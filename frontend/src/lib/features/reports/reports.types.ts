@@ -21,6 +21,11 @@ export interface AccountBalance {
 	/** Rôle métier explicite du compte (Story 14-3a), `null` si aucun. Porte le
 	 *  regroupement par rôle de la section Capitaux propres au bilan (Story 14-3c). */
 	role: AccountRole | null;
+	/** Story 37-4 — devise du compte (ISO 4217), **absente** pour un compte en devise
+	 *  principale. Les totaux du rapport restent en devise principale. */
+	currency?: string;
+	/** Story 37-4 — solde en devise, signé comme `balance` ; absent hors compte en devise. */
+	balanceCurrency?: string;
 }
 
 export interface BalanceSheetDto {
@@ -64,6 +69,14 @@ export interface TrialBalanceRow {
 	balance: string;
 	/** Story 25-5-b — ouverture + mouvements : pour un compte de bilan, son solde au bilan. */
 	closingBalance: string;
+	/** Story 37-4 — devise du compte ; absente (avec les champs suivants) pour un compte
+	 *  en devise principale. Aucun total en devise (devises mêlées). */
+	currency?: string;
+	openingCurrency?: string;
+	totalDebitCurrency?: string;
+	totalCreditCurrency?: string;
+	balanceCurrency?: string;
+	closingCurrency?: string;
 }
 
 export interface TrialBalanceDto {
@@ -87,7 +100,19 @@ export interface JournalEntryLineRow {
 	debit: string;
 	credit: string;
 	lineOrder: number;
+	/** Story 37-4 — devise du compte, seulement si la ligne porte un montant en devise. */
+	currency?: string;
+	/** Montant en devise, sans signe : son côté est celui du montant en devise principale.
+	 *  0 pour une réévaluation. */
+	amountCurrency?: string;
+	/** Cours par unité de devise. */
+	exchangeRate?: string;
+	/** Provenance du cours. */
+	rateSource?: RateSource;
 }
+
+/** Story 37-4 — provenance du cours d'une ligne en devise. */
+export type RateSource = 'afc' | 'manual' | 'revaluation';
 
 export interface JournalEntryRow {
 	entryId: number;
@@ -298,6 +323,8 @@ export interface FiscalYearBreak {
 	date: string;
 	closingFiscalYearId: number;
 	closingBalance: string;
+	/** Story 37-4 — solde en devise de l'exercice clos (compte en devise seulement). */
+	closingBalanceCurrency?: string;
 }
 
 export interface LedgerLine {
@@ -322,6 +349,17 @@ export interface LedgerLine {
 	 * et PDF (C-15-1b-6).
 	 */
 	letteringCode: string | null;
+	/** Story 37-4 — montant en devise au débit ; présent sur toute ligne d'une section en
+	 *  devise (0 du côté opposé), absent ailleurs. */
+	debitCurrency?: string;
+	/** Montant en devise au crédit (même règle). */
+	creditCurrency?: string;
+	/** Cours par unité de devise. */
+	exchangeRate?: string;
+	/** Provenance du cours ; `revaluation` se lit « Réévaluation au cours X ». */
+	rateSource?: RateSource;
+	/** Solde progressif en devise. */
+	runningBalanceCurrency?: string;
 }
 
 export interface LedgerSection {
@@ -348,6 +386,13 @@ export interface LedgerSection {
 	fiscalYearBreaks: FiscalYearBreak[];
 	/** Nombre de lignes sur la période, **avant pagination**. */
 	lineCount: number;
+	/** Story 37-4 — devise du compte ; absente (avec les champs suivants) pour un compte
+	 *  en devise principale. */
+	currency?: string;
+	openingCurrency?: string;
+	totalDebitCurrency?: string;
+	totalCreditCurrency?: string;
+	closingCurrency?: string;
 }
 
 export interface GeneralLedgerDto {

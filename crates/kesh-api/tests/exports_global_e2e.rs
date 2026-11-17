@@ -291,12 +291,14 @@ async fn post_entry(
                     debit: amount,
                     credit: Decimal::ZERO,
                     project_id: None,
+                    foreign: None,
                 },
                 NewJournalEntryLine {
                     account_id: credit_account,
                     debit: Decimal::ZERO,
                     credit: amount,
                     project_id: None,
+                    foreign: None,
                 },
             ],
         },
@@ -2089,6 +2091,7 @@ async fn export_global_zip_carries_a_modified_entry_and_its_trace(pool: MySqlPoo
         debit,
         credit,
         project_id: None,
+        foreign: None,
     };
     let created = journal_entries::create(
         &pool,

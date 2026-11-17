@@ -97,6 +97,13 @@ pub const TABLES_TO_TRUNCATE: &[&str] = &[
     // plus, enfant de companies (RESTRICT) ; sa place suit celle de
     // `company_invoice_settings`, autre ligne de réglages de société.
     "mcp_server_settings",
+    // Story 37-2 — cours de change retenus par la société : enfant de companies
+    // + users (RESTRICT), sans enfant propre ; sa place suit celle de
+    // `mcp_server_settings`, autre table de réglages de société. Vidée à la
+    // remise à zéro (absente de `RESET_PRESERVED_TABLES`) : un cours retenu est
+    // une donnée de la société. Inscrite à `ABSENCES_ADMISES_EPIC_37` : une
+    // sauvegarde antérieure, sans elle, se réimporte.
+    "exchange_rates",
     "bank_transactions", // Story 8-1b — enfant de bank_imports + bank_accounts.
     "bank_imports",      // Story 8-1b — enfant de bank_accounts + companies.
     "bank_profiles",     // Story 8-2 — enfant de companies (CASCADE).
@@ -193,6 +200,28 @@ pub const ABSENCES_ADMISES_EPIC_37: &[AbsenceAdmise] = &[
     AbsenceAdmise {
         absence: Absence::Colonne("fiscal_years", "closing_rate_kind"),
         migration: 20261114000001,
+    },
+    // Story 37-2 — `20261114000002_exchange_rates` : les cours retenus par la
+    // société. Une sauvegarde antérieure est mono-devise, sans cours retenu :
+    // la table reste vide après l'import (R1).
+    AbsenceAdmise {
+        absence: Absence::Table("exchange_rates"),
+        migration: 20261114000002,
+    },
+    // Story 37-3a — `20261114000003_journal_lines_foreign_currency` : la partie
+    // en devise d'une ligne d'écriture. Une sauvegarde antérieure est
+    // mono-devise : ses lignes restent en CHF (trois colonnes `NULL`).
+    AbsenceAdmise {
+        absence: Absence::Colonne("journal_entry_lines", "amount_currency"),
+        migration: 20261114000003,
+    },
+    AbsenceAdmise {
+        absence: Absence::Colonne("journal_entry_lines", "exchange_rate"),
+        migration: 20261114000003,
+    },
+    AbsenceAdmise {
+        absence: Absence::Colonne("journal_entry_lines", "rate_source"),
+        migration: 20261114000003,
     },
 ];
 
@@ -1042,6 +1071,10 @@ mod tests {
         "_kesh_version",
         "_kesh_backup_schedule",
         "_kesh_installation_settings",
+        // Story 37-2 — valeurs publiées par la source des cours et état de la
+        // dernière récupération : données de l'installation, jamais sauvegardées.
+        "_kesh_fetched_exchange_rates",
+        "_kesh_exchange_rate_fetch",
     ];
 
     /// Story v0174-mise-a-jour (#847, T16) — **la convention du préfixe**, sur
@@ -1160,7 +1193,8 @@ mod tests {
     }
 
     /// [`table_absente_admise`] ne vaut que pour une table de la liste :
-    /// aucune aujourd'hui (Story 37-1 n'y inscrit que des colonnes).
+    /// `exchange_rates` depuis la Story 37-2 (37-1 n'y inscrivait que des
+    /// colonnes).
     #[test]
     fn table_absente_admise_ne_vaut_que_pour_la_liste() {
         for t in TABLES_TO_TRUNCATE {
@@ -1169,6 +1203,7 @@ mod tests {
                 .any(|a| matches!(a.absence, Absence::Table(x) if x == *t));
             assert_eq!(table_absente_admise(t), listee, "{t}");
         }
+        assert!(table_absente_admise("exchange_rates"));
         assert!(!table_absente_admise("companies"));
         assert!(!table_absente_admise("table_inconnue"));
     }

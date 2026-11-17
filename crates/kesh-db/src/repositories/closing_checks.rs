@@ -1,10 +1,11 @@
 //! Préparer la clôture d'un exercice — les **contrôles préalables**, en lecture
 //! seule (Story 29-1a, #232).
 //!
-//! [`for_fiscal_year`] rend, pour un exercice `Y`, **exactement** huit
+//! [`for_fiscal_year`] rend, pour un exercice `Y`, **exactement** neuf
 //! contrôles, dans cet ordre (l'ensemble clos de la fiche, AC1 ; K8 ajouté en
 //! **dernier** par la Story v017-4a, #849, pour que les index de K1 à K7 ne
-//! bougent pas) :
+//! bougent pas, puis K9 en dernier par la Story 37-5, pour que ceux de K1 à K8
+//! ne bougent pas) :
 //!
 //! | Code | Sévérité | `attention` quand… |
 //! |---|---|---|
@@ -16,13 +17,21 @@
 //! | K6 `INCONSISTENT_ENTRIES` | `anomaly` | une écriture incohérente (déséquilibrée, à moins de deux lignes, hors de son exercice, ou d'un autre exercice datée dans Y) |
 //! | K7 `NEXT_FISCAL_YEAR` | `info` | aucun exercice ne suit Y |
 //! | K8 `DRAFT_SUPPLIER_INVOICES` | `info` | une facture fournisseur en brouillon est datée dans Y |
+//! | K9 `FOREIGN_ACCOUNTS_NOT_REVALUED` | `blocking` | un compte de bilan en devise a, au cours de clôture par défaut, un écart non nul, ou sa devise n'a pas de cours alors qu'il porte un solde (Story 37-5) |
 //!
 //! `count` vaut le nombre de points relevés : transactions (K2), comptes en
-//! défaut (K3), factures (K4, K8), pièces (K5), écritures distinctes (K6) ; pour
-//! K1 et K7, `1` quand le contrôle est en `attention`, `0` sinon.
+//! défaut (K3), factures (K4, K8), pièces (K5), écritures distinctes (K6),
+//! comptes en devise non réévalués (K9) ; pour K1 et K7, `1` quand le contrôle
+//! est en `attention`, `0` sinon.
 //!
-//! Rien ne **bloque** : la clôture garde son unique refus existant (K1,
-//! `fiscal_years::close`), qui reste l'autorité.
+//! Le panneau ne **bloque** rien par lui-même : deux contrôles, K1 et K9, sont
+//! `blocking` parce que la clôture (`fiscal_years::close`) refuse réellement
+//! dans ces cas — c'est elle qui reste l'autorité.
+//!
+//! **K9 ne coûte rien hors multi-devises** (NFR-37-5-7) : exercice mono-devise
+//! → `ok` sans autre lecture ; exercice multi-devises sans compte de bilan en
+//! devise → `ok` après la seule requête [`FX_CANDIDATES_EXIST_SQL`], sans
+//! résolution de cours ni soldes.
 //!
 //! # Une seule vue, aucune écriture, aucun verrou (AC2)
 //!
@@ -57,7 +66,14 @@
 //! - [`super::bank_accounts::balances_from_row`], [`super::bank_accounts::is_shared`],
 //!   [`super::bank_accounts::statement_gap`] (sans SQL) ;
 //! - [`super::fiscal_years::find_earliest_earlier_open`] (texte `EARLIER_OPEN_SQL`) ;
-//! - [`super::fiscal_years::find_next_after`] (texte `NEXT_AFTER_SQL`).
+//! - [`super::fiscal_years::find_next_after`] (texte `NEXT_AFTER_SQL`) ;
+//! - K9 (Story 37-5) : [`super::fx_revaluation::candidate_currencies`],
+//!   [`super::fx_revaluation::resolve_default_rates`] (et, par elle,
+//!   [`super::exchange_rates::find_company_rate_in_tx`] et
+//!   [`super::exchange_rates::find_fetched_rate_in_tx`], sans `FOR UPDATE`),
+//!   [`super::fx_revaluation::lines_for_fiscal_year`] (et, par elle,
+//!   [`super::account_balances::balances_as_of`]) ;
+//!   [`super::fx_revaluation::not_revalued`] (sans SQL).
 //!
 //! Le panneau lit **à un instant** : un contrôle lu `ok` peut être faux une
 //! seconde plus tard (une transaction importée entre-temps). C'est un
@@ -105,6 +121,7 @@ use sqlx::MySqlConnection;
 
 use crate::entities::{FiscalYear, FiscalYearStatus, bank_account::bank_account_display_name};
 use crate::errors::{DbError, map_db_error};
+use crate::repositories::fx_revaluation::{self, NotRevaluedAccounts};
 use crate::repositories::{bank_accounts, fiscal_years};
 
 /// Les contrôles d'un exercice — la réponse de
@@ -120,8 +137,9 @@ pub struct ClosingChecks {
     pub start_date: NaiveDate,
     /// Dernier jour de Y.
     pub end_date: NaiveDate,
-    /// **Toujours huit** contrôles, dans l'ordre de l'AC1 (table de la doc du
-    /// module ; K8 en dernier, Story v017-4a).
+    /// **Toujours neuf** contrôles, dans l'ordre de l'AC1 (table de la doc du
+    /// module ; K8 puis K9 en dernier, Stories v017-4a et 37-5), mono-devise
+    /// compris.
     pub checks: Vec<ClosingCheck>,
 }
 
@@ -164,14 +182,18 @@ pub enum CheckCode {
     NextFiscalYear,
     /// K8 — factures fournisseur en brouillon, datées dans Y (Story v017-4a).
     DraftSupplierInvoices,
+    /// K9 — comptes de bilan en devise non réévalués au cours de clôture
+    /// (Story 37-5).
+    ForeignAccountsNotRevalued,
 }
 
-/// Sévérité d'un contrôle, sérialisée en minuscules. Seul `blocking` (K1)
-/// correspond à un refus réel, celui de la clôture ; rien ne bloque ici.
+/// Sévérité d'un contrôle, sérialisée en minuscules. Seul `blocking` (K1 et
+/// K9) correspond à un refus réel, celui de la clôture ; le panneau, lui, ne
+/// bloque rien.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Severity {
-    /// La clôture refuse tant que le point demeure (K1).
+    /// La clôture refuse tant que le point demeure (K1, K9).
     Blocking,
     /// À vérifier avant de clôturer (K2, K3).
     Warning,
@@ -214,6 +236,10 @@ pub enum CheckDetails {
     NextFiscalYear(NextFiscalYearDetails),
     /// K8 — même forme que K4 (`{ "invoices": [{ id, label, date }] }`).
     DraftSupplierInvoices(DraftDetails),
+    /// K9 — `{ "accounts": [{ accountId, number, name, currency, delta,
+    /// reason }] }`, au plus `MAX_LISTED` comptes, par numéro ; la même forme
+    /// que les `details` du 409 `FOREIGN_ACCOUNTS_NOT_REVALUED` de la clôture.
+    ForeignAccountsNotRevalued(NotRevaluedAccounts),
 }
 
 /// Un exercice nommé (K1).
@@ -543,11 +569,21 @@ const INCONSISTENT_SQL: &str = "SELECT je.id, je.entry_number, je.entry_date, fy
          OR other_year_dated_inside = 1 \
      ORDER BY je.entry_date ASC, je.id ASC";
 
+/// K9 (Story 37-5) : la société a-t-elle un compte de bilan en devise ? Le
+/// prédicat est, à l'octet près, celui des comptes candidats de l'aperçu
+/// (`fx_revaluation::CANDIDATE_PREDICATE`, gardé par un test) : `Asset` ou
+/// `Liability`, en devise, archivés et non imputables compris. Lu aussi par la
+/// clôture, avant `begin` ([`fx_candidates_exist`]).
+pub(crate) const FX_CANDIDATES_EXIST_SQL: &str = "SELECT CAST(EXISTS (SELECT 1 FROM accounts a \
+     WHERE a.company_id = ? AND a.account_type IN ('Asset', 'Liability') AND a.currency IS NOT NULL) \
+     AS SIGNED)";
+
 /// **Toutes** les requêtes du module : la garde T-a2 exige que chaque site
 /// d'appel `query*` ait pour premier argument l'une d'elles, et que leur nombre
 /// égale celui des `const …_SQL` du module.
 #[allow(dead_code)] // lu par la garde statique T-a2, pas par le code
 const ALL_SQL: &[&str] = &[
+    FX_CANDIDATES_EXIST_SQL,
     FISCAL_YEAR_SQL,
     PENDING_SQL,
     EXAMINED_ACCOUNTS_SQL,
@@ -563,7 +599,7 @@ const ALL_SQL: &[&str] = &[
 // La lecture
 // ---------------------------------------------------------------------------
 
-/// Les huit contrôles de l'exercice `fiscal_year_id` de la société, dans
+/// Les neuf contrôles de l'exercice `fiscal_year_id` de la société, dans
 /// l'ordre de l'AC1, lus sur `conn` — la connexion d'un
 /// [`crate::snapshot::ReadSnapshot`] (voir la doc du module).
 ///
@@ -591,6 +627,7 @@ pub async fn for_fiscal_year(
         inconsistent_entries(conn, company_id, &y).await?,
         next_fiscal_year(conn, company_id, &y).await?,
         draft_supplier_invoices(conn, company_id, &y).await?,
+        foreign_accounts_not_revalued(conn, company_id, &y).await?,
     ];
     Ok(ClosingChecks {
         fiscal_year_id: y.id,
@@ -955,6 +992,57 @@ async fn inconsistent_entries(
     })
 }
 
+/// La société a-t-elle un compte de bilan en devise
+/// ([`FX_CANDIDATES_EXIST_SQL`]) ? Lecture ordinaire, sans verrou — par K9 dans
+/// l'instantané, par la clôture sur le pool avant `begin`.
+pub async fn fx_candidates_exist(
+    conn: &mut MySqlConnection,
+    company_id: i64,
+) -> Result<bool, DbError> {
+    let n: i64 = sqlx::query_scalar(FX_CANDIDATES_EXIST_SQL)
+        .bind(company_id)
+        .fetch_one(&mut *conn)
+        .await
+        .map_err(map_db_error)?;
+    Ok(n != 0)
+}
+
+/// K9 — comptes de bilan en devise non réévalués au cours de clôture par
+/// défaut (Story 37-5, AC-9) : les lignes de l'aperçu **sans `accountIds`**
+/// (archivés compris, sans plafond), par la fonction de l'aperçu et de la
+/// clôture (DRY). Mono-devise → `ok` sans autre lecture ; aucun compte
+/// candidat → `ok` après la seule requête `EXISTS`. Un calcul hors bornes ne
+/// fait pas perdre les autres contrôles : K9 est en `attention`, le compte
+/// listé avec `delta` nul.
+async fn foreign_accounts_not_revalued(
+    conn: &mut MySqlConnection,
+    company_id: i64,
+    y: &FiscalYear,
+) -> Result<ClosingCheck, DbError> {
+    let mut found = NotRevaluedAccounts {
+        count: 0,
+        accounts: Vec::new(),
+    };
+    if y.multi_currency && fx_candidates_exist(&mut *conn, company_id).await? {
+        let currencies = fx_revaluation::candidate_currencies(&mut *conn, company_id).await?;
+        let rates = fx_revaluation::resolve_default_rates(&mut *conn, company_id, y, &currencies)
+            .await?
+            .into_iter()
+            .filter_map(|(c, r)| r.map(|r| (c, r.rate)))
+            .collect();
+        let lines =
+            fx_revaluation::lines_for_fiscal_year(&mut *conn, company_id, y, &rates).await?;
+        found = fx_revaluation::not_revalued(&lines);
+    }
+    Ok(ClosingCheck {
+        code: CheckCode::ForeignAccountsNotRevalued,
+        severity: Severity::Blocking,
+        status: status_of(found.count > 0),
+        count: found.count,
+        details: CheckDetails::ForeignAccountsNotRevalued(found),
+    })
+}
+
 /// K7 — l'exercice qui suit Y (le premier dont `start_date > Y.end_date`).
 async fn next_fiscal_year(
     conn: &mut MySqlConnection,
@@ -1118,6 +1206,18 @@ mod tests {
             .into_iter()
             .filter(|m| haut.contains(m))
             .collect()
+    }
+
+    /// K9 (Story 37-5) : la requête `EXISTS` porte, à l'octet près, le
+    /// prédicat des comptes candidats de l'aperçu (« même prédicat »).
+    #[test]
+    fn k9_exists_porte_le_predicat_des_candidats() {
+        assert!(
+            super::FX_CANDIDATES_EXIST_SQL
+                .contains(crate::repositories::fx_revaluation::CANDIDATE_PREDICATE),
+            "{}",
+            super::FX_CANDIDATES_EXIST_SQL
+        );
     }
 
     /// T-a2 — appliquée au source réel du module.

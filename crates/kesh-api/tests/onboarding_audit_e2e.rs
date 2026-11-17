@@ -2037,6 +2037,26 @@ async fn populate(pool: &MySqlPool, app: &TestApp, token: &str, company_id: i64)
         .unwrap();
         tx.commit().await.unwrap();
     }
+    // Story 37-2 (AC-7) — un cours retenu par la société (applicatif, vidé par
+    // la remise à zéro) et une valeur publiée (système, gardée).
+    sqlx::query(
+        "INSERT INTO exchange_rates (company_id, currency, kind, rate_date, rate, source) \
+         VALUES (?, 'USD', 'month', '2026-01-01', 0.8800000000, 'manual')",
+    )
+    .bind(company_id)
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO _kesh_fetched_exchange_rates (source, currency, kind, rate_date, \
+             rate_per_unit, published_unit, published_rate, first_fetched_at, fetched_at, \
+             value_changed_at) \
+         VALUES ('afc', 'USD', 'month', '2026-01-01', 0.8800000000, 1, 0.88000, \
+             '2026-01-10 10:00:00', '2026-01-10 10:00:00', '2026-01-10 10:00:00')",
+    )
+    .execute(pool)
+    .await
+    .unwrap();
     key_id
 }
 
@@ -2094,6 +2114,7 @@ async fn reset_clears_every_company_table_and_traces_itself(pool: MySqlPool) {
         "mcp_sends",
         "mcp_prompts",
         "mcp_prompt_versions",
+        "exchange_rates",
     ] {
         assert!(before[t] > 0, "montage : {t} doit être peuplée");
     }
@@ -2175,6 +2196,14 @@ async fn reset_clears_every_company_table_and_traces_itself(pool: MySqlPool) {
             assert_eq!(after[t], 0, "#279 : {t} doit être vidée");
         }
     }
+    // Story 37-2 (AC-7) : les cours retenus sont vidés (ci-dessus, la table est
+    // dans `cleared`), les valeurs publiées, système, restent.
+    assert!(cleared.contains(&"exchange_rates"));
+    let publiees: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM _kesh_fetched_exchange_rates")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(publiees, 1, "la remise à zéro garde les valeurs publiées");
     assert_eq!(
         kesh_db::test_fixtures::prompts_de_societe(&pool, company_id)
             .await

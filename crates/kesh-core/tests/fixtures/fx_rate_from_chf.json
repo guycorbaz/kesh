@@ -1,0 +1,16 @@
+[
+  { "case": "CHF repris d'un bilan", "amount": "1234.56", "chf": "1125.83", "rate": "0.9119281363" },
+  { "case": "cours court", "amount": "100", "chf": "91.19", "rate": "0.9119" },
+  { "case": "JPY", "amount": "100000", "chf": "573.12", "rate": "0.0057312" },
+  { "case": "petit montant", "amount": "0.01", "chf": "0.01", "rate": "1" },
+  { "case": "montant a 4 decimales", "amount": "1.2345", "chf": "1.13", "rate": "0.9153503443" },
+  { "case": "aucun cours ne convient : un pas de 10^-10 deplace le CHF de 1000", "amount": "10000000000000", "chf": "9123456789012.34", "error": "FX_AMOUNT_MISMATCH", "expected": "9123456789000.00" },
+  { "case": "CHF a 3 decimales", "amount": "1", "chf": "0.123", "error": "FX_AMOUNT_MISMATCH", "expected": "0.12" },
+  { "case": "montant 0", "amount": "0", "chf": "10", "error": "FX_VALUE_OUT_OF_RANGE" },
+  { "case": "CHF 0", "amount": "10", "chf": "0", "error": "FX_VALUE_OUT_OF_RANGE" },
+  { "case": "montant negatif", "amount": "-10", "chf": "10", "error": "FX_VALUE_OUT_OF_RANGE" },
+  { "case": "montant a 5 decimales", "amount": "1.00001", "chf": "1", "error": "FX_VALUE_OUT_OF_RANGE" },
+  { "case": "montant > 10^13", "amount": "10000000000000.0001", "chf": "1", "error": "FX_VALUE_OUT_OF_RANGE" },
+  { "case": "CHF > 10^13", "amount": "1", "chf": "10000000000000.01", "error": "FX_VALUE_OUT_OF_RANGE" },
+  { "case": "cours obtenu > 10^6", "amount": "0.0001", "chf": "1000", "error": "FX_VALUE_OUT_OF_RANGE" }
+]

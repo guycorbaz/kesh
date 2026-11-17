@@ -2954,3 +2954,80 @@ async fn fiscal_year_valid_rename_succeeds_after_the_replay(pool: MySqlPool) {
     );
     capture.exiger_un_rejeu("fiscal_years::update_name");
 }
+
+// ============================================================
+// Test 37-2 — saisie d'un cours retenu victime (Story 37-2, AC-5)
+// ============================================================
+
+/// `PUT /exchange-rates/rates` (remplacement d'une ligne `afc` copiée par
+/// Kesh), victime, est **rejouée** (Story 37-2, AC-5).
+///
+/// Montage : la transaction lourde tient l'utilisateur `FOR UPDATE` ; le `PUT`,
+/// lancé en tâche, tient la ligne `exchange_rates` `FOR UPDATE` puis est vu en
+/// attente sur son `UPDATE` (le contrôle de la clé étrangère `updated_by`,
+/// passée de `NULL` à l'utilisateur, demande la ligne `users` en partage). La
+/// transaction demande la ligne de cours : cycle ; InnoDB annule le `PUT`, plus
+/// léger ; la route rejoue et rend **200**, la ligne `manual` en version 2, une
+/// seule entrée d'audit.
+///
+/// ⛔ Tue la mutation « appel hors de `retry_on_deadlock` » : 500, et pas de
+/// témoin de rejeu.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn exchange_rate_put_is_replayed_when_it_is_the_deadlock_victim(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let capture = CaptureRejeu::installer();
+    let company_id = ctx.company_id();
+    societe_multi_devises(&pool, company_id).await;
+    let ligne = sqlx::query(
+        "INSERT INTO exchange_rates (company_id, currency, kind, rate_date, rate, source, \
+             updated_by) VALUES (?, 'USD', 'month', '2026-01-01', 0.8800000000, 'afc', NULL)",
+    )
+    .bind(company_id)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+
+    let mut lourde = transaction_lourde(&pool).await;
+    sqlx::query("SELECT id FROM users WHERE id = ? FOR UPDATE")
+        .bind(ctx.societe.admin_user_id)
+        .fetch_one(&mut *lourde)
+        .await
+        .unwrap();
+
+    let route = requete_en_tache(
+        &ctx,
+        reqwest::Method::PUT,
+        "/api/v1/exchange-rates/rates",
+        Some(json!({
+            "currency": "USD",
+            "kind": "month",
+            "rateDate": "2026-01-01",
+            "rate": "0.9100",
+            "version": 1,
+        })),
+    );
+    let (status, corps) = victime(
+        &pool,
+        lourde,
+        route,
+        &["UPDATE exchange_rates SET rate"],
+        "SELECT id FROM exchange_rates WHERE id = ? FOR UPDATE",
+        ligne,
+    )
+    .await;
+
+    assert_eq!(status, 200, "⛔ l'interblocage doit être rejoué : {corps}");
+    assert_eq!(corps["source"], "manual", "{corps}");
+    assert_eq!(corps["row"]["version"], 2, "{corps}");
+    assert_eq!(corps["row"]["updatedByKesh"], false, "{corps}");
+    let audits: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM audit_log WHERE action = 'exchange_rate.updated' AND entity_id = ?",
+    )
+    .bind(ligne)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(audits, 1, "une seule entrée d'audit");
+    capture.exiger_un_rejeu("exchange_rates::put_rate");
+}

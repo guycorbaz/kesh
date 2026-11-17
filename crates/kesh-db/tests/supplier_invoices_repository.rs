@@ -802,6 +802,7 @@ async fn cancel_paid_invoice_detaches_its_settlement(pool: MySqlPool) {
                     debit: l.debit,
                     credit: l.credit,
                     project_id: l.project_id,
+                    foreign: None,
                 })
                 .collect(),
         };
@@ -3845,4 +3846,78 @@ async fn commit_with_view_rolls_back_when_the_view_cannot_be_read(pool: MySqlPoo
         societe, c,
         "le rattachement à l'autre société n'a pas survécu"
     );
+}
+
+/// Story 37-3a (AC-5) — un compte de règlement **interne en devise** (par
+/// ailleurs actif, imputable, distinct des créanciers ; société multi-devises,
+/// compte passé en `USD` par SQL) est refusé au paiement d'une facture
+/// fournisseur, sous son nom (`AccountInForeignCurrency`, compte et devise) :
+/// le règlement s'écrit en CHF. Rien n'est écrit — aucune écriture de plus, la
+/// facture reste `open` sans règlement. Sans l'appel de
+/// `refuse_foreign_currency_accounts_in_tx` (étape 3 ter de `pay_in_tx_as`), le
+/// refus viendrait du contrôle central de l'écriture (`AccountRequiresCurrency`) ;
+/// revue de code P1.
+#[sqlx::test(migrations = "./test-schema")]
+async fn pay_with_foreign_currency_internal_account_is_rejected(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let c = ctx.seeded.company_id;
+    let created = supplier_invoices::create_validated(
+        &pool,
+        one_line(&ctx, dec!(100.00), dec!(0)),
+        ctx.seeded.admin_user_id,
+    )
+    .await
+    .unwrap();
+    let usd = sqlx::query(
+        "INSERT INTO accounts (company_id, number, name, account_type) \
+         VALUES (?, '1090', 'Compte courant USD', 'Asset')",
+    )
+    .bind(c)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    sqlx::query("UPDATE companies SET multi_currency_enabled = TRUE WHERE id = ?")
+        .bind(c)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE accounts SET currency = 'USD' WHERE id = ?")
+        .bind(usd)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let entries_sql = format!("SELECT COUNT(*) FROM journal_entries WHERE company_id = {c}");
+    let entries_before = count(&pool, &entries_sql).await;
+
+    let err = supplier_invoices::pay(
+        &pool,
+        c,
+        created.invoice.id,
+        SettlementChoice::InternalAccount { account_id: usd },
+        d(2026, 6, 20),
+        ctx.seeded.admin_user_id,
+        crate::jour::aujourd_hui_test(),
+    )
+    .await
+    .unwrap_err();
+    match err {
+        DbError::AccountInForeignCurrency {
+            account_id: Some(id),
+            ref currency,
+        } => {
+            assert_eq!(id, usd);
+            assert_eq!(currency, "USD");
+        }
+        other => panic!("attendu AccountInForeignCurrency, reçu {other:?}"),
+    }
+    assert_eq!(count(&pool, &entries_sql).await, entries_before);
+    let (status, settlement): (String, Option<i64>) = sqlx::query_as(
+        "SELECT status, settlement_journal_entry_id FROM supplier_invoices WHERE id = ?",
+    )
+    .bind(created.invoice.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!((status.as_str(), settlement), ("open", None));
 }

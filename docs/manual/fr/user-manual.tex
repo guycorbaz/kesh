@@ -22,6 +22,10 @@
   \end{figure}%
 }
 
+%% Coche de l'écran Cours de change (« AFC ✓ ») : la police du manuel n'a pas
+%% ce caractère, d'où un tracé TikZ (tikz est chargé par kesh-style.sty).
+\newcommand{\keshcoche}{\tikz[baseline=0ex,x=1ex,y=1ex,line width=0.13ex,line cap=round,line join=round]\draw (0,0.5)--(0.35,0.1)--(1,1.05);}
+
 \title{Manuel utilisateur Kesh}
 \author{\keshAuthor}
 \date{\keshReleaseDate}
@@ -108,6 +112,8 @@ Si vous avez oublié votre mot de passe :
     \item Reconnectez-vous avec le nouveau mot de passe. Par sécurité, toutes vos sessions ouvertes (autres onglets, autres appareils) ne peuvent plus être renouvelées~: chacune prend fin à sa prochaine activité, au plus tard à l'échéance de son jeton d'accès (15 minutes par défaut).
 \end{enumerate}
 
+
+\keshscreenshot{md-reglage-multi-devises.png}{Administration → Paramètres, section Comptabilité : la case « Comptabilité multi-devises » et ses trois sélecteurs (gains, pertes, conversion).}
 \begin{keshwarning}
 Si vous ne recevez pas l'email dans les 5 minutes, vérifiez votre dossier spam/indésirables. Si l'email n'arrive pas du tout : soit aucune adresse email n'est renseignée sur votre compte, soit l'envoi d'emails n'est pas configuré sur l'instance — dans les deux cas, contactez votre administrateur, qui peut réinitialiser votre mot de passe manuellement.
 \end{keshwarning}
@@ -920,12 +926,12 @@ Dans une société passée en \textbf{multi-devises}, un exercice ne se crée pa
 
 \subsection{Préparer la clôture}\label{sec:preparer-cloture}
 
-Avant de clôturer --- et à tout moment de l'année ---, le bouton \emph{Préparer la clôture} d'un exercice ouvert (\emph{Administration} → \emph{Exercices comptables}, colonne \emph{Actions}) ouvre un panneau qui passe l'exercice en revue~: huit \textbf{contrôles préalables}, chacun avec son état --- \emph{Rien à signaler}, ou ce qui reste à faire --- et un lien vers l'écran où l'on agit. Le panneau est offert à \textbf{tous les rôles}, Consultation comprise~: il ne fait que lire.
+Avant de clôturer --- et à tout moment de l'année ---, le bouton \emph{Préparer la clôture} d'un exercice ouvert (\emph{Administration} → \emph{Exercices comptables}, colonne \emph{Actions}) ouvre un panneau qui passe l'exercice en revue~: neuf \textbf{contrôles préalables}, chacun avec son état --- \emph{Rien à signaler}, ou ce qui reste à faire --- et un lien vers l'écran où l'on agit. Le panneau est offert à \textbf{tous les rôles}, Consultation comprise~: il ne fait que lire.
 
-Le panneau \textbf{ne bloque rien}~: la clôture garde son seul refus, l'exercice antérieur encore ouvert. Le dialogue de clôture en rappelle le résultat au-dessus de sa confirmation (« Aucun point à vérifier », ou la liste des points), sans empêcher de clôturer --- une clôture se défait d'ailleurs par une réouverture motivée (\S\ref{sec:reouverture-exercice}).
+Le panneau ne bloque rien par lui-même~: \textbf{deux contrôles}, marqués \emph{Bloquant}, empêchent la clôture, parce que la clôture elle-même refuse dans ces cas --- l'exercice antérieur encore ouvert et, depuis l'Epic~37, le compte en devise non réévalué. Les sept autres ne l'empêchent pas. Le dialogue de clôture en rappelle le résultat au-dessus de sa confirmation (« Aucun point à vérifier », ou la liste des points)~; une clôture se défait d'ailleurs par une réouverture motivée (\S\ref{sec:reouverture-exercice}).
 
 \begin{description}
-    \item[Exercices antérieurs] Un exercice plus ancien est encore ouvert~: le panneau nomme le plus ancien, qu'il faut clôturer d'abord. C'est le seul contrôle qui bloque, et c'est la clôture elle-même qui bloque (le bouton \emph{Clôturer} est alors désactivé).
+    \item[Exercices antérieurs] Un exercice plus ancien est encore ouvert~: le panneau nomme le plus ancien, qu'il faut clôturer d'abord. Ce contrôle bloque, et c'est la clôture elle-même qui bloque (le bouton \emph{Clôturer} est alors désactivé).
     \item[Transactions bancaires à rapprocher] Des transactions bancaires, importées ou saisies à la main, datées (date de comptabilisation bancaire) dans l'exercice, attendent leur rapprochement --- y compris celles que vous avez écartées des propositions. Lien~: \emph{Réconciliation bancaire} (\S\ref{sec:reconciliation}).
     \item[Relevés bancaires de fin d'exercice] Pour chaque compte bancaire, le relevé qui \textbf{se termine au plus tard le dernier jour de l'exercice} est comparé aux livres~: relevé manquant, relevé arrêté trop tôt, ou écart entre le solde du relevé et le solde comptable à sa date. Lien~: \emph{Comptes bancaires}.
     \item[Factures en brouillon] Des factures client datées dans l'exercice n'ont jamais été validées~: elles ne sont pas en comptabilité. Lien~: la liste des factures, filtrée sur les brouillons de l'exercice.
@@ -933,7 +939,10 @@ Le panneau \textbf{ne bloque rien}~: la clôture garde son seul refus, l'exercic
     \item[Écritures incohérentes] Des écritures déséquilibrées, à moins de deux lignes, datées hors de leur exercice, ou appartenant à un autre exercice mais datées dans celui-ci. Chaque écriture listée mène à sa fiche.
     \item[Exercice suivant] Aucun exercice ne suit celui-ci~: créez-le pour y passer les écritures de l'année qui vient --- et pour contre-passer vos transitoires au début de cet exercice (\S\ref{sec:transitoires}). Bouton~: \emph{Créer l'exercice suivant}, qui ouvre la création d'un exercice (administrateur et comptable).
     \item[Factures fournisseur en brouillon] Depuis la version~0.17.0~: des factures fournisseur datées dans l'exercice sont restées en \textbf{brouillon}~: jamais validées, leur achat n'est pas en comptabilité (\S\ref{sec:brouillon-fournisseur}). Le panneau nomme les \textbf{vingt premiers} brouillons, par leur numéro interne pour un brouillon qui en a gardé un (\S\ref{sec:numero-interne-fournisseur}), chacun menant à sa fiche, et dit «~… et N autres~» au-delà~; le lien \emph{Ouvrir les brouillons de factures fournisseurs} ouvre la liste des factures fournisseurs \textbf{filtrée sur les brouillons, de tous les exercices} (depuis la version~0.17.2)~: son compte peut donc dépasser celui du contrôle, qui ne compte que les brouillons datés dans l'exercice.
+    \item[Comptes en devise à réévaluer] Depuis l'Epic~37, exercice multi-devises seulement~: un compte de bilan en devise a, au cours de clôture retenu par la société, un \textbf{écart} non nul --- il n'est pas (ou plus) réévalué ---, ou sa devise n'a \textbf{pas de cours de clôture} alors qu'il porte un solde. Ce contrôle \textbf{bloque}~: le bouton \emph{Clôturer} est désactivé, et la clôture refuse. Le panneau nomme les comptes concernés et, pour un comptable ou un administrateur, \textbf{montre directement l'aperçu} de la réévaluation (\S\ref{sec:reevaluation-devises})~; son bouton \emph{Réévaluer} passe les écritures montrées, puis le panneau relit les contrôles. Un compte \textbf{archivé} à écart non nul compte aussi~: réactivez-le pour le réévaluer. Il en va de même d'un compte rendu \textbf{non imputable} qui porte encore un solde~: l'aperçu le montre sans case à cocher, la clôture le compte~; rendez-le imputable pour le réévaluer. (Un compte en devise mouvementé ne reçoit pas de sous-compte, \S\ref{sec:devise-compte}~: il ne devient donc pas non imputable par ce chemin, d'où il ne pourrait plus revenir.) Un compte que vous ne réévaluez pas (poste non monétaire) bloque la clôture tant que son écart n'est pas nul~: tenez un tel poste sur un compte \textbf{en CHF}.
 \end{description}
+
+\keshscreenshot{rd-controle-cloture.png}{Préparer la clôture : le contrôle bloquant « Comptes en devise à réévaluer » et son aperçu.}
 
 \paragraph{Ce que les contrôles ne disent pas.}
 \begin{itemize}
@@ -954,7 +963,7 @@ Le panneau \textbf{ne bloque rien}~: la clôture garde son seul refus, l'exercic
 
 \keshscreenshot{exercice-cloture.png}{Écran de clôture d'un exercice comptable.}  % TODO capture: ecran cloture exercice
 
-\emph{Administration} → \emph{Exercices comptables} → sélectionner l'exercice → \emph{Clôturer}. Le dialogue de confirmation rappelle d'abord le résultat des contrôles préalables (\S\ref{sec:preparer-cloture}), sans bloquer la clôture.
+\emph{Administration} → \emph{Exercices comptables} → sélectionner l'exercice → \emph{Clôturer}. Le dialogue de confirmation rappelle d'abord le résultat des contrôles préalables (\S\ref{sec:preparer-cloture})~; il ne bloque la clôture que pour un compte en devise non réévalué (\emph{Réévaluez d'abord les comptes en devise}) --- un exercice antérieur ouvert, lui, désactive déjà le bouton de la ligne.
 
 Les exercices se clôturent \textbf{dans l'ordre} (depuis la v0.13.0)~: un exercice ne se clôture qu'après \textbf{tous ceux qui le précèdent}. Tant qu'un exercice antérieur est encore ouvert, le bouton \emph{Clôturer} est désactivé, et son infobulle nomme l'exercice à clôturer d'abord --- le plus ancien encore ouvert~; Kesh refuse de même la clôture demandée par l'API. Le bilan étant cumulatif depuis l'origine, clôturer un exercice en laissant ouvert un exercice antérieur laisserait son bilan changer après coup.
 
@@ -1042,7 +1051,7 @@ L'écriture d'ouverture est datée au premier jour du \textbf{premier} exercice 
 
 Le franc suisse (CHF) reste la \textbf{devise principale} de Kesh~: les livres, les soldes et les rapports sont tenus en CHF. Le mode \emph{multi-devises} permet de donner \textbf{une autre devise à un compte} du plan comptable --- un compte en euros, en dollars, le solde d'un compte PayPal. Par défaut, une société est \emph{mono-devise}, et rien de ce qui suit n'y apparaît~: qui reste en mono-devise ne voit aucun changement.
 
-Cette section décrit le réglage, les comptes qu'il demande, le mode des exercices et la devise des comptes. La saisie d'écritures en devise, les cours de change et la réévaluation de fin d'exercice s'appuient sur ce réglage~; ce manuel les décrira avec la version qui les livre.
+Cette section décrit le réglage, les comptes qu'il demande, le mode des exercices, la devise des comptes, les cours de change (\S\ref{sec:cours-de-change}) et la saisie d'écritures en devise (\S\ref{sec:ecritures-devise}). La réévaluation de fin d'exercice s'appuie sur ce réglage et sur ces cours~; ce manuel la décrira avec la version qui la livre.
 
 \subsection{Activer le multi-devises}
 
@@ -1089,15 +1098,19 @@ Chaque exercice est \emph{mono-devise} ou \emph{multi-devises}~; son mode se pos
     \item \textbf{Aucun exercice ne se crée avant un exercice mono-devise}~: Kesh refuse et nomme l'exercice postérieur, mono-devise. Le rouvrir n'y change rien --- il reste mono-devise. Les exercices mono-devise restent ainsi les plus anciens.
 \end{itemize}
 
-\paragraph{Le genre des cours d'ouverture et de clôture.} Un exercice porte aussi le \textbf{genre} du cours de change retenu à son ouverture et à sa clôture --- cours journalier ou cours mensuel. À la création, le cours d'ouverture \textbf{reprend par défaut le genre du cours de clôture de l'exercice précédent} --- celui qui se termine la veille du début du nouvel exercice~; pour un premier exercice, ou un exercice précédé d'un trou, c'est le cours journalier. Le genre de clôture est d'abord le cours journalier. Les cours eux-mêmes, et le choix de ces genres, viennent avec les fonctions qui emploient les cours (saisie en devise, réévaluation)~; ce manuel les décrira avec elles.
+\paragraph{Le genre des cours d'ouverture et de clôture.} Un exercice porte aussi le \textbf{genre} du cours de change retenu à son ouverture et à sa clôture --- cours journalier ou cours mensuel. À la création, le cours d'ouverture \textbf{reprend par défaut le genre du cours de clôture de l'exercice précédent} --- celui qui se termine la veille du début du nouvel exercice~; pour un premier exercice, ou un exercice précédé d'un trou, c'est le cours journalier. Le genre de clôture est d'abord le cours journalier. Les deux genres se choisissent à l'écran \emph{Cours de change} (\S\ref{sec:cours-genres}).
 
 \subsection{La devise d'un compte}\label{sec:devise-compte}
 
-En multi-devises, \emph{Administration} → \emph{Plan comptable} affiche la devise d'un compte en devise à côté de son numéro (rien pour un compte en CHF), et le formulaire de création et de modification d'un compte un champ \emph{Devise}~: \emph{CHF (devise principale)} ou un code de devise à trois lettres (\texttt{EUR}, \texttt{USD}, \texttt{GBP}\ldots). Choisir CHF revient à ne pas donner de devise. Un compte de regroupement peut porter une devise, à titre informatif~; ses sous-comptes n'en héritent pas. En mono-devise, le champ n'existe pas, et une devise envoyée par l'API est refusée (\texttt{409 MULTI\_\allowbreak CURRENCY\_\allowbreak DISABLED}).
+En multi-devises, \emph{Administration} → \emph{Plan comptable} affiche la devise d'un compte en devise à côté de son numéro (rien pour un compte en CHF), et le formulaire de création et de modification d'un compte un champ \emph{Devise}~: \emph{CHF (devise principale)} ou un code de devise à trois lettres (\texttt{EUR}, \texttt{USD}, \texttt{GBP}\ldots). Choisir CHF revient à ne pas donner de devise. Un compte de regroupement peut porter une devise, à titre informatif~; ses sous-comptes n'en héritent pas. Un compte d'\textbf{actif ou de passif en devise qui porte déjà des écritures} ne reçoit pas de sous-compte (\texttt{409 ACCOUNT\_\allowbreak FOREIGN\_\allowbreak PARENT\_\allowbreak HAS\_\allowbreak ENTRIES})~: il deviendrait non imputable en gardant son solde, que la réévaluation de fin d'exercice ne pourrait plus corriger, et la clôture serait bloquée. Créez plutôt un compte voisin, ou le sous-compte avant la première écriture. En mono-devise, le champ n'existe pas, et une devise envoyée par l'API est refusée (\texttt{409 MULTI\_\allowbreak CURRENCY\_\allowbreak DISABLED}).
+
+\keshscreenshot{md-plan-colonne-devise.png}{Plan comptable en multi-devises : la devise des comptes en devise s'affiche à côté de leur numéro.}
 
 \begin{keshwarning}
 \textbf{La devise d'un compte se verrouille à sa première écriture, et ce verrou est définitif.} La devise d'une ligne d'écriture est celle de son compte~: c'est donc le verrou qui fixe la devise de toutes les écritures passées sur ce compte --- la changer les réinterpréterait toutes. Dès qu'un compte porte une ligne d'écriture, sa devise ne change plus (le champ est grisé, avec l'explication~; l'API répond \texttt{409 ACCOUNT\_\allowbreak CURRENCY\_\allowbreak LOCKED}), sans confirmation possible et même archivé. Le seul retour est de \textbf{supprimer toutes ses écritures}. Choisissez donc la devise \textbf{avant} la première écriture.
 \end{keshwarning}
+
+\keshscreenshot{md-devise-verrouillee.png}{Modification d'un compte déjà utilisé : le champ Devise est grisé, avec son explication.}
 
 \paragraph{Les comptes qui ne prennent pas de devise.} Kesh débite et crédite en CHF certains comptes de lui-même~; ceux-là ne reçoivent pas de devise (\texttt{409 ACCOUNT\_\allowbreak CURRENCY\_\allowbreak IN\_\allowbreak USE}, qui nomme ce qui le retient)~:
 \begin{itemize}
@@ -1118,15 +1131,192 @@ Les comptes de gains et de pertes de la société sont le \textbf{défaut}. Pour
     \item \emph{Propres à ce compte} --- deux sélecteurs, gains et pertes, mêmes conditions que ceux de la société (charge ou produit, en CHF, imputable, actif, pas un compte de chiffre d'affaires~; le même compte admis pour les deux).
 \end{itemize}
 
+\keshscreenshot{md-comptes-propres.png}{Création d'un compte en USD : choix « Propres à ce compte » et ses deux sélecteurs de comptes de différence de change.}
+
 Exemple~: pour isoler les frais de change cachés de PayPal et de Stripe, créez deux sous-comptes de charge, «~Frais de change PayPal~» et «~Frais de change Stripe~», sous un compte de regroupement de la classe~6, et désignez-les comme comptes propres du compte PayPal et du compte Stripe.
 
 \textbf{Ce qu'ils changent}~: toute différence de change que Kesh passera sur ce compte --- la ligne d'écart d'une écriture en devise, celle d'une conversion, la réévaluation de fin d'exercice --- ira sur ses comptes propres au lieu de ceux de la société. Le \textbf{compte de conversion}, lui, reste celui de la société. Un compte de la société invalide n'arrête rien tant qu'aucun compte qui l'emploie n'est touché.
 
 Repasser le champ \emph{Devise} à CHF remet le choix à \emph{Par défaut}~: un compte en CHF n'a pas de comptes de différence. Un compte désigné comme compte propre est protégé comme un compte désigné par la société (ci-dessus)~; le compte en devise qui le désigne, lui, peut être archivé --- ses désignations restent comptées, et de nouveau en vigueur s'il est réactivé.
 
+\subsection{Les cours de change}\label{sec:cours-de-change}
+
+En multi-devises, \emph{Administration} → \emph{Paramètres} porte une carte \emph{Cours de change}~; son bouton \emph{Gérer} ouvre l'écran des cours. En mono-devise, la carte n'existe pas. Tous les rôles lisent l'écran~; l'\textbf{Administrateur} et le \textbf{Comptable} le modifient, le rôle \textbf{Consultation} le voit en lecture seule.
+
+\keshscreenshot{md-carte-cours-de-change.png}{La carte « Cours de change » d'Administration → Paramètres, avec son bouton Gérer.}
+
+\begin{sloppypar}
+\paragraph{La source.} Kesh récupère les cours officiels de l'\textbf{Administration fédérale des contributions (AFC)}, publiés par l'Office fédéral de la douane et de la sécurité des frontières (OFDF). Il en tient deux genres~:
+\end{sloppypar}
+\begin{itemize}
+    \item le \textbf{cours mensuel AFC}, publié \textbf{d'avance} pour le mois et valable pour tout ce mois~;
+    \item le \textbf{cours journalier}, publié les jours ouvrables~; pour un samedi, un dimanche ou un jour férié, Kesh retient la dernière publication qui précède, et l'écran dit sa date («~publié le 28.06.2024~»).
+\end{itemize}
+Ces cours sont \textbf{indicatifs et non contraignants}~: chaque cours peut être remplacé par le vôtre (ci-dessous). Un cours s'entend toujours \textbf{en CHF pour une unité} de la devise --- l'AFC publie certaines devises par 100 (le yen, par exemple)~: Kesh les ramène à une unité.
+
+\subsubsection{Le tableau d'un exercice}
+
+L'écran montre \textbf{un tableau par exercice}~; la liste en haut de l'écran propose les exercices \textbf{multi-devises} (par défaut celui qui couvre aujourd'hui, sinon le plus récent) --- un exercice mono-devise n'a pas de cours et n'y figure pas. Le tableau a \textbf{une ligne par devise} --- celles des comptes de la société~; \emph{Ajouter une devise} en ajoute une, et la case \emph{Toutes les devises publiées} montre aussi les devises qu'aucun compte ne porte --- et \textbf{une colonne par mois de l'exercice}, du premier au dernier, dans l'ordre de l'exercice~: «~juil. 2024~» à «~juin 2025~» pour un exercice au 1er juillet. Kesh n'impose aucune durée d'exercice~: un exercice raccourci ou allongé, lors d'un changement de date de clôture, a moins ou plus de douze colonnes (six pour un exercice de six mois, dix-huit pour dix-huit mois)~; un exercice qui commence en cours de mois (le 15.03.2024, par exemple) a pour premier mois ce mois-là, et treize colonnes s'il dure un an. Suivent les colonnes \textbf{Ouverture} et \textbf{Clôture} (ci-dessous). Seul le tableau défile horizontalement~; la colonne des devises reste en place.
+
+\keshscreenshot{md-cours-tableau.png}{L'écran Cours de change : un tableau par exercice, une ligne par devise ; sous chaque case, l'origine du cours (« AFC \protect\keshcoche{} » ou « AFC : 0.9300 » avec la flèche \protect$\uparrow$ pour le cours saisi).}
+
+\subsubsection{Le cours retenu par la société}\label{sec:cours-retenu}
+
+Chaque case montre \textbf{une seule valeur}~: le \textbf{cours retenu par la société} pour cette devise et ce mois (ou ce jour). C'est lui que Kesh proposera aux écritures en devise --- jamais directement la valeur publiée par l'AFC. Il a deux origines~:
+\begin{itemize}
+    \item \textbf{la copie automatique}~: quand Kesh récupère un cours publié, il le copie dans les cases \textbf{vides} des exercices multi-devises ouverts de la société, pour les devises que portent ses comptes (archivés compris). Il le fait aussi à la création d'un exercice multi-devises, au changement d'un genre d'ouverture ou de clôture, et quand un compte reçoit une devise --- pour les cours déjà récupérés. La copie \textbf{ne remplace jamais} une case remplie~;
+    \item \textbf{le cours saisi}~: entrez une autre valeur dans la case et validez-la~; elle devient le cours retenu (au plus 10 décimales, strictement positif, au plus 1~000~000). Un champ vidé ne retire rien~: la valeur affichée revient.
+\end{itemize}
+Sous la valeur, une mention dit d'où elle vient et ce que l'AFC a publié~:
+\begin{itemize}
+    \item «~AFC~\keshcoche~»~: le cours retenu est la valeur publiée~;
+    \item «~AFC~: 0.8846~»~: vous avez saisi un autre cours~; la valeur publiée est indiquée~;
+    \item «~AFC~\keshcoche~· saisi~»~: un cours saisi égal à la valeur publiée~;
+    \item «~AFC~: non publié~»~: aucune valeur publiée de l'AFC n'est connue de Kesh pour cette case --- cours saisi, ou case vide (pas encore publiée, ou pas encore récupérée)~;
+    \item «~AFC (valeur publiée non relue)~»~: après une restauration, avant la récupération suivante (ci-dessous)~;
+    \item «~AFC corrigé~: 0.8850 (le 03.12.2024)~», \textbf{en rouge}~: l'AFC a corrigé ce cours après que la société l'a retenu (\S\ref{sec:cours-correction}).
+\end{itemize}
+La flèche $\uparrow$ à côté de la mention reprend la valeur publiée~: elle retire un cours saisi (la case revient à la valeur publiée, ou se vide si l'AFC n'a rien publié --- \emph{Retirer le cours saisi}), remplit une case vide (\emph{Reprendre la valeur publiée}) ou reprend une correction de l'AFC (\emph{Reprendre la valeur corrigée}). Entrer à la main la valeur publiée revient à cliquer sur $\uparrow$~: l'écran n'enregistre pas de cours «~saisi~» égal à la valeur publiée (un client de l'API, lui, le peut~: la case porte alors «~AFC~✓~· saisi~»). Au survol, une case dit si elle a été copiée par Kesh ou retenue par un utilisateur, et, dans ce second cas, quand. Si un autre utilisateur a changé la case entre-temps, Kesh recharge le tableau et vous demande de vérifier puis de réessayer. Le cours saisi, la reprise par $\uparrow$, l'acquittement des corrections et la récupération manuelle sont inscrits au journal d'audit~; la copie automatique ne l'est pas.
+
+\subsubsection{Les cours d'ouverture et de clôture}\label{sec:cours-genres}
+
+Au-dessus du tableau, deux choix règlent les colonnes \textbf{Ouverture} et \textbf{Clôture} de l'exercice~:
+\begin{itemize}
+    \item \emph{Cours d'ouverture}~: le «~cours journalier de la veille de l'ouverture~» (par défaut~: le 30.06.2024 pour un exercice au 1er juillet 2024) ou le «~cours mensuel du dernier mois de l'exercice précédent~» (juin 2024 pour ce même exercice). \textbf{Pourquoi le dernier mois de l'exercice précédent}~: le cours d'ouverture d'un exercice est le cours de clôture du précédent~; ainsi, les valeurs en CHF concordent d'un exercice à l'autre. À la création d'un exercice, le genre d'ouverture reprend celui de la clôture de l'exercice précédent (\S\ref{sec:multi-devises-exercices})~;
+    \item \emph{Cours de clôture}~: le «~cours journalier de la date de clôture~» (par défaut) ou le «~cours mensuel du dernier mois~».
+\end{itemize}
+
+\keshscreenshot{md-cours-ouverture-cloture.png}{Les deux choix de genre (cours d'ouverture et de clôture) et les colonnes Ouverture et Clôture du tableau.}
+En genre journalier, la colonne montre le cours de ce jour. En genre mensuel, la Clôture est \textbf{la même case} que la colonne du dernier mois (une seule valeur, modifiée à un seul endroit)~; l'Ouverture est une case propre quand l'exercice commence le 1er d'un mois --- la même que la colonne de ce mois dans l'exercice précédent, et que sa Clôture s'il finit la veille ---, et la même case que la première colonne quand l'exercice commence en cours de mois. De même, le jour de clôture d'un exercice est le jour d'ouverture de l'exercice suivant quand celui-ci commence le lendemain~: c'est une seule case, et la modifier depuis l'un change ce qu'affiche l'autre.
+
+\paragraph{Changer le cours de clôture.} Quand l'exercice \textbf{suivant} existe (il commence le lendemain de la clôture), changer le genre de clôture ouvre un dialogue~: la case «~Appliquer aussi au cours d'ouverture de l'exercice suivant~», cochée par défaut, applique le même genre à son ouverture. Le dialogue le dit~: entre deux exercices Kesh, \textbf{aucune écriture d'ouverture n'existe} --- les soldes de bilan sont reportés d'un exercice à l'autre~; ce choix \textbf{ne modifie donc aucune écriture}, il change le cours proposé et affiché à l'ouverture de l'exercice suivant. Si l'exercice suivant est clôturé, la case est désactivée~: son cours d'ouverture ne change plus. Sans exercice suivant, il n'y a pas de dialogue. Le changement de genre est inscrit au journal d'audit.
+
+\subsubsection{La récupération des cours}\label{sec:cours-recuperation}
+
+\paragraph{Automatique.} Kesh récupère seul les cours des \textbf{exercices multi-devises ouverts}~: leurs mois, jusqu'au mois suivant le mois courant, et les jours d'ouverture et de clôture que leurs genres demandent, une fois ces jours passés. Il le fait~:
+\begin{itemize}
+    \item au \textbf{démarrage} (une minute après)~;
+    \item \textbf{chaque jour}, à minuit (heure suisse), tant que le cours du mois courant ou du mois suivant manque --- c'est-à-dire jusqu'à ce qu'il obtienne le cours du mois suivant~;
+    \item puis il fait une \textbf{pause}, jusqu'au plus tôt de «~date d'obtention + 24 jours~» et du \textbf{25 du mois obtenu}, mais \textbf{jamais avant le 1er de ce mois}~: le cours de décembre obtenu le 14 novembre fait reprendre la vérification quotidienne le 8 décembre~; obtenu le 2 novembre, le 1er décembre~;
+    \item à la \textbf{connexion} d'un utilisateur, au plus une fois par quart d'heure, si un cours utile autre que le seul mois suivant manque.
+\end{itemize}
+Chaque passage qui a un cours à récupérer revérifie aussi le cours du \textbf{mois courant}, pour découvrir une correction de l'AFC~; quand rien ne manque, il n'y a pas de passage, donc pas de revérification. Le cours d'un mois non encore publié se redemande le lendemain. Sans exercice multi-devises ouvert, Kesh n'appelle pas la source de lui-même. La récupération automatique n'est pas inscrite au journal d'audit~; l'écran dit l'état de la dernière récupération --- automatique ou manuelle, date, statut, motif d'un échec.
+
+\keshAttention\ \emph{Limite connue~: un jour d'ouverture ou de clôture qui manque ne fait pas, à lui seul, reprendre la vérification quotidienne. Le cours journalier du 31 décembre, jour de clôture d'un exercice civil, attend ainsi la fin de la pause de janvier --- au plus tard le 25 janvier --- s'il n'y a ni connexion ni redémarrage entre-temps. «~Récupérer les cours manquants~» l'obtient tout de suite.}
+
+\paragraph{À la demande.} Deux boutons (Administrateur et Comptable)~:
+\begin{itemize}
+    \item \emph{Récupérer les cours manquants} demande, colonne par colonne, les cours qui manquent dans le tableau --- une case sans valeur publiée, ou sans cours retenu pour une devise d'un compte. Il reste offert sur un exercice clôturé, que la récupération automatique ignore. Un mois au-delà du mois suivant ou un jour qui n'est pas encore passé ne se récupèrent pas~: la raison s'affiche au survol, et la case reste saisissable. Kesh ne tient aucun cours antérieur au 1er janvier 2000~: une telle case ne se récupère ni ne se saisit. Un échec s'affiche sur les cases de sa colonne sans arrêter les suivantes~;
+    \item \emph{Revérifier les cours publiés} redemande les colonnes déjà présentes~: c'est par là qu'une correction de l'AFC sur un autre mois que le mois courant se découvre.
+\end{itemize}
+
+\subsubsection{Quand l'AFC corrige un cours}\label{sec:cours-correction}
+
+Il arrive que l'AFC publie de nouveau un cours, à une autre valeur. Kesh enregistre la nouvelle valeur publiée, mais \textbf{la société garde son cours retenu}~: une correction ne change le cours d'aucune société sans qu'elle le décide. L'écart ne passe pas inaperçu~:
+\begin{itemize}
+    \item la case affiche «~AFC corrigé~: \emph{valeur} (le \emph{date})~» \textbf{en rouge}, tant que la valeur corrigée n'est pas reprise~;
+    \item sa flèche $\uparrow$ \emph{Reprendre la valeur corrigée} la reprend \textbf{directement}, pour \textbf{cette société seule}~: le rouge disparaît~;
+    \item un \textbf{avertissement} s'affiche en tête de Kesh, pour l'Administrateur et le Comptable~: «~L'AFC a corrigé N cours que votre société a retenus~», avec la liste (devise, mois ou jour, cours retenu → valeur corrigée) et un lien vers l'écran des cours. Son bouton \emph{Acquitter} le fait disparaître pour la société et pour \textbf{cette valeur}~: une correction suivante avertit de nouveau. Acquitter ne reprend rien~: la case reste en rouge tant que la valeur n'est pas reprise.
+\end{itemize}
+
+\keshscreenshot{md-afc-corrige.png}{Correction de l'AFC : avertissement en tête de Kesh et mention « AFC corrigé » en rouge dans la case concernée.}
+\textbf{Ni la correction ni sa reprise ne modifient une écriture passée}~: une ligne d'écriture passée au cours AFC précédent garde son cours, et reste admise tant qu'on ne la modifie pas~; modifiée, elle prend le nouveau cours retenu ou devient un cours saisi.
+
+\subsubsection{Exercice clôturé et lecture seule}
+
+Sur un exercice \textbf{clôturé}, les cours et les flèches sont en lecture seule et les deux choix de genre sont désactivés~; \emph{Récupérer les cours manquants} reste offert. Pour le rôle \textbf{Consultation}, tout l'écran est en lecture seule.
+
+\subsubsection{Restauration et réinitialisation}
+
+Les cours retenus par la société \textbf{et leur origine} (copie de l'AFC ou cours saisi) font partie de la sauvegarde~: après une restauration, ils sont là et valent tout de suite. Les valeurs publiées, elles, sont des données de l'installation~: une installation neuve restaurée les récupère à son prochain passage, et ses cases copiées de l'AFC disent «~AFC (valeur publiée non relue)~» jusque-là --- la récupération suivante peut alors révéler une correction survenue entre-temps, annoncée comme ci-dessus. La \textbf{réinitialisation des données de démonstration} vide les cours retenus de la société (elle la remet aussi en mono-devise) et garde les valeurs publiées.
+
+\subsection{La réévaluation de fin d'exercice}\label{sec:reevaluation-devises}
+
+À la fin de l'exercice, les comptes de \textbf{bilan} en devise (actifs et passifs) se présentent au \textbf{cours de clôture}~: Kesh propose leur réévaluation, vous la contrôlez, puis il la passe. L'écart entre le solde en CHF du compte et son solde en devise converti au cours de clôture va aux comptes de \textbf{différences de change} --- gains ou pertes non réalisés, comptabilisés comme tels (CO~960b~; Kesh ne propose pas de les neutraliser par une provision). Les comptes de résultat ne se réévaluent pas.
+
+\paragraph{Où.} \emph{Administration} → \emph{Exercices comptables}, bouton \emph{Réévaluer les devises} d'un exercice \textbf{ouvert et multi-devises}, pour l'Administrateur et le Comptable. Un exercice mono-devise --- un exercice clos avant l'activation du multi-devises, puis rouvert --- n'a pas ce bouton, et la réévaluation y est refusée. L'aperçu se montre aussi dans le panneau \emph{Préparer la clôture}, quand un compte n'est pas réévalué (\S\ref{sec:preparer-cloture}).
+
+\paragraph{Le cours de clôture.} Par devise, Kesh propose le \textbf{cours retenu par la société} (\S\ref{sec:cours-retenu}), selon le cours de clôture choisi pour l'exercice (\S\ref{sec:cours-genres})~:
+\begin{itemize}
+    \item \emph{cours journalier de la date de clôture} (par défaut)~: le cours journalier OFDF du dernier jour de l'exercice --- la pratique d'un cours de clôture~; s'il manque, le \textbf{cours mensuel AFC du mois de clôture}, que l'écran \textbf{signale} comme repli («~cours du jour de clôture indisponible~: cours mensuel de décembre 2024~»), avec le bouton \emph{Récupérer le cours du 31.12.2024} une fois ce jour passé (avant, l'écran dit «~date de clôture pas encore passée~»)~;
+    \item \emph{cours mensuel du dernier mois}~: le cours mensuel AFC du mois de clôture, seul.
+\end{itemize}
+L'exercice peut avoir n'importe quelle durée~: c'est toujours le dernier jour, et son mois, qui comptent. Un cours que vous avez \textbf{saisi} pour ce jour ou ce mois à l'écran \emph{Cours de change} est le cours retenu~; l'écran dit sa source --- «~AFC~» ou «~cours saisi~». Une correction de l'AFC que vous n'avez pas reprise ($\uparrow$) ne change pas le cours proposé. Sans aucun cours, la devise est signalée, sans champ de cours, et ses comptes ne sont pas proposés~: récupérez le cours, ou saisissez-le à l'écran \emph{Cours de change}, puis rouvrez la réévaluation.
+
+Le champ du cours d'une devise qui a un cours se modifie~: le cours modifié vaut \textbf{pour cette passation seulement} (source «~manuel~» à l'audit), il n'écrit aucun cours saisi~; le cours retenu par la société reste affiché sous le champ. \keshAttention\ \emph{La clôture vérifie au cours retenu par la société~: une réévaluation passée à un autre cours laisse le contrôle de clôture en attention. Pour clôturer à ce cours, saisissez-le à l'écran} Cours de change \emph{--- ou, s'il est le cours publié du jour de clôture, récupérez-le~; la passation suivante n'ajoute alors que le résidu.}
+
+\paragraph{L'aperçu.} Une ligne par compte~: numéro et nom (lien vers son grand livre), solde en devise, CHF actuel, cours, CHF cible, \textbf{réévaluations déjà passées} dans l'exercice (leur valeur cumulée et des liens vers leurs écritures), \textbf{nouvelle valeur cumulée} et écart~; puis l'écriture prévue et sa contrepartie --- les comptes de différence \textbf{propres} du compte s'il en a (\S\ref{sec:multi-devises-comptes}), sinon ceux de la société (\emph{comptes propres} ou \emph{réglage de la société}). Les totaux des gains et des pertes suivent. Chaque compte se coche ou se décoche~; un compte archivé est grisé. Ce que la passation refuserait (exercice antérieur ouvert, période verrouillée, compte de différence invalide) s'affiche sous le tableau, et \emph{Passer les écritures} reste désactivé.
+
+\keshscreenshot{rd-reevaluation-apercu.png}{Réévaluer les devises : cours de clôture proposé, solde en devise, CHF actuel et cible, écart et écriture prévue.}
+
+\paragraph{La passation.} \emph{Passer les écritures} passe \textbf{une écriture par compte réévalué}, datée du dernier jour de l'exercice, de deux lignes~: le compte, à montant en devise nul, et la contrepartie --- le compte de gains si l'écart est positif, le compte de pertes s'il est négatif, quel que soit le sens du solde. Toutes passent, ou aucune. Une écriture n'est \textbf{jamais modifiée}~: une nouvelle passation n'ajoute que le \textbf{résidu} (après une écriture tardive, par exemple)~; sans mouvement, elle ne passe rien. Une réévaluation se corrige par la \textbf{suppression} de son écriture, ou par un nouveau passage --- sa modification est refusée. La contre-passation ne la corrige que dans un exercice \textbf{en cours}~: datée d'un jour postérieur à la clôture, l'inverse tombe dans l'exercice suivant, et la réévaluation de l'exercice reste entière. Aucune écriture de report n'est passée~: les soldes en devise se reportent d'eux-mêmes.
+
+\paragraph{La source du cours, à l'audit.} La ligne réévaluée porte la source «~réévaluation~»~; la source du cours («~AFC~», «~cours saisi~», «~manuel~») et son genre sont conservés dans le journal d'audit (\emph{Réévaluation des comptes en devise passée}).
+
+\paragraph{Postes non monétaires.} Stocks, immobilisations ou capital tenus en devise se décochent à la passation, mais \textbf{bloquent la clôture} tant que leur écart n'est pas nul~: tenez-les sur un compte \textbf{en CHF}.
+
+\paragraph{Livres tenus ailleurs.} La réévaluation de livres repris par l'API ne s'importe pas en écritures~: elle se \textbf{repasse} par cette fonction, avec les cours de clôture des livres d'origine (guide de l'API).
+
+\subsection{Les écritures en devise}\label{sec:ecritures-devise}
+
+Une ligne d'écriture sur un compte en devise se saisit \textbf{en devise}~: son montant dans la devise du compte, un cours, et Kesh en tire le montant en CHF, qui seul entre dans les débits, les crédits et les soldes. La devise d'une ligne est \textbf{toujours celle de son compte}~: elle ne se choisit pas.
+
+\subsubsection{Saisir une ligne en devise}
+
+Dans \emph{Écritures} → \emph{Nouvelle écriture}, choisissez un compte en devise~: la ligne prend deux champs de plus, sous elle.
+\begin{itemize}
+    \item \textbf{Le montant en devise} se saisit dans la colonne \emph{Débit} ou \emph{Crédit}, précédé du code de la devise~: la colonne donne le sens de la ligne.
+    \item \textbf{Le cours} est proposé~: c'est le \textbf{cours retenu par la société} pour le \textbf{mois de la date} de l'écriture (\S\ref{sec:cours-retenu}) --- le cours mensuel AFC, \textbf{fixé d'avance} pour le mois, ou le cours que votre société a saisi. Un indicateur dit lequel~: «~AFC~», «~cours saisi~» (avec la source entre parenthèses si le cours vient d'ailleurs, par exemple «~cours saisi (ecb)~»), ou «~manuel~» une fois que vous l'avez retouché. Si la société n'a encore aucun cours pour ce mois, Kesh le récupère auprès de l'AFC (Administrateur et Comptable)~; sinon, saisissez-le.
+    \item \textbf{Le montant CHF} est calculé (montant × cours, arrondi au centime). Vous pouvez saisir \textbf{soit le cours, soit le montant CHF}~: un CHF saisi --- celui de votre relevé, par exemple --- donne le cours qui le redonne exactement.
+\end{itemize}
+
+\keshscreenshot{md-ecriture-usd.png}{Écriture en devise : le montant en USD, le cours proposé (AFC) et le montant en CHF calculé.}
+Changer la date repropose le cours des lignes dont vous n'avez pas retouché le cours. Quand le cours de la société pour le mois diffère de celui de la ligne, il s'affiche sous le champ («~AFC~: 0.8846~» ou «~Cours saisi~: 0.8846~») avec une flèche $\uparrow$, qui remet \textbf{la ligne} à ce cours~; la flèche ne touche jamais la table des cours (\S\ref{sec:cours-de-change}). La provenance enregistrée sur la ligne est «~AFC~» quand le cours est exactement le cours AFC retenu pour le mois, «~manuel~» sinon~; la fiche d'une écriture et la liste montrent, à côté du CHF, le montant en devise avec son code, le cours et cette provenance.
+
+\keshscreenshot{md-chf-saisi.png}{CHF saisi à la main : le cours devient « manuel », et le cours de la société s'affiche avec la flèche \protect$\uparrow$ qui y ramène la ligne.}
+
+\paragraph{Changer le compte d'une ligne.} La devise suit le compte~: vers un compte d'une autre devise, le montant et le cours repartent à vide et le cours de la nouvelle devise est proposé~; vers un compte CHF, la ligne redevient une ligne CHF~; vers un autre compte de la même devise, montant et cours sont gardés.
+
+\paragraph{Une seule devise par écriture.} Dès qu'une ligne porte une devise, les autres lignes ne proposent plus que les comptes CHF et ceux de cette devise. Pour passer d'une devise à une autre, un lien ouvre l'assistant \emph{Conversion} (ci-dessous). L'écriture d'ouverture et son complément, qui reprennent les soldes de plusieurs comptes en devise, font exception et restent modifiables.
+
+\paragraph{La différence de change.} Les montants CHF de l'écriture, arrondis chacun au centime, ou le CHF réel d'un relevé, peuvent laisser un écart. Le bouton \emph{Ajouter la différence de change} \textbf{ajoute une ligne} à l'écriture en cours --- il n'enregistre rien ---~: au crédit du compte de gains de change si les débits l'emportent, au débit du compte de pertes sinon. Ces comptes sont ceux du compte en devise de l'écriture, \textbf{ses comptes propres} s'il en a (\S\ref{sec:devise-compte}), sinon ceux de la société~; avec plusieurs comptes en devise de paires différentes, Kesh prend le premier compte de bilan et le dit. Un texte sous le bouton dit si l'écart est un arrondi ou non~; vérifiez les montants avant d'ajouter une ligne qui n'en est pas un. La ligne reste modifiable et se retire comme toute autre.
+
+\keshscreenshot{md-ligne-ecart.png}{La ligne de différence de change, ajoutée à l'écriture sur le compte de pertes propre au compte en devise.}
+
+\paragraph{Achat avec TVA en devise.} L'\emph{Assistant TVA achat} passe en devise quand la charge ou la contrepartie est un compte en devise~: le montant HT se saisit dans la devise, la TVA est calculée \textbf{en devise}, et la ligne d'impôt préalable, toujours en CHF, reçoit le CHF de la TVA \textbf{au même cours}. Les trois arrondis au centime peuvent laisser un écart d'un centime~: le bouton de la différence de change le solde. La charge et la contrepartie ne peuvent pas être de deux devises différentes. Si vous changez la date après l'insertion, réinsérez l'assistant~: un avis le rappelle.
+
+\keshscreenshot{md-assistant-tva-usd.png}{L'Assistant TVA achat en devise : montant HT en USD et cours USD → CHF.}
+
+\paragraph{Un cours AFC corrigé et une écriture ancienne.} Après que la société a repris un cours AFC corrigé (\S\ref{sec:cours-correction}), une écriture ancienne au cours remplacé reste admise tant qu'on ne touche pas ses lignes au cours AFC~: modifier son libellé passe. Si vous corrigez une telle ligne (son montant, par exemple), Kesh refuse et propose \emph{Reprendre le cours attendu} (la ligne prend le nouveau cours AFC, son CHF change) ou \emph{Garder mon cours} (la ligne garde son cours, enregistré «~manuel~», son CHF ne change pas), sans toucher au reste de l'écriture. Si la société a entre-temps fixé son propre cours pour ce mois, seule \emph{Garder mon cours} est offerte.
+
+\paragraph{Un exercice clos avant l'activation.} Un exercice clôturé avant l'activation du multi-devises reste \textbf{mono-devise}, même rouvert~: aucun compte en devise n'y est utilisable, et Kesh refuse une ligne en devise datée dans cet exercice.
+
+\paragraph{La réévaluation.} Une écriture de réévaluation des comptes en devise ne se modifie pas~: sa fiche le dit, et elle se supprime (hors période verrouillée et lettrage) pour être refaite.
+
+\subsubsection{Convertir d'une devise à une autre}\label{sec:conversion-devises}
+
+Une conversion entre deux devises --- des euros changés en dollars --- ne tient pas dans une écriture, qui ne porte qu'une devise. Elle passe par \textbf{votre compte de conversion} (\S\ref{sec:multi-devises-comptes}), en \textbf{deux écritures}, chacune rapprochable du relevé de son compte~:
+\begin{enumerate}
+    \item à la date du débit sur le compte en euros~: le compte en euros est crédité (montant en euros × cours), le compte de conversion débité du même CHF, moins les frais~;
+    \item à la date du crédit sur le compte en dollars~: le compte en dollars est débité (montant en dollars × cours), le compte de conversion crédité du même CHF qu'à la première écriture --- il revient à zéro --- et la \textbf{différence de change} équilibre l'écriture, sur les comptes de différence du compte en dollars.
+\end{enumerate}
+\emph{Écritures} → \emph{Conversion de devises} (sociétés multi-devises, Administrateur et Comptable) ouvre l'assistant~: deux colonnes, \emph{Débit} (le compte débité sur son relevé) et \emph{Crédit} (le compte crédité sur son relevé), chacune avec sa date, son compte, son montant, son cours proposé (cours OU montant CHF, comme au formulaire) et ses frais. Un frais se passe au débit, en CHF ou dans la devise de sa colonne~; dans la colonne \emph{Crédit}, un frais sur un compte de charge de la devise (vos frais PayPal en dollars, par exemple) est admis et reste sur son compte, hors de la différence de change. L'aperçu montre les deux écritures, la différence calculée et le compte de conversion à zéro~; \emph{Passer les écritures} les enregistre ensemble, ou aucune. Le bouton reste désactivé, avec le motif, quand une date n'est pas dans un exercice ouvert, que les deux comptes ont la même devise, ou que les comptes de différence manquent ou sont invalides.
+
+\keshscreenshot{md-assistant-conversion.png}{L'assistant Conversion : colonnes Débit et Crédit, et aperçu des deux écritures avec la différence de change.}
+
+\keshAttention\ \emph{Limite~: le lien entre les deux écritures n'est pas gardé~; chacune se modifie ensuite comme une écriture ordinaire.}
+
+\subsubsection{Soldes d'ouverture en devise}
+
+Dans \emph{Soldes de départ} (\S\ref{sec:soldes-depart}), un compte en devise se saisit \textbf{en devise}~: son solde dans la colonne \emph{Débit} ou \emph{Crédit}, un cours, et le CHF, qui entre dans les totaux et l'équilibre. Le cours proposé est le \textbf{cours de clôture de l'exercice précédent} --- le solde est repris au cours de clôture, si bien que les valeurs en CHF concordent d'un exercice à l'autre~: selon le choix de l'exercice (\S\ref{sec:cours-genres}), le cours journalier de la \textbf{veille de l'ouverture} («~proposé~: cours journalier du 31.12.2025~») ou le cours mensuel du \textbf{dernier mois de l'exercice précédent} («~proposé~: AFC 12.2025~»). Saisissez plutôt le \textbf{montant CHF} de votre ancien bilan~: Kesh en déduit le cours, et le CHF repris est exact. Un complément daté du jour propose le cours mensuel du mois de sa date. Un solde en devise saisi sans CHF calculable désactive l'enregistrement, avec un message sur la ligne.
+
+\keshscreenshot{md-soldes-ouverture.png}{Soldes de départ : les comptes en devise se saisissent en devise, avec le cours de clôture de l'exercice précédent proposé.}
+
 \subsection{Sauvegardes}
 
-Une sauvegarde \texttt{.keshbackup} écrite \textbf{par une version antérieure au multi-devises} se réimporte~: elle ne peut décrire qu'une comptabilité mono-devise, et la société restaurée l'est --- réglage désactivé, comptes sans devise, exercices mono-devise. Une sauvegarde écrite par cette version conserve le réglage, ses trois comptes, la devise et les comptes propres de chaque compte, et le mode et les genres de cours de chaque exercice~; les exports CSV des comptes, de la société et des exercices les portent aussi.
+\begin{sloppypar}
+Une sauvegarde \texttt{.keshbackup} écrite \textbf{par une version antérieure au multi-devises} se réimporte~: elle ne peut décrire qu'une comptabilité mono-devise, et la société restaurée l'est --- réglage désactivé, comptes sans devise, exercices mono-devise, aucun cours retenu. Une sauvegarde écrite par cette version conserve le réglage, ses trois comptes, la devise et les comptes propres de chaque compte, le mode et les genres de cours de chaque exercice, et les cours retenus par la société avec leur origine~; les exports CSV des comptes, de la société, des exercices et des cours les portent aussi.
+\end{sloppypar}
 
 %%─────────────────────────────────────────────────────────────────────────────
 \section{Carnet d'adresses}
@@ -3772,6 +3962,57 @@ L'écran s'arrête à \textbf{500 lignes par compte} et le dit quand il tronque.
 exports, eux, ne sont jamais tronqués} : c'est le fichier produit qui vaut présentation des
 livres.
 \end{keshnote}
+
+\subsection{Les rapports d'une société multi-devises}\label{sec:rapports-devise}
+
+Dans une société passée en multi-devises (\S\ref{sec:multi-devises}), un compte \textbf{en devise}
+(\S\ref{sec:devise-compte}) se lit aux rapports \textbf{dans les deux devises}~: son montant en CHF,
+comme tout compte, et, à côté, le même montant \textbf{dans sa devise} --- de quoi rapprocher un
+compte PayPal ou Wise de son relevé, et contrôler la réévaluation de fin d'exercice. Un compte en CHF
+ne change pas, et une société sans compte en devise voit ses rapports \textbf{exactement comme
+avant}, exports compris.
+
+\begin{itemize}
+    \item \textbf{La devise est celle du compte.} Le solde en devise d'un compte est la somme des
+          montants en devise de ses lignes au débit, moins celle de ses lignes au crédit --- le côté
+          d'une ligne est celui de son montant en CHF ---, signée comme le CHF selon la nature du
+          compte. Il suit les \textbf{mêmes règles} que le CHF~: ouverture cumulée pour un compte de
+          bilan, depuis le début de l'exercice pour un compte de produits ou de charges, remise à
+          zéro à chaque rupture d'exercice.
+    \item \textbf{Grand livre.} L'en-tête d'un compte en devise porte sa devise~; sous chaque
+          écriture, une seconde ligne en petit donne son montant en devise, son \textbf{cours par
+          unité} et le solde progressif en devise --- «~USD 31.35 × 0.8808 · solde USD 1'233.57~».
+          L'ouverture, la clôture, les ruptures et le total des mouvements portent aussi leur montant
+          en devise. Une \textbf{réévaluation} se lit «~Réévaluation au cours 0.9312~», sans montant
+          en devise~: elle ne change que le montant en CHF. Le signal «~Solde contre nature~» reste
+          lu sur le solde en CHF.
+    \item \textbf{Balance.} Sous la ligne d'un compte en devise, une seconde ligne donne
+          l'ouverture, les mouvements débit et crédit et la clôture dans sa devise.
+    \item \textbf{Bilan et compte de résultat.} La devise et le solde en devise («~USD 1'233.57~»)
+          s'affichent à côté du nom du compte. Un compte dont le solde en CHF est nul mais dont le
+          solde en devise ne l'est pas --- après une conversion, par exemple --- \textbf{reste
+          listé}, aux quatre rapports.
+    \item \textbf{Aucun total en devise.} Les comptes d'un rapport peuvent être dans plusieurs
+          devises~: les totaux de la balance, du bilan et du compte de résultat restent en CHF. Seul
+          un compte du grand livre, qui n'a qu'une devise, a ses totaux en devise.
+    \item \textbf{Exports.} Le PDF reprend les secondes lignes et les mentions de l'écran~; au grand
+          livre, «~À reporter~» et «~Report~» portent aussi le report en devise. Le CSV ajoute, seulement
+          si le rapport contient un compte en devise, des colonnes en devise (\texttt{Devise},
+          \texttt{SoldeDevise}, \texttt{DebitDevise}, \texttt{Cours}\ldots), vides pour un compte en
+          CHF~; sinon, le fichier est identique à celui d'avant. Les montants en devise sont arrondis
+          au centime, le cours est écrit par unité (de quatre à dix décimales).
+    \item \textbf{Journal.} À l'écran, une ligne en devise porte sous elle son montant et son cours~;
+          le PDF et le CSV du journal ne changent pas.
+    \item \textbf{Restent en CHF}~: l'accueil, les rapports par projet, le rapport TVA et la balance
+          âgée --- une écriture en devise y compte pour son montant en CHF ---, ainsi que les postes
+          ouverts et le lettrage.
+\end{itemize}
+
+\keshscreenshot{rd-bilan-usd.png}{Bilan : le solde en devise s'affiche à côté du nom du compte en USD ; les totaux restent en CHF.}
+
+\keshscreenshot{rd-balance-usd.png}{Balance des comptes : sous le compte en USD, une seconde ligne donne ouverture, mouvements et clôture dans sa devise.}
+
+\keshscreenshot{rd-grand-livre-usd.png}{Grand livre d'un compte en USD : sous chaque écriture, le montant en devise, le cours par unité et le solde progressif en devise.}
 
 \subsection{Balance âgée des créances}\label{sec:balance-agee}
 

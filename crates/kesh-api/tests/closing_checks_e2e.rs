@@ -243,9 +243,17 @@ async fn closing_checks_are_served_to_every_role(pool: MySqlPool) {
                 "IMPORTED_SUPPLIER_INVOICES_TO_COMPLETE",
                 "INCONSISTENT_ENTRIES",
                 "NEXT_FISCAL_YEAR",
-                // Story v017-4a (#849, AC-16) — K8, en dernier : `checks[7]`.
+                // Story v017-4a (#849, AC-16) — K8 : `checks[7]`.
                 "DRAFT_SUPPLIER_INVOICES",
+                // Story 37-5 (AC-9) — K9, en dernier : `checks[8]`, bloquant.
+                "FOREIGN_ACCOUNTS_NOT_REVALUED",
             ]
+        );
+        assert_eq!(body["checks"][8]["severity"], "blocking");
+        assert_eq!(body["checks"][8]["status"], "ok");
+        assert_eq!(
+            body["checks"][8]["details"]["accounts"],
+            serde_json::json!([])
         );
         let k3 = &body["checks"][2];
         assert_eq!(k3["status"], "attention");

@@ -87,20 +87,133 @@ use kesh_core::listing::{SortBy, SortDirection};
 
 use crate::entities::audit_log::{Acteur, NewAuditLogEntry};
 use crate::entities::{
-    Journal, JournalEntry, JournalEntryLine, JournalEntryWithLines, NewJournalEntry,
-    NewJournalEntryLine,
+    ForeignAmount, Journal, JournalEntry, JournalEntryLine, JournalEntryWithLines, NewJournalEntry,
+    NewJournalEntryLine, RateProvenance,
 };
 use crate::errors::{
     ArchivedAccount, DbError, ModificationBlocker, ModificationGuard, NonPostableAccount,
     ReversalBlocker, map_db_error,
 };
 use crate::repositories::audit_log;
+use crate::repositories::journal_entry_fx::{self, PorteeDevises};
 use crate::util::search::escape_boolean_ft;
 
 const ENTRY_COLUMNS: &str = "id, company_id, fiscal_year_id, entry_number, entry_date, journal, description, \
      version, reverses_entry_id, created_at, updated_at";
 
-const LINE_COLUMNS: &str = "id, entry_id, account_id, line_order, debit, credit, project_id, lettering_key, lettering_origin";
+/// Colonnes d'une ligne, **qualifiées** (`jel.`), plus la devise du compte
+/// (`a.currency AS account_currency`, Story 37-3a, AC-2) : s'emploie toujours
+/// avec [`LINE_FROM`], qui porte la jointure.
+const LINE_COLUMNS: &str = "jel.id, jel.entry_id, jel.account_id, jel.line_order, jel.debit, jel.credit, \
+     jel.project_id, jel.lettering_key, jel.lettering_origin, jel.amount_currency, jel.exchange_rate, \
+     jel.rate_source, a.currency AS account_currency";
+
+/// Source des lectures de lignes (Story 37-3a, AC-2) : la ligne et son compte,
+/// dont elle lit la devise. Lectures **non verrouillantes** seulement — sous
+/// `FOR UPDATE`, la jointure verrouillerait aussi les comptes.
+const LINE_FROM: &str = "journal_entry_lines jel JOIN accounts a ON a.id = jel.account_id";
+
+/// Lecture des lignes d'une écriture, par `line_order` (DRY : la jointure
+/// s'écrit une fois).
+fn lines_of_entry_sql() -> String {
+    format!("SELECT {LINE_COLUMNS} FROM {LINE_FROM} WHERE jel.entry_id = ? ORDER BY jel.line_order")
+}
+
+/// Reprend, pour des lignes relues dans une transaction d'écriture, la devise
+/// de leur compte telle que l'a lue la lecture **verrouillante** des comptes
+/// (rang 1 de l'AC-4) — jamais celle de la jointure, dont l'instantané peut
+/// précéder ce verrou (Story 37-3a, AC-4, devise des lignes relues).
+fn take_controlled_currencies(
+    lines: &mut [JournalEntryLine],
+    devises: &std::collections::HashMap<i64, Option<String>>,
+) {
+    for l in lines {
+        if let Some(d) = devises.get(&l.account_id) {
+            l.account_currency = d.clone();
+        }
+    }
+}
+
+/// L'écriture porte-t-elle une ligne de réévaluation (Story 37-3a, AC-7) ?
+async fn has_revaluation_line(
+    conn: &mut sqlx::MySqlConnection,
+    entry_id: i64,
+) -> Result<bool, DbError> {
+    sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM journal_entry_lines \
+         WHERE entry_id = ? AND BINARY rate_source = 'revaluation'",
+    )
+    .bind(entry_id)
+    .fetch_one(conn)
+    .await
+    .map(|n| n > 0)
+    .map_err(map_db_error)
+}
+
+/// Insère les lignes d'une écriture (Story 37-3a, AC-2) — les deux seuls
+/// `INSERT INTO journal_entry_lines` de production, [`create_in_tx_inner`] et
+/// [`update_in_tx`], passent ici. Une ligne en devise écrit ses trois colonnes
+/// (jamais de devise) ; une ligne CHF ne les nomme pas, ce qui garde l'`INSERT`
+/// valide sur un schéma de test monté avant la migration
+/// `20261114000003` (même raison que `reverses_entry_id`, étape 4).
+///
+/// Une ligne en devise sans provenance est un invariant violé.
+async fn insert_lines(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    entry_id: i64,
+    lines: &[NewJournalEntryLine],
+    document_project_id: Option<i64>,
+) -> Result<(), DbError> {
+    for (idx, line) in lines.iter().enumerate() {
+        let line_order = (idx as i32) + 1;
+        let project_id = line.project_id.or(document_project_id);
+        match &line.foreign {
+            None => {
+                sqlx::query(
+                    "INSERT INTO journal_entry_lines \
+                     (entry_id, account_id, line_order, debit, credit, project_id) \
+                     VALUES (?, ?, ?, ?, ?, ?)",
+                )
+                .bind(entry_id)
+                .bind(line.account_id)
+                .bind(line_order)
+                .bind(line.debit)
+                .bind(line.credit)
+                .bind(project_id)
+                .execute(&mut **tx)
+                .await
+                .map_err(map_db_error)?;
+            }
+            Some(f) => {
+                let source = f.source.ok_or_else(|| {
+                    DbError::Invariant(format!(
+                        "ligne {} en devise sans provenance à l'INSERT",
+                        idx + 1
+                    ))
+                })?;
+                sqlx::query(
+                    "INSERT INTO journal_entry_lines \
+                     (entry_id, account_id, line_order, debit, credit, project_id, \
+                      amount_currency, exchange_rate, rate_source) \
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                )
+                .bind(entry_id)
+                .bind(line.account_id)
+                .bind(line_order)
+                .bind(line.debit)
+                .bind(line.credit)
+                .bind(project_id)
+                .bind(f.amount)
+                .bind(f.rate)
+                .bind(source.as_str())
+                .execute(&mut **tx)
+                .await
+                .map_err(map_db_error)?;
+            }
+        }
+    }
+    Ok(())
+}
 
 /// Valide que chaque compte référencé par les lignes d'une écriture existe,
 /// appartient à `company_id`, est actif et — si `enforce_postable` — imputable.
@@ -124,8 +237,23 @@ const LINE_COLUMNS: &str = "id, entry_id, account_id, line_order, debit, credit,
 /// filtrerait le compte sans dire **pourquoi** il manque. La liste des flux qui
 /// passent `enforce_postable = false` est au doc-comment de [`create_in_tx`].
 ///
-/// Lecture **sans verrou** (`FOR UPDATE` absent) : défaut antérieur, hors
-/// périmètre de la 15-5a (choix C21).
+/// **Rend la devise de chaque compte** (`accounts.currency`, `None` = devise
+/// principale) — Story 37-3a, AC-4 : c'est la **seule** source de la devise
+/// des lignes pour tous les contrôles qui suivent (la ligne ne stocke pas de
+/// devise, CR-4). La devise ne se rend qu'après le contrôle d'appartenance
+/// (KF-002 : un compte d'une autre société ne livre rien).
+///
+/// Lecture **`LOCK IN SHARE MODE`** (Story 37-3a, AC-4 *Concurrence* ; ⛔ pas
+/// `FOR SHARE`, erreur de syntaxe sur MariaDB 10.11) : un changement de devise
+/// d'un compte (37-1, `FOR UPDATE` sur le compte avant de compter ses lignes)
+/// ne peut pas se glisser entre ce contrôle et l'`INSERT` des lignes — sans
+/// quoi une ligne CHF atterrirait sur un compte devenu en devise. Le verrou
+/// partagé est pris par **toute** écriture, chemins automatiques compris ; il
+/// avance dans la transaction le partagé de clé étrangère que l'`INSERT` des
+/// lignes prenait déjà sur `accounts` (même cycle connu avec le complément
+/// d'ouverture, qui tient les comptes `FOR UPDATE` avant l'exercice ; défendu
+/// par le rejeu). Jusqu'à la 37-3a, cette lecture était sans verrou (choix
+/// C21 de la 15-5a).
 ///
 /// **Rollback-agnostique** : rend l'erreur sans toucher à la transaction — le
 /// caller décide du rollback.
@@ -137,7 +265,7 @@ async fn validate_lines_accounts_in_tx(
     company_id: i64,
     account_ids: &[i64],
     enforce_postable: bool,
-) -> Result<(), DbError> {
+) -> Result<std::collections::HashMap<i64, Option<String>>, DbError> {
     let placeholders = account_ids
         .iter()
         .map(|_| "?")
@@ -146,32 +274,36 @@ async fn validate_lines_accounts_in_tx(
     // Ni `active` ni `postable` dans le `WHERE` : la raison d'un refus se
     // décide ci-dessous, en Rust (Story 15-5a).
     let accounts_sql = format!(
-        "SELECT id, number, active, postable FROM accounts \
-         WHERE company_id = ? AND id IN ({placeholders})"
+        "SELECT id, number, active, postable, currency FROM accounts \
+         WHERE company_id = ? AND id IN ({placeholders}) LOCK IN SHARE MODE"
     );
 
-    let mut q = sqlx::query_as::<_, (i64, String, bool, bool)>(&accounts_sql).bind(company_id);
+    type Row = (i64, String, bool, bool, Option<String>);
+    let mut q = sqlx::query_as::<_, Row>(&accounts_sql).bind(company_id);
     for id in account_ids {
         q = q.bind(id);
     }
-    let found: Vec<(i64, String, bool, bool)> =
-        q.fetch_all(&mut **tx).await.map_err(map_db_error)?;
+    let found: Vec<Row> = q.fetch_all(&mut **tx).await.map_err(map_db_error)?;
 
     let mut unique_requested: Vec<i64> = account_ids.to_vec();
     unique_requested.sort_unstable();
     unique_requested.dedup();
 
     // (1) Absent (inconnu / autre société) ou archivé — prime sur tout.
-    if found.len() != unique_requested.len() || found.iter().any(|(_, _, active, _)| !active) {
+    if found.len() != unique_requested.len() || found.iter().any(|(_, _, active, _, _)| !active) {
         return Err(DbError::InactiveOrInvalidAccounts);
     }
+    let devises: std::collections::HashMap<i64, Option<String>> = found
+        .iter()
+        .map(|(id, _, _, _, currency)| (*id, currency.clone()))
+        .collect();
 
     // (2) Non imputable — saisie manuelle seulement.
     if enforce_postable {
         let non_postable: Vec<NonPostableAccount> = found
             .into_iter()
-            .filter(|(_, _, _, postable)| !postable)
-            .map(|(account_id, account_number, _, _)| NonPostableAccount {
+            .filter(|(_, _, _, postable, _)| !postable)
+            .map(|(account_id, account_number, _, _, _)| NonPostableAccount {
                 account_id,
                 account_number,
             })
@@ -180,7 +312,7 @@ async fn validate_lines_accounts_in_tx(
             return Err(DbError::accounts_not_postable(non_postable));
         }
     }
-    Ok(())
+    Ok(devises)
 }
 
 /// Crée une écriture comptable (en-tête + lignes) dans une transaction
@@ -261,6 +393,34 @@ pub async fn create_in_tx(
         enforce_postable,
         true,
         None,
+        PorteeDevises::UneSeule,
+    )
+    .await
+}
+
+/// [`create_in_tx`] pour l'écriture d'**ouverture** et son **complément**
+/// (Story 37-3a, AC-4 rang 2 bis) : exemptés de la règle d'une seule devise
+/// étrangère par écriture — ils reprennent les soldes de plusieurs comptes en
+/// devise et ne se rapprochent d'aucun relevé (motif de R7). Ses deux seuls
+/// appelants sont [`create_opening_entry`] et
+/// `opening_complement::create_opening_complement_in_tx` (garde lexicale
+/// `tests/chf_line_lexical.rs`).
+pub(crate) async fn create_opening_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    fiscal_year_id: i64,
+    acteur: Acteur,
+    new: NewJournalEntry,
+    enforce_postable: bool,
+) -> Result<JournalEntryWithLines, DbError> {
+    create_in_tx_inner(
+        tx,
+        fiscal_year_id,
+        acteur,
+        new,
+        enforce_postable,
+        true,
+        None,
+        PorteeDevises::Ouverture,
     )
     .await
 }
@@ -293,7 +453,9 @@ async fn create_in_tx_inner(
     enforce_postable: bool,
     enforce_project_taggable: bool,
     reverses_entry_id: Option<i64>,
+    portee: PorteeDevises,
 ) -> Result<JournalEntryWithLines, DbError> {
+    let mut new = new;
     // Étape 0 : validation des projets analytiques par-ligne (Story 19-2).
     // Elle précède l'étape 1 (le re-verrou de l'exercice) : sentinelle et
     // projets avant l'exercice, la convention de Pattern 5 (« Global Lock
@@ -337,8 +499,10 @@ async fn create_in_tx_inner(
             .flatten();
 
     // Étape 1 : re-lock de l'exercice contre une clôture concurrente + bornes de dates.
-    let fy_row: Option<(i64, String, NaiveDate, NaiveDate)> = sqlx::query_as(
-        "SELECT id, status, start_date, end_date FROM fiscal_years \
+    // Story 37-3a (AC-4 rang 2) : le mode de l'exercice se lit dans la même
+    // ligne verrouillée (sérialisée avec l'activation de 37-1, qui l'écrit).
+    let fy_row: Option<(i64, String, NaiveDate, NaiveDate, bool)> = sqlx::query_as(
+        "SELECT id, status, start_date, end_date, multi_currency FROM fiscal_years \
          WHERE id = ? AND company_id = ? FOR UPDATE",
     )
     .bind(fiscal_year_id)
@@ -347,10 +511,11 @@ async fn create_in_tx_inner(
     .await
     .map_err(map_db_error)?;
 
+    let exercice_multi_devises = fy_row.as_ref().is_some_and(|r| r.4);
     match fy_row {
         None => return Err(DbError::NotFound),
-        Some((_, status, _, _)) if status == "Closed" => return Err(DbError::FiscalYearClosed),
-        Some((_, _, fy_start, fy_end)) => {
+        Some((_, status, _, _, _)) if status == "Closed" => return Err(DbError::FiscalYearClosed),
+        Some((_, _, fy_start, fy_end, _)) => {
             // Étape 1-a (Story 15-12b, #543) — LE FILET : un exercice
             // POSTÉRIEUR est clos. Le bilan est cumulatif depuis l'origine
             // (`kesh-report/src/balance_sheet.rs`) : une écriture créée ici
@@ -432,7 +597,26 @@ async fn create_in_tx_inner(
     // Validation factorisée (helper rollback-agnostique). La garde de
     // postabilité dépend de `enforce_postable` (D-A0) ; un compte non imputable
     // est refusé sous son nom, `AccountsNotPostable` (Story 15-5a).
-    validate_lines_accounts_in_tx(tx, new.company_id, &account_ids, enforce_postable).await?;
+    let devises =
+        validate_lines_accounts_in_tx(tx, new.company_id, &account_ids, enforce_postable).await?;
+
+    // Étape 2-bis (Story 37-3a, AC-4 rangs 2 à 4) : le contrôle central des
+    // lignes en devise, sur la devise des comptes lue au rang 1.
+    journal_entry_fx::controler_lignes(
+        tx,
+        &journal_entry_fx::Contexte {
+            company_id: new.company_id,
+            fiscal_year_id,
+            exercice_multi_devises,
+            entry_date: new.entry_date,
+            devises: &devises,
+            portee,
+            contre_passation: reverses_entry_id.is_some(),
+            avant: None,
+        },
+        &mut new.lines,
+    )
+    .await?;
 
     // Étape 3 : consommer le prochain entry_number au COMPTEUR.
     //
@@ -505,24 +689,9 @@ async fn create_in_tx_inner(
     // Étape 5 : INSERT des lignes avec line_order séquentiel. Le tag
     // analytique par-ligne (19-2, écritures manuelles) prime sur le tag
     // document-level (19-3, propagation facture) — aucun flux ne fournit
-    // les deux à la fois.
-    for (idx, line) in new.lines.iter().enumerate() {
-        let line_order = (idx as i32) + 1;
-        sqlx::query(
-            "INSERT INTO journal_entry_lines \
-             (entry_id, account_id, line_order, debit, credit, project_id) \
-             VALUES (?, ?, ?, ?, ?, ?)",
-        )
-        .bind(entry_id)
-        .bind(line.account_id)
-        .bind(line_order)
-        .bind(line.debit)
-        .bind(line.credit)
-        .bind(line.project_id.or(new.project_id))
-        .execute(&mut **tx)
-        .await
-        .map_err(map_db_error)?;
-    }
+    // les deux à la fois. Les lignes en devise écrivent leurs trois colonnes
+    // (Story 37-3a).
+    insert_lines(tx, entry_id, &new.lines, new.project_id).await?;
 
     // Étape 6 : double-check balance applicative (defense in depth).
     let row = sqlx::query(
@@ -552,13 +721,12 @@ async fn create_in_tx_inner(
     .await
     .map_err(map_db_error)?;
 
-    let lines = sqlx::query_as::<_, JournalEntryLine>(&format!(
-        "SELECT {LINE_COLUMNS} FROM journal_entry_lines WHERE entry_id = ? ORDER BY line_order"
-    ))
-    .bind(entry_id)
-    .fetch_all(&mut **tx)
-    .await
-    .map_err(map_db_error)?;
+    let mut lines = sqlx::query_as::<_, JournalEntryLine>(&lines_of_entry_sql())
+        .bind(entry_id)
+        .fetch_all(&mut **tx)
+        .await
+        .map_err(map_db_error)?;
+    take_controlled_currencies(&mut lines, &devises);
 
     // Étape 8 (Story 3.5) : INSERT audit_log avant le COMMIT.
     // Le caller qui appelle create_in_tx peut ajouter son propre audit
@@ -733,7 +901,8 @@ pub async fn create_opening_entry(
     // Étape 5 : création atomique dans la même tx (re-lock ré-entrant).
     // Story 35-8a2 (#431) : le bilan d'ouverture reste au nom de l'utilisateur
     // (`AConvertir` de la garde des acteurs ; déploiement à l'Epic 36).
-    match create_in_tx(
+    // Story 37-3a (AC-4 rang 2 bis) : exemptée de la règle d'une devise.
+    match create_opening_in_tx(
         &mut tx,
         fiscal_year_id,
         Acteur::utilisateur(user_id),
@@ -778,13 +947,11 @@ pub async fn find_by_id(
         return Ok(None);
     };
 
-    let lines = sqlx::query_as::<_, JournalEntryLine>(&format!(
-        "SELECT {LINE_COLUMNS} FROM journal_entry_lines WHERE entry_id = ? ORDER BY line_order"
-    ))
-    .bind(entry.id)
-    .fetch_all(pool)
-    .await
-    .map_err(map_db_error)?;
+    let lines = sqlx::query_as::<_, JournalEntryLine>(&lines_of_entry_sql())
+        .bind(entry.id)
+        .fetch_all(pool)
+        .await
+        .map_err(map_db_error)?;
 
     Ok(Some(JournalEntryWithLines { entry, lines }))
 }
@@ -988,14 +1155,11 @@ pub async fn list_by_company_paginated(
     // --- Charger les lignes de chaque entry (N+1 acceptable limit ≤ 500) ---
     let mut items = Vec::with_capacity(entries.len());
     for entry in entries {
-        let lines = sqlx::query_as::<_, JournalEntryLine>(&format!(
-            "SELECT {LINE_COLUMNS} FROM journal_entry_lines \
-             WHERE entry_id = ? ORDER BY line_order"
-        ))
-        .bind(entry.id)
-        .fetch_all(pool)
-        .await
-        .map_err(map_db_error)?;
+        let lines = sqlx::query_as::<_, JournalEntryLine>(&lines_of_entry_sql())
+            .bind(entry.id)
+            .fetch_all(pool)
+            .await
+            .map_err(map_db_error)?;
         items.push(JournalEntryWithLines { entry, lines });
     }
 
@@ -1021,14 +1185,31 @@ fn entry_snapshot_json(entry: &JournalEntry, lines: &[JournalEntryLine]) -> serd
         "journal": entry.journal.as_str(),
         "description": entry.description,
         "version": entry.version,
-        "lines": lines.iter().map(|l| serde_json::json!({
-            "lineOrder": l.line_order,
-            "accountId": l.account_id,
-            "debit": l.debit.to_string(),
-            "credit": l.credit.to_string(),
-            "projectId": l.project_id,
-        })).collect::<Vec<_>>()
+        "lines": lines.iter().map(line_snapshot_json).collect::<Vec<_>>()
     })
+}
+
+/// Une ligne de l'instantané d'audit. Story 37-3a (AC-8) : la clé `foreign`
+/// (`{ currency, amount, rate, rateSource }`, devise lue sur le compte) n'est
+/// posée que pour une ligne en devise — l'audit d'une écriture CHF reste
+/// identique octet pour octet.
+fn line_snapshot_json(l: &JournalEntryLine) -> serde_json::Value {
+    let mut v = serde_json::json!({
+        "lineOrder": l.line_order,
+        "accountId": l.account_id,
+        "debit": l.debit.to_string(),
+        "credit": l.credit.to_string(),
+        "projectId": l.project_id,
+    });
+    if let Some(f) = l.foreign() {
+        v["foreign"] = serde_json::json!({
+            "currency": f.currency,
+            "amount": f.amount.normalize().to_string(),
+            "rate": f.rate.normalize().to_string(),
+            "rateSource": f.source.as_str(),
+        });
+    }
+    v
 }
 
 // ---------------------------------------------------------------------------
@@ -1290,6 +1471,12 @@ pub async fn modification_blocker(
     if let Some(guard) = modification_guard(&mut *conn, company_id, id).await? {
         return Ok(Some(ModificationBlocker::Guard(guard)));
     }
+    // Story 37-3a (AC-7) — l'écriture de réévaluation, au rang de l'étape
+    // 3-bis du `PUT` : après la garde d'écriture, avant le verrou de période et
+    // la marque de lettrage.
+    if has_revaluation_line(&mut *conn, id).await? {
+        return Ok(Some(ModificationBlocker::FxRevaluation));
+    }
     let books_locked_through: Option<NaiveDate> =
         sqlx::query_scalar("SELECT books_locked_through FROM companies WHERE id = ?")
             .bind(company_id)
@@ -1314,6 +1501,12 @@ pub async fn modification_blocker(
 ///
 /// Les lignes se comparent dans l'ordre (`line_order`) : l'ordre fait partie de
 /// l'écriture telle qu'elle se lit.
+///
+/// Story 37-3a (AC-2) : les trois champs stockés de la partie en devise
+/// (montant, cours, provenance ; montants en valeur) entrent dans la
+/// comparaison — la devise suit le compte, déjà comparé. Appelée **après** la
+/// résolution de la provenance (AC-4, rang 4) : elle ne compare jamais un
+/// `None`.
 fn is_no_op_change(
     before_entry: &JournalEntry,
     before_lines: &[JournalEntryLine],
@@ -1333,6 +1526,15 @@ fn is_no_op_change(
             && b.debit == c.debit
             && b.credit == c.credit
             && b.project_id == c.project_id.or(updated.project_id)
+            && match (&c.foreign, b.amount_currency) {
+                (None, None) => true,
+                (Some(f), Some(amount)) => {
+                    amount == f.amount
+                        && b.exchange_rate == Some(f.rate)
+                        && b.rate_source.as_deref() == f.source.map(|s| s.as_str())
+                }
+                _ => false,
+            }
     })
 }
 
@@ -1442,11 +1644,15 @@ enum UpdateOutcome {
 ///
 /// 404 → exercice clos (400) → exercice postérieur clos (400) → garde d'écriture
 /// (409 : `ENTRY_IS_REVERSED`, `IS_A_REVERSAL`, code de la pièce,
-/// `DETACHED_SUPPLIER_SETTLEMENT`) → version (409) → date hors de l'exercice
-/// **de l'écriture** (400) → projet (404/409) → comptes (400
+/// `DETACHED_SUPPLIER_SETTLEMENT`) → écriture de réévaluation (409
+/// `ENTRY_IS_FX_REVALUATION`, étape 3-bis, Story 37-3a) → version (409) → date
+/// hors de l'exercice **de l'écriture** (400) → projet (404/409) → comptes (400
 /// `INACTIVE_OR_INVALID_ACCOUNTS`, puis `ACCOUNT_NOT_POSTABLE`, **sans
 /// exemption** : une ligne inchangée sur un compte devenu non imputable est
-/// refusée, C-15-8-4) → verrou de période, ancienne puis nouvelle date (400)
+/// refusée, C-15-8-4) → contrôle central des lignes en devise (étape 6-bis,
+/// Story 37-3a : `MULTI_CURRENCY_DISABLED`, `FX_MULTIPLE_CURRENCIES` si
+/// l'ensemble des devises s'élargit, accord ligne-compte, provenance des seules
+/// lignes `afc` nouvelles ou modifiées) → verrou de période, ancienne puis nouvelle date (400)
 /// → marque de lettrage (409 `ENTRY_LETTERED`, étape 7-bis, Story 15-1a-ii :
 /// elle parle après tout refus que le délettrage ne lèverait pas, C126).
 /// Le court-circuit **no-op** vient après toutes les gardes (KF-004) : un `PUT`
@@ -1483,6 +1689,7 @@ async fn update_in_tx(
     acteur: Acteur,
     updated: NewJournalEntry,
 ) -> Result<UpdateOutcome, DbError> {
+    let mut updated = updated;
     // Étape 1 — PREMIER ACTE : le verrou de l'écriture, seule. Aucune lecture
     // ordinaire avant lui (cf. « Sérialisation »).
     // ⚠️ Les tests de concurrence reconnaissent cette requête à son texte
@@ -1530,8 +1737,9 @@ async fn update_in_tx(
 
     // Étape 1-ter — l'exercice de l'écriture, puis les exercices postérieurs
     // clos : derniers verrous, lus à l'état COURANT.
-    let fy: Option<(String, NaiveDate, NaiveDate)> = sqlx::query_as(
-        "SELECT status, start_date, end_date FROM fiscal_years \
+    // Story 37-3a (AC-4 rang 2) : le mode de l'exercice, dans la même ligne.
+    let fy: Option<(String, NaiveDate, NaiveDate, bool)> = sqlx::query_as(
+        "SELECT status, start_date, end_date, multi_currency FROM fiscal_years \
          WHERE id = ? AND company_id = ? FOR UPDATE",
     )
     .bind(fiscal_year_id)
@@ -1539,7 +1747,7 @@ async fn update_in_tx(
     .fetch_optional(&mut **tx)
     .await
     .map_err(map_db_error)?;
-    let (fy_status, fy_start, fy_end) = fy.ok_or_else(|| {
+    let (fy_status, fy_start, fy_end, exercice_multi_devises) = fy.ok_or_else(|| {
         DbError::Invariant(format!(
             "écriture {id} : exercice {fiscal_year_id} introuvable"
         ))
@@ -1575,6 +1783,13 @@ async fn update_in_tx(
         return Err(modification_refusal(guard));
     }
 
+    // Étape 3-bis (Story 37-3a, AC-7) — une écriture de réévaluation ne se
+    // modifie pas (elle se supprime) ; avant la version : le motif réel prime.
+    // Hors `ModificationGuard`, que la suppression partage.
+    if has_revaluation_line(tx, id).await? {
+        return Err(DbError::EntryIsFxRevaluation);
+    }
+
     // Étape 4 — version (après le gel : le motif réel prime sur « rechargez »).
     if entry_version != version {
         return Err(DbError::OptimisticLockConflict);
@@ -1597,7 +1812,36 @@ async fn update_in_tx(
         ));
     }
     let account_ids: Vec<i64> = updated.lines.iter().map(|l| l.account_id).collect();
-    validate_lines_accounts_in_tx(tx, company_id, &account_ids, true).await?;
+    let devises = validate_lines_accounts_in_tx(tx, company_id, &account_ids, true).await?;
+
+    // Étape 6-bis (Story 37-3a, AC-4) — les lignes d'avant, lues ici (et non
+    // plus à l'étape 8), sous le verrou de l'écriture : la règle d'une devise
+    // (rang 2 bis) et la provenance gardée d'une ligne identique (rang 4) les
+    // lisent. Puis le contrôle central des lignes en devise. La devise de ces
+    // lignes vient de la jointure, non de la lecture verrouillante : un compte
+    // qui porte des lignes a sa devise verrouillée (37-1, AC-4), la jointure
+    // ne peut donc pas en lire une autre (revue de code P1).
+    let before_lines: Vec<JournalEntryLine> =
+        sqlx::query_as::<_, JournalEntryLine>(&lines_of_entry_sql())
+            .bind(id)
+            .fetch_all(&mut **tx)
+            .await
+            .map_err(map_db_error)?;
+    journal_entry_fx::controler_lignes(
+        tx,
+        &journal_entry_fx::Contexte {
+            company_id,
+            fiscal_year_id,
+            exercice_multi_devises,
+            entry_date: updated.entry_date,
+            devises: &devises,
+            portee: PorteeDevises::UneSeule,
+            contre_passation: false,
+            avant: Some((&before_lines, old_date)),
+        },
+        &mut updated.lines,
+    )
+    .await?;
 
     // Étape 7 — verrou de période, seuil INCLUSIF : l'ancienne date, puis la
     // nouvelle. Le verrou parle en dernier des refus de date, comme à la
@@ -1631,13 +1875,6 @@ async fn update_in_tx(
     .fetch_one(&mut **tx)
     .await
     .map_err(map_db_error)?;
-    let before_lines: Vec<JournalEntryLine> = sqlx::query_as::<_, JournalEntryLine>(&format!(
-        "SELECT {LINE_COLUMNS} FROM journal_entry_lines WHERE entry_id = ? ORDER BY line_order"
-    ))
-    .bind(id)
-    .fetch_all(&mut **tx)
-    .await
-    .map_err(map_db_error)?;
     if is_no_op_change(&before_entry, &before_lines, &updated) {
         return Ok(UpdateOutcome::NoOp(JournalEntryWithLines {
             entry: before_entry,
@@ -1666,23 +1903,7 @@ async fn update_in_tx(
     .execute(&mut **tx)
     .await
     .map_err(map_db_error)?;
-    for (idx, line) in updated.lines.iter().enumerate() {
-        let line_order = (idx as i32) + 1;
-        sqlx::query(
-            "INSERT INTO journal_entry_lines \
-             (entry_id, account_id, line_order, debit, credit, project_id) \
-             VALUES (?, ?, ?, ?, ?, ?)",
-        )
-        .bind(id)
-        .bind(line.account_id)
-        .bind(line_order)
-        .bind(line.debit)
-        .bind(line.credit)
-        .bind(line.project_id.or(updated.project_id))
-        .execute(&mut **tx)
-        .await
-        .map_err(map_db_error)?;
-    }
+    insert_lines(tx, id, &updated.lines, updated.project_id).await?;
 
     // Étape 10 — recontrôle de l'équilibre (défense en profondeur).
     let row = sqlx::query(
@@ -1709,13 +1930,12 @@ async fn update_in_tx(
     .fetch_one(&mut **tx)
     .await
     .map_err(map_db_error)?;
-    let after_lines = sqlx::query_as::<_, JournalEntryLine>(&format!(
-        "SELECT {LINE_COLUMNS} FROM journal_entry_lines WHERE entry_id = ? ORDER BY line_order"
-    ))
-    .bind(id)
-    .fetch_all(&mut **tx)
-    .await
-    .map_err(map_db_error)?;
+    let mut after_lines = sqlx::query_as::<_, JournalEntryLine>(&lines_of_entry_sql())
+        .bind(id)
+        .fetch_all(&mut **tx)
+        .await
+        .map_err(map_db_error)?;
+    take_controlled_currencies(&mut after_lines, &devises);
     let after_json = entry_snapshot_json(&after_entry, &after_lines);
     audit_log::insert_in_tx(
         tx,
@@ -1973,13 +2193,12 @@ pub(crate) async fn delete_in_tx(
     .await
     .map_err(map_db_error)?;
 
-    let before_lines: Vec<JournalEntryLine> = sqlx::query_as::<_, JournalEntryLine>(&format!(
-        "SELECT {LINE_COLUMNS} FROM journal_entry_lines WHERE entry_id = ? ORDER BY line_order"
-    ))
-    .bind(id)
-    .fetch_all(&mut **tx)
-    .await
-    .map_err(map_db_error)?;
+    let before_lines: Vec<JournalEntryLine> =
+        sqlx::query_as::<_, JournalEntryLine>(&lines_of_entry_sql())
+            .bind(id)
+            .fetch_all(&mut **tx)
+            .await
+            .map_err(map_db_error)?;
 
     let snapshot = entry_snapshot_json(&before_entry, &before_lines);
 
@@ -2047,9 +2266,12 @@ pub async fn list_all_lines_by_company(
 ) -> Result<Vec<JournalEntryLine>, DbError> {
     sqlx::query_as::<_, JournalEntryLine>(
         "SELECT jel.id, jel.entry_id, jel.account_id, jel.line_order, jel.debit, jel.credit, \
-                jel.project_id, jel.lettering_key, jel.lettering_origin \
+                jel.project_id, jel.lettering_key, jel.lettering_origin, \
+                jel.amount_currency, jel.exchange_rate, jel.rate_source, \
+                a.currency AS account_currency \
          FROM journal_entry_lines jel \
          JOIN journal_entries je ON jel.entry_id = je.id \
+         JOIN accounts a ON a.id = jel.account_id \
          WHERE je.company_id = ? \
          ORDER BY jel.entry_id, jel.line_order",
     )
@@ -2717,8 +2939,20 @@ pub async fn reverse_at_next_fiscal_year_start_in_tx(
 }
 
 /// Une ligne de l'origine lue par la contre-passation : `(id, account_id,
-/// debit, credit, project_id, lettering_key)` — Story 15-1a-ii (R6).
-type OriginLine = (i64, i64, Decimal, Decimal, Option<i64>, Option<i64>);
+/// debit, credit, project_id, lettering_key, amount_currency, exchange_rate,
+/// rate_source)` — Story 15-1a-ii (R6), Story 37-3a (AC-7 : les trois colonnes
+/// en devise, sans jointure — la devise suit le compte, inchangé).
+type OriginLine = (
+    i64,
+    i64,
+    Decimal,
+    Decimal,
+    Option<i64>,
+    Option<i64>,
+    Option<Decimal>,
+    Option<Decimal>,
+    Option<String>,
+);
 
 /// La contre-passation, **écrite une seule fois** (25-3-zero, 25-3-a-1).
 ///
@@ -2919,7 +3153,8 @@ async fn reverse_in_tx_inner(
     // lettrage (ligne → en-tête) — cycle connu, défendu par le rejeu de la
     // contre-passation et des annulations qui l'appellent (toutes `Rejouee`).
     let origin_lines: Vec<OriginLine> = sqlx::query_as(
-        "SELECT id, account_id, debit, credit, project_id, lettering_key \
+        "SELECT id, account_id, debit, credit, project_id, lettering_key, \
+                amount_currency, exchange_rate, rate_source \
          FROM journal_entry_lines WHERE entry_id = ? ORDER BY line_order FOR UPDATE",
     )
     .bind(id)
@@ -2933,23 +3168,40 @@ async fn reverse_in_tx_inner(
     }
 
     // (3) Comptes archivés depuis — refus qui NOMME, cf. `ReversalAccountsArchived`.
-    let account_ids: Vec<i64> = origin_lines.iter().map(|(_, a, _, _, _, _)| *a).collect();
+    let account_ids: Vec<i64> = origin_lines.iter().map(|l| l.1).collect();
     let archived = archived_accounts_in_tx(tx, company_id, &account_ids).await?;
     if !archived.is_empty() {
         return Err(DbError::ReversalAccountsArchived(archived));
     }
 
-    let reversal_lines: Vec<NewJournalEntryLine> = origin_lines
-        .iter()
-        .map(
-            |(_, account_id, debit, credit, project_id, _)| NewJournalEntryLine {
-                account_id: *account_id,
-                debit: *credit,
-                credit: *debit,
-                project_id: *project_id,
-            },
-        )
-        .collect();
+    // Story 37-3a (AC-7) — les trois colonnes en devise sont recopiées
+    // (réévaluation comprise), côtés inversés, sur le même compte ; la devise
+    // annoncée est absente (chemin interne). Une provenance illisible est un
+    // invariant violé (`chk_jel_fx_rate_source` l'interdit).
+    let mut reversal_lines: Vec<NewJournalEntryLine> = Vec::with_capacity(origin_lines.len());
+    for (_, account_id, debit, credit, project_id, _, amount, rate, source) in &origin_lines {
+        let foreign = match (amount, rate, source) {
+            (Some(amount), Some(rate), Some(source)) => Some(ForeignAmount {
+                declared_currency: None,
+                amount: *amount,
+                rate: *rate,
+                source: Some(
+                    source
+                        .parse::<RateProvenance>()
+                        .map_err(DbError::Invariant)?,
+                ),
+                rate_derived: false,
+            }),
+            _ => None,
+        };
+        reversal_lines.push(NewJournalEntryLine {
+            account_id: *account_id,
+            debit: *credit,
+            credit: *debit,
+            project_id: *project_id,
+            foreign,
+        });
+    }
 
     // (4) L'exercice et la date de l'écriture inverse — verrouillés APRÈS
     // l'exercice de l'origine : cycle possible avec une clôture ou une création
@@ -3020,6 +3272,9 @@ async fn reverse_in_tx_inner(
         // Idem pour les projets — les tags sont COPIÉS, pas choisis.
         false,
         Some(id),
+        // Exemptée de la règle d'une devise et de `FX_RATE_NOT_AFC` par
+        // `reverses_entry_id`, non de `MULTI_CURRENCY_DISABLED` (Story 37-3a).
+        PorteeDevises::UneSeule,
     )
     .await?;
 
@@ -3071,7 +3326,8 @@ async fn reverse_in_tx_inner(
     }
     let mut lettered_any = false;
     for (origin_line, mirror) in origin_lines.iter().zip(created.lines.iter()) {
-        let (origin_line_id, account_id, _, _, _, lettering_key) = *origin_line;
+        let (origin_line_id, account_id, lettering_key) =
+            (origin_line.0, origin_line.1, origin_line.5);
         if lettering_key.is_some() {
             continue;
         }
@@ -3099,13 +3355,19 @@ async fn reverse_in_tx_inner(
     // lettrée. Ici et non dans la route : tous les appelants de
     // `reverse_in_tx` (annulations, dé-rapprochement) reçoivent une valeur exacte.
     if lettered_any {
-        created.lines = sqlx::query_as::<_, JournalEntryLine>(&format!(
-            "SELECT {LINE_COLUMNS} FROM journal_entry_lines WHERE entry_id = ? ORDER BY line_order"
-        ))
-        .bind(created.entry.id)
-        .fetch_all(&mut **tx)
-        .await
-        .map_err(map_db_error)?;
+        // La devise des lignes copiées est celle des lignes que la création
+        // vient de rendre (lecture verrouillante des comptes) : on la garde.
+        let devises: std::collections::HashMap<i64, Option<String>> = created
+            .lines
+            .iter()
+            .map(|l| (l.account_id, l.account_currency.clone()))
+            .collect();
+        created.lines = sqlx::query_as::<_, JournalEntryLine>(&lines_of_entry_sql())
+            .bind(created.entry.id)
+            .fetch_all(&mut **tx)
+            .await
+            .map_err(map_db_error)?;
+        take_controlled_currencies(&mut created.lines, &devises);
     }
 
     Ok(created)
@@ -3361,12 +3623,14 @@ mod tests {
                     debit: dec!(42),
                     credit: dec!(0),
                     project_id: None,
+                    foreign: None,
                 },
                 NewJournalEntryLine {
                     account_id: a2,
                     debit: dec!(0),
                     credit: dec!(42),
                     project_id: None,
+                    foreign: None,
                 },
             ],
         );
@@ -3429,12 +3693,14 @@ mod tests {
                     debit: dec!(100),
                     credit: dec!(0),
                     project_id: None,
+                    foreign: None,
                 },
                 NewJournalEntryLine {
                     account_id: a2,
                     debit: dec!(0),
                     credit: dec!(100),
                     project_id: None,
+                    foreign: None,
                 },
             ],
         );
@@ -3479,12 +3745,14 @@ mod tests {
                         debit: dec!(50),
                         credit: dec!(0),
                         project_id: None,
+                        foreign: None,
                     },
                     NewJournalEntryLine {
                         account_id: a2,
                         debit: dec!(0),
                         credit: dec!(50),
                         project_id: None,
+                        foreign: None,
                     },
                 ],
             );
@@ -3516,12 +3784,14 @@ mod tests {
                 debit: dec!(10),
                 credit: dec!(0),
                 project_id: None,
+                foreign: None,
             },
             NewJournalEntryLine {
                 account_id: a2,
                 debit: dec!(0),
                 credit: dec!(10),
                 project_id: None,
+                foreign: None,
             },
         ]
     }
@@ -4487,12 +4757,14 @@ mod tests {
                     debit: dec!(100),
                     credit: dec!(0),
                     project_id: None,
+                    foreign: None,
                 },
                 NewJournalEntryLine {
                     account_id: a2,
                     debit: dec!(0),
                     credit: dec!(100),
                     project_id: None,
+                    foreign: None,
                 },
             ],
         );
@@ -4579,18 +4851,21 @@ mod tests {
                     debit: dec!(30),
                     credit: dec!(0),
                     project_id: None,
+                    foreign: None,
                 },
                 NewJournalEntryLine {
                     account_id: a1,
                     debit: dec!(20),
                     credit: dec!(0),
                     project_id: None,
+                    foreign: None,
                 },
                 NewJournalEntryLine {
                     account_id: a2,
                     debit: dec!(0),
                     credit: dec!(50),
                     project_id: None,
+                    foreign: None,
                 },
             ],
         );
@@ -4629,12 +4904,14 @@ mod tests {
                             debit: dec!(10),
                             credit: dec!(0),
                             project_id: None,
+                            foreign: None,
                         },
                         NewJournalEntryLine {
                             account_id: a2,
                             debit: dec!(0),
                             credit: dec!(10),
                             project_id: None,
+                            foreign: None,
                         },
                     ],
                 ),
@@ -4671,12 +4948,14 @@ mod tests {
                     debit: dec!(100),
                     credit: dec!(0),
                     project_id: None,
+                    foreign: None,
                 },
                 NewJournalEntryLine {
                     account_id: a2,
                     debit: dec!(0),
                     credit: dec!(100),
                     project_id: None,
+                    foreign: None,
                 },
             ],
         );
@@ -4694,12 +4973,14 @@ mod tests {
                     debit: dec!(50),
                     credit: dec!(0),
                     project_id: None,
+                    foreign: None,
                 },
                 NewJournalEntryLine {
                     account_id: a2,
                     debit: dec!(0),
                     credit: dec!(50),
                     project_id: None,
+                    foreign: None,
                 },
             ],
         );
@@ -4759,12 +5040,14 @@ mod tests {
                     debit: dec!(10),
                     credit: dec!(0),
                     project_id: None,
+                    foreign: None,
                 },
                 NewJournalEntryLine {
                     account_id: a2,
                     debit: dec!(0),
                     credit: dec!(10),
                     project_id: None,
+                    foreign: None,
                 },
             ],
         );
@@ -4785,12 +5068,14 @@ mod tests {
                     debit: dec!(20),
                     credit: dec!(0),
                     project_id: None,
+                    foreign: None,
                 },
                 NewJournalEntryLine {
                     account_id: a2,
                     debit: dec!(0),
                     credit: dec!(20),
                     project_id: None,
+                    foreign: None,
                 },
             ],
         );
@@ -4840,12 +5125,14 @@ mod tests {
                         debit: dec!(1),
                         credit: dec!(0),
                         project_id: None,
+                        foreign: None,
                     },
                     NewJournalEntryLine {
                         account_id: a2,
                         debit: dec!(0),
                         credit: dec!(1),
                         project_id: None,
+                        foreign: None,
                     },
                 ],
             );
@@ -4896,12 +5183,14 @@ mod tests {
                     debit: dec!(10),
                     credit: dec!(0),
                     project_id: None,
+                    foreign: None,
                 },
                 NewJournalEntryLine {
                     account_id: a2,
                     debit: dec!(0),
                     credit: dec!(10),
                     project_id: None,
+                    foreign: None,
                 },
             ],
         );
@@ -4967,12 +5256,14 @@ mod tests {
                             debit: amount,
                             credit: dec!(0),
                             project_id: None,
+                            foreign: None,
                         },
                         NewJournalEntryLine {
                             account_id: a2,
                             debit: dec!(0),
                             credit: amount,
                             project_id: None,
+                            foreign: None,
                         },
                     ],
                 ),
@@ -5010,12 +5301,14 @@ mod tests {
                         debit: dec!(10),
                         credit: dec!(0),
                         project_id: None,
+                        foreign: None,
                     },
                     NewJournalEntryLine {
                         account_id: a2,
                         debit: dec!(0),
                         credit: dec!(10),
                         project_id: None,
+                        foreign: None,
                     },
                 ],
             );
@@ -5033,12 +5326,14 @@ mod tests {
                     debit: dec!(20),
                     credit: dec!(0),
                     project_id: None,
+                    foreign: None,
                 },
                 NewJournalEntryLine {
                     account_id: a2,
                     debit: dec!(0),
                     credit: dec!(20),
                     project_id: None,
+                    foreign: None,
                 },
             ],
         );
@@ -5079,12 +5374,14 @@ mod tests {
                             debit: dec!(10),
                             credit: dec!(0),
                             project_id: None,
+                            foreign: None,
                         },
                         NewJournalEntryLine {
                             account_id: a2,
                             debit: dec!(0),
                             credit: dec!(10),
                             project_id: None,
+                            foreign: None,
                         },
                     ],
                 ),
@@ -5153,12 +5450,14 @@ mod tests {
                             debit: dec!(10),
                             credit: dec!(0),
                             project_id: None,
+                            foreign: None,
                         },
                         NewJournalEntryLine {
                             account_id: a2,
                             debit: dec!(0),
                             credit: dec!(10),
                             project_id: None,
+                            foreign: None,
                         },
                     ],
                 ),
@@ -5228,12 +5527,14 @@ mod tests {
                     debit: dec!(42),
                     credit: dec!(0),
                     project_id: None,
+                    foreign: None,
                 },
                 NewJournalEntryLine {
                     account_id: a2,
                     debit: dec!(0),
                     credit: dec!(42),
                     project_id: None,
+                    foreign: None,
                 },
             ],
         );
@@ -5251,12 +5552,14 @@ mod tests {
                     debit: dec!(7),
                     credit: dec!(0),
                     project_id: None,
+                    foreign: None,
                 },
                 NewJournalEntryLine {
                     account_id: a2,
                     debit: dec!(0),
                     credit: dec!(7),
                     project_id: None,
+                    foreign: None,
                 },
             ],
         );
@@ -5312,12 +5615,14 @@ mod tests {
                         debit: dec!(10),
                         credit: dec!(0),
                         project_id: None,
+                        foreign: None,
                     },
                     NewJournalEntryLine {
                         account_id: a2,
                         debit: dec!(0),
                         credit: dec!(10),
                         project_id: None,
+                        foreign: None,
                     },
                 ],
             );
@@ -5357,12 +5662,14 @@ mod tests {
                     debit: dec!(10),
                     credit: dec!(0),
                     project_id: None,
+                    foreign: None,
                 },
                 NewJournalEntryLine {
                     account_id: a1,
                     debit: dec!(0),
                     credit: dec!(10),
                     project_id: None,
+                    foreign: None,
                 },
             ],
         );
@@ -5427,6 +5734,7 @@ mod tests {
             debit,
             credit,
             project_id: None,
+            foreign: None,
         }
     }
 
@@ -5441,6 +5749,7 @@ mod tests {
             debit,
             credit,
             project_id: Some(project_id),
+            foreign: None,
         }
     }
 
@@ -5893,12 +6202,14 @@ mod tests {
                         debit: dec!(17),
                         credit: dec!(0),
                         project_id: None,
+                        foreign: None,
                     },
                     NewJournalEntryLine {
                         account_id: a2,
                         debit: dec!(0),
                         credit: dec!(17),
                         project_id: None,
+                        foreign: None,
                     },
                 ],
             ),
@@ -6093,6 +6404,7 @@ mod tests {
                     debit: l.debit,
                     credit: l.credit,
                     project_id: l.project_id,
+                    foreign: None,
                 })
                 .collect(),
         }
@@ -6617,5 +6929,85 @@ mod tests {
             lectures[0] < recensement,
             "le détecteur voit l'ordre fautif"
         );
+    }
+
+    /// Story 37-3a (AC-2) — une ligne en devise **sans provenance** qui
+    /// atteindrait l'`INSERT` est un invariant violé, jamais une ligne écrite.
+    /// (Le contrôle central qualifie toujours la ligne avant : ce chemin n'est
+    /// atteignable que par un appel direct.)
+    #[tokio::test]
+    async fn insert_lines_refuse_une_ligne_sans_provenance() {
+        let pool = test_pool().await;
+        let (company_id, fy_id, _, jour) = setup(&pool).await;
+        let account_id: i64 =
+            sqlx::query_scalar("SELECT id FROM accounts WHERE company_id = ? LIMIT 1")
+                .bind(company_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        let entry_id = sqlx::query(
+            "INSERT INTO journal_entries (company_id, fiscal_year_id, entry_number, entry_date, \
+             journal, description) VALUES (?, ?, 987654, ?, 'OD', 'Invariant')",
+        )
+        .bind(company_id)
+        .bind(fy_id)
+        .bind(jour)
+        .execute(&mut *tx)
+        .await
+        .unwrap()
+        .last_insert_id() as i64;
+        let ligne = NewJournalEntryLine {
+            account_id,
+            debit: dec!(9.12),
+            credit: Decimal::ZERO,
+            project_id: None,
+            foreign: Some(ForeignAmount {
+                declared_currency: None,
+                amount: dec!(10),
+                rate: dec!(0.912),
+                source: None,
+                rate_derived: false,
+            }),
+        };
+        let e = insert_lines(&mut tx, entry_id, &[ligne], None)
+            .await
+            .unwrap_err();
+        assert!(matches!(e, DbError::Invariant(_)), "{e:?}");
+        let ecrites: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM journal_entry_lines WHERE entry_id = ?")
+                .bind(entry_id)
+                .fetch_one(&mut *tx)
+                .await
+                .unwrap();
+        assert_eq!(ecrites, 0, "aucune ligne écrite");
+        tx.rollback().await.unwrap();
+    }
+
+    /// Story 37-3a (AC-4) — `verifier_provenances` refuse une ligne en devise
+    /// sans provenance et accepte une ligne CHF ou qualifiée.
+    #[test]
+    fn verifier_provenances_refuse_un_none() {
+        let ligne =
+            |source: Option<crate::entities::RateProvenance>, fx: bool| NewJournalEntryLine {
+                account_id: 1,
+                debit: dec!(9.12),
+                credit: Decimal::ZERO,
+                project_id: None,
+                foreign: fx.then(|| ForeignAmount {
+                    declared_currency: None,
+                    amount: dec!(10),
+                    rate: dec!(0.912),
+                    source,
+                    rate_derived: false,
+                }),
+            };
+        use crate::entities::RateProvenance as P;
+        assert!(journal_entry_fx::verifier_provenances(&[ligne(None, false)]).is_ok());
+        assert!(journal_entry_fx::verifier_provenances(&[ligne(Some(P::Afc), true)]).is_ok());
+        assert!(matches!(
+            journal_entry_fx::verifier_provenances(&[ligne(None, true)]),
+            Err(DbError::Invariant(_))
+        ));
     }
 }

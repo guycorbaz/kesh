@@ -75,8 +75,8 @@ pub use invoice_settlement::{
     WriteOffNature as SettlementWriteOffNature,
 };
 pub use journal_entry::{
-    Journal, JournalEntry, JournalEntryLine, JournalEntryWithLines, NewJournalEntry,
-    NewJournalEntryLine,
+    ForeignAmount, Journal, JournalEntry, JournalEntryLine, JournalEntryWithLines, LineForeign,
+    NewJournalEntry, NewJournalEntryLine, RateProvenance,
 };
 pub use mcp_key::{
     McpKey, McpScope, McpScopeError, McpScopes, NewMcpKey, SendValidation, StoredMcpScopes,

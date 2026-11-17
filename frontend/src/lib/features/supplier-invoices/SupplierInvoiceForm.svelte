@@ -48,7 +48,11 @@
 	import { qrIbanHasValidQrIid } from '$lib/shared/utils/iban';
 	import { formatExactAmount } from '$lib/features/invoices/invoice-helpers';
 	import type { ContactResponse, StructuredAddress } from '$lib/features/contacts/contacts.types';
-	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
+	// Story 37-3b (AC-4) : ni compte en devise, filtré ici, à l'entrée du composant.
+	import {
+		withoutForeignCurrency,
+		type AccountResponse,
+	} from '$lib/features/accounts/accounts.types';
 	import type { VatRateResponse } from '$lib/features/vat-rates/vat-rates.types';
 	import type { ProjectResponse } from '$lib/features/projects/projects.types';
 	import type { ImportedSupplierInvoice } from '$lib/features/imported-supplier-invoices/imported-supplier-invoices.types';
@@ -823,7 +827,7 @@
 					bind:value={line.expenseAccountId}
 				>
 					<option value={0}>{i18nMsg('supplier-invoices-line-account', 'Compte')}</option>
-					{#each expenseAccounts as a (a.id)}
+					{#each withoutForeignCurrency(expenseAccounts) as a (a.id)}
 						<option value={a.id}>{a.number} {a.name}</option>
 					{/each}
 				</select>

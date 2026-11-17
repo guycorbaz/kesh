@@ -1,0 +1,31 @@
+CI Test Company
+Bilan
+Période : 01.01.2026  31.12.2026
+Actifs
+1000
+Caisse CI
+597.20
+1010
+Ancienne caisse
+50.00
+1100
+Banque CI
+11'079.90
+Total actifs
+11'727.10
+Passifs
+2000
+Capital CI
+10'000.00
+Total passifs
+10'000.00
+Capitaux propres
+Résultat reporté (calculé)
+814.45
+Résultat de l'exercice
+912.65
+Total capitaux propres
+1'727.10
+Total passifs + Capitaux propres
+11'727.10
+page 1 / 1

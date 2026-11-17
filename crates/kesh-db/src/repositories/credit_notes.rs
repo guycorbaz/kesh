@@ -254,6 +254,8 @@ fn generate_credit_note_journal_lines(
         debit: Decimal::ZERO,
         credit: total_ht + total_vat,
         project_id: None,
+        // Story 37-3a (AC-5) : les chemins automatiques n'écrivent qu'en CHF.
+        foreign: None,
     });
     // (1..M) Débit produit HT par compte effectif (annule chaque crédit produit).
     // Mêmes clés, mêmes montants, même ordre que la ventilation de la facture :
@@ -265,6 +267,7 @@ fn generate_credit_note_journal_lines(
                 debit: *amount,
                 credit: Decimal::ZERO,
                 project_id: None,
+                foreign: None,
             });
         }
     }
@@ -282,6 +285,7 @@ fn generate_credit_note_journal_lines(
                     debit: *amount,
                     credit: Decimal::ZERO,
                     project_id: None,
+                    foreign: None,
                 });
             }
         }
@@ -662,6 +666,11 @@ pub async fn create_credit_note(
                 rejected.dedup_by_key(|r| (r.line_number, r.account_id));
                 return Err(DbError::CreditNoteRevenueAccountsArchived(rejected));
             }
+            // Story 37-3a (AC-5) — un compte de produit en devise est refusé
+            // (400 `ACCOUNT_IN_FOREIGN_CURRENCY`) : l'avoir s'écrit en CHF.
+            let ids: Vec<i64> = sites.iter().map(|(_, a)| *a).collect();
+            super::accounts::refuse_foreign_currency_accounts_in_tx(&mut tx, company_id, &ids)
+                .await?;
         }
 
         // (7) Écriture de contre-passation (triplets calculés en (3 ter)).
@@ -697,6 +706,7 @@ pub async fn create_credit_note(
                     Decimal::ZERO
                 },
                 project_id: None,
+                foreign: None,
             });
         }
         let journal: Journal = settings.default_sales_journal;

@@ -1,0 +1,290 @@
+{
+  "period": {
+    "from": "2025-07-01",
+    "to": "2026-06-30"
+  },
+  "sections": [
+    {
+      "accountId": 1,
+      "accountName": "Caisse CI",
+      "accountNumber": "1000",
+      "accountType": "Asset",
+      "active": true,
+      "balanceSide": "debit",
+      "closing": "597.2000",
+      "fiscalYearBreaks": [],
+      "lineCount": 4,
+      "lines": [
+        {
+          "counterpart": [
+            "3000"
+          ],
+          "credit": "0.0000",
+          "debit": "1234.5500",
+          "description": "Vente août",
+          "entryDate": "2025-08-03",
+          "entryId": 2,
+          "entryNumber": 2,
+          "fiscalYearId": 1,
+          "fiscalYearName": "FY 2025",
+          "journal": "Ventes",
+          "letteringCode": null,
+          "lineId": 3,
+          "runningBalance": "1184.5500"
+        },
+        {
+          "counterpart": [
+            "3000"
+          ],
+          "credit": "0.0000",
+          "debit": "990.0000",
+          "description": "Vente février",
+          "entryDate": "2026-02-14",
+          "entryId": 4,
+          "entryNumber": 1,
+          "fiscalYearId": 2,
+          "fiscalYearName": "FY 2026",
+          "journal": "Ventes",
+          "letteringCode": null,
+          "lineId": 7,
+          "runningBalance": "2174.5500"
+        },
+        {
+          "counterpart": [
+            "1100"
+          ],
+          "credit": "1500.0000",
+          "debit": "0.0000",
+          "description": "Versement",
+          "entryDate": "2026-03-01",
+          "entryId": 5,
+          "entryNumber": 2,
+          "fiscalYearId": 2,
+          "fiscalYearName": "FY 2026",
+          "journal": "Banque",
+          "letteringCode": null,
+          "lineId": 10,
+          "runningBalance": "674.5500"
+        },
+        {
+          "counterpart": [
+            "4000"
+          ],
+          "credit": "77.3500",
+          "debit": "0.0000",
+          "description": "Fournitures",
+          "entryDate": "2026-05-31",
+          "entryId": 6,
+          "entryNumber": 3,
+          "fiscalYearId": 2,
+          "fiscalYearName": "FY 2026",
+          "journal": "Achats",
+          "letteringCode": null,
+          "lineId": 12,
+          "runningBalance": "597.2000"
+        }
+      ],
+      "opening": "-50.0000",
+      "totalCredit": "1577.3500",
+      "totalDebit": "2224.5500",
+      "unnaturalBalance": false
+    },
+    {
+      "accountId": 6,
+      "accountName": "Ancienne caisse",
+      "accountNumber": "1010",
+      "accountType": "Asset",
+      "active": false,
+      "balanceSide": "debit",
+      "closing": "50.0000",
+      "fiscalYearBreaks": [],
+      "lineCount": 0,
+      "lines": [],
+      "opening": "50.0000",
+      "totalCredit": "0.0000",
+      "totalDebit": "0.0000",
+      "unnaturalBalance": false
+    },
+    {
+      "accountId": 2,
+      "accountName": "Banque CI",
+      "accountNumber": "1100",
+      "accountType": "Asset",
+      "active": true,
+      "balanceSide": "debit",
+      "closing": "11079.9000",
+      "fiscalYearBreaks": [],
+      "lineCount": 2,
+      "lines": [
+        {
+          "counterpart": [
+            "4000"
+          ],
+          "credit": "420.1000",
+          "debit": "0.0000",
+          "description": "Loyer",
+          "entryDate": "2025-11-20",
+          "entryId": 3,
+          "entryNumber": 3,
+          "fiscalYearId": 1,
+          "fiscalYearName": "FY 2025",
+          "journal": "Achats",
+          "letteringCode": null,
+          "lineId": 6,
+          "runningBalance": "9579.9000"
+        },
+        {
+          "counterpart": [
+            "1000"
+          ],
+          "credit": "0.0000",
+          "debit": "1500.0000",
+          "description": "Versement",
+          "entryDate": "2026-03-01",
+          "entryId": 5,
+          "entryNumber": 2,
+          "fiscalYearId": 2,
+          "fiscalYearName": "FY 2026",
+          "journal": "Banque",
+          "letteringCode": null,
+          "lineId": 9,
+          "runningBalance": "11079.9000"
+        }
+      ],
+      "opening": "10000.0000",
+      "totalCredit": "420.1000",
+      "totalDebit": "1500.0000",
+      "unnaturalBalance": false
+    },
+    {
+      "accountId": 3,
+      "accountName": "Capital CI",
+      "accountNumber": "2000",
+      "accountType": "Liability",
+      "active": true,
+      "balanceSide": "credit",
+      "closing": "10000.0000",
+      "fiscalYearBreaks": [],
+      "lineCount": 0,
+      "lines": [],
+      "opening": "10000.0000",
+      "totalCredit": "0.0000",
+      "totalDebit": "0.0000",
+      "unnaturalBalance": false
+    },
+    {
+      "accountId": 4,
+      "accountName": "Ventes CI",
+      "accountNumber": "3000",
+      "accountType": "Revenue",
+      "active": true,
+      "balanceSide": "credit",
+      "closing": "990.0000",
+      "fiscalYearBreaks": [
+        {
+          "closingBalance": "1234.5500",
+          "closingFiscalYearId": 1,
+          "date": "2026-02-14"
+        }
+      ],
+      "lineCount": 2,
+      "lines": [
+        {
+          "counterpart": [
+            "1000"
+          ],
+          "credit": "1234.5500",
+          "debit": "0.0000",
+          "description": "Vente août",
+          "entryDate": "2025-08-03",
+          "entryId": 2,
+          "entryNumber": 2,
+          "fiscalYearId": 1,
+          "fiscalYearName": "FY 2025",
+          "journal": "Ventes",
+          "letteringCode": null,
+          "lineId": 4,
+          "runningBalance": "1234.5500"
+        },
+        {
+          "counterpart": [
+            "1000"
+          ],
+          "credit": "990.0000",
+          "debit": "0.0000",
+          "description": "Vente février",
+          "entryDate": "2026-02-14",
+          "entryId": 4,
+          "entryNumber": 1,
+          "fiscalYearId": 2,
+          "fiscalYearName": "FY 2026",
+          "journal": "Ventes",
+          "letteringCode": null,
+          "lineId": 8,
+          "runningBalance": "990.0000"
+        }
+      ],
+      "opening": "0.0000",
+      "totalCredit": "2224.5500",
+      "totalDebit": "0.0000",
+      "unnaturalBalance": false
+    },
+    {
+      "accountId": 5,
+      "accountName": "Charges CI",
+      "accountNumber": "4000",
+      "accountType": "Expense",
+      "active": true,
+      "balanceSide": "debit",
+      "closing": "77.3500",
+      "fiscalYearBreaks": [
+        {
+          "closingBalance": "420.1000",
+          "closingFiscalYearId": 1,
+          "date": "2026-05-31"
+        }
+      ],
+      "lineCount": 2,
+      "lines": [
+        {
+          "counterpart": [
+            "1100"
+          ],
+          "credit": "0.0000",
+          "debit": "420.1000",
+          "description": "Loyer",
+          "entryDate": "2025-11-20",
+          "entryId": 3,
+          "entryNumber": 3,
+          "fiscalYearId": 1,
+          "fiscalYearName": "FY 2025",
+          "journal": "Achats",
+          "letteringCode": null,
+          "lineId": 5,
+          "runningBalance": "420.1000"
+        },
+        {
+          "counterpart": [
+            "1000"
+          ],
+          "credit": "0.0000",
+          "debit": "77.3500",
+          "description": "Fournitures",
+          "entryDate": "2026-05-31",
+          "entryId": 6,
+          "entryNumber": 3,
+          "fiscalYearId": 2,
+          "fiscalYearName": "FY 2026",
+          "journal": "Achats",
+          "letteringCode": null,
+          "lineId": 11,
+          "runningBalance": "77.3500"
+        }
+      ],
+      "opening": "0.0000",
+      "totalCredit": "0.0000",
+      "totalDebit": "497.4500",
+      "unnaturalBalance": false
+    }
+  ]
+}
