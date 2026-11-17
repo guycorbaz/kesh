@@ -21,6 +21,8 @@
 		validateDescriptionTemplate,
 		validateFormatTemplate,
 	} from '$lib/features/invoices/invoice-number-format';
+	import { readGroupMax } from '$lib/features/invoices/group-settlement-max';
+	import { amountEntryMessage } from '$lib/features/journal-entries/amount-entry-message';
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
@@ -66,6 +68,34 @@
 	let roundTo5 = $state(true);
 	// Story 25-4-e : vide = aucun seuil.
 	let minimumAmount = $state('');
+	// Story 43-7 (#823) : l'écart admis dans un règlement de plusieurs factures.
+	let groupMax = $state('5.00');
+	let groupMaxReading = $derived(readGroupMax(groupMax));
+	/** Le refus du champ, en mots ; `''` quand la saisie est lisible. */
+	let groupMaxError = $derived.by(() => {
+		const r = groupMaxReading;
+		if (r.ok) return '';
+		switch (r.problem) {
+			case 'ambiguous':
+			case 'unreadable':
+				return amountEntryMessage(r.problem, 2);
+			case 'scale':
+				return i18nMsg(
+					'settings-invoicing-group-max-scale',
+					"L'écart admis se règle au centime : deux décimales au plus.",
+				);
+			case 'range':
+				return i18nMsg(
+					'settings-invoicing-group-max-range',
+					"L'écart admis ne peut pas dépasser 100.00.",
+				);
+			default:
+				return i18nMsg(
+					'settings-invoicing-group-max-required',
+					"Indiquez l'écart admis (0 pour n'en admettre aucun).",
+				);
+		}
+	});
 	// Story 25-4-d1 : les comptes des natures d'écart soldé.
 	let writeOff = $state<Record<WriteOffKey, number | null>>({
 		discount: null,
@@ -211,6 +241,7 @@
 			roundingId = s.defaultRoundingAccountId;
 			roundTo5 = s.roundTo5Centimes;
 			minimumAmount = s.minimumInvoiceAmount ?? '';
+			groupMax = s.groupSettlementMaxDifference;
 			writeOff = writeOffFrom(s);
 			salesJournal = s.defaultSalesJournal;
 			version = s.version;
@@ -259,6 +290,11 @@
 			);
 			return;
 		}
+		const groupMaxRead = groupMaxReading;
+		if (!groupMaxRead.ok) {
+			notifyError(groupMaxError);
+			return;
+		}
 		submitting = true;
 		try {
 			const updated = await updateInvoiceSettings({
@@ -277,6 +313,7 @@
 				defaultDiscountAccountId: writeOff.discount,
 				defaultBankFeesAccountId: writeOff.bankFees,
 				defaultBadDebtAccountId: writeOff.badDebt,
+				groupSettlementMaxDifference: groupMaxRead.payload,
 				defaultSalesJournal: salesJournal,
 				journalEntryDescriptionTemplate: descriptionTemplate,
 				version,
@@ -305,6 +342,7 @@
 						roundingId = fresh.defaultRoundingAccountId;
 						roundTo5 = fresh.roundTo5Centimes;
 						minimumAmount = fresh.minimumInvoiceAmount ?? '';
+						groupMax = fresh.groupSettlementMaxDifference;
 						writeOff = writeOffFrom(fresh);
 						salesJournal = fresh.defaultSalesJournal;
 						version = fresh.version;
@@ -695,11 +733,58 @@
 			</div>
 		</section>
 
+		<section class="space-y-3 rounded-lg border border-border bg-white p-6 shadow-sm">
+			<h2 class="text-lg font-semibold">
+				{i18nMsg('settings-invoicing-group-max-title', 'Règlement de plusieurs factures')}
+			</h2>
+			<div>
+				<label class="mb-1 block text-sm font-medium" for="{uid}-group-max">
+					{i18nMsg(
+						'settings-invoicing-group-max-label',
+						'Écart admis pour un règlement de plusieurs factures (moins-payé ou trop-perçu)',
+					)}
+				</label>
+				<input
+					id="{uid}-group-max"
+					type="text"
+					inputmode="decimal"
+					data-testid="settings-group-max-difference"
+					class="w-full rounded-md border bg-white px-3 py-2 text-sm"
+					class:border-border={!groupMaxError}
+					class:border-destructive={!!groupMaxError}
+					aria-invalid={!!groupMaxError}
+					aria-describedby={groupMaxError ? `${uid}-group-max-error` : `${uid}-group-max-hint`}
+					bind:value={groupMax}
+				/>
+				{#if groupMaxError}
+					<p
+						id="{uid}-group-max-error"
+						class="mt-1 text-xs text-destructive"
+						role="alert"
+						data-testid="settings-group-max-error"
+					>
+						{groupMaxError}
+					</p>
+				{/if}
+				<p
+					id="{uid}-group-max-hint"
+					class="mt-1 text-xs text-text-muted"
+					data-testid="settings-group-max-hint"
+				>
+					{i18nMsg(
+						'settings-invoicing-group-max-hint',
+						"0 : aucun écart admis, seul l'arrondi sous le centime passe ; au plus 100.00. Au-delà de ce montant, Kesh refuse de régler plusieurs factures d'un seul versement.",
+					)}
+				</p>
+			</div>
+		</section>
+
 		<div class="flex justify-end">
 			<Button
 				type="submit"
 				data-testid="settings-invoicing-save"
 				disabled={submitting ||
+					!groupMaxReading.ok ||
 					formatBlocked ||
 					creditNoteFormatBlocked ||
 					!supplierFormatValidation.ok ||

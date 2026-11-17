@@ -62,6 +62,10 @@ pub struct InvoiceSettingsResponse {
     pub default_discount_account_id: Option<i64>,
     pub default_bank_fees_account_id: Option<i64>,
     pub default_bad_debt_account_id: Option<i64>,
+    /// Story 43-7 (#823) — plafond de l'écart d'un règlement groupé, en chaîne à
+    /// **deux décimales** (la colonne en porte quatre : une valeur posée par SQL
+    /// direct s'affiche arrondie au centime ; le `PUT` n'écrit qu'au centime).
+    pub group_settlement_max_difference: String,
     pub version: i32,
 }
 
@@ -86,6 +90,10 @@ impl From<CompanyInvoiceSettings> for InvoiceSettingsResponse {
             default_discount_account_id: s.default_discount_account_id,
             default_bank_fees_account_id: s.default_bank_fees_account_id,
             default_bad_debt_account_id: s.default_bad_debt_account_id,
+            group_settlement_max_difference: format!(
+                "{:.2}",
+                s.group_settlement_max_difference.round_dp(2)
+            ),
             version: s.version,
         }
     }
@@ -144,12 +152,21 @@ pub struct UpdateInvoiceSettingsRequest {
     pub default_bank_fees_account_id: Option<Option<i64>>,
     #[serde(default, deserialize_with = "crate::helpers::double_option")]
     pub default_bad_debt_account_id: Option<Option<i64>>,
+    /// Story 43-7 (#823) — plafond de l'écart d'un règlement groupé. **Absent :
+    /// préservé** (patron #216) ; non nul, de 0 à 100.00, au centime.
+    #[serde(default)]
+    pub group_settlement_max_difference: Option<rust_decimal::Decimal>,
     pub version: i32,
 }
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/// Borne haute du plafond de l'écart d'un règlement groupé (Story 43-7) : 100.00,
+/// celle de la `CHECK` de la colonne.
+const GROUP_SETTLEMENT_MAX_DIFFERENCE_CEILING: rust_decimal::Decimal =
+    rust_decimal::Decimal::from_parts(100, 0, 0, false, 0);
 
 fn parse_journal(raw: &str) -> Result<Journal, AppError> {
     raw.parse::<Journal>()
@@ -496,6 +513,26 @@ pub async fn update_invoice_settings(
         ));
     }
 
+    // Story 43-7 (#823) — le plafond de l'écart d'un règlement groupé : de 0 à
+    // 100.00, au centime (la `CHECK` de la colonne dit 0 à 100). Absent : préservé,
+    // sans contrôle (une valeur posée par SQL à quatre décimales ne bloque rien).
+    let group_settlement_max_difference = match req.group_settlement_max_difference {
+        None => current.group_settlement_max_difference,
+        Some(max) => {
+            if max < rust_decimal::Decimal::ZERO
+                || max > GROUP_SETTLEMENT_MAX_DIFFERENCE_CEILING
+                || !crate::routes::limits::scale_within(&max.normalize(), 2)
+            {
+                return Err(AppError::Validation(
+                    "Écart admis pour un règlement de plusieurs factures : \
+                     entre 0 et 100.00, au centime."
+                        .into(),
+                ));
+            }
+            max
+        }
+    };
+
     // 5. Persister.
     let update = CompanyInvoiceSettingsUpdate {
         invoice_number_format: req.invoice_number_format,
@@ -518,6 +555,7 @@ pub async fn update_invoice_settings(
         default_discount_account_id,
         default_bank_fees_account_id,
         default_bad_debt_account_id,
+        group_settlement_max_difference,
     };
     let settings = kesh_db::retry::retry_on_deadlock("company_invoice_settings::update", || {
         company_invoice_settings::update(

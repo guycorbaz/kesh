@@ -70,7 +70,7 @@ pub struct CompanyInvoiceSettings {
     /// Entre 0 et 100 (`chk_company_invoice_settings_group_max`), 5.00 par
     /// défaut. Lu **au moment du geste** par
     /// [`crate::repositories::company_invoice_settings::group_settlement_max_difference`] ;
-    /// modifié par la Story 43-7.
+    /// écrit par la Story 43-7 (`PUT /company/invoice-settings`).
     pub group_settlement_max_difference: Decimal,
     pub version: i32,
     pub created_at: NaiveDateTime,
@@ -107,4 +107,7 @@ pub struct CompanyInvoiceSettingsUpdate {
     pub default_discount_account_id: Option<i64>,
     pub default_bank_fees_account_id: Option<i64>,
     pub default_bad_debt_account_id: Option<i64>,
+    /// Story 43-7 (#823) — le plafond de l'écart d'un règlement groupé : la valeur
+    /// **résolue** (la route préserve l'absent). Entre 0 et 100, au centime.
+    pub group_settlement_max_difference: Decimal,
 }

@@ -1037,7 +1037,10 @@ const ATTENDU = {
 	// `common-amount-unreadable` (`journal-entries/amount-entry-message.ts`),
 	// `supplier-invoices-err-line-unit-price-ambiguous` et `-unreadable`
 	// (`SupplierInvoiceForm.svelte`) : quatre littéraux.
-	sitesTotal: 3086,
+	// Story 43-7 (#823) : **3086 → 3092**, relevé par la garde (« expected 3092 to be 3086 »,
+	// `kesh-gate-logs/e437/vitest-releve.log`) — six littéraux de l'écran *Administration →
+	// Facturation* : `settings-invoicing-group-max-{title,label,hint,scale,range,required}`.
+	sitesTotal: 3092,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

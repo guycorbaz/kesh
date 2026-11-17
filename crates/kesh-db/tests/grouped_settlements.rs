@@ -382,9 +382,9 @@ async fn empreinte(pool: &MySqlPool) -> Vec<i64> {
         "SELECT COUNT(*) FROM invoice_settlements",
         "SELECT COUNT(*) FROM audit_log",
         "SELECT COUNT(*) FROM journal_entry_lines WHERE lettering_key IS NOT NULL",
-        "SELECT COALESCE(SUM(version), 0) FROM invoices",
+        "SELECT CAST(COALESCE(SUM(version), 0) AS SIGNED) FROM invoices",
         "SELECT COUNT(*) FROM invoices WHERE paid_at IS NOT NULL",
-        "SELECT COALESCE(SUM(version), 0) FROM bank_transactions",
+        "SELECT CAST(COALESCE(SUM(version), 0) AS SIGNED) FROM bank_transactions",
         "SELECT COUNT(*) FROM bank_transactions WHERE matched_entry_id IS NOT NULL",
     ] {
         out.push(
@@ -1465,4 +1465,109 @@ async fn the_retired_backfill_abstains_on_a_group_that_sync_letters(pool: MySqlP
     }
     tx.commit().await.unwrap();
     assert_eq!(lettrees(pool.clone(), lignes).await, 2);
+}
+
+// ---------------------------------------------------------------------------
+// Story 43-7 (#823) — le plafond réglé par l'administrateur est lu au geste
+// ---------------------------------------------------------------------------
+
+/// AC5 — le plafond est posé par le chemin d'écriture des réglages
+/// (`company_invoice_settings::update`, celui du `PUT`), puis le geste le lit :
+/// à 1.00, un écart de −1.01 **et** de +1.01 est refusé (`DifferenceTooLarge`,
+/// `max_difference = 1.00`), un écart de −1.00 et de +1.00 est accepté ; le
+/// plafond se juge d'abord, donc le refus tient aussi sans compte d'écart.
+#[sqlx::test(migrations = "./test-schema")]
+async fn the_ceiling_set_through_the_settings_is_read_by_the_gesture(pool: MySqlPool) {
+    use kesh_db::entities::CompanyInvoiceSettingsUpdate;
+    use kesh_db::repositories::company_invoice_settings;
+
+    let m = monter(&pool).await;
+    let ecart = m.s.accounts["4000"];
+    let s = company_invoice_settings::get_or_create_default(&pool, m.s.company_id)
+        .await
+        .unwrap();
+    let saved = company_invoice_settings::update(
+        &pool,
+        m.s.company_id,
+        s.version,
+        m.s.admin_user_id,
+        CompanyInvoiceSettingsUpdate {
+            invoice_number_format: s.invoice_number_format.clone(),
+            default_receivable_account_id: s.default_receivable_account_id,
+            default_revenue_account_id: s.default_revenue_account_id,
+            default_vat_payable_account_id: s.default_vat_payable_account_id,
+            default_vat_recoverable_account_id: s.default_vat_recoverable_account_id,
+            default_vat_decompte_account_id: s.default_vat_decompte_account_id,
+            default_sales_journal: s.default_sales_journal,
+            journal_entry_description_template: s.journal_entry_description_template.clone(),
+            credit_note_number_format: s.credit_note_number_format.clone(),
+            supplier_internal_number_format: s.supplier_internal_number_format.clone(),
+            default_payable_account_id: s.default_payable_account_id,
+            default_rounding_account_id: s.default_rounding_account_id,
+            round_to_5_centimes: s.round_to_5_centimes,
+            minimum_invoice_amount: s.minimum_invoice_amount,
+            default_discount_account_id: s.default_discount_account_id,
+            default_bank_fees_account_id: s.default_bank_fees_account_id,
+            default_bad_debt_account_id: s.default_bad_debt_account_id,
+            group_settlement_max_difference: dec!(1.00),
+        },
+    )
+    .await
+    .expect("le plafond seul change : écrit");
+    assert_eq!(saved.version, s.version + 1);
+    assert_eq!(saved.group_settlement_max_difference, dec!(1.00));
+
+    let a = facture(&pool, &m, "P-1", dec!(100.00), jour(6, 1), None).await;
+    let b = facture(&pool, &m, "P-2", dec!(200.00), jour(6, 1), None).await;
+    // Refusé, avec compte comme sans compte (le plafond se juge d'abord).
+    for (paye, gap) in [(dec!(298.99), dec!(-1.01)), (dec!(301.01), dec!(1.01))] {
+        let bt = transaction(&pool, &m, paye, jour(6, 15)).await;
+        for compte in [Some(ecart), None] {
+            let avant = empreinte(&pool).await;
+            let refus = regler(&pool, &m, bt, &[a, b], compte)
+                .await
+                .expect_err("au-delà du plafond");
+            assert_eq!(
+                refus,
+                GroupRefusal::DifferenceTooLarge {
+                    transaction_amount: paye,
+                    sum_applied: dec!(300.00),
+                    gap,
+                    max_difference: dec!(1.00),
+                },
+                "{paye} avec compte {compte:?}"
+            );
+            assert_eq!(empreinte(&pool).await, avant, "rien d'écrit");
+        }
+    }
+    // Accepté au plafond, dans les deux sens, sur le compte choisi.
+    for (n, (paye, gap)) in [(dec!(299.00), dec!(-1.00)), (dec!(301.00), dec!(1.00))]
+        .into_iter()
+        .enumerate()
+    {
+        let c = facture(
+            &pool,
+            &m,
+            &format!("P-{}", 3 + 2 * n),
+            dec!(100.00),
+            jour(6, 1),
+            None,
+        )
+        .await;
+        let d = facture(
+            &pool,
+            &m,
+            &format!("P-{}", 4 + 2 * n),
+            dec!(200.00),
+            jour(6, 1),
+            None,
+        )
+        .await;
+        let bt = transaction(&pool, &m, paye, jour(6, 15)).await;
+        let done = regler(&pool, &m, bt, &[c, d], Some(ecart))
+            .await
+            .unwrap_or_else(|e| panic!("{paye} au plafond : {e:?}"));
+        assert_eq!(done.decomposition.gap, gap);
+        assert_eq!(done.difference_account_id, Some(ecart));
+    }
 }

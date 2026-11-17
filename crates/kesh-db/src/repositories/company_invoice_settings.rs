@@ -157,6 +157,7 @@ pub fn settings_snapshot_json(s: &CompanyInvoiceSettings) -> serde_json::Value {
         "defaultDiscountAccountId": s.default_discount_account_id,
         "defaultBankFeesAccountId": s.default_bank_fees_account_id,
         "defaultBadDebtAccountId": s.default_bad_debt_account_id,
+        "groupSettlementMaxDifference": s.group_settlement_max_difference,
         "version": s.version,
     })
 }
@@ -352,6 +353,9 @@ fn is_no_op_change(
         && before.default_discount_account_id == changes.default_discount_account_id
         && before.default_bank_fees_account_id == changes.default_bank_fees_account_id
         && before.default_bad_debt_account_id == changes.default_bad_debt_account_id
+        // Story 43-7 (#823) : sans cette ligne, un `PUT` qui ne change QUE le
+        // plafond serait jugé « sans changement » (200, rien d'écrit).
+        && before.group_settlement_max_difference == changes.group_settlement_max_difference
 }
 
 /// Met à jour la config (tous les champs) avec verrou optimiste et audit.
@@ -454,7 +458,8 @@ pub async fn update(
              default_payable_account_id = ?, default_rounding_account_id = ?, \
              round_to_5_centimes = ?, minimum_invoice_amount = ?, \
              default_discount_account_id = ?, default_bank_fees_account_id = ?, \
-             default_bad_debt_account_id = ?, version = version + 1 \
+             default_bad_debt_account_id = ?, group_settlement_max_difference = ?, \
+             version = version + 1 \
          WHERE company_id = ? AND version = ?",
     )
     .bind(&changes.invoice_number_format)
@@ -474,6 +479,7 @@ pub async fn update(
     .bind(changes.default_discount_account_id)
     .bind(changes.default_bank_fees_account_id)
     .bind(changes.default_bad_debt_account_id)
+    .bind(changes.group_settlement_max_difference)
     .bind(company_id)
     .bind(expected_version)
     .execute(&mut *tx)

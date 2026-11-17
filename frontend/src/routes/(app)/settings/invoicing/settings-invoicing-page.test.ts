@@ -90,6 +90,7 @@ function settings(overrides: Partial<InvoiceSettingsResponse> = {}): InvoiceSett
 		defaultDiscountAccountId: null,
 		defaultBankFeesAccountId: null,
 		defaultBadDebtAccountId: null,
+		groupSettlementMaxDifference: '5.00',
 		version: 3,
 		...overrides,
 	};
@@ -519,5 +520,59 @@ describe('Administration → Facturation — comptes liés à un compte bancaire
 		await waitFor(() => expect(receivable.value).toBe('10'));
 		expect(optionValues(receivable)).toContain('1');
 		expect(optionValues(payable)).toContain('11');
+	});
+});
+
+// Story 43-7 (#823) — l'écart admis d'un règlement de plusieurs factures.
+describe('Administration → Facturation — écart admis d’un règlement groupé', () => {
+	beforeEach(() => {
+		getInvoiceSettingsMock.mockResolvedValue(settings());
+		updateInvoiceSettingsMock.mockResolvedValue(settings());
+	});
+
+	it('charge la valeur à deux décimales et l’envoie à l’enregistrement (mutation : champ non envoyé)', async () => {
+		getInvoiceSettingsMock.mockResolvedValue(settings({ groupSettlementMaxDifference: '2.50' }));
+		const { findByTestId, container } = render(Page);
+		const input = (await findByTestId('settings-group-max-difference')) as HTMLInputElement;
+		await waitFor(() => expect(input.value).toBe('2.50'));
+		await fireEvent.input(input, { target: { value: '1,00' } });
+		await fireEvent.submit(container.querySelector('form')!);
+		await waitFor(() => expect(updateInvoiceSettingsMock).toHaveBeenCalledTimes(1));
+		expect(updateInvoiceSettingsMock.mock.calls[0][0]).toMatchObject({
+			groupSettlementMaxDifference: '1.00',
+		});
+	});
+
+	it.each([
+		['1.250', 'Montant ambigu'],
+		['1.005', 'Montant ambigu'],
+		['100.01', 'ne peut pas dépasser 100.00'],
+		['1.2345', 'deux décimales au plus'],
+		['', 'Indiquez l'],
+		['abc', 'Montant illisible'],
+	])('« %s » : refus affiché, bouton désactivé, aucun appel', async (raw, message) => {
+		const { findByTestId, container } = render(Page);
+		const input = (await findByTestId('settings-group-max-difference')) as HTMLInputElement;
+		await waitFor(() => expect(input.value).toBe('5.00'));
+		await fireEvent.input(input, { target: { value: raw } });
+		const error = await findByTestId('settings-group-max-error');
+		expect(error.textContent).toContain(message);
+		expect(input.getAttribute('aria-invalid')).toBe('true');
+		expect((await findByTestId('settings-invoicing-save')).hasAttribute('disabled')).toBe(true);
+		await fireEvent.submit(container.querySelector('form')!);
+		expect(updateInvoiceSettingsMock).not.toHaveBeenCalled();
+	});
+
+	it('0 est une valeur valide : aucun écart admis', async () => {
+		const { findByTestId, container, queryByTestId } = render(Page);
+		const input = (await findByTestId('settings-group-max-difference')) as HTMLInputElement;
+		await waitFor(() => expect(input.value).toBe('5.00'));
+		await fireEvent.input(input, { target: { value: '0' } });
+		expect(queryByTestId('settings-group-max-error')).toBeNull();
+		await fireEvent.submit(container.querySelector('form')!);
+		await waitFor(() => expect(updateInvoiceSettingsMock).toHaveBeenCalledTimes(1));
+		expect(updateInvoiceSettingsMock.mock.calls[0][0]).toMatchObject({
+			groupSettlementMaxDifference: '0',
+		});
 	});
 });
