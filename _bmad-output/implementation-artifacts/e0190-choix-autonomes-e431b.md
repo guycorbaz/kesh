@@ -45,7 +45,10 @@ sans erreur, dès que le groupe n'avait pas d'écart d'origine (`Some(dette)` au
   lues sur l'écriture ; et parce que c'est la seule trace qui garde la ligne d'une facture détachée — le gel « paiement
   détaché » s'appuie déjà sur elle. Les deux sources sont des traces d'audit : celle retenue est la plus étroite.
 - **Angle mort** : une facture détachée par un code antérieur à la 43-1b n'aurait pas de ligne à sa trace — sans
-  objet, aucun groupe n'existe avant elle ; si une trace manque, la vue rend `Invariant`, jamais une valeur fausse.
+  objet, aucun groupe n'existe avant elle. *(Annoté à la revue P2, LOW-1 : la phrase « si une trace manque, la vue
+  rend `Invariant` » était **fausse** pour la dernière facture détachée d'un groupe sans écart — la forme restait
+  cohérente et la vue rendait sa dette comme compte d'écart, constaté rouge par
+  `a_missing_detachment_trace_makes_the_view_an_invariant`. Elle est vraie depuis C-e431b-15.)*
 - Tests : `a_detached_invoice_on_another_payable_account_leaves_no_false_gap` (deux comptes de dette, sans écart et
   avec écart, la dernière détachée), `detaching_the_first_or_a_middle_invoice_keeps_the_view_right`,
   `a_detached_invoice_leaves_the_group_and_the_rest_unreconciles`. Le bras client est inchangé.
@@ -117,4 +120,36 @@ exemplaires (client et fournisseur) ; leur extraction toucherait l'inventaire du
 `bank_ledger_account_id`, lu par l'étape (b) en `FOR UPDATE` ; le paiement groupé l'emploie au lieu de le relire sur
 l'instantané. Le champ est additif : `accept_one_supplier_invoice` et les tests de `payment_batches` ne lisent que
 `invoice`. `ensure_open_in_tx` reste (C-e431b-6), commenté comme inerte, sauf un refus à tort d'un compte rouvert
-après la naissance de l'instantané.
+après la naissance de l'instantané. *(Revue P2, LOW-3 : tenu par `the_bank_ledger_is_the_one_read_under_lock`,
+mutation M10.)*
+
+## Revue P2 (2026-11-18) — décisions de l'orchestrateur appliquées
+
+**C-e431b-15 — Le nombre de lignes de dette recoupé** (LOW-1) : la vue d'un groupe fournisseur exige autant de lignes
+de dette nommées (membres et détachées) que de factures soldées par le paiement, nombre lu sur son entrée
+`reconciliation.accepted` (`details.supplier_invoices`, écrite dans la même transaction que l'écriture,
+`group_size_at_payment`). C'est un **recoupement**, non une source : le compte d'écart se relit toujours sur
+l'écriture (C-e431b-4). Entrée manquante ou multiple, nombre différent : `Invariant`. Autre option (proposée par la
+revue) : recouper le compte d'écart rendu avec `difference_account_id` de la même entrée — écartée, le nombre de
+factures ferme le cas sans comparer de valeur.
+
+**C-e431b-16 — Les traces de détachement des seules factures annulées** (LOW-6) : `detached_debt_lines` ajoute
+`si.status = 'cancelled'`, le filtre de `modification_guard`. Il borne le balayage et écarte une trace étrangère
+restaurée ; une facture détachée puis repassée en brouillon ne compte plus, mais ce repassage exige l'écriture
+contre-passée — la vue ne se lit plus.
+
+**C-e431b-17 — Limite du test d'interblocage** (LOW-2, inscrite sans traitement, décision de l'orchestrateur) :
+`a_fiche_payment_between_two_invoices_does_not_deadlock` attend la requête du groupe sur les motifs
+`supplier_invoices` et `FOR UPDATE` — une requête **en cours**, non **en attente**. Sur un code fautif (sans la
+lecture de tête), la sonde peut voir le verrou bref de la première facture avant que le groupe ait pris le compte ;
+la fiche partirait alors trop tôt, prendrait le compte la première, et le test passerait sans former le cycle. Il ne
+peut donc pas passer à tort sur le code sain, mais sa preuve contre le code fautif dépend du minutage (M8 a été tuée
+à l'essai). Remède possible, non appliqué : ajouter le motif `FORCE INDEX (PRIMARY)` à la sonde (le test neuf
+`the_bank_ledger_is_the_one_read_under_lock` le fait), ou attendre l'état `LOCK WAIT` de
+`information_schema.INNODB_TRX`.
+
+**C-e431b-18 — Le test de la 43-1a adapté, renommé** (LOW-7) : `a_group_without_client_settlements_is_an_invariant`
+devient `a_malformed_supplier_group_is_an_invariant_for_the_view` ; son assertion porte sur la variante
+(`DbError::Invariant`), non plus sur un texte. La branche défensive « aucun règlement » du dé-rapprochement groupé est
+tenue par `a_group_cancel_on_an_entry_without_settlement_is_an_invariant` ; celle de `supplier_difference_account_of`
+et de `supplier_cancel_in_tx` (membres vides) reste inatteignable par la classification, écrite comme telle.

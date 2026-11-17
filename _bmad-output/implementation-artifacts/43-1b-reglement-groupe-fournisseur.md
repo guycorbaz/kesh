@@ -91,9 +91,13 @@ veux qu'au rapprochement Kesh passe **un** paiement qui solde et lettre chacune,
   et `grouped_difference_account_id` serait faux ou `None`, **sans erreur**. La 43-1b les complète :
   - `view_members` gagne le bras fournisseur : membres lus sur `supplier_invoices.settlement_journal_entry_id = écriture`
     (`kind` `supplier_invoice`, `id`, numéro affichable, montant brut = `total_amount`), par identifiant croissant ;
-  - `difference_account_of` gagne le même bras : apports = `total_amount` des membres, décomposition recalculée par
+  - `difference_account_of` gagne le même bras : ~~apports = `total_amount` des membres~~ *(remplacé au
+    développement et aux revues P1 et P2, C-e431b-4, C-e431b-15)* apports = les montants des lignes de dette **nommées**
+    — celles des membres et celles des factures détachées (trace du détachement, AC7), leur nombre recoupé avec les
+    factures du paiement —, qui doivent occuper les positions 1 à n ; décomposition recalculée par
     `group_difference(|montant|, apports, Decimal::MAX)`, ligne d'écart relue **par position** dans l'ordre des lignes
-    d'AC2 (banque, une dette par facture, arrondi si `r ≠ 0`, écart si `e ≠ 0`) ; `None` si `e = 0`.
+    d'AC2 (banque, une dette par facture, arrondi si `r ≠ 0`, écart si `e ≠ 0`) ; `None` si `e = 0` ; toute autre
+    forme, `Invariant`.
   La 43-2 (AC7, `groupedInvoices`, `differenceAccount` fournisseur) et la 43-3 (AC5, dialogue d'annulation d'un groupe
   fournisseur) en dépendent.
 - **AC7** — **Les deux sites** qui remettent `settlement_journal_entry_id` à `NULL` — `supplier_invoices.rs:2639`
@@ -156,7 +160,8 @@ Opus 5.5 (agent de développement, 2026-11-17), en autonomie ; choix au registre
   compte d'arrondi, compte d'écart, écriture sans projet d'en-tête, factures `paid` avec leur ligne à la version lue
   sous verrou, transaction rapprochée, lettrage par facture, `recheck_open_locked_in_tx`, audit.
 - **AC6, AC6 bis** : bras fournisseur de `view_members`, `difference_account_of` (bloc des dettes lu sur l'écriture,
-  C-e431b-4), `group_cancel_blocker` (tête `supplier_settlement_cancel_head` extraite, C-e431b-5) et `cancel_in_tx`
+  C-e431b-4 — *annoté le 2026-11-18 : cette forme devinée a été remplacée aux revues P1 et P2 par les lignes de dette
+  nommées et leur nombre recoupé, C-e431b-4 récrit, C-e431b-15*), `group_cancel_blocker` (tête `supplier_settlement_cancel_head` extraite, C-e431b-5) et `cancel_in_tx`
   (`supplier_cancel_in_tx`) : l'`Invariant` de C-e431a-9 est remplacé ; `Some(true)` → `ReconciliationCancelChanged`.
 - **AC7** : les deux sites emploient déjà `CLEAR_SETTLEMENT_SQL` (43-1a) ; l'audit du détachement gagne
   `settlementJournalEntryLineId` ; doc-comment du faux positif bénin sur `supplier_invoices::cancel_in_tx`.
@@ -186,6 +191,9 @@ E2 ; B-3), une douzaine de LOW. Remédiation selon les décisions de l'orchestra
 - **Rouges d'abord** (`kesh-gate-logs/e431b/p1-rouges.log`, `rouges.log`) : 8 tests neufs, écrits avant le correctif ;
   2 rouges qui confirment les MEDIUM — la vue rendait la dette de la facture détachée comme compte d'écart (`Some(9)`
   au lieu de `None`), la fiche recevait 1213 entre deux factures du groupe ; 6 verts (couverture des LOW).
+  *(Annoté à la revue P2, LOW-4 : recompté depuis la source, `git grep -c '^#\[sqlx::test'` sur
+  `grouped_settlements_supplier.rs`, 12 à `366568c61`, 18 à `b3b2800be` : **six** tests neufs, dont **deux** rouges
+  et **quatre** verts ; « 8 » et « 6 » étaient faux.)*
 - **Vue** (C-e431b-4 récrit) : les lignes de dette = celles des membres + celles des factures détachées, nommées par la
   trace du détachement (`detached_debt_lines`) ; positions 1 à n exigées, sinon `Invariant`.
 - **Verrous** (C-e431b-12) : toutes les factures verrouillées par identifiant croissant avant le compte
@@ -215,6 +223,8 @@ E2 ; B-3), une douzaine de LOW. Remédiation selon les décisions de l'orchestra
 - `crates/kesh-db/src/repositories/grouped_settlements.rs`, `supplier_invoices.rs` (modifiés)
 - `crates/kesh-db/tests/grouped_settlements_supplier.rs` (neuf)
 - `crates/kesh-db/tests/letterings_lexical.rs`, `crates/kesh-api/tests/bank_account_closed_inventory.rs` (modifiés)
+- `crates/kesh-db/tests/grouped_settlements.rs` (modifié : le test de la 43-1a adapté puis renommé,
+  `a_malformed_supplier_group_is_an_invariant_for_the_view`)
 - `_bmad-output/implementation-artifacts/e0190-choix-autonomes-e431b.md`, `…-review-prompt-p1.md` (neufs)
 - cette fiche, `sprint-status.yaml` (modifiés)
 
