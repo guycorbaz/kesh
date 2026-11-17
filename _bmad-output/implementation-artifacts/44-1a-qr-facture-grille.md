@@ -1,6 +1,6 @@
 # Story 44-1a : QR-facture — la grille SIX, *Payable by* à sa place, des largeurs mesurées, un palier de secours (#944)
 
-Status: review
+Status: done
 
 *Fiche née de la 36-12b (`36-12b-qr-facture-grille-largeurs.md`, rédigée le 2026-11-15, laissée telle quelle), reprise le
 2026-11-17 comme **première story de l'Epic 44 « QR-facture conforme »** (#944), release **0.19.0** (vendredi 2026-11-20 ;
