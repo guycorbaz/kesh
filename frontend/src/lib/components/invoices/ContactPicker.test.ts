@@ -222,6 +222,9 @@ describe('ContactPicker — Entrée (D2)', () => {
 		const { input, onSelect } = await focusPose(DUPONT);
 		await taper(input, 'Marc');
 		await laisser(100);
+		// Deux Entrées : la première ne désigne rien dans l'ancienne liste, la
+		// seconde ne choisit donc rien (gardes `searching` des règles 1 et 2).
+		expect(await entree(input)).toBe(false);
 		expect(await entree(input)).toBe(false);
 		expect(onSelect).not.toHaveBeenCalled();
 
