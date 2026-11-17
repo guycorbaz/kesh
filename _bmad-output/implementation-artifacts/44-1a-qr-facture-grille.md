@@ -435,3 +435,10 @@ fiche `36-12b-qr-facture-grille-largeurs.md` ; validation P1 `kesh-gate-logs/e44
   L2 (≥ 15 / 22 sans référence, dans le texte neuf de l'AC5), L3 (M10 : bas égal à 57,9 / 49,4 à 0,05 mm près, AC6), L4
   (M13), L5 (R1 : adresse sans rue, plusieurs lignes de rue, R4 sur une ligne), L6 (texte à l'utilisateur sans compte de
   lignes ; D4 et D8 : « si les localités tiennent chacune sur une ligne »), L7 (#1229, #1230).
+- 2026-11-17 — **Validation terminée en cinq passes** (orchestrateur). Tendance (C/H/M/L) : P1 Sonnet 0/1/5/6 → P2 Opus
+  0/0/3/7 → P3 Sonnet 0/0/2/7 → P4 ciblée Haiku 0/0/2/2 (prompt versionné `kesh-gate-logs/e44/validation-p4-ciblee-prompt.md`)
+  → P5 ciblée Haiku **0/0/0/4**. Remédiations : P1 et P3 par un agent Sonnet, P2 par un agent Sonnet, P4 par l'orchestrateur
+  (`1a6d06c06` : référence QRR et message des fixtures P3, M13b), relue par la P5. Reclassement : aucun. **LOW de la P5 laissés
+  à l'étape 0 du développement** (`kesh-gate-logs/e44/validation-p5-ciblee.md`) : LOW-A (dire « QRR » au paragraphe du
+  contre-exemple), LOW-B (seuil réel sans message K ≤ 21, formule conservatrice), LOW-D (modèle de coupe de NPA-localité à
+  confronter à `couper_ligne`) ; LOW-C traité par cette entrée. Statut : `ready-for-dev`.
