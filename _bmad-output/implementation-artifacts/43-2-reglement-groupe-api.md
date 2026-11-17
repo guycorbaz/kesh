@@ -9,7 +9,7 @@ Dev Notes, étape 0), puis après ses validations P2 et P3, et sur la **décisio
 (`kesh-gate-logs/e43/decision-difference.md`). Release **0.19.0**. **La recherche (T3 : dépôt et route) ne dépend
 d'aucun commit de la 43-1a et part tout de suite** ; le reste part du commit T3 de la 43-1a, dont le contrat est celui
 consigné dans `kesh-gate-logs/e43/t3.md` quand il existera ; se fusionne après elle. Aucune migration. Décisions : C-43-1 à
-C-43-24 (fichier d'épique), qui font foi. Validation : passe 4 à lancer.*
+C-43-26 (fichier d'épique), qui font foi. Validation : passe 4 (0/0/2/6) remédiée ; passe 5 à lancer.*
 
 **Issues** : `refs #823` ; aucun mot-clé de fermeture dans un commit.
 
@@ -114,19 +114,37 @@ refus par proposition du *Pattern batch*.
 - **D8 — Différences : décision de Guy du 2026-11-17** (C-43-16, `kesh-gate-logs/e43/decision-difference.md`) :
   fractions de centime au compte d'arrondi, sans plafond ; écart `e` (moins-payé `e < 0`, trop-perçu `e > 0`) **admis dans
   les deux sens**, pour les deux familles, sur le compte **choisi par l'utilisateur** (`differenceAccountId`, obligatoire
-  dès que `e ≠ 0`), dans la limite du plafond. Plus de refus `RECONCILIATION_OVERPAYMENT` ni `RECONCILIATION_UNDERPAYMENT`
-  pour un groupe ; le code neuf `RECONCILIATION_UNDERPAYMENT` disparaît. Aucun refus de projet (C-43-20).
-- **D9 — Compte de différence interdit, avec les refus existants** (P3, M1) — aucun code neuf :
-  - compte égal à un compte de tiers des factures (créance ou dette) → `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT`,
-    `details.role = "counterparty"` (« la contrepartie que l'utilisateur choisit », `kesh-db/src/errors.rs:1862-1888`) et
-    `claim` (`receivable` / `payable`), comme `claim_account_failed_proposal` ;
-  - compte égal au compte de la banque de la transaction → `VALIDATION_ERROR`, `reason: "counterparty_equals_bank_ledger"`
-    (`counterparty_is_bank_ledger_failed_proposal`, `routes/reconciliation.rs` près de :726) ;
-  - compte non imputable → `ACCOUNT_NOT_POSTABLE` (`non_postable_failed_proposal`, :682) ; archivé, d'une autre société
-    ou inexistant → `INACTIVE_OR_INVALID_ACCOUNTS` (`DbError::InactiveOrInvalidAccounts`) ;
-  - compte absent alors que `e ≠ 0` → `RECONCILIATION_GROUP_INVALID`, `reason: "difference_account_required"`.
-  Les rôles de `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT` restent ceux du code : `counterparty`, `rounding`,
-  `write_off_nature`, `vat_payable` ; le compte d'arrondi égal à une créance ou à la banque garde `rounding`.
+  dès que `e ≠ 0` hors arrondi automatique, D8 bis), dans la limite du plafond. Plus de refus `RECONCILIATION_OVERPAYMENT`
+  ni `RECONCILIATION_UNDERPAYMENT` pour un groupe ; le code neuf `RECONCILIATION_UNDERPAYMENT` disparaît. Aucun refus de
+  projet (C-43-20).
+- **D8 bis — Arrondi automatique (décision de l'orchestrateur, 2026-11-18 ; C-43-25)** : un écart `e` dont la valeur
+  absolue ne dépasse pas l'arrondi cumulé des restes, `|e| ≤ centime(n × 0.005)` pour `n` factures, part
+  **automatiquement au compte d'arrondi** avec les fractions de centime : aucun compte n'est demandé, et ce n'est pas une
+  « différence » au sens de Guy ; `gap` vaut alors `"0.00"` et `roundingDifference` porte `r + e`. Exemple : deux restes de
+  10.0050 payés 20.01 → `r` = +0.0100, `e` = −0.01, `|e| ≤ 0.01` → `roundingDifference` `"0.0000"` (aucune ligne d'arrondi),
+  `gap` `"0.00"`, aucun compte demandé. Au-delà du seuil, la règle de Guy (D8) s'applique au `e` entier. Le calcul est celui
+  de `group_difference` (43-1a, à transmettre : `t3.md`).
+- **D9 — Compte de différence interdit, avec les refus existants** (P3 M1, P4 M2) — aucun code neuf ; **ordre de la
+  contrepartie choisie** (`is_bank_ledger`, doc près de :709-713 ; flux ventilé :3663-3711 et règle :4100-4139) :
+  1. compte égal au compte de la banque de la transaction → `VALIDATION_ERROR`, `reason: "counterparty_equals_bank_ledger"`
+     (`counterparty_is_bank_ledger_failed_proposal`, près de :726) — d'abord, pour ne pas inviter à agir sur la mauvaise
+     chose ;
+  2. compte inexistant, archivé ou d'une autre société → **`ACCOUNT_NOT_FOUND`**, `details { missingAccountIds: [id] }`
+     (convention des flux ventilé et règle, libellé existant « Un compte de contrepartie est introuvable ou archivé ») —
+     plus d'`INACTIVE_OR_INVALID_ACCOUNTS` ici ;
+  3. compte non imputable → `ACCOUNT_NOT_POSTABLE` (`non_postable_failed_proposal`, :682, qui exige le **numéro** du compte :
+     porté par la variante, ou lu par la route) ;
+  4. compte égal à un compte de tiers **des factures du groupe** (leurs comptes de créance ou de dette ; un compte collectif
+     d'une autre famille, 2000 pour un groupe client par exemple, n'est pas interdit — L5) → `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT`,
+     `role: "counterparty"`, `claim`, **sans `bankAccountId`** ;
+  - compte absent alors qu'un compte est requis → `RECONCILIATION_GROUP_INVALID`, `reason: "difference_account_required"`.
+  **Discriminant des deux causes de `role: "counterparty"`** (P4, M1) : le même code et le même rôle disent aussi « le compte
+  de créance d'une facture est le compte de la banque » (43-1a étape 5, configuration). La route les sépare **sûrement** en
+  comparant `details.accountId` au `differenceAccountId` envoyé ; `details.bankAccountId` n'est présent **que** dans le cas
+  banque. `docs/api-external.md` documente les deux. Les rôles de `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT` restent ceux du
+  code : `counterparty`, `rounding`, `write_off_nature`, `vat_payable` ; le compte d'arrondi égal à une créance ou à la banque
+  garde `rounding`. Un compte de différence qui est le compte du grand livre d'**une autre** banque est admis (seule la
+  banque de la transaction est interdite), comme pour le rapprochement manuel : phrase à `docs/api-external.md`.
 
 ## Contrat
 
@@ -163,10 +181,11 @@ l'ordre : transaction inexistante et une seule facture → `BANK_TRANSACTION_NOT
 ```
 
 Une seule définition pour les deux familles, celle de `group_difference` (43-1a D4 bis) : `difference = |montant| − Σ
-apports bruts` (signé, brut : négatif quand moins reçu ou moins payé, positif sinon) ; `roundingDifference` = les fractions
-de centime (signé, brut) ; **`gap` = `e`**, l'écart au centime, **signé** (négatif : moins-payé ; positif : trop-perçu ;
-`"0.00"` sans écart) — il remplace `bankFees` du contrat précédent, l'écart n'étant plus des frais d'office ;
-`differenceAccountId` = le compte choisi, `null` sans écart (C-43-16).
+apports bruts` (signé, brut : négatif quand moins reçu ou moins payé, positif sinon) ; `roundingDifference` = le montant
+passé au compte d'arrondi — les fractions de centime, plus l'écart absorbé par l'arrondi automatique (D8 bis) (signé,
+brut) ; **`gap` = `e`** au-delà de l'arrondi automatique, au centime, **signé** (négatif : la banque a reçu ou payé moins
+que les factures ; positif : plus ; `"0.00"` sans écart ou sous le seuil) — il remplace `bankFees` du contrat précédent ;
+`differenceAccountId` = le compte choisi, `null` quand `gap` est nul. Invariant : `difference = roundingDifference + gap`.
 
 `invoiceId` vaut `0` (sentinelle documentée, `docs/api-external.md:679`), `supplierInvoiceId` `null` ; pour un groupe
 fournisseur, `settledInvoices[].supplierInvoiceId`. `journalEntryId` existe déjà ; seuls `difference`, `roundingDifference`,
@@ -191,10 +210,10 @@ fournisseur) pour que l'écran la nomme (43-3).
 | `HeldByPaymentBatch` | `RECONCILIATION_SUPPLIER_PAYMENT_HOLD` | `reason: "other_invoice_in_payment_batch"`, ids |
 | `SaleEntryMalformed` | `INVOICE_SALE_ENTRY_MALFORMED` | `reason: "no_debit_line_on_sale_entry"` |
 | `BankAccountNotConfigured` / `NotFound` / `Closed` | `BANK_ACCOUNT_NOT_CONFIGURED` / `BANK_ACCOUNT_NOT_FOUND` / `BANK_ACCOUNT_CLOSED` | — |
-| `ClaimAccount { claim, role }` (compte de tiers ou d'arrondi égal à la banque, ou compte d'arrondi ou de différence égal à une créance ou une dette) | `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT` | comme `claim_account_failed_proposal` : `accountId`, `accountNumber`, `claim`, `role` ∈ rôles **réels** — `counterparty` (créance ou dette = banque ; **compte de différence choisi**, D9), `rounding` (compte d'arrondi) — `bankAccountId` |
-| `DifferenceAccountIsBankLedger` | `VALIDATION_ERROR` | `reason: "counterparty_equals_bank_ledger"` (D9) |
-| `DifferenceAccountNotPostable` | `ACCOUNT_NOT_POSTABLE` | comme `non_postable_failed_proposal` (:682) |
-| `DifferenceAccountInvalid` (archivé, autre société, inexistant) | `INACTIVE_OR_INVALID_ACCOUNTS` | `accountId` |
+| `ClaimAccount { claim, role }` (compte de tiers ou d'arrondi égal à la banque, ou compte d'arrondi ou de différence égal à un compte de tiers des factures du groupe) | `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT` | comme `claim_account_failed_proposal` : `accountId`, `accountNumber`, `claim`, `role` ∈ rôles **réels** — `counterparty` (créance ou dette = banque, **avec `bankAccountId`** ; **compte de différence choisi**, **sans `bankAccountId`**, `accountId` = `differenceAccountId` envoyé — D9), `rounding` (compte d'arrondi) |
+| `DifferenceAccountIsBankLedger` (contrôle 1) | `VALIDATION_ERROR` | `reason: "counterparty_equals_bank_ledger"` (D9) |
+| compte de différence manquant, archivé ou d'une autre société (contrôle 2) | `ACCOUNT_NOT_FOUND` | `missingAccountIds: [id]` |
+| `DifferenceAccountNotPostable` (contrôle 3) | `ACCOUNT_NOT_POSTABLE` | comme `non_postable_failed_proposal` (:682), numéro du compte compris |
 | `DifferenceAccountRequired` | `RECONCILIATION_GROUP_INVALID` | `reason: "difference_account_required"`, `gap` |
 | `PaymentBeforeInvoiceDate` | `RECONCILIATION_INVOICE_NOT_ELIGIBLE` | `reason: "payment_date_before_invoice_date"`, `tolerance_days` (comme `date_refusal_failed_proposal`, :2316-2335) **plus** `invoiceId` / `supplierInvoiceId` et `invoiceNumber`, que `group_refusal_to_failed_proposal` **ajoute** (L5) |
 | `DifferenceTooLarge` | `RECONCILIATION_GROUP_DIFFERENCE_TOO_LARGE` | `transactionAmount`, `sumApplied`, `gap`, `maxDifference` |
@@ -260,7 +279,9 @@ calcule sur la valeur absolue (L-2).
 - `GET /reconciliation/transactions/{id}` : `kind` gagne `"grouped_settlement"` ; pour un groupe, `invoiceId`,
   `supplierInvoiceId` et leurs numéros valent `null` ; champs additifs `groupedInvoices: [{ "kind": "invoice" |
   "supplier_invoice", "id", "number", "amount" }]` (vide hors groupe ; montant brut), **`gap` et `differenceAccount: { "id",
-  "number", "name" } | null`** (le compte choisi, lu sur la ligne d'écart de l'écriture), et **`cancelBlockedInvoice: { "kind",
+  "number", "name" } | null`** — **tous deux lus sur la ligne d'écart de l'écriture** (son compte, et son montant signé par
+  son côté et la famille), par le dépôt de la 43-1a (`t3.md`), **jamais** recalculés depuis les comptes désignés des
+  réglages, qui ont pu changer depuis (P4, L2) — et **`cancelBlockedInvoice: { "kind",
   "id", "number" } | null`** — la facture qui porte le premier motif d'un refus d'annulation par facture (créditée, soldée,
   lettrage figé), lue de `entry_cancel_outlook` (43-1a). Le `match` de :5869-5875 gagne le bras.
 - `POST /reconciliation/transactions/{id}/cancel` : pour un groupe, `invoiceId` et `supplierInvoiceId` valent `null` ;
@@ -277,7 +298,9 @@ calcule sur la valeur absolue (L-2).
   `LetteringLineAlreadyLettered` ne se force pas par l'API (refus exclu par construction) : **test unitaire** de
   `group_error_to_failed_proposal` sur des `DbError` construits (`LetteringLineAlreadyLettered` et `Invariant` →
   `INTERNAL_ERROR`, `Sqlx` → `DATABASE_ERROR`), comme pour une facture seule (L3). La route n'écrit aucune trace : le test lit `reconciliation.accepted` puis
-  `invoice.paid` par facture, avec l'acteur et les clés snake_case exigées de la 43-1a (`batch_size` compris).
+  `invoice.paid` par facture, avec l'acteur et les clés snake_case de la 43-1a (`t3.md`) — dont **`gap`** et
+  **`difference_account_id`** (la décision de Guy : compte choisi et montant), `rounding_difference` et `batch_size` ; plus
+  de `bank_fees` (P4, L3).
 - **AC3** — `supplier_invoice_group` (commit D4) : symétrique, `pay_supplier_invoices_in_tx`.
 - **AC4** — Lot mixte (`invoice` + groupe valide + groupe refusé) : deux `accepted`, un `failed`, dans l'ordre ; un
   `invoice_group` sur un débit refusé `RECONCILIATION_TRANSACTION_NOT_CREDIT`, `reason: "debit_transaction"` (sonde de
@@ -294,13 +317,20 @@ calcule sur la valeur absolue (L-2).
   nul → `200`, `direction: null`, liste vide ; transaction rejetée → servie comme par `get_link_candidates` (P3, M2) ;
   ordre déterminé au-delà de 500 factures (L2).
 - **AC6** — Différences (D5, D8, D9) : deux restes à 10.0050 et un virement de 20.02 → `difference` `"0.0100"`,
-  `roundingDifference` `"0.0100"`, `gap` `"0.00"`, `differenceAccountId` `null` ; virement de 20.01 sans compte →
-  `RECONCILIATION_GROUP_INVALID`, `reason: "difference_account_required"` ; avec un compte → `difference` `"0.0000"`,
-  `gap` `"-0.01"`, ligne d'écart de 0.01 sur ce compte ; **trop-perçu** de 0.40 avec un compte → accepté, `gap` `"0.40"`
-  (côté client et côté fournisseur) ; écart au-delà du réglage → `RECONCILIATION_GROUP_DIFFERENCE_TOO_LARGE` avec
-  `maxDifference` = le réglage ; compte de différence = une créance → `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT`, `role:
-  "counterparty"` ; = la banque → `VALIDATION_ERROR`, `counterparty_equals_bank_ledger` ; non imputable →
-  `ACCOUNT_NOT_POSTABLE` ; archivé → `INACTIVE_OR_INVALID_ACCOUNTS` ; `settledInvoices[].amount` au brut ; facture au projet
+  `roundingDifference` `"0.0100"`, `gap` `"0.00"`, `differenceAccountId` `null` ; virement de **20.01, sans compte →
+  accepté** par l'arrondi automatique (D8 bis) : `difference` `"0.0000"`, `roundingDifference` `"0.0000"`, `gap` `"0.00"`,
+  aucune ligne d'arrondi ni d'écart ; deux factures sans fraction (500.00 + 300.00) payées 799.60 **sans compte** →
+  `RECONCILIATION_GROUP_INVALID`, `reason: "difference_account_required"` ; avec un compte → `gap` `"-0.40"`, ligne d'écart
+  de 0.40 sur ce compte ; écart de 0.01 sur ces mêmes factures (seuil `centime(2 × 0.005)` = 0.01) → arrondi automatique,
+  0.02 → compte demandé (borne du seuil) ; **plus** de 0.40 avec un compte → accepté, `gap` `"0.40"` (côté client et côté
+  fournisseur) ; écart au-delà du réglage → `RECONCILIATION_GROUP_DIFFERENCE_TOO_LARGE` avec `maxDifference` = le réglage ;
+  **contrôles du compte, dans l'ordre de D9, un test par cause** : = la banque → `VALIDATION_ERROR`,
+  `counterparty_equals_bank_ledger` (même s'il est aussi non imputable) ; archivé, d'une autre société ou inexistant →
+  `ACCOUNT_NOT_FOUND`, `missingAccountIds` ; non imputable → `ACCOUNT_NOT_POSTABLE` avec le numéro ; = le compte de créance
+  d'une facture du groupe → `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT`, `role: "counterparty"`, **sans `bankAccountId`**,
+  `accountId` = le compte envoyé ; **et** le cas configuration (compte de créance d'une facture = la banque, 43-1a étape 5)
+  → même code et même rôle, **avec `bankAccountId`** (sonde du discriminant, P4 M1) ; = le compte 2000 pour un groupe
+  client → admis (L5) ; = le compte du grand livre d'une autre banque → admis ; `settledInvoices[].amount` au brut ; facture au projet
   archivé après coup acceptée ; paiement antérieur à une facture refusé (`payment_date_before_invoice_date`, `details` avec
   `invoiceId`, `invoiceNumber` et `tolerance_days`, L5).
 - **AC7** — Vue et annulation : groupe client (et fournisseur, D4) — `grouped_settlement`, `groupedInvoices`,
@@ -310,8 +340,9 @@ calcule sur la valeur absolue (L-2).
   en CHF passe (sonde).
 - **AC9** — `docs/api-external.md` : « Régler plusieurs factures par une transaction » (*depuis la v0.19.0*) — types,
   ordre des refus, recherche (règles de `q`, borne de date, codes, liste vide), table des codes, `differenceAccountId` et
-  ses refus, `gap` (signé), élément d'`accepted[]`, brut et centime, plafond nommé, garde CHF, champs de la vue et de
-  l'annulation, *Pattern batch*.
+  ses refus dans leur ordre, le discriminant des deux causes de `role: "counterparty"`, le compte d'une autre banque admis,
+  l'arrondi automatique et son seuil, `gap` (signé), élément d'`accepted[]`, brut et centime, plafond nommé, garde CHF,
+  champs de la vue et de l'annulation, *Pattern batch*.
 - **AC10** — Accès (L-6) : rôle Comptable+ ; clé d'API en écriture : `POST /accept` permis ; clé en lecture
   (`ApiKeyReadOnly`, `middleware/auth.rs:139-142`) : `POST /accept` refusé, `GET group-candidates` permis ; rôle
   inférieur : `403`.
@@ -321,17 +352,19 @@ calcule sur la valeur absolue (L-2).
 **Le contrat de la 43-2 avec la 43-1a est celui du commit T3 de la 43-1a**, consigné dans `kesh-gate-logs/e43/t3.md` quand
 il existera ; l'agent qui développe la 43-1a a reçu les ajustements (`WrongDirection`, `CurrencyMismatch`,
 `ClaimAccount.role` aux rôles réels, différence selon la décision de Guy : `difference_account_id`, deux sens, refus D9).
-L'étape 0 relit `t3.md` contre la table des refus ; un écart va au Change Log et à l'orchestrateur. Les points ci-dessous
-restent comme trace des exigences transmises :
+L'étape 0 relit `t3.md` contre la table des refus : **chaque** variante `DifferenceAccount*` (dont `DifferenceAccountNotUsable`
+si elle existe) doit y avoir sa ligne et son code — le `match` exhaustif le garantit à la compilation, non la justesse du
+code choisi (P4, L6) ; un écart va au Change Log et à l'orchestrateur. Les points ci-dessous restent comme trace des
+exigences transmises (les mentions de `bank_fees` y sont **périmées** : remplacées par `gap` et `difference_account_id`) :
 
 0. *(P3, L4)* le point de sauvegarde propre de la 43-1a : un `ROLLBACK TO` qui échoue en 1305 après un 1213 **remonte en
    `Err(DbError)`**, jamais avalé en refus — test `is_savepoint_lost`.
 
 1. **Forme brut/centime au commit T3** : `GroupedSettlement.difference`, `rounding_difference` et
-   `GroupedInvoiceRef.amount` en `Decimal` brut (quatre décimales), `bank_fees` au centime ; lecture du plafond réglable
+   `GroupedInvoiceRef.amount` en `Decimal` brut (quatre décimales), `gap` au centime ; lecture du plafond réglable
    (`DEFAULT_GROUP_DIFFERENCE_MAX` comme valeur par défaut seulement). *Reporté dans la 43-1a le 2026-11-17 (nuit).*
 2. **Clés d'audit** : `reconciliation.accepted` en **snake_case** alignées sur l'unitaire — `bank_transaction_id`,
-   `journal_entry_id`, `paid_amount`, `rounding_difference` (= les fractions de centime), `bank_fees`, `batch_size`, plus `proposal_type: "invoice_group"`
+   `journal_entry_id`, `paid_amount`, `rounding_difference`, `gap`, `difference_account_id`, `batch_size`, plus `proposal_type: "invoice_group"`
    et `invoices: [{ invoice_id, settled_amount }]` ; `settle_invoices_in_tx` et `pay_supplier_invoices_in_tx` **reçoivent
    `batch_size`** (taille du lot reçu).
 3. **Signature de `pay_supplier_invoices_in_tx`** figée à T3, symétrique de `settle_invoices_in_tx` (`supplier_invoice_ids`,
@@ -453,3 +486,11 @@ résolu en gardant les deux).
   rejet comme `get_link_candidates`, aucune `AppError` neuve) ; M3 (contrat = commit T3 de la 43-1a, `t3.md`) ; L1
   (`pub(super)`), L2 (`ORDER BY`, `PayableDocument`), L3 (test unitaire, mutation g), L4 (1305 remonte), L5 (identifiants
   ajoutés aux refus de date), L6 (en Dev Notes) ; la recherche part sans attendre la 43-1a ; ordre de retrait.
+- 2026-11-18 (P4) — Remédiée après la validation P4 (0/0/2/6) : M1 (discriminant des deux causes de `role: "counterparty"`,
+  `bankAccountId` seulement dans le cas banque, comparaison à `differenceAccountId`, un test par cause), M2 (D9 aligné sur
+  la contrepartie choisie : banque → manquant `ACCOUNT_NOT_FOUND` → non imputable avec numéro → compte de tiers des
+  factures du groupe ; plus d'`INACTIVE_OR_INVALID_ACCOUNTS`) ; **arrondi automatique** (D8 bis, décision de
+  l'orchestrateur : `|e| ≤ centime(n × 0.005)` au compte d'arrondi, aucun compte demandé ; `difference = roundingDifference
+  + gap`) ; L2 (source de `gap` et du compte dans la vue), L3 (clés d'audit `gap`, `difference_account_id`), L4 (réglé par
+  l'arrondi automatique), L5 (comptes de tiers des factures du groupe seulement), L6 (recompte de `t3.md`) ; compte d'une
+  autre banque admis et documenté.

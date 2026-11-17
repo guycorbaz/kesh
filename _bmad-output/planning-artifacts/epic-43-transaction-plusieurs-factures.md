@@ -149,8 +149,11 @@ archivé après coup se règle en groupe comme seule. Aucun refus de projet.
 **C-43-21 — Montants bruts de bout en bout** : la recherche rend `amountDueRaw` (quatre décimales) et `amountDue`
 (centime) ; `difference` et `settledInvoices[].amount` sont au brut ; l'écran calcule en entiers de 1/10 000.
 
-**C-43-22 — Garde CHF** : le geste groupé refuse une transaction non CHF ou de montant nul, par la seule définition
-existante `transaction_can_be_linked_to_entry` (`repositories/reconciliation_link.rs:535`) ; l'écran suit `canLink`.
+**C-43-22 — Sens, montant nul et devise** *(récrit à la P4 de la 43-2)* : le geste groupé refuse d'abord le sens
+contraire et le montant nul par la garde unique de l'unitaire, `refuse_wrong_direction` (`RECONCILIATION_TRANSACTION_NOT_CREDIT`
+/ `NOT_DEBIT`, `zero_amount_transaction`), puis une devise non CHF (`RECONCILIATION_CURRENCY_MISMATCH`) ; la recherche
+rend une liste vide pour ces transactions ; l'écran suit `canLink` (`transaction_can_be_linked_to_entry`,
+`repositories/reconciliation_link.rs:535`, en reste le miroir côté serveur pour le rattachement).
 
 **C-43-23 — Ordre de retrait de la 43-3** (validation P1 de la 43-3, M5) : d'abord les commits fournisseur, puis les
 captures non essentielles ; **jamais l'E2E** ; les traductions de/it/en ne se retirent pas (la garde `i18n-keys.test.ts`
@@ -164,6 +167,18 @@ constante `DEFAULT_GROUP_DIFFERENCE_MAX`, valeur par défaut seulement, citée u
 *Administration → Facturation* (`frontend/src/routes/(app)/settings/invoicing/+page.svelte`,
 `PUT /api/v1/company/invoice-settings`, Admin, `routes/company_invoice_settings.rs:325`) : ≥ 0, au centime, au plus
 **100.00** ; tracé à l'audit. Porté par une petite story à part, **43-7**, coupable.
+
+**C-43-25 — Arrondi automatique** (décision de l'orchestrateur, 2026-11-18) : un écart `e` dont la valeur absolue ne
+dépasse pas l'arrondi cumulé des restes, `|e| ≤ centime(n × 0.005)` pour `n` factures, part **automatiquement au compte
+d'arrondi** avec les fractions de centime : aucun compte n'est demandé, et ce n'est pas une « différence » au sens de Guy.
+Exemple : deux restes de 10.0050 payés 20.01 — aucun écart, aucune ligne. Au-delà du seuil, la règle de Guy (C-43-16,
+compte choisi) s'applique à l'écart entier. Calcul porté par `group_difference` (43-1a), contrat 43-2 D8 bis, écran 43-3 D3.
+
+**C-43-26 — Libellés et préremplissage par famille** (décision de l'orchestrateur, 2026-11-18) : clients — crédit
+inférieur aux factures « Moins-payé » (prérempli : compte de frais bancaires), crédit supérieur « Trop-perçu » (prérempli :
+compte d'arrondi) ; fournisseurs — débit supérieur aux factures « Débit supérieur aux factures » (prérempli : frais
+bancaires), débit inférieur « Débit inférieur aux factures » (prérempli : arrondi). On ne préremplit qu'un compte désigné
+**utilisable** (actif, imputable) ; sinon le champ reste vide, pour ne pas reproduire #1000. Fiche 43-3, D2 bis.
 
 ## Registre des propositions en attente de Guy
 
@@ -225,6 +240,6 @@ Plafond de la story de solde (43-4) : **2 issues**.
 3. `supplier_invoices` : N factures pour le même `settlement_journal_entry_id` ; colonne neuve `settlement_journal_entry_line_id`.
 4. `company_invoice_settings.group_settlement_max_difference` : plafond des frais admis, réglage de la société (5.00 par défaut).
 5. Montants **bruts** (quatre décimales) dans le calcul ; le centime pour l'affichage et pour les frais.
-6. **Le geste groupé n'accepte qu'une transaction en CHF** (`transaction_can_be_linked_to_entry`) : c'est le point à élargir par le multi-devise, avec une règle de devise **par ligne de tiers** ; un écart de change ne se confond ni avec la ligne d'arrondi ni avec celle des frais.
+6. **Le geste groupé n'accepte qu'une transaction en CHF** (refus `RECONCILIATION_CURRENCY_MISMATCH`, après la garde de sens `refuse_wrong_direction` ; écran : `canLink`) : c'est le point à élargir par le multi-devise, avec une règle de devise **par ligne de tiers** ; un écart de change ne se confond ni avec la ligne d'arrondi ni avec la ligne d'écart choisie.
 7. Migration : `crates/kesh-db/migrations/20261118000001_grouped_settlements.sql` (92ᵉ, seule de la release ; la 43-5 et sa colonne `journal_entry_lines.bank_transaction_id` sont sorties de la 0.19.0) ; DDL seul, non breaking. Celle du multi-devise prend un horodatage postérieur et part de `main` après la 0.19.0.
 8. Code : `repositories/grouped_settlements.rs` (neuf), `letterings.rs`, `reconciliation_cancel.rs`, `routes/reconciliation_group.rs` (neuf), `frontend/src/lib/features/reconciliation/`. Ne pas les modifier avant la publication de la 0.19.0 sans prévenir.
