@@ -647,7 +647,7 @@ Revue 4 de Guy (page `epic-35-revue.html`, 35-N = 37-N) : tout approuvé, 37-5 s
   décoché à la passation garde un résidu qui bloque la clôture (A37). Aucune marque « non monétaire » sur les comptes
   (KISS). Le manuel le dit ; C-37-7 (« décochables ») est lu sous cette réserve.
 
-## Recoupements avec l'Epic 36, release 0.18.0 (relevé du 2026-11-16)
+## Recoupements avec l'Epic 36, release 0.18.0 (relevé du 2026-11-16, résolu le 2026-11-17)
 
 Relevé sur `origin/epic/36-0.18.0` à `e50586b8`, **pas encore dans `main`**. Fusion d'essai dans `epic/37-multi-devises`
 à `6ad579f6`, sans commit, puis annulée. Dix fichiers sont en conflit de texte :
@@ -672,6 +672,77 @@ Le second arrivé résout, dans sa branche ; ici, la reprise de `main` après la
   story est encore `backlog`. Selon la règle de cadence de Guy (branche `chore/cadence-hebdomadaire`), l'Epic 36 se
   clôt avec la 0.18.0, et #823 passe à un epic neuf. Elle concerne la 38-6c2 (A40), non l'Epic 37.
 
+### Reprise de `main` (v0.18.0) — résolu le 2026-11-17
+
+`git merge --no-ff origin/main` (tag `v0.18.0` + `bbc1fa56`) dans `epic/37-multi-devises`, commit de fusion `460fcbb5`,
+puis les correctifs `88a2d9f5` et `ccdefd21`. Aucune migration n'est venue de `main` (91 + les trois de l'epic = **94**,
+recompté : `ls crates/kesh-db/migrations/*.sql | wc -l` et les deux sites du total de
+`docs/migrations-idempotence-audit.md`, inchangés). Les dix crates portent la 0.18.0 de `main`. Journal :
+`kesh-gate-logs/integration-main-37/`.
+
+**Conflits de texte, les deux intentions gardées :**
+- `routes/onboarding.rs` : le corps de `finalize` de la 37-1 (dates du premier exercice, refus rendu sous verrou) et la
+  complétion des réglages de la 36-19 (`complete_default_accounts_in_tx`) sont tous deux dans `finalize_inner`.
+- `onboarding/+page.svelte` : la section « Premier exercice » de la 37-1 dans l'écran `onboarding-screen-6` de la 36-17 ;
+  les gardes de réentrée (`finalizing`) et de dates (`fyProblem`) s'additionnent sur les deux boutons et à la touche
+  Entrée. **`runFinalize` (Réessayer, Terminer la configuration) envoie les dates choisies** : la 36-17 appelait
+  `finalize()` sans corps, ce qui, après un échec, aurait créé l'exercice aux dates par défaut du serveur, en silence.
+  Après un rechargement, la saisie est perdue : dates par défaut de l'assistant, les mêmes que celles du serveur (dit au
+  manuel). Test : `onboarding-fiscal-year.test.ts` (refus à l'écran, Réessayer avec les dates).
+- `kesh-core/horloge.rs` : l'aide `debut_jour_suisse` de la 37-2 est retirée au profit de `debut_du_jour_suisse` de la
+  36-10, de même contrat (une seule fonction, DRY) ; le test de la 37-2 l'exerce désormais.
+- `settings/opening-balances/+page.svelte` : la lecture du journal de la 36-18a (`isEnteredLine`, `unread`, `payloadOf`,
+  message sous la ligne) et les lignes en devise de la 37-3b (`isFilledForeignRow`, `isIncompleteForeignRow`,
+  `linePayload`, refus par ligne). Le `rowProblem` local de la 36-18a est renommé `amountProblem` (celui de
+  `opening-fx.ts` reste le problème de la partie en devise).
+- Catalogues i18n (quatre locales), `user-manual.tex`, `README.md` : les deux blocs gardés ; au manuel, la finalisation
+  aux dates choisies, mono-devise, sans compte de différence ni de conversion.
+- Compteurs **relevés par les gardes après la fusion**, non additionnés : `sitesTotal` **3388**, candidates de
+  `i18n-libelle-en-dur` **119** (`ecartee` 18, `conforme` 101), clés relevées de `i18n-un-repli-par-cle` **463**.
+  Schéma de test (`crates/kesh-db/test-schema/`) : non touché par `main`, sa garde est verte.
+
+**Interactions sans conflit de texte :**
+- **36-19 × 37-1 — corrigé.** La finalisation désignait d'office le compte de rôle ou du plan sans les gardes de la 37-1 :
+  un compte en devise, ou de gains, de pertes de change ou de conversion, pouvait devenir compte débiteurs, de produit,
+  créanciers ou d'arrondi (le mode multi-devises se règle avant la fin de l'assistant). `complete_default_accounts_in_tx`
+  prend désormais `companies` en partage en tête (ordre global ; la route le tient déjà `FOR UPDATE`) et
+  `role_candidate_rejection` écarte ces comptes : réglage obligatoire → refus nommé (causes neuves
+  `RoleAccountInForeignCurrency`, `RoleAccountIsFxAccount`, phrases au motif de `finalize`), facultatif → laissé vide.
+  Tests : trois au dépôt (`company_invoice_settings_repository.rs`), les phrases au test du motif (`onboarding.rs`).
+- **36-9 × 37-1 — rien à corriger.** La 36-9 ajoute un contrôle de type dans `vat_payable_account_for_write`, sous le
+  `FOR UPDATE` du compte qu'il prenait déjà ; aucun verrou neuf ni déplacé. La 37-1 ne touche pas le solde du reste ;
+  l'ordre `companies` → réglages → `accounts` du `PUT` des réglages est inchangé.
+- **36-10 × 37-2 — unifié.** Voir `horloge.rs` ci-dessus ; la 37-2 tire déjà le jour de `state.horloge` (Zurich). La
+  garde « jour d'un instant enregistré » de la 36-10 est verte sur le code de l'epic.
+- **36-15 — corrigé.** Le manuel disait « les rapports par projet » (chapitre multi-devises) : « par compte analytique ».
+  La garde G25 est verte. (Les notes de version ci-dessous de même.)
+- **36-18a — vérifié, testé.** Les montants en devise et le CHF saisi d'une ligne en devise se lisent déjà par
+  `readJournalAmount` (37-3b : « 1.250 » ambigu, « 1'250 » admis) ; les cours (`readRate`, dix décimales) ne relèvent
+  pas de la règle des milliers, un cours n'ayant pas de séparateur de milliers. Tests ajoutés aux soldes de départ :
+  montant en devise « 1.250 » refusé, ligne CHF « 1.250 » signalée sous une grille en devise.
+- Tests de `main` complétés des champs de la 37-1 (`AccountUpdate`, `NewAccount`, `CompanyJson`, `FiscalYearResponse`).
+- **E2E** : `onboarding-bank-account.spec.ts:117` (37-1) attendait la navigation d'office vers `/` ; il passe désormais par
+  la page « Configuration terminée » de la 36-17, dont il contrôle le récapitulatif (exercice du 01.04 au 31.03), puis
+  *Commencer* (commit `c81d06e6`).
+
+**Gates, relevés au journal** (`kesh-gate-logs/integration-main-37/`) :
+- backend (`scripts/test-fast.sh --ci`, fmt, clippy, nextest) au commit `ccdefd21` : **5940 exécutés, 5940 passés,
+  13 ignorés** (`gate-backend-2.log` ; le premier passage, `gate-backend-1.log`, s'arrêtait sur deux
+  `clippy::explicit_auto_deref` du correctif, repris par `ccdefd21`) ;
+- frontend au commit `88a2d9f5` (le suivant ne touche que du Rust) : `npm run check` 0 erreur,
+  `lint-i18n-ownership` vert, Vitest **4350 passés (271 fichiers)**, `npm run build` vert ;
+- E2E complet (`LANG=fr_CH.UTF-8`, port 3377, base `kesh_e2e_int37`) au commit `ccdefd21` : **453 passés, 11 échecs,
+  18 ignorés** (`e2e-1.log`) — les sept de la KF-029 (#97), les trois préexistants connus
+  (`backup-restore-new-install.spec.ts:262`, `:381`, `opening-balances.spec.ts:156`) et
+  `onboarding-bank-account.spec.ts:117`, corrigé ci-dessus et rejoué seul : 2 passés (`e2e-2-onboarding-bank-account.log`) ;
+- recette de montée depuis l'image publiée `gcorbaz/kesh:0.18.0` (`recette-montee-1.log`, journal copié sous
+  `recette-journal/`) : code 0 — 91 migrations avant, **3 appliquées** par le binaire de l'epic, sauvegarde
+  `pre-upgrade/` écrite avant la migration, écarts d'empreinte limités à `migrations`, `accounts`, `companies`,
+  `fiscal_years`, `journal_entry_lines` (colonnes neuves), refus de l'image 0.18.0 sur la base migrée (migration
+  inconnue), retour par le dump à empreinte identique, `.keshbackup` 0.18.0 importé dans le binaire neuf. Les crates
+  portant encore la 0.18.0 de `main`, la sauvegarde se nomme « 0.18.0-to-0.18.0 » : le numéro de la release de l'epic
+  se pose au bump de la release.
+
 ## Notes de version de l'epic
 
 *(Résumé pour Guy, qui assemble le `CHANGELOG.md` à la release ; le texte prêt à assembler de chaque point est la section « Note de version » de la fiche citée. Le fichier d'epic n'écrit pas le `CHANGELOG.md`. Rédigé le 2026-11-17, à la clôture de l'epic.)*
@@ -684,6 +755,7 @@ Le second arrivé résout, dans sa branche ; ici, la reprise de `main` après la
 ### Changements de contrat de l'API
 
 - **Écritures** (37-3a) : `POST`/`PUT /journal-entries` prennent `foreign { currency?, amount, rate?, chf?, rateSource?, side? }` ; `rate`, `chf`, `side`, `rateSource`, `debit`/`credit` deviennent facultatifs ; une ligne CHF sans `debit` rend 400 au lieu de 422. Mêmes 400 aux routes d'ouverture, et `rateSource: "revaluation"` y est refusé (37-3b).
+- **Finalisation de l'assistant** (intégration de la v0.18.0) : `POST /onboarding/finalize` refuse (400 `VALIDATION_ERROR`, motif nommé) un compte débiteurs ou de produit par défaut à désigner d'office qui serait en devise, compte de gains ou de pertes de change, ou compte de conversion ; un tel compte facultatif reste non désigné.
 - **Comptes et société** (37-1) : champs neufs `currency`, `fxGainAccountId`, `fxLossAccountId`, `currencyLocked` ; corps facultatif de `POST /onboarding/finalize` (dates du premier exercice) ; réglage multi-devises réservé à l'Administrateur, par une session et jamais par une clé d'API, définitif.
 - **Routes neuves** : `/exchange-rates` et ses sous-routes, `/fiscal-years/{id}/exchange-rates`, `PUT /fiscal-years/{id}/rate-kinds` (37-2) ; `POST /journal-entries/conversions` et `GET /opening-balances/status` (champ `currency`) (37-3b) ; aperçu et passation de la réévaluation (37-5).
 - **Codes neufs** : `MULTI_CURRENCY_DISABLED`, `MULTI_CURRENCY_IRREVERSIBLE`, `CURRENCY_UNKNOWN`, `FX_ACCOUNT_INVALID`, `ACCOUNT_CURRENCY_LOCKED`, `ACCOUNT_CURRENCY_IN_USE`, `ACCOUNT_IN_FOREIGN_CURRENCY`, `ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT`, `LATER_FISCAL_YEAR_MONO_CURRENCY` (37-1) ; `RATE_NOT_PUBLISHED`, `RATE_SOURCE_UNAVAILABLE`, `RATE_UNAVAILABLE`, `FX_RATE_INVALID` (37-2) ; `FX_CONVERSION_TRANSIT_UNBALANCED` (37-3b) ; `FX_REVALUATION_ACCOUNT_INVALID`, `FOREIGN_ACCOUNTS_NOT_REVALUED` (409 à la clôture) (37-5). `modificationBlockedBy` peut valoir `ENTRY_IS_FX_REVALUATION` ; l'enregistrement d'une pièce sur un compte en devise rend 400 `ACCOUNT_IN_FOREIGN_CURRENCY` ; les lots de rapprochement rendent les refus `FX_*` dans `failed[]` (37-3a).
@@ -700,6 +772,6 @@ Le second arrivé résout, dans sa branche ; ici, la reprise de `main` après la
 - **Réglage et comptes** (37-1) : case « Comptabilité multi-devises » (activation définitive), devise d'un compte verrouillée dès sa première écriture, comptes de différence de change propres à un compte, compte de conversion.
 - **Cours de change** (37-2) : cours mensuels de l'AFC récupérés seuls (accès sortant HTTPS, mandataire par `HTTPS_PROXY`), écran *Paramètres → Cours de change* (cours retenu par la société, genres d'ouverture et de clôture, récupération et revérification), bandeau des corrections de l'AFC à acquitter.
 - **Saisie** (37-3b) : écritures en devise avec cours proposé, ligne de différence de change, Assistant TVA achat en devise, assistant *Conversion*, soldes de départ en devise.
-- **Rapports** (37-4) : grand livre, balance, bilan et compte de résultat dans les deux devises (écran, CSV, PDF) ; journal en devise à l'écran et au JSON seulement ; accueil, projets, TVA et balance âgée restent en CHF ; sans compte en devise, rapports et exports inchangés.
+- **Rapports** (37-4) : grand livre, balance, bilan et compte de résultat dans les deux devises (écran, CSV, PDF) ; journal en devise à l'écran et au JSON seulement ; accueil, comptes analytiques, TVA et balance âgée restent en CHF ; sans compte en devise, rapports et exports inchangés.
 - **Clôture** (37-5) : réévaluation de fin d'exercice (aperçu puis passation) et neuvième contrôle de clôture, bloquant.
 - **Limite connue** : le lettrage manuel d'un compte en devise ne raisonne qu'en CHF (37-3a, issue ouverte à la PR).
