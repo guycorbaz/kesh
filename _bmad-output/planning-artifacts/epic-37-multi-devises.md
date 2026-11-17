@@ -792,6 +792,21 @@ exécutés, 5941 passés, 13 ignorés** (`gate-backend-p1fix.log` ; 5940 + le te
 (`#[sqlx::test]`), 3 Vitest, 1 E2E ; assertions modifiées dans 3 tests Rust existants. Le correctif touche la
 production (H1, M1, L1, L3) : une passe de revue suivante est due.
 
+**Revue du code d'intégration, passe 2** (complète, Sonnet, contexte frais, sur `git diff 4884661d b99dc5c5` ; rapport
+`kesh-gate-logs/integration-main-37/revue-P2.md`) : **0 CRITICAL, 0 HIGH, 0 MEDIUM, 4 LOW**. Les prémisses de H1 et M1
+sont corrigées, aucune régression de la remédiation trouvée ; axes exercés et non exercés déclarés au rapport (aucun
+test Rust ni E2E rejoué par la passe : Vitest ciblé seulement, 78 tests verts). **Boucle close** : trend P1 1 HIGH +
+1 MEDIUM + 5 LOW (Opus) → P2 4 LOW (Sonnet), 0 au-dessus de LOW.
+- **L3 — corrigé** (manuel FR seul, sans code) : au chapitre de l'assistant, la phrase « la finalisation ne désigne aucun
+  compte de différence de change ni de conversion » contredisait la phrase voisine (un compte de gains ou de pertes, et
+  le compte de conversion, sont désignés aux réglages autres que le produit par défaut) ; elle dit désormais que la
+  finalisation ne règle aucun des trois comptes de change **de la société** (gains, pertes, conversion), réglés ensuite
+  dans les paramètres. PDF non régénéré (à la release).
+- **L1, L2, L4 — à ouvrir en issues** avec la PR (`kesh-gate-logs/issues-a-ouvrir-epic-37.md`, points 32 à 34) : saisie
+  des dates gardée en `sessionStorage` ni bornée à l'installation ni validée (bug, P3) ; variante morte `Transit` de
+  `RoleAccountIsFxAccount` (technical-debt, P4) ; nom accessible et focus des formulaires des écrans d'échec et de
+  reprise (bug, P4).
+
 ## Notes de version de l'epic
 
 *(Résumé pour Guy, qui assemble le `CHANGELOG.md` à la release ; le texte prêt à assembler de chaque point est la section « Note de version » de la fiche citée. Le fichier d'epic n'écrit pas le `CHANGELOG.md`. Rédigé le 2026-11-17, à la clôture de l'epic.)*
