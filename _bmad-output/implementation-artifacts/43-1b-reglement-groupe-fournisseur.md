@@ -130,8 +130,8 @@ test de l'écart rougit) ; retirer le contrôle du compte choisi égal à la ban
 ## Note de version
 
 - **Ajouté** — Un débit peut régler plusieurs factures fournisseur, d'un ou de plusieurs fournisseurs : un seul paiement,
-  chaque facture soldée et lettrée ; un petit écart, dans un sens ou dans l'autre (5.00 au plus par défaut, réglable), se
-  comptabilise sur le compte que vous choisissez (refs #823).
+  chaque facture soldée et lettrée ; un petit écart, dans un sens ou dans l'autre, dans la limite d'un plafond (5.00 par
+  défaut), se comptabilise sur le compte que vous choisissez (refs #823).
 
 ## Dev Notes
 
@@ -178,6 +178,38 @@ Opus 5.5 (agent de développement, 2026-11-17), en autonomie ; choix au registre
   la clôture ; aucune route ni écran dans cette story).
 - **Manuels** : aucun changement (ni route ni écran). `user-manual.tex:3253` cite encore #823 comme limite — à la 43-3.
 
+#### Remédiation de la revue P1 (2026-11-18, Opus 5.5)
+
+Revue P1 (Opus, trois lentilles) : 0 CRITICAL, 0 HIGH, 3 MEDIUM distincts (A MEDIUM-1 = B-2 = E1, convergent ; B-1 =
+E2 ; B-3), une douzaine de LOW. Remédiation selon les décisions de l'orchestrateur, base : tête de la 43-1a fusionnée
+(`f711dd2de`, tests et fiche seulement, plus une phrase de doc-comment).
+- **Rouges d'abord** (`kesh-gate-logs/e431b/p1-rouges.log`, `rouges.log`) : 8 tests neufs, écrits avant le correctif ;
+  2 rouges qui confirment les MEDIUM — la vue rendait la dette de la facture détachée comme compte d'écart (`Some(9)`
+  au lieu de `None`), la fiche recevait 1213 entre deux factures du groupe ; 6 verts (couverture des LOW).
+- **Vue** (C-e431b-4 récrit) : les lignes de dette = celles des membres + celles des factures détachées, nommées par la
+  trace du détachement (`detached_debt_lines`) ; positions 1 à n exigées, sinon `Invariant`.
+- **Verrous** (C-e431b-12) : toutes les factures verrouillées par identifiant croissant avant le compte
+  (`payment_batches::lock_invoices_sql` réemployée) ; la fonction unitaire n'est pas scindée.
+- **Règle commune** (C-e431b-13) : `difference_accounts`, `push_difference_lines`, `create_group_entry`, appelées par
+  les deux bras ; le bras client garde son comportement (ses binaires rejoués : `p1-cible-2.log`). Dette restante
+  au registre (issue proposée).
+- **E3** (C-e431b-14) : `LockedForSettlement.bank_ledger_account_id`, lu sous verrou.
+- **LOW** : tests de `TooMany`, `CurrencyMismatch`, `HeldByPaymentBatch` (l'autre facture nommée), brouillon, annulée,
+  compte d'arrondi absent, compte clos, exercice clos ; refus **après** l'écriture (transaction changée) ; délettrage ;
+  détachement de la première et d'une facture du milieu ; doc-comment de test corrigé (A LOW-2) ; *Note de version*
+  sans « réglable » (A LOW-6).
+- **Test de la 43-1a adapté** : `a_group_without_client_settlements_is_an_invariant` (revue P2 de la 43-1a) attendait
+  le message « aucun règlement client », que la 43-1b remplace ; il attend désormais l'`Invariant` du bras fournisseur
+  (sa facture fabriquée pointe la ligne de banque) — comportement inchangé : jamais une réponse.
+- **Mutations** (`mut/campagne.log`) : M1, M2, M4b, M5b, M7 (transaction `AND version = ?`, A LOW-5), M8 (lecture
+  de tête des factures), M9 (lignes détachées ignorées) tuées ; M3 équivalente ; M4, M5, M6 sans motif (code déplacé
+  ou remplacé), remplacées par M4b, M5b, M9.
+- **Gates** au commit de code `b3b2800be`, bases remises à neuf : `test-fast --ci` (voie 2) **5572 passés, 13 ignorés**
+  (`test-fast-p1.log`) ; `gate-ci.sh kesh_ci_e431b` (voie 1) **5579 passés, 0 échec, 17 ignorés** (`gate-ci-p1.log`).
+  Frontend non touché. E2E à la clôture.
+- **Non traité** : B-4 (commentaire, fait), B-5 (plan `EXPLAIN` de `locked_supplier_members`) et B-6
+  (`RaceDuringUpdate` inatteignable côté fournisseur) — issues proposées au rapport.
+
 ### File List
 
 - `crates/kesh-db/src/repositories/grouped_settlements.rs`, `supplier_invoices.rs` (modifiés)
@@ -205,3 +237,6 @@ Opus 5.5 (agent de développement, 2026-11-17), en autonomie ; choix au registre
 - 2026-11-17 (développement, Opus 5.5) — Validation terminée (contre `t3.md`, puis passe ciblée 2 : 0 au-dessus de
   LOW) ; étape 0 (L-3) ; AC1 à AC8 et AC6 bis ; 12 tests, 6 mutations (5 tuées, 1 équivalente) ; `test-fast --ci` et
   `gate-ci` verts à `cb594a7e2` ; passage en `review`. E2E à la clôture.
+- 2026-11-18 (revue P1, Opus, B/E/A : 0/0/3/≈12 ; remédiation Opus 5.5) — 3 MEDIUM remédiés (vue après détachement,
+  ordre des verrous, règle de la différence commune), LOW de tests et de rédaction ; `test-fast --ci` et `gate-ci`
+  verts à `b3b2800be`. Revue P2 complète à suivre.

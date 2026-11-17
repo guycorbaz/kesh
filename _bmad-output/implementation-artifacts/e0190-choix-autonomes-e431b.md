@@ -26,18 +26,29 @@ une facture d'un lot `generated` du compte reste refusé. L'ordre des refus est 
 (facture, compte bancaire, lot, garde du lot du compte), puis la date, puis la dette — la liste de la fiche (AC1)
 nommait « lot » avant « compte bancaire ».
 
-**C-e431b-4 — Le compte d'écart d'un groupe fournisseur relu sur l'écriture** (`supplier_difference_account_of`) :
-le bloc des dettes va de la ligne 1 à la dernière ligne d'un membre, puis s'étend aux lignes suivantes dont le compte
-est celui d'une ligne du bloc ; les apports sont les montants de ces lignes. La fiche (AC6 bis) écrivait « apports =
-`total_amount` des membres » : c'est la même chose tant qu'aucune facture n'est détachée, mais une facture **détachée**
-(AC7) n'est plus membre alors que sa ligne reste dans l'écriture — l'écriture lue par les membres seuls rendrait un
-écart faux ou un `Invariant`, et la vue d'une transaction ainsi rapprochée échouerait. Le bloc s'étend sans erreur
-parce qu'une ligne d'arrondi ou d'écart ne porte jamais une dette du groupe (refus au paiement, C-e431a-7). Angle
-mort écrit au doc-comment : une facture détachée dont la dette est sur un **autre** compte que celle de toutes les
-factures restantes, et qui était la dernière du groupe, serait lue comme une ligne de la queue ; le contrôle du nombre
-de lignes rend alors `Invariant` (jamais une valeur fausse sans erreur, sauf coïncidence de montants). Test :
-`a_detached_invoice_leaves_the_group_and_the_rest_unreconciles` (la dernière facture détachée). Le bras client est
-inchangé.
+**C-e431b-4 — Le compte d'écart d'un groupe fournisseur : les lignes de dette lues nommément** (`supplier_difference_account_of`,
+**récrit à la revue P1**, décision de l'orchestrateur sur A MEDIUM-1, B-2, E1). Une facture **détachée** (AC7) n'est
+plus membre, mais sa ligne de dette reste dans l'écriture : lire l'écriture par les seuls membres rendrait un écart faux
+ou un `Invariant`. La première version (2026-11-17) devinait le bloc des dettes en l'étendant aux lignes suivantes de
+même compte — **fausse** : la dernière facture détachée, sur un autre compte de dette, était lue comme ligne d'écart,
+sans erreur, dès que le groupe n'avait pas d'écart d'origine (`Some(dette)` au lieu de `None`, constaté rouge par
+`a_detached_invoice_on_another_payable_account_leaves_no_false_gap`). Ce registre affirmait le contraire.
+- **Source retenue** : les lignes des membres (`settlement_journal_entry_line_id`) **plus** celles des factures
+  détachées, nommées par la trace de leur détachement (`supplier_invoice.cancelled`,
+  `details.settlementJournalEntryLineId`, que la 43-1b écrit, AC7), lues par `DETACHED_SETTLEMENT_TRACES` et
+  `DETACHED_SETTLEMENT_ENTRY` (la lecture du gel « paiement détaché »). Ensemble, elles doivent occuper exactement les
+  positions 1 à `n` ; la décomposition est recalculée sur leurs montants (principe de C-e431a-8), la queue contrôlée
+  en nombre ; toute autre forme rend `Invariant`.
+- **Autre option : le `difference_account_id` de l'audit `reconciliation.accepted`** — une ligne, certaine aussi.
+  Écartée parce qu'elle **recopie** une valeur au lieu de la relire sur l'écriture (C-e431a-8 a rejeté l'audit comme
+  source de la vue pour cette raison), alors que la trace du détachement ne sert qu'à **nommer** des lignes, qui restent
+  lues sur l'écriture ; et parce que c'est la seule trace qui garde la ligne d'une facture détachée — le gel « paiement
+  détaché » s'appuie déjà sur elle. Les deux sources sont des traces d'audit : celle retenue est la plus étroite.
+- **Angle mort** : une facture détachée par un code antérieur à la 43-1b n'aurait pas de ligne à sa trace — sans
+  objet, aucun groupe n'existe avant elle ; si une trace manque, la vue rend `Invariant`, jamais une valeur fausse.
+- Tests : `a_detached_invoice_on_another_payable_account_leaves_no_false_gap` (deux comptes de dette, sans écart et
+  avec écart, la dernière détachée), `detaching_the_first_or_a_middle_invoice_keeps_the_view_right`,
+  `a_detached_invoice_leaves_the_group_and_the_rest_unreconciles`. Le bras client est inchangé.
 
 **C-e431b-5 — La tête fournisseur extraite** (`supplier_invoices::supplier_settlement_cancel_head`, `pub(crate)`) :
 patron de `settlement_cancel_head` (C-e431a-15). `supplier_settlement_cancel_blocker_unlinking` l'appelle, puis la
@@ -72,7 +83,38 @@ extraite du libellé client (une seule définition de la coupe).
 paramètre, la dette pour le fournisseur) ; `entry_description` délègue la coupe à `bounded_description` ;
 `difference_account_of`, `group_cancel_blocker`, `view_members` et `cancel_in_tx` aiguillent vers le bras fournisseur
 quand l'écriture n'a aucun règlement client (C-e431a-9, C-e431a-16). Aucune autre ligne du bras client ne change.
+*(Amendé à la revue P1 : C-e431b-13 extrait aussi la règle de la différence et la création de l'écriture, que le
+bras client appelle désormais — à comportement égal.)*
 
 **C-e431b-11 — Mutation M3 équivalente** : retirer `AND version = ?` (et sa liaison) de l'`UPDATE` des factures ne
 change rien d'observable, la facture étant tenue `FOR UPDATE` depuis `lock_for_bank_settlement_in_tx` : aucune
-version ne peut bouger entre la lecture et l'`UPDATE`. La clause reste (AC3 la demande, défense en profondeur).
+version ne peut bouger entre la lecture et l'`UPDATE`. La clause reste (AC3 la demande, défense en profondeur). La
+clause de la **transaction** (lue sans verrou) n'est pas équivalente : mutation M7, tuée par
+`a_transaction_changed_meanwhile_is_refused_after_the_entry` (revue P1, A LOW-5).
+
+## Revue P1 (2026-11-18) — décisions de l'orchestrateur appliquées
+
+**C-e431b-12 — L'ordre des verrous : facture, compte, lot** (B-1, E2). Le paiement groupé verrouille **toutes** ses
+factures par identifiant croissant, avant le compte, par la lecture de tête de `create_batch` réemployée
+(`payment_batches::lock_invoices_sql`, `FORCE INDEX (PRIMARY) … ORDER BY id FOR UPDATE`) ;
+`lock_for_bank_settlement_in_tx` les redemande ensuite, déjà tenues — la fonction n'est pas scindée, ses appelants
+unitaires sont inchangés. Avant, le groupe tenait le compte (pris avec la facture 1) en attendant la facture 2 : un
+paiement depuis la fiche de la facture 2 formait un cycle — **constaté rouge** (1213) par
+`a_fiche_payment_between_two_invoices_does_not_deadlock`, qui lance la fiche entre les deux factures. Mutation M8.
+
+**C-e431b-13 — La règle de la différence écrite une fois** (B-3) : `difference_accounts` (plafond, compte d'arrondi
+requis et jamais un compte de tiers, puis l'ordre des refus du compte d'écart), `push_difference_lines` (côté des
+lignes `r` et `e` selon le côté de la banque) et `create_group_entry` (exercice, création, traduction des erreurs de
+période et d'exercice en refus) — appelées par les deux bras. Le bras client garde exactement son comportement :
+mêmes refus dans le même ordre, mêmes lignes (vérifié par ses binaires `grouped_settlements` et
+`reconciliation_cancel`, rejoués). Seule différence de forme : l'exercice est lu après la construction des lignes,
+qui ne refuse rien. **Dette restante** (issue proposée) : le verrou écriture + exercice, le lien défait et l'audit
+`reconciliation.cancelled` du dé-rapprochement, et l'`UPDATE` de la transaction au paiement, restent en deux
+exemplaires (client et fournisseur) ; leur extraction toucherait l'inventaire du compte clos (sites et registre de la
+43-1a) et a été jugée trop risquée avant la coupure.
+
+**C-e431b-14 — Le compte du grand livre lu sous verrou** (E3) : `LockedForSettlement` porte désormais
+`bank_ledger_account_id`, lu par l'étape (b) en `FOR UPDATE` ; le paiement groupé l'emploie au lieu de le relire sur
+l'instantané. Le champ est additif : `accept_one_supplier_invoice` et les tests de `payment_batches` ne lisent que
+`invoice`. `ensure_open_in_tx` reste (C-e431b-6), commenté comme inerte, sauf un refus à tort d'un compte rouvert
+après la naissance de l'instantané.
