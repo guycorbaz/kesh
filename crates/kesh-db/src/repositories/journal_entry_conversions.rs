@@ -35,9 +35,18 @@
 //! `Rejouee`) : le compte de conversion, les comptes de l'écriture à compléter
 //! et ses comptes de différence sont lus en partage **avant** l'exercice, alors
 //! que l'écriture ordinaire prend l'exercice puis les comptes en partage ;
-//! aucun chemin ne prend un exercice puis un compte **en exclusif** depuis le
-//! retrait de la bascule `force` de 37-1 (CR-7). Mais la sentinelle `companies`
-//! fait des cycles, tous défendus par le rejeu (revue de code P1,
+//! seule l'activation du multi-devises (`companies::update_currency_settings`)
+//! prend des exercices puis des comptes **en exclusif** (les exercices ouverts,
+//! puis les comptes de change désignés), mais jamais un compte de l'écriture à
+//! compléter avant d'avoir pris `companies` `FOR UPDATE`, que la conversion
+//! tient en partage : elle l'attend, sans cycle. *(Corrigé à la revue
+//! d'intégration de l'équipe de Guy, 2026-11-17 : cette phrase disait
+//! qu'aucun chemin ne prenait un exercice puis un compte en exclusif depuis
+//! le retrait de la bascule `force` de 37-1, CR-7. Ailleurs, l'activation peut
+//! s'interbloquer avec un règlement, unitaire ou groupé, quand un même compte
+//! y sert aux deux rôles ; sans conséquence : les deux côtés sont rejoués, et
+//! l'activation n'a lieu qu'une fois par société.)* Mais la sentinelle
+//! `companies` fait des cycles, tous défendus par le rejeu (revue de code P1,
 //! 37-3b-CR-P1-16) :
 //! - quand une ligne porte un projet, l'étape 0 de `create_in_tx` prend
 //!   `companies` `FOR UPDATE` alors que cette transaction la tient en partage
