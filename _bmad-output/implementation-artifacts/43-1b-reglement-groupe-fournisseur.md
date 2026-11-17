@@ -8,9 +8,10 @@ M-A, M-B, M-C ; exigences de la 43-2). Code lu à `8b50fd195`. Release **0.19.0*
 (migration, entités, signatures) ; se fusionne après elle. **Coupable à la coupure** (C-43-18) : sans elle, la migration
 reste entière et la colonne fournisseur vide, la 43-2 et la 43-3 retirent leurs commits fournisseur. `kesh-db` touché :
 gate complet en boucle. Décisions : C-43-1 à C-43-26 (fichier d'épique), qui font foi ; la règle de différence est
-tranchée (C-43-16, C-43-25). **Contrat figé de la 43-1a** : `kesh-gate-logs/e43/t3.md` (commit `241839568`), code dans
-`/home/gcorbaz/devel/kesh-43-1a`, registre `e0190-choix-autonomes-e431a.md` (C-e431a-5, -6, -8, -9 repris ci-dessous).
-Validation : à lancer.*
+tranchée (C-43-16, C-43-25). **Contrat figé de la 43-1a** : `kesh-gate-logs/e43/t3.md` (commit `241839568`), code sur
+la branche `story/43-1a-reglement-groupe-modele`, registre `e0190-choix-autonomes-e431a.md` (C-e431a-5, -6, -8, -9
+repris ci-dessous). Validation terminée (`kesh-gate-logs/e43/validation-fiches-contre-t3.md`, puis
+`validation-fiches-p-ciblee-2.md` : 0 au-dessus de LOW).*
 
 **Issues** : `refs #823` ; aucun mot-clé de fermeture dans un commit.
 
@@ -123,8 +124,8 @@ test de l'écart rougit) ; retirer le contrôle du compte choisi égal à la ban
 
 ## Tâches
 
-- [ ] **T0** — Étape 0 : LOW de la validation ; signatures du T3 de la 43-1a relues (`kesh-gate-logs/e43/t3.md`).
-- [ ] **T1** — AC1 à AC5. — [ ] **T2** — AC6 à AC8. — [ ] **T3** — Gates, Dev Agent Record, prompt de revue P1.
+- [x] **T0** — Étape 0 : LOW de la validation ; signatures du T3 de la 43-1a relues (`kesh-gate-logs/e43/t3.md`).
+- [x] **T1** — AC1 à AC5. — [x] **T2** — AC6 à AC8. — [x] **T3** — Gates, Dev Agent Record, prompt de revue P1.
 
 ## Note de version
 
