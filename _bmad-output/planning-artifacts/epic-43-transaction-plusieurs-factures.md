@@ -197,6 +197,7 @@ Plafond de la story de solde (43-4) : **2 issues**.
 | `crates/kesh-db/migrations/20261118000001_grouped_settlements.sql`, `…/20261118000002_bank_line_transaction.sql` (43-5), `test-schema/0001_schema_squash.sql`, `docs/migrations-idempotence-audit.md`, `tests/migrations_upgrade_path.rs`, `tests/journal_entries_modification.rs` | 43-1a, 43-5 | multi-devise ; toute migration |
 | `crates/kesh-db/src/entities/{invoice_settlement,supplier_invoice,journal_entry}.rs` et l'entité des réglages de facturation | 43-1a, 43-5, 43-7 | multi-devise |
 | `crates/kesh-db/src/repositories/grouped_settlements.rs` (neuf) | 43-1a, 43-1b, 43-5 | — |
+| `crates/kesh-db/src/repositories/reconciliation_group_candidates.rs` (neuf, recherche ; `kesh-db` : gate complet en boucle pour la 43-2) | 43-2 seule | — |
 | `repositories/{letterings,reconciliation_cancel,invoice_settlements,supplier_invoices,journal_entries,company_invoice_settings}.rs` | 43-1a, 43-1b, 43-5, 43-7 | multi-devise |
 | `repositories/{bank_accounts,invoices,settlement_cancellation,reconciliation_link}.rs` | 43-5 | — |
 | `repositories/project_reassignment.rs` (branche Epic 42) | 43-6 | **Epic 42** |
