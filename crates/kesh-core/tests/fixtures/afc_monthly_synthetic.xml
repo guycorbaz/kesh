@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Fixture SYNTHÉTIQUE (Story 37-2, AC-2) : forme du XML réel de xmlavgmonth, valeurs INVENTÉES — aucun cours officiel n'est versionné. -->
+<monatsmittelkurs xmlns="https://www.backend-rates.bazg.admin.ch/avgratesmonth" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="https://www.backend-rates.bazg.admin.ch/avgratesmonth https://www.backend-rates.bazg.admin.ch/avgratesmonth.xsd">
+  <monat>2024-12</monat>
+  <devise code="usd">
+    <land_de>Vereinigte Staaten</land_de>
+    <land_fr>Etats-Unis</land_fr>
+    <land_it>Stati Uniti</land_it>
+    <waehrung>1 USD</waehrung>
+    <kurs>0.8812</kurs>
+  </devise>
+  <devise code="eur">
+    <land_de>Euro-Raum</land_de>
+    <land_fr>Zone euro</land_fr>
+    <land_it>Zona euro</land_it>
+    <waehrung>1 EUR</waehrung>
+    <kurs>0.9301</kurs>
+  </devise>
+  <devise code="jpy">
+    <land_de>Japan</land_de>
+    <land_fr>Japon</land_fr>
+    <land_it>Giappone</land_it>
+    <waehrung>100 JPY</waehrung>
+    <kurs>0.5733</kurs>
+  </devise>
+  <devise code="huf">
+    <land_de>Ungarn</land_de>
+    <land_fr>Hongrie</land_fr>
+    <land_it>Ungheria</land_it>
+    <waehrung>1000 HUF</waehrung>
+    <kurs>2.2511</kurs>
+  </devise>
+  <devise code="idr">
+    <land_de>Indonesien</land_de>
+    <land_fr>Indonésie</land_fr>
+    <land_it>Indonesia</land_it>
+    <waehrung>10000 IDR</waehrung>
+    <kurs>0.5507</kurs>
+  </devise>
+  <devise code="ars">
+    <land_de>Argentinien</land_de>
+    <land_fr>Argentine</land_fr>
+    <land_it>Argentina</land_it>
+    <waehrung>1 ARS</waehrung>
+    <kurs>0.0009</kurs>
+  </devise>
+</monatsmittelkurs>

@@ -11,7 +11,11 @@
  * `counterparty_equals_bank_ledger`, un compte archivé ou d'une autre société en 404, un
  * compte non imputable en 400 `ACCOUNT_NOT_POSTABLE` (`routes/reconciliation.rs`).
  */
-import type { AccountResponse, AccountRole } from '$lib/features/accounts/accounts.types';
+import {
+	isForeignCurrencyAccount,
+	type AccountResponse,
+	type AccountRole,
+} from '$lib/features/accounts/accounts.types';
 
 /**
  * Les comptes proposés comme contrepartie : actifs, imputables, de toute classe, sauf celui
@@ -26,7 +30,11 @@ export function counterpartyAccounts(
 	accounts: readonly AccountResponse[],
 	bankLedgerAccountId: number | null,
 ): AccountResponse[] {
-	return accounts.filter((a) => a.active && a.postable && a.id !== bankLedgerAccountId);
+	// Story 37-3b (AC-4) : ni compte en devise — le rapprochement passe en CHF
+	// (37-3a refuse une contrepartie en devise).
+	return accounts.filter(
+		(a) => a.active && a.postable && a.id !== bankLedgerAccountId && !isForeignCurrencyAccount(a),
+	);
 }
 
 /**

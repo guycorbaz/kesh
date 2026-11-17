@@ -2743,3 +2743,130 @@ async fn cancelled_redraft_without_a_linked_reversal_is_an_invariant(pool: MySql
     let err = refus_sans_ecrire(&pool, &seeded, a).await;
     assert!(matches!(err, DbError::Invariant(_)), "{err:?}");
 }
+
+// ---------------------------------------------------------------------------
+// Story 37-3a (AC-5) — compte de charge en devise refusé sur la pièce
+// ---------------------------------------------------------------------------
+
+/// Passe la société en multi-devises et le compte en `USD`, par SQL : contourne
+/// délibérément les gardes de la Story 37-1, pour exercer le seul refus de la
+/// pièce.
+async fn passer_en_usd(pool: &MySqlPool, company_id: i64, compte: i64) {
+    sqlx::query("UPDATE companies SET multi_currency_enabled = TRUE WHERE id = ?")
+        .bind(company_id)
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE accounts SET currency = 'USD' WHERE id = ?")
+        .bind(compte)
+        .execute(pool)
+        .await
+        .unwrap();
+}
+
+/// `AccountInForeignCurrency { account_id: Some(compte), currency: "USD" }`
+/// attendu, et rien d'autre.
+fn assert_compte_en_usd(err: DbError, compte: i64) {
+    match err {
+        DbError::AccountInForeignCurrency {
+            account_id: Some(id),
+            ref currency,
+        } => {
+            assert_eq!(id, compte);
+            assert_eq!(currency, "USD");
+        }
+        autre => panic!("AccountInForeignCurrency attendu, reçu {autre:?}"),
+    }
+}
+
+/// Story 37-3a (AC-5) — un compte de charge **en devise** (par ailleurs actif,
+/// imputable, `Expense`) est refusé à l'**enregistrement** du brouillon, à la
+/// création comme à la mise à jour, sous son nom (`AccountInForeignCurrency`).
+/// Rien n'est écrit : aucune facture créée ; le brouillon mis à jour garde sa
+/// version et son compte. L'enregistrement d'un brouillon ne passe aucune
+/// écriture : seul l'appel de `refuse_foreign_currency_accounts_in_tx` dans
+/// `check_draft_input_in_tx` produit ce refus ; revue de code P1.
+#[sqlx::test(migrations = "./test-schema")]
+async fn a_draft_refuses_a_foreign_currency_expense_account(pool: MySqlPool) {
+    let (seeded, f) = decor(&pool).await;
+    let usd: i64 = sqlx::query(
+        "INSERT INTO accounts (company_id, number, name, account_type) \
+         VALUES (?, '4990', 'Charges USD', 'Expense')",
+    )
+    .bind(seeded.company_id)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    passer_en_usd(&pool, seeded.company_id, usd).await;
+
+    // Création.
+    let mut new = nouvelle(
+        &seeded,
+        f,
+        "FF-USD",
+        jour(2026, 6, 15),
+        &[(dec!(10), dec!(0)), (dec!(20), dec!(0))],
+    );
+    new.lines[1].expense_account_id = usd;
+    let err = supplier_invoices::create_draft(&pool, new, seeded.admin_user_id)
+        .await
+        .expect_err("compte de charge en devise");
+    assert_compte_en_usd(err, usd);
+    let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM supplier_invoices WHERE company_id = ?")
+        .bind(seeded.company_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(n, 0, "aucune facture enregistrée");
+
+    // Mise à jour d'un brouillon CHF.
+    let d = brouillon(&pool, &seeded, f, "FF-CHF", dec!(10)).await;
+    let mut corrige = nouvelle(
+        &seeded,
+        f,
+        "FF-CHF",
+        jour(2026, 6, 15),
+        &[(dec!(10), dec!(0))],
+    );
+    corrige.lines[0].expense_account_id = usd;
+    let err = supplier_invoices::update_draft(
+        &pool,
+        seeded.company_id,
+        d.invoice.id,
+        d.invoice.version,
+        corrige,
+        seeded.admin_user_id,
+    )
+    .await
+    .expect_err("compte de charge en devise");
+    assert_compte_en_usd(err, usd);
+    assert_eq!(etat(&pool, d.invoice.id).await, ("draft".into(), None, 1));
+    let comptes: Vec<i64> = sqlx::query_scalar(
+        "SELECT expense_account_id FROM supplier_invoice_lines WHERE supplier_invoice_id = ?",
+    )
+    .bind(d.invoice.id)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(comptes, vec![seeded.accounts["4000"]], "lignes inchangées");
+}
+
+/// Story 37-3a (AC-5) — le compte de charge d'un brouillon **passé en devise
+/// après l'enregistrement** est refusé à la **validation**, sous son nom
+/// (`AccountInForeignCurrency`) et non par le contrôle central de l'écriture
+/// d'achat (`AccountRequiresCurrency` sur une ligne générée), que l'appel de
+/// `refuse_foreign_currency_accounts_in_tx` dans `validate_in_tx` devance.
+/// Rien n'est écrit (`validation_refusee` : aucune écriture, brouillon intact,
+/// aucun audit) ; revue de code P1.
+#[sqlx::test(migrations = "./test-schema")]
+async fn validation_refuses_an_expense_account_made_foreign_currency_since_the_draft(
+    pool: MySqlPool,
+) {
+    let (seeded, f) = decor(&pool).await;
+    let compte = seeded.accounts["4000"];
+    let d = brouillon(&pool, &seeded, f, "FF-DEVISE", dec!(10)).await;
+    passer_en_usd(&pool, seeded.company_id, compte).await;
+    let err = validation_refusee(&pool, &seeded, &d).await;
+    assert_compte_en_usd(err, compte);
+}

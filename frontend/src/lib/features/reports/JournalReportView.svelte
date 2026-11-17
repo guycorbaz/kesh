@@ -1,8 +1,14 @@
 <script lang="ts">
 	// Story 9-1 — Vue Journaux.
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
-	import { formatReportAmount, formatSwissDate, isReportEmpty } from './reports.api';
-	import type { JournalReportDto } from './reports.types';
+	import { formatRate } from '$lib/features/exchange-rates/exchange-rates-grid';
+	import {
+		formatCurrencyAmount,
+		formatReportAmount,
+		formatSwissDate,
+		isReportEmpty,
+	} from './reports.api';
+	import type { JournalEntryLineRow, JournalReportDto } from './reports.types';
 
 	interface Props {
 		dto: JournalReportDto;
@@ -11,6 +17,21 @@
 	let empty = $derived(isReportEmpty('journals', dto));
 
 	const fmt = formatReportAmount;
+
+	/**
+	 * Story 37-4 (AC-7) — la partie en devise d'une ligne : « USD 31.35 × 0.8808 »,
+	 * ou « Réévaluation au cours X », sans montant (comme au grand livre).
+	 */
+	function fxLine(currency: string, l: JournalEntryLineRow): string {
+		const rate = formatRate(l.exchangeRate);
+		if (l.rateSource === 'revaluation') {
+			return i18nMsg('reports-fx-revaluation', 'Réévaluation au cours { $rate }', { rate });
+		}
+		return i18nMsg('reports-fx-line', '{ $amount } × { $rate }', {
+			amount: formatCurrencyAmount(currency, l.amountCurrency),
+			rate,
+		});
+	}
 </script>
 
 <section class="space-y-4">
@@ -49,6 +70,14 @@
 												<td class="text-right font-mono">{fmt(l.debit)}</td>
 												<td class="text-right font-mono">{fmt(l.credit)}</td>
 											</tr>
+											{#if l.currency}
+												<!-- Story 37-4 (AC-7) — la partie en devise, écran seulement (le
+												     PDF et le CSV du journal restent inchangés). -->
+												<tr class="text-xs text-gray-600" data-testid="journal-fx-line">
+													<td></td>
+													<td class="font-mono" colspan="3">{fxLine(l.currency, l)}</td>
+												</tr>
+											{/if}
 										{/each}
 									</tbody>
 								</table>

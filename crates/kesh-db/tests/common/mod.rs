@@ -82,6 +82,25 @@ pub fn migrations_before(version: i64, label: &str) -> usize {
         })
 }
 
+/// Les colonnes de `20261114000003_journal_lines_foreign_currency` (Story 37-3a)
+/// que le dépôt courant **lit** (`LINE_COLUMNS` des lignes d'écriture) — posées
+/// et retirées avec celles de la 37-1 par [`colonnes_multi_devises`], sur une
+/// base d'avant les deux migrations. Sans les contraintes : le semis n'écrit
+/// que des lignes CHF.
+const COLONNES_LIGNES_EN_DEVISE: &[(&str, &str, &str)] = &[
+    (
+        "journal_entry_lines",
+        "amount_currency",
+        "DECIMAL(19,4) NULL",
+    ),
+    (
+        "journal_entry_lines",
+        "exchange_rate",
+        "DECIMAL(20,10) NULL",
+    ),
+    ("journal_entry_lines", "rate_source", "VARCHAR(12) NULL"),
+];
+
 /// Les colonnes de `20261114000001_multi_currency_settings` (Story 37-1) que le
 /// dépôt courant **lit** (listes de colonnes de `Company`, `FiscalYear`,
 /// `Account`) : `(table, colonne, définition)`, types et défauts de la migration.
@@ -127,7 +146,10 @@ const COLONNES_MULTI_DEVISES: &[(&str, &str, &str)] = &[
 /// `lettering_documents_backfill.rs`).
 #[allow(dead_code)]
 pub async fn colonnes_multi_devises(pool: &MySqlPool, poser: bool) {
-    for (table, colonne, definition) in COLONNES_MULTI_DEVISES {
+    for (table, colonne, definition) in COLONNES_MULTI_DEVISES
+        .iter()
+        .chain(COLONNES_LIGNES_EN_DEVISE.iter())
+    {
         let sql = if poser {
             format!("ALTER TABLE {table} ADD COLUMN {colonne} {definition}")
         } else {

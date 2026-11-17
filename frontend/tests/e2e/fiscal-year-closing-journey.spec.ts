@@ -155,14 +155,15 @@ async function balanceOf(
 }
 
 /**
- * Ouvre « Préparer la clôture » de l'exercice, attend les huit lignes (Story v017-4b,
- * AC-26 : K8, les brouillons fournisseur, s'ajoute en dernier).
+ * Ouvre « Préparer la clôture » de l'exercice, attend les neuf lignes (Story v017-4b,
+ * AC-26 : K8, les brouillons fournisseur ; Story 37-5 : K9, les comptes en devise,
+ * s'ajoute en dernier).
  */
 async function openChecks(page: Page, fyId: number) {
 	await page.goto('/settings/fiscal-years');
 	await page.getByTestId(`fiscal-year-checks-${fyId}`).click();
 	const dialog = page.getByTestId('fiscal-year-checks-dialog');
-	await expect(dialog.locator('[data-testid^="fiscal-year-checks-row-"]')).toHaveCount(8);
+	await expect(dialog.locator('[data-testid^="fiscal-year-checks-row-"]')).toHaveCount(9);
 	return dialog;
 }
 

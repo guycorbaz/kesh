@@ -436,6 +436,30 @@ async fn main() {
         Arc::new(mail::NoopMailer)
     };
 
+    // Story 37-2 (AC-3) — la source des cours de change : le client HTTP de
+    // l'AFC en production ; en KESH_TEST_MODE, la source factice (aucun appel
+    // sortant), pilotée par POST /api/v1/_test/exchange-rates/source.
+    let mut test_rate_source: Option<kesh_api::exchange_rates::MockRateSource> = None;
+    let rate_source: Arc<dyn kesh_api::exchange_rates::RateSource> = if config.test_mode {
+        let mock = kesh_api::exchange_rates::MockRateSource::new();
+        test_rate_source = Some(mock.clone());
+        tracing::warn!(
+            "KESH_TEST_MODE — source des cours factice : AUCUN appel à l'AFC, pilotage via /api/v1/_test/exchange-rates/source."
+        );
+        Arc::new(mock)
+    } else {
+        match kesh_api::exchange_rates::HttpRateSource::new() {
+            Ok(source) => Arc::new(source),
+            Err(e) => {
+                tracing::error!(
+                    "client HTTP des cours de change impossible à construire ({e}) — abandon."
+                );
+                std::process::exit(1);
+            }
+        }
+    };
+    let test_mode = config.test_mode;
+
     let state = AppState {
         pool,
         config: Arc::new(config),
@@ -461,6 +485,13 @@ async fn main() {
         // Story 35-5a0 — l'horloge réelle ; le binaire servi ne lit jamais
         // la variable d'instant des tests.
         horloge: Arc::new(kesh_api::horloge::HorlogeSysteme),
+        // Story 37-2 (AC-3, AC-4) — source des cours, verrou, mémoire des
+        // 15 minutes, dernier tour de connexion.
+        rate_source,
+        rate_fetch_lock: Arc::new(tokio::sync::Mutex::new(())),
+        rate_fetch_memo: Arc::default(),
+        rate_login_trigger: Arc::new(std::sync::Mutex::new(None)),
+        test_rate_source,
     };
 
     // Story 31-1c (#503, AC26) — la sauvegarde automatique faite par Kesh :
@@ -468,6 +499,14 @@ async fn main() {
     // 5 minutes après le démarrage. Garde lexicale :
     // `auto_backup::tests::lancement_par_main_seulement`.
     kesh_api::auto_backup::spawn(state.clone());
+
+    // Story 37-2 (AC-4) — la récupération automatique des cours de change :
+    // ici et ici seulement, jamais en KESH_TEST_MODE (un tour tomberait au
+    // milieu de la suite E2E). Garde lexicale :
+    // `exchange_rates::tests::lancement_par_main_seulement`.
+    if !test_mode {
+        kesh_api::exchange_rates::spawn(state.clone());
+    }
 
     let app = build_router(state, static_dir);
 

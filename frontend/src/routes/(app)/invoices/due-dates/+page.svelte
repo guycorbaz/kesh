@@ -44,6 +44,8 @@
 		type SettlementPayload,
 	} from '$lib/features/invoices/SettleInvoiceDialog.svelte';
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
+	// fx-filtre-comptes : exempté — les comptes du règlement sont filtrés à l'entrée
+	// de `SettleInvoiceDialog`.
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 	import {
 		listBankAccounts,

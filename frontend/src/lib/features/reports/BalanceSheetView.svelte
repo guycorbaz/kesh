@@ -3,6 +3,7 @@
 	import Big from 'big.js';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import { accountRoleKey, type AccountRole } from '$lib/features/accounts/accounts.types';
+	import AccountCurrencyBalance from './AccountCurrencyBalance.svelte';
 	import { formatReportAmount, formatSwissDate, isReportEmpty, ledgerHref } from './reports.api';
 	import type { AccountBalance, BalanceSheetDto } from './reports.types';
 
@@ -136,7 +137,7 @@
 									>{a.accountNumber}</a
 									>
 								</td>
-								<td class="px-2 py-1">{a.accountName}</td>
+								<td class="px-2 py-1">{a.accountName}<AccountCurrencyBalance account={a} /></td>
 								<td class="px-2 py-1 text-right font-mono">{fmt(a.balance)}</td>
 							</tr>
 						{/each}
@@ -175,7 +176,7 @@
 									>{l.accountNumber}</a
 									>
 								</td>
-								<td class="px-2 py-1">{l.accountName}</td>
+								<td class="px-2 py-1">{l.accountName}<AccountCurrencyBalance account={l} /></td>
 								<td class="px-2 py-1 text-right font-mono">{fmt(l.balance)}</td>
 							</tr>
 						{/each}
@@ -230,7 +231,7 @@
 										>{e.accountNumber}</a
 										>
 									</td>
-									<td class="px-2 py-1">{e.accountName}</td>
+									<td class="px-2 py-1">{e.accountName}<AccountCurrencyBalance account={e} /></td>
 									<td class="px-2 py-1 text-right font-mono">{fmt(e.balance)}</td>
 								</tr>
 							{/each}

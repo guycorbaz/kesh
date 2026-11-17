@@ -528,6 +528,96 @@ pub enum AppError {
     #[error("Une sauvegarde est déjà en cours")]
     BackupInProgress,
 
+    /// Story 37-2 (AC-5) — `POST /exchange-rates/fetch` d'un mois ou d'un
+    /// jour que la source n'a pas encore publié (racine vide, ou 404 de
+    /// `xmldaily`). HTTP 404, code `RATE_NOT_PUBLISHED`, clé
+    /// `error-rate-not-published`.
+    #[error("Cours pas encore publiés")]
+    RateNotPublished,
+
+    /// Story 37-2 (AC-5) — la source des cours est injoignable ou a répondu
+    /// inutilisablement (`timeout`, `connect`, `http_status:<n>`, `too_large`,
+    /// `malformed`, `month_mismatch`, `date_mismatch`, `no_valid_rate`). HTTP
+    /// **503** (jamais 500 ni 502 : le frontend lit 502 et 504 comme une issue
+    /// inconnue), code `RATE_SOURCE_UNAVAILABLE`, clé
+    /// `error-rate-source-unavailable`. Le code classé est journalisé et écrit
+    /// dans `_kesh_exchange_rate_fetch`, jamais rendu (ni URL ni trace).
+    #[error("Source des cours indisponible : {0}")]
+    RateSourceUnavailable(String),
+
+    /// Story 37-2 (AC-5) — un cours saisi (par unité) hors des bornes d'un
+    /// cours seul (`kesh_core::exchange_rates::check_rate_bounds` : nul ou
+    /// négatif, plus de 10 décimales, au-delà de 10⁶). HTTP 400, code
+    /// `FX_RATE_INVALID`, `details: { currency }`, clé `error-fx-rate-invalid`.
+    /// Réutilisé par 37-5 pour les cours de sa requête.
+    #[error("Cours de change invalide pour {currency}")]
+    FxRateInvalid {
+        /// La devise du cours refusé.
+        currency: String,
+    },
+
+    /// Story 37-5 (AC-4) — plus de 100 devises dans les cours d'une
+    /// réévaluation : HTTP 400 `FX_RATE_INVALID`, `details: { reason:
+    /// "tooMany" }`, sans devise fautive.
+    #[error("Trop de cours de change dans la requête")]
+    FxRateTooMany,
+
+    /// Story 37-3a (AC-3, AC-6) — refus d'une ligne en devise par `kesh-core`
+    /// ou par l'analyse de `foreign` : HTTP 400, code
+    /// `FX_VALUE_OUT_OF_RANGE`, `FX_LINE_ROUNDS_TO_ZERO` ou
+    /// `FX_AMOUNT_MISMATCH`, `details: { line[, expected, provided] }`.
+    #[error("Ligne en devise refusée : {0}")]
+    FxLine(kesh_core::errors::CoreError),
+
+    /// Story 37-2 (AC-5) — `GET /exchange-rates/lookup?kind=day` sans cours
+    /// retenu par la société pour ce jour : HTTP 404 `RATE_UNAVAILABLE`, la
+    /// forme du cours mensuel (`DbError::RateUnavailable`, `details {currency,
+    /// month}`) **plus** `date`. Construite par le handler, la variante de
+    /// `DbError` restant à deux champs.
+    #[error("Aucun cours journalier {currency} au {date}")]
+    RateUnavailableDay {
+        /// Code ISO 4217.
+        currency: String,
+        /// Le jour demandé.
+        date: chrono::NaiveDate,
+    },
+
+    /// Story 37-3b (AC-2 bis) — le compte de conversion ne revient pas à zéro
+    /// entre les deux écritures d'une conversion : HTTP 400
+    /// `FX_CONVERSION_TRANSIT_UNBALANCED`, `details: { entry1, entry2 }` (solde
+    /// net, débit − crédit, du compte de conversion dans chaque écriture).
+    #[error("Compte de conversion déséquilibré ({entry1} / {entry2})")]
+    FxConversionTransitUnbalanced {
+        /// Solde net dans l'écriture 1 du corps.
+        entry1: String,
+        /// Solde net dans l'écriture 2 du corps.
+        entry2: String,
+    },
+
+    /// Story 37-3b (AC-2 bis) — refus de forme d'une conversion qui vise une
+    /// ligne : HTTP 400 `VALIDATION_ERROR`, comme [`AppError::Validation`],
+    /// avec `details: { line }` quand une ligne est visée.
+    #[error("Requête invalide : {message}")]
+    ValidationAtLine {
+        /// Message traduit.
+        message: String,
+        /// Rang 1-based de la ligne dans le corps de l'écriture.
+        line: Option<usize>,
+    },
+
+    /// Story 37-3b (AC-2 bis) — un refus qui vise l'une des deux écritures
+    /// d'une conversion (`entry`, 1 ou 2, rang dans le corps). La réponse est
+    /// celle de `error`, à laquelle le handler de la route ajoute
+    /// `details.entry` (`routes::journal_entries::conversion_refusal`, qui lit
+    /// le corps produit) ; rendue seule, elle est celle de `error`, inchangée.
+    #[error("Écriture {entry} de la conversion : {error}")]
+    ConversionEntry {
+        /// Rang de l'écriture visée dans le corps.
+        entry: usize,
+        /// Le refus de cette écriture.
+        error: Box<AppError>,
+    },
+
     /// Story 17-4b — échec d'envoi d'un email transactionnel via SMTP
     /// (connexion SMTP, auth, build du message, panne réseau). HTTP 500, i18n
     /// key `error-smtp-send-failed`. Détail loggé `tracing::error!`, jamais
@@ -1428,6 +1518,193 @@ struct ErrorDetail {
     message: String,
 }
 
+/// Un montant CHF d'un refus `FX_AMOUNT_MISMATCH`, **sans arrondi** : la valeur
+/// normalisée, portée à deux décimales si elle en a moins (revue de code P1 de
+/// la 37-3a — un `{:.2}` rendait « 9.12 » pour un CHF fourni de `9.1201` et le
+/// refus affichait deux valeurs égales).
+fn chf_text(d: rust_decimal::Decimal) -> String {
+    let mut n = d.normalize();
+    if n.scale() < 2 {
+        n.rescale(2);
+    }
+    n.to_string()
+}
+
+/// Story 37-3a (AC-4, AC-6, AC-7) — statut, code, message traduit et `details`
+/// d'un refus du contrôle central des lignes en devise. `None` pour toute autre
+/// variante. Partagée par la réponse HTTP et par les correspondances
+/// `FailedProposal` des lots de rapprochement (AC-5) : un code, un message,
+/// une forme de `details`, où qu'il sorte.
+pub(crate) fn fx_db_refusal(
+    e: &DbError,
+) -> Option<(StatusCode, &'static str, String, serde_json::Value)> {
+    Some(match e {
+        DbError::FxMultipleCurrencies { currencies } => {
+            let liste = currencies.join(", ");
+            let mut args = FluentArgs::new();
+            args.set("currencies", liste.clone());
+            (
+                StatusCode::BAD_REQUEST,
+                "FX_MULTIPLE_CURRENCIES",
+                t_args(
+                    "error-fx-multiple-currencies",
+                    &format!(
+                        "Une écriture ne porte qu’une devise étrangère (ici : {liste}). Passez une conversion entre devises par le compte de conversion, en deux écritures."
+                    ),
+                    &args,
+                ),
+                serde_json::json!({ "currencies": currencies }),
+            )
+        }
+        DbError::AccountRequiresCurrency { line } => (
+            StatusCode::BAD_REQUEST,
+            "ACCOUNT_REQUIRES_CURRENCY",
+            line_message(
+                "error-account-requires-currency",
+                *line,
+                "le compte est tenu en devise, saisissez le montant en devise et le cours.",
+            ),
+            serde_json::json!({ "line": line }),
+        ),
+        DbError::FxAccountInChf { line } => (
+            StatusCode::BAD_REQUEST,
+            "FX_ACCOUNT_IN_CHF",
+            line_message(
+                "error-fx-account-in-chf",
+                *line,
+                "le compte est tenu en CHF, la ligne ne peut pas porter de montant en devise.",
+            ),
+            serde_json::json!({ "line": line }),
+        ),
+        DbError::FxCurrencyMismatch {
+            line,
+            expected,
+            provided,
+        } => {
+            let mut args = FluentArgs::new();
+            args.set("line", *line as i64);
+            args.set("expected", expected.clone());
+            args.set("provided", provided.clone());
+            (
+                StatusCode::BAD_REQUEST,
+                "FX_CURRENCY_MISMATCH",
+                t_args(
+                    "error-fx-currency-mismatch",
+                    &format!(
+                        "Ligne {line} : le compte est tenu en {expected}, la ligne annonce {provided}. Rechargez le formulaire."
+                    ),
+                    &args,
+                ),
+                serde_json::json!({ "line": line, "expected": expected, "provided": provided }),
+            )
+        }
+        DbError::FxRateNotAfc {
+            line,
+            expected_rate,
+        } => {
+            let attendu = expected_rate.map(|r| r.normalize().to_string());
+            let message = match &attendu {
+                Some(cours) => {
+                    let mut args = FluentArgs::new();
+                    args.set("line", *line as i64);
+                    args.set("rate", cours.clone());
+                    t_args(
+                        "error-fx-rate-not-afc",
+                        &format!(
+                            "Ligne {line} : ce n’est pas le cours AFC retenu pour ce mois ({cours}). Reprenez ce cours, ou gardez le vôtre comme cours saisi."
+                        ),
+                        &args,
+                    )
+                }
+                None => line_message(
+                    "error-fx-rate-not-afc-manual",
+                    *line,
+                    "le cours retenu pour ce mois est un cours saisi, non un cours AFC. Gardez la ligne comme cours saisi.",
+                ),
+            };
+            (
+                StatusCode::BAD_REQUEST,
+                "FX_RATE_NOT_AFC",
+                message,
+                serde_json::json!({ "line": line, "expectedRate": attendu }),
+            )
+        }
+        DbError::EntryIsFxRevaluation => (
+            StatusCode::CONFLICT,
+            "ENTRY_IS_FX_REVALUATION",
+            t(
+                "error-entry-is-fx-revaluation",
+                "Une écriture de réévaluation ne se modifie pas : supprimez-la et réévaluez de nouveau.",
+            ),
+            serde_json::json!({}),
+        ),
+        _ => return None,
+    })
+}
+
+/// Message « Ligne N : … » d'un refus par ligne (Story 37-3a) : clé i18n à un
+/// argument `line`.
+fn line_message(key: &str, line: usize, suite: &str) -> String {
+    let mut args = FluentArgs::new();
+    args.set("line", line as i64);
+    t_args(key, &format!("Ligne {line} : {suite}"), &args)
+}
+
+/// Message traduit d'un refus de forme d'une conversion entre devises (Story
+/// 37-3b, AC-2 bis), rendu en `VALIDATION_ERROR` avec `details.line`.
+pub(crate) fn conversion_validation_message(
+    reason: &kesh_db::repositories::journal_entry_conversions::ConversionValidation,
+) -> String {
+    use kesh_db::repositories::journal_entry_conversions::ConversionValidation as V;
+    match reason {
+        V::DifferenceLineAndComplete => t(
+            "error-conversion-difference-line-and-complete",
+            "L’écriture porte déjà une ligne de différence de change : retirez-la, ou ne demandez pas au serveur de la calculer (completeDifference).",
+        ),
+        V::FeeOnCredit { currency } => {
+            let mut args = FluentArgs::new();
+            args.set("currency", currency.clone());
+            t_args(
+                "error-conversion-fee-on-credit",
+                &format!(
+                    "Un frais de conversion se passe au débit d’un compte de charge de la devise {currency}."
+                ),
+                &args,
+            )
+        }
+        V::DifferenceLineWithoutPair => t(
+            "error-conversion-difference-without-pair",
+            "La ligne de différence de change exige un seul compte en devise dans l’écriture (hors comptes de charge) : ses comptes de différence en dépendent.",
+        ),
+        V::DifferenceLineOffPair { account_number } => {
+            let mut args = FluentArgs::new();
+            args.set("account", account_number.clone());
+            t_args(
+                "error-conversion-difference-off-pair",
+                &format!(
+                    "La différence de change va sur les comptes du compte en devise {account_number} : le compte de gains au crédit, ou le compte de pertes au débit."
+                ),
+                &args,
+            )
+        }
+        V::SameCurrency { currency } => {
+            let mut args = FluentArgs::new();
+            args.set("currency", currency.clone());
+            t_args(
+                "error-conversion-same-currency",
+                &format!(
+                    "Les deux écritures sont dans la même devise ({currency}) : ce n’est pas une conversion, passez deux écritures ordinaires."
+                ),
+                &args,
+            )
+        }
+        V::TooManyLines => t(
+            "error-conversion-too-many-lines",
+            "Trop de lignes dans l’écriture : la ligne de différence de change ne peut pas s’y ajouter.",
+        ),
+    }
+}
+
 /// Une `Response` JSON structurée **avec** `details` :
 /// `{ "error": { code, message, details } }` (Story 37-1, refus de la devise
 /// d'un compte).
@@ -1989,6 +2266,35 @@ impl IntoResponse for AppError {
             AppError::Validation(msg) => {
                 build_response(StatusCode::BAD_REQUEST, "VALIDATION_ERROR", &msg)
             }
+
+            // Story 37-3b (AC-2 bis) — conversion entre devises.
+            AppError::ValidationAtLine { message, line } => coded_response(
+                StatusCode::BAD_REQUEST,
+                "VALIDATION_ERROR",
+                message,
+                match line {
+                    Some(line) => serde_json::json!({ "line": line }),
+                    None => serde_json::json!({}),
+                },
+            ),
+            AppError::FxConversionTransitUnbalanced { entry1, entry2 } => {
+                let mut args = FluentArgs::new();
+                args.set("entry1", entry1.clone());
+                args.set("entry2", entry2.clone());
+                coded_response(
+                    StatusCode::BAD_REQUEST,
+                    "FX_CONVERSION_TRANSIT_UNBALANCED",
+                    t_args(
+                        "error-fx-conversion-transit-unbalanced",
+                        &format!(
+                            "Le compte de conversion ne revient pas à zéro : il doit être débité dans une écriture et crédité du même montant dans l’autre (soldes : {entry1} et {entry2})."
+                        ),
+                        &args,
+                    ),
+                    serde_json::json!({ "entry1": entry1, "entry2": entry2 }),
+                )
+            }
+            AppError::ConversionEntry { error, .. } => error.into_response(),
 
             // Story 16-2a (#144) — D10. Le sujet désigne **l'article**, jamais
             // le réglage société : réutiliser le formateur de 16-1a ferait lire,
@@ -2583,6 +2889,141 @@ impl IntoResponse for AppError {
                      instants.",
                 ),
             ),
+
+            // Story 37-2 (AC-5) — cours pas encore publiés.
+            AppError::RateNotPublished => build_response(
+                StatusCode::NOT_FOUND,
+                "RATE_NOT_PUBLISHED",
+                &t(
+                    "error-rate-not-published",
+                    "Ces cours ne sont pas encore publiés par l'AFC. Réessayez plus tard.",
+                ),
+            ),
+
+            // Story 37-2 (AC-5) — source des cours indisponible : 503, le code
+            // classé au journal seulement.
+            AppError::RateSourceUnavailable(code) => {
+                tracing::warn!(code = %code, "source des cours indisponible");
+                build_response(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "RATE_SOURCE_UNAVAILABLE",
+                    &t(
+                        "error-rate-source-unavailable",
+                        "La source des cours de change (AFC) ne répond pas ou a rendu une réponse \
+                         inutilisable. Réessayez plus tard, ou saisissez le cours.",
+                    ),
+                )
+            }
+
+            // Story 37-2 (AC-5) — cours saisi hors bornes.
+            AppError::FxRateInvalid { currency } => {
+                let mut args = FluentArgs::new();
+                args.set("currency", currency.clone());
+                coded_response(
+                    StatusCode::BAD_REQUEST,
+                    "FX_RATE_INVALID",
+                    t_args(
+                        "error-fx-rate-invalid",
+                        &format!(
+                            "Cours {currency} invalide : il doit être strictement positif, \
+                             par unité, avec au plus 10 décimales et au plus 1 000 000."
+                        ),
+                        &args,
+                    ),
+                    serde_json::json!({ "currency": currency }),
+                )
+            }
+
+            // Story 37-5 (AC-4) — plus de 100 devises dans `rates`.
+            AppError::FxRateTooMany => coded_response(
+                StatusCode::BAD_REQUEST,
+                "FX_RATE_INVALID",
+                t(
+                    "error-fx-rate-too-many",
+                    "Une réévaluation porte au plus 100 cours de change.",
+                ),
+                serde_json::json!({ "reason": "tooMany" }),
+            ),
+
+            // Story 37-3a (AC-3, AC-6) — refus d'une ligne en devise.
+            AppError::FxLine(core) => {
+                use kesh_core::errors::CoreError;
+                let (key, suite, details) = match &core {
+                    CoreError::FxValueOutOfRange { line } => (
+                        "error-fx-value-out-of-range",
+                        "montant en devise, cours ou montant CHF hors des limites (montant à 4 décimales au plus, cours à 10 décimales et 1 000 000 au plus, montants positifs).".to_string(),
+                        serde_json::json!({ "line": line }),
+                    ),
+                    CoreError::FxLineRoundsToZero { line } => (
+                        "error-fx-line-rounds-to-zero",
+                        "le montant en CHF calculé s’arrondit à zéro.".to_string(),
+                        serde_json::json!({ "line": line }),
+                    ),
+                    CoreError::FxAmountMismatch {
+                        line,
+                        expected,
+                        provided,
+                    } => (
+                        "error-fx-amount-mismatch",
+                        format!(
+                            "le montant CHF ({}) ne correspond pas au montant en devise multiplié par le cours ({}).",
+                            chf_text(*provided),
+                            chf_text(*expected)
+                        ),
+                        serde_json::json!({
+                            "line": line,
+                            "expected": chf_text(*expected),
+                            "provided": chf_text(*provided),
+                        }),
+                    ),
+                    other => {
+                        return AppError::Internal(format!(
+                            "AppError::FxLine porte une erreur non FX : {other}"
+                        ))
+                        .into_response();
+                    }
+                };
+                let line = details["line"].as_u64().unwrap_or(0);
+                let mut args = FluentArgs::new();
+                args.set("line", line as i64);
+                if let Some(e) = details.get("expected").and_then(|v| v.as_str()) {
+                    args.set("expected", e.to_string());
+                }
+                if let Some(p) = details.get("provided").and_then(|v| v.as_str()) {
+                    args.set("provided", p.to_string());
+                }
+                coded_response(
+                    StatusCode::BAD_REQUEST,
+                    core.error_code(),
+                    t_args(key, &format!("Ligne {line} : {suite}"), &args),
+                    details,
+                )
+            }
+
+            // Story 37-2 (AC-5) — aucun cours journalier retenu : la forme du
+            // cours mensuel, plus `date`.
+            AppError::RateUnavailableDay { currency, date } => {
+                let mut args = FluentArgs::new();
+                args.set("currency", currency.clone());
+                args.set("date", date.format("%d.%m.%Y").to_string());
+                coded_response(
+                    StatusCode::NOT_FOUND,
+                    "RATE_UNAVAILABLE",
+                    t_args(
+                        "error-rate-unavailable-day",
+                        &format!(
+                            "Aucun cours de change {currency} pour le {} : récupérez les cours ou saisissez-en un.",
+                            date.format("%d.%m.%Y")
+                        ),
+                        &args,
+                    ),
+                    serde_json::json!({
+                        "currency": currency,
+                        "month": date.format("%Y-%m-01").to_string(),
+                        "date": date.format("%Y-%m-%d").to_string(),
+                    }),
+                )
+            }
 
             // Story 17-4b — échec envoi email SMTP (recovery). Détail loggé,
             // jamais exposé. (17-4c : fire-and-forget, n'atteint pas le client.)
@@ -4376,17 +4817,31 @@ impl IntoResponse for AppError {
                 // configuration : 409 quand l'état s'y oppose, 400 quand la
                 // donnée d'entrée est invalide.
                 DbError::MultiCurrencyDisabled { fiscal_year_id } => {
-                    let details = match fiscal_year_id {
-                        Some(id) => serde_json::json!({ "fiscalYearId": id }),
-                        None => serde_json::json!({}),
+                    // Story 37-3a (AC-4 rang 2) : refusé sur un exercice, le
+                    // message le dit — sans dire pourquoi l'exercice est
+                    // mono-devise : la même variante sort aussi des routes des
+                    // cours et des genres (37-1, 37-2), dans une société qui
+                    // n'a jamais activé le multi-devises (revue de code P1).
+                    let (details, message) = match fiscal_year_id {
+                        Some(id) => (
+                            serde_json::json!({ "fiscalYearId": id }),
+                            t(
+                                "error-multi-currency-disabled-fiscal-year",
+                                "Cet exercice est mono-devise : cette opération en devise n’y est pas possible.",
+                            ),
+                        ),
+                        None => (
+                            serde_json::json!({}),
+                            t(
+                                "error-multi-currency-disabled",
+                                "Le mode multi-devises n’est pas activé : un compte ne peut pas recevoir de devise étrangère. Un administrateur l’active dans Paramètres.",
+                            ),
+                        ),
                     };
                     coded_response(
                         StatusCode::CONFLICT,
                         "MULTI_CURRENCY_DISABLED",
-                        t(
-                            "error-multi-currency-disabled",
-                            "Le mode multi-devises n’est pas activé : un compte ne peut pas recevoir de devise étrangère. Un administrateur l’active dans Paramètres.",
-                        ),
+                        message,
                         details,
                     )
                 }
@@ -4406,6 +4861,29 @@ impl IntoResponse for AppError {
                         serde_json::json!({ "value": value }),
                     )
                 }
+                // Story 37-2 (AC-5) — aucun cours retenu par la société pour
+                // une devise et un mois : 404, forme unique d'un cours mensuel
+                // (`month` au 1er, `AAAA-MM-01`), d'où l'écran tire le
+                // `POST /exchange-rates/fetch`.
+                DbError::RateUnavailable { currency, month } => {
+                    let mois = month.format("%Y-%m-01").to_string();
+                    let mut args = FluentArgs::new();
+                    args.set("currency", currency.clone());
+                    args.set("month", month.format("%m.%Y").to_string());
+                    coded_response(
+                        StatusCode::NOT_FOUND,
+                        "RATE_UNAVAILABLE",
+                        t_args(
+                            "error-rate-unavailable",
+                            &format!(
+                                "Aucun cours de change {currency} pour {} : récupérez les cours ou saisissez-en un.",
+                                month.format("%m.%Y")
+                            ),
+                            &args,
+                        ),
+                        serde_json::json!({ "currency": currency, "month": mois }),
+                    )
+                }
                 DbError::AccountCurrencyLocked => coded_response(
                     StatusCode::CONFLICT,
                     "ACCOUNT_CURRENCY_LOCKED",
@@ -4415,6 +4893,31 @@ impl IntoResponse for AppError {
                     ),
                     serde_json::json!({}),
                 ),
+                DbError::AccountForeignParentHasEntries {
+                    parent_account_id,
+                    parent_number,
+                    currency,
+                } => {
+                    let mut args = FluentArgs::new();
+                    args.set("number", parent_number.clone());
+                    args.set("currency", currency.clone());
+                    coded_response(
+                        StatusCode::CONFLICT,
+                        "ACCOUNT_FOREIGN_PARENT_HAS_ENTRIES",
+                        t_args(
+                            "error-account-foreign-parent-has-entries",
+                            &format!(
+                                "Le compte {parent_number} est tenu en {currency} et porte des écritures : il ne reçoit pas de sous-compte, sans quoi il deviendrait non imputable avec un solde que la réévaluation de fin d’exercice ne pourrait plus corriger. Créez plutôt un compte voisin."
+                            ),
+                            &args,
+                        ),
+                        serde_json::json!({
+                            "parentAccountId": parent_account_id,
+                            "parentNumber": parent_number,
+                            "currency": currency,
+                        }),
+                    )
+                }
                 DbError::AccountCurrencyInUse { site } => coded_response(
                     StatusCode::CONFLICT,
                     "ACCOUNT_CURRENCY_IN_USE",
@@ -4483,6 +4986,19 @@ impl IntoResponse for AppError {
                         details,
                     )
                 }
+                // Story 37-3a (AC-4, AC-6, AC-7) — refus du contrôle central des
+                // lignes en devise : une table, partagée avec les lots
+                // (`FailedProposal`, AC-5).
+                e @ (DbError::FxMultipleCurrencies { .. }
+                | DbError::AccountRequiresCurrency { .. }
+                | DbError::FxAccountInChf { .. }
+                | DbError::FxCurrencyMismatch { .. }
+                | DbError::FxRateNotAfc { .. }
+                | DbError::EntryIsFxRevaluation) => {
+                    let (status, code, message, details) =
+                        fx_db_refusal(&e).expect("fx_db_refusal couvre les variantes de ce bras");
+                    coded_response(status, code, message, details)
+                }
                 // Story 15-12a (#543) — la clôture d'un exercice précédé d'un
                 // exercice ouvert. 409, comme les autres refus de transition de
                 // l'écran des exercices, mais un code DÉDIÉ : l'écran traduit
@@ -4509,6 +5025,74 @@ impl IntoResponse for AppError {
                         }
                     });
                     (StatusCode::CONFLICT, Json(body)).into_response()
+                }
+                // Story 37-5 (AC-4) — `accountIds` d'une réévaluation refusé :
+                // 400, les identifiants tels que reçus.
+                DbError::FxRevaluationAccountInvalid {
+                    reason,
+                    account_ids,
+                } => {
+                    let message = match reason {
+                        kesh_db::repositories::fx_revaluation::RevaluationAccountReason::Empty => t(
+                            "error-fx-revaluation-account-empty",
+                            "Cochez au moins un compte à réévaluer.",
+                        ),
+                        kesh_db::repositories::fx_revaluation::RevaluationAccountReason::Duplicate => t(
+                            "error-fx-revaluation-account-duplicate",
+                            "Un compte figure deux fois dans la sélection de la réévaluation.",
+                        ),
+                        kesh_db::repositories::fx_revaluation::RevaluationAccountReason::TooMany => t(
+                            "error-fx-revaluation-account-too-many",
+                            "Une réévaluation porte au plus 498 comptes : passez-la en plusieurs fois.",
+                        ),
+                        kesh_db::repositories::fx_revaluation::RevaluationAccountReason::NotEligible => t(
+                            "error-fx-revaluation-account-not-eligible",
+                            "Un compte sélectionné ne se réévalue pas : seuls les comptes de bilan en devise, actifs et imputables, de la société se réévaluent.",
+                        ),
+                    };
+                    coded_response(
+                        StatusCode::BAD_REQUEST,
+                        "FX_REVALUATION_ACCOUNT_INVALID",
+                        message,
+                        serde_json::json!({ "reason": reason.as_str(), "accountIds": account_ids }),
+                    )
+                }
+                // Story 37-5 (AC-4) — calcul de la réévaluation hors bornes : le
+                // code de la ligne en devise de 37-3a, sans rang de ligne.
+                DbError::FxRevaluationValueOutOfRange {
+                    currency,
+                    account_id,
+                } => {
+                    let mut args = FluentArgs::new();
+                    args.set("currency", currency.clone());
+                    coded_response(
+                        StatusCode::BAD_REQUEST,
+                        "FX_VALUE_OUT_OF_RANGE",
+                        t_args(
+                            "error-fx-revaluation-value-out-of-range",
+                            &format!(
+                                "La réévaluation d’un compte en {currency} sort des limites : le montant en CHF dépasserait 10 000 000 000 000."
+                            ),
+                            &args,
+                        ),
+                        serde_json::json!({ "currency": currency, "accountId": account_id }),
+                    )
+                }
+                // Story 37-5 (AC-9) — la clôture refusée par K9 : 409, `details`
+                // de K9.
+                DbError::ForeignAccountsNotRevalued(found) => {
+                    let mut args = FluentArgs::new();
+                    args.set("count", found.count);
+                    coded_response(
+                        StatusCode::CONFLICT,
+                        "FOREIGN_ACCOUNTS_NOT_REVALUED",
+                        t_args(
+                            "error-fiscal-year-close-fx-not-revalued",
+                            "Réévaluez d’abord les comptes en devise au cours de clôture : un compte de bilan en devise n’est pas réévalué, ou sa devise n’a pas de cours de clôture.",
+                            &args,
+                        ),
+                        serde_json::to_value(&found).unwrap_or_else(|_| serde_json::json!({})),
+                    )
                 }
                 // Story 29-1b (#232) — la contre-passation au début de l'exercice
                 // suivant, refusée faute d'exercice suivant. 409, comme
@@ -5737,6 +6321,19 @@ fn archived_accounts_response(
 mod tests {
     use super::*;
     use http_body_util::BodyExt;
+
+    /// Revue de code P2 de la 37-3a — `chf_text` : jamais d'arrondi, au moins
+    /// deux décimales.
+    #[test]
+    fn chf_text_never_rounds_and_keeps_two_decimals() {
+        use rust_decimal::Decimal;
+        use std::str::FromStr;
+        let t = |s: &str| chf_text(Decimal::from_str(s).unwrap());
+        assert_eq!(t("9.1201"), "9.1201");
+        assert_eq!(t("100"), "100.00");
+        assert_eq!(t("0"), "0.00");
+        assert_eq!(t("12.500"), "12.50");
+    }
 
     async fn response_body(resp: Response) -> (StatusCode, serde_json::Value) {
         let (parts, body) = resp.into_parts();

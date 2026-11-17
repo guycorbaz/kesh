@@ -56,6 +56,22 @@ pub struct JournalEntryLineRow {
     pub debit: Decimal,
     pub credit: Decimal,
     pub line_order: i32,
+    /// Devise du compte de la ligne (Story 37-4, AC-7) — les quatre champs en
+    /// devise ne sont remplis que si le compte est en devise **et** la ligne
+    /// porte un montant en devise ; JSON et écran seulement (le PDF et le CSV
+    /// du journal restent inchangés).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub currency: Option<String>,
+    /// Montant en devise, sans signe : son côté est celui du montant en devise
+    /// principale. 0 pour une ligne `revaluation`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub amount_currency: Option<Decimal>,
+    /// Cours par unité de devise.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exchange_rate: Option<Decimal>,
+    /// Provenance du cours (`afc`, `manual`, `revaluation`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rate_source: Option<String>,
 }
 
 #[derive(sqlx::FromRow)]
@@ -71,6 +87,10 @@ struct RawJoinedRow {
     line_debit: Decimal,
     line_credit: Decimal,
     line_order: i32,
+    line_account_currency: Option<String>,
+    line_amount_currency: Option<Decimal>,
+    line_exchange_rate: Option<Decimal>,
+    line_rate_source: Option<String>,
 }
 
 /// Ordre fixe des journaux (Pass 1 ECH-05 — convention métier suisse).
@@ -108,7 +128,11 @@ pub async fn generate(
                 a.name AS line_account_name,
                 jel.debit AS line_debit,
                 jel.credit AS line_credit,
-                jel.line_order
+                jel.line_order,
+                a.currency AS line_account_currency,
+                jel.amount_currency AS line_amount_currency,
+                jel.exchange_rate AS line_exchange_rate,
+                jel.rate_source AS line_rate_source
             FROM journal_entries je
             INNER JOIN journal_entry_lines jel ON jel.entry_id = je.id
             INNER JOIN accounts a ON a.id = jel.account_id
@@ -132,7 +156,11 @@ pub async fn generate(
                 a.name AS line_account_name,
                 jel.debit AS line_debit,
                 jel.credit AS line_credit,
-                jel.line_order
+                jel.line_order,
+                a.currency AS line_account_currency,
+                jel.amount_currency AS line_amount_currency,
+                jel.exchange_rate AS line_exchange_rate,
+                jel.rate_source AS line_rate_source
             FROM journal_entries je
             INNER JOIN journal_entry_lines jel ON jel.entry_id = je.id
             INNER JOIN accounts a ON a.id = jel.account_id
@@ -174,6 +202,9 @@ pub async fn generate(
     let mut grouped: Vec<(Journal, JournalEntryRow)> = Vec::new();
 
     for row in rows {
+        // La devise du compte gouverne l'affichage (AC-1, T3) : une ligne en
+        // devise posée hors du dépôt sur un compte CHF se lit en CHF.
+        let en_devise = row.line_account_currency.is_some() && row.line_amount_currency.is_some();
         let line = JournalEntryLineRow {
             account_id: row.line_account_id,
             account_number: row.line_account_number,
@@ -181,6 +212,10 @@ pub async fn generate(
             debit: row.line_debit,
             credit: row.line_credit,
             line_order: row.line_order,
+            currency: row.line_account_currency.filter(|_| en_devise),
+            amount_currency: row.line_amount_currency.filter(|_| en_devise),
+            exchange_rate: row.line_exchange_rate.filter(|_| en_devise),
+            rate_source: row.line_rate_source.filter(|_| en_devise),
         };
 
         match &mut current_entry {

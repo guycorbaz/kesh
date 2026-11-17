@@ -1589,6 +1589,16 @@ const ECRANS_ASSUMES: &[(&str, &str)] = &[
         "crates/kesh-i18n/locales/fr-CH/messages.ftl",
         "(toutes les sociétés, les utilisateurs, les données système et les pièces justificatives :",
     ),
+    // exchange-rates-correction-scope-managed (Story 37-2, AC-6, U3, A23) : l'option
+    // « toutes les sociétés sous votre gestion » du dialogue du ↑ d'une correction de
+    // l'AFC est SPÉCIFIÉE mais NON RENDUE — le dialogue entier dépend de la condition
+    // `CAN_MANAGE_SEVERAL_COMPANIES`, constante `false` tant qu'un utilisateur
+    // n'appartient qu'à une société (`users.company_id`), et l'option y est désactivée.
+    // Aucune promesse multi-société n'atteint l'écran aujourd'hui.
+    (
+        "crates/kesh-i18n/locales/fr-CH/messages.ftl",
+        "Corriger pour toutes les sociétés sous votre gestion (exercices ouverts seulement)",
+    ),
     // Commentaire de tête du composant : même contenu.
     (
         "frontend/src/lib/features/admin-backup/AdminBackupPanel.svelte",

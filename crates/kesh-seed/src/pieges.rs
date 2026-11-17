@@ -535,12 +535,15 @@ pub async fn semer(
                     debit: cent,
                     credit: Decimal::ZERO,
                     project_id: None,
+                    // Données de démonstration : en CHF (Story 37-3a).
+                    foreign: None,
                 },
                 NewJournalEntryLine {
                     account_id: k1.id,
                     debit: Decimal::ZERO,
                     credit: cent,
                     project_id: None,
+                    foreign: None,
                 },
             ],
         },

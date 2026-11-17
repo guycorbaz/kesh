@@ -137,10 +137,12 @@ use serde_json::json;
 use sqlx::mysql::MySqlPool;
 
 use crate::entities::audit_log::NewAuditLogEntry;
-use crate::entities::{FiscalYear, FiscalYearStatus, NewFiscalYear};
+use crate::entities::{FiscalYear, FiscalYearStatus, NewFiscalYear, RateKind};
 use crate::errors::{DbError, map_db_error};
 use crate::repositories::MAX_LIST_LIMIT;
 use crate::repositories::audit_log;
+use crate::repositories::exchange_rates;
+use crate::repositories::fx_revaluation;
 
 const FIND_BY_ID_SQL: &str = "SELECT id, company_id, name, start_date, end_date, status, multi_currency, opening_rate_kind, closing_rate_kind, created_at, updated_at \
      FROM fiscal_years WHERE id = ?";
@@ -162,12 +164,9 @@ const LIST_BY_COMPANY_SQL: &str = "SELECT id, company_id, name, start_date, end_
 const LOCK_IN_COMPANY_SQL: &str = "SELECT id, company_id, name, start_date, end_date, status, multi_currency, opening_rate_kind, closing_rate_kind, created_at, updated_at \
      FROM fiscal_years WHERE id = ? AND company_id = ? FOR UPDATE";
 
-/// Étape (a) de [`close`] : date de début de l'exercice, **sans verrou**.
-const START_DATE_IN_COMPANY_SQL: &str =
-    "SELECT start_date FROM fiscal_years WHERE id = ? AND company_id = ?";
-
-/// Étape (b) de [`close`] : les exercices **antérieurs**, **tous statuts**, sans
-/// verrou, dans l'ordre chronologique (Story 15-12a, C119).
+/// Étape (b) de [`close`] et de `fx_revaluation::post` : les exercices
+/// **antérieurs**, **tous statuts**, sans verrou, dans l'ordre chronologique
+/// (Story 15-12a, C119) — lus sur le pool, **avant** `begin` (Story 37-5).
 const LIST_EARLIER_SQL: &str = "SELECT id FROM fiscal_years \
      WHERE company_id = ? AND start_date < ? ORDER BY start_date ASC";
 
@@ -434,10 +433,22 @@ pub async fn create(
 
     let fy = fetch_fiscal_year_in_tx(&mut tx, id).await?;
 
+    // Story 37-2 (AC-3 bis) : un exercice multi-devises reçoit la copie des
+    // cours déjà récupérés de ses unités utiles, pour les devises des comptes
+    // de la société, dans cette transaction (la société est déjà tenue en
+    // partage, en tête). Le nombre copié va au détail de l'audit (`copied`).
+    let mut details = snapshot_json(&fy);
+    if fy.multi_currency {
+        let units = kesh_core::exchange_rates::unites_utiles_exercice(&fy.exercice_devises());
+        let copied =
+            exchange_rates::copy_fetched_in_tx(&mut tx, fy.company_id, &units, None).await?;
+        details["copied"] = json!(copied);
+    }
+
     // Audit log : snapshot direct (1 état).
     audit_log::insert_in_tx(
         &mut tx,
-        build_audit_entry(user_id, "fiscal_year.created", fy.id, snapshot_json(&fy)),
+        build_audit_entry(user_id, "fiscal_year.created", fy.id, details),
     )
     .await?;
 
@@ -682,6 +693,190 @@ pub async fn update_name(
 
     tx.commit().await.map_err(map_db_error)?;
     Ok(after)
+}
+
+// --- Story 37-2 — genres d'ouverture et de clôture (AC-5, U4) ---
+
+/// L'exercice **suivant** d'un exercice — celui de la société qui commence le
+/// lendemain de sa fin (`start_date = end_date + 1 jour` : un exercice séparé
+/// par un trou n'est pas « suivant », comme en 37-1 AC-3 bis) —, lu
+/// `FOR UPDATE`. Modèle : [`NEXT_AFTER_SQL`], sans verrou.
+const NEXT_ADJACENT_LOCK_SQL: &str = "SELECT id, company_id, name, start_date, end_date, status, multi_currency, opening_rate_kind, closing_rate_kind, created_at, updated_at \
+     FROM fiscal_years WHERE company_id = ? AND start_date = ? FOR UPDATE";
+
+/// Ce que [`update_rate_kinds_in_tx`] a fait à l'exercice suivant (U4).
+#[derive(Debug, Clone)]
+pub struct NextOpeningUpdate {
+    /// L'exercice suivant avant.
+    pub before: FiscalYear,
+    /// L'exercice suivant après (identique à `before` s'il n'est pas touché).
+    pub after: FiscalYear,
+    /// Vrai si son genre d'ouverture a pris le genre de clôture réglé ; faux
+    /// s'il est clos (`reason: "closed"`).
+    pub applied: bool,
+}
+
+/// Résultat de [`update_rate_kinds_in_tx`], pour l'audit et la réponse de
+/// l'appelant.
+#[derive(Debug, Clone)]
+pub struct RateKindsUpdate {
+    /// L'exercice réglé avant.
+    pub before: FiscalYear,
+    /// L'exercice réglé après.
+    pub after: FiscalYear,
+    /// L'exercice suivant, quand le genre de clôture change, qu'il existe et
+    /// que l'appelant demande de l'y appliquer ; `None` sinon.
+    pub next: Option<NextOpeningUpdate>,
+    /// Lignes de cours copiées sur les unités neuves (AC-3 bis).
+    pub copied: u64,
+}
+
+impl RateKindsUpdate {
+    /// Faux pour un no-op (mêmes genres) : rien n'est écrit, aucun audit.
+    pub fn changed(&self) -> bool {
+        self.before.opening_rate_kind != self.after.opening_rate_kind
+            || self.before.closing_rate_kind != self.after.closing_rate_kind
+    }
+}
+
+/// Règle les genres d'ouverture et de clôture d'un exercice
+/// (`PUT /api/v1/fiscal-years/{id}/rate-kinds`, Story 37-2 AC-5), dans la
+/// transaction de l'appelant, qui écrit l'audit et la rejoue sur
+/// interblocage.
+///
+/// Verrous, dans l'ordre : l'exercice `FOR UPDATE` (portée société), puis —
+/// seulement si le genre de clôture change et que `apply_to_next_opening` est
+/// vrai — l'exercice suivant `FOR UPDATE` (ordre chronologique, celui des
+/// autres routes d'exercice), puis `companies` en partage par la clé
+/// étrangère de la copie. Refus, relus sous le verrou : exercice absent ou
+/// d'une autre société → [`DbError::NotFound`] ; exercice mono-devise →
+/// [`DbError::MultiCurrencyDisabled`] (`fiscal_year_id`) ; exercice clos →
+/// [`DbError::FiscalYearClosed`]. Mêmes genres → rien d'écrit
+/// ([`RateKindsUpdate::changed`] faux).
+///
+/// Exercice suivant (U4) : ouvert, son genre d'ouverture prend le genre de
+/// clôture réglé (son mode n'est pas relu) ; clos, il n'est pas touché
+/// (`applied` faux). Aucune écriture comptable n'est modifiée. Les unités
+/// **neuves** des deux exercices reçoivent la copie des cours déjà récupérés
+/// ([`exchange_rates::copy_fetched_in_tx`], insertion seule).
+pub async fn update_rate_kinds_in_tx(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    id: i64,
+    opening: RateKind,
+    closing: RateKind,
+    apply_to_next_opening: bool,
+) -> Result<RateKindsUpdate, DbError> {
+    let before = sqlx::query_as::<_, FiscalYear>(LOCK_IN_COMPANY_SQL)
+        .bind(id)
+        .bind(company_id)
+        .fetch_optional(&mut *conn)
+        .await
+        .map_err(map_db_error)?
+        .ok_or(DbError::NotFound)?;
+    if !before.multi_currency {
+        return Err(DbError::MultiCurrencyDisabled {
+            fiscal_year_id: Some(id),
+        });
+    }
+    if before.status == FiscalYearStatus::Closed {
+        return Err(DbError::FiscalYearClosed);
+    }
+    if before.opening_rate_kind == opening && before.closing_rate_kind == closing {
+        return Ok(RateKindsUpdate {
+            after: before.clone(),
+            before,
+            next: None,
+            copied: 0,
+        });
+    }
+
+    let next_before = if closing != before.closing_rate_kind && apply_to_next_opening {
+        match before.end_date.succ_opt() {
+            Some(lendemain) => sqlx::query_as::<_, FiscalYear>(NEXT_ADJACENT_LOCK_SQL)
+                .bind(company_id)
+                .bind(lendemain)
+                .fetch_optional(&mut *conn)
+                .await
+                .map_err(map_db_error)?,
+            None => None,
+        }
+    } else {
+        None
+    };
+
+    sqlx::query(
+        "UPDATE fiscal_years SET opening_rate_kind = ?, closing_rate_kind = ? \
+         WHERE id = ? AND company_id = ?",
+    )
+    .bind(opening.as_str())
+    .bind(closing.as_str())
+    .bind(id)
+    .bind(company_id)
+    .execute(&mut *conn)
+    .await
+    .map_err(map_db_error)?;
+    let after = sqlx::query_as::<_, FiscalYear>(FIND_BY_ID_SQL)
+        .bind(id)
+        .fetch_one(&mut *conn)
+        .await
+        .map_err(map_db_error)?;
+
+    let mut neuves = unites_neuves(&before, &after);
+    let next = match next_before {
+        None => None,
+        Some(nb) if nb.status == FiscalYearStatus::Closed => Some(NextOpeningUpdate {
+            after: nb.clone(),
+            before: nb,
+            applied: false,
+        }),
+        Some(nb) => {
+            sqlx::query("UPDATE fiscal_years SET opening_rate_kind = ? WHERE id = ?")
+                .bind(closing.as_str())
+                .bind(nb.id)
+                .execute(&mut *conn)
+                .await
+                .map_err(map_db_error)?;
+            let na = sqlx::query_as::<_, FiscalYear>(FIND_BY_ID_SQL)
+                .bind(nb.id)
+                .fetch_one(&mut *conn)
+                .await
+                .map_err(map_db_error)?;
+            if na.multi_currency {
+                neuves.extend(unites_neuves(&nb, &na));
+            }
+            Some(NextOpeningUpdate {
+                before: nb,
+                after: na,
+                applied: true,
+            })
+        }
+    };
+
+    let units: Vec<_> = neuves.into_iter().collect();
+    let copied = exchange_rates::copy_fetched_in_tx(conn, company_id, &units, None).await?;
+    Ok(RateKindsUpdate {
+        before,
+        after,
+        next,
+        copied,
+    })
+}
+
+/// Les unités de cours utiles de `after` qui ne l'étaient pas de `before`
+/// (le même exercice, avant et après un changement de genre).
+fn unites_neuves(
+    before: &FiscalYear,
+    after: &FiscalYear,
+) -> std::collections::BTreeSet<kesh_core::exchange_rates::RateUnit> {
+    use kesh_core::exchange_rates::unites_utiles_exercice;
+    let avant: std::collections::BTreeSet<_> = unites_utiles_exercice(&before.exercice_devises())
+        .into_iter()
+        .collect();
+    unites_utiles_exercice(&after.exercice_devises())
+        .into_iter()
+        .filter(|u| !avant.contains(u))
+        .collect()
 }
 
 /// Retrouve un exercice par son id (sans scope multi-tenant).
@@ -1099,6 +1294,88 @@ pub async fn list_by_company(
         .map_err(map_db_error)
 }
 
+/// Étape (b) de [`close`] et de `fx_revaluation::post` : les identifiants des
+/// exercices de la société qui commencent **avant** `start_date`, tous statuts,
+/// dans l'ordre chronologique — **lecture ordinaire sur le pool**, à faire
+/// **avant** `begin` (Story 37-5) : dans la transaction, elle fixerait
+/// l'instantané avant les verrous.
+pub async fn list_earlier_ids(
+    pool: &MySqlPool,
+    company_id: i64,
+    start_date: NaiveDate,
+) -> Result<Vec<i64>, DbError> {
+    sqlx::query_scalar(LIST_EARLIER_SQL)
+        .bind(company_id)
+        .bind(start_date)
+        .fetch_all(pool)
+        .await
+        .map_err(map_db_error)
+}
+
+/// L'exercice verrouillé par [`lock_with_earlier_in_tx`], et le plus ancien
+/// antérieur ouvert relu sous verrou.
+#[derive(Debug, Clone)]
+pub struct LockedFiscalYear {
+    /// L'exercice, lu `FOR UPDATE` (étape (c)).
+    pub target: FiscalYear,
+    /// Le plus ancien exercice antérieur **ouvert**, relu en lecture
+    /// verrouillante (étape (d)) ; `None` s'il n'y en a pas.
+    pub earliest_open: Option<FiscalYear>,
+}
+
+/// Étapes (b') à (d) de [`close`], partagées avec `fx_revaluation::post`
+/// (Story 37-5, DRY : un texte copié divergerait) : chaque antérieur de
+/// `earlier` verrouillé par clé primaire, un par un, dans l'ordre reçu
+/// (`LOCK_EARLIER_BY_ID_SQL`), puis l'exercice `FOR UPDATE`
+/// (`LOCK_IN_COMPANY_SQL`), puis la relecture **verrouillante** du plus ancien
+/// antérieur ouvert (`earlier_open_locking_sql()`).
+///
+/// Aucune lecture ordinaire : l'instantané de la transaction ne naît pas ici.
+/// Rend `None` si l'exercice n'existe pas dans la société. Ne juge rien : à
+/// l'appelant de refuser l'exercice clos ou l'antérieur ouvert, chacun selon
+/// son code. Ne touche pas à la transaction en cas d'erreur.
+pub async fn lock_with_earlier_in_tx(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    id: i64,
+    earlier: &[i64],
+) -> Result<Option<LockedFiscalYear>, DbError> {
+    // (b') Chacun verrouillé, un par un, dans cet ordre — l'ordre des verrous est
+    // celui de cette boucle. Un exercice disparu entre-temps est ignoré.
+    for earlier_id in earlier {
+        let _: Option<i64> = sqlx::query_scalar(LOCK_EARLIER_BY_ID_SQL)
+            .bind(earlier_id)
+            .bind(company_id)
+            .fetch_optional(&mut *conn)
+            .await
+            .map_err(map_db_error)?;
+    }
+
+    // (c) L'exercice lui-même, par clé primaire.
+    let Some(target) = sqlx::query_as::<_, FiscalYear>(LOCK_IN_COMPANY_SQL)
+        .bind(id)
+        .bind(company_id)
+        .fetch_optional(&mut *conn)
+        .await
+        .map_err(map_db_error)?
+    else {
+        return Ok(None);
+    };
+
+    // (d) Relecture verrouillante : le plus ancien antérieur ouvert, sur l'état
+    // validé le plus récent.
+    let earliest_open = sqlx::query_as::<_, FiscalYear>(&earlier_open_locking_sql())
+        .bind(company_id)
+        .bind(target.start_date)
+        .fetch_optional(&mut *conn)
+        .await
+        .map_err(map_db_error)?;
+    Ok(Some(LockedFiscalYear {
+        target,
+        earliest_open,
+    }))
+}
+
 /// Clôture un exercice (`Open` → `Closed`) avec audit log — **dans l'ordre** :
 /// refusée tant qu'un exercice antérieur de la société est ouvert (Story 15-12a,
 /// #543 ; invariant I, doc du module).
@@ -1112,12 +1389,20 @@ pub async fn list_by_company(
 ///
 /// # Étapes, et l'ordre des verrous (Story 15-12a, C119)
 ///
-/// - **(a)** lecture **non verrouillante** de `start_date` de Y
-///   (`START_DATE_IN_COMPANY_SQL`) — `start_date` est immuable (aucun `UPDATE`
-///   ne l'écrit) ; absente → `NotFound` ;
-/// - **(b)** liste des exercices **antérieurs**, **tous statuts**, sans verrou
-///   (`LIST_EARLIER_SQL`, `ORDER BY start_date ASC`) — un antérieur clos dans la
-///   vue peut être en cours de réouverture ;
+/// - **(a)** lecture **non verrouillante** de Y entier, **sur le pool, avant
+///   `begin`** ([`find_by_id_in_company`]) — `start_date` est immuable (aucun
+///   `UPDATE` ne l'écrit) ; absente → `NotFound`. Depuis la Story 37-5 (CR-8),
+///   (a) et (b) ne sont plus dans la transaction : une lecture ordinaire y
+///   fixerait l'instantané **avant** les verrous, et la relecture des soldes de
+///   l'étape (d-bis) verrait l'état d'avant une écriture commitée pendant
+///   l'attente ;
+/// - **(b)** liste des exercices **antérieurs**, **tous statuts**, sans verrou,
+///   sur le pool ([`list_earlier_ids`], `LIST_EARLIER_SQL`, `ORDER BY
+///   start_date ASC`) — un antérieur clos dans la vue peut être en cours de
+///   réouverture ; puis, **seulement** si Y est multi-devises, la requête
+///   `EXISTS` de K9 et, si elle trouve un compte, les cours par défaut des
+///   devises de ces comptes (`fx_revaluation::resolve_default_rates`) — aucun
+///   cours ne se lit sous verrou ;
 /// - **(b')** **chacun verrouillé, un par un, dans cet ordre**, par clé primaire
 ///   (`LOCK_EARLIER_BY_ID_SQL`), dans une boucle Rust : l'ordre des verrous est
 ///   fixé par le code, non par le plan de l'optimiseur. Un exercice listé puis
@@ -1130,6 +1415,15 @@ pub async fn list_by_company(
 ///   **validé le plus récent**, non sur la vue fixée en (a). C'est elle qui rend
 ///   le verdict [`DbError::EarlierFiscalYearOpen`] — l'invariant I en dépend,
 ///   quel que soit le plan ;
+/// - **(d-bis)** (Story 37-5, K9) — genre de clôture relu sur la ligne
+///   verrouillée de Y : changé depuis (a) → [`DbError::OptimisticLockConflict`] ;
+///   puis, **si la ligne verrouillée est multi-devises**, les lignes de la
+///   réévaluation (`fx_revaluation::lines_for_fiscal_year`, la fonction de
+///   l'aperçu et de K9), comptes et soldes lus **après les verrous**, aux cours
+///   résolus en (b) : un écart non nul, ou une devise sans cours sur un compte à
+///   solde non nul → [`DbError::ForeignAccountsNotRevalued`] (échec fermé : un
+///   compte en devise apparu après (b) n'a pas de cours résolu, et refuse) ; un
+///   calcul hors bornes → [`DbError::FxRevaluationValueOutOfRange`] ;
 /// - **(e)** `UPDATE`, audit `fiscal_year.closed`, `COMMIT`.
 ///
 /// **Pourquoi un par un** : une lecture verrouillante par intervalle
@@ -1181,57 +1475,45 @@ pub async fn list_by_company(
 /// - `DbError::IllegalStateTransition` s'il est déjà clos (prime sur la garde :
 ///   l'état de l'exercice lui-même parle d'abord, même dans un état hérité) ;
 /// - `DbError::EarlierFiscalYearOpen` si un exercice antérieur est ouvert — le
-///   **plus ancien**, qu'il faut clôturer d'abord.
+///   **plus ancien**, qu'il faut clôturer d'abord ;
+/// - `DbError::OptimisticLockConflict` si le genre de clôture a changé depuis
+///   la lecture (a) (Story 37-5, (d-bis)) ;
+/// - `DbError::ForeignAccountsNotRevalued` si un compte de bilan en devise n'est
+///   pas réévalué au cours par défaut (Story 37-5, contrôle K9) ;
+/// - `DbError::FxRevaluationValueOutOfRange` si le calcul de K9 sort des bornes.
+///
+/// La signature ne change pas avec la Story 37-5 : la clôture lit l'exercice et
+/// résout les cours **elle-même**, si bien qu'aucun appelant ne peut
+/// contourner K9 en oubliant de les passer.
 pub async fn close(
     pool: &MySqlPool,
     user_id: i64,
     company_id: i64,
     id: i64,
 ) -> Result<FiscalYear, DbError> {
+    // (a) L'exercice entier, sans verrou, sur le pool (avant `begin`).
+    let Some(before) = find_by_id_in_company(pool, company_id, id).await? else {
+        return Err(DbError::NotFound);
+    };
+
+    // (b) Les antérieurs, tous statuts, sans verrou, dans l'ordre chronologique ;
+    // puis les cours par défaut de K9 — exercice multi-devises seulement.
+    let earlier = list_earlier_ids(pool, company_id, before.start_date).await?;
+    let rates = if before.multi_currency {
+        let mut conn = pool.acquire().await.map_err(map_db_error)?;
+        fx_revaluation::default_rates_for_candidates(&mut conn, company_id, &before).await?
+    } else {
+        Default::default()
+    };
+
     let mut tx = pool.begin().await.map_err(map_db_error)?;
 
-    // (a) Date de début, sans verrou.
-    let start_date: Option<NaiveDate> = sqlx::query_scalar(START_DATE_IN_COMPANY_SQL)
-        .bind(id)
-        .bind(company_id)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(map_db_error)?;
-    let Some(start_date) = start_date else {
+    // (b') à (d) — la fonction partagée avec `fx_revaluation::post`.
+    let Some(locked) = lock_with_earlier_in_tx(&mut tx, company_id, id, &earlier).await? else {
         tx.rollback().await.map_err(map_db_error)?;
         return Err(DbError::NotFound);
     };
-
-    // (b) Les antérieurs, tous statuts, sans verrou, dans l'ordre chronologique.
-    let earlier: Vec<i64> = sqlx::query_scalar(LIST_EARLIER_SQL)
-        .bind(company_id)
-        .bind(start_date)
-        .fetch_all(&mut *tx)
-        .await
-        .map_err(map_db_error)?;
-
-    // (b') Chacun verrouillé, un par un, dans cet ordre — l'ordre des verrous est
-    // celui de cette boucle. Un exercice disparu entre-temps est ignoré.
-    for earlier_id in earlier {
-        let _: Option<i64> = sqlx::query_scalar(LOCK_EARLIER_BY_ID_SQL)
-            .bind(earlier_id)
-            .bind(company_id)
-            .fetch_optional(&mut *tx)
-            .await
-            .map_err(map_db_error)?;
-    }
-
-    // (c) L'exercice lui-même, par clé primaire.
-    let target = sqlx::query_as::<_, FiscalYear>(LOCK_IN_COMPANY_SQL)
-        .bind(id)
-        .bind(company_id)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(map_db_error)?;
-    let Some(target) = target else {
-        tx.rollback().await.map_err(map_db_error)?;
-        return Err(DbError::NotFound);
-    };
+    let target = locked.target;
     if target.status == FiscalYearStatus::Closed {
         tx.rollback().await.map_err(map_db_error)?;
         // Story 14-2 (D6) : re-clore un exercice déjà clos reste une erreur
@@ -1240,21 +1522,42 @@ pub async fn close(
             "fiscal_year {id} déjà clos (re-clôture no-op)"
         )));
     }
-
-    // (d) Relecture verrouillante : le plus ancien antérieur ouvert, sur l'état
-    // validé le plus récent.
-    let earliest_open = sqlx::query_as::<_, FiscalYear>(&earlier_open_locking_sql())
-        .bind(company_id)
-        .bind(target.start_date)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(map_db_error)?;
-    if let Some(open) = earliest_open {
+    if let Some(open) = locked.earliest_open {
         tx.rollback().await.map_err(map_db_error)?;
         return Err(DbError::EarlierFiscalYearOpen {
             fiscal_year_id: open.id,
             fiscal_year_name: open.name,
         });
+    }
+
+    // (d-bis) Story 37-5 — genre de clôture inchangé, puis K9 sur la ligne
+    // verrouillée : comptes et soldes lus après les verrous.
+    if target.closing_rate_kind != before.closing_rate_kind {
+        tx.rollback().await.map_err(map_db_error)?;
+        return Err(DbError::OptimisticLockConflict);
+    }
+    if target.multi_currency {
+        let lines =
+            match fx_revaluation::lines_for_fiscal_year(&mut tx, company_id, &target, &rates).await
+            {
+                Ok(lines) => lines,
+                Err(e) => {
+                    tx.rollback().await.map_err(map_db_error)?;
+                    return Err(e);
+                }
+            };
+        if let Some(e) = lines
+            .iter()
+            .find_map(fx_revaluation::RevaluationLine::out_of_range)
+        {
+            tx.rollback().await.map_err(map_db_error)?;
+            return Err(e);
+        }
+        let not_revalued = fx_revaluation::not_revalued(&lines);
+        if not_revalued.count > 0 {
+            tx.rollback().await.map_err(map_db_error)?;
+            return Err(DbError::ForeignAccountsNotRevalued(not_revalued));
+        }
     }
 
     // (e) La transition.

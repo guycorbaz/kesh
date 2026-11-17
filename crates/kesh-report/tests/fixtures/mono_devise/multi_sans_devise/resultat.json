@@ -1,0 +1,32 @@
+{
+  "expenses": [
+    {
+      "accountId": 5,
+      "accountName": "Charges CI",
+      "accountNumber": "4000",
+      "accountType": "Expense",
+      "active": true,
+      "balance": "77.3500",
+      "role": null
+    }
+  ],
+  "netResult": "912.6500",
+  "period": {
+    "endDate": "2026-12-31",
+    "fiscalYearId": 2,
+    "startDate": "2026-01-01"
+  },
+  "revenues": [
+    {
+      "accountId": 4,
+      "accountName": "Ventes CI",
+      "accountNumber": "3000",
+      "accountType": "Revenue",
+      "active": true,
+      "balance": "990.0000",
+      "role": null
+    }
+  ],
+  "totalExpenses": "77.3500",
+  "totalRevenues": "990.0000"
+}

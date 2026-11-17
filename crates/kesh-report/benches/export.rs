@@ -50,6 +50,8 @@ fn make_account_balance(i: usize, ty: AccountType) -> AccountBalance {
         active: true,
         balance: Decimal::from_str(&format!("{}.{:02}", i, (i * 17) % 100)).unwrap(),
         role: None,
+        currency: None,
+        balance_currency: None,
     }
 }
 
@@ -114,6 +116,12 @@ fn make_trial_balance(n: usize) -> TrialBalance {
             total_credit: Decimal::from(100),
             balance: Decimal::from(0),
             closing_balance: Decimal::from(250),
+            currency: None,
+            opening_currency: None,
+            total_debit_currency: None,
+            total_credit_currency: None,
+            balance_currency: None,
+            closing_currency: None,
         })
         .collect();
     let total_debit: Decimal = rows.iter().map(|r| r.total_debit).sum();
@@ -157,6 +165,10 @@ fn make_journal_report(n_entries: usize) -> JournalReport {
                         debit: Decimal::from(100),
                         credit: Decimal::ZERO,
                         line_order: 0,
+                        currency: None,
+                        amount_currency: None,
+                        exchange_rate: None,
+                        rate_source: None,
                     },
                     JournalEntryLineRow {
                         account_id: 2,
@@ -165,6 +177,10 @@ fn make_journal_report(n_entries: usize) -> JournalReport {
                         debit: Decimal::ZERO,
                         credit: Decimal::from(100),
                         line_order: 1,
+                        currency: None,
+                        amount_currency: None,
+                        exchange_rate: None,
+                        rate_source: None,
                     },
                 ],
             })

@@ -71,60 +71,13 @@ impl<'r> Decode<'r, MySql> for FiscalYearStatus {
 /// Genre d'un cours de change d'exercice (Story 37-1) : cours **journalier**
 /// ou cours **mensuel**. Colonne `ENUM('day','month')`, écrite en minuscules
 /// au HTTP comme en base.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum RateKind {
-    /// Cours journalier.
-    Day,
-    /// Cours mensuel.
-    Month,
-}
-
-impl RateKind {
-    /// Valeur en base et au HTTP : `day` ou `month`.
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Day => "day",
-            Self::Month => "month",
-        }
-    }
-}
-
-impl std::str::FromStr for RateKind {
-    type Err = String;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "day" => Ok(Self::Day),
-            "month" => Ok(Self::Month),
-            other => Err(format!("RateKind inconnu : {other}")),
-        }
-    }
-}
-
-impl Type<MySql> for RateKind {
-    fn type_info() -> MySqlTypeInfo {
-        <String as Type<MySql>>::type_info()
-    }
-    fn compatible(ty: &MySqlTypeInfo) -> bool {
-        <String as Type<MySql>>::compatible(ty) || <str as Type<MySql>>::compatible(ty)
-    }
-}
-
-impl<'q> Encode<'q, MySql> for RateKind {
-    fn encode_by_ref(
-        &self,
-        buf: &mut <MySql as sqlx::Database>::ArgumentBuffer<'q>,
-    ) -> Result<IsNull, BoxDynError> {
-        <&str as Encode<MySql>>::encode_by_ref(&self.as_str(), buf)
-    }
-}
-
-impl<'r> Decode<'r, MySql> for RateKind {
-    fn decode(value: <MySql as sqlx::Database>::ValueRef<'r>) -> Result<Self, BoxDynError> {
-        let s = <String as Decode<MySql>>::decode(value)?;
-        s.parse().map_err(Into::into)
-    }
-}
+///
+/// Story 37-2 : le type vit dans `kesh-core` (les fonctions pures des cours en
+/// ont besoin, et `kesh-core` ne dépend pas de `kesh-db`) ; il est réexporté
+/// ici. L'orphan rule interdit d'y implémenter les traits `sqlx` : les colonnes
+/// se lisent en texte, converties par `TryFrom<String>`
+/// (`#[sqlx(try_from = "String")]`), et s'écrivent par `RateKind::as_str`.
+pub use kesh_core::exchange_rates::RateKind;
 
 /// Exercice comptable persisté en base.
 ///
@@ -159,11 +112,26 @@ pub struct FiscalYear {
     /// Exercice multi-devises (voir la doc du type).
     pub multi_currency: bool,
     /// Genre du cours d'ouverture (voir la doc du type).
+    #[sqlx(try_from = "String")]
     pub opening_rate_kind: RateKind,
     /// Genre du cours de clôture (voir la doc du type).
+    #[sqlx(try_from = "String")]
     pub closing_rate_kind: RateKind,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
+}
+
+impl FiscalYear {
+    /// Ses dates et ses deux genres, pour le calcul des unités de cours utiles
+    /// (Story 37-2, AC-3 bis, AC-4, AC-5).
+    pub fn exercice_devises(&self) -> kesh_core::exchange_rates::ExerciceDevises {
+        kesh_core::exchange_rates::ExerciceDevises {
+            start: self.start_date,
+            end: self.end_date,
+            opening_kind: self.opening_rate_kind,
+            closing_kind: self.closing_rate_kind,
+        }
+    }
 }
 
 /// Données de création d'un exercice comptable.

@@ -18,7 +18,10 @@
 	import { Input } from '$lib/components/ui/input';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
-	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
+	import {
+		withoutForeignCurrency,
+		type AccountResponse,
+	} from '$lib/features/accounts/accounts.types';
 	import type { BankAccountSummary } from '$lib/features/bank-accounts/bank-accounts.api';
 	import { bankAccountOptionLabel } from '$lib/features/bank-accounts/format';
 	import { withoutCreditCards } from '$lib/features/bank-accounts/credit-card';
@@ -144,9 +147,10 @@
 	// les deux.
 	//
 	// Story 15-6b : ni le compte débiteurs (rôle `Receivable`) — cf. plus haut.
+	// Story 37-3b (AC-4) : ni compte en devise, filtré ici, à l'entrée du dialogue.
 	let selectableAccounts = $derived(
 		withoutAccountIds(
-			accounts.filter((a) => a.active && a.postable),
+			withoutForeignCurrency(accounts).filter((a) => a.active && a.postable),
 			receivableIds,
 		),
 	);

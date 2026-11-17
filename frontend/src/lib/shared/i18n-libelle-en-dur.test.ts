@@ -356,8 +356,35 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
  * rendu, `conforme` **79 → 80** ; `ecartee` ne bouge pas. Relevé par la garde (`expected 94 to
  * be 93`), non additionné ; seule déclaration neuve de la phase C à porter un suffixe `Label`,
  * `Text` ou `Display`.
+ *
+ * **94 → 106, et les douze déclarations sont NOMMÉES** (Story 37-2, AC-6, écran *Cours de
+ * change*) : dans `lib/features/exchange-rates/exchange-rates-labels.ts`, `mentionText`,
+ * `arrowLabel`, `notFetchableText`, `fetchFailureText`, `fetchErrorCodeText`, `kindText`,
+ * `unitLongText`, `statusText` (textes par `i18nMsg`, ou le message du serveur par
+ * `errorMessageOf`, ou une donnée : le code brut inconnu) ; dans `exchange-rates-grid.ts`,
+ * `monthLabel`, `monthLongLabel`, `unitLabel` (`Intl.DateTimeFormat` ou `formatSwissDate` :
+ * des données) ; dans `ExchangeRatesScreen.svelte`, `linkedLabel` (une donnée ou `null`).
+ * Aucun littéral rendu : `conforme` **80 → 92** ; `ecartee` ne bouge pas. Relevé par la garde
+ * (`expected 106 to be 94`), non additionné.
+ *
+ * **106 → 112, et les six déclarations sont NOMMÉES** (Story 37-3b, écritures en devise à
+ * l'écran) : `rateSourceLabel` et `foreignLineLabel` (`lib/features/journal-entries/fx-display.ts`,
+ * textes par `i18nMsg` et données), `monthLabel` (`fx-refusals.ts`, une donnée reformatée),
+ * `openingProvenanceLabel` (`lib/features/opening-balances/opening-fx.ts`, textes par
+ * `i18nMsg`), `accountLabel` (`ConversionAssistant.svelte`, numéro et nom du compte : des
+ * données) — `conforme` **92 → 97** — et `indicatorLabel` (`JournalEntryForm.svelte`,
+ * textes par `i18nMsg`, et `''` pour une ligne sans devise, neutre) — `ecartee` **14 → 15**.
+ * Relevé par la garde (`expected 112 to be 106`), non additionné.
+ *
+ * **112 → 116, et les quatre déclarations sont NOMMÉES** (Story 37-5, réévaluation de fin
+ * d'exercice ; 106 → 110 sur sa branche avant la fusion de la 37-3b) : dans
+ * `lib/features/fiscal-years/revaluation.helpers.ts`, `sourceLabel`, `kindLabel` et
+ * `originLabel` (textes par `i18nMsg`, et la chaîne vide neutre quand il n'y a rien à dire :
+ * `ecartee` **15 → 18**) ; dans `closing-checks-labels.ts`, `notRevaluedText` (textes par
+ * `i18nMsg` seulement : `conforme` **97 → 98**). Relevé par la garde après la fusion, non
+ * additionné.
  */
-const CANDIDATES_ATTENDUES = 94;
+const CANDIDATES_ATTENDUES = 116;
 
 /** Les trois délimiteurs de littéral en JS/TS. */
 const QUOTES = ["'", '"', '`'];
@@ -874,7 +901,7 @@ describe('libellés en dur — l’angle mort #255', () => {
 			else if (c.retours.length > 0) classes.ecartee += 1;
 			else classes.conforme += 1;
 		}
-		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 14, conforme: 80 });
+		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 18, conforme: 98 });
 		// La somme est recalculée depuis les classes, jamais depuis le total qu'elle contrôle.
 		const somme = Object.values(classes).reduce((a, b) => a + b, 0);
 		expect(somme).toBe(CANDIDATES_ATTENDUES);

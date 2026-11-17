@@ -627,7 +627,8 @@ test.describe('Cycle brouillon → validée → payée (étapes par l’écran, 
 			await page.goto('/settings/fiscal-years');
 			await page.getByTestId(`fiscal-year-checks-${fys[0].id}`).click();
 			const dialog = page.getByTestId('fiscal-year-checks-dialog');
-			await expect(dialog.locator('[data-testid^="fiscal-year-checks-row-"]')).toHaveCount(8);
+			// Story 37-5 : neuf contrôles (K9 en dernier).
+			await expect(dialog.locator('[data-testid^="fiscal-year-checks-row-"]')).toHaveCount(9);
 			const k8 = dialog.getByTestId('fiscal-year-checks-row-DRAFT_SUPPLIER_INVOICES');
 			await expect(k8).toHaveAttribute('data-status', 'attention');
 			await expect(k8.locator(`a[href="/supplier-invoices/${draft.id}"]`)).toHaveCount(1);

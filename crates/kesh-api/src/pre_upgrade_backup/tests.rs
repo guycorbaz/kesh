@@ -46,8 +46,11 @@ const BINAIRE: &str = env!("CARGO_PKG_VERSION");
 /// `mcp_prompt_versions`) : la base partielle s'arrête juste avant.
 const PREMIERE_EN_ATTENTE: i64 = 20261027000001;
 
-/// Les tables que crée la migration en attente : absentes de la base partielle.
-const TABLES_EN_ATTENTE: &[&str] = &["mcp_prompt_versions", "mcp_prompts"];
+/// Les tables applicatives que créent les migrations en attente : absentes de
+/// la base partielle — celles de `20261027000001_mcp_prompts`, et
+/// `exchange_rates` de `20261114000002_exchange_rates` (Story 37-2), créée
+/// après elle et donc tout aussi absente de la version de départ (0.17.3).
+const TABLES_EN_ATTENTE: &[&str] = &["exchange_rates", "mcp_prompt_versions", "mcp_prompts"];
 
 /// L'inventaire de la version de départ, **littéral** (C-v0174m-17 (c)) :
 /// oracle indépendant du prédicat que lit le module.

@@ -211,7 +211,8 @@ pub const TEMOINS: &[(&str, Jeux, Complet)] = &[
                 "description": "P", "accountId": p.compte_k1, "amountMin": "0",
                 "amountMax": "100000", "dateFrom": d(p.exercice_debut),
                 "dateTo": d(p.exercice_fin), "journal": "OD", "sortBy": "entryDate",
-                "sortDir": "asc", "limit": 22, "offset": 0,
+                // Story 37-3a : maximum re-mesuré, 22 → 18.
+                "sortDir": "asc", "limit": 18, "offset": 0,
             })
         },
     ),
@@ -230,15 +231,15 @@ pub const TEMOINS: &[(&str, Jeux, Complet)] = &[
         },
         |p| {
             json!({"accountId": p.compte_k1, "from": d(p.exercice_debut),
-                   "to": d(p.exercice_fin), "limit": 30, "offset": 0})
+                   "to": d(p.exercice_fin), "limit": 26, "offset": 0})
         },
     ),
     (
         "kesh_balance",
-        |p| vec![json!({"fiscalYearId": p.exercice_id, "limit": 55})],
+        |p| vec![json!({"fiscalYearId": p.exercice_id, "limit": 42})],
         |p| {
             json!({"fiscalYearId": p.exercice_id, "periodStart": d(p.exercice_debut),
-                   "periodEnd": d(p.exercice_fin), "limit": 55, "offset": 0})
+                   "periodEnd": d(p.exercice_fin), "limit": 42, "offset": 0})
         },
     ),
     (
