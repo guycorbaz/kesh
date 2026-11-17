@@ -593,22 +593,57 @@ async fn la_recherche_d_un_credit_rend_les_factures_de_tous_les_clients(pool: My
     assert_eq!(body["maxDifference"], "1.00");
 }
 
-/// AC5, D4 — un débit ne rend rien tant que le type fournisseur groupé n'est
-/// pas accepté (le commit D4 remplace ce test) : jamais une facture client,
-/// jamais ce que le `POST` refuserait.
+/// AC5, D4 — un débit : les factures fournisseur ouvertes, aucune facture
+/// client ; le montant signé.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
-async fn un_debit_ne_rend_rien_avant_le_type_fournisseur(pool: MySqlPool) {
+async fn la_recherche_d_un_debit_rend_les_factures_fournisseur(pool: MySqlPool) {
     let ctx = monter(&pool).await;
     let _client = ctx.facture("F-1", "80.00", "2026-06-01").await;
-    let _g = ctx
-        .facture_fournisseur("Gamma", "FF-1", "G-77", "R", "120.00", "2026-06-01")
+    let g = ctx
+        .facture_fournisseur(
+            "Gamma Fournitures",
+            "FF-2026-001",
+            "G-77",
+            "RF18539007547034",
+            "120.00",
+            "2026-06-01",
+        )
         .await;
     let tx = ctx.transaction("-200.00", "2026-06-20").await;
     let (s, body) = ctx.candidats(tx, "").await;
     assert_eq!(s, 200, "{body}");
-    assert_eq!(body["direction"], Value::Null);
+    assert_eq!(body["direction"], "supplier");
     assert_eq!(body["transactionAmount"], "-200.00");
-    assert_eq!(body["candidates"], json!([]));
+    let c = body["candidates"].as_array().unwrap();
+    assert_eq!(c.len(), 1, "{body}");
+    assert_eq!(c[0]["kind"], "supplier_invoice");
+    assert_eq!(c[0]["id"], g);
+    assert_eq!(c[0]["internalNumber"], "FF-2026-001");
+    assert_eq!(c[0]["supplierInvoiceNumber"], "G-77");
+    assert_eq!(c[0]["paymentReference"], "RF18539007547034");
+    assert_eq!(c[0]["contactName"], "Gamma Fournitures");
+    assert_eq!(c[0]["amountDue"], "120.00");
+    assert_eq!(c[0]["amountDueRaw"], "120.0000");
+    assert!(c[0].get("totalTtc").is_none());
+    assert_eq!(ctx.ids_candidats(tx, "?q=G-77").await, vec![g]);
+}
+
+/// AC1, D4 — le pré-vol du type fournisseur : identifiant `≤ 0` dans
+/// `supplierInvoiceIds`, `differenceAccountId` `≤ 0` → `400` au lot.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn le_pre_vol_du_type_fournisseur(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let tx = ctx.transaction("-30.00", "2026-06-20").await;
+    for p in [
+        json!({ "type": "supplier_invoice_group", "bankTransactionId": tx,
+                "supplierInvoiceIds": [3, 0] }),
+        json!({ "type": "supplier_invoice_group", "bankTransactionId": tx,
+                "supplierInvoiceIds": [3, 4], "differenceAccountId": -1 }),
+        json!({ "type": "supplier_invoice_group", "bankTransactionId": tx, "invoiceIds": [3, 4] }),
+    ] {
+        let (s, b) = ctx.accepter(json!([p])).await;
+        assert_refus(s, &b, 400, "VALIDATION_ERROR");
+    }
 }
 
 /// AC5 — `q`, `exclude`, `limit` et `hasMore` ; paramètres invalides en 400.
@@ -723,8 +758,9 @@ async fn les_refus_de_la_recherche(pool: MySqlPool) {
 // AC1 — le type et le pré-vol
 // ============================================================
 
-/// AC1 — un type inconnu nomme les cinq types ; un identifiant `≤ 0` dans
-/// `invoiceIds` ou un `differenceAccountId` `≤ 0` rendent `400` au lot.
+/// AC1 — un type inconnu nomme les six types (cinq avant le commit D4) ; un
+/// identifiant `≤ 0` dans `invoiceIds` ou un `differenceAccountId` `≤ 0`
+/// rendent `400` au lot.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn le_type_et_le_pre_vol(pool: MySqlPool) {
     let ctx = monter(&pool).await;
@@ -736,7 +772,7 @@ async fn le_type_et_le_pre_vol(pool: MySqlPool) {
     let message = b["error"]["message"].as_str().unwrap_or_default();
     assert!(
         message.contains(
-            "[\"invoice\", \"split\", \"rule\", \"supplier_invoice\", \"invoice_group\"]"
+            "[\"invoice\", \"split\", \"rule\", \"supplier_invoice\", \"invoice_group\", \"supplier_invoice_group\"]"
         ),
         "{message}"
     );
@@ -1583,4 +1619,167 @@ async fn l_acces(pool: MySqlPool) {
         .await;
     assert_eq!(s, 200, "{body}");
     assert_eq!(body["accepted"].as_array().unwrap().len(), 1, "{body}");
+}
+
+// ============================================================
+// AC3, AC6, AC7 — le type fournisseur (D4) : exigent la 43-1b
+// ============================================================
+//
+// `grouped_settlements::pay_supplier_invoices_in_tx` est encore
+// `unimplemented!` au contrat T3 de la 43-1a : ces tests ne tournent qu'une fois
+// la Story 43-1b fusionnée (`cargo nextest run --run-ignored all`). Retirer le
+// `#[ignore]` à la reprise de sa branche.
+
+impl Ctx {
+    /// Une facture fournisseur validée avec son écriture d'achat
+    /// `D 4000 / C 2000` (la dette lue par le règlement).
+    async fn facture_achat(&self, interne: &str, montant: &str, date: &str) -> i64 {
+        let s = &self.seeded;
+        let contact_id = self.contact(&format!("Fournisseur {interne}")).await;
+        let amount = dec(montant);
+        let je = journal_entries::create(
+            &self.pool,
+            s.fiscal_year_id,
+            Acteur::utilisateur(s.admin_user_id),
+            NewJournalEntry {
+                company_id: s.company_id,
+                entry_date: d(date),
+                journal: Journal::Achats,
+                description: "Achat".into(),
+                project_id: None,
+                lines: vec![
+                    NewJournalEntryLine {
+                        account_id: s.accounts["4000"],
+                        debit: amount,
+                        credit: Decimal::ZERO,
+                        project_id: None,
+                    },
+                    NewJournalEntryLine {
+                        account_id: s.accounts["2000"],
+                        debit: Decimal::ZERO,
+                        credit: amount,
+                        project_id: None,
+                    },
+                ],
+            },
+        )
+        .await
+        .expect("écriture d'achat");
+        sqlx::query(
+            "INSERT INTO supplier_invoices (company_id, contact_id, internal_number, status, \
+             invoice_date, due_date, total_amount, purchase_journal_entry_id) \
+             VALUES (?, ?, ?, 'open', ?, ?, ?, ?)",
+        )
+        .bind(s.company_id)
+        .bind(contact_id)
+        .bind(interne)
+        .bind(d(date))
+        .bind(d(date))
+        .bind(amount)
+        .bind(je.entry.id)
+        .execute(&self.pool)
+        .await
+        .unwrap()
+        .last_insert_id() as i64
+    }
+
+    async fn grouper_fournisseur(
+        &self,
+        tx: i64,
+        ids: &[i64],
+        compte: Option<i64>,
+    ) -> (Value, Value) {
+        let mut p = json!({ "type": "supplier_invoice_group", "bankTransactionId": tx,
+                            "supplierInvoiceIds": ids });
+        if let Some(c) = compte {
+            p["differenceAccountId"] = json!(c);
+        }
+        let (s, b) = self.accepter(json!([p])).await;
+        assert_eq!(s, 200, "{b}");
+        (b["accepted"][0].clone(), b["failed"][0].clone())
+    }
+}
+
+/// AC3 — deux factures fournisseur réglées au montant exact par un débit.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+#[ignore = "exige la 43-1b : pay_supplier_invoices_in_tx, vue et dé-rapprochement fournisseur"]
+async fn un_groupe_fournisseur_se_regle(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let a = ctx.facture_achat("FF-1", "120.00", "2026-06-01").await;
+    let b = ctx.facture_achat("FF-2", "80.00", "2026-06-02").await;
+    let tx = ctx.transaction("-200.00", "2026-06-20").await;
+    let (ok, ko) = ctx.grouper_fournisseur(tx, &[a, b], None).await;
+    assert!(ko.is_null(), "{ko}");
+    assert_eq!(ok["invoiceId"], 0);
+    assert_eq!(ok["supplierInvoiceId"], Value::Null);
+    assert_eq!(ok["gap"], "0.00");
+    assert_eq!(
+        ok["settledInvoices"],
+        json!([
+            { "supplierInvoiceId": a, "amount": "120.0000" },
+            { "supplierInvoiceId": b, "amount": "80.0000" }
+        ])
+    );
+    // Un crédit est refusé (sonde du sens).
+    let credit = ctx.transaction("200.00", "2026-06-20").await;
+    let c = ctx.facture_achat("FF-3", "120.00", "2026-06-01").await;
+    let e = ctx.facture_achat("FF-4", "80.00", "2026-06-01").await;
+    let (_, ko) = ctx.grouper_fournisseur(credit, &[c, e], None).await;
+    assert_eq!(ko["errorCode"], "RECONCILIATION_TRANSACTION_NOT_DEBIT");
+    assert_eq!(ko["details"]["reason"], "credit_transaction");
+}
+
+/// AC6 — l'écart fournisseur : un débit supérieur aux factures, compte choisi,
+/// `gap` positif ; sans compte, refusé.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+#[ignore = "exige la 43-1b : pay_supplier_invoices_in_tx, vue et dé-rapprochement fournisseur"]
+async fn l_ecart_fournisseur(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let a = ctx.facture_achat("FF-1", "120.00", "2026-06-01").await;
+    let b = ctx.facture_achat("FF-2", "80.00", "2026-06-02").await;
+    let tx = ctx.transaction("-200.40", "2026-06-20").await;
+    let (_, ko) = ctx.grouper_fournisseur(tx, &[a, b], None).await;
+    assert_eq!(ko["details"]["reason"], "difference_account_required");
+    let (ok, ko) = ctx.grouper_fournisseur(tx, &[a, b], Some(ctx.frais)).await;
+    assert!(ko.is_null(), "{ko}");
+    assert_eq!(ok["gap"], "0.40");
+    assert_eq!(ok["differenceAccountId"], ctx.frais);
+}
+
+/// AC7 — la vue et l'annulation d'un groupe fournisseur.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+#[ignore = "exige la 43-1b : pay_supplier_invoices_in_tx, vue et dé-rapprochement fournisseur"]
+async fn la_vue_et_l_annulation_d_un_groupe_fournisseur(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let a = ctx.facture_achat("FF-1", "120.00", "2026-06-01").await;
+    let b = ctx.facture_achat("FF-2", "80.00", "2026-06-02").await;
+    let tx = ctx.transaction("-199.60", "2026-06-20").await;
+    let (ok, _) = ctx.grouper_fournisseur(tx, &[a, b], Some(ctx.frais)).await;
+    assert_eq!(ok["gap"], "-0.40");
+    let v = vue(&ctx, tx).await;
+    assert_eq!(v["kind"], "grouped_settlement");
+    assert_eq!(
+        v["groupedInvoices"],
+        json!([
+            { "kind": "supplier_invoice", "id": a, "number": "FF-1", "amount": "120.0000" },
+            { "kind": "supplier_invoice", "id": b, "number": "FF-2", "amount": "80.0000" }
+        ])
+    );
+    assert_eq!(v["gap"], "-0.40");
+    assert_eq!(v["differenceAccount"]["id"], ctx.frais);
+    let (s, body) = ctx
+        .post(
+            &format!("/api/v1/reconciliation/transactions/{tx}/cancel"),
+            json!({}),
+        )
+        .await;
+    assert_eq!(s, 200, "{body}");
+    assert_eq!(body["kind"], "grouped_settlement");
+    assert_eq!(
+        body["cancelledInvoices"],
+        json!([
+            { "kind": "supplier_invoice", "id": a, "number": "FF-1" },
+            { "kind": "supplier_invoice", "id": b, "number": "FF-2" }
+        ])
+    );
 }

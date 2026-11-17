@@ -914,6 +914,17 @@ pub enum AcceptProposalInput {
         #[serde(default)]
         difference_account_id: Option<i64>,
     },
+    /// Story 43-2 (#823, D4 — commit retirable) — **une** transaction au
+    /// débit règle **plusieurs** factures fournisseur `open` :
+    /// `reconciliation_group::accept_one_supplier_invoice_group`, par
+    /// `grouped_settlements::pay_supplier_invoices_in_tx` (Story 43-1b).
+    #[serde(rename = "supplier_invoice_group", rename_all = "camelCase")]
+    SupplierInvoiceGroup {
+        bank_transaction_id: i64,
+        supplier_invoice_ids: Vec<i64>,
+        #[serde(default)]
+        difference_account_id: Option<i64>,
+    },
 }
 
 impl AcceptProposalInput {
@@ -941,16 +952,19 @@ impl AcceptProposalInput {
             | AcceptProposalInput::InvoiceGroup {
                 bank_transaction_id,
                 ..
+            }
+            | AcceptProposalInput::SupplierInvoiceGroup {
+                bank_transaction_id,
+                ..
             } => *bank_transaction_id,
         }
     }
 }
 
 /// Les valeurs admises pour `type` dans `POST /reconciliation/accept`, telles
-/// que le message de l'extracteur les nomme (Story 43-2 : cinq jusqu'au type
-/// fournisseur groupé).
-pub(crate) const ACCEPT_PROPOSAL_TYPES: &str =
-    "[\"invoice\", \"split\", \"rule\", \"supplier_invoice\", \"invoice_group\"]";
+/// que le message de l'extracteur les nomme (Story 43-2 : six avec le type
+/// fournisseur groupé, D4).
+pub(crate) const ACCEPT_PROPOSAL_TYPES: &str = "[\"invoice\", \"split\", \"rule\", \"supplier_invoice\", \"invoice_group\", \"supplier_invoice_group\"]";
 
 /// Story 8-5a-bis — ligne de split dans le body `/accept type='split'`
 /// (équivalent du `SplitLineInput` côté `/split` standalone).
@@ -1687,6 +1701,18 @@ pub async fn post_accept(
                     "invoice_group",
                 )?;
             }
+            AcceptProposalInput::SupplierInvoiceGroup {
+                supplier_invoice_ids,
+                difference_account_id,
+                ..
+            } => {
+                super::reconciliation_group::preflight_group(
+                    supplier_invoice_ids,
+                    *difference_account_id,
+                    "supplierInvoiceIds",
+                    "supplier_invoice_group",
+                )?;
+            }
             AcceptProposalInput::Rule {
                 rule_id,
                 counterparty_account_id,
@@ -2211,6 +2237,29 @@ async fn accept_one(
                     aujourd_hui,
                 },
                 invoice_ids,
+            )
+            .await
+        }
+        AcceptProposalInput::SupplierInvoiceGroup {
+            bank_transaction_id,
+            supplier_invoice_ids,
+            difference_account_id,
+        } => {
+            super::reconciliation_group::accept_one_supplier_invoice_group(
+                tx,
+                super::reconciliation_group::GroupGesture {
+                    company_id,
+                    bank_account_id,
+                    bank_transaction_id: *bank_transaction_id,
+                    difference_account_id: *difference_account_id,
+                    batch_size,
+                    acteur: Acteur {
+                        user_id,
+                        api_key_id: actor_api_key_id,
+                    },
+                    aujourd_hui,
+                },
+                supplier_invoice_ids,
             )
             .await
         }

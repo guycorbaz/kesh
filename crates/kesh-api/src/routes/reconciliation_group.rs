@@ -185,6 +185,30 @@ pub(super) async fn accept_one_invoice_group(
     conclude(g, SettlementDirection::Credit, outcome)
 }
 
+/// `type: "supplier_invoice_group"` (D4, commit retirable) — règle les
+/// factures fournisseur `supplier_invoice_ids` par la transaction au débit,
+/// symétrique de [`accept_one_invoice_group`] (Story 43-2, AC3), par
+/// `grouped_settlements::pay_supplier_invoices_in_tx` (Story 43-1b).
+pub(super) async fn accept_one_supplier_invoice_group(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    g: GroupGesture,
+    supplier_invoice_ids: &[i64],
+) -> Result<AcceptedProposal, FailedProposal> {
+    let outcome = grouped_settlements::pay_supplier_invoices_in_tx(
+        tx,
+        g.company_id,
+        g.bank_account_id,
+        g.bank_transaction_id,
+        supplier_invoice_ids,
+        g.difference_account_id,
+        g.batch_size,
+        g.acteur,
+        g.aujourd_hui,
+    )
+    .await;
+    conclude(g, SettlementDirection::Debit, outcome)
+}
+
 /// La conclusion commune des deux familles : le règlement en
 /// [`AcceptedProposal`], le refus et l'erreur en [`FailedProposal`].
 fn conclude(
@@ -720,9 +744,9 @@ fn parse_exclude(raw: Option<&str>) -> Result<Vec<i64>, AppError> {
 /// facture ne peut la régler : montant nul, ou devise autre que CHF (la règle
 /// de `transaction_can_be_linked_to_entry` et de la proposition).
 ///
-/// ⚠️ Un **débit** ne rend rien tant que le type `supplier_invoice_group` n'est
-/// pas accepté (D4 : la famille fournisseur vit dans un commit retirable) — la
-/// liste n'offre jamais ce que le `POST` refuserait.
+/// Un **débit** cherche des factures fournisseur (D4, commit retirable : sans
+/// lui, un débit ne rend rien, la liste n'offrant jamais ce que le `POST`
+/// refuserait).
 fn family_of(t: &BankTransaction) -> Option<(CandidateFamily, NaiveDate)> {
     if t.currency != "CHF" {
         return None;
@@ -731,6 +755,11 @@ fn family_of(t: &BankTransaction) -> Option<(CandidateFamily, NaiveDate)> {
         Some((
             CandidateFamily::Client,
             InvoiceDateWindow::for_transaction(t).latest_invoice_date,
+        ))
+    } else if t.amount < Decimal::ZERO {
+        Some((
+            CandidateFamily::Supplier,
+            InvoiceDateWindow::for_supplier_transaction(t).latest_invoice_date,
         ))
     } else {
         None
