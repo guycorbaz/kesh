@@ -1,6 +1,6 @@
 # Story 43-3 : un règlement pour plusieurs factures — l'écran de réconciliation, façon bexio (#823)
 
-Status: ready-for-dev
+Status: in-progress
 
 *Fiche rédigée le 2026-11-17 par l'agent de rédaction de l'Epic 43 (Opus 5.5), workflow `bmad-create-story`, code lu à
 `8b50fd195` ; révisée le soir même (interface comme bexio, tiers mixtes), remédiée après ses validations P1
@@ -280,15 +280,16 @@ comptabilise, et j'enregistre — puis, si je me suis trompé, j'annule ce rappr
 
 ## Tâches
 
-- [ ] **T0** — Étape 0 : LOW restants (Dev Notes) ; contrat de la 43-2 relu (fiche, puis code s'il existe).
-- [ ] **T1** — Types et appels (`reconciliation.types.ts`, `reconciliation.api.ts`, lecture des réglages de facturation).
-- [ ] **T2** — Clés i18n des quatre locales (AC6), avant les composants.
-- [ ] **T3** — `modal-guards.ts` neuf (D4), employé par le nouveau composant seulement ; `LinkSettlementModal` non touché.
-- [ ] **T4** — `GroupSettlementModal.svelte` (avec le sélecteur de compte, D2 bis), bouton, garde `group` (AC1 à AC4),
+- [x] **T0** — Étape 0 : LOW restants (Dev Notes) ; contrat de la 43-2 relu (fiche, puis code s'il existe).
+- [x] **T1** — Types et appels (`reconciliation.types.ts`, `reconciliation.api.ts`, lecture des réglages de facturation).
+- [x] **T2** — Clés i18n des quatre locales (AC6), avant les composants.
+- [x] **T3** — `modal-guards.ts` neuf (D4), employé par le nouveau composant seulement ; `LinkSettlementModal` non touché.
+- [x] **T4** — `GroupSettlementModal.svelte` (avec le sélecteur de compte, D2 bis), bouton, garde `group` (AC1 à AC4),
   côté client.
-- [ ] **T5** — Dialogue d'annulation (AC5). — [ ] **T6** — Manuel et compilation jetable (AC7).
-- [ ] **T7** — Commits D6 (côté fournisseur).
+- [x] **T5** — Dialogue d'annulation (AC5). — [x] **T6** — Manuel et compilation jetable (AC7).
+- [x] **T7** — Commits D6 (côté fournisseur).
 - [ ] **T8** — E2E (mercredi soir sur la branche de travail réunie, jeudi sur la branche définitive) ; captures (AC8).
+  *Spec écrit, en attente (`test.describe.fixme`) : à jouer sur la branche réunie ; captures à prendre avec l'API.*
 - [ ] **T9** — Gates frontend complets ; E2E complet à la clôture ; Dev Agent Record (#1235 citée) ; prompt de revue P1.
 
 ## Note de version
@@ -322,9 +323,68 @@ cette condition est le **seul** point à élargir côté écran ; la phrase est 
 
 ### Agent Model Used
 
+Opus 5.5 (agent de développement de la 43-3, clé `e433`, voie 2), 2026-11-17.
+
 ### Completion Notes List
 
+*Relevé daté du 2026-11-17, fin de l'étape 1 (tout ce qui ne dépend pas de l'API réelle). L'étape 2 — E2E et
+captures — attend la branche de la 43-2 ; ce relevé ne déclare rien qui n'ait tourné.*
+
+- **Étape 0** (lignes lues citées) :
+  - L-6 (P2) — repli `LIKE` d'un nom sans jeton de trois caractères : présent dans la 43-2,
+    `crates/kesh-db/src/repositories/reconciliation_group_candidates.rs:21` (« repli `LIKE` quand le terme n'a aucun
+    jeton de trois caractères ») et `:152` (`AND (c.name LIKE `) ; le test réel reste celui de la 43-2.
+  - L-4 (P2) — contraste du texte de l'écart : vérifié dans l'E2E (`reconciliation-group.spec.ts`, couleurs calculées
+    passées par un canevas, `helpers/contrast.ts`), qui attend l'API.
+  - L4 (P3) — `RELIRE_SUR` lu à `LinkSettlementModal.svelte:87` (`const RELIRE_SUR = new Set([`) : citation juste.
+  - P5 L4 — les refus non classés (`PERIOD_LOCKED`, `BANK_ACCOUNT_*`, `ROUNDING_ACCOUNT_NOT_CONFIGURED`,
+    `too_many` / `duplicate`…) laissent la sélection intacte, libellé existant : `handleRefusal` (modale), testé sur
+    `PERIOD_LOCKED`.
+  - LOW-8 (passe contre `t3.md`) — sources de la vue dans le code de la 43-2 (`70f74f964`) :
+    `routes/reconciliation_group.rs:527` (`gap` ← recalculé par `group_difference`), `:530` (`differenceAccount` ←
+    `view.grouped_difference_account_id`), `:533` (`cancelBlockedInvoice`) ; l'écran les affiche tels quels.
+  - AC5, groupe fournisseur : la vue et le dé-rapprochement fournisseur dépendent de la 43-1b (`ready-for-dev` au
+    `sprint-status.yaml:1113`) ; l'écran les traite déjà (D6), sans test réel avant elle.
+  - Contrat de la 43-2 relu au code (`70f74f964`) : structures `GroupCandidateResponse`, `GroupCandidatesResponse`,
+    `GroupAcceptedFields`, refus de `group_refusal_to_failed_proposal`, `CancelReconciliationResponse` (`kind`,
+    `cancelledInvoices`) ; types alignés. 39 codes : union des littéraux de `reconciliation.rs` (34) et des codes de la
+    fonction de traduction de `reconciliation_group.rs`, plus les trois de `DbError` ; deux neufs.
+- **Fait** : types et appel (`getGroupCandidates`) ; grandeurs en `bigint` de 1/10 000 (`group-settlement.ts`) ; gardes
+  (`modal-guards.ts`, fabriques — C-e433-6) ; libellés des refus (39 codes, discriminant `group`) ; modale, bouton,
+  geste `group` dans la garde « déjà comptabilisée » ; dialogue d'annulation d'un groupe ; i18n des quatre locales ;
+  manuel (`.tex`, compilé hors du dépôt) ; côté fournisseur en commits à part (C-e433-7) ; E2E écrit, en attente.
+  `LinkSettlementModal` n'est pas touché (dette #1235).
+- **Compteurs relevés par les gardes** : `sitesTotal` 3086 → 3146 (« expected 3146 to be 3086 »,
+  `kesh-gate-logs/e433/vitest-i18n-releve-1.log`), dont 3142 sans le côté fournisseur ; candidates de
+  `i18n-libelle-en-dur.test.ts` 95 → 104, `ecartee` 14 → 18, `conforme` 81 → 86 (`vitest-i18n-releve-2.log`).
+- **Gates tels qu'ils ont tourné** (étape 1) : frontend complet au commit `81e4b4a2b` — `npm run check` 0 erreur,
+  `lint-i18n-ownership` PASS, `npm run test:unit` **4071 tests, 249 fichiers**, `npm run build` vert
+  (`kesh-gate-logs/e433/front-complet-etape1.log`) ; `cargo test -p kesh-i18n` 41 passés (parité des locales,
+  `cargo-i18n-1.log`). **Non lancés** : `test-fast --ci`, `gate-ci`, E2E (au passage en revue et à la clôture).
+- **Mutations** (`kesh-gate-logs/e433/mut/`, script `mutations.py`) : M1 à M11 et M12b tuées ; M12 (un seul site de la
+  garde de session) survit, le même contrôle se répétant dans `handleRefusal` — équivalente sur ce chemin ; M12b
+  (garde entière neutralisée) est tuée par deux tests (`mutations-1.log`, `mutations-2.log`).
+- **Rouges** : tests écrits après le code, dans la même séance — écart déclaré (`kesh-gate-logs/e433/rouges.log`).
+- **Écarts à la consigne Edit** : aucun sur le code, les tests ni les fiches ; le script de mutations écrit et restaure
+  (`git restore --worktree` puis `touch`), comme la consigne le permet. `git add` pour les fichiers neufs.
+- **Limite connue** : l'abandon de la recherche est local (C-e433-1) — `apiClient` ne prend pas de signal.
+
 ### File List
+
+- `frontend/src/lib/features/reconciliation/GroupSettlementModal.svelte` (neuf) et `.test.ts` (neuf)
+- `frontend/src/lib/features/reconciliation/group-settlement.ts` (neuf) et `.test.ts` (neuf)
+- `frontend/src/lib/features/reconciliation/modal-guards.ts` (neuf) et `.test.ts` (neuf)
+- `frontend/src/lib/features/reconciliation/ModalSuccessStubGroup.test.svelte` (neuf)
+- `frontend/src/lib/features/reconciliation/reconciliation.types.ts`, `reconciliation.api.ts`, `reconciliation.api.test.ts`
+- `frontend/src/lib/features/reconciliation/failed-proposal-label.ts`, `failed-proposal-label.test.ts`
+- `frontend/src/lib/features/reconciliation/ReconciliationProposals.svelte`, `ReconciliationProposals.test.ts`
+- `frontend/src/lib/features/reconciliation/CancelReconciliationDialog.svelte`, `CancelReconciliationDialog.test.ts`
+- `frontend/src/lib/features/reconciliation/reconciliation-cancel.ts`, `reconciliation-cancel.test.ts`
+- `frontend/src/lib/shared/i18n-keys.test.ts`, `frontend/src/lib/shared/i18n-libelle-en-dur.test.ts`
+- `frontend/tests/e2e/reconciliation-group.spec.ts` (neuf), `frontend/tests/e2e/helpers/api-fixtures.ts`
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`
+- `docs/manual/fr/user-manual.tex`
+- `_bmad-output/implementation-artifacts/e0190-choix-autonomes-e433.md` (neuf)
 
 ## Change Log
 
@@ -367,3 +427,10 @@ cette condition est le **seul** point à élargir côté écran ; la phrase est 
   sur ce point (« `d` entier sur le compte choisi »). La passe ciblée relit ce commit et le précédent.
 - 2026-11-18 (fiches contre le contrat `t3.md`) — LOW-8 : AC5 renvoie à la source des champs de la vue écrite par la 43-2
   (MEDIUM-3) et à la dépendance du groupe fournisseur envers l'AC6 bis et l'AC6 de la 43-1b (HIGH-1).
+- 2026-11-17 (développement, étape 1) — Clôture de la validation reprise telle quelle (P1 Sonnet 0/3/6/8 → P5 Sonnet
+  0/0/0/5, puis passes ciblées sur C-43-25 et contre `t3.md`). Étape 0 : LOW de la P5 déjà intégrés à la fiche ; L-6,
+  L-4, L4, P5 L4 et LOW-8 contrôlés, lignes lues au Dev Agent Record. Développement de tout ce qui ne dépend pas de l'API
+  réelle (T0 à T7) : commits `be7c0c2eb` (types, appel), `388d3bd65` (i18n), `cf908bfd8` (grandeurs, gardes),
+  `c11469b2d` (libellés, 39 codes), `b2bd9078e` (modale, bouton, garde), `4053741c7` (annulation), `fefaed04f` (D6),
+  `951263aeb` (manuel), `ed68aea4d` et `81e4b4a2b` (E2E en attente, dont D6). Choix C-e433-1 à 9. Statut :
+  `in-progress` — E2E et captures attendent l'API de la 43-2.

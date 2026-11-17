@@ -1,0 +1,61 @@
+# Story 43-3 — registre des choix (développement, 2026-11-17)
+
+Registre de la story 43-3 (clé `e433`). Les décisions de l'épique (C-43-14 à C-43-26), la fiche 43-3 et la règle de la
+différence (`kesh-gate-logs/e43/decision-difference.md`) font foi ; ce registre consigne les choix tranchés par l'agent de
+développement. Chaque choix est réversible sans migration.
+
+**C-e433-1 — Annulation de la recherche par `AbortController`, sans toucher `api-client`.** La fiche (D4) veut la requête
+précédente « annulée par `AbortController` ». `apiClient.get` n'accepte aucun signal (`api-client.ts`, doc-comment de
+`fetchWithTimeout` : le signal d'un appelant serait écrasé), et y en faire passer un traiterait l'abandon comme un délai
+dépassé : `toFetchApiError` en ferait un `TIMEOUT`, `fetchWithRetry` rejouerait la requête et `apiHealth.setDegraded()`
+afficherait le bandeau « serveur dégradé » à chaque frappe. Retenu : `modal-guards.ts` tient un `AbortController` par
+requête, l'avorte quand une requête plus récente part ou que la modale se ferme, et toute réponse dont le signal est avorté
+ou la génération dépassée est ignorée. La requête réseau va à son terme, son résultat est jeté. Autre option : étendre
+`CallOptions` d'un `signal` et distinguer l'abandon du délai dans `fetchWithRetry` — module partagé par tout l'écran,
+hors du périmètre de la story ; une issue est demandée au rapport. Réversible : le signal est déjà porté par l'appel.
+
+**C-e433-2 — Réglages de facturation illisibles : l'écran ne bloque pas sur l'arrondi.** La modale lit
+`GET /company/invoice-settings` à l'ouverture (comptes désignés). Si la lecture échoue, elle ne sait pas si un compte
+d'arrondi est désigné : elle ne préremplit rien et ne refuse pas l'envoi pour `r ≠ 0` ; le serveur tranche
+(`ROUNDING_ACCOUNT_NOT_CONFIGURED`, affiché avec son libellé). Autre option : traiter l'échec comme « aucun compte
+désigné » — la phrase « Aucun compte de différences d'arrondi n'est désigné » serait alors fausse.
+
+**C-e433-3 — Le compte de l'écart effectif est dérivé, non stocké.** Le compte envoyé est
+`choisiParUtilisateur ? choixUtilisateur : préremplissage(sens)`, calculé à chaque rendu (`effectiveDifferenceAccount`,
+`group-settlement.ts`). Le préremplissage suit donc le signe sans effet de bord ; le drapeau survit au changement de signe
+et à la disparition du sélecteur ; vider le champ lève le drapeau et rend le préremplissage. Un choix sorti de la liste
+(`keepOfferedCounterparty`) retombe à vide, comme le #1000.
+
+**C-e433-4 — Relecture des montants par la recherche, une requête par facture imputée.** Sur
+`difference_account_required` ou `RECONCILIATION_GROUP_DIFFERENCE_TOO_LARGE`, la fiche veut les montants des factures
+imputées relus. Aucune route ne rend une candidate par identifiant ; la recherche, elle, rend `amountDueRaw` sur les mêmes
+règles que le `POST`. La modale cherche chaque facture imputée par son numéro (`q` = numéro, numéro interne à défaut pour
+un fournisseur), garde la ligne de même identifiant et met son reste dû à jour ; une facture que la recherche ne rend plus
+est retirée, avec la phrase « Facture … : n'est plus réglable ». Autre option : `GET /invoices/{id}` — son `amountDue`
+n'est pas garanti au brut, ni défini pour une facture fournisseur.
+
+**C-e433-5 — Montants en `bigint` de 1/10 000.** « Aucun `Number` sur un montant » (D3) : les montants se lisent en
+`bigint` (unités de 1/10 000) par `parseUnits`, qui refuse plus de quatre décimales et toute forme autre que
+`-?\d+(\.\d{1,4})?`. Un `bigint` n'a pas de borne à 2⁵³.
+
+**C-e433-6 — Gardes en fabriques, non en classes.** `modal-guards.ts` expose `createSessionGuard` et
+`createLatestRequest` (fermetures). La garde `i18n-libelle-en-dur.test.ts` refuse toute classe non admise
+dans `src/` (les méthodes de classe échappent à son relevé des libellés en dur) ; une première rédaction en
+classes l'a fait rougir. Autre option : admettre les deux classes nommément (`CLASSES_ADMISES`), comme
+`SecretUnique` — une exception de plus à une garde qui en compte une.
+
+**C-e433-7 — Côté fournisseur en commits à part (D6, C-43-18).** Le commit `fefaed04f` (code) et le
+commit `81e4b4a2b` (E2E) portent tout ce qui ne sert qu'au débit : la variante `supplier_invoice_group` du
+type, la branche du corps, les libellés « Débit supérieur / inférieur aux factures », la colonne
+« Fournisseur », le texte d'annulation d'un groupe fournisseur, leurs quatre clés dans les quatre locales,
+`canGroup` élargi au débit et leurs tests ; `sitesTotal` 3142 → 3146. La logique pure (`gapSense`,
+`prefillAccount` pour les deux familles) reste dans le commit de base : elle ne sert à rien sans le bouton,
+et ses tests n'appellent aucune API. Retirer les deux commits ramène le bouton au seul crédit.
+
+**C-e433-8 — Cinquante factures au plus, dit à l'écran.** À 50 factures imputées, les boutons *Ajouter*
+se grisent et une phrase le dit (`reconciliation-group-max-reached`) — la borne `too_many` de la 43-1a
+n'est jamais atteinte depuis l'écran. Autre option : laisser le serveur refuser (`too_many`), libellé
+existant.
+
+**C-e433-9 — Une modale fermée par un refus prévient le parent par `onStale`.** Distinct d'`onSuccess` :
+le parent relit sa liste sans compter d'opération réussie ni effacer le bilan du lot précédent.
