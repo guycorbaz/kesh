@@ -59,6 +59,10 @@ vi.mock('./TransactionSplitModal.svelte', async () => ({
 vi.mock('./LinkSettlementModal.svelte', async () => ({
 	default: (await import('./ModalSuccessStubLink.test.svelte')).default,
 }));
+// Story 43-3 (#823) — la modale du règlement groupé, même doublure (`data-modal="group"`).
+vi.mock('./GroupSettlementModal.svelte', async () => ({
+	default: (await import('./ModalSuccessStubGroup.test.svelte')).default,
+}));
 
 // Mock i18n util pour rendre le composant déterministe (renvoie le
 // fallback fourni en deuxième argument, variables `{ $x }` interpolées).
@@ -1062,6 +1066,35 @@ describe('ReconciliationProposals — rattacher à une écriture existante (Stor
 		expect(boutons[1].textContent?.trim()).toBe('Rattacher à une écriture existante');
 	});
 
+	// Story 43-3 (#823, D1, AC1) — « Régler plusieurs factures… » suit `canLink` : un crédit en
+	// CHF de montant non nul ; ni montant nul, ni autre devise (sonde négative). Le débit vient
+	// avec le commit fournisseur (D6).
+	it('Régler plusieurs factures… : un crédit en CHF non nul (43-3, D1)', async () => {
+		mockApi.getProposals.mockResolvedValue({
+			proposals: [ligne(1, '100.03'), ligne(2, '-50.00'), ligne(3, '0.00'), ligne(4, '20.00', 'EUR')],
+			hasMore: false,
+		} satisfies GetProposalsResponse);
+		const { findAllByTestId } = render(ReconciliationProposals, { bankAccountId: 17 });
+		await findAllByTestId('reconciliation-row');
+		const boutons = await findAllByTestId('group-settlement-button');
+		expect(boutons.map((b) => b.getAttribute('data-tx-id'))).toEqual(['1']);
+		expect(boutons[0].textContent?.trim()).toBe('Régler plusieurs factures…');
+	});
+
+	it('un règlement groupé réussi efface le bilan, recharge et affiche « 1 opération(s) réussie(s). »', async () => {
+		mockApi.getProposals.mockResolvedValue({ proposals: [ligne(2, '100.03')], hasMore: false });
+		const { findByTestId, getByTestId } = render(ReconciliationProposals, { bankAccountId: 17 });
+		const appelsAvant = (await findByTestId('group-settlement-button')) && mockApi.getProposals.mock.calls.length;
+		await fireEvent.click(getByTestId('group-settlement-button'));
+		const ouverte = await findByTestId('stub-modal-success');
+		expect(ouverte.getAttribute('data-modal')).toBe('group');
+		await fireEvent.click(ouverte);
+		await vi.waitFor(() => {
+			expect(getByTestId('reconciliation-success').textContent).toContain('1');
+		});
+		expect(mockApi.getProposals.mock.calls.length).toBeGreaterThan(appelsAvant);
+	});
+
 	it('un rattachement réussi efface le bilan du lot précédent, recharge et affiche « 1 opération(s) réussie(s). »', async () => {
 		mockApi.getProposals
 			.mockResolvedValueOnce({
@@ -1687,9 +1720,11 @@ describe('ReconciliationProposals — transaction déjà comptabilisée (Story 3
 	// Revue P1 (E1-3, A1-2) : chaque doublure porte le nom de sa modale (`data-modal`), si bien
 	// que *Continuer quand même* doit rouvrir **le** geste demandé (mutation M9 : `manual` et
 	// `split` intervertis dans `runGesture`).
+	// Story 43-3 (#823, D1, AC1) — « Régler plusieurs factures… » entre dans la garde (geste `group`).
 	it.each([
 		['manual-match-button', 'manual'],
 		['split-button', 'split'],
+		['group-settlement-button', 'group'],
 	])(
 		'AC-6 %s sur une ligne signalée ⇒ confirmation ; Annuler n’ouvre rien ; Continuer ouvre la modale « %s » (M5, M9)',
 		async (bouton, modale) => {
@@ -1713,6 +1748,7 @@ describe('ReconciliationProposals — transaction déjà comptabilisée (Story 3
 	it.each([
 		['manual-match-button', 'manual'],
 		['split-button', 'split'],
+		['group-settlement-button', 'group'],
 	])('AC-6 %s sur une ligne non signalée ⇒ la modale « %s » s’ouvre aussitôt', async (bouton, modale) => {
 		const view = await monter([signalee(1, null)]);
 		await fireEvent.click(view.getByTestId(bouton));

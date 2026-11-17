@@ -351,8 +351,21 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
  * de chaque langue dans sa propre langue, qui ne se traduit pas — aucun `return` d'un
  * littéral). `conforme` **78 → 81** ; `ecartee` ne bouge pas. Relevé par la garde
  * (`expected 95 to be 92`, `kesh-gate-logs/e36-17/front-test-unit-1.log`), non additionné.
+ *
+ * **95 → 104, et les déclarations sont NOMMÉES** (Story 43-3, #823) : dans
+ * `lib/features/reconciliation/GroupSettlementModal.svelte`, `gapText`, `totalText`,
+ * `blockText` (vides tant que rien n'est calculé ou retenu, sinon par `i18nMsg` ou un montant
+ * mis en forme), `accountLabel` (`'—'` sans compte, sinon un gabarit) et `refusalText` (par
+ * `i18nMsg`) ; dans `CancelReconciliationDialog.svelte`, `pieceLabel` (un numéro ou `#id`) et
+ * `groupGapText` (par `i18nMsg`) ; dans `failed-proposal-label.ts`, `groupAccountLabel` (par
+ * `i18nMsg`) et `groupLabel` (son résultat). `ecartee` **14 → 18** (des retours neutres, `''`
+ * ou `'—'`, aucun libellé), `conforme` **81 → 86**, relevés par la garde et non attribués un à
+ * un. Relevé par la garde (« expected 104
+ * to be 95 », `kesh-gate-logs/e433/vitest-i18n-releve-2.log`), non additionné ; les neuf sont
+ * les seules déclarations neuves du diff de la story à porter un suffixe `Label`, `Text` ou
+ * `Display`.
  */
-const CANDIDATES_ATTENDUES = 95;
+const CANDIDATES_ATTENDUES = 104;
 
 /** Les trois délimiteurs de littéral en JS/TS. */
 const QUOTES = ["'", '"', '`'];
@@ -869,7 +882,7 @@ describe('libellés en dur — l’angle mort #255', () => {
 			else if (c.retours.length > 0) classes.ecartee += 1;
 			else classes.conforme += 1;
 		}
-		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 14, conforme: 81 });
+		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 18, conforme: 86 });
 		// La somme est recalculée depuis les classes, jamais depuis le total qu'elle contrôle.
 		const somme = Object.values(classes).reduce((a, b) => a + b, 0);
 		expect(somme).toBe(CANDIDATES_ATTENDUES);

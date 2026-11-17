@@ -1037,7 +1037,14 @@ const ATTENDU = {
 	// `common-amount-unreadable` (`journal-entries/amount-entry-message.ts`),
 	// `supplier-invoices-err-line-unit-price-ambiguous` et `-unreadable`
 	// (`SupplierInvoiceForm.svelte`) : quatre littéraux.
-	sitesTotal: 3086,
+	// Story 43-3 (#823, AC6), côté client : **3086 → 3142** — la story entière a été relevée à
+	// 3146 par la garde (« expected 3146 to be 3086 », `kesh-gate-logs/e433/vitest-i18n-releve-1.log`),
+	// dont quatre sites du côté fournisseur (D6), dans un commit à part : 60 − 4 = 56 sites,
+	// 36 dans `reconciliation/GroupSettlementModal.svelte` (neuf) et 20 dans les fichiers touchés
+	// (`failed-proposal-label.ts`, `reconciliation-cancel.ts`, `CancelReconciliationDialog.svelte`,
+	// `ReconciliationProposals.svelte`), recomptés par `grep -c 'i18nMsg('` ; que des littéraux.
+	// À relever de nouveau à l'union de la 0.19.0 (C-e350-18).
+	sitesTotal: 3142,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/
