@@ -4037,7 +4037,10 @@ comme en PDF, et ses exports CSV avec les mêmes colonnes (seul l'échappement d
           devises~: les totaux de la balance, du bilan et du compte de résultat restent en CHF. Seul
           un compte du grand livre, qui n'a qu'une devise, a ses totaux en devise.
     \item \textbf{Exports.} Le PDF reprend les secondes lignes et les mentions de l'écran~; au grand
-          livre, «~À reporter~» et «~Report~» portent aussi le report en devise. Le CSV ajoute, seulement
+          livre, «~À reporter~» et «~Report~» portent aussi le report en devise. Ses colonnes de montant
+          disent alors leur devise~: «~Devise~» et «~CHF~» en tête du bilan et du compte de résultat,
+          «~Débit CHF~», «~Crédit CHF~»\ldots{} à la balance et au grand livre, pour tous les comptes du
+          rapport~; sans compte en devise, ces en-têtes ne changent pas. Le CSV ajoute, seulement
           si le rapport contient un compte en devise, des colonnes en devise (\texttt{Devise},
           \texttt{SoldeDevise}, \texttt{DebitDevise}, \texttt{Cours}\ldots), vides pour un compte en
           CHF~; sinon, ses colonnes sont celles d'avant. Les montants en devise sont arrondis
@@ -4140,6 +4143,8 @@ un tableur. Aucun des deux n'est tronqué, même quand l'écran l'est. Dans le P
 \textbf{alignés à droite} dans leur colonne, les décimales l'une sous l'autre, totaux compris~; un
 solde en devise («~USD 1'233.57~») l'est dans sa propre colonne. Les secondes lignes en petit du
 grand livre et de la balance, qui sont des phrases, restent alignées à gauche.
+Le titre du rapport, dans les propriétés du fichier PDF, garde ses accents («~Compte de
+résultat~», «~Décompte TVA~»).
 \end{keshnote}
 
 \paragraph{Les cellules de texte du CSV.} Pour qu'un tableur lise toujours un libellé comme du
