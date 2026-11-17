@@ -12,6 +12,9 @@ les choix C-v0190c-1 à 10 sont repris des fiches, les suivants naissent de la r
 - **C-v0190c-12** (D2, V1-1) : chaque frappe invalide toute recherche en vol ; `pending` ne se lève qu'à la réponse de la recherche du brouillon actuel ; au `blur` et au choix, anti-rebond annulé et `pending` à faux.
 - **C-v0190c-13** (D3, V1-7) : flèche bas / haut ouvrent la liste fermée et désignent le premier / le dernier (patron `AccountAutocomplete`).
 
+- **C-v0190c-16** (D1 à D3, validation P2 V2-2 à V2-7) : la frappe efface la désignation ; `loading` et `results` remis à zéro au `blur` et au choix ; réponse jugée sur le `draft` courant à son arrivée, échec = réponse ; le changement de `selected?.id` purge désignation, liste, `pending` ; sous-ligne IDE lisible (≥ 4,5:1) ; `preventDefault` sur `mousedown`.
+- **C-v0190c-17** (AC3, V2-8) : le test de page *Réinitialiser* est exigé ; AC4 : lignes remplies avant la frappe, aucun `POST` parti, rouge constaté au développement ; jalon mercredi 18 h (la story sort de la release).
+
 ## Fiche `v0190-nom-societe.md` (#1097, nom de la société)
 
 - **C-v0190c-4** (D1) : route dédiée `PUT /api/v1/companies/current/name`, Admin-only ; écarté : étendre `address` ou `contact-details`.
@@ -22,4 +25,5 @@ les choix C-v0190c-1 à 10 sont repris des fiches, les suivants naissent de la r
 - **C-v0190c-9** (D6) : les trois refus du PDF (replis Rust, quatre catalogues) renvoient à *Paramètres → Organisation* ; deux gardes inversées.
 - **C-v0190c-10** (D7) : manuel utilisateur ; `.tex` seulement.
 - **C-v0190c-14** (D5, V1-3) : la branche `nameEditing` de `syncOpenBlocks` ; AC4 : édition du nom ouverte, enregistrement d'un autre bloc, pas de 409 parasite.
+- **C-v0190c-18** (validation P2 V2-N1 à V2-N6) : liste des effets du nom complétée (rapports, variable d'e-mail) ; refus de la route en français seul, limite assumée rattachée à #710 ; AC1 g-bis (société sans composants), AC4 (nom stocké de 71 caractères, normaliseur `trim`) ; version de la phrase du manuel posée à l'intégration ; plan de coupure tout ou rien, jalon mercredi 18 h.
 - **C-v0190c-15** (D7, V1-5) : aucune route ajoutée à la note de montée de la 0.17.4 (`admin-manual.tex:2667`) ; la route se dit à la section « Passer à la 0.19.0 » ; si un manuel la porte, `MULTI_SOCIETE_ASSUME` reçoit un fragment et `MULTI_SOCIETE_TOTAL` passe de 22 à 23 (recompté).
