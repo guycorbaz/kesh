@@ -1515,7 +1515,7 @@ async fn role_candidate_rejection(
         ));
     }
     if let Some(hit) =
-        super::accounts::fx_designations_of_in_tx(&mut **tx, company_id, currency_state, account_id)
+        super::accounts::fx_designations_of_in_tx(tx, company_id, currency_state, account_id)
             .await?
             .into_iter()
             .next()
@@ -1672,7 +1672,7 @@ pub async fn complete_default_accounts_in_tx(
     // verrou, dans l'ordre global du dépôt (`companies` → … → `accounts`). La route
     // tient déjà la ligne `FOR UPDATE` (`lock_company`) : aucune attente neuve.
     let currency_state = super::accounts::lock_company_currency_in_tx(
-        &mut **tx,
+        tx,
         company_id,
         super::accounts::CompanyLock::Share,
     )
