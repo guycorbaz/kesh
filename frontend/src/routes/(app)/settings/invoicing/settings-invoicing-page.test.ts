@@ -589,6 +589,24 @@ describe('Administration → Facturation — écart admis d’un règlement grou
 		);
 	});
 
+	// Revue P2 (B2-1) — mutation : comparaison de la saisie brute (« 5,01 » ≠ « 5.01 » en texte).
+	it.each([
+		['5.01', '5,01'],
+		['5.00', '5,00'],
+		['5.00', '5.0'],
+	])('« %s » rendu, « %s » saisi : même valeur, le plafond n’est pas envoyé', async (stored, typed) => {
+		getInvoiceSettingsMock.mockResolvedValue(settings({ groupSettlementMaxDifference: stored }));
+		const { findByTestId, container } = render(Page);
+		const input = (await findByTestId('settings-group-max-difference')) as HTMLInputElement;
+		await waitFor(() => expect(input.value).toBe(stored));
+		await fireEvent.input(input, { target: { value: typed } });
+		await fireEvent.submit(container.querySelector('form')!);
+		await waitFor(() => expect(updateInvoiceSettingsMock).toHaveBeenCalledTimes(1));
+		expect(updateInvoiceSettingsMock.mock.calls[0][0]).not.toHaveProperty(
+			'groupSettlementMaxDifference',
+		);
+	});
+
 	// Revue P1 (B1-3) — le champ reprend la valeur que le serveur rend.
 	it('après l’enregistrement, le champ reprend la valeur rendue (« 1,5 » → « 1.50 »)', async () => {
 		updateInvoiceSettingsMock.mockResolvedValue(

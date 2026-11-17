@@ -21,7 +21,7 @@
 		validateDescriptionTemplate,
 		validateFormatTemplate,
 	} from '$lib/features/invoices/invoice-number-format';
-	import { readGroupMax } from '$lib/features/invoices/group-settlement-max';
+	import { groupMaxChanged, readGroupMax } from '$lib/features/invoices/group-settlement-max';
 	import { amountEntryMessage } from '$lib/features/journal-entries/amount-entry-message';
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
@@ -315,7 +315,7 @@
 				defaultBadDebtAccountId: writeOff.badDebt,
 				// Revue P1 (B1-1) : envoyé **seulement si modifié** — enregistrer un autre réglage ne
 				// réécrit pas au centime affiché un plafond stocké à quatre décimales.
-				...(groupMax.trim() !== settings?.groupSettlementMaxDifference
+				...(groupMaxChanged(groupMax, settings?.groupSettlementMaxDifference)
 					? { groupSettlementMaxDifference: groupMaxRead.payload }
 					: {}),
 				defaultSalesJournal: salesJournal,

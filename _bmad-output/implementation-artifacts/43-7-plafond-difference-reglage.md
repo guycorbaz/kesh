@@ -54,7 +54,10 @@ retenus, arrondis de clients, etc.).
   **Précisée à la revue P1** : l'affichage arrondit le demi-centime en s'éloignant de zéro (`MidpointAwayFromZero`, comme
   `amount_due_to_centime` : `5.0050` → `5.01`), non au pair ; l'écran n'envoie le plafond **que s'il est modifié**, donc
   enregistrer un autre réglage ne réécrit pas une valeur à quatre décimales (B1-1) ; la modifier écrit la valeur saisie, au
-  centime.
+  centime. « Modifié » se juge sur les **valeurs**, non sur le texte saisi (P2, B2-1) : « 5,01 » contre « 5.01 », « 5,00 »
+  contre « 5.00 » ne sont pas des changements (`groupMaxChanged`, lecture par `readGroupMax` puis égalité décimale).
+  **L'audit** (`{before, after}`) **et l'export CSV** des réglages portent la valeur **brute, à quatre décimales** (`5.0060`),
+  alors que l'API l'affiche arrondie au centime (`5.01`) (P2, B2-3).
 - **AC2** — Contrôles du `PUT` : ≥ 0, au **centime** (deux décimales au plus), ≤ **100.00** ; montant ambigu (« 1.250 »)
   refusé par la règle des montants des réglages si elle est déjà posée, sinon la saisie de l'écran l'impose ; refus `400
   VALIDATION_ERROR` qui nomme le champ.
