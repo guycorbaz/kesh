@@ -564,6 +564,11 @@ pub struct AcceptedProposal {
     pub supplier_invoice_id: Option<i64>,
     pub journal_entry_id: i64,
     pub score: MatchScore,
+    /// Story 43-2 (#823) — les champs d'un **règlement groupé**
+    /// (`difference`, `roundingDifference`, `gap`, `differenceAccountId`,
+    /// `settledInvoices`), aplatis ; absents pour les autres types (additif).
+    #[serde(flatten)]
+    pub group: Option<super::reconciliation_group::GroupAcceptedFields>,
 }
 
 #[derive(Debug, Serialize)]
@@ -600,7 +605,7 @@ pub struct FailedProposal {
 /// ⚠️ `projectId` est **omis** quand il n'y a pas de projet, jamais publié à
 /// `null` — c'est la convention de tous les autres codes du batch, et le chemin
 /// `split` appelle précisément avec `None`.
-fn period_locked_failed_proposal(
+pub(super) fn period_locked_failed_proposal(
     bank_transaction_id: i64,
     project_id: Option<i64>,
     locked_through: chrono::NaiveDate,
@@ -641,7 +646,7 @@ fn period_locked_failed_proposal(
 /// `details` : `{ fiscalYearId, fiscalYearName }` — l'exercice postérieur clos
 /// le plus proche —, plus `projectId` quand il est connu ; **omis** quand il
 /// vaut `None` (voie « règle » et « ventilé »), jamais publié à `null`.
-fn later_fiscal_year_closed_failed_proposal(
+pub(super) fn later_fiscal_year_closed_failed_proposal(
     bank_transaction_id: i64,
     project_id: Option<i64>,
     fiscal_year_id: i64,
@@ -679,7 +684,7 @@ fn later_fiscal_year_closed_failed_proposal(
 ///
 /// **Précondition** : `accounts` non vide, et chaque compte est de la société
 /// et actif (le manquant est rendu avant, en `ACCOUNT_NOT_FOUND`).
-fn non_postable_failed_proposal(
+pub(super) fn non_postable_failed_proposal(
     bank_transaction_id: i64,
     accounts: Vec<kesh_db::errors::NonPostableAccount>,
 ) -> FailedProposal {
@@ -723,7 +728,9 @@ fn is_bank_ledger(counterparty_account_id: i64, bank_ledger_account_id: i64) -> 
 /// `errorCode = "VALIDATION_ERROR"` et `details = { "reason":
 /// "counterparty_equals_bank_ledger" }` — la forme du flux ventilé existant,
 /// que la règle reprend (cf. [`is_bank_ledger`] pour la place).
-fn counterparty_is_bank_ledger_failed_proposal(bank_transaction_id: i64) -> FailedProposal {
+pub(super) fn counterparty_is_bank_ledger_failed_proposal(
+    bank_transaction_id: i64,
+) -> FailedProposal {
     FailedProposal {
         bank_transaction_id,
         error_code: "VALIDATION_ERROR".to_string(),
@@ -894,6 +901,19 @@ pub enum AcceptProposalInput {
         bank_transaction_id: i64,
         supplier_invoice_id: i64,
     },
+    /// Story 43-2 (#823) — **une** transaction au crédit règle **plusieurs**
+    /// factures clients (2 à 50), de tiers quelconques :
+    /// `reconciliation_group::accept_one_invoice_group`, par
+    /// `grouped_settlements::settle_invoices_in_tx` (Story 43-1a).
+    /// `differenceAccountId` : le compte de l'écart au centime `e`, choisi par
+    /// l'utilisateur, obligatoire dès que `e ≠ 0`, ignoré sinon.
+    #[serde(rename = "invoice_group", rename_all = "camelCase")]
+    InvoiceGroup {
+        bank_transaction_id: i64,
+        invoice_ids: Vec<i64>,
+        #[serde(default)]
+        difference_account_id: Option<i64>,
+    },
 }
 
 impl AcceptProposalInput {
@@ -917,10 +937,20 @@ impl AcceptProposalInput {
             | AcceptProposalInput::SupplierInvoice {
                 bank_transaction_id,
                 ..
+            }
+            | AcceptProposalInput::InvoiceGroup {
+                bank_transaction_id,
+                ..
             } => *bank_transaction_id,
         }
     }
 }
+
+/// Les valeurs admises pour `type` dans `POST /reconciliation/accept`, telles
+/// que le message de l'extracteur les nomme (Story 43-2 : cinq jusqu'au type
+/// fournisseur groupé).
+pub(crate) const ACCEPT_PROPOSAL_TYPES: &str =
+    "[\"invoice\", \"split\", \"rule\", \"supplier_invoice\", \"invoice_group\"]";
 
 /// Story 8-5a-bis — ligne de split dans le body `/accept type='split'`
 /// (équivalent du `SplitLineInput` côté `/split` standalone).
@@ -958,7 +988,9 @@ where
             Err(rej) => {
                 let message = match &rej {
                     JsonRejection::JsonDataError(_) | JsonRejection::JsonSyntaxError(_) => {
-                        "corps JSON invalide : champ mal formé, ou champ `type` manquant — valeurs acceptées pour `type` : [\"invoice\", \"split\", \"rule\", \"supplier_invoice\"]".to_string()
+                        format!(
+                            "corps JSON invalide : champ mal formé, ou champ `type` manquant — valeurs acceptées pour `type` : {ACCEPT_PROPOSAL_TYPES}"
+                        )
                     }
                     JsonRejection::MissingJsonContentType(_) => {
                         "Content-Type attendu : application/json".to_string()
@@ -1640,6 +1672,21 @@ pub async fn post_accept(
                     ));
                 }
             }
+            // Story 43-2 (M7) — identifiants seulement : le nombre et les
+            // doublons se refusent par proposition, dans le dépôt
+            // (`RECONCILIATION_GROUP_INVALID`), jamais ici.
+            AcceptProposalInput::InvoiceGroup {
+                invoice_ids,
+                difference_account_id,
+                ..
+            } => {
+                super::reconciliation_group::preflight_group(
+                    invoice_ids,
+                    *difference_account_id,
+                    "invoiceIds",
+                    "invoice_group",
+                )?;
+            }
             AcceptProposalInput::Rule {
                 rule_id,
                 counterparty_account_id,
@@ -1788,6 +1835,9 @@ pub async fn post_accept(
     // Story 17-2a (DC5 cat ii) — attribution PAT propagée dans les helpers/closures.
     let actor_api_key_id = current_user.api_key_id;
     let bank_account_id = body.bank_account_id;
+    // Story 43-2 — la date du jour, lue une fois avant les rejeux (patron du
+    // dé-rapprochement), pour le règlement groupé.
+    let aujourd_hui = state.horloge.aujourd_hui();
     let locked = retry_with(
         "reconciliation::accept",
         DEFAULT_MAX_DEADLOCK_ATTEMPTS,
@@ -1807,6 +1857,7 @@ pub async fn post_accept(
                     actor_api_key_id,
                     proposals,
                     batch_size,
+                    aujourd_hui,
                 )
                 .await
             }
@@ -1822,6 +1873,7 @@ pub async fn post_accept(
 /// Une tentative de `POST /accept` : transaction neuve, verrou du compte
 /// bancaire, lot, commit (Story 25-4-c2 — extraite de `post_accept` pour que
 /// `retry_with` puisse la rejouer en entier).
+#[allow(clippy::too_many_arguments)]
 async fn accept_once(
     pool: &sqlx::MySqlPool,
     company_id: i64,
@@ -1830,6 +1882,7 @@ async fn accept_once(
     actor_api_key_id: Option<i64>,
     proposals: Vec<AcceptProposalInput>,
     batch_size: i64,
+    aujourd_hui: NaiveDate,
 ) -> Result<AcceptResponse, AppError> {
     let mut tx_outer = pool
         .begin()
@@ -1850,6 +1903,7 @@ async fn accept_once(
                 actor_api_key_id,
                 &proposals,
                 batch_size,
+                aujourd_hui,
             )
             .await
         },
@@ -1964,6 +2018,7 @@ async fn accept_once(
 /// **éligible** (le pré-vol de `post_accept` a déjà refusé les autres) ;
 /// `batch_size` est donc passé explicitement — la taille du lot **reçu**,
 /// que porte la trace `reconciliation.accepted` (AC2).
+#[allow(clippy::too_many_arguments)]
 async fn accept_batch(
     tx_outer: &mut sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,
@@ -1972,6 +2027,7 @@ async fn accept_batch(
     actor_api_key_id: Option<i64>,
     proposals: &[AcceptProposalInput],
     batch_size: i64,
+    aujourd_hui: NaiveDate,
 ) -> Result<AcceptResponse, ReconciliationError> {
     let mut accepted: Vec<AcceptedProposal> = Vec::new();
     let mut failed: Vec<FailedProposal> = Vec::new();
@@ -1990,6 +2046,7 @@ async fn accept_batch(
             actor_api_key_id,
             proposal,
             batch_size,
+            aujourd_hui,
         )
         .await
         {
@@ -2054,6 +2111,7 @@ fn is_savepoint_lost(err: &sqlx::Error) -> bool {
 /// Story 8-5a-bis F3''' Pass 3 Opus + H1 Pass 4 : pattern match top-level
 /// pour briser les 29 accès directs `proposal.bank_transaction_id` /
 /// `.invoice_id` (qui cassent avec l'enum tagged).
+#[allow(clippy::too_many_arguments)]
 async fn accept_one(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,
@@ -2062,6 +2120,7 @@ async fn accept_one(
     actor_api_key_id: Option<i64>,
     proposal: &AcceptProposalInput,
     batch_size: i64,
+    aujourd_hui: NaiveDate,
 ) -> Result<AcceptedProposal, FailedProposal> {
     match proposal {
         AcceptProposalInput::Invoice {
@@ -2132,6 +2191,29 @@ async fn accept_one(
             )
             .await
         }
+        AcceptProposalInput::InvoiceGroup {
+            bank_transaction_id,
+            invoice_ids,
+            difference_account_id,
+        } => {
+            super::reconciliation_group::accept_one_invoice_group(
+                tx,
+                super::reconciliation_group::GroupGesture {
+                    company_id,
+                    bank_account_id,
+                    bank_transaction_id: *bank_transaction_id,
+                    difference_account_id: *difference_account_id,
+                    batch_size,
+                    acteur: Acteur {
+                        user_id,
+                        api_key_id: actor_api_key_id,
+                    },
+                    aujourd_hui,
+                },
+                invoice_ids,
+            )
+            .await
+        }
     }
 }
 
@@ -2188,7 +2270,10 @@ fn claim_account_failed_proposal(
 /// - Toute autre erreur (`Sqlx`, interblocage…) → `DATABASE_ERROR`
 ///   (`details.message`), comme les étapes voisines ; un interblocage est
 ///   ensuite rejoué par `accept_batch` (`retry_with`).
-fn lettering_error_to_failed_proposal(bank_transaction_id: i64, err: DbError) -> FailedProposal {
+pub(super) fn lettering_error_to_failed_proposal(
+    bank_transaction_id: i64,
+    err: DbError,
+) -> FailedProposal {
     match err {
         DbError::Invariant(_)
         | DbError::LetteringConcurrentChange
@@ -2255,7 +2340,7 @@ fn refuse_non_credit_settlement(
 /// #686, AC-b7) : un **crédit** pour une facture client (un encaissement), un
 /// **débit** pour une facture fournisseur (un décaissement).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum SettlementDirection {
+pub(super) enum SettlementDirection {
     Credit,
     Debit,
 }
@@ -2273,7 +2358,7 @@ enum SettlementDirection {
 ///
 /// Chaque code est écrit **au site de construction** (`error_code: "…"`),
 /// forme que recompte le doc-comment de `failed-proposal-label.ts`.
-fn refuse_wrong_direction(
+pub(super) fn refuse_wrong_direction(
     bank_transaction_id: i64,
     amount: Decimal,
     expected: SettlementDirection,
@@ -2319,10 +2404,9 @@ fn date_refusal_failed_proposal(
     window: InvoiceDateWindow,
 ) -> FailedProposal {
     let details = match refusal {
-        InvoiceDateRefusal::PaymentBeforeInvoice => serde_json::json!({
-            "reason": "payment_date_before_invoice_date",
-            "tolerance_days": window.tolerance_days,
-        }),
+        InvoiceDateRefusal::PaymentBeforeInvoice => {
+            payment_before_invoice_details(window.tolerance_days)
+        }
         InvoiceDateRefusal::PaymentTooLate => serde_json::json!({
             "reason": "payment_date_outside_window",
             "window_days": window.window_days,
@@ -2333,6 +2417,16 @@ fn date_refusal_failed_proposal(
         error_code: "RECONCILIATION_INVOICE_NOT_ELIGIBLE".to_string(),
         details: Some(details),
     }
+}
+
+/// Les `details` du refus `payment_date_before_invoice_date` — une seule
+/// forme pour l'unitaire ([`date_refusal_failed_proposal`]) et le règlement
+/// groupé (Story 43-2, qui y ajoute la pièce).
+pub(super) fn payment_before_invoice_details(tolerance_days: i64) -> serde_json::Value {
+    serde_json::json!({
+        "reason": "payment_date_before_invoice_date",
+        "tolerance_days": tolerance_days,
+    })
 }
 
 /// Helper interne — traite UNE proposal `type='invoice'` dans son savepoint.
@@ -3088,6 +3182,7 @@ async fn accept_one_invoice(
         supplier_invoice_id: None,
         journal_entry_id,
         score,
+        group: None,
     })
 }
 
@@ -3517,6 +3612,7 @@ async fn accept_one_supplier_invoice(
         supplier_invoice_id: Some(invoice.id),
         journal_entry_id,
         score,
+        group: None,
     })
 }
 
@@ -3941,6 +4037,7 @@ async fn accept_one_split(
             reference_score: 0.0,
             contact_score: 0.0,
         },
+        group: None,
     })
 }
 
@@ -4481,6 +4578,7 @@ async fn accept_one_rule(
             reference_score: 0.0,
             contact_score: 0.0,
         },
+        group: None,
     })
 }
 
@@ -5846,6 +5944,18 @@ pub struct ReconciliationTransactionResponse {
     pub cancel_blocked_label: Option<String>,
     /// L'**autre** transaction qui pointe la même écriture (rang 3).
     pub cancel_blocked_document_id: Option<i64>,
+    /// Story 43-2 (#823) — les factures d'un **règlement groupé**, par
+    /// identifiant croissant, montant brut ; vide hors groupe (champ additif).
+    pub grouped_invoices: Vec<super::reconciliation_group::GroupedInvoiceResponse>,
+    /// Story 43-2 — l'écart au centime `e` d'un groupe, signé, recalculé sur
+    /// les montants du règlement ; `null` hors groupe.
+    pub gap: Option<String>,
+    /// Story 43-2 — le compte de l'écart d'un groupe ; `null` sans écart ou
+    /// hors groupe.
+    pub difference_account: Option<super::reconciliation_group::AccountRef>,
+    /// Story 43-2 — la facture du groupe qui porte le premier motif d'un refus
+    /// d'annulation ; `null` sinon.
+    pub cancel_blocked_invoice: Option<super::reconciliation_group::GroupedPieceResponse>,
 }
 
 /// `GET /api/v1/reconciliation/transactions/{id}` — la transaction et ce qui
@@ -5873,12 +5983,15 @@ pub async fn get_reconciliation_transaction(
         Some(ReconciliationKind::SupplierSettlement {
             supplier_invoice_id,
         }) => (None, Some(supplier_invoice_id)),
-        // Story 43-1a : la liste d'un groupe (`view.grouped_invoices`) est
-        // exposée par la Story 43-2.
+        // Story 43-2 : un groupe n'a pas de facture unique ; sa liste est
+        // `groupedInvoices`.
         Some(ReconciliationKind::GroupedSettlement { .. })
         | Some(ReconciliationKind::Entry)
         | None => (None, None),
     };
+    let group =
+        super::reconciliation_group::group_view_fields(&state.pool, current_user.company_id, &view)
+            .await?;
     let hit = view.cancel_blocker;
     Ok(Json(ReconciliationTransactionResponse {
         transaction: view.bank_transaction.into(),
@@ -5893,6 +6006,10 @@ pub async fn get_reconciliation_transaction(
         cancel_blocked_by: hit.as_ref().map(|h| h.0.code()),
         cancel_blocked_label: hit.as_ref().and_then(|h| h.2.clone()),
         cancel_blocked_document_id: hit.as_ref().and_then(|h| h.1),
+        grouped_invoices: group.grouped_invoices,
+        gap: group.gap,
+        difference_account: group.difference_account,
+        cancel_blocked_invoice: group.cancel_blocked_invoice,
     }))
 }
 
@@ -5911,6 +6028,13 @@ pub struct CancelReconciliationResponse {
     /// La facture fournisseur dont le paiement a été retiré, pour un
     /// règlement fournisseur (Story 30-1a, AC-a5 : champ ajouté).
     pub supplier_invoice_id: Option<i64>,
+    /// Story 43-2 (#823) — le genre du rapprochement défait
+    /// (`invoice_settlement`, `supplier_settlement`, `grouped_settlement`,
+    /// `entry`), pour tous les rapprochements (champ additif).
+    pub kind: &'static str,
+    /// Story 43-2 — les factures d'un règlement groupé défait ; vide hors
+    /// groupe (champ additif).
+    pub cancelled_invoices: Vec<super::reconciliation_group::GroupedPieceResponse>,
 }
 
 /// Corps **facultatif** de `POST …/cancel` (Story 34-11b, revue P1 E1-1) : un
@@ -6029,6 +6153,12 @@ async fn cancel_reconciliation_once(
                 reversal_journal_entry_id: done.reversal_journal_entry_id,
                 invoice_id: done.invoice_id,
                 supplier_invoice_id: done.supplier_invoice_id,
+                kind: done.kind.code(),
+                cancelled_invoices: done
+                    .grouped_invoices
+                    .into_iter()
+                    .map(super::reconciliation_group::GroupedPieceResponse::from_view)
+                    .collect(),
             })
         }
         Err(e) => {
@@ -6068,7 +6198,7 @@ async fn cancel_reconciliation_once(
 ///
 /// Lecture non verrouillante en autocommit : elle ne demande aucun verrou et
 /// ne peut être victime d'aucun interblocage.
-async fn bank_account_of_transaction(
+pub(super) async fn bank_account_of_transaction(
     pool: &sqlx::MySqlPool,
     company_id: i64,
     bank_transaction_id: i64,
@@ -6297,7 +6427,7 @@ fn link_amount_tolerance() -> Decimal {
 /// tait pas la cause sous une liste vide. Un compte du grand livre **inactif**
 /// n'est pas refusé, à la différence de `post_manual` : le rattachement
 /// n'écrit aucune ligne.
-async fn link_preflight(
+pub(super) async fn link_preflight(
     pool: &sqlx::MySqlPool,
     company_id: i64,
     bank_account_id: i64,

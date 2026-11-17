@@ -8,7 +8,7 @@ Status: ready-for-dev
 Dev Notes, étape 0), puis après ses validations P2 et P3, et sur la **décision de Guy du 2026-11-17 sur la différence**
 (`kesh-gate-logs/e43/decision-difference.md`). Release **0.19.0**. **La recherche (tâche TR : dépôt et route) ne dépend
 d'aucun commit de la 43-1a et part tout de suite** ; le reste part du commit T3 de la 43-1a, dont le contrat est celui
-figé dans `kesh-gate-logs/e43/t3.md` (commit `241839568` ; code dans `/home/gcorbaz/devel/kesh-43-1a`) ; se fusionne
+figé dans `kesh-gate-logs/e43/t3.md` (commit `241839568`, branche `story/43-1a-reglement-groupe-modele`) ; se fusionne
 après elle. Les champs fournisseur de la vue (AC7) dépendent de l'AC6 bis de la **43-1b**. Aucune migration. Décisions : C-43-1 à
 C-43-26 (fichier d'épique), qui font foi. Validation terminée en P5 (0/0/0/5) ; correction de C-43-25 (arrondi automatique) relue par une passe ciblée.*
 
