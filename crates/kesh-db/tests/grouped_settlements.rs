@@ -1365,3 +1365,84 @@ async fn the_upgrade_keeps_unit_settlements_and_allows_a_group(pool: MySqlPool) 
         .await
         .expect("un groupe après la montée");
 }
+
+// ---------------------------------------------------------------------------
+// AC11 — le rattrapage de lettrage retiré, face à un groupe
+// ---------------------------------------------------------------------------
+
+/// AC11 — test d'accord du rattrapage `20261010000001` (retiré du rejeu,
+/// `RETIRED_BACKFILLS`) sur un règlement groupé non lettré.
+///
+/// ⚠️ **Divergence assumée, écrite ici** : le SQL du rattrapage ne connaît pas
+/// `invoice_settlements.journal_entry_line_id` (une migration appliquée ne se
+/// modifie plus, P8). Pour une facture d'un groupe, son `C(I)` prend **toutes**
+/// les lignes du compte de créance de l'écriture groupée — celles des autres
+/// factures comprises —, si bien que la somme n'est pas nulle : il
+/// **s'abstient**, il ne lettre rien de faux. La synchronisation vivante, qui
+/// filtre par ligne (AC4), lettre chaque facture. Le rattrapage ne se rejoue
+/// plus à l'import (fenêtre fermée depuis `20261025000001`) : la divergence
+/// n'a pas de chemin en production ; ce test la tient décrite.
+#[sqlx::test(migrations = "./test-schema")]
+async fn the_retired_backfill_abstains_on_a_group_that_sync_letters(pool: MySqlPool) {
+    use kesh_db::post_restore::RETIRED_BACKFILLS;
+    use kesh_db::repositories::{fiscal_years, letterings};
+
+    let m = monter(&pool).await;
+    let a = facture(&pool, &m, "B-1", dec!(100.00), jour(6, 1), None).await;
+    let b = facture(&pool, &m, "B-2", dec!(200.00), jour(6, 1), None).await;
+    let bt = transaction(&pool, &m, dec!(300.00), jour(6, 15)).await;
+    let done = regler(&pool, &m, bt, &[a, b], None).await.expect("réglé");
+    let lignes: Vec<i64> = done.invoices.iter().map(|r| r.line_id).collect();
+
+    // La fixture : le groupe non lettré (marques `document` effacées).
+    sqlx::query(
+        "UPDATE journal_entry_lines SET lettering_key = NULL, lettering_origin = NULL \
+         WHERE lettering_origin = 'document'",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let lettrees = |pool: MySqlPool, lignes: Vec<i64>| async move {
+        let mut n = 0;
+        for l in lignes {
+            let k: Option<i64> =
+                sqlx::query_scalar("SELECT lettering_key FROM journal_entry_lines WHERE id = ?")
+                    .bind(l)
+                    .fetch_one(&pool)
+                    .await
+                    .unwrap();
+            n += i64::from(k.is_some());
+        }
+        n
+    };
+    assert_eq!(lettrees(pool.clone(), lignes.clone()).await, 0, "montage");
+
+    // Le SQL du rattrapage : il s'abstient.
+    let m1 = RETIRED_BACKFILLS
+        .iter()
+        .find(|b| b.version == 20261010000001)
+        .expect("rattrapage retiré");
+    sqlx::raw_sql(m1.sql)
+        .execute(&pool)
+        .await
+        .expect("rattrapage exécuté");
+    assert_eq!(
+        lettrees(pool.clone(), lignes.clone()).await,
+        0,
+        "le rattrapage ne lettre pas un groupe"
+    );
+
+    // La synchronisation vivante : elle lettre chaque facture.
+    let mut tx = pool.begin().await.unwrap();
+    let fy = fiscal_years::find_open_covering_date(&mut tx, m.s.company_id, jour(6, 15))
+        .await
+        .unwrap()
+        .expect("exercice");
+    for id in [a, b] {
+        letterings::sync_invoice_in_tx(&mut tx, m.s.company_id, id, fy.id, acteur(&m))
+            .await
+            .expect("synchronisation");
+    }
+    tx.commit().await.unwrap();
+    assert_eq!(lettrees(pool.clone(), lignes).await, 2);
+}
