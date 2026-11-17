@@ -127,3 +127,8 @@ passait devant le rang 1 de la seconde facture. Réversible.
 - **E-7 (43-2)** — un `difference_account_id` fourni quand `e = 0` est ignoré sans contrôle (décision de Guy :
   « ignoré sinon ») ; la route ne doit pas renvoyer d'écho trompeur (la réponse dit `differenceAccountId: null`, ce qui
   est juste).
+- **Revue P2, LOW-6 (43-2, à vérifier)** — interblocage possible entre le dé-rapprochement d'un groupe (règlements puis
+  factures, ordre de l'unitaire) et un avoir concurrent sur l'une des n factures (`credit_notes.rs:381-386` : facture
+  puis premier règlement). Même exposition que l'unitaire, élargie à n factures ; le dé-rapprochement est rejoué sur 1213
+  par la route (`retry_app_on_deadlock`) ; **l'avoir, non vérifié** : la 43-2 (ou la route de l'avoir) doit dire s'il
+  est rejoué, sinon le noter au manuel.

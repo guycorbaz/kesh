@@ -487,7 +487,10 @@ struct ClientMember {
 /// [`cancel_in_tx`] et la 43-1b, sans effet.
 ///
 /// Au succès, le point de sauvegarde est **relâché** (`RELEASE SAVEPOINT`,
-/// revue P1, B-3) : il ne survit pas dans la transaction de l'appelant.
+/// revue P1, B-3) : il ne survit pas dans la transaction de l'appelant. Après
+/// un **refus**, il subsiste (`ROLLBACK TO` le garde ; revue P2, LOW-7) : sans
+/// effet — le suivant, de même nom, le remplace, et un `ROLLBACK TO` du point
+/// de l'appelant efface ceux posés après lui.
 #[allow(clippy::too_many_arguments)]
 pub async fn settle_invoices_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
