@@ -1,6 +1,6 @@
 # Story 43-2 : un règlement pour plusieurs factures — l'API de la réconciliation (#823)
 
-Status: ready-for-dev
+Status: review
 
 *Fiche rédigée le 2026-11-17 par l'agent de rédaction de l'Epic 43 (Opus 5.5), workflow `bmad-create-story`, code lu à
 `8b50fd195` ; révisée le soir même (décisions de Guy), puis **remédiée après sa validation P1**
@@ -503,9 +503,47 @@ résolu en gardant les deux).
 
 ### Agent Model Used
 
+Opus 5.5 (agent de développement, en autonomie), 2026-11-17.
+
 ### Completion Notes List
 
+- **Commits** : `b32c3d42f` (recherche, `invoice_group`, vue, annulation, guide d'API) ; `7994a7a34` (trois défauts de test) ;
+  **`70f74f964` = commit D4** (type fournisseur, retirable) ; `6e656ad88` (test de `conclude`, mutation a) — **dernier commit
+  de code de la story** ; `420bd6317` = fusion de la branche de la 43-1a (C-e432-12) ; puis fiches seules.
+- **Tests ajoutés** (périmètre `cf77cff18`..`6e656ad88`, recomptés par `grep -c`) : `kesh-api/tests/reconciliation_group_e2e.rs`
+  25 `#[sqlx::test]`, dont **3 `#[ignore]`** (groupe fournisseur : exigent la 43-1b, `pay_supplier_invoices_in_tx` encore
+  `unimplemented!`) ; `kesh-db/tests/reconciliation_group_candidates.rs` 7 ; unitaires : 5 dans `reconciliation_group.rs`,
+  1 dans `reconciliation_group_candidates.rs`.
+- **Rouges** (`kesh-gate-logs/e432/rouges.log`) : le code de TR, T1, T2 et T4 a été écrit avant ses tests (aucun « rouge
+  d'abord » strict, dit au journal) ; les huit rouges rencontrés étaient des défauts de test, corrigés (`7994a7a34`).
+- **Mutations** (`kesh-gate-logs/e432/mut/campagne.py`, `campagne.log`, `campagne-a2.log`) : (b) à (h) **tuées** au commit
+  `70f74f964` par les tests annoncés ; (a) **survivante** au premier passage (aucun test n'atteignait une `DbError` dans le
+  chemin groupé), puis **tuée** par `the_conclusion_keeps_errors_in_the_proposal` (`6e656ad88`) — ⚠️ ce rejeu a été troublé :
+  j'ai restauré le fichier à la main pendant qu'il tournait (17:47:29), le binaire muté était probablement déjà compilé ;
+  verdict « probable », à rejouer si la revue le demande. (f) tue dix tests, dont des tests sans rapport avec la date :
+  probablement par erreur SQL du motif muté plutôt que par l'assertion de borne.
+- **Gates au passage en review** (base `kesh_e432` remise à neuf avant) :
+  - `scripts/test-fast.sh --ci` au commit `420bd6317` : **5589 passés, 0 échec, 16 ignorés**
+    (`kesh-gate-logs/e432/test-fast-review-2.log`) ;
+  - `scripts/gate-ci.sh kesh_ci_e432` au commit `420bd6317` : **5596 passés, 0 échoué, 20 ignorés**
+    (`kesh-gate-logs/e432/gate-ci-review.log`) ;
+  - le premier `test-fast --ci`, au commit `6e656ad88` sur la base `241839568`, rendait 17 rouges, tous dans du code et des
+    tests de la 43-1a, corrigés par elle après cette base (`test-fast-review.log`, C-e432-12) ;
+  - frontend : non touché, non lancé ; **E2E non lancé** (règle `e35-dev-commun.md` : à la clôture).
+- **Non exécuté** : les trois tests fournisseur `#[ignore]` (43-1b) ; aucune capture (aucun contrôle visible : l'écran est la
+  43-3).
+- **Choix** : C-e432-1 à C-e432-12 (`e0190-choix-autonomes-e432.md`). Code écrit par l'outil Edit seulement ; la campagne
+  de mutations applique ses motifs par script (permis pour les mutations).
+
 ### File List
+
+- `crates/kesh-db/src/repositories/reconciliation_group_candidates.rs` (neuf), `repositories/mod.rs`,
+  `repositories/reconciliation_cancel.rs` (champ `kind`, C-e432-4)
+- `crates/kesh-db/tests/reconciliation_group_candidates.rs` (neuf)
+- `crates/kesh-api/src/routes/reconciliation_group.rs` (neuf), `routes/reconciliation.rs`, `routes/mod.rs`, `lib.rs`
+- `crates/kesh-api/tests/reconciliation_group_e2e.rs` (neuf)
+- `docs/api-external.md`
+- `_bmad-output/implementation-artifacts/e0190-choix-autonomes-e432.md` (neuf), cette fiche, son prompt de revue P1
 
 ## Change Log
 

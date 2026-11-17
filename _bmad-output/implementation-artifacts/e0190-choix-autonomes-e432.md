@@ -53,3 +53,13 @@ le paramétrer toucherait les trois appelants de l'unitaire pour un journal inte
 
 **C-e432-11 — `gap` de la vue, en cas d'erreur de `group_difference`.** Avec `Decimal::MAX` pour plafond, la fonction ne
 peut refuser ; si elle le faisait, `gap` vaudrait `null` plutôt qu'une erreur de la vue.
+
+**C-e432-12 — Branche de la 43-1a reprise avant le passage en revue** (demande de l'orchestrateur du 2026-11-17 : gates
+verts). Le `test-fast --ci` au commit `6e656ad88` (base `241839568`, commit T3 jamais passé aux tests d'intégration,
+`t3.md`) rendait 17 rouges, tous dans des fichiers que la 43-2 ne touche pas (tests `grouped_settlements`,
+`lettering_documents_backfill`, `migrations_upgrade_path`, `company_invoice_settings_repository`, inventaires
+`bank_account_closed_inventory` et `letterings_lexical`, garde du squash sur `grouped_settlements.rs:1243`), corrigés par la
+43-1a après la base (`69e75f5fc`, `130b0e60b`, `bc02e360f`, `69eb2e1ee`). Fusion de `story/43-1a-reglement-groupe-modele` à
+sa tête `5602c0d21` (remédiation P2 de sa revue, signatures de `t3.md` inchangées), sans conflit : commit `420bd6317`. La
+43-1a reste en revue : une remédiation ultérieure se reprend de même. Autre option : attendre sa clôture (pas de gate vert
+avant).
