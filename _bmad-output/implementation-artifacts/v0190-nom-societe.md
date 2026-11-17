@@ -1,6 +1,6 @@
 # Story v0190-nom-societe : le nom de la société se modifie dans *Paramètres → Organisation* (#1097)
 
-Status: ready-for-dev
+Status: review
 
 *Fiche rédigée le 2026-11-17 (Sonnet 5.5), worktree `kesh-v0190c`, branche `story/v0190-nom-societe` à créer depuis
 `epic/v0190-correction` (= `main` = v0.18.0, `8b50fd195`), par le workflow `bmad-create-story`. Issue de la scission de
@@ -126,6 +126,77 @@ Ceux de `e35-dev-commun.md` : gate ciblé en cours de développement (`npm run c
 - **Registre des choix** : `_bmad-output/implementation-artifacts/e0190-choix-autonomes-v0190c.md` (C-v0190c-4 à 15).
 - Issues liées (ouvertes) : **#1226** (l'assistant n'applique pas les contrôles de la QR-facture au nom), **#1227** (`first_name`/`last_name` sans écran, limite D3).
 - Aucune donnée réelle dans les fixtures (« Démo SA »).
+
+## Change Log
+
+- **2026-11-17 — validation terminée** (fiche relue avec `v0190-correction` jusqu'à la P4) : P1 Opus 4 MEDIUM / 5 LOW → P2 Sonnet 0 MEDIUM / 6 LOW → P3 ciblée Opus 1 MEDIUM (N3-1, le normaliseur `trim` déjà donné par la règle commune) / 1 LOW (N3-2, ligne du patron g-bis) → P4 ciblée Haiku, aucun finding pour cette fiche (`validation-p4-ciblee.md` : « La boucle `v0190-nom-societe` peut se clore sur cette passe »). Rapports : `kesh-gate-logs/v0190c/validation-nom-societe-p1.md`, `-p2.md`, `-p3-ciblee.md`, `validation-p4-ciblee.md`.
+- **2026-11-17 — étape 0 du développement** (Opus 5.5, worktree `kesh-v0190n`, clé `v0190n`, voie 2). Le dernier rapport propre à la fiche (P3) ne laisse qu'un LOW, N3-2, déjà appliqué (AC1 g-bis cite `companies_repository.rs:355`, montage `:362-369`) ; ligne lue `crates/kesh-db/tests/companies_repository.rs:355` `async fn update_preserves_address_when_structured_columns_are_empty(pool: MySqlPool) {`. Prémisses relues avant d'écrire : `kesh-qrbill/src/validation.rs:10` `pub const NAME_MAX: usize = 70;`, `:213` `pub fn first_qr_refused_char(value: &str) -> Option<char> {`, `:244` `pub fn champ_vide_pour_qr(valeur: &str) -> bool {` ; `company-conflict.ts:55-57` `normalizeCompanyValue` = `(value ?? '').trim()` (N3-1 : aucun normaliseur ajouté) ; aucune migration (`20260404000001_initial_schema.sql:6` `name VARCHAR(255) NOT NULL,`).
+- **2026-11-17 — développement** : voir le Dev Agent Record. Écart à la fiche : quatre compteurs non inventoriés, dont celui du manuel d'administration (C-v0190c-23).
+
+## Dev Agent Record
+
+*Opus 5.5, 2026-11-17, worktree `/home/gcorbaz/devel/kesh-v0190n`, branche `story/v0190-nom-societe` partie de `epic/v0190-correction` (`b2e2ff67c`). Journaux : `/home/gcorbaz/devel/kesh-gate-logs/v0190n/`.*
+
+### Commits
+
+- `e4e176be0` — route `PUT /api/v1/companies/current/name`, `validate_company_name_for_qr` et ses tests unitaires, refus du PDF (trois replis, douze phrases), deux gardes inversées, registres d'audit et compteurs, manuel d'administration recompté.
+- `9cb4d4c34` — bloc nom de *Paramètres → Organisation*, API et types, quatre clés × quatre catalogues, tests de la page et de l'API, `sitesTotal`.
+- `e5b1f0161` — `company-name.spec.ts`, manuel utilisateur (D7). **Dernier commit de code.**
+- le commit suivant ne porte que la fiche, le registre, le prompt de revue P1 et `sprint-status.yaml`.
+
+### Ce qui est livré, par AC
+
+- **AC1** — `crates/kesh-api/src/routes/companies.rs` : `UpdateCompanyNameRequest`, `validate_company_name_for_qr` (rognage, `champ_vide_pour_qr`, `chars().count() > NAME_MAX`, `first_qr_refused_char`, dans l'ordre du PDF), `update_company_name` (nom jugé **avant** `get_company_for`, full-replace qui reporte tous les autres champs, `update_in_tx`, audit `company.updated` `{before:{name}, after:{name}}` seulement si la version a bougé) ; route `lib.rs:476-479` dans `admin_routes`. Tests : dix `#[sqlx::test]` neufs dans `company_address_e2e.rs` (a, b ×3, c, d, e, f, g, g-bis). Registres : `admin_pat_denied_e2e.rs`, `audit_route_registry.rs`, `audit_acteur_garde.rs` (h).
+- **AC2** — cinq `#[test]` dans `mod tests` de `companies.rs` (0/blanc/U+00AD, 1-70-71, rognage, premier caractère refusé, caractères admis).
+- **AC3** — replis `invoice_pdf_service.rs` et `messages.ftl` ×4 ; garde `texte.contains("Organi")` et `invoice_pdf_e2e.rs` inversées ; `cles.len() == 42` inchangé.
+- **AC4** — `+page.svelte` (bloc nom, `syncOpenBlocks`) ; douze cas neufs dans `settings-page.test.ts` (onze `it(`, dont un dans une boucle sur deux rôles) et un dans `settings.api.test.ts`.
+- **AC5** — `frontend/tests/e2e/company-name.spec.ts`, deux tests (correction relue après rechargement ; refus de « 张 » nommé avec `U+5F20`, rien d'écrit), nom restauré en `finally`.
+- **AC6** — clés `settings-company-name-saved`, `-required`, `-conflict`, `-conflict-reload-failed` ×4 après `settings-company-email-conflict-reload-failed` ; `sitesTotal` 3087 → 3095 (huit littéraux du bloc), relevé par la garde (`vitest-i18n-1.log` : « expected 3095 to be 3087 »).
+- **AC7** — `user-manual.tex` : paragraphe « Corriger le nom de votre entreprise » (remplace « Le nom et l'IDE ne se modifient pas ici. »), « du nom » ajouté au paragraphe des conflits, phrase du § *Les caractères d'une QR-facture* remplacée (« depuis la version~0.19.0 », **à reposer à l'intégration si la story glisse**). `git grep -n -E "1097|modifie pas encore" -- docs/manual/fr/` : vide. `MULTI_SOCIETE_TOTAL` reste à 22 (aucun manuel ne nomme la route). PDF non régénérés (à la release).
+
+### Décomptes (recomptés à `e5b1f0161`, périmètre `b2e2ff67c..e5b1f0161`)
+
+`company_address_e2e.rs` : 23 → 33 `sqlx::test` ; `companies.rs` : 0 → 5 `#[test]` ; `settings-page.test.ts` : 59 → 70 `it(` ; `settings.api.test.ts` : 5 → 6 `it(` ; `company-name.spec.ts` : 2 `test(` ; 21 fichiers, 1032 insertions, 42 suppressions.
+
+### Rouges
+
+- Les compteurs : `cible-1.log` (commit de travail, avant `e4e176be0`) — `admin_pat_denied_e2e` « left: (15, 39) right: (15, 38) », `audit_route_registry::le_manuel_dit_le_compte_du_registre` « left: [(139, 146)] right: [(140, 147)] » ; recomptés, puis `cible-2.log` vert (155 tests).
+- `sitesTotal` : `vitest-i18n-1.log` rouge (3095 contre 3087), puis `vitest-i18n-2.log` vert.
+- Les tests neufs n'ont pas été lancés sur le code d'origine (la route n'existait pas : 405) ; leur capacité à rougir est établie par les mutations ci-dessous.
+
+### Mutations (`mut/`, code commité avant, restauration `git restore --worktree` puis `touch`)
+
+Rust (`mutations-rust.py`, `resume-rust.log`, voie 2) : **7 tuées sur 7** — M1 vide jugé par `is_empty` (U+00AD passe), M2 sans contrôle du jeu, M3 borne `>=`, M4 nom non écrit, M5 clé en trop dans l'audit, M6 sans rognage, M7 une phrase de-CH revenue à « noch nicht ändern ». Frontend (`mutations-front.py`, `resume-front.log`) : **4 tuées sur 4** — F1 sans la branche `nameEditing` de `syncOpenBlocks` (les deux tests « nom en cours d'édition » rougissent), F2 sans refus local du vide, F3 envoi non rogné, F4 bouton *Modifier* pour tous les rôles. Non jouée, déclarée équivalente pour l'ordre jugement/lecture : déplacer `validate_company_name_for_qr` après `get_company_for` laisse le `400` à version périmée (le refus précède toujours `update_in_tx`) ; seul un `404` de société manquante changerait de place, cas que la session d'un administrateur ne produit pas.
+
+### Gates
+
+| Gate | Commit | Journal | Résultat |
+|---|---|---|---|
+| ciblé backend (six binaires + `companies::tests` + `invoice_pdf_service`) | arbre de `e4e176be0` | `cible-2.log` | 155 passés |
+| Vitest de `settings` | arbre de `9cb4d4c34` | `vitest-settings-1.log` | 4 fichiers, 121 passés |
+| `npm run check`, `lint-i18n-ownership` | arbre de `9cb4d4c34` | `check-1.log`, `lint-i18n-1.log` | 0 erreur ; PASS |
+| E2E `company-name.spec.ts` seul (voie 2, base `kesh_e2e_v0190n` recréée) | `e5b1f0161` | `e2e-company-name-2.log` | 2 passés |
+| **`scripts/test-fast.sh --ci`** (voie 2, bases remises à neuf) | `e5b1f0161` | `test-fast-review.log` | **5527 passés**, 13 ignorés |
+| **`scripts/gate-ci.sh kesh_ci_v0190n`** (voie 1) | `e5b1f0161` | `gate-ci-review.log`, puis `gate-ci-review-2.log` | 1er passage : **rouge** au binaire `mcp_transport_e2e`, `abandon_au_delai_le_permis_reste_pris` (« témoin : sonde servie », `mcp_transport_e2e.rs:1876`), 2145 passés, 1 échoué — **KF-061 (#1126)**, test temporel du transport MCP, sans rapport avec la story, relancé tel quel ; 2e passage : **5534 passés, 0 échoué, 17 ignorés** (= 5519 de `v0190-correction` + 10 `sqlx::test` + 5 `#[test]`) |
+| **frontend complet** (`check`, `lint-i18n-ownership`, `test:unit`, `build`) | `e5b1f0161` | `front-{check,lint-i18n-ownership,test-unit,build}-review.log` | `check` 0 erreur (29 avertissements, aucun sur `settings`) ; lint PASS ; Vitest **247 fichiers, 4002 passés** ; build vert |
+| E2E complet | — | — | **non lancé** : à la clôture |
+
+**Jalon du plan de coupure** (mercredi 2026-11-18, 18 h) : le gate ciblé de la route et de l'écran est vert le mardi 17 (`cible-2.log`, `vitest-settings-1.log`, `check-1.log`) ; aucune alerte écrite.
+
+### Captures (thème clair, base jetable `kesh_e2e_v0190n`, voie 2)
+
+`/home/gcorbaz/devel/kesh-gate-logs/v0190n/captures/` : `1-organisation-bouton-modifier.png`, `2-edition-du-nom.png`, `3-refus-caractere-hors-jeu.png`, `4-refus-du-pdf-renvoie-a-organisation.png` (toast « Le nom de l'entreprise dépasse 70 caractères (71). Raccourcissez-le dans Paramètres → Organisation. », nom de 71 caractères posé en SQL). Script : `captures.mjs`, lancé par `e2e-et-captures.sh`.
+
+### Écarts
+
+- **C-v0190c-23** : quatre compteurs hors de l'inventaire de la fiche, dont le compte du manuel d'administration (§ journal d'audit), recompté dans la story.
+- **Consigne Edit** : les tests AC1 ont été **ajoutés en fin de `company_address_e2e.rs` par un `cat >>`** (ajout pur, aucune ligne existante touchée), non par l'outil Edit ; tout le reste du code par Edit/Write. Pas de manque de l'outil : un réflexe, déclaré.
+- Les captures sont sous `kesh-gate-logs/v0190n/`, non `v0190c/` comme le dit la section « Recette visuelle » (clé de la voie de développement).
+
+### Ce qui reste
+
+- E2E complet et `gate-ci` de clôture, au dernier commit de code, sur demande de l'orchestrateur.
+- À l'intégration : la phrase « depuis la version~0.19.0 » (D7 (2)) si la story glisse ; la section « Passer à la 0.19.0 » du manuel d'administration (phrase dans la Note de version) ; les deux PDF des manuels.
 
 ## Note de version
 
