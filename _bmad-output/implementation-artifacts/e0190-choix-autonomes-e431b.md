@@ -153,3 +153,10 @@ devient `a_malformed_supplier_group_is_an_invariant_for_the_view` ; son assertio
 (`DbError::Invariant`), non plus sur un texte. La branche défensive « aucun règlement » du dé-rapprochement groupé est
 tenue par `a_group_cancel_on_an_entry_without_settlement_is_an_invariant` ; celle de `supplier_difference_account_of`
 et de `supplier_cancel_in_tx` (membres vides) reste inatteignable par la classification, écrite comme telle.
+*(Annoté à la revue P3 ciblée, LOW-B : la phrase se contredit pour `supplier_cancel_in_tx`. Sa branche « aucun
+règlement » **est atteinte** — par l'aiguillage de `grouped_settlements::cancel_in_tx` (fonction publique), pour
+toute écriture sans règlement client ni fournisseur ; c'est ce que fait le test cité. C'est la **classification**
+(`reconciliation_cancel::classify`) qui n'y mène jamais : elle ne rend un groupe qu'avec un membre. Seule la branche
+de `supplier_difference_account_of` (privée, appelée par la vue après la classification) reste inatteignable. Le
+contrôle des positions de cette fonction, que le test adapté n'atteint plus (il tombe sur le recoupement, C-e431b-15),
+est tenu par `debt_lines_out_of_their_positions_make_the_view_an_invariant`.)*

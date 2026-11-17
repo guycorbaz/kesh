@@ -1904,3 +1904,40 @@ async fn a_group_cancel_on_an_entry_without_settlement_is_an_invariant(pool: MyS
     tx.rollback().await.unwrap();
     assert_eq!(empreinte(&pool).await, avant);
 }
+
+/// Revue P3 ciblée (LOW-A) — le contrôle des **positions** des lignes de dette,
+/// atteint seul : un groupe payé (deux factures, audit de deux factures), dont
+/// une facture pointe, par un montage, la ligne de **banque** au lieu de sa
+/// ligne de dette. Le nombre de lignes nommées recoupe le paiement (deux) ;
+/// elles n'occupent pas les positions 1 à 2 : `Invariant` par ce contrôle,
+/// jamais une réponse.
+#[sqlx::test(migrations = "./test-schema")]
+async fn debt_lines_out_of_their_positions_make_the_view_an_invariant(pool: MySqlPool) {
+    let m = monter(&pool).await;
+    let a = facture(&pool, &m, "P-1", dec!(100.00), jour(6, 1), None).await;
+    let b = facture(&pool, &m, "P-2", dec!(50.00), jour(6, 1), None).await;
+    let bt = transaction(&pool, &m, dec!(-150.00), jour(6, 15)).await;
+    let done = payer(&pool, &m, bt, &[a, b], None).await.expect("payé");
+    let banque: i64 = sqlx::query_scalar(
+        "SELECT id FROM journal_entry_lines WHERE entry_id = ? ORDER BY line_order LIMIT 1",
+    )
+    .bind(done.journal_entry_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let n = sqlx::query(
+        "UPDATE supplier_invoices SET settlement_journal_entry_line_id = ? WHERE id = ?",
+    )
+    .bind(banque)
+    .bind(a)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .rows_affected();
+    assert_eq!(n, 1, "montage : la facture pointe la ligne de banque");
+    let res = reconciliation_cancel::get_view(&pool, m.s.company_id, bt, aujourd_hui()).await;
+    assert!(
+        matches!(&res, Err(DbError::Invariant(msg)) if msg.contains("positions 1 à n")),
+        "{res:?}"
+    );
+}
