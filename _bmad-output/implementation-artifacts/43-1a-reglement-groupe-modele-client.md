@@ -532,6 +532,11 @@ gate complet (`reset-base.sh`).
 | `test-fast --ci`, 3ᵉ | `bc02e360f` | 5534 : 5533 passés, 1 rouge (registre du compte clos) | `test-fast-review-3.log` |
 | **`test-fast --ci`** (fmt, clippy, nextest) | **`69eb2e1ee`** | **5534 passés, 13 ignorés** | `test-fast-review-4.log` |
 | **`gate-ci.sh kesh_ci_e431a`** | **`69eb2e1ee`** | **5541 passés, 0 échec, 17 ignorés** (recompté : somme des `test result:` du journal) | `gate-ci-review.log` |
+| revue P1 — entrelacement, rouge | `16172c632` (code `ad77f3e21`) | rouge : `Ok(… reversal Some(4))`, contre-passé en exercice clos | `p1-rouge-entrelacement.log` |
+| revue P1 — rayon d'impact | avant `58d949434` | 93 : 92 passés, 1 rouge de montage (CHECK `chk_invoices_validated_has_je`) ; entrelacement vert | `p1-vert-entrelacement.log` |
+| revue P1 — `binary(grouped_settlements)` | `58d949434` | 29/29 | `p1-cible-2.log` |
+| revue P1 — fmt, clippy, `nextest --profile ci` (`test-fast` sans son garde des droits, refusé par un droit `kesh_ci_e437` d'un autre agent) | `58d949434` | **5549 passés, 13 ignorés** | `test-fast-p1-sans-garde.log` |
+| revue P1 — **`gate-ci.sh kesh_ci_e431a`** | `58d949434` | **5556 passés, 0 échec, 17 ignorés** | `gate-ci-p1.log` |
 | frontend | — | non touché, non lancé | — |
 | E2E | — | **non lancé** : à la clôture (consigne de la release) | — |
 
