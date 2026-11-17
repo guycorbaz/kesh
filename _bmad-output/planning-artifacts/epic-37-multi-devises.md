@@ -743,6 +743,55 @@ recompté : `ls crates/kesh-db/migrations/*.sql | wc -l` et les deux sites du to
   portant encore la 0.18.0 de `main`, la sauvegarde se nomme « 0.18.0-to-0.18.0 » : le numéro de la release de l'epic
   se pose au bump de la release.
 
+**Revue du code d'intégration, passe 1** (complète, rapport `kesh-gate-logs/integration-main-37/revue-P1.md`) :
+**0 CRITICAL, 1 HIGH, 1 MEDIUM, 5 LOW**. Prémisse de chaque finding vérifiée au code avant correctif ; toutes exactes.
+Correctifs au commit `38299a21` :
+- **H1 — corrigé.** Le lien de remède d'un refus de finalisation (36-17) faisait perdre les dates du premier exercice
+  (37-1) : au retour, *Terminer la configuration* créait l'exercice à l'année civile. Les deux dates sont désormais
+  affichées et modifiables sur les écrans d'échec et de reprise (`snippet` `premierExercice` de `+page.svelte`, rendu
+  par `OnboardingFinalizeScreen.svelte` dans un formulaire), avec la garde `fyProblem` sur les boutons et la touche
+  Entrée (`finalizeAgain`) ; la saisie est gardée pour l'onglet (`sessionStorage`, `premier-exercice.ts`, lectures et
+  écritures sous `try/catch`), effacée après une finalisation réussie et à la page terminée. Ce qui est écrit plus haut
+  (« Après un rechargement, la saisie est perdue ») ne vaut plus que sans stockage. Tests : trois Vitest
+  (`onboarding-fiscal-year.test.ts` : refus → démontage → remontage, dates affichées et envoyées ; garde et Entrée sur
+  l'écran d'échec ; stockage illisible ignoré) et un E2E (`onboarding-fin.spec.ts`, E5 : refus simulé, lien, retour,
+  exercice du 01.04.2026 au 31.03.2027). Manuel FR corrigé (fin de l'assistant). Captures :
+  `kesh-gate-logs/integration-main-37/captures/` (six états, thème clair, base E2E synthétique).
+- **M1 — corrigé.** La finalisation écartait, pour tous les réglages, les comptes de gains, de pertes et de conversion,
+  plus large que FR-37-1-12 et que le `PUT`. Une seule règle désormais, `accounts::designation_refusal_in_tx`, qui rend
+  la cause, partagée par le `PUT` des réglages, l'article et la finalisation (`role_candidate_rejection`) : compte en
+  devise refusé partout ; compte de gains ou de pertes refusé au seul compte de produit par défaut ; compte de conversion
+  admis. L'ancien `refuse_fx_account_as_revenue_in_tx` est retiré. Ce qui est écrit plus haut à « 36-19 × 37-1 »
+  (« ou de conversion », réglages facultatifs écartés pour un compte de change) ne vaut plus. Tests : au dépôt,
+  `finalize_refuses_a_revenue_role_account_that_is_an_fx_account` (sans le cas `Transit`, désignation propre avec son
+  porteur), `finalize_designates_fx_accounts_to_non_revenue_settings` (neuf : débiteurs compte de conversion, arrondi
+  compte de pertes, créanciers compte de conversion, et **6900 désigné compte des pertes de change → frais bancaires
+  posés**), `finalize_leaves_an_optional_setting_empty_on_an_fx_candidate` (compte en devise seulement) ; au `PUT`,
+  `reglages_de_facturation_gardes_inverses` (pertes aux frais bancaires, conversion aux débiteurs : admis). Manuel FR,
+  `docs/api-external.md` et note de version alignés.
+- **L1 — corrigé.** `RoleAccountIsFxAccount` porte `holder_number` ; la phrase nomme le compte en devise porteur d'un
+  compte de change propre, ou renvoie au réglage de la société (*Administration → Paramètres*, section *Comptabilité*) ;
+  test du motif mis à jour.
+- **L2 — corrigé.** Ordre des verrous de `finalize` écrit à `docs/MULTI-TENANT-SCOPING-PATTERNS.md` et au commentaire de
+  `onboarding.rs` (`companies` en partage en tête, relectures des candidats, verrous d'index de
+  `fx_designations_of_in_tx` pour le seul candidat au produit par défaut).
+- **L3 — corrigé** (trivial) : `kesh-seed/src/pieges.rs` prend `companies` en partage en tête de sa transaction.
+- **L4 — corrigé.** `docs/api-external.md` décrit les refus de `POST /onboarding/finalize` (36-19 et Epic 37).
+- **L5 — joué.** Suite backend sous `KESH_TEST_INSTANT=2027-01-04T10:00:00Z`, base remise à zéro avant :
+  **5941 exécutés, 5941 passés, 13 ignorés** (`gate-backend-p1fix-2027.log`). Aucune sonde n'a prouvé que la variable
+  atteignait chaque test (elle passe par l'environnement de `heavy.sh` et de `test-fast.sh`).
+
+Gates au commit `38299a21` (journaux `kesh-gate-logs/integration-main-37/*-p1fix*`) : base `kesh_int37` remise à zéro
+(DROP/CREATE, migrations, seed) ; backend `scripts/test-fast.sh --ci` (fmt, clippy `-D warnings`, nextest) **5941
+exécutés, 5941 passés, 13 ignorés** (`gate-backend-p1fix.log` ; 5940 + le test neuf) ; frontend `npm run check`
+0 erreur (29 avertissements préexistants), `lint-i18n-ownership` vert, Vitest **4353 passés (271 fichiers)**
+(4350 + 3), `npm run build` vert ; E2E complet (port 3377, `kesh_e2e_int37`) **455 passés, 10 échecs, 18 ignorés**
+(`e2e-p1fix.log`) — les sept de la KF-029 (#97, `docs/testing.md`) et les trois préexistants déjà relevés
+(`backup-restore-new-install.spec.ts:262`, `:381`, `opening-balances.spec.ts:156`) ; E5 et
+`onboarding-bank-account.spec.ts:117` verts. Tests ajoutés (périmètre `4884661d..38299a21`, recomptés) : 1 Rust
+(`#[sqlx::test]`), 3 Vitest, 1 E2E ; assertions modifiées dans 3 tests Rust existants. Le correctif touche la
+production (H1, M1, L1, L3) : une passe de revue suivante est due.
+
 ## Notes de version de l'epic
 
 *(Résumé pour Guy, qui assemble le `CHANGELOG.md` à la release ; le texte prêt à assembler de chaque point est la section « Note de version » de la fiche citée. Le fichier d'epic n'écrit pas le `CHANGELOG.md`. Rédigé le 2026-11-17, à la clôture de l'epic.)*
@@ -755,7 +804,7 @@ recompté : `ls crates/kesh-db/migrations/*.sql | wc -l` et les deux sites du to
 ### Changements de contrat de l'API
 
 - **Écritures** (37-3a) : `POST`/`PUT /journal-entries` prennent `foreign { currency?, amount, rate?, chf?, rateSource?, side? }` ; `rate`, `chf`, `side`, `rateSource`, `debit`/`credit` deviennent facultatifs ; une ligne CHF sans `debit` rend 400 au lieu de 422. Mêmes 400 aux routes d'ouverture, et `rateSource: "revaluation"` y est refusé (37-3b).
-- **Finalisation de l'assistant** (intégration de la v0.18.0) : `POST /onboarding/finalize` refuse (400 `VALIDATION_ERROR`, motif nommé) un compte débiteurs ou de produit par défaut à désigner d'office qui serait en devise, compte de gains ou de pertes de change, ou compte de conversion ; un tel compte facultatif reste non désigné.
+- **Finalisation de l'assistant** (intégration de la v0.18.0 ; règle alignée sur le `PUT` des réglages à la revue P1 de l'intégration) : `POST /onboarding/finalize` refuse (400 `VALIDATION_ERROR`, motif nommé) un compte débiteurs ou de produit par défaut à désigner d'office qui serait tenu en devise, ou — produit par défaut seulement — compte de gains ou de pertes de change (de la société, ou propre à un compte en devise, que le motif nomme) ; un compte facultatif en devise reste non désigné. Le compte de conversion, et un compte de gains ou de pertes aux autres réglages (frais bancaires, arrondi…), sont désignés, comme le `PUT` les accepte.
 - **Comptes et société** (37-1) : champs neufs `currency`, `fxGainAccountId`, `fxLossAccountId`, `currencyLocked` ; corps facultatif de `POST /onboarding/finalize` (dates du premier exercice) ; réglage multi-devises réservé à l'Administrateur, par une session et jamais par une clé d'API, définitif.
 - **Routes neuves** : `/exchange-rates` et ses sous-routes, `/fiscal-years/{id}/exchange-rates`, `PUT /fiscal-years/{id}/rate-kinds` (37-2) ; `POST /journal-entries/conversions` et `GET /opening-balances/status` (champ `currency`) (37-3b) ; aperçu et passation de la réévaluation (37-5).
 - **Codes neufs** : `MULTI_CURRENCY_DISABLED`, `MULTI_CURRENCY_IRREVERSIBLE`, `CURRENCY_UNKNOWN`, `FX_ACCOUNT_INVALID`, `ACCOUNT_CURRENCY_LOCKED`, `ACCOUNT_CURRENCY_IN_USE`, `ACCOUNT_IN_FOREIGN_CURRENCY`, `ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT`, `LATER_FISCAL_YEAR_MONO_CURRENCY` (37-1) ; `RATE_NOT_PUBLISHED`, `RATE_SOURCE_UNAVAILABLE`, `RATE_UNAVAILABLE`, `FX_RATE_INVALID` (37-2) ; `FX_CONVERSION_TRANSIT_UNBALANCED` (37-3b) ; `FX_REVALUATION_ACCOUNT_INVALID`, `FOREIGN_ACCOUNTS_NOT_REVALUED` (409 à la clôture) (37-5). `modificationBlockedBy` peut valoir `ENTRY_IS_FX_REVALUATION` ; l'enregistrement d'une pièce sur un compte en devise rend 400 `ACCOUNT_IN_FOREIGN_CURRENCY` ; les lots de rapprochement rendent les refus `FX_*` dans `failed[]` (37-3a).
