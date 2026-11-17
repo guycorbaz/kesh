@@ -422,8 +422,10 @@ Journaux hors dépôt, `/home/gcorbaz/devel/kesh-gate-logs/e44/` :
 - `rouges.log` (synthèse) et `rouges-brut.log` — les sept tests de comportement contre la mise en page de la v0.18.0 (code de
   `4b3a20b0b`, tests non encore commités ; « 0 passed; 7 failed ») ;
 - `dev-run1.log`, `dev-run2.log` — le crate pendant le développement ;
-- `pire-cas-boites.log` — `pire_cas_boites_independantes` (`#[ignore]`) au commit `f83eb8730` : **vert, 67 mots relevés**
-  dans la section de paiement par `pdftotext -bbox` ;
+- `pire-cas-boites.log` — `pire_cas_boites_independantes` (`#[ignore]`) lancé sur l'arbre de travail **avant** le commit
+  `f83eb8730` (journal à 09:50:18, commit à 09:51:10 ; l'arbre était celui qui a été commité, sans preuve écrite), vert, 67
+  mots ; *annoté à la remédiation de la revue P1 (E-5)* : rejoué au commit `8997f6349`, arbre propre, journal
+  `pire-cas-boites-8997f6349.log` : **vert, 67 mots relevés** par `pdftotext -bbox` ;
 - `mut/synthese-campagne-1.log`, `mut/synthese-campagne-2.log`, `mut/M*.log`, script `mut/mutations_44_1a.py` — mutations
   au commit `f83eb8730` ;
 - `outils/coupe_afm.py` — modèle de coupe indépendant (chasses lues à `phvr8a.afm`, sans la table du dépôt) qui a servi à
@@ -501,6 +503,13 @@ Décompte des `#[test]` de `pdf.rs` : **53** à `4b3a20b0b` → **62** à `36971
 117 dans la bordure, débiteur à x = 67, point de dépôt à la base 5, montant dans les valeurs du reçu, 27 caractères par
 ligne, aucun palier, croix à (90, 70)). `les_derniers_paliers_tiennent_par_construction`, écrit après les constantes, est
 rouge par M10.
+*Annoté le 2026-11-17, à la remédiation de la revue P1 (A-1, A-2) — la phrase ci-dessus était fausse sur deux points.*
+(1) Le rouge enregistré de `le_code_qr_est_inchange` n'est **pas** la croix : c'est sa première assertion, sur le littéral
+provisoire `"à relever"` de `CHARGE_UTILE_S` (`rouges.log`). Le test s'arrête là, et l'assertion de la croix (AC9) n'a jamais
+tourné contre la v0.18.0. Elle est prouvée par mutation : **M8** (croix laissée à l'ancien centre) tue
+`le_code_qr_est_inchange` (`mut/M8.log`). (2) `pire_cas_boites_independantes` (`#[ignore]`) n'a **pas** de rouge d'origine
+contre la v0.18.0, alors que la fiche en attendait un. Sa preuve est la sonde positive **M1** (colonne remise à 117), qui le
+fait rougir (`mut/synthese-campagne-1.log`).
 
 **Mutations** (`f83eb8730`, `mut/`) : **16 jouées, 15 tuées par le test attendu, 1 équivalente** —
 M1 (`la_grille_six_est_tenue`, `chaque_ligne_dans_sa_zone`, et `pire_cas_boites_independantes` : sonde positive du relevé
@@ -508,11 +517,44 @@ indépendant), M2, M3, M12, M4a, M4b, M5, M7, M8, M9, M10, M13, M13b, M14, M11 t
 **équivalente** : elle ne touche que les modules noirs, et sa survie prouve que (10, 10) est blanc ; rejouée en **M6b** sur
 le module (0, 0), noir (motif de repérage) : tuée par `le_code_qr_est_inchange`. Restauration par `git restore --worktree`
 puis `touch` après chacune ; fichier propre après les deux campagnes.
+*Annoté le 2026-11-17, à la remédiation de la revue P1 (A-4, A-3).* Le total ci-dessus oublie M6b : sur les deux campagnes,
+**17 mutations jouées (16 + M6b), 16 tuées, 1 équivalente (M6)**.
+**Troisième campagne** (commit `8997f6349`, `mut/synthese-campagne-3.log`). Dans les journaux de la campagne 1, M3, M7 et
+M13b étaient tuées par les deux `debug_assert!` de production « le dernier palier tient » (`pdf.rs`, `mise_en_page`), et non
+par les assertions des tests. Ces `debug_assert!` se taisent en profil release. Je les ai donc rejouées avec les deux
+`debug_assert!` neutralisés (`true ||`, comme en release) : M3n, M7n, M13bn. **Toutes trois sont tuées par l'assertion
+propre du test** :
+- **M3n** par `la_cascade_par_palier` (« R4 sans P3 : R1, P0 au lieu de R4, P0 ») et par `aucune_entree_admise_n_echoue`
+  (une ligne de `@` à la base 41, bas 40,42, à moins de 5 mm du montant) ;
+- **M7n** par `aucune_entree_admise_n_echoue` (lignes de la colonne sous y = 5) ;
+- **M13bn** par `la_cascade_par_palier` (valeurs du reçu de « R4 sans P3 » : le créancier garde ses quatre lignes de nom).
+
+Avec cette campagne, le décompte devient **20 mutations jouées, 19 tuées, 1 équivalente**.
 
 **AC10.** `git diff origin/epic/44-qr-facture-conforme --stat -- crates/kesh-api crates/kesh-db crates/kesh-i18n` : vide.
 `invoice_frozen_pdf_e2e.rs` et `invoice_pdf_e2e.rs` passent sans modification (56 tests `PASS` de ces deux binaires dans
 `test-fast-ci-review.log`). **`t4_pdfium_scans_synthetiques` (`qr_decode.rs`) : non lancé** au passage en revue — à la
 clôture.
+
+**Remédiation de la revue P1** (2026-11-17, commit de code `8997f6349`). La revue P1 a rendu 0 finding au-dessus de LOW sur
+les trois lentilles (`review-p1-{B,E,A}.md`). Les LOW retenus par l'orchestrateur sont traités ainsi :
+- **B-1, B-2** : doc du module et doc de `dessiner_section_de_paiement` corrigés.
+- **B-4** : `#[allow(clippy::too_many_arguments)]` retiré ; `clippy -p kesh-qrbill --all-targets -D warnings` est vert.
+- **B-3** : écrit comme limite et renvoyé à la 44-1b (#1230) : C-44-1-8.
+- **E-1** : la réserve « sauf code QR trop dense » est ajoutée au manuel (paragraphe de l'adresse très longue, titre
+  compris) et au doc d'`aucune_entree_admise_n_echoue`. Ce doc reçoit aussi la note sur L pour `@` (A-5).
+- **E-2** : `zones_violees` et `valeurs_du_recu` reconnaissent la section montant du récépissé par son identité (position,
+  taille, graisse ; exactement quatre textes). Toute autre ligne doit tenir au-dessus de 41,52. Le test neuf
+  `zones_violees_signale_une_ligne_sous_le_montant` le prouve : une ligne injectée à la base 27 est signalée, de même
+  qu'un cinquième texte à une place de la section montant.
+- **E-3** : `billing_information` n'est imprimée nulle part. C'est l'issue **#1234**, déjà ouverte.
+- **E-4** : le manuel dit « chacun la sienne, s'il en a une ».
+- **E-5** : relevé indépendant rejoué au commit (voir *Debug Log References*).
+- **A-1, A-2, A-3, A-4** : annotations ci-dessus.
+- **A-6** : la note de version distingue P0 (le message se coupe sur plusieurs lignes) de P3 (« ... »).
+
+`#[test]` de `pdf.rs` : 62 → **63**. Gate de remédiation : `test-fast --ci` en voie 2 (`test-fast-ci-remediation-p1.log`,
+chiffres au Change Log). `gate-ci`, E2E et `t4_pdfium` viennent à la clôture.
 
 **AC13.** Manuel : six phrases reprises (message long ; titre et corps de « Le reçu et la partie paiement portent
 l'adresse » ; « Ce que cette coupe ne garantit pas » remplacé par deux paragraphes, la grille et l'adresse très longue ;

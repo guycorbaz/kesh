@@ -71,3 +71,18 @@ retenue, options écartées, réversibilité.
   seul ; débiteur de six lignes (nom 2, rue 2, localité 2), créancier ordinaire de trois : neuf, R1 (relevé par
   `outils/coupe_afm.py`, confirmé par `la_cascade_par_palier`).
 - **Réversible** : oui (fixture de test).
+
+### C-44-1-8 — Un mot plus large que la colonne commence sur sa propre ligne (limite, revue P1, B-3)
+
+- **Contexte** : revue de code P1, B-3. Quand `courante + " " + mot` dépasse la largeur, `couper_ligne` pousse la ligne
+  courante, puis coupe le mot à partir d'une ligne vide, même si ce mot est plus large que la colonne : « Rue » puis 80 `W`
+  laisse « Rue » seul sur sa ligne. On utilise une ligne de plus que nécessaire, ce qui peut faire passer une adresse au
+  palier suivant (R1, R4 au récépissé ; P3 dans la colonne) alors qu'elle aurait tenu au précédent.
+- **Retenu** : le comportement reste tel quel, et il est **écrit comme limite**. Il suit le doc-comment de `couper_ligne`
+  et l'ancienne coupe par caractères (`couper_ligne_mot_long_sans_perte` : « Un mot long après un mot court part sur sa
+  propre ligne »). Il ne fait échouer aucune entrée : le dernier palier tient par construction. La limite est **renvoyée à la
+  44-1b (#1230)**, qui reprend la cascade : remplir la fin de ligne avec le début d'un mot trop large se décide avec ses
+  paliers intermédiaires.
+- **Écartée** : changer la coupe ici. Cela toucherait la production dans une passe de remédiation et changerait les
+  attentes de `couper_ligne_mot_long_sans_perte`.
+- **Réversible** : oui.
