@@ -73,7 +73,7 @@
 		<p>
 			{i18nMsg(
 				'export-global-content-includes',
-				"L'export contient 30 tables : plan comptable, exercices, écritures et leurs lignes, contacts et personnes de contact, produits, comptes analytiques, factures de vente et leurs lignes, avoirs et leurs lignes, règlements, factures fournisseurs et leurs lignes, pièces fournisseurs importées, lots de paiement et leurs postes, comptes bancaires, imports et transactions, taux de TVA, paramètres de facturation et de rappel, règles de réconciliation, profils d'import, journal d'audit — et un manifeste metadata.json avec le hash SHA-256 de chaque fichier.",
+				"L'export contient 31 tables : plan comptable, exercices, écritures et leurs lignes, contacts et personnes de contact, produits, comptes analytiques, factures de vente et leurs lignes, avoirs et leurs lignes, règlements, factures fournisseurs et leurs lignes, pièces fournisseurs importées, lots de paiement et leurs postes, comptes bancaires, imports et transactions, taux de TVA, cours de change, paramètres de facturation et de rappel, règles de réconciliation, profils d'import, journal d'audit — et un manifeste metadata.json avec le hash SHA-256 de chaque fichier.",
 			)}
 		</p>
 		<p class="mt-2">

@@ -4008,8 +4008,9 @@ Dans une société passée en multi-devises (\S\ref{sec:multi-devises}), un comp
 (\S\ref{sec:devise-compte}) se lit aux rapports \textbf{dans les deux devises}~: son montant en CHF,
 comme tout compte, et, à côté, le même montant \textbf{dans sa devise} --- de quoi rapprocher un
 compte PayPal ou Wise de son relevé, et contrôler la réévaluation de fin d'exercice. Un compte en CHF
-ne change pas, et une société sans compte en devise voit ses rapports \textbf{exactement comme
-avant}, exports compris.
+ne change pas, et une société sans compte en devise voit ses rapports \textbf{comme avant}, à l'écran
+comme en PDF, et ses exports CSV avec les mêmes colonnes (seul l'échappement des cellules de texte,
+\S\ref{sec:rapports-exports}, peut y changer une cellule).
 
 \begin{itemize}
     \item \textbf{La devise est celle du compte.} Le solde en devise d'un compte est la somme des
@@ -4038,7 +4039,7 @@ avant}, exports compris.
           livre, «~À reporter~» et «~Report~» portent aussi le report en devise. Le CSV ajoute, seulement
           si le rapport contient un compte en devise, des colonnes en devise (\texttt{Devise},
           \texttt{SoldeDevise}, \texttt{DebitDevise}, \texttt{Cours}\ldots), vides pour un compte en
-          CHF~; sinon, le fichier est identique à celui d'avant. Les montants en devise sont arrondis
+          CHF~; sinon, ses colonnes sont celles d'avant. Les montants en devise sont arrondis
           au centime, le cours est écrit par unité (de quatre à dix décimales).
     \item \textbf{Journal.} À l'écran, une ligne en devise porte sous elle son montant et son cours~;
           le PDF et le CSV du journal ne changent pas.
@@ -4121,7 +4122,7 @@ que la concordance annuelle exige (art.~72 al.~1 LTVA), et Kesh ne l'outille pas
 \small \emph{Limitation actuelle (v0.3)} : le format de décompte officiel AFC (e-décompte ESTV) et la méthode des taux de la dette fiscale nette (TDFN) ne sont pas encore couverts. Le décompte de Kesh fournit les montants (due, récupérable, solde net) à reporter manuellement sur le formulaire AFC.
 \end{quote}
 
-\subsection{Visualisation et exports}
+\subsection{Visualisation et exports}\label{sec:rapports-exports}
 
 Tous les rapports se \textbf{consultent à l'écran}. Pour les emporter :
 
@@ -4136,6 +4137,16 @@ Tous les rapports se \textbf{consultent à l'écran}. Pour les emporter :
 Le PDF est paginé et destiné à être présenté ou archivé ; le CSV est destiné à être repris dans
 un tableur. Aucun des deux n'est tronqué, même quand l'écran l'est.
 \end{keshnote}
+
+\paragraph{Les cellules de texte du CSV.} Pour qu'un tableur lise toujours un libellé comme du
+texte, et jamais comme une formule, une cellule de texte d'un export CSV de rapport --- libellé
+d'écriture, numéro ou nom de compte, nom de contact, de compte analytique ou d'exercice --- qui
+commence par \texttt{=}, \texttt{+}, \texttt{-} ou \texttt{@} est précédée d'une apostrophe
+(\texttt{'}), et une tabulation ou un retour à la ligne y est remplacé par une espace. Les montants
+ne sont jamais touchés~: \texttt{-12.50} reste un nombre. C'est la règle que suivaient déjà les
+autres exports CSV de Kesh (factures, export global)~; elle s'applique aux rapports depuis la
+version qui apporte le multi-devises, \textbf{que la société soit multi-devises ou non}~: un CSV de
+rapport peut donc différer de celui d'une version antérieure sur ces seules cellules.
 
 %%─────────────────────────────────────────────────────────────────────────────
 \section{Comptabilité analytique}
@@ -4224,7 +4235,7 @@ contestation, complétez cet export par un dispositif d'archivage tiers.
 
 \subsection{Contenu du ZIP}
 
-L'archive contient \textbf{un fichier CSV par table}, plus un manifeste. Les trente tables
+L'archive contient \textbf{un fichier CSV par table}, plus un manifeste. Les trente et une tables
 couvrent l'ensemble de votre comptabilité~:
 
 \begin{itemize}
@@ -4241,6 +4252,7 @@ couvrent l'ensemble de votre comptabilité~:
     \item \textbf{Banque}~: \texttt{bank\_accounts.csv}, \texttt{bank\_imports.csv},
           \texttt{bank\_transactions.csv}, \texttt{reconciliation\_rules.csv}, \texttt{bank\_profiles.csv}.
     \item \textbf{Paramètres et traçabilité}~: \texttt{company.csv}, \texttt{vat\_rates.csv},
+          \texttt{exchange\_rates.csv} (les cours de change retenus par la société),
           \texttt{company\_invoice\_settings.csv}, \texttt{dunning\_levels.csv},
           \texttt{company\_dunning\_settings.csv}, et \texttt{audit\_log.csv} --- le journal d'audit.
     \item \texttt{metadata.json}~: le manifeste (version de Kesh, date, auteur, et le hash
