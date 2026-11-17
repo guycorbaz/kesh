@@ -581,7 +581,11 @@ Opus 5.5 (agent de développement, en autonomie), 2026-11-17.
   `repositories/reconciliation_cancel.rs` (champ `kind`, C-e432-4)
 - `crates/kesh-db/tests/reconciliation_group_candidates.rs` (neuf)
 - `crates/kesh-api/src/routes/reconciliation_group.rs` (neuf), `routes/reconciliation.rs`, `routes/mod.rs`, `lib.rs`
-- `crates/kesh-api/tests/reconciliation_group_e2e.rs` (neuf)
+- `crates/kesh-api/tests/reconciliation_group_e2e.rs` (neuf) ; `crates/kesh-api/tests/reconciliation_link_entry_e2e.rs`
+  (deux assertions du retrait seul, revue P1, A6)
+- `crates/kesh-db/src/repositories/grouped_settlements.rs` (corps provisoire de `pay_supplier_invoices_in_tx`, C-e432-13 ;
+  fichier de la 43-1a)
+- `_bmad-output/planning-artifacts/epic-43-transaction-plusieurs-factures.md` (barrière de release de D4)
 - `docs/api-external.md`
 - `_bmad-output/implementation-artifacts/e0190-choix-autonomes-e432.md` (neuf), cette fiche, son prompt de revue P1
 
