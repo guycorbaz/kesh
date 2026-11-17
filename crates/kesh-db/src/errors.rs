@@ -2211,6 +2211,23 @@ pub enum DefaultInvoiceAccountCause {
         /// Nom d'affichage du premier compte bancaire lié, par `id`.
         bank_label: String,
     },
+    /// Le réglage est vide et le compte qui porte le rôle est tenu **en devise**
+    /// (Story 37-1, AC-4 ; intégration de la v0.18.0 dans l'Epic 37) : un
+    /// réglage de facturation débite ou crédite en CHF, et le `PUT` des réglages
+    /// refuse un tel compte (`ACCOUNT_IN_FOREIGN_CURRENCY`).
+    RoleAccountInForeignCurrency {
+        account_number: String,
+        /// Code ISO 4217 de la devise du compte.
+        currency: String,
+    },
+    /// Le réglage est vide et le compte qui porte le rôle est un compte de
+    /// différence de change (gains, pertes — de la société ou propre à un compte
+    /// en devise) ou le compte de conversion de la société (Story 37-1, AC-4 ;
+    /// intégration de la v0.18.0) : la finalisation ne le désigne jamais d'office.
+    RoleAccountIsFxAccount {
+        account_number: String,
+        designation: FxDesignation,
+    },
 }
 
 /// Un élément de [`DbError::DefaultInvoiceAccountsUnavailable`].

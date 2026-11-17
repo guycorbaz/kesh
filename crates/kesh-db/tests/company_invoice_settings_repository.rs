@@ -2056,6 +2056,9 @@ async fn create_sub_account(
             parent_id: Some(parent),
             role: None,
             postable: true,
+            // Story 37-1 : un compte en CHF, sans comptes de différence propres.
+            currency: None,
+            own_fx_accounts: None,
         },
     )
     .await
@@ -2727,4 +2730,193 @@ async fn finalize_is_idempotent_on_a_completed_row(pool: MySqlPool) {
     assert_eq!(designated_ids(s), designated_ids(after));
     assert_eq!(s.version, after.version, "aucun UPDATE");
     assert_eq!(s.updated_at, after.updated_at, "aucun UPDATE");
+}
+
+// ─── Intégration de la v0.18.0 dans l'Epic 37 : la finalisation (36-19) et les
+// gardes de devise de la 37-1 (AC-4) ───
+
+/// Pose, par SQL, la devise `currency` sur le compte `account_id`.
+async fn set_account_currency(pool: &MySqlPool, account_id: i64, currency: &str) {
+    sqlx::query("UPDATE accounts SET currency = ? WHERE id = ?")
+        .bind(currency)
+        .bind(account_id)
+        .execute(pool)
+        .await
+        .unwrap();
+}
+
+/// Pose, par SQL, le mode multi-devises et les trois comptes de différence de la
+/// société (`None` laisse le réglage vide).
+async fn set_company_fx_accounts(
+    pool: &MySqlPool,
+    company_id: i64,
+    gain: Option<i64>,
+    loss: Option<i64>,
+    transit: Option<i64>,
+) {
+    sqlx::query(
+        "UPDATE companies SET multi_currency_enabled = TRUE, fx_gain_account_id = ?, \
+         fx_loss_account_id = ?, fx_transit_account_id = ? WHERE id = ?",
+    )
+    .bind(gain)
+    .bind(loss)
+    .bind(transit)
+    .bind(company_id)
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+/// Un compte de rôle obligatoire **en devise** n'est pas désigné d'office : refus,
+/// cause « en devise », rien d'écrit — la finalisation ne contourne pas la garde
+/// `ACCOUNT_IN_FOREIGN_CURRENCY` du `PUT` des réglages (Story 37-1, AC-4).
+#[sqlx::test(migrations = "./test-schema")]
+async fn finalize_refuses_a_mandatory_role_account_in_foreign_currency(pool: MySqlPool) {
+    use kesh_db::errors::DbError;
+    use kesh_db::errors::DefaultInvoiceAccountCause as Cause;
+    use kesh_db::errors::DefaultInvoiceSetting::{Receivable, Revenue};
+
+    for (setting, number) in [(Receivable, "1100"), (Revenue, "3000")] {
+        let c = company_with_pme_chart(&pool, &format!("Devise {number}")).await;
+        let id = account_id_by_number(&pool, c, number).await;
+        set_account_currency(&pool, id, "EUR").await;
+        match complete_defaults(&pool, c).await {
+            Err(DbError::DefaultInvoiceAccountsUnavailable(v)) => assert_eq!(
+                v,
+                unavailable(&[(
+                    setting,
+                    Cause::RoleAccountInForeignCurrency {
+                        account_number: number.into(),
+                        currency: "EUR".into(),
+                    }
+                )]),
+                "{number}"
+            ),
+            other => panic!("{number} : obtenu {other:?}"),
+        }
+        assert_eq!(
+            settings_row_state(&pool, c).await,
+            None,
+            "{number} : rien d'écrit"
+        );
+    }
+}
+
+/// Le compte de produit par défaut n'est jamais un compte de gains ou de pertes de
+/// change — de la société, ou propre à un compte en devise — ni le compte de
+/// conversion (Story 37-1, AC-4, symétrique de `refuse_fx_account_as_revenue_in_tx`).
+#[sqlx::test(migrations = "./test-schema")]
+async fn finalize_refuses_a_revenue_role_account_that_is_an_fx_account(pool: MySqlPool) {
+    use kesh_db::errors::DefaultInvoiceAccountCause as Cause;
+    use kesh_db::errors::DefaultInvoiceSetting::Revenue;
+    use kesh_db::errors::{DbError, FxDesignation};
+
+    for designation in [
+        FxDesignation::Gain,
+        FxDesignation::Loss,
+        FxDesignation::Transit,
+    ] {
+        let c = company_with_pme_chart(&pool, &format!("Différence {designation:?}")).await;
+        let revenue = account_id_by_number(&pool, c, "3000").await;
+        let some = Some(revenue);
+        match designation {
+            FxDesignation::Gain => set_company_fx_accounts(&pool, c, some, None, None).await,
+            FxDesignation::Loss => set_company_fx_accounts(&pool, c, None, some, None).await,
+            FxDesignation::Transit => set_company_fx_accounts(&pool, c, None, None, some).await,
+        }
+        match complete_defaults(&pool, c).await {
+            Err(DbError::DefaultInvoiceAccountsUnavailable(v)) => assert_eq!(
+                v,
+                unavailable(&[(
+                    Revenue,
+                    Cause::RoleAccountIsFxAccount {
+                        account_number: "3000".into(),
+                        designation,
+                    }
+                )]),
+                "{designation:?}"
+            ),
+            other => panic!("{designation:?} : obtenu {other:?}"),
+        }
+        assert_eq!(settings_row_state(&pool, c).await, None, "rien d'écrit");
+    }
+
+    // Compte de gains **propre** à un compte en devise (1020 en EUR).
+    let c = company_with_pme_chart(&pool, "Différence propre").await;
+    let revenue = account_id_by_number(&pool, c, "3000").await;
+    let loss = account_id_by_number(&pool, c, "6900").await;
+    let holder = account_id_by_number(&pool, c, "1020").await;
+    set_company_fx_accounts(&pool, c, None, None, None).await;
+    sqlx::query(
+        "UPDATE accounts SET currency = 'EUR', fx_gain_account_id = ?, fx_loss_account_id = ? \
+         WHERE id = ?",
+    )
+    .bind(revenue)
+    .bind(loss)
+    .bind(holder)
+    .execute(&pool)
+    .await
+    .unwrap();
+    match complete_defaults(&pool, c).await {
+        Err(DbError::DefaultInvoiceAccountsUnavailable(v)) => assert_eq!(
+            v,
+            unavailable(&[(
+                Revenue,
+                Cause::RoleAccountIsFxAccount {
+                    account_number: "3000".into(),
+                    designation: FxDesignation::Gain,
+                }
+            )])
+        ),
+        other => panic!("propre : obtenu {other:?}"),
+    }
+}
+
+/// Les réglages **facultatifs** (créanciers, arrondi) dont le candidat est en devise
+/// ou compte de différence de change restent vides, sans refus ; les obligatoires
+/// sont posés.
+#[sqlx::test(migrations = "./test-schema")]
+async fn finalize_leaves_an_optional_setting_empty_on_an_fx_candidate(pool: MySqlPool) {
+    let c = company_with_pme_chart(&pool, "Facultatifs en devise").await;
+    let payable = account_with_role(&pool, c, "Payable").await;
+    let rounding = account_id_by_number(&pool, c, "6940").await;
+    // Créanciers : compte de conversion de la société ; arrondi : pertes de change.
+    set_company_fx_accounts(&pool, c, None, Some(rounding), Some(payable)).await;
+    let outcome = complete_defaults(&pool, c).await.expect("finalisation");
+    let s = outcome.settings();
+    assert_eq!(
+        s.default_receivable_account_id,
+        Some(account_id_by_number(&pool, c, "1100").await)
+    );
+    assert_eq!(
+        s.default_revenue_account_id,
+        Some(account_id_by_number(&pool, c, "3000").await)
+    );
+    assert_eq!(s.default_payable_account_id, None, "compte de conversion");
+    assert_eq!(
+        s.default_rounding_account_id, None,
+        "compte de pertes de change"
+    );
+
+    // Témoin : sans désignation de change, les deux sont posés.
+    let t = company_with_pme_chart(&pool, "Facultatifs témoin").await;
+    let outcome = complete_defaults(&pool, t)
+        .await
+        .expect("finalisation témoin");
+    assert_eq!(
+        outcome.settings().default_payable_account_id,
+        Some(account_with_role(&pool, t, "Payable").await)
+    );
+    assert_eq!(
+        outcome.settings().default_rounding_account_id,
+        Some(account_id_by_number(&pool, t, "6940").await)
+    );
+
+    // Créanciers en devise : vide de même.
+    let d = company_with_pme_chart(&pool, "Créanciers en devise").await;
+    set_account_currency(&pool, account_with_role(&pool, d, "Payable").await, "USD").await;
+    let outcome = complete_defaults(&pool, d)
+        .await
+        .expect("finalisation devise");
+    assert_eq!(outcome.settings().default_payable_account_id, None);
 }

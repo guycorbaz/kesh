@@ -995,6 +995,40 @@ describe('37-3b — soldes en devise (AC-1)', () => {
 		expect(generateMock).not.toHaveBeenCalled();
 	});
 
+	// Intégration de la v0.18.0 (Story 36-18a, #1050) : le montant en devise se lit par la
+	// lecture du journal (`readForeignAmount` → `readJournalAmount`) — « 1.250 » est ambigu,
+	// jamais lu 1,25 ; et une ligne CHF ambiguë garde son message sous une grille qui porte
+	// des comptes en devise.
+	it('montant en devise « 1.250 » : ambigu, problème affiché, bouton désactivé, aucun appel', async () => {
+		lookupRateMock.mockImplementation(lookupOk('0.8846'));
+		getStatusMock.mockResolvedValue(readyStatus());
+		render(Page);
+		await screen.findByTestId('opening-balances-grid');
+		await waitFor(() => expect(val('opening-balances-fx-rate-1022')).toBe('0.8846'));
+		await type('opening-balances-fx-debit-1022', '1.250');
+		expect(screen.getByTestId('opening-balances-fx-problem-1022')).toBeTruthy();
+		expect(val('opening-balances-fx-chf-1022')).toBe('');
+		await type('opening-balances-credit-2000', '1.11');
+		expect((screen.getByTestId('opening-balances-generate') as HTMLButtonElement).disabled).toBe(true);
+		await fireEvent.click(screen.getByTestId('opening-balances-generate'));
+		expect(generateMock).not.toHaveBeenCalled();
+		// « 1'250 » se lit mille deux cent cinquante.
+		await type('opening-balances-fx-debit-1022', "1'250");
+		expect(val('opening-balances-fx-chf-1022')).toBe('1105.75');
+	});
+
+	it('ligne CHF « 1.250 » à côté d’un compte en devise : message ambigu, Générer désactivé', async () => {
+		lookupRateMock.mockImplementation(lookupOk('0.8846'));
+		getStatusMock.mockResolvedValue(readyStatus());
+		render(Page);
+		await screen.findByTestId('opening-balances-grid');
+		await waitFor(() => expect(val('opening-balances-fx-rate-1022')).toBe('0.8846'));
+		await type('opening-balances-fx-debit-1022', '100');
+		await type('opening-balances-credit-2000', '1.250');
+		expect(await screen.findByTestId('opening-balances-amount-ambiguous')).toBeTruthy();
+		expect((screen.getByTestId('opening-balances-generate') as HTMLButtonElement).disabled).toBe(true);
+	});
+
 	it('exercices illisibles : aucun cours proposé, message', async () => {
 		listFiscalYearsMock.mockRejectedValue(new Error('réseau'));
 		getStatusMock.mockResolvedValue(readyStatus());

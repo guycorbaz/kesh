@@ -200,15 +200,32 @@ describe('assistant — premier exercice (Story 37-1, AC-11)', () => {
 		await new Promise((r) => setTimeout(r, 0));
 	});
 
-	it('un refus 400 de la finalisation s’affiche avec le motif du serveur', async () => {
+	// Intégration de la v0.18.0 (Story 36-17, #1187, D2) : l'échec de la finalisation
+	// s'affiche à l'écran de l'étape 7, avec *Réessayer* — plus en toast. Et *Réessayer*
+	// renvoie les dates choisies : sans elles, l'exercice serait créé aux dates par
+	// défaut du serveur, en silence.
+	it('un refus 400 de la finalisation s’affiche avec le motif du serveur ; Réessayer renvoie les dates choisies', async () => {
 		vi.mocked(api.finalize).mockRejectedValueOnce({
 			code: 'VALIDATION_ERROR',
 			message: 'MOTIF-DATES',
 			status: 400,
 		});
 		const { unmount } = await rendre();
+		await saisir('fy-start', '2026-07-01');
+		await saisir('fy-end', '2027-06-30');
 		await fireEvent.click(boutonPlusTard());
-		await waitFor(() => expect(toastError).toHaveBeenCalledWith('MOTIF-DATES'));
+		const motif = await screen.findByTestId('onboarding-finalize-motif');
+		expect(motif.textContent).toContain('MOTIF-DATES');
+		const retry = screen.getByTestId('onboarding-finalize-retry') as HTMLButtonElement;
+		await waitFor(() => expect(retry.disabled).toBe(false));
+		await fireEvent.click(retry);
+		await waitFor(() => expect(api.finalize).toHaveBeenCalledTimes(2));
+		for (const call of vi.mocked(api.finalize).mock.calls) {
+			expect(call[0]).toEqual({
+				fiscalYearStartDate: '2026-07-01',
+				fiscalYearEndDate: '2027-06-30',
+			});
+		}
 		unmount();
 		await new Promise((r) => setTimeout(r, 0));
 	});

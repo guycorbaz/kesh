@@ -1338,6 +1338,31 @@ fn finalize_refusal_phrase(item: &UnavailableDefaultInvoiceAccount) -> String {
              Administration → Facturation.",
             setting.to_lowercase()
         ),
+        // Story 37-1 (AC-4), intégration de la v0.18.0 dans l'Epic 37 : la
+        // finalisation ne désigne ni un compte en devise, ni un compte de
+        // différence de change, ni le compte de conversion.
+        DefaultInvoiceAccountCause::RoleAccountInForeignCurrency {
+            account_number,
+            currency,
+        } => format!(
+            "{setting} : le compte {account_number}, qui porte le rôle « {role} », est tenu en \
+             {currency} — désignez un compte en francs suisses dans Administration → Facturation."
+        ),
+        DefaultInvoiceAccountCause::RoleAccountIsFxAccount {
+            account_number,
+            designation,
+        } => {
+            let what = match designation {
+                kesh_db::errors::FxDesignation::Gain => "un compte de gains de change",
+                kesh_db::errors::FxDesignation::Loss => "un compte de pertes de change",
+                kesh_db::errors::FxDesignation::Transit => "le compte de conversion de la société",
+            };
+            format!(
+                "{setting} : le compte {account_number}, qui porte le rôle « {role} », est {what} \
+                 — désignez un autre {} dans Administration → Facturation.",
+                setting.to_lowercase()
+            )
+        }
     }
 }
 
@@ -1901,6 +1926,47 @@ mod tests {
                 "Compte débiteurs : le compte 1100, qui porte le rôle « Créances clients », est le compte du compte bancaire « UBS — Courant » — déliez ce compte bancaire dans Administration → Comptes bancaires (s'il est clos, rouvrez-le d'abord), ou désignez un autre compte débiteurs dans Administration → Facturation."
             )
         );
+        // Intégration de la v0.18.0 dans l'Epic 37 (Story 37-1, AC-4) : compte de
+        // rôle en devise, compte de différence de change, compte de conversion.
+        assert_eq!(
+            message(vec![(
+                Receivable,
+                Cause::RoleAccountInForeignCurrency {
+                    account_number: "1100".into(),
+                    currency: "EUR".into(),
+                }
+            )]),
+            entoure(
+                "Compte débiteurs : le compte 1100, qui porte le rôle « Créances clients », est tenu en EUR — désignez un compte en francs suisses dans Administration → Facturation."
+            )
+        );
+        for (designation, what) in [
+            (
+                kesh_db::errors::FxDesignation::Gain,
+                "un compte de gains de change",
+            ),
+            (
+                kesh_db::errors::FxDesignation::Loss,
+                "un compte de pertes de change",
+            ),
+            (
+                kesh_db::errors::FxDesignation::Transit,
+                "le compte de conversion de la société",
+            ),
+        ] {
+            assert_eq!(
+                message(vec![(
+                    Revenue,
+                    Cause::RoleAccountIsFxAccount {
+                        account_number: "3000".into(),
+                        designation,
+                    }
+                )]),
+                entoure(&format!(
+                    "Compte de produit par défaut : le compte 3000, qui porte le rôle « Produit par défaut », est {what} — désignez un autre compte de produit par défaut dans Administration → Facturation."
+                ))
+            );
+        }
         // Deux causes différentes, débiteurs d'abord, une espace entre elles.
         assert_eq!(
             message(vec![

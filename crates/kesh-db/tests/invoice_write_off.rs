@@ -1523,6 +1523,10 @@ mod tva_due_type {
                 account_type,
                 role,
                 postable: a.postable,
+                // Story 37-1 : devise et comptes de différence propres inchangés
+                // (intégration de la v0.18.0).
+                currency: Default::default(),
+                own_fx_accounts: Default::default(),
             },
             true,
         )
