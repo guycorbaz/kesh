@@ -627,3 +627,9 @@ script Python, dans `kesh-gate-logs` (hors dépôt).
   mutations 15 tuées, M6 équivalente (M6b tuée) ; `test-fast --ci` 5520/5520, `gate-ci` 5527 passés ; E2E et `t4_pdfium`
   à la clôture. Choix C-44-1-1 à 7. Statut : `review` ; prompt de la revue P1 :
   `44-1a-qr-facture-grille-review-prompt-p1.md`.
+- 2026-11-17 — **Revue de code P1** (Sonnet, trois lentilles) : 0 C / 0 H / 0 M ; LOW : B 4, E 5, A 6. **Remédiation**
+  (Opus 5.5, commit de code `8997f6349`) : B-1, B-2, B-4, E-1, E-2, E-4, A-6 au code, au manuel et à la note ; B-3 écrit
+  comme limite (C-44-1-8, renvoyé à #1230) ; E-3 = #1234 ; A-1 à A-4 et E-5 au Dev Agent Record (annotations) ; mutations
+  M3n, M7n, M13bn tuées par les tests, `debug_assert!` neutralisés ; relevé `pdftotext -bbox` rejoué au commit, vert, 67 mots.
+  `test-fast --ci` voie 2 : **5521 passés, 14 ignorés** (`test-fast-ci-remediation-p1.log`, commit `8997f6349`). Une passe
+  ciblée relira ce correctif ; `gate-ci`, E2E et `t4_pdfium` à la clôture.
