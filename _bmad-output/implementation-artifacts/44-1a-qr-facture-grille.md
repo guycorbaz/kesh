@@ -1,6 +1,6 @@
 # Story 44-1a : QR-facture — la grille SIX, *Payable by* à sa place, des largeurs mesurées, un palier de secours (#944)
 
-Status: ready-for-dev
+Status: review
 
 *Fiche née de la 36-12b (`36-12b-qr-facture-grille-largeurs.md`, rédigée le 2026-11-15, laissée telle quelle), reprise le
 2026-11-17 comme **première story de l'Epic 44 « QR-facture conforme »** (#944), release **0.19.0** (vendredi 2026-11-20 ;
@@ -412,11 +412,142 @@ fiche `36-12b-qr-facture-grille-largeurs.md` ; validation P1 `kesh-gate-logs/e44
 
 ### Agent Model Used
 
+Claude Opus 5.5, 2026-11-17, en autonomie (worktree `/home/gcorbaz/devel/kesh-44-1`, clé `e441`, voie 2 ; `gate-ci` en
+voie 1). Base `4b3a20b0b` (= `origin/epic/44-qr-facture-conforme` `8b50fd195` + fiche validée).
+
 ### Debug Log References
+
+Journaux hors dépôt, `/home/gcorbaz/devel/kesh-gate-logs/e44/` :
+- `rouges.log` (synthèse) et `rouges-brut.log` — les sept tests de comportement contre la mise en page de la v0.18.0 (code de
+  `4b3a20b0b`, tests non encore commités ; « 0 passed; 7 failed ») ;
+- `dev-run1.log`, `dev-run2.log` — le crate pendant le développement ;
+- `pire-cas-boites.log` — `pire_cas_boites_independantes` (`#[ignore]`) au commit `f83eb8730` : **vert, 67 mots relevés**
+  dans la section de paiement par `pdftotext -bbox` ;
+- `mut/synthese-campagne-1.log`, `mut/synthese-campagne-2.log`, `mut/M*.log`, script `mut/mutations_44_1a.py` — mutations
+  au commit `f83eb8730` ;
+- `outils/coupe_afm.py` — modèle de coupe indépendant (chasses lues à `phvr8a.afm`, sans la table du dépôt) qui a servi à
+  composer les fixtures et à prévoir leurs paliers ;
+- `manuel-xelatex-1.log`, `manuel-xelatex-2.log` — le manuel utilisateur construit **hors du dépôt**
+  (`target/manuel/user-manual.pdf`), pour le contrôle aplati ;
+- `test-fast-ci-review.log`, `gate-ci-review.log` — gates du passage en revue (commit `369719847`) ;
+- `captures/avant/`, `captures/apres/` (`section-*.png` recadrés, PDF sous `pdf/`), `captures/echantillon-six-nr1.jpg`.
 
 ### Completion Notes List
 
+**Étape 0.** Lignes citées relues à `4b3a20b0b` : `draw_receipt` `:1055`, `dessiner_adresse` `:1037`, `ADRESSE_PAS` `:912`,
+`dessiner_reference` `:1011`, `draw_payment_part` `:1143`, `MAX_CARACTERES_RECU` `:967`, `couper_ligne` `:982`,
+`lignes_adresse` `:924` — inchangées ; `invoice_pdf_service.rs` `:244` (`generate_qr_bill_pdf`), `:324` (`Reference::Qrr`),
+`:384` (`ultimate_debtor: Some(debtor.clone())`), `:391` (`take(140)`), `:507` (`PdfGenerationFailed`) — conformes.
+Inventaire rejoué : `git grep -n "generate_qr_bill_pdf" -- crates` hors `kesh-qrbill` rend `qr_decode.rs:900` et
+`invoice_pdf_service.rs:244`, comme la fiche. Charge utile de la fixture S relevée à la base (`CHARGE_UTILE_S`, rouge
+d'abord sur un littéral provisoire, la valeur rendue recopiée). `#[test]` de `pdf.rs` : **53** à `4b3a20b0b`. LOW de la
+validation P5 : **LOW-A** — « avec la référence QRR » écrit au contre-exemple (AC5) ; **LOW-B** — la borne sans message
+(n₁ + n₂ ≤ 21 avec référence, ≤ 24 sans) écrite à l'AC5 : l'intitulé *Additional information* n'est pas imprimé sans
+message (`information_du_paiement`, `if let Some(message) = message {`) ; le code mesure le bas rendu, il n'emploie pas la
+formule ; **LOW-C** — déjà traité par la validation ; **LOW-D** — la coupe de NPA-localité confrontée au modèle de
+`couper_ligne` (`outils/coupe_afm.py`, puis `la_cascade_par_palier`) : `DE-` + 16 `W` reste seul, la localité de 35 `W`
+se coupe en 32 + 3 à 87 mm, 19 + 16 à 52 mm ; N = 18 à 87 mm, N' = 14 à 52 mm, écrit à l'AC5. Le message « de 140
+caractères en 8 lignes (mots de 17 `W`) » est impossible (143 caractères) : quatre paires 17 + 16, 139 caractères (C-44-1-1).
+
+**Jalon.** La mise en page pure (R0, R1, R4, P0, P3) est verte sur les fixtures de l'AC5 le **mardi 2026-11-17**
+(`f83eb8730`), avant le jalon du mercredi 18 h : aucune alerte.
+
+**AC7, lu au code.** `fn mise_en_page(data: &QrBillData, i18n: &QrBillI18n, devise: &str, montant: &str) -> MiseEnPage` :
+aucun `Result`. Le dernier palier est pris par `unwrap_or_else` après `split_last` sur une liste constante non vide ; les
+deux `debug_assert!` disent que le dernier palier tient. Seuls `dessiner_section_de_paiement` (`InvalidAmount`, montant
+absent, comme avant) et `draw_qr_matrix` peuvent échouer ; `PdfGeneration` ne garde que ses causes d'avant.
+
+**AC11, la liste fermée** (anciennes → nouvelles valeurs) :
+- `quatre_blocs_impriment_la_composition` — récépissé : créancier 86,5/83/79,5 → 84/80,5/77 ; référence 73,5/70,5 →
+  71/68 ; *Currency* 62,5 → 35 ; *Payable by* 51 → 62 ; débiteur 47,5/44/40,5 → 58,5/55/51,5 ; colonne x 117 → 118,
+  créancier 86,5/83/79,5 → 91,5/88/84,5, référence 73,5 → 78,5 ; débiteur (67 ; 26/22,5/19) → (118 ; 57/53,5/50). Grille D2.
+- `le_pays_s_imprime_hors_de_suisse` — mêmes déplacements (5,79,5 → 5,77 ; 117,79,5 → 118,84,5 ; 5,44/40,5 → 5,55/51,5 ;
+  67,19 → 118,50).
+- `chaque_site_imprime_la_base_des_lettres` — mêmes déplacements ; message (117 ; 61,5) → (118 ; 66,5).
+- `sans_reference_aucune_rubrique` — *Currency* (5 ; 71,5) → (5 ; 35) : le montant ne remonte plus (D6) ; ajouté :
+  *Payable by* à (5 ; 71), qui remonte à sa place.
+- `rue_longue_les_y_suivent` — la rue de 61 caractères : trois lignes au reçu → deux (« Chemin des Trois-Fontaines de la
+  Vieille » / « Tour du Haut-Plateau 12 ») ; deux dans la colonne → une ; toutes les positions recalculées (huit lignes, R0).
+- `constantes_de_coupe_recalculees` — **supprimé** avec `MAX_CARACTERES_*` ; remplacé par `la_coupe_mesure_les_largeurs`.
+- `couper_ligne_mot_long_sans_perte` — `27` → `RECU_LARGEUR` ; attentes inchangées (27 `A` = 50,83 mm, 28 = 52,71).
+- `couper_ligne_rue_entiere` — 27 / 46 caractères → 52 / 87 mm : deux lignes, puis une ; borne contrôlée par la largeur.
+- `couper_ligne_frontieres_en_caracteres` → **renommé** `couper_ligne_frontieres_en_largeur` : la jointure qui fait
+  exactement la largeur tient, 0,01 mm de moins la coupe ; un mot de la largeur exacte tient seul.
+- `couper_ligne_reduit_les_espaces_multiples` — la deuxième ligne tient désormais entière à 52 mm (50,5 mm) ; un troisième
+  cas garde une coupe (« … de la Vieille » / « Tour »).
+- `couper_ligne_npa_peut_rester_seul` — « FR-69400 Villefranche-sur-Saône » tient à 52 mm (42,03) ; le NPA seul se montre
+  avec « …-et-Beaujolais » (59,29 mm).
+- `les_ciseaux_ne_touchent_rien` — rectangle du QR élargi `42..98` → `37..93`.
+- `cinq_cas_au_dessus_du_point_de_depot` — règle « y ≥ 5 + pas » → **non-recouvrement de la boîte du point de dépôt**
+  (`boite_44`) ; « aucune ligne vide » gardée.
+- `la_ligne_verticale_ne_traverse_aucun_texte` — exclusion des capitales larges retirée, fixture « capitales très larges »
+  ajoutée (noms de 70 et 27 `W`, rue de 70 `W`), doc-comment corrigé.
+- `le_point_de_depot_est_aligne_a_droite` — base 5 → `POINT_DE_DEPOT_BASE` (20,5), doc-comment ; abscisses inchangées.
+- `le_point_de_depot_ignore_ce_qui_ne_s_imprime_pas` — base 5 → 20,5 ; Td.x 39,946 inchangé.
+- `chaque_texte_s_imprime_en_noir` — **inchangé** : cinq `rg`, **17** `Tj` après le dernier `re` (l'ordre du dessin garde le
+  titre de la partie paiement avant le QR ; après la croix : compte, IBAN, créancier 3, référence 2, message 2, *Payable by*,
+  débiteur 3, section montant 4 = 17).
+- Commentaires périmés repris : doc du module (carré blanc 8 × 8, la grille), `CISEAU_V_Y` (« qui monte à 98 » → 93),
+  `MAX_CARACTERES_*` et « Limite écrite, à #944 » retirés avec eux.
+
+Décompte des `#[test]` de `pdf.rs` : **53** à `4b3a20b0b` → **62** à `369719847` (−1 supprimé, 1 renommé, +10 neufs :
+`la_grille_six_est_tenue`, `payable_by_dans_la_section_d_information`, `chaque_ligne_dans_sa_zone`,
+`la_coupe_mesure_les_largeurs`, `la_cascade_par_palier`, `les_derniers_paliers_tiennent_par_construction`,
+`aucune_entree_admise_n_echoue`, `le_code_qr_est_inchange`, `pire_cas_boites_independantes` (`#[ignore]`),
+`raccourcir_laisse_la_place_des_points`) ; aucun retiré sans remplaçant.
+
+**Rouges** (`rouges.log`) : les sept tests de comportement rougissent contre la v0.18.0, chacun pour sa raison (colonne à
+117 dans la bordure, débiteur à x = 67, point de dépôt à la base 5, montant dans les valeurs du reçu, 27 caractères par
+ligne, aucun palier, croix à (90, 70)). `les_derniers_paliers_tiennent_par_construction`, écrit après les constantes, est
+rouge par M10.
+
+**Mutations** (`f83eb8730`, `mut/`) : **16 jouées, 15 tuées par le test attendu, 1 équivalente** —
+M1 (`la_grille_six_est_tenue`, `chaque_ligne_dans_sa_zone`, et `pire_cas_boites_independantes` : sonde positive du relevé
+indépendant), M2, M3, M12, M4a, M4b, M5, M7, M8, M9, M10, M13, M13b, M14, M11 tuées ; **M6** (module (10, 10) décalé)
+**équivalente** : elle ne touche que les modules noirs, et sa survie prouve que (10, 10) est blanc ; rejouée en **M6b** sur
+le module (0, 0), noir (motif de repérage) : tuée par `le_code_qr_est_inchange`. Restauration par `git restore --worktree`
+puis `touch` après chacune ; fichier propre après les deux campagnes.
+
+**AC10.** `git diff origin/epic/44-qr-facture-conforme --stat -- crates/kesh-api crates/kesh-db crates/kesh-i18n` : vide.
+`invoice_frozen_pdf_e2e.rs` et `invoice_pdf_e2e.rs` passent sans modification (56 tests `PASS` de ces deux binaires dans
+`test-fast-ci-review.log`). **`t4_pdfium_scans_synthetiques` (`qr_decode.rs`) : non lancé** au passage en revue — à la
+clôture.
+
+**AC13.** Manuel : six phrases reprises (message long ; titre et corps de « Le reçu et la partie paiement portent
+l'adresse » ; « Ce que cette coupe ne garantit pas » remplacé par deux paragraphes, la grille et l'adresse très longue ;
+« ne bougent pas » et « Deux limites demeurent » ; le PDF figé). Contrôle aplati (forme E6) sur le PDF construit hors du
+dépôt : « suit la grille de la directive » 1, « perdent ensemble leur rue » 1, « Aucune adresse admise ne fait échouer le
+PDF » 1 ; « 27 caractères au reçu » 0, « Ce que cette coupe ne garantit pas » 0, « Deux limites demeurent » 0, « faute de
+borne de largeur » 0. Le PDF du dépôt n'est **pas** régénéré (intégration). `de`, `en`, `it`, README, `website/` : non
+touchés (relus par la validation P1).
+
+**AC14.** Captures avant (v0.18.0, code de `4b3a20b0b`) et après (`369719847`), fixtures ordinaire, rue longue, sans
+référence, réaliste R1, pire cas, en fr, de et en ; section de paiement recadrée (`section-*.png`). Comparée à l'échantillon
+SIX Nr. 1 : titres, QR, colonne, *Payable by*, section montant et point de dépôt aux mêmes places.
+
+**Gates du passage en revue** (commit `369719847`, dernier commit de code ; bases `kesh_e441`, `kesh_e2e_e441` remises à
+neuf, 91 migrations) :
+- `scripts/test-fast.sh --ci`, voie 2 : **5520 tests exécutés, 5520 passés, 14 ignorés** (`test-fast-ci-review.log`) ;
+- `scripts/gate-ci.sh kesh_ci_e441`, voie 1 : **5527 passés, 0 échoué, 18 ignorés**, code 0 (`gate-ci-review.log` ; le script a aussi laissé sa copie par défaut,
+  `/tmp/gate-ci.peWkgm.log`, faute d'un journal en argument) ;
+- frontend : non touché, non lancé ; **E2E : non lancé** (clôture ; aucun E2E neuf, la route ne change pas).
+
+**Mots-clés de fermeture** : `git log origin/epic/44-qr-facture-conforme..HEAD --format=%B | /usr/bin/grep -niE
+'\b(close[sd]?|fix(e[sd])?|resolve[sd]?) #[0-9]'` vide.
+
+**Écarts à la consigne Edit** : aucun sur le code, les tests ni les fiches ; le script de mutations (`mut/`) remplace des
+motifs vérifiés uniques puis restaure, comme le permet la consigne ; il a aussi été complété d'une entrée (M6b) par un court
+script Python, dans `kesh-gate-logs` (hors dépôt).
+
 ### File List
+
+- `crates/kesh-qrbill/src/pdf.rs` (modifié)
+- `crates/kesh-qrbill/examples/capture_qr_facture.rs` (modifié)
+- `docs/manual/fr/user-manual.tex` (modifié)
+- `_bmad-output/implementation-artifacts/44-1a-qr-facture-grille.md` (cette fiche)
+- `_bmad-output/implementation-artifacts/44-1a-qr-facture-grille-review-prompt-p1.md` (neuf)
+- `_bmad-output/implementation-artifacts/e44-choix-autonomes-44-1.md` (neuf)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` (clé `44-1a-qr-facture-grille` : `review`)
 
 ## Change Log
 
@@ -447,3 +578,9 @@ fiche `36-12b-qr-facture-grille-largeurs.md` ; validation P1 `kesh-gate-logs/e44
   à l'étape 0 du développement** (`kesh-gate-logs/e44/validation-p5-ciblee.md`) : LOW-A (dire « QRR » au paragraphe du
   contre-exemple), LOW-B (seuil réel sans message K ≤ 21, formule conservatrice), LOW-D (modèle de coupe de NPA-localité à
   confronter à `couper_ligne`) ; LOW-C traité par cette entrée. Statut : `ready-for-dev`.
+- 2026-11-17 — **Développement** (Opus 5.5) : étape 0 (LOW-A, -B, -D de la P5 traités dans la fiche, lignes lues citées au
+  Dev Agent Record) ; tests de comportement rouges (`ae515257f`) ; mise en page pure à paliers R0/R1/R4 et P0/P3, coupe à la
+  largeur, grille D2 (`f83eb8730`) ; manuel (`d864f3df3`) ; exemple de capture (`369719847`, dernier commit de code) ;
+  mutations 15 tuées, M6 équivalente (M6b tuée) ; `test-fast --ci` 5520/5520, `gate-ci` 5527 passés ; E2E et `t4_pdfium`
+  à la clôture. Choix C-44-1-1 à 7. Statut : `review` ; prompt de la revue P1 :
+  `44-1a-qr-facture-grille-review-prompt-p1.md`.
