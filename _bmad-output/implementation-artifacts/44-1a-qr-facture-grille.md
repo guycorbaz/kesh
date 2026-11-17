@@ -192,14 +192,19 @@ se testent) ; dernière valeur → intitulé suivant 6,0 (comme `dessiner_refere
    rue de 86 caractères, localité de 51 : à 87 mm 3 + 3 + 3 lignes par adresse, N = 18, N + m = 26 > 19 → P3 — sans message,
    N + m = 18 ≤ 19 et P3 ne se déclencherait pas ; à 52 mm après R1, nom 4 lignes (70 W à 2,66 mm le W, 19 W par ligne) plus
    NPA-localité, au moins 3 lignes, soit au moins 7 par adresse et N' ≥ 14 > 8 → R4 ; les nombres exacts se relèvent à l'étape 0
-   avec `couper_ligne`) ; **une autre déclenche P3 et R1 sans R4**, **avec référence QRR** (sans référence, son N + m = 22 ≤ 22 et
+   avec `couper_ligne`, à 52 **et** à 87 mm — relevés : NPA-localité `DE-` + 16 `W` puis 32 `W` puis 3 `W` à 87 mm (le NPA
+   reste seul, la localité est un mot plus large que la colonne), 3 lignes aussi à 52 mm ; N = 18 à 87 mm, N' = 14 à 52 mm ;
+   le message de huit lignes alterne des mots de 17 et 16 `W`, 139 caractères, deux mots ne tenant jamais ensemble à 87 mm) ; **une autre déclenche P3 et R1 sans R4**, **avec référence QRR** (sans référence, son N + m = 22 ≤ 22 et
    P3 ne se déclenche pas)
    (colonne : n₁ + n₂ + m > 19 avec référence, > 22 sans, m ≤ 8 lignes de message ; P3 exige donc n₁ + n₂ ≥ 12 à 87 mm, ≥ 15
-   sans référence). **Il n'est pas vrai que P3 entraîne R4** : R4 se décide après R1, rue retirée du compte, P3 la compte ;
+   sans référence ; **sans message**, l'intitulé *Additional information* n'est pas imprimé et la borne devient
+   n₁ + n₂ ≤ 21 avec référence, ≤ 24 sans — la formule à m est donc prudente pour m = 0, et le code ne l'emploie pas :
+   il mesure le bas rendu, étape 0, LOW-B de la P5). **Il n'est pas vrai que P3 entraîne R4** : R4 se décide après R1, rue retirée du compte, P3 la compte ;
    le contre-exemple, **recalculé à l'étape 0** (couper_ligne sur les largeurs AFM, relu à `15b362e19`) : noms de 5 `A` (une
    ligne chacun) ; rue = un mot de 70 `W`, une espace, un numéro de 16 chiffres ; NPA étranger `XX-` + 16 `W` et localité de
-   35 `W` ; message de 140 caractères en 8 lignes (mots de 17 `W`) ; à 87 mm, par adresse : nom 1, rue 3, NPA-localité 3 = 7,
-   N = 14, N + m = 22 > 19 → **P3** ; à 52 mm : nom 1, rue 5, NPA-localité 3 = 9, N = 18 > 8 → R0 échoue ; R1 : N' = 2 × (1 + 3)
+   35 `W` ; message de 139 caractères en 8 lignes (mots de 17 et 16 `W` en alternance : huit mots de 17 `W` et leurs sept
+   espaces feraient 143 caractères, au-delà des 140 admis ; relevé à l'étape 0) ; à 87 mm, par adresse : nom 1, rue 3, NPA-localité 3 = 7,
+   N = 14, N + m = 22 > 19 avec la référence QRR → **P3** ; à 52 mm : nom 1, rue 5, NPA-localité 3 = 9, N = 18 > 8 → R0 échoue ; R1 : N' = 2 × (1 + 3)
    = 8 ≤ 8 → **tient** (bas 72,5 − 28,0 − 0,584 = 43,9 ≥ 41,52). Aucune démonstration universelle n'est écrite au Dev Agent
    Record : chaque fixture se vérifie par ses nombres. — « et seulement lui » n'a de sens que dans une même cascade pour R1 et
    pour R4 sans P3 ; au palier P3, le message

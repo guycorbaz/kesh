@@ -3853,4 +3853,1048 @@ mod tests {
             }
         }
     }
+
+    // ----- Story 44-1a (#944) : la grille SIX, *Payable by*, la coupe à la largeur, les paliers -----
+    //
+    // Repère de la fiche : mm depuis le bas à gauche ; la *boîte* d'un texte va de `Td.x` à
+    // `Td.x` + sa largeur (table AFM), et de sa ligne de base − 0,207 em (`Descender`) à + 0,718 em
+    // (`CapHeight`) — la boîte que poppler rend pour la police standard (relevé indépendant,
+    // `pire_cas_boites_independantes`).
+
+    /// Tolérance des positions : l'arrondi des points écrits par printpdf, bien sous la plus
+    /// serrée des marges de la grille (0,48 mm entre les intitulés du montant et la bordure du QR).
+    const TOL: f32 = 0.01;
+
+    /// La boîte d'un texte mesuré, au sens de la fiche 44-1a (sans le demi-millimètre de jeu de
+    /// [`TexteMesure::boite`], qui servait la 36-12a).
+    fn boite_44(t: &TexteMesure) -> Boite {
+        Boite {
+            x0: t.x,
+            y0: t.y - 0.207 * t.taille * MM_PAR_PT,
+            x1: t.x + crate::largeurs::largeur_mm(&t.texte, t.taille, t.gras),
+            y1: t.y + 0.718 * t.taille * MM_PAR_PT,
+        }
+    }
+
+    /// Les textes de la section de paiement (sous la ligne horizontale).
+    fn textes_de_la_section(pdf: &[u8]) -> Vec<TexteMesure> {
+        textes_mesures(pdf)
+            .into_iter()
+            .filter(|t| t.y < SEP_Y)
+            .collect()
+    }
+
+    /// **AC3** (Story 44-1a) — ce qui sort de sa zone dans la section de paiement d'un PDF : le
+    /// récépissé dans [5, 57], la colonne d'information dans [118, 205], le titre et les
+    /// intitulés de la partie paiement à gauche de 118, rien dans le QR élargi de sa bordure de
+    /// 5 mm (x ∈ [62, 118], y ∈ [37, 93]), rien sous y = 5, l'information du récépissé à 5 mm
+    /// au moins au-dessus de la section montant (bas ≥ 41,52), rien sur le point de dépôt.
+    fn zones_violees(pdf: &[u8]) -> Vec<String> {
+        let textes = textes_de_la_section(pdf);
+        let mut v = Vec::new();
+        let qr = Boite {
+            x0: 62.0,
+            y0: 37.0,
+            x1: 118.0,
+            y1: 93.0,
+        };
+        let au_point_de_depot = |t: &TexteMesure| t.x < RECEIPT_W && (t.y - 20.5).abs() < TOL;
+        let depot: Vec<Boite> = textes
+            .iter()
+            .filter(|t| au_point_de_depot(t))
+            .map(boite_44)
+            .collect();
+        if depot.len() != 1 {
+            v.push(format!("un seul point de dépôt à la base 20,5 : {depot:?}"));
+        }
+        for t in &textes {
+            let b = boite_44(t);
+            let nom = format!("{:?} à ({:.2}, {:.2})", t.texte, t.x, t.y);
+            if b.y0 < 5.0 - TOL {
+                v.push(format!("{nom} : bas {:.2} sous y = 5", b.y0));
+            }
+            if t.x < RECEIPT_W {
+                if b.x0 < 5.0 - TOL || b.x1 > 57.0 + TOL {
+                    v.push(format!(
+                        "{nom} : hors de [5, 57] ({:.2}..{:.2})",
+                        b.x0, b.x1
+                    ));
+                }
+                // L'information : ni le titre (11 pt), ni la section montant et le point de dépôt
+                // (bases 35, 31,5 et 20,5).
+                if t.taille < 11.0 && t.y > 35.0 + TOL && b.y0 < 41.52 - TOL {
+                    v.push(format!(
+                        "{nom} : bas {:.2} à moins de 5 mm du montant",
+                        b.y0
+                    ));
+                }
+                if !au_point_de_depot(t) && depot.iter().any(|d| !b.disjointe(d)) {
+                    v.push(format!("{nom} : sur le point de dépôt"));
+                }
+            } else if t.x >= 118.0 - TOL {
+                if b.x1 > 205.0 + TOL {
+                    v.push(format!("{nom} : au-delà de x = 205 ({:.2})", b.x1));
+                }
+            } else if b.x1 > 118.0 + TOL {
+                v.push(format!(
+                    "{nom} : déborde sur la colonne d'information ({:.2})",
+                    b.x1
+                ));
+            }
+            if b.x0 < qr.x1 - TOL && b.x1 > qr.x0 + TOL && b.y0 < qr.y1 - TOL && b.y1 > qr.y0 + TOL
+            {
+                v.push(format!("{nom} : dans le QR élargi ({b:?})"));
+            }
+        }
+        v
+    }
+
+    /// Les rectangles remplis du contenu (`re`), en mm, avec la couleur de remplissage en vigueur.
+    fn rectangles(pdf: &[u8]) -> Vec<(Boite, Vec<f32>)> {
+        let mut couleur = vec![0.0, 0.0, 0.0];
+        let mut rects = Vec::new();
+        for op in operations_du_pdf(pdf) {
+            match op.operator.as_str() {
+                "rg" => couleur = op.operands.iter().map(nombre).collect(),
+                "re" => {
+                    let v: Vec<f32> = op.operands.iter().map(|o| nombre(o) * MM_PAR_PT).collect();
+                    rects.push((
+                        Boite {
+                            x0: v[0],
+                            y0: v[1],
+                            x1: v[0] + v[2],
+                            y1: v[1] + v[3],
+                        },
+                        couleur.clone(),
+                    ));
+                }
+                _ => {}
+            }
+        }
+        rects
+    }
+
+    /// Les modules noirs du QR : rectangles noirs de la section de paiement.
+    fn modules_noirs(pdf: &[u8]) -> Vec<Boite> {
+        rectangles(pdf)
+            .into_iter()
+            .filter(|(b, c)| c.as_slice() == [0.0, 0.0, 0.0] && b.y1 < SEP_Y)
+            .map(|(b, _)| b)
+            .collect()
+    }
+
+    /// Une QR-facture de la fixture (référence QRR) pour ce créancier, ce débiteur et ce message.
+    fn donnees_44(
+        creancier: Address,
+        debiteur: Option<Address>,
+        message: Option<&str>,
+    ) -> QrBillData {
+        let (mut data, _, _) = invoice_fixture();
+        data.creditor = creancier;
+        data.ultimate_debtor = debiteur;
+        data.unstructured_message = message.map(Into::into);
+        data
+    }
+
+    /// La même, sans référence (IBAN ordinaire).
+    fn sans_ref(mut data: QrBillData) -> QrBillData {
+        data.creditor_iban = "CH9300762011623852957".into();
+        data.reference = Reference::None;
+        data
+    }
+
+    /// Le PDF de ces données, avec le corps de la fixture, en anglais (libellés par défaut).
+    fn pdf_44(data: &QrBillData) -> Vec<u8> {
+        let (_, invoice, i18n) = invoice_fixture();
+        generate_qr_bill_pdf_with_date(data, &invoice, &i18n, fixed_date()).unwrap()
+    }
+
+    /// Le pire cas de la fiche (AC5) : nom de 70 `W`, rue de 70 `W` et numéro de 16 chiffres, NPA
+    /// étranger de 16 `W` et localité de 35 `W`.
+    fn adresse_pire() -> Address {
+        adresse_etrangere(
+            &"W".repeat(70),
+            &"W".repeat(70),
+            "1234567890123456",
+            &"W".repeat(16),
+            &"W".repeat(35),
+            "DE",
+        )
+    }
+
+    /// L'adresse du contre-exemple de l'AC5 (P3 sans R4) : celle du pire cas, nom de 5 `A`.
+    fn adresse_contre_exemple() -> Address {
+        Address {
+            name: "AAAAA".into(),
+            ..adresse_pire()
+        }
+    }
+
+    /// Un message de 139 caractères en huit lignes à 87 mm : mots de 17 et 16 `W` en
+    /// alternance, dont deux ne tiennent jamais ensemble (45,29 + 0,78 + 42,63 > 87).
+    fn message_huit_lignes() -> String {
+        [17, 16, 17, 16, 17, 16, 17, 16]
+            .map(|n| "W".repeat(n))
+            .join(" ")
+    }
+
+    /// Les fixtures de l'AC3 de la 44-1a, nommées.
+    fn fixtures_44() -> Vec<(&'static str, QrBillData)> {
+        let rue = "Chemin des Trois-Fontaines de la Vieille Tour du Haut-Plateau";
+        let message = Some("Facture F-2026-0042");
+        let k = |name: &str, line1: &str, line2: &str| Address {
+            address_type: AddressType::Combined,
+            name: name.into(),
+            line1: line1.into(),
+            line2: line2.into(),
+            postal_code: String::new(),
+            town: String::new(),
+            country: "CH".into(),
+        };
+        let huit = message_huit_lignes();
+        vec![
+            (
+                "ordinaire",
+                donnees_44(creancier_ordinaire(), Some(debiteur_ordinaire()), message),
+            ),
+            (
+                "rue longue",
+                donnees_44(
+                    adresse_s("Robert Schneider SA", rue, "12", "2501", "Biel"),
+                    Some(adresse_s("Pia Rutschmann", rue, "12", "9400", "Rorschach")),
+                    message,
+                ),
+            ),
+            (
+                "étrangère",
+                donnees_44(
+                    adresse_etrangere("Vaduz AG", "Städtle", "5", "9490", "Vaduz", "LI"),
+                    Some(adresse_etrangere(
+                        "Jan",
+                        "ulica Długa",
+                        "5",
+                        "90-001",
+                        "Łódź",
+                        "PL",
+                    )),
+                    message,
+                ),
+            ),
+            (
+                "sans référence",
+                sans_ref(donnees_44(
+                    creancier_ordinaire(),
+                    Some(debiteur_ordinaire()),
+                    message,
+                )),
+            ),
+            (
+                "sans message",
+                donnees_44(creancier_ordinaire(), Some(debiteur_ordinaire()), None),
+            ),
+            (
+                "débiteur absent",
+                donnees_44(creancier_ordinaire(), None, message),
+            ),
+            ("type K", invoice_fixture().0),
+            ("réaliste R1", donnees_realiste_r1()),
+            (
+                "R1 sur le seul débiteur",
+                donnees_44(creancier_ordinaire(), Some(debiteur_r1_seul()), message),
+            ),
+            (
+                "R4 sans P3",
+                donnees_44(
+                    adresse_s(&"W".repeat(70), "Rue du Lac", "1268", "2501", "Biel"),
+                    Some(adresse_s(
+                        &"W".repeat(70),
+                        "Marktgasse",
+                        "28",
+                        "9400",
+                        "Rorschach",
+                    )),
+                    message,
+                ),
+            ),
+            (
+                "P3 et R4",
+                donnees_44(adresse_pire(), Some(adresse_pire()), Some(&huit)),
+            ),
+            (
+                "P3 et R1 sans R4",
+                donnees_44(
+                    adresse_contre_exemple(),
+                    Some(adresse_contre_exemple()),
+                    Some(&huit),
+                ),
+            ),
+            (
+                "type K, neuf lignes",
+                donnees_44(
+                    k(&"W".repeat(70), "Rue du Lac 1268", "2501 Biel"),
+                    Some(k("Pia Rutschmann", "Marktgasse 28", "9400 Rorschach")),
+                    message,
+                ),
+            ),
+        ]
+    }
+
+    /// La fixture réaliste de neuf lignes au récépissé (AC5) : noms de deux lignes des deux
+    /// côtés, rue de deux lignes du côté du créancier, QR-IBAN et référence QRR.
+    fn donnees_realiste_r1() -> QrBillData {
+        donnees_44(
+            adresse_s(
+                "Fondation suisse pour la protection du paysage",
+                "Chemin des Trois-Fontaines de la Vieille Tour",
+                "12",
+                "2501",
+                "Biel",
+            ),
+            Some(adresse_s(
+                "Coopérative d'habitation des Jardins du Lac",
+                "Marktgasse",
+                "28",
+                "9400",
+                "Rorschach",
+            )),
+            Some("Facture F-2026-0042"),
+        )
+    }
+
+    /// Un débiteur de six lignes au récépissé (nom, rue et localité de deux lignes chacun) :
+    /// avec un créancier ordinaire, neuf lignes, et seul le débiteur déborde.
+    fn debiteur_r1_seul() -> Address {
+        adresse_s(
+            "Association des amis de la Fondation suisse pour le paysage alpin",
+            "Chemin des Trois-Fontaines de la Vieille Tour du Haut-Plateau",
+            "12",
+            "9400",
+            "Rorschacherberg-Wartensee-Staad",
+        )
+    }
+
+    /// Les valeurs (8 pt) de l'information du récépissé, de haut en bas.
+    fn valeurs_du_recu(pdf: &[u8]) -> Vec<String> {
+        let mut v: Vec<_> = textes_de_la_section(pdf)
+            .into_iter()
+            .filter(|t| t.x < RECEIPT_W && t.taille == 8.0 && t.y > 35.0 + TOL)
+            .collect();
+        v.sort_by(|a, b| b.y.total_cmp(&a.y));
+        v.into_iter().map(|t| t.texte).collect()
+    }
+
+    /// Les textes de la colonne d'information (x ≥ 118), de haut en bas, avec leur base.
+    fn colonne(pdf: &[u8]) -> Vec<(f32, String)> {
+        let mut v: Vec<_> = textes_de_la_section(pdf)
+            .into_iter()
+            .filter(|t| t.x >= 118.0 - TOL)
+            .collect();
+        v.sort_by(|a, b| b.y.total_cmp(&a.y));
+        v.into_iter().map(|t| (t.y, t.texte)).collect()
+    }
+
+    /// La référence QRR groupée de la fixture.
+    const QRR_GROUPEE: &str = "00 00000 00004 20000 00000 01008";
+    /// L'IBAN groupé de la fixture.
+    const IBAN_GROUPE: &str = "CH44 3199 9123 0008 8901 2";
+
+    /// **AC1** (Story 44-1a) — la grille de D2, mesurée dans le PDF, dans les quatre langues :
+    /// titres à la base 96,5 (x = 5 et 67), QR de 46 mm de x = 67 à 113 et de y = 42 à 88,
+    /// colonne d'information à x = 118, premiers intitulés aux bases 90,5 (récépissé) et 98,0
+    /// (colonne), section montant à la base 35,0 des deux côtés (≥ 5 mm sous le QR), point de
+    /// dépôt à la base 20,5 et au bord droit 57 ; le titre et les intitulés de la partie
+    /// paiement à gauche de x = 118.
+    #[test]
+    fn la_grille_six_est_tenue() {
+        let mut ecarts = Vec::new();
+        for (langue, _) in LANGUES {
+            let i18n = i18n_de(langue);
+            let pdf = pdf_ordinaire(&i18n);
+            let textes = textes_de_la_section(&pdf);
+            let mut attendre = |cle: &'static str, x: f32, y: f32| {
+                let libelle = i18n.get(cle);
+                if !textes
+                    .iter()
+                    .any(|t| t.texte == libelle && (t.x - x).abs() < TOL && (t.y - y).abs() < TOL)
+                {
+                    ecarts.push(format!("{langue} : {libelle:?} attendu à ({x}, {y})"));
+                }
+            };
+            attendre("invoice-pdf-qr-section-receipt", 5.0, 96.5);
+            attendre("invoice-pdf-qr-section-payment", 67.0, 96.5);
+            attendre("invoice-pdf-qr-account", 5.0, 90.5);
+            attendre("invoice-pdf-qr-account", 118.0, 98.0);
+            attendre("invoice-pdf-qr-currency", 5.0, 35.0);
+            attendre("invoice-pdf-qr-amount", 17.0, 35.0);
+            attendre("invoice-pdf-qr-currency", 67.0, 35.0);
+            attendre("invoice-pdf-qr-amount", 82.0, 35.0);
+            // Le point de dépôt : base 20,5, bord droit 57.
+            let depot = i18n.get("invoice-pdf-qr-acceptance-point");
+            match textes.iter().find(|t| t.texte == depot) {
+                Some(t) => {
+                    let bord = boite_44(t).x1;
+                    if (t.y - 20.5).abs() >= TOL || (bord - 57.0).abs() > 0.05 {
+                        ecarts.push(format!(
+                            "{langue} : point de dépôt à ({}, {}), bord {bord}",
+                            t.x, t.y
+                        ));
+                    }
+                }
+                None => ecarts.push(format!("{langue} : pas de point de dépôt")),
+            }
+            // Le titre et les intitulés de la partie paiement, à gauche de la colonne.
+            for t in textes
+                .iter()
+                .filter(|t| t.x > RECEIPT_W && t.x < 118.0 - TOL)
+            {
+                let bord = boite_44(t).x1;
+                if bord > 118.0 {
+                    ecarts.push(format!("{langue} : {:?} finit à {bord}", t.texte));
+                }
+            }
+            // Le QR : 46 × 46 mm, x de 67 à 113, y de 42 à 88.
+            let modules = modules_noirs(&pdf);
+            let qr = modules.iter().skip(1).fold(modules[0], |b, m| b.union(m));
+            for (nom, mesure, attendu) in [
+                ("x0", qr.x0, 67.0),
+                ("x1", qr.x1, 113.0),
+                ("y0", qr.y0, 42.0),
+                ("y1", qr.y1, 88.0),
+            ] {
+                if (mesure - attendu).abs() > TOL {
+                    ecarts.push(format!("{langue} : QR {nom} = {mesure}, attendu {attendu}"));
+                }
+            }
+            // La section montant à 5 mm au moins sous le QR : haut des intitulés de 6 pt
+            // (35 + 0,718 em) sous la bordure, à qr.y0 − 5.
+            let haut_montant = 35.0 + 0.718 * 6.0 * MM_PAR_PT;
+            if haut_montant > qr.y0 - 5.0 + TOL {
+                ecarts.push(format!(
+                    "{langue} : montant (haut {haut_montant}) à moins de 5 mm du QR ({})",
+                    qr.y0
+                ));
+            }
+        }
+        assert!(ecarts.is_empty(), "{ecarts:#?}");
+    }
+
+    /// **AC2** (Story 44-1a) — *Payable by* dans la section d'information : au récépissé, à
+    /// x = 5, après la référence et avant la section montant ; en partie paiement, à x = 118,
+    /// sous *Additional information* (ou sous la référence, sans message) ; plus rien à x = 67
+    /// sous la section montant.
+    #[test]
+    fn payable_by_dans_la_section_d_information() {
+        let pdf = pdf_44(&donnees_44(
+            creancier_ordinaire(),
+            Some(debiteur_ordinaire()),
+            Some("Facture F-2026-0042"),
+        ));
+        let textes = textes_du_pdf(&pdf);
+        for (x, y, attendu) in [
+            (5.0, 71.0, "Reference"),
+            (5.0, 68.0, QRR_GROUPEE),
+            (5.0, 62.0, "Payable by"),
+            (5.0, 58.5, "Pia Rutschmann"),
+            (5.0, 55.0, "Marktgasse 28"),
+            (5.0, 51.5, "9400 Rorschach"),
+            (118.0, 69.5, "Additional information"),
+            (118.0, 66.5, "Facture F-2026-0042"),
+            (118.0, 60.5, "Payable by"),
+            (118.0, 57.0, "Pia Rutschmann"),
+            (118.0, 53.5, "Marktgasse 28"),
+            (118.0, 50.0, "9400 Rorschach"),
+        ] {
+            assert_eq!(texte_a(&textes, x, y), attendu, "à ({x}, {y})");
+        }
+        // Sous la section montant de la partie paiement (base 31,5), à x = 67 : rien.
+        let sous: Vec<_> = textes
+            .iter()
+            .filter(|(x, y, _)| (*x - 67.0).abs() < TOL && *y < 31.5 - TOL)
+            .collect();
+        assert!(sous.is_empty(), "{sous:?}");
+
+        // Sans message : *Payable by* sous la référence.
+        let pdf = pdf_44(&donnees_44(
+            creancier_ordinaire(),
+            Some(debiteur_ordinaire()),
+            None,
+        ));
+        let textes = textes_du_pdf(&pdf);
+        assert_eq!(texte_a(&textes, 118.0, 69.5), "Payable by");
+    }
+
+    /// **AC3** (Story 44-1a) — aucune ligne hors de sa zone, pour chaque fixture.
+    #[test]
+    fn chaque_ligne_dans_sa_zone() {
+        let mut v = Vec::new();
+        for (nom, data) in fixtures_44() {
+            for e in zones_violees(&pdf_44(&data)) {
+                v.push(format!("{nom} : {e}"));
+            }
+        }
+        assert!(v.is_empty(), "{v:#?}");
+    }
+
+    /// **AC4** (Story 44-1a) — la coupe mesure la largeur, avec des valeurs calculées à la main
+    /// depuis `phvr8a.afm` (`W` = 944), hors de la table : 27 `W` à 8 pt = 71,93 mm, 19 `W` =
+    /// 50,62 mm tiennent à 52, 20 = 53,28 non ; 32 `W` = 85,25 mm tiennent à 87, 33 = 87,91 non ;
+    /// « Robert Schneider SA » = 26,51 mm et « Rue du Lac 1268 » = 21,49 mm.
+    #[test]
+    fn la_coupe_mesure_les_largeurs() {
+        // Les valeurs écrites à la main, confrontées à la table (sa justesse est l'AC8 de la
+        // 36-12a ; ici, elles fixent les attentes de la coupe).
+        for (texte, mm) in [
+            ("W".repeat(27), 71.93),
+            ("W".repeat(19), 50.62),
+            ("W".repeat(20), 53.28),
+            ("W".repeat(32), 85.25),
+            ("W".repeat(33), 87.91),
+            ("Robert Schneider SA".to_string(), 26.51),
+            ("Rue du Lac 1268".to_string(), 21.49),
+        ] {
+            let table = crate::largeurs::largeur_mm(&texte, 8.0, false);
+            assert!((table - mm).abs() < 0.01, "{texte} : {table} pour {mm}");
+        }
+        // 27 `W` : 19 + 8 au récépissé (52 mm), une ligne dans la colonne (87 mm).
+        let nom = |n: usize| adresse_s(&"W".repeat(n), "Rue du Lac", "1268", "2501", "Biel");
+        let textes = textes_du_pdf(&pdf_44(&donnees_44(
+            nom(27),
+            Some(debiteur_ordinaire()),
+            None,
+        )));
+        assert_eq!(texte_a(&textes, 5.0, 84.0), "W".repeat(19));
+        assert_eq!(texte_a(&textes, 5.0, 80.5), "W".repeat(8));
+        assert_eq!(texte_a(&textes, 5.0, 77.0), "Rue du Lac 1268");
+        assert_eq!(texte_a(&textes, 118.0, 91.5), "W".repeat(27));
+        assert_eq!(texte_a(&textes, 118.0, 88.0), "Rue du Lac 1268");
+        // 33 `W` : 32 + 1 dans la colonne.
+        let textes = textes_du_pdf(&pdf_44(&donnees_44(
+            nom(33),
+            Some(debiteur_ordinaire()),
+            None,
+        )));
+        assert_eq!(texte_a(&textes, 118.0, 91.5), "W".repeat(32));
+        assert_eq!(texte_a(&textes, 118.0, 88.0), "W");
+        // Les deux lignes ordinaires, entières des deux côtés.
+        let textes = textes_du_pdf(&pdf_ordinaire(&QrBillI18n::default()));
+        for (x, y) in [(5.0, 84.0), (118.0, 91.5)] {
+            assert_eq!(texte_a(&textes, x, y), "Robert Schneider SA");
+        }
+        for (x, y) in [(5.0, 80.5), (118.0, 88.0)] {
+            assert_eq!(texte_a(&textes, x, y), "Rue du Lac 1268");
+        }
+    }
+
+    /// **AC5** (Story 44-1a) — la cascade, palier par palier, lue dans le PDF.
+    #[test]
+    fn la_cascade_par_palier() {
+        let par_nom: std::collections::HashMap<_, _> = fixtures_44().into_iter().collect();
+        let pdf = |nom: &str| pdf_44(&par_nom[nom]);
+        let w = |n: usize| "W".repeat(n);
+        // Les écarts de toutes les fixtures, réunis : un rouge les nomme toutes.
+        let ecarts = std::cell::RefCell::new(Vec::new());
+        let attendre = |nom: &str, obtenu: Vec<String>, attendu: Vec<String>| {
+            if obtenu != attendu {
+                ecarts.borrow_mut().push(format!(
+                    "{nom} :\n  obtenu  {obtenu:?}\n  attendu {attendu:?}"
+                ));
+            }
+        };
+        let s = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+
+        // R0 : l'ordinaire imprime sa rue au récépissé ; la rue longue (8 lignes) aussi.
+        attendre(
+            "ordinaire",
+            valeurs_du_recu(&pdf("ordinaire")),
+            s(&[
+                IBAN_GROUPE,
+                "Robert Schneider SA",
+                "Rue du Lac 1268",
+                "2501 Biel",
+                QRR_GROUPEE,
+                "Pia Rutschmann",
+                "Marktgasse 28",
+                "9400 Rorschach",
+            ]),
+        );
+        attendre(
+            "rue longue",
+            valeurs_du_recu(&pdf("rue longue")),
+            s(&[
+                IBAN_GROUPE,
+                "Robert Schneider SA",
+                "Chemin des Trois-Fontaines de la Vieille",
+                "Tour du Haut-Plateau 12",
+                "2501 Biel",
+                QRR_GROUPEE,
+                "Pia Rutschmann",
+                "Chemin des Trois-Fontaines de la Vieille",
+                "Tour du Haut-Plateau 12",
+                "9400 Rorschach",
+            ]),
+        );
+        // R1 : neuf lignes ; la rue manque des deux adresses, les noms restent entiers.
+        attendre(
+            "réaliste R1",
+            valeurs_du_recu(&pdf("réaliste R1")),
+            s(&[
+                IBAN_GROUPE,
+                "Fondation suisse pour la protection du",
+                "paysage",
+                "2501 Biel",
+                QRR_GROUPEE,
+                "Coopérative d'habitation des Jardins du",
+                "Lac",
+                "9400 Rorschach",
+            ]),
+        );
+        let col: Vec<String> = colonne(&pdf("réaliste R1"))
+            .into_iter()
+            .map(|(_, t)| t)
+            .collect();
+        for rue in [
+            "Chemin des Trois-Fontaines de la Vieille Tour 12",
+            "Marktgasse 28",
+        ] {
+            if !col.iter().any(|t| t == rue) {
+                ecarts
+                    .borrow_mut()
+                    .push(format!("réaliste R1 : colonne sans {rue:?} (P0) : {col:?}"));
+            }
+        }
+        // R1 sur le seul débiteur : le créancier perd aussi sa rue.
+        attendre(
+            "R1 sur le seul débiteur",
+            valeurs_du_recu(&pdf("R1 sur le seul débiteur")),
+            s(&[
+                IBAN_GROUPE,
+                "Robert Schneider SA",
+                "2501 Biel",
+                QRR_GROUPEE,
+                "Association des amis de la Fondation",
+                "suisse pour le paysage alpin",
+                "9400",
+                "Rorschacherberg-Wartensee-Staad",
+            ]),
+        );
+        // R4 sans P3 : noms de quatre lignes ; nom et localité, ramenés à 52 mm.
+        let w18 = format!("{}...", w(18));
+        attendre(
+            "R4 sans P3",
+            valeurs_du_recu(&pdf("R4 sans P3")),
+            vec![
+                IBAN_GROUPE.into(),
+                w18.clone(),
+                "2501 Biel".into(),
+                QRR_GROUPEE.into(),
+                w18.clone(),
+                "9400 Rorschach".into(),
+            ],
+        );
+        attendre(
+            "R4 sans P3, colonne en P0",
+            colonne(&pdf("R4 sans P3"))
+                .into_iter()
+                .map(|(_, t)| t)
+                .filter(|t| t.starts_with('W'))
+                .collect(),
+            vec![w(32), w(32), w(6), w(32), w(32), w(6)],
+        );
+        // P3 et R4 : le pire cas.
+        // « DE- » et 16 `W` : 47,49 mm ; l'espace et un `W` de plus ne laissent plus la place
+        // des « ... » (2,35 mm) : l'espace de fin tombe, les points suivent le NPA.
+        let localite_52 = format!("DE-{}...", w(16));
+        attendre(
+            "P3 et R4",
+            valeurs_du_recu(&pdf("P3 et R4")),
+            vec![
+                IBAN_GROUPE.into(),
+                w18.clone(),
+                localite_52.clone(),
+                QRR_GROUPEE.into(),
+                w18.clone(),
+                localite_52,
+            ],
+        );
+        let ligne_87 = format!("{}...", w(31));
+        // 47,49 + 0,78 + 13 × 2,664 + 2,35 = 85,26 mm ; un 14e `W` dépasse 87.
+        let localite_87 = format!("DE-{} {}...", w(16), w(13));
+        attendre(
+            "P3 et R4, colonne",
+            colonne(&pdf("P3 et R4"))
+                .into_iter()
+                .map(|(_, t)| t)
+                .collect(),
+            vec![
+                "Account / Payable to".into(),
+                IBAN_GROUPE.into(),
+                ligne_87.clone(),
+                ligne_87.clone(),
+                localite_87.clone(),
+                "Reference".into(),
+                QRR_GROUPEE.into(),
+                "Additional information".into(),
+                format!("{} {}...", w(17), w(14)),
+                "Payable by".into(),
+                ligne_87.clone(),
+                ligne_87,
+                localite_87,
+            ],
+        );
+        // P3 et R1 sans R4 : la colonne tronque, le récépissé omet seulement la rue.
+        attendre(
+            "P3 et R1 sans R4",
+            valeurs_du_recu(&pdf("P3 et R1 sans R4")),
+            vec![
+                IBAN_GROUPE.into(),
+                "AAAAA".into(),
+                format!("DE-{}", w(16)),
+                w(19),
+                w(16),
+                QRR_GROUPEE.into(),
+                "AAAAA".into(),
+                format!("DE-{}", w(16)),
+                w(19),
+                w(16),
+            ],
+        );
+        let col = colonne(&pdf("P3 et R1 sans R4"));
+        let messages: Vec<_> = col
+            .iter()
+            .skip_while(|(_, t)| t != "Additional information")
+            .skip(1)
+            .take_while(|(_, t)| t != "Payable by")
+            .map(|(_, t)| t.clone())
+            .collect();
+        attendre(
+            "P3 et R1 sans R4, message",
+            messages,
+            vec![format!("{} {}...", w(17), w(14))],
+        );
+        // Débiteur absent : l'intitulé seul.
+        attendre(
+            "débiteur absent",
+            valeurs_du_recu(&pdf("débiteur absent")),
+            s(&[
+                IBAN_GROUPE,
+                "Robert Schneider SA",
+                "Rue du Lac 1268",
+                "2501 Biel",
+                QRR_GROUPEE,
+            ]),
+        );
+        let col = colonne(&pdf("débiteur absent"));
+        if col.last().map(|(_, t)| t.as_str()) != Some("Payable by") {
+            ecarts
+                .borrow_mut()
+                .push(format!("débiteur absent : colonne {col:?}"));
+        }
+        // Type K de neuf lignes : R1 sans objet, R4.
+        attendre(
+            "type K, neuf lignes",
+            valeurs_du_recu(&pdf("type K, neuf lignes")),
+            vec![
+                IBAN_GROUPE.into(),
+                w18,
+                "2501 Biel".into(),
+                QRR_GROUPEE.into(),
+                "Pia Rutschmann".into(),
+                "9400 Rorschach".into(),
+            ],
+        );
+        // P0 : un message long s'imprime entier, une ligne par mot, au pas de `MESSAGE_PAS`.
+        let pdf_message = pdf_44(&donnees_44(
+            creancier_ordinaire(),
+            Some(debiteur_ordinaire()),
+            Some(&[17, 16, 17, 16].map(|n| w(n)).join(" ")),
+        ));
+        let col = colonne(&pdf_message);
+        for (y, attendu) in [
+            (66.5, w(17)),
+            (63.0, w(16)),
+            (59.5, w(17)),
+            (56.0, w(16)),
+            (50.0, "Payable by".to_string()),
+        ] {
+            if !col
+                .iter()
+                .any(|(cy, t)| (cy - y).abs() < TOL && *t == attendu)
+            {
+                ecarts.borrow_mut().push(format!(
+                    "message en P0 : {attendu:?} attendu à {y} : {col:?}"
+                ));
+            }
+        }
+        let ecarts = ecarts.into_inner();
+        assert!(ecarts.is_empty(), "{}", ecarts.join("\n"));
+    }
+
+    /// **AC8** (Story 44-1a) — aucune entrée admise par `validation::validate` ne fait échouer
+    /// le PDF ni ne sort de sa zone : mots de ⌊L/2⌋+1 et ⌊L/3⌋+1 caractères (L = 19 au
+    /// récépissé, 32 dans la colonne), chaînes uniformes, du caractère le plus large du jeu
+    /// admis une fois imprimé ; nom 70, rue 70 + numéro 16, NPA 16, localité 35, en Suisse et à
+    /// l'étranger ; avec et sans référence ; message de 0 et de 140 caractères ; type K aussi.
+    #[test]
+    fn aucune_entree_admise_n_echoue() {
+        // Le caractère le plus large, par sa sortie de `texte_imprime` (un caractère peut s'y
+        // replier en deux, `Ĳ` en `IJ`).
+        let largeur =
+            |c: &char| crate::largeurs::largeur_mm(&texte_imprime(&c.to_string()), 8.0, false);
+        let plus_large = (0x20u32..=0x2100)
+            .filter_map(char::from_u32)
+            .filter(|c| crate::validation::est_caractere_qr(*c))
+            .max_by(|a, b| largeur(a).total_cmp(&largeur(b)))
+            .expect("un caractère");
+        // Un champ de `n` caractères fait de mots de `mot` caractères (0 : un seul mot).
+        let champ = |n: usize, mot: usize| -> String {
+            let c = plus_large.to_string();
+            if mot == 0 {
+                return c.repeat(n);
+            }
+            let mut s = String::new();
+            while s.chars().count() < n {
+                if !s.is_empty() {
+                    s.push(' ');
+                }
+                let reste = n - s.chars().count();
+                s.push_str(&c.repeat(mot.min(reste)));
+            }
+            s.trim_end().to_string()
+        };
+        let mut cas = 0;
+        let mut ecarts = Vec::new();
+        for mot in [0, 19 / 2 + 1, 19 / 3 + 1, 32 / 2 + 1, 32 / 3 + 1] {
+            for pays in ["CH", "DE"] {
+                for reference in [true, false] {
+                    for message in [0, 140] {
+                        for type_k in [false, true] {
+                            let adresse = if type_k {
+                                Address {
+                                    address_type: AddressType::Combined,
+                                    name: champ(70, mot),
+                                    line1: champ(70, mot),
+                                    line2: champ(70, mot),
+                                    postal_code: String::new(),
+                                    town: String::new(),
+                                    country: pays.into(),
+                                }
+                            } else {
+                                adresse_etrangere(
+                                    &champ(70, mot),
+                                    &champ(70, mot),
+                                    &champ(16, mot),
+                                    &champ(16, mot),
+                                    &champ(35, mot),
+                                    pays,
+                                )
+                            };
+                            let msg = (message > 0).then(|| champ(message, mot));
+                            let mut data =
+                                donnees_44(adresse.clone(), Some(adresse), msg.as_deref());
+                            if !reference {
+                                data = sans_ref(data);
+                            }
+                            crate::validation::validate(&data).unwrap_or_else(|e| {
+                                panic!("montage : entrée refusée ({mot}, {pays}) : {e:?}")
+                            });
+                            let (_, invoice, i18n) = invoice_fixture();
+                            let nom = format!(
+                                "mot {mot}, {pays}, réf. {reference}, message {message}, K {type_k}"
+                            );
+                            match generate_qr_bill_pdf_with_date(
+                                &data,
+                                &invoice,
+                                &i18n,
+                                fixed_date(),
+                            ) {
+                                Ok(pdf) => {
+                                    for e in zones_violees(&pdf) {
+                                        ecarts.push(format!("{nom} : {e}"));
+                                    }
+                                }
+                                Err(e) => ecarts.push(format!("{nom} : erreur {e:?}")),
+                            }
+                            cas += 1;
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(cas, 80, "montage : cas parcourus");
+        let total = ecarts.len();
+        ecarts.truncate(40);
+        assert!(
+            ecarts.is_empty(),
+            "{plus_large:?}, {total} écarts, les 40 premiers : {ecarts:#?}"
+        );
+    }
+
+    /// La charge utile de la fixture de type S (`pdf_ordinaire`), relevée à la base de la
+    /// Story 44-1a (`4b3a20b0b`) : la mise en page n'y touche pas.
+    const CHARGE_UTILE_S: &str = "SPC\n0200\n1\nCH4431999123000889012\nS\nRobert Schneider SA\nRue du Lac\n1268\n2501\nBiel\nCH\n\n\n\n\n\n\n\n1234.50\nCHF\nS\nPia Rutschmann\nMarktgasse\n28\n9400\nRorschach\nCH\nQRR\n000000000004200000000001008\nFacture F-2026-0042\nEPD\n";
+
+    /// **AC9** (Story 44-1a) — le code QR inchangé : charge utile, matrice reconstruite des
+    /// modules noirs du PDF, relecture par `rxing` ; la croix centrée en (90, 65).
+    #[test]
+    fn le_code_qr_est_inchange() {
+        let (mut data, _, _) = invoice_fixture();
+        data.creditor = creancier_ordinaire();
+        data.ultimate_debtor = Some(debiteur_ordinaire());
+        let charge = build_payload(&data).unwrap();
+        assert_eq!(charge, CHARGE_UTILE_S);
+        let qr = render_qr_image(&charge).unwrap();
+        let n = qr.size() as usize;
+        let pdf = pdf_ordinaire(&QrBillI18n::default());
+        let modules = modules_noirs(&pdf);
+        let cote = 46.0 / n as f32;
+        let (x0, haut) = (
+            modules.iter().map(|b| b.x0).fold(f32::MAX, f32::min),
+            modules.iter().map(|b| b.y1).fold(f32::MIN, f32::max),
+        );
+        let mut matrice = vec![vec![false; n]; n];
+        for b in &modules {
+            let col = ((b.x0 - x0) / cote).round() as usize;
+            let lig = ((haut - b.y1) / cote).round() as usize;
+            matrice[lig][col] = true;
+        }
+        for (y, ligne) in matrice.iter().enumerate() {
+            for (x, noir) in ligne.iter().enumerate() {
+                assert_eq!(
+                    *noir,
+                    qr.get_module(x as i32, y as i32),
+                    "module ({x}, {y})"
+                );
+            }
+        }
+        // Relecture par rxing de la matrice reconstruite.
+        let (echelle, marge) = (10usize, 4usize);
+        let dim = (n + 2 * marge) * echelle;
+        let mut image = vec![255u8; dim * dim];
+        for (y, ligne) in matrice.iter().enumerate() {
+            for (x, noir) in ligne.iter().enumerate() {
+                if *noir {
+                    for dy in 0..echelle {
+                        for dx in 0..echelle {
+                            image
+                                [((marge + y) * echelle + dy) * dim + (marge + x) * echelle + dx] =
+                                0;
+                        }
+                    }
+                }
+            }
+        }
+        let lu = rxing::helpers::detect_in_luma(
+            image,
+            dim as u32,
+            dim as u32,
+            Some(rxing::BarcodeFormat::QR_CODE),
+        )
+        .expect("rxing relit le QR");
+        assert_eq!(lu.getText(), charge);
+        // La croix : carré blanc de 8 mm et carré rouge de 7 mm centrés en (90, 65).
+        let rects = rectangles(&pdf);
+        for (couleur, cote) in [(vec![1.0, 1.0, 1.0], 8.0), (vec![0.85, 0.0, 0.0], 7.0)] {
+            let carre = rects
+                .iter()
+                .find(|(b, c)| *c == couleur && (b.largeur() - cote).abs() < TOL)
+                .unwrap_or_else(|| panic!("carré de {cote} mm : {rects:?}"))
+                .0;
+            let (cx, cy) = carre.centre();
+            assert!(
+                (cx - 90.0).abs() < TOL
+                    && (cy - 65.0).abs() < TOL
+                    && (carre.hauteur() - cote).abs() < TOL,
+                "carré de {cote} mm : {carre:?}"
+            );
+        }
+    }
+
+    /// **AC8** (Story 44-1a), relevé indépendant — le pire cas rendu en PDF, ses boîtes de mots
+    /// relevées par `pdftotext -bbox` (poppler : boîtes de 718 / −207 millièmes d'em pour la
+    /// police standard, en points depuis le haut de la page), sans passer par la table des
+    /// largeurs ; l'AC3 vérifiée sur elles à 0,05 mm. `#[ignore]` : il exige poppler, rejoué à
+    /// la clôture (`cargo test -p kesh-qrbill -- --ignored pire_cas_boites_independantes`).
+    #[test]
+    #[ignore]
+    fn pire_cas_boites_independantes() {
+        use std::io::Write;
+        use std::process::{Command, Stdio};
+        const T: f32 = 0.05;
+        let pdf = pdf_44(&donnees_44(
+            adresse_pire(),
+            Some(adresse_pire()),
+            Some(&message_huit_lignes()),
+        ));
+        // La hauteur de la page, lue à la `MediaBox`.
+        let doc = printpdf::lopdf::Document::load_mem(&pdf).expect("PDF relisible");
+        let page = doc.get_pages().values().next().copied().expect("une page");
+        let media = doc
+            .get_dictionary(page)
+            .and_then(|p| p.get(b"MediaBox"))
+            .and_then(|o| o.as_array())
+            .expect("MediaBox")
+            .clone();
+        let hauteur_pt = nombre(&media[3]);
+        let mut enfant = Command::new("pdftotext")
+            .args(["-bbox", "-", "-"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .expect("pdftotext (poppler) présent");
+        enfant
+            .stdin
+            .take()
+            .expect("entrée")
+            .write_all(&pdf)
+            .expect("PDF écrit à pdftotext");
+        let sortie = enfant.wait_with_output().expect("pdftotext terminé");
+        let html = String::from_utf8(sortie.stdout).expect("UTF-8");
+        let attribut = |ligne: &str, nom: &str| -> f32 {
+            let debut = ligne.find(&format!("{nom}=\"")).expect(nom) + nom.len() + 2;
+            ligne[debut..debut + ligne[debut..].find('"').expect("guillemet")]
+                .parse()
+                .expect("nombre")
+        };
+        let mm = |pt: f32| pt * MM_PAR_PT;
+        let mut mots = 0;
+        let mut ecarts = Vec::new();
+        for ligne in html.lines().filter(|l| l.trim_start().starts_with("<word")) {
+            let (x0, x1) = (mm(attribut(ligne, "xMin")), mm(attribut(ligne, "xMax")));
+            let (haut, bas) = (
+                mm(hauteur_pt - attribut(ligne, "yMin")),
+                mm(hauteur_pt - attribut(ligne, "yMax")),
+            );
+            if haut >= SEP_Y {
+                continue;
+            }
+            mots += 1;
+            let mot = &ligne[ligne.find('>').expect(">") + 1..ligne.rfind('<').expect("<")];
+            let nom = format!("{mot:?} ({x0:.2}..{x1:.2}, {bas:.2}..{haut:.2})");
+            if bas < 5.0 - T {
+                ecarts.push(format!("{nom} sous y = 5"));
+            }
+            if x0 < RECEIPT_W {
+                if x0 < 5.0 - T || x1 > 57.0 + T {
+                    ecarts.push(format!("{nom} hors de [5, 57]"));
+                }
+                // L'information du récépissé, au-dessus de 41,52 : ni le titre (haut ≥ 98), ni
+                // la section montant (haut ≤ 36,52), ni le point de dépôt (haut ≤ 22,02).
+                if haut > 36.52 + T && haut < 98.0 && bas < 41.52 - T {
+                    ecarts.push(format!("{nom} sur la section montant"));
+                }
+            } else if x0 >= 118.0 - T {
+                if x1 > 205.0 + T {
+                    ecarts.push(format!("{nom} au-delà de 205"));
+                }
+            } else if x1 > 118.0 + T {
+                ecarts.push(format!("{nom} sur la colonne"));
+            }
+            if x0 < 118.0 - T && x1 > 62.0 + T && bas < 93.0 - T && haut > 37.0 + T {
+                ecarts.push(format!("{nom} dans le QR élargi"));
+            }
+        }
+        println!("pire_cas_boites_independantes : {mots} mots relevés dans la section de paiement");
+        assert!(mots > 30, "montage : mots relevés ({mots})");
+        assert!(ecarts.is_empty(), "{ecarts:#?}");
+    }
 }

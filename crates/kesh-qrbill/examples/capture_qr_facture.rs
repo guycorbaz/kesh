@@ -1,5 +1,5 @@
 //! Les QR-factures de la recette visuelle (Stories 36-12a et 36-12b, #944) : des PDF de
-//! fixtures **synthétiques**, en français et en anglais, écrits dans le répertoire donné en
+//! fixtures **synthétiques**, en français, en allemand et en anglais, écrits dans le répertoire donné en
 //! argument, pour être rendus en PNG et comparés aux échantillons de SIX.
 //!
 //! ```sh
@@ -22,11 +22,16 @@ use kesh_qrbill::{
 use printpdf::OffsetDateTime;
 use rust_decimal::Decimal;
 
-/// Les deux langues de la capture, avec leur fichier de traductions.
-const LANGUES: [(&str, &str); 2] = [
+/// Les trois langues de la capture, avec leur fichier de traductions (l'allemand depuis la
+/// Story 44-1a, AC14 : ses libellés sont les plus larges).
+const LANGUES: [(&str, &str); 3] = [
     (
         "fr",
         include_str!("../../kesh-i18n/locales/fr-CH/messages.ftl"),
+    ),
+    (
+        "de",
+        include_str!("../../kesh-i18n/locales/de-CH/messages.ftl"),
     ),
     (
         "en",
@@ -53,7 +58,24 @@ struct Fixture {
     donnees: QrBillData,
 }
 
-/// Les trois fixtures : ordinaire (référence QRR), rue longue, sans référence (IBAN simple).
+/// Une adresse de type S à l'étranger.
+fn adresse_etrangere(
+    nom: &str,
+    rue: &str,
+    numero: &str,
+    npa: &str,
+    localite: &str,
+    pays: &str,
+) -> Address {
+    Address {
+        country: pays.into(),
+        ..adresse(nom, rue, numero, npa, localite)
+    }
+}
+
+/// Les fixtures : ordinaire (référence QRR), rue longue, sans référence (IBAN simple) ; et,
+/// depuis la Story 44-1a, une adresse réaliste de neuf lignes au récépissé (la rue y est
+/// omise, palier R1) et le pire cas (paliers R4 et P3).
 fn fixtures() -> Vec<Fixture> {
     let rue_longue = "Chemin des Trois-Fontaines de la Vieille Tour du Haut-Plateau";
     let base = QrBillData {
@@ -72,6 +94,20 @@ fn fixtures() -> Vec<Fixture> {
         unstructured_message: Some("Facture F-2026-0042".into()),
         billing_information: None,
     };
+    // Le pire cas de la fiche 44-1a (AC5) : noms de 70 `W`, rue de 70 `W` et numéro de 16
+    // chiffres, NPA étranger de 16 `W` et localité de 35 `W`, message de 139 caractères en
+    // huit mots qui ne tiennent jamais à deux sur une ligne de 87 mm.
+    let pire = adresse_etrangere(
+        &"W".repeat(70),
+        &"W".repeat(70),
+        "1234567890123456",
+        &"W".repeat(16),
+        &"W".repeat(35),
+        "DE",
+    );
+    let message_de_huit_lignes = [17, 16, 17, 16, 17, 16, 17, 16]
+        .map(|n| "W".repeat(n))
+        .join(" ");
     vec![
         Fixture {
             nom: "ordinaire",
@@ -96,6 +132,35 @@ fn fixtures() -> Vec<Fixture> {
             donnees: QrBillData {
                 creditor_iban: "CH9300762011623852957".into(),
                 reference: Reference::None,
+                ..base.clone()
+            },
+        },
+        Fixture {
+            nom: "realiste-r1",
+            donnees: QrBillData {
+                creditor: adresse(
+                    "Fondation suisse pour la protection du paysage",
+                    "Chemin des Trois-Fontaines de la Vieille Tour",
+                    "12",
+                    "2501",
+                    "Biel",
+                ),
+                ultimate_debtor: Some(adresse(
+                    "Coopérative d'habitation des Jardins du Lac",
+                    "Marktgasse",
+                    "28",
+                    "9400",
+                    "Rorschach",
+                )),
+                ..base.clone()
+            },
+        },
+        Fixture {
+            nom: "pire-cas",
+            donnees: QrBillData {
+                creditor: pire.clone(),
+                ultimate_debtor: Some(pire),
+                unstructured_message: Some(message_de_huit_lignes),
                 ..base
             },
         },
