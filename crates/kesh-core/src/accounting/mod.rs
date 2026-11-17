@@ -18,6 +18,7 @@
 pub mod balance;
 pub mod exercice;
 pub mod fx;
+pub mod fx_revaluation;
 pub mod purchase;
 pub mod vat;
 

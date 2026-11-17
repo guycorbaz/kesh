@@ -132,6 +132,7 @@ pub const ACTIONS: &[&str] = &[
     "fiscal_year.rate_kinds_updated",
     "fiscal_year.reopened",
     "fiscal_year.updated",
+    "fx_revaluation.posted",
     "imported_supplier_invoice.attached",
     "imported_supplier_invoice.completed",
     "imported_supplier_invoice.created",

@@ -311,6 +311,56 @@ async fn devise_verrouillee_apres_une_ligne(pool: MySqlPool) {
     assert_eq!((st, code(&e)), (409, "ACCOUNT_CURRENCY_LOCKED"), "{e}");
 }
 
+/// 37-5-CR-P3-1 — un compte de bilan en devise qui porte une ligne ne reçoit
+/// pas de sous-compte : 409, le parent nommé, rien n'est créé.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn sous_compte_refuse_sous_un_compte_en_devise_mouvemente(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    multi(&pool, &ctx).await;
+    let id = compte(&pool, ctx.s.company_id, "1020", "Asset", Some("USD")).await;
+    let je: i64 = sqlx::query_scalar(
+        "INSERT INTO journal_entries (company_id, fiscal_year_id, entry_number, entry_date, journal, description) \
+         VALUES (?, ?, 1, '2026-06-01', 'Banque', 'test') RETURNING id",
+    )
+    .bind(ctx.s.company_id)
+    .bind(ctx.s.fiscal_year_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO journal_entry_lines (entry_id, account_id, line_order, debit, credit) \
+         VALUES (?, ?, 1, 10, 0)",
+    )
+    .bind(je)
+    .bind(id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let (st, e) = creer(
+        &ctx,
+        json!({ "number": "1021", "name": "Détail", "accountType": "Asset", "currency": "USD", "parentId": id }),
+    )
+    .await;
+    assert_eq!(
+        (st, code(&e)),
+        (409, "ACCOUNT_FOREIGN_PARENT_HAS_ENTRIES"),
+        "{e}"
+    );
+    assert_eq!(
+        e["error"]["details"],
+        json!({ "parentAccountId": id, "parentNumber": "1020", "currency": "USD" })
+    );
+    assert!(
+        e["error"]["message"].as_str().unwrap().contains("1020"),
+        "{e}"
+    );
+    let crees: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM accounts WHERE number = '1021'")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(crees, 0);
+}
+
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn devise_refusee_sur_un_compte_employe_en_chf(pool: MySqlPool) {
     let ctx = monter(&pool).await;

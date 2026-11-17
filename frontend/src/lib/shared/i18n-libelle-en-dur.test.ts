@@ -375,8 +375,16 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
  * données) — `conforme` **92 → 97** — et `indicatorLabel` (`JournalEntryForm.svelte`,
  * textes par `i18nMsg`, et `''` pour une ligne sans devise, neutre) — `ecartee` **14 → 15**.
  * Relevé par la garde (`expected 112 to be 106`), non additionné.
+ *
+ * **112 → 116, et les quatre déclarations sont NOMMÉES** (Story 37-5, réévaluation de fin
+ * d'exercice ; 106 → 110 sur sa branche avant la fusion de la 37-3b) : dans
+ * `lib/features/fiscal-years/revaluation.helpers.ts`, `sourceLabel`, `kindLabel` et
+ * `originLabel` (textes par `i18nMsg`, et la chaîne vide neutre quand il n'y a rien à dire :
+ * `ecartee` **15 → 18**) ; dans `closing-checks-labels.ts`, `notRevaluedText` (textes par
+ * `i18nMsg` seulement : `conforme` **97 → 98**). Relevé par la garde après la fusion, non
+ * additionné.
  */
-const CANDIDATES_ATTENDUES = 112;
+const CANDIDATES_ATTENDUES = 116;
 
 /** Les trois délimiteurs de littéral en JS/TS. */
 const QUOTES = ["'", '"', '`'];
@@ -893,7 +901,7 @@ describe('libellés en dur — l’angle mort #255', () => {
 			else if (c.retours.length > 0) classes.ecartee += 1;
 			else classes.conforme += 1;
 		}
-		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 15, conforme: 97 });
+		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 18, conforme: 98 });
 		// La somme est recalculée depuis les classes, jamais depuis le total qu'elle contrôle.
 		const somme = Object.values(classes).reduce((a, b) => a + b, 0);
 		expect(somme).toBe(CANDIDATES_ATTENDUES);

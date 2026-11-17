@@ -33,9 +33,10 @@
 //! puis 144 à la 0.17.3, Story v0172-session, 145 à la 33-5, 146 à la 34-2 et
 //! 147 à la 37-1, 152 à la 37-2 — la récupération des cours, puis les quatre
 //! routes des cours retenus et des genres d'un exercice —, 153 à la 37-3b — la
-//! conversion entre devises ; dont `/mcp`, monté
+//! conversion entre devises —, 155 à la 37-5 — l'aperçu et la passation de la
+//! réévaluation ; dont `/mcp`, monté
 //! par `route_service` — Story 32-6a) ; celui du REGISTRE est plus large
-//! (157), car quatre routes
+//! (159), car quatre routes
 //! mutantes vivent dans `routes/test_endpoints.rs` (la quatrième, le pilotage
 //! de la source factice des cours, à la 37-2) et sont montées par un `nest()`.
 //! D'où :
@@ -610,6 +611,13 @@ const LIB_ROUTES: &[(&str, &str, Status, Rejeu)] = &[
     ("post", "exchange_rates::reset_rate", Traced, SansEcritureAuJournal),
     ("post", "exchange_rates::acknowledge_notices", Traced, SansEcritureAuJournal),
     ("put", "fiscal_years::update_rate_kinds", Traced, SansEcritureAuJournal),
+    // Story 37-5 (AC-2) — réévaluation de fin d'exercice : l'aperçu calcule sans
+    // rien écrire ; la passation écrit une écriture par compte réévalué
+    // (`journal_entry.created`) et `fx_revaluation.posted` (entité
+    // `fiscal_year`), dans une transaction rejouée par le handler
+    // (`retry_on_deadlock("fx_revaluation::post", …)`).
+    ("post", "fx_revaluation::preview_revaluation", NoMatter("calcule sans persistance — aucune mutation"), SansEcritureAuJournal),
+    ("post", "fx_revaluation::post_revaluation", Traced, Rejouee),
     ("post", "bank_imports::preview", NoMatter("parse et valide sans persistance — aucune mutation"), SansEcritureAuJournal),
     ("post", "bank_imports::create", Traced, SansEcritureAuJournal),
     ("delete", "bank_imports::delete", Traced, SansEcritureAuJournal),
@@ -1083,8 +1091,8 @@ fn the_registry_partition_is_what_the_story_declares() {
 
     assert_eq!(
         LIB_ROUTES.len(),
-        153,
-        "l'inventaire porte sur 153 routes (+ 1 : la conversion entre devises, 37-3b ; + 5 : la récupération des cours de change, la saisie et le ↑ d'un cours retenu, l'acquittement des corrections et les genres d'un exercice, 37-2 ; + 1 : le réglage multi-devises de la société, 37-1 ; + 1 : le solde d'ouverture d'un compte bancaire existant, 34-2 ; + 1 : l'adresse de la société, 33-5 ; + 1 : `/mcp`, 32-6a ; + 1 : la décision d'un \
+        155,
+        "l'inventaire porte sur 155 routes (+ 2 : l'aperçu et la passation de la réévaluation de fin d'exercice, 37-5 ; + 1 : la conversion entre devises, 37-3b ; + 5 : la récupération des cours de change, la saisie et le ↑ d'un cours retenu, l'acquittement des corrections et les genres d'un exercice, 37-2 ; + 1 : le réglage multi-devises de la société, 37-1 ; + 1 : le solde d'ouverture d'un compte bancaire existant, 34-2 ; + 1 : l'adresse de la société, 33-5 ; + 1 : `/mcp`, 32-6a ; + 1 : la décision d'un \
          envoi MCP, 32-8b ; + 5 : les routes mutantes des prompts du serveur MCP, 32-10a-iii ; \
          + 1 : le rattachement d'une transaction à une écriture, v017-3a ; + 2 : l'aperçu et \
          la création d'un relevé saisi à la main, v016-2a ; + 4 : le `PUT`, le `DELETE`, la \
@@ -1110,8 +1118,10 @@ fn the_registry_partition_is_what_the_story_declares() {
     // l'acquittement des corrections et les genres d'un exercice).
     // Story 37-3b : 145 → 146 (la conversion entre devises, tracée par
     // `journal_entry.created` ×2).
+    // Story 37-5 : 146 → 147 (la passation de la réévaluation de fin
+    // d'exercice, tracée par `fx_revaluation.posted`).
     assert_eq!(
-        traced, 146,
+        traced, 147,
         "73 tracées avant la 25-1b, plus ses 14, plus la dévalidation (25-2-b-1, #440), \
          plus l'annulation d'un règlement client (25-3-a-1) et fournisseur (25-3-a-2, #414), \
          plus l'annulation d'un rapprochement (25-3-b, #418), plus le solde du reste \
@@ -1140,7 +1150,8 @@ fn the_registry_partition_is_what_the_story_declares() {
          solde d'ouverture d'un compte bancaire existant (34-2, refs #533), plus le réglage \
          multi-devises de la société (37-1), plus la récupération des cours de change, la \
          saisie et le ↑ d'un cours retenu, l'acquittement des corrections et les genres d'un \
-         exercice (37-2), plus la conversion entre devises (37-3b)"
+         exercice (37-2), plus la conversion entre devises (37-3b), plus la passation de la \
+         réévaluation de fin d'exercice (37-5)"
     );
     assert_eq!(
         exempt, 4,
@@ -1148,13 +1159,14 @@ fn the_registry_partition_is_what_the_story_declares() {
          DECISION_GESTES_SESSION (33-7)"
     );
     assert_eq!(
-        no_matter, 3,
-        "trois routes mutantes qui ne mutent rien (le `PUT` des écritures en est sorti, 15-8a ; \
-         l'aperçu de la saisie manuelle d'un relevé y est entré, v016-2a)"
+        no_matter, 4,
+        "quatre routes mutantes qui ne mutent rien (le `PUT` des écritures en est sorti, 15-8a ; \
+         l'aperçu de la saisie manuelle d'un relevé y est entré, v016-2a ; l'aperçu de la \
+         réévaluation de fin d'exercice, 37-5)"
     );
     assert_eq!(
         LIB_ROUTES.len() + TEST_ENDPOINT_ROUTES.len(),
-        157,
+        159,
         "le registre est plus large que l'inventaire, et c'est voulu"
     );
 }
@@ -1408,9 +1420,9 @@ fn every_replayed_route_calls_an_envelope() {
         }
     }
     assert_eq!(
-        examinees, 28,
-        "les vingt-huit routes Rejouee ont été examinées (vingt-sept avant la conversion \
-         entre devises, 37-3b)"
+        examinees, 29,
+        "les vingt-neuf routes Rejouee ont été examinées (vingt-sept avant la conversion \
+         entre devises, 37-3b, et la passation de la réévaluation de fin d'exercice, 37-5)"
     );
 }
 
@@ -1547,8 +1559,8 @@ fn the_replay_partition_is_what_the_story_declares() {
         .count();
 
     assert_eq!(
-        rejouees, 28,
-        "37-3b : + la conversion entre devises — 28 ; 5 rejouées avant la 15-5e1 (write_off, accept, cancel du rapprochement, \
+        rejouees, 29,
+        "37-5 : + la passation de la réévaluation — 29 ; 37-3b : + la conversion entre devises — 28 ; 5 rejouées avant la 15-5e1 (write_off, accept, cancel du rapprochement, \
          complément des soldes de départ, modification d'une écriture — 15-8a) + 4 par \
          elle (validation, règlement, annulation de règlement, saisie fournisseur) + la \
          suppression d'une écriture (15-8b) + 12 par la 15-5e2 (dévalidation, avoir, \
@@ -1560,12 +1572,13 @@ fn the_replay_partition_is_what_the_story_declares() {
          (brouillons, sans écriture au journal) + la validation et la dévalidation d'une \
          facture fournisseur — compte inchangé ; 34-2 : + la création d'un compte bancaire \
          (reclassée, elle porte un solde d'ouverture) + la saisie du solde d'ouverture d'un \
-         compte existant — 27"
+         compte existant — 27 ; 37-3b : + la conversion entre devises — 28 ; 37-5 : + la \
+         passation de la réévaluation de fin d'exercice — 29"
     );
     assert_eq!(exemptees, 3, "full_import, /seed, /reset");
     assert_eq!(
-        sans_ecriture, 126,
-        "124 routes de lib.rs (37-2 : + 5 — la récupération des cours de change, la saisie et le ↑ d'un cours retenu, l'acquittement des corrections, les genres d'un exercice) — 119 avant (37-1 : + 1 — le réglage multi-devises de la société) — 118 avant (34-2 : − 1 — la création d'un compte bancaire, reclassée \
+        sans_ecriture, 127,
+        "125 routes de lib.rs (37-5 : + 1 — l'aperçu de la réévaluation de fin d'exercice) — 124 avant (37-2 : + 5 — la récupération des cours de change, la saisie et le ↑ d'un cours retenu, l'acquittement des corrections, les genres d'un exercice) — 119 avant (37-1 : + 1 — le réglage multi-devises de la société) — 118 avant (34-2 : − 1 — la création d'un compte bancaire, reclassée \
          `Rejouee`) — 119 avant (33-5 : + 1 — l'adresse de la société ; v0172-session : + 2 — le réglage de la durée d'inactivité \
          et le battement d'activité ; v017-4a : + 4 — la saisie fournisseur et la complétion \
          d'import reclassées, le `PUT` et le `DELETE` d'un brouillon) — 112 avant \
@@ -1591,7 +1604,8 @@ fn the_replay_partition_is_what_the_story_declares() {
     // pilotage de la source factice, endpoint de test ; la saisie et le ↑ d'un
     // cours retenu, l'acquittement des corrections, les genres d'un exercice).
     // Story 37-3b : 156 → 157 (la conversion entre devises).
-    assert_eq!(tout.len(), 157);
+    // Story 37-5 : 157 → 159 (l'aperçu et la passation de la réévaluation).
+    assert_eq!(tout.len(), 159);
 }
 
 /// Visiteur `syn` d'un fichier de routes : relève chaque appel à la primitive

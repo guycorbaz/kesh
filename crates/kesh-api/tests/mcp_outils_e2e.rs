@@ -1786,6 +1786,82 @@ async fn une_ligne_en_devise_dans_kesh_ecriture(pool: MySqlPool) {
     );
 }
 
+/// Story 37-5 (AC-5, V12) — une écriture de réévaluation se lit par
+/// `kesh_ecriture` : la ligne du compte en devise rend sa devise (celle du
+/// compte), un montant en devise nul et la source `revaluation` ; la
+/// contrepartie est une ligne CHF.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn une_ecriture_de_reevaluation_dans_kesh_ecriture(pool: MySqlPool) {
+    let a = societe_piegee(&pool, "Société A 329", 'A').await;
+    let jeton = cle_de(&pool, &a, &LECTURE, SendValidation::Exempt).await;
+    let b = banc(&pool);
+    sqlx::query("UPDATE companies SET multi_currency_enabled = TRUE WHERE id = ?")
+        .bind(a.c)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE fiscal_years SET multi_currency = TRUE WHERE id = ?")
+        .bind(a.p.exercice_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let eur = sqlx::query(
+        "INSERT INTO accounts (company_id, number, name, account_type, currency) \
+         VALUES (?, '09912', 'Banque EUR', 'Asset', 'EUR')",
+    )
+    .bind(a.c)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    let je = journal_entries::create(
+        &pool,
+        a.p.exercice_id,
+        kesh_db::entities::audit_log::Acteur::utilisateur(a.u),
+        NewJournalEntry {
+            company_id: a.c,
+            entry_date: common::jour::aujourd_hui_test(),
+            journal: Journal::OD,
+            description: "Gain de change Banque EUR EUR 0.94947 (non réalisé)".into(),
+            project_id: None,
+            lines: vec![
+                NewJournalEntryLine {
+                    account_id: eur,
+                    debit: Decimal::new(1234, 2),
+                    credit: Decimal::ZERO,
+                    project_id: None,
+                    foreign: Some(kesh_db::entities::ForeignAmount {
+                        declared_currency: None,
+                        amount: Decimal::ZERO,
+                        rate: Decimal::new(94947, 5),
+                        source: Some(kesh_db::entities::RateProvenance::Revaluation),
+                        rate_derived: false,
+                    }),
+                },
+                NewJournalEntryLine {
+                    account_id: a.p.compte_k2,
+                    debit: Decimal::ZERO,
+                    credit: Decimal::new(1234, 2),
+                    project_id: None,
+                    foreign: None,
+                },
+            ],
+        },
+    )
+    .await
+    .unwrap();
+    let ecriture = structure(
+        &b.appeler(&jeton, "kesh_ecriture", json!({"id": je.entry.id}))
+            .await,
+        "kesh_ecriture",
+    );
+    let lignes = &ecriture["ecriture"]["lignes"];
+    assert_eq!(lignes[0]["devise"], "EUR", "{ecriture}");
+    assert_eq!(lignes[0]["montantDevise"], "0.00", "{ecriture}");
+    assert_eq!(lignes[0]["sourceCours"], "revaluation", "{ecriture}");
+    assert!(lignes[1]["devise"].is_null(), "{ecriture}");
+}
+
 /// Story 33-1b (#926, AC8 ; revue P1, A-F2) — `kesh_ecriture` et `kesh_postes_ouverts`
 /// disent le numéro interne de la facture fournisseur à côté de celui du fournisseur,
 /// chacun sous son nom : le test nomme le champ, là où l'inventaire de

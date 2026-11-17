@@ -1051,7 +1051,11 @@ const ATTENDU = {
 	// Fusion de `epic/37-multi-devises` (37-3a et 37-4 terminées) dans la 37-3b : **3294 → 3300**,
 	// relevé par la garde (`expected 3300 to be 3294`) : les 6 sites de la 37-4 (rapports), non additionnés
 	// à la main. Les commentaires ci-après sont ceux de la 37-4, repris tels quels.
-	sitesTotal: 3300,
+	// Fusion de la 37-3b dans la 37-5 : **3300 → 3350**, relevé par la garde (`expected 3350 to
+	// be 3300`) — les 50 sites de la 37-5 (voir plus bas).
+	// Revue de code P2 (37-5) : **3350 → 3352**, relevé par la garde (`expected 3352 to be 3350`) — les
+	// deux sites de l'avis « compte non imputable » (aperçu, K9).
+	sitesTotal: 3352,
 	// Story 37-4 (AC-6) : **3184 → 3190** sur sa branche (partie de 946aa86a), relevé par la garde
 	// (`expected 3190 to be 3184`) et ventilé au code : 3 sites dans
 	// `features/reports/GeneralLedgerView.svelte` (`reports-fx-revaluation-balance`,
@@ -1061,6 +1065,13 @@ const ATTENDU = {
 	// 65b3877f) dans la branche de la 37-4 : **3191**, relevé par la garde après la fusion
 	// (non additionné). Fusion de la 37-3a jusqu'à `e89291e6` : **3191**, relevé de nouveau par la
 	// garde (Dev Agent Record de la 37-4) ; à recompter à chaque reprise suivante.
+	// Story 37-5 : **3191 → 3241** sur sa branche (fusion de `epic/37-multi-devises` à
+	// `dd01a3df` comprise, qui n'apporte aucun site), relevé par la garde (`expected 3241 to be
+	// 3191`), non additionné : les littéraux de `RevaluationPanel.svelte`, de
+	// `revaluation.helpers.ts`, de l'avis de K9 (`FiscalYearChecks.svelte`,
+	// `closing-checks-labels.ts`) et de la page des exercices. Fusion de `epic/37-multi-devises`
+	// à `03f4599d` (37-3b terminée) dans la 37-5 : **3350**, la valeur ci-dessus, relevée par la
+	// garde après cette fusion (non additionnée).
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/
