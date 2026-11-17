@@ -345,7 +345,8 @@ Une mutation équivalente se dit.
 - QR-facture : la section de paiement suit la grille de la directive SIX. *Payable by* s'imprime dans la section
   d'information, avant le montant ; le montant est à la même hauteur au récépissé et en partie paiement ; le point de dépôt
   remonte à la place que la directive lui donne ; aucun texte ne touche plus le code QR ni ne sort de la feuille, même fait
-  de lettres très larges, et un message trop long se termine par « ... ». Au récépissé, une adresse très longue
+  de lettres très larges ; un message long se coupe sur plusieurs lignes, et ne se termine par « ... » que si les
+  adresses ne lui laissent pas la place. Au récépissé, une adresse très longue
   (des noms sur plusieurs lignes) perd sa rue, comme la directive le permet ; une adresse qui dépasse encore est
   raccourcie par « ... » plutôt que de faire échouer le PDF. Le code QR et son contenu ne changent pas.
   **Les PDF déjà émis et figés ne changent pas** ; une facture validée jamais ouverte, un rappel et un PDF refigé prennent le

@@ -12,8 +12,10 @@
 //!   7×7 mm red Swiss cross centred at (90, 65), information column at x = 118 mm with
 //!   *Payable by* in it, amount section at baseline 35 mm on both sides, acceptance point
 //!   at baseline 20.5 mm. Text is wrapped at measured widths (52 mm on the receipt, 87 mm
-//!   in the column); a very long address falls back to fixed-height steps (street omitted
-//!   on the receipt, then lines shortened with "..."): the layout never fails.
+//!   in the column); a very long address falls back to tiers, tried in order while the
+//!   text does not fit above the amount section or the page margin (street omitted on the
+//!   receipt, then lines shortened with "..."), the last tier fitting by construction: the
+//!   layout never fails.
 //!
 //! Uses `BuiltinFont::Helvetica` (PDF standard 14) — no external font embedding.
 
@@ -1523,9 +1525,9 @@ fn dessiner_texte(
 /// Dessine la section de paiement (récépissé et partie paiement, hors lignes et ciseaux) :
 /// la [`mise_en_page`], le code QR de 46 mm à (67, 88) et sa croix centrée en (90, 65).
 ///
-/// Seul le montant absent (et le QR, par [`draw_qr_matrix`]) peut faire échouer ce dessin :
-/// la mise en page, elle, ne le peut pas.
-#[allow(clippy::too_many_arguments)]
+/// Seul le montant absent peut faire échouer ce dessin (`InvalidAmount`, comme avant la
+/// Story 44-1a) : [`draw_qr_matrix`] rend un `Result` par héritage mais n'échoue jamais, et
+/// la mise en page ne le peut pas.
 fn dessiner_section_de_paiement(
     layer: &PdfLayerReference,
     data: &QrBillData,
@@ -4251,7 +4253,22 @@ mod tests {
     /// 5 mm (x ∈ [62, 118], y ∈ [37, 93]), rien sous y = 5, l'information du récépissé à 5 mm
     /// au moins au-dessus de la section montant (bas ≥ 41,52), rien sur le point de dépôt.
     fn zones_violees(pdf: &[u8]) -> Vec<String> {
-        let textes = textes_de_la_section(pdf);
+        zones_violees_dans(&textes_de_la_section(pdf))
+    }
+
+    /// Un texte de la section montant du récépissé, reconnu par son identité (revue P1, E-2) :
+    /// intitulé de 6 pt gras à la base 35, ou valeur de 8 pt à la base 31,5, à x = 5 ou 17 —
+    /// non par sa seule hauteur, qui laisserait passer une ligne d'information glissée dessous.
+    fn de_la_section_montant_du_recu(t: &TexteMesure) -> bool {
+        let x_du_montant = (t.x - MARGE).abs() < TOL || (t.x - MARGE - 12.0).abs() < TOL;
+        let intitule = (t.y - 35.0).abs() < TOL && t.taille == 6.0 && t.gras;
+        let valeur = (t.y - 31.5).abs() < TOL && t.taille == 8.0 && !t.gras;
+        x_du_montant && (intitule || valeur)
+    }
+
+    /// [`zones_violees`] sur des textes déjà relus : l'AC3 se teste aussi sur une liste
+    /// fabriquée (`zones_violees_signale_une_ligne_sous_le_montant`).
+    fn zones_violees_dans(textes: &[TexteMesure]) -> Vec<String> {
         let mut v = Vec::new();
         let qr = Boite {
             x0: 62.0,
@@ -4268,7 +4285,16 @@ mod tests {
         if depot.len() != 1 {
             v.push(format!("un seul point de dépôt à la base 20,5 : {depot:?}"));
         }
-        for t in &textes {
+        let montant = textes
+            .iter()
+            .filter(|t| de_la_section_montant_du_recu(t))
+            .count();
+        if montant != 4 {
+            v.push(format!(
+                "section montant du récépissé : {montant} textes au lieu de 4"
+            ));
+        }
+        for t in textes {
             let b = boite_44(t);
             let nom = format!("{:?} à ({:.2}, {:.2})", t.texte, t.x, t.y);
             if b.y0 < 5.0 - TOL {
@@ -4281,9 +4307,11 @@ mod tests {
                         b.x0, b.x1
                     ));
                 }
-                // L'information : ni le titre (11 pt), ni la section montant et le point de dépôt
-                // (bases 35, 31,5 et 20,5).
-                if t.taille < 11.0 && t.y > 35.0 + TOL && b.y0 < 41.52 - TOL {
+                // L'information : tout le récépissé hors le titre (11 pt), la section montant
+                // (reconnue par son identité) et le point de dépôt — où qu'elle soit descendue.
+                let information =
+                    t.taille < 11.0 && !de_la_section_montant_du_recu(t) && !au_point_de_depot(t);
+                if information && b.y0 < 41.52 - TOL {
                     v.push(format!(
                         "{nom} : bas {:.2} à moins de 5 mm du montant",
                         b.y0
@@ -4534,11 +4562,12 @@ mod tests {
         )
     }
 
-    /// Les valeurs (8 pt) de l'information du récépissé, de haut en bas.
+    /// Les valeurs (8 pt) de l'information du récépissé, de haut en bas : hors la section
+    /// montant, reconnue par son identité (revue P1, E-2), où qu'elles soient descendues.
     fn valeurs_du_recu(pdf: &[u8]) -> Vec<String> {
         let mut v: Vec<_> = textes_de_la_section(pdf)
             .into_iter()
-            .filter(|t| t.x < RECEIPT_W && t.taille == 8.0 && t.y > 35.0 + TOL)
+            .filter(|t| t.x < RECEIPT_W && t.taille == 8.0 && !de_la_section_montant_du_recu(t))
             .collect();
         v.sort_by(|a, b| b.y.total_cmp(&a.y));
         v.into_iter().map(|t| t.texte).collect()
@@ -4694,6 +4723,43 @@ mod tests {
             }
         }
         assert!(v.is_empty(), "{v:#?}");
+    }
+
+    /// **Revue P1, E-2** (Story 44-1a) — sonde de [`zones_violees_dans`] : une ligne
+    /// d'information du récépissé glissée sous la base 35 (entre la section montant et le point
+    /// de dépôt, sans toucher ni l'une ni l'autre) est signalée ; un texte de plus à une place de
+    /// la section montant aussi ; les textes réels de la fixture ordinaire, eux, ne le sont pas.
+    #[test]
+    fn zones_violees_signale_une_ligne_sous_le_montant() {
+        let pdf = pdf_44(&donnees_44(
+            creancier_ordinaire(),
+            Some(debiteur_ordinaire()),
+            Some("Facture F-2026-0042"),
+        ));
+        let textes = textes_de_la_section(&pdf);
+        assert!(
+            zones_violees_dans(&textes).is_empty(),
+            "montage : la fixture tient"
+        );
+        let ligne = |y: f32| TexteMesure {
+            x: MARGE,
+            y,
+            texte: "Rue du Lac 1268".into(),
+            taille: 8.0,
+            gras: false,
+        };
+        for (y, motif) in [
+            (27.0, "à moins de 5 mm du montant"),
+            (31.5, "5 textes au lieu de 4"),
+        ] {
+            let mut avec = textes_de_la_section(&pdf);
+            avec.push(ligne(y));
+            let v = zones_violees_dans(&avec);
+            assert!(
+                v.iter().any(|e| e.contains(motif)),
+                "ligne à la base {y} non signalée : {v:#?}"
+            );
+        }
     }
 
     /// **AC4** (Story 44-1a) — la coupe mesure la largeur, avec des valeurs calculées à la main
@@ -5089,6 +5155,13 @@ mod tests {
     /// récépissé, 32 dans la colonne), chaînes uniformes, du caractère le plus large du jeu
     /// admis une fois imprimé ; nom 70, rue 70 + numéro 16, NPA 16, localité 35, en Suisse et à
     /// l'étranger ; avec et sans référence ; message de 0 et de 140 caractères ; type K aussi.
+    ///
+    /// La **mise en page** ne fait échouer aucune entrée ; seul un code QR trop dense (modules
+    /// sous 0,4 mm, garde inchangée de `generate_qr_bill_pdf_with_date`, revue P1, E-1) peut
+    /// encore refuser une entrée admise — `@`, un octet en UTF-8, ne l'atteint pas, des lettres
+    /// accentuées sur deux octets le peuvent. L vaut pour le `W` de la fiche ; pour `@` (2,864 mm,
+    /// 18 à 52 mm et 30 à 87 mm), les mots de 10, 7 et 11 sont les mêmes, 17 au lieu de 16 ne
+    /// tient pas non plus deux fois sur une ligne de la colonne (revue P1, A-5).
     #[test]
     fn aucune_entree_admise_n_echoue() {
         // Le caractère le plus large, par sa sortie de `texte_imprime` (un caractère peut s'y
