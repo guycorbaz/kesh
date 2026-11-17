@@ -189,7 +189,10 @@ comptabilise, et j'enregistre — puis, si je me suis trompé, j'annule ce rappr
   `LinkSettlementModal`.
 - **AC5** — Annulation : `CancelReconciliationDialog`, `kind = "grouped_settlement"` → les **N** factures listées
   (`groupedInvoices`) redeviendront ouvertes, l'écriture sera contre-passée (écart compris, compte nommé : `gap`,
-  `differenceAccount`) ; un refus d'annulation par facture nomme la facture (`cancelBlockedInvoice`) avec les textes existants
+  `differenceAccount`, dont la 43-2 écrit la source — « Vue et annulation » : `gap` recalculé par `group_difference`,
+  compte relu par `grouped_difference_account_id` puis numéro et nom lus du compte ; l'écran les affiche tels quels, sans
+  recalcul) ; pour un groupe **fournisseur**, ces champs dépendent de l'AC6 bis (vue) et de l'AC6 (dé-rapprochement) de la
+  **43-1b** — l'étape 0 le vérifie ; un refus d'annulation par facture nomme la facture (`cancelBlockedInvoice`) avec les textes existants
   mis au pluriel du groupe (« Une des factures de ce rapprochement, {numéro}, a été créditée… ») ; si la 43-2 retire
   `cancelBlockedInvoice` (son ordre de retrait), la limite est écrite au manuel et une issue s'ouvre.
 - **AC6** — i18n : quatre locales (`fr-CH` rédigé ; `de-CH`, `it-CH`, `en-CH` traduits, glossaire
@@ -362,3 +365,5 @@ cette condition est le **seul** point à élargir côté écran ; la phrase est 
   information**, seul ou avec l'écart ; compte d'arrondi désigné requis si `r ≠ 0` ; tableau des six cas en D3, tests et
   mutations refaits (troncature, demi-centime vers zéro, tout `d` comme écart, `r` masqué). Remplace l'entrée précédente
   sur ce point (« `d` entier sur le compte choisi »). La passe ciblée relit ce commit et le précédent.
+- 2026-11-18 (fiches contre le contrat `t3.md`) — LOW-8 : AC5 renvoie à la source des champs de la vue écrite par la 43-2
+  (MEDIUM-3) et à la dépendance du groupe fournisseur envers l'AC6 bis et l'AC6 de la 43-1b (HIGH-1).

@@ -8,7 +8,8 @@ Status: ready-for-dev
 Dev Notes, étape 0), puis après ses validations P2 et P3, et sur la **décision de Guy du 2026-11-17 sur la différence**
 (`kesh-gate-logs/e43/decision-difference.md`). Release **0.19.0**. **La recherche (tâche TR : dépôt et route) ne dépend
 d'aucun commit de la 43-1a et part tout de suite** ; le reste part du commit T3 de la 43-1a, dont le contrat est celui
-consigné dans `kesh-gate-logs/e43/t3.md` quand il existera ; se fusionne après elle. Aucune migration. Décisions : C-43-1 à
+figé dans `kesh-gate-logs/e43/t3.md` (commit `241839568` ; code dans `/home/gcorbaz/devel/kesh-43-1a`) ; se fusionne
+après elle. Les champs fournisseur de la vue (AC7) dépendent de l'AC6 bis de la **43-1b**. Aucune migration. Décisions : C-43-1 à
 C-43-26 (fichier d'épique), qui font foi. Validation terminée en P5 (0/0/0/5) ; correction de C-43-25 (arrondi automatique) relue par une passe ciblée.*
 
 **Issues** : `refs #823` ; aucun mot-clé de fermeture dans un commit.
@@ -128,9 +129,12 @@ refus par proposition du *Pattern batch*.
   `r` et `e` peuvent être non nuls ensemble ; aucune ligne à quatre décimales n'est écrite sur le compte choisi. *(Remplace
   les formes précédentes du 2026-11-18 : `centime(n × 0.005)`, puis `|d| < 0.005` avec `gap = d` brut.)*
 
-  **Ordre** : le **compte d'arrondi est requis dès que `r ≠ 0`**, avec ses contrôles habituels
-  (`ROUNDING_ACCOUNT_NOT_CONFIGURED`, compte d'arrondi égal à une créance), **vérifié avant** `DifferenceAccountRequired`
-  puis les contrôles D9 du compte choisi. Le calcul est celui de `group_difference` (43-1a, `t3.md`).
+  **Ordre — celui du code** (`group_difference`, `grouped_settlements.rs:306-322`, puis `settle_client_inner`, :664-716) :
+  (1) **le plafond d'abord** — `|e| >` réglage → `DifferenceTooLarge`, rendu **dans** `group_difference`, avant tout
+  contrôle de compte (un écart trop grand **sans** compte rend donc `RECONCILIATION_GROUP_DIFFERENCE_TOO_LARGE`, non
+  `difference_account_required`) ; (2) le **compte d'arrondi, requis dès que `r ≠ 0`**, avec ses contrôles habituels
+  (`ROUNDING_ACCOUNT_NOT_CONFIGURED`, compte d'arrondi égal à une créance) ; (3) `DifferenceAccountRequired` ; (4) les
+  contrôles D9 du compte choisi.
 - **D9 — Compte de différence interdit, avec les refus existants** (P3 M1, P4 M2) — aucun code neuf ; **ordre de la
   contrepartie choisie** (`is_bank_ledger`, doc près de :709-713 ; flux ventilé :3663-3711 et règle :4100-4139) :
   1. compte égal au compte de la banque de la transaction → `VALIDATION_ERROR`, `reason: "counterparty_equals_bank_ledger"`
@@ -268,7 +272,7 @@ atteint. `exclude=12,15` (facultatif, 50 identifiants au plus) retire les factur
 troncature.
 
 ```json
-{ "direction": "client", "transactionAmount": "1250.00", "maxDifference": "<le réglage de la société>",
+{ "direction": "client", "transactionAmount": "1250.00", "maxDifference": "5.00",
   "candidates": [
     { "kind": "invoice", "id": 12, "number": "F-2026-0012", "contactName": "Exemple SA",
       "date": "2026-10-03", "dueDate": "2026-11-02", "totalTtc": "800.00",
@@ -277,7 +281,9 @@ troncature.
 ```
 
 Candidate **fournisseur (M4)** : `{ "kind": "supplier_invoice", "id", "internalNumber", "supplierInvoiceNumber",
-"contactName", "date", "dueDate", "paymentReference", "amountDue", "amountDueRaw" }` — `amountDue` = `total_amount` au
+"contactName", "date", "dueDate", "paymentReference", "amountDue", "amountDueRaw" }`. `maxDifference` (ici et dans
+`details.maxDifference` du refus) est le réglage de la société (43-7) rendu à **deux décimales**, comme le `GET` des
+réglages ; la colonne en porte quatre. — `amountDue` = `total_amount` au
 centime, `amountDueRaw` = `total_amount` brut ; pas de `totalTtc` distinct. Valeurs de `kind` en **snake_case**
 (`invoice`, `supplier_invoice`), comme `candidateType` (`reconciliation.types.ts:27`), partout
 dans ce contrat. `transactionAmount` est **signé** comme la transaction (`-1250.00` pour un débit) ; la différence se
@@ -288,9 +294,19 @@ calcule sur la valeur absolue (L-2).
 - `GET /reconciliation/transactions/{id}` : `kind` gagne `"grouped_settlement"` ; pour un groupe, `invoiceId`,
   `supplierInvoiceId` et leurs numéros valent `null` ; champs additifs `groupedInvoices: [{ "kind": "invoice" |
   "supplier_invoice", "id", "number", "amount" }]` (vide hors groupe ; montant brut), **`gap` et `differenceAccount: { "id",
-  "number", "name" } | null`** — **tous deux lus sur la ligne d'écart de l'écriture** (son compte, et son montant signé par
-  son côté et la famille), par le dépôt de la 43-1a (`t3.md`), **jamais** recalculés depuis les comptes désignés des
-  réglages, qui ont pu changer depuis (P4, L2) — et **`cancelBlockedInvoice: { "kind",
+  "number", "name" } | null`**. **Source de chaque champ** (le contrat `t3.md` ne rend que
+  `ReconciliationView::{grouped_invoices, cancel_blocked_invoice, grouped_difference_account_id}`) :
+  - `groupedInvoices` ← `view.grouped_invoices` (dépôt ; bras fournisseur par la 43-1b, AC6 bis) ;
+  - `gap` ← **calculé par la route** : `group_difference(|view.bank_transaction.amount|, <montants bruts de
+    view.grouped_invoices>, Decimal::MAX).gap` (fonction `pub` pure de la 43-1a, `Decomposition.gap`, C-e431a-8), rendu
+    au centime, signé ;
+  - `differenceAccount.id` ← `view.grouped_difference_account_id` (le dépôt le relit par le même recalcul, ligne
+    d'écart prise **par position** dans l'écriture) ; `number` et `name` ← une **lecture du compte** par cet identifiant
+    (`accounts`, société de la requête) ; `null` si l'identifiant est `None` ;
+  - aucun de ces champs ne se lit dans les **comptes désignés des réglages**, qui ont pu changer depuis (P4, L2) ; le
+    recalcul porte sur les montants du règlement, non sur les réglages.
+
+  Et **`cancelBlockedInvoice: { "kind",
   "id", "number" } | null`** — la facture qui porte le premier motif d'un refus d'annulation par facture (créditée, soldée,
   lettrage figé), lue de `entry_cancel_outlook` (43-1a). Le `match` de :5869-5875 gagne le bras.
 - `POST /reconciliation/transactions/{id}/cancel` : pour un groupe, `invoiceId` et `supplierInvoiceId` valent `null` ;
@@ -339,11 +355,12 @@ calcule sur la valeur absolue (L-2).
 
   Sans compte quand `e ≠ 0` → `RECONCILIATION_GROUP_INVALID`, `reason: "difference_account_required"` ; 500.00 + 300.00
   payés 799.60 avec un compte → `gap` `"-0.40"` ;
-  - **ordre** : `r ≠ 0` sans compte d'arrondi désigné → `ROUNDING_ACCOUNT_NOT_CONFIGURED`, **même si `e ≠ 0` et qu'aucun
-    compte n'est choisi** (le compte d'arrondi se vérifie avant `DifferenceAccountRequired`) ; `r = 0`, `e ≠ 0`, sans compte
-    choisi → `difference_account_required`, jamais le refus du compte d'arrondi ;
+  - **ordre** (D8 bis) : **le plafond d'abord** — plafond réglé à 0.00, cas 20.02 **sans** compte →
+    `RECONCILIATION_GROUP_DIFFERENCE_TOO_LARGE`, non `difference_account_required` ; `r ≠ 0` sans compte d'arrondi désigné
+    (écart sous le plafond) → `ROUNDING_ACCOUNT_NOT_CONFIGURED`, **même si `e ≠ 0` et qu'aucun compte n'est choisi** ;
+    `r = 0`, `e ≠ 0`, sans compte choisi → `difference_account_required`, jamais le refus du compte d'arrondi ;
   - **plafond sur `|e|` seulement** : plafond réglé à 0.00 → le cas 10.0049 (arrondi automatique) est accepté, le cas 20.02
-    est refusé ;
+    est refusé `RECONCILIATION_GROUP_DIFFERENCE_TOO_LARGE`, avec ou sans compte choisi ;
   - **plus** de 0.40 avec un compte → accepté, `gap` `"0.40"` (côté client et côté fournisseur) ; écart au-delà du réglage → `RECONCILIATION_GROUP_DIFFERENCE_TOO_LARGE` avec `maxDifference` = le réglage ;
   **contrôles du compte, dans l'ordre de D9, un test par cause** : = la banque → `VALIDATION_ERROR`,
   `counterparty_equals_bank_ledger` (même s'il est aussi non imputable) ; archivé, d'une autre société ou inexistant →
@@ -355,7 +372,11 @@ calcule sur la valeur absolue (L-2).
   archivé après coup acceptée ; paiement antérieur à une facture refusé (`payment_date_before_invoice_date`, `details` avec
   `invoiceId`, `invoiceNumber` et `tolerance_days`, L5).
 - **AC7** — Vue et annulation : groupe client (et fournisseur, D4) — `grouped_settlement`, `groupedInvoices`,
-  `cancelBlockedInvoice` sur une facture créditée ; réponse du `POST` (M5) ; refus par le code du premier motif.
+  `cancelBlockedInvoice` sur une facture créditée ; réponse du `POST` (M5) ; refus par le code du premier motif ;
+  `gap` et `differenceAccount` (numéro et nom) selon leurs sources (M5), pour `e > 0`, `e < 0` et `e = 0` (`null`) ;
+  **un groupe n'est jamais un retrait seul** (C-e431a-6) : `expect_unlink_only = Some(true)` sur un groupe → `409
+  RECONCILIATION_CANCEL_CHANGED` (le dépôt rend `ReconciliationCancelChanged { unlink_only: false }`), rien d'écrit. La
+  partie fournisseur dépend de l'AC6 bis (vue) et de l'AC6 (dé-rapprochement) de la 43-1b.
 - **AC8** — Garde CHF (D6, M2, M3) : `invoice_group` sur une transaction EUR → `RECONCILIATION_CURRENCY_MISMATCH`,
   `details { transactionCurrency: "EUR", expected: "CHF" }`, **rien d'écrit** (point de sauvegarde de la 43-1a) ; la même
   en CHF passe (sonde).
@@ -371,19 +392,20 @@ calcule sur la valeur absolue (L-2).
 
 ## Exigences sur la 43-1a (historique ; le contrat qui fait foi est celui du commit T3)
 
-**Le contrat de la 43-2 avec la 43-1a est celui du commit T3 de la 43-1a**, consigné dans `kesh-gate-logs/e43/t3.md` quand
-il existera ; l'agent qui développe la 43-1a a reçu les ajustements (`WrongDirection`, `CurrencyMismatch`,
+**Le contrat de la 43-2 avec la 43-1a est celui du commit T3 de la 43-1a**, figé dans `kesh-gate-logs/e43/t3.md` (commit
+`241839568`) ; l'agent qui développe la 43-1a a reçu les ajustements (`WrongDirection`, `CurrencyMismatch`,
 `ClaimAccount.role` aux rôles réels, différence selon la décision de Guy : `difference_account_id`, deux sens, refus D9).
-L'étape 0 relit `t3.md` contre la table des refus : **chaque** variante `DifferenceAccount*` (dont `DifferenceAccountNotUsable`
-si elle existe) doit y avoir sa ligne et son code — le `match` exhaustif le garantit à la compilation, non la justesse du
+L'étape 0 relit `t3.md` contre la table des refus : **chaque** variante `DifferenceAccount*` doit y avoir sa ligne
+et son code (`DifferenceAccountNotUsable` n'existe pas : la table est complète sur la liste finale de `t3.md`) — le `match` exhaustif le garantit à la compilation, non la justesse du
 code choisi (P4, L6) ; un écart va au Change Log et à l'orchestrateur. Les points ci-dessous restent comme trace des
 exigences transmises (les mentions de `bank_fees` y sont **périmées** : remplacées par `gap` et `difference_account_id`) :
 
 0. *(P3, L4)* le point de sauvegarde propre de la 43-1a : un `ROLLBACK TO` qui échoue en 1305 après un 1213 **remonte en
    `Err(DbError)`**, jamais avalé en refus — test `is_savepoint_lost`.
 
-1. **Forme brut/centime au commit T3** : `GroupedSettlement.difference`, `rounding_difference` et
-   `GroupedInvoiceRef.amount` en `Decimal` brut (quatre décimales), `gap` au centime ; lecture du plafond réglable
+1. **Forme brut/centime au commit T3** *(chemin périmé : le contrat final porte
+   `GroupedSettlement.decomposition: Decomposition { difference, rounding_difference, gap }`)* :
+   `GroupedSettlement.difference`, `rounding_difference` et `GroupedInvoiceRef.amount` en `Decimal` brut (quatre décimales), `gap` au centime ; lecture du plafond réglable
    (`DEFAULT_GROUP_DIFFERENCE_MAX` comme valeur par défaut seulement). *Reporté dans la 43-1a le 2026-11-17 (nuit).*
 2. **Clés d'audit** : `reconciliation.accepted` en **snake_case** alignées sur l'unitaire — `bank_transaction_id`,
    `journal_entry_id`, `paid_amount`, `rounding_difference`, `gap`, `difference_account_id`, `batch_size`, plus `proposal_type: "invoice_group"`
@@ -535,3 +557,9 @@ résolu en gardant les deux).
   d'AC6 : lignes d'arrondi signées, −0.0050 et +0.0050). Les mentions restantes de `bankFees`, `bank_fees` et
   `centime(n × 0.005)` sont des traces marquées périmées ou remplacées (l. 129, 195, 312, 379, 402) ou des entrées
   historiques du Change Log.
+- 2026-11-18 (fiches contre le contrat `t3.md`) — MEDIUM-3 : la vue écrit la source de chaque champ (`gap` recalculé par
+  `group_difference`, compte par `grouped_difference_account_id`, numéro et nom lus du compte ; « lus sur la ligne par le
+  dépôt » était faux) ; MEDIUM-1 et LOW-1 : D8 bis et AC6 placent le plafond **en premier**, code attendu au test ; LOW-6 :
+  `t3.md` existant, `DifferenceAccountNotUsable` inexistante, chemin `decomposition` du contrat final, `maxDifference` à
+  deux décimales ; LOW-7 : sonde « un groupe n'est jamais un retrait seul » à l'AC7 ; dépendance de l'AC7 envers l'AC6 bis
+  et l'AC6 de la 43-1b (HIGH-1).

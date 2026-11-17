@@ -19,7 +19,7 @@ entre comptes propres est déjà traité (0.17.6, 34-11b).
 ## Décisions (C-43-k) — code lu à `8b50fd195`, et à `origin/epic/42-reimputation-analytique` pour l'Epic 42
 
 **C-43-1 — Une écriture par geste** : une ligne de banque, une ligne de tiers par facture, et au plus deux lignes de
-différence (arrondi, frais — C-43-16). La transaction pointe **cette** écriture (`bank_transactions.matched_entry_id`,
+différence (arrondi, écart — C-43-16, C-43-25). La transaction pointe **cette** écriture (`bank_transactions.matched_entry_id`,
 `20260504000001_bank_imports.sql:71`). Tout ce qui lit ce lien reste juste sans changement (`journal_entries.rs:2343-2344`,
 `bank_accounts.rs:1884-1898`, `reconciliation_cancel.rs:203`). *Écartées* : N écritures et une **table** de liens (une table
 neuve rend toute sauvegarde 0.18.0 inimportable, `admin_backup/import.rs:250-253`) ; des transactions « filles ».
@@ -179,9 +179,11 @@ différence. Champs : `roundingDifference = r`, `gap = e` (au centime, signé), 
 être non nuls ensemble. Exemples : 2 × 10.0050 payés 20.01 → aucun écart ; payés 20.02 → `e` +0.01, compte demandé ;
 3 × 10.0050 payés 30.06 → `e` +0.05 et `r` −0.0050. *(Remplace les formes précédentes du même jour :
 `centime(n × 0.005)`, puis `|d| < 0.005` avec `gap = d` brut — et la formule `Σ centime(apport)` de C-43-16, barrée.)*
-**Ordre des contrôles** : le compte d'arrondi (requis si `r ≠ 0`, avec ses contrôles habituels), puis
-`DifferenceAccountRequired` (si `e ≠ 0` sans compte choisi), puis les contrôles du compte choisi (banque, existence,
-imputable, compte de tiers des factures du groupe), puis le plafond sur `|e|`. Calcul porté par `group_difference` (43-1a,
+**Ordre des contrôles — celui du code de la 43-1a** (`t3.md`, `grouped_settlements.rs:306-322` et :664-716) : **le
+plafond sur `|e|` d'abord** (`DifferenceTooLarge`, rendu dans `group_difference`), puis le compte d'arrondi (requis si
+`r ≠ 0`, avec ses contrôles habituels), puis `DifferenceAccountRequired` (si `e ≠ 0` sans compte choisi), puis les
+contrôles du compte choisi (banque, existence, imputable, compte de tiers des factures du groupe). *(Corrigé le
+2026-11-18 : cet ordre plaçait le plafond en dernier, contre le code.)* Calcul porté par `group_difference` (43-1a,
 développeur prévenu), contrat 43-2 D8 bis, écran 43-3 D3.
 
 **C-43-26 — Libellés et préremplissage par famille** (décision de l'orchestrateur, 2026-11-18) : clients — crédit
@@ -248,8 +250,9 @@ Plafond de la story de solde (43-4) : **2 issues**.
 1. Un règlement peut être **commun à plusieurs factures**, de tiers différents : **une** écriture — une ligne de banque, une ligne de tiers par facture (projet de sa facture), au plus une ligne d'arrondi et une ligne d'écart (moins-payé ou trop-perçu, sur un compte **choisi par l'utilisateur**, au plus le plafond) — pointée par **une** transaction (`matched_entry_id`).
 2. `invoice_settlements` : N lignes pour le même `journal_entry_id` ; colonne neuve `journal_entry_line_id` (`NULL` = règlement unitaire) ; unicité `(journal_entry_id, invoice_id)`.
 3. `supplier_invoices` : N factures pour le même `settlement_journal_entry_id` ; colonne neuve `settlement_journal_entry_line_id`.
-4. `company_invoice_settings.group_settlement_max_difference` : plafond des frais admis, réglage de la société (5.00 par défaut).
-5. Montants **bruts** (quatre décimales) dans le calcul ; le centime pour l'affichage et pour les frais.
+4. `company_invoice_settings.group_settlement_max_difference` : plafond de l'écart admis (`|e|`, dans les deux sens), réglage de la société (5.00 par défaut ; deux décimales à
+   l'écran et à l'API, quatre en colonne).
+5. Montants **bruts** (quatre décimales) dans le calcul ; le centime pour l'affichage et pour l'écart.
 6. **Le geste groupé n'accepte qu'une transaction en CHF** (refus `RECONCILIATION_CURRENCY_MISMATCH`, après la garde de sens `refuse_wrong_direction` ; écran : `canLink`) : c'est le point à élargir par le multi-devise, avec une règle de devise **par ligne de tiers** ; un écart de change ne se confond ni avec la ligne d'arrondi ni avec la ligne d'écart choisie.
 7. Migration : `crates/kesh-db/migrations/20261118000001_grouped_settlements.sql` (92ᵉ, seule de la release ; la 43-5 et sa colonne `journal_entry_lines.bank_transaction_id` sont sorties de la 0.19.0) ; DDL seul, non breaking. Celle du multi-devise prend un horodatage postérieur et part de `main` après la 0.19.0.
 8. Code : `repositories/grouped_settlements.rs` (neuf), `letterings.rs`, `reconciliation_cancel.rs`, `routes/reconciliation_group.rs` (neuf), `frontend/src/lib/features/reconciliation/`. Ne pas les modifier avant la publication de la 0.19.0 sans prévenir.
