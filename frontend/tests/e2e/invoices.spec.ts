@@ -498,6 +498,62 @@ test.describe('Factures — création brouillon', () => {
 		await expect(page.locator('tbody').getByText(contactName)).toBeVisible({ timeout: 5000 });
 	});
 
+	// Story v0190-correction (#1162, AC4) — un texte tapé dans le champ client et non choisi
+	// ne fait pas partir la facture par *Entrée* ; quitté, le champ réaffiche le client
+	// choisi, et c'est lui que la facture porte. Les lignes sont remplies AVANT la frappe :
+	// le formulaire est valide à l'*Entrée*, si bien que l'ancien code l'envoyait (V2-1).
+	test('un texte tapé dans le champ client, non choisi, ne fait pas partir la facture (#1162)', async ({
+		page
+	}) => {
+		await login(page);
+		const contactName = uniq('Client v0190c');
+		await createContactViaApi(page, contactName);
+
+		await page.goto('/invoices/new');
+		await expect(page.getByRole('heading', { name: 'Nouvelle facture' })).toBeVisible();
+		const champ = page.getByRole('combobox', { name: /Rechercher un contact/ });
+		await champ.click();
+		await champ.fill(contactName);
+		await page.getByRole('option', { name: new RegExp(contactName) }).first().click();
+		await expect(champ).toHaveValue(contactName);
+
+		const firstRow = page.locator('tbody tr').first();
+		await firstRow.locator('input[type="text"]').first().fill('Conseil v0190c');
+		const numericInputs = firstRow.locator('input[inputmode="decimal"]');
+		await numericInputs.nth(0).fill('1');
+		await numericInputs.nth(1).fill('100.00');
+
+		// Compteur des créations : plus sûr que l'URL seule.
+		let creations = 0;
+		page.on('request', (r) => {
+			if (r.method() === 'POST' && new URL(r.url()).pathname === '/api/v1/invoices') creations++;
+		});
+
+		const texte = `zzz-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+		await champ.click();
+		const reponse = page.waitForResponse(
+			(r) =>
+				new URL(r.url()).pathname === '/api/v1/contacts' &&
+				new URL(r.url()).searchParams.get('search') === texte
+		);
+		await champ.fill(texte);
+		await reponse;
+		await expect(page.getByRole('listbox')).toContainText('Aucun contact');
+		await champ.press('Enter');
+		await expect(page).toHaveURL(/\/invoices\/new$/);
+
+		// Quitté, le champ réaffiche le client choisi.
+		await champ.press('Tab');
+		await expect(champ).toHaveValue(contactName);
+
+		await page.getByRole('button', { name: 'Créer la facture' }).click();
+		await expect(page).toHaveURL(/\/invoices\/\d+$/);
+		// Une seule création : celle du bouton, non celle de l'Entrée.
+		expect(creations).toBe(1);
+		await page.goto('/invoices');
+		await expect(page.locator('tbody').getByText(contactName)).toBeVisible({ timeout: 5000 });
+	});
+
 	// Story 36-3b (#1171, AC6) — un prix unitaire « 1.250 » est refusé comme ambigu, sans
 	// qu'aucune requête parte ; « 1'250 » part `1250` et le serveur l'enregistre 1250.
 	test('refuse un prix unitaire ambigu « 1.250 » et envoie « 1\'250 » comme 1250 (#1171)', async ({

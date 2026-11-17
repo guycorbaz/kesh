@@ -38,6 +38,8 @@ vi.mock('$lib/features/invoices/invoices.api', () => ({
 
 vi.mock('$lib/features/contacts/contacts.api', () => ({
 	getContact: vi.fn(async () => ({ id: 1, name: 'Client' })),
+	// v0190-correction (#1162, AC2) : la frappe dans le champ client lance une recherche.
+	listContacts: vi.fn(async () => ({ items: [], total: 0, offset: 0, limit: 50 })),
 }));
 
 vi.mock('$lib/features/vat-rates', () => ({
@@ -953,6 +955,32 @@ describe('InvoiceForm — Entrée dans le compte de produit (Story 36-1)', () =>
 		expect(compteEnvoye(0)).toBeNull();
 		expect(nonEmpechee).toBe(true);
 		expect(field.value).toBe('');
+	});
+});
+
+// Story v0190-correction (#1162, AC2) — un texte tapé dans le champ client, non choisi,
+// est abandonné au départ du champ : le champ réaffiche le client que la facture
+// enregistre. Le `contactId` du client partait déjà (la frappe ne touchait pas
+// `selectedContact`) ; c'est l'AFFICHAGE qui prouve le rouge.
+describe('InvoiceForm — le client affiché est celui qui part (v0190-correction, #1162)', () => {
+	it('« zzz » tapé dans le champ client, champ quitté, Enregistrer : le client X part et le champ montre X', async () => {
+		updateInvoiceMock.mockResolvedValue({ id: 7 });
+		const { container, getByTestId } = render(InvoiceForm, {
+			invoice: invoiceWith([SERVICES.id]),
+		});
+		await settle();
+		const champ = container.querySelector('input[role="combobox"]') as HTMLInputElement;
+		expect(champ.value).toBe('Client');
+
+		await fireEvent.input(champ, { target: { value: 'zzz' } });
+		// En jsdom le clic ne déplace pas le focus : le départ du champ est explicite.
+		await fireEvent.blur(champ);
+		await fireEvent.click(getByTestId('create-invoice-button'));
+		await settle();
+
+		expect(updateInvoiceMock).toHaveBeenCalledTimes(1);
+		expect((updateInvoiceMock.mock.calls[0][1] as { contactId: number }).contactId).toBe(1);
+		expect(champ.value).toBe('Client');
 	});
 });
 
