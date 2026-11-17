@@ -198,6 +198,20 @@ Rust (`mutations-rust.py`, `resume-rust.log`, voie 2) : **7 tuées sur 7** — M
 - E2E complet et `gate-ci` de clôture, au dernier commit de code, sur demande de l'orchestrateur.
 - À l'intégration : la phrase « depuis la version~0.19.0 » (D7 (2)) si la story glisse ; la section « Passer à la 0.19.0 » du manuel d'administration (phrase dans la Note de version) ; les deux PDF des manuels.
 
+### Remédiation de la revue P1 (2026-11-17)
+
+Revue P1 (trois lentilles, `kesh-gate-logs/v0190n/review-p1-{B,E,A}.md`) : **rien au-dessus de LOW**. Les LOW sont corrigés dans la story, sur demande de l'orchestrateur ; une passe ciblée relira ce correctif.
+
+- **Commits** : `6794e82a0` (code et tests, **dernier commit de code**) ; `aa7ee1ac1` (registre, C-v0190c-25) ; le suivant porte cette section.
+- **E3** (C-v0190c-25) : `maxlength={70}` retiré du champ du nom ; la longueur se refuse localement, en points de code, par `settings-company-name-too-long` (quatre catalogues), sans appel, saisie gardée. Tests : Vitest « 71 caractères (un nom collé) », « 70 caractères après rognage, et hors du plan de base », V2-N3 scindé (nom stocké trop long : refus local ; nom stocké hors jeu : refus du serveur) ; E2E « un nom collé de 71 caractères n'est pas tronqué ». `sitesTotal` 3095 → 3096.
+- **B1, A1, E1** : les 59 références `lib.rs:N` de `audit_acteur_garde.rs` situées au-delà de la ligne 478 (55 lignes) décalées de +6 ; chacune contrôlée contre la base (`git show b2e2ff67c:crates/kesh-api/src/lib.rs | sed -n "$((n-6))p"` égale à `sed -n "${n}p"` de la tête : 0 écart) ; le doc-commentaire de `SITES` le dit.
+- **E2** : `lib.rs:266` (« exactement 54 (v0190-nom-societe ; 53 à la 33-5) », sur une seule ligne pour ne pas décaler la numérotation), `admin_pat_denied_e2e.rs:46-48` (« 54 constructeurs … 53 avant la v0190-nom-societe ») et `:800` (« les 54 couples »). Recompte à la source : 54 constructeurs entre les marqueurs (hors commentaires) ; `block_declares_exactly_the_listed_couples` vert dans `cible-p1.log`.
+- **A2** : message de l'assertion `sans_ecriture` réécrit en une chaîne lisible (« 119 routes de lib.rs (v0190-nom-societe : + 1) — 118 avant (34-2 …) — 119 avant (33-5 …) — 112 avant … plus /password-reset-token »).
+- **E4** : montage de g-bis à `address_country = 'CH'`, et le pays relu `CH` après le renommage.
+- **B2 et E3, mutations** (`mut/mutations-p1.py`, `resume-p1-rust.log`, `resume-p1-front.log`) : **5 tuées sur 5** — M8 audit écrit même sans changement (`an_identical_name_is_a_no_op_without_audit`), M9 e-mail non reporté et M10 prénom non reporté (`a_valid_name_is_written_and_nothing_else_moves`), F5 sans refus local de la longueur, F6 longueur comptée en unités UTF-16.
+- **Gates de la remédiation** (arbre de `6794e82a0`) : `cargo fmt --check` vert ; `clippy` workspace vert (`clippy-p1.log`) ; nextest ciblé des six binaires + `companies::tests` + `invoice_pdf_service`, **155 passés** (`cible-p1.log`) ; Vitest i18n + `settings` + `features/settings`, **134 passés** (`vitest-i18n-3.log`) ; `npm run check` 0 erreur (`check-p1.log`) ; `company-name.spec.ts` **3 passés** (`e2e-company-name-p1.log`, base `kesh_e2e_v0190n` recréée), captures refaites. **Non lancés** : `test-fast --ci`, Vitest complet, `gate-ci`, E2E complet — à la clôture.
+- Consigne Edit tenue pour tout le code et les tests de la remédiation.
+
 ## Note de version
 
 **Corrigé**
