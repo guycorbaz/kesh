@@ -555,7 +555,9 @@ test.describe('Factures — création brouillon', () => {
 		// *Créer la facture* → rien ne part, le message le dit, le texte reste affiché.
 		await champ.fill('Martin');
 		await page.getByRole('button', { name: 'Créer la facture' }).click();
-		await expect(page.getByText('Choisissez le client dans la liste')).toBeVisible();
+		// Le message (« Choisissez le client dans la liste ») par son `data-testid` : la garde
+		// KF-043 refuse un sélecteur figé sur un libellé traduit.
+		await expect(page.getByTestId('invoice-form-error')).toBeVisible();
 		await expect(champ).toHaveValue('Martin');
 		await expect(page).toHaveURL(/\/invoices\/new$/);
 		expect(creations).toBe(0);

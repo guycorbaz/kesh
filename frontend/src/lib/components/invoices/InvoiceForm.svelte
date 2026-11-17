@@ -783,7 +783,11 @@
 
 <form onsubmit={onSubmit} class="space-y-6">
 	{#if errorMsg}
-		<div class="rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-sm text-destructive">
+		<!-- `data-testid` : l'E2E ne vise pas un libellé traduit (garde KF-043). -->
+		<div
+			class="rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-sm text-destructive"
+			data-testid="invoice-form-error"
+		>
 			{errorMsg}
 		</div>
 	{/if}
