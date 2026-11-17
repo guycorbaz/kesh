@@ -544,6 +544,37 @@ Opus 5.5 (agent de développement, en autonomie), 2026-11-17.
 - **Choix** : C-e432-1 à C-e432-12 (`e0190-choix-autonomes-e432.md`). Code écrit par l'outil Edit seulement ; la campagne
   de mutations applique ses motifs par script (permis pour les mutations).
 
+#### Remédiation de la revue P1 (2026-11-17 au soir, décisions de l'orchestrateur)
+
+- **Commit de code** : `ed8ab9c97` (dernier commit de code). Revue P1 : 0 CRITICAL, 1 HIGH (B1/E1/A4), 6 MEDIUM, ~30 LOW
+  (`kesh-gate-logs/e432/review-p1-{B,E,A}.md`).
+- **Traité** : barrière de release de D4 (fiche, § *Ordre de retrait* ; épique, sous C-43-18) ; corps provisoire de
+  `pay_supplier_invoices_in_tx` en `Err(DbError::Invariant)` (C-e432-13) ; `bankAccountId` des refus `BANK_ACCOUNT_CLOSED` et
+  `…_NOT_CONFIGURED` (B6, C-e432-10 révisé) ; test en table des 25 variantes de `GroupRefusal` (A2/B4) ; `effective_limit`
+  extraite et testée (E4/B9) ; tests B2, A3, B3, B10, B11, A14, E3, E2/A13, E6, A6 (dont le retrait seul, assertion ajoutée
+  à `reconciliation_link_entry_e2e.rs`), A12 ; guide d'API A10, A11/B7, B12 ; registre E8, E9, E10 (C-e432-14 à 16) ; T7
+  cochée (A9) ; journaux de gate en-têtés de leur commit (A7).
+- **Non traité, par décision** : E5 (disjonction `hasMore` redondante tant que `limit ≤ 100 < 500`, non demandée) ; E8 écrit
+  seulement (C-e432-14) ; E10 en issue proposée (C-e432-16).
+- **Tests à `ed8ab9c97`** (recomptés par `grep -c`) : `reconciliation_group_e2e.rs` 31 `#[sqlx::test]` dont 3 `#[ignore]` ;
+  `reconciliation_group_candidates.rs` (dépôt) 7 ; unitaires de `reconciliation_group.rs` 6.
+- **Mutations** :
+  - (f) de la première campagne était **non concluante** (motif invalide : `? IS NOT NULL` suivi du `?` du bind, erreur
+    SQL) ; rejouée avec des mutants valides (`mut/campagne2.py`, `campagne2.log`, au commit `ed8ab9c97`) : (f1) client tuée
+    par `client_candidates_follow_the_settlement_rules` et `la_recherche_d_un_credit_…`, (f2) fournisseur tuée par
+    `supplier_candidates_follow_the_settlement_rules` ;
+  - neuves, toutes tuées : (i) reste dû → TTC (`campagne2-i.log`, mutant corrigé après un premier motif qui ne compilait
+    pas), (j) `HAVING` retiré, (k) statut client retiré, (l) TTC fournisseur `>= 0`, (m) tri retiré, (n) plafond de `limit`
+    retiré, (o) `bankAccountId` retiré ;
+  - (a) rejouée seule sans écriture concurrente (`campagne-a3.log`) : **tuée** par
+    `the_conclusion_keeps_errors_in_the_proposal` et par `le_type_fournisseur_se_desserialise_et_ne_panique_pas`.
+- **Gates** (base `kesh_e432` remise à neuf avant) :
+  - ciblé : `kesh-gate-logs/e432/cible-3.log`, commit `ed8ab9c97`, 99 passés ;
+  - `scripts/test-fast.sh --ci` : **5596 passés, 0 échec, 16 ignorés** (`test-fast-p1.log`, en-tête : commit `ed8ab9c97`) ;
+  - `scripts/gate-ci.sh kesh_ci_e432` : **5603 passés, 0 échoué, 20 ignorés** (`gate-ci-p1.out`/`gate-ci-p1.log`, en-tête :
+    commit `ed8ab9c97`) ;
+  - frontend non touché ; E2E à la clôture.
+
 ### File List
 
 - `crates/kesh-db/src/repositories/reconciliation_group_candidates.rs` (neuf), `repositories/mod.rs`,
