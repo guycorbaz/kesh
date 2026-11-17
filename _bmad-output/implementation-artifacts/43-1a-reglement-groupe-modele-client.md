@@ -10,8 +10,8 @@ L1-L8 appliqués selon les décisions de l'orchestrateur), les validations P1 de
 porte la migration de la release.** **`kesh-db` touché : gate complet même en cours de boucle.** Décisions : fichier
 d'épique `_bmad-output/planning-artifacts/epic-43-transaction-plusieurs-factures.md`, **C-43-1 à C-43-24**, qui font foi ;
 la règle de différence (C-43-16) est une **proposition en attente de Guy** (registre de l'épique). **Jalons** : commit T3
-mercredi 18 avant midi (43-1b, 43-2 et 43-7 en partent) ; passage en `review` mercredi 18 à 18 h. Validation : passe 3
-complète à lancer.*
+mercredi 18 avant midi (43-1b et 43-2 en partent ; la 43-7 part de T1) ; passage en `review` mercredi 18 à 18 h sur le
+périmètre du repli (Dev Notes). Validation : passe 3 (0/0/6/10) remédiée ; passe 4 ciblée à lancer.*
 
 **Issues** : `refs #823` ; aucun mot-clé de fermeture dans un commit.
 
@@ -75,9 +75,18 @@ Cette story pose **la migration de la release** (colonnes de la 43-1b et réglag
   de ligne.
 - **D4** — Le dé-rapprochement groupé retire les propriétaires, **puis** contre-passe l'écriture devenue sans propriétaire
   (`journal_entries::reverse_in_tx`) : aucune autorité neuve.
+- **D4 bis — Une seule fonction de la différence** (M4) : `grouped_settlements::group_difference(famille, montant,
+  apports_bruts, plafond) -> Result<Decomposition, GroupRefusal>`, **pure**, appelée par les deux bras (client et
+  fournisseur). Elle porte toute la règle de C-43-16 ; un changement décidé par Guy ne change qu'elle, ses tests et les
+  libellés. Définitions, **les mêmes pour les deux familles** : `difference = |montant| − Σ apports bruts` (signé : négatif
+  quand moins reçu, positif quand plus payé) ; `rounding_difference = r = Σ (centime(apport) − apport)` (signé) ; `bank_fees
+  = |e| ≥ 0`, avec `e = |montant| − Σ centime(apport)` (0 sans frais). Le sens admis de `e` dépend de la famille (client :
+  `e ≤ 0` ; fournisseur : `e ≥ 0`) ; l'autre sens est refusé (`Overpayment`, `Underpayment`) ; `|e| >` plafond →
+  `DifferenceTooLarge`. **À défaut de réponse de Guy mercredi à 8 h** (L10), cette proposition s'applique ; si Guy la
+  change, seules `group_difference`, ses tests, les variantes de refus et les libellés suivent (registre de l'épique).
 - **D5 — Audit** (C-43-9) : le dépôt écrit `reconciliation.accepted` **avant** les traces par facture, avec l'acteur et les
   clés **snake_case** de l'unitaire : `bank_transaction_id`, `journal_entry_id`, `paid_amount`, `batch_size`,
-  `rounding_difference` (= `r`), plus `proposal_type: "invoice_group"`, `bank_fees` (= `e`, 0 sans frais) et `invoices:
+  `rounding_difference` (= `r`), plus `proposal_type: "invoice_group"`, `bank_fees` (= `|e|`, ≥ 0), `difference` et `invoices:
   [{ invoice_id, settled_amount }]` ; puis `invoice.paid` par facture avec les détails de l'unitaire (`paid_via:
   "reconciliation"`, `settlement_journal_entry_id`, `reconciliation_audit_id`, avant/après). La route n'écrit aucune trace.
   Au dé-rapprochement, `reconciliation.cancelled` porte `kind: "grouped_settlement"`, `invoice_id` et `settlement_id` nuls,
@@ -85,11 +94,17 @@ Cette story pose **la migration de la release** (colonnes de la 43-1b et réglag
 - **D6 — Point de sauvegarde propre** (M-C) : `settle_invoices_in_tx` ouvre `SAVEPOINT grouped_settlement` (nom constant)
   en tête et, avant de rendre **tout** `Ok(Err(refus))`, fait `ROLLBACK TO SAVEPOINT grouped_settlement` : un refus ne
   laisse rien dans la transaction de l'appelant, que celui-ci valide ou non. Il s'emboîte dans celui de `accept_batch`
-  (doc-comment). Un `Err(DbError)` laisse l'appelant revenir à **son** point de sauvegarde.
-- **D7 — Projet estampillé sans validation** (H-B, C-43-20) : `create_in_tx` gagne une forme publique
-  `create_copying_projects_in_tx` (ou un paramètre explicite) qui passe `enforce_project_taggable = false`, réservée aux
-  flux qui recopient le projet d'une pièce ; son doc-comment le dit, et le test `pay_succeeds_when_project_archived_after_tagging`
-  reste vert.
+  (doc-comment). Un `Err(DbError)` laisse l'appelant revenir à **son** point de sauvegarde. Le doc-comment dit aussi (L3) :
+  un `Err(DbError::Sqlx)` (1213, 1305) n'est **jamais** traduit en refus — il remonte, et la route rejoue (`accept_batch`,
+  `is_savepoint_lost`, `routes/reconciliation.rs:1990-2046`) ; un `ROLLBACK TO SAVEPOINT grouped_settlement` qui échoue
+  (1305, interblocage absorbé plus bas) remonte en `Err`, jamais suivi du refus ; les erreurs du lettrage restent des `Err`,
+  comme dans l'unitaire (:2191-2218). Un `RELEASE` au succès est facultatif.
+- **D7 — Projet estampillé sans validation** (H-B, C-43-20, M3, L2) : `create_in_tx` gagne une forme **`pub(crate)`**
+  `create_copying_projects_in_tx(tx, fiscal_year_id, acteur, new, enforce_postable)` qui passe `enforce_project_taggable =
+  false` ; seul appelant : `grouped_settlements` (même crate ; le test H-B passe par `settle_invoices_in_tx`). Doc-comment :
+  « les projets viennent d'une pièce de la société, jamais d'une saisie ». Le groupe l'appelle avec **`enforce_postable =
+  false`**, comme l'unitaire (`create_in_tx(…, false)`, :2820-2840) : les comptes sont ceux des réglages et de l'écriture de
+  vente, tous de la société. Le test `pay_succeeds_when_project_archived_after_tagging` reste vert.
 
 ## Critères d'acceptation
 
@@ -104,7 +119,11 @@ Cette story pose **la migration de la release** (colonnes de la 43-1b et réglag
   3. `supplier_invoices` : `ADD COLUMN settlement_journal_entry_line_id BIGINT NULL`, `fk_supplier_invoices_settlement_line`
      → `journal_entry_lines(id) ON DELETE RESTRICT`, `UNIQUE KEY uq_supplier_invoices_settlement_line`, `CONSTRAINT
      chk_supplier_invoices_settlement_line CHECK (settlement_journal_entry_line_id IS NULL OR settlement_journal_entry_id
-     IS NOT NULL)` ;
+     IS NOT NULL)` ; **les deux sites qui remettent `settlement_journal_entry_id` à `NULL`** —
+     `supplier_invoices.rs:2639` (`cancel_in_tx`, détachement) et `:2929` (`cancel_settlement_in_tx`) — remettent aussi la
+     ligne à `NULL`, par **un seul fragment SQL partagé** (constante `CLEAR_SETTLEMENT_SQL`, `… settlement_journal_entry_id
+     = NULL, settlement_journal_entry_line_id = NULL …`) que les deux `UPDATE` emploient (M2) ; test de la `CHECK` : poser
+     la ligne sans l'écriture est refusé par la base ;
   4. `company_invoice_settings` : `ADD COLUMN group_settlement_max_difference DECIMAL(19,4) NOT NULL DEFAULT 5.0000`, et
      `CONSTRAINT chk_company_invoice_settings_group_max CHECK (group_settlement_max_difference >= 0 AND
      group_settlement_max_difference <= 100)`.
@@ -113,11 +132,16 @@ Cette story pose **la migration de la release** (colonnes de la 43-1b et réglag
   hors de la liste de P3 ; la 0.18.0 refuse de démarrer et refuse toute sauvegarde 0.19.0, si bien qu'aucun chemin ne lui
   fait lire un groupe (son `classify` supposerait l'unicité retirée) ; pas de relèvement de `kesh_version_min_required`
   (L6) ; la colonne à `DEFAULT` est remise à 5.0000 à l'import d'une sauvegarde 0.18.0, et c'est voulu (P7, C-43-5) ; DDL
-  non transactionnel en MariaDB : un échec au milieu laisse les premières instructions posées.
+  non transactionnel en MariaDB : un échec au milieu laisse les premières instructions posées et la migration non inscrite,
+  et le rejeu échoue en 1060 (reprise manuelle : AC13). L'ordre « clé composée avant `DROP INDEX` » est celui de la 30-2a
+  (erreur 1553 sinon, `docs/migrations-idempotence-audit.md:104`) ; les `CHECK` sur colonne neuve ont leur précédent
+  (`20261031000001`) (L8).
 - **AC2** — Registres et garde-fous :
-  - `docs/migrations-idempotence-audit.md` : une ligne (`tracked-by-sqlx`, réserve d'AC1), totaux à **92** aux deux sites,
-    compteurs de partition recomptés depuis le tableau ; P6 : `migrations_upgrade_path.rs` à `assert_eq!(total, 92)` et
-    `total - 58` (frontière à la 35ᵉ ; commentaires :137-156 et :228-231) ; si la 43-5 est publiée, **elle** passe à 93 et
+  - `docs/migrations-idempotence-audit.md` : une ligne (`tracked-by-sqlx`, réserve d'AC1), totaux à **92** aux deux sites
+    (en-tête :17, `Total` :117, dont la ventilation gagne « + 1 Story 43-1a »), compteurs de partition recomptés depuis le
+    tableau ; P6 : `migrations_upgrade_path.rs` à `assert_eq!(total, 92)` et `total - 58` (frontière inchangée) — sites
+    :51 (docstring, `total == 91`), :134-135, :146, :156, :221, :228-231, trouvés par `grep -nE "\b(57|91)\b"` sur le
+    fichier, relancé après la correction (L6) ; si la 43-5 est publiée, **elle** passe à 93 et
     `total - 59` (C-43-5) ; les autres sites résolvent par version (`pre_upgrade_backup/tests.rs`,
     `sauvegarde_avant_migration.rs`), relevé au Change Log ;
   - squash `test-schema` repris, `test_schema_guard.rs` vert ; `every_data_backfill_migration_is_triaged` vert sans entrée ;
@@ -125,9 +149,13 @@ Cette story pose **la migration de la release** (colonnes de la 43-1b et réglag
     (:144-151), et les deux colonnes `…journal_entry_line_id` l'inventaire de :173-195. L'invariant est levé **par décision
     écrite** dans le test et au Change Log : « une écriture dont une ligne est référencée par un règlement est **possédée**
     (`document_owners` : `OwnedBySettlement`, `OwnedBySupplierInvoice`, `MatchedBankTransaction`), donc jamais réécrite par
-    le `PUT` (`modification_guard`) ». Les assertions deviennent : clés vers une ligne **inventoriées** (exactement
-    `fk_invoice_settlements_entry_line`, `fk_supplier_invoices_settlement_line`) ; colonnes `…journal_entry_line_id`
-    déclarées. La liste des colonnes de `journal_entry_lines` (:153-171) ne change pas (43-5 seulement). Test « `PUT` d'une
+    le `PUT` (`modification_guard`) ». Les assertions deviennent : clés vers une ligne **inventoriées** — `cles_vers` rend des
+    couples `(table, colonne)` (:119-130) : exactement `(invoice_settlements, journal_entry_line_id)` et `(supplier_invoices,
+    settlement_journal_entry_line_id)` ; ces deux colonnes déclarées au point (3) (:173-195, motif `%journal_entry%`) (L7).
+    La levée tient parce que le `PUT` s'arrête à `modification_guard` (`journal_entries.rs:1574`), la suppression à
+    `modification_guard` sous `enforce_ownership` (:1930 ; les deux appelants à `false`, `supplier_invoices.rs:1421-1423` et
+    `invoices.rs:1708`, visent un achat ou une vente qu'aucun règlement ne possède), la contre-passation directe à
+    `reversal_blockers`. La liste des colonnes de `journal_entry_lines` (:153-171) ne change pas (43-5 seulement). Test « `PUT` d'une
     écriture groupée refusé, aucune ligne réécrite, clés vers les lignes intactes » ;
   - `TABLES_TO_TRUNCATE` (`backup.rs:46`, L5) : `supplier_invoices` **et** `imported_supplier_invoices` déplacées ensemble
     avant `journal_entry_lines`, ou le commentaire « FK-safe » amendé (sans effet à l'exécution, `FOREIGN_KEY_CHECKS = 0`) ;
@@ -144,7 +172,9 @@ Cette story pose **la migration de la release** (colonnes de la 43-1b et réglag
   `supplier_invoices` :1232, réglages de facturation) : colonnes ajoutées. **`journal_entry_lines` n'est pas touchée** (L1).
 - **AC3 bis** — Lecture du plafond : `company_invoice_settings::group_settlement_max_difference(conn, company_id)` rend la
   colonne, ou `DEFAULT_GROUP_DIFFERENCE_MAX` (5.0000, **seule** occurrence de la valeur dans le code Rust) si la société
-  n'a pas de ligne de réglages.
+  n'a pas de ligne de réglages. Un test compare la constante au `DEFAULT` de la colonne
+  (`information_schema.COLUMNS.COLUMN_DEFAULT`) : les deux sources ne dérivent pas (L9). **Livré à T1** avec le champ
+  d'entité (M5), pour que la 43-7 parte de T1.
 
 **Lettrage par ligne (deux familles)**
 
@@ -157,7 +187,13 @@ Cette story pose **la migration de la release** (colonnes de la 43-1b et réglag
 
 - **AC5** — `grouped_settlements::settle_invoices_in_tx(tx, company_id, bank_account_id, bank_transaction_id, invoice_ids,
   batch_size, acteur, aujourd_hui) -> Result<Result<GroupedSettlement, GroupRefusal>, DbError>`, dans la transaction et
-  sous le verrou de compte de la route, **par la méthode de l'unitaire** (C-43-19, H-A) :
+  sous le verrou de compte de la route, **par la méthode de l'unitaire, à deux écarts près** (C-43-19, H-A, L1) : lecture
+  sans verrou, version et reste dû de l'instantané, `UPDATE … AND version = <lue>` par identifiant croissant,
+  `rows_affected()` contrôlé, `paid_at` posé seulement sur un reste dû tombé à zéro — comme l'unitaire. **Écarts** : (1)
+  l'ordre des deux `UPDATE` — factures (étape 9) **avant** la transaction (étape 10), là où l'unitaire met à jour la
+  transaction d'abord (`routes/reconciliation.rs:2905-2925` puis :2950-2965), pour qu'un refus d'une facture tombe avant
+  toute écriture sur la transaction ; sans effet sur le résultat (même transaction, verrou de compte, point de sauvegarde
+  D6) ; (2) ni score ni fenêtre haute de 30 jours (C-43-7) :
   1. `SAVEPOINT grouped_settlement` (D6) ;
   2. **avant toute lecture** : bornes (moins de 2, plus de 50), doublon → refus ;
   3. transaction rechargée (`find_pending_by_id_for_account`, non verrouillante) : introuvable, non `pending`, pas un
@@ -165,12 +201,13 @@ Cette story pose **la migration de la release** (colonnes de la 43-1b et réglag
   4. chaque facture, par identifiant croissant, lue **sans verrou** sur l'instantané (`find_invoice_by_id_for_company`),
      avec sa **version** et son **reste dû** (`amount_due`) : introuvable ou d'une autre société, non `validated`, déjà
      payée, reste dû nul, sans écriture de vente, écriture de vente sans ligne au débit → refus ; **date** :
-     `InvoiceDateWindow::for_transaction(&tx).check(invoice_date, anchor)` — seul `PaymentBeforeInvoice` est un refus
-     (`PaymentBeforeInvoiceDate`, M-B), `PaymentTooLate` est ignoré (C-43-7) ;
+     `InvoiceDateWindow::for_transaction(&tx).check(invoice_date, invoice_date)` — l'ancre réelle n'est **pas** lue
+     (`check` rend `PaymentBeforeInvoice` avant `PaymentTooLate`, `reconciliation.rs:565-575`, et la borne haute est
+     ignorée) ; seul `PaymentBeforeInvoice` est un refus (`PaymentBeforeInvoiceDate`, M-B, L5) ;
   5. compte bancaire (non lié, clos, archivé → refus), `ensure_open_in_tx` ; compte de créance de chaque facture
      (`sale_receivable_account`) ; compte de créance égal à la banque → refus (`refuse_if_claim_account`) ;
-  6. **différences (C-43-16, proposition en attente de Guy)** : `r = Σ (centime(reste) − reste)` et `e = montant − Σ
-     centime(reste)` ; `e > 0` → refus `Overpayment` ; `|e| >` plafond (AC3 bis) → refus `DifferenceTooLarge` ; `r ≠ 0` →
+  6. **différences (C-43-16, proposition en attente de Guy ; calculées par `group_difference`, D4 bis)** : `r` et `e` de
+     D4 bis ; `e > 0` → refus `Overpayment` ; `|e| >` plafond (AC3 bis) → refus `DifferenceTooLarge` ; `r ≠ 0` →
      compte d'arrondi (`rounding_account_for_write` ; absent → refus `RoundingAccountNotConfigured` ; égal à un compte de
      créance ou à la banque → refus `ClaimAccount`) ; `e < 0` → compte de frais bancaires
      (`write_off_account_for_write(…, BankFees)` ; absent → refus `BankFeesAccountNotConfigured` ; égal à un compte de
@@ -178,12 +215,15 @@ Cette story pose **la migration de la release** (colonnes de la 43-1b et réglag
   7. écriture datée comme l'unitaire, **sans** projet d'en-tête, par la forme de D7 : débit banque du montant ; par
      facture, crédit de **son** compte de créance de son **reste brut**, `project_id` = celui de la facture (estampillé sans
      validation, H-B) ; arrondi : `r` au crédit si `r > 0`, au débit sinon ; frais : `|e|` au débit ; ni l'un ni l'autre
-     n'a de projet ; les refus de `create_in_tx` (période, exercice clos ou absent, comptes non imputables) → refus ;
+     n'a de projet ; `enforce_postable = false` (D7, L2 : aucun refus « compte non imputable ») ; les refus de
+     `create_in_tx` (période verrouillée, exercice clos ou absent) → refus ;
   8. une ligne `invoice_settlements` par facture (`amount` = reste brut, `settled_on`, `bank_transfer`,
      `settlement_bank_account_id`, `journal_entry_line_id`) ;
-  9. chaque facture, par identifiant croissant : `UPDATE invoices SET paid_at = …, version = version + 1 … WHERE id = ? AND
-     company_id = ? AND version = <version lue à l'étape 4> AND status = 'validated'` ; `rows_affected() != 1` → refus
-     `race_during_update` (la facture est nommée) ;
+  9. chaque facture, par identifiant croissant : relire son reste dû après l'insertion des règlements (`amount_due`) ;
+     `> 0` → `DbError::Invariant` (défense contre un défaut du calcul des restes, L4 ; l'unitaire ne pose `paid_at` que si
+     `fully_settled`) ; puis `UPDATE invoices SET paid_at = …, version = version + 1 … WHERE id = ? AND company_id = ? AND
+     version = <version lue à l'étape 4> AND status = 'validated'` ; `rows_affected() != 1` → refus `race_during_update`
+     (la facture est nommée) ;
   10. la transaction : `UPDATE bank_transactions SET matched_entry_id = ?, status = 'reconciled', version = version + 1
       WHERE … AND status = 'pending' AND matched_entry_id IS NULL AND version = ?` ; `rows_affected() != 1` → refus
       `TransactionNotPending` (L2) ;
@@ -192,8 +232,9 @@ Cette story pose **la migration de la release** (colonnes de la 43-1b et réglag
   SupplierInvoice(id)`) et le **numéro affichable** de la pièce quand une pièce est en cause ; aucune variante de projet
   (H-B). Les variantes de la 43-1b (lot `generated`, tenue par un lot, non `open`, `Underpayment`) sont déclarées à T3. Tout
   autre `DbError` reste `Err` (doc-comment). **`GroupedSettlement`** : `journal_entry_id`, `reconciliation_audit_id`,
-  `rounding_difference` (`r`, brut), `bank_fees` (`e`), `difference` (`montant − Σ restes bruts`, brut, exposé par la
-  43-2), et par facture un `GroupedInvoiceRef { kind, id, number, settlement_id: Option<i64>, line_id, amount }` (montant
+  la `Decomposition` de D4 bis — `difference` (`|montant| − Σ restes bruts`, signé, brut), `rounding_difference` (`r`,
+  signé, brut), `bank_fees` (`|e|`, ≥ 0, au centime), une seule définition pour les deux familles, la 43-1b et la 43-2 y
+  renvoient (M4) —, et par facture un `GroupedInvoiceRef { kind, id, number, settlement_id: Option<i64>, line_id, amount }` (montant
   brut ; `settlement_id` absent côté fournisseur).
 - **AC6** — Après AC5 : reste dû 0 et `paid_at` posé pour chaque facture ; une clé de lettrage **par** facture (sa ligne de
   vente et sa seule ligne de créance) ; ni banque, ni arrondi, ni frais lettrés ; la ligne de créance de chaque facture
@@ -259,7 +300,8 @@ Cette story pose **la migration de la release** (colonnes de la 43-1b et réglag
   `backup/pre-upgrade/`), `KESH_SKIP_PRE_UPGRADE_BACKUP=0.19.0` ; la 0.18.0 refuse de démarrer (« was previously applied but
   is missing ») et refuse toute sauvegarde 0.19.0 (`IMPORT_SCHEMA_MISMATCH`) ; une sauvegarde 0.18.0 s'importe dans la
   0.19.0 (plafond remis à sa valeur par défaut) ; retour par la sauvegarde d'avant la mise à jour seulement, « tout ce qui a
-  été saisi depuis est perdu » ; renvoi à la procédure de retour existante.
+  été saisi depuis est perdu » ; renvoi à la procédure de retour existante ; si la migration échoue au milieu (Kesh ne
+  démarre pas, erreur 1060 au rejeu), restaurer la sauvegarde `pre-upgrade/` plutôt que reprendre à la main (L8).
 
 ## Tests à écrire, et la preuve du rouge
 
@@ -275,17 +317,29 @@ Cette story pose **la migration de la release** (colonnes de la 43-1b et réglag
   daté de plus d'un jour avant une facture refusé (M-B) ;
 - un test par variante de `GroupRefusal` ; après chaque refus, **la transaction est validée** par le test puis les tables
   comparées (inchangées) : preuve de D6 (M-C) ;
-- **concurrence (H-A)** : un `settle_invoice` **partiel**, depuis la fiche, **validé entre la relecture de la transaction et
-  le calcul des restes** du groupe → le groupe refuse la facture (`race_during_update`), rien d'écrit, reste dû jamais
-  négatif ; deux groupes qui partagent une facture — un seul aboutit, l'autre refuse ou est rejoué, aucun interblocage non
-  rejoué ;
+- **concurrence (H-A, M1)** — protocole en trois temps, qui fait naître l'instantané avant la course (MariaDB, `REPEATABLE
+  READ` : l'instantané naît à la première lecture cohérente, non au `BEGIN`) :
+  1. `let mut tx = pool.begin()` puis **une lecture cohérente** dans `tx` (`invoice_settlements::amount_due(&mut *tx,
+     facture)`) : l'instantané est fixé ;
+  2. sur **une autre connexion**, un `settle_invoice` **partiel** de la même facture, **validé** ;
+  3. `settle_invoices_in_tx(&mut tx, …)` → `Ok(Err(race_during_update))` nommant la facture ; `ROLLBACK TO SAVEPOINT` fait,
+     tables inchangées, reste dû jamais négatif.
+  Les deux mutations « `FOR UPDATE` sur la facture à l'étape 4 » et « sans `AND version = ?` » **doivent rougir** (le groupe
+  réglerait alors un reste périmé) ; sans l'étape 1, elles survivent — vérifié au rouge et consigné. **Deux groupes qui
+  partagent une facture**, même protocole : la transaction du groupe 2 lit (étape 1), le groupe 1 est commité sur une autre
+  connexion (étape 2), puis le groupe 2 refuse la facture (`race_during_update`) — issue déterministe ; un `1213` éventuel
+  n'est pas asserté, il se rejoue dans le test par `kesh_db::retry::retry_on_deadlock` ;
 - dé-rapprochement : complet, refus sur exercice clos (rien d'écrit), `expect_unlink_only = Some(true)` refusé, acteur clé
   d'API dans chaque entrée ; entrelacement « avoir sur une facture du groupe » et dé-rapprochement ;
 - AC2 (`PUT` d'une écriture groupée refusé ; `journal_entries_modification.rs`), AC8, AC9, AC10 à AC12 ;
-- **mutations** (`kesh-gate-logs/e431a/mut/`) : retirer le filtre par ligne d'AC4 (AC6 rougit) ; inverser l'attribution ;
-  **ajouter un `FOR UPDATE` sur la facture à l'étape 4** (le test de concurrence H-A rougit) ; retirer `AND version = ?` ;
-  retirer le `ROLLBACK TO SAVEPOINT` (le test de D6 rougit) ; valider le projet par ligne (le test H-B rougit) ; omettre la
-  suppression des règlements à l'étape 4 d'AC7.
+- `group_difference` (D4 bis) : tests unitaires purs des deux familles, des deux sens et du plafond ; test d'audit :
+  `bank_fees` positif pour un groupe client à −0.40 et pour un groupe fournisseur à +0.40 (43-1b) ; `CHECK` de la colonne
+  de ligne fournisseur (AC1.3) ; égalité constante / `DEFAULT` (AC3 bis) ;
+- **mutations** (`kesh-gate-logs/e431a/mut/`), **réduites à quatre** (M6) : (1) `FOR UPDATE` sur la facture à l'étape 4
+  et (2) sans `AND version = ?` — le test de concurrence rougit (H-A) ; (3) le détachement sans remettre la ligne à `NULL`
+  — le test de la `CHECK` rougit (M2) ; (4) inverser le sens admis de `e` dans `group_difference` — le test « trop-perçu
+  refusé » rougit. Les autres (filtre par ligne, `ROLLBACK TO SAVEPOINT`, projet validé) sont souhaitables si le temps le
+  permet, en second lot.
 
 ## Tâches
 
@@ -293,8 +347,9 @@ Cette story pose **la migration de la release** (colonnes de la 43-1b et réglag
   `DROP INDEX` et `CHECK` sur colonne neuve, sur MariaDB 10.11 ; décision écrite levant l'invariant (1 bis) de
   `journal_entries_modification.rs` (AC2), ligne lue citée ; réponse de Guy sur M-A relue (registre de l'épique).
 - [ ] **T1** — Migration, audit d'idempotence, P6, squash, `journal_entries_modification.rs`, `TABLES_TO_TRUNCATE` (AC1,
-  AC2). Commit — la 43-7 peut partir.
-- [ ] **T2** — Entités, listes de colonnes, export, lecture du plafond (AC3, AC3 bis). Commit.
+  AC2), **et le plafond** : champ de l'entité des réglages de facturation, ses listes de colonnes, lecteur
+  `group_settlement_max_difference` et `DEFAULT_GROUP_DIFFERENCE_MAX` (AC3 bis, M5). Commit — la 43-7 peut partir.
+- [ ] **T2** — Entités et listes de colonnes des règlements, fragment `CLEAR_SETTLEMENT_SQL` (AC1.3), export (AC3). Commit.
 - [ ] **T3** — **Signatures publiques** documentées : `GroupedSettlement`, `GroupedInvoiceRef`, `GroupedDocument`,
   `GroupRefusal` (toutes ses variantes, celles de la 43-1b comprises), `DEFAULT_GROUP_DIFFERENCE_MAX`,
   `settle_invoices_in_tx`, **`pay_supplier_invoices_in_tx(tx, company_id, bank_account_id, bank_transaction_id,
@@ -324,8 +379,32 @@ Cette story pose **la migration de la release** (colonnes de la 43-1b et réglag
 `kesh-db/migrations` (+ squash, audit, `migrations_upgrade_path.rs`, `journal_entries_modification.rs`, `backup.rs`),
 `entities`, `repositories/grouped_settlements` (neuf), `repositories/letterings`, `repositories/reconciliation_cancel` (+
 listes de colonnes de `invoice_settlements`, `supplier_invoices`, `company_invoice_settings` ; forme de `create_in_tx` et
-doc-comment de `journal_entries`), `kesh-api/exports/csv_tables`. Cinq modules métier : au plafond de la règle de
-splitting, tenue ainsi parce que la migration, la création et l'annulation se testent ensemble.
+doc-comment de `journal_entries`), `kesh-api/exports/csv_tables`, `kesh-reconciliation/matching.rs` (littéral d'AC3).
+
+### Dérogation règle de splitting
+
+**Le décompte dépasse la borne** (`CLAUDE.md`, § *Règle de splitting préventif*, M6) : **trois crates** (`kesh-db`,
+`kesh-api`, `kesh-reconciliation`) et **huit modules de dépôt** (`grouped_settlements`, `letterings`,
+`reconciliation_cancel`, `journal_entries`, `company_invoice_settings`, `invoice_settlements`, `supplier_invoices`,
+`backup`), plus la migration et le manuel.
+- **Justification** : la migration, la création et l'annulation d'un groupe se testent ensemble ; aucun commit fusionné ne
+  doit produire une écriture groupée qu'on ne sait pas défaire, ni une clé vers une ligne sans la levée écrite de
+  l'invariant de la modification d'écriture. Hors `grouped_settlements`, `letterings` et `reconciliation_cancel`, les
+  modules ne reçoivent que des colonnes, un fragment SQL, une forme `pub(crate)` ou un doc-comment. Le travail que les
+  autres stories consomment (T1 à T3 : schéma, entités, plafond, signatures) est isolé dans des commits à part, déjà livrés
+  à midi.
+- **Risque accepté** : une revue plus large qu'une story à cinq modules, et un passage en revue tendu ; il est borné par le
+  repli ci-dessous.
+
+### Repli des jalons (M6)
+
+- **Mercredi midi** : commit T3 (T0 à T3), transmis à l'orchestrateur ; la 43-1b, la 43-2 et la 43-7 en partent.
+- **Mercredi 18 h** : passage en `review` sur **T0 à T6 (AC1 à AC9)** ; revue P1 sur ce périmètre.
+- **Jeudi matin** : second lot **AC10 à AC13** (sauvegarde, test d'accord, montée, manuel d'administration), relu par
+  une **passe ciblée** sur ce seul lot.
+- **Mutations** : les quatre de la section *Tests* seulement ; les autres en second lot si le temps le permet.
+- Ce qui ne se réduit pas : AC7 (dé-rapprochement), H-A avec son protocole (M1), H-C (AC2).
+- Conséquence déjà tenue par C-43-18 : sans la 43-2 et la 43-6, la 43-1a ne sort pas.
 
 ### Limites assumées
 
@@ -366,3 +445,10 @@ change pour passer, hors des trois assertions de `journal_entries_modification.r
   et de la 43-3 (brut, clés d'audit snake_case et `batch_size`, signature de `pay_supplier_invoices_in_tx`,
   `GroupedInvoiceRef` fournisseur, `GroupedDocument`, facture qui bloque, `Copy`) ; Q4 (plafond réglable, colonne et
   lecture ici, réglage en 43-7).
+- 2026-11-17 (nuit, P3) — Remédiée après la validation P3 (0/0/6/10) : M1 (protocole du test de concurrence en trois
+  temps, test des deux groupes déterministe), M2 (les deux sites `supplier_invoices.rs:2639` et `:2929`, fragment partagé,
+  test de la `CHECK`), M3 (`create_copying_projects_in_tx` en `pub(crate)`), M4 (une définition des signes, fonction pure
+  `group_difference`), M5 (plafond livré à T1), M6 (dérogation écrite, repli des jalons, mutations réduites à quatre) ; L1
+  (« à deux écarts près », nommés), L2 (`enforce_postable = false`), L3 (doc-comment du point de sauvegarde), L4 (reste dû
+  vérifié à zéro avant `paid_at`), L5 (ancre non lue), L6 (sites du compteur), L7 (couples `(table, colonne)`), L8
+  (reprise au manuel), L9 (constante contre `DEFAULT`), L10 (défaut sans réponse de Guy). Passe 4 ciblée à lancer.

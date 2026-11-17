@@ -42,10 +42,12 @@ veux qu'au rapprochement Kesh passe **un** paiement qui solde et lettre chacune,
   refus de projet** (C-43-20).
 - **AC2** — Écriture (sans projet d'en-tête, forme D7 de la 43-1a) : crédit banque de |montant| ; par facture, débit de
   **son** compte de dette (`purchase_payable_line`) de son `total_amount`, avec le projet de la facture estampillé sans
-  validation. Différences (C-43-16, proposition en attente) : `r = Σ (centime(total) − total)` au compte d'arrondi (au
-  débit si `r > 0`) ; `e = |montant| − Σ centime(total)` : `e > 0` (plus payé : frais) → débit du compte de frais bancaires,
-  `|e| ≤` plafond (43-1a AC3 bis) sinon `DifferenceTooLarge` ; `e < 0` (moins payé) → refus `Underpayment` ; refus des
-  comptes non configurés comme en 43-1a. Ni projet ni lettrage sur ces lignes.
+  validation. Différences (C-43-16, proposition en attente) : calculées par **la même** fonction pure
+  `group_difference` que le bras client (43-1a D4 bis), avec ses définitions (`difference = |montant| − Σ brut`, signé ;
+  `rounding_difference = r` ; `bank_fees = |e| ≥ 0`) : arrondi au compte d'arrondi (au débit si `r > 0`) ; `e > 0` (plus
+  payé : frais) → débit du compte de frais bancaires, `|e| ≤` plafond (43-1a AC3 bis) sinon `DifferenceTooLarge` ; `e < 0`
+  (moins payé) → refus `Underpayment` ; refus des comptes non configurés comme en 43-1a. Ni projet ni lettrage sur ces
+  lignes ; `enforce_postable = false`.
 - **AC3** — Chaque facture : `status = 'paid'`, `settlement_type = 'bank_transfer'`, `settlement_bank_account_id`,
   `settlement_journal_entry_id`, **`settlement_journal_entry_line_id`**, `paid_at`, `version + 1`, `WHERE … AND version = ?
   AND status = 'open'` (version lue sous le verrou de `lock_for_bank_settlement_in_tx`, qui **est** la méthode de l'unitaire
@@ -62,8 +64,10 @@ veux qu'au rapprochement Kesh passe **un** paiement qui solde et lettre chacune,
   `settlement_*` **ligne comprise** et `paid_at` à `NULL`, `version + 1`), contre-passation, audit
   `supplier_invoice.settlement_cancelled` (ou l'action de l'unitaire) par facture ; la facture qui bloque est rendue à
   `entry_cancel_outlook` comme côté client.
-- **AC7** — Détachement (`cancel_in_tx` d'une facture payée du groupe) : la ligne passe aussi à `NULL` (le `CHECK` de la
-  migration rougit sinon) ; `details` de l'audit gagne `settlementJournalEntryLineId`. Le dé-rapprochement ultérieur
+- **AC7** — **Les deux sites** qui remettent `settlement_journal_entry_id` à `NULL` — `supplier_invoices.rs:2639`
+  (`cancel_in_tx`, détachement) et `:2929` (`cancel_settlement_in_tx`, inatteignable aujourd'hui pour un membre d'un groupe
+  rapproché, mais gardé quand même) — emploient le fragment partagé `CLEAR_SETTLEMENT_SQL` de la 43-1a (AC1.3, T2), qui
+  remet aussi la ligne à `NULL` (le `CHECK` rendrait sinon une 500, `4025`). Détachement d'une facture payée du groupe : `details` de l'audit gagne `settlementJournalEntryLineId`. Le dé-rapprochement ultérieur
   contre-passe l'écriture entière et ne rouvre que les factures encore attachées ; quand plus aucune ne l'est, l'écriture
   est classée `entry`. Faux positif bénin du gel « paiement détaché » (`find_modification_blocker`) écrit au doc-comment.
 - **AC8** — Gestes unitaires refusés : retour en brouillon (`PaidReconciled`), annulation du règlement
@@ -107,3 +111,5 @@ Modules : `repositories/grouped_settlements`, `repositories/supplier_invoices` (
 - 2026-11-17 — Fiche née du découpage de la 43-1.
 - 2026-11-17 (nuit) — Alignée sur la remédiation de la 43-1a : projet sans validation, différences (proposition M-A), borne
   basse de date, point de sauvegarde, signature figée, audit snake_case.
+- 2026-11-17 (nuit, P3 de la 43-1a) — Les deux sites de remise à `NULL` et le fragment partagé (M2) ; la fonction
+  `group_difference` commune et ses signes (M4) ; `enforce_postable = false` (L2).

@@ -5,7 +5,9 @@ Status: ready-for-dev
 *Fiche rédigée le 2026-11-17 dans la nuit par l'agent de rédaction de l'Epic 43 (Opus 5.5), workflow `bmad-create-story`,
 sur la décision de Guy du 2026-11-17 (Q4 : plafond configurable, 5.00 CHF par défaut). Code lu à `8b50fd195`. Release
 **0.19.0**. **Petite et coupable** (C-43-18) : la colonne est posée par la migration de la 43-1a (C-43-24) et lue par le
-geste ; sans cette story, le plafond reste à sa valeur par défaut, non modifiable. Part de la 43-1a à son commit T1.
+geste ; sans cette story, le plafond reste à sa valeur par défaut, non modifiable. Part de la 43-1a à son commit T1, qui
+livre la colonne, le champ de l'entité des réglages, ses listes de colonnes et le lecteur `group_settlement_max_difference`
+(43-1a AC3 bis, M5 de sa P3) : la 43-7 n'ajoute pas ce champ elle-même.
 Décision C-43-24 (fichier d'épique), qui fait foi. Validation : à lancer.*
 
 **Issues** : `refs #823`.

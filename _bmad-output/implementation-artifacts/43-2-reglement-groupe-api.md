@@ -109,8 +109,9 @@ proposition, avant la lecture de la transaction et tout verrou**, dans cet ordre
   "settledInvoices": [ { "invoiceId": 12, "amount": "500.0000" }, { "invoiceId": 15, "amount": "300.0000" } ] }
 ```
 
-`difference` = montant − Σ apports bruts (signé, brut) ; `roundingDifference` et `bankFees` en sont la décomposition
-(C-43-16).
+Une seule définition pour les deux familles, celle de `group_difference` (43-1a D4 bis) : `difference = |montant| − Σ
+apports bruts` (signé, brut : négatif quand moins reçu, positif quand plus payé) ; `roundingDifference` = les fractions de
+centime (signé, brut) ; `bankFees = |e|` (≥ 0, au centime, `"0.00"` sans frais) (C-43-16).
 
 `invoiceId` vaut `0` (sentinelle documentée, `docs/api-external.md:679`), `supplierInvoiceId` `null` ; pour un groupe
 fournisseur, `settledInvoices[].supplierInvoiceId`. `journalEntryId` existe déjà ; seuls `difference`, `roundingDifference`,
@@ -141,7 +142,10 @@ fournisseur) pour que l'écran la nomme (43-3).
 | `DifferenceTooLarge` | `RECONCILIATION_GROUP_DIFFERENCE_TOO_LARGE` | `transactionAmount`, `sumApplied`, `bankFees`, `maxDifference` |
 | `RoundingAccountNotConfigured` | `ROUNDING_ACCOUNT_NOT_CONFIGURED` | — |
 | `BankFeesAccountNotConfigured` | `WRITE_OFF_ACCOUNT_NOT_CONFIGURED` | `nature: "bank_fees"` |
-| `PeriodLocked` / `LaterFiscalYearClosed` / `FiscalYearInvalid` / `AccountNotPostable` | `PERIOD_LOCKED` / `LATER_FISCAL_YEAR_CLOSED` / `FISCAL_YEAR_INVALID` / `ACCOUNT_NOT_POSTABLE` | comme les constructeurs existants (:603, :644, :682) |
+| `PeriodLocked` / `LaterFiscalYearClosed` / `FiscalYearInvalid` | `PERIOD_LOCKED` / `LATER_FISCAL_YEAR_CLOSED` / `FISCAL_YEAR_INVALID` | comme les constructeurs existants (:603, :644) |
+
+Pas de refus « compte non imputable » : l'écriture se crée avec `enforce_postable = false`, comme l'unitaire (43-1a D7) ;
+ses comptes sont ceux des réglages et des écritures de vente ou d'achat.
 
 Les constructeurs existants sont **appelés**, non recopiés. Une variante que la 43-1a ajouterait sans ligne ici fait
 échouer la compilation (`match` exhaustif sans joker).
@@ -318,3 +322,5 @@ Avec la 43-1a (`grouped_settlements.rs`, lu) ; avec la 43-3 (`reconciliation.typ
 - 2026-11-17 (nuit, suite) — Alignée sur la remédiation P2 de la 43-1a et sur Q4 : refus de projet retirés (H-B), refus de
   date (M-B), différences décomposées et refus `OVERPAYMENT` / `UNDERPAYMENT` / `WRITE_OFF_ACCOUNT_NOT_CONFIGURED`
   (proposition M-A en attente de Guy, D8), plafond réglable (D7).
+- 2026-11-17 (nuit, P3 de la 43-1a) — Signes de `difference` et `bankFees` (M4, une définition, `group_difference`) ;
+  `ACCOUNT_NOT_POSTABLE` retiré de la table (L2).
