@@ -168,11 +168,14 @@ constante `DEFAULT_GROUP_DIFFERENCE_MAX`, valeur par défaut seulement, citée u
 `PUT /api/v1/company/invoice-settings`, Admin, `routes/company_invoice_settings.rs:325`) : ≥ 0, au centime, au plus
 **100.00** ; tracé à l'audit. Porté par une petite story à part, **43-7**, coupable.
 
-**C-43-25 — Arrondi automatique** (décision de l'orchestrateur, 2026-11-18) : un écart `e` dont la valeur absolue ne
-dépasse pas l'arrondi cumulé des restes, `|e| ≤ centime(n × 0.005)` pour `n` factures, part **automatiquement au compte
-d'arrondi** avec les fractions de centime : aucun compte n'est demandé, et ce n'est pas une « différence » au sens de Guy.
-Exemple : deux restes de 10.0050 payés 20.01 — aucun écart, aucune ligne. Au-delà du seuil, la règle de Guy (C-43-16,
-compte choisi) s'applique à l'écart entier. Calcul porté par `group_difference` (43-1a), contrat 43-2 D8 bis, écran 43-3 D3.
+**C-43-25 — Arrondi automatique** (décision de l'orchestrateur, **corrigée le 2026-11-18**) : soit `d = |montant| − Σ
+restes bruts`. **Si `|d| < 0.005`** (strictement ; en entiers de 1/10 000, `|d| < 50`), `d` part automatiquement au compte
+d'arrondi, `gap = 0`, aucun compte n'est demandé : c'est l'arrondi sous le centime de l'unitaire, indépendant du nombre de
+factures et nul quand les restes n'ont pas de fraction. **Sinon**, la règle de Guy (C-43-16) s'applique à `d` entier,
+`gap = d`, sur le compte choisi. Exemples : deux restes de 10.0050 payés 20.01 → aucun écart ; payés 20.02 → `d` = 0.01,
+compte demandé ; 500.00 + 300.00 payés 799.99 → compte demandé. *(Remplace la règle `|e| ≤ centime(n × 0.005)` du même jour,
+qui absorbait de vrais écarts au compte d'arrondi — validation P5 de la 43-2, L1 et L2.)* Calcul porté par
+`group_difference` (43-1a, développeur prévenu), contrat 43-2 D8 bis, écran 43-3 D3.
 
 **C-43-26 — Libellés et préremplissage par famille** (décision de l'orchestrateur, 2026-11-18) : clients — crédit
 inférieur aux factures « Moins-payé » (prérempli : compte de frais bancaires), crédit supérieur « Trop-perçu » (prérempli :
