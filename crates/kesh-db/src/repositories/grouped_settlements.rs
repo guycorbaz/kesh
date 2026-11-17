@@ -1414,12 +1414,15 @@ pub(crate) async fn difference_account_of(
 /// nommées par la trace de leur détachement (`supplier_invoice.cancelled`,
 /// `details.settlementJournalEntryLineId`, écrite par la 43-1b — la seule
 /// trace qui en reste, comme le gel « paiement détaché » lit déjà
-/// `settlementJournalEntryId` dans la même trace). Ensemble, elles doivent
-/// occuper exactement les positions 1 à `n` ; les apports sont leurs montants
-/// (le `total_amount` de chaque facture, contrôlé égal au paiement), la queue
-/// (arrondi, écart) se contrôle en nombre. Toute autre forme — une ligne de
-/// dette sans facture qui la nomme — rend `Invariant`, jamais une valeur
-/// fausse.
+/// `settlementJournalEntryId` dans la même trace). Leur nombre doit égaler celui
+/// des factures que le paiement a soldées, recoupé sur son entrée
+/// `reconciliation.accepted` ([`group_size_at_payment`], revue P2, LOW-1 : sans
+/// lui, une trace manquante pour la **dernière** facture d'un groupe sans écart
+/// passerait inaperçue) ; ensemble, elles doivent occuper exactement les
+/// positions 1 à `n` ; les apports sont leurs montants (le `total_amount` de
+/// chaque facture, contrôlé égal au paiement), la queue (arrondi, écart) se
+/// contrôle en nombre. Toute autre forme — une ligne de dette qu'aucune facture
+/// ne nomme, une trace manquante — rend `Invariant`, jamais une valeur fausse.
 async fn supplier_difference_account_of(
     conn: &mut sqlx::MySqlConnection,
     company_id: i64,
@@ -1456,9 +1459,18 @@ async fn supplier_difference_account_of(
         );
     }
     debt_lines.extend(detached_debt_lines(conn, company_id, entry_id).await?);
+    // Autant de lignes nommées que de factures payées par le geste (revue P2,
+    // LOW-1) : sans ce recoupement, une trace de détachement manquante pour la
+    // DERNIÈRE facture d'un groupe sans écart ferait lire sa dette comme ligne
+    // d'écart, la forme restant cohérente.
+    let n = debt_lines.len();
+    if group_size_at_payment(conn, company_id, entry_id).await? != Some(n) {
+        return Err(malformee(
+            "les lignes de dette nommées ne recoupent pas les factures du paiement",
+        ));
+    }
     // Elles occupent exactement les positions 1 à n (D2 : une par facture,
     // juste après la banque).
-    let n = debt_lines.len();
     let block_ok = lines.len() > n
         && lines[1..=n]
             .iter()
@@ -1485,9 +1497,12 @@ async fn supplier_difference_account_of(
 /// `entry_id` (AC7) : celles que nomment les traces `supplier_invoice.cancelled`
 /// de la société dont `settlementJournalEntryId` est l'écriture
 /// ([`super::journal_entries::DETACHED_SETTLEMENT_TRACES`], la lecture du gel
-/// « paiement détaché »). Sans filtre de statut : une trace est un fait, et une
-/// facture repassée en brouillon depuis garde la sienne (ce repassage exige
-/// l'écriture contre-passée, donc une transaction qui n'est plus rapprochée).
+/// « paiement détaché »), **sur les seules factures `cancelled`** — le filtre de
+/// `modification_guard` (revue P2, LOW-6) : il borne le balayage, et écarte une
+/// trace étrangère restaurée qui se joindrait par `entity_id` à une facture qui
+/// n'est pas annulée. Une facture détachée puis repassée en brouillon n'est plus
+/// `cancelled`, mais ce repassage exige l'écriture contre-passée, donc une
+/// transaction qui n'est plus rapprochée : sa vue ne se lit plus.
 async fn detached_debt_lines(
     conn: &mut sqlx::MySqlConnection,
     company_id: i64,
@@ -1496,7 +1511,8 @@ async fn detached_debt_lines(
     use super::journal_entries::{DETACHED_SETTLEMENT_ENTRY, DETACHED_SETTLEMENT_TRACES};
     let lines: Vec<Option<i64>> = sqlx::query_scalar(&format!(
         "SELECT DISTINCT CAST(JSON_VALUE(al.details_json, '$.settlementJournalEntryLineId') \
-         AS SIGNED) FROM {DETACHED_SETTLEMENT_TRACES} AND {DETACHED_SETTLEMENT_ENTRY} = ?"
+         AS SIGNED) FROM {DETACHED_SETTLEMENT_TRACES} \
+           AND si.status = 'cancelled' AND {DETACHED_SETTLEMENT_ENTRY} = ?"
     ))
     .bind(company_id)
     .bind(company_id)
@@ -1505,6 +1521,34 @@ async fn detached_debt_lines(
     .await
     .map_err(map_db_error)?;
     Ok(lines.into_iter().flatten().collect())
+}
+
+/// Le nombre de factures que le paiement groupé `entry_id` a soldées, lu sur
+/// son entrée `reconciliation.accepted` (`details.supplier_invoices`, écrite
+/// dans la même transaction que l'écriture) — un **recoupement**, jamais la
+/// source d'une valeur (revue P2, LOW-1) : le compte d'écart se relit toujours
+/// sur l'écriture. `None` si l'entrée manque ou n'est pas unique.
+async fn group_size_at_payment(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    entry_id: i64,
+) -> Result<Option<usize>, DbError> {
+    let sizes: Vec<Option<i64>> = sqlx::query_scalar(
+        "SELECT JSON_LENGTH(details_json, '$.supplier_invoices') FROM audit_log \
+         WHERE company_id = ? AND entity_type = 'bank_transaction' \
+           AND action = 'reconciliation.accepted' \
+           AND JSON_VALUE(details_json, '$.proposal_type') = 'supplier_invoice_group' \
+           AND JSON_VALUE(details_json, '$.journal_entry_id') = ?",
+    )
+    .bind(company_id)
+    .bind(entry_id.to_string())
+    .fetch_all(&mut *conn)
+    .await
+    .map_err(map_db_error)?;
+    Ok(match sizes.as_slice() {
+        [Some(n)] => usize::try_from(*n).ok(),
+        _ => None,
+    })
 }
 
 /// Le point de sauvegarde du lot a-t-il disparu — la transaction annulée sous
@@ -2118,6 +2162,15 @@ fn supplier_number(invoice: &SupplierInvoice) -> Option<String> {
 /// [`super::supplier_invoices::lock_for_bank_settlement_in_tx`] (**réemployée**),
 /// par identifiant croissant ; son `UPDATE … AND version = ? AND status =
 /// 'open'` porte la version lue **sous ce verrou**.
+///
+/// ⛔ **Ordre des verrous : facture, compte, lot** — celui de `pay_in_tx` et de
+/// `create_batch` (revue P1, B-1, E2) : **toutes** les factures sont
+/// verrouillées d'abord, par identifiant croissant (la lecture de tête de
+/// `create_batch`), avant que la première `lock_for_bank_settlement_in_tx` ne
+/// prenne le compte ; sans cela, le groupe tiendrait le compte en attendant la
+/// facture suivante, et un paiement depuis sa fiche formerait un cycle (1213).
+/// Le compte du grand livre de la banque est celui lu sous le verrou du compte
+/// (`LockedForSettlement::bank_ledger_account_id`).
 ///
 /// L'écriture (sans projet d'en-tête) : la banque **au crédit** de |montant| ;
 /// par facture, le **débit** de son compte de dette (lu sur l'écriture d'achat)

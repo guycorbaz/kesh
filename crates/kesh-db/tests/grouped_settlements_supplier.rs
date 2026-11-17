@@ -1785,3 +1785,122 @@ async fn unreconciling_unletters_each_purchase(pool: MySqlPool) {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// Revue P2 de la 43-1b
+// ---------------------------------------------------------------------------
+
+/// Revue P2 (LOW-1) — la trace du détachement de la **dernière** facture d'un
+/// groupe **sans écart** a disparu : la vue ne peut plus nommer sa ligne de
+/// dette. Elle rend `Invariant` (le nombre de lignes de dette nommées ne
+/// recoupe plus celui du paiement), jamais la dette détachée comme compte
+/// d'écart.
+#[sqlx::test(migrations = "./test-schema")]
+async fn a_missing_detachment_trace_makes_the_view_an_invariant(pool: MySqlPool) {
+    let m = monter(&pool).await;
+    let autre_dette = compte(&pool, m.s.company_id, "2011", "Liability").await;
+    let a = facture(&pool, &m, "Z-1", dec!(100.00), jour(6, 1), None).await;
+    dette_par_defaut(&pool, &m, autre_dette).await;
+    let b = facture(&pool, &m, "Z-2", dec!(50.00), jour(6, 1), None).await;
+    let bt = transaction(&pool, &m, dec!(-150.00), jour(6, 15)).await;
+    payer(&pool, &m, bt, &[a, b], None).await.expect("payé");
+    supplier_invoices::cancel(&pool, m.s.company_id, b, m.s.admin_user_id, aujourd_hui())
+        .await
+        .expect("détachée");
+    let n = sqlx::query(
+        "DELETE FROM audit_log WHERE action = 'supplier_invoice.cancelled' AND entity_id = ?",
+    )
+    .bind(b)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .rows_affected();
+    assert_eq!(n, 1, "la trace du détachement existait");
+    let res = reconciliation_cancel::get_view(&pool, m.s.company_id, bt, aujourd_hui()).await;
+    assert!(matches!(res, Err(DbError::Invariant(_))), "{res:?}");
+}
+
+/// Revue P2 (LOW-3, E3) — le compte du grand livre du compte bancaire change
+/// pendant que le groupe attend une facture : la ligne de banque porte le
+/// compte **lu sous verrou** (le nouveau), non celui de l'instantané.
+#[sqlx::test(migrations = "./test-schema")]
+async fn the_bank_ledger_is_the_one_read_under_lock(pool: MySqlPool) {
+    use kesh_db::test_fixtures::attendre_une_requete_en_cours;
+
+    let m = monter(&pool).await;
+    let nouveau = compte(&pool, m.s.company_id, "1021", "Asset").await;
+    let a = facture(&pool, &m, "J-1", dec!(100.00), jour(6, 1), None).await;
+    let b = facture(&pool, &m, "J-2", dec!(50.00), jour(6, 1), None).await;
+    let bt = transaction(&pool, &m, dec!(-150.00), jour(6, 15)).await;
+
+    let mut autre = tenir_facture(&pool, b).await;
+    let groupe = payer_en_tache(&pool, &m, bt, vec![a, b]);
+    assert!(
+        attendre_une_requete_en_cours(
+            &pool,
+            &["FORCE INDEX (PRIMARY)", "supplier_invoices", "FOR UPDATE"],
+            || groupe.is_finished()
+        )
+        .await,
+        "le groupe n'attend pas la deuxième facture"
+    );
+    sqlx::query("UPDATE bank_accounts SET journal_account_id = ? WHERE id = ?")
+        .bind(nouveau)
+        .bind(m.bank_account_id)
+        .execute(&mut *autre)
+        .await
+        .unwrap();
+    autre.commit().await.unwrap();
+
+    let done = groupe
+        .await
+        .unwrap()
+        .expect("aucune erreur de base")
+        .expect("payé");
+    let l = lignes(&pool, done.journal_entry_id).await;
+    assert_eq!(l[0].1, nouveau, "la banque au compte lu sous verrou");
+}
+
+/// Revue P2 (LOW-7) — la branche défensive « aucun règlement » du
+/// dé-rapprochement groupé : une écriture que ne règle aucune facture, ni
+/// client ni fournisseur, rend `Invariant` et n'écrit rien.
+#[sqlx::test(migrations = "./test-schema")]
+async fn a_group_cancel_on_an_entry_without_settlement_is_an_invariant(pool: MySqlPool) {
+    let m = monter(&pool).await;
+    let a = facture(&pool, &m, "N-1", dec!(100.00), jour(6, 1), None).await;
+    let b = facture(&pool, &m, "N-2", dec!(50.00), jour(6, 1), None).await;
+    let bt = transaction(&pool, &m, dec!(-150.00), jour(6, 15)).await;
+    payer(&pool, &m, bt, &[a, b], None).await.expect("payé");
+    // L'écriture d'ACHAT de `a` : aucune facture ne la désigne comme règlement.
+    let achat: i64 =
+        sqlx::query_scalar("SELECT purchase_journal_entry_id FROM supplier_invoices WHERE id = ?")
+            .bind(a)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let avant = empreinte(&pool).await;
+    let mut tx = pool.begin().await.unwrap();
+    let transaction_bancaire =
+        kesh_db::repositories::reconciliation::find_by_id_for_account_for_update(
+            &mut *tx,
+            m.s.company_id,
+            m.bank_account_id,
+            bt,
+        )
+        .await
+        .unwrap()
+        .expect("transaction");
+    let res = grouped_settlements::cancel_in_tx(
+        &mut tx,
+        m.s.company_id,
+        &transaction_bancaire,
+        achat,
+        acteur(&m),
+        None,
+        aujourd_hui(),
+    )
+    .await;
+    assert!(matches!(res, Err(DbError::Invariant(_))), "{res:?}");
+    tx.rollback().await.unwrap();
+    assert_eq!(empreinte(&pool).await, avant);
+}

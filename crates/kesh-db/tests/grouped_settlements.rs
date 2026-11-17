@@ -2396,19 +2396,17 @@ async fn a_missing_gap_line_is_an_invariant_for_the_view(pool: MySqlPool) {
     );
 }
 
-/// Revue P2, LOW-2 — une écriture classée groupée sans règlement client (la
-/// forme d'un groupe fournisseur, 43-1b) : la vue rend `Invariant`
-/// (`group_cancel_blocker`, `difference_account_of`), jamais « annulable ».
-/// Le bras groupé d'`entry_cancel_chain` reste inatteignable (retour anticipé,
-/// commentaire au code).
-///
-/// Story 43-1b : la vue d'un groupe fournisseur a désormais son bras ; la
-/// facture fournisseur fabriquée ici pointe la ligne de **banque**, forme
-/// qu'aucun paiement ne produit — le bras fournisseur la refuse lui aussi en
-/// `Invariant` (« les lignes de dette nommées n'occupent pas les positions 1 à
-/// n »), jamais une réponse.
+/// Revue P2 de la 43-1a (LOW-2), adapté par la 43-1b (revue P2, LOW-7) — une
+/// écriture classée groupée **fournisseur malformée** : ses règlements clients
+/// retirés, une facture fournisseur fabriquée qui pointe la ligne de
+/// **banque**, forme qu'aucun paiement ne produit. La vue rend `Invariant`
+/// (le bras fournisseur de `difference_account_of`), jamais une réponse ni
+/// « annulable ». Avant la 43-1b, ce test épinglait le message « aucun
+/// règlement client » ; la branche défensive « aucun règlement » du bras
+/// fournisseur est tenue par
+/// `grouped_settlements_supplier::a_group_cancel_on_an_entry_without_settlement_is_an_invariant`.
 #[sqlx::test(migrations = "./test-schema")]
-async fn a_group_without_client_settlements_is_an_invariant(pool: MySqlPool) {
+async fn a_malformed_supplier_group_is_an_invariant_for_the_view(pool: MySqlPool) {
     let m = monter(&pool).await;
     let (_, _, bt, entry) = groupe_regle(&pool, &m, "F").await;
     let ligne: i64 = sqlx::query_scalar(
@@ -2448,10 +2446,7 @@ async fn a_group_without_client_settlements_is_an_invariant(pool: MySqlPool) {
         .await
         .unwrap();
     let res = reconciliation_cancel::get_view(&pool, m.s.company_id, bt, jour(11, 17)).await;
-    assert!(
-        matches!(&res, Err(DbError::Invariant(msg)) if msg.contains("positions 1 à n")),
-        "{res:?}"
-    );
+    assert!(matches!(&res, Err(DbError::Invariant(_))), "{res:?}");
 }
 
 /// Revue P2, LOW-5 — une partie de l'ordre de l'étape 4 (AC5.4) : le reste dû
