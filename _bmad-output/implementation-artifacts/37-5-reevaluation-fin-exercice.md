@@ -1,6 +1,6 @@
 # Story 37-5 : réévaluation des comptes en devise à la fin de l'exercice
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-14 (Opus 5.5), branche `epic/37-multi-devises`. Epic 37, D5 corrigé par D10, D9, C-37-7
 (amendé, CR-1). Suit 37-4.
@@ -1430,3 +1430,14 @@ Opus 5.5 (`claude-opus-5-5`).
   rendu un HIGH et un MEDIUM.
 - 2026-11-17 — revue de code P4 ciblée (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW ; remédié. LOW 37-5-CR-P4-1 (`accounts.rs`, doc) : le correctif P3 avait inséré `refuse_foreign_parent_with_entries_in_tx` entre la doc de `has_journal_line_locked` et sa fonction — la doc de l'une préfixait l'autre ; remise en place, aucune ligne de code changée. Vérifié au code : ordre des verrous (parent `FOR UPDATE`, puis lignes `LOCK IN SHARE MODE`, même ordre que `update` l.776 ; le cycle avec une écriture concurrente se résout en interblocage rejoué par `retry_app_on_deadlock("accounts::create")`, `routes/accounts.rs:415`) ; `parent_id` immuable au `PUT` (aucun chemin de reparentage), import de plan, seed, onboarding sans devise (hors règle, sans objet) ; compte de résultat ou CHF libre (`CANDIDATE_PREDICATE`, test CHF) ; message des 4 locales (`$number`, `$currency`), manuel et guide d'API conformes au code. `heavy.sh scripts/test-fast.sh --ci` **5877 passés, 13 ignorés** (`review-p4/gate-backend-1.log`). Non exercés : E2E Playwright, concurrence réelle (raisonnée), compte de produit en devise non testé (même prédicat).
 - 2026-11-17 — **boucle de revue close** (orchestrateur) : P1 (Opus) 6 MEDIUM → P2 (Sonnet) 3 MEDIUM (D1) → P3 (Opus) 1 HIGH, 1 MEDIUM → P4 ciblée (Sonnet) 1 LOW, commentaires seuls. Clôture : Vitest complet et build, E2E complet au dernier commit.
+
+- **Fin de story (2026-11-17)**, journaux `kesh-gate-logs/s37-5/final2/`. Gate backend non rejoué : vert au dernier
+  commit de code de production (`8ab80b05`, nextest 5877 passés), les commits suivants ne touchent que des commentaires et
+  des comptes rendus. Frontend à la pointe : Vitest **4109 / 263 fichiers** (`vitest.log`), `npm run build` vert (`build.log`).
+  **E2E complet** (`LANG=fr_CH.UTF-8`, port 3376, base `kesh_e2e_s37_5` neuve, binaire reconstruit) : **443 passés,
+  10 échecs, 18 ignorés** (`e2e.log`, 42,4 min). Les dix : les **sept de la KF-029** (`mode-expert.spec.ts:26` et `:41`,
+  `onboarding-path-b.spec.ts:65` et `:92`, `onboarding.spec.ts:57`, `:77`, `:150`) ; `backup-restore-new-install.spec.ts:262`
+  et `:381` et `opening-balances.spec.ts:156`, **préexistants à `19bf12fb`** (établis aux E2E précédents, point 7 de
+  `issues-a-ouvrir-epic-37.md`, non rejoués). `bank-import.spec.ts:130` (pollution, rouge au run précédent) est **vert**.
+  Aucun échec causé par la story ; `fx-revaluation.spec.ts` (2 tests) vert. Captures de l'écran de réévaluation
+  régénérées au dernier code (`fx-revaluation` rejoué seul, 2/2, `KESH_E2E_CAPTURES_DIR`) : `kesh-gate-logs/s37-5/captures/`.
