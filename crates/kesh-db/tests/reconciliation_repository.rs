@@ -1166,8 +1166,9 @@ async fn find_unpaid_matches_on_amount_due_of_partially_settled_invoice(pool: My
     .await
     .expect("line insert");
 
-    // Règlement partiel de 400.— : il lui faut sa propre écriture
-    // (`uq_invoice_settlements_entry`).
+    // Règlement partiel de 400.— : il lui faut sa propre écriture (un
+    // règlement unitaire ; l'unicité est `uq_invoice_settlements_entry_invoice`
+    // depuis la Story 43-1a).
     let settle_je_id = sqlx::query(
         "INSERT INTO journal_entries (company_id, fiscal_year_id, entry_number, entry_date, \
          journal, description, version, created_at, updated_at) \

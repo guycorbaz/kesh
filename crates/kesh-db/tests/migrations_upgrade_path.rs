@@ -1399,6 +1399,16 @@ async fn draft_migration_preserves_a_populated_base(pool: MySqlPool, frontiere: 
     .execute(&pool)
     .await
     .unwrap();
+    // Story 43-1a (#823) : de même, les trois colonnes de `20261118000001` que lit
+    // le dépôt courant (facture fournisseur, règlement client, réglages).
+    for sql in [
+        "ALTER TABLE supplier_invoices ADD COLUMN settlement_journal_entry_line_id BIGINT NULL",
+        "ALTER TABLE invoice_settlements ADD COLUMN journal_entry_line_id BIGINT NULL",
+        "ALTER TABLE company_invoice_settings ADD COLUMN group_settlement_max_difference \
+         DECIMAL(19,4) NOT NULL DEFAULT 5.0000",
+    ] {
+        sqlx::query(sql).execute(&pool).await.unwrap();
+    }
     let entry_nullable: String = sqlx::query_scalar(
         "SELECT IS_NULLABLE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() \
          AND TABLE_NAME = 'supplier_invoices' AND COLUMN_NAME = 'purchase_journal_entry_id'",
@@ -1609,6 +1619,13 @@ async fn draft_migration_preserves_a_populated_base(pool: MySqlPool, frontiere: 
         .execute(&pool)
         .await
         .unwrap();
+    for sql in [
+        "ALTER TABLE supplier_invoices DROP COLUMN settlement_journal_entry_line_id",
+        "ALTER TABLE invoice_settlements DROP COLUMN journal_entry_line_id",
+        "ALTER TABLE company_invoice_settings DROP COLUMN group_settlement_max_difference",
+    ] {
+        sqlx::query(sql).execute(&pool).await.unwrap();
+    }
 
     let watched = [
         "supplier_invoices",

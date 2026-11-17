@@ -2989,8 +2989,10 @@ async fn accept_one_invoice(
     };
     let journal_entry_id = settlement_je.entry.id;
 
-    // (f) La liaison facture ↔ écriture. `UNIQUE (journal_entry_id)` en base :
-    //     une écriture d'encaissement règle UNE facture.
+    // (f) La liaison facture ↔ écriture. Une écriture d'encaissement unitaire
+    //     règle UNE facture ; depuis la Story 43-1a, l'unicité en base est
+    //     `(journal_entry_id, invoice_id)` — une écriture groupée en règle
+    //     plusieurs, chacune par sa ligne (`journal_entry_line_id`).
     if let Err(e) = invoice_settlements::create_in_tx(
         tx,
         kesh_db::entities::NewInvoiceSettlement {

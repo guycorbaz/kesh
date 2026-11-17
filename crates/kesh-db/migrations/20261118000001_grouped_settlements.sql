@@ -26,6 +26,8 @@
 --    compte que l'utilisateur choisit, réglage de la société (C-43-24),
 --    5.00 par défaut, entre 0 et 100. Une sauvegarde 0.18.0 n'a pas la
 --    colonne : à son import, la valeur par défaut s'applique — voulu (P7).
+-- Les CHECK sur une colonne neuve ont leur précédent : 20261031000001
+-- (supplier_invoices_draft).
 --
 -- Ce que la 0.18.0 voit : elle refuse de démarrer sur une base migrée
 -- (« was previously applied but is missing ») et refuse toute sauvegarde 0.19.0

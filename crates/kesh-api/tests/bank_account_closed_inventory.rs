@@ -231,6 +231,30 @@ const REGISTRE: &[(&str, &str, Statut)] = &[
         "cancel_in_tx",
         Statut::Gardee("bank_accounts::ensure_open_in_tx sur bt.bank_account_id, après (3)"),
     ),
+    // Story 43-1a (#823) — le règlement groupé client et son dé-rapprochement.
+    (
+        "kesh-db/src/repositories/grouped_settlements.rs",
+        "settle_client_inner",
+        Statut::Gardee(
+            "bank_accounts::ensure_open_in_tx sur le compte de la transaction, étape (5) ; transaction pending (I1) et pré-vol R1 de la route",
+        ),
+    ),
+    (
+        "kesh-db/src/repositories/grouped_settlements.rs",
+        "cancel_in_tx",
+        Statut::Gardee(
+            "bank_accounts::ensure_open_in_tx sur bt.bank_account_id, après le verrou de l'écriture et de son exercice",
+        ),
+    ),
+    (
+        // Le retrait des règlements du groupe, appelé par le seul
+        // `grouped_settlements::cancel_in_tx`, qui a gardé le compte avant.
+        "kesh-db/src/repositories/invoice_settlements_write.rs",
+        "delete_grouped_settlements_in_tx",
+        Statut::Gardee(
+            "appelé par grouped_settlements::cancel_in_tx seul, après son bank_accounts::ensure_open_in_tx ; revérifié en dernier par recheck_open_locked_in_tx",
+        ),
+    ),
     (
         // Story 29-8 (#670) — le rattachement d'une transaction à un règlement.
         "kesh-db/src/repositories/reconciliation_link.rs",
@@ -354,6 +378,15 @@ const APPELANTS_REGLEMENT: &[(&str, &str, Statut)] = &[
         Statut::Invariant(
             "I1",
             "transaction pending dans l'état commité jusqu'au commit du lot ; et le pré-vol R1 refuse un compte clos",
+        ),
+    ),
+    (
+        // Story 43-1a (#823) — un règlement par facture du groupe, par virement
+        // sur le compte de la transaction.
+        "kesh-db/src/repositories/grouped_settlements.rs",
+        "settle_client_inner",
+        Statut::Gardee(
+            "bank_accounts::ensure_open_in_tx, étape (5) ; recheck_open_locked_in_tx en dernière acquisition",
         ),
     ),
     (
@@ -559,8 +592,10 @@ fn every_bank_account_writer_is_classified() {
     // cesserait de voir rendrait un registre « vert » vide. Story v017-4a
     // (#849) : 34 → 38 — `create_in_tx` devient `validate_in_tx`, et le
     // brouillon ajoute quatre écrivains (création, modification, suppression,
-    // dévalidation), aucun ne nommant un compte bancaire.
-    assert_eq!(sites.len(), 38, "sites vus :\n{}", detail.join("\n"));
+    // dévalidation), aucun ne nommant un compte bancaire. Story 43-1a (#823) :
+    // 38 → 41 — le règlement groupé (`UPDATE bank_transactions`) et son
+    // dé-rapprochement (`UPDATE bank_transactions`, `DELETE invoice_settlements`).
+    assert_eq!(sites.len(), 41, "sites vus :\n{}", detail.join("\n"));
 }
 
 /// Second inventaire (AC8, C-28-4-22) — chaque appelant du créateur de
@@ -588,7 +623,8 @@ fn every_invoice_settlement_creator_is_classified() {
         "appelant(s) du registre introuvable(s) :\n{}",
         sans_site.join("\n")
     );
-    assert_eq!(couples.len(), 3, "trois créateurs de règlement connus");
+    // Story 43-1a (#823) : 3 → 4, le règlement groupé client.
+    assert_eq!(couples.len(), 4, "quatre créateurs de règlement connus");
 }
 
 /// T-a34 (AC8) — le volet inverse du diff, et l'extraction elle-même, sur un
@@ -892,9 +928,14 @@ enum Fenetre {
 /// **jamais** `archived` — un compte archivé ne se rouvre pas, refuser
 /// l'annulation d'un de ses règlements la rendrait définitivement impossible.
 /// Écrit en dur pour que la déclaration du registre ne puisse pas dériver.
-const ANNULATIONS: [(&str, &str); 5] = [
+const ANNULATIONS: [(&str, &str); 6] = [
     (
         "kesh-db/src/repositories/reconciliation_cancel.rs",
+        "cancel_in_tx",
+    ),
+    // Story 43-1a (#823) — le dé-rapprochement d'un règlement groupé.
+    (
+        "kesh-db/src/repositories/grouped_settlements.rs",
         "cancel_in_tx",
     ),
     (
@@ -986,6 +1027,19 @@ const FENETRE: &[(&str, &str, Fenetre)] = &[
     // (`Variante::Clos`, tenu aussi par (i bis)), en dernière acquisition.
     (
         "kesh-db/src/repositories/reconciliation_cancel.rs",
+        "cancel_in_tx",
+        Fenetre::Reverifiee(Variante::Clos, Position::EnDernier),
+    ),
+    // Story 43-1a (#823) — le règlement groupé client (comme l'annulation : le
+    // geste ne fait que lier une transaction pending, `closed_on` seul) et son
+    // dé-rapprochement (une annulation).
+    (
+        "kesh-db/src/repositories/grouped_settlements.rs",
+        "settle_client_inner",
+        Fenetre::Reverifiee(Variante::Clos, Position::EnDernier),
+    ),
+    (
+        "kesh-db/src/repositories/grouped_settlements.rs",
         "cancel_in_tx",
         Fenetre::Reverifiee(Variante::Clos, Position::EnDernier),
     ),
@@ -1358,15 +1412,17 @@ fn every_unlocked_closed_account_guard_is_rechecked_or_justified() {
     // « vert » vide.
     assert_eq!(
         gardes_non_verrouillantes(&sources).len(),
-        12,
+        14,
         "G : neuf fonctions au sol de la 29-4a, plus la constante de lecture de \
          closing_checks.rs (29-1a, entrée au rebase), plus le rattachement (29-8), \
-         plus le rattachement à une écriture (v017-3a)"
+         plus le rattachement à une écriture (v017-3a), plus le règlement groupé et \
+         son dé-rapprochement (43-1a)"
     );
     assert_eq!(
         appels_de_reverification(&sources).len(),
-        7,
-        "sept revérifications depuis la 29-4b (import, lot, cinq annulations)"
+        9,
+        "neuf revérifications depuis la 43-1a (import, lot, six annulations, le \
+         règlement groupé)"
     );
 }
 
