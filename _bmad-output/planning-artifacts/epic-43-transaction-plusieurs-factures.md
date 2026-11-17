@@ -2,9 +2,11 @@
 
 *Kickoff du 2026-11-17 (agent de rédaction de l'Epic 43, Opus 5.5), worktree `kesh-43`, branche
 `story/43-transaction-plusieurs-factures` partie de `epic/43-transaction-plusieurs-factures` (= `main` = v0.18.0,
-`8b50fd195`). **Révisé le 2026-11-17 au soir** : décisions de Guy du même jour et validation P1 de la 43-1
-(`kesh-gate-logs/e43/validation-43-1-p1.md`, 0/3/7/8). Release **0.19.0** (vendredi 2026-11-20, coupure jeudi 19 au soir),
-rang 1 ; chaque story doit pouvoir **sortir seule** à la coupure.*
+`8b50fd195`). Révisé le 2026-11-17 au soir (décisions de Guy ; validation P1 de la 43-1), puis **dans la nuit** :
+validation P2 de la 43-1a (`kesh-gate-logs/e43/validation-43-1a-p2.md`), validations P1 de la 43-2 et de la 43-3, décision
+de Guy sur Q4 (plafond configurable), décisions de l'orchestrateur (42-2 et 42-3 hors 0.19.0 ; migration propre à la 43-5 ;
+code du refus de réimputation). Release **0.19.0** (vendredi 2026-11-20, coupure jeudi 19 au soir), rang 1 ; chaque story
+doit pouvoir **sortir seule** à la coupure.*
 
 ## Objet
 
@@ -16,8 +18,8 @@ entre comptes propres est déjà traité (0.17.6, 34-11b).
 
 ## Décisions (C-43-k) — code lu à `8b50fd195`, et à `origin/epic/42-reimputation-analytique` pour l'Epic 42
 
-**C-43-1 — Une écriture par geste : une ligne de banque, une ligne de tiers par facture impayée, une ligne d'écart s'il y
-en a une.** La transaction pointe **cette** écriture (`bank_transactions.matched_entry_id`,
+**C-43-1 — Une écriture par geste** : une ligne de banque, une ligne de tiers par facture, et au plus deux lignes de
+différence (arrondi, frais — C-43-16). La transaction pointe **cette** écriture (`bank_transactions.matched_entry_id`,
 `20260504000001_bank_imports.sql:71`). Tout ce qui lit ce lien reste juste sans changement (`journal_entries.rs:2343-2344`,
 `bank_accounts.rs:1884-1898`, `reconciliation_cancel.rs:203`). *Écartées* : N écritures et une **table** de liens (une table
 neuve rend toute sauvegarde 0.18.0 inimportable, `admin_backup/import.rs:250-253`) ; des transactions « filles ».
@@ -30,121 +32,151 @@ Sans elles, la découverte du lettrage (`letterings.rs:1477`, `:1497`, `:1536`, 
 (`20260827000001_invoice_settlements.sql:65`) → `uq_invoice_settlements_entry_invoice (journal_entry_id, invoice_id)` ;
 côté fournisseur, `CHECK` (ligne ⇒ écriture).
 
-**C-43-4 — Une seule migration, non breaking : `20261118000001_grouped_settlements.sql`** (DDL seul) — les deux colonnes
-de C-43-2, la clé de C-43-3, et la colonne de C-43-17. La 0.18.0 refuse de démarrer sur la base migrée et refuse **toute**
-sauvegarde 0.19.0, même sans groupe (colonnes exportées, `import.rs:613-620`) ; une sauvegarde 0.18.0 s'importe dans la
-0.19.0 (colonnes facultatives, `import.rs:622-628`). Un binaire 0.18.0 qui démarrerait classerait mal un groupe (son
-`classify` suppose l'unicité retirée) : c'est le refus de démarrer qui protège, et `kesh_version_min_required` reste
-**0.17.6**. **Retour à la 0.18.0 : par la sauvegarde d'avant la mise à jour seulement.** La migration est entière dans la
-43-1a, **même si la 43-1b ou la 43-5 sortent** : leurs colonnes restent alors à `NULL`, sans effet.
+**C-43-4 — Migration de la 43-1a, non breaking : `20261118000001_grouped_settlements.sql`** (DDL seul) — les deux colonnes
+de C-43-2, la clé de C-43-3, et la colonne de réglage du plafond (C-43-24). *La colonne de la 43-5 n'y est plus* (C-43-17).
+La 0.18.0 refuse de démarrer sur la base migrée et refuse **toute** sauvegarde 0.19.0 (colonnes inconnues,
+`import.rs:613-620`) ; une sauvegarde 0.18.0 s'importe dans la 0.19.0 (colonnes facultatives ou à défaut,
+`import.rs:622-628`). « Non breaking » au sens du paragraphe ⚠️ de P1 (sans relever `kesh_version_min_required`, sans
+corrompre le schéma) : `DROP INDEX` n'est pas dans la liste de P3, et aucun chemin ne fait lire un groupe par une 0.18.0.
+`kesh_version_min_required` reste **0.17.6**. **Retour à la 0.18.0 : par la sauvegarde d'avant la mise à jour seulement.**
+Les colonnes de la 43-1b restent dans cette migration même si la 43-1b sort (symétriques, vides, sans effet).
 
-**C-43-5 — DDL seul** : P7 sans entrée (`every_data_backfill_migration_is_triaged`) ; P5 (totaux à 92) ; P6
-(`migrations_upgrade_path.rs:133-135` : 91 → 92, et `total - 57` → `total - 58`, :228-231) ; squash `test-schema`.
-*Corrigé (M3)* : le rattrapage de lettrage `20261010000001` **ne se rejoue plus** à l'import — il est dans
-`RETIRED_BACKFILLS` (`post_restore.rs:213-216`) ; reste le test d'accord de sa matière, qui gagne une fixture de groupe.
+**C-43-5 — Compteurs de migrations selon ce qui sort.** 91 en 0.18.0 ; **92** avec la 43-1a ; **93** si la 43-5 est publiée
+(sa migration `20261118000002_bank_line_transaction.sql`). Chaque story qui ajoute une migration écrit le compte qu'elle
+produit (P5 : en-tête et `Total` de `docs/migrations-idempotence-audit.md` ; P6 : `migrations_upgrade_path.rs`,
+`assert_eq!(total, …)` et la fenêtre `total - N` qui garde sa frontière à la 35ᵉ) ; si la 43-5 sort, son commit part avec,
+et le compte de la release redevient 92 sans rien réécrire. P7 : DDL seul, aucune entrée de rejeu ; le rattrapage de
+lettrage `20261010000001` ne se rejoue plus (`RETIRED_BACKFILLS`, `post_restore.rs:213-216`), seul son test d'accord gagne
+une fixture. **Une colonne à `DEFAULT`** (C-43-24) est remise à sa valeur par défaut à l'import d'une sauvegarde
+antérieure (`is_required()` faux, P7) : ici c'est voulu — une sauvegarde 0.18.0 n'a pas de plafond, la 0.19.0 lui donne
+celui par défaut.
 
 **C-43-6 — Un règlement groupé ne se défait que par le dé-rapprochement de sa transaction, en entier**, dans l'ordre de
-verrous du geste unitaire (M1). Les gestes unitaires sur une facture du groupe butent sur les gardes existantes
-(`MATCHED_BANK_TRANSACTION` ; `PaidReconciled`, `supplier_invoices.rs:1194-1209`) ; seule l'annulation d'une facture
-fournisseur payée détache (`supplier_invoices.rs:2639`), comme aujourd'hui.
+verrous du geste unitaire. Les gestes unitaires sur une facture du groupe butent sur les gardes existantes
+(`MATCHED_BANK_TRANSACTION` ; `PaidReconciled`, `supplier_invoices.rs:1194-1209`) ; une écriture groupée est **possédée**,
+donc jamais réécrite par la modification d'écriture (`PUT`) : c'est ce qui permet la clé étrangère vers une ligne (C-43-2,
+43-1a AC2). Seule l'annulation d'une facture fournisseur payée détache (`supplier_invoices.rs:2639`).
 
 **C-43-7 — Admises dans un groupe** : factures du sens de la transaction, d'un ou plusieurs tiers, **deux au moins**, 50 au
-plus. Story de tête : factures **impayées** (client `validated`, reste dû > 0 ; fournisseur `open`, hors lot `generated`) ;
-43-5 : en plus, les factures **payées dont le paiement n'est pas rapproché** (C-43-17). Ni score ni fenêtre de 30 jours
-(choix explicite). Chaque facture passe les refus de l'acceptation unitaire, énumérés dans `GroupRefusal` (*Pattern
-batch* : aucun ne sort en `AppError`).
+plus ; factures **impayées** (client `validated`, reste dû > 0 ; fournisseur `open`, hors lot `generated`) ; avec la 43-5,
+paiements existants non rapprochés. Pas de score, pas de fenêtre de 30 jours (choix explicite) ; **la borne basse de date
+de l'unitaire reste** (paiement antérieur à la facture au-delà de la tolérance → refus, `InvoiceDateWindow::check`,
+`repositories/reconciliation.rs:565`, refus `PaymentBeforeInvoice` seul). Chaque facture passe les refus de l'unitaire,
+énumérés dans `GroupRefusal` (*Pattern batch* : aucun ne sort en `AppError`).
 
-**C-43-8 — API** : `invoice_group` (`invoiceIds`), `supplier_invoice_group` (`supplierInvoiceIds`) ; recherche des
-candidates **par texte**, tous tiers (`GET /reconciliation/group-candidates?bankTransactionId=…&q=…`) ; `kind =
-"grouped_settlement"`. Contrat : fiche 43-2.
+**C-43-8 — API** : `invoice_group` (`invoiceIds`), `supplier_invoice_group` (`supplierInvoiceIds`) ; recherche par texte,
+tous tiers (`GET /reconciliation/transactions/{id}/group-candidates`) ; `kind = "grouped_settlement"`. Contrat : 43-2.
 
-**C-43-9 — Audit (H1)** : le dépôt écrit **lui-même** `reconciliation.accepted` en premier, puis, par facture, l'action de
-l'unitaire — `invoice.paid` (avec `reconciliation_audit_id`, `paid_via`, `settlement_journal_entry_id`, avant/après) côté
-client, `supplier_invoice.paid` côté fournisseur — avec l'**acteur** (clé d'API comprise). La route n'écrit rien. Aucune
-action neuve.
+**C-43-9 — Audit** : le dépôt écrit lui-même `reconciliation.accepted` (clés **snake_case** de l'unitaire, `batch_size`
+compris), puis l'action de l'unitaire par facture (`invoice.paid` avec `reconciliation_audit_id` ; `supplier_invoice.paid`),
+avec l'acteur. La route n'écrit rien. Aucune action neuve hors du réglage (C-43-24).
 
-**C-43-10 — Le lot pain.001 confirmé** n'est plus hors périmètre : c'est la **43-5** (C-43-17), coupable.
+**C-43-10 — Le lot pain.001 confirmé** : 43-5, coupable.
 
-**C-43-11 — Réimputation analytique (Epic 42) sur une écriture commune** *(récrit, H2)*. Un règlement unitaire porte le
-projet de sa facture sur **toutes** ses lignes (en-tête `project_id: invoice.project_id`, `routes/reconciliation.rs:2820` ;
-`supplier_invoices.rs:2163` ; héritage `line.project_id.or(new.project_id)`, `journal_entries.rs:521`). L'écriture groupée
-porte le projet de chaque facture sur **sa** ligne de tiers ; banque et écart : sans projet (C-43-20). Le geste de la 42-1
-(`project_reassignment.rs:443-453`, `reassign_lines_in_tx` :352-363, par écriture) réimputerait toute l'écriture : sur une
-écriture commune, il ne doit réimputer que la ligne de la facture. Porté par la **43-6** (raccord), en dernier ; **repli
-approuvé par Guy** si le temps manque : le geste **refuse** une facture réglée en groupe (garde courte, prête mercredi).
+**C-43-11 — Réimputation analytique (Epic 42)**. La 42-2 (fournisseur) et la 42-3 (écriture manuelle) **sortent de la
+0.19.0** (décision de l'orchestrateur, 2026-11-17) : en 0.19.0, seul le geste client de la 42-1 croise un groupe. Il lit
+toutes les écritures de règlement de la facture (`project_reassignment.rs:443-453`) et réimpute toutes leurs lignes
+(`reassign_lines_in_tx`, :352-363) ; sur une écriture groupée, il réimputerait la banque, les différences et les autres
+factures. **La 43-6 le fait refuser** : `409 PROJECT_REASSIGNMENT_GROUPED_SETTLEMENT`, `details { invoiceId,
+journalEntryId }`, juste après le contrôle de version, dès qu'un règlement de la facture porte `journal_entry_line_id`.
+La 42-2 reprendra en 0.20.0 le même prédicat par ligne (`settlement_journal_entry_line_id`), y compris pour une facture
+**détachée** d'un groupe (`kesh-gate-logs/e42/validation-42-2-p2.md`, V2-1) : refusée ou limitée à sa ligne, jamais
+l'écriture entière.
 
-**C-43-12 — Découpage** (H3 retenu, adapté) : § *Stories*.
+**C-43-12 — Découpage** : § *Stories*.
 
-**C-43-13** — *Tombée* (Guy, 2026-11-17) : des tiers différents sont admis. Le faux rattachement reste évité par le choix
-explicite, facture par facture, sans présélection automatique.
+**C-43-13** — *Tombée* : des tiers différents sont admis ; aucune présélection automatique.
 
 **C-43-14 — Interface « comme bexio »** : ligne du relevé → ajout de factures une à une par recherche → total et
 différence → *Enregistrer*. Fiche 43-3.
 
 **C-43-15 — Pas de mélange** clients / fournisseurs : le sens de la transaction choisit la famille.
 
-**C-43-16 — La différence** : `d = montant − Σ apports`. Apport : reste dû brut (client), `total_amount` (fournisseur),
-montant du paiement existant (43-5). `d = 0` : pas de ligne d'écart. `0 < |d| ≤ 5.00` : une ligne sur le **compte de
-différences d'arrondi** de l'unitaire (`company_invoice_settings::rounding_account_for_write`,
-`company_invoice_settings.rs:628`), au crédit si `d > 0`, au débit sinon, sans projet ; refus de l'unitaire réemployés
-(`ROUNDING_ACCOUNT_NOT_CONFIGURED`, compte d'arrondi égal au compte de tiers ou de banque). `|d| > 5.00` : refus
-`RECONCILIATION_GROUP_DIFFERENCE_TOO_LARGE`. *Pourquoi 5.00* : l'unitaire n'a pas de compte d'écart, seulement l'arrondi
-sous le centime et une tolérance de 0.05 pour la proposition (`AMOUNT_TOLERANCE_HUNDREDTHS`, `routes/reconciliation.rs:86`) ;
-Guy attend « de petites différences » (frais bancaires) ; 5.00 les couvre et l'écran l'affiche. **Valeur à confirmer par
-Guy (Q4)** ; constante unique `GROUP_DIFFERENCE_MAX` dans `grouped_settlements.rs`.
+**C-43-16 — La différence** *(proposition de l'orchestrateur, en attente de Guy — registre ci-dessous)*. Montants **bruts**
+(C-43-21). Pour chaque facture, l'apport est son reste dû brut (client) ou son `total_amount` (fournisseur), et son apport
+**au centime** est `amount_due_to_centime(apport)`.
+- **Arrondi** : `r = Σ (apport au centime − apport brut)`, fractions de centime ; si `r ≠ 0`, une ligne au **compte de
+  différences d'arrondi** (`rounding_account_for_write`), comme la troisième ligne de l'unitaire
+  (`settlement_journal_lines`) ; refus `ROUNDING_ACCOUNT_NOT_CONFIGURED`. Hors plafond.
+- **Frais** : `e = |montant| − Σ apports au centime`. Client : `e < 0` (moins reçu) → ligne au débit du **compte de frais
+  bancaires** désigné (`default_bank_fees_account_id`, `write_off_account_for_write(…, BankFees)`,
+  `company_invoice_settings.rs:650-670`), refus `WRITE_OFF_ACCOUNT_NOT_CONFIGURED` ; `e > 0` (trop reçu) → **refusé**
+  `RECONCILIATION_OVERPAYMENT`, comme l'unitaire (`invoice_settlements.rs:157`). Fournisseur : `e > 0` (plus payé : frais)
+  → frais bancaires ; `e < 0` (moins payé) → refusé `RECONCILIATION_UNDERPAYMENT`.
+- **Plafond** : `|e| ≤` le réglage de la société (C-43-24) ; au-delà, `RECONCILIATION_GROUP_DIFFERENCE_TOO_LARGE`.
+- Aucune ligne de différence ne porte de projet ; aucune n'est lettrée.
 
-**C-43-17 — Factures payées non rapprochées (43-5), sans table neuve** : colonne facultative
-`journal_entry_lines.bank_transaction_id` (clé étrangère `ON DELETE RESTRICT`, index), posée sur la **ligne de banque**
-d'une écriture de paiement **existante** pour nommer la transaction qui la rapproche. La transaction garde **un**
-`matched_entry_id` : l'écriture groupée si le geste en passe une (factures impayées ou écart), sinon le plus petit
-identifiant des écritures existantes ; **toutes** les écritures existantes du geste portent la colonne sur leur ligne de
-banque, celle que pointe `matched_entry_id` comprise — c'est ce qui permet au dé-rapprochement de les reconnaître (une
-écriture existante pointée sans la colonne reste un rattachement unitaire, défait comme aujourd'hui). Un « paiement
-existant » est l'écriture d'un règlement client par virement ou d'une facture fournisseur payée, sur le compte de la
-banque de la transaction, que rien ne rapproche encore ; son apport est le montant de sa ligne de banque. Le
-dé-rapprochement **retire ces liens sans contre-passer** ces paiements (le geste ne les a pas créés ; contre-passer les
-trente paiements d'un lot serait destructeur), à la différence du rattachement unitaire à une écriture (v017-3a), qui les
-défait : écrit au manuel, question Q5. La 43-5 met à jour les lecteurs qui disent « cette écriture est rapprochée »
-(inventaire dans sa fiche).
+**C-43-17 — Paiements déjà passés (43-5), sans table neuve** : colonne `journal_entry_lines.bank_transaction_id`, dans une
+**migration propre à la 43-5**, `20261118000002_bank_line_transaction.sql`, qui sort avec elle (validation P2 de la 43-1a,
+M-D). Le reste du modèle est inchangé (fiche 43-5). **Dé-rapprochement — décision de Guy (Q5 = a, 2026-11-17)** : les
+paiements rattachés ne perdent que leur lien `bank_transaction_id` — ni contre-passés, leurs factures restent payées ; dans
+un geste mixte, les règlements **créés** par le geste (factures impayées) sont annulés et leur écriture contre-passée, les
+paiements **rattachés** ne perdent que leur lien. Elle lève, pour cette colonne, l'invariant de
+`journal_entries_modification.rs:153-171` (une colonne neuve de `journal_entry_lines` serait perdue par le `PUT`) : la 43-5
+le justifie par la possession, comme la 43-1a pour les clés vers une ligne.
 
-**C-43-18 — Ordre de sortie à la coupure** (le premier nommé sort le premier) : **43-5** ; puis la **43-6 complète**,
-remplacée par son **repli**, qui, lui, **ne sort pas** si 42-1 et 43-1a sont publiées ensemble ; puis **43-1b** (avec les
-tâches fournisseur de 43-2 et 43-3, livrées en commits séparés, retirables) ; puis **43-3** (l'API seule reste utile à la
-clé d'API de Guy) ; puis **43-2**. La **43-1a** n'est publiée qu'avec la 43-2 ; sans elle, l'epic entier sort, migration
-comprise.
+**C-43-18 — Ordre de sortie à la coupure** (le premier nommé sort le premier) : **43-5** (et sa migration) ; **43-7**
+(le plafond reste à sa valeur par défaut, non modifiable) ; **43-1b** (avec les commits fournisseur de 43-2 et 43-3) ;
+**43-3** (l'API seule reste utile à la clé d'API de Guy) ; **43-2**. La **43-6 ne sort jamais** si la 42-1 et la 43-1a sont
+publiées ensemble. La **43-1a** n'est publiée qu'avec la 43-2 et la 43-6 ; sans elles, l'epic entier sort.
 
-**C-43-19 — Verrous et versions (M1, M2)** : l'ordre de l'unitaire partout ; `AND version = ?` et `rows_affected() == 1`
-sur chaque facture et sur la transaction ; `ensure_open_in_tx` puis `recheck_open_locked_in_tx` du compte bancaire en
-dernière acquisition (`reconciliation_cancel.rs:631`, `:784`).
+**C-43-19 — Verrous et versions** *(récrit, H-A)* : **la méthode de l'unitaire, à la lettre**
+(`routes/reconciliation.rs:2932-2950`) : aucun `FOR UPDATE` sur les factures client en amont ; chaque facture et son reste
+dû lus sur l'**instantané** ; puis `UPDATE invoices … AND version = <version lue> AND status = 'validated'` par
+identifiant croissant, `rows_affected() == 1` sinon refus `race_during_update` ; la transaction `UPDATE … AND version = ?`
+comme l'unitaire (:2918-2925). Fournisseur : la méthode de son unitaire (`lock_for_bank_settlement_in_tx`).
+`ensure_open_in_tx`, puis `recheck_open_locked_in_tx` en dernière acquisition (`reconciliation_cancel.rs:631`, `:784`). Le
+dépôt pose **son propre point de sauvegarde** et y revient avant de rendre un refus (M-C).
 
-**C-43-20 — Projet par ligne (H2)** : la ligne de tiers de chaque facture porte le `project_id` de sa facture, l'en-tête
-aucun ; un projet non imputable (archivé, inexistant) est un refus de **la** facture (`GroupRefusal::ProjectNotTaggable`).
+**C-43-20 — Projet par ligne, estampillé sans validation** *(récrit, H-B)* : la ligne de tiers de chaque facture porte le
+`project_id` de sa facture, **sans** `validate_taggable_in_tx`, comme les flux qui recopient le projet d'une pièce
+(`journal_entries.rs:271-282`, `:309-316`, test `pay_succeeds_when_project_archived_after_tagging`) : une facture au projet
+archivé après coup se règle en groupe comme seule. Aucun refus de projet.
+
+**C-43-21 — Montants bruts de bout en bout** : la recherche rend `amountDueRaw` (quatre décimales) et `amountDue`
+(centime) ; `difference` et `settledInvoices[].amount` sont au brut ; l'écran calcule en entiers de 1/10 000.
+
+**C-43-22 — Garde CHF** : le geste groupé refuse une transaction non CHF ou de montant nul, par la seule définition
+existante `transaction_can_be_linked_to_entry` (`repositories/reconciliation_link.rs:535`) ; l'écran suit `canLink`.
+
+**C-43-23 — Ordre de retrait de la 43-3** (validation P1 de la 43-3, M5) : d'abord les commits fournisseur, puis les
+captures non essentielles ; **jamais l'E2E** ; les traductions de/it/en ne se retirent pas (la garde `i18n-keys.test.ts`
+exige les quatre locales). L'E2E ne tourne que sur la branche réunie, au plus tôt mercredi soir, définitivement jeudi.
+
+**C-43-24 — Le plafond de la différence est un réglage de la société** (décision de Guy, Q4, 2026-11-17) : colonne
+`company_invoice_settings.group_settlement_max_difference DECIMAL(19,4) NOT NULL DEFAULT 5.0000`, posée par la migration de
+la 43-1a, sur la table qui porte déjà `default_rounding_account_id` et `default_bank_fees_account_id`
+(`company_invoice_settings.rs:628-670`). Le geste lit la valeur **au moment du geste** ; ligne de réglages absente → la
+constante `DEFAULT_GROUP_DIFFERENCE_MAX`, valeur par défaut seulement, citée une seule fois. Le réglage se modifie dans
+*Administration → Facturation* (`frontend/src/routes/(app)/settings/invoicing/+page.svelte`,
+`PUT /api/v1/company/invoice-settings`, Admin, `routes/company_invoice_settings.rs:325`) : ≥ 0, au centime, au plus
+**100.00** ; tracé à l'audit. Porté par une petite story à part, **43-7**, coupable.
+
+## Registre des propositions en attente de Guy
+
+| Réf. | Proposition | Écrite dans | Si Guy la change |
+|---|---|---|---|
+| M-A (C-43-16) | moins reçu (client) ou plus payé (fournisseur) → compte de frais bancaires, dans la limite du plafond ; l'inverse refusé, comme le trop-perçu de l'unitaire ; fractions de centime au compte d'arrondi | 43-1a AC5, 43-1b AC2, 43-2, 43-3 | fiches remédiées ; `GroupRefusal` et libellés suivent |
+| Q1 | fermeture de #823 | — | — |
+
+*Tranchée* : Q5 = (a), décision de Guy du 2026-11-17 (C-43-17). Q4 = plafond réglable (C-43-24) ; sa suite, le compte de
+frais et le refus du trop-perçu (M-A, « Q4 bis »), reste en attente.
 
 ## Stories
 
 | Story | Objet | Part de | Parallèle |
 |---|---|---|---|
-| **43-1a** | migration entière, entités, export, lettrage par ligne (deux familles), règlement groupé **client** avec écart, dé-rapprochement groupé client, `document_owners`, manuel d'administration | `epic/43` | — |
-| **43-1b** | règlement groupé **fournisseur**, dé-rapprochement fournisseur, détachement | 43-1a au commit T3 | 43-2, 43-3 |
-| **43-2** | API (deux types, recherche, vue), `docs/api-external.md` | 43-1a au commit T3 | 43-1b, 43-3 |
+| **43-1a** | migration (sans la colonne de la 43-5), entités, lettrage par ligne (deux familles), règlement groupé **client** avec différences, dé-rapprochement client, lecture du plafond | `epic/43` | — |
+| **43-1b** | règlement groupé **fournisseur**, dé-rapprochement, détachement | 43-1a au commit T3 | 43-2, 43-3, 43-7 |
+| **43-2** | API, `docs/api-external.md` | 43-1a au commit T3 | 43-1b, 43-3, 43-7 |
 | **43-3** | écran façon bexio, annulation, i18n, manuel utilisateur, E2E | `epic/43` (Vitest sur contrat) ; E2E sur la branche réunie | tout |
-| **43-5** | factures payées non rapprochées (lot pain.001 confirmé, « Payer » à la main) | 43-1a (+ 43-1b pour le fournisseur) | après 43-1b |
-| **43-6** | raccord Epic 42 (ou son repli) | branche réunie 42-1 + 43-1a | en dernier |
+| **43-5** | paiements déjà passés, sa propre migration | 43-1a (+ 43-1b) | après 43-1b |
+| **43-6** | refus de la réimputation d'une facture réglée en groupe (42-1) | branche réunie 42-1 + 43-1a | en dernier |
+| **43-7** | réglage du plafond (API, écran, audit) | 43-1a au commit T1 | tout |
 | **43-4** | solde de la dette (plafond 2 issues) | fin d'epic | — |
 
-Fiches : `43-1a-reglement-groupe-modele-client.md`, `43-1b-reglement-groupe-fournisseur.md`, `43-2-reglement-groupe-api.md`,
-`43-3-reglement-groupe-ecran.md`, `43-5-paiements-non-rapproches.md`, `43-6-raccord-reimputation.md`. La fiche
-`43-1-reglement-groupe-modele.md` est `split` (validée en P1, puis découpée).
-
-**Jalons** : commit T3 de la 43-1a (migration et signatures) **mercredi 18 avant midi** ; 43-1a **en revue mercredi 18 à
-18 h** (développement fini, `test-fast --ci` et `gate-ci` verts) ; repli de la 43-6 prêt mercredi soir ; 43-1a et 43-2
-closes jeudi midi ; le reste jeudi soir.
-
-## Questions à Guy
-
-- **Q4** — Plafond de l'écart : 5.00 CHF (C-43-16) ?
-- **Q5** — Dé-rapprocher un geste qui a rattaché des paiements existants : retirer le lien seulement (C-43-17) ?
-- **Q1** — #823 se ferme-t-elle à la release si la 43-5 sort ? Proposé : `closes` si la 43-5 est publiée, `refs` sinon.
+**Jalons** : commit T3 de la 43-1a mercredi 18 avant midi ; 43-1a en revue mercredi 18 à 18 h ; 43-6 prête mercredi soir ;
+43-1a, 43-2, 43-6 closes jeudi midi ; le reste jeudi soir.
 
 ## Décomptes au kickoff
 
@@ -160,24 +192,25 @@ Plafond de la story de solde (43-4) : **2 issues**.
 
 | Fichier ou module | Stories | Croise |
 |---|---|---|
-| `crates/kesh-db/migrations/20261118000001_grouped_settlements.sql` (neuf), `test-schema/0001_schema_squash.sql`, `docs/migrations-idempotence-audit.md`, `tests/migrations_upgrade_path.rs` | 43-1a | multi-devise ; toute migration |
-| `crates/kesh-db/src/entities/{invoice_settlement,supplier_invoice,journal_entry}.rs` | 43-1a | multi-devise |
+| `crates/kesh-db/migrations/20261118000001_grouped_settlements.sql`, `…/20261118000002_bank_line_transaction.sql` (43-5), `test-schema/0001_schema_squash.sql`, `docs/migrations-idempotence-audit.md`, `tests/migrations_upgrade_path.rs`, `tests/journal_entries_modification.rs` | 43-1a, 43-5 | multi-devise ; toute migration |
+| `crates/kesh-db/src/entities/{invoice_settlement,supplier_invoice,journal_entry}.rs` et l'entité des réglages de facturation | 43-1a, 43-5, 43-7 | multi-devise |
 | `crates/kesh-db/src/repositories/grouped_settlements.rs` (neuf) | 43-1a, 43-1b, 43-5 | — |
-| `repositories/{letterings,reconciliation_cancel,invoice_settlements,supplier_invoices,journal_entries}.rs` | 43-1a, 43-1b, 43-5 | multi-devise ; 42-2 |
+| `repositories/{letterings,reconciliation_cancel,invoice_settlements,supplier_invoices,journal_entries,company_invoice_settings}.rs` | 43-1a, 43-1b, 43-5, 43-7 | multi-devise |
 | `repositories/{bank_accounts,invoices,settlement_cancellation,reconciliation_link}.rs` | 43-5 | — |
 | `repositories/project_reassignment.rs` (branche Epic 42) | 43-6 | **Epic 42** |
-| `crates/kesh-api/src/routes/reconciliation.rs`, `routes/reconciliation_group.rs` (neuf), `lib.rs`, `audit_labels.rs`, `exports/csv_tables.rs` | 43-1a (export), 43-2 | 42-2, 42-3 |
-| `frontend/src/lib/features/reconciliation/` | 43-3 | — |
-| catalogues i18n (quatre locales) | 43-2, 43-3 | tous (bloc par epic) |
-| `docs/manual/fr/admin-manual.tex` (43-1a), `user-manual.tex` (43-3, 43-5) — `.tex` seulement | | 42, 44 |
-| `docs/api-external.md` | 43-2 | 42 |
+| `crates/kesh-api/src/routes/{reconciliation,reconciliation_group,company_invoice_settings}.rs`, `lib.rs`, `audit_labels.rs`, `exports/csv_tables.rs` | 43-1a (export), 43-2, 43-7 | 42-1 |
+| `frontend/src/lib/features/reconciliation/`, `frontend/src/routes/(app)/settings/invoicing/` | 43-3, 43-7 | — |
+| catalogues i18n (quatre locales) | 43-3, 43-6, 43-7 | tous (bloc par epic) |
+| `docs/manual/fr/admin-manual.tex` (43-1a, 43-7), `user-manual.tex` (43-3, 43-5, 43-6) — `.tex` seulement | | 42, 44 |
+| `docs/api-external.md` | 43-2, 43-6, 43-7 | 42 |
 
 ## Pour les travaux parallèles (multi-devise)
 
-1. Un règlement peut être **commun à plusieurs factures**, de tiers différents : **une** écriture — une ligne de banque, une ligne de tiers par facture (portant le projet de sa facture), une ligne d'écart éventuelle (compte d'arrondi, au plus 5.00) — pointée par **une** transaction (`matched_entry_id`).
-2. `invoice_settlements` : N lignes pour le même `journal_entry_id` ; colonne neuve `journal_entry_line_id` (`NULL` = règlement unitaire) ; unicité `(journal_entry_id, invoice_id)` au lieu de `(journal_entry_id)`.
+1. Un règlement peut être **commun à plusieurs factures**, de tiers différents : **une** écriture — une ligne de banque, une ligne de tiers par facture (projet de sa facture), au plus une ligne d'arrondi et une de frais bancaires — pointée par **une** transaction (`matched_entry_id`).
+2. `invoice_settlements` : N lignes pour le même `journal_entry_id` ; colonne neuve `journal_entry_line_id` (`NULL` = règlement unitaire) ; unicité `(journal_entry_id, invoice_id)`.
 3. `supplier_invoices` : N factures pour le même `settlement_journal_entry_id` ; colonne neuve `settlement_journal_entry_line_id`.
-4. `journal_entry_lines` : colonne neuve `bank_transaction_id` — la ligne de banque d'un paiement **existant** nomme la transaction qui la rapproche, quand un geste groupé rattache des paiements déjà passés (43-5, peut sortir de la 0.19.0 : la colonne reste alors vide).
-5. Toute règle de devise (montant en devise, cours, écart de change) s'applique **par ligne de tiers** ; l'écart de change ne se confond pas avec la ligne d'écart du groupe.
-6. Migration : `crates/kesh-db/migrations/20261118000001_grouped_settlements.sql` (la 92ᵉ), DDL seul, non breaking ; celle du multi-devise prend un horodatage postérieur et part de `main` après la 0.19.0.
-7. Code : `repositories/grouped_settlements.rs` (neuf), `letterings.rs`, `reconciliation_cancel.rs`, `routes/reconciliation_group.rs` (neuf), `frontend/src/lib/features/reconciliation/`. Ne pas les modifier avant la publication de la 0.19.0 sans prévenir.
+4. `company_invoice_settings.group_settlement_max_difference` : plafond des frais admis, réglage de la société (5.00 par défaut).
+5. Montants **bruts** (quatre décimales) dans le calcul ; le centime pour l'affichage et pour les frais.
+6. **Le geste groupé n'accepte qu'une transaction en CHF** (`transaction_can_be_linked_to_entry`) : c'est le point à élargir par le multi-devise, avec une règle de devise **par ligne de tiers** ; un écart de change ne se confond ni avec la ligne d'arrondi ni avec celle des frais.
+7. Migrations : `crates/kesh-db/migrations/20261118000001_grouped_settlements.sql` (92ᵉ) et, si la 43-5 est publiée, `20261118000002_bank_line_transaction.sql` (93ᵉ, `journal_entry_lines.bank_transaction_id`) ; DDL seul, non breaking. Celle du multi-devise prend un horodatage postérieur et part de `main` après la 0.19.0.
+8. Code : `repositories/grouped_settlements.rs` (neuf), `letterings.rs`, `reconciliation_cancel.rs`, `routes/reconciliation_group.rs` (neuf), `frontend/src/lib/features/reconciliation/`. Ne pas les modifier avant la publication de la 0.19.0 sans prévenir.

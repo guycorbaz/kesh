@@ -3,10 +3,12 @@
 Status: ready-for-dev
 
 *Fiche rédigée le 2026-11-17 au soir par l'agent de rédaction de l'Epic 43 (Opus 5.5), workflow `bmad-create-story`,
-découpage de la 43-1 (validation P1, H3). Code lu à `8b50fd195`. Release **0.19.0**. **Part de la 43-1a à son commit T3**
+découpage de la 43-1 (validation P1, H3) ; **alignée dans la nuit** sur la remédiation de la 43-1a (validation P2 : H-B,
+M-A, M-B, M-C ; exigences de la 43-2). Code lu à `8b50fd195`. Release **0.19.0**. **Part de la 43-1a à son commit T3**
 (migration, entités, signatures) ; se fusionne après elle. **Coupable à la coupure** (C-43-18) : sans elle, la migration
-reste entière et la colonne fournisseur vide, la 43-2 et la 43-3 n'exposent pas le type fournisseur. `kesh-db` touché :
-gate complet en boucle. Décisions : C-43-1 à C-43-20 (fichier d'épique), qui font foi. Validation : à lancer.*
+reste entière et la colonne fournisseur vide, la 43-2 et la 43-3 retirent leurs commits fournisseur. `kesh-db` touché :
+gate complet en boucle. Décisions : C-43-1 à C-43-24 (fichier d'épique), qui font foi ; la règle de différence (C-43-16)
+est une proposition en attente de Guy. Validation : à lancer.*
 
 **Issues** : `refs #823` ; aucun mot-clé de fermeture dans un commit.
 
@@ -20,38 +22,48 @@ veux qu'au rapprochement Kesh passe **un** paiement qui solde et lettre chacune,
 - Acceptation unitaire : `accept_one_supplier_invoice` (`routes/reconciliation.rs:3312`), égalité exacte du montant
   (:3406), `supplier_invoices::lock_for_bank_settlement_in_tx` (`supplier_invoices.rs:2345` : facture `FOR UPDATE`, compte,
   lot `generated` en lecture verrouillante, garde du lot du compte), `pay_in_tx_as` (:1976 ; une écriture **par** facture,
-  donc non réemployable telle quelle ; projet d'en-tête `inv.project_id` :2163 ; `UPDATE … settlement_journal_entry_id = ?`
-  :2179 ; audit `supplier_invoice.paid` :2219), `purchase_payable_line` (:1891).
+  non réemployable telle quelle ; projet d'en-tête `inv.project_id` :2163 ; `UPDATE … settlement_journal_entry_id = ?`
+  :2179 ; audit `supplier_invoice.paid` :2219), `purchase_payable_line` (:1891) ; fenêtre fournisseur
+  `InvoiceDateWindow::for_supplier_transaction` (`repositories/reconciliation.rs:541`).
 - Détachement : `cancel_in_tx` (:2530) remet les colonnes de règlement à `NULL` (:2639) et écrit
   `details.settlementJournalEntryId` ; annulation du règlement : `cancel_settlement_in_tx` (:2819, `UPDATE` :2929).
 - Retour en brouillon d'une payée rapprochée refusé : `PaidReconciled` (:1194-1209).
 
 ## Critères d'acceptation
 
-- **AC1** — `grouped_settlements::pay_supplier_invoices_in_tx` (signature posée par la 43-1a) : verrous par
-  `lock_for_bank_settlement_in_tx`, facture par facture, **identifiants croissants** (réemployé, non recopié) ; refus
-  (`GroupRefusal`) : ceux de la 43-1a qui s'appliquent (bornes, doublon, transaction non `pending`, compte, période,
-  écart, compte d'arrondi, projet non imputable) et ceux de `SupplierSettlementRefusal` (introuvable, non `open`, lot
-  `generated`, tenue par un lot du compte) avec `invoice_id`, et « la transaction n'est pas un débit ».
-- **AC2** — Écriture (sans projet d'en-tête) : crédit banque de |montant| ; par facture, débit de **son** compte de dette
-  (`purchase_payable_line`) de son `total_amount`, avec le projet de la facture ; ligne d'écart `d = |montant| − Σ
-  total_amount` si `d ≠ 0`, au compte d'arrondi, au **débit** si `d > 0` (trop payé), au crédit sinon, sans projet,
-  plafond `GROUP_DIFFERENCE_MAX` (C-43-16).
+- **AC1** — `grouped_settlements::pay_supplier_invoices_in_tx(tx, company_id, bank_account_id, bank_transaction_id,
+  supplier_invoice_ids, batch_size, acteur, aujourd_hui)` (signature posée par la 43-1a à T3), avec le **point de
+  sauvegarde propre** de la 43-1a (D6) : bornes et doublon d'abord ; transaction (introuvable, non `pending`, pas un débit,
+  non CHF ou nulle) ; puis la méthode de **son** unitaire : `lock_for_bank_settlement_in_tx` facture par facture,
+  **identifiants croissants** (réemployé, non recopié) ; refus (`GroupRefusal`, `GroupedDocument::SupplierInvoice`, numéro
+  affichable) : introuvable, non `open`, lot `generated`, tenue par un lot du compte, compte bancaire, date (borne basse
+  seule : `InvoiceDateWindow::for_supplier_transaction(&tx).check(…)`, `PaymentBeforeInvoice` → refus,
+  `PaymentTooLate` ignoré), compte de dette égal à la banque, et ceux de la différence et de `create_in_tx` (AC2). **Aucun
+  refus de projet** (C-43-20).
+- **AC2** — Écriture (sans projet d'en-tête, forme D7 de la 43-1a) : crédit banque de |montant| ; par facture, débit de
+  **son** compte de dette (`purchase_payable_line`) de son `total_amount`, avec le projet de la facture estampillé sans
+  validation. Différences (C-43-16, proposition en attente) : `r = Σ (centime(total) − total)` au compte d'arrondi (au
+  débit si `r > 0`) ; `e = |montant| − Σ centime(total)` : `e > 0` (plus payé : frais) → débit du compte de frais bancaires,
+  `|e| ≤` plafond (43-1a AC3 bis) sinon `DifferenceTooLarge` ; `e < 0` (moins payé) → refus `Underpayment` ; refus des
+  comptes non configurés comme en 43-1a. Ni projet ni lettrage sur ces lignes.
 - **AC3** — Chaque facture : `status = 'paid'`, `settlement_type = 'bank_transfer'`, `settlement_bank_account_id`,
   `settlement_journal_entry_id`, **`settlement_journal_entry_line_id`**, `paid_at`, `version + 1`, `WHERE … AND version = ?
-  AND status = 'open'` (version lue sous le verrou), `rows_affected() == 1`. Transaction rapprochée comme en 43-1a AC5 ;
+  AND status = 'open'` (version lue sous le verrou de `lock_for_bank_settlement_in_tx`, qui **est** la méthode de l'unitaire
+  fournisseur), `rows_affected() == 1`. Transaction rapprochée comme en 43-1a AC5 (`AND version = ?`) ;
   `recheck_open_locked_in_tx` en dernière acquisition.
-- **AC4** — Audit (C-43-9) : `reconciliation.accepted` (`proposalType: "supplier_invoice_group"`) d'abord, puis
-  `supplier_invoice.paid` par facture avec les détails de `pay_in_tx_as` et l'acteur ; **pas** de doublon.
+- **AC4** — Audit (C-43-9) : `reconciliation.accepted` (`proposal_type: "supplier_invoice_group"`, clés snake_case,
+  `batch_size`) d'abord, puis `supplier_invoice.paid` par facture avec les détails de `pay_in_tx_as` et l'acteur ; pas de
+  doublon.
 - **AC5** — Lettrage de chaque facture (`sync_supplier_invoice_in_tx`) : une clé par facture (sa ligne d'achat, sa ligne
   de dette).
-- **AC6** — Dé-rapprochement : le bras fournisseur de `grouped_settlements::cancel_in_tx` (ordre de verrous de l'unitaire :
-  facture fournisseur **avant** l'écriture, comme `supplier_invoices::cancel_settlement_in_tx`) ; refus par facture
-  (`supplier_settlement_cancel_blocker`) avant toute écriture ; délettrage, factures rouvertes (`open`, colonnes
+- **AC6** — Dé-rapprochement : le bras fournisseur de `grouped_settlements::cancel_in_tx` (ordre de verrous de
+  l'unitaire : facture fournisseur **avant** l'écriture, comme `supplier_invoices::cancel_settlement_in_tx`) ; refus par
+  facture (`supplier_settlement_cancel_blocker`) avant toute écriture ; délettrage, factures rouvertes (`open`, colonnes
   `settlement_*` **ligne comprise** et `paid_at` à `NULL`, `version + 1`), contre-passation, audit
-  `supplier_invoice.settlement_cancelled` (ou l'action de l'unitaire) par facture.
+  `supplier_invoice.settlement_cancelled` (ou l'action de l'unitaire) par facture ; la facture qui bloque est rendue à
+  `entry_cancel_outlook` comme côté client.
 - **AC7** — Détachement (`cancel_in_tx` d'une facture payée du groupe) : la ligne passe aussi à `NULL` (le `CHECK` de la
-  migration rougit sinon) ; `details` de l'audit gagne `settlementJournalEntryLineId` (L7). Le dé-rapprochement ultérieur
+  migration rougit sinon) ; `details` de l'audit gagne `settlementJournalEntryLineId`. Le dé-rapprochement ultérieur
   contre-passe l'écriture entière et ne rouvre que les factures encore attachées ; quand plus aucune ne l'est, l'écriture
   est classée `entry`. Faux positif bénin du gel « paiement détaché » (`find_modification_blocker`) écrit au doc-comment.
 - **AC8** — Gestes unitaires refusés : retour en brouillon (`PaidReconciled`), annulation du règlement
@@ -60,21 +72,22 @@ veux qu'au rapprochement Kesh passe **un** paiement qui solde et lettre chacune,
 ## Tests
 
 Dans `crates/kesh-db/tests/grouped_settlements.rs` (module fournisseur) : groupe de deux fournisseurs ; facture d'un lot
-`generated` refusée ; écart accepté et refusé ; projets par ligne ; concurrence avec `pay_in_tx` depuis la fiche et avec
-`create_batch` ; dé-rapprochement ; détachement puis dé-rapprochement (AC7) ; acteur clé d'API. Mutations
-(`kesh-gate-logs/e431b/mut/`) : omettre la ligne au détachement (AC7 rougit) ; verrous dans l'ordre décroissant (le test
-d'interblocage rougit ou se rejoue — à constater) ; retirer `AND version = ?`.
+`generated` refusée ; frais acceptés, au-delà du plafond refusés, moins payé refusé ; projets par ligne, **projet archivé
+après coup accepté** ; date antérieure refusée ; un refus validé par le test laisse les tables inchangées (point de
+sauvegarde) ; concurrence avec `pay_in_tx` depuis la fiche et avec `create_batch` ; dé-rapprochement ; détachement puis
+dé-rapprochement (AC7) ; acteur clé d'API. Mutations (`kesh-gate-logs/e431b/mut/`) : omettre la ligne au détachement
+(AC7 rougit) ; retirer `AND version = ?` ; inverser le sens de `e` (le test « moins payé refusé » rougit).
 
 ## Tâches
 
-- [ ] **T0** — Étape 0 : LOW de la validation ; ligne lue de `lock_for_bank_settlement_in_tx` pour N factures (la garde (d)
-  se lit avec le montant de la transaction).
+- [ ] **T0** — Étape 0 : LOW de la validation ; signatures du T3 de la 43-1a relues ; réponse de Guy sur M-A.
 - [ ] **T1** — AC1 à AC5. — [ ] **T2** — AC6 à AC8. — [ ] **T3** — Gates, Dev Agent Record, prompt de revue P1.
 
 ## Note de version
 
 - **Ajouté** — Un débit peut régler plusieurs factures fournisseur, d'un ou de plusieurs fournisseurs : un seul paiement,
-  chaque facture soldée et lettrée (refs #823).
+  chaque facture soldée et lettrée ; des frais bancaires (5.00 au plus par défaut, réglable) passent au compte de frais
+  bancaires (refs #823).
 
 ## Dev Notes
 
@@ -92,3 +105,5 @@ Modules : `repositories/grouped_settlements`, `repositories/supplier_invoices` (
 ## Change Log
 
 - 2026-11-17 — Fiche née du découpage de la 43-1.
+- 2026-11-17 (nuit) — Alignée sur la remédiation de la 43-1a : projet sans validation, différences (proposition M-A), borne
+  basse de date, point de sauvegarde, signature figée, audit snake_case.
