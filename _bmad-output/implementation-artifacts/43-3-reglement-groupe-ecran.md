@@ -16,7 +16,7 @@ attente de Guy. Validation : passe 2 à lancer.*
 ## Story
 
 En tant que comptable, je choisis une ligne du relevé, j'y ajoute des factures une à une en les cherchant, je vois à
-chaque ajout le total imputé et la différence avec le montant du relevé, et j'enregistre — puis, si je me suis trompé,
+chaque ajout le total imputé et l'écart avec le montant du relevé, et j'enregistre — puis, si je me suis trompé,
 j'annule ce rapprochement en voyant les factures qu'il rouvrira.
 
 ## Ce qui se lit au code (`8b50fd195`)
@@ -28,13 +28,15 @@ j'annule ce rapprochement en voyant les factures qu'il rouvrira.
     `accept`, `reject`, `manual`, `split`), `guard()` (:316), `runGesture()` (`switch` fermé par `never`),
     `AlreadyBookedConfirmDialog`, `confirmKind = 'write' | 'reject'` ; l'en-tête du fichier énumère les gestes gardés ;
   - bouton « Rattacher à une écriture existante » (:747, `data-testid="link-settlement-button"`).
-- `LinkSettlementModal.svelte` : gardes `loadGen` et `session` (:73-82, revue P1 de la 29-8, C-29-8-37), `RELIRE_SUR`
-  (:84-90) — le patron de concurrence à reprendre.
+- `LinkSettlementModal.svelte` : gardes `loadGen` et `session` (:80-83, revue P1 de la 29-8, C-29-8-37), `RELIRE_SUR`
+  (:86-91) — le patron de concurrence ; ni anti-rebond ni `AbortController`.
 - `CancelReconciliationDialog.svelte`, `reconciliation-cancel.ts` (textes au singulier : « La facture de ce
-  rapprochement… »), `reconciliation.types.ts` (`kind` :204, `candidateType` :24, `AcceptedProposal` :134-141,
-  `cancelBlockedDocumentId` :233).
-- `failed-proposal-label.ts` (lit `role`, `claim`, `reason`, `fiscalYearName`, `tolerance_days` ; aucun numéro de facture)
-  et `failed-proposal-label.test.ts` (« couvre les 37 codes », :95-96 ; recette de comptage en tête, :6-16, par `grep` sur
+  rapprochement… »), `reconciliation.types.ts` (`kind` :204, `candidateType` :27, `AcceptedProposal` :134-141,
+  `cancelBlockedDocumentId` :222).
+- `failed-proposal-label.ts` (lit `role`, `claim`, `reason`, `fiscalYearName`, `tolerance_days` ; aucun numéro de facture ;
+  37 `case`, **aucun** pour `WRITE_OFF_ACCOUNT_NOT_CONFIGURED` ; `RECONCILIATION_OVERPAYMENT` parle « de la facture »
+  :355-358, `ROUNDING_ACCOUNT_NOT_CONFIGURED` « solde la facture » :398-401 ; `RECONCILIATION_CURRENCY_MISMATCH` :271) et
+  `failed-proposal-label.test.ts` (« couvre les 37 codes », :95-96 ; recette de comptage en tête, :6-16, par `grep` sur
   `reconciliation.rs` seul).
 - `frontend/src/lib/shared/i18n-keys.test.ts` : `sitesTotal` = 3086 (:1040).
 - E2E : `frontend/tests/e2e/helpers/api-fixtures.ts` (contacts, factures validées, compte bancaire lié ; **aucun** helper
@@ -55,35 +57,44 @@ j'annule ce rapprochement en voyant les factures qu'il rouvrira.
 - **D2 — Interface comme bexio (C-43-14).** En tête, la ligne du relevé (date, contrepartie, montant) ; un champ de
   **recherche** (`GET /reconciliation/transactions/{id}/group-candidates?q=…&exclude=…`) dont chaque résultat s'**ajoute**
   d'un clic ; la liste des factures **imputées**, chacune retirable, avec son reste dû ; en pied, **montant du relevé**,
-  **total imputé**, **différence**, chacun avec un **texte**, jamais la seule couleur. Textes de la différence (C-43-16,
-  proposition en attente de Guy ; la décomposition suit la 43-2) :
-  - nulle → « Différence nulle » ;
-  - frais admis (client : moins reçu ; fournisseur : plus payé), dans le plafond → « {montant} de frais bancaires, passés au
-    compte de frais bancaires ; les factures seront soldées en entier » ;
-  - au-delà du plafond → « Différence trop grande (au plus {maxDifference}) » ;
+  **total imputé** et **« Écart »** — jamais « différence », mot que l'API réserve à `difference` (`|montant| − Σ brut`) —,
+  chacun avec un **texte**, jamais la seule couleur. Textes de l'écart (C-43-16, proposition en attente de Guy ; l'écart
+  est la grandeur que l'API rend en `bankFees`, au sens près) :
+  - nul → « Aucun écart » ;
+  - frais admis (client : moins reçu ; fournisseur : plus payé), dans le plafond → « Écart de {montant} : frais bancaires,
+    passés au compte de frais bancaires ; les factures seront soldées en entier » ;
+  - au-delà du plafond → « Écart trop grand (au plus {maxDifference}) » ;
   - sens refusé (client : trop reçu ; fournisseur : moins payé) → « {montant} de plus que les factures : non admis » /
     « {montant} de moins que les factures : non admis » ;
-  - fractions de centime → rien d'affiché à part (elles passent au compte d'arrondi, comme une facture seule).
+  - fractions de centime → rien d'affiché (elles passent au compte d'arrondi, comme pour une facture seule).
   Aucune présélection : la modale s'ouvre avec **zéro** facture imputée ; le nom de la contrepartie préremplit seulement la
-  recherche (un nom sans jeton de 3 caractères est servi par le repli `LIKE` de la 43-2).
-- **D3 — Montants bruts, calcul en entiers de 1/10 000 (H2, C-43-21).** La modale reçoit `amountDueRaw` (chaîne à quatre
-  décimales) et le montant du relevé ; elle convertit chaque montant en **entier de 1/10 000** (aucun `Number` sur un
-  montant, aucun flottant), calcule les apports au centime (`MidpointAwayFromZero`, comme `amount_due_to_centime`), les
-  frais `e = |montant| − Σ apports au centime` et affiche selon D2. *Enregistrer* est actif si au moins **deux** factures
-  sont imputées, si le sens de `e` est admis et si `|e| ≤ maxDifference` (valeur **lue de la réponse** : le réglage de la
-  société, C-43-24 ; jamais écrite dans le code). Après succès, `difference`, `roundingDifference` et `bankFees` rendus par
-  le serveur sont comparés à ceux de l'écran ; un écart est journalisé en console (contrôle de cohérence), non montré.
+  recherche (un nom sans jeton de 3 caractères ou plus — « BL SA » — est servi par le repli `LIKE` de la 43-2, dont le
+  critère est aligné, L7).
+- **D3 — Les grandeurs de l'écran, en entiers (M1, H2, C-43-21).** La modale convertit les montants en **entiers de
+  1/10 000** (aucun `Number` sur un montant, aucun flottant) et ne refait **aucun** arrondi :
+  - *total imputé* = `Σ amountDue` (le centime rendu par le serveur, `amount_due_to_centime`, une seule définition) ;
+  - *écart* `e = |montant| − total imputé` ; l'écran affiche `|e|` selon D2 ;
+  - *Enregistrer* est actif si au moins **deux** factures sont imputées, si le sens de `e` est admis et si `|e| ≤
+    maxDifference` (valeur **lue de la réponse** : le réglage de la société, C-43-24 ; jamais écrite dans le code).
+  `amountDueRaw` n'est lu que pour l'afficher au survol, s'il y a lieu ; l'écran ne calcule ni `difference` ni
+  `roundingDifference`. Après succès, le contrôle de cohérence porte sur **`bankFees` seul** (= `|e|`) : un écart est
+  journalisé en console, non montré. Cohérent avec l'AC6 de la 43-2 : deux restes à 10.0050 (`amountDue` 10.01 chacun)
+  contre 20.02 → écart nul, `bankFees` `"0.00"` ; contre 20.01 → écart de 0.01, `bankFees` `"0.01"`.
 - **D4 — Gardes de concurrence (H3).** La modale reprend le patron de `LinkSettlementModal` : `session` (incrémentée à
   l'ouverture, à la fermeture, au changement de transaction et avant chaque soumission ; une réponse d'une session
   précédente n'agit jamais), `loadGen` pour la recherche (délai anti-rebond de 250 ms, requête précédente annulée par
-  `AbortController`, réponse hors d'ordre ignorée). Le code commun aux deux modales s'**extrait** dans
-  `reconciliation/modal-guards.ts`, testé seul, plutôt que d'être recopié.
+  `AbortController`, réponse hors d'ordre ignorée). Ces gardes vivent dans `reconciliation/modal-guards.ts` (anti-rebond,
+  abandon, compteurs), testé seul, **employé par le nouveau composant seulement** : `LinkSettlementModal` n'est **pas**
+  touché en 0.19.0 (décision de l'orchestrateur, L5) — y rattacher ses deux compteurs est une dette à ouvrir en issue.
 - **D5 — Refus nommés (M2).** Un refus `failed[]` s'affiche « Facture {numéro} : {libellé} », le numéro venant de
   `details.invoiceNumber` (43-2) et, à défaut, de la liste imputée par `details.invoiceId` / `supplierInvoiceId`. Une
   facture refusée parce qu'elle n'est plus réglable (`RECONCILIATION_INVOICE_NOT_ELIGIBLE`, `INVOICE_NOT_FOUND`,
   `SUPPLIER_INVOICE_NOT_FOUND`, `RECONCILIATION_SUPPLIER_PAYMENT_HOLD`) est **retirée des imputées**, la phrase la nomme, la
-  recherche est relue ; les autres refus laissent la sélection intacte. Ensemble de ces codes nommé `RETIRER_SUR`, à côté
-  de `RELIRE_SUR`.
+  recherche est relue (la recherche filtre la date comme le `POST`, 43-2 M4 : une facture retirée pour
+  `payment_date_before_invoice_date` ne revient pas, L3) ; les refus qui portent sur **la transaction**
+  (`BANK_TRANSACTION_NOT_FOUND`, `RECONCILIATION_ALREADY_RECONCILED`, `RECONCILIATION_ALREADY_REJECTED`) **ferment la modale
+  et relisent la liste** des propositions (L2) ; les autres refus laissent la sélection intacte. Ensembles nommés
+  `RETIRER_SUR` et `FERMER_SUR`, propres au nouveau composant.
 - **D6 — Côté fournisseur retirable (C-43-18).** Le débit (`supplier_invoice_group`) et ses tests vivent dans des commits à
   part, retirables si la 43-1b sort : sans eux, le bouton n'apparaît que sur un crédit.
 
@@ -92,16 +103,22 @@ j'annule ce rapprochement en voyant les factures qu'il rouvrira.
 - **AC1** — Bouton selon D1 : présent sur un crédit CHF en attente ; absent sur une transaction rapprochée, rejetée, de
   montant nul, en EUR ; sur une ligne signalée « déjà comptabilisée », le dialogue de confirmation s'ouvre **avant** la
   modale, et l'annuler n'ouvre rien ; sur une ligne non signalée, la modale s'ouvre directement.
-- **AC2** — D2 et D3 : ajout, retrait, recherche, total, différence et ses textes, bouton ; une facture imputée est passée à
+- **AC2** — D2 et D3 : ajout, retrait, recherche, total imputé, écart et ses textes, bouton ; une facture imputée est passée à
   `exclude` (elle ne revient pas, et `hasMore` reste juste) ; `hasMore` → phrase qui invite à préciser la recherche ; aucun
   résultat → phrase qui le dit ; chargement → état visible.
 - **AC3** — D4 : réponse de recherche hors d'ordre ignorée ; fermeture pendant l'envoi sans effet sur une modale rouverte ;
   rouverture sur une autre transaction propre.
 - **AC4** — *Enregistrer* envoie `POST /reconciliation/accept` (`invoice_group` ou `supplier_invoice_group`) ; succès →
-  toast, modale fermée, transaction retirée ; refus → D5 ; `failed-proposal-label.ts` gagne les codes neufs de la 43-2
-  (`RECONCILIATION_GROUP_INVALID` par `reason`, `RECONCILIATION_GROUP_DIFFERENCE_TOO_LARGE`, `RECONCILIATION_UNDERPAYMENT`,
-  et la phrase du `409` de la recherche) et vérifie que `RECONCILIATION_OVERPAYMENT`, `ROUNDING_ACCOUNT_NOT_CONFIGURED` et
-  `WRITE_OFF_ACCOUNT_NOT_CONFIGURED` (`nature: "bank_fees"`) ont un libellé.
+  toast, modale fermée, transaction retirée ; refus → D5 ; `failed-proposal-label.ts` **ajoute** les codes neufs de la
+  43-2 (`RECONCILIATION_GROUP_INVALID` par `reason`, `RECONCILIATION_GROUP_DIFFERENCE_TOO_LARGE`,
+  `RECONCILIATION_UNDERPAYMENT`) **et `WRITE_OFF_ACCOUNT_NOT_CONFIGURED`** (`nature: "bank_fees"`, absent aujourd'hui), avec
+  une forme **au pluriel** pour un groupe de `RECONCILIATION_OVERPAYMENT`, `ROUNDING_ACCOUNT_NOT_CONFIGURED` et
+  `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT` (`role: "bank_fees"`) — clé par geste, ou paramètre ; le test passe de 37 à
+  **41** codes, compte recompté depuis la source (L1). `RECONCILIATION_CURRENCY_MISMATCH` et
+  `RECONCILIATION_TRANSACTION_NOT_CREDIT` / `NOT_DEBIT` (montant nul compris) ont déjà leur libellé (43-2 M2). Les erreurs
+  de la **recherche** (`404 RECONCILIATION_TRANSACTION_NOT_PENDING`, `409 BANK_ACCOUNT_CLOSED`, `412
+  BANK_ACCOUNT_NOT_CONFIGURED`, `409 RECONCILIATION_ALREADY_REJECTED`, `409 RECONCILIATION_CURRENCY_MISMATCH`) s'affichent
+  dans la modale comme `loadError`, patron de `LinkSettlementModal`, non dans `failed-proposal-label.ts` (L4).
 - **AC5** — Annulation (M3) : `CancelReconciliationDialog`, `kind = "grouped_settlement"` → les **N** factures listées
   (`groupedInvoices`) redeviendront ouvertes, l'écriture sera contre-passée ; un refus d'annulation par facture nomme la
   facture (`cancelBlockedInvoice`) avec les textes existants mis au pluriel du groupe (« Une des factures de ce
@@ -112,8 +129,9 @@ j'annule ce rapprochement en voyant les factures qu'il rouvrira.
   recompté depuis la source (3086 à la tête) ; `failed-proposal-label.test.ts` : liste et recette de comptage étendues à
   `reconciliation_group.rs`.
 - **AC7** — Manuel utilisateur (`docs/manual/fr/user-manual.tex`, `.tex` seulement ; § `sec:reconciliation` et
-  `sec:annuler-rapprochement`) : « Régler plusieurs factures par une transaction » — gestes ; différence : frais bancaires
-  admis jusqu'au plafond réglé par l'administrateur (5.00 par défaut), sens refusé, fractions de centime ; comptes de
+  `sec:annuler-rapprochement`) : « Régler plusieurs factures par une transaction » — gestes ; écart : frais bancaires
+  admis jusqu'au plafond réglé par l'administrateur (5.00 par défaut), sens refusé, fractions de centime ; le pied dit
+  « Écart » ; comptes de
   différences d'arrondi et de frais bancaires à désigner ; 50 factures au plus ; confirmation sur une ligne signalée « déjà
   comptabilisée » comme les autres gestes ; un règlement et un lettrage par facture ; annulation en entier seulement ;
   limites : la ligne de banque d'un règlement groupé ne porte pas de compte analytique ; le changement de compte analytique
@@ -122,19 +140,21 @@ j'annule ce rapprochement en voyant les factures qu'il rouvrira.
   contrôle aplati (`pdftotext … | tr '\n' ' ' | tr -s ' '`) porte sur ce PDF jetable ; le prompt de revue P1 nomme l'axe
   « manuel contre code, PDF compris ».
 - **AC8** — Captures (thème clair, base de démonstration jetable), une par état d'AC2 à AC5 : modale vide, chargement,
-  aucun résultat, `hasMore`, une facture, deux factures de tiers différents avec frais, différence nulle, différence trop
-  grande, sens refusé, facture refusée nommée et retirée, confirmation « déjà comptabilisée », côté fournisseur (D6),
+  aucun résultat, `hasMore`, une facture, deux factures de tiers différents avec frais, écart nul, écart trop grand, sens
+  refusé, facture refusée nommée et retirée, confirmation « déjà comptabilisée », côté fournisseur (D6),
   dialogue d'annulation d'un groupe et son refus nommé — dans `/home/gcorbaz/devel/kesh-gate-logs/e433/captures/`.
 
 ## Tests
 
 - **Vitest** :
   - `GroupSettlementModal.test.ts` : ajout, retrait, `exclude`, bouton (une facture ; frais trop grands ; sens refusé ;
-    admis) ; calcul en entiers (`0.10 + 0.20` ; **10.0050 + 10.0050 contre 20.02 → différence nulle affichée, contre 20.01
-    → 0.01 de frais**) ; textes de la différence ; `maxDifference` lu de la réponse (réglage à 1.00 dans la maquette) ;
-    corps envoyé pour chaque famille ; refus nommé et retiré (une facture parmi trois) ; zéro facture imputée à
-    l'ouverture ; gardes D4 (réponse hors d'ordre, fermeture pendant l'envoi) ;
-  - `modal-guards.test.ts` (module extrait) ; `LinkSettlementModal.test.ts` reste vert sans modification de ses cas ;
+    admis) ; calcul en entiers sur `amountDue` (`0.10 + 0.20` ; **deux restes à 10.0050, `amountDue` 10.01 chacun, contre
+    20.02 → aucun écart affiché, contre 20.01 → écart de 0.01**, cohérent avec l'AC6 de la 43-2) ; contrôle de cohérence
+    sur `bankFees` seul ; textes de l'écart ; `maxDifference` lu de la réponse (réglage à 1.00 dans la maquette) ; corps
+    envoyé pour chaque famille ; refus nommé et retiré (une facture parmi trois) ; refus de transaction → modale fermée
+    (L2) ; zéro facture imputée à l'ouverture ; gardes D4 (réponse hors d'ordre, fermeture pendant l'envoi) ; erreur de
+    recherche affichée en `loadError` (L4) ;
+  - `modal-guards.test.ts` (module neuf) ; `LinkSettlementModal` n'est pas touché ;
   - `ReconciliationProposals.test.ts` : bouton selon `canLink` (EUR, montant nul) ; ligne signalée → dialogue avant la
     modale ; ligne non signalée → modale ; sonde négative ;
   - `CancelReconciliationDialog.test.ts` : `grouped_settlement`, refus nommé (deux motifs) ;
@@ -170,7 +190,7 @@ j'annule ce rapprochement en voyant les factures qu'il rouvrira.
   sur M-A (textes de D2).
 - [ ] **T1** — Types et appels (`reconciliation.types.ts`, `reconciliation.api.ts`).
 - [ ] **T2** — Clés i18n des quatre locales (AC6), avant les composants.
-- [ ] **T3** — `modal-guards.ts` extrait (D4), `LinkSettlementModal` repris dessus sans changement de comportement.
+- [ ] **T3** — `modal-guards.ts` neuf (D4), employé par le nouveau composant seulement ; `LinkSettlementModal` non touché.
 - [ ] **T4** — `GroupSettlementModal.svelte`, bouton, garde `group` (AC1 à AC4), côté client.
 - [ ] **T5** — Dialogue d'annulation (AC5). — [ ] **T6** — Manuel et compilation jetable (AC7).
 - [ ] **T7** — Commits D6 (côté fournisseur).
@@ -180,7 +200,7 @@ j'annule ce rapprochement en voyant les factures qu'il rouvrira.
 ## Note de version
 
 - **Ajouté** — Réconciliation : « Régler plusieurs factures… » — sur une ligne du relevé, ajoutez les factures une à une ;
-  le total et la différence s'affichent ; Kesh règle et lettre chacune, des frais bancaires retenus passant au compte de
+  le total et l'écart s'affichent ; Kesh règle et lettre chacune, des frais bancaires retenus passant au compte de
   frais bancaires dans la limite réglée par l'administrateur (refs #823).
 
 ## Dev Notes
@@ -198,10 +218,11 @@ cette condition est le **seul** point à élargir côté écran ; la phrase est 
 ### LOW à l'étape 0
 
 - **L-5** : `exclude` envoyé au serveur (appliqué à AC2).
-- **L-6** : nom sans jeton de 3 caractères : servi par le repli `LIKE` (43-2) ; un test de la modale l'exerce par maquette.
+- **L-6** : nom sans jeton de 3 caractères ou plus : servi par le repli `LIKE` (43-2, critère aligné à sa P2) ; un test
+  de la modale l'exerce par maquette, le test réel est celui de la 43-2 (AC5, « BL SA »).
 - **L-7 (c)** et **L-8** : appliqués (mutation de la garde ; libellé exact « Rattacher à une écriture existante » et
   `data-testid`).
-- **L-4** : contraste du texte de la différence vérifié par `helpers/contrast.ts` dans l'E2E.
+- **L-4** : contraste du texte de l'écart vérifié par `helpers/contrast.ts` dans l'E2E.
 
 ## Dev Agent Record
 
@@ -221,3 +242,8 @@ cette condition est le **seul** point à élargir côté écran ; la phrase est 
   l'E2E), M5 (planning et ordre de retrait), M6 (manuel compilé, PDF jetable) ; LOW L-1, L-2, L-3, L-4, L-5, L-7, L-8
   appliqués, L-6 en Dev Notes ; alignée sur la remédiation P2 de la 43-1a (différences, proposition M-A en attente) et sur
   Q4 (plafond lu du réglage).
+- 2026-11-18 — Remédiée après la validation P2 (0/0/1/7) : M1 (grandeurs nommées : total imputé = Σ `amountDue`, pied
+  « Écart », contrôle sur `bankFees` seul, test de 10.0050 corrigé, cohérent avec l'AC6 de la 43-2) ; L1 (libellés ajoutés,
+  formes au pluriel, 41 codes), L2 (refus de transaction : fermer et relire), L3 (borne de date de la recherche), L4
+  (erreurs de recherche en `loadError`), L5 (`LinkSettlementModal` non touché, décision de l'orchestrateur), L6
+  (citations), L7 (critère du repli aligné sur la 43-2).

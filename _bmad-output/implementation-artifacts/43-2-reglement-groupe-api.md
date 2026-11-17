@@ -34,7 +34,7 @@ refus par proposition du *Pattern batch*.
   `supplier_invoice_id: Option<i64>`, `journal_entry_id`, `score: MatchScore` **obligatoire** ; lu tel quel par
   `frontend/src/lib/features/reconciliation/reconciliation.types.ts:134-141` ; décrit par `docs/api-external.md:679`.
 - Clés d'audit de l'unitaire, en **snake_case** : `bank_transaction_id`, `invoice_id`, `score`, `batch_size` (taille du lot
-  reçu, Story 27-4, :1706-1710), `journal_entry_id`, `sale_journal_entry_id`, `settled_amount`, `paid_amount`,
+  reçu, Story 27-4, :1764-1766), `journal_entry_id`, `sale_journal_entry_id`, `settled_amount`, `paid_amount`,
   `rounding_difference` (près de :3003-3075).
 - Aucune garde de devise dans `accept_one_invoice` ni `accept_one_supplier_invoice` ; la garde CHF n'est que dans les
   propositions (:506, :1101) et le rattachement (`transaction_can_be_linked_to_entry`,
@@ -43,20 +43,46 @@ refus par proposition du *Pattern batch*.
   caractères au moins, préfixe seulement ; numéros et références en `LIKE … ESCAPE` ; disjonction dans les deux branches) ;
   `crates/kesh-db/src/util/search.rs` (`escape_like` :24, `escape_boolean_ft` :121).
 - Vue `ReconciliationTransactionResponse` (:5821) : `(invoice_id, supplier_invoice_id)` par un `match` exhaustif sur
-  `ReconciliationKind` (:5842-5849) ; `CancelReconciliationResponse` (:5896-5905) : **ni `kind` ni liste** —
+  `ReconciliationKind` (:5869-5875) ; `CancelReconciliationResponse` (:5896-5905) : **ni `kind` ni liste** —
   `bank_transaction`, `reversal_journal_entry_id`, `invoice_id`, `supplier_invoice_id`. Routes sœurs :
   `/reconciliation/transactions/{id}/link-candidates` et `…/entry-candidates` (`lib.rs:886-943`).
+- Pré-vol réel de `post_accept` : lecture de **toutes** les transactions du lot (`find_by_ids_for_account`, Step 0ter,
+  :1729-1740) et classement par `classify_batch_transaction` (:1530-1550 : `BANK_TRANSACTION_NOT_FOUND`,
+  `RECONCILIATION_ALREADY_RECONCILED`, `RECONCILIATION_ALREADY_REJECTED`) **avant** tout traitement ; verrou du compte pris
+  **une fois pour le lot** dans `accept_once` (:1767-1812), avant `accept_one`.
+- Garde de sens **unique** : `refuse_wrong_direction` (après `refuse_non_credit_settlement`, près de :2258-2300) — sens
+  contraire et montant nul en `RECONCILIATION_TRANSACTION_NOT_CREDIT` / `NOT_DEBIT`, `details.reason` =
+  `debit_transaction` / `credit_transaction` ou `zero_amount_transaction`, et `details.transactionAmount` ; publié par
+  `docs/api-external.md:679`. Refus de devise existant : `RECONCILIATION_CURRENCY_MISMATCH`, `details { transactionCurrency,
+  expected: "CHF" }` (:4170-4179, proposition `rule`), libellé `failed-proposal-label.ts:271`.
+- Erreurs du lettrage : `lettering_error_to_failed_proposal` (:2191-2217) classe en `INTERNAL_ERROR` (après
+  `tracing::error!`) `Invariant`, `NotFound` et les refus de lettrage exclus par construction (`LetteringConcurrentChange`,
+  `LetteringLineAlreadyLettered`, …), le reste en `DATABASE_ERROR` ; doc-comment :2180-2190 (« `DATABASE_ERROR` invite au
+  rejeu »).
+- Route sœur de recherche : `get_link_candidates` (près de :6348) — `bank_account_of_transaction`, `link_preflight` (compte
+  archivé → `BankAccountNotFound`, clos → `409 BANK_ACCOUNT_CLOSED`, sans compte du grand livre → `412
+  BANK_ACCOUNT_NOT_CONFIGURED`), puis transaction rapprochée → `AppError::ReconciliationTransactionNotPending` (`404
+  RECONCILIATION_TRANSACTION_NOT_PENDING`) ; elle ne contrôle pas le rejet. Principe écrit à `link_preflight` : « la liste
+  n'offre jamais ce que le `POST` refuserait ». Borne de date : `InvoiceDateWindow::latest_invoice_date`
+  (`repositories/reconciliation.rs:546-551`).
+- Aucune requête `MATCH(` dans `crates/kesh-api/src` : les recherches vivent dans les dépôts de `kesh-db`
+  (`docs/search-patterns.md` § 4, § 6) ; le reste dû dérivé est une jointure de `kesh-db` (`amount_due_derived_joins`).
 
 ## Décisions propres à la story
 
 - **D1** — Code neuf dans `crates/kesh-api/src/routes/reconciliation_group.rs` (module déclaré dans `routes/mod.rs`) ;
   `reconciliation.rs` ne gagne que les variantes, le pré-vol, l'aiguillage, le texte de l'extracteur et les champs de la vue.
-- **D2 — Aucune erreur d'un groupe ne sort au lot (H1).** Les refus de `GroupRefusal` deviennent des `FailedProposal` par
+  **La requête de recherche vit dans un dépôt neuf, propre à la 43-2** (M6) :
+  `crates/kesh-db/src/repositories/reconciliation_group_candidates.rs` (`find_group_candidates`), non partagé avec la
+  43-1a ni la 43-1b. **`kesh-db` est donc touché : gate complet même en cours de boucle** (`CLAUDE.md`, exception
+  `kesh-db`), assumé.
+- **D2 — Aucune erreur d'un groupe ne sort au lot (H1, M1).** Les refus de `GroupRefusal` deviennent des `FailedProposal` par
   **une seule** fonction, `group_refusal_to_failed_proposal(bank_transaction_id, GroupRefusal)` ; tout `Err(DbError)` des
-  fonctions de groupe, par **une seule** fonction, `group_error_to_failed_proposal(bank_transaction_id, DbError)` :
-  `INTERNAL_ERROR` pour `DbError::Invariant` (défaut structurel), `DATABASE_ERROR` avec `details.message` sinon — jamais
-  une `AppError`. L'interblocage (1213) est ainsi absorbé comme dans l'unitaire et le lot rejoué par `accept_batch`. Un
-  corps illisible reste un `400` du lot.
+  fonctions de groupe passe par `group_error_to_failed_proposal(bank_transaction_id, DbError)`, qui **délègue** à
+  `lettering_error_to_failed_proposal` (:2191-2217) : même classement que l'unitaire (`INTERNAL_ERROR` pour `Invariant`,
+  `NotFound` et les refus de lettrage exclus par construction ; `DATABASE_ERROR` avec `details.message` sinon) — jamais une
+  `AppError`. L'interblocage (1213) est ainsi absorbé comme dans l'unitaire et le lot rejoué par `accept_batch`. Un corps
+  illisible reste un `400` du lot.
 - **D3 — Audit écrit par le dépôt** (C-43-9) : la route n'écrit **aucune** trace pour un groupe.
 - **D4 — Type fournisseur retirable** (C-43-18) : la variante `SupplierInvoiceGroup`, sa branche du pré-vol, du `match` de
   `bank_transaction_id()` et de l'aiguillage, le **message de l'extracteur passé de cinq à six types**, la famille
@@ -68,15 +94,19 @@ refus par proposition du *Pattern batch*.
   brut (43-3). La différence `d = |montant| − Σ apports bruts` (valeur absolue du montant de la transaction, comme aux lignes de `group_difference` plus bas et à D4 bis de la 43-1a) se décompose (D8) en fractions de centime (compte d'arrondi,
   au brut, comme la troisième ligne de l'unitaire, `settlement_journal_lines`) et en frais au centime ; seuls les frais se
   comparent au plafond.
-- **D6 — Garde CHF (M6, C-43-22).** Une transaction dont la devise n'est pas `CHF`, ou de montant nul, est refusée par
-  proposition (`RECONCILIATION_GROUP_INVALID`, `reason: "currency"` ou `"zero_amount"`) **avant** tout verrou ; la
-  recherche rend `409 RECONCILIATION_GROUP_UNSUPPORTED_TRANSACTION` pour la même transaction. La condition est la fonction
-  existante `transaction_can_be_linked_to_entry` (une seule définition), appelée par les deux.
+- **D6 — Sens, montant nul, devise : les gardes existantes (M2, C-43-22).** Dans cet ordre, sur la transaction rechargée :
+  (1) **sens et montant nul** par `refuse_wrong_direction` — `RECONCILIATION_TRANSACTION_NOT_CREDIT` / `NOT_DEBIT`, mêmes
+  `reason` et `details` que l'unitaire, `zero_amount_transaction` compris (atteignable : c'est cette garde qui le rend) ;
+  (2) **devise** : non CHF → `RECONCILIATION_CURRENCY_MISMATCH`, `details { transactionCurrency, expected: "CHF" }`, forme de
+  :4174. Aucun code neuf, aucun `reason: "currency" | "zero_amount"` sous `RECONCILIATION_GROUP_INVALID`. La recherche
+  rend pour la même transaction le **`409 RECONCILIATION_CURRENCY_MISMATCH`** (devise) ; pour un montant nul, sans sens,
+  elle rend une **liste vide** (`direction: null`) plutôt qu'un code neuf ; écran : la condition reste `canLink`.
 - **D7 — Plafond réglable** (décision de Guy, Q4 ; C-43-24). La valeur est le réglage
   `company_invoice_settings.group_settlement_max_difference`, lu au moment du geste (43-1a AC3 bis) ; la constante
   `DEFAULT_GROUP_DIFFERENCE_MAX` n'en est que la valeur par défaut. La recherche rend le réglage (`maxDifference`), les
   refus le portent (`details.maxDifference`), `docs/api-external.md` le nomme sans recopier de valeur figée hors de la
-  mention « 5.00 par défaut » ; un test règle 1.00 et vérifie `maxDifference` et le refus.
+  mention « 5.00 par défaut » ; un test règle 1.00 **par le dépôt ou un `UPDATE` direct**, jamais par
+  `PUT /company/invoice-settings` (la 43-7 peut sortir la première, L2), et vérifie `maxDifference` et le refus.
 - **D8 — Différences (C-43-16, proposition de l'orchestrateur en attente de Guy)** : fractions de centime au compte
   d'arrondi, sans plafond ; frais (client : moins reçu ; fournisseur : plus payé) au compte de frais bancaires, dans la
   limite du plafond ; l'inverse refusé (`RECONCILIATION_OVERPAYMENT`, `RECONCILIATION_UNDERPAYMENT`). Aucun refus de projet
@@ -96,9 +126,14 @@ refus par proposition du *Pattern batch*.
 `paymentEntryIds` (paiements existants) s'ajoute avec la 43-5, champ facultatif.
 
 **Pré-vol (M7)**, dans `post_accept`, comme les types existants : un identifiant ≤ 0 dans `invoiceIds` /
-`supplierInvoiceIds` → `400 VALIDATION_ERROR` du lot ; la taille du corps reste bornée par la limite existante. Puis, **par
-proposition, avant la lecture de la transaction et tout verrou**, dans cet ordre : tableau vide ou d'un élément, plus de
-50, doublon → `RECONCILIATION_GROUP_INVALID` (`reason: "too_few" | "too_many" | "duplicate"`).
+`supplierInvoiceIds` → `400 VALIDATION_ERROR` du lot ; la taille du corps reste bornée par la limite existante. **Ordre
+réel des refus (M3)** : (a) pré-vol par lot de `post_accept` — chaque transaction lue et classée (`BANK_TRANSACTION_NOT_FOUND`,
+`RECONCILIATION_ALREADY_RECONCILED`, `RECONCILIATION_ALREADY_REJECTED`) ; (b) verrou du compte, une fois pour le lot
+(`accept_once`) ; (c) par proposition, dans `settle_invoices_in_tx` (43-1a, étape 2), après son `SAVEPOINT` et **sous le
+verrou du compte**, avant toute écriture et tout verrou de ligne : tableau vide ou d'un élément, plus de 50, doublon →
+`RECONCILIATION_GROUP_INVALID` (`reason: "too_few" | "too_many" | "duplicate"`) — **une seule** définition, dans le dépôt
+(aucune copie dans `post_accept`) ; (d) transaction rechargée, sens, montant nul, devise (D6) ; (e) factures. Test de
+l'ordre : transaction inexistante et une seule facture → `BANK_TRANSACTION_NOT_FOUND`, non `too_few`.
 
 **Élément de `accepted[]` pour un groupe (M1)** — la structure complète :
 
@@ -116,7 +151,8 @@ centime (signé, brut) ; `bankFees = |e|` (≥ 0, au centime, `"0.00"` sans frai
 `invoiceId` vaut `0` (sentinelle documentée, `docs/api-external.md:679`), `supplierInvoiceId` `null` ; pour un groupe
 fournisseur, `settledInvoices[].supplierInvoiceId`. `journalEntryId` existe déjà ; seuls `difference`, `roundingDifference`,
 `bankFees` et `settledInvoices` sont neufs (additifs, absents pour les autres types). Montants au brut (D5). Le type TypeScript `AcceptedProposal` gagne
-deux champs facultatifs ; un test de la 43-3 désérialise cet élément.
+**quatre** champs facultatifs (`difference`, `roundingDifference`, `bankFees`, `settledInvoices`, L3) ; un test de la 43-3
+désérialise cet élément.
 
 **Refus (`failed[]`, `200`) — table complète variante de `GroupRefusal` → code (M8)**, construite par
 `group_refusal_to_failed_proposal` seule. `details` porte toujours `invoiceId` ou `supplierInvoiceId` quand une facture est
@@ -126,18 +162,18 @@ fournisseur) pour que l'écran la nomme (43-3).
 | Variante (43-1a / 43-1b) | `errorCode` | `details` |
 |---|---|---|
 | `TooFew`, `TooMany`, `Duplicate` | `RECONCILIATION_GROUP_INVALID` | `reason` : `too_few`, `too_many`, `duplicate` (+ `invoiceId`) |
-| `UnsupportedTransaction` (devise, montant nul) | `RECONCILIATION_GROUP_INVALID` | `reason` : `currency`, `zero_amount` |
+| `CurrencyMismatch` | `RECONCILIATION_CURRENCY_MISMATCH` | `transactionCurrency`, `expected: "CHF"` (forme de :4174) |
 | `TransactionNotFound` | `BANK_TRANSACTION_NOT_FOUND` | — |
 | `TransactionNotPending` | `RECONCILIATION_ALREADY_RECONCILED` | — |
-| `NotCredit` / `NotDebit` | `RECONCILIATION_TRANSACTION_NOT_CREDIT` / `…_NOT_DEBIT` | — |
+| `WrongDirection` (sens contraire ou montant nul) | `RECONCILIATION_TRANSACTION_NOT_CREDIT` / `…_NOT_DEBIT` | par `refuse_wrong_direction` : `reason` (`debit_transaction` / `credit_transaction` / `zero_amount_transaction`), `transactionAmount` |
 | `InvoiceNotFound` | `INVOICE_NOT_FOUND` / `SUPPLIER_INVOICE_NOT_FOUND` | id |
 | `InvoiceNotEligible { reason }` | `RECONCILIATION_INVOICE_NOT_ELIGIBLE` | `reason` : `invoice_not_validated`, `invoice_already_paid`, `invoice_journal_entry_not_set`, `nothing_due`, `supplier_invoice_not_open`, `supplier_invoice_in_payment_batch`, `race_during_update` (version) |
 | `HeldByPaymentBatch` | `RECONCILIATION_SUPPLIER_PAYMENT_HOLD` | `reason: "other_invoice_in_payment_batch"`, ids |
 | `SaleEntryMalformed` | `INVOICE_SALE_ENTRY_MALFORMED` | `reason: "no_debit_line_on_sale_entry"` |
 | `BankAccountNotConfigured` / `NotFound` / `Closed` | `BANK_ACCOUNT_NOT_CONFIGURED` / `BANK_ACCOUNT_NOT_FOUND` / `BANK_ACCOUNT_CLOSED` | — |
-| `ClaimAccount { side }` (créance ou arrondi = banque ou créance) | `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT` | comme `claim_account_failed_proposal` |
+| `ClaimAccount { side, role }` (compte de créance, d'arrondi **ou de frais** égal à la banque ou à une créance) | `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT` | comme `claim_account_failed_proposal`, `details.role` = `receivable`, `rounding` ou **`bank_fees`** (L4) |
 | `PaymentBeforeInvoiceDate` | `RECONCILIATION_INVOICE_NOT_ELIGIBLE` | `reason: "payment_date_before_invoice_date"`, comme `date_refusal_failed_proposal` (:2316) |
-| `Overpayment` (client, trop reçu) | `RECONCILIATION_OVERPAYMENT` | `transactionAmount`, `sumApplied` |
+| `Overpayment` (client, trop reçu) | `RECONCILIATION_OVERPAYMENT` | `transactionAmount`, `sumApplied` — l'unitaire porte `amountDue` et `transactionAmount` (:2706-2714) : même code, deux formes, dit dans `docs/api-external.md` (L6) |
 | `Underpayment` (fournisseur, moins payé) | `RECONCILIATION_UNDERPAYMENT` | `transactionAmount`, `sumApplied` |
 | `DifferenceTooLarge` | `RECONCILIATION_GROUP_DIFFERENCE_TOO_LARGE` | `transactionAmount`, `sumApplied`, `bankFees`, `maxDifference` |
 | `RoundingAccountNotConfigured` | `ROUNDING_ACCOUNT_NOT_CONFIGURED` | — |
@@ -152,15 +188,22 @@ Les constructeurs existants sont **appelés**, non recopiés. Une variante que l
 
 ### `GET /api/v1/reconciliation/transactions/{id}/group-candidates?q=…&limit=…&exclude=…`
 
-Chemin aligné sur les routes sœurs (L-1). Comptable+, lecture seule. Transaction `pending`, non rejetée, compte ouvert
-(sinon `404`, `409 BANK_ACCOUNT_CLOSED`, `409 RECONCILIATION_ALREADY_RECONCILED`, comme `link-candidates`), CHF et non
-nulle (sinon `409 RECONCILIATION_GROUP_UNSUPPORTED_TRANSACTION`, D6). **Tous tiers.** Crédit → factures clients
-`validated`, reste dû > 0 ; débit → factures fournisseur `open`, hors lot `generated`.
+Chemin aligné sur les routes sœurs (L-1). Comptable+, lecture seule. **Refus, par les fonctions de `get_link_candidates`
+réemployées (M5)** : transaction introuvable → `404 NOT_FOUND` (`bank_account_of_transaction`) ; compte archivé →
+`BankAccountNotFound`, clos → `409 BANK_ACCOUNT_CLOSED`, sans compte du grand livre → `412 BANK_ACCOUNT_NOT_CONFIGURED`
+(`link_preflight`) ; transaction rapprochée → `404 RECONCILIATION_TRANSACTION_NOT_PENDING` (garde `is_reconciled`) ;
+**transaction rejetée** → `409 RECONCILIATION_ALREADY_REJECTED` (code du pré-vol par lot, :1545, porté par une `AppError`
+à paramètre si elle n'existe pas — à l'étape 0) ; non CHF → `409 RECONCILIATION_CURRENCY_MISMATCH` ; montant nul →
+liste vide, `direction: null` (D6). **Tous tiers.** Crédit → factures clients `validated`, reste dû > 0 ;
+débit → factures fournisseur `open`, hors lot `generated`. **Borne de date (M4)** : seules les factures dont
+`invoice_date <= InvoiceDateWindow::for_transaction(&t).latest_invoice_date` (client ; `for_supplier_transaction` pour un
+débit) sont rendues — la liste n'offre jamais ce que le `POST` refuserait. Requête : `find_group_candidates` du dépôt neuf
+(D1).
 
 **Recherche `q` (M3, `docs/search-patterns.md`)** — `q` taillé ; vide → pas de filtre ; sinon, disjonction :
 - **nom du tiers** : `MATCH(c.name) AGAINST(? IN BOOLEAN MODE)` avec `escape_boolean_ft(q)` suivi de `*` ; si le terme
-  échappé est vide **ou** fait moins de 3 caractères, repli `c.name LIKE ? ESCAPE '\\'` avec `escape_like` (pas de silence
-  sur un `q` court) ;
+  échappé n'a **aucun jeton de 3 caractères ou plus** (vide, « BL », « BL SA »), repli `c.name LIKE ? ESCAPE '\\'` avec
+  `escape_like` (pas de silence sur un nom à jetons courts, `docs/search-patterns.md` § 3.1, L5) ;
 - **numéros et référence** (`LIKE '%…%' ESCAPE '\\'`, `escape_like`) : client `invoice_number` ; fournisseur
   `internal_number`, `supplier_invoice_number`, `payment_reference` ;
 - la disjonction est présente dans **les deux** branches (terme FULLTEXT vide ou non), comme le prescrit § 6.
@@ -183,7 +226,7 @@ troncature.
 Candidate **fournisseur (M4)** : `{ "kind": "supplier_invoice", "id", "internalNumber", "supplierInvoiceNumber",
 "contactName", "date", "dueDate", "paymentReference", "amountDue", "amountDueRaw" }` — `amountDue` = `total_amount` au
 centime, `amountDueRaw` = `total_amount` brut ; pas de `totalTtc` distinct. Valeurs de `kind` en **snake_case**
-(`invoice`, `supplier_invoice`, et `payment` avec la 43-5), comme `candidateType` (`reconciliation.types.ts:24`), partout
+(`invoice`, `supplier_invoice`, et `payment` avec la 43-5), comme `candidateType` (`reconciliation.types.ts:27`), partout
 dans ce contrat. `transactionAmount` est **signé** comme la transaction (`-1250.00` pour un débit) ; la différence se
 calcule sur la valeur absolue (L-2).
 
@@ -193,7 +236,7 @@ calcule sur la valeur absolue (L-2).
   `supplierInvoiceId` et leurs numéros valent `null` ; champs additifs `groupedInvoices: [{ "kind": "invoice" |
   "supplier_invoice", "id", "number", "amount" }]` (vide hors groupe ; montant brut) et **`cancelBlockedInvoice: { "kind",
   "id", "number" } | null`** — la facture qui porte le premier motif d'un refus d'annulation par facture (créditée, soldée,
-  lettrage figé), lue de `entry_cancel_outlook` (43-1a). Le `match` de :5842-5849 gagne le bras.
+  lettrage figé), lue de `entry_cancel_outlook` (43-1a). Le `match` de :5869-5875 gagne le bras.
 - `POST /reconciliation/transactions/{id}/cancel` : pour un groupe, `invoiceId` et `supplierInvoiceId` valent `null` ;
   champs additifs `kind` (le code de `ReconciliationKind`, pour tous les rapprochements) et `cancelledInvoices: [{ "kind",
   "id", "number" }]` (vide hors groupe).
@@ -204,17 +247,23 @@ calcule sur la valeur absolue (L-2).
   pré-vol (M7) : identifiant ≤ 0 → `400` ; `bank_transaction_id()` couvre les deux variantes.
 - **AC2** — `invoice_group` : sous le verrou du compte, `settle_invoices_in_tx` ; succès → élément de M1 ; chaque
   `GroupRefusal` → sa ligne de la table, rien d'écrit pour cette proposition, les autres passent ; un `Err(DbError)` →
-  `DATABASE_ERROR` / `INTERNAL_ERROR` (D2). La route n'écrit aucune trace : le test lit `reconciliation.accepted` puis
+  `DATABASE_ERROR` / `INTERNAL_ERROR` par délégation à `lettering_error_to_failed_proposal` (D2) — test : une
+  `LetteringLineAlreadyLettered` forcée rend `INTERNAL_ERROR`, comme pour une facture seule. La route n'écrit aucune trace : le test lit `reconciliation.accepted` puis
   `invoice.paid` par facture, avec l'acteur et les clés snake_case exigées de la 43-1a (`batch_size` compris).
 - **AC3** — `supplier_invoice_group` (commit D4) : symétrique, `pay_supplier_invoices_in_tx`.
 - **AC4** — Lot mixte (`invoice` + groupe valide + groupe refusé) : deux `accepted`, un `failed`, dans l'ordre ; un
-  `invoice_group` sur un débit refusé `RECONCILIATION_TRANSACTION_NOT_CREDIT` (sonde de C-43-15) ; **interblocage** : deux
+  `invoice_group` sur un débit refusé `RECONCILIATION_TRANSACTION_NOT_CREDIT`, `reason: "debit_transaction"` (sonde de
+  C-43-15) ; sur un montant nul, `reason: "zero_amount_transaction"` ; **ordre (M3)** : transaction inexistante et une
+  seule facture → `BANK_TRANSACTION_NOT_FOUND` (pré-vol par lot), non `too_few` ; **interblocage** : deux
   lots concurrents dont les groupes partagent une facture — l'un aboutit, l'autre refuse la facture (`race_during_update` ou
   `invoice_already_paid`) ou est rejoué, jamais un `500` du lot.
 - **AC5** — Recherche : crédit et débit ; tiers différents dans la même liste ; un test par champ de `q` (nom ≥ 3
-  caractères, nom de 2 caractères par le repli, numéro, numéro interne, numéro du fournisseur, référence) ; injection (`%`,
-  `_`, `\`, `*`, `+`, `"` : aucun résultat parasite, aucune erreur) ; `exclude` ; tri puis troncature (`hasMore`) ; une
-  facture d'une autre société jamais rendue ; transaction EUR → `409` (D6).
+  caractères, nom à jetons courts « BL SA » par le repli, numéro, numéro interne, numéro du fournisseur, référence) ;
+  injection (`%`, `_`, `\`, `*`, `+`, `"` : aucun résultat parasite, aucune erreur) ; `exclude` ; tri puis troncature
+  (`hasMore`) ; une facture d'une autre société jamais rendue ; **borne de date** : une facture datée au-delà de
+  `latest_invoice_date` n'est pas rendue, la même à la date limite l'est (M4) ; **refus (M5)** : `404 NOT_FOUND`, `409
+  BANK_ACCOUNT_CLOSED`, `412 BANK_ACCOUNT_NOT_CONFIGURED`, `404 RECONCILIATION_TRANSACTION_NOT_PENDING`, `409
+  RECONCILIATION_ALREADY_REJECTED`, `409 RECONCILIATION_CURRENCY_MISMATCH` (EUR), montant nul → liste vide.
 - **AC6** — Différences (D5, D8) : deux restes à 10.0050 et un virement de 20.02 → `difference` `"0.0100"`,
   `roundingDifference` `"0.0100"`, `bankFees` `"0.00"` ; virement de 20.01 → `difference` `"0.0000"`, `roundingDifference`
   `"0.0100"`, `bankFees` `"0.01"` ; trop reçu de 0.01 → `RECONCILIATION_OVERPAYMENT` ; frais au-delà du réglage →
@@ -223,11 +272,13 @@ calcule sur la valeur absolue (L-2).
   (`payment_date_before_invoice_date`).
 - **AC7** — Vue et annulation : groupe client (et fournisseur, D4) — `grouped_settlement`, `groupedInvoices`,
   `cancelBlockedInvoice` sur une facture créditée ; réponse du `POST` (M5) ; refus par le code du premier motif.
-- **AC8** — Garde CHF (D6) : `invoice_group` sur une transaction EUR → `RECONCILIATION_GROUP_INVALID`, `reason:
-  "currency"`, sans verrou ni écriture ; la même en CHF passe (sonde).
+- **AC8** — Garde CHF (D6, M2, M3) : `invoice_group` sur une transaction EUR → `RECONCILIATION_CURRENCY_MISMATCH`,
+  `details { transactionCurrency: "EUR", expected: "CHF" }`, **rien d'écrit** (point de sauvegarde de la 43-1a) ; la même
+  en CHF passe (sonde).
 - **AC9** — `docs/api-external.md` : « Régler plusieurs factures par une transaction » (*depuis la v0.19.0*) — types,
-  pré-vol, recherche (règles de `q`), table des codes, élément d'`accepted[]`, brut et centime, plafond nommé, garde CHF,
-  champs de la vue et de l'annulation, *Pattern batch*.
+  ordre des refus, recherche (règles de `q`, borne de date, codes), table des codes (dont `RECONCILIATION_OVERPAYMENT` et ses
+  deux formes de `details`, L6), élément d'`accepted[]`, brut et centime, plafond nommé, garde CHF, champs de la vue et de
+  l'annulation, *Pattern batch*.
 - **AC10** — Accès (L-6) : rôle Comptable+ ; clé d'API en écriture : `POST /accept` permis ; clé en lecture
   (`ApiKeyReadOnly`, `middleware/auth.rs:139-142`) : `POST /accept` refusé, `GET group-candidates` permis ; rôle
   inférieur : `403`.
@@ -248,8 +299,10 @@ calcule sur la valeur absolue (L-2).
    `number`, `line_id`, `amount`.
 5. **`cancelBlockedInvoice`** : `entry_cancel_outlook` rend, pour un groupe, la facture du premier motif par facture ;
    `ReconciliationKind::GroupedSettlement` reste `Copy` (aucun `Vec` dans la variante ; la liste se lit à part).
-6. **Variantes de `GroupRefusal`** de la table ci-dessus, `UnsupportedTransaction` (devise, montant nul, D6) comprise,
-   refusée avant tout verrou.
+6. **Variantes de `GroupRefusal`** de la table ci-dessus. *Mise à jour de la P2 de la 43-2 (à transmettre à la 43-1a en
+   développement)* : `UnsupportedTransaction` devient `CurrencyMismatch` (devise seule) ; le sens et le montant nul sont
+   une variante `WrongDirection` traduite par `refuse_wrong_direction` (montant porté) ; l'ordre de l'étape 3 est : sens et
+   montant nul **d'abord**, devise ensuite ; `ClaimAccount` porte `role` = `receivable` | `rounding` | `bank_fees`.
 
 ## Tests
 
@@ -257,7 +310,8 @@ calcule sur la valeur absolue (L-2).
 de la table. Rouges d'abord : `kesh-gate-logs/e432/rouges.log` ; mutations : `kesh-gate-logs/e432/mut/` — (a) convertir un
 `Err(DbError)` en `AppError` (AC4 rougit) ; (b) écrire `reconciliation.accepted` aussi dans la route (le test qui compte
 les traces rougit) ; (c) calculer la différence au centime (AC6 rougit) ; (d) retirer la garde CHF (AC8 rougit) ; (e)
-retirer le repli `LIKE` du nom court (AC5 rougit).
+retirer le repli `LIKE` du nom court (AC5 rougit) ; (f) retirer la borne de date de la recherche (AC5 rougit). Tests de
+dépôt de `find_group_candidates` dans `crates/kesh-db/tests/reconciliation_group_candidates.rs` (neuf, squash).
 
 ## Tâches
 
@@ -265,7 +319,7 @@ retirer le repli `LIKE` du nom court (AC5 rougit).
   écart → au Change Log et à l'orchestrateur.
 - [ ] **T1** — Variante client, pré-vol, `bank_transaction_id()`, extracteur à cinq types, aiguillage (AC1).
 - [ ] **T2** — `reconciliation_group.rs` : `invoice_group`, conversions D2, garde D6 (AC2, AC4, AC6, AC8).
-- [ ] **T3** — Recherche (AC5). — [ ] **T4** — Vue et annulation (AC7). — [ ] **T5** — `docs/api-external.md` (AC9) ;
+- [ ] **T3** — Recherche : `reconciliation_group_candidates.rs` (dépôt, **gate complet**) puis la route (AC5). — [ ] **T4** — Vue et annulation (AC7). — [ ] **T5** — `docs/api-external.md` (AC9) ;
   accès (AC10).
 - [ ] **T6** — **Commit D4** : `supplier_invoice_group` et sa famille partout, message à six types (AC3).
 - [ ] **T7** — Gates ; Dev Agent Record ; prompt de revue P1 (lentilles B, E, A ; `docs/api-external.md` nommé).
@@ -281,11 +335,12 @@ retirer le repli `LIKE` du nom court (AC5 rougit).
 ### Modules touchés
 
 `kesh-api/routes/reconciliation` (variantes, pré-vol, vue, annulation), `routes/reconciliation_group` (neuf), `routes/mod.rs`,
-`lib.rs`, `docs/api-external.md`. `audit_labels.rs` inchangé (aucune action neuve). Les codes neufs
-(`RECONCILIATION_GROUP_INVALID`, `RECONCILIATION_GROUP_DIFFERENCE_TOO_LARGE`, `RECONCILIATION_UNDERPAYMENT`,
-`RECONCILIATION_GROUP_UNSUPPORTED_TRANSACTION`)
-sont des chaînes de `FailedProposal`, sauf le dernier (réponse `409` de la recherche) — vérifier à l'étape 0 si
-`errors.rs` doit le porter.
+`lib.rs`, `docs/api-external.md`, et **`kesh-db/repositories/reconciliation_group_candidates`** (neuf, propre à la 43-2,
+M6) avec `repositories/mod.rs`. **`kesh-db` touché : gate complet même en cours de boucle**, assumé (exception `kesh-db`
+du `CLAUDE.md`) ; le fichier est neuf et n'est partagé ni avec la 43-1a ni avec la 43-1b. `audit_labels.rs` inchangé
+(aucune action neuve). Codes neufs, tous des chaînes de `FailedProposal` : `RECONCILIATION_GROUP_INVALID`,
+`RECONCILIATION_GROUP_DIFFERENCE_TOO_LARGE`, `RECONCILIATION_UNDERPAYMENT` ; la recherche n'en crée aucun
+(`RECONCILIATION_ALREADY_REJECTED` en `AppError` à paramètre, à vérifier à l'étape 0).
 
 ### LOW à l'étape 0
 
@@ -299,8 +354,9 @@ sont des chaînes de `FailedProposal`, sauf le dernier (réponse `409` de la rec
 
 ### Fichiers communs
 
-Avec la 43-1a (`grouped_settlements.rs`, lu) ; avec la 43-3 (`reconciliation.types.ts`, écrit par elle) ; avec la 42-1
-(`lib.rs`, `docs/api-external.md` : blocs distincts, conflit résolu en gardant les deux).
+Avec la 43-1a (`grouped_settlements.rs`, lu ; `repositories/mod.rs`, une ligne chacune) ; avec la 43-3
+(`reconciliation.types.ts`, écrit par elle) ; avec la 42-1 (`lib.rs`, `docs/api-external.md` : blocs distincts, conflit
+résolu en gardant les deux).
 
 ## Dev Agent Record
 
@@ -324,3 +380,8 @@ Avec la 43-1a (`grouped_settlements.rs`, lu) ; avec la 43-3 (`reconciliation.typ
   (proposition M-A en attente de Guy, D8), plafond réglable (D7).
 - 2026-11-17 (nuit, P3 de la 43-1a) — Signes de `difference` et `bankFees` (M4, une définition, `group_difference`) ;
   `ACCOUNT_NOT_POSTABLE` retiré de la table (L2).
+- 2026-11-18 — Remédiée après la validation P2 (0/0/6/6) : M1 (délégation à `lettering_error_to_failed_proposal`), M2
+  (`refuse_wrong_direction` et `RECONCILIATION_CURRENCY_MISMATCH`, sens et montant nul avant la devise, plus de code de
+  devise neuf), M3 (ordre réel du pré-vol, bornes dans le dépôt sous le verrou du compte, AC8 « rien d'écrit »), M4
+  (borne de date de la recherche), M5 (codes réels de la recherche, transaction rejetée), M6 (dépôt neuf
+  `reconciliation_group_candidates.rs`, gate complet assumé) ; L1 à L6.
