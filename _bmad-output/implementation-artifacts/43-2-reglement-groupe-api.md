@@ -94,8 +94,8 @@ refus par proposition du *Pattern batch*.
   calcule l'écart sur le brut. Le contrat rend donc le **brut** (`amountDueRaw`, `difference`, `settledInvoices[].amount`,
   chaînes à quatre décimales) **et** le centime pour l'affichage (`amountDue`). L'écran calcule en entiers de 1/10 000 sur le
   brut (43-3). La différence `d = |montant| − Σ apports bruts` (valeur absolue du montant de la transaction, comme
-  `group_difference`, 43-1a) va **tout entière** soit au compte d'arrondi (`|d| < 0.005`, D8 bis), soit au compte choisi
-  (`gap = d`, au brut) ; seul `|gap|` se compare au plafond.
+  `group_difference`, 43-1a) se décompose (D8 bis) en **`e`**, `d` arrondi au centime, sur le compte choisi, et **`r = d −
+  e`**, la fraction sous le centime, sur le compte d'arrondi ; seul `|e|` se compare au plafond.
 - **D6 — Sens, montant nul, devise : les gardes existantes (M2, C-43-22).** Dans cet ordre, sur la transaction rechargée :
   (1) **sens et montant nul** par `refuse_wrong_direction` — `RECONCILIATION_TRANSACTION_NOT_CREDIT` / `NOT_DEBIT`, mêmes
   `reason` et `details` que l'unitaire, `zero_amount_transaction` compris (atteignable : c'est cette garde qui le rend) ;
@@ -111,23 +111,26 @@ refus par proposition du *Pattern batch*.
   mention « 5.00 par défaut » ; un test règle 1.00 **par le dépôt ou un `UPDATE` direct**, jamais par
   `PUT /company/invoice-settings` (la 43-7 peut sortir la première, L2), et vérifie `maxDifference` et le refus.
 - **D8 — Différences : décision de Guy du 2026-11-17** (C-43-16, `kesh-gate-logs/e43/decision-difference.md`) :
-  hors de la zone d'arrondi automatique (D8 bis), la différence `d` (moins `d < 0`, plus `d > 0`) est **admise dans les deux
-  sens**, pour les deux familles, sur le compte **choisi par l'utilisateur** (`differenceAccountId`, obligatoire dès que
-  `|d| ≥ 0.005`), dans la limite du plafond. Plus de refus `RECONCILIATION_OVERPAYMENT`
+  l'écart au centime `e` (D8 bis ; moins `e < 0`, plus `e > 0`) est **admis dans les deux sens**, pour les deux familles,
+  sur le compte **choisi par l'utilisateur** (`differenceAccountId`, obligatoire dès que `e ≠ 0`), dans la limite du
+  plafond (`|e| ≤` plafond ; `r` n'y est jamais soumis). Plus de refus `RECONCILIATION_OVERPAYMENT`
   ni `RECONCILIATION_UNDERPAYMENT` pour un groupe ; le code neuf `RECONCILIATION_UNDERPAYMENT` disparaît. Aucun refus de
   projet (C-43-20).
-- **D8 bis — Arrondi automatique (décision de l'orchestrateur, corrigée le 2026-11-18 ; C-43-25)** : soit `d = |montant| −
-  Σ restes bruts`. **Si `|d| < 0.005`** (strictement), `d` part **automatiquement au compte d'arrondi** : aucun compte n'est
-  demandé, `gap = "0.0000"`, `roundingDifference = d` — c'est l'arrondi sous le centime de l'unitaire, indépendant du
-  nombre de factures, nul quand les restes n'ont pas de fraction (donc toujours nul côté fournisseur, dont les montants
-  sont au centime). **Sinon**, la règle de Guy (D8) s'applique à `d` **entier** : `gap = d` (brut, signé) sur le compte
-  choisi, `roundingDifference = "0.0000"`. Le seuil se compare en entiers de 1/10 000 : `|d| < 50`. *(Remplace la règle
-  `centime(n × 0.005)` du 2026-11-18 matin, qui absorbait de vrais écarts — P5, L1 et L2.)* Exemples : deux restes de
-  10.0050 (brut 20.0100) payés **20.01** → `d` = −0.0000 → arrondi, aucun écart ; payés **20.02** → `d` = +0.0100 → compte
-  demandé, `gap` `"0.0100"` ; 500.00 + 300.00 payés **799.99** → `d` = −0.01 → compte demandé. Le calcul est celui de
-  `group_difference` (43-1a, `t3.md`). **Ordre** (P5, L3) : le compte d'arrondi (`ROUNDING_ACCOUNT_NOT_CONFIGURED`, compte
-  d'arrondi égal à une créance) n'est contrôlé que dans la zone d'arrondi automatique, avant tout autre refus de la
-  différence ; hors de la zone, `DifferenceAccountRequired` puis D9.
+- **D8 bis — Décomposition de l'écart (décision de l'orchestrateur, version définitive ; C-43-25 ;
+  `kesh-gate-logs/e43/decision-difference.md`, § « Décomposition de l'écart », dont le tableau fait foi)** :
+  - `d = |montant| − Σ restes bruts`, sur quatre décimales ;
+  - **`e` = `d` arrondi au centime**, demi-centime arrondi en s'éloignant de zéro, comme `amount_due_to_centime` ;
+  - **`r = d − e`**, la fraction sous le centime (`|r| ≤ 0.005`).
+
+  `r` va au **compte d'arrondi**, comme pour le règlement d'une seule facture (aucune ligne si `r = 0`) ; `e` va au **compte
+  choisi** s'il n'est pas nul — c'est la « différence » au sens de Guy, et la seule que borne le plafond. L'**arrondi
+  automatique** est le cas `e = 0` (`|d| < 0.005`) : aucun compte demandé, ni l'API ni l'écran ne parlent de différence.
+  `r` et `e` peuvent être non nuls ensemble ; aucune ligne à quatre décimales n'est écrite sur le compte choisi. *(Remplace
+  les formes précédentes du 2026-11-18 : `centime(n × 0.005)`, puis `|d| < 0.005` avec `gap = d` brut.)*
+
+  **Ordre** : le **compte d'arrondi est requis dès que `r ≠ 0`**, avec ses contrôles habituels
+  (`ROUNDING_ACCOUNT_NOT_CONFIGURED`, compte d'arrondi égal à une créance), **vérifié avant** `DifferenceAccountRequired`
+  puis les contrôles D9 du compte choisi. Le calcul est celui de `group_difference` (43-1a, `t3.md`).
 - **D9 — Compte de différence interdit, avec les refus existants** (P3 M1, P4 M2) — aucun code neuf ; **ordre de la
   contrepartie choisie** (`is_bank_ledger`, doc près de :709-713 ; flux ventilé :3663-3711 et règle :4100-4139) :
   1. compte égal au compte de la banque de la transaction → `VALIDATION_ERROR`, `reason: "counterparty_equals_bank_ledger"`
@@ -163,7 +166,7 @@ refus par proposition du *Pattern batch*.
 ```
 
 `differenceAccountId` (facultatif, entier > 0 ; ≤ 0 → `400 VALIDATION_ERROR` au pré-vol) : le compte de l'écart, choisi
-par l'utilisateur (D8) ; **obligatoire dès que `|d| ≥ 0.005`** (hors zone d'arrondi automatique, D8 bis), ignoré sinon. *(La 43-5 et `paymentEntryIds` sont
+par l'utilisateur (D8) ; **obligatoire dès que l'écart au centime `e` est non nul** (D8 bis), ignoré sinon. *(La 43-5 et `paymentEntryIds` sont
 sortis de la 0.19.0.)*
 
 **Pré-vol (M7)**, dans `post_accept`, comme les types existants : un identifiant ≤ 0 dans `invoiceIds` /
@@ -181,21 +184,22 @@ l'ordre : transaction inexistante et une seule facture → `BANK_TRANSACTION_NOT
 ```json
 { "bankTransactionId": 41, "invoiceId": 0, "supplierInvoiceId": null, "journalEntryId": 905,
   "score": { "...": "sous-scores à 0, total conventionnel 1.0, comme le type rule" },
-  "difference": "-0.4000", "roundingDifference": "0.0000", "gap": "-0.4000", "differenceAccountId": 6940,
+  "difference": "-0.4000", "roundingDifference": "0.0000", "gap": "-0.40", "differenceAccountId": 6940,
   "settledInvoices": [ { "invoiceId": 12, "amount": "500.0000" }, { "invoiceId": 15, "amount": "300.0000" } ] }
 ```
 
 Une seule définition pour les deux familles, celle de `group_difference` (43-1a D4 bis) : `difference = |montant| − Σ
-apports bruts` (signé, brut : négatif quand moins reçu ou moins payé, positif sinon) ; `roundingDifference` = `d` si
-`|d| < 0.005` (arrondi automatique, D8 bis), `"0.0000"` sinon ; **`gap`** = `d` si `|d| ≥ 0.005`, `"0.0000"` sinon
-(**brut, signé** : négatif, la banque a reçu ou payé moins que les factures ; positif, plus) — il remplace `bankFees` du
-contrat précédent ; `differenceAccountId` = le compte choisi, `null` quand `gap` est nul. Invariant : `difference =
-roundingDifference + gap`, et l'un des deux est toujours nul.
+apports bruts` (signé, brut : négatif quand moins reçu ou moins payé, positif sinon) ; **`roundingDifference` = `r`**, la
+fraction sous le centime passée au compte d'arrondi (brut, signé, `|r| ≤ 0.005`) ; **`gap` = `e`**, `d` arrondi au centime,
+passé au compte choisi (**au centime, signé** : négatif, la banque a reçu ou payé moins que les factures ; positif, plus ;
+`"0.00"` dans l'arrondi automatique) — il remplace `bankFees` du contrat précédent ; `differenceAccountId` = le compte
+choisi, `null` quand `gap` est nul. Invariant : `difference = roundingDifference + gap` ; les deux peuvent être non nuls
+ensemble (D8 bis).
 
 `invoiceId` vaut `0` (sentinelle documentée, `docs/api-external.md:679`), `supplierInvoiceId` `null` ; pour un groupe
 fournisseur, `settledInvoices[].supplierInvoiceId`. `journalEntryId` existe déjà ; seuls `difference`, `roundingDifference`,
 `gap`, `differenceAccountId` et `settledInvoices` sont neufs (additifs, absents pour les autres types). Montants au brut
-(D5), `gap` compris. Le type TypeScript `AcceptedProposal` gagne **cinq** champs facultatifs ; un test de la 43-3
+(D5), sauf `gap`, au centime. Le type TypeScript `AcceptedProposal` gagne **cinq** champs facultatifs ; un test de la 43-3
 désérialise cet élément.
 
 **Refus (`failed[]`, `200`) — table complète variante de `GroupRefusal` → code (M8)**, construite par
@@ -321,18 +325,26 @@ calcule sur la valeur absolue (L-2).
   BANK_ACCOUNT_CLOSED`, `412 BANK_ACCOUNT_NOT_CONFIGURED`, `404 RECONCILIATION_TRANSACTION_NOT_PENDING` ; EUR ou montant
   nul → `200`, `direction: null`, liste vide ; transaction rejetée → servie comme par `get_link_candidates` (P3, M2) ;
   ordre déterminé au-delà de 500 factures (L2).
-- **AC6** — Différences (D5, D8, D8 bis corrigée, D9) — `d = |montant| − Σ restes bruts` :
-  - deux restes à 10.0050 (brut 20.0100) payés **20.01, sans compte → accepté** par l'arrondi automatique : `difference`,
-    `roundingDifference` et `gap` `"0.0000"`, aucune ligne d'arrondi ni d'écart ;
-  - les mêmes payés **20.02** → `d` = +0.0100 → **compte demandé** (`difference_account_required` sans compte) ; avec un
-    compte → `gap` `"0.0100"`, `roundingDifference` `"0.0000"`, ligne de 0.01 sur ce compte ;
-  - 500.00 + 300.00 payés **799.99** → `d` = −0.01 → **compte demandé** ; payés 799.60 avec un compte → `gap` `"-0.4000"` ;
-  - trois restes à 10.0050 (brut 30.0150) payés **30.06** → `d` = +0.0450 → compte demandé, `gap` `"0.0450"` ;
-  - **bornes du seuil** : restes 10.0049 + 10.0000 payés 20.00 → `d` = −0.0049 → arrondi automatique, sans compte ; restes
-    10.0050 + 10.0000 payés 20.00 → `d` = −0.0050 → compte demandé ;
-  - **ordre** (P5, L3) : dans la zone d'arrondi automatique sans compte d'arrondi désigné → `ROUNDING_ACCOUNT_NOT_CONFIGURED` ;
-    hors zone, sans compte choisi → `difference_account_required`, jamais le refus du compte d'arrondi ;
-  - **plus** de 0.40 avec un compte → accepté, `gap` `"0.4000"` (côté client et côté fournisseur) ; écart au-delà du réglage → `RECONCILIATION_GROUP_DIFFERENCE_TOO_LARGE` avec `maxDifference` = le réglage ;
+- **AC6** — Différences (D5, D8, D8 bis définitive, D9) — **le tableau de `decision-difference.md` fait foi**, un test par
+  ligne (`d`, `e` = `gap`, `r` = `roundingDifference`, lignes écrites) :
+
+  | Cas | `difference` (`d`) | `gap` (`e`) | `roundingDifference` (`r`) | Effet |
+  |---|---|---|---|---|
+  | 2 × 10.0050 payés 20.01 | 0.0000 | 0.00 | 0.0000 | aucun écart, aucun compte, aucune ligne |
+  | 2 × 10.0050 payés 20.02 | +0.0100 | +0.01 | 0.0000 | compte demandé (0.01) |
+  | 500.00 + 300.00 payés 799.99 | −0.0100 | −0.01 | 0.0000 | compte demandé |
+  | 3 × 10.0050 payés 30.06 | +0.0450 | +0.05 | −0.0050 | compte demandé (0.05) **et** ligne d'arrondi de 0.0050 |
+  | 10.0049 + 10.0000 payés 20.00 | −0.0049 | 0.00 | −0.0049 | arrondi automatique, sans compte |
+  | 10.0050 + 10.0000 payés 20.00 | −0.0050 | −0.01 | +0.0050 | compte demandé (0.01) **et** ligne d'arrondi de 0.0050 |
+
+  Sans compte quand `e ≠ 0` → `RECONCILIATION_GROUP_INVALID`, `reason: "difference_account_required"` ; 500.00 + 300.00
+  payés 799.60 avec un compte → `gap` `"-0.40"` ;
+  - **ordre** : `r ≠ 0` sans compte d'arrondi désigné → `ROUNDING_ACCOUNT_NOT_CONFIGURED`, **même si `e ≠ 0` et qu'aucun
+    compte n'est choisi** (le compte d'arrondi se vérifie avant `DifferenceAccountRequired`) ; `r = 0`, `e ≠ 0`, sans compte
+    choisi → `difference_account_required`, jamais le refus du compte d'arrondi ;
+  - **plafond sur `|e|` seulement** : plafond réglé à 0.00 → le cas 10.0049 (arrondi automatique) est accepté, le cas 20.02
+    est refusé ;
+  - **plus** de 0.40 avec un compte → accepté, `gap` `"0.40"` (côté client et côté fournisseur) ; écart au-delà du réglage → `RECONCILIATION_GROUP_DIFFERENCE_TOO_LARGE` avec `maxDifference` = le réglage ;
   **contrôles du compte, dans l'ordre de D9, un test par cause** : = la banque → `VALIDATION_ERROR`,
   `counterparty_equals_bank_ledger` (même s'il est aussi non imputable) ; archivé, d'une autre société ou inexistant →
   `ACCOUNT_NOT_FOUND`, `missingAccountIds` ; non imputable → `ACCOUNT_NOT_POSTABLE` avec le numéro ; = le compte de créance
@@ -513,3 +525,8 @@ résolu en gardant les deux).
   automatique ne s'applique plus que si `|d| < 0.005` (`d = |montant| − Σ restes bruts`) ; sinon `gap = d` entier sur le
   compte choisi ; AC6 recalculé (20.01 arrondi ; 20.02 et 799.99 compte demandé ; 30.06 → `gap` 0.0450 ; bornes 0.0049 et
   0.0050). Cette correction change une règle : une passe ciblée la relit. Statut : `ready-for-dev`.
+- 2026-11-18 (C-43-25 définitive) — Décomposition de l'écart selon `decision-difference.md`, § « Décomposition de l'écart » :
+  `e` = `d` arrondi au centime sur le compte choisi (le seul que borne le plafond), `r = d − e` sur le compte d'arrondi ;
+  arrondi automatique = `e = 0` ; `gap = e` au centime, `roundingDifference = r`, les deux pouvant être non nuls ; compte
+  d'arrondi requis si `r ≠ 0`, vérifié avant `DifferenceAccountRequired` ; AC6 refait sur le tableau de la décision.
+  Remplace l'entrée précédente sur ce point (« `gap = d` entier »). La passe ciblée relit ce commit et le précédent.

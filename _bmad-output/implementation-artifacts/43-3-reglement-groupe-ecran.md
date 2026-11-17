@@ -68,7 +68,7 @@ comptabilise, et j'enregistre — puis, si je me suis trompé, j'annule ce rappr
   de la 43-2). Réponse de recherche à `direction: null` (montant nul, devise non CHF) → état **« aucune facture à proposer
   pour cette transaction »**, distinct de « aucun résultat » pour un `q` (P3, M1).
 - **D2 bis — Le compte de l'écart (décision de Guy du 2026-11-17 ; libellés et préremplissage par famille, décision de
-  l'orchestrateur du 2026-11-18, C-43-26).** Dès qu'il reste un écart **au-delà de l'arrondi automatique** (D3), un
+  l'orchestrateur du 2026-11-18, C-43-26).** Dès que l'**écart au centime `e`** (D3) est non nul, un
   **sélecteur de compte** apparaît sous « Écart », avec le **sens** en libellé et un **préremplissage** propres à la
   famille :
 
@@ -87,35 +87,40 @@ comptabilise, et j'enregistre — puis, si je me suis trompé, j'annule ce rappr
   **Choix gardé** (P4, L5) : un drapeau `choisiParUtilisateur` se pose à toute sélection manuelle (même si c'est le compte
   prérempli) et se lève si l'utilisateur vide le champ ; tant qu'il est posé, le compte reste **même si le signe change**
   ou si le sélecteur disparaît puis réapparaît pendant la session de la modale ; seul le **préremplissage** suit le signe.
-  Le compte est **obligatoire** pour enregistrer hors de la zone d'arrondi automatique. Les deux sens sont admis pour les
-  deux familles ; seul un écart **au-delà du plafond, hors zone d'arrondi automatique**, est refusé. Textes :
-  - nul → « Aucun écart » (le sélecteur disparaît) ;
-  - dans la zone d'arrondi automatique (D3) → « Arrondi de {montant} passé au compte d'arrondi » — **pas** « aucun écart » —,
-    sans sélecteur ; si aucun compte d'arrondi n'est désigné (`defaultRoundingAccountId` nul dans `GET
-    /company/invoice-settings`), l'écran le dit **avant** l'envoi (« Aucun compte de différences d'arrondi n'est désigné :
-    demandez à l'administrateur de le régler ») et *Enregistrer* reste inactif (P5, L2) ;
-  - hors zone, dans le plafond → le libellé du tableau, avec le sélecteur ;
-  - hors zone, au-delà du plafond → « Écart trop grand (au plus {maxDifference}) », *Enregistrer* inactif.
-- **D3 — Les grandeurs de l'écran, en entiers (H2, C-43-21, C-43-25 corrigée).** La modale convertit les montants en
-  **entiers de 1/10 000** (aucun `Number` sur un montant, aucun flottant) et ne refait **aucun** arrondi :
+  Le compte est **obligatoire** dès que `e ≠ 0`. Les deux sens sont admis pour les deux familles ; seul un **écart `e`
+  au-delà du plafond** est refusé (`r` n'y est jamais soumis). Textes :
+  - **écart** `e` : nul → « Aucun écart » (le sélecteur disparaît) ; dans le plafond → le libellé du tableau, **au
+    centime**, avec le sélecteur ; au-delà → « Écart trop grand (au plus {maxDifference}) », *Enregistrer* inactif ;
+  - **arrondi** `r` — une **information**, indépendante de l'écart, affichée dès que `r ≠ 0` : « Arrondi de {r} passé au
+    compte d'arrondi » (quatre décimales) ; elle peut accompagner un écart (3 × 10.0050 payés 30.06 : « Trop-perçu de 0.05 »
+    **et** « Arrondi de −0.0050 ») ou paraître seule (arrondi automatique, `e = 0`) ; si `r ≠ 0` et qu'aucun compte
+    d'arrondi n'est désigné (`defaultRoundingAccountId` nul dans `GET /company/invoice-settings`), l'écran le dit **avant**
+    l'envoi (« Aucun compte de différences d'arrondi n'est désigné : demandez à l'administrateur de le régler ») et
+    *Enregistrer* reste inactif (P5, L2).
+- **D3 — Les grandeurs de l'écran, en entiers (H2, C-43-21, C-43-25 définitive).** La modale convertit les montants en
+  **entiers de 1/10 000** (aucun `Number` sur un montant, aucun flottant) :
   - *total imputé* = `Σ amountDueRaw` (brut) ; chaque facture imputée affiche son reste **brut** quand il porte une fraction
     de centime (quatre décimales), sinon au centime, pour que la somme affichée soit celle qui est comparée ;
-  - *différence* `d = |montant| − total imputé`, signée (c'est la `difference` de l'API) ;
-  - **arrondi automatique** (C-43-25 corrigée ; 43-2 D8 bis) : si `|d| < 0.005` — en entiers, **`|d| < 50`**, strictement —,
-    `d` part au compte d'arrondi : l'écran l'annonce comme arrondi (D2 bis) et ne demande aucun compte. Sinon, l'**écart**
-    est `d` entier, affiché avec son sens (D2 bis), au centime s'il est rond, à quatre décimales sinon ;
-  - *Enregistrer* est actif si au moins **deux** factures sont imputées et, **soit** `d` est dans la zone d'arrondi
-    automatique (quel que soit le plafond, même réglé à 0.00, comme le serveur — P5, L1 ; compte d'arrondi désigné),
-    **soit** `|d| ≤ maxDifference` (valeur **lue de la réponse** : le réglage de la société, C-43-24 ; jamais écrite dans le
-    code) **et** un compte est choisi.
-  L'écran ne calcule pas `roundingDifference` ; `amountDue` (centime) ne sert qu'à l'affichage d'une facture sans fraction.
-  Après succès, le contrôle de cohérence compare `gap` à l'écart **affiché** (`"0.0000"` dans la zone d'arrondi, sans
-  toast) ; s'ils diffèrent (montants changés entre la recherche et l'envoi), un **toast dit le montant réellement passé** et
-  sur quel compte (P4, L3). Cohérent avec l'AC6 de la 43-2 : deux restes à 10.0050 (brut 20.0100) contre **20.01** → d = 0
-  → « Aucun écart » ; contre **20.02** → d = +0.0100 → trop-perçu de 0.01, compte demandé ; 500.00 + 300.00 contre
-  **799.99** → moins-payé de 0.01, compte demandé ; contre 799.60 → moins-payé de 0.40 ; restes 10.0049 + 10.0000 contre
-  20.00 → d = −0.0049 → « Arrondi de 0.0049 passé au compte d'arrondi » ; restes 10.0050 + 10.0000 contre 20.00 → d =
-  −0.0050 → moins-payé de 0.0050, compte demandé.
+  - *différence* `d = |montant| − total imputé`, signée (la `difference` de l'API) — **non affichée comme telle** ;
+  - **écart** `e` = `d` arrondi au centime, demi-centime arrondi en s'éloignant de zéro (en entiers : `e = signe(d) ×
+    ⌊(|d| + 50) / 100⌋ × 100`, comme `amount_due_to_centime`) ; **arrondi** `r = d − e` (`|r| ≤ 50`). L'arrondi automatique
+    est le cas `e = 0`, soit `|d| < 50` ;
+  - *Enregistrer* est actif si au moins **deux** factures sont imputées, si `r = 0` ou un compte d'arrondi est désigné, et,
+    si `e ≠ 0`, si `|e| ≤ maxDifference` (valeur **lue de la réponse** : le réglage de la société, C-43-24 ; jamais écrite
+    dans le code) **et** un compte est choisi. Avec `e = 0`, le plafond ne joue pas, même réglé à 0.00, comme le serveur
+    (P5, L1).
+  Après succès, le contrôle de cohérence compare `gap` à `e` et `roundingDifference` à `r` ; s'ils diffèrent (montants
+  changés entre la recherche et l'envoi), un **toast dit les montants réellement passés** et sur quels comptes (P4, L3).
+  Cohérent avec le tableau de `decision-difference.md` (43-2 AC6) :
+
+  | Cas | `e` affiché | `r` affiché | Compte demandé |
+  |---|---|---|---|
+  | 2 × 10.0050 payés 20.01 | aucun écart | — | non |
+  | 2 × 10.0050 payés 20.02 | trop-perçu de 0.01 | — | oui |
+  | 500.00 + 300.00 payés 799.99 | moins-payé de 0.01 | — | oui |
+  | 3 × 10.0050 payés 30.06 | trop-perçu de 0.05 | arrondi de −0.0050 | oui |
+  | 10.0049 + 10.0000 payés 20.00 | aucun écart | arrondi de −0.0049 | non |
+  | 10.0050 + 10.0000 payés 20.00 | moins-payé de 0.01 | arrondi de +0.0050 | oui |
 - **D4 — Gardes de concurrence (H3).** La modale tient `session` (incrémentée à l'ouverture, à la fermeture, au
   changement de transaction et avant chaque soumission ; une réponse d'une session précédente n'agit jamais) et `loadGen`
   pour la recherche (délai anti-rebond de 250 ms, requête précédente annulée par `AbortController`, réponse hors d'ordre
@@ -169,7 +174,7 @@ comptabilise, et j'enregistre — puis, si je me suis trompé, j'annule ce rappr
 - **AC3** — D4 : réponse de recherche hors d'ordre ignorée ; fermeture pendant l'envoi sans effet sur une modale rouverte ;
   rouverture sur une autre transaction propre.
 - **AC4** — *Enregistrer* envoie `POST /reconciliation/accept` (`invoice_group` ou `supplier_invoice_group`, avec
-  `differenceAccountId` s'il reste un écart au-delà de l'arrondi automatique) ; succès → toast, modale fermée, transaction
+  `differenceAccountId` si l'écart au centime `e` est non nul) ; succès → toast, modale fermée, transaction
   retirée ; refus → D5. `failed-proposal-label.ts` **ajoute** les deux codes neufs de la 43-2 (`RECONCILIATION_GROUP_INVALID`
   par `reason`, dont `difference_account_required` ; `RECONCILIATION_GROUP_DIFFERENCE_TOO_LARGE`) : le test passe de **37 à
   39** codes, compte recompté depuis la source ; sa recette de comptage s'étend à `reconciliation_group.rs`. **Forme du
@@ -205,7 +210,8 @@ comptabilise, et j'enregistre — puis, si je me suis trompé, j'annule ce rappr
   « manuel contre code, PDF compris ».
 - **AC8** — Captures (thème clair, base de démonstration jetable), une par état d'AC2 à AC5 : modale vide, chargement,
   aucun résultat, aucune facture à proposer, `hasMore`, une facture, deux factures de tiers différents avec moins-payé et
-  compte prérempli, trop-perçu, débit supérieur aux factures (D6), écart nul, arrondi passé au compte d'arrondi, arrondi
+  compte prérempli, trop-perçu, débit supérieur aux factures (D6), écart nul, arrondi seul passé au compte d'arrondi, écart
+  et arrondi ensemble (30.06), arrondi
   sans compte d'arrondi désigné, écart
   trop grand, compte désigné inutilisable (champ vide), compte refusé (une capture par cause), facture refusée nommée et retirée, confirmation
   « déjà comptabilisée », côté fournisseur (D6), dialogue d'annulation d'un groupe et son refus nommé — dans
@@ -215,19 +221,16 @@ comptabilise, et j'enregistre — puis, si je me suis trompé, j'annule ce rappr
 
 - **Vitest** :
   - `GroupSettlementModal.test.ts` : ajout, retrait, `exclude`, bouton (une facture ; écart trop grand ; écart sans compte ;
-    admis) ; calcul en entiers : **`0.10 + 0.20`** (c'est lui qui rougit sous la mutation `Number`) ; **différence au brut
-    et arrondi automatique (C-43-25 corrigée)** : deux restes à 10.0050 (brut 20.0100) contre **20.01** → « Aucun écart »,
-    aucun compte ; contre **20.02** → trop-perçu de 0.01, compte demandé (c'est lui qui rougit si l'on somme `amountDue` au
-    lieu de `amountDueRaw`) ; 500.00 + 300.00 contre **799.99** → moins-payé de 0.01, compte demandé ; trois restes à
-    10.0050 (brut 30.0150) contre **30.06** → trop-perçu de 0.0450, compte demandé ; **bornes** : restes 10.0049 + 10.0000
-    contre 20.00 → « Arrondi de 0.0049 passé au compte d'arrondi », sans compte ; restes 10.0050 + 10.0000 contre 20.00 →
-    moins-payé de 0.0050, compte demandé ; zone d'arrondi avec un plafond réglé à **0.00** → *Enregistrer* actif (P5, L1) ;
-    zone d'arrondi sans compte d'arrondi désigné → phrase avant l'envoi, *Enregistrer* inactif (P5, L2) ; libellés et
+    admis) ; calcul en entiers : **`0.10 + 0.20`** (c'est lui qui rougit sous la mutation `Number`) ; **décomposition de
+    l'écart (C-43-25 définitive)** : **les six lignes du tableau de D3**, chacune avec `e`, `r` et « compte demandé » — dont
+    20.02 (rougit si l'on somme `amountDue` au lieu de `amountDueRaw`), 30.06 (écart **et** arrondi affichés ensemble),
+    10.0049 (arrondi seul, sans compte) et 10.0050 (écart de 0.01 **et** arrondi de +0.0050 : borne du demi-centime) ;
+    arrondi automatique avec un plafond réglé à **0.00** → *Enregistrer* actif (P5, L1) ; `r ≠ 0` sans compte d'arrondi
+    désigné → phrase avant l'envoi, *Enregistrer* inactif, **même si `e = 0`** (P5, L2) ; libellés et
     préremplissage **des quatre cas** du tableau de
     D2 bis ; compte désigné archivé ou non imputable → champ vide ; choix gardé : sélection manuelle conservée quand le signe
     change, quand le sélecteur disparaît puis réapparaît, levée quand le champ est vidé ; obligation ; contrôle de cohérence
-    sur `gap` contre l'écart **affiché** (aucun toast dans la zone d'arrondi, où `gap` vaut `"0.0000"`) et toast s'il
-    diffère ; `maxDifference` lu de la réponse (réglage à 1.00 dans la maquette) ; corps envoyé
+    de `gap` contre `e` et de `roundingDifference` contre `r` (aucun toast s'ils concordent), toast s'ils diffèrent ; `maxDifference` lu de la réponse (réglage à 1.00 dans la maquette) ; corps envoyé
     pour chaque famille, `differenceAccountId` compris ; refus nommé et retiré (une facture parmi trois) ; refus de
     transaction, de sens, de devise et `404` de recherche → toast puis fermeture ; **refus du compte, une cause par test**
     (banque, introuvable, non imputable, compte de tiers du groupe) sous le sélecteur, et le cas configuration
@@ -252,10 +255,10 @@ comptabilise, et j'enregistre — puis, si je me suis trompé, j'annule ce rappr
   débit réglant deux factures fournisseur. Sonde négative : la transaction rapprochée n'offre plus le bouton.
 - **Rouges d'abord** : `kesh-gate-logs/e433/rouges.log`. **Mutations** (`kesh-gate-logs/e433/mut/`) : retirer « au moins
   deux » ; retirer le contrôle du plafond ; remplacer les entiers par `Number` (**le Vitest `0.10 + 0.20` rougit**) ;
-  **sommer `amountDue` au lieu de `amountDueRaw`** (le Vitest 20.02 ne demande plus de compte : il rougit) ; **retirer le
-  seuil de l'arrondi automatique** (la borne 0.0049 demande un compte : elle rougit) ; **seuil `≤` au lieu de `<`** (la
-  borne 0.0050 ne demande plus de compte : elle rougit) ; seuil compté en centimes au lieu de 1/10 000 (les deux bornes
-  rougissent) ; préremplir sans vérifier que le compte figure dans
+  **sommer `amountDue` au lieu de `amountDueRaw`** (le Vitest 20.02 ne demande plus de compte : il rougit) ; **tronquer au
+  lieu d'arrondir au centime** (`e` du cas 10.0050 vaut 0 au lieu de −0.01 : il rougit) ; **arrondir le demi-centime vers
+  zéro** (même cas : il rougit) ; **envoyer tout `d` comme écart** (le cas 10.0049 demande un compte : il rougit ; le cas
+  30.06 affiche 0.0450) ; **retirer l'affichage de `r` quand `e ≠ 0`** (le cas 30.06 rougit) ; préremplir sans vérifier que le compte figure dans
   la liste (le Vitest du compte désigné archivé rougit) ; retirer l'obligation du compte quand l'écart est non nul ; retirer la branche `group` de `guard`
   (AC1 rougit) ; retirer la garde de session (AC3 rougit).
 
@@ -353,3 +356,9 @@ cette condition est le **seul** point à élargir côté écran ; la phrase est 
   seulement si `|d| < 0.005`, sinon `d` entier sur le compte choisi ; tests recalculés (20.01 aucun écart ; 20.02 et 799.99
   compte demandé ; 30.06 → 0.0450) ; mutations : « sommer `amountDue` », « seuil retiré », « `≤` au lieu de `<` »,
   « seuil en centimes ». Cette correction change une règle : une passe ciblée la relit. Statut : `ready-for-dev`.
+- 2026-11-18 (C-43-25 définitive) — Décomposition de l'écart selon `decision-difference.md`, § « Décomposition de l'écart » :
+  l'écran calcule `d` au brut, puis `e` (au centime, demi-centime en s'éloignant de zéro) et `r = d − e` ; il affiche
+  l'**écart `e` au centime** (sélecteur, libellé du sens, plafond sur `|e|` seulement) et l'**arrondi `r` comme une
+  information**, seul ou avec l'écart ; compte d'arrondi désigné requis si `r ≠ 0` ; tableau des six cas en D3, tests et
+  mutations refaits (troncature, demi-centime vers zéro, tout `d` comme écart, `r` masqué). Remplace l'entrée précédente
+  sur ce point (« `d` entier sur le compte choisi »). La passe ciblée relit ce commit et le précédent.
