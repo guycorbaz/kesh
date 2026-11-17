@@ -8,8 +8,10 @@ dans la nuit** après sa validation P2 (`kesh-gate-logs/e43/validation-43-1a-p2.
 L1-L8 appliqués selon les décisions de l'orchestrateur), les validations P1 de la 43-2 et de la 43-3 (exigences sur la
 43-1a) et la décision de Guy sur Q4 (plafond configurable). Code lu à `8b50fd195`. Release **0.19.0**. **Story de tête ;
 porte la migration de la release.** **`kesh-db` touché : gate complet même en cours de boucle.** Décisions : fichier
-d'épique `_bmad-output/planning-artifacts/epic-43-transaction-plusieurs-factures.md`, **C-43-1 à C-43-24**, qui font foi ;
-la règle de différence (C-43-16) est une **proposition en attente de Guy** (registre de l'épique). **Jalons** : commit T3
+d'épique `_bmad-output/planning-artifacts/epic-43-transaction-plusieurs-factures.md`, **C-43-1 à C-43-26**, qui font foi ;
+la règle de la différence est **tranchée** (décision de Guy du 2026-11-17, décomposition définitive de l'orchestrateur :
+`kesh-gate-logs/e43/decision-difference.md` ; registre de la story `e0190-choix-autonomes-e431a.md`, C-e431a-1, -2, -12,
+-14) — D4 bis ci-dessous. **Jalons** : commit T3
 mercredi 18 avant midi (43-1b et 43-2 en partent ; la 43-7 part de T1) ; passage en `review` mercredi 18 à 18 h sur le
 périmètre du repli (Dev Notes). Validation : passe 3 (0/0/6/10) remédiée ; passe 4 ciblée à lancer.*
 
@@ -75,23 +77,32 @@ Cette story pose **la migration de la release** (colonnes de la 43-1b et réglag
   de ligne.
 - **D4** — Le dé-rapprochement groupé retire les propriétaires, **puis** contre-passe l'écriture devenue sans propriétaire
   (`journal_entries::reverse_in_tx`) : aucune autorité neuve.
-- ⚠️ **D4 bis est REMPLACÉE par la décision de Guy du 2026-11-17** (`kesh-gate-logs/e43/decision-difference.md`,
-  registre `e0190-choix-autonomes-e431a.md`, C-e431a-1 et C-e431a-2) : l'écart `gap` est admis dans les deux sens, au
-  compte que l'utilisateur choisit (`difference_account_id`), seul le plafond refuse ; `Decomposition { difference,
-  rounding_difference, gap }` ; `group_difference(montant, apports_bruts, plafond)`. Le texte ci-dessous reste comme
-  relevé de la validation ; il ne fait plus foi pour le signe ni pour les refus.
-- **D4 bis — Une seule fonction de la différence** (M4) : `grouped_settlements::group_difference(famille, montant,
-  apports_bruts, plafond) -> Result<Decomposition, GroupRefusal>`, **pure**, appelée par les deux bras (client et
-  fournisseur). Elle porte toute la règle de C-43-16 ; un changement décidé par Guy ne change qu'elle, ses tests et les
-  libellés. Définitions, **les mêmes pour les deux familles** : `difference = |montant| − Σ apports bruts` (signé : négatif
-  quand moins reçu, positif quand plus payé) ; `rounding_difference = r = Σ (centime(apport) − apport)` (signé) ; `bank_fees
-  = |e| ≥ 0`, avec `e = |montant| − Σ centime(apport)` (0 sans frais). Le sens admis de `e` dépend de la famille (client :
-  `e ≤ 0` ; fournisseur : `e ≥ 0`) ; l'autre sens est refusé (`Overpayment`, `Underpayment`) ; `|e| >` plafond →
-  `DifferenceTooLarge`. **À défaut de réponse de Guy mercredi à 8 h** (L10), cette proposition s'applique ; si Guy la
-  change, seules `group_difference`, ses tests, les variantes de refus et les libellés suivent (registre de l'épique).
+- **D4 bis — La différence : une seule fonction pure** (M4 ; règle de Guy du 2026-11-17, décomposition définitive de
+  `kesh-gate-logs/e43/decision-difference.md`, § « Décomposition de l'écart », dont le tableau des six cas fait foi ;
+  registre C-e431a-14). `grouped_settlements::group_difference(montant, apports_bruts, plafond) -> Result<Decomposition,
+  GroupRefusal>`, **pure**, appelée par les deux bras (client et fournisseur), la même pour les deux familles :
+  - `d = |montant| − Σ apports bruts` (quatre décimales ; apport = reste dû brut côté client, `total_amount` côté
+    fournisseur) ; `e = centime(d)`, demi-centime arrondi en s'éloignant de zéro (`amount_due_to_centime`) ;
+    `r = d − e` (toujours `|r| ≤ 0.005`) ;
+  - `Decomposition { difference: d, rounding_difference: r, gap: e }` — rien d'autre pour l'écart ; `d = r + e` ;
+  - `r ≠ 0` → ligne au **compte d'arrondi** (`rounding_account_for_write`, contrôlé comme dans l'unitaire), jamais
+    soumise au plafond ;
+  - `e ≠ 0` (moins-payé ou trop-perçu, **les deux sens admis**) → ligne au **compte que l'utilisateur choisit**
+    (`difference_account_id`, obligatoire) ; seul `|e| >` plafond est refusé (`DifferenceTooLarge`) ;
+  - l'**arrondi automatique** est le cas `e = 0` (`|d| < 0.005`) : aucun compte choisi.
+
+  | Cas | d | e | r |
+  |---|---|---|---|
+  | 2 × 10.0050 payés 20.01 | 0 | 0 | 0 |
+  | 2 × 10.0050 payés 20.02 | +0.0100 | +0.01 | 0 |
+  | 500.00 + 300.00 payés 799.99 | −0.0100 | −0.01 | 0 |
+  | 3 × 10.0050 payés 30.06 | +0.0450 | +0.05 | −0.0050 |
+  | 10.0049 + 10.0000 payés 20.00 | −0.0049 | 0 | −0.0049 |
+  | 10.0050 + 10.0000 payés 20.00 | −0.0050 | −0.01 | +0.0050 |
 - **D5 — Audit** (C-43-9) : le dépôt écrit `reconciliation.accepted` **avant** les traces par facture, avec l'acteur et les
-  clés **snake_case** de l'unitaire : `bank_transaction_id`, `journal_entry_id`, `paid_amount`, `batch_size`,
-  `rounding_difference` (= `r`), plus `proposal_type: "invoice_group"`, `bank_fees` (= `|e|`, ≥ 0), `difference` et `invoices:
+  clés **snake_case** de l'unitaire : `bank_transaction_id`, `journal_entry_id`, `paid_amount`, `batch_size`, plus
+  `proposal_type: "invoice_group"`, `difference` (= `d`), `rounding_difference` (= `r`), `gap` (= `e`),
+  `difference_account_id` (le compte choisi, nul sans écart) et `invoices:
   [{ invoice_id, settled_amount }]` ; puis `invoice.paid` par facture avec les détails de l'unitaire (`paid_via:
   "reconciliation"`, `settlement_journal_entry_id`, `reconciliation_audit_id`, avant/après). La route n'écrit aucune trace.
   Au dé-rapprochement, `reconciliation.cancelled` porte `kind: "grouped_settlement"`, `invoice_id` et `settlement_id` nuls,
@@ -192,7 +203,7 @@ Cette story pose **la migration de la release** (colonnes de la 43-1b et réglag
 **Règlement groupé client**
 
 - **AC5** — `grouped_settlements::settle_invoices_in_tx(tx, company_id, bank_account_id, bank_transaction_id, invoice_ids,
-  batch_size, acteur, aujourd_hui) -> Result<Result<GroupedSettlement, GroupRefusal>, DbError>`, dans la transaction et
+  difference_account_id, batch_size, acteur, aujourd_hui) -> Result<Result<GroupedSettlement, GroupRefusal>, DbError>`, dans la transaction et
   sous le verrou de compte de la route, **par la méthode de l'unitaire, à deux écarts près** (C-43-19, H-A, L1) : lecture
   sans verrou, version et reste dû de l'instantané, `UPDATE … AND version = <lue>` par identifiant croissant,
   `rows_affected()` contrôlé, `paid_at` posé seulement sur un reste dû tombé à zéro — comme l'unitaire. **Écarts** : (1)
@@ -202,26 +213,30 @@ Cette story pose **la migration de la release** (colonnes de la 43-1b et réglag
   D6) ; (2) ni score ni fenêtre haute de 30 jours (C-43-7) :
   1. `SAVEPOINT grouped_settlement` (D6) ;
   2. **avant toute lecture** : bornes (moins de 2, plus de 50), doublon → refus ;
-  3. transaction rechargée (`find_pending_by_id_for_account`, non verrouillante) : introuvable, non `pending`, pas un
-     crédit, devise non CHF ou montant nul (`transaction_can_be_linked_to_entry`, C-43-22) → refus ;
+  3. transaction rechargée (`find_pending_by_id_for_account`, non verrouillante) : introuvable (`TransactionNotFound`),
+     non `pending` (`TransactionNotPending`), puis **le sens et le montant nul** (`WrongDirection { amount }`), puis **la
+     devise** non CHF (`CurrencyMismatch { currency }`, `transaction_can_be_linked_to_entry`, C-43-22) → refus ;
   4. chaque facture, par identifiant croissant, lue **sans verrou** sur l'instantané (`find_invoice_by_id_for_company`),
      avec sa **version** et son **reste dû** (`amount_due`) : introuvable ou d'une autre société, non `validated`, déjà
      payée, reste dû nul, sans écriture de vente, écriture de vente sans ligne au débit → refus ; **date** :
      `InvoiceDateWindow::for_transaction(&tx).check(invoice_date, invoice_date)` — l'ancre réelle n'est **pas** lue
      (`check` rend `PaymentBeforeInvoice` avant `PaymentTooLate`, `reconciliation.rs:565-575`, et la borne haute est
      ignorée) ; seul `PaymentBeforeInvoice` est un refus (`PaymentBeforeInvoiceDate`, M-B, L5) ;
-  5. compte bancaire (non lié, clos, archivé → refus), `ensure_open_in_tx` ; compte de créance de chaque facture
-     (`sale_receivable_account`) ; compte de créance égal à la banque → refus (`refuse_if_claim_account`) ;
-  6. **différences (C-43-16, proposition en attente de Guy ; calculées par `group_difference`, D4 bis)** : `r` et `e` de
-     D4 bis ; `e > 0` → refus `Overpayment` ; `|e| >` plafond (AC3 bis) → refus `DifferenceTooLarge` ; `r ≠ 0` →
-     compte d'arrondi (`rounding_account_for_write` ; absent → refus `RoundingAccountNotConfigured` ; égal à un compte de
-     créance ou à la banque → refus `ClaimAccount`) ; `e < 0` → compte de frais bancaires
-     (`write_off_account_for_write(…, BankFees)` ; absent → refus `BankFeesAccountNotConfigured` ; égal à un compte de
-     créance ou à la banque → refus `ClaimAccount`) ;
+  5. compte bancaire (introuvable ou archivé `BankAccountNotFound`, non lié `BankAccountNotConfigured`, clos
+     `BankAccountClosed`), `ensure_open_in_tx` ; compte de créance de chaque facture (`sale_receivable_account`) ; compte
+     de créance égal à la banque → refus `ClaimAccount { role: Counterparty, bank_account_id: Some(..), piece }` ;
+  6. **la différence (D4 bis, `group_difference`)** : `|e| >` plafond (AC3 bis) → `DifferenceTooLarge` ; puis, **dans cet
+     ordre**, `r ≠ 0` → compte d'arrondi (`rounding_account_for_write` ; absent → `RoundingAccountNotConfigured` ; égal à
+     un compte de créance → `ClaimAccount { role: Rounding }`) — contrôlé **avant** le compte d'écart ; `e ≠ 0` → compte
+     choisi `difference_account_id` : absent → `DifferenceAccountRequired { gap }`, puis la convention de la contrepartie
+     choisie : compte de banque → `DifferenceAccountIsBankLedger`, inexistant, archivé ou d'une autre société →
+     `DifferenceAccountInvalid` (route : `ACCOUNT_NOT_FOUND`), non imputable → `DifferenceAccountNotPostable
+     { account_id, account_number }`, compte de créance d'une facture → `ClaimAccount { role: Counterparty,
+     bank_account_id: None }` ;
   7. écriture datée comme l'unitaire, **sans** projet d'en-tête, par la forme de D7 : débit banque du montant ; par
      facture, crédit de **son** compte de créance de son **reste brut**, `project_id` = celui de la facture (estampillé sans
-     validation, H-B) ; arrondi : `r` au crédit si `r > 0`, au débit sinon ; frais : `|e|` au débit ; ni l'un ni l'autre
-     n'a de projet ; `enforce_postable = false` (D7, L2 : aucun refus « compte non imputable ») ; les refus de
+     validation, H-B) ; arrondi : `r` au crédit si `r > 0`, au débit sinon ; écart : `e` au crédit du compte choisi si
+     `e > 0` (trop-perçu), au débit sinon (moins-payé) ; ni l'un ni l'autre n'a de projet ; `enforce_postable = false` (D7, L2 : aucun refus « compte non imputable ») ; les refus de
      `create_in_tx` (période verrouillée, exercice clos ou absent) → refus ;
   8. une ligne `invoice_settlements` par facture (`amount` = reste brut, `settled_on`, `bank_transfer`,
      `settlement_bank_account_id`, `journal_entry_line_id`) ;
@@ -234,16 +249,24 @@ Cette story pose **la migration de la release** (colonnes de la 43-1b et réglag
       WHERE … AND status = 'pending' AND matched_entry_id IS NULL AND version = ?` ; `rows_affected() != 1` → refus
       `TransactionNotPending` (L2) ;
   11. lettrage de chaque facture (`sync_invoice_in_tx`) ; `recheck_open_locked_in_tx` ; audit de D5.
-  **`GroupRefusal`** : une variante par refus nommé ci-dessus, `document: Option<GroupedDocument>` (`Invoice(id) |
-  SupplierInvoice(id)`) et le **numéro affichable** de la pièce quand une pièce est en cause ; aucune variante de projet
-  (H-B). Les variantes de la 43-1b (lot `generated`, tenue par un lot, non `open`, `Underpayment`) sont déclarées à T3. Tout
-  autre `DbError` reste `Err` (doc-comment). **`GroupedSettlement`** : `journal_entry_id`, `reconciliation_audit_id`,
-  la `Decomposition` de D4 bis — `difference` (`|montant| − Σ apports bruts`, signé, brut), `rounding_difference` (`r`,
-  signé, brut), `bank_fees` (`|e|`, ≥ 0, au centime), une seule définition pour les deux familles, la 43-1b et la 43-2 y
-  renvoient (M4) —, et par facture un `GroupedInvoiceRef { kind, id, number, settlement_id: Option<i64>, line_id, amount }` (montant
-  brut ; `settlement_id` absent côté fournisseur).
+  **`GroupRefusal`** — la liste finale, celle de `kesh-gate-logs/e43/t3.md` : `TooFew`, `TooMany`, `Duplicate`,
+  `TransactionNotFound`, `TransactionNotPending`, `WrongDirection { amount }`, `CurrencyMismatch { currency }`,
+  `InvoiceNotFound`, `InvoiceNotEligible { piece, reason }` (`IneligibleReason` : `NotValidated`, `AlreadyPaid`,
+  `JournalEntryNotSet`, `NothingDue`, `SupplierNotOpen`, `SupplierInPaymentBatch`, `RaceDuringUpdate`),
+  `HeldByPaymentBatch` (43-1b), `SaleEntryMalformed`, `BankAccountNotConfigured`, `BankAccountNotFound`,
+  `BankAccountClosed`, `ClaimAccount { claim, role: SettlementAccountRole, account_id, account_number, bank_account_id,
+  piece }`, `PaymentBeforeInvoiceDate`, `DifferenceTooLarge { transaction_amount, sum_applied, gap, max_difference }`,
+  `DifferenceAccountRequired { gap }`, `DifferenceAccountIsBankLedger`, `DifferenceAccountInvalid`,
+  `DifferenceAccountNotPostable { account_id, account_number }`, `RoundingAccountNotConfigured`, `PeriodLocked`,
+  `LaterFiscalYearClosed`, `FiscalYearInvalid`. Une pièce en cause est un `GroupedPiece { document: GroupedDocument,
+  number }` (numéro affichable) ; aucune variante de projet (H-B). Plus de `Overpayment`, `Underpayment` ni
+  `BankFeesAccountNotConfigured`. Tout autre `DbError` reste `Err` (doc-comment). **`GroupedSettlement`** :
+  `journal_entry_id`, `reconciliation_audit_id`, la `Decomposition { difference, rounding_difference, gap }` de D4 bis
+  (une seule définition pour les deux familles, la 43-1b et la 43-2 y renvoient, M4), `difference_account_id`, et par
+  facture un `GroupedInvoiceRef { kind, id, number, settlement_id: Option<i64>, line_id, amount }` (montant brut ;
+  `settlement_id` absent côté fournisseur).
 - **AC6** — Après AC5 : reste dû 0 et `paid_at` posé pour chaque facture ; une clé de lettrage **par** facture (sa ligne de
-  vente et sa seule ligne de créance) ; ni banque, ni arrondi, ni frais lettrés ; la ligne de créance de chaque facture
+  vente et sa seule ligne de créance) ; ni banque, ni arrondi, ni écart lettrés ; la ligne de créance de chaque facture
   porte son projet, les autres aucun.
 
 **Dé-rapprochement groupé client**
@@ -314,11 +337,12 @@ Cette story pose **la migration de la release** (colonnes de la 43-1b et réglag
 `crates/kesh-db/tests/grouped_settlements.rs` (neuf, squash, `#[sqlx::test]`) ; rouges d'abord
 (`kesh-gate-logs/e431a/rouges.log`) :
 
-- groupes de 2 et 3 factures de **deux clients** ; restes à quatre décimales (deux restes à 10.0050, affichés 10.01 chacun :
-  contre 20.02, arrondi de +0.0100 au crédit, aucun frais ; contre 20.01, arrondi de +0.0100 au crédit **et** frais de
-  0.01 au débit — un centime de moins que les montants affichés) ; facture déjà réglée en partie (son
-  reste) ; frais de −0.40 et −5.00 acceptés au plafond par défaut, −5.01 refusé ; plafond réglé à 0 : seuls les arrondis
-  passent ; trop-perçu de +0.01 refusé ; frais sans compte de frais refusé ; deux factures à projets différents (AC6) ;
+- groupes de 2 et 3 factures de **deux clients** ; **les six cas du tableau de D4 bis** (`d`, `e`, `r`), en test pur, et
+  en écritures pour les restes à quatre décimales (lignes d'arrondi et d'écart, équilibre, compte d'écart relu par la
+  vue) ; facture déjà réglée en partie (son reste) ; écart de −0.40 et −5.00 acceptés au plafond par défaut, −5.01
+  refusé ; **trop-perçu** accepté au compte choisi (crédit) ; plafond réglé à 0 : seul l'arrondi automatique (`e = 0`)
+  passe ; écart sans compte choisi refusé (`DifferenceAccountRequired`) ; compte choisi = banque, inexistant, non
+  imputable, créance → chacun son refus, dans l'ordre de AC5.6 ; deux factures à projets différents (AC6) ;
   **facture au projet archivé après sa validation, réglée en groupe, ligne de créance portant ce projet** (H-B) ; paiement
   daté de plus d'un jour avant une facture refusé (M-B) ;
 - un test par variante de `GroupRefusal` ; après chaque refus, **la transaction est validée** par le test puis les tables
@@ -338,13 +362,15 @@ Cette story pose **la migration de la release** (colonnes de la 43-1b et réglag
 - dé-rapprochement : complet, refus sur exercice clos (rien d'écrit), `expect_unlink_only = Some(true)` refusé, acteur clé
   d'API dans chaque entrée ; entrelacement « avoir sur une facture du groupe » et dé-rapprochement ;
 - AC2 (`PUT` d'une écriture groupée refusé ; `journal_entries_modification.rs`), AC8, AC9, AC10 à AC12 ;
-- `group_difference` (D4 bis) : tests unitaires purs des deux familles, des deux sens et du plafond ; test d'audit :
-  `bank_fees` positif pour un groupe client à −0.40 et pour un groupe fournisseur à +0.40 (43-1b) ; `CHECK` de la colonne
-  de ligne fournisseur (AC1.3) ; égalité constante / `DEFAULT` (AC3 bis) ;
+- `group_difference` (D4 bis) : tests unitaires purs — les six cas du tableau, les deux sens, `|montant|` pour une
+  transaction au débit, le plafond, l'identité `d = r + e`, un centime jamais absorbé (cinquante factures) ; audit :
+  `gap`, `difference_account_id`, `rounding_difference` ; `CHECK` de la colonne de ligne fournisseur (AC1.3) ; égalité
+  constante / `DEFAULT` (AC3 bis) ;
 - **mutations** (`kesh-gate-logs/e431a/mut/`), **réduites à quatre** (M6) : (1) `FOR UPDATE` sur la facture à l'étape 4
   et (2) sans `AND version = ?` — le test de concurrence rougit (H-A) ; (3) le détachement sans remettre la ligne à `NULL`
-  — le test de la `CHECK` rougit (M2) ; (4) inverser le sens admis de `e` dans `group_difference` — le test « trop-perçu
-  refusé » rougit. Les autres (filtre par ligne, `ROLLBACK TO SAVEPOINT`, projet validé) sont souhaitables si le temps le
+  — le test de la `CHECK` rougit (M2) ; (4) le plafond ne borne plus qu'un sens de `e` (`e > plafond` au lieu de
+  `|e| > plafond`) — le refus d'un moins-reçu au-delà du plafond rougit (la mutation d'origine, « inverser le sens admis
+  de `e` », est sans objet depuis que les deux sens sont admis). Les autres (filtre par ligne, `ROLLBACK TO SAVEPOINT`, projet validé) sont souhaitables si le temps le
   permet, en second lot. *Pourquoi ces quatre et non celles de la P3* (P4 LOW-2) : (3) et (4) gardent les deux
   décisions **neuves** de la P3 (M2, M4), que rien d'autre n'exerce ; le filtre par ligne est déjà exercé par AC6 (une
   clé de lettrage par facture : sans le filtre, les deux lignes de créance d'un même compte tombent dans un seul groupe
@@ -380,8 +406,9 @@ Cette story pose **la migration de la release** (colonnes de la 43-1b et réglag
   une migration ; le retour à la 0.18.0 ne se fait que par cette sauvegarde ; une sauvegarde faite en 0.19.0 ne s'importe
   pas dans une 0.18.0. Kesh écrit aussi la sienne dans `backup/pre-upgrade/` avant de migrer.
 - **Ajouté** — Un virement peut régler plusieurs factures clients, d'un ou de plusieurs clients : un seul règlement, chaque
-  facture soldée et lettrée ; des frais bancaires retenus par la banque (5.00 au plus par défaut, réglable) passent au
-  compte de frais bancaires ; le dé-rapprochement le défait en entier (refs #823).
+  facture soldée et lettrée ; un écart — moins reçu ou trop-perçu, 5.00 au plus par défaut, réglable — passe au compte
+  que vous choisissez, les fractions de centime au compte de différences d'arrondi ; le dé-rapprochement le défait en
+  entier (refs #823).
 
 ## Dev Notes
 
@@ -420,7 +447,8 @@ doc-comment de `journal_entries`), `kesh-api/exports/csv_tables`, `kesh-reconcil
 
 ### Limites assumées
 
-- Pas de règlement partiel dans un groupe ; le trop-perçu est refusé (proposition M-A).
+- Pas de règlement partiel dans un groupe : chaque facture est soldée ; l'écart, dans les deux sens, va au compte choisi
+  dans la limite du plafond (décision de Guy du 2026-11-17).
 - La ligne de banque et les différences d'un groupe n'ont pas de compte analytique, à la différence d'un règlement
   unitaire dont toutes les lignes héritent du projet de la facture.
 - Le motif `OwnedBySettlement` d'une écriture groupée nomme une seule facture (la plus petite) ; le gel est juste, le
@@ -483,3 +511,9 @@ change pour passer, hors des trois assertions de `journal_entries_modification.r
   `IsBankLedger`, `NotPostable`, `Invalid`), `ClaimAccount` aux rôles réels, `CurrencyMismatch`, `WrongDirection`,
   `Overpayment`, `Underpayment` et `BankFeesAccountNotConfigured` retirés. Les AC5 (étape 6) et la section *Tests*
   (frais, trop-perçu) se lisent sous cette règle.
+- 2026-11-17 (développement) — **Fiche alignée sur le code** (validation ciblée `kesh-gate-logs/e43/validation-43-23-p6-
+  ciblee.md`, CRITICAL-1 et HIGH-1) : en-tête (C-43-1 à C-43-26, différence tranchée), D4 bis réécrite sur la
+  décomposition définitive (`e = centime(d)`, `r = d − e`, tableau des six cas, C-e431a-14), D5 (clés `gap`,
+  `difference_account_id`, `rounding_difference`), AC5 (signature avec `difference_account_id`, ordre de l'étape 3,
+  étape 6 et ordre des contrôles, écriture de l'écart dans les deux sens, liste finale de `GroupRefusal`), AC6, section
+  *Tests* (six cas, mutation 4 redéfinie), note de version, limites.
