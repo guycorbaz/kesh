@@ -487,7 +487,9 @@ pub async fn update(
     // `DESIGNATED_ACCOUNT_COLUMNS`, lu `LOCK IN SHARE MODE` après le
     // `FOR UPDATE` des réglages : en devise → `ACCOUNT_IN_FOREIGN_CURRENCY` ;
     // le compte de produit par défaut, compte de gains ou de pertes de change
-    // (société ou comptes propres) → `ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT`.
+    // (société ou comptes propres) → `ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT`. La règle
+    // est celle de `accounts::designation_refusal_in_tx`, que la finalisation de
+    // l'assistant applique aussi (revue P1 de l'intégration de la v0.18.0, M1).
     for (code, requested, current) in designated_changes(&before, &changes) {
         let Some(account_id) = requested else {
             continue;
@@ -495,16 +497,14 @@ pub async fn update(
         if requested == current {
             continue;
         }
-        accounts::refuse_foreign_currency_in_tx(&mut tx, company_id, account_id).await?;
-        if code == "revenue" {
-            accounts::refuse_fx_account_as_revenue_in_tx(
-                &mut tx,
-                company_id,
-                &currency_state,
-                account_id,
-            )
-            .await?;
-        }
+        accounts::refuse_designation_in_tx(
+            &mut tx,
+            company_id,
+            &currency_state,
+            account_id,
+            code == "revenue",
+        )
+        .await?;
     }
 
     // KF-004 : court-circuit no-op AVANT toute mutation.
@@ -1478,23 +1478,25 @@ fn is_blank(s: &CompanyInvoiceSettings) -> bool {
 /// #987) — lu par `bank_accounts::first_active_bank_account_linked_to`, verrou
 /// partagé, **après** la ligne des réglages (ordre réglages → `bank_accounts`).
 ///
-/// **Devises** (Story 37-1, AC-4 ; intégration de la v0.18.0 dans l'Epic 37) :
-/// un compte **en devise** (`currency` relue sous le même verrou), puis un compte
-/// de gains ou de pertes de change (de la société ou propre) ou le compte de
-/// conversion de la société ([`super::accounts::fx_designations_of_in_tx`], sur
-/// `currency_state`, lu sous le verrou partagé de `companies` pris en tête de
-/// [`complete_default_accounts_in_tx`]) n'est jamais désigné d'office : la
-/// finalisation ne contourne pas les gardes que le `PUT` des réglages applique.
+/// **Devises** (Story 37-1, AC-4 ; intégration de la v0.18.0 dans l'Epic 37 ; revue
+/// P1 de l'intégration, M1) : la règle du `PUT` des réglages, **la même fonction**
+/// ([`super::accounts::designation_refusal_in_tx`], sur `currency_state`, lu sous
+/// le verrou partagé de `companies` pris en tête de
+/// [`complete_default_accounts_in_tx`]) — un compte **en devise** n'est désigné
+/// d'office à aucun réglage ; un compte de gains ou de pertes de change (de la
+/// société ou propre) ne l'est pas au compte de produit par défaut
+/// (`default_revenue`) ; le compte de conversion n'est pas écarté. La
+/// finalisation ne contourne pas les gardes du `PUT`, et n'en ajoute pas.
 async fn role_candidate_rejection(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,
     currency_state: &super::accounts::CompanyCurrencyState,
     account_id: i64,
     bank_guard: bool,
+    default_revenue: bool,
 ) -> Result<Option<DefaultInvoiceAccountCause>, DbError> {
-    let (account_number, postable, currency): (String, bool, Option<String>) = sqlx::query_as(
-        "SELECT number, postable, currency FROM accounts WHERE id = ? AND company_id = ? \
-         FOR UPDATE",
+    let (account_number, postable): (String, bool) = sqlx::query_as(
+        "SELECT number, postable FROM accounts WHERE id = ? AND company_id = ? FOR UPDATE",
     )
     .bind(account_id)
     .bind(company_id)
@@ -1506,24 +1508,31 @@ async fn role_candidate_rejection(
             account_number,
         }));
     }
-    if let Some(currency) = currency {
-        return Ok(Some(
-            DefaultInvoiceAccountCause::RoleAccountInForeignCurrency {
-                account_number,
-                currency,
-            },
-        ));
-    }
-    if let Some(hit) =
-        super::accounts::fx_designations_of_in_tx(tx, company_id, currency_state, account_id)
-            .await?
-            .into_iter()
-            .next()
+    match super::accounts::designation_refusal_in_tx(
+        tx,
+        company_id,
+        currency_state,
+        account_id,
+        default_revenue,
+    )
+    .await?
     {
-        return Ok(Some(DefaultInvoiceAccountCause::RoleAccountIsFxAccount {
-            account_number,
-            designation: hit.designation,
-        }));
+        Some(super::accounts::DesignationRefusal::ForeignCurrency { currency }) => {
+            return Ok(Some(
+                DefaultInvoiceAccountCause::RoleAccountInForeignCurrency {
+                    account_number,
+                    currency,
+                },
+            ));
+        }
+        Some(super::accounts::DesignationRefusal::FxDifference(hit)) => {
+            return Ok(Some(DefaultInvoiceAccountCause::RoleAccountIsFxAccount {
+                account_number,
+                designation: hit.designation,
+                holder_number: hit.holder.map(|(_, number)| number),
+            }));
+        }
+        None => {}
     }
     if bank_guard
         && let Some((_, bank_label)) =
@@ -1587,8 +1596,16 @@ async fn mandatory_account(
         (None, None) => DefaultInvoiceAccountCause::NoRoleAccount,
         (None, Some(account_id)) => {
             let bank_guard = setting == DefaultInvoiceSetting::Receivable;
-            match role_candidate_rejection(tx, company_id, currency_state, account_id, bank_guard)
-                .await?
+            let default_revenue = setting == DefaultInvoiceSetting::Revenue;
+            match role_candidate_rejection(
+                tx,
+                company_id,
+                currency_state,
+                account_id,
+                bank_guard,
+                default_revenue,
+            )
+            .await?
             {
                 None => return Ok(Some(account_id)),
                 Some(cause) => cause,
@@ -1619,8 +1636,11 @@ async fn mandatory_account(
 ///
 /// **Un candidat invalide n'est jamais désigné** (D6) : compte de rôle non
 /// imputable, ou — débiteurs et créanciers — lié à un compte bancaire non
-/// archivé. Obligatoire → refus ; facultatif → réglage laissé vide, sans refus.
-/// Les comptes du plan sont déjà filtrés (`designated_account_id`).
+/// archivé ; compte en devise, ou — produit par défaut seulement — compte de
+/// gains ou de pertes de change (Story 37-1, la règle du `PUT`,
+/// `accounts::designation_refusal_in_tx`). Obligatoire → refus ; facultatif →
+/// réglage laissé vide, sans refus. Les comptes du plan sont déjà filtrés
+/// (`designated_account_id`).
 ///
 /// **Refus** : [`DbError::DefaultInvoiceAccountsUnavailable`], un élément par
 /// réglage obligatoire en défaut, débiteurs d'abord, après l'examen des deux.
@@ -1759,9 +1779,16 @@ pub async fn complete_default_accounts_in_tx(
     let payable = match payable_role {
         Some(account_id)
             if blank
-                && role_candidate_rejection(tx, company_id, &currency_state, account_id, true)
-                    .await?
-                    .is_none() =>
+                && role_candidate_rejection(
+                    tx,
+                    company_id,
+                    &currency_state,
+                    account_id,
+                    true,
+                    false,
+                )
+                .await?
+                .is_none() =>
         {
             Some(account_id)
         }
@@ -1769,7 +1796,9 @@ pub async fn complete_default_accounts_in_tx(
     };
     let (rounding, discount, bank_fees, bad_debt) = if blank {
         // Story 37-1 (AC-4), intégration de la v0.18.0 : un compte du plan en
-        // devise, ou compte de différence de change, laisse son réglage vide.
+        // devise laisse son réglage vide. Un compte de gains ou de pertes de change
+        // n'est écarté que du compte de produit par défaut (revue P1 de
+        // l'intégration, M1, FR-37-1-12) : ces quatre réglages l'admettent.
         let mut usable = [
             chart.rounding,
             chart.discount,
@@ -1778,9 +1807,16 @@ pub async fn complete_default_accounts_in_tx(
         ];
         for slot in &mut usable {
             if let Some(account_id) = *slot
-                && role_candidate_rejection(tx, company_id, &currency_state, account_id, false)
-                    .await?
-                    .is_some()
+                && role_candidate_rejection(
+                    tx,
+                    company_id,
+                    &currency_state,
+                    account_id,
+                    false,
+                    false,
+                )
+                .await?
+                .is_some()
             {
                 *slot = None;
             }

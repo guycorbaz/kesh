@@ -2220,13 +2220,19 @@ pub enum DefaultInvoiceAccountCause {
         /// Code ISO 4217 de la devise du compte.
         currency: String,
     },
-    /// Le réglage est vide et le compte qui porte le rôle est un compte de
-    /// différence de change (gains, pertes — de la société ou propre à un compte
-    /// en devise) ou le compte de conversion de la société (Story 37-1, AC-4 ;
-    /// intégration de la v0.18.0) : la finalisation ne le désigne jamais d'office.
+    /// Le réglage **compte de produit par défaut** est vide et le compte qui porte
+    /// le rôle est un compte de gains ou de pertes de change — de la société ou
+    /// propre à un compte en devise (Story 37-1, AC-4, FR-37-1-12 ; intégration de
+    /// la v0.18.0) : la finalisation ne le désigne pas d'office, comme le `PUT`
+    /// des réglages le refuse (`accounts::designation_refusal_in_tx`). Le compte
+    /// de conversion n'est pas visé (revue P1 de l'intégration, M1) : `designation`
+    /// ne vaut jamais `Transit` ici.
     RoleAccountIsFxAccount {
         account_number: String,
         designation: FxDesignation,
+        /// Numéro du compte en devise qui le désigne (désignation propre) ; `None`
+        /// pour une désignation de la société (revue P1 de l'intégration, L1).
+        holder_number: Option<String>,
     },
 }
 

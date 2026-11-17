@@ -25,6 +25,9 @@
 		defaultFiscalYearEnd,
 		defaultFiscalYearStart,
 		fiscalYearRangeProblem,
+		readSavedFiscalYear,
+		saveFiscalYear,
+		clearSavedFiscalYear,
 	} from '$lib/features/onboarding/premier-exercice';
 	import { fetchCompanyCurrent } from '$lib/features/settings/settings.api';
 	import { listFiscalYears } from '$lib/features/fiscal-years/fiscal-years.api';
@@ -305,11 +308,22 @@
 	// qu'elle n'a pas été retouchée. Les deux boutons envoient ces dates à
 	// `finalize`, et restent désactivés, avec le motif, tant qu'elles ne
 	// conviennent pas.
+	//
+	// Revue P1 de l'intégration de la v0.18.0 (H1) : la saisie est gardée pour l'onglet
+	// (`sessionStorage`, `premier-exercice.ts`) et relue ici, pour survivre au lien de
+	// remède d'un refus de finalisation (*Administration → Facturation*) et au retour par
+	// la bannière ; les dates restent affichées et modifiables sur les écrans d'échec et
+	// de reprise (`premierExercice`, ci-dessous). Effacée après une finalisation réussie.
 	const fyDefaultStart = defaultFiscalYearStart(todayLocal());
-	let fyStart = $state(fyDefaultStart);
-	let fyEnd = $state(defaultFiscalYearEnd(fyDefaultStart) ?? '');
-	let fyEndTouched = $state(false);
+	const fySaved = readSavedFiscalYear();
+	let fyStart = $state(fySaved?.start ?? fyDefaultStart);
+	let fyEnd = $state(fySaved?.end ?? defaultFiscalYearEnd(fyDefaultStart) ?? '');
+	let fyEndTouched = $state(fySaved?.endTouched ?? false);
 	const fyProblem = $derived(fiscalYearRangeProblem(fyStart, fyEnd));
+
+	function keepFiscalYear() {
+		saveFiscalYear({ start: fyStart, end: fyEnd, endTouched: fyEndTouched });
+	}
 
 	function setFyStart(value: string) {
 		fyStart = value;
@@ -317,11 +331,13 @@
 			const end = defaultFiscalYearEnd(value);
 			if (end !== null) fyEnd = end;
 		}
+		keepFiscalYear();
 	}
 
 	function setFyEnd(value: string) {
 		fyEnd = value;
 		fyEndTouched = true;
+		keepFiscalYear();
 	}
 
 	function fyProblemText(): string {
@@ -384,14 +400,18 @@
 	// Story 37-1 (AC-11), intégration de la v0.18.0 : chaque finalisation — après l'étape
 	// bancaire, *Réessayer* après un échec, *Terminer la configuration* à la reprise — envoie
 	// les dates du premier exercice choisies sur la page (`finalizeBody`). Sans elles, un
-	// *Réessayer* créerait l'exercice aux dates par défaut du serveur, en silence. Après un
-	// rechargement de la page, la saisie est perdue : ce sont les dates par défaut de
-	// l'assistant (l'année civile du jour), les mêmes que celles du serveur.
+	// *Réessayer* créerait l'exercice aux dates par défaut du serveur, en silence.
+	//
+	// Revue P1 de l'intégration (H1) : la saisie survit au rechargement et au départ par le
+	// lien de remède (relue de `sessionStorage` ; à défaut de stockage, les dates par défaut
+	// de l'assistant, l'année civile du jour) ; les dates sont sous les yeux de l'utilisateur
+	// sur les écrans d'échec et de reprise. Elle est effacée après une finalisation réussie.
 	async function runFinalize() {
 		finalizeError = null;
 		finalizing = true;
 		try {
 			await onboardingState.finalize(finalizeBody());
+			clearSavedFiscalYear();
 		} catch (err) {
 			await reportFinalizeError(err);
 		} finally {
@@ -399,8 +419,18 @@
 		}
 	}
 
-	/** *Réessayer* et *Terminer la configuration* ne répondent pas pendant un appel (D3). */
-	const finalizeDisabled = $derived(finalizing || onboardingState.loading);
+	/**
+	 * *Réessayer* et *Terminer la configuration* ne répondent pas pendant un appel (D3), ni
+	 * tant que les dates du premier exercice ne conviennent pas (37-1, AC-11 ; revue P1 de
+	 * l'intégration, H1).
+	 */
+	const finalizeDisabled = $derived(finalizing || onboardingState.loading || fyProblem !== null);
+
+	/** *Réessayer*, *Terminer la configuration*, ou la touche Entrée dans un champ de date. */
+	function finalizeAgain() {
+		if (finalizeDisabled) return;
+		void runFinalize();
+	}
 
 	// Story 36-17 (#1187, D6) : le récapitulatif de la page terminée, lu une fois à son
 	// affichage. De chaque compte bancaire, seul son nom d'affichage (`bankAccountName` : la
@@ -435,6 +465,8 @@
 	$effect(() => {
 		if (screen === 'done' && !summaryRequested) {
 			summaryRequested = true;
+			// Une configuration terminée n'a plus de premier exercice à choisir.
+			clearSavedFiscalYear();
 			void loadSummary();
 		}
 	});
@@ -506,6 +538,61 @@
 
 	const cardClass = "rounded-lg border border-border bg-white p-6 text-left shadow-sm transition-colors hover:border-primary hover:bg-primary-light/5";
 </script>
+
+<!-- Story 37-1 (AC-11) : le premier exercice — au-dessus du compte bancaire (écran 6), et,
+     depuis la revue P1 de l'intégration de la v0.18.0 (H1), sur les écrans d'échec et de
+     reprise de la finalisation, au-dessus de *Réessayer* / *Terminer la configuration* :
+     aucune finalisation ne part sur des dates que l'utilisateur n'a pas sous les yeux. Les
+     champs sont ceux de l'écran Exercices (`type="date"`) ; la forme suisse JJ.MM.AAAA se
+     relit sous les champs. -->
+{#snippet premierExercice()}
+	<section class="mb-8 flex flex-col gap-4" data-testid="onboarding-fiscal-year">
+		<h2 class="text-center text-xl font-semibold">
+			{msg('onboarding-fiscal-year-title', 'Premier exercice')}
+		</h2>
+		<div class="grid grid-cols-2 gap-3">
+			<div>
+				<label for="fy-start" class="mb-1 block text-sm font-medium">
+					{msg('onboarding-fiscal-year-start', 'Début')}
+				</label>
+				<Input
+					id="fy-start"
+					type="date"
+					bind:value={() => fyStart, setFyStart}
+					data-testid="onboarding-fiscal-year-start"
+				/>
+			</div>
+			<div>
+				<label for="fy-end" class="mb-1 block text-sm font-medium">
+					{msg('onboarding-fiscal-year-end', 'Fin')}
+				</label>
+				<Input
+					id="fy-end"
+					type="date"
+					bind:value={() => fyEnd, setFyEnd}
+					data-testid="onboarding-fiscal-year-end"
+					aria-invalid={fyProblem !== null}
+					aria-describedby={fyProblem !== null ? 'fy-problem' : undefined}
+				/>
+			</div>
+		</div>
+		{#if fyProblem === null}
+			<p class="text-sm" data-testid="onboarding-fiscal-year-summary">
+				{i18nMsg('onboarding-fiscal-year-summary', 'Du { $start } au { $end }', {
+					start: formatSwissDate(fyStart),
+					end: formatSwissDate(fyEnd),
+				})}
+			</p>
+		{:else}
+			<p id="fy-problem" class="text-sm text-destructive" role="alert" data-testid="onboarding-fiscal-year-problem">
+				{fyProblemText()}
+			</p>
+		{/if}
+		<p class="text-sm text-text-muted" data-testid="onboarding-fiscal-year-immutable">
+			{msg('onboarding-fiscal-year-immutable', 'Les dates d’un exercice ne se modifient plus une fois créé.')}
+		</p>
+	</section>
+{/snippet}
 
 <!--
 	Story 36-17 (#1187, D8) : un écran pour chaque état, choisi par `onboardingScreenFor`.
@@ -686,55 +773,7 @@
 	<!-- Step 7 : Compte bancaire (reste affiché pendant l'appel de l'étape bancaire,
 	     boutons désactivés, jusqu'au passage à l'étape 7 — Story 36-17, D3) -->
 	<div data-testid="onboarding-screen-6">
-	<!-- Story 37-1 (AC-11) : le premier exercice, au-dessus du compte bancaire. Les
-	     champs sont ceux de l'écran Exercices (`type="date"`) ; la forme suisse
-	     JJ.MM.AAAA se relit sous les champs. -->
-	<section class="mb-8 flex flex-col gap-4" data-testid="onboarding-fiscal-year">
-		<h2 class="text-center text-xl font-semibold">
-			{msg('onboarding-fiscal-year-title', 'Premier exercice')}
-		</h2>
-		<div class="grid grid-cols-2 gap-3">
-			<div>
-				<label for="fy-start" class="mb-1 block text-sm font-medium">
-					{msg('onboarding-fiscal-year-start', 'Début')}
-				</label>
-				<Input
-					id="fy-start"
-					type="date"
-					bind:value={() => fyStart, setFyStart}
-					data-testid="onboarding-fiscal-year-start"
-				/>
-			</div>
-			<div>
-				<label for="fy-end" class="mb-1 block text-sm font-medium">
-					{msg('onboarding-fiscal-year-end', 'Fin')}
-				</label>
-				<Input
-					id="fy-end"
-					type="date"
-					bind:value={() => fyEnd, setFyEnd}
-					data-testid="onboarding-fiscal-year-end"
-					aria-invalid={fyProblem !== null}
-					aria-describedby={fyProblem !== null ? 'fy-problem' : undefined}
-				/>
-			</div>
-		</div>
-		{#if fyProblem === null}
-			<p class="text-sm" data-testid="onboarding-fiscal-year-summary">
-				{i18nMsg('onboarding-fiscal-year-summary', 'Du { $start } au { $end }', {
-					start: formatSwissDate(fyStart),
-					end: formatSwissDate(fyEnd),
-				})}
-			</p>
-		{:else}
-			<p id="fy-problem" class="text-sm text-destructive" role="alert" data-testid="onboarding-fiscal-year-problem">
-				{fyProblemText()}
-			</p>
-		{/if}
-		<p class="text-sm text-text-muted" data-testid="onboarding-fiscal-year-immutable">
-			{msg('onboarding-fiscal-year-immutable', 'Les dates d’un exercice ne se modifient plus une fois créé.')}
-		</p>
-	</section>
+	{@render premierExercice()}
 
 	<h2 class="mb-6 text-center text-xl font-semibold">
 		{msg('onboarding-bank-title', 'Compte bancaire principal')}
@@ -843,7 +882,8 @@
 		motif={finalizeError?.motif ?? null}
 		remedy={finalizeError?.remedy ?? false}
 		disabled={finalizeDisabled}
-		onFinalize={runFinalize}
+		onFinalize={finalizeAgain}
+		fiscalYear={premierExercice}
 		resumeText={msg('incomplete-banner-text', "Configuration incomplète : terminez-la avant d'utiliser Kesh.")}
 		resumeCta={msg('incomplete-banner-cta', 'Terminer la configuration')}
 	/>

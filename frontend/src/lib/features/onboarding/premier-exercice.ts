@@ -67,3 +67,58 @@ export function fiscalYearRangeProblem(start: string, end: string): FiscalYearRa
 	if (!stockable(start) || !stockable(end)) return 'invalid-date';
 	return end > start ? null : 'end-not-after-start';
 }
+
+/**
+ * La saisie du premier exercice, gardée pour l'onglet (`sessionStorage`) — revue P1 de
+ * l'intégration de la v0.18.0 (H1). Le lien de remède d'un refus de finalisation mène hors
+ * de l'assistant (*Administration → Facturation*) ; au retour, la page est recréée, et sans
+ * cette garde ses dates repartiraient de l'année civile : l'exercice serait créé à des dates
+ * que l'utilisateur n'a pas choisies, sans retour possible. Effacée après une finalisation
+ * réussie. Toute lecture ou écriture est sous `try/catch` : navigation privée, stockage
+ * bloqué ou plein — la page fonctionne alors sans elle.
+ */
+export interface SavedFiscalYear {
+	start: string;
+	end: string;
+	/** La fin a été retouchée : elle ne se recalcule plus à chaque changement du début. */
+	endTouched: boolean;
+}
+
+export const FISCAL_YEAR_STORAGE_KEY = 'kesh-onboarding-first-fiscal-year';
+
+/** La saisie gardée, `null` si aucune, illisible ou de forme inattendue. */
+export function readSavedFiscalYear(): SavedFiscalYear | null {
+	try {
+		const raw = sessionStorage.getItem(FISCAL_YEAR_STORAGE_KEY);
+		if (raw === null) return null;
+		const v: unknown = JSON.parse(raw);
+		if (typeof v !== 'object' || v === null) return null;
+		const { start, end, endTouched } = v as Record<string, unknown>;
+		if (typeof start !== 'string' || typeof end !== 'string' || typeof endTouched !== 'boolean') {
+			return null;
+		}
+		// Une chaîne de la forme d'un champ `type="date"` : rien d'autre ne s'y relit.
+		if (start.length > 10 || end.length > 10) return null;
+		return { start, end, endTouched };
+	} catch {
+		return null;
+	}
+}
+
+/** Garde la saisie ; sans effet si le stockage est indisponible. */
+export function saveFiscalYear(value: SavedFiscalYear): void {
+	try {
+		sessionStorage.setItem(FISCAL_YEAR_STORAGE_KEY, JSON.stringify(value));
+	} catch {
+		// Stockage indisponible : la saisie vit dans la page seulement.
+	}
+}
+
+/** Efface la saisie gardée (finalisation réussie) ; sans effet si le stockage est indisponible. */
+export function clearSavedFiscalYear(): void {
+	try {
+		sessionStorage.removeItem(FISCAL_YEAR_STORAGE_KEY);
+	} catch {
+		// Rien à faire.
+	}
+}

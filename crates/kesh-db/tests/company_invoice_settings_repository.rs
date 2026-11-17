@@ -2803,26 +2803,23 @@ async fn finalize_refuses_a_mandatory_role_account_in_foreign_currency(pool: MyS
 }
 
 /// Le compte de produit par défaut n'est jamais un compte de gains ou de pertes de
-/// change — de la société, ou propre à un compte en devise — ni le compte de
-/// conversion (Story 37-1, AC-4, symétrique de `refuse_fx_account_as_revenue_in_tx`).
+/// change — de la société, ou propre à un compte en devise (Story 37-1, AC-4,
+/// FR-37-1-12, la règle du `PUT` : `accounts::designation_refusal_in_tx`). Le
+/// compte de **conversion**, lui, n'est pas écarté (revue P1 de l'intégration de la
+/// v0.18.0, M1) : le `PUT` le désigne sans refus, la finalisation de même.
 #[sqlx::test(migrations = "./test-schema")]
 async fn finalize_refuses_a_revenue_role_account_that_is_an_fx_account(pool: MySqlPool) {
     use kesh_db::errors::DefaultInvoiceAccountCause as Cause;
     use kesh_db::errors::DefaultInvoiceSetting::Revenue;
     use kesh_db::errors::{DbError, FxDesignation};
 
-    for designation in [
-        FxDesignation::Gain,
-        FxDesignation::Loss,
-        FxDesignation::Transit,
-    ] {
+    for designation in [FxDesignation::Gain, FxDesignation::Loss] {
         let c = company_with_pme_chart(&pool, &format!("Différence {designation:?}")).await;
         let revenue = account_id_by_number(&pool, c, "3000").await;
         let some = Some(revenue);
         match designation {
             FxDesignation::Gain => set_company_fx_accounts(&pool, c, some, None, None).await,
-            FxDesignation::Loss => set_company_fx_accounts(&pool, c, None, some, None).await,
-            FxDesignation::Transit => set_company_fx_accounts(&pool, c, None, None, some).await,
+            _ => set_company_fx_accounts(&pool, c, None, some, None).await,
         }
         match complete_defaults(&pool, c).await {
             Err(DbError::DefaultInvoiceAccountsUnavailable(v)) => assert_eq!(
@@ -2832,6 +2829,7 @@ async fn finalize_refuses_a_revenue_role_account_that_is_an_fx_account(pool: MyS
                     Cause::RoleAccountIsFxAccount {
                         account_number: "3000".into(),
                         designation,
+                        holder_number: None,
                     }
                 )]),
                 "{designation:?}"
@@ -2841,7 +2839,8 @@ async fn finalize_refuses_a_revenue_role_account_that_is_an_fx_account(pool: MyS
         assert_eq!(settings_row_state(&pool, c).await, None, "rien d'écrit");
     }
 
-    // Compte de gains **propre** à un compte en devise (1020 en EUR).
+    // Compte de gains **propre** à un compte en devise (1020 en EUR) : la cause
+    // nomme le compte en devise qui le désigne (L1).
     let c = company_with_pme_chart(&pool, "Différence propre").await;
     let revenue = account_id_by_number(&pool, c, "3000").await;
     let loss = account_id_by_number(&pool, c, "6900").await;
@@ -2865,6 +2864,7 @@ async fn finalize_refuses_a_revenue_role_account_that_is_an_fx_account(pool: MyS
                 Cause::RoleAccountIsFxAccount {
                     account_number: "3000".into(),
                     designation: FxDesignation::Gain,
+                    holder_number: Some("1020".into()),
                 }
             )])
         ),
@@ -2872,16 +2872,73 @@ async fn finalize_refuses_a_revenue_role_account_that_is_an_fx_account(pool: MyS
     }
 }
 
-/// Les réglages **facultatifs** (créanciers, arrondi) dont le candidat est en devise
-/// ou compte de différence de change restent vides, sans refus ; les obligatoires
-/// sont posés.
+/// Les réglages **autres que le produit par défaut** admettent un compte de gains
+/// ou de pertes de change, et le compte de conversion — la règle du `PUT` des
+/// réglages (FR-37-1-12 ; revue P1 de l'intégration de la v0.18.0, M1, qui
+/// retire l'écart de la finalisation). Seul un compte **en devise** laisse un
+/// réglage facultatif vide.
+#[sqlx::test(migrations = "./test-schema")]
+async fn finalize_designates_fx_accounts_to_non_revenue_settings(pool: MySqlPool) {
+    let c = company_with_pme_chart(&pool, "Facultatifs de change").await;
+    let payable = account_with_role(&pool, c, "Payable").await;
+    let rounding = account_id_by_number(&pool, c, "6940").await;
+    let gains = account_id_by_number(&pool, c, "6950").await;
+    let receivable = account_id_by_number(&pool, c, "1100").await;
+    // Débiteurs (obligatoire, actif) : compte de conversion de la société — le cas
+    // (a) de la revue ; arrondi : compte de pertes de change ; gains : 6950.
+    set_company_fx_accounts(&pool, c, Some(gains), Some(rounding), Some(receivable)).await;
+    let outcome = complete_defaults(&pool, c).await.expect("finalisation");
+    let s = outcome.settings();
+    assert_eq!(
+        s.default_receivable_account_id,
+        Some(receivable),
+        "compte de conversion"
+    );
+    assert_eq!(
+        s.default_revenue_account_id,
+        Some(account_id_by_number(&pool, c, "3000").await)
+    );
+    assert_eq!(s.default_payable_account_id, Some(payable));
+    assert_eq!(
+        s.default_rounding_account_id,
+        Some(rounding),
+        "compte de pertes de change"
+    );
+
+    // Créanciers (facultatif, passif) : compte de conversion — désigné de même.
+    let p = company_with_pme_chart(&pool, "Créanciers de conversion").await;
+    let payable = account_with_role(&pool, p, "Payable").await;
+    set_company_fx_accounts(&pool, p, None, None, Some(payable)).await;
+    let outcome = complete_defaults(&pool, p)
+        .await
+        .expect("finalisation créanciers");
+    assert_eq!(outcome.settings().default_payable_account_id, Some(payable));
+
+    // Le cas que la revue P1 a nommé : 6900 « Charges financières », compte des
+    // frais bancaires des trois plans livrés, choisi comme compte des pertes de
+    // change avant la fin de l'assistant — le réglage de frais bancaires est posé,
+    // comme le `PUT` l'accepterait.
+    let f = company_with_pme_chart(&pool, "Frais bancaires pertes de change").await;
+    let charges = account_id_by_number(&pool, f, "6900").await;
+    let gains = account_id_by_number(&pool, f, "6950").await;
+    set_company_fx_accounts(&pool, f, Some(gains), Some(charges), None).await;
+    let outcome = complete_defaults(&pool, f)
+        .await
+        .expect("finalisation 6900");
+    assert_eq!(
+        outcome.settings().default_bank_fees_account_id,
+        Some(charges)
+    );
+}
+
+/// Un compte **en devise** laisse vide le réglage facultatif qu'il aurait reçu
+/// (créanciers, arrondi), sans refus ; les obligatoires sont posés.
 #[sqlx::test(migrations = "./test-schema")]
 async fn finalize_leaves_an_optional_setting_empty_on_an_fx_candidate(pool: MySqlPool) {
     let c = company_with_pme_chart(&pool, "Facultatifs en devise").await;
-    let payable = account_with_role(&pool, c, "Payable").await;
     let rounding = account_id_by_number(&pool, c, "6940").await;
-    // Créanciers : compte de conversion de la société ; arrondi : pertes de change.
-    set_company_fx_accounts(&pool, c, None, Some(rounding), Some(payable)).await;
+    set_company_fx_accounts(&pool, c, None, None, None).await;
+    set_account_currency(&pool, rounding, "EUR").await;
     let outcome = complete_defaults(&pool, c).await.expect("finalisation");
     let s = outcome.settings();
     assert_eq!(
@@ -2892,10 +2949,10 @@ async fn finalize_leaves_an_optional_setting_empty_on_an_fx_candidate(pool: MySq
         s.default_revenue_account_id,
         Some(account_id_by_number(&pool, c, "3000").await)
     );
-    assert_eq!(s.default_payable_account_id, None, "compte de conversion");
+    assert_eq!(s.default_rounding_account_id, None, "compte en devise");
     assert_eq!(
-        s.default_rounding_account_id, None,
-        "compte de pertes de change"
+        s.default_bank_fees_account_id,
+        Some(account_id_by_number(&pool, c, "6900").await)
     );
 
     // Témoin : sans désignation de change, les deux sont posés.

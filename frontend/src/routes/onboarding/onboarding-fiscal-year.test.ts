@@ -93,6 +93,7 @@ async function rendre() {
 
 beforeEach(() => {
 	vi.clearAllMocks();
+	sessionStorage.clear();
 	vi.mocked(api.setBankAccount).mockResolvedValue(etat(7));
 	vi.mocked(api.skipBank).mockResolvedValue(etat(7));
 	vi.mocked(api.finalize).mockResolvedValue(etat(8));
@@ -228,5 +229,90 @@ describe('assistant — premier exercice (Story 37-1, AC-11)', () => {
 		}
 		unmount();
 		await new Promise((r) => setTimeout(r, 0));
+	});
+
+	// Revue P1 de l'intégration de la v0.18.0 (H1) : le lien de remède d'un refus mène hors
+	// de l'assistant ; au retour, la page est recréée. Les dates choisies doivent revenir,
+	// affichées sur l'écran de reprise, et partir avec *Terminer la configuration* — sinon
+	// l'exercice serait créé à l'année civile, sans retour possible.
+	it('refus, départ par le lien de remède puis retour : les dates choisies sont affichées et envoyées', async () => {
+		vi.mocked(api.finalize).mockRejectedValueOnce({
+			code: 'VALIDATION_ERROR',
+			message: 'MOTIF-REMEDE',
+			status: 400,
+		});
+		const premier = await rendre();
+		await saisir('fy-start', '2026-04-01');
+		await fireEvent.click(boutonPlusTard());
+		await screen.findByTestId('onboarding-finalize-motif');
+		expect(screen.getByTestId('onboarding-finalize-remedy-link')).toBeTruthy();
+		// Les dates restent sous les yeux de l'utilisateur sur l'écran d'échec.
+		expect(champ('fy-start').value).toBe('2026-04-01');
+		expect(champ('fy-end').value).toBe('2027-03-31');
+		premier.unmount();
+		await new Promise((r) => setTimeout(r, 0));
+
+		// Retour par la bannière : page neuve, étape 7 complétée (écran de reprise).
+		vi.mocked(api.fetchState).mockResolvedValue(etat(7));
+		await onboardingState.fetchState();
+		const second = render(Page);
+		const finir = (await screen.findByTestId('onboarding-resume-finish')) as HTMLButtonElement;
+		expect(champ('fy-start').value).toBe('2026-04-01');
+		expect(champ('fy-end').value).toBe('2027-03-31');
+		expect(screen.getByTestId('onboarding-fiscal-year-summary').textContent).toContain(
+			'Du 01.04.2026 au 31.03.2027'
+		);
+		await waitFor(() => expect(finir.disabled).toBe(false));
+		await fireEvent.click(finir);
+		await waitFor(() => expect(api.finalize).toHaveBeenCalledTimes(2));
+		expect(vi.mocked(api.finalize).mock.calls[1][0]).toEqual({
+			fiscalYearStartDate: '2026-04-01',
+			fiscalYearEndDate: '2027-03-31',
+		});
+		// Finalisation réussie : la saisie gardée est effacée.
+		await waitFor(() =>
+			expect(sessionStorage.getItem('kesh-onboarding-first-fiscal-year')).toBeNull()
+		);
+		second.unmount();
+		await new Promise((r) => setTimeout(r, 0));
+	});
+
+	it('sur l’écran d’échec, une fin qui ne suit pas le début désactive Réessayer, et la touche Entrée ne finalise pas', async () => {
+		vi.mocked(api.finalize).mockRejectedValueOnce({
+			code: 'VALIDATION_ERROR',
+			message: 'MOTIF',
+			status: 400,
+		});
+		const { unmount } = await rendre();
+		await fireEvent.click(boutonPlusTard());
+		const retry = (await screen.findByTestId('onboarding-finalize-retry')) as HTMLButtonElement;
+		await waitFor(() => expect(retry.disabled).toBe(false));
+		await saisir('fy-end', '2025-12-31');
+		expect((await screen.findByTestId('onboarding-fiscal-year-problem')).textContent).toContain(
+			'La date de fin doit suivre la date de début.'
+		);
+		expect(retry.disabled).toBe(true);
+		await fireEvent.submit(screen.getByTestId('onboarding-finalize-form'));
+		await new Promise((r) => setTimeout(r, 0));
+		expect(api.finalize).toHaveBeenCalledTimes(1);
+		// Corrigée, la fin rend le bouton, et Entrée relance avec les dates affichées.
+		await saisir('fy-end', '2026-06-30');
+		await waitFor(() => expect(retry.disabled).toBe(false));
+		await fireEvent.submit(screen.getByTestId('onboarding-finalize-form'));
+		await waitFor(() => expect(api.finalize).toHaveBeenCalledTimes(2));
+		expect(vi.mocked(api.finalize).mock.calls[1][0]).toEqual({
+			fiscalYearStartDate: '2026-01-01',
+			fiscalYearEndDate: '2026-06-30',
+		});
+		unmount();
+		await new Promise((r) => setTimeout(r, 0));
+	});
+
+	it('un stockage illisible est ignoré : les dates par défaut', async () => {
+		sessionStorage.setItem('kesh-onboarding-first-fiscal-year', '{pas du json');
+		const { unmount } = await rendre();
+		expect(champ('fy-start').value).toBe('2026-01-01');
+		expect(champ('fy-end').value).toBe('2026-12-31');
+		unmount();
 	});
 });

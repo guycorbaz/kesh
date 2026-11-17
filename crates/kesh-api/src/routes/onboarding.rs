@@ -1148,9 +1148,16 @@ async fn finalize_inner(
     // Story 36-19 (#1200, refs #987) — les réglages de facturation : créés, ou
     // **complétés** si un écran les a créés vides avant la fin de l'assistant
     // (`GET /api/v1/company/invoice-settings`), sans remplacer un compte déjà
-    // choisi. Lectures des comptes candidats `FOR UPDATE`, puis la ligne, dans
-    // cette transaction (ordre `accounts → company_invoice_settings →
-    // bank_accounts`). Un refus nomme chaque réglage obligatoire en défaut, sa
+    // choisi. Ordre des verrous dans cette transaction (revue P1 de
+    // l'intégration de la v0.18.0, L2) : `companies` en partage (Story 37-1 ;
+    // sans attente, la ligne est déjà tenue `FOR UPDATE` par `lock_company`) →
+    // `accounts` (candidats `FOR UPDATE`) → `company_invoice_settings`
+    // (`INSERT IGNORE`, puis la ligne `FOR UPDATE`) → `accounts` (désignés
+    // `LOCK IN SHARE MODE` ; candidats relus, déjà tenus, et leur devise ; pour le
+    // seul candidat au compte de produit par défaut, les entrées d'index
+    // `idx_accounts_fx_gain` / `idx_accounts_fx_loss` en partage,
+    // `accounts::fx_designations_of_in_tx`) → `bank_accounts`
+    // (`LOCK IN SHARE MODE`). Un refus nomme chaque réglage obligatoire en défaut, sa
     // cause et son remède (`400 VALIDATION_ERROR`, code que la Story 36-17
     // reconnaît).
     let settings_outcome =
@@ -1339,8 +1346,10 @@ fn finalize_refusal_phrase(item: &UnavailableDefaultInvoiceAccount) -> String {
             setting.to_lowercase()
         ),
         // Story 37-1 (AC-4), intégration de la v0.18.0 dans l'Epic 37 : la
-        // finalisation ne désigne ni un compte en devise, ni un compte de
-        // différence de change, ni le compte de conversion.
+        // finalisation ne désigne pas un compte en devise, ni, au compte de produit
+        // par défaut, un compte de gains ou de pertes de change — la règle du `PUT`
+        // des réglages (`accounts::designation_refusal_in_tx`, revue P1 de
+        // l'intégration, M1).
         DefaultInvoiceAccountCause::RoleAccountInForeignCurrency {
             account_number,
             currency,
@@ -1348,18 +1357,33 @@ fn finalize_refusal_phrase(item: &UnavailableDefaultInvoiceAccount) -> String {
             "{setting} : le compte {account_number}, qui porte le rôle « {role} », est tenu en \
              {currency} — désignez un compte en francs suisses dans Administration → Facturation."
         ),
+        // Revue P1 de l'intégration, L1 : une désignation propre nomme le compte en
+        // devise qui la porte — l'utilisateur ne la trouverait pas dans le réglage
+        // multi-devises de la société.
         DefaultInvoiceAccountCause::RoleAccountIsFxAccount {
             account_number,
             designation,
+            holder_number,
         } => {
-            let what = match designation {
-                kesh_db::errors::FxDesignation::Gain => "un compte de gains de change",
-                kesh_db::errors::FxDesignation::Loss => "un compte de pertes de change",
-                kesh_db::errors::FxDesignation::Transit => "le compte de conversion de la société",
+            let kind = match designation {
+                kesh_db::errors::FxDesignation::Gain => "gains de change",
+                kesh_db::errors::FxDesignation::Loss => "pertes de change",
+                // Non atteint (M1) : le compte de conversion n'est pas écarté.
+                kesh_db::errors::FxDesignation::Transit => "conversion",
+            };
+            let what = match holder_number {
+                Some(holder) => format!(
+                    "le compte de {kind} propre au compte en devise {holder} (plan comptable)"
+                ),
+                None => format!(
+                    "le compte de {kind} de la société (Administration → Paramètres, section \
+                     Comptabilité)"
+                ),
             };
             format!(
                 "{setting} : le compte {account_number}, qui porte le rôle « {role} », est {what} \
-                 — désignez un autre {} dans Administration → Facturation.",
+                 — un gain ou une perte de change ne va pas au chiffre d'affaires ; désignez un \
+                 autre {} dans Administration → Facturation.",
                 setting.to_lowercase()
             )
         }
@@ -1927,7 +1951,8 @@ mod tests {
             )
         );
         // Intégration de la v0.18.0 dans l'Epic 37 (Story 37-1, AC-4) : compte de
-        // rôle en devise, compte de différence de change, compte de conversion.
+        // rôle en devise ; compte de gains ou de pertes de change, de la société ou
+        // propre (revue P1 de l'intégration, M1 et L1).
         assert_eq!(
             message(vec![(
                 Receivable,
@@ -1940,18 +1965,26 @@ mod tests {
                 "Compte débiteurs : le compte 1100, qui porte le rôle « Créances clients », est tenu en EUR — désignez un compte en francs suisses dans Administration → Facturation."
             )
         );
-        for (designation, what) in [
+        for (designation, holder, what) in [
             (
                 kesh_db::errors::FxDesignation::Gain,
-                "un compte de gains de change",
+                None,
+                "le compte de gains de change de la société (Administration → Paramètres, section Comptabilité)",
             ),
             (
                 kesh_db::errors::FxDesignation::Loss,
-                "un compte de pertes de change",
+                None,
+                "le compte de pertes de change de la société (Administration → Paramètres, section Comptabilité)",
             ),
             (
-                kesh_db::errors::FxDesignation::Transit,
-                "le compte de conversion de la société",
+                kesh_db::errors::FxDesignation::Gain,
+                Some("1020"),
+                "le compte de gains de change propre au compte en devise 1020 (plan comptable)",
+            ),
+            (
+                kesh_db::errors::FxDesignation::Loss,
+                Some("1021"),
+                "le compte de pertes de change propre au compte en devise 1021 (plan comptable)",
             ),
         ] {
             assert_eq!(
@@ -1960,10 +1993,11 @@ mod tests {
                     Cause::RoleAccountIsFxAccount {
                         account_number: "3000".into(),
                         designation,
+                        holder_number: holder.map(String::from),
                     }
                 )]),
                 entoure(&format!(
-                    "Compte de produit par défaut : le compte 3000, qui porte le rôle « Produit par défaut », est {what} — désignez un autre compte de produit par défaut dans Administration → Facturation."
+                    "Compte de produit par défaut : le compte 3000, qui porte le rôle « Produit par défaut », est {what} — un gain ou une perte de change ne va pas au chiffre d'affaires ; désignez un autre compte de produit par défaut dans Administration → Facturation."
                 ))
             );
         }

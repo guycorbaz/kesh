@@ -2310,20 +2310,93 @@ fn refuse_designated(
     }
 }
 
-/// Refuse de **désigner compte de produit par défaut** (réglages de
-/// facturation, article) un compte de gains ou de pertes de change, de la
-/// société ou propre (Story 37-1, AC-4, symétrique de l'AC-3 : les gains de
-/// change ne vont pas au chiffre d'affaires) → `ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT`.
-/// Le compte de conversion n'est pas visé. `state` est lu sous le verrou de
-/// `companies` de l'appelant ; les recherches propres sont verrouillantes.
-pub async fn refuse_fx_account_as_revenue_in_tx(
+/// Pourquoi un compte ne peut pas être désigné à un site de configuration qui
+/// débite ou crédite en CHF — rendu par [`designation_refusal_in_tx`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DesignationRefusal {
+    /// Le compte est tenu en devise (`ACCOUNT_IN_FOREIGN_CURRENCY`).
+    ForeignCurrency {
+        /// Code ISO 4217 de la devise du compte.
+        currency: String,
+    },
+    /// Le compte de produit par défaut est un compte de gains ou de pertes de
+    /// change, de la société ou propre à un compte en devise
+    /// (`ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT`).
+    FxDifference(FxDesignationHit),
+}
+
+impl DesignationRefusal {
+    /// L'erreur que rend un geste de l'utilisateur refusé pour cette cause
+    /// (`PUT` des réglages de facturation, article).
+    pub fn into_error(self, account_id: i64) -> DbError {
+        match self {
+            Self::ForeignCurrency { currency } => DbError::AccountInForeignCurrency {
+                account_id: Some(account_id),
+                currency,
+            },
+            Self::FxDifference(hit) => hit.into_error(),
+        }
+    }
+}
+
+/// **La** règle de désignation d'un compte à un réglage de facturation ou au
+/// compte de produit d'un article (Story 37-1, AC-4, FR-37-1-5 et FR-37-1-12) —
+/// partagée par le `PUT` des réglages, l'article et la finalisation de
+/// l'assistant (revue P1 de l'intégration de la v0.18.0, M1 : la finalisation en
+/// tenait une copie plus large) :
+///
+/// 1. un compte **en devise** n'est désigné à aucun réglage
+///    ([`DesignationRefusal::ForeignCurrency`]) ;
+/// 2. un compte de **gains ou de pertes de change** — de la société, ou propre à
+///    un compte en devise, archivé compris — n'est pas désigné **compte de produit
+///    par défaut** (`default_revenue`) : les gains de change ne vont pas au chiffre
+///    d'affaires ([`DesignationRefusal::FxDifference`]). Aux autres réglages
+///    (débiteurs, créanciers, arrondi, escompte, frais bancaires, pertes), il se
+///    désigne ; le **compte de conversion** n'est visé par aucun refus de
+///    désignation (son type, actif ou passif, lui ferme déjà le rôle
+///    `DefaultRevenue`).
+///
+/// `None` si le compte peut être désigné. La devise se relit `LOCK IN SHARE MODE`
+/// ([`currency_in_share_mode`]) ; `state` est lu sous le verrou de `companies` de
+/// l'appelant ; les recherches de désignation propre sont verrouillantes
+/// ([`fx_designations_of_in_tx`]). Un compte absent ou d'une autre société n'est
+/// pas refusé ici.
+pub async fn designation_refusal_in_tx(
     conn: &mut sqlx::MySqlConnection,
     company_id: i64,
     state: &CompanyCurrencyState,
     account_id: i64,
+    default_revenue: bool,
+) -> Result<Option<DesignationRefusal>, DbError> {
+    if let Some(Some(currency)) = currency_in_share_mode(&mut *conn, company_id, account_id).await?
+    {
+        return Ok(Some(DesignationRefusal::ForeignCurrency { currency }));
+    }
+    if !default_revenue {
+        return Ok(None);
+    }
+    Ok(
+        fx_designations_of_in_tx(conn, company_id, state, account_id)
+            .await?
+            .into_iter()
+            .find(|h| h.designation != FxDesignation::Transit)
+            .map(DesignationRefusal::FxDifference),
+    )
+}
+
+/// [`designation_refusal_in_tx`], rendu en erreur : le refus d'un geste de
+/// l'utilisateur (`PUT` des réglages de facturation, article).
+pub async fn refuse_designation_in_tx(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    state: &CompanyCurrencyState,
+    account_id: i64,
+    default_revenue: bool,
 ) -> Result<(), DbError> {
-    let hits = fx_designations_of_in_tx(conn, company_id, state, account_id).await?;
-    refuse_designated(hits, |d| d != FxDesignation::Transit)
+    match designation_refusal_in_tx(conn, company_id, state, account_id, default_revenue).await? {
+        Some(refusal) => Err(refusal.into_error(account_id)),
+        None => Ok(()),
+    }
 }
 
 /// La devise d'un compte de la société, lue **`LOCK IN SHARE MODE`** —
