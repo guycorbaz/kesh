@@ -71,7 +71,9 @@ avant). *Fusion acceptée par l'orchestrateur le 2026-11-18.*
 branche de la 43-2, le corps rend `Err(DbError::Invariant("règlement groupé fournisseur : Story 43-1b non livrée"))` au
 lieu de `unimplemented!` : la route le traduit par la délégation D2 en `INTERNAL_ERROR` dans `failed[]` (code constant),
 jamais une panique du lot. Fichier de la 43-1a : à la fusion de la 43-1b, c'est son implémentation qui l'emporte. La
-barrière de release (D4 seulement avec la 43-1b) est écrite à la fiche et au fichier d'épique.
+barrière de release (D4 seulement avec la 43-1b) est écrite à la fiche et au fichier d'épique. *Annoté le 2026-11-18
+(revue P2, P2-1) : la 43-1b est close ce jour et versée dans la branche d'épique (`c22647e7a`) ; la barrière et la
+procédure de retrait sont levées, D4 sort avec elle. Le corps provisoire disparaîtra à la reprise de la branche d'épique.*
 
 **C-e432-14 — Le test de concurrence ne prouve pas l'entrelacement** (revue P1, E8, décision de l'orchestrateur : écrit,
 non traité). `deux_lots_concurrents_ne_reglent_pas_deux_fois` lance deux lots par `tokio::join!` sans barrière : si les
@@ -89,3 +91,20 @@ découpe le terme échappé par `split_whitespace` ; l'index découpe aussi sur 
 (`contacts.rs`, `invoices.rs`) n'ont **aucun** repli de jetons courts : elles ne prennent le `LIKE` que si le terme
 échappé est vide. Le repli de la 43-2 est donc plus large qu'elles, et cohérent avec leur découpage ; non corrigé ici,
 issue proposée au rapport (découper sur `!c.is_alphanumeric()` dans les recherches qui ont un repli).
+
+**C-e432-17 — Le manuel utilisateur dit encore « à rejeter / issue #823 » : point pour la 43-3** (revue P2, P2-4,
+décision de l'orchestrateur : écrit, manuel non touché). `docs/manual/fr/user-manual.tex:3161` (« un lot de plusieurs
+factures que la banque débite en une seule ligne (issue \#823) ») et `:3253` (« un paiement qui règle plusieurs factures
+enregistrées séparément … (issue \#823) »), et leurs trois reflets dans le PDF. Vrais pour l'écran tant que la 43-3 n'est
+pas livrée, faux pour l'API dès la 43-2 : la 43-3, qui écrit le manuel de l'écran, les réécrit. Le guide d'API
+(`docs/api-external.md:733`) est, lui, corrigé par la 43-2.
+
+**C-e432-18 — La garde de couverture de la table des refus** (revue P2, P2-2). `rang(&GroupRefusal)`, dans le module de
+test de `reconciliation_group.rs`, est un `match` exhaustif sans joker : une variante neuve fait échouer la compilation du
+test. Le test exige une ligne par rang `0..RANGS`. Angle mort assumé : qui ajoute le bras de `rang` sans augmenter `RANGS`
+ni ajouter de ligne voit le test passer ; le commentaire de `RANGS` dit la règle.
+
+**C-e432-19 — Le journal d'une erreur de groupe nomme le groupe** (revue P2, P2-6). Le classement de
+`lettering_error_to_failed_proposal` est extrait en `classify_db_error_to_failed_proposal(bt, err, contexte)` ; l'unitaire
+garde « encaissement : lettrage de la facture impossible », le groupe journalise « règlement groupé : erreur de la
+proposition ». Classement `INTERNAL_ERROR` par proposition accepté par l'orchestrateur (C-e432-13).

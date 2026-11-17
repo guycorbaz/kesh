@@ -231,10 +231,11 @@ async fn client_candidates_follow_the_settlement_rules(pool: MySqlPool) {
     // Créditée en entier par un avoir émis : validée, non payée, reste dû nul —
     // écartée par `HAVING amount_due > 0` (B3).
     let creditee = facture(&pool, &m, b, "F-9", dec!(50), jour(6, 6), "validated").await;
-    sqlx::query(
+    // Un avoir ordinaire (revue P2, P2-8) : une ligne de 50, TVA 0, arrondi nul.
+    let avoir = sqlx::query(
         "INSERT INTO credit_notes (company_id, contact_id, invoice_id, status, date, \
-         credit_note_number, journal_entry_id, rounding_amount) \
-         VALUES (?, ?, ?, 'issued', '2026-06-07', 'AV-1', ?, 50)",
+         credit_note_number, total_amount, journal_entry_id, rounding_amount) \
+         VALUES (?, ?, ?, 'issued', '2026-06-07', 'AV-1', 50, ?, 0)",
     )
     .bind(m.s.company_id)
     .bind(b)
@@ -242,7 +243,16 @@ async fn client_candidates_follow_the_settlement_rules(pool: MySqlPool) {
     .bind(m.entry_id)
     .execute(&pool)
     .await
-    .expect("avoir");
+    .expect("avoir")
+    .last_insert_id() as i64;
+    sqlx::query(
+        "INSERT INTO credit_note_lines (credit_note_id, position, description, quantity, \
+         unit_price, vat_rate, line_total) VALUES (?, 0, 'Avoir total', 1, 50, 0, 50)",
+    )
+    .bind(avoir)
+    .execute(&pool)
+    .await
+    .expect("ligne d'avoir");
     let found = find_group_candidates(
         &pool,
         GroupCandidatesQuery {

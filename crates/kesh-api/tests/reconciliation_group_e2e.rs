@@ -1829,23 +1829,44 @@ async fn le_type_fournisseur_se_desserialise_et_ne_panique_pas(pool: MySqlPool) 
         .await;
     assert_refus(s, &b, 400, "VALIDATION_ERROR");
 
+    // P2-5 — un lot mixte : un groupe client qui réussit, puis une proposition
+    // dont le dépôt rend une `DbError` (le corps provisoire de
+    // `pay_supplier_invoices_in_tx`, avant la 43-1b) : la réussie est écrite et
+    // rendue, l'autre refusée seule, le lot en `200`.
+    let x = ctx.facture("M-1", "10.00", "2026-06-01").await;
+    let y = ctx.facture("M-2", "20.00", "2026-06-01").await;
+    let credit = ctx.transaction("30.00", "2026-06-20").await;
     let tx = ctx.transaction("-30.00", "2026-06-20").await;
     let a = ctx.facture_achat("FF-1", "10.00", "2026-06-01").await;
     let c = ctx.facture_achat("FF-2", "20.00", "2026-06-01").await;
     let (s, b) = ctx
-        .accepter(
-            json!([{ "type": "supplier_invoice_group", "bankTransactionId": tx,
-                           "supplierInvoiceIds": [a, c] }]),
-        )
+        .accepter(json!([
+            { "type": "invoice_group", "bankTransactionId": credit, "invoiceIds": [x, y] },
+            { "type": "supplier_invoice_group", "bankTransactionId": tx,
+              "supplierInvoiceIds": [a, c] }
+        ]))
         .await;
     assert_eq!(s, 200, "{b}");
-    let accepted = b["accepted"].as_array().unwrap().len();
-    let failed = b["failed"].as_array().unwrap().len();
-    assert_eq!(accepted + failed, 1, "{b}");
-    if failed == 1 {
-        // Avant la 43-1b : le corps provisoire du dépôt.
-        assert_eq!(b["failed"][0]["errorCode"], "INTERNAL_ERROR", "{b}");
+    assert_eq!(b["accepted"].as_array().unwrap().len(), 1, "{b}");
+    assert_eq!(b["accepted"][0]["bankTransactionId"], credit, "{b}");
+    assert_eq!(b["failed"].as_array().unwrap().len(), 1, "{b}");
+    assert_eq!(b["failed"][0]["bankTransactionId"], tx, "{b}");
+    assert_eq!(b["failed"][0]["errorCode"], "INTERNAL_ERROR", "{b}");
+    for id in [x, y] {
+        let paid = ctx
+            .scalaire(
+                "SELECT COUNT(*) FROM invoices WHERE id = ? AND paid_at IS NOT NULL",
+                id,
+            )
+            .await;
+        assert_eq!(paid, 1, "la proposition réussie est écrite");
     }
+    let (statut,): (String,) = sqlx::query_as("SELECT status FROM bank_transactions WHERE id = ?")
+        .bind(tx)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(statut, "pending", "la refusée n'a rien écrit");
 }
 
 /// A3 — la route trie par l'ordre d'imputation **puis** tronque : une facture

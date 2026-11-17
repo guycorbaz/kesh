@@ -90,7 +90,8 @@ refus par proposition du *Pattern batch*.
 - **D4 — Type fournisseur retirable** (C-43-18) : la variante `SupplierInvoiceGroup`, sa branche du pré-vol, du `match` de
   `bank_transaction_id()` et de l'aiguillage, le **message de l'extracteur passé de cinq à six types**, la famille
   fournisseur de la recherche et de la vue, et leurs tests vivent dans **un seul commit** à part, retirable si la 43-1b
-  sort ; un test fixe le texte du message à cinq types avant ce commit, à six après.
+  sort ; un test fixe le texte du message à cinq types avant ce commit, à six après. *Annoté le 2026-11-18 : la 43-1b est
+  close ce jour et D4 sort avec elle ; le commit n'est plus retirable (§ Ordre de retrait).*
 - **D5 — Montants bruts de bout en bout (H2, C-43-21).** Un reste dû peut porter quatre décimales (10.0050) ; le serveur
   calcule l'écart sur le brut. Le contrat rend donc le **brut** (`amountDueRaw`, `difference`, `settledInvoices[].amount`,
   chaînes à quatre décimales) **et** le centime pour l'affichage (`amountDue`). L'écran calcule en entiers de 1/10 000 sur le
@@ -476,18 +477,12 @@ différence interdit réemploie des codes existants (D9). `RECONCILIATION_UNDERP
 
 ### Ordre de retrait (si le temps manque)
 
-⛔ **Barrière de release (décision de l'orchestrateur, revue P1, B1/E1/A4)** : le commit D4 ne sort **qu'avec la 43-1b**
-(`pay_supplier_invoices_in_tx` implémenté, les trois tests fournisseur sans `#[ignore]`). Sinon, `git revert 70f74f964`
-avant la PR de release. Le corps provisoire du dépôt rend `Err(DbError::Invariant)` (→ `INTERNAL_ERROR` dans `failed[]`)
-au lieu de paniquer : défense en profondeur, non une permission de publier D4 seul.
+**Le commit fournisseur (D4, `70f74f964`) n'est plus retirable** : la **43-1b est close le 2026-11-18** et versée dans
+`epic/43-transaction-plusieurs-factures` (`c22647e7a`) ; D4 sort avec elle (décision de l'orchestrateur du 2026-11-18,
+revue P2, P2-1). La barrière et la procédure de retrait écrites à la remédiation P1 sont levées.
 
-Le commit fournisseur (D4 : `70f74f964`, `git revert` sans conflit attendu). Le revert rend à `family_of` sa forme
-d'avant D4 : un débit ne propose plus de factures fournisseur (`direction: null`, liste vide). Retirer aussi, à la main,
-dans `docs/api-external.md`, ce que le premier commit a écrit de la recherche fournisseur : « un débit, les factures
-fournisseur … » (l. 741), le numéro interne, le numéro du fournisseur et la référence de paiement d'une facture
-fournisseur dans `q` (l. 743), la forme d'une candidate fournisseur et « `"-1250.00"` pour un débit » (l. 756 ; numéros
-au commit `7994a7a34`). Puis les champs de vue et d'annulation `cancelBlockedInvoice` et `cancelledInvoices` (la 43-3
-écrit alors la limite) ; jamais la recherche, l'acceptation client ni les refus de la différence.
+Si le temps manque : les champs de vue et d'annulation `cancelBlockedInvoice` et `cancelledInvoices` (la 43-3 écrit
+alors la limite) ; jamais la recherche, l'acceptation (client et fournisseur) ni les refus de la différence.
 
 ### LOW à l'étape 0
 

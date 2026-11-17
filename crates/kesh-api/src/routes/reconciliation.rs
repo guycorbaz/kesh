@@ -914,7 +914,7 @@ pub enum AcceptProposalInput {
         #[serde(default)]
         difference_account_id: Option<i64>,
     },
-    /// Story 43-2 (#823, D4 — commit retirable) — **une** transaction au
+    /// Story 43-2 (#823, D4 ; sort avec la 43-1b) — **une** transaction au
     /// débit règle **plusieurs** factures fournisseur `open` :
     /// `reconciliation_group::accept_one_supplier_invoice_group`, par
     /// `grouped_settlements::pay_supplier_invoices_in_tx` (Story 43-1b).
@@ -2323,6 +2323,22 @@ pub(super) fn lettering_error_to_failed_proposal(
     bank_transaction_id: i64,
     err: DbError,
 ) -> FailedProposal {
+    classify_db_error_to_failed_proposal(
+        bank_transaction_id,
+        err,
+        "encaissement : lettrage de la facture impossible",
+    )
+}
+
+/// Le classement de [`lettering_error_to_failed_proposal`], avec le
+/// **contexte** du journal d'erreur (`tracing::error!`) fourni par l'appelant :
+/// le règlement groupé (Story 43-2, revue P2, P2-6) y nomme son geste, au lieu
+/// de « encaissement : lettrage de la facture impossible ».
+pub(super) fn classify_db_error_to_failed_proposal(
+    bank_transaction_id: i64,
+    err: DbError,
+    context: &str,
+) -> FailedProposal {
     match err {
         DbError::Invariant(_)
         | DbError::LetteringConcurrentChange
@@ -2336,7 +2352,7 @@ pub(super) fn lettering_error_to_failed_proposal(
         | DbError::LetteringLineOwnedByDocument { .. }
         | DbError::LetteringIsDocument
         | DbError::NotFound => {
-            tracing::error!("encaissement : lettrage de la facture impossible : {err}");
+            tracing::error!("{context} : {err}");
             FailedProposal {
                 bank_transaction_id,
                 error_code: "INTERNAL_ERROR".to_string(),

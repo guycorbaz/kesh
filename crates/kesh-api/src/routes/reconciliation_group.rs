@@ -41,8 +41,8 @@ use crate::middleware::auth::CurrentUser;
 
 use super::reconciliation::{
     AcceptedProposal, FailedProposal, SettlementDirection, bank_account_of_transaction,
-    counterparty_is_bank_ledger_failed_proposal, later_fiscal_year_closed_failed_proposal,
-    lettering_error_to_failed_proposal, link_preflight, non_postable_failed_proposal,
+    classify_db_error_to_failed_proposal, counterparty_is_bank_ledger_failed_proposal,
+    later_fiscal_year_closed_failed_proposal, link_preflight, non_postable_failed_proposal,
     payment_before_invoice_details, period_locked_failed_proposal, refuse_wrong_direction,
 };
 
@@ -185,7 +185,7 @@ pub(super) async fn accept_one_invoice_group(
     conclude(g, SettlementDirection::Credit, outcome)
 }
 
-/// `type: "supplier_invoice_group"` (D4, commit retirable) — règle les
+/// `type: "supplier_invoice_group"` (D4) — règle les
 /// factures fournisseur `supplier_invoice_ids` par la transaction au débit,
 /// symétrique de [`accept_one_invoice_group`] (Story 43-2, AC3), par
 /// `grouped_settlements::pay_supplier_invoices_in_tx` (Story 43-1b).
@@ -229,16 +229,22 @@ fn conclude(
 }
 
 /// D2 — une erreur de base d'un groupe en [`FailedProposal`] : **délégation**
-/// à `lettering_error_to_failed_proposal`, même classement que l'unitaire —
+/// au classement de `lettering_error_to_failed_proposal`
+/// (`classify_db_error_to_failed_proposal`), même classement que l'unitaire —
 /// `INTERNAL_ERROR` (après `tracing::error!`) pour `Invariant`, `NotFound` et
 /// les refus de lettrage exclus par construction, `DATABASE_ERROR` avec
 /// `details.message` pour le reste (un interblocage est rejoué par le lot).
-/// Jamais une `AppError`.
+/// Le journal nomme le règlement groupé (revue P2, P2-6). Jamais une
+/// `AppError`.
 pub(super) fn group_error_to_failed_proposal(
     bank_transaction_id: i64,
     err: DbError,
 ) -> FailedProposal {
-    lettering_error_to_failed_proposal(bank_transaction_id, err)
+    classify_db_error_to_failed_proposal(
+        bank_transaction_id,
+        err,
+        "règlement groupé : erreur de la proposition",
+    )
 }
 
 /// `invoiceId` ou `supplierInvoiceId`, selon la famille de la pièce.
@@ -765,9 +771,8 @@ fn parse_exclude(raw: Option<&str>) -> Result<Vec<i64>, AppError> {
 /// facture ne peut la régler : montant nul, ou devise autre que CHF (la règle
 /// de `transaction_can_be_linked_to_entry` et de la proposition).
 ///
-/// Un **débit** cherche des factures fournisseur (D4, commit retirable : sans
-/// lui, un débit ne rend rien, la liste n'offrant jamais ce que le `POST`
-/// refuserait).
+/// Un **débit** cherche des factures fournisseur (D4), que le type
+/// `supplier_invoice_group` règle.
 fn family_of(t: &BankTransaction) -> Option<(CandidateFamily, NaiveDate)> {
     if t.currency != "CHF" {
         return None;
@@ -938,9 +943,49 @@ mod tests {
         assert_eq!(refused.details.unwrap()["reason"], "debit_transaction");
     }
 
+    /// Le nombre de variantes de [`GroupRefusal`], tenu par [`rang`] : un bras
+    /// neuf prend le rang `RANGS`, puis `RANGS` grandit d'un.
+    const RANGS: usize = 25;
+
+    /// Le rang d'une variante — `match` exhaustif **sans joker** (revue P2,
+    /// P2-2) : une variante neuve de [`GroupRefusal`] fait échouer la
+    /// **compilation** de ce module jusqu'à ce qu'elle reçoive son rang (et que
+    /// [`RANGS`] grandisse), puis le test en table jusqu'à ce qu'elle y ait sa
+    /// ligne.
+    fn rang(r: &GroupRefusal) -> usize {
+        match r {
+            GroupRefusal::TooFew { .. } => 0,
+            GroupRefusal::TooMany { .. } => 1,
+            GroupRefusal::Duplicate { .. } => 2,
+            GroupRefusal::TransactionNotFound => 3,
+            GroupRefusal::TransactionNotPending => 4,
+            GroupRefusal::WrongDirection { .. } => 5,
+            GroupRefusal::CurrencyMismatch { .. } => 6,
+            GroupRefusal::InvoiceNotFound { .. } => 7,
+            GroupRefusal::InvoiceNotEligible { .. } => 8,
+            GroupRefusal::HeldByPaymentBatch { .. } => 9,
+            GroupRefusal::SaleEntryMalformed { .. } => 10,
+            GroupRefusal::BankAccountNotConfigured => 11,
+            GroupRefusal::BankAccountNotFound => 12,
+            GroupRefusal::BankAccountClosed => 13,
+            GroupRefusal::ClaimAccount { .. } => 14,
+            GroupRefusal::PaymentBeforeInvoiceDate { .. } => 15,
+            GroupRefusal::DifferenceTooLarge { .. } => 16,
+            GroupRefusal::DifferenceAccountRequired { .. } => 17,
+            GroupRefusal::DifferenceAccountIsBankLedger { .. } => 18,
+            GroupRefusal::DifferenceAccountInvalid { .. } => 19,
+            GroupRefusal::DifferenceAccountNotPostable { .. } => 20,
+            GroupRefusal::RoundingAccountNotConfigured => 21,
+            GroupRefusal::PeriodLocked { .. } => 22,
+            GroupRefusal::LaterFiscalYearClosed { .. } => 23,
+            GroupRefusal::FiscalYearInvalid { .. } => 24,
+        }
+    }
+
     /// D2, M8 (revue P1, A2/B4) — **chaque** variante de [`GroupRefusal`] :
-    /// son code et ses `details` exacts. La table est en `match` sans joker :
-    /// une variante neuve sans ligne ici fait échouer `toutes_couvertes`.
+    /// son code et ses `details` exacts. Toute variante a sa ligne : [`rang`]
+    /// les énumère toutes (sa compilation l'impose), et le test exige une ligne
+    /// par rang.
     #[test]
     fn every_refusal_has_its_code_and_details() {
         use grouped_settlements::IneligibleReason;
@@ -1180,17 +1225,21 @@ mod tests {
                 Some(json!({ "valueDate": "2026-11-05" })),
             ),
         ];
-        let mut couvertes = std::collections::HashSet::new();
+        let mut couvertes = std::collections::BTreeSet::new();
         for (refusal, code, details) in cas {
-            couvertes.insert(std::mem::discriminant(&refusal));
+            couvertes.insert(rang(&refusal));
             let label = format!("{refusal:?}");
             let f = group_refusal_to_failed_proposal(41, 2, SettlementDirection::Credit, refusal);
             assert_eq!(f.bank_transaction_id, 41, "{label}");
             assert_eq!(f.error_code, code, "{label}");
             assert_eq!(f.details, details, "{label}");
         }
-        // Les vingt-cinq variantes de la liste finale de `t3.md`.
-        assert_eq!(couvertes.len(), 25, "toutes_couvertes");
+        // Chaque rang de `rang` a au moins une ligne dans la table.
+        assert_eq!(
+            couvertes,
+            (0..RANGS).collect::<std::collections::BTreeSet<usize>>(),
+            "une variante de GroupRefusal n'a pas de ligne dans la table"
+        );
 
         // Le sens d'un débit (famille fournisseur).
         let f = group_refusal_to_failed_proposal(
