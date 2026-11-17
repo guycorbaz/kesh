@@ -423,7 +423,11 @@ describe('ContactPicker — la désignation (D3)', () => {
 	it('e-sexies. « Zzz » sans résultat, flèche : la relance cherche « Zzz », non « »', async () => {
 		const { input } = await focusPose(DUPONT);
 		await saisir(input, 'Zzz');
+		// La flèche RELANCE (un appel de plus) : sans ce compte, le dernier appel
+		// serait encore celui de la frappe et le cas passerait à vide.
+		const avant = listContactsMock.mock.calls.length;
 		await bas(input);
+		expect(listContactsMock.mock.calls.length).toBe(avant + 1);
 		expect(listContactsMock).toHaveBeenLastCalledWith(expect.objectContaining({ search: 'Zzz' }));
 	});
 
