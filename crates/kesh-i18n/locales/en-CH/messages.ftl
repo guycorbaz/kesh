@@ -2547,6 +2547,8 @@ invoice-line-vat-rate-disabled-option = { $rate }% (deactivated)
 invoice-line-vat-rate-disabled-error = Line { $line }: the VAT rate { $rate }% has been deactivated. Choose an active rate.
 invoice-line-unit-price-ambiguous-error = Line { $line }: ambiguous unit price — write 1'250 for one thousand two hundred fifty francs, or 1.2500 for one franc and 25 centimes.
 invoice-line-unit-price-unreadable-error = Line { $line }: unreadable unit price — digits, apostrophe for thousands (1'250), point or comma for decimals, at most four decimals.
+# v0190-correction (#1162, D4) : un texte tapé dans le champ client n'a pas été choisi dans la liste.
+invoice-contact-unresolved-error = Choose the customer from the list
 invoice-lines-revenue-account-invalid = Invalid revenue account on the following lines: { $lines }
 invoice-default-revenue-account-unusable = The company default revenue account is no longer usable (archived, not postable, or unexpected type). Lines following it cannot be validated — fix it in Administration → Invoicing, or pick an account on each line.
 common-account-default-suffix = (default)

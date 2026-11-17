@@ -158,6 +158,13 @@
 	// svelte-ignore state_referenced_locally
 	const initialInvoice = invoice;
 	let selectedContact = $state<ContactResponse | null>(null);
+	/**
+	 * Story v0190-correction, D4 (C-v0190c-22, décision de Guy du 2026-11-17) :
+	 * un texte tapé et non choisi est affiché dans le champ client. Tenu par le
+	 * rappel `onDraftChange` de `ContactPicker` ; l'enregistrement est refusé tant
+	 * qu'il est vrai (bouton comme *Entrée*), sans jeter le texte.
+	 */
+	let contactUnresolved = $state(false);
 	// #889 : la date du jour du poste, non celle d'UTC (la veille entre minuit et 1 h).
 	let date = $state<string>(initialInvoice?.date ?? todayLocal());
 	let dueDate = $state<string>(initialInvoice?.dueDate ?? '');
@@ -535,6 +542,10 @@
 	}
 
 	function validateClient(): string | null {
+		// D4 (v0190-correction) : avant tout, le client montré doit être celui qui part.
+		if (contactUnresolved) {
+			return i18nMsg('invoice-contact-unresolved-error', 'Choisissez le client dans la liste');
+		}
 		if (!selectedContact) return 'Veuillez sélectionner un contact';
 		if (!date) return 'La date est obligatoire';
 		// #245 : comparaison lexicographique valide sur ISO YYYY-MM-DD.
@@ -787,7 +798,12 @@
 	<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
 		<div>
 			<label class="mb-1 block text-sm font-medium" for="invoice-contact">Contact</label>
-			<ContactPicker selected={selectedContact} onSelect={onContactSelect} />
+			<ContactPicker
+				selected={selectedContact}
+				onSelect={onContactSelect}
+				keepDraftOnBlur
+				onDraftChange={(u) => (contactUnresolved = u)}
+			/>
 		</div>
 		<div>
 			<label class="mb-1 block text-sm font-medium" for="invoice-date">Date</label>

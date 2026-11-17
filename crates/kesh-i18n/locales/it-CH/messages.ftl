@@ -2540,6 +2540,8 @@ invoice-line-vat-rate-disabled-option = { $rate }% (disattivato)
 invoice-line-vat-rate-disabled-error = Riga { $line }: l’aliquota IVA { $rate }% è stata disattivata. Scegliete un’aliquota attiva.
 invoice-line-unit-price-ambiguous-error = Riga { $line }: prezzo unitario ambiguo — scrivete 1'250 per milleduecentocinquanta franchi, o 1.2500 per un franco e 25 centesimi.
 invoice-line-unit-price-unreadable-error = Riga { $line }: prezzo unitario illeggibile — cifre, apostrofo delle migliaia (1'250), punto o virgola decimale, al massimo quattro decimali.
+# v0190-correction (#1162, D4) : un texte tapé dans le champ client n'a pas été choisi dans la liste.
+invoice-contact-unresolved-error = Scegliete il cliente dall'elenco
 invoice-lines-revenue-account-invalid = Conto di ricavo non valido nelle righe seguenti: { $lines }
 invoice-default-revenue-account-unusable = Il conto di ricavo predefinito della società non è più utilizzabile (archiviato, non imputabile o di tipo inatteso). Le righe che lo seguono non potranno essere validate — correggilo in Amministrazione → Fatturazione oppure scegli un conto per ogni riga.
 common-account-default-suffix = (predefinito)

@@ -2670,6 +2670,8 @@ invoice-line-vat-rate-disabled-option = { $rate }% (désactivé)
 invoice-line-vat-rate-disabled-error = Ligne { $line } : le taux de TVA { $rate }% a été désactivé. Choisissez un taux actif.
 invoice-line-unit-price-ambiguous-error = Ligne { $line } : prix unitaire ambigu — écrivez 1'250 pour mille deux cent cinquante francs, ou 1.2500 pour un franc vingt-cinq.
 invoice-line-unit-price-unreadable-error = Ligne { $line } : prix unitaire illisible — chiffres, apostrophe des milliers (1'250), point ou virgule décimale, quatre décimales au plus.
+# v0190-correction (#1162, D4) : un texte tapé dans le champ client n'a pas été choisi dans la liste.
+invoice-contact-unresolved-error = Choisissez le client dans la liste
 invoice-lines-revenue-account-invalid = Compte de produit invalide sur les lignes suivantes : { $lines }
 invoice-default-revenue-account-unusable = Le compte de produit par défaut de la société n'est plus utilisable (archivé, non imputable ou de type inattendu). Les lignes qui le suivent ne pourront pas être validées — corrigez-le dans Administration → Facturation, ou choisissez un compte sur chaque ligne.
 common-account-default-suffix = (défaut)

@@ -1037,7 +1037,9 @@ const ATTENDU = {
 	// `common-amount-unreadable` (`journal-entries/amount-entry-message.ts`),
 	// `supplier-invoices-err-line-unit-price-ambiguous` et `-unreadable`
 	// (`SupplierInvoiceForm.svelte`) : quatre littéraux.
-	sitesTotal: 3086,
+	// 3086 → 3087 (v0190-correction, #1162, D4) : `invoice-contact-unresolved-error`
+	// (`InvoiceForm.svelte`), un littéral — recompté par la garde, non estimé.
+	sitesTotal: 3087,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

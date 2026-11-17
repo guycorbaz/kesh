@@ -2542,6 +2542,8 @@ invoice-line-vat-rate-disabled-option = { $rate }% (deaktiviert)
 invoice-line-vat-rate-disabled-error = Zeile { $line }: Der MWST-Satz { $rate }% wurde deaktiviert. Wählen Sie einen aktiven Satz.
 invoice-line-unit-price-ambiguous-error = Zeile { $line }: mehrdeutiger Einzelpreis — schreiben Sie 1'250 für eintausendzweihundertfünfzig Franken oder 1.2500 für einen Franken und 25 Rappen.
 invoice-line-unit-price-unreadable-error = Zeile { $line }: unlesbarer Einzelpreis — Ziffern, Apostroph als Tausendertrennzeichen (1'250), Punkt oder Komma als Dezimaltrennzeichen, höchstens vier Nachkommastellen.
+# v0190-correction (#1162, D4) : un texte tapé dans le champ client n'a pas été choisi dans la liste.
+invoice-contact-unresolved-error = Wählen Sie den Kunden aus der Liste
 invoice-lines-revenue-account-invalid = Ungültiges Ertragskonto auf den folgenden Zeilen: { $lines }
 invoice-default-revenue-account-unusable = Das Standard-Ertragskonto der Firma ist nicht mehr verwendbar (archiviert, nicht buchbar oder unerwarteter Typ). Zeilen, die ihm folgen, können nicht validiert werden — korrigieren Sie es unter Administration → Fakturierung oder wählen Sie pro Zeile ein Konto.
 common-account-default-suffix = (Standard)

@@ -498,9 +498,10 @@ test.describe('Factures — création brouillon', () => {
 		await expect(page.locator('tbody').getByText(contactName)).toBeVisible({ timeout: 5000 });
 	});
 
-	// Story v0190-correction (#1162, AC4) — un texte tapé dans le champ client et non choisi
-	// ne fait pas partir la facture par *Entrée* ; quitté, le champ réaffiche le client
-	// choisi, et c'est lui que la facture porte. Les lignes sont remplies AVANT la frappe :
+	// Story v0190-correction (#1162, AC4 et AC7) — un texte tapé dans le champ client et non
+	// choisi ne fait pas partir la facture, ni par *Entrée*, ni par le bouton (D4 : le texte
+	// reste, le message le dit) ; le client choisi dans la liste est celui que la facture
+	// porte. Les lignes sont remplies AVANT la frappe :
 	// le formulaire est valide à l'*Entrée*, si bien que l'ancien code l'envoyait (V2-1).
 	test('un texte tapé dans le champ client, non choisi, ne fait pas partir la facture (#1162)', async ({
 		page
@@ -550,13 +551,24 @@ test.describe('Factures — création brouillon', () => {
 		await expect(page).toHaveURL(/\/invoices\/new$/);
 		expect(creations).toBe(0);
 
-		// Quitté, le champ réaffiche le client choisi.
-		await champ.press('Tab');
+		// D4 (décision de Guy du 2026-11-17, AC7) : « Martin » tapé, non choisi, clic sur
+		// *Créer la facture* → rien ne part, le message le dit, le texte reste affiché.
+		await champ.fill('Martin');
+		await page.getByRole('button', { name: 'Créer la facture' }).click();
+		await expect(page.getByText('Choisissez le client dans la liste')).toBeVisible();
+		await expect(champ).toHaveValue('Martin');
+		await expect(page).toHaveURL(/\/invoices\/new$/);
+		expect(creations).toBe(0);
+
+		// Le client choisi dans la liste lève le refus.
+		await champ.click();
+		await champ.fill(contactName);
+		await page.getByRole('option', { name: new RegExp(contactName) }).first().click();
 		await expect(champ).toHaveValue(contactName);
 
 		await page.getByRole('button', { name: 'Créer la facture' }).click();
 		await expect(page).toHaveURL(/\/invoices\/\d+$/);
-		// Une seule création : celle du bouton, non celle de l'Entrée.
+		// Une seule création : celle du dernier clic, non celles de l'Entrée et du refus.
 		expect(creations).toBe(1);
 		await page.goto('/invoices');
 		await expect(page.locator('tbody').getByText(contactName)).toBeVisible({ timeout: 5000 });

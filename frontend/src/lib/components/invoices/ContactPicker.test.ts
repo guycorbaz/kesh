@@ -76,9 +76,12 @@ async function laisser(ms = 0) {
 	await tick();
 }
 
-function monter(selected: ContactResponse | null = DUPONT) {
+function monter(
+	selected: ContactResponse | null = DUPONT,
+	autres: { keepDraftOnBlur?: boolean; onDraftChange?: (u: boolean) => void } = {}
+) {
 	const onSelect = vi.fn();
-	const r = render(ContactPicker, { selected, onSelect });
+	const r = render(ContactPicker, { selected, onSelect, ...autres });
 	onSelect.mockImplementation((c: ContactResponse) => {
 		void r.rerender({ selected: c, onSelect });
 	});
@@ -581,5 +584,74 @@ describe('ContactPicker — le client change hors du champ (D1)', () => {
 		await bas(input);
 		expect(listContactsMock.mock.calls.length).toBe(avant + 1);
 		expect(listContactsMock).toHaveBeenLastCalledWith(expect.objectContaining({ search: '' }));
+	});
+});
+
+describe('ContactPicker — le brouillon gardé au départ du champ (D4, décision de Guy du 2026-11-17)', () => {
+	it('D4-a. `keepDraftOnBlur` : « Mar » tapé, champ quitté → le texte reste, le parent est prévenu ; au retour, la recherche reprend « Mar » et désigne le premier', async () => {
+		const onDraftChange = vi.fn();
+		const m = monter(DUPONT, { keepDraftOnBlur: true, onDraftChange });
+		await focus(m.input);
+		await laisser();
+		expect(onDraftChange).toHaveBeenLastCalledWith(false);
+
+		await saisir(m.input, 'Mar');
+		expect(onDraftChange).toHaveBeenLastCalledWith(true);
+		await quitter(m.input);
+		await laisser(ANTI_REBOND);
+		expect(m.input.value).toBe('Mar');
+		expect(liste(m.container)).toBeNull();
+		expect(onDraftChange).toHaveBeenLastCalledWith(true);
+		expect(m.onSelect).not.toHaveBeenCalled();
+
+		await focus(m.input);
+		expect(listContactsMock).toHaveBeenLastCalledWith(expect.objectContaining({ search: 'Mar' }));
+		await laisser();
+		expect(designees(m.container)).toEqual(['Martin Sàrl']);
+		expect(await entree(m.input)).toBe(false);
+		expect(m.onSelect).toHaveBeenCalledWith(MARTIN);
+		await laisser();
+		expect(m.input.value).toBe('Martin Sàrl');
+		expect(onDraftChange).toHaveBeenLastCalledWith(false);
+	});
+
+	it('D4-b. `keepDraftOnBlur` : brouillon blanc, champ quitté → jeté (D1), le client reparaît, le parent est prévenu', async () => {
+		const onDraftChange = vi.fn();
+		const m = monter(DUPONT, { keepDraftOnBlur: true, onDraftChange });
+		await focus(m.input);
+		await laisser();
+		await taper(m.input, '   ');
+		await laisser();
+		await quitter(m.input);
+		await laisser();
+		expect(m.input.value).toBe('Dupont SA');
+		expect(onDraftChange).toHaveBeenLastCalledWith(false);
+	});
+
+	it('D4-c. sans `keepDraftOnBlur` (filtres) : le texte est jeté au départ, le parent reçoit `false`', async () => {
+		const onDraftChange = vi.fn();
+		const m = monter(DUPONT, { onDraftChange });
+		await focus(m.input);
+		await laisser();
+		await taper(m.input, 'zzz');
+		await laisser();
+		expect(onDraftChange).toHaveBeenLastCalledWith(true);
+		await quitter(m.input);
+		await laisser();
+		expect(m.input.value).toBe('Dupont SA');
+		expect(onDraftChange).toHaveBeenLastCalledWith(false);
+	});
+});
+
+describe('ContactPicker — seul le bouton principal choisit (revue P1, E3)', () => {
+	it('clic droit ou du milieu sur une option : rien n’est choisi, la liste reste ; clic principal : choisi', async () => {
+		const { input, container, onSelect } = await focusPose(DUPONT);
+		await saisir(input, 'Ma');
+		expect(await fireEvent.mouseDown(option(container, 'Marcel et Cie'), { button: 2 })).toBe(false);
+		expect(await fireEvent.mouseDown(option(container, 'Marcel et Cie'), { button: 1 })).toBe(false);
+		expect(onSelect).not.toHaveBeenCalled();
+		expect(liste(container)).not.toBeNull();
+		await fireEvent.mouseDown(option(container, 'Marcel et Cie'), { button: 0 });
+		expect(onSelect).toHaveBeenCalledWith(MARCEL);
 	});
 });

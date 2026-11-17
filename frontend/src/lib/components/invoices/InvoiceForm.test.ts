@@ -958,29 +958,55 @@ describe('InvoiceForm — Entrée dans le compte de produit (Story 36-1)', () =>
 	});
 });
 
-// Story v0190-correction (#1162, AC2) — un texte tapé dans le champ client, non choisi,
-// est abandonné au départ du champ : le champ réaffiche le client que la facture
-// enregistre. Le `contactId` du client partait déjà (la frappe ne touchait pas
-// `selectedContact`) ; c'est l'AFFICHAGE qui prouve le rouge.
+// Story v0190-correction (#1162, AC2 et AC7) — D4, décision de Guy du 2026-11-17 : dans
+// le formulaire de facture, un texte tapé dans le champ client et non choisi n'est PAS
+// jeté au départ du champ ; l'enregistrement est refusé tant qu'il est affiché, par le
+// bouton comme par la soumission implicite (*Entrée*), avec « Choisissez le client dans
+// la liste ». Un brouillon blanc, lui, est jeté au départ (D1) : le champ remontre X.
 describe('InvoiceForm — le client affiché est celui qui part (v0190-correction, #1162)', () => {
-	it('« zzz » tapé dans le champ client, champ quitté, Enregistrer : le client X part et le champ montre X', async () => {
+	async function monterFacture() {
 		updateInvoiceMock.mockResolvedValue({ id: 7 });
-		const { container, getByTestId } = render(InvoiceForm, {
-			invoice: invoiceWith([SERVICES.id]),
-		});
+		const r = render(InvoiceForm, { invoice: invoiceWith([SERVICES.id]) });
 		await settle();
-		const champ = container.querySelector('input[role="combobox"]') as HTMLInputElement;
+		const champ = r.container.querySelector('input[role="combobox"]') as HTMLInputElement;
 		expect(champ.value).toBe('Client');
+		return { ...r, champ };
+	}
 
+	it('AC7 — « zzz » tapé, champ quitté, Enregistrer : rien ne part, le message le dit, le texte reste', async () => {
+		const { champ, getByTestId, container } = await monterFacture();
 		await fireEvent.input(champ, { target: { value: 'zzz' } });
 		// En jsdom le clic ne déplace pas le focus : le départ du champ est explicite.
 		await fireEvent.blur(champ);
 		await fireEvent.click(getByTestId('create-invoice-button'));
 		await settle();
 
+		expect(updateInvoiceMock).not.toHaveBeenCalled();
+		expect(container.textContent).toContain('Choisissez le client dans la liste');
+		expect(champ.value).toBe('zzz');
+	});
+
+	it('AC7 — même refus par la soumission implicite (Entrée dans un autre champ du formulaire)', async () => {
+		const { champ } = await monterFacture();
+		await fireEvent.input(champ, { target: { value: 'zzz' } });
+		await fireEvent.blur(champ);
+		champ.form!.requestSubmit();
+		await settle();
+
+		expect(updateInvoiceMock).not.toHaveBeenCalled();
+		expect(champ.value).toBe('zzz');
+	});
+
+	it('AC2 — champ vidé au clavier puis quitté : le brouillon blanc est jeté, le client X part et s’affiche', async () => {
+		const { champ, getByTestId } = await monterFacture();
+		await fireEvent.input(champ, { target: { value: '' } });
+		await fireEvent.blur(champ);
+		expect(champ.value).toBe('Client');
+		await fireEvent.click(getByTestId('create-invoice-button'));
+		await settle();
+
 		expect(updateInvoiceMock).toHaveBeenCalledTimes(1);
 		expect((updateInvoiceMock.mock.calls[0][1] as { contactId: number }).contactId).toBe(1);
-		expect(champ.value).toBe('Client');
 	});
 });
 

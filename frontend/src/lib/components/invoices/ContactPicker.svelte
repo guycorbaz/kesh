@@ -26,8 +26,28 @@
 		selected: ContactResponse | null;
 		onSelect: (c: ContactResponse) => void;
 		placeholder?: string;
+		/**
+		 * D4 (C-v0190c-22, décision de Guy du 2026-11-17) — un brouillon NON BLANC
+		 * survit au départ du champ : l'utilisateur doit pouvoir revenir choisir.
+		 * Réservé à un consommateur qui BLOQUE son envoi tant qu'un brouillon est
+		 * affiché (`onDraftChange`) : le formulaire de facture. **Défaut `false`** :
+		 * les filtres des listes gardent D1 (brouillon jeté au départ du champ).
+		 */
+		keepDraftOnBlur?: boolean;
+		/**
+		 * Appelé à chaque changement de l'état « un texte tapé et non choisi est
+		 * affiché » (brouillon non blanc) : le parent l'apprend par ce rappel, jamais
+		 * par le DOM.
+		 */
+		onDraftChange?: (unresolved: boolean) => void;
 	};
-	let { selected, onSelect, placeholder = 'Rechercher un contact…' }: Props = $props();
+	let {
+		selected,
+		onSelect,
+		placeholder = 'Rechercher un contact…',
+		keepDraftOnBlur = false,
+		onDraftChange = undefined
+	}: Props = $props();
 
 	// ID unique par instance pour le pattern combobox ARIA (les IDs doivent
 	// exister au premier render). On utilise le rune `$props.id()` de Svelte 5,
@@ -89,6 +109,25 @@
 		results = [];
 	}
 
+	/**
+	 * Réinitialisation commune (revue P1, B4) : recherche abandonnée, brouillon
+	 * jeté, liste fermée, rien de désigné. Au `blur` (sauf D4), au choix, au
+	 * brouillon blanc jeté par *Entrée* et au changement de client.
+	 */
+	function reinitialiser() {
+		abandonSearch();
+		draft = null;
+		open = false;
+		highlighted = -1;
+	}
+
+	/** Un texte tapé et non choisi est affiché (brouillon non blanc). */
+	const unresolved = $derived(draft !== null && draft.trim() !== '');
+	$effect(() => {
+		const u = unresolved;
+		untrack(() => onDraftChange?.(u));
+	});
+
 	// Un client changé par le parent (choix, 409 rechargé, *Réinitialiser* d'un
 	// filtre) jette le brouillon et purge la liste : le champ montre le nouveau
 	// client, et aucune désignation de l'ancienne liste ne survit (D1, V2-5,
@@ -104,10 +143,7 @@
 			}
 			if (id === lastSelectedId) return;
 			lastSelectedId = id;
-			abandonSearch();
-			draft = null;
-			open = false;
-			highlighted = -1;
+			reinitialiser();
 		});
 	});
 
@@ -162,11 +198,9 @@
 		}, 300);
 	}
 
+	/** Choix : l'état est nettoyé AVANT `onSelect`, donc avant le rendu du parent (A5). */
 	function pick(c: ContactResponse) {
-		abandonSearch();
-		draft = null;
-		open = false;
-		highlighted = -1;
+		reinitialiser();
 		onSelect(c);
 	}
 
@@ -217,10 +251,7 @@
 		e.preventDefault();
 		if (draft.trim() === '') {
 			// Brouillon blanc (E5 de la 36-1) : jeté, le client retenu reparaît.
-			abandonSearch();
-			draft = null;
-			open = false;
-			highlighted = -1;
+			reinitialiser();
 			return;
 		}
 		open = true;
@@ -251,12 +282,17 @@
 	 * `blur` immédiat (D1) : le brouillon est jeté, le champ réaffiche le client
 	 * retenu. Un clic dans la liste ne fait pas perdre le focus (`preventDefault`
 	 * au `mousedown`) : le délai d'origine n'a plus d'objet.
+	 * D4 (`keepDraftOnBlur`) : un brouillon non blanc reste affiché ; la recherche
+	 * est abandonnée et la liste fermée, le parent bloque l'envoi.
 	 */
 	function onBlur() {
-		abandonSearch();
-		draft = null;
-		open = false;
-		highlighted = -1;
+		if (keepDraftOnBlur && unresolved) {
+			abandonSearch();
+			open = false;
+			highlighted = -1;
+			return;
+		}
+		reinitialiser();
 	}
 
 	onMount(() => {
@@ -276,7 +312,11 @@
 			open = true;
 			// Ouvrir n'est pas désigner (#1165).
 			highlighted = -1;
-			if (results.length === 0 && !searching) runSearch('');
+			// `!searching` : défense en profondeur, sans cas atteignable (un focus suit
+			// un `blur`, qui abandonne la recherche ; revue P1, A5). Le texte cherché
+			// est le brouillon gardé (D4), `''` sinon : la recherche d'un brouillon
+			// désigne le premier à son arrivée, comme une frappe.
+			if (results.length === 0 && !searching) runSearch((draft ?? '').trim());
 		}}
 		onblur={onBlur}
 		onkeydown={onKeydown}
@@ -314,6 +354,8 @@
 						]}
 						onmousedown={(e) => {
 							e.preventDefault();
+							// Seul le bouton principal choisit (revue P1, E3).
+							if (e.button !== 0) return;
 							pick(c);
 						}}
 					>
