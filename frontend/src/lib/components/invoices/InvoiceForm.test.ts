@@ -1008,6 +1008,39 @@ describe('InvoiceForm — le client affiché est celui qui part (v0190-correctio
 		expect(updateInvoiceMock).toHaveBeenCalledTimes(1);
 		expect((updateInvoiceMock.mock.calls[0][1] as { contactId: number }).contactId).toBe(1);
 	});
+
+	it('F1 — après le refus, le texte tapé tombe (champ vidé puis quitté) : le bandeau du refus se retire', async () => {
+		const { champ, getByTestId, queryByTestId } = await monterFacture();
+		await fireEvent.input(champ, { target: { value: 'zzz' } });
+		await fireEvent.blur(champ);
+		await fireEvent.click(getByTestId('create-invoice-button'));
+		await settle();
+		expect(getByTestId('invoice-form-error').textContent).toContain('Choisissez le client dans la liste');
+
+		await fireEvent.input(champ, { target: { value: '' } });
+		await fireEvent.blur(champ);
+		await settle();
+		expect(champ.value).toBe('Client');
+		expect(queryByTestId('invoice-form-error')).toBeNull();
+	});
+
+	it('F2 — un texte tapé pendant l’attente des réglages arrête l’envoi', async () => {
+		const { champ, getByTestId } = await monterFacture();
+		let tenir!: (v: unknown) => void;
+		getInvoiceSettingsMock.mockImplementationOnce(
+			() => new Promise((res) => (tenir = res)),
+		);
+		await fireEvent.click(getByTestId('create-invoice-button'));
+		// L'envoi attend les réglages ; le champ client est encore éditable.
+		await fireEvent.input(champ, { target: { value: 'zzz' } });
+		await settle();
+		tenir({ defaultReceivableAccountId: 1100, defaultRevenueAccountId: DEFAULT_REVENUE.id });
+		await settle();
+
+		expect(updateInvoiceMock).not.toHaveBeenCalled();
+		expect(getByTestId('invoice-form-error').textContent).toContain('Choisissez le client dans la liste');
+		expect(champ.value).toBe('zzz');
+	});
 });
 
 // Story 36-3b (#1171) — le prix unitaire d'une ligne de facture client se lit comme le
