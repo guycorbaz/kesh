@@ -633,3 +633,18 @@ script Python, dans `kesh-gate-logs` (hors dépôt).
   M3n, M7n, M13bn tuées par les tests, `debug_assert!` neutralisés ; relevé `pdftotext -bbox` rejoué au commit, vert, 67 mots.
   `test-fast --ci` voie 2 : **5521 passés, 14 ignorés** (`test-fast-ci-remediation-p1.log`, commit `8997f6349`). Une passe
   ciblée relira ce correctif ; `gate-ci`, E2E et `t4_pdfium` à la clôture.
+- 2026-11-17 — **Revue de code terminée, story close.** Tendance (C/H/M/L) : **P1**, trois lentilles Sonnet (B, E, A),
+  **0/0/0/15** → **P2 ciblée** Haiku sur `8997f6349`, **0/0/0/2** (`kesh-gate-logs/e44/review-p2-ciblee.md` ; P2-1 :
+  référence de ligne du prompt, rien à corriger ; P2-2 : phrase du manuel sur le type K, reportée à #1230 par
+  l'orchestrateur, non corrigée). Modèles : développement et remédiation Opus 5.5 ; revue P1 Sonnet ; passe ciblée P2 Haiku.
+  **Gates de clôture au dernier commit de code `8997f6349`** (tête `c97004a9a`, qui n'y ajoute que des comptes rendus),
+  bases `kesh_e441` et `kesh_e2e_e441` remises à neuf (91 migrations) :
+  - `scripts/gate-ci.sh kesh_ci_e441`, voie 1 : **5528 passés, 0 échoué, 18 ignorés** (`gate-ci-cloture.log`) ;
+  - **E2E complet**, voie 2, port 3441, frontend construit (`front-build-cloture.log`) : **437 passés, 7 échecs,
+    18 ignorés** (`e2e-cloture.log`, `e2e-cloture-backend.log`). Les 7 échecs sont exactement les sept de la KF-029 (#97)
+    de `docs/testing.md` : `mode-expert.spec.ts:26`, `:41` ; `onboarding-path-b.spec.ts:65`, `:92` ;
+    `onboarding.spec.ts:57`, `:77`, `:150`. Aucun autre échec ;
+  - `t4_pdfium_scans_synthetiques` (AC10) : **vert** (`t4-pdfium-cloture.log`). Le premier lancement a échoué faute de
+    `LD_LIBRARY_PATH` vers `libpdfium.so`, un défaut de montage ; il a été rejoué avec `kesh-gate-logs/pdfium-7920/lib`.
+
+  Statut : `done`.

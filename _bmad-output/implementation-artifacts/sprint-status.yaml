@@ -1110,6 +1110,6 @@ development_status:
 
   # 2026-11-17 — Epic 44 « QR-facture conforme » (#944), release 0.19.0 ; branche epic/44-qr-facture-conforme ; la 36-12b y est reprise (découpée en 44-1a et 44-1b).
   epic-44: in-progress  # QR-facture conforme (#944) ; release 0.19.0 (2026-11-20), coupure le jeudi 19 au soir ; au plus six stories, solde comprise
-  44-1a-qr-facture-grille: review  # #944 ; ex-36-12b (partie) ; grille SIX, Payable by, montant fixe, largeurs mesurées, paliers R1, R4 et P3 ; développée le 2026-11-17 (dernier commit de code 369719847 ; test-fast --ci 5520, gate-ci 5527 ; E2E à la clôture) ; revue P1 à lancer
+  44-1a-qr-facture-grille: done  # #944 ; ex-36-12b (partie) ; grille SIX, Payable by, montant fixe, largeurs mesurées, paliers R1, R4 et P3 ; revue P1 0/0/0/15 → P2 ciblée 0/0/0/2 ; clôture au dernier commit de code 8997f6349 : gate-ci 5528, E2E 437 + 7 KF-029, t4_pdfium vert
   44-1b-qr-facture-cascade: backlog  # #944 ; ex-36-12b (suite) ; paliers intermédiaires R2, R3, P1, P2 ; release ultérieure, part de la 44-1a fusionnée ; à valider avant développement
   44-2-solde-dette-epic: backlog  # story de solde de l'Epic 44 (CLAUDE.md) : au plus 2 issues ouvertes par les stories 44-* ; en fin d'epic, avant le tag
