@@ -185,6 +185,34 @@ async fn colonne_posterieure(pool: &MySqlPool, poser: bool) {
         .await
         .expect("colonne postérieure à la fenêtre");
     colonnes_du_numero_interne(pool, poser).await;
+    colonnes_du_reglement_groupe(pool, poser).await;
+}
+
+/// Même geste pour les colonnes de la migration `20261118000001` (Story 43-1a) que
+/// lisent les gestes vivants (règlement client, facture fournisseur, réglages de
+/// facturation). Sans clé ni contrainte : seules les colonnes sont lues. ⚠️ Le
+/// retrait est obligatoire avant la montée, pour la même raison.
+async fn colonnes_du_reglement_groupe(pool: &MySqlPool, poser: bool) {
+    let instructions: [&str; 3] = if poser {
+        [
+            "ALTER TABLE invoice_settlements ADD COLUMN journal_entry_line_id BIGINT NULL",
+            "ALTER TABLE supplier_invoices ADD COLUMN settlement_journal_entry_line_id BIGINT NULL",
+            "ALTER TABLE company_invoice_settings ADD COLUMN group_settlement_max_difference \
+             DECIMAL(19,4) NOT NULL DEFAULT 5.0000",
+        ]
+    } else {
+        [
+            "ALTER TABLE invoice_settlements DROP COLUMN journal_entry_line_id",
+            "ALTER TABLE supplier_invoices DROP COLUMN settlement_journal_entry_line_id",
+            "ALTER TABLE company_invoice_settings DROP COLUMN group_settlement_max_difference",
+        ]
+    };
+    for sql in instructions {
+        sqlx::query(sql)
+            .execute(pool)
+            .await
+            .expect("colonnes du règlement groupé");
+    }
 }
 
 /// Même geste pour les colonnes de la migration `20261106000001` (Story 33-1a) que
@@ -817,6 +845,7 @@ async fn backfill_pairs_reversals_by_position(pool: MySqlPool) {
         .await
         .expect("migrations avant M1");
     colonnes_du_numero_interne(&pool, true).await;
+    colonnes_du_reglement_groupe(&pool, true).await;
     let seeded = societe(&pool).await;
     let ach = achats(&pool, &seeded).await;
     let (jumelles, lignes) = ecriture(
@@ -877,6 +906,7 @@ async fn backfill_pairs_reversals_by_position(pool: MySqlPool) {
     .unwrap();
 
     colonnes_du_numero_interne(&pool, false).await;
+    colonnes_du_reglement_groupe(&pool, false).await;
     // M1 seule : la paire de l'achat, pas celle de l'écriture manuelle.
     apply_migrations_up_to(
         &pool,

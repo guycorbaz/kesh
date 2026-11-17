@@ -469,9 +469,73 @@ change pour passer, hors des trois assertions de `journal_entries_modification.r
 
 ### Agent Model Used
 
+Claude Opus 5.5 (agent de développement de la 43-1a, clé `e431a`, voie 1), le 2026-11-17.
+
 ### Completion Notes List
 
+- **Périmètre livré** : T0 à T8 — AC1 à AC13. Le second lot de la fiche (AC10 à AC13) a été écrit le même jour, pendant
+  l'attente du verrou de la voie 1 ; il entre donc dans cette revue P1 au lieu d'une passe ciblée jeudi.
+- **Contrat** : la règle de la différence a changé quatre fois pendant le développement, sur décisions de Guy et de
+  l'orchestrateur (registre `e0190-choix-autonomes-e431a.md`, C-e431a-1, -2, -12, -13, -14) ; la forme définitive est
+  D4 bis. Commits de contrat : `3f6a6b22f` (T3), `2bd2117d0`, `a679cedcd`, `241839568` (définitive), fiche alignée
+  `c31159276` ; signalés dans `kesh-gate-logs/e43/t3.md`.
+- **T0** : MariaDB 10.11.19 — `DROP INDEX` seul en 1553, migration entière acceptée, `CHECK` éprouvées
+  (`kesh-gate-logs/e431a/t0-mariadb.log`) ; D2 confirmé au code (`journal_entries.rs:513-530`, `:551-555`).
+- **Rouges** : ⚠️ les tests de T5/T6 ont été écrits **après** le code ; la preuve du rouge passe par les mutations.
+  Premier passage des tests neufs (`t5-cible-1.log`, code au commit `c31159276`) : 222 tests, 217 passés, 5 rouges, tous
+  des défauts des tests (somme de versions rendue en `DECIMAL`, nom de colonne `actor_api_key_id`, fichier à inscrire au
+  garde du squash) — `kesh-gate-logs/e431a/rouges.log`. Après correction (`69e75f5fc`) : `t5-cible-2.log`, 29 tests du
+  rayon d'impact, 29 passés (dont les deux d'AC10 côté `kesh-api`).
+- **Mutations** (`kesh-gate-logs/e431a/mut/`, script `mutations.py` et `campagne.sh`, code commité avant, restauration
+  par `git restore --worktree` puis `touch`) — les quatre tuées (`campagne.log`, `mutation-N.log`) : (1) version lue par
+  `FOR UPDATE` → `a_concurrent_partial_settlement_is_refused_by_the_version` et `two_groups_sharing_an_invoice_settle_it_once`
+  rouges ; (2) sans `AND version = ?` → les mêmes ; (3) fragment `CLEAR_SETTLEMENT_SQL` sans la ligne →
+  `a_settlement_line_without_its_entry_is_refused` ; (4) plafond sur un seul sens de `e` → trois rouges (deux tests purs,
+  `the_gap_is_admitted_both_ways_up_to_the_ceiling`). La mutation 4 remplace « inverser le sens admis de `e` », sans objet
+  depuis la décision de Guy.
+- **Gates du passage en `review`** : voir *Gates* ci-dessous (journaux `test-fast-review.log`, `gate-ci-review.log`).
+  Frontend non touché ; **E2E non lancé** (à la clôture, consigne de la release).
+- **AC9 — inventaire** (`git grep -c "invoice_settlements\|settlement_journal_entry_id" -- 'crates/*/src/*'`, 39 fichiers) :
+  résolus ici : `classify`, `entry_cancel_outlook`, `get_view`, `cancel_in_tx` (`reconciliation_cancel.rs`),
+  `document_owners` (doc-comment, `journal_entries.rs`), lettrage (`letterings.rs`, AC4), export (`csv_tables.rs`).
+  Assumés sûrs, comme la fiche les nomme (lecture par facture ou par règlement, ou garde existante qui refuse avant) ;
+  sites **nouveaux** relevés, tous de la documentation ou des types : `kesh-api/src/errors.rs:5393` (détails du refus de
+  compte de tiers), `lib.rs:1097` (route de liste des règlements, par facture), `routes/supplier_invoices.rs:94,243`
+  (champ de réponse), `services/mod.rs:158` (doc), `entities/invoice.rs:36`, `kesh-db/src/errors.rs` (doc),
+  `accounts.rs:372` (doc), `settlement_cancellation.rs:8,74` (doc), `kesh-report/src/errors.rs:27` (doc).
+- **Écarts à la consigne Edit** : les tests de T5/T6 (et AC10, AC11, AC12) ont été rédigés par l'outil Write dans des
+  brouillons (`kesh-gate-logs/e431a/draft-*.rs`), puis **ajoutés en fin de fichier par `cat >>`** — pour ne pas modifier
+  un fichier de test pendant qu'un gate pouvait le compiler. Aucun `sed -i` ni script de remplacement sur le code ; un
+  `replace_all` de l'outil Edit (`adjustment` → `gap` dans `grouped_settlements.rs`).
+- **AC11** est dans `grouped_settlements.rs` (où vivent les montages du groupe), non dans
+  `lettering_documents_backfill.rs` comme l'écrivait la fiche ; AC12 aussi, d'où l'inscription du fichier à
+  `ALLOWED_REAL_MIGRATOR_FILES` (`test_schema_guard.rs`).
+- **P8** : la migration a changé d'octets une fois avant toute publication (commentaire de la colonne de plafond,
+  C-e431a-12.4) — checksum, squash et bases `kesh_e431a`, `kesh_e2e_e431a`, `kesh_ci_e431a` reconstruites.
+- **Limites** (au rapport, à ouvrir en issues si l'orchestrateur le juge utile) : la vue (`get_view`) ne lit que les
+  membres **clients** d'un groupe ; le dé-rapprochement d'un groupe fournisseur rend `Invariant` jusqu'à la 43-1b ; le
+  motif `OwnedBySettlement` d'une écriture groupée ne nomme qu'une facture.
+
+### Gates
+
+*(rempli après exécution — voir ci-dessous.)*
+
 ### File List
+
+- `crates/kesh-db/migrations/20261118000001_grouped_settlements.sql` (neuf), `crates/kesh-db/migrations.sha384`,
+  `crates/kesh-db/test-schema/0001_schema_squash.sql`, `docs/migrations-idempotence-audit.md`
+- `crates/kesh-db/src/repositories/grouped_settlements.rs` (neuf), `repositories/mod.rs`,
+  `repositories/reconciliation_cancel.rs`, `repositories/letterings.rs`, `repositories/journal_entries.rs`,
+  `repositories/invoice_settlements.rs`, `repositories/invoice_settlements_write.rs`, `repositories/supplier_invoices.rs`,
+  `repositories/company_invoice_settings.rs`, `src/backup.rs`
+- `crates/kesh-db/src/entities/{invoice_settlement,supplier_invoice,company_invoice_settings}.rs`
+- `crates/kesh-reconciliation/src/matching.rs`, `crates/kesh-api/src/exports/csv_tables.rs`,
+  `crates/kesh-api/src/routes/reconciliation.rs`
+- Tests : `crates/kesh-db/tests/grouped_settlements.rs` (neuf), `journal_entries_modification.rs`,
+  `migrations_upgrade_path.rs`, `test_schema_guard.rs`, `crates/kesh-api/tests/admin_full_import_e2e.rs`
+- `docs/manual/fr/admin-manual.tex` (§ *Passer à la 0.19.0*, `.tex` seulement)
+- `_bmad-output/implementation-artifacts/43-1a-reglement-groupe-modele-client.md`,
+  `e0190-choix-autonomes-e431a.md` (neuf), `43-1a-reglement-groupe-modele-client-review-prompt-p1.md` (neuf)
 
 ## Change Log
 

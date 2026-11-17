@@ -2319,7 +2319,8 @@ async fn settings_row_state(pool: &MySqlPool, company_id: i64) -> Option<(i32, [
          credit_note_number_format, supplier_internal_number_format, default_payable_account_id, \
          default_rounding_account_id, round_to_5_centimes, minimum_invoice_amount, \
          default_discount_account_id, default_bank_fees_account_id, default_bad_debt_account_id, \
-         version, created_at, updated_at FROM company_invoice_settings WHERE company_id = ?",
+         group_settlement_max_difference, version, created_at, updated_at \
+         FROM company_invoice_settings WHERE company_id = ?",
     )
     .bind(company_id)
     .fetch_optional(pool)
