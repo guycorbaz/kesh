@@ -32,11 +32,12 @@ function k9Attention() {
 	return closingChecks({
 		FOREIGN_ACCOUNTS_NOT_REVALUED: {
 			status: 'attention',
-			count: 2,
+			count: 3,
 			details: {
 				accounts: [
 					{ accountId: 10, number: '1020', name: 'PayPal USD', currency: 'USD', delta: '31.93', reason: 'NOT_REVALUED' },
-					{ accountId: 12, number: '1040', name: 'Banque GBP', currency: 'GBP', delta: null, reason: 'RATE_UNAVAILABLE' }
+					{ accountId: 12, number: '1040', name: 'Banque GBP', currency: 'GBP', delta: null, reason: 'RATE_UNAVAILABLE' },
+					{ accountId: 13, number: '1050', name: 'Banque CAD', currency: 'CAD', delta: '2.00', reason: 'NOT_POSTABLE' }
 				]
 			}
 		}
@@ -53,9 +54,10 @@ describe('FiscalYearChecks — K9', () => {
 		previewMock.mockResolvedValue(preview());
 		render(FiscalYearChecks, { loadState: 'ready', checks: k9Attention(), canRevalue: true });
 		const statut = screen.getByTestId('fiscal-year-checks-status-FOREIGN_ACCOUNTS_NOT_REVALUED');
-		expect(statut.textContent).toMatch(/2 compte\(s\) en devise non réévalué\(s\)/);
+		expect(statut.textContent).toMatch(/3 compte\(s\) en devise non réévalué\(s\)/);
 		expect(statut.textContent).toMatch(/1020 PayPal USD : écart de/);
 		expect(statut.textContent).toMatch(/pas de cours de clôture GBP/);
+		expect(statut.textContent).toMatch(/1050 Banque CAD : compte non imputable portant un solde en devise — rendez-le imputable/);
 		expect(await screen.findByTestId('revaluation-panel')).toBeTruthy();
 		expect(previewMock).toHaveBeenCalledWith(1, {});
 		expect(screen.getByTestId('revaluation-submit').textContent).toMatch(/Réévaluer/);

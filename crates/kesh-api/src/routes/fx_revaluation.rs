@@ -198,9 +198,10 @@ pub async fn post_revaluation(
     let scope: BTreeSet<String> = selected.iter().filter_map(|a| a.currency.clone()).collect();
     cles_dans(&recus, &scope)?;
     // Seules les devises des comptes admissibles exigent un cours : un compte
-    // non admissible (archivé, de résultat) sans cours tombe sous verrou en
-    // `notEligible`, non en `RATE_UNAVAILABLE`. Un cours reçu pour sa devise
-    // reste admis (`scope`) et passe à l'audit.
+    // non admissible (archivé, non imputable, de résultat) sans cours tombe
+    // sous verrou en `notEligible`, non en `RATE_UNAVAILABLE`. Un cours reçu
+    // pour sa devise reste admis (`scope`), mais n'entre pas dans la
+    // passation ni dans l'audit : `rates` ne se construit que sur ces devises.
     let currencies: BTreeSet<String> = selected
         .iter()
         .filter(|a| a.is_eligible())
@@ -289,7 +290,8 @@ pub struct PreviewLine {
     pub selectable: bool,
     /// Le compte est dans la sélection de cette réponse.
     pub selected: bool,
-    /// `ACCOUNT_ARCHIVED`, `RATE_UNAVAILABLE` ou `null`.
+    /// `ACCOUNT_ARCHIVED`, `ACCOUNT_NOT_POSTABLE` (actif mais non imputable,
+    /// 37-5-CR-P1-D1), `RATE_UNAVAILABLE` ou `null`.
     pub reason: Option<&'static str>,
     /// Débit net en devise, depuis l'origine.
     pub devise_net: Decimal,
@@ -422,7 +424,8 @@ pub async fn preview_revaluation(
     // `accountIds`, les devises des comptes reçus de la société (la règle de la
     // passation, `find_accounts`) ; sans, celles des comptes admissibles
     // (C-37-5-2).
-    let eligible: Vec<&RevaluationLine> = lines.iter().filter(|l| l.account.active).collect();
+    let eligible: Vec<&RevaluationLine> =
+        lines.iter().filter(|l| l.account.is_eligible()).collect();
     let scope: BTreeSet<String> = match &body.account_ids {
         Some(ids) => depot::find_accounts(&mut conn, company_id, ids)
             .await?
@@ -465,13 +468,6 @@ pub async fn preview_revaluation(
             )
         }
     };
-    if let Some(e) = lines
-        .iter()
-        .filter(|l| selected.contains(&l.account.id))
-        .find_map(RevaluationLine::out_of_range)
-    {
-        return Err(AppError::Database(e));
-    }
 
     // Les cours, par devise des comptes listés.
     let listed: BTreeSet<String> = lines
@@ -538,6 +534,8 @@ pub async fn preview_revaluation(
         let prev = previous.get(&line.account.id).cloned().unwrap_or_default();
         let reason = if !line.account.active {
             Some("ACCOUNT_ARCHIVED")
+        } else if !line.account.postable {
+            Some("ACCOUNT_NOT_POSTABLE")
         } else if line.outcome == LineOutcome::RateUnavailable {
             Some("RATE_UNAVAILABLE")
         } else {
@@ -634,6 +632,17 @@ pub async fn preview_revaluation(
             }))
             .await,
         );
+    }
+    // Un compte sélectionné dont le calcul sort des bornes (`FX_VALUE_OUT_OF_RANGE`,
+    // la passation le refuserait) : un blocker **par compte**, non un refus de
+    // tout l'aperçu — l'écran se charge et l'utilisateur décoche le compte
+    // (37-5-CR-P1-D2).
+    for e in lines
+        .iter()
+        .filter(|l| selected.contains(&l.account.id))
+        .filter_map(RevaluationLine::out_of_range)
+    {
+        blockers.push(blocker_de(AppError::Database(e)).await);
     }
     let pairs: Vec<(i64, Option<FxAccounts>)> = lines
         .iter()

@@ -98,13 +98,16 @@ pub const MAX_LISTED: usize = 20;
 /// VARCHAR(500)`, `MAX_DESCRIPTION_LEN` de la saisie manuelle).
 pub const MAX_LABEL_CHARS: usize = 500;
 
-/// Le prédicat des comptes **candidats** (alias `a`) : de bilan, en devise,
-/// imputables — archivés compris (un compte archivé à solde non nul est listé,
-/// non sélectionnable, et K9 le compte). Partagé, à l'octet près, avec la
-/// requête `EXISTS` de K9 (`closing_checks::FX_CANDIDATES_EXIST_SQL`, gardé par
-/// un test) : « même prédicat que l'aperçu ».
+/// Le prédicat des comptes **candidats** (alias `a`) : de bilan, en devise —
+/// archivés et non imputables compris. Un compte archivé, ou devenu non
+/// imputable (sous-compte créé, `postable = false`), **à solde non nul** est
+/// listé, non sélectionnable, et K9 le compte : il ne se réévalue pas, mais il
+/// ne contourne pas la clôture (37-5-CR-P1-D1). Sans solde, il n'est pas rendu
+/// ([`lines_for_fiscal_year`]). Partagé, à l'octet près, avec la requête
+/// `EXISTS` de K9 (`closing_checks::FX_CANDIDATES_EXIST_SQL`, gardé par un
+/// test) : « même prédicat que l'aperçu ».
 pub const CANDIDATE_PREDICATE: &str =
-    "a.account_type IN ('Asset', 'Liability') AND a.currency IS NOT NULL AND a.postable = TRUE";
+    "a.account_type IN ('Asset', 'Liability') AND a.currency IS NOT NULL";
 
 // ---------------------------------------------------------------------------
 // Cours par défaut
@@ -253,17 +256,16 @@ pub struct RevaluationAccount {
 impl RevaluationAccount {
     /// Admissible à la passation : de bilan, en devise, imputable, actif.
     pub fn is_eligible(&self) -> bool {
-        self.is_candidate() && self.active
+        self.is_candidate() && self.active && self.postable
     }
 
     /// Candidat (prédicat [`CANDIDATE_PREDICATE`]) : de bilan, en devise,
-    /// imputable, archivé ou non.
+    /// imputable ou non, archivé ou non.
     pub fn is_candidate(&self) -> bool {
         matches!(
             self.account_type,
             AccountType::Asset | AccountType::Liability
         ) && self.currency.is_some()
-            && self.postable
     }
 }
 
@@ -410,7 +412,8 @@ async fn company_fx_accounts(
 /// fonction*) : tous les comptes candidats ([`CANDIDATE_PREDICATE`], archivés
 /// compris) par numéro, leurs soldes cumulés à la date de fin, et l'écart au
 /// cours de `rates` (devise absente : [`LineOutcome::RateUnavailable`]). Un
-/// compte **archivé** sans solde (ni en devise ni en CHF) n'est pas rendu.
+/// compte **archivé ou non imputable** sans solde (ni en devise ni en CHF)
+/// n'est pas rendu.
 ///
 /// Lectures **non verrouillantes** sur `conn` : l'aperçu les fait sur le pool,
 /// K9 dans l'instantané, la clôture après ses verrous (la vue naît alors ici).
@@ -437,7 +440,7 @@ pub async fn lines_for_fiscal_year(
     let balances = balances_as_of(&mut *conn, company_id, fy.end_date, Some(&ids)).await?;
     Ok(build_lines(&candidates, &balances, rates, company_fx)
         .into_iter()
-        .filter(|l| l.account.active || l.has_balance())
+        .filter(|l| l.account.is_eligible() || l.has_balance())
         .collect())
 }
 
@@ -453,6 +456,10 @@ pub enum NotRevaluedReason {
     NotRevalued,
     /// Devise sans cours de clôture, compte à solde non nul.
     RateUnavailable,
+    /// Compte actif, à solde, devenu non imputable : il ne se réévalue pas
+    /// tant qu'il ne l'est plus (37-5-CR-P1-D1) ; l'utilisateur doit le
+    /// rendre imputable. Prime sur les deux autres motifs.
+    NotPostable,
 }
 
 /// Un compte relevé par K9.
@@ -503,6 +510,11 @@ pub fn not_revalued(lines: &[RevaluationLine]) -> NotRevaluedAccounts {
                 (None, NotRevaluedReason::RateUnavailable)
             }
             LineOutcome::RateUnavailable => continue,
+        };
+        let reason = if line.account.active && !line.account.postable {
+            NotRevaluedReason::NotPostable
+        } else {
+            reason
         };
         count += 1;
         if accounts.len() < MAX_LISTED {

@@ -151,6 +151,21 @@ describe('RevaluationPanel — écran complet', () => {
 		expect((await screen.findByTestId('revaluation-posted')).textContent).toMatch(/#91/);
 	});
 
+	it('sélection vide (devise sans cours) : le cours récupéré recharge l\u2019aperçu entier (37-5-CR-P2-1)', async () => {
+		const sans = rate({ rate: null, rateKind: null, rateDate: null, defaultKind: null, defaultRate: null, defaultSource: null, sourceDate: null });
+		previewMock.mockResolvedValueOnce(
+			preview({ rates: [sans], lines: [line({ reason: 'RATE_UNAVAILABLE', selectable: false, selected: false, delta: null, rate: null, targetChf: null })] })
+		);
+		render(RevaluationPanel, { fiscalYearId: 1, mode: 'full', today: '2025-01-15' });
+		fetchMock.mockResolvedValue({});
+		previewMock.mockResolvedValueOnce(preview());
+		await fireEvent.click(await screen.findByTestId('revaluation-fetch-day-USD'));
+		await waitFor(() =>
+			expect((screen.getByTestId('revaluation-select-10') as HTMLInputElement).disabled).toBe(false)
+		);
+		expect(previewMock).toHaveBeenLastCalledWith(1, {});
+	});
+
 	it('repli mensuel : signalé, « Récupérer le cours du 31.12.2024 », puis aperçu relu au cours du jour', async () => {
 		previewMock.mockResolvedValueOnce(preview({ rates: [fallback] }));
 		render(RevaluationPanel, { fiscalYearId: 1, mode: 'full', today: '2025-01-15' });
@@ -198,6 +213,16 @@ describe('RevaluationPanel — écran complet', () => {
 		expect(await screen.findByTestId('revaluation-fetch-month-USD')).toBeTruthy();
 		expect(screen.queryByTestId('revaluation-fetch-day-USD')).toBeNull();
 		expect(screen.getByTestId('revaluation-rate-missing-USD')).toBeTruthy();
+	});
+
+	it('compte non imputable à solde : avis qui dit quoi faire, case désactivée (37-5-CR-P2-D1)', async () => {
+		previewMock.mockResolvedValueOnce(
+			preview({ lines: [line({ reason: 'ACCOUNT_NOT_POSTABLE', selectable: false, selected: false })] })
+		);
+		render(RevaluationPanel, { fiscalYearId: 1, mode: 'full', today: '2025-01-15' });
+		const avis = await screen.findByTestId('revaluation-not-postable-10');
+		expect(avis.textContent).toMatch(/rendez-le imputable pour le réévaluer/);
+		expect((screen.getByTestId('revaluation-select-10') as HTMLInputElement).disabled).toBe(true);
 	});
 
 	it('devise sans cours retenu : aucun champ de cours (le cours tapé ne partirait jamais) (37-5-CR-P1-1)', async () => {

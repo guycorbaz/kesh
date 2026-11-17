@@ -942,3 +942,119 @@ async fn mono_devise_pose_par_l_api(pool: MySqlPool) {
         assert_eq!(v["error"]["details"]["fiscalYearId"], fy);
     }
 }
+
+// ---------------------------------------------------------------------------
+// Revue de code P2 (37-5-CR-P2-D1, D2)
+// ---------------------------------------------------------------------------
+
+/// D1 : un compte actif, à solde, devenu non imputable reste candidat — ligne
+/// `ACCOUNT_NOT_POSTABLE`, non sélectionnable ni sélectionné ; refusé par
+/// `accountIds` (`notEligible`) ; K9 le compte (`NOT_POSTABLE`) et la clôture
+/// est refusée avec ce motif ; une fois rendu imputable et réévalué, elle passe.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn compte_non_imputable_a_solde_bloque_l_apercu_et_la_cloture(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let c = ctx.s.company_id;
+    cours(&pool, c, "USD", "day", "2024-12-31", "0.92", "afc").await;
+    cours(&pool, c, "EUR", "day", "2024-12-31", "0.95", "afc").await;
+    // Réévalue EUR ; USD (écart 40.00) devient non imputable.
+    let (st, _) = passer(&ctx, &json!({ "accountIds": [ctx.eur] })).await;
+    assert_eq!(st, 200);
+    sqlx::query("UPDATE accounts SET postable = FALSE WHERE id = ?")
+        .bind(ctx.usd)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (st, v) = apercu(&ctx, &json!({})).await;
+    assert_eq!(st, 200, "{v}");
+    let l = ligne(&v, ctx.usd);
+    assert_eq!(l["reason"], "ACCOUNT_NOT_POSTABLE");
+    assert_eq!(
+        (l["selectable"].clone(), l["selected"].clone()),
+        (json!(false), json!(false))
+    );
+    assert_eq!(l["archived"], false);
+    assert_eq!(l["delta"], "40.00");
+    // Par `accountIds` : refus, comme la passation.
+    let (st, e) = apercu(&ctx, &json!({ "accountIds": [ctx.usd] })).await;
+    assert_eq!(st, 400, "{e}");
+    assert_eq!(e["error"]["code"], "FX_REVALUATION_ACCOUNT_INVALID");
+    let (st, e) = passer(&ctx, &json!({ "accountIds": [ctx.usd] })).await;
+    assert_eq!(
+        (st, e["error"]["details"]["reason"].as_str()),
+        (400, Some("notEligible"))
+    );
+    // K9 et la clôture.
+    let r = ctx
+        .app
+        .client
+        .get(format!(
+            "{}/api/v1/fiscal-years/{}/closing-checks",
+            ctx.app.base_url, ctx.fy
+        ))
+        .bearer_auth(&ctx.jwt)
+        .send()
+        .await
+        .unwrap();
+    let k: Value = r.json().await.unwrap();
+    assert_eq!(k["checks"][8]["status"], "attention");
+    assert_eq!(
+        k["checks"][8]["details"]["accounts"][0]["reason"],
+        "NOT_POSTABLE"
+    );
+    let r = ctx
+        .app
+        .client
+        .post(format!(
+            "{}/api/v1/fiscal-years/{}/close",
+            ctx.app.base_url, ctx.fy
+        ))
+        .bearer_auth(&ctx.jwt)
+        .json(&json!({}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status().as_u16(), 409);
+    let v: Value = r.json().await.unwrap();
+    assert_eq!(v["error"]["code"], "FOREIGN_ACCOUNTS_NOT_REVALUED");
+    assert_eq!(
+        v["error"]["details"]["accounts"][0]["reason"],
+        "NOT_POSTABLE"
+    );
+}
+
+/// D2 : un compte sélectionné dont le calcul sort des bornes (10¹³ CHF) sort
+/// en blocker `FX_VALUE_OUT_OF_RANGE`, et l'aperçu se charge ; la passation
+/// refuse le même compte.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn apercu_hors_bornes_en_blocker_par_compte(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let c = ctx.s.company_id;
+    cours(&pool, c, "USD", "day", "2024-12-31", "0.92", "afc").await;
+    cours(&pool, c, "EUR", "day", "2024-12-31", "0.95", "afc").await;
+    // 9·10¹² USD de plus, réévalués à 1000 : hors bornes.
+    ecriture(&ctx, ctx.usd, "9000000000000", "9000000000000.00", "1").await;
+    let (st, v) = apercu(&ctx, &json!({ "rates": { "USD": "1000" } })).await;
+    assert_eq!(st, 200, "l'aperçu se charge : {v}");
+    let b: Vec<&Value> = v["blockers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|b| b["code"] == "FX_VALUE_OUT_OF_RANGE")
+        .collect();
+    assert_eq!(b.len(), 1, "{v}");
+    assert_eq!(b[0]["details"]["accountId"], ctx.usd);
+    assert_eq!(ligne(&v, ctx.usd)["selected"], true);
+    assert_eq!(ligne(&v, ctx.usd)["delta"], Value::Null);
+    assert_eq!(ligne(&v, ctx.eur)["selected"], true);
+    let (st, e) = passer(
+        &ctx,
+        &json!({ "rates": { "USD": "1000" } , "accountIds": [ctx.usd] }),
+    )
+    .await;
+    assert_eq!(
+        (st, e["error"]["code"].as_str()),
+        (400, Some("FX_VALUE_OUT_OF_RANGE"))
+    );
+    assert_eq!(nb_reevaluations(&pool).await, 0);
+}

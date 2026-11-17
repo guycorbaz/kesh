@@ -1053,7 +1053,9 @@ const ATTENDU = {
 	// à la main. Les commentaires ci-après sont ceux de la 37-4, repris tels quels.
 	// Fusion de la 37-3b dans la 37-5 : **3300 → 3350**, relevé par la garde (`expected 3350 to
 	// be 3300`) — les 50 sites de la 37-5 (voir plus bas).
-	sitesTotal: 3350,
+	// Revue de code P2 (37-5) : **3350 → 3352**, relevé par la garde (`expected 3352 to be 3350`) — les
+	// deux sites de l'avis « compte non imputable » (aperçu, K9).
+	sitesTotal: 3352,
 	// Story 37-4 (AC-6) : **3184 → 3190** sur sa branche (partie de 946aa86a), relevé par la garde
 	// (`expected 3190 to be 3184`) et ventilé au code : 3 sites dans
 	// `features/reports/GeneralLedgerView.svelte` (`reports-fx-revaluation-balance`,

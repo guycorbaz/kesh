@@ -94,6 +94,13 @@ export function checkHelp(code: ClosingCheckCode): string {
 /** Un compte relevé par K9 (Story 37-5) : son écart, ou l'absence de cours de clôture. */
 export function notRevaluedText(a: NotRevaluedAccount): string {
 	const account = `${a.number} ${a.name}`;
+	if (a.reason === 'NOT_POSTABLE') {
+		return i18nMsg(
+			'fiscal-years-checks-k9-not-postable',
+			'{ $account } : compte non imputable portant un solde en devise — rendez-le imputable pour le réévaluer.',
+			{ account }
+		);
+	}
 	if (a.reason === 'RATE_UNAVAILABLE') {
 		return i18nMsg(
 			'fiscal-years-checks-k9-no-rate',

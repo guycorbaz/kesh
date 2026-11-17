@@ -34,7 +34,7 @@ devise n'est pas réévalué (A37).
 
 **Fonctionnelles**
 
-- FR-37-5-1 — `POST /fiscal-years/{id}/fx-revaluation/preview` donne, par compte de bilan (`Asset`, `Liability`) imputable en devise, la devise du compte, les soldes en devise et CHF cumulés depuis l'origine jusqu'à la date de fin (exercice de durée quelconque), le cours, le CHF réévalué, l'écart D = round(devise_net × cours) − chf_net en débit net, le numéro et le nom du compte, les réévaluations déjà passées dans l'exercice (`previousRevaluationTotal`, `previousEntryIds`) et la valeur cumulée après passage (`revaluationTotalAfter`, CR-8 A39), la contrepartie résolue par compte (`fx_accounts_for` : comptes propres ou de la société, `counterpartAccountId`, `fxAccountsOrigin`) et l'écriture prévue ; il n'écrit rien, présélectionne au plus 498 comptes (troncature signalée), liste un compte archivé non sélectionnable, propose aussi un compte à solde en devise nul et CHF résiduel (D = −chf_net), et signale sans refuser, dans `blockers[]`, seulement `EARLIER_FISCAL_YEAR_OPEN`, `LATER_FISCAL_YEAR_CLOSED`, `PERIOD_LOCKED`, `FX_ACCOUNT_INVALID` (sur les comptes sélectionnés) ; il refuse comme la passation l'exercice inconnu ou d'une autre société (404), le mono-devise (409), l'exercice clos (400), les formes de requête, `notEligible` et `FX_VALUE_OUT_OF_RANGE` (AC-1, AC-4).
+- FR-37-5-1 — `POST /fiscal-years/{id}/fx-revaluation/preview` donne, par compte de bilan (`Asset`, `Liability`) imputable en devise, la devise du compte, les soldes en devise et CHF cumulés depuis l'origine jusqu'à la date de fin (exercice de durée quelconque), le cours, le CHF réévalué, l'écart D = round(devise_net × cours) − chf_net en débit net, le numéro et le nom du compte, les réévaluations déjà passées dans l'exercice (`previousRevaluationTotal`, `previousEntryIds`) et la valeur cumulée après passage (`revaluationTotalAfter`, CR-8 A39), la contrepartie résolue par compte (`fx_accounts_for` : comptes propres ou de la société, `counterpartAccountId`, `fxAccountsOrigin`) et l'écriture prévue ; il n'écrit rien, présélectionne au plus 498 comptes (troncature signalée), liste un compte archivé non sélectionnable, propose aussi un compte à solde en devise nul et CHF résiduel (D = −chf_net), et signale sans refuser, dans `blockers[]`, seulement `EARLIER_FISCAL_YEAR_OPEN`, `LATER_FISCAL_YEAR_CLOSED`, `PERIOD_LOCKED`, `FX_ACCOUNT_INVALID` (sur les comptes sélectionnés), `RATE_UNAVAILABLE` (une fois par devise sans cours d'un compte de `accountIds`, 37-5-CR-P1-5) et `FX_VALUE_OUT_OF_RANGE` (un par compte sélectionné hors bornes, 37-5-CR-P2-D2) — six codes depuis la revue de code ; il refuse comme la passation l'exercice inconnu ou d'une autre société (404), le mono-devise (409), l'exercice clos (400), les formes de requête, `notEligible` et `FX_VALUE_OUT_OF_RANGE` (AC-1, AC-4).
 - FR-37-5-2 — Le cours par défaut, par devise, est le cours **retenu par la société** (jamais la dernière valeur publiée non reprise, U1), selon le genre de clôture de l'exercice : genre `day`, le cours journalier de la date de fin, à défaut le cours mensuel du mois de fin signalé comme repli ; genre `month`, le cours mensuel du dernier mois seul ; sinon `RATE_UNAVAILABLE` — à l'aperçu, la devise est signalée et ses comptes exclus jusqu'à saisie ou récupération (ni refus ni `blockers[]`), à la passation, 404. Il est surchargeable par devise (`rates`) ; le genre d'un cours reçu (`day`, `month`, `request`) suit une règle unique à l'aperçu, à la passation et à l'audit ; l'aperçu porte, par devise, le cours, son genre et sa date, le cours et la source de la résolution par défaut (source brute, une autre que `afc` traitée comme `manual`, A30), `overridden` et `sourceDate` (cours `afc` seulement), et `closingRateKind` (AC-1, AC-2, AC-7).
 - FR-37-5-3 — `POST …/fx-revaluation` recalcule sans se fier à l'aperçu et passe, dans **une seule transaction** (toutes ou aucune), une écriture `OD` de deux lignes par compte à écart non nul, datée du dernier jour de l'exercice (ligne `revaluation` à montant en devise 0 et CHF = |D|, exemptée de l'égalité CHF = montant × cours et de `FX_LINE_ROUNDS_TO_ZERO` ; D > 0 : débit du compte réévalué, crédit du compte de gains ; D < 0 : crédit du compte réévalué, débit du compte de pertes — gains et pertes du compte réévalué, quel que soit le signe du solde ; aucune compensation entre comptes), libellé français partagé avec l'aperçu ; verrous pris avant toute lecture des soldes, si bien que deux passations concurrentes n'en passent qu'une ; aucun écart → 200 `{ entryIds: [] }`, sinon les identifiants dans l'ordre des numéros de compte. Les livres importés repassent leur réévaluation par cette route (V8) (AC-2).
 - FR-37-5-4 — La passation est rejouable compte par compte : un second passage sans mouvement ne passe rien, après un mouvement tardif seul le résidu du compte touché ; une réévaluation se corrige par suppression ou nouveau passage (le `PUT` la refuse, la contre-passation ne corrige que dans un exercice en cours) ; aucune écriture de report (AC-3).
@@ -830,9 +830,22 @@ release. *U1, restauration* : l'aperçu après restauration d'un `.keshbackup` s
 restauré, aucun appel sortant) n'a pas de test propre ; la table `exchange_rates` est couverte par la sauvegarde de
 37-2 et l'aperçu ne lit que cette table — issue à ouvrir, même propriétaire.
 
+**Règle retenue pour D1 (revue de code P2, 37-5-CR-P2-D1).** Le prédicat des candidats ne retient plus `postable` :
+un compte de bilan en devise **actif ou archivé, imputable ou non**, qui porte un solde (en devise ou en CHF) reste
+candidat. Il figure à l'aperçu, non sélectionnable (`reason` `ACCOUNT_NOT_POSTABLE` s'il est actif, `ACCOUNT_ARCHIVED`
+sinon), la passation le refuse (`notEligible`), **K9 le compte** (motif `NOT_POSTABLE`, avec son écart) et la clôture
+est refusée en 409 avec ce motif ; le texte dit de le rendre imputable pour le réévaluer. Un compte non imputable
+**sans solde** n'est pas rendu. Tests : `kesh-db/tests/fx_revaluation.rs`
+`compte_mouvemente_devenu_non_imputable_bloque_la_cloture` (aperçu, K9, passation refusée, clôture refusée puis
+permise), `kesh-api/tests/fx_revaluation_e2e.rs` `compte_non_imputable_a_solde_bloque_l_apercu_et_la_cloture`,
+Vitest `RevaluationPanel.test.ts` et `FiscalYearChecks.k9.test.ts`.
+
 ## Note de version
 
 *(Texte prêt à assembler au `CHANGELOG.md` à la release ; la fiche n'écrit jamais au `CHANGELOG.md`.)*
+
+- **Changed** — exports CSV des rapports (journal, grand livre, balance, bilan…) : une cellule de texte qui commence par `=`, `+`, `-` ou `@` est précédée d'une apostrophe, et tabulation et retours à la ligne y deviennent une espace ; les montants ne changent pas.
+- **Changed** — `GET …/closing-checks` : le motif `NOT_POSTABLE` s'ajoute à K9 (compte à solde devenu non imputable) ; la ligne d'aperçu porte `ACCOUNT_NOT_POSTABLE` ; `blockers[]` de l'aperçu peut porter `RATE_UNAVAILABLE` et `FX_VALUE_OUT_OF_RANGE`.
 
 - **Added** — réévaluation de fin d'exercice : aperçu puis passation des écritures de différence de change (action d'audit `fx_revaluation.posted`, erreur `FX_REVALUATION_ACCOUNT_INVALID`), depuis l'écran des exercices et par l'API.
 - **Added** — neuvième contrôle de clôture, **bloquant** : un compte de bilan en devise non réévalué au cours de clôture empêche la clôture (`FOREIGN_ACCOUNTS_NOT_REVALUED`) ; son avis montre l'aperçu et passe les écritures d'un clic ; l'aperçu montre les réévaluations déjà passées et la nouvelle valeur cumulée.
@@ -1300,6 +1313,7 @@ Opus 5.5 (`claude-opus-5-5`).
 
 ### File List
 
+- *Revue de code P1 (échappement commun des CSV) et P2 :* `crates/kesh-core/src/csv.rs` (neuf), `crates/kesh-core/src/lib.rs`, `crates/kesh-report/src/csv.rs`, `crates/kesh-api/src/util.rs` ; `frontend/src/lib/features/fiscal-years/` (`RevaluationPanel.svelte`, tests) et `closing-checks-labels.ts`.
 - `crates/kesh-core/src/accounting/fx_revaluation.rs` (neuf), `crates/kesh-core/src/accounting/mod.rs`
 - `crates/kesh-db/src/repositories/fx_revaluation.rs` (neuf), `repositories/mod.rs`, `repositories/fiscal_years.rs`,
   `repositories/closing_checks.rs`, `repositories/accounts.rs` (`fx_accounts_for_settings`), `src/errors.rs`
@@ -1354,3 +1368,25 @@ Opus 5.5 (`claude-opus-5-5`).
   `-D warnings`, nextest **5872 passés, 13 ignorés** (`gate-backend-p1.log`) ; frontend `check` 0 erreur,
   `lint-i18n-ownership` PASS, Vitest complet **4107 / 263 fichiers** (`front-vitest.log`), `build` vert
   (`front-build.log`). **E2E complet non rejoué** à cette passe : à rejouer au dernier commit de code de la story.
+- 2026-11-16 — revue de code P2 (Sonnet) : 0 CRITICAL, 0 HIGH, 3 MEDIUM, 9 LOW après dédoublonnage (Blind Hunter
+  3 MEDIUM + 5 LOW, Edge Case Hunter 6 LOW, Acceptance Auditor 1 MEDIUM + 6 LOW) ; D1 et D2 de la P1 corrigées.
+  Corrigés : **D1** (MEDIUM, règle retenue dans « Règle retenue pour D1 » ci-dessus : prédicat sans `postable`,
+  motif `NOT_POSTABLE` à K9, ligne `ACCOUNT_NOT_POSTABLE`) ; **D2** (LOW : blocker `FX_VALUE_OUT_OF_RANGE` par compte
+  sélectionné, plus de refus de tout l'aperçu) ; **CR-P2-1** (MEDIUM : à sélection vide, « Récupérer le cours »
+  recharge l'aperçu entier) ; **CR-P2-2** (MEDIUM, spec : `blockers[]` porte six codes, FR-37-5-1, AC-1 et l'epic
+  amendés) ; **CR-P2-3** (LOW : « Réévaluer » désactivé pendant le chargement de l'aperçu) ; **CR-P2-4** (LOW : aperçu
+  qui réécrivait « actif » au lieu d'`is_eligible`) ; **CR-P2-5** (LOW : commentaire sur l'audit d'un cours de compte non
+  admissible) ; **CR-P2-6** (LOW : guide d'API, `accountIds` vide pour `tooMany`) ; **CR-P2-7** (LOW : File List et Notes
+  de version, échappement des CSV). Écartés ou laissés : deux connexions du pool à l'aperçu (déjà écarté en P1,
+  `companies::find_by_id` prend le pool), clic avalé sur « Passer les écritures » juste après une saisie (aucun envoi
+  faux), ordre de `notEligible` et de `FX_VALUE_OUT_OF_RANGE` entre aperçu et passation par l'API directe seulement,
+  erreur de relecture dans `postError`, cas `FX_ACCOUNT_INVALID` de l'AC-7 non rejoués au dépôt (`DefaultRevenue`, gain
+  avant perte : portés par la 37-1), cours saisi qui laisse K9 en attention (voulu, P1). **U1** (aperçu après
+  restauration d'un `.keshbackup`) **non écrit** : il exige le montage complet de l'import, hors « quelques lignes » ;
+  reste en dette. Tests ajoutés (de `HEAD` avant la passe) : `kesh-db/tests/fx_revaluation.rs` +1, `kesh-api/tests/fx_revaluation_e2e.rs` +2,
+  Vitest +2 (`RevaluationPanel.test.ts` +2 ; `FiscalYearChecks.k9.test.ts` complété). Aucune mutation rejouée à cette
+  passe. Gates (base `kesh_s37_5` remise à zéro, 94 migrations, seed) : `cargo fmt` ; `clippy --workspace
+  --all-targets -D warnings` vert ; `heavy.sh scripts/test-fast.sh --ci` **5875 passés, 13 ignorés**
+  (`review-p2/gate-backend-1.log`) ; frontend `check` 0 erreur, `lint-i18n-ownership` PASS, Vitest complet **4109 / 263
+  fichiers**, `build` vert (`review-p2/`) ; `sitesTotal` 3350 → 3352 relevé par la garde. E2E complet non rejoué (à
+  la clôture). Boucle à poursuivre : la P2 a rendu des MEDIUM.

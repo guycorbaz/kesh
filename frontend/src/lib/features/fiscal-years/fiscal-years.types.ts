@@ -85,7 +85,7 @@ export interface NotRevaluedAccount {
 	currency: string;
 	/** Écart en débit net (chaîne décimale) ; `null` sans cours ou hors bornes. */
 	delta: string | null;
-	reason: 'NOT_REVALUED' | 'RATE_UNAVAILABLE';
+	reason: 'NOT_REVALUED' | 'RATE_UNAVAILABLE' | 'NOT_POSTABLE';
 }
 
 export type ClosingCheckSeverity = 'blocking' | 'warning' | 'info' | 'anomaly';
@@ -225,7 +225,7 @@ export interface RevaluationLine {
 	archived: boolean;
 	selectable: boolean;
 	selected: boolean;
-	reason: 'ACCOUNT_ARCHIVED' | 'RATE_UNAVAILABLE' | null;
+	reason: 'ACCOUNT_ARCHIVED' | 'ACCOUNT_NOT_POSTABLE' | 'RATE_UNAVAILABLE' | null;
 	/** Débit net en devise (sens brut). */
 	deviseNet: string;
 	/** Débit net en CHF (« CHF actuel »). */

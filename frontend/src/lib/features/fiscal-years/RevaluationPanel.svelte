@@ -150,9 +150,11 @@
 				await load();
 				onRatesFetched?.();
 			} else {
-				// L'écran complet relit avec la sélection ; à sélection vide, rien (AC-1) :
-				// le nouveau cours est repris à la prochaine case cochée.
-				await reread();
+				// L'écran complet relit avec la sélection ; à sélection vide (devise sans
+				// cours : aucune case cochable), l'aperçu se recharge entier, faute de quoi
+				// le cours récupéré ne paraîtrait jamais (37-5-CR-P2-1).
+				if (selected.size === 0) await load();
+				else await reread();
 			}
 		} catch (err) {
 			// 404 RATE_NOT_PUBLISHED, 503 RATE_SOURCE_UNAVAILABLE : le message, l'aperçu tel quel.
@@ -163,7 +165,7 @@
 	}
 
 	async function submit(): Promise<void> {
-		if (!preview || rereading > 0) return;
+		if (!preview || rereading > 0 || loadState === 'loading') return;
 		posting = true;
 		postError = '';
 		try {
@@ -364,6 +366,13 @@
 											'Compte archivé : réactivez-le pour le réévaluer (la clôture le compte aussi).'
 										)}
 									</span>
+								{:else if line.reason === 'ACCOUNT_NOT_POSTABLE'}
+									<span class="block text-warning" data-testid="revaluation-not-postable-{line.accountId}">
+										{i18nMsg(
+											'fiscal-years-revaluation-not-postable',
+											'Compte non imputable portant un solde : rendez-le imputable pour le réévaluer (la clôture le compte aussi).'
+										)}
+									</span>
 								{:else if line.reason === 'RATE_UNAVAILABLE'}
 									<span class="block text-warning">
 										{i18nMsg('fiscal-years-revaluation-line-no-rate', 'Pas de cours de clôture pour cette devise.')}
@@ -453,7 +462,7 @@
 			<Button
 				type="button"
 				data-testid="revaluation-submit"
-				disabled={posting || rereading > 0 || !canPost(preview, selected)}
+				disabled={posting || rereading > 0 || loadState === 'loading' || !canPost(preview, selected)}
 				onclick={submit}
 			>
 				{mode === 'full'

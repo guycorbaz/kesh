@@ -572,10 +572,10 @@ const INCONSISTENT_SQL: &str = "SELECT je.id, je.entry_number, je.entry_date, fy
 /// K9 (Story 37-5) : la société a-t-elle un compte de bilan en devise ? Le
 /// prédicat est, à l'octet près, celui des comptes candidats de l'aperçu
 /// (`fx_revaluation::CANDIDATE_PREDICATE`, gardé par un test) : `Asset` ou
-/// `Liability`, en devise, imputable, archivés compris. Lu aussi par la
+/// `Liability`, en devise, archivés et non imputables compris. Lu aussi par la
 /// clôture, avant `begin` ([`fx_candidates_exist`]).
 pub(crate) const FX_CANDIDATES_EXIST_SQL: &str = "SELECT CAST(EXISTS (SELECT 1 FROM accounts a \
-     WHERE a.company_id = ? AND a.account_type IN ('Asset', 'Liability') AND a.currency IS NOT NULL AND a.postable = TRUE) \
+     WHERE a.company_id = ? AND a.account_type IN ('Asset', 'Liability') AND a.currency IS NOT NULL) \
      AS SIGNED)";
 
 /// **Toutes** les requêtes du module : la garde T-a2 exige que chaque site

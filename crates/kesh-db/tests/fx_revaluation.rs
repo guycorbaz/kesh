@@ -2089,3 +2089,112 @@ async fn passation_apres_cloture_concurrente(pool: MySqlPool) {
     .unwrap();
     assert_eq!(apres, avant, "rien d'écrit après la clôture");
 }
+
+// ---------------------------------------------------------------------------
+// Revue de code P2 (37-5-CR-P2-D1) : un compte mouvementé devenu non imputable
+// ---------------------------------------------------------------------------
+
+/// D1 : un compte de bilan en devise **actif, à solde, devenu non imputable**
+/// (sous-compte créé, `postable = false`) reste candidat : il figure à
+/// l'aperçu, non admissible ; K9 le compte (motif `NOT_POSTABLE`, avec son
+/// écart) ; la passation le refuse (`notEligible`) ; la clôture est refusée
+/// avec le même motif, jusqu'à ce qu'il redevienne imputable et soit
+/// réévalué. Sans solde, un compte non imputable n'est pas rendu.
+#[sqlx::test(migrations = "./test-schema")]
+async fn compte_mouvemente_devenu_non_imputable_bloque_la_cloture(pool: MySqlPool) {
+    let dec = jeu(&pool).await;
+    let c = dec.s.company_id;
+    cours(&pool, c, "USD", "day", d(2024, 12, 31), dec!(0.92), "afc").await;
+    cours(&pool, c, "EUR", "day", d(2024, 12, 31), dec!(0.95), "afc").await;
+    passer(
+        &pool,
+        &dec,
+        &demande(dec.fy, &[("USD", dec!(0.92))], &[dec.usd, dec.usd_passif]),
+    )
+    .await
+    .unwrap();
+    assert_eq!(k9(&pool, &dec).await.status, CheckStatus::Ok);
+    // Un mouvement tardif rouvre un écart sur le compte USD, puis le compte
+    // devient non imputable (posé par SQL, comme la création d'un sous-compte).
+    poser(
+        &pool,
+        &dec,
+        dec.fy,
+        d(2024, 12, 30),
+        dec.usd,
+        true,
+        dec!(90.00),
+        dec!(100),
+        dec!(0.90),
+    )
+    .await;
+    let vide = compte(&pool, c, "1070", "Asset", Some("USD")).await;
+    for id in [dec.usd, vide] {
+        sqlx::query("UPDATE accounts SET postable = FALSE WHERE id = ?")
+            .bind(id)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    // L'aperçu : le compte à solde est listé, non admissible ; le vide, non.
+    let fy = exercice(&pool, dec.fy).await;
+    let cours_usd = BTreeMap::from([("USD".to_string(), dec!(0.92))]);
+    let mut conn = pool.acquire().await.unwrap();
+    let lignes = fx_revaluation::lines_for_fiscal_year(&mut conn, c, &fy, &cours_usd)
+        .await
+        .unwrap();
+    drop(conn);
+    let ligne = lignes
+        .iter()
+        .find(|l| l.account.id == dec.usd)
+        .expect("le compte non imputable à solde reste listé");
+    assert!(ligne.account.is_candidate() && !ligne.account.is_eligible());
+    assert_eq!(ligne.delta(), Some(dec!(2.00)));
+    assert!(lignes.iter().all(|l| l.account.id != vide));
+    // K9 : attention, motif NOT_POSTABLE, écart conservé.
+    let k = k9(&pool, &dec).await;
+    assert_eq!(k.status, CheckStatus::Attention);
+    assert_eq!(
+        k9_comptes(&k),
+        vec![(dec.usd, NotRevaluedReason::NotPostable, Some(dec!(2.00)))]
+    );
+    // La passation le refuse : il n'est pas admissible.
+    assert!(matches!(
+        passer(
+            &pool,
+            &dec,
+            &demande(dec.fy, &[("USD", dec!(0.92))], &[dec.usd])
+        )
+        .await,
+        Err(DbError::FxRevaluationAccountInvalid {
+            reason: RevaluationAccountReason::NotEligible,
+            ..
+        })
+    ));
+    // La clôture est refusée, avec le motif qui dit quoi faire.
+    match clore(&pool, &dec).await {
+        Err(DbError::ForeignAccountsNotRevalued(found)) => {
+            assert_eq!(found.count, 1);
+            let json = serde_json::to_value(&found).unwrap();
+            assert_eq!(json["accounts"][0]["accountId"], dec.usd);
+            assert_eq!(json["accounts"][0]["reason"], "NOT_POSTABLE");
+        }
+        other => panic!("{other:?}"),
+    }
+    // Rendu imputable puis réévalué : la clôture passe.
+    sqlx::query("UPDATE accounts SET postable = TRUE WHERE id = ?")
+        .bind(dec.usd)
+        .execute(&pool)
+        .await
+        .unwrap();
+    passer(
+        &pool,
+        &dec,
+        &demande(dec.fy, &[("USD", dec!(0.92))], &[dec.usd]),
+    )
+    .await
+    .unwrap();
+    clore(&pool, &dec)
+        .await
+        .expect("clôture permise une fois le compte réévalué");
+}
