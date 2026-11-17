@@ -538,9 +538,17 @@ test.describe('Factures — création brouillon', () => {
 		);
 		await champ.fill(texte);
 		await reponse;
-		await expect(page.getByRole('listbox')).toContainText('Aucun contact');
+		// La réponse rendue : aucune option. (L'ancien code fermait la liste à ce stade,
+		// constaté au rouge du développement : attendre « Aucun contact » ici aurait fait
+		// rougir le test AVANT l'Entrée, sans prouver le défaut.)
+		await expect(champ).toHaveValue(texte);
+		await expect(page.getByRole('option', { name: /Client v0190c/ })).toHaveCount(0);
 		await champ.press('Enter');
+		// Entrée sur un brouillon non résolu rouvre la liste, qui le dit. (L'ancien code
+		// envoyait la facture et affichait sa vue détail : ce test y rougit.)
+		await expect(page.getByRole('listbox')).toContainText('Aucun contact');
 		await expect(page).toHaveURL(/\/invoices\/new$/);
+		expect(creations).toBe(0);
 
 		// Quitté, le champ réaffiche le client choisi.
 		await champ.press('Tab');
