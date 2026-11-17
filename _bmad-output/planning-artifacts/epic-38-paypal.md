@@ -1264,3 +1264,26 @@ clôture du relevé joint passé de K9 à K10 (l'Epic 37 prend K9) ; PDF des man
     à `default_project_id`, présenté comme le compte analytique d'une règle.
   - 36-10 : les dates sont celles de Zurich. Le téléchargement et ses fenêtres datées s'en servent déjà, par
     `kesh_core::horloge`.
+
+## Point du 2026-11-17 — release 0.19.0 de Guy, règles de `main`, Epic 37 terminé
+
+- **Epic 37 terminé** (six stories, gates et E2E verts), proposé par Beat pour la **0.19.0** (vendredi 2026-11-20),
+  en second arrivé derrière l'Epic 43 de Guy ; intégration de `main` (v0.18.0) en cours dans `epic/37-multi-devises`.
+- **#823 = Epic 43 de Guy**, priorité de la 0.19.0 : une transaction bancaire règle plusieurs factures, fournisseurs
+  et clients. Intention (plan `release-0.19.0.md`, à confirmer à sa fiche) : lever ou remplacer
+  `uq_invoice_settlements_entry`, ou une table de liaison transaction → règlements ; migration non breaking, la
+  92ᵉ, arrêtée le mercredi 2026-11-19. **La 38-6c2 se récrit sur ce modèle** après la publication de la 0.19.0 :
+  elle abandonne `bank_transaction_extra_entries` (B28) si l'Epic 43 couvre le groupe de 2 à 5 écritures de somme
+  exacte, le lot, l'API et l'annulation du groupe ; sinon elle l'étend, avec Guy. Revalidation ensuite.
+- **Base de l'epic** : `main` dit désormais « une branche d'epic n'est pas une base : un contributeur part de `main` ;
+  bâtir sur une branche d'epic non publiée demande l'accord du Project Lead ». L'Epic 38 s'appuie sur l'Epic 37
+  (devise du compte, cours, lignes en devise) : il **repartira de `main` après la publication de l'Epic 37**, ou
+  avec l'accord de Guy avant. Le développement ne commence pas avant.
+- **Release de l'Epic 38** : une seule (« un epic = une release »), après la 0.19.0. La 0.20.0 (2026-11-27) porte
+  déjà une migration de Guy (note interne) ; la migration breaking de la 38-2 se numérote et s'annonce au projet
+  GitHub avec Guy (Q1).
+- **Montants** : la règle du montant ambigu (« 1.250 » refusé, apostrophe des milliers admise, 36-3 / 36-18a)
+  s'applique aux champs de montant des écrans 38-9a et 38-9b (soldes de contrôle, relevés joints) : réemployer
+  l'utilitaire commun.
+- **Coordination** : un canal de courriel signé entre l'agent de Beat et celui de Guy est à l'essai depuis le
+  2026-11-17 (`agent-kesh@lightning-multicom.com`) ; rien ne part sans l'accord de Beat.
