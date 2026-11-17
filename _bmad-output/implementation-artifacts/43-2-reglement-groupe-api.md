@@ -5,9 +5,11 @@ Status: ready-for-dev
 *Fiche rédigée le 2026-11-17 par l'agent de rédaction de l'Epic 43 (Opus 5.5), workflow `bmad-create-story`, code lu à
 `8b50fd195` ; révisée le soir même (décisions de Guy), puis **remédiée après sa validation P1**
 (`kesh-gate-logs/e43/validation-43-2-p1.md`, 0/2/7/8 : H1, H2, M1-M8 appliqués ; LOW d'une ligne appliqués, les autres en
-Dev Notes, étape 0). Release **0.19.0**. **Part de la 43-1a à son commit T3** ; se fusionne après elle. Aucune migration.
-Décisions : C-43-1 à C-43-23 (fichier d'épique), qui font foi. Ce que cette fiche impose à la 43-1a : § *Exigences sur la
-43-1a*. Validation : passe 2 à lancer.*
+Dev Notes, étape 0), puis après ses validations P2 et P3, et sur la **décision de Guy du 2026-11-17 sur la différence**
+(`kesh-gate-logs/e43/decision-difference.md`). Release **0.19.0**. **La recherche (T3 : dépôt et route) ne dépend
+d'aucun commit de la 43-1a et part tout de suite** ; le reste part du commit T3 de la 43-1a, dont le contrat est celui
+consigné dans `kesh-gate-logs/e43/t3.md` quand il existera ; se fusionne après elle. Aucune migration. Décisions : C-43-1 à
+C-43-24 (fichier d'épique), qui font foi. Validation : passe 4 à lancer.*
 
 **Issues** : `refs #823` ; aucun mot-clé de fermeture dans un commit.
 
@@ -91,26 +93,40 @@ refus par proposition du *Pattern batch*.
 - **D5 — Montants bruts de bout en bout (H2, C-43-21).** Un reste dû peut porter quatre décimales (10.0050) ; le serveur
   calcule l'écart sur le brut. Le contrat rend donc le **brut** (`amountDueRaw`, `difference`, `settledInvoices[].amount`,
   chaînes à quatre décimales) **et** le centime pour l'affichage (`amountDue`). L'écran calcule en entiers de 1/10 000 sur le
-  brut (43-3). La différence `d = |montant| − Σ apports bruts` (valeur absolue du montant de la transaction, comme aux lignes de `group_difference` plus bas et à D4 bis de la 43-1a) se décompose (D8) en fractions de centime (compte d'arrondi,
-  au brut, comme la troisième ligne de l'unitaire, `settlement_journal_lines`) et en frais au centime ; seuls les frais se
-  comparent au plafond.
+  brut (43-3). La différence `d = |montant| − Σ apports bruts` (valeur absolue du montant de la transaction, comme
+  `group_difference`, 43-1a D4 bis) se décompose (D8) en fractions de centime (compte d'arrondi, au brut, comme la
+  troisième ligne de l'unitaire, `settlement_journal_lines`) et en **écart** au centime `e` (signé) ; seul `|e|` se compare
+  au plafond.
 - **D6 — Sens, montant nul, devise : les gardes existantes (M2, C-43-22).** Dans cet ordre, sur la transaction rechargée :
   (1) **sens et montant nul** par `refuse_wrong_direction` — `RECONCILIATION_TRANSACTION_NOT_CREDIT` / `NOT_DEBIT`, mêmes
   `reason` et `details` que l'unitaire, `zero_amount_transaction` compris (atteignable : c'est cette garde qui le rend) ;
   (2) **devise** : non CHF → `RECONCILIATION_CURRENCY_MISMATCH`, `details { transactionCurrency, expected: "CHF" }`, forme de
-  :4174. Aucun code neuf, aucun `reason: "currency" | "zero_amount"` sous `RECONCILIATION_GROUP_INVALID`. La recherche
-  rend pour la même transaction le **`409 RECONCILIATION_CURRENCY_MISMATCH`** (devise) ; pour un montant nul, sans sens,
-  elle rend une **liste vide** (`direction: null`) plutôt qu'un code neuf ; écran : la condition reste `canLink`.
+  :4174. Aucun code neuf, aucun `reason: "currency" | "zero_amount"` sous `RECONCILIATION_GROUP_INVALID`. La recherche,
+  alignée sur `get_link_candidates` (P3, M2), rend **`200`, `direction: null`, `candidates: []`** pour un montant nul ou une
+  devise non CHF — **aucun `409` neuf** ; écran : la condition reste `canLink`, et la modale a un état « aucune facture à
+  proposer pour cette transaction ».
 - **D7 — Plafond réglable** (décision de Guy, Q4 ; C-43-24). La valeur est le réglage
   `company_invoice_settings.group_settlement_max_difference`, lu au moment du geste (43-1a AC3 bis) ; la constante
   `DEFAULT_GROUP_DIFFERENCE_MAX` n'en est que la valeur par défaut. La recherche rend le réglage (`maxDifference`), les
   refus le portent (`details.maxDifference`), `docs/api-external.md` le nomme sans recopier de valeur figée hors de la
   mention « 5.00 par défaut » ; un test règle 1.00 **par le dépôt ou un `UPDATE` direct**, jamais par
   `PUT /company/invoice-settings` (la 43-7 peut sortir la première, L2), et vérifie `maxDifference` et le refus.
-- **D8 — Différences (C-43-16, proposition de l'orchestrateur en attente de Guy)** : fractions de centime au compte
-  d'arrondi, sans plafond ; frais (client : moins reçu ; fournisseur : plus payé) au compte de frais bancaires, dans la
-  limite du plafond ; l'inverse refusé (`RECONCILIATION_OVERPAYMENT`, `RECONCILIATION_UNDERPAYMENT`). Aucun refus de projet
-  (C-43-20).
+- **D8 — Différences : décision de Guy du 2026-11-17** (C-43-16, `kesh-gate-logs/e43/decision-difference.md`) :
+  fractions de centime au compte d'arrondi, sans plafond ; écart `e` (moins-payé `e < 0`, trop-perçu `e > 0`) **admis dans
+  les deux sens**, pour les deux familles, sur le compte **choisi par l'utilisateur** (`differenceAccountId`, obligatoire
+  dès que `e ≠ 0`), dans la limite du plafond. Plus de refus `RECONCILIATION_OVERPAYMENT` ni `RECONCILIATION_UNDERPAYMENT`
+  pour un groupe ; le code neuf `RECONCILIATION_UNDERPAYMENT` disparaît. Aucun refus de projet (C-43-20).
+- **D9 — Compte de différence interdit, avec les refus existants** (P3, M1) — aucun code neuf :
+  - compte égal à un compte de tiers des factures (créance ou dette) → `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT`,
+    `details.role = "counterparty"` (« la contrepartie que l'utilisateur choisit », `kesh-db/src/errors.rs:1862-1888`) et
+    `claim` (`receivable` / `payable`), comme `claim_account_failed_proposal` ;
+  - compte égal au compte de la banque de la transaction → `VALIDATION_ERROR`, `reason: "counterparty_equals_bank_ledger"`
+    (`counterparty_is_bank_ledger_failed_proposal`, `routes/reconciliation.rs` près de :726) ;
+  - compte non imputable → `ACCOUNT_NOT_POSTABLE` (`non_postable_failed_proposal`, :682) ; archivé, d'une autre société
+    ou inexistant → `INACTIVE_OR_INVALID_ACCOUNTS` (`DbError::InactiveOrInvalidAccounts`) ;
+  - compte absent alors que `e ≠ 0` → `RECONCILIATION_GROUP_INVALID`, `reason: "difference_account_required"`.
+  Les rôles de `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT` restent ceux du code : `counterparty`, `rounding`,
+  `write_off_nature`, `vat_payable` ; le compte d'arrondi égal à une créance ou à la banque garde `rounding`.
 
 ## Contrat
 
@@ -118,12 +134,14 @@ refus par proposition du *Pattern batch*.
 
 ```json
 { "bankAccountId": 3, "proposals": [
-  { "type": "invoice_group", "bankTransactionId": 41, "invoiceIds": [12, 15, 19] },
+  { "type": "invoice_group", "bankTransactionId": 41, "invoiceIds": [12, 15, 19], "differenceAccountId": 6940 },
   { "type": "supplier_invoice_group", "bankTransactionId": 42, "supplierInvoiceIds": [7, 8] }
 ] }
 ```
 
-`paymentEntryIds` (paiements existants) s'ajoute avec la 43-5, champ facultatif.
+`differenceAccountId` (facultatif, entier > 0 ; ≤ 0 → `400 VALIDATION_ERROR` au pré-vol) : le compte de l'écart, choisi
+par l'utilisateur (D8) ; **obligatoire dès que l'écart `e` est non nul**, ignoré sinon. *(La 43-5 et `paymentEntryIds` sont
+sortis de la 0.19.0.)*
 
 **Pré-vol (M7)**, dans `post_accept`, comme les types existants : un identifiant ≤ 0 dans `invoiceIds` /
 `supplierInvoiceIds` → `400 VALIDATION_ERROR` du lot ; la taille du corps reste bornée par la limite existante. **Ordre
@@ -140,18 +158,20 @@ l'ordre : transaction inexistante et une seule facture → `BANK_TRANSACTION_NOT
 ```json
 { "bankTransactionId": 41, "invoiceId": 0, "supplierInvoiceId": null, "journalEntryId": 905,
   "score": { "...": "sous-scores à 0, total conventionnel 1.0, comme le type rule" },
-  "difference": "-0.4000", "roundingDifference": "0.0000", "bankFees": "0.40",
+  "difference": "-0.4000", "roundingDifference": "0.0000", "gap": "-0.40", "differenceAccountId": 6940,
   "settledInvoices": [ { "invoiceId": 12, "amount": "500.0000" }, { "invoiceId": 15, "amount": "300.0000" } ] }
 ```
 
 Une seule définition pour les deux familles, celle de `group_difference` (43-1a D4 bis) : `difference = |montant| − Σ
-apports bruts` (signé, brut : négatif quand moins reçu, positif quand plus payé) ; `roundingDifference` = les fractions de
-centime (signé, brut) ; `bankFees = |e|` (≥ 0, au centime, `"0.00"` sans frais) (C-43-16).
+apports bruts` (signé, brut : négatif quand moins reçu ou moins payé, positif sinon) ; `roundingDifference` = les fractions
+de centime (signé, brut) ; **`gap` = `e`**, l'écart au centime, **signé** (négatif : moins-payé ; positif : trop-perçu ;
+`"0.00"` sans écart) — il remplace `bankFees` du contrat précédent, l'écart n'étant plus des frais d'office ;
+`differenceAccountId` = le compte choisi, `null` sans écart (C-43-16).
 
 `invoiceId` vaut `0` (sentinelle documentée, `docs/api-external.md:679`), `supplierInvoiceId` `null` ; pour un groupe
 fournisseur, `settledInvoices[].supplierInvoiceId`. `journalEntryId` existe déjà ; seuls `difference`, `roundingDifference`,
-`bankFees` et `settledInvoices` sont neufs (additifs, absents pour les autres types). Montants au brut (D5). Le type TypeScript `AcceptedProposal` gagne
-**quatre** champs facultatifs (`difference`, `roundingDifference`, `bankFees`, `settledInvoices`, L3) ; un test de la 43-3
+`gap`, `differenceAccountId` et `settledInvoices` sont neufs (additifs, absents pour les autres types). Montants au brut
+(D5), `gap` au centime. Le type TypeScript `AcceptedProposal` gagne **cinq** champs facultatifs ; un test de la 43-3
 désérialise cet élément.
 
 **Refus (`failed[]`, `200`) — table complète variante de `GroupRefusal` → code (M8)**, construite par
@@ -171,17 +191,19 @@ fournisseur) pour que l'écran la nomme (43-3).
 | `HeldByPaymentBatch` | `RECONCILIATION_SUPPLIER_PAYMENT_HOLD` | `reason: "other_invoice_in_payment_batch"`, ids |
 | `SaleEntryMalformed` | `INVOICE_SALE_ENTRY_MALFORMED` | `reason: "no_debit_line_on_sale_entry"` |
 | `BankAccountNotConfigured` / `NotFound` / `Closed` | `BANK_ACCOUNT_NOT_CONFIGURED` / `BANK_ACCOUNT_NOT_FOUND` / `BANK_ACCOUNT_CLOSED` | — |
-| `ClaimAccount { side, role }` (compte de créance, d'arrondi **ou de frais** égal à la banque ou à une créance) | `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT` | comme `claim_account_failed_proposal`, `details.role` = `receivable`, `rounding` ou **`bank_fees`** (L4) |
-| `PaymentBeforeInvoiceDate` | `RECONCILIATION_INVOICE_NOT_ELIGIBLE` | `reason: "payment_date_before_invoice_date"`, comme `date_refusal_failed_proposal` (:2316) |
-| `Overpayment` (client, trop reçu) | `RECONCILIATION_OVERPAYMENT` | `transactionAmount`, `sumApplied` — l'unitaire porte `amountDue` et `transactionAmount` (:2706-2714) : même code, deux formes, dit dans `docs/api-external.md` (L6) |
-| `Underpayment` (fournisseur, moins payé) | `RECONCILIATION_UNDERPAYMENT` | `transactionAmount`, `sumApplied` |
-| `DifferenceTooLarge` | `RECONCILIATION_GROUP_DIFFERENCE_TOO_LARGE` | `transactionAmount`, `sumApplied`, `bankFees`, `maxDifference` |
+| `ClaimAccount { claim, role }` (compte de tiers ou d'arrondi égal à la banque, ou compte d'arrondi ou de différence égal à une créance ou une dette) | `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT` | comme `claim_account_failed_proposal` : `accountId`, `accountNumber`, `claim`, `role` ∈ rôles **réels** — `counterparty` (créance ou dette = banque ; **compte de différence choisi**, D9), `rounding` (compte d'arrondi) — `bankAccountId` |
+| `DifferenceAccountIsBankLedger` | `VALIDATION_ERROR` | `reason: "counterparty_equals_bank_ledger"` (D9) |
+| `DifferenceAccountNotPostable` | `ACCOUNT_NOT_POSTABLE` | comme `non_postable_failed_proposal` (:682) |
+| `DifferenceAccountInvalid` (archivé, autre société, inexistant) | `INACTIVE_OR_INVALID_ACCOUNTS` | `accountId` |
+| `DifferenceAccountRequired` | `RECONCILIATION_GROUP_INVALID` | `reason: "difference_account_required"`, `gap` |
+| `PaymentBeforeInvoiceDate` | `RECONCILIATION_INVOICE_NOT_ELIGIBLE` | `reason: "payment_date_before_invoice_date"`, `tolerance_days` (comme `date_refusal_failed_proposal`, :2316-2335) **plus** `invoiceId` / `supplierInvoiceId` et `invoiceNumber`, que `group_refusal_to_failed_proposal` **ajoute** (L5) |
+| `DifferenceTooLarge` | `RECONCILIATION_GROUP_DIFFERENCE_TOO_LARGE` | `transactionAmount`, `sumApplied`, `gap`, `maxDifference` |
 | `RoundingAccountNotConfigured` | `ROUNDING_ACCOUNT_NOT_CONFIGURED` | — |
-| `BankFeesAccountNotConfigured` | `WRITE_OFF_ACCOUNT_NOT_CONFIGURED` | `nature: "bank_fees"` |
 | `PeriodLocked` / `LaterFiscalYearClosed` / `FiscalYearInvalid` | `PERIOD_LOCKED` / `LATER_FISCAL_YEAR_CLOSED` / `FISCAL_YEAR_INVALID` | comme les constructeurs existants (:603, :644) |
 
-Pas de refus « compte non imputable » : l'écriture se crée avec `enforce_postable = false`, comme l'unitaire (43-1a D7) ;
-ses comptes sont ceux des réglages et des écritures de vente ou d'achat.
+Plus de lignes `Overpayment`, `Underpayment` ni `BankFeesAccountNotConfigured` (décision de Guy, D8). L'écriture se crée
+avec `enforce_postable = false`, comme l'unitaire (43-1a D7), ses comptes étant ceux des réglages et des pièces ; **le
+compte de différence, choisi par l'utilisateur, est contrôlé à part** (D9).
 
 Les constructeurs existants sont **appelés**, non recopiés. Une variante que la 43-1a ajouterait sans ligne ici fait
 échouer la compilation (`match` exhaustif sans joker).
@@ -192,9 +214,10 @@ Chemin aligné sur les routes sœurs (L-1). Comptable+, lecture seule. **Refus, 
 réemployées (M5)** : transaction introuvable → `404 NOT_FOUND` (`bank_account_of_transaction`) ; compte archivé →
 `BankAccountNotFound`, clos → `409 BANK_ACCOUNT_CLOSED`, sans compte du grand livre → `412 BANK_ACCOUNT_NOT_CONFIGURED`
 (`link_preflight`) ; transaction rapprochée → `404 RECONCILIATION_TRANSACTION_NOT_PENDING` (garde `is_reconciled`) ;
-**transaction rejetée** → `409 RECONCILIATION_ALREADY_REJECTED` (code du pré-vol par lot, :1545, porté par une `AppError`
-à paramètre si elle n'existe pas — à l'étape 0) ; non CHF → `409 RECONCILIATION_CURRENCY_MISMATCH` ; montant nul →
-liste vide, `direction: null` (D6). **Tous tiers.** Crédit → factures clients `validated`, reste dû > 0 ;
+**transaction rejetée** : **comme `get_link_candidates`**, qui ne contrôle pas le rejet — la liste est servie (l'écran
+n'offre pas le bouton sur une ligne rejetée, et le `POST` la refuse au pré-vol par lot) ; non CHF ou montant nul → **`200`,
+`direction: null`, `candidates: []`**, comme la route sœur (doc-comment près de :6338-6346) — **aucun `409` neuf, aucune
+`AppError` neuve** (P3, M2). **Tous tiers.** Crédit → factures clients `validated`, reste dû > 0 ;
 débit → factures fournisseur `open`, hors lot `generated`. **Borne de date (M4)** : seules les factures dont
 `invoice_date <= InvoiceDateWindow::for_transaction(&t).latest_invoice_date` (client ; `for_supplier_transaction` pour un
 débit) sont rendues — la liste n'offre jamais ce que le `POST` refuserait. Requête : `find_group_candidates` du dépôt neuf
@@ -208,8 +231,10 @@ débit) sont rendues — la liste n'offre jamais ce que le `POST` refuserait. Re
   `internal_number`, `supplier_invoice_number`, `payment_reference` ;
 - la disjonction est présente dans **les deux** branches (terme FULLTEXT vide ou non), comme le prescrit § 6.
 
-**Tri puis troncature** : `imputation_order` est une fonction Rust ; la route lit au plus **500** factures ouvertes
-filtrées (plafond de lecture nommé `GROUP_CANDIDATES_SCAN_LIMIT`), les trie par `imputation_order`, puis tronque à
+**Tri puis troncature** : `imputation_order` est une fonction Rust, générique sur `PayableDocument`
+(`repositories/reconciliation.rs:344-352`, `:416`) : le DTO du dépôt neuf **implémente** ce trait (ses trois méthodes). La
+requête lit au plus **500** factures ouvertes filtrées, **`ORDER BY` la date puis l'identifiant** (échantillon déterminé
+au-delà de 500, L2 ; plafond nommé `GROUP_CANDIDATES_SCAN_LIMIT`), la route les trie par `imputation_order`, puis tronque à
 `limit` (50 par défaut, 100 au plus) ; `hasMore` vaut vrai si la troncature a coupé **ou** si le plafond de lecture a été
 atteint. `exclude=12,15` (facultatif, 50 identifiants au plus) retire les factures déjà imputées par l'écran avant la
 troncature.
@@ -226,7 +251,7 @@ troncature.
 Candidate **fournisseur (M4)** : `{ "kind": "supplier_invoice", "id", "internalNumber", "supplierInvoiceNumber",
 "contactName", "date", "dueDate", "paymentReference", "amountDue", "amountDueRaw" }` — `amountDue` = `total_amount` au
 centime, `amountDueRaw` = `total_amount` brut ; pas de `totalTtc` distinct. Valeurs de `kind` en **snake_case**
-(`invoice`, `supplier_invoice`, et `payment` avec la 43-5), comme `candidateType` (`reconciliation.types.ts:27`), partout
+(`invoice`, `supplier_invoice`), comme `candidateType` (`reconciliation.types.ts:27`), partout
 dans ce contrat. `transactionAmount` est **signé** comme la transaction (`-1250.00` pour un débit) ; la différence se
 calcule sur la valeur absolue (L-2).
 
@@ -234,7 +259,8 @@ calcule sur la valeur absolue (L-2).
 
 - `GET /reconciliation/transactions/{id}` : `kind` gagne `"grouped_settlement"` ; pour un groupe, `invoiceId`,
   `supplierInvoiceId` et leurs numéros valent `null` ; champs additifs `groupedInvoices: [{ "kind": "invoice" |
-  "supplier_invoice", "id", "number", "amount" }]` (vide hors groupe ; montant brut) et **`cancelBlockedInvoice: { "kind",
+  "supplier_invoice", "id", "number", "amount" }]` (vide hors groupe ; montant brut), **`gap` et `differenceAccount: { "id",
+  "number", "name" } | null`** (le compte choisi, lu sur la ligne d'écart de l'écriture), et **`cancelBlockedInvoice: { "kind",
   "id", "number" } | null`** — la facture qui porte le premier motif d'un refus d'annulation par facture (créditée, soldée,
   lettrage figé), lue de `entry_cancel_outlook` (43-1a). Le `match` de :5869-5875 gagne le bras.
 - `POST /reconciliation/transactions/{id}/cancel` : pour un groupe, `invoiceId` et `supplierInvoiceId` valent `null` ;
@@ -248,7 +274,9 @@ calcule sur la valeur absolue (L-2).
 - **AC2** — `invoice_group` : sous le verrou du compte, `settle_invoices_in_tx` ; succès → élément de M1 ; chaque
   `GroupRefusal` → sa ligne de la table, rien d'écrit pour cette proposition, les autres passent ; un `Err(DbError)` →
   `DATABASE_ERROR` / `INTERNAL_ERROR` par délégation à `lettering_error_to_failed_proposal` (D2) — test : une
-  `LetteringLineAlreadyLettered` forcée rend `INTERNAL_ERROR`, comme pour une facture seule. La route n'écrit aucune trace : le test lit `reconciliation.accepted` puis
+  `LetteringLineAlreadyLettered` ne se force pas par l'API (refus exclu par construction) : **test unitaire** de
+  `group_error_to_failed_proposal` sur des `DbError` construits (`LetteringLineAlreadyLettered` et `Invariant` →
+  `INTERNAL_ERROR`, `Sqlx` → `DATABASE_ERROR`), comme pour une facture seule (L3). La route n'écrit aucune trace : le test lit `reconciliation.accepted` puis
   `invoice.paid` par facture, avec l'acteur et les clés snake_case exigées de la 43-1a (`batch_size` compris).
 - **AC3** — `supplier_invoice_group` (commit D4) : symétrique, `pay_supplier_invoices_in_tx`.
 - **AC4** — Lot mixte (`invoice` + groupe valide + groupe refusé) : deux `accepted`, un `failed`, dans l'ordre ; un
@@ -261,29 +289,43 @@ calcule sur la valeur absolue (L-2).
   caractères, nom à jetons courts « BL SA » par le repli, numéro, numéro interne, numéro du fournisseur, référence) ;
   injection (`%`, `_`, `\`, `*`, `+`, `"` : aucun résultat parasite, aucune erreur) ; `exclude` ; tri puis troncature
   (`hasMore`) ; une facture d'une autre société jamais rendue ; **borne de date** : une facture datée au-delà de
-  `latest_invoice_date` n'est pas rendue, la même à la date limite l'est (M4) ; **refus (M5)** : `404 NOT_FOUND`, `409
-  BANK_ACCOUNT_CLOSED`, `412 BANK_ACCOUNT_NOT_CONFIGURED`, `404 RECONCILIATION_TRANSACTION_NOT_PENDING`, `409
-  RECONCILIATION_ALREADY_REJECTED`, `409 RECONCILIATION_CURRENCY_MISMATCH` (EUR), montant nul → liste vide.
-- **AC6** — Différences (D5, D8) : deux restes à 10.0050 et un virement de 20.02 → `difference` `"0.0100"`,
-  `roundingDifference` `"0.0100"`, `bankFees` `"0.00"` ; virement de 20.01 → `difference` `"0.0000"`, `roundingDifference`
-  `"0.0100"`, `bankFees` `"0.01"` ; trop reçu de 0.01 → `RECONCILIATION_OVERPAYMENT` ; frais au-delà du réglage →
-  `RECONCILIATION_GROUP_DIFFERENCE_TOO_LARGE` avec `maxDifference` = le réglage ; `settledInvoices[].amount` au brut ;
-  facture au projet archivé après coup acceptée (aucun refus de projet) ; paiement antérieur à une facture refusé
-  (`payment_date_before_invoice_date`).
+  `latest_invoice_date` n'est pas rendue, la même à la date limite l'est (M4) ; **refus** : `404 NOT_FOUND`, `409
+  BANK_ACCOUNT_CLOSED`, `412 BANK_ACCOUNT_NOT_CONFIGURED`, `404 RECONCILIATION_TRANSACTION_NOT_PENDING` ; EUR ou montant
+  nul → `200`, `direction: null`, liste vide ; transaction rejetée → servie comme par `get_link_candidates` (P3, M2) ;
+  ordre déterminé au-delà de 500 factures (L2).
+- **AC6** — Différences (D5, D8, D9) : deux restes à 10.0050 et un virement de 20.02 → `difference` `"0.0100"`,
+  `roundingDifference` `"0.0100"`, `gap` `"0.00"`, `differenceAccountId` `null` ; virement de 20.01 sans compte →
+  `RECONCILIATION_GROUP_INVALID`, `reason: "difference_account_required"` ; avec un compte → `difference` `"0.0000"`,
+  `gap` `"-0.01"`, ligne d'écart de 0.01 sur ce compte ; **trop-perçu** de 0.40 avec un compte → accepté, `gap` `"0.40"`
+  (côté client et côté fournisseur) ; écart au-delà du réglage → `RECONCILIATION_GROUP_DIFFERENCE_TOO_LARGE` avec
+  `maxDifference` = le réglage ; compte de différence = une créance → `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT`, `role:
+  "counterparty"` ; = la banque → `VALIDATION_ERROR`, `counterparty_equals_bank_ledger` ; non imputable →
+  `ACCOUNT_NOT_POSTABLE` ; archivé → `INACTIVE_OR_INVALID_ACCOUNTS` ; `settledInvoices[].amount` au brut ; facture au projet
+  archivé après coup acceptée ; paiement antérieur à une facture refusé (`payment_date_before_invoice_date`, `details` avec
+  `invoiceId`, `invoiceNumber` et `tolerance_days`, L5).
 - **AC7** — Vue et annulation : groupe client (et fournisseur, D4) — `grouped_settlement`, `groupedInvoices`,
   `cancelBlockedInvoice` sur une facture créditée ; réponse du `POST` (M5) ; refus par le code du premier motif.
 - **AC8** — Garde CHF (D6, M2, M3) : `invoice_group` sur une transaction EUR → `RECONCILIATION_CURRENCY_MISMATCH`,
   `details { transactionCurrency: "EUR", expected: "CHF" }`, **rien d'écrit** (point de sauvegarde de la 43-1a) ; la même
   en CHF passe (sonde).
 - **AC9** — `docs/api-external.md` : « Régler plusieurs factures par une transaction » (*depuis la v0.19.0*) — types,
-  ordre des refus, recherche (règles de `q`, borne de date, codes), table des codes (dont `RECONCILIATION_OVERPAYMENT` et ses
-  deux formes de `details`, L6), élément d'`accepted[]`, brut et centime, plafond nommé, garde CHF, champs de la vue et de
+  ordre des refus, recherche (règles de `q`, borne de date, codes, liste vide), table des codes, `differenceAccountId` et
+  ses refus, `gap` (signé), élément d'`accepted[]`, brut et centime, plafond nommé, garde CHF, champs de la vue et de
   l'annulation, *Pattern batch*.
 - **AC10** — Accès (L-6) : rôle Comptable+ ; clé d'API en écriture : `POST /accept` permis ; clé en lecture
   (`ApiKeyReadOnly`, `middleware/auth.rs:139-142`) : `POST /accept` refusé, `GET group-candidates` permis ; rôle
   inférieur : `403`.
 
-## Exigences sur la 43-1a (à reporter à sa remédiation d'ensemble)
+## Exigences sur la 43-1a (historique ; le contrat qui fait foi est celui du commit T3)
+
+**Le contrat de la 43-2 avec la 43-1a est celui du commit T3 de la 43-1a**, consigné dans `kesh-gate-logs/e43/t3.md` quand
+il existera ; l'agent qui développe la 43-1a a reçu les ajustements (`WrongDirection`, `CurrencyMismatch`,
+`ClaimAccount.role` aux rôles réels, différence selon la décision de Guy : `difference_account_id`, deux sens, refus D9).
+L'étape 0 relit `t3.md` contre la table des refus ; un écart va au Change Log et à l'orchestrateur. Les points ci-dessous
+restent comme trace des exigences transmises :
+
+0. *(P3, L4)* le point de sauvegarde propre de la 43-1a : un `ROLLBACK TO` qui échoue en 1305 après un 1213 **remonte en
+   `Err(DbError)`**, jamais avalé en refus — test `is_savepoint_lost`.
 
 1. **Forme brut/centime au commit T3** : `GroupedSettlement.difference`, `rounding_difference` et
    `GroupedInvoiceRef.amount` en `Decimal` brut (quatre décimales), `bank_fees` au centime ; lecture du plafond réglable
@@ -302,7 +344,8 @@ calcule sur la valeur absolue (L-2).
 6. **Variantes de `GroupRefusal`** de la table ci-dessus. *Mise à jour de la P2 de la 43-2 (à transmettre à la 43-1a en
    développement)* : `UnsupportedTransaction` devient `CurrencyMismatch` (devise seule) ; le sens et le montant nul sont
    une variante `WrongDirection` traduite par `refuse_wrong_direction` (montant porté) ; l'ordre de l'étape 3 est : sens et
-   montant nul **d'abord**, devise ensuite ; `ClaimAccount` porte `role` = `receivable` | `rounding` | `bank_fees`.
+   montant nul **d'abord**, devise ensuite ; `ClaimAccount` porte `claim` et un `role` parmi les rôles réels
+   (`counterparty`, `rounding`) — *corrigé à la P3 : `receivable` est une valeur de `claim`, `bank_fees` n'existe pas*.
 
 ## Tests
 
@@ -310,16 +353,24 @@ calcule sur la valeur absolue (L-2).
 de la table. Rouges d'abord : `kesh-gate-logs/e432/rouges.log` ; mutations : `kesh-gate-logs/e432/mut/` — (a) convertir un
 `Err(DbError)` en `AppError` (AC4 rougit) ; (b) écrire `reconciliation.accepted` aussi dans la route (le test qui compte
 les traces rougit) ; (c) calculer la différence au centime (AC6 rougit) ; (d) retirer la garde CHF (AC8 rougit) ; (e)
-retirer le repli `LIKE` du nom court (AC5 rougit) ; (f) retirer la borne de date de la recherche (AC5 rougit). Tests de
+retirer le repli `LIKE` du nom court (AC5 rougit) ; (f) retirer la borne de date de la recherche (AC5 rougit) ; (g)
+remplacer la délégation de D2 par un `DATABASE_ERROR` sans exception (le test unitaire d'AC2 rougit) ; (h) accepter un
+compte de différence égal à la banque (AC6 rougit). Tests de
 dépôt de `find_group_candidates` dans `crates/kesh-db/tests/reconciliation_group_candidates.rs` (neuf, squash).
 
 ## Tâches
 
 - [ ] **T0** — Étape 0 : LOW restants (Dev Notes) ; signatures du commit T3 de la 43-1a relues contre § *Exigences* ;
   écart → au Change Log et à l'orchestrateur.
-- [ ] **T1** — Variante client, pré-vol, `bank_transaction_id()`, extracteur à cinq types, aiguillage (AC1).
-- [ ] **T2** — `reconciliation_group.rs` : `invoice_group`, conversions D2, garde D6 (AC2, AC4, AC6, AC8).
-- [ ] **T3** — Recherche : `reconciliation_group_candidates.rs` (dépôt, **gate complet**) puis la route (AC5). — [ ] **T4** — Vue et annulation (AC7). — [ ] **T5** — `docs/api-external.md` (AC9) ;
+- [ ] **T3 d'abord** — Recherche : `reconciliation_group_candidates.rs` (dépôt, **gate complet**) puis la route (AC5).
+  **Ne dépend d'aucun commit de la 43-1a** (ni migration, ni dépôt de règlement) : elle part tout de suite, en parallèle.
+- [ ] **T1** — Variante client, pré-vol (`differenceAccountId` ≤ 0 compris), `bank_transaction_id()`, extracteur à cinq
+  types, aiguillage (AC1). Attend le commit T3 de la 43-1a.
+- [ ] **T2** — `reconciliation_group.rs` : `invoice_group`, conversions D2, gardes D6 et D9 (AC2, AC4, AC6, AC8) ; les
+  fonctions privées de `reconciliation.rs` qu'il emploie (`lettering_error_to_failed_proposal`, `refuse_wrong_direction`,
+  `SettlementDirection`, `date_refusal_failed_proposal`, `claim_account_failed_proposal`, `period_locked_failed_proposal`,
+  `non_postable_failed_proposal`, `counterparty_is_bank_ledger_failed_proposal`) passent en **`pub(super)`** (L1) ; aucun
+  test d'intégration n'en a besoin (vérifié à l'étape 0 : `pub(super)` est invisible de `tests/`). — [ ] **T4** — Vue et annulation (AC7). — [ ] **T5** — `docs/api-external.md` (AC9) ;
   accès (AC10).
 - [ ] **T6** — **Commit D4** : `supplier_invoice_group` et sa famille partout, message à six types (AC3).
 - [ ] **T7** — Gates ; Dev Agent Record ; prompt de revue P1 (lentilles B, E, A ; `docs/api-external.md` nommé).
@@ -327,8 +378,9 @@ dépôt de `find_group_candidates` dans `crates/kesh-db/tests/reconciliation_gro
 ## Note de version
 
 - **Ajouté (API)** — `POST /reconciliation/accept` accepte `invoice_group` et `supplier_invoice_group` ;
-  `GET /reconciliation/transactions/{id}/group-candidates` ; la vue et l'annulation d'un rapprochement rendent
-  `grouped_settlement`, la liste des factures et la facture qui bloque (refs #823).
+  `GET /reconciliation/transactions/{id}/group-candidates` ; un écart (moins-payé ou trop-perçu, dans la limite du
+  plafond) se comptabilise sur le compte `differenceAccountId` ; la vue et l'annulation d'un rapprochement rendent
+  `grouped_settlement`, la liste des factures, l'écart et son compte, et la facture qui bloque (refs #823).
 
 ## Dev Notes
 
@@ -338,9 +390,15 @@ dépôt de `find_group_candidates` dans `crates/kesh-db/tests/reconciliation_gro
 `lib.rs`, `docs/api-external.md`, et **`kesh-db/repositories/reconciliation_group_candidates`** (neuf, propre à la 43-2,
 M6) avec `repositories/mod.rs`. **`kesh-db` touché : gate complet même en cours de boucle**, assumé (exception `kesh-db`
 du `CLAUDE.md`) ; le fichier est neuf et n'est partagé ni avec la 43-1a ni avec la 43-1b. `audit_labels.rs` inchangé
-(aucune action neuve). Codes neufs, tous des chaînes de `FailedProposal` : `RECONCILIATION_GROUP_INVALID`,
-`RECONCILIATION_GROUP_DIFFERENCE_TOO_LARGE`, `RECONCILIATION_UNDERPAYMENT` ; la recherche n'en crée aucun
-(`RECONCILIATION_ALREADY_REJECTED` en `AppError` à paramètre, à vérifier à l'étape 0).
+(aucune action neuve). Codes neufs, deux seulement, des chaînes de `FailedProposal` : `RECONCILIATION_GROUP_INVALID`,
+`RECONCILIATION_GROUP_DIFFERENCE_TOO_LARGE`. **Aucune `AppError` neuve**, donc ni `errors.rs`, ni catalogues Rust, ni
+garde G9 dans le périmètre : la recherche ne rend que des refus existants ou une liste vide (P3, M2), et le compte de
+différence interdit réemploie des codes existants (D9). `RECONCILIATION_UNDERPAYMENT` n'est plus créé.
+
+### Ordre de retrait (si le temps manque)
+
+Le commit fournisseur (D4) ; puis les champs de vue et d'annulation `cancelBlockedInvoice` et `cancelledInvoices` (la 43-3
+écrit alors la limite) ; jamais la recherche, l'acceptation client ni les refus de la différence.
 
 ### LOW à l'étape 0
 
@@ -351,6 +409,9 @@ du `CLAUDE.md`) ; le fichier est neuf et n'est partagé ni avec la 43-1a ni avec
   `failed-proposal-label.test.ts` recompte les codes dans `reconciliation.rs` **et** `reconciliation_group.rs`.
 - **Échelle des `Decimal`** : vérifier que la sérialisation rend quatre décimales pour les champs bruts (`"0.0100"`) ; sinon
   formater explicitement.
+- **L6 (P3)** : `lettering_error_to_failed_proposal` journalise « encaissement : lettrage de la facture impossible » pour
+  tout `Invariant`, y compris le « reste dû > 0 » de la 43-1a ; sans effet sur le contrat — paramétrer le message ou le
+  laisser, à décider à l'étape 0.
 
 ### Fichiers communs
 
@@ -385,3 +446,10 @@ résolu en gardant les deux).
   devise neuf), M3 (ordre réel du pré-vol, bornes dans le dépôt sous le verrou du compte, AC8 « rien d'écrit »), M4
   (borne de date de la recherche), M5 (codes réels de la recherche, transaction rejetée), M6 (dépôt neuf
   `reconciliation_group_candidates.rs`, gate complet assumé) ; L1 à L6.
+- 2026-11-18 (P3) — Remédiée après la validation P3 (0/0/3/6) et sur la décision de Guy du 2026-11-17 sur la différence :
+  `differenceAccountId` dans le `POST`, `gap` (signé) et `differenceAccountId` dans la réponse, `gap` et
+  `differenceAccount` dans la vue ; plus de refus de sens de l'écart ; M1 (rôles réels, compte de différence interdit par
+  les refus existants, D9, aucun code neuf) ; M2 (recherche : `200`, liste vide, `direction: null` pour EUR et montant nul,
+  rejet comme `get_link_candidates`, aucune `AppError` neuve) ; M3 (contrat = commit T3 de la 43-1a, `t3.md`) ; L1
+  (`pub(super)`), L2 (`ORDER BY`, `PayableDocument`), L3 (test unitaire, mutation g), L4 (1305 remonte), L5 (identifiants
+  ajoutés aux refus de date), L6 (en Dev Notes) ; la recherche part sans attendre la 43-1a ; ordre de retrait.
