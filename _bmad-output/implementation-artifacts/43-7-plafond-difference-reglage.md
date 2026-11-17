@@ -185,6 +185,30 @@ elle relève de la 43-2 (le champ n'existe pas sur cette branche) ; à contrôle
   droits seulement, le garde est revenu au vert) ; aucun conteneur redémarré.
 - Un `cat > /dev/null` oublié a bloqué un moment une commande (arrêtée) ; sans effet sur le dépôt.
 
+### Remédiation de la revue P1 (commit `678603712`)
+
+Rapports : `kesh-gate-logs/e437/review-p1-{B,E,A}.md` (0 CRITICAL, 0 HIGH, 1 MEDIUM, une dizaine de LOW). Tout par l'outil Edit
+(`cargo fmt` seul en dehors).
+- **B1-1 (MEDIUM)** : l'écran n'envoie `groupSettlementMaxDifference` que si la saisie diffère de la valeur rendue par le serveur ;
+  le type TypeScript du champ devient facultatif. Test d'écran « le plafond non modifié n'est pas envoyé » ; **mutation M4** (champ
+  envoyé à chaque fois) → ce test rouge, 1 sur 35 (`mut/M4.log`), fichier restauré (`git restore` puis `touch`).
+- **E1-1 / A1-2 et E1-4** : test serveur `an_absent_or_null_ceiling_leaves_a_four_decimal_value_intact` (base à `5.0060`, `PUT`
+  sans le champ puis avec `null` : valeur intacte). **E1-5** : `trailing_zero_forms_and_negative_zero_are_accepted` (`5.0000`,
+  `100.0000`, `-0`, `0.00`).
+- **B1-2 / E1-3** : l'affichage passe par `group_max_for_display` (`MidpointAwayFromZero`, deux décimales) ; règle écrite à sa
+  doc-comment, à la fiche (L-4) et au manuel ; tests `group_max_display_rounds_half_away_from_zero` (5.0050 → 5.01) et
+  `get_rounds_a_half_cent_away_from_zero`.
+- **B1-3** : après un enregistrement réussi, `groupMax` est relu de la réponse (test « 1,5 → 1.50 »). **B1-4** : `aria-describedby`
+  nomme le refus et l'aide (test). **Relecture sur `OPTIMISTIC_LOCK_CONFLICT`** : test « reprend le plafond ».
+- **A1-3** : le paragraphe du manuel d'administration est déplacé après le bloc « Quand un paiement… », avant *Comptes débiteurs
+  et créanciers*. **L-4** : fiche et manuel complétés (arrondi vers le haut ; un autre réglage ne réécrit pas la valeur ; la
+  modifier écrit la valeur saisie au centime).
+- **Droits MariaDB** : `scripts/check-dev-grants.sh` → « garde des droits : droits de kesh conformes à 01-dev-grants.sql » (code 0).
+- **Gates ciblés** (`rem1-*.log`, commit `678603712`) : `nextest` `binary(group_settlement_max_setting_e2e)` et le test unitaire de la
+  route : 9 passés, 0 échoué (`rem1-cible.log`) ; Vitest de la page, de `group-settlement-max` et de `i18n-keys` : 58 passés
+  (`rem1-vitest.log`) ; `npm run check` 0 erreur (`rem1-check.log`) ; `cargo fmt --check` vert. Non relancés : `test-fast` complet,
+  `gate-ci` et E2E (à la clôture, sur la branche fusionnée avec la 43-1a).
+
 ### File List
 
 Code : `crates/kesh-db/src/entities/company_invoice_settings.rs`, `crates/kesh-db/src/repositories/company_invoice_settings.rs`,
