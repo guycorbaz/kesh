@@ -247,6 +247,15 @@ const REGISTRE: &[(&str, &str, Statut)] = &[
         ),
     ),
     (
+        // Le retrait des règlements du groupe, appelé par le seul
+        // `grouped_settlements::cancel_in_tx`, qui a gardé le compte avant.
+        "kesh-db/src/repositories/invoice_settlements_write.rs",
+        "delete_grouped_settlements_in_tx",
+        Statut::Gardee(
+            "appelé par grouped_settlements::cancel_in_tx seul, après son bank_accounts::ensure_open_in_tx ; revérifié en dernier par recheck_open_locked_in_tx",
+        ),
+    ),
+    (
         // Story 29-8 (#670) — le rattachement d'une transaction à un règlement.
         "kesh-db/src/repositories/reconciliation_link.rs",
         "link_in_tx",
