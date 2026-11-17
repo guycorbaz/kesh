@@ -266,9 +266,20 @@ async fn facture(
     .await
     .expect("facture créée")
     .0;
+    // L'exercice qui couvre la date (le seed, ou un exercice posé par le test).
+    let exercice: i64 = sqlx::query_scalar(
+        "SELECT id FROM fiscal_years WHERE company_id = ? AND start_date <= ? AND end_date >= ? \
+         ORDER BY start_date DESC LIMIT 1",
+    )
+    .bind(s.company_id)
+    .bind(date)
+    .bind(date)
+    .fetch_one(pool)
+    .await
+    .expect("exercice couvrant la date de la facture");
     let je = journal_entries::create(
         pool,
-        s.fiscal_year_id,
+        exercice,
         Acteur::utilisateur(s.admin_user_id),
         NewJournalEntry {
             company_id: s.company_id,
@@ -1465,4 +1476,109 @@ async fn the_retired_backfill_abstains_on_a_group_that_sync_letters(pool: MySqlP
     }
     tx.commit().await.unwrap();
     assert_eq!(lettrees(pool.clone(), lignes).await, 2);
+}
+
+// ---------------------------------------------------------------------------
+// Revue P1 (B-1, E-1) — une clôture concurrente attend le dé-rapprochement d'un
+// groupe
+// ---------------------------------------------------------------------------
+
+/// Un exercice 2019 ouvert (le seed couvre 2020-2030), rendu par son id.
+async fn exercice_2019(pool: &MySqlPool, company_id: i64) -> i64 {
+    sqlx::query(
+        "INSERT INTO fiscal_years (company_id, name, start_date, end_date, status) \
+         VALUES (?, 'Exercice 2019', '2019-01-01', '2019-12-31', 'Open')",
+    )
+    .bind(company_id)
+    .execute(pool)
+    .await
+    .expect("exercice 2019")
+    .last_insert_id() as i64
+}
+
+fn en_2019(m: u32, d: u32) -> NaiveDate {
+    NaiveDate::from_ymd_opt(2019, m, d).expect("date valide")
+}
+
+/// ⛔ Revue P1 (B-1, E-1) — **une clôture concurrente attend le dé-rapprochement
+/// d'un groupe**, sur le patron de `reconciliation_cancel.rs::
+/// a_concurrent_close_waits_for_the_unreconciliation`. Le groupe est réglé en
+/// 2019 ; la contre-passation, datée du jour, tombe dans un autre exercice,
+/// ouvert. Si le geste figeait son instantané avant le verrou de l'exercice
+/// (une lecture ordinaire des membres), il lirait 2019 encore ouvert, défairait
+/// le lien et le lettrage et contre-passerait **avec succès** un règlement
+/// d'exercice clos. Avec l'ordre de l'unitaire, il attend la clôture, relit, et
+/// refuse (`FiscalYearClosed`) ; rien n'est écrit.
+#[sqlx::test(migrations = "./test-schema")]
+async fn a_concurrent_close_waits_for_the_group_unreconciliation(pool: MySqlPool) {
+    use kesh_db::errors::SettlementCancelBlocker;
+
+    let m = monter(&pool).await;
+    let fy_2019 = exercice_2019(&pool, m.s.company_id).await;
+    let a = facture(&pool, &m, "E-1", dec!(100.00), en_2019(6, 1), None).await;
+    let b = facture(&pool, &m, "E-2", dec!(200.00), en_2019(6, 1), None).await;
+    let bt = transaction(&pool, &m, dec!(300.00), en_2019(6, 15)).await;
+    let done = regler(&pool, &m, bt, &[a, b], None)
+        .await
+        .expect("réglé en 2019");
+    let avant = empreinte(&pool).await;
+
+    // (1) La clôture en cours, non validée.
+    let mut closing = pool.begin().await.unwrap();
+    sqlx::query("UPDATE fiscal_years SET status = 'Closed' WHERE id = ?")
+        .bind(fy_2019)
+        .execute(&mut *closing)
+        .await
+        .unwrap();
+
+    // (2) Le dé-rapprochement démarre pendant ce temps.
+    let p = pool.clone();
+    let (company_id, user_id) = (m.s.company_id, m.s.admin_user_id);
+    let annulation = tokio::spawn(async move {
+        reconciliation_cancel::cancel(
+            &p,
+            company_id,
+            bt,
+            Acteur::utilisateur(user_id),
+            jour(11, 17),
+        )
+        .await
+    });
+    // Synchronisation déterministe : la clôture n'est validée qu'une fois le
+    // geste VU en attente du `FOR UPDATE` de l'exercice.
+    let vue = kesh_db::test_fixtures::attendre_une_requete_en_cours(
+        &pool,
+        &["fiscal_years", "FOR UPDATE"],
+        || annulation.is_finished(),
+    )
+    .await;
+    if !vue {
+        panic!(
+            "le dé-rapprochement a fini sans attendre de verrou : {:?}",
+            annulation.await
+        );
+    }
+
+    // (3) La clôture est validée.
+    closing.commit().await.unwrap();
+
+    let result = annulation.await.expect("tâche");
+    assert!(
+        matches!(
+            result,
+            Err(DbError::ReconciliationNotCancellable {
+                blocker: SettlementCancelBlocker::FiscalYearClosed
+            })
+        ),
+        "le geste devait attendre la clôture puis refuser l'exercice clos — reçu {result:?}"
+    );
+    // Rien d'écrit : la clôture a seulement relevé la version de l'exercice.
+    assert_eq!(empreinte(&pool).await, avant, "rien n'a été défait");
+    let reversals: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries WHERE reverses_entry_id = ?")
+            .bind(done.journal_entry_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(reversals, 0, "rien n'a été contre-passé");
 }
