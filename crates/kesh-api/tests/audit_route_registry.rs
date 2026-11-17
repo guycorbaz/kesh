@@ -1483,7 +1483,8 @@ fn the_replay_partition_is_what_the_story_declares() {
     assert_eq!(exemptees, 3, "full_import, /seed, /reset");
     assert_eq!(
         sans_ecriture, 120,
-        "119 routes de lib.rs (v0190-nom-societe : + 1 — le nom de la société) — 118 avant \
+        "120 au total = 119 routes de lib.rs + /password-reset-token de test_endpoints.rs. \
+         119 routes de lib.rs (v0190-nom-societe : + 1 — le nom de la société) — 118 avant \
          (34-2 : − 1 — la création d'un compte bancaire, reclassée `Rejouee`) — 119 avant (33-5 : + 1 — l'adresse de la société ; v0172-session : + 2 — le réglage de la durée d'inactivité \
          et le battement d'activité ; v017-4a : + 4 — la saisie fournisseur et la complétion \
          d'import reclassées, le `PUT` et le `DELETE` d'un brouillon) — 112 avant \
