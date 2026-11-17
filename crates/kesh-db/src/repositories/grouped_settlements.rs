@@ -250,6 +250,15 @@ pub enum GroupRefusal {
         account_id: i64,
         account_number: String,
     },
+    /// Contrôle **3 bis** (reprise de `main` après l'Epic 37, revue
+    /// d'intégration M2) : le compte choisi est tenu **en devise** — le
+    /// règlement groupé s'écrit en CHF. Route (43-2) :
+    /// `ACCOUNT_IN_FOREIGN_CURRENCY`, `details: { accountId, currency }`, le
+    /// code du règlement unitaire (`invoice_settlements_write`, Story 37-3a,
+    /// AC-5). Sans ce refus, la ligne CHF tomberait au contrôle central de
+    /// l'écriture (`MULTI_CURRENCY_DISABLED` ou `ACCOUNT_REQUIRES_CURRENCY`),
+    /// une erreur de base au lieu d'un refus nommé.
+    DifferenceAccountInForeignCurrency { account_id: i64, currency: String },
     /// Une fraction de centime à passer sans compte de différences d'arrondi.
     RoundingAccountNotConfigured,
     /// La date de l'écriture est dans une période verrouillée.

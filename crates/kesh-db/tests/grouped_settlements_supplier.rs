@@ -556,6 +556,63 @@ async fn the_gap_is_admitted_both_ways_on_the_chosen_account(pool: MySqlPool) {
     assert_eq!(empreinte(&pool).await, avant);
 }
 
+/// Revue d'intégration de l'Epic 37, M2 — côté fournisseur, la même règle
+/// commune : un compte d'écart **en devise** rend
+/// `DifferenceAccountInForeignCurrency`, après « non imputable », et rien
+/// n'est écrit ; sans devise, le même compte est accepté.
+#[sqlx::test(migrations = "./test-schema")]
+async fn a_foreign_currency_difference_account_is_refused(pool: MySqlPool) {
+    let m = monter(&pool).await;
+    sqlx::query("UPDATE companies SET multi_currency_enabled = TRUE WHERE id = ?")
+        .bind(m.s.company_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let en_euros = compte(&pool, m.s.company_id, "6949", "Expense").await;
+    sqlx::query("UPDATE accounts SET currency = 'EUR' WHERE id = ?")
+        .bind(en_euros)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let a = facture(&pool, &m, "D-1", dec!(100.00), jour(6, 1), None).await;
+    let b = facture(&pool, &m, "D-2", dec!(50.00), jour(6, 1), None).await;
+    let bt = transaction(&pool, &m, dec!(-150.30), jour(6, 15)).await;
+
+    let avant = empreinte(&pool).await;
+    assert_eq!(
+        payer(&pool, &m, bt, &[a, b], Some(en_euros)).await,
+        Err(GroupRefusal::DifferenceAccountInForeignCurrency {
+            account_id: en_euros,
+            currency: "EUR".into(),
+        })
+    );
+    assert_eq!(empreinte(&pool).await, avant, "rien d'écrit");
+
+    sqlx::query("UPDATE accounts SET postable = FALSE WHERE id = ?")
+        .bind(en_euros)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        payer(&pool, &m, bt, &[a, b], Some(en_euros)).await,
+        Err(GroupRefusal::DifferenceAccountNotPostable {
+            account_id: en_euros,
+            account_number: "6949".into(),
+        })
+    );
+
+    // Sonde positive : en CHF et imputable, accepté.
+    sqlx::query("UPDATE accounts SET postable = TRUE, currency = NULL WHERE id = ?")
+        .bind(en_euros)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let done = payer(&pool, &m, bt, &[a, b], Some(en_euros))
+        .await
+        .expect("compte en CHF accepté");
+    assert_eq!(done.difference_account_id, Some(en_euros));
+}
+
 /// AC2 — les comptes interdits pour l'écart, dans l'ordre du code : la banque,
 /// un compte archivé, un compte non imputable, la dette d'une facture du
 /// groupe ; et la dette égale à la banque. Rien n'est écrit.

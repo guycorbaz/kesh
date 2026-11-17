@@ -621,6 +621,69 @@ async fn sub_centime_remainders_go_to_rounding_and_the_gap_to_the_chosen_account
     }
 }
 
+/// Revue d'intégration de l'Epic 37, M2 — un compte d'écart **en devise** est
+/// refusé par un refus nommé (`DifferenceAccountInForeignCurrency`), non par
+/// l'erreur de base du contrôle central de l'écriture. Après le contrôle « non
+/// imputable » : un compte en devise non imputable reste
+/// `DifferenceAccountNotPostable`. Rien n'est écrit ; une fois la devise
+/// retirée, le même compte est accepté.
+#[sqlx::test(migrations = "./test-schema")]
+async fn a_foreign_currency_difference_account_is_refused(pool: MySqlPool) {
+    let m = monter(&pool).await;
+    sqlx::query("UPDATE companies SET multi_currency_enabled = TRUE WHERE id = ?")
+        .bind(m.s.company_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let en_euros: i64 = sqlx::query(
+        "INSERT INTO accounts (company_id, number, name, account_type, currency) \
+         VALUES (?, '6949', 'Frais en euros', 'Expense', 'EUR')",
+    )
+    .bind(m.s.company_id)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    let a = facture(&pool, &m, "D-1", dec!(100.00), jour(6, 1), None).await;
+    let b = facture(&pool, &m, "D-2", dec!(200.00), jour(6, 1), None).await;
+    let bt = transaction(&pool, &m, dec!(299.60), jour(6, 15)).await;
+
+    let avant = empreinte(&pool).await;
+    assert_eq!(
+        regler(&pool, &m, bt, &[a, b], Some(en_euros)).await,
+        Err(GroupRefusal::DifferenceAccountInForeignCurrency {
+            account_id: en_euros,
+            currency: "EUR".into(),
+        })
+    );
+    assert_eq!(empreinte(&pool).await, avant, "rien d'écrit");
+
+    // L'ordre des contrôles : non imputable d'abord.
+    sqlx::query("UPDATE accounts SET postable = FALSE WHERE id = ?")
+        .bind(en_euros)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        regler(&pool, &m, bt, &[a, b], Some(en_euros)).await,
+        Err(GroupRefusal::DifferenceAccountNotPostable {
+            account_id: en_euros,
+            account_number: "6949".into(),
+        })
+    );
+
+    // Sonde positive : le même compte, en CHF et imputable, est accepté.
+    sqlx::query("UPDATE accounts SET postable = TRUE, currency = NULL WHERE id = ?")
+        .bind(en_euros)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let done = regler(&pool, &m, bt, &[a, b], Some(en_euros))
+        .await
+        .expect("compte en CHF accepté");
+    assert_eq!(done.difference_account_id, Some(en_euros));
+}
+
 /// Décision de Guy du 2026-11-17 — moins reçu et trop-perçu admis jusqu'au
 /// plafond, au compte choisi ; au-delà, refusé ; sans compte, refusé ; le compte
 /// contrôlé. Après chaque refus, la transaction est VALIDÉE et les tables sont
