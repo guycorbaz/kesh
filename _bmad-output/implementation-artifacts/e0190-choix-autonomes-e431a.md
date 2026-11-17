@@ -61,6 +61,15 @@ d'un centime ou plus n'est jamais absorbé, quel que soit `n`. `auto_rounding_to
 d'arrondi (`RoundingAccountNotConfigured`) passe avant `DifferenceAccountRequired` — c'était déjà l'ordre du code
 (étape 6 : compte d'arrondi, puis compte d'écart).
 
+**C-e431a-14 — Décomposition définitive de l'écart** (orchestrateur, `decision-difference.md`, § « Décomposition de
+l'écart » ; **remplace C-e431a-12.3 et C-e431a-13**) : `d = |montant| − Σ restes bruts` ; `e = centime(d)` (demi-centime
+loin de zéro, `amount_due_to_centime`) ; `r = d − e`. `r` au compte d'arrondi s'il est non nul (requis, contrôlé avant
+`DifferenceAccountRequired`) ; `e` au compte choisi, obligatoire si `e ≠ 0` ; plafond sur `|e|` seul. L'arrondi
+automatique est le cas `e = 0`. `Decomposition { difference = d, rounding_difference = r, gap = e }`. Les six cas du
+tableau sont tenus par `the_six_cases_of_the_decision_table` (test pur) et quatre d'entre eux en écritures
+(`sub_centime_remainders_go_to_rounding_and_the_gap_to_the_chosen_account`). `DifferenceTooLarge.sum_applied` porte
+désormais la somme **brute** des restes.
+
 ## Choix de l'agent
 
 **C-e431a-3 — `TABLES_TO_TRUNCATE`** : `imported_supplier_invoices` et `supplier_invoices` déplacées ensemble avant

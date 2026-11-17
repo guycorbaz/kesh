@@ -266,15 +266,15 @@ pub enum GroupRefusal {
 /// La décomposition de la différence d'un groupe (D4 bis) — **une seule
 /// définition pour les deux familles**.
 ///
-/// - `difference = |montant| − Σ apports bruts` (signé : négatif quand moins
+/// - `difference = d = |montant| − Σ apports bruts` (signé : négatif quand moins
 ///   reçu ou payé, positif quand plus ; brut, quatre décimales) ;
-/// - `rounding_difference = r = Σ (centime(apport) − apport)` (signé, brut) —
-///   les fractions de centime, au compte d'arrondi comme dans l'unitaire ;
-/// - `gap = e = |montant| − Σ centime(apport)` (signé, au centime) — le
+/// - `gap = e = centime(d)` (signé, au centime, demi-centime loin de zéro) — le
 ///   moins-payé (`e < 0`) ou le trop-perçu (`e > 0`), passé au compte que
-///   **l'utilisateur choisit** (décision de Guy du 2026-11-17).
+///   **l'utilisateur choisit** (décision de Guy du 2026-11-17) ;
+/// - `rounding_difference = r = d − e` (signé, `|r| ≤ 0.005`) — la fraction
+///   sous le centime, au compte d'arrondi comme dans l'unitaire.
 ///
-/// Identité : `difference = e + r`.
+/// Identité : `difference = rounding_difference + gap`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Decomposition {
     pub difference: Decimal,
@@ -290,9 +290,14 @@ pub struct Decomposition {
 /// reste dû ; fournisseur : son `total_amount`) ; `max_difference` : le plafond
 /// de la société.
 ///
-/// L'écart `e = |amount| − Σ centime(apport)` est admis **dans les deux sens** ;
-/// seul `|e| >` plafond est refusé ([`GroupRefusal::DifferenceTooLarge`]). Les
-/// fractions de centime (`r`) n'entrent pas dans le plafond.
+/// **Décomposition définitive** (`kesh-gate-logs/e43/decision-difference.md`,
+/// § « Décomposition de l'écart ») : `d = |amount| − Σ apports bruts` (quatre
+/// décimales) ; `e = centime(d)`, demi-centime arrondi en s'éloignant de zéro
+/// (comme [`amount_due_to_centime`]) ; `r = d − e`, toujours `|r| ≤ 0.005`.
+/// `r` va au compte d'arrondi, `e` au compte choisi. L'**arrondi automatique**
+/// est le cas `e = 0` (`|d| < 0.005`) : aucun compte choisi. L'écart `e` est
+/// admis **dans les deux sens** ; seul `|e| >` plafond est refusé
+/// ([`GroupRefusal::DifferenceTooLarge`]) ; `r` n'y est jamais soumis.
 ///
 /// Guy : « le trop perçu ou le moins doit pouvoir être comptabilisé à la main :
 /// un moins peut être une perte sur débiteur ou des frais bancaires : on ne sait
@@ -305,39 +310,20 @@ pub fn group_difference(
 ) -> Result<Decomposition, GroupRefusal> {
     let paid = amount.abs();
     let gross: Decimal = gross_contributions.iter().copied().sum();
-    let centimes: Decimal = gross_contributions
-        .iter()
-        .map(|c| amount_due_to_centime(*c))
-        .sum();
-    let e = paid - centimes;
     let d = paid - gross;
-    // L'arrondi automatique (décision de l'orchestrateur, validation P5 de la
-    // 43-2, L2 — remplace la tolérance `centime(n × 0.005)`, qui absorbait de
-    // vrais écarts d'un centime) : une différence BRUTE `d = |montant| − Σ
-    // restes bruts` strictement sous le demi-centime n'est qu'un arrondi — elle
-    // va tout entière au compte d'arrondi, sans compte choisi ni plafond.
-    // Exemple : deux restes de 10.0050 (affichés 10.01) payés 20.01 → `d = 0`.
-    // Au-delà, la décomposition ordinaire : `r` au compte d'arrondi, `e` au
-    // compte choisi, le plafond sur `|e|`. Un `e` d'un centime ou plus n'est
-    // donc jamais absorbé, quel que soit le nombre de factures.
-    if d.abs() < Decimal::new(5, 3) {
-        return Ok(Decomposition {
-            difference: d,
-            rounding_difference: d,
-            gap: Decimal::ZERO,
-        });
-    }
+    let e = amount_due_to_centime(d);
+    let r = d - e;
     if e.abs() > max_difference {
         return Err(GroupRefusal::DifferenceTooLarge {
             transaction_amount: amount,
-            sum_applied: centimes,
+            sum_applied: gross,
             gap: e,
             max_difference,
         });
     }
     Ok(Decomposition {
         difference: d,
-        rounding_difference: centimes - gross,
+        rounding_difference: r,
         gap: e,
     })
 }
@@ -1463,64 +1449,78 @@ mod tests {
         );
     }
 
-    /// La fiche : deux restes de 10.0050 (affichés 10.01) — contre 20.02,
-    /// `d = 0.0100` hors de la zone d'arrondi : `r = +0.0100` au compte
-    /// d'arrondi, aucun écart ; contre 20.01, `d = 0` : ni ligne d'arrondi ni
-    /// ligne d'écart.
+    /// Les six cas du tableau de la décision (`kesh-gate-logs/e43/
+    /// decision-difference.md`, § « Décomposition de l'écart ») :
+    /// `(restes, payé, d, e, r)`, et l'identité `d = r + e`.
     #[test]
-    fn sub_centime_remainders_split_rounding_and_gap() {
-        let restes = [dec!(10.0050), dec!(10.0050)];
-        let d = group_difference(dec!(20.02), &restes, dec!(5)).unwrap();
-        assert_eq!(d.rounding_difference, dec!(0.0100));
-        assert_eq!(d.gap, dec!(0.00));
-        assert_eq!(d.difference, dec!(0.0100));
-        let d = group_difference(dec!(20.01), &restes, dec!(5)).unwrap();
-        assert_eq!(d.rounding_difference, dec!(0.0000));
-        assert_eq!(d.gap, Decimal::ZERO);
-        assert_eq!(d.difference, dec!(0.0000));
-        // L'identité `difference = e + r`.
-        assert_eq!(d.difference, d.gap + d.rounding_difference);
-    }
-
-    /// L'arrondi automatique (validation P5 de la 43-2, L2) : seule une
-    /// différence brute `|d| < 0.005` part au compte d'arrondi sans compte
-    /// choisi ; un écart `e` d'un centime ou plus n'est jamais absorbé, quel que
-    /// soit le nombre de factures.
-    #[test]
-    fn only_a_raw_difference_below_half_a_centime_is_rounding() {
-        // `d = 0.0049` : arrondi, plafond à zéro accepté.
-        let d = group_difference(dec!(100.00), &[dec!(99.9951)], dec!(0)).unwrap();
-        assert_eq!(d.rounding_difference, dec!(0.0049));
-        assert_eq!(d.gap, Decimal::ZERO);
-        assert_eq!(d.difference, dec!(0.0049));
-        // `d = 0.0050` : hors de la zone ; la décomposition ordinaire n'y trouve
-        // qu'une fraction (`r = 0.0050`, `e = 0`) — aucun compte exigé.
-        let d = group_difference(dec!(100.00), &[dec!(99.9950)], dec!(0)).unwrap();
-        assert_eq!(d.rounding_difference, dec!(0.0050));
-        assert_eq!(d.gap, Decimal::ZERO);
-        // Le cas de la P5 : 500.00 + 300.00 payés 799.99 — un vrai écart d'un
-        // centime, au compte choisi, refusé sous un plafond nul.
-        let f = [dec!(500.00), dec!(300.00)];
-        let d = group_difference(dec!(799.99), &f, dec!(5)).unwrap();
-        assert_eq!(d.gap, dec!(-0.01));
-        assert_eq!(d.rounding_difference, Decimal::ZERO);
-        assert!(group_difference(dec!(799.99), &f, dec!(0)).is_err());
+    fn the_six_cases_of_the_decision_table() {
+        let cas: [(Vec<Decimal>, Decimal, Decimal, Decimal, Decimal); 6] = [
+            (
+                vec![dec!(10.0050), dec!(10.0050)],
+                dec!(20.01),
+                dec!(0),
+                dec!(0),
+                dec!(0),
+            ),
+            (
+                vec![dec!(10.0050), dec!(10.0050)],
+                dec!(20.02),
+                dec!(0.0100),
+                dec!(0.01),
+                dec!(0),
+            ),
+            (
+                vec![dec!(500.00), dec!(300.00)],
+                dec!(799.99),
+                dec!(-0.0100),
+                dec!(-0.01),
+                dec!(0),
+            ),
+            (
+                vec![dec!(10.0050), dec!(10.0050), dec!(10.0050)],
+                dec!(30.06),
+                dec!(0.0450),
+                dec!(0.05),
+                dec!(-0.0050),
+            ),
+            (
+                vec![dec!(10.0049), dec!(10.0000)],
+                dec!(20.00),
+                dec!(-0.0049),
+                dec!(0),
+                dec!(-0.0049),
+            ),
+            (
+                vec![dec!(10.0050), dec!(10.0000)],
+                dec!(20.00),
+                dec!(-0.0050),
+                dec!(-0.01),
+                dec!(0.0050),
+            ),
+        ];
+        for (restes, paye, d, e, r) in cas {
+            let got = group_difference(paye, &restes, dec!(5)).unwrap();
+            assert_eq!(got.difference, d, "d pour {paye} sur {restes:?}");
+            assert_eq!(got.gap, e, "e pour {paye} sur {restes:?}");
+            assert_eq!(got.rounding_difference, r, "r pour {paye} sur {restes:?}");
+            assert_eq!(got.difference, got.rounding_difference + got.gap);
+            assert!(got.rounding_difference.abs() <= dec!(0.005));
+            // L'arrondi automatique est le cas `e = 0` : il passe sous un
+            // plafond nul ; tout `e ≠ 0` y est refusé.
+            assert_eq!(
+                group_difference(paye, &restes, dec!(0)).is_ok(),
+                e.is_zero(),
+                "plafond nul pour {paye}"
+            );
+        }
         // Un centime n'est jamais absorbé, même à cinquante factures.
         let cinquante = vec![dec!(10.00); 50];
-        let d = group_difference(dec!(499.99), &cinquante, dec!(5)).unwrap();
-        assert_eq!(d.gap, dec!(-0.01));
-        let d = group_difference(dec!(500.01), &cinquante, dec!(5)).unwrap();
-        assert_eq!(d.gap, dec!(0.01));
-        // L'invariant `difference = rounding + gap`, dans chaque branche.
-        for (paye, f) in [
-            (dec!(20.02), vec![dec!(10.0050), dec!(10.0050)]),
-            (dec!(20.00), vec![dec!(10.0050), dec!(10.0050)]),
-            (dec!(799.99), vec![dec!(500.00), dec!(300.00)]),
-            (dec!(100.00), vec![dec!(99.9951)]),
-        ] {
-            let d = group_difference(paye, &f, dec!(5)).unwrap();
-            assert_eq!(d.difference, d.rounding_difference + d.gap, "{paye}");
-        }
+        assert_eq!(
+            group_difference(dec!(499.99), &cinquante, dec!(5))
+                .unwrap()
+                .gap,
+            dec!(-0.01)
+        );
     }
 
     /// Décision de Guy du 2026-11-17 : moins reçu ET trop-perçu admis, dans la
@@ -1557,10 +1557,8 @@ mod tests {
             group_difference(dec!(305.01), &f, dec!(5)),
             Err(GroupRefusal::DifferenceTooLarge { .. })
         ));
-        // Plafond à zéro : seuls les arrondis passent.
-        assert!(group_difference(dec!(299.98), &f, dec!(0)).is_err());
-        let restes = [dec!(10.0050), dec!(10.0050)];
-        assert!(group_difference(dec!(20.02), &restes, dec!(0)).is_ok());
+        // Plafond à zéro : tout écart d'un centime ou plus est refusé.
+        assert!(group_difference(dec!(299.99), &f, dec!(0)).is_err());
     }
 
     /// Fournisseur : la même règle, sur `|montant|` (transaction au débit).

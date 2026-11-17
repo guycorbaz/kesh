@@ -507,11 +507,12 @@ async fn two_clients_are_settled_and_lettered_one_by_one(pool: MySqlPool) {
     assert_eq!(paid_traces, 2);
 }
 
-/// La fiche — deux restes de 10.0050 (affichés 10.01). Contre 20.02 : arrondi
-/// de +0.0100 au crédit, aucun écart. Contre 20.01 : l'écart d'un centime est
-/// dans l'arrondi automatique (`centime(2 × 0.005)`), qui annule les fractions —
-/// ni ligne d'arrondi ni ligne d'écart. Contre 20.00 : arrondi de +0.0100 au
-/// crédit **et** écart de 0.02 au débit du compte choisi. Les écritures
+/// Le tableau de la décision, en écritures (quatre de ses cas) : deux restes de
+/// 10.0050 payés 20.01 (`d = e = r = 0`, ni ligne d'arrondi ni ligne d'écart) ;
+/// payés 20.02 (`e = +0.01` au crédit du compte choisi) ; 10.0049 + 10.0000
+/// payés 20.00 (`r = −0.0049` au débit du compte d'arrondi, arrondi
+/// automatique) ; 10.0050 + 10.0000 payés 20.00 (`e = −0.01` au débit du
+/// compte choisi, `r = +0.0050` au crédit du compte d'arrondi). Les écritures
 /// s'équilibrent, et la vue relit le compte d'écart sur sa ligne.
 #[sqlx::test(migrations = "./test-schema")]
 async fn sub_centime_remainders_go_to_rounding_and_the_gap_to_the_chosen_account(pool: MySqlPool) {
@@ -520,16 +521,35 @@ async fn sub_centime_remainders_go_to_rounding_and_the_gap_to_the_chosen_account
         .await
         .unwrap();
     let ecart = m.s.accounts["4000"];
-    for (paye, attendu_arrondi, attendu_gap) in [
-        (dec!(20.02), dec!(0.0100), dec!(0.00)),
-        (dec!(20.01), dec!(0.0000), dec!(0.00)),
-        (dec!(20.00), dec!(0.0100), dec!(-0.02)),
-    ] {
+    for (rang, (restes, paye, attendu_arrondi, attendu_gap)) in [
+        ([dec!(10.005), dec!(10.005)], dec!(20.01), dec!(0), dec!(0)),
+        (
+            [dec!(10.005), dec!(10.005)],
+            dec!(20.02),
+            dec!(0),
+            dec!(0.01),
+        ),
+        (
+            [dec!(10.0049), dec!(10.00)],
+            dec!(20.00),
+            dec!(-0.0049),
+            dec!(0),
+        ),
+        (
+            [dec!(10.005), dec!(10.00)],
+            dec!(20.00),
+            dec!(0.0050),
+            dec!(-0.01),
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
         let a = facture(
             &pool,
             &m,
-            &format!("S-{paye}-1"),
-            dec!(10.005),
+            &format!("S-{rang}-1"),
+            restes[0],
             jour(6, 1),
             None,
         )
@@ -537,13 +557,13 @@ async fn sub_centime_remainders_go_to_rounding_and_the_gap_to_the_chosen_account
         let b = facture(
             &pool,
             &m,
-            &format!("S-{paye}-2"),
-            dec!(10.005),
+            &format!("S-{rang}-2"),
+            restes[1],
             jour(6, 1),
             None,
         )
         .await;
-        assert_eq!(reste(&pool, a).await, dec!(10.0050), "montage : reste brut");
+        assert_eq!(reste(&pool, a).await, restes[0], "montage : reste brut");
         let bt = transaction(&pool, &m, paye, jour(6, 15)).await;
         let done = regler(&pool, &m, bt, &[a, b], Some(ecart))
             .await
