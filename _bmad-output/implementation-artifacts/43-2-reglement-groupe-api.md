@@ -333,9 +333,9 @@ calcule sur la valeur absolue (L-2).
   | 2 × 10.0050 payés 20.01 | 0.0000 | 0.00 | 0.0000 | aucun écart, aucun compte, aucune ligne |
   | 2 × 10.0050 payés 20.02 | +0.0100 | +0.01 | 0.0000 | compte demandé (0.01) |
   | 500.00 + 300.00 payés 799.99 | −0.0100 | −0.01 | 0.0000 | compte demandé |
-  | 3 × 10.0050 payés 30.06 | +0.0450 | +0.05 | −0.0050 | compte demandé (0.05) **et** ligne d'arrondi de 0.0050 |
+  | 3 × 10.0050 payés 30.06 | +0.0450 | +0.05 | −0.0050 | compte demandé (0.05) **et** ligne d'arrondi de −0.0050 (`r`) |
   | 10.0049 + 10.0000 payés 20.00 | −0.0049 | 0.00 | −0.0049 | arrondi automatique, sans compte |
-  | 10.0050 + 10.0000 payés 20.00 | −0.0050 | −0.01 | +0.0050 | compte demandé (0.01) **et** ligne d'arrondi de 0.0050 |
+  | 10.0050 + 10.0000 payés 20.00 | −0.0050 | −0.01 | +0.0050 | compte demandé (0.01) **et** ligne d'arrondi de +0.0050 (`r`) |
 
   Sans compte quand `e ≠ 0` → `RECONCILIATION_GROUP_INVALID`, `reason: "difference_account_required"` ; 500.00 + 300.00
   payés 799.60 avec un compte → `gap` `"-0.40"` ;
@@ -362,7 +362,8 @@ calcule sur la valeur absolue (L-2).
 - **AC9** — `docs/api-external.md` : « Régler plusieurs factures par une transaction » (*depuis la v0.19.0*) — types,
   ordre des refus, recherche (règles de `q`, borne de date, codes, liste vide), table des codes, `differenceAccountId` et
   ses refus dans leur ordre, le discriminant des deux causes de `role: "counterparty"`, le compte d'une autre banque admis,
-  l'arrondi automatique et son seuil, `gap` (signé), élément d'`accepted[]`, brut et centime, plafond nommé, garde CHF,
+  la décomposition `e` / `r` de D8 bis (`e` au centime sur le compte choisi, `r` au compte d'arrondi, arrondi automatique
+  quand `e = 0`) et l'ordre de leurs contrôles, `gap` (signé), élément d'`accepted[]`, brut et centime, plafond nommé, garde CHF,
   champs de la vue et de l'annulation, *Pattern batch*.
 - **AC10** — Accès (L-6) : rôle Comptable+ ; clé d'API en écriture : `POST /accept` permis ; clé en lecture
   (`ApiKeyReadOnly`, `middleware/auth.rs:139-142`) : `POST /accept` refusé, `GET group-candidates` permis ; rôle
@@ -530,3 +531,7 @@ résolu en gardant les deux).
   arrondi automatique = `e = 0` ; `gap = e` au centime, `roundingDifference = r`, les deux pouvant être non nuls ; compte
   d'arrondi requis si `r ≠ 0`, vérifié avant `DifferenceAccountRequired` ; AC6 refait sur le tableau de la décision.
   Remplace l'entrée précédente sur ce point (« `gap = d` entier »). La passe ciblée relit ce commit et le précédent.
+- 2026-11-18 (P6 ciblée) — LOW-1 (AC9 : « son seuil » → décomposition `e` / `r` et ordre des contrôles), LOW-3 (tableau
+  d'AC6 : lignes d'arrondi signées, −0.0050 et +0.0050). Les mentions restantes de `bankFees`, `bank_fees` et
+  `centime(n × 0.005)` sont des traces marquées périmées ou remplacées (l. 129, 195, 312, 379, 402) ou des entrées
+  historiques du Change Log.

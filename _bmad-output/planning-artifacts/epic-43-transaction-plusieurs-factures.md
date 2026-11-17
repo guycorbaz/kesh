@@ -97,13 +97,14 @@ différence → *Enregistrer*. Fiche 43-3.
 proposition « moins-payé au compte de frais bancaires, trop-perçu refusé »). « Le trop perçu ou le moins doit pouvoir être
 comptabilisé à la main : un moins peut être une perte sur débiteur ou des frais bancaires : on ne sait pas a priori. Un trop
 perçu peut être un arrondi vers le haut de la part du client. » Montants **bruts** (C-43-21). Pour chaque facture, l'apport
-est son reste dû brut (client) ou son `total_amount` (fournisseur), et son apport **au centime** est
-`amount_due_to_centime(apport)`.
-- **Arrondi** : `r = Σ (apport au centime − apport brut)`, fractions de centime ; si `r ≠ 0`, une ligne au **compte de
-  différences d'arrondi** (`rounding_account_for_write`), comme la troisième ligne de l'unitaire
-  (`settlement_journal_lines`) ; refus `ROUNDING_ACCOUNT_NOT_CONFIGURED`. Hors plafond, hors de la différence choisie.
-- **Écart** : `e = |montant| − Σ apports au centime`, **signé** — moins-payé (`e < 0`) ou trop-perçu (`e > 0`), **les deux
-  sens admis**, pour les clients comme pour les fournisseurs. Plus de refus de principe (`OVERPAYMENT`, `UNDERPAYMENT`).
+est son reste dû brut (client) ou son `total_amount` (fournisseur).
+- **Décomposition `r` / `e` : voir C-43-25** (version définitive, `decision-difference.md`, § « Décomposition de l'écart ») :
+  `d = |montant| − Σ apports bruts`, `e` = `d` arrondi au centime (compte choisi), `r = d − e` (compte d'arrondi, hors
+  plafond, refus `ROUNDING_ACCOUNT_NOT_CONFIGURED`). *~~`r = Σ (centime(apport) − apport)`, `e = |montant| − Σ
+  centime(apport)`~~ — formule **remplacée** par C-43-25 le 2026-11-18 : elle portait le même centime tantôt à l'arrondi,
+  tantôt à la différence choisie, et supprimait l'arrondi automatique du cas 20.01 (validation P6 ciblée, CRITICAL-1).*
+- **Écart** `e` (C-43-25), **signé** — moins-payé (`e < 0`) ou trop-perçu (`e > 0`), **les deux sens admis**, pour les
+  clients comme pour les fournisseurs. Plus de refus de principe (`OVERPAYMENT`, `UNDERPAYMENT`).
 - **Compte choisi par l'utilisateur** dans le geste (`differenceAccountId`) : **obligatoire** dès que `e ≠ 0`. L'écran le
   **préremplit**, s'ils sont configurés, avec le compte de frais bancaires désigné pour un moins-payé et le compte d'arrondi
   pour un trop-perçu ; modifiable. Contrôles : compte de la société, **imputable**, non archivé, ni un compte de tiers des
@@ -177,8 +178,11 @@ borne. L'**arrondi automatique** est le cas `e = 0` (`|d| < 0.005`) : aucun comp
 différence. Champs : `roundingDifference = r`, `gap = e` (au centime, signé), `difference = d = r + e` ; `r` et `e` peuvent
 être non nuls ensemble. Exemples : 2 × 10.0050 payés 20.01 → aucun écart ; payés 20.02 → `e` +0.01, compte demandé ;
 3 × 10.0050 payés 30.06 → `e` +0.05 et `r` −0.0050. *(Remplace les formes précédentes du même jour :
-`centime(n × 0.005)`, puis `|d| < 0.005` avec `gap = d` brut.)* Calcul porté par `group_difference` (43-1a, développeur
-prévenu), contrat 43-2 D8 bis, écran 43-3 D3.
+`centime(n × 0.005)`, puis `|d| < 0.005` avec `gap = d` brut — et la formule `Σ centime(apport)` de C-43-16, barrée.)*
+**Ordre des contrôles** : le compte d'arrondi (requis si `r ≠ 0`, avec ses contrôles habituels), puis
+`DifferenceAccountRequired` (si `e ≠ 0` sans compte choisi), puis les contrôles du compte choisi (banque, existence,
+imputable, compte de tiers des factures du groupe), puis le plafond sur `|e|`. Calcul porté par `group_difference` (43-1a,
+développeur prévenu), contrat 43-2 D8 bis, écran 43-3 D3.
 
 **C-43-26 — Libellés et préremplissage par famille** (décision de l'orchestrateur, 2026-11-18) : clients — crédit
 inférieur aux factures « Moins-payé » (prérempli : compte de frais bancaires), crédit supérieur « Trop-perçu » (prérempli :

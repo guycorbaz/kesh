@@ -45,14 +45,20 @@ veux qu'au rapprochement Kesh passe **un** paiement qui solde et lettre chacune,
 - **AC2** — Écriture (sans projet d'en-tête, forme D7 de la 43-1a) : crédit banque de |montant| ; par facture, débit de
   **son** compte de dette (`purchase_payable_line`) de son `total_amount`, avec le projet de la facture estampillé sans
   validation. **Différences — décision de Guy du 2026-11-17** (C-43-16, `kesh-gate-logs/e43/decision-difference.md`) :
-  calculées par **la même** fonction pure `group_difference` que le bras client (43-1a D4 bis) — arrondi `r` au compte
-  d'arrondi (au débit si `r > 0`), hors plafond ; écart `e = |montant| − Σ centime(total)`, **signé, les deux sens admis**
-  (plus payé ou moins payé) ; si `e ≠ 0`, une ligne de `|e|` sur le compte **choisi par l'utilisateur**
-  (`difference_account_id`), du côté qui équilibre l'écriture (au débit si `e > 0`, au crédit sinon) ; refus : compte
-  absent alors que `e ≠ 0`, compte d'une autre société, non imputable ou archivé, égal à un compte de dette des factures ou
-  au compte de la banque ; `|e| >` plafond (43-1a AC3 bis) → `DifferenceTooLarge`. Plus de refus `Underpayment`. Ni projet
-  ni lettrage sur ces lignes ; `enforce_postable = false` pour l'écriture (comptes de pièces et de réglages), le compte
-  choisi étant contrôlé à part. Audit : compte choisi et montant dans les `details`.
+  calculées par **la même** fonction pure `group_difference` que le bras client, selon la **décomposition définitive de
+  C-43-25** (`decision-difference.md`, § « Décomposition de l'écart », dont le tableau fait foi) : `d = |montant| − Σ
+  total_amount` (quatre décimales) ; **`e` = `d` arrondi au centime** (demi-centime en s'éloignant de zéro) ; **`r = d − e`**.
+  Les `total_amount` fournisseur étant au centime, `r` est nul en pratique ; s'il ne l'est pas, il va au compte d'arrondi
+  (au débit si `r > 0`), hors plafond, compte d'arrondi requis et vérifié **avant** `DifferenceAccountRequired`. Écart `e`
+  **signé, les deux sens admis** (plus payé ou moins payé) ; si `e ≠ 0`, une ligne de `|e|` sur le compte **choisi par
+  l'utilisateur** (`difference_account_id`), du côté qui équilibre l'écriture (au débit si `e > 0`, au crédit sinon) ;
+  arrondi automatique si `e = 0`. Refus, dans l'ordre de la 43-2 D9 : compte absent alors que `e ≠ 0`
+  (`DifferenceAccountRequired`), puis compte égal à la banque, inexistant, archivé ou d'une autre société
+  (`ACCOUNT_NOT_FOUND`), non imputable, égal à un compte de dette des factures du groupe ; `|e| >` plafond →
+  `DifferenceTooLarge`. Plus de refus `Underpayment`. Ni projet ni lettrage sur ces lignes ; `enforce_postable = false` pour
+  l'écriture (comptes de pièces et de réglages), le compte choisi étant contrôlé à part. Audit : `gap` (= `e`),
+  `difference_account_id`, `rounding_difference` (= `r`) — jamais `bank_fees`. *(Formule précédente `e = |montant| − Σ
+  centime(total)` remplacée par C-43-25 le 2026-11-18.)*
 - **AC3** — Chaque facture : `status = 'paid'`, `settlement_type = 'bank_transfer'`, `settlement_bank_account_id`,
   `settlement_journal_entry_id`, **`settlement_journal_entry_line_id`**, `paid_at`, `version + 1`, `WHERE … AND version = ?
   AND status = 'open'` (version lue sous le verrou de `lock_for_bank_settlement_in_tx`, qui **est** la méthode de l'unitaire
@@ -123,3 +129,6 @@ Modules : `repositories/grouped_settlements`, `repositories/supplier_invoices` (
   `group_difference` commune et ses signes (M4) ; `enforce_postable = false` (L2).
 - 2026-11-18 — Décision de Guy du 2026-11-17 sur la différence : deux sens admis, compte choisi par l'utilisateur
   (`difference_account_id`), refus seulement au-delà du plafond et pour un compte interdit ; ordre sens puis devise.
+- 2026-11-18 (P6 ciblée des 43-2 et 43-3, CRITICAL-1) — AC2 aligné sur la décomposition définitive de C-43-25 (`e` = `d`
+  arrondi au centime, `r = d − e`), ordre des contrôles, clés d'audit `gap`, `difference_account_id`,
+  `rounding_difference` ; l'ancienne formule `Σ centime(total)` marquée remplacée.
