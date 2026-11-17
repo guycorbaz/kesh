@@ -437,20 +437,21 @@ dépôt de `find_group_candidates` dans `crates/kesh-db/tests/reconciliation_gro
 
 ## Tâches
 
-- [ ] **T0** — Étape 0 : LOW restants (Dev Notes) ; signatures du commit T3 de la 43-1a relues contre § *Exigences* ;
+- [x] **T0** — Étape 0 : LOW restants (Dev Notes) ; signatures du commit T3 de la 43-1a relues contre § *Exigences* ;
   écart → au Change Log et à l'orchestrateur.
-- [ ] **TR (d'abord)** — Recherche : `reconciliation_group_candidates.rs` (dépôt, **gate complet**) puis la route (AC5).
+- [x] **TR (d'abord)** — Recherche : `reconciliation_group_candidates.rs` (dépôt, **gate complet**) puis la route (AC5).
   *Nommée TR pour ne pas la confondre avec le « commit T3 » de la 43-1a* (P5, L5).
   **Ne dépend d'aucun commit de la 43-1a** (ni migration, ni dépôt de règlement) : elle part tout de suite, en parallèle.
-- [ ] **T1** — Variante client, pré-vol (`differenceAccountId` ≤ 0 compris), `bank_transaction_id()`, extracteur à cinq
+- [x] **T1** — Variante client, pré-vol (`differenceAccountId` ≤ 0 compris), `bank_transaction_id()`, extracteur à cinq
   types, aiguillage (AC1). Attend le commit T3 de la 43-1a.
-- [ ] **T2** — `reconciliation_group.rs` : `invoice_group`, conversions D2, gardes D6 et D9 (AC2, AC4, AC6, AC8) ; les
+- [x] **T2** — `reconciliation_group.rs` : `invoice_group`, conversions D2, gardes D6 et D9 (AC2, AC4, AC6, AC8) ; les
   fonctions privées de `reconciliation.rs` qu'il emploie (`lettering_error_to_failed_proposal`, `refuse_wrong_direction`,
   `SettlementDirection`, `date_refusal_failed_proposal`, `claim_account_failed_proposal`, `period_locked_failed_proposal`,
   `non_postable_failed_proposal`, `counterparty_is_bank_ledger_failed_proposal`) passent en **`pub(super)`** (L1) ; aucun
-  test d'intégration n'en a besoin (vérifié à l'étape 0 : `pub(super)` est invisible de `tests/`). — [ ] **T4** — Vue et annulation (AC7). — [ ] **T5** — `docs/api-external.md` (AC9) ;
+  test d'intégration n'en a besoin (vérifié à l'étape 0 : `pub(super)` est invisible de `tests/`). — [x] **T4** — Vue et annulation (AC7). — [x] **T5** — `docs/api-external.md` (AC9) ;
   accès (AC10).
-- [ ] **T6** — **Commit D4** : `supplier_invoice_group` et sa famille partout, message à six types (AC3).
+- [x] **T6** — **Commit D4** : `supplier_invoice_group` et sa famille partout, message à six types (AC3). Tests qui
+  règlent un groupe fournisseur marqués `#[ignore]` (exigent la 43-1b).
 - [ ] **T7** — Gates ; Dev Agent Record ; prompt de revue P1 (lentilles B, E, A ; `docs/api-external.md` nommé).
 
 ## Note de version
@@ -475,7 +476,8 @@ différence interdit réemploie des codes existants (D9). `RECONCILIATION_UNDERP
 
 ### Ordre de retrait (si le temps manque)
 
-Le commit fournisseur (D4) ; puis les champs de vue et d'annulation `cancelBlockedInvoice` et `cancelledInvoices` (la 43-3
+Le commit fournisseur (D4 : `70f74f964`, `git revert` sans conflit attendu ; retirer aussi, à la main, « un débit, les
+factures fournisseur … » de la recherche dans `docs/api-external.md`, écrit au premier commit) ; puis les champs de vue et d'annulation `cancelBlockedInvoice` et `cancelledInvoices` (la 43-3
 écrit alors la limite) ; jamais la recherche, l'acceptation client ni les refus de la différence.
 
 ### LOW à l'étape 0
