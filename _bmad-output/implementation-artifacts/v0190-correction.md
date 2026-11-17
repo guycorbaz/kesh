@@ -1,6 +1,6 @@
 # Story v0190-correction : le client que montre le champ est celui qui part (#1162)
 
-Status: ready-for-dev
+Status: review
 
 *Fiche rédigée le 2026-11-17 (Sonnet 5.5), worktree `kesh-v0190c`, branche `story/v0190-correction`, partie de
 `epic/v0190-correction` (= `main` = v0.18.0, `8b50fd195`), par le workflow `bmad-create-story`. Release **0.19.0** (publiée le
@@ -146,6 +146,58 @@ Champ client avec un texte tapé non choisi ; le même champ après avoir quitt�
 - **2026-11-17 — P7 ciblée (Haiku), 0/0/1/3.** P7-1 (MEDIUM : la relance par la flèche désignait à liste fermée après *Échap*) remédié par les deux gardes : *Échap* fait `searchSeq++` et `pending = false`, et toute réponse, relance comprise, ne désigne rien si `open` est faux à l'arrivée (D3) ; cas e-bis-bis ajouté, e-bis réécrit en conséquence. P7-2 : le montage de e-quater-bis (ii) exige une réponse de `''` non vide. P7-3 : `pick` fait `searchSeq++` et `pending = false` (D1). P7-4 : rien à changer (formulations du prompt de la passe, non de la fiche). Remédiation par un agent ; la passe 8 est la dernière permise.
 - **2026-11-17 — P8 ciblée, 0/0/2/2 ; validation terminée au plafond de huit passes.** Tendance complète : P1 0/0/3/8 → P2 0/0/1/7 → P3 0/0/1/6 → P4 0/0/2/1 → P5 0/0/2/3 → P6 0/0/1/9 → P7 0/0/1/3 → P8 0/0/2/2. Deux MEDIUM (P8-1, P8-2) et deux LOW (P8-3, P8-4) ouverts ; l'orchestrateur ne remédie plus après la sixième passe : ils sont **recontrôlés et corrigés à l'étape 0 du développement** (entrée suivante), comme le permet le `CLAUDE.md` (§ *Review Iteration Rule*, clôture au plafond).
 - **2026-11-17 — étape 0 du développement (Opus 5.5), recontrôle de P8-1 à P8-4, lignes lues citées.** Ligne lue au code d'origine (`git show HEAD:frontend/src/lib/components/invoices/ContactPicker.svelte`) : `:69` `if (seq === searchSeq) loading = false;` — une réponse abandonnée ne lève jamais `loading` : P8-1 confirmé (la clause P7-1 d'*Échap*, `searchSeq++` sans `loading = false`, laissait « Chargement… » à vie et empêchait la relance de e-bis-bis) ; `:101-107` `} else if (e.key === 'Escape') {` / `e.preventDefault();` / `open = false;` / `inputEl?.focus();` — *Échap* d'origine ne touche ni `searchSeq` ni `pending`. **Voie retenue, celle du rapport P8 : *Échap* reprend son comportement d'origine** (`open = false`, plus `highlighted = -1` de D3, retour du focus), sans `searchSeq++` ni `pending = false` ; la garde « une réponse arrivée liste fermée ne désigne rien » (test de `open` à l'arrivée) suffit. Les deux conditions exigées sont tenues, et constatées par test : (a) « Chargement… » ne reste jamais affiché — la recherche continue et sa réponse, de séquence courante, lève `loading` et `pending` dans sa `finally` (code : `ContactPicker.svelte`, `finally { if (seq === searchSeq) { loading = false; pending = false; } }`), cas e-bis-bis (« plus de « Chargement… » ») et e-bis, cas voisin ; (b) une réouverture par *Entrée* ne désigne jamais une liste périmée — la règle 2 de D2 ne désigne que si `!pending && !loading` (code : `if (!searching && results.length > 0) highlighted = 0;`, `searching = pending || loading`) : pendant la recherche elle ne désigne rien, après elle les résultats sont ceux de la saisie affichée ; cas e-bis-bis, second volet, et c. L'autre voie du rapport (*Échap* remet `loading` à faux et vide `results`) n'a pas été nécessaire. Fiche corrigée : D3 (« *Échap* n'abandonne rien », phrase inexacte de P6-4 réécrite — « *Échap* est la seule fermeture qui la laisse vivre », P8-4) ; D2 (1) définit « recherche courante terminée » par `!pending && !loading` (P8-1) et D2 (2) teste aussi `loading` ; D1, `pick` nomme `loading = false` et `results = []` (P8-3) ; e-bis (cas voisin) et e-bis-bis réécrits, e-bis-bis distinguant sa seule garde (`open` à l'arrivée ; P8-4) et portant un second volet ; c précise « la réponse à « Mar » ». Le calcul des flèches part de `highlighted` (patron `AccountAutocomplete.svelte:328-338`), ce qui rend e-bis-bis discriminant (C-v0190c-20). Le rouge de e-bis-bis sans la garde est constaté par mutation (Dev Agent Record).
+
+- **2026-11-17 — développement (Opus 5.5), passage en `review`.** Code et tests aux commits `a2177d469`, `3251ddd16` (cas d renforcé), `d2a8a6370` (E2E) et `d5d3f8b17` (e-sexies renforcé, test seul). Gates du passage en revue verts (cf. Dev Agent Record) ; `gate-ci` de clôture et E2E complet restent à la clôture (E2E complet non lancé).
+
+## Dev Agent Record
+
+*Agent : Opus 5.5, 2026-11-17, worktree `/home/gcorbaz/devel/kesh-v0190c`, voie 1 (prompt d'appel ; la fiche disait voie 2), clé `v0190c`. Journaux sous `/home/gcorbaz/devel/kesh-gate-logs/v0190c/`.*
+
+### Commits (de `39441131d`, fiche validée, à la tête)
+
+- `7d4621c98` — étape 0 : P8-1 à P8-4 dans la fiche, registre C-v0190c-20 et 21.
+- `a2177d469` — `ContactPicker.svelte` (D1 à D3), `ContactPicker.test.ts` (neuf), tests de `InvoiceForm` et de la page des factures, E2E, manuel (`.tex`).
+- `3251ddd16` — `ContactPicker.test.ts`, cas d : deux *Entrée* pendant l'anti-rebond (après la campagne de mutations, cf. M4-M11).
+- `d2a8a6370` — E2E : l'assertion de la liste déplacée après *Entrée* (dernier commit touchant le composant ou l'E2E).
+- `d5d3f8b17` — `ContactPicker.test.ts`, e-sexies : la flèche doit relancer (un appel de plus) ; **dernier commit de code** (test seul). Sans ce compte, e-sexies passait sur le code d'origine (le dernier appel était celui de la frappe) : constaté rouge sur l'origine après renfort (`unit-esexies-origine.log`), vert sur le correctif (`unit-esexies-vert.log`) ; M15 le tue toujours.
+
+### Rouges d'abord
+
+- Vitest, tests écrits avant le correctif, sur le composant d'origine : **31 échecs** sur 96 (`rouges-unit-avant.log`) — 29 des 31 cas de `ContactPicker.test.ts` (verts sur l'origine : f, choix à la souris, non-régression attendue ; e-sexies, qui passait à vide, renforcé depuis, ci-dessus), AC2 (`expected 'zzz' to be 'Client'`) et AC3 (`expected 'Client Démo SA' to be ''`). Chaque échec est une assertion, aucun n'est une erreur de montage.
+- E2E (AC4), frontend construit avec le composant d'origine (`git restore --source=39441131d`, puis restauré) : **rouge** (`e2e-rouge-origine-3.log`, test final) à `invoices.spec.ts:549` (`listbox` absente) ; la page est la **vue détail de la facture** créée par l'*Entrée* (instantané Playwright : `heading "Facture" [level=1]`) — le défaut #1162. Premier essai (`e2e-rouge-origine.log`) : le test rougissait **avant** l'*Entrée*, à l'attente de « Aucun contact » (l'ancien code a fermé la liste) — il ne prouvait pas le défaut ; l'attente est devenue `champ` à la valeur tapée et zéro option, et « Aucun contact » s'asserte après *Entrée* (écart à la lettre d'AC4, même but : la réponse rendue avant *Entrée*). Vert sur le correctif : `e2e-vert.log`, 1 passed.
+
+### Mutations (`mut/`, banc `campagne.sh`, `campagne2.sh`, `muter.py` ; restauration `git restore --worktree` + `touch`, fichier propre constaté en fin de campagne)
+
+18 + 5 mutations de `ContactPicker.svelte`, Vitest des trois fichiers (`resume.log`, `resume2.log`) :
+- **Tuées** : M1 (`open` non testé à l'arrivée → e-bis cas voisin, **e-bis-bis**), M2 (frappe sans `searchSeq++` → d-bis), M3 (`blur` sans `draft = null` → a, b, d-ter, d-quinquies i, AC2), M5 (désignation sans brouillon → e, e-quinquies, e-quater-bis…), M6 (flèche depuis `-1` vers `1` → d-ter, e, e-bis…), M7 (`group-hover:` sur la sous-ligne désignée → f-ter), M8 (changement de client sans purge → g-bis), **M9 (*Échap* de la clause P7-1 : `searchSeq++`, `pending = false` → e-bis cas voisin, e-bis-bis : « Chargement… » à vie, P8-1 constaté)**, M10 (liste sans `preventDefault` → f-quater), M13 (brouillon blanc non jeté → e-ter, e-quater-bis ii), M14 (direction ignorée → e-quater), M15 (relance à `''` → e-sexies), M16 (`repeat` → h), M17 (IME → h), M18 (`pending` non levé à la réponse → 15 cas).
+- **Survivantes, équivalentes une à une** : M4 (règle 1 sans `!searching`), M11 (règle 2 sans `!searching`), M12 (flèche pendant la recherche sans garde) — l'invariant « recherche en cours ⇒ `highlighted = -1` » (posé par la frappe, la flèche, le focus) et l'écrasement de `highlighted` à l'arrivée de la réponse les rendent sans effet observable seules ; défense en profondeur. **La paire M4+M11 est tuée** (cas d renforcé : deux *Entrée* pendant l'anti-rebond — sans les deux gardes, la première désigne l'ancienne liste et la seconde la choisit). M13 de la première campagne : motif absent (quotage du banc), rejouée en seconde campagne.
+
+### Gates (passage en `review`)
+
+- Frontend, au commit `d2a8a6370` : `npm run check` 0 erreur, 29 avertissements, aucun dans les fichiers touchés (`front-check.log`) ; `lint-i18n-ownership` PASS (`front-lint-i18n-ownership.log`) ; `npm run build` vert (`build-front-corrige-2.log`, composant identique à `d2a8a6370`). `test:unit` **247 fichiers, 3981 tests** verts au commit `d2a8a6370` (`front-test:unit.log`) **et** au commit `d5d3f8b17` (`front-test-unit-2.log`).
+- Backend, au commit `d2a8a6370` (aucun fichier Rust touché, mais le manuel est lu par des gardes ; `d5d3f8b17` ne touche qu'un test Vitest) : base `kesh_v0190c` remise à neuf ; `scripts/test-fast.sh --ci` **5512 exécutés, 5512 passés, 13 ignorés** (`test-fast-review.log`) ; `scripts/gate-ci.sh kesh_ci_v0190c` **5519 passés, 0 échoué, 17 ignorés** (`gate-ci-review.log`).
+- **Non lancés** : E2E complet (à la clôture) ; seul le test AC4 a tourné (rouge et vert ci-dessus).
+
+### Décomptes (de `39441131d` à `d5d3f8b17`)
+
+`ContactPicker.test.ts` neuf : 31 `it(` ; `InvoiceForm.test.ts` : 56 → 57 `it(` ; `invoices-list-page.test.ts` : 4 → 5 `it(` ; E2E : +1 test. Huit fichiers touchés (`git diff --stat`).
+
+### Captures (thème clair, base E2E jetable, `captures/`, script `captures.mjs`)
+
+`1-texte-tape-non-choisi.png` (« zzz », « Aucun contact ») ; `2-champ-quitte-client-reaffiche.png` (le champ remontre « Dupont Démo SA ») ; `3-liste-designation-par-fleche.png` (Martin, à numéro IDE, désigné : fond `primary`, sous-ligne blanche lisible).
+
+### Écarts
+
+- Voie 1 et non 2 (prompt d'appel).
+- AC1 g-bis : la relance se constate par une flèche, non par un focus (C-v0190c-21).
+- AC1 d-sexies : « Chargement… » constaté absent après l'arrivée de la recherche du focus (il s'affiche le temps de cette recherche, ce qui est juste).
+- AC4 : attente de la réponse rendue par la valeur du champ et l'absence d'option, « Aucun contact » asserté après *Entrée* (rouge ci-dessus).
+- Consigne Edit : code, tests, fiche, manuel par Edit/Write (Write pour les fichiers neufs) ; scripts Python seulement pour les mutations (`muter.py`) et une retouche du script de captures hors dépôt.
+- Fichiers hors dépôt dans le worktree : `frontend/node_modules` (lien dur, `cp -al`), `frontend/build`, `frontend/test-results`, `target/e2e-r1/` — non versionnés.
+
+### Ce que la revue doit savoir
+
+Les gardes `searching` des règles 1 et 2 d'*Entrée* sont redondantes l'une de l'autre (M4, M11) ; *Échap* n'abandonne plus la recherche (C-v0190c-20). PDF du manuel non régénéré (à la release, AC6).
 
 ## Note de version
 
