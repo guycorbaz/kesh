@@ -1107,3 +1107,9 @@ development_status:
   # (décision de Guy). Aucune clé `epic-37` à `epic-39` n'est créée ici tant que leurs kickoffs n'ont pas eu lieu :
   # les décomptes de clés `epic-<entier>` restent ceux des epics réels. Le prochain epic de l'orchestrateur porte le
   # numéro 40. Détail : `_bmad-output/planning-artifacts/epics-37-39-reserves.md`.
+  epic-43: in-progress  # 2026-11-17 kickoff — Une transaction, plusieurs factures (#823), release 0.19.0 (vendredi 2026-11-20, coupure jeudi 19 au soir), rang 1 (décision de Guy du 2026-11-17) ; planning-artifacts/epic-43-transaction-plusieurs-factures.md (C-43-1 à C-43-13) ; porte la migration 20261118000001_grouped_settlements (non breaking) ; au kickoff : 461 issues, 237 bugs, 14 P1 (recomptés par l'agent ; 458/236/14 au prompt d'appel)
+  43-1-reglement-groupe-modele: ready-for-dev  # #823 (refs) ; modèle, migration, dépôt (client et fournisseur), lettrage par ligne, dé-rapprochement groupé, raccord Epic 42 (AC-R) ; kesh-db : gate complet en boucle ; T3 (signatures) débloque 43-2 ; validation à lancer
+  43-2-reglement-groupe-api: ready-for-dev  # #823 (refs) ; API : invoice_group, supplier_invoice_group, group-candidates, vue grouped_settlement ; part de 43-1 au commit T3 ; validation à lancer
+  43-3-reglement-groupe-ecran: ready-for-dev  # #823 (refs) ; écran « Régler plusieurs factures… », annulation, i18n, manuel utilisateur, E2E ; parallèle dès maintenant (Vitest sur le contrat de 43-2), E2E sur la branche réunie ; validation à lancer
+  43-4-solde-dette-epic: backlog  # story de solde, plafond 2 issues ; fin d'epic, avant le tag
+  epic-43-retrospective: optional
