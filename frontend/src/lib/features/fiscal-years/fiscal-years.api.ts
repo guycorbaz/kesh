@@ -8,6 +8,9 @@ import type {
 	CreateFiscalYearRequest,
 	FiscalYearResponse,
 	ReopenFiscalYearRequest,
+	RevaluationPostResponse,
+	RevaluationPreview,
+	RevaluationRequest,
 	UpdateFiscalYearRequest
 } from './fiscal-years.types';
 
@@ -46,9 +49,29 @@ export async function reopenFiscalYear(
 
 /**
  * Story 29-1a (#232) — les contrôles préalables à la clôture de l'exercice
- * (lecture seule, tout rôle). Ils ne bloquent rien : la clôture reste
- * l'autorité.
+ * (lecture seule, tout rôle). Le panneau ne bloque rien par lui-même : deux
+ * contrôles, K1 et K9 (Story 37-5), sont bloquants parce que la clôture
+ * refuse réellement dans ces cas — elle reste l'autorité.
  */
 export async function getClosingChecks(id: number): Promise<ClosingChecksResponse> {
 	return apiClient.get<ClosingChecksResponse>(`/api/v1/fiscal-years/${id}/closing-checks`);
+}
+
+/**
+ * Story 37-5 — aperçu de la réévaluation des comptes en devise (Comptable et
+ * Administrateur ; n'écrit rien).
+ */
+export async function previewRevaluation(
+	id: number,
+	req: RevaluationRequest
+): Promise<RevaluationPreview> {
+	return apiClient.post<RevaluationPreview>(`/api/v1/fiscal-years/${id}/fx-revaluation/preview`, req);
+}
+
+/** Story 37-5 — passe la réévaluation : une écriture par compte réévalué. */
+export async function postRevaluation(
+	id: number,
+	req: RevaluationRequest
+): Promise<RevaluationPostResponse> {
+	return apiClient.post<RevaluationPostResponse>(`/api/v1/fiscal-years/${id}/fx-revaluation`, req);
 }

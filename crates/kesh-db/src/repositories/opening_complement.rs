@@ -44,7 +44,7 @@ use rust_decimal::Decimal;
 use sqlx::{MySql, MySqlPool, QueryBuilder, Transaction};
 
 use kesh_core::accounting::{
-    self, Journal as CoreJournal, JournalEntryDraft, JournalEntryLineDraft,
+    self, ForeignAmount, Journal as CoreJournal, JournalEntryDraft, JournalEntryLineDraft,
 };
 use kesh_core::types::Money;
 
@@ -145,11 +145,20 @@ pub enum ComplementScope {
 
 /// Une ligne saisie : montants déjà validés par le handler (strictement
 /// positifs, une seule colonne non nulle, au plus quatre décimales).
+///
+/// ⚠️ Sans `Default` (Story 37-3b, AC-1) : chaque site de construction dit
+/// s'il porte une partie en devise.
 #[derive(Debug, Clone)]
 pub struct ComplementLine {
     pub account_id: i64,
+    /// Débit en devise principale (CHF) ; pour une ligne en devise, le CHF
+    /// complété et contrôlé par la route (`check_foreign_line`).
     pub debit: Decimal,
     pub credit: Decimal,
+    /// Partie en devise (Story 37-3b, AC-1) ; `None` pour une ligne CHF — et
+    /// toujours pour le solde d'ouverture d'un compte bancaire (34-2) : un
+    /// compte lié ne porte jamais de devise (37-1).
+    pub foreign: Option<ForeignAmount>,
 }
 
 /// Branche de la date retenue (arbitrage 2).
@@ -205,6 +214,9 @@ pub struct CompletableAccount {
     pub number: String,
     pub name: String,
     pub account_type: String,
+    /// Devise du compte (Story 37-1), `None` pour un compte CHF — lue par la
+    /// grille du complément pour saisir le solde en devise (Story 37-3b, AC-1).
+    pub currency: Option<String>,
 }
 
 /// État du mode « compléter », pour le status (lecture **sans verrou** : le
@@ -316,7 +328,8 @@ const CANDIDATE_FY_SQL: &str = "SELECT id, name, start_date, end_date, status FR
 const RETAINED_SQL: &str = "SELECT id, number, name, postable FROM accounts \
      WHERE company_id = ? AND singleton_role = ?";
 
-const COMPLETABLE_SQL: &str = "SELECT a.id, a.number, a.name, a.account_type FROM accounts a \
+const COMPLETABLE_SQL: &str = "SELECT a.id, a.number, a.name, a.account_type, a.currency \
+     FROM accounts a \
      WHERE a.company_id = ? AND a.active = TRUE AND a.postable = TRUE \
        AND a.account_type IN ('Asset', 'Liability') \
        AND (a.role IS NULL OR a.role <> ?) \
@@ -671,6 +684,10 @@ pub async fn create_opening_complement_in_tx(
             debit: Money::new(l.debit),
             credit: Money::new(l.credit),
             project_id: None,
+            // Story 37-3b (AC-1) : la partie en devise saisie, déjà complétée
+            // et contrôlée par la route (`check_foreign_line`) ; la devise et
+            // la provenance sont jugées par le contrôle central.
+            foreign: l.foreign.clone(),
         })
         .collect();
     if gap != Decimal::ZERO {
@@ -684,6 +701,8 @@ pub async fn create_opening_complement_in_tx(
             debit: Money::new(debit),
             credit: Money::new(credit),
             project_id: None,
+            // Contrepartie sur le report à nouveau : toujours en CHF.
+            foreign: None,
         });
     }
 
@@ -713,11 +732,13 @@ pub async fn create_opening_complement_in_tx(
                 debit: l.debit.amount(),
                 credit: l.credit.amount(),
                 project_id: None,
+                foreign: l.foreign,
             })
             .collect(),
     };
     // Story 35-8a2 (#431) : au nom de l'utilisateur (`AConvertir`, Epic 36).
-    journal_entries::create_in_tx(
+    // Story 37-3a (AC-4 rang 2 bis) : exempté de la règle d'une devise.
+    journal_entries::create_opening_in_tx(
         tx,
         date.fiscal_year_id,
         crate::entities::audit_log::Acteur::utilisateur(user_id),

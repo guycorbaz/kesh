@@ -300,6 +300,12 @@ mod tests {
             // Story 35-5a0 — un `mod tests` de `src` ne lit pas la variable
             // d'instant des tests : horloge arrêtée sur l'heure réelle.
             horloge: std::sync::Arc::new(kesh_core::horloge::HorlogeFixe(chrono::Utc::now())),
+            // Story 37-2 — littéral-exception (test_state) : source factice.
+            rate_source: std::sync::Arc::new(crate::exchange_rates::MockRateSource::new()),
+            rate_fetch_lock: std::sync::Arc::new(tokio::sync::Mutex::new(())),
+            rate_fetch_memo: std::sync::Arc::default(),
+            rate_login_trigger: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            test_rate_source: None,
         }
     }
 

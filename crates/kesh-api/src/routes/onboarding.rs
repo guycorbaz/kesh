@@ -36,7 +36,8 @@ use kesh_db::repositories::{audit_log, companies, onboarding};
 
 use crate::AppState;
 use crate::audit::AuditActor;
-use crate::errors::AppError;
+use crate::dates_recues::borner;
+use crate::errors::{AppError, t};
 use crate::middleware::auth::CurrentUser;
 
 /// P1-H1: Helper for graceful transaction rollback
@@ -862,11 +863,126 @@ pub async fn skip_bank(
     conclude_step(&state.pool, tx, result).await
 }
 
+/// Corps facultatif de `POST /api/v1/onboarding/finalize` (Story 37-1, AC-11) :
+/// les dates du premier exercice choisies dans l'assistant.
+///
+/// Corps absent ou champs absents : début au 1er janvier de l'année du jour du
+/// serveur, fin à la veille du même jour un an plus tard
+/// ([`kesh_core::accounting::exercice::fin_par_defaut`]) — sans début fourni,
+/// le 31 décembre, comme avant l'AC-11. Les dates d'un exercice ne se modifient
+/// plus une fois créé : c'est ici qu'elles se choisissent.
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FinalizeRequest {
+    /// Premier jour du premier exercice (`AAAA-MM-JJ`).
+    #[serde(default)]
+    pub fiscal_year_start_date: Option<chrono::NaiveDate>,
+    /// Dernier jour du premier exercice (`AAAA-MM-JJ`).
+    #[serde(default)]
+    pub fiscal_year_end_date: Option<chrono::NaiveDate>,
+}
+
+/// Les dates et le nom du premier exercice, calculés **une fois**, avant la
+/// transaction (Story 37-1, AC-11) : la fermeture rejouée de
+/// [`crate::retry::retry_app_on_deadlock`] les reçoit par référence.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PremierExercice {
+    nom: String,
+    debut: chrono::NaiveDate,
+    fin: chrono::NaiveDate,
+}
+
+/// Refus des dates du premier exercice, gardé tel quel jusqu'à la lecture de
+/// l'étape sous verrou (revue de code P2 de la 37-1, 37-1-CR-P1-3) : une
+/// finalisation déjà faite ignore le corps (AC-11), de sorte que le refus ne
+/// s'oppose qu'à une finalisation à faire. Clonable — la fermeture rejouée de
+/// [`crate::retry::retry_app_on_deadlock`] le relit à chaque tentative —, à la
+/// différence d'[`AppError`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum RefusPremierExercice {
+    /// 400 `VALIDATION_ERROR`, message déjà résolu.
+    Validation(String),
+    /// 500 — inatteignable avec des dates bornées, gardé pour ne rien masquer.
+    Interne(String),
+}
+
+impl From<AppError> for RefusPremierExercice {
+    fn from(e: AppError) -> Self {
+        match e {
+            AppError::Validation(m) => Self::Validation(m),
+            AppError::Internal(m) => Self::Interne(m),
+            autre => Self::Interne(autre.to_string()),
+        }
+    }
+}
+
+impl From<&RefusPremierExercice> for AppError {
+    fn from(r: &RefusPremierExercice) -> Self {
+        match r {
+            RefusPremierExercice::Validation(m) => AppError::Validation(m.clone()),
+            RefusPremierExercice::Interne(m) => AppError::Internal(m.clone()),
+        }
+    }
+}
+
+/// Résout les dates du premier exercice depuis le corps de `finalize` et le
+/// jour du serveur. Refus en 400 (`VALIDATION_ERROR`) : une date hors de la
+/// plage de la base (`borner`, y compris la fin calculée d'un début en 9999) ;
+/// une fin qui ne suit pas strictement le début (`error-fiscal-year-dates-invalid`,
+/// le message de la création d'un exercice). Aucune borne de durée : six ou
+/// dix-huit mois sont admis.
+fn premier_exercice(
+    req: &FinalizeRequest,
+    aujourd_hui: chrono::NaiveDate,
+) -> Result<PremierExercice, AppError> {
+    if let Some(d) = req.fiscal_year_start_date {
+        borner(d, "fiscalYearStartDate")?;
+    }
+    if let Some(f) = req.fiscal_year_end_date {
+        borner(f, "fiscalYearEndDate")?;
+    }
+    let debut = match req.fiscal_year_start_date {
+        Some(d) => d,
+        None => chrono::NaiveDate::from_ymd_opt(aujourd_hui.year(), 1, 1).ok_or_else(|| {
+            AppError::Internal("1er janvier de l'année du jour non représentable".into())
+        })?,
+    };
+    let fin = match req.fiscal_year_end_date {
+        Some(f) => f,
+        None => {
+            // Début borné à 1000..=9999 : l'année suivante est toujours représentable.
+            let f = kesh_core::accounting::exercice::fin_par_defaut(debut).ok_or_else(|| {
+                AppError::Internal("fin par défaut du premier exercice non représentable".into())
+            })?;
+            borner(f, "fiscalYearEndDate")?;
+            f
+        }
+    };
+    if fin <= debut {
+        return Err(AppError::Validation(t(
+            "error-fiscal-year-dates-invalid",
+            "Les dates de l'exercice sont invalides (la date de fin doit être strictement postérieure à la date de début)",
+        )));
+    }
+    Ok(PremierExercice {
+        nom: kesh_core::accounting::exercice::nom_par_defaut(debut, fin),
+        debut,
+        fin,
+    })
+}
+
 /// POST /api/v1/onboarding/finalize — step 7→complete (Path B only)
 /// Pose les comptes par défaut de facturation que le plan fournit, par **rôle** —
 /// en créant la ligne des réglages, ou en **complétant** celle qu'un écran a créée
 /// vide avant la fin de l'assistant, sans remplacer un compte déjà choisi (Story
 /// 36-19, #1200 : `company_invoice_settings::complete_default_accounts_in_tx`).
+///
+/// Story 37-1 (AC-11) : corps facultatif [`FinalizeRequest`] — les dates du
+/// premier exercice, résolues une fois avant la transaction ; leur refus (400
+/// sans rien créer, étape inchangée) n'est rendu qu'après la lecture de l'étape
+/// sous verrou : une finalisation déjà faite (`step_completed == 8`) ignore le
+/// corps, dates invalides comprises, et rend l'état, comme avant (revue de code
+/// P2, 37-1-CR-P1-3).
 ///
 /// F2 CRITICAL FIX: SELECT FOR UPDATE on onboarding_state serializes all finalize() calls.
 /// Prevents multiple concurrent requests from both passing the step check and duplicating work.
@@ -905,6 +1021,7 @@ pub async fn skip_bank(
 pub async fn finalize(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
+    body: Option<Json<FinalizeRequest>>,
 ) -> Result<Json<OnboardingResponse>, AppError> {
     // KF-002-H-002 (#43) : la closure ci-dessous est rappelée intégralement
     // si MariaDB rollback la tx pour deadlock (cycle de locks détecté avec
@@ -914,8 +1031,15 @@ pub async fn finalize(
     // non `FnOnce`, sans clone par tentative (revue P1 de la 15-5e2, B-5).
     // Story 35-5a0 — la date du jour, lue une fois sur l'horloge de l'état.
     let aujourd_hui = state.horloge.aujourd_hui();
+    // Story 37-1 (AC-11) — les dates du premier exercice, résolues et validées
+    // une fois, hors de la fermeture rejouée. Le refus éventuel est rendu par
+    // `finalize_inner` après la lecture de l'étape : une finalisation déjà faite
+    // ignore le corps (37-1-CR-P1-3) ; à faire, le refus ne touche ni la base ni
+    // l'étape.
+    let req = body.map(|Json(r)| r).unwrap_or_default();
+    let exercice = premier_exercice(&req, aujourd_hui).map_err(RefusPremierExercice::from);
     crate::retry::retry_app_on_deadlock("onboarding::finalize", || {
-        finalize_inner(&state.pool, &current_user, aujourd_hui)
+        finalize_inner(&state.pool, &current_user, &exercice)
     })
     .await
     .map(Json)
@@ -943,12 +1067,14 @@ pub async fn finalize(
 /// ou `company_invoice_settings.updated` (ligne complétée, Story 36-19), puis
 /// `vat_rate.created` (ordre du seed), `fiscal_year.created`, l'étape.
 ///
-/// `aujourd_hui` (Story 35-5a0) : la date du jour, lue par l'appelant sur
-/// l'horloge de l'état — elle donne l'année du premier exercice.
+/// `exercice` (Story 37-1, AC-11, après la 35-5a0) : le nom et les dates du
+/// premier exercice, résolus par l'appelant depuis le corps et la date du jour
+/// de l'horloge de l'état — identiques d'une tentative à l'autre —, ou leur
+/// refus, rendu seulement si la finalisation reste à faire (37-1-CR-P1-3).
 async fn finalize_inner(
     pool: &sqlx::MySqlPool,
     current_user: &CurrentUser,
-    aujourd_hui: chrono::NaiveDate,
+    exercice: &Result<PremierExercice, RefusPremierExercice>,
 ) -> Result<OnboardingResponse, AppError> {
     // F2/F3/F4 CRITICAL FIX: Pessimistic locking strategy.
     // 1. Lock onboarding_state (serializes all finalize() calls on same session)
@@ -994,6 +1120,17 @@ async fn finalize_inner(
         return response_with_stub(pool, onboarding).await;
     }
 
+    // Story 37-1 (AC-11, 37-1-CR-P1-3) — la finalisation reste à faire : les
+    // dates du corps s'appliquent, et leur refus se rend ici, avant toute
+    // écriture.
+    let exercice = match exercice {
+        Ok(e) => e,
+        Err(refus) => {
+            best_effort_rollback(tx).await;
+            return Err(AppError::from(refus));
+        }
+    };
+
     // F3 CRITICAL FIX: Lock company row before complete_default_accounts_in_tx()
     // Prevents concurrent deletion between our check and INSERT INTO company_invoice_settings.
     // R2-001 Fix: Add explicit rollback on error
@@ -1011,9 +1148,16 @@ async fn finalize_inner(
     // Story 36-19 (#1200, refs #987) — les réglages de facturation : créés, ou
     // **complétés** si un écran les a créés vides avant la fin de l'assistant
     // (`GET /api/v1/company/invoice-settings`), sans remplacer un compte déjà
-    // choisi. Lectures des comptes candidats `FOR UPDATE`, puis la ligne, dans
-    // cette transaction (ordre `accounts → company_invoice_settings →
-    // bank_accounts`). Un refus nomme chaque réglage obligatoire en défaut, sa
+    // choisi. Ordre des verrous dans cette transaction (revue P1 de
+    // l'intégration de la v0.18.0, L2) : `companies` en partage (Story 37-1 ;
+    // sans attente, la ligne est déjà tenue `FOR UPDATE` par `lock_company`) →
+    // `accounts` (candidats `FOR UPDATE`) → `company_invoice_settings`
+    // (`INSERT IGNORE`, puis la ligne `FOR UPDATE`) → `accounts` (désignés
+    // `LOCK IN SHARE MODE` ; candidats relus, déjà tenus, et leur devise ; pour le
+    // seul candidat au compte de produit par défaut, les entrées d'index
+    // `idx_accounts_fx_gain` / `idx_accounts_fx_loss` en partage,
+    // `accounts::fx_designations_of_in_tx`) → `bank_accounts`
+    // (`LOCK IN SHARE MODE`). Un refus nomme chaque réglage obligatoire en défaut, sa
     // cause et son remède (`400 VALIDATION_ERROR`, code que la Story 36-17
     // reconnaît).
     let settings_outcome =
@@ -1056,21 +1200,18 @@ async fn finalize_inner(
         return Err(e);
     }
 
-    // Story 3.7 AC #13 — auto-create fiscal_year for current calendar year if
-    // none exists (Path B). L'INSERT atomique anti-TOCTOU
+    // Story 3.7 AC #13 — auto-create the first fiscal_year if none exists
+    // (Path B), aux dates choisies dans l'assistant (Story 37-1, AC-11 ; par
+    // défaut l'année civile du jour). L'INSERT atomique anti-TOCTOU
     // (`create_if_absent_in_tx`) garantit l'idempotence sous finalize concurrent.
     // Audit log inséré uniquement si la création a effectivement eu lieu — par
     // le dépôt lui-même : `finalize` n'écrit PAS sa propre entrée d'exercice
     // (Story 15-7a2, AC 7 ; son attribution par `::user` est la dette #431).
-    let year = aujourd_hui.year();
-    let fy_name = format!("Exercice {year}");
-    let fy_start = chrono::NaiveDate::from_ymd_opt(year, 1, 1).expect("valid date");
-    let fy_end = chrono::NaiveDate::from_ymd_opt(year, 12, 31).expect("valid date");
     let new_fy = NewFiscalYear {
         company_id: company.id,
-        name: fy_name,
-        start_date: fy_start,
-        end_date: fy_end,
+        name: exercice.nom.clone(),
+        start_date: exercice.debut,
+        end_date: exercice.fin,
     };
     if let Err(e) = kesh_db::repositories::fiscal_years::create_if_absent_in_tx(
         &mut tx,
@@ -1204,6 +1345,48 @@ fn finalize_refusal_phrase(item: &UnavailableDefaultInvoiceAccount) -> String {
              Administration → Facturation.",
             setting.to_lowercase()
         ),
+        // Story 37-1 (AC-4), intégration de la v0.18.0 dans l'Epic 37 : la
+        // finalisation ne désigne pas un compte en devise, ni, au compte de produit
+        // par défaut, un compte de gains ou de pertes de change — la règle du `PUT`
+        // des réglages (`accounts::designation_refusal_in_tx`, revue P1 de
+        // l'intégration, M1).
+        DefaultInvoiceAccountCause::RoleAccountInForeignCurrency {
+            account_number,
+            currency,
+        } => format!(
+            "{setting} : le compte {account_number}, qui porte le rôle « {role} », est tenu en \
+             {currency} — désignez un compte en francs suisses dans Administration → Facturation."
+        ),
+        // Revue P1 de l'intégration, L1 : une désignation propre nomme le compte en
+        // devise qui la porte — l'utilisateur ne la trouverait pas dans le réglage
+        // multi-devises de la société.
+        DefaultInvoiceAccountCause::RoleAccountIsFxAccount {
+            account_number,
+            designation,
+            holder_number,
+        } => {
+            let kind = match designation {
+                kesh_db::errors::FxDesignation::Gain => "gains de change",
+                kesh_db::errors::FxDesignation::Loss => "pertes de change",
+                // Non atteint (M1) : le compte de conversion n'est pas écarté.
+                kesh_db::errors::FxDesignation::Transit => "conversion",
+            };
+            let what = match holder_number {
+                Some(holder) => format!(
+                    "le compte de {kind} propre au compte en devise {holder} (plan comptable)"
+                ),
+                None => format!(
+                    "le compte de {kind} de la société (Administration → Paramètres, section \
+                     Comptabilité)"
+                ),
+            };
+            format!(
+                "{setting} : le compte {account_number}, qui porte le rôle « {role} », est {what} \
+                 — un gain ou une perte de change ne va pas au chiffre d'affaires ; désignez un \
+                 autre {} dans Administration → Facturation.",
+                setting.to_lowercase()
+            )
+        }
     }
 }
 
@@ -1380,7 +1563,9 @@ macro_rules! company_select {
         concat!(
             "SELECT id, name, first_name, last_name, address, address_street, address_building, \
              address_postal_code, address_city, address_country, ide_number, org_type, accounting_language, \
-             instance_language, email, phone, website, is_stub, books_locked_through, version, created_at, updated_at \
+             instance_language, email, phone, website, is_stub, books_locked_through, \
+             multi_currency_enabled, fx_gain_account_id, fx_loss_account_id, fx_transit_account_id, \
+             version, created_at, updated_at \
              FROM companies ",
             $tail
         )
@@ -1603,7 +1788,93 @@ async fn update_company_coordinates_in_tx(
 
 #[cfg(test)]
 mod tests {
-    use super::BankAccountRequest;
+    use super::{BankAccountRequest, FinalizeRequest, PremierExercice, premier_exercice};
+    use crate::errors::AppError;
+    use chrono::NaiveDate;
+
+    fn jour(a: i32, m: u32, j: u32) -> NaiveDate {
+        NaiveDate::from_ymd_opt(a, m, j).unwrap()
+    }
+
+    fn corps(debut: Option<NaiveDate>, fin: Option<NaiveDate>) -> FinalizeRequest {
+        FinalizeRequest {
+            fiscal_year_start_date: debut,
+            fiscal_year_end_date: fin,
+        }
+    }
+
+    /// Story 37-1 (AC-11) — sans corps : l'année civile du jour, comme avant.
+    #[test]
+    fn premier_exercice_sans_dates_est_l_annee_civile_du_jour() {
+        assert_eq!(
+            premier_exercice(&FinalizeRequest::default(), jour(2026, 11, 16)).unwrap(),
+            PremierExercice {
+                nom: "Exercice 2026".into(),
+                debut: jour(2026, 1, 1),
+                fin: jour(2026, 12, 31),
+            }
+        );
+    }
+
+    /// Story 37-1 (AC-11) — un début seul : fin à la veille du même jour un an
+    /// plus tard, nom à deux années ; cas limites du 29 février.
+    #[test]
+    fn premier_exercice_debut_seul_calcule_la_fin() {
+        let cas = [
+            (jour(2026, 4, 1), jour(2027, 3, 31), "Exercice 2026/2027"),
+            (jour(2028, 2, 29), jour(2029, 2, 28), "Exercice 2028/2029"),
+            (jour(2027, 3, 1), jour(2028, 2, 29), "Exercice 2027/2028"),
+            (jour(2027, 1, 1), jour(2027, 12, 31), "Exercice 2027"),
+        ];
+        for (debut, fin, nom) in cas {
+            let e = premier_exercice(&corps(Some(debut), None), jour(2026, 11, 16)).unwrap();
+            assert_eq!(
+                (e.debut, e.fin, e.nom.as_str()),
+                (debut, fin, nom),
+                "{debut}"
+            );
+        }
+    }
+
+    /// Story 37-1 (AC-11) — fin fournie : aucune borne de durée ; une fin
+    /// seule garde le 1er janvier de l'année du jour.
+    #[test]
+    fn premier_exercice_fin_fournie_sans_borne_de_duree() {
+        let e = premier_exercice(
+            &corps(Some(jour(2026, 7, 1)), Some(jour(2027, 12, 31))),
+            jour(2026, 11, 16),
+        )
+        .unwrap();
+        assert_eq!((e.debut, e.fin), (jour(2026, 7, 1), jour(2027, 12, 31)));
+        let e =
+            premier_exercice(&corps(None, Some(jour(2026, 6, 30))), jour(2026, 11, 16)).unwrap();
+        assert_eq!(
+            (e.debut, e.fin, e.nom.as_str()),
+            (jour(2026, 1, 1), jour(2026, 6, 30), "Exercice 2026")
+        );
+    }
+
+    /// Story 37-1 (AC-11) — refus : fin ≤ début, dates hors de la plage de la
+    /// base, fin calculée hors plage (début en 9999).
+    #[test]
+    fn premier_exercice_refuse_les_dates_invalides() {
+        let aujourd_hui = jour(2026, 11, 16);
+        for c in [
+            corps(Some(jour(2026, 4, 1)), Some(jour(2026, 4, 1))),
+            corps(Some(jour(2026, 4, 1)), Some(jour(2026, 3, 31))),
+            corps(Some(jour(999, 1, 1)), None),
+            corps(Some(jour(2026, 1, 1)), Some(jour(10000, 1, 1))),
+            corps(Some(jour(9999, 2, 1)), None),
+        ] {
+            assert!(
+                matches!(
+                    premier_exercice(&c, aujourd_hui),
+                    Err(AppError::Validation(_))
+                ),
+                "{c:?}"
+            );
+        }
+    }
 
     /// Story 36-19 (revue P1, B5/E6 ; mutation M16) — le motif du refus de la
     /// finalisation, **mot pour mot**, pour chacune des cinq causes et pour un
@@ -1679,6 +1950,57 @@ mod tests {
                 "Compte débiteurs : le compte 1100, qui porte le rôle « Créances clients », est le compte du compte bancaire « UBS — Courant » — déliez ce compte bancaire dans Administration → Comptes bancaires (s'il est clos, rouvrez-le d'abord), ou désignez un autre compte débiteurs dans Administration → Facturation."
             )
         );
+        // Intégration de la v0.18.0 dans l'Epic 37 (Story 37-1, AC-4) : compte de
+        // rôle en devise ; compte de gains ou de pertes de change, de la société ou
+        // propre (revue P1 de l'intégration, M1 et L1).
+        assert_eq!(
+            message(vec![(
+                Receivable,
+                Cause::RoleAccountInForeignCurrency {
+                    account_number: "1100".into(),
+                    currency: "EUR".into(),
+                }
+            )]),
+            entoure(
+                "Compte débiteurs : le compte 1100, qui porte le rôle « Créances clients », est tenu en EUR — désignez un compte en francs suisses dans Administration → Facturation."
+            )
+        );
+        for (designation, holder, what) in [
+            (
+                kesh_db::errors::FxDesignation::Gain,
+                None,
+                "le compte de gains de change de la société (Administration → Paramètres, section Comptabilité)",
+            ),
+            (
+                kesh_db::errors::FxDesignation::Loss,
+                None,
+                "le compte de pertes de change de la société (Administration → Paramètres, section Comptabilité)",
+            ),
+            (
+                kesh_db::errors::FxDesignation::Gain,
+                Some("1020"),
+                "le compte de gains de change propre au compte en devise 1020 (plan comptable)",
+            ),
+            (
+                kesh_db::errors::FxDesignation::Loss,
+                Some("1021"),
+                "le compte de pertes de change propre au compte en devise 1021 (plan comptable)",
+            ),
+        ] {
+            assert_eq!(
+                message(vec![(
+                    Revenue,
+                    Cause::RoleAccountIsFxAccount {
+                        account_number: "3000".into(),
+                        designation,
+                        holder_number: holder.map(String::from),
+                    }
+                )]),
+                entoure(&format!(
+                    "Compte de produit par défaut : le compte 3000, qui porte le rôle « Produit par défaut », est {what} — un gain ou une perte de change ne va pas au chiffre d'affaires ; désignez un autre compte de produit par défaut dans Administration → Facturation."
+                ))
+            );
+        }
         // Deux causes différentes, débiteurs d'abord, une espace entre elles.
         assert_eq!(
             message(vec![

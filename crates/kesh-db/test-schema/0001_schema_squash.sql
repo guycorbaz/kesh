@@ -1,6 +1,6 @@
 -- SQUASH DU SCHÉMA DE TEST — Story 22-5 (#251). GÉNÉRÉ, NE PAS ÉDITER.
 -- Régénérer : scripts/regen-test-schema.sh
--- Équivalent des 92 migrations de crates/kesh-db/migrations/,
+-- Équivalent des 95 migrations de crates/kesh-db/migrations/,
 -- rejouées en UN batch DDL par base éphémère de test.
 --
 -- Le garde-fou crates/kesh-db/tests/test_schema_guard.rs compare ce schéma
@@ -39,6 +39,49 @@ CREATE TABLE `_kesh_backup_schedule` (
   CONSTRAINT `chk_kesh_backup_schedule_interval` CHECK (`interval_hours` in (6,12,24,168)),
   CONSTRAINT `chk_kesh_backup_schedule_retention` CHECK (`retention_count` between 1 and 60),
   CONSTRAINT `chk_kesh_backup_schedule_status` CHECK (`last_status` in ('ok','partial','failed','insufficient_space','disk_full'))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `_kesh_exchange_rate_fetch`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `_kesh_exchange_rate_fetch` (
+  `id` tinyint(3) unsigned NOT NULL DEFAULT 1,
+  `triggered_by` enum('auto','manual') NOT NULL COMMENT 'auto = tâche ou connexion, manual = POST /exchange-rates/fetch',
+  `last_run_at` datetime(3) NOT NULL COMMENT 'Fin de la dernière récupération (UTC)',
+  `last_status` varchar(16) CHARACTER SET ascii COLLATE ascii_general_ci NOT NULL COMMENT 'ok, error ou not_published (le pire d''un tour)',
+  `last_error` varchar(64) CHARACTER SET ascii COLLATE ascii_general_ci DEFAULT NULL COMMENT 'Code classé (timeout, connect, http_status:<n>, malformed…), jamais un texte libre',
+  `last_kind` varchar(5) CHARACTER SET ascii COLLATE ascii_general_ci NOT NULL COMMENT 'Genre de l''unité en cause',
+  `last_rate_date` date NOT NULL COMMENT 'Date de l''unité en cause (1er du mois ou jour demandé)',
+  PRIMARY KEY (`id`),
+  CONSTRAINT `chk_kesh_exchange_rate_fetch_single_row` CHECK (`id` = 1),
+  CONSTRAINT `chk_kesh_exchange_rate_fetch_status` CHECK (cast(`last_status` as char charset binary) in ('ok','error','not_published')),
+  CONSTRAINT `chk_kesh_exchange_rate_fetch_kind` CHECK (cast(`last_kind` as char charset binary) in ('month','day'))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `_kesh_fetched_exchange_rates`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `_kesh_fetched_exchange_rates` (
+  `source` varchar(12) CHARACTER SET ascii COLLATE ascii_general_ci NOT NULL COMMENT 'Source des cours (afc aujourd''hui ; format seul au schéma)',
+  `currency` char(3) CHARACTER SET ascii COLLATE ascii_general_ci NOT NULL COMMENT 'Code ISO 4217, majuscules',
+  `kind` varchar(5) CHARACTER SET ascii COLLATE ascii_general_ci NOT NULL COMMENT 'month = cours mensuel, day = cours journalier',
+  `rate_date` date NOT NULL COMMENT '1er du mois (month) ou date demandée (day)',
+  `rate_per_unit` decimal(20,10) NOT NULL COMMENT 'published_rate / published_unit, arrondi à 10 décimales',
+  `published_unit` int(11) NOT NULL COMMENT 'Unité publiée (1, 100, 1000, 10000…)',
+  `published_rate` decimal(19,6) NOT NULL COMMENT 'Cours publié pour l''unité',
+  `source_date` date DEFAULT NULL COMMENT 'Date de publication lue (day), NULL pour month',
+  `first_fetched_at` datetime(3) NOT NULL COMMENT 'Première obtention (UTC), jamais mise à jour',
+  `fetched_at` datetime(3) NOT NULL COMMENT 'Dernière récupération qui a confirmé la ligne (UTC)',
+  `value_changed_at` datetime(3) NOT NULL COMMENT 'Récupération qui a apporté la valeur actuelle (UTC)',
+  PRIMARY KEY (`source`,`currency`,`kind`,`rate_date`),
+  KEY `idx_kesh_fetched_exchange_rates_unit` (`source`,`kind`,`rate_date`),
+  CONSTRAINT `chk_kesh_fetched_exchange_rates_source` CHECK (cast(`source` as char charset binary) regexp '^[a-z]{2,12}$'),
+  CONSTRAINT `chk_kesh_fetched_exchange_rates_kind` CHECK (cast(`kind` as char charset binary) in ('month','day')),
+  CONSTRAINT `chk_kesh_fetched_exchange_rates_month_day` CHECK (cast(`kind` as char charset binary) <> 'month' or dayofmonth(`rate_date`) = 1),
+  CONSTRAINT `chk_kesh_fetched_exchange_rates_source_date` CHECK (cast(`kind` as char charset binary) = 'day' = (`source_date` is not null)),
+  CONSTRAINT `chk_kesh_fetched_exchange_rates_rate` CHECK (`rate_per_unit` > 0),
+  CONSTRAINT `chk_kesh_fetched_exchange_rates_unit` CHECK (`published_unit` > 0),
+  CONSTRAINT `chk_kesh_fetched_exchange_rates_currency` CHECK (cast(`currency` as char charset binary) regexp '^[A-Z]{3}$')
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `_kesh_installation_settings`;
@@ -84,16 +127,25 @@ CREATE TABLE `accounts` (
   `role` varchar(32) DEFAULT NULL COMMENT 'Rôle métier explicite (Story 14-3a) — NULL = aucun',
   `postable` tinyint(1) NOT NULL DEFAULT 1 COMMENT 'FALSE = compte titre/regroupement ou compte de résultat calculé',
   `singleton_role` varchar(32) GENERATED ALWAYS AS (case when `active` <> 0 and `role` in ('Receivable','DefaultRevenue','Payable','VatRecoverable','VatPayable','VatSettlement','RetainedEarnings','CurrentYearResult') then `role` else NULL end) VIRTUAL,
+  `currency` char(3) CHARACTER SET ascii COLLATE ascii_general_ci DEFAULT NULL COMMENT 'Code ISO 4217 de la devise du compte, NULL = devise principale (CHF)',
+  `fx_gain_account_id` bigint(20) DEFAULT NULL COMMENT 'Compte de gains de change propre (accounts.id, sans FK), NULL = réglage de la société',
+  `fx_loss_account_id` bigint(20) DEFAULT NULL COMMENT 'Compte de pertes de change propre (accounts.id, sans FK), NULL = réglage de la société',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_accounts_company_number` (`company_id`,`number`),
   UNIQUE KEY `uq_accounts_company_singleton_role` (`company_id`,`singleton_role`),
   KEY `fk_accounts_parent` (`parent_id`),
+  KEY `idx_accounts_fx_gain` (`company_id`,`fx_gain_account_id`),
+  KEY `idx_accounts_fx_loss` (`company_id`,`fx_loss_account_id`),
   CONSTRAINT `fk_accounts_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`),
   CONSTRAINT `fk_accounts_parent` FOREIGN KEY (`parent_id`) REFERENCES `accounts` (`id`),
   CONSTRAINT `chk_accounts_type` CHECK (cast(`account_type` as char charset binary) in (cast('Asset' as char charset binary),cast('Liability' as char charset binary),cast('Revenue' as char charset binary),cast('Expense' as char charset binary))),
   CONSTRAINT `chk_accounts_number_nonempty` CHECK (char_length(trim(`number`)) > 0),
   CONSTRAINT `chk_accounts_name_nonempty` CHECK (char_length(trim(`name`)) > 0),
-  CONSTRAINT `chk_accounts_role` CHECK (`role` is null or cast(`role` as char charset binary) in (cast('Receivable' as char charset binary),cast('DefaultRevenue' as char charset binary),cast('Payable' as char charset binary),cast('VatRecoverable' as char charset binary),cast('VatPayable' as char charset binary),cast('VatSettlement' as char charset binary),cast('EquityCapital' as char charset binary),cast('EquityOther' as char charset binary),cast('RetainedEarnings' as char charset binary),cast('CurrentYearResult' as char charset binary)))
+  CONSTRAINT `chk_accounts_role` CHECK (`role` is null or cast(`role` as char charset binary) in (cast('Receivable' as char charset binary),cast('DefaultRevenue' as char charset binary),cast('Payable' as char charset binary),cast('VatRecoverable' as char charset binary),cast('VatPayable' as char charset binary),cast('VatSettlement' as char charset binary),cast('EquityCapital' as char charset binary),cast('EquityOther' as char charset binary),cast('RetainedEarnings' as char charset binary),cast('CurrentYearResult' as char charset binary))),
+  CONSTRAINT `chk_accounts_currency_format` CHECK (`currency` is null or cast(`currency` as char charset binary) regexp '^[A-Z]{3}$'),
+  CONSTRAINT `chk_accounts_currency_not_base` CHECK (`currency` is null or cast(`currency` as char charset binary) <> cast('CHF' as char charset binary)),
+  CONSTRAINT `chk_accounts_fx_own_pair` CHECK (`fx_gain_account_id` is null = (`fx_loss_account_id` is null)),
+  CONSTRAINT `chk_accounts_fx_own_foreign` CHECK (`fx_gain_account_id` is null or `currency` is not null)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `api_keys`;
@@ -307,6 +359,10 @@ CREATE TABLE `companies` (
   `phone` varchar(50) DEFAULT NULL,
   `website` varchar(255) DEFAULT NULL,
   `books_locked_through` date DEFAULT NULL COMMENT 'Story 24-4c (#380) : borne INCLUSIVE du verrou de période. NULL = aucun verrou. Aucune écriture ne peut être créée avec une entry_date <= cette date.',
+  `multi_currency_enabled` tinyint(1) NOT NULL DEFAULT 0 COMMENT 'Mode multi-devises de la société, irréversible une fois activé',
+  `fx_gain_account_id` bigint(20) DEFAULT NULL COMMENT 'Compte des gains de change (accounts.id, sans FK : intégrité par le dépôt)',
+  `fx_loss_account_id` bigint(20) DEFAULT NULL COMMENT 'Compte des pertes de change (accounts.id, sans FK : intégrité par le dépôt)',
+  `fx_transit_account_id` bigint(20) DEFAULT NULL COMMENT 'Compte de conversion entre devises, de bilan, en CHF (accounts.id, sans FK)',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_companies_ide_number` (`ide_number`),
   CONSTRAINT `chk_companies_org_type` CHECK (cast(`org_type` as char charset binary) in (cast('Independant' as char charset binary),cast('Association' as char charset binary),cast('Pme' as char charset binary))),
@@ -584,6 +640,38 @@ CREATE TABLE `email_templates` (
   CONSTRAINT `chk_email_templates_template_type` CHECK (`template_type` in ('invoice_send','invoice_reminder'))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `exchange_rates`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `exchange_rates` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `company_id` bigint(20) NOT NULL,
+  `currency` char(3) CHARACTER SET ascii COLLATE ascii_general_ci NOT NULL COMMENT 'Code ISO 4217, majuscules, jamais CHF',
+  `kind` varchar(5) CHARACTER SET ascii COLLATE ascii_general_ci NOT NULL COMMENT 'month = cours mensuel, day = cours journalier',
+  `rate_date` date NOT NULL COMMENT '1er du mois (month) ou jour (day)',
+  `rate` decimal(20,10) NOT NULL COMMENT 'Cours retenu par la société, par unité de devise',
+  `source` varchar(12) CHARACTER SET ascii COLLATE ascii_general_ci NOT NULL COMMENT 'afc (copie ou reprise d''une valeur publiée) ou manual (cours saisi) ; format seul au schéma',
+  `acknowledged_rate` decimal(20,10) DEFAULT NULL COMMENT 'Valeur publiée (par unité) dont la correction a été acquittée par la société',
+  `acknowledged_at` datetime(3) DEFAULT NULL COMMENT 'Acquittement (UTC)',
+  `version` int(11) NOT NULL DEFAULT 1,
+  `updated_by` bigint(20) DEFAULT NULL COMMENT 'Auteur de la dernière écriture ; NULL = ligne écrite par Kesh (copie)',
+  `created_at` datetime(3) NOT NULL DEFAULT current_timestamp(3),
+  `updated_at` datetime(3) NOT NULL DEFAULT current_timestamp(3) ON UPDATE current_timestamp(3),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_exchange_rates_key` (`company_id`,`currency`,`kind`,`rate_date`),
+  KEY `fk_exchange_rates_updated_by` (`updated_by`),
+  KEY `idx_exchange_rates_company_kind_date` (`company_id`,`kind`,`rate_date`),
+  CONSTRAINT `fk_exchange_rates_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`),
+  CONSTRAINT `fk_exchange_rates_updated_by` FOREIGN KEY (`updated_by`) REFERENCES `users` (`id`),
+  CONSTRAINT `chk_exchange_rates_currency` CHECK (cast(`currency` as char charset binary) regexp '^[A-Z]{3}$' and cast(`currency` as char charset binary) <> cast('CHF' as char charset binary)),
+  CONSTRAINT `chk_exchange_rates_kind` CHECK (cast(`kind` as char charset binary) in ('month','day')),
+  CONSTRAINT `chk_exchange_rates_month_day` CHECK (cast(`kind` as char charset binary) <> 'month' or dayofmonth(`rate_date`) = 1),
+  CONSTRAINT `chk_exchange_rates_rate` CHECK (`rate` > 0),
+  CONSTRAINT `chk_exchange_rates_source` CHECK (cast(`source` as char charset binary) regexp '^[a-z]{2,12}$'),
+  CONSTRAINT `chk_exchange_rates_ack_pair` CHECK (`acknowledged_rate` is null = (`acknowledged_at` is null)),
+  CONSTRAINT `chk_exchange_rates_ack_afc` CHECK (`acknowledged_rate` is null or cast(`source` as char charset binary) = 'afc')
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `fiscal_years`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
@@ -597,6 +685,9 @@ CREATE TABLE `fiscal_years` (
   `created_at` datetime(3) NOT NULL DEFAULT current_timestamp(3),
   `updated_at` datetime(3) NOT NULL DEFAULT current_timestamp(3) ON UPDATE current_timestamp(3),
   `supplier_invoice_next_number` bigint(20) NOT NULL DEFAULT 1,
+  `multi_currency` tinyint(1) NOT NULL DEFAULT 0 COMMENT 'Exercice multi-devises, posé à la création et à l''activation, jamais changé ensuite',
+  `opening_rate_kind` enum('day','month') NOT NULL DEFAULT 'day' COMMENT 'Genre du cours d''ouverture : day = veille de start_date, month = mois de la veille',
+  `closing_rate_kind` enum('day','month') NOT NULL DEFAULT 'day' COMMENT 'Genre du cours de clôture : day = end_date, month = mois de end_date',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_fiscal_years_company_name` (`company_id`,`name`),
   UNIQUE KEY `uq_fiscal_years_company_start_date` (`company_id`,`start_date`),
@@ -855,6 +946,9 @@ CREATE TABLE `journal_entry_lines` (
   `project_id` bigint(20) DEFAULT NULL,
   `lettering_key` bigint(20) DEFAULT NULL COMMENT 'Clé du groupe de lettrage = plus petit id de ligne du groupe ; NULL = ligne ouverte',
   `lettering_origin` varchar(10) DEFAULT NULL COMMENT 'Origine du groupe : document, reversal, manual',
+  `amount_currency` decimal(19,4) DEFAULT NULL COMMENT 'Montant en devise du compte, NULL = ligne en devise principale',
+  `exchange_rate` decimal(20,10) DEFAULT NULL COMMENT 'Cours par unité de devise, NULL = ligne en devise principale',
+  `rate_source` varchar(12) DEFAULT NULL COMMENT 'Provenance du cours (afc, manual, revaluation), NULL = ligne en devise principale',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_jel_entry_order` (`entry_id`,`line_order`),
   KEY `idx_jel_entry` (`entry_id`),
@@ -869,7 +963,12 @@ CREATE TABLE `journal_entry_lines` (
   CONSTRAINT `chk_jel_debit_nonneg` CHECK (`debit` >= 0),
   CONSTRAINT `chk_jel_credit_nonneg` CHECK (`credit` >= 0),
   CONSTRAINT `chk_jel_lettering_origin` CHECK (`lettering_origin` is null or `lettering_origin` in ('document','reversal','manual')),
-  CONSTRAINT `chk_jel_lettering_pair` CHECK (`lettering_key` is null = (`lettering_origin` is null))
+  CONSTRAINT `chk_jel_lettering_pair` CHECK (`lettering_key` is null = (`lettering_origin` is null)),
+  CONSTRAINT `chk_jel_fx_all_or_none` CHECK (`amount_currency` is null and `exchange_rate` is null and `rate_source` is null or `amount_currency` is not null and `exchange_rate` is not null and `rate_source` is not null),
+  CONSTRAINT `chk_jel_fx_rate_source` CHECK (`rate_source` is null or cast(`rate_source` as char charset binary) in ('afc','manual','revaluation')),
+  CONSTRAINT `chk_jel_fx_amount` CHECK (`amount_currency` is null or cast(`rate_source` as char charset binary) = 'revaluation' and `amount_currency` = 0 or `rate_source` is not null and cast(`rate_source` as char charset binary) <> 'revaluation' and `amount_currency` > 0),
+  CONSTRAINT `chk_jel_fx_rate` CHECK (`exchange_rate` is null or `exchange_rate` > 0),
+  CONSTRAINT `chk_jel_fx_chf` CHECK (`amount_currency` is null or cast(`rate_source` as char charset binary) = 'revaluation' or `debit` + `credit` = round(`amount_currency` * `exchange_rate`,2))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `journal_entry_number_sequences`;

@@ -114,6 +114,12 @@ fn fmt_opt_decimal(d: Option<Decimal>) -> String {
     d.map(fmt_decimal).unwrap_or_default()
 }
 
+/// Format `Option<Decimal>` à l'échelle **de sa colonne** (Story 37-3a :
+/// `amount_currency` à 4, `exchange_rate` à 10 décimales) ou chaîne vide.
+fn fmt_opt_decimal_scale(d: Option<Decimal>, scale: usize) -> String {
+    d.map(|d| format!("{d:.scale$}")).unwrap_or_default()
+}
+
 /// Format `Option<i64>` → `i64.to_string()` ou chaîne vide.
 fn fmt_opt_i64(v: Option<i64>) -> String {
     v.map(|i| i.to_string()).unwrap_or_default()
@@ -189,6 +195,11 @@ pub fn serialize_company_csv<W: Write>(rows: &[Company], writer: W) -> Result<()
         // CSV n'a aucun importeur (cf. l'audit `books.restored`).
         "books_locked_through",
         "is_stub",
+        // Story 37-1 (AC-6) : le réglage multi-devises et ses trois comptes.
+        "multi_currency_enabled",
+        "fx_gain_account_id",
+        "fx_loss_account_id",
+        "fx_transit_account_id",
         "version",
         "created_at",
         "updated_at",
@@ -217,6 +228,10 @@ pub fn serialize_company_csv<W: Write>(rows: &[Company], writer: W) -> Result<()
                 .map(|d| d.to_string())
                 .unwrap_or_default(),
             fmt_bool(c.is_stub),
+            fmt_bool(c.multi_currency_enabled),
+            fmt_opt_i64(c.fx_gain_account_id),
+            fmt_opt_i64(c.fx_loss_account_id),
+            fmt_opt_i64(c.fx_transit_account_id),
             c.version.to_string(),
             fmt_dt(c.created_at),
             fmt_dt(c.updated_at),
@@ -241,6 +256,10 @@ pub fn serialize_fiscal_years_csv<W: Write>(
         "start_date",
         "end_date",
         "status",
+        // Story 37-1 (AC-6) : le mode et les genres de cours de l'exercice.
+        "multi_currency",
+        "opening_rate_kind",
+        "closing_rate_kind",
         "created_at",
         "updated_at",
     ])
@@ -253,6 +272,9 @@ pub fn serialize_fiscal_years_csv<W: Write>(
             fmt_date(fy.start_date),
             fmt_date(fy.end_date),
             fy.status.as_str().to_string(),
+            fmt_bool(fy.multi_currency),
+            fy.opening_rate_kind.as_str().to_string(),
+            fy.closing_rate_kind.as_str().to_string(),
             fmt_dt(fy.created_at),
             fmt_dt(fy.updated_at),
         ])
@@ -278,6 +300,11 @@ pub fn serialize_accounts_csv<W: Write>(rows: &[Account], writer: W) -> Result<(
         // `Account` doit être répercuté ici ET dans le write_record ci-dessous.
         "role",
         "postable",
+        // Story 37-1 (AC-6) : la devise (vide = CHF) et les comptes de
+        // différence propres (vides = réglage de la société).
+        "currency",
+        "fx_gain_account_id",
+        "fx_loss_account_id",
         "version",
         "created_at",
         "updated_at",
@@ -294,6 +321,9 @@ pub fn serialize_accounts_csv<W: Write>(rows: &[Account], writer: W) -> Result<(
             fmt_bool(a.active),
             a.role.map(|r| r.as_str().to_string()).unwrap_or_default(),
             fmt_bool(a.postable),
+            fmt_opt_str(&a.currency),
+            fmt_opt_i64(a.fx_gain_account_id),
+            fmt_opt_i64(a.fx_loss_account_id),
             a.version.to_string(),
             fmt_dt(a.created_at),
             fmt_dt(a.updated_at),
@@ -372,6 +402,12 @@ pub fn serialize_journal_entry_lines_csv<W: Write>(
         // que l'utilisateur vérifie ce que Kesh affirme, ce qui est soldé compris.
         "lettering_key",
         "lettering_origin",
+        // Story 37-3a (AC-8) — la partie en devise, aux échelles de ses
+        // colonnes (4 et 10 décimales) ; aucune colonne de devise : la devise
+        // d'une ligne se lit dans le CSV des comptes.
+        "amount_currency",
+        "exchange_rate",
+        "rate_source",
     ])
     .map_err(|e| map_csv_err("journal_entry_lines", e))?;
     for jl in rows {
@@ -390,6 +426,10 @@ pub fn serialize_journal_entry_lines_csv<W: Write>(
             // comme toute cellule texte lue en base.
             jl.lettering_key.map(|k| k.to_string()).unwrap_or_default(),
             txt(jl.lettering_origin.clone().unwrap_or_default()),
+            // Jamais `fmt_decimal` (deux décimales) : montant à 4, cours à 10.
+            fmt_opt_decimal_scale(jl.amount_currency, 4),
+            fmt_opt_decimal_scale(jl.exchange_rate, 10),
+            fmt_opt_str(&jl.rate_source),
         ])
         .map_err(|e| map_csv_err("journal_entry_lines", e))?;
     }
@@ -831,6 +871,67 @@ pub fn serialize_vat_rates_csv<W: Write>(rows: &[VatRate], writer: W) -> Result<
         .map_err(|e| map_csv_err("vat_rates", e))?;
     }
     csv.flush().map_err(|e| map_flush_err("vat_rates", e))
+}
+
+/// Format d'un **cours de change** (Story 37-2) : toujours 10 décimales, la
+/// précision de `exchange_rates.rate` (`DECIMAL(20,10)`). ⚠️ Jamais
+/// [`fmt_decimal`], qui arrondirait le cours à 2 décimales — un cours de
+/// 0.9123456789 exporté 0.91 serait faux dans l'autre logiciel.
+fn fmt_rate(d: Decimal) -> String {
+    format!("{d:.10}")
+}
+
+/// Format `Option<Decimal>` d'un cours → 10 décimales ou chaîne vide.
+fn fmt_opt_rate(d: Option<Decimal>) -> String {
+    d.map(fmt_rate).unwrap_or_default()
+}
+
+/// Sérialise les cours de change **retenus par la société** (Story 37-2,
+/// `exchange_rates`) : cours à 10 décimales, source (`afc`, `manual`, ou la
+/// valeur lue telle quelle), acquittement et auteur (`updated_by` vide = ligne
+/// écrite par Kesh).
+pub fn serialize_exchange_rates_csv<W: Write>(
+    rows: &[kesh_db::repositories::exchange_rates::CompanyRate],
+    writer: W,
+) -> Result<(), AppError> {
+    let mut w = writer;
+    write_csv_bom(&mut w)?;
+    let mut csv = make_csv_writer(w);
+    csv.write_record([
+        "id",
+        "company_id",
+        "currency",
+        "kind",
+        "rate_date",
+        "rate",
+        "source",
+        "version",
+        "acknowledged_rate",
+        "acknowledged_at",
+        "updated_by",
+        "created_at",
+        "updated_at",
+    ])
+    .map_err(|e| map_csv_err("exchange_rates", e))?;
+    for r in rows {
+        csv.write_record([
+            r.id.to_string(),
+            r.company_id.to_string(),
+            txt(r.currency.clone()),
+            r.kind.as_str().to_string(),
+            fmt_date(r.rate_date),
+            fmt_rate(r.rate),
+            txt(r.source.as_str().to_string()),
+            r.version.to_string(),
+            fmt_opt_rate(r.acknowledged_rate),
+            fmt_opt_dt(r.acknowledged_at),
+            fmt_opt_i64(r.updated_by),
+            fmt_dt(r.created_at),
+            fmt_dt(r.updated_at),
+        ])
+        .map_err(|e| map_csv_err("exchange_rates", e))?;
+    }
+    csv.flush().map_err(|e| map_flush_err("exchange_rates", e))
 }
 
 /// Sérialise les `DunningLevel` (Story 21-3, #231) — niveaux de rappel configurés.
@@ -1673,6 +1774,54 @@ mod tests {
     use kesh_db::entities::{AccountRole, AccountType, Journal as JournalEnum};
     use rust_decimal_macros::dec;
 
+    /// Story 37-2 : un cours retenu s'exporte à **10 décimales** (jamais
+    /// arrondi à 2 par `fmt_decimal`), sa source et son auteur tels quels
+    /// (`updated_by` vide = copie de Kesh).
+    #[test]
+    fn exchange_rates_csv_exports_ten_decimals() {
+        use kesh_db::repositories::exchange_rates::{CompanyRate, RateOrigin};
+        let ts = NaiveDate::from_ymd_opt(2026, 1, 2)
+            .unwrap()
+            .and_hms_opt(8, 0, 0)
+            .unwrap();
+        let ligne = |source, rate, updated_by| CompanyRate {
+            id: 7,
+            company_id: 3,
+            currency: "JPY".into(),
+            kind: kesh_core::exchange_rates::RateKind::Month,
+            rate_date: NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
+            rate,
+            source,
+            version: 2,
+            acknowledged_rate: None,
+            acknowledged_at: None,
+            updated_by,
+            created_at: ts,
+            updated_at: ts,
+        };
+        let mut buf = Vec::new();
+        serialize_exchange_rates_csv(
+            &[
+                ligne(RateOrigin::Afc, dec!(0.0058123456), None),
+                ligne(RateOrigin::Manual, dec!(0.91), Some(5)),
+            ],
+            &mut buf,
+        )
+        .unwrap();
+        let texte = String::from_utf8(buf[3..].to_vec()).unwrap();
+        let lignes: Vec<&str> = texte.split("\r\n").collect();
+        assert!(lignes[0].starts_with("id;company_id;currency;kind;rate_date;rate;source"));
+        assert_eq!(
+            lignes[1],
+            "7;3;JPY;month;2026-01-01;0.0058123456;afc;2;;;;2026-01-02T08:00:00Z;2026-01-02T08:00:00Z"
+        );
+        assert!(
+            lignes[2].contains(";0.9100000000;manual;2;;;5;"),
+            "{}",
+            lignes[2]
+        );
+    }
+
     /// Story 26-1, AC11 (M11) : `debit_sign` est exporté, en-tête et
     /// valeur, juste après `header_row_count`.
     #[test]
@@ -1730,6 +1879,9 @@ mod tests {
             active: true,
             role: Some(AccountRole::Receivable),
             postable: true,
+            currency: None,
+            fx_gain_account_id: None,
+            fx_loss_account_id: None,
             version: 1,
             created_at: naive_dt(2026, 1, 1, 0, 0, 0),
             updated_at: naive_dt(2026, 1, 2, 12, 30, 45),
@@ -1759,6 +1911,10 @@ mod tests {
             website: None,
             is_stub: false,
             books_locked_through: None,
+            multi_currency_enabled: false,
+            fx_gain_account_id: None,
+            fx_loss_account_id: None,
+            fx_transit_account_id: None,
             version: 1,
             created_at: naive_dt(2026, 1, 1, 0, 0, 0),
             updated_at: naive_dt(2026, 1, 1, 0, 0, 0),
@@ -1792,6 +1948,10 @@ mod tests {
             project_id: None,
             lettering_key: None,
             lettering_origin: None,
+            amount_currency: None,
+            exchange_rate: None,
+            rate_source: None,
+            account_currency: None,
         }
     }
 
@@ -2022,8 +2182,9 @@ mod tests {
 
         assert_eq!(
             lines.next().unwrap(),
-            "id;company_id;number;name;account_type;parent_id;active;role;postable;version;created_at;updated_at",
-            "en-tête CSV des comptes (12 colonnes depuis la Story 14-3a)"
+            "id;company_id;number;name;account_type;parent_id;active;role;postable;\
+             currency;fx_gain_account_id;fx_loss_account_id;version;created_at;updated_at",
+            "en-tête CSV des comptes (15 colonnes depuis la Story 37-1)"
         );
 
         let row = lines.next().unwrap();
@@ -2031,6 +2192,95 @@ mod tests {
             row.contains(";Receivable;true;"),
             "le rôle et la postabilité doivent figurer dans la ligne : {row}"
         );
+        // Story 37-1 : un compte CHF « par défaut » laisse les trois cellules vides.
+        assert!(
+            row.contains(";Receivable;true;;;;1;"),
+            "devise et comptes propres vides : {row}"
+        );
+    }
+
+    /// Story 37-1 (AC-6) — un compte en devise avec comptes de différence
+    /// propres : les trois cellules, à leur place (index tiré de l'en-tête).
+    #[test]
+    fn serialize_accounts_csv_carries_currency_and_own_fx_accounts() {
+        let mut compte = sample_account();
+        compte.role = None;
+        compte.currency = Some("USD".into());
+        compte.fx_gain_account_id = Some(7);
+        compte.fx_loss_account_id = Some(8);
+        let mut buf = Vec::new();
+        serialize_accounts_csv(&[compte], &mut buf).expect("serialize ok");
+        let text = std::str::from_utf8(&buf[3..]).unwrap();
+        let mut rdr = csv::ReaderBuilder::new()
+            .delimiter(b';')
+            .from_reader(text.as_bytes());
+        let en_tete: Vec<String> = rdr.headers().unwrap().iter().map(String::from).collect();
+        let ligne = rdr.records().next().unwrap().unwrap();
+        let cellule = |nom: &str| {
+            let i = en_tete.iter().position(|h| h == nom).expect(nom);
+            ligne[i].to_string()
+        };
+        assert_eq!(cellule("currency"), "USD");
+        assert_eq!(cellule("fx_gain_account_id"), "7");
+        assert_eq!(cellule("fx_loss_account_id"), "8");
+    }
+
+    /// Story 37-1 (AC-6) — le réglage multi-devises actif de la société, et le
+    /// mode et les genres d'un exercice, sortent à leur place.
+    #[test]
+    fn serialize_company_and_fiscal_years_csv_carry_the_multi_currency_setting() {
+        let mut societe = sample_company();
+        societe.multi_currency_enabled = true;
+        societe.fx_gain_account_id = Some(11);
+        societe.fx_loss_account_id = Some(12);
+        societe.fx_transit_account_id = Some(13);
+        let mut buf = Vec::new();
+        serialize_company_csv(&[societe], &mut buf).expect("serialize ok");
+        let text = std::str::from_utf8(&buf[3..]).unwrap();
+        let mut rdr = csv::ReaderBuilder::new()
+            .delimiter(b';')
+            .from_reader(text.as_bytes());
+        let en_tete: Vec<String> = rdr.headers().unwrap().iter().map(String::from).collect();
+        let ligne = rdr.records().next().unwrap().unwrap();
+        for (nom, attendu) in [
+            ("multi_currency_enabled", "true"),
+            ("fx_gain_account_id", "11"),
+            ("fx_loss_account_id", "12"),
+            ("fx_transit_account_id", "13"),
+        ] {
+            let i = en_tete.iter().position(|h| h == nom).expect(nom);
+            assert_eq!(&ligne[i], attendu, "{nom}");
+        }
+
+        let exercice = FiscalYear {
+            id: 3,
+            company_id: 1,
+            name: "Exercice 2027".into(),
+            start_date: NaiveDate::from_ymd_opt(2027, 1, 1).unwrap(),
+            end_date: NaiveDate::from_ymd_opt(2027, 12, 31).unwrap(),
+            status: kesh_db::entities::FiscalYearStatus::Open,
+            multi_currency: true,
+            opening_rate_kind: kesh_db::entities::RateKind::Month,
+            closing_rate_kind: kesh_db::entities::RateKind::Day,
+            created_at: naive_dt(2026, 1, 1, 0, 0, 0),
+            updated_at: naive_dt(2026, 1, 1, 0, 0, 0),
+        };
+        let mut buf = Vec::new();
+        serialize_fiscal_years_csv(&[exercice], &mut buf).expect("serialize ok");
+        let text = std::str::from_utf8(&buf[3..]).unwrap();
+        let mut rdr = csv::ReaderBuilder::new()
+            .delimiter(b';')
+            .from_reader(text.as_bytes());
+        let en_tete: Vec<String> = rdr.headers().unwrap().iter().map(String::from).collect();
+        let ligne = rdr.records().next().unwrap().unwrap();
+        for (nom, attendu) in [
+            ("multi_currency", "true"),
+            ("opening_rate_kind", "month"),
+            ("closing_rate_kind", "day"),
+        ] {
+            let i = en_tete.iter().position(|h| h == nom).expect(nom);
+            assert_eq!(&ligne[i], attendu, "{nom}");
+        }
     }
 
     /// Un compte sans rôle exporte une cellule **vide**, pas la chaîne "null".
@@ -2208,11 +2458,32 @@ mod tests {
         let text = std::str::from_utf8(&buf[3..]).unwrap();
         // Decimal formaté 2 décimales — debit 150.25 + credit 0.00,
         // project_id vide (ligne non taguée, Story 19-2).
-        assert!(text.contains(";150.25;0.00;;;\r\n"), "got: {text}");
+        assert!(text.contains(";150.25;0.00;;;;;;\r\n"), "got: {text}");
         // Header
         assert!(text.starts_with(
-            "id;entry_id;account_id;line_order;debit;credit;project_id;lettering_key;lettering_origin"
+            "id;entry_id;account_id;line_order;debit;credit;project_id;lettering_key;lettering_origin;\
+             amount_currency;exchange_rate;rate_source\r\n"
         ));
+    }
+
+    /// Story 37-3a (AC-8) — une ligne en devise s'exporte à l'échelle de ses
+    /// colonnes : montant à 4 décimales, cours à 10, jamais ramenés à deux.
+    #[test]
+    fn serialize_journal_entry_lines_csv_foreign_line_keeps_column_scales() {
+        let mut line = sample_line();
+        line.debit = dec!(1125.83);
+        line.amount_currency = Some(dec!(1234.56));
+        line.exchange_rate = Some(dec!(0.9119281363));
+        line.rate_source = Some("manual".into());
+        line.account_currency = Some("USD".into());
+        let mut buf = Vec::new();
+        serialize_journal_entry_lines_csv(&[line], &mut buf).expect("serialize ok");
+        let text = std::str::from_utf8(&buf[3..]).unwrap();
+        let lignes: Vec<&str> = text.lines().collect();
+        assert_eq!(
+            lignes[1],
+            "100;10;1;1;1125.83;0.00;;;;1234.5600;0.9119281363;manual"
+        );
     }
 
     #[test]
@@ -2222,7 +2493,7 @@ mod tests {
         let mut buf = Vec::new();
         serialize_journal_entry_lines_csv(&[line], &mut buf).expect("serialize ok");
         let text = std::str::from_utf8(&buf[3..]).unwrap();
-        assert!(text.contains(";150.25;0.00;7;;\r\n"), "got: {text}");
+        assert!(text.contains(";150.25;0.00;7;;;;;\r\n"), "got: {text}");
     }
 
     /// Story 15-1a-i (AC14) — l'export des lignes porte la marque du lettrage :
@@ -2241,10 +2512,11 @@ mod tests {
         let lignes: Vec<&str> = text.lines().collect();
         assert_eq!(
             lignes[0],
-            "id;entry_id;account_id;line_order;debit;credit;project_id;lettering_key;lettering_origin"
+            "id;entry_id;account_id;line_order;debit;credit;project_id;lettering_key;lettering_origin;\
+             amount_currency;exchange_rate;rate_source"
         );
-        assert_eq!(lignes[1], "100;10;1;1;150.25;0.00;;100;manual");
-        assert_eq!(lignes[2], "101;10;1;1;150.25;0.00;;;");
+        assert_eq!(lignes[1], "100;10;1;1;150.25;0.00;;100;manual;;;");
+        assert_eq!(lignes[2], "101;10;1;1;150.25;0.00;;;;;;");
     }
 
     #[test]
@@ -2505,6 +2777,10 @@ mod tests {
             (
                 "imported_supplier_invoices",
                 entete(|w| serialize_imported_supplier_invoices_csv(&[], w)),
+            ),
+            (
+                "exchange_rates",
+                entete(|w| serialize_exchange_rates_csv(&[], w)),
             ),
         ];
         // ⛔ Contre le REGISTRE, pas contre un nombre (revue P3) : une table

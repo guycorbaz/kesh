@@ -4,7 +4,11 @@
 	// passait par `features/onboarding`, couplage transverse que
 	// `shared/utils/i18n.svelte.ts:1-7` proscrit explicitement.
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
-	import type { AccountResponse, AccountType } from '$lib/features/accounts/accounts.types';
+	import {
+		isForeignCurrencyAccount,
+		type AccountResponse,
+		type AccountType
+	} from '$lib/features/accounts/accounts.types';
 	import { isAccountUnusable } from '$lib/features/accounts/account-validity';
 	import { CLASSE_DESIGNEE, CLASSE_LISTE, CLASSE_SURVOL } from './account-autocomplete-classes';
 
@@ -96,6 +100,14 @@
 		 * une espace quand `markInvalid` est actif, comme la spec ARIA le prévoit.
 		 */
 		describedBy?: string;
+		/**
+		 * Story 37-3b (AC-4) — retire les comptes en devise des propositions et
+		 * marque une valeur persistée en devise comme inutilisable. **Défaut
+		 * `true`** : les pièces, produits et rapprochements ne les acceptent pas.
+		 * `false` dans le formulaire d'écriture et l'assistant *Conversion* (saisie
+		 * en devise), et dans l'assistant TVA d'une société multi-devises.
+		 */
+		excludeForeignCurrency?: boolean;
 	}
 
 	let {
@@ -111,7 +123,8 @@
 		requiredAccountType = undefined,
 		postableExemptAccountId = null,
 		placeholder = undefined,
-		ariaLabel = undefined
+		ariaLabel = undefined,
+		excludeForeignCurrency = true
 	}: Props = $props();
 
 	// Identifiant stable pour lier le message d'invalidité au champ. `$props.id()`
@@ -211,7 +224,8 @@
 			(a) =>
 				a.active &&
 				a.postable &&
-				(requiredAccountType === undefined || a.accountType === requiredAccountType)
+				(requiredAccountType === undefined || a.accountType === requiredAccountType) &&
+				!(excludeForeignCurrency && isForeignCurrencyAccount(a))
 		)
 	);
 
@@ -225,7 +239,11 @@
 		// Règle déléguée à `account-validity` : `InvoiceForm` applique EXACTEMENT
 		// la même pour décider du blocage. Un champ marqué sans blocage, ou
 		// l'inverse, serait pire que l'absence de fonctionnalité.
-		return isAccountUnusable(selected, { requiredAccountType, postableExemptAccountId });
+		return isAccountUnusable(selected, {
+			requiredAccountType,
+			postableExemptAccountId,
+			excludeForeignCurrency
+		});
 	});
 
 	const filtered = $derived.by(() => {

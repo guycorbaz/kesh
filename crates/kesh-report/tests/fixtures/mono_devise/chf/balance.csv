@@ -1,0 +1,9 @@
+﻿NumeroCompte;NomCompte;SoldeOuverture;TotalDebit;TotalCredit;SoldeCloture
+1000;Caisse CI;1184.55;990.00;1577.35;597.20
+1010;Ancienne caisse;50.00;0.00;0.00;50.00
+1100;Banque CI;9579.90;1500.00;0.00;11079.90
+2000;Capital CI;10000.00;0.00;0.00;10000.00
+3000;Ventes CI;0.00;0.00;990.00;990.00
+4000;Charges CI;0.00;77.35;0.00;77.35
+;Résultat reporté (calculé);814.45;;;814.45
+Total;;;2567.35;2567.35;

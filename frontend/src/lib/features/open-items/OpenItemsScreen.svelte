@@ -18,6 +18,8 @@
 	import { isApiError } from '$lib/shared/utils/api-client';
 	import { authState } from '$lib/app/stores/auth.svelte';
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
+	// fx-filtre-comptes : exempté — écran de consultation (postes ouverts d'un compte,
+	// en devise compris).
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 	import LetteringCodeLink from './LetteringCodeLink.svelte';
 	import OpenItemsTable from './OpenItemsTable.svelte';

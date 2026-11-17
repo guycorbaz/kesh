@@ -1,0 +1,18 @@
+CI Test Company
+Compte de résultat
+Période : 01.01.2026  31.12.2026
+Produits
+3000
+Ventes CI
+990.00
+Total produits
+990.00
+Charges
+4000
+Charges CI
+77.35
+Total charges
+77.35
+Résultat net
+912.65
+page 1 / 1

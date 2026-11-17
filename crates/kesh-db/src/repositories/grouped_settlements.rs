@@ -708,6 +708,8 @@ async fn settle_client_inner(
         debit: bt.amount,
         credit: Decimal::ZERO,
         project_id: None,
+        // Chemin automatique : CHF seulement (Epic 37, `invoice_settlements`).
+        foreign: None,
     }];
     for m in &members {
         lines.push(NewJournalEntryLine {
@@ -716,6 +718,7 @@ async fn settle_client_inner(
             credit: m.raw_due,
             // Le projet de la facture, estampillé sans validation (D7, C-43-20).
             project_id: m.invoice.project_id,
+            foreign: None,
         });
     }
     // Client : moins reçu (`r`, `e` < 0) au débit, trop-perçu au crédit.
@@ -1108,6 +1111,8 @@ fn push_difference_lines(
             debit,
             credit,
             project_id: None,
+            // Chemin automatique : CHF seulement (Epic 37).
+            foreign: None,
         });
     };
     if let Some(id) = accounts.rounding_account_id {
@@ -2420,6 +2425,8 @@ async fn pay_supplier_inner(
         debit: Decimal::ZERO,
         credit: paid,
         project_id: None,
+        // Chemin automatique : CHF seulement (Epic 37, `supplier_invoices`).
+        foreign: None,
     }];
     for m in &members {
         lines.push(NewJournalEntryLine {
@@ -2428,6 +2435,7 @@ async fn pay_supplier_inner(
             credit: Decimal::ZERO,
             // Le projet de la facture, estampillé sans validation (C-43-20).
             project_id: m.invoice.project_id,
+            foreign: None,
         });
     }
     // Fournisseur : la banque est au crédit ; `r > 0` et `e > 0` (plus payé

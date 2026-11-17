@@ -89,4 +89,21 @@ describe('debounce', () => {
 
 		expect(fn).toHaveBeenCalledTimes(1);
 	});
+
+	it('flush() exécute tout de suite l’appel en attente, avec ses arguments, une seule fois', () => {
+		const fn = vi.fn();
+		const debounced = debounce(fn, 300);
+
+		debounced.flush();
+		expect(fn).not.toHaveBeenCalled();
+
+		debounced('a');
+		debounced('b');
+		debounced.flush();
+		expect(fn).toHaveBeenCalledTimes(1);
+		expect(fn).toHaveBeenCalledWith('b');
+
+		vi.advanceTimersByTime(300);
+		expect(fn).toHaveBeenCalledTimes(1);
+	});
 });

@@ -77,6 +77,29 @@ pub enum FixtureError {
 ///
 /// Retourne `SeededCompany` avec tous les IDs nécessaires pour les tests
 /// downstream.
+/// Constructeur **de test** d'une ligne d'écriture en CHF (Story 37-3a) :
+/// sans projet, sans partie en devise. `NewJournalEntryLine` n'a pas de
+/// `Default` (chaque site de production dit ce qu'il pose) ; les tests
+/// passent par ici, et un projet se pose par
+/// `NewJournalEntryLine { project_id, ..chf_line(…) }`.
+///
+/// ⛔ **Jamais en production** : la garde lexicale
+/// `crates/kesh-db/tests/chf_line_lexical.rs` refuse tout appel depuis un
+/// `src/` hors `mod tests` et hors ce module.
+pub fn chf_line(
+    account_id: i64,
+    debit: rust_decimal::Decimal,
+    credit: rust_decimal::Decimal,
+) -> crate::entities::NewJournalEntryLine {
+    crate::entities::NewJournalEntryLine {
+        account_id,
+        debit,
+        credit,
+        project_id: None,
+        foreign: None,
+    }
+}
+
 pub async fn seed_accounting_company(pool: &MySqlPool) -> Result<SeededCompany, FixtureError> {
     // Company — adresse sur 2 lignes (line1 = rue, line2 = zip + ville) car
     // la génération QR Bill exige les deux lignes (cf. test `invoice_pdf_e2e`).
@@ -372,6 +395,10 @@ pub async fn seed_accounting_company_no_fy(pool: &MySqlPool) -> Result<(), Fixtu
 /// - `_kesh_installation_settings` : Story v0172-session (0.17.3) — singleton
 ///   des réglages de l'installation faits dans l'interface (durée
 ///   d'inactivité de la session) ; sans ligne, les défauts du code.
+/// - `_kesh_fetched_exchange_rates` et `_kesh_exchange_rate_fetch` : Story 37-2
+///   — valeurs publiées par la source des cours et état de la dernière
+///   récupération. Hors de ce vidage ; `POST /_test/seed` et `/_test/reset` les
+///   vident à part (`repositories::exchange_rates::clear_fetched_state`).
 // Story 17-3a — la liste canonique des tables a été promue vers
 // `crate::backup::TABLES_TO_TRUNCATE` (source de vérité unique, réutilisée par
 // l'export d'installation). On la ré-exporte ici pour `truncate_all`.

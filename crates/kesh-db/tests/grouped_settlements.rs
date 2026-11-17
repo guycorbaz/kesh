@@ -173,13 +173,13 @@ async fn group_max_reads_the_setting_or_the_default(pool: MySqlPool) {
 use chrono::NaiveDate;
 use kesh_db::entities::audit_log::Acteur;
 use kesh_db::entities::journal_entry::Journal;
-use kesh_db::entities::{NewInvoice, NewInvoiceLine, NewJournalEntry, NewJournalEntryLine};
+use kesh_db::entities::{NewInvoice, NewInvoiceLine, NewJournalEntry};
 use kesh_db::errors::DbError;
 use kesh_db::repositories::grouped_settlements::{
     self, GroupRefusal, GroupedDocument, IneligibleReason,
 };
 use kesh_db::repositories::{invoices, journal_entries, reconciliation_cancel};
-use kesh_db::test_fixtures::{SeededCompany, designate_rounding_account};
+use kesh_db::test_fixtures::{SeededCompany, chf_line, designate_rounding_account};
 
 /// La date de valeur des transactions des tests : dans l'exercice 2020-2030 du
 /// seed, après la date des factures.
@@ -288,18 +288,8 @@ async fn facture(
             description: "Vente".into(),
             project_id: None,
             lines: vec![
-                NewJournalEntryLine {
-                    account_id: s.accounts["1100"],
-                    debit: amount,
-                    credit: Decimal::ZERO,
-                    project_id: None,
-                },
-                NewJournalEntryLine {
-                    account_id: s.accounts["3000"],
-                    debit: Decimal::ZERO,
-                    credit: amount,
-                    project_id: None,
-                },
+                chf_line(s.accounts["1100"], amount, Decimal::ZERO),
+                chf_line(s.accounts["3000"], Decimal::ZERO, amount),
             ],
         },
     )
@@ -1197,18 +1187,8 @@ async fn a_grouped_entry_refuses_modification_and_keeps_its_line_keys(pool: MySq
             description: "modifiée".into(),
             project_id: None,
             lines: vec![
-                NewJournalEntryLine {
-                    account_id: m.bank_ledger,
-                    debit: dec!(300.00),
-                    credit: Decimal::ZERO,
-                    project_id: None,
-                },
-                NewJournalEntryLine {
-                    account_id: m.s.accounts["1100"],
-                    debit: Decimal::ZERO,
-                    credit: dec!(300.00),
-                    project_id: None,
-                },
+                chf_line(m.bank_ledger, dec!(300.00), Decimal::ZERO),
+                chf_line(m.s.accounts["1100"], Decimal::ZERO, dec!(300.00)),
             ],
         },
     )
@@ -1288,18 +1268,8 @@ async fn the_upgrade_keeps_unit_settlements_and_allows_a_group(pool: MySqlPool) 
             description: "Encaissement d'avant".into(),
             project_id: None,
             lines: vec![
-                NewJournalEntryLine {
-                    account_id: m.bank_ledger,
-                    debit: dec!(80.00),
-                    credit: Decimal::ZERO,
-                    project_id: None,
-                },
-                NewJournalEntryLine {
-                    account_id: m.s.accounts["1100"],
-                    debit: Decimal::ZERO,
-                    credit: dec!(80.00),
-                    project_id: None,
-                },
+                chf_line(m.bank_ledger, dec!(80.00), Decimal::ZERO),
+                chf_line(m.s.accounts["1100"], Decimal::ZERO, dec!(80.00)),
             ],
         },
     )

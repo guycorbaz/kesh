@@ -167,6 +167,8 @@ fn generate_purchase_journal_lines(
             debit: *line_total,
             credit: Decimal::ZERO,
             project_id: None,
+            // Story 37-3a (AC-5) : les chemins automatiques n'écrivent qu'en CHF.
+            foreign: None,
         });
     }
 
@@ -181,6 +183,7 @@ fn generate_purchase_journal_lines(
             debit: total_vat,
             credit: Decimal::ZERO,
             project_id: None,
+            foreign: None,
         });
     }
 
@@ -190,6 +193,7 @@ fn generate_purchase_journal_lines(
         debit: Decimal::ZERO,
         credit: total_ttc,
         project_id: None,
+        foreign: None,
     });
 
     Ok((
@@ -560,6 +564,10 @@ async fn check_draft_input_in_tx(
     if !non_postable.is_empty() {
         return Err(DbError::accounts_not_postable(non_postable));
     }
+    // Story 37-3a (AC-5) — un compte de charge en devise est refusé (400
+    // `ACCOUNT_IN_FOREIGN_CURRENCY`) : la facture fournisseur s'écrit en CHF.
+    let ids: Vec<i64> = new.lines.iter().map(|l| l.expense_account_id).collect();
+    super::accounts::refuse_foreign_currency_accounts_in_tx(tx, new.company_id, &ids).await?;
     Ok(line_totals)
 }
 
@@ -1665,6 +1673,9 @@ pub async fn validate_in_tx(
 
     // (2, suite) Passe des COMPTES de l'étape (2), après les réglages.
     let mut non_postable: Vec<NonPostableAccount> = Vec::new();
+    // Comptes de charge en devise, lus dans le `SELECT … FOR UPDATE` ci-dessous
+    // (revue de code P2 : la devise se lit sous verrou, pas sur l'instantané).
+    let mut foreign: Vec<(i64, String)> = Vec::new();
     // Le `line_total` de chaque ligne vient de la passe de forme : aucun second
     // produit (v017-3b, AC-3).
     for (line, &line_total) in lines.iter().zip(&line_totals) {
@@ -1683,8 +1694,8 @@ pub async fn validate_in_tx(
         // atteignable que par appel direct à l'API — comme pour le règlement
         // fournisseur, fermé au même titre : *une garde serveur ne se déduit pas
         // d'un filtre d'écran.*
-        let acct: Option<(bool, bool, String, String)> = sqlx::query_as(
-            "SELECT active, postable, account_type, number FROM accounts \
+        let acct: Option<(bool, bool, String, String, Option<String>)> = sqlx::query_as(
+            "SELECT active, postable, account_type, number, currency FROM accounts \
              WHERE id = ? AND company_id = ? FOR UPDATE",
         )
         .bind(line.expense_account_id)
@@ -1698,8 +1709,12 @@ pub async fn validate_in_tx(
         // sinon, non imputable → collecté, nommé après la passe si aucune
         // ligne n'est en (a).
         match acct {
-            Some((true, true, ref t, _)) if t == "Expense" => {}
-            Some((true, false, ref t, number)) if t == "Expense" => {
+            Some((true, true, ref t, _, ref currency)) if t == "Expense" => {
+                if let Some(currency) = currency {
+                    foreign.push((line.expense_account_id, currency.clone()));
+                }
+            }
+            Some((true, false, ref t, number, _)) if t == "Expense" => {
                 non_postable.push(NonPostableAccount {
                     account_id: line.expense_account_id,
                     account_number: number,
@@ -1711,6 +1726,20 @@ pub async fn validate_in_tx(
     }
     if !non_postable.is_empty() {
         return Err(DbError::accounts_not_postable(non_postable));
+    }
+    // Story 37-3a (AC-5, revue de code P1 et P2) — la devise des comptes de
+    // charge se rejuge à la validation, comme `validate_invoice` le fait pour les
+    // comptes de produit : un compte passé en devise depuis l'enregistrement du
+    // brouillon (37-1 ne le lui interdit pas) est refusé sous son nom (400
+    // `ACCOUNT_IN_FOREIGN_CURRENCY`), non par le rang 3 du contrôle central sur
+    // une ligne générée. La devise est lue dans le `SELECT … FOR UPDATE` des
+    // comptes, donc sur leur dernier état commité ; le premier refus est celui
+    // de l'identifiant le plus petit (déterministe).
+    if let Some((account_id, currency)) = foreign.into_iter().min_by_key(|(id, _)| *id) {
+        return Err(DbError::AccountInForeignCurrency {
+            account_id: Some(account_id),
+            currency,
+        });
     }
 
     // (2, désignés) Story 15-5d (#429) — les comptes DÉSIGNÉS que cette saisie
@@ -2127,6 +2156,12 @@ pub async fn pay_in_tx_as(
         ClaimSubject::Counterparty(ClaimSide::Payable),
     )
     .await?;
+    // (3 ter) Story 37-3a (AC-5) — un compte de règlement interne en devise est
+    // refusé (400 `ACCOUNT_IN_FOREIGN_CURRENCY`) : le règlement s'écrit en CHF.
+    if let Some(account_id) = internal_account_id {
+        super::accounts::refuse_foreign_currency_accounts_in_tx(tx, company_id, &[account_id])
+            .await?;
+    }
 
     // (4) Exercice ouvert couvrant la date de règlement.
     let fy = fiscal_years::find_open_covering_date(tx, company_id, payment_date)
@@ -2153,12 +2188,14 @@ pub async fn pay_in_tx_as(
             debit: ttc,
             credit: Decimal::ZERO,
             project_id: None,
+            foreign: None,
         },
         NewJournalEntryLine {
             account_id: counterparty_account_id,
             debit: Decimal::ZERO,
             credit: ttc,
             project_id: None,
+            foreign: None,
         },
     ];
     let je = journal_entries::create_in_tx(
