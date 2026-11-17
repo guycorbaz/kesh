@@ -187,6 +187,16 @@ pub struct SectionLabels {
     pub fx_credit: String,
     /// « clôture » — la clôture en devise d'un compte de la balance.
     pub fx_closing: String,
+    // En-têtes des colonnes de montant d'un rapport qui contient un compte en
+    // devise (correctif `fix-pdf-montants-alignes`) : sans eux, rien ne dit que
+    // la colonne des soldes est en devise principale.
+    /// Code de la devise principale, en tête de ses colonnes : « CHF ». Sur la
+    /// balance et le grand livre, il suit l'en-tête de chaque colonne de montant
+    /// (« Débit CHF ») ; au bilan et au compte de résultat, il est l'en-tête.
+    pub col_base_currency: String,
+    /// En-tête de la colonne des soldes en devise du bilan et du compte de
+    /// résultat : « Devise ».
+    pub col_foreign_currency: String,
 }
 
 impl SectionLabels {
@@ -248,6 +258,20 @@ impl SectionLabels {
             fx_debit: "débit".into(),
             fx_credit: "crédit".into(),
             fx_closing: "clôture".into(),
+            col_base_currency: "CHF".into(),
+            col_foreign_currency: "Devise".into(),
+        }
+    }
+
+    /// L'en-tête d'une colonne de montant suivi du code de la devise
+    /// principale (« Débit CHF ») si le rapport contient un compte en devise
+    /// (`multi`), sinon l'en-tête tel quel : un rapport mono-devise ne change
+    /// pas.
+    fn amount_header(&self, label: &str, multi: bool) -> String {
+        if multi {
+            format!("{label} {}", self.col_base_currency)
+        } else {
+            label.to_string()
         }
     }
 
@@ -400,12 +424,18 @@ struct PdfBuilder {
     cursor_y: f32,
     /// Index de la page courante dans `self.pages`.
     current_page_idx: usize,
+    /// Titre non ASCII du document, à poser dans ses propriétés à la
+    /// finalisation, et le gabarit ASCII écrit à sa place par printpdf : voir
+    /// [`title_placeholder`].
+    title_fix: Option<(String, String)>,
 }
 
 impl PdfBuilder {
     fn new(title: &str) -> Result<Self, ReportError> {
+        let title_fix = title_placeholder(title).map(|ph| (ph, title.to_string()));
+        let doc_title = title_fix.as_ref().map_or(title, |(ph, _)| ph.as_str());
         let (doc, page1, layer1) =
-            PdfDocument::new(title, Mm(PAGE_WIDTH_MM), Mm(PAGE_HEIGHT_MM), "Layer 1");
+            PdfDocument::new(doc_title, Mm(PAGE_WIDTH_MM), Mm(PAGE_HEIGHT_MM), "Layer 1");
         let font = doc
             .add_builtin_font(BuiltinFont::Helvetica)
             .map_err(|e| ReportError::PdfGeneration(format!("font: {e}")))?;
@@ -419,6 +449,7 @@ impl PdfBuilder {
             pages: vec![(page1, layer1)],
             cursor_y: PAGE_HEIGHT_MM - MARGIN_TOP_MM,
             current_page_idx: 0,
+            title_fix,
         })
     }
 
@@ -526,10 +557,84 @@ impl PdfBuilder {
 
     fn finalize(self) -> Result<Vec<u8>, ReportError> {
         self.draw_footers();
-        self.doc
+        let bytes = self
+            .doc
             .save_to_bytes()
-            .map_err(|e| ReportError::PdfGeneration(format!("save: {e}")))
+            .map_err(|e| ReportError::PdfGeneration(format!("save: {e}")))?;
+        match &self.title_fix {
+            Some((placeholder, title)) => set_pdf_title(bytes, placeholder, title),
+            None => Ok(bytes),
+        }
     }
+}
+
+/// Le gabarit ASCII du titre d'un document dont le titre n'est pas ASCII, ou
+/// `None` pour un titre ASCII, que printpdf écrit juste.
+///
+/// printpdf 0.7 écrit le titre des propriétés du PDF (`/Title` du dictionnaire
+/// `Info`) en chaîne littérale faite des **octets UTF-8** du titre
+/// (`printpdf-0.7.0/src/document_info.rs:83`), qu'un lecteur décode en
+/// PDFDocEncoding : « Compte de résultat » s'y lit « Compte de rÃ©sultat ». Le
+/// PDF veut une chaîne de texte en UTF-16BE précédée de `FE FF`, que printpdf ne
+/// sait pas écrire (son titre est une `String`). Le document est donc créé sous
+/// ce gabarit, puis [`set_pdf_title`] remplace, dans les octets produits, la
+/// chaîne littérale `(gabarit)` par la chaîne hexadécimale `<FEFF…>` du vrai
+/// titre. Le gabarit a **exactement la longueur** de cette chaîne (4 + 4 par
+/// unité UTF-16, les délimiteurs se répondant), si bien qu'aucun décalage
+/// d'octets ne fausse la table des références croisées : rien n'est relu ni
+/// réécrit d'autre. Seuls des caractères alphanumériques ASCII, que lopdf écrit
+/// tels quels.
+fn title_placeholder(title: &str) -> Option<String> {
+    if title.is_ascii() {
+        return None;
+    }
+    let len = 4 + 4 * title.encode_utf16().count();
+    Some(
+        "KeshTitrePdf"
+            .chars()
+            .chain(std::iter::repeat('x'))
+            .take(len)
+            .collect(),
+    )
+}
+
+/// Une chaîne de texte PDF en hexadécimal : `<FEFF…>`, l'UTF-16BE de `text`
+/// précédé de la marque d'ordre des octets (ISO 32000-1, § 7.9.2.2).
+fn pdf_utf16_hex(text: &str) -> String {
+    let mut out = String::from("<FEFF");
+    for unit in text.encode_utf16() {
+        out.push_str(&format!("{unit:04X}"));
+    }
+    out.push('>');
+    out
+}
+
+/// Remplace, dans le PDF produit, la chaîne littérale `(placeholder)` — le
+/// titre provisoire écrit par printpdf, voir [`title_placeholder`] — par le
+/// vrai titre en UTF-16BE. Le remplacement garde la longueur (contrôlée) ; il
+/// exige une occurrence et une seule, sans quoi le PDF n'est pas rendu.
+fn set_pdf_title(
+    mut bytes: Vec<u8>,
+    placeholder: &str,
+    title: &str,
+) -> Result<Vec<u8>, ReportError> {
+    let needle = format!("({placeholder})");
+    let hex = pdf_utf16_hex(title);
+    let needle = needle.as_bytes();
+    let erreur = |m: &str| ReportError::PdfGeneration(format!("titre du document : {m}"));
+    if hex.len() != needle.len() {
+        return Err(erreur("longueur du gabarit"));
+    }
+    let mut hits = bytes
+        .windows(needle.len())
+        .enumerate()
+        .filter(|(_, w)| w == &needle);
+    let (at, _) = hits.next().ok_or_else(|| erreur("gabarit absent"))?;
+    if hits.next().is_some() {
+        return Err(erreur("gabarit en double"));
+    }
+    bytes[at..at + needle.len()].copy_from_slice(hex.as_bytes());
+    Ok(bytes)
 }
 
 // ============================================================================
@@ -599,6 +704,29 @@ fn draw_empty_message(builder: &mut PdfBuilder, ctx: &PdfContext) {
 /// 34 caractères à 2,5 mm la capitale (comme `TB_NAME_MAX_CHARS`) tiennent dans
 /// 85 mm, avec une marge (Story 37-4, revue de code P1).
 const ACCOUNT_NAME_MAX_CHARS_FX: usize = 34;
+
+/// En-têtes des deux colonnes de montant du bilan et du compte de résultat,
+/// alignés à droite comme elles — « Devise » sur les soldes en devise, « CHF »
+/// sur les soldes en devise principale —, dessinés seulement si le rapport
+/// contient un compte en devise : un rapport mono-devise n'a qu'une colonne de
+/// montant et garde son rendu.
+fn draw_currency_columns_header(builder: &mut PdfBuilder, ctx: &PdfContext) {
+    let l = &ctx.section_labels;
+    builder.write_right(
+        &l.col_foreign_currency,
+        FONT_SIZE_PT,
+        true,
+        FX_AMOUNT_RIGHT_MM,
+    );
+    builder.write_right(&l.col_base_currency, FONT_SIZE_PT, true, AMOUNT_RIGHT_MM);
+    builder.cursor_y -= LINE_HEIGHT_MM;
+}
+
+/// Vrai si l'un des comptes porte une devise (Story 37-4) : le rapport montre
+/// alors une colonne en devise à côté de celle en devise principale.
+fn any_foreign<'a>(accounts: impl IntoIterator<Item = &'a AccountBalance>) -> bool {
+    accounts.into_iter().any(|ab| ab.currency.is_some())
+}
 
 /// Dessine une ligne de compte (N° | Nom | Solde) ou variante.
 fn draw_account_row(builder: &mut PdfBuilder, ab: &AccountBalance) {
@@ -692,6 +820,10 @@ pub fn render_balance_sheet_pdf(
     if bs.is_empty() {
         draw_empty_message(&mut builder, ctx);
         return builder.finalize();
+    }
+
+    if any_foreign(bs.assets.iter().chain(&bs.liabilities).chain(&bs.equity)) {
+        draw_currency_columns_header(&mut builder, ctx);
     }
 
     // Section Actifs
@@ -821,6 +953,10 @@ pub fn render_income_statement_pdf(
         return builder.finalize();
     }
 
+    if any_foreign(is_.revenues.iter().chain(&is_.expenses)) {
+        draw_currency_columns_header(&mut builder, ctx);
+    }
+
     // Section Produits
     builder.write_line(&ctx.section_labels.revenues, FONT_SIZE_PT, true, 0.0);
     for ab in &is_.revenues {
@@ -905,15 +1041,21 @@ pub fn render_trial_balance_pdf(
     }
 
     let l = &ctx.section_labels;
+    // Avec un compte en devise, les quatre colonnes disent leur devise
+    // (« Débit CHF ») : les montants en devise sont dans la seconde ligne.
+    let multi = tb.rows.iter().any(|r| r.currency.is_some());
+    let [opening_h, debit_h, credit_h, closing_h] =
+        [&l.col_opening, &l.col_debit, &l.col_credit, &l.col_closing]
+            .map(|h| l.amount_header(h, multi));
     draw_tb_row(
         &mut builder,
         [
             Some(&l.col_account_number),
             Some(&l.col_account_name),
-            Some(&l.col_opening),
-            Some(&l.col_debit),
-            Some(&l.col_credit),
-            Some(&l.col_closing),
+            Some(&opening_h),
+            Some(&debit_h),
+            Some(&credit_h),
+            Some(&closing_h),
         ],
         true,
     );
@@ -1674,6 +1816,7 @@ fn draw_ledger_account_header(
     ctx: &PdfContext,
     section: &crate::general_ledger::LedgerSection,
     continued: bool,
+    multi: bool,
 ) {
     let l = &ctx.section_labels;
     let mut title = format!("{} — {}", section.account_number, section.account_name);
@@ -1703,14 +1846,15 @@ fn draw_ledger_account_header(
         true,
         LEDGER_COL_COUNTERPART,
     );
-    builder.write_right(&l.col_debit, LEDGER_FONT_PT, true, LEDGER_DEBIT_RIGHT_MM);
-    builder.write_right(&l.col_credit, LEDGER_FONT_PT, true, LEDGER_CREDIT_RIGHT_MM);
-    builder.write_right(
-        &l.col_running,
-        LEDGER_FONT_PT,
-        true,
-        LEDGER_RUNNING_RIGHT_MM,
-    );
+    // Avec un compte en devise dans le rapport, les colonnes de montant disent
+    // leur devise (« Débit CHF ») ; les soldes en devise portent leur code.
+    for (label, right) in [
+        (&l.col_debit, LEDGER_DEBIT_RIGHT_MM),
+        (&l.col_credit, LEDGER_CREDIT_RIGHT_MM),
+        (&l.col_running, LEDGER_RUNNING_RIGHT_MM),
+    ] {
+        builder.write_right(&l.amount_header(label, multi), LEDGER_FONT_PT, true, right);
+    }
     builder.cursor_y -= LINE_HEIGHT_MM;
 }
 
@@ -1762,6 +1906,9 @@ pub fn render_general_ledger_pdf(
         draw_empty_message(&mut builder, ctx);
         return builder.finalize();
     }
+    // Un compte en devise dans le rapport : les en-têtes de montant de tous les
+    // comptes disent « CHF », pour un rendu égal d'un compte à l'autre.
+    let multi = gl.sections.iter().any(|s| s.currency.is_some());
 
     for section in &gl.sections {
         // Story 37-4 : le solde en devise d'une ligne d'encadrement, `None`
@@ -1776,7 +1923,7 @@ pub fn render_general_ledger_pdf(
         // bandeau, sa ligne d'ouverture et un mouvement — et, en devise, la
         // seconde ligne de ce mouvement (Story 37-4, revue de code P1).
         builder.ensure_space_for_rows(if section.currency.is_some() { 5.0 } else { 4.0 });
-        draw_ledger_account_header(&mut builder, ctx, section, false);
+        draw_ledger_account_header(&mut builder, ctx, section, false, multi);
         draw_ledger_marker(
             &mut builder,
             &ctx.section_labels.ledger_opening,
@@ -1842,7 +1989,7 @@ pub fn render_general_ledger_pdf(
                     true,
                 );
                 builder.new_page();
-                draw_ledger_account_header(&mut builder, ctx, section, true);
+                draw_ledger_account_header(&mut builder, ctx, section, true, multi);
                 draw_ledger_marker(
                     &mut builder,
                     &ctx.section_labels.ledger_carried_over,
@@ -3207,6 +3354,19 @@ mod tests {
             );
             fin = bord;
         }
+        // L'en-tête le plus long de la balance, en multi-devises, après l'intitulé.
+        let entete = SectionLabels::fr_ch_defaults().amount_header("Ouverture", true);
+        assert!(
+            right_aligned_x(&entete, FONT_SIZE_PT, true, TB_AMOUNT_RIGHT_MM[0])
+                > MARGIN_LEFT_MM + TB_COL_X[1] + largeur_mm("Intitulé", FONT_SIZE_PT, true)
+        );
+        for (i, h) in ["Débit", "Crédit", "Clôture"].into_iter().enumerate() {
+            let h = SectionLabels::fr_ch_defaults().amount_header(h, true);
+            assert!(
+                right_aligned_x(&h, FONT_SIZE_PT, true, TB_AMOUNT_RIGHT_MM[i + 1])
+                    > TB_AMOUNT_RIGHT_MM[i]
+            );
+        }
         // Grand livre (8 pt) : contreparties (10 caractères), débit, crédit, solde.
         let mut fin = LEDGER_COL_COUNTERPART + largeur_mm("6000,6001…", LEDGER_FONT_PT, false);
         for bord in [
@@ -3307,6 +3467,8 @@ mod tests {
             .into_iter()
             .zip(TB_AMOUNT_RIGHT_MM)
         {
+            // Balance avec un compte en devise : « Ouverture CHF ».
+            let entete = &format!("{entete} CHF");
             let p = poses.iter().find(|p| &p.text == entete).unwrap();
             assert!(
                 (p.x_mm + largeur_mm(entete, p.size, p.bold) - bord).abs() < 0.01,
@@ -3434,5 +3596,154 @@ mod tests {
                 .unwrap(),
             &[RET_COUT_RIGHT_MM, RET_REV_RIGHT_MM, RET_RES_RIGHT_MM],
         );
+    }
+
+    // ------------------------------------------------------------------
+    // Correctif fix-pdf-montants-alignes — titre des propriétés du PDF
+    // ------------------------------------------------------------------
+
+    /// Le titre des propriétés d'un PDF (`/Title` du dictionnaire `Info`), relu
+    /// par lopdf — qui doit donc analyser le fichier entier, table des
+    /// références croisées comprise — et décodé : UTF-16BE après `FE FF`,
+    /// sinon octet par octet (PDFDocEncoding, ASCII ici).
+    fn pdf_title(bytes: &[u8]) -> String {
+        let doc = lopdf::Document::load_mem(bytes).expect("PDF lisible par lopdf");
+        let info = doc.trailer.get(b"Info").unwrap().as_reference().unwrap();
+        let title = doc.get_dictionary(info).unwrap().get(b"Title").unwrap();
+        let raw = title.as_str().unwrap();
+        match raw.strip_prefix(&[0xFE, 0xFF]) {
+            Some(utf16) => String::from_utf16(
+                &utf16
+                    .chunks(2)
+                    .map(|c| u16::from_be_bytes([c[0], c[1]]))
+                    .collect::<Vec<_>>(),
+            )
+            .unwrap(),
+            None => raw.iter().map(|b| char::from(*b)).collect(),
+        }
+    }
+
+    /// Unitaire — le gabarit a la longueur exacte de la chaîne hexadécimale qui
+    /// le remplacera (délimiteurs compris), pour tout titre non ASCII, y compris
+    /// hors du plan multilingue de base (deux unités UTF-16) ; aucun pour un
+    /// titre ASCII.
+    #[test]
+    fn le_gabarit_du_titre_a_la_longueur_de_sa_chaine_utf16() {
+        assert_eq!(title_placeholder("Bilan"), None);
+        assert_eq!(title_placeholder("Erfolgsrechnung"), None);
+        for t in [
+            "é",
+            "Compte de résultat",
+            "Décompte TVA",
+            "Prüfbericht — Übersicht",
+            "Clé 𝄞",
+        ] {
+            let ph = title_placeholder(t).unwrap();
+            assert!(ph.chars().all(|c| c.is_ascii_alphanumeric()), "{ph}");
+            assert_eq!(format!("({ph})").len(), pdf_utf16_hex(t).len(), "{t}");
+        }
+        assert_eq!(pdf_utf16_hex("é"), "<FEFF00E9>");
+        assert_eq!(pdf_utf16_hex("𝄞"), "<FEFFD834DD1E>");
+    }
+
+    /// Unitaire — le remplacement exige le gabarit une fois et une seule.
+    #[test]
+    fn le_titre_ne_se_pose_que_sur_un_gabarit_unique() {
+        let ph = title_placeholder("é").unwrap();
+        let un = format!("<</Title({ph})>>").into_bytes();
+        assert_eq!(
+            set_pdf_title(un, &ph, "é").unwrap(),
+            b"<</Title<FEFF00E9>>>".to_vec()
+        );
+        assert!(set_pdf_title(b"<</Title(x)>>".to_vec(), &ph, "é").is_err());
+        let deux = format!("({ph})({ph})").into_bytes();
+        assert!(set_pdf_title(deux, &ph, "é").is_err());
+    }
+
+    /// Bout en bout — le titre des propriétés se relit juste, accents compris,
+    /// dans un PDF que lopdf analyse (le remplacement n'a décalé aucun octet) :
+    /// compte de résultat, décompte TVA, grand livre au titre allemand et hors
+    /// du plan de base ; un titre ASCII (« Bilan ») reste tel quel.
+    #[test]
+    fn le_titre_des_proprietes_du_pdf_se_relit_juste() {
+        let ctx = PdfContext::fr_ch_default("Test SA");
+        assert_eq!(
+            pdf_title(&render_income_statement_pdf(&fixture_is(false), &ctx).unwrap()),
+            "Compte de résultat"
+        );
+        assert_eq!(
+            pdf_title(&render_balance_sheet_pdf(&fixture_bs(false), &ctx).unwrap()),
+            "Bilan"
+        );
+        let vat = render_vat_report_pdf(&fixture_vat(false), &ctx, &VatPdfLabels::fr_ch_defaults())
+            .unwrap();
+        assert_eq!(pdf_title(&vat), "Décompte TVA");
+        let mut de = PdfContext::fr_ch_default("Test SA");
+        de.section_labels.ledger_title = "Hauptbuch — Prüfung 𝄞".into();
+        // Plusieurs pages : le titre se pose aussi sur un gros document.
+        let gl = render_general_ledger_pdf(&ledger_with(300), &de).unwrap();
+        assert_eq!(pdf_title(&gl), "Hauptbuch — Prüfung 𝄞");
+        // Aucun reste du gabarit.
+        assert!(!String::from_utf8_lossy(&gl).contains("KeshTitr"));
+    }
+
+    // ------------------------------------------------------------------
+    // Correctif fix-pdf-montants-alignes — en-têtes des colonnes en devise
+    // ------------------------------------------------------------------
+
+    /// Le bord droit d'un texte posé : son abscisse de départ plus sa largeur.
+    fn bord_de(poses: &[Pose], text: &str) -> Option<f32> {
+        poses
+            .iter()
+            .find(|p| p.text == text)
+            .map(|p| p.x_mm + largeur_mm(&p.text, p.size, p.bold))
+    }
+
+    /// Bilan et compte de résultat avec un compte en devise : « Devise » et
+    /// « CHF » en tête de leurs colonnes, alignés à droite sur elles ; sans
+    /// compte en devise, aucun en-tête — le rendu mono-devise ne change pas.
+    #[test]
+    fn bilan_et_resultat_disent_la_devise_de_leurs_colonnes_en_multi_devises() {
+        let ctx = PdfContext::fr_ch_default("Test SA");
+        let poses = pdf_poses(&render_balance_sheet_pdf(&fixture_bs_multi(), &ctx).unwrap());
+        assert!((bord_de(&poses, "Devise").unwrap() - FX_AMOUNT_RIGHT_MM).abs() < 0.01);
+        assert!((bord_de(&poses, "CHF").unwrap() - AMOUNT_RIGHT_MM).abs() < 0.01);
+        let mut is_ = fixture_is(false);
+        is_.revenues[0].currency = Some("EUR".into());
+        is_.revenues[0].balance_currency = Some(dec!(2100));
+        let poses = pdf_poses(&render_income_statement_pdf(&is_, &ctx).unwrap());
+        assert!((bord_de(&poses, "Devise").unwrap() - FX_AMOUNT_RIGHT_MM).abs() < 0.01);
+        assert!((bord_de(&poses, "CHF").unwrap() - AMOUNT_RIGHT_MM).abs() < 0.01);
+        for bytes in [
+            render_balance_sheet_pdf(&fixture_bs(false), &ctx).unwrap(),
+            render_income_statement_pdf(&fixture_is(false), &ctx).unwrap(),
+        ] {
+            let t = pdf_text(&bytes);
+            assert!(
+                !t.iter().any(|l| l == "Devise" || l == "CHF"),
+                "mono : {t:?}"
+            );
+        }
+    }
+
+    /// Balance et grand livre avec un compte en devise : les en-têtes de montant
+    /// disent « CHF » ; sans compte en devise, ils restent tels quels.
+    #[test]
+    fn balance_et_grand_livre_disent_chf_en_multi_devises() {
+        let ctx = PdfContext::fr_ch_default("Test SA");
+        let mut tb = fixture_tb(false);
+        let mono = pdf_text(&render_trial_balance_pdf(&tb, &ctx).unwrap());
+        assert!(mono.iter().any(|l| l == "Ouverture") && !mono.iter().any(|l| l.ends_with(" CHF")));
+        tb.rows[0].currency = Some("USD".into());
+        let multi = pdf_text(&render_trial_balance_pdf(&tb, &ctx).unwrap());
+        for h in ["Ouverture CHF", "Débit CHF", "Crédit CHF", "Clôture CHF"] {
+            assert!(multi.iter().any(|l| l == h), "{h} dans {multi:?}");
+        }
+        let mono = pdf_text(&render_general_ledger_pdf(&ledger_with(3), &ctx).unwrap());
+        assert!(mono.iter().any(|l| l == "Solde") && !mono.iter().any(|l| l.ends_with(" CHF")));
+        let multi = pdf_text(&render_general_ledger_pdf(&ledger_usd(3), &ctx).unwrap());
+        for h in ["Débit CHF", "Crédit CHF", "Solde CHF"] {
+            assert!(multi.iter().any(|l| l == h), "{h}");
+        }
     }
 }
