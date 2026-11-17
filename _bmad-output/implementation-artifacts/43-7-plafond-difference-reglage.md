@@ -212,6 +212,23 @@ Rapports : `kesh-gate-logs/e437/review-p1-{B,E,A}.md` (0 CRITICAL, 0 HIGH, 1 MED
   (`rem1-vitest.log`) ; `npm run check` 0 erreur (`rem1-check.log`) ; `cargo fmt --check` vert. Non relancés : `test-fast` complet,
   `gate-ci` et E2E (à la clôture, sur la branche fusionnée avec la 43-1a).
 
+### Remédiation de la passe ciblée P2 (commit `9849bd74b`)
+
+Rapport : `kesh-gate-logs/e437/review-p2-ciblee.md` (1 MEDIUM, 2 LOW). Edit seulement.
+- **B2-1 (MEDIUM)** : l'écran compare les **valeurs**, non le texte : `groupMaxChanged` (`group-settlement-max.ts`) lit la saisie et la
+  valeur rendue par `readGroupMax`, puis égalité `Big`. Tests (`it.each`) « 5.01 rendu / 5,01 saisi », « 5.00 / 5,00 », « 5.00 / 5.0 » :
+  le champ n'est pas envoyé. **Mutation M5** (comparaison du texte brut, remise dans le script) : 3 rouges (`mut/M5.log`) ; elle
+  rougissait donc sur le code de `678603712`.
+- **B2-2 — changements de comportement de la remédiation P1**, à nommer : (a) **B1-3**, après un enregistrement réussi le champ est
+  **réécrit depuis la réponse** (« 1,5 » devient « 1.50 », « 5 » devient « 5.00 ») : la saisie de l'utilisateur change sous ses
+  yeux ; (b) **B1-4**, `aria-describedby` porte **deux identifiants** (refus et aide) quand l'erreur s'affiche, un seul sinon : ce que
+  lit un lecteur d'écran change.
+- **B2-3** : L-4 (fiche et manuel) dit que l'audit et l'export CSV portent la valeur brute à quatre décimales, l'API l'arrondie au
+  centime ; l'AC1 de la fiche dit que « modifié » se juge sur les valeurs.
+- **M4** : ajoutée au script `mut/mut-e437.sh` (avec M5, voie frontend), rejouée sur le code de `9849bd74b` : 4 rouges (`mut/M4.log`).
+- **Gates ciblés** (commit `9849bd74b`) : Vitest de la page et de `group-settlement-max` 50 passés (`rem2-vitest.log`) ; `npm run check`
+  0 erreur (`rem2-check.log`). Aucun code Rust touché.
+
 ### File List
 
 Code : `crates/kesh-db/src/entities/company_invoice_settings.rs`, `crates/kesh-db/src/repositories/company_invoice_settings.rs`,
