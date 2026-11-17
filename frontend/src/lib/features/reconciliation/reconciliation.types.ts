@@ -129,6 +129,13 @@ export type AcceptProposalInput =
 			bankTransactionId: number;
 			invoiceIds: number[];
 			differenceAccountId?: number;
+	  }
+	// Story 43-3 (#823, D6) — une transaction au débit règle plusieurs factures fournisseur.
+	| {
+			type: 'supplier_invoice_group';
+			bankTransactionId: number;
+			supplierInvoiceIds: number[];
+			differenceAccountId?: number;
 	  };
 
 export interface SplitProposalLine {

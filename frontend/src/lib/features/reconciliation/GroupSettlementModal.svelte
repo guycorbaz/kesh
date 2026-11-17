@@ -196,6 +196,18 @@
 				return i18nMsg('reconciliation-group-gap-client-over', 'Trop-perçu de { $amount }', {
 					amount: gapAbs,
 				});
+			case 'supplier-over':
+				return i18nMsg(
+					'reconciliation-group-gap-supplier-over',
+					'Débit supérieur aux factures de { $amount }',
+					{ amount: gapAbs },
+				);
+			case 'supplier-under':
+				return i18nMsg(
+					'reconciliation-group-gap-supplier-under',
+					'Débit inférieur aux factures de { $amount }',
+					{ amount: gapAbs },
+				);
 			default:
 				return i18nMsg('reconciliation-group-gap-none', 'Aucun écart');
 		}
@@ -476,14 +488,15 @@
 		const ids = imputed.map((c) => c.id);
 		const sentAccountId = decomposition.gap !== 0n ? differenceAccountId : null;
 		const account = sentAccountId === null ? {} : { differenceAccountId: sentAccountId };
-		// Côté client seulement : le débit vient avec le commit fournisseur (D6).
-		if (family !== 'client') return;
-		const body: AcceptProposalInput = {
-			type: 'invoice_group',
-			bankTransactionId: txId,
-			invoiceIds: ids,
-			...account,
-		};
+		const body: AcceptProposalInput =
+			family === 'client'
+				? { type: 'invoice_group', bankTransactionId: txId, invoiceIds: ids, ...account }
+				: {
+						type: 'supplier_invoice_group',
+						bankTransactionId: txId,
+						supplierInvoiceIds: ids,
+						...account,
+					};
 		latest.cancel();
 		const mySession = session.next();
 		submitting = true;
@@ -601,7 +614,9 @@
 								<tr>
 									<th class="text-left">{i18nMsg('reconciliation-group-col-invoice', 'Facture')}</th>
 									<th class="text-left">
-										{i18nMsg('reconciliation-group-col-client', 'Client')}
+										{family === 'client'
+											? i18nMsg('reconciliation-group-col-client', 'Client')
+											: i18nMsg('reconciliation-group-col-supplier', 'Fournisseur')}
 									</th>
 									<th class="text-left">{i18nMsg('reconciliation-group-col-date', 'Date')}</th>
 									<th class="text-right">{i18nMsg('reconciliation-group-col-due', 'Reste dû')}</th>

@@ -1044,7 +1044,11 @@ const ATTENDU = {
 	// (`failed-proposal-label.ts`, `reconciliation-cancel.ts`, `CancelReconciliationDialog.svelte`,
 	// `ReconciliationProposals.svelte`), recomptés par `grep -c 'i18nMsg('` ; que des littéraux.
 	// À relever de nouveau à l'union de la 0.19.0 (C-e350-18).
-	sitesTotal: 3142,
+	// Story 43-3, côté fournisseur (D6, commit retirable) : **3142 → 3146** — les quatre sites
+	// `reconciliation-group-gap-supplier-over`, `-under`, `-col-supplier`
+	// (`GroupSettlementModal.svelte`) et `reconciliation-cancel-confirm-group-supplier`
+	// (`CancelReconciliationDialog.svelte`) ; la valeur relevée par la garde pour la story entière.
+	sitesTotal: 3146,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

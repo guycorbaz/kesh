@@ -277,6 +277,23 @@ describe('CancelReconciliationDialog — règlement groupé (Story 43-3)', () =>
 		expect(queryByTestId('reconciliation-cancel-group-gap')).toBeNull();
 	});
 
+	// D6 — un groupe fournisseur (commit retirable).
+	it('groupe fournisseur : le paiement des factures fournisseur est retiré', async () => {
+		mockApi.getReconciliationTransaction.mockResolvedValue(
+			view({
+				...groupe,
+				groupedInvoices: [
+					{ kind: 'supplier_invoice', id: 7, number: 'FF-7', amount: '100.0000' },
+					{ kind: 'supplier_invoice', id: 8, number: 'FF-8', amount: '50.0000' },
+				],
+			}),
+		);
+		const { findByTestId } = monter();
+		expect((await findByTestId('reconciliation-cancel-confirm-text')).textContent).toContain(
+			'le paiement des factures fournisseur FF-7, FF-8 sera retiré',
+		);
+	});
+
 	it.each([
 		['INVOICE_CREDITED', 'Une des factures de ce rapprochement, F-15, a été créditée'],
 		['INVOICE_WRITTEN_OFF', "Le reste d'une des factures de ce rapprochement, F-15, a été soldé"],

@@ -146,6 +146,14 @@
 		// Story 43-3 (#823, AC5) — un règlement groupé : ses N factures redeviennent ouvertes.
 		if (view?.kind === 'grouped_settlement') {
 			const invoices = (view.groupedInvoices ?? []).map(pieceLabel).join(', ');
+			// D6 — un groupe fournisseur : le paiement est retiré, les factures redeviennent validées.
+			if ((view.groupedInvoices ?? []).some((g) => g.kind === 'supplier_invoice')) {
+				return i18nMsg(
+					'reconciliation-cancel-confirm-group-supplier',
+					"Une écriture inverse datée d'aujourd'hui sera passée, le paiement des factures fournisseur { $invoices } sera retiré et elles redeviendront validées, à payer ; la transaction redeviendra à rapprocher.",
+					{ invoices },
+				);
+			}
 			return i18nMsg(
 				'reconciliation-cancel-confirm-group',
 				"Une écriture inverse datée d'aujourd'hui sera passée, le règlement des factures { $invoices } sera retiré et elles redeviendront à régler ; la transaction redeviendra à rapprocher.",

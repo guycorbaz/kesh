@@ -302,11 +302,13 @@
 	}
 
 	/**
-	 * Story 43-3 (#823, D1) — *Régler plusieurs factures…* : un crédit en CHF de montant non nul
-	 * (`canLink`) ; le débit vient avec le commit fournisseur (D6, retirable).
+	 * Story 43-3 (#823, D1) — *Régler plusieurs factures…* : la même condition que le rattachement
+	 * (`canLink`, CHF, montant non nul) ; un crédit règle des factures clients, un débit (D6,
+	 * commit retirable) des factures fournisseur. ⚠️ Retirer le commit D6 ramène ici la garde du
+	 * crédit seul. Quand le multi-devise arrivera, cette condition est le seul point à élargir.
 	 */
 	function canGroup(p: ReconciliationProposal): boolean {
-		return canLink(p) && !p.transaction.amount.trim().startsWith('-');
+		return canLink(p);
 	}
 
 	function openGroup(p: ReconciliationProposal) {

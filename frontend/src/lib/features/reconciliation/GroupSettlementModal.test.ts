@@ -728,3 +728,76 @@ describe('GroupSettlementModal — gardes de concurrence (D4, AC3)', () => {
 		expect(mockToast.success).not.toHaveBeenCalled();
 	});
 });
+
+// Story 43-3 (#823, D6, C-43-18) — le côté fournisseur, dans un commit retirable si la 43-1b sort.
+describe('GroupSettlementModal — un débit règle plusieurs factures fournisseur (D6)', () => {
+	function sup(id: number, raw: string, contact = 'Fournisseur SA'): GroupCandidate {
+		return {
+			kind: 'supplier_invoice',
+			id,
+			internalNumber: `FF-${id}`,
+			supplierInvoiceNumber: `R-${id}`,
+			contactName: contact,
+			date: '2026-10-01',
+			dueDate: null,
+			paymentReference: null,
+			amountDue: raw.slice(0, raw.indexOf('.') + 3),
+			amountDueRaw: raw,
+		};
+	}
+
+	async function deuxFournisseurs(amount: string) {
+		serve([sup(7, '500.0000'), sup(8, '300.0000', 'Autre fournisseur')], {
+			direction: 'supplier',
+			transactionAmount: amount,
+		});
+		const m = monter(proposal(amount));
+		await ajouter(m.r, 7);
+		await ajouter(m.r, 8);
+		return m;
+	}
+
+	it('débit supérieur aux factures : frais bancaires préremplis, corps supplier_invoice_group', async () => {
+		const { r } = await deuxFournisseurs('-800.40');
+		expect(texte(r, 'group-gap')).toBe('Débit supérieur aux factures de 0.40');
+		await waitFor(() => expect(champCompte()?.value).toBe('6940 — Frais bancaires'));
+		await waitFor(() => expect(submit(r).disabled).toBe(false));
+		mockApi.acceptProposals.mockResolvedValue({ accepted: [], failed: [] });
+		await fireEvent.click(submit(r));
+		await waitFor(() => expect(mockApi.acceptProposals).toHaveBeenCalledTimes(1));
+		expect(mockApi.acceptProposals.mock.calls[0][1]).toEqual([
+			{
+				type: 'supplier_invoice_group',
+				bankTransactionId: TX,
+				supplierInvoiceIds: [7, 8],
+				differenceAccountId: 6940,
+			},
+		]);
+	});
+
+	it('débit inférieur aux factures : compte d’arrondi prérempli ; colonne « Fournisseur »', async () => {
+		const { r } = await deuxFournisseurs('-799.60');
+		expect(texte(r, 'group-gap')).toBe('Débit inférieur aux factures de 0.40');
+		await waitFor(() => expect(champCompte()?.value).toBe('6960 — Différences d’arrondi'));
+		expect(r.getAllByTestId('group-imputed-row')[0].textContent).toContain('FF-7');
+	});
+
+	it('refus d’une facture fournisseur : supplierInvoiceId lu, la facture retirée et nommée', async () => {
+		const { r } = await deuxFournisseurs('-800.00');
+		await waitFor(() => expect(submit(r).disabled).toBe(false));
+		mockApi.acceptProposals.mockResolvedValue({
+			accepted: [],
+			failed: [
+				{
+					bankTransactionId: TX,
+					errorCode: 'RECONCILIATION_SUPPLIER_PAYMENT_HOLD',
+					details: { reason: 'other_invoice_in_payment_batch', supplierInvoiceId: 8, invoiceNumber: 'FF-8' },
+				},
+			],
+		});
+		await fireEvent.click(submit(r));
+		await r.findByTestId('group-refusal');
+		expect(texte(r, 'group-refusal')).toContain('Facture FF-8 : Une autre facture fournisseur');
+		expect(r.getAllByTestId('group-imputed-row').map((x) => x.getAttribute('data-invoice-id'))).toEqual(['7']);
+	});
+});

@@ -1066,10 +1066,9 @@ describe('ReconciliationProposals — rattacher à une écriture existante (Stor
 		expect(boutons[1].textContent?.trim()).toBe('Rattacher à une écriture existante');
 	});
 
-	// Story 43-3 (#823, D1, AC1) — « Régler plusieurs factures… » suit `canLink` : un crédit en
-	// CHF de montant non nul ; ni montant nul, ni autre devise (sonde négative). Le débit vient
-	// avec le commit fournisseur (D6).
-	it('Régler plusieurs factures… : un crédit en CHF non nul (43-3, D1)', async () => {
+	// Story 43-3 (#823, D1, AC1) — « Régler plusieurs factures… » suit `canLink` : crédit ou
+	// débit (D6) en CHF de montant non nul ; ni montant nul, ni autre devise (sonde négative).
+	it('Régler plusieurs factures… : même condition que le rattachement (43-3, D1, D6)', async () => {
 		mockApi.getProposals.mockResolvedValue({
 			proposals: [ligne(1, '100.03'), ligne(2, '-50.00'), ligne(3, '0.00'), ligne(4, '20.00', 'EUR')],
 			hasMore: false,
@@ -1077,7 +1076,7 @@ describe('ReconciliationProposals — rattacher à une écriture existante (Stor
 		const { findAllByTestId } = render(ReconciliationProposals, { bankAccountId: 17 });
 		await findAllByTestId('reconciliation-row');
 		const boutons = await findAllByTestId('group-settlement-button');
-		expect(boutons.map((b) => b.getAttribute('data-tx-id'))).toEqual(['1']);
+		expect(boutons.map((b) => b.getAttribute('data-tx-id'))).toEqual(['1', '2']);
 		expect(boutons[0].textContent?.trim()).toBe('Régler plusieurs factures…');
 	});
 
