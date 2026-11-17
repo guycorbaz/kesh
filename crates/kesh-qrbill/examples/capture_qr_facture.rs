@@ -1,4 +1,4 @@
-//! Les QR-factures de la recette visuelle (Stories 36-12a et 36-12b, #944) : des PDF de
+//! Les QR-factures de la recette visuelle (Stories 36-12a et 44-1a, #944) : des PDF de
 //! fixtures **synthétiques**, en français, en allemand et en anglais, écrits dans le répertoire donné en
 //! argument, pour être rendus en PNG et comparés aux échantillons de SIX.
 //!
