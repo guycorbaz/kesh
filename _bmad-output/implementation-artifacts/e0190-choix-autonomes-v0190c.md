@@ -15,6 +15,8 @@ les choix C-v0190c-1 à 10 sont repris des fiches, les suivants naissent de la r
 - **C-v0190c-16** (D1 à D3, validation P2 V2-2 à V2-7) : la frappe efface la désignation ; `loading` et `results` remis à zéro au `blur` et au choix ; réponse jugée sur le `draft` courant à son arrivée, échec = réponse ; le changement de `selected?.id` purge désignation, liste, `pending` ; sous-ligne IDE lisible (≥ 4,5:1) ; `preventDefault` sur `mousedown`.
 - **C-v0190c-17** (AC3, V2-8) : le test de page *Réinitialiser* est exigé ; AC4 : lignes remplies avant la frappe, aucun `POST` parti, rouge constaté au développement ; jalon mercredi 18 h (la story sort de la release).
 
+- **C-v0190c-19** (D1 à D3, remédiations des validations P3 à P6) : `searchSeq++` au changement de client (P3-1) ; « Chargement… » tant que `pending || loading` (P3-3) ; règle 2 (cas E3) : *Entrée* sur un brouillon rouvre et désigne si `pending` est faux (P3-4) ; `group-hover` réservé à l'option non désignée (P4-1, P5-1) ; la relance par la flèche reprend le texte de la frappe (P4-2) ; règle unique de désignation : par la saisie (brouillon non blanc, liste ouverte à l'arrivée) ou par une flèche, jamais par l'arrivée pour un brouillon nul (P5-2, P6-4) ; la direction de la relance est un paramètre de `runSearch`, capturé avec `seq`, appliqué seulement si `seq === searchSeq`, sans état du composant (P6-1) ; la désignation par la flèche l'emporte sur celle de la saisie (P6-3). Écarté : un état `arrowRelance` (survit à une recherche abandonnée).
+
 ## Fiche `v0190-nom-societe.md` (#1097, nom de la société)
 
 - **C-v0190c-4** (D1) : route dédiée `PUT /api/v1/companies/current/name`, Admin-only ; écarté : étendre `address` ou `contact-details`.
