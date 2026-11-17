@@ -4893,6 +4893,31 @@ impl IntoResponse for AppError {
                     ),
                     serde_json::json!({}),
                 ),
+                DbError::AccountForeignParentHasEntries {
+                    parent_account_id,
+                    parent_number,
+                    currency,
+                } => {
+                    let mut args = FluentArgs::new();
+                    args.set("number", parent_number.clone());
+                    args.set("currency", currency.clone());
+                    coded_response(
+                        StatusCode::CONFLICT,
+                        "ACCOUNT_FOREIGN_PARENT_HAS_ENTRIES",
+                        t_args(
+                            "error-account-foreign-parent-has-entries",
+                            &format!(
+                                "Le compte {parent_number} est tenu en {currency} et porte des écritures : il ne reçoit pas de sous-compte, sans quoi il deviendrait non imputable avec un solde que la réévaluation de fin d’exercice ne pourrait plus corriger. Créez plutôt un compte voisin."
+                            ),
+                            &args,
+                        ),
+                        serde_json::json!({
+                            "parentAccountId": parent_account_id,
+                            "parentNumber": parent_number,
+                            "currency": currency,
+                        }),
+                    )
+                }
                 DbError::AccountCurrencyInUse { site } => coded_response(
                     StatusCode::CONFLICT,
                     "ACCOUNT_CURRENCY_IN_USE",

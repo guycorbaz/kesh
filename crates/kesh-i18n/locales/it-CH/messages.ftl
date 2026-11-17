@@ -1172,6 +1172,7 @@ error-fx-revaluation-value-out-of-range = La rivalutazione di un conto in { $cur
 error-fiscal-year-close-fx-not-revalued = Rivaluta prima i conti in valuta al tasso di chiusura: un conto di bilancio in valuta non è rivalutato, o la sua valuta non ha un tasso di chiusura.
 error-exchange-rate-version-forbidden = Nessun tasso è ancora fissato per questa casella: la versione non deve essere inviata.
 error-account-currency-locked = La valuta di questo conto non può più cambiare: porta delle registrazioni, di cui è la valuta.
+error-account-foreign-parent-has-entries = Il conto { $number } è tenuto in { $currency } e porta delle registrazioni: non riceve sottoconti, altrimenti diventerebbe non imputabile con un saldo che la rivalutazione di fine esercizio non potrebbe più correggere. Create invece un conto affiancato.
 error-account-currency-in-use = Questo conto è usato in CHF (ruolo, impostazioni di fatturazione, conto bancario, articolo o regola di riconciliazione): non può ricevere una valuta.
 error-account-in-foreign-currency = Questo conto è tenuto in { $currency }: non può essere usato qui, dove Kesh contabilizza in CHF.
 error-account-is-fx-difference-account = Questo conto è un conto di differenza di cambio della società: non può essere né archiviato, né cambiato di tipo, né reso non imputabile, né ricevere una valuta, un sottoconto o un ruolo di ricavo.

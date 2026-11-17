@@ -1172,6 +1172,7 @@ error-fx-revaluation-value-out-of-range = Die Bewertung eines Kontos in { $curre
 error-fiscal-year-close-fx-not-revalued = Bewerten Sie zuerst die Fremdwährungskonten zum Abschlusskurs: Ein Bilanzkonto in Fremdwährung ist nicht bewertet, oder seine Währung hat keinen Abschlusskurs.
 error-exchange-rate-version-forbidden = Für dieses Feld ist noch kein Kurs festgelegt: Die Version darf nicht gesendet werden.
 error-account-currency-locked = Die Währung dieses Kontos kann nicht mehr geändert werden: Es enthält Buchungen, deren Währung sie ist.
+error-account-foreign-parent-has-entries = Das Konto { $number } wird in { $currency } geführt und enthält Buchungen: Es erhält kein Unterkonto, sonst würde es mit einem Saldo nicht bebuchbar, den die Bewertung zum Jahresende nicht mehr korrigieren könnte. Erstellen Sie stattdessen ein benachbartes Konto.
 error-account-currency-in-use = Dieses Konto wird in CHF verwendet (Rolle, Rechnungseinstellungen, Bankkonto, Artikel oder Abgleichsregel): Es kann keine Währung erhalten.
 error-account-in-foreign-currency = Dieses Konto wird in { $currency } geführt: Es kann hier nicht verwendet werden, da Kesh hier in CHF bucht.
 error-account-is-fx-difference-account = Dieses Konto ist ein Kursdifferenzkonto der Firma: Es kann weder archiviert, umtypisiert oder nicht bebuchbar gemacht werden noch eine Währung, ein Unterkonto oder eine Ertragsrolle erhalten.

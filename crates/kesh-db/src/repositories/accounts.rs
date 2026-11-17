@@ -219,6 +219,7 @@ pub async fn create(pool: &MySqlPool, user_id: i64, new: NewAccount) -> Result<A
         if parent.is_some() {
             let hits = fx_designations_of_in_tx(&mut tx, new.company_id, &state, parent_id).await?;
             refuse_designated(hits, |_| true)?;
+            refuse_foreign_parent_with_entries_in_tx(&mut tx, parent_id).await?;
         }
     }
 
@@ -2402,6 +2403,41 @@ pub async fn refuse_foreign_currency_accounts_in_tx(
 /// après le `FOR UPDATE` du compte (Story 37-1, AC-4) : une ligne commitée
 /// pendant l'attente des verrous est vue, et une ligne en cours d'insertion
 /// attend la fin du geste.
+/// Refuse un sous-compte sous un compte **candidat à la réévaluation**
+/// ([`super::fx_revaluation::CANDIDATE_PREDICATE`] : de bilan, en devise) qui
+/// porte au moins une ligne d'écriture — `AccountForeignParentHasEntries`
+/// (37-5-CR-P3-1). Le parent passerait non imputable avec son solde : la
+/// réévaluation ne l'atteindrait plus, K9 et la clôture le compteraient, et il
+/// ne redeviendrait pas imputable tant qu'il a des sous-comptes actifs
+/// ([`effective_postable`]) — une clôture sans recours. Le parent est déjà
+/// verrouillé `FOR UPDATE` par l'appelant ; la lecture des lignes est
+/// verrouillante (comme [`has_journal_line_locked`]), si bien qu'une écriture
+/// concurrente sur le parent est vue, ou refusée ensuite comme non imputable.
+async fn refuse_foreign_parent_with_entries_in_tx(
+    conn: &mut sqlx::MySqlConnection,
+    parent_id: i64,
+) -> Result<(), DbError> {
+    let sql = format!(
+        "SELECT a.number, a.currency FROM accounts a WHERE a.id = ? AND {}",
+        super::fx_revaluation::CANDIDATE_PREDICATE
+    );
+    let parent: Option<(String, String)> = sqlx::query_as(&sql)
+        .bind(parent_id)
+        .fetch_optional(&mut *conn)
+        .await
+        .map_err(map_db_error)?;
+    if let Some((parent_number, currency)) = parent
+        && has_journal_line_locked(&mut *conn, parent_id).await?
+    {
+        return Err(DbError::AccountForeignParentHasEntries {
+            parent_account_id: parent_id,
+            parent_number,
+            currency,
+        });
+    }
+    Ok(())
+}
+
 async fn has_journal_line_locked(
     conn: &mut sqlx::MySqlConnection,
     account_id: i64,

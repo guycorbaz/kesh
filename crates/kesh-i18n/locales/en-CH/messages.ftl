@@ -1172,6 +1172,7 @@ error-fx-revaluation-value-out-of-range = The revaluation of an account in { $cu
 error-fiscal-year-close-fx-not-revalued = First revalue the foreign-currency accounts at the closing rate: a balance-sheet account in a foreign currency is not revalued, or its currency has no closing rate.
 error-exchange-rate-version-forbidden = No rate is set for this cell yet: the version must not be sent.
 error-account-currency-locked = This account’s currency can no longer change: it carries entries, whose currency it is.
+error-account-foreign-parent-has-entries = Account { $number } is kept in { $currency } and carries entries: it cannot receive a sub-account, otherwise it would become non-postable with a balance that the year-end revaluation could no longer correct. Create a sibling account instead.
 error-account-currency-in-use = This account is used in CHF (role, invoicing settings, bank account, product or reconciliation rule): it cannot receive a currency.
 error-account-in-foreign-currency = This account is kept in { $currency }: it cannot be used here, where Kesh books in CHF.
 error-account-is-fx-difference-account = This account is an exchange difference account of the company: it cannot be archived, retyped, made non-postable, or receive a currency, a sub-account or a revenue role.

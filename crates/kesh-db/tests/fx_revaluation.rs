@@ -12,8 +12,8 @@ use std::collections::BTreeMap;
 use chrono::NaiveDate;
 use kesh_core::accounting::fx_revaluation::RevaluationRateKind;
 use kesh_db::entities::{
-    Acteur, FiscalYear, ForeignAmount, Journal, NewJournalEntry, NewJournalEntryLine, RateKind,
-    RateProvenance,
+    AccountType, Acteur, FiscalYear, ForeignAmount, Journal, NewAccount, NewJournalEntry,
+    NewJournalEntryLine, RateKind, RateProvenance,
 };
 use kesh_db::errors::{DbError, FxAccountField, FxAccountReason};
 use kesh_db::repositories::closing_checks::{self, CheckCode, CheckDetails, CheckStatus};
@@ -21,7 +21,7 @@ use kesh_db::repositories::exchange_rates::RateOrigin;
 use kesh_db::repositories::fx_revaluation::{
     self, NotRevaluedReason, PostRequest, PostedEntry, RetainedRate, RevaluationAccountReason,
 };
-use kesh_db::repositories::{account_balances, fiscal_years, journal_entries};
+use kesh_db::repositories::{account_balances, accounts, fiscal_years, journal_entries};
 use kesh_db::test_fixtures::{SeededCompany, chf_line, seed_accounting_company};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -2095,7 +2095,8 @@ async fn passation_apres_cloture_concurrente(pool: MySqlPool) {
 // ---------------------------------------------------------------------------
 
 /// D1 : un compte de bilan en devise **actif, à solde, devenu non imputable**
-/// (sous-compte créé, `postable = false`) reste candidat : il figure à
+/// (`PUT` `postable = false` ; le sous-compte, lui, est refusé sous un tel
+/// compte depuis 37-5-CR-P3-1) reste candidat : il figure à
 /// l'aperçu, non admissible ; K9 le compte (motif `NOT_POSTABLE`, avec son
 /// écart) ; la passation le refuse (`notEligible`) ; la clôture est refusée
 /// avec le même motif, jusqu'à ce qu'il redevienne imputable et soit
@@ -2115,7 +2116,7 @@ async fn compte_mouvemente_devenu_non_imputable_bloque_la_cloture(pool: MySqlPoo
     .unwrap();
     assert_eq!(k9(&pool, &dec).await.status, CheckStatus::Ok);
     // Un mouvement tardif rouvre un écart sur le compte USD, puis le compte
-    // devient non imputable (posé par SQL, comme la création d'un sous-compte).
+    // devient non imputable (posé par SQL, comme un `PUT` `postable = false`).
     poser(
         &pool,
         &dec,
@@ -2197,4 +2198,121 @@ async fn compte_mouvemente_devenu_non_imputable_bloque_la_cloture(pool: MySqlPoo
     clore(&pool, &dec)
         .await
         .expect("clôture permise une fois le compte réévalué");
+}
+
+/// 37-5-CR-P3-1 : un compte de bilan en devise **qui porte des écritures** ne
+/// reçoit pas de sous-compte (il deviendrait non imputable avec un solde que
+/// rien ne réévalue, et ne redeviendrait pas imputable tant que le sous-compte
+/// est actif — une clôture sans recours) ; il reste imputable. Un compte en
+/// devise **sans écriture** en reçoit un : le parent, non imputable, sans solde
+/// propre (les soldes ne remontent pas des sous-comptes), n'est ni listé ni
+/// compté par K9 ; seul le sous-compte se réévalue, une fois. Un compte CHF
+/// mouvementé reçoit toujours un sous-compte.
+#[sqlx::test(migrations = "./test-schema")]
+async fn sous_compte_sous_un_compte_de_bilan_en_devise(pool: MySqlPool) {
+    let dec = jeu(&pool).await;
+    let c = dec.s.company_id;
+    let admin = dec.s.admin_user_id;
+    cours(&pool, c, "USD", "day", d(2024, 12, 31), dec!(0.92), "afc").await;
+    cours(&pool, c, "EUR", "day", d(2024, 12, 31), dec!(0.95), "afc").await;
+    let postable = |id: i64| {
+        let pool = pool.clone();
+        async move {
+            sqlx::query_scalar::<_, bool>("SELECT postable FROM accounts WHERE id = ?")
+                .bind(id)
+                .fetch_one(&pool)
+                .await
+                .unwrap()
+        }
+    };
+
+    // Sous le compte USD mouvementé : refusé, le parent reste imputable.
+    let mut sous_usd = NewAccount::new(
+        c,
+        "1061",
+        "Sous-compte USD",
+        AccountType::Asset,
+        Some(dec.usd),
+    );
+    sous_usd.currency = Some("USD".into());
+    match accounts::create(&pool, admin, sous_usd).await {
+        Err(DbError::AccountForeignParentHasEntries {
+            parent_account_id,
+            currency,
+            ..
+        }) => {
+            assert_eq!(parent_account_id, dec.usd);
+            assert_eq!(currency, "USD");
+        }
+        other => panic!("{other:?}"),
+    }
+    assert!(postable(dec.usd).await, "le parent refusé reste imputable");
+
+    // Sous un compte USD sans écriture : admis ; le parent n'a pas de solde
+    // propre, seul l'enfant est listé et se réévalue.
+    let parent = compte(&pool, c, "1080", "Asset", Some("USD")).await;
+    let mut detail = NewAccount::new(
+        c,
+        "1081",
+        "Banque USD détail",
+        AccountType::Asset,
+        Some(parent),
+    );
+    detail.currency = Some("USD".into());
+    let enfant = accounts::create(&pool, admin, detail).await.unwrap().id;
+    assert!(!postable(parent).await);
+    poser(
+        &pool,
+        &dec,
+        dec.fy,
+        d(2024, 6, 30),
+        enfant,
+        true,
+        dec!(90.00),
+        dec!(100),
+        dec!(0.90),
+    )
+    .await;
+    let fy = exercice(&pool, dec.fy).await;
+    let cours_usd = BTreeMap::from([("USD".to_string(), dec!(0.92))]);
+    let mut conn = pool.acquire().await.unwrap();
+    let lignes = fx_revaluation::lines_for_fiscal_year(&mut conn, c, &fy, &cours_usd)
+        .await
+        .unwrap();
+    drop(conn);
+    assert!(
+        lignes.iter().all(|l| l.account.id != parent),
+        "parent sans solde propre"
+    );
+    let ligne = lignes.iter().find(|l| l.account.id == enfant).unwrap();
+    assert!(ligne.account.is_eligible());
+    assert_eq!(ligne.delta(), Some(dec!(2.00)));
+    passer(
+        &pool,
+        &dec,
+        &demande(
+            dec.fy,
+            &[("USD", dec!(0.92))],
+            &[dec.usd, dec.usd_passif, enfant],
+        ),
+    )
+    .await
+    .unwrap();
+    assert_eq!(k9(&pool, &dec).await.status, CheckStatus::Ok);
+
+    // Un compte CHF mouvementé (la caisse, contrepartie de toutes les
+    // écritures) reçoit toujours un sous-compte.
+    accounts::create(
+        &pool,
+        admin,
+        NewAccount::new(
+            c,
+            "1001",
+            "Sous-caisse",
+            AccountType::Asset,
+            Some(dec.caisse),
+        ),
+    )
+    .await
+    .expect("sous-compte d'un compte CHF mouvementé");
 }

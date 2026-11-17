@@ -1170,6 +1170,23 @@ pub enum DbError {
     #[error("La devise du compte est verrouillée : il porte des écritures")]
     AccountCurrencyLocked,
 
+    /// Un sous-compte demandé sous un compte de **bilan en devise** qui porte
+    /// au moins une ligne d'écriture (Story 37-5, 37-5-CR-P3-1) : le parent
+    /// deviendrait non imputable en gardant son solde, que la réévaluation ne
+    /// peut plus atteindre et que la clôture refuserait sans recours (un compte
+    /// qui a des sous-comptes actifs ne redevient pas imputable). Mappé vers
+    /// HTTP **409** `ACCOUNT_FOREIGN_PARENT_HAS_ENTRIES`,
+    /// `details: { parentAccountId, parentNumber, currency }`.
+    #[error("Le compte parent {parent_number} est en {currency} et porte des écritures")]
+    AccountForeignParentHasEntries {
+        /// Le compte parent refusé.
+        parent_account_id: i64,
+        /// Son numéro.
+        parent_number: String,
+        /// Sa devise.
+        currency: String,
+    },
+
     /// Une devise posée sur un compte que les chemins automatiques débitent en
     /// CHF (Story 37-1, AC-4) — le site en `details`. Mappé vers HTTP **409**
     /// `ACCOUNT_CURRENCY_IN_USE`.
@@ -2290,6 +2307,7 @@ impl DbError {
             Self::CurrencyUnknown { .. } => "CURRENCY_UNKNOWN",
             Self::RateUnavailable { .. } => "RATE_UNAVAILABLE",
             Self::AccountCurrencyLocked => "ACCOUNT_CURRENCY_LOCKED",
+            Self::AccountForeignParentHasEntries { .. } => "ACCOUNT_FOREIGN_PARENT_HAS_ENTRIES",
             Self::AccountCurrencyInUse { .. } => "ACCOUNT_CURRENCY_IN_USE",
             Self::AccountInForeignCurrency { .. } => "ACCOUNT_IN_FOREIGN_CURRENCY",
             Self::AccountIsFxDifferenceAccount { .. } => "ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT",
