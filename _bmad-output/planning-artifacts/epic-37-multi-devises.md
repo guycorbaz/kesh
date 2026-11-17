@@ -807,6 +807,70 @@ test Rust ni E2E rejoué par la passe : Vitest ciblé seulement, 78 tests verts)
   `RoleAccountIsFxAccount` (technical-debt, P4) ; nom accessible et focus des formulaires des écrans d'échec et de
   reprise (bug, P4).
 
+### Revue d'intégration de l'équipe de Guy — remédiée le 2026-11-17
+
+Revue du code d'intégration de la PR #1247 par l'équipe de Guy (trois lentilles) : 1 MEDIUM et 7 LOW, plus un LOW
+facultatif de la troisième lentille relayé par l'orchestrateur. **Prémisse de chaque finding vérifiée au code avant
+correctif ; toutes exactes.** Commits `d75e2c95` à `7838c8a5` (sur `a94a8e32`).
+
+- **1 — `docker-compose.yml`, port `8888:80` — corrigé** (`d75e2c95`). Entré par erreur dans `ea365174` (commit de
+  l'Epic 35), réglage local. `80:80` remis ; `git diff origin/main HEAD -- docker-compose*.yml .env.example Dockerfile
+  scripts/ .cargo .config` ne rend plus rien ; `Cargo.lock` et les deux `Cargo.toml` diffèrent par les dépendances de
+  l'epic seulement.
+- **2 — MEDIUM, `docs/api-external.md` sans les routes de la 37-2 — corrigé** (`a7efa167`, complété par `7838c8a5`).
+  Nouvelle section § 7 « Cours de change » (dix routes, lues au code : `routes/exchange_rates.rs`,
+  `routes/fiscal_years.rs::update_rate_kinds`, `exchange_rates/recuperation.rs`), ligne et note ¹³ au tableau des
+  ressources, renvois de la note ¹⁰ᵇ et des soldes d'ouverture ; au § 10, `RATE_NOT_PUBLISHED`,
+  `RATE_SOURCE_UNAVAILABLE`, `RATE_UNAVAILABLE`, `FX_RATE_INVALID`, les codes de ligne en devise,
+  `FX_CONVERSION_TRANSIT_UNBALANCED`, `ENTRY_IS_FX_REVALUATION`, et `MULTI_CURRENCY_DISABLED` élargi. Contrôle des autres
+  routes neuves de l'epic (diff des routes de `lib.rs` contre `origin/main`) : `currency-settings`, `conversions` et la
+  réévaluation étaient déjà décrites.
+- **3 — LOW, « CSV identique octet pour octet » — corrigé** (`4fae02f0`). Recompté au code
+  (`exports/csv_tables.rs`) : l'export global insère, **sans activation**, quatre colonnes au milieu de `company.csv`
+  (le fichier est au singulier), trois dans `accounts.csv`, trois dans `fiscal_years.csv`. Corrigé : notes de version
+  ci-dessous (deux phrases), Note de version des fiches 37-1 (ligne ajoutée) et 37-4, `docs/api-external.md`,
+  manuel FR (§ rapports d'une société multi-devises), rétrospective (annotation datée). **Grep du symptôme** : l'écran
+  d'export et le manuel annonçaient **30** tables, `exchange_rates.csv` (37-2) en fait **31** — quatre locales, repli
+  Svelte et manuel corrigés. Laissés tels quels, relevés datés : NFR-37-4-1 (exigence de la 37-4, vraie à sa livraison).
+- **4 — LOW, échappement des CSV de rapports en mono-devise — corrigé** (`4fae02f0`) : notes de version, fiches 37-4 et
+  37-5, manuel FR (§ *Visualisation et exports*, paragraphe « Les cellules de texte du CSV », sans détail
+  d'exploitation), `docs/api-external.md`. Le CSV TVA n'y passe pas (`render_vat_report_csv`, aucune cellule texte
+  libre) : non cité.
+- **5 — LOW (production), `std::process::exit(1)` au démarrage — corrigé** (`8b61070c`). `production_rate_source`
+  (`exchange_rates/source.rs`) rend, si le client HTTP ne se construit pas, une `UnavailableRateSource` qui échoue en
+  `connect` (`503 RATE_SOURCE_UNAVAILABLE`), avec une ligne `tracing::error!`. Test
+  `source_de_repli_si_le_client_ne_se_construit_pas`.
+- **6 — LOW (production), réussites de `POST /exchange-rates/fetch` non freinées — corrigé** (`7838c8a5`). La mémoire
+  des quinze minutes garde aussi les réussites (`MemoEntry.echec: Option<Echec>`) ; un `POST` de la même unité dans la
+  fenêtre est servi en `200` sans appel, par ce que la base tient (le chemin du raccourci de l'AC-3, factorisé en
+  `servir_sans_appel` : copie pour la société, `rejected` et `corrected` à 0, sans audit ni état) ; la tâche
+  automatique n'est pas freinée ; le pilotage de la source factice (`_test`) oublie les réussites mémorisées du genre
+  ou de l'unité. Aucun code d'erreur neuf. Test `fetch_reussite_freinee_quinze_minutes` (rouge sans le frein,
+  mutation vérifiée) ; `fetch_memoire_des_echecs` et `fetch_correction_comptee_cours_retenus_intacts` adaptés. Manuel
+  FR (bouton *Revérifier*) et `docs/api-external.md`.
+- **7 — LOW (production), acquittement qui ne nomme pas l'entrée — corrigé** (`7838c8a5`). `details.notice` (rang
+  1-based) et « Entrée n » en tête d'un `VALIDATION_ERROR`, par `errors::refus_avec_detail`, extrait de
+  `conversion_refusal` (qui l'appelle désormais, DRY). Tests : unitaire `acquittement_nomme_l_entree_refusee`, HTTP
+  dans `les_corrections_s_annoncent_par_societe` (`exchange_rates_api_e2e.rs`).
+- **8 — LOW (tests), CSV de la balance âgée et des rapports de projet — corrigé** (`993e012f`) : trois tests
+  (`balance_agee_…`, `depenses_par_projet_…`, `rendement_par_projet_…`) ; mutation vérifiée sur la balance âgée.
+- **LOW facultatif (troisième lentille) — corrigé** (`a352415b`, commentaire seulement) : la doc de
+  `journal_entry_conversions.rs` disait qu'aucun chemin ne prenait un exercice puis un compte en exclusif ;
+  l'activation du multi-devises le fait. `docs/MULTI-TENANT-SCOPING-PATTERNS.md` ne portait pas l'affirmation ; la
+  fiche 37-3b (spécification et Change Log) la porte, relevé daté laissé tel quel.
+
+Tests ajoutés (périmètre `a94a8e32..7838c8a5`, recomptés) : 6 Rust (3 `#[test]` de `kesh-report`, 1 `#[tokio::test]`,
+1 `#[sqlx::test]`, 1 `#[test]` de `kesh-api`), assertions ajoutées à 3 tests existants ; aucun Vitest ni E2E.
+
+**Gates** au commit `7838c8a5` (journaux `kesh-gate-logs/integration-main-37/*-guy1*`) : base `kesh_int37` remise à
+zéro (DROP/CREATE, migrations, seed) ; backend `scripts/test-fast.sh --ci` (fmt, clippy `-D warnings`, nextest)
+**5947 exécutés, 5947 passés, 13 ignorés** (`gate-backend-guy1.log` ; 5941 + 6) ; frontend `npm run check` 0 erreur
+(29 avertissements préexistants), `lint-i18n-ownership` vert, Vitest **4353 passés (271 fichiers)**, `npm run build`
+vert ; E2E complet (port 3377, base `kesh_e2e_int37` recréée, `LANG=fr_CH.UTF-8`) **455 passés, 10 échecs, 18 ignorés** (`e2e-guy1.log`) — les sept de la KF-029 (#97 : `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`) et les trois préexistants déjà relevés (`backup-restore-new-install.spec.ts:262`, `:381`, `opening-balances.spec.ts:156`), mêmes chiffres qu'au commit `38299a21` ; `scripts/gate-ci.sh kesh_ci_int37` sur une copie de l'arbre (`git archive`, `gate-ci-src2/`, conteneur `kesh-mariadb-dev2` par `KESH_DOCKER`/`KESH_CARGO`) **5964 passés, 0 échoué, 17 ignorés**, 250 binaires (`gate-ci-guy1.log` ; 5958 + 6), cible de compilation supprimée ensuite.
+
+La remédiation touche la production (points 5 à 7) : une **passe ciblée** est due, prompt
+`kesh-gate-logs/integration-main-37/revue-guy1-prompt.md`.
+
 ## Notes de version de l'epic
 
 *(Résumé pour Guy, qui assemble le `CHANGELOG.md` à la release ; le texte prêt à assembler de chaque point est la section « Note de version » de la fiche citée. Le fichier d'epic n'écrit pas le `CHANGELOG.md`. Rédigé le 2026-11-17, à la clôture de l'epic.)*
