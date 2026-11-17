@@ -343,18 +343,22 @@ pub fn group_difference(
 /// Le compte choisi pour l'écart, **contrôlé** (décision de Guy du
 /// 2026-11-17) : de la société et actif (sinon
 /// [`GroupRefusal::DifferenceAccountInvalid`]), imputable (sinon
-/// [`GroupRefusal::DifferenceAccountNotPostable`]) — sans restriction de
-/// classe —, verrouillé `FOR UPDATE` comme un compte désigné (une désactivation
-/// concurrente attend la fin du geste). `None` : le compte convient. La
-/// comparaison aux comptes de tiers et à la banque est faite par l'appelant,
-/// qui les connaît.
+/// [`GroupRefusal::DifferenceAccountNotPostable`]), en CHF (sinon
+/// [`GroupRefusal::DifferenceAccountInForeignCurrency`] — le règlement groupé
+/// s'écrit en CHF ; même ordre que le règlement unitaire de l'Epic 37 :
+/// invalide, non imputable, en devise) — sans restriction de classe —,
+/// verrouillé `FOR UPDATE` comme un compte désigné (une désactivation, ou un
+/// changement de devise, concurrents attendent la fin du geste). `None` : le
+/// compte convient. La comparaison aux comptes de tiers et à la banque est
+/// faite par l'appelant, qui les connaît.
 pub(crate) async fn difference_account_refusal(
     conn: &mut sqlx::MySqlConnection,
     company_id: i64,
     account_id: i64,
 ) -> Result<Option<GroupRefusal>, DbError> {
-    let row: Option<(bool, bool, String)> = sqlx::query_as(
-        "SELECT active, postable, number FROM accounts WHERE id = ? AND company_id = ? FOR UPDATE",
+    let row: Option<(bool, bool, String, Option<String>)> = sqlx::query_as(
+        "SELECT active, postable, number, currency FROM accounts \
+         WHERE id = ? AND company_id = ? FOR UPDATE",
     )
     .bind(account_id)
     .bind(company_id)
@@ -362,12 +366,22 @@ pub(crate) async fn difference_account_refusal(
     .await
     .map_err(map_db_error)?;
     Ok(match row {
-        None | Some((false, _, _)) => Some(GroupRefusal::DifferenceAccountInvalid { account_id }),
-        Some((true, false, account_number)) => Some(GroupRefusal::DifferenceAccountNotPostable {
-            account_id,
-            account_number,
-        }),
-        Some((true, true, _)) => None,
+        None | Some((false, _, _, _)) => {
+            Some(GroupRefusal::DifferenceAccountInvalid { account_id })
+        }
+        Some((true, false, account_number, _)) => {
+            Some(GroupRefusal::DifferenceAccountNotPostable {
+                account_id,
+                account_number,
+            })
+        }
+        Some((true, true, _, Some(currency))) => {
+            Some(GroupRefusal::DifferenceAccountInForeignCurrency {
+                account_id,
+                currency,
+            })
+        }
+        Some((true, true, _, None)) => None,
     })
 }
 
@@ -1010,8 +1024,8 @@ struct DifferenceAccounts {
 /// d'abord** — puis, si `r ≠ 0`, le compte d'arrondi (requis, et jamais un
 /// compte de tiers du groupe, C-e431a-7) ; puis, si `e ≠ 0`, le compte choisi,
 /// dans l'ordre : requis (`DifferenceAccountRequired`), pas la banque, existant
-/// et actif, imputable ([`difference_account_refusal`]), pas un compte de tiers
-/// du groupe.
+/// et actif, imputable, en CHF ([`difference_account_refusal`]), pas un compte
+/// de tiers du groupe.
 ///
 /// `claims` : les comptes de tiers des factures (créances ou dettes) ; `claim` :
 /// leur côté, porté par le refus `ClaimAccount`.
@@ -1120,7 +1134,9 @@ fn push_difference_lines(
             debit,
             credit,
             project_id: None,
-            // Chemin automatique : CHF seulement (Epic 37).
+            // CHF seulement : un compte d'écart en devise est refusé en amont
+            // (`DifferenceAccountInForeignCurrency`) ; l'arrondi est un compte
+            // désigné, que l'Epic 37 interdit en devise.
             foreign: None,
         });
     };
