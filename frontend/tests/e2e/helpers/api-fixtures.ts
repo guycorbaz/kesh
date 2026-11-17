@@ -462,3 +462,36 @@ export async function createExpenseEntryViaApi(
 		await disposeContextSafe(ctx);
 	}
 }
+
+/** Story 43-3 — les deux comptes désignés qui préremplissent le compte de l'écart. */
+export interface DesignatedAccounts {
+	defaultRoundingAccountId: number | null;
+	defaultBankFeesAccountId: number | null;
+}
+
+/**
+ * Story 43-3 (#823) — désigne le compte de différences d'arrondi et le compte de frais
+ * bancaires (`PUT /company/invoice-settings`, les autres réglages repris tels quels). Rend les
+ * valeurs d'avant, que l'appelant **restaure en `finally`** par un second appel : la base E2E
+ * est partagée entre les specs.
+ */
+export async function setDesignatedAccountsViaApi(
+	page: Page,
+	accounts: DesignatedAccounts,
+): Promise<DesignatedAccounts> {
+	const ctx = await authedApiContext(page);
+	try {
+		const settings = await (await ctx.get('/api/v1/company/invoice-settings')).json();
+		const before: DesignatedAccounts = {
+			defaultRoundingAccountId: settings.defaultRoundingAccountId ?? null,
+			defaultBankFeesAccountId: settings.defaultBankFeesAccountId ?? null,
+		};
+		const put = await ctx.put('/api/v1/company/invoice-settings', {
+			data: { ...settings, ...accounts },
+		});
+		expect(put.ok(), `comptes désignés : ${put.status()} ${await put.text()}`).toBeTruthy();
+		return before;
+	} finally {
+		await disposeContextSafe(ctx);
+	}
+}
