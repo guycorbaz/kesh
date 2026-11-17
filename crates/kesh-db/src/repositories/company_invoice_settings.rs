@@ -2137,6 +2137,9 @@ mod designated_changes_tests {
             "supplierInternalNumberFormat": "FF", "roundTo5Centimes": false,
             "minimumInvoiceAmount": null, "version": 1,
             "createdAt": "2026-01-01T00:00:00", "updatedAt": "2026-01-01T00:00:00",
+            // Story 43-1a (#823) : le plafond du règlement groupé, champ sans
+            // défaut de l'entité (reprise de `main` après l'Epic 37).
+            "groupSettlementMaxDifference": "5.0000",
         });
         let mut changes = serde_json::json!({
             "invoiceNumberFormat": "F", "defaultSalesJournal": "Ventes",
