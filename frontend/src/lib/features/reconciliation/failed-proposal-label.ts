@@ -78,6 +78,7 @@
  * Le code brut reste en `title` de chaque refus, pour le support.
  */
 import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
+import { fxRefusalMessage } from '$lib/features/journal-entries/fx-refusals';
 
 /**
  * Numéros des comptes non imputables d'un `details` de la forme
@@ -424,6 +425,33 @@ export function failedProposalLabel(code: string, details?: unknown): string {
 			);
 		case 'VALIDATION_ERROR':
 			return i18nMsg('error-validation', 'Erreur de validation');
+		// Story 37-3b (reçu de la 37-3a, AC-5) — refus propres aux devises, rendus par
+		// `fx_failed_proposal` : le rapprochement passe en CHF.
+		case 'ACCOUNT_REQUIRES_CURRENCY':
+			return i18nMsg(
+				'reconciliation-failed-account-requires-currency',
+				'Le compte de contrepartie est tenu en devise : un rapprochement passe en CHF. Choisissez un compte en CHF, ou passez l’écriture en devise depuis le journal.'
+			);
+		case 'FX_MULTIPLE_CURRENCIES':
+			return i18nMsg(
+				'reconciliation-failed-fx-multiple-currencies',
+				'L’écriture porterait deux devises étrangères : une écriture n’en porte qu’une.'
+			);
+		case 'ENTRY_IS_FX_REVALUATION':
+			return i18nMsg(
+				'reconciliation-failed-fx-revaluation',
+				'L’écriture visée est une réévaluation des comptes en devise : elle ne se modifie pas.'
+			);
+		case 'MULTI_CURRENCY_DISABLED':
+		case 'RATE_UNAVAILABLE':
+		case 'FX_ACCOUNT_IN_CHF':
+		case 'FX_CURRENCY_MISMATCH':
+		case 'FX_RATE_NOT_AFC':
+			return fxRefusalMessage(
+				code,
+				details && typeof details === 'object' ? (details as Record<string, unknown>) : undefined,
+				''
+			);
 		default:
 			return i18nMsg('reconciliation-failed-unknown', 'Refus non reconnu ({ $code }).', { code });
 	}

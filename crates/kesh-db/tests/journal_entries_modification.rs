@@ -98,6 +98,12 @@ const COLONNES_DES_LIGNES: &[&str] = &[
     // évalué après le verrou de période.
     "lettering_key",
     "lettering_origin",
+    // Story 37-3a (AC-2, AC-7) — la partie en devise. Elle n'est pas perdue à la
+    // réinsertion : le corps du `PUT` la porte (`NewJournalEntryLine.foreign`,
+    // sans `Default`), `insert_lines` l'écrit, et `is_no_op_change` la compare.
+    "amount_currency",
+    "exchange_rate",
+    "rate_source",
 ];
 
 /// Colonnes dont le nom évoque une écriture, sans clé étrangère, déclarées avec
@@ -321,12 +327,14 @@ fn corps(
                 debit: dec!(100.00),
                 credit: dec!(0),
                 project_id: project,
+                foreign: None,
             },
             NewJournalEntryLine {
                 account_id: s.accounts["1100"],
                 debit: dec!(0),
                 credit: dec!(100.00),
                 project_id: None,
+                foreign: None,
             },
         ],
     }
@@ -642,7 +650,8 @@ async fn update_and_a_reversal_of_the_same_year_can_deadlock(pool: MySqlPool) {
         attendre_une_requete_en_cours(
             &pool,
             &[
-                "SELECT status, start_date, end_date FROM fiscal_years",
+                // Story 37-3a : la requête lit aussi le mode de l'exercice.
+                "SELECT status, start_date, end_date, multi_currency FROM fiscal_years",
                 "FOR UPDATE"
             ],
             || a.is_finished()

@@ -40,6 +40,7 @@
 	import ProjectReturnView from '$lib/features/reports/ProjectReturnView.svelte';
 	import { listProjects } from '$lib/features/projects/projects.api';
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
+	// fx-filtre-comptes : exempté — rapports (consultation, comptes en devise compris).
 	import { letterableAccountIds as letterableIdsOf } from '$lib/features/open-items/open-items';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 	import type { ProjectResponse } from '$lib/features/projects/projects.types';

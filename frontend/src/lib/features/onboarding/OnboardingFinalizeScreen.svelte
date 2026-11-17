@@ -13,8 +13,16 @@
 	 * - `resume` — après un rechargement, ni appel ni échec : la configuration n'est pas
 	 *   terminée, *Terminer la configuration*. **Aucune finalisation d'office.**
 	 *
+	 * Sur `finalize-error` et `resume`, la section « Premier exercice » de la page
+	 * (`fiscalYear`) précède le bouton, dans un formulaire : les dates sont sous les yeux
+	 * de l'utilisateur et modifiables avant toute finalisation, et la touche Entrée dans un
+	 * champ de date relance la finalisation par le même chemin que le bouton, sous la même
+	 * garde (`disabled`, qui couvre les dates invalides) — revue P1 de l'intégration de la
+	 * v0.18.0 (H1).
+	 *
 	 * Présentationnel : la finalisation et son `catch` vivent dans `+page.svelte`.
 	 */
+	import type { Snippet } from 'svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 
@@ -26,6 +34,7 @@
 		onFinalize,
 		resumeText,
 		resumeCta,
+		fiscalYear,
 	}: {
 		/**
 		 * La phrase et le bouton de l'écran de reprise : ceux de la bannière de l'application
@@ -44,7 +53,14 @@
 		disabled: boolean;
 		/** *Réessayer* ou *Terminer la configuration* : relance la finalisation. */
 		onFinalize: () => void;
+		/** La section « Premier exercice » de la page, rendue au-dessus du bouton. */
+		fiscalYear?: Snippet;
 	} = $props();
+
+	function submit(e: SubmitEvent) {
+		e.preventDefault();
+		if (!disabled) onFinalize();
+	}
 </script>
 
 {#if mode === 'finalizing'}
@@ -79,15 +95,21 @@
 				</p>
 			{/if}
 		</div>
-		<Button type="button" onclick={onFinalize} {disabled} data-testid="onboarding-finalize-retry">
-			{i18nMsg('onboarding-retry', 'Réessayer')}
-		</Button>
+		<form class="flex flex-col gap-4" onsubmit={submit} data-testid="onboarding-finalize-form">
+			{@render fiscalYear?.()}
+			<Button type="submit" {disabled} data-testid="onboarding-finalize-retry">
+				{i18nMsg('onboarding-retry', 'Réessayer')}
+			</Button>
+		</form>
 	</div>
 {:else}
 	<div class="flex flex-col gap-4 text-center" data-testid="onboarding-screen-resume">
 		<p class="font-medium">{resumeText}</p>
-		<Button type="button" onclick={onFinalize} {disabled} data-testid="onboarding-resume-finish">
-			{resumeCta}
-		</Button>
+		<form class="flex flex-col gap-4 text-left" onsubmit={submit} data-testid="onboarding-resume-form">
+			{@render fiscalYear?.()}
+			<Button type="submit" {disabled} data-testid="onboarding-resume-finish">
+				{resumeCta}
+			</Button>
+		</form>
 	</div>
 {/if}

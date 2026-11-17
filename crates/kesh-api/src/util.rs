@@ -220,40 +220,11 @@ pub(crate) fn hex_encode(bytes: &[u8]) -> String {
     s
 }
 
-/// Neutralise une cellule CSV contre l'**injection de formule**.
-///
-/// Un tableur interprète une cellule commençant par `=`, `+`, `-` ou `@` comme
-/// une formule : on préfixe d'une apostrophe simple pour forcer le texte.
-///
-/// Neutralise aussi TAB, CR et LF — Excel traite la tabulation en déclencheur
-/// dans certains contextes, et un champ remplacé par une espace reste lisible
-/// sans casser l'alignement pour un parseur tiers naïf. Le **whitespace de
-/// tête** est pris en compte : sans cela, `" =cmd"` contournerait le contrôle.
-///
-/// ⛔ **Seul échappement anti-formule du dépôt** — le moteur `kesh-report` n'en
-/// a pas. Extraite ici de `routes::invoices` par la Story 25-1c-a (deuxième
-/// consommateur : l'export du journal d'audit), **comportement identique**.
-pub(crate) fn csv_sanitize(raw: String) -> String {
-    let raw: String = raw
-        .chars()
-        .map(|c| {
-            if c == '\r' || c == '\n' || c == '\t' {
-                ' '
-            } else {
-                c
-            }
-        })
-        .collect();
-    if let Some(first) = raw.trim_start().chars().next()
-        && matches!(first, '=' | '+' | '-' | '@')
-    {
-        let mut out = String::with_capacity(raw.len() + 1);
-        out.push('\'');
-        out.push_str(&raw);
-        return out;
-    }
-    raw
-}
+/// L'échappement des cellules texte des CSV — **une seule règle**, celle de
+/// [`kesh_core::csv::csv_sanitize`] (déplacée de ce module par la Story 37-5
+/// pour servir aussi `kesh-report`, comportement identique ; ses tests l'ont
+/// suivie). Réexportée ici pour les sites d'appel de `kesh-api`.
+pub(crate) use kesh_core::csv::csv_sanitize;
 
 // ===========================================================================
 // Origine web (Story 32-5c, factorisée Story 32-6a)
@@ -312,6 +283,34 @@ pub(crate) fn refus_qr_iban(e: kesh_core::errors::CoreError) -> AppError {
 }
 
 // ===========================================================================
+// Gardes lexicales (tests)
+// ===========================================================================
+
+/// Lignes de code d'un fichier, commentaires `//` écartés, tronqué au
+/// premier `#[cfg(test)]` — l'aide des gardes lexicales « lancé par
+/// `main.rs` seulement » (Story 31-1c, `auto_backup` ; Story 37-2,
+/// `exchange_rates`), extraite ici pour être partagée (refs #727).
+///
+/// ⚠️ **Limite assumée** (Story 32-1a, #711 E-9 (3), C-32-1-38) : la lecture
+/// est ligne à ligne, sans analyse lexicale. Seules les lignes **entières**
+/// qui commencent par `//` sont écartées ; un commentaire de fin de ligne, un
+/// commentaire `/* … */` et le **contenu des chaînes** restent lus comme du
+/// code. La troncature s'arrête à la première ligne dont le contenu est
+/// exactement `#[cfg(test)]`. Conséquence : un jeton **exigé** par une garde,
+/// écrit seulement dans un commentaire de bloc ou une chaîne, la satisferait à
+/// tort — muet ; un jeton **interdit** écrit au même endroit la fait rougir —
+/// bruyant. Correction suivie par #727 (extraction d'un balayeur commun).
+#[cfg(test)]
+pub(crate) fn code(source: &str) -> String {
+    source
+        .lines()
+        .take_while(|l| l.trim() != "#[cfg(test)]")
+        .filter(|l| !l.trim_start().starts_with("//"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+// ===========================================================================
 // Tests
 // ===========================================================================
 
@@ -319,45 +318,7 @@ pub(crate) fn refus_qr_iban(e: kesh_core::errors::CoreError) -> AppError {
 mod tests {
     use super::*;
 
-    // ----- csv_sanitize (Story 25-1c-a, AC 13) -----
-    //
-    // ⛔ La fonction n'avait AUCUN test avant son extraction. Une fonction de
-    // sécurité non testée qu'on déplace est une fonction qu'on peut casser sans
-    // le voir.
-
-    #[test]
-    fn csv_sanitize_prefixes_each_formula_trigger() {
-        for declencheur in ['=', '+', '-', '@'] {
-            let cellule = format!("{declencheur}HYPERLINK(\"x\")");
-            assert_eq!(
-                csv_sanitize(cellule.clone()),
-                format!("'{cellule}"),
-                "une cellule commençant par `{declencheur}` doit être préfixée"
-            );
-        }
-    }
-
-    #[test]
-    fn csv_sanitize_sees_through_leading_whitespace() {
-        // Sans `trim_start`, `" =cmd"` contournerait le contrôle.
-        assert_eq!(csv_sanitize(" =cmd".to_string()), "' =cmd");
-        assert_eq!(csv_sanitize("\t=cmd".to_string()), "' =cmd");
-    }
-
-    #[test]
-    fn csv_sanitize_replaces_cr_lf_and_tab_with_spaces() {
-        assert_eq!(
-            csv_sanitize("a\rb\nc\td".to_string()),
-            "a b c d",
-            "CR, LF et TAB deviennent des espaces"
-        );
-    }
-
-    #[test]
-    fn csv_sanitize_leaves_an_ordinary_string_untouched() {
-        assert_eq!(csv_sanitize("Müller SA".to_string()), "Müller SA");
-        assert_eq!(csv_sanitize(String::new()), "");
-    }
+    // `csv_sanitize` : tests dans `kesh_core::csv` (Story 37-5).
 
     // ----- slugify -----
 

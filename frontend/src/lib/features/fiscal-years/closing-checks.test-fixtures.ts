@@ -17,11 +17,13 @@ const ORDER: [ClosingCheckCode, ClosingCheck['severity']][] = [
 	['IMPORTED_SUPPLIER_INVOICES_TO_COMPLETE', 'info'],
 	['INCONSISTENT_ENTRIES', 'anomaly'],
 	['NEXT_FISCAL_YEAR', 'info'],
-	// Story v017-4b (#849, AC-26) — K8, rendu en dernier par le serveur (AC-16).
-	['DRAFT_SUPPLIER_INVOICES', 'info']
+	// Story v017-4b (#849, AC-26) — K8 (AC-16).
+	['DRAFT_SUPPLIER_INVOICES', 'info'],
+	// Story 37-5 (AC-9) — K9, bloquant, rendu en dernier par le serveur.
+	['FOREIGN_ACCOUNTS_NOT_REVALUED', 'blocking']
 ];
 
-/** Les huit contrôles `ok` (K7 avec un exercice suivant), surchargés par code. */
+/** Les neuf contrôles `ok` (K7 avec un exercice suivant), surchargés par code. */
 export function closingChecks(
 	over: Partial<Record<ClosingCheckCode, Partial<ClosingCheck>>> = {}
 ): ClosingChecksResponse {
@@ -43,7 +45,8 @@ export function closingChecks(
 		NEXT_FISCAL_YEAR: {
 			fiscalYear: { id: 2, name: 'Exercice 2027', startDate: '2027-01-01', status: 'Open' }
 		},
-		DRAFT_SUPPLIER_INVOICES: { invoices: [] }
+		DRAFT_SUPPLIER_INVOICES: { invoices: [] },
+		FOREIGN_ACCOUNTS_NOT_REVALUED: { accounts: [] }
 	};
 	return {
 		fiscalYearId: 1,

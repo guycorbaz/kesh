@@ -26,6 +26,8 @@
 import Big from 'big.js';
 import { parseAmount, readJournalAmount, type JournalAmountKind } from './balance';
 import type { LineDraft } from './form-helpers';
+import { computeChf, readRate, type FxErrorCode } from './fx';
+import { foreignChf, syncDerivedChf, type LineForeign } from './fx-lines';
 
 /**
  * Montant de TVA pour une base HT et un taux en pourcent, arrondi au centime
@@ -156,11 +158,103 @@ export function purchaseVatEntry(
 	};
 }
 
+/** Story 37-3b (S5) — la partie « devise » de l'assistant TVA achat. */
+export interface PurchaseVatForeign {
+	/**
+	 * Le gabarit des lignes en devise : devise du compte en devise, cours (et sa
+	 * provenance : proposé, `afcRate`, `afcMonth`, cours de la société) ; le
+	 * montant et le sens sont posés par {@link foreignPurchaseVatEntry}.
+	 */
+	template: LineForeign;
+	/** La charge est sur un compte en devise (sinon une ligne CHF au même cours). */
+	chargeIsForeign: boolean;
+	/** La contrepartie est sur un compte en devise. */
+	counterpartyIsForeign: boolean;
+}
+
+/**
+ * Story 37-3b (AC-2, S5) — l'écriture d'achat avec TVA **en devise** : `HT` =
+ * montant HT arrondi au centime, `TVA` = {@link lineVatAmount}(`HT`, taux) **en
+ * devise** (même fonction qu'en CHF), `TTC` = `HT` + `TVA` ; une ligne sur un
+ * compte en devise porte `foreign` (montant en devise, cours) et son CHF
+ * `computeChf(montant, cours)` ; une ligne sur un compte CHF — l'impôt préalable
+ * toujours — reçoit le CHF de son montant en devise **au même cours**, marquée
+ * `chfFromForeign`. Les trois arrondis peuvent laisser un écart d'un centime :
+ * aucune ligne n'est ajoutée, le bouton d'écart du formulaire le solde.
+ *
+ * Rend `null` si le HT ou le cours ne sont pas utilisables, et
+ * `{ error: 'FX_LINE_ROUNDS_TO_ZERO' }` si une ligne CHF dérivée s'arrondit à 0.00
+ * (une ligne nulle serait refusée par `chk_jel_debit_credit_exclusive`).
+ */
+export function foreignPurchaseVatEntry(
+	params: PurchaseVatParams,
+	fx: PurchaseVatForeign,
+): { lines: LineDraft[]; isExempt: boolean } | { error: FxErrorCode } | null {
+	const ht = readHtAmount(params.htAmount);
+	const rate = readRate(fx.template.rate);
+	if (!ht.usable || ht.payload === null || rate === null || rate === 'empty') return null;
+	const charge = round2(ht.payload);
+	const vat = lineVatAmount(charge, params.ratePercent);
+	const ttc = parseAmount(charge).plus(vat).toFixed(2);
+	const rateStr = rate.toFixed();
+
+	/** Une ligne au montant en devise `amount` : en devise, ou CHF au même cours. */
+	const line = (
+		accountId: number,
+		amount: string,
+		side: 'debit' | 'credit',
+		foreign: boolean,
+	): LineDraft | { error: FxErrorCode } => {
+		if (foreign) {
+			const draft: LineDraft = {
+				accountId,
+				debit: '',
+				credit: '',
+				projectId: null,
+				foreign: { ...fx.template, amount, side, rate: rateStr },
+			};
+			const chf = draft.foreign ? foreignChf(draft.foreign) : null;
+			if (chf === null || !chf.ok) return { error: chf?.ok === false ? chf.error : 'FX_VALUE_OUT_OF_RANGE' };
+			return syncDerivedChf(draft);
+		}
+		const chf = computeChf(amount, rate);
+		if (!chf.ok) return { error: chf.error };
+		const value = chf.value.toFixed(2);
+		return {
+			accountId,
+			debit: side === 'debit' ? value : '',
+			credit: side === 'credit' ? value : '',
+			projectId: null,
+			chfFromForeign: { rate: rateStr },
+		};
+	};
+
+	const out: LineDraft[] = [];
+	const parts: Array<[number, string, 'debit' | 'credit', boolean] | null> = [
+		[params.chargeAccountId, charge, 'debit', fx.chargeIsForeign],
+		parseAmount(vat).gt(0) ? [params.recoverableAccountId, vat, 'debit', false] : null,
+		[params.counterpartyAccountId, ttc, 'credit', fx.counterpartyIsForeign],
+	];
+	for (const p of parts) {
+		if (p === null) continue;
+		const l = line(...p);
+		if ('error' in l) return { error: l.error };
+		out.push(l);
+	}
+	return { lines: out, isExempt: vat === '0.00' };
+}
+
 /**
  * `true` si une ligne de brouillon n'est pas vierge (compte choisi OU montant
  * saisi). Une `LineDraft` initiale `{ accountId: null, debit: '', credit: '' }`
  * est vierge. Sert à décider la confirmation avant remplacement (AC6/DC-c9).
+ * Story 37-3b : le montant en devise compte aussi (il survit à un cours vide).
  */
 export function isDraftLineNonEmpty(line: LineDraft): boolean {
-	return line.accountId !== null || line.debit.trim() !== '' || line.credit.trim() !== '';
+	return (
+		line.accountId !== null ||
+		line.debit.trim() !== '' ||
+		line.credit.trim() !== '' ||
+		(line.foreign !== undefined && line.foreign.amount.trim() !== '')
+	);
 }

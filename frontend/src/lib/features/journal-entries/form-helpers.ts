@@ -9,13 +9,29 @@
 
 import Big from 'big.js';
 import type { JournalEntryLineResponse, JournalEntryResponse } from './journal-entries.types';
+import { foreignFromResponse, type LineForeign } from './fx-lines';
 
 export interface LineDraft {
 	accountId: number | null;
+	/**
+	 * Montant au débit en devise principale (CHF). Pour une ligne en devise,
+	 * **le CHF dérivé seul** (Story 37-3b, contrat de `fx-lines.ts`).
+	 */
 	debit: string;
 	credit: string;
 	/** Projet analytique de la ligne (Epic 19). `null` = non taguée. */
 	projectId: number | null;
+	/**
+	 * Story 37-3b (AC-2) — partie en devise ; absente = ligne CHF. Sa devise est
+	 * celle du compte, jamais saisie.
+	 */
+	foreign?: LineForeign;
+	/**
+	 * Story 37-3b (AC-2, S5) — ligne CHF que l'assistant TVA a calculée au cours
+	 * d'une ligne en devise (le cours de l'insertion) ; effacée par toute retouche
+	 * du montant. Comptée dans le seuil « arrondi » de la ligne d'écart.
+	 */
+	chfFromForeign?: { rate: string } | null;
 }
 
 /**
@@ -37,12 +53,17 @@ function amountToFieldValue(raw: string): string {
  * Convertit une ligne persistée en draft de formulaire.
  */
 export function lineResponseToDraft(line: JournalEntryLineResponse): LineDraft {
-	return {
+	const draft: LineDraft = {
 		accountId: line.accountId,
 		debit: amountToFieldValue(line.debit),
 		credit: amountToFieldValue(line.credit),
 		projectId: line.projectId ?? null
 	};
+	// Story 37-3b (AC-3) — la partie en devise relue : devise de la réponse
+	// (celle du compte), provenance relue gardée tant que rien n'est retouché.
+	const foreign = foreignFromResponse(line);
+	if (foreign) draft.foreign = foreign;
+	return draft;
 }
 
 /**
@@ -119,6 +140,9 @@ export function editRefusalOutcome(code: string): 'stale' | 'stay' | 'other' {
 		case 'DETACHED_SUPPLIER_SETTLEMENT':
 		case 'ENTRY_LETTERED':
 		case 'OPTIMISTIC_LOCK_CONFLICT':
+		// Story 37-3b (AC-2) — l'écriture est devenue une réévaluation : la fiche
+		// se recharge et dit le motif.
+		case 'ENTRY_IS_FX_REVALUATION':
 			return 'stale';
 		case 'PERIOD_LOCKED':
 		case 'DATE_OUTSIDE_FISCAL_YEAR':
@@ -128,6 +152,51 @@ export function editRefusalOutcome(code: string): 'stale' | 'stay' | 'other' {
 		case 'VALIDATION_ERROR':
 			return 'stay';
 		default:
-			return 'other';
+			// Story 37-3b (AC-2) — les refus propres aux devises : la saisie est en
+			// cause, le formulaire reste ouvert.
+			return isFxRefusalCode(code) ? 'stay' : 'other';
 	}
+}
+
+/**
+ * Story 37-3b (AC-3) — « Supprimer » est-il offert sur la fiche ? Quand
+ * l'écriture se modifie ; et pour une écriture de **réévaluation**
+ * (`ENTRY_IS_FX_REVALUATION`, qui ne se modifie pas) hors période verrouillée et
+ * sans ligne lettrée — ce motif se rend **avant** `PERIOD_LOCKED` et le
+ * lettrage, que la suppression contrôle encore : sans ces deux termes, le bouton
+ * serait offert pour un refus certain. `booksLockedThrough` inconnu
+ * (`undefined`, lecture échouée) : bouton absent pour une réévaluation.
+ */
+export function canDeleteEntry(
+	entry: {
+		modifiable: boolean;
+		modificationBlockedBy: string | null;
+		entryDate: string;
+		lines: { letteringKey: number | null }[];
+	},
+	booksLockedThrough: string | null | undefined
+): boolean {
+	if (entry.modifiable) return true;
+	if (entry.modificationBlockedBy !== 'ENTRY_IS_FX_REVALUATION') return false;
+	if (booksLockedThrough === undefined) return false;
+	const periodLocked = booksLockedThrough !== null && entry.entryDate <= booksLockedThrough;
+	const lettered = entry.lines.some((l) => l.letteringKey !== null);
+	return !periodLocked && !lettered;
+}
+
+/**
+ * Story 37-3b (AC-2) — les codes de refus propres aux lignes en devise :
+ * `RATE_UNAVAILABLE`, tout `FX_*` (`FX_RATE_NOT_AFC`, `FX_AMOUNT_MISMATCH`,
+ * `FX_CURRENCY_MISMATCH`, `FX_ACCOUNT_IN_CHF`, `FX_MULTIPLE_CURRENCIES`,
+ * `FX_VALUE_OUT_OF_RANGE`, `FX_LINE_ROUNDS_TO_ZERO`, `FX_ACCOUNT_INVALID`,
+ * `FX_CONVERSION_TRANSIT_UNBALANCED`), `ACCOUNT_REQUIRES_CURRENCY` et
+ * `MULTI_CURRENCY_DISABLED` (exercice mono-devise).
+ */
+export function isFxRefusalCode(code: string): boolean {
+	return (
+		code.startsWith('FX_') ||
+		code === 'RATE_UNAVAILABLE' ||
+		code === 'ACCOUNT_REQUIRES_CURRENCY' ||
+		code === 'MULTI_CURRENCY_DISABLED'
+	);
 }

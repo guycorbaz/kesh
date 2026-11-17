@@ -1017,6 +1017,60 @@ const ATTENDU = {
 	// de la 36-2, a été rejoué par `rerere` à la fusion de la 36-3 dans la branche de release
 	// (`0e562af37`) sans y être relevé ; dans cette branche, 3050 = 3036 + 1 (36-1) + 4 (36-3)
 	// + 4 (36-3b) + 5 (36-2), relevé par la garde à la fusion de la 36-2.
+	// Story 37-1 (AC-7) : **3050 → 3086**, relevé par la garde (`expected 3086 to be 3050`)
+	// avant d'écrire ce nombre, et ventilé au code : 23 sites dans
+	// `features/settings/CurrencySettingsSection.svelte` (neuf), 11 dans
+	// `features/accounts/AccountCurrencyFields.svelte` (neuf), 2 dans
+	// `routes/(app)/accounts/+page.svelte` (92 → 94 : la colonne « Devise » et le message
+	// des comptes propres incomplets) — 23 + 11 + 2 = 36. Que des littéraux.
+	// Story 37-1 (AC-11) : **3086 → 3093**, relevé par la garde (`expected 3093 to be 3086`)
+	// avant d'écrire ce nombre, et ventilé au code : 7 sites dans `routes/onboarding/+page.svelte`
+	// (section « Premier exercice » : titre, début, fin, résumé, phrase des dates définitives,
+	// deux motifs de refus). Que des littéraux.
+	// Story 37-2 (AC-6) : **3093 → 3184**, relevé par la garde (`expected 3184 to be 3093`)
+	// avant d'écrire ce nombre, et ventilé au code (`findCallSites` par fichier) : dans
+	// `features/exchange-rates/` (neuf), 39 sites dans `ExchangeRatesScreen.svelte`, 32 dans
+	// `exchange-rates-labels.ts`, 6 dans `RateCell.svelte`, 6 dans `CorrectionDialog.svelte`,
+	// 5 dans `ExchangeRateNoticesBanner.svelte` ; 3 dans `routes/(app)/settings/+page.svelte`
+	// (86 → 89 : la carte « Cours de change ») — 39 + 32 + 6 + 6 + 5 + 3 = 91. Que des littéraux.
+	// Revue de code P2 (37-2-CR-P2-4) : **3184 → 3185**, relevé par la garde : la légende du
+	// groupe de choix de `CorrectionDialog.svelte` (6 → 7 sites).
+	// Story 37-3b : **3185 → 3289**, relevé par la garde (`expected 3289 to be 3185`) avant
+	// d'écrire ce nombre, et ventilé au code (sites `i18nMsg(` par fichier, base de la branche
+	// → HEAD) : `ConversionAssistant.svelte` 35 (neuf), `JournalEntryForm.svelte` +34,
+	// `settings/opening-balances/+page.svelte` +9, `fx-refusals.ts` 6 (neuf),
+	// `VatPurchaseAssistant.svelte` +5, `opening-fx.ts` 5 (neuf), `journal-entries/conversion/
+	// +page.svelte` 4 (neuf), `fx-display.ts` 3 (neuf), `blocker-messages.ts` +1,
+	// `journal-entries/+page.svelte` +1, `settings/invoicing/+page.svelte` +1 — total 104. Que
+	// des littéraux. Puis **3289 → 3292** : `reconciliation/failed-proposal-label.ts` +3 (les
+	// codes de lot propres aux devises, reçus de la 37-3a), relevé par la garde. Puis
+	// **3292 → 3294** (revue de code P1 de la 37-3b) : la page de l'assistant *Conversion*
+	// +2 (`journal-entries-conversion-load-error`, `-retry`, l'état d'erreur de
+	// chargement) ; le message des problèmes d'une ligne en devise, déplacé du formulaire
+	// vers `fx-refusals.ts`, ne change pas le compte. Relevé par la garde.
+	// Fusion de `epic/37-multi-devises` (37-3a et 37-4 terminées) dans la 37-3b : **3294 → 3300**,
+	// relevé par la garde (`expected 3300 to be 3294`) : les 6 sites de la 37-4 (rapports), non additionnés
+	// à la main. Les commentaires ci-après sont ceux de la 37-4, repris tels quels.
+	// Fusion de la 37-3b dans la 37-5 : **3300 → 3350**, relevé par la garde (`expected 3350 to
+	// be 3300`) — les 50 sites de la 37-5 (voir plus bas).
+	// Revue de code P2 (37-5) : **3350 → 3352**, relevé par la garde (`expected 3352 to be 3350`) — les
+	// deux sites de l'avis « compte non imputable » (aperçu, K9).
+	// Story 37-4 (AC-6) : **3184 → 3190** sur sa branche (partie de 946aa86a), relevé par la garde
+	// (`expected 3190 to be 3184`) et ventilé au code : 3 sites dans
+	// `features/reports/GeneralLedgerView.svelte` (`reports-fx-revaluation-balance`,
+	// `reports-fx-movement`, `reports-fx-totals`), 1 dans `TrialBalanceView.svelte`
+	// (`reports-fx-trial-balance`), 2 dans `JournalReportView.svelte` (`reports-fx-revaluation`,
+	// `reports-fx-line`) — 6 littéraux. Fusion de `epic/37-multi-devises` (37-2 terminée,
+	// 65b3877f) dans la branche de la 37-4 : **3191**, relevé par la garde après la fusion
+	// (non additionné). Fusion de la 37-3a jusqu'à `e89291e6` : **3191**, relevé de nouveau par la
+	// garde (Dev Agent Record de la 37-4) ; à recompter à chaque reprise suivante.
+	// Story 37-5 : **3191 → 3241** sur sa branche (fusion de `epic/37-multi-devises` à
+	// `dd01a3df` comprise, qui n'apporte aucun site), relevé par la garde (`expected 3241 to be
+	// 3191`), non additionné : les littéraux de `RevaluationPanel.svelte`, de
+	// `revaluation.helpers.ts`, de l'avis de K9 (`FiscalYearChecks.svelte`,
+	// `closing-checks-labels.ts`) et de la page des exercices. Fusion de `epic/37-multi-devises`
+	// à `03f4599d` (37-3b terminée) dans la 37-5 : **3350**, la valeur ci-dessus, relevée par la
+	// garde après cette fusion (non additionnée).
 	// Story 36-17 (#1187) : **3050 → 3081** sur sa branche, relevé par la garde
 	// (« expected 3081 to be 3050 », `kesh-gate-logs/e36-17/front-test-unit-1.log`) avant d'écrire
 	// ce nombre — les cinq écrans neufs de `features/onboarding/` et les textes neufs de
@@ -1037,7 +1091,10 @@ const ATTENDU = {
 	// `common-amount-unreadable` (`journal-entries/amount-entry-message.ts`),
 	// `supplier-invoices-err-line-unit-price-ambiguous` et `-unreadable`
 	// (`SupplierInvoiceForm.svelte`) : quatre littéraux.
-	sitesTotal: 3086,
+	// Intégration de main (v0.18.0) dans l'Epic 37 (2026-11-17) : **3388**, relevé par la garde après la
+	// fusion (`expected 3388 to be 0`, `kesh-gate-logs/integration-main-37/vitest-1.log`), non
+	// additionné — il égale 3050 + 302 (Epic 37) + 36 (Epic 36), les deux côtés gardés.
+	sitesTotal: 3388,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

@@ -22,7 +22,7 @@
  * le libellé d'une valeur persistée, jamais à la rendre re-sélectionnable.
  */
 
-import type { AccountResponse, AccountType } from './accounts.types';
+import { isForeignCurrencyAccount, type AccountResponse, type AccountType } from './accounts.types';
 
 export interface AccountValidityOptions {
 	/** Type attendu ; `undefined` = aucun contrôle de type. */
@@ -40,6 +40,14 @@ export interface AccountValidityOptions {
 	 * relâchement porte sur `postable`.
 	 */
 	postableExemptAccountId?: number | null;
+	/**
+	 * Story 37-3b (AC-4) — un compte en devise est inutilisable (défaut `true`) :
+	 * les pièces, lots et réglages ne l'acceptent pas (le serveur le refuserait).
+	 * Le formulaire d'écriture d'une société multi-devises et son sélecteur
+	 * passent `false` — sans quoi chaque compte en devise y serait marqué
+	 * inutilisable ; d'une société mono-devise, `true` (`!multiCurrency`).
+	 */
+	excludeForeignCurrency?: boolean;
 }
 
 /**
@@ -57,6 +65,7 @@ export function isAccountUnusable(
 ): boolean {
 	if (!account) return false;
 	if (!account.active) return true;
+	if ((options.excludeForeignCurrency ?? true) && isForeignCurrencyAccount(account)) return true;
 	if (
 		options.requiredAccountType !== undefined &&
 		account.accountType !== options.requiredAccountType

@@ -81,3 +81,83 @@ pub fn migrations_before(version: i64, label: &str) -> usize {
             panic!("migration {label} ({version}) introuvable dans le MIGRATOR — renommée ?")
         })
 }
+
+/// Les colonnes de `20261114000003_journal_lines_foreign_currency` (Story 37-3a)
+/// que le dépôt courant **lit** (`LINE_COLUMNS` des lignes d'écriture) — posées
+/// et retirées avec celles de la 37-1 par [`colonnes_multi_devises`], sur une
+/// base d'avant les deux migrations. Sans les contraintes : le semis n'écrit
+/// que des lignes CHF.
+const COLONNES_LIGNES_EN_DEVISE: &[(&str, &str, &str)] = &[
+    (
+        "journal_entry_lines",
+        "amount_currency",
+        "DECIMAL(19,4) NULL",
+    ),
+    (
+        "journal_entry_lines",
+        "exchange_rate",
+        "DECIMAL(20,10) NULL",
+    ),
+    ("journal_entry_lines", "rate_source", "VARCHAR(12) NULL"),
+];
+
+/// Les colonnes de `20261114000001_multi_currency_settings` (Story 37-1) que le
+/// dépôt courant **lit** (listes de colonnes de `Company`, `FiscalYear`,
+/// `Account`) : `(table, colonne, définition)`, types et défauts de la migration.
+const COLONNES_MULTI_DEVISES: &[(&str, &str, &str)] = &[
+    (
+        "companies",
+        "multi_currency_enabled",
+        "BOOLEAN NOT NULL DEFAULT FALSE",
+    ),
+    ("companies", "fx_gain_account_id", "BIGINT NULL"),
+    ("companies", "fx_loss_account_id", "BIGINT NULL"),
+    ("companies", "fx_transit_account_id", "BIGINT NULL"),
+    (
+        "fiscal_years",
+        "multi_currency",
+        "BOOLEAN NOT NULL DEFAULT FALSE",
+    ),
+    (
+        "fiscal_years",
+        "opening_rate_kind",
+        "ENUM('day', 'month') NOT NULL DEFAULT 'day'",
+    ),
+    (
+        "fiscal_years",
+        "closing_rate_kind",
+        "ENUM('day', 'month') NOT NULL DEFAULT 'day'",
+    ),
+    (
+        "accounts",
+        "currency",
+        "CHAR(3) CHARACTER SET ascii COLLATE ascii_general_ci NULL",
+    ),
+    ("accounts", "fx_gain_account_id", "BIGINT NULL"),
+    ("accounts", "fx_loss_account_id", "BIGINT NULL"),
+];
+
+/// Story 37-1 — pose (`true`) ou retire (`false`) les colonnes multi-devises
+/// sur une base d'**avant** la migration 37-1 : un semis qui passe par le dépôt
+/// courant (`companies::create`, `journal_entries::create_in_tx`…) les lit.
+/// ⚠️ Le retrait est **obligatoire** avant `MIGRATOR.run()`, qui les ajoute
+/// lui-même (sans `IF NOT EXISTS`). Même geste que les colonnes de la 33-1a
+/// posées le temps d'un semis (`migrations_upgrade_path.rs`,
+/// `lettering_documents_backfill.rs`).
+#[allow(dead_code)]
+pub async fn colonnes_multi_devises(pool: &MySqlPool, poser: bool) {
+    for (table, colonne, definition) in COLONNES_MULTI_DEVISES
+        .iter()
+        .chain(COLONNES_LIGNES_EN_DEVISE.iter())
+    {
+        let sql = if poser {
+            format!("ALTER TABLE {table} ADD COLUMN {colonne} {definition}")
+        } else {
+            format!("ALTER TABLE {table} DROP COLUMN {colonne}")
+        };
+        sqlx::query(&sql)
+            .execute(pool)
+            .await
+            .unwrap_or_else(|e| panic!("colonne multi-devises {table}.{colonne} : {e}"));
+    }
+}

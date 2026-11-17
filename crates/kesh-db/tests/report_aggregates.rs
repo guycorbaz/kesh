@@ -128,6 +128,8 @@ async fn create_acc_with_role(
             parent_id: None,
             role,
             postable: true,
+            currency: None,
+            own_fx_accounts: None,
         },
     )
     .await
@@ -176,12 +178,14 @@ async fn post_entry(
                     debit: amount,
                     credit: Decimal::ZERO,
                     project_id: None,
+                    foreign: None,
                 },
                 NewJournalEntryLine {
                     account_id: credit_account,
                     debit: Decimal::ZERO,
                     credit: amount,
                     project_id: None,
+                    foreign: None,
                 },
             ],
         },
@@ -823,12 +827,14 @@ async fn journal_entry_out_of_fiscal_year_bounds_rejected(pool: MySqlPool) {
                     debit: dec!(100),
                     credit: Decimal::ZERO,
                     project_id: None,
+                    foreign: None,
                 },
                 NewJournalEntryLine {
                     account_id: revenue,
                     debit: Decimal::ZERO,
                     credit: dec!(100),
                     project_id: None,
+                    foreign: None,
                 },
             ],
         },

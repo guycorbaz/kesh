@@ -51,7 +51,10 @@
 	import type { BankAccountSummary } from '$lib/features/bank-accounts/bank-accounts.api';
 	import { bankAccountOptionLabel } from '$lib/features/bank-accounts/format';
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
-	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
+	import {
+		withoutForeignCurrency,
+		type AccountResponse,
+	} from '$lib/features/accounts/accounts.types';
 	import {
 		accountIdsWithRole,
 		bankAccountsNotLinkedTo,
@@ -234,8 +237,9 @@
 			// Le message ne vaut que si le filtre a ÉCARTÉ un compte : une société
 			// sans compte bancaire lié garde son comportement.
 			noEligibleBankAccount = bankAccounts.length === 0 && linked.length > bankAccounts.length;
+			// Story 37-3b (AC-4) : ni compte en devise (le règlement passe en CHF).
 			accounts = withoutAccountIds(
-				accts.filter((a) => a.active && a.postable), // 14-3b : compte posté
+				withoutForeignCurrency(accts).filter((a) => a.active && a.postable), // 14-3b : compte posté
 				payableIds,
 			);
 			projects = projs;

@@ -784,6 +784,9 @@ fn les_replis_rust_suivent_le_catalogue() {
                 ("error-default-invoice-accounts-unavailable", 1, &[]),
                 ("error-fiscal-year-create-later-closed", 1, NOM),
                 ("error-later-fiscal-year-closed", 1, NOM),
+                // Story 37-1 (D-CR7-2) — un seul site,
+                // `later_fiscal_year_mono_currency_response`.
+                ("error-fiscal-year-create-later-mono-currency", 1, NOM),
                 // Story 29-1b (#232) — les deux refus de la contre-passation au
                 // début de l'exercice suivant.
                 ("error-next-fiscal-year-missing", 1, NOM),
@@ -1354,6 +1357,13 @@ const MULTI_SOCIETE_ASSUME: &[(&str, &str)] = &[
         "docs/manual/fr/admin-manual.tex",
         "PUT /api/v1/companies/current/address",
     ),
+    // Le chemin d'une route, Story 37-1 (AC-10, V6) : le réglage multi-devises
+    // activé par une session d'Administrateur ; `companies` n'y promet aucune
+    // multi-société.
+    (
+        "docs/manual/fr/user-manual.tex",
+        "PUT /api/v1/companies/current/currency-settings",
+    ),
     // Dit l'absence (deux occurrences : `super-admin`, `sélecteur de société`).
     (
         "docs/manual/fr/admin-manual.tex",
@@ -1452,10 +1462,12 @@ const MULTI_SOCIETE_ASSUME: &[(&str, &str)] = &[
 /// le nom de table du remède de moteur ; + 1 le 2026-10-26, Story 32-6c : le
 /// journal du filtre d'adresse ; + 3 le 2026-10-27, Story 32-7 : le second volet
 /// de P7-H3 et le 401 d'une origine admise par une autre société, § « Le serveur
-/// MCP » ; + 1 le 2026-11-07, Story 33-5 : le chemin de la route de l'adresse).
+/// MCP » ; + 1 le 2026-11-07, Story 33-5 : le chemin de la route de l'adresse ;
+/// puis + 1 le 2026-11-16, Story 37-1 : le chemin de la route du réglage multi-devises,
+/// au manuel utilisateur).
 /// Un motif qui cesserait de voir
 /// un site rougit (A-9, B10 : `>=` laissait passer une occurrence perdue).
-const MULTI_SOCIETE_TOTAL: usize = 22;
+const MULTI_SOCIETE_TOTAL: usize = 23;
 
 /// **G18** (#127) — une installation porte une société : la documentation
 /// utilisateur ne promet pas le contraire. Chaque occurrence de
@@ -1588,6 +1600,16 @@ const ECRANS_ASSUMES: &[(&str, &str)] = &[
     (
         "crates/kesh-i18n/locales/fr-CH/messages.ftl",
         "(toutes les sociétés, les utilisateurs, les données système et les pièces justificatives :",
+    ),
+    // exchange-rates-correction-scope-managed (Story 37-2, AC-6, U3, A23) : l'option
+    // « toutes les sociétés sous votre gestion » du dialogue du ↑ d'une correction de
+    // l'AFC est SPÉCIFIÉE mais NON RENDUE — le dialogue entier dépend de la condition
+    // `CAN_MANAGE_SEVERAL_COMPANIES`, constante `false` tant qu'un utilisateur
+    // n'appartient qu'à une société (`users.company_id`), et l'option y est désactivée.
+    // Aucune promesse multi-société n'atteint l'écran aujourd'hui.
+    (
+        "crates/kesh-i18n/locales/fr-CH/messages.ftl",
+        "Corriger pour toutes les sociétés sous votre gestion (exercices ouverts seulement)",
     ),
     // Commentaire de tête du composant : même contenu.
     (

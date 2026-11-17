@@ -8,7 +8,9 @@
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import LetteringCodeLink from '$lib/features/open-items/LetteringCodeLink.svelte';
 	import { openItemsHref } from '$lib/features/open-items/open-items';
-	import { formatReportAmount, formatSwissDate } from './reports.api';
+	import Big from 'big.js';
+	import { formatRate } from '$lib/features/exchange-rates/exchange-rates-grid';
+	import { formatCurrencyAmount, formatReportAmount, formatSwissDate } from './reports.api';
 	import type {
 		FiscalYearBreak,
 		GeneralLedgerDto,
@@ -151,15 +153,49 @@
 			? String(l.entryNumber)
 			: `${l.fiscalYearName}/${l.entryNumber}`;
 	}
+
+	/**
+	 * Story 37-4 (AC-2) — la seconde ligne d'un mouvement d'un compte en devise :
+	 * « USD 31.35 × 0.8808 · solde USD 1'233.57 », ou, pour une réévaluation,
+	 * « Réévaluation au cours X · solde … », sans montant en devise. La devise est
+	 * celle du compte (la section), jamais d'une ligne.
+	 */
+	function fxMovement(currency: string, l: LedgerLine): string {
+		const rate = formatRate(l.exchangeRate);
+		const balance = formatCurrencyAmount(currency, l.runningBalanceCurrency);
+		if (l.rateSource === 'revaluation') {
+			return i18nMsg(
+				'reports-fx-revaluation-balance',
+				'Réévaluation au cours { $rate } · solde { $balance }',
+				{ rate, balance },
+			);
+		}
+		const amount = Big(l.debitCurrency ?? '0').plus(l.creditCurrency ?? '0').toString();
+		return i18nMsg('reports-fx-movement', '{ $amount } × { $rate } · solde { $balance }', {
+			amount: formatCurrencyAmount(currency, amount),
+			rate,
+			balance,
+		});
+	}
 </script>
 
-{#snippet fyBreak(brk: FiscalYearBreak)}
+{#snippet fxBalance(currency: string | undefined, v: string | undefined, testid: string)}
+	<!-- Story 37-4 — le même solde en devise, compte en devise seulement. -->
+	{#if currency}
+		<span class="ml-2 font-mono text-xs text-gray-600" data-testid={testid}
+			>{formatCurrencyAmount(currency, v)}</span
+		>
+	{/if}
+{/snippet}
+
+{#snippet fyBreak(brk: FiscalYearBreak, currency: string | undefined)}
 	<tr class="border-y bg-indigo-50 text-xs text-indigo-900" data-testid="ledger-fy-break">
 		<td class="px-2 py-1" colspan={BALANCE_LABEL_SPAN}>
 			{formatSwissDate(brk.date)} — {i18nMsg(
 				'reports-ledger-fy-break',
 				"Clôture de l'exercice — le solde repart de zéro",
 			)}
+			{@render fxBalance(currency, brk.closingBalanceCurrency, 'ledger-fy-break-fx')}
 		</td>
 		<td class="px-2 py-1 text-right font-mono">{fmt(brk.closingBalance)}</td>
 		{#each { length: AFTER_BALANCE }, i (i)}<td class="px-2 py-1"></td>{/each}
@@ -183,6 +219,12 @@
 			<header class="flex flex-wrap items-baseline gap-2 border-b bg-gray-50 px-3 py-2">
 				<span class="font-mono font-semibold">{s.accountNumber}</span>
 				<span class="font-semibold">{s.accountName}</span>
+				{#if s.currency}
+					<span
+						class="rounded bg-sky-100 px-1 font-mono text-xs text-sky-900"
+						data-testid="ledger-currency-{s.accountNumber}">{s.currency}</span
+					>
+				{/if}
 				{#if !s.active}
 					<span class="rounded bg-gray-200 px-1 text-xs"
 						>{i18nMsg('reports-ledger-archived', 'archivé')}</span
@@ -226,6 +268,7 @@
 					<tr class="border-b bg-gray-50/50 italic">
 						<td class="px-2 py-1" colspan={BALANCE_LABEL_SPAN}>
 							{i18nMsg('reports-ledger-opening', "Solde d'ouverture")}
+							{@render fxBalance(s.currency, s.openingCurrency, 'ledger-opening-fx')}
 						</td>
 						<td class="px-2 py-1 text-right font-mono" data-testid="ledger-opening">
 							{fmt(s.opening)}
@@ -236,7 +279,7 @@
 					{#each s.lines as l, idx (l.lineId)}
 						{@const brk = breakBefore(s, idx)}
 						{#if brk}
-							{@render fyBreak(brk)}
+							{@render fyBreak(brk, s.currency)}
 						{/if}
 						<tr class="border-b last:border-b-0">
 							<td class="px-2 py-1 whitespace-nowrap">{formatSwissDate(l.entryDate)}</td>
@@ -251,6 +294,15 @@
 								{#if l.letteringCode}<LetteringCodeLink code={l.letteringCode} />{/if}
 							</td>
 						</tr>
+						{#if s.currency}
+							<!-- Story 37-4 (AC-2) — seconde ligne, en devise du compte. -->
+							<tr class="border-b text-xs text-gray-600" data-testid="ledger-fx-{l.lineId}">
+								<td class="px-2 pb-1" colspan={indexOf('description')}></td>
+								<td class="px-2 pb-1 font-mono" colspan={COLUMN_COUNT - indexOf('description')}
+									>{fxMovement(s.currency, l)}</td
+								>
+							</tr>
+						{/if}
 					{:else}
 						<!-- #777/#778 — « l'ouverture reste due » est faux quand une rupture
 						     finale la clôt dans la période : le message le dit alors. -->
@@ -271,13 +323,22 @@
 						</tr>
 					{/each}
 					{#each trailingBreaks(s) as brk (brk.closingFiscalYearId)}
-						{@render fyBreak(brk)}
+						{@render fyBreak(brk, s.currency)}
 					{/each}
 				</tbody>
 				<tfoot>
 					<tr class="border-t">
 						<td class="px-2 py-1" colspan={MOVEMENTS_LABEL_SPAN}>
 							{i18nMsg('reports-ledger-movements-total', 'Total des mouvements')}
+							{#if s.currency}
+								<!-- Story 37-4 — les seuls totaux en devise : ceux d'une section. -->
+								<span class="ml-2 font-mono text-xs text-gray-600" data-testid="ledger-totals-fx"
+									>{i18nMsg('reports-fx-totals', 'débit { $debit } · crédit { $credit }', {
+										debit: formatCurrencyAmount(s.currency, s.totalDebitCurrency),
+										credit: formatCurrencyAmount(s.currency, s.totalCreditCurrency),
+									})}</span
+								>
+							{/if}
 						</td>
 						<td class="px-2 py-1 text-right font-mono">{fmt(s.totalDebit)}</td>
 						<td class="px-2 py-1 text-right font-mono">{fmt(s.totalCredit)}</td>
@@ -286,6 +347,7 @@
 					<tr class="border-t font-semibold">
 						<td class="px-2 py-1" colspan={BALANCE_LABEL_SPAN}>
 							{i18nMsg('reports-ledger-closing', 'Solde de clôture')}
+							{@render fxBalance(s.currency, s.closingCurrency, 'ledger-closing-fx')}
 						</td>
 						<td class="px-2 py-1 text-right font-mono" data-testid="ledger-closing">
 							{fmt(s.closing)}

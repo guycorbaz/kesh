@@ -246,9 +246,11 @@ pub(crate) fn parse_and_verify_avec_inventaire<R: Read + Seek>(
     }
 
     // Couverture : chaque table applicative attendue doit figurer au manifeste
-    // (sinon on ne saurait pas la restaurer correctement).
+    // (sinon on ne saurait pas la restaurer correctement) — sauf une table de la
+    // liste close des absences admises de l'Epic 37 (Story 37-1, AC-6), traitée
+    // comme vide : la restauration la vide sans rien y insérer.
     for &t in inventaire {
-        if !manifest.tables.contains_key(t) {
+        if !manifest.tables.contains_key(t) && !kesh_db::backup::table_absente_admise(t) {
             return Err(invalide(format!("table '{t}' absente du manifeste")));
         }
     }

@@ -134,6 +134,12 @@ champ_enum!(
     kesh_db::entities::AccountRole,
     kesh_db::entities::Journal,
     kesh_db::entities::FiscalYearStatus,
+    // Story 37-1 (AC-2, V10) : le genre d'un cours d'exercice, sans champ,
+    // `Serialize` dérivé en minuscules (`day`/`month`, celles du HTTP).
+    kesh_db::entities::RateKind,
+    // Story 37-3a (AC-8) : la provenance du cours d'une ligne en devise, sans
+    // champ, `Serialize` dérivé en minuscules (`afc`, `manual`, `revaluation`).
+    kesh_db::entities::RateProvenance,
     // Story 32-9b : les énumérations d'un contact, sans champ, `Serialize`
     // dérivé (`entities/contact.rs:53`, `:110` ; `company.rs:73-74`).
     kesh_db::entities::contact::ContactType,
@@ -210,8 +216,10 @@ impl ChampSur for Date {}
 /// (`rust_decimal` 1.43.0, doc de `rescale`). Inatteignable depuis la base :
 /// les colonnes décimales sont en `DECIMAL(19,4)`, `DECIMAL(18,2)`,
 /// `DECIMAL(7,2)` ou `DECIMAL(5,2)` (recompté dans `crates/kesh-db/migrations/`
-/// le 2026-10-29), seize chiffres entiers au plus ; une somme de telles valeurs
-/// en reste à des ordres de grandeur.
+/// le 2026-10-29), seize chiffres entiers au plus, et — Story 37-3a, le cours
+/// d'une ligne en devise — `DECIMAL(20,10)` (dix chiffres entiers, borné à
+/// 10⁶ par le dépôt) ; une somme de telles valeurs en reste à des ordres de
+/// grandeur.
 pub struct Montant(pub Decimal);
 
 impl Serialize for Montant {
@@ -300,6 +308,33 @@ impl<E: Serialize> Serialize for Code<E> {
 }
 impl<E: ChampSur> scelle::Scelle for Code<E> {}
 impl<E: ChampSur> ChampSur for Code<E> {}
+
+/// Le code ISO 4217 de la devise d'un compte (Story 37-1, AC-8) : **trois
+/// lettres majuscules ASCII**, seule forme que `FromStr` admet — la forme que
+/// le schéma impose (`chk_accounts_currency_format`). Se lit par
+/// [`Code::depuis_str`] : une valeur d'une autre forme sortirait enveloppée,
+/// jamais brute. La liste ISO 4217 ne contrôle pas ici (elle ne valide qu'à
+/// l'écriture : un code retiré plus tard reste lisible).
+pub struct Devise(String);
+
+impl std::str::FromStr for Devise {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.len() == 3 && s.bytes().all(|b| b.is_ascii_uppercase()) {
+            Ok(Self(s.to_string()))
+        } else {
+            Err(())
+        }
+    }
+}
+
+impl Serialize for Devise {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.0)
+    }
+}
+impl scelle::Scelle for Devise {}
+impl ChampSur for Devise {}
 
 // ---------------------------------------------------------------------------
 // Les tiers (AC-a6)

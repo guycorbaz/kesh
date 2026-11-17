@@ -211,6 +211,8 @@ async fn create_acc(
             parent_id: None,
             role,
             postable: true,
+            currency: None,
+            own_fx_accounts: None,
         },
     )
     .await
@@ -291,12 +293,14 @@ async fn post_normal_entry(pool: &MySqlPool, seed: &Seed, fy_id: i64, date: Naiv
                     debit: dec!(50),
                     credit: Decimal::ZERO,
                     project_id: None,
+                    foreign: None,
                 },
                 NewJournalEntryLine {
                     account_id: seed.liability,
                     debit: Decimal::ZERO,
                     credit: dec!(50),
                     project_id: None,
+                    foreign: None,
                 },
             ],
         },
@@ -788,6 +792,8 @@ async fn create_non_postable_acc(
             parent_id: None,
             role: None,
             postable: false,
+            currency: None,
+            own_fx_accounts: None,
         },
     )
     .await

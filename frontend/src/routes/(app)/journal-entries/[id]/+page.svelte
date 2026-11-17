@@ -31,10 +31,15 @@
 	import { supplierInvoiceShortLabel } from '$lib/features/supplier-invoices/supplier-invoice-label';
 	import { toast } from 'svelte-sonner';
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
+	// fx-filtre-comptes : exempté — fiche d'une écriture (libellés) et formulaire
+	// d'écriture, qui saisit en devise (37-3b, AC-4).
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 	import { listProjects } from '$lib/features/projects/projects.api';
 	import type { ProjectResponse } from '$lib/features/projects/projects.types';
 	import { formatSwissAmount } from '$lib/features/journal-entries/balance';
+	import { foreignLineLabel } from '$lib/features/journal-entries/fx-display';
+	import { canDeleteEntry } from '$lib/features/journal-entries/form-helpers';
+	import type { CompanyJson } from '$lib/features/settings/settings.types';
 	import { isApiError } from '$lib/shared/utils/api-client';
 	import LetteringCodeLink from '$lib/features/open-items/LetteringCodeLink.svelte';
 	import DocumentPreview from '$lib/features/imported-supplier-invoices/DocumentPreview.svelte';
@@ -95,6 +100,32 @@
 	$effect(() => {
 		void loadEntry(id);
 	});
+
+	/**
+	 * Story 37-3b (AC-2, AC-3) — la société, lue au montage : la borne du verrou
+	 * (« Supprimer » d'une réévaluation ; `undefined` tant qu'inconnue, bouton
+	 * absent), le réglage multi-devises et les comptes de différence (édition).
+	 */
+	let pageBooksLockedThrough = $state<string | null | undefined>(undefined);
+	let pageCompany = $state<CompanyJson | null>(null);
+	$effect(() => {
+		// `Promise.resolve().then` : un appel qui lève ou rend autre chose qu'une
+		// promesse finit en échec lisible, jamais en exception de la page.
+		void Promise.resolve()
+			.then(() => fetchCompanyCurrent())
+			.then((c) => {
+				if (!c?.company) throw new Error('société illisible');
+				pageCompany = c.company;
+				pageBooksLockedThrough = c.company.booksLockedThrough;
+			})
+			.catch(() => {
+				pageCompany = null;
+				pageBooksLockedThrough = undefined;
+			});
+	});
+	const multiCurrency = $derived(
+		pageCompany?.multiCurrencyEnabled ?? accounts.some((a) => (a.currency ?? null) !== null)
+	);
 
 	/** Lit la liste des exercices (Story 29-1b), sans retarder la fiche. */
 	function loadFiscalYears() {
@@ -424,6 +455,10 @@
 					>
 						{i18nMsg('journal-entry-edit', 'Modifier')}
 					</Button>
+				{/if}
+				<!-- Story 37-3b (AC-3) : « Supprimer » reste offert pour une
+				     réévaluation, hors période verrouillée et lettrage. -->
+				{#if canDeleteEntry(entry, pageBooksLockedThrough)}
 					<Button
 						variant="outline"
 						data-testid="delete-entry"
@@ -496,6 +531,8 @@
 		recoverableAccountId={editRecoverableAccountId}
 		initialEntry={entry}
 		entryFiscalYear={editFiscalYear}
+		{multiCurrency}
+		companyFx={pageCompany}
 		onSuccess={onEditSaved}
 		onCancel={() => (editing = false)}
 		onStale={onEditStale}
@@ -620,7 +657,15 @@
 		<tbody>
 			{#each entry.lines as line (line.id)}
 				<tr class="border-b border-border">
-					<td class="py-2 pr-2">{accountLabel(line.accountId)}</td>
+					<td class="py-2 pr-2">
+						{accountLabel(line.accountId)}
+						<!-- Story 37-3b (AC-3) : montant en devise, cours, provenance. -->
+						{#if line.foreign}
+							<span class="block text-xs text-muted-foreground" data-testid="entry-line-fx-{line.id}">
+								{foreignLineLabel(line.foreign)}
+							</span>
+						{/if}
+					</td>
 					{#if hasProjects}
 						<td class="py-2 pr-2">
 							{line.projectId !== null ? projectLabel(line.projectId) : ''}

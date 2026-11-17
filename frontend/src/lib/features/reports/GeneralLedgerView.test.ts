@@ -9,7 +9,9 @@ import { describe, it, expect, vi } from 'vitest';
 import { render } from '@testing-library/svelte';
 
 vi.mock('$lib/shared/utils/i18n.svelte', () => ({
-	i18nMsg: (_key: string, fallback: string) => fallback,
+	// Le repli, paramètres substitués (Story 37-4 : les mentions en devise en portent).
+	i18nMsg: (_key: string, fallback: string, args?: Record<string, string | number>) =>
+		fallback.replace(/\{ \$(\w+) \}/g, (_: string, k: string) => String(args?.[k] ?? '')),
 }));
 
 import GeneralLedgerView from './GeneralLedgerView.svelte';
@@ -339,5 +341,86 @@ describe('GeneralLedgerView', () => {
 		// … ni sans la prop du tout.
 		const bare = render(GeneralLedgerView, { dto: dto() });
 		expect(bare.queryByTestId('ledger-open-items-1020')).toBeNull();
+	});
+});
+
+describe('GeneralLedgerView — Story 37-4, compte en devise', () => {
+	function usdSection(): LedgerSection {
+		return section({
+			currency: 'USD',
+			opening: '1370.00',
+			openingCurrency: '1500.0000',
+			lines: [
+				line({
+					lineId: 11,
+					debit: '0.00',
+					credit: '190.00',
+					runningBalance: '1180.00',
+					debitCurrency: '0.0000',
+					creditCurrency: '200.0000',
+					exchangeRate: '0.9500000000',
+					rateSource: 'manual',
+					runningBalanceCurrency: '1300.0000',
+				}),
+				line({
+					lineId: 12,
+					debit: '15.00',
+					credit: '0.00',
+					runningBalance: '1195.00',
+					debitCurrency: '0.0000',
+					creditCurrency: '0.0000',
+					exchangeRate: '0.9312000000',
+					rateSource: 'revaluation',
+					runningBalanceCurrency: '1300.0000',
+				}),
+			],
+			lineCount: 2,
+			totalDebitCurrency: '0.0000',
+			totalCreditCurrency: '200.0000',
+			closing: '1195.00',
+			closingCurrency: '1300.0000',
+		});
+	}
+
+	it('montre la devise, la seconde ligne de chaque mouvement et les soldes en devise', () => {
+		const r = render(GeneralLedgerView, { dto: dto({ sections: [usdSection()] }) });
+		expect(r.getByTestId('ledger-currency-1020').textContent).toBe('USD');
+		expect(r.getByTestId('ledger-fx-11').textContent?.trim()).toBe(
+			'USD 200.00 × 0.9500 · solde USD 1’300.00',
+		);
+		// La réévaluation : le cours, sans montant en devise (AC-2).
+		expect(r.getByTestId('ledger-fx-12').textContent?.trim()).toBe(
+			'Réévaluation au cours 0.9312 · solde USD 1’300.00',
+		);
+		expect(r.getByTestId('ledger-opening-fx').textContent).toBe('USD 1’500.00');
+		expect(r.getByTestId('ledger-closing-fx').textContent).toBe('USD 1’300.00');
+		expect(r.getByTestId('ledger-totals-fx').textContent).toBe(
+			'débit USD 0.00 · crédit USD 200.00',
+		);
+	});
+
+	it('porte le solde en devise d’une rupture d’exercice', () => {
+		const s = usdSection();
+		s.accountType = 'Revenue';
+		s.lines = [s.lines[0]];
+		s.lines[0].fiscalYearId = 2;
+		s.fiscalYearBreaks = [
+			{
+				date: s.lines[0].entryDate,
+				closingFiscalYearId: 1,
+				closingBalance: '470.00',
+				closingBalanceCurrency: '500.0000',
+			},
+		];
+		const r = render(GeneralLedgerView, { dto: dto({ sections: [s] }) });
+		expect(r.getByTestId('ledger-fy-break-fx').textContent).toBe('USD 500.00');
+	});
+
+	it('mono-devise : rien de visible ne change (aucune mention en devise)', () => {
+		const r = render(GeneralLedgerView, { dto: dto() });
+		const html = r.container.innerHTML;
+		expect(html).not.toContain('×');
+		expect(html).not.toMatch(/data-testid="ledger-(fx|currency|opening-fx|closing-fx|totals-fx)/);
+		expect(r.container.querySelectorAll('tbody tr')).toHaveLength(2); // ouverture + 1 ligne
 	});
 });

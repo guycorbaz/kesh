@@ -139,6 +139,8 @@ async fn make_account(pool: &MySqlPool, company_id: i64, number: &str, ty: Accou
             parent_id: None,
             role: None,
             postable: true,
+            currency: None,
+            own_fx_accounts: None,
         },
     )
     .await
@@ -212,12 +214,14 @@ async fn ligne(
                     debit,
                     credit,
                     project_id: None,
+                    foreign: None,
                 },
                 NewJournalEntryLine {
                     account_id: contre,
                     debit: credit,
                     credit: debit,
                     project_id: None,
+                    foreign: None,
                 },
             ],
         },

@@ -257,6 +257,10 @@ const PREFIXES = [
  * Intégration de la release 0.17.6 (2026-11-12), recompté par la garde après chaque fusion
  * (non additionné) : 412 après la 34-8 (34-1, 34-8), **434** après la 34-9.
  *
+ * ⚠️ **Story 37-1** (AC-11) : **434 → 441** (+7), relevé par la garde (`expected 441 to be
+ * 434`) : les sept `onboarding-fiscal-year-*` de la section « Premier exercice » (relais `msg`
+ * et `i18nMsg` de `routes/onboarding/+page.svelte`), un repli chacune. Aucune retirée.
+ *
  * ⚠️ **Story 36-17** (#1187) : **434 → 453** (+19), relevé par la garde (`expected 453 to be
  * 434`) : vingt et une clés `onboarding-` neuves de la fin de l'assistant (`-state-load-error`,
  * `-retry`, `-finalizing`, `-finalizing-desc`, `-finalize-remedy`, dix `-done-*`, `-start`,
@@ -274,8 +278,12 @@ const PREFIXES = [
  * `kesh-gate-logs/e36-18/review-front.log`, qui ne porte que « 1 failed ») —
  * `supplier-invoices-err-line-unit-price-ambiguous` et `-unreadable`, un repli chacune
  * (`SupplierInvoiceForm.svelte`).
+ *
+ * Intégration de main (v0.18.0) dans l'Epic 37 (2026-11-17) : **463**, relevé par la garde après la
+ * fusion (`expected 463 to be 0`, `kesh-gate-logs/integration-main-37/vitest-1.log`), non
+ * additionné — 434 + 7 (Story 37-1) + 22 (Epic 36).
  */
-const CLES_RELEVEES = 456;
+const CLES_RELEVEES = 463;
 
 
 /** Relève, pour chaque clé du domaine, l'ensemble de ses replis littéraux distincts. */

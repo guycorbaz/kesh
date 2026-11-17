@@ -25,6 +25,18 @@
 		type AccountType,
 		type RetypeImpact,
 	} from '$lib/features/accounts/accounts.types';
+	import AccountCurrencyFields from '$lib/features/accounts/AccountCurrencyFields.svelte';
+	import {
+		currencyFieldsForCreate,
+		currencyFieldsForUpdate,
+		initialCurrencyForm,
+		ownAccountsIncomplete,
+		readFxAccountField,
+		type AccountCurrencyForm,
+		type FxAccountField,
+	} from '$lib/features/accounts/fx-accounts';
+	import { fetchCompanyCurrent } from '$lib/features/settings/settings.api';
+	import type { CompanyJson } from '$lib/features/settings/settings.types';
 
 	const ACCOUNT_TYPES: AccountType[] = ['Asset', 'Liability', 'Revenue', 'Expense'];
 
@@ -69,6 +81,8 @@
 	const NO_ROLE = '';
 
 	// --- State ---
+	// fx-filtre-comptes : exempté — le plan comptable : tous les comptes, en devise
+	// compris.
 	let accounts = $state<AccountResponse[]>([]);
 	let loading = $state(false);
 	let showArchived = $state(false);
@@ -116,6 +130,43 @@
 	let clearRoleOpen = $state(false);
 	let clearRoleTarget = $state<AccountResponse | null>(null);
 	let clearRoleSubmitting = $state(false);
+
+	// --- Story 37-1 (AC-7) : devise des comptes, en multi-devises seulement ---
+	//
+	// La société n'est lue que pour savoir si le multi-devises est actif et quels
+	// comptes de différence elle désigne. Sans elle (lecture échouée), l'écran
+	// reste celui du mono-devise : aucun champ, aucune colonne, aucun envoi.
+	let company = $state<CompanyJson | null>(null);
+	let multiCurrency = $derived(company?.multiCurrencyEnabled === true);
+	let createCurrency = $state<AccountCurrencyForm>(initialCurrencyForm(null));
+	let editCurrency = $state<AccountCurrencyForm>(initialCurrencyForm(null));
+	let createFxErrors = $state<Partial<Record<FxAccountField, string>>>({});
+	let editFxErrors = $state<Partial<Record<FxAccountField, string>>>({});
+
+	/**
+	 * Le refus `FX_ACCOUNT_INVALID` d'un compte propre, rangé sous son sélecteur
+	 * (`details.field`) ; `null` pour tout autre refus, affiché au pied du formulaire.
+	 */
+	function fxFieldErrorOf(err: unknown): Partial<Record<FxAccountField, string>> | null {
+		if (!isApiError(err) || err.code !== 'FX_ACCOUNT_INVALID') return null;
+		const field = readFxAccountField(err.details);
+		return field === 'fxGainAccountId' || field === 'fxLossAccountId' ? { [field]: err.message } : null;
+	}
+
+	async function loadCompany() {
+		try {
+			company = (await fetchCompanyCurrent()).company;
+		} catch {
+			company = null;
+		}
+	}
+
+	function ownIncompleteMessage(): string {
+		return i18nMsg(
+			'accounts-fx-own-incomplete',
+			'Choisissez les deux comptes de différence de change, ou revenez aux comptes par défaut.',
+		);
+	}
 
 	// --- Computed: tree structure ---
 	interface TreeAccount extends AccountResponse {
@@ -179,12 +230,15 @@
 		createRole = NO_ROLE;
 		createPostable = true;
 		createError = '';
+		createCurrency = initialCurrencyForm(null);
+		createFxErrors = {};
 		createOpen = true;
 	}
 
 	let createValidation = $derived.by(() => {
 		if (!createNumber.trim()) return i18nMsg('accounts-error-number-required', 'Le numéro est requis.');
 		if (!createName.trim()) return i18nMsg('accounts-error-name-required', 'Le nom est requis.');
+		if (multiCurrency && ownAccountsIncomplete(createCurrency)) return ownIncompleteMessage();
 		return '';
 	});
 
@@ -195,6 +249,7 @@
 		}
 		createSubmitting = true;
 		createError = '';
+		createFxErrors = {};
 		try {
 			await createAccount({
 				number: createNumber.trim(),
@@ -203,6 +258,8 @@
 				parentId: createParentId !== '' ? Number(createParentId) : null,
 				role: createRole === NO_ROLE ? null : (createRole as AccountRole),
 				postable: createPostable,
+				// Story 37-1 : rien en mono-devise ni pour un compte CHF.
+				...currencyFieldsForCreate(createCurrency, multiCurrency),
 			});
 			toast.success(
 				i18nMsg('accounts-created', 'Compte { $number } créé', { number: createNumber.trim() })
@@ -210,7 +267,10 @@
 			createOpen = false;
 			await loadAccounts();
 		} catch (err) {
-			if (isApiError(err)) {
+			const fxErrors = fxFieldErrorOf(err);
+			if (fxErrors) {
+				createFxErrors = fxErrors;
+			} else if (isApiError(err)) {
 				if (err.code === 'RESOURCE_CONFLICT') {
 					createError = i18nMsg('accounts-error-number-exists', 'Ce numéro de compte existe déjà.');
 				} else {
@@ -234,11 +294,14 @@
 		editRole = account.role ?? NO_ROLE;
 		editPostable = account.postable;
 		editError = '';
+		editCurrency = initialCurrencyForm(account);
+		editFxErrors = {};
 		editOpen = true;
 	}
 
 	let editValidation = $derived.by(() => {
 		if (!editName.trim()) return i18nMsg('accounts-error-name-required', 'Le nom est requis.');
+		if (multiCurrency && ownAccountsIncomplete(editCurrency)) return ownIncompleteMessage();
 		return '';
 	});
 
@@ -268,6 +331,8 @@
 			postable: editPostable,
 			version: editAccount.version,
 			...(confirmAccountRetype ? { confirmAccountRetype: true } : {}),
+			// Story 37-1 : seulement ce qui change (absent = inchangé), rien en mono-devise.
+			...currencyFieldsForUpdate(editAccount, editCurrency, multiCurrency),
 		});
 	}
 
@@ -289,12 +354,16 @@
 		}
 		editSubmitting = true;
 		editError = '';
+		editFxErrors = {};
 		try {
 			await putAccount(false);
 			editSucceeded();
 			await loadAccounts();
 		} catch (err) {
-			if (isApiError(err)) {
+			const fxErrors = fxFieldErrorOf(err);
+			if (fxErrors) {
+				editFxErrors = fxErrors;
+			} else if (isApiError(err)) {
 				if (err.code === 'OPTIMISTIC_LOCK_CONFLICT') {
 					editError = i18nMsg('accounts-error-stale', 'Les données ont été modifiées. Rechargez la page.');
 				} else if (err.code === 'ACCOUNT_HAS_ENTRIES') {
@@ -328,9 +397,14 @@
 			await loadAccounts();
 		} catch (err) {
 			retypeWarnOpen = false;
-			editError = isApiError(err)
-				? err.message
-				: i18nMsg('error-unexpected', 'Erreur inattendue.');
+			const fxErrors = fxFieldErrorOf(err);
+			if (fxErrors) {
+				editFxErrors = fxErrors;
+			} else {
+				editError = isApiError(err)
+					? err.message
+					: i18nMsg('error-unexpected', 'Erreur inattendue.');
+			}
 		} finally {
 			editSubmitting = false;
 		}
@@ -461,6 +535,7 @@
 	$effect(() => {
 		if (authState.isAuthenticated) {
 			loadAccounts();
+			void loadCompany();
 		}
 	});
 </script>
@@ -504,6 +579,16 @@
 					<span class="inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary whitespace-nowrap" data-testid="account-row-{account.number}-type-badge">
 						{typeLabel(account.accountType)}
 					</span>
+					<!-- Story 37-1 (AC-7) : la devise, en multi-devises seulement ; rien pour le CHF. -->
+					{#if multiCurrency && account.currency}
+						<span
+							class="inline-flex items-center rounded-full bg-surface-alt px-2 py-0.5 font-mono text-xs font-medium text-text whitespace-nowrap"
+							title={i18nMsg('accounts-currency-label', 'Devise')}
+							data-testid="account-row-{account.number}-currency"
+						>
+							{account.currency}
+						</span>
+					{/if}
 					<!-- Story 14-3a : rôle explicite. Sur une ligne archivée il est
 					     affiché barré + explicité, sinon l'utilisateur qui coche
 					     « afficher les archivés » voit deux comptes porter le même
@@ -633,6 +718,15 @@
 					{i18nMsg('account-postable-hint', 'Un compte non postable n’accepte pas de saisie d’écriture manuelle')}
 				</p>
 			</div>
+			{#if multiCurrency && company}
+				<AccountCurrencyFields
+					bind:form={createCurrency}
+					{accounts}
+					{company}
+					idPrefix="account-create"
+					fieldErrors={createFxErrors}
+				/>
+			{/if}
 			{#if createError}
 				<p class="text-sm text-red-600" role="alert">{createError}</p>
 			{/if}
@@ -705,6 +799,17 @@
 					{i18nMsg('account-postable-hint', 'Un compte non postable n’accepte pas de saisie d’écriture manuelle')}
 				</p>
 			</div>
+			{#if multiCurrency && company}
+				<AccountCurrencyFields
+					bind:form={editCurrency}
+					{accounts}
+					{company}
+					idPrefix="account-edit"
+					locked={editAccount?.currencyLocked === true}
+					fieldErrors={editFxErrors}
+					accountId={editAccount?.id}
+				/>
+			{/if}
 			{#if editError}
 				<p class="text-sm text-red-600" role="alert">{editError}</p>
 			{/if}

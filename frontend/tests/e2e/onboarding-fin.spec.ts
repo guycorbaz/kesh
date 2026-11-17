@@ -191,4 +191,58 @@ test.describe('Assistant — la fin de la configuration (#1187)', () => {
 		await expect(page).toHaveURL(/\/$/);
 		await expect(page.getByTestId('nav-group-quotidien')).toBeVisible();
 	});
+
+	// Revue P1 de l'intégration de la v0.18.0 dans l'Epic 37 (H1) : le lien de remède d'un
+	// refus mène hors de l'assistant ; au retour (la bannière mène à `/onboarding`), la page
+	// est recréée. Les dates du premier exercice choisies doivent être de nouveau affichées,
+	// et l'exercice créé à ces dates. Le refus est simulé (`route.fulfill`, la forme du
+	// `400 VALIDATION_ERROR` de la 36-19) : la requête n'atteint pas le serveur, l'état reste 7.
+	test('E5 — refus, lien de remède, retour : les dates choisies sont affichées et retenues', async ({
+		page,
+	}) => {
+		await connexion(page);
+		await jouerJusquAuCompteBancaire(page);
+		await page.fill('#fy-start', '2026-04-01');
+		await expect(page.locator('#fy-end')).toHaveValue('2027-03-31');
+
+		await page.route(
+			FINALIZE,
+			(route: Route) =>
+				route.fulfill({
+					status: 400,
+					contentType: 'application/json',
+					body: JSON.stringify({
+						error: {
+							code: 'VALIDATION_ERROR',
+							message:
+								'La configuration ne peut pas se terminer. Compte débiteurs : le compte 1100 est archivé. Réessayez ensuite.',
+						},
+					}),
+				}),
+			{ times: 1 }
+		);
+		await page.getByTestId('onboarding-skip-bank').click();
+		await expect(page.getByTestId('onboarding-screen-finalize-error')).toBeVisible();
+		await expect(page.locator('#fy-start')).toHaveValue('2026-04-01');
+		await expect(page.locator('#fy-end')).toHaveValue('2027-03-31');
+		expect(await etapeServeur(page)).toBe(7);
+
+		await page.getByTestId('onboarding-finalize-remedy-link').click();
+		await expect(page).toHaveURL(/\/settings\/invoicing/);
+		// Le retour, comme par la bannière « Terminer la configuration ».
+		await page.goto('/onboarding');
+		await expect(page.getByTestId('onboarding-screen-resume')).toBeVisible();
+		await expect(page.locator('#fy-start')).toHaveValue('2026-04-01');
+		await expect(page.locator('#fy-end')).toHaveValue('2027-03-31');
+		await expect(page.getByTestId('onboarding-fiscal-year-summary')).toContainText(
+			'01.04.2026'
+		);
+
+		await page.getByTestId('onboarding-resume-finish').click();
+		await expect(page.getByTestId('onboarding-screen-done')).toBeVisible();
+		const recap = page.getByTestId('onboarding-done-summary');
+		await expect(recap).toContainText('01.04.2026');
+		await expect(recap).toContainText('31.03.2027');
+		expect(await etapeServeur(page)).toBe(8);
+	});
 });
