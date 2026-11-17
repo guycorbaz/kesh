@@ -671,3 +671,35 @@ Le second arrivé résout, dans sa branche ; ici, la reprise de `main` après la
 - **36-6 (#823, une transaction et plusieurs écritures)** : aucun code dans les branches publiées au 2026-11-16, et la
   story est encore `backlog`. Selon la règle de cadence de Guy (branche `chore/cadence-hebdomadaire`), l'Epic 36 se
   clôt avec la 0.18.0, et #823 passe à un epic neuf. Elle concerne la 38-6c2 (A40), non l'Epic 37.
+
+## Notes de version de l'epic
+
+*(Résumé pour Guy, qui assemble le `CHANGELOG.md` à la release ; le texte prêt à assembler de chaque point est la section « Note de version » de la fiche citée. Le fichier d'epic n'écrit pas le `CHANGELOG.md`. Rédigé le 2026-11-17, à la clôture de l'epic.)*
+
+### Migrations et sauvegarde
+
+- **Trois migrations, non breaking** (`kesh_version_min_required` inchangé) : `20261114000001_multi_currency_settings` (fiche 37-1), `20261114000002_exchange_rates` (37-2 ; DDL seul, deux tables système et une table applicative), `20261114000003_journal_lines_foreign_currency` (37-3a).
+- **Sauvegarde d'avant la mise à jour exigée** : comme toute migration, elles empêchent la version précédente de démarrer sur une base migrée, et le retour passe par la base, le `.keshbackup` et le dossier des documents d'avant la mise à jour (37-1, 37-2). Un `.keshbackup` 0.17.6 ou antérieur se réimporte (mono-devise, cours saisis vides) (37-2).
+
+### Changements de contrat de l'API
+
+- **Écritures** (37-3a) : `POST`/`PUT /journal-entries` prennent `foreign { currency?, amount, rate?, chf?, rateSource?, side? }` ; `rate`, `chf`, `side`, `rateSource`, `debit`/`credit` deviennent facultatifs ; une ligne CHF sans `debit` rend 400 au lieu de 422. Mêmes 400 aux routes d'ouverture, et `rateSource: "revaluation"` y est refusé (37-3b).
+- **Comptes et société** (37-1) : champs neufs `currency`, `fxGainAccountId`, `fxLossAccountId`, `currencyLocked` ; corps facultatif de `POST /onboarding/finalize` (dates du premier exercice) ; réglage multi-devises réservé à l'Administrateur, par une session et jamais par une clé d'API, définitif.
+- **Routes neuves** : `/exchange-rates` et ses sous-routes, `/fiscal-years/{id}/exchange-rates`, `PUT /fiscal-years/{id}/rate-kinds` (37-2) ; `POST /journal-entries/conversions` et `GET /opening-balances/status` (champ `currency`) (37-3b) ; aperçu et passation de la réévaluation (37-5).
+- **Codes neufs** : `MULTI_CURRENCY_DISABLED`, `MULTI_CURRENCY_IRREVERSIBLE`, `CURRENCY_UNKNOWN`, `FX_ACCOUNT_INVALID`, `ACCOUNT_CURRENCY_LOCKED`, `ACCOUNT_CURRENCY_IN_USE`, `ACCOUNT_IN_FOREIGN_CURRENCY`, `ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT`, `LATER_FISCAL_YEAR_MONO_CURRENCY` (37-1) ; `RATE_NOT_PUBLISHED`, `RATE_SOURCE_UNAVAILABLE`, `RATE_UNAVAILABLE`, `FX_RATE_INVALID` (37-2) ; `FX_CONVERSION_TRANSIT_UNBALANCED` (37-3b) ; `FX_REVALUATION_ACCOUNT_INVALID`, `FOREIGN_ACCOUNTS_NOT_REVALUED` (409 à la clôture) (37-5). `modificationBlockedBy` peut valoir `ENTRY_IS_FX_REVALUATION` ; l'enregistrement d'une pièce sur un compte en devise rend 400 `ACCOUNT_IN_FOREIGN_CURRENCY` ; les lots de rapprochement rendent les refus `FX_*` dans `failed[]` (37-3a).
+- **Clôture** (37-5) : `GET …/closing-checks` rend neuf contrôles (le neuvième, bloquant, en dernier : changement additif) et le motif `NOT_POSTABLE` s'ajoute à K9 ; l'aperçu de la réévaluation est enrichi (`blockers[]` peut porter `RATE_UNAVAILABLE` et `FX_VALUE_OUT_OF_RANGE`) ; action d'audit `fx_revaluation.posted`.
+- **Exports CSV** : le CSV des lignes d'écriture gagne trois colonnes en fin de ligne (`amount_currency`, `exchange_rate`, `rate_source`) (37-3a) ; la table `exchange_rates` s'ajoute à l'export (37-2) ; les rapports en devise ajoutent des colonnes en devise seulement s'ils contiennent un compte en devise, et le CSV reste identique octet pour octet sinon (37-4) ; cellules texte des exports CSV des rapports passées par l'échappement commun (37-5).
+
+### Changements de contrat du serveur MCP (bornes de pages réduites)
+
+- `kesh_plan_comptable` : page par défaut 40 → **38**, maximum 70 → **68** ; un `limit` de 69 ou 70 est refusé (37-1). Il gagne `devise`, et `kesh_exercices` gagne `multi_devises`, `genre_ouverture`, `genre_cloture` (37-1).
+- `kesh_ecritures` : page par défaut 12 → **10**, maximum 22 → **18** ; un `limit` de 19 à 22 est refusé ; chaque ligne porte `devise`, `montantDevise`, `cours`, `sourceCours` (`null` sur une ligne CHF) (37-3a). Champs en devise aux outils de rapport (37-4).
+
+### Nouveautés pour l'utilisateur
+
+- **Réglage et comptes** (37-1) : case « Comptabilité multi-devises » (activation définitive), devise d'un compte verrouillée dès sa première écriture, comptes de différence de change propres à un compte, compte de conversion.
+- **Cours de change** (37-2) : cours mensuels de l'AFC récupérés seuls (accès sortant HTTPS, mandataire par `HTTPS_PROXY`), écran *Paramètres → Cours de change* (cours retenu par la société, genres d'ouverture et de clôture, récupération et revérification), bandeau des corrections de l'AFC à acquitter.
+- **Saisie** (37-3b) : écritures en devise avec cours proposé, ligne de différence de change, Assistant TVA achat en devise, assistant *Conversion*, soldes de départ en devise.
+- **Rapports** (37-4) : grand livre, balance, bilan et compte de résultat dans les deux devises (écran, CSV, PDF) ; journal en devise à l'écran et au JSON seulement ; accueil, projets, TVA et balance âgée restent en CHF ; sans compte en devise, rapports et exports inchangés.
+- **Clôture** (37-5) : réévaluation de fin d'exercice (aperçu puis passation) et neuvième contrôle de clôture, bloquant.
+- **Limite connue** : le lettrage manuel d'un compte en devise ne raisonne qu'en CHF (37-3a, issue ouverte à la PR).
