@@ -2529,6 +2529,19 @@ pub async fn supplier_invoice_cancel_blocker(
 /// la dévalidation, et tant que le règlement détaché n'est pas contre-passé,
 /// jamais (son gel lit la facture par le statut `cancelled`).
 ///
+/// **Membre d'un règlement groupé** (Story 43-1b, #823, AC7) : la facture se
+/// détache de même — `CLEAR_SETTLEMENT_SQL` vide aussi sa ligne
+/// (`settlement_journal_entry_line_id`), sans quoi la `CHECK` « ligne ⇒
+/// écriture » rendrait une 500 —, et l'audit nomme sa ligne. L'écriture
+/// commune reste au grand livre, rapprochée : son dé-rapprochement ultérieur la
+/// contre-passe **entière** et ne rouvre que les factures encore attachées ;
+/// quand plus aucune ne l'est, elle est classée `entry`. ⚠️ **Faux positif
+/// bénin du gel « paiement détaché »** (`journal_entries::modification_guard`,
+/// `DETACHED_SETTLEMENT_TRACES`) : la trace de ce détachement désigne
+/// l'écriture commune, qui est déjà gelée tant qu'un membre la possède (motif
+/// `Owned`, lu en premier) — le gel n'ajoute rien ; il ne devient le motif
+/// rendu que lorsque plus aucun membre n'est attaché, ce qui est le cas voulu.
+///
 /// ⛔ **Les verrous d'abord, tous, avant toute lecture non verrouillante**
 /// (leçon de la Story 25-3-b) : sous `REPEATABLE READ`, la première lecture non
 /// verrouillante fige l'instantané ; placée avant un verrou, elle ferait relire
@@ -2686,6 +2699,11 @@ pub async fn cancel_in_tx(
         details["settlementType"] = serde_json::json!(inv.settlement_type);
         details["paidAt"] = serde_json::json!(inv.paid_at);
     }
+    // Story 43-1b (AC7) : membre d'un règlement groupé, la facture détachée
+    // nomme aussi SA ligne de dette — la seule trace qui en reste.
+    if let Some(line) = inv.settlement_journal_entry_line_id {
+        details["settlementJournalEntryLineId"] = serde_json::json!(line);
+    }
     audit_log::insert_in_tx(
         tx,
         NewAuditLogEntry::user(
@@ -2774,6 +2792,35 @@ pub async fn supplier_settlement_cancel_blocker_unlinking(
     unlinking: Option<i64>,
     aujourd_hui: NaiveDate,
 ) -> Result<Option<super::settlement_cancellation::SettlementCancelHit>, DbError> {
+    let entry_id =
+        match supplier_settlement_cancel_head(conn, company_id, supplier_invoice_id).await? {
+            Ok(entry_id) => entry_id,
+            Err(hit) => return Ok(Some(hit)),
+        };
+    super::settlement_cancellation::settlement_entry_cancel_blocker(
+        conn,
+        company_id,
+        entry_id,
+        unlinking,
+        aujourd_hui,
+    )
+    .await
+}
+
+/// La **tête** fournisseur des motifs d'annulation d'un règlement — rang 1 (la
+/// facture n'est pas `paid`) — et, sinon, l'écriture du règlement. Extraite de
+/// [`supplier_settlement_cancel_blocker_unlinking`], qui l'appelle avant la
+/// queue commune ; le dé-rapprochement d'un règlement groupé fournisseur
+/// (Story 43-1b, patron de `invoice_settlements_write::settlement_cancel_head`)
+/// l'appelle pour **chaque** facture, puis la queue **une fois** pour
+/// l'écriture commune. ⛔ Le rang 1 n'est écrit qu'ici.
+///
+/// Facture introuvable (ou d'une autre société) → [`DbError::NotFound`].
+pub(crate) async fn supplier_settlement_cancel_head(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    supplier_invoice_id: i64,
+) -> Result<Result<i64, super::settlement_cancellation::SettlementCancelHit>, DbError> {
     let row: Option<(String, Option<i64>)> = sqlx::query_as(
         "SELECT status, settlement_journal_entry_id FROM supplier_invoices \
          WHERE id = ? AND company_id = ?",
@@ -2787,21 +2834,11 @@ pub async fn supplier_settlement_cancel_blocker_unlinking(
     // Rang 1. ⚠️ `chk_supplier_invoices_paid_has_settlement` garantit qu'une
     // facture `paid` porte son écriture de règlement : l'absence ne peut venir
     // que d'une facture non `paid`.
-    let Some(entry_id) = settlement_entry.filter(|_| status == "paid") else {
-        return Ok(Some((
-            crate::errors::SettlementCancelBlocker::SupplierInvoiceNotPaid,
-            None,
-            None,
-        )));
-    };
-    super::settlement_cancellation::settlement_entry_cancel_blocker(
-        conn,
-        company_id,
-        entry_id,
-        unlinking,
-        aujourd_hui,
-    )
-    .await
+    Ok(settlement_entry.filter(|_| status == "paid").ok_or((
+        crate::errors::SettlementCancelBlocker::SupplierInvoiceNotPaid,
+        None,
+        None,
+    )))
 }
 
 /// Ce que rend l'annulation d'un règlement fournisseur.

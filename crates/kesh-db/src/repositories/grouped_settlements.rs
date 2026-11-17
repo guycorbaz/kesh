@@ -29,7 +29,9 @@ use chrono::NaiveDate;
 use rust_decimal::Decimal;
 
 use crate::entities::audit_log::{Acteur, NewAuditLogEntry};
-use crate::entities::{Invoice, NewInvoiceSettlement, NewJournalEntry, NewJournalEntryLine};
+use crate::entities::{
+    Invoice, NewInvoiceSettlement, NewJournalEntry, NewJournalEntryLine, SupplierInvoice,
+};
 use crate::errors::{ClaimSide, DbError, SettlementAccountRole, map_db_error};
 use crate::repositories::invoice_settlements::amount_due_to_centime;
 
@@ -1009,11 +1011,16 @@ fn entry_description(members: &[ClientMember]) -> String {
                 .unwrap_or_else(|| m.invoice.id.to_string())
         })
         .collect();
-    let full = format!(
+    bounded_description(format!(
         "Encaissement groupé de {} factures : {}",
         members.len(),
         numbers.join(", ")
-    );
+    ))
+}
+
+/// Un libellé d'écriture borné à la colonne (500 caractères), coupé avec
+/// « ... » — une seule définition pour les deux familles.
+fn bounded_description(full: String) -> String {
     if full.chars().count() <= 500 {
         full
     } else {
@@ -1023,7 +1030,8 @@ fn entry_description(members: &[ClientMember]) -> String {
     }
 }
 
-/// Construit le refus de compte de tiers, numéro du compte lu à l'échec.
+/// Construit le refus de compte de tiers, numéro du compte lu à l'échec — côté
+/// client (la créance soldée).
 async fn claim_refusal(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,
@@ -1032,9 +1040,32 @@ async fn claim_refusal(
     bank_account_id: Option<i64>,
     piece: Option<GroupedPiece>,
 ) -> Result<GroupRefusal, DbError> {
+    claim_refusal_on(
+        tx,
+        company_id,
+        ClaimSide::Receivable,
+        role,
+        account_id,
+        bank_account_id,
+        piece,
+    )
+    .await
+}
+
+/// [`claim_refusal`], pour le côté soldé `claim` — la dette d'un groupe
+/// fournisseur (Story 43-1b) passe `ClaimSide::Payable`.
+async fn claim_refusal_on(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    claim: ClaimSide,
+    role: SettlementAccountRole,
+    account_id: i64,
+    bank_account_id: Option<i64>,
+    piece: Option<GroupedPiece>,
+) -> Result<GroupRefusal, DbError> {
     let account_number = super::accounts::number_in_company(tx, company_id, account_id).await?;
     Ok(GroupRefusal::ClaimAccount {
-        claim: ClaimSide::Receivable,
+        claim,
         role,
         account_id,
         account_number,
@@ -1106,20 +1137,106 @@ async fn locked_members(
     .map_err(map_db_error)
 }
 
-/// Les factures d'une écriture groupée, pour la vue (`get_view`, 43-2).
+/// Un membre fournisseur d'une écriture groupée, lu par [`supplier_members`].
+#[derive(Debug, Clone)]
+pub(crate) struct SupplierGroupMember {
+    pub id: i64,
+    /// Le numéro affichable : interne, à défaut celui du fournisseur.
+    pub number: Option<String>,
+    /// Le `total_amount` de la facture : son apport au groupe.
+    pub amount: Decimal,
+    /// Sa ligne de dette dans l'écriture (`settlement_journal_entry_line_id`).
+    pub line_id: Option<i64>,
+}
+
+/// Le filtre des membres fournisseur d'une écriture groupée : les factures
+/// `paid` qui la pointent — le prédicat du classement
+/// (`reconciliation_cancel::SUPPLIER_SETTLEMENT_CLASSIFY_SQL`), par l'index de
+/// `settlement_journal_entry_id`. Une facture **détachée** (annulée, colonnes
+/// vidées, AC7) n'en est plus.
+const SUPPLIER_MEMBERS_WHERE: &str =
+    "WHERE company_id = ? AND settlement_journal_entry_id = ? AND status = 'paid' ORDER BY id";
+
+/// Les factures fournisseur d'une écriture groupée, par identifiant croissant
+/// (Story 43-1b, AC6 bis) — lecture **ordinaire**, sous la même règle que
+/// [`client_members`] : dans le geste, jamais avant le verrou de l'écriture et
+/// de son exercice.
+pub(crate) async fn supplier_members(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    entry_id: i64,
+) -> Result<Vec<SupplierGroupMember>, DbError> {
+    /// `(facture, numéro interne, numéro du fournisseur, total, ligne)`.
+    type Row = (i64, Option<String>, Option<String>, Decimal, Option<i64>);
+    let rows: Vec<Row> = sqlx::query_as(&format!(
+        "SELECT id, internal_number, supplier_invoice_number, total_amount, \
+             settlement_journal_entry_line_id FROM supplier_invoices {SUPPLIER_MEMBERS_WHERE}"
+    ))
+    .bind(company_id)
+    .bind(entry_id)
+    .fetch_all(&mut *conn)
+    .await
+    .map_err(map_db_error)?;
+    Ok(rows
+        .into_iter()
+        .map(
+            |(id, interne, fournisseur, amount, line_id)| SupplierGroupMember {
+                id,
+                number: interne.or(fournisseur),
+                amount,
+                line_id,
+            },
+        )
+        .collect())
+}
+
+/// `(facture, version)` des membres fournisseur, par une lecture
+/// **verrouillante** — les lignes que le classement verrouillant tient déjà
+/// (`reconciliation_cancel::classify`, même prédicat, même index) : elle ne
+/// fige pas l'instantané et ne prend aucun verrou neuf.
+async fn locked_supplier_members(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    entry_id: i64,
+) -> Result<Vec<(i64, i64, Option<chrono::NaiveDateTime>)>, DbError> {
+    sqlx::query_as(&format!(
+        "SELECT id, version, paid_at FROM supplier_invoices {SUPPLIER_MEMBERS_WHERE} FOR UPDATE"
+    ))
+    .bind(company_id)
+    .bind(entry_id)
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(map_db_error)
+}
+
+/// Les factures d'une écriture groupée, pour la vue (`get_view`, 43-2) : les
+/// membres clients, à défaut les membres fournisseur (Story 43-1b, AC6 bis) —
+/// une écriture groupée n'a qu'une famille (C-43-15).
 pub(crate) async fn view_members(
     conn: &mut sqlx::MySqlConnection,
     company_id: i64,
     entry_id: i64,
 ) -> Result<Vec<GroupedViewInvoice>, DbError> {
-    Ok(client_members(conn, company_id, entry_id)
+    let clients = client_members(conn, company_id, entry_id).await?;
+    if !clients.is_empty() {
+        return Ok(clients
+            .into_iter()
+            .map(|(_, id, number, amount)| GroupedViewInvoice {
+                kind: GroupFamily::Client,
+                id,
+                number,
+                amount,
+            })
+            .collect());
+    }
+    Ok(supplier_members(conn, company_id, entry_id)
         .await?
         .into_iter()
-        .map(|(_, id, number, amount)| GroupedViewInvoice {
-            kind: GroupFamily::Client,
-            id,
-            number,
-            amount,
+        .map(|m| GroupedViewInvoice {
+            kind: GroupFamily::Supplier,
+            id: m.id,
+            number: m.number,
+            amount: m.amount,
         })
         .collect())
 }
@@ -1147,6 +1264,10 @@ pub(crate) async fn difference_account_of(
     .fetch_all(&mut *conn)
     .await
     .map_err(map_db_error)?;
+    // Story 43-1b (AC6 bis) : sans règlement client, le groupe est fournisseur.
+    if amounts.is_empty() {
+        return supplier_difference_account_of(conn, company_id, entry_id).await;
+    }
     let lines: Vec<(i64, Decimal)> = sqlx::query_as(
         "SELECT jel.account_id, jel.debit + jel.credit FROM journal_entry_lines jel \
          JOIN journal_entries je ON je.id = jel.entry_id \
@@ -1158,19 +1279,13 @@ pub(crate) async fn difference_account_of(
     .await
     .map_err(map_db_error)?;
     // Revue P1 (B-2, E-3, E-4) : une écriture qui n'a pas la forme d'un groupe
-    // client — aucune ligne, aucun règlement client (groupe fournisseur, Story
-    // 43-1b), ligne d'écart absente — rend `Invariant`, jamais une valeur
-    // fausse ni un « sans écart » silencieux.
+    // client — aucune ligne, ligne d'écart absente — rend `Invariant`, jamais
+    // une valeur fausse ni un « sans écart » silencieux.
     let malformee = |quoi: &str| {
         DbError::Invariant(format!(
             "écriture groupée {entry_id} : {quoi} (relecture du compte d'écart)"
         ))
     };
-    if amounts.is_empty() {
-        return Err(malformee(
-            "aucun règlement client (groupe fournisseur : Story 43-1b)",
-        ));
-    }
     let Some((_, paid)) = lines.first() else {
         return Err(malformee("aucune ligne"));
     };
@@ -1184,6 +1299,81 @@ pub(crate) async fn difference_account_of(
         .get(skip)
         .map(|(account, _)| Some(*account))
         .ok_or_else(|| malformee("ligne d'écart absente"))
+}
+
+/// [`difference_account_of`] pour un groupe **fournisseur** (Story 43-1b,
+/// AC6 bis) : même ordre des lignes (banque, une dette par facture, arrondi si
+/// `r ≠ 0`, écart si `e ≠ 0`), même [`group_difference`] (plafond sans objet).
+///
+/// ⚠️ **Le bloc des dettes se lit sur l'écriture, non sur les membres** : une
+/// facture du groupe peut avoir été **détachée** (annulée après coup, AC7) —
+/// elle n'est plus membre, mais sa ligne de dette reste dans l'écriture. Le
+/// bloc va donc de la ligne 1 à la dernière ligne d'un membre, puis s'étend
+/// aux lignes suivantes dont le compte est celui d'une ligne du bloc : une
+/// ligne d'arrondi ou d'écart ne porte jamais un compte de dette du groupe
+/// (refus `ClaimAccount` au paiement, C-e431a-7). Les apports sont les
+/// montants de ces lignes — le `total_amount` de chaque facture, contrôlé
+/// égal au paiement. Une écriture qui ne retombe pas sur cette forme rend
+/// `Invariant`.
+async fn supplier_difference_account_of(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    entry_id: i64,
+) -> Result<Option<i64>, DbError> {
+    let malformee = |quoi: &str| {
+        DbError::Invariant(format!(
+            "écriture groupée fournisseur {entry_id} : {quoi} (relecture du compte d'écart)"
+        ))
+    };
+    let members = supplier_members(conn, company_id, entry_id).await?;
+    if members.is_empty() {
+        return Err(malformee("aucun règlement"));
+    }
+    let lines: Vec<(i64, i64, Decimal)> = sqlx::query_as(
+        "SELECT jel.id, jel.account_id, jel.debit + jel.credit FROM journal_entry_lines jel \
+         JOIN journal_entries je ON je.id = jel.entry_id \
+         WHERE jel.entry_id = ? AND je.company_id = ? ORDER BY jel.line_order",
+    )
+    .bind(entry_id)
+    .bind(company_id)
+    .fetch_all(&mut *conn)
+    .await
+    .map_err(map_db_error)?;
+    let Some((_, _, paid)) = lines.first() else {
+        return Err(malformee("aucune ligne"));
+    };
+    // La dernière ligne d'un membre.
+    let mut last = 0usize;
+    for m in &members {
+        let line_id = m
+            .line_id
+            .ok_or_else(|| malformee("un membre sans ligne de règlement"))?;
+        let position = lines
+            .iter()
+            .position(|(id, _, _)| *id == line_id)
+            .filter(|p| *p > 0)
+            .ok_or_else(|| malformee("la ligne d'un membre n'est pas une ligne de dette"))?;
+        last = last.max(position);
+    }
+    let payables: BTreeSet<i64> = lines[1..=last].iter().map(|(_, a, _)| *a).collect();
+    let mut block_end = last;
+    while lines
+        .get(block_end + 1)
+        .is_some_and(|(_, account, _)| payables.contains(account))
+    {
+        block_end += 1;
+    }
+    let contributions: Vec<Decimal> = lines[1..=block_end].iter().map(|(_, _, a)| *a).collect();
+    let d = group_difference(*paid, &contributions, Decimal::MAX)
+        .map_err(|r| malformee(&format!("décomposition {r:?}")))?;
+    let tail = usize::from(!d.rounding_difference.is_zero()) + usize::from(!d.gap.is_zero());
+    if lines.len() != block_end + 1 + tail {
+        return Err(malformee("lignes d'arrondi et d'écart inattendues"));
+    }
+    if d.gap.is_zero() {
+        return Ok(None);
+    }
+    Ok(lines.last().map(|(_, account, _)| *account))
 }
 
 /// Le point de sauvegarde du lot a-t-il disparu — la transaction annulée sous
@@ -1211,7 +1401,9 @@ pub fn is_savepoint_lost(err: &DbError) -> bool {
 /// `settlement_entry_cancel_blocker` ; revue P1, B-5 / E-5 : elle était
 /// réévaluée par facture). Un motif de l'écriture nomme la première facture.
 ///
-/// Un groupe sans règlement client (groupe fournisseur, Story 43-1b) →
+/// Un groupe **fournisseur** (Story 43-1b, AC6) : la tête fournisseur de chaque
+/// facture (rang 1, `supplier_invoices::supplier_settlement_cancel_head`), puis
+/// la même queue une fois. Une écriture sans aucun membre →
 /// [`DbError::Invariant`] : aucune réponse fausse (revue P1, B-2, E-3).
 pub(crate) async fn group_cancel_blocker(
     conn: &mut sqlx::MySqlConnection,
@@ -1228,10 +1420,8 @@ pub(crate) async fn group_cancel_blocker(
 > {
     let members = client_members(conn, company_id, entry_id).await?;
     let Some((_, first_invoice, first_number, _)) = members.first().cloned() else {
-        return Err(DbError::Invariant(format!(
-            "règlement groupé : l'écriture {entry_id} n'a aucun règlement client \
-             (groupe fournisseur : Story 43-1b)"
-        )));
+        return supplier_group_cancel_blocker(conn, company_id, entry_id, unlinking, aujourd_hui)
+            .await;
     };
     for (settlement_id, invoice_id, number, _) in members {
         let (_, head) = super::invoice_settlements_write::settlement_cancel_head(
@@ -1268,6 +1458,54 @@ pub(crate) async fn group_cancel_blocker(
                 },
             )
         }),
+    )
+}
+
+/// Le bras fournisseur de [`group_cancel_blocker`] (Story 43-1b, AC6) : la
+/// tête de chaque facture, par identifiant croissant, puis la queue de
+/// l'écriture commune **une fois** ; un motif de l'écriture nomme la première
+/// facture.
+async fn supplier_group_cancel_blocker(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    entry_id: i64,
+    unlinking: i64,
+    aujourd_hui: NaiveDate,
+) -> Result<
+    Option<(
+        crate::repositories::settlement_cancellation::SettlementCancelHit,
+        GroupedPiece,
+    )>,
+    DbError,
+> {
+    let members = supplier_members(conn, company_id, entry_id).await?;
+    let Some(first) = members.first().cloned() else {
+        return Err(DbError::Invariant(format!(
+            "règlement groupé : l'écriture {entry_id} n'a aucun règlement, client ni fournisseur"
+        )));
+    };
+    let piece = |m: &SupplierGroupMember| GroupedPiece {
+        document: GroupedDocument::SupplierInvoice(m.id),
+        number: m.number.clone(),
+    };
+    for m in &members {
+        if let Err(hit) =
+            super::supplier_invoices::supplier_settlement_cancel_head(conn, company_id, m.id)
+                .await?
+        {
+            return Ok(Some((hit, piece(m))));
+        }
+    }
+    Ok(
+        super::settlement_cancellation::settlement_entry_cancel_blocker(
+            conn,
+            company_id,
+            entry_id,
+            Some(unlinking),
+            aujourd_hui,
+        )
+        .await?
+        .map(|hit| (hit, piece(&first))),
     )
 }
 
@@ -1321,10 +1559,18 @@ pub async fn cancel_in_tx(
     // ordinaire) seulement après.
     let tenus = locked_members(tx, company_id, entry_id).await?;
     if tenus.is_empty() {
-        return Err(DbError::Invariant(format!(
-            "règlement groupé : l'écriture {entry_id} n'a aucun règlement client \
-             (groupe fournisseur : Story 43-1b)"
-        )));
+        // Story 43-1b (AC6) : sans règlement client, le groupe est fournisseur
+        // (C-e431a-9 : l'`Invariant` d'avant est remplacé par ce bras).
+        return supplier_cancel_in_tx(
+            tx,
+            company_id,
+            bt,
+            entry_id,
+            acteur,
+            expect_unlink_only,
+            aujourd_hui,
+        )
+        .await;
     }
     // Les factures, par identifiant croissant.
     for (_, invoice_id) in &tenus {
@@ -1507,16 +1753,253 @@ pub async fn cancel_in_tx(
     })
 }
 
+/// Le bras **fournisseur** de [`cancel_in_tx`] (Story 43-1b, AC6) — l'ordre de
+/// l'unitaire fournisseur (`supplier_invoices::cancel_settlement_in_tx`) :
+/// **les factures avant l'écriture**. Le classement verrouillant les tient déjà
+/// (la ligne `supplier_invoices` **est** la ligne de règlement) ; la lecture
+/// verrouillante des membres le redit sans verrou neuf. Puis l'écriture et son
+/// exercice, `ensure_open_in_tx`, et seulement alors les lectures ordinaires.
+///
+/// 1. tous les refus avant toute écriture : `expect_unlink_only = Some(true)`
+///    → `ReconciliationCancelChanged` (un groupe n'est jamais un retrait seul,
+///    C-e431a-6) ; puis la tête de chaque facture et la queue de l'écriture
+///    une fois ([`supplier_group_cancel_blocker`]) ;
+/// 2. le lien défait ;
+/// 3. le délettrage de chaque facture ;
+/// 4. chaque facture rouverte (`open`, colonnes de règlement **ligne
+///    comprise** et `paid_at` à `NULL` par `CLEAR_SETTLEMENT_SQL`, `version +
+///    1`, à la version lue sous verrou) : l'écriture n'a plus de propriétaire ;
+/// 5. la contre-passation de l'écriture entière — y compris la ligne d'une
+///    facture **détachée** auparavant (AC7), qui n'est plus rouverte ;
+/// 6. `recheck_open_locked_in_tx`, puis l'audit : une
+///    `supplier_invoice.settlement_cancelled` par facture rouverte, puis
+///    `reconciliation.cancelled`.
+async fn supplier_cancel_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    bt: &crate::entities::bank_transaction::BankTransaction,
+    entry_id: i64,
+    acteur: Acteur,
+    expect_unlink_only: Option<bool>,
+    aujourd_hui: NaiveDate,
+) -> Result<GroupedCancellation, DbError> {
+    use super::supplier_invoices::CLEAR_SETTLEMENT_SQL;
+
+    let tenus = locked_supplier_members(tx, company_id, entry_id).await?;
+    if tenus.is_empty() {
+        return Err(DbError::Invariant(format!(
+            "règlement groupé : l'écriture {entry_id} n'a aucun règlement, client ni fournisseur"
+        )));
+    }
+    // L'écriture et son exercice, avant de juger.
+    let fiscal_year_id: i64 = sqlx::query_scalar(
+        "SELECT fy.id FROM journal_entries je \
+         JOIN fiscal_years fy ON fy.id = je.fiscal_year_id \
+         WHERE je.id = ? AND je.company_id = ? FOR UPDATE",
+    )
+    .bind(entry_id)
+    .bind(company_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(map_db_error)?
+    .ok_or(DbError::NotFound)?;
+    super::bank_accounts::ensure_open_in_tx(tx, company_id, bt.bank_account_id).await?;
+    // Les numéros et les lignes, maintenant que l'instantané naît après le verrou.
+    let members = supplier_members(tx, company_id, entry_id).await?;
+    let lus: Vec<i64> = members.iter().map(|m| m.id).collect();
+    let ids_tenus: Vec<i64> = tenus.iter().map(|(id, _, _)| *id).collect();
+    if lus != ids_tenus {
+        return Err(DbError::Invariant(format!(
+            "dé-rapprochement groupé fournisseur : les factures lues ({lus:?}) ne sont pas \
+             celles tenues ({ids_tenus:?})"
+        )));
+    }
+
+    // (1) Les refus, avant toute écriture.
+    if expect_unlink_only == Some(true) {
+        return Err(DbError::ReconciliationCancelChanged { unlink_only: false });
+    }
+    if let Some(((blocker, _, _), _)) =
+        supplier_group_cancel_blocker(tx, company_id, entry_id, bt.id, aujourd_hui).await?
+    {
+        return Err(DbError::ReconciliationNotCancellable { blocker });
+    }
+
+    // (2) Le lien défait.
+    let updated = sqlx::query(
+        "UPDATE bank_transactions \
+         SET matched_entry_id = NULL, status = 'pending', auto_match_rejected_at = NULL, \
+             version = version + 1, updated_at = NOW(3) \
+         WHERE id = ? AND company_id = ? AND status = 'reconciled' AND version = ?",
+    )
+    .bind(bt.id)
+    .bind(company_id)
+    .bind(bt.version)
+    .execute(&mut **tx)
+    .await
+    .map_err(map_db_error)?;
+    if updated.rows_affected() != 1 {
+        return Err(DbError::OptimisticLockConflict);
+    }
+
+    // (3) Le délettrage de chaque pièce (l'exercice tenu : celui du règlement).
+    for m in &members {
+        super::letterings::dissolve_supplier_invoice_document_group_in_tx(
+            tx,
+            company_id,
+            m.id,
+            fiscal_year_id,
+            acteur,
+        )
+        .await?;
+    }
+
+    // (4) Chaque facture rouverte, à la version lue sous verrou : l'écriture
+    //     n'a plus de propriétaire.
+    for (id, version, _) in &tenus {
+        let rows = sqlx::query(&format!(
+            "UPDATE supplier_invoices SET status = 'open', {CLEAR_SETTLEMENT_SQL}, \
+             version = version + 1 \
+             WHERE id = ? AND company_id = ? AND version = ? AND status = 'paid'"
+        ))
+        .bind(id)
+        .bind(company_id)
+        .bind(version)
+        .execute(&mut **tx)
+        .await
+        .map_err(map_db_error)?
+        .rows_affected();
+        if rows != 1 {
+            return Err(DbError::OptimisticLockConflict);
+        }
+    }
+
+    // (5) La contre-passation de l'écriture entière.
+    let reversal =
+        super::journal_entries::reverse_in_tx(tx, company_id, entry_id, acteur, aujourd_hui)
+            .await?;
+
+    // (6) La revérification du compte, puis l'audit.
+    super::bank_accounts::recheck_open_locked_in_tx(tx, company_id, bt.bank_account_id).await?;
+    for (m, (_, _, paid_at)) in members.iter().zip(&tenus) {
+        super::audit_log::insert_in_tx(
+            tx,
+            NewAuditLogEntry::par(
+                acteur,
+                "supplier_invoice.settlement_cancelled",
+                "supplier_invoice",
+                m.id,
+                Some(serde_json::json!({
+                    "settlementType": "bank_transfer",
+                    "settlementJournalEntryId": entry_id,
+                    "settlementJournalEntryLineId": m.line_id,
+                    "reversalJournalEntryId": reversal.entry.id,
+                    "paidAt": paid_at,
+                    "grouped": true,
+                })),
+            ),
+        )
+        .await?;
+    }
+    super::audit_log::insert_in_tx(
+        tx,
+        NewAuditLogEntry::par(
+            acteur,
+            "reconciliation.cancelled",
+            "bank_transaction",
+            bt.id,
+            Some(serde_json::json!({
+                "kind": "grouped_settlement",
+                "matchedEntryId": entry_id,
+                "reversalJournalEntryId": reversal.entry.id,
+                "unlinkOnly": false,
+                "invoiceId": null,
+                "settlementId": null,
+                "supplierInvoiceId": null,
+                "supplier_invoices": members
+                    .iter()
+                    .map(|m| serde_json::json!({
+                        "supplier_invoice_id": m.id,
+                        "number": m.number,
+                    }))
+                    .collect::<Vec<_>>(),
+                "amount": bt.amount,
+                "wasPreviouslyRejected": bt.auto_match_rejected_at.is_some(),
+            })),
+        ),
+    )
+    .await?;
+
+    Ok(GroupedCancellation {
+        reversal_journal_entry_id: reversal.entry.id,
+        invoices: members
+            .into_iter()
+            .map(|m| GroupedViewInvoice {
+                kind: GroupFamily::Supplier,
+                id: m.id,
+                number: m.number,
+                amount: m.amount,
+            })
+            .collect(),
+    })
+}
+
 // ---------------------------------------------------------------------------
 // Le règlement groupé fournisseur — Story 43-1b
 // ---------------------------------------------------------------------------
 
-/// **Paie plusieurs factures fournisseur par une transaction au débit** —
-/// signature figée à T3 de la 43-1a ; corps : Story 43-1b (même méthode, même
-/// point de sauvegarde, même [`group_difference`], écart au compte choisi
-/// `difference_account_id`, `settlement_journal_entry_line_id` posée par
-/// facture). Côté fournisseur, la banque est au crédit : un écart `e > 0` (plus
-/// payé) va au **débit** du compte choisi, `e < 0` au crédit.
+/// Une facture fournisseur lue et verrouillée à l'étape 4, ce que la suite en
+/// emploie.
+struct SupplierMember {
+    invoice: SupplierInvoice,
+    /// Le compte de dette, lu sur l'écriture d'achat (`purchase_payable_line`).
+    payable_account_id: i64,
+    /// Le numéro affichable : interne, à défaut celui du fournisseur.
+    number: Option<String>,
+}
+
+impl SupplierMember {
+    fn piece(&self) -> GroupedPiece {
+        GroupedPiece {
+            document: GroupedDocument::SupplierInvoice(self.invoice.id),
+            number: self.number.clone(),
+        }
+    }
+}
+
+/// Le numéro affichable d'une facture fournisseur : le numéro interne, à
+/// défaut celui du fournisseur (`GroupedPiece`, 43-3).
+fn supplier_number(invoice: &SupplierInvoice) -> Option<String> {
+    invoice
+        .internal_number
+        .clone()
+        .or_else(|| invoice.supplier_invoice_number.clone())
+}
+
+/// **Paie plusieurs factures fournisseur par une transaction au débit**, dans
+/// la transaction de l'appelant et sous son verrou de compte (Story 43-1b,
+/// #823) — signature figée à T3 de la 43-1a.
+///
+/// La forme est celle de [`settle_invoices_in_tx`] — même point de sauvegarde
+/// (D6), mêmes bornes et doublon, même [`group_difference`] —, la méthode celle
+/// de **l'unitaire fournisseur** (`accept_one_supplier_invoice`, C-43-19) :
+/// chaque facture est verrouillée et admise par
+/// [`super::supplier_invoices::lock_for_bank_settlement_in_tx`] (**réemployée**),
+/// par identifiant croissant ; son `UPDATE … AND version = ? AND status =
+/// 'open'` porte la version lue **sous ce verrou**.
+///
+/// L'écriture (sans projet d'en-tête) : la banque **au crédit** de |montant| ;
+/// par facture, le **débit** de son compte de dette (lu sur l'écriture d'achat)
+/// de son `total_amount`, avec le projet de la facture estampillé sans
+/// validation (C-43-20) ; l'arrondi `r` (au débit si `r > 0`) ; l'écart `e` au
+/// compte choisi, **au débit si `e > 0`** (plus payé que les factures), au
+/// crédit sinon — le symétrique du côté client. Chaque facture porte sa ligne
+/// (`settlement_journal_entry_line_id`), ce qui fait d'elle un membre du
+/// groupe (`reconciliation_cancel::classify`).
+///
+/// Audit : `reconciliation.accepted` (`proposal_type: "supplier_invoice_group"`)
+/// puis `supplier_invoice.paid` par facture, avec l'acteur. `aujourd_hui`
+/// n'est pas lu, comme dans [`settle_invoices_in_tx`].
 #[allow(clippy::too_many_arguments)]
 pub async fn pay_supplier_invoices_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
@@ -1529,7 +2012,14 @@ pub async fn pay_supplier_invoices_in_tx(
     acteur: Acteur,
     aujourd_hui: NaiveDate,
 ) -> Result<Result<GroupedSettlement, GroupRefusal>, DbError> {
-    let _ = (
+    let _ = aujourd_hui;
+    // (1) Le point de sauvegarde propre.
+    savepoint(tx).await?;
+    // (2) Bornes et doublon, avant toute lecture.
+    if let Some(r) = check_bounds(GroupFamily::Supplier, supplier_invoice_ids) {
+        return refuse(tx, r).await;
+    }
+    match pay_supplier_inner(
         tx,
         company_id,
         bank_account_id,
@@ -1538,9 +2028,531 @@ pub async fn pay_supplier_invoices_in_tx(
         difference_account_id,
         batch_size,
         acteur,
-        aujourd_hui,
-    );
-    unimplemented!("Story 43-1b : règlement groupé fournisseur")
+    )
+    .await?
+    {
+        Ok(done) => {
+            sqlx::query(&format!("RELEASE SAVEPOINT {SAVEPOINT}"))
+                .execute(&mut **tx)
+                .await
+                .map_err(DbError::Sqlx)?;
+            Ok(Ok(done))
+        }
+        Err(r) => refuse(tx, r).await,
+    }
+}
+
+/// Le corps de [`pay_supplier_invoices_in_tx`], étapes 3 à 11 : rend le refus
+/// sans revenir au point de sauvegarde (l'enveloppe s'en charge).
+#[allow(clippy::too_many_arguments)]
+async fn pay_supplier_inner(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    bank_account_id: i64,
+    bank_transaction_id: i64,
+    supplier_invoice_ids: &[i64],
+    difference_account_id: Option<i64>,
+    batch_size: i64,
+    acteur: Acteur,
+) -> Result<Result<GroupedSettlement, GroupRefusal>, DbError> {
+    use super::reconciliation::{
+        InvoiceDateRefusal, InvoiceDateWindow, find_pending_by_id_for_account, payment_date,
+    };
+    use crate::entities::bank_transaction::BankTransactionStatus;
+
+    // (3) La transaction, rechargée sans verrou (patron de l'unitaire).
+    let Some(bt) =
+        find_pending_by_id_for_account(&mut **tx, company_id, bank_account_id, bank_transaction_id)
+            .await?
+    else {
+        return Ok(Err(GroupRefusal::TransactionNotFound));
+    };
+    if bt.status != BankTransactionStatus::Pending {
+        return Ok(Err(GroupRefusal::TransactionNotPending));
+    }
+    // Un débit : ni crédit ni montant nul ; la devise ensuite.
+    if bt.amount >= Decimal::ZERO {
+        return Ok(Err(GroupRefusal::WrongDirection { amount: bt.amount }));
+    }
+    if !super::reconciliation_link::transaction_can_be_linked_to_entry(&bt) {
+        return Ok(Err(GroupRefusal::CurrencyMismatch {
+            currency: bt.currency.clone(),
+        }));
+    }
+    let paid = bt.amount.abs();
+    let value_date = payment_date(&bt);
+    let window = InvoiceDateWindow::for_supplier_transaction(&bt);
+
+    // (4) Chaque facture, par identifiant croissant, verrouillée et admise par
+    //     la méthode de l'unitaire ; puis la borne basse de date ; puis sa
+    //     ligne de dette.
+    let mut ids: Vec<i64> = supplier_invoice_ids.to_vec();
+    ids.sort_unstable();
+    let mut members: Vec<SupplierMember> = Vec::with_capacity(ids.len());
+    for id in &ids {
+        let locked = super::supplier_invoices::lock_for_bank_settlement_in_tx(
+            tx,
+            company_id,
+            *id,
+            bank_account_id,
+            paid,
+        )
+        .await?;
+        let invoice = match locked {
+            Ok(l) => l.invoice,
+            Err(refusal) => {
+                return Ok(Err(
+                    supplier_lock_refusal(tx, company_id, *id, refusal).await?
+                ));
+            }
+        };
+        let number = supplier_number(&invoice);
+        let piece = GroupedPiece {
+            document: GroupedDocument::SupplierInvoice(*id),
+            number: number.clone(),
+        };
+        // La borne basse seule (C-43-7) : `check` rend `PaymentBeforeInvoice`
+        // avant `PaymentTooLate`, borne haute ignorée.
+        if let Err(InvoiceDateRefusal::PaymentBeforeInvoice) =
+            window.check(invoice.invoice_date, invoice.invoice_date)
+        {
+            return Ok(Err(GroupRefusal::PaymentBeforeInvoiceDate {
+                piece,
+                tolerance_days: window.tolerance_days,
+            }));
+        }
+        // La dette, lue sur l'écriture d'achat (comme `pay_in_tx_as`) ; son
+        // absence est un invariant rompu, comme dans l'unitaire.
+        let purchase_entry_id = invoice.purchase_journal_entry_id.ok_or_else(|| {
+            DbError::Invariant("facture fournisseur validée sans écriture d'achat".into())
+        })?;
+        let (payable_account_id, payable_amount) =
+            super::supplier_invoices::purchase_payable_line(tx, company_id, purchase_entry_id)
+                .await?
+                .ok_or_else(|| {
+                    DbError::Invariant("écriture d'achat sans ligne de crédit créanciers".into())
+                })?;
+        // La ligne de la dette doit solder ce que la facture doit : le lettrage
+        // (achat, règlement) et la vue (apports = `total_amount`) en dépendent.
+        if payable_amount != invoice.total_amount {
+            return Err(DbError::Invariant(format!(
+                "règlement groupé : la facture fournisseur {id} doit {} mais son écriture \
+                 d'achat crédite {payable_amount}",
+                invoice.total_amount
+            )));
+        }
+        members.push(SupplierMember {
+            invoice,
+            payable_account_id,
+            number,
+        });
+    }
+
+    // (5) Le compte bancaire, verrouillé et contrôlé par
+    //     `lock_for_bank_settlement_in_tx` ; la garde du compte clos de la
+    //     famille, comme le client (étape 5), revérifiée en dernier — puis le
+    //     compte de banque, qui n'est la dette d'aucune facture.
+    match super::bank_accounts::ensure_open_in_tx(tx, company_id, bank_account_id).await {
+        Ok(()) => {}
+        Err(DbError::BankAccountClosed { .. }) => {
+            return Ok(Err(GroupRefusal::BankAccountClosed));
+        }
+        Err(DbError::NotFound) => return Ok(Err(GroupRefusal::BankAccountNotFound)),
+        Err(e) => return Err(e),
+    }
+    let bank_ledger_account_id: Option<i64> = sqlx::query_scalar(
+        "SELECT journal_account_id FROM bank_accounts WHERE company_id = ? AND id = ?",
+    )
+    .bind(company_id)
+    .bind(bank_account_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(map_db_error)?
+    .flatten();
+    let Some(bank_ledger_account_id) = bank_ledger_account_id else {
+        return Ok(Err(GroupRefusal::BankAccountNotConfigured));
+    };
+    let payables: BTreeSet<i64> = members.iter().map(|m| m.payable_account_id).collect();
+    if let Some(m) = members
+        .iter()
+        .find(|m| m.payable_account_id == bank_ledger_account_id)
+    {
+        return Ok(Err(claim_refusal_on(
+            tx,
+            company_id,
+            ClaimSide::Payable,
+            SettlementAccountRole::Counterparty,
+            bank_ledger_account_id,
+            Some(bank_account_id),
+            Some(m.piece()),
+        )
+        .await?));
+    }
+
+    // (6) La différence (C-43-16, C-43-25) — la même fonction que le client,
+    //     le plafond d'abord — puis les comptes qu'elle exige.
+    let max =
+        super::company_invoice_settings::group_settlement_max_difference(&mut **tx, company_id)
+            .await?;
+    let gross: Vec<Decimal> = members.iter().map(|m| m.invoice.total_amount).collect();
+    let decomposition = match group_difference(bt.amount, &gross, max) {
+        Ok(d) => d,
+        Err(r) => return Ok(Err(r)),
+    };
+    let r = decomposition.rounding_difference;
+    let rounding_account_id = if r.is_zero() {
+        None
+    } else {
+        match super::company_invoice_settings::rounding_account_for_write(
+            tx,
+            company_id,
+            crate::errors::RoundingContext::Payment,
+        )
+        .await
+        {
+            Ok(id) => {
+                // Comme le client (C-e431a-7) : le compte d'arrondi n'est pas une
+                // dette du groupe.
+                if payables.contains(&id) {
+                    return Ok(Err(claim_refusal_on(
+                        tx,
+                        company_id,
+                        ClaimSide::Payable,
+                        SettlementAccountRole::Rounding,
+                        id,
+                        None,
+                        None,
+                    )
+                    .await?));
+                }
+                Some(id)
+            }
+            Err(DbError::RoundingAccountNotConfigured { .. }) => {
+                return Ok(Err(GroupRefusal::RoundingAccountNotConfigured));
+            }
+            Err(e) => return Err(e),
+        }
+    };
+    // L'écart `e` : au compte que l'utilisateur choisit — banque, manquant,
+    // non imputable, dette du groupe, dans cet ordre.
+    let e = decomposition.gap;
+    let difference_line_account_id = if e.is_zero() {
+        None
+    } else {
+        let Some(id) = difference_account_id else {
+            return Ok(Err(GroupRefusal::DifferenceAccountRequired { gap: e }));
+        };
+        if id == bank_ledger_account_id {
+            return Ok(Err(GroupRefusal::DifferenceAccountIsBankLedger {
+                account_id: id,
+            }));
+        }
+        if let Some(refusal) = difference_account_refusal(tx, company_id, id).await? {
+            return Ok(Err(refusal));
+        }
+        if payables.contains(&id) {
+            return Ok(Err(claim_refusal_on(
+                tx,
+                company_id,
+                ClaimSide::Payable,
+                SettlementAccountRole::Counterparty,
+                id,
+                None,
+                None,
+            )
+            .await?));
+        }
+        Some(id)
+    };
+
+    // (7) L'écriture : banque, une dette par facture (identifiant croissant),
+    //     arrondi, écart. Exercice ouvert couvrant la date de valeur.
+    let Some(fiscal_year) =
+        super::fiscal_years::find_open_covering_date(tx, company_id, value_date).await?
+    else {
+        return Ok(Err(GroupRefusal::FiscalYearInvalid { value_date }));
+    };
+    let mut lines = vec![NewJournalEntryLine {
+        account_id: bank_ledger_account_id,
+        debit: Decimal::ZERO,
+        credit: paid,
+        project_id: None,
+    }];
+    for m in &members {
+        lines.push(NewJournalEntryLine {
+            account_id: m.payable_account_id,
+            debit: m.invoice.total_amount,
+            credit: Decimal::ZERO,
+            // Le projet de la facture, estampillé sans validation (C-43-20).
+            project_id: m.invoice.project_id,
+        });
+    }
+    // Fournisseur : la banque est au crédit ; `r > 0` et `e > 0` (plus payé
+    // que les factures) au débit, négatifs au crédit — le côté qui équilibre.
+    if let Some(account_id) = rounding_account_id {
+        lines.push(NewJournalEntryLine {
+            account_id,
+            debit: if r > Decimal::ZERO { r } else { Decimal::ZERO },
+            credit: if r < Decimal::ZERO { -r } else { Decimal::ZERO },
+            project_id: None,
+        });
+    }
+    if let Some(account_id) = difference_line_account_id {
+        lines.push(NewJournalEntryLine {
+            account_id,
+            debit: if e > Decimal::ZERO { e } else { Decimal::ZERO },
+            credit: if e < Decimal::ZERO { -e } else { Decimal::ZERO },
+            project_id: None,
+        });
+    }
+    let numbers: Vec<String> = members
+        .iter()
+        .map(|m| m.number.clone().unwrap_or_else(|| m.invoice.id.to_string()))
+        .collect();
+    let new_entry = NewJournalEntry {
+        company_id,
+        entry_date: value_date,
+        journal: crate::entities::journal_entry::Journal::Banque,
+        description: bounded_description(format!(
+            "Paiement groupé de {} factures fournisseur : {}",
+            members.len(),
+            numbers.join(", ")
+        )),
+        project_id: None,
+        lines,
+    };
+    let entry = match super::journal_entries::create_copying_projects_in_tx(
+        tx,
+        fiscal_year.id,
+        acteur,
+        new_entry,
+        false,
+    )
+    .await
+    {
+        Ok(e) => e,
+        Err(DbError::PeriodLocked {
+            locked_through,
+            attempted,
+        }) => {
+            return Ok(Err(GroupRefusal::PeriodLocked {
+                locked_through,
+                attempted,
+            }));
+        }
+        Err(DbError::LaterFiscalYearClosed {
+            fiscal_year_id,
+            fiscal_year_name,
+        }) => {
+            return Ok(Err(GroupRefusal::LaterFiscalYearClosed {
+                fiscal_year_id,
+                fiscal_year_name,
+            }));
+        }
+        Err(DbError::FiscalYearClosed | DbError::DateOutsideFiscalYear) => {
+            return Ok(Err(GroupRefusal::FiscalYearInvalid { value_date }));
+        }
+        Err(e) => return Err(e),
+    };
+    let journal_entry_id = entry.entry.id;
+    // Attribution ligne → facture par la position d'insertion (D2) : la ligne
+    // `k + 1` (0 = banque) est celle de la facture `k`.
+    if entry.lines.len() < members.len() + 1 {
+        return Err(DbError::Invariant(
+            "règlement groupé fournisseur : l'écriture n'a pas une ligne par facture".into(),
+        ));
+    }
+    let line_ids: Vec<i64> = entry.lines[1..=members.len()]
+        .iter()
+        .map(|l| l.id)
+        .collect();
+
+    // (8) Chaque facture : `paid`, son règlement et SA ligne, à la version lue
+    //     sous le verrou de l'étape 4 (AC3).
+    let paid_at = value_date
+        .and_time(chrono::NaiveTime::from_hms_opt(0, 0, 0).expect("minuit est une heure valide"));
+    let mut refs: Vec<GroupedInvoiceRef> = Vec::with_capacity(members.len());
+    for (m, line_id) in members.iter().zip(&line_ids) {
+        let updated = sqlx::query(
+            "UPDATE supplier_invoices SET status = 'paid', settlement_type = 'bank_transfer', \
+             settlement_bank_account_id = ?, settlement_account_id = NULL, \
+             settlement_journal_entry_id = ?, settlement_journal_entry_line_id = ?, \
+             paid_at = ?, version = version + 1 \
+             WHERE id = ? AND company_id = ? AND version = ? AND status = 'open'",
+        )
+        .bind(bank_account_id)
+        .bind(journal_entry_id)
+        .bind(line_id)
+        .bind(paid_at)
+        .bind(m.invoice.id)
+        .bind(company_id)
+        .bind(m.invoice.version)
+        .execute(&mut **tx)
+        .await
+        .map_err(map_db_error)?;
+        if updated.rows_affected() != 1 {
+            return Ok(Err(GroupRefusal::InvoiceNotEligible {
+                piece: m.piece(),
+                reason: IneligibleReason::RaceDuringUpdate,
+            }));
+        }
+        refs.push(GroupedInvoiceRef {
+            kind: GroupFamily::Supplier,
+            id: m.invoice.id,
+            number: m.number.clone(),
+            settlement_id: None,
+            line_id: *line_id,
+            amount: m.invoice.total_amount,
+        });
+    }
+
+    // (9) La transaction.
+    let updated = sqlx::query(
+        "UPDATE bank_transactions \
+         SET matched_entry_id = ?, status = 'reconciled', updated_at = NOW(3), \
+             version = version + 1 \
+         WHERE id = ? AND company_id = ? AND status = 'pending' AND matched_entry_id IS NULL \
+           AND version = ?",
+    )
+    .bind(journal_entry_id)
+    .bind(bank_transaction_id)
+    .bind(company_id)
+    .bind(bt.version)
+    .execute(&mut **tx)
+    .await
+    .map_err(map_db_error)?;
+    if updated.rows_affected() != 1 {
+        return Ok(Err(GroupRefusal::TransactionNotPending));
+    }
+
+    // (10) Le lettrage de chaque facture (sa ligne d'achat, sa ligne de dette),
+    //      puis la revérification du compte, dernière acquisition de verrou.
+    for m in &members {
+        super::letterings::sync_supplier_invoice_in_tx(
+            tx,
+            company_id,
+            m.invoice.id,
+            fiscal_year.id,
+            acteur,
+        )
+        .await?;
+    }
+    super::bank_accounts::recheck_open_locked_in_tx(tx, company_id, bank_account_id).await?;
+
+    // (11) L'audit : le rapprochement d'abord, puis le paiement de chaque
+    //      facture (les détails de `pay_in_tx_as`, et le groupe).
+    let accepted = super::audit_log::insert_in_tx(
+        tx,
+        NewAuditLogEntry::par(
+            acteur,
+            "reconciliation.accepted",
+            "bank_transaction",
+            bank_transaction_id,
+            Some(serde_json::json!({
+                "proposal_type": "supplier_invoice_group",
+                "bank_transaction_id": bank_transaction_id,
+                "journal_entry_id": journal_entry_id,
+                "batch_size": batch_size,
+                "paid_amount": paid,
+                "transaction_amount": bt.amount,
+                "difference": decomposition.difference,
+                "rounding_difference": decomposition.rounding_difference,
+                "gap": decomposition.gap,
+                "difference_account_id": difference_line_account_id,
+                "supplier_invoices": refs
+                    .iter()
+                    .map(|i| serde_json::json!({
+                        "supplier_invoice_id": i.id,
+                        "settled_amount": i.amount,
+                    }))
+                    .collect::<Vec<_>>(),
+            })),
+        ),
+    )
+    .await?;
+    for r in &refs {
+        super::audit_log::insert_in_tx(
+            tx,
+            NewAuditLogEntry::par(
+                acteur,
+                "supplier_invoice.paid",
+                "supplier_invoice",
+                r.id,
+                Some(serde_json::json!({
+                    "settlementType": "bank_transfer",
+                    "settlementJournalEntryId": journal_entry_id,
+                    "settlementJournalEntryLineId": r.line_id,
+                    "amount": r.amount.to_string(),
+                    "reconciliationAuditId": accepted.id,
+                    "grouped": true,
+                })),
+            ),
+        )
+        .await?;
+    }
+
+    Ok(Ok(GroupedSettlement {
+        journal_entry_id,
+        reconciliation_audit_id: accepted.id,
+        decomposition,
+        difference_account_id: difference_line_account_id,
+        invoices: refs,
+    }))
+}
+
+/// Un refus de [`super::supplier_invoices::lock_for_bank_settlement_in_tx`] en
+/// refus du groupe : la facture `id` en cause (ou, pour la garde du lot du
+/// compte, l'**autre** facture qui la tient, avec son numéro).
+async fn supplier_lock_refusal(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    id: i64,
+    refusal: super::supplier_invoices::SupplierSettlementRefusal,
+) -> Result<GroupRefusal, DbError> {
+    use super::supplier_invoices::SupplierSettlementRefusal as R;
+    // Le numéro d'une pièce verrouillée (ou lue) — pour que l'écran la nomme.
+    async fn piece_of(
+        tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+        company_id: i64,
+        id: i64,
+    ) -> Result<GroupedPiece, DbError> {
+        let row: Option<(Option<String>, Option<String>)> = sqlx::query_as(
+            "SELECT internal_number, supplier_invoice_number FROM supplier_invoices \
+             WHERE id = ? AND company_id = ?",
+        )
+        .bind(id)
+        .bind(company_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(map_db_error)?;
+        Ok(GroupedPiece {
+            document: GroupedDocument::SupplierInvoice(id),
+            number: row.and_then(|(interne, fournisseur)| interne.or(fournisseur)),
+        })
+    }
+    Ok(match refusal {
+        R::NotFound => GroupRefusal::InvoiceNotFound {
+            document: GroupedDocument::SupplierInvoice(id),
+        },
+        R::NotOpen { .. } => GroupRefusal::InvoiceNotEligible {
+            piece: piece_of(tx, company_id, id).await?,
+            reason: IneligibleReason::SupplierNotOpen,
+        },
+        R::BankAccountNotFound => GroupRefusal::BankAccountNotFound,
+        R::BankAccountClosed => GroupRefusal::BankAccountClosed,
+        R::BankAccountNotConfigured => GroupRefusal::BankAccountNotConfigured,
+        R::InGeneratedBatch { .. } => GroupRefusal::InvoiceNotEligible {
+            piece: piece_of(tx, company_id, id).await?,
+            reason: IneligibleReason::SupplierInPaymentBatch,
+        },
+        R::HeldByPaymentBatch {
+            supplier_invoice_id,
+            payment_batch_id,
+        } => GroupRefusal::HeldByPaymentBatch {
+            piece: piece_of(tx, company_id, supplier_invoice_id).await?,
+            payment_batch_id: Some(payment_batch_id),
+        },
+    })
 }
 
 #[cfg(test)]

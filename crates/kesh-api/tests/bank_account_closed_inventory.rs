@@ -246,6 +246,22 @@ const REGISTRE: &[(&str, &str, Statut)] = &[
             "bank_accounts::ensure_open_in_tx sur bt.bank_account_id, après le verrou de l'écriture et de son exercice",
         ),
     ),
+    // Story 43-1b (#823) — le paiement groupé fournisseur et son
+    // dé-rapprochement.
+    (
+        "kesh-db/src/repositories/grouped_settlements.rs",
+        "pay_supplier_inner",
+        Statut::Gardee(
+            "supplier_invoices::lock_for_bank_settlement_in_tx : closed_on, archived lus dans le FOR UPDATE du compte, étape (4) ; bank_accounts::ensure_open_in_tx, étape (5) ; recheck_open_locked_in_tx en dernière acquisition",
+        ),
+    ),
+    (
+        "kesh-db/src/repositories/grouped_settlements.rs",
+        "supplier_cancel_in_tx",
+        Statut::Gardee(
+            "bank_accounts::ensure_open_in_tx sur bt.bank_account_id, après le verrou de l'écriture et de son exercice",
+        ),
+    ),
     (
         // Le retrait des règlements du groupe, appelé par le seul
         // `grouped_settlements::cancel_in_tx`, qui a gardé le compte avant.
@@ -595,7 +611,10 @@ fn every_bank_account_writer_is_classified() {
     // dévalidation), aucun ne nommant un compte bancaire. Story 43-1a (#823) :
     // 38 → 41 — le règlement groupé (`UPDATE bank_transactions`) et son
     // dé-rapprochement (`UPDATE bank_transactions`, `DELETE invoice_settlements`).
-    assert_eq!(sites.len(), 41, "sites vus :\n{}", detail.join("\n"));
+    // Story 43-1b (#823) : 41 → 45 — le paiement groupé fournisseur et son
+    // dé-rapprochement (chacun `UPDATE supplier_invoices`, `UPDATE
+    // bank_transactions`).
+    assert_eq!(sites.len(), 45, "sites vus :\n{}", detail.join("\n"));
 }
 
 /// Second inventaire (AC8, C-28-4-22) — chaque appelant du créateur de
@@ -928,15 +947,20 @@ enum Fenetre {
 /// **jamais** `archived` — un compte archivé ne se rouvre pas, refuser
 /// l'annulation d'un de ses règlements la rendrait définitivement impossible.
 /// Écrit en dur pour que la déclaration du registre ne puisse pas dériver.
-const ANNULATIONS: [(&str, &str); 6] = [
+const ANNULATIONS: [(&str, &str); 7] = [
     (
         "kesh-db/src/repositories/reconciliation_cancel.rs",
         "cancel_in_tx",
     ),
-    // Story 43-1a (#823) — le dé-rapprochement d'un règlement groupé.
+    // Story 43-1a (#823) — le dé-rapprochement d'un règlement groupé ; Story
+    // 43-1b, son bras fournisseur.
     (
         "kesh-db/src/repositories/grouped_settlements.rs",
         "cancel_in_tx",
+    ),
+    (
+        "kesh-db/src/repositories/grouped_settlements.rs",
+        "supplier_cancel_in_tx",
     ),
     (
         "kesh-db/src/repositories/bank_imports.rs",
@@ -1041,6 +1065,18 @@ const FENETRE: &[(&str, &str, Fenetre)] = &[
     (
         "kesh-db/src/repositories/grouped_settlements.rs",
         "cancel_in_tx",
+        Fenetre::Reverifiee(Variante::Clos, Position::EnDernier),
+    ),
+    // Story 43-1b (#823) — le paiement groupé fournisseur et son
+    // dé-rapprochement, comme leurs jumeaux clients.
+    (
+        "kesh-db/src/repositories/grouped_settlements.rs",
+        "pay_supplier_inner",
+        Fenetre::Reverifiee(Variante::Clos, Position::EnDernier),
+    ),
+    (
+        "kesh-db/src/repositories/grouped_settlements.rs",
+        "supplier_cancel_in_tx",
         Fenetre::Reverifiee(Variante::Clos, Position::EnDernier),
     ),
     (
@@ -1412,17 +1448,17 @@ fn every_unlocked_closed_account_guard_is_rechecked_or_justified() {
     // « vert » vide.
     assert_eq!(
         gardes_non_verrouillantes(&sources).len(),
-        14,
+        16,
         "G : neuf fonctions au sol de la 29-4a, plus la constante de lecture de \
          closing_checks.rs (29-1a, entrée au rebase), plus le rattachement (29-8), \
          plus le rattachement à une écriture (v017-3a), plus le règlement groupé et \
-         son dé-rapprochement (43-1a)"
+         son dé-rapprochement (43-1a), plus leurs bras fournisseur (43-1b)"
     );
     assert_eq!(
         appels_de_reverification(&sources).len(),
-        9,
-        "neuf revérifications depuis la 43-1a (import, lot, six annulations, le \
-         règlement groupé)"
+        11,
+        "onze revérifications depuis la 43-1b (import, lot, sept annulations, les \
+         deux règlements groupés)"
     );
 }
 
