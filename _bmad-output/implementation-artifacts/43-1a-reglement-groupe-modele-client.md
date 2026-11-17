@@ -602,3 +602,60 @@ schéma d'avant (`lettering_documents_backfill.rs`, `migrations_upgrade_path.rs`
   `difference_account_id`, `rounding_difference`), AC5 (signature avec `difference_account_id`, ordre de l'étape 3,
   étape 6 et ordre des contrôles, écriture de l'écart dans les deux sens, liste finale de `GroupRefusal`), AC6, section
   *Tests* (six cas, mutation 4 redéfinie), note de version, limites.
+- 2026-11-17 (développement, T1, `3ac36d922`) — Migration `20261118000001_grouped_settlements` (quatre `ALTER`), ligne
+  d'audit d'idempotence (`tracked-by-sqlx`), totaux à 92 aux deux sites, squash repris, `TABLES_TO_TRUNCATE`, plafond
+  (entité, listes de colonnes, `group_settlement_max_difference`, `DEFAULT_GROUP_DIFFERENCE_MAX`). **Levée de
+  l'invariant (1 bis)** de `journal_entries_modification.rs` (AC2, H-C), décision écrite dans le test
+  (`journal_entries_modification.rs:85-90`, puis `:175`) et reprise ici : « une écriture dont une ligne est référencée
+  par un règlement est **possédée** (`document_owners` : `OwnedBySettlement`, `OwnedBySupplierInvoice`,
+  `MatchedBankTransaction`), donc jamais réécrite par le `PUT` (`modification_guard`) » ; les clés vers une ligne sont
+  inventoriées — exactement `(invoice_settlements, journal_entry_line_id)` et `(supplier_invoices,
+  settlement_journal_entry_line_id)`. **Sites P6** (`git grep -ln "migrations.len()\|apply_migrations_up_to" -- crates`,
+  onze fichiers) : `migrations_upgrade_path.rs` positionnel assumé, `assert_eq!(total, 92)` (`:135`) et `total - 58`
+  (`:230`, frontière inchangée à 34, ligne historique ajoutée `:223`) ; **résolus par version**, sans changement :
+  `kesh-api/src/pre_upgrade_backup/tests.rs:182` et `:506` (`migrations_before(PREMIERE_EN_ATTENTE, "mcp_prompts")`),
+  `kesh-api/tests/sauvegarde_avant_migration.rs:28-30` (`migrations_before(20261027000001, "mcp_prompts")`), et le test
+  neuf d'AC12 (`grouped_settlements.rs`, `migrations_before(GROUPED_VERSION, "grouped_settlements")`) ; les fichiers de
+  rattrapage (`*_backfill.rs`, `journal_entry_number_sequences_bootstrap.rs`) visent une version passée, par version.
+- 2026-11-17 (développement, T2, `3f6a6b22f`) — Entités et listes de colonnes, fragment `CLEAR_SETTLEMENT_SQL`, export.
+  **Inventaire des listes de colonnes (AC3)**, par `git grep -c` sur `crates/*/src/*` : `journal_entry_line_id` dans 9
+  fichiers (`csv_tables.rs`, `routes/reconciliation.rs`, `backup.rs`, `entities/invoice_settlement.rs`,
+  `grouped_settlements.rs`, `invoice_settlements.rs` — `COLUMNS` et `insert` —, `invoice_settlements_write.rs`,
+  `letterings.rs`, `reconciliation_cancel.rs`) ; `settlement_journal_entry_line_id` dans 8 (`csv_tables.rs`, `backup.rs`,
+  `entities/supplier_invoice.rs`, `grouped_settlements.rs`, `letterings.rs`, `reconciliation_cancel.rs`,
+  `supplier_invoices.rs` — `FIND_SCOPED_SQL`, `SUPPLIER_INVOICE_COLUMNS_SI`, `list_all_by_company` —, `matching.rs`) ;
+  `group_settlement_max_difference` dans 4. Les autres fichiers qui nomment `settlement_bank_account_id` (13) ne
+  portent pas de liste de colonnes à étendre : `mcp/outils/factures_fournisseur.rs:224-226` (champs de l'entité),
+  `routes/supplier_invoices.rs` (réponse), `post_restore.rs` et son rejeu `20260828000001` (hors fenêtre),
+  `reconciliation_link.rs` (prédicats `WHERE`).
+- 2026-11-17 (développement, T3) — voir l'entrée « T3 » ci-dessus ; commits `3f6a6b22f`, `2bd2117d0`, `a679cedcd`,
+  `241839568`.
+- 2026-11-17 (développement, T4, `3f6a6b22f`) — Lettrage par ligne : `SYNC_SETTLEMENT_ENTRIES_SQL` et
+  `SYNC_SUPPLIER_INVOICE_SQL` lisent la ligne du règlement ; `keep_owned_lines` ne garde que la ligne de la pièce.
+  ⚠️ Écart à AC4 (« les tests existants de `letterings` passent sans modification ») et à *Ce qui doit rester vrai* :
+  `letterings_lexical.rs` a changé (écrivains 2 → 3, créateurs, motif `{CLEAR_SETTLEMENT_SQL}` reconnu,
+  `bc02e360f`) — un registre, aucun garde-fou affaibli (revue P1, A LOW-6).
+- 2026-11-17 (développement, T5, `3f6a6b22f`, `2bd2117d0`, `a679cedcd`, `241839568`) — Règlement groupé client, D6
+  (point de sauvegarde), D7 (projets), différence décomposée (C-e431a-14).
+- 2026-11-17 (développement, T6, `3f6a6b22f`, `bc02e360f`) — Dé-rapprochement, gestes unitaires. **AC9, sites assumés,
+  ligne lue** : `ReversalAuthority::exempts` (`journal_entries.rs:2662`) et `reversal_blockers` (`:2472`) — par écriture,
+  le groupe est possédé, rien ne change ; `reconciliation_link.rs:150` (`LINKABLE_SETTLEMENTS`, par règlement),
+  `:698-710` (`other_side_predicate` : `NOT EXISTS` sur `s2.journal_entry_id`, vrai dès un règlement) et `:811`
+  (`NOT EXISTS`, même lecture) ; `letterings/open_items.rs:121-125` (`EXISTS` par facture) ; `credit_notes.rs:381-386`
+  (premier règlement de la facture, `LIMIT 1 FOR UPDATE` — l'avoir est refusé, test
+  `a_grouped_invoice_refuses_a_credit_note_and_a_manual_unlettering`) ; `kesh-report/src/vat_report.rs:337-341` (soldes
+  `write_off` seulement, jamais groupés) ; `imported_supplier_invoices.rs:423-427` (`ORDER BY si.id LIMIT 1`, une
+  facture nommée) ; `document_group_frozen_by_periods` (`letterings.rs:760`, par groupe) ;
+  `mcp/outils/factures_fournisseur.rs:224-226` (champs d'une facture) ; rejeu `20260828000001`
+  (`post_restore.rs:425-431`, `EXEMPT_MIGRATIONS`, hors fenêtre). Les sites lus par facture ou par règlement (L8) et
+  les sites nouveaux sont au Dev Agent Record.
+- 2026-11-17 (développement, T7, `6713a90d5`, `2e437efaa`, `40744cc78`) — AC10 (aller-retour, sauvegarde 0.18.0), AC11
+  et AC12 — tous deux dans `grouped_settlements.rs`, non dans `lettering_documents_backfill.rs` que nommait AC11 (revue
+  P1, A LOW-8), d'où l'inscription du fichier à `ALLOWED_REAL_MIGRATOR_FILES`.
+- 2026-11-17 (développement, T8, `2bd2117d0`) — Manuel d'administration, § *Passer à la 0.19.0* (`.tex` seulement).
+- 2026-11-17 (développement, T9, `69eb2e1ee`, `ad77f3e21`) — Gates du passage en `review` (*Gates*), Dev Agent Record,
+  prompt de revue P1. ⚠️ *Ce qui doit rester vrai* disait « aucun test existant ne change pour passer, hors des trois
+  assertions de `journal_entries_modification.rs` » : ont aussi changé des **registres et montages** —
+  `letterings_lexical.rs`, `bank_account_closed_inventory.rs` (41 sites, 4 créateurs, 14 gardes, 9 revérifications),
+  `lettering_documents_backfill.rs`, `migrations_upgrade_path.rs` (`draft_migration_preserves_a_populated_base`),
+  `company_invoice_settings_repository.rs` — aucun garde-fou affaibli (revue P1, A LOW-6).

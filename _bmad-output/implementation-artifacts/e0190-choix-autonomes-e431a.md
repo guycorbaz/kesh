@@ -109,3 +109,21 @@ renseignée) ; `grouped_settlements::cancel_in_tx` rend `DbError::Invariant` s'i
 **C-e431a-11 — Registre des checksums** : la migration est inscrite à `migrations.sha384` dès T1 (le garde
 `published_migrations_keep_their_checksums` l'exige). Toute modification avant publication change la ligne avec le
 fichier (P8 : délibérée, bases de dev à reconstruire).
+
+**C-e431a-15 — Revue P1 : les rangs de l'écriture une seule fois** (B-5, E-5 ; remplace la mécanique de C-e431a-5,
+pas sa règle) : `invoice_settlements_write::settlement_cancel_head` (`pub(crate)`) porte désormais seule les rangs 1 et
+1 bis ; `settlement_cancel_blocker_unlinking` l'appelle puis la queue (comportement unitaire inchangé) ;
+`group_cancel_blocker` appelle la tête pour chaque facture, puis `settlement_entry_cancel_blocker` **une fois**. L'ordre
+suit AC7.1 (« par facture … et ceux de l'écriture ») : toutes les têtes d'abord, puis l'écriture ; un motif de
+l'écriture nomme la première facture. Avant, la queue suivait la tête de chaque facture : un rang 2 de l'écriture
+passait devant le rang 1 de la seconde facture. Réversible.
+
+**C-e431a-16 — Revue P1 : points laissés à la 43-1b et à la 43-2** (décision de l'orchestrateur : inscrits, non traités) :
+
+- **B-2, E-3 (43-1b)** — la vue d'un groupe **fournisseur** : `view_members` rend une liste vide. En traitant E-4 et
+  B-6, `difference_account_of` et `group_cancel_blocker` rendent maintenant `DbError::Invariant` quand l'écriture n'a
+  aucun règlement client : la vue d'un groupe fournisseur échoue au lieu de répondre faux (« annulable », compte d'écart
+  inventé). La 43-1b doit y ajouter la branche fournisseur (les trois lectures de la vue et le geste, C-e431a-9).
+- **E-7 (43-2)** — un `difference_account_id` fourni quand `e = 0` est ignoré sans contrôle (décision de Guy :
+  « ignoré sinon ») ; la route ne doit pas renvoyer d'écho trompeur (la réponse dit `differenceAccountId: null`, ce qui
+  est juste).
