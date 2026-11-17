@@ -530,23 +530,26 @@ async fn fetch_memoire_des_echecs(pool: MySqlPool) {
     let (st, _) = ctx.fetch(json!({"year": 2026, "month": 10})).await;
     assert_eq!(st, 200);
 
-    // Un succès retire l'entrée (ici expirée mais encore présente).
+    // Un succès remplace l'entrée d'échec (ici expirée mais encore présente)
+    // par une réussite (frein des réussites).
     if let Some(ancien) = Instant::now().checked_sub(Duration::from_secs(16 * 60)) {
         ctx.state.rate_fetch_memo.lock().unwrap().insert(
             (RateKind::Month, d(2026, 9, 1)),
             MemoEntry {
                 depuis: ancien,
-                echec: Echec::Unavailable("timeout".into()),
+                echec: Some(Echec::Unavailable("timeout".into())),
             },
         );
         let (st, _) = ctx.fetch(json!({"year": 2026, "month": 9})).await;
         assert_eq!(st, 200);
         assert!(
-            !ctx.state
+            ctx.state
                 .rate_fetch_memo
                 .lock()
                 .unwrap()
-                .contains_key(&(RateKind::Month, d(2026, 9, 1)))
+                .get(&(RateKind::Month, d(2026, 9, 1)))
+                .is_some_and(|e| e.echec.is_none()),
+            "réussite mémorisée"
         );
     }
     assert!(
@@ -557,6 +560,62 @@ async fn fetch_memoire_des_echecs(pool: MySqlPool) {
             .contains_key(&(RateKind::Month, d(2026, 11, 1))),
         "l'échec de novembre reste mémorisé"
     );
+}
+
+/// Frein des réussites (revue d'intégration de l'équipe de Guy) : un second
+/// `POST` de la même unité dans les 15 minutes est servi en 200 sans appel à la
+/// source, sans audit ni écriture de l'état, par ce que la base tient
+/// (`count`, `rejected` et `corrected` à 0) — la copie faite pour la société de
+/// l'appelant ; une autre unité n'est pas freinée ; passé le délai, la source
+/// est rappelée.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn fetch_reussite_freinee_quinze_minutes(pool: MySqlPool) {
+    let ctx = monter(&pool, false).await;
+    let (st, premier) = ctx.fetch(json!({"year": 2026, "month": 11})).await;
+    assert_eq!(st, 200, "{premier}");
+    assert_eq!(ctx.source.call_count(), 1);
+    let etat_1 = etat(&pool).await.unwrap();
+    let audits_1 = audits_fetched(&pool).await;
+
+    // La source publierait autre chose : le frein ne la rappelle pas.
+    ctx.source.set_for(
+        mois(2026, 11),
+        MockBehavior::reply(MockReply::Xml(monthly_xml(
+            2026,
+            11,
+            &[("USD", 1, "0.8900")],
+        ))),
+    );
+    let (st, b) = ctx.fetch(json!({"year": 2026, "month": 11})).await;
+    assert_eq!(st, 200, "{b}");
+    assert_eq!(ctx.source.call_count(), 1, "pas rappelée");
+    assert_eq!(b["kind"], "month");
+    assert_eq!(b["rateDate"], "2026-11-01");
+    assert_eq!(b["count"], premier["count"]);
+    assert_eq!(b["rejected"], 0);
+    assert_eq!(b["corrected"], 0);
+    assert_eq!(etat(&pool).await.unwrap(), etat_1, "état non réécrit");
+    assert_eq!(audits_fetched(&pool).await, audits_1, "aucun audit");
+
+    // Une autre unité n'est pas freinée.
+    let (st, _) = ctx.fetch(json!({"year": 2026, "month": 10})).await;
+    assert_eq!(st, 200);
+    assert_eq!(ctx.source.call_count(), 2);
+
+    // Le délai passé, la source est rappelée et la correction comptée.
+    if let Some(ancien) = Instant::now().checked_sub(Duration::from_secs(16 * 60)) {
+        ctx.state
+            .rate_fetch_memo
+            .lock()
+            .unwrap()
+            .get_mut(&(RateKind::Month, d(2026, 11, 1)))
+            .unwrap()
+            .depuis = ancien;
+        let (st, b) = ctx.fetch(json!({"year": 2026, "month": 11})).await;
+        assert_eq!(st, 200, "{b}");
+        assert_eq!(ctx.source.call_count(), 3, "rappelée après le délai");
+        assert_eq!(b["corrected"], 1);
+    }
 }
 
 /// Correction de l'AFC (règle (c)) comptée dans `corrected` ; les cours
@@ -592,6 +651,10 @@ async fn fetch_correction_comptee_cours_retenus_intacts(pool: MySqlPool) {
             &[("USD", 1, "0.8900"), ("EUR", 1, "0.9400")],
         ))),
     );
+    // La réussite de novembre freinerait le second `POST` (servi sans appel,
+    // `fetch_reussite_freinee_quinze_minutes`) : on l'oublie, comme 15 minutes
+    // écoulées.
+    ctx.state.rate_fetch_memo.lock().unwrap().clear();
     let (st, b) = ctx.fetch(json!({"year": 2026, "month": 11})).await;
     assert_eq!(st, 200, "{b}");
     assert_eq!(b["count"], 2);

@@ -235,6 +235,12 @@ async fn recuperer_et_noter(
 /// jour (AC-5) : 200 `{kind, rateDate, sourceDate, count, rejected,
 /// corrected}`, 404 `RATE_NOT_PUBLISHED`, 503 `RATE_SOURCE_UNAVAILABLE`.
 ///
+/// Freiné (revue d'intégration de l'équipe de Guy) : un échec n'est pas
+/// redemandé à la source pendant 15 minutes (la même réponse), et une
+/// réussite non plus — la demande est servie en 200 par ce que la base tient
+/// de l'unité (copie pour la société comprise), `rejected` et `corrected` à
+/// 0, sans appel, sans audit ni écriture de l'état.
+///
 /// Le travail tourne dans un `tokio::spawn` attendu (comme « Sauvegarder
 /// maintenant ») : l'abandon du client n'interrompt pas une récupération
 /// entre l'écriture des cours et celle de l'état. Les cours, les copies et la
@@ -1056,36 +1062,80 @@ pub struct AcknowledgeResponse {
 /// cours, ni la source, ni la version. Audit
 /// `exchange_rates.corrections_acknowledged` (entité `company`) des seules
 /// acquittées, aucun si rien ne l'est. 1 à 500 entrées, sinon 400.
+///
+/// Une entrée refusée refuse toute la requête, sans rien écrire ; le refus
+/// **nomme l'entrée** (revue d'intégration de l'équipe de Guy) :
+/// `details.notice`, son rang 1-based dans `notices`, et, pour un refus de
+/// forme (`VALIDATION_ERROR`), le message qui commence par « Entrée n ».
 pub async fn acknowledge_notices(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
     AcknowledgeBodyExtractor(body): AcknowledgeBodyExtractor,
-) -> Result<Json<AcknowledgeResponse>, AppError> {
-    exiger_multi_devises(&state, current_user.company_id).await?;
+) -> Result<Json<AcknowledgeResponse>, axum::response::Response> {
+    use axum::response::IntoResponse;
+    exiger_multi_devises(&state, current_user.company_id)
+        .await
+        .map_err(IntoResponse::into_response)?;
     if body.notices.is_empty() || body.notices.len() > MAX_ACKNOWLEDGE_NOTICES {
         return Err(AppError::Validation(format!(
             "`notices` : de 1 à {MAX_ACKNOWLEDGE_NOTICES} entrées"
-        )));
+        ))
+        .into_response());
     }
-    let mut items = Vec::with_capacity(body.notices.len());
-    for n in &body.notices {
-        let kind = lire_genre(&n.kind)?;
-        let rate_date = lire_date_de_cours(&n.rate_date, kind)?;
-        refuser_chf(&n.currency)?;
-        let published_rate = lire_cours(&n.published_rate, "publishedRate")?;
-        items.push(NoticeAck {
-            currency: n.currency.clone(),
-            kind,
-            rate_date,
-            published_rate,
-        });
-    }
-    for n in &items {
-        exiger_devise_connue(&n.currency)?;
-    }
+    let items = match lire_entrees_acquittement(&body.notices) {
+        Ok(items) => items,
+        Err((rang, err)) => {
+            return Err(crate::errors::refus_avec_detail(err, "notice", json!(rang)).await);
+        }
+    };
+    acquitter(&state, &current_user, &items)
+        .await
+        .map(Json)
+        .map_err(IntoResponse::into_response)
+}
 
-    let user = &current_user;
-    let items = &items;
+/// Lit et juge les entrées d'un acquittement, dans l'ordre des refus de
+/// l'AC-5 : la forme de **toutes** les entrées d'abord (genre, date, `CHF`,
+/// cours), puis leurs devises (`CURRENCY_UNKNOWN`). `Err((rang, refus))` :
+/// le rang 1-based de la première entrée refusée ; un refus de forme porte
+/// « Entrée n » en tête de son message.
+fn lire_entrees_acquittement(
+    notices: &[AcknowledgeItem],
+) -> Result<Vec<NoticeAck>, (usize, AppError)> {
+    let nommer = |rang: usize, err: AppError| match err {
+        AppError::Validation(m) => (rang, AppError::Validation(format!("Entrée {rang} : {m}"))),
+        autre => (rang, autre),
+    };
+    let mut items = Vec::with_capacity(notices.len());
+    for (i, n) in notices.iter().enumerate() {
+        let rang = i + 1;
+        let lire = || -> Result<NoticeAck, AppError> {
+            let kind = lire_genre(&n.kind)?;
+            let rate_date = lire_date_de_cours(&n.rate_date, kind)?;
+            refuser_chf(&n.currency)?;
+            let published_rate = lire_cours(&n.published_rate, "publishedRate")?;
+            Ok(NoticeAck {
+                currency: n.currency.clone(),
+                kind,
+                rate_date,
+                published_rate,
+            })
+        };
+        items.push(lire().map_err(|e| nommer(rang, e))?);
+    }
+    for (i, n) in items.iter().enumerate() {
+        exiger_devise_connue(&n.currency).map_err(|e| nommer(i + 1, e))?;
+    }
+    Ok(items)
+}
+
+/// L'acquittement des entrées lues, en une transaction rejouée, audit compris.
+async fn acquitter(
+    state: &AppState,
+    current_user: &CurrentUser,
+    items: &[NoticeAck],
+) -> Result<AcknowledgeResponse, AppError> {
+    let user = current_user;
     let acquittees =
         kesh_db::retry::retry_on_deadlock("exchange_rates::acknowledge_notices", || {
             let pool = state.pool.clone();
@@ -1127,9 +1177,9 @@ pub async fn acknowledge_notices(
             }
         })
         .await?;
-    Ok(Json(AcknowledgeResponse {
+    Ok(AcknowledgeResponse {
         acknowledged: acquittees,
-    }))
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -1312,6 +1362,67 @@ mod tests {
             month,
             date: date.map(str::to_string),
         }
+    }
+
+    fn entree(currency: &str, kind: &str, rate_date: &str, rate: &str) -> AcknowledgeItem {
+        AcknowledgeItem {
+            currency: currency.into(),
+            kind: kind.into(),
+            rate_date: rate_date.into(),
+            published_rate: rate.into(),
+        }
+    }
+
+    /// L'acquittement nomme l'entrée refusée : son rang 1-based, et « Entrée n »
+    /// en tête d'un refus de forme ; les devises se jugent après la forme de
+    /// toutes les entrées.
+    #[test]
+    fn acquittement_nomme_l_entree_refusee() {
+        let bonne = entree("USD", "month", "2026-11-01", "0.88");
+        assert_eq!(
+            lire_entrees_acquittement(&[bonne.clone(), bonne.clone()])
+                .unwrap()
+                .len(),
+            2
+        );
+
+        let (rang, err) = lire_entrees_acquittement(&[
+            bonne.clone(),
+            bonne.clone(),
+            entree("USD", "month", "2026-11-01", "abc"),
+        ])
+        .unwrap_err();
+        assert_eq!(rang, 3);
+        match err {
+            AppError::Validation(m) => assert!(m.starts_with("Entrée 3 : "), "{m}"),
+            autre => panic!("{autre:?}"),
+        }
+
+        let (rang, err) = lire_entrees_acquittement(&[
+            bonne.clone(),
+            entree("USD", "week", "2026-11-01", "0.88"),
+        ])
+        .unwrap_err();
+        assert_eq!(rang, 2);
+        assert!(matches!(err, AppError::Validation(m) if m.starts_with("Entrée 2 : ")));
+
+        // Une devise inconnue (2e) cède le pas à la forme d'une entrée
+        // postérieure (3e) ; seule, elle est nommée par son rang.
+        let (rang, _) = lire_entrees_acquittement(&[
+            bonne.clone(),
+            entree("XXY", "month", "2026-11-01", "0.88"),
+            entree("USD", "month", "2026-11-15", "0.88"),
+        ])
+        .unwrap_err();
+        assert_eq!(rang, 3, "la forme d'abord");
+        let (rang, err) =
+            lire_entrees_acquittement(&[bonne, entree("XXY", "month", "2026-11-01", "0.88")])
+                .unwrap_err();
+        assert_eq!(rang, 2);
+        assert!(matches!(
+            err,
+            AppError::Database(DbError::CurrencyUnknown { .. })
+        ));
     }
 
     /// Bornes de l'AC-5 : mois 2000-01 au mois suivant ; jour 2000-01-01 à

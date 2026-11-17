@@ -28,6 +28,46 @@ pub fn init_error_i18n(bundle: std::sync::Arc<I18nBundle>, locale: Locale) {
     *guard = Some((bundle, locale));
 }
 
+/// La réponse d'un refus, à laquelle s'ajoute `details.<cle> = valeur` — le
+/// rang de l'élément visé d'un corps à plusieurs entrées. **Mécanisme
+/// commun** (conversion : `details.entry`, Story 37-3b ; acquittement des
+/// corrections de cours : `details.notice`, revue d'intégration de l'équipe de
+/// Guy) : un refus sans `details` en reçoit (`{ cle: valeur }`), un refus qui en
+/// porte les garde et y ajoute la clé. Le corps produit par l'erreur est relu,
+/// complété et réécrit ; statut et en-têtes sont gardés (hors
+/// `Content-Length`). Un corps qui n'est pas du JSON est rendu tel quel.
+pub(crate) async fn refus_avec_detail(
+    err: AppError,
+    cle: &str,
+    valeur: serde_json::Value,
+) -> Response {
+    let (mut parts, body) = err.into_response().into_parts();
+    let bytes = match axum::body::to_bytes(body, 1 << 20).await {
+        Ok(b) => b,
+        Err(_) => {
+            return AppError::Internal("corps d'un refus illisible".into()).into_response();
+        }
+    };
+    let mut value: serde_json::Value = match serde_json::from_slice(&bytes) {
+        Ok(v) => v,
+        Err(_) => return Response::from_parts(parts, axum::body::Body::from(bytes)),
+    };
+    if let Some(error) = value.get_mut("error").and_then(|e| e.as_object_mut()) {
+        let details = error
+            .entry("details")
+            .or_insert_with(|| serde_json::json!({}));
+        if !details.is_object() {
+            *details = serde_json::json!({});
+        }
+        if let Some(map) = details.as_object_mut() {
+            map.insert(cle.into(), valeur);
+        }
+    }
+    parts.headers.remove(axum::http::header::CONTENT_LENGTH);
+    let body = serde_json::to_vec(&value).unwrap_or_else(|_| bytes.to_vec());
+    Response::from_parts(parts, axum::body::Body::from(body))
+}
+
 /// Résout un message d'erreur via i18n, avec fallback sur le message par défaut.
 ///
 /// Exposé `pub(crate)` pour permettre aux handlers de construire des messages

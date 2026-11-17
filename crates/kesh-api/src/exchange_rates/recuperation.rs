@@ -6,7 +6,11 @@
 //! 1. raccourci d'un `POST /fetch` qui a **attendu** le verrou et trouve
 //!    l'unité écrite par une récupération commencée après son arrivée ;
 //! 2. mémoire des 15 minutes (`AppState::rate_fetch_memo`) : un
-//!    `not_published` ou un échec ne se redemande pas avant ;
+//!    `not_published` ou un échec ne se redemande pas avant ; une **réussite**
+//!    n'est pas redemandée avant par un `POST /fetch` (le frein des réussites,
+//!    revue d'intégration de l'équipe de Guy, 2026-11-17) — il rend l'unité
+//!    écrite et en fait la copie, comme le raccourci, sans appel ; la tâche
+//!    automatique n'est pas freinée ;
 //! 3. pour la tâche, l'unité jugée manquante **sous le verrou** ;
 //! 4. instant pris **avant** l'appel sortant, appel, analyse (`kesh-core`),
 //!    contrôle du mois (`month_mismatch`) ou de la date (`date_mismatch`) ;
@@ -39,7 +43,8 @@ use crate::audit::AuditActor;
 use crate::exchange_rates::source::SourceError;
 use crate::middleware::auth::CurrentUser;
 
-/// Durée de la mémoire des `not_published` et des échecs (AC-5).
+/// Durée de la mémoire des `not_published`, des échecs (AC-5) et — pour un
+/// `POST /fetch` seulement — des réussites.
 pub const MEMO_TTL: Duration = Duration::from_secs(15 * 60);
 
 /// Pourquoi une unité n'a pas été récupérée.
@@ -92,10 +97,12 @@ impl From<RatesError> for Echec {
 /// Une entrée de la mémoire des 15 minutes.
 #[derive(Debug, Clone)]
 pub struct MemoEntry {
-    /// Quand l'échec a été constaté.
+    /// Quand l'issue a été constatée.
     pub depuis: Instant,
-    /// L'échec, rendu tel quel pendant [`MEMO_TTL`].
-    pub echec: Echec,
+    /// L'échec, rendu tel quel pendant [`MEMO_TTL`] ; `None` pour une
+    /// **réussite** : pendant [`MEMO_TTL`], un `POST /fetch` de l'unité est
+    /// servi sans appel par ce que la base en tient (frein des réussites).
+    pub echec: Option<Echec>,
 }
 
 /// La mémoire des 15 minutes, par `(genre, rate_date)` (`AppState::rate_fetch_memo`).
@@ -131,7 +138,9 @@ impl Recuperee {
 pub enum Issue {
     /// Appel fait, unité écrite.
     Recuperee(Recuperee),
-    /// `POST /fetch` qui a attendu : l'unité venait d'être écrite ; aucun appel.
+    /// `POST /fetch` servi sans appel : il a attendu et l'unité venait d'être
+    /// écrite (raccourci), ou elle a été récupérée avec succès il y a moins de
+    /// [`MEMO_TTL`] (frein des réussites).
     Raccourci(Recuperee),
     /// Appel fait, échec (mémorisé 15 minutes).
     Echouee(Echec),
@@ -171,9 +180,9 @@ pub(crate) fn maintenant_ms() -> NaiveDateTime {
         .unwrap_or(t)
 }
 
-/// Lit l'entrée de mémoire de l'unité, encore valable ; retire une entrée
-/// expirée.
-fn memo_lire(state: &AppState, unit: RateUnit) -> Option<Echec> {
+/// Lit l'entrée de mémoire de l'unité, encore valable (`Some(None)` : une
+/// réussite) ; retire une entrée expirée.
+fn memo_lire(state: &AppState, unit: RateUnit) -> Option<Option<Echec>> {
     let mut memo = state
         .rate_fetch_memo
         .lock()
@@ -189,26 +198,45 @@ fn memo_lire(state: &AppState, unit: RateUnit) -> Option<Echec> {
     }
 }
 
+/// Mémorise l'issue d'un appel : l'échec, ou la réussite (`None`), qui
+/// remplace un échec antérieur.
 fn memo_ecrire(state: &AppState, unit: RateUnit, echec: Option<Echec>) {
     let mut memo = state
         .rate_fetch_memo
         .lock()
         .unwrap_or_else(|e| e.into_inner());
-    let cle = (unit.kind, unit.date);
-    match echec {
-        Some(echec) => {
-            memo.insert(
-                cle,
-                MemoEntry {
-                    depuis: Instant::now(),
-                    echec,
-                },
-            );
-        }
-        None => {
-            memo.remove(&cle);
-        }
-    }
+    memo.insert(
+        (unit.kind, unit.date),
+        MemoEntry {
+            depuis: Instant::now(),
+            echec,
+        },
+    );
+}
+
+/// Sert un `POST /fetch` **sans appel** par ce que la base tient de l'unité
+/// (raccourci de l'AC-3 et frein des réussites) : la copie pour la société de
+/// l'utilisateur, et le résumé de la dernière récupération — `rejected` et
+/// `corrected` à 0, rien de neuf n'ayant été lu. `None` si la base ne tient
+/// pas l'unité (vidée depuis, par une restauration) : l'appel se fait alors.
+async fn servir_sans_appel(
+    state: &AppState,
+    unit: RateUnit,
+    utilisateur: &CurrentUser,
+    resume: Option<depot::FetchedUnitSummary>,
+) -> Result<Option<Issue>, DbError> {
+    let Some(r) = resume else {
+        return Ok(None);
+    };
+    let copied = copier_pour(state, unit, utilisateur.company_id).await?;
+    Ok(Some(Issue::Raccourci(Recuperee {
+        unit,
+        source_date: r.source_date,
+        count: usize::try_from(r.count).unwrap_or(0),
+        rejected: 0,
+        corrected: 0,
+        copied,
+    })))
 }
 
 /// Ce que la réponse de la source a rendu, analysé et contrôlé.
@@ -362,26 +390,30 @@ pub async fn recuperer_unite(state: &AppState, demande: Demande) -> Result<Issue
         && attendu
     {
         let mut conn = state.pool.acquire().await.map_err(map_db_error)?;
-        let resume = depot::fetched_unit_summary(&mut conn, SOURCE_AFC, unit).await?;
+        let resume = depot::fetched_unit_summary(&mut conn, SOURCE_AFC, unit)
+            .await?
+            .filter(|r| r.last_fetched_at >= m.arrivee);
         drop(conn);
-        if let Some(r) = resume
-            && r.last_fetched_at >= m.arrivee
-        {
-            let copied = copier_pour(state, unit, m.utilisateur.company_id).await?;
-            return Ok(Issue::Raccourci(Recuperee {
-                unit,
-                source_date: r.source_date,
-                count: usize::try_from(r.count).unwrap_or(0),
-                rejected: 0,
-                corrected: 0,
-                copied,
-            }));
+        if let Some(issue) = servir_sans_appel(state, unit, &m.utilisateur, resume).await? {
+            return Ok(issue);
         }
     }
 
-    // 2. Mémoire des 15 minutes.
-    if let Some(echec) = memo_lire(state, unit) {
-        return Ok(Issue::Memorisee(echec));
+    // 2. Mémoire des 15 minutes : un échec est rendu tel quel ; une réussite
+    //    freine un `POST /fetch` (servi sans appel), jamais la tâche.
+    match memo_lire(state, unit) {
+        Some(Some(echec)) => return Ok(Issue::Memorisee(echec)),
+        Some(None) => {
+            if let Some(m) = &demande.manuelle {
+                let mut conn = state.pool.acquire().await.map_err(map_db_error)?;
+                let resume = depot::fetched_unit_summary(&mut conn, SOURCE_AFC, unit).await?;
+                drop(conn);
+                if let Some(issue) = servir_sans_appel(state, unit, &m.utilisateur, resume).await? {
+                    return Ok(issue);
+                }
+            }
+        }
+        None => {}
     }
 
     // 3. La tâche juge « manque » sous le verrou.

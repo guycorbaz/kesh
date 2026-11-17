@@ -1222,6 +1222,7 @@ Chaque passage qui a un cours à récupérer revérifie aussi le cours du \textb
     \item \emph{Récupérer les cours manquants} demande, colonne par colonne, les cours qui manquent dans le tableau --- une case sans valeur publiée, ou sans cours retenu pour une devise d'un compte. Il reste offert sur un exercice clôturé, que la récupération automatique ignore. Un mois au-delà du mois suivant ou un jour qui n'est pas encore passé ne se récupèrent pas~: la raison s'affiche au survol, et la case reste saisissable. Kesh ne tient aucun cours antérieur au 1er janvier 2000~: une telle case ne se récupère ni ne se saisit. Un échec s'affiche sur les cases de sa colonne sans arrêter les suivantes~;
     \item \emph{Revérifier les cours publiés} redemande les colonnes déjà présentes~: c'est par là qu'une correction de l'AFC sur un autre mois que le mois courant se découvre.
 \end{itemize}
+Une colonne obtenue de l'AFC il y a moins d'un quart d'heure n'est pas redemandée~: Kesh rend ce qu'il en tient déjà --- et un échec ne se redemande pas non plus avant un quart d'heure. Une correction publiée entre-temps se découvre à la revérification suivante.
 
 \subsubsection{Quand l'AFC corrige un cours}\label{sec:cours-correction}
 
