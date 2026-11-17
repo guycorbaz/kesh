@@ -471,6 +471,12 @@ pub fn build_router_avec_registre(
             "/api/v1/companies/current/address",
             put(routes::companies::update_company_address),
         )
+        // Story v0190-nom-societe (#1097) : corriger le nom de la société, que
+        // la QR-facture peut refuser après l'assistant.
+        .route(
+            "/api/v1/companies/current/name",
+            put(routes::companies::update_company_name),
+        )
         // Story 14-2 : réouverture d'un exercice clôturé (Admin uniquement +
         // motif obligatoire + audit + garde LIFO). Plus strict que la clôture
         // (Comptable+, comptable_routes) — opération réglementaire sensible.

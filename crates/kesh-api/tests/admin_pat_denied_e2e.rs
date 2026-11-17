@@ -83,6 +83,8 @@ const ADMIN_COUPLES: &[(&str, &str)] = &[
     ("PUT", "/api/v1/companies/current/email"),
     ("PUT", "/api/v1/companies/current/contact-details"),
     ("PUT", "/api/v1/companies/current/address"),
+    // Story v0190-nom-societe (#1097) : le nom de la société.
+    ("PUT", "/api/v1/companies/current/name"),
     ("POST", "/api/v1/fiscal-years/1/reopen"),
     // Story 24-4c (#380) : DÉVERROUILLER une période. Admin-only, comme la
     // réouverture d'exercice ci-dessus et pour la même raison — la POSE, elle,
@@ -877,7 +879,9 @@ async fn read_only_pat_is_stopped_by_the_right_guard_on_each_couple(pool: MySqlP
         // arrêté par le gate de portée.
         // (15, 37) → (15, 38) : Story 33-5 (refs #909) — le `PUT` de l'adresse de
         // la société est arrêté par le gate de portée.
-        (15, 38),
+        // (15, 38) → (15, 39) : Story v0190-nom-societe (refs #1097) — le `PUT`
+        // du nom de la société est arrêté par le gate de portée.
+        (15, 39),
         "la répartition attendue entre la couche et le gate de portée a changé"
     );
 }

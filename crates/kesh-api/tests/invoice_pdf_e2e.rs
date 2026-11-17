@@ -695,9 +695,9 @@ async fn refus_nomme_le_nom_vide_de_l_entreprise(pool: MySqlPool) {
     let m = message_du_refus(&pool, invoice_id).await.to_lowercase();
     assert!(m.contains("nom de l'entreprise"), "{m}");
     assert!(m.contains("vide"), "{m}");
-    // Revue de code P1 (B1) — le nom ne se modifie pas dans Paramètres →
-    // Organisation : la phrase ne doit pas y renvoyer.
-    assert!(!m.contains("organisation"), "{m}");
+    // Story v0190-nom-societe (#1097, D6) — le nom se corrige dans Paramètres →
+    // Organisation : la phrase y renvoie (jusqu'à la 0.18.0, l'inverse).
+    assert!(m.contains("paramètres → organisation"), "{m}");
 }
 
 /// AC1, D9 — un caractère refusé dans la communication vient du numéro de
