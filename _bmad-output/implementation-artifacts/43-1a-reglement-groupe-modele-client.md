@@ -537,6 +537,9 @@ gate complet (`reset-base.sh`).
 | revue P1 — `binary(grouped_settlements)` | `58d949434` | 29/29 | `p1-cible-2.log` |
 | revue P1 — fmt, clippy, `nextest --profile ci` (`test-fast` sans son garde des droits, refusé par un droit `kesh_ci_e437` d'un autre agent) | `58d949434` | **5549 passés, 13 ignorés** | `test-fast-p1-sans-garde.log` |
 | revue P1 — **`gate-ci.sh kesh_ci_e431a`** | `58d949434` | **5556 passés, 0 échec, 17 ignorés** | `gate-ci-p1.log` |
+| revue P2 — ciblé `binary(grouped_settlements) \| binary(reconciliation_cancel)` | `5602c0d21` (avant commit) | 43/43 | `p2-cible-1.log` |
+| revue P2 — mutation 5 (ancien ordre têtes/queue) | `5602c0d21` | tuée : `every_invoice_head_comes_before_the_entry_ranks` rouge (`FiscalYearClosed`), 33 autres passés | `mut/mutation-p2-ordre.log` |
+| revue P2 — **`gate-ci.sh kesh_ci_e431a`** | `5602c0d21` | **5561 passés, 0 échec, 17 ignorés** | `gate-ci-p2.log` |
 | frontend | — | non touché, non lancé | — |
 | E2E | — | **non lancé** : à la clôture (consigne de la release) | — |
 
@@ -664,3 +667,12 @@ schéma d'avant (`lettering_documents_backfill.rs`, `migrations_upgrade_path.rs`
   `letterings_lexical.rs`, `bank_account_closed_inventory.rs` (41 sites, 4 créateurs, 14 gardes, 9 revérifications),
   `lettering_documents_backfill.rs`, `migrations_upgrade_path.rs` (`draft_migration_preserves_a_populated_base`),
   `company_invoice_settings_repository.rs` — aucun garde-fou affaibli (revue P1, A LOW-6).
+- 2026-11-17 (revue P2, 0/0/1/7, `5602c0d21`) — Tests seuls, plus un doc-comment ; aucune autre ligne de production.
+  MEDIUM-1 : `every_invoice_head_comes_before_the_entry_ranks` épingle l'ordre de C-e431a-15 (`b` créditée et exercice
+  clos → `InvoiceCredited` nommant `b`), mutation de l'ancien ordre tuée. LOW-1 :
+  `a_successful_group_releases_its_savepoint` (`ROLLBACK TO` après succès → 1305). LOW-2 :
+  `a_missing_gap_line_is_an_invariant_for_the_view` et `a_group_without_client_settlements_is_an_invariant` ; le bras
+  groupé d'`entry_cancel_chain` reste inatteignable, commentaire au code (`reconciliation_cancel.rs`, retour anticipé).
+  LOW-3 : constat 4025 par le numéro MariaDB (`numero_mariadb`). LOW-4 : libellé coupé à 500 caractères sur des
+  numéros accentués (`len() > 500`). LOW-5 : `step_four_refuses_in_the_order_of_ac5_4`. LOW-7 : doc-comment du point
+  de sauvegarde après un refus. LOW-6 : au registre (C-e431a-16), pour la 43-2, non traité.
