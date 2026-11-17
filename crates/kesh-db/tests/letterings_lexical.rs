@@ -396,13 +396,17 @@ fn invoice_settlement_writers_stay_in_their_module_and_sync() {
         "⛔ inventaire des écrivains de `invoice_settlements` (Story 15-1a2-i, AC8) :\n{}",
         fautes.join("\n")
     );
-    // Anti-muet : l'`INSERT` et le `DELETE` connus, et les trois créateurs.
-    assert_eq!(ecrivains, 2, "un INSERT et un DELETE de production");
+    // Anti-muet : l'`INSERT` et les deux `DELETE` connus (le second, celui du
+    // dé-rapprochement d'un groupe, Story 43-1a), et les quatre créateurs.
+    assert_eq!(ecrivains, 3, "un INSERT et deux DELETE de production");
     createurs.sort();
     assert_eq!(
         createurs,
         [
             "kesh-api/src/routes/reconciliation.rs::accept_one_invoice",
+            // Story 43-1a (#823) — le règlement groupé, qui synchronise chaque
+            // facture après les créations (étape 11).
+            "kesh-db/src/repositories/grouped_settlements.rs::settle_client_inner",
             "kesh-db/src/repositories/invoice_settlements_write.rs::settle_invoice",
             "kesh-db/src/repositories/invoice_settlements_write.rs::write_off_invoice",
         ],
@@ -569,10 +573,15 @@ fn ecrivains_du_reglement_fournisseur(source: &str) -> Vec<(String, bool, bool)>
     let fns = fonctions(&masque);
     ecritures_de_table(source, &["UPDATE"], "supplier_invoices")
         .into_iter()
+        // Story 43-1a (#823, M2) : les deux annulations vident le règlement par le
+        // fragment partagé `CLEAR_SETTLEMENT_SQL`, interpolé dans le littéral —
+        // il nomme `settlement_journal_entry_id` à leur place.
         .filter(|(p, _)| {
-            litteraux
-                .iter()
-                .any(|l| l.debut == *p && l.texte.contains("settlement_journal_entry_id"))
+            litteraux.iter().any(|l| {
+                l.debut == *p
+                    && (l.texte.contains("settlement_journal_entry_id")
+                        || l.texte.contains("{CLEAR_SETTLEMENT_SQL}"))
+            })
         })
         .map(|(p, _)| match fonction_englobante(&fns, p) {
             Some((nom, de, fin)) => {

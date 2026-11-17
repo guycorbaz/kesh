@@ -897,6 +897,34 @@ pub async fn settlement_cancel_blocker_unlinking(
     settlement_entry_cancel_blocker(conn, company_id, entry_id, unlinking, aujourd_hui).await
 }
 
+/// Retire **toutes** les lignes `invoice_settlements` d'une écriture de
+/// règlement groupé (Story 43-1a, #823, AC7 étape 4) — le seul `DELETE` des
+/// règlements hors de [`cancel_settlement_in_tx`], tenu dans ce module comme
+/// l'exige l'inventaire des écrivains (`letterings_lexical.rs`, AC8 de la
+/// 15-1a2-i).
+///
+/// ⛔ À n'appeler que par `grouped_settlements::cancel_in_tx`, **après** le
+/// délettrage de chaque facture du groupe et **avant** la contre-passation de
+/// l'écriture devenue sans propriétaire (D4) ; rend le nombre de lignes
+/// retirées.
+pub(crate) async fn delete_grouped_settlements_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    entry_id: i64,
+) -> Result<u64, DbError> {
+    Ok(
+        sqlx::query(
+            "DELETE FROM invoice_settlements WHERE company_id = ? AND journal_entry_id = ?",
+        )
+        .bind(company_id)
+        .bind(entry_id)
+        .execute(&mut **tx)
+        .await
+        .map_err(map_db_error)?
+        .rows_affected(),
+    )
+}
+
 /// Ce que rend une annulation de règlement.
 #[derive(Debug, Clone)]
 pub struct SettlementCancellation {

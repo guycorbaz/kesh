@@ -1293,12 +1293,16 @@ pub async fn cancel_in_tx(
     }
 
     // (4) Les règlements retirés : l'écriture n'a plus de propriétaire.
-    sqlx::query("DELETE FROM invoice_settlements WHERE company_id = ? AND journal_entry_id = ?")
-        .bind(company_id)
-        .bind(entry_id)
-        .execute(&mut **tx)
-        .await
-        .map_err(map_db_error)?;
+    let retires = super::invoice_settlements_write::delete_grouped_settlements_in_tx(
+        tx, company_id, entry_id,
+    )
+    .await?;
+    if retires != members.len() as u64 {
+        return Err(DbError::Invariant(format!(
+            "dé-rapprochement groupé : {retires} règlements retirés pour {} lus",
+            members.len()
+        )));
+    }
 
     // (5) La contre-passation.
     let reversal =
