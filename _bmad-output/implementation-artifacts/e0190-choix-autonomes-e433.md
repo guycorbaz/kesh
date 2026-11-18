@@ -59,3 +59,19 @@ existant.
 
 **C-e433-9 — Une modale fermée par un refus prévient le parent par `onStale`.** Distinct d'`onSuccess` :
 le parent relit sa liste sans compter d'opération réussie ni effacer le bilan du lot précédent.
+
+**C-e433-10 — Le refus `ACCOUNT_IN_FOREIGN_CURRENCY` d'un groupe (Epic 37, apporté par la 43-2).** Sans
+discriminant, la clé globale existante `error-account-in-foreign-currency` (elle nomme la devise) ; avec le discriminant
+`group` et `details.accountId` égal au compte envoyé, une forme propre au compte de l'écart
+(`reconciliation-failed-group-account-foreign-currency`, quatre locales), affichée sous le sélecteur. Le sélecteur
+exclut déjà ces comptes (`counterpartyAccounts`, et `excludeForeignCurrency` de `AccountAutocomplete`, posé
+explicitement) : le refus ne survient qu'en course (compte passé en devise entre-temps). 48 codes au test.
+
+**C-e433-11 — Les états fugaces de l'E2E par une réponse interceptée.** Chargement, `hasMore`, `direction: null`,
+refus du serveur par cause, réglages altérés et refus d'annulation par facture s'obtiennent dans
+`reconciliation-group.spec.ts` en altérant **une** réponse (`page.route`, précédents : `invoices.spec.ts`,
+`reminders.spec.ts`), sur un décor réel (factures, relevé, comptes). Les gestes nominaux, eux, traversent la frontière
+HTTP sans interception. Autre option : fabriquer chaque état en base (compte passé en devise, avoir sur une facture
+groupée, plus de 50 candidates) — plusieurs heures pour des captures. La recherche « sans résultat » est interceptée
+aussi : la recherche de la 43-2 est une disjonction de jetons, et un terme fait de jetons uniques à l'exécution trouvait
+encore le tiers du décor (`e2e-group-3.log`).
