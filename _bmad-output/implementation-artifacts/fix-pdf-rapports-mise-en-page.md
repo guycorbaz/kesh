@@ -139,6 +139,21 @@ Trois défauts de mise en page des PDF de rapports (`crates/kesh-report/src/pdf.
   (2) dépendance `kesh-report` → `kesh-qrbill` acceptée, la ligne d'architecture fait foi.
 - 2026-11-18 — passe P2 ciblée (Haiku) sur `62ccfa4a` : 0 CRITICAL/HIGH, **1 MEDIUM**, 4 LOW. MEDIUM-1 : `crates/kesh-qrbill/README.md` disait encore le crate « standalone, zero dependency on kesh-core » (propagation manquée de P1-3) — corrigé. LOW-1 (manuel : troncature à un nombre fixe de caractères, non « trop longs pour leur colonne »), LOW-2 (`WINANSI` est `pub(crate)`), LOW-3 (message vide non centré), LOW-4 (`architecture.md` : `kesh-report` ne dépend pas de `kesh-i18n`) — corrigés dans le même commit, sans code exécutable. Passe P3 ciblée à suivre (une passe à MEDIUM appelle une passe de plus).
 - 2026-11-18 — passe P3 ciblée (Sonnet) sur `a2759eed` : **0 au-dessus de LOW**, 4 LOW (copies restées fausses de la description de `kesh-qrbill` et des dépendances de `kesh-report` dans des documents de planning et le README ; tracées en une issue de documentation, I-8). **Boucle close.** Trend : P1 Opus 0 > LOW (8 LOW) → P2 ciblée Haiku 1 MEDIUM + 4 LOW → P3 ciblée Sonnet 0 > LOW (4 LOW). Dernier commit de code `cc6aabe3`, gates complets verts à ce commit ; les commits suivants ne portent que documentation et commentaires.
+- 2026-11-18 — **Reprise de `main` après la v0.19.0, puis gate complet groupé.** `origin/main` (`773df80d`, tag
+  `v0.19.0`) repris par fusion (`4da013c1`), sans rebase ; conflits résolus en gardant les deux intentions (`sprint-status.yaml` : les deux blocs).
+  Gate ciblé après la reprise : `fmt`, `clippy` du workspace, nextest de `kesh-report` et `kesh-qrbill` **353 passés, 2 ignorés**, garde i18n verte (`kesh-gate-logs/fix-pdf-alignement/reprise-v0190-*.log`). Puis `origin/main` `37c2f875` (documentation seule : `CLAUDE.md`, bilan de la
+  0.19.0, `sprint-status.yaml`) repris de même. **Gate complet groupé** sur la branche jetable `integ/fixes-0.19.0`
+  (`773df80d` + les quatre correctifs fusionnés dans l'ordre PDF, monnaies retirées, résultat reporté, parent du
+  compte ; seul conflit, `sprint-status.yaml`), **au commit `5fc6fb1b`**, base `kesh_integ` remise à zéro :
+  `scripts/test-fast.sh --ci` **6165 passés, 14 ignorés** ; frontend `check` 0 erreur (29 avertissements
+  préexistants), `lint-i18n-ownership`, `test:unit` **4627 tests (278 fichiers)**, `build` ; **E2E complet**
+  (`LANG=fr_CH.UTF-8`, port 3382) **478 passés, 10 échecs, 18 ignorés** — les dix attendus, jugés un à un : sept KF-029
+  (#97 : `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`,
+  `:150`), `backup-restore-new-install.spec.ts:262`, `:381`, `opening-balances.spec.ts:156` (`docs/testing.md`
+  inchangé par la 0.19.0) ; `scripts/gate-ci.sh` (copie `git archive`) **6184 passés, 0 échoué, 18 ignorés**.
+  Journaux : `kesh-gate-logs/integ-fixes-0.19.0/` (`gate-backend.log`, `front-*.log`, `e2e.log`, `gate-ci.log`) ; un
+  premier essai, arrêté par le disque plein de la station, est gardé dans `avorte-disque-plein/`. Le commit de
+  documentation `37c2f875` n'a pas été rejoué au gate (aucun code).
 
 ## Issues à ouvrir
 
@@ -193,6 +208,9 @@ Opus 5.5.
   « Décompte TVA » après.
 
 ### Gates
+
+**Gate complet groupé (2026-11-18)** : vert au commit `5fc6fb1b` de `integ/fixes-0.19.0` — chiffres au Change Log,
+journaux dans `kesh-gate-logs/integ-fixes-0.19.0/`.
 
 Voir `kesh-gate-logs/fix-pdf-alignement/` (relevés au rapport de l'agent).
 
