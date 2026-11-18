@@ -883,3 +883,292 @@ async fn the_audit_entry_carries_the_five_components_only(pool: MySqlPool) {
     let actor = common::audit_actor(&pool, "company", company_id, "company.updated").await;
     assert_eq!(actor.2, admin_id);
 }
+
+// ---------------------------------------------------------------------------
+// Story v0190-nom-societe (#1097) — `PUT /api/v1/companies/current/name`
+// ---------------------------------------------------------------------------
+
+const NAME_ROUTE: &str = "/api/v1/companies/current/name";
+
+async fn put_name(app: &TestApp, token: &str, name: &str, version: i64) -> reqwest::Response {
+    app.client
+        .put(app.url(NAME_ROUTE))
+        .bearer_auth(token)
+        .json(&json!({ "name": name, "version": version }))
+        .send()
+        .await
+        .unwrap()
+}
+
+/// Le message d'un refus `400 VALIDATION_ERROR`.
+async fn refus_400(resp: reqwest::Response, cas: &str) -> String {
+    assert_eq!(resp.status(), 400, "{cas}");
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "VALIDATION_ERROR", "{cas} : {body}");
+    body["error"]["message"].as_str().unwrap().to_string()
+}
+
+/// AC1 a — le nom s'écrit, la version monte, et rien d'autre ne bouge (full-replace :
+/// chaque champ reporté est posé par le montage, pour ne pas comparer vide à vide).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn a_valid_name_is_written_and_nothing_else_moves(pool: MySqlPool) {
+    let (app, token, company_id, _) = setup(&pool).await;
+    sqlx::query(
+        "UPDATE companies SET first_name = 'Prénom Essai', last_name = 'Nom Essai', \
+         ide_number = 'CHE109322551', email = 'reply@demo.ch', \
+         phone = '+41 21 123 45 67', website = 'https://demo.ch' WHERE id = ?",
+    )
+    .bind(company_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let before = app.company(&token).await;
+    let version = before["version"].as_i64().unwrap();
+
+    let resp = put_name(&app, &token, "Nom corrigé SA", version).await;
+    assert_eq!(resp.status(), 200);
+    let put: Value = resp.json().await.unwrap();
+    assert_eq!(put["name"], "Nom corrigé SA");
+
+    let after = app.company(&token).await;
+    assert_eq!(after["name"], "Nom corrigé SA");
+    assert_eq!(after["version"].as_i64().unwrap(), version + 1);
+    for field in [
+        "firstName",
+        "lastName",
+        "address",
+        "addressStructured",
+        "ideNumber",
+        "orgType",
+        "email",
+        "phone",
+        "website",
+    ] {
+        assert!(!before[field].is_null(), "montage : {field} non posé");
+        assert_eq!(after[field], before[field], "champ {field} perdu");
+    }
+}
+
+/// AC1 b — le nom est rogné ; un saut de ligne ou U+2028 en bord de chaîne est un
+/// blanc que `trim` retire (patron `a_line_break_at_the_edge_is_trimmed_…`).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn the_name_is_trimmed_line_breaks_at_the_edge_included(pool: MySqlPool) {
+    let (app, token, _, _) = setup(&pool).await;
+    for (i, raw) in ["  Démo SA ", "Démo SA\n", "\u{2028}Démo SA"]
+        .iter()
+        .enumerate()
+    {
+        let version = app.company(&token).await["version"].as_i64().unwrap();
+        // Un nom identique au précédent serait un no-op : chacun diffère.
+        let raw = raw.replace("SA", &format!("SA {i}"));
+        let resp = put_name(&app, &token, &raw, version).await;
+        assert_eq!(resp.status(), 200, "{raw:?}");
+        assert_eq!(app.company(&token).await["name"], format!("Démo SA {i}"));
+    }
+}
+
+/// AC1 b — vide, blanc, U+00AD seul ; 71 caractères ; un caractère hors jeu, au milieu
+/// du nom : `400`, le refus dit ce qu'il refuse, rien n'est écrit ni tracé.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn invalid_names_are_refused_and_nothing_is_written(pool: MySqlPool) {
+    let (app, token, _, _) = setup(&pool).await;
+    let before = app.company(&token).await;
+    let version = before["version"].as_i64().unwrap();
+    let audit_before = audit_count(&pool).await;
+
+    let long = "é".repeat(71);
+    let cases: [(&str, &str, &[&str]); 7] = [
+        ("vide", "", &["obligatoire"]),
+        ("blanc", "   ", &["obligatoire"]),
+        ("U+00AD seul", "\u{AD}", &["obligatoire"]),
+        ("71 caractères", &long, &["70", "71"]),
+        ("idéogramme", "Démo 张 SA", &["« 张 »", "U+5F20"]),
+        ("U+2028 au milieu", "Démo\u{2028}SA", &["U+2028"]),
+        ("saut de ligne au milieu", "Démo\nSA", &["\\n", "U+000A"]),
+    ];
+    for (cas, name, markers) in cases {
+        let message = refus_400(put_name(&app, &token, name, version).await, cas).await;
+        for marker in markers {
+            assert!(message.contains(marker), "{cas} : {message}");
+        }
+    }
+    assert_eq!(app.company(&token).await, before, "rien n'est écrit");
+    assert_eq!(audit_count(&pool).await, audit_before, "aucune trace");
+}
+
+/// AC1 b — 70 caractères (multioctets) passent ; `&`, `é`, U+2019 aussi.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn the_limit_and_the_admitted_characters_pass(pool: MySqlPool) {
+    let (app, token, _, _) = setup(&pool).await;
+    for name in ["é".repeat(70), "Müller & Fils’ Sàrl".to_string()] {
+        let version = app.company(&token).await["version"].as_i64().unwrap();
+        assert_eq!(put_name(&app, &token, &name, version).await.status(), 200);
+        assert_eq!(app.company(&token).await["name"], name.as_str());
+    }
+}
+
+/// AC1 c — version périmée : `409` sans écriture ni trace ; un nom invalide à version
+/// périmée est un `400` (la saisie se juge avant la version).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn a_stale_version_is_a_409_and_an_invalid_name_at_it_a_400(pool: MySqlPool) {
+    let (app, token, _, _) = setup(&pool).await;
+    let before = app.company(&token).await;
+    let version = before["version"].as_i64().unwrap();
+    let audit_before = audit_count(&pool).await;
+
+    let resp = put_name(&app, &token, "Nom corrigé SA", version - 1).await;
+    assert_eq!(resp.status(), 409);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "OPTIMISTIC_LOCK_CONFLICT");
+
+    refus_400(
+        put_name(&app, &token, &"x".repeat(71), version - 1).await,
+        "invalide et périmé",
+    )
+    .await;
+
+    assert_eq!(app.company(&token).await, before);
+    assert_eq!(audit_count(&pool).await, audit_before);
+}
+
+/// AC1 d — nom identique (après rognage) : `200`, version inchangée, aucune trace.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn an_identical_name_is_a_no_op_without_audit(pool: MySqlPool) {
+    let (app, token, _, _) = setup(&pool).await;
+    let before = app.company(&token).await;
+    let version = before["version"].as_i64().unwrap();
+    let audit_before = audit_count(&pool).await;
+    let same = format!(" {} ", before["name"].as_str().unwrap());
+
+    let resp = put_name(&app, &token, &same, version).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["version"].as_i64().unwrap(), version);
+    assert_eq!(audit_count(&pool).await, audit_before);
+}
+
+/// AC1 e — une entrée `company.updated`, bornée au nom, attribuée à l'Administrateur
+/// en session.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn the_audit_entry_carries_the_name_only(pool: MySqlPool) {
+    let (app, token, company_id, admin_id) = setup(&pool).await;
+    let before = app.company(&token).await;
+    assert_eq!(audit_actions(&pool, "company", company_id).await.len(), 0);
+
+    let resp = put_name(
+        &app,
+        &token,
+        "Nom corrigé SA",
+        before["version"].as_i64().unwrap(),
+    )
+    .await;
+    assert_eq!(resp.status(), 200);
+
+    assert_eq!(
+        audit_actions(&pool, "company", company_id).await,
+        vec!["company.updated".to_string()]
+    );
+    let details = audit_details(&pool, "company", company_id, "company.updated")
+        .await
+        .expect("details_json");
+    assert_eq!(
+        details,
+        json!({ "before": { "name": before["name"] }, "after": { "name": "Nom corrigé SA" } })
+    );
+    let actor = common::audit_actor(&pool, "company", company_id, "company.updated").await;
+    assert_eq!(actor.0, "user");
+    assert_eq!(actor.1, None);
+    assert_eq!(actor.2, admin_id);
+}
+
+/// AC1 f — le défaut de l'issue, de bout en bout : un nom de 71 caractères fait refuser
+/// le PDF, dont le refus renvoie à l'écran ; corrigé par la route, le PDF se produit.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn correcting_the_name_restores_the_qr_invoice(pool: MySqlPool) {
+    let (app, token, company_id, admin_id) = setup(&pool).await;
+    let invoice_id = seed_validated_invoice(&pool, company_id, admin_id).await;
+    sqlx::query("UPDATE companies SET name = ? WHERE id = ?")
+        .bind("N".repeat(71))
+        .bind(company_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let resp = app.get_pdf(&token, invoice_id).await;
+    assert_eq!(resp.status(), 400);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "INVOICE_NOT_PDF_READY");
+    let message = body["error"]["message"].as_str().unwrap();
+    assert!(
+        message.contains("nom de l'entreprise")
+            && message.contains("71")
+            && message.contains("Paramètres → Organisation"),
+        "{body}"
+    );
+
+    let version = app.company(&token).await["version"].as_i64().unwrap();
+    assert_eq!(
+        put_name(&app, &token, "Nom corrigé SA", version)
+            .await
+            .status(),
+        200
+    );
+    let resp = app.get_pdf(&token, invoice_id).await;
+    assert_eq!(resp.status(), 200);
+    assert!(resp.bytes().await.unwrap().starts_with(b"%PDF-1."));
+}
+
+/// AC1 g — Comptable et Consultation : `403` ; une clé d'API, même en écriture, aussi.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn only_an_administrator_in_session_may_correct_the_name(pool: MySqlPool) {
+    let (app, token, company_id, _) = setup(&pool).await;
+    let before = app.company(&token).await;
+    let version = before["version"].as_i64().unwrap();
+
+    for (name, role) in [
+        ("comptanom", Role::Comptable),
+        ("consultnom", Role::Consultation),
+    ] {
+        let password = create_user(&pool, company_id, name, role).await;
+        let user_token = app.login(name, &password).await;
+        let resp = put_name(&app, &user_token, "Nom corrigé SA", version).await;
+        assert_eq!(resp.status(), 403, "{name}");
+    }
+    let (_, key) =
+        create_key_via_http(&app.client, &app.base_url, &token, "cle-nom", "read-write").await;
+    let resp = put_name(&app, &key, "Nom corrigé SA", version).await;
+    assert_eq!(resp.status(), 403, "clé d'API");
+
+    assert_eq!(app.company(&token).await["name"], before["name"]);
+}
+
+/// AC1 g-bis — une société d'avant les composants (adresse en texte libre seulement) :
+/// renommer ne produit ni `500` ni écrasement de l'adresse (garde de `update_in_tx`,
+/// Story 16-3a ; filet de non-régression). Revue P1 (E4) : le pays vaut `CH`, comme sur une
+/// vraie société d'avant les composants — la migration `20260705000001_structured_addresses`
+/// a ajouté `address_country CHAR(2) NOT NULL DEFAULT 'CH'` sans rien réécrire.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn renaming_a_free_text_only_company_keeps_its_address(pool: MySqlPool) {
+    let (app, token, company_id, _) = setup(&pool).await;
+    sqlx::query(
+        "UPDATE companies SET address = 'Ancienne adresse libre', address_street = '', \
+         address_building = '', address_postal_code = '', address_city = '', \
+         address_country = 'CH' WHERE id = ?",
+    )
+    .bind(company_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let version = app.company(&token).await["version"].as_i64().unwrap();
+
+    assert_eq!(
+        put_name(&app, &token, "Nom corrigé SA", version)
+            .await
+            .status(),
+        200
+    );
+    let after = app.company(&token).await;
+    assert_eq!(after["name"], "Nom corrigé SA");
+    assert_eq!(after["address"], "Ancienne adresse libre");
+    assert_eq!(after["addressStructured"]["country"], "CH");
+}

@@ -38,6 +38,8 @@ vi.mock('$lib/features/invoices/invoices.api', () => ({
 
 vi.mock('$lib/features/contacts/contacts.api', () => ({
 	getContact: vi.fn(async () => ({ id: 1, name: 'Client' })),
+	// v0190-correction (#1162, AC2) : la frappe dans le champ client lance une recherche.
+	listContacts: vi.fn(async () => ({ items: [], total: 0, offset: 0, limit: 50 })),
 }));
 
 vi.mock('$lib/features/vat-rates', () => ({
@@ -953,6 +955,91 @@ describe('InvoiceForm — Entrée dans le compte de produit (Story 36-1)', () =>
 		expect(compteEnvoye(0)).toBeNull();
 		expect(nonEmpechee).toBe(true);
 		expect(field.value).toBe('');
+	});
+});
+
+// Story v0190-correction (#1162, AC2 et AC7) — D4, décision de Guy du 2026-11-17 : dans
+// le formulaire de facture, un texte tapé dans le champ client et non choisi n'est PAS
+// jeté au départ du champ ; l'enregistrement est refusé tant qu'il est affiché, par le
+// bouton comme par la soumission implicite (*Entrée*), avec « Choisissez le client dans
+// la liste ». Un brouillon blanc, lui, est jeté au départ (D1) : le champ remontre X.
+describe('InvoiceForm — le client affiché est celui qui part (v0190-correction, #1162)', () => {
+	async function monterFacture() {
+		updateInvoiceMock.mockResolvedValue({ id: 7 });
+		const r = render(InvoiceForm, { invoice: invoiceWith([SERVICES.id]) });
+		await settle();
+		const champ = r.container.querySelector('input[role="combobox"]') as HTMLInputElement;
+		expect(champ.value).toBe('Client');
+		return { ...r, champ };
+	}
+
+	it('AC7 — « zzz » tapé, champ quitté, Enregistrer : rien ne part, le message le dit, le texte reste', async () => {
+		const { champ, getByTestId, container } = await monterFacture();
+		await fireEvent.input(champ, { target: { value: 'zzz' } });
+		// En jsdom le clic ne déplace pas le focus : le départ du champ est explicite.
+		await fireEvent.blur(champ);
+		await fireEvent.click(getByTestId('create-invoice-button'));
+		await settle();
+
+		expect(updateInvoiceMock).not.toHaveBeenCalled();
+		expect(container.textContent).toContain('Choisissez le client dans la liste');
+		expect(champ.value).toBe('zzz');
+	});
+
+	it('AC7 — même refus par la soumission implicite (Entrée dans un autre champ du formulaire)', async () => {
+		const { champ } = await monterFacture();
+		await fireEvent.input(champ, { target: { value: 'zzz' } });
+		await fireEvent.blur(champ);
+		champ.form!.requestSubmit();
+		await settle();
+
+		expect(updateInvoiceMock).not.toHaveBeenCalled();
+		expect(champ.value).toBe('zzz');
+	});
+
+	it('AC2 — champ vidé au clavier puis quitté : le brouillon blanc est jeté, le client X part et s’affiche', async () => {
+		const { champ, getByTestId } = await monterFacture();
+		await fireEvent.input(champ, { target: { value: '' } });
+		await fireEvent.blur(champ);
+		expect(champ.value).toBe('Client');
+		await fireEvent.click(getByTestId('create-invoice-button'));
+		await settle();
+
+		expect(updateInvoiceMock).toHaveBeenCalledTimes(1);
+		expect((updateInvoiceMock.mock.calls[0][1] as { contactId: number }).contactId).toBe(1);
+	});
+
+	it('F1 — après le refus, le texte tapé tombe (champ vidé puis quitté) : le bandeau du refus se retire', async () => {
+		const { champ, getByTestId, queryByTestId } = await monterFacture();
+		await fireEvent.input(champ, { target: { value: 'zzz' } });
+		await fireEvent.blur(champ);
+		await fireEvent.click(getByTestId('create-invoice-button'));
+		await settle();
+		expect(getByTestId('invoice-form-error').textContent).toContain('Choisissez le client dans la liste');
+
+		await fireEvent.input(champ, { target: { value: '' } });
+		await fireEvent.blur(champ);
+		await settle();
+		expect(champ.value).toBe('Client');
+		expect(queryByTestId('invoice-form-error')).toBeNull();
+	});
+
+	it('F2 — un texte tapé pendant l’attente des réglages arrête l’envoi', async () => {
+		const { champ, getByTestId } = await monterFacture();
+		let tenir!: (v: unknown) => void;
+		getInvoiceSettingsMock.mockImplementationOnce(
+			() => new Promise((res) => (tenir = res)),
+		);
+		await fireEvent.click(getByTestId('create-invoice-button'));
+		// L'envoi attend les réglages ; le champ client est encore éditable.
+		await fireEvent.input(champ, { target: { value: 'zzz' } });
+		await settle();
+		tenir({ defaultReceivableAccountId: 1100, defaultRevenueAccountId: DEFAULT_REVENUE.id });
+		await settle();
+
+		expect(updateInvoiceMock).not.toHaveBeenCalled();
+		expect(getByTestId('invoice-form-error').textContent).toContain('Choisissez le client dans la liste');
+		expect(champ.value).toBe('zzz');
 	});
 });
 

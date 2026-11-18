@@ -52,6 +52,12 @@ pub struct SupplierInvoice {
     pub settlement_bank_account_id: Option<i64>,
     pub settlement_account_id: Option<i64>,
     pub settlement_journal_entry_id: Option<i64>,
+    /// La ligne de **dette** qui porte ce règlement dans une écriture qui en
+    /// règle plusieurs (règlement groupé, Story 43-1a/43-1b, #823) ; `None` pour
+    /// un règlement unitaire. Jamais renseignée sans
+    /// `settlement_journal_entry_id` (`chk_supplier_invoices_settlement_line`) :
+    /// tout geste qui vide l'une vide l'autre ([`crate::repositories::supplier_invoices::CLEAR_SETTLEMENT_SQL`]).
+    pub settlement_journal_entry_line_id: Option<i64>,
     pub paid_at: Option<NaiveDateTime>,
     pub version: i32,
     pub created_at: NaiveDateTime,

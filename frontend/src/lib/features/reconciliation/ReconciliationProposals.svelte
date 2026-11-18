@@ -52,6 +52,11 @@
   la liste sans être aux livres. Le dialogue le dit (*Rejeter quand même*). Une relecture de la
   liste (`load()`) referme toute confirmation ouverte : elle ne peut jamais être validée sur des
   lignes qui ne sont plus celles de la liste.
+
+  Story 43-3 (#823, D1) — *Régler plusieurs factures…* (`GroupSettlementModal`) : une ligne du
+  relevé règle plusieurs factures, ajoutées une à une par recherche. Offert à la même condition
+  que *Rattacher* (`canLink` : CHF, montant non nul). Il passe une écriture : il entre dans la
+  garde « déjà comptabilisée » comme *Écriture manuelle* et *Éclater* (geste `group`).
 -->
 <script lang="ts">
 	import { errorMessageOf } from '$lib/shared/utils/error-message';
@@ -78,6 +83,7 @@
 	import ManualMatchModal from './ManualMatchModal.svelte';
 	import TransactionSplitModal from './TransactionSplitModal.svelte';
 	import LinkSettlementModal from './LinkSettlementModal.svelte';
+	import GroupSettlementModal from './GroupSettlementModal.svelte';
 	import AlreadyBookedConfirmDialog from './AlreadyBookedConfirmDialog.svelte';
 	import { alreadyBookedWarning, describeTransaction, isAlreadyBooked } from './already-booked';
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
@@ -102,6 +108,9 @@
 	// existante » depuis la Story v017-3a (#671).
 	let linkOpen = $state(false);
 	let linkProposal = $state<ReconciliationProposal | null>(null);
+	// Story 43-3 (#823) — modale du règlement groupé.
+	let groupOpen = $state(false);
+	let groupProposal = $state<ReconciliationProposal | null>(null);
 	let accounts = $state<AccountResponse[]>([]);
 	// γ refactor BS1 — checkbox tx-level top-1 only : selected = Set<txId>
 	// (l'invoiceId top-1 est ré-extrait au moment du submit).
@@ -295,17 +304,50 @@
 	}
 
 	/**
+	 * Story 43-3 (#823, D1) — *Régler plusieurs factures…* : la même condition que le rattachement
+	 * (`canLink`, CHF, montant non nul) ; un crédit règle des factures clients, un débit (D6,
+	 * commit retirable) des factures fournisseur. ⚠️ Retirer le commit D6 ramène ici la garde du
+	 * crédit seul. Quand le multi-devise arrivera, cette condition est le seul point à élargir.
+	 */
+	function canGroup(p: ReconciliationProposal): boolean {
+		return canLink(p);
+	}
+
+	function openGroup(p: ReconciliationProposal) {
+		groupProposal = p;
+		groupOpen = true;
+	}
+
+	/** Story 43-3 — un règlement groupé enregistré ouvre un nouveau bilan, comme un rattachement. */
+	async function onGroupSuccess() {
+		clearBatchReport();
+		lastSuccessCount = 1;
+		groupOpen = false;
+		groupProposal = null;
+		await load();
+	}
+
+	/** Story 43-3 (D5) — la modale s'est fermée sur un refus de la transaction : la liste est relue. */
+	async function onGroupStale() {
+		groupOpen = false;
+		groupProposal = null;
+		await load();
+	}
+
+	/**
 	 * Story 34-4 (#828, AC-6) — le geste qui attend la confirmation d'une ligne signalée « déjà
 	 * comptabilisée », et les lignes signalées qu'il concerne (relevées à la demande).
-	 * *Accepter*, *Écriture manuelle* et *Éclater* passent par là parce qu'ils passeraient une
-	 * écriture ; *Rejeter* depuis la Story 35-4 (#1023), parce qu'il retirerait de la liste, sans
-	 * écriture, un mouvement peut-être réel.
+	 * *Accepter*, *Écriture manuelle*, *Éclater* et, depuis la Story 43-3 (#823, D1), *Régler
+	 * plusieurs factures…* passent par là parce qu'ils passeraient une écriture ; *Rejeter* depuis
+	 * la Story 35-4 (#1023), parce qu'il retirerait de la liste, sans écriture, un mouvement
+	 * peut-être réel.
 	 */
 	type GuardedGesture =
 		| { kind: 'accept' }
 		| { kind: 'reject' }
 		| { kind: 'manual'; proposal: ReconciliationProposal }
-		| { kind: 'split'; proposal: ReconciliationProposal };
+		| { kind: 'split'; proposal: ReconciliationProposal }
+		| { kind: 'group'; proposal: ReconciliationProposal };
 	let pendingGesture = $state<GuardedGesture | null>(null);
 	let confirmTransactions = $state<ReconciliationProposal[]>([]);
 	// Story 35-4 (#1023, D2) — ce que le dialogue dit : le geste (écriture ou rejet) et le nombre
@@ -340,6 +382,9 @@
 			case 'split':
 				openSplit(gesture.proposal);
 				return;
+			case 'group':
+				openGroup(gesture.proposal);
+				return;
 			default: {
 				const inconnu: never = gesture;
 				throw new Error(`geste inconnu : ${JSON.stringify(inconnu)}`);
@@ -373,6 +418,11 @@
 		guard({ kind: 'split', proposal: p }, isAlreadyBooked(p) ? [p] : []);
 	}
 
+	/** Story 43-3 (#823, D1) — *Régler plusieurs factures…* : confirmation sur une ligne signalée. */
+	function requestGroup(p: ReconciliationProposal): void {
+		guard({ kind: 'group', proposal: p }, [p].filter(isAlreadyBooked));
+	}
+
 	/**
 	 * *Continuer quand même* (ou *Rejeter quand même*) : le geste reprend tel quel. Depuis la
 	 * Story 35-4 (#1024, D3), une relecture de la liste referme la confirmation (`load()`) : le
@@ -397,11 +447,7 @@
 			(p) => p.bankTransactionId === gesture.proposal.bankTransactionId,
 		);
 		if (!current) return;
-		runGesture(
-			gesture.kind === 'manual'
-				? { kind: 'manual', proposal: current }
-				: { kind: 'split', proposal: current },
-		);
+		runGesture({ kind: gesture.kind, proposal: current });
 	}
 
 	/** *Annuler* : rien n'est fait. */
@@ -749,6 +795,20 @@
 									{i18nMsg('reconciliation-link-button-label', 'Rattacher à une écriture existante')}
 								</button>
 							{/if}
+							<!-- Story 43-3 (#823, D1) — régler plusieurs factures par cette transaction
+							     (`canGroup`) ; geste gardé (« déjà comptabilisée »). -->
+							{#if canGroup(p)}
+								<button
+									type="button"
+									class="ml-2 text-xs text-primary underline disabled:opacity-50"
+									disabled={busy}
+									onclick={() => requestGroup(p)}
+									data-testid="group-settlement-button"
+									data-tx-id={p.bankTransactionId}
+								>
+									{i18nMsg('reconciliation-group-button-label', 'Régler plusieurs factures…')}
+								</button>
+							{/if}
 						</td>
 					</tr>
 					<!-- Story 34-4 (#828, AC-5) — sous la ligne, l'avertissement d'une transaction qui
@@ -843,6 +903,20 @@
 			}}
 			proposal={linkProposal}
 			onSuccess={onLinkSuccess}
+		/>
+
+		<GroupSettlementModal
+			open={groupOpen}
+			onOpenChange={(v) => {
+				groupOpen = v;
+				if (!v) groupProposal = null;
+			}}
+			{bankAccountId}
+			proposal={groupProposal}
+			{accounts}
+			{bankLedgerAccountId}
+			onSuccess={onGroupSuccess}
+			onStale={onGroupStale}
 		/>
 
 		<AlreadyBookedConfirmDialog

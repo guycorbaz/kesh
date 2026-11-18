@@ -93,6 +93,16 @@ export interface UpdateCompanyAddressRequest {
 	version: number;
 }
 
+/**
+ * Payload de `PUT /companies/current/name` (Admin-only, Story v0190-nom-societe, #1097).
+ * Le serveur rogne et refuse un nom vide, de plus de 70 caractères ou hors du jeu de la
+ * QR-facture.
+ */
+export interface UpdateCompanyNameRequest {
+	name: string;
+	version: number;
+}
+
 export interface BankAccountJson {
 	id: number;
 	bankName: string;

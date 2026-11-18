@@ -158,6 +158,28 @@
 	// svelte-ignore state_referenced_locally
 	const initialInvoice = invoice;
 	let selectedContact = $state<ContactResponse | null>(null);
+	/**
+	 * Story v0190-correction, D4 (C-v0190c-22, décision de Guy du 2026-11-17) :
+	 * un texte tapé et non choisi est affiché dans le champ client. Tenu par le
+	 * rappel `onDraftChange` de `ContactPicker` ; l'enregistrement est refusé tant
+	 * qu'il est vrai (bouton comme *Entrée*), sans jeter le texte.
+	 */
+	let contactUnresolved = $state(false);
+
+	/** Message du refus D4 — une source pour `validateClient`, le recontrôle d'`onSubmit` et son retrait. */
+	function contactUnresolvedMessage(): string {
+		return i18nMsg('invoice-contact-unresolved-error', 'Choisissez le client dans la liste');
+	}
+
+	/**
+	 * Rappel `onDraftChange` du champ client. Quand le texte tapé tombe (choix, champ
+	 * vidé puis quitté, client changé), le bandeau du refus D4 se retire — lui seul,
+	 * un autre message reste (revue P2, F1).
+	 */
+	function onContactDraftChange(unresolved: boolean) {
+		contactUnresolved = unresolved;
+		if (!unresolved && errorMsg === contactUnresolvedMessage()) errorMsg = '';
+	}
 	// #889 : la date du jour du poste, non celle d'UTC (la veille entre minuit et 1 h).
 	let date = $state<string>(initialInvoice?.date ?? todayLocal());
 	let dueDate = $state<string>(initialInvoice?.dueDate ?? '');
@@ -535,6 +557,8 @@
 	}
 
 	function validateClient(): string | null {
+		// D4 (v0190-correction) : avant tout, le client montré doit être celui qui part.
+		if (contactUnresolved) return contactUnresolvedMessage();
 		if (!selectedContact) return 'Veuillez sélectionner un contact';
 		if (!date) return 'La date est obligatoire';
 		// #245 : comparaison lexicographique valide sur ISO YYYY-MM-DD.
@@ -639,6 +663,14 @@
 			errorMsg = isApiError(err)
 				? `Impossible de valider les paramètres: ${err.message}`
 				: 'Impossible de valider les paramètres de facturation';
+			submitting = false;
+			return;
+		}
+		// v0190-correction, D4 (revue P2, F2) — le champ client est resté éditable pendant
+		// l'attente des réglages : un texte tapé alors arrête l'envoi, comme le prix
+		// retapé ci-dessous (36-3b).
+		if (contactUnresolved) {
+			errorMsg = contactUnresolvedMessage();
 			submitting = false;
 			return;
 		}
@@ -772,7 +804,11 @@
 
 <form onsubmit={onSubmit} class="space-y-6">
 	{#if errorMsg}
-		<div class="rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-sm text-destructive">
+		<!-- `data-testid` : l'E2E ne vise pas un libellé traduit (garde KF-043). -->
+		<div
+			class="rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-sm text-destructive"
+			data-testid="invoice-form-error"
+		>
 			{errorMsg}
 		</div>
 	{/if}
@@ -787,7 +823,12 @@
 	<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
 		<div>
 			<label class="mb-1 block text-sm font-medium" for="invoice-contact">Contact</label>
-			<ContactPicker selected={selectedContact} onSelect={onContactSelect} />
+			<ContactPicker
+				selected={selectedContact}
+				onSelect={onContactSelect}
+				keepDraftOnBlur
+				onDraftChange={onContactDraftChange}
+			/>
 		</div>
 		<div>
 			<label class="mb-1 block text-sm font-medium" for="invoice-date">Date</label>
