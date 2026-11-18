@@ -1,3 +1,4 @@
+# last_updated: 2026-11-18 (kickoff de la 0.20.0 révisé sur les réponses de Guy aux points ouverts : sous-totaux repoussés, 49-3-titres-et-sous-totaux renommée 49-3-titres-de-section ; #1234 retirée de la 48-13 ; 48-13 fusionnée avant l'Epic 49 ; issues de la solde #1263, #1262, #1261, #1255 au milestone v0.20.0)
 # last_updated: 2026-11-18 (kickoff de la 0.20.0 en autonomie, release-0.20.0.md : Epic 48 sort du réservoir et devient l'épique corrective de la release, sept stories par dérogation à la borne de six (décision de Guy du 2026-11-18), 48-11 à 48-14 ajoutées, 48-3 à 48-9 hors 0.20.0 ; Epic 49 ouverte, types de lignes de la facture client (#1242), seule migration de la release ; v0200-menu-sous-groupes (#1253), amélioration de la release)
 # last_updated: 2026-11-18 (après la v0.19.0 : Epics 42, 43, 44 closes avec la release, restes et clés de l'Epic 36 versés à l'Epic 48 (réservoir) ; 36-16a superseded = 42-1 ; décisions de Guy, page « après la 0.19.0 »)
 # last_updated: 2026-11-16 (rétrospective de l'Epic 36 tenue en autonomie, epic-36-retro-2026-11-16.md ; v0.18.0 publiée ; epic-36 done ; stories non faites reprises dans une épique neuve, Epic 42 et suivantes, décision de Guy du 2026-11-16 ; 36-16a done, non publiée)
@@ -1173,8 +1174,8 @@ development_status:
   48-10-montants-ambigus-reglages-filtres: backlog  # release 0.20.0 (kickoff du 2026-11-18). — = 36-18b (fiche 36-18b-montants-ambigus-reglages-filtres.md) ; #1173, #1175, #1176, #1177
   48-11-arrondi-au-centime: backlog  # release 0.20.0, prioritaire ; #1245 (P2) : `{:.2}` tronque un Decimal ; une fonction commune « arrondir au centime puis formater », un test par site, une garde ; part de main APRÈS la fusion de la PR #1327 de Beat (crates/kesh-report/src/pdf.rs)
   48-12-reponses-perdues-fournisseurs: backlog  # release 0.20.0 ; #975, #984, #985, #986 (P2) : doublon ou écrasement après une réponse perdue ou un 409 (factures fournisseur, comptes bancaires)
-  48-13-avant-la-vraie-facture: backlog  # release 0.20.0, prioritaire ; #1233, #1243, #1226, #1234 : chemin de la première facture client QR ; InvoiceForm.svelte et kesh-qrbill partagés avec l'Epic 49
-  48-14-solde-dette-epic: backlog  # release 0.20.0 ; story de solde : dette des revues de la 0.19.0 (règlement groupé, #1255 à #1265) ; plafond QUATRE issues, fixé au kickoff du 2026-11-18 ; sort la première à la coupure
+  48-13-avant-la-vraie-facture: backlog  # release 0.20.0, prioritaire ; #1233, #1243, #1226 : chemin de la première facture client QR ; se fusionne AVANT les stories de l'Epic 49 qui touchent InvoiceForm.svelte (arbitrage de Guy du 2026-11-18) ; #1234 retirée le 2026-11-18, renvoyée à « Plus tard »
+  48-14-solde-dette-epic: backlog  # release 0.20.0 ; story de solde : dette des revues de la 0.19.0 (règlement groupé) ; plafond QUATRE issues, fixé au kickoff du 2026-11-18 : #1263, #1262, #1261, #1255, au milestone v0.20.0 ; sort la première à la coupure
   epic-48-retrospective: optional
 
   # 2026-11-18 — Epic 49 « Types de lignes de la facture client » (#1242, P2, demande de Guy, échéance fin novembre), release 0.20.0 ;
@@ -1182,9 +1183,9 @@ development_status:
   # écart assumé à « une épique en cours par développeur » (décision de Guy du 2026-11-18, pour la vitesse).
   epic-49: in-progress  # kickoff 2026-11-18 ; release 0.20.0 (vendredi 2026-11-27, coupure jeudi 2026-11-26 au soir) ; trois stories ; une migration (49-1)
   49-0-kickoff: done  # 2026-11-18 : epic-49-types-de-lignes-facture.md, release-0.20.0.md
-  49-1-types-de-lignes: backlog  # #1242 ; types produit, sans produit, commentaire ; migration qui pose d'emblée les cinq types (titre et sous-total compris) et les contraintes par type, sur invoice_lines ET credit_note_lines, non breaking visée ; rendu PDF ; avoirs qui reprennent commentaires et titres ; splitting préventif à juger à la fiche
+  49-1-types-de-lignes: backlog  # #1242 ; FACTURES RÉELLES EN PRODUCTION (complément de Guy du 2026-11-18) : la migration conserve à l'identique chaque facture et avoir existants (type établi à la fiche, sinon type unique « chiffré »), triage P7, PDF des factures émises inchangé (test avant/après), recette de montée avec factures réelles simulées ; types produit, sans produit, commentaire ; migration qui pose d'emblée les types produit, sans produit, commentaire et titre (sous-total seulement si la fiche établit qu'il ne préjuge pas de son sens TVA, sinon sa propre migration plus tard) et les contraintes par type, sur invoice_lines ET credit_note_lines ; non breaking : colonnes NOT NULL, valeurs neutres, CHECK assouplis par type ; rendu PDF ; avoirs qui reprennent commentaires et titres ; splitting préventif à juger à la fiche
   49-2-reordonnancement-lignes: backlog  # #1242 ; ↑/↓ en brouillon (glisser-déposer si la fiche le juge sûr) ; après 49-1
-  49-3-titres-et-sous-totaux: backlog  # #1242 ; titre de section, sous-total (sens à arrêter à la fiche : total de la section, hors total et écritures) ; rendu PDF ; après 49-1
+  49-3-titres-de-section: backlog  # #1242 ; titre de section sans montant ; rendu PDF ; reprise dans les avoirs ; après 49-1 ; clé renommée le 2026-11-18 (était 49-3-titres-et-sous-totaux) : les sous-totaux sont repoussés à une release ultérieure, décision de Guy (justesse HT/TTC et par taux), issue « sous-totaux de section » à ouvrir
   epic-49-retrospective: optional
 
   # 2026-11-18 — Release 0.20.0 : l'amélioration de la release (une par release, décision de Guy du 2026-11-17), hors épique.

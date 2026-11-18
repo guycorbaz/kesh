@@ -3,12 +3,14 @@
 **Publication : vendredi 2026-11-27.** Coupure le **jeudi 2026-11-26 au soir** : n'entre que ce qui est clos (boucle de
 revue terminée, gates de clôture et E2E complet verts) ; une story non close sort vers une épique ultérieure, **la date ne
 bouge pas** (kesh:D7, kesh:D11). Kickoff tenu en autonomie par l'orchestrateur le 2026-11-18, sur les décisions de Guy du
-même jour (page « kickoff-0.20.0 » et conversation). Ce document s'adresse aussi aux contributeurs — en particulier à Beat
+même jour (page « kickoff-0.20.0 » et conversation) ; révisé le même jour sur les réponses de Guy aux points ouverts du
+kickoff. Ce document s'adresse aussi aux contributeurs — en particulier à Beat
 et à son agent — pour qu'ils voient d'avance où leurs changements croiseront les nôtres.
 
 > ⚠️ **Une migration** — celle de la 49-1 (types de lignes de la facture client), la 96ᵉ. **Sauvegarde complète
 > obligatoire avant la mise à jour du NAS** : base, `.keshbackup` et dossier des documents ; le retour à la 0.19.0 passe
-> par elle. Non breaking visée : `kesh_version_min_required` resterait à 0.17.6.
+> par elle. Non breaking (colonnes `NOT NULL`, valeurs neutres, `CHECK` assouplis par type) :
+> `kesh_version_min_required` reste à 0.17.6.
 
 ## Décisions qui fondent le plan
 
@@ -18,7 +20,13 @@ et à son agent — pour qu'ils voient d'avance où leurs changements croiseront
 | kesh:D13 | Une release publiée avant son vendredi compte pour la semaine : la 0.19.0 (mercredi 2026-11-18) est celle de la semaine ; **la 0.20.0 garde le vendredi 2026-11-27**. | 2026-11-18 |
 | kesh:D14 | La 0.20.0 s'attaque **principalement aux bugs**, avec une ou deux fonctionnalités. | 2026-11-18 |
 | Guy, 2026-11-18 | **Epic 48** devient l'épique corrective de la release, **sept stories** par dérogation à la borne de six (près de dix jours de travail, « il y a deux jours de plus ») ; 48-3 à 48-9 hors 0.20.0. | 2026-11-18 |
-| Guy, 2026-11-18 | **Epic 49** — types de lignes de la facture client (#1242), trois stories, toutes visées pour la 0.20.0 ; la 49-1 porte la migration, qui pose d'emblée les cinq types. | 2026-11-18 |
+| Guy, 2026-11-18 | **Epic 49** — types de lignes de la facture client (#1242), trois stories, toutes visées pour la 0.20.0 ; la 49-1 porte la migration. | 2026-11-18 |
+| Guy, 2026-11-18 | **Sous-totaux repoussés** à une release ultérieure : Beat tient une comptabilité assujettie à la TVA, un sous-total doit être juste en HT/TTC et par taux, ou attendre. La 49-3 ne porte plus que les **titres de section** (clé renommée `49-3-titres-de-section`). La migration de la 49-1 pose les types produit, sans produit, commentaire et titre ; le type sous-total n'y entre que si la fiche de la 49-1 établit qu'il ne préjuge pas de son sens TVA, sinon il viendra avec sa propre migration. Issue à ouvrir par l'orchestrateur, « sous-totaux de section », milestone « Plus tard ». | 2026-11-18 |
+| Guy, 2026-11-18 | **#1234 retirée** de la 48-13 et de la 0.20.0, renvoyée à « Plus tard » (latente tant que Kesh ne renseigne pas `billing_information`). | 2026-11-18 |
+| Guy, 2026-11-18 | **La 48-13 se fusionne avant** les stories de l'Epic 49 qui touchent `InvoiceForm.svelte` (petite, sur le chemin de la première facture de fin novembre). | 2026-11-18 |
+| Guy, 2026-11-18 | Story de solde : **#1263, #1262, #1261, #1255** au milestone v0.20.0 ; milestone **v0.21.0** créé (vendredi 2026-12-04), #1236 y est. | 2026-11-18 |
+| Guy, 2026-11-18 (complément) | **Des factures réelles existent déjà** en production (remises sur papier à un locataire) : la migration de la 49-1 les conserve à l'identique, une facture émise garde son PDF, recette de montée avec factures réelles simulées comme gate de la release ; les fiches 48-1, 48-2 et 48-13 citent ce cas dans leurs AC. | 2026-11-18 |
+| Orchestrateur, 2026-11-18 (délégation de Guy) | Migration **non breaking** : colonnes `NOT NULL`, valeurs neutres pour les lignes non chiffrées, `CHECK` assouplis par type, `credit_note_lines` comprise ; **splitting préventif** de la 49-1 (et de la 48-12, de la 48-13 si besoin) jugé à la fiche, selon la règle ; **charge de la voie B** surveillée par l'orchestrateur. | 2026-11-18 |
 | Guy, 2026-11-18 | **v0200-menu-sous-groupes** (#1253) : l'amélioration de la release (une par release, décision de Guy du 2026-11-17), hors épique. | 2026-11-18 |
 | Guy, 2026-11-18 | **Une seule migration** en 0.20.0, celle de la 49-1. | 2026-11-18 |
 | Guy, 2026-11-18 | **Deux épiques en parallèle** (48 et 49), sur les deux voies de la station, pour la vitesse. | 2026-11-18 |
@@ -44,21 +52,21 @@ et à son agent — pour qu'ils voient d'avance où leurs changements croiseront
 
 | Rang | Story | Issues | Migration | Si le temps manque |
 |---|---|---|---|---|
-| 1 | 48-13 — Avant la vraie facture : client écrasé par un chargement tardif, adresse tronquée en silence, nom de société non contrôlé à l'assistant, informations de facturation de la QR-facture | #1233, #1243, #1226, #1234 | non | **prioritaire** |
+| 1 | 48-13 — Avant la vraie facture : client écrasé par un chargement tardif, adresse tronquée en silence, nom de société non contrôlé à l'assistant ; **se fusionne avant les stories de l'Epic 49** | #1233, #1243, #1226 | non | **prioritaire** |
 | 2 | 48-11 — Les montants à deux décimales sont arrondis au centime, non tronqués (exports CSV, rapports CSV et PDF) ; **après la fusion de #1327** | #1245 (P2) | non | **prioritaire** |
 | 3 | 48-12 — Plus de doublon ni d'écrasement après une réponse perdue (factures fournisseur, comptes bancaires) | #975, #984, #985, #986 (P2) | non | sort après la 48-2 |
 | 4 | 48-10 — « 1.250 » refusé au prix d'article, aux frais de rappel, au montant minimal, aux filtres des écritures | #1173, #1175, #1176, #1177 | non | sort après la 48-2 |
 | 5 | 48-1 — Changer le compte analytique d'une facture fournisseur, même payée | #1167 (refs) | non | sort après la 48-2 |
 | 6 | 48-2 — Idem, écriture manuelle ; #1167 se ferme avec elle | #1167 | non | **sort la deuxième** |
-| 7 | 48-14 — Story de solde : dette des revues de la 0.19.0 (règlement groupé), **au plus quatre issues** parmi #1255 à #1265 | à arrêter à la fiche | non | **sort la première** |
+| 7 | 48-14 — Story de solde : dette des revues de la 0.19.0 (règlement groupé), **plafond de quatre issues** | #1263, #1262, #1261, #1255 | non | **sort la première** |
 
 ### Epic 49 — Types de lignes de la facture client (`epic-49-types-de-lignes-facture.md`) — porte la migration
 
 | Rang | Story | Issues | Migration | Si le temps manque |
 |---|---|---|---|---|
-| 1 | 49-1 — Types produit, sans produit, commentaire ; la migration des cinq types (titre et sous-total compris), contraintes par type sur `invoice_lines` et `credit_note_lines` ; rendu PDF ; avoirs qui reprennent commentaires et titres | #1242 (P2) | **oui** | sortie = la release n'a plus de migration |
+| 1 | 49-1 — Types produit, sans produit, commentaire ; la migration des types (titre compris ; sous-total seulement si sa fiche établit qu'il ne préjuge pas de son sens TVA), contraintes par type sur `invoice_lines` et `credit_note_lines` ; rendu PDF ; avoirs qui reprennent commentaires et titres | #1242 (P2) | **oui** | sortie = la release n'a plus de migration |
 | 2 | 49-2 — Réordonner les lignes d'un brouillon (↑ / ↓ ; glisser-déposer si sûr) | #1242 | non | sort après la 49-3 |
-| 3 | 49-3 — Titres de section et sous-totaux, rendu PDF | #1242 | non (posée par la 49-1) | sort la première de l'épique |
+| 3 | 49-3 — Titres de section (sans montant), rendu PDF, reprise dans les avoirs ; les **sous-totaux sont repoussés** | #1242 | non (posée par la 49-1) | sort la première de l'épique |
 
 Échéance de Guy : **fin novembre**, pour ses vraies factures — la 0.20.0 est la dernière release avant elle.
 
@@ -74,10 +82,37 @@ Si le temps manque, dans l'ordre : **48-14**, **48-2**, puis selon l'avancement 
 v0200-menu-sous-groupes ; **48-11 et 48-13 restent les dernières**. La 49-1 sort avec sa migration. Le Project Lead garde
 le dernier mot ; l'orchestrateur ne touche jamais aux épiques d'un contributeur.
 
+## Contraintes de production — des factures réelles existent déjà
+
+Guy a déjà créé de vraies factures client dans Kesh (NAS) et les a remises sur papier à un locataire. D'où, pour toute la
+release (détail : `epic-49-types-de-lignes-facture.md`, § *Contraintes de production*) :
+
+- **la migration de la 49-1 conserve à l'identique chaque facture et chaque avoir existants** : chaque ligne existante
+  reçoit le type « ligne produit » ou « sans produit » selon son origine, règle établie à la fiche et jamais devinée — en
+  cas de doute, un type unique « chiffré » rendu comme aujourd'hui ; totaux, TVA, écritures et numéros inchangés ; triage
+  P7 au registre `POST_RESTORE_BACKFILLS` ou `EXEMPT_MIGRATIONS`, avec justification ; un import d'une sauvegarde 0.19.0
+  donne les mêmes factures ;
+- **une facture déjà émise garde son PDF** : le PDF archivé (25-6-b) reste la référence ; une facture émise avant la
+  0.20.0 se réimprime à l'identique, ou son PDF archivé est servi tel quel ; la fiche le prouve par un test de rendu
+  avant / après d'une facture validée de la 0.19.0 ;
+- **48-1, 48-2 et 48-13** s'appliquent à des factures et écritures réelles : leurs fiches citent ce cas dans leurs AC.
+
+## Gates de la release
+
+Outre les gates habituels (gate complet, E2E complet, `gate-ci`, revue du code d'intégration, CI) :
+
+- **Recette de montée avec des factures réelles simulées — obligatoire** : base peuplée par la **0.19.0** (dernière
+  image publiée) avec des factures client **validées, payées et non payées**, **un avoir**, **une facture réglée en
+  groupe** ; montée en 0.20.0 ; comparaison, facture par facture, des **totaux**, des **écritures** et du **PDF**.
+  Installation jetable seulement, jamais la base du NAS (`scripts/recette-montee.sh`).
+- **Import d'une sauvegarde 0.19.0** de cette même base : mêmes factures après import qu'après montée.
+
 ## Migration annoncée
 
 Une seule, portée par la **49-1** : une colonne de type sur `invoice_lines` et `credit_note_lines`, et des contraintes par
-type à la place des `CHECK` actuels (`quantity > 0`, description non vide, montant non négatif). **Non breaking visée** ;
+type à la place des `CHECK` actuels (`quantity > 0`, description non vide, montant non négatif). Types posés : produit, sans
+produit, commentaire, titre ; sous-total à la condition dite plus haut. **Non breaking** (colonnes `NOT NULL`, valeurs
+neutres) ;
 horodatée après `20261118000001_grouped_settlements` ; audit d'idempotence (P5), couplage positionnel (P6), triage P7 si
 elle écrit des données, schéma de test, `.keshbackup` et export de souveraineté. Le détail est au fichier de l'Epic 49.
 **Annoncée au projet GitHub** (champ de #1242) et en tête des notes de version.
@@ -104,17 +139,18 @@ copie ; aucun ne porte de migration :
 
 | Correctif | État au 2026-11-18 | Fichiers | Croise |
 |---|---|---|---|
-| PR **#1327** — mise en page des PDF de rapports (montants alignés à droite, titre accentué, en-têtes de devise) | ouverte ; CI sur la copie **#1329** | `kesh-report/src/pdf.rs`, `kesh-report/Cargo.toml`, `kesh-qrbill/src/largeurs.rs`, `kesh-qrbill/src/lib.rs`, catalogues (4 locales), `user-manual.tex`, `Cargo.lock`, `sprint-status.yaml`, `architecture.md` | **48-11** (même `pdf.rs` : se fusionne **avant** son lancement) ; 49-1 et 48-13 (`kesh-qrbill`) |
+| PR **#1327** — mise en page des PDF de rapports (montants alignés à droite, titre accentué, en-têtes de devise) | ouverte ; CI sur la copie **#1329** | `kesh-report/src/pdf.rs`, `kesh-report/Cargo.toml`, `kesh-qrbill/src/largeurs.rs`, `kesh-qrbill/src/lib.rs`, catalogues (4 locales), `user-manual.tex`, `Cargo.lock`, `sprint-status.yaml`, `architecture.md` | **48-11** (même `pdf.rs` : se fusionne **avant** son lancement) ; 49-1 et 49-3 (`kesh-qrbill`) |
 | Cours AFC des monnaies retirées | annoncé | à lire à sa PR (cours de change) | — |
 | Ligne « Résultat reporté » à zéro | annoncé | à lire à sa PR (rapports) | 48-11 si `kesh-report` |
 | Parent d'un compte modifiable | annoncé | à lire à sa PR (plan comptable) | — |
 
 ## Milestone v0.20.0
 
-Fait par l'orchestrateur le 2026-11-18, sur décision de Guy. **Y restent seize issues** : #1242, #1245, #1173, #1175,
-#1176, #1177, #975, #984, #985, #986, #1233, #1243, #1226, #1234, #1253, #1167 (contrôlé ce jour : seize ouvertes).
-**En sortent** : #1236 (état « envoyée » → 0.21.0, fonctionnalité principale envisagée), #1158 et #268 (note interne),
-#944 (QR-facture, suite), #1125 (tests figés en 2026).
+Fait par l'orchestrateur le 2026-11-18, sur décision de Guy. **Dix-neuf issues** (contrôlé ce jour : dix-neuf ouvertes) :
+#1242, #1245, #1173, #1175, #1176, #1177, #975, #984, #985, #986, #1233, #1243, #1226, #1253, #1167, et les quatre de la
+story de solde, #1263, #1262, #1261, #1255. **En sortent** : #1234 (→ « Plus tard »), #1236 (état « envoyée » → milestone
+**v0.21.0**, créé pour le vendredi 2026-12-04, fonctionnalité principale envisagée), #1158 et #268 (note interne), #944
+(QR-facture, suite), #1125 (tests figés en 2026).
 
 ## Décompte au kickoff et objectif
 
@@ -130,8 +166,9 @@ Hors les **56 issues masquées** du compte de l'agent de Beat (#1266–#1271, #1
 attendre leur rétablissement jusqu'au 2026-11-25, sinon recréation depuis le compte de Beat, et correction du décompte au
 tag par une annotation datée.
 
-La release vise **treize bugs** du milestone (#1245, #1173, #1175, #1176, #1177, #975, #984, #985, #986, #1233, #1243,
-#1226, #1234) et jusqu'à **trois** de plus par la story de solde (#1261, #1262, #1263, si retenues). Aucune des
+La release vise **quinze bugs** (`bug` ou `known-failure`), tous au milestone : douze dans les stories 48-10 à 48-13
+(#1245, #1173, #1175, #1176, #1177, #975, #984, #985, #986, #1233, #1243, #1226) et trois dans la story de solde (#1261,
+#1262, #1263). Aucune des
 quatorze P1 ouvertes (dont les onze de la TVA en report assumé) n'est dans le périmètre : celles qui restent se nomment à
 la rétrospective avec leur raison (`CLAUDE.md` § *Priorités des défauts*).
 
@@ -139,8 +176,8 @@ la rétrospective avec leur raison (`CLAUDE.md` § *Priorités des défauts*).
 
 | Fichier | Qui | Règle |
 |---|---|---|
-| `frontend/src/lib/components/invoices/InvoiceForm.svelte` | 48-13 (#1233) ; 49-1, 49-2, 49-3 | point ouvert pour Guy (arbitrage de deux épiques sur le même module) |
-| `crates/kesh-qrbill/src/pdf.rs`, `types.rs` | 48-13 (#1234) ; 49-1, 49-3 ; #1327 (`largeurs.rs`, `lib.rs`) | zones distinctes ; le second arrivé résout |
+| `frontend/src/lib/components/invoices/InvoiceForm.svelte` | 48-13 (#1233) ; 49-1, 49-2, 49-3 | **la 48-13 se fusionne d'abord** (arbitrage de Guy du 2026-11-18) ; les stories de l'Epic 49 qui touchent le fichier partent ensuite de la branche à jour |
+| `crates/kesh-qrbill/src/pdf.rs`, `types.rs` | 49-1, 49-3 ; #1327 (`largeurs.rs`, `lib.rs`) | le second arrivé résout |
 | `crates/kesh-report/src/pdf.rs` | 48-11 ; #1327 | 48-11 après #1327 |
 | `crates/kesh-db/src/repositories/supplier_invoices.rs`, `kesh-api/src/routes/supplier_invoices.rs` | 48-1 ; 48-12 (si clé d'idempotence) | même épique ; le second arrivé résout |
 | `routes/(app)/settings/+page.svelte` | 48-13 (#1243) ; v0200-menu-sous-groupes (peut-être) | blocs distincts |
@@ -158,30 +195,21 @@ la rétrospective avec leur raison (`CLAUDE.md` § *Priorités des défauts*).
 | jeu. 19 → mer. 25 | développement sur les deux voies ; chaque story close se fusionne dans sa branche d'épique et se pousse |
 | mer. 2026-11-25 | échéance des issues masquées de Beat (décision de Guy) |
 | **jeu. 2026-11-26 au soir** | **coupure** : n'entre que ce qui est clos ; sortie dans l'ordre ci-dessus |
-| **ven. 2026-11-27** | intégration (fusions, gates, recette de montée depuis l'image 0.19.0 sur base peuplée, revue du code d'intégration, PR, CI) ; accord de fusion de Guy vers midi ; tag et image ; NAS par Guy, **après sauvegarde complète** |
+| **ven. 2026-11-27** | intégration (fusions, gates, recette de montée depuis l'image 0.19.0 sur une base peuplée de factures réelles simulées, revue du code d'intégration, PR, CI) ; accord de fusion de Guy vers midi ; tag et image ; NAS par Guy, **après sauvegarde complète** |
 
-## Points ouverts pour Guy
+## Points ouverts du kickoff — réglés le 2026-11-18
 
-1. **`InvoiceForm.svelte` et `kesh-qrbill` partagés entre l'Epic 48 (48-13) et l'Epic 49** : le `CLAUDE.md` veut que deux
-   épiques sur le même module s'arbitrent avec le Project Lead. Recommandation : la 48-13 passe tôt ; l'Epic 49 la reprend
-   à l'intégration et résout dans sa branche.
-2. **Splitting préventif de la 49-1** : elle touchera vraisemblablement plus de cinq modules ; la règle commande de la
-   découper avant `bmad-create-story` (par exemple 49-1a modèle et API, 49-1b écran et PDF). Ce découpage garde vos trois
-   stories, mais fait passer l'Epic 49 à quatre clés ; à défaut, une section `Dérogation règle de splitting` à la fiche.
-   Même examen pour 48-12 et 48-13, qui réunissent chacune quatre issues.
-3. **Migration non breaking** : les lignes non chiffrées (commentaire, titre, sous-total) n'ont ni quantité ni prix. Les
-   rendre nullables (`MODIFY COLUMN`) rendrait la migration **breaking** (bump de `kesh_version_min_required` et des
-   crates à 0.20.0). Recommandation : garder les colonnes `NOT NULL` avec des valeurs neutres, et relâcher les `CHECK` par
-   type ; la fiche tranche, la revue confirme.
-4. **Sens du sous-total** (49-3) : #1242 propose « total de la section, hors total et écritures » ; restent HT ou TTC, et
-   la reprise des sous-totaux dans les avoirs.
-5. **Story de solde** : les quatre issues retenues (proposition : #1263, #1262, #1261, #1255) ne sont pas au milestone
-   v0.20.0 ; les y rattacher est votre décision.
-6. **Milestone 0.21.0** : #1236 est donnée « → 0.21.0 » mais porte aujourd'hui le milestone « Plus tard » ; il n'existe pas
-   encore de milestone v0.21.0.
-7. **Charge de la voie B** : sept stories, dont deux réunissant quatre issues, plus le menu, en huit jours ouvrés, en
-   parallèle d'une épique à migration : la coupure tranchera, mais l'ordre de sortie (48-14, 48-2, …) suppose que les
-   fiches 48-1 et 48-10, déjà écrites, se revalident vite contre la v0.19.0.
-8. **#1234** (`billing_information` jamais imprimé) est **latent** tant que Kesh ne renseigne pas ce champ : le corriger
-   dans la 48-13 imprime un champ toujours vide. Il reste dans la story, comme décidé ; la fiche dira s'il se limite à un
-   rendu testé sur données d'essai.
+Les huit points ouverts du kickoff sont réglés ; il n'en reste aucun.
+
+1. **`InvoiceForm.svelte` partagé entre la 48-13 et l'Epic 49** — Guy : la 48-13 se fusionne d'abord ; les stories de
+   l'Epic 49 qui touchent ce fichier partent ensuite de la branche à jour. `kesh-qrbill` n'est plus partagé (#1234 retirée).
+2. **Splitting préventif** — orchestrateur : la règle s'applique à la fiche de la 49-1 (découpage probable en 49-1a et
+   49-1b) et, si besoin, à celles de la 48-12 et de la 48-13 ; à défaut, une section `Dérogation règle de splitting`.
+3. **Migration** — orchestrateur : non breaking, colonnes `NOT NULL`, valeurs neutres pour les lignes non chiffrées,
+   `CHECK` assouplis par type, `credit_note_lines` comprise ; `kesh_version_min_required` reste à 0.17.6.
+4. **Sous-totaux** — Guy : repoussés à une release ultérieure (justesse HT/TTC et par taux, Beat étant assujetti) ; la
+   49-3 devient `49-3-titres-de-section` ; issue à ouvrir, « sous-totaux de section », milestone « Plus tard ».
+5. **Issues de la story de solde** — Guy : #1263, #1262, #1261, #1255 sont au milestone v0.20.0.
+6. **Milestone v0.21.0** — créé (vendredi 2026-12-04) ; #1236 y est.
+7. **Charge de la voie B** — surveillée par l'orchestrateur ; l'ordre de sortie s'applique à la coupure.
+8. **#1234** — Guy : retirée de la 48-13 et de la 0.20.0, renvoyée à « Plus tard ».

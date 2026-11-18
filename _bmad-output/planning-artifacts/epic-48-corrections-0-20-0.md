@@ -4,7 +4,14 @@
 `chore/kickoff-0.20.0` (partie de `chore/apres-release-0.19.0`, `00eb6e3c1`). Code lu à `main` = tag **v0.19.0**
 (`773df80da`). Release **0.20.0** : publication le **vendredi 2026-11-27**, coupure le **jeudi 2026-11-26 au soir**
 (plan : `release-0.20.0.md`). Décisions de Guy du 2026-11-18 (page « kickoff-0.20.0 » et conversation), kesh:D11, kesh:D13,
-kesh:D14.*
+kesh:D14. Révisé le même jour sur les réponses de Guy aux points ouverts du kickoff (#1234 retirée, ordre de fusion de
+la 48-13, issues de la solde au milestone) et les règlements de l'orchestrateur ; puis sur le complément de Guy du même
+jour : des factures réelles existent déjà en production.*
+
+> **Factures réelles.** Guy a déjà émis de vraies factures client depuis Kesh (production, remises sur papier à un
+> locataire). Les gestes de la **48-1**, de la **48-2** (réimputation) et de la **48-13** s'appliquent à des factures et
+> écritures réelles : **leurs fiches citent ce cas dans leurs critères d'acceptation** (une facture validée, payée ou non,
+> garde ses montants, sa TVA, son numéro et son PDF archivé ; seul ce que le geste vise change).
 
 ## Objet
 
@@ -34,8 +41,8 @@ vers une épique ultérieure, dans l'**ordre de sortie** ci-dessous.
 | 48-10-montants-ambigus-reglages-filtres | « 1.250 » refusé au prix d'article, aux frais de rappel, au montant minimal, aux filtres des écritures | #1173, #1175, #1176, #1177 | P3, P4 | non | fiche `36-18b-montants-ambigus-reglages-filtres.md` (`backlog`, à valider) |
 | 48-11-arrondi-au-centime | Les montants à deux décimales sont arrondis, non tronqués | #1245 | **P2** | non | à écrire |
 | 48-12-reponses-perdues-fournisseurs | Plus de doublon ni d'écrasement après une réponse perdue ou un 409 | #975, #984, #985, #986 | **P2** | non | à écrire |
-| 48-13-avant-la-vraie-facture | Le chemin de la première facture client QR | #1233, #1243, #1226, #1234 | P2 à P4 | non | à écrire |
-| 48-14-solde-dette-epic | Story de solde : dette des revues de la 0.19.0 (règlement groupé) | parmi #1255 à #1265, **au plus quatre** | P3, P4 | non | à écrire |
+| 48-13-avant-la-vraie-facture | Le chemin de la première facture client QR | #1233, #1243, #1226 | P2, P3 | non | à écrire |
+| 48-14-solde-dette-epic | Story de solde : dette des revues de la 0.19.0 (règlement groupé) | #1263, #1262, #1261, #1255 (**plafond : quatre**) | P3, P4 | non | à écrire |
 
 Les clés 48-3 à 48-9 du réservoir restent `backlog` (48-5 garde `ready-for-dev`), **hors 0.20.0, pour une release
 ultérieure**.
@@ -101,23 +108,28 @@ Le motif attendu : relire et montrer ce qui a été écrit avant de proposer de 
 pour la société. Pour #975, la fiche choisit entre relecture et clé d'idempotence côté serveur (celle-ci toucherait
 `kesh-api/src/routes/supplier_invoices.rs` et `kesh-db/src/repositories/supplier_invoices.rs`).
 
-### 48-13 — Avant la vraie facture (#1233, #1243, #1226, #1234)
+### 48-13 — Avant la vraie facture (#1233, #1243, #1226)
 
 Les défauts restés sur le chemin d'une première facture client QR, que Guy émettra avant la fin novembre :
 - #1233 (P3) : `InvoiceForm.svelte:376-386` — la réponse tardive de `getContact` écrase un client choisi entre-temps ;
 - #1243 (P3) : `settings/+page.svelte` (adresse de la société, ~l. 820-840) — `maxlength` tronque en silence ; refus
   explicite, comme le nom depuis #1097 ;
 - #1226 (P2) : `kesh-api/src/routes/onboarding.rs:535` — l'assistant ne contrôle le nom de la société que non vide ;
-  mêmes contrôles que la route de modification du nom (70 caractères, jeu SIX) ;
-- #1234 (P4) : `billing_information` de la QR-facture jamais imprimé sur la section de paiement (`kesh-qrbill`), latent
-  tant que l'API le fixe à `None`.
+  mêmes contrôles que la route de modification du nom (70 caractères, jeu SIX).
+
+**#1234** (`billing_information` jamais imprimé) est **retirée de la 48-13 et de la 0.20.0** (décision de Guy du
+2026-11-18) et renvoyée au milestone « Plus tard » : elle reste latente tant que Kesh ne renseigne pas ce champ. La 48-13
+ne touche donc plus `kesh-qrbill`.
+
+**Ordre de fusion** (arbitrage de Guy du 2026-11-18) : la 48-13 **se fusionne avant** les stories de l'Epic 49 qui
+touchent `InvoiceForm.svelte` ; elle est petite et sur le chemin de la première facture de fin novembre.
 
 ### 48-14 — Story de solde (plafond : quatre issues)
 
 Story de solde de l'épique (`CLAUDE.md`, § *Priorités des défauts*), décidée au kickoff : elle reprend la dette des revues
 de la 0.19.0 dont les stories de solde 42-4, 43-4 et 44-2 sont devenues sans objet (kesh:D11) — le règlement groupé,
-#1255 à #1265. **Plafond : quatre issues**, fixé au kickoff. Proposition de l'orchestrateur, à arrêter à la fiche (les
-bugs d'abord, kesh:D14) :
+#1255 à #1265. **Plafond : quatre issues**, fixé au kickoff. Les quatre retenues (les bugs d'abord, kesh:D14) sont
+**au milestone v0.20.0** depuis le 2026-11-18 (décision de Guy) :
 
 | Issue | Label | Objet | Fichiers |
 |---|---|---|---|
@@ -126,8 +138,7 @@ bugs d'abord, kesh:D14) :
 | #1261 | known-failure, P3 | [KF-063] `disque_sature_pendant_l_ecriture` variable sous `-j1` | `crates/kesh-api/tests/admin_auto_backup_e2e.rs` |
 | #1255 | technical-debt, P3 | dé-rapprochement commun aux bras client et fournisseur | `kesh-db/src/repositories/grouped_settlements.rs` et voisins |
 
-Les autres (#1256 à #1260, #1264, #1265 ; P4) restent ouvertes. Aucune de ces issues n'est au milestone v0.20.0 : les
-retenues y entrent par décision du Project Lead (point ouvert du plan).
+Les autres (#1256 à #1260, #1264, #1265 ; P4) restent ouvertes, hors de la release.
 
 ## Ordre de lancement et ordre de sortie
 
@@ -148,8 +159,9 @@ ultérieure (kesh:D11) ; l'Epic 48 se clôt avec la release.
   `routes/supplier_invoices.rs` ; 48-12 : `new/`, `[id]/edit/`, peut-être les mêmes route et repository) : fichiers
   distincts côté écran, possiblement communs côté serveur ; le second arrivé résout.
 - **48-10 et 48-2** touchent l'espace `journal-entries` sur deux pages distinctes (liste / détail) : pas de conflit attendu.
-- **48-13 et l'Epic 49** partagent `frontend/src/lib/components/invoices/InvoiceForm.svelte` (#1233 / lignes de la
-  facture) et `crates/kesh-qrbill` (#1234 / rendu des lignes) : voir *Fichiers communs*.
+- **48-13 avant l'Epic 49** : elles partagent `frontend/src/lib/components/invoices/InvoiceForm.svelte` (#1233 / lignes
+  de la facture) ; la 48-13 se fusionne d'abord, les stories de l'Epic 49 partent ensuite de la branche à jour (arbitrage
+  de Guy du 2026-11-18).
 - **48-14** est indépendante (réconciliation).
 
 ## Fichiers et modules touchés (déclarés au kickoff)
@@ -163,24 +175,24 @@ Lu au code à `773df80da`. « Probable » : la fiche confirme.
 | 48-10 | — | `features/products/product-helpers.ts`, `routes/(app)/products/`, `routes/(app)/settings/dunning/+page.svelte`, `settings/invoicing/+page.svelte`, `routes/(app)/journal-entries/+page.svelte` | `kesh-i18n`, manuels, `montants-ambigus.spec.ts`, `i18n-keys.test.ts`, `dunning-page.test.ts` (neuf) |
 | 48-11 | `kesh-core/src/types/money.rs` (fonction commune, probable), `kesh-report/src/pdf.rs`, `kesh-report/src/csv.rs`, `kesh-api/src/exports/csv_tables.rs`, `kesh-api/src/routes/bank_statements_manual.rs` | — | tests par site, garde ; manuel si un format visible change |
 | 48-12 | `kesh-api/src/routes/supplier_invoices.rs` et `kesh-db/src/repositories/supplier_invoices.rs` (si clé d'idempotence), `imported_supplier_invoices` (lecture du document) | `routes/(app)/supplier-invoices/new/`, `supplier-invoices/[id]/edit/`, `routes/(app)/bank-accounts/+page.svelte`, `features/supplier-invoices/`, `features/bank-accounts/` | `kesh-i18n`, manuel utilisateur, Vitest et E2E des écrans |
-| 48-13 | `kesh-api/src/routes/onboarding.rs` (et le contrôle partagé du nom de `companies.rs`) ; `kesh-qrbill/src/pdf.rs` (`billing_information`) | `lib/components/invoices/InvoiceForm.svelte`, `routes/(app)/settings/+page.svelte` | `kesh-i18n`, manuels |
+| 48-13 | `kesh-api/src/routes/onboarding.rs` (et le contrôle partagé du nom de `companies.rs`) | `lib/components/invoices/InvoiceForm.svelte`, `routes/(app)/settings/+page.svelte` | `kesh-i18n`, manuels |
 | 48-14 | `kesh-db/src/repositories/grouped_settlements.rs` (#1255) ; `kesh-api/tests/admin_auto_backup_e2e.rs` (#1261) | `features/reconciliation/GroupSettlementModal.svelte` (#1262, #1263) | `kesh-i18n` si un libellé change |
 
 Modules de l'épique : `kesh-core` (money), `kesh-db` (repositories), `kesh-api` (routes, exports, tests), `kesh-report`
-(PDF, CSV), `kesh-qrbill` (section de paiement), `kesh-i18n` (catalogues), frontend (`features/projects`,
+(PDF, CSV), `kesh-i18n` (catalogues), frontend (`features/projects`,
 `features/products`, `features/reconciliation`, `features/supplier-invoices`, `features/bank-accounts`,
 `components/invoices`, routes `settings`, `journal-entries`, `supplier-invoices`, `bank-accounts`, `products`),
 manuels FR/DE/IT/EN (`.tex` seulement).
 
-**Splitting préventif à juger à chaque fiche** : 48-12 et 48-13 réunissent chacune quatre issues sur des écrans distincts ;
-si l'une dépasse cinq modules, elle se découpe (a/b) ou écrit sa dérogation.
+**Splitting préventif** (règlement de l'orchestrateur du 2026-11-18) : la règle s'applique à chaque fiche ; la 48-12
+(quatre issues) et la 48-13 (trois) se découpent (a/b) avant `bmad-create-story` si l'une dépasse cinq modules, ou écrivent
+leur dérogation.
 
 ## Fichiers communs (avec l'Epic 49, v0200-menu-sous-groupes et les PR de Beat)
 
 | Fichier | Qui d'autre | Règle |
 |---|---|---|
-| `lib/components/invoices/InvoiceForm.svelte` | 48-13 (#1233) ; Epic 49 (49-1, 49-2, 49-3 : éditeur de lignes) | **contact à arbitrer avec le Project Lead** (point ouvert du plan) ; recommandation : la 48-13 passe tôt, et le second arrivé à l'intégration résout dans sa branche (une branche d'épique n'est pas une base) |
-| `crates/kesh-qrbill/src/pdf.rs`, `types.rs` | 48-13 (#1234, section de paiement) ; 49-1, 49-3 (lignes de la facture) ; PR #1327 de Beat (`largeurs.rs`, `lib.rs`) | zones distinctes du même fichier ; le second arrivé résout |
+| `lib/components/invoices/InvoiceForm.svelte` | 48-13 (#1233) ; Epic 49 (49-1, 49-2, 49-3 : éditeur de lignes) | **la 48-13 se fusionne d'abord** (arbitrage de Guy du 2026-11-18) ; les stories de l'Epic 49 qui touchent le fichier partent ensuite de la branche à jour |
 | `crates/kesh-report/src/pdf.rs` | 48-11 ; PR #1327 | 48-11 part de `main` après #1327 |
 | `routes/(app)/settings/+page.svelte` | 48-13 (#1243) ; v0200-menu-sous-groupes (si le menu touche les pages de réglages) | blocs distincts |
 | catalogues i18n (4 locales), `sprint-status.yaml` | toutes | chaque épique dans son bloc ; conflit résolu en gardant les deux côtés |
@@ -192,6 +204,6 @@ si l'une dépasse cinq modules, elle se découpe (a/b) ou écrit sa dérogation.
 
 Recomptés le 2026-11-18 depuis GitHub (commandes du `CLAUDE.md`) : **496 issues ouvertes**, **247 bugs** (`bug` ou
 `known-failure`), **14 P1** ouvertes (dont 11 portant `bug` ou `known-failure`) — identiques au tag v0.19.0 ; hors les 56
-issues masquées du compte de l'agent de Beat. L'Epic 48 vise **seize** issues portant `bug` ou `known-failure` : treize au
-milestone v0.20.0 (#1245, #1173, #1175, #1176, #1177, #975, #984, #985, #986, #1233, #1243, #1226, #1234) et jusqu'à trois
-dans la story de solde (#1261, #1262, #1263, si retenues), plus #1167 (CR).
+issues masquées du compte de l'agent de Beat. L'Epic 48 vise **quinze** issues portant `bug` ou `known-failure`, toutes au
+milestone v0.20.0 : douze dans les stories 48-10 à 48-13 (#1245, #1173, #1175, #1176, #1177, #975, #984, #985, #986, #1233,
+#1243, #1226) et trois dans la story de solde (#1261, #1262, #1263) ; plus #1255 (`technical-debt`) et #1167 (CR).

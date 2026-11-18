@@ -3,7 +3,9 @@
 *Kickoff du 2026-11-18, tenu en autonomie par l'orchestrateur (Opus 5.5), worktree `kesh-k0200`, branche
 `chore/kickoff-0.20.0`. Code lu à `main` = tag **v0.19.0** (`773df80da`). Release **0.20.0** : publication le **vendredi
 2026-11-27**, coupure le **jeudi 2026-11-26 au soir** (plan : `release-0.20.0.md`). Décisions de Guy du 2026-11-18 ;
-demande et réponses de Guy du 2026-11-17 au corps de #1242.*
+demande et réponses de Guy du 2026-11-17 au corps de #1242. Révisé le même jour sur les réponses de Guy aux points
+ouverts du kickoff : sous-totaux repoussés, ordre de fusion avec la 48-13, règlements de l'orchestrateur ; puis sur le
+complément de Guy du même jour (factures réelles déjà émises, § *Contraintes de production*).*
 
 ## Objet
 
@@ -16,11 +18,14 @@ qu'une suite de lignes chiffrées :
 - **ligne sans produit** : un texte, une quantité, un prix unitaire, comme aujourd'hui (taux de TVA et compte de produit
   pris des réglages par défaut, modifiables) ;
 - **ligne de commentaire** : du texte seul, sans montant, **hors du total et des écritures**, plaçable n'importe où ;
-- **titre de section** et **sous-total** : acceptés par Guy (« bonne idée ») ;
+- **titre de section** : accepté par Guy (« bonne idée »), sans montant ;
+- **sous-total** : accepté sur le principe, mais **repoussé à une release ultérieure** (décision de Guy du 2026-11-18) :
+  Beat, contributeur, tient une comptabilité **assujettie à la TVA** ; un sous-total doit être juste en HT et TTC et par
+  taux, ou attendre. Issue à ouvrir par l'orchestrateur, « sous-totaux de section », milestone « Plus tard » ;
 - **réordonnancement** des lignes à la main **avant la validation** (brouillon).
 
-Les **avoirs** reprennent les lignes de commentaire (et les titres) de la facture d'origine. Le **PDF** rend commentaires,
-titres et sous-totaux (pleine largeur, sans colonnes de quantité ni de prix pour un commentaire).
+Les **avoirs** reprennent les lignes de commentaire (et les titres) de la facture d'origine. Le **PDF** rend commentaires
+et titres (pleine largeur, sans colonnes de quantité ni de prix).
 
 C'est une **épique de fonctionnalité** : elle n'est pas tenue à la borne de six stories, et en compte trois.
 
@@ -53,25 +58,51 @@ C'est une **épique de fonctionnalité** : elle n'est pas tenue à la borne de s
   `invoice-helpers.ts`, `unit-price.ts` ; pages `routes/(app)/invoices/new`, `[id]` ; avoirs :
   `features/credit-notes/`, `routes/(app)/credit-notes/`.
 
+## Contraintes de production — des factures réelles existent déjà
+
+**Guy a déjà créé de vraies factures client dans Kesh** (production, NAS) et les a remises sur papier à un locataire
+(complément de Guy du 2026-11-18). Ces contraintes priment sur tout le reste de l'épique :
+
+1. **La migration conserve à l'identique chaque facture et chaque avoir existants.** Toute ligne existante reçoit le type
+   « ligne produit » ou « sans produit » selon qu'elle vient du catalogue ou non — **règle à établir à la fiche, jamais
+   devinée à tort** : en cas de doute, un **type unique « chiffré »** qui se rend exactement comme aujourd'hui. Lu au
+   code : `invoice_lines` et `credit_note_lines` **ne gardent aucun lien** vers le catalogue (pas de colonne d'article ;
+   la ligne recopie les valeurs) ; l'origine d'une ligne existante n'est donc vraisemblablement pas établissable, et le
+   type « chiffré » le cas probable — la fiche le prouve ou le réfute. Totaux, TVA, écritures et numéros **inchangés**.
+2. **Triage P7** : si la migration écrit des données (rétro-remplissage du type), elle se trie au registre
+   `POST_RESTORE_BACKFILLS` ou à `EXEMPT_MIGRATIONS` (`crates/kesh-db/src/post_restore.rs`), avec sa justification.
+   **Un import d'une sauvegarde 0.19.0 doit donner les mêmes factures** que la montée en place.
+3. **Une facture déjà émise garde son PDF.** Le PDF archivé (story 25-6-b, `kesh-api/src/routes/issued_invoice_pdf.rs`,
+   gelé au premier téléchargement) reste la référence. Si le rendu des lignes change, une facture émise avant la 0.20.0
+   doit se **réimprimer à l'identique**, ou son PDF archivé être servi tel quel. Deux chemins à couvrir : une facture
+   validée dont le PDF n'a pas encore été gelé (il le sera avec le code 0.20.0), et le regel explicite
+   (`refreeze_invoice_pdf`). **La fiche le prouve par un test** : rendu avant / après d'une facture validée de la 0.19.0.
+4. **Recette de montée obligatoire, avec des factures réelles simulées** (gate de la release, plan § *Gates*) : base
+   peuplée par la 0.19.0 avec des factures client validées, payées et non payées, un avoir, une facture réglée en groupe ;
+   après montée, comparaison des totaux, des écritures et du PDF de chacune. Jamais sur la base du NAS.
+
 ## La migration — la seule de la 0.20.0
 
-Portée par la **49-1**, elle pose **d'emblée les cinq types** (produit, sans produit, commentaire, titre, sous-total) et
-leurs contraintes, pour que 49-3 n'ait pas à migrer (décision de Guy du 2026-11-18) — et que la 49-3 puisse sortir à la
-coupure sans emporter de migration.
+Portée par la **49-1**, elle pose **d'emblée les quatre types de la release** — produit, sans produit, commentaire,
+**titre** — et leurs contraintes, pour que la 49-3 n'ait pas à migrer et puisse sortir à la coupure sans emporter de
+migration (décisions de Guy du 2026-11-18). **Le type sous-total n'y entre que si la fiche de la 49-1 établit qu'il ne
+préjuge pas de son sens TVA** (HT, TTC, ventilation par taux) ; sinon il viendra avec sa propre migration, dans la
+release des sous-totaux.
 
-Exigences, à arrêter à la fiche :
-- une colonne de type sur `invoice_lines` **et** `credit_note_lines`, avec une valeur par défaut qui classe toute ligne
-  existante comme ligne chiffrée — sans `UPDATE` de rétro-remplissage si possible (DDL seul : pas de triage P7 à faire
-  valoir ; s'il faut écrire des données, triage au registre `POST_RESTORE_BACKFILLS` ou à `EXEMPT_MIGRATIONS`, P7) ;
+Exigences (le choix non breaking est **arrêté par l'orchestrateur le 2026-11-18**, sur délégation de Guy ; le reste se
+précise à la fiche) :
+- une colonne de type sur `invoice_lines` **et** `credit_note_lines` ; toute ligne existante reçoit un type qui la rend
+  comme aujourd'hui (§ *Contraintes de production*, point 1) ; s'il faut écrire des données, triage P7 au registre
+  `POST_RESTORE_BACKFILLS` ou à `EXEMPT_MIGRATIONS`, avec justification (point 2) ;
 - des **contraintes par type** remplaçant `chk_*_quantity_positive`, `chk_*_description_not_empty`, et les contrôles de
-  montant : une ligne chiffrée garde exactement les règles d'aujourd'hui ; un commentaire porte un texte et aucun montant ;
-  un sous-total ne porte pas de texte obligatoire ; etc. ;
-- **non breaking visée** (`CLAUDE.md` § *Migration breaking policy*) : pas de `DROP COLUMN`, pas de `MODIFY COLUMN` vers un
-  type incompatible. Si la fiche rend `quantity` ou `unit_price` nullables (`MODIFY COLUMN … NULL`), une ligne de
-  commentaire écrite par la 0.20.0 ne se lirait plus par un binaire 0.19.0 : c'est un **cas breaking** (P1, P3), qui
-  exige le bump de `kesh_version_min_required` et des crates, ou une justification `breaking-skip-bump` confirmée en
-  revue. **Recommandation de l'orchestrateur** : garder les colonnes `NOT NULL` et des valeurs neutres (0) pour les
-  lignes non chiffrées, en relâchant les `CHECK` par type — à juger à la fiche (point ouvert du plan) ;
+  montant : une ligne chiffrée garde exactement les règles d'aujourd'hui ; un commentaire et un titre portent un texte et
+  des valeurs neutres (quantité, prix, montant à 0) ;
+- **non breaking** (`CLAUDE.md` § *Migration breaking policy*) — **décidé** : les colonnes `quantity`, `unit_price`,
+  `vat_rate`, `line_total` restent **`NOT NULL`** ; les lignes non chiffrées y portent des **valeurs neutres** ; les
+  `CHECK` sont **assouplis par type** ; **`credit_note_lines` comprise**. Pas de `DROP COLUMN`, pas de `MODIFY COLUMN`.
+  Motif : rendre ces colonnes nullables ferait qu'une ligne écrite par la 0.20.0 ne se lirait plus par un binaire
+  0.19.0 — cas breaking (P1, P3), qui exigerait le bump de `kesh_version_min_required` et des crates ;
+  `kesh_version_min_required` reste donc à 0.17.6 ;
 - **audit d'idempotence** (P5) : une ligne au tableau de `docs/migrations-idempotence-audit.md`, totaux recomptés ;
 - **couplage positionnel** (P6) : `grep -rn "migrations.len()\|apply_migrations_up_to" crates/` et chaque site inspecté ;
 - **schéma de test** : `crates/kesh-db/test-schema/0001_schema_squash.sql` mis à jour ;
@@ -87,9 +118,12 @@ Exigences, à arrêter à la fiche :
 
 | Clé | Objet | Migration | Dépend de |
 |---|---|---|---|
-| 49-1-types-de-lignes | Types produit, sans produit, commentaire ; la migration des cinq types ; rendu PDF ; avoirs qui reprennent commentaires et titres | **oui** | — |
+| 49-1-types-de-lignes | Types produit, sans produit, commentaire ; la migration des types (titre compris) ; rendu PDF ; avoirs qui reprennent commentaires et titres | **oui** | — |
 | 49-2-reordonnancement-lignes | Réordonner les lignes d'un brouillon : ↑ / ↓, et glisser-déposer si la fiche le juge sûr | non | 49-1 |
-| 49-3-titres-et-sous-totaux | Titre de section et sous-total : saisie, calcul, rendu PDF | non (posée par 49-1) | 49-1 |
+| 49-3-titres-de-section | Titre de section, sans montant : saisie, rendu PDF, reprise dans les avoirs | non (posée par 49-1) | 49-1 |
+
+La clé `49-3-titres-et-sous-totaux` du kickoff est renommée `49-3-titres-de-section` le 2026-11-18, les sous-totaux étant
+repoussés (décision de Guy).
 
 ### 49-1 — Types de lignes
 
@@ -97,14 +131,15 @@ Le choix du type à l'ajout d'une ligne ; la ligne produit recopie l'article san
 code) ; la ligne sans produit prend TVA et compte des réglages ; la ligne de commentaire est un texte seul, hors total et
 écritures. Le serveur valide chaque type (requête de création et de mise à jour, API externe documentée dans
 `docs/api-external.md`) ; la validation de la facture ignore les lignes non chiffrées ; un avoir recopie commentaires et
-titres à leur position. Le PDF rend un commentaire sur toute la largeur. Les titres et sous-totaux, déjà admis par le
-schéma, restent **refusés par l'API** jusqu'à la 49-3 (pour qu'une 49-3 sortie à la coupure ne laisse pas un type
-accepté sans écran ni rendu).
+titres à leur position. Le PDF rend un commentaire sur toute la largeur. Le type titre, déjà admis par le schéma, reste
+**refusé par l'API** jusqu'à la 49-3 (pour qu'une 49-3 sortie à la coupure ne laisse pas un type accepté sans écran ni
+rendu) ; de même le type sous-total, s'il entre au schéma.
 
-**Splitting préventif** : la 49-1 touchera vraisemblablement plus de cinq modules (`kesh-db`, `kesh-core`, `kesh-api`,
-`kesh-qrbill`, `kesh-report`, frontend `invoices` et `credit-notes`, `kesh-i18n`). La fiche juge le découpage — par
-exemple **49-1a** (migration, modèle, API, validation, avoirs) et **49-1b** (écran et PDF) — ou écrit une section
-`Dérogation règle de splitting` (point ouvert du plan).
+**Splitting préventif** (règlement de l'orchestrateur du 2026-11-18) : la 49-1 touchera vraisemblablement plus de cinq
+modules (`kesh-db`, `kesh-core`, `kesh-api`, `kesh-qrbill`, `kesh-report`, frontend `invoices` et `credit-notes`,
+`kesh-i18n`) ; **la règle s'applique à la fiche** : découpage avant `bmad-create-story` — par exemple **49-1a**
+(migration, modèle, API, validation, avoirs) et **49-1b** (écran et PDF) — ou section `Dérogation règle de splitting`
+si le découpage crée des fusions intermédiaires intestables.
 
 ### 49-2 — Réordonnancement
 
@@ -113,20 +148,24 @@ En brouillon seulement : boutons ↑ / ↓ sur chaque ligne (accessibles au clav
 facture validée ne se réordonne pas. Frontend pour l'essentiel ; E2E du parcours « créer toutes les lignes, puis
 réordonner ».
 
-### 49-3 — Titres de section et sous-totaux
+### 49-3 — Titres de section
 
-Sens du sous-total **à arrêter à la fiche** ; proposition de #1242 : **le total de la section**, depuis le titre ou le
-sous-total précédent, **hors du total de la facture et des écritures**. Questions que la fiche tranche : montant HT ou
-TTC ; sous-total calculé au rendu (aucun montant stocké, recommandé) ou figé ; sous-total sans titre qui le précède ;
-reprise dans les avoirs (titres oui, #1242 ; sous-totaux à décider). Rendu PDF des deux types.
+Un titre de section est une ligne de texte **sans montant**, hors du total et des écritures, rendue en évidence sur
+toute la largeur du PDF ; il se place, se déplace (49-2) et se reprend dans un avoir comme un commentaire. L'API accepte le
+type titre à partir de cette story.
+
+**Sous-totaux : hors de la 0.20.0** (décision de Guy du 2026-11-18). Beat tient une comptabilité assujettie à la TVA : un
+sous-total doit être juste en HT et TTC et par taux, ou attendre. Ils feront l'objet d'une release ultérieure — issue à
+ouvrir par l'orchestrateur, « sous-totaux de section », milestone « Plus tard » ; le sens proposé par #1242 (total de la
+section, hors total et écritures) y sera repris.
 
 ## Dépendances entre stories et avec l'Epic 48
 
 - **49-2 et 49-3 partent de la 49-1** (même éditeur de lignes, même type de ligne) ; elles peuvent avancer en parallèle
   l'une de l'autre une fois la 49-1 fusionnée dans la branche d'épique, en résolvant `InvoiceForm.svelte`.
-- **Avec la 48-13** : `InvoiceForm.svelte` (#1233, chargement du client) et `kesh-qrbill/src/pdf.rs` (#1234, section de
-  paiement ; 49-1 et 49-3 : tableau des lignes). Zones distinctes ; le second arrivé résout. Arbitrage du Project Lead
-  demandé (point ouvert du plan).
+- **Avec la 48-13** : `InvoiceForm.svelte` (#1233, chargement du client). **Arbitrage de Guy du 2026-11-18 : la 48-13 se
+  fusionne d'abord** (petite, sur le chemin de sa première facture de fin novembre) ; les stories de l'Epic 49 qui touchent
+  ce fichier partent ensuite de la branche à jour.
 - **Avec la PR #1327 de Beat** : elle touche `kesh-qrbill/src/largeurs.rs` et `lib.rs` (et les catalogues) ; la 49-1 en
   tient compte si elle est fusionnée avant.
 
@@ -136,23 +175,31 @@ reprise dans les avoirs (titres oui, #1242 ; sous-totaux à décider). Rendu PDF
 |---|---|---|---|
 | 49-1 | `kesh-db/migrations/` (une migration), `test-schema/0001_schema_squash.sql`, `post_restore.rs` (si backfill), `backup.rs` ; `kesh-db/src/entities/invoice.rs`, `credit_note.rs` ; `kesh-db/src/repositories/invoices.rs`, `credit_notes.rs`, et les lecteurs de `invoice_lines` inventoriés ci-dessus ; `kesh-core/src/accounting/vat.rs` ; `kesh-report/src/vat_report.rs` ; `kesh-api/src/routes/invoices.rs`, `credit_notes.rs`, `invoice_pdf_service.rs`, `errors.rs`, `exports/` ; `kesh-qrbill/src/types.rs`, `pdf.rs` ; `kesh-seed` (données de démonstration, pièges) | `components/invoices/InvoiceForm.svelte`, `ProductPicker.svelte` ; `features/invoices/` (types, helpers) ; `features/credit-notes/` ; `routes/(app)/invoices/`, `routes/(app)/credit-notes/` | `kesh-i18n` (4 locales), `docs/migrations-idempotence-audit.md`, `docs/api-external.md`, manuels utilisateur (4 langues) et d'administration (sauvegarde avant mise à jour), tests d'intégration `kesh-db`/`kesh-api`, Vitest, E2E |
 | 49-2 | probablement aucun (à confirmer : ordre préservé par `update`) | `components/invoices/InvoiceForm.svelte`, `features/invoices/` | i18n, manuel utilisateur, Vitest, E2E |
-| 49-3 | `kesh-db/src/repositories/invoices.rs`, `credit_notes.rs` (acceptation des deux types) ; `kesh-api/src/routes/invoices.rs`, `invoice_pdf_service.rs` ; `kesh-qrbill/src/pdf.rs`, `types.rs` ; calcul du sous-total (`kesh-core`, probable) | `components/invoices/InvoiceForm.svelte`, `features/invoices/` | i18n, `docs/api-external.md`, manuel utilisateur, tests |
+| 49-3 | `kesh-db/src/repositories/invoices.rs`, `credit_notes.rs` (acceptation du type titre) ; `kesh-api/src/routes/invoices.rs`, `invoice_pdf_service.rs` ; `kesh-qrbill/src/pdf.rs`, `types.rs` | `components/invoices/InvoiceForm.svelte`, `features/invoices/` | i18n, `docs/api-external.md`, manuel utilisateur, tests |
 
-Modules de l'épique : `kesh-db` (migration, entités, repositories, sauvegarde), `kesh-core` (TVA, calcul du sous-total),
-`kesh-api` (routes des factures et avoirs, PDF, exports), `kesh-qrbill` (PDF de la facture), `kesh-report` (rapport TVA),
-`kesh-seed`, `kesh-i18n`, frontend (`components/invoices`, `features/invoices`, `features/credit-notes`, routes
-`invoices` et `credit-notes`), manuels FR/DE/IT/EN (`.tex` seulement), `docs/api-external.md`,
-`docs/migrations-idempotence-audit.md`.
+Modules de l'épique : `kesh-db` (migration, entités, repositories, sauvegarde), `kesh-core` (TVA), `kesh-api` (routes des
+factures et avoirs, PDF, exports), `kesh-qrbill` (PDF de la facture), `kesh-report` (rapport TVA), `kesh-seed`,
+`kesh-i18n`, frontend (`components/invoices`, `features/invoices`, `features/credit-notes`, routes `invoices` et
+`credit-notes`), manuels FR/DE/IT/EN (`.tex` seulement), `docs/api-external.md`, `docs/migrations-idempotence-audit.md`.
+
+## Fichiers communs (avec l'Epic 48 et les PR de Beat)
+
+| Fichier | Qui d'autre | Règle |
+|---|---|---|
+| `lib/components/invoices/InvoiceForm.svelte` | 48-13 (#1233) | **la 48-13 se fusionne d'abord** (arbitrage de Guy du 2026-11-18) ; 49-1, 49-2, 49-3 partent ensuite de la branche à jour |
+| `crates/kesh-qrbill/src/pdf.rs`, `types.rs` | PR #1327 de Beat (`largeurs.rs`, `lib.rs`) | le second arrivé résout |
+| catalogues i18n (4 locales), `sprint-status.yaml`, `sitesTotal`, totaux de l'audit des migrations, schéma de test | toutes | blocs par épique ; compteurs recomptés après fusion |
+| manuels `.tex` | toutes ; le menu (v0200-menu-sous-groupes) fusionne en dernier | PDF jamais commités |
 
 ## Ordre de sortie à la coupure
 
 La date ne bouge pas (kesh:D11). Si le temps manque : la **49-3** sort la première (la migration, déjà posée par la 49-1,
-reste ; l'API continue de refuser titres et sous-totaux), puis la **49-2**. La **49-1 porte la migration** : si elle
-n'est pas close à la coupure, elle sort **avec** sa migration (« une story sortie emporte sa migration ») et la 0.20.0
-n'en porte aucune — à dire en tête des notes.
+reste ; l'API continue de refuser le type titre), puis la **49-2**. La **49-1 porte la migration** : si elle n'est pas
+close à la coupure, elle sort **avec** sa migration (« une story sortie emporte sa migration ») et la 0.20.0 n'en porte
+aucune — à dire en tête des notes.
 
 ## Décomptes au kickoff
 
 Au 2026-11-18 : 496 issues ouvertes, 247 bugs, 14 P1 (plan de la release). L'Epic 49 porte **#1242** (`enhancement`,
-P2), qui se ferme avec la dernière story livrée de l'épique — ou reste ouverte, avec ce qui manque écrit au corps, si la
-49-2 ou la 49-3 sort.
+P2). Les sous-totaux en sortent : #1242 ne se ferme donc pas avec l'épique sans que l'issue des sous-totaux soit ouverte
+et liée ; elle reste ouverte, avec ce qui manque écrit au corps, si la 49-2 ou la 49-3 sort.
