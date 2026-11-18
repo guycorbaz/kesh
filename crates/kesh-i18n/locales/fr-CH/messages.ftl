@@ -1772,6 +1772,7 @@ reconciliation-group-search-placeholder = Nom du tiers, numéro ou référence
 reconciliation-group-loading = Recherche…
 reconciliation-group-no-direction = Aucune facture à proposer pour cette transaction.
 reconciliation-group-results-empty = Aucune facture ne correspond à cette recherche.
+reconciliation-group-held-by-batch = Le montant de ce débit est retenu par le lot de paiement n° { $batch }, en cours sur ce compte : ce débit en est peut-être le paiement. Pour régler ses factures ici, annulez d’abord le lot.
 reconciliation-group-col-invoice = Facture
 reconciliation-group-col-client = Client
 reconciliation-group-col-supplier = Fournisseur

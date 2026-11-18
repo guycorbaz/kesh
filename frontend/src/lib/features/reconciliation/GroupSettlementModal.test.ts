@@ -262,6 +262,23 @@ describe('GroupSettlementModal — ouverture et recherche (D2, AC2)', () => {
 		expect(r.queryByTestId('group-results-empty')).toBeNull();
 	});
 
+	// Revue P4 de la 43-2 (P4-1) — un lot de paiement en cours retient le montant d'un débit : la
+	// liste vide dit pourquoi, nomme le lot, et ne se confond pas avec « aucun résultat ».
+	it('heldByPaymentBatch → avis qui nomme le lot et dit de l’annuler ; absent → « aucun résultat »', async () => {
+		serve([], { direction: 'supplier', heldByPaymentBatch: { supplierInvoiceId: 7, paymentBatchId: 31 } });
+		const { r } = monter(proposal('-800.00'));
+		await r.findByTestId('group-held-by-batch');
+		expect(texte(r, 'group-held-by-batch')).toBe(
+			'Le montant de ce débit est retenu par le lot de paiement n° 31, en cours sur ce compte : ce débit en est peut-être le paiement. Pour régler ses factures ici, annulez d’abord le lot.',
+		);
+		expect(r.queryByTestId('group-results-empty')).toBeNull();
+		// La même liste vide sans retenue : la phrase ordinaire.
+		serve([], { direction: 'supplier', heldByPaymentBatch: null });
+		await fireEvent.input(r.getByTestId('group-search-input'), { target: { value: 'autre' } });
+		await r.findByTestId('group-results-empty');
+		expect(r.queryByTestId('group-held-by-batch')).toBeNull();
+	});
+
 	it('hasMore → phrase qui invite à préciser la recherche', async () => {
 		serve([inv(12, '500.0000')], { hasMore: true });
 		const { r } = monter();

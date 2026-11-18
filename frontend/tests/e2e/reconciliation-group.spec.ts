@@ -546,7 +546,7 @@ test.describe('Règlement groupé — l’écran (Story 43-3, #823)', () => {
 		page,
 	}, testInfo) => {
 		const s = await clientScene(page, 'recherche', 0);
-		let mode: 'lent' | 'hasMore' | 'vide' | 'sansSens' = 'lent';
+		let mode: 'lent' | 'hasMore' | 'vide' | 'retenu' | 'sansSens' = 'lent';
 		const verrou = { relacher: () => {} };
 		await page.route('**/group-candidates**', async (route) => {
 			const reponse = await route.fetch();
@@ -558,6 +558,18 @@ test.describe('Règlement groupé — l’écran (Story 43-3, #823)', () => {
 			if (mode === 'hasMore') return route.fulfill({ response: reponse, json: { ...corps, hasMore: true } });
 			if (mode === 'vide') {
 				return route.fulfill({ response: reponse, json: { ...corps, candidates: [], hasMore: false } });
+			}
+			// Revue P4 de la 43-2 (P4-1) : un lot de paiement en cours retient le montant.
+			if (mode === 'retenu') {
+				return route.fulfill({
+					response: reponse,
+					json: {
+						...corps,
+						candidates: [],
+						hasMore: false,
+						heldByPaymentBatch: { supplierInvoiceId: 1, paymentBatchId: 31 },
+					},
+				});
 			}
 			return route.fulfill({
 				response: reponse,
@@ -577,6 +589,10 @@ test.describe('Règlement groupé — l’écran (Story 43-3, #823)', () => {
 			await modal.getByTestId('group-search-input').fill('zzz');
 			await expect(modal.getByTestId('group-results-empty')).toBeVisible();
 			await modal.screenshot({ path: capturePath(testInfo, '43-3-aucun-resultat') });
+			mode = 'retenu';
+			await modal.getByTestId('group-search-input').fill('yyy');
+			await expect(modal.getByTestId('group-held-by-batch')).toContainText('lot de paiement n° 31');
+			await modal.screenshot({ path: capturePath(testInfo, '43-3-retenu-par-un-lot') });
 			mode = 'sansSens';
 			await modal.getByTestId('group-search-input').fill('x');
 			await expect(modal.getByTestId('group-no-direction')).toHaveText(

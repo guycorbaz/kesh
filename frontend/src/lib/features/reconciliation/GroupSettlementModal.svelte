@@ -137,6 +137,8 @@
 	let hasMore = $state(false);
 	let direction = $state<'client' | 'supplier' | null>(null);
 	let maxDifference = $state<string | null>(null);
+	/** Le lot de paiement qui retient le montant d'un débit (revue P4 de la 43-2, P4-1). */
+	let heldByBatch = $state<number | null>(null);
 	let searched = $state(false);
 	let searching = $state(false);
 	let searchError = $state('');
@@ -250,6 +252,7 @@
 			hasMore = false;
 			direction = null;
 			maxDifference = null;
+			heldByBatch = null;
 			searched = false;
 			searching = false;
 			searchError = '';
@@ -300,6 +303,7 @@
 					hasMore = r.hasMore;
 					direction = r.direction;
 					maxDifference = r.maxDifference;
+					heldByBatch = r.heldByPaymentBatch?.paymentBatchId ?? null;
 				},
 				onError: (e) => {
 					if (!session.isCurrent(mySession)) return;
@@ -595,6 +599,20 @@
 						{i18nMsg(
 							'reconciliation-group-no-direction',
 							'Aucune facture à proposer pour cette transaction.',
+						)}
+					</p>
+				{:else if searched && heldByBatch !== null}
+					<!-- Revue P4 de la 43-2 (P4-1) : un lot de paiement en cours retient ce montant ; la
+					     liste est vide parce que tout règlement y serait refusé, et l'écran dit pourquoi. -->
+					<p
+						class="rounded-md border border-warning bg-warning/10 px-3 py-2 text-sm"
+						data-testid="group-held-by-batch"
+						data-payment-batch-id={heldByBatch}
+					>
+						{i18nMsg(
+							'reconciliation-group-held-by-batch',
+							'Le montant de ce débit est retenu par le lot de paiement n° { $batch }, en cours sur ce compte : ce débit en est peut-être le paiement. Pour régler ses factures ici, annulez d’abord le lot.',
+							{ batch: heldByBatch },
 						)}
 					</p>
 				{:else if searched && results.length === 0}

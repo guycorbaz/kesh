@@ -1113,8 +1113,10 @@ const ATTENDU = {
 	// l'écran *Administration → Facturation* : `settings-invoicing-group-max-{title,label,hint,scale,
 	// range,required}` (la garde confirme à la fusion : `kesh-gate-logs/e437/vitest-cloture.log`).
 	// Fusion de l'épique (`d54bad428`, 43-7 comprise) dans la 43-3 (2026-11-18) : relevé par la garde
-	// après la fusion (`kesh-gate-logs/e433/fusion-epic-releve-1.log`), non additionné.
-	sitesTotal: 3456,
+	// après la fusion (`kesh-gate-logs/e433/fusion-epic-releve-1.log`), non additionné : 3456.
+	// Puis l'avis `reconciliation-group-held-by-batch` (revue P4 de la 43-2, P4-1), un littéral :
+	// **3457**, relevé par la garde (`kesh-gate-logs/e433/held-by-batch-releve-1.log`).
+	sitesTotal: 3457,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

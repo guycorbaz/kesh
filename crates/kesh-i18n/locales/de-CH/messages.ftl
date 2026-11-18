@@ -1689,6 +1689,7 @@ reconciliation-group-search-placeholder = Name der Gegenpartei, Nummer oder Refe
 reconciliation-group-loading = Suche läuft…
 reconciliation-group-no-direction = Für diese Transaktion gibt es keine Rechnung vorzuschlagen.
 reconciliation-group-results-empty = Keine Rechnung entspricht dieser Suche.
+reconciliation-group-held-by-batch = Der Betrag dieser Belastung wird durch den laufenden Zahlungslauf Nr. { $batch } auf diesem Konto zurückgehalten: Diese Belastung ist vielleicht dessen Zahlung. Um seine Rechnungen hier zu begleichen, stornieren Sie zuerst den Zahlungslauf.
 reconciliation-group-col-invoice = Rechnung
 reconciliation-group-col-client = Kunde
 reconciliation-group-col-supplier = Lieferant

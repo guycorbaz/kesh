@@ -1689,6 +1689,7 @@ reconciliation-group-search-placeholder = Counterparty name, number or reference
 reconciliation-group-loading = Searching…
 reconciliation-group-no-direction = No invoice to offer for this transaction.
 reconciliation-group-results-empty = No invoice matches this search.
+reconciliation-group-held-by-batch = The amount of this debit is held by payment batch no. { $batch }, in progress on this account: this debit may be its payment. To settle its invoices here, cancel the batch first.
 reconciliation-group-col-invoice = Invoice
 reconciliation-group-col-client = Client
 reconciliation-group-col-supplier = Supplier

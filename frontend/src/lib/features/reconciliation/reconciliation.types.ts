@@ -220,6 +220,12 @@ export interface GroupCandidatesResponse {
 	candidates: GroupCandidate[];
 	/** Vrai s'il reste des factures au-delà de la liste rendue. */
 	hasMore: boolean;
+	/**
+	 * Revue P4 de la 43-2 (P4-1) — pour un débit, le lot de paiement `generated` de ce compte qui
+	 * retient ce montant (la liste est alors vide : tout groupe y serait refusé) ; `null` sinon.
+	 * Facultatif : absent d'un serveur antérieur.
+	 */
+	heldByPaymentBatch?: { supplierInvoiceId: number; paymentBatchId: number } | null;
 }
 
 export interface FailedProposal {

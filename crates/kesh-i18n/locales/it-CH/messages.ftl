@@ -1689,6 +1689,7 @@ reconciliation-group-search-placeholder = Nome della controparte, numero o rifer
 reconciliation-group-loading = Ricerca in corso…
 reconciliation-group-no-direction = Nessuna fattura da proporre per questa transazione.
 reconciliation-group-results-empty = Nessuna fattura corrisponde a questa ricerca.
+reconciliation-group-held-by-batch = L'importo di questo addebito è trattenuto dal lotto di pagamento n. { $batch }, in corso su questo conto: questo addebito ne è forse il pagamento. Per saldare qui le sue fatture, annullate prima il lotto.
 reconciliation-group-col-invoice = Fattura
 reconciliation-group-col-client = Cliente
 reconciliation-group-col-supplier = Fornitore
