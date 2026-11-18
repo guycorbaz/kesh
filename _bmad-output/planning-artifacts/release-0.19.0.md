@@ -13,14 +13,14 @@
 | Entre dans la 0.19.0 | Issues |
 |---|---|
 | Epic 37 — comptabilité multi-devises (37-1 à 37-5) | refs #233 |
-| Epic 43 — 43-1a (règlement groupé, modèle et clients), 43-1b (fournisseurs), 43-2 (API), 43-3 (écran), 43-7 (plafond de l'écart) | #823 |
+| Epic 43 — 43-1a (règlement groupé, modèle et clients), 43-1b (fournisseurs), 43-2 (API), 43-3 (écran), 43-6 (raccord avec la réimputation : refus `409 PROJECT_REASSIGNMENT_GROUPED_SETTLEMENT` sur une facture réglée en groupe ; réintégrée le 2026-11-18, décision de Guy), 43-7 (plafond de l'écart) | #823 (43-6 : refs #1167) |
 | Epic 42 — 42-1 (= 36-16a, changer le compte analytique d'une facture client) | refs #1167 |
 | Epic 44 — 44-1a (QR-facture : grille SIX, *Payable by*, largeurs) | refs #944 |
 | Correction de la semaine — v0190-correction (client affiché ≠ client enregistré), v0190-nom-societe (nom de la société modifiable) | #1162, #1097 |
 
 | Sort de la 0.19.0 (statut `backlog`) | Motif |
 |---|---|
-| 43-4 (solde), 43-5 (paiements non rapprochés), 43-6 (raccord avec la réimputation) | coupure du 2026-11-18 (43-5 sortie dès le 2026-11-17 par Guy) |
+| 43-4 (solde), 43-5 (paiements non rapprochés) | coupure du 2026-11-18 (43-5 sortie dès le 2026-11-17 par Guy) ; la 43-6, sortie par erreur à la coupure, a été réintégrée le même jour (décision de Guy du 2026-11-18 : C-43-18 interdit de publier la 42-1 et la 43-1a sans elle) |
 | 42-2 (facture fournisseur), 42-3 (écriture manuelle), 42-4 (solde) | coupure du 2026-11-18 (42-2 et 42-3 sorties dès le 2026-11-17) |
 | 44-1b (cascade des paliers), 44-2 (solde) | coupure du 2026-11-18 |
 
