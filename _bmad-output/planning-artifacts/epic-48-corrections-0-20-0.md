@@ -139,8 +139,9 @@ répété site par site : vérifier la borne du serveur, l'**ajouter** si elle m
 - #1332 (P3) : pays d'un fournisseur neuf, coupé à deux caractères (`SupplierCreatePanel.svelte`) ;
 - #1333 (P3) : e-mail de la société sans borne serveur (`companies.rs`) ;
 - #1334 (P4) : prénom ou nom seul non bornés (`contacts.rs`, et `onboarding.rs::set_coordinates`) ;
-- et trois champs qui finissent sur le PDF : **nom d'article** (`products/+page.svelte`), **numéro de client** et
-  **conditions de paiement** (`contacts/+page.svelte`).
+- et cinq champs qui finissent sur le PDF : **nom d'article** (`products/+page.svelte`), **numéro de client**,
+  **conditions de paiement**, **raison sociale** et **délai de paiement** (`contacts/+page.svelte`) — les deux derniers
+  ajoutés à la validation de la fiche (2026-11-18).
 
 **Dérogation à la règle de splitting** (décision de Guy du 2026-11-18) : sept modules au grain du domaine, mais un seul
 geste mécanique répété, rangé en **deux lots ordonnés** (A serveur, puis B écrans) ; écrite dans la fiche. **Dépend de la
