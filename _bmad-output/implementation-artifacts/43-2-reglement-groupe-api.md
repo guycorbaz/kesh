@@ -291,6 +291,11 @@ centime, `amountDueRaw` = `total_amount` brut ; pas de `totalTtc` distinct. Vale
 dans ce contrat. `transactionAmount` est **signé** comme la transaction (`-1250.00` pour un débit) ; la différence se
 calcule sur la valeur absolue (L-2).
 
+**Retenue par un lot (revue P3, P3-4, C-e432-20)** — pour un **débit**, si une facture fournisseur ouverte au montant exact
+est engagée dans un lot `generated` **de ce compte bancaire** (`find_open_supplier_invoice_in_account_batch`, la garde (d)
+du `POST`), la réponse rend `direction: "supplier"`, `candidates: []`, `hasMore: false` et `heldByPaymentBatch:
+{ supplierInvoiceId, paymentBatchId }` ; le champ vaut `null` sinon (additif).
+
 ### Vue et annulation (M5)
 
 - `GET /reconciliation/transactions/{id}` : `kind` gagne `"grouped_settlement"` ; pour un groupe, `invoiceId`,
@@ -587,7 +592,7 @@ Opus 5.5 (agent de développement, en autonomie), 2026-11-17.
   - Fusion de `origin/epic/43-transaction-plusieurs-factures` à `6238dfa18` : commit `866cd1434`.
   - Deux conflits : `grouped_settlements.rs`, résolu par la version de l'épique (le corps provisoire cède à la 43-1b) ; `sprint-status.yaml`, 43-1a et 43-1b de l'épique, ligne 43-2 de la branche.
   - Code : commit `f8ce94a5b`, dernier commit de code :
-    - `foreign: None` aux quatre littéraux de test ;
+    - `foreign: None` aux quatre littéraux de test ; *annoté le 2026-11-18 (revue P3, P3-8) : six lignes, sur trois gabarits (`facture_sur` ×2, `facture_achat` ×2, `monter` de `reconciliation_group_candidates.rs` ×2) ;*
     - `DifferenceAccountInForeignCurrency` traduite en `ACCOUNT_IN_FOREIGN_CURRENCY` (`accountId`, `currency`). La garde `rang` a fait échouer la compilation du test avant que la variante reçoive son rang 25 (`RANGS` = 26) : c'est sa sonde positive. La ligne est ajoutée à la table de test, à la fiche et au guide ;
     - les `DbError` d'un groupe passent d'abord par `fx_failed_proposal` (M2) ;
     - les trois tests fournisseur n'ont plus de `#[ignore]` et passent ;

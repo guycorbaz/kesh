@@ -756,8 +756,10 @@ fn counterparty_is_bank_ledger_error(field: &str) -> AppError {
 /// — les seuls qu'un rapprochement, qui n'écrit qu'en CHF, puisse rencontrer —
 /// et, par prudence, les autres refus du contrôle central.
 ///
-/// ⛔ **Un seul constructeur pour les trois sites** (patron de
-/// [`period_locked_failed_proposal`]). `None` pour toute autre variante.
+/// ⛔ **Un seul constructeur pour les quatre sites** (patron de
+/// [`period_locked_failed_proposal`]) : `project_error_to_failed_proposal`,
+/// `supplier_payment_error_to_failed_proposal`, `accept_one_rule` et le
+/// règlement groupé (`reconciliation_group::group_error_to_failed_proposal`). `None` pour toute autre variante.
 pub(super) fn fx_failed_proposal(
     bank_transaction_id: i64,
     err: &DbError,
