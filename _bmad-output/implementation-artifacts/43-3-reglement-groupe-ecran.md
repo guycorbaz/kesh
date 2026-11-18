@@ -1,6 +1,6 @@
 # Story 43-3 : un règlement pour plusieurs factures — l'écran de réconciliation, façon bexio (#823)
 
-Status: in-progress
+Status: review
 
 *Fiche rédigée le 2026-11-17 par l'agent de rédaction de l'Epic 43 (Opus 5.5), workflow `bmad-create-story`, code lu à
 `8b50fd195` ; révisée le soir même (interface comme bexio, tiers mixtes), remédiée après ses validations P1
@@ -288,9 +288,9 @@ comptabilise, et j'enregistre — puis, si je me suis trompé, j'annule ce rappr
   côté client.
 - [x] **T5** — Dialogue d'annulation (AC5). — [x] **T6** — Manuel et compilation jetable (AC7).
 - [x] **T7** — Commits D6 (côté fournisseur).
-- [ ] **T8** — E2E (mercredi soir sur la branche de travail réunie, jeudi sur la branche définitive) ; captures (AC8).
-  *Spec écrit, en attente (`test.describe.fixme`) : à jouer sur la branche réunie ; captures à prendre avec l'API.*
-- [ ] **T9** — Gates frontend complets ; E2E complet à la clôture ; Dev Agent Record (#1235 citée) ; prompt de revue P1.
+- [x] **T8** — E2E (mercredi soir sur la branche de travail réunie, jeudi sur la branche définitive) ; captures (AC8).
+  *Joué sur la branche réunie (43-2 `d20095425`, épique `d54bad428`) ; à rejouer sur la tête définitive de la 43-2.*
+- [x] **T9** — Gates frontend complets ; E2E complet à la clôture ; Dev Agent Record (#1235 citée) ; prompt de revue P1.
 
 ## Note de version
 
@@ -368,6 +368,41 @@ captures — attend la branche de la 43-2 ; ce relevé ne déclare rien qui n'ai
 - **Écarts à la consigne Edit** : aucun sur le code, les tests ni les fiches ; le script de mutations écrit et restaure
   (`git restore --worktree` puis `touch`), comme la consigne le permet. `git add` pour les fichiers neufs.
 - **Limite connue** : l'abandon de la recherche est local (C-e433-1) — `apiClient` ne prend pas de signal.
+
+*Relevé daté du 2026-11-18, étape 2 et passage en revue.*
+
+- **Fusions** : la 43-2 (`d20095425`, avec la 43-1a, la 43-1b et l'Epic 37 ; 95 migrations) par `a179b687d`, puis
+  l'épique (`d54bad428`, 43-7 comprise) par `7ac22c02d`. Conflits résolus en gardant les deux côtés ; compteurs relevés
+  par la garde, jamais additionnés : `sitesTotal` 3450 puis 3456, puis **3457** avec l'avis du lot
+  (`fusion-432-releve-1.log`, `fusion-epic-releve-1.log`, `front-complet-review.log`) ; candidates de la garde des libellés
+  en dur **128** (22 écartées, 106 conformes) ; test des libellés de refus à **48** codes. Squash sans conflit.
+- **Raccords Epic 37** (C-e433-10) : refus `ACCOUNT_IN_FOREIGN_CURRENCY` libellé (clé globale ; forme du groupe dans les
+  quatre locales, sous le sélecteur) ; sélecteur `excludeForeignCurrency={true}` ; Vitest : compte en devise ni offert
+  ni prérempli ; garde `fx-account-filter-inventory` verte.
+- **Revue P4 de la 43-2, P4-1** (`8664d51fd`) : `heldByPaymentBatch` de la recherche d'un débit → avis qui nomme le lot et
+  dit de l'annuler d'abord, distinct de « aucun résultat » ; quatre locales ; Vitest ; état intercepté et capture
+  `43-3-retenu-par-un-lot.png` ; manuel (cas de liste vide). Le champ n'arrive dans la branche qu'avec la tête définitive
+  de la 43-2 : avant elle, il est absent (facultatif au type) et l'écran n'affiche rien de plus.
+- **E2E** : `fixme` retirés (client et D6) ; spec `reconciliation-group.spec.ts` **12 tests verts** contre l'API réelle
+  (`e2e-group-4.log`, voie 2, port 3433). Points vérifiés au code : `totalAmount` est le HT (reste dû lu sur la fiche) ;
+  le seed pose l'arrondi des pièces à 5 centimes (levé pendant la spec, restauré) ; `line_total` garde quatre décimales
+  (0.5 × 20.01 = 10.0050) ; `/reverse` sans corps. États fugaces par une réponse interceptée sur un décor réel
+  (C-e433-11). **26 captures** dans `kesh-gate-logs/e433/captures/`, thème clair.
+- **Manuel** : `sec:reglement-groupe` ; le lot pain.001 débité en une ligne reste à rejeter (textes rétablis tels
+  quels, P3-1 de la revue de la 43-2) et un paragraphe le distingue des factures ouvertes hors lot ; liste vide. PDF
+  compilé hors du dépôt (`kesh-gate-logs/e433/manuel/user-manual.pdf`), aucune référence indéfinie, contrôle aplati.
+- **Gates de passage en revue**, bases remises à neuf (`kesh_e433`, `kesh_e2e_e433` : 95 migrations) :
+  - `test-fast --ci` (voie 2) au commit `7ac22c02d` : **6069 passés, 13 ignorés** (`test-fast-review.log`) ; un premier
+    passage avait échoué sur un disque plein, sans rapport avec le code (`alerte.md`) ;
+  - `gate-ci kesh_ci_e433` (voie 1) au commit `7ac22c02d` : **6086 passés, 0 échoué, 17 ignorés** (`gate-ci-review.log`)
+    — les quatre catalogues portaient déjà, non commitée, la clé de l'avis du lot (une ligne de plus dans chacun) ;
+  - frontend complet au commit `8664d51fd` : `check` 0 erreur, `lint-i18n-ownership` PASS, **4519 Vitest (275 fichiers)**,
+    `build` vert (`front-complet-review.log`) ;
+  - E2E complet au commit `8664d51fd`, base E2E recréée : **471 passés, 7 échoués, 17 ignorés** (`e2e-complet-review.log`) ;
+    les sept échecs sont exactement ceux de la KF-029 (#97) de `docs/testing.md` (`mode-expert.spec.ts:26`, `:41`,
+    `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`) ; aucun autre.
+- **À la clôture** : reprendre la tête définitive de la 43-2 (champ `heldByPaymentBatch`), rejouer `gate-ci` et l'E2E
+  complet.
 
 ### File List
 
