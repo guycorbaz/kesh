@@ -12,7 +12,7 @@ afficherait le bandeau « serveur dégradé » à chaque frappe. Retenu : `modal
 requête, l'avorte quand une requête plus récente part ou que la modale se ferme, et toute réponse dont le signal est avorté
 ou la génération dépassée est ignorée. La requête réseau va à son terme, son résultat est jeté. Autre option : étendre
 `CallOptions` d'un `signal` et distinguer l'abandon du délai dans `fetchWithRetry` — module partagé par tout l'écran,
-hors du périmètre de la story ; une issue est demandée au rapport. Réversible : le signal est déjà porté par l'appel.
+hors du périmètre de la story ; tracé par l'issue #1246. Réversible : le signal est déjà porté par l'appel.
 
 **C-e433-2 — Réglages de facturation illisibles : l'écran ne bloque pas sur l'arrondi.** La modale lit
 `GET /company/invoice-settings` à l'ouverture (comptes désignés). Si la lecture échoue, elle ne sait pas si un compte
@@ -112,7 +112,8 @@ périmètre de la fiche : le choix reste ; quand le serveur demande un compte al
 l'envoi n'a pas porté (écart nul à l'envoi), la phrase sous le sélecteur dit « Kesh demande un compte pour l'écart :
 vérifiez le compte choisi, puis enregistrez de nouveau. » au lieu de « Choisissez le compte de l'écart ». Le cas du
 compte prérempli (relecture qui fait apparaître un écart) prend la même phrase. Remettre le choix à zéro reste
-possible, mais change une règle de la fiche : décision au Project Lead.
+possible, mais change une règle de la fiche : décision au Project Lead. Écart accepté par l'orchestrateur le
+2026-11-18 (« la fiche validée fait foi »).
 
 *Revue P3 ciblée (L-D) — rédaction laissée telle quelle, noté.* « Retirez-la puis ajoutez-la de nouveau » ne se suit
 que si la recherche courante ramène la facture : `removeInvoice` relance la recherche avec la requête du champ, et

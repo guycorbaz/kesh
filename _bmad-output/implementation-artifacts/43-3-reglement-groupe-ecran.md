@@ -1,6 +1,6 @@
 # Story 43-3 : un règlement pour plusieurs factures — l'écran de réconciliation, façon bexio (#823)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-17 par l'agent de rédaction de l'Epic 43 (Opus 5.5), workflow `bmad-create-story`, code lu à
 `8b50fd195` ; révisée le soir même (interface comme bexio, tiers mixtes), remédiée après ses validations P1
@@ -502,12 +502,45 @@ captures — attend la branche de la 43-2 ; ce relevé ne déclare rien qui n'ai
     à 1 (ligature « ﬀ » dans le texte extrait : la forme sans ligature rend 0), « vérifiera à l’enregistrement » à 0 ;
   - E2E complet et `gate-ci` : à la clôture, après la fusion de la branche d'épique.
 
+*Relevé daté du 2026-11-18, passe ciblée P3 (Haiku, sur `06cf8ab92` : 0/0/0/5, `review-p3-ciblee.md`) et clôture.*
+
+- **Commit de code** `18d869b31` — L-A : `serverWantsAccount` tombe après une relecture complète et à tout changement
+  des factures (ajout, retrait, facture retirée sur refus) ; relue à écart nul, « Les restes dus ont été relus :
+  vérifiez l'écart, puis enregistrez de nouveau. ». L-B : sous un champ qui porte déjà un compte que l'envoi n'a pas
+  porté, « Kesh demande un compte pour l'écart : vérifiez le compte choisi, puis enregistrez de nouveau. » ; le choix
+  gardé de la fiche (D2 bis, C-e433-3) n'est **pas** remis à zéro — écart à la consigne, déclaré au registre
+  (C-e433-12) et accepté par l'orchestrateur. L-C : nom de test. L-E : `gap-label.test.ts` (locales simulées, dont
+  `de-CH`). L-D : rédaction laissée, noté au registre. Deux clés neuves, quatre locales ; `sitesTotal` **3468**
+  (relevé par la garde, `rem3-vitest-1.log`). Rouges avant la correction (`rouges-rem3.log`) : les tests L-A, L-B et
+  le test modifié de `difference_account_required` (3) ; le test allemand passe sur le code d'avant (garde de
+  non-régression, la logique était juste). Passe ciblée P4 (Sonnet) sur ce commit : 0/0/0/3, L-A et L-B fermés.
+- **Fusion** de `origin/epic/43-transaction-plusieurs-factures` à `4c7a4fd94` (43-1a, 43-1b, 43-2, 43-7 closes,
+  reprise de `main`) : commit `2f41d29d5` ; un seul conflit, `sprint-status.yaml`, résolu en gardant la ligne close de
+  la 43-2 et celle de la 43-3 ; aucun conflit dans le squash ni les catalogues ; compteurs revérifiés par les gardes
+  au gate frontend (`sitesTotal` 3468, candidates 130 : verts).
+- **`retenu-par-un-lot` contre l'API réelle** (L-4 de la P2) : commit `b6315a87c` — le test crée une facture
+  fournisseur, un lot `generated` sur le compte (`POST /payment-batches`) et un débit du montant exact ; il lit
+  `heldByPaymentBatch.paymentBatchId` dans la vraie réponse et l'avis qui nomme le lot ; aucune interception ; le lot
+  est annulé au nettoyage. Capture `43-3-retenu-par-un-lot.png` refaite (« lot de paiement n° 1 », base neuve).
+- **Disque** : 11 Go libres à la reprise ; cible de la 43-3 vidée (`cargo clean` dans le worktree, 44,5 Go) avant les
+  gates.
+- **Gates de clôture**, une commande lourde à la fois, bases de la voie 2 recréées (95 migrations, graine) :
+  - `test-fast --ci` au commit `2f41d29d5` : **6071 passés, 13 ignorés** (`test-fast-cloture.log`) ;
+  - `gate-ci kesh_ci_e433` : **6088 passés, 0 échoué, 17 ignorés** (`gate-ci-cloture.log`) ;
+  - frontend complet : `check` 0 erreur (29 avertissements antérieurs), `lint-i18n-ownership` PASS, **4544 Vitest
+    (276 fichiers)**, `build` vert (`clot-front-*.log`) ;
+  - spec de la story au commit `b6315a87c`, base E2E neuve : **13 passés** (`clot-e2e-spec.log`) ;
+  - E2E complet au commit `b6315a87c`, base E2E recréée : **471 passés, 7 échoués, 18 ignorés** (496 tests,
+    `clot-e2e-complet.log`). Les sept échecs, jugés un à un contre `docs/testing.md` § *Les échecs attendus* : ce sont
+    exactement ceux de la KF-029 (#97) — `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`,
+    `onboarding.spec.ts:57`, `:77`, `:150` ; aucun autre, aucune pollution.
+
 ### File List
 
 - `frontend/src/lib/features/reconciliation/GroupSettlementModal.svelte` (neuf) et `.test.ts` (neuf)
 - `frontend/src/lib/features/reconciliation/group-settlement.ts` (neuf) et `.test.ts` (neuf)
 - `frontend/src/lib/features/reconciliation/modal-guards.ts` (neuf) et `.test.ts` (neuf)
-- `frontend/src/lib/features/reconciliation/gap-label.ts` (neuf)
+- `frontend/src/lib/features/reconciliation/gap-label.ts` (neuf) et `.test.ts` (neuf)
 - `frontend/src/lib/features/reconciliation/ModalSuccessStubGroup.test.svelte` (neuf)
 - `frontend/src/lib/features/reconciliation/reconciliation.types.ts`, `reconciliation.api.ts`, `reconciliation.api.test.ts`
 - `frontend/src/lib/features/reconciliation/failed-proposal-label.ts`, `failed-proposal-label.test.ts`
@@ -568,3 +601,22 @@ captures — attend la branche de la 43-2 ; ce relevé ne déclare rien qui n'ai
   `c11469b2d` (libellés, 39 codes), `b2bd9078e` (modale, bouton, garde), `4053741c7` (annulation), `fefaed04f` (D6),
   `951263aeb` (manuel), `ed68aea4d` et `81e4b4a2b` (E2E en attente, dont D6). Choix C-e433-1 à 9. Statut :
   `in-progress` — E2E et captures attendent l'API de la 43-2.
+- 2026-11-18 (clôture) — **Revue de code terminée.** Tendance (CRITICAL/HIGH/MEDIUM/LOW) :
+
+  | Passe | Modèle | Portée | Décompte |
+  |---|---|---|---|
+  | P1 | 3 × Opus (lentilles A, B, E) | complète, story entière à `978260c26` | 0/0/7/~30 (deux MEDIUM convergents) |
+  | P2 | Sonnet | complète, remédiation de la P1 (`978260c26..729070f3a`) | 0/0/1/7 |
+  | P3 | Haiku | ciblée sur `06cf8ab92` | 0/0/0/5 |
+  | P4 | Sonnet | ciblée sur `18d869b31` | 0/0/0/3 |
+
+  La boucle se clôt sur deux passes sans finding au-dessus de LOW, la dernière remédiation de production (`18d869b31`)
+  relue par la P4. **Transferts et reclassements** : P4-1 de la 43-2 (`heldByPaymentBatch` à l'écran) transféré à la
+  43-3 et livré ; E-L10 (plafond à quatre décimales) renvoyé à la 43-7 et à #1245 (C-e433-14) ; E-L3 réglé à la clôture
+  (retenue sur l'API réelle) ; L-B de la P3 : écart à la consigne (le choix gardé de la fiche fait foi), accepté par
+  l'orchestrateur ; L-D de la P3 : rédaction laissée, notée au registre. **Issues** : #1246 (annulation d'une requête
+  dans `apiClient`, C-e433-1), #1262 (liste non relue si la modale est rouverte pendant l'envoi, C-e433-15), et les trois
+  LOW de la P4, non corrigés dans la story pour ne pas rouvrir de cycle avant la coupure : #1263 (« Choisissez le
+  compte » sans sélecteur après une relecture réussie bloquée), #1264 (« vérifiez le compte choisi » pour un compte
+  prérempli), #1265 (test de casse de `gap-label.test.ts` qui ne couvre pas la logique). Fusion de la branche d'épique
+  à `4c7a4fd94`, retenue rejouée sur l'API réelle, gates de clôture verts (Dev Agent Record). Statut : `done`.
