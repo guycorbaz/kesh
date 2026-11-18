@@ -790,7 +790,7 @@
 						{editParentId ? editParentOptions.find(p => p.value === editParentId)?.label ?? '—' : i18nMsg('accounts-parent-none', 'Aucun')}
 					</Select.Trigger>
 					<Select.Content>
-						<Select.Item value="" label={i18nMsg('accounts-parent-none', 'Aucun')}>{i18nMsg('accounts-parent-none', 'Aucun')}</Select.Item>
+						<Select.Item value="" label={i18nMsg('accounts-parent-none', 'Aucun')} data-testid="account-edit-dialog-parent-none">{i18nMsg('accounts-parent-none', 'Aucun')}</Select.Item>
 						{#each editParentOptions as opt}
 							<Select.Item value={opt.value} label={opt.label}>{opt.label}</Select.Item>
 						{/each}

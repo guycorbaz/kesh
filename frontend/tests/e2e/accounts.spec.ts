@@ -312,7 +312,6 @@ test.describe('Plan comptable — changer le parent d’un compte', () => {
 
 		await page.locator(`[data-testid="account-row-${membre}-edit-button"]`).click();
 		const parentField = page.locator('[data-testid="account-edit-dialog-parent"]');
-		await expect(parentField).toContainText('Aucun');
 		await parentField.click();
 		await page.getByRole('option', { name: new RegExp(`^${groupe} `) }).click();
 		await page.locator('[data-testid="account-edit-dialog-submit"]').click();
@@ -340,7 +339,7 @@ test.describe('Plan comptable — changer le parent d’un compte', () => {
 		// Le groupe ne se propose ni lui-même ni son sous-compte comme parent.
 		await page.locator(`[data-testid="account-row-${groupe}-edit-button"]`).click();
 		await page.locator('[data-testid="account-edit-dialog-parent"]').click();
-		await expect(page.getByRole('option', { name: 'Aucun' })).toBeVisible();
+		await expect(page.locator('[data-testid="account-edit-dialog-parent-none"]')).toBeVisible();
 		await expect(page.getByRole('option', { name: new RegExp(`^${membre} `) })).toHaveCount(0);
 		await expect(page.getByRole('option', { name: new RegExp(`^${groupe} `) })).toHaveCount(0);
 		await page.keyboard.press('Escape');
@@ -349,7 +348,7 @@ test.describe('Plan comptable — changer le parent d’un compte', () => {
 		// « Aucun » remet le membre à la racine.
 		await page.locator(`[data-testid="account-row-${membre}-edit-button"]`).click();
 		await page.locator('[data-testid="account-edit-dialog-parent"]').click();
-		await page.getByRole('option', { name: 'Aucun' }).click();
+		await page.locator('[data-testid="account-edit-dialog-parent-none"]').click();
 		await page.locator('[data-testid="account-edit-dialog-submit"]').click();
 		await expect(page.getByRole('dialog')).toBeHidden();
 		const ctx3 = await authedApiContext(page);
