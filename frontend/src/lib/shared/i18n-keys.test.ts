@@ -1132,6 +1132,20 @@ const ATTENDU = {
 	// local de la longueur — un littéral, garde verte à 3096 (`vitest-i18n-3.log`).
 	// Union de la 0.19.0 (fusion d'epic/v0190-correction) : valeur de HEAD gardée à la
 	// résolution, à relever par la garde au raccord qui suit (C-e350-18).
+	// Branche epic/42-reimputation-analytique, partie de la 0.18.0 (avant l'Epic 37 et l'Epic 43) :
+	// Story 36-16a (#1167) : **3082 → 3098**, relevé par la garde (« expected 3098 to be 3082 »,
+	// `kesh-gate-logs/e36-16/vitest-i18n-1.log`) — seize littéraux : treize dans
+	// `features/projects/ProjectReassignDialog.svelte` (dont `common-cancel` et `error-unexpected`),
+	// trois sur la fiche facture (`projects-reassign-open`, `projects-reassign-done`,
+	// `invoice-detail-project-label` comme libellé de la rangée). Sur une base qui porte la 36-15
+	// non fusionnée (C-36-16a-1) : à relever de nouveau à l'union de la 0.18.0 (C-e350-18).
+	// Puis **3098 → 3099** (« expected 3099 to be 3098 », `kesh-gate-logs/e36-16/vitest-cible-4.log`) :
+	// le sélecteur `projects-reassign-warning-entries`, que le dictionnaire du frontend résout
+	// sans arguments, scindé en deux clés plates `-one` et `-other` (deux littéraux pour un).
+	// Epic 42-1 (ex-36-16a), portée sur `main` après la v0.18.0 : **3086 → 3103**, union des
+	// deux relevés ci-dessus (+17 littéraux de la 36-16a), à confirmer par la garde.
+	// Union de la 0.19.0 (fusion d'epic/42-reimputation-analytique) : valeur de HEAD gardée à
+	// la résolution, à relever par la garde au raccord qui suit (C-e350-18).
 	sitesTotal: 3468,
 	sitesNonResolus: 31,
 	relais: 6,

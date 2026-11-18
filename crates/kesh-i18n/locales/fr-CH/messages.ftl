@@ -4129,3 +4129,25 @@ settings-invoicing-account-foreign = (en devise : à remplacer)
 reconciliation-failed-account-requires-currency = Le compte de contrepartie est tenu en devise : un rapprochement passe en CHF. Choisissez un compte en CHF, ou passez l’écriture en devise depuis le journal.
 reconciliation-failed-fx-multiple-currencies = L’écriture porterait deux devises étrangères : une écriture n’en porte qu’une.
 reconciliation-failed-fx-revaluation = L’écriture visée est une réévaluation des comptes en devise : elle ne se modifie pas.
+
+# Story 36-16a (#1167) — changer le compte analytique après coup
+audit-log-action-invoice-project-reassigned = Compte analytique de la facture changé
+error-project-reassignment-closed-period = { $entryCount ->
+    [one] Changer le compte analytique modifierait une écriture d'un exercice clos ou d'une période verrouillée. Confirmez pour continuer.
+   *[other] Changer le compte analytique modifierait { $entryCount } écritures d'un exercice clos ou d'une période verrouillée. Confirmez pour continuer.
+}
+error-project-reassignment-closed-period-admin-only = Seul un Administrateur connecté à l'interface web peut changer le compte analytique d'un exercice clos ou d'une période verrouillée : demandez-le à un Administrateur.
+projects-reassign-open = Changer le compte analytique
+projects-reassign-title = Changer le compte analytique
+projects-reassign-body = La pièce et toutes ses écritures passent au compte analytique choisi. Les montants, les comptes, les dates, les numéros, le lettrage et le rapprochement ne changent pas.
+projects-reassign-none = — Aucun
+projects-reassign-archived = { $name } (archivé)
+projects-reassign-save = Enregistrer
+projects-reassign-warning-title = Exercice clos ou période verrouillée
+projects-reassign-warning-entries-one = Une écriture d'une période close changera de compte analytique.
+projects-reassign-warning-entries-other = { $entryCount } écritures d'une période close changeront de compte analytique.
+projects-reassign-warning-fiscal-years = Exercice clos : { $names }.
+projects-reassign-warning-locked = Écritures verrouillées jusqu'au { $date }.
+projects-reassign-warning-reports = Les rapports analytiques de cette période changeront.
+projects-reassign-confirm = Confirmer
+projects-reassign-done = Compte analytique changé.

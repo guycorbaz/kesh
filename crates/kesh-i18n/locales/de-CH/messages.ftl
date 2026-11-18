@@ -4050,3 +4050,25 @@ settings-invoicing-account-foreign = (in Fremdwährung: zu ersetzen)
 reconciliation-failed-account-requires-currency = Das Gegenkonto wird in Fremdwährung geführt: Ein Abgleich läuft in CHF. Wählen Sie ein CHF-Konto oder buchen Sie die Fremdwährungsbuchung im Journal.
 reconciliation-failed-fx-multiple-currencies = Die Buchung trüge zwei Fremdwährungen: Eine Buchung trägt nur eine.
 reconciliation-failed-fx-revaluation = Die betroffene Buchung ist eine Neubewertung der Fremdwährungskonten: Sie wird nicht geändert.
+
+# Story 36-16a (#1167) — changer le compte analytique après coup
+audit-log-action-invoice-project-reassigned = Analytisches Konto der Rechnung geändert
+error-project-reassignment-closed-period = { $entryCount ->
+    [one] Das Ändern des analytischen Kontos würde eine Buchung eines abgeschlossenen Geschäftsjahres oder einer gesperrten Periode ändern. Bestätigen Sie, um fortzufahren.
+   *[other] Das Ändern des analytischen Kontos würde { $entryCount } Buchungen eines abgeschlossenen Geschäftsjahres oder einer gesperrten Periode ändern. Bestätigen Sie, um fortzufahren.
+}
+error-project-reassignment-closed-period-admin-only = Nur ein in der Weboberfläche angemeldeter Administrator kann das analytische Konto eines abgeschlossenen Geschäftsjahres oder einer gesperrten Periode ändern: Bitten Sie einen Administrator darum.
+projects-reassign-open = Analytisches Konto ändern
+projects-reassign-title = Analytisches Konto ändern
+projects-reassign-body = Der Beleg und alle seine Buchungen gehen auf das gewählte analytische Konto über. Beträge, Konten, Daten, Nummern, Ausgleich und Abgleich bleiben unverändert.
+projects-reassign-none = — Keines
+projects-reassign-archived = { $name } (archiviert)
+projects-reassign-save = Speichern
+projects-reassign-warning-title = Abgeschlossenes Geschäftsjahr oder gesperrte Periode
+projects-reassign-warning-entries-one = Eine Buchung einer abgeschlossenen Periode erhält ein anderes analytisches Konto.
+projects-reassign-warning-entries-other = { $entryCount } Buchungen einer abgeschlossenen Periode erhalten ein anderes analytisches Konto.
+projects-reassign-warning-fiscal-years = Abgeschlossenes Geschäftsjahr: { $names }.
+projects-reassign-warning-locked = Buchungen gesperrt bis zum { $date }.
+projects-reassign-warning-reports = Die analytischen Berichte dieser Periode ändern sich.
+projects-reassign-confirm = Bestätigen
+projects-reassign-done = Analytisches Konto geändert.

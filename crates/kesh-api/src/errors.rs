@@ -1774,6 +1774,53 @@ fn build_response(status: StatusCode, code: &'static str, message: &str) -> Resp
         .into_response()
 }
 
+/// Corps des deux refus de période close d'un changement de compte analytique
+/// (Story 36-16a, #1167) : `409 PROJECT_REASSIGNMENT_CLOSED_PERIOD` pour un
+/// Administrateur en session sans accusé, `403
+/// PROJECT_REASSIGNMENT_CLOSED_PERIOD_ADMIN_ONLY` pour tout autre auteur. Les
+/// mêmes `details { entryCount, fiscalYears, lockedThrough }`, pour que l'écran
+/// nomme l'exercice, la borne du verrou et le nombre d'écritures.
+fn closed_period_response(
+    exposure: &kesh_db::errors::ClosedPeriodExposure,
+    admin_only: bool,
+) -> Response {
+    let (status, code, key, fallback) = if admin_only {
+        (
+            StatusCode::FORBIDDEN,
+            "PROJECT_REASSIGNMENT_CLOSED_PERIOD_ADMIN_ONLY",
+            "error-project-reassignment-closed-period-admin-only",
+            // Revue P1, B-3 : le même refus sert le Comptable en session et la
+            // clé d'API ; il dit qui peut agir, sans renvoyer le Comptable vers
+            // l'interface où il est déjà.
+            "Seul un Administrateur connecté à l'interface web peut changer le compte \
+             analytique d'un exercice clos ou d'une période verrouillée : demandez-le à un \
+             Administrateur.",
+        )
+    } else {
+        (
+            StatusCode::CONFLICT,
+            "PROJECT_REASSIGNMENT_CLOSED_PERIOD",
+            "error-project-reassignment-closed-period",
+            "Changer le compte analytique modifierait des écritures d'un exercice clos ou \
+             d'une période verrouillée. Confirmez pour continuer.",
+        )
+    };
+    let mut args = FluentArgs::new();
+    args.set("entryCount", exposure.entry_count as i64);
+    let body = serde_json::json!({
+        "error": {
+            "code": code,
+            "message": t_args(key, fallback, &args),
+            "details": {
+                "entryCount": exposure.entry_count,
+                "fiscalYears": exposure.fiscal_years,
+                "lockedThrough": exposure.locked_through.map(|d| d.to_string()),
+            },
+        }
+    });
+    (status, Json(body)).into_response()
+}
+
 /// Corps `400` d'un refus qui nomme un exercice **postérieur** (Stories 15-8a,
 /// 15-12a, 37-1) : un seul gabarit pour les trois messages — celui des
 /// écritures (`error-later-fiscal-year-closed`) et celui de la création d'un
@@ -5587,6 +5634,17 @@ impl IntoResponse for AppError {
                         }
                     });
                     (StatusCode::BAD_REQUEST, Json(body)).into_response()
+                }
+                // Story 36-16a (#1167) — changer le compte analytique d'écritures
+                // d'une période close : `409` à l'Administrateur en session (il
+                // confirme), `403` à tout autre auteur. Les mêmes `details`, pour
+                // que l'écran nomme l'exercice, la borne du verrou et le nombre
+                // d'écritures.
+                DbError::ProjectReassignmentClosedPeriod(exposure) => {
+                    closed_period_response(&exposure, false)
+                }
+                DbError::ProjectReassignmentClosedPeriodAdminOnly(exposure) => {
+                    closed_period_response(&exposure, true)
                 }
                 DbError::IllegalStateTransition(m) => {
                     tracing::warn!("illegal state: {m}");

@@ -4056,3 +4056,25 @@ settings-invoicing-account-foreign = (in foreign currency: to be replaced)
 reconciliation-failed-account-requires-currency = The counterpart account is kept in a foreign currency: a reconciliation is posted in CHF. Choose a CHF account, or post the foreign-currency entry from the journal.
 reconciliation-failed-fx-multiple-currencies = The entry would carry two foreign currencies: an entry carries only one.
 reconciliation-failed-fx-revaluation = The targeted entry is a revaluation of the foreign-currency accounts: it is not modified.
+
+# Story 36-16a (#1167) — changer le compte analytique après coup
+audit-log-action-invoice-project-reassigned = Invoice analytical account changed
+error-project-reassignment-closed-period = { $entryCount ->
+    [one] Changing the analytical account would modify one entry of a closed fiscal year or a locked period. Confirm to continue.
+   *[other] Changing the analytical account would modify { $entryCount } entries of a closed fiscal year or a locked period. Confirm to continue.
+}
+error-project-reassignment-closed-period-admin-only = Only an administrator signed in to the web interface can change the analytical account of a closed fiscal year or a locked period: ask an administrator.
+projects-reassign-open = Change the analytical account
+projects-reassign-title = Change the analytical account
+projects-reassign-body = The document and all its entries move to the chosen analytical account. Amounts, accounts, dates, numbers, lettering and reconciliation do not change.
+projects-reassign-none = — None
+projects-reassign-archived = { $name } (archived)
+projects-reassign-save = Save
+projects-reassign-warning-title = Closed fiscal year or locked period
+projects-reassign-warning-entries-one = One entry of a closed period will change analytical account.
+projects-reassign-warning-entries-other = { $entryCount } entries of a closed period will change analytical account.
+projects-reassign-warning-fiscal-years = Closed fiscal year: { $names }.
+projects-reassign-warning-locked = Entries locked through { $date }.
+projects-reassign-warning-reports = The analytical reports for this period will change.
+projects-reassign-confirm = Confirm
+projects-reassign-done = Analytical account changed.

@@ -4223,6 +4223,39 @@ L'affectation est \textbf{optionnelle} et disponible sur \textbf{tous les flux d
           via la règle est alors taguée automatiquement).
 \end{itemize}
 
+\subsection{Changer le compte analytique après coup}
+\label{sec:reimputation-analytique}
+
+Un brouillon de facture se corrige dans son formulaire. Une facture client \textbf{validée,
+payée ou annulée} garde, elle, le bouton \emph{Changer le compte analytique} sur sa fiche
+(Comptable et Administrateur). Le dialogue propose les comptes analytiques actifs, celui que la
+facture porte s'il est archivé, et «~— Aucun~» pour retirer le compte~; \emph{Enregistrer} reste
+inactif tant que rien n'a changé.
+
+\begin{itemize}
+    \item \textbf{Ce que le geste touche}~: la facture et \textbf{toutes ses écritures}, chacune
+          de toutes ses lignes --- la vente, les règlements (ceux d'un rapprochement bancaire
+          compris) et le solde du reste d'une facture payée~; la vente et l'avoir d'une facture
+          annulée. Les rapports \emph{Dépenses} et \emph{Rendement par compte analytique}
+          suivent aussitôt.
+    \item \textbf{Ce qu'il ne touche pas}~: aucun montant, aucun compte du plan, aucune date,
+          aucun numéro, aucun lettrage, aucun rapprochement, aucun règlement ni statut.
+    \item \textbf{Les paires annulées}~: un règlement annulé et sa contre-passation ne sont plus
+          rattachés à la facture~; ils gardent leur compte analytique, et leur effet net sur ce
+          compte est nul.
+    \item \textbf{Exercice clos ou période verrouillée}~: si une écriture qui changerait est
+          dans un exercice clos (ou suivi d'un exercice clos), ou datée au plus tard de la date
+          du verrou des livres, le geste est \textbf{réservé à l'Administrateur connecté à
+          l'interface web}, comme la réouverture d'un exercice et la levée du verrou. Kesh
+          l'avertit~--- exercice clos ou date du verrou, nombre d'écritures, et le fait que les
+          rapports analytiques de cette période changeront~--- et lui demande de
+          \emph{Confirmer}. Un Comptable, ou une clé d'API, reçoit un refus qui le dit, et rien
+          n'est écrit.
+    \item \textbf{La trace}~: chaque changement est inscrit au journal d'audit (\emph{Compte
+          analytique de la facture changé}), avec l'ancien et le nouveau compte, les écritures
+          touchées, et si une période close a été confirmée~; une clé d'API y est nommée.
+\end{itemize}
+
 \subsection{Les deux rapports par compte analytique}
 
 Dans \emph{Rapports}, deux onglets exploitent la dimension analytique (exportables PDF/CSV,
