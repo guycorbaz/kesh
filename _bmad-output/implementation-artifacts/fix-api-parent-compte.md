@@ -147,6 +147,7 @@ sans parent ; l'`UPDATE` de `accounts::update` n'écrit pas `parent_id` ; commen
   `front-test-unit-r1.log`), corrigé par `3e1bfbb0`. Captures non reprises : le dialogue ne change que par le filtre
   des candidats et un `data-testid`. **Gate complet groupé à venir.**
 - La remédiation touche la production : passe P2 ciblée requise (`revue-p2-ciblee-prompt.md`).
+- 2026-11-18 — passe P2 ciblée (Sonnet, lecture seule) sur `4241e6b7`..`3e1bfbb0` : **0 au-dessus de LOW**, 4 LOW. P2-4 (phrase soudée de `docs/api-external.md`) corrigée par l'orchestrateur ; P2-1 (formulation du refus quand le parent est déjà non imputable), P2-2 (comptes E2E non nettoyés), P2-3 (nom de variable d'un test) tracés en issues. **Boucle close.** Trend : P1 Opus 3 MEDIUM + 5 LOW → P2 ciblée Sonnet 0 > LOW. Gate complet groupé à venir, avant tout push.
 
 ## Notes de version
 

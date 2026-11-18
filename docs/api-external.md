@@ -1081,7 +1081,7 @@ le compte garde ou reçoit dans le même `PUT` → `400 FX_ACCOUNT_INVALID`
 `notPostable`. **Plus strict que la création** : tout autre parent qui porte des
 écritures, en CHF compris, → **`409 ACCOUNT_PARENT_HAS_ENTRIES`** (`details {
 parentAccountId, parentNumber }`) — il passerait non imputable avec un solde
-qu'aucune saisie ne corrigerait plus ; `POST /accounts` l'accepte encore. Et un compte ne se range ni sous lui-même ni sous l'un de ses
+qu'aucune saisie ne corrigerait plus ; `POST /accounts` l'accepte encore. Un compte ne se range pas non plus sous lui-même ni sous l'un de ses
 sous-comptes, à quelque niveau : **`409 ACCOUNT_PARENT_CYCLE`**, le message nomme
 le parent demandé. Rien n'est écrit sur un refus. Comme à la création, le nouveau
 parent — forcément sans écriture — devient **non imputable** (compte de
