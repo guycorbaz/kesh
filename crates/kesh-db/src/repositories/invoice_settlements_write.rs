@@ -378,6 +378,8 @@ pub async fn settle_invoice(
             company_id,
             invoice_id,
             journal_entry_id: je.entry.id,
+            // Règlement unitaire : toute la créance de l'écriture (Story 43-1a).
+            journal_entry_line_id: None,
             amount: settled_amount,
             settled_on,
             kind: crate::entities::SettlementKind::Choice(choice),
@@ -754,6 +756,8 @@ pub async fn write_off_invoice(
             company_id,
             invoice_id,
             journal_entry_id: je.entry.id,
+            // Solde unitaire : toute la créance de l'écriture (Story 43-1a).
+            journal_entry_line_id: None,
             amount,
             settled_on,
             kind: SettlementKind::WriteOff {
@@ -867,6 +871,25 @@ pub async fn settlement_cancel_blocker_unlinking(
     unlinking: Option<i64>,
     aujourd_hui: NaiveDate,
 ) -> Result<Option<SettlementCancelHit>, DbError> {
+    let (entry_id, head) = settlement_cancel_head(conn, company_id, settlement_id).await?;
+    if head.is_some() {
+        return Ok(head);
+    }
+    settlement_entry_cancel_blocker(conn, company_id, entry_id, unlinking, aujourd_hui).await
+}
+
+/// La **tête** client des motifs d'annulation d'un règlement — rang 1
+/// (facture créditée) et rang 1 bis (un solde existe) —, et l'écriture du
+/// règlement. Extraite de [`settlement_cancel_blocker_unlinking`], qui
+/// l'appelle avant la queue commune ; le dé-rapprochement d'un règlement
+/// groupé (Story 43-1a, revue P1 B-5) l'appelle pour **chaque** facture, puis
+/// la queue **une fois** pour l'écriture commune. ⛔ Les rangs 1 et 1 bis ne
+/// sont écrits qu'ici.
+pub(crate) async fn settlement_cancel_head(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    settlement_id: i64,
+) -> Result<(i64, Option<SettlementCancelHit>), DbError> {
     // Story 25-4-d2a : un solde existe-t-il sur la facture, et ce règlement
     // en est-il un ?
     let row: Option<(i64, String, String, bool)> = sqlx::query_as(
@@ -894,14 +917,48 @@ pub async fn settlement_cancel_blocker_unlinking(
     // antérieures à la 0.12.1 (la 0.12.0 acceptait cet avoir), restaurées ou
     // mises à jour sur place.
     if status != "validated" {
-        return Ok(Some((SettlementCancelBlocker::InvoiceCredited, None, None)));
+        return Ok((
+            entry_id,
+            Some((SettlementCancelBlocker::InvoiceCredited, None, None)),
+        ));
     }
     // Rang 1 bis (Story 25-4-d2a) : annuler d'abord le solde. Le solde lui-même
     // reste annulable.
     if write_off_exists && settlement_type != "write_off" {
-        return Ok(Some((SettlementCancelBlocker::WriteOffExists, None, None)));
+        return Ok((
+            entry_id,
+            Some((SettlementCancelBlocker::WriteOffExists, None, None)),
+        ));
     }
-    settlement_entry_cancel_blocker(conn, company_id, entry_id, unlinking, aujourd_hui).await
+    Ok((entry_id, None))
+}
+
+/// Retire **toutes** les lignes `invoice_settlements` d'une écriture de
+/// règlement groupé (Story 43-1a, #823, AC7 étape 4) — le seul `DELETE` des
+/// règlements hors de [`cancel_settlement_in_tx`], tenu dans ce module comme
+/// l'exige l'inventaire des écrivains (`letterings_lexical.rs`, AC8 de la
+/// 15-1a2-i).
+///
+/// ⛔ À n'appeler que par `grouped_settlements::cancel_in_tx`, **après** le
+/// délettrage de chaque facture du groupe et **avant** la contre-passation de
+/// l'écriture devenue sans propriétaire (D4) ; rend le nombre de lignes
+/// retirées.
+pub(crate) async fn delete_grouped_settlements_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    entry_id: i64,
+) -> Result<u64, DbError> {
+    Ok(
+        sqlx::query(
+            "DELETE FROM invoice_settlements WHERE company_id = ? AND journal_entry_id = ?",
+        )
+        .bind(company_id)
+        .bind(entry_id)
+        .execute(&mut **tx)
+        .await
+        .map_err(map_db_error)?
+        .rows_affected(),
+    )
 }
 
 /// Ce que rend une annulation de règlement.

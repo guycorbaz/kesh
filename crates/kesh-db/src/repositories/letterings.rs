@@ -1474,8 +1474,25 @@ const SYNC_INVOICE_SQL: &str = "SELECT status, journal_entry_id, invoice_number 
 /// Les écritures des règlements **en vigueur** de la facture (lignes de
 /// `invoice_settlements`, soldes compris), lecture **verrouillante**, par
 /// l'index (société, facture), forcé (C-15-1a2-i-2).
-const SYNC_SETTLEMENT_ENTRIES_SQL: &str = "SELECT journal_entry_id FROM invoice_settlements \
+///
+/// Story 43-1a (#823, AC4) : la ligne de créance du règlement
+/// (`journal_entry_line_id`) est lue avec l'écriture — même lecture, même
+/// index, même verrou. Renseignée (règlement groupé), seule CETTE ligne de
+/// l'écriture entre dans `C(I)` ; `NULL` (règlement unitaire), toutes les lignes
+/// du compte de créance de l'écriture, comme avant.
+const SYNC_SETTLEMENT_ENTRIES_SQL: &str = "SELECT journal_entry_id, journal_entry_line_id \
+     FROM invoice_settlements \
      FORCE INDEX (idx_invoice_settlements_company_invoice) WHERE invoice_id = ? AND company_id = ? ORDER BY id FOR UPDATE";
+
+/// Le filtre par ligne (Story 43-1a, AC4) : d'une écriture dont la pièce porte
+/// l'identifiant de sa ligne (`only`), ne garder que cette ligne ; les autres
+/// écritures, toutes leurs lignes lues.
+fn keep_owned_lines(lines: Vec<LineRow>, only: &BTreeMap<i64, i64>) -> Vec<LineRow> {
+    lines
+        .into_iter()
+        .filter(|l| only.get(&l.entry_id).is_none_or(|line_id| *line_id == l.id))
+        .collect()
+}
 
 /// L'écriture de l'avoir **émis** de la facture, lecture **verrouillante** —
 /// par `uq_credit_notes_invoice`, **forcé** : `idx_credit_notes_company_status`
@@ -1562,13 +1579,18 @@ async fn discover_invoice_document(
             .ok_or_else(|| DbError::Invariant("écriture de vente sans ligne de débit".into()))?;
 
     let mut entries = vec![sale_entry_id];
-    let reglements: Vec<i64> = sqlx::query_scalar(SYNC_SETTLEMENT_ENTRIES_SQL)
+    let reglements: Vec<(i64, Option<i64>)> = sqlx::query_as(SYNC_SETTLEMENT_ENTRIES_SQL)
         .bind(invoice_id)
         .bind(company_id)
         .fetch_all(&mut **tx)
         .await
         .map_err(map_db_error)?;
-    entries.extend(reglements);
+    // Story 43-1a (AC4) — les écritures groupées : leur seule ligne à soi.
+    let owned_lines: BTreeMap<i64, i64> = reglements
+        .iter()
+        .filter_map(|(entry, line)| line.map(|l| (*entry, l)))
+        .collect();
+    entries.extend(reglements.iter().map(|(entry, _)| *entry));
     let avoirs: Vec<i64> = sqlx::query_scalar(SYNC_CREDIT_NOTE_ENTRIES_SQL)
         .bind(invoice_id)
         .bind(company_id)
@@ -1600,10 +1622,12 @@ async fn discover_invoice_document(
                 "lettrage de pièce : l'ancre de la facture {invoice_id} est introuvable"
             ))
         })?;
-    let lines = lues
-        .into_iter()
-        .filter(|l| l.entry_id != sale_entry_id || l.id == ancre)
-        .collect();
+    let lines = keep_owned_lines(
+        lues.into_iter()
+            .filter(|l| l.entry_id != sale_entry_id || l.id == ancre)
+            .collect(),
+        &owned_lines,
+    );
     Ok(Some(PieceDocument {
         account_id,
         lines,
@@ -1878,9 +1902,25 @@ async fn dissolve_document_in_tx(
 /// La facture fournisseur, **verrouillée** (l'appelant la tient déjà : la
 /// relecture `FOR UPDATE` ne prend aucun verrou neuf et lit la ligne courante —
 /// après l'`UPDATE` du paiement, le statut `paid` et l'écriture de règlement).
+///
+/// Story 43-1a (#823, AC4) : `settlement_journal_entry_line_id` lue avec —
+/// renseignée (règlement groupé), seule cette ligne du règlement entre dans
+/// `C(S)`.
 const SYNC_SUPPLIER_INVOICE_SQL: &str = "SELECT status, purchase_journal_entry_id, \
-     settlement_journal_entry_id, internal_number, supplier_invoice_number FROM supplier_invoices \
+     settlement_journal_entry_id, settlement_journal_entry_line_id, internal_number, \
+     supplier_invoice_number FROM supplier_invoices \
      WHERE id = ? AND company_id = ? FOR UPDATE";
+
+/// La ligne de [`SYNC_SUPPLIER_INVOICE_SQL`] : statut, écriture d'achat,
+/// écriture et ligne de règlement, numéro interne, numéro du fournisseur.
+type SupplierDocumentRow = (
+    String,
+    Option<i64>,
+    Option<i64>,
+    Option<i64>,
+    Option<String>,
+    Option<String>,
+);
 
 /// P2 — la découverte d'une facture fournisseur, **par statut** (C-15-1a2-15) :
 ///
@@ -1903,13 +1943,7 @@ async fn discover_supplier_invoice_document(
     company_id: i64,
     supplier_invoice_id: i64,
 ) -> Result<Option<PieceDocument>, DbError> {
-    let (status, purchase_entry_id, settlement_entry_id, interne, fournisseur): (
-        String,
-        Option<i64>,
-        Option<i64>,
-        Option<String>,
-        Option<String>,
-    ) = sqlx::query_as(SYNC_SUPPLIER_INVOICE_SQL)
+    let (status, purchase_entry_id, settlement_entry_id, settlement_line_id, interne, fournisseur): SupplierDocumentRow = sqlx::query_as(SYNC_SUPPLIER_INVOICE_SQL)
         .bind(supplier_invoice_id)
         .bind(company_id)
         .fetch_optional(&mut **tx)
@@ -1971,10 +2005,17 @@ async fn discover_supplier_invoice_document(
                  introuvable"
             ))
         })?;
-    let lines = lues
-        .into_iter()
-        .filter(|l| l.entry_id != purchase_entry_id || l.id == ancre)
-        .collect();
+    // Story 43-1a (AC4) — un règlement groupé : sa seule ligne à soi.
+    let owned_lines: BTreeMap<i64, i64> = match (settlement_entry_id, settlement_line_id) {
+        (Some(entry), Some(line)) if status == "paid" => BTreeMap::from([(entry, line)]),
+        _ => BTreeMap::new(),
+    };
+    let lines = keep_owned_lines(
+        lues.into_iter()
+            .filter(|l| l.entry_id != purchase_entry_id || l.id == ancre)
+            .collect(),
+        &owned_lines,
+    );
     Ok(Some(PieceDocument {
         account_id,
         lines,

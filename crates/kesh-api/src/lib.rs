@@ -1012,6 +1012,12 @@ pub fn build_router_avec_registre(
             "/api/v1/reconciliation/transactions/{id}/link-candidates",
             get(routes::reconciliation::get_link_candidates),
         )
+        // Story 43-2 (#823) : les factures candidates d'un règlement groupé
+        // (Comptable+, lecture ; clés d'API en lecture admises).
+        .route(
+            "/api/v1/reconciliation/transactions/{id}/group-candidates",
+            get(routes::reconciliation_group::get_group_candidates),
+        )
         .route(
             "/api/v1/reconciliation/transactions/{id}/link",
             post(routes::reconciliation::post_link_transaction),

@@ -1091,10 +1091,37 @@ const ATTENDU = {
 	// `common-amount-unreadable` (`journal-entries/amount-entry-message.ts`),
 	// `supplier-invoices-err-line-unit-price-ambiguous` et `-unreadable`
 	// (`SupplierInvoiceForm.svelte`) : quatre littéraux.
+	// Story 43-3 (#823, AC6), côté client : **3086 → 3142** — la story entière a été relevée à
+	// 3146 par la garde (« expected 3146 to be 3086 », `kesh-gate-logs/e433/vitest-i18n-releve-1.log`),
+	// dont quatre sites du côté fournisseur (D6), dans un commit à part : 60 − 4 = 56 sites,
+	// 36 dans `reconciliation/GroupSettlementModal.svelte` (neuf) et 20 dans les fichiers touchés
+	// (`failed-proposal-label.ts`, `reconciliation-cancel.ts`, `CancelReconciliationDialog.svelte`,
+	// `ReconciliationProposals.svelte`), recomptés par `grep -c 'i18nMsg('` ; que des littéraux.
+	// À relever de nouveau à l'union de la 0.19.0 (C-e350-18).
+	// Story 43-3, côté fournisseur (D6, commit retirable) : **3142 → 3146** — les quatre sites
+	// `reconciliation-group-gap-supplier-over`, `-under`, `-col-supplier`
+	// (`GroupSettlementModal.svelte`) et `reconciliation-cancel-confirm-group-supplier`
+	// (`CancelReconciliationDialog.svelte`) ; la valeur relevée par la garde pour la story entière.
 	// Intégration de main (v0.18.0) dans l'Epic 37 (2026-11-17) : **3388**, relevé par la garde après la
 	// fusion (`expected 3388 to be 0`, `kesh-gate-logs/integration-main-37/vitest-1.log`), non
 	// additionné — il égale 3050 + 302 (Epic 37) + 36 (Epic 36), les deux côtés gardés.
-	sitesTotal: 3388,
+	// Fusion de la 43-2 (`d20095425`, Epic 37 compris) dans la 43-3 (2026-11-18) : relevé par la
+	// garde après la fusion (« expected 3450 », `kesh-gate-logs/e433/fusion-432-releve-1.log`), non
+	// additionné — il égale 3388 + 60 (Story 43-3) + 2 (le refus `ACCOUNT_IN_FOREIGN_CURRENCY`,
+	// libellé global et forme du groupe, `failed-proposal-label.ts`).
+	// Story 43-7 (#823), fusionnée avec la tête de l'Epic 43 : **3388 + 6 = 3394** — six littéraux de
+	// l'écran *Administration → Facturation* : `settings-invoicing-group-max-{title,label,hint,scale,
+	// range,required}` (la garde confirme à la fusion : `kesh-gate-logs/e437/vitest-cloture.log`).
+	// Fusion de l'épique (`d54bad428`, 43-7 comprise) dans la 43-3 (2026-11-18) : relevé par la garde
+	// après la fusion (`kesh-gate-logs/e433/fusion-epic-releve-1.log`), non additionné : 3456.
+	// Puis l'avis `reconciliation-group-held-by-batch` (revue P4 de la 43-2, P4-1), un littéral :
+	// **3457**, relevé par la garde (`kesh-gate-logs/e433/front-complet-review.log`, vert à 3457).
+	// Remédiation de la revue P1 de la 43-3 : **3466**, relevé par la garde (« expected 3466 to be
+	// 3457 », `kesh-gate-logs/e433/rem1-vitest-1.log`) — causes d'Enregistrer inactif, relecture,
+	// en-tête des factures imputées, écart sans compte à l'annulation, fin d'un groupe fournisseur.
+	// Revue P3 ciblée de la 43-3 (L-A, L-B) : **3468**, relevé par la garde (« expected 3468 to be
+	// 3466 », `kesh-gate-logs/e433/rem3-vitest-1.log`) — `reread-retry`, `account-check-retry`.
+	sitesTotal: 3468,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

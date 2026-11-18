@@ -742,9 +742,87 @@ Aucune garde de score : le score est recalculé pour la réponse (≥ `0.5`, le 
 
 **L'acceptation d'une règle rejoue le masquage** — ⚠️ **changement de contrat, des deux côtés** : une proposition `rule` autrefois acceptée est refusée en `RECONCILIATION_RULE_MASKED` *(neuf)* quand une facture la défend, relue au moment de l'acceptation (un appel direct, ou une page chargée avant la saisie de la facture) : pour un **débit**, `details.reason = "payment_batch"` (facture du montant exact dans un lot `generated` du compte ; `supplierInvoiceId`, `paymentBatchId`) ou `"invoice_candidate"` (une facture fournisseur candidate ; `supplierInvoiceId`) ; pour un **crédit**, `"invoice_slightly_overpaid"` (une facture client que le paiement dépasse de `0,005` à `0,05` et qui porte une référence ou une contrepartie liée ; `invoiceId`). Rien n'est écrit. Les autres formes du masquage de la proposition (facture fournisseur presque au montant ou hors fenêtre portant un indice, lot d'un autre compte, liste pleine ; côté client, une facture **candidate**) ne sont **pas** rejouées. Le geste attendu est de traiter la facture — accepter la proposition `supplier_invoice` (débit), ou enregistrer le règlement de la facture client puis rattacher la transaction (`POST /api/v1/reconciliation/transactions/{id}/link`, crédit). `POST /api/v1/reconciliation/manual` ou `/split` ne conviennent que pour une transaction qui ne règle aucune facture saisie : sinon la charge ou le produit serait compté deux fois.
 
-⚠️ **Dépense déjà réglée par un autre chemin** — le débit d'une facture fournisseur **déjà payée** (depuis la fiche, par la confirmation d'un lot, ou payée puis annulée, son paiement restant au grand livre), ou d'une dépense passée par une écriture saisie au journal, n'est pas **proposé**, même s'il porte sa référence : la facture n'est plus à payer. Pour ce débit, l'API propose peut-être la règle, ou une **autre** facture validée du même montant, et **rien n'empêche** de les accepter, ni `POST /reconciliation/manual` ni `/split` — chacun compterait la dépense ou le paiement deux fois. *Depuis la v0.17.0*, la transaction se **rattache** à l'écriture déjà passée (`GET …/entry-candidates`, puis `POST …/link-entry`, section suivante) : aucune seconde écriture. Le second côté d'un virement entre deux comptes propres se rattache, *depuis la v0.17.6*, à l'écriture du virement déjà rapprochée de l'autre côté. Restent sans écriture à laquelle se rattacher, à **rejeter** plutôt qu'à affecter : un lot de plusieurs factures débité en une ligne ([#823](https://github.com/guycorbaz/kesh/issues/823)) ; un paiement passé sur un ancien compte du grand livre, ou sur un autre compte bancaire à compte du grand livre distinct ([#827](https://github.com/guycorbaz/kesh/issues/827)) ; un paiement qui inclut des frais de rappel ([#401](https://github.com/guycorbaz/kesh/issues/401)).
+⚠️ **Dépense déjà réglée par un autre chemin** — le débit d'une facture fournisseur **déjà payée** (depuis la fiche, par la confirmation d'un lot, ou payée puis annulée, son paiement restant au grand livre), ou d'une dépense passée par une écriture saisie au journal, n'est pas **proposé**, même s'il porte sa référence : la facture n'est plus à payer. Pour ce débit, l'API propose peut-être la règle, ou une **autre** facture validée du même montant, et **rien n'empêche** de les accepter, ni `POST /reconciliation/manual` ni `/split` — chacun compterait la dépense ou le paiement deux fois. *Depuis la v0.17.0*, la transaction se **rattache** à l'écriture déjà passée (`GET …/entry-candidates`, puis `POST …/link-entry`, section suivante) : aucune seconde écriture. Le second côté d'un virement entre deux comptes propres se rattache, *depuis la v0.17.6*, à l'écriture du virement déjà rapprochée de l'autre côté. Restent sans écriture à laquelle se rattacher, à **rejeter** plutôt qu'à affecter : un lot de paiement de plusieurs factures, confirmé (factures payées) puis débité en une ligne — ses factures sont refusées par le règlement groupé (`supplier_invoice_not_open`), comme celles d'un lot encore `generated` (`supplier_invoice_in_payment_batch`) ; ce cas va à une version ultérieure ([#823](https://github.com/guycorbaz/kesh/issues/823)) ; un paiement passé sur un ancien compte du grand livre, ou sur un autre compte bancaire à compte du grand livre distinct ([#827](https://github.com/guycorbaz/kesh/issues/827)) ; un paiement qui inclut des frais de rappel ([#401](https://github.com/guycorbaz/kesh/issues/401)). En revanche, plusieurs factures fournisseur **ouvertes, hors de tout lot**, payées par un seul débit, se règlent *depuis la v0.19.0* par le type `supplier_invoice_group` (§ « Régler plusieurs factures par une transaction ») ; un lot `generated` doit d'abord être annulé.
 
 **`paidAt`** — *depuis la v0.14.0*, le `paidAt` d'une facture fournisseur payée est la **date du paiement** à minuit (`AAAA-MM-JJT00:00:00`) — le `paymentDate` de `POST /supplier-invoices/{id}/pay`, celui de `POST /payment-batches/{id}/confirm`, la date de paiement de la transaction acceptée —, et non plus l'heure de l'enregistrement. Les factures déjà payées gardent leur valeur.
+
+### Régler plusieurs factures par une transaction
+
+*(Depuis la v0.19.0, [#823](https://github.com/guycorbaz/kesh/issues/823).)* Une transaction au **crédit** règle **plusieurs factures clients** — de clients quelconques : une banque verse souvent, en un seul montant, ce que plusieurs débiteurs doivent. Une seule écriture : la banque, puis une ligne de créance par facture (par identifiant croissant), chaque facture soldée de son reste dû **brut** et lettrée avec sa seule ligne ; s'y ajoutent au plus une ligne d'arrondi et une ligne d'écart (ci-dessous). Les routes sont celles de la réconciliation : rôle Comptable, clés d'API admises (une clé en **lecture** peut chercher, non accepter, `403 API_KEY_READ_ONLY`) ; la clé est nommée au journal d'audit.
+
+**Chercher les factures — `GET /api/v1/reconciliation/transactions/{id}/group-candidates?q=…&limit=…&exclude=…`** (lecture). Un crédit rend les factures clients **validées** à reste dû positif ; un débit, les factures fournisseur **validées** (`open`), hors lot de paiement `generated`. **Tous tiers.** Seules les factures datées au plus tard du lendemain du paiement (une semaine pour une facture fournisseur) sont rendues : la liste n'offre jamais ce que l'acceptation refuserait pour cette raison.
+
+- `q` (facultatif, taillé ; vide : aucun filtre) cherche, au choix : le **nom du tiers** — par préfixe du dernier mot, comme la liste des contacts ; un terme dont aucun mot n'a trois caractères (« BL SA ») est cherché tel quel dans le nom — ; le **numéro** de la facture client ; le **numéro interne**, le **numéro du fournisseur** et la **référence de paiement** d'une facture fournisseur. Les caractères `%`, `_`, `\` et les opérateurs de recherche (`+ - * " ~ @ < > ( )`) ne sont pas interprétés.
+- `limit` : 50 par défaut, 100 au plus (au-delà, ramené à 100 ; `≤ 0`, le défaut). `exclude=12,15` : les factures à retirer (déjà imputées par l'écran), 50 au plus, chacune `> 0` — sinon `400 VALIDATION_ERROR`.
+- Au plus 500 factures sont lues (les plus anciennes, par date puis identifiant), triées dans l'**ordre d'imputation** (échues d'abord, puis la plus proche de son échéance), puis tronquées à `limit`. `hasMore` vaut `true` si la troncature a coupé ou si plus de 500 factures répondaient.
+
+```json
+{ "direction": "client", "transactionAmount": "799.60", "maxDifference": "5.00",
+  "candidates": [
+    { "kind": "invoice", "id": 12, "number": "F-2026-0012", "contactName": "Exemple SA",
+      "date": "2026-10-03", "dueDate": "2026-11-02", "totalTtc": "800.00",
+      "amountDue": "500.00", "amountDueRaw": "500.0000" },
+    { "kind": "invoice", "id": 15, "number": "F-2026-0015", "contactName": "Autre Sàrl",
+      "date": "2026-10-10", "dueDate": "2026-11-09", "totalTtc": "300.00",
+      "amountDue": "300.00", "amountDueRaw": "300.0000" } ],
+  "hasMore": false, "heldByPaymentBatch": null }
+```
+
+Une candidate fournisseur : `{ "kind": "supplier_invoice", "id", "internalNumber", "supplierInvoiceNumber", "contactName", "date", "dueDate", "paymentReference", "amountDue", "amountDueRaw" }` (son total, au centime et brut). `amountDue` est au **centime** (affichage) ; `amountDueRaw` est le reste dû **brut**, à quatre décimales, sur lequel le serveur calcule l'écart. `transactionAmount` est **signé** (`"-1250.00"` pour un débit). `maxDifference` est le plafond de l'écart de la société (réglage `group_settlement_max_difference`, **5.00 par défaut**), à deux décimales. Un **montant nul** ou une transaction **hors CHF** rend `200` avec `direction: null` et une liste vide. Un **débit** dont le montant exact est retenu par une autre facture fournisseur ouverte, engagée dans un lot de paiement `generated` **de ce compte bancaire**, rend une liste vide et `heldByPaymentBatch: { "supplierInvoiceId", "paymentBatchId" }` : tout groupe y serait refusé (`RECONCILIATION_SUPPLIER_PAYMENT_HOLD`) ; le champ vaut `null` sinon. Ici, `supplierInvoiceId` désigne la facture **tenue par le lot**, comme dans le refus de l'acceptation d'une facture seule ; dans le refus `RECONCILIATION_SUPPLIER_PAYMENT_HOLD` du `POST` d'un groupe, `details.supplierInvoiceId` désigne la facture **du groupe** refusée, et la facture tenue n'y est pas nommée : seul `paymentBatchId` est commun aux deux ([#1260](https://github.com/guycorbaz/kesh/issues/1260)).
+
+Refus, dans l'ordre de `GET …/link-candidates` : transaction introuvable ou d'une autre société → `404 NOT_FOUND` ; compte bancaire archivé → `404 BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND` ; clos → `409 BANK_ACCOUNT_CLOSED` ; sans compte du grand livre → `412 BANK_ACCOUNT_NOT_CONFIGURED` ; transaction déjà rapprochée → `404 RECONCILIATION_TRANSACTION_NOT_PENDING`. Une transaction **rejetée** est servie (l'acceptation la refuse, `RECONCILIATION_ALREADY_REJECTED`).
+
+**Accepter — `POST /api/v1/reconciliation/accept`**, type `invoice_group` :
+
+```json
+{ "bankAccountId": 3, "proposals": [
+  { "type": "invoice_group", "bankTransactionId": 41, "invoiceIds": [12, 15], "differenceAccountId": 6940 }
+] }
+```
+
+`invoiceIds` : 2 à 50 factures ; `differenceAccountId` (facultatif) : le compte de l'**écart**, choisi par l'utilisateur, obligatoire dès que l'écart au centime est non nul, ignoré sinon. Un identifiant `≤ 0` dans `invoiceIds`, ou un `differenceAccountId` `≤ 0`, rend `400 VALIDATION_ERROR` pour le **lot** ; tout autre refus est **par proposition**, dans `failed[]`, en `200` (*Pattern batch* : une proposition refusée n'écrit rien et n'empêche pas les autres). Le message d'un `type` inconnu nomme les types admis.
+
+**Ordre des refus** : (1) le pré-vol du lot — transaction introuvable (`BANK_TRANSACTION_NOT_FOUND`), déjà rapprochée (`RECONCILIATION_ALREADY_RECONCILED`) ou rejetée (`RECONCILIATION_ALREADY_REJECTED`) ; (2) sous le verrou du compte, pour le groupe : moins de 2, plus de 50, doublon (`RECONCILIATION_GROUP_INVALID`) ; (3) la transaction relue : le **sens** (un débit ou un montant nul, `RECONCILIATION_TRANSACTION_NOT_CREDIT`, `details.reason` = `debit_transaction` ou `zero_amount_transaction`), puis la **devise** (autre que CHF, `RECONCILIATION_CURRENCY_MISMATCH`, `details { transactionCurrency, expected: "CHF" }`) ; (4) chaque facture, par identifiant croissant ; (5) l'écart et ses comptes. Une transaction inexistante proposée avec une seule facture rend donc `BANK_TRANSACTION_NOT_FOUND`, non `too_few`.
+
+**Factures fournisseur** — le type `supplier_invoice_group` (`supplierInvoiceIds`, mêmes bornes, même `differenceAccountId`) règle **plusieurs factures fournisseur** validées (`open`) par une transaction au **débit**, chacune de son total ; le refus de sens est alors `RECONCILIATION_TRANSACTION_NOT_DEBIT` (`credit_transaction`, `zero_amount_transaction`), `details` nomme `supplierInvoiceId` et `invoiceNumber` (le numéro interne, à défaut celui du fournisseur), `settledInvoices[]` porte `supplierInvoiceId`, et les `groupedInvoices[].kind` de la vue valent `supplier_invoice` (la vue reste `kind: "grouped_settlement"`). S'y ajoutent `SUPPLIER_INVOICE_NOT_FOUND`, `RECONCILIATION_INVOICE_NOT_ELIGIBLE` (`supplier_invoice_not_open`, `supplier_invoice_in_payment_batch`, `payment_date_before_invoice_date` avec `tolerance_days` = 7) et `RECONCILIATION_SUPPLIER_PAYMENT_HOLD` (une autre facture du même montant est dans un lot `generated` de ce compte). Un débit supérieur aux factures est un écart positif, un débit inférieur un écart négatif.
+
+**L'écart** — `d = |montant| − Σ restes dus bruts` se décompose en **`e`**, `d` arrondi au centime (le demi-centime s'éloigne de zéro), et **`r = d − e`**, la fraction sous le centime (`|r| ≤ 0.005`) :
+
+- `r` va au **compte de différences d'arrondi** des réglages, comme pour le règlement d'une seule facture (aucune ligne si `r = 0`) ;
+- `e` va au **compte choisi** (`differenceAccountId`) : moins-payé (`e < 0`, au débit) ou trop-perçu (`e > 0`, au crédit), **les deux sens admis**, dans la limite du **plafond** de la société (`|e| ≤ maxDifference` ; `r` n'y est jamais soumis) ;
+- `e = 0` (`|d| < 0.005`) est l'**arrondi automatique** : aucun compte demandé.
+
+Contrôles, dans cet ordre : (1) `|e|` au-delà du plafond → `RECONCILIATION_GROUP_DIFFERENCE_TOO_LARGE` (même sans compte choisi) ; (2) `r ≠ 0` sans compte d'arrondi → `ROUNDING_ACCOUNT_NOT_CONFIGURED`, compte d'arrondi égal à un compte de créance des factures → `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT` (`role: "rounding"`) ; (3) `e ≠ 0` sans `differenceAccountId` → `RECONCILIATION_GROUP_INVALID`, `reason: "difference_account_required"` ; (4) le compte choisi : égal au compte de la banque de la transaction → `VALIDATION_ERROR`, `reason: "counterparty_equals_bank_ledger"` (même s'il est aussi non imputable) ; inexistant, archivé ou d'une autre société → `ACCOUNT_NOT_FOUND`, `missingAccountIds` ; non imputable → `ACCOUNT_NOT_POSTABLE`, `rejected[{accountId, accountNumber}]` ; tenu en devise → `ACCOUNT_IN_FOREIGN_CURRENCY`, `details { accountId, currency }` (le règlement groupé s'écrit en CHF, comme le règlement d'une facture seule) ; égal au compte de créance d'une facture du groupe → `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT`, `role: "counterparty"`. Le compte du grand livre d'une **autre** banque est admis (seule celle de la transaction est interdite), comme le compte des créanciers (`2000`) pour un groupe client.
+
+⚠️ **Deux causes pour `role: "counterparty"`** : le compte de créance d'une facture est le compte de la banque (configuration : `details.bankAccountId` présent, `accountId` = ce compte) ; ou le compte choisi pour l'écart est un compte de créance du groupe (`details.bankAccountId` **absent**, `accountId` = le `differenceAccountId` envoyé).
+
+Élément d'`accepted[]` d'un groupe — `invoiceId` vaut `0` (sentinelle), `supplierInvoiceId` `null`, le score est conventionnel (`total` 1.0, sous-scores à 0, comme `rule`) ; cinq champs **additifs**, absents pour les autres types :
+
+```json
+{ "bankTransactionId": 41, "invoiceId": 0, "supplierInvoiceId": null, "journalEntryId": 905,
+  "score": { "total": 1.0, "amountScore": 0.0, "referenceScore": 0.0, "contactScore": 0.0 },
+  "difference": "-0.4000", "roundingDifference": "0.0000", "gap": "-0.40", "differenceAccountId": 6940,
+  "settledInvoices": [ { "invoiceId": 12, "amount": "500.0000" }, { "invoiceId": 15, "amount": "300.0000" } ] }
+```
+
+`difference` (`d`) et `roundingDifference` (`r`) sont bruts, signés, à quatre décimales ; `gap` (`e`) est au centime, signé (`"0.00"` dans l'arrondi automatique) ; `difference = roundingDifference + gap`. `differenceAccountId` est `null` quand `gap` est nul. `settledInvoices[].amount` : le montant soldé, brut.
+
+Refus propres à une facture — `details` nomme la facture (`invoiceId`, et `invoiceNumber`, `null` si elle n'a pas de numéro) :
+
+| `errorCode` | Cause | `details` |
+|---|---|---|
+| `RECONCILIATION_GROUP_INVALID` *(neuf)* | moins de 2 ou plus de 50 factures, doublon ; écart sans compte | `reason` = `too_few`, `too_many` (+ `count`), `duplicate` (+ `invoiceId`), `difference_account_required` (+ `gap`) |
+| `RECONCILIATION_GROUP_DIFFERENCE_TOO_LARGE` *(neuf)* | l'écart `e`, en valeur absolue, au-delà du plafond | `transactionAmount`, `sumApplied` (Σ des restes bruts), `gap`, `maxDifference` (le réglage) |
+| `INVOICE_NOT_FOUND` | facture absente ou d'une autre société | `invoiceId` |
+| `RECONCILIATION_INVOICE_NOT_ELIGIBLE` | facture non validée, déjà payée, sans écriture de vente, sans reste dû ; changée pendant l'acceptation ; datée de plus d'un jour après le paiement | `reason` = `invoice_not_validated`, `invoice_already_paid`, `invoice_journal_entry_not_set`, `nothing_due`, `race_during_update`, `payment_date_before_invoice_date` (+ `tolerance_days`) ; `invoiceId`, `invoiceNumber` |
+| `INVOICE_SALE_ENTRY_MALFORMED` | l'écriture de vente n'a pas de ligne au débit | `reason`, `saleEntryId`, `invoiceId`, `invoiceNumber` |
+| `BANK_ACCOUNT_NOT_CONFIGURED`, `BANK_ACCOUNT_NOT_FOUND`, `BANK_ACCOUNT_CLOSED` | le compte bancaire de la transaction | `bankAccountId` (sauf `BANK_ACCOUNT_NOT_FOUND`) |
+| `FISCAL_YEAR_INVALID`, `PERIOD_LOCKED`, `LATER_FISCAL_YEAR_CLOSED` | comme pour une facture seule | comme pour une facture seule |
+| `MULTI_CURRENCY_DISABLED`, `ACCOUNT_REQUIRES_CURRENCY`, et les autres refus du contrôle des devises | défense en profondeur : un état incohérent de la base (un compte de l'écriture passé en devise hors de l'API, qui le refuse dès qu'une ligne le vise) ; le compte d'écart en devise est refusé avant, en `ACCOUNT_IN_FOREIGN_CURRENCY` | comme pour une facture seule |
+
+Un compte analytique archivé après coup ne refuse rien. Il n'y a ni score ni borne basse de dates (la fenêtre de 30 jours après l'échéance de l'acceptation d'une facture seule) : l'utilisateur choisit les factures. Un interblocage est rejoué par le lot ; une erreur de base est rendue dans `failed[]` (`DATABASE_ERROR`, à rejouer ; `INTERNAL_ERROR`, défaut à signaler), jamais en `500` du lot.
+
+**La vue et l'annulation** — `GET /api/v1/reconciliation/transactions/{id}` rend `kind = "grouped_settlement"` pour un groupe, `invoiceId`, `invoiceNumber` et `supplierInvoiceId` à `null`, et quatre champs **additifs** : `groupedInvoices: [{ "kind": "invoice", "id", "number", "amount" }]` (montant soldé brut ; vide hors groupe), `gap` (l'écart au centime, signé, recalculé sur les montants du règlement ; `null` hors groupe), `differenceAccount: { "id", "number", "name" }` (le compte de l'écart ; `null` sans écart ou hors groupe) et `cancelBlockedInvoice: { "kind", "id", "number" }` (la facture qui porte le premier motif d'un refus d'annulation ; `null` sinon). `POST …/cancel` défait le groupe **en entier** — un groupe n'est jamais un retrait seul : `expectUnlinkOnly: true` rend `409 RECONCILIATION_CANCEL_CHANGED`, rien d'écrit — et sa réponse gagne `kind` (pour tout rapprochement) et `cancelledInvoices: [{ "kind", "id", "number" }]` (vide hors groupe).
 
 ### Annuler un rapprochement bancaire
 
@@ -1065,6 +1143,14 @@ qui archive un tel compte : la requête aboutissait auparavant. Ordre des refus 
 sous-comptes actifs, désignation, version. `PUT /company/invoice-settings` ne
 refuse plus un compte archivé reconduit à l'identique ; choisir un compte archivé
 reste refusé.
+
+*Depuis la 0.19.0* (Story 43-7, #823), `GET` et `PUT /company/invoice-settings`
+portent `groupSettlementMaxDifference` : l'**écart admis** (moins-payé ou
+trop-perçu, passé au compte choisi) d'un règlement de plusieurs factures, en
+chaîne décimale à deux décimales (`"5.00"` par défaut). Au `PUT`, facultatif
+(absent : inchangé), de 0 à 100.00 et au centime, sinon `400 VALIDATION_ERROR`
+qui nomme le champ. Le `PUT` est une route d'administration, fermée aux clés
+d'API ; le `GET` reste ouvert à toute clé.
 
 ¹ **Les mutations de taux de TVA ne sont pas accessibles via l'API** :
 `POST /vat-rates`, `PUT /vat-rates/{id}` et `DELETE /vat-rates/{id}` sont
