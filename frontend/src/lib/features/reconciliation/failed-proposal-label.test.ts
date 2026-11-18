@@ -14,6 +14,14 @@
 // `RECONCILIATION_SUPPLIER_PAYMENT_HOLD`, `RECONCILIATION_RULE_MASKED` (34, recomptés par la même
 // commande) — et un troisième code de `DbError::error_code()`, `INACTIVE_OR_INVALID_ACCOUNTS` :
 // 37 codes.
+// Story 43-3 (#823, AC4) : le règlement groupé (Story 43-2) pose ses refus dans
+// `crates/kesh-api/src/routes/reconciliation_group.rs` ; la recette s'y étend — union des
+// littéraux de ses refus (`grep -oE '"[A-Z][A-Z_]{4,}"'` sur `group_refusal_to_failed_proposal`,
+// les codes y étant écrits sur une ligne à part après `fail(`) et de ceux de `reconciliation.rs`.
+// Deux codes neufs, `RECONCILIATION_GROUP_INVALID` et `RECONCILIATION_GROUP_DIFFERENCE_TOO_LARGE`
+// (relevé sur la branche de la 43-2, commit `70f74f964`) : 39 codes. Depuis la fusion de l'Epic 37
+// (43-2 `d20095425`) : **48** — les huit codes de `fx_failed_proposal` (Story 37-3b) et
+// `ACCOUNT_IN_FOREIGN_CURRENCY`, que le groupe pose pour le compte de l'écart.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -43,6 +51,7 @@ import {
 	failedProposalLabel,
 	failureReason,
 	fiscalYearName,
+	isDifferenceAccountRefusal,
 	rejectedAccountNumbers,
 } from './failed-proposal-label';
 
@@ -85,6 +94,12 @@ const EXPECTED_KEYS: Record<string, string> = {
 	SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT: 'reconciliation-failed-counterparty-is-claim-account',
 	SUPPLIER_INVOICE_NOT_FOUND: 'reconciliation-failed-invoice-not-found',
 	VALIDATION_ERROR: 'error-validation',
+	// Story 43-3 — les deux codes neufs de la 43-2 (sans `details` : leur forme générique).
+	RECONCILIATION_GROUP_INVALID: 'reconciliation-failed-group-invalid',
+	RECONCILIATION_GROUP_DIFFERENCE_TOO_LARGE: 'reconciliation-failed-group-difference-too-large-generic',
+	// Epic 37 dans le règlement groupé (43-2, `reconciliation_group.rs`) : le compte de l'écart en
+	// devise ; sans discriminant, la clé globale.
+	ACCOUNT_IN_FOREIGN_CURRENCY: 'error-account-in-foreign-currency',
 	// Story 37-3b — les huit codes de `fx_failed_proposal` (37-3a, AC-5).
 	ACCOUNT_REQUIRES_CURRENCY: 'reconciliation-failed-account-requires-currency',
 	FX_MULTIPLE_CURRENCIES: 'reconciliation-failed-fx-multiple-currencies',
@@ -101,8 +116,8 @@ describe('failedProposalLabel', () => {
 		calls.length = 0;
 	});
 
-	it('couvre les 45 codes relevés (37 + les huit de `fx_failed_proposal`, Story 37-3b)', () => {
-		expect(Object.keys(EXPECTED_KEYS)).toHaveLength(45);
+	it('couvre les 48 codes relevés (37 + trois du règlement groupé, Stories 43-2 et 43-3, + les huit de `fx_failed_proposal`, Story 37-3b)', () => {
+		expect(Object.keys(EXPECTED_KEYS)).toHaveLength(48);
 	});
 
 	// Story 28-4b (#642, AC13) — le refus d'un compte clos (compte clos dans un autre
@@ -401,6 +416,153 @@ describe('failedProposalLabel', () => {
 			tolerance_days: 7,
 		});
 		expect(label).toBe(valeurFr(calls[0])?.replace('{ $days }', '7'));
+	});
+});
+
+// Story 43-3 (#823, AC4, D5) — les deux codes neufs, par raison, et le discriminant `group` :
+// chaque forme et chaque cause, avec et sans discriminant.
+describe('failedProposalLabel — règlement groupé (Story 43-3)', () => {
+	const GROUP = { group: true, differenceAccountId: 6940 } as const;
+
+	beforeEach(() => {
+		calls.length = 0;
+	});
+
+	it.each([
+		['too_few', 'reconciliation-failed-group-too-few'],
+		['too_many', 'reconciliation-failed-group-too-many'],
+		['duplicate', 'reconciliation-failed-group-duplicate'],
+		['difference_account_required', 'reconciliation-failed-group-difference-account-required'],
+		['autre', 'reconciliation-failed-group-invalid'],
+	])('RECONCILIATION_GROUP_INVALID, reason %s → %s', (reason, key) => {
+		failedProposalLabel('RECONCILIATION_GROUP_INVALID', { reason });
+		expect(calls).toEqual([key]);
+	});
+
+	it('RECONCILIATION_GROUP_DIFFERENCE_TOO_LARGE nomme le plafond lu dans details', () => {
+		const label = failedProposalLabel('RECONCILIATION_GROUP_DIFFERENCE_TOO_LARGE', {
+			gap: '-6.00',
+			maxDifference: '5.00',
+		});
+		expect(calls).toEqual(['reconciliation-failed-group-difference-too-large']);
+		expect(label).toContain('(5.00)');
+	});
+
+	it('ROUNDING_ACCOUNT_NOT_CONFIGURED : la forme du groupe avec le discriminant, celle de l’unitaire sans', () => {
+		failedProposalLabel('ROUNDING_ACCOUNT_NOT_CONFIGURED', null, GROUP);
+		expect(calls).toEqual(['reconciliation-failed-group-rounding-not-configured']);
+		calls.length = 0;
+		failedProposalLabel('ROUNDING_ACCOUNT_NOT_CONFIGURED', null);
+		expect(calls).toEqual(['error-rounding-account-not-configured']);
+	});
+
+	it.each([
+		['VALIDATION_ERROR', { reason: 'counterparty_equals_bank_ledger' }, 'reconciliation-failed-group-account-is-bank', 'error-validation'],
+		['ACCOUNT_NOT_FOUND', { missingAccountIds: [6940] }, 'reconciliation-failed-group-account-not-found', 'reconciliation-failed-account-not-found'],
+		[
+			'ACCOUNT_NOT_POSTABLE',
+			{ rejected: [{ accountId: 6940, accountNumber: '6940' }] },
+			'reconciliation-failed-group-account-not-postable',
+			'reconciliation-failed-account-not-postable',
+		],
+		['ACCOUNT_NOT_POSTABLE', {}, 'reconciliation-failed-group-account-not-postable-generic', 'reconciliation-failed-account-not-postable-generic'],
+		[
+			'ACCOUNT_IN_FOREIGN_CURRENCY',
+			{ accountId: 6940, currency: 'EUR' },
+			'reconciliation-failed-group-account-foreign-currency',
+			'error-account-in-foreign-currency',
+		],
+		[
+			'SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT',
+			{ accountId: 6940, accountNumber: '6940', claim: 'receivable', role: 'counterparty' },
+			'reconciliation-failed-group-account-is-claim',
+			'reconciliation-failed-counterparty-is-claim-account',
+		],
+	])('%s : compte de l’écart avec le discriminant, libellé de l’unitaire sans', (code, details, groupKey, unitKey) => {
+		failedProposalLabel(code, details, GROUP);
+		expect(calls).toEqual([groupKey]);
+		expect(isDifferenceAccountRefusal(code, details, 6940)).toBe(true);
+		calls.length = 0;
+		failedProposalLabel(code, details);
+		expect(calls).toEqual([unitKey]);
+	});
+
+	it('VALIDATION_ERROR d’une autre raison : libellé générique, même avec le discriminant', () => {
+		failedProposalLabel('VALIDATION_ERROR', { reason: 'splits_count_out_of_range' }, GROUP);
+		expect(calls).toEqual(['error-validation']);
+		expect(isDifferenceAccountRefusal('VALIDATION_ERROR', { reason: 'x' }, 6940)).toBe(false);
+	});
+
+	it('SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT avec bankAccountId (configuration) : libellé existant, hors sélecteur', () => {
+		const details = {
+			accountId: 1100,
+			accountNumber: '1100',
+			claim: 'receivable',
+			role: 'counterparty',
+			bankAccountId: 3,
+		};
+		failedProposalLabel('SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT', details, GROUP);
+		expect(calls).toEqual(['reconciliation-failed-counterparty-is-claim-account']);
+		expect(isDifferenceAccountRefusal('SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT', details, 6940)).toBe(false);
+	});
+
+	it('SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT dont accountId n’est pas le compte envoyé : hors sélecteur', () => {
+		const details = { accountId: 1100, claim: 'receivable', role: 'counterparty' };
+		failedProposalLabel('SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT', details, GROUP);
+		expect(calls).toEqual(['reconciliation-failed-counterparty-is-claim-account']);
+		expect(isDifferenceAccountRefusal('SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT', details, 6940)).toBe(false);
+		// Aucun compte envoyé : jamais la cause « compte de l'écart ».
+		expect(isDifferenceAccountRefusal('SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT', details, null)).toBe(false);
+	});
+
+	it('SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT, role rounding : renvoi aux réglages, même avec le discriminant', () => {
+		failedProposalLabel(
+			'SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT',
+			{ accountId: 6960, role: 'rounding', claim: 'receivable' },
+			GROUP,
+		);
+		expect(calls).toEqual(['reconciliation-failed-rounding-account-is-claim-account']);
+	});
+
+	it('difference_account_required est une cause du compte de l’écart ; too_few ne l’est pas', () => {
+		expect(
+			isDifferenceAccountRefusal('RECONCILIATION_GROUP_INVALID', { reason: 'difference_account_required' }, null),
+		).toBe(true);
+		expect(isDifferenceAccountRefusal('RECONCILIATION_GROUP_INVALID', { reason: 'too_few' }, 6940)).toBe(false);
+		expect(isDifferenceAccountRefusal('PERIOD_LOCKED', null, 6940)).toBe(false);
+	});
+
+	it('les replis des clés neuves égalent le catalogue fr-CH', () => {
+		const cas: [string, unknown, typeof GROUP | undefined][] = [
+			['RECONCILIATION_GROUP_INVALID', { reason: 'too_few' }, undefined],
+			['RECONCILIATION_GROUP_INVALID', { reason: 'duplicate' }, undefined],
+			['RECONCILIATION_GROUP_INVALID', { reason: 'difference_account_required' }, undefined],
+			['RECONCILIATION_GROUP_INVALID', {}, undefined],
+			['RECONCILIATION_GROUP_DIFFERENCE_TOO_LARGE', {}, undefined],
+			['ROUNDING_ACCOUNT_NOT_CONFIGURED', null, GROUP],
+			['VALIDATION_ERROR', { reason: 'counterparty_equals_bank_ledger' }, GROUP],
+			['ACCOUNT_NOT_FOUND', {}, GROUP],
+			['ACCOUNT_NOT_POSTABLE', {}, GROUP],
+			['SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT', { accountId: 6940, role: 'counterparty' }, GROUP],
+		];
+		for (const [code, details, group] of cas) {
+			calls.length = 0;
+			const label = failedProposalLabel(code, details, group);
+			const attendu = valeurFr(calls[0]);
+			expect(attendu, calls[0]).toBeDefined();
+			expect(label, code).toBe(attendu);
+		}
+		calls.length = 0;
+		const max = failedProposalLabel('RECONCILIATION_GROUP_DIFFERENCE_TOO_LARGE', { maxDifference: '5.00' });
+		expect(max).toBe(valeurFr(calls[0])?.replace('{ $max }', '5.00'));
+		// Revue P1 (B-L9) : le plafond de 50 n'est plus écrit en dur dans le libellé.
+		calls.length = 0;
+		const trop = failedProposalLabel('RECONCILIATION_GROUP_INVALID', { reason: 'too_many' });
+		expect(valeurFr(calls[0])).toContain('{ $max }');
+		expect(trop).toBe(valeurFr(calls[0])?.replace('{ $max }', '50'));
+		calls.length = 0;
+		const num = failedProposalLabel('ACCOUNT_NOT_POSTABLE', { rejected: [{ accountNumber: '6900' }] }, GROUP);
+		expect(num).toBe(valeurFr(calls[0])?.replace('{ $numbers }', '6900'));
 	});
 });
 

@@ -29,7 +29,9 @@ const updateSessionSettingsMock = vi.fn();
 const updateCompanyAddressMock = vi.fn();
 const updateCompanyContactDetailsMock = vi.fn();
 const updateCompanyEmailMock = vi.fn();
+const updateCompanyNameMock = vi.fn();
 vi.mock('$lib/features/settings/settings.api', () => ({
+	updateCompanyName: (...a: unknown[]) => updateCompanyNameMock(...a),
 	fetchCompanyCurrent: () => fetchCompanyCurrentMock(),
 	updateCompanyAddress: (...a: unknown[]) => updateCompanyAddressMock(...a),
 	updateCompanyContactDetails: (...a: unknown[]) => updateCompanyContactDetailsMock(...a),
@@ -1268,5 +1270,248 @@ describe('page Paramètres — carte Cours de change (Story 37-2)', () => {
 		const { findByTestId, queryByTestId } = render(Page);
 		await findByTestId('settings-currency-enabled');
 		expect(queryByTestId('settings-exchange-rates')).toBeNull();
+	});
+});
+
+// Story v0190-nom-societe (#1097, AC4) — le nom de la société se corrige dans
+// Organisation, sur le patron du bloc e-mail.
+describe('page Paramètres — nom de la société (Story v0190-nom-societe)', () => {
+	const CONFLIT = { code: 'OPTIMISTIC_LOCK_CONFLICT', message: 'conflit', status: 409 };
+
+	function societe(overrides: Record<string, unknown> = {}): CompanyCurrentResponse {
+		const base = reponse(null);
+		return {
+			...base,
+			company: {
+				...base.company,
+				addressStructured: {
+					street: 'Rue Test',
+					building: '1',
+					postalCode: '1000',
+					city: 'Lausanne',
+					country: 'CH',
+				},
+				addressCountryKnown: true,
+				email: 'info@test.ch',
+				...overrides,
+			} as CompanyCurrentResponse['company'],
+		};
+	}
+
+	function connecter(role: string) {
+		authState.login({ userId: '1', username: 'u', role, expiresIn: 900 }, { broadcast: false });
+	}
+
+	async function saisir(getByTestId: (id: string) => HTMLElement, id: string, value: string) {
+		await fireEvent.input(getByTestId(id), { target: { value } });
+	}
+
+	beforeEach(() => {
+		vi.resetAllMocks();
+		fetchSessionSettingsMock.mockResolvedValue({ sessionIdleMinutes: 60, version: 0, min: 1, max: 1440 });
+	});
+
+	afterEach(() => {
+		authState.clearSession({ broadcast: false });
+	});
+
+	it('Administrateur : Modifier préremplit le nom, Enregistrer envoie nom et version, affiche le nom reçu', async () => {
+		connecter('Admin');
+		fetchCompanyCurrentMock.mockResolvedValue(societe());
+		updateCompanyNameMock.mockResolvedValue(societe({ name: 'Démo SA', version: 2 }).company);
+		const { findByTestId, getByTestId, queryByTestId } = render(Page);
+		expect((await findByTestId('settings-company-name')).textContent).toBe('Test SA');
+		await fireEvent.click(getByTestId('settings-company-name-edit'));
+		const input = getByTestId('settings-company-name-input') as HTMLInputElement;
+		expect(input.value).toBe('Test SA');
+		// Revue P1 (E3, C-v0190c-25) : aucun `maxlength`, qui tronquait en silence un nom collé.
+		expect(input.hasAttribute('maxlength')).toBe(false);
+		await saisir(getByTestId, 'settings-company-name-input', ' Démo SA ');
+		await fireEvent.click(getByTestId('settings-company-name-save'));
+		await vi.waitFor(() => expect(updateCompanyNameMock).toHaveBeenCalledTimes(1));
+		expect(updateCompanyNameMock).toHaveBeenCalledWith({ name: 'Démo SA', version: 1 });
+		await vi.waitFor(() => expect(queryByTestId('settings-company-name-input')).toBeNull());
+		expect(getByTestId('settings-company-name').textContent).toBe('Démo SA');
+		expect(notifySuccessMock).toHaveBeenCalledWith('Nom de la société enregistré');
+	});
+
+	for (const role of ['Comptable', 'Consultation']) {
+		it(`${role} : lit le nom, sans bouton Modifier`, async () => {
+			connecter(role);
+			fetchCompanyCurrentMock.mockResolvedValue(societe());
+			const { findByTestId, queryByTestId } = render(Page);
+			expect((await findByTestId('settings-company-name')).textContent).toBe('Test SA');
+			expect(queryByTestId('settings-company-name-edit')).toBeNull();
+		});
+	}
+
+	it('vide (ou blanc) : refus local, aucun appel', async () => {
+		connecter('Admin');
+		fetchCompanyCurrentMock.mockResolvedValue(societe());
+		const { findByTestId, getByTestId } = render(Page);
+		await fireEvent.click(await findByTestId('settings-company-name-edit'));
+		await saisir(getByTestId, 'settings-company-name-input', '   ');
+		await fireEvent.click(getByTestId('settings-company-name-save'));
+		expect((await findByTestId('settings-company-name-error')).textContent).toContain('obligatoire');
+		expect(updateCompanyNameMock).not.toHaveBeenCalled();
+	});
+
+	// Revue P1 (E3, C-v0190c-25) : la longueur se refuse ici, sans appel ; la saisie reste.
+	// Le mock d'`i18nMsg` rend le repli sans l'interpoler : les nombres du message se
+	// vérifient dans l'E2E (`company-name.spec.ts`), où la vraie fonction les pose.
+	it('71 caractères (un nom collé) : refus local, aucun appel, la saisie reste entière', async () => {
+		connecter('Admin');
+		fetchCompanyCurrentMock.mockResolvedValue(societe());
+		const { findByTestId, getByTestId } = render(Page);
+		await fireEvent.click(await findByTestId('settings-company-name-edit'));
+		const long = 'N'.repeat(71);
+		await saisir(getByTestId, 'settings-company-name-input', ` ${long} `);
+		await fireEvent.click(getByTestId('settings-company-name-save'));
+		expect((await findByTestId('settings-company-name-error')).textContent).toContain('dépasse');
+		expect((getByTestId('settings-company-name-input') as HTMLInputElement).value).toBe(` ${long} `);
+		expect(updateCompanyNameMock).not.toHaveBeenCalled();
+	});
+
+	it('70 caractères après rognage, et 70 caractères hors du plan de base (comptés en points de code) : envoyés', async () => {
+		connecter('Admin');
+		fetchCompanyCurrentMock.mockResolvedValue(societe());
+		updateCompanyNameMock.mockResolvedValue(societe({ version: 2 }).company);
+		const { findByTestId, getByTestId } = render(Page);
+		for (const nom of ['N'.repeat(70), '𝒜'.repeat(70)]) {
+			await fireEvent.click(await findByTestId('settings-company-name-edit'));
+			await saisir(getByTestId, 'settings-company-name-input', `  ${nom} `);
+			await fireEvent.click(getByTestId('settings-company-name-save'));
+			await vi.waitFor(() =>
+				expect(updateCompanyNameMock).toHaveBeenLastCalledWith({ name: nom, version: expect.any(Number) }),
+			);
+		}
+		expect(updateCompanyNameMock).toHaveBeenCalledTimes(2);
+	});
+
+	it('nom stocké trop long : Modifier le préremplit tel quel, l’envoi inchangé est refusé ici, le raccourcir l’enregistre (V2-N3)', async () => {
+		connecter('Admin');
+		const stocke = 'S'.repeat(71);
+		fetchCompanyCurrentMock.mockResolvedValue(societe({ name: stocke }));
+		updateCompanyNameMock.mockResolvedValueOnce(societe({ name: 'S'.repeat(70), version: 2 }).company);
+		const { findByTestId, getByTestId, queryByTestId } = render(Page);
+		await fireEvent.click(await findByTestId('settings-company-name-edit'));
+		expect((getByTestId('settings-company-name-input') as HTMLInputElement).value).toBe(stocke);
+		await fireEvent.click(getByTestId('settings-company-name-save'));
+		expect((await findByTestId('settings-company-name-error')).textContent).toContain('dépasse');
+		expect(updateCompanyNameMock).not.toHaveBeenCalled();
+		await saisir(getByTestId, 'settings-company-name-input', 'S'.repeat(70));
+		await fireEvent.click(getByTestId('settings-company-name-save'));
+		await vi.waitFor(() => expect(queryByTestId('settings-company-name-input')).toBeNull());
+		expect(updateCompanyNameMock.mock.calls[0][0]).toEqual({ name: 'S'.repeat(70), version: 1 });
+	});
+
+	it('nom stocké hors du jeu de la QR-facture : l’envoi inchangé rend le refus du serveur, la saisie reste (V2-N3)', async () => {
+		connecter('Admin');
+		const stocke = 'Démo 张 SA';
+		fetchCompanyCurrentMock.mockResolvedValue(societe({ name: stocke }));
+		updateCompanyNameMock.mockRejectedValueOnce({
+			code: 'VALIDATION_ERROR',
+			message: 'Le nom de la société contient un caractère que la QR-facture n’admet pas : « 张 » (U+5F20)',
+			status: 400,
+		});
+		const { findByTestId, getByTestId } = render(Page);
+		await fireEvent.click(await findByTestId('settings-company-name-edit'));
+		await fireEvent.click(getByTestId('settings-company-name-save'));
+		expect((await findByTestId('settings-company-name-error')).textContent).toContain('U+5F20');
+		expect((getByTestId('settings-company-name-input') as HTMLInputElement).value).toBe(stocke);
+		expect(updateCompanyNameMock).toHaveBeenCalledWith({ name: stocke, version: 1 });
+	});
+
+	it('conflit de version : la valeur relue est montrée, la saisie gardée, le second clic part avec la version relue', async () => {
+		connecter('Admin');
+		fetchCompanyCurrentMock.mockResolvedValueOnce(societe());
+		fetchCompanyCurrentMock.mockResolvedValueOnce(societe({ name: 'Autre SA', version: 9 }));
+		updateCompanyNameMock.mockRejectedValueOnce(CONFLIT);
+		const { findByTestId, getByTestId } = render(Page);
+		await fireEvent.click(await findByTestId('settings-company-name-edit'));
+		await saisir(getByTestId, 'settings-company-name-input', 'Moi SA');
+		await fireEvent.click(getByTestId('settings-company-name-save'));
+		expect((await findByTestId('settings-company-name-conflict-changed-name')).textContent).toContain('Autre SA');
+		expect((getByTestId('settings-company-name-input') as HTMLInputElement).value).toBe('Moi SA');
+		updateCompanyNameMock.mockResolvedValue(societe({ name: 'Moi SA', version: 10 }).company);
+		await fireEvent.click(getByTestId('settings-company-name-save'));
+		await vi.waitFor(() => expect(updateCompanyNameMock).toHaveBeenCalledTimes(2));
+		expect(updateCompanyNameMock.mock.calls[1][0]).toEqual({ name: 'Moi SA', version: 9 });
+	});
+
+	it('relecture impossible après un conflit : le message le dit, la saisie reste', async () => {
+		connecter('Admin');
+		fetchCompanyCurrentMock.mockResolvedValueOnce(societe());
+		fetchCompanyCurrentMock.mockRejectedValueOnce(new Error('réseau'));
+		updateCompanyNameMock.mockRejectedValueOnce(CONFLIT);
+		const { findByTestId, getByTestId } = render(Page);
+		await fireEvent.click(await findByTestId('settings-company-name-edit'));
+		await saisir(getByTestId, 'settings-company-name-input', 'Moi SA');
+		await fireEvent.click(getByTestId('settings-company-name-save'));
+		expect((await findByTestId('settings-company-name-error')).textContent).toContain('rechargez la page');
+		expect((getByTestId('settings-company-name-input') as HTMLInputElement).value).toBe('Moi SA');
+	});
+
+	it('« Nom␠ » égal au nom relu après rognage : « déjà enregistré », non « conflit » (non-régression, V2-N4 b)', async () => {
+		connecter('Admin');
+		fetchCompanyCurrentMock.mockResolvedValueOnce(societe());
+		fetchCompanyCurrentMock.mockResolvedValueOnce(societe({ name: 'Moi SA', version: 9 }));
+		updateCompanyNameMock.mockRejectedValueOnce(CONFLIT);
+		const { findByTestId, getByTestId, queryByTestId } = render(Page);
+		await fireEvent.click(await findByTestId('settings-company-name-edit'));
+		await saisir(getByTestId, 'settings-company-name-input', 'Moi SA ');
+		await fireEvent.click(getByTestId('settings-company-name-save'));
+		await vi.waitFor(() => expect(queryByTestId('settings-company-name-input')).toBeNull());
+		expect(updateCompanyNameMock).toHaveBeenCalledTimes(1);
+		expect(notifySuccessMock).toHaveBeenCalledWith(expect.stringContaining('déjà enregistr'));
+	});
+
+	it('nom en cours d’édition, e-mail enregistré : le nom part avec la version neuve, sans conflit (C-v0190c-14)', async () => {
+		connecter('Admin');
+		fetchCompanyCurrentMock.mockResolvedValueOnce(societe());
+		updateCompanyEmailMock.mockResolvedValueOnce(societe({ version: 2, email: 'moi@test.ch' }).company);
+		updateCompanyNameMock.mockResolvedValueOnce(societe({ version: 3, name: 'Moi SA' }).company);
+		const { findByTestId, getByTestId } = render(Page);
+		await fireEvent.click(await findByTestId('settings-company-name-edit'));
+		await fireEvent.click(getByTestId('settings-company-email-edit'));
+		await saisir(getByTestId, 'settings-company-email-input', 'moi@test.ch');
+		await fireEvent.click(getByTestId('settings-company-email-save'));
+		await vi.waitFor(() => expect(updateCompanyEmailMock).toHaveBeenCalledTimes(1));
+		await saisir(getByTestId, 'settings-company-name-input', 'Moi SA');
+		await fireEvent.click(getByTestId('settings-company-name-save'));
+		await vi.waitFor(() => expect(updateCompanyNameMock).toHaveBeenCalledTimes(1));
+		expect(updateCompanyNameMock.mock.calls[0][0]).toEqual({ name: 'Moi SA', version: 2 });
+	});
+
+	it('nom en cours d’édition, adresse enregistrée : idem', async () => {
+		connecter('Admin');
+		fetchCompanyCurrentMock.mockResolvedValueOnce(societe());
+		updateCompanyAddressMock.mockResolvedValueOnce(societe({ version: 2 }).company);
+		updateCompanyNameMock.mockResolvedValueOnce(societe({ version: 3, name: 'Moi SA' }).company);
+		const { findByTestId, getByTestId } = render(Page);
+		await fireEvent.click(await findByTestId('settings-company-name-edit'));
+		await fireEvent.click(getByTestId('settings-company-address-edit'));
+		await fireEvent.click(getByTestId('settings-company-address-save'));
+		await vi.waitFor(() => expect(updateCompanyAddressMock).toHaveBeenCalledTimes(1));
+		await saisir(getByTestId, 'settings-company-name-input', 'Moi SA');
+		await fireEvent.click(getByTestId('settings-company-name-save'));
+		await vi.waitFor(() => expect(updateCompanyNameMock).toHaveBeenCalledTimes(1));
+		expect(updateCompanyNameMock.mock.calls[0][0]).toEqual({ name: 'Moi SA', version: 2 });
+	});
+
+	it('le nom porte la classe du champ en vol et passe en lecture seule pendant l’envoi', async () => {
+		connecter('Admin');
+		fetchCompanyCurrentMock.mockResolvedValueOnce(societe());
+		let release: (v: unknown) => void = () => {};
+		updateCompanyNameMock.mockReturnValueOnce(new Promise((r) => (release = r)));
+		const { findByTestId, getByTestId } = render(Page);
+		await fireEvent.click(await findByTestId('settings-company-name-edit'));
+		const champ = getByTestId('settings-company-name-input') as HTMLInputElement;
+		for (const classe of PENDING_FIELD_CLASS.split(' ')) {
+			expect(champ.classList.contains(classe), classe).toBe(true);
+		}
+		await fireEvent.click(getByTestId('settings-company-name-save'));
+		await vi.waitFor(() => expect(champ.readOnly).toBe(true));
+		release(societe({ version: 2 }).company);
 	});
 });

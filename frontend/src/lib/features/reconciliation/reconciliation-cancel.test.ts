@@ -5,8 +5,11 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 
+// Story 43-3, revue P1 (A L-10) : les variables `{ $x }` sont interpolées, pour que le nombre de
+// factures rouvertes soit vérifié, non seulement le choix du message.
 vi.mock('$lib/shared/utils/i18n.svelte', () => ({
-	i18nMsg: (_k: string, fallback: string) => fallback,
+	i18nMsg: (_k: string, fallback: string, args?: Record<string, string | number>) =>
+		args ? fallback.replace(/\{ \$(\w+) \}/g, (_m, k) => String(args[k])) : fallback,
 }));
 
 import {
@@ -29,6 +32,37 @@ describe('reconciliationCancelDoneMessage', () => {
 		const annule = reconciliationCancelDoneMessage({ ...base, reversalJournalEntryId: 9 });
 		expect(seul).toBe('Le lien est retiré ; l’écriture reste celle de l’autre côté du virement.');
 		expect(annule).toBe('Rapprochement annulé.');
+	});
+
+	// Story 43-3 (#823, AC5) — un règlement groupé défait dit ses factures rouvertes.
+	it('règlement groupé (`cancelledInvoices` non vide) ⇒ le message du groupe (mutation : liste ignorée)', () => {
+		const groupe = reconciliationCancelDoneMessage({
+			...base,
+			reversalJournalEntryId: 9,
+			kind: 'grouped_settlement',
+			cancelledInvoices: [
+				{ kind: 'invoice', id: 12, number: 'F-12' },
+				{ kind: 'invoice', id: 15, number: 'F-15' },
+			],
+		});
+		expect(groupe).toBe('Rapprochement annulé : 2 factures redeviennent à régler.');
+		const vide = reconciliationCancelDoneMessage({ ...base, reversalJournalEntryId: 9, cancelledInvoices: [] });
+		expect(vide).toBe('Rapprochement annulé.');
+	});
+
+	// Revue P1 (B-L12) : un groupe fournisseur a son propre message.
+	it('règlement groupé fournisseur ⇒ « factures fournisseur redeviennent validées, à payer »', () => {
+		const groupe = reconciliationCancelDoneMessage({
+			...base,
+			reversalJournalEntryId: 9,
+			kind: 'grouped_settlement',
+			cancelledInvoices: [
+				{ kind: 'supplier_invoice', id: 7, number: 'FF-7' },
+				{ kind: 'supplier_invoice', id: 8, number: 'FF-8' },
+				{ kind: 'supplier_invoice', id: 9, number: null },
+			],
+		});
+		expect(groupe).toBe('Rapprochement annulé : 3 factures fournisseur redeviennent validées, à payer.');
 	});
 });
 

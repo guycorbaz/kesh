@@ -1012,6 +1012,28 @@ impl NumberFormatCause {
     }
 }
 
+/// Ce qu'un changement de compte analytique toucherait dans une période close —
+/// porté par [`DbError::ProjectReassignmentClosedPeriod`] et
+/// [`DbError::ProjectReassignmentClosedPeriodAdminOnly`] (Story 36-16a, #1167),
+/// rendu en `details { entryCount, fiscalYears, lockedThrough }`.
+///
+/// Une écriture est **exposée** si elle changerait (une de ses lignes ne porte
+/// pas encore le compte visé) et qu'elle est dans un exercice clos, dans un
+/// exercice suivi d'un exercice clos, ou datée au plus tard de la borne du
+/// verrou des livres (seuil inclusif).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClosedPeriodExposure {
+    /// Nombre d'écritures exposées **qui changeraient**.
+    pub entry_count: usize,
+    /// Les exercices **clos en cause**, sans doublon : celui d'une écriture
+    /// exposée s'il est clos, sinon l'exercice postérieur clos qui l'expose ; dans
+    /// l'ordre des exercices des écritures (date de début croissante).
+    pub fiscal_years: Vec<String>,
+    /// La borne du verrou des livres, quand au moins une écriture qui changerait
+    /// est datée au plus tard de cette borne ; `None` sinon.
+    pub locked_through: Option<chrono::NaiveDate>,
+}
+
 /// Erreurs des opérations de persistance MariaDB.
 ///
 /// Les messages `Display` sont destinés au logging serveur uniquement.
@@ -2023,6 +2045,47 @@ pub enum DbError {
         attempted: chrono::NaiveDate,
     },
 
+    // --- Changer le compte analytique après coup (Story 36-16a, #1167) ---
+    //
+    // Le geste change des écritures d'un exercice clos ou d'une période
+    // verrouillée : il défait la même garantie que la réouverture d'un exercice
+    // et la levée du verrou (Administrateur seulement). D'où deux refus, rendus
+    // avant toute écriture, et qui nomment ce qui serait touché.
+    /// Des écritures exposées changeraient, et l'Administrateur en session n'a
+    /// pas accusé l'avertissement (`acknowledgeClosedPeriods`). → `409
+    /// PROJECT_REASSIGNMENT_CLOSED_PERIOD` ; l'écran avertit et renvoie avec
+    /// l'accusé.
+    #[error(
+        "Changer le compte analytique toucherait {} écriture(s) d'une période close",
+        .0.entry_count
+    )]
+    ProjectReassignmentClosedPeriod(ClosedPeriodExposure),
+
+    /// Des écritures exposées changeraient, et l'auteur n'est pas un
+    /// Administrateur en session (Comptable, ou clé d'API quel que soit le rôle
+    /// de son créateur) : l'accusé n'y change rien. → `403
+    /// PROJECT_REASSIGNMENT_CLOSED_PERIOD_ADMIN_ONLY`.
+    #[error(
+        "Seul un Administrateur en session peut changer le compte analytique de {} écriture(s) d'une période close",
+        .0.entry_count
+    )]
+    ProjectReassignmentClosedPeriodAdminOnly(ClosedPeriodExposure),
+
+    /// La facture est réglée dans un **groupe** (Story 43-6, #823, #1167) : un
+    /// de ses règlements porte un identifiant de ligne
+    /// (`invoice_settlements.journal_entry_line_id`), et son écriture porte
+    /// aussi la banque, l'écart éventuel et les créances des autres factures.
+    /// Le geste, qui réimpute ses écritures **entières**, les réécrirait : il
+    /// refuse, sans rien écrire. → `409 PROJECT_REASSIGNMENT_GROUPED_SETTLEMENT`,
+    /// `details { invoiceId, journalEntryId }` (la plus petite écriture groupée).
+    #[error(
+        "La facture {invoice_id} est réglée dans un groupe (écriture {journal_entry_id}) : son compte analytique ne se change pas"
+    )]
+    ProjectReassignmentGroupedSettlement {
+        invoice_id: i64,
+        journal_entry_id: i64,
+    },
+
     // --- Lettrage (Story 15-1a-i, #518) — refus de la primitive unique ---
     //
     // ⚠️ L'ordre des variantes ci-dessous suit les RANGS des refus de
@@ -2494,6 +2557,13 @@ impl DbError {
             // vient du mappage `kesh-api`, qui rend `guard.code()`.
             Self::EntryNotModifiable(_) => "ENTRY_NOT_MODIFIABLE",
             Self::PeriodLocked { .. } => "PERIOD_LOCKED",
+            Self::ProjectReassignmentClosedPeriod(_) => "PROJECT_REASSIGNMENT_CLOSED_PERIOD",
+            Self::ProjectReassignmentClosedPeriodAdminOnly(_) => {
+                "PROJECT_REASSIGNMENT_CLOSED_PERIOD_ADMIN_ONLY"
+            }
+            Self::ProjectReassignmentGroupedSettlement { .. } => {
+                "PROJECT_REASSIGNMENT_GROUPED_SETTLEMENT"
+            }
             Self::LetteringTooFewLines => "LETTERING_TOO_FEW_LINES",
             Self::LetteringTooManyLines { .. } => "LETTERING_TOO_MANY_LINES",
             Self::LetteringAccountsDiffer => "LETTERING_ACCOUNTS_DIFFER",

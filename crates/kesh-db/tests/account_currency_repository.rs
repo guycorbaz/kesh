@@ -1101,6 +1101,7 @@ fn reglages_tels_quels(
         default_discount_account_id: r.default_discount_account_id,
         default_bank_fees_account_id: r.default_bank_fees_account_id,
         default_bad_debt_account_id: r.default_bad_debt_account_id,
+        group_settlement_max_difference: r.group_settlement_max_difference,
     }
 }
 

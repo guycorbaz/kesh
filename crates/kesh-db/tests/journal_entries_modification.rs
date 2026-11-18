@@ -81,6 +81,34 @@ const REFERENCES_TRIEES: &[(&str, &str, &str)] = &[
     ),
 ];
 
+/// Les références vers une **ligne** d'écriture (`journal_entry_lines`), triées
+/// — Story 43-1a (#823), règlement groupé.
+///
+/// ⛔ **Décision écrite qui lève l'invariant (1 bis)** d'avant la 43-1a (« aucune
+/// clé vers une ligne », parce que la modification supprime et réinsère les
+/// lignes, `journal_entries::update`) : une écriture dont une ligne est
+/// référencée par un règlement est **possédée** (`document_owners` :
+/// `OwnedBySettlement`, `OwnedBySupplierInvoice`, et `MatchedBankTransaction`
+/// pour un règlement né d'un rapprochement), donc jamais réécrite par le `PUT`
+/// (`modification_guard`) ni supprimée (`delete_in_tx` sous
+/// `enforce_ownership`), ni contre-passée directement (`reversal_blockers`).
+/// Les deux colonnes ne sont posées que dans une écriture que la même
+/// transaction fait posséder par le règlement qui les porte. Tenu par le test
+/// `a_grouped_entry_refuses_modification_and_keeps_its_line_keys`
+/// (`grouped_settlements.rs`).
+const REFERENCES_VERS_LIGNES_TRIEES: &[(&str, &str, &str)] = &[
+    (
+        "invoice_settlements",
+        "journal_entry_line_id",
+        "OwnedBySettlement — ligne de créance d'un règlement groupé",
+    ),
+    (
+        "supplier_invoices",
+        "settlement_journal_entry_line_id",
+        "OwnedBySupplierInvoice — ligne de dette d'un règlement groupé",
+    ),
+];
+
 /// Les colonnes de `journal_entry_lines` que la modification réinsère.
 const COLONNES_DES_LIGNES: &[&str] = &[
     "id",
@@ -147,13 +175,19 @@ async fn assert_inventaire_clos(pool: &MySqlPool) {
         "les clés étrangères vers journal_entries ont changé — {QUOI_FAIRE}"
     );
 
-    // (1 bis) Aucune clé vers une LIGNE : la modification supprime et réinsère
-    // les lignes, dont les `id` changent — un `RESTRICT` ferait échouer le `PUT`
-    // (1451), un `CASCADE` effacerait en silence.
+    // (1 bis) Les clés vers une LIGNE : l'ensemble exact. La modification
+    // supprime et réinsère les lignes, dont les `id` changent — un `RESTRICT`
+    // ferait échouer le `PUT` (1451), un `CASCADE` effacerait en silence. Seules
+    // les références d'une écriture POSSÉDÉE sont admises (Story 43-1a, décision
+    // écrite à `REFERENCES_VERS_LIGNES_TRIEES`) ; toute autre rougit.
+    let attendu_lignes: BTreeSet<(String, String)> = REFERENCES_VERS_LIGNES_TRIEES
+        .iter()
+        .map(|(t, c, _)| (t.to_string(), c.to_string()))
+        .collect();
     let vers_lignes = cles_vers(pool, "journal_entry_lines").await;
-    assert!(
-        vers_lignes.is_empty(),
-        "une table référence journal_entry_lines : {vers_lignes:?} — la modification réécrit les \
+    assert_eq!(
+        vers_lignes, attendu_lignes,
+        "les clés étrangères vers journal_entry_lines ont changé — la modification réécrit les \
          lignes ; {QUOI_FAIRE}"
     );
 
@@ -187,7 +221,10 @@ async fn assert_inventaire_clos(pool: &MySqlPool) {
     .unwrap()
     .into_iter()
     .collect();
-    for (t, c, _) in REFERENCES_TRIEES {
+    for (t, c, _) in REFERENCES_TRIEES
+        .iter()
+        .chain(REFERENCES_VERS_LIGNES_TRIEES)
+    {
         nommees.remove(&(t.to_string(), c.to_string()));
     }
     let declarees: BTreeSet<(String, String)> = COLONNES_SANS_CLE_DECLAREES
