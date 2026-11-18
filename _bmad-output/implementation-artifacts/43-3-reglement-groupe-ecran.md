@@ -449,11 +449,65 @@ captures — attend la branche de la 43-2 ; ce relevé ne déclare rien qui n'ai
   - E2E complet au commit `40fc70b48`, base E2E recréée : **472 passés, 7 échoués, 17 ignorés**
     (`rem1-e2e-complet.log`) — les sept de la KF-029 (#97) exactement.
 
+*Relevé daté du 2026-11-18, remédiation de la revue P2 (Sonnet ; `kesh-gate-logs/e433/review-p2.md` : 0 CRITICAL,
+0 HIGH, 1 MEDIUM, 7 LOW ; décisions de l'orchestrateur).*
+
+- **Commit** : `06cf8ab92` (code, tests, i18n, manuel, registre, spec).
+- **MEDIUM** — M-1 : un plafond encore non lu (`null` pendant le chargement) n'empile `unreadable` qu'à partir de deux
+  factures (`submitBlocks`) ; à l'ouverture, une seule phrase, « Ajoutez au moins deux factures. ». Test qui lit
+  `group-block-hint` **pendant** le chargement (recherche et réglages sans réponse), **rouge avant la correction**
+  (« Ajoutez au moins deux factures.Kesh n'a pas pu lire un montant… »), plus un test unitaire de `submitBlocks`.
+  Capture `43-3-chargement.png` refaite (07:21, une seule phrase sous le pied).
+- **LOW** :
+  - L-1 — sur `difference_account_required`, le sélecteur s'affiche même à écart calculé nul (`serverWantsAccount`,
+    passé à `submitBlocks` et à l'envoi) ; la phrase « non relue » vit dans son propre encadré (`group-not-reread`),
+    reste tant que la facture est imputée sans relecture, dit que l'écart peut être faux et comment la relire (la
+    retirer puis l'ajouter de nouveau), quatre locales. Le test qui figeait l'impasse est réécrit (sélecteur affiché,
+    phrase dite une fois, envoi avec le compte choisi) ; test neuf de la durée de la phrase. Registre C-e433-12 : la
+    raison des deux codes ; recherche d'un autre refus de montant — seul `RECONCILIATION_AMOUNT_MISMATCH`, propre au
+    règlement d'une facture fournisseur seule, que le groupe n'émet pas : aucun code ajouté.
+  - L-2 — « Choisissez le compte de l'écart » n'est pas posé sous le sélecteur quand le pied le dit déjà
+    (`account-required`) ; le test compte une occurrence dans la modale.
+  - L-3 — l'envoi note la recherche qu'il avorte ; après un refus ou une erreur, la modale ouverte la relance ; test :
+    retrait pendant une recherche, envoi refusé, la facture retirée revient dans les résultats.
+  - L-5 — « Écart trop grand : moins-payé de 6.00 (au plus 5.00) » : le sens prend une minuscule après le
+    deux-points (`gapSenseLabel(…, inSentence)`), sauf en allemand (noms : « Minderzahlung ») ; tests Vitest et E2E ;
+    capture `43-3-ecart-trop-grand.png` refaite.
+  - L-6 — manuel, § lot pain.001 : « Pour régler ces factures ici, annulez d'abord le lot : elles redeviennent
+    ouvertes et hors lot, et le débit se règle alors par ce geste. » ; § refus : sélecteur affiché même à écart nul,
+    phrase « non relue » durable et geste pour relire (« Kesh la vérifiera à l'enregistrement » retiré).
+  - L-4 — **captures par interception** (`page.route` sur `/reconciliation/accept` ou `…/group-candidates`) :
+    `43-3-compte-refuse-banque.png`, `-devise.png`, `-introuvable.png`, `-non-imputable.png` (phrase du refus sur un
+    compte neutre CHF : elles prouvent l'affichage de la phrase, pas le refus réel), `43-3-retenu-par-un-lot.png`
+    (la branche ne porte pas encore `heldByPaymentBatch` côté serveur), et les états de recherche `43-3-chargement`,
+    `-has-more`, `-aucun-resultat`, `-aucune-facture-a-proposer`. **À la clôture** : refaire `retenu-par-un-lot`
+    contre le serveur de la tête de la 43-2 (`4c7a4fd94`), sans interception.
+  - L-7 — C-e433-15 cite l'issue #1262.
+- **Rouges** : les dix tests neufs ou modifiés joués contre le code de production d'avant (`729070f3a`, fichiers
+  `GroupSettlementModal.svelte`, `group-settlement.ts`, `gap-label.ts` remis par `git stash` puis rendus) : **10
+  rouges sur 99**, tous ceux attendus (`kesh-gate-logs/e433/rouges-rem2.log`). Seul M-1 a été écrit et vu rouge avant
+  la correction ; les autres, écrits avec le code — écart déclaré.
+- **Symptôme gréppé** (« vérifiera à l », « Moins-payé de 6.00 (au », « prüft ihn beim Speichern ») : aucun autre site.
+- **Compteurs relevés par la garde** : candidates **130** (`senseLabel` neuf, conforme ; 21 écartées, 109 conformes,
+  `rem2-vitest-1.log`) ; `sitesTotal` inchangé (3466).
+- **Gates** (pas de Rust touché ; les catalogues se lisent à l'exécution, `kesh-api` non recompilé) :
+  - frontend complet au commit `06cf8ab92` : `check` 0 erreur (29 avertissements antérieurs, hors story ;
+    `rem2-check.log`), `lint-i18n-ownership` PASS, **4537 Vitest (275 fichiers)** (4532 + 5 neufs), `build` vert
+    (`rem2-front-{lint,unit,build}.log`) ;
+  - spec de la story : **13 passés** (`rem2-e2e-spec.log`), rejouée avec les captures (`rem2-e2e-spec-captures.log`,
+    13 passés) ;
+  - PDF jetable recompilé après le `.tex` (`kesh-gate-logs/e433/manuel/user-manual.pdf`, 07:21, trois passes, sans
+    « Rerun » à refaire) ; aplati : « Pour régler ces factures ici, annulez d’abord le lot », « tant qu’elle n’est pas
+    relue », « retirez-la puis ajoutez-la de nouveau » à 1 occurrence chacune, « le sélecteur s’aﬀiche quand même »
+    à 1 (ligature « ﬀ » dans le texte extrait : la forme sans ligature rend 0), « vérifiera à l’enregistrement » à 0 ;
+  - E2E complet et `gate-ci` : à la clôture, après la fusion de la branche d'épique.
+
 ### File List
 
 - `frontend/src/lib/features/reconciliation/GroupSettlementModal.svelte` (neuf) et `.test.ts` (neuf)
 - `frontend/src/lib/features/reconciliation/group-settlement.ts` (neuf) et `.test.ts` (neuf)
 - `frontend/src/lib/features/reconciliation/modal-guards.ts` (neuf) et `.test.ts` (neuf)
+- `frontend/src/lib/features/reconciliation/gap-label.ts` (neuf)
 - `frontend/src/lib/features/reconciliation/ModalSuccessStubGroup.test.svelte` (neuf)
 - `frontend/src/lib/features/reconciliation/reconciliation.types.ts`, `reconciliation.api.ts`, `reconciliation.api.test.ts`
 - `frontend/src/lib/features/reconciliation/failed-proposal-label.ts`, `failed-proposal-label.test.ts`
