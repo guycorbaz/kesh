@@ -2756,6 +2756,7 @@ settings-company-address-country-unknown = Il codice paese « { $code } » della
 settings-company-address-help = Indirizzo dell’emittente e del creditore sulle vostre fatture e QR-fatture. NPA e località obbligatori; paese come codice ISO a due lettere. Un PDF già fissato non cambia.
 error-company-phone-too-long = Il numero di telefono della società è troppo lungo (al massimo 50 caratteri).
 error-company-website-too-long = L'indirizzo del sito web della società è troppo lungo (al massimo 255 caratteri).
+error-company-email-too-long = L'indirizzo e-mail della società è troppo lungo (al massimo 320 caratteri).
 error-invoice-pdf-header-overflow = L'intestazione del documento non entra nella pagina. Eliminate un recapito — telefono, e-mail o sito web — nelle impostazioni: accorciarlo non libera spazio, ogni recapito occupa una riga intera. Oppure riducete il numero di righe dell'indirizzo del destinatario.
 
 # Story 23-2 (#283) — parità it-CH : le 57 chiavi che esistevano solo in fr-CH.

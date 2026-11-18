@@ -11,6 +11,16 @@ use sqlx::MySqlPool;
 use crate::errors::AppError;
 use crate::middleware::auth::CurrentUser;
 
+/// Longueur maximale, en caractères, du **prénom** et du **nom** d'une personne,
+/// chacun séparément — la taille des colonnes `first_name` / `last_name`
+/// (`VARCHAR(70)`) de `contacts` et de `companies` (migration
+/// `20260705000002_person_names.sql`). Story 48-15 (#1334) : sans elle, seul le
+/// nom composé était borné et un prénom de 71 caractères butait sur MariaDB
+/// (`400 DATA_LENGTH_OR_RANGE`, qui ne nomme pas le champ). La borne **égale** la
+/// colonne : aucune valeur déjà enregistrée ne peut être refusée. Sert aux routes
+/// des contacts et à l'assistant (`set_coordinates`), avec [`validate_text_len`].
+pub const PERSON_NAME_PART_MAX: usize = 70;
+
 /// Rejette (400) un texte dépassant `max` **caractères** — un 400 explicite plutôt
 /// qu'une erreur MariaDB brute (1406) au-delà de la borne de la colonne.
 ///

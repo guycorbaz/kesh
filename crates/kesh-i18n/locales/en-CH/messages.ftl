@@ -2763,6 +2763,7 @@ settings-company-address-country-unknown = The company's country code "{ $code }
 settings-company-address-help = Issuer and creditor address on your invoices and QR-bills. Postal code and town are required; country as a two-letter ISO code. A PDF already frozen does not change.
 error-company-phone-too-long = The company phone number is too long (50 characters maximum).
 error-company-website-too-long = The company website address is too long (255 characters maximum).
+error-company-email-too-long = The company email address is too long (320 characters maximum).
 error-invoice-pdf-header-overflow = The document header does not fit on the page. Remove one contact detail — phone, email or website — in the settings: shortening it frees no space, each detail takes a whole line. Or reduce the number of lines in the recipient address.
 
 # Story 23-2 (#283) — en-CH parity: the 57 keys that existed only in fr-CH.
