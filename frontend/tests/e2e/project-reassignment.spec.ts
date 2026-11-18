@@ -26,10 +26,12 @@ import {
 } from './helpers/test-state';
 import {
 	createContactWithAddressViaApi,
+	createManualCreditStatementViaApi,
 	createUser,
 	invoiceVersionViaApi,
 	todayInZurich,
 	USER_PASSWORD,
+	wiredBankAccountViaApi,
 } from './helpers/api-fixtures';
 import { ajouterJoursIso } from './helpers/dates';
 
@@ -91,20 +93,7 @@ async function createProject(ctx: Ctx, code: string): Promise<{ id: number; code
 
 /** Une facture de 100.— sans TVA au compte `projectId`, validée et réglée entièrement. */
 async function paidInvoice(page: Page, ctx: Ctx, projectId: number, date: string): Promise<number> {
-	const contactId = await createContactWithAddressViaApi(page, uniq('Client Analytique '));
-	const created = await ctx.post('/api/v1/invoices', {
-		data: {
-			contactId,
-			date,
-			dueDate: date,
-			projectId,
-			lines: [{ description: 'Prestation', quantity: '1', unitPrice: '100.00', vatRate: '0' }],
-		},
-	});
-	expect(created.ok(), `facture : ${created.status()}`).toBeTruthy();
-	const id = (await created.json()).id as number;
-	const validated = await ctx.post(`/api/v1/invoices/${id}/validate`);
-	expect(validated.ok(), `validation : ${validated.status()}`).toBeTruthy();
+	const id = await validatedInvoice(page, ctx, projectId, date);
 	const accounts = (await (await ctx.get('/api/v1/accounts')).json()) as {
 		id: number;
 		number: string;
@@ -121,6 +110,30 @@ async function paidInvoice(page: Page, ctx: Ctx, projectId: number, date: string
 		},
 	});
 	expect(settled.ok(), `règlement : ${settled.status()} ${await settled.text()}`).toBeTruthy();
+	return id;
+}
+
+/** Une facture de 100.— sans TVA au compte `projectId`, validée (Story 43-6 : extraite). */
+async function validatedInvoice(
+	page: Page,
+	ctx: Ctx,
+	projectId: number,
+	date: string,
+): Promise<number> {
+	const contactId = await createContactWithAddressViaApi(page, uniq('Client Analytique '));
+	const created = await ctx.post('/api/v1/invoices', {
+		data: {
+			contactId,
+			date,
+			dueDate: date,
+			projectId,
+			lines: [{ description: 'Prestation', quantity: '1', unitPrice: '100.00', vatRate: '0' }],
+		},
+	});
+	expect(created.ok(), `facture : ${created.status()}`).toBeTruthy();
+	const id = (await created.json()).id as number;
+	const validated = await ctx.post(`/api/v1/invoices/${id}/validate`);
+	expect(validated.ok(), `validation : ${validated.status()}`).toBeTruthy();
 	return id;
 }
 
@@ -273,6 +286,59 @@ test('derrière le verrou des livres : avertissement, Confirmer, succès', async
 		expect(await lineProjects(ctx, id)).toEqual([q.id, q.id, q.id, q.id]);
 	} finally {
 		await releaseBooksLock(ctx);
+		await disposeContextSafe(ctx);
+	}
+});
+
+// Story 43-6 (#823, #1167) — une facture réglée avec d'autres par un même virement : le geste est
+// refusé (`409 PROJECT_REASSIGNMENT_GROUPED_SETTLEMENT`) et le dialogue affiche le message de
+// l'API, sans avertissement ni *Confirmer* ; aucune ligne ne change. C'est la valeur réelle du
+// serveur qui traverse la frontière (aucune simulation). Capture : `43-6-refus-groupe`.
+test('une facture réglée en groupe : le refus s’affiche, rien ne change', async ({
+	page,
+}, testInfo) => {
+	await login(page);
+	const ctx = await authedApiContext(page);
+	const today = todayInZurich();
+	let txId = 0;
+	let importId = 0;
+	try {
+		const p = await createProject(ctx, uniq('P'));
+		const q = await createProject(ctx, uniq('Q'));
+		const a = await validatedInvoice(page, ctx, p.id, today);
+		const b = await validatedInvoice(page, ctx, p.id, today);
+		const bankAccountId = await wiredBankAccountViaApi(page, 'CH4431999123000889012');
+		({ importId, txId } = await createManualCreditStatementViaApi(ctx, {
+			bankAccountId,
+			bookingDate: today,
+			amount: '200.00',
+			counterpartyName: uniq('Client groupe '),
+			details: uniq('Règlement groupé 43-6 '),
+		}));
+		const accepted = await ctx.post('/api/v1/reconciliation/accept', {
+			data: {
+				bankAccountId,
+				proposals: [{ type: 'invoice_group', bankTransactionId: txId, invoiceIds: [a, b] }],
+			},
+		});
+		const body = await accepted.json();
+		expect(body.failed, `groupe : ${JSON.stringify(body)}`).toEqual([]);
+		const before = await lineProjects(ctx, a);
+
+		await page.goto(`/invoices/${a}`);
+		await chooseAndSave(page, a, q.id);
+		const error = page.getByTestId('project-reassign-error');
+		await expect(error).toContainText('réglée avec d');
+		await expect(page.getByTestId('project-reassign-warning')).toHaveCount(0);
+		await expect(page.getByTestId('project-reassign-confirm')).toHaveCount(0);
+		await capture(page, testInfo, 'refus-groupe');
+
+		expect(await lineProjects(ctx, a)).toEqual(before);
+		const fiche = await (await ctx.get(`/api/v1/invoices/${a}`)).json();
+		expect(fiche.projectId).toBe(p.id);
+	} finally {
+		if (txId) await ctx.post(`/api/v1/reconciliation/transactions/${txId}/cancel`, { data: {} });
+		if (importId) await ctx.delete(`/api/v1/bank-imports/${importId}`);
 		await disposeContextSafe(ctx);
 	}
 });
