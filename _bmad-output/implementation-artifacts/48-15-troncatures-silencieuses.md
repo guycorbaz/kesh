@@ -117,7 +117,7 @@ Numérotation : **M1 à M12, uniques, un journal chacune** (V2-6).
 
 ## Tâches
 
-*Deux lots, écrits pour que le découpage proposé au rapport (A serveur, B écrans) se fasse sans réécriture.*
+*Deux lots ordonnés (A serveur, B écrans), sous la dérogation à la règle de splitting.*
 
 **Lot A — serveur** (`kesh-api`, `kesh-i18n`) :
 1. **Étape 0** : relire les lignes citées à la tête de la branche (celles de ce document, y compris `onboarding.rs` après la fusion de la 48-13 : les numéros ont bougé) ; copier trois au Change Log ; confirmer les noms de fichiers de test (D6, AC2, AC4).
@@ -149,20 +149,25 @@ Numérotation : **M1 à M12, uniques, un journal chacune** (V2-6).
 ## Dev Notes
 
 - **Modules : sept au grain du domaine** (règle de décompte : une **crate** backend, un **domaine** frontend — `components/<d>`, `features/<d>`, `routes/(app)/<d>` —, ou **les manuels** ; les tests et les catalogues suivent leur module) : (1) `kesh-api` (`routes/contacts.rs`, `routes/companies.rs`, `routes/onboarding.rs`, `helpers.rs`), (2) `kesh-i18n` (une clé, quatre catalogues), (3) frontend `routes/(app)/settings`, (4) frontend `routes/(app)/contacts`, (5) frontend `routes/(app)/products`, (6) frontend `features/supplier-invoices`, (7) manuels.
-  **Sept > cinq : la règle de splitting préventif s'applique.** **Proposition de découpage, non écrite** : **48-15a** (serveur : modules 1 et 2, lot A ; avec les tests Rust) et **48-15b** (écrans : modules 3 à 6 + manuels, lot B ; part de la 48-15a fusionnée). **Alternative** : une `Dérogation règle de splitting` (famille mécanique, un même motif répété sur sept sites, revue fichier par fichier ; pas de cycle de dépendances) — c'est le choix du Project Lead, la fiche est écrite en deux lots pour l'un comme pour l'autre.
+  **Sept > cinq : voir la section `Dérogation règle de splitting` ci-dessous.**
 - **Dépendances** : **la 48-13 se fusionne d'abord** (`onboarding.rs` : `set_coordinates` ; `settings/+page.svelte` : blocs distincts) ; la 48-15 **ne bloque pas** l'Epic 49 (aucun fichier de l'éditeur de lignes ; `InvoiceForm.svelte` n'est pas touché).
 - **Fichiers communs** (plan de la release et fichier d'épique 48) : `contacts/+page.svelte` — aucune autre story de la release ; `settings/+page.svelte` avec la 48-13 (#1243, adresse/téléphone/site) et la v0200-menu-sous-groupes (blocs distincts) ; `i18n-keys.test.ts`, catalogues i18n, `sprint-status.yaml` : recomptés / résolus en gardant les deux côtés. Pas de PDF de manuel commité. Contributeur Beat (PR #1327, `kesh-report/src/pdf.rs`, `kesh-qrbill` `largeurs.rs`, `lib.rs`) : aucun de ces fichiers.
-- **Hors périmètre — sites au même symptôme (un `maxlength` qui coupe, serveur qui sait ou doit refuser)** : issues **ouvertes par l'orchestrateur** (numéros à porter ici à la passe suivante ; **une issue par famille, P4**) :
-  1. `frontend/src/lib/features/contacts/ContactPersonsManager.svelte:141-145` : prénom et nom (70), fonction (100), e-mail (320), téléphone (50) d'un contact de société ; serveur : `contact_persons.rs:93` (prénom/nom 70) — **issue ouverte par l'orchestrateur**.
-  2. `frontend/src/routes/(app)/contacts/+page.svelte:960` (e-mail, 320) et `:965` (téléphone, 50) ; serveur : `contacts.rs:408`, `:420` ; l'e-mail est l'adresse d'envoi de la facture (`invoice_email.rs`), la coupure exigerait plus de 320 caractères : effet nul — **issue ouverte par l'orchestrateur**.
-  3. `frontend/src/routes/(app)/settings/projects/+page.svelte:199` (code, 32), `:203` (nom, 150) — **issue ouverte par l'orchestrateur** (refus serveur à vérifier).
-  4. `frontend/src/lib/features/reconciliation/rules/RuleFormModal.svelte:146` (120), `:196` (255) ; `ManualMatchModal.svelte:205` et `TransactionSplitModal.svelte:423` (`MAX_DESCRIPTION_LEN`, #1179 les touche déjà) — **issue ouverte par l'orchestrateur**.
-  5. `frontend/src/lib/features/bank-import/BankProfileForm.svelte:139` (100), `:157` (200), `:170` (50) — **issue ouverte par l'orchestrateur**.
-  6. Divers à bornes de colonne, sans effet PDF : `settings/api-keys/+page.svelte:320` (255), `products/+page.svelte:646` (description, 1000), `supplier-invoices/+page.svelte:284` (128), `DunningPauseDialog.svelte:81`, `settings/fiscal-years/+page.svelte:881` — **issue ouverte par l'orchestrateur**.
-  7. `bank-accounts/+page.svelte:860`, `:1118` : **#1005 existe** (P4).
+- **Hors périmètre — sites au même symptôme (un `maxlength` qui coupe, serveur qui sait ou doit refuser)** : issues **ouvertes** (une issue par famille, P4) :
+  1. `frontend/src/lib/features/contacts/ContactPersonsManager.svelte:141-145` : prénom et nom (70), fonction (100), e-mail (320), téléphone (50) d'un contact de société ; serveur : `contact_persons.rs:93` (prénom/nom 70) — **#1335**.
+  2. `frontend/src/routes/(app)/contacts/+page.svelte:960` (e-mail, 320) et `:965` (téléphone, 50) ; serveur : `contacts.rs:408`, `:420` ; l'e-mail est l'adresse d'envoi de la facture (`invoice_email.rs`), la coupure exigerait plus de 320 caractères : effet nul — **#1336**.
+  3. `frontend/src/routes/(app)/settings/projects/+page.svelte:199` (code, 32), `:203` (nom, 150) — **#1337** (refus serveur à vérifier).
+  4. `frontend/src/lib/features/reconciliation/rules/RuleFormModal.svelte:146` (120), `:196` (255) ; `ManualMatchModal.svelte:205` et `TransactionSplitModal.svelte:423` (`MAX_DESCRIPTION_LEN`, #1179 les touche déjà) — **#1338**.
+  5. `frontend/src/lib/features/bank-import/BankProfileForm.svelte:139` (100), `:157` (200), `:170` (50) — **#1339**.
+  6. Divers à bornes de colonne, sans effet PDF : `settings/api-keys/+page.svelte:320` (255), `products/+page.svelte:646` (description, 1000), `supplier-invoices/+page.svelte:284` (128), `DunningPauseDialog.svelte:81`, `settings/fiscal-years/+page.svelte:881` — **#1340**.
+  7. `bank-accounts/+page.svelte:860`, `:1118` : **#1005** (existante, P4).
 - **Ce qui doit rester vrai** : un contact, une société, un article existants se rouvrent et se réenregistrent comme avant ; le refus de l'adresse dit le champ et le nombre ; un prénom de 70 caractères est accepté ; l'assistant n'agit qu'à l'étape 5.
 - **Aucune donnée réelle** dans les tests, captures ni journaux : « Démo SA », adresses factices.
 - Références : `48-13-avant-la-vraie-facture.md` (D4, D5, #1243), `v0190-nom-societe.md` (C-v0190c-25), `e0200-commun.md`, plan `release-0.20.0.md` et `epic-48-corrections-0-20-0.md` (branche `chore/kickoff-0.20.0`), `validation-p1.md` et `validation-p2.md` (`kesh-gate-logs/e4813/`).
+
+## Dérogation règle de splitting
+
+La story touche **sept modules au grain du domaine** (liste en Dev Notes), au-dessus de la borne de cinq du `CLAUDE.md`. **Décision du Project Lead (Guy) du 2026-11-18 : la story reste unique**, avec dérogation, pour ces raisons : elle ne porte **qu'un seul geste mécanique répété** sur chaque site — vérifier (ou ajouter) la borne serveur, puis retirer le `maxlength` —, revu fichier par fichier ; les sites ne se commandent entre eux que par un ordre simple, sans cycle de dépendances ni fusion intermédiaire intestable ; le découpage en deux stories (serveur, écrans) doublerait le coût de gates, de revue et d'E2E pour un même geste.
+**Garde-fou** : la story est rangée en **deux lots ordonnés** (lot A serveur, lot B écrans), le lot B ne s'appliquant qu'après le lot A (borne serveur avant retrait de l'attribut) ; chaque lot a ses commits et sa revue lisible séparément. La proposition de découpage 48-15a / 48-15b est **retirée**.
 
 ## Dev Agent Record
 
@@ -172,3 +177,4 @@ Numérotation : **M1 à M12, uniques, un journal chacune** (V2-6).
 
 - **2026-11-18 — création de la fiche, par découpe de la 48-13 après la validation P2** (Sonnet 5.5). Origine : la 48-13 avait été élargie le 2026-11-18 (décision de Guy) à ces sites ; la passe P2 (V2-2) a relevé neuf modules au grain du domaine ; l'orchestrateur a déclaré le signal de splitting au Project Lead et coupé la story. Reprend les remédiations de la P1 et de la P2 qui la concernent : V1-4 (trois champs du PDF), V2-1 (#1334, deux sites, constante partagée, mutations nommées), V2-3 (le défaut est un `400 DATA_LENGTH_OR_RANGE` générique, non un 500), V2-4 (sites hors périmètre listés, une issue par famille), V2-5 (bornes égales aux colonnes), V2-6 (M1 à M12 uniques), V2-7 (manuel `:1353`). Lu à `773df80da` : `contacts.rs:377-400`, `:429`, `:451` ; `companies.rs:140-149`, `:214-215`, `:251` ; `onboarding.rs:526-541` ; `address_input.rs:58-80` ; `helpers.rs:26` ; `errors.rs:6022` (kesh-api), `errors.rs:2602` (kesh-db) ; `SupplierCreatePanel.svelte:129-135`, `:210`.
   Modules : sept au grain du domaine (règle écrite en Dev Notes) ; découpage 48-15a / 48-15b proposé, non écrit.
+- **2026-11-18 — dérogation à la règle de splitting** (décision de Guy, Project Lead, 2026-11-18) : la 48-15 reste une story unique, sept domaines, un même geste mécanique en deux lots ordonnés (A serveur, B écrans) ; section `Dérogation règle de splitting` écrite, proposition 48-15a / 48-15b retirée. Sites hors périmètre rattachés à leurs issues : ContactPersonsManager #1335, e-mail et téléphone des contacts #1336, projets #1337, rapprochement #1338, profils d'import bancaire #1339, divers #1340, comptes bancaires #1005 (existante).
