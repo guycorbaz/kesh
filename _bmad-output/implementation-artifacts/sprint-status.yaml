@@ -1143,3 +1143,9 @@ development_status:
   42-2-reimputation-facture-fournisseur: backlog  # 2026-11-17 SORTIE de la 0.19.0 par l'orchestrateur (dépend de la colonne settlement_journal_entry_line_id de l'Epic 43, validation P2 V2-1 HIGH, kesh-gate-logs/e42/validation-42-2-p2.md) ; à reprendre dans une épique de la 0.20.0, fiche remédiée P1 sur story/42-2-reimputation-facture-fournisseur (04dedba10). — = 36-16b (fiche 36-16b-reimputation-facture-fournisseur.md) ; part de 42-1
   42-3-reimputation-ecriture-manuelle: backlog  # 2026-11-17 SORTIE de la 0.19.0 avec la 42-2 ; épique de la 0.20.0. — = 36-16c (fiche 36-16c-reimputation-ecriture-manuelle.md) ; part de 42-1 ; #1167 se ferme avec elle
   42-4-solde-dette-epic: backlog  # story de solde, plafond 2 issues (proposé le 2026-11-17) ; sort la première à la coupure
+
+  # 2026-11-17 — Epic 44 « QR-facture conforme » (#944), release 0.19.0 ; branche epic/44-qr-facture-conforme ; la 36-12b y est reprise (découpée en 44-1a et 44-1b).
+  epic-44: in-progress  # QR-facture conforme (#944) ; release 0.19.0 (2026-11-20), coupure le jeudi 19 au soir ; au plus six stories, solde comprise
+  44-1a-qr-facture-grille: done  # #944 ; ex-36-12b (partie) ; grille SIX, Payable by, montant fixe, largeurs mesurées, paliers R1, R4 et P3 ; revue P1 0/0/0/15 → P2 ciblée 0/0/0/2 ; clôture au dernier commit de code 8997f6349 : gate-ci 5528, E2E 437 + 7 KF-029, t4_pdfium vert
+  44-1b-qr-facture-cascade: backlog  # #944 ; ex-36-12b (suite) ; paliers intermédiaires R2, R3, P1, P2 ; release ultérieure, part de la 44-1a fusionnée ; à valider avant développement
+  44-2-solde-dette-epic: backlog  # story de solde de l'Epic 44 (CLAUDE.md) : au plus 2 issues ouvertes par les stories 44-* ; en fin d'epic, avant le tag
