@@ -484,6 +484,113 @@ pub async fn update_currency_settings(
     Ok(Json(CompanyJson::from(updated)))
 }
 
+/// Payload de `PUT /api/v1/companies/current/name` (Story v0190-nom-societe, #1097).
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateCompanyNameRequest {
+    pub name: String,
+    pub version: i32,
+}
+
+/// Le nom de la société, rogné, s'il passe les contrôles que la QR-facture lui
+/// applique (`kesh_qrbill::validation`, `validate_address`) : rien de visible
+/// (`champ_vide_pour_qr`, qui voit U+00AD quand `trim` ne le voit pas), plus de
+/// [`kesh_qrbill::validation::NAME_MAX`] caractères, ou un caractère hors du jeu.
+///
+/// Même ordre que le PDF (vide, longueur, jeu), pour que le refus de la saisie
+/// soit celui que le PDF aurait opposé. Messages en français littéral, comme la
+/// route d'adresse (`address_input::validate_required_for_qr`) : limite tracée
+/// par #710.
+pub(crate) fn validate_company_name_for_qr(raw: &str) -> Result<String, AppError> {
+    let name = raw.trim();
+    if kesh_qrbill::champ_vide_pour_qr(name) {
+        return Err(AppError::Validation(
+            "Le nom de la société est obligatoire.".to_string(),
+        ));
+    }
+    let len = name.chars().count();
+    let max = kesh_qrbill::validation::NAME_MAX;
+    if len > max {
+        return Err(AppError::Validation(format!(
+            "Le nom de la société dépasse {max} caractères ({len}) : la QR-facture n'en admet pas davantage."
+        )));
+    }
+    if let Some(c) = kesh_qrbill::first_qr_refused_char(name) {
+        return Err(AppError::Validation(format!(
+            "Le nom de la société contient un caractère que la QR-facture n'admet pas : « {} » (U+{:04X})",
+            c.escape_debug(),
+            c as u32
+        )));
+    }
+    Ok(name.to_string())
+}
+
+/// PUT /api/v1/companies/current/name — corrige le nom de la société après
+/// l'assistant (Story v0190-nom-societe, #1097), sur le patron
+/// d'[`update_company_email`].
+///
+/// Le nom se juge **avant** la lecture de la société : un nom refusé à version
+/// périmée est un `400`, non un `409`. `first_name` / `last_name` sont reportés
+/// à l'identique (limite D3, #1227) : pour une personne physique, le nom corrigé
+/// peut ne plus être « prénom nom ».
+///
+/// ⚠️ Comme ses jumelles, cette route **reconstruit un `CompanyUpdate` complet**
+/// depuis l'état courant : `companies::update_in_tx` est un full-replace. Une
+/// facture au PDF déjà figé ne change pas.
+pub async fn update_company_name(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    Json(req): Json<UpdateCompanyNameRequest>,
+) -> Result<Json<CompanyJson>, AppError> {
+    let name = validate_company_name_for_qr(&req.name)?;
+    let company = get_company_for(&current_user, &state.pool).await?;
+
+    let changes = CompanyUpdate {
+        name,
+        first_name: company.first_name.clone(),
+        last_name: company.last_name.clone(),
+        address_structured: company.structured_address(),
+        ide_number: company.ide_number.clone(),
+        org_type: company.org_type,
+        accounting_language: company.accounting_language,
+        instance_language: company.instance_language,
+        // Reportés à l'identique : `update_in_tx` est un full-replace.
+        email: company.email.clone(),
+        phone: company.phone.clone(),
+        website: company.website.clone(),
+    };
+
+    let mut tx = state
+        .pool
+        .begin()
+        .await
+        .map_err(|e| AppError::Database(map_db_error(e)))?;
+    let updated = companies::update_in_tx(&mut tx, company.id, req.version, changes).await?;
+    // Le repository court-circuite le no-op sans incrémenter `version` (KF-004).
+    if updated.version != company.version {
+        audit_log::insert_in_tx(
+            &mut tx,
+            // `::user` est sûr : la route est dans `admin_routes`, seul bloc
+            // porteur de `require_not_pat`.
+            NewAuditLogEntry::user(
+                current_user.user_id,
+                "company.updated",
+                "company",
+                company.id,
+                Some(serde_json::json!({
+                    "before": { "name": company.name },
+                    "after": { "name": updated.name },
+                })),
+            ),
+        )
+        .await?;
+    }
+    tx.commit()
+        .await
+        .map_err(|e| AppError::Database(map_db_error(e)))?;
+    Ok(Json(CompanyJson::from(updated)))
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BankAccountJson {
@@ -609,4 +716,66 @@ pub async fn unlock_company_books(
     )
     .await?;
     Ok(Json(updated.into()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_company_name_for_qr;
+    use crate::errors::AppError;
+
+    /// Le message du refus, ou la panique si le nom passe.
+    fn refus(raw: &str) -> String {
+        match validate_company_name_for_qr(raw) {
+            Err(AppError::Validation(m)) => m,
+            other => panic!("refus attendu pour {raw:?} : {other:?}"),
+        }
+    }
+
+    /// AC2 — 0 caractère, et U+00AD seul, que `trim` ne retire pas : vides au sens
+    /// de la QR-facture.
+    #[test]
+    fn un_nom_sans_rien_de_visible_est_refuse() {
+        for raw in ["", "   ", "\u{AD}", " \u{AD} "] {
+            assert!(refus(raw).contains("obligatoire"), "{raw:?}");
+        }
+    }
+
+    /// AC2 — 1 et 70 caractères passent, multioctets compris ; 71 est refusé, et
+    /// le message dit le maximum et le nombre saisi.
+    #[test]
+    fn la_borne_de_70_caracteres() {
+        assert_eq!(validate_company_name_for_qr("A").unwrap(), "A");
+        let soixante_dix = "é".repeat(70);
+        assert_eq!(
+            validate_company_name_for_qr(&soixante_dix).unwrap(),
+            soixante_dix
+        );
+        let m = refus(&"é".repeat(71));
+        assert!(m.contains("70") && m.contains("(71)"), "{m}");
+    }
+
+    /// Le nom est rogné avant d'être compté et jugé : 70 caractères entourés de
+    /// blancs passent.
+    #[test]
+    fn le_nom_est_rogne_avant_les_controles() {
+        let nom = format!("  {}\n", "a".repeat(70));
+        assert_eq!(validate_company_name_for_qr(&nom).unwrap(), "a".repeat(70));
+    }
+
+    /// AC2 — le refus nomme le PREMIER caractère refusé, avec son point de code.
+    #[test]
+    fn le_premier_caractere_refuse_est_nomme() {
+        let m = refus("Démo 张 SA \u{2603}");
+        assert!(m.contains("« 张 »") && m.contains("U+5F20"), "{m}");
+        assert!(!m.contains("U+2603"), "{m}");
+        let m = refus("Démo\nSA");
+        assert!(m.contains("\\n") && m.contains("U+000A"), "{m}");
+    }
+
+    /// Ce que le jeu de la QR-facture admet passe : `&`, `é`, U+2019.
+    #[test]
+    fn les_caracteres_admis_passent() {
+        let nom = "Müller & Fils’ Sàrl";
+        assert_eq!(validate_company_name_for_qr(nom).unwrap(), nom);
+    }
 }

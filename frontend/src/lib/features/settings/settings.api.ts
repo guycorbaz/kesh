@@ -6,6 +6,7 @@ import type {
 	UpdateCompanyAddressRequest,
 	UpdateCompanyContactDetailsRequest,
 	UpdateCompanyEmailRequest,
+	UpdateCompanyNameRequest,
 	UpdateCurrencySettingsRequest,
 	UpdateSessionSettingsRequest
 } from './settings.types';
@@ -51,6 +52,14 @@ export async function updateCompanyContactDetails(
  */
 export async function updateCompanyAddress(req: UpdateCompanyAddressRequest): Promise<CompanyJson> {
 	return apiClient.put<CompanyJson>('/api/v1/companies/current/address', req);
+}
+
+/**
+ * Corrige le nom de la société (Story v0190-nom-societe, #1097). Admin-only, verrou
+ * optimiste, même patron que `updateCompanyAddress`.
+ */
+export async function updateCompanyName(req: UpdateCompanyNameRequest): Promise<CompanyJson> {
+	return apiClient.put<CompanyJson>('/api/v1/companies/current/name', req);
 }
 
 /**

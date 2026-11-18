@@ -934,7 +934,7 @@ invoice-pdf-error-contact-missing = The contact linked to this invoice was not f
 invoice-pdf-error-no-primary-bank = No primary bank account is configured for this company.
 invoice-pdf-error-client-address-required = The client address is required to generate the PDF.
 # Story 35-2a (#955, #964) — the PDF refusal names the field and the character to correct.
-invoice-pdf-error-charset-company-name = The company name contains a character the QR-bill does not allow: “{ $car }” ({ $point }). The company name cannot be changed from the interface yet.
+invoice-pdf-error-charset-company-name = The company name contains a character the QR-bill does not allow: “{ $car }” ({ $point }). Correct it in Settings → Organisation.
 invoice-pdf-error-charset-company-street = The company street contains a character the QR-bill does not allow: “{ $car }” ({ $point }). Correct it in Settings → Organisation.
 invoice-pdf-error-charset-company-building = The company building number contains a character the QR-bill does not allow: “{ $car }” ({ $point }). Correct it in Settings → Organisation.
 invoice-pdf-error-charset-company-postal-code = The company postcode contains a character the QR-bill does not allow: “{ $car }” ({ $point }). Correct it in Settings → Organisation.
@@ -946,14 +946,14 @@ invoice-pdf-error-charset-client-postal-code = The client postcode contains a ch
 invoice-pdf-error-charset-client-city = The client town contains a character the QR-bill does not allow: “{ $car }” ({ $point }). Correct the client's record in Contacts.
 invoice-pdf-error-charset-invoice-number = The invoice number contains a character the QR-bill does not allow: “{ $car }” ({ $point }). A validated invoice cannot be corrected: check the numbering format in Administration → Invoicing.
 invoice-pdf-error-charset-other = A QR-bill field contains a character that is not allowed: “{ $car }” ({ $point }). Check the client's and the company's records.
-invoice-pdf-error-empty-company-name = The company name is empty. It cannot be changed from the interface yet.
+invoice-pdf-error-empty-company-name = The company name is empty. Fill it in under Settings → Organisation.
 invoice-pdf-error-empty-company-postal-code = Company address incomplete: the postcode is empty. Fill it in under Settings → Organisation (the QR-bill requires postcode and town).
 invoice-pdf-error-empty-company-city = Company address incomplete: the town is empty. Fill it in under Settings → Organisation (the QR-bill requires postcode and town).
 invoice-pdf-error-empty-client-name = The client name is empty. Complete the client's record in Contacts.
 invoice-pdf-error-empty-client-postal-code = Client address incomplete: the postcode is empty. Complete the client's record in Contacts (the QR-bill requires postcode and town).
 invoice-pdf-error-empty-client-city = Client address incomplete: the town is empty. Complete the client's record in Contacts (the QR-bill requires postcode and town).
 invoice-pdf-error-empty-other = A required QR-bill field is empty. Check the client's and the company's records.
-invoice-pdf-error-too-long-company-name = The company name exceeds { $max } characters ({ $got }). It cannot be changed from the interface yet.
+invoice-pdf-error-too-long-company-name = The company name exceeds { $max } characters ({ $got }). Shorten it in Settings → Organisation.
 invoice-pdf-error-too-long-company-street = The company street exceeds { $max } characters ({ $got }). Shorten it in Settings → Organisation.
 invoice-pdf-error-too-long-company-building = The company building number exceeds { $max } characters ({ $got }). Shorten it in Settings → Organisation.
 invoice-pdf-error-too-long-company-postal-code = The company postcode exceeds { $max } characters ({ $got }). Shorten it in Settings → Organisation.
@@ -2556,6 +2556,11 @@ settings-company-email-invalid = Invalid email address.
 settings-company-email-saved = Company email saved
 settings-company-email-conflict = Version conflict — data reloaded, please try again.
 settings-company-email-conflict-reload-failed = Version conflict and reload failed — reload the page.
+settings-company-name-saved = Company name saved
+settings-company-name-required = The company name is required.
+settings-company-name-too-long = The company name exceeds { $max } characters ({ $got }): the QR-bill allows no more.
+settings-company-name-conflict = Version conflict — data reloaded, please try again.
+settings-company-name-conflict-reload-failed = Version conflict and reload failed — reload the page.
 
 # Story v0172-session (0.17.3, CR #891) — section « Session » des paramètres et page de connexion.
 settings-session-title = Session
@@ -2718,6 +2723,8 @@ invoice-line-vat-rate-disabled-option = { $rate }% (deactivated)
 invoice-line-vat-rate-disabled-error = Line { $line }: the VAT rate { $rate }% has been deactivated. Choose an active rate.
 invoice-line-unit-price-ambiguous-error = Line { $line }: ambiguous unit price — write 1'250 for one thousand two hundred fifty francs, or 1.2500 for one franc and 25 centimes.
 invoice-line-unit-price-unreadable-error = Line { $line }: unreadable unit price — digits, apostrophe for thousands (1'250), point or comma for decimals, at most four decimals.
+# v0190-correction (#1162, D4) : un texte tapé dans le champ client n'a pas été choisi dans la liste.
+invoice-contact-unresolved-error = Choose the customer from the list
 invoice-lines-revenue-account-invalid = Invalid revenue account on the following lines: { $lines }
 invoice-default-revenue-account-unusable = The company default revenue account is no longer usable (archived, not postable, or unexpected type). Lines following it cannot be validated — fix it in Administration → Invoicing, or pick an account on each line.
 common-account-default-suffix = (default)

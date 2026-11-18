@@ -1121,6 +1121,17 @@ const ATTENDU = {
 	// en-tête des factures imputées, écart sans compte à l'annulation, fin d'un groupe fournisseur.
 	// Revue P3 ciblée de la 43-3 (L-A, L-B) : **3468**, relevé par la garde (« expected 3468 to be
 	// 3466 », `kesh-gate-logs/e433/rem3-vitest-1.log`) — `reread-retry`, `account-check-retry`.
+	// Branche epic/v0190-correction, partie de la 0.18.0 (avant l'Epic 37 et l'Epic 43) :
+	// 3086 → 3087 (v0190-correction, #1162, D4) : `invoice-contact-unresolved-error`
+	// (`InvoiceForm.svelte`), un littéral — recompté par la garde, non estimé.
+	// 3087 → 3095 (v0190-nom-societe, #1097) : le bloc nom de `settings/+page.svelte`, huit
+	// littéraux — `settings-company-name-required`, `-saved`, `-conflict`,
+	// `-conflict-reload-failed`, `common-save`, `common-cancel`, `common-edit`, `common-error`
+	// (« expected 3095 to be 3087 », `kesh-gate-logs/v0190n/vitest-i18n-1.log`).
+	// 3095 → 3096 (v0190-nom-societe, revue P1 E3) : `settings-company-name-too-long`, le refus
+	// local de la longueur — un littéral, garde verte à 3096 (`vitest-i18n-3.log`).
+	// Union de la 0.19.0 (fusion d'epic/v0190-correction) : valeur de HEAD gardée à la
+	// résolution, à relever par la garde au raccord qui suit (C-e350-18).
 	sitesTotal: 3468,
 	sitesNonResolus: 31,
 	relais: 6,

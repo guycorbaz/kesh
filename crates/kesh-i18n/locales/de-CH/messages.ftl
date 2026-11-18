@@ -934,7 +934,7 @@ invoice-pdf-error-contact-missing = Der mit der Rechnung verknüpfte Kontakt wur
 invoice-pdf-error-no-primary-bank = Für dieses Unternehmen ist kein Hauptbankkonto konfiguriert.
 invoice-pdf-error-client-address-required = Die Kundenadresse ist zur PDF-Erstellung erforderlich.
 # Story 35-2a (#955, #964) — die Ablehnung des PDFs nennt das zu korrigierende Feld und Zeichen.
-invoice-pdf-error-charset-company-name = Der Name des Unternehmens enthält ein Zeichen, das die QR-Rechnung nicht zulässt: «{ $car }» ({ $point }). Der Name des Unternehmens lässt sich in der Oberfläche noch nicht ändern.
+invoice-pdf-error-charset-company-name = Der Name des Unternehmens enthält ein Zeichen, das die QR-Rechnung nicht zulässt: «{ $car }» ({ $point }). Korrigieren Sie ihn unter Einstellungen → Organisation.
 invoice-pdf-error-charset-company-street = Die Strasse des Unternehmens enthält ein Zeichen, das die QR-Rechnung nicht zulässt: «{ $car }» ({ $point }). Korrigieren Sie sie unter Einstellungen → Organisation.
 invoice-pdf-error-charset-company-building = Die Hausnummer des Unternehmens enthält ein Zeichen, das die QR-Rechnung nicht zulässt: «{ $car }» ({ $point }). Korrigieren Sie sie unter Einstellungen → Organisation.
 invoice-pdf-error-charset-company-postal-code = Die PLZ des Unternehmens enthält ein Zeichen, das die QR-Rechnung nicht zulässt: «{ $car }» ({ $point }). Korrigieren Sie sie unter Einstellungen → Organisation.
@@ -946,14 +946,14 @@ invoice-pdf-error-charset-client-postal-code = Die PLZ des Kunden enthält ein Z
 invoice-pdf-error-charset-client-city = Der Ort des Kunden enthält ein Zeichen, das die QR-Rechnung nicht zulässt: «{ $car }» ({ $point }). Korrigieren Sie die Kundenkarte unter Kontakte.
 invoice-pdf-error-charset-invoice-number = Die Rechnungsnummer enthält ein Zeichen, das die QR-Rechnung nicht zulässt: «{ $car }» ({ $point }). Eine validierte Rechnung lässt sich nicht korrigieren: Prüfen Sie das Nummernformat unter Administration → Fakturierung.
 invoice-pdf-error-charset-other = Ein Feld der QR-Rechnung enthält ein nicht zulässiges Zeichen: «{ $car }» ({ $point }). Prüfen Sie die Karten des Kunden und des Unternehmens.
-invoice-pdf-error-empty-company-name = Der Name des Unternehmens ist leer. Er lässt sich in der Oberfläche noch nicht ändern.
+invoice-pdf-error-empty-company-name = Der Name des Unternehmens ist leer. Ergänzen Sie ihn unter Einstellungen → Organisation.
 invoice-pdf-error-empty-company-postal-code = Adresse des Unternehmens unvollständig: Die PLZ ist leer. Ergänzen Sie sie unter Einstellungen → Organisation (PLZ und Ort verlangt die QR-Rechnung).
 invoice-pdf-error-empty-company-city = Adresse des Unternehmens unvollständig: Der Ort ist leer. Ergänzen Sie ihn unter Einstellungen → Organisation (PLZ und Ort verlangt die QR-Rechnung).
 invoice-pdf-error-empty-client-name = Der Name des Kunden ist leer. Ergänzen Sie die Kundenkarte unter Kontakte.
 invoice-pdf-error-empty-client-postal-code = Adresse des Kunden unvollständig: Die PLZ ist leer. Ergänzen Sie die Kundenkarte unter Kontakte (PLZ und Ort verlangt die QR-Rechnung).
 invoice-pdf-error-empty-client-city = Adresse des Kunden unvollständig: Der Ort ist leer. Ergänzen Sie die Kundenkarte unter Kontakte (PLZ und Ort verlangt die QR-Rechnung).
 invoice-pdf-error-empty-other = Ein Pflichtfeld der QR-Rechnung ist leer. Prüfen Sie die Karten des Kunden und des Unternehmens.
-invoice-pdf-error-too-long-company-name = Der Name des Unternehmens überschreitet { $max } Zeichen ({ $got }). Er lässt sich in der Oberfläche noch nicht ändern.
+invoice-pdf-error-too-long-company-name = Der Name des Unternehmens überschreitet { $max } Zeichen ({ $got }). Kürzen Sie ihn unter Einstellungen → Organisation.
 invoice-pdf-error-too-long-company-street = Die Strasse des Unternehmens überschreitet { $max } Zeichen ({ $got }). Kürzen Sie sie unter Einstellungen → Organisation.
 invoice-pdf-error-too-long-company-building = Die Hausnummer des Unternehmens überschreitet { $max } Zeichen ({ $got }). Kürzen Sie sie unter Einstellungen → Organisation.
 invoice-pdf-error-too-long-company-postal-code = Die PLZ des Unternehmens überschreitet { $max } Zeichen ({ $got }). Kürzen Sie sie unter Einstellungen → Organisation.
@@ -2551,6 +2551,11 @@ settings-company-email-invalid = Ungültige E-Mail-Adresse.
 settings-company-email-saved = Firmen-E-Mail gespeichert
 settings-company-email-conflict = Versionskonflikt — die Daten wurden neu geladen, bitte erneut versuchen.
 settings-company-email-conflict-reload-failed = Versionskonflikt und Neuladen fehlgeschlagen — laden Sie die Seite neu.
+settings-company-name-saved = Firmenname gespeichert
+settings-company-name-required = Der Name des Unternehmens ist obligatorisch.
+settings-company-name-too-long = Der Name des Unternehmens überschreitet { $max } Zeichen ({ $got }): Die QR-Rechnung lässt nicht mehr zu.
+settings-company-name-conflict = Versionskonflikt — die Daten wurden neu geladen, bitte erneut versuchen.
+settings-company-name-conflict-reload-failed = Versionskonflikt und Neuladen fehlgeschlagen — laden Sie die Seite neu.
 
 # Story v0172-session (0.17.3, CR #891) — section « Session » des paramètres et page de connexion.
 settings-session-title = Sitzung
@@ -2713,6 +2718,8 @@ invoice-line-vat-rate-disabled-option = { $rate }% (deaktiviert)
 invoice-line-vat-rate-disabled-error = Zeile { $line }: Der MWST-Satz { $rate }% wurde deaktiviert. Wählen Sie einen aktiven Satz.
 invoice-line-unit-price-ambiguous-error = Zeile { $line }: mehrdeutiger Einzelpreis — schreiben Sie 1'250 für eintausendzweihundertfünfzig Franken oder 1.2500 für einen Franken und 25 Rappen.
 invoice-line-unit-price-unreadable-error = Zeile { $line }: unlesbarer Einzelpreis — Ziffern, Apostroph als Tausendertrennzeichen (1'250), Punkt oder Komma als Dezimaltrennzeichen, höchstens vier Nachkommastellen.
+# v0190-correction (#1162, D4) : un texte tapé dans le champ client n'a pas été choisi dans la liste.
+invoice-contact-unresolved-error = Wählen Sie den Kunden aus der Liste
 invoice-lines-revenue-account-invalid = Ungültiges Ertragskonto auf den folgenden Zeilen: { $lines }
 invoice-default-revenue-account-unusable = Das Standard-Ertragskonto der Firma ist nicht mehr verwendbar (archiviert, nicht buchbar oder unerwarteter Typ). Zeilen, die ihm folgen, können nicht validiert werden — korrigieren Sie es unter Administration → Fakturierung oder wählen Sie pro Zeile ein Konto.
 common-account-default-suffix = (Standard)

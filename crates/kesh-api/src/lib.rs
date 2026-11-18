@@ -293,7 +293,7 @@ pub fn build_router_avec_registre(
     // KESH-ADMIN-ROUTES-BEGIN
     // ⚠️ Bloc borné — Story 22-4a (#167). Le test `admin_pat_denied_e2e` lit CE
     // fichier par `include_str!`, compte les constructeurs de méthode entre les
-    // deux marqueurs, et exige exactement 52 (Story v0172-session). Toute route ajoutée ici sans son
+    // deux marqueurs, et exige exactement 54 (v0190-nom-societe ; 53 à la 33-5). Toute route ajoutée ici sans son
     // couple dans la liste du test fait ROUGIR le test : c'est le rappel qui
     // manquait, et qui a laissé 16 routes sur 19 sans garde anti-PAT.
     // Ne pas déplacer ni reformuler les marqueurs sans ajuster le test.
@@ -507,6 +507,12 @@ pub fn build_router_avec_registre(
         .route(
             "/api/v1/companies/current/currency-settings",
             put(routes::companies::update_currency_settings),
+        )
+        // Story v0190-nom-societe (#1097) : corriger le nom de la société, que
+        // la QR-facture peut refuser après l'assistant.
+        .route(
+            "/api/v1/companies/current/name",
+            put(routes::companies::update_company_name),
         )
         // Story 14-2 : réouverture d'un exercice clôturé (Admin uniquement +
         // motif obligatoire + audit + garde LIFO). Plus strict que la clôture

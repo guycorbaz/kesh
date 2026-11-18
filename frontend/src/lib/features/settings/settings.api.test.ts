@@ -16,7 +16,20 @@ import {
 	updateCompanyAddress,
 	updateCompanyContactDetails,
 	updateCompanyEmail,
+	updateCompanyName,
 } from './settings.api';
+
+describe('settings.api — updateCompanyName (v0190-nom-societe, #1097)', () => {
+	// Le seul lien entre l'écran et la route est ce littéral de chemin.
+	it('PUT name + version au bon path', async () => {
+		(apiClient.put as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 1, version: 4 });
+		await updateCompanyName({ name: 'Démo SA', version: 3 });
+		expect(apiClient.put).toHaveBeenCalledWith('/api/v1/companies/current/name', {
+			name: 'Démo SA',
+			version: 3,
+		});
+	});
+});
 
 describe('settings.api — updateCompanyEmail (20-3b2)', () => {
 	it('PUT email + version au bon path', async () => {

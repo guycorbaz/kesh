@@ -934,7 +934,7 @@ invoice-pdf-error-contact-missing = Il contatto collegato alla fattura non è st
 invoice-pdf-error-no-primary-bank = Nessun conto bancario principale configurato per questa azienda.
 invoice-pdf-error-client-address-required = L'indirizzo del cliente è obbligatorio per generare il PDF.
 # Story 35-2a (#955, #964) — il rifiuto del PDF nomina il campo e il carattere da correggere.
-invoice-pdf-error-charset-company-name = Il nome dell'azienda contiene un carattere non ammesso dalla QR-fattura: «{ $car }» ({ $point }). Il nome dell'azienda non si può ancora modificare dall'interfaccia.
+invoice-pdf-error-charset-company-name = Il nome dell'azienda contiene un carattere non ammesso dalla QR-fattura: «{ $car }» ({ $point }). Correggerlo in Impostazioni → Organizzazione.
 invoice-pdf-error-charset-company-street = La via dell'azienda contiene un carattere non ammesso dalla QR-fattura: «{ $car }» ({ $point }). Correggerla in Impostazioni → Organizzazione.
 invoice-pdf-error-charset-company-building = Il numero civico dell'azienda contiene un carattere non ammesso dalla QR-fattura: «{ $car }» ({ $point }). Correggerlo in Impostazioni → Organizzazione.
 invoice-pdf-error-charset-company-postal-code = Il NPA dell'azienda contiene un carattere non ammesso dalla QR-fattura: «{ $car }» ({ $point }). Correggerlo in Impostazioni → Organizzazione.
@@ -946,14 +946,14 @@ invoice-pdf-error-charset-client-postal-code = Il NPA del cliente contiene un ca
 invoice-pdf-error-charset-client-city = La località del cliente contiene un carattere non ammesso dalla QR-fattura: «{ $car }» ({ $point }). Correggere la scheda del cliente in Contatti.
 invoice-pdf-error-charset-invoice-number = Il numero di fattura contiene un carattere non ammesso dalla QR-fattura: «{ $car }» ({ $point }). Una fattura convalidata non si corregge: verificare il formato di numerazione in Amministrazione → Fatturazione.
 invoice-pdf-error-charset-other = Un campo della QR-fattura contiene un carattere non ammesso: «{ $car }» ({ $point }). Verificare le schede del cliente e dell'azienda.
-invoice-pdf-error-empty-company-name = Il nome dell'azienda è vuoto. Non si può ancora modificare dall'interfaccia.
+invoice-pdf-error-empty-company-name = Il nome dell'azienda è vuoto. Completarlo in Impostazioni → Organizzazione.
 invoice-pdf-error-empty-company-postal-code = Indirizzo dell'azienda incompleto: il NPA è vuoto. Completarlo in Impostazioni → Organizzazione (NPA e località sono richiesti dalla QR-fattura).
 invoice-pdf-error-empty-company-city = Indirizzo dell'azienda incompleto: la località è vuota. Completarlo in Impostazioni → Organizzazione (NPA e località sono richiesti dalla QR-fattura).
 invoice-pdf-error-empty-client-name = Il nome del cliente è vuoto. Completare la scheda del cliente in Contatti.
 invoice-pdf-error-empty-client-postal-code = Indirizzo del cliente incompleto: il NPA è vuoto. Completare la scheda del cliente in Contatti (NPA e località sono richiesti dalla QR-fattura).
 invoice-pdf-error-empty-client-city = Indirizzo del cliente incompleto: la località è vuota. Completare la scheda del cliente in Contatti (NPA e località sono richiesti dalla QR-fattura).
 invoice-pdf-error-empty-other = Un campo obbligatorio della QR-fattura è vuoto. Verificare le schede del cliente e dell'azienda.
-invoice-pdf-error-too-long-company-name = Il nome dell'azienda supera { $max } caratteri ({ $got }). Non si può ancora modificare dall'interfaccia.
+invoice-pdf-error-too-long-company-name = Il nome dell'azienda supera { $max } caratteri ({ $got }). Accorciarlo in Impostazioni → Organizzazione.
 invoice-pdf-error-too-long-company-street = La via dell'azienda supera { $max } caratteri ({ $got }). Accorciarla in Impostazioni → Organizzazione.
 invoice-pdf-error-too-long-company-building = Il numero civico dell'azienda supera { $max } caratteri ({ $got }). Accorciarlo in Impostazioni → Organizzazione.
 invoice-pdf-error-too-long-company-postal-code = Il NPA dell'azienda supera { $max } caratteri ({ $got }). Accorciarlo in Impostazioni → Organizzazione.
@@ -2549,6 +2549,11 @@ settings-company-email-invalid = Indirizzo e-mail non valido.
 settings-company-email-saved = E-mail della società salvata
 settings-company-email-conflict = Conflitto di versione — i dati sono stati ricaricati, riprovare.
 settings-company-email-conflict-reload-failed = Conflitto di versione e ricaricamento impossibile — ricaricare la pagina.
+settings-company-name-saved = Nome della società salvato
+settings-company-name-required = Il nome della società è obbligatorio.
+settings-company-name-too-long = Il nome della società supera { $max } caratteri ({ $got }): la QR-fattura non ne ammette di più.
+settings-company-name-conflict = Conflitto di versione — i dati sono stati ricaricati, riprovare.
+settings-company-name-conflict-reload-failed = Conflitto di versione e ricaricamento impossibile — ricaricare la pagina.
 
 # Story v0172-session (0.17.3, CR #891) — section « Session » des paramètres et page de connexion.
 settings-session-title = Sessione
@@ -2711,6 +2716,8 @@ invoice-line-vat-rate-disabled-option = { $rate }% (disattivato)
 invoice-line-vat-rate-disabled-error = Riga { $line }: l’aliquota IVA { $rate }% è stata disattivata. Scegliete un’aliquota attiva.
 invoice-line-unit-price-ambiguous-error = Riga { $line }: prezzo unitario ambiguo — scrivete 1'250 per milleduecentocinquanta franchi, o 1.2500 per un franco e 25 centesimi.
 invoice-line-unit-price-unreadable-error = Riga { $line }: prezzo unitario illeggibile — cifre, apostrofo delle migliaia (1'250), punto o virgola decimale, al massimo quattro decimali.
+# v0190-correction (#1162, D4) : un texte tapé dans le champ client n'a pas été choisi dans la liste.
+invoice-contact-unresolved-error = Scegliete il cliente dall'elenco
 invoice-lines-revenue-account-invalid = Conto di ricavo non valido nelle righe seguenti: { $lines }
 invoice-default-revenue-account-unusable = Il conto di ricavo predefinito della società non è più utilizzabile (archiviato, non imputabile o di tipo inatteso). Le righe che lo seguono non potranno essere validate — correggilo in Amministrazione → Fatturazione oppure scegli un conto per ogni riga.
 common-account-default-suffix = (predefinito)

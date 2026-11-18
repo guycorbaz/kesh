@@ -34,9 +34,10 @@
 //! 147 à la 37-1, 152 à la 37-2 — la récupération des cours, puis les quatre
 //! routes des cours retenus et des genres d'un exercice —, 153 à la 37-3b — la
 //! conversion entre devises —, 155 à la 37-5 — l'aperçu et la passation de la
-//! réévaluation ; dont `/mcp`, monté
+//! réévaluation —, 156 à la v0190-nom-societe — le nom de la société, unie à
+//! l'Epic 37 par l'intégration de la 0.19.0 ; dont `/mcp`, monté
 //! par `route_service` — Story 32-6a) ; celui du REGISTRE est plus large
-//! (159), car quatre routes
+//! (160), car quatre routes
 //! mutantes vivent dans `routes/test_endpoints.rs` (la quatrième, le pilotage
 //! de la source factice des cours, à la 37-2) et sont montées par un `nest()`.
 //! D'où :
@@ -495,6 +496,7 @@ const LIB_ROUTES: &[(&str, &str, Status, Rejeu)] = &[
     ("put", "companies::update_company_contact_details", Traced, SansEcritureAuJournal),
     ("put", "companies::update_company_address", Traced, SansEcritureAuJournal),
     ("put", "companies::update_currency_settings", Traced, SansEcritureAuJournal),
+    ("put", "companies::update_company_name", Traced, SansEcritureAuJournal),
     ("post", "fiscal_years::reopen_fiscal_year", Traced, SansEcritureAuJournal),
     ("post", "companies::unlock_company_books", Traced, SansEcritureAuJournal),
     ("post", "onboarding::reset", Traced, SansEcritureAuJournal),
@@ -1091,8 +1093,8 @@ fn the_registry_partition_is_what_the_story_declares() {
 
     assert_eq!(
         LIB_ROUTES.len(),
-        155,
-        "l'inventaire porte sur 155 routes (+ 2 : l'aperçu et la passation de la réévaluation de fin d'exercice, 37-5 ; + 1 : la conversion entre devises, 37-3b ; + 5 : la récupération des cours de change, la saisie et le ↑ d'un cours retenu, l'acquittement des corrections et les genres d'un exercice, 37-2 ; + 1 : le réglage multi-devises de la société, 37-1 ; + 1 : le solde d'ouverture d'un compte bancaire existant, 34-2 ; + 1 : l'adresse de la société, 33-5 ; + 1 : `/mcp`, 32-6a ; + 1 : la décision d'un \
+        156,
+        "l'inventaire porte sur 156 routes (+ 1 : le nom de la société, v0190-nom-societe ; + 2 : l'aperçu et la passation de la réévaluation de fin d'exercice, 37-5 ; + 1 : la conversion entre devises, 37-3b ; + 5 : la récupération des cours de change, la saisie et le ↑ d'un cours retenu, l'acquittement des corrections et les genres d'un exercice, 37-2 ; + 1 : le réglage multi-devises de la société, 37-1 ; + 1 : le solde d'ouverture d'un compte bancaire existant, 34-2 ; + 1 : l'adresse de la société, 33-5 ; + 1 : `/mcp`, 32-6a ; + 1 : la décision d'un \
          envoi MCP, 32-8b ; + 5 : les routes mutantes des prompts du serveur MCP, 32-10a-iii ; \
          + 1 : le rattachement d'une transaction à une écriture, v017-3a ; + 2 : l'aperçu et \
          la création d'un relevé saisi à la main, v016-2a ; + 4 : le `PUT`, le `DELETE`, la \
@@ -1120,8 +1122,11 @@ fn the_registry_partition_is_what_the_story_declares() {
     // `journal_entry.created` ×2).
     // Story 37-5 : 146 → 147 (la passation de la réévaluation de fin
     // d'exercice, tracée par `fx_revaluation.posted`).
+    // Story v0190-nom-societe (#1097), unie à l'Epic 37 par l'intégration de la
+    // 0.19.0 : 147 → 148 (la correction du nom de la société, tracée par
+    // `company.updated`).
     assert_eq!(
-        traced, 147,
+        traced, 148,
         "73 tracées avant la 25-1b, plus ses 14, plus la dévalidation (25-2-b-1, #440), \
          plus l'annulation d'un règlement client (25-3-a-1) et fournisseur (25-3-a-2, #414), \
          plus l'annulation d'un rapprochement (25-3-b, #418), plus le solde du reste \
@@ -1151,7 +1156,8 @@ fn the_registry_partition_is_what_the_story_declares() {
          multi-devises de la société (37-1), plus la récupération des cours de change, la \
          saisie et le ↑ d'un cours retenu, l'acquittement des corrections et les genres d'un \
          exercice (37-2), plus la conversion entre devises (37-3b), plus la passation de la \
-         réévaluation de fin d'exercice (37-5)"
+         réévaluation de fin d'exercice (37-5), plus la correction du nom de la société \
+         (v0190-nom-societe, refs #1097)"
     );
     assert_eq!(
         exempt, 4,
@@ -1166,7 +1172,7 @@ fn the_registry_partition_is_what_the_story_declares() {
     );
     assert_eq!(
         LIB_ROUTES.len() + TEST_ENDPOINT_ROUTES.len(),
-        159,
+        160,
         "le registre est plus large que l'inventaire, et c'est voulu"
     );
 }
@@ -1577,8 +1583,8 @@ fn the_replay_partition_is_what_the_story_declares() {
     );
     assert_eq!(exemptees, 3, "full_import, /seed, /reset");
     assert_eq!(
-        sans_ecriture, 127,
-        "125 routes de lib.rs (37-5 : + 1 — l'aperçu de la réévaluation de fin d'exercice) — 124 avant (37-2 : + 5 — la récupération des cours de change, la saisie et le ↑ d'un cours retenu, l'acquittement des corrections, les genres d'un exercice) — 119 avant (37-1 : + 1 — le réglage multi-devises de la société) — 118 avant (34-2 : − 1 — la création d'un compte bancaire, reclassée \
+        sans_ecriture, 128,
+        "126 routes de lib.rs (v0190-nom-societe : + 1 — le nom de la société, unie à l'Epic 37 par l'intégration de la 0.19.0) — 125 avant (37-5 : + 1 — l'aperçu de la réévaluation de fin d'exercice) — 124 avant (37-2 : + 5 — la récupération des cours de change, la saisie et le ↑ d'un cours retenu, l'acquittement des corrections, les genres d'un exercice) — 119 avant (37-1 : + 1 — le réglage multi-devises de la société) — 118 avant (34-2 : − 1 — la création d'un compte bancaire, reclassée \
          `Rejouee`) — 119 avant (33-5 : + 1 — l'adresse de la société ; v0172-session : + 2 — le réglage de la durée d'inactivité \
          et le battement d'activité ; v017-4a : + 4 — la saisie fournisseur et la complétion \
          d'import reclassées, le `PUT` et le `DELETE` d'un brouillon) — 112 avant \
@@ -1605,7 +1611,9 @@ fn the_replay_partition_is_what_the_story_declares() {
     // cours retenu, l'acquittement des corrections, les genres d'un exercice).
     // Story 37-3b : 156 → 157 (la conversion entre devises).
     // Story 37-5 : 157 → 159 (l'aperçu et la passation de la réévaluation).
-    assert_eq!(tout.len(), 159);
+    // Story v0190-nom-societe (#1097), unie à l'Epic 37 par l'intégration de la
+    // 0.19.0 : 159 → 160 (le nom de la société).
+    assert_eq!(tout.len(), 160);
 }
 
 /// Visiteur `syn` d'un fichier de routes : relève chaque appel à la primitive
