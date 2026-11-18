@@ -1094,7 +1094,11 @@ const ATTENDU = {
 	// Intégration de main (v0.18.0) dans l'Epic 37 (2026-11-17) : **3388**, relevé par la garde après la
 	// fusion (`expected 3388 to be 0`, `kesh-gate-logs/integration-main-37/vitest-1.log`), non
 	// additionné — il égale 3050 + 302 (Epic 37) + 36 (Epic 36), les deux côtés gardés.
-	sitesTotal: 3388,
+	// Correctif `fix-api-parent-compte` (2026-11-18) : **3388 → 3392**, relevé par la garde
+	// (« expected 3392 to be 3388 », `kesh-gate-logs/fix-api-parent-compte/front-test-unit.log`) —
+	// le champ parent du dialogue de modification (`accounts/+page.svelte`) : son libellé
+	// `account-field-parent-optional` et trois `accounts-parent-none`, comme à la création.
+	sitesTotal: 3392,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

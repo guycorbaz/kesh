@@ -26,6 +26,7 @@
 		type RetypeImpact,
 	} from '$lib/features/accounts/accounts.types';
 	import AccountCurrencyFields from '$lib/features/accounts/AccountCurrencyFields.svelte';
+	import { parentCandidates, parentFieldForUpdate } from '$lib/features/accounts/account-options';
 	import {
 		currencyFieldsForCreate,
 		currencyFieldsForUpdate,
@@ -105,6 +106,8 @@
 	let editType = $state<AccountType>('Asset');
 	let editRole = $state<string>(NO_ROLE);
 	let editPostable = $state(true);
+	// Correctif `fix-api-parent-compte` — `''` = « Aucun » (racine).
+	let editParentId = $state('');
 	let editSubmitting = $state(false);
 	let editError = $state('');
 
@@ -200,9 +203,14 @@
 		}));
 	});
 
-	// Parent options for create dialog (only group-level accounts)
-	let parentOptions = $derived(
-		accounts.filter((a) => a.active).map((a) => ({ value: String(a.id), label: `${a.number} — ${a.name}` }))
+	// Options de parent : à la création, les comptes actifs ; à la modification
+	// (correctif `fix-api-parent-compte`), sans le compte ni ses sous-comptes.
+	function toParentOptions(candidates: AccountResponse[]) {
+		return candidates.map((a) => ({ value: String(a.id), label: `${a.number} — ${a.name}` }));
+	}
+	let parentOptions = $derived(toParentOptions(parentCandidates(accounts, null)));
+	let editParentOptions = $derived(
+		toParentOptions(parentCandidates(accounts, editAccount?.id ?? null))
 	);
 
 	// --- API ---
@@ -293,6 +301,7 @@
 		editType = account.accountType;
 		editRole = account.role ?? NO_ROLE;
 		editPostable = account.postable;
+		editParentId = account.parentId !== null ? String(account.parentId) : '';
 		editError = '';
 		editCurrency = initialCurrencyForm(account);
 		editFxErrors = {};
@@ -331,6 +340,8 @@
 			postable: editPostable,
 			version: editAccount.version,
 			...(confirmAccountRetype ? { confirmAccountRetype: true } : {}),
+			// Correctif `fix-api-parent-compte` : seulement s'il change (absent = inchangé).
+			...parentFieldForUpdate(editAccount, editParentId),
 			// Story 37-1 : seulement ce qui change (absent = inchangé), rien en mono-devise.
 			...currencyFieldsForUpdate(editAccount, editCurrency, multiCurrency),
 		});
@@ -767,6 +778,20 @@
 					<Select.Content>
 						{#each ACCOUNT_TYPES as t}
 							<Select.Item value={t} label={typeLabel(t)}>{typeLabel(t)}</Select.Item>
+						{/each}
+					</Select.Content>
+				</Select.Root>
+			</div>
+			<div>
+				<label for="edit-parent" class="text-sm font-medium text-text">{i18nMsg('account-field-parent-optional', 'Compte parent (optionnel)')}</label>
+				<Select.Root type="single" bind:value={editParentId}>
+					<Select.Trigger id="edit-parent" class="w-full mt-1" data-testid="account-edit-dialog-parent">
+						{editParentId ? editParentOptions.find(p => p.value === editParentId)?.label ?? '—' : i18nMsg('accounts-parent-none', 'Aucun')}
+					</Select.Trigger>
+					<Select.Content>
+						<Select.Item value="" label={i18nMsg('accounts-parent-none', 'Aucun')}>{i18nMsg('accounts-parent-none', 'Aucun')}</Select.Item>
+						{#each editParentOptions as opt}
+							<Select.Item value={opt.value} label={opt.label}>{opt.label}</Select.Item>
 						{/each}
 					</Select.Content>
 				</Select.Root>

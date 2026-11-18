@@ -306,10 +306,10 @@ pub async fn create(pool: &MySqlPool, user_id: i64, new: NewAccount) -> Result<A
         .map_err(|_| DbError::Invariant(format!("last_insert_id {last_id} dépasse i64::MAX")))?;
 
     // Code review 14-3a (D2) : le parent vient d'acquérir un sous-compte, il
-    // devient donc un compte de regroupement. `parent_id` étant immuable après
-    // création (cf. `AccountUpdate`), c'est le seul chemin — avec le seed — qui
-    // crée une relation de parenté ; la normalisation d'[`update`] couvre le
-    // reste. Le scope `company_id` est défensif : sans lui, un `parentId`
+    // devient donc un compte de regroupement. Les chemins qui créent une
+    // relation de parenté sont celui-ci, le seed et, depuis le correctif
+    // `fix-api-parent-compte`, le changement de parent d'[`update`], qui
+    // applique la même règle ; la normalisation d'[`update`] couvre le reste. Le scope `company_id` est défensif : sans lui, un `parentId`
     // pointant sur une autre société ferait écrire hors du tenant courant.
     // Pas de bump de `version` : `postable` est ici une conséquence structurelle,
     // pas une modification demandée par un utilisateur sur le parent.
