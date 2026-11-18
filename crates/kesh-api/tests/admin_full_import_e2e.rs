@@ -33,7 +33,7 @@ use kesh_db::entities::{Language, NewCompany, NewUser, OrgType, Role};
 use kesh_db::post_restore::ReplayedBackfill;
 use kesh_db::repositories::{companies, users};
 use reqwest::multipart;
-use serde_json::Value;
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use sqlx::MySqlPool;
 
@@ -1801,12 +1801,14 @@ async fn lettering_pieces(pool: &MySqlPool, biz: &Business) -> LetteringPieces {
                     debit: dec!(20),
                     credit: dec!(0),
                     project_id: None,
+                    foreign: None,
                 },
                 NewJournalEntryLine {
                     account_id: payable,
                     debit: dec!(0),
                     credit: dec!(20),
                     project_id: None,
+                    foreign: None,
                 },
             ],
         },
@@ -5852,6 +5854,491 @@ async fn full_import_of_a_0_17_5_backup_makes_every_account_a_bank_account(pool:
     assert_eq!(apres[0].2.as_deref(), Some("CH9300762011623852957"));
     assert_eq!(apres[0].3, "bank");
     assert_eq!(apres[0].4, None);
+}
+
+// ---------------------------------------------------------------------------
+// Story 37-1 (AC-6) — sauvegarde 0.17.6 (avant l'Epic 37) et aller-retour
+// ---------------------------------------------------------------------------
+
+/// `(multi_currency_enabled, fx_gain, fx_loss, fx_transit)` de la société.
+async fn reglage_multi_devises(
+    pool: &MySqlPool,
+    company_id: i64,
+) -> (bool, Option<i64>, Option<i64>, Option<i64>) {
+    sqlx::query_as(
+        "SELECT multi_currency_enabled, fx_gain_account_id, fx_loss_account_id, \
+         fx_transit_account_id FROM companies WHERE id = ?",
+    )
+    .bind(company_id)
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+/// `(currency, fx_gain, fx_loss)` d'un compte.
+async fn devise_du_compte(pool: &MySqlPool, id: i64) -> (Option<String>, Option<i64>, Option<i64>) {
+    sqlx::query_as(
+        "SELECT currency, fx_gain_account_id, fx_loss_account_id \
+         FROM accounts WHERE id = ?",
+    )
+    .bind(id)
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+/// `(multi_currency, opening_rate_kind, closing_rate_kind)` des exercices de la
+/// société, par identifiant.
+async fn modes_des_exercices(pool: &MySqlPool, company_id: i64) -> Vec<(bool, String, String)> {
+    sqlx::query_as(
+        "SELECT multi_currency, opening_rate_kind, closing_rate_kind FROM fiscal_years \
+         WHERE company_id = ? ORDER BY id",
+    )
+    .bind(company_id)
+    .fetch_all(pool)
+    .await
+    .unwrap()
+}
+
+/// Pose en SQL direct un réglage multi-devises complet (l'activation vient en
+/// phase suivante) : société multi-devises et ses trois comptes, un compte en
+/// USD à comptes propres, l'exercice multi-devises au genre d'ouverture `month`.
+async fn poser_multi_devises(pool: &MySqlPool, biz: &Business) -> i64 {
+    let c = biz.ctx.company_id;
+    sqlx::query(
+        "UPDATE companies SET multi_currency_enabled = TRUE, fx_gain_account_id = ?, \
+         fx_loss_account_id = ?, fx_transit_account_id = ? WHERE id = ?",
+    )
+    .bind(biz.accounts["3000"])
+    .bind(biz.accounts["4000"])
+    .bind(biz.accounts["1000"])
+    .bind(c)
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "UPDATE accounts SET currency = 'USD', fx_gain_account_id = ?, fx_loss_account_id = ? \
+         WHERE id = ?",
+    )
+    .bind(biz.accounts["3000"])
+    .bind(biz.accounts["4000"])
+    .bind(biz.accounts["1020"])
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "UPDATE fiscal_years SET multi_currency = TRUE, opening_rate_kind = 'month' \
+         WHERE company_id = ?",
+    )
+    .bind(c)
+    .execute(pool)
+    .await
+    .unwrap();
+    biz.accounts["1020"]
+}
+
+/// AC-6 — une sauvegarde **0.17.6** (simulée : export courant d'une société
+/// mono-devise, colonnes de la liste close des absences admises retirées du
+/// manifeste et des NDJSON, `keshVersion` 0.17.6) se réimporte : 200, réglage
+/// et exercices à leur défaut (mono-devise, `day`), comptes sans devise — même
+/// sur une base qui portait un réglage actif avant l'import.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_of_a_0_17_6_backup_takes_the_multi_currency_defaults(pool: MySqlPool) {
+    use kesh_db::backup::{ABSENCES_ADMISES_EPIC_37, Absence};
+    let app = spawn_app(pool.clone()).await;
+    let biz = seed_business(&pool, "Forme 0176").await;
+    let c = biz.ctx.company_id;
+    let backup = export_backup(&app, &biz.ctx.jwt).await;
+    let (mut manifest, mut data, fichiers) = ouvrir_tout(&backup);
+    manifest["keshVersion"] = Value::from("0.17.6");
+    manifest["keshVersionMinRequired"] = Value::from("0.17.6");
+    let mut retirees = 0;
+    for entree in ABSENCES_ADMISES_EPIC_37 {
+        match entree.absence {
+            Absence::Colonne(table, colonne) => {
+                recrire_table(&mut manifest, &mut data, table, |o| {
+                    o.remove(colonne);
+                });
+                strip_column(&mut manifest, table, colonne);
+                retirees += 1;
+            }
+            Absence::Table(table) => {
+                manifest["tables"].as_object_mut().unwrap().remove(table);
+                data.remove(table);
+            }
+        }
+    }
+    assert_eq!(
+        retirees, 13,
+        "les dix colonnes de la 37-1 et les trois de la 37-3a (lignes d'écriture)"
+    );
+    let ancienne = rezip_tout(&manifest, &data, &fichiers);
+
+    assert!(
+        manifest["tables"].get("exchange_rates").is_none(),
+        "Story 37-2 : la sauvegarde 0.17.6 ne porte pas la table des cours"
+    );
+
+    // La base porte un réglage actif avant l'import : l'import le remplace.
+    let compte_usd = poser_multi_devises(&pool, &biz).await;
+    // Story 37-2 (AC-7, R1) : un cours retenu avant l'import est effacé comme
+    // toute donnée de la société remplacée ; la table reste vide.
+    sqlx::query(
+        "INSERT INTO exchange_rates (company_id, currency, kind, rate_date, rate, source) \
+         VALUES (?, 'USD', 'month', '2026-01-01', 0.8800000000, 'manual')",
+    )
+    .bind(c)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let resp = post_import(&app, &biz.ctx.jwt, ancienne).await;
+    assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
+    let cours: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM exchange_rates")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        cours, 0,
+        "aucun cours retenu après l'import d'une sauvegarde 0.17.6"
+    );
+
+    assert_eq!(
+        reglage_multi_devises(&pool, c).await,
+        (false, None, None, None)
+    );
+    assert_eq!(
+        devise_du_compte(&pool, compte_usd).await,
+        (None, None, None)
+    );
+    let devises: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM accounts WHERE currency IS NOT NULL")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(devises, 0, "aucun compte en devise");
+    // Story 37-3a (AC-1) : les lignes d'écriture réimportées sont en CHF.
+    let lignes_en_devise: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM journal_entry_lines WHERE amount_currency IS NOT NULL \
+         OR exchange_rate IS NOT NULL OR rate_source IS NOT NULL",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(lignes_en_devise, 0, "lignes aux trois colonnes NULL");
+    let modes = modes_des_exercices(&pool, c).await;
+    assert!(!modes.is_empty());
+    assert!(
+        modes
+            .iter()
+            .all(|m| *m == (false, "day".to_string(), "day".to_string())),
+        "{modes:?}"
+    );
+}
+
+/// AC-6 — la liste close ne tolère **que** ses entrées : une table **hors
+/// liste** retirée d'une sauvegarde 0.17.6 reste refusée (400, le refus
+/// d'origine tient), et rien n'est importé.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_of_a_0_17_6_backup_without_a_listed_table_is_refused(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let biz = seed_business(&pool, "Forme 0176 sans table").await;
+    let backup = export_backup(&app, &biz.ctx.jwt).await;
+    let (mut manifest, mut data, fichiers) = ouvrir_tout(&backup);
+    manifest["keshVersion"] = Value::from("0.17.6");
+    manifest["keshVersionMinRequired"] = Value::from("0.17.6");
+    assert!(!kesh_db::backup::table_absente_admise("projects"));
+    manifest["tables"]
+        .as_object_mut()
+        .unwrap()
+        .remove("projects")
+        .expect("projects au manifeste");
+    data.remove("projects");
+    let resp = post_import(&app, &biz.ctx.jwt, rezip_tout(&manifest, &data, &fichiers)).await;
+    assert_eq!(resp.status(), 400);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "INVALID_BACKUP_STRUCTURE", "{body}");
+    let imports: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM audit_log WHERE action = 'admin.full_import'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(imports, 0, "aucune entrée admin.full_import");
+}
+
+/// AC-6 — **aller-retour** d'une sauvegarde 37-1 : réglage multi-devises et
+/// ses trois comptes, devise et comptes propres d'un compte, mode et genres des
+/// exercices reviennent tels qu'exportés (le `.keshbackup` lit ses colonnes à
+/// `information_schema` : aucune énumération à la main).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_round_trip_keeps_the_multi_currency_setting(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let biz = seed_business(&pool, "Aller-retour 37-1").await;
+    let c = biz.ctx.company_id;
+    let compte_usd = poser_multi_devises(&pool, &biz).await;
+    let reglage = reglage_multi_devises(&pool, c).await;
+    let devise = devise_du_compte(&pool, compte_usd).await;
+    let modes = modes_des_exercices(&pool, c).await;
+    assert!(reglage.0 && devise.0.is_some(), "montage : réglage posé");
+    let backup = export_backup(&app, &biz.ctx.jwt).await;
+
+    // Entre l'export et l'import, tout revient au défaut.
+    sqlx::query(
+        "UPDATE accounts SET currency = NULL, fx_gain_account_id = NULL, \
+         fx_loss_account_id = NULL WHERE company_id = ?",
+    )
+    .bind(c)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "UPDATE companies SET multi_currency_enabled = FALSE, fx_gain_account_id = NULL, \
+         fx_loss_account_id = NULL, fx_transit_account_id = NULL WHERE id = ?",
+    )
+    .bind(c)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "UPDATE fiscal_years SET multi_currency = FALSE, opening_rate_kind = 'day' \
+         WHERE company_id = ?",
+    )
+    .bind(c)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let resp = post_import(&app, &biz.ctx.jwt, backup).await;
+    assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
+    assert_eq!(reglage_multi_devises(&pool, c).await, reglage);
+    assert_eq!(devise_du_compte(&pool, compte_usd).await, devise);
+    assert_eq!(modes_des_exercices(&pool, c).await, modes);
+}
+
+/// Story 37-3a (AC-8) — **aller-retour** d'une ligne d'écriture en devise :
+/// montant à 4 décimales et cours à 10 reviennent identiques (export générique
+/// par `information_schema`, restauration sous `chk_jel_fx_*`).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_round_trip_keeps_a_foreign_currency_line(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let biz = seed_business(&pool, "Aller-retour 37-3a").await;
+    let c = biz.ctx.company_id;
+    let compte_usd = poser_multi_devises(&pool, &biz).await;
+    let fy: i64 = sqlx::query_scalar("SELECT id FROM fiscal_years WHERE company_id = ? LIMIT 1")
+        .bind(c)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let entry_id: i64 = sqlx::query_scalar(
+        "INSERT INTO journal_entries (company_id, fiscal_year_id, entry_number, entry_date, \
+         journal, description) VALUES (?, ?, 9001, \
+         (SELECT start_date FROM fiscal_years WHERE id = ?), 'OD', 'Ligne USD') RETURNING id",
+    )
+    .bind(c)
+    .bind(fy)
+    .bind(fy)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO journal_entry_lines (entry_id, account_id, line_order, debit, credit, \
+         amount_currency, exchange_rate, rate_source) VALUES \
+         (?, ?, 1, 12.34, 0, 1234.5678, 0.0099956789, 'manual'), \
+         (?, ?, 2, 0, 12.34, NULL, NULL, NULL)",
+    )
+    .bind(entry_id)
+    .bind(compte_usd)
+    .bind(entry_id)
+    .bind(biz.accounts["3000"])
+    .execute(&pool)
+    .await
+    .unwrap();
+    let lire = || async {
+        sqlx::query_scalar::<_, String>(
+            "SELECT CONCAT_WS('|', account_id, debit, credit, IFNULL(amount_currency, '-'), \
+             IFNULL(exchange_rate, '-'), IFNULL(rate_source, '-')) \
+             FROM journal_entry_lines WHERE entry_id = ? ORDER BY line_order",
+        )
+        .bind(entry_id)
+        .fetch_all(&pool)
+        .await
+        .unwrap()
+    };
+    let avant = lire().await;
+    assert!(
+        avant[0].contains("1234.5678|0.0099956789|manual"),
+        "{avant:?}"
+    );
+    let backup = export_backup(&app, &biz.ctx.jwt).await;
+    sqlx::query("DELETE FROM journal_entry_lines WHERE entry_id = ?")
+        .bind(entry_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let resp = post_import(&app, &biz.ctx.jwt, backup).await;
+    assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
+    assert_eq!(lire().await, avant, "ligne en devise identique");
+}
+
+/// Story 37-3a (AC-4, cas (h)) — **restauration** sur une installation sans
+/// valeur publiée (table système vide) : une ligne `afc` au cours restauré se
+/// crée sans aucune récupération, et le `PUT` du seul libellé d'une écriture
+/// `afc` restaurée passe (revue de code P1 : test exigé par la fiche, absent).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_then_afc_line_at_the_restored_rate(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let biz = seed_business(&pool, "Restauration afc 37-3a").await;
+    let c = biz.ctx.company_id;
+    let compte_usd = poser_multi_devises(&pool, &biz).await;
+    let debut: chrono::NaiveDate =
+        sqlx::query_scalar("SELECT start_date FROM fiscal_years WHERE company_id = ? LIMIT 1")
+            .bind(c)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    sqlx::query(
+        "INSERT INTO exchange_rates (company_id, currency, kind, rate_date, rate, source) \
+         VALUES (?, 'USD', 'month', DATE_FORMAT(?, '%Y-%m-01'), 0.91193, 'afc')",
+    )
+    .bind(c)
+    .bind(debut)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let corps = |description: &str| {
+        json!({
+            "entryDate": debut.to_string(),
+            "journal": "OD",
+            "description": description,
+            "lines": [
+                { "accountId": compte_usd, "debit": "1125.83", "credit": "0",
+                  "foreign": { "amount": "1234.56", "rate": "0.91193", "rateSource": "afc" } },
+                { "accountId": biz.accounts["3000"], "debit": "0", "credit": "1125.83" },
+            ],
+        })
+    };
+    let poster = |body: Value| {
+        app.client
+            .post(app.url("/api/v1/journal-entries"))
+            .header("Authorization", format!("Bearer {}", biz.ctx.jwt))
+            .json(&body)
+            .send()
+    };
+    let r = poster(corps("Avant la sauvegarde")).await.unwrap();
+    assert_eq!(r.status(), 201, "{}", r.text().await.unwrap());
+    let avant: Value = r.json().await.unwrap();
+    let id = avant["id"].as_i64().unwrap();
+
+    let backup = export_backup(&app, &biz.ctx.jwt).await;
+    let resp = post_import(&app, &biz.ctx.jwt, backup).await;
+    assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
+    let publiees: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM _kesh_fetched_exchange_rates")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        publiees, 0,
+        "aucune valeur publiée : installation sans récupération"
+    );
+
+    // Création d'une ligne `afc` au cours restauré.
+    let r = poster(corps("Après la restauration")).await.unwrap();
+    assert_eq!(r.status(), 201, "{}", r.text().await.unwrap());
+    let cree: Value = r.json().await.unwrap();
+    assert_eq!(cree["lines"][0]["foreign"]["rateSource"], "afc", "{cree}");
+
+    // `PUT` du seul libellé de l'écriture `afc` restaurée.
+    let mut body = corps("Libellé modifié");
+    body["version"] = avant["version"].clone();
+    let r = app
+        .client
+        .put(app.url(&format!("/api/v1/journal-entries/{id}")))
+        .header("Authorization", format!("Bearer {}", biz.ctx.jwt))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200, "{}", r.text().await.unwrap());
+    let modifiee: Value = r.json().await.unwrap();
+    assert_eq!(modifiee["description"], "Libellé modifié", "{modifiee}");
+    assert_eq!(
+        modifiee["lines"][0]["foreign"]["rateSource"], "afc",
+        "{modifiee}"
+    );
+}
+
+/// Les lignes `exchange_rates` de la base, toutes colonnes, en texte, par id.
+async fn cours_retenus(pool: &MySqlPool) -> Vec<String> {
+    sqlx::query_scalar(
+        "SELECT CONCAT_WS('|', id, company_id, currency, kind, rate_date, rate, source, version, \
+             IFNULL(acknowledged_rate, '-'), IFNULL(acknowledged_at, '-'), \
+             IFNULL(updated_by, '-'), created_at, updated_at) \
+         FROM exchange_rates ORDER BY id",
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap()
+}
+
+/// Story 37-2 (AC-7) — **aller-retour** des cours retenus : une ligne `afc`
+/// copiée par Kesh (`updated_by` `NULL`, acquittée) et une ligne `manual`
+/// (version 3), à 10 décimales, reviennent identiques, toutes colonnes ; après
+/// l'import, sur des tables système vides (aucune valeur publiée),
+/// `GET /exchange-rates/lookup` rend 200 sans aucun appel sortant — ni valeur
+/// publiée, ni état de récupération écrits.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_round_trip_keeps_the_company_exchange_rates(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let biz = seed_business(&pool, "Aller-retour 37-2").await;
+    let c = biz.ctx.company_id;
+    poser_multi_devises(&pool, &biz).await;
+    sqlx::query(
+        "INSERT INTO exchange_rates (company_id, currency, kind, rate_date, rate, source, \
+             version, acknowledged_rate, acknowledged_at, updated_by) VALUES \
+         (?, 'USD', 'month', '2026-01-01', 0.8812345678, 'afc', 1, 0.8900000000, \
+             '2026-02-01 10:00:00.123', NULL), \
+         (?, 'EUR', 'day', '2026-03-31', 0.9512345678, 'manual', 3, NULL, NULL, ?)",
+    )
+    .bind(c)
+    .bind(c)
+    .bind(biz.ctx.user_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let avant = cours_retenus(&pool).await;
+    assert_eq!(avant.len(), 2, "montage : deux cours retenus");
+    let backup = export_backup(&app, &biz.ctx.jwt).await;
+
+    sqlx::query("DELETE FROM exchange_rates")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let resp = post_import(&app, &biz.ctx.jwt, backup).await;
+    assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
+    assert_eq!(
+        cours_retenus(&pool).await,
+        avant,
+        "cours retenus identiques"
+    );
+
+    let r = app
+        .client
+        .get(app.url("/api/v1/exchange-rates/lookup?currency=USD&date=2026-01-15&kind=month"))
+        .header("Authorization", format!("Bearer {}", biz.ctx.jwt))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
+    let b: Value = r.json().await.unwrap();
+    assert_eq!(b["source"], "afc", "{b}");
+    assert_eq!(b["effectiveRate"], "0.8812345678", "{b}");
+    assert_eq!(b["publishedRate"], Value::Null, "{b}");
+    for table in ["_kesh_fetched_exchange_rates", "_kesh_exchange_rate_fetch"] {
+        let n: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*) FROM {table}"))
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(n, 0, "{table} : aucun appel sortant, rien d'écrit");
+    }
 }
 
 /// Revue P2 (E2) — un `.keshbackup` retouché à la main, `account_kind = "BANK"`

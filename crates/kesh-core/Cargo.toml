@@ -11,6 +11,10 @@ chrono = { version = "0.4", features = ["serde"] }
 # par `rxing` : aucun paquet ajouté.
 chrono-tz = "0.10.4"
 kesh-import = { path = "../kesh-import" }
+# Story 37-2 (AC-2) — analyse du XML des cours de l'AFC / OFDF
+# (`exchange_rates::parse`). Même version que `kesh-import` et `kesh-payment` :
+# déjà au graphe, aucun paquet ajouté.
+quick-xml = "0.42"
 rust_decimal = { version = "1.41", features = ["serde-str", "maths"] }
 rust_decimal_macros = "1.40"
 serde = { version = "1", features = ["derive"] }

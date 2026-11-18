@@ -25,6 +25,7 @@
 	} from '$lib/features/settings/company-conflict';
 	import CompanyConflictNotice from '$lib/features/settings/CompanyConflictNotice.svelte';
 	import SessionIdleSection from '$lib/features/settings/SessionIdleSection.svelte';
+	import CurrencySettingsSection from '$lib/features/settings/CurrencySettingsSection.svelte';
 	import { bankAccountFullId, bankAccountName } from '$lib/features/bank-accounts/format';
 	import { authState } from '$lib/app/stores/auth.svelte';
 	import { isApiError } from '$lib/shared/utils/api-client';
@@ -885,6 +886,12 @@
 				<dt class="font-medium text-text-muted">{msg('settings-field-accounting-language', 'Langue comptable')}</dt>
 				<dd>{data.company.accountingLanguage}</dd>
 			</dl>
+			<!-- Story 37-1 (AC-7) : comptabilité multi-devises, éditable par l'Administrateur seul. -->
+			<CurrencySettingsSection
+				company={data.company}
+				{isAdmin}
+				onSaved={(company) => adoptCompany(company, nextSeq())}
+			/>
 		</section>
 
 		<Separator />
@@ -1037,6 +1044,29 @@
 		</section>
 
 		<Separator />
+
+		{#if data.company.multiCurrencyEnabled}
+			<!-- Section Cours de change (Story 37-2, AC-6) — visible en multi-devises seulement -->
+			<section class="rounded-lg border border-border bg-white p-6 shadow-sm" data-testid="settings-exchange-rates">
+				<div class="flex items-center justify-between">
+					<h2 class="text-lg font-semibold">{msg('exchange-rates-title', 'Cours de change')}</h2>
+					<Button
+						variant="outline"
+						size="sm"
+						href="/settings/exchange-rates"
+						data-testid="settings-exchange-rates-manage-link"
+					>{msg('settings-manage', 'Gérer')}</Button>
+				</div>
+				<p class="mt-2 text-sm text-text-muted">
+					{msg(
+						'exchange-rates-settings-card',
+						'Cours mensuels AFC et cours journaliers de chaque exercice multi-devises : cours retenus par la société, récupération et corrections.',
+					)}
+				</p>
+			</section>
+
+			<Separator />
+		{/if}
 
 		<!-- Section Taux de TVA (Story 11-1, Administrateur) -->
 		<section class="rounded-lg border border-border bg-white p-6 shadow-sm">

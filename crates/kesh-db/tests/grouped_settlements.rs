@@ -173,13 +173,13 @@ async fn group_max_reads_the_setting_or_the_default(pool: MySqlPool) {
 use chrono::NaiveDate;
 use kesh_db::entities::audit_log::Acteur;
 use kesh_db::entities::journal_entry::Journal;
-use kesh_db::entities::{NewInvoice, NewInvoiceLine, NewJournalEntry, NewJournalEntryLine};
+use kesh_db::entities::{NewInvoice, NewInvoiceLine, NewJournalEntry};
 use kesh_db::errors::DbError;
 use kesh_db::repositories::grouped_settlements::{
     self, GroupRefusal, GroupedDocument, IneligibleReason,
 };
 use kesh_db::repositories::{invoices, journal_entries, reconciliation_cancel};
-use kesh_db::test_fixtures::{SeededCompany, designate_rounding_account};
+use kesh_db::test_fixtures::{SeededCompany, chf_line, designate_rounding_account};
 
 /// La date de valeur des transactions des tests : dans l'exercice 2020-2030 du
 /// seed, après la date des factures.
@@ -288,18 +288,8 @@ async fn facture(
             description: "Vente".into(),
             project_id: None,
             lines: vec![
-                NewJournalEntryLine {
-                    account_id: s.accounts["1100"],
-                    debit: amount,
-                    credit: Decimal::ZERO,
-                    project_id: None,
-                },
-                NewJournalEntryLine {
-                    account_id: s.accounts["3000"],
-                    debit: Decimal::ZERO,
-                    credit: amount,
-                    project_id: None,
-                },
+                chf_line(s.accounts["1100"], amount, Decimal::ZERO),
+                chf_line(s.accounts["3000"], Decimal::ZERO, amount),
             ],
         },
     )
@@ -629,6 +619,69 @@ async fn sub_centime_remainders_go_to_rounding_and_the_gap_to_the_chosen_account
             }
         );
     }
+}
+
+/// Revue d'intégration de l'Epic 37, M2 — un compte d'écart **en devise** est
+/// refusé par un refus nommé (`DifferenceAccountInForeignCurrency`), non par
+/// l'erreur de base du contrôle central de l'écriture. Après le contrôle « non
+/// imputable » : un compte en devise non imputable reste
+/// `DifferenceAccountNotPostable`. Rien n'est écrit ; une fois la devise
+/// retirée, le même compte est accepté.
+#[sqlx::test(migrations = "./test-schema")]
+async fn a_foreign_currency_difference_account_is_refused(pool: MySqlPool) {
+    let m = monter(&pool).await;
+    sqlx::query("UPDATE companies SET multi_currency_enabled = TRUE WHERE id = ?")
+        .bind(m.s.company_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let en_euros: i64 = sqlx::query(
+        "INSERT INTO accounts (company_id, number, name, account_type, currency) \
+         VALUES (?, '6949', 'Frais en euros', 'Expense', 'EUR')",
+    )
+    .bind(m.s.company_id)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    let a = facture(&pool, &m, "D-1", dec!(100.00), jour(6, 1), None).await;
+    let b = facture(&pool, &m, "D-2", dec!(200.00), jour(6, 1), None).await;
+    let bt = transaction(&pool, &m, dec!(299.60), jour(6, 15)).await;
+
+    let avant = empreinte(&pool).await;
+    assert_eq!(
+        regler(&pool, &m, bt, &[a, b], Some(en_euros)).await,
+        Err(GroupRefusal::DifferenceAccountInForeignCurrency {
+            account_id: en_euros,
+            currency: "EUR".into(),
+        })
+    );
+    assert_eq!(empreinte(&pool).await, avant, "rien d'écrit");
+
+    // L'ordre des contrôles : non imputable d'abord.
+    sqlx::query("UPDATE accounts SET postable = FALSE WHERE id = ?")
+        .bind(en_euros)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        regler(&pool, &m, bt, &[a, b], Some(en_euros)).await,
+        Err(GroupRefusal::DifferenceAccountNotPostable {
+            account_id: en_euros,
+            account_number: "6949".into(),
+        })
+    );
+
+    // Sonde positive : le même compte, en CHF et imputable, est accepté.
+    sqlx::query("UPDATE accounts SET postable = TRUE, currency = NULL WHERE id = ?")
+        .bind(en_euros)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let done = regler(&pool, &m, bt, &[a, b], Some(en_euros))
+        .await
+        .expect("compte en CHF accepté");
+    assert_eq!(done.difference_account_id, Some(en_euros));
 }
 
 /// Décision de Guy du 2026-11-17 — moins reçu et trop-perçu admis jusqu'au
@@ -1197,18 +1250,8 @@ async fn a_grouped_entry_refuses_modification_and_keeps_its_line_keys(pool: MySq
             description: "modifiée".into(),
             project_id: None,
             lines: vec![
-                NewJournalEntryLine {
-                    account_id: m.bank_ledger,
-                    debit: dec!(300.00),
-                    credit: Decimal::ZERO,
-                    project_id: None,
-                },
-                NewJournalEntryLine {
-                    account_id: m.s.accounts["1100"],
-                    debit: Decimal::ZERO,
-                    credit: dec!(300.00),
-                    project_id: None,
-                },
+                chf_line(m.bank_ledger, dec!(300.00), Decimal::ZERO),
+                chf_line(m.s.accounts["1100"], Decimal::ZERO, dec!(300.00)),
             ],
         },
     )
@@ -1288,18 +1331,8 @@ async fn the_upgrade_keeps_unit_settlements_and_allows_a_group(pool: MySqlPool) 
             description: "Encaissement d'avant".into(),
             project_id: None,
             lines: vec![
-                NewJournalEntryLine {
-                    account_id: m.bank_ledger,
-                    debit: dec!(80.00),
-                    credit: Decimal::ZERO,
-                    project_id: None,
-                },
-                NewJournalEntryLine {
-                    account_id: m.s.accounts["1100"],
-                    debit: Decimal::ZERO,
-                    credit: dec!(80.00),
-                    project_id: None,
-                },
+                chf_line(m.bank_ledger, dec!(80.00), Decimal::ZERO),
+                chf_line(m.s.accounts["1100"], Decimal::ZERO, dec!(80.00)),
             ],
         },
     )
@@ -2396,13 +2429,17 @@ async fn a_missing_gap_line_is_an_invariant_for_the_view(pool: MySqlPool) {
     );
 }
 
-/// Revue P2, LOW-2 — une écriture classée groupée sans règlement client (la
-/// forme d'un groupe fournisseur, 43-1b) : la vue rend `Invariant`
-/// (`group_cancel_blocker`, `difference_account_of`), jamais « annulable ».
-/// Le bras groupé d'`entry_cancel_chain` reste inatteignable (retour anticipé,
-/// commentaire au code).
+/// Revue P2 de la 43-1a (LOW-2), adapté par la 43-1b (revue P2, LOW-7) — une
+/// écriture classée groupée **fournisseur malformée** : ses règlements clients
+/// retirés, une facture fournisseur fabriquée qui pointe la ligne de
+/// **banque**, forme qu'aucun paiement ne produit. La vue rend `Invariant`
+/// (le bras fournisseur de `difference_account_of`), jamais une réponse ni
+/// « annulable ». Avant la 43-1b, ce test épinglait le message « aucun
+/// règlement client » ; la branche défensive « aucun règlement » du bras
+/// fournisseur est tenue par
+/// `grouped_settlements_supplier::a_group_cancel_on_an_entry_without_settlement_is_an_invariant`.
 #[sqlx::test(migrations = "./test-schema")]
-async fn a_group_without_client_settlements_is_an_invariant(pool: MySqlPool) {
+async fn a_malformed_supplier_group_is_an_invariant_for_the_view(pool: MySqlPool) {
     let m = monter(&pool).await;
     let (_, _, bt, entry) = groupe_regle(&pool, &m, "F").await;
     let ligne: i64 = sqlx::query_scalar(
@@ -2442,16 +2479,17 @@ async fn a_group_without_client_settlements_is_an_invariant(pool: MySqlPool) {
         .await
         .unwrap();
     let res = reconciliation_cancel::get_view(&pool, m.s.company_id, bt, jour(11, 17)).await;
-    assert!(
-        matches!(&res, Err(DbError::Invariant(msg)) if msg.contains("aucun règlement client")),
-        "{res:?}"
-    );
+    assert!(matches!(&res, Err(DbError::Invariant(_))), "{res:?}");
 }
 
-/// Revue P2, LOW-5 — l'ordre de l'étape 4 (AC5.4) : le reste dû nul passe
-/// devant la date, l'écriture de vente malformée aussi.
+/// Revue P2, LOW-5 — une partie de l'ordre de l'étape 4 (AC5.4) : le reste dû
+/// nul passe devant la date, l'écriture de vente malformée aussi. Ni
+/// `AlreadyPaid` ni `NotValidated` contre `NothingDue`, ni `SaleEntryMalformed`
+/// contre `NothingDue` ne sont épinglés ici (revue P3, LOW-1).
 #[sqlx::test(migrations = "./test-schema")]
-async fn step_four_refuses_in_the_order_of_ac5_4(pool: MySqlPool) {
+async fn step_four_refuses_before_the_date_when_nothing_is_due_or_the_sale_is_malformed(
+    pool: MySqlPool,
+) {
     let m = monter(&pool).await;
     let bt = transaction(&pool, &m, dec!(300.00), jour(6, 15)).await;
     let a = facture(&pool, &m, "Q-1", dec!(100.00), jour(6, 1), None).await;

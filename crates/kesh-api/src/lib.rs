@@ -20,6 +20,7 @@ pub mod config;
 pub mod dates_recues;
 pub mod document_storage;
 pub mod errors;
+pub mod exchange_rates;
 pub mod exports;
 pub(crate) mod extractors;
 pub mod helpers;
@@ -113,6 +114,25 @@ pub struct AppState {
     /// (`horloge::horloge_de_test`) dans `new_for_tests` et les états de test.
     /// Champ `pub` : un test la remplace par une horloge arrêtée.
     pub horloge: Arc<dyn kesh_core::horloge::Horloge>,
+    /// Story 37-2 (AC-3) — la source des cours de change : `HttpRateSource`
+    /// en production, `MockRateSource` en `KESH_TEST_MODE` et dans
+    /// `new_for_tests` (aucun appel sortant). Champ `pub` : les tests la
+    /// remplacent.
+    pub rate_source: Arc<dyn exchange_rates::RateSource>,
+    /// Story 37-2 (AC-3) — une seule récupération de cours à la fois, prise
+    /// **par unité** (genre et date) par `exchange_rates::recuperation`.
+    pub rate_fetch_lock: Arc<tokio::sync::Mutex<()>>,
+    /// Story 37-2 (AC-5) — la mémoire des 15 minutes des `not_published` et
+    /// des échecs, par `(genre, rate_date)`.
+    pub rate_fetch_memo: Arc<std::sync::Mutex<exchange_rates::RateFetchMemo>>,
+    /// Story 37-2 (AC-4) — le dernier tour lancé à la connexion (au plus un
+    /// par quart d'heure pour l'installation). Vidé par
+    /// `clear_transient_test_state`.
+    pub rate_login_trigger: Arc<std::sync::Mutex<Option<std::time::Instant>>>,
+    /// Story 37-2 (AC-3) — poignée de la source factice du mode test, pilotée
+    /// par `POST /api/v1/_test/exchange-rates/source`. `None` hors
+    /// `KESH_TEST_MODE`.
+    pub test_rate_source: Option<exchange_rates::MockRateSource>,
 }
 
 impl AppState {
@@ -156,6 +176,16 @@ impl AppState {
             // Story 35-5a0 — l'horloge de test : arrêtée si la variable
             // d'instant des tests est posée, réelle sinon.
             horloge: horloge::horloge_de_test(),
+            // Story 37-2 — source factice, aucun appel sortant.
+            rate_source: Arc::new(exchange_rates::MockRateSource::new()),
+            rate_fetch_lock: Arc::new(tokio::sync::Mutex::new(())),
+            rate_fetch_memo: Arc::default(),
+            // Story 37-2 (AC-4) — un tour de connexion tenu pour **récent** :
+            // les tests qui se connectent sur une société multi-devises ne
+            // lancent aucun tour détaché ; les tests du déclenchement le
+            // remettent à `None`.
+            rate_login_trigger: Arc::new(std::sync::Mutex::new(Some(std::time::Instant::now()))),
+            test_rate_source: None,
         }
     }
 
@@ -471,6 +501,13 @@ pub fn build_router_avec_registre(
             "/api/v1/companies/current/address",
             put(routes::companies::update_company_address),
         )
+        // Story 37-1 (AC-3) : le réglage multi-devises (mode irréversible et
+        // comptes de différence de change). Administrateur en session seul,
+        // jamais par une clé d'API, comme les autres `PUT /companies/current/*`.
+        .route(
+            "/api/v1/companies/current/currency-settings",
+            put(routes::companies::update_currency_settings),
+        )
         // Story 14-2 : réouverture d'un exercice clôturé (Admin uniquement +
         // motif obligatoire + audit + garde LIFO). Plus strict que la clôture
         // (Comptable+, comptable_routes) — opération réglementaire sensible.
@@ -548,9 +585,40 @@ pub fn build_router_avec_registre(
             "/api/v1/accounts/{id}/reactivate",
             put(routes::accounts::reactivate_account),
         )
+        // Story 37-2 (AC-5) — récupérer les cours d'un mois ou d'un jour
+        // (Administrateur ou Comptable ; société multi-devises).
+        .route(
+            "/api/v1/exchange-rates/fetch",
+            post(routes::exchange_rates::fetch_rates),
+        )
+        // Story 37-2 (AC-5) — cours retenus par la société : saisie, ↑,
+        // corrections de l'AFC à annoncer et leur acquittement.
+        .route(
+            "/api/v1/exchange-rates/rates",
+            put(routes::exchange_rates::put_rate),
+        )
+        .route(
+            "/api/v1/exchange-rates/rates/reset",
+            post(routes::exchange_rates::reset_rate),
+        )
+        .route(
+            "/api/v1/exchange-rates/notices",
+            get(routes::exchange_rates::list_notices),
+        )
+        .route(
+            "/api/v1/exchange-rates/notices/acknowledge",
+            post(routes::exchange_rates::acknowledge_notices),
+        )
         .route(
             "/api/v1/journal-entries",
             post(routes::journal_entries::create_journal_entry),
+        )
+        // Story 37-3b (AC-2 bis) — conversion entre deux devises : deux
+        // écritures par le compte de conversion. Mêmes rôles que la création
+        // d'une écriture (Admin + Comptable ; clé d'API `read-write`).
+        .route(
+            "/api/v1/journal-entries/conversions",
+            post(routes::journal_entries::create_conversion),
         )
         .route(
             "/api/v1/journal-entries/{id}",
@@ -833,6 +901,22 @@ pub fn build_router_avec_registre(
             "/api/v1/fiscal-years/{id}/close",
             post(routes::fiscal_years::close_fiscal_year),
         )
+        // Story 37-2 (AC-5, U4) — genres des cours d'ouverture et de clôture.
+        .route(
+            "/api/v1/fiscal-years/{id}/rate-kinds",
+            put(routes::fiscal_years::update_rate_kinds),
+        )
+        // Story 37-5 (AC-1, AC-2, AC-5) — réévaluation de fin d'exercice :
+        // aperçu (POST, n'écrit rien — Consultation 403 comme tout POST) et
+        // passation. Clés d'API admises, comme la clôture.
+        .route(
+            "/api/v1/fiscal-years/{id}/fx-revaluation/preview",
+            post(routes::fx_revaluation::preview_revaluation),
+        )
+        .route(
+            "/api/v1/fiscal-years/{id}/fx-revaluation",
+            post(routes::fx_revaluation::post_revaluation),
+        )
         // Story 8-1b : import bancaire CAMT.053 (Comptable+ uniquement
         // pour les mutations — POST preview + POST create).
         // DefaultBodyLimit appliqué localement pour ces deux endpoints
@@ -1034,6 +1118,26 @@ pub fn build_router_avec_registre(
     // Routes authentifiées (tout rôle) : changement de mot de passe, i18n, onboarding, companies, consultation plan comptable, lecture écritures
     let authenticated_routes = Router::new()
         .route("/api/v1/accounts", get(routes::accounts::list_accounts))
+        // Story 37-2 (AC-5) — état de la dernière récupération des cours
+        // (tout rôle authentifié ; société multi-devises).
+        .route(
+            "/api/v1/exchange-rates/status",
+            get(routes::exchange_rates::get_fetch_status),
+        )
+        // Story 37-2 (AC-5) — cases d'un mois ou d'un jour, cours effectif et
+        // tableau annuel d'un exercice (lecture seule, tout rôle).
+        .route(
+            "/api/v1/exchange-rates",
+            get(routes::exchange_rates::list_rates),
+        )
+        .route(
+            "/api/v1/exchange-rates/lookup",
+            get(routes::exchange_rates::lookup_rate),
+        )
+        .route(
+            "/api/v1/fiscal-years/{id}/exchange-rates",
+            get(routes::exchange_rates::fiscal_year_rates),
+        )
         .route(
             "/api/v1/journal-entries",
             get(routes::journal_entries::list_journal_entries),

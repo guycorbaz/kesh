@@ -68,7 +68,38 @@ impl<'r> Decode<'r, MySql> for FiscalYearStatus {
     }
 }
 
+/// Genre d'un cours de change d'exercice (Story 37-1) : cours **journalier**
+/// ou cours **mensuel**. Colonne `ENUM('day','month')`, écrite en minuscules
+/// au HTTP comme en base.
+///
+/// Story 37-2 : le type vit dans `kesh-core` (les fonctions pures des cours en
+/// ont besoin, et `kesh-core` ne dépend pas de `kesh-db`) ; il est réexporté
+/// ici. L'orphan rule interdit d'y implémenter les traits `sqlx` : les colonnes
+/// se lisent en texte, converties par `TryFrom<String>`
+/// (`#[sqlx(try_from = "String")]`), et s'écrivent par `RateKind::as_str`.
+pub use kesh_core::exchange_rates::RateKind;
+
 /// Exercice comptable persisté en base.
+///
+/// **Mode et genres de cours (Story 37-1).** `multi_currency` dit si
+/// l'exercice admet des lignes sur des comptes en devise : il prend le réglage
+/// de la société à sa création, passe à `true` à l'activation du multi-devises
+/// s'il est ouvert, et ne change plus ensuite (un exercice clos à
+/// l'activation reste mono-devise, même rouvert).
+///
+/// Sens des genres — le cours d'ouverture est le cours de clôture de
+/// l'exercice précédent, pour que les valeurs CHF concordent d'un exercice à
+/// l'autre :
+/// - ouverture [`RateKind::Day`] : cours journalier de la **veille** de
+///   `start_date` (jour de clôture de l'exercice précédent) ;
+/// - ouverture [`RateKind::Month`] : cours mensuel du **mois de la veille** de
+///   `start_date` (dernier mois de l'exercice précédent) ;
+/// - clôture [`RateKind::Day`] : cours journalier de `end_date` ;
+/// - clôture [`RateKind::Month`] : cours mensuel du mois de `end_date`.
+///
+/// À la création, l'ouverture reprend le genre de clôture de l'exercice de la
+/// société qui finit la veille de `start_date` (`day` sinon), et la clôture
+/// prend `day`.
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct FiscalYear {
     pub id: i64,
@@ -78,8 +109,29 @@ pub struct FiscalYear {
     pub start_date: NaiveDate,
     pub end_date: NaiveDate,
     pub status: FiscalYearStatus,
+    /// Exercice multi-devises (voir la doc du type).
+    pub multi_currency: bool,
+    /// Genre du cours d'ouverture (voir la doc du type).
+    #[sqlx(try_from = "String")]
+    pub opening_rate_kind: RateKind,
+    /// Genre du cours de clôture (voir la doc du type).
+    #[sqlx(try_from = "String")]
+    pub closing_rate_kind: RateKind,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
+}
+
+impl FiscalYear {
+    /// Ses dates et ses deux genres, pour le calcul des unités de cours utiles
+    /// (Story 37-2, AC-3 bis, AC-4, AC-5).
+    pub fn exercice_devises(&self) -> kesh_core::exchange_rates::ExerciceDevises {
+        kesh_core::exchange_rates::ExerciceDevises {
+            start: self.start_date,
+            end: self.end_date,
+            opening_kind: self.opening_rate_kind,
+            closing_kind: self.closing_rate_kind,
+        }
+    }
 }
 
 /// Données de création d'un exercice comptable.

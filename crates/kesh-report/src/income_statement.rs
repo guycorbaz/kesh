@@ -10,8 +10,9 @@ use rust_decimal::Decimal;
 use serde::Serialize;
 use sqlx::MySqlPool;
 
-use crate::balance_sheet::AccountBalance;
+use crate::balance_sheet::{AccountBalance, sign_exprs};
 use crate::errors::ReportError;
+use crate::opening::is_bilan;
 use crate::period::ReportPeriod;
 
 /// Compte de résultat complet.
@@ -58,19 +59,22 @@ async fn fetch_section(
     period: &ReportPeriod,
     account_type: AccountType,
 ) -> Result<Vec<AccountBalance>, ReportError> {
-    // Sign convention : Revenue = credit-debit ; Expense = debit-credit
-    let sign_expr = match account_type {
-        AccountType::Revenue => "COALESCE(SUM(jel.credit), 0) - COALESCE(SUM(jel.debit), 0)",
-        AccountType::Expense => "COALESCE(SUM(jel.debit), 0) - COALESCE(SUM(jel.credit), 0)",
-        _ => unreachable!("income_statement ne traite que Revenue/Expense"),
-    };
+    // Sign convention : Revenue = credit-debit ; Expense = debit-credit — la même
+    // fonction que le bilan, qui construit aussi le solde en devise (Story 37-4).
+    assert!(
+        !is_bilan(account_type),
+        "income_statement ne traite que Revenue/Expense"
+    );
+    let (sign_expr, sign_expr_fx) = sign_exprs(account_type);
 
     let sql = format!(
         // `a.role` inclus car `AccountBalance` (struct partagée avec le bilan) porte le
         // champ `role` depuis Story 14-3c ; son `FromRow` exige la colonne dans le
         // result-set (le compte de résultat ne l'exploite pas, mais doit la décoder).
+        // Story 37-4 : `a.currency` et le solde en devise, bornés comme le CHF
+        // (exercice ET dates) ; un compte à CHF 0 et devise ≠ 0 reste listé.
         "SELECT a.id AS account_id, a.number, a.name, a.account_type, a.active, a.role, \
-                {sign_expr} AS balance \
+                a.currency, {sign_expr} AS balance, {sign_expr_fx} AS balance_currency \
          FROM accounts a \
          INNER JOIN journal_entry_lines jel ON jel.account_id = a.id \
          INNER JOIN journal_entries je ON je.id = jel.entry_id \
@@ -79,8 +83,8 @@ async fn fetch_section(
            AND je.company_id = ? \
            AND je.fiscal_year_id = ? \
            AND je.entry_date BETWEEN ? AND ? \
-         GROUP BY a.id, a.number, a.name, a.account_type, a.active, a.role \
-         HAVING balance != 0 \
+         GROUP BY a.id, a.number, a.name, a.account_type, a.active, a.role, a.currency \
+         HAVING balance != 0 OR balance_currency != 0 \
          ORDER BY a.number ASC"
     );
 

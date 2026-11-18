@@ -16,9 +16,18 @@
 //! métier passent.
 
 pub mod balance;
+pub mod exercice;
+pub mod fx;
+pub mod fx_revaluation;
 pub mod purchase;
 pub mod vat;
 
-pub use balance::{BalancedEntry, Journal, JournalEntryDraft, JournalEntryLineDraft, validate};
+pub use balance::{
+    BalancedEntry, Journal, JournalEntryDraft, JournalEntryLineDraft, fx_line_error, validate,
+};
+pub use fx::{
+    ForeignAmount, FxLineError, RateFromChfError, RateProvenance, check_foreign_line, fx_chf,
+    rate_from_chf,
+};
 pub use purchase::{LineNotInCentimes, purchase_invoice_totals, purchase_line_total};
 pub use vat::line_vat_amount;

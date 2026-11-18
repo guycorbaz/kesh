@@ -91,7 +91,18 @@ export async function skipBank(): Promise<OnboardingState> {
 	return apiClient.post<OnboardingState>('/api/v1/onboarding/skip-bank');
 }
 
-// Story 2.6: Finalize onboarding and pre-fill invoice settings
-export async function finalize(): Promise<OnboardingState> {
-	return apiClient.post<OnboardingState>('/api/v1/onboarding/finalize');
+/**
+ * Corps de la finalisation (Story 37-1, AC-11) : les dates du premier exercice,
+ * `AAAA-MM-JJ`. Les dates d'un exercice ne se modifient plus une fois créé.
+ */
+export interface FinalizePayload {
+	fiscalYearStartDate: string;
+	fiscalYearEndDate: string;
+}
+
+// Story 2.6: Finalize onboarding and pre-fill invoice settings.
+// Story 37-1 (AC-11) : le corps porte les dates du premier exercice ; sans
+// corps, le serveur crée l'année civile du jour (clients de l'API).
+export async function finalize(body?: FinalizePayload): Promise<OnboardingState> {
+	return apiClient.post<OnboardingState>('/api/v1/onboarding/finalize', body);
 }

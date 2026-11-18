@@ -655,7 +655,10 @@ async fn validate_line_revenue_accounts_in_tx(
     }
 
     if rejected.is_empty() {
-        Ok(())
+        // Story 37-3a (AC-5) — un compte de produit en devise est refusé à
+        // l'enregistrement de la pièce (400 `ACCOUNT_IN_FOREIGN_CURRENCY`) :
+        // la facture se comptabilise en CHF.
+        super::accounts::refuse_foreign_currency_accounts_in_tx(tx, company_id, &ids).await
     } else {
         // Ordre stable pour des messages déterministes : le compte par défaut
         // de la société (`None`) en tête, puis les lignes par numéro croissant.
@@ -1897,6 +1900,8 @@ pub(in crate::repositories) fn generate_invoice_journal_lines(
         debit: total_ht + total_vat,
         credit: Decimal::ZERO,
         project_id: None,
+        // Story 37-3a (AC-5) : les chemins automatiques n'écrivent qu'en CHF.
+        foreign: None,
     });
     // (1..M) Crédit produit HT, une ligne par compte effectif, montant > 0,
     // `account_id` croissant. Σ de ces lignes == total_ht (aucun arrondi sur le
@@ -1908,6 +1913,7 @@ pub(in crate::repositories) fn generate_invoice_journal_lines(
                 debit: Decimal::ZERO,
                 credit: *amount,
                 project_id: None,
+                foreign: None,
             });
         }
     }
@@ -1926,6 +1932,7 @@ pub(in crate::repositories) fn generate_invoice_journal_lines(
                     debit: Decimal::ZERO,
                     credit: *amount,
                     project_id: None,
+                    foreign: None,
                 });
             }
         }
@@ -1981,6 +1988,7 @@ pub(in crate::repositories) fn generate_invoice_journal_lines_rounded(
                 Decimal::ZERO
             },
             project_id: None,
+            foreign: None,
         });
     }
     Ok(generated)

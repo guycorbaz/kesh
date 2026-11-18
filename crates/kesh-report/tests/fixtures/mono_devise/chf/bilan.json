@@ -1,0 +1,54 @@
+{
+  "assets": [
+    {
+      "accountId": 1,
+      "accountName": "Caisse CI",
+      "accountNumber": "1000",
+      "accountType": "Asset",
+      "active": true,
+      "balance": "597.2000",
+      "role": null
+    },
+    {
+      "accountId": 6,
+      "accountName": "Ancienne caisse",
+      "accountNumber": "1010",
+      "accountType": "Asset",
+      "active": false,
+      "balance": "50.0000",
+      "role": null
+    },
+    {
+      "accountId": 2,
+      "accountName": "Banque CI",
+      "accountNumber": "1100",
+      "accountType": "Asset",
+      "active": true,
+      "balance": "11079.9000",
+      "role": null
+    }
+  ],
+  "equationHolds": true,
+  "equity": [],
+  "equityResult": "912.6500",
+  "liabilities": [
+    {
+      "accountId": 3,
+      "accountName": "Capital CI",
+      "accountNumber": "2000",
+      "accountType": "Liability",
+      "active": true,
+      "balance": "10000.0000",
+      "role": null
+    }
+  ],
+  "period": {
+    "endDate": "2026-12-31",
+    "fiscalYearId": 2,
+    "startDate": "2026-01-01"
+  },
+  "retainedEarnings": "814.4500",
+  "totalAssets": "11727.1000",
+  "totalEquity": "0",
+  "totalLiabilities": "10000.0000"
+}

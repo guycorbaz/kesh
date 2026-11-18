@@ -280,7 +280,8 @@ async fn t0_un_verrou_dans_l_instantane_est_refuse_par_le_serveur(pool: MySqlPoo
 /// T-a1 (AC1) — sept codes, dans l'ordre de la fiche, sévérités comprises ;
 /// sur une société vierge, tout est `ok` sauf K7 (aucun exercice suivant).
 /// *Story v017-4a (#849, AC-16) : huit codes — K8 en dernier, les sept premiers
-/// à leur rang ; le nom du test est gardé.*
+/// à leur rang ; le nom du test est gardé. Story 37-5 : neuf codes — K9 en
+/// dernier, bloquant.*
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn t_a1_les_sept_controles_dans_l_ordre(pool: MySqlPool) {
     let seeded = company(&pool).await;
@@ -301,6 +302,8 @@ async fn t_a1_les_sept_controles_dans_l_ordre(pool: MySqlPool) {
             (CheckCode::InconsistentEntries, Severity::Anomaly),
             (CheckCode::NextFiscalYear, Severity::Info),
             (CheckCode::DraftSupplierInvoices, Severity::Info),
+            // Story 37-5 — K9 en dernier : les index de K1 à K8 ne bougent pas.
+            (CheckCode::ForeignAccountsNotRevalued, Severity::Blocking),
         ]
     );
     for k in &c.checks {
@@ -1676,7 +1679,11 @@ async fn t_k8_brouillons_fournisseur_dans_l_exercice(pool: MySqlPool) {
     .unwrap();
     let c0 = checks(&pool, seeded.company_id, seeded.fiscal_year_id).await;
     let j0 = serde_json::to_value(&c0).unwrap();
-    assert_eq!(j0["checks"].as_array().unwrap().len(), 8, "huit contrôles");
+    assert_eq!(
+        j0["checks"].as_array().unwrap().len(),
+        9,
+        "neuf contrôles (K9, 37-5)"
+    );
     assert_eq!(j0["checks"][7]["code"], "DRAFT_SUPPLIER_INVOICES");
     assert_eq!(j0["checks"][7]["severity"], "info");
     assert_eq!(j0["checks"][7]["status"], "ok");

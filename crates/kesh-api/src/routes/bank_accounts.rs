@@ -441,7 +441,15 @@ async fn locked_ledger_type(
         return Ok(None);
     };
     match accounts::type_in_share_mode(tx, company_id, account_id).await? {
-        Some((account_type, true)) => Ok(Some(account_type)),
+        // Story 37-1 (AC-4) — un compte en devise ne se lie pas à un compte
+        // bancaire, jugé sous le même verrou partagé.
+        Some((_, true, Some(currency))) => {
+            Err(AppError::Database(DbError::AccountInForeignCurrency {
+                account_id: Some(account_id),
+                currency,
+            }))
+        }
+        Some((account_type, true, None)) => Ok(Some(account_type)),
         _ => Err(AppError::AccountNotFound {
             account_id,
             missing_account_ids: None,
@@ -669,6 +677,18 @@ pub(crate) async fn validate_journal_account_id(
         });
     }
 
+    // Story 37-1 (AC-4) — un compte en devise ne se lie pas à un compte
+    // bancaire. Pré-vol sur le pool : les routes bancaires le rejugent sous
+    // verrou (`locked_ledger_type`) ; l'étape bancaire de l'assistant, non
+    // (limite assumée : la société d'un assistant en cours n'a aucun compte en
+    // devise).
+    if let Some(currency) = account.currency {
+        return Err(AppError::Database(DbError::AccountInForeignCurrency {
+            account_id: Some(account_id),
+            currency,
+        }));
+    }
+
     if !kind.admits_ledger_type(account.account_type) {
         return Err(ledger_type_refusal(kind, account_id, account.account_type));
     }
@@ -771,6 +791,9 @@ fn opening_line(journal_account_id: i64, opening: OpeningAmount) -> ComplementLi
         account_id: journal_account_id,
         debit,
         credit,
+        // Story 37-3b (AC-1) : jamais de devise ici — un compte lié à un
+        // compte bancaire ne peut porter de devise (37-1).
+        foreign: None,
     }
 }
 

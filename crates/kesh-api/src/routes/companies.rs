@@ -1,6 +1,7 @@
 //! Routes company — lecture de la configuration de l'organisation,
 //! et mise à jour de l'e-mail de contact (Story 20-3b1, Reply-To des
-//! e-mails métier), des coordonnées (16-3a) et de l'adresse (33-5, #909).
+//! e-mails métier), des coordonnées (16-3a), de l'adresse (33-5, #909) et du
+//! réglage multi-devises (37-1).
 
 use axum::Extension;
 use axum::Json;
@@ -8,7 +9,9 @@ use axum::extract::State;
 use serde::{Deserialize, Serialize};
 
 use kesh_db::entities::audit_log::NewAuditLogEntry;
-use kesh_db::entities::{BankAccount, BankAccountKind, Company, CompanyUpdate};
+use kesh_db::entities::{
+    BankAccount, BankAccountKind, Company, CompanyUpdate, CurrencySettingsUpdate,
+};
 use kesh_db::errors::map_db_error;
 use kesh_db::repositories::{audit_log, bank_accounts, companies};
 
@@ -60,6 +63,19 @@ pub struct CompanyJson {
     /// `null` = aucun verrou. L'écran s'en sert pour le bandeau et pour le
     /// `min` du champ date de saisie.
     pub books_locked_through: Option<chrono::NaiveDate>,
+    /// Mode multi-devises de la société (Story 37-1, AC-2). Toujours présent :
+    /// ce n'est pas un champ en devise (C-37-9).
+    pub multi_currency_enabled: bool,
+    /// Compte des gains de change de la société (Story 37-1) ; `null` si non
+    /// désigné. Toujours présent.
+    pub fx_gain_account_id: Option<i64>,
+    /// Compte des pertes de change de la société (Story 37-1). Toujours présent.
+    pub fx_loss_account_id: Option<i64>,
+    /// Compte de conversion entre devises (Story 37-1). Toujours présent.
+    pub fx_transit_account_id: Option<i64>,
+    /// Devise principale de la comptabilité (Story 37-1) : la constante
+    /// [`kesh_core::currency::BASE_CURRENCY`] (`"CHF"`) ; elle ne change pas.
+    pub base_currency: &'static str,
     /// Verrou optimiste — requis par les routes `PUT /companies/current/*`.
     pub version: i32,
 }
@@ -88,6 +104,11 @@ impl From<Company> for CompanyJson {
             phone: c.phone,
             website: c.website,
             books_locked_through: c.books_locked_through,
+            multi_currency_enabled: c.multi_currency_enabled,
+            fx_gain_account_id: c.fx_gain_account_id,
+            fx_loss_account_id: c.fx_loss_account_id,
+            fx_transit_account_id: c.fx_transit_account_id,
+            base_currency: kesh_core::currency::BASE_CURRENCY,
             version: c.version,
         }
     }
@@ -403,6 +424,63 @@ pub async fn update_company_address(
     tx.commit()
         .await
         .map_err(|e| AppError::Database(map_db_error(e)))?;
+    Ok(Json(CompanyJson::from(updated)))
+}
+
+/// Payload de `PUT /api/v1/companies/current/currency-settings` (Story 37-1,
+/// AC-3). Les trois identifiants sont présents ou `null` (absents = `null`).
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateCurrencySettingsRequest {
+    pub multi_currency_enabled: bool,
+    #[serde(default)]
+    pub fx_gain_account_id: Option<i64>,
+    #[serde(default)]
+    pub fx_loss_account_id: Option<i64>,
+    #[serde(default)]
+    pub fx_transit_account_id: Option<i64>,
+    pub version: i32,
+}
+
+/// PUT /api/v1/companies/current/currency-settings — écrit le réglage
+/// multi-devises de la société (Story 37-1, AC-3) : mode **irréversible** une
+/// fois activé, comptes des gains et des pertes de change, compte de
+/// conversion. Administrateur seul, par une session (cookie de l'écran ou
+/// `Authorization: Bearer` d'un `POST /auth/login`), jamais par une clé d'API
+/// (`require_not_pat`).
+///
+/// Les gardes, l'ordre des refus, les verrous et l'audit vivent dans
+/// `companies::update_currency_settings`. **Rejouée sur interblocage** : la
+/// transaction tient `companies` `FOR UPDATE` puis, à l'activation, les
+/// exercices ; une saisie d'écriture prend l'exercice puis `companies` en
+/// partage (clé étrangère), et la validation d'une facture les réglages de
+/// facturation avant l'exercice — des cycles que le rejeu résout,
+/// transaction unique sûre à relancer.
+pub async fn update_currency_settings(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    Json(req): Json<UpdateCurrencySettingsRequest>,
+) -> Result<Json<CompanyJson>, AppError> {
+    let changes = CurrencySettingsUpdate {
+        multi_currency_enabled: req.multi_currency_enabled,
+        fx_gain_account_id: req.fx_gain_account_id,
+        fx_loss_account_id: req.fx_loss_account_id,
+        fx_transit_account_id: req.fx_transit_account_id,
+    };
+    let updated = kesh_db::retry::retry_on_deadlock("companies::update_currency_settings", || {
+        let pool = state.pool.clone();
+        async move {
+            companies::update_currency_settings(
+                &pool,
+                current_user.user_id,
+                current_user.company_id,
+                req.version,
+                changes,
+            )
+            .await
+        }
+    })
+    .await?;
     Ok(Json(CompanyJson::from(updated)))
 }
 

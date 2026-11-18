@@ -353,6 +353,8 @@ async fn new_account(
             parent_id: None,
             role: None,
             postable: true,
+            currency: None,
+            own_fx_accounts: None,
         },
     )
     .await
@@ -387,12 +389,14 @@ async fn post(
                     debit: amount,
                     credit: Decimal::ZERO,
                     project_id: None,
+                    foreign: None,
                 },
                 NewJournalEntryLine {
                     account_id: credit_account,
                     debit: Decimal::ZERO,
                     credit: amount,
                     project_id: None,
+                    foreign: None,
                 },
             ],
         },

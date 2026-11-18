@@ -1,6 +1,6 @@
 # Story 43-1a : un règlement pour plusieurs factures — migration, lettrage par ligne, factures clients (#823)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-17 au soir par l'agent de rédaction de l'Epic 43 (Opus 5.5), par le workflow
 `bmad-create-story`, en découpant la 43-1 (`43-1-reglement-groupe-modele.md`, `split`) après sa validation P1 ; **remédiée
@@ -537,8 +537,15 @@ gate complet (`reset-base.sh`).
 | revue P1 — `binary(grouped_settlements)` | `58d949434` | 29/29 | `p1-cible-2.log` |
 | revue P1 — fmt, clippy, `nextest --profile ci` (`test-fast` sans son garde des droits, refusé par un droit `kesh_ci_e437` d'un autre agent) | `58d949434` | **5549 passés, 13 ignorés** | `test-fast-p1-sans-garde.log` |
 | revue P1 — **`gate-ci.sh kesh_ci_e431a`** | `58d949434` | **5556 passés, 0 échec, 17 ignorés** | `gate-ci-p1.log` |
+| revue P2 — ciblé `binary(grouped_settlements) \| binary(reconciliation_cancel)` | `5602c0d21` (avant commit) | 43/43 | `p2-cible-1.log` |
+| revue P2 — mutation 5 (ancien ordre têtes/queue) | `5602c0d21` | tuée : `every_invoice_head_comes_before_the_entry_ranks` rouge (`FiscalYearClosed`), 33 autres passés | `mut/mutation-p2-ordre.log` |
+| revue P2 — **`gate-ci.sh kesh_ci_e431a`** | `5602c0d21` | **5561 passés, 0 échec, 17 ignorés** | `gate-ci-p2.log` |
 | frontend | — | non touché, non lancé | — |
-| E2E | — | **non lancé** : à la clôture (consigne de la release) | — |
+| **clôture — `test-fast --ci`** (garde des droits conforme) | `f711dd2de` | **5554 passés, 13 ignorés** ; 1 flaky hors périmètre (`kesh-api::mcp_transport_e2e abandon_au_delai_le_permis_reste_pris`, passé au 2ᵉ essai) | `test-fast-cloture.log` |
+| **clôture — `gate-ci.sh kesh_ci_e431a`** | `f711dd2de` | **5561 passés, 0 échec, 17 ignorés** | `gate-ci-cloture.log` |
+| **clôture — frontend complet** (`check`, `lint-i18n-ownership`, `test:unit`, `build`, après `npm ci`) | `f711dd2de` | vert ; Vitest **3948 passés (246 fichiers)** | `frontend-cloture.log` |
+| **clôture — E2E complet** (recette de `docs/testing.md`, `kesh_e2e_e431a` recréée, port 3143) | `f711dd2de` | **437 passés, 7 échecs, 18 ignorés** — les sept de la KF-029 (#97) : `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150` ; aucun autre | `e2e-complet-cloture.log` |
+| E2E (passage en `review`) | — | non lancé : à la clôture (consigne de la release) | — |
 
 Les rouges intermédiaires ne venaient d'aucun défaut du code de production : registres et décomptes des inventaires
 (`bank_account_closed_inventory.rs`, `letterings_lexical.rs`), montages de tests qui exercent le code courant sur un
@@ -664,3 +671,36 @@ schéma d'avant (`lettering_documents_backfill.rs`, `migrations_upgrade_path.rs`
   `letterings_lexical.rs`, `bank_account_closed_inventory.rs` (41 sites, 4 créateurs, 14 gardes, 9 revérifications),
   `lettering_documents_backfill.rs`, `migrations_upgrade_path.rs` (`draft_migration_preserves_a_populated_base`),
   `company_invoice_settings_repository.rs` — aucun garde-fou affaibli (revue P1, A LOW-6).
+- 2026-11-17 (revue P2, 0/0/1/7, `5602c0d21`) — Tests seuls, plus un doc-comment ; aucune autre ligne de production.
+  MEDIUM-1 : `every_invoice_head_comes_before_the_entry_ranks` épingle l'ordre de C-e431a-15 (`b` créditée et exercice
+  clos → `InvoiceCredited` nommant `b`), mutation de l'ancien ordre tuée. LOW-1 :
+  `a_successful_group_releases_its_savepoint` (`ROLLBACK TO` après succès → 1305). LOW-2 :
+  `a_missing_gap_line_is_an_invariant_for_the_view` et `a_group_without_client_settlements_is_an_invariant` ; le bras
+  groupé d'`entry_cancel_chain` reste inatteignable, commentaire au code (`reconciliation_cancel.rs`, retour anticipé).
+  LOW-3 : constat 4025 par le numéro MariaDB (`numero_mariadb`). LOW-4 : libellé coupé à 500 caractères sur des
+  numéros accentués (`len() > 500`). LOW-5 : `step_four_refuses_in_the_order_of_ac5_4`. LOW-7 : doc-comment du point
+  de sauvegarde après un refus. LOW-6 : au registre (C-e431a-16), pour la 43-2, non traité.
+- 2026-11-18 (revue P3 ciblée sur `5602c0d21`, 0/0/0/3 ; `f711dd2de`) — LOW-1 : le test de l'étape 4 renommé
+  `step_four_refuses_before_the_date_when_nothing_is_due_or_the_sale_is_malformed`, doc-comment ramené à ce qu'il
+  épingle. **Non traités** (décision de l'orchestrateur) : LOW-2 — l'assertion 4025 ne contrôle que le numéro, non le
+  nom de la contrainte `chk_invoices_validated_has_je` ; LOW-3 — le downcast MySQL de `numero_mariadb` (test) reprend
+  celui de `is_savepoint_lost` (production), à regrouper si un troisième site apparaît.
+- 2026-11-18 — **Clôture de la revue de code** : P1 complète en trois lentilles, Opus (B 1 HIGH / 0 MEDIUM / 6 LOW ;
+  E 0/0/2/5 ; A 0/0/4/8 — ensemble 1 HIGH, 6 MEDIUM, 19 LOW) → P2 complète, contexte frais (0/0/1/7, le HIGH fermé,
+  aucune régression) → P3 ciblée sur la remédiation de la P2 (0/0/0/3). Modèles de la P2 et de la P3 : choisis par
+  l'orchestrateur, non déclarés dans leurs rapports. Reclassements : B-2, E-3, E-7 et P2 LOW-6 laissés aux 43-1b et
+  43-2 (registre C-e431a-16), P3 LOW-2 et LOW-3 non traités ; aucun MEDIUM+ reclassé en dette. Rouges constatés : le
+  test d'entrelacement de B-1 rouge sur le code d'avant puis vert ; mutation 5 (ancien ordre têtes/queue) tuée. Gates de
+  clôture au dernier commit de code `f711dd2de` (tableau *Gates*) : `test-fast --ci` 5554/13, `gate-ci` 5561/0/17,
+  frontend vert (Vitest 3948), E2E 437 passés et les sept échecs de la KF-029 seuls. **Statut `done`.**
+- 2026-11-18 (reprise de `main` après l'Epic 37, branche `chore/43-reprise-main` ; `6f152a5f8` fusion, `776392b52`
+  rouge, `9bfc33c69` correction, `69c4d1db7` test de l'Epic 37 adapté) — Migration désormais **95ᵉ** (`total == 95`,
+  `total - 61`, audit 95/84/11, squash régénéré) ; M1 (`foreign: None`, `chf_line`, `PorteeDevises::UneSeule`) ; M2
+  (`DifferenceAccountInForeignCurrency`, test rouge `MultiCurrencyDisabled` puis vert) ; détail au registre,
+  C-e431a-17. Interaction sans conflit de texte trouvée au gate : `designated_changes_follows_designated_account_columns`
+  (Story 37-1) ne connaissait pas `groupSettlementMaxDifference`. Gates au commit `69c4d1db7`, bases remises à neuf :
+  `test-fast --ci` **6013 passés, 13 ignorés** (`kesh-gate-logs/e43r/test-fast-ci-3.log`) ; `gate-ci.sh kesh_ci_e43r`
+  **6030/0/17** (`gate-ci-2.log` ; le premier tirage `gate-ci-1.log` a rougi sur `disque_sature_pendant_l_ecriture`,
+  binaire `admin_auto_backup_e2e`, hors de l'Epic 43, vert trois fois rejoué seul, `rejeu-disque-sature.log`) ;
+  frontend complet vert (Vitest **4353 tests, 271 fichiers**) ; E2E complet sur `kesh_e2e_e43r` recréée vide
+  (`e2e-reprise.log`) : **458 passés, 7 échecs, 18 ignorés** — les sept de la KF-029 seuls.

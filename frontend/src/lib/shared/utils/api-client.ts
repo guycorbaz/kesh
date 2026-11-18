@@ -61,6 +61,15 @@ export interface CallOptions {
 	timeoutMs?: number;
 	/** `false` interdit tout rejeu, même d'un `GET` (défaut : rejeu des méthodes idempotentes). */
 	retry?: boolean;
+	/**
+	 * Story 37-2 (AC-5) — `false` : une réponse **503** n'allume pas le bandeau
+	 * « service dégradé » (défaut : elle l'allume). Pour une route dont le 503
+	 * porte un refus métier explicite, et non une base injoignable — la
+	 * récupération des cours de change rend `503 RATE_SOURCE_UNAVAILABLE` quand la
+	 * source externe ne répond pas. ⚠️ Ne couvre que le 503 : un `TIMEOUT` ou une
+	 * coupure du client allument toujours le bandeau (le serveur, lui, ne répond pas).
+	 */
+	degradedOn503?: boolean;
 }
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -392,6 +401,8 @@ function getRetryDelays(): readonly number[] {
  *   ne retournant pas 503 (réponse 200, 4xx, 5xx-non-503 → la DB répond).
  * - **`call.retry === false`** (Story 31-1b, AC18b) : une seule tentative, quelle
  *   que soit la méthode ; **`call.timeoutMs`** remplace le délai de 30 s.
+ * - **`call.degradedOn503 === false`** (Story 37-2, AC-5) : un 503 n'allume pas le
+ *   bandeau ; la branche `catch` (TIMEOUT, coupure) l'allume toujours.
  */
 async function fetchWithRetry(
 	url: string,
@@ -406,7 +417,7 @@ async function fetchWithRetry(
 		try {
 			const res = await fetchWithTimeout(url, init, call.timeoutMs);
 			if (res.status === 503) {
-				apiHealth.setDegraded();
+				if (call.degradedOn503 !== false) apiHealth.setDegraded();
 				if (attempt < maxAttempts - 1) {
 					// Story 10.3 F7 (Pass 1 code review) : drain le body 503 abandonné
 					// avant le retry pour libérer la connexion HTTP/1.1 (sinon le browser

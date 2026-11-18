@@ -167,6 +167,8 @@ fn generate_purchase_journal_lines(
             debit: *line_total,
             credit: Decimal::ZERO,
             project_id: None,
+            // Story 37-3a (AC-5) : les chemins automatiques n'écrivent qu'en CHF.
+            foreign: None,
         });
     }
 
@@ -181,6 +183,7 @@ fn generate_purchase_journal_lines(
             debit: total_vat,
             credit: Decimal::ZERO,
             project_id: None,
+            foreign: None,
         });
     }
 
@@ -190,6 +193,7 @@ fn generate_purchase_journal_lines(
         debit: Decimal::ZERO,
         credit: total_ttc,
         project_id: None,
+        foreign: None,
     });
 
     Ok((
@@ -560,6 +564,10 @@ async fn check_draft_input_in_tx(
     if !non_postable.is_empty() {
         return Err(DbError::accounts_not_postable(non_postable));
     }
+    // Story 37-3a (AC-5) — un compte de charge en devise est refusé (400
+    // `ACCOUNT_IN_FOREIGN_CURRENCY`) : la facture fournisseur s'écrit en CHF.
+    let ids: Vec<i64> = new.lines.iter().map(|l| l.expense_account_id).collect();
+    super::accounts::refuse_foreign_currency_accounts_in_tx(tx, new.company_id, &ids).await?;
     Ok(line_totals)
 }
 
@@ -1665,6 +1673,9 @@ pub async fn validate_in_tx(
 
     // (2, suite) Passe des COMPTES de l'étape (2), après les réglages.
     let mut non_postable: Vec<NonPostableAccount> = Vec::new();
+    // Comptes de charge en devise, lus dans le `SELECT … FOR UPDATE` ci-dessous
+    // (revue de code P2 : la devise se lit sous verrou, pas sur l'instantané).
+    let mut foreign: Vec<(i64, String)> = Vec::new();
     // Le `line_total` de chaque ligne vient de la passe de forme : aucun second
     // produit (v017-3b, AC-3).
     for (line, &line_total) in lines.iter().zip(&line_totals) {
@@ -1683,8 +1694,8 @@ pub async fn validate_in_tx(
         // atteignable que par appel direct à l'API — comme pour le règlement
         // fournisseur, fermé au même titre : *une garde serveur ne se déduit pas
         // d'un filtre d'écran.*
-        let acct: Option<(bool, bool, String, String)> = sqlx::query_as(
-            "SELECT active, postable, account_type, number FROM accounts \
+        let acct: Option<(bool, bool, String, String, Option<String>)> = sqlx::query_as(
+            "SELECT active, postable, account_type, number, currency FROM accounts \
              WHERE id = ? AND company_id = ? FOR UPDATE",
         )
         .bind(line.expense_account_id)
@@ -1698,8 +1709,12 @@ pub async fn validate_in_tx(
         // sinon, non imputable → collecté, nommé après la passe si aucune
         // ligne n'est en (a).
         match acct {
-            Some((true, true, ref t, _)) if t == "Expense" => {}
-            Some((true, false, ref t, number)) if t == "Expense" => {
+            Some((true, true, ref t, _, ref currency)) if t == "Expense" => {
+                if let Some(currency) = currency {
+                    foreign.push((line.expense_account_id, currency.clone()));
+                }
+            }
+            Some((true, false, ref t, number, _)) if t == "Expense" => {
                 non_postable.push(NonPostableAccount {
                     account_id: line.expense_account_id,
                     account_number: number,
@@ -1711,6 +1726,20 @@ pub async fn validate_in_tx(
     }
     if !non_postable.is_empty() {
         return Err(DbError::accounts_not_postable(non_postable));
+    }
+    // Story 37-3a (AC-5, revue de code P1 et P2) — la devise des comptes de
+    // charge se rejuge à la validation, comme `validate_invoice` le fait pour les
+    // comptes de produit : un compte passé en devise depuis l'enregistrement du
+    // brouillon (37-1 ne le lui interdit pas) est refusé sous son nom (400
+    // `ACCOUNT_IN_FOREIGN_CURRENCY`), non par le rang 3 du contrôle central sur
+    // une ligne générée. La devise est lue dans le `SELECT … FOR UPDATE` des
+    // comptes, donc sur leur dernier état commité ; le premier refus est celui
+    // de l'identifiant le plus petit (déterministe).
+    if let Some((account_id, currency)) = foreign.into_iter().min_by_key(|(id, _)| *id) {
+        return Err(DbError::AccountInForeignCurrency {
+            account_id: Some(account_id),
+            currency,
+        });
     }
 
     // (2, désignés) Story 15-5d (#429) — les comptes DÉSIGNÉS que cette saisie
@@ -2127,6 +2156,12 @@ pub async fn pay_in_tx_as(
         ClaimSubject::Counterparty(ClaimSide::Payable),
     )
     .await?;
+    // (3 ter) Story 37-3a (AC-5) — un compte de règlement interne en devise est
+    // refusé (400 `ACCOUNT_IN_FOREIGN_CURRENCY`) : le règlement s'écrit en CHF.
+    if let Some(account_id) = internal_account_id {
+        super::accounts::refuse_foreign_currency_accounts_in_tx(tx, company_id, &[account_id])
+            .await?;
+    }
 
     // (4) Exercice ouvert couvrant la date de règlement.
     let fy = fiscal_years::find_open_covering_date(tx, company_id, payment_date)
@@ -2153,12 +2188,14 @@ pub async fn pay_in_tx_as(
             debit: ttc,
             credit: Decimal::ZERO,
             project_id: None,
+            foreign: None,
         },
         NewJournalEntryLine {
             account_id: counterparty_account_id,
             debit: Decimal::ZERO,
             credit: ttc,
             project_id: None,
+            foreign: None,
         },
     ];
     let je = journal_entries::create_in_tx(
@@ -2257,6 +2294,10 @@ pub async fn pay_in_tx_as(
 pub struct LockedForSettlement {
     /// La facture, lue sous `FOR UPDATE` (statut `open`).
     pub invoice: SupplierInvoice,
+    /// Le compte du grand livre du compte bancaire, lu **sous le verrou** du
+    /// compte, étape (b) (Story 43-1b, revue P1 E3 : le paiement groupé
+    /// l'emploie au lieu de le relire sur l'instantané).
+    pub bank_ledger_account_id: i64,
 }
 
 /// Pourquoi une facture fournisseur ne peut pas être réglée par une
@@ -2386,7 +2427,7 @@ pub async fn lock_for_bank_settlement_in_tx(
             .fetch_optional(&mut **tx)
             .await
             .map_err(map_db_error)?;
-    match account {
+    let bank_ledger_account_id = match account {
         None | Some((_, _, true)) => {
             return Ok(Err(SupplierSettlementRefusal::BankAccountNotFound));
         }
@@ -2394,8 +2435,8 @@ pub async fn lock_for_bank_settlement_in_tx(
         Some((None, None, false)) => {
             return Ok(Err(SupplierSettlementRefusal::BankAccountNotConfigured));
         }
-        Some((Some(_), None, false)) => {}
-    }
+        Some((Some(ledger), None, false)) => ledger,
+    };
 
     // (c) L'appartenance à un lot `generated`, en lecture verrouillante.
     let in_batch: Option<i64> = sqlx::query_scalar(
@@ -2429,7 +2470,10 @@ pub async fn lock_for_bank_settlement_in_tx(
         }));
     }
 
-    Ok(Ok(LockedForSettlement { invoice }))
+    Ok(Ok(LockedForSettlement {
+        invoice,
+        bank_ledger_account_id,
+    }))
 }
 
 // ---------------------------------------------------------------------------
@@ -2528,6 +2572,19 @@ pub async fn supplier_invoice_cancel_blocker(
 /// qui supprime l'achat et la contre-passation posée ici — sous les gardes de
 /// la dévalidation, et tant que le règlement détaché n'est pas contre-passé,
 /// jamais (son gel lit la facture par le statut `cancelled`).
+///
+/// **Membre d'un règlement groupé** (Story 43-1b, #823, AC7) : la facture se
+/// détache de même — `CLEAR_SETTLEMENT_SQL` vide aussi sa ligne
+/// (`settlement_journal_entry_line_id`), sans quoi la `CHECK` « ligne ⇒
+/// écriture » rendrait une 500 —, et l'audit nomme sa ligne. L'écriture
+/// commune reste au grand livre, rapprochée : son dé-rapprochement ultérieur la
+/// contre-passe **entière** et ne rouvre que les factures encore attachées ;
+/// quand plus aucune ne l'est, elle est classée `entry`. ⚠️ **Faux positif
+/// bénin du gel « paiement détaché »** (`journal_entries::modification_guard`,
+/// `DETACHED_SETTLEMENT_TRACES`) : la trace de ce détachement désigne
+/// l'écriture commune, qui est déjà gelée tant qu'un membre la possède (motif
+/// `Owned`, lu en premier) — le gel n'ajoute rien ; il ne devient le motif
+/// rendu que lorsque plus aucun membre n'est attaché, ce qui est le cas voulu.
 ///
 /// ⛔ **Les verrous d'abord, tous, avant toute lecture non verrouillante**
 /// (leçon de la Story 25-3-b) : sous `REPEATABLE READ`, la première lecture non
@@ -2686,6 +2743,11 @@ pub async fn cancel_in_tx(
         details["settlementType"] = serde_json::json!(inv.settlement_type);
         details["paidAt"] = serde_json::json!(inv.paid_at);
     }
+    // Story 43-1b (AC7) : membre d'un règlement groupé, la facture détachée
+    // nomme aussi SA ligne de dette — la seule trace qui en reste.
+    if let Some(line) = inv.settlement_journal_entry_line_id {
+        details["settlementJournalEntryLineId"] = serde_json::json!(line);
+    }
     audit_log::insert_in_tx(
         tx,
         NewAuditLogEntry::user(
@@ -2774,6 +2836,35 @@ pub async fn supplier_settlement_cancel_blocker_unlinking(
     unlinking: Option<i64>,
     aujourd_hui: NaiveDate,
 ) -> Result<Option<super::settlement_cancellation::SettlementCancelHit>, DbError> {
+    let entry_id =
+        match supplier_settlement_cancel_head(conn, company_id, supplier_invoice_id).await? {
+            Ok(entry_id) => entry_id,
+            Err(hit) => return Ok(Some(hit)),
+        };
+    super::settlement_cancellation::settlement_entry_cancel_blocker(
+        conn,
+        company_id,
+        entry_id,
+        unlinking,
+        aujourd_hui,
+    )
+    .await
+}
+
+/// La **tête** fournisseur des motifs d'annulation d'un règlement — rang 1 (la
+/// facture n'est pas `paid`) — et, sinon, l'écriture du règlement. Extraite de
+/// [`supplier_settlement_cancel_blocker_unlinking`], qui l'appelle avant la
+/// queue commune ; le dé-rapprochement d'un règlement groupé fournisseur
+/// (Story 43-1b, patron de `invoice_settlements_write::settlement_cancel_head`)
+/// l'appelle pour **chaque** facture, puis la queue **une fois** pour
+/// l'écriture commune. ⛔ Le rang 1 n'est écrit qu'ici.
+///
+/// Facture introuvable (ou d'une autre société) → [`DbError::NotFound`].
+pub(crate) async fn supplier_settlement_cancel_head(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    supplier_invoice_id: i64,
+) -> Result<Result<i64, super::settlement_cancellation::SettlementCancelHit>, DbError> {
     let row: Option<(String, Option<i64>)> = sqlx::query_as(
         "SELECT status, settlement_journal_entry_id FROM supplier_invoices \
          WHERE id = ? AND company_id = ?",
@@ -2787,21 +2878,11 @@ pub async fn supplier_settlement_cancel_blocker_unlinking(
     // Rang 1. ⚠️ `chk_supplier_invoices_paid_has_settlement` garantit qu'une
     // facture `paid` porte son écriture de règlement : l'absence ne peut venir
     // que d'une facture non `paid`.
-    let Some(entry_id) = settlement_entry.filter(|_| status == "paid") else {
-        return Ok(Some((
-            crate::errors::SettlementCancelBlocker::SupplierInvoiceNotPaid,
-            None,
-            None,
-        )));
-    };
-    super::settlement_cancellation::settlement_entry_cancel_blocker(
-        conn,
-        company_id,
-        entry_id,
-        unlinking,
-        aujourd_hui,
-    )
-    .await
+    Ok(settlement_entry.filter(|_| status == "paid").ok_or((
+        crate::errors::SettlementCancelBlocker::SupplierInvoiceNotPaid,
+        None,
+        None,
+    )))
 }
 
 /// Ce que rend l'annulation d'un règlement fournisseur.

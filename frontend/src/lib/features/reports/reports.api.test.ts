@@ -3,6 +3,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { authState } from '$lib/app/stores/auth.svelte';
 import {
+	formatCurrencyAmount,
 	buildExportFilename,
 	downloadReport,
 	getProjectReportExportUrl,
@@ -465,5 +466,19 @@ describe.each(['UTC', 'America/New_York'])('formatSwissDate / formatSwissDateTim
 		['', ''],
 	])('formatSwissDateTime(%j) = %j', (input, expected) => {
 		expect(formatSwissDateTime(input)).toBe(expected);
+	});
+});
+
+describe('formatCurrencyAmount — Story 37-4', () => {
+	it('arrondit à deux décimales, l’équidistant loin de zéro', () => {
+		expect(formatCurrencyAmount('USD', '1233.5650')).toBe('USD 1’233.57');
+		expect(formatCurrencyAmount('USD', '-1233.5650')).toBe('USD -1’233.57');
+		expect(formatCurrencyAmount('EUR', undefined)).toBe('EUR 0.00');
+	});
+
+	it('ne rend pas « -0.00 » pour un résidu négatif sous le demi-centime (revue P1)', () => {
+		expect(formatCurrencyAmount('USD', '-0.0040')).toBe('USD 0.00');
+		expect(formatCurrencyAmount('USD', '-0.0049')).toBe('USD 0.00');
+		expect(formatCurrencyAmount('USD', '-0.0050')).toBe('USD -0.01');
 	});
 });
