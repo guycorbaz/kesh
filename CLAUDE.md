@@ -168,7 +168,7 @@ Toute story qui ajoute ou modifie un **contrôle visible** (bouton, avis, dialog
 S'applique à `bmad-create-story validate`, à `bmad-code-review` et à toute revue adversariale du même genre.
 
 - **On relance une passe tant qu'une passe rend un finding au-dessus de LOW** (CRITICAL, HIGH, MEDIUM), patches appliqués avant la passe suivante. Arrêt : une passe qui ne rend **aucun** finding au-dessus de LOW — même un MEDIUM corrigé hors production appelle une passe de plus (décision de Guy du 2026-10-23) — ou **8 passes**.
-- **Contexte frais à chaque passe, et modèle différent** de la passe précédente : Sonnet ↔ Opus pour les passes complètes ; **Haiku seulement pour une passe ciblée** ; **une première passe n'est jamais ciblée** et ne va jamais à Haiku (décisions de Guy des 2026-10-06 et 2026-10-24).
+- **Contexte frais à chaque passe, et modèle différent** de la passe précédente : Sonnet ↔ Opus pour les passes complètes ; **Haiku seulement pour une passe ciblée** ; deux passes ciblées de suite changent aussi de modèle (Haiku ↔ Sonnet) ; **une première passe n'est jamais ciblée** et ne va jamais à Haiku (décisions de Guy des 2026-10-06, 2026-10-24 et 2026-11-18).
 - **Change Log final** (une entrée, pas une par passe) : tendance des findings par passe, modèles employés, reclassements.
 - **Exception** : un finding MEDIUM+ reclassé en dette documentée (section `Security debt`, `Performance debt` ou équivalente), avec propriétaire et story de remédiation planifiée, compte comme résolu.
 
@@ -254,7 +254,7 @@ Chaque défaut ouvert porte sa priorité dès sa création, et c'est elle qui or
 
 Et :
 
-- **Report assumé des dix P1 de la TVA** (jalon « Vague 2 » : #390 à #397, #401, #525) : Guy, seul utilisateur réel, n'est pas assujetti. Ils sont nommés à chaque rétrospective ; le report tombe dès que Kesh tient, ou est proposé pour tenir, les livres d'un assujetti (décision de Guy du 2026-10-08).
+- **Report assumé des onze P1 de la TVA** (jalon « Vague 2 » : #390 à #397, #401, #525, #1198) : Guy, seul utilisateur réel, n'est pas assujetti. Ils sont nommés à chaque rétrospective ; le report tombe dès que Kesh tient, ou est proposé pour tenir, les livres d'un assujetti (décisions de Guy des 2026-10-08 et 2026-11-18).
 - **Moins d'issues ouvertes au tag qu'au tag précédent est un objectif, pas une barrière** : le dépasser n'empêche pas de publier. Le décompte (toutes les issues) s'écrit : celui du tag précédent et l'objectif au fichier d'epic dès le kickoff, celui du tag à la PR de release et à la rétrospective, avec l'écart et sa cause (décision de Guy du 2026-10-24).
 - **On trace toujours** : un point qu'on décide de ne pas traiter s'ouvre en issue, même s'il fait remonter le compte ; on ne ferme jamais un défaut réel pour tenir le chiffre ; **une issue par problème**, sans regroupement (décisions de Guy des 2026-10-23 et 2026-11-10).
 - **Un LOW de revue qui touche la production peut se corriger dans la story**, suivi d'une passe ciblée de ce seul correctif ; l'issue reste le choix par défaut quand le correctif sort du périmètre (décision de Guy du 2026-11-14).
@@ -336,7 +336,7 @@ Les anciennes rétrospectives classent la dette en **A** (vraie dette), **B** (l
 
 ## Travailler à plusieurs développeurs
 
-Kesh a plusieurs développeurs depuis le 2026-11-15 : le Project Lead, l'orchestrateur qui travaille sur son mandat, et des contributeurs à qui des epics sont réservés (37 à 39, 40 ; le prochain epic interne est le 41, et le reste de l'Epic 36 part en epics neufs à partir du 42). Décisions de Guy des 2026-11-15 et 2026-11-16 ; `docs/developpement-a-plusieurs.md` les commente pour un contributeur, mais **elles font foi ici**.
+Kesh a plusieurs développeurs depuis le 2026-11-15 : le Project Lead, l'orchestrateur qui travaille sur son mandat, et des contributeurs à qui des epics sont réservés (37 à 40, 46, 47) ; les epics internes ouverts sont le 41 (pièces justificatives), le 45 (note interne) et le 48 (réservoir des stories non faites des Epics 36 et 42 à 44), et le prochain epic interne neuf est le 49. Décisions de Guy des 2026-11-15, 2026-11-16 et 2026-11-18 ; `docs/developpement-a-plusieurs.md` les commente pour un contributeur, mais **elles font foi ici**.
 
 ### Planification — GitHub Projects
 
@@ -366,7 +366,7 @@ Kesh a plusieurs développeurs depuis le 2026-11-15 : le Project Lead, l'orchest
 - **La semaine type** : coupure le **jeudi soir** (n'entrent que les stories closes — boucle de revue terminée, gates de clôture et E2E complet verts) ; intégration le **vendredi matin** (dernières fusions, gates, recette de montée, revue du code d'intégration, PR, CI) ; **accord de fusion du Project Lead vers midi**, puis tag et image ; mise à jour du NAS par le Project Lead.
 - **Chaque story se fusionne dans la branche de son epic dès sa clôture**, puis on pousse (§ *Commits, branches et push*) ; les branches `story/…` poussées se suppriment sur GitHub après la fusion de la release.
 - **Une branche d'epic n'est pas une base** : un contributeur part de `main` ; bâtir sur une branche d'epic non publiée demande l'accord du Project Lead.
-- **Un epic qui n'aboutit pas se réduit** : à la coupure, l'orchestrateur sort les stories non closes (`backlog`, pour une semaine suivante) et le dit au compte rendu de la PR ; le Project Lead garde le dernier mot. Il ne touche jamais à l'epic d'un contributeur.
+- **Un epic qui n'aboutit pas se réduit** : on ne retarde pas une release, on réduit son étendue. À la coupure, l'orchestrateur sort les stories non closes vers une épique ultérieure et le dit au compte rendu de la PR ; l'épique se clôt avec la release (décision de Guy du 2026-11-18) ; le Project Lead garde le dernier mot. Il ne touche jamais à l'epic d'un contributeur.
 - **Une story sortie emporte sa migration.** Une migration est annoncée d'avance au projet GitHub et dite en tête des notes ; les migrations voisines se regroupent quand c'est possible.
 - **Chaque release planifiée corrige au moins un ou deux bugs**, dans une story de correction en plus de ses epics, comptée dans la borne de six : un P1 d'abord, sinon ce qui touche l'usage réel du Project Lead, sinon le plus ancien. Elle est petite et part en premier. Le dosage s'adapte au stock de bugs. Elle s'ajoute à la story de solde et à la correction des LOW, sans les remplacer.
 - **Une release urgente** (`hotfix/X.Y.Z`) reste possible pour un bug majeur — P1 qui touche les livres ou la conformité, ou défaut qui bloque le Project Lead —, sur sa décision ; elle ne compte pas comme la release de la semaine.
