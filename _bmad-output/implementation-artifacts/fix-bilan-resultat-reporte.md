@@ -92,10 +92,10 @@ deux « résultats reportés » côte à côte, dont l'un nul (l'ancien logiciel
       (deux exercices)
 - [x] Manuel FR (`user-manual.tex`), `docs/api-external.md`
 - [x] Gates ciblés, mutations, captures (ci-dessous)
-- [ ] Gate complet (`test-fast.sh --ci`, E2E complet, `gate-ci.sh`) : **groupé, à venir** sur une branche d'intégration
-      (décision de Beat du 2026-11-18)
+- [x] Gate complet (`test-fast.sh --ci`, E2E complet, `gate-ci.sh`) : **groupé**, vert au commit `5fc6fb1b` de la branche
+      d'intégration `integ/fixes-0.19.0` (décision de Beat du 2026-11-18 ; chiffres au Change Log)
 - [x] Revue de code P1 (Sonnet) : 0 au-dessus de LOW, 3 LOW corrigés dans la story
-- [ ] Passe ciblée P2 sur la remédiation (prompt : `kesh-gate-logs/fix-bilan-resultat-reporte/revue-p2-ciblee-prompt.md`)
+- [x] Passe ciblée P2 sur la remédiation, 0 au-dessus de LOW (prompt : `kesh-gate-logs/fix-bilan-resultat-reporte/revue-p2-ciblee-prompt.md`)
 
 ## Change Log
 
@@ -173,6 +173,21 @@ deux « résultats reportés » côte à côte, dont l'un nul (l'ancien logiciel
   Tendance de la boucle : P1 (Sonnet, complète) 0 au-dessus de LOW, 3 LOW → corrigés ; la remédiation touche la
   production, d'où une **passe P2 ciblée** (`revue-p2-ciblee-prompt.md`).
 - 2026-11-18 — passe P2 ciblée (Sonnet, lecture seule) sur `69d20e34` et `ba8b56ac` : **0 au-dessus de LOW**, 2 LOW — LOW-1 `showsRetainedEarningsLine('')` rend `true` (le DTO porte toujours une chaîne décimale, sans effet) ; LOW-2 `balance_sheet.rs` importe `pdf::round_for_display` (dépendance du modèle vers le rendu, à déplacer après la fusion de `fix/pdf-montants-alignes`, tracé). **Boucle close.** Trend : P1 Sonnet 0 > LOW (3 LOW, corrigés) → P2 ciblée Sonnet 0 > LOW. Gate complet groupé à venir, avant tout push.
+- 2026-11-18 — **Reprise de `main` après la v0.19.0, puis gate complet groupé.** `origin/main` (`773df80d`, tag
+  `v0.19.0`) repris par fusion (`f13fc6d8`), sans rebase ; conflits résolus en gardant les deux intentions (`sprint-status.yaml` : les deux blocs).
+  Gate ciblé après la reprise : `fmt`, `clippy` du workspace, nextest de `kesh-report`, `opening_balances_e2e` et `reports_e2e` **283 passés, 1 ignoré**, Vitest `src/lib/features/reports` **126 tests (10 fichiers)**, garde i18n verte (`kesh-gate-logs/fix-bilan-resultat-reporte/reprise-v0190-*.log`). Puis `origin/main` `37c2f875` (documentation seule : `CLAUDE.md`, bilan de la
+  0.19.0, `sprint-status.yaml`) repris de même. **Gate complet groupé** sur la branche jetable `integ/fixes-0.19.0`
+  (`773df80d` + les quatre correctifs fusionnés dans l'ordre PDF, monnaies retirées, résultat reporté, parent du
+  compte ; seul conflit, `sprint-status.yaml`), **au commit `5fc6fb1b`**, base `kesh_integ` remise à zéro :
+  `scripts/test-fast.sh --ci` **6165 passés, 14 ignorés** ; frontend `check` 0 erreur (29 avertissements
+  préexistants), `lint-i18n-ownership`, `test:unit` **4627 tests (278 fichiers)**, `build` ; **E2E complet**
+  (`LANG=fr_CH.UTF-8`, port 3382) **478 passés, 10 échecs, 18 ignorés** — les dix attendus, jugés un à un : sept KF-029
+  (#97 : `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`,
+  `:150`), `backup-restore-new-install.spec.ts:262`, `:381`, `opening-balances.spec.ts:156` (`docs/testing.md`
+  inchangé par la 0.19.0) ; `scripts/gate-ci.sh` (copie `git archive`) **6184 passés, 0 échoué, 18 ignorés**.
+  Journaux : `kesh-gate-logs/integ-fixes-0.19.0/` (`gate-backend.log`, `front-*.log`, `e2e.log`, `gate-ci.log`) ; un
+  premier essai, arrêté par le disque plein de la station, est gardé dans `avorte-disque-plein/`. Le commit de
+  documentation `37c2f875` n'a pas été rejoué au gate (aucun code).
 
 ## Notes de version
 
