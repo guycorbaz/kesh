@@ -138,6 +138,7 @@ Trois défauts de mise en page des PDF de rapports (`crates/kesh-report/src/pdf.
 - 2026-11-18 — **Décisions de Beat** : (1) clés `reports-pdf-col-*` non lues jusqu'à la traduction complète des PDF ;
   (2) dépendance `kesh-report` → `kesh-qrbill` acceptée, la ligne d'architecture fait foi.
 - 2026-11-18 — passe P2 ciblée (Haiku) sur `62ccfa4a` : 0 CRITICAL/HIGH, **1 MEDIUM**, 4 LOW. MEDIUM-1 : `crates/kesh-qrbill/README.md` disait encore le crate « standalone, zero dependency on kesh-core » (propagation manquée de P1-3) — corrigé. LOW-1 (manuel : troncature à un nombre fixe de caractères, non « trop longs pour leur colonne »), LOW-2 (`WINANSI` est `pub(crate)`), LOW-3 (message vide non centré), LOW-4 (`architecture.md` : `kesh-report` ne dépend pas de `kesh-i18n`) — corrigés dans le même commit, sans code exécutable. Passe P3 ciblée à suivre (une passe à MEDIUM appelle une passe de plus).
+- 2026-11-18 — passe P3 ciblée (Sonnet) sur `a2759eed` : **0 au-dessus de LOW**, 4 LOW (copies restées fausses de la description de `kesh-qrbill` et des dépendances de `kesh-report` dans des documents de planning et le README ; tracées en une issue de documentation, I-8). **Boucle close.** Trend : P1 Opus 0 > LOW (8 LOW) → P2 ciblée Haiku 1 MEDIUM + 4 LOW → P3 ciblée Sonnet 0 > LOW (4 LOW). Dernier commit de code `cc6aabe3`, gates complets verts à ce commit ; les commits suivants ne portent que documentation et commentaires.
 
 ## Issues à ouvrir
 
