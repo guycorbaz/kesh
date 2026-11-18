@@ -143,6 +143,7 @@ Les flux de 2026 après mars (mensuels 2026-10, 2026-12 ; journalier du 13.11.20
   remise à zéro) **479/479** (`p2-nextest.log`). Le gate complet et l'E2E complet de ce commit se feront **groupés, sur
   une branche d'intégration** ; ceux de `102758bf` (ci-dessus) ne couvrent pas `49e75a7e`. Passe ciblée P2 à lancer
   (`kesh-gate-logs/fix-cours-afc-bgn/revue-p2-ciblee-prompt.md`).
+- 2026-11-18 — passe P2 ciblée (Haiku, lecture seule) sur `49e75a7e` : 0 CRITICAL/HIGH, 1 MEDIUM, 1 LOW. **P2-1 (MEDIUM, procédure)** : `CLAUDE.md` exige le gate complet et l'E2E complet au dernier commit de code ; seul le gate ciblé a tourné à `49e75a7e`. Décision de Beat (2026-11-18) : pour les correctifs courts, gate ciblé par correctif, puis **gate complet groupé** (test-fast `--ci`, E2E complet, `gate-ci.sh`) sur une branche d'intégration réunissant plusieurs correctifs, **avant tout push** ; la boucle de ce correctif se clôt sur ce gate groupé, rapporté ici. **P2-2 (LOW)** : le gate ciblé (`p2-cible.log`) a tourné sur l'arbre de travail de `2ae7749e` augmenté du test, avant le commit `49e75a7e` ; contenu identique au commit (arbre propre à HEAD, 9 tests dans le binaire).
 
 ## Notes de version
 
