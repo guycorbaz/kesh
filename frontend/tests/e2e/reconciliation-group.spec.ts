@@ -357,7 +357,10 @@ test.describe('Règlement groupé — l’écran (Story 43-3, #823)', () => {
 			const { modal } = await openGroup(page, s.bankAccountId, s.txId);
 			await add(modal, s.fa.number, s.fa.id);
 			await add(modal, s.fb.number, s.fb.id);
-			await expect(modal.getByTestId('group-gap')).toHaveText('Écart trop grand (au plus 5.00)');
+			await expect(modal.getByTestId('group-gap')).toHaveText(
+				'Écart trop grand : Moins-payé de 6.00 (au plus 5.00)',
+			);
+			await expect(modal.getByTestId('group-block-hint')).toContainText('L’écart dépasse le plafond admis');
 			await expect(modal.getByTestId('group-account-section')).toHaveCount(0);
 			await expect(modal.getByTestId('group-submit')).toBeDisabled();
 			await modal.screenshot({ path: capturePath(testInfo, '43-3-ecart-trop-grand') });
@@ -530,7 +533,70 @@ test.describe('Règlement groupé — l’écran (Story 43-3, #823)', () => {
 				'supplier_invoice_group',
 			);
 			await expect(modal).toBeHidden();
+
+			// Revue P1 (A L-9) : l'annulation d'un groupe fournisseur, jouée par l'interface.
+			await page.goto(`/bank-import/${importId}`);
+			const row = page.locator(`[data-testid="detail-tx-row"][data-tx-id="${txId}"]`);
+			await row.getByTestId('detail-tx-cancel-reconciliation').click();
+			const dialog = page.getByTestId('reconciliation-cancel-dialog');
+			await expect(dialog.getByTestId('reconciliation-cancel-confirm-text')).toContainText(
+				'le paiement des factures fournisseur',
+			);
+			await expect(dialog.getByTestId('reconciliation-cancel-group-invoice')).toHaveCount(2);
+			await expect(dialog.getByTestId('reconciliation-cancel-group-gap')).toContainText(
+				'Débit supérieur aux factures de 0.40',
+			);
+			await expect(dialog.getByTestId('reconciliation-cancel-group-gap')).toContainText(fees.number);
+			await dialog.screenshot({ path: capturePath(testInfo, '43-3-annulation-groupe-fournisseur') });
+			await dialog.getByTestId('reconciliation-cancel-submit').click();
+			await expect(row.getByTestId('detail-tx-cancel-reconciliation')).toHaveCount(0);
+			for (const id of [s1.supplierInvoiceId, s2.supplierInvoiceId]) {
+				const si = (await (await ctx.get(`/api/v1/supplier-invoices/${id}`)).json()) as { status: string };
+				expect(si.status, `facture fournisseur ${id} rouverte`).not.toBe('paid');
+			}
 		} finally {
+			await cleanup(ctx, txId, importId);
+			await disposeContextSafe(ctx);
+		}
+	});
+
+	// Revue P1 (A L-4) : « retenu par un lot » sur un DÉBIT réel ; la retenue elle-même est
+	// interceptée (le champ `heldByPaymentBatch` n'arrive qu'avec la tête définitive de la 43-2).
+	test('un débit dont le montant est retenu par un lot : l’avis nomme le lot', async ({ page }, testInfo) => {
+		const unique = `${Date.now()}-retenu`;
+		const today = todayInZurich();
+		const bankAccountId = await wiredBankAccountViaApi(page, TEST_IBAN);
+		const ctx = await authedApiContext(page);
+		const importId = await createManualDebitStatementViaApi(page, {
+			bankAccountId,
+			bookingDate: today,
+			amount: ((30000 + (Date.now() % 20000)) / 100).toFixed(2),
+			counterpartyName: `Fournisseur ${unique}`,
+			details: `Débit retenu ${unique}`,
+		});
+		const txId = ((await (await ctx.get(`/api/v1/bank-imports/${importId}`)).json()) as {
+			transactions: Array<{ id: number }>;
+		}).transactions[0].id;
+		await page.route('**/group-candidates**', async (route) => {
+			const reponse = await route.fetch();
+			const corps = await reponse.json();
+			await route.fulfill({
+				response: reponse,
+				json: {
+					...corps,
+					candidates: [],
+					hasMore: false,
+					heldByPaymentBatch: { supplierInvoiceId: 1, paymentBatchId: 31 },
+				},
+			});
+		});
+		try {
+			const { modal } = await openGroup(page, bankAccountId, txId);
+			await expect(modal.getByTestId('group-held-by-batch')).toContainText('lot de paiement n° 31');
+			await expect(modal.getByTestId('group-gap')).toHaveText('—');
+			await modal.screenshot({ path: capturePath(testInfo, '43-3-retenu-par-un-lot') });
+		} finally {
+			await page.unroute('**/group-candidates**');
 			await cleanup(ctx, txId, importId);
 			await disposeContextSafe(ctx);
 		}
@@ -546,7 +612,7 @@ test.describe('Règlement groupé — l’écran (Story 43-3, #823)', () => {
 		page,
 	}, testInfo) => {
 		const s = await clientScene(page, 'recherche', 0);
-		let mode: 'lent' | 'hasMore' | 'vide' | 'retenu' | 'sansSens' = 'lent';
+		let mode: 'lent' | 'hasMore' | 'vide' | 'sansSens' = 'lent';
 		const verrou = { relacher: () => {} };
 		await page.route('**/group-candidates**', async (route) => {
 			const reponse = await route.fetch();
@@ -558,18 +624,6 @@ test.describe('Règlement groupé — l’écran (Story 43-3, #823)', () => {
 			if (mode === 'hasMore') return route.fulfill({ response: reponse, json: { ...corps, hasMore: true } });
 			if (mode === 'vide') {
 				return route.fulfill({ response: reponse, json: { ...corps, candidates: [], hasMore: false } });
-			}
-			// Revue P4 de la 43-2 (P4-1) : un lot de paiement en cours retient le montant.
-			if (mode === 'retenu') {
-				return route.fulfill({
-					response: reponse,
-					json: {
-						...corps,
-						candidates: [],
-						hasMore: false,
-						heldByPaymentBatch: { supplierInvoiceId: 1, paymentBatchId: 31 },
-					},
-				});
 			}
 			return route.fulfill({
 				response: reponse,
@@ -589,10 +643,6 @@ test.describe('Règlement groupé — l’écran (Story 43-3, #823)', () => {
 			await modal.getByTestId('group-search-input').fill('zzz');
 			await expect(modal.getByTestId('group-results-empty')).toBeVisible();
 			await modal.screenshot({ path: capturePath(testInfo, '43-3-aucun-resultat') });
-			mode = 'retenu';
-			await modal.getByTestId('group-search-input').fill('yyy');
-			await expect(modal.getByTestId('group-held-by-batch')).toContainText('lot de paiement n° 31');
-			await modal.screenshot({ path: capturePath(testInfo, '43-3-retenu-par-un-lot') });
 			mode = 'sansSens';
 			await modal.getByTestId('group-search-input').fill('x');
 			await expect(modal.getByTestId('group-no-direction')).toHaveText(
@@ -704,20 +754,37 @@ test.describe('Règlement groupé — l’écran (Story 43-3, #823)', () => {
 				json: { accepted: [], failed: [{ bankTransactionId: s.txId, ...refus }] },
 			});
 		});
+		// Revue P1 (A L-3) : une facture refusée « n'est plus réglable » ne revient pas dans les
+		// résultats — le serveur, dont le refus est intercepté, la jugerait encore réglable.
+		let retiree: number | null = null;
+		await page.route('**/group-candidates**', async (route) => {
+			const reponse = await route.fetch();
+			const corps = (await reponse.json()) as { candidates: Array<{ id: number }> };
+			await route.fulfill({
+				response: reponse,
+				json: { ...corps, candidates: corps.candidates.filter((c) => c.id !== retiree) },
+			});
+		});
+		// Revue P1 (A L-5) : un compte au nom neutre, que la capture ne dément pas.
+		const neutre = await expenseAccount(s.ctx, 'Compte choisi pour l’écart 43-3');
 		try {
 			const { modal } = await openGroup(page, s.bankAccountId, s.txId);
 			await add(modal, s.fa.number, s.fa.id);
 			await add(modal, s.fb.number, s.fb.id);
+			const champ = modal.locator('input[aria-autocomplete="list"]');
+			await champ.fill(neutre.number);
+			await modal.getByRole('option', { name: new RegExp(neutre.number) }).first().dispatchEvent('mousedown');
+			await expect(champ).toHaveValue(`${neutre.number} — ${neutre.name}`);
 			const causes: [string, string, Record<string, unknown>, string][] = [
 				['banque', 'VALIDATION_ERROR', { reason: 'counterparty_equals_bank_ledger' }, 'compte de la banque'],
-				['introuvable', 'ACCOUNT_NOT_FOUND', { missingAccountIds: [fees.id] }, 'introuvable ou archivé'],
+				['introuvable', 'ACCOUNT_NOT_FOUND', { missingAccountIds: [neutre.id] }, 'introuvable ou archivé'],
 				[
 					'non-imputable',
 					'ACCOUNT_NOT_POSTABLE',
-					{ rejected: [{ accountId: fees.id, accountNumber: fees.number }] },
+					{ rejected: [{ accountId: neutre.id, accountNumber: neutre.number }] },
 					'n’est pas imputable',
 				],
-				['devise', 'ACCOUNT_IN_FOREIGN_CURRENCY', { accountId: fees.id, currency: 'EUR' }, 'tenu en EUR'],
+				['devise', 'ACCOUNT_IN_FOREIGN_CURRENCY', { accountId: neutre.id, currency: 'EUR' }, 'tenu en EUR'],
 			];
 			for (const [nom, errorCode, details, phrase] of causes) {
 				refus = { errorCode, details };
@@ -729,13 +796,18 @@ test.describe('Règlement groupé — l’écran (Story 43-3, #823)', () => {
 				errorCode: 'RECONCILIATION_INVOICE_NOT_ELIGIBLE',
 				details: { reason: 'invoice_already_paid', invoiceId: s.fb.id, invoiceNumber: s.fb.number },
 			};
+			retiree = s.fb.id;
 			await modal.getByTestId('group-submit').click();
 			await expect(modal.getByTestId('group-refusal')).toContainText(`Facture ${s.fb.number}`);
 			await expect(
 				modal.locator(`[data-testid="group-imputed-row"][data-invoice-id="${s.fb.id}"]`),
 			).toHaveCount(0);
+			await expect(
+				modal.locator(`[data-testid="group-result-row"][data-invoice-id="${s.fb.id}"]`),
+			).toHaveCount(0);
 			await modal.screenshot({ path: capturePath(testInfo, '43-3-facture-refusee-retiree') });
 		} finally {
+			await page.unroute('**/group-candidates**');
 			await page.unroute('**/api/v1/reconciliation/accept');
 			await cleanup(s.ctx, s.txId, s.importId);
 			await disposeContextSafe(s.ctx);
