@@ -27,20 +27,29 @@ deux « résultats reportés » côte à côte, dont l'un nul (l'ancien logiciel
   la Story 14-3c (`14-3c-fonds-propres-par-role.md`, « Collision Résultat reporté : DISTINGUER nettement ») impose de
   ne **jamais fusionner** le compte physique `RetainedEarnings` et la ligne calculée, et de marquer celle-ci
   « (calculé) ». D1 n'exige pas d'afficher la ligne nulle : elle traite le cas où **les deux** valeurs coexistent. Le
-  compte physique, lui, n'est listé que non nul (`HAVING balance != 0`). Aucun texte de 14-1 ni de 14-3c ne motive
-  l'affichage d'un zéro ; le seul garde-fou lié est la garde « rapport vide » (`is_empty`, revue P1 de la 14-1), qui
-  reste inchangée.
+  compte physique, lui, n'est listé que non nul (`HAVING balance != 0`). La Story 14-1, elle, demandait à la lettre
+  d'afficher la ligne sans condition (`14-1-cloture-report-des-soldes.md` l. 102 : « Frontend `BalanceSheetView.svelte` :
+  afficher « Résultat reporté » + « Résultat de l'exercice » ») ; mais son AC-D (l. 79) veut qu'au **premier
+  exercice** le bilan « dégénère exactement au comportement mono-exercice actuel (régression zéro) » — et avant la
+  14-1 il n'y avait aucune ligne de report : omettre la ligne nulle **sert** l'AC-D plutôt qu'elle ne la contredit.
+  Aucun texte ne motive l'affichage d'un zéro ; le seul garde-fou lié est la garde « rapport vide » (`is_empty`,
+  revue P1 de la 14-1), qui reste inchangée. *(Paragraphe corrigé à la revue P1, LOW-2 : il disait « aucun texte de
+  14-1 ni de 14-3c ne motive l'affichage d'un zéro », inexact à la lettre pour la l. 102 de la 14-1.)*
 
 ## Décision
 
 1. **Écran et PDF** : la ligne calculée n'est affichée que si `retained_earnings` est **non nul** (positif : bénéfice
-   reporté ; négatif : « Perte reportée » à l'écran). Non nulle, elle reste : elle signale un résultat d'exercices
+   reporté ; négatif : « Perte reportée » à l'écran), **jugé arrondi au centime comme il s'affiche** (l'équidistant
+   loin de zéro, `round_for_display` / `roundToCents` ; revue P1, LOW-1) : un résidu sous le demi-centime
+   (`0.004`, `-0.004`) omet la ligne, qui n'affiche donc jamais « 0.00 » ni « -0.00 », et `0.005` s'affiche « 0.01 »
+   — la valeur écrite est arrondie de même. Non nulle, elle reste : elle signale un résultat d'exercices
    antérieurs qu'aucune écriture n'a encore reporté (et D1 s'applique toujours : deux lignes distinctes, jamais
    fusionnées). « Résultat de l'exercice » reste toujours affiché. Le total des capitaux propres et la ligne
    « Total passifs + Capitaux propres » sont inchangés (on omet un zéro) : l'équation affichée reste juste.
 2. **Source unique** : `BalanceSheet::shows_retained_earnings_line()` (backend, PDF et CSV) ; pendant frontend
-   `showsRetainedEarningsLine()` (`reports.api.ts`), tenu en parallèle comme `isReportEmpty` — même règle, une
-   valeur illisible (`NaN`) restant affichée comme avant.
+   `showsRetainedEarningsLine()` (`reports.api.ts`), tenu en parallèle comme `isReportEmpty` — même règle (même arrondi :
+   `roundToCents`, extrait de `formatCurrencyFigure` qui l'emploie désormais), une valeur illisible restant
+   affichée comme avant.
 3. **JSON et MCP : inchangés.** `GET /reports/balance-sheet` rend toujours `retainedEarnings`, zéro compris, et
    `kesh_bilan` toujours `report` : c'est la donnée, non sa présentation ; un champ stable évite de casser un client.
 4. **CSV : la ligne nulle est omise, comme au PDF.** Le CSV du bilan est la *présentation* du bilan en tableau (mêmes
@@ -57,12 +66,12 @@ deux « résultats reportés » côte à côte, dont l'un nul (l'ancien logiciel
    `pdf.rs`) : changement limité à la **tête** de la boucle des lignes calculées de `render_balance_sheet_pdf`
    (`pdf.rs` l. 710–721 après correctif : le tableau devient `[Option<…>; 2]` aplati), le corps de la boucle (où
    l'autre branche remplace `use_text` par `write_right`) n'est pas touché ; test ajouté **au milieu** du module de
-   tests (après `balance_sheet_pdf_shows_equity_when_assets_liabilities_net_to_zero`, l. 2451–2483), non à sa fin où
+   tests (après `balance_sheet_pdf_shows_equity_when_assets_liabilities_net_to_zero`, l. 2451–2498 après la revue P1), non à sa fin où
    l'autre branche ajoute les siens.
 
 ## Critères d'acceptation
 
-1. **AC-1** — Bilan dont le résultat reporté calculé est nul : la ligne « Résultat reporté (calculé) » n'apparaît ni à
+1. **AC-1** — Bilan dont le résultat reporté calculé est nul **une fois arrondi au centime** : la ligne « Résultat reporté (calculé) » n'apparaît ni à
    l'écran, ni au PDF, ni au CSV ; « Résultat de l'exercice », les comptes de fonds propres et les totaux sont
    inchangés.
 2. **AC-2** — Résultat reporté calculé non nul, positif ou négatif : la ligne apparaît avec son montant, à l'écran
@@ -85,7 +94,8 @@ deux « résultats reportés » côte à côte, dont l'un nul (l'ancien logiciel
 - [x] Gates ciblés, mutations, captures (ci-dessous)
 - [ ] Gate complet (`test-fast.sh --ci`, E2E complet, `gate-ci.sh`) : **groupé, à venir** sur une branche d'intégration
       (décision de Beat du 2026-11-18)
-- [ ] Revue de code P1 (prompt : `kesh-gate-logs/fix-bilan-resultat-reporte/revue-p1-prompt.md`)
+- [x] Revue de code P1 (Sonnet) : 0 au-dessus de LOW, 3 LOW corrigés dans la story
+- [ ] Passe ciblée P2 sur la remédiation (prompt : `kesh-gate-logs/fix-bilan-resultat-reporte/revue-p2-ciblee-prompt.md`)
 
 ## Change Log
 
@@ -132,9 +142,40 @@ deux « résultats reportés » côte à côte, dont l'un nul (l'ancien logiciel
   (`0.0000`) et les mêmes champs. `02-report-non-nul-*` (exercice antérieur avec une vente de 750) : ligne à 750.00
   avant et après, CSV identique octet pour octet.
 
+- **2026-11-18 — revue de code P1 (Sonnet, passe complète) : 0 au-dessus de LOW, 3 LOW**
+  (`kesh-gate-logs/fix-bilan-resultat-reporte/revue-p1.md`), **corrigés dans la story** (décision de
+  l'orchestrateur), commit `69d20e34` :
+  - **LOW-1** — un report non nul sous le centime (`0.004`, `-0.004`) gardait la ligne, affichée « 0.00 » voire
+    « -0.00 ». La règle juge désormais la valeur arrondie au centime, l'équidistant loin de zéro :
+    `round_for_display` (`pdf.rs`, `pub(crate)`, importé dans `balance_sheet.rs` — `pdf.rs` ne change qu'à la tête
+    de boucle, où la valeur écrite passe par lui aussi) ; au CSV, `format_amount_iso(round_for_display(…))` ; à
+    l'écran, `roundToCents` extrait de `formatCurrencyFigure` (qui l'emploie, comportement inchangé) et la ligne
+    affichée par `formatCurrencyFigure`. Le nom `roundToCents` évite le suffixe `Display`, que la garde des libellés
+    en dur (`i18n-libelle-en-dur.test.ts`) prend pour un libellé : nommée `roundForDisplay`, elle comptait une
+    candidate de plus (120 pour 119) et rougissait deux tests — relevé au premier Vitest, renommée.
+    Tests : `shows_retained_earnings_line_only_when_nonzero` (0.004, -0.004, 0.0049 omis ; 0.005, -0.005
+    montrés), le test PDF (0.005 → « 0.01 », -0.005 → « -0.01 », 0.004 et -0.004 absents, aucun « -0.00 »), le test
+    CSV par rôle (mêmes cas), Vitest du composant (`it.each` étendu à 0.004 et -0.004, cas 0.005 → « 0.01 ») et du
+    helper. Sonde : règle remise à `!is_zero()` → 3 échecs (`mutation-p1fix-regle.log`), source rétablie.
+  - **LOW-2** — § Intention corrigée : la 14-1 (l. 102) demandait l'affichage sans condition ; son AC-D (l. 79)
+    justifie l'omission au premier exercice. Le paragraphe d'origine est annoté, non réécrit en silence.
+  - **LOW-3** — `data-testid="balance-sheet-equity"` sur la table des capitaux propres ; le test la repère par lui
+    et vérifie le libellé complet « Bénéfice de l'exercice ».
+  Propagation : manuel FR et `docs/api-external.md` (§ 7) disent la règle d'arrondi ; grep de
+  `round_for_display`, `roundToCents`, `formatCurrencyFigure`, `showsRetainedEarningsLine` sans autre site.
+  **Gate ciblé au commit `69d20e34`**, chaque commande lancée par `heavy.sh` quand aucun autre `heavy.sh` ne
+  tournait (`gates-p1fix.sh`) : `cargo fmt --check` vert ; `clippy --workspace --all-targets -D warnings` vert
+  (`clippy-p1fix.log`) ; nextest `--profile ci` sur `package(kesh-report)` + `reports_e2e`, `reports_export_e2e`,
+  `opening_balances_e2e` : **303 passés, 1 ignoré** (`nextest-p1fix.log`) ; Vitest **4362 passés, 271 fichiers**
+  (`front-vitest-p1fix-3.log` ; `-p1fix.log` et `-p1fix-2.log` : les deux rouges de la garde des libellés, avant le
+  renommage) ; `npm run check` 0 erreur (`front-check-p1fix-2.log`). Pas d'E2E ni de build relancés. **Gate complet
+  groupé à venir.**
+  Tendance de la boucle : P1 (Sonnet, complète) 0 au-dessus de LOW, 3 LOW → corrigés ; la remédiation touche la
+  production, d'où une **passe P2 ciblée** (`revue-p2-ciblee-prompt.md`).
+
 ## Notes de version
 
-- **Fixed** — Le bilan n'affiche plus la ligne « Résultat reporté (calculé) » quand elle vaut zéro (premier exercice
+- **Fixed** — Le bilan n'affiche plus la ligne « Résultat reporté (calculé) » quand elle vaut zéro au centime (premier exercice
   tenu dans Kesh, report porté par votre compte de report), à l'écran, au PDF et au CSV ; non nulle, elle reste. Les
   totaux ne changent pas, et l'API (`retainedEarnings`) comme le serveur MCP (`report`) donnent toujours la valeur,
   zéro compris.
