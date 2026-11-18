@@ -91,6 +91,8 @@ pub struct BalanceSheet {
     /// antérieurs** à `fy_start` (P&L `entry_date < fy_start`). Négatif = pertes
     /// cumulées (« Perte reportée »). **Ligne calculée virtuelle** — disjointe des
     /// comptes physiques de rôle `RetainedEarnings` (collision D1, Story 14-3c).
+    /// **Toujours** sérialisé, zéro compris ; sa ligne n'est **présentée** (écran, PDF,
+    /// CSV) que non nulle — [`BalanceSheet::shows_retained_earnings_line`].
     pub retained_earnings: Decimal,
     /// Résultat de l'exercice courant = P&L sur `[fy_start, date d'arrêté]`.
     /// **Ligne calculée virtuelle** — disjointe d'un compte physique `CurrentYearResult`.
@@ -116,6 +118,23 @@ impl BalanceSheet {
             && self.equity.is_empty()
             && self.retained_earnings.is_zero()
             && self.equity_result.is_zero()
+    }
+
+    /// `true` si la **ligne calculée** « Résultat reporté (calculé) » doit figurer au
+    /// bilan **présenté** (PDF, CSV) : seulement quand `retained_earnings` est **non nul**.
+    ///
+    /// Correctif `fix-bilan-resultat-reporte` (2026-11-18) : à zéro — aucun exercice
+    /// antérieur tenu dans Kesh, ou résultats antérieurs déjà reportés —, la ligne
+    /// n'apporte rien et se confond avec le compte physique de rôle `RetainedEarnings`
+    /// itemisé juste au-dessus (collision D1, Story 14-3c). Non nulle, elle reste : elle
+    /// signale un résultat d'exercices antérieurs qu'aucune écriture n'a encore reporté.
+    /// Masquer une valeur nulle ne change ni `Total capitaux propres` ni l'équation
+    /// affichée. Le champ `retainedEarnings` du JSON (et `report` du MCP) est, lui,
+    /// **toujours** émis : c'est la donnée, non la présentation. Pendant frontend :
+    /// `showsRetainedEarningsLine` (`reports.api.ts`), tenu en parallèle comme
+    /// `isReportEmpty`.
+    pub fn shows_retained_earnings_line(&self) -> bool {
+        !self.retained_earnings.is_zero()
     }
 }
 
@@ -511,6 +530,17 @@ mod tests {
         );
         assert_eq!(bs.total_equity, Decimal::ZERO);
         assert!(!bs.is_empty(), "equity peuplé ⇒ rapport non vide");
+    }
+
+    /// Correctif `fix-bilan-resultat-reporte` : la ligne calculée n'est présentée que
+    /// non nulle — positive (bénéfice reporté) comme négative (perte reportée).
+    #[test]
+    fn shows_retained_earnings_line_only_when_nonzero() {
+        assert!(!bs_with(vec![], Decimal::ZERO, dec!(500)).shows_retained_earnings_line());
+        // `0.00` (échelle 2, telle que rendue par SQL) est zéro aussi.
+        assert!(!bs_with(vec![], dec!(0.00), dec!(500)).shows_retained_earnings_line());
+        assert!(bs_with(vec![], dec!(0.01), Decimal::ZERO).shows_retained_earnings_line());
+        assert!(bs_with(vec![], dec!(-600), Decimal::ZERO).shows_retained_earnings_line());
     }
 
     #[test]

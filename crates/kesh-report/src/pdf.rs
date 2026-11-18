@@ -707,13 +707,18 @@ pub fn render_balance_sheet_pdf(
         }
         draw_account_row(&mut builder, ab);
     }
+    // « Résultat reporté (calculé) » omise à zéro (`shows_retained_earnings_line`,
+    // correctif fix-bilan-resultat-reporte) ; « Résultat de l'exercice » toujours.
     for (label, amount) in [
-        (
+        bs.shows_retained_earnings_line().then_some((
             &ctx.section_labels.retained_result_label,
             bs.retained_earnings,
-        ),
-        (&ctx.section_labels.equity_result_label, bs.equity_result),
-    ] {
+        )),
+        Some((&ctx.section_labels.equity_result_label, bs.equity_result)),
+    ]
+    .into_iter()
+    .flatten()
+    {
         builder.ensure_space_for_row();
         let y = builder.cursor_y;
         let layer = builder.current_layer();
@@ -2441,6 +2446,39 @@ mod tests {
             with_equity.len(),
             truly_empty.len()
         );
+    }
+
+    /// Correctif fix-bilan-resultat-reporte — la ligne calculée « Résultat reporté
+    /// (calculé) » n'est dessinée que **non nulle** ; « Résultat de l'exercice » l'est
+    /// toujours, et le total des capitaux propres ne change pas.
+    #[test]
+    fn balance_sheet_pdf_omits_the_calculated_retained_line_only_when_zero() {
+        let ctx = PdfContext::fr_ch_default("CI Test Company");
+        let label = &ctx.section_labels.retained_result_label;
+
+        // Nulle (premier exercice tenu dans Kesh) : absente.
+        let zero = pdf_text(&render_balance_sheet_pdf(&fixture_bs(false), &ctx).unwrap());
+        assert!(!zero.iter().any(|t| t == label), "{zero:?}");
+        assert!(
+            zero.iter()
+                .any(|t| t == &ctx.section_labels.equity_result_label),
+            "{zero:?}"
+        );
+
+        // Non nulle, positive ou négative : présente avec son montant.
+        for (retained, shown) in [(dec!(250), "250.00"), (dec!(-250), "-250.00")] {
+            let mut bs = fixture_bs(false);
+            bs.retained_earnings = retained;
+            bs.equity_result -= retained;
+            let t = pdf_text(&render_balance_sheet_pdf(&bs, &ctx).unwrap());
+            let at = t
+                .iter()
+                .position(|x| x == label)
+                .unwrap_or_else(|| panic!("ligne calculée attendue pour {retained} : {t:?}"));
+            assert_eq!(t[at + 1], shown, "{t:?}");
+            // Total capitaux propres identique au cas nul : 0 + report + résultat.
+            assert!(t.iter().any(|x| x == "734.56"), "{t:?}");
+        }
     }
 
     #[test]
