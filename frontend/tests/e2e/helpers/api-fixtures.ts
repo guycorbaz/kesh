@@ -463,10 +463,15 @@ export async function createExpenseEntryViaApi(
 	}
 }
 
-/** Story 43-3 — les deux comptes désignés qui préremplissent le compte de l'écart. */
+/**
+ * Story 43-3 — les deux comptes désignés qui préremplissent le compte de l'écart, et l'arrondi à
+ * 5 centimes des pièces émises (posé par le seed : il ramène le reste dû d'une facture à un
+ * multiple de 5 centimes, et aucun reste à fraction de centime ne se forme).
+ */
 export interface DesignatedAccounts {
 	defaultRoundingAccountId: number | null;
 	defaultBankFeesAccountId: number | null;
+	roundTo5Centimes?: boolean;
 }
 
 /**
@@ -485,6 +490,7 @@ export async function setDesignatedAccountsViaApi(
 		const before: DesignatedAccounts = {
 			defaultRoundingAccountId: settings.defaultRoundingAccountId ?? null,
 			defaultBankFeesAccountId: settings.defaultBankFeesAccountId ?? null,
+			roundTo5Centimes: settings.roundTo5Centimes,
 		};
 		const put = await ctx.put('/api/v1/company/invoice-settings', {
 			data: { ...settings, ...accounts },

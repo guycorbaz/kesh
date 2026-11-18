@@ -6,9 +6,7 @@
  * frontière HTTP jusqu'à `POST /reconciliation/accept` (`invoice_group`, `supplier_invoice_group`),
  * et la recherche (`GET …/group-candidates`) en revenir (`CLAUDE.md`, § *E2E*).
  *
- * ⏳ **EN ATTENTE** (`test.describe.fixme`) tant que l'API de la 43-2 n'est pas dans la branche :
- * le spec est écrit sur son contrat et se joue sur la branche réunie (43-1a et 43-2 fusionnées),
- * fiche 43-3, § *Planning*. Retirer le `fixme` à ce moment-là.
+ * Se joue sur la branche réunie (43-1a, 43-1b et 43-2 fusionnées), fiche 43-3, § *Planning*.
  *
  * ⚠️ **Montants et références UNIQUES à chaque exécution** (patron de
  * `reconciliation-link.spec.ts`) : prix des factures et contreparties tirés de l'horloge. En
@@ -104,8 +102,10 @@ async function clientInvoice(
 	const { id } = (await created.json()) as { id: number };
 	const validated = await ctx.post(`/api/v1/invoices/${id}/validate`);
 	expect(validated.ok(), `validation : ${validated.status()}`).toBeTruthy();
-	const inv = (await validated.json()) as { invoiceNumber: string; totalAmount: string };
-	return { id, number: inv.invoiceNumber, total: inv.totalAmount };
+	const inv = (await validated.json()) as { invoiceNumber: string };
+	// Le reste dû (TTC) lu sur la fiche : `totalAmount` est le HT (`routes/invoices.rs`).
+	const fiche = (await (await ctx.get(`/api/v1/invoices/${id}`)).json()) as { amountDue: string };
+	return { id, number: inv.invoiceNumber, total: fiche.amountDue };
 }
 
 /** Un relevé saisi à la main d'une seule ligne de crédit (patron de `createManualDebitStatementViaApi`). */
@@ -200,7 +200,7 @@ async function cleanup(ctx: APIRequestContext, txId: number, importId: number) {
 	await ctx.delete(`/api/v1/bank-imports/${importId}`);
 }
 
-test.describe.fixme('Règlement groupé — l’écran (Story 43-3, #823)', () => {
+test.describe('Règlement groupé — l’écran (Story 43-3, #823)', () => {
 	let before: DesignatedAccounts | null = null;
 	let fees: Account;
 	let rounding: Account;
@@ -217,6 +217,8 @@ test.describe.fixme('Règlement groupé — l’écran (Story 43-3, #823)', () =
 		before = await setDesignatedAccountsViaApi(page, {
 			defaultRoundingAccountId: rounding.id,
 			defaultBankFeesAccountId: fees.id,
+			// Sans arrondi des pièces à 5 centimes : le reste dû suit les lignes (cas 20.01).
+			roundTo5Centimes: false,
 		});
 	});
 
@@ -531,6 +533,235 @@ test.describe.fixme('Règlement groupé — l’écran (Story 43-3, #823)', () =
 		} finally {
 			await cleanup(ctx, txId, importId);
 			await disposeContextSafe(ctx);
+		}
+	});
+
+	// ---------------------------------------------------------------------------------------
+	// Les états de l'écran (AC8). Le décor est réel ; les états fugaces ou rares — chargement,
+	// `hasMore`, `direction: null`, refus du serveur, réglages altérés — sont obtenus en
+	// interceptant UNE réponse (`page.route`), le reste traversant la frontière HTTP.
+	// ---------------------------------------------------------------------------------------
+
+	test('états de la recherche : chargement, hasMore, aucun résultat, aucune facture à proposer', async ({
+		page,
+	}, testInfo) => {
+		const s = await clientScene(page, 'recherche', 0);
+		let mode: 'lent' | 'hasMore' | 'vide' | 'sansSens' = 'lent';
+		const verrou = { relacher: () => {} };
+		await page.route('**/group-candidates**', async (route) => {
+			const reponse = await route.fetch();
+			const corps = (await reponse.json()) as Record<string, unknown>;
+			if (mode === 'lent') {
+				await new Promise<void>((res) => (verrou.relacher = res));
+				return route.fulfill({ response: reponse, json: corps });
+			}
+			if (mode === 'hasMore') return route.fulfill({ response: reponse, json: { ...corps, hasMore: true } });
+			if (mode === 'vide') {
+				return route.fulfill({ response: reponse, json: { ...corps, candidates: [], hasMore: false } });
+			}
+			return route.fulfill({
+				response: reponse,
+				json: { ...corps, direction: null, candidates: [], hasMore: false },
+			});
+		});
+		try {
+			const { modal } = await openGroup(page, s.bankAccountId, s.txId);
+			await expect(modal.getByTestId('group-loading')).toHaveText('Recherche…');
+			await modal.screenshot({ path: capturePath(testInfo, '43-3-chargement') });
+			mode = 'hasMore';
+			verrou.relacher();
+			await modal.getByTestId('group-search-input').fill(s.fa.number);
+			await expect(modal.getByTestId('group-has-more')).toBeVisible();
+			await modal.screenshot({ path: capturePath(testInfo, '43-3-has-more') });
+			mode = 'vide';
+			await modal.getByTestId('group-search-input').fill('zzz');
+			await expect(modal.getByTestId('group-results-empty')).toBeVisible();
+			await modal.screenshot({ path: capturePath(testInfo, '43-3-aucun-resultat') });
+			mode = 'sansSens';
+			await modal.getByTestId('group-search-input').fill('x');
+			await expect(modal.getByTestId('group-no-direction')).toHaveText(
+				'Aucune facture à proposer pour cette transaction.',
+			);
+			await modal.screenshot({ path: capturePath(testInfo, '43-3-aucune-facture-a-proposer') });
+		} finally {
+			await page.unroute('**/group-candidates**');
+			await cleanup(s.ctx, s.txId, s.importId);
+			await disposeContextSafe(s.ctx);
+		}
+	});
+
+	test('arrondi : seul, avec un écart, et sans compte d’arrondi désigné', async ({ page }, testInfo) => {
+		const unique = `${Date.now()}-arrondi`;
+		const today = todayInZurich();
+		const bankAccountId = await wiredBankAccountViaApi(page, TEST_IBAN);
+		const ctx = await authedApiContext(page);
+		const c = await createContactWithAddressViaApi(page, `Arrondi ${unique}`);
+		// 0.3 × 33.33 = 9.999 et 10.00 : 19.999 payés 20.00 → arrondi seul de +0.0010.
+		const f1 = await clientInvoice(ctx, c, '33.33', today, '0.3');
+		const f2 = await clientInvoice(ctx, c, '10.00', today);
+		// 3 × (0.5 × 20.01) = 30.015 payés 30.06 → écart de 0.05 et arrondi de -0.0050.
+		const g = await Promise.all([1, 2, 3].map(() => clientInvoice(ctx, c, '20.01', today, '0.5')));
+		const t1 = await creditStatement(ctx, {
+			bankAccountId,
+			bookingDate: today,
+			amount: '20.00',
+			counterpartyName: `Arrondi ${unique}`,
+			details: `Arrondi seul ${unique}`,
+		});
+		const t2 = await creditStatement(ctx, {
+			bankAccountId,
+			bookingDate: today,
+			amount: '30.06',
+			counterpartyName: `Arrondi ${unique}`,
+			details: `Écart et arrondi ${unique}`,
+		});
+		try {
+			let { modal } = await openGroup(page, bankAccountId, t1.txId);
+			await add(modal, f1.number, f1.id);
+			await add(modal, f2.number, f2.id);
+			await expect(modal.getByTestId('group-gap')).toHaveText('Aucun écart');
+			await expect(modal.getByTestId('group-rounding')).toHaveText(
+				'Arrondi de +0.0010 passé au compte d’arrondi',
+			);
+			await expect(modal.getByTestId('group-submit')).toBeEnabled();
+			await modal.screenshot({ path: capturePath(testInfo, '43-3-arrondi-seul') });
+
+			({ modal } = await openGroup(page, bankAccountId, t2.txId));
+			for (const f of g) await add(modal, f.number, f.id);
+			await expect(modal.getByTestId('group-gap')).toHaveText('Trop-perçu de 0.05');
+			await expect(modal.getByTestId('group-rounding')).toHaveText(
+				'Arrondi de -0.0050 passé au compte d’arrondi',
+			);
+			await modal.screenshot({ path: capturePath(testInfo, '43-3-ecart-et-arrondi') });
+
+			// Sans compte d'arrondi désigné (réglage lu par la modale, réponse altérée).
+			await page.route('**/api/v1/company/invoice-settings', async (route) => {
+				const reponse = await route.fetch();
+				const corps = await reponse.json();
+				await route.fulfill({ response: reponse, json: { ...corps, defaultRoundingAccountId: null } });
+			});
+			({ modal } = await openGroup(page, bankAccountId, t1.txId));
+			await add(modal, f1.number, f1.id);
+			await add(modal, f2.number, f2.id);
+			await expect(modal.getByTestId('group-rounding-not-configured')).toBeVisible();
+			await expect(modal.getByTestId('group-submit')).toBeDisabled();
+			await modal.screenshot({ path: capturePath(testInfo, '43-3-arrondi-sans-compte') });
+		} finally {
+			await page.unroute('**/api/v1/company/invoice-settings');
+			await cleanup(ctx, t1.txId, t1.importId);
+			await cleanup(ctx, t2.txId, t2.importId);
+			await disposeContextSafe(ctx);
+		}
+	});
+
+	test('compte désigné inutilisable : le champ reste vide', async ({ page }, testInfo) => {
+		const s = await clientScene(page, 'inutilisable', -40);
+		await page.route('**/api/v1/company/invoice-settings', async (route) => {
+			const reponse = await route.fetch();
+			const corps = await reponse.json();
+			// Un identifiant qu'aucun compte offert ne porte (archivé ou d'une autre société).
+			await route.fulfill({ response: reponse, json: { ...corps, defaultBankFeesAccountId: 999999 } });
+		});
+		try {
+			const { modal } = await openGroup(page, s.bankAccountId, s.txId);
+			await add(modal, s.fa.number, s.fa.id);
+			await add(modal, s.fb.number, s.fb.id);
+			await expect(modal.getByTestId('group-gap')).toHaveText('Moins-payé de 0.40');
+			await expect(modal.locator('input[aria-autocomplete="list"]')).toHaveValue('');
+			await expect(modal.getByTestId('group-submit')).toBeDisabled();
+			await modal.screenshot({ path: capturePath(testInfo, '43-3-compte-designe-inutilisable') });
+		} finally {
+			await page.unroute('**/api/v1/company/invoice-settings');
+			await cleanup(s.ctx, s.txId, s.importId);
+			await disposeContextSafe(s.ctx);
+		}
+	});
+
+	test('refus du serveur : une phrase par cause du compte de l’écart, et la facture refusée nommée', async ({
+		page,
+	}, testInfo) => {
+		const s = await clientScene(page, 'refus', -40);
+		let refus: { errorCode: string; details: Record<string, unknown> } | null = null;
+		await page.route('**/api/v1/reconciliation/accept', async (route) => {
+			if (!refus) return route.continue();
+			await route.fulfill({
+				json: { accepted: [], failed: [{ bankTransactionId: s.txId, ...refus }] },
+			});
+		});
+		try {
+			const { modal } = await openGroup(page, s.bankAccountId, s.txId);
+			await add(modal, s.fa.number, s.fa.id);
+			await add(modal, s.fb.number, s.fb.id);
+			const causes: [string, string, Record<string, unknown>, string][] = [
+				['banque', 'VALIDATION_ERROR', { reason: 'counterparty_equals_bank_ledger' }, 'compte de la banque'],
+				['introuvable', 'ACCOUNT_NOT_FOUND', { missingAccountIds: [fees.id] }, 'introuvable ou archivé'],
+				[
+					'non-imputable',
+					'ACCOUNT_NOT_POSTABLE',
+					{ rejected: [{ accountId: fees.id, accountNumber: fees.number }] },
+					'n’est pas imputable',
+				],
+				['devise', 'ACCOUNT_IN_FOREIGN_CURRENCY', { accountId: fees.id, currency: 'EUR' }, 'tenu en EUR'],
+			];
+			for (const [nom, errorCode, details, phrase] of causes) {
+				refus = { errorCode, details };
+				await modal.getByTestId('group-submit').click();
+				await expect(modal.getByTestId('group-account-error')).toContainText(phrase);
+				await modal.screenshot({ path: capturePath(testInfo, `43-3-compte-refuse-${nom}`) });
+			}
+			refus = {
+				errorCode: 'RECONCILIATION_INVOICE_NOT_ELIGIBLE',
+				details: { reason: 'invoice_already_paid', invoiceId: s.fb.id, invoiceNumber: s.fb.number },
+			};
+			await modal.getByTestId('group-submit').click();
+			await expect(modal.getByTestId('group-refusal')).toContainText(`Facture ${s.fb.number}`);
+			await expect(
+				modal.locator(`[data-testid="group-imputed-row"][data-invoice-id="${s.fb.id}"]`),
+			).toHaveCount(0);
+			await modal.screenshot({ path: capturePath(testInfo, '43-3-facture-refusee-retiree') });
+		} finally {
+			await page.unroute('**/api/v1/reconciliation/accept');
+			await cleanup(s.ctx, s.txId, s.importId);
+			await disposeContextSafe(s.ctx);
+		}
+	});
+
+	test('annulation d’un groupe refusée : la facture en cause est nommée', async ({ page }, testInfo) => {
+		const s = await clientScene(page, 'annul-refus', 0);
+		try {
+			const r = await s.ctx.post('/api/v1/reconciliation/accept', {
+				data: {
+					bankAccountId: s.bankAccountId,
+					proposals: [{ type: 'invoice_group', bankTransactionId: s.txId, invoiceIds: [s.fa.id, s.fb.id] }],
+				},
+			});
+			expect(((await r.json()) as { accepted: unknown[] }).accepted).toHaveLength(1);
+			// Le motif par facture (avoir sur une facture du groupe) est altéré dans la vue lue.
+			await page.route(`**/api/v1/reconciliation/transactions/${s.txId}`, async (route) => {
+				const reponse = await route.fetch();
+				const corps = await reponse.json();
+				await route.fulfill({
+					response: reponse,
+					json: {
+						...corps,
+						cancellable: false,
+						cancelBlockedBy: 'INVOICE_CREDITED',
+						cancelBlockedInvoice: { kind: 'invoice', id: s.fb.id, number: s.fb.number },
+					},
+				});
+			});
+			await page.goto(`/bank-import/${s.importId}`);
+			const row = page.locator(`[data-testid="detail-tx-row"][data-tx-id="${s.txId}"]`);
+			await row.getByTestId('detail-tx-cancel-reconciliation').click();
+			const dialog = page.getByTestId('reconciliation-cancel-dialog');
+			await expect(dialog.getByTestId('reconciliation-cancel-motif')).toContainText(
+				`Une des factures de ce rapprochement, ${s.fb.number}`,
+			);
+			await dialog.screenshot({ path: capturePath(testInfo, '43-3-annulation-refusee') });
+		} finally {
+			await page.unroute(`**/api/v1/reconciliation/transactions/${s.txId}`);
+			await cleanup(s.ctx, s.txId, s.importId);
+			await disposeContextSafe(s.ctx);
 		}
 	});
 });
