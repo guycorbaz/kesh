@@ -331,7 +331,7 @@ refusé dans l'adresse ; aucune société déjà configurée n'est modifiée, au
 | M7 | `validate_required()` remis | `coordinates_rejects_an_address_…_1226` | `mut-m7.log` |
 | M8 | `contactGen++` de `onContactDraftChange(true)` retiré | AC13 | `mut-m8.log` |
 | M1 (E2E) | idem M1, frontend reconstruit | AC3, ligne 93 (le client d'origine revient) | `e2e-m1.log` |
-| M5 (E2E) | `maxlength={70}` sur la rue, frontend reconstruit | AC5, ligne 144 (la rue relue a 70 caractères) | `e2e-m5.log` |
+| M5 (E2E) | `maxlength={70}` sur la rue, frontend reconstruit | AC5, ligne 144 (le champ ne garde que 70 caractères après le collage ; revue P1, B4) | `e2e-m5.log` |
 | M6 (E2E) | idem M6, backend reconstruit | AC8 b, ligne 83 (pas de toast « (71) ») | `e2e-m6.log` |
 
 **Écart constaté et corrigé** : la première série M1, M2, M3, M8 a rendu « TUÉE » à tort — vitest, lancé avec `--root frontend`
@@ -360,12 +360,17 @@ est trop long (50 caractères au plus). »), `04-brouillon-client-choisi-garde-a
 - **AC8 a** : `git diff … --stat -- frontend/src/routes/onboarding/+page.svelte` → vide : aucune borne copiée dans l'écran.
 - **AC10** : aucune clé i18n (`git diff … --stat -- crates/kesh-i18n frontend/src/lib/shared/i18n-keys.test.ts` vide) : `sitesTotal`
   inchangé ; `git grep -c -E "70 caract" -- docs/manual/fr/user-manual.tex` : `1` à `65fd4efcd`, `3` à `b41df52da`. PDF non régénéré
-  (à la release) : `pdftotext docs/manual/fr/user-manual.pdf - | tr '\n' ' ' | tr -s ' ' | /usr/bin/grep -c 'refusé ensuite par la QR-facture se corrige ainsi'` → `1` (avant ; `0` attendu après régénération) ; `'jamais coupé'` → `0` (avant ; `1` attendu après).
+  (à la release) : `pdftotext docs/manual/fr/user-manual.pdf - | tr '\n' ' ' | tr -s ' ' | /usr/bin/grep -c 'refusé ensuite par la QR-facture se corrige ainsi'` → `1` (avant ; `0` attendu après régénération) ; `'jamais coupé'` → `0` (avant ; `1` attendu après). *Annoté le 2026-11-18 (revue P1, A5) :
+  la phrase de `:1522` revient au présent (`448186f11`) ; la première phrase de contrôle rend donc encore `1` après régénération. Contrôle de
+  la release : `'avant la version 0.20.0 et refusé ensuite'` → `1` (le `~` de LaTeX devient une espace).*
 - Mots-clés de fermeture : `git log origin/epic/48-corrections-0-20-0..HEAD --format=%B | /usr/bin/grep -niE '\b(close[sd]?|fix(e[sd])?|resolve[sd]?) #[0-9]'` → vide.
 
 ### Gates
 
-*Tous au commit `b41df52da`, une commande lourde à la fois, `CARGO_BUILD_JOBS=2`, verrous de voie.*
+*Une commande lourde à la fois, `CARGO_BUILD_JOBS=2`, verrous de voie. **Le gate ciblé a tourné sur l'arbre de travail, avant le
+commit** (ses journaux, de 21 h 16 à 21 h 22, précèdent `b41df52da`, daté de 21 h 22 min 56, et ne nomment aucun commit) ; **les gates
+de review ont tourné au commit `b41df52da`** (journaux postérieurs, arbre propre). Correction de la revue P1 (A1) : la ligne disait
+« Tous au commit `b41df52da` ».*
 
 - **En cours de développement** (gate ciblé) : `cargo fmt --all -- --check` vert (`fmt.log`) ; `cargo clippy --workspace --all-targets -- -D warnings`
   vert (`clippy.log`) ; `cargo nextest run -p kesh-api -E 'binary(onboarding_path_b_e2e) | binary(onboarding_audit_e2e) | binary(fiscal_years_e2e) | binary(textes_coherents) | binary(invoice_pdf_e2e) | binary(company_address_e2e)'`
@@ -376,6 +381,22 @@ est trop long (50 caractères au plus). »), `04-brouillon-client-choisi-garde-a
   - frontend complet : `npm run check` 0 erreur (29 avertissements, aucun dans un fichier touché ; `front-check-review.log`),
     `lint-i18n-ownership` PASS, `test:unit` **278 fichiers, 4624 tests passed**, `build` vert (`front-*-review.log`).
 - **Non lancés** (à la clôture) : E2E complet et `gate-ci` de clôture. Seules les trois specs touchées ont tourné (`e2e-neufs.log`, 8 passed).
+
+### Remédiation de la revue P1 (commit `448186f11`)
+
+- **Gate ciblé, au commit `448186f11`** (arbre propre ; chaque journal porte le commit en tête) : `cargo fmt --all -- --check` vert
+  (`fmt-p1.log`, lancé sur l'arbre juste avant le commit, sans autre changement) ; `clippy -D warnings` vert (`clippy-p1.log`) ;
+  `cargo nextest run -p kesh-api -E 'binary(kesh_api) | binary(onboarding_path_b_e2e) | binary(onboarding_audit_e2e) | binary(fiscal_years_e2e) | binary(textes_coherents) | binary(invoice_pdf_e2e) | binary(company_address_e2e)'`
+  : **934 passed, 5 skipped** (`cible-rust-p1.log` ; `binary(kesh_api)` porte les tests unitaires d'`address_input.rs`) ; Vitest
+  `InvoiceForm.test.ts` et `settings-page.test.ts` : **158 passed** (`cible-vitest-p1.log`) ; `npm run check` 0 erreur (`check-p1.log`).
+- **Non lancé** : la spec `invoice-contact-tardif.spec.ts` modifiée (E8, une ligne d'attente) ; elle tourne à l'E2E complet de clôture.
+- **Tests** : les quatre refus du nom deviennent quatre `#[sqlx::test]` sur l'aide `assert_name_refused` (le test en boucle
+  `coordinates_rejects_a_name_the_qr_bill_refuses_1226` disparaît) : **7** tests `1226` au lieu de 4. Vitest : le cas du téléphone devient
+  deux cas (téléphone, site web), **13** `it` ajoutés par la story au lieu de 12.
+- **Mutations rejouées sur les tests séparés (E7)** : **M6** (`mut-m6-p1.log`) tue les **quatre** tests de refus du nom, chacun pour sa
+  raison ; **M6-bis** (le nom juge `body.name` au lieu du nom composé, `mut-m6bis.log`) tue **seulement**
+  `coordinates_rejects_a_composed_name_over_70_1226` (« « 70 » absent de « Le nom de la société est obligatoire. » ») : le point propre
+  de D5, le nom composé jugé, est prouvé rouge.
 
 ## Change Log
 
@@ -400,3 +421,16 @@ est trop long (50 caractères au plus). »), `04-brouillon-client-choisi-garde-a
   `contacts:1086` n'est plus rattaché à #1336 (il est dans le périmètre de la 48-15) ; les entrées passées du Change Log gardent leurs
   mots. Code au commit `b41df52da` ; rouges, mutations, E2E, captures et gates : Dev Agent Record. Le jeu de caractères de l'adresse à
   l'assistant (défaut trouvé à la fiche, D5) est corrigé ici, sans issue (V1-11). Statut : `review`.
+- **2026-11-18 — revue de code, passe 1** (trois lentilles, contexte frais ; `kesh-gate-logs/e4813/review-p1-{B,E,A}.md`) : **aucun
+  finding au-dessus de LOW** — B 0/0/0/5, E 0/0/0/8, A 0/0/0/5. Décisions de l'orchestrateur :
+  - **corrigés dans la story** (règle « un LOW qui touche la production peut se corriger », suivi d'une passe ciblée), commit de code
+    `448186f11` : **A2** (AC9 a vérifie `200.00`, au lieu de comparer le pied du tableau à lui-même), **A3/B3** (téléphone simulé avec le
+    vrai message du serveur, et un cas neuf pour le site web), **E7** (les quatre refus du nom en quatre tests indépendants, chacun sur
+    sa base, le nom composé d'abord : un rouge ne s'arrête plus au premier cas), **E8** (`await (await reponse).finished()` dans l'E2E de
+    l'AC3), **E4** (`validate_required` privée), **E5/B5/A4** (doc-comments d'`address_input.rs` vrais sur les appelants), **E6**
+    (commentaire du pays, champ libre), **A5** (manuel `:1522` au présent pour une société configurée avant la version 0.20.0) ; au
+    Dev Agent Record, **A1** (le gate ciblé a tourné sur l'arbre de travail, avant le commit) et **B4** (ligne 144 de M5 décrite juste) ;
+  - **en issues, hors story** (ouvertes par l'orchestrateur, une par problème) : B1/E1 (prénom ou nom fait du seul U+00AD) → **#1343** ;
+    B2 (raison sociale saisie avec prénom et nom ignorée sans un mot) → **#1344** ; E3/B2 (message du nom composé : « nom de la société »,
+    nombre qu'aucun champ ne montre) → **#1345** ; E2 (prénom ou nom seul non bornés) → **#1334**, déjà portée par la 48-15.
+  Gate ciblé de la remédiation : Dev Agent Record. La passe ciblée sur `448186f11` est lancée par l'orchestrateur.
