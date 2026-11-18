@@ -1756,6 +1756,33 @@ async fn un_groupe_fournisseur_se_regle(pool: MySqlPool) {
             { "supplierInvoiceId": b, "amount": "80.0000" }
         ])
     );
+    // P3-6 — ce qui est écrit : les factures payées, l'écriture, la transaction
+    // rapprochée (le détail des lignes et du lettrage est prouvé au dépôt par
+    // la 43-1b).
+    let payees: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM supplier_invoices WHERE id IN (?, ?) AND status = 'paid'",
+    )
+    .bind(a)
+    .bind(b)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(payees, 2);
+    let entry = ok["journalEntryId"].as_i64().unwrap();
+    let lignes = ctx
+        .scalaire(
+            "SELECT COUNT(*) FROM journal_entry_lines WHERE entry_id = ?",
+            entry,
+        )
+        .await;
+    assert_eq!(lignes, 3, "banque et deux dettes");
+    let (statut, lien): (String, Option<i64>) =
+        sqlx::query_as("SELECT status, matched_entry_id FROM bank_transactions WHERE id = ?")
+            .bind(tx)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!((statut.as_str(), lien), ("reconciled", Some(entry)));
     // Un crédit est refusé (sonde du sens).
     let credit = ctx.transaction("200.00", "2026-06-20").await;
     let c = ctx.facture_achat("FF-3", "120.00", "2026-06-01").await;
@@ -1779,6 +1806,22 @@ async fn l_ecart_fournisseur(pool: MySqlPool) {
     assert!(ko.is_null(), "{ko}");
     assert_eq!(ok["gap"], "0.40");
     assert_eq!(ok["differenceAccountId"], ctx.frais);
+    // P3-6 — un débit supérieur aux factures : l'écart au **débit** du compte
+    // choisi.
+    assert_eq!(
+        ctx.solde_ligne(ok["journalEntryId"].as_i64().unwrap(), ctx.frais)
+            .await,
+        Some(dec("-0.40"))
+    );
+    let payees: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM supplier_invoices WHERE id IN (?, ?) AND status = 'paid'",
+    )
+    .bind(a)
+    .bind(b)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(payees, 2);
 }
 
 /// Epic 37 — un compte d'écart tenu en devise est refusé
@@ -1804,9 +1847,74 @@ async fn un_compte_d_ecart_en_devise_est_refuse(pool: MySqlPool) {
         json!({ "accountId": en_devise, "currency": "EUR" })
     );
     assert_eq!(ctx.empreinte().await, empreinte, "rien d'écrit");
-    let (ok, ko) = ctx.grouper(tx, &[a, b], Some(ctx.frais)).await;
+    // Sonde : le **même** compte, rendu au CHF (aucune ligne ne le vise
+    // encore), est admis.
+    sqlx::query("UPDATE accounts SET currency = NULL WHERE id = ?")
+        .bind(en_devise)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (ok, ko) = ctx.grouper(tx, &[a, b], Some(en_devise)).await;
     assert!(ko.is_null(), "{ko}");
     assert_eq!(ok["gap"], "-0.40");
+    assert_eq!(ok["differenceAccountId"], en_devise);
+}
+
+/// Revue P3, P3-4 (AC5) — un débit dont le montant exact est retenu par une
+/// facture ouverte d'un lot `generated` **de ce compte** : le `POST` refuse
+/// tout groupe (`RECONCILIATION_SUPPLIER_PAYMENT_HOLD`, garde (d) de
+/// l'unitaire) ; la recherche n'offre donc rien et dit pourquoi
+/// (`heldByPaymentBatch`). Sans le lot, les mêmes factures sont offertes.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn la_recherche_reflete_la_retenue_d_un_lot(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let a = ctx.facture_achat("FF-A", "10.00", "2026-06-01").await;
+    let b = ctx.facture_achat("FF-B", "20.00", "2026-06-01").await;
+    let tx = ctx.transaction("-30.00", "2026-06-20").await;
+    let (s, body) = ctx.candidats(tx, "").await;
+    assert_eq!(s, 200, "{body}");
+    assert_eq!(body["candidates"].as_array().unwrap().len(), 2, "{body}");
+    assert_eq!(body["heldByPaymentBatch"], Value::Null, "{body}");
+
+    // Une facture ouverte de 30.00 dans un lot `generated` du compte.
+    let retenue = ctx.facture_achat("FF-L", "30.00", "2026-06-01").await;
+    let lot = sqlx::query(
+        "INSERT INTO payment_batches (company_id, bank_account_id, status, \
+         requested_execution_date, msg_id, payment_info_id) \
+         VALUES (?, ?, 'generated', '2026-06-19', REPLACE(UUID(), '-', ''), 'P')",
+    )
+    .bind(ctx.company_id())
+    .bind(ctx.bank)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    sqlx::query(
+        "INSERT INTO payment_batch_items (payment_batch_id, supplier_invoice_id, position, \
+         end_to_end_id, amount) VALUES (?, ?, 1, 'E2E', 30)",
+    )
+    .bind(lot)
+    .bind(retenue)
+    .execute(&pool)
+    .await
+    .unwrap();
+    // Le `POST` refuse le groupe…
+    let (_, ko) = ctx.grouper_fournisseur(tx, &[a, b], None).await;
+    assert_eq!(
+        ko["errorCode"], "RECONCILIATION_SUPPLIER_PAYMENT_HOLD",
+        "{ko}"
+    );
+    // … et la recherche ne l'offre plus, en le disant.
+    let (s, body) = ctx.candidats(tx, "").await;
+    assert_eq!(s, 200, "{body}");
+    assert_eq!(body["direction"], "supplier", "{body}");
+    assert_eq!(body["candidates"], json!([]), "{body}");
+    assert_eq!(body["hasMore"], false, "{body}");
+    assert_eq!(
+        body["heldByPaymentBatch"],
+        json!({ "supplierInvoiceId": retenue, "paymentBatchId": lot }),
+        "{body}"
+    );
 }
 
 /// AC7 — la vue et l'annulation d'un groupe fournisseur.
@@ -1853,8 +1961,6 @@ async fn la_vue_et_l_annulation_d_un_groupe_fournisseur(pool: MySqlPool) {
 /// B2 — le type fournisseur : une proposition bien formée sur une transaction
 /// inexistante passe l'extracteur et le pré-vol (`200`,
 /// `BANK_TRANSACTION_NOT_FOUND`), ce qu'un type inconnu ne fait pas (`400`).
-/// P2-5, M2 (Epic 37) — un lot mixte : une `DbError` d'un groupe à côté d'un
-/// groupe réussi.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn le_type_fournisseur_se_desserialise_et_ne_panique_pas(pool: MySqlPool) {
     let ctx = monter(&pool).await;
@@ -1873,13 +1979,24 @@ async fn le_type_fournisseur_se_desserialise_et_ne_panique_pas(pool: MySqlPool) 
         )
         .await;
     assert_refus(s, &b, 400, "VALIDATION_ERROR");
+}
 
-    // P2-5 — un lot mixte : un groupe client qui réussit, puis un groupe dont le
-    // dépôt rend une `DbError` — ses factures portent leur créance sur un
-    // compte tenu en devise dans un exercice mono-devise (état forgé : le
-    // contrôle central refuse l'écriture). M2 : le refus sort par
-    // `fx_failed_proposal` (`MULTI_CURRENCY_DISABLED`), jamais en
-    // `DATABASE_ERROR`. La réussie est écrite et rendue, l'autre n'écrit rien.
+/// P2-5, M2 (Epic 37) — un lot mixte de deux groupes clients : le premier
+/// réussit, le second rend une `DbError` du dépôt. La réussie est écrite et
+/// rendue dans `accepted`, l'autre refusée seule dans `failed`, le lot en `200`.
+///
+/// ⚠️ **État forgé, inatteignable par l'API** : les factures du second groupe
+/// portent leur créance sur un compte passé en devise **après** l'écriture de
+/// vente (`UPDATE accounts SET currency`), ce que l'API refuse
+/// (`ACCOUNT_CURRENCY_LOCKED`, Epic 37). C'est la seule source de `DbError`
+/// déterministe d'un règlement groupé client qui reste : la 43-1b a remplacé le
+/// corps provisoire fournisseur, et le compte d'écart en devise est refusé en
+/// amont (`ACCOUNT_IN_FOREIGN_CURRENCY`). Le contrôle central de l'écriture
+/// refuse alors en `MULTI_CURRENCY_DISABLED` (exercice mono-devise), que la
+/// route rend par `fx_failed_proposal`, jamais en `DATABASE_ERROR`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn un_lot_mixte_garde_une_erreur_de_base_dans_sa_proposition(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
     let x = ctx.facture("M-1", "10.00", "2026-06-01").await;
     let y = ctx.facture("M-2", "20.00", "2026-06-01").await;
     let credit = ctx.transaction("30.00", "2026-06-20").await;
