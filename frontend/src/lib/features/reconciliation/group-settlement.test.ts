@@ -215,7 +215,7 @@ describe('Enregistrer — ce qui le retient (D3)', () => {
 		expect(submitBlock(input({ roundingDesignated: false }))).toBeNull();
 	});
 
-	it('plafond pas encore lu → retenu tant qu’un écart est à borner', () => {
+	it('plafond illisible, deux factures → illisible tant qu’un écart est à borner', () => {
 		expect(submitBlock(input({ maxDifference: null }))).toBe('unreadable');
 		const exact = decompose('800.00', ['500.00', '300.00']);
 		expect(submitBlock(input({ decomposition: exact, maxDifference: null }))).toBeNull();

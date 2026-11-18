@@ -489,6 +489,9 @@
 			return fresh;
 		});
 		notReread = failed;
+		// Revue P3 ciblée (L-A) : relus, les montants de l'écran sont ceux du serveur ; sa demande
+		// d'un compte reposait sur les montants remplacés et ne s'impose plus.
+		if (failed.length === 0) serverWantsAccount = false;
 	}
 
 	/** D5 — un refus de la proposition, selon son genre. */
@@ -505,7 +508,12 @@
 		const text = refusalText(f, sentAccountId);
 		if (RETIRER_SUR.has(f.errorCode)) {
 			const id = refusedInvoiceId(f.details);
-			if (id !== null) imputed = imputed.filter((x) => x.id !== id);
+			if (id !== null) {
+				imputed = imputed.filter((x) => x.id !== id);
+				notReread = notReread.filter((x) => x !== id);
+			}
+			// Revue P3 ciblée (L-A) : les factures ont changé, la demande d'un compte tombe.
+			serverWantsAccount = false;
 			refusals = [text];
 			search(true);
 			return;
@@ -524,15 +532,36 @@
 			// Revue P2 (L-1) : le serveur veut un compte ; le sélecteur s'affiche, même si l'écart
 			// calculé ici reste nul (relecture impossible). Revue P2 (L-2) : la phrase « Choisissez
 			// le compte de l'écart » est déjà dite sous le pied (`account-required`) ; elle ne
-			// se répète pas sous le sélecteur.
-			serverWantsAccount = true;
+			// se répète pas sous le sélecteur. Revue P3 ciblée (L-A) : la demande ne s'impose que
+			// si une facture n'a pas pu être relue ; relus, les montants disent eux-mêmes l'écart.
+			serverWantsAccount = notReread.length > 0;
 			if (showAccount) {
-				if (!blocks.includes('account-required')) {
-					accountError = failedProposalLabel(f.errorCode, f.details, {
-						group: true,
-						differenceAccountId: sentAccountId,
-					});
-				}
+				if (blocks.includes('account-required')) return;
+				// Revue P3 ciblée (L-B) : un compte est déjà dans le champ (choisi et gardé, fiche
+				// D2 bis, ou prérempli) alors que l'envoi n'en portait pas — l'écart y était nul ;
+				// « Choisissez le compte » serait faux, la phrase dit de vérifier ce compte.
+				accountError =
+					differenceAccountId !== null && differenceAccountId !== sentAccountId
+						? i18nMsg(
+								'reconciliation-group-account-check-retry',
+								'Kesh demande un compte pour l’écart : vérifiez le compte choisi, puis enregistrez de nouveau.',
+							)
+						: failedProposalLabel(f.errorCode, f.details, {
+								group: true,
+								differenceAccountId: sentAccountId,
+							});
+				return;
+			}
+			if (notReread.length === 0 && blocks.length === 0) {
+				// Revue P3 ciblée (L-A) : relus, les montants ne demandent aucun compte ; l'écran est
+				// à jour et *Enregistrer* actif — jamais un refus muet.
+				refusals = [
+					...refusals,
+					i18nMsg(
+						'reconciliation-group-reread-retry',
+						'Les restes dus ont été relus : vérifiez l’écart, puis enregistrez de nouveau.',
+					),
+				];
 				return;
 			}
 		}

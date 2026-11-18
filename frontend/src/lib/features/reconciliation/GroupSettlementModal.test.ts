@@ -748,8 +748,76 @@ describe('GroupSettlementModal — refus (D5, AC4)', () => {
 		await fireEvent.click(submit(r));
 		await r.findByTestId('group-account-error');
 		expect(texte(r, 'group-gap')).toBe('Moins-payé de 0.40');
-		expect(texte(r, 'group-account-error')).toBe('Choisissez le compte de l’écart.');
+		// Le champ porte le compte prérempli (6940) : la phrase dit de le vérifier (revue P3 ciblée, L-B).
+		expect(champCompte()?.value).toBe('6940 — Frais bancaires');
+		expect(texte(r, 'group-account-error')).toBe(
+			'Kesh demande un compte pour l’écart : vérifiez le compte choisi, puis enregistrez de nouveau.',
+		);
 		expect(mockApi.getGroupCandidates).toHaveBeenCalledWith(TX, { q: 'F-12', limit: 100 });
+	});
+
+	// Revue P3 ciblée (L-A) : relus avec succès, les montants ramènent l'écart à zéro ; la demande
+	// du serveur reposait sur des montants remplacés — ni sélecteur, ni compte exigé.
+	it('difference_account_required, relecture réussie à écart nul : ni sélecteur ni compte exigé', async () => {
+		serve([inv(12, '500.0000'), inv(15, '300.0000', 'Autre SàRL')]);
+		const { r } = monter(proposal('800.00'));
+		await ajouter(r, 12);
+		await ajouter(r, 15);
+		await waitFor(() => expect(submit(r).disabled).toBe(false));
+		mockApi.acceptProposals.mockResolvedValue({
+			accepted: [],
+			failed: [
+				{
+					bankTransactionId: TX,
+					errorCode: 'RECONCILIATION_GROUP_INVALID',
+					details: { reason: 'difference_account_required', gap: '-0.40' },
+				},
+			],
+		});
+		await fireEvent.click(submit(r));
+		await r.findByTestId('group-refusal');
+		expect(texte(r, 'group-refusal')).toBe(
+			'Les restes dus ont été relus : vérifiez l’écart, puis enregistrez de nouveau.',
+		);
+		expect(texte(r, 'group-gap')).toBe('Aucun écart');
+		expect(r.queryByTestId('group-account-section')).toBeNull();
+		expect(r.queryByTestId('group-block-hint')).toBeNull();
+		expect(submit(r).disabled).toBe(false);
+	});
+
+	// Revue P3 ciblée (L-B) : un compte choisi survit à l'écart nul (fiche D2 bis, C-e433-3) ; le
+	// serveur demande un compte (envoi sans compte), relecture impossible : le sélecteur montre ce
+	// compte, la phrase dit de le vérifier — jamais « Choisissez le compte » sous un champ rempli.
+	it('compte choisi gardé à écart nul, puis compte demandé : la phrase dit de vérifier le compte choisi', async () => {
+		serve([inv(12, '500.0000'), inv(15, '300.0000', 'Autre SàRL'), inv(17, '0.4000')]);
+		const { r } = monter(proposal('800.40'));
+		await ajouter(r, 12);
+		await ajouter(r, 15);
+		await choisirCompte(r, '6970');
+		await waitFor(() => expect(champCompte()?.value).toBe('6970 — Pertes sur débiteurs'));
+		await ajouter(r, 17);
+		expect(texte(r, 'group-gap')).toBe('Aucun écart');
+		await waitFor(() => expect(submit(r).disabled).toBe(false));
+		mockApi.getGroupCandidates.mockRejectedValue({ code: 'DATABASE_ERROR', message: 'x', status: 500 });
+		mockApi.acceptProposals.mockResolvedValue({
+			accepted: [],
+			failed: [
+				{
+					bankTransactionId: TX,
+					errorCode: 'RECONCILIATION_GROUP_INVALID',
+					details: { reason: 'difference_account_required', gap: '-0.40' },
+				},
+			],
+		});
+		await fireEvent.click(submit(r));
+		await r.findByTestId('group-account-error');
+		expect(champCompte()?.value).toBe('6970 — Pertes sur débiteurs');
+		expect(texte(r, 'group-account-error')).toBe(
+			'Kesh demande un compte pour l’écart : vérifiez le compte choisi, puis enregistrez de nouveau.',
+		);
+		const modale = r.getByTestId('group-settlement-modal').textContent ?? '';
+		expect(modale).not.toContain('Choisissez le compte de l’écart.');
+		expect(submit(r).disabled).toBe(false);
 	});
 
 	it('PERIOD_LOCKED laisse la sélection intacte, avec son libellé', async () => {

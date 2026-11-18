@@ -1119,7 +1119,9 @@ const ATTENDU = {
 	// Remédiation de la revue P1 de la 43-3 : **3466**, relevé par la garde (« expected 3466 to be
 	// 3457 », `kesh-gate-logs/e433/rem1-vitest-1.log`) — causes d'Enregistrer inactif, relecture,
 	// en-tête des factures imputées, écart sans compte à l'annulation, fin d'un groupe fournisseur.
-	sitesTotal: 3466,
+	// Revue P3 ciblée de la 43-3 (L-A, L-B) : **3468**, relevé par la garde (« expected 3468 to be
+	// 3466 », `kesh-gate-logs/e433/rem3-vitest-1.log`) — `reread-retry`, `account-check-retry`.
+	sitesTotal: 3468,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

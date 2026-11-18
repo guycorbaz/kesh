@@ -100,6 +100,26 @@ change. Recherche d'un autre refus de montant (`grep -rhoE "RECONCILIATION_[A-Z_
 seul `RECONCILIATION_AMOUNT_MISMATCH`, propre au règlement d'**une** facture fournisseur (`|tx| = TTC`), que le
 groupe n'émet pas. Aucun code n'est ajouté.
 
+*Revue P3 ciblée (L-A).* La demande du serveur (`serverWantsAccount`) ne s'impose que si une facture n'a pas pu être
+relue : une relecture complète la lève (les montants de l'écran sont alors ceux du serveur), comme tout changement des
+factures (ajout, retrait, facture retirée sur refus). Relue à écart nul, la fenêtre dit « Les restes dus ont été
+relus : vérifiez l'écart, puis enregistrez de nouveau. » — ni sélecteur, ni compte exigé, jamais un refus muet.
+
+*Revue P3 ciblée (L-B) — écart à la consigne, déclaré.* La consigne était de remettre le choix du compte à zéro
+quand l'écart retombe à zéro. Elle contredit la fiche validée (D2 bis, « Choix gardé », P4 L5 : le choix survit
+« si le sélecteur disparaît puis réapparaît ») et C-e433-3, que fige le test « choix gardé ». Retenu, dans le
+périmètre de la fiche : le choix reste ; quand le serveur demande un compte alors que le champ en porte déjà un que
+l'envoi n'a pas porté (écart nul à l'envoi), la phrase sous le sélecteur dit « Kesh demande un compte pour l'écart :
+vérifiez le compte choisi, puis enregistrez de nouveau. » au lieu de « Choisissez le compte de l'écart ». Le cas du
+compte prérempli (relecture qui fait apparaître un écart) prend la même phrase. Remettre le choix à zéro reste
+possible, mais change une règle de la fiche : décision au Project Lead.
+
+*Revue P3 ciblée (L-D) — rédaction laissée telle quelle, noté.* « Retirez-la puis ajoutez-la de nouveau » ne se suit
+que si la recherche courante ramène la facture : `removeInvoice` relance la recherche avec la requête du champ, et
+une facture trouvée par son numéro ne revient pas si l'utilisateur a changé la requête. Le texte reste vrai dans le
+cas courant ; une autre rédaction (« relancez la recherche par son numéro ») ou la remise de la requête au retrait
+sont à trancher avec Guy.
+
 **C-e433-13 — Le « × » du compte de l'écart laisse le champ vide (revue P1, B-L2).** Vider le champ pose le choix
 « aucun compte » (`selectAccount(null)` → `{ byUser: true, accountId: null }`) : le préremplissage ne revient pas,
 le compte est demandé, et *Enregistrer* le dit. La fiche (D2 bis) disait « [le drapeau] se lève si l'utilisateur
