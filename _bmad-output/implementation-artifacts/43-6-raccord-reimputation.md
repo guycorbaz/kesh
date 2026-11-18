@@ -1,6 +1,6 @@
 # Story 43-6 : « Changer le compte analytique » refusé sur une facture réglée en groupe — raccord avec la 42-1 (#823, #1167)
 
-Status: ready-for-dev
+Status: review
 
 *Fiche rédigée le 2026-11-17 au soir par l'agent de rédaction de l'Epic 43 (Opus 5.5), workflow `bmad-create-story`
 (ex-T-R de la 43-1 ; validation P1, M5) ; **récrite dans la nuit** sur les décisions de l'orchestrateur : la 42-2 et la 42-3
@@ -87,30 +87,30 @@ réimputation limitée à la ligne (plutôt qu'un refus) pourra alors être prop
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Tests d'abord** (`crates/kesh-api/tests/project_reassignment_e2e.rs`, helpers `snapshot`, `line_projects`,
+- [x] **T1 — Tests d'abord** (`crates/kesh-api/tests/project_reassignment_e2e.rs`, helpers `snapshot`, `line_projects`,
   `entry_versions`, `audits` ; groupe monté par `kesh_db::repositories::grouped_settlements::settle_invoices_in_tx`, comme
   `admin_full_import_e2e.rs:6487`, ou par la route comme `reconciliation_group_e2e.rs`) :
-  - [ ] AC1 — groupe de deux factures, réimputation de l'une → refus, `details`, empreinte et audit inchangés ;
-  - [ ] AC3 — version périmée sur facture groupée → `OPTIMISTIC_LOCK_CONFLICT` ;
-  - [ ] AC4 — compte visé archivé, compte visé inconnu, exercice clos + Comptable, rien à changer → code de groupe ;
-  - [ ] AC5 — groupe dé-rapproché (`POST /api/v1/reconciliation/transactions/{tx}/cancel`) puis réimputé → `200` ;
-  - [ ] AC2 — les tests existants de la 42-1 passent sans modification.
-- [ ] **T2 — Erreur** : `crates/kesh-db/src/errors.rs`, variante `DbError` neuve (près de `ProjectReassignmentClosedPeriod`,
+  - [x] AC1 — groupe de deux factures, réimputation de l'une → refus, `details`, empreinte et audit inchangés ;
+  - [x] AC3 — version périmée sur facture groupée → `OPTIMISTIC_LOCK_CONFLICT` ;
+  - [x] AC4 — compte visé archivé, compte visé inconnu, exercice clos + Comptable, rien à changer → code de groupe ;
+  - [x] AC5 — groupe dé-rapproché (`POST /api/v1/reconciliation/transactions/{tx}/cancel`) puis réimputé → `200` ;
+  - [x] AC2 — les tests existants de la 42-1 passent sans modification.
+- [x] **T2 — Erreur** : `crates/kesh-db/src/errors.rs`, variante `DbError` neuve (près de `ProjectReassignmentClosedPeriod`,
   :2031) portant `invoice_id` et `journal_entry_id`, et son bras de `code()` (:2511) ; `crates/kesh-api/src/errors.rs`, bras
   du mappage `DbError → réponse` (près de :5643) : `409`, `details { invoiceId, journalEntryId }`, `t("error-project-
   reassignment-grouped-settlement", <repli = valeur fr-CH>)`.
-- [ ] **T3 — Garde** : `project_reassignment.rs`, étape (3) de `reassign_invoice` (la lecture devient
+- [x] **T3 — Garde** : `project_reassignment.rs`, étape (3) de `reassign_invoice` (la lecture devient
   `journal_entry_id, journal_entry_line_id`, le refus tombe avant la lecture des avoirs) ; doc du module (« Ordre des verrous
   et des refus », :17-44) et doc de `reassign_invoice` (:387-408) : l'étape neuve et sa précédence sur « rien à faire ».
-- [ ] **T4 — i18n** : clé `error-project-reassignment-grouped-settlement` dans `crates/kesh-i18n/locales/{fr-CH,de-CH,
+- [x] **T4 — i18n** : clé `error-project-reassignment-grouped-settlement` dans `crates/kesh-i18n/locales/{fr-CH,de-CH,
   it-CH,en-CH}/messages.ftl`, bloc de la 36-16a. Gardes qui jouent : `textes_coherents.rs::les_replis_rust_suivent_le_catalogue`
   (:724) et `le_vocabulaire_analytique_est_compte_analytique` (G25, :2920 : ni « projet », « Projekt », « progett »,
   « project » dans les valeurs, ni « projet » au manuel et dans `api-external.md`) ; `SELECTEURS_RESOLUS_COTE_SERVEUR`
   (`kesh-i18n/src/loader.rs:383`) seulement si le message prend un sélecteur.
-- [ ] **T5 — Écran** : aucun code neuf dans `ProjectReassignDialog.svelte` ; un test dans `ProjectReassignDialog.test.ts`
+- [x] **T5 — Écran** : aucun code neuf dans `ProjectReassignDialog.svelte` ; un test dans `ProjectReassignDialog.test.ts`
   (patron du test « 403 : le message de l'API, sans Confirmer ») prouve l'affichage du message pour ce code ; `sitesTotal`
   (`frontend/src/lib/shared/i18n-keys.test.ts:1153`) recompté, inchangé.
-- [ ] **T6 — Documentation** :
+- [x] **T6 — Documentation** :
   - `docs/api-external.md`, tableau de la route (:628-635) : rangée `PROJECT_REASSIGNMENT_GROUPED_SETTLEMENT | 409,
     details` **entre** `OPTIMISTIC_LOCK_CONFLICT` et « *(rien à faire)* » ; la phrase du `200` (:620) dit qu'une facture
     réglée en groupe est refusée même quand rien ne changerait ;
@@ -121,8 +121,8 @@ réimputation limitée à la ligne (plutôt qu'un refus) pourra alors être prop
     compte analytique d'une facture réglée en groupe est refusé en version~0.19.0 » devient vraie avec la story ; y ajouter
     le renvoi à `\S\ref{sec:reimputation-analytique}` et la levée par l'annulation du rapprochement. **Les deux sites se
     relisent ensemble** (validation P2, V2-1). Seul le manuel FR traite de la réimputation ; PDF non commités.
-- [ ] **T7 — Recette visuelle** (AC7).
-- [ ] **T8 — Gates** du prompt de développement ; mutations déclarées (ci-dessous).
+- [x] **T7 — Recette visuelle** (AC7).
+- [x] **T8 — Gates** du prompt de développement ; mutations déclarées (ci-dessous).
 
 ## Tests et mutations
 
@@ -163,9 +163,83 @@ Petite : prête **mercredi soir** sur une branche de travail réunie.
 
 ### Agent Model Used
 
+Claude Opus 5.5 — deux agents : le premier (Phase A, Phase B jusqu'à `cba56143e`), interrompu à 10 h 46 par
+`systemd-oomd` (station tuée : construction Rust, construction frontend et E2E d'un autre projet ensemble) ; le second,
+la reprise (`kesh-gate-logs/e436/reprise-prompt.md`), de `8a75833ec` au passage en revue.
+
 ### Completion Notes List
 
+- **Code** (commit `600b9d75f`) : variante `DbError::ProjectReassignmentGroupedSettlement { invoice_id, journal_entry_id }`
+  et son code ; bras `409` du mappage avec `details { invoiceId, journalEntryId }` et `t("error-project-reassignment-
+  grouped-settlement", repli fr-CH)` ; dans `reassign_invoice`, la lecture verrouillante de l'étape (3) rend
+  `journal_entry_line_id` et refuse avant la lecture des avoirs (`project_reassignment.rs`, « (3 bis) ») ; doc du module et
+  de la fonction. Clé Fluent dans les quatre locales ; `docs/api-external.md` (phrase du `200`, rangée de l'ordre des refus,
+  tableau général) ; manuel FR, deux sites (§ règlement groupé, *Limites* ; § `sec:reimputation-analytique`, puce neuve).
+  Aucun code neuf à l'écran ; `sitesTotal` inchangé (`3495` à `i18n-keys.test.ts:1153`, fichier non touché par la branche).
+- **Tests** : `project_reassignment_e2e.rs` passe de 27 à 32 `#[sqlx::test]` (`ff79da71c` → `8a75833ec`), sans ligne
+  retirée (AC2) : `a_grouped_settlement_is_refused` (AC1), `a_stale_version_comes_before_the_grouped_refusal` (AC3),
+  `the_grouped_refusal_comes_before_target_and_closed_period` et `a_grouped_invoice_is_refused_even_when_nothing_would_change`
+  (AC4), `an_uncancelled_group_lets_the_invoice_move_again` (AC5). G9 (`les_replis_rust_suivent_le_catalogue`) reçoit la clé
+  (`65c15ff62`). Vitest : `ProjectReassignDialog.test.ts` de 6 à 7 cas. E2E : `project-reassignment.spec.ts` de 4 à 5 tests,
+  le refus réel du serveur à l'écran (`cba56143e`) ; `createManualCreditStatementViaApi` extrait de
+  `reconciliation-group.spec.ts` vers `helpers/api-fixtures.ts` (DRY).
+- **Rouges** (`kesh-gate-logs/e436/rouges.log`, avant la garde) : 5 tests, 3 rouges (AC1, les deux d'AC4), 2 verts attendus
+  (AC3 et AC5 sont des non-régressions sur le code d'origine).
+- **Mutations** (`kesh-gate-logs/e436/mut/`, script `muter-e436.py`, lanceur `run-rust-e436.sh`, restauration
+  `git restore --worktree` + `touch`) — toutes tuées :
+  - M1, garde retirée : AC1 et AC4 rougissent (3 tests) ;
+  - M2a, garde après (7) : AC4 rougit (`404` au lieu du code de groupe ; `200` sur « rien à faire ») ;
+  - M2b, garde après « rien à faire » : AC4 « rien à faire » rougit (`200`) ;
+  - M2c, garde entre (5) et (6) (reprise) : AC4 rougit (`404`, `200`) ;
+  - M2d, garde après (7) et compte visé neutralisé (reprise, isole la période close) : AC4 rougit (`403` au lieu de `409`) ;
+  - M3, garde avant la version : AC3 rougit (code de groupe au lieu de `OPTIMISTIC_LOCK_CONFLICT`) ;
+  - M4 (écran), le code traité comme la période close : le test Vitest rougit ;
+  - M5 (repli Rust divergent du catalogue) : **survivante** avant `65c15ff62` (`M5.log`, G9 ne listait pas la clé), tuée
+    après (`M5-bis.log`).
+  AC5 n'a pas de mutation propre (fiche, « Tests et mutations ») : non-régression déclarée.
+- **Recette visuelle** (AC7) : `/home/gcorbaz/devel/kesh-gate-logs/e436/captures/43-6-refus-groupe.png` — dialogue
+  *Changer le compte analytique* sur une facture réglée en groupe, refus affiché dans `project-reassign-error`, ni
+  avertissement ni *Confirmer* ; thème clair, base jetable de l'E2E (`kesh_e2e_e436`), prise par l'E2E complet. Artefact de
+  la capture pleine page : le voile du dialogue ne couvre que la hauteur de la fenêtre (le bas de la page reste net) —
+  propre à `fullPage: true`, non à l'écran.
+- **Reprise** : bases `kesh_e436`, `kesh_e2e_e436` (voie 2) recréées, migrées (95 migrations du worktree), `kesh_e436`
+  semée ; `kesh_ci_e436` recréée par `gate-ci.sh`. Aucune erreur d'artefact cargo : rien n'a été nettoyé dans `target/`.
+  Attente de mem-guard (mybibli) de 10 h 59 à 11 h 20. Toutes les constructions en `-j 2`, une commande lourde à la fois.
+- **Gates au passage en revue**, tous au commit `8a75833ec` :
+  - `scripts/test-fast.sh --ci`, voie 2 (`kesh-gate-logs/e436/test-fast-reprise.log`) : **6132 tests, 6132 passés**
+    (1 lent), 14 ignorés ;
+  - `scripts/gate-ci.sh kesh_ci_e436`, voie 1 (`gate-ci-reprise.log`) : **6149 passés, 0 échoué, 18 ignorés** ;
+  - frontend (`front-*-reprise.log`) : `check` 0 erreur (29 avertissements, 5 fichiers) ; `lint-i18n-ownership` PASS ;
+    `test:unit` **278 fichiers, 4612 tests passés** ; `build` vert ;
+  - E2E complet, voie 2, port 3436, base recréée vide (`e2e-reprise.log`, script `e2e-complet-e436.sh`) : **481 passés,
+    7 échoués, 17 sautés** ; les sept échecs sont exactement ceux de la KF-029 (#97) de `docs/testing.md` § *Les échecs
+    attendus* (`mode-expert.spec.ts:26`, `:41` ; `onboarding-path-b.spec.ts:65`, `:92` ; `onboarding.spec.ts:57`, `:77`,
+    `:150`) ; le test neuf passe (`project-reassignment.spec.ts:297`).
+  - **Pas encore tourné** : la revue de code ; le `gate-ci` et l'E2E de clôture se rejoueront au dernier commit de code de
+    la boucle de revue.
+
 ### File List
+
+- `crates/kesh-db/src/errors.rs`
+- `crates/kesh-db/src/repositories/project_reassignment.rs`
+- `crates/kesh-api/src/errors.rs`
+- `crates/kesh-api/tests/project_reassignment_e2e.rs`
+- `crates/kesh-api/tests/textes_coherents.rs`
+- `crates/kesh-i18n/locales/fr-CH/messages.ftl`
+- `crates/kesh-i18n/locales/de-CH/messages.ftl`
+- `crates/kesh-i18n/locales/it-CH/messages.ftl`
+- `crates/kesh-i18n/locales/en-CH/messages.ftl`
+- `docs/api-external.md`
+- `docs/manual/fr/user-manual.tex`
+- `frontend/src/lib/features/projects/ProjectReassignDialog.test.ts`
+- `frontend/tests/e2e/helpers/api-fixtures.ts`
+- `frontend/tests/e2e/project-reassignment.spec.ts`
+- `frontend/tests/e2e/reconciliation-group.spec.ts`
+- `_bmad-output/implementation-artifacts/43-6-raccord-reimputation.md`
+- `_bmad-output/implementation-artifacts/43-6-raccord-reimputation-review-prompt-p1.md`
+- `_bmad-output/implementation-artifacts/e0190-choix-autonomes-e436.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- `_bmad-output/planning-artifacts/epic-43-transaction-plusieurs-factures.md` (Phase A)
 
 ## Change Log
 
@@ -182,3 +256,7 @@ Petite : prête **mercredi soir** sur une branche de travail réunie.
   0 MEDIUM, 2 LOW (V2-1 second site du manuel `user-manual.tex:3575-3577` ajouté à T6 ; V2-2 Dev Notes *Verrous*
   reformulées). **Validation terminée** sur cette passe. Tendance : P1 (Opus) 0/0/2/6 → P2 (Sonnet) 0/0/0/2 ;
   aucun reclassement.
+- 2026-11-18 — Développement (`600b9d75f`, `65c15ff62`, `cba56143e`), interrompu à 10 h 46 par le plantage de la station ;
+  reprise : espace de `projects-reassign-open` rétabli dans les quatre catalogues et capture renommée `43-6-refus-groupe`
+  (`8a75833ec`, C-e436-5) ; mutations M2c et M2d ajoutées (C-e436-6) ; gates du passage en revue verts (Dev Agent Record) ;
+  statut `review`. Gate-ci et E2E de clôture à rejouer au dernier commit de code.

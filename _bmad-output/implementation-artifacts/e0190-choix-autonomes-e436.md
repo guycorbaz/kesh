@@ -19,3 +19,17 @@ Autre option : laisser le `200` passer avant — il exigerait de verrouiller les
 
 **C-e436-4 — Phrase de l'épique ajustée** (C-43-11 de `epic-43-transaction-plusieurs-factures.md`) pour la position
 dans l'étape (3) et la précédence ; le reste de C-43-11 inchangé.
+
+**C-e436-5 — Reprise après le plantage de la station (2026-11-18, 10 h 46) : deux retouches au commit `8a75833ec`.**
+(a) L'espace après `=` de `projects-reassign-open` avait disparu dans les quatre `messages.ftl` au commit `600b9d75f`
+(sans effet pour Fluent, mais hors périmètre) : rétabli. (b) La capture de l'E2E prenait le préfixe `36-16a-` du helper
+`capture` de la 42-1 alors que son commentaire annonçait `43-6-refus-groupe` : elle s'écrit désormais par
+`capturePath(testInfo, '43-6-refus-groupe')`, sans toucher au helper (les captures de la 42-1 gardent leur nom). Autre
+option : paramétrer le préfixe du helper — plus large que la story. Réversible.
+
+**C-e436-6 — Deux mutations ajoutées à la reprise, M2c et M2d.** Le test d'ordre aval
+(`the_grouped_refusal_comes_before_target_and_closed_period`) enchaîne ses assertions : sous M2a (garde après l'étape 7)
+il rougit dès la première (`404`, compte inconnu), si bien que le volet « période close » n'était prouvé par aucune
+mutation. M2c (garde entre (5) et (6)) rougit encore sur le compte visé ; M2d (garde après (7) **et** contrôle du compte
+visé neutralisé) isole la période close : `403` au lieu de `409`. Journaux `kesh-gate-logs/e436/mut/M2c.log`, `M2d.log`.
+Autre option : scinder le test en trois — plus de montage, même preuve. Réversible.
