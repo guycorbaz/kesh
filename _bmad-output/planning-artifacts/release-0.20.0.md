@@ -208,7 +208,7 @@ Les huit points ouverts du kickoff sont réglés ; il n'en reste aucun.
 3. **Migration** — orchestrateur : non breaking, colonnes `NOT NULL`, valeurs neutres pour les lignes non chiffrées,
    `CHECK` assouplis par type, `credit_note_lines` comprise ; `kesh_version_min_required` reste à 0.17.6.
 4. **Sous-totaux** — Guy : repoussés à une release ultérieure (justesse HT/TTC et par taux, Beat étant assujetti) ; la
-   49-3 devient `49-3-titres-de-section` ; issue à ouvrir, « sous-totaux de section », milestone « Plus tard ».
+   49-3 devient `49-3-titres-de-section` ; issue #1330 (sous-totaux de section, milestone « Plus tard »).
 5. **Issues de la story de solde** — Guy : #1263, #1262, #1261, #1255 sont au milestone v0.20.0.
 6. **Milestone v0.21.0** — créé (vendredi 2026-12-04) ; #1236 y est.
 7. **Charge de la voie B** — surveillée par l'orchestrateur ; l'ordre de sortie s'applique à la coupure.

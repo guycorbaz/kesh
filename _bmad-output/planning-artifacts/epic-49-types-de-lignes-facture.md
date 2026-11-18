@@ -21,7 +21,7 @@ qu'une suite de lignes chiffrées :
 - **titre de section** : accepté par Guy (« bonne idée »), sans montant ;
 - **sous-total** : accepté sur le principe, mais **repoussé à une release ultérieure** (décision de Guy du 2026-11-18) :
   Beat, contributeur, tient une comptabilité **assujettie à la TVA** ; un sous-total doit être juste en HT et TTC et par
-  taux, ou attendre. Issue à ouvrir par l'orchestrateur, « sous-totaux de section », milestone « Plus tard » ;
+  taux, ou attendre. Issue #1330 (sous-totaux de section, milestone « Plus tard ») ;
 - **réordonnancement** des lignes à la main **avant la validation** (brouillon).
 
 Les **avoirs** reprennent les lignes de commentaire (et les titres) de la facture d'origine. Le **PDF** rend commentaires
@@ -155,8 +155,8 @@ toute la largeur du PDF ; il se place, se déplace (49-2) et se reprend dans un 
 type titre à partir de cette story.
 
 **Sous-totaux : hors de la 0.20.0** (décision de Guy du 2026-11-18). Beat tient une comptabilité assujettie à la TVA : un
-sous-total doit être juste en HT et TTC et par taux, ou attendre. Ils feront l'objet d'une release ultérieure — issue à
-ouvrir par l'orchestrateur, « sous-totaux de section », milestone « Plus tard » ; le sens proposé par #1242 (total de la
+sous-total doit être juste en HT et TTC et par taux, ou attendre. Ils feront l'objet d'une release ultérieure — issue
+#1330 (sous-totaux de section, milestone « Plus tard ») ; le sens proposé par #1242 (total de la
 section, hors total et écritures) y sera repris.
 
 ## Dépendances entre stories et avec l'Epic 48
