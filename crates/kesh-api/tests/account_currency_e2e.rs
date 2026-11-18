@@ -231,7 +231,9 @@ async fn chf_est_normalise_et_une_devise_refusee_en_mono_devise(pool: MySqlPool)
     assert_eq!((st, code(&e)), (409, "MULTI_CURRENCY_DISABLED"), "{e}");
     assert_eq!(e["error"]["details"], json!({}));
 
-    for inconnu in ["XYZ", "US", "éur", ""] {
+    // `BGN`, `HRK` : monnaies retirées, admises pour un cours de change
+    // seulement (correctif `fix-cours-afc-bgn`) — jamais pour un compte.
+    for inconnu in ["XYZ", "US", "éur", "", "BGN", "HRK"] {
         let (st, e) = creer(
             &ctx,
             json!({ "number": "1023", "name": "Banque", "accountType": "Asset", "currency": inconnu }),
