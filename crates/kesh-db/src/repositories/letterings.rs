@@ -1911,6 +1911,17 @@ const SYNC_SUPPLIER_INVOICE_SQL: &str = "SELECT status, purchase_journal_entry_i
      supplier_invoice_number FROM supplier_invoices \
      WHERE id = ? AND company_id = ? FOR UPDATE";
 
+/// La ligne de [`SYNC_SUPPLIER_INVOICE_SQL`] : statut, écriture d'achat,
+/// écriture et ligne de règlement, numéro interne, numéro du fournisseur.
+type SupplierDocumentRow = (
+    String,
+    Option<i64>,
+    Option<i64>,
+    Option<i64>,
+    Option<String>,
+    Option<String>,
+);
+
 /// P2 — la découverte d'une facture fournisseur, **par statut** (C-15-1a2-15) :
 ///
 /// | statut | `C(S)` |
@@ -1927,17 +1938,6 @@ const SYNC_SUPPLIER_INVOICE_SQL: &str = "SELECT status, purchase_journal_entry_i
 /// ⛔ `cancelled` → `None` : l'achat d'une facture annulée reste **possédé** et
 /// la contre-passation l'a lettré `reversal` avec son miroir (15-1a-ii R6) ; le
 /// soumettre à l'étape 2 rendrait [`DbError::Invariant`] sur un état légitime.
-/// La ligne de [`SYNC_SUPPLIER_INVOICE_SQL`] : statut, écriture d'achat,
-/// écriture et ligne de règlement, numéro interne, numéro du fournisseur.
-type SupplierDocumentRow = (
-    String,
-    Option<i64>,
-    Option<i64>,
-    Option<i64>,
-    Option<String>,
-    Option<String>,
-);
-
 async fn discover_supplier_invoice_document(
     tx: &mut Transaction<'_, MySql>,
     company_id: i64,

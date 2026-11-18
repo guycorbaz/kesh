@@ -8,10 +8,12 @@
  */
 
 import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
+import { formatChfBalance } from '$lib/features/bank-accounts/format';
 import type {
 	ClosingCheckCode,
 	EntryReason,
-	NotCheckableReason
+	NotCheckableReason,
+	NotRevaluedAccount
 } from './fiscal-years.types';
 
 /** Le libellé d'un contrôle. */
@@ -33,6 +35,8 @@ export function checkTitle(code: ClosingCheckCode): string {
 			return i18nMsg('fiscal-years-checks-k7-title', 'Exercice suivant');
 		case 'DRAFT_SUPPLIER_INVOICES':
 			return i18nMsg('fiscal-years-checks-k8-title', 'Factures fournisseur en brouillon');
+		case 'FOREIGN_ACCOUNTS_NOT_REVALUED':
+			return i18nMsg('fiscal-years-checks-k9-title', 'Comptes en devise à réévaluer');
 	}
 }
 
@@ -79,7 +83,40 @@ export function checkHelp(code: ClosingCheckCode): string {
 				'fiscal-years-checks-k8-help',
 				'Les factures fournisseur datées dans l’exercice et jamais validées : leur achat n’est pas en comptabilité.'
 			);
+		case 'FOREIGN_ACCOUNTS_NOT_REVALUED':
+			return i18nMsg(
+				'fiscal-years-checks-k9-help',
+				'Chaque compte de bilan en devise doit être réévalué au cours de clôture retenu par la société avant la clôture.'
+			);
 	}
+}
+
+/** Un compte relevé par K9 (Story 37-5) : son écart, ou l'absence de cours de clôture. */
+export function notRevaluedText(a: NotRevaluedAccount): string {
+	const account = `${a.number} ${a.name}`;
+	if (a.reason === 'NOT_POSTABLE') {
+		return i18nMsg(
+			'fiscal-years-checks-k9-not-postable',
+			'{ $account } : compte non imputable portant un solde en devise — rendez-le imputable pour le réévaluer.',
+			{ account }
+		);
+	}
+	if (a.reason === 'RATE_UNAVAILABLE') {
+		return i18nMsg(
+			'fiscal-years-checks-k9-no-rate',
+			'{ $account } : pas de cours de clôture { $currency } — récupérez-le ou saisissez-le à l’écran Cours de change.',
+			{ account, currency: a.currency }
+		);
+	}
+	if (a.delta === null) {
+		return i18nMsg('fiscal-years-checks-k9-out-of-range', '{ $account } : écart hors des limites de calcul.', {
+			account
+		});
+	}
+	return i18nMsg('fiscal-years-checks-k9-delta', '{ $account } : écart de { $delta } à réévaluer.', {
+		account,
+		delta: formatChfBalance(a.delta)
+	});
 }
 
 /** Le motif d'un compte non vérifiable (K3). */

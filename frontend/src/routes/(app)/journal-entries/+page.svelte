@@ -11,6 +11,8 @@
 	import Big from 'big.js';
 	import { i18nMsg } from '$lib/features/onboarding/onboarding.svelte';
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
+	// fx-filtre-comptes : exempté — liste des écritures (libellés, filtre par compte)
+	// et formulaire d'écriture, qui saisit en devise (37-3b, AC-4).
 	import { listProjects } from '$lib/features/projects/projects.api';
 	import type { ProjectResponse } from '$lib/features/projects/projects.types';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
@@ -25,7 +27,10 @@
 	import JournalEntryForm from '$lib/features/journal-entries/JournalEntryForm.svelte';
 	import { getInvoiceSettings } from '$lib/features/invoices/invoices.api';
 	import { fetchCompanyCurrent } from '$lib/features/settings/settings.api';
+	import type { CompanyJson } from '$lib/features/settings/settings.types';
+	import { authState } from '$lib/app/stores/auth.svelte';
 	import { formatSwissAmount } from '$lib/features/journal-entries/balance';
+	import { entryForeignLabels } from '$lib/features/journal-entries/fx-display';
 	// v0172-correctifs (#880) : dates en forme suisse (liste, bandeau du verrou).
 	import { formatSwissDate } from '$lib/features/reports/reports.api';
 	import {
@@ -52,6 +57,17 @@
 	let recoverableAccountId = $state<number | null>(null);
 	// Borne du verrou de période (Story 24-4c, #380) — `null` = aucun verrou.
 	let booksLockedThrough = $state<string | null>(null);
+	// Story 37-3b (AC-2) — réglage multi-devises et comptes de différence de la
+	// société. Si la société ne se lit pas, le mode se déduit des comptes (un compte
+	// en devise n'existe qu'en multi-devises, 37-1) ; les comptes de différence
+	// restent alors inconnus (le bouton d'écart l'explique).
+	let company = $state<CompanyJson | null>(null);
+	const multiCurrency = $derived(
+		company?.multiCurrencyEnabled ?? accounts.some((a) => (a.currency ?? null) !== null)
+	);
+	const canEnterEntries = $derived(
+		authState.currentUser?.role === 'Admin' || authState.currentUser?.role === 'Comptable'
+	);
 	let loading = $state(false);
 
 	// Story 3.4 — pagination + filtres.
@@ -161,8 +177,14 @@
 			.then((s) => (recoverableAccountId = s.defaultVatRecoverableAccountId ?? null))
 			.catch(() => (recoverableAccountId = null));
 		void fetchCompanyCurrent()
-			.then((c) => (booksLockedThrough = c.company.booksLockedThrough))
-			.catch(() => (booksLockedThrough = null));
+			.then((c) => {
+				booksLockedThrough = c.company.booksLockedThrough;
+				company = c.company;
+			})
+			.catch(() => {
+				booksLockedThrough = null;
+				company = null;
+			});
 
 		return () => {
 			debouncedLoad.cancel();
@@ -342,10 +364,18 @@
 			{i18nMsg('journal-entries-title', 'Écritures comptables')}
 		</h1>
 		{#if mode === 'list'}
-			<Button onclick={openCreate}>
-				<Plus class="w-4 h-4 mr-1" />
-				{i18nMsg('journal-entries-new', 'Nouvelle écriture')}
-			</Button>
+			<div class="flex gap-2">
+				{#if multiCurrency && canEnterEntries}
+					<!-- Story 37-3b (AC-2 bis) : l'assistant Conversion. -->
+					<Button variant="outline" href="/journal-entries/conversion" data-testid="journal-entries-conversion">
+						{i18nMsg('journal-entries-conversion-button', 'Conversion de devises')}
+					</Button>
+				{/if}
+				<Button onclick={openCreate}>
+					<Plus class="w-4 h-4 mr-1" />
+					{i18nMsg('journal-entries-new', 'Nouvelle écriture')}
+				</Button>
+			</div>
 		{/if}
 	</div>
 
@@ -356,6 +386,8 @@
 			{projects}
 			{recoverableAccountId}
 			{booksLockedThrough}
+			{multiCurrency}
+			companyFx={company}
 			onSuccess={handleSuccess}
 			onCancel={handleCancel}
 		/>
@@ -561,7 +593,13 @@
 							<td class="py-2 tabular-nums">{entry.entryNumber}</td>
 							<td class="py-2">{formatSwissDate(entry.entryDate)}</td>
 							<td class="py-2">{journalLabel(entry.journal)}</td>
-							<td class="py-2">{entry.description}</td>
+							<td class="py-2">
+								{entry.description}
+								<!-- Story 37-3b (AC-3) : montant en devise, cours et provenance. -->
+								{#each entryForeignLabels(entry) as fx, k (k)}
+									<span class="block text-xs text-muted-foreground" data-testid="journal-entries-row-fx">{fx}</span>
+								{/each}
+							</td>
 							<td class="py-2 text-right tabular-nums">{totalOf(entry)}</td>
 							<!-- ⛔ Story 24-4b (#380) — les deux boutons ✎ et 🗑 sont partis
 							     avec le gel, et le lien qui les remplace n'est pas un lot de

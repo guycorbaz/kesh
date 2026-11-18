@@ -15,20 +15,25 @@ use sqlx::mysql::MySqlPool;
 use sqlx::{MySql, Transaction};
 
 use crate::entities::{
-    AUDIT_ENTITY_ID_NONE, Company, CompanyUpdate, Language, NewAuditLogEntry, NewCompany, OrgType,
+    AUDIT_ENTITY_ID_NONE, Company, CompanyUpdate, CurrencySettingsUpdate, Language,
+    NewAuditLogEntry, NewCompany, OrgType,
 };
 use crate::errors::{DbError, map_db_error};
 use crate::repositories::MAX_LIST_LIMIT;
-use crate::repositories::{api_keys, audit_log, mcp_keys};
+use crate::repositories::{accounts, api_keys, audit_log, mcp_keys};
 
 const FIND_BY_ID_SQL: &str = "SELECT id, name, first_name, last_name, address, address_street, address_building, \
             address_postal_code, address_city, address_country, ide_number, org_type, \
-            accounting_language, instance_language, email, phone, website, is_stub, books_locked_through, version, created_at, updated_at \
+            accounting_language, instance_language, email, phone, website, is_stub, books_locked_through, \
+            multi_currency_enabled, fx_gain_account_id, fx_loss_account_id, fx_transit_account_id, \
+            version, created_at, updated_at \
      FROM companies WHERE id = ?";
 
 const LIST_SQL: &str = "SELECT id, name, first_name, last_name, address, address_street, address_building, \
             address_postal_code, address_city, address_country, ide_number, org_type, \
-            accounting_language, instance_language, email, phone, website, is_stub, books_locked_through, version, created_at, updated_at \
+            accounting_language, instance_language, email, phone, website, is_stub, books_locked_through, \
+            multi_currency_enabled, fx_gain_account_id, fx_loss_account_id, fx_transit_account_id, \
+            version, created_at, updated_at \
      FROM companies ORDER BY id LIMIT ? OFFSET ?";
 
 /// Crée une nouvelle company et retourne l'entité persistée.
@@ -202,9 +207,12 @@ where
 /// Écrit les valeurs de [`insert_stub`] (`Language::Fr` pour les deux
 /// langues), `is_stub = TRUE`, `version = version + 1`, et ramène **chaque
 /// autre colonne** à la valeur qu'elle prend à l'insertion du stub, c'est-à-dire
-/// à son défaut du schéma : `NULL` pour les sept colonnes nullables, `''` pour
-/// les quatre `address_*` textuelles (`NOT NULL DEFAULT ''`), `'CH'` pour
-/// `address_country` et `country`. Cette énumération est **ouverte** par
+/// à son défaut du schéma : `NULL` pour les dix colonnes nullables (dont les
+/// trois comptes de différence de change, Story 37-1), `''` pour les quatre
+/// `address_*` textuelles (`NOT NULL DEFAULT ''`), `'CH'` pour
+/// `address_country` et `country`, `FALSE` pour `multi_currency_enabled` (la
+/// remise à zéro est le seul chemin qui ramène une société en mono-devise :
+/// elle vide aussi comptes, exercices et écritures). Cette énumération est **ouverte** par
 /// nature : ce qui la ferme est le test 5 de la story
 /// (`reset_restores_the_stub_columns_in_place`, `onboarding_audit_e2e.rs`), qui
 /// compare **toutes** les colonnes lues dans `information_schema.COLUMNS` à un
@@ -220,6 +228,8 @@ pub async fn reset_to_stub_in_tx(tx: &mut Transaction<'_, MySql>, id: i64) -> Re
             phone = NULL, website = NULL, books_locked_through = NULL, \
             address_street = '', address_building = '', address_postal_code = '', \
             address_city = '', address_country = 'CH', country = 'CH', \
+            multi_currency_enabled = FALSE, fx_gain_account_id = NULL, \
+            fx_loss_account_id = NULL, fx_transit_account_id = NULL, \
             version = version + 1 \
          WHERE id = ?",
     )
@@ -957,6 +967,183 @@ pub async fn update_in_tx(
     };
 
     Ok(company)
+}
+
+// ---------------------------------------------------------------------------
+// Story 37-1 (AC-3) — le réglage multi-devises
+// ---------------------------------------------------------------------------
+
+/// Écrit le réglage multi-devises de la société (Story 37-1, AC-3, CR-7) et
+/// rend la société à jour — fonction **dédiée** (ne passe pas par
+/// [`update_in_tx`], remplacement complet). Transaction propre, audit
+/// `company.currency_settings_updated` dans la même transaction.
+///
+/// # Ordre des refus (une seule raison)
+///
+/// 1. forme du corps ([`CurrencySettingsUpdate::validate_shape`], avant la
+///    transaction) : `FX_ACCOUNT_INVALID` `missing` / `unexpected` ;
+/// 2. version (`OptimisticLockConflict`), jugée sous le `FOR UPDATE` de
+///    `companies` (non sur une lecture sans verrou comme `update_in_tx`) ;
+/// 3. **no-op** : rien ne change → la société telle quelle, sans bump de
+///    `version` ni audit (KF-004) ;
+/// 4. désactivation d'une société multi-devises → [`DbError::MultiCurrencyIrreversible`]
+///    (A34 : le mode ne se désactive jamais) ;
+/// 5. comptes **changés** ([`accounts::check_fx_accounts_in_tx`]), gains puis
+///    pertes puis conversion → `FX_ACCOUNT_INVALID`. Un compte inchangé devenu
+///    invalide n'empêche pas d'enregistrer l'autre (motif C4).
+///
+/// # Verrous, dans l'ordre global du dépôt
+///
+/// `companies` `FOR UPDATE` → (activation seulement) les exercices de la société
+/// `FOR UPDATE`, dans l'ordre chronologique → réglages de facturation `LOCK IN
+/// SHARE MODE` → comptes désignés `FOR UPDATE` → articles qui les désignent
+/// (lecture verrouillante). Ce n'est pas l'ordre d'une saisie d'écriture
+/// (exercice puis `companies` en partage par la clé étrangère) : l'appelant
+/// rejoue sur interblocage (`retry_on_deadlock`), la transaction étant sûre à
+/// relancer.
+///
+/// # Activation
+///
+/// Passer le mode à `true` passe **tous les exercices ouverts** de la société en
+/// multi-devises, dans la même transaction ; les exercices clos restent
+/// mono-devise pour toujours. Leurs identifiants vont au détail d'audit
+/// (`fiscalYearIds`). **Aucun cours n'est copié** : une société mono-devise n'a
+/// aucun compte en devise (CR-5, U1).
+pub async fn update_currency_settings(
+    pool: &MySqlPool,
+    user_id: i64,
+    company_id: i64,
+    version: i32,
+    changes: CurrencySettingsUpdate,
+) -> Result<Company, DbError> {
+    changes.validate_shape()?;
+
+    let mut tx = pool.begin().await.map_err(map_db_error)?;
+
+    let before = sqlx::query_as::<_, Company>(&format!("{FIND_BY_ID_SQL} FOR UPDATE"))
+        .bind(company_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(map_db_error)?
+        .ok_or(DbError::NotFound)?;
+    if before.version != version {
+        return Err(DbError::OptimisticLockConflict);
+    }
+
+    let current = CurrencySettingsUpdate::of(&before);
+    if current == changes {
+        tx.rollback().await.map_err(map_db_error)?;
+        return Ok(before);
+    }
+    if current.multi_currency_enabled && !changes.multi_currency_enabled {
+        return Err(DbError::MultiCurrencyIrreversible);
+    }
+
+    // Exercices, quand le geste active : verrouillés avant les comptes (ordre
+    // `companies` → exercices → `accounts` de la saisie d'écriture).
+    let activating = !current.multi_currency_enabled && changes.multi_currency_enabled;
+    let mut fiscal_year_ids: Vec<i64> = Vec::new();
+    if activating {
+        let rows: Vec<(i64, String, bool)> = sqlx::query_as(
+            "SELECT id, status, multi_currency FROM fiscal_years \
+             WHERE company_id = ? ORDER BY start_date, id FOR UPDATE",
+        )
+        .bind(company_id)
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(map_db_error)?;
+        fiscal_year_ids = rows
+            .into_iter()
+            .filter(|(_, status, multi)| status == "Open" && !multi)
+            .map(|(id, _, _)| id)
+            .collect();
+    }
+
+    // Comptes changés seulement (motif C4), gains puis pertes puis conversion.
+    let checks: Vec<accounts::FxAccountCheck> = changes
+        .accounts()
+        .into_iter()
+        .zip(current.accounts())
+        .filter_map(|((field, new), (_, old))| match new {
+            Some(id) if new != old => Some(accounts::FxAccountCheck {
+                field,
+                account_id: id,
+                holder_account_id: None,
+            }),
+            _ => None,
+        })
+        .collect();
+    accounts::check_fx_accounts_in_tx(
+        &mut tx,
+        company_id,
+        &checks,
+        accounts::FxAccountLock::ForUpdate,
+    )
+    .await?;
+
+    let rows = sqlx::query(
+        "UPDATE companies SET multi_currency_enabled = ?, fx_gain_account_id = ?, \
+         fx_loss_account_id = ?, fx_transit_account_id = ?, version = version + 1 \
+         WHERE id = ? AND version = ?",
+    )
+    .bind(changes.multi_currency_enabled)
+    .bind(changes.fx_gain_account_id)
+    .bind(changes.fx_loss_account_id)
+    .bind(changes.fx_transit_account_id)
+    .bind(company_id)
+    .bind(version)
+    .execute(&mut *tx)
+    .await
+    .map_err(map_db_error)?
+    .rows_affected();
+    if rows == 0 {
+        // Défensif : la ligne est tenue `FOR UPDATE` depuis la lecture.
+        return Err(DbError::OptimisticLockConflict);
+    }
+
+    if !fiscal_year_ids.is_empty() {
+        let placeholders = std::iter::repeat_n("?", fiscal_year_ids.len())
+            .collect::<Vec<_>>()
+            .join(",");
+        let sql = format!(
+            "UPDATE fiscal_years SET multi_currency = TRUE \
+             WHERE company_id = ? AND id IN ({placeholders})"
+        );
+        let mut query = sqlx::query(&sql).bind(company_id);
+        for id in &fiscal_year_ids {
+            query = query.bind(id);
+        }
+        query.execute(&mut *tx).await.map_err(map_db_error)?;
+    }
+
+    audit_log::insert_in_tx(
+        &mut tx,
+        NewAuditLogEntry::user(
+            user_id,
+            "company.currency_settings_updated",
+            "company",
+            company_id,
+            Some(json!({
+                "before": current,
+                "after": changes,
+                "fiscalYearIds": fiscal_year_ids,
+            })),
+        ),
+    )
+    .await?;
+
+    let after = sqlx::query_as::<_, Company>(FIND_BY_ID_SQL)
+        .bind(company_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(map_db_error)?
+        .ok_or_else(|| {
+            DbError::Invariant(format!(
+                "company {company_id} introuvable après UPDATE réussi"
+            ))
+        })?;
+    tx.commit().await.map_err(map_db_error)?;
+    Ok(after)
 }
 
 // ---------------------------------------------------------------------------

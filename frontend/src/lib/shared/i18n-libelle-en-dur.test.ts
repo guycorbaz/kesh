@@ -343,6 +343,47 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
  * additionné ; seule déclaration neuve du diff de la story à porter un suffixe `Label`, `Text`
  * ou `Display`.
  *
+ * **92 → 93, et la déclaration est NOMMÉE** (Story 37-1, AC-7) : `accountOptionLabel`
+ * (`lib/features/settings/CurrencySettingsSection.svelte`), numéro et nom du compte,
+ * « (archivé) » par `i18nMsg` (`settings-invoicing-account-archived`) — aucun littéral rendu :
+ * `conforme` **78 → 79** ; `ecartee` ne bouge pas. Relevé par la garde (`expected 93 to be
+ * 92`), non additionné ; seule déclaration neuve du diff de la phase écrans de la story à
+ * porter un suffixe `Label`, `Text` ou `Display`.
+ *
+ * **93 → 94, et la déclaration est NOMMÉE** (Story 37-1, AC-11) : `fyProblemText`
+ * (`routes/onboarding/+page.svelte`), le motif qui désactive les boutons de la dernière page
+ * de l'assistant — ses deux branches passent par `msg` (relais d'`i18nMsg`) : aucun littéral
+ * rendu, `conforme` **79 → 80** ; `ecartee` ne bouge pas. Relevé par la garde (`expected 94 to
+ * be 93`), non additionné ; seule déclaration neuve de la phase C à porter un suffixe `Label`,
+ * `Text` ou `Display`.
+ *
+ * **94 → 106, et les douze déclarations sont NOMMÉES** (Story 37-2, AC-6, écran *Cours de
+ * change*) : dans `lib/features/exchange-rates/exchange-rates-labels.ts`, `mentionText`,
+ * `arrowLabel`, `notFetchableText`, `fetchFailureText`, `fetchErrorCodeText`, `kindText`,
+ * `unitLongText`, `statusText` (textes par `i18nMsg`, ou le message du serveur par
+ * `errorMessageOf`, ou une donnée : le code brut inconnu) ; dans `exchange-rates-grid.ts`,
+ * `monthLabel`, `monthLongLabel`, `unitLabel` (`Intl.DateTimeFormat` ou `formatSwissDate` :
+ * des données) ; dans `ExchangeRatesScreen.svelte`, `linkedLabel` (une donnée ou `null`).
+ * Aucun littéral rendu : `conforme` **80 → 92** ; `ecartee` ne bouge pas. Relevé par la garde
+ * (`expected 106 to be 94`), non additionné.
+ *
+ * **106 → 112, et les six déclarations sont NOMMÉES** (Story 37-3b, écritures en devise à
+ * l'écran) : `rateSourceLabel` et `foreignLineLabel` (`lib/features/journal-entries/fx-display.ts`,
+ * textes par `i18nMsg` et données), `monthLabel` (`fx-refusals.ts`, une donnée reformatée),
+ * `openingProvenanceLabel` (`lib/features/opening-balances/opening-fx.ts`, textes par
+ * `i18nMsg`), `accountLabel` (`ConversionAssistant.svelte`, numéro et nom du compte : des
+ * données) — `conforme` **92 → 97** — et `indicatorLabel` (`JournalEntryForm.svelte`,
+ * textes par `i18nMsg`, et `''` pour une ligne sans devise, neutre) — `ecartee` **14 → 15**.
+ * Relevé par la garde (`expected 112 to be 106`), non additionné.
+ *
+ * **112 → 116, et les quatre déclarations sont NOMMÉES** (Story 37-5, réévaluation de fin
+ * d'exercice ; 106 → 110 sur sa branche avant la fusion de la 37-3b) : dans
+ * `lib/features/fiscal-years/revaluation.helpers.ts`, `sourceLabel`, `kindLabel` et
+ * `originLabel` (textes par `i18nMsg`, et la chaîne vide neutre quand il n'y a rien à dire :
+ * `ecartee` **15 → 18**) ; dans `closing-checks-labels.ts`, `notRevaluedText` (textes par
+ * `i18nMsg` seulement : `conforme` **97 → 98**). Relevé par la garde après la fusion, non
+ * additionné.
+ *
  * **92 → 95, et les déclarations sont NOMMÉES** (Story 36-17, #1187) : dans
  * `lib/features/onboarding/OnboardingDone.svelte`, `orgTypeLabel` (le type d'organisation du
  * récapitulatif : chaque branche par `i18nMsg`, la valeur inconnue rendue telle quelle) et
@@ -351,8 +392,12 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
  * de chaque langue dans sa propre langue, qui ne se traduit pas — aucun `return` d'un
  * littéral). `conforme` **78 → 81** ; `ecartee` ne bouge pas. Relevé par la garde
  * (`expected 95 to be 92`, `kesh-gate-logs/e36-17/front-test-unit-1.log`), non additionné.
+ *
+ * **Intégration de main (v0.18.0) dans l'Epic 37** (2026-11-17) : **119**, relevé par la garde après
+ * la fusion (`expected 119 to be 0`, `kesh-gate-logs/integration-main-37/vitest-1.log`), non
+ * additionné — 92 + 24 (Epic 37) + 3 (Story 36-17) ; `ecartee` **18**, `conforme` **101**.
  */
-const CANDIDATES_ATTENDUES = 95;
+const CANDIDATES_ATTENDUES = 119;
 
 /** Les trois délimiteurs de littéral en JS/TS. */
 const QUOTES = ["'", '"', '`'];
@@ -869,7 +914,7 @@ describe('libellés en dur — l’angle mort #255', () => {
 			else if (c.retours.length > 0) classes.ecartee += 1;
 			else classes.conforme += 1;
 		}
-		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 14, conforme: 81 });
+		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 18, conforme: 101 });
 		// La somme est recalculée depuis les classes, jamais depuis le total qu'elle contrôle.
 		const somme = Object.values(classes).reduce((a, b) => a + b, 0);
 		expect(somme).toBe(CANDIDATES_ATTENDUES);

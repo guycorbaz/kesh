@@ -9,8 +9,11 @@ use axum::{Extension, Json};
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 
-use kesh_db::entities::account::{Account, AccountRole, AccountType, AccountUpdate, NewAccount};
-use kesh_db::errors::{DbError, map_db_error};
+use kesh_db::entities::account::{
+    Account, AccountRole, AccountType, AccountUpdate, CurrencyChange, NewAccount, OwnFxAccounts,
+    OwnFxAccountsChange,
+};
+use kesh_db::errors::{DbError, FxAccountField, FxAccountReason, map_db_error};
 use kesh_db::repositories::{accounts, letterings};
 
 use crate::AppState;
@@ -44,10 +47,94 @@ pub struct CreateAccountRequest {
     /// Postabilité (Story 14-3a) — optionnel, `true` par défaut.
     #[serde(default = "default_true")]
     pub postable: bool,
+    /// Devise (Story 37-1, AC-4), code ISO 4217 ; absente ou `null` = CHF.
+    /// `"CHF"` (toute casse) est normalisé en CHF avant tout contrôle.
+    #[serde(default)]
+    pub currency: Option<String>,
+    /// Compte de gains de change propre (Story 37-1, AC-4 bis) ; absent = par
+    /// défaut. Va avec [`Self::fx_loss_account_id`].
+    #[serde(default)]
+    pub fx_gain_account_id: Option<i64>,
+    /// Compte de pertes de change propre (Story 37-1, AC-4 bis).
+    #[serde(default)]
+    pub fx_loss_account_id: Option<i64>,
 }
 
 fn default_true() -> bool {
     true
+}
+
+/// Normalise une devise reçue (Story 37-1, AC-4) : `trim`, majuscules ASCII,
+/// `CHF` → `None` (devise principale), code hors liste ISO 4217 →
+/// `CURRENCY_UNKNOWN` (400). Avant tout autre contrôle de devise.
+///
+/// La valeur refusée est reprise dans le message et les `details` : elle est
+/// **tronquée** à [`CURRENCY_ECHO_MAX`] caractères, une saisie illimitée ne
+/// revenant pas deux fois dans la réponse (revue de code P1, 37-1-CR-P1-1).
+fn normalize_currency(raw: &str) -> Result<Option<String>, AppError> {
+    kesh_core::currency::normalize_foreign_currency(raw)
+        .map(|code| code.map(String::from))
+        .map_err(|_| {
+            AppError::Database(DbError::CurrencyUnknown {
+                value: raw.chars().take(CURRENCY_ECHO_MAX).collect(),
+            })
+        })
+}
+
+/// Nombre maximal de caractères d'une devise refusée repris dans la réponse
+/// (`CURRENCY_UNKNOWN`) : un code ISO 4217 en compte trois.
+const CURRENCY_ECHO_MAX: usize = 32;
+
+/// Le refus de forme des comptes propres (Story 37-1, AC-4 bis) : l'un sans
+/// l'autre → `FX_ACCOUNT_INVALID` `missing` sur le champ manquant, avant la
+/// transaction.
+fn own_fx_missing(missing_gain: bool, holder_account_id: Option<i64>) -> AppError {
+    AppError::Database(DbError::FxAccountInvalid {
+        field: if missing_gain {
+            FxAccountField::Gain
+        } else {
+            FxAccountField::Loss
+        },
+        reason: FxAccountReason::Missing,
+        holder_account_id,
+    })
+}
+
+/// Comptes propres d'une création : les deux, ou aucun.
+fn own_fx_for_create(
+    gain: Option<i64>,
+    loss: Option<i64>,
+) -> Result<Option<OwnFxAccounts>, AppError> {
+    match (gain, loss) {
+        (None, None) => Ok(None),
+        (Some(gain), Some(loss)) => Ok(Some(OwnFxAccounts { gain, loss })),
+        (None, Some(_)) => Err(own_fx_missing(true, None)),
+        (Some(_), None) => Err(own_fx_missing(false, None)),
+    }
+}
+
+/// Comptes propres d'une modification (trois états, Story 37-1, AC-4 bis) :
+/// les deux absents = inchangés ; les deux `null` = par défaut ; les deux
+/// posés = comptes propres ; toute autre forme → `missing`.
+fn own_fx_for_update(
+    gain: Option<Option<i64>>,
+    loss: Option<Option<i64>>,
+    holder_account_id: i64,
+) -> Result<OwnFxAccountsChange, AppError> {
+    match (gain, loss) {
+        (None, None) => Ok(OwnFxAccountsChange::Unchanged),
+        (Some(None), Some(None)) => Ok(OwnFxAccountsChange::Company),
+        (Some(Some(gain)), Some(Some(loss))) => {
+            Ok(OwnFxAccountsChange::Own(OwnFxAccounts { gain, loss }))
+        }
+        // Le gain posé (perte absente ou `null`), ou le gain `null` et la perte
+        // absente : c'est la perte qui manque.
+        (Some(Some(_)), _) | (Some(None), None) => {
+            Err(own_fx_missing(false, Some(holder_account_id)))
+        }
+        // Le gain absent, ou `null` face à une perte posée.
+        _ => Err(own_fx_missing(true, Some(holder_account_id))),
+    }
 }
 
 /// Désérialise un champ en distinguant **absent** de **`null`**.
@@ -107,6 +194,24 @@ pub struct UpdateAccountRequest {
     /// confirmation explicite du dépôt, qu'il ne faut pas doubler d'un second.
     #[serde(default)]
     pub confirm_account_retype: bool,
+    /// Devise (Story 37-1, AC-4) : `None` = champ **absent** → devise
+    /// **inchangée** ; `Some(None)` = `null` → CHF ; `Some(Some(code))` = devise.
+    ///
+    /// ⚠️ **Pas de 400 sur l'absence, à la différence de `role`** : le motif du
+    /// full-replace est d'éviter l'effacement silencieux d'une donnée ; ici
+    /// « absent = inchangé » n'efface rien, et un 400 casserait tout client
+    /// mono-devise qui ne connaît pas le champ. L'absence se résout dans le
+    /// dépôt, sous le `FOR UPDATE` du compte.
+    #[serde(default, deserialize_with = "present_or_null")]
+    pub currency: Option<Option<String>>,
+    /// Compte de gains de change propre (Story 37-1, AC-4 bis), mêmes trois
+    /// états que `currency` (absent = inchangé, `null` = par défaut) ; va avec
+    /// [`Self::fx_loss_account_id`].
+    #[serde(default, deserialize_with = "present_or_null")]
+    pub fx_gain_account_id: Option<Option<i64>>,
+    /// Compte de pertes de change propre (Story 37-1, AC-4 bis).
+    #[serde(default, deserialize_with = "present_or_null")]
+    pub fx_loss_account_id: Option<Option<i64>>,
     pub version: i32,
 }
 
@@ -152,6 +257,22 @@ pub struct AccountResponse {
     /// passif, et désigné par aucun compte bancaire — archivé compris. Calculé
     /// par la seule règle `letterings::is_letterable`.
     pub letterable: bool,
+    /// Devise du compte (Story 37-1, AC-4), code ISO 4217 ; **absente** pour
+    /// un compte en CHF (C-37-9 : le JSON reste identique en mono-devise).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub currency: Option<String>,
+    /// La devise est verrouillée : le compte porte au moins une ligne
+    /// d'écriture (Story 37-1, AC-4). **Absent** quand `false`.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub currency_locked: bool,
+    /// Compte de gains de change propre (Story 37-1, AC-4 bis) ; absent pour
+    /// un compte « par défaut ».
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fx_gain_account_id: Option<i64>,
+    /// Compte de pertes de change propre (Story 37-1, AC-4 bis) ; absent pour
+    /// un compte « par défaut ».
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fx_loss_account_id: Option<i64>,
     pub version: i32,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
@@ -160,8 +281,10 @@ pub struct AccountResponse {
 impl AccountResponse {
     /// `letterable` ne se déduit pas de l'entité seule (un compte bancaire peut
     /// le désigner) : l'appelant le lit par `letterings::is_letterable_account`
-    /// (une réponse) ou `letterings::letterable_account_ids` (la liste).
-    pub fn new(a: Account, letterable: bool) -> Self {
+    /// (une réponse) ou `letterings::letterable_account_ids` (la liste). De même
+    /// `currency_locked` (Story 37-1) : `accounts::is_currency_locked` ou
+    /// `accounts::currency_locked_account_ids`.
+    pub fn new(a: Account, letterable: bool, currency_locked: bool) -> Self {
         Self {
             id: a.id,
             company_id: a.company_id,
@@ -173,6 +296,10 @@ impl AccountResponse {
             role: a.role,
             postable: a.postable,
             letterable,
+            currency: a.currency,
+            currency_locked,
+            fx_gain_account_id: a.fx_gain_account_id,
+            fx_loss_account_id: a.fx_loss_account_id,
             version: a.version,
             created_at: a.created_at,
             updated_at: a.updated_at,
@@ -185,12 +312,15 @@ impl AccountResponse {
 // ---------------------------------------------------------------------------
 
 /// La réponse d'un compte unique : sa lettrabilité en une requête
-/// (`letterings::is_letterable_account`, Story 15-1b AC11).
+/// (`letterings::is_letterable_account`, Story 15-1b AC11) et le verrou de sa
+/// devise en une autre (`accounts::is_currency_locked`, Story 37-1).
 async fn response(state: &AppState, account: Account) -> Result<AccountResponse, AppError> {
     let mut conn = state.pool.acquire().await.map_err(map_db_error)?;
     let letterable =
         letterings::is_letterable_account(&mut conn, account.company_id, account.id).await?;
-    Ok(AccountResponse::new(account, letterable))
+    let currency_locked =
+        accounts::is_currency_locked(&mut conn, account.company_id, account.id).await?;
+    Ok(AccountResponse::new(account, letterable, currency_locked))
 }
 
 /// GET /api/v1/accounts — liste les comptes de la company courante.
@@ -205,7 +335,7 @@ pub async fn list_accounts(
     Ok(Json(
         comptes
             .into_iter()
-            .map(|c| AccountResponse::new(c.compte, c.lettrable))
+            .map(|c| AccountResponse::new(c.compte, c.lettrable, c.devise_verrouillee))
             .collect(),
     ))
 }
@@ -239,6 +369,15 @@ pub async fn create_account(
         ));
     }
 
+    // Story 37-1 (AC-4, AC-4 bis) — forme, avant la transaction : devise
+    // normalisée (`CHF` → CHF, code inconnu → `CURRENCY_UNKNOWN`), puis la
+    // paire des comptes propres (`missing`).
+    let currency = match req.currency.as_deref() {
+        Some(raw) => normalize_currency(raw)?,
+        None => None,
+    };
+    let own_fx_accounts = own_fx_for_create(req.fx_gain_account_id, req.fx_loss_account_id)?;
+
     // Valider que le parent existe, appartient à la société courante et est actif.
     // Le scope société n'était pas vérifié : un `parentId` d'une autre société
     // était accepté (code review 14-3a — d'autant plus sensible maintenant que
@@ -262,9 +401,27 @@ pub async fn create_account(
         parent_id: req.parent_id,
         role: req.role,
         postable: req.postable,
+        currency,
+        own_fx_accounts,
     };
 
-    let account = accounts::create(&state.pool, current_user.user_id, new).await?;
+    // ⚠️ **Rejouée sur interblocage** (Story 37-1, AC-4 bis, 37-1-CR3-P2-1 ;
+    // opération `accounts::create`) : un `POST` qui porte des comptes propres
+    // tient `companies` `FOR UPDATE`, puis passe le parent à non imputable
+    // (verrou exclusif sur sa ligne) ; une écriture CHF sur ce parent le tient
+    // en partage puis demande `companies` en partage à son `INSERT` — cycle.
+    // Le dépôt ouvre et conclut sa propre transaction à chaque tentative.
+    let user_id = current_user.user_id;
+    let account = crate::retry::retry_app_on_deadlock("accounts::create", || {
+        let new = new.clone();
+        let pool = state.pool.clone();
+        async move {
+            accounts::create(&pool, user_id, new)
+                .await
+                .map_err(AppError::from)
+        }
+    })
+    .await?;
     Ok((
         axum::http::StatusCode::CREATED,
         Json(response(&state, account).await?),
@@ -312,11 +469,26 @@ pub async fn update_account(
         AppError::Validation("postable is required — full-replace semantics".into())
     })?;
 
+    // Story 37-1 (AC-4, AC-4 bis) — après le pré-vol existant, avant la
+    // transaction : devise normalisée (`CURRENCY_UNKNOWN`), puis la forme des
+    // comptes propres (`missing`). Absents = inchangés, résolus par le dépôt.
+    let currency = match req.currency {
+        None => CurrencyChange::Unchanged,
+        Some(None) => CurrencyChange::Base,
+        Some(Some(raw)) => match normalize_currency(&raw)? {
+            None => CurrencyChange::Base,
+            Some(code) => CurrencyChange::Foreign(code),
+        },
+    };
+    let own_fx_accounts = own_fx_for_update(req.fx_gain_account_id, req.fx_loss_account_id, id)?;
+
     let changes = AccountUpdate {
         name: trimmed_name,
         account_type: req.account_type,
         role,
         postable,
+        currency,
+        own_fx_accounts,
     };
 
     // Story 25-2-a : le dépôt refuse en 409 `ACCOUNT_HAS_ENTRIES` si le compte
@@ -399,4 +571,30 @@ pub async fn reactivate_account(
     )
     .await?;
     Ok(Json(response(&state, account).await?))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 37-1-CR-P1-1 : une devise démesurée est refusée, et sa reprise dans la
+    /// réponse est bornée ; une saisie courte est reprise telle quelle.
+    #[test]
+    fn unknown_currency_echo_is_bounded() {
+        let long = "é".repeat(5000);
+        match normalize_currency(&long) {
+            Err(AppError::Database(DbError::CurrencyUnknown { value })) => {
+                assert_eq!(value.chars().count(), CURRENCY_ECHO_MAX);
+            }
+            _ => panic!("devise démesurée non refusée en CURRENCY_UNKNOWN"),
+        }
+        match normalize_currency("usd1") {
+            Err(AppError::Database(DbError::CurrencyUnknown { value })) => {
+                assert_eq!(value, "usd1");
+            }
+            _ => panic!("« usd1 » non refusée en CURRENCY_UNKNOWN"),
+        }
+        assert!(matches!(normalize_currency(" chf "), Ok(None)));
+        assert_eq!(normalize_currency("usd").unwrap().as_deref(), Some("USD"));
+    }
 }

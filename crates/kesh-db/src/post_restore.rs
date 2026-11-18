@@ -980,7 +980,8 @@ mod tests {
     }
 
     /// Vrai si le statement crée une table figurant dans
-    /// [`crate::backup::TABLES_TO_TRUNCATE`].
+    /// [`crate::backup::TABLES_TO_TRUNCATE`], hors des tables que l'import
+    /// tolère absentes ([`crate::backup::ABSENCES_ADMISES_EPIC_37`], Story 37-1).
     ///
     /// La comparaison porte sur le nom **isolé** (et non sur un `contains`) : un
     /// `CREATE TABLE supplier_invoice_lines` ne doit pas être compté comme créant
@@ -998,8 +999,12 @@ mod tests {
             .next()
             .unwrap_or_default()
             .trim_end_matches(';');
+        // Story 37-1 (AC-6) : une table que l'import tolère absente
+        // (`ABSENCES_ADMISES_EPIC_37`) ne referme pas la fenêtre — une sauvegarde
+        // qui ne la porte pas reste importable.
         crate::backup::TABLES_TO_TRUNCATE
             .iter()
+            .filter(|t| !crate::backup::table_absente_admise(t))
             .any(|t| t.to_ascii_uppercase() == name)
     }
 

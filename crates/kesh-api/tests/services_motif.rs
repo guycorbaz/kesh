@@ -284,12 +284,14 @@ async fn poser_ecriture(
                     debit: montant,
                     credit: Decimal::ZERO,
                     project_id: projet,
+                    foreign: None,
                 },
                 NewJournalEntryLine {
                     account_id: seeded.accounts[credit],
                     debit: Decimal::ZERO,
                     credit: montant,
                     project_id: projet,
+                    foreign: None,
                 },
             ],
         },
@@ -1931,6 +1933,7 @@ async fn grand_livre_les_deux_regimes(pool: MySqlPool) {
             debit: dec!(1),
             credit: Decimal::ZERO,
             project_id: None,
+            foreign: None,
         })
         .collect();
     lines.push(NewJournalEntryLine {
@@ -1938,6 +1941,7 @@ async fn grand_livre_les_deux_regimes(pool: MySqlPool) {
         debit: Decimal::ZERO,
         credit: Decimal::from(attendu),
         project_id: None,
+        foreign: None,
     });
     journal_entries::create(
         &pool,
@@ -2410,11 +2414,12 @@ const SITES_NON_RESOLUS: &[SiteNonResolu] = &[
     ),
     // Story 32-9a (AC-a12) : la liste des exercices passe par
     // `exercices::lister` ; les six autres gestionnaires — qu'aucun outil ne
-    // sert — restent sur `state.pool`.
+    // sert — restent sur `state.pool`. Story 37-2 : + `update_rate_kinds`
+    // (genres des cours d'un exercice), qu'aucun outil ne sert non plus.
     (
         "routes/fiscal_years.rs",
-        7,
-        7,
+        8,
+        8,
         &[
             "close_fiscal_year",
             "create_fiscal_year",
@@ -2422,14 +2427,18 @@ const SITES_NON_RESOLUS: &[SiteNonResolu] = &[
             "get_fiscal_year",
             "reopen_fiscal_year",
             "update_fiscal_year",
+            "update_rate_kinds",
         ],
         &[],
     ),
     (
+        // Story 37-3b (AC-2 bis) : + `create_conversion` (handler, pool) et
+        // `conversion_refusal` (aide privée, réécrit la réponse d'un refus) — 8 / 9.
         "routes/journal_entries.rs",
-        7,
-        7,
+        8,
+        9,
         &[
+            "create_conversion",
             "create_journal_entry",
             "delete_journal_entry",
             "reverse_journal_entry",

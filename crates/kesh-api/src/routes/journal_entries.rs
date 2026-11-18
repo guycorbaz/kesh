@@ -21,7 +21,8 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 use kesh_core::accounting::{
-    self, Journal as CoreJournal, JournalEntryDraft, JournalEntryLineDraft,
+    self, ForeignAmount, Journal as CoreJournal, JournalEntryDraft, JournalEntryLineDraft,
+    RateFromChfError, RateProvenance, check_foreign_line, fx_chf, fx_line_error, rate_from_chf,
 };
 use kesh_core::errors::CoreError;
 use kesh_core::listing::{SortBy, SortDirection};
@@ -68,16 +69,60 @@ fn default_sort_dir() -> SortDirection {
 #[serde(rename_all = "camelCase")]
 pub struct CreateJournalEntryLineRequest {
     pub account_id: i64,
-    /// Montant au débit, format string décimal (ex: "100.00"). Parsé
+    /// Montant au débit (CHF), format string décimal (ex: "100.00"). Parsé
     /// via `Decimal::from_str` — rejet 400 si format invalide.
-    pub debit: String,
-    /// Montant au crédit, format string décimal.
-    pub credit: String,
+    ///
+    /// Story 37-3a (AC-6, V2) : facultatif. Une ligne CHF exige `debit` **et**
+    /// `credit` (400 sinon — et non plus 422) ; sur une ligne en devise, un
+    /// seul fourni vaut l'autre à 0, aucun fourni → le serveur pose le CHF du
+    /// côté `foreign.side`.
+    #[serde(default)]
+    pub debit: Option<String>,
+    /// Montant au crédit (CHF), format string décimal. Voir `debit`.
+    #[serde(default)]
+    pub credit: Option<String>,
     /// Projet analytique de la ligne (Epic 19, Story 19-2). Optionnel —
     /// absent ou `null` = ligne non taguée. Validé côté repo (projet de
     /// la company, non archivé) : inconnu/cross-company → 404, archivé → 409.
     #[serde(default)]
     pub project_id: Option<i64>,
+    /// Partie en devise (Story 37-3a, AC-6) ; absente pour une ligne CHF.
+    #[serde(default)]
+    pub foreign: Option<ForeignLineRequest>,
+}
+
+/// `foreign` d'une ligne du corps (Story 37-3a, AC-6) : la ligne se passe par
+/// l'API seule, sans calcul du client (V1, V2).
+///
+/// ⚠️ Tous les champs sont des **chaînes** analysées dans le handler : une
+/// énumération ou un nombre JSON échouerait à la désérialisation d'axum, qui
+/// rend 422 et non le 400 attendu.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ForeignLineRequest {
+    /// Devise **annoncée** ; absente, la ligne prend celle de son compte.
+    /// Comparée telle quelle à la devise du compte (`FX_CURRENCY_MISMATCH`) ;
+    /// jamais stockée.
+    #[serde(default)]
+    pub currency: Option<String>,
+    /// Montant en devise (requis).
+    #[serde(default)]
+    pub amount: Option<String>,
+    /// Cours par unité ; absent, il se déduit du CHF (`rate_from_chf`).
+    #[serde(default)]
+    pub rate: Option<String>,
+    /// Montant CHF de la ligne ; s'il accompagne `debit`/`credit`, il doit
+    /// égaler `debit + credit`.
+    #[serde(default)]
+    pub chf: Option<String>,
+    /// `afc` ou `manual` ; absent, le dépôt qualifie la ligne. `revaluation`
+    /// est refusé ici (réservé à la réévaluation, 37-5).
+    #[serde(default)]
+    pub rate_source: Option<String>,
+    /// `debit` ou `credit` : le côté où poser le CHF quand `debit`/`credit`
+    /// sont absents.
+    #[serde(default)]
+    pub side: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -120,6 +165,22 @@ pub struct JournalEntryLineResponse {
     pub lettering_code: Option<String>,
     /// Origine du groupe (`document`, `reversal`, `manual`), `null` si ouverte.
     pub lettering_origin: Option<String>,
+    /// Partie en devise (Story 37-3a, AC-6) — **omise** pour une ligne CHF
+    /// (registre C-37-9 : le JSON reste identique en mono-devise ; ⚠️
+    /// contrairement aux champs de lettrage, présents à `null`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub foreign: Option<ForeignLineResponse>,
+}
+
+/// `foreign` d'une ligne rendue (Story 37-3a, AC-6) : devise **lue sur le
+/// compte**, décimaux en chaînes, provenance `afc|manual|revaluation`.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ForeignLineResponse {
+    pub currency: String,
+    pub amount: String,
+    pub rate: String,
+    pub rate_source: &'static str,
 }
 
 #[derive(Debug, Serialize)]
@@ -171,10 +232,11 @@ pub struct JournalEntryDetailResponse {
     /// L'écriture se modifie-t-elle (Story 15-8a, D8) ? Motif d'écran, sur
     /// l'état **présent** : le `PUT` reste seul juge (corps, version, date).
     pub modifiable: bool,
-    /// Code d'écran du motif, `null` si `modifiable` — l'une de douze valeurs :
+    /// Code d'écran du motif, `null` si `modifiable` — l'une de treize valeurs :
     /// `FISCAL_YEAR_CLOSED`, `LATER_FISCAL_YEAR_CLOSED`, `IS_A_REVERSAL`,
     /// `ALREADY_REVERSED`, `OWNED_BY_*`, `MATCHED_BANK_TRANSACTION`,
-    /// `DETACHED_SUPPLIER_SETTLEMENT`, `PERIOD_LOCKED`, `ENTRY_LETTERED`
+    /// `DETACHED_SUPPLIER_SETTLEMENT`, `ENTRY_IS_FX_REVALUATION` (Story 37-3a,
+    /// juste après la garde d'écriture), `PERIOD_LOCKED`, `ENTRY_LETTERED`
     /// (Story 15-1a-ii, en dernier).
     pub modification_blocked_by: Option<String>,
     /// Numéro de pièce, nom de l'exercice postérieur clos, borne du verrou
@@ -214,7 +276,14 @@ impl From<imported_supplier_invoices::EntrySourceDocument> for EntrySourceDocume
 
 impl From<JournalEntryLine> for JournalEntryLineResponse {
     fn from(l: JournalEntryLine) -> Self {
+        let foreign = l.foreign().map(|f| ForeignLineResponse {
+            currency: f.currency,
+            amount: f.amount.normalize().to_string(),
+            rate: f.rate.normalize().to_string(),
+            rate_source: f.source.as_str(),
+        });
         Self {
+            foreign,
             id: l.id,
             account_id: l.account_id,
             line_order: l.line_order,
@@ -285,6 +354,15 @@ pub(crate) fn map_core_error(err: CoreError) -> AppError {
         CoreError::EntryZeroTotal => {
             AppError::Validation("Écriture invalide : le total ne peut pas être nul".into())
         }
+        CoreError::EntryTotalOutOfRange => AppError::Validation(
+            "Écriture invalide : le total des débits ou des crédits dépasse la valeur admise"
+                .into(),
+        ),
+        // Story 37-3a (AC-3) — un bras par variante : sans lui, le code et les
+        // `details` n'atteindraient jamais le client (repli ci-dessous).
+        e @ (CoreError::FxValueOutOfRange { .. }
+        | CoreError::FxLineRoundsToZero { .. }
+        | CoreError::FxAmountMismatch { .. }) => AppError::FxLine(e),
         // Variantes non-écriture — fallback sur Validation générique.
         other => AppError::Validation(format!("Erreur métier : {other}")),
     }
@@ -528,6 +606,27 @@ fn prepare_new_journal_entry(
     description: &str,
     lines: &[CreateJournalEntryLineRequest],
 ) -> Result<NewJournalEntry, AppError> {
+    let draft = parse_entry_body(entry_date, journal, description, lines)?;
+    // Garde-fou #1 : validation métier pure (kesh-core).
+    // P4 : on récupère le BalancedEntry validé et on l'utilise pour
+    // construire le NewJournalEntry, éliminant la duplication fragile
+    // entre line_drafts et line_decimals (ex-security theater).
+    let balanced = accounting::validate(draft).map_err(map_core_error)?;
+    Ok(draft_to_new_entry(company_id, balanced.into_draft()))
+}
+
+/// Partie de [`prepare_new_journal_entry`] **sans** `accounting::validate`
+/// (Story 37-3b, AC-2 bis — extraite, partagée par la route de conversion, qui
+/// ne valide l'équilibre qu'une fois l'écriture à compléter identifiée sous
+/// verrou) : trim et longueur du libellé, borne de lignes du corps reçu, parse
+/// des montants et analyse de `foreign` (37-3a AC-6), dans cet ordre. Ne lit
+/// pas la base.
+fn parse_entry_body(
+    entry_date: NaiveDate,
+    journal: CoreJournal,
+    description: &str,
+    lines: &[CreateJournalEntryLineRequest],
+) -> Result<JournalEntryDraft, AppError> {
     // P5 : trim du libellé dès l'entrée — unique source de vérité.
     let trimmed_description = description.trim().to_string();
 
@@ -545,39 +644,38 @@ fn prepare_new_journal_entry(
         )));
     }
 
-    // Parse des montants (string → Decimal). Rejet 400 si format invalide.
+    // Parse des montants (string → Decimal) et analyse de `foreign` (Story
+    // 37-3a, AC-6), dans l'ordre du corps. Rejet 400 si format invalide.
     let mut line_drafts: Vec<JournalEntryLineDraft> = Vec::with_capacity(lines.len());
     for (idx, line) in lines.iter().enumerate() {
-        let debit = Decimal::from_str(&line.debit).map_err(|e| {
-            AppError::Validation(format!("ligne {}: débit invalide ({e})", idx + 1))
-        })?;
-        let credit = Decimal::from_str(&line.credit).map_err(|e| {
-            AppError::Validation(format!("ligne {}: crédit invalide ({e})", idx + 1))
-        })?;
+        let (debit, credit, foreign) = parse_line_amounts(
+            idx + 1,
+            line.debit.as_deref(),
+            line.credit.as_deref(),
+            line.foreign.as_ref(),
+        )?;
         line_drafts.push(JournalEntryLineDraft {
             account_id: line.account_id,
             debit: Money::new(debit),
             credit: Money::new(credit),
             project_id: line.project_id,
+            foreign,
         });
     }
 
-    // Garde-fou #1 : validation métier pure (kesh-core).
-    let draft = JournalEntryDraft {
+    Ok(JournalEntryDraft {
         date: entry_date,
         journal,
         description: trimmed_description,
         lines: line_drafts,
-    };
-    // P4 : on récupère le BalancedEntry validé et on l'utilise pour
-    // construire le NewJournalEntry, éliminant la duplication fragile
-    // entre line_drafts et line_decimals (ex-security theater).
-    let balanced = accounting::validate(draft).map_err(map_core_error)?;
-    let validated = balanced.into_draft();
+    })
+}
 
-    // Construction du NewJournalEntry pour kesh-db depuis les données
-    // garanties équilibrées par `validate()`.
-    Ok(NewJournalEntry {
+/// Le `NewJournalEntry` de `kesh-db` d'un brouillon analysé (validé par
+/// `accounting::validate` au `POST`/`PUT` ; à valider sous verrou par la
+/// conversion).
+fn draft_to_new_entry(company_id: i64, validated: JournalEntryDraft) -> NewJournalEntry {
+    NewJournalEntry {
         company_id,
         entry_date: validated.date,
         journal: DbJournal::from(validated.journal),
@@ -593,9 +691,174 @@ fn prepare_new_journal_entry(
                 // Tag analytique par-ligne (19-2) — a traversé validate()
                 // verbatim depuis la request.
                 project_id: l.project_id,
+                // Story 37-3a : la partie en devise analysée, provenance
+                // éventuellement `None` (qualifiée par le dépôt).
+                foreign: l.foreign,
             })
             .collect(),
-    })
+    }
+}
+
+/// Analyse un décimal du corps d'une ligne (refus 400 `Validation`).
+fn parse_decimal(line: usize, champ: &str, s: &str) -> Result<Decimal, AppError> {
+    Decimal::from_str(s)
+        .map_err(|e| AppError::Validation(format!("ligne {line}: {champ} invalide ({e})")))
+}
+
+/// Analyse les montants d'**une** ligne du corps — `debit`, `credit` et
+/// `foreign` (Story 37-3a, AC-6) — et rend `(débit, crédit, partie en devise)`,
+/// la ligne complétée **sans lecture de la base** (V1, V2, CR-6) :
+///
+/// - ligne CHF (sans `foreign`) : `debit` **et** `credit` requis (400) ;
+/// - ligne en devise : `amount` requis ; un `debit`, `credit` ou `chf` négatif
+///   → `EntryNegativeAmount` avant tout calcul ; un seul de `debit`/`credit`
+///   fourni vaut l'autre à 0 ; `chf` et `debit`/`credit` fournis doivent
+///   s'égaler (`FX_AMOUNT_MISMATCH`) ; sans `rate`, le cours se déduit du CHF
+///   de référence (`rate_from_chf`, marqueur `rate_derived`) — ni cours ni CHF
+///   → 400 ; sans `debit`/`credit`, `side` est requis et reçoit le CHF (fourni,
+///   ou `round(montant × cours, 2)`) ; avec, `side` doit désigner la seule
+///   colonne non nulle s'il y en a exactement une ;
+/// - `rateSource` parmi `afc`, `manual` (absent → `None`, qualifié par le
+///   dépôt) ; `revaluation` et toute autre valeur → 400.
+///
+/// `pub(crate)` : les routes d'ouverture et de complément (37-3b) emploient la
+/// même analyse.
+pub(crate) fn parse_line_amounts(
+    line: usize,
+    debit: Option<&str>,
+    credit: Option<&str>,
+    foreign: Option<&ForeignLineRequest>,
+) -> Result<(Decimal, Decimal, Option<ForeignAmount>), AppError> {
+    let debit = debit.map(|s| parse_decimal(line, "débit", s)).transpose()?;
+    let credit = credit
+        .map(|s| parse_decimal(line, "crédit", s))
+        .transpose()?;
+    let Some(f) = foreign else {
+        return match (debit, credit) {
+            (Some(d), Some(c)) => Ok((d, c, None)),
+            _ => Err(AppError::Validation(format!(
+                "ligne {line}: débit et crédit requis"
+            ))),
+        };
+    };
+    let amount = f
+        .amount
+        .as_deref()
+        .ok_or_else(|| AppError::Validation(format!("ligne {line}: montant en devise requis")))
+        .and_then(|s| parse_decimal(line, "montant en devise", s))?;
+    let rate = f
+        .rate
+        .as_deref()
+        .map(|s| parse_decimal(line, "cours", s))
+        .transpose()?;
+    let chf = f
+        .chf
+        .as_deref()
+        .map(|s| parse_decimal(line, "montant CHF", s))
+        .transpose()?;
+    let source = match f.rate_source.as_deref() {
+        None => None,
+        Some("afc") => Some(RateProvenance::Afc),
+        Some("manual") => Some(RateProvenance::Manual),
+        Some(other) => {
+            return Err(AppError::Validation(format!(
+                "ligne {line}: provenance du cours inconnue ({other}) : afc ou manual"
+            )));
+        }
+    };
+    let side = match f.side.as_deref() {
+        None => None,
+        Some("debit") => Some(true),
+        Some("credit") => Some(false),
+        Some(other) => {
+            return Err(AppError::Validation(format!(
+                "ligne {line}: côté inconnu ({other}) : debit ou credit"
+            )));
+        }
+    };
+    // Signe d'abord (l'ordre des refus de l'AC-3 ne dépend pas de `rate`).
+    if [debit, credit, chf]
+        .iter()
+        .flatten()
+        .any(|d| d.is_sign_negative() && !d.is_zero())
+    {
+        return Err(map_core_error(CoreError::EntryNegativeAmount));
+    }
+    let fournis = debit.is_some() || credit.is_some();
+    // Somme vérifiée : deux montants proches de la borne de `Decimal` ne
+    // doivent pas faire paniquer le handler (revue de code P2).
+    let somme = debit
+        .unwrap_or_default()
+        .checked_add(credit.unwrap_or_default())
+        .ok_or(AppError::FxLine(CoreError::FxValueOutOfRange { line }))?;
+    let chf_ref = chf.or(fournis.then_some(somme));
+    if let (Some(c), true) = (chf, fournis)
+        && c != somme
+    {
+        return Err(AppError::FxLine(CoreError::FxAmountMismatch {
+            line,
+            expected: c,
+            provided: somme,
+        }));
+    }
+    let (rate, rate_derived) = match rate {
+        Some(r) => (r, false),
+        None => {
+            let c = chf_ref.ok_or_else(|| {
+                AppError::Validation(format!("ligne {line}: cours ou montant CHF requis"))
+            })?;
+            let r = rate_from_chf(&amount, &c).map_err(|e| {
+                AppError::FxLine(match e {
+                    RateFromChfError::OutOfRange => CoreError::FxValueOutOfRange { line },
+                    RateFromChfError::Mismatch { expected } => CoreError::FxAmountMismatch {
+                        line,
+                        expected,
+                        provided: c,
+                    },
+                })
+            })?;
+            (r, true)
+        }
+    };
+    let (debit, credit) = if fournis {
+        let (d, c) = (debit.unwrap_or_default(), credit.unwrap_or_default());
+        if let Some(cote_debit) = side
+            && (d.is_zero() != c.is_zero())
+            && cote_debit == d.is_zero()
+        {
+            return Err(AppError::Validation(format!(
+                "ligne {line}: le côté ne désigne pas la colonne renseignée"
+            )));
+        }
+        (d, c)
+    } else {
+        let cote_debit = side.ok_or_else(|| {
+            AppError::Validation(format!(
+                "ligne {line}: côté requis (debit ou credit) quand débit et crédit sont absents"
+            ))
+        })?;
+        let montant = match chf {
+            Some(c) => c,
+            None => fx_chf(&amount, &rate)
+                .map_err(|_| AppError::FxLine(CoreError::FxValueOutOfRange { line }))?,
+        };
+        if cote_debit {
+            (montant, Decimal::ZERO)
+        } else {
+            (Decimal::ZERO, montant)
+        }
+    };
+    Ok((
+        debit,
+        credit,
+        Some(ForeignAmount {
+            declared_currency: f.currency.clone(),
+            amount,
+            rate,
+            source,
+            rate_derived,
+        }),
+    ))
 }
 
 /// POST /api/v1/journal-entries — crée une écriture en partie double.
@@ -664,6 +927,168 @@ pub async fn create_journal_entry(
         StatusCode::CREATED,
         Json(JournalEntryResponse::from(result)),
     ))
+}
+
+/// Corps de `POST /api/v1/journal-entries/conversions` (Story 37-3b, AC-2 bis).
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateConversionRequest {
+    /// Les deux écritures de la conversion, chacune au format de
+    /// `POST /journal-entries` ; une autre longueur rend 400.
+    pub entries: Vec<CreateJournalEntryRequest>,
+    /// Demande au serveur de calculer la ligne de différence de change de
+    /// l'écriture à compléter (A31) ; absent = `false`. Un champ non booléen
+    /// rend 400 (extracteur).
+    #[serde(default)]
+    pub complete_difference: bool,
+}
+
+crate::extractors::impl_validation_extractor!(
+    ConversionBody,
+    CreateConversionRequest,
+    "entries (deux écritures), completeDifference (booléen)"
+);
+
+/// Réponse 201 de la conversion : les deux écritures créées, dans l'ordre du
+/// corps.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversionResponse {
+    pub entries: Vec<JournalEntryResponse>,
+}
+
+/// Le refus d'une conversion en `AppError`, l'écriture visée en
+/// [`AppError::ConversionEntry`]. Un interblocage reste un
+/// `AppError::Database` nu : l'enveloppe de rejeu doit le reconnaître.
+fn conversion_error(
+    e: kesh_db::repositories::journal_entry_conversions::ConversionError,
+) -> AppError {
+    use kesh_db::repositories::journal_entry_conversions::ConversionErrorKind as K;
+    let err = match e.kind {
+        K::Db(d) if kesh_db::retry::is_deadlock_error(&d) => return AppError::Database(d),
+        K::Db(d) => AppError::from(d),
+        K::Core(c) => map_core_error(c),
+        K::TransitUnbalanced { entry1, entry2 } => AppError::FxConversionTransitUnbalanced {
+            entry1: entry1.to_string(),
+            entry2: entry2.to_string(),
+        },
+        K::Validation { reason, line } => AppError::ValidationAtLine {
+            message: crate::errors::conversion_validation_message(&reason),
+            line,
+        },
+        K::NoFiscalYear(date) => AppError::NoFiscalYear {
+            date: date.to_string(),
+        },
+        K::FiscalYearClosed(date) => AppError::FiscalYearClosed {
+            date: date.to_string(),
+        },
+    };
+    match e.entry {
+        Some(entry) => AppError::ConversionEntry {
+            entry,
+            error: Box::new(err),
+        },
+        None => err,
+    }
+}
+
+/// La réponse d'un refus de la conversion : celle de l'erreur, à laquelle un
+/// refus qui vise une écriture ajoute `details.entry` (1 ou 2, rang dans le
+/// corps) — **mécanisme commun** à tous les refus d'une écriture : un refus
+/// sans `details` en reçoit (`{ "entry": n }`), un refus qui en porte les garde
+/// et y ajoute `entry`. Le corps produit par l'erreur est relu, complété et
+/// réécrit ; statut et en-têtes sont gardés (hors `Content-Length`).
+async fn conversion_refusal(err: AppError) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    let AppError::ConversionEntry { entry, error } = err else {
+        return err.into_response();
+    };
+    crate::errors::refus_avec_detail(*error, "entry", serde_json::json!(entry)).await
+}
+
+/// POST /api/v1/journal-entries/conversions — passe une conversion entre deux
+/// devises par le compte de conversion (Story 37-3b, AC-2 bis, R7) : **deux
+/// écritures dans une transaction**, tout ou rien, chacune soumise à tous les
+/// contrôles de `POST /journal-entries`.
+///
+/// Refus, une seule raison, dans l'ordre : `entries` de longueur ≠ 2 (400) ;
+/// puis, **avant la transaction**, écriture par écriture dans l'ordre du corps
+/// (`details.entry`) : date, libellé, nombre de lignes, analyse de `foreign`
+/// (37-3a AC-6) et contrôle FX par ligne (37-3a AC-3) — sans
+/// `accounting::validate`, qui attend l'identification de l'écriture à
+/// compléter ; puis, sous verrou, l'ordre de
+/// [`kesh_db::repositories::journal_entry_conversions::create_conversion`].
+/// La ligne de différence n'est calculée que sur `completeDifference: true`
+/// (A31). Réponse 201 `{ entries }` dans l'ordre du corps ; audit
+/// `journal_entry.created` ×2.
+///
+/// ⚠️ **Rejouée sur interblocage** (enveloppe `retry_app_on_deadlock`) : la
+/// transaction est rejouée entière ; voir l'en-tête du module du dépôt pour
+/// les cycles de verrous.
+pub async fn create_conversion(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    ConversionBody(req): ConversionBody,
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    let result: Result<ConversionResponse, AppError> = async {
+        if req.entries.len() != 2 {
+            return Err(AppError::Validation(
+                "une conversion porte exactement deux écritures (entries)".into(),
+            ));
+        }
+        let company = get_company_for(&current_user, &state.pool).await?;
+        let mut news: Vec<NewJournalEntry> = Vec::with_capacity(2);
+        for (idx, e) in req.entries.iter().enumerate() {
+            let tag = |error: AppError| AppError::ConversionEntry {
+                entry: idx + 1,
+                error: Box::new(error),
+            };
+            borner(e.entry_date, "entryDate").map_err(tag)?;
+            let draft =
+                parse_entry_body(e.entry_date, e.journal, &e.description, &e.lines).map_err(tag)?;
+            for (k, l) in draft.lines.iter().enumerate() {
+                if let Some(f) = &l.foreign {
+                    check_foreign_line(&l.debit.amount(), &l.credit.amount(), f)
+                        .map_err(|x| tag(map_core_error(fx_line_error(k + 1, x))))?;
+                }
+            }
+            news.push(draft_to_new_entry(company.id, draft));
+        }
+        let entries: [NewJournalEntry; 2] = news
+            .try_into()
+            .map_err(|_| AppError::Internal("conversion : deux écritures attendues".into()))?;
+        let acteur = Acteur::from(&current_user);
+        let complete_difference = req.complete_difference;
+        let created = crate::retry::retry_app_on_deadlock("journal_entries::conversion", || {
+            let pool = &state.pool;
+            let entries = entries.clone();
+            async move {
+                kesh_db::repositories::journal_entry_conversions::create_conversion(
+                    pool,
+                    company.id,
+                    acteur,
+                    entries,
+                    complete_difference,
+                    MAX_LINES_PER_ENTRY,
+                )
+                .await
+                .map_err(conversion_error)
+            }
+        })
+        .await?;
+        Ok(ConversionResponse {
+            entries: created
+                .into_iter()
+                .map(JournalEntryResponse::from)
+                .collect(),
+        })
+    }
+    .await;
+    match result {
+        Ok(body) => (StatusCode::CREATED, Json(body)).into_response(),
+        Err(err) => conversion_refusal(err).await,
+    }
 }
 
 /// PUT /api/v1/journal-entries/{id} — modifie une écriture tant que son
@@ -842,9 +1267,50 @@ mod tests {
             project_id: Some(7),
             lettering_key: None,
             lettering_origin: None,
+            amount_currency: None,
+            exchange_rate: None,
+            rate_source: None,
+            account_currency: None,
         });
         let json = serde_json::to_value(&resp).unwrap();
         assert_eq!(json["projectId"], 7);
+        // Story 37-3a (AC-6) — une ligne CHF n'a pas de clé `foreign`.
+        assert!(json.get("foreign").is_none(), "{json}");
+    }
+
+    /// Story 37-3a (AC-6) — une ligne en devise expose `foreign` : devise lue
+    /// sur le compte, décimaux en chaînes sans zéros terminaux ; un montant posé
+    /// sur un compte sans devise se lit comme une ligne CHF (pas de `foreign`).
+    #[test]
+    fn line_response_exposes_foreign_from_the_account_currency() {
+        let ligne = |account_currency: Option<&str>| JournalEntryLine {
+            id: 1,
+            entry_id: 2,
+            account_id: 3,
+            line_order: 1,
+            debit: rust_decimal_macros::dec!(1125.83),
+            credit: rust_decimal_macros::dec!(0),
+            project_id: None,
+            lettering_key: None,
+            lettering_origin: None,
+            amount_currency: Some(rust_decimal_macros::dec!(1234.5600)),
+            exchange_rate: Some(rust_decimal_macros::dec!(0.9119300000)),
+            rate_source: Some("afc".into()),
+            account_currency: account_currency.map(str::to_string),
+        };
+        let json =
+            serde_json::to_value(JournalEntryLineResponse::from(ligne(Some("USD")))).unwrap();
+        assert_eq!(
+            json["foreign"],
+            serde_json::json!({
+                "currency": "USD",
+                "amount": "1234.56",
+                "rate": "0.91193",
+                "rateSource": "afc",
+            })
+        );
+        let chf = serde_json::to_value(JournalEntryLineResponse::from(ligne(None))).unwrap();
+        assert!(chf.get("foreign").is_none(), "{chf}");
     }
 
     /// Story 15-1a-i (AC14) — la ligne expose les trois champs du lettrage :
@@ -862,6 +1328,10 @@ mod tests {
             project_id: None,
             lettering_key,
             lettering_origin: lettering_origin.map(str::to_string),
+            amount_currency: None,
+            exchange_rate: None,
+            rate_source: None,
+            account_currency: None,
         };
         let ouverte =
             serde_json::to_value(JournalEntryLineResponse::from(ligne(None, None))).unwrap();
@@ -900,5 +1370,41 @@ mod tests {
         let (status, body) = body_json(resp).await;
         assert_eq!(status, StatusCode::CONFLICT);
         assert_eq!(body["error"]["code"], "ILLEGAL_STATE_TRANSITION");
+    }
+
+    /// Revue de code P4 de la 37-3a — le bras `EntryTotalOutOfRange` de
+    /// `map_core_error` rend 400 `VALIDATION_ERROR`, non le repli générique.
+    #[tokio::test]
+    async fn map_core_error_total_hors_intervalle_rend_validation_error() {
+        let resp = map_core_error(CoreError::EntryTotalOutOfRange).into_response();
+        let (status, body) = body_json(resp).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body["error"]["code"], "VALIDATION_ERROR");
+        let msg = body["error"]["message"].as_str().unwrap_or_default();
+        assert!(msg.contains("dépasse la valeur admise"), "message : {msg}");
+    }
+
+    /// Revue de code P3 de la 37-3a — la somme `debit + credit` d'une ligne en
+    /// devise, au débordement de `Decimal`, rend 400 `FX_VALUE_OUT_OF_RANGE`
+    /// et ne panique pas (la route, non le noyau, fait cette somme).
+    #[test]
+    fn parse_line_amounts_somme_qui_deborde_rend_fx_value_out_of_range() {
+        let max = "79228162514264337593543950335";
+        let f = ForeignLineRequest {
+            currency: Some("USD".into()),
+            amount: Some("100".into()),
+            rate: Some("0.9".into()),
+            chf: None,
+            rate_source: None,
+            side: None,
+        };
+        let err = parse_line_amounts(3, Some(max), Some(max), Some(&f)).unwrap_err();
+        assert!(
+            matches!(
+                err,
+                AppError::FxLine(CoreError::FxValueOutOfRange { line: 3 })
+            ),
+            "attendu FxValueOutOfRange ligne 3, reçu {err:?}"
+        );
     }
 }

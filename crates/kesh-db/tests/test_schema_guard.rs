@@ -56,6 +56,10 @@ const ALLOWED_REAL_MIGRATOR_FILES: &[&str] = &[
     "crates/kesh-db/tests/post_restore_transactionality.rs",
     // Backfill D6 de la Story 22-1, sur schéma réel.
     "crates/kesh-db/tests/client_number_canonical_backfill.rs",
+    // Story 43-1a (#823, AC12) : la montée d'une base peuplée au schéma d'avant
+    // `20261118000001` (fenêtre résolue par version), puis un règlement groupé
+    // par les montages du fichier ; ses autres tests montent le squash.
+    "crates/kesh-db/tests/grouped_settlements.rs",
     // Le garde-fou lui-même : il compare les deux chemins, il lui faut le vrai.
     "crates/kesh-db/tests/test_schema_guard.rs",
     // Story v0174-mise-a-jour (#847) : la sauvegarde avant mise à jour lit une
@@ -890,7 +894,18 @@ fn parse_attribute(trimmed: &str) -> Option<String> {
 }
 
 /// Répertoires sans code Rust du workspace, et dont la traversée coûte cher.
-const SKIPPED_DIRS: &[&str] = &["target", ".git", "node_modules", "build", ".svelte-kit"];
+///
+/// `.claude` porte les worktrees de Claude Code (`.claude/worktrees/<nom>`) :
+/// chacun est une copie du dépôt sur une autre branche, dont les attributs
+/// `#[sqlx::test]` ne relèvent pas de l'arbre balayé.
+const SKIPPED_DIRS: &[&str] = &[
+    "target",
+    ".git",
+    "node_modules",
+    "build",
+    ".svelte-kit",
+    ".claude",
+];
 
 fn collect_rs(dir: &std::path::Path, acc: &mut Vec<std::path::PathBuf>) {
     // ⚠️ Une erreur de lecture ROUGIT, elle ne se saute pas : un sous-arbre

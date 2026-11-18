@@ -221,6 +221,8 @@ async fn create_acc(
             parent_id: None,
             role: None,
             postable: true,
+            currency: None,
+            own_fx_accounts: None,
         },
     )
     .await
@@ -262,12 +264,14 @@ async fn post_entry(
                     debit: amount,
                     credit: Decimal::ZERO,
                     project_id: None,
+                    foreign: None,
                 },
                 NewJournalEntryLine {
                     account_id: credit_account,
                     debit: Decimal::ZERO,
                     credit: amount,
                     project_id: None,
+                    foreign: None,
                 },
             ],
         },
@@ -1908,6 +1912,8 @@ async fn posting_to_a_closed_closing_account_is_refused(pool: MySqlPool) {
             parent_id: None,
             role: None,
             postable: false, // l'etat que produit le plan livre + le backfill
+            currency: None,
+            own_fx_accounts: None,
         },
     )
     .await
@@ -1986,6 +1992,8 @@ async fn a_closed_closing_account_can_be_reopened_by_its_owner(pool: MySqlPool) 
             parent_id: None,
             role: None,
             postable: false,
+            currency: None,
+            own_fx_accounts: None,
         },
     )
     .await

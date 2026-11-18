@@ -1,6 +1,6 @@
 # Story 43-1b : un règlement pour plusieurs factures — factures fournisseur (#823)
 
-Status: ready-for-dev
+Status: done
 
 *Fiche rédigée le 2026-11-17 au soir par l'agent de rédaction de l'Epic 43 (Opus 5.5), workflow `bmad-create-story`,
 découpage de la 43-1 (validation P1, H3) ; **alignée dans la nuit** sur la remédiation de la 43-1a (validation P2 : H-B,
@@ -8,9 +8,10 @@ M-A, M-B, M-C ; exigences de la 43-2). Code lu à `8b50fd195`. Release **0.19.0*
 (migration, entités, signatures) ; se fusionne après elle. **Coupable à la coupure** (C-43-18) : sans elle, la migration
 reste entière et la colonne fournisseur vide, la 43-2 et la 43-3 retirent leurs commits fournisseur. `kesh-db` touché :
 gate complet en boucle. Décisions : C-43-1 à C-43-26 (fichier d'épique), qui font foi ; la règle de différence est
-tranchée (C-43-16, C-43-25). **Contrat figé de la 43-1a** : `kesh-gate-logs/e43/t3.md` (commit `241839568`), code dans
-`/home/gcorbaz/devel/kesh-43-1a`, registre `e0190-choix-autonomes-e431a.md` (C-e431a-5, -6, -8, -9 repris ci-dessous).
-Validation : à lancer.*
+tranchée (C-43-16, C-43-25). **Contrat figé de la 43-1a** : `kesh-gate-logs/e43/t3.md` (commit `241839568`), code sur
+la branche `story/43-1a-reglement-groupe-modele`, registre `e0190-choix-autonomes-e431a.md` (C-e431a-5, -6, -8, -9
+repris ci-dessous). Validation terminée (`kesh-gate-logs/e43/validation-fiches-contre-t3.md`, puis
+`validation-fiches-p-ciblee-2.md` : 0 au-dessus de LOW).*
 
 **Issues** : `refs #823` ; aucun mot-clé de fermeture dans un commit.
 
@@ -90,9 +91,13 @@ veux qu'au rapprochement Kesh passe **un** paiement qui solde et lettre chacune,
   et `grouped_difference_account_id` serait faux ou `None`, **sans erreur**. La 43-1b les complète :
   - `view_members` gagne le bras fournisseur : membres lus sur `supplier_invoices.settlement_journal_entry_id = écriture`
     (`kind` `supplier_invoice`, `id`, numéro affichable, montant brut = `total_amount`), par identifiant croissant ;
-  - `difference_account_of` gagne le même bras : apports = `total_amount` des membres, décomposition recalculée par
+  - `difference_account_of` gagne le même bras : ~~apports = `total_amount` des membres~~ *(remplacé au
+    développement et aux revues P1 et P2, C-e431b-4, C-e431b-15)* apports = les montants des lignes de dette **nommées**
+    — celles des membres et celles des factures détachées (trace du détachement, AC7), leur nombre recoupé avec les
+    factures du paiement —, qui doivent occuper les positions 1 à n ; décomposition recalculée par
     `group_difference(|montant|, apports, Decimal::MAX)`, ligne d'écart relue **par position** dans l'ordre des lignes
-    d'AC2 (banque, une dette par facture, arrondi si `r ≠ 0`, écart si `e ≠ 0`) ; `None` si `e = 0`.
+    d'AC2 (banque, une dette par facture, arrondi si `r ≠ 0`, écart si `e ≠ 0`) ; `None` si `e = 0` ; toute autre
+    forme, `Invariant`.
   La 43-2 (AC7, `groupedInvoices`, `differenceAccount` fournisseur) et la 43-3 (AC5, dialogue d'annulation d'un groupe
   fournisseur) en dépendent.
 - **AC7** — **Les deux sites** qui remettent `settlement_journal_entry_id` à `NULL` — `supplier_invoices.rs:2639`
@@ -123,14 +128,14 @@ test de l'écart rougit) ; retirer le contrôle du compte choisi égal à la ban
 
 ## Tâches
 
-- [ ] **T0** — Étape 0 : LOW de la validation ; signatures du T3 de la 43-1a relues (`kesh-gate-logs/e43/t3.md`).
-- [ ] **T1** — AC1 à AC5. — [ ] **T2** — AC6 à AC8. — [ ] **T3** — Gates, Dev Agent Record, prompt de revue P1.
+- [x] **T0** — Étape 0 : LOW de la validation ; signatures du T3 de la 43-1a relues (`kesh-gate-logs/e43/t3.md`).
+- [x] **T1** — AC1 à AC5. — [x] **T2** — AC6 à AC8. — [x] **T3** — Gates, Dev Agent Record, prompt de revue P1.
 
 ## Note de version
 
 - **Ajouté** — Un débit peut régler plusieurs factures fournisseur, d'un ou de plusieurs fournisseurs : un seul paiement,
-  chaque facture soldée et lettrée ; un petit écart, dans un sens ou dans l'autre (5.00 au plus par défaut, réglable), se
-  comptabilise sur le compte que vous choisissez (refs #823).
+  chaque facture soldée et lettrée ; un petit écart, dans un sens ou dans l'autre, dans la limite d'un plafond (5.00 par
+  défaut), se comptabilise sur le compte que vous choisissez (refs #823).
 
 ## Dev Notes
 
@@ -141,9 +146,114 @@ Modules : `repositories/grouped_settlements` (paiement, bras du dé-rapprochemen
 
 ### Agent Model Used
 
+Opus 5.5 (agent de développement, 2026-11-17), en autonomie ; choix au registre `e0190-choix-autonomes-e431b.md`
+(C-e431b-1 à 11).
+
 ### Completion Notes List
 
+- **Étape 0** : LOW L-3 de `validation-fiches-p-ciblee-2.md` traité (en-tête : le chemin du worktree de la 43-1a
+  remplacé par sa branche). Contrat `t3.md` relu, annotation de la revue P1 de la 43-1a comprise. L-1, L-2, L-4 portent
+  sur la 43-7 et l'épique : hors de cette fiche.
+- **AC1 à AC5** : `pay_supplier_invoices_in_tx` / `pay_supplier_inner` — point de sauvegarde, bornes, transaction (sens,
+  devise), `lock_for_bank_settlement_in_tx` réemployée par identifiant croissant, borne basse de date, dette lue sur
+  l'achat et contrôlée égale au `total_amount` (C-e431b-2), dette ≠ banque, même `group_difference` (plafond d'abord),
+  compte d'arrondi, compte d'écart, écriture sans projet d'en-tête, factures `paid` avec leur ligne à la version lue
+  sous verrou, transaction rapprochée, lettrage par facture, `recheck_open_locked_in_tx`, audit.
+- **AC6, AC6 bis** : bras fournisseur de `view_members`, `difference_account_of` (bloc des dettes lu sur l'écriture,
+  C-e431b-4 — *annoté le 2026-11-18 : cette forme devinée a été remplacée aux revues P1 et P2 par les lignes de dette
+  nommées et leur nombre recoupé, C-e431b-4 récrit, C-e431b-15*), `group_cancel_blocker` (tête `supplier_settlement_cancel_head` extraite, C-e431b-5) et `cancel_in_tx`
+  (`supplier_cancel_in_tx`) : l'`Invariant` de C-e431a-9 est remplacé ; `Some(true)` → `ReconciliationCancelChanged`.
+- **AC7** : les deux sites emploient déjà `CLEAR_SETTLEMENT_SQL` (43-1a) ; l'audit du détachement gagne
+  `settlementJournalEntryLineId` ; doc-comment du faux positif bénin sur `supplier_invoices::cancel_in_tx`.
+- **AC8** : retour en brouillon refusé (`PaidReconciled`) ; annulation du règlement refusée sur le motif
+  `MatchedBankTransaction` (variante `EntryNotReversable`, C-e431b-8).
+- **Hors des modules annoncés** (deux gardes de tests que le gate a fait rougir) :
+  `kesh-api/tests/bank_account_closed_inventory.rs` (écrivains classés, `ANNULATIONS` 6 → 7, `FENETRE` + 2, anti-muets
+  41 → 45 sites, G 14 → 16, revérifications 9 → 11 — C-e431b-6) ; `kesh-db/tests/letterings_lexical.rs` (cinq
+  écrivains du règlement fournisseur au lieu de trois ; `reverse_in_tx(` admis comme contre-passation).
+- **Tests** : 12 dans `crates/kesh-db/tests/grouped_settlements_supplier.rs` (C-e431b-1). ⚠️ Écrits **après** le code
+  (écart à « rouges d'abord », `kesh-gate-logs/e431b/rouges.log`) ; la campagne de mutations prouve qu'ils mordent.
+- **Mutations** (`kesh-gate-logs/e431b/mut/campagne.log`, code commité avant) : 6 jouées, 5 tuées (M1, M2, M4, M5, M6),
+  1 équivalente (M3 `AND version = ?`, facture tenue `FOR UPDATE` — C-e431b-11).
+- **Gates du passage en revue**, au dernier commit de code `cb594a7e2`, bases remises à neuf :
+  `scripts/test-fast.sh --ci` (voie 2) **5561 passés, 13 ignorés** (`kesh-gate-logs/e431b/test-fast-review-2.log`) ;
+  `scripts/gate-ci.sh kesh_ci_e431b` (voie 1) **5568 passés, 0 échec, 17 ignorés** (`gate-ci-review.log`). Le premier
+  `test-fast` (`test-fast-review.log`, `ad3acb75e`) rendait 1 échec, la garde lexicale
+  `supplier_settlement_writers_sync_or_dissolve`, corrigée par `cb594a7e2`. Frontend non touché. **E2E non lancé** (à
+  la clôture ; aucune route ni écran dans cette story).
+- **Manuels** : aucun changement (ni route ni écran). `user-manual.tex:3253` cite encore #823 comme limite — à la 43-3.
+
+#### Remédiation de la revue P1 (2026-11-18, Opus 5.5)
+
+Revue P1 (Opus, trois lentilles) : 0 CRITICAL, 0 HIGH, 3 MEDIUM distincts (A MEDIUM-1 = B-2 = E1, convergent ; B-1 =
+E2 ; B-3), une douzaine de LOW. Remédiation selon les décisions de l'orchestrateur, base : tête de la 43-1a fusionnée
+(`f711dd2de`, tests et fiche seulement, plus une phrase de doc-comment).
+- **Rouges d'abord** (`kesh-gate-logs/e431b/p1-rouges.log`, `rouges.log`) : 8 tests neufs, écrits avant le correctif ;
+  2 rouges qui confirment les MEDIUM — la vue rendait la dette de la facture détachée comme compte d'écart (`Some(9)`
+  au lieu de `None`), la fiche recevait 1213 entre deux factures du groupe ; 6 verts (couverture des LOW).
+  *(Annoté à la revue P2, LOW-4 : recompté depuis la source, `git grep -c '^#\[sqlx::test'` sur
+  `grouped_settlements_supplier.rs`, 12 à `366568c61`, 18 à `b3b2800be` : **six** tests neufs, dont **deux** rouges
+  et **quatre** verts ; « 8 » et « 6 » étaient faux.)*
+- **Vue** (C-e431b-4 récrit) : les lignes de dette = celles des membres + celles des factures détachées, nommées par la
+  trace du détachement (`detached_debt_lines`) ; positions 1 à n exigées, sinon `Invariant`.
+- **Verrous** (C-e431b-12) : toutes les factures verrouillées par identifiant croissant avant le compte
+  (`payment_batches::lock_invoices_sql` réemployée) ; la fonction unitaire n'est pas scindée.
+- **Règle commune** (C-e431b-13) : `difference_accounts`, `push_difference_lines`, `create_group_entry`, appelées par
+  les deux bras ; le bras client garde son comportement (ses binaires rejoués : `p1-cible-2.log`). Dette restante
+  au registre (issue proposée).
+- **E3** (C-e431b-14) : `LockedForSettlement.bank_ledger_account_id`, lu sous verrou.
+- **LOW** : tests de `TooMany`, `CurrencyMismatch`, `HeldByPaymentBatch` (l'autre facture nommée), brouillon, annulée,
+  compte d'arrondi absent, compte clos, exercice clos ; refus **après** l'écriture (transaction changée) ; délettrage ;
+  détachement de la première et d'une facture du milieu ; doc-comment de test corrigé (A LOW-2) ; *Note de version*
+  sans « réglable » (A LOW-6).
+- **Test de la 43-1a adapté** : `a_group_without_client_settlements_is_an_invariant` (revue P2 de la 43-1a) attendait
+  le message « aucun règlement client », que la 43-1b remplace ; il attend désormais l'`Invariant` du bras fournisseur
+  (sa facture fabriquée pointe la ligne de banque) — comportement inchangé : jamais une réponse.
+- **Mutations** (`mut/campagne.log`) : M1, M2, M4b, M5b, M7 (transaction `AND version = ?`, A LOW-5), M8 (lecture
+  de tête des factures), M9 (lignes détachées ignorées) tuées ; M3 équivalente ; M4, M5, M6 sans motif (code déplacé
+  ou remplacé), remplacées par M4b, M5b, M9.
+- **Gates** au commit de code `b3b2800be`, bases remises à neuf : `test-fast --ci` (voie 2) **5572 passés, 13 ignorés**
+  (`test-fast-p1.log`) ; `gate-ci.sh kesh_ci_e431b` (voie 1) **5579 passés, 0 échec, 17 ignorés** (`gate-ci-p1.log`).
+  Frontend non touché. E2E à la clôture.
+- **Non traité** : B-4 (commentaire, fait), B-5 (plan `EXPLAIN` de `locked_supplier_members`) et B-6
+  (`RaceDuringUpdate` inatteignable côté fournisseur) — issues proposées au rapport.
+
+#### Remédiation de la revue P2 (2026-11-18, Opus 5.5)
+
+Revue P2 (Sonnet 5.5, passe complète) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 8 LOW ; les trois MEDIUM de la P1 levés.
+Traités selon les décisions de l'orchestrateur :
+- **LOW-1** (production, rouge d'abord, `kesh-gate-logs/e431b/p2-rouges.log`) : une trace de détachement manquante
+  pour la dernière facture d'un groupe sans écart faisait rendre sa dette comme compte d'écart. La vue recoupe
+  désormais le nombre de lignes de dette nommées avec les factures du paiement (`group_size_at_payment`, C-e431b-15) ;
+  test `a_missing_detachment_trace_makes_the_view_an_invariant`. C-e431b-4 annoté, doc-comment récrit.
+- **LOW-6** (production) : `detached_debt_lines` filtre `si.status = 'cancelled'` (C-e431b-16).
+- **LOW-3** : test `the_bank_ledger_is_the_one_read_under_lock` et mutation M10.
+- **LOW-7** : test `a_group_cancel_on_an_entry_without_settlement_is_an_invariant` ; le test de la 43-1a adapté
+  renommé `a_malformed_supplier_group_is_an_invariant_for_the_view`, assertion sur la variante (C-e431b-18).
+- **LOW-4, LOW-5** : décompte de la P1 annoté (six tests neufs, deux rouges, quatre verts) ; AC6 bis, la ligne de la
+  vue (§ Completion Notes), le File List et le doc-comment public de `pay_supplier_invoices_in_tx` (verrouillage de
+  toutes les factures avant le compte) mis à jour.
+- **LOW-8** : la campagne distingue une mutation non compilée et garde la cause de chaque échec ; M11 (délettrage
+  retiré du dé-rapprochement) et M12 (côté de l'écart inversé au bras **client**) jouées.
+- **LOW-2** : inscrit au registre comme limite du test d'interblocage (C-e431b-17), non traité.
+- **Tests**, recomptés depuis la source (`git grep -c '^#\[sqlx::test'`) : `grouped_settlements_supplier.rs` 18 à
+  `b3b2800be`, **21** à `bd5d97820` (trois neufs) ; `grouped_settlements.rs` : un test renommé, aucun ajouté.
+- **Mutations** (`mut/campagne.log`, causes jointes) : M9, M10, M11, M12 tuées — M10 par la ligne de banque au compte
+  de l'instantané (6 au lieu de 9), M11 par l'achat resté lettré, M12 par l'`Invariant` de la balance (« débit=20.0300,
+  crédit=20.0100 »), M9 par l'`Invariant` du recoupement.
+- **Gates** au commit de code `bd5d97820`, bases remises à neuf : `test-fast --ci` (voie 2) **5575 passés, 13
+  ignorés** (`test-fast-p2.log`) ; `gate-ci.sh kesh_ci_e431b` (voie 1) **5582 passés, 0 échec, 17 ignorés**
+  (`gate-ci-p2.log`). Frontend non touché. E2E à la clôture.
+
 ### File List
+
+- `crates/kesh-db/src/repositories/grouped_settlements.rs`, `supplier_invoices.rs` (modifiés)
+- `crates/kesh-db/tests/grouped_settlements_supplier.rs` (neuf)
+- `crates/kesh-db/tests/letterings_lexical.rs`, `crates/kesh-api/tests/bank_account_closed_inventory.rs` (modifiés)
+- `crates/kesh-db/tests/grouped_settlements.rs` (modifié : le test de la 43-1a adapté puis renommé,
+  `a_malformed_supplier_group_is_an_invariant_for_the_view`)
+- `_bmad-output/implementation-artifacts/e0190-choix-autonomes-e431b.md`, `…-review-prompt-p1.md` (neufs)
+- cette fiche, `sprint-status.yaml` (modifiés)
 
 ## Change Log
 
@@ -161,3 +271,38 @@ Modules : `repositories/grouped_settlements` (paiement, bras du dé-rapprochemen
   `difference_account_of`), avec ses tests ; MEDIUM-1 : ordre des refus du code (plafond d'abord, dans
   `group_difference`) ; MEDIUM-2 : AC6 reprend C-e431a-9 (l'`Invariant` remplacé) et C-e431a-6 (jamais un retrait seul) ;
   LOW-2 à LOW-5 : règle tranchée, `t3.md` existant, ordre des lignes de l'écriture, test d'équilibre `r` et `e` ensemble.
+- 2026-11-17 (développement, Opus 5.5) — Validation terminée (contre `t3.md`, puis passe ciblée 2 : 0 au-dessus de
+  LOW) ; étape 0 (L-3) ; AC1 à AC8 et AC6 bis ; 12 tests, 6 mutations (5 tuées, 1 équivalente) ; `test-fast --ci` et
+  `gate-ci` verts à `cb594a7e2` ; passage en `review`. E2E à la clôture.
+- 2026-11-18 (revue P1, Opus, B/E/A : 0/0/3/≈12 ; remédiation Opus 5.5) — 3 MEDIUM remédiés (vue après détachement,
+  ordre des verrous, règle de la différence commune), LOW de tests et de rédaction ; `test-fast --ci` et `gate-ci`
+  verts à `b3b2800be`. Revue P2 complète à suivre.
+- 2026-11-18 (clôture, Opus 5.5) — **Boucle de revue close.** Tendance (CRITICAL/HIGH/MEDIUM/LOW) : **P1** complète,
+  trois lentilles B, E, A, toutes Opus — 0/0/3/≈12 (MEDIUM : vue fausse après le détachement de la dernière facture,
+  convergent sur les trois lentilles ; ordre des verrous compte avant facture ; règle de la différence en double) →
+  **P2** complète, Sonnet — 0/0/0/8 → **P3** ciblée sur `bd5d97820`, Haiku — 0/0/0/4. Les défauts de production de la
+  P1 et le LOW-1 de la P2 ont été reproduits par un test rouge avant correction (`p1-rouges.log`, `p2-rouges.log`).
+  **Reclassements** : aucun MEDIUM reclassé en dette. Le reste de la duplication (B-3), le contrôle de plan (B-5) et
+  `RaceDuringUpdate` inatteignable (B-6) sont ouverts en issues ; issues de la boucle : **#1255 à #1258** (#1258 : le
+  coût par vue de `group_size_at_payment`, LOW-C de la P3). P2 LOW-2 inscrit au registre comme limite du test
+  d'interblocage (C-e431b-17), non traité. P3 : LOW-A traité (`debt_lines_out_of_their_positions_make_the_view_an_invariant`,
+  mutation M13 tuée), LOW-B traité (C-e431b-18 annoté), **LOW-D non traité** — l'assertion de
+  `a_missing_detachment_trace_makes_the_view_an_invariant` porte sur la variante seule, sans épingler le message du
+  recoupement (aucune autre cause d'`Invariant` n'y précède le recoupement, d'après la P3). Avant la clôture, tête
+  de la branche d'épique fusionnée (`fcce75ed3`, clôture de la 43-1a ; conflit de `sprint-status.yaml` résolu en gardant
+  les deux lignes). **Gates de clôture** au dernier commit de code `920471faa`, bases remises à neuf :
+  `test-fast --ci` (voie 2) **5576 passés, 13 ignorés** (`test-fast-cloture.log`) ; `gate-ci.sh kesh_ci_e431b`
+  (voie 1) **5583 passés, 0 échec, 17 ignorés** (`gate-ci-cloture.log`) ; frontend complet après `npm ci` —
+  `check`, `lint-i18n-ownership`, `build` verts, Vitest **3948 tests, 246 fichiers** (`front-*.log`) ; **E2E complet**
+  sur `kesh_e2e_e431b`, port 3477 (`e2e-cloture.log`, script `e2e-cloture.sh`) : **437 passés, 7 échecs, 18 ignorés**
+  — les sept de la KF-029 (#97), un par un : `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`,
+  `onboarding.spec.ts:57`, `:77`, `:150` ; aucun échec variable. Statut `done`.
+- 2026-11-18 (reprise de `main` après l'Epic 37, branche `chore/43-reprise-main`, `6f152a5f8` à `69c4d1db7`) — Bras
+  fournisseur : `foreign: None` sur la banque et chaque dette ; refus `DifferenceAccountInForeignCurrency` par la règle
+  commune `difference_accounts`, test rouge (`grouped_settlements_supplier.rs`,
+  `a_foreign_currency_difference_account_is_refused`, rouge `MultiCurrencyDisabled`) puis vert ; registre
+  C-e431b-19 (détail commun : C-e431a-17 de la 43-1a). Gates au commit `69c4d1db7`, bases remises à neuf (journaux
+  `kesh-gate-logs/e43r/`) : `test-fast --ci` 6013/13 ; `gate-ci` 6030/0/17 (au second tirage, le premier rouge sur
+  `disque_sature_pendant_l_ecriture`, hors de l'Epic 43, vert rejoué seul) ; frontend vert (Vitest 4353) ; E2E 458
+  passés, 18 ignorés, et les sept échecs de la KF-029 seuls : `mode-expert.spec.ts:26`, `:41`,
+  `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`.

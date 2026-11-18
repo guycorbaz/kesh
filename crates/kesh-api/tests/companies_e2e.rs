@@ -111,6 +111,54 @@ async fn companies_current_returns_company(pool: MySqlPool) {
     assert_eq!(body["bankAccounts"].as_array().unwrap().len(), 0);
 }
 
+/// Story 37-1 (AC-2) — `GET /companies/current` expose le réglage
+/// multi-devises : `multiCurrencyEnabled`, les trois comptes et
+/// `baseCurrency: "CHF"`, **toujours présents** (`null` quand non désignés) ;
+/// puis les valeurs posées (activation simulée en SQL direct, la route vient en
+/// phase suivante).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn companies_current_expose_le_reglage_multi_devises(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    create_test_company(&pool).await;
+    ensure_admin_user(&pool, &test_config()).await.unwrap();
+    let token = login(&app).await;
+    let lire = || async {
+        let resp = app
+            .client
+            .get(app.url("/api/v1/companies/current"))
+            .header("Authorization", format!("Bearer {token}"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+        resp.json::<serde_json::Value>().await.unwrap()["company"].clone()
+    };
+
+    let societe = lire().await;
+    assert_eq!(societe["multiCurrencyEnabled"], false);
+    assert_eq!(societe["baseCurrency"], "CHF");
+    for cle in ["fxGainAccountId", "fxLossAccountId", "fxTransitAccountId"] {
+        assert!(
+            societe.get(cle).is_some_and(|v| v.is_null()),
+            "{cle} présent et null : {societe}"
+        );
+    }
+
+    sqlx::query(
+        "UPDATE companies SET multi_currency_enabled = TRUE, fx_gain_account_id = 11, \
+         fx_loss_account_id = 12, fx_transit_account_id = 13",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let societe = lire().await;
+    assert_eq!(societe["multiCurrencyEnabled"], true);
+    assert_eq!(societe["fxGainAccountId"], 11);
+    assert_eq!(societe["fxLossAccountId"], 12);
+    assert_eq!(societe["fxTransitAccountId"], 13);
+    assert_eq!(societe["baseCurrency"], "CHF");
+}
+
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn companies_current_requires_auth(pool: MySqlPool) {
     let app = spawn_app(pool).await;

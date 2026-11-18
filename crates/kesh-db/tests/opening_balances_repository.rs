@@ -107,6 +107,8 @@ async fn create_acc(
             parent_id: None,
             role,
             postable: true,
+            currency: None,
+            own_fx_accounts: None,
         },
     )
     .await
@@ -133,12 +135,14 @@ fn opening_entry(
                 debit: dec!(1000),
                 credit: dec!(0),
                 project_id: None,
+                foreign: None,
             },
             NewJournalEntryLine {
                 account_id: retained_id,
                 debit: dec!(0),
                 credit: dec!(1000),
                 project_id: None,
+                foreign: None,
             },
         ],
     }

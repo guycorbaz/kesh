@@ -103,12 +103,14 @@ async fn validated_invoice(
                     debit: amount,
                     credit: Decimal::ZERO,
                     project_id: None,
+                    foreign: None,
                 },
                 NewJournalEntryLine {
                     account_id: revenue,
                     debit: Decimal::ZERO,
                     credit: amount,
                     project_id: None,
+                    foreign: None,
                 },
             ],
         },
@@ -925,12 +927,14 @@ async fn residuel_reste_nul_laisse_paid_at(pool: MySqlPool) {
                     debit: dec!(100.00),
                     credit: Decimal::ZERO,
                     project_id: None,
+                    foreign: None,
                 },
                 NewJournalEntryLine {
                     account_id: seeded.accounts["1100"],
                     debit: Decimal::ZERO,
                     credit: dec!(100.00),
                     project_id: None,
+                    foreign: None,
                 },
             ],
         },
@@ -2653,4 +2657,66 @@ async fn la_sortie_de_l_annulation_porte_la_facture_relue(pool: MySqlPool) {
     assert_eq!(done.amount_settled, Decimal::ZERO);
     assert_eq!(done.amount_due_after, dec!(100.00));
     assert_eq!(done.lines.len(), 1);
+}
+
+/// Story 37-3a (AC-5) — un compte de règlement **interne en devise** (par
+/// ailleurs actif, imputable, distinct de la créance ; société multi-devises,
+/// compte passé en `USD` par SQL) est refusé au règlement d'une facture client,
+/// sous son nom (`AccountInForeignCurrency`, compte et devise) : le règlement
+/// s'écrit en CHF. Rien n'est écrit — ni règlement, ni écriture, ni audit, et
+/// la version de la facture ne bouge pas. Sans l'appel de
+/// `refuse_foreign_currency_accounts_in_tx` dans `settle_invoice`, le refus
+/// viendrait du contrôle central de l'écriture (`AccountRequiresCurrency`) ;
+/// revue de code P1.
+#[sqlx::test(migrations = "./test-schema")]
+async fn un_compte_interne_en_devise_est_refuse(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.expect("seed");
+    let inv_id = validated_invoice(&pool, &seeded, dec!(100.00), ymd(2026, 3, 1)).await;
+    let usd = sqlx::query(
+        "INSERT INTO accounts (company_id, number, name, account_type) \
+         VALUES (?, '1090', 'Compte courant USD', 'Asset')",
+    )
+    .bind(seeded.company_id)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    sqlx::query("UPDATE companies SET multi_currency_enabled = TRUE WHERE id = ?")
+        .bind(seeded.company_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE accounts SET currency = 'USD' WHERE id = ?")
+        .bind(usd)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let avant = empreinte_reglement(&pool, inv_id).await;
+
+    let err = settle_at_current_version(
+        &pool,
+        seeded.admin_user_id,
+        seeded.company_id,
+        inv_id,
+        SettlementChoice::InternalAccount { account_id: usd },
+        dec!(100.00),
+        ymd(2026, 3, 5),
+    )
+    .await
+    .expect_err("un compte en devise doit être refusé");
+    match err {
+        DbError::AccountInForeignCurrency {
+            account_id: Some(id),
+            ref currency,
+        } => {
+            assert_eq!(id, usd);
+            assert_eq!(currency, "USD");
+        }
+        other => panic!("attendu AccountInForeignCurrency, obtenu {other:?}"),
+    }
+    assert_eq!(
+        empreinte_reglement(&pool, inv_id).await,
+        avant,
+        "rien d'écrit"
+    );
 }

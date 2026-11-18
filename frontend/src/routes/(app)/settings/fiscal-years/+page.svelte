@@ -4,7 +4,7 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
-	import { Plus, Pencil, Lock, LockOpen, ClipboardCheck } from '@lucide/svelte';
+	import { Plus, Pencil, Lock, LockOpen, ClipboardCheck, ArrowLeftRight } from '@lucide/svelte';
 
 	import {
 		closeFiscalYear,
@@ -22,6 +22,7 @@
 	} from '$lib/features/fiscal-years/fiscal-years.helpers';
 	import { checkTitle } from '$lib/features/fiscal-years/closing-checks-labels';
 	import FiscalYearChecks from '$lib/features/fiscal-years/FiscalYearChecks.svelte';
+	import RevaluationPanel from '$lib/features/fiscal-years/RevaluationPanel.svelte';
 	import type {
 		ClosingChecksResponse,
 		FiscalYearResponse,
@@ -75,6 +76,17 @@
 	let closeChecksData = $state<ClosingChecksResponse | null>(null);
 	let closeChecksRequest = 0;
 	let closePoints = $derived(closeChecksData ? pointsToVerify(closeChecksData) : []);
+	// Story 37-5 (AC-9) — K9 en attention : « Clôturer » désactivé (la clôture
+	// refuserait). Contrôles en chargement ou en échec : le bouton reste actif, le
+	// serveur fait foi.
+	let closeBlockedByK9 = $derived(
+		closePoints.some((p) => p.code === 'FOREIGN_ACCOUNTS_NOT_REVALUED')
+	);
+
+	// Story 37-5 (AC-6) — l'écran de la réévaluation, depuis la ligne d'un exercice
+	// ouvert et multi-devises (Comptable, Administrateur).
+	let revaluationOpen = $state(false);
+	let revaluationTarget = $state<FiscalYearResponse | null>(null);
 
 	// Reopen dialog (Story 14-2 — Admin only, motif obligatoire)
 	/** Borne serveur `REOPEN_MOTIF_MAX` (audit_log.details_json, rétention 10 ans). */
@@ -281,6 +293,16 @@
 		}
 	}
 
+	/** K9 : après une réévaluation ou une récupération de cours, relire les contrôles. */
+	function reloadChecks(): void {
+		if (checksTarget) void openChecks(checksTarget);
+	}
+
+	function openRevaluation(fy: FiscalYearResponse): void {
+		revaluationTarget = fy;
+		revaluationOpen = true;
+	}
+
 	/** K7 : du panneau vers le dialogue de création. */
 	function createFromChecks(): void {
 		checksOpen = false;
@@ -332,7 +354,12 @@
 				// Story 15-12a (#543) — un exercice antérieur est encore ouvert :
 				// le message du serveur le nomme. Traité AVANT la branche
 				// ILLEGAL_STATE_TRANSITION, qui dirait « déjà clôturé » à tort.
-				if (err.code === 'EARLIER_FISCAL_YEAR_OPEN') {
+				// Story 37-5 (AC-9) — un compte en devise n'est pas réévalué : même
+				// traitement (message du serveur, dialogue fermé).
+				if (
+					err.code === 'EARLIER_FISCAL_YEAR_OPEN' ||
+					err.code === 'FOREIGN_ACCOUNTS_NOT_REVALUED'
+				) {
 					closeError = err.message;
 					notifyError(err.message);
 					closeOpen = false;
@@ -483,6 +510,20 @@
 									aria-label="{i18nMsg('fiscal-years-checks-button', 'Préparer la clôture')} {fy.name}"
 								>
 									<ClipboardCheck class="h-4 w-4" aria-hidden="true" />
+								</Button>
+							{/if}
+							<!-- Story 37-5 (AC-6) — exercice ouvert ET multi-devises, Comptable et
+							     Administrateur ; en mono-devise, rien n'apparaît (D1, R3). -->
+							{#if fy.status === 'Open' && fy.multiCurrency && canMutate}
+								<Button
+									variant="ghost"
+									size="icon-xs"
+									data-testid="fiscal-year-revaluation-{fy.id}"
+									title={i18nMsg('fiscal-years-revaluation-button', 'Réévaluer les devises')}
+									onclick={() => openRevaluation(fy)}
+									aria-label="{i18nMsg('fiscal-years-revaluation-button', 'Réévaluer les devises')} {fy.name}"
+								>
+									<ArrowLeftRight class="h-4 w-4" aria-hidden="true" />
 								</Button>
 							{/if}
 							{#if canMutate}
@@ -671,9 +712,10 @@
 			<Dialog.Title>
 				{msg('fiscal-year-close-confirmation-title', "Clôturer l'exercice ?")}
 			</Dialog.Title>
-			<!-- Story 29-1a (AC6) — le rappel des contrôles préalables. Il ne bloque
-			     rien : le bouton « Clôturer » reste actif pendant le chargement et après
-			     un échec. ⛔ Ni « Aucun point » ni « N point(s) » avant la réponse (M-a22). -->
+			<!-- Story 29-1a (AC6) — le rappel des contrôles préalables. Le bouton
+			     « Clôturer » reste actif pendant le chargement et après un échec (le
+			     serveur fait foi) ; depuis la Story 37-5, il est désactivé quand K9 est en
+			     attention. ⛔ Ni « Aucun point » ni « N point(s) » avant la réponse (M-a22). -->
 			<div class="rounded-md border border-border p-3 text-sm" data-testid="fiscal-year-close-checks">
 				{#if closeChecksState === 'loading'}
 					<p class="text-text-muted" role="status" data-testid="fiscal-year-close-checks-loading">
@@ -724,6 +766,11 @@
 		{#if closeError}
 			<p class="text-sm text-red-600" role="alert">{closeError}</p>
 		{/if}
+		{#if closeBlockedByK9}
+			<p class="text-sm text-error" data-testid="fiscal-year-close-blocked-k9">
+				{i18nMsg('fiscal-years-checks-k9-close-blocked', 'Réévaluez d’abord les comptes en devise.')}
+			</p>
+		{/if}
 		<Dialog.Footer>
 			<Dialog.Close>
 				<Button variant="outline" type="button">
@@ -734,7 +781,7 @@
 				type="button"
 				data-testid="fiscal-year-close-confirm"
 				class="bg-red-600 hover:bg-red-700"
-				disabled={closeSubmitting}
+				disabled={closeSubmitting || closeBlockedByK9}
 				onclick={submitClose}
 			>
 				{closeSubmitting
@@ -759,10 +806,38 @@
 			loadState={checksState}
 			checks={checksData}
 			onCreateFiscalYear={canMutate ? createFromChecks : undefined}
+			canRevalue={canMutate}
+			onChecksChanged={reloadChecks}
 		/>
 		<Dialog.Footer>
 			<Dialog.Close>
 				<Button variant="outline" type="button" data-testid="fiscal-year-checks-close">
+					{i18nMsg('fiscal-years-checks-close', 'Fermer')}
+				</Button>
+			</Dialog.Close>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
+
+<!-- Dialog : réévaluer les devises (Story 37-5, AC-6 — Comptable, Administrateur) -->
+<Dialog.Root bind:open={revaluationOpen}>
+	<Dialog.Content
+		class="max-h-[90vh] overflow-y-auto sm:max-w-6xl"
+		data-testid="fiscal-year-revaluation-dialog"
+	>
+		<Dialog.Header>
+			<Dialog.Title>
+				{i18nMsg('fiscal-years-revaluation-title', 'Réévaluer les devises — { $name }', {
+					name: revaluationTarget?.name ?? ''
+				})}
+			</Dialog.Title>
+		</Dialog.Header>
+		{#if revaluationOpen && revaluationTarget}
+			<RevaluationPanel fiscalYearId={revaluationTarget.id} mode="full" />
+		{/if}
+		<Dialog.Footer>
+			<Dialog.Close>
+				<Button variant="outline" type="button" data-testid="fiscal-year-revaluation-close">
 					{i18nMsg('fiscal-years-checks-close', 'Fermer')}
 				</Button>
 			</Dialog.Close>

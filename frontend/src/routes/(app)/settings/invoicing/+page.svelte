@@ -24,7 +24,11 @@
 	import { groupMaxChanged, readGroupMax } from '$lib/features/invoices/group-settlement-max';
 	import { amountEntryMessage } from '$lib/features/journal-entries/amount-entry-message';
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
-	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
+	import {
+		isForeignCurrencyAccount,
+		withoutForeignCurrency,
+		type AccountResponse,
+	} from '$lib/features/accounts/accounts.types';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 
 	const JOURNAL_CODES: JournalCode[] = ['Achats', 'Ventes', 'Banque', 'Caisse', 'OD'];
@@ -107,18 +111,22 @@
 
 	// Story 14-3b : comptes de config de facturation → postés à la génération
 	// d'écriture, donc filtrés `postable` (protège d'un rejet en aval).
+	// Story 37-3b (AC-4) : un compte désigné ne porte jamais de devise (37-1) —
+	// les comptes en devise ne sont pas proposés ; une valeur en place le reste
+	// (`withCurrentAccount`), avec l'avertissement de `accountOptionLabel`.
+	let designatable = $derived(withoutForeignCurrency(accounts));
 	let assetAccounts = $derived(
-		accounts.filter((a) => a.active && a.postable && a.accountType === 'Asset'),
+		designatable.filter((a) => a.active && a.postable && a.accountType === 'Asset'),
 	);
 	let revenueAccounts = $derived(
-		accounts.filter((a) => a.active && a.postable && a.accountType === 'Revenue'),
+		designatable.filter((a) => a.active && a.postable && a.accountType === 'Revenue'),
 	);
 	let liabilityAccounts = $derived(
-		accounts.filter((a) => a.active && a.postable && a.accountType === 'Liability'),
+		designatable.filter((a) => a.active && a.postable && a.accountType === 'Liability'),
 	);
 	// Story 25-4-c3-a1 : un écart d'arrondi est un résultat — charge ou produit.
 	let resultAccounts = $derived(
-		accounts.filter(
+		designatable.filter(
 			(a) =>
 				a.active && a.postable && (a.accountType === 'Expense' || a.accountType === 'Revenue'),
 		),
@@ -148,6 +156,9 @@
 	/** Le libellé d'une option ; un compte archivé, seule valeur en place qui peut l'être, le dit (#486). */
 	function accountOptionLabel(a: AccountResponse): string {
 		const label = `${a.number} — ${a.name}`;
+		if (isForeignCurrencyAccount(a)) {
+			return `${label} ${i18nMsg('settings-invoicing-account-foreign', '(en devise : à remplacer)')}`;
+		}
 		return a.active
 			? label
 			: `${label} ${i18nMsg('settings-invoicing-account-archived', '(archivé)')}`;

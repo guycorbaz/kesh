@@ -46,9 +46,9 @@ async fn apply_migrations_up_to(
     assert!(
         n <= all.len(),
         "apply_migrations_up_to: n={} > total={} — vérifier que le calcul \
-         `total - 58` (fenêtre d'upgrade, FRONTIÈRE figée à 34) reste \
+         `total - 61` (fenêtre d'upgrade, FRONTIÈRE figée à 34) reste \
          cohérent avec l'ajout de migrations futures. Si une migration a été ajoutée à \
-         la branche, l'assertion `total == 92` du test upgrade_path_preserves_data \
+         la branche, l'assertion `total == 95` du test upgrade_path_preserves_data \
          doit également échouer, c'est son rôle : elle signale qu'il faut décider \
          explicitement si la fenêtre s'élargit (bumper `total` seul) ou si la \
          frontière doit rester à 34 (bumper `total` ET la fenêtre). Cf. garde-fou \
@@ -65,8 +65,8 @@ async fn apply_migrations_up_to(
     sub.run(pool).await
 }
 
-/// AC #15a — cas générique upgrade path : `total - 58` migrations appliquées
-/// (**34** à ce jour) + seed + `MIGRATOR.run()` final, qui applique les **58**
+/// AC #15a — cas générique upgrade path : `total - 61` migrations appliquées
+/// (**34** à ce jour) + seed + `MIGRATOR.run()` final, qui applique les **61**
 /// dernières. Assertion : seed préservé à travers la fenêtre d'upgrade.
 ///
 /// ⚠️ Les nombres ci-dessus se recomptent, ils ne se relisent pas — cf. le
@@ -129,14 +129,17 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     // + installation_settings (Story v0172-session, refs #876, refs #891) = 89.
     // + supplier_invoice_internal_number (Story 33-1a, refs #926) = 90.
     // + bank_accounts_without_iban (Story 34-11a1, refs #972) = 91.
-    // + grouped_settlements (Story 43-1a, refs #823) = 92.
+    // + multi_currency_settings (Story 37-1) = 92.
+    // + exchange_rates (Story 37-2) = 93.
+    // + journal_lines_foreign_currency (Story 37-3a) = 94.
+    // + grouped_settlements (Story 43-1a, refs #823) = 95.
     let total = kesh_db::MIGRATOR.migrations.len();
     assert_eq!(
-        total, 92,
-        "92 migrations attendues (91 précédentes + Story 43-1a : grouped_settlements)"
+        total, 95,
+        "95 migrations attendues (94 précédentes + Story 43-1a : grouped_settlements)"
     );
 
-    // Étape 1 : applique toutes les migrations sauf les 58 dernières. La
+    // Étape 1 : applique toutes les migrations sauf les 61 dernières. La
     // fenêtre d'upgrade démarre donc à la 35ᵉ, `20260614000001_vat_accounts_config`
     // (Story 18-1a), et court jusqu'à la dernière du dépôt. Ne pas ré-énumérer
     // ici les migrations de la fenêtre : une liste nominative se périme à chaque
@@ -144,17 +147,17 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     // plus bas. Le seul nombre qui fait foi est celui du `total - N` ci-dessous.
     //
     // Note `total - N` : expression relative à la longueur totale, tandis que
-    // l'assertion `total == 92` ci-dessus est INTENTIONNELLEMENT codée en dur
+    // l'assertion `total == 95` ci-dessus est INTENTIONNELLEMENT codée en dur
     // pour fail-loud sur toute évolution non revue. À chaque migration ajoutée,
     // le mainteneur doit (1) bumper ce compte (2) incrémenter `N` du même pas,
     // de sorte que `total - N` — la frontière — reste **constant**.
     //
     // Frontière actuelle : **34**. Le test applique donc les 34 premières
     // migrations (jusqu'à `20260613000001_vat_rates_crud` incluse), seede des
-    // données, puis joue les 58 restantes comme « fenêtre d’upgrade ».
+    // données, puis joue les 61 restantes comme « fenêtre d’upgrade ».
     //
-    // ⚠️ `N` DOIT être incrémenté en même temps que `total`. Le laisser à 57
-    // avec `total = 92` porterait la frontière à 35 : le test continuerait de
+    // ⚠️ `N` DOIT être incrémenté en même temps que `total`. Le laisser à 60
+    // avec `total = 95` porterait la frontière à 35 : le test continuerait de
     // passer en testant une fenêtre plus étroite d'une migration.
     // Story 16-1a : 21 → 22, frontière inchangée (56 - 22 = 55 - 21 = 34).
     // Story 16-1a-bis : 22 → 23, frontière inchangée (57 - 23 = 34).
@@ -220,17 +223,21 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     // Story v0172-session : 54 → 55, frontière inchangée (89 - 55 = 34).
     // Story 33-1a : 55 → 56, frontière inchangée (90 - 56 = 34).
     // Story 34-11a1 : 56 → 57, frontière inchangée (91 - 57 = 34).
-    // Story 43-1a : 57 → 58, frontière inchangée (92 - 58 = 34).
+    // Story 37-1 : 57 → 58, frontière inchangée (92 - 58 = 34).
+    // Story 37-2 : 58 → 59, frontière inchangée (93 - 59 = 34).
+    // Story 37-3a : 59 → 60, frontière inchangée (94 - 60 = 34).
+    // Story 43-1a : 60 → 61, frontière inchangée (95 - 61 = 34) — reprise de
+    // `main` après l'Epic 37 (sur sa branche, la 43-1a avait posé 57 → 58).
     //
     // ⚠️ J'ai d'abord porté `total` à 69 SANS toucher à ce soustracteur : le socle
     // est alors passé de 34 à 35 migrations, la fenêtre a glissé d'un cran, et le
     // test a rougi non plus sur son compteur mais sur `COUNT(accounts) : expected
     // 4, got 2` — un échec qui ne ressemble en rien à sa cause. *Les deux nombres
     // se bougent du même pas, et le commentaire ci-dessus le disait.*
-    let n_before_upgrade_window = total - 58;
+    let n_before_upgrade_window = total - 61;
     apply_migrations_up_to(&pool, n_before_upgrade_window)
         .await
-        .expect("apply_migrations_up_to(total - 58) failed");
+        .expect("apply_migrations_up_to(total - 61) failed");
 
     // Étape 2 : seed 1 company + 1 user + 2 accounts + 1 invoice + 1 contact.
     let company_id: i64 = sqlx::query_scalar(
@@ -299,7 +306,7 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     .await
     .expect("INSERT invoice failed");
 
-    // Étape 3 : appliquer les 58 migrations restantes via MIGRATOR.run().
+    // Étape 3 : appliquer les 61 migrations restantes via MIGRATOR.run().
     kesh_db::MIGRATOR
         .run(&pool)
         .await
@@ -882,32 +889,6 @@ async fn record_boot_version_updates_row(pool: MySqlPool) {
 const MANUAL_SOURCE_VERSION: i64 = 20261030000001;
 const MANUAL_SOURCE_LABEL: &str = "bank_imports_manual_source";
 
-/// Chaque ligne d'une table, colonne par colonne (toutes les colonnes de
-/// `information_schema`, `NULL` rendu `∅`), triée par `id` : la comparaison
-/// avant/après ne choisit pas les colonnes qu'elle regarde.
-async fn table_snapshot(pool: &MySqlPool, table: &str) -> Vec<String> {
-    let columns: Vec<String> = sqlx::query_scalar(
-        "SELECT COLUMN_NAME FROM information_schema.COLUMNS \
-         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? ORDER BY ORDINAL_POSITION",
-    )
-    .bind(table)
-    .fetch_all(pool)
-    .await
-    .unwrap();
-    assert!(!columns.is_empty(), "table {table} introuvable");
-    let parts: Vec<String> = columns
-        .iter()
-        .map(|c| format!("'{c}=', IFNULL(CAST(`{c}` AS CHAR), '∅')"))
-        .collect();
-    sqlx::query_scalar(&format!(
-        "SELECT CONCAT_WS('|', {}) FROM `{table}` ORDER BY id",
-        parts.join(", ")
-    ))
-    .fetch_all(pool)
-    .await
-    .unwrap()
-}
-
 async fn application_tables(pool: &MySqlPool) -> Vec<String> {
     sqlx::query_scalar(
         "SELECT TABLE_NAME FROM information_schema.TABLES \
@@ -1085,12 +1066,17 @@ async fn bank_imports_manual_source_preserves_existing_rows(pool: MySqlPool) {
         "journal_entries",
         "journal_entry_lines",
     ];
+    // Story 37-3a : les colonnes se fixent AVANT la montée — une migration
+    // postérieure qui ajoute des colonnes (`journal_entry_lines.amount_currency`…,
+    // `20261114000003`) n'entre pas dans la comparaison.
     let mut before = Vec::new();
     for t in watched {
-        before.push(table_snapshot(&pool, t).await);
+        let cols = columns_of(&pool, t).await;
+        let snap = table_snapshot_on(&pool, t, &cols).await;
+        before.push((cols, snap));
     }
-    assert_eq!(before[0].len(), 2, "montage : deux imports semés");
-    assert_eq!(before[1].len(), 4, "montage : quatre transactions semées");
+    assert_eq!(before[0].1.len(), 2, "montage : deux imports semés");
+    assert_eq!(before[1].1.len(), 4, "montage : quatre transactions semées");
 
     // --- La montée ---
     kesh_db::MIGRATOR
@@ -1100,8 +1086,12 @@ async fn bank_imports_manual_source_preserves_existing_rows(pool: MySqlPool) {
 
     // 1. et 3. — chaque ligne se relit colonne par colonne à l'identique,
     // écriture liée et ses lignes comprises.
-    for (t, b) in watched.iter().zip(&before) {
-        assert_eq!(&table_snapshot(&pool, t).await, b, "table {t} modifiée");
+    for (t, (cols, b)) in watched.iter().zip(&before) {
+        assert_eq!(
+            &table_snapshot_on(&pool, t, cols).await,
+            b,
+            "table {t} modifiée"
+        );
     }
 
     // 2. — relecture par le code applicatif (décodage `from_str` compris).
@@ -1237,7 +1227,8 @@ async fn columns_of(pool: &MySqlPool, table: &str) -> Vec<String> {
     .unwrap()
 }
 
-/// [`table_snapshot`] sur une liste de colonnes **fixée avant la montée** : une
+/// Chaque ligne d'une table, colonne par colonne (`NULL` rendu `∅`), triée par
+/// `id`, sur une liste de colonnes **fixée avant la montée** : une
 /// colonne ajoutée par la migration (`link_origin`) n'entre pas dans la
 /// comparaison, toutes les autres, si.
 async fn table_snapshot_on(pool: &MySqlPool, table: &str, columns: &[String]) -> Vec<String> {
@@ -1310,6 +1301,7 @@ async fn facture_ouverte_rc1(
         debit: ht,
         credit: Decimal::ZERO,
         project_id: None,
+        foreign: None,
     }];
     if tva > Decimal::ZERO {
         lines.push(NewJournalEntryLine {
@@ -1317,6 +1309,7 @@ async fn facture_ouverte_rc1(
             debit: tva,
             credit: Decimal::ZERO,
             project_id: None,
+            foreign: None,
         });
     }
     lines.push(NewJournalEntryLine {
@@ -1324,6 +1317,7 @@ async fn facture_ouverte_rc1(
         debit: Decimal::ZERO,
         credit: ttc,
         project_id: None,
+        foreign: None,
     });
     let mut tx = pool.begin().await.unwrap();
     let je = kesh_db::repositories::journal_entries::create_in_tx(
@@ -1399,6 +1393,18 @@ async fn draft_migration_preserves_a_populated_base(pool: MySqlPool, frontiere: 
     .execute(&pool)
     .await
     .unwrap();
+    // Story 37-1 : de même, les colonnes multi-devises que lit le dépôt courant.
+    poser_colonnes_multi_devises(&pool).await;
+    // Story 43-1a (#823) : de même, les trois colonnes de `20261118000001` que lit
+    // le dépôt courant (facture fournisseur, règlement client, réglages).
+    for sql in [
+        "ALTER TABLE supplier_invoices ADD COLUMN settlement_journal_entry_line_id BIGINT NULL",
+        "ALTER TABLE invoice_settlements ADD COLUMN journal_entry_line_id BIGINT NULL",
+        "ALTER TABLE company_invoice_settings ADD COLUMN group_settlement_max_difference \
+         DECIMAL(19,4) NOT NULL DEFAULT 5.0000",
+    ] {
+        sqlx::query(sql).execute(&pool).await.unwrap();
+    }
     let entry_nullable: String = sqlx::query_scalar(
         "SELECT IS_NULLABLE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() \
          AND TABLE_NAME = 'supplier_invoices' AND COLUMN_NAME = 'purchase_journal_entry_id'",
@@ -1609,6 +1615,14 @@ async fn draft_migration_preserves_a_populated_base(pool: MySqlPool, frontiere: 
         .execute(&pool)
         .await
         .unwrap();
+    retirer_colonnes_multi_devises(&pool).await;
+    for sql in [
+        "ALTER TABLE supplier_invoices DROP COLUMN settlement_journal_entry_line_id",
+        "ALTER TABLE invoice_settlements DROP COLUMN journal_entry_line_id",
+        "ALTER TABLE company_invoice_settings DROP COLUMN group_settlement_max_difference",
+    ] {
+        sqlx::query(sql).execute(&pool).await.unwrap();
+    }
 
     let watched = [
         "supplier_invoices",
@@ -1863,7 +1877,16 @@ async fn installation_settings_adds_only_its_system_table(pool: MySqlPool) {
             .await
             .unwrap();
 
-    kesh_db::MIGRATOR.run(&pool).await.unwrap();
+    // Story 37-2 : la montée s'arrête à CETTE migration (`n + 1`) et non à la
+    // dernière du dépôt — une migration postérieure qui crée ses propres
+    // tables (`20261114000002_exchange_rates`) ferait sinon rougir
+    // l'assertion « une seule table neuve » sans rapport avec ce qu'elle garde.
+    apply_migrations_up_to(
+        &pool,
+        common::migrations_before(INSTALLATION_SETTINGS_VERSION, INSTALLATION_SETTINGS_LABEL) + 1,
+    )
+    .await
+    .unwrap();
 
     let mut expected = before.clone();
     expected.push("_kesh_installation_settings".to_string());
@@ -2043,12 +2066,14 @@ async fn facture_avant_numero(
                         debit: dec!(100),
                         credit: Decimal::ZERO,
                         project_id: None,
+                        foreign: None,
                     },
                     NewJournalEntryLine {
                         account_id: s.payable,
                         debit: Decimal::ZERO,
                         credit: dec!(100),
                         project_id: None,
+                        foreign: None,
                     },
                 ],
             },
@@ -2075,12 +2100,14 @@ async fn facture_avant_numero(
                         debit: dec!(100),
                         credit: Decimal::ZERO,
                         project_id: None,
+                        foreign: None,
                     },
                     NewJournalEntryLine {
                         account_id: s.bank,
                         debit: Decimal::ZERO,
                         credit: dec!(100),
                         project_id: None,
+                        foreign: None,
                     },
                 ],
             },
@@ -2166,6 +2193,8 @@ async fn internal_number_migration_numbers_a_populated_base(pool: MySqlPool) {
     .await
     .unwrap();
     assert_eq!(colonne, 0, "montage : la base partielle n'a pas la colonne");
+    // Story 37-1 : `journal_entries::create_in_tx` lit les colonnes multi-devises.
+    poser_colonnes_multi_devises(&pool).await;
 
     let a = societe_avant_numero(&pool, "Société A").await;
     let b = societe_avant_numero(&pool, "Société B").await;
@@ -2299,6 +2328,7 @@ async fn internal_number_migration_numbers_a_populated_base(pool: MySqlPool) {
         11,
         "montage : neuf achats, deux règlements"
     );
+    retirer_colonnes_multi_devises(&pool).await;
 
     kesh_db::MIGRATOR
         .run(&pool)
@@ -2389,6 +2419,8 @@ async fn internal_number_migration_keeps_the_thousandth(pool: MySqlPool) {
     )
     .await
     .unwrap();
+    // Story 37-1 : `journal_entries::create_in_tx` lit les colonnes multi-devises.
+    poser_colonnes_multi_devises(&pool).await;
     let s = societe_avant_numero(&pool, "Société mille").await;
     let fy = exercice_avant_numero(&pool, &s, "2026", "2026-01-01", "2026-12-31").await;
     // L'écriture d'achat peut être partagée : aucune unicité sur la colonne.
@@ -2413,6 +2445,7 @@ async fn internal_number_migration_keeps_the_thousandth(pool: MySqlPool) {
     .execute(&pool)
     .await
     .unwrap();
+    retirer_colonnes_multi_devises(&pool).await;
 
     kesh_db::MIGRATOR
         .run(&pool)
@@ -2492,6 +2525,8 @@ async fn sans_iban_la_montee_garde_chaque_compte_bancaire(pool: MySqlPool) {
         colonne, 0,
         "assertion de montage : la migration n'a pas tourné"
     );
+    // Story 37-1 : `companies::create` lit les colonnes multi-devises.
+    poser_colonnes_multi_devises(&pool).await;
 
     let company_id = kesh_db::repositories::companies::create(
         &pool,
@@ -2560,6 +2595,7 @@ async fn sans_iban_la_montee_garde_chaque_compte_bancaire(pool: MySqlPool) {
     }
     let avant = bank_accounts_avant_colonnes(&pool).await;
     assert_eq!(avant.len(), 3, "assertion de montage : trois comptes");
+    retirer_colonnes_multi_devises(&pool).await;
 
     kesh_db::MIGRATOR
         .run(&pool)
@@ -2668,4 +2704,508 @@ async fn sans_iban_la_migration_n_ajoute_aucune_table(pool: MySqlPool) {
     let before = application_tables(&pool).await;
     apply_migrations_up_to(&pool, n + 1).await.unwrap();
     assert_eq!(application_tables(&pool).await, before);
+}
+
+// ===========================================================================
+// Story 37-1 (AC-1) — `20261114000001_multi_currency_settings`
+// ===========================================================================
+
+const MULTI_DEVISES_VERSION: i64 = 20261114000001;
+const MULTI_DEVISES_LABEL: &str = "multi_currency_settings";
+
+/// Story 37-1 — sur une base d'**avant** la migration 37-1, un semis qui passe
+/// par le dépôt courant (`companies::create`, `journal_entries::create_in_tx`…)
+/// lit les colonnes neuves : elles sont posées le temps du semis
+/// (`common::colonnes_multi_devises`), puis retirées par
+/// [`retirer_colonnes_multi_devises`] avant la montée — `MIGRATOR.run()` les
+/// ajoute lui-même. Précédent : les colonnes de la 33-1a, posées et retirées
+/// par `draft_migration_preserves_a_populated_base`.
+async fn poser_colonnes_multi_devises(pool: &MySqlPool) {
+    common::colonnes_multi_devises(pool, true).await;
+}
+
+/// Retire les colonnes posées par [`poser_colonnes_multi_devises`].
+async fn retirer_colonnes_multi_devises(pool: &MySqlPool) {
+    common::colonnes_multi_devises(pool, false).await;
+}
+
+/// AC-1 — une base 0.17.6 **peuplée** (société, comptes, exercices) monte
+/// sans écart : société mono-devise sans comptes de différence, exercices
+/// mono-devise aux genres `day`, comptes sans devise ni comptes propres ; les
+/// colonnes d'avant restent intactes, `kesh_version_min_required` ne bouge
+/// pas (migration non breaking). Montage **résolu par version** (P6), et
+/// assertion de montage : la colonne `accounts.currency` est absente avant.
+///
+/// ⚠️ Les lignes se posent en SQL brut : les dépôts lisent désormais les
+/// colonnes neuves, absentes de la base d'avant la migration.
+#[sqlx::test(migrations = false)]
+async fn multi_devises_la_montee_pose_les_defauts(pool: MySqlPool) {
+    apply_migrations_up_to(
+        &pool,
+        common::migrations_before(MULTI_DEVISES_VERSION, MULTI_DEVISES_LABEL),
+    )
+    .await
+    .expect("apply_migrations_up_to(avant multi_currency_settings) failed");
+    let colonne: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() \
+         AND TABLE_NAME = 'accounts' AND COLUMN_NAME = 'currency'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        colonne, 0,
+        "assertion de montage : la migration n'a pas tourné"
+    );
+
+    let company_id: i64 = sqlx::query_scalar(
+        "INSERT INTO companies (name, address, org_type, accounting_language, instance_language) \
+         VALUES ('Montée SA', 'Rue 1, 1000 Lausanne', 'Pme', 'FR', 'FR') RETURNING id",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    for (numero, nom, genre) in [
+        ("1000", "Caisse", "Asset"),
+        ("3200", "Ventes", "Revenue"),
+        ("6900", "Frais", "Expense"),
+    ] {
+        sqlx::query(
+            "INSERT INTO accounts (company_id, number, name, account_type) VALUES (?, ?, ?, ?)",
+        )
+        .bind(company_id)
+        .bind(numero)
+        .bind(nom)
+        .bind(genre)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+    for (nom, debut, fin, statut) in [
+        ("Exercice 2025", "2025-01-01", "2025-12-31", "Closed"),
+        ("Exercice 2026", "2026-01-01", "2026-12-31", "Open"),
+    ] {
+        sqlx::query(
+            "INSERT INTO fiscal_years (company_id, name, start_date, end_date, status) \
+             VALUES (?, ?, ?, ?, ?)",
+        )
+        .bind(company_id)
+        .bind(nom)
+        .bind(debut)
+        .bind(fin)
+        .bind(statut)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+    let empreinte = |pool: MySqlPool| async move {
+        let comptes: Vec<String> = sqlx::query_scalar(
+            "SELECT CONCAT_WS('|', id, company_id, number, name, account_type, active, \
+             COALESCE(role, '∅'), postable, version, created_at, updated_at) \
+             FROM accounts ORDER BY id",
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        let exercices: Vec<String> = sqlx::query_scalar(
+            "SELECT CONCAT_WS('|', id, company_id, name, start_date, end_date, status, \
+             created_at, updated_at) FROM fiscal_years ORDER BY id",
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        let societe: Vec<String> = sqlx::query_scalar(
+            "SELECT CONCAT_WS('|', id, name, address, org_type, version, created_at, updated_at) \
+             FROM companies ORDER BY id",
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        (comptes, exercices, societe)
+    };
+    let avant = empreinte(pool.clone()).await;
+    assert_eq!(avant.0.len(), 3, "assertion de montage : trois comptes");
+    assert_eq!(avant.1.len(), 2, "assertion de montage : deux exercices");
+
+    kesh_db::MIGRATOR
+        .run(&pool)
+        .await
+        .expect("MIGRATOR.run() final failed — la montée doit passer sur une base peuplée");
+
+    assert_eq!(
+        empreinte(pool.clone()).await,
+        avant,
+        "colonnes d'avant intactes"
+    );
+    let societe: (bool, Option<i64>, Option<i64>, Option<i64>) = sqlx::query_as(
+        "SELECT multi_currency_enabled, fx_gain_account_id, fx_loss_account_id, \
+         fx_transit_account_id FROM companies WHERE id = ?",
+    )
+    .bind(company_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(societe, (false, None, None, None));
+    let exercices: Vec<(bool, String, String)> = sqlx::query_as(
+        "SELECT multi_currency, opening_rate_kind, closing_rate_kind FROM fiscal_years ORDER BY id",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        exercices,
+        vec![(false, "day".to_string(), "day".to_string()); 2]
+    );
+    let comptes: Vec<(Option<String>, Option<i64>, Option<i64>)> = sqlx::query_as(
+        "SELECT currency, fx_gain_account_id, fx_loss_account_id \
+         FROM accounts ORDER BY id",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(comptes, vec![(None, None, None); 3]);
+    // Les entités relisent la base migrée (listes de colonnes écrites à la main).
+    let lus = kesh_db::repositories::fiscal_years::list_by_company(&pool, company_id)
+        .await
+        .unwrap();
+    assert!(lus.iter().all(|fy| !fy.multi_currency));
+    let min: String =
+        sqlx::query_scalar("SELECT kesh_version_min_required FROM _kesh_version WHERE id = 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        min, "0.17.6",
+        "migration non breaking : min_required inchangé"
+    );
+}
+
+/// AC-1 — chaque contrainte neuve refuse **par son nom** : `usd` (collation
+/// binaire : la casse compte), `CHF` (la devise principale s'écrit `NULL`),
+/// une paire de comptes propres dépareillée, des comptes propres sur un compte
+/// CHF. Les formes admises passent.
+#[sqlx::test(migrations = "./test-schema")]
+async fn multi_devises_le_schema_refuse_par_chaque_contrainte(pool: MySqlPool) {
+    let company_id: i64 = sqlx::query_scalar(
+        "INSERT INTO companies (name, address, org_type, accounting_language, instance_language) \
+         VALUES ('Contraintes SA', 'Rue 1', 'Pme', 'FR', 'FR') RETURNING id",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let inserer = |numero: &'static str,
+                   devise: Option<&'static str>,
+                   gain: Option<i64>,
+                   perte: Option<i64>| {
+        let pool = pool.clone();
+        async move {
+            sqlx::query(
+                "INSERT INTO accounts (company_id, number, name, account_type, currency, \
+                 fx_gain_account_id, fx_loss_account_id) VALUES (?, ?, 'Compte', 'Asset', ?, ?, ?)",
+            )
+            .bind(company_id)
+            .bind(numero)
+            .bind(devise)
+            .bind(gain)
+            .bind(perte)
+            .execute(&pool)
+            .await
+        }
+    };
+    for (numero, devise, gain, perte, contrainte) in [
+        (
+            "1001",
+            Some("usd"),
+            None,
+            None,
+            "chk_accounts_currency_format",
+        ),
+        (
+            "1002",
+            Some("US1"),
+            None,
+            None,
+            "chk_accounts_currency_format",
+        ),
+        (
+            "1003",
+            Some("CHF"),
+            None,
+            None,
+            "chk_accounts_currency_not_base",
+        ),
+        (
+            "1004",
+            Some("USD"),
+            Some(1),
+            None,
+            "chk_accounts_fx_own_pair",
+        ),
+        (
+            "1005",
+            Some("USD"),
+            None,
+            Some(1),
+            "chk_accounts_fx_own_pair",
+        ),
+        (
+            "1006",
+            None,
+            Some(1),
+            Some(2),
+            "chk_accounts_fx_own_foreign",
+        ),
+    ] {
+        let refus = inserer(numero, devise, gain, perte)
+            .await
+            .expect_err("forme refusée par le schéma");
+        assert!(
+            refus.to_string().contains(contrainte),
+            "{numero} : refus attendu par {contrainte} : {refus}"
+        );
+    }
+    inserer("1100", None, None, None).await.expect("compte CHF");
+    inserer("1101", Some("USD"), None, None)
+        .await
+        .expect("compte USD par défaut");
+    inserer("1102", Some("EUR"), Some(7), Some(7))
+        .await
+        .expect("comptes propres, le même compte admis pour les deux");
+}
+
+/// AC-1 — la migration n'ajoute aucune table : la fenêtre d'import ne bouge
+/// pas, une sauvegarde 0.17.6 reste importable.
+#[sqlx::test(migrations = false)]
+async fn multi_devises_la_migration_n_ajoute_aucune_table(pool: MySqlPool) {
+    let n = common::migrations_before(MULTI_DEVISES_VERSION, MULTI_DEVISES_LABEL);
+    apply_migrations_up_to(&pool, n).await.unwrap();
+    let before = application_tables(&pool).await;
+    apply_migrations_up_to(&pool, n + 1).await.unwrap();
+    assert_eq!(application_tables(&pool).await, before);
+}
+
+// ===========================================================================
+// Story 37-2 (AC-1) — `20261114000002_exchange_rates`
+// ===========================================================================
+
+const COURS_VERSION: i64 = 20261114000002;
+const COURS_LABEL: &str = "exchange_rates";
+
+/// AC-1 — la migration ajoute deux tables **système**, vides
+/// (`_kesh_fetched_exchange_rates`, `_kesh_exchange_rate_fetch`), et
+/// **exactement une** table applicative, `exchange_rates`, vide ; aucune ligne
+/// existante n'est modifiée. Montage **résolu par version** (P6), et assertion
+/// de montage : les trois tables sont absentes avant, la société semée est là.
+/// La base est montée jusqu'à la migration de 37-2 incluse (`n + 1`), non
+/// jusqu'à la dernière du dépôt : une migration future ne change pas ce que ce
+/// test regarde.
+#[sqlx::test(migrations = false)]
+async fn exchange_rates_adds_two_system_tables_and_one_application_table(pool: MySqlPool) {
+    let n = common::migrations_before(COURS_VERSION, COURS_LABEL);
+    apply_migrations_up_to(&pool, n).await.unwrap();
+    let company_id: i64 = sqlx::query_scalar(
+        "INSERT INTO companies (name, address, org_type, accounting_language, instance_language, \
+         multi_currency_enabled) VALUES ('Cours SA', 'Rue 1, 1000 Lausanne', 'Pme', 'FR', 'FR', TRUE) \
+         RETURNING id",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let before = application_tables(&pool).await;
+    for t in [
+        "exchange_rates",
+        "_kesh_fetched_exchange_rates",
+        "_kesh_exchange_rate_fetch",
+    ] {
+        assert!(
+            !before.contains(&t.to_string()),
+            "assertion de montage : {t} absente avant"
+        );
+    }
+    let company_before: (String, bool) =
+        sqlx::query_as("SELECT name, multi_currency_enabled FROM companies WHERE id = ?")
+            .bind(company_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+    apply_migrations_up_to(&pool, n + 1).await.unwrap();
+
+    let mut expected = before.clone();
+    expected.extend(
+        [
+            "_kesh_exchange_rate_fetch",
+            "_kesh_fetched_exchange_rates",
+            "exchange_rates",
+        ]
+        .map(String::from),
+    );
+    expected.sort();
+    let mut after = application_tables(&pool).await;
+    after.sort();
+    assert_eq!(after, expected, "deux tables système et une applicative");
+    let applicatives = kesh_db::backup::TABLES_TO_TRUNCATE;
+    assert!(applicatives.contains(&"exchange_rates"));
+    assert!(!applicatives.contains(&"_kesh_fetched_exchange_rates"));
+    assert!(!applicatives.contains(&"_kesh_exchange_rate_fetch"));
+    for t in [
+        "exchange_rates",
+        "_kesh_fetched_exchange_rates",
+        "_kesh_exchange_rate_fetch",
+    ] {
+        let rows: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*) FROM {t}"))
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(rows, 0, "{t} vide : la migration n'écrit aucune donnée");
+    }
+    let company_after: (String, bool) =
+        sqlx::query_as("SELECT name, multi_currency_enabled FROM companies WHERE id = ?")
+            .bind(company_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(company_after, company_before, "ligne companies intacte");
+    let min_required: String =
+        sqlx::query_scalar("SELECT kesh_version_min_required FROM _kesh_version WHERE id = 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(min_required, "0.17.6", "migration non breaking");
+}
+
+// ===========================================================================
+// Story 37-3a (AC-1) — `20261114000003_journal_lines_foreign_currency`
+// ===========================================================================
+
+const LIGNES_EN_DEVISE_VERSION: i64 = 20261114000003;
+const LIGNES_EN_DEVISE_LABEL: &str = "journal_lines_foreign_currency";
+
+/// AC-1 — la migration ajoute à `journal_entry_lines` **trois** colonnes
+/// `NULL` (`amount_currency`, `exchange_rate`, `rate_source`) et **aucune**
+/// colonne de devise (CR-4, T3) ; une ligne existante les reçoit à `NULL` et
+/// garde toutes ses autres colonnes ; aucune table neuve ; non breaking.
+/// Montage **résolu par version** (P6), assertion de montage : les colonnes
+/// sont absentes avant, la ligne semée est là. Montée jusqu'à cette migration
+/// incluse (`n + 1`).
+#[sqlx::test(migrations = false)]
+async fn journal_lines_foreign_currency_adds_three_nullable_columns(pool: MySqlPool) {
+    let n = common::migrations_before(LIGNES_EN_DEVISE_VERSION, LIGNES_EN_DEVISE_LABEL);
+    apply_migrations_up_to(&pool, n).await.unwrap();
+    let company_id: i64 = sqlx::query_scalar(
+        "INSERT INTO companies (name, address, org_type, accounting_language, instance_language) \
+         VALUES ('Lignes SA', 'Rue 1, 1000 Lausanne', 'Pme', 'FR', 'FR') RETURNING id",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let fy_id: i64 = sqlx::query_scalar(
+        "INSERT INTO fiscal_years (company_id, name, start_date, end_date, status) \
+         VALUES (?, '2026', '2026-01-01', '2026-12-31', 'Open') RETURNING id",
+    )
+    .bind(company_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let mut comptes = Vec::new();
+    for (numero, genre) in [("1000", "Asset"), ("3000", "Revenue")] {
+        let id: i64 = sqlx::query_scalar(
+            "INSERT INTO accounts (company_id, number, name, account_type) \
+             VALUES (?, ?, ?, ?) RETURNING id",
+        )
+        .bind(company_id)
+        .bind(numero)
+        .bind(numero)
+        .bind(genre)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        comptes.push(id);
+    }
+    let entry_id: i64 = sqlx::query_scalar(
+        "INSERT INTO journal_entries (company_id, fiscal_year_id, entry_number, entry_date, \
+         journal, description) VALUES (?, ?, 1, '2026-03-01', 'OD', 'Avant') RETURNING id",
+    )
+    .bind(company_id)
+    .bind(fy_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    for (ordre, compte, debit, credit) in [(1, comptes[0], "10", "0"), (2, comptes[1], "0", "10")] {
+        sqlx::query(
+            "INSERT INTO journal_entry_lines (entry_id, account_id, line_order, debit, credit) \
+             VALUES (?, ?, ?, ?, ?)",
+        )
+        .bind(entry_id)
+        .bind(compte)
+        .bind(ordre)
+        .bind(debit)
+        .bind(credit)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+    let avant_cols = columns_of(&pool, "journal_entry_lines").await;
+    for c in ["amount_currency", "exchange_rate", "rate_source"] {
+        assert!(
+            !avant_cols.contains(&c.to_string()),
+            "assertion de montage : {c} absente"
+        );
+    }
+    let avant = table_snapshot_on(&pool, "journal_entry_lines", &avant_cols).await;
+    assert_eq!(avant.len(), 2, "montage : deux lignes semées");
+    let tables_avant = application_tables(&pool).await;
+
+    apply_migrations_up_to(&pool, n + 1).await.unwrap();
+
+    let apres_cols = columns_of(&pool, "journal_entry_lines").await;
+    let neuves: Vec<String> = apres_cols
+        .iter()
+        .filter(|c| !avant_cols.contains(c))
+        .cloned()
+        .collect();
+    assert_eq!(
+        neuves,
+        vec!["amount_currency", "exchange_rate", "rate_source"],
+        "trois colonnes, aucune de devise"
+    );
+    assert!(
+        !apres_cols
+            .iter()
+            .any(|c| c.contains("currency") && c != "amount_currency"),
+        "aucune colonne de devise : {apres_cols:?}"
+    );
+    let nullable: Vec<String> = sqlx::query_scalar(
+        "SELECT IS_NULLABLE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() \
+         AND TABLE_NAME = 'journal_entry_lines' \
+         AND COLUMN_NAME IN ('amount_currency', 'exchange_rate', 'rate_source')",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(nullable, vec!["YES"; 3]);
+    assert_eq!(
+        table_snapshot_on(&pool, "journal_entry_lines", &avant_cols).await,
+        avant,
+        "lignes existantes intactes"
+    );
+    let nulles: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM journal_entry_lines WHERE amount_currency IS NULL \
+         AND exchange_rate IS NULL AND rate_source IS NULL",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(nulles, 2, "les lignes existantes sont en CHF");
+    assert_eq!(
+        application_tables(&pool).await,
+        tables_avant,
+        "aucune table neuve"
+    );
+    let min_required: String =
+        sqlx::query_scalar("SELECT kesh_version_min_required FROM _kesh_version WHERE id = 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(min_required, "0.17.6", "migration non breaking");
 }
