@@ -722,6 +722,10 @@ fn is_no_op_change(before: &Account, changes: &AccountUpdate) -> bool {
         // place, n'est pas un changement.
         && changes.currency.resolve(before.currency.as_deref()) == before.currency
         && changes.own_fx_accounts.resolve(before.own_fx_accounts()) == before.own_fx_accounts()
+        // Correctif `fix-api-parent-compte` : renvoyer le parent en place n'est
+        // pas un changement ; sans cette comparaison, un `PUT` qui ne change que
+        // le parent serait ignoré en silence.
+        && changes.parent.resolve(before.parent_id) == before.parent_id
 }
 
 /// La société d'un compte, lue **sur le pool, hors transaction** (Story 37-1,
@@ -895,8 +899,26 @@ where
     Ok((count, closed_fiscal_years))
 }
 
-/// Met à jour un compte actif (nom et type). Verrouillage optimiste + audit log (Story 3.5).
+/// Met à jour un compte actif (nom, type, rôle, postabilité, devise, comptes
+/// propres et — depuis le correctif `fix-api-parent-compte` — parent).
+/// Verrouillage optimiste + audit log (Story 3.5).
 /// Retourne `IllegalStateTransition` si le compte est archivé.
+///
+/// # Parent (correctif `fix-api-parent-compte`)
+///
+/// `changes.parent` est à trois états (inchangé / racine / sous un compte),
+/// résolu sous le `FOR UPDATE` du compte. Un parent qui change passe, après
+/// les gardes de devise et avant les refus existants (rôle singleton, compte
+/// bancaire lié, écritures), les contrôles de [`create`] — parent de la
+/// société, actif, ni compte de différence de change, ni compte en devise
+/// mouvementé, ni l'un des comptes propres du compte — **plus** le refus d'un
+/// cycle ([`DbError::AccountParentCycle`]) : voir [`guard_parent_change_in_tx`].
+/// Le nouveau parent devient non imputable (comme à la création) ; l'ancien
+/// garde son état. Le compte déplacé garde sa postabilité, ses écritures et
+/// son historique : seule la hiérarchie change. Verrous supplémentaires : le
+/// nouveau parent `FOR UPDATE` **après** le compte, puis ses ancêtres en
+/// lecture verrouillante — deux déplacements croisés qui fermeraient un cycle
+/// se sérialisent (ou s'interbloquent, et la route les rejoue).
 ///
 /// `confirm_retype` (Story 25-2-a, [#382], [#274]) : autorise le changement
 /// d'`account_type` d'un compte **qui porte des écritures**. Sans lui, un tel
@@ -941,6 +963,96 @@ where
 /// comparé à la lecture hors transaction : écart → `NotFound`), puis, sous ce
 /// verrou, les désignations, la ligne d'écriture et les liens en lecture
 /// verrouillante.
+/// Les contrôles d'un changement de parent d'[`update`] (correctif
+/// `fix-api-parent-compte`) : ceux de [`create`], **plus** le refus d'un
+/// cycle. Ordre des refus :
+///
+/// 1. le parent est le compte lui-même → [`DbError::AccountParentCycle`] ;
+/// 2. absent de la société du compte → [`DbError::AccountParentNotFound`]
+///    (la route l'a déjà refusé, même message que la création) ; archivé →
+///    [`DbError::AccountParentArchived`] (même remarque) ;
+/// 3. un sous-compte du compte, à quelque niveau → `AccountParentCycle` ;
+/// 4. un compte de différence de change → `ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT`,
+///    un compte en devise mouvementé → `ACCOUNT_FOREIGN_PARENT_HAS_ENTRIES`
+///    (comme [`create`]) ;
+/// 5. l'un des comptes propres **résultants** du compte → `FX_ACCOUNT_INVALID`
+///    `notPostable` (il deviendrait non imputable — revue de code P2 de la
+///    37-1, 37-1-CR-P2-8, appliquée à la création).
+///
+/// **Verrous** : le parent `FOR UPDATE` (il passera non imputable), puis
+/// chacun de ses ancêtres en `LOCK IN SHARE MODE`, en remontant : lus
+/// verrouillés, ils sont la dernière version commitée, si bien qu'un
+/// déplacement concurrent qui fermerait le cycle par l'autre bout est vu, ou
+/// s'interbloque avec celui-ci (InnoDB en annule un, que la route rejoue, et
+/// le rejeu voit le cycle). La remontée est bornée par l'ensemble des comptes
+/// déjà vus : une hiérarchie déjà cyclique en base (aucun chemin d'écriture ne
+/// la produit) est signalée par `Invariant` plutôt que parcourue sans fin.
+async fn guard_parent_change_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    state: &CompanyCurrencyState,
+    account: &Account,
+    new_parent_id: i64,
+    own_fx: Option<OwnFxAccounts>,
+) -> Result<(), DbError> {
+    let parent: Option<(String, bool, Option<i64>)> = sqlx::query_as(
+        "SELECT number, active, parent_id FROM accounts WHERE id = ? AND company_id = ? FOR UPDATE",
+    )
+    .bind(new_parent_id)
+    .bind(account.company_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(map_db_error)?;
+    let Some((parent_number, parent_active, mut ancestor)) = parent else {
+        return Err(DbError::AccountParentNotFound);
+    };
+    if new_parent_id == account.id {
+        return Err(DbError::AccountParentCycle { parent_number });
+    }
+    if !parent_active {
+        return Err(DbError::AccountParentArchived { parent_number });
+    }
+
+    let mut seen = std::collections::HashSet::from([new_parent_id]);
+    while let Some(current) = ancestor {
+        if current == account.id {
+            return Err(DbError::AccountParentCycle { parent_number });
+        }
+        if !seen.insert(current) {
+            return Err(DbError::Invariant(format!(
+                "hiérarchie de comptes cyclique en base au-dessus du compte {new_parent_id}"
+            )));
+        }
+        ancestor = sqlx::query_scalar::<_, Option<i64>>(
+            "SELECT parent_id FROM accounts WHERE id = ? LOCK IN SHARE MODE",
+        )
+        .bind(current)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(map_db_error)?
+        .flatten();
+    }
+
+    let hits = fx_designations_of_in_tx(tx, account.company_id, state, new_parent_id).await?;
+    refuse_designated(hits, |_| true)?;
+    refuse_foreign_parent_with_entries_in_tx(tx, new_parent_id).await?;
+
+    if let Some(own) = own_fx {
+        for (field, id) in [
+            (FxAccountField::Gain, own.gain),
+            (FxAccountField::Loss, own.loss),
+        ] {
+            if id == new_parent_id {
+                return Err(DbError::FxAccountInvalid {
+                    field,
+                    reason: FxAccountReason::NotPostable,
+                    holder_account_id: Some(account.id),
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
 pub async fn update(
     pool: &MySqlPool,
     id: i64,
@@ -1030,6 +1142,16 @@ pub async fn update(
     )
     .await?;
 
+    // Correctif `fix-api-parent-compte` : le parent résolu ici, sous le
+    // `FOR UPDATE` du compte ; un parent qui change passe les contrôles de la
+    // création, plus le refus d'un cycle.
+    let parent_id = changes.parent.resolve(before.parent_id);
+    if parent_id != before.parent_id
+        && let Some(new_parent_id) = parent_id
+    {
+        guard_parent_change_in_tx(&mut tx, &state, &before, new_parent_id, own_fx).await?;
+    }
+
     // Story 14-3a : si le payload attribue un rôle singleton déjà porté par un
     // autre compte actif, échouer AVANT l'UPDATE pour pouvoir nommer ce compte.
     // La contrainte DB reste le filet (1062 sur course perdue).
@@ -1090,7 +1212,7 @@ pub async fn update(
 
     let rows = sqlx::query(
         "UPDATE accounts SET name = ?, account_type = ?, role = ?, postable = ?, \
-         currency = ?, fx_gain_account_id = ?, fx_loss_account_id = ?, \
+         currency = ?, fx_gain_account_id = ?, fx_loss_account_id = ?, parent_id = ?, \
          version = version + 1 WHERE id = ? AND version = ? AND active = TRUE",
     )
     .bind(&changes.name)
@@ -1100,6 +1222,7 @@ pub async fn update(
     .bind(&currency)
     .bind(own_fx.map(|o| o.gain))
     .bind(own_fx.map(|o| o.loss))
+    .bind(parent_id)
     .bind(id)
     .bind(version)
     .execute(&mut *tx)
@@ -1113,6 +1236,24 @@ pub async fn update(
         // le SELECT et l'UPDATE (lecture repeatable InnoDB).
         tx.rollback().await.map_err(map_db_error)?;
         return Err(DbError::OptimisticLockConflict);
+    }
+
+    // Correctif `fix-api-parent-compte` — comme à la création (code review
+    // 14-3a, D2) : le nouveau parent acquiert un sous-compte, il devient un
+    // compte de regroupement, non imputable, sans bump de version (conséquence
+    // structurelle, non modification demandée sur le parent). L'ancien parent
+    // garde son état, comme après l'archivage de son dernier sous-compte :
+    // l'utilisateur le rend imputable par un `PUT` s'il le veut
+    // ([`effective_postable`] l'admet dès qu'il n'a plus de sous-compte actif).
+    if parent_id != before.parent_id
+        && let Some(new_parent_id) = parent_id
+    {
+        sqlx::query("UPDATE accounts SET postable = FALSE WHERE id = ? AND company_id = ?")
+            .bind(new_parent_id)
+            .bind(before.company_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(map_db_error)?;
     }
 
     let after = sqlx::query_as::<_, Account>(FIND_BY_ID_SQL)
@@ -3090,6 +3231,7 @@ mod tests {
                 postable: true,
                 currency: Default::default(),
                 own_fx_accounts: Default::default(),
+                parent: Default::default(),
             },
             false,
         )
@@ -3150,6 +3292,7 @@ mod tests {
                 postable: true,
                 currency: Default::default(),
                 own_fx_accounts: Default::default(),
+                parent: Default::default(),
             },
             false,
         )
@@ -3193,6 +3336,7 @@ mod tests {
                 postable: true,
                 currency: Default::default(),
                 own_fx_accounts: Default::default(),
+                parent: Default::default(),
             },
             true,
         )
@@ -3226,6 +3370,7 @@ mod tests {
                 postable: true,
                 currency: Default::default(),
                 own_fx_accounts: Default::default(),
+                parent: Default::default(),
             },
             false,
         )
@@ -3263,6 +3408,7 @@ mod tests {
                 postable: true,
                 currency: Default::default(),
                 own_fx_accounts: Default::default(),
+                parent: Default::default(),
             },
             false,
         )
@@ -3303,6 +3449,7 @@ mod tests {
                 postable: true,
                 currency: Default::default(),
                 own_fx_accounts: Default::default(),
+                parent: Default::default(),
             },
             false,
         )
@@ -3351,6 +3498,7 @@ mod tests {
                 postable: true,
                 currency: Default::default(),
                 own_fx_accounts: Default::default(),
+                parent: Default::default(),
             },
             true,
         )
@@ -3421,6 +3569,7 @@ mod tests {
                 postable: true,
                 currency: Default::default(),
                 own_fx_accounts: Default::default(),
+                parent: Default::default(),
             },
             false,
         )
@@ -3461,6 +3610,7 @@ mod tests {
                 postable: true,
                 currency: Default::default(),
                 own_fx_accounts: Default::default(),
+                parent: Default::default(),
             },
             false,
         )
@@ -3609,6 +3759,7 @@ mod tests {
                 postable: true,
                 currency: Default::default(),
                 own_fx_accounts: Default::default(),
+                parent: Default::default(),
             },
             false,
         )
@@ -3631,6 +3782,7 @@ mod tests {
                 postable: true,
                 currency: Default::default(),
                 own_fx_accounts: Default::default(),
+                parent: Default::default(),
             },
             false,
         )
@@ -3818,6 +3970,7 @@ mod tests {
                 postable: true,
                 currency: Default::default(),
                 own_fx_accounts: Default::default(),
+                parent: Default::default(),
             },
             false,
         )
@@ -4014,6 +4167,7 @@ mod tests {
                 postable: true,
                 currency: Default::default(),
                 own_fx_accounts: Default::default(),
+                parent: Default::default(),
             },
             false,
         )
@@ -4074,6 +4228,7 @@ mod tests {
                 postable: true,
                 currency: Default::default(),
                 own_fx_accounts: Default::default(),
+                parent: Default::default(),
             },
             false,
         )
@@ -4176,6 +4331,7 @@ mod tests {
                 postable: true,
                 currency: Default::default(),
                 own_fx_accounts: Default::default(),
+                parent: Default::default(),
             },
             false,
         )
@@ -4232,6 +4388,7 @@ mod tests {
                 postable: a.postable,
                 currency: Default::default(),
                 own_fx_accounts: Default::default(),
+                parent: Default::default(),
             },
             false,
         )
@@ -4252,6 +4409,7 @@ mod tests {
                 postable: true,
                 currency: Default::default(),
                 own_fx_accounts: Default::default(),
+                parent: Default::default(),
             },
             false,
         )
@@ -4292,6 +4450,7 @@ mod tests {
                 postable: true,
                 currency: Default::default(),
                 own_fx_accounts: Default::default(),
+                parent: Default::default(),
             },
             false,
         )
@@ -4421,6 +4580,7 @@ mod tests {
                 postable: true,
                 currency: Default::default(),
                 own_fx_accounts: Default::default(),
+                parent: Default::default(),
             },
             false,
         )
@@ -4624,6 +4784,7 @@ mod tests {
                 postable: true,
                 currency: Default::default(),
                 own_fx_accounts: Default::default(),
+                parent: Default::default(),
             },
             false,
         )
@@ -4707,6 +4868,7 @@ mod tests {
                 postable: true,
                 currency: Default::default(),
                 own_fx_accounts: Default::default(),
+                parent: Default::default(),
             },
             false,
         )

@@ -262,6 +262,7 @@ accounts-retype-confirm = Change the type anyway
 account-field-parent-optional = Parent account (optional)
 accounts-parent-none = None
 accounts-parent-archived = Parent account { $number } is archived. Reactivate it first.
+error-account-parent-cycle = Account { $number } is this account itself or one of its sub-accounts: an account cannot be placed under itself.
 accounts-role-invalid-for-type = The { $role } role cannot be assigned to a { $type } account.
 accounts-role-conflict-generic = This role has just been assigned to another account. Please reload the page.
 accounts-reactivate-without-role = Reactivate without the role

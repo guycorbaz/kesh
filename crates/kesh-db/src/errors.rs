@@ -1632,6 +1632,24 @@ pub enum DbError {
         parent_number: String,
     },
 
+    /// Changement de parent refusé : le parent demandé est le compte lui-même
+    /// ou l'un de ses sous-comptes, à quelque niveau que ce soit — le ranger
+    /// dessous fermerait un cycle dans la hiérarchie (correctif
+    /// `fix-api-parent-compte`). HTTP 409 `ACCOUNT_PARENT_CYCLE`.
+    #[error("Le compte {parent_number} est ce compte ou l'un de ses sous-comptes")]
+    AccountParentCycle {
+        /// Numéro du parent demandé.
+        parent_number: String,
+    },
+
+    /// Changement de parent refusé : le parent demandé n'existe pas dans la
+    /// société du compte (correctif `fix-api-parent-compte`). Relu sous verrou
+    /// dans la transaction du `PUT` ; la route l'a déjà refusé avant, par le
+    /// même contrôle que la création. HTTP 400 `VALIDATION_ERROR`, le message
+    /// de la création (« parent account not found »).
+    #[error("Compte parent introuvable")]
+    AccountParentNotFound,
+
     /// Le rôle demandé est incompatible avec le type du compte (Story 14-3a).
     ///
     /// Contrainte volontairement **minimale** : seule la frontière bilan /
@@ -2427,6 +2445,8 @@ impl DbError {
             Self::SettlementAccountIsCreditCard { .. } => "SETTLEMENT_ACCOUNT_IS_CREDIT_CARD",
             Self::AccountRoleAlreadyAssigned { .. } => "ACCOUNT_ROLE_ALREADY_ASSIGNED",
             Self::AccountParentArchived { .. } => "ACCOUNT_PARENT_ARCHIVED",
+            Self::AccountParentCycle { .. } => "ACCOUNT_PARENT_CYCLE",
+            Self::AccountParentNotFound => "VALIDATION_ERROR",
             Self::AccountRoleInvalidForType { .. } => "ACCOUNT_ROLE_INVALID_FOR_TYPE",
             Self::InvalidRevenueAccounts(_) => "INVOICE_LINE_REVENUE_ACCOUNT_INVALID",
             Self::CreditNoteRevenueAccountsArchived(_) => "CREDIT_NOTE_REVENUE_ACCOUNT_ARCHIVED",

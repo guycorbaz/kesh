@@ -262,6 +262,7 @@ accounts-retype-confirm = Cambia comunque il tipo
 account-field-parent-optional = Conto padre (facoltativo)
 accounts-parent-none = Nessuno
 accounts-parent-archived = Il conto padre { $number } è archiviato. Riattivatelo prima.
+error-account-parent-cycle = Il conto { $number } è questo conto stesso o uno dei suoi sottoconti: un conto non può essere collocato sotto sé stesso.
 accounts-role-invalid-for-type = Il ruolo { $role } non può essere attribuito a un conto di tipo { $type }.
 accounts-role-conflict-generic = Questo ruolo è appena stato attribuito a un altro conto. Ricaricate la pagina.
 accounts-reactivate-without-role = Riattivare senza il ruolo

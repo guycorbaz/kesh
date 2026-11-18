@@ -4555,6 +4555,26 @@ impl IntoResponse for AppError {
                         &t_args("accounts-parent-archived", &fallback, &args),
                     )
                 }
+                // Correctif `fix-api-parent-compte` : le `PUT` d'un compte
+                // accepte `parentId`. Le cycle a son code ; le parent introuvable
+                // relu sous verrou rend la réponse de la création (400).
+                DbError::AccountParentCycle { parent_number } => {
+                    let fallback = format!(
+                        "Le compte {parent_number} est ce compte ou l'un de ses sous-comptes : un compte ne peut pas être rangé sous lui-même."
+                    );
+                    let mut args = FluentArgs::new();
+                    args.set("number", parent_number.clone());
+                    build_response(
+                        StatusCode::CONFLICT,
+                        "ACCOUNT_PARENT_CYCLE",
+                        &t_args("error-account-parent-cycle", &fallback, &args),
+                    )
+                }
+                DbError::AccountParentNotFound => build_response(
+                    StatusCode::BAD_REQUEST,
+                    "VALIDATION_ERROR",
+                    "parent account not found",
+                ),
                 DbError::AccountRoleInvalidForType { role, account_type } => {
                     let fallback = format!(
                         "Le rôle {role} ne peut pas être attribué à un compte de type {account_type}."
