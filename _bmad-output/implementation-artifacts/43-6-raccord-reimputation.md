@@ -1,6 +1,6 @@
 # Story 43-6 : « Changer le compte analytique » refusé sur une facture réglée en groupe — raccord avec la 42-1 (#823, #1167)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-17 au soir par l'agent de rédaction de l'Epic 43 (Opus 5.5), workflow `bmad-create-story`
 (ex-T-R de la 43-1 ; validation P1, M5) ; **récrite dans la nuit** sur les décisions de l'orchestrateur : la 42-2 et la 42-3
@@ -211,7 +211,21 @@ la reprise (`kesh-gate-logs/e436/reprise-prompt.md`), de `8a75833ec` au passage 
   `cargo fmt --check` vert, `cargo clippy --workspace --all-targets -D warnings` vert (`e436/revue-p1-clippy.log`),
   `nextest binary(project_reassignment_e2e) | binary(textes_coherents)` **63 passés sur 63** (`e436/revue-p1-cible.log`).
   Vitest non relancé : aucun test frontend ne lit les messages modifiés (le test du dialogue simule un message français).
-  `test-fast`, `gate-ci` et E2E non relancés : à la clôture, après la passe ciblée.
+  `test-fast`, `gate-ci` et E2E non relancés : à la clôture, après la passe ciblée. *Annotation du même jour* : la règle
+  `kesh-db` (repository touché, même en doc-comment) a fait lancer `scripts/test-fast.sh --ci`, voie 2, au commit
+  `d49258e09` (`e436/test-fast-revue-p1.log`) : **6133 tests, 6133 passés** (1 lent), 14 ignorés.
+- **Gates de clôture**, tous au commit `d49258e09` (dernier commit de code), une commande lourde à la fois, `-j 2` :
+  - `scripts/gate-ci.sh kesh_ci_e436`, voie 1 : premier passage **rouge**, 794 passés, 1 échoué, 5 ignorés
+    (`e436/gate-ci-cloture.log`) — `admin_auto_backup_e2e::disque_sature_pendant_l_ecriture`, `Failure(Failed)` au lieu
+    de `Failure(DiskFull)` après une panique `zip-2.6.1 write.rs:1078`. C'est la **KF-063 (#1261, ouverte)**, mêmes
+    symptômes, hors du périmètre de la story (sauvegarde automatique, non touchée par la branche). Rejoué une fois tel
+    quel : **6150 passés, 0 échoué, 18 ignorés** (`e436/gate-ci-cloture-2.log`, le test `ok`) ;
+  - frontend (`e436/front-*-cloture.log`) : `check` 0 erreur (29 avertissements, 5 fichiers) ; `lint-i18n-ownership`
+    PASS ; `test:unit` **278 fichiers, 4612 tests passés** ; `build` vert ;
+  - E2E complet, voie 2, port 3436, base `kesh_e2e_e436` recréée vide (`e436/e2e-cloture.log`) : **481 passés, 7 échoués,
+    17 sautés** ; les sept échecs, jugés un par un, sont ceux de la KF-029 (#97) de `docs/testing.md` § *Les échecs
+    attendus* (`mode-expert.spec.ts:26`, `:41` ; `onboarding-path-b.spec.ts:65`, `:92` ; `onboarding.spec.ts:57`, `:77`,
+    `:150`) ; `project-reassignment.spec.ts:297` passe ; la capture `43-6-refus-groupe.png` est reprise par ce passage.
 - **Recette visuelle** (AC7) : `/home/gcorbaz/devel/kesh-gate-logs/e436/captures/43-6-refus-groupe.png` — dialogue
   *Changer le compte analytique* sur une facture réglée en groupe, refus affiché dans `project-reassign-error`, ni
   avertissement ni *Confirmer* ; thème clair, base jetable de l'E2E (`kesh_e2e_e436`), prise par l'E2E complet. Artefact de
@@ -288,3 +302,8 @@ la reprise (`kesh-gate-logs/e436/reprise-prompt.md`), de `8a75833ec` au passage 
   créditée, solde existant, puis `settlement_entry_cancel_blocker` : exercice clos, lettrage figé, autre transaction liée,
   compte archivé, pas d'exercice ouvert au jour), message inchangé ; B2 commentaire du test AC1 et fiche (« Tests et
   mutations ») : rouge sur le statut. Aucun reclassement. Passe ciblée à suivre sur le commit de remédiation.
+- 2026-11-18 — **Boucle de revue terminée.** Tendance : P1 complète (Opus ×3, lentilles B, E, A) 0/0/0/8, corrigés à
+  `d49258e09` → P2 ciblée (Sonnet, une lentille, sur `d49258e09`, `kesh-gate-logs/e436/review-p2-ciblee.md`) 0/0/0/1 ;
+  son LOW-1 (« soldée » ambigu) est tracé hors story en #1275, ouverte. `test-fast --ci` à `d49258e09` : 6133 passés.
+  Gates de clôture au même commit (Dev Agent Record) : `gate-ci` vert au rejeu (premier passage rouge sur la KF-063,
+  #1261, hors périmètre), frontend complet vert, E2E complet avec les sept échecs de la KF-029 seulement. Statut `done`.
