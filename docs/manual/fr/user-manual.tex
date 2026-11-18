@@ -446,7 +446,7 @@ Le plan comptable est la colonne vertébrale de votre comptabilité. Kesh fourni
     \item \textbf{Numéro} : par exemple 1020.1 pour un sous-compte de la banque.
     \item \textbf{Nom} : par exemple « UBS compte courant ».
     \item \textbf{Type} : Actif, Passif, Produit ou Charge.
-    \item \textbf{Compte parent (optionnel)} : compte de niveau supérieur (1020 dans l'exemple). Il ne se choisit qu'à la création.
+    \item \textbf{Compte parent (optionnel)} : compte de niveau supérieur (1020 dans l'exemple). Il se change ensuite par \emph{Modifier le compte} (\S\ref{sec:modification-compte}).
     \item \textbf{Rôle} : fonction du compte dans l'application (\emph{Créances clients}, \emph{TVA due}, \emph{Capital}, \emph{Résultat de l'exercice}\ldots) ou \emph{Aucun}. Voir la section \emph{Rôles des comptes} ci-dessous.
     \item \textbf{Postable} : décocher pour un compte de regroupement (compte titre) sur lequel on ne saisit pas d'écriture.
 \end{itemize}
@@ -462,12 +462,23 @@ compte créanciers désignés dans \emph{Administration} → \emph{Facturation}.
 bancaire son solde comptable (\S\ref{sec:solde-comptable}) ; la réconciliation des relevés
 l'exige (\S\ref{sec:import-dans-kesh}).
 
-\subsection{Modification d'un compte}
+\subsection{Modification d'un compte}\label{sec:modification-compte}
 
 On modifie un compte actif par le bouton crayon de sa ligne (\emph{Modifier le compte}), présent pour
-les rôles Comptable et Administrateur ; aucune ligne du plan ne s'ouvre d'un clic. Vous pouvez modifier le \textbf{nom}, le \textbf{rôle} et
-l'indicateur \textbf{postable}. Le \textbf{numéro} n'est jamais modifiable après la création
-(pour préserver le journal d'audit), et le \textbf{compte parent} non plus. Le \textbf{type} se modifie librement tant que le compte ne porte aucune écriture ; au-delà, Kesh vous avertit avant de le laisser faire (voir ci-dessous).
+les rôles Comptable et Administrateur ; aucune ligne du plan ne s'ouvre d'un clic. Vous pouvez modifier le \textbf{nom}, le \textbf{rôle},
+l'indicateur \textbf{postable} et le \textbf{compte parent}. Le \textbf{numéro} n'est jamais modifiable après la création
+(pour préserver le journal d'audit). Le \textbf{type} se modifie librement tant que le compte ne porte aucune écriture ; au-delà, Kesh vous avertit avant de le laisser faire (voir ci-dessous).
+
+\paragraph{Ranger un compte sous un autre.} Le champ \textbf{Compte parent (optionnel)} range le
+compte sous un compte de groupe, ou le remet à la racine (\emph{Aucun}) --- utile pour reprendre la
+structure d'un ancien bilan sur les comptes du plan livré, même s'ils portent déjà des écritures.
+Seule la hiérarchie change : le compte garde son type, ses écritures et son solde. Comme à la
+création, le compte de groupe choisi devient \textbf{non postable} (compte de regroupement)~;
+l'ancien parent garde son état, et redevient postable si vous cochez \textbf{Postable} une fois
+qu'il n'a plus de sous-compte actif. Le champ ne propose ni le compte lui-même ni ses
+sous-comptes~: un compte ne se range pas sous lui-même. Kesh refuse aussi, comme à la création,
+un parent archivé, un compte de différence de change et un compte en devise qui porte des
+écritures --- le message dit lequel.
 
 \begin{keshwarning}
 \textbf{Changer le type d'un compte qui porte des écritures reclasse tout son historique.} Le type — Actif, Passif, Produit, Charge — ne décrit pas seulement le compte : c'est lui qui décide dans quel état ses montants apparaissent. Les rapports le lisent \textbf{au moment où vous les demandez}, jamais au moment où l'écriture a été passée.
