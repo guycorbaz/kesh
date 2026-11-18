@@ -161,3 +161,28 @@ pub async fn colonnes_multi_devises(pool: &MySqlPool, poser: bool) {
             .unwrap_or_else(|e| panic!("colonne multi-devises {table}.{colonne} : {e}"));
     }
 }
+
+/// Story 49-1a — pose (`true`) ou retire (`false`) `line_type` sur
+/// `invoice_lines` et `credit_note_lines`, sur une base d'**avant** la
+/// migration `20261118000002` : un semis qui passe par le dépôt courant
+/// (`invoices::create`, `validate_invoice`, `create_credit_note`) l'écrit et le
+/// lit. Sans contrainte : seule la colonne est lue. ⚠️ Le retrait est
+/// **obligatoire** avant `MIGRATOR.run()` : la migration la pose par
+/// `ADD COLUMN IF NOT EXISTS`, qui sauterait en silence — et le test passerait
+/// sur une montée qui n'a pas créé la colonne.
+#[allow(dead_code)]
+pub async fn colonnes_types_de_ligne(pool: &MySqlPool, poser: bool) {
+    for table in ["invoice_lines", "credit_note_lines"] {
+        let sql = if poser {
+            format!(
+                "ALTER TABLE {table} ADD COLUMN line_type VARCHAR(16) NOT NULL DEFAULT 'priced'"
+            )
+        } else {
+            format!("ALTER TABLE {table} DROP COLUMN line_type")
+        };
+        sqlx::query(&sql)
+            .execute(pool)
+            .await
+            .unwrap_or_else(|e| panic!("colonne {table}.line_type : {e}"));
+    }
+}

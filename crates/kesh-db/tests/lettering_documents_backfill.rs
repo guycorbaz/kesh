@@ -187,6 +187,9 @@ async fn colonne_posterieure(pool: &MySqlPool, poser: bool) {
         .expect("colonne postérieure à la fenêtre");
     colonnes_du_numero_interne(pool, poser).await;
     colonnes_du_reglement_groupe(pool, poser).await;
+    // Story 49-1a : `line_type` (`20261118000002`), écrit et lu par les gestes
+    // vivants de la facture et de l'avoir.
+    common::colonnes_types_de_ligne(pool, poser).await;
 }
 
 /// Même geste pour les colonnes de la migration `20261118000001` (Story 43-1a) que
