@@ -1109,7 +1109,12 @@ const ATTENDU = {
 	// garde après la fusion (« expected 3450 », `kesh-gate-logs/e433/fusion-432-releve-1.log`), non
 	// additionné — il égale 3388 + 60 (Story 43-3) + 2 (le refus `ACCOUNT_IN_FOREIGN_CURRENCY`,
 	// libellé global et forme du groupe, `failed-proposal-label.ts`).
-	sitesTotal: 3450,
+	// Story 43-7 (#823), fusionnée avec la tête de l'Epic 43 : **3388 + 6 = 3394** — six littéraux de
+	// l'écran *Administration → Facturation* : `settings-invoicing-group-max-{title,label,hint,scale,
+	// range,required}` (la garde confirme à la fusion : `kesh-gate-logs/e437/vitest-cloture.log`).
+	// Fusion de l'épique (`d54bad428`, 43-7 comprise) dans la 43-3 (2026-11-18) : relevé par la garde
+	// après la fusion (`kesh-gate-logs/e433/fusion-epic-releve-1.log`), non additionné.
+	sitesTotal: 3456,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

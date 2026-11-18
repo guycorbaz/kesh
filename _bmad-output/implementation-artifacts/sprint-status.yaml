@@ -1119,7 +1119,7 @@ development_status:
   43-3-reglement-groupe-ecran: in-progress  # #823 (refs) ; écran façon bexio ; validation terminée en P5 (0/0/0/5) ; 2026-11-17 étape 1 faite (tout sauf E2E et captures, commit 81e4b4a2b, frontend complet vert : 4071 Vitest) ; 2026-11-18 étape 2 : 43-2 fusionnée (d20095425), E2E contre l'API réelle
   43-5-paiements-non-rapproches: backlog  # 2026-11-17 SORTIE de la 0.19.0 (décision de Guy) : en 0.20.0, un état « envoyée » — un lot pain.001 ne paiera plus les factures, payées seulement au rapprochement ; aucun paiement par pain.001 fait à ce jour ; la fiche reste comme trace de conception pour l'épique « envoyée » ; migration 20261118000002 non écrite ; #823 se ferme avec le règlement groupé
   43-6-raccord-reimputation: ready-for-dev  # #823, #1167 (refs) ; refus 409 PROJECT_REASSIGNMENT_GROUPED_SETTLEMENT (après le contrôle de version, critère par ligne) dans le geste de la 42-1 ; 42-2 et 42-3 hors 0.19.0 ; ne sort jamais si 42-1 et 43-1a sont publiées ensemble ; validation à lancer
-  43-7-plafond-difference-reglage: ready-for-dev  # #823 (refs) ; Q4 de Guy : plafond réglable (colonne posée par la 43-1a, 5.00 par défaut, 0 à 100.00) ; API, écran Facturation, audit ; coupable ; validation à lancer
+  43-7-plafond-difference-reglage: done  # #823 (refs) ; Q4 de Guy : plafond réglable (colonne posée par la 43-1a, 5.00 par défaut, 0 à 100.00) ; API, écran Facturation, audit ; passé en review le 2026-11-17 (gates sur la fusion jetable avec la 43-1a)
   43-4-solde-dette-epic: backlog  # story de solde, plafond 2 issues ; fin d'epic, avant le tag
   epic-43-retrospective: optional
   # 2026-11-16 — Kickoffs des Epics 37 à 40 (Beat) tenus sur ses branches ; numéros 37–40 à Beat selon

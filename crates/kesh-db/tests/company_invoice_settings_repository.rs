@@ -285,6 +285,7 @@ async fn update_no_op_returns_unchanged_entity_no_audit(pool: MySqlPool) {
             default_discount_account_id: settings.default_discount_account_id,
             default_bank_fees_account_id: settings.default_bank_fees_account_id,
             default_bad_debt_account_id: settings.default_bad_debt_account_id,
+            group_settlement_max_difference: settings.group_settlement_max_difference,
         },
     )
     .await
@@ -361,6 +362,7 @@ async fn update_partial_change_bumps_version(pool: MySqlPool) {
             default_discount_account_id: settings.default_discount_account_id,
             default_bank_fees_account_id: settings.default_bank_fees_account_id,
             default_bad_debt_account_id: settings.default_bad_debt_account_id,
+            group_settlement_max_difference: settings.group_settlement_max_difference,
         },
     )
     .await
@@ -459,6 +461,7 @@ async fn update_vat_accounts_round_trip(pool: MySqlPool) {
             default_discount_account_id: settings.default_discount_account_id,
             default_bank_fees_account_id: settings.default_bank_fees_account_id,
             default_bad_debt_account_id: settings.default_bad_debt_account_id,
+            group_settlement_max_difference: settings.group_settlement_max_difference,
         },
     )
     .await
@@ -559,6 +562,7 @@ async fn update_vat_account_foreign_id_rejected_by_fk(pool: MySqlPool) {
             default_discount_account_id: settings_a.default_discount_account_id,
             default_bank_fees_account_id: settings_a.default_bank_fees_account_id,
             default_bad_debt_account_id: settings_a.default_bad_debt_account_id,
+            group_settlement_max_difference: settings_a.group_settlement_max_difference,
         },
     )
     .await;
@@ -1012,6 +1016,7 @@ async fn update_rounding_account_round_trip(pool: MySqlPool) {
             default_discount_account_id: settings.default_discount_account_id,
             default_bank_fees_account_id: settings.default_bank_fees_account_id,
             default_bad_debt_account_id: settings.default_bad_debt_account_id,
+            group_settlement_max_difference: settings.group_settlement_max_difference,
         },
     )
     .await
@@ -1317,6 +1322,7 @@ async fn update_write_off_accounts_round_trip(pool: MySqlPool) {
             default_discount_account_id: settings.default_discount_account_id,
             default_bank_fees_account_id: settings.default_bank_fees_account_id,
             default_bad_debt_account_id: settings.default_bad_debt_account_id,
+            group_settlement_max_difference: settings.group_settlement_max_difference,
         };
         match field {
             "discount" => changes.default_discount_account_id = Some(target),
@@ -1458,6 +1464,7 @@ fn update_with_receivable(
         default_discount_account_id: s.default_discount_account_id,
         default_bank_fees_account_id: s.default_bank_fees_account_id,
         default_bad_debt_account_id: s.default_bad_debt_account_id,
+        group_settlement_max_difference: s.group_settlement_max_difference,
     }
 }
 
