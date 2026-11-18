@@ -137,6 +137,7 @@ Trois défauts de mise en page des PDF de rapports (`crates/kesh-report/src/pdf.
   correction à lancer (`revue-p2-ciblee-prompt.md`).
 - 2026-11-18 — **Décisions de Beat** : (1) clés `reports-pdf-col-*` non lues jusqu'à la traduction complète des PDF ;
   (2) dépendance `kesh-report` → `kesh-qrbill` acceptée, la ligne d'architecture fait foi.
+- 2026-11-18 — passe P2 ciblée (Haiku) sur `62ccfa4a` : 0 CRITICAL/HIGH, **1 MEDIUM**, 4 LOW. MEDIUM-1 : `crates/kesh-qrbill/README.md` disait encore le crate « standalone, zero dependency on kesh-core » (propagation manquée de P1-3) — corrigé. LOW-1 (manuel : troncature à un nombre fixe de caractères, non « trop longs pour leur colonne »), LOW-2 (`WINANSI` est `pub(crate)`), LOW-3 (message vide non centré), LOW-4 (`architecture.md` : `kesh-report` ne dépend pas de `kesh-i18n`) — corrigés dans le même commit, sans code exécutable. Passe P3 ciblée à suivre (une passe à MEDIUM appelle une passe de plus).
 
 ## Issues à ouvrir
 

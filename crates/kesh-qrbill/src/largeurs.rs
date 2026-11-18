@@ -499,7 +499,7 @@ fn chasse(c: char, gras: bool) -> Option<u16> {
 /// La largeur de `texte` imprimé en Helvetica (ou Helvetica-Bold si `gras`) à `taille`
 /// points, en millimètres : la somme des chasses, sans crénage (printpdf n'en applique pas).
 ///
-/// Un caractère sans entrée compte **zéro** : la table `WINANSI` (interne au module) porte tous les
+/// Un caractère sans entrée compte **zéro** : la table `WINANSI` (`pub(crate)`, interne au crate) porte tous les
 /// octets imprimables (`table_triee_et_complete`), si bien qu'un caractère sans entrée n'a pas d'octet, et
 /// `lopdf` le retire à l'écriture (`lopdf-0.31.0/src/encodings/mod.rs:14-18`,
 /// `string_to_bytes`) : il ne s'imprime pas. Une espace insécable (U+00A0, que WinAnsi place à

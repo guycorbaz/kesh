@@ -698,7 +698,7 @@ fn draw_empty_message(builder: &mut PdfBuilder, ctx: &PdfContext) {
     let mid = (builder.cursor_y + MARGIN_BOTTOM_MM) / 2.0;
     builder.cursor_y = mid;
     let layer = builder.current_layer();
-    // X fixe, approximativement centré : le message n'est pas mesuré (une
+    // X fixe, à 30 mm de la marge gauche, non centré : le message n'est pas mesuré (une
     // mesure exacte existe, `kesh_qrbill::largeur_mm`, voir `right_aligned_x`,
     // mais le centrage du message vide n'est pas repris par ce correctif).
     layer.use_text(
