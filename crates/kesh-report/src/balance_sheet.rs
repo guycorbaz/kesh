@@ -66,6 +66,7 @@ use sqlx::MySqlPool;
 use crate::errors::ReportError;
 use crate::income_statement;
 use crate::opening::{is_bilan, is_debit_natured};
+use crate::pdf::round_for_display;
 use crate::period::ReportPeriod;
 
 /// Bilan complet.
@@ -121,7 +122,11 @@ impl BalanceSheet {
     }
 
     /// `true` si la **ligne calculée** « Résultat reporté (calculé) » doit figurer au
-    /// bilan **présenté** (PDF, CSV) : seulement quand `retained_earnings` est **non nul**.
+    /// bilan **présenté** (PDF, CSV) : seulement quand `retained_earnings`, **arrondi au
+    /// centime comme il s'affiche** ([`round_for_display`], l'équidistant loin de zéro),
+    /// est **non nul** — un résidu sous le demi-centime (`0.004`, `-0.004`) ne fait pas
+    /// paraître une ligne « 0.00 » ni « -0.00 » ; `0.005` s'affiche « 0.01 ». Les
+    /// sorties écrivent alors la valeur arrondie de même (revue P1, LOW-1).
     ///
     /// Correctif `fix-bilan-resultat-reporte` (2026-11-18) : à zéro — aucun exercice
     /// antérieur tenu dans Kesh, ou résultats antérieurs déjà reportés —, la ligne
@@ -134,7 +139,7 @@ impl BalanceSheet {
     /// `showsRetainedEarningsLine` (`reports.api.ts`), tenu en parallèle comme
     /// `isReportEmpty`.
     pub fn shows_retained_earnings_line(&self) -> bool {
-        !self.retained_earnings.is_zero()
+        !round_for_display(self.retained_earnings).is_zero()
     }
 }
 
@@ -541,6 +546,13 @@ mod tests {
         assert!(!bs_with(vec![], dec!(0.00), dec!(500)).shows_retained_earnings_line());
         assert!(bs_with(vec![], dec!(0.01), Decimal::ZERO).shows_retained_earnings_line());
         assert!(bs_with(vec![], dec!(-600), Decimal::ZERO).shows_retained_earnings_line());
+        // Revue P1, LOW-1 : la règle juge la valeur arrondie au centime, comme elle
+        // s'affiche — sous le demi-centime, omise ; au demi-centime, « 0.01 ».
+        assert!(!bs_with(vec![], dec!(0.004), Decimal::ZERO).shows_retained_earnings_line());
+        assert!(!bs_with(vec![], dec!(-0.004), Decimal::ZERO).shows_retained_earnings_line());
+        assert!(!bs_with(vec![], dec!(0.0049), Decimal::ZERO).shows_retained_earnings_line());
+        assert!(bs_with(vec![], dec!(0.005), Decimal::ZERO).shows_retained_earnings_line());
+        assert!(bs_with(vec![], dec!(-0.005), Decimal::ZERO).shows_retained_earnings_line());
     }
 
     #[test]

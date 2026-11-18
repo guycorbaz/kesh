@@ -5,6 +5,7 @@
 	import { accountRoleKey, type AccountRole } from '$lib/features/accounts/accounts.types';
 	import AccountCurrencyBalance from './AccountCurrencyBalance.svelte';
 	import {
+		formatCurrencyFigure,
 		formatReportAmount,
 		formatSwissDate,
 		isReportEmpty,
@@ -208,7 +209,7 @@
 				<h3 class="text-lg font-semibold">
 					{i18nMsg('reports-section-equity', 'Capitaux propres')}
 				</h3>
-				<table class="mt-2 w-full border-collapse">
+				<table class="mt-2 w-full border-collapse" data-testid="balance-sheet-equity">
 					<thead>
 						<tr class="border-b bg-gray-50 text-left text-sm">
 							<th class="px-2 py-1">{i18nMsg('reports-column-account-number', 'N° de compte')}</th>
@@ -249,7 +250,7 @@
 							<tr data-testid="balance-sheet-retained-earnings">
 								<td colspan="2" class="px-2 py-1 {retainedClass}">{retainedLabel}</td>
 								<td class="px-2 py-1 text-right font-mono {retainedClass}"
-									>{fmt(dto.retainedEarnings)}</td
+									>{formatCurrencyFigure(dto.retainedEarnings)}</td
 								>
 							</tr>
 						{/if}

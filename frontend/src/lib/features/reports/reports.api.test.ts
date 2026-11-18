@@ -427,10 +427,11 @@ describe('reports.api — Story 9-2a', () => {
 		// Correctif fix-bilan-resultat-reporte : la ligne calculée n'est affichée que
 		// non nulle ; une valeur illisible reste affichée (comportement d'avant).
 		it('showsRetainedEarningsLine : faux à zéro, vrai non nul ou illisible', () => {
-			for (const z of ['0', '0.00', '-0', '0.0000']) {
+			// Revue P1, LOW-1 : jugé arrondi au centime, comme il s'affiche.
+			for (const z of ['0', '0.00', '-0', '0.0000', '0.004', '-0.004', '0.0049']) {
 				expect(showsRetainedEarningsLine(bs({ retainedEarnings: z }))).toBe(false);
 			}
-			for (const v of ['0.01', '-0.01', '5000', '-600', 'abc']) {
+			for (const v of ['0.01', '-0.01', '0.005', '-0.005', '5000', '-600', 'abc']) {
 				expect(showsRetainedEarningsLine(bs({ retainedEarnings: v }))).toBe(true);
 			}
 		});

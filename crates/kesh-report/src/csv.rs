@@ -221,7 +221,8 @@ pub fn render_balance_sheet_csv<W: Write>(
                 "CapitauxPropres",
                 "",
                 "Résultat reporté (calculé)",
-                &format_amount_iso(bs.retained_earnings),
+                // Arrondie comme la règle qui la montre (revue P1, LOW-1).
+                &format_amount_iso(round_for_display(bs.retained_earnings)),
             ],
             balance_row_extra(None, fx),
         )?;
@@ -1410,6 +1411,33 @@ mod tests {
             body.contains("Total passifs + capitaux propres;;;3300.00"),
             "{body}"
         );
+
+        // Revue P1, LOW-1 : la règle juge la valeur arrondie au centime. Sous le
+        // demi-centime, la ligne est omise (ni « 0.00 » ni « -0.00 ») ; au
+        // demi-centime, elle paraît, arrondie loin de zéro.
+        for (retained, line) in [
+            (dec!(0.004), None),
+            (dec!(-0.004), None),
+            (
+                dec!(0.005),
+                Some("CapitauxPropres;;Résultat reporté (calculé);0.01\r\n"),
+            ),
+            (
+                dec!(-0.005),
+                Some("CapitauxPropres;;Résultat reporté (calculé);-0.01\r\n"),
+            ),
+        ] {
+            let mut bs = bs.clone();
+            bs.retained_earnings = retained;
+            let mut buf = Vec::new();
+            render_balance_sheet_csv(&bs, &mut buf).unwrap();
+            let body = String::from_utf8(buf[3..].to_vec()).unwrap();
+            match line {
+                Some(l) => assert!(body.contains(l), "{retained} : {body}"),
+                None => assert!(!body.contains("Résultat reporté"), "{retained} : {body}"),
+            }
+            assert!(!body.contains(";-0.00"), "{retained} : {body}");
+        }
     }
 
     #[test]

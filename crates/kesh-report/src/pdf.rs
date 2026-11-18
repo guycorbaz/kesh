@@ -712,7 +712,7 @@ pub fn render_balance_sheet_pdf(
     for (label, amount) in [
         bs.shows_retained_earnings_line().then_some((
             &ctx.section_labels.retained_result_label,
-            bs.retained_earnings,
+            round_for_display(bs.retained_earnings),
         )),
         Some((&ctx.section_labels.equity_result_label, bs.equity_result)),
     ]
@@ -2466,7 +2466,13 @@ mod tests {
         );
 
         // Non nulle, positive ou négative : présente avec son montant.
-        for (retained, shown) in [(dec!(250), "250.00"), (dec!(-250), "-250.00")] {
+        for (retained, shown) in [
+            (dec!(250), "250.00"),
+            (dec!(-250), "-250.00"),
+            // Revue P1, LOW-1 : au demi-centime, la ligne paraît, arrondie loin de zéro.
+            (dec!(0.005), "0.01"),
+            (dec!(-0.005), "-0.01"),
+        ] {
             let mut bs = fixture_bs(false);
             bs.retained_earnings = retained;
             bs.equity_result -= retained;
@@ -2478,6 +2484,15 @@ mod tests {
             assert_eq!(t[at + 1], shown, "{t:?}");
             // Total capitaux propres identique au cas nul : 0 + report + résultat.
             assert!(t.iter().any(|x| x == "734.56"), "{t:?}");
+        }
+
+        // Sous le demi-centime, positif ou négatif : absente — ni « 0.00 » ni « -0.00 ».
+        for residue in [dec!(0.004), dec!(-0.004)] {
+            let mut bs = fixture_bs(false);
+            bs.retained_earnings = residue;
+            let t = pdf_text(&render_balance_sheet_pdf(&bs, &ctx).unwrap());
+            assert!(!t.iter().any(|x| x == label), "{residue} : {t:?}");
+            assert!(!t.iter().any(|x| x == "-0.00"), "{residue} : {t:?}");
         }
     }
 

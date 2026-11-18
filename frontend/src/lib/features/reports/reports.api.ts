@@ -139,10 +139,16 @@ export async function downloadProjectReport(
  * résultat d'exercices antérieurs qu'aucune écriture n'a encore reporté. Le total des
  * capitaux propres l'inclut toujours. Pendant backend :
  * `BalanceSheet::shows_retained_earnings_line` (PDF, CSV), tenu en parallèle comme
- * `isReportEmpty`. Une valeur illisible (`NaN`) reste affichée, comme avant.
+ * `isReportEmpty`. La valeur est jugée **arrondie au centime, comme elle s'affiche**
+ * (`roundToCents`) : un résidu sous le demi-centime n'affiche ni « 0.00 » ni
+ * « -0.00 » (revue P1, LOW-1). Une valeur illisible reste affichée, comme avant.
  */
 export function showsRetainedEarningsLine(bs: BalanceSheetDto): boolean {
-	return Number(bs.retainedEarnings) !== 0;
+	try {
+		return !roundToCents(bs.retainedEarnings).eq(0);
+	} catch {
+		return true;
+	}
 }
 
 /**
@@ -289,6 +295,20 @@ export function formatCurrencyAmount(currency: string, v: string | undefined): s
 }
 
 /**
+ * Arrondi d'affichage d'un montant exact (quatre décimales stockées) : deux
+ * décimales, l'équidistant loin de zéro — pendant de `round_for_display` côté
+ * serveur. Revue de code P1 (Story 37-4) : un résidu négatif sous le demi-centime
+ * (« -0.0040 ») s'arrondit à un zéro **sans signe**, qui ne s'affiche pas « -0.00 ».
+ * Lève sur une valeur illisible (comme `new Big`).
+ */
+// Nommé sans suffixe `Display` : la garde des libellés en dur (`i18n-libelle-en-dur.test.ts`)
+// prend toute fonction `*Display` pour un libellé ; celle-ci rend un nombre.
+export function roundToCents(v: string): Big {
+	const r = new Big(v).round(2, Big.roundHalfUp);
+	return r.eq(0) ? new Big(0) : r;
+}
+
+/**
  * Le chiffre d'un montant en devise, sans la devise (balance, où elle est dite
  * une fois en tête de la seconde ligne) : arrondi à deux décimales, sans
  * « -0.00 » (revue de code P2 : la balance le contournait).
@@ -296,10 +316,7 @@ export function formatCurrencyAmount(currency: string, v: string | undefined): s
 export function formatCurrencyFigure(v: string | undefined): string {
 	let amount = v ?? '0';
 	try {
-		// Revue de code P1 : un résidu négatif sous le demi-centime (« -0.0040 »)
-		// s'arrondit à un zéro sans signe, et ne s'affiche pas « -0.00 ».
-		const r = new Big(amount).round(2, Big.roundHalfUp);
-		amount = r.eq(0) ? '0' : r.toString();
+		amount = roundToCents(amount).toString();
 	} catch {
 		// valeur illisible : rendue telle quelle par formatReportAmount
 	}
