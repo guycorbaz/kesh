@@ -896,10 +896,12 @@ pub struct SupplierInvoiceInAccountBatch {
 /// lot réglerait janvier : un seul débit, deux règlements. Kesh ne propose
 /// rien et le dit (`notice`).
 ///
-/// **Trois lecteurs, aucun autre texte ne décide de ce critère** : la
+/// **Quatre lecteurs, aucun autre texte ne décide de ce critère** : la
 /// proposition (`get_proposals`), l'acceptation d'une facture fournisseur
-/// (`supplier_invoices::lock_for_bank_settlement_in_tx`, étape (d)) et
-/// l'acceptation d'une règle (`accept_one_rule`, rejeu du masquage).
+/// (`supplier_invoices::lock_for_bank_settlement_in_tx`, étape (d), reprise
+/// par le règlement groupé fournisseur), l'acceptation d'une règle
+/// (`accept_one_rule`, rejeu du masquage) et la recherche des candidates d'un
+/// groupe (`get_group_candidates`, `heldByPaymentBatch`, Story 43-2).
 ///
 /// **Lecture ordinaire** : un lot commis après la naissance de la vue de la
 /// transaction appelante n'est pas vu — tolérance écrite (C-30-1-39).
