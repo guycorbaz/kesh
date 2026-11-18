@@ -1,6 +1,6 @@
 # Story 48-13 : Avant la vraie facture — client écrasé par un chargement tardif, adresse tronquée en silence, nom de société non contrôlé à l'assistant (#1233, #1243, #1226)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-18 (Sonnet 5.5), worktree `kesh-48-13`, branche `story/48-13-avant-la-vraie-facture` partie de
 `epic/48-corrections-0-20-0` (= `main` = v0.19.0, `773df80da`), par le workflow `bmad-create-story`. Release **0.20.0** (sortie le
@@ -398,6 +398,23 @@ de review ont tourné au commit `b41df52da`** (journaux postérieurs, arbre prop
   `coordinates_rejects_a_composed_name_over_70_1226` (« « 70 » absent de « Le nom de la société est obligatoire. » ») : le point propre
   de D5, le nom composé jugé, est prouvé rouge.
 
+### Clôture (dernier commit de code `448186f11` ; arbre au commit `0ac0450f9`, qui n'ajoute que la fiche)
+
+*Une commande lourde à la fois ; bases `kesh_e4813` et `kesh_e2e_e4813` remises à neuf avant ; chaque journal nomme son commit en tête.*
+
+- `scripts/gate-ci.sh kesh_ci_e4813` : **6157 passés, 0 échoués, 18 ignorés**, code 0 (`kesh-gate-logs/e4813/gate-ci-cloture.log`). La
+  KF-063 (`admin_auto_backup_e2e::disque_sature_pendant_l_ecriture`, #1261) n'a pas rougi : aucun rejeu nécessaire.
+- Frontend complet : `npm run check` 0 erreur (29 avertissements, hors fichiers touchés), `lint-i18n-ownership` PASS, `test:unit`
+  **278 fichiers, 4625 tests passed**, `build` vert (`front-{check,lint-i18n-ownership,test-unit,build}-cloture.log`).
+- **E2E complet** (`e2e-complet-cloture.log`, montage de `docs/testing.md` § *Prérequis Playwright local* par `e2e-4813.sh` : base
+  `kesh_e2e_e4813` recréée, backend `target/debug/kesh-api` reconstruit à 23 h 16 (`build-api-cloture.log`), frontend `build` de
+  23 h 15, port 3413, 22,1 min) : **483 passed, 18 skipped, 7 failed**. Les sept échecs, jugés un à un contre `docs/testing.md`
+  § *Les échecs attendus* : `mode-expert.spec.ts:26`, `mode-expert.spec.ts:41`, `onboarding-path-b.spec.ts:65`,
+  `onboarding-path-b.spec.ts:92`, `onboarding.spec.ts:57`, `onboarding.spec.ts:77`, `onboarding.spec.ts:150` — **les sept de la KF-029
+  (#97), aucun autre, aucun échec de pollution**. Les specs de la story sont vertes : `company-address.spec.ts:132`,
+  `invoice-contact-tardif.spec.ts:27` (avec l'attente E8), `onboarding-motif.spec.ts:56` et `:74`.
+- Backend arrêté (port 3413 libéré, `== port 3413 libéré` au journal).
+
 ## Change Log
 
 - **2026-11-18 — création de la fiche** (Sonnet 5.5, `bmad-create-story`). Lu à `773df80da` : `InvoiceForm.svelte:399-416` (chargement initial du client, sans garde), `settings/+page.svelte:821-841` (sept `maxlength` dont cinq d'adresse),
@@ -434,3 +451,11 @@ de review ont tourné au commit `b41df52da`** (journaux postérieurs, arbre prop
     B2 (raison sociale saisie avec prénom et nom ignorée sans un mot) → **#1344** ; E3/B2 (message du nom composé : « nom de la société »,
     nombre qu'aucun champ ne montre) → **#1345** ; E2 (prénom ou nom seul non bornés) → **#1334**, déjà portée par la 48-15.
   Gate ciblé de la remédiation : Dev Agent Record. La passe ciblée sur `448186f11` est lancée par l'orchestrateur.
+- **2026-11-18 — revue de code terminée, clôture** (entrée finale). **Tendance des findings** : **P1** complète, trois lentilles B, E, A,
+  **Opus 5.5** ×3, contexte frais : **0 / 0 / 0 / 18** (B 5, E 8, A 5) → **P2 ciblée**, une lentille, **Sonnet 5.5**, contexte frais, sur le
+  seul commit de remédiation `448186f11` : **0 / 0 / 0 / 0** (`kesh-gate-logs/e4813/review-p2-ciblee.md` ; prompt versionné hors dépôt :
+  `kesh-gate-logs/e4813/review-p2-ciblee-prompt.md`). Modèles alternés (Opus puis Sonnet). **Reclassements** : aucun changement de
+  sévérité. Des 18 LOW de la P1, treize sont corrigés dans la story (A1 à A5, B3 à B5, E4 à E8) et cinq partent en issues hors story
+  (B1, E1 → #1343 ; B2 → #1344 ; E3 → #1345 ; E2 → #1334, portée par la 48-15). Clôture au dernier commit de code `448186f11` :
+  `gate-ci` 6157 passés, 0 échoué ; frontend complet vert (4625 tests) ; **E2E complet 483 passed, 7 failed = les sept de la KF-029**
+  (Dev Agent Record § *Clôture*). Statut : `done`.
