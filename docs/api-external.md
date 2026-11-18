@@ -1144,6 +1144,14 @@ sous-comptes actifs, désignation, version. `PUT /company/invoice-settings` ne
 refuse plus un compte archivé reconduit à l'identique ; choisir un compte archivé
 reste refusé.
 
+*Depuis la 0.19.0* (Story 43-7, #823), `GET` et `PUT /company/invoice-settings`
+portent `groupSettlementMaxDifference` : l'**écart admis** (moins-payé ou
+trop-perçu, passé au compte choisi) d'un règlement de plusieurs factures, en
+chaîne décimale à deux décimales (`"5.00"` par défaut). Au `PUT`, facultatif
+(absent : inchangé), de 0 à 100.00 et au centime, sinon `400 VALIDATION_ERROR`
+qui nomme le champ. Le `PUT` est une route d'administration, fermée aux clés
+d'API ; le `GET` reste ouvert à toute clé.
+
 ¹ **Les mutations de taux de TVA ne sont pas accessibles via l'API** :
 `POST /vat-rates`, `PUT /vat-rates/{id}` et `DELETE /vat-rates/{id}` sont
 réservées au rôle **Administrateur**, et l'administration est fermée aux clés

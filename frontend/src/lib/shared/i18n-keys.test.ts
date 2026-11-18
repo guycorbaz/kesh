@@ -1094,7 +1094,10 @@ const ATTENDU = {
 	// Intégration de main (v0.18.0) dans l'Epic 37 (2026-11-17) : **3388**, relevé par la garde après la
 	// fusion (`expected 3388 to be 0`, `kesh-gate-logs/integration-main-37/vitest-1.log`), non
 	// additionné — il égale 3050 + 302 (Epic 37) + 36 (Epic 36), les deux côtés gardés.
-	sitesTotal: 3388,
+	// Story 43-7 (#823), fusionnée avec la tête de l'Epic 43 : **3388 + 6 = 3394** — six littéraux de
+	// l'écran *Administration → Facturation* : `settings-invoicing-group-max-{title,label,hint,scale,
+	// range,required}` (la garde confirme à la fusion : `kesh-gate-logs/e437/vitest-cloture.log`).
+	sitesTotal: 3394,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/
