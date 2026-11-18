@@ -130,13 +130,14 @@ Les flux de 2026 après mars (mensuels 2026-10, 2026-12 ; journalier du 13.11.20
   (`captures-apres.log`) : `rejected: 0`, état sans erreur, `GET ?currency=BGN` → 200, ligne BGN au tableau, compte
   BGN toujours `400 CURRENCY_UNKNOWN`. `scripts/gate-ci.sh` (copie `git archive` de `6ae0116b`, dont le code est celui de `102758bf`, `KESH_NO_MEMGUARD=1`) :
   **5972 passés, 0 échoué, 17 ignorés** (`gate-ci.log`), cible de compilation supprimée ensuite.
+- 2026-11-18 — revue P1 (Sonnet, lecture seule) : **0 au-dessus de LOW**, 2 LOW. P1-1 (« BGN publié jusqu'en 2025 » au lieu de mars 2026, `docs/api-external.md`, manuel, notes de version) corrigé. P1-2 (AC-4 : aucun test d'un `PUT /accounts/{id}` vers BGN ou HRK, seul le `POST` l'est ; même `normalize_foreign_currency`, risque nul au code) : test à ajouter dès que la station plafonne de nouveau ses gates (mem-guard indisponible depuis la saturation mémoire du 18.11), passe ciblée ensuite.
 
 ## Notes de version
 
 *(Texte prêt à assembler au `CHANGELOG.md` à la release ; la fiche n'écrit jamais au `CHANGELOG.md`.)*
 
 - **Fixed** — Cours de change : les cours que l'AFC publie dans une monnaie aujourd'hui retirée — le lev bulgare (BGN)
-  jusqu'en 2025, la kuna croate (HRK), les monnaies remplacées par l'euro, le bolívar fort (VEF) — sont récupérés
+  jusqu'en mars 2026, la kuna croate (HRK), les monnaies remplacées par l'euro, le bolívar fort (VEF) — sont récupérés
   comme les autres ; ils étaient écartés comme invalides (« 1 cours écartés comme invalides » à chaque mois de 2024).
   Ils se lisent et se saisissent à l'écran *Cours de change* (« Toutes les devises publiées ») et par l'API ; un
   compte ne s'ouvre toujours que dans une monnaie en cours.
