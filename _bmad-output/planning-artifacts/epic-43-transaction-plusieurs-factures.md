@@ -41,7 +41,7 @@ corrompre le schéma) : `DROP INDEX` n'est pas dans la liste de P3, et aucun che
 `kesh_version_min_required` reste **0.17.6**. **Retour à la 0.18.0 : par la sauvegarde d'avant la mise à jour seulement.**
 Les colonnes de la 43-1b restent dans cette migration même si la 43-1b sort (symétriques, vides, sans effet).
 
-**C-43-5 — Compteurs de migrations selon ce qui sort.** 91 en 0.18.0 ; **92** avec la 43-1a ; **93** si la 43-5 est publiée
+**C-43-5 — Compteurs de migrations selon ce qui sort.** *(Annotation du 2026-11-18, intégration de la 0.19.0 : le multi-devises est dans la 0.19.0, avec trois migrations d'horodatage antérieur, `20261114000001` à `…03` ; 95 migrations en tout, la 43-1a porte la 95ᵉ ; la 43-5 est sortie. Le texte qui suit est celui du kickoff.)* 91 en 0.18.0 ; **92** avec la 43-1a ; **93** si la 43-5 est publiée
 (sa migration `20261118000002_bank_line_transaction.sql`). Chaque story qui ajoute une migration écrit le compte qu'elle
 produit (P5 : en-tête et `Total` de `docs/migrations-idempotence-audit.md` ; P6 : `migrations_upgrade_path.rs`,
 `assert_eq!(total, …)` et la fenêtre `total - N` qui garde sa frontière à la 35ᵉ) ; si la 43-5 sort, son commit part avec,
@@ -257,5 +257,5 @@ Plafond de la story de solde (43-4) : **2 issues**.
    l'écran et à l'API, quatre en colonne).
 5. Montants **bruts** (quatre décimales) dans le calcul ; le centime pour l'affichage et pour l'écart.
 6. **Le geste groupé n'accepte qu'une transaction en CHF** (refus `RECONCILIATION_CURRENCY_MISMATCH`, après la garde de sens `refuse_wrong_direction` ; écran : `canLink`) : c'est le point à élargir par le multi-devise, avec une règle de devise **par ligne de tiers** ; un écart de change ne se confond ni avec la ligne d'arrondi ni avec la ligne d'écart choisie.
-7. Migration : `crates/kesh-db/migrations/20261118000001_grouped_settlements.sql` (92ᵉ, seule de la release ; la 43-5 et sa colonne `journal_entry_lines.bank_transaction_id` sont sorties de la 0.19.0) ; DDL seul, non breaking. Celle du multi-devise prend un horodatage postérieur et part de `main` après la 0.19.0.
+7. Migration : `crates/kesh-db/migrations/20261118000001_grouped_settlements.sql` (92ᵉ, seule de la release ; la 43-5 et sa colonne `journal_entry_lines.bank_transaction_id` sont sorties de la 0.19.0) ; DDL seul, non breaking. Celle du multi-devise prend un horodatage postérieur et part de `main` après la 0.19.0. *(Annotation du 2026-11-18 : faux à l'arrivée — le multi-devises est entré dans la 0.19.0 avec ses trois migrations, d'horodatage antérieur ; celle-ci est la 95ᵉ, voir C-43-5.)*
 8. Code : `repositories/grouped_settlements.rs` (neuf), `letterings.rs`, `reconciliation_cancel.rs`, `routes/reconciliation_group.rs` (neuf), `frontend/src/lib/features/reconciliation/`. Ne pas les modifier avant la publication de la 0.19.0 sans prévenir.

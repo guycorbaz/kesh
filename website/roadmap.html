@@ -4,7 +4,7 @@
 	<meta charset="utf-8" />
 	<meta name="viewport" content="width=device-width, initial-scale=1" />
 	<title>Roadmap — Kesh</title>
-	<meta name="description" content="Kesh release roadmap — v0.1 foundations, v0.2 sovereignty, v0.3 Swiss VAT, v0.4 supplier invoices & project analytics, v0.5 structured QR addresses, v0.6 invoice emailing, v0.7 receivables & dunning, v0.8 year-end closing, planned epics and current status." />
+	<meta name="description" content="Kesh release roadmap — v0.1 foundations, v0.2 sovereignty, v0.3 Swiss VAT, v0.4 supplier invoices & project analytics, v0.5 structured QR addresses, v0.6 invoice emailing, v0.7 receivables & dunning, v0.8 year-end closing, planned releases and current status." />
 	<meta name="theme-color" content="#0f172a" />
 	<link rel="icon" type="image/svg+xml" href="img/logo.svg" />
 	<link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -40,7 +40,7 @@
 		<div class="relative max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
 			<p class="text-emerald-400 text-sm font-mono mb-3">// Roadmap</p>
 			<h1 class="text-4xl sm:text-5xl font-extrabold tracking-tight mb-6">From foundations to Swiss VAT.</h1>
-			<p class="text-lg text-slate-300 leading-relaxed">Kesh is delivered as a sequence of <strong class="text-white">epics</strong>, each composed of small, independently reviewable stories. The release plan below tracks the path from MVP (v0.1) through sovereignty tooling (v0.2), Swiss VAT (v0.3), supplier invoices, payments & project analytics (v0.4), structured QR-bill addresses (v0.5), invoice emailing with multilingual templates (v0.6), receivables &amp; multi-level dunning (v0.7), year-end closing with automatic balance carry-forward (v0.8), advanced invoicing (v0.9), duplicate prevention (v0.10), translation debt (v0.11), the correction wave that made the books right (v0.12), open items &amp; matching (v0.13), supplier invoices from the document to the payment (v0.14), and a backup that restores everything — supporting documents included, written by Kesh on its own schedule (v0.15) — then a built-in MCP server that reads the books for AI agents on the local network (v0.16), then draft supplier bills and bank statements typed in by hand (v0.17), then a setup wizard shown to the very end and analytical accounts (v0.18, current release), toward a feature-complete production release. <strong class="text-white">Kesh keeps its author&rsquo;s real books since 2026-10-31, and the limits are worth knowing</strong>: its author is a private individual, not registered for VAT; no year-end closing has yet been held in Kesh (a dry run of a closing is documented in the administration manual and has only been played on a demonstration backup), Swiss VAT is not yet enforceable (ten critical issues remain open), so the books of a VAT-registered business cannot be kept in Kesh, and a manual journal entry carries no supporting document yet (#235).</p>
+			<p class="text-lg text-slate-300 leading-relaxed">Kesh is delivered as a sequence of <strong class="text-white">releases</strong>, each made of small, independently reviewable changes. The release plan below tracks the path from MVP (v0.1) through sovereignty tooling (v0.2), Swiss VAT (v0.3), supplier invoices, payments & project analytics (v0.4), structured QR-bill addresses (v0.5), invoice emailing with multilingual templates (v0.6), receivables &amp; multi-level dunning (v0.7), year-end closing with automatic balance carry-forward (v0.8), advanced invoicing (v0.9), duplicate prevention (v0.10), translation debt (v0.11), the correction wave that made the books right (v0.12), open items &amp; matching (v0.13), supplier invoices from the document to the payment (v0.14), and a backup that restores everything — supporting documents included, written by Kesh on its own schedule (v0.15) — then a built-in MCP server that reads the books for AI agents on the local network (v0.16), then draft supplier bills and bank statements typed in by hand (v0.17), then a setup wizard shown to the very end and analytical accounts (v0.18), then multi-currency accounting and one bank movement settling several invoices (v0.19, current release), toward a feature-complete production release. <strong class="text-white">Kesh keeps its author&rsquo;s real books since 2026-10-31, and the limits are worth knowing</strong>: its author is a private individual, not registered for VAT; no year-end closing has yet been held in Kesh (a dry run of a closing is documented in the administration manual and has only been played on a demonstration backup), Swiss VAT is not yet enforceable (ten critical issues remain open), so the books of a VAT-registered business cannot be kept in Kesh, and a manual journal entry carries no supporting document yet (#235).</p>
 			<div class="flex gap-4 mt-8 text-sm">
 				<div class="flex items-center gap-2">
 					<span class="w-3 h-3 rounded-full bg-emerald-400"></span>
@@ -75,7 +75,7 @@
 					<div class="absolute -left-[2.6rem] top-1.5 w-5 h-5 rounded-full bg-emerald-500 border-4 border-slate-950 ring-2 ring-emerald-500/30"></div>
 					<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30">
 						<div class="flex items-center justify-between mb-2 flex-wrap gap-2">
-							<h3 class="text-lg font-semibold">E1 — Foundations &amp; Authentication</h3>
+							<h3 class="text-lg font-semibold">Foundations &amp; Authentication</h3>
 							<span class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">Done</span>
 						</div>
 						<p class="text-sm text-slate-400">Workspace bootstrap, MariaDB schema baseline, JWT authentication with refresh tokens, password hashing, login flow.</p>
@@ -87,7 +87,7 @@
 					<div class="absolute -left-[2.6rem] top-1.5 w-5 h-5 rounded-full bg-emerald-500 border-4 border-slate-950 ring-2 ring-emerald-500/30"></div>
 					<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30">
 						<div class="flex items-center justify-between mb-2 flex-wrap gap-2">
-							<h3 class="text-lg font-semibold">E2 — Onboarding &amp; Configuration</h3>
+							<h3 class="text-lg font-semibold">Onboarding &amp; Configuration</h3>
 							<span class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">Done</span>
 						</div>
 						<p class="text-sm text-slate-400">Company creation flow, user-to-company assignment, multi-tenant scoping (<code>company_id</code> JWT claim).</p>
@@ -99,7 +99,7 @@
 					<div class="absolute -left-[2.6rem] top-1.5 w-5 h-5 rounded-full bg-emerald-500 border-4 border-slate-950 ring-2 ring-emerald-500/30"></div>
 					<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30">
 						<div class="flex items-center justify-between mb-2 flex-wrap gap-2">
-							<h3 class="text-lg font-semibold">E3 — Chart of Accounts &amp; Journal Entries</h3>
+							<h3 class="text-lg font-semibold">Chart of Accounts &amp; Journal Entries</h3>
 							<span class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">Done</span>
 						</div>
 						<p class="text-sm text-slate-400">Swiss chart of accounts seed, double-entry validation, journal entry CRUD, audit log that a backup import no longer replaces.</p>
@@ -111,7 +111,7 @@
 					<div class="absolute -left-[2.6rem] top-1.5 w-5 h-5 rounded-full bg-emerald-500 border-4 border-slate-950 ring-2 ring-emerald-500/30"></div>
 					<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30">
 						<div class="flex items-center justify-between mb-2 flex-wrap gap-2">
-							<h3 class="text-lg font-semibold">E4 — Contacts &amp; Product Catalog</h3>
+							<h3 class="text-lg font-semibold">Contacts &amp; Product Catalog</h3>
 							<span class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">Done</span>
 						</div>
 						<p class="text-sm text-slate-400">Contact management (customers, suppliers), product catalog with VAT rates and payment terms.</p>
@@ -123,7 +123,7 @@
 					<div class="absolute -left-[2.6rem] top-1.5 w-5 h-5 rounded-full bg-emerald-500 border-4 border-slate-950 ring-2 ring-emerald-500/30"></div>
 					<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30">
 						<div class="flex items-center justify-between mb-2 flex-wrap gap-2">
-							<h3 class="text-lg font-semibold">E5 — QR Bill Invoicing</h3>
+							<h3 class="text-lg font-semibold">QR Bill Invoicing</h3>
 							<span class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">Done</span>
 						</div>
 						<p class="text-sm text-slate-400">Invoice CRUD, QR Bill 2.2 PDF generation, invoice status workflow (draft → sent → paid).</p>
@@ -135,7 +135,7 @@
 					<div class="absolute -left-[2.6rem] top-1.5 w-5 h-5 rounded-full bg-emerald-500 border-4 border-slate-950 ring-2 ring-emerald-500/30"></div>
 					<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30">
 						<div class="flex items-center justify-between mb-2 flex-wrap gap-2">
-							<h3 class="text-lg font-semibold">E6 — Quality &amp; CI/CD</h3>
+							<h3 class="text-lg font-semibold">Quality &amp; CI/CD</h3>
 							<span class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">Done</span>
 						</div>
 						<p class="text-sm text-slate-400">GitHub Actions CI pipeline, Docker images on Docker Hub, pre-commit hooks, automated release tagging.</p>
@@ -147,7 +147,7 @@
 					<div class="absolute -left-[2.6rem] top-1.5 w-5 h-5 rounded-full bg-emerald-500 border-4 border-slate-950 ring-2 ring-emerald-500/30"></div>
 					<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30">
 						<div class="flex items-center justify-between mb-2 flex-wrap gap-2">
-							<h3 class="text-lg font-semibold">E7 — Technical Debt Closure</h3>
+							<h3 class="text-lg font-semibold">Technical Debt Closure</h3>
 							<span class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">Done</span>
 						</div>
 						<p class="text-sm text-slate-400">Multi-tenant scoping rollout, full-text search, Playwright stability fixes, security hardening (KF-002 audit).</p>
@@ -159,7 +159,7 @@
 					<div class="absolute -left-[2.6rem] top-1.5 w-5 h-5 rounded-full bg-emerald-500 border-4 border-slate-950 ring-2 ring-emerald-500/30"></div>
 					<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30">
 						<div class="flex items-center justify-between mb-2 flex-wrap gap-2">
-							<h3 class="text-lg font-semibold">E8 — Bank Import &amp; Reconciliation</h3>
+							<h3 class="text-lg font-semibold">Bank Import &amp; Reconciliation</h3>
 							<span class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">Done</span>
 						</div>
 						<p class="text-sm text-slate-400 mb-3">CAMT.053 ISO 20022 parser, CSV import (multi-bank profiles), automatic reconciliation against open invoices, manual reconciliation with transaction splitting and assignment rules engine.</p>
@@ -179,7 +179,7 @@
 					<div class="absolute -left-[2.6rem] top-1.5 w-5 h-5 rounded-full bg-emerald-500 border-4 border-slate-950 ring-2 ring-emerald-500/30"></div>
 					<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30">
 						<div class="flex items-center justify-between mb-2 flex-wrap gap-2">
-							<h3 class="text-lg font-semibold">E9 — Reports &amp; Exports</h3>
+							<h3 class="text-lg font-semibold">Reports &amp; Exports</h3>
 							<span class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">Done</span>
 						</div>
 						<p class="text-sm text-slate-400">Balance sheet, P&amp;L, trial balance, CSV/PDF exports, global ZIP export (sovereignty).</p>
@@ -191,7 +191,7 @@
 					<div class="absolute -left-[2.6rem] top-1.5 w-5 h-5 rounded-full bg-emerald-500 border-4 border-slate-950 ring-2 ring-emerald-500/30"></div>
 					<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30">
 						<div class="flex items-center justify-between mb-2 flex-wrap gap-2">
-							<h3 class="text-lg font-semibold">E9.5 — Technical Debt Closure</h3>
+							<h3 class="text-lg font-semibold">Technical Debt Closure, second pass</h3>
 							<span class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">Done</span>
 						</div>
 						<p class="text-sm text-slate-400">Zero-carry-forward debt sweep before v0.1 release: closed 6 KFs, codified review &amp; commit rules, Swiss CO 958f research.</p>
@@ -203,7 +203,7 @@
 					<div class="absolute -left-[2.6rem] top-1.5 w-5 h-5 rounded-full bg-emerald-500 border-4 border-slate-950 ring-2 ring-emerald-500/30"></div>
 					<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30">
 						<div class="flex items-center justify-between mb-2 flex-wrap gap-2">
-							<h3 class="text-lg font-semibold">E10 — Deployment &amp; Operations</h3>
+							<h3 class="text-lg font-semibold">Deployment &amp; Operations</h3>
 							<span class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">Done</span>
 						</div>
 						<p class="text-sm text-slate-400">Production hardening (Docker, env vars, log rotation), migrations idempotence with downgrade protection, frontend resilience when DB unreachable, Synology DSM install manual + native backup, httpOnly auth cookies.</p>
@@ -220,163 +220,163 @@
 				<h2 class="text-3xl font-bold tracking-tight">v0.2 – v0.3 — Sovereignty & Swiss VAT</h2>
 				<span class="text-sm text-slate-500 font-mono">and beyond</span>
 			</div>
-			<p class="text-slate-400 mb-10">Growing from a working ledger toward everything an SME needs to run a full fiscal year: sovereignty tooling (v0.2), Swiss VAT (v0.3), supplier invoices, payments & project analytics (v0.4), structured addresses (v0.5), invoice emailing (v0.6), receivables &amp; dunning (v0.7), year-end closing &amp; balance carry-forward (v0.8), advanced invoicing (v0.9), hardening (v0.10), translations (v0.11), the correction wave (v0.12), open items &amp; matching (v0.13), supplier invoices from the document to the payment (v0.14), a backup that restores everything (v0.15), a built-in MCP server that reads the books for AI agents (v0.16), draft supplier bills and bank statements typed in by hand (v0.17), a setup wizard shown to the very end and analytical accounts (v0.18, current release), then budgets.</p>
+			<p class="text-slate-400 mb-10">Growing from a working ledger toward everything an SME needs to run a full fiscal year: sovereignty tooling (v0.2), Swiss VAT (v0.3), supplier invoices, payments & project analytics (v0.4), structured addresses (v0.5), invoice emailing (v0.6), receivables &amp; dunning (v0.7), year-end closing &amp; balance carry-forward (v0.8), advanced invoicing (v0.9), hardening (v0.10), translations (v0.11), the correction wave (v0.12), open items &amp; matching (v0.13), supplier invoices from the document to the payment (v0.14), a backup that restores everything (v0.15), a built-in MCP server that reads the books for AI agents (v0.16), draft supplier bills and bank statements typed in by hand (v0.17), a setup wizard shown to the very end and analytical accounts (v0.18), multi-currency accounting and several invoices settled by one bank movement (v0.19, current release), then budgets.</p>
 
 			<div class="grid sm:grid-cols-2 gap-4">
 				<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30 sm:col-span-2">
 					<div class="flex items-center justify-between mb-1 flex-wrap gap-2">
-						<h3 class="font-semibold">E17 — Infrastructure &amp; Sovereignty <span class="text-slate-500 font-mono text-xs">v0.2.0</span></h3>
+						<h3 class="font-semibold">Infrastructure &amp; Sovereignty <span class="text-slate-500 font-mono text-xs">v0.2.0</span></h3>
 						<span class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">Done</span>
 					</div>
 					<p class="text-sm text-slate-400">External API with personal access tokens (read / read-write, per company), full installation export/import (<code>.keshbackup</code>) for SSH-free migration and restore, self-service password recovery by email (anti-enumeration, single-use 30-min links), atomic first-admin setup (TOCTOU fix).</p>
 				</div>
 				<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30 sm:col-span-2">
 					<div class="flex items-center justify-between mb-1 flex-wrap gap-2">
-						<h3 class="font-semibold">E11 / E18 — Swiss VAT &amp; VAT accounting <span class="text-slate-500 font-mono text-xs">v0.3.0</span></h3>
+						<h3 class="font-semibold">Swiss VAT &amp; VAT accounting <span class="text-slate-500 font-mono text-xs">v0.3.0</span></h3>
 						<span class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">Done</span>
 					</div>
 					<p class="text-sm text-slate-400">Per-period VAT computation and report, multiple rates (standard, reduced, accommodation); output VAT posted automatically when sales invoices are validated; assisted entry of purchases with input VAT; VAT return (net amount due to the FTA) and reconciliation of the report against the general ledger. Official FTA e-decompte (ESTV) format planned for a later release.</p>
 				</div>
 				<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30 sm:col-span-2">
 					<div class="flex items-center justify-between mb-1 flex-wrap gap-2">
-						<h3 class="font-semibold">E12 — Credit notes, supplier invoices &amp; payments <span class="text-slate-500 font-mono text-xs">v0.3.2 / v0.4.0</span></h3>
+						<h3 class="font-semibold">Credit notes, supplier invoices &amp; payments <span class="text-slate-500 font-mono text-xs">v0.3.2 / v0.4.0</span></h3>
 						<span class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">Done</span>
 					</div>
 					<p class="text-sm text-slate-400">Credit notes (linked reversal of a validated invoice) — shipped in v0.3.2. Supplier invoices with binary settlement, ISO 20022 <code>pain.001.001.09</code> outgoing payment file for Swiss e-banking, and folder-based supplier-invoice import with server-side Swiss QR-Bill decoding — <strong class="text-slate-200">shipped in v0.4.0</strong>.</p>
 				</div>
 				<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30 sm:col-span-2">
 					<div class="flex items-center justify-between mb-1 flex-wrap gap-2">
-						<h3 class="font-semibold">E19 — Project cost accounting (analytics) <span class="text-slate-500 font-mono text-xs">v0.4.0</span></h3>
+						<h3 class="font-semibold">Project cost accounting (analytics) <span class="text-slate-500 font-mono text-xs">v0.4.0</span></h3>
 						<span class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">Done</span>
 					</div>
 					<p class="text-sm text-slate-400">An optional <strong class="text-slate-200">project</strong> dimension (two levels) taggable across every entry flow — manual journal entries (per line), sales &amp; supplier invoices (per document), and bank reconciliation (match, split, rule default). Two exportable reports (PDF/CSV): <strong class="text-slate-200">Expenses by project</strong> (all charges, drill-down to the entry, for tax deductions) and <strong class="text-slate-200">Return by project</strong> (invested cost / revenue / net result / yield %), with sub-project roll-up and fiscal-year or cumulative views.</p>
 				</div>
 				<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30 sm:col-span-2">
 					<div class="flex items-center justify-between mb-1 flex-wrap gap-2">
-						<h3 class="font-semibold">E20 — Invoice emailing &amp; business email templates <span class="text-slate-500 font-mono text-xs">v0.6.0</span></h3>
+						<h3 class="font-semibold">Invoice emailing &amp; business email templates <span class="text-slate-500 font-mono text-xs">v0.6.0</span></h3>
 						<span class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">Done</span>
 					</div>
 					<p class="text-sm text-slate-400">Send a validated invoice by email in one click — Swiss QR-Bill PDF attached, subject and body pre-filled in the <strong class="text-slate-200">contact's language</strong> with a personalised salutation, <strong class="text-slate-200">recipient locked</strong> to the contact card (anti-spoofing), reply-to set to your company mailbox. Admin-editable <strong class="text-slate-200">multilingual templates</strong> (FR/DE/IT/EN) with substitution variables and sensible zero-config defaults; per-contact correspondence language and salutation; every send recorded in the audit log, and resend support.</p>
 				</div>
 				<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30 sm:col-span-2">
 					<div class="flex items-center justify-between mb-1 flex-wrap gap-2">
-						<h3 class="font-semibold">E21 — Receivables &amp; dunning <span class="text-slate-500 font-mono text-xs">v0.7.0</span></h3>
+						<h3 class="font-semibold">Receivables &amp; dunning <span class="text-slate-500 font-mono text-xs">v0.7.0</span></h3>
 						<span class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">Done</span>
 					</div>
-					<p class="text-sm text-slate-400">The full debtor follow-up cycle: <strong class="text-slate-200">structured payment terms</strong> on the contact (auto-calculated invoice due dates), correct <strong class="text-slate-200">VAT-inclusive amounts</strong> everywhere a total is shown (QR-Bill, PDF, email, receivables list), an <strong class="text-slate-200">aged-receivables</strong> balance of open items, and <strong class="text-slate-200">multi-level payment reminders</strong> — configurable levels &amp; fees, an auto-populated list of invoices to chase, manual sending by email through the multilingual templates (E20), and a per-invoice reminder history.</p>
+					<p class="text-sm text-slate-400">The full debtor follow-up cycle: <strong class="text-slate-200">structured payment terms</strong> on the contact (auto-calculated invoice due dates), correct <strong class="text-slate-200">VAT-inclusive amounts</strong> everywhere a total is shown (QR-Bill, PDF, email, receivables list), an <strong class="text-slate-200">aged-receivables</strong> balance of open items, and <strong class="text-slate-200">multi-level payment reminders</strong> — configurable levels &amp; fees, an auto-populated list of invoices to chase, manual sending by email through the multilingual templates (v0.6.0), and a per-invoice reminder history.</p>
 				</div>
 				<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30 sm:col-span-2">
 					<div class="flex items-center justify-between mb-1 flex-wrap gap-2">
-						<h3 class="font-semibold">E14 — Year-end closing &amp; balance carry-forward <span class="text-slate-500 font-mono text-xs">v0.8.0</span></h3>
+						<h3 class="font-semibold">Year-end closing &amp; balance carry-forward <span class="text-slate-500 font-mono text-xs">v0.8.0</span></h3>
 						<span class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">Done</span>
 					</div>
 					<p class="text-sm text-slate-400">Balance-sheet figures now <strong class="text-slate-200">carry forward automatically</strong> from one fiscal year to the next, computed in real time from inception — <strong class="text-slate-200">no closing or carry-forward entries to post by hand</strong>. The balance sheet shows <strong class="text-slate-200">retained earnings</strong> and <strong class="text-slate-200">result for the year</strong> as distinct lines inside a dedicated <strong class="text-slate-200">equity section</strong> (CO art. 959a). Closing a year is a <strong class="text-slate-200">lock</strong> (immutability + audit, CO art. 957-964), and an administrator can <strong class="text-slate-200">reopen</strong> it against a recorded justification. Every account carries an <strong class="text-slate-200">explicit role</strong> — Kesh never infers an account’s purpose from its number, so you can renumber your chart of accounts freely. <strong class="text-slate-200">Opening balances</strong> let you migrate an existing set of books in one balanced entry.</p>
 				</div>
 				<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30 sm:col-span-2">
 					<div class="flex items-center justify-between mb-1 flex-wrap gap-2">
-						<h3 class="font-semibold">E16 — Advanced invoicing <span class="text-slate-500 font-mono text-xs">v0.9.0</span></h3>
+						<h3 class="font-semibold">Advanced invoicing <span class="text-slate-500 font-mono text-xs">v0.9.0</span></h3>
 						<span class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">Done</span>
 					</div>
 					<p class="text-sm text-slate-400">Each invoice line can now carry <strong class="text-slate-200">its own revenue account</strong>, falling back to the company default — the accounting entry splits the credit across the right accounts, credit notes included. Each catalogue item can hold a <strong class="text-slate-200">default revenue account</strong> that pre-fills the line. The invoice PDF is complete at last: a <strong class="text-slate-200">VAT recap by rate</strong>, your own <strong class="text-slate-200">contact details</strong> under your address, and the <strong class="text-slate-200">customer number</strong> you assign to a contact — unique per company, searchable in the address book, and printed on credit notes too.</p>
 				</div>
 				<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30 sm:col-span-2">
 					<div class="flex items-center justify-between mb-1 flex-wrap gap-2">
-						<h3 class="font-semibold">E22 — Duplicate prevention &amp; hardening <span class="text-slate-500 font-mono text-xs">v0.10.0</span></h3>
+						<h3 class="font-semibold">Duplicate prevention &amp; hardening <span class="text-slate-500 font-mono text-xs">v0.10.0</span></h3>
 						<span class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">Done</span>
 					</div>
 					<p class="text-sm text-slate-400">As you type a new contact, Kesh <strong class="text-slate-200">warns you that a similar one may already exist</strong> — case, accents, hyphens and invisible characters are all ignored when comparing — and flags a <strong class="text-slate-200">VAT number (IDE) already taken</strong>, including by an <strong class="text-slate-200">archived</strong> contact, the one case where saving would be refused by a record you cannot see. It <strong class="text-slate-200">warns, it never blocks</strong>: two clients may legitimately share a near-identical name. Also in this release: <strong class="text-slate-200">canonical customer numbers</strong> — two numbers identical to the eye are now the same number, whatever the Unicode composition or database collation; <strong class="text-slate-200">hardened API keys</strong> — a PAT can no longer reach any administration route, so revoking a compromised key is once again enough; and an integration test suite <strong class="text-slate-200">42× faster</strong>.</p>
 				</div>
 				<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30 sm:col-span-2">
 					<div class="flex items-center justify-between mb-1 flex-wrap gap-2">
-						<h3 class="font-semibold">E23 — Translation debt <span class="text-slate-500 font-mono text-xs">v0.11.0</span></h3>
+						<h3 class="font-semibold">Translation debt <span class="text-slate-500 font-mono text-xs">v0.11.0</span></h3>
 						<span class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">Done</span>
 					</div>
 					<p class="text-sm text-slate-400">Kesh advertises four languages, and on part of its screens it was <strong class="text-slate-200">serving French to everyone</strong> — not raw keys or error messages, but <strong class="text-slate-200">correct French</strong>, indistinguishable from a deliberate translation, with every check green. A missing label simply fell back to the French text embedded in the code. <strong class="text-slate-200">1600 messages have been written</strong>: 358 new French labels and 414 in each of the three other languages, so all four catalogues now hold <strong class="text-slate-200">the same 1630 keys</strong>. Six guards keep the gap from reopening silently — a label requested but missing, a language losing a key the others have, text hard-coded past the translation layer, one label drifting into two meanings — each proven by recreating the very defect it claims to catch. <strong class="text-slate-200">Translations have not been reviewed by native speakers</strong>: a glossary fixes the Swiss accounting terminology and systematic checks ruled out clashes of meaning, but nothing guarantees the language sounds natural.</p>
 				</div>
 				<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30 sm:col-span-2">
 					<div class="flex items-center justify-between mb-1 flex-wrap gap-2">
-						<h3 class="font-semibold">E24 — Getting the books right <span class="text-slate-500 font-mono text-xs">v0.12.0</span></h3>
+						<h3 class="font-semibold">Getting the books right <span class="text-slate-500 font-mono text-xs">v0.12.0</span></h3>
 						<span class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">Done</span>
 					</div>
 					<p class="text-sm text-slate-400">A review of the whole product by three experts — accountant, tax adviser, finance director — found the founding defect: <strong class="text-slate-200">collecting a customer payment wrote no accounting entry</strong>, while the balance sheet stayed balanced and no check turned red. This wave adds the <strong class="text-slate-200">payment entry</strong>, the <strong class="text-slate-200">general ledger</strong>, <strong class="text-slate-200">reversal</strong> of an entry — correcting without erasing, the original left intact (CO art. 958f) —, and a <strong class="text-slate-200">period lock</strong> so that a quarter already declared no longer moves.</p>
 				</div>
 				<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30 sm:col-span-2">
 					<div class="flex items-center justify-between mb-1 flex-wrap gap-2">
-						<h3 class="font-semibold">E25 — The correction wave, completed <span class="text-slate-500 font-mono text-xs">v0.12.1</span></h3>
+						<h3 class="font-semibold">The correction wave, completed <span class="text-slate-500 font-mono text-xs">v0.12.1</span></h3>
 						<span class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">Done</span>
 					</div>
 					<p class="text-sm text-slate-400">The <em>Wave 1</em> milestone closed at zero open issues: an <strong class="text-slate-200">audit trail that holds</strong> and can be read on screen; entries never renumbered; a validated invoice <strong class="text-slate-200">un-validated</strong> instead of deleted, and payments, reconciliations and supplier payments <strong class="text-slate-200">cancelled by reversal</strong>; the <strong class="text-slate-200">amount still due</strong> right everywhere, including write-offs; a trial balance that agrees with the balance sheet; and a sovereignty export that carries the whole of the books.</p>
 				</div>
 				<div class="p-5 rounded-xl bg-slate-900 border border-slate-800">
-					<h3 class="font-semibold mb-1">E13 — Budgets</h3>
+					<h3 class="font-semibold mb-1">Budgets (in a later version)</h3>
 					<p class="text-sm text-slate-400">Annual budgets per account, variance reports, cash-flow forecasting.</p>
 				</div>
 				<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30 sm:col-span-2">
 					<div class="flex items-center justify-between mb-1 flex-wrap gap-2">
-						<h3 class="font-semibold">E15 — Open items &amp; matching, receipts, custom journals <span class="text-slate-500 font-mono text-xs">v0.13.0</span></h3>
-						<span class="text-xs font-mono px-2 py-0.5 rounded bg-amber-400/10 text-amber-300 border border-amber-400/30">Matching released — epic open</span>
+						<h3 class="font-semibold">Open items &amp; matching, receipts, custom journals <span class="text-slate-500 font-mono text-xs">v0.13.0</span></h3>
+						<span class="text-xs font-mono px-2 py-0.5 rounded bg-amber-400/10 text-amber-300 border border-amber-400/30">Matching released — more to come</span>
 					</div>
 					<p class="text-sm text-slate-400"><strong class="text-slate-200">Released in v0.13.0:</strong> the <strong class="text-slate-200">open items</strong> of a balance-sheet account at any date — what remains open, line by line, totalling the account balance; <strong class="text-slate-200">manual matching with suggested pairs</strong> — Kesh suggests, you confirm, it never matches a suggestion on its own — and unmatching; a settled customer invoice and a paid supplier invoice are matched with their payments, a reversal with the entry it corrects, existing data included at upgrade; the matching code shown on journal entries and in the general ledger. Also: an entry can be <strong class="text-slate-200">edited or deleted while its fiscal year is open</strong>, fiscal years close in order, and the <code>.env</code> configuration finally reaches Kesh. ⚠️ <strong class="text-slate-200">No way back to v0.12.x</strong> once the database is upgraded — back it up first. <strong class="text-slate-200">Still to come:</strong> document attachments, versioned parsers and templates, user-definable journal types.</p>
 				</div>
 				<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30 sm:col-span-2">
 					<div class="flex items-center justify-between mb-1 flex-wrap gap-2">
-						<h3 class="font-semibold">E26 — Acceptance testing of v0.13.0 <span class="text-slate-500 font-mono text-xs">v0.13.1</span></h3>
+						<h3 class="font-semibold">Acceptance testing of v0.13.0 <span class="text-slate-500 font-mono text-xs">v0.13.1</span></h3>
 						<span class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">Released</span>
 					</div>
 					<p class="text-sm text-slate-400">Found by importing a real statement: in debit/credit CSV profiles, <strong class="text-slate-200">every UBS expense became a receipt</strong>, silently. The <strong class="text-slate-200">sign of debits is now a profile setting</strong>, never a guess, and a statement whose amount contradicts its column is refused as a whole; up to 20 header lines let the UBS CSV import as it is. Bank accounts get an optional <strong class="text-slate-200">short description</strong> (“UBS — Personal”) shown in every list and picker; the Synology restore script <strong class="text-slate-200">fails closed</strong> while Kesh may be running; the manual describes the actual chart-of-accounts and import screens. ⚠️ <strong class="text-slate-200">No way back to v0.13.0</strong> once the database is upgraded — back it up first.</p>
 				</div>
 				<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30 sm:col-span-2">
 					<div class="flex items-center justify-between mb-1 flex-wrap gap-2">
-						<h3 class="font-semibold">E27 — Acceptance testing of v0.13.1 <span class="text-slate-500 font-mono text-xs">v0.13.2</span></h3>
+						<h3 class="font-semibold">Acceptance testing of v0.13.1 <span class="text-slate-500 font-mono text-xs">v0.13.2</span></h3>
 						<span class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">Released</span>
 					</div>
 					<p class="text-sm text-slate-400">A bank import none of whose transactions is reconciled can now be <strong class="text-slate-200">deleted, then re-imported</strong> — traced in the audit log. The <strong class="text-slate-200">currency of a statement is read</strong> — an optional Currency column in CSV profiles, the amount&rsquo;s own currency in CAMT.053 — and a statement not in Swiss francs is <strong class="text-slate-200">refused</strong> instead of being booked in CHF without a word. <strong class="text-slate-200">Changing the profile after the preview recomputes it</strong>, and an import whose profile, account or file changed since the preview is refused. A reconciliation batch holding a transaction that has disappeared is processed proposal by proposal instead of failing as a whole. No database migration: going back to v0.13.1 remains possible once the Currency column is removed from profiles.</p>
 				</div>
 				<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30 sm:col-span-2">
 					<div class="flex items-center justify-between mb-1 flex-wrap gap-2">
-						<h3 class="font-semibold">E28 — Six bugs and closing a bank account <span class="text-slate-500 font-mono text-xs">v0.13.3</span></h3>
+						<h3 class="font-semibold">Six bugs and closing a bank account <span class="text-slate-500 font-mono text-xs">v0.13.3</span></h3>
 						<span class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">Released</span>
 					</div>
 					<p class="text-sm text-slate-400">A bank account can now be <strong class="text-slate-200">closed</strong>, and reopened: it becomes read-only, its history stays whole, and nothing more can be booked on it. A <strong class="text-slate-200">rejected bank transaction can be put back</strong> among the reconciliation proposals from its import&rsquo;s detail. The installation backup reads all its tables in <strong class="text-slate-200">a single consistent snapshot</strong>. Reconciliation no longer proposes an invoice it would then refuse, and a debit offered against a customer invoice is refused cleanly. An error is never displayed as &ldquo;[object Object]&rdquo; any more, and destructive buttons are visible again. One database migration, which does not raise the minimum version — but going back to v0.13.2 requires restoring the backup taken before the upgrade.</p>
 				</div>
 				<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30 sm:col-span-2">
 					<div class="flex items-center justify-between mb-1 flex-wrap gap-2">
-						<h3 class="font-semibold">E29 — Preparing the first year-end closing, part one <span class="text-slate-500 font-mono text-xs">v0.13.4</span></h3>
+						<h3 class="font-semibold">Preparing the first year-end closing, part one <span class="text-slate-500 font-mono text-xs">v0.13.4</span></h3>
 						<span class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">Released</span>
 					</div>
 					<p class="text-sm text-slate-400"><strong class="text-slate-200">Preparing a fiscal year&rsquo;s closing</strong>: seven read-only checks — bank transactions still to reconcile, missing year-end statement, draft invoices, imported bills to complete, inconsistent entries — each leading to the screen where to act. A bank transaction can be <strong class="text-slate-200">linked to the payment already recorded</strong> on the invoice, without a new entry. Reconciliation now proposes a payment received <strong class="text-slate-200">after the due date or a reminder</strong>, puts the invoice that fell due first at the top on equal score (art. 87 CO), no longer proposes an invoice a payment exceeds by a few cents, and says which proposal it shows. An import, a payment batch or a cancellation started just before a bank account is closed no longer lands on it. The reconciliation list says when older transactions remain beyond the 100 most recent. No database migration: going back to v0.13.3 only takes its image. Automatic reversal of accruals at the opening of the next year follows in v0.14.0.</p>
 				</div>
 				<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30 sm:col-span-2">
 					<div class="flex items-center justify-between mb-1 flex-wrap gap-2">
-						<h3 class="font-semibold">E29 — Preparing the first year-end closing, part two <span class="text-slate-500 font-mono text-xs">v0.14.0</span></h3>
+						<h3 class="font-semibold">Preparing the first year-end closing, part two <span class="text-slate-500 font-mono text-xs">v0.14.0</span></h3>
 						<span class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">Released</span>
 					</div>
-					<p class="text-sm text-slate-400"><strong class="text-slate-200">Accruals and deferrals reversed on the first day of the next fiscal year</strong>, from the entry itself (<a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/232">#232</a>): a prepaid expense, accrued income or an invoice still to receive is booked on the last day of the year, and its reversal is dated the first day of the next one, in that year. A dry run of a closing in the administration manual is moved to E31, after the complete backup.</p>
+					<p class="text-sm text-slate-400"><strong class="text-slate-200">Accruals and deferrals reversed on the first day of the next fiscal year</strong>, from the entry itself (<a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/232">#232</a>): a prepaid expense, accrued income or an invoice still to receive is booked on the last day of the year, and its reversal is dated the first day of the next one, in that year. A dry run of a closing in the administration manual is moved to v0.15.0, after the complete backup.</p>
 				</div>
 				<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30 sm:col-span-2">
 					<div class="flex items-center justify-between mb-1 flex-wrap gap-2">
-						<h3 class="font-semibold">E30 — Supplier invoices, from the document to the payment <span class="text-slate-500 font-mono text-xs">v0.14.0</span></h3>
+						<h3 class="font-semibold">Supplier invoices, from the document to the payment <span class="text-slate-500 font-mono text-xs">v0.14.0</span></h3>
 						<span class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">Released</span>
 					</div>
 					<p class="text-sm text-slate-400">Every supplier document, <strong class="text-slate-200">with or without a QR code</strong>, enters a &ldquo;Documents to process&rdquo; list with a preview; the bill is <strong class="text-slate-200">created next to its document</strong>, the supplier proposed — never chosen automatically — or created without leaving the form (<a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/685">#685</a>). A document can be attached to a bill afterwards, detached, and viewed from the journal entry. Reconciliation <strong class="text-slate-200">proposes the open supplier bill for a debit</strong> and settles it; cancelling the match undoes the payment (<a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/686">#686</a>). The same bill can no longer enter two pending payment batches. One <strong class="text-slate-200">breaking</strong> database migration: going back to v0.13.4 requires restoring the backup taken before the upgrade.</p>
 				</div>
 				<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30 sm:col-span-2">
 					<div class="flex items-center justify-between mb-1 flex-wrap gap-2">
-						<h3 class="font-semibold">E31 — Keeping the books <span class="text-slate-500 font-mono text-xs">v0.15.0</span></h3>
+						<h3 class="font-semibold">Keeping the books <span class="text-slate-500 font-mono text-xs">v0.15.0</span></h3>
 						<span class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">Released</span>
 					</div>
 					<p class="text-sm text-slate-400">A <strong class="text-slate-200">backup that restores everything</strong>: the <code>.keshbackup</code> file carries the supporting documents and frozen invoice PDFs, Kesh writes a complete backup on its own, at a regular interval set in the interface, the server&rsquo;s backups can be listed and downloaded from the screen, and a fresh installation is restored from the setup wizard (<a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/503">#503</a>). The administration manual describes a <strong class="text-slate-200">dry run of a year-end closing</strong> on an isolated copy, played on a demonstration backup. Four short fixes (the demo validates an invoice with VAT, the QR-bill message follows the invoice&rsquo;s language, among others), an E2E smoke test in CI (<a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/577">#577</a>) and Rust 1.97.1. One non-breaking database migration — but going back to v0.14.0 requires restoring the backup taken before the upgrade, documents folder included.</p>
 				</div>
 				<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30 sm:col-span-2">
 					<div class="flex items-center justify-between mb-1 flex-wrap gap-2">
-						<h3 class="font-semibold">E32 — Kesh&rsquo;s MCP server <span class="text-slate-500 font-mono text-xs">v0.16.0</span></h3>
+						<h3 class="font-semibold">Kesh&rsquo;s MCP server <span class="text-slate-500 font-mono text-xs">v0.16.0</span></h3>
 						<span class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">Released</span>
 					</div>
 					<p class="text-sm text-slate-400">A <strong class="text-slate-200">built-in MCP server</strong>, so that an AI agent on the local network can <strong class="text-slate-200">read</strong> the books: <strong class="text-slate-200">off by default</strong> and switched on by the administrator, reached with a dedicated key with fine-grained scopes, <strong class="text-slate-200">read-only on the books</strong>; prompts kept in Kesh with their history; the data <strong class="text-slate-200">shown to the administrator before it is sent</strong> to the agent, under a key that requires validation (the default) — a key exempted from validation sends without showing, each send logged. The agent writes nothing in the books; it can propose a prompt, which an administrator approves or refuses; its proposed entries are planned for a later version, not yet released.</p>
 				</div>
 				<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30 sm:col-span-2">
 					<div class="flex items-center justify-between mb-1 flex-wrap gap-2">
-						<h3 class="font-semibold">E32 fixes, manual statements &amp; draft supplier bills <span class="text-slate-500 font-mono text-xs">v0.17.0</span></h3>
+						<h3 class="font-semibold">MCP server fixes, manual statements &amp; draft supplier bills <span class="text-slate-500 font-mono text-xs">v0.17.0</span></h3>
 						<span class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">Released</span>
 					</div>
 					<p class="text-sm text-slate-400">A <strong class="text-slate-200">supplier bill is first saved as a draft</strong>, corrected, then validated, which posts the purchase entry; a validated bill not yet paid can be <strong class="text-slate-200">unvalidated</strong> to be corrected (<a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/849">#849</a>). A <strong class="text-slate-200">bank statement can be typed in by hand</strong> when the bank provides no CAMT.053 or CSV file (<a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/816">#816</a>), and a pending bank transaction can be linked to an entry already posted (<a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/671">#671</a>). A supplier bill line that is not in whole centimes is refused (<a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/687">#687</a>); the QR bill of a scanned document is read at import (<a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/854">#854</a>); the MCP server answers in text only (<a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/811">#811</a>); <code>quick-xml</code> fixes two security advisories (<a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/789">#789</a>). Two database migrations, the minimum version raised to 0.17.0: <strong class="text-slate-200">take a complete backup before upgrading</strong> — going back requires it.</p>
@@ -432,24 +432,24 @@
 				</div>
 				<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30 sm:col-span-2">
 					<div class="flex items-center justify-between mb-1 flex-wrap gap-2">
-						<h3 class="font-semibold">E36 — Corrective release: before the first invoice (phase 1) <span class="text-slate-500 font-mono text-xs">v0.17.8</span></h3>
+						<h3 class="font-semibold">Corrective release: before the first invoice <span class="text-slate-500 font-mono text-xs">v0.17.8</span></h3>
 						<span class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">Released</span>
 					</div>
 					<p class="text-sm text-slate-400">Pressing <strong class="text-slate-200">Enter</strong> in the revenue account field of an invoice line or a product no longer saves the old account while the field shows what you typed, and no longer picks the first account of an empty field (<a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/1095">#1095</a>, <a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/1165">#1165</a>). An <strong class="text-slate-200">ambiguous amount</strong> like &ldquo;1.234&rdquo; is refused instead of being read as one franc and a fraction, in manual entries, the purchase VAT assistant and a split transaction, and as an invoice&rsquo;s unit price; the thousands apostrophe (1'234) is accepted (<a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/1051">#1051</a>, <a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/1171">#1171</a>). <strong class="text-slate-200">Splitting a bank transaction</strong> is posted from the screen, which says what is missing, in a wider window (<a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/1150">#1150</a>, <a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/1151">#1151</a>). The audit log credits an API key with the payments it cancels (<a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/1131">#1131</a>; <a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/431">#431</a>, in part); a restore&rsquo;s report stays on screen (<a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/931">#931</a>). <strong class="text-slate-200">No database migration</strong>: going back to v0.17.7 needs no restore; a complete backup before upgrading is still recommended.</p>
 				</div>
 				<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30 sm:col-span-2">
 					<div class="flex items-center justify-between mb-1 flex-wrap gap-2">
-						<h3 class="font-semibold">E36 — The first invoice and what follows (phase 2, no migration) <span class="text-slate-500 font-mono text-xs">v0.18.0</span></h3>
+						<h3 class="font-semibold">The first invoice and what follows (no migration) <span class="text-slate-500 font-mono text-xs">v0.18.0</span></h3>
 						<span class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">Released</span>
 					</div>
-					<p class="text-sm text-slate-400">The <strong class="text-slate-200">setup wizard</strong> shows a screen to the very end: &ldquo;Setting up&hellip;&rdquo;, then a &ldquo;Setup complete&rdquo; page, a failure shown with <em>Retry</em>, and the setup resumed after a reload (<a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/1187">#1187</a>); it no longer refuses to finish when a page was opened before it, and fills in the empty default invoicing accounts (<a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/1200">#1200</a>, <a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/987">#987</a>). The analytical axis is now called <strong class="text-slate-200">analytical account</strong>, in all four languages (<a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/1161">#1161</a>). An <strong class="text-slate-200">ambiguous amount</strong> like &ldquo;1.250&rdquo; is refused in opening balances, supplier bills and payments too (<a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/1050">#1050</a>, <a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/1159">#1159</a>, <a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/1172">#1172</a>, <a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/1174">#1174</a>). Settling an invoice&rsquo;s remainder refuses a retyped VAT account &mdash; an API contract change (<a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/1044">#1044</a>). The audit log filters and the reconciliation window count Zurich days (<a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/1147">#1147</a>, <a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/1053">#1053</a>). The QR bill has both cutting lines with scissors (<a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/944">#944</a>, in part). <strong class="text-slate-200">No database migration</strong>: going back to v0.17.8 needs no restore; a complete backup before upgrading is still recommended. Epic 36 closes with this release; analytical reallocation follows in the next release (v0.19.0), in a new epic.</p>
+					<p class="text-sm text-slate-400">The <strong class="text-slate-200">setup wizard</strong> shows a screen to the very end: &ldquo;Setting up&hellip;&rdquo;, then a &ldquo;Setup complete&rdquo; page, a failure shown with <em>Retry</em>, and the setup resumed after a reload (<a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/1187">#1187</a>); it no longer refuses to finish when a page was opened before it, and fills in the empty default invoicing accounts (<a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/1200">#1200</a>, <a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/987">#987</a>). The analytical axis is now called <strong class="text-slate-200">analytical account</strong>, in all four languages (<a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/1161">#1161</a>). An <strong class="text-slate-200">ambiguous amount</strong> like &ldquo;1.250&rdquo; is refused in opening balances, supplier bills and payments too (<a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/1050">#1050</a>, <a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/1159">#1159</a>, <a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/1172">#1172</a>, <a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/1174">#1174</a>). Settling an invoice&rsquo;s remainder refuses a retyped VAT account &mdash; an API contract change (<a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/1044">#1044</a>). The audit log filters and the reconciliation window count Zurich days (<a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/1147">#1147</a>, <a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/1053">#1053</a>). The QR bill has both cutting lines with scissors (<a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/944">#944</a>, in part). <strong class="text-slate-200">No database migration</strong>: going back to v0.17.8 needs no restore; a complete backup before upgrading is still recommended. Analytical reallocation follows in the next release (v0.19.0).</p>
 				</div>
 				<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30 sm:col-span-2">
 					<div class="flex items-center justify-between mb-1 flex-wrap gap-2">
-						<h3 class="font-semibold">E37 Multi-currency accounting, E43 One transaction, several invoices, E42-1, E44-1a <span class="text-slate-500 font-mono text-xs">v0.19.0</span></h3>
+						<h3 class="font-semibold">Multi-currency accounting, one transaction for several invoices <span class="text-slate-500 font-mono text-xs">v0.19.0</span></h3>
 						<span class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">Released</span>
 					</div>
-					<p class="text-sm text-slate-400"><strong class="text-slate-200">Multi-currency accounting</strong>, a company setting off by default and final once enabled: the Swiss franc stays the base currency and the currency is carried by the account; the monthly rates of the Swiss tax administration are fetched on their own; entries, conversions and opening balances in foreign currency; general ledger, trial balance, balance sheet and income statement in both currencies; year-end revaluation and a ninth, blocking, closing check (<a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/233">#233</a>, in part; Epic 37, by a contributor). <strong class="text-slate-200">One bank movement settles several invoices</strong>, customer or supplier, each one settled and matched, a small gap posted to the account you choose within an adjustable limit (<a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/823">#823</a>). A customer invoice&rsquo;s <strong class="text-slate-200">analytical account can be changed</strong>, even once paid, with all its entries (<a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/1167">#1167</a>, in part). The <strong class="text-slate-200">QR bill follows the SIX grid</strong>: <em>Payable by</em>, amount and widths (<a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/944">#944</a>, in part). An invoice&rsquo;s customer field no longer shows a customer the invoice will not save (<a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/1162">#1162</a>); the <strong class="text-slate-200">company name</strong> can be corrected in the settings (<a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/1097">#1097</a>). <strong class="text-slate-200">Four database migrations</strong>: a complete backup before upgrading is required, and going back to v0.18.0 means restoring it.</p>
+					<p class="text-sm text-slate-400"><strong class="text-slate-200">Multi-currency accounting</strong>, a company setting off by default and final once enabled: the Swiss franc stays the base currency and the currency is carried by the account; the monthly rates of the Swiss tax administration are fetched on their own; entries, conversions and opening balances in foreign currency; general ledger, trial balance, balance sheet and income statement in both currencies; year-end revaluation and a ninth, blocking, closing check (<a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/233">#233</a>, in part; contributed by a second developer). <strong class="text-slate-200">One bank movement settles several invoices</strong>, customer or supplier, each one settled and matched, a small gap posted to the account you choose within an adjustable limit (<a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/823">#823</a>). A customer invoice&rsquo;s <strong class="text-slate-200">analytical account can be changed</strong>, even once paid, with all its entries (<a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/1167">#1167</a>, in part). The <strong class="text-slate-200">QR bill follows the SIX grid</strong>: <em>Payable by</em>, amount and widths (<a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/944">#944</a>, in part). An invoice&rsquo;s customer field no longer shows a customer the invoice will not save (<a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/1162">#1162</a>); the <strong class="text-slate-200">company name</strong> can be corrected in the settings (<a class="text-emerald-400 hover:underline" href="https://github.com/guycorbaz/kesh/issues/1097">#1097</a>). <strong class="text-slate-200">Four database migrations</strong>: a complete backup before upgrading is required, and going back to v0.18.0 means restoring it.</p>
 				</div>
 			</div>
 		</div>
