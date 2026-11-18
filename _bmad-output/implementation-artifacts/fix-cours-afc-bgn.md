@@ -131,6 +131,18 @@ Les flux de 2026 après mars (mensuels 2026-10, 2026-12 ; journalier du 13.11.20
   BGN toujours `400 CURRENCY_UNKNOWN`. `scripts/gate-ci.sh` (copie `git archive` de `6ae0116b`, dont le code est celui de `102758bf`, `KESH_NO_MEMGUARD=1`) :
   **5972 passés, 0 échoué, 17 ignorés** (`gate-ci.log`), cible de compilation supprimée ensuite.
 - 2026-11-18 — revue P1 (Sonnet, lecture seule) : **0 au-dessus de LOW**, 2 LOW. P1-1 (« BGN publié jusqu'en 2025 » au lieu de mars 2026, `docs/api-external.md`, manuel, notes de version) corrigé. P1-2 (AC-4 : aucun test d'un `PUT /accounts/{id}` vers BGN ou HRK, seul le `POST` l'est ; même `normalize_foreign_currency`, risque nul au code) : test à ajouter dès que la station plafonne de nouveau ses gates (mem-guard indisponible depuis la saturation mémoire du 18.11), passe ciblée ensuite.
+- 2026-11-18 — P1-2 corrigé, `49e75a7e` (test seul, aucune ligne de production) :
+  `monnaie_retiree_refusee_a_la_modification_d_un_compte` (`account_currency_e2e.rs`, 8 → 9 `#[sqlx::test]` de
+  `2ae7749e` à `49e75a7e`) — `PUT /accounts/{id}` vers `BGN`, `HRK`, `bgn`, sur un compte en CHF et un compte en USD
+  sans écriture, en multi-devises : `400 CURRENCY_UNKNOWN`, `details.value` tel que reçu, devise et version inchangées
+  en base ; sonde positive vers EUR (200). Mutation **M4** (`normalize_foreign_currency` sur `parse_rate_currency`) →
+  rouges `monnaie_retiree_refusee_a_la_modification_d_un_compte` et
+  `chf_est_normalise_et_une_devise_refusee_en_mono_devise` (`p2-cible.log`). **Gate ciblé seulement**, par décision de
+  Beat (`heavy.sh`, sans `KESH_NO_MEMGUARD`) : `cargo fmt --check` et `clippy --workspace --all-targets -D warnings`
+  verts ; nextest de kesh-core, `account_currency_e2e`, `exchange_rates_fetch_e2e`, `exchange_rates_api_e2e` (base
+  remise à zéro) **479/479** (`p2-nextest.log`). Le gate complet et l'E2E complet de ce commit se feront **groupés, sur
+  une branche d'intégration** ; ceux de `102758bf` (ci-dessus) ne couvrent pas `49e75a7e`. Passe ciblée P2 à lancer
+  (`kesh-gate-logs/fix-cours-afc-bgn/revue-p2-ciblee-prompt.md`).
 
 ## Notes de version
 
