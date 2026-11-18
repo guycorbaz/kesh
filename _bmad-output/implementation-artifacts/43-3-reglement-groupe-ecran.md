@@ -404,6 +404,51 @@ captures — attend la branche de la 43-2 ; ce relevé ne déclare rien qui n'ai
 - **À la clôture** : reprendre la tête définitive de la 43-2 (champ `heldByPaymentBatch`), rejouer `gate-ci` et l'E2E
   complet.
 
+*Relevé daté du 2026-11-18, remédiation de la revue P1 (Opus ; rapports `kesh-gate-logs/e433/review-p1-{B,E,A}.md` :
+0 CRITICAL, 0 HIGH, 7 MEDIUM dont deux convergents, une trentaine de LOW ; décisions de l'orchestrateur).*
+
+- **Commits** : `d3b8b7265` (code, i18n, manuel, registre), `40fc70b48` (E2E et captures).
+- **MEDIUM** :
+  - A M-1, E-M1 — `submitBlocks` rend **toutes** les causes ; sous deux factures, le pied affiche « — », sans
+    sélecteur ni arrondi ; au-delà du plafond, « Écart trop grand : {sens et montant} (au plus {max}) », avec ou sans
+    compte d'arrondi désigné. Tests : 0 et 1 facture, deux factures au-delà du plafond avec et sans compte d'arrondi.
+  - B-M3, E-M2 — un refus du compte va sous le sélecteur seulement s'il est affiché après la relecture, sinon avec
+    les autres refus : jamais muet.
+  - B-M1 — `searching` retombe à l'envoi et à la fermeture sur refus ; test de l'envoi pendant une recherche.
+  - B-M2, E-L1 — relecture : une facture non retrouvée reste, avec son montant d'avant, dite « non relue » ; jamais
+    « plus réglable » (C-e433-12 ; pas de lecture par identifiant au brut dans l'API).
+  - A M-2 — PDF jetable recompilé **après** le dernier `.tex` (`d3b8b7265`, 06:38) : `user-manual.pdf` du
+    2026-11-18 06:42:47, aucune référence indéfinie ; contrôle aplati
+    (`pdftotext user-manual.pdf - | tr '\n' ' ' | tr -s ' ' | /usr/bin/grep -c '<phrase>'`) à 1 pour « retenu par un
+    lot de paiement en cours », « nomme alors le lot », « les comptes tenus dans une autre devise n », « Kesh le
+    refuse à l », « qu.il ne parvient pas à relire reste dans le règlement », « l.écart n.est annoncé qu.à partir de
+    deux factures ».
+- **LOW corrigés** : montant d'en-tête au centime ; annulation au centime, écart dit avec son sens (`gap-label.ts`,
+  partagé avec la modale) et annoncé sans compte ; messages effacés au changement du groupe ; `hasMore` masqué sous
+  une erreur ; une phrase par cause d'*Enregistrer* inactif (illisible, plafond) ; `= L'écart` refait dans les quatre
+  locales ; plafond 50 en `{ $max }` (`MAX_GROUP_INVOICES`) ; commentaires 39 → 48 ; doc-comment déplacé ; délai
+  anti-rebond annulé au démontage ; `aria-live` (recherche, pied, refus), `aria-describedby` d'*Enregistrer*, en-tête
+  des imputées, `role="status"` de l'avis d'arrondi ; « × » effectif (C-e433-13) ; réglages gardés si l'on soumet
+  avant leur arrivée ; toast de succès modale fermée (C-e433-15) ; test du plafond de 50 ; message de fin
+  d'annulation avec le nombre interpolé, et distinct pour le fournisseur. Manuel : L-6 (état inaccessible retiré),
+  L-7 (devise exclue, débiteurs offert puis refusé), relecture, causes du grisé.
+- **Captures refaites** : `43-3-facture-refusee-retiree.png` (la facture ne revient pas), `43-3-retenu-par-un-lot.png`
+  (sur un débit), `43-3-compte-refuse-*.png` (compte neutre « Compte choisi pour l'écart 43-3 ») ; neuve :
+  `43-3-annulation-groupe-fournisseur.png`, avec l'E2E de l'annulation d'un groupe fournisseur (factures rouvertes).
+- **Hors story** : E-L10 noté (C-e433-14, renvoi à la 43-7 et à #1245) ; E-L7 en partie (C-e433-15, issue demandée) ;
+  E-L3 se règle à la clôture avec la tête définitive de la 43-2.
+- **Rouges** : les tests neufs écrits après le code dans la même passe — écart déclaré ; joués contre le code de
+  production d'avant (`978260c26`) : **17 rouges** sur 240 (`kesh-gate-logs/e433/rouges-rem1.log`, script
+  `mut/rouges-rem1.sh`, restauration par `git restore` et `touch`).
+- **Compteurs relevés par la garde** : `sitesTotal` 3466 (`rem1-vitest-1.log`), candidates 129 (21 écartées, 108
+  conformes).
+- **Gates** (pas de Rust touché, `gate-ci` non exigé à cette étape) :
+  - frontend complet au commit `40fc70b48` : `check` 0 erreur, `lint-i18n-ownership` PASS, **4532 Vitest (275
+    fichiers)**, `build` vert (`rem1-front-complet.log`) ;
+  - spec de la story : **13 passés** (`rem1-e2e-group.log`) ;
+  - E2E complet au commit `40fc70b48`, base E2E recréée : **472 passés, 7 échoués, 17 ignorés**
+    (`rem1-e2e-complet.log`) — les sept de la KF-029 (#97) exactement.
+
 ### File List
 
 - `frontend/src/lib/features/reconciliation/GroupSettlementModal.svelte` (neuf) et `.test.ts` (neuf)
