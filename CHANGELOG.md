@@ -8,7 +8,7 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
-## [0.19.0] — Non publié
+## [0.19.0] — 2026-11-18
 
 ⚠️ **Avant la mise à jour, faites une sauvegarde complète : la base, un `.keshbackup` et le dossier des documents. Elle est obligatoire.** La 0.19.0 porte **quatre migrations** (95 au total) : trois pour la comptabilité multi-devises (`20261114000001_multi_currency_settings`, `20261114000002_exchange_rates`, `20261114000003_journal_lines_foreign_currency`) et une pour le règlement de plusieurs factures par un seul mouvement (`20261118000001_grouped_settlements`). Aucune ne relève `kesh_version_min_required`, qui reste à 0.17.6, et aucune n'écrit de données ; mais, comme toute migration, elles empêchent la 0.18.0 de démarrer sur la base migrée. **Le retour à la 0.18.0 ne se fait que par la restauration de cette sauvegarde**, et un `.keshbackup` écrit en 0.19.0 ne s'importe pas dans une 0.18.0. Kesh écrit aussi sa propre sauvegarde dans `backup/pre-upgrade/` avant de migrer ; elle ne dispense pas de la vôtre. Le détail est au manuel d'administration, *Passer à la 0.19.0*. Un `.keshbackup` 0.17.6 à 0.18.0 se réimporte dans une 0.19.0.
 
