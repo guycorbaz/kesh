@@ -1,6 +1,6 @@
 # Story 48-13 : Avant la vraie facture — client écrasé par un chargement tardif, adresse tronquée en silence, nom de société non contrôlé à l'assistant (#1233, #1243, #1226)
 
-Status: ready-for-dev
+Status: review
 
 *Fiche rédigée le 2026-11-18 (Sonnet 5.5), worktree `kesh-48-13`, branche `story/48-13-avant-la-vraie-facture` partie de
 `epic/48-corrections-0-20-0` (= `main` = v0.19.0, `773df80da`), par le workflow `bmad-create-story`. Release **0.20.0** (sortie le
@@ -13,7 +13,7 @@ Guy du 2026-11-18) : `kesh-qrbill` n'est pas touché.*
 *Révisée le 2026-11-18 après les validations P1 et P2 (Opus puis Sonnet) : la story avait été élargie aux troncatures silencieuses des contacts, du fournisseur, de l'article et de l'e-mail
 de la société (décision de Guy du 2026-11-18, « diminuer le nombre de bugs »). La validation P2 (V2-2) a relevé qu'elle dépassait la règle de splitting et retardait le correctif qui débloque l'Epic 49 ;
 **sur décision de l'orchestrateur, la story est coupée en deux, le périmètre est réparti entre les deux fiches, et le critère du texte tapé (D10) est rétabli ici (AC13)** : **48-13** garde **#1233, #1243, #1226** (chemin de la facture, se fusionne avant l'Epic 49) ;
-**`48-15-troncatures-silencieuses`** prend **#1331, #1332, #1333, #1334** et les trois champs du PDF (nom d'article, numéro de client, conditions de paiement)
+**`48-15-troncatures-silencieuses`** prend **#1331, #1332, #1333, #1334** et cinq champs du PDF (nom d'article, numéro de client, conditions de paiement, raison sociale, délai de paiement ; cinq depuis la validation P4 de la 48-15, V4-8)
 (fiche `48-15-troncatures-silencieuses.md`, qui ne bloque pas l'Epic 49 et part de la 48-13 fusionnée pour `onboarding.rs` et `settings/+page.svelte`).*
 
 ## Story
@@ -110,12 +110,12 @@ dise, afin que le premier PDF que je remets sur papier porte ce que j'ai écrit.
   | `settings/+page.svelte:964` téléphone (50) | colonne `VARCHAR(50)` | oui (`invoice_pdf_service.rs:426` `creditor_phone: company.phone.clone(),`) | **oui** (`companies.rs:214` `MAX_PHONE_LEN`, `normalize_contact_field` `:251`, clé `error-company-phone-too-long`) | **dans le périmètre** (même défaut, même bloc ; D4) |
   | `settings/+page.svelte:974` site web (255) | colonne `VARCHAR(255)` | oui (`:428` `creditor_website`) | **oui** (`MAX_WEBSITE_LEN`, `error-company-website-too-long`) | **dans le périmètre** (D4) |
   | `settings/+page.svelte:906` e-mail (320) | colonne | oui (`:427` `creditor_email`) | **non** : aucune longueur côté serveur (`contacts.rs:266` `is_valid_email_simple`) | **hors périmètre : 48-15 (#1333)** — le `maxlength={320}` **reste** dans la 48-13 : le retirer sans borne serveur ouvrirait un refus muet (`DATA_LENGTH_OR_RANGE`) |
-  | `contacts/+page.svelte:992-1008` adresse du client ; `:872`, `:882` prénom/nom ; `:1066` numéro de client ; `:1105` conditions de paiement | SIX / 70 / 50 / 100 | oui (débiteur de la QR, `invoice_pdf_service.rs:439`, `:418`) | voir 48-15 | **hors périmètre : 48-15 (#1331, #1334 et les trois champs du PDF)** |
+  | `contacts/+page.svelte:992-1008` adresse du client ; `:872`, `:882` prénom/nom ; `:1066` numéro de client ; `:1105` conditions de paiement | SIX / 70 / 50 / 100 | oui (débiteur de la QR, `invoice_pdf_service.rs:439`, `:418`) | voir 48-15 | **hors périmètre : 48-15 (#1331, #1334 et les cinq champs du PDF)** |
   | `products/+page.svelte:637` nom de l'article (255) | colonne | oui (`InvoiceForm.svelte:482` `description: p.name,`) | oui (`products.rs:187`) | **hors périmètre : 48-15** |
   | `SupplierCreatePanel.svelte:210` pays du fournisseur (2) | ISO | non | oui (`check_lengths`) | **hors périmètre : 48-15 (#1332)** |
   | `products/+page.svelte:646` description de l'article (1000) | colonne | non (le PDF porte `p.name`, `:482`) | — | sans objet |
   | `bank-accounts/+page.svelte:860`, `:1118` et **`onboarding/+page.svelte:814`** (description du compte bancaire, à l'assistant) `BANK_ACCOUNT_DESCRIPTION_MAX` | colonne | non (la QR porte l'IBAN et le nom du créancier, non la description) | oui | hors périmètre : **#1005** (existante, P4) |
-  | autres (`ContactPersonsManager`, `BankProfileForm`, `RuleFormModal`, `api-keys`, `projects`, `fiscal-years`, `DunningPauseDialog`, `supplier-invoices/+page.svelte:284`, `ManualMatchModal`, `TransactionSplitModal`, `contacts/+page.svelte:960` e-mail, `:965` téléphone, `:1086` délai) | diverses | non | — | **hors périmètre ; portés par la 48-15 (« hors périmètre ») avec leurs issues : #1335 (ContactPersonsManager), #1336 (e-mail, téléphone et délai `:1086` des contacts), #1337 (projets), #1338 (rapprochement), #1339 (profils d'import bancaire), #1340 (divers)** |
+  | autres (`ContactPersonsManager`, `BankProfileForm`, `RuleFormModal`, `api-keys`, `projects`, `fiscal-years`, `DunningPauseDialog`, `supplier-invoices/+page.svelte:284`, `ManualMatchModal`, `TransactionSplitModal`, `contacts/+page.svelte:960` e-mail, `:965` téléphone) | diverses | non | — | **hors périmètre ; portés par la 48-15 (« hors périmètre ») avec leurs issues : #1335 (ContactPersonsManager), #1336 (e-mail et téléphone des contacts ; le délai `:1086` est dans le périmètre de la 48-15, V4-8), #1337 (projets), #1338 (rapprochement), #1339 (profils d'import bancaire), #1340 (divers)** |
 
 ### #1226 — l'assistant ne contrôle le nom que non vide
 
@@ -283,7 +283,99 @@ refusé dans l'adresse ; aucune société déjà configurée n'est modifiée, au
 
 ## Dev Agent Record
 
-*(vide — rempli au développement)*
+*Développement du 2026-11-18 (Opus 5.5, `bmad-dev-story`), worktree `kesh-48-13`, clé `e4813`, port 3413. Journaux sous
+`/home/gcorbaz/devel/kesh-gate-logs/e4813/`. Registre : `e0200-choix-autonomes-e4813.md` (C-e4813-1 à 6).*
+
+### Commits
+
+- `b41df52da` — code, tests, E2E, manuel (`.tex`) : **dernier commit de code**.
+- Commit suivant — fiche (ce Dev Agent Record, Change Log, statut `review`), registre, prompt de la revue P1.
+
+### Fichiers touchés (`git diff --stat 78d8c4c55 b41df52da`, 11 fichiers)
+
+`crates/kesh-api/src/routes/onboarding.rs`, `crates/kesh-api/tests/onboarding_path_b_e2e.rs`,
+`frontend/src/lib/components/invoices/InvoiceForm.svelte`, `InvoiceForm.test.ts`, `frontend/src/routes/(app)/settings/+page.svelte`,
+`settings-page.test.ts`, `frontend/src/routes/onboarding/onboarding-motif.test.ts`, `frontend/tests/e2e/invoice-contact-tardif.spec.ts`
+(neuf), `company-address.spec.ts`, `onboarding-motif.spec.ts`, `docs/manual/fr/user-manual.tex`. Modules : quatre (`kesh-api`,
+`components/invoices`, `routes/(app)/settings`, manuels), comme la fiche. **Aucune migration**, aucune clé i18n, aucune route.
+
+### Tests ajoutés (recomptés depuis le diff `78d8c4c55..b41df52da`)
+
+- Rust : **4** `#[sqlx::test]` (`onboarding_path_b_e2e.rs`) — refus du nom (4 cas en boucle), nom de 70 caractères accepté et rogné,
+  refus de l'adresse (2 cas), société configurée inchangée (AC9 d).
+- Vitest : **12** `it(` — `InvoiceForm.test.ts` 7 (AC1 ×4, AC2, AC13, AC9 a), `settings-page.test.ts` 4 (AC4), `onboarding-motif.test.ts` 1 (AC8 a).
+- E2E : **3** `test(` — `invoice-contact-tardif.spec.ts` (AC3), `company-address.spec.ts` (AC5), `onboarding-motif.spec.ts` (AC8 b).
+
+### Les rouges (avant correctif, code des tests seul)
+
+- `rouge-rust.log` : 2 des 4 tests neufs rougissent — `coordinates_rejects_a_name_the_qr_bill_refuses_1226` (« 71 caractères : left 200,
+  right 400 » : le nom de 71 caractères était **accepté**, étape passée à 6) et `coordinates_rejects_an_address_character_…_1226` ;
+  les deux autres passent, **filets déclarés** (le nom accepté l'était déjà ; AC9 d est le refus d'étape existant).
+- `rouge-vitest.log` : 5 rouges — AC1 (choix sans frappe : « expected 'Client' to be 'Autre client' »), AC1 échec tardif (bandeau
+  présent), AC2 (« expected 'Client' to be 'Client du serveur' »), AC13 (« expected 'Client' to be 'Mar' »), AC4 (« street: expected
+  true to be false »). Verts avant correctif, **filets déclarés** : AC1 « sans geste » ×2 (comportement d'avant, gardé), AC9 a
+  (non-régression), AC4 « part entier » ×3 (jsdom ne contraint pas une valeur posée par programme, V1-6).
+- **AC2** rougit avant correctif, mais par D1 (le choix de l'utilisateur n'avançait rien), non par D2 : sous M3 (D1 retiré de
+  `onContactSelect`), AC2 **reste vert** grâce au `contactGen++` de `reloadFromServer` (`mut-m3.log`). D2 n'est donc pas prouvé seul :
+  conforme à la fiche (D2 défensif, pas de mutation propre).
+
+### Mutations (`mut/muter.sh`, code commité avant, restauration `git restore --worktree` + `touch`, motif vérifié unique)
+
+| Mutation | Geste | Tuée par | Journal |
+|---|---|---|---|
+| M1 | garde du `.then` retirée | AC1 (choix), AC2, AC13 | `mut-m1.log` |
+| M2 | garde du `.catch` retirée | AC1 (échec tardif) | `mut-m2.log` |
+| M3 | `contactGen++` de `onContactSelect` retiré | AC1 ×2 (AC2 reste vert : voir ci-dessus) | `mut-m3.log` |
+| M4 | `maxlength={70}` remis sur la rue | AC4 (absence de l'attribut) | `mut-m4.log` |
+| M6 | `if name.is_empty()` remis | `coordinates_rejects_a_name_…_1226` | `mut-m6.log` |
+| M7 | `validate_required()` remis | `coordinates_rejects_an_address_…_1226` | `mut-m7.log` |
+| M8 | `contactGen++` de `onContactDraftChange(true)` retiré | AC13 | `mut-m8.log` |
+| M1 (E2E) | idem M1, frontend reconstruit | AC3, ligne 93 (le client d'origine revient) | `e2e-m1.log` |
+| M5 (E2E) | `maxlength={70}` sur la rue, frontend reconstruit | AC5, ligne 144 (la rue relue a 70 caractères) | `e2e-m5.log` |
+| M6 (E2E) | idem M6, backend reconstruit | AC8 b, ligne 83 (pas de toast « (71) ») | `e2e-m6.log` |
+
+**Écart constaté et corrigé** : la première série M1, M2, M3, M8 a rendu « TUÉE » à tort — vitest, lancé avec `--root frontend`
+depuis la racine, ne trouvait aucun fichier (« No test files found », code 1). Rejouée depuis `frontend/` ; les journaux
+`mut-m{1,2,3,8}.log` sont ceux du rejeu (chaque rouge nommé ci-dessus). Après les mutations E2E, frontend et backend reconstruits
+propres (`build-front-dev2.log`, `build-api-dev2.log`).
+
+### E2E (les trois specs touchées, seules ; pas d'E2E complet au passage en `review`)
+
+`e2e-neufs.log`, commit `b41df52da`, base `kesh_e2e_e4813` recréée, backend sur 3413 : **8 passed** (`company-address.spec.ts` 5,
+`invoice-contact-tardif.spec.ts` 1, `onboarding-motif.spec.ts` 2). L'E2E complet et le `gate-ci` de clôture tournent à la clôture.
+
+### Recette visuelle (AC11)
+
+`/home/gcorbaz/devel/kesh-gate-logs/e4813/captures/` (thème clair, base de test jetable, données factices ; `captures-4813.sh` et
+`.mjs`, `captures.log`, commit `b41df52da`) : `01-adresse-rue-71-non-coupee.png`, `02-adresse-refus-serveur-saisie-gardee.png`
+(« adresse : le champ rue dépasse 70 caractères (71) »), `03-telephone-trop-long-refuse.png` (« Le numéro de téléphone de la société
+est trop long (50 caractères au plus). »), `04-brouillon-client-choisi-garde-apres-reponse-tardive.png`,
+`05-assistant-nom-71-refuse-toast.png` (« Le nom de la société dépasse 70 caractères (71) : la QR-facture n'en admet pas davantage. »).
+
+### Preuves des AC sans test propre
+
+- **AC9 b** : `git diff origin/epic/48-corrections-0-20-0..HEAD --stat -- 'frontend/src/routes/(app)/invoices/[id]/+page.svelte' crates/kesh-api/src/routes/invoice_pdf_service.rs crates/kesh-qrbill crates/kesh-report` → **sortie vide**.
+- **AC9 c** : `invoice_pdf_e2e` passe sans modification (gate ciblé `vert-rust-cible.log` et `test-fast-ci-review.log`) ; la recette avant/après
+  (`scripts/recette-montee.sh`) est à l'orchestrateur.
+- **AC8 a** : `git diff … --stat -- frontend/src/routes/onboarding/+page.svelte` → vide : aucune borne copiée dans l'écran.
+- **AC10** : aucune clé i18n (`git diff … --stat -- crates/kesh-i18n frontend/src/lib/shared/i18n-keys.test.ts` vide) : `sitesTotal`
+  inchangé ; `git grep -c -E "70 caract" -- docs/manual/fr/user-manual.tex` : `1` à `65fd4efcd`, `3` à `b41df52da`. PDF non régénéré
+  (à la release) : `pdftotext docs/manual/fr/user-manual.pdf - | tr '\n' ' ' | tr -s ' ' | /usr/bin/grep -c 'refusé ensuite par la QR-facture se corrige ainsi'` → `1` (avant ; `0` attendu après régénération) ; `'jamais coupé'` → `0` (avant ; `1` attendu après).
+- Mots-clés de fermeture : `git log origin/epic/48-corrections-0-20-0..HEAD --format=%B | /usr/bin/grep -niE '\b(close[sd]?|fix(e[sd])?|resolve[sd]?) #[0-9]'` → vide.
+
+### Gates
+
+*Tous au commit `b41df52da`, une commande lourde à la fois, `CARGO_BUILD_JOBS=2`, verrous de voie.*
+
+- **En cours de développement** (gate ciblé) : `cargo fmt --all -- --check` vert (`fmt.log`) ; `cargo clippy --workspace --all-targets -- -D warnings`
+  vert (`clippy.log`) ; `cargo nextest run -p kesh-api -E 'binary(onboarding_path_b_e2e) | binary(onboarding_audit_e2e) | binary(fiscal_years_e2e) | binary(textes_coherents) | binary(invoice_pdf_e2e) | binary(company_address_e2e)'`
+  : **211 passed** (`vert-rust-cible.log`) ; Vitest des trois fichiers touchés : **186 passed** (`vert-vitest-cible.log`).
+- **Passage en `review`** — base `kesh_e4813` remise à neuf (migrations du worktree, `seed-dev-db.sql`) :
+  - `scripts/test-fast.sh --ci` : **6137 tests run, 6137 passed, 14 skipped** (`test-fast-ci-review.log`) ;
+  - `scripts/gate-ci.sh kesh_ci_e4813` : **6154 passés, 0 échoués, 18 ignorés**, code 0 (`gate-ci-review.log`) ;
+  - frontend complet : `npm run check` 0 erreur (29 avertissements, aucun dans un fichier touché ; `front-check-review.log`),
+    `lint-i18n-ownership` PASS, `test:unit` **278 fichiers, 4624 tests passed**, `build` vert (`front-*-review.log`).
+- **Non lancés** (à la clôture) : E2E complet et `gate-ci` de clôture. Seules les trois specs touchées ont tourné (`e2e-neufs.log`, 8 passed).
 
 ## Change Log
 
@@ -299,3 +391,12 @@ refusé dans l'adresse ; aucune société déjà configurée n'est modifiée, au
 - **2026-11-18 — validation, passe 2** (Sonnet 5.5 ; `kesh-gate-logs/e4813/validation-p2.md`) : 0 / 0 / **2 MEDIUM** / **7 LOW**, remédiés. **V2-2 (MEDIUM) : la story est coupée en deux** (neuf modules au grain du domaine après l'élargissement ; règle de splitting préventif, signal déclaré au Project Lead par l'orchestrateur) : #1331, #1332, #1333, #1334 et les trois champs du PDF partent dans la **48-15** ; la 48-13 revient à #1233, #1243, #1226 (quatre modules, règle de décompte écrite). **V2-1** (#1334) : traité dans la 48-15 (les deux sites, contacts et assistant). V2-3, V2-4, V2-5, V2-6 (M1 à M8 uniques, mutation de `onContactSelect` nommée), V2-7 (D4 : messages localisés du téléphone et du site), V2-8 (D10 : limite assumée), V2-9 (« issue à ouvrir » résiduels retirés) : remédiés ici ou dans la 48-15.
 - **2026-11-18 — validation, passe 3** (Opus 5.5 ; `kesh-gate-logs/e4813/validation-p3.md`) : 0 / 0 / **1 MEDIUM** / **8 LOW**, remédiés. **V3-1 (MEDIUM)** : la découpe avait perdu l'AC du texte tapé (D10, M8) que le tableau des tests, les tâches et la Note de version citaient encore : **rétabli en AC13** ; **signal « recycle » constaté** (V3-1 naît du correctif de la P2, à sévérité égale ; V3-2 reprend V1-7 et V2-6 sous une troisième forme), **déclaré au Project Lead par l'orchestrateur**. V3-2 : AC8 b cite M6. V3-3 : le test de l'AC1 choisit sans rien taper (M3). V3-4 : D7 recomposé. V3-5 : 40 lignes dont 3 commentaires = 37 sites, `onboarding/+page.svelte:814` ajouté à #1005. V3-6 : renvois aux issues #1335 à #1340 et #1005 ; le délai `contacts:1086` va à #1336 ; la raison sociale n'est plus citée ici (elle reste à la 48-15, D4). V3-7 : règle de décompte des tests d'écran. V3-8 : AC12 reformulé. V3-9 : à l'orchestrateur (fichier d'épique). *Les renvois « AC n », « M n » et « D n » (D9, D11, partis à la 48-15) des entrées P1 et P2 ci-dessus suivent la numérotation d'alors ; ceux du corps de la fiche ont été relus et sont à jour (AC1 à AC13, M1 à M8).*
 - **2026-11-18 — validation terminée** (tendance des findings au-dessus de LOW : **P1 Opus 0/0/4/8 → P2 Sonnet 0/0/2/7 → découpe de la story (48-15) → P3 Opus 0/0/1/8 → P4 ciblée Haiku 0/0/0/4**). Modèles : Opus, Sonnet, Opus, Haiku (passe ciblée sur le seul commit `25e7b63ab`). Signal « recycle » constaté à la P3 (V3-1 né de la découpe, à sévérité égale ; V3-2 troisième forme de la numérotation des mutations), **déclaré au Project Lead par l'orchestrateur**. Les issues #1335 à #1340 des sites hors périmètre sont **ouvertes par l'orchestrateur, une par écran**. **Les quatre LOW de la P4 (P4-1 à P4-4) sont corrigés après la dernière passe, dans le texte de la fiche seulement** (aucun code, aucun AC modifié : « Choisissez le client dans la liste » précisé à l'AC13 et à D10, `(`onSelect`)` orphelin retiré, annotation des renvois D, #1335 à #1340). Rapport : `kesh-gate-logs/e4813/validation-p4-ciblee.md`. Statut : `ready-for-dev`.
+- **2026-11-18 — développement** (Opus 5.5, `bmad-dev-story`). **Étape 0** : les quatre LOW de la P4 étaient déjà traités dans la
+  fiche (relus) ; lignes relues à la tête `78d8c4c55`, trois citées : `InvoiceForm.svelte:404` `getContact(invoice.contactId)` (sans
+  garde), `settings/+page.svelte:821` `… class={PENDING_FIELD} maxlength={70} data-testid="settings-company-address-street-input" />`,
+  `onboarding.rs:542` `let address = body.address.validate_required()?;` ; `ContactPicker.svelte` relu (`reinitialiser()` au changement
+  de `selected`, `onDraftChange` par effet sur `unresolved`). Aucune prémisse démentie. **Note de l'orchestrateur** (validation 48-15,
+  V4-8) : deux renvois du corps corrigés — « les trois champs du PDF » devient « cinq champs » (en-tête, tableau de #1243) et le délai
+  `contacts:1086` n'est plus rattaché à #1336 (il est dans le périmètre de la 48-15) ; les entrées passées du Change Log gardent leurs
+  mots. Code au commit `b41df52da` ; rouges, mutations, E2E, captures et gates : Dev Agent Record. Le jeu de caractères de l'adresse à
+  l'assistant (défaut trouvé à la fiche, D5) est corrigé ici, sans issue (V1-11). Statut : `review`.
