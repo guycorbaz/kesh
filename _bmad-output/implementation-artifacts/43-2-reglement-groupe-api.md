@@ -606,6 +606,32 @@ Opus 5.5 (agent de développement, en autonomie), 2026-11-17.
     - frontend non touché ; E2E à la clôture.
   - Mutations : aucune rejouée sur cette reprise. La garde `rang` a été éprouvée par la compilation, sur la vraie variante neuve.
 
+#### Remédiation de la revue P3 (2026-11-18)
+
+- **Revue P3** : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 7 LOW (`kesh-gate-logs/e432/review-p3.md`).
+- **Tests** (commit `fb53fd53f`) : P3-4 en rouge d'abord (`la_recherche_reflete_la_retenue_d_un_lot`, `rouge-p3.log` :
+  33 passés, 1 échec, le test neuf, au commit `fb53fd53f`) ; P3-5 (lot mixte sorti en
+  `un_lot_mixte_garde_une_erreur_de_base_dans_sa_proposition`, état forgé déclaré inatteignable ; sonde du compte d'écart
+  sur le même compte rendu au CHF) ; P3-6 (factures `paid`, trois lignes d'écriture, transaction `reconciled`, écart au
+  débit du compte choisi).
+- **Code et documentation** (commit `7bc319aff`) :
+  - P3-4 : `get_group_candidates` appelle, pour un débit, `find_open_supplier_invoice_in_account_batch` (la garde (d) du
+    `POST`) ; si une facture retient le montant, liste vide et `heldByPaymentBatch { supplierInvoiceId, paymentBatchId }`
+    (C-e432-20, contrat de la fiche, guide) ; doc-comment de la fonction : « quatre lecteurs » ;
+  - P3-1 : guide, le lot de paiement revient dans la liste « à rejeter », phrase à part pour les factures ouvertes hors lot ;
+    C-e432-17 annoté ;
+  - P3-2 : commentaire de `rang` aligné sur l'angle mort de C-e432-18 ;
+  - P3-3 : `fx_failed_proposal`, « quatre sites », nommés ;
+  - P3-7 : ligne « contrôle des devises » du guide, défense en profondeur ;
+  - P3-8 : entrée de la partie B annotée (six lignes, trois gabarits).
+- **Gates** (base `kesh_e432` remise à neuf avant, 95 migrations, `base-p3.log`) :
+  - ciblé `binary(reconciliation_group_e2e)` : **34 passés** (`cible-p3.log`) ;
+  - `scripts/test-fast.sh --ci` : **6061 passés, 0 échec, 13 ignorés** (`test-fast-p3.log`, en-tête : commit `7bc319aff`) ;
+  - `scripts/gate-ci.sh kesh_ci_e432` : **6078 passés, 0 échoué, 17 ignorés**, 254 binaires (`gate-ci-p3.out`/`gate-ci-p3.log`,
+    en-tête : commit `7bc319aff`, somme des lignes `test result:` recomptée) ;
+  - frontend non touché ; E2E à la clôture.
+- Mutations : aucune rejouée ; le rouge de P3-4 au commit d'avant le correctif en tient lieu pour la garde neuve.
+
 ### File List
 
 - `crates/kesh-db/src/repositories/reconciliation_group_candidates.rs` (neuf), `repositories/mod.rs`,
