@@ -21,7 +21,7 @@ Cette story pose **la migration** (le type de ligne et ses contraintes, sur `inv
 **modèle** et ses **dépôts**, la **reprise des types dans l'avoir**, le **filtrage** des lecteurs qui regrouperaient ou
 compteraient des lignes sans montant, les **exports** et le **MCP**, et une **API qui connaît les types mais n'en ouvre aucun
 de neuf** : seul `priced` est accepté, `comment` et `heading` sont refusés `400` tant que leur rendu et leur écran n'existent pas.
-**Rien ne change pour l'utilisateur.** Le rendu PDF est la 49-1b ; l'écran, l'ouverture de `comment` et le manuel utilisateur la
+**Rien ne change pour l'utilisateur.** **Couplage de coupure (décision de l'orchestrateur, 2026-11-18) : la 49-1a ne sort jamais sans la 49-1d** — la sauvegarde d'avant la mise à jour au manuel d'administration et la recette de montée (`--diff-attendu`) sont exigées de toute release qui porte une migration (`CLAUDE.md` § *Ce qu'impose la production*) ; à la coupure, les deux sortent ensemble, ou les deux restent. Le rendu PDF est la 49-1b ; l'écran, l'ouverture de `comment` et le manuel utilisateur la
 49-1c ; le gate de recette et le manuel d'administration la 49-1d ; le titre de section la 49-3.
 
 ## Ce qui se lit au code (`773df80da`)
@@ -56,16 +56,19 @@ Le symptôme : *« une ligne de facture ou d'avoir est lue, comptée, regroupée
 Commandes (sorties copiées) :
 
 ```sh
-$ git grep -lE "invoice_lines|credit_note_lines" -- 'crates/kesh-*/src' 'scripts'
+$ git grep -lE "invoice_lines|credit_note_lines" -- 'crates/kesh-*/src/*' 'scripts'     # 18 fichiers (rejoué le 2026-11-18)
 crates/kesh-api/src/exports/csv_tables.rs          crates/kesh-api/src/exports/global.rs
-crates/kesh-api/src/routes/invoice_pdf_service.rs  crates/kesh-db/src/backup.rs
-crates/kesh-db/src/entities/credit_note.rs         crates/kesh-db/src/post_restore.rs
-crates/kesh-db/src/repositories/credit_notes.rs    crates/kesh-db/src/repositories/invoice_settlements.rs
-crates/kesh-db/src/repositories/invoice_settlements_write.rs  crates/kesh-db/src/repositories/invoices.rs
-crates/kesh-db/src/repositories/journal_entries.rs crates/kesh-db/src/repositories/letterings/open_items.rs
-crates/kesh-db/src/repositories/supplier_invoices.rs  crates/kesh-db/src/test_fixtures.rs
-crates/kesh-report/src/vat_report.rs               crates/kesh-seed/src/pieges.rs   scripts/recette-montee.sh
+crates/kesh-api/src/routes/invoice_pdf_service.rs  crates/kesh-core/src/accounting/vat.rs   (commentaire)
+crates/kesh-db/src/backup.rs                       crates/kesh-db/src/entities/credit_note.rs
+crates/kesh-db/src/post_restore.rs                 crates/kesh-db/src/repositories/credit_notes.rs
+crates/kesh-db/src/repositories/invoice_settlements.rs  crates/kesh-db/src/repositories/invoice_settlements_write.rs
+crates/kesh-db/src/repositories/invoices.rs        crates/kesh-db/src/repositories/journal_entries.rs
+crates/kesh-db/src/repositories/letterings/open_items.rs  crates/kesh-db/src/repositories/supplier_invoices.rs
+crates/kesh-db/src/test_fixtures.rs                crates/kesh-report/src/vat_report.rs
+crates/kesh-seed/src/pieges.rs                     scripts/recette-montee.sh
 $ git grep -nE "\bInvoiceLine\b|NewInvoiceLine|CreditNoteLine\b|InvoiceLinePdf" -- 'crates/*/src/*'   # les porteurs du type
+$ git grep -n "verify_vat_rates_against_db" -- 'crates/kesh-api/src/*'    # les consommateurs de `vat_rate` par ligne (V1-2)
+crates/kesh-api/src/routes/invoices.rs:680   crates/kesh-api/src/routes/invoices.rs:773   (et sa définition, `routes/vat.rs`)
   (entités, dépôts, routes `invoices.rs` / `credit_notes.rs`, `invoice_email.rs`, `invoice_pdf_service.rs`, `services/factures.rs`,
    `mcp/outils/factures.rs`, `project_reassignment.rs`, `kesh-qrbill/src/{types,pdf}.rs`, `kesh-seed/src/pieges.rs`)
 ```
@@ -92,6 +95,7 @@ Chaque site est **résolu** (dans la story, avec son AC) ou écrit **hors périm
 | `kesh-core/src/accounting/vat.rs` | TVA par taux | **aucun changement** : l'écart au fichier d'épique, qui déclarait ce module | aucun |
 | `kesh-report/src/vat_report.rs:121` `FROM invoice_lines il … WHERE i.company_id = ? AND i.status = 'validated'` | **regroupe par taux** | **une ligne de commentaire (`vat_rate = 0`) ferait apparaître une ligne « 0 % » de base 0 dans le rapport TVA** (`by_rate.entry(vat_rate)`) : le « taux 0 % fantôme » du kickoff | **AC10** |
 | `kesh-api/src/routes/invoices.rs:69` `CreateInvoiceLineRequest`, `:150` `InvoiceLineResponse`, `:475` `validate_line`, `:584` `validate_lines` | écrit / sert | type, validation par type, réponse | **AC11**, **AC12** |
+| `kesh-api/src/routes/invoices.rs:679-680` et `:772-773` : `let rates: Vec<Decimal> = lines.iter().map(\|l\| l.vat_rate).collect(); vat::verify_vat_rates_against_db(…)` (`routes/vat.rs:96-110`, `COUNT(DISTINCT rate) … active = TRUE`) | **liste blanche des taux** | **un commentaire (`vat_rate = 0`) serait refusé `400` « taux de TVA » dans toute société dont le 0 % est désactivé** | **hors périmètre de la 49-1a, pris par la 49-1c** (qui ouvre `comment` : ne collecter que les taux des lignes `priced`, avec son AC). **En 49-1a le site est inatteignable** : la garde (AC11), dans `validate_lines`, rejette tout type non chiffré avant lui. |
 | `kesh-api/src/routes/credit_notes.rs:33` `CreditNoteLineResponse` | sert | type dans la réponse | **AC12** |
 | `kesh-api/src/exports/csv_tables.rs:623`, `:1271` ; `exports/global.rs:133`, `:146` | exporte | colonne `line_type` | **AC13** |
 | `kesh-api/src/mcp/outils/factures.rs:237` `LigneFacture`, `:487` | sert | champ `type_ligne` | **AC13** |
@@ -105,9 +109,9 @@ Chaque site est **résolu** (dans la story, avec son AC) ou écrit **hors périm
 | `scripts/recette-montee.sh:414` (`TABLES="… invoice_lines …"`, `SELECT * FROM $t`) | empreinte | la nouvelle colonne **fait diverger** `invoice_lines` entre « avant » et « après » | **hors périmètre → 49-1d** (`--diff-attendu`) |
 | `kesh-db/src/repositories/supplier_invoices.rs`, `journal_entries.rs:679`, `letterings/open_items.rs:666-692`, `test_fixtures.rs:377` | **faux positifs** du `git grep` : `supplier_invoice_lines` (table sœur, hors périmètre), commentaires, texte de test | aucune lecture de `invoice_lines` | aucun |
 
-Fichiers de **tests** qui lisent ou écrivent ces tables (`git grep -lE "invoice_lines|credit_note_lines" -- 'crates/*/tests'` :
-43 fichiers, listés par la commande) : ils compilent après l'ajout du champ — **67 littéraux `NewInvoiceLine {` dans 43 fichiers**
-(`git grep -F "NewInvoiceLine {" -- crates | grep -v "pub struct" | wc -l`), 4 littéraux `InvoiceLine {`
+Fichiers de **tests** qui lisent ou écrivent ces tables : `git grep -lE "invoice_lines|credit_note_lines" -- 'crates/*/tests/*' | wc -l`
+= **31** (le pathspec `'crates/*/tests'` rend 0 : muet). Ils compilent après l'ajout du champ — **67 littéraux `NewInvoiceLine {` dans
+43 fichiers** (`git grep -F "NewInvoiceLine {" -- 'crates/*' | grep -v "pub struct" | wc -l` = 67 ; `git grep -lF … | wc -l` = 43), 4 littéraux `InvoiceLine {`
 (`invoices.rs:3148`, `credit_notes.rs:1105`, `invoice_email.rs:1624`, `invoice_pdf_service.rs:1251`, tous de tests) ; ceux dont
 **l'assertion** change sont nommés aux tâches.
 
@@ -200,7 +204,11 @@ Fichiers de **tests** qui lisent ou écrivent ces tables (`git grep -lE "invoice
   pour `comment` et `heading` ils sont **absents ou nuls**, tout autre montant est refusé, de même qu'un `revenueAccountId`.
   Une intégration existante (PAT, Beat) qui n'envoie pas `lineType` reste **acceptée à l'identique**. Seul changement observable :
   l'omission d'un de ces trois champs sur une ligne chiffrée rend `400 VALIDATION_ERROR` nommant la ligne et le champ (« Ligne N :
-  la quantité est obligatoire »), au lieu de l'erreur générique de désérialisation. *Écartée* : un `enum` serde étiqueté par type
+  la quantité est obligatoire »), au lieu du `422` de l'extracteur `Json` (`errors.rs`, `StatusCode::UNPROCESSABLE_ENTITY`). **⚠️ Changement de contrat de l'API :
+  le statut passe de `422` à `400 VALIDATION_ERROR`** pour un champ manquant (ou `null`) sur une ligne chiffrée, documenté comme
+  `docs/api-external.md:1121` (« Une ligne CHF sans `debit` ou sans `credit` rend désormais `400 VALIDATION_ERROR`, non plus le `422` d'un
+  champ manquant »). Un corps de 0.19.0 qui envoie les quatre champs n'est **pas** touché. **Un `lineType` inconnu** (`"subtotal"`,
+  `"product"`) reste, lui, un rejet de l'extracteur : **`422`**, tel quel (V1-12). *Écartée* : un `enum` serde étiqueté par type
   (changerait la forme du corps pour tous les clients).
 - **D9 — La garde : `LineType::open_to_api()`, une seule fonction.** En 49-1a elle rend `true` pour `priced` seulement ; la 49-1c
   l'ouvre pour `comment`, la 49-3 pour `heading`. Un type refusé donne `400 VALIDATION_ERROR` : « Ligne N : le type de ligne
@@ -245,16 +253,19 @@ Fichiers de **tests** qui lisent ou écrivent ces tables (`git grep -lE "invoice
   VARCHAR(16) NOT NULL DEFAULT 'priced'`, le `DROP CONSTRAINT [IF EXISTS]` de `chk_*_quantity_positive` et les trois `ADD
   CONSTRAINT [IF NOT EXISTS]` de D4. **En-tête** : (a) non breaking au sens de P1 — « sans relever `kesh_version_min_required` et
   sans corrompre le schéma » (citer) ; (b) `DROP CONSTRAINT` n'est pas une opération de P3 ; (c) **le SQL qui défait la migration**
-  (P1, « le retour en arrière passe par la sauvegarde… ou par le SQL qui défait la migration »), écrit **en commentaire** :
-  `ALTER TABLE invoice_lines DROP CONSTRAINT chk_…_unpriced_neutral, DROP CONSTRAINT chk_…_priced_quantity, DROP CONSTRAINT
-  chk_…_line_type, DROP COLUMN line_type, ADD CONSTRAINT chk_…_quantity_positive CHECK (quantity > 0)` (valable **seulement** si
-  aucune ligne non chiffrée n'existe : `SELECT COUNT(*) FROM invoice_lines WHERE line_type <> 'priced'` = 0), puis `DELETE FROM
-  _sqlx_migrations WHERE version = 20261119000001` — **en commentaire, donc le détecteur de P7 doit le lire comme du commentaire** ;
-  (d) la règle de typage des lignes existantes (D1) et pourquoi aucun `UPDATE` (D2) ; (e) le type sous-total absent et pourquoi (D5).
+  (P1, « le retour en arrière passe par la sauvegarde… ou par le SQL qui défait la migration »), écrit en **commentaires `--`** (jamais
+  `/* */`, que refuse `migrations_contain_no_block_comment`, `post_restore.rs:1420` ; `split_statements` ne retire que les `--`), **pour les
+  deux tables** : *1°* (valable **seulement** si `SELECT COUNT(*) FROM invoice_lines WHERE line_type <> 'priced'` et le même sur
+  `credit_note_lines` valent 0) `ALTER TABLE invoice_lines DROP CONSTRAINT chk_invoice_lines_unpriced_neutral, DROP CONSTRAINT
+  chk_invoice_lines_priced_quantity, DROP CONSTRAINT chk_invoice_lines_line_type;` — **un `ALTER` qui retire d'abord les contraintes** (la
+  contrainte neutre est multi-colonnes et référence `line_type`) ; *2°* `ALTER TABLE invoice_lines DROP COLUMN line_type, ADD CONSTRAINT
+  chk_invoice_lines_quantity_positive CHECK (quantity > 0);` ; *3°* les deux mêmes `ALTER` sur `credit_note_lines` (`chk_credit_note_lines_…`) ;
+  *4°* `DELETE FROM _sqlx_migrations WHERE version = 20261119000001;`. Le retour est **sondé à T0** comme la montée (T0 e) ; (d) la règle de typage des lignes existantes (D1) et pourquoi aucun `UPDATE` (D2) ; (e) le type sous-total absent et pourquoi (D5).
   **`kesh_version_min_required` inchangé** (0.17.6, vérifié : `git diff -- crates/kesh-db/migrations` ne contient aucun
   `UPDATE _kesh_version`) ; aucun `Cargo.toml` ne bouge.
 - **AC2** — **Aucune facture ni aucun avoir ne change.** Sur une base peuplée par le schéma de la 0.19.0 (montée par
-  `migrations_before` jusqu'à la migration `20261118000001`) — **factures validées payée, impayée, annulée par un avoir, avoir émis,
+  `common::migrations_before(20261119000001, "invoice_line_types")`, qui applique tout **sauf** la migration neuve — donc `grouped_settlements`
+  comprise, que le règlement groupé exige) — **factures validées payée, impayée, annulée par un avoir, avoir émis,
   facture réglée dans un règlement groupé**, avec 1, 3 et 8 lignes, deux taux de TVA et un arrondi à 5 centimes —, la migration
   appliquée : chaque ligne de `invoice_lines` et de `credit_note_lines` est **identique colonne à colonne** (empreinte des colonnes
   d'avant), `line_type = 'priced'` partout, `invoices.total_amount`, `rounding_amount`, `credit_notes.total_amount`, les écritures
@@ -288,9 +299,10 @@ Fichiers de **tests** qui lisent ou écrivent ces tables (`git grep -lE "invoice
   `"priced" | "comment" | "heading"` (camelCase des DTO inchangé) ; `InvoiceLine.line_type`, `NewInvoiceLine.line_type`,
   `CreditNoteLine.line_type` ; **une seule liste de colonnes par table** : `invoices::LINE_COLUMNS` (`:47`) gagne `line_type`, et les
   trois listes en dur de `credit_note_lines` (`credit_notes.rs:66-76`, `:98-104`, `:919-935`) ainsi que celle d'`invoices.rs:3050-3053`
-  passent par **une constante partagée** (`CREDIT_NOTE_LINE_COLUMNS`, et `LINE_COLUMNS` préfixée pour la forme jointe) — un oubli ne
-  doit plus échouer à l'exécution (`FromRow`) sans avoir été vu à la compilation. Les **67** littéraux `NewInvoiceLine {` et les **4**
-  `InvoiceLine {` sont complétés (`line_type: LineType::Priced`) ; **aucun test existant n'est modifié autrement**. `kesh-seed`
+  passent par **une constante partagée** (`CREDIT_NOTE_LINE_COLUMNS`, et `LINE_COLUMNS` préfixée pour la forme jointe) — il n'y a plus
+  qu'**une seule liste à tenir** (un `SELECT` sans `line_type` échouerait encore à l'exécution, `FromRow` : la constante centralise, elle ne fait pas
+  voir l'oubli à la compilation). Les **67** littéraux `NewInvoiceLine {` et les **4**
+  `InvoiceLine {` sont complétés (`line_type: LineType::Priced`) ; **aucun test existant n'est modifié autrement que ceux que nomment AC3 (b) et AC13 (a)**. `kesh-seed`
   (`pieges.rs:579`) compile.
 - **AC6** — `insert_lines` (`invoices.rs:471`) écrit `line_type` ; pour un type non chiffré, `line_total` n'est **pas** calculé
   (`compute_line_total` rend `0`) et `compute_total` (`:464`) ne compte que les lignes `priced` ; une ligne `comment` ou `heading`
@@ -333,27 +345,29 @@ Fichiers de **tests** qui lisent ou écrivent ces tables (`git grep -lE "invoice
   **absents ou égaux à zéro**, `revenueAccountId` absent ou `null`, sinon `400 VALIDATION_ERROR` nommant la ligne et le champ ;
   **puis la garde (D9)** : `LineType::open_to_api()` faux → `400 VALIDATION_ERROR`, « Ligne N : le type de ligne … n'est pas encore
   disponible », **aucune écriture**, au `POST` **et** au `PUT`. **Un corps de 0.19.0** (sans `lineType`, avec les quatre champs) est
-  accepté et rend la **même réponse** qu'avant, au champ `lineType` près.
+  accepté et rend la **même réponse** qu'avant, au champ `lineType` près. Un `lineType` inconnu rend `422` (rejet de l'extracteur), dit tel quel à `docs/api-external.md`. `verify_vat_rates_against_db` (`:680`, `:773`) : voir l'inventaire (49-1c) ; ici, un test unitaire vérifie que `validate_lines` rejette un type non ouvert **avant** qu'aucun taux ne soit collecté.
 - **AC12** — `InvoiceLineResponse` (`:150`) et `CreditNoteLineResponse` (`credit_notes.rs:33`) gagnent `lineType` (`"priced"`).
   Réponses de `POST`, `PUT`, `GET`, `validate`, `unvalidate`, `settlements` et de l'avoir : **le seul ajout est `lineType`**.
-  `routes/invoice_email.rs`, `invoice_pdf_service.rs` et `credit_notes.rs:307` (PDF) **ne changent pas** (hors périmètre, 49-1b).
+  `routes/invoice_email.rs`, `invoice_pdf_service.rs` et `credit_notes.rs:307` (PDF) **ne changent aucune ligne de rendu** (hors périmètre, 49-1b) ; **seule exception nommée** : le littéral de test `InvoiceLine {` de `invoice_pdf_service.rs:1251` (`#[cfg(test)]`), qui reçoit `line_type: LineType::Priced`.
 
 **Exports, MCP, documentation**
 
 - **AC13** — (a) `serialize_invoice_lines_csv` (`csv_tables.rs:623`) et `serialize_credit_note_lines_csv` (`:1271`) ajoutent
-  `line_type` **en dernière colonne** (D14) ; `exports_global_e2e` et `admin_full_export_e2e` (les en-têtes, `("invoice_lines.csv",
-  0)` à `exports_global_e2e.rs:991`) sont mis à jour ; (b) MCP : `LigneFacture.type_ligne` (`mcp/outils/factures.rs:237`, `:487`)
+  `line_type` **en dernière colonne** (D14) ; `exports_global_e2e` et `admin_full_export_e2e` (`("invoice_lines.csv", 0)` à `exports_global_e2e.rs:991` est un *nombre de lignes* attendu, non un en-tête : **aucune assertion d'en-tête de
+  `invoice_lines.csv` n'existe, T10 l'écrit**) sont mis à jour ; (b) MCP : `LigneFacture.type_ligne` (`mcp/outils/factures.rs:237`, `:487`)
   — additif, le MCP de 0.19.0 n'est pas contractuellement figé sur les champs (à confirmer au développement : un test d'exactitude
   du schéma, s'il existe, est mis à jour) ; (c) `docs/api-external.md` : `lineType` documenté sur la création et la modification
   d'une facture (défaut `priced`, valeurs `comment` et `heading` **réservées**, refusées `400` jusqu'à leur ouverture), le champ
-  des réponses, la colonne des exports ; la phrase « les lignes d'une facture client portent un type depuis la v0.20.0 » ; (d)
+  des réponses, la colonne des exports ; **le changement de contrat `422` → `400 VALIDATION_ERROR`** (champ manquant sur une ligne chiffrée), en « ⚠️ » sur le modèle de `:1121`, et la mention qu'un `lineType` inconnu rend `422` ; la phrase « les lignes d'une facture client portent un type depuis la v0.20.0 » ; (d)
   **aucun manuel utilisateur** n'est touché (l'écran ne change pas — `git grep -n "ligne de facture" -- docs/manual/fr/user-manual.tex`
   ne rend que `:515` (comptes imputables), qui ne décrit aucun type de ligne ; le manuel d'administration est la 49-1d).
 
 **Non-régression**
 
-- **AC14** — **Aucun fichier de rendu n'est touché** : `git diff --stat origin/epic/49-types-de-lignes-facture..HEAD -- crates/kesh-qrbill
-  crates/kesh-api/src/routes/invoice_pdf_service.rs crates/kesh-api/src/routes/issued_invoice_pdf.rs` est **vide** ; `invoice_pdf_e2e`,
+- **AC14** — **Aucune ligne de rendu n'est changée** : `git diff origin/epic/49-types-de-lignes-facture..HEAD -- crates/kesh-qrbill
+  crates/kesh-api/src/routes/issued_invoice_pdf.rs` est **vide** ; pour `crates/kesh-api/src/routes/invoice_pdf_service.rs`, le diff se
+  **limite au module `#[cfg(test)]`** — le seul ajout permis est `line_type: LineType::Priced` au littéral `InvoiceLine {` de `:1251`
+  (exception nommée : l'entité n'a pas `Default`, AC5 l'oblige) ; `invoice_pdf_e2e`,
   `invoice_frozen_pdf_e2e`, `invoice_frozen_pdf` (dépôt), `invoice_send_email_e2e` **verts sans modification**.
 - **AC15** — **Gates** : gate complet (`fmt`, `build`, `clippy -D warnings`, `cargo nextest`/`gate-ci.sh`) **vert**, base remise à zéro
   avant ; E2E Playwright **complet** au dernier commit de code, « vert » au sens de `docs/testing.md` § *Les échecs attendus*
@@ -368,10 +382,10 @@ Chaque test neuf **rougit sans le correctif** : le journal attendu est dans `kes
 | # | Test | Ce qu'il prouve | Mutation / retrait qui doit le rougir |
 |---|---|---|---|
 | T1 | `migrations_upgrade_path.rs::line_types_migration_keeps_real_invoices` (AC2) | base 0.19.0 peuplée (payée, impayée, annulée + avoir, groupée, 1/3/8 lignes, 2 taux, arrondi) ; empreinte d'avant = d'après sur les colonnes d'avant ; `line_type = 'priced'` partout ; totaux, TTC, reste dû, écritures inchangés ; contraintes existantes présentes | ajouter un `UPDATE invoice_lines SET unit_price = unit_price` à la migration ; mettre `DEFAULT 'comment'` ; oublier `credit_note_lines` |
-| T2 | `kesh-db/tests/invoice_line_types.rs::constraints_by_type` (AC1, D4), pour **les deux tables** | `priced` : `quantity = 0` refusée, `quantity > 0` admise ; `comment` : `quantity = 1`, `unit_price = 1`, `vat_rate = 7.7`, `line_total = 1`, `revenue_account_id` posé, description vide **refusés** ; `heading` neutre admis ; `line_type = 'subtotal'` **refusé** ; description non vide **toujours** exigée pour un commentaire | retirer **chacune** des trois contraintes neuves, et remettre `chk_*_quantity_positive` : un test rougit par mutation (quatre journaux par table) |
+| T2 | `kesh-db/tests/invoice_line_types.rs::constraints_by_type` (AC1, D4), pour **les deux tables** | `priced` : `quantity = 0` refusée, `quantity > 0` admise ; `comment` : `quantity = 1`, `unit_price = 1`, `vat_rate = 7.7`, `line_total = 1`, `revenue_account_id` posé, description vide **refusés** ; `heading` neutre admis ; `line_type = 'subtotal'` **refusé** ; **un `INSERT` de forme 0.19.0 (sans `line_type`, formes de `invoices.rs:480-482` et `credit_notes.rs:774-777`) passe après la migration et donne `priced`** (V1-13) ; description non vide **toujours** exigée pour un commentaire | retirer **chacune** des trois contraintes neuves, et remettre `chk_*_quantity_positive` : un test rougit par mutation (quatre journaux par table) |
 | T3 | `admin_full_import_e2e.rs::import_sauvegarde_0_19_0_donne_les_memes_lignes` et `…_aller_retour_ligne_de_commentaire` (AC4) | manifeste sans `line_type` → `'priced'` ; manifeste 0.20.0 avec `comment` → identique | `NOT NULL` **sans** `DEFAULT` : l'import 0.19.0 échoue (`is_required`) |
 | T4 | `kesh-db/tests/invoice_line_types.rs::draft_roundtrip_and_no_op` (AC6, AC7) | création et remplacement d'un brouillon avec un commentaire entre deux lignes chiffrées : positions `0..n`, total inchangé ; un `update` qui ne change **que** le type n'est **pas** un no-op ; audit « before / after » porte `lineType` ; ligne `comment` non neutre → `Invariant` | retirer `b.line_type == c.line_type` de `is_no_op_change` ; retirer le `lineType` du snapshot |
-| T5 | `kesh-db/tests/invoices_validate_vat.rs::validation_ignores_unpriced_lines` (AC8) | écriture identique avec et sans commentaire (comptes, montants, ordre) ; le compte du commentaire reste `NULL` après validation ; compte par défaut **non exigé** si les lignes chiffrées ont un compte explicite ; pièce de commentaires seuls → `invoiceTotalZero` | retirer `AND line_type = 'priced'` de l'`UPDATE` (`:2314`) : **500 par `chk_…_unpriced_neutral`** ; retirer le filtre du `any(…is_none())` |
+| T5 | `kesh-db/tests/invoices_validate_vat.rs::validation_ignores_unpriced_lines` (AC8) | écriture identique avec et sans commentaire (comptes, montants, ordre) ; le compte du commentaire reste `NULL` après validation ; compte par défaut **non exigé** si les lignes chiffrées ont un compte explicite ; pièce de commentaires seuls → `invoiceTotalZero` | **trois mutations, deux jeux** : jeu (1) une ligne chiffrée à compte `NULL` **plus** un commentaire → l'`UPDATE` s'exécute, le commentaire reste `NULL` ; tue le retrait de `AND line_type = 'priced'` de `:2314` (**500 par `chk_…_unpriced_neutral`**) ; jeu (2) lignes chiffrées à compte explicite **plus** un commentaire, **compte par défaut archivé** → la validation passe (le compte par défaut reste exigé *configuré*, `invoices.rs:2169-2171`, mais n'est re-validé que s'il est effectivement posté) ; tue le retrait du filtre du `any(…is_none())` (`:2269`, `:2312`) ; la boucle en mémoire (`:2335-2337`) est tuée par AC8 (e, f) |
 | T6 | `kesh-db/tests/credit_notes_repository.rs::credit_note_copies_unpriced_lines` (AC9) | l'avoir d'une facture à commentaires : lignes **toutes** copiées, types et positions ; écriture identique à celle sans commentaires ; `get` rend `line_type` ; avoir d'une facture **d'avant la montée** : mêmes lignes, même écriture | ne pas copier `line_type` (`INSERT` sans la colonne → `priced` : l'assertion de type rougit) ; copier le commentaire avec un compte |
 | T7 | `kesh-report/tests/vat_report_reconciliation.rs::vat_report_ignores_unpriced_lines` (AC10 a) | rapport identique avec / sans commentaire ; **aucune ligne « 0 % »** ; `reconciliation_delta` identique | retirer `AND il.line_type = 'priced'` : la ligne `0 %` apparaît |
 | T8 | `invoice_amount_due_parity.rs`, `invoice_ttc_parity.rs` : cas « avec commentaire et titre » (AC10 b) | TTC, crédité, réglé, reste dû identiques (SQL ↔ `kesh-core`) | remplacer les valeurs neutres d'un commentaire par `unit_price = 1` (test de contre-épreuve du motif de neutralité) |
@@ -394,7 +408,7 @@ commit de code (AC15) : elle prouve que l'écran de la 0.19.0 crée, modifie, va
   déclare au Change Log. (b) **Rejouer la sonde de D13** sur le MariaDB de dev (un `ALTER` unique par table, deux fois, trois formes `IF [NOT] EXISTS`) ; coller la sortie.
   (c) Rejouer que `ADD CONSTRAINT … CHECK` référençant la colonne **ajoutée dans le même `ALTER`** valide les lignes existantes
   (`quantity > 0`, `unit_price >= 0`) sans erreur. (d) Relever que `information_schema.COLUMNS.COLUMN_DEFAULT` rend `'priced'` (donc
-  `has_default`, `backup.rs:795`). Si l'une des trois ne se rejoue pas, **s'arrêter et le dire** (rapport).
+  `has_default`, `backup.rs:795`). (e) **Sonder le retour (V1-5)** sur un schéma jetable `kesh_e491_*` (supprimé ensuite) : montée, retour par le SQL de l'en-tête (AC1 c) sur les deux tables, vérifier que les contraintes d'origine sont revenues (`information_schema.CHECK_CONSTRAINTS`) et qu'un `INSERT` de forme 0.19.0 passe, puis **remontée** ; si le `ALTER` du *1°* échoue, le scinder et le dire au Change Log. Si l'une des trois ne se rejoue pas, **s'arrêter et le dire** (rapport).
 - [ ] **T1 — La migration** (AC1) et son audit (AC3 a), `regen-test-schema.sh` (AC3 d), P6 (AC3 b).
 - [ ] **T2 — Entités, constantes de colonnes, littéraux** (AC5). Compiler d'abord (`cargo check --workspace --all-targets`) : les 67 +
   4 littéraux se trouvent au compilateur ; **un seul commit** pour cette mécanique.
@@ -416,11 +430,12 @@ commit de code (AC15) : elle prouve que l'écran de la 0.19.0 crée, modifie, va
 > désormais, au niveau du schéma, distinguer une ligne chiffrée d'une ligne de texte seul (commentaire, titre de section) sur les
 > factures et les avoirs ; **chaque facture et chaque avoir existants restent identiques**, ligne pour ligne. Aucune ligne de texte
 > seul ne peut encore être saisie : leur écran et leur impression arrivent avec les stories suivantes de #1242. L'API des factures
-> accepte un champ optionnel `lineType` (défaut `priced`) ; ses valeurs `comment` et `heading` sont refusées pour l'instant. Les
+> accepte un champ optionnel `lineType` (défaut `priced`) ; ses valeurs `comment` et `heading` sont refusées pour l'instant, et un type inconnu rend `422`. **Changement de contrat de l'API** : un champ `quantity`, `unitPrice` ou `vatRate` manquant sur une ligne chiffrée rend désormais `400 VALIDATION_ERROR` (nommant la ligne), non plus le `422` de l'extracteur. Les
 > exports CSV des lignes de facture et d'avoir gagnent la colonne `line_type`, en dernière position. (refs #1242)
 
 ## Dev Notes
 
+- **Couplage 49-1a / 49-1d** : la 49-1a **ne sort pas sans la 49-1d** (V1-4) ; la 49-1d garde la recette et le manuel d'administration ×4.
 - **Hors périmètre, avec la story qui le prend** : rendu PDF (facture, avoir) → **49-1b** ; écran, ouverture de `comment`, manuel
   utilisateur ×4, i18n → **49-1c** ; gate de recette, manuel d'administration « Passer à la 0.20.0 » ×4 → **49-1d** ; réordonnancement
   → **49-2** ; titre de section → **49-3** ; sous-totaux → **#1330** (« Plus tard »).
@@ -435,6 +450,7 @@ commit de code (AC15) : elle prouve que l'écran de la 0.19.0 crée, modifie, va
   qui n'en ouvre qu'un ; (4) la garde `open_to_api()` est **la seule** chose qui empêche un commentaire de s'imprimer `0 × 0.00` : un
   retrait de la garde avant la 49-1b est une régression visible (test T9 le garde) ; (5) le retour à la 0.19.0 passe par la
   sauvegarde d'avant la mise à jour, ou par le SQL de l'en-tête de la migration (P1).
+- **Splitting (V1-15)** : la 49-1a compte **cinq** modules (`kesh-db`, `kesh-api`, `kesh-report`, `kesh-seed`, `docs/`), **au plafond** de la règle (conforme à la lettre : « plus de cinq ») ; c'est la plus grosse des quatre parties (15 AC, 13 tests). Si la passe 2 de validation recycle ses défauts, le signal se **déclare au Project Lead** (`CLAUDE.md` § *Règle de splitting préventif*).
 - **Pièges à connaître** : (a) l'`UPDATE` de matérialisation du compte (`invoices.rs:2314`) est le piège central — la contrainte
   neutre le transformerait en 500 à la **validation** d'une facture à commentaire ; (b) `quantity = 0` sur un commentaire ne
   doit **jamais** atteindre un diviseur : aucun lecteur ne divise par la quantité (`git grep -n "/ .*quantity\|quantity.*/" --
@@ -446,7 +462,7 @@ commit de code (AC15) : elle prouve que l'écran de la 0.19.0 crée, modifie, va
   au niveau base. La **recette de montée** avec factures simulées (payée, impayée, avoir, règlement groupé, PDF figés et non figés)
   est le gate de la 49-1d, rejoué au dernier commit de code de la release (`scripts/recette-montee.sh`).
 - **Test avant / après du PDF** (consigne de production) : il est exigé **dans la story qui touche le rendu**, la 49-1b. Cette
-  story garantit seulement (AC14) qu'**elle ne touche aucun fichier de rendu**, de sorte que la référence « avant » de la 49-1b
+  story garantit seulement (AC14) qu'**elle ne change aucune ligne de rendu**, de sorte que la référence « avant » de la 49-1b
   est le rendu de ce commit.
 - **Références** : `epic-49-types-de-lignes-facture.md` (kickoff), `release-0.20.0.md`, #1242 et ses deux commentaires, #1330,
   `CLAUDE.md` § *Migration breaking policy* (P1 à P8) et § *Règle de splitting préventif*, modèle de fiche avec migration :
@@ -462,3 +478,4 @@ commit de code (AC15) : elle prouve que l'écran de la 0.19.0 crée, modifie, va
 | Date | Entrée |
 |---|---|
 | 2026-11-18 | Création de la fiche (workflow `bmad-create-story`), par l'agent de rédaction de la 49-1 (Sonnet 5.5) : découpage préventif de la 49-1 en 49-1a à 49-1d (`kesh-gate-logs/e491/decoupage-49-1.md`), fiche de la première partie ; code lu à `773df80da`. Écarts au fichier d'épique : trois types stockés (non quatre), pas de type sous-total (D5), `kesh-core` non touché, API **gardée**. Non encore validée. |
+| 2026-11-18 | **Passe de validation P1** (Opus, contexte frais, `kesh-gate-logs/e491/validation-49-1a-p1.md` : 0 CRITICAL, 0 HIGH, 7 MEDIUM, 8 LOW). **Remédiation** (sept MEDIUM et huit LOW traités, décisions de l'orchestrateur) : V1-1 AC14 et AC12 bornés au code de rendu, exception nommée du littéral de test `invoice_pdf_service.rs:1251` ; V1-2 `verify_vat_rates_against_db` (`routes/invoices.rs:680`, `:773`) ajouté à l'inventaire, traitement pris par la 49-1c, inatteignable en 49-1a (garde) ; V1-3 changement de contrat `422` → `400 VALIDATION_ERROR` nommé (D8, AC13 c, note de version, `api-external.md`) ; V1-4 couplage « la 49-1a ne sort jamais sans la 49-1d » (fiche et découpage) ; V1-5 SQL de retour complet (deux tables, contraintes retirées avant `DROP COLUMN`) et sondé à T0 (e) ; V1-6 deux jeux de mutation pour T5 ; V1-7 pathspecs corrigés, inventaires rejoués (18 fichiers de `src`, 31 de tests, 67 littéraux dans 43 fichiers, 4 littéraux `InvoiceLine {`) ; V1-8 schéma 0.19.0 par `migrations_before(20261119000001, …)` ; V1-9 `:991` est un nombre de lignes, T10 écrit l'assertion d'en-tête ; V1-10 AC5 « hors AC3 b et AC13 a » ; V1-11 « une seule liste à tenir » ; V1-12 `lineType` inconnu = `422`, dit tel quel ; V1-13 `INSERT` de forme 0.19.0 après la migration (T2) ; V1-14 commentaires `--` obligatoires ; V1-15 cinq modules, au plafond, déclaré. Modèles : Sonnet (rédaction), Opus (passe 1). Une passe 2 reste à lancer (modèle différent). |
