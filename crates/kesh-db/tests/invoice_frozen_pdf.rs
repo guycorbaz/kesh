@@ -64,6 +64,7 @@ async fn seed_validated(pool: &MySqlPool) -> Seeded {
             payment_terms: None,
             lines: vec![NewInvoiceLine {
                 revenue_account_id: None,
+                line_type: kesh_db::entities::LineType::Priced,
                 description: "Conseil".into(),
                 quantity: dec!(1),
                 unit_price: dec!(100.00),

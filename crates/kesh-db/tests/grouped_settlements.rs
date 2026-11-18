@@ -260,6 +260,7 @@ async fn facture(
                 unit_price: amount,
                 vat_rate: dec!(0),
                 revenue_account_id: Some(s.accounts["3000"]),
+                line_type: kesh_db::entities::LineType::Priced,
             }],
         },
     )

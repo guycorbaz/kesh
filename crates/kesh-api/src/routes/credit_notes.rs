@@ -11,7 +11,7 @@ use axum::extract::{Path, Query, State};
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use chrono::{NaiveDate, NaiveDateTime};
-use kesh_db::entities::{CreditNote, CreditNoteLine};
+use kesh_db::entities::{CreditNote, CreditNoteLine, LineType};
 use kesh_db::errors::DbError;
 use kesh_db::repositories::{contacts, credit_notes};
 use kesh_qrbill::{Currency, InvoiceLinePdf, InvoicePdfData};
@@ -60,6 +60,8 @@ pub struct CreditNoteLineResponse {
     /// cf. le test `null_line_credit_note_falls_back_to_current_default_known_limitation`
     /// et l'avertissement correspondant du CHANGELOG.
     pub revenue_account_id: Option<i64>,
+    /// Type de la ligne, recopié de la ligne de facture (Story 49-1a).
+    pub line_type: LineType,
 }
 
 impl From<CreditNoteLine> for CreditNoteLineResponse {
@@ -72,6 +74,7 @@ impl From<CreditNoteLine> for CreditNoteLineResponse {
             vat_rate: l.vat_rate,
             line_total: l.line_total,
             revenue_account_id: l.revenue_account_id,
+            line_type: l.line_type,
         }
     }
 }

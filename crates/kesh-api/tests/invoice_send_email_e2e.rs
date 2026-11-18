@@ -250,6 +250,7 @@ async fn seed_validated_invoice_lines(
         lines: (0..n)
             .map(|_| NewInvoiceLine {
                 revenue_account_id: None,
+                line_type: kesh_db::entities::LineType::Priced,
                 description: "Prestation".into(),
                 quantity: dec!(1),
                 unit_price: dec!(100.00),
@@ -589,6 +590,7 @@ async fn draft_invoice_returns_400_not_validated(pool: MySqlPool) {
             payment_terms: None,
             lines: vec![NewInvoiceLine {
                 revenue_account_id: None,
+                line_type: kesh_db::entities::LineType::Priced,
                 description: "Draft".into(),
                 quantity: dec!(1),
                 unit_price: dec!(50.00),

@@ -83,6 +83,7 @@ async fn create_and_validate(
             .iter()
             .map(|(rate, price)| NewInvoiceLine {
                 revenue_account_id: None,
+                line_type: kesh_db::entities::LineType::Priced,
                 description: "Ligne".into(),
                 quantity: dec!(1),
                 unit_price: *price,
@@ -250,6 +251,7 @@ async fn credit_note_refused_on_draft_invoice(pool: MySqlPool) {
             payment_terms: None,
             lines: vec![NewInvoiceLine {
                 revenue_account_id: None,
+                line_type: kesh_db::entities::LineType::Priced,
                 description: "L".into(),
                 quantity: dec!(1),
                 unit_price: dec!(100.00),
@@ -384,6 +386,7 @@ async fn credit_note_inherits_project_and_nets_to_zero(pool: MySqlPool) {
         project_id: Some(project),
         lines: vec![NewInvoiceLine {
             revenue_account_id: None,
+            line_type: kesh_db::entities::LineType::Priced,
             description: "Ligne".into(),
             quantity: dec!(1),
             unit_price: dec!(1000.00),
@@ -1154,4 +1157,149 @@ async fn credit_note_refused_when_revenue_account_in_foreign_currency(pool: MySq
         other => panic!("attendu AccountInForeignCurrency, reçu {other:?}"),
     }
     assert_nothing_written(&pool, invoice_id, entries_before).await;
+}
+
+/// Story 49-1a (#1242) — T6 (AC9, D7) : l'avoir d'une facture portant un
+/// commentaire et un titre recopie **toutes** les lignes, à leur position, avec
+/// leur type ; son écriture est identique à celle de la même facture sans eux ;
+/// `get` et l'export rendent le type.
+#[sqlx::test(migrations = "./test-schema")]
+async fn credit_note_copies_unpriced_lines(pool: MySqlPool) {
+    use kesh_db::entities::LineType;
+
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
+
+    let ligne = |lt: LineType, desc: &str, price: Decimal, rate: Decimal| NewInvoiceLine {
+        description: desc.into(),
+        quantity: if lt == LineType::Priced {
+            dec!(1)
+        } else {
+            Decimal::ZERO
+        },
+        unit_price: price,
+        vat_rate: rate,
+        revenue_account_id: None,
+        line_type: lt,
+    };
+    let a = ligne(LineType::Priced, "A", dec!(1000.00), dec!(8.10));
+    let b = ligne(LineType::Priced, "B", dec!(500.00), dec!(2.60));
+    let titre = ligne(LineType::Heading, "Travaux", Decimal::ZERO, Decimal::ZERO);
+    let note = ligne(
+        LineType::Comment,
+        "Selon devis",
+        Decimal::ZERO,
+        Decimal::ZERO,
+    );
+
+    let avoir_de = |lines: Vec<NewInvoiceLine>| {
+        let pool = pool.clone();
+        let seeded_company = seeded.company_id;
+        let admin = seeded.admin_user_id;
+        async move {
+            let (inv, _) = invoices::create(
+                &pool,
+                admin,
+                NewInvoice {
+                    company_id: seeded_company,
+                    contact_id: contact,
+                    date: d(2026, 6, 15),
+                    due_date: None,
+                    payment_terms: None,
+                    lines,
+                    project_id: None,
+                },
+            )
+            .await
+            .expect("create invoice");
+            invoices::validate_invoice(&pool, seeded_company, inv.id, admin)
+                .await
+                .expect("validate invoice");
+            credit_notes::create_credit_note(
+                &pool,
+                NewCreditNote {
+                    company_id: seeded_company,
+                    invoice_id: inv.id,
+                    date: d(2026, 7, 1),
+                },
+                admin,
+            )
+            .await
+            .expect("create credit note")
+        }
+    };
+
+    let sans = avoir_de(vec![a.clone(), b.clone()]).await;
+    let avec = avoir_de(vec![titre.clone(), a, note.clone(), b]).await;
+
+    // (a) Toutes les lignes, à leur position, avec leur type ; les non chiffrées
+    // restent neutres et sans compte.
+    let copiees: Vec<_> = avec
+        .lines
+        .iter()
+        .map(|l| {
+            (
+                l.position,
+                l.line_type,
+                l.description.as_str(),
+                l.line_total,
+                l.revenue_account_id.is_some(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        copiees,
+        vec![
+            (0, LineType::Heading, "Travaux", Decimal::ZERO, false),
+            (1, LineType::Priced, "A", dec!(1000.0000), true),
+            (2, LineType::Comment, "Selon devis", Decimal::ZERO, false),
+            (3, LineType::Priced, "B", dec!(500.0000), true),
+        ]
+    );
+
+    // (c) Écriture de contre-passation identique ; (d) même total.
+    let ecriture = |c: &credit_notes::IssuedCreditNote| -> Vec<(i64, Decimal, Decimal)> {
+        c.journal_entry
+            .lines
+            .iter()
+            .map(|l| (l.account_id, l.debit, l.credit))
+            .collect()
+    };
+    assert_eq!(ecriture(&avec), ecriture(&sans));
+    assert_eq!(avec.credit_note.total_amount, sans.credit_note.total_amount);
+
+    // (e) `get` et l'export rendent le type.
+    let (_, lues) = credit_notes::get(&pool, seeded.company_id, avec.credit_note.id)
+        .await
+        .unwrap()
+        .expect("avoir relu");
+    assert_eq!(
+        lues.iter().map(|l| l.line_type).collect::<Vec<_>>(),
+        vec![
+            LineType::Heading,
+            LineType::Priced,
+            LineType::Comment,
+            LineType::Priced
+        ]
+    );
+    let toutes = credit_notes::list_all_lines_by_company(&pool, seeded.company_id)
+        .await
+        .unwrap();
+    assert_eq!(
+        toutes
+            .iter()
+            .filter(|l| l.line_type != LineType::Priced)
+            .count(),
+        2
+    );
+    let lignes_facture = invoices::list_all_lines_by_company(&pool, seeded.company_id)
+        .await
+        .unwrap();
+    assert_eq!(
+        lignes_facture
+            .iter()
+            .filter(|l| l.line_type == LineType::Comment)
+            .count(),
+        1
+    );
 }

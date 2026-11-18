@@ -103,6 +103,7 @@ async fn validated(
             .iter()
             .map(|(rate, price)| NewInvoiceLine {
                 revenue_account_id: None,
+                line_type: kesh_db::entities::LineType::Priced,
                 description: "Ligne".into(),
                 quantity: dec!(1),
                 unit_price: *price,
@@ -517,6 +518,7 @@ async fn place_3_rounding_account_precedes_designated_accounts(pool: MySqlPool) 
             payment_terms: None,
             lines: vec![NewInvoiceLine {
                 revenue_account_id: None,
+                line_type: kesh_db::entities::LineType::Priced,
                 description: "Ligne".into(),
                 quantity: dec!(1),
                 unit_price: dec!(100.01),
@@ -564,4 +566,123 @@ async fn place_3_rounding_account_precedes_designated_accounts(pool: MySqlPool) 
 
     let validated = tache.await.expect("tâche").expect("la validation réussit");
     assert_eq!(validated.invoice.rounding_amount, dec!(-0.01));
+}
+
+/// Story 49-1a (#1242) — T8 (AC10 b) : une facture et un avoir portant un
+/// commentaire et un titre, créés **par le dépôt**, ont le même TTC, le même
+/// réglé, le même crédité et le même reste dû que la même pièce sans eux — dans
+/// les formes SQL scalaire et jointe comme en Rust (`kesh-core`).
+#[sqlx::test(migrations = "./test-schema")]
+async fn unpriced_lines_change_no_amount(pool: MySqlPool) {
+    use kesh_core::accounting::vat::invoice_total_ttc;
+    use kesh_db::entities::LineType;
+
+    let seeded = seeded_with_rounding(&pool).await;
+    let contact = make_contact(&pool, &seeded).await;
+    let ligne = |lt: LineType, rate: Decimal, price: Decimal| NewInvoiceLine {
+        description: "Ligne".into(),
+        quantity: if lt == LineType::Priced {
+            dec!(1)
+        } else {
+            Decimal::ZERO
+        },
+        unit_price: price,
+        vat_rate: rate,
+        revenue_account_id: None,
+        line_type: lt,
+    };
+    let a = ligne(LineType::Priced, dec!(8.10), dec!(100.00));
+    let b = ligne(LineType::Priced, dec!(2.60), dec!(33.33));
+    let sans = vec![a.clone(), b.clone()];
+    let avec = vec![
+        ligne(LineType::Heading, Decimal::ZERO, Decimal::ZERO),
+        a,
+        ligne(LineType::Comment, Decimal::ZERO, Decimal::ZERO),
+        b,
+    ];
+    let valider = |lines: Vec<NewInvoiceLine>| {
+        let pool = pool.clone();
+        let (company, admin) = (seeded.company_id, seeded.admin_user_id);
+        async move {
+            let (inv, lignes) = invoices::create(
+                &pool,
+                admin,
+                NewInvoice {
+                    company_id: company,
+                    contact_id: contact,
+                    date: d(2026, 6, 15),
+                    due_date: None,
+                    payment_terms: None,
+                    lines,
+                    project_id: None,
+                },
+            )
+            .await
+            .expect("create invoice");
+            invoices::validate_invoice(&pool, company, inv.id, admin)
+                .await
+                .expect("validate invoice");
+            (inv.id, lignes)
+        }
+    };
+
+    // Deux paires : réglée en partie, créditée.
+    let (regle_sans, l_sans) = valider(sans.clone()).await;
+    let (regle_avec, l_avec) = valider(avec.clone()).await;
+    settle(&pool, &seeded, regle_sans, dec!(40.00)).await;
+    settle(&pool, &seeded, regle_avec, dec!(40.00)).await;
+    let (credite_sans, _) = valider(sans).await;
+    let (credite_avec, _) = valider(avec).await;
+    credit(&pool, &seeded, credite_sans).await;
+    credit(&pool, &seeded, credite_avec).await;
+
+    // Rust (`kesh-core`) : les lignes neutres ne comptent pour rien.
+    let ttc = |l: &[kesh_db::entities::InvoiceLine]| {
+        invoice_total_ttc(l.iter().map(|x| (x.line_total, x.vat_rate)))
+    };
+    assert_eq!(ttc(&l_avec), ttc(&l_sans));
+    assert_eq!(
+        ttc(&l_sans),
+        dec!(142.30),
+        "anti-vacuité : 100 + 8.10 ; 33.33 + 0.87"
+    );
+
+    let rows: Vec<(i64, Decimal, Decimal, Decimal, Decimal)> = sqlx::query_as(&format!(
+        "SELECT i.id, {INVOICE_SETTLED_SUBQUERY_SQL}, COALESCE(st.settled, 0), \
+                {INVOICE_CREDITED_SUBQUERY_SQL}, COALESCE(cnt.credited, 0) \
+         FROM invoices i {INVOICE_SETTLED_DERIVED_JOIN_SQL} {INVOICE_CREDITED_DERIVED_JOIN_SQL} \
+         WHERE i.company_id = ? ORDER BY i.id"
+    ))
+    .bind(seeded.company_id)
+    .fetch_all(&pool)
+    .await
+    .expect("parité");
+    let joined: Vec<(i64, Decimal)> = sqlx::query_as(&format!(
+        "SELECT i.id, {INVOICE_AMOUNT_DUE_DERIVED_SQL} FROM invoices i {} \
+         WHERE i.company_id = ? ORDER BY i.id",
+        amount_due_derived_joins()
+    ))
+    .bind(seeded.company_id)
+    .fetch_all(&pool)
+    .await
+    .expect("reste dû joint");
+    let par = |x: i64| {
+        let r = rows.iter().find(|r| r.0 == x).unwrap();
+        let j = joined.iter().find(|r| r.0 == x).unwrap();
+        (r.1, r.2, r.3, r.4, j.1)
+    };
+    for (sans, avec) in [(regle_sans, regle_avec), (credite_sans, credite_avec)] {
+        let (s, a) = (par(sans), par(avec));
+        assert_eq!(a, s, "facture {avec} ≠ facture {sans}");
+        assert_eq!(s.0, s.1, "réglé scalaire = joint");
+        assert_eq!(s.2, s.3, "crédité scalaire = joint");
+        assert_eq!(amount_due(&pool, avec).await.unwrap(), s.4);
+        assert_eq!(amount_due(&pool, sans).await.unwrap(), s.4);
+    }
+    assert_eq!(par(regle_avec).0, dec!(40.00), "anti-vacuité : réglé");
+    assert_eq!(
+        par(credite_avec).2,
+        dec!(142.30),
+        "anti-vacuité : crédité TTC"
+    );
 }

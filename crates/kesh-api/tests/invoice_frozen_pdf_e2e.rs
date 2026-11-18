@@ -217,6 +217,7 @@ async fn seed_invoice(pool: &MySqlPool, s: &Seeded, n_lines: usize) -> i64 {
     let lines = (0..n_lines)
         .map(|i| NewInvoiceLine {
             revenue_account_id: None,
+            line_type: kesh_db::entities::LineType::Priced,
             description: format!("Ligne {}", i + 1),
             quantity: dec!(1),
             unit_price: dec!(100.00),

@@ -3211,3 +3211,630 @@ async fn journal_lines_foreign_currency_adds_three_nullable_columns(pool: MySqlP
             .unwrap();
     assert_eq!(min_required, "0.17.6", "migration non breaking");
 }
+
+// ---------------------------------------------------------------------------
+// Story 49-1a (#1242) — T1 : la migration des types de lignes ne change aucune
+// facture ni aucun avoir existants (AC2, AC9 f).
+// ---------------------------------------------------------------------------
+
+const LINE_TYPES_VERSION: i64 = 20261118000002;
+const LINE_TYPES_LABEL: &str = "invoice_line_types";
+
+/// Les tables dont l'empreinte doit traverser la montée intacte.
+const TABLES_EMPREINTE: [&str; 6] = [
+    "invoices",
+    "invoice_lines",
+    "credit_notes",
+    "credit_note_lines",
+    "journal_entry_lines",
+    "invoice_settlements",
+];
+
+/// Témoin chiffré (V5-4) : par table, (nombre de colonnes d'avant, nombre de
+/// lignes rendues par l'empreinte). Une table vidée, une liste de colonnes
+/// vide ou un peuplement amputé le font rougir.
+const TEMOIN: [(&str, usize, usize); 6] = [
+    ("invoices", 24, 6),
+    ("invoice_lines", 10, 16),
+    ("credit_notes", 13, 1),
+    ("credit_note_lines", 10, 8),
+    ("journal_entry_lines", 12, 25),
+    ("invoice_settlements", 13, 3),
+];
+
+/// Les colonnes d'une table, dans l'ordre du schéma.
+async fn colonnes_de(pool: &MySqlPool, table: &str) -> Vec<String> {
+    sqlx::query_scalar(
+        "SELECT COLUMN_NAME FROM information_schema.COLUMNS \
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? ORDER BY ORDINAL_POSITION",
+    )
+    .bind(table)
+    .fetch_all(pool)
+    .await
+    .unwrap()
+}
+
+/// L'empreinte d'une table sur une liste de colonnes : une chaîne par ligne,
+/// toutes colonnes converties en texte (`NULL` distingué), dans l'ordre des `id`.
+async fn empreinte(pool: &MySqlPool, table: &str, colonnes: &[String]) -> Vec<String> {
+    let exprs: Vec<String> = colonnes
+        .iter()
+        .map(|c| format!("COALESCE(CAST(`{c}` AS CHAR), '<NULL>')"))
+        .collect();
+    sqlx::query_scalar(&format!(
+        "SELECT CONCAT_WS('|', {}) FROM {table} ORDER BY id",
+        exprs.join(", ")
+    ))
+    .fetch_all(pool)
+    .await
+    .unwrap()
+}
+
+/// Écriture brute : rend l'id de l'écriture et ceux de ses lignes.
+async fn ecriture_brute(
+    pool: &MySqlPool,
+    s: &kesh_db::test_fixtures::SeededCompany,
+    numero: i64,
+    journal: &str,
+    lignes: &[(i64, &str, &str)],
+) -> (i64, Vec<i64>) {
+    let entry_id = sqlx::query(
+        "INSERT INTO journal_entries (company_id, fiscal_year_id, entry_number, entry_date, \
+         journal, description) VALUES (?, ?, ?, '2026-03-10', ?, ?)",
+    )
+    .bind(s.company_id)
+    .bind(s.fiscal_year_id)
+    .bind(numero)
+    .bind(journal)
+    .bind(format!("Pièce {numero}"))
+    .execute(pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    let mut ids = Vec::new();
+    for (ordre, (account, debit, credit)) in lignes.iter().enumerate() {
+        let id = sqlx::query(
+            "INSERT INTO journal_entry_lines (entry_id, account_id, line_order, debit, credit) \
+             VALUES (?, ?, ?, ?, ?)",
+        )
+        .bind(entry_id)
+        .bind(account)
+        .bind(ordre as i32 + 1)
+        .bind(*debit)
+        .bind(*credit)
+        .execute(pool)
+        .await
+        .unwrap()
+        .last_insert_id() as i64;
+        ids.push(id);
+    }
+    (entry_id, ids)
+}
+
+/// Une ligne de facture brute : (description, quantité, prix, taux, total).
+type LigneBrute<'a> = (&'a str, &'a str, &'a str, &'a str, &'a str);
+
+/// Facture brute de forme 0.19.0 (sans `line_type`) : rend son id. Compte de
+/// produit 3000 sur chaque ligne.
+#[allow(clippy::too_many_arguments)]
+async fn facture_brute(
+    pool: &MySqlPool,
+    s: &kesh_db::test_fixtures::SeededCompany,
+    contact: i64,
+    numero: &str,
+    status: &str,
+    entry: i64,
+    rounding: &str,
+    lignes: &[LigneBrute<'_>],
+) -> i64 {
+    let total: rust_decimal::Decimal = lignes
+        .iter()
+        .map(|l| l.4.parse::<rust_decimal::Decimal>().unwrap())
+        .sum();
+    let id = sqlx::query(
+        "INSERT INTO invoices (company_id, contact_id, invoice_number, status, date, due_date, \
+         payment_terms, total_amount, rounding_amount, journal_entry_id, version) \
+         VALUES (?, ?, ?, ?, '2026-03-10', '2026-04-09', '30 jours', ?, ?, ?, 3)",
+    )
+    .bind(s.company_id)
+    .bind(contact)
+    .bind(numero)
+    .bind(status)
+    .bind(total)
+    .bind(rounding)
+    .bind(entry)
+    .execute(pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    for (pos, (desc, q, p, v, t)) in lignes.iter().enumerate() {
+        // La forme exacte de `invoices.rs` en 0.19.0 : pas de `line_type`.
+        sqlx::query(
+            "INSERT INTO invoice_lines (invoice_id, position, description, quantity, \
+             unit_price, vat_rate, line_total, revenue_account_id) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(id)
+        .bind(pos as i32)
+        .bind(*desc)
+        .bind(*q)
+        .bind(*p)
+        .bind(*v)
+        .bind(*t)
+        .bind(s.accounts["3000"])
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+    id
+}
+
+/// Règlement brut, `internal_account` sur la caisse (1000).
+async fn reglement_brut(
+    pool: &MySqlPool,
+    s: &kesh_db::test_fixtures::SeededCompany,
+    invoice: i64,
+    entry: i64,
+    entry_line: Option<i64>,
+    amount: &str,
+) {
+    sqlx::query(
+        "INSERT INTO invoice_settlements (company_id, invoice_id, journal_entry_id, amount, \
+         settled_on, settlement_type, settlement_account_id, journal_entry_line_id) \
+         VALUES (?, ?, ?, ?, '2026-03-20', 'internal_account', ?, ?)",
+    )
+    .bind(s.company_id)
+    .bind(invoice)
+    .bind(entry)
+    .bind(amount)
+    .bind(s.accounts["1000"])
+    .bind(entry_line)
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+/// T1 (AC2, AC9 f) — une base 0.19.0 peuplée **en SQL brut de forme 0.19.0**
+/// (jamais par le dépôt, qui écrit `line_type`) : factures payée et au PDF
+/// figé, impayée à deux taux et arrondie, annulée par un avoir à huit lignes,
+/// réglées ensemble par un règlement groupé, et une dernière impayée ; la
+/// migration appliquée, toutes les colonnes d'avant sont identiques, toutes les
+/// lignes sont `priced`, TTC et reste dû inchangés, les contraintes d'avant
+/// toujours là. Puis un avoir émis **après** la montée sur une facture
+/// **d'avant** reprend ses lignes à l'identique, toutes `priced`.
+#[sqlx::test(migrations = false)]
+async fn line_types_migration_keeps_real_invoices(pool: MySqlPool) {
+    use kesh_db::repositories::{credit_notes, invoice_settlements, invoices};
+    use rust_decimal::Decimal;
+
+    apply_migrations_up_to(
+        &pool,
+        common::migrations_before(LINE_TYPES_VERSION, LINE_TYPES_LABEL),
+    )
+    .await
+    .expect("apply_migrations_up_to(avant invoice_line_types) failed");
+    let colonne: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() \
+         AND COLUMN_NAME = 'line_type'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        colonne, 0,
+        "assertion de montage : la migration n'a pas tourné"
+    );
+
+    let s = kesh_db::test_fixtures::seed_accounting_company(&pool)
+        .await
+        .unwrap();
+    let contact: i64 = sqlx::query(
+        "INSERT INTO contacts (company_id, contact_type, name, is_client, address) \
+         VALUES (?, 'Entreprise', 'Locataire SA', TRUE, 'Rue 1\n1000 Lausanne')",
+    )
+    .bind(s.company_id)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    let (c1000, c1100, c2000, c3000) = (
+        s.accounts["1000"],
+        s.accounts["1100"],
+        s.accounts["2000"],
+        s.accounts["3000"],
+    );
+
+    // F1 — payée, PDF figé, une ligne à 8.1 %.
+    let (e1, _) = ecriture_brute(
+        &pool,
+        &s,
+        1,
+        "Ventes",
+        &[
+            (c1100, "1081.00", "0"),
+            (c3000, "0", "1000.00"),
+            (c2000, "0", "81.00"),
+        ],
+    )
+    .await;
+    let f1 = facture_brute(
+        &pool,
+        &s,
+        contact,
+        "F-2026-001",
+        "validated",
+        e1,
+        "0",
+        &[("Loyer de mars", "1", "1000.00", "8.10", "1000.00")],
+    )
+    .await;
+    sqlx::query(
+        "UPDATE invoices SET pdf_storage_path = 'invoices/1/F-2026-001.pdf', \
+         pdf_sha256 = REPEAT('a', 64), pdf_frozen_at = '2026-03-11 08:00:00.123', \
+         pdf_language = 'FR', paid_at = '2026-03-20 00:00:00' WHERE id = ?",
+    )
+    .bind(f1)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let (r1, _) = ecriture_brute(
+        &pool,
+        &s,
+        2,
+        "Caisse",
+        &[(c1000, "1081.00", "0"), (c1100, "0", "1081.00")],
+    )
+    .await;
+    reglement_brut(&pool, &s, f1, r1, None, "1081.00").await;
+
+    // F2 — impayée, non figée, trois lignes, deux taux, arrondi à 5 centimes.
+    let (e2, _) = ecriture_brute(
+        &pool,
+        &s,
+        3,
+        "Ventes",
+        &[
+            (c1100, "189.95", "0"),
+            (c3000, "0", "179.10"),
+            (c2000, "0", "10.83"),
+            (s.accounts["4000"], "0", "0.02"),
+        ],
+    )
+    .await;
+    let f2 = facture_brute(
+        &pool,
+        &s,
+        contact,
+        "F-2026-002",
+        "validated",
+        e2,
+        "0.02",
+        &[
+            ("Charges", "1", "100.00", "8.10", "100.00"),
+            ("Jardin", "2", "33.35", "2.60", "66.70"),
+            ("Frais", "1", "12.40", "8.10", "12.40"),
+        ],
+    )
+    .await;
+
+    // F3 — annulée par un avoir, huit lignes.
+    let huit: Vec<String> = (1..=8).map(|i| format!("Poste {i}")).collect();
+    let huit_refs: Vec<LigneBrute<'_>> = huit
+        .iter()
+        .map(|d| (d.as_str(), "1", "10.00", "8.10", "10.00"))
+        .collect();
+    let (e3, _) = ecriture_brute(
+        &pool,
+        &s,
+        4,
+        "Ventes",
+        &[
+            (c1100, "86.48", "0"),
+            (c3000, "0", "80.00"),
+            (c2000, "0", "6.48"),
+        ],
+    )
+    .await;
+    let f3 = facture_brute(
+        &pool,
+        &s,
+        contact,
+        "F-2026-003",
+        "cancelled",
+        e3,
+        "0",
+        &huit_refs,
+    )
+    .await;
+    let (a3, _) = ecriture_brute(
+        &pool,
+        &s,
+        5,
+        "Ventes",
+        &[
+            (c1100, "0", "86.48"),
+            (c3000, "80.00", "0"),
+            (c2000, "6.48", "0"),
+        ],
+    )
+    .await;
+    let avoir = sqlx::query(
+        "INSERT INTO credit_notes (company_id, contact_id, invoice_id, credit_note_number, \
+         status, date, total_amount, journal_entry_id) \
+         VALUES (?, ?, ?, 'AV-2026-001', 'issued', '2026-03-15', 80.00, ?)",
+    )
+    .bind(s.company_id)
+    .bind(contact)
+    .bind(f3)
+    .bind(a3)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    for (pos, (desc, q, p, v, t)) in huit_refs.iter().enumerate() {
+        // La forme exacte de `credit_notes.rs` en 0.19.0 : pas de `line_type`.
+        sqlx::query(
+            "INSERT INTO credit_note_lines (credit_note_id, position, description, quantity, \
+             unit_price, vat_rate, line_total, revenue_account_id) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(avoir)
+        .bind(pos as i32)
+        .bind(*desc)
+        .bind(*q)
+        .bind(*p)
+        .bind(*v)
+        .bind(*t)
+        .bind(c3000)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+
+    // F4, F5 — réglées ensemble par un règlement groupé (une écriture, une
+    // ligne de créance par facture).
+    let mut groupees = Vec::new();
+    for (n, numero) in [(6, "F-2026-004"), (7, "F-2026-005")] {
+        let (e, _) = ecriture_brute(
+            &pool,
+            &s,
+            n,
+            "Ventes",
+            &[(c1100, "200.00", "0"), (c3000, "0", "200.00")],
+        )
+        .await;
+        groupees.push(
+            facture_brute(
+                &pool,
+                &s,
+                contact,
+                numero,
+                "validated",
+                e,
+                "0",
+                &[("Place de parc", "1", "200.00", "0.00", "200.00")],
+            )
+            .await,
+        );
+    }
+    let (rg, lignes_rg) = ecriture_brute(
+        &pool,
+        &s,
+        8,
+        "Caisse",
+        &[
+            (c1000, "400.00", "0"),
+            (c1100, "0", "200.00"),
+            (c1100, "0", "200.00"),
+        ],
+    )
+    .await;
+    for (i, f) in groupees.iter().enumerate() {
+        reglement_brut(&pool, &s, *f, rg, Some(lignes_rg[i + 1]), "200.00").await;
+        sqlx::query("UPDATE invoices SET paid_at = '2026-03-20 00:00:00' WHERE id = ?")
+            .bind(f)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+
+    // F6 — impayée, deux lignes : l'avoir émis APRÈS la montée (AC9 f).
+    let (e6, _) = ecriture_brute(
+        &pool,
+        &s,
+        9,
+        "Ventes",
+        &[
+            (c1100, "432.40", "0"),
+            (c3000, "0", "400.00"),
+            (c2000, "0", "32.40"),
+        ],
+    )
+    .await;
+    let f6 = facture_brute(
+        &pool,
+        &s,
+        contact,
+        "F-2026-006",
+        "validated",
+        e6,
+        "0",
+        &[
+            ("Loyer d'avril", "1", "300.00", "8.10", "300.00"),
+            ("Charges d'avril", "1", "100.00", "8.10", "100.00"),
+        ],
+    )
+    .await;
+    let factures = [f1, f2, f3, groupees[0], groupees[1], f6];
+
+    // --- Empreinte d'avant -------------------------------------------------
+    let mut colonnes_avant = Vec::new();
+    let mut avant = Vec::new();
+    for t in TABLES_EMPREINTE {
+        let cols = colonnes_de(&pool, t).await;
+        avant.push(empreinte(&pool, t, &cols).await);
+        colonnes_avant.push(cols);
+    }
+    let mut montants_avant = Vec::new();
+    for f in factures {
+        montants_avant.push((
+            invoices::total_ttc(&pool, f).await.unwrap(),
+            invoice_settlements::amount_due(&pool, f).await.unwrap(),
+        ));
+    }
+    let figees: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM invoices WHERE pdf_sha256 IS NOT NULL")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(figees, 1, "témoin : une facture au PDF figé");
+
+    // --- La montée -----------------------------------------------------------
+    kesh_db::MIGRATOR.run(&pool).await.expect("MIGRATOR.run()");
+
+    // --- Empreinte d'après, sur les colonnes d'avant -----------------------
+    for (i, t) in TABLES_EMPREINTE.iter().enumerate() {
+        let apres = empreinte(&pool, t, &colonnes_avant[i]).await;
+        let (nom, nb_cols, nb_lignes) = TEMOIN[i];
+        assert_eq!(nom, *t);
+        assert_eq!(colonnes_avant[i].len(), nb_cols, "témoin : colonnes de {t}");
+        assert_eq!(avant[i].len(), nb_lignes, "témoin : lignes de {t} avant");
+        assert_eq!(apres.len(), nb_lignes, "témoin : lignes de {t} après");
+        assert_eq!(apres, avant[i], "{t} : une colonne d'avant a changé");
+    }
+    for (f, attendu) in factures.iter().zip(&montants_avant) {
+        let apres = (
+            invoices::total_ttc(&pool, *f).await.unwrap(),
+            invoice_settlements::amount_due(&pool, *f).await.unwrap(),
+        );
+        assert_eq!(&apres, attendu, "facture {f} : TTC ou reste dû changé");
+    }
+    for t in ["invoice_lines", "credit_note_lines"] {
+        let autres: i64 = sqlx::query_scalar(&format!(
+            "SELECT COUNT(*) FROM {t} WHERE line_type <> 'priced'"
+        ))
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            autres, 0,
+            "{t} : toutes les lignes existantes sont `priced`"
+        );
+    }
+
+    // Les contraintes d'avant sont toujours là ; la seule retirée est la
+    // quantité positive, remplacée par sa forme limitée aux lignes chiffrées.
+    for t in ["invoice_lines", "credit_note_lines"] {
+        let checks: Vec<String> = sqlx::query_scalar(
+            "SELECT CONSTRAINT_NAME FROM information_schema.CHECK_CONSTRAINTS \
+             WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = ? ORDER BY CONSTRAINT_NAME",
+        )
+        .bind(t)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        let attendues: Vec<String> = [
+            "description_not_empty",
+            "line_total_non_negative",
+            "line_type",
+            "priced_quantity",
+            "unit_price_non_negative",
+            "unpriced_neutral",
+            "vat_rate_range",
+        ]
+        .iter()
+        .map(|c| format!("chk_{t}_{c}"))
+        .collect();
+        assert_eq!(checks, attendues, "{t} : contraintes CHECK");
+        let unique: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS \
+             WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = ? \
+             AND CONSTRAINT_TYPE = 'UNIQUE' AND CONSTRAINT_NAME = ?",
+        )
+        .bind(t)
+        .bind(format!("uq_{t}_position"))
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(unique, 1, "{t} : unicité de la position");
+    }
+    let min_required: String =
+        sqlx::query_scalar("SELECT kesh_version_min_required FROM _kesh_version WHERE id = 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(min_required, "0.17.6", "migration non breaking");
+
+    // --- AC9 f : l'avoir émis après la montée sur une facture d'avant --------
+    let (_, lignes_facture) = invoices::find_by_id_with_lines(&pool, s.company_id, f6)
+        .await
+        .unwrap()
+        .unwrap();
+    let issued = credit_notes::create_credit_note(
+        &pool,
+        kesh_db::entities::NewCreditNote {
+            company_id: s.company_id,
+            invoice_id: f6,
+            date: chrono::NaiveDate::from_ymd_opt(2026, 4, 2).unwrap(),
+        },
+        s.admin_user_id,
+    )
+    .await
+    .expect("avoir sur une facture d'avant la montée");
+    let attendues: Vec<_> = lignes_facture
+        .iter()
+        .map(|l| {
+            (
+                l.position,
+                l.description.clone(),
+                l.quantity,
+                l.unit_price,
+                l.vat_rate,
+                l.line_total,
+                l.revenue_account_id,
+                l.line_type,
+            )
+        })
+        .collect();
+    let recopiees: Vec<_> = issued
+        .lines
+        .iter()
+        .map(|l| {
+            (
+                l.position,
+                l.description.clone(),
+                l.quantity,
+                l.unit_price,
+                l.vat_rate,
+                l.line_total,
+                l.revenue_account_id,
+                l.line_type,
+            )
+        })
+        .collect();
+    assert_eq!(
+        recopiees, attendues,
+        "l'avoir recopie les lignes à l'identique"
+    );
+    assert!(
+        issued
+            .lines
+            .iter()
+            .all(|l| l.line_type == kesh_db::entities::LineType::Priced)
+    );
+    // La contre-passation inverse exactement la vente : créance, produit, TVA.
+    let mut contre: Vec<(i64, Decimal, Decimal)> = issued
+        .journal_entry
+        .lines
+        .iter()
+        .map(|l| (l.account_id, l.credit, l.debit))
+        .collect();
+    contre.sort();
+    let mut vente: Vec<(i64, Decimal, Decimal)> = vec![
+        (c1100, Decimal::new(43240, 2), Decimal::ZERO),
+        (c3000, Decimal::ZERO, Decimal::new(40000, 2)),
+        (c2000, Decimal::ZERO, Decimal::new(3240, 2)),
+    ];
+    vente.sort();
+    assert_eq!(contre, vente, "l'écriture de l'avoir inverse la vente");
+}

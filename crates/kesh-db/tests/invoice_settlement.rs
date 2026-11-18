@@ -77,6 +77,7 @@ async fn validated_invoice(
                 unit_price: amount,
                 vat_rate: dec!(0),
                 revenue_account_id: Some(revenue),
+                line_type: kesh_db::entities::LineType::Priced,
             }],
         },
     )

@@ -599,6 +599,7 @@ async fn invoice_legacy_due_date_pair_unchanged_editable(pool: MySqlPool) {
             project_id: None,
             lines: vec![kesh_db::entities::invoice::NewInvoiceLine {
                 revenue_account_id: None,
+                line_type: kesh_db::entities::LineType::Priced,
                 description: "Legacy".into(),
                 quantity: rust_decimal::Decimal::ONE,
                 unit_price: rust_decimal::Decimal::new(10000, 2),

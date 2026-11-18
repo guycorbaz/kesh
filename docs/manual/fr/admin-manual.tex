@@ -2547,6 +2547,20 @@ La session ouverte doit être \textbf{rouverte} --- reconnexion, ou au plus la d
 
 \textbf{Limite} : les données de démonstration laissées par une réinitialisation antérieure (taux de TVA, réglages de facturation, contacts, articles, factures, avoirs) qui désignent la société effacée restent en base, invisibles et inertes (\#546).
 
+\subsubsection{Passer à la 0.20.0}\label{sec:maj-0-20-0}
+% Story 49-1a (#1242, AC13 e) : squelette de la section, posé avec la migration
+% des types de lignes. La Story 49-1d le complète : la sauvegarde d'avant la mise
+% à jour, l'introduction (« La 0.20.0 se pose sur la 0.19.0 »), « Une
+% migration », « Compatibilité », « Le retour à la 0.19.0 », « Si la migration
+% échoue au milieu » et « Ce qu'il faut savoir ».
+\sloppy
+
+\begin{sloppypar}
+\paragraph{Pour les intégrations.} Les lignes d'une facture client portent désormais un \textbf{type} : \texttt{priced} (ligne chiffrée, la seule forme d'avant), \texttt{comment} (texte seul) ou \texttt{heading} (titre de section) ; toutes les lignes existantes sont \texttt{priced}. \textbf{L'export global} : \texttt{invoice\_lines.csv} et \texttt{credit\_note\_lines.csv} gagnent la colonne \texttt{line\_type} \textbf{en dernière position} --- aucune colonne existante ne se décale. \textbf{Le serveur MCP} : la sortie de \texttt{kesh\_facture} gagne, sur \textbf{chaque} ligne, la clé \texttt{typeLigne}, facture existante comprise --- un ajout de clé, sans effet sur un consommateur qui ignore les clés inconnues. \textbf{L'API} : une ligne de facture accepte un champ facultatif \texttt{lineType}, \texttt{priced} par défaut ; un corps de la 0.19.0 est accepté à l'identique. \texttt{comment} et \texttt{heading} sont refusés pour l'instant (\texttt{400 VALIDATION\_ERROR}), un type inconnu est refusé en \texttt{422}. \textbf{Changement de contrat} : sur une ligne chiffrée, un champ \texttt{quantity}, \texttt{unitPrice} ou \texttt{vatRate} manquant rend désormais \texttt{400 VALIDATION\_ERROR}, en nommant la ligne et le champ, et non plus \texttt{422}.
+\end{sloppypar}
+
+\fussy
+
 \subsubsection{Passer à la 0.19.0}\label{sec:maj-0-19-0}
 % Story 43-1a (#823, AC13) : section ouverte par la story pour sa migration ; le
 % paragraphe « Ce qu'il faut savoir » des autres stories de la 0.19.0 s'écrit à

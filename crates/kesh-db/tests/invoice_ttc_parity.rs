@@ -86,6 +86,7 @@ async fn ttc_four_way_parity_mixed_rates_and_rounding_edges(pool: MySqlPool) {
             .iter()
             .map(|(rate, price)| NewInvoiceLine {
                 revenue_account_id: None,
+                line_type: kesh_db::entities::LineType::Priced,
                 description: "Ligne parité".into(),
                 quantity: dec!(1),
                 unit_price: *price,
@@ -225,6 +226,7 @@ async fn list_items_total_ttc_matches_helper(pool: MySqlPool) {
             project_id: None,
             lines: vec![NewInvoiceLine {
                 revenue_account_id: None,
+                line_type: kesh_db::entities::LineType::Priced,
                 description: "Ligne".into(),
                 quantity: dec!(1),
                 unit_price: price,
@@ -259,4 +261,110 @@ async fn list_items_total_ttc_matches_helper(pool: MySqlPool) {
         assert_eq!(item.total_ttc, expected_ttc, "colonne SQL total_ttc");
         assert_eq!(item.total_amount, price, "total_amount reste HT");
     }
+}
+
+/// Story 49-1a (#1242) — T8 (AC10 b) : les quatre voies du TTC restent
+/// d'accord, au centime, sur une facture qui porte un titre et un commentaire
+/// (lignes neutres, créées **par le dépôt**), et donnent le TTC de la même
+/// facture sans eux.
+#[sqlx::test(migrations = "./test-schema")]
+async fn ttc_four_way_parity_with_unpriced_lines(pool: MySqlPool) {
+    use kesh_db::entities::LineType;
+
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let contact_id: i64 = sqlx::query(
+        "INSERT INTO contacts (company_id, contact_type, name, is_client) \
+         VALUES (?, 'Entreprise', 'Client Parité TTC 49-1a', TRUE)",
+    )
+    .bind(seeded.company_id)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    let ligne = |lt: LineType, rate: Decimal, price: Decimal| NewInvoiceLine {
+        description: "Ligne".into(),
+        quantity: if lt == LineType::Priced {
+            dec!(1)
+        } else {
+            Decimal::ZERO
+        },
+        unit_price: price,
+        vat_rate: rate,
+        revenue_account_id: None,
+        line_type: lt,
+    };
+    let lines = vec![
+        ligne(LineType::Heading, Decimal::ZERO, Decimal::ZERO),
+        ligne(LineType::Priced, dec!(8.10), dec!(100.00)),
+        ligne(LineType::Comment, Decimal::ZERO, Decimal::ZERO),
+        ligne(LineType::Priced, dec!(1.00), dec!(12345.50)),
+        ligne(LineType::Priced, dec!(2.60), dec!(50.00)),
+    ];
+    let (inv, lignes) = invoices::create(
+        &pool,
+        seeded.admin_user_id,
+        NewInvoice {
+            company_id: seeded.company_id,
+            contact_id,
+            date: NaiveDate::from_ymd_opt(2026, 6, 15).unwrap(),
+            due_date: None,
+            payment_terms: None,
+            project_id: None,
+            lines,
+        },
+    )
+    .await
+    .expect("create invoice");
+
+    // Voie 1 — Rust, toutes lignes, et sur les seules lignes chiffrées.
+    let rust_ttc = invoice_total_ttc(lignes.iter().map(|l| (l.line_total, l.vat_rate)));
+    let chiffrees = invoice_total_ttc(
+        lignes
+            .iter()
+            .filter(|l| l.line_type == LineType::Priced)
+            .map(|l| (l.line_total, l.vat_rate)),
+    );
+    assert_eq!(rust_ttc, chiffrees);
+    // 100 + 8.10 ; 12345.50 + 123.46 ; 50 + 1.30.
+    assert_eq!(rust_ttc, dec!(12628.36));
+
+    // Voie 2 — SQL scalaire.
+    let scalaire: Decimal = sqlx::query_scalar(&format!(
+        "SELECT {INVOICE_TTC_SUBQUERY_SQL} FROM invoices i WHERE i.id = ?"
+    ))
+    .bind(inv.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(scalaire, rust_ttc);
+
+    // Voie 4 — débit créance de l'écriture ; voie 3 — agrégat.
+    kesh_db::test_fixtures::designate_rounding_account(&pool, seeded.company_id)
+        .await
+        .expect("compte d'arrondi");
+    let validated =
+        invoices::validate_invoice(&pool, seeded.company_id, inv.id, seeded.admin_user_id)
+            .await
+            .expect("validate invoice");
+    let rounded = invoice_total_ttc_rounded(
+        lignes.iter().map(|l| (l.line_total, l.vat_rate)),
+        validated.invoice.rounding_amount,
+    );
+    let creance = validated
+        .journal_entry
+        .lines
+        .iter()
+        .find(|l| l.account_id == seeded.accounts["1100"])
+        .expect("ligne créance");
+    assert_eq!(creance.debit, rounded);
+    let summary = due_dates_summary(
+        &pool,
+        seeded.company_id,
+        &InvoiceListQuery::default(),
+        aujourd_hui_test(),
+    )
+    .await
+    .expect("summary");
+    assert_eq!(summary.unpaid_total, rounded);
+    assert_eq!(rounded, dec!(12628.35));
 }

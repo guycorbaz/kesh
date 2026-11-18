@@ -914,6 +914,7 @@ async fn fixture_tailles(pool: &MySqlPool, s: &Societe, large: bool) {
                     unit_price: Decimal::new(12_345, 2),
                     vat_rate: Decimal::ZERO,
                     revenue_account_id: None,
+                    line_type: kesh_db::entities::LineType::Priced,
                 }],
             },
         )
@@ -2064,6 +2065,7 @@ async fn ac5_l_echeancier_du_mcp_juge_au_jour_suisse(pool: MySqlPool) {
                 unit_price: Decimal::new(10_000, 2),
                 vat_rate: Decimal::ZERO,
                 revenue_account_id: None,
+                line_type: kesh_db::entities::LineType::Priced,
             }],
         },
     )
@@ -2711,5 +2713,117 @@ async fn tailles_mesurees_en_devise(pool: MySqlPool) {
     eprintln!(
         "TAILLE EN DEVISE kesh_bilan (57 comptes en devise) : {} o",
         texte(&r).len()
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Story 49-1a (#1242) — T11 : la sortie `kesh_facture` porte `typeLigne` sur
+// chaque ligne (AC13 b, D14)
+// ---------------------------------------------------------------------------
+
+/// Une facture brouillon de `lignes` (créée par le dépôt, qui accepte les trois
+/// types) : rend son id.
+async fn facture_typee(
+    pool: &MySqlPool,
+    c: i64,
+    u: i64,
+    client: i64,
+    lignes: &[kesh_db::entities::LineType],
+) -> i64 {
+    use kesh_db::entities::LineType;
+    let lines = lignes
+        .iter()
+        .map(|lt| {
+            let priced = *lt == LineType::Priced;
+            NewInvoiceLine {
+                description: if priced { "Prestation" } else { "Note" }.into(),
+                quantity: if priced { Decimal::ONE } else { Decimal::ZERO },
+                unit_price: if priced {
+                    Decimal::new(10_000, 2)
+                } else {
+                    Decimal::ZERO
+                },
+                vat_rate: Decimal::ZERO,
+                revenue_account_id: None,
+                line_type: *lt,
+            }
+        })
+        .collect();
+    invoices::create(
+        pool,
+        u,
+        NewInvoice {
+            company_id: c,
+            contact_id: client,
+            date: date(2026, 3, 1),
+            due_date: None,
+            payment_terms: None,
+            project_id: None,
+            lines,
+        },
+    )
+    .await
+    .unwrap()
+    .0
+    .id
+}
+
+/// T11 — la **clé elle-même** `typeLigne` est présente sur chaque ligne (jamais
+/// `is_null()` : l'indexation d'un `Value` rend `Null` pour une clé absente),
+/// avec la valeur du type ; puis la mesure de V6-2 : la taille d'une ligne, ce
+/// que la clé y ajoute, et le nombre maximal de lignes qu'une facture peut
+/// porter sous le plafond d'un envoi, avec et sans la clé.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn kesh_facture_porte_le_type_de_chaque_ligne(pool: MySqlPool) {
+    use kesh_api::services::envois_mcp::MCP_ENVOI_OCTETS_MAX;
+    use kesh_db::entities::LineType;
+
+    let (c, u, jeton) = societe_servie(&pool, "Société types 49-1a", date(2026, 3, 10)).await;
+    let client = contacts::create(&pool, u, contact(c, "Client 49-1a".into(), true))
+        .await
+        .unwrap()
+        .id;
+    let b = banc(&pool);
+    let types = [LineType::Priced, LineType::Comment, LineType::Heading];
+    let f = facture_typee(&pool, c, u, client, &types).await;
+    let fiche = donnees_de(&b.appeler(&jeton, "kesh_facture", json!({ "id": f })).await);
+    let lignes = fiche["lignes"]
+        .as_array()
+        .unwrap_or_else(|| panic!("{fiche}"));
+    assert_eq!(lignes.len(), 3, "{fiche}");
+    for (l, attendu) in lignes.iter().zip(["priced", "comment", "heading"]) {
+        let objet = l.as_object().unwrap();
+        assert!(objet.contains_key("typeLigne"), "clé absente : {l}");
+        assert_eq!(objet["typeLigne"], json!(attendu), "{l}");
+    }
+
+    // Mesure (V6-2) : une facture d'une, puis de deux lignes chiffrées.
+    let mut tailles = Vec::new();
+    let mut texte_deux = String::new();
+    for n in [1, 2] {
+        let f = facture_typee(&pool, c, u, client, &vec![LineType::Priced; n]).await;
+        let t = texte(&b.appeler(&jeton, "kesh_facture", json!({ "id": f })).await);
+        tailles.push(t.len());
+        texte_deux = t;
+    }
+    let par_ligne = tailles[1] - tailles[0];
+    let socle = tailles[0] - par_ligne;
+    // La clé en JSON joli : sa ligne, son saut de ligne, et la virgule qu'elle
+    // ajoute au champ qui la précède.
+    let ligne_cle = texte_deux
+        .lines()
+        .find(|l| l.contains("\"typeLigne\""))
+        .expect("typeLigne dans le texte");
+    let cle = ligne_cle.len() + 2;
+    let max_avec = (MCP_ENVOI_OCTETS_MAX - socle) / par_ligne;
+    let max_sans = (MCP_ENVOI_OCTETS_MAX - socle) / (par_ligne - cle);
+    eprintln!(
+        "MESURE kesh_facture : socle {socle} o, ligne {par_ligne} o dont typeLigne {cle} o ; \
+         lignes max sous {MCP_ENVOI_OCTETS_MAX} o : {max_sans} sans la clé, {max_avec} avec"
+    );
+    assert!(cle > 0 && cle < par_ligne);
+    assert!(
+        max_avec >= 40,
+        "une facture courante doit rester servie : {max_avec} lignes au plus"
     );
 }

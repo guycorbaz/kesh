@@ -591,6 +591,7 @@ async fn un_compte_libere_par_la_devalidation_redevient_completable(pool: MySqlP
             payment_terms: None,
             lines: vec![NewInvoiceLine {
                 revenue_account_id: None,
+                line_type: kesh_db::entities::LineType::Priced,
                 description: "Conseil".into(),
                 quantity: dec!(1),
                 unit_price: dec!(100.00),
