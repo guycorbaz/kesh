@@ -6,7 +6,8 @@
 (plan : `release-0.20.0.md`). Décisions de Guy du 2026-11-18 (page « kickoff-0.20.0 » et conversation), kesh:D11, kesh:D13,
 kesh:D14. Révisé le même jour sur les réponses de Guy aux points ouverts du kickoff (#1234 retirée, ordre de fusion de
 la 48-13, issues de la solde au milestone) et les règlements de l'orchestrateur ; puis sur le complément de Guy du même
-jour : des factures réelles existent déjà en production.*
+jour : des factures réelles existent déjà en production ; puis, le même jour encore, sur la découpe de la 48-13 à sa
+validation P2 : la **48-15** en est née, et l'épique passe à **huit** stories (décisions de Guy du 2026-11-18).*
 
 > **Factures réelles.** Guy a déjà émis de vraies factures client depuis Kesh (production, remises sur papier à un
 > locataire). Les gestes de la **48-1**, de la **48-2** (réimputation) et de la **48-13** s'appliquent à des factures et
@@ -17,7 +18,7 @@ jour : des factures réelles existent déjà en production.*
 
 L'Epic 48 était le **réservoir** des stories non faites des Epics 36 et 42 à 44 (kesh:D11). Au kickoff de la 0.20.0, elle
 devient **l'épique corrective de la release** : la 0.20.0 « s'attaque principalement aux bugs, avec une ou deux
-fonctionnalités en plus » (kesh:D14). Elle porte sept stories : la fin de la réimputation analytique (#1167), quatre
+fonctionnalités en plus » (kesh:D14). Elle porte huit stories : la fin de la réimputation analytique (#1167), cinq
 stories de défauts groupés par chemin, et la story de solde.
 
 Elle ne porte **aucune migration** : la seule migration de la 0.20.0 est celle de l'Epic 49 (49-1).
@@ -25,9 +26,11 @@ Elle ne porte **aucune migration** : la seule migration de la 0.20.0 est celle d
 ## Dérogation à la borne de six stories
 
 Le `CLAUDE.md` (§ *Numérotation des versions*) borne une épique de correction à **six stories, story de solde comprise**.
-L'Epic 48 en compte **sept**. **Décision de Guy du 2026-11-18**, au motif que la 0.20.0 dispose de près de dix jours de
-travail, deux de plus qu'une semaine ordinaire (« il y a deux jours de plus »). La dérogation vaut pour cette épique
-seulement ; elle ne modifie pas la règle.
+L'Epic 48 en compte **huit**. **Décisions de Guy du 2026-11-18** : sept au kickoff, au motif que la 0.20.0 dispose de
+près de dix jours de travail, deux de plus qu'une semaine ordinaire (« il y a deux jours de plus ») ; **huit** le même
+jour, par le même motif et par l'élargissement que Guy a voulu pour faire baisser les bugs — les troncatures silencieuses
+#1331 à #1334, ajoutées à la release, qui ont fait découper la 48-13 en 48-13 et 48-15. La dérogation vaut pour cette
+épique seulement ; elle ne modifie pas la règle.
 
 La règle de cadence en reste la garde : la date ne bouge pas (kesh:D7, kesh:D11). Une story non close à la coupure sort
 vers une épique ultérieure, dans l'**ordre de sortie** ci-dessous.
@@ -41,7 +44,8 @@ vers une épique ultérieure, dans l'**ordre de sortie** ci-dessous.
 | 48-10-montants-ambigus-reglages-filtres | « 1.250 » refusé au prix d'article, aux frais de rappel, au montant minimal, aux filtres des écritures | #1173, #1175, #1176, #1177 | P3, P4 | non | fiche `36-18b-montants-ambigus-reglages-filtres.md` (`backlog`, à valider) |
 | 48-11-arrondi-au-centime | Les montants à deux décimales sont arrondis, non tronqués | #1245 | **P2** | non | à écrire |
 | 48-12-reponses-perdues-fournisseurs | Plus de doublon ni d'écrasement après une réponse perdue ou un 409 | #975, #984, #985, #986 | **P2** | non | à écrire |
-| 48-13-avant-la-vraie-facture | Le chemin de la première facture client QR | #1233, #1243, #1226 | P2, P3 | non | à écrire |
+| 48-13-avant-la-vraie-facture | Le chemin de la première facture client QR | #1233, #1243, #1226 | P2, P3 | non | fiche `48-13-avant-la-vraie-facture.md`, en validation (P3) |
+| 48-15-troncatures-silencieuses | Un texte trop long est refusé en le disant, non coupé en silence (adresse du client, pays du fournisseur, e-mail de la société, prénom et nom ; nom d'article, numéro de client, conditions de paiement) | #1331, #1332, #1333, #1334 | P3, P4 | non | fiche `48-15-troncatures-silencieuses.md` (découpée de la 48-13), en validation (P3) |
 | 48-14-solde-dette-epic | Story de solde : dette des revues de la 0.19.0 (règlement groupé) | #1263, #1262, #1261, #1255 (**plafond : quatre**) | P3, P4 | non | à écrire |
 
 Les clés 48-3 à 48-9 du réservoir restent `backlog` (48-5 garde `ready-for-dev`), **hors 0.20.0, pour une release
@@ -122,7 +126,27 @@ Les défauts restés sur le chemin d'une première facture client QR, que Guy é
 ne touche donc plus `kesh-qrbill`.
 
 **Ordre de fusion** (arbitrage de Guy du 2026-11-18) : la 48-13 **se fusionne avant** les stories de l'Epic 49 qui
-touchent `InvoiceForm.svelte` ; elle est petite et sur le chemin de la première facture de fin novembre.
+touchent `InvoiceForm.svelte`, et avant la 48-15 ; elle est petite et sur le chemin de la première facture de fin
+novembre.
+
+### 48-15 — Troncatures silencieuses (#1331, #1332, #1333, #1334)
+
+**Née de la 48-13 à sa validation P2** (2026-11-18) : Guy avait élargi la 48-13 à ces sites « pour diminuer le nombre de
+bugs » ; la passe P2 y a compté neuf modules ; le signal de splitting a été déclaré et la story coupée. Un attribut
+`maxlength` coupe en silence un texte collé, la valeur coupée s'enregistre et part sur la QR-facture ou le PDF. Le geste,
+répété site par site : vérifier la borne du serveur, l'**ajouter** si elle manque, puis retirer le `maxlength`.
+- #1331 (P3) : adresse d'un client (`contacts/+page.svelte`, cinq champs) ;
+- #1332 (P3) : pays d'un fournisseur neuf, coupé à deux caractères (`SupplierCreatePanel.svelte`) ;
+- #1333 (P3) : e-mail de la société sans borne serveur (`companies.rs`) ;
+- #1334 (P4) : prénom ou nom seul non bornés (`contacts.rs`, et `onboarding.rs::set_coordinates`) ;
+- et trois champs qui finissent sur le PDF : **nom d'article** (`products/+page.svelte`), **numéro de client** et
+  **conditions de paiement** (`contacts/+page.svelte`).
+
+**Dérogation à la règle de splitting** (décision de Guy du 2026-11-18) : sept modules au grain du domaine, mais un seul
+geste mécanique répété, rangé en **deux lots ordonnés** (A serveur, puis B écrans) ; écrite dans la fiche. **Dépend de la
+48-13 fusionnée** (toutes deux touchent `onboarding.rs::set_coordinates` et `settings/+page.svelte`) ; **ne bloque pas
+l'Epic 49** (aucun fichier de l'éditeur de lignes). Sites voisins hors périmètre, une issue par famille, sans milestone :
+#1335 à #1340 (et #1005, existante).
 
 ### 48-14 — Story de solde (plafond : quatre issues)
 
@@ -142,11 +166,12 @@ Les autres (#1256 à #1260, #1264, #1265 ; P4) restent ouvertes, hors de la rele
 
 ## Ordre de lancement et ordre de sortie
 
-**Lancement** (voie B, plan § *Voies*) : 48-13 et 48-11 d'abord (prioritaires ; 48-11 dès la fusion de #1327), puis 48-12,
-48-10, 48-1, 48-2, et la 48-14 en dernier.
+**Lancement** (voie B, plan § *Voies*) : 48-13 et 48-11 d'abord (prioritaires ; 48-11 dès la fusion de #1327), la 48-15
+dès la 48-13 fusionnée, puis 48-12, 48-10, 48-1, 48-2, et la 48-14 en dernier.
 
-**Sortie à la coupure, si le temps manque** (décision de Guy du 2026-11-18) : la **48-14** sort la première, puis la
-**48-2** ; **48-11 et 48-13 sont prioritaires** et sont les dernières à sortir. Une story sortie retourne à une épique
+**Sortie à la coupure, si le temps manque** (décisions de Guy du 2026-11-18) : la **48-14** sort la première, puis la
+**48-2**, puis selon l'avancement 48-1, 48-10, 48-12 ; la **48-15 sort avant la 48-11 et la 48-13**, prioritaires, qui
+sont les dernières à sortir. Une story sortie retourne à une épique
 ultérieure (kesh:D11) ; l'Epic 48 se clôt avec la release.
 
 ## Dépendances entre stories
@@ -155,6 +180,8 @@ ultérieure (kesh:D11) ; l'Epic 48 se clôt avec la release.
   `project_reassignment.rs`, `ProjectReassignDialog.svelte`, `projects.api.ts`, `project-reassignment.spec.ts`, les
   catalogues, `api-external.md` et les manuels. Le second arrivé fait l'union.
 - **48-11 après la PR #1327** (Beat), fusionnée dans `main`.
+- **48-15 après la 48-13** fusionnée dans la branche d'épique : `onboarding.rs` (`set_coordinates`) et
+  `settings/+page.svelte` (blocs distincts).
 - **48-1 et 48-12** touchent toutes deux l'espace `supplier-invoices` (48-1 : `[id]/+page.svelte` et
   `routes/supplier_invoices.rs` ; 48-12 : `new/`, `[id]/edit/`, peut-être les mêmes route et repository) : fichiers
   distincts côté écran, possiblement communs côté serveur ; le second arrivé résout.
@@ -176,17 +203,19 @@ Lu au code à `773df80da`. « Probable » : la fiche confirme.
 | 48-11 | `kesh-core/src/types/money.rs` (fonction commune, probable), `kesh-report/src/pdf.rs`, `kesh-report/src/csv.rs`, `kesh-api/src/exports/csv_tables.rs`, `kesh-api/src/routes/bank_statements_manual.rs` | — | tests par site, garde ; manuel si un format visible change |
 | 48-12 | `kesh-api/src/routes/supplier_invoices.rs` et `kesh-db/src/repositories/supplier_invoices.rs` (si clé d'idempotence), `imported_supplier_invoices` (lecture du document) | `routes/(app)/supplier-invoices/new/`, `supplier-invoices/[id]/edit/`, `routes/(app)/bank-accounts/+page.svelte`, `features/supplier-invoices/`, `features/bank-accounts/` | `kesh-i18n`, manuel utilisateur, Vitest et E2E des écrans |
 | 48-13 | `kesh-api/src/routes/onboarding.rs` (et le contrôle partagé du nom de `companies.rs`) | `lib/components/invoices/InvoiceForm.svelte`, `routes/(app)/settings/+page.svelte` | `kesh-i18n`, manuels |
+| 48-15 | lot A : `kesh-api/src/routes/contacts.rs`, `companies.rs`, `onboarding.rs` (`set_coordinates`), `helpers.rs` (borne partagée) | lot B : `routes/(app)/contacts/+page.svelte`, `routes/(app)/settings/+page.svelte`, `routes/(app)/products/+page.svelte`, `features/supplier-invoices/SupplierCreatePanel.svelte` | `kesh-i18n` (une clé), manuels, Vitest, E2E |
 | 48-14 | `kesh-db/src/repositories/grouped_settlements.rs` (#1255) ; `kesh-api/tests/admin_auto_backup_e2e.rs` (#1261) | `features/reconciliation/GroupSettlementModal.svelte` (#1262, #1263) | `kesh-i18n` si un libellé change |
 
 Modules de l'épique : `kesh-core` (money), `kesh-db` (repositories), `kesh-api` (routes, exports, tests), `kesh-report`
 (PDF, CSV), `kesh-i18n` (catalogues), frontend (`features/projects`,
 `features/products`, `features/reconciliation`, `features/supplier-invoices`, `features/bank-accounts`,
-`components/invoices`, routes `settings`, `journal-entries`, `supplier-invoices`, `bank-accounts`, `products`),
+`components/invoices`, routes `settings`, `contacts`, `journal-entries`, `supplier-invoices`, `bank-accounts`, `products`),
 manuels FR/DE/IT/EN (`.tex` seulement).
 
-**Splitting préventif** (règlement de l'orchestrateur du 2026-11-18) : la règle s'applique à chaque fiche ; la 48-12
-(quatre issues) et la 48-13 (trois) se découpent (a/b) avant `bmad-create-story` si l'une dépasse cinq modules, ou écrivent
-leur dérogation.
+**Splitting préventif** (règlement de l'orchestrateur du 2026-11-18) : la règle s'applique à chaque fiche. Elle a
+joué pour la 48-13, coupée à sa validation P2 (neuf modules) en 48-13 et 48-15 ; la 48-15 (sept modules, un seul geste
+mécanique) porte une **dérogation** décidée par Guy le 2026-11-18. La 48-12 se découpe si elle dépasse cinq modules, ou
+écrit sa dérogation.
 
 ## Fichiers communs (avec l'Epic 49, v0200-menu-sous-groupes et les PR de Beat)
 
@@ -194,9 +223,11 @@ leur dérogation.
 |---|---|---|
 | `lib/components/invoices/InvoiceForm.svelte` | 48-13 (#1233) ; Epic 49 (49-1, 49-2, 49-3 : éditeur de lignes) | **la 48-13 se fusionne d'abord** (arbitrage de Guy du 2026-11-18) ; les stories de l'Epic 49 qui touchent le fichier partent ensuite de la branche à jour |
 | `crates/kesh-report/src/pdf.rs` | 48-11 ; PR #1327 | 48-11 part de `main` après #1327 |
-| `routes/(app)/settings/+page.svelte` | 48-13 (#1243) ; v0200-menu-sous-groupes (si le menu touche les pages de réglages) | blocs distincts |
+| `routes/(app)/settings/+page.svelte` | 48-13 (#1243) ; 48-15 (#1333, e-mail) ; v0200-menu-sous-groupes (si le menu touche les pages de réglages) | blocs distincts ; la 48-15 après la 48-13 |
+| `crates/kesh-api/src/routes/onboarding.rs` (`set_coordinates`) | 48-13 (#1226) ; 48-15 (#1334) | la 48-15 part de la 48-13 fusionnée |
+| `routes/(app)/contacts/+page.svelte`, `routes/(app)/products/+page.svelte` | 48-15 ; 48-10 (`products`, prix de l'article) | blocs distincts ; le second arrivé résout |
 | catalogues i18n (4 locales), `sprint-status.yaml` | toutes | chaque épique dans son bloc ; conflit résolu en gardant les deux côtés |
-| `i18n-keys.test.ts` (`sitesTotal`), `audit_route_registry.rs` | 48-1, 48-2, 48-10, 48-12, 48-13 ; Epic 49 | recomptés après fusion |
+| `i18n-keys.test.ts` (`sitesTotal`), `audit_route_registry.rs` | 48-1, 48-2, 48-10, 48-12, 48-13, 48-15 ; Epic 49 | recomptés après fusion |
 | manuels `.tex` | toutes ; v0200-menu-sous-groupes change les chemins de menu des quatre manuels | le menu fusionne en dernier ; PDF jamais commités |
 | `CHANGELOG.md` | — | jamais écrit dans les stories ; assemblé à l'intégration depuis les *Notes de version* |
 
@@ -204,6 +235,8 @@ leur dérogation.
 
 Recomptés le 2026-11-18 depuis GitHub (commandes du `CLAUDE.md`) : **496 issues ouvertes**, **247 bugs** (`bug` ou
 `known-failure`), **14 P1** ouvertes (dont 11 portant `bug` ou `known-failure`) — identiques au tag v0.19.0 ; hors les 56
-issues masquées du compte de l'agent de Beat. L'Epic 48 vise **quinze** issues portant `bug` ou `known-failure`, toutes au
-milestone v0.20.0 : douze dans les stories 48-10 à 48-13 (#1245, #1173, #1175, #1176, #1177, #975, #984, #985, #986, #1233,
-#1243, #1226) et trois dans la story de solde (#1261, #1262, #1263) ; plus #1255 (`technical-debt`) et #1167 (CR).
+issues masquées du compte de l'agent de Beat. L'Epic 48 vise **dix-neuf** issues portant `bug` ou `known-failure`, toutes
+au milestone v0.20.0 (recompté le 2026-11-18 au soir) : douze dans les stories 48-10 à 48-13 (#1245, #1173, #1175, #1176,
+#1177, #975, #984, #985, #986, #1233, #1243, #1226), quatre dans la 48-15 (#1331, #1332, #1333, #1334) et trois dans la
+story de solde (#1261, #1262, #1263) ; plus #1255 (`technical-debt`) et #1167 (CR). Le même soir, le stock est à **507
+issues ouvertes** et **257 bugs** : les issues ouvertes par les fiches de la release (dont #1330 à #1340) le font monter.
