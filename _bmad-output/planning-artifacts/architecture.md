@@ -269,6 +269,7 @@ Dev :   Navigateur → Vite :5173 (hot reload) → proxy /api/* → Axum :3000
 - `kesh-api` dépend de `kesh-core`, `kesh-db`, `kesh-i18n`, `kesh-reconciliation`
 - `kesh-reconciliation` dépend de `kesh-core`, `kesh-db`
 - `kesh-report` dépend de `kesh-core`, `kesh-db`, `kesh-i18n`
+- `kesh-report` dépend aussi de `kesh-qrbill`, pour la seule table des chasses d'Helvetica (`largeur_mm`, engendrée et vérifiée par `scripts/engendrer-largeurs-helvetica.py`) qui aligne à droite les montants de ses PDF (correctif `fix-pdf-rapports-mise-en-page`, 2026-11-18) : une métrique de police partagée plutôt que dupliquée, non une couche de rendu partagée — chaque crate garde son propre PDF (décision 12) ; l'arête était déjà au graphe par `kesh-db`. À déplacer dans un crate de métriques commun le jour où un PDF embarque une autre police (#943)
 - `kesh-seed` dépend de `kesh-core`, `kesh-db`
 - Crates publiables (`kesh-import`, `kesh-payment`, `kesh-qrbill`) : zéro dépendance interne
 

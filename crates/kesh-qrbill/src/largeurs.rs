@@ -499,14 +499,16 @@ fn chasse(c: char, gras: bool) -> Option<u16> {
 /// La largeur de `texte` imprimé en Helvetica (ou Helvetica-Bold si `gras`) à `taille`
 /// points, en millimètres : la somme des chasses, sans crénage (printpdf n'en applique pas).
 ///
-/// Un caractère sans entrée compte **zéro** : [`WINANSI`] porte tous les octets imprimables
-/// (`table_triee_et_complete`), si bien qu'un caractère sans entrée n'a pas d'octet, et
+/// Un caractère sans entrée compte **zéro** : la table `WINANSI` (interne au module) porte tous les
+/// octets imprimables (`table_triee_et_complete`), si bien qu'un caractère sans entrée n'a pas d'octet, et
 /// `lopdf` le retire à l'écriture (`lopdf-0.31.0/src/encodings/mod.rs:14-18`,
 /// `string_to_bytes`) : il ne s'imprime pas. Une espace insécable (U+00A0, que WinAnsi place à
 /// 0xA0 sous le nom `space`, déjà pris par 0x20) en est un exemple. La largeur rendue est donc
 /// celle du texte réellement imprimé (revue P1, B-2) — à la condition que `texte` soit
-/// **exactement la chaîne passée à `use_text`**, donc, pour un champ d'adresse ou de message,
-/// le résultat de [`crate::texte::texte_imprime`] : avant ce repli, une lettre hors WinAnsi
+/// **exactement la chaîne passée à `use_text`**, donc, pour un champ d'adresse ou de message
+/// de la QR-facture, le résultat de `texte_imprime` (module interne `texte`) ; un appelant hors
+/// de ce crate (`kesh-report`) mesure de même la chaîne exacte qu'il écrit. Avant ce repli, une
+/// lettre hors WinAnsi
 /// (`Ĳ`, qui s'imprime `IJ`) compterait zéro et la largeur serait sous-estimée (revue P2
 /// ciblée, LOW-1).
 pub fn largeur_mm(texte: &str, taille: f32, gras: bool) -> f32 {

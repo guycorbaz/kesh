@@ -55,8 +55,8 @@ Trois défauts de mise en page des PDF de rapports (`crates/kesh-report/src/pdf.
   `col_vat`, `col_tot`) — mais ne sont pas touchées : à tracer à part.
 - La ligne « Résultat reporté (calculé) » (décision de Beat : traitée ailleurs).
 - Relevés en passant, non traités : flèche « → » de la période, « ↳ » des sous-projets et « ⚠ » du bandeau du grand
-  livre, hors WinAnsi, qui disparaissent à l'impression ; intitulé de compte des journaux non tronqué ; commentaire de
-  `draw_empty_message` (« Helvetica builtin n'expose pas de mesure de largeur ») devenu faux.
+  livre, hors WinAnsi, qui disparaissent à l'impression ; intitulé de compte des journaux non tronqué. Tous tracés au
+  § *Issues à ouvrir*. (Le commentaire de `draw_empty_message`, devenu faux, est corrigé — revue P1, P1-3.)
 
 ## Tâches
 
@@ -78,7 +78,9 @@ Trois défauts de mise en page des PDF de rapports (`crates/kesh-report/src/pdf.
   `kesh-report` dépend de `kesh-qrbill` (déjà au graphe par `kesh-db`). ⚠️ Écart à relire : la décision 12 de
   l'architecture sépare les PDF des deux crates ; seule une table de métriques est partagée, non une couche de rendu.
   L'autre voie — déplacer la table dans `kesh-core` — toucherait le script `engendrer-largeurs-helvetica.py` et les
-  tests propres à la QR-facture de `largeurs.rs` ; elle n'a pas été prise.
+  tests propres à la QR-facture de `largeurs.rs` ; elle n'a pas été prise. **Décision de Beat (2026-11-18)** : la
+  dépendance est acceptée ; la ligne ajoutée aux « Dépendances croisées » de
+  `_bmad-output/planning-artifacts/architecture.md` en fait foi (revue P1, P1-1).
 - **Chiffres de même chasse.** Les dix chiffres d'Helvetica valent 556 millièmes d'em en maigre comme en gras ;
   l'apostrophe (191 / 238) et le signe moins (333), non : la largeur est mesurée, non déduite du nombre de caractères.
 - **Bords retenus** (mm depuis le bord gauche de la page A4) : montants en devise principale et totaux 195 (marge
@@ -104,8 +106,8 @@ Trois défauts de mise en page des PDF de rapports (`crates/kesh-report/src/pdf.
   neufs suivent la même voie ; leurs clés `reports-pdf-col-base-currency` (CHF) et `reports-pdf-col-foreign-currency`
   (Devise, Währung, Valuta, Currency) sont posées dans les quatre locales, comme `reports-pdf-header-period`, mais ne
   sont pas encore lues : un seul mot allemand dans un PDF tout en français serait pire que le français partout.
-  ⚠️ **À trancher par Beat** : les lire dès maintenant (deux lignes dans `load_pdf_context`) ou attendre l'i18n des
-  PDF.
+  **Décision de Beat (2026-11-18)** : les deux clés restent **non lues** par les PDF jusqu'à la traduction complète des
+  PDF — pas de mot allemand isolé dans un PDF français. Issue à ouvrir (§ *Issues à ouvrir*, I-7).
 
 ## Change Log
 
@@ -117,6 +119,44 @@ Trois défauts de mise en page des PDF de rapports (`crates/kesh-report/src/pdf.
   et `balance_pdf_aligne_les_quatre_colonnes_a_droite` rouges ; ligne d'en-têtes du bilan retirée →
   `bilan_et_resultat_disent_la_devise_de_leurs_colonnes_en_multi_devises` rouge. Tests de `pdf.rs`
   (`grep -c '#\[test\]'`) : 41 à `70be12a6`, 50 à `bd087f4a`, 55 à `cc6aabe3` — quatorze ajoutés au total.
+
+- 2026-11-18 — **Revue de code P1** (Opus 5.5, passe complète, lentilles B, E et A réunies, contexte frais ;
+  `kesh-gate-logs/fix-pdf-alignement/revue-p1.md`) : **0 CRITICAL / 0 HIGH / 0 MEDIUM / 8 LOW**. Corrigés sans code
+  exécutable (commentaires, documentation, manuel), commit `docs(...)` : P1-1 (ligne d'architecture sur la dépendance),
+  P1-2 (commentaire de `draw_account_row`), P1-3 (commentaire de `draw_empty_message` ; doc de `largeur_mm` qui
+  renvoyait à des items non publics, `texte_imprime` et `WINANSI` ; doc du module `pdf` qui renvoyait à
+  `PdfBuilder::write_right`, privé ; en-tête de `kesh-qrbill/src/lib.rs`, « standalone », périmé), P1-5 (manuel :
+  « aucun des deux n'est tronqué » était faux, le PDF abrège les intitulés trop longs ; le solde en devise n'a sa propre
+  colonne qu'au bilan et au compte de résultat), P1-7 en partie (réserve « à revoir à toute montée de printpdf ou de
+  lopdf » au doc-comment de `title_placeholder`). Non corrigés, tracés au § *Issues à ouvrir* : P1-4, P1-6, P1-7, P1-8.
+  Contrôles après correction : `cargo fmt --check`, `cargo clippy --workspace --all-targets -D warnings`,
+  `cargo doc -p kesh-qrbill -p kesh-report --no-deps` verts — `post-p1-checks.log` ; `cargo doc` y garde cinq
+  avertissements de liens vers des items privés, tous **préexistants** (`kesh-qrbill` : `REMINDER_*_MAX_CHARS`, une
+  URL de `validation.rs` ; `kesh-report` : `NAMED_POSTS` de `homepage_summary.rs`), aucun de cette branche. Pas de gate
+  complet (aucun code exécutable touché). Trend : P1 Opus 0 > LOW (8 LOW) ; passe ciblée P2 sur le commit de
+  correction à lancer (`revue-p2-ciblee-prompt.md`).
+- 2026-11-18 — **Décisions de Beat** : (1) clés `reports-pdf-col-*` non lues jusqu'à la traduction complète des PDF ;
+  (2) dépendance `kesh-report` → `kesh-qrbill` acceptée, la ligne d'architecture fait foi.
+
+## Issues à ouvrir
+
+*(Non ouvertes par l'agent — ni `gh`, ni issue ; reprises dans `kesh-gate-logs/issues-a-ouvrir-fixes.md`, une entrée
+par point, priorité et étiquette proposées.)*
+
+- **I-1 (P1-4)** — Tests de bord manquants : colonne « Rendement » (`RET_RENDEMENT_RIGHT_MM`) jamais contrôlée ;
+  bord des en-têtes du grand livre, de la TVA et du rendement non testé. P3, `technical-debt`.
+- **I-2 (P1-6)** — Bilan et compte de résultat multi-devises sur plusieurs pages : l'en-tête « Devise / CHF » n'est
+  pas répété à partir de la page 2. P4, `bug`.
+- **I-3 (P1-7)** — Titre des propriétés : procédé lié au fonctionnement interne de printpdf 0.7 / lopdf 0.31 ; à
+  revoir à toute montée, et un `pdfinfo` d'un PDF produit par l'image release à la recette de release. P3,
+  `technical-debt`.
+- **I-4 (P1-8)** — Factures (`kesh-qrbill`) : montants du tableau des lignes, du récapitulatif TVA et du total alignés à
+  gauche. P4, `bug`.
+- **I-5 (P1-8)** — PDF de rapports : « → » (période), « ↳ » (sous-projets) et « ⚠ » (bandeau du grand livre), hors
+  WinAnsi, disparaissent à l'impression. P4, `bug`.
+- **I-6 (P1-8)** — PDF des journaux : intitulé de compte non tronqué, peut recouvrir la colonne débit. P4, `bug`.
+- **I-7 (décision de Beat)** — PDF de rapports : lire les libellés dans la langue de l'utilisateur (i18n complète), y
+  compris les deux en-têtes neufs. P4, `enhancement`.
 
 ## Notes de version
 

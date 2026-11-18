@@ -13,7 +13,7 @@
 //! - Helvetica builtin (cohérent kesh-qrbill, pas d'embedding TTF v0.1 — L3/L11).
 //!
 //! Montants **alignés à droite** sur le bord de leur colonne (correctif
-//! `fix-pdf-montants-alignes`) : [`PdfBuilder::write_right`] mesure le texte
+//! `fix-pdf-montants-alignes`) : `PdfBuilder::write_right` mesure le texte
 //! par la métrique de la police ([`kesh_qrbill::largeur_mm`]) et le fait finir
 //! au bord donné — les décimales s'alignent, quelle que soit la longueur.
 //!
@@ -584,6 +584,17 @@ impl PdfBuilder {
 /// d'octets ne fausse la table des références croisées : rien n'est relu ni
 /// réécrit d'autre. Seuls des caractères alphanumériques ASCII, que lopdf écrit
 /// tels quels.
+///
+/// ⚠️ **À revoir à toute montée de printpdf ou de lopdf** : le procédé repose
+/// sur leur fonctionnement interne aux versions du `Cargo.lock` (printpdf 0.7.0,
+/// lopdf 0.31.0) — titre écrit une seule fois, en chaîne littérale non
+/// échappée, dans le dictionnaire `Info` hors de tout flux compressé, sans
+/// métadonnées XMP ni flux d'objets. Une version qui écrirait le titre
+/// autrement ferait échouer le rendu de tout rapport au titre non ASCII
+/// (gabarit absent ou en double → `ReportError::PdfGeneration`), ce que
+/// `le_titre_des_proprietes_du_pdf_se_relit_juste` signale. Seul le profil de
+/// test (non compressé) est exercé par les tests ; le profil release l'est à la
+/// lecture des sources (`optimize` ne compresse que les flux).
 fn title_placeholder(title: &str) -> Option<String> {
     if title.is_ascii() {
         return None;
@@ -687,8 +698,9 @@ fn draw_empty_message(builder: &mut PdfBuilder, ctx: &PdfContext) {
     let mid = (builder.cursor_y + MARGIN_BOTTOM_MM) / 2.0;
     builder.cursor_y = mid;
     let layer = builder.current_layer();
-    // X approximatif centré (Helvetica builtin n'expose pas de mesure de largeur,
-    // donc on utilise une heuristique conservatrice).
+    // X fixe, approximativement centré : le message n'est pas mesuré (une
+    // mesure exacte existe, `kesh_qrbill::largeur_mm`, voir `right_aligned_x`,
+    // mais le centrage du message vide n'est pas repris par ce correctif).
     layer.use_text(
         &ctx.empty_message,
         FONT_SIZE_PT,
@@ -741,8 +753,8 @@ fn draw_account_row(builder: &mut PdfBuilder, ab: &AccountBalance) {
         &builder.font,
     );
     // Story 37-4 (revue de code P1) : un compte en devise porte son solde en
-    // devise à `PAGE_WIDTH_MM - 85` ; son nom est tronqué pour ne pas le
-    // recouvrir. Un compte en devise principale garde son nom entier.
+    // devise, aligné à droite sur `FX_AMOUNT_RIGHT_MM` (il commence au plus tôt
+    // vers 130 mm) ; son nom est tronqué pour ne pas le recouvrir. Un compte en devise principale garde son nom entier.
     let name = if ab.currency.is_some() {
         truncate_with_ellipsis(&ab.account_name, ACCOUNT_NAME_MAX_CHARS_FX)
     } else {
