@@ -1071,3 +1071,258 @@ async fn default_invoice_accounts_unavailable_reads_its_catalogue_key(pool: MySq
         "montage : les deux textes diffèrent"
     );
 }
+
+// ─── Story 48-13 (#1226) : l'assistant juge le nom et l'adresse comme la QR-facture ───
+
+/// Étapes 2 à 5 (type `Pme`, langue FR) : l'assistant attend les coordonnées.
+async fn advance_to_step_5(app: &TestApp, token: &str) {
+    advance_to_step_2(app, token).await;
+    for (path, body) in [
+        ("/api/v1/onboarding/start-production", None),
+        (
+            "/api/v1/onboarding/org-type",
+            Some(json!({ "orgType": "Pme" })),
+        ),
+        (
+            "/api/v1/onboarding/accounting-language",
+            Some(json!({ "language": "FR" })),
+        ),
+    ] {
+        let mut req = app
+            .client
+            .post(app.url(path))
+            .header("Authorization", auth(token));
+        if let Some(b) = body {
+            req = req.json(&b);
+        }
+        let resp = req.send().await.unwrap();
+        assert_eq!(resp.status(), 200, "{path}");
+    }
+}
+
+/// Une adresse valide pour la QR-facture (données factices).
+fn adresse_valide() -> serde_json::Value {
+    json!({"street":"Rue Test","building":"1","postalCode":"1000","city":"Lausanne","country":"CH"})
+}
+
+async fn post_coordinates(
+    app: &TestApp,
+    token: &str,
+    body: serde_json::Value,
+) -> (u16, serde_json::Value) {
+    let resp = app
+        .client
+        .post(app.url("/api/v1/onboarding/coordinates"))
+        .header("Authorization", auth(token))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    let status = resp.status().as_u16();
+    (status, resp.json().await.unwrap())
+}
+
+/// Nom, prénom, nom de famille et adresse de chaque société : ce que
+/// `set_coordinates` écrirait.
+type CompanyRow = (
+    String,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+);
+
+async fn companies_snapshot(pool: &MySqlPool) -> Vec<CompanyRow> {
+    sqlx::query_as(
+        "SELECT name, first_name, last_name, address_street, address_building, \
+         address_postal_code, address_city, address_country FROM companies ORDER BY id",
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap()
+}
+
+async fn step_completed(app: &TestApp, token: &str) -> serde_json::Value {
+    let resp = app
+        .client
+        .get(app.url("/api/v1/onboarding/state"))
+        .header("Authorization", auth(token))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    body["stepCompleted"].clone()
+}
+
+/// AC6 — un nom que la QR-facture refuserait est refusé à l'assistant, en
+/// `400 VALIDATION_ERROR`, sans rien écrire : plus de 70 caractères (le message
+/// dit `70` et le nombre saisi), un caractère hors du jeu (nommé avec son point
+/// de code), le seul U+00AD (« obligatoire »), et un « prénom nom » composé
+/// au-delà de 70 caractères (c'est le nom composé qui part au PDF).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn coordinates_rejects_a_name_the_qr_bill_refuses_1226(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    create_test_company(&pool).await;
+    ensure_admin_user(&pool, &test_config()).await.unwrap();
+    let token = login(&app).await;
+    advance_to_step_5(&app, &token).await;
+    let avant = companies_snapshot(&pool).await;
+
+    let cas: [(&str, serde_json::Value, &[&str]); 4] = [
+        (
+            "71 caractères",
+            json!({ "name": "N".repeat(71), "address": adresse_valide(), "ideNumber": null }),
+            &["70", "(71)"],
+        ),
+        (
+            "caractère hors du jeu",
+            json!({ "name": "Démo 张 SA", "address": adresse_valide(), "ideNumber": null }),
+            &["张", "U+5F20"],
+        ),
+        (
+            "U+00AD seul",
+            json!({ "name": "\u{00AD}", "address": adresse_valide(), "ideNumber": null }),
+            &["obligatoire"],
+        ),
+        (
+            "prénom + nom composés au-delà de 70",
+            json!({
+                "name": "",
+                "firstName": "P".repeat(35),
+                "lastName": "F".repeat(35),
+                "address": adresse_valide(),
+                "ideNumber": null
+            }),
+            &["70", "(71)"],
+        ),
+    ];
+    for (libelle, corps, attendus) in cas {
+        let (status, body) = post_coordinates(&app, &token, corps).await;
+        assert_eq!(status, 400, "{libelle} : {body}");
+        assert_eq!(body["error"]["code"], "VALIDATION_ERROR", "{libelle}");
+        let message = body["error"]["message"].as_str().unwrap_or_default();
+        for attendu in attendus {
+            assert!(
+                message.contains(attendu),
+                "{libelle} : « {attendu} » absent de « {message} »"
+            );
+        }
+        assert_eq!(
+            companies_snapshot(&pool).await,
+            avant,
+            "{libelle} : rien d'écrit"
+        );
+        assert_eq!(step_completed(&app, &token).await, 5, "{libelle}");
+    }
+}
+
+/// AC6 (filet : ces noms étaient déjà acceptés) — un nom de 70 caractères portant
+/// « & », « é » et « ’ » (U+2019), entouré d'espaces, est accepté et enregistré
+/// **rogné**. Les caractères multi-octets en font aussi la preuve d'un compte en
+/// caractères, non en octets.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn coordinates_accepts_a_70_character_name_and_trims_it_1226(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    create_test_company(&pool).await;
+    ensure_admin_user(&pool, &test_config()).await.unwrap();
+    let token = login(&app).await;
+    advance_to_step_5(&app, &token).await;
+
+    let debut = "Démo & Fils l\u{2019}Atelier ";
+    let nom = format!("{debut}{}", "x".repeat(70 - debut.chars().count()));
+    assert_eq!(nom.chars().count(), 70, "montage");
+    let (status, body) = post_coordinates(
+        &app,
+        &token,
+        json!({ "name": format!("  {nom}  "), "address": adresse_valide(), "ideNumber": null }),
+    )
+    .await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["stepCompleted"], 6);
+    let lignes = companies_snapshot(&pool).await;
+    assert_eq!(lignes.len(), 1);
+    assert_eq!(lignes[0].0, nom, "nom enregistré rogné, entier");
+}
+
+/// AC7 — une rue ou une localité portant un caractère que la QR-facture n'admet
+/// pas est refusée à l'assistant, le champ et le caractère nommés, sans rien
+/// écrire (le défaut de #1097, pour l'adresse).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn coordinates_rejects_an_address_character_the_qr_bill_refuses_1226(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    create_test_company(&pool).await;
+    ensure_admin_user(&pool, &test_config()).await.unwrap();
+    let token = login(&app).await;
+    advance_to_step_5(&app, &token).await;
+    let avant = companies_snapshot(&pool).await;
+
+    let cas = [
+        (
+            "rue",
+            json!({"street":"Rue de l\u{02BC}Église","building":"1","postalCode":"1000","city":"Lausanne","country":"CH"}),
+            "U+02BC",
+        ),
+        (
+            "localité",
+            json!({"street":"Rue Test","building":"1","postalCode":"1000","city":"Lausanne 张","country":"CH"}),
+            "U+5F20",
+        ),
+    ];
+    for (champ, adresse, point) in cas {
+        let (status, body) = post_coordinates(
+            &app,
+            &token,
+            json!({ "name": "Démo SA", "address": adresse, "ideNumber": null }),
+        )
+        .await;
+        assert_eq!(status, 400, "{champ} : {body}");
+        assert_eq!(body["error"]["code"], "VALIDATION_ERROR", "{champ}");
+        let message = body["error"]["message"].as_str().unwrap_or_default();
+        assert!(
+            message.contains(&format!("le champ {champ} contient un caractère")),
+            "{champ} : {message}"
+        );
+        assert!(message.contains(point), "{champ} : {message}");
+        assert_eq!(
+            companies_snapshot(&pool).await,
+            avant,
+            "{champ} : rien d'écrit"
+        );
+        assert_eq!(step_completed(&app, &token).await, 5, "{champ}");
+    }
+}
+
+/// AC9 d (non-régression, ne rougit pas) — une société déjà configurée ne repasse
+/// pas par l'assistant : l'étape 5 franchie, le même `POST` valide rend le refus
+/// d'étape existant et la société reste inchangée.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn coordinates_after_step_5_leave_the_company_unchanged_1226(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    create_test_company(&pool).await;
+    ensure_admin_user(&pool, &test_config()).await.unwrap();
+    let token = login(&app).await;
+    advance_to_step_5(&app, &token).await;
+    let (status, body) = post_coordinates(
+        &app,
+        &token,
+        json!({ "name": "Démo SA", "address": adresse_valide(), "ideNumber": null }),
+    )
+    .await;
+    assert_eq!(status, 200, "{body}");
+    let configuree = companies_snapshot(&pool).await;
+
+    let (status, body) = post_coordinates(
+        &app,
+        &token,
+        json!({ "name": "Autre Démo SA", "address": adresse_valide(), "ideNumber": null }),
+    )
+    .await;
+    assert_eq!(status, 400, "{body}");
+    assert_eq!(body["error"]["code"], "ONBOARDING_STEP_ALREADY_COMPLETED");
+    assert_eq!(companies_snapshot(&pool).await, configuree);
+    assert_eq!(step_completed(&app, &token).await, 6);
+}
