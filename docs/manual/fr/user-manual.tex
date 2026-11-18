@@ -474,11 +474,13 @@ compte sous un compte de groupe, ou le remet à la racine (\emph{Aucun}) --- uti
 structure d'un ancien bilan sur les comptes du plan livré, même s'ils portent déjà des écritures.
 Seule la hiérarchie change : le compte garde son type, ses écritures et son solde. Comme à la
 création, le compte de groupe choisi devient \textbf{non postable} (compte de regroupement)~;
-l'ancien parent garde son état, et redevient postable si vous cochez \textbf{Postable} une fois
-qu'il n'a plus de sous-compte actif. Le champ ne propose ni le compte lui-même ni ses
-sous-comptes~: un compte ne se range pas sous lui-même. Kesh refuse aussi, comme à la création,
-un parent archivé, un compte de différence de change et un compte en devise qui porte des
-écritures --- le message dit lequel.
+c'est pourquoi il ne doit porter \textbf{aucune écriture} --- son solde ne se corrigerait plus.
+L'ancien parent garde son état, et redevient postable si vous cochez \textbf{Postable} une fois
+qu'il n'a plus de sous-compte actif. Le champ ne propose ni le compte lui-même, ni ses
+sous-comptes (un compte ne se range pas sous lui-même), ni les comptes qui portent des écritures.
+Kesh refuse aussi, comme à la création, un parent archivé et un compte de différence de change
+--- le message dit lequel. (À la \emph{création} d'un compte, un parent qui porte des écritures
+est encore accepté~: créez plutôt vos comptes de groupe sans écriture.)
 
 \begin{keshwarning}
 \textbf{Changer le type d'un compte qui porte des écritures reclasse tout son historique.} Le type — Actif, Passif, Produit, Charge — ne décrit pas seulement le compte : c'est lui qui décide dans quel état ses montants apparaissent. Les rapports le lisent \textbf{au moment où vous les demandez}, jamais au moment où l'écriture a été passée.

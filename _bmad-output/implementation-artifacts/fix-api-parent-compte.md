@@ -29,7 +29,8 @@ sans parent ; l'`UPDATE` de `accounts::update` n'écrit pas `parent_id` ; commen
    account not found » ; archivé → `400` « parent account is archived » (mêmes réponses que `POST /accounts`, par la
    même fonction) ; compte de différence de change (de la société ou propre) → `409 ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT` ;
    compte de bilan en devise qui porte des écritures → `409 ACCOUNT_FOREIGN_PARENT_HAS_ENTRIES` ; l'un des comptes
-   propres résultants du compte → `400 FX_ACCOUNT_INVALID` `notPostable`. La création n'exige aucune compatibilité de
+   propres résultants du compte → `400 FX_ACCOUNT_INVALID` `notPostable`. **Plus strict que la création** (revue
+   P1-2, décision de Beat) : tout autre parent qui porte des écritures → `409 ACCOUNT_PARENT_HAS_ENTRIES`. La création n'exige aucune compatibilité de
    type entre parent et enfant : la modification non plus.
 3. **AC-3 — Cycle.** Le compte lui-même, ou l'un de ses sous-comptes à tout niveau → `409 ACCOUNT_PARENT_CYCLE`
    (message traduit dans les quatre locales, qui nomme le parent demandé). Rien n'est écrit.
@@ -40,7 +41,8 @@ sans parent ; l'`UPDATE` de `accounts::update` n'écrit pas `parent_id` ; commen
    version) ; l'ancien garde son état. Le compte déplacé garde type, postabilité, écritures et solde. Audit
    `account.updated`, `parentId` dans `before` et `after`.
 6. **AC-6 — Écran.** *Modifier le compte* propose le champ **Compte parent (optionnel)**, comme la création, sans le
-   compte ni ses sous-comptes ; le champ ne part que s'il change.
+   compte ni ses sous-comptes, ni les comptes qui portent des écritures (parent actuel excepté) ; le champ ne part que
+   s'il change ; un refus s'affiche dans le dialogue. Un E2E Playwright le traverse (revue P1-3).
 7. **AC-7 — Rien ne casse ailleurs** (vérifié au code) : rapports, export, sauvegarde, MCP.
 8. **AC-8 — Documentation.** `docs/api-external.md` (changement additif, code d'erreur au tableau),
    `docs/MULTI-TENANT-SCOPING-PATTERNS.md` (ordre des verrous), manuel utilisateur FR (`.tex` seulement).
@@ -57,6 +59,8 @@ sans parent ; l'`UPDATE` de `accounts::update` n'écrit pas `parent_id` ; commen
 - **Réévaluation de fin d'exercice (Story 37-5)** : sa garde « un compte en devise mouvementé ne reçoit pas de
   sous-compte » reposait sur l'absence de reparentage (fiche 37-5, revue P4) ; elle est rejouée au changement de
   parent (`refuse_foreign_parent_with_entries_in_tx`).
+- **Le parent mouvementé** (revue P1-2) : refusé au `PUT` ; la création l'accepte encore (écart tracé, A-1 de
+  `kesh-gate-logs/issues-a-ouvrir-fixes.md`).
 - **Postabilité** : `effective_postable` (compte à sous-comptes actifs non imputable) est inchangé ; un ancien parent
   sans plus de sous-compte actif redevient imputable par un `PUT` (comme après l'archivage de son dernier enfant).
 
@@ -114,6 +118,27 @@ sans parent ; l'`UPDATE` de `accounts::update` n'écrit pas `parent_id` ; commen
   `parentFieldForUpdate` ; commentaire d'`accounts::create` (« `parent_id` immuable ») corrigé ; `sitesTotal` de la
   garde i18n relevé par la garde, 3388 → 3392 (`front-test-unit-1-rouge-sitesTotal.log`). Dernier commit de code.
 
+### Revue de code P1 (Opus 5.5, trois lentilles en un rapport, `kesh-gate-logs/fix-api-parent-compte/revue-p1.md`)
+
+- Trend : **P1 : 0 CRITICAL, 0 HIGH, 3 MEDIUM, 5 LOW.** Chaque prémisse vérifiée au code avant remédiation.
+- **P1-1** (MEDIUM, vérifié : `grep` — la doc d'`update` coiffait `guard_parent_change_in_tx`, `update` sans doc) :
+  le garde déplacé avant la doc d'`update`.
+- **P1-2** (MEDIUM, décision de Beat) : refus `409 ACCOUNT_PARENT_HAS_ENTRIES` d'un parent qui porte des écritures
+  (`DbError::AccountParentHasEntries`, `has_journal_line_locked` sous le `FOR UPDATE` du parent, après le refus propre
+  à la devise) ; clé `error-account-parent-has-entries` (quatre locales) ; `api-external.md`, manuel ; écran :
+  `parentCandidates` écarte en modification les comptes `currencyLocked` (vérifié au code : `currency_locked_account_ids`
+  = au moins une ligne d'écriture, sans condition de devise), sauf le parent actuel ; le refus s'affiche dans le
+  dialogue (`editError = err.message`). Création inchangée : issue A-1.
+- **P1-3** (MEDIUM) : cas Playwright « ranger un compte sous un groupe, puis le remettre à la racine »
+  (`accounts.spec.ts`).
+- **P1-4** (LOW, vérifié : `fx_designations_of_in_tx` lit les désignations en base, compte lui-même compris) :
+  `fx_designations_excluding_in_tx` écarte celles du compte déplacé, jugées sur l'état après le `PUT` (étape 5) ;
+  `fx_designations_of_in_tx` en devient l'enveloppe (`exclude_holder = 0`). Test
+  `sous_son_ancien_compte_propre_retire_dans_le_meme_put` (accepté seul détenteur ; refusé si d'autres désignent).
+- **P1-5, P1-8** (LOW) : issues A-2, A-3 à ouvrir. **P1-6** (LOW) : manuel aligné sur le code. **P1-7** (LOW) :
+  commentaire replié.
+- La remédiation touche la production : passe P2 ciblée requise (`revue-p2-ciblee-prompt.md`).
+
 ## Notes de version
 
 *(Texte prêt à assembler au `CHANGELOG.md` à la release ; la fiche n'écrit jamais au `CHANGELOG.md`.)*
@@ -121,8 +146,8 @@ sans parent ; l'`UPDATE` de `accounts::update` n'écrit pas `parent_id` ; commen
 - **Fixed** — Plan comptable : le **compte parent** d'un compte se change après sa création, par *Modifier le compte*
   et par `PUT /api/v1/accounts/{id}` (`parentId` : absent = inchangé, `null` = racine) — les comptes du plan livré, ou
   qui portent déjà des écritures, se rangent sous des comptes de groupe. Mêmes contrôles qu'à la création, et un compte
-  ne se range ni sous lui-même ni sous l'un de ses sous-comptes (`409 ACCOUNT_PARENT_CYCLE`). Changement de contrat
-  additif.
+  ne se range ni sous lui-même ni sous l'un de ses sous-comptes (`409 ACCOUNT_PARENT_CYCLE`), ni sous un compte qui
+  porte des écritures (`409 ACCOUNT_PARENT_HAS_ENTRIES`). Changement de contrat additif.
 
 ## Dev Agent Record
 
