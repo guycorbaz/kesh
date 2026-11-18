@@ -541,8 +541,9 @@
 	}
 
 	// Story 33-5 (#909) — corriger l'adresse après l'assistant, sur le patron des
-	// deux éditions ci-dessus. Le pays reste un champ libre de deux lettres, comme
-	// aux contacts : le serveur juge, l'écran affiche son message.
+	// deux éditions ci-dessus. Le pays est un champ libre (Story 48-13, #1243 : sans
+	// `maxlength`) ; le serveur juge la forme (deux lettres) et le code, l'écran
+	// affiche son message et garde la saisie.
 	/** Adresse vide d'une édition pas encore ouverte : le pays par défaut du serveur. */
 	function emptyAddress(): Record<(typeof ADDRESS_FIELDS)[number], string> {
 		return { street: '', building: '', postalCode: '', city: '', country: 'CH' };

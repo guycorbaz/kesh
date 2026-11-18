@@ -1159,12 +1159,13 @@ async fn step_completed(app: &TestApp, token: &str) -> serde_json::Value {
 }
 
 /// AC6 — un nom que la QR-facture refuserait est refusé à l'assistant, en
-/// `400 VALIDATION_ERROR`, sans rien écrire : plus de 70 caractères (le message
-/// dit `70` et le nombre saisi), un caractère hors du jeu (nommé avec son point
-/// de code), le seul U+00AD (« obligatoire »), et un « prénom nom » composé
-/// au-delà de 70 caractères (c'est le nom composé qui part au PDF).
-#[sqlx::test(migrations = "../kesh-db/test-schema")]
-async fn coordinates_rejects_a_name_the_qr_bill_refuses_1226(pool: MySqlPool) {
+/// `400 VALIDATION_ERROR`, sans rien écrire (société inchangée, étape toujours
+/// à 5), et le message contient chacun des `attendus`.
+///
+/// Un cas par test, chacun sur sa base (revue P1, E7) : un cas accepté à tort
+/// franchirait l'étape et fausserait le cas suivant ; ainsi une mutation montre
+/// chaque cas rouge pour sa propre raison.
+async fn assert_name_refused(pool: MySqlPool, corps: serde_json::Value, attendus: &[&str]) {
     let app = spawn_app(pool.clone()).await;
     create_test_company(&pool).await;
     ensure_admin_user(&pool, &test_config()).await.unwrap();
@@ -1172,52 +1173,70 @@ async fn coordinates_rejects_a_name_the_qr_bill_refuses_1226(pool: MySqlPool) {
     advance_to_step_5(&app, &token).await;
     let avant = companies_snapshot(&pool).await;
 
-    let cas: [(&str, serde_json::Value, &[&str]); 4] = [
-        (
-            "71 caractères",
-            json!({ "name": "N".repeat(71), "address": adresse_valide(), "ideNumber": null }),
-            &["70", "(71)"],
-        ),
-        (
-            "caractère hors du jeu",
-            json!({ "name": "Démo 张 SA", "address": adresse_valide(), "ideNumber": null }),
-            &["张", "U+5F20"],
-        ),
-        (
-            "U+00AD seul",
-            json!({ "name": "\u{00AD}", "address": adresse_valide(), "ideNumber": null }),
-            &["obligatoire"],
-        ),
-        (
-            "prénom + nom composés au-delà de 70",
-            json!({
-                "name": "",
-                "firstName": "P".repeat(35),
-                "lastName": "F".repeat(35),
-                "address": adresse_valide(),
-                "ideNumber": null
-            }),
-            &["70", "(71)"],
-        ),
-    ];
-    for (libelle, corps, attendus) in cas {
-        let (status, body) = post_coordinates(&app, &token, corps).await;
-        assert_eq!(status, 400, "{libelle} : {body}");
-        assert_eq!(body["error"]["code"], "VALIDATION_ERROR", "{libelle}");
-        let message = body["error"]["message"].as_str().unwrap_or_default();
-        for attendu in attendus {
-            assert!(
-                message.contains(attendu),
-                "{libelle} : « {attendu} » absent de « {message} »"
-            );
-        }
-        assert_eq!(
-            companies_snapshot(&pool).await,
-            avant,
-            "{libelle} : rien d'écrit"
+    let (status, body) = post_coordinates(&app, &token, corps).await;
+    assert_eq!(status, 400, "{body}");
+    assert_eq!(body["error"]["code"], "VALIDATION_ERROR");
+    let message = body["error"]["message"].as_str().unwrap_or_default();
+    for attendu in attendus {
+        assert!(
+            message.contains(attendu),
+            "« {attendu} » absent de « {message} »"
         );
-        assert_eq!(step_completed(&app, &token).await, 5, "{libelle}");
     }
+    assert_eq!(companies_snapshot(&pool).await, avant, "rien d'écrit");
+    assert_eq!(step_completed(&app, &token).await, 5);
+}
+
+/// AC6, D5 — un « prénom nom » composé au-delà de 70 caractères est refusé :
+/// c'est le nom **composé**, celui qui part au PDF, qui est jugé (chaque moitié
+/// fait 35 caractères, le nom composé 71 avec l'espace).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn coordinates_rejects_a_composed_name_over_70_1226(pool: MySqlPool) {
+    assert_name_refused(
+        pool,
+        json!({
+            "name": "",
+            "firstName": "P".repeat(35),
+            "lastName": "F".repeat(35),
+            "address": adresse_valide(),
+            "ideNumber": null
+        }),
+        &["70", "(71)"],
+    )
+    .await;
+}
+
+/// AC6 — un nom de 71 caractères : le message dit `70` et le nombre saisi.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn coordinates_rejects_a_71_character_name_1226(pool: MySqlPool) {
+    assert_name_refused(
+        pool,
+        json!({ "name": "N".repeat(71), "address": adresse_valide(), "ideNumber": null }),
+        &["70", "(71)"],
+    )
+    .await;
+}
+
+/// AC6 — un caractère hors du jeu de la QR-facture, nommé avec son point de code.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn coordinates_rejects_a_name_character_the_qr_bill_refuses_1226(pool: MySqlPool) {
+    assert_name_refused(
+        pool,
+        json!({ "name": "Démo 张 SA", "address": adresse_valide(), "ideNumber": null }),
+        &["张", "U+5F20"],
+    )
+    .await;
+}
+
+/// AC6 — un nom fait du seul U+00AD est vide au sens de la QR-facture.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn coordinates_rejects_a_soft_hyphen_only_name_1226(pool: MySqlPool) {
+    assert_name_refused(
+        pool,
+        json!({ "name": "\u{00AD}", "address": adresse_valide(), "ideNumber": null }),
+        &["obligatoire"],
+    )
+    .await;
 }
 
 /// AC6 (filet : ces noms étaient déjà acceptés) — un nom de 70 caractères portant

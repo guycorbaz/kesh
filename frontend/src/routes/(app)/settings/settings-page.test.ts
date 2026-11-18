@@ -1623,22 +1623,39 @@ describe('page Paramètres — un texte trop long n’est plus coupé (Story 48-
 		expect((getByTestId('settings-company-address-country-input') as HTMLInputElement).value).toBe('Suisse');
 	});
 
-	it('AC4 — un téléphone trop long part entier ; le refus du serveur s’affiche, la saisie reste', async () => {
-		const long = `+41 ${'1'.repeat(60)}`;
-		updateCompanyContactDetailsMock.mockRejectedValueOnce({
-			code: 'VALIDATION_ERROR',
-			message: 'Le téléphone dépasse 50 caractères',
-			status: 400,
-		});
-		const { findByTestId, getByTestId } = render(Page);
-		await fireEvent.click(await findByTestId('settings-company-contact-edit'));
-		await saisir(getByTestId, 'settings-company-phone-input', long);
-		await fireEvent.click(getByTestId('settings-company-contact-save'));
+	// Revue P1 (A3, B3) : les messages simulés sont ceux que le serveur rend
+	// (`error-company-phone-too-long`, `error-company-website-too-long`,
+	// `crates/kesh-i18n/locales/fr-CH/messages.ftl`) : ils disent le maximum.
+	const CAS_CONTACT = [
+		{
+			champ: 'phone',
+			valeur: `+41 ${'1'.repeat(60)}`,
+			message: 'Le numéro de téléphone de la société est trop long (50 caractères au plus).',
+		},
+		{
+			champ: 'website',
+			valeur: `https://${'w'.repeat(250)}.ch`,
+			message: "L'adresse du site web de la société est trop longue (255 caractères au plus).",
+		},
+	] as const;
 
-		expect((await findByTestId('settings-company-contact-error')).textContent).toContain('50');
-		expect(updateCompanyContactDetailsMock).toHaveBeenCalledWith(
-			expect.objectContaining({ phone: long }),
-		);
-		expect((getByTestId('settings-company-phone-input') as HTMLInputElement).value).toBe(long);
-	});
+	for (const { champ, valeur, message } of CAS_CONTACT) {
+		it(`AC4 — ${champ} trop long : part entier ; le refus du serveur (avec le maximum) s’affiche, la saisie reste`, async () => {
+			updateCompanyContactDetailsMock.mockRejectedValueOnce({
+				code: 'VALIDATION_ERROR',
+				message,
+				status: 400,
+			});
+			const { findByTestId, getByTestId } = render(Page);
+			await fireEvent.click(await findByTestId('settings-company-contact-edit'));
+			await saisir(getByTestId, `settings-company-${champ}-input`, valeur);
+			await fireEvent.click(getByTestId('settings-company-contact-save'));
+
+			expect((await findByTestId('settings-company-contact-error')).textContent?.trim()).toBe(message);
+			expect(updateCompanyContactDetailsMock).toHaveBeenCalledWith(
+				expect.objectContaining({ [champ]: valeur }),
+			);
+			expect((getByTestId(`settings-company-${champ}-input`) as HTMLInputElement).value).toBe(valeur);
+		});
+	}
 });

@@ -87,8 +87,9 @@ test('un client choisi avant la fin du chargement du client d’origine n’est 
 
 	const reponse = page.waitForResponse((r) => new URL(r.url()).pathname === cheminOrigine);
 	liberer();
-	await reponse;
-	// La réponse a été traitée par la page (sa promesse s'est résolue) : un tour de tâches.
+	// Revue P1 (E8) : `waitForResponse` se résout aux en-têtes ; on attend aussi la fin
+	// du corps, que `getContact` lit, puis un tour de tâches dans la page.
+	await (await reponse).finished();
 	await page.evaluate(() => new Promise((r) => setTimeout(r, 100)));
 	await expect(champ).toHaveValue(choisi);
 

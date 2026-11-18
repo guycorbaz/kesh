@@ -1615,7 +1615,10 @@ describe('InvoiceForm — le client choisi n’est plus écrasé par un chargeme
 		await settle();
 		const champ = container.querySelector('input[role="combobox"]') as HTMLInputElement;
 		expect(champ.value).toBe('Client');
-		const total = container.querySelector('tfoot')?.textContent ?? '';
+		// Revue P1 (A2) : le total affiché est celui du brouillon chargé (2 × 100.00),
+		// non le total comparé à lui-même.
+		const total = () => container.querySelector('tfoot')?.textContent ?? '';
+		expect(total()).toContain('200.00');
 
 		await fireEvent.click(getByTestId('create-invoice-button'));
 		await settle();
@@ -1647,6 +1650,6 @@ describe('InvoiceForm — le client choisi n’est plus écrasé par un chargeme
 				],
 			},
 		]);
-		expect(container.querySelector('tfoot')?.textContent ?? '').toBe(total);
+		expect(total()).toContain('200.00');
 	});
 });
