@@ -137,6 +137,15 @@ sans parent ; l'`UPDATE` de `accounts::update` n'écrit pas `parent_id` ; commen
   `sous_son_ancien_compte_propre_retire_dans_le_meme_put` (accepté seul détenteur ; refusé si d'autres désignent).
 - **P1-5, P1-8** (LOW) : issues A-2, A-3 à ouvrir. **P1-6** (LOW) : manuel aligné sur le code. **P1-7** (LOW) :
   commentaire replié.
+- Commits : `4241e6b7` (code et tests), `2be85cf4` (docs), `3e1bfbb0` (sélecteur E2E « Aucun » par `data-testid`,
+  relevé par la garde KF-043 `e2e-selecteurs-traduits.test.ts` — **dernier commit de code**).
+- Gate ciblé de la remédiation (sous `heavy.sh` et `mem-guard`) : fmt et clippy verts ; nextest ciblé, mêmes 31
+  binaires qu'au gate précédent, au commit `4241e6b7` (le suivant ne touche pas le Rust) : **2027 passés, 6 ignorés**
+  (`cible-nextest.log`) ; frontend à `3e1bfbb0` : `check` 0 erreur, `lint-i18n-ownership`, `test:unit` **4359 tests
+  (271 fichiers)**, `build` ; E2E ciblé `accounts.spec.ts` + `smoke.spec.ts` : **14 passés**, dont le cas neuf
+  (`e2e-cible.log`). Premier passage Vitest rouge sur la garde KF-043 (« Aucun » visé par libellé :
+  `front-test-unit-r1.log`), corrigé par `3e1bfbb0`. Captures non reprises : le dialogue ne change que par le filtre
+  des candidats et un `data-testid`. **Gate complet groupé à venir.**
 - La remédiation touche la production : passe P2 ciblée requise (`revue-p2-ciblee-prompt.md`).
 
 ## Notes de version
