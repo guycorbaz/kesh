@@ -374,10 +374,17 @@ mod tests {
     /// `error-designated-account-not-postable` (Story 15-5d, choix C28/C36) l'est
     /// par le bras `DbError::DesignatedAccountsNotPostable`, par le même helper
     /// (`account_not_postable_response`) et les mêmes arguments.
+    ///
+    /// `error-project-reassignment-closed-period` (Story 36-16a, #1167) l'est par
+    /// `closed_period_response` de `kesh-api/src/errors.rs`, via `t_args` avec
+    /// `entryCount` (nombre Fluent) : le dialogue partagé affiche `err.message` ou
+    /// ses propres clés plates (`projects-reassign-warning-entries-one|-other`),
+    /// jamais cette clé.
     const SELECTEURS_RESOLUS_COTE_SERVEUR: &[&str] = &[
         "contact-payment-terms-days-label",
         "error-account-not-postable",
         "error-designated-account-not-postable",
+        "error-project-reassignment-closed-period",
     ];
 
     /// Les clés d'un `.ftl` dont la valeur contient une expression **`select`**.

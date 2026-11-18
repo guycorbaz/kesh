@@ -621,7 +621,7 @@ pub(crate) fn refus_pdf(cause: &CauseRefusPdf) -> RefusPdf {
                 "creditor.name" => (
                     "invoice-pdf-error-charset-company-name",
                     format!(
-                        "Le nom de l'entreprise contient un caractère refusé par la QR-facture : « {car} » ({point}). Le nom de l'entreprise ne se modifie pas encore depuis l'interface."
+                        "Le nom de l'entreprise contient un caractère refusé par la QR-facture : « {car} » ({point}). Corrigez-le dans Paramètres → Organisation."
                     ),
                 ),
                 "creditor.line1" => (
@@ -701,7 +701,7 @@ pub(crate) fn refus_pdf(cause: &CauseRefusPdf) -> RefusPdf {
         C::ChampVide { champ } => match *champ {
             "creditor.name" => sans_argument(
                 "invoice-pdf-error-empty-company-name",
-                "Le nom de l'entreprise est vide. Il ne se modifie pas encore depuis l'interface.",
+                "Le nom de l'entreprise est vide. Complétez-le dans Paramètres → Organisation.",
             ),
             "creditor.postal_code" => sans_argument(
                 "invoice-pdf-error-empty-company-postal-code",
@@ -734,7 +734,7 @@ pub(crate) fn refus_pdf(cause: &CauseRefusPdf) -> RefusPdf {
                 "creditor.name" => (
                     "invoice-pdf-error-too-long-company-name",
                     format!(
-                        "Le nom de l'entreprise dépasse {max} caractères ({got}). Il ne se modifie pas encore depuis l'interface."
+                        "Le nom de l'entreprise dépasse {max} caractères ({got}). Raccourcissez-le dans Paramètres → Organisation."
                     ),
                 ),
                 "creditor.line1" => (
@@ -1735,13 +1735,14 @@ mod tests {
                         r.cle
                     );
                 }
-                // Revue de code P1 (B1/E2) — le nom de l'entreprise ne se modifie
-                // pas depuis l'interface : aucune phrase n'y renvoie à l'écran
-                // Organisation, où il ne s'édite pas.
+                // Story v0190-nom-societe (#1097, D6) — le nom de l'entreprise se
+                // corrige dans Paramètres → Organisation : chaque phrase y renvoie,
+                // comme celles de l'adresse. (Jusqu'à la 0.18.0, la garde exigeait
+                // le contraire : le nom ne s'y éditait pas.)
                 if r.cle.ends_with("-company-name") {
                     assert!(
-                        !texte.contains("Organi"),
-                        "{locale:?} : {} renvoie à un écran où le nom ne se modifie pas : {texte}",
+                        texte.contains("Organi"),
+                        "{locale:?} : {} ne renvoie pas à l'écran où le nom se corrige : {texte}",
                         r.cle
                     );
                 }

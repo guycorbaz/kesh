@@ -45,6 +45,11 @@ pub struct InvoiceSettlement {
     /// vatAmount}]`, `[]` sans TVA —, renseignée ssi `settlement_type =
     /// 'write_off'` (Story 25-4-d2a ; lue par le rapport TVA, d2c).
     pub write_off_vat: Option<serde_json::Value>,
+    /// La ligne de **créance** de l'écriture qui porte CE règlement, quand
+    /// l'écriture en règle plusieurs (règlement groupé, Story 43-1a, #823) ;
+    /// `None` pour un règlement unitaire — le lettrage prend alors toutes les
+    /// lignes du compte de tiers de l'écriture, la règle d'avant.
+    pub journal_entry_line_id: Option<i64>,
     pub created_at: NaiveDateTime,
 }
 
@@ -54,6 +59,9 @@ pub struct NewInvoiceSettlement {
     pub company_id: i64,
     pub invoice_id: i64,
     pub journal_entry_id: i64,
+    /// La ligne de créance de ce règlement dans une écriture groupée (Story
+    /// 43-1a) ; `None` pour un règlement unitaire.
+    pub journal_entry_line_id: Option<i64>,
     pub amount: Decimal,
     pub settled_on: NaiveDate,
     /// Le MODE, et sa contrepartie. Story 24-3 (#372).

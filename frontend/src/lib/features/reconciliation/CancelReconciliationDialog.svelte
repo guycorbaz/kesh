@@ -30,10 +30,19 @@
 		ReconciliationTransactionResponse,
 	} from './reconciliation.types';
 	import {
+		groupedCancelBlockedMessage,
 		isReconciliationCancelCode,
 		reconciliationCancelErrorMessage,
 		reconciliationCancelMessage,
 	} from './reconciliation-cancel';
+	import type { GroupedPieceRef } from './reconciliation.types';
+	import { displayDue, parseUnits } from './group-settlement';
+	import { gapSenseLabel } from './gap-label';
+
+	/** Story 43-3 — le numéro d'une facture d'un groupe, `#id` à défaut. */
+	function pieceLabel(p: GroupedPieceRef): string {
+		return p.number !== null && p.number.trim() !== '' ? p.number : `#${p.id}`;
+	}
 
 	type Props = {
 		bankTransactionId: number;
@@ -73,9 +82,48 @@
 	const motif = $derived.by(() => {
 		const code = view?.cancelBlockedBy;
 		if (!view || view.cancellable || !code) return null;
-		return isReconciliationCancelCode(code)
-			? reconciliationCancelMessage(code, view.cancelBlockedLabel)
-			: code;
+		if (!isReconciliationCancelCode(code)) return code;
+		// Story 43-3 (#823, AC5) — un refus par facture d'un règlement groupé nomme la facture.
+		const blockedInvoice = view.kind === 'grouped_settlement' ? view.cancelBlockedInvoice : null;
+		if (blockedInvoice) {
+			const grouped = groupedCancelBlockedMessage(code, pieceLabel(blockedInvoice));
+			if (grouped !== null) return grouped;
+		}
+		return reconciliationCancelMessage(code, view.cancelBlockedLabel);
+	});
+
+	/** Story 43-3 (#823, AC5) — les factures d'un règlement groupé, que l'annulation rouvrira. */
+	const groupedInvoices = $derived(
+		view?.kind === 'grouped_settlement' ? (view.groupedInvoices ?? []) : [],
+	);
+
+	/**
+	 * Story 43-3 — l'écart du groupe et son compte, tels que le serveur les rend (`gap`,
+	 * `differenceAccount`, recalculés par la 43-2), l'écart dit avec son **sens**, comme dans la
+	 * modale (revue P1, A L-2, E-L11) ; annoncé même si son compte n'a pas pu être relu ; rien si
+	 * l'écart est nul ou illisible.
+	 */
+	const groupGapText = $derived.by(() => {
+		if (view?.kind !== 'grouped_settlement') return null;
+		const gap = parseUnits(view.gap ?? null);
+		if (gap === null || gap === 0n) return null;
+		const family = (view.groupedInvoices ?? []).some((g) => g.kind === 'supplier_invoice')
+			? 'supplier'
+			: 'client';
+		const label = gapSenseLabel(family, gap);
+		const account = view.differenceAccount ?? null;
+		if (account === null) {
+			return i18nMsg(
+				'reconciliation-cancel-confirm-group-gap-no-account',
+				'{ $gap } sera contre-passé avec l’écriture.',
+				{ gap: label },
+			);
+		}
+		return i18nMsg(
+			'reconciliation-cancel-confirm-group-gap',
+			'{ $gap }, passé au compte { $account }, sera contre-passé avec l’écriture.',
+			{ gap: label, account: `${account.number} ${account.name}` },
+		);
 	});
 
 	const confirmText = $derived.by(() => {
@@ -108,6 +156,23 @@
 						supplierInvoiceNumber: view.supplierInvoiceNumber,
 					}),
 				},
+			);
+		}
+		// Story 43-3 (#823, AC5) — un règlement groupé : ses N factures redeviennent ouvertes.
+		if (view?.kind === 'grouped_settlement') {
+			const invoices = (view.groupedInvoices ?? []).map(pieceLabel).join(', ');
+			// D6 — un groupe fournisseur : le paiement est retiré, les factures redeviennent validées.
+			if ((view.groupedInvoices ?? []).some((g) => g.kind === 'supplier_invoice')) {
+				return i18nMsg(
+					'reconciliation-cancel-confirm-group-supplier',
+					"Une écriture inverse datée d'aujourd'hui sera passée, le paiement des factures fournisseur { $invoices } sera retiré et elles redeviendront validées, à payer ; la transaction redeviendra à rapprocher.",
+					{ invoices },
+				);
+			}
+			return i18nMsg(
+				'reconciliation-cancel-confirm-group',
+				"Une écriture inverse datée d'aujourd'hui sera passée, le règlement des factures { $invoices } sera retiré et elles redeviendront à régler ; la transaction redeviendra à rapprocher.",
+				{ invoices },
 			);
 		}
 		return i18nMsg(
@@ -156,6 +221,19 @@
 			<p class="text-sm" data-testid="reconciliation-cancel-motif">{motif}</p>
 		{:else if view}
 			<p class="text-sm" data-testid="reconciliation-cancel-confirm-text">{confirmText}</p>
+			{#if groupedInvoices.length > 0}
+				<!-- Story 43-3 (#823, AC5) — les N factures que l'annulation rouvrira, montant brut. -->
+				<ul class="list-disc pl-6 text-sm" data-testid="reconciliation-cancel-group-invoices">
+					{#each groupedInvoices as g (`${g.kind}-${g.id}`)}
+						<li data-testid="reconciliation-cancel-group-invoice" data-invoice-id={g.id}>
+							{pieceLabel(g)} — {displayDue(g.amount)}
+						</li>
+					{/each}
+				</ul>
+			{/if}
+			{#if groupGapText}
+				<p class="text-sm" data-testid="reconciliation-cancel-group-gap">{groupGapText}</p>
+			{/if}
 		{/if}
 
 		{#if errorMsg}

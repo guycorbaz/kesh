@@ -388,6 +388,47 @@ export async function createManualDebitStatementViaApi(
 	}
 }
 
+/**
+ * Story 43-3 (#823), extrait à la Story 43-6 (DRY : `reconciliation-group.spec.ts` et
+ * `project-reassignment.spec.ts`) — un relevé **saisi à la main** d'une seule ligne de
+ * **crédit** de `amount` (patron de `createManualDebitStatementViaApi`). Rend l'import et
+ * la transaction.
+ */
+export async function createManualCreditStatementViaApi(
+	ctx: APIRequestContext,
+	opts: { bankAccountId: number; bookingDate: string; amount: string; counterpartyName: string; details: string },
+): Promise<{ importId: number; txId: number }> {
+	const [y, m] = opts.bookingDate.split('-');
+	const lastDay = new Date(Date.UTC(Number(y), Number(m), 0)).getUTCDate();
+	const res = await ctx.post('/api/v1/bank-imports/manual', {
+		data: {
+			bankAccountId: opts.bankAccountId,
+			periodFrom: `${y}-${m}-01`,
+			periodTo: `${y}-${m}-${String(lastDay).padStart(2, '0')}`,
+			openingBalance: '0.00',
+			closingBalance: opts.amount,
+			lines: [
+				{
+					bookingDate: opts.bookingDate,
+					details: opts.details,
+					counterpartyName: opts.counterpartyName,
+					amount: opts.amount,
+					direction: 'credit',
+				},
+			],
+			confirmDuplicateFile: true,
+			confirmDuplicateLines: true,
+			confirmOpeningBalanceGap: true,
+		},
+	});
+	expect(res.status(), `relevé : ${await res.text()}`).toBe(201);
+	const importId = ((await res.json()) as { id: number }).id;
+	const detail = (await (await ctx.get(`/api/v1/bank-imports/${importId}`)).json()) as {
+		transactions: Array<{ id: number }>;
+	};
+	return { importId, txId: detail.transactions[0].id };
+}
+
 /** La date du jour à Zurich, `AAAA-MM-JJ` : entre minuit et 2 h, la date UTC est la veille. */
 export function todayInZurich(): string {
 	return new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Zurich' });
@@ -458,6 +499,45 @@ export async function createExpenseEntryViaApi(
 			accountId: expense!.id,
 			accountNumber: expense!.number,
 		};
+	} finally {
+		await disposeContextSafe(ctx);
+	}
+}
+
+/**
+ * Story 43-3 — les deux comptes désignés qui préremplissent le compte de l'écart, et l'arrondi à
+ * 5 centimes des pièces émises (posé par le seed : il ramène le reste dû d'une facture à un
+ * multiple de 5 centimes, et aucun reste à fraction de centime ne se forme).
+ */
+export interface DesignatedAccounts {
+	defaultRoundingAccountId: number | null;
+	defaultBankFeesAccountId: number | null;
+	roundTo5Centimes?: boolean;
+}
+
+/**
+ * Story 43-3 (#823) — désigne le compte de différences d'arrondi et le compte de frais
+ * bancaires (`PUT /company/invoice-settings`, les autres réglages repris tels quels). Rend les
+ * valeurs d'avant, que l'appelant **restaure en `finally`** par un second appel : la base E2E
+ * est partagée entre les specs.
+ */
+export async function setDesignatedAccountsViaApi(
+	page: Page,
+	accounts: DesignatedAccounts,
+): Promise<DesignatedAccounts> {
+	const ctx = await authedApiContext(page);
+	try {
+		const settings = await (await ctx.get('/api/v1/company/invoice-settings')).json();
+		const before: DesignatedAccounts = {
+			defaultRoundingAccountId: settings.defaultRoundingAccountId ?? null,
+			defaultBankFeesAccountId: settings.defaultBankFeesAccountId ?? null,
+			roundTo5Centimes: settings.roundTo5Centimes,
+		};
+		const put = await ctx.put('/api/v1/company/invoice-settings', {
+			data: { ...settings, ...accounts },
+		});
+		expect(put.ok(), `comptes désignés : ${put.status()} ${await put.text()}`).toBeTruthy();
+		return before;
 	} finally {
 		await disposeContextSafe(ctx);
 	}

@@ -1285,6 +1285,82 @@ pub async fn write_off_invoice_handler(
     }))
 }
 
+/// Corps de `POST /api/v1/invoices/{id}/reassign-project` — Story 36-16a (#1167).
+///
+/// `projectId` est **exigé**, `null` compris (retirer le compte analytique) :
+/// un client qui l'oublierait ne doit pas retirer le compte par mégarde.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReassignProjectRequest {
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub project_id: Option<i64>,
+    pub version: i32,
+    /// L'accusé de l'avertissement de période close — n'a d'effet que pour un
+    /// Administrateur en session.
+    #[serde(default)]
+    pub acknowledge_closed_periods: bool,
+}
+
+/// Réponse : la facture à jour (la même qu'un `GET`, version comprise) et les
+/// écritures qui ont changé de compte analytique.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReassignProjectResponse {
+    pub invoice: InvoiceResponse,
+    pub journal_entry_ids: Vec<i64>,
+}
+
+/// `POST /api/v1/invoices/:id/reassign-project` — change le compte analytique
+/// d'une facture client, quel que soit son statut, et de toutes ses écritures
+/// (Story 36-16a, #1167 ; dépôt `project_reassignment::reassign_invoice`).
+///
+/// - Comptable et clé `read-write` en période ouverte. Dans un exercice clos ou
+///   une période verrouillée : **Administrateur en session seulement**, après
+///   l'accusé (`acknowledgeClosedPeriods`) — `403
+///   PROJECT_REASSIGNMENT_CLOSED_PERIOD_ADMIN_ONLY` pour tout autre auteur, clé
+///   d'un Administrateur comprise, comme la réouverture d'un exercice et la levée
+///   du verrou des livres.
+/// - ⚠️ **Rejoué sur interblocage**, comme toute route qui écrit au journal :
+///   le rejeu est sûr grâce à la `version`, qu'une tentative annulée laisse
+///   intacte.
+pub async fn reassign_project_handler(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    Path(id): Path<i64>,
+    Json(req): Json<ReassignProjectRequest>,
+) -> Result<Json<ReassignProjectResponse>, AppError> {
+    let company = get_company_for(&current_user, &state.pool).await?;
+    let acteur = kesh_db::entities::Acteur::from(&current_user);
+    let may_acknowledge =
+        current_user.role == kesh_db::entities::Role::Admin && current_user.api_key_id.is_none();
+    let done = kesh_db::retry::retry_on_deadlock("invoices::reassign_project", || {
+        kesh_db::repositories::project_reassignment::reassign_invoice(
+            &state.pool,
+            acteur,
+            may_acknowledge,
+            company.id,
+            id,
+            req.project_id,
+            req.version,
+            req.acknowledge_closed_periods,
+        )
+    })
+    .await?;
+
+    // Story 33-6 (#450) — aucune relecture : la facture est lue dans la
+    // transaction du geste.
+    let invoice = with_draft_rounding_preview(
+        &state,
+        InvoiceResponse::from_parts(done.invoice, done.lines, state.horloge.aujourd_hui())
+            .with_settlement(done.amount_settled, done.amount_due),
+    )
+    .await?;
+    Ok(Json(ReassignProjectResponse {
+        invoice,
+        journal_entry_ids: done.journal_entry_ids,
+    }))
+}
+
 /// Un règlement d'une facture, tel que l'écran le liste (Story 25-3-a-1, #414).
 ///
 /// ⛔ **`cancellable` et ses trois compagnons sont calculés par la fonction même

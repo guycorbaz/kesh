@@ -3041,6 +3041,10 @@ async fn s34_11b_ac4_annuler_un_cote_puis_l_autre(pool: MySqlPool) {
     let (s, b) = ctx.annuler_rapprochement(credit).await;
     assert_eq!(s, 200, "{b}");
     assert!(b["reversalJournalEntryId"].is_null(), "{b}");
+    // Story 43-2 (revue P1, A6) — un retrait seul dit son genre, que
+    // `invoiceId`/`supplierInvoiceId` (nuls) ne disent pas (C-e432-4).
+    assert_eq!(b["kind"], "entry", "{b}");
+    assert_eq!(b["cancelledInvoices"], json!([]), "{b}");
     assert_eq!(ctx.etat(credit).await, ("pending".to_string(), None));
     assert_eq!(ctx.etat(debit).await, ("reconciled".to_string(), Some(e)));
     assert_eq!(
