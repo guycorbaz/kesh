@@ -388,6 +388,47 @@ export async function createManualDebitStatementViaApi(
 	}
 }
 
+/**
+ * Story 43-3 (#823), extrait à la Story 43-6 (DRY : `reconciliation-group.spec.ts` et
+ * `project-reassignment.spec.ts`) — un relevé **saisi à la main** d'une seule ligne de
+ * **crédit** de `amount` (patron de `createManualDebitStatementViaApi`). Rend l'import et
+ * la transaction.
+ */
+export async function createManualCreditStatementViaApi(
+	ctx: APIRequestContext,
+	opts: { bankAccountId: number; bookingDate: string; amount: string; counterpartyName: string; details: string },
+): Promise<{ importId: number; txId: number }> {
+	const [y, m] = opts.bookingDate.split('-');
+	const lastDay = new Date(Date.UTC(Number(y), Number(m), 0)).getUTCDate();
+	const res = await ctx.post('/api/v1/bank-imports/manual', {
+		data: {
+			bankAccountId: opts.bankAccountId,
+			periodFrom: `${y}-${m}-01`,
+			periodTo: `${y}-${m}-${String(lastDay).padStart(2, '0')}`,
+			openingBalance: '0.00',
+			closingBalance: opts.amount,
+			lines: [
+				{
+					bookingDate: opts.bookingDate,
+					details: opts.details,
+					counterpartyName: opts.counterpartyName,
+					amount: opts.amount,
+					direction: 'credit',
+				},
+			],
+			confirmDuplicateFile: true,
+			confirmDuplicateLines: true,
+			confirmOpeningBalanceGap: true,
+		},
+	});
+	expect(res.status(), `relevé : ${await res.text()}`).toBe(201);
+	const importId = ((await res.json()) as { id: number }).id;
+	const detail = (await (await ctx.get(`/api/v1/bank-imports/${importId}`)).json()) as {
+		transactions: Array<{ id: number }>;
+	};
+	return { importId, txId: detail.transactions[0].id };
+}
+
 /** La date du jour à Zurich, `AAAA-MM-JJ` : entre minuit et 2 h, la date UTC est la veille. */
 export function todayInZurich(): string {
 	return new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Zurich' });

@@ -1577,3 +1577,274 @@ async fn a_missing_project_id_is_refused(pool: MySqlPool) {
     assert!((400..500).contains(&status), "{status}");
     assert_eq!(ctx.invoice(id).await["projectId"], ctx.p);
 }
+
+// ---------------------------------------------------------------------------
+// Story 43-6 (#823, #1167) — une facture réglée en groupe est refusée
+// ---------------------------------------------------------------------------
+
+/// Un groupe client de deux factures de 100.— (43-1a), réglé par une seule
+/// transaction de 200.— acceptée par la route (`type: invoice_group`) : la
+/// facture `a` au compte `pa`, la facture `b` au compte `pb`. Rend `(a, b,
+/// transaction, écriture groupée)`.
+async fn grouped_pair(
+    pool: &MySqlPool,
+    ctx: &Ctx,
+    pa: Option<i64>,
+    pb: Option<i64>,
+) -> (i64, i64, i64, i64) {
+    grouped_pair_after(pool, ctx, pa, pb, None).await
+}
+
+/// [`grouped_pair`], la facture `a` ayant d'abord reçu, depuis sa fiche, un
+/// règlement unitaire de `partial` (écriture propre, ligne non attribuée) : le
+/// groupe ne règle alors que son reste.
+async fn grouped_pair_after(
+    pool: &MySqlPool,
+    ctx: &Ctx,
+    pa: Option<i64>,
+    pb: Option<i64>,
+    partial: Option<Decimal>,
+) -> (i64, i64, i64, i64) {
+    let d = sale_day();
+    let a = ctx.validated(pa, d).await;
+    let b = ctx.validated(pb, d).await;
+    let mut total = dec!(200.00);
+    if let Some(amount) = partial {
+        ctx.settle(a, &amount.to_string(), d + Duration::days(5))
+            .await;
+        total -= amount;
+    }
+    let tx_id = ctx
+        .bank_transaction(pool, a, total, d + Duration::days(10))
+        .await;
+    let body = ctx
+        .post_ok(
+            "/api/v1/reconciliation/accept",
+            json!({
+                "bankAccountId": ctx.bank_account_id,
+                "proposals": [{ "type": "invoice_group", "bankTransactionId": tx_id,
+                                "invoiceIds": [a, b] }],
+            }),
+        )
+        .await;
+    assert!(body["failed"][0].is_null(), "montage du groupe : {body}");
+    let group = body["accepted"][0]["journalEntryId"]
+        .as_i64()
+        .unwrap_or_else(|| panic!("montage du groupe : {body}"));
+    let lines: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM invoice_settlements \
+         WHERE journal_entry_id = ? AND journal_entry_line_id IS NOT NULL",
+    )
+    .bind(group)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    assert_eq!(lines, 2, "montage : deux règlements à ligne attribuée");
+    (a, b, tx_id, group)
+}
+
+/// Les `project_id` des deux factures, lus en base.
+async fn invoice_projects(pool: &MySqlPool, ids: &[i64]) -> Vec<Option<i64>> {
+    let mut out = Vec::new();
+    for id in ids {
+        out.push(
+            sqlx::query_scalar("SELECT project_id FROM invoices WHERE id = ?")
+                .bind(id)
+                .fetch_one(pool)
+                .await
+                .unwrap(),
+        );
+    }
+    out
+}
+
+fn assert_grouped_refusal(status: u16, body: &Value, invoice_id: i64, group: i64) {
+    assert_refused(status, body, 409, "PROJECT_REASSIGNMENT_GROUPED_SETTLEMENT");
+    assert_eq!(
+        body["error"]["details"],
+        json!({ "invoiceId": invoice_id, "journalEntryId": group }),
+        "{body}"
+    );
+}
+
+/// 43-6 AC1 — la réimputation d'une facture réglée en groupe est refusée :
+/// `409`, `details` exacts, rien d'écrit — ni lignes (banque, créance de
+/// l'autre facture), ni factures, ni versions, ni trace. Mutation : la garde
+/// retirée, le geste rend `200` au lieu de `409` et ce test rougit sur le
+/// statut (`mut/M1.log`) ; les assertions sur les lignes ne sont alors pas
+/// atteintes.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn a_grouped_settlement_is_refused(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let (a, b, _, group) = grouped_pair(&pool, &ctx, Some(ctx.p), Some(ctx.q)).await;
+    let entries: Vec<i64> = {
+        let mut v = linked_entries(&pool, a).await;
+        v.extend(linked_entries(&pool, b).await);
+        v.sort_unstable();
+        v.dedup();
+        v
+    };
+    assert!(entries.contains(&group));
+    let before = snapshot(&pool, ctx.seeded.company_id).await;
+    let lines = line_projects(&pool, &entries).await;
+    let versions = entry_versions(&pool, &entries).await;
+    let (va, vb) = (ctx.version(a).await, ctx.version(b).await);
+
+    let (status, body) = ctx.reassign(&ctx.admin, a, Some(ctx.q), va, None).await;
+
+    assert_grouped_refusal(status, &body, a, group);
+    assert_eq!(snapshot(&pool, ctx.seeded.company_id).await, before);
+    assert_eq!(line_projects(&pool, &entries).await, lines);
+    assert_eq!(entry_versions(&pool, &entries).await, versions);
+    assert_eq!(
+        invoice_projects(&pool, &[a, b]).await,
+        vec![Some(ctx.p), Some(ctx.q)]
+    );
+    assert_eq!((ctx.version(a).await, ctx.version(b).await), (va, vb));
+    assert!(audits(&pool, "invoice.project_reassigned").await.is_empty());
+}
+
+/// 43-6 AC1 (revue P1, E1) — la facture `a` réglée en partie depuis sa fiche
+/// (40.—, écriture propre, plus ancienne), puis groupée pour son reste :
+/// `details.journalEntryId` est l'écriture du **groupe**, non celle du
+/// règlement unitaire. Mutation : le déclencheur gardé, mais le minimum pris
+/// sur **tous** les règlements, ce test rougit (`mut/M6.log`).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn the_grouped_refusal_names_the_group_entry_after_a_partial_settlement(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let (a, _, _, group) =
+        grouped_pair_after(&pool, &ctx, Some(ctx.p), Some(ctx.p), Some(dec!(40.00))).await;
+    let unit: Vec<i64> = sqlx::query_scalar(
+        "SELECT journal_entry_id FROM invoice_settlements \
+         WHERE invoice_id = ? AND journal_entry_line_id IS NULL",
+    )
+    .bind(a)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(unit.len(), 1, "montage : un règlement unitaire");
+    assert!(unit[0] < group, "montage : l'unitaire est le plus ancien");
+    let before = snapshot(&pool, ctx.seeded.company_id).await;
+    let version = ctx.version(a).await;
+
+    let (status, body) = ctx
+        .reassign(&ctx.admin, a, Some(ctx.q), version, None)
+        .await;
+
+    assert_grouped_refusal(status, &body, a, group);
+    assert_eq!(snapshot(&pool, ctx.seeded.company_id).await, before);
+}
+
+/// 43-6 AC3 — ordre amont : une version périmée sur une facture groupée rend
+/// le refus de version, non le code de groupe. Mutation : la garde avant le
+/// contrôle de version, ce test rougit.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn a_stale_version_comes_before_the_grouped_refusal(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let (a, _, _, _) = grouped_pair(&pool, &ctx, Some(ctx.p), Some(ctx.p)).await;
+    let version = ctx.version(a).await;
+    let (status, body) = ctx
+        .reassign(&ctx.admin, a, Some(ctx.q), version - 1, None)
+        .await;
+    assert_refused(status, &body, 409, "OPTIMISTIC_LOCK_CONFLICT");
+}
+
+/// 43-6 AC4 — ordre aval : sur une facture groupée, le code de groupe passe
+/// avant le compte visé inconnu (`404`) ou archivé (`409
+/// ILLEGAL_STATE_TRANSITION`) et avant la période close d'un Comptable
+/// (`403`). Mutation : la garde déplacée après l'étape (5) ou (7), ce test
+/// rougit ; chaque volet rougit seul — compte inconnu (`mut/M2a`, `M2c`),
+/// compte archivé (`M2e`), période close (`M2d`).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn the_grouped_refusal_comes_before_target_and_closed_period(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let (a, _, _, group) = grouped_pair(&pool, &ctx, Some(ctx.p), Some(ctx.p)).await;
+    let archived = project(&ctx, "ARCH").await;
+    archive(&ctx, archived).await;
+    let version = ctx.version(a).await;
+
+    let (status, body) = ctx
+        .reassign(&ctx.admin, a, Some(999_999), version, None)
+        .await;
+    assert_grouped_refusal(status, &body, a, group);
+    let (status, body) = ctx
+        .reassign(&ctx.admin, a, Some(archived), version, None)
+        .await;
+    assert_grouped_refusal(status, &body, a, group);
+
+    let comptable = ctx.user(&pool, "comptable", "Comptable").await;
+    close_fiscal_year(&pool, &ctx).await;
+    let before = snapshot(&pool, ctx.seeded.company_id).await;
+    for ack in [None, Some(true)] {
+        let (status, body) = ctx.reassign(&comptable, a, Some(ctx.q), version, ack).await;
+        assert_grouped_refusal(status, &body, a, group);
+    }
+    let (status, body) = ctx
+        .reassign(&ctx.admin, a, Some(ctx.q), version, None)
+        .await;
+    assert_grouped_refusal(status, &body, a, group);
+    assert_eq!(snapshot(&pool, ctx.seeded.company_id).await, before);
+    assert!(audits(&pool, "invoice.project_reassigned").await.is_empty());
+}
+
+/// 43-6 AC4 — rien à changer (factures et toutes les lignes du groupe, banque
+/// comprise, sans compte analytique ; cible `null`) : le code de groupe, non
+/// `200`. Mutation : la garde déplacée après le « rien à faire », ce test
+/// rougit.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn a_grouped_invoice_is_refused_even_when_nothing_would_change(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let (a, b, _, group) = grouped_pair(&pool, &ctx, None, None).await;
+    let mut entries = linked_entries(&pool, a).await;
+    entries.extend(linked_entries(&pool, b).await);
+    assert!(
+        line_projects(&pool, &entries)
+            .await
+            .iter()
+            .all(Option::is_none),
+        "montage : aucune ligne n'a de compte analytique"
+    );
+    let (status, body) = ctx.reassign_now(a, None).await;
+    assert_grouped_refusal(status, &body, a, group);
+}
+
+/// 43-6 AC5 — après le dé-rapprochement du groupe, la facture redevient
+/// réimputable : `200`, seule sa vente change ; l'écriture groupée et sa
+/// contre-passation ne bougent pas. Test de non-régression (la garde retirée
+/// ne le fait pas rougir) : il prouve que le refus ne survit pas au groupe.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn an_uncancelled_group_lets_the_invoice_move_again(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let (a, b, tx_id, group) = grouped_pair(&pool, &ctx, Some(ctx.p), Some(ctx.p)).await;
+    let cancelled = ctx
+        .post_ok(
+            &format!("/api/v1/reconciliation/transactions/{tx_id}/cancel"),
+            json!({}),
+        )
+        .await;
+    let reversal = cancelled["reversalJournalEntryId"]
+        .as_i64()
+        .unwrap_or_else(|| panic!("annulation : {cancelled}"));
+    let pair = [group, reversal];
+    let pair_lines = line_projects(&pool, &pair).await;
+    let pair_versions = entry_versions(&pool, &pair).await;
+    let sale = linked_entries(&pool, a).await;
+    assert_eq!(sale.len(), 1, "montage : la vente seule reste reliée");
+
+    let (status, body) = ctx.reassign_now(a, Some(ctx.q)).await;
+
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(ids_of(&body["journalEntryIds"]), sale);
+    assert!(
+        line_projects(&pool, &sale)
+            .await
+            .iter()
+            .all(|p| *p == Some(ctx.q))
+    );
+    assert_eq!(line_projects(&pool, &pair).await, pair_lines);
+    assert_eq!(entry_versions(&pool, &pair).await, pair_versions);
+    assert_eq!(
+        invoice_projects(&pool, &[a, b]).await,
+        vec![Some(ctx.q), Some(ctx.p)]
+    );
+}

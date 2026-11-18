@@ -5646,6 +5646,28 @@ impl IntoResponse for AppError {
                 DbError::ProjectReassignmentClosedPeriodAdminOnly(exposure) => {
                     closed_period_response(&exposure, true)
                 }
+                // Story 43-6 (#823, #1167) — une facture réglée dans un groupe :
+                // son écriture porte aussi la banque et les autres factures.
+                // Le message vient d'ici ; l'écran l'affiche tel quel.
+                DbError::ProjectReassignmentGroupedSettlement {
+                    invoice_id,
+                    journal_entry_id,
+                } => {
+                    let body = serde_json::json!({
+                        "error": {
+                            "code": "PROJECT_REASSIGNMENT_GROUPED_SETTLEMENT",
+                            "message": t(
+                                "error-project-reassignment-grouped-settlement",
+                                "Cette facture est réglée avec d'autres par un même virement : son compte analytique ne se change pas. Annulez d'abord le rapprochement de ce règlement groupé.",
+                            ),
+                            "details": {
+                                "invoiceId": invoice_id,
+                                "journalEntryId": journal_entry_id,
+                            },
+                        }
+                    });
+                    (StatusCode::CONFLICT, Json(body)).into_response()
+                }
                 DbError::IllegalStateTransition(m) => {
                     tracing::warn!("illegal state: {m}");
                     build_response(

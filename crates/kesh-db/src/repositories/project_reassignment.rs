@@ -23,7 +23,13 @@
 //! 2. la pièce `FOR UPDATE` (`404`), puis sa `version` (`409
 //!    OPTIMISTIC_LOCK_CONFLICT`) ;
 //! 3. l'ensemble relu **sous verrou, après la pièce** — une lecture ordinaire
-//!    manquerait un règlement commité depuis l'instantané ;
+//!    manquerait un règlement commité depuis l'instantané ; pour la facture
+//!    client, un règlement **groupé** (ligne attribuée,
+//!    `invoice_settlements.journal_entry_line_id` non nul) y est refusé aussitôt
+//!    → `409 PROJECT_REASSIGNMENT_GROUPED_SETTLEMENT` (Story 43-6), avant
+//!    l'étape 4 : ce refus précède donc le « rien à faire » et tous les refus
+//!    qui suivent, et aucune ligne des autres factures du groupe n'est
+//!    verrouillée ;
 //! 4. en-têtes puis lignes de ces écritures `FOR UPDATE`, par `id` croissant ;
 //!    court-circuit « rien à faire » (`200`, rien d'écrit) ;
 //! 5. le compte visé (`projects::validate_taggable_in_tx`), **seulement s'il
@@ -391,6 +397,13 @@ pub async fn reassign_lines_in_tx(
 ///
 /// - `version` est celle de la facture, exigée : périmée → `409
 ///   OPTIMISTIC_LOCK_CONFLICT`, même si le compte ne change pas.
+/// - **Règlement groupé** (Story 43-6, #823) — un règlement de la facture porte
+///   une ligne attribuée : son écriture porte aussi la banque, l'écart éventuel
+///   et les créances des autres factures, que le geste réécrirait. → `409
+///   PROJECT_REASSIGNMENT_GROUPED_SETTLEMENT`, juste après la version, avant
+///   le « rien à faire » et tout autre refus ; rien n'est écrit. Après
+///   l'annulation du rapprochement du groupe, la facture redevient
+///   réimputable.
 /// - **Rien à faire** — la facture et toutes les lignes portent déjà
 ///   `project_id` — : rien n'est écrit, ni version, ni audit (`200`).
 /// - Sinon la `version` de la facture augmente d'une unité. ⛔ **C'est ce qui
@@ -441,8 +454,8 @@ pub async fn reassign_invoice(
     // (3) L'ensemble, relu sous verrou après la facture : la vente, les
     //     règlements (et le solde du reste), l'avoir.
     let mut base_ids: Vec<i64> = sale_entry_id.into_iter().collect();
-    let settlements: Vec<i64> = sqlx::query_scalar(
-        "SELECT journal_entry_id FROM invoice_settlements \
+    let settlements: Vec<(i64, Option<i64>)> = sqlx::query_as(
+        "SELECT journal_entry_id, journal_entry_line_id FROM invoice_settlements \
          WHERE invoice_id = ? AND company_id = ? ORDER BY id FOR UPDATE",
     )
     .bind(invoice_id)
@@ -450,7 +463,21 @@ pub async fn reassign_invoice(
     .fetch_all(&mut *tx)
     .await
     .map_err(map_db_error)?;
-    base_ids.extend(settlements);
+    // (3 bis) Story 43-6 — un règlement groupé (ligne attribuée) : l'écriture
+    //     porte la banque et les autres factures ; refus, avant tout verrou de
+    //     ligne et avant le « rien à faire ».
+    if let Some(journal_entry_id) = settlements
+        .iter()
+        .filter(|(_, line)| line.is_some())
+        .map(|(entry, _)| *entry)
+        .min()
+    {
+        return Err(DbError::ProjectReassignmentGroupedSettlement {
+            invoice_id,
+            journal_entry_id,
+        });
+    }
+    base_ids.extend(settlements.into_iter().map(|(entry, _)| entry));
     let credit_notes: Vec<Option<i64>> = sqlx::query_scalar(
         "SELECT journal_entry_id FROM credit_notes \
          WHERE invoice_id = ? AND company_id = ? ORDER BY id FOR UPDATE",

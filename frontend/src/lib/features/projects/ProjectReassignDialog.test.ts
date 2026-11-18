@@ -145,4 +145,26 @@ describe('ProjectReassignDialog', () => {
 		expect(r.queryByTestId('project-reassign-warning')).toBeNull();
 		expect(onDone).not.toHaveBeenCalled();
 	});
+
+	// Story 43-6 (#823) — facture réglée en groupe : aucun code neuf à l'écran,
+	// le message traduit par le serveur s'affiche tel quel.
+	it('409 règlement groupé : le message de l’API, sans avertissement ni Confirmer (mutation : traité comme la période close)', async () => {
+		const submit = vi.fn().mockRejectedValueOnce({
+			code: 'PROJECT_REASSIGNMENT_GROUPED_SETTLEMENT',
+			status: 409,
+			message: 'Cette facture est réglée avec d’autres par un même virement…',
+			details: { invoiceId: 7, journalEntryId: 42 },
+		});
+		const { r, onDone } = open(submit);
+		await fireEvent.change(r.getByTestId('project-reassign-select-7'), {
+			target: { value: '12' },
+		});
+		await fireEvent.click(r.getByTestId('project-reassign-save'));
+
+		const error = await r.findByTestId('project-reassign-error');
+		expect(error.textContent).toContain('réglée avec d’autres par un même virement');
+		expect(r.queryByTestId('project-reassign-confirm')).toBeNull();
+		expect(r.queryByTestId('project-reassign-warning')).toBeNull();
+		expect(onDone).not.toHaveBeenCalled();
+	});
 });

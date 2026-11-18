@@ -79,7 +79,9 @@ avec l'acteur. La route n'écrit rien. Aucune action neuve hors du réglage (C-4
 toutes les écritures de règlement de la facture (`project_reassignment.rs:443-453`) et réimpute toutes leurs lignes
 (`reassign_lines_in_tx`, :352-363) ; sur une écriture groupée, il réimputerait la banque, les différences et les autres
 factures. **La 43-6 le fait refuser** : `409 PROJECT_REASSIGNMENT_GROUPED_SETTLEMENT`, `details { invoiceId,
-journalEntryId }`, juste après le contrôle de version, dès qu'un règlement de la facture porte `journal_entry_line_id`.
+journalEntryId }`, après le contrôle de version, dans la lecture verrouillante des règlements (étape 3), dès qu'un
+règlement de la facture porte `journal_entry_line_id` ; il précède le « rien à faire » et tous les refus aval (validation
+P1 de la 43-6).
 La 42-2 reprendra en 0.20.0 le même prédicat par ligne (`settlement_journal_entry_line_id`), y compris pour une facture
 **détachée** d'un groupe (`kesh-gate-logs/e42/validation-42-2-p2.md`, V2-1) : refusée ou limitée à sa ligne, jamais
 l'écriture entière.
