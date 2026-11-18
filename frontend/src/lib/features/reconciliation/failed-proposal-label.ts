@@ -15,6 +15,21 @@
  * `INACTIVE_OR_INVALID_ACCOUNTS` (le règlement d'une facture fournisseur). Un code apparu depuis
  * retombe sur le repli, qui **montre le code brut** : mieux vaut un code qu'une case vide.
  *
+ * Story 43-3 (#823, AC4) — **39 codes** à la story, **48** depuis la fusion de l'Epic 37 (les huit
+ * codes de `fx_failed_proposal`, Story 37-3b, et `ACCOUNT_IN_FOREIGN_CURRENCY`, que le groupe pose
+ * pour le compte de l'écart) : le règlement groupé (Story 43-2) pose ses refus dans
+ * `crates/kesh-api/src/routes/reconciliation_group.rs`, par `group_refusal_to_failed_proposal`,
+ * et y ajoute deux codes neufs, `RECONCILIATION_GROUP_INVALID` (par `details.reason` :
+ * `too_few`, `too_many`, `duplicate`, `difference_account_required`) et
+ * `RECONCILIATION_GROUP_DIFFERENCE_TOO_LARGE` ; ses autres codes sont ceux de
+ * `reconciliation.rs`. Recompté par l'union des littéraux des deux fichiers — dans
+ * `reconciliation_group.rs`, les chaînes de code de la fonction de traduction, écrites sur une
+ * ligne à part après `fail(` : `grep -oE '"[A-Z][A-Z_]{4,}"'` sur son corps, comparé au relevé
+ * de `reconciliation.rs`. Le groupe appelle la fonction avec un **discriminant**
+ * (`{ group: true, differenceAccountId }`, voir `GroupLabelOptions`) : il choisit la forme
+ * propre au groupe de `ROUNDING_ACCOUNT_NOT_CONFIGURED` et les libellés qui nomment le **compte
+ * de l'écart** ; sans lui, les libellés restent ceux de l'unitaire.
+ *
  * Story 30-1b (#686) — cinq littéraux neufs, qui portent le compte de 29 à 34 :
  * `RECONCILIATION_TRANSACTION_NOT_DEBIT` (un crédit ou un montant nul proposé contre une facture
  * fournisseur), `SUPPLIER_INVOICE_NOT_FOUND` (même libellé que la facture client),
@@ -79,6 +94,7 @@
  */
 import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 import { fxRefusalMessage } from '$lib/features/journal-entries/fx-refusals';
+import { MAX_GROUP_INVOICES } from './group-settlement';
 
 /**
  * Numéros des comptes non imputables d'un `details` de la forme
@@ -153,17 +169,107 @@ export function fiscalYearName(details: unknown): string | null {
 }
 
 /**
+ * Story 43-3 (#823, AC4) — le discriminant d'un refus de **règlement groupé**, fourni par
+ * `GroupSettlementModal`, seul appelant du cas groupe. `differenceAccountId` est le compte de
+ * l'écart **envoyé** (`null` si aucun) : il sépare les deux causes de
+ * `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT` / `role: "counterparty"` (fiche 43-2, D9).
+ */
+export interface GroupLabelOptions {
+	group: true;
+	differenceAccountId: number | null;
+}
+
+/** Un champ entier d'un `details` (`accountId`, `bankAccountId`…), ou `null`. */
+function detailNumber(details: unknown, key: string): number | null {
+	if (typeof details !== 'object' || details === null) return null;
+	const v = (details as Record<string, unknown>)[key];
+	return typeof v === 'number' && Number.isInteger(v) ? v : null;
+}
+
+/** Un champ texte non vide d'un `details`, ou `null`. */
+export function detailString(details: unknown, key: string): string | null {
+	if (typeof details !== 'object' || details === null) return null;
+	const v = (details as Record<string, unknown>)[key];
+	return typeof v === 'string' && v.trim() !== '' ? v : null;
+}
+
+/**
+ * Story 43-3 (#823, D5) — le refus porte-t-il sur le **compte de l'écart** choisi ? La modale
+ * l'affiche alors sous le sélecteur, qui reste ouvert. Cinq causes, dans l'ordre des contrôles
+ * de la 43-2 (D9) : le compte de la banque (`VALIDATION_ERROR`,
+ * `counterparty_equals_bank_ledger`), introuvable ou archivé (`ACCOUNT_NOT_FOUND`), non
+ * imputable (`ACCOUNT_NOT_POSTABLE`), compte de tiers d'une facture du groupe
+ * (`SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT`, `role: "counterparty"`, `accountId` = le compte
+ * envoyé, **sans** `bankAccountId`), et l'absence de compte (`RECONCILIATION_GROUP_INVALID`,
+ * `difference_account_required`). Dans un groupe, `ACCOUNT_NOT_FOUND` et `ACCOUNT_NOT_POSTABLE`
+ * ne viennent que du compte de l'écart : l'écriture se crée avec `enforce_postable = false`
+ * pour le reste (43-2). Le cas de configuration (`bankAccountId` présent : le compte de créance
+ * d'une facture est celui de la banque) n'en est pas : changer de compte n'y ferait rien.
+ */
+export function isDifferenceAccountRefusal(
+	code: string,
+	details: unknown,
+	differenceAccountId: number | null,
+): boolean {
+	switch (code) {
+		case 'VALIDATION_ERROR':
+			return failureReason(details) === 'counterparty_equals_bank_ledger';
+		case 'ACCOUNT_NOT_FOUND':
+		case 'ACCOUNT_NOT_POSTABLE':
+			return true;
+		// Epic 37 (43-2) — le compte de l'écart tenu en devise (`details.accountId` = le compte
+		// envoyé) : seul ce compte-là est contrôlé ainsi dans un groupe.
+		case 'ACCOUNT_IN_FOREIGN_CURRENCY':
+			return differenceAccountId !== null && detailNumber(details, 'accountId') === differenceAccountId;
+		case 'SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT':
+			return isGroupAccountClaimRefusal(details, differenceAccountId);
+		case 'RECONCILIATION_GROUP_INVALID':
+			return failureReason(details) === 'difference_account_required';
+		default:
+			return false;
+	}
+}
+
+/** `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT` sur le compte de l'écart envoyé (D9). */
+function isGroupAccountClaimRefusal(details: unknown, differenceAccountId: number | null): boolean {
+	return (
+		differenceAccountId !== null &&
+		failureRole(details) === 'counterparty' &&
+		detailNumber(details, 'bankAccountId') === null &&
+		detailNumber(details, 'accountId') === differenceAccountId
+	);
+}
+
+/**
  * Libellé traduit d'un `errorCode` de `failed[]`. `details` n'est lu que pour
  * `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT`, `ACCOUNT_NOT_POSTABLE`, `LATER_FISCAL_YEAR_CLOSED`,
- * `RECONCILIATION_INVOICE_NOT_ELIGIBLE`, `RECONCILIATION_ALREADY_RECONCILED` et
- * `RECONCILIATION_RULE_MASKED` ; un code inconnu rend un repli qui cite le code.
+ * `RECONCILIATION_INVOICE_NOT_ELIGIBLE`, `RECONCILIATION_ALREADY_RECONCILED`,
+ * `RECONCILIATION_RULE_MASKED`, et, depuis la Story 43-3, `RECONCILIATION_GROUP_INVALID`,
+ * `RECONCILIATION_GROUP_DIFFERENCE_TOO_LARGE` et, avec le discriminant `group`,
+ * `VALIDATION_ERROR` ; un code inconnu rend un repli qui cite le code.
  */
-export function failedProposalLabel(code: string, details?: unknown): string {
+export function failedProposalLabel(
+	code: string,
+	details?: unknown,
+	group?: GroupLabelOptions,
+): string {
+	if (group) {
+		const groupLabel = groupAccountLabel(code, details, group.differenceAccountId);
+		if (groupLabel !== null) return groupLabel;
+	}
 	switch (code) {
 		case 'ACCOUNT_NOT_FOUND':
 			return i18nMsg(
 				'reconciliation-failed-account-not-found',
 				'Un compte de contrepartie est introuvable ou archivé.'
+			);
+		// Epic 37, posé dans `failed[]` par le règlement groupé (43-2) : la clé globale, qui nomme
+		// la devise (`details.currency`).
+		case 'ACCOUNT_IN_FOREIGN_CURRENCY':
+			return i18nMsg(
+				'error-account-in-foreign-currency',
+				'Ce compte est tenu en { $currency } : il ne peut pas servir ici, où Kesh comptabilise en CHF.',
+				{ currency: detailString(details, 'currency') ?? '' }
 			);
 		case 'ACCOUNT_NOT_POSTABLE': {
 			const numbers = rejectedAccountNumbers(details);
@@ -425,6 +531,53 @@ export function failedProposalLabel(code: string, details?: unknown): string {
 			);
 		case 'VALIDATION_ERROR':
 			return i18nMsg('error-validation', 'Erreur de validation');
+		// Story 43-3 (#823, AC4) — les deux codes neufs du règlement groupé (Story 43-2).
+		case 'RECONCILIATION_GROUP_INVALID': {
+			const reason = failureReason(details);
+			if (reason === 'too_few') {
+				return i18nMsg(
+					'reconciliation-failed-group-too-few',
+					'Un règlement de plusieurs factures en demande au moins deux.'
+				);
+			}
+			if (reason === 'too_many') {
+				return i18nMsg(
+					'reconciliation-failed-group-too-many',
+					'Un règlement de plusieurs factures en compte au plus { $max }.',
+					{ max: MAX_GROUP_INVOICES }
+				);
+			}
+			if (reason === 'duplicate') {
+				return i18nMsg(
+					'reconciliation-failed-group-duplicate',
+					'La même facture figure deux fois dans le règlement.'
+				);
+			}
+			if (reason === 'difference_account_required') {
+				return i18nMsg(
+					'reconciliation-failed-group-difference-account-required',
+					'Choisissez le compte de l’écart.'
+				);
+			}
+			return i18nMsg(
+				'reconciliation-failed-group-invalid',
+				'Ce règlement de plusieurs factures n’est pas valable.'
+			);
+		}
+		case 'RECONCILIATION_GROUP_DIFFERENCE_TOO_LARGE': {
+			const max = detailString(details, 'maxDifference');
+			if (max !== null) {
+				return i18nMsg(
+					'reconciliation-failed-group-difference-too-large',
+					'L’écart entre la transaction et les factures dépasse le plafond admis ({ $max }).',
+					{ max }
+				);
+			}
+			return i18nMsg(
+				'reconciliation-failed-group-difference-too-large-generic',
+				'L’écart entre la transaction et les factures dépasse le plafond admis.'
+			);
+		}
 		// Story 37-3b (reçu de la 37-3a, AC-5) — refus propres aux devises, rendus par
 		// `fx_failed_proposal` : le rapprochement passe en CHF.
 		case 'ACCOUNT_REQUIRES_CURRENCY':
@@ -454,5 +607,67 @@ export function failedProposalLabel(code: string, details?: unknown): string {
 			);
 		default:
 			return i18nMsg('reconciliation-failed-unknown', 'Refus non reconnu ({ $code }).', { code });
+	}
+}
+
+/**
+ * Story 43-3 (#823, AC4, D5) — les formes propres au groupe : l'arrondi (un reste sous le
+ * centime, et non « solde la facture au centime ») et les libellés qui nomment le **compte de
+ * l'écart**, un par cause. `null` : le libellé de l'unitaire s'applique — dont le cas de
+ * configuration de `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT` (`bankAccountId` présent).
+ */
+function groupAccountLabel(
+	code: string,
+	details: unknown,
+	differenceAccountId: number | null,
+): string | null {
+	switch (code) {
+		case 'ROUNDING_ACCOUNT_NOT_CONFIGURED':
+			return i18nMsg(
+				'reconciliation-failed-group-rounding-not-configured',
+				'Ce règlement laisse un arrondi sous le centime, mais aucun compte de différences d’arrondi utilisable n’est désigné : un administrateur doit en choisir un dans Administration → Facturation.'
+			);
+		case 'VALIDATION_ERROR':
+			if (failureReason(details) !== 'counterparty_equals_bank_ledger') return null;
+			return i18nMsg(
+				'reconciliation-failed-group-account-is-bank',
+				'Le compte choisi pour l’écart est le compte de la banque de cette transaction : choisissez-en un autre.'
+			);
+		case 'ACCOUNT_NOT_FOUND':
+			return i18nMsg(
+				'reconciliation-failed-group-account-not-found',
+				'Le compte choisi pour l’écart est introuvable ou archivé.'
+			);
+		case 'ACCOUNT_IN_FOREIGN_CURRENCY':
+			if (differenceAccountId === null || detailNumber(details, 'accountId') !== differenceAccountId) {
+				return null;
+			}
+			return i18nMsg(
+				'reconciliation-failed-group-account-foreign-currency',
+				'Le compte choisi pour l’écart est tenu en { $currency } : choisissez un compte en CHF.',
+				{ currency: detailString(details, 'currency') ?? '' }
+			);
+		case 'ACCOUNT_NOT_POSTABLE': {
+			const numbers = rejectedAccountNumbers(details);
+			if (numbers.length > 0) {
+				return i18nMsg(
+					'reconciliation-failed-group-account-not-postable',
+					'Le compte choisi pour l’écart n’est pas imputable ({ $numbers }) : choisissez un compte imputable.',
+					{ numbers: numbers.join(', ') }
+				);
+			}
+			return i18nMsg(
+				'reconciliation-failed-group-account-not-postable-generic',
+				'Le compte choisi pour l’écart n’est pas imputable : choisissez un compte imputable.'
+			);
+		}
+		case 'SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT':
+			if (!isGroupAccountClaimRefusal(details, differenceAccountId)) return null;
+			return i18nMsg(
+				'reconciliation-failed-group-account-is-claim',
+				'Le compte choisi pour l’écart est le compte de créance (ou de dette) d’une facture du groupe : choisissez-en un autre.'
+			);
+		default:
+			return null;
 	}
 }

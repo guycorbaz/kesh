@@ -42,8 +42,21 @@ use crate::repositories::{audit_log, letterings};
 const FIND_SCOPED_SQL: &str = "SELECT id, company_id, contact_id, supplier_invoice_number, \
     internal_number, status, invoice_date, due_date, total_amount, creditor_iban, creditor_qr_iban, payment_reference, \
     expected_payment_amount, project_id, purchase_journal_entry_id, settlement_type, settlement_bank_account_id, \
-    settlement_account_id, settlement_journal_entry_id, paid_at, version, created_at, updated_at \
+    settlement_account_id, settlement_journal_entry_id, settlement_journal_entry_line_id, paid_at, \
+    version, created_at, updated_at \
     FROM supplier_invoices WHERE id = ? AND company_id = ?";
+
+/// Le fragment `SET` qui **vide le règlement** d'une facture fournisseur —
+/// mode, contrepartie, écriture **et ligne** de règlement, date de paiement
+/// (Story 43-1a, AC1.3, M2). ⛔ **Le seul** : les deux gestes qui remettent
+/// `settlement_journal_entry_id` à `NULL` — l'annulation d'une facture payée
+/// qui détache son règlement ([`cancel_in_tx`]) et l'annulation du règlement
+/// ([`cancel_settlement_in_tx`]) — l'emploient tous deux, pour qu'aucun ne
+/// laisse une ligne sans son écriture (`chk_supplier_invoices_settlement_line`
+/// le refuserait, en erreur de base).
+pub const CLEAR_SETTLEMENT_SQL: &str = "settlement_type = NULL, \
+    settlement_bank_account_id = NULL, settlement_account_id = NULL, \
+    settlement_journal_entry_id = NULL, settlement_journal_entry_line_id = NULL, paid_at = NULL";
 
 /// Les colonnes de [`SupplierInvoice`], préfixées de l'alias `si`, pour les
 /// requêtes qui joignent d'autres tables (la réconciliation, Story 30-1b) —
@@ -55,7 +68,7 @@ pub const SUPPLIER_INVOICE_COLUMNS_SI: &str = "si.id, si.company_id, si.contact_
     si.creditor_iban, si.creditor_qr_iban, si.payment_reference, si.expected_payment_amount, \
     si.project_id, si.purchase_journal_entry_id, si.settlement_type, \
     si.settlement_bank_account_id, si.settlement_account_id, si.settlement_journal_entry_id, \
-    si.paid_at, si.version, si.created_at, si.updated_at";
+    si.settlement_journal_entry_line_id, si.paid_at, si.version, si.created_at, si.updated_at";
 
 const LINE_COLUMNS: &str = "id, supplier_invoice_id, position, description, quantity, unit_price, \
     vat_rate, line_total, expense_account_id, created_at";
@@ -2281,6 +2294,10 @@ pub async fn pay_in_tx_as(
 pub struct LockedForSettlement {
     /// La facture, lue sous `FOR UPDATE` (statut `open`).
     pub invoice: SupplierInvoice,
+    /// Le compte du grand livre du compte bancaire, lu **sous le verrou** du
+    /// compte, étape (b) (Story 43-1b, revue P1 E3 : le paiement groupé
+    /// l'emploie au lieu de le relire sur l'instantané).
+    pub bank_ledger_account_id: i64,
 }
 
 /// Pourquoi une facture fournisseur ne peut pas être réglée par une
@@ -2410,7 +2427,7 @@ pub async fn lock_for_bank_settlement_in_tx(
             .fetch_optional(&mut **tx)
             .await
             .map_err(map_db_error)?;
-    match account {
+    let bank_ledger_account_id = match account {
         None | Some((_, _, true)) => {
             return Ok(Err(SupplierSettlementRefusal::BankAccountNotFound));
         }
@@ -2418,8 +2435,8 @@ pub async fn lock_for_bank_settlement_in_tx(
         Some((None, None, false)) => {
             return Ok(Err(SupplierSettlementRefusal::BankAccountNotConfigured));
         }
-        Some((Some(_), None, false)) => {}
-    }
+        Some((Some(ledger), None, false)) => ledger,
+    };
 
     // (c) L'appartenance à un lot `generated`, en lecture verrouillante.
     let in_batch: Option<i64> = sqlx::query_scalar(
@@ -2453,7 +2470,10 @@ pub async fn lock_for_bank_settlement_in_tx(
         }));
     }
 
-    Ok(Ok(LockedForSettlement { invoice }))
+    Ok(Ok(LockedForSettlement {
+        invoice,
+        bank_ledger_account_id,
+    }))
 }
 
 // ---------------------------------------------------------------------------
@@ -2552,6 +2572,19 @@ pub async fn supplier_invoice_cancel_blocker(
 /// qui supprime l'achat et la contre-passation posée ici — sous les gardes de
 /// la dévalidation, et tant que le règlement détaché n'est pas contre-passé,
 /// jamais (son gel lit la facture par le statut `cancelled`).
+///
+/// **Membre d'un règlement groupé** (Story 43-1b, #823, AC7) : la facture se
+/// détache de même — `CLEAR_SETTLEMENT_SQL` vide aussi sa ligne
+/// (`settlement_journal_entry_line_id`), sans quoi la `CHECK` « ligne ⇒
+/// écriture » rendrait une 500 —, et l'audit nomme sa ligne. L'écriture
+/// commune reste au grand livre, rapprochée : son dé-rapprochement ultérieur la
+/// contre-passe **entière** et ne rouvre que les factures encore attachées ;
+/// quand plus aucune ne l'est, elle est classée `entry`. ⚠️ **Faux positif
+/// bénin du gel « paiement détaché »** (`journal_entries::modification_guard`,
+/// `DETACHED_SETTLEMENT_TRACES`) : la trace de ce détachement désigne
+/// l'écriture commune, qui est déjà gelée tant qu'un membre la possède (motif
+/// `Owned`, lu en premier) — le gel n'ajoute rien ; il ne devient le motif
+/// rendu que lorsque plus aucun membre n'est attaché, ce qui est le cas voulu.
 ///
 /// ⛔ **Les verrous d'abord, tous, avant toute lecture non verrouillante**
 /// (leçon de la Story 25-3-b) : sous `REPEATABLE READ`, la première lecture non
@@ -2670,12 +2703,13 @@ pub async fn cancel_in_tx(
 
     // (4) `cancelled`, règlement DÉTACHÉ (colonnes à NULL — déjà NULL pour une
     //     facture ouverte). ⛔ L'écriture de règlement n'est PAS contre-passée.
-    let rows = sqlx::query(
-        "UPDATE supplier_invoices SET status = 'cancelled', settlement_type = NULL, \
-         settlement_bank_account_id = NULL, settlement_account_id = NULL, \
-         settlement_journal_entry_id = NULL, paid_at = NULL, version = version + 1 \
-         WHERE id = ? AND company_id = ? AND version = ? AND status IN ('open', 'paid')",
-    )
+    //     Story 43-1a (M2) : la ligne de règlement avec l'écriture, par le
+    //     fragment partagé.
+    let rows = sqlx::query(&format!(
+        "UPDATE supplier_invoices SET status = 'cancelled', {CLEAR_SETTLEMENT_SQL}, \
+         version = version + 1 \
+         WHERE id = ? AND company_id = ? AND version = ? AND status IN ('open', 'paid')"
+    ))
     .bind(id)
     .bind(company_id)
     .bind(inv.version)
@@ -2708,6 +2742,11 @@ pub async fn cancel_in_tx(
         details["settlementJournalEntryId"] = serde_json::json!(settlement_entry);
         details["settlementType"] = serde_json::json!(inv.settlement_type);
         details["paidAt"] = serde_json::json!(inv.paid_at);
+    }
+    // Story 43-1b (AC7) : membre d'un règlement groupé, la facture détachée
+    // nomme aussi SA ligne de dette — la seule trace qui en reste.
+    if let Some(line) = inv.settlement_journal_entry_line_id {
+        details["settlementJournalEntryLineId"] = serde_json::json!(line);
     }
     audit_log::insert_in_tx(
         tx,
@@ -2797,6 +2836,35 @@ pub async fn supplier_settlement_cancel_blocker_unlinking(
     unlinking: Option<i64>,
     aujourd_hui: NaiveDate,
 ) -> Result<Option<super::settlement_cancellation::SettlementCancelHit>, DbError> {
+    let entry_id =
+        match supplier_settlement_cancel_head(conn, company_id, supplier_invoice_id).await? {
+            Ok(entry_id) => entry_id,
+            Err(hit) => return Ok(Some(hit)),
+        };
+    super::settlement_cancellation::settlement_entry_cancel_blocker(
+        conn,
+        company_id,
+        entry_id,
+        unlinking,
+        aujourd_hui,
+    )
+    .await
+}
+
+/// La **tête** fournisseur des motifs d'annulation d'un règlement — rang 1 (la
+/// facture n'est pas `paid`) — et, sinon, l'écriture du règlement. Extraite de
+/// [`supplier_settlement_cancel_blocker_unlinking`], qui l'appelle avant la
+/// queue commune ; le dé-rapprochement d'un règlement groupé fournisseur
+/// (Story 43-1b, patron de `invoice_settlements_write::settlement_cancel_head`)
+/// l'appelle pour **chaque** facture, puis la queue **une fois** pour
+/// l'écriture commune. ⛔ Le rang 1 n'est écrit qu'ici.
+///
+/// Facture introuvable (ou d'une autre société) → [`DbError::NotFound`].
+pub(crate) async fn supplier_settlement_cancel_head(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    supplier_invoice_id: i64,
+) -> Result<Result<i64, super::settlement_cancellation::SettlementCancelHit>, DbError> {
     let row: Option<(String, Option<i64>)> = sqlx::query_as(
         "SELECT status, settlement_journal_entry_id FROM supplier_invoices \
          WHERE id = ? AND company_id = ?",
@@ -2810,21 +2878,11 @@ pub async fn supplier_settlement_cancel_blocker_unlinking(
     // Rang 1. ⚠️ `chk_supplier_invoices_paid_has_settlement` garantit qu'une
     // facture `paid` porte son écriture de règlement : l'absence ne peut venir
     // que d'une facture non `paid`.
-    let Some(entry_id) = settlement_entry.filter(|_| status == "paid") else {
-        return Ok(Some((
-            crate::errors::SettlementCancelBlocker::SupplierInvoiceNotPaid,
-            None,
-            None,
-        )));
-    };
-    super::settlement_cancellation::settlement_entry_cancel_blocker(
-        conn,
-        company_id,
-        entry_id,
-        unlinking,
-        aujourd_hui,
-    )
-    .await
+    Ok(settlement_entry.filter(|_| status == "paid").ok_or((
+        crate::errors::SettlementCancelBlocker::SupplierInvoiceNotPaid,
+        None,
+        None,
+    )))
 }
 
 /// Ce que rend l'annulation d'un règlement fournisseur.
@@ -2960,12 +3018,13 @@ pub async fn cancel_settlement_in_tx(
 
     // (4) Retour à `open`, colonnes de règlement vidées. Il n'y en a qu'un jeu ;
     //     le lien survit dans l'audit et au grand livre (`reverses_entry_id`).
-    let rows = sqlx::query(
-        "UPDATE supplier_invoices SET status = 'open', settlement_type = NULL, \
-         settlement_bank_account_id = NULL, settlement_account_id = NULL, \
-         settlement_journal_entry_id = NULL, paid_at = NULL, version = version + 1 \
-         WHERE id = ? AND company_id = ? AND version = ? AND status = 'paid'",
-    )
+    //     Story 43-1a (M2) : la ligne de règlement avec l'écriture, par le
+    //     fragment partagé.
+    let rows = sqlx::query(&format!(
+        "UPDATE supplier_invoices SET status = 'open', {CLEAR_SETTLEMENT_SQL}, \
+         version = version + 1 \
+         WHERE id = ? AND company_id = ? AND version = ? AND status = 'paid'"
+    ))
     .bind(id)
     .bind(company_id)
     .bind(inv.version)
@@ -3233,7 +3292,7 @@ pub async fn list_all_by_company(
          invoice_date, due_date, total_amount, creditor_iban, creditor_qr_iban, payment_reference, \
          expected_payment_amount, project_id, purchase_journal_entry_id, settlement_type, \
          settlement_bank_account_id, settlement_account_id, settlement_journal_entry_id, \
-         paid_at, version, created_at, updated_at \
+         settlement_journal_entry_line_id, paid_at, version, created_at, updated_at \
          FROM supplier_invoices WHERE company_id = ? ORDER BY id",
     )
     .bind(company_id)

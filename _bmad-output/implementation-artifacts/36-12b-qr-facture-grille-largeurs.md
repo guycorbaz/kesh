@@ -1,3 +1,5 @@
+> **Découpée le 2026-11-17 en 44-1a (`44-1a-qr-facture-grille.md`, 0.19.0) et 44-1b (`44-1b-qr-facture-cascade.md`, backlog).** Cette fiche est laissée telle quelle, à titre d'historique ; elle ne fait plus foi.
+
 # Story 36-12b : QR-facture — la grille SIX, *Payable by* à sa place, des largeurs mesurées (#944)
 
 Status: backlog

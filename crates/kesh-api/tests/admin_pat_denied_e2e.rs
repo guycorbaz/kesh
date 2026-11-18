@@ -43,8 +43,9 @@ const LIB_RS: &str = include_str!("../src/lib.rs");
 const MARKER_BEGIN: &str = "KESH-ADMIN-ROUTES-BEGIN";
 const MARKER_END: &str = "KESH-ADMIN-ROUTES-END";
 
-/// Les **53 constructeurs de méthode** du bloc `admin_routes` (49 avant la
-/// Story v017-4a, 50 avant la Story v0172-session, 52 avant la 33-5), un par couple
+/// Les **54 constructeurs de méthode** du bloc `admin_routes` (49 avant la
+/// Story v017-4a, 50 avant la Story v0172-session, 52 avant la 33-5, 53 avant la
+/// v0190-nom-societe), un par couple
 /// (méthode, chemin). Les identifiants de chemin sont arbitraires : la couche
 /// répond **avant** le handler, donc aucune donnée n'a besoin d'exister.
 ///
@@ -86,6 +87,8 @@ const ADMIN_COUPLES: &[(&str, &str)] = &[
     // Story 37-1 (AC-3) — le réglage multi-devises : par une session, jamais
     // par une clé d'API.
     ("PUT", "/api/v1/companies/current/currency-settings"),
+    // Story v0190-nom-societe (#1097) : le nom de la société.
+    ("PUT", "/api/v1/companies/current/name"),
     ("POST", "/api/v1/fiscal-years/1/reopen"),
     // Story 24-4c (#380) : DÉVERROUILLER une période. Admin-only, comme la
     // réouverture d'exercice ci-dessus et pour la même raison — la POSE, elle,
@@ -798,7 +801,7 @@ async fn error_code(resp: reqwest::Response) -> String {
 // Tests HTTP — le comportement
 // ============================================================================
 
-/// AC1, jambe `read-write` : les 53 couples rendent `API_KEY_ADMIN_FORBIDDEN`.
+/// AC1, jambe `read-write` : les 54 couples rendent `API_KEY_ADMIN_FORBIDDEN`.
 ///
 /// ⚠️ On asserte le **code**, pas le statut. Trois gardes distinctes rendent
 /// `403` sur ces routes — le RBAC, le gate de portée, et la couche : un test
@@ -882,7 +885,10 @@ async fn read_only_pat_is_stopped_by_the_right_guard_on_each_couple(pool: MySqlP
         // la société est arrêté par le gate de portée.
         // (15, 38) → (15, 39) : Story 37-1 — le `PUT` du réglage multi-devises
         // est arrêté par le gate de portée.
-        (15, 39),
+        // (15, 39) → (15, 40) : Story v0190-nom-societe (refs #1097), unie à la
+        // 37-1 par l'intégration de la 0.19.0 — le `PUT` du nom de la société est
+        // arrêté par le gate de portée.
+        (15, 40),
         "la répartition attendue entre la couche et le gate de portée a changé"
     );
 }

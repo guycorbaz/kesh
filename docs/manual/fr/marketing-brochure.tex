@@ -403,7 +403,7 @@ Kesh est en développement actif. Voici la feuille de route publique au \keshRel
 
 \vspace{0.4cm}
 
-\textbf{\color{keshSuccess}\faCheckCircle\ TVA Suisse (Epic 11 \& 18, livré)}
+\textbf{\color{keshSuccess}\faCheckCircle\ TVA Suisse (v0.3, livré)}
 
 \begin{itemize}
     \item Configuration des taux + calcul et rapport de TVA par période.
@@ -413,7 +413,7 @@ Kesh est en développement actif. Voici la feuille de route publique au \keshRel
 
 \vspace{0.4cm}
 
-\textbf{\color{keshSuccess}\faCheckCircle\ Report à-nouveau automatique (Epic 14, v0.8, livré)}
+\textbf{\color{keshSuccess}\faCheckCircle\ Report à-nouveau automatique (v0.8, livré)}
 
 \begin{itemize}
     \item Report automatique des soldes de bilan d'un exercice à l'autre, calculé en temps réel depuis l'origine : aucune écriture de report ni de clôture à passer --- le résultat de l'exercice et le résultat reporté sont calculés au bilan.
@@ -421,7 +421,7 @@ Kesh est en développement actif. Voici la feuille de route publique au \keshRel
 
 \vspace{0.4cm}
 
-\textbf{\color{keshSuccess}\faCheckCircle\ Lettrage et postes ouverts (Epic 15, v0.13)}
+\textbf{\color{keshSuccess}\faCheckCircle\ Lettrage et postes ouverts (v0.13)}
 
 \begin{itemize}
     \item Les postes ouverts d'un compte de tiers à une date : ce qui reste ouvert, ligne à ligne, et dont le total égale le solde du compte.
@@ -431,17 +431,17 @@ Kesh est en développement actif. Voici la feuille de route publique au \keshRel
 
 \vspace{0.4cm}
 
-\textbf{\color{keshSuccess}\faCheckCircle\ Préparer la première clôture (Epic 29, v0.13.4 et v0.14)}
+\textbf{\color{keshSuccess}\faCheckCircle\ Préparer la première clôture (v0.13.4 et v0.14)}
 
 \begin{itemize}
-    \item Neuf contrôles préalables à la clôture (rapprochement bancaire, relevé de fin d'exercice, brouillons de factures client et fournisseur, écritures incohérentes, comptes en devise à réévaluer\ldots), dont deux bloquants. \emph{(livré en v0.13.4 ; le huitième, les brouillons fournisseur, en v0.17.0 ; le neuvième, les comptes en devise, avec l'Epic 37)}
-    \item La réévaluation de fin d'exercice des comptes en devise au cours de clôture : aperçu, puis une écriture par compte. \emph{(Epic 37)}
+    \item Neuf contrôles préalables à la clôture (rapprochement bancaire, relevé de fin d'exercice, brouillons de factures client et fournisseur, écritures incohérentes, comptes en devise à réévaluer\ldots), dont deux bloquants. \emph{(livré en v0.13.4 ; le huitième, les brouillons fournisseur, en v0.17.0 ; le neuvième, les comptes en devise, en v0.19.0)}
+    \item La réévaluation de fin d'exercice des comptes en devise au cours de clôture : aperçu, puis une écriture par compte. \emph{(livré en v0.19.0)}
     \item Les transitoires contre-passées depuis la fiche de l'écriture, datées du premier jour de l'exercice suivant. \emph{(livré en v0.14.0)}
 \end{itemize}
 
 \vspace{0.4cm}
 
-\textbf{\color{keshSuccess}\faCheckCircle\ Factures fournisseur, de la pièce au règlement (Epic 30, v0.14)}
+\textbf{\color{keshSuccess}\faCheckCircle\ Factures fournisseur, de la pièce au règlement (v0.14)}
 
 \begin{itemize}
     \item « Documents à traiter » : tout document fournisseur, avec ou sans QR-code, avec un aperçu ; la facture se crée à côté de son document, le fournisseur proposé --- jamais choisi d'office --- ou créé sans quitter la saisie.
@@ -452,7 +452,7 @@ Kesh est en développement actif. Voici la feuille de route publique au \keshRel
 
 \vspace{0.4cm}
 
-\textbf{\color{keshSuccess}\faCheckCircle\ Tenir les livres : une sauvegarde qui restaure tout (Epic 31, v0.15)}
+\textbf{\color{keshSuccess}\faCheckCircle\ Tenir les livres : une sauvegarde qui restaure tout (v0.15)}
 
 \begin{itemize}
     \item La sauvegarde \texttt{.keshbackup} emporte les pièces justificatives : documents fournisseur importés et PDF figés des factures émises, chacun vérifié par son empreinte à la restauration.
@@ -463,7 +463,7 @@ Kesh est en développement actif. Voici la feuille de route publique au \keshRel
 
 \vspace{0.4cm}
 
-\textbf{\color{keshSuccess}\faCheckCircle\ Réconciliation et comptes bancaires (Epic 34, v0.17.6)}
+\textbf{\color{keshSuccess}\faCheckCircle\ Réconciliation et comptes bancaires (v0.17.6)}
 
 \begin{itemize}
     \item La carte de crédit tenue comme un compte : quatre derniers chiffres seulement, dette liée à un passif, relevé saisi à la main ou importé en CSV, prélèvement mensuel passé une seule fois, comme un virement.
@@ -473,7 +473,7 @@ Kesh est en développement actif. Voici la feuille de route publique au \keshRel
 
 \vspace{0.4cm}
 
-\textbf{\color{keshWarning}\faClock\ Backlog (Epic 13 à 15)}
+\textbf{\color{keshWarning}\faClock\ Dans une version ultérieure}
 
 \begin{itemize}
     \item Budgets annuels + suivi.
@@ -487,7 +487,7 @@ Kesh est en développement actif. Voici la feuille de route publique au \keshRel
 \begin{itemize}
     \item Signature électronique qualifiée (QES) sur les exports.
     \item Décompte TVA officiel AFC (e-décompte ESTV).
-    \item Multi-devises pour les PME à l'export.
+    \item Factures, factures fournisseur et relevés bancaires en devise pour les PME à l'export (la comptabilité multi-devises est livrée depuis la v0.19.0).
     \item Format PDF/A (ISO 19005) pour l'archivage durable.
     \item Traductions DE/IT/EN des manuels.
     \item Webhooks pour assistants IA conversationnels.
@@ -496,7 +496,7 @@ Kesh est en développement actif. Voici la feuille de route publique au \keshRel
 \vspace{0.5cm}
 
 \begin{keshnote}
-Notre feuille de route est publique sur GitHub. Suivez notre progression sur \keshWebsite ou consultez la documentation projet pour le détail des epics et stories.
+Notre feuille de route est publique sur GitHub. Suivez notre progression sur \keshWebsite ou consultez la documentation projet pour le détail de chaque version.
 \end{keshnote}
 
 %%─────────────────────────────────────────────────────────────────────────────

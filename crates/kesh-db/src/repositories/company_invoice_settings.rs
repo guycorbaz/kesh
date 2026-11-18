@@ -26,6 +26,8 @@ use std::collections::BTreeSet;
 use sqlx::mysql::MySqlPool;
 use sqlx::{MySql, QueryBuilder, Row};
 
+use rust_decimal::Decimal;
+
 use crate::entities::audit_log::NewAuditLogEntry;
 use crate::entities::{
     AccountRole, AccountType, CompanyInvoiceSettings, CompanyInvoiceSettingsUpdate, Journal,
@@ -44,7 +46,40 @@ const COLUMNS: &str = "company_id, invoice_number_format, default_receivable_acc
     credit_note_number_format, supplier_internal_number_format, default_payable_account_id, \
     default_rounding_account_id, round_to_5_centimes, minimum_invoice_amount, \
     default_discount_account_id, default_bank_fees_account_id, default_bad_debt_account_id, \
-    version, created_at, updated_at";
+    group_settlement_max_difference, version, created_at, updated_at";
+
+/// Le plafond par défaut de l'écart d'un règlement groupé (Story 43-1a,
+/// C-43-24) : 5.00. **Seule** occurrence de la valeur dans le code Rust — elle ne
+/// sert que lorsque la société n'a pas de ligne de réglages ; sinon la colonne
+/// fait foi. Le test `group_max_default_matches_the_column_default` la compare
+/// au `DEFAULT` de la colonne (`information_schema`), pour que les deux sources
+/// ne dérivent pas.
+pub const DEFAULT_GROUP_DIFFERENCE_MAX: Decimal = Decimal::from_parts(50000, 0, 0, false, 4);
+
+/// Le plafond de l'écart d'un règlement groupé de la société, **au
+/// moment du geste** (Story 43-1a, AC3 bis, C-43-24) : la colonne
+/// `group_settlement_max_difference`, ou [`DEFAULT_GROUP_DIFFERENCE_MAX`] si la
+/// société n'a pas de ligne de réglages.
+///
+/// Lecture pure, sans verrou ni création de ligne (patron de
+/// [`round_to_5_centimes`]) : un réglage modifié pendant le geste est lu tel que
+/// l'instantané de la transaction le voit.
+pub async fn group_settlement_max_difference<'e, E>(
+    executor: E,
+    company_id: i64,
+) -> Result<Decimal, DbError>
+where
+    E: sqlx::Executor<'e, Database = sqlx::MySql>,
+{
+    Ok(sqlx::query_scalar::<_, Decimal>(
+        "SELECT group_settlement_max_difference FROM company_invoice_settings WHERE company_id = ?",
+    )
+    .bind(company_id)
+    .fetch_optional(executor)
+    .await
+    .map_err(map_db_error)?
+    .unwrap_or(DEFAULT_GROUP_DIFFERENCE_MAX))
+}
 
 /// Les dix comptes que les paramètres de facturation désignent : la colonne, et le
 /// code stable que l'API rend pour elle (Story 33-8, #486). Un test compare cette
@@ -149,6 +184,7 @@ pub fn settings_snapshot_json(s: &CompanyInvoiceSettings) -> serde_json::Value {
         "defaultDiscountAccountId": s.default_discount_account_id,
         "defaultBankFeesAccountId": s.default_bank_fees_account_id,
         "defaultBadDebtAccountId": s.default_bad_debt_account_id,
+        "groupSettlementMaxDifference": s.group_settlement_max_difference,
         "version": s.version,
     })
 }
@@ -344,6 +380,9 @@ fn is_no_op_change(
         && before.default_discount_account_id == changes.default_discount_account_id
         && before.default_bank_fees_account_id == changes.default_bank_fees_account_id
         && before.default_bad_debt_account_id == changes.default_bad_debt_account_id
+        // Story 43-7 (#823) : sans cette ligne, un `PUT` qui ne change QUE le
+        // plafond serait jugé « sans changement » (200, rien d'écrit).
+        && before.group_settlement_max_difference == changes.group_settlement_max_difference
 }
 
 /// Les dix comptes désignés, `(code, demandé, en place)`, dans l'ordre de
@@ -539,7 +578,8 @@ pub async fn update(
              default_payable_account_id = ?, default_rounding_account_id = ?, \
              round_to_5_centimes = ?, minimum_invoice_amount = ?, \
              default_discount_account_id = ?, default_bank_fees_account_id = ?, \
-             default_bad_debt_account_id = ?, version = version + 1 \
+             default_bad_debt_account_id = ?, group_settlement_max_difference = ?, \
+             version = version + 1 \
          WHERE company_id = ? AND version = ?",
     )
     .bind(&changes.invoice_number_format)
@@ -559,6 +599,7 @@ pub async fn update(
     .bind(changes.default_discount_account_id)
     .bind(changes.default_bank_fees_account_id)
     .bind(changes.default_bad_debt_account_id)
+    .bind(changes.group_settlement_max_difference)
     .bind(company_id)
     .bind(expected_version)
     .execute(&mut *tx)
@@ -2102,12 +2143,17 @@ mod designated_changes_tests {
             "supplierInternalNumberFormat": "FF", "roundTo5Centimes": false,
             "minimumInvoiceAmount": null, "version": 1,
             "createdAt": "2026-01-01T00:00:00", "updatedAt": "2026-01-01T00:00:00",
+            // Story 43-1a (#823) : le plafond du règlement groupé, champ sans
+            // défaut de l'entité (reprise de `main` après l'Epic 37).
+            "groupSettlementMaxDifference": "5.0000",
         });
         let mut changes = serde_json::json!({
             "invoiceNumberFormat": "F", "defaultSalesJournal": "Ventes",
             "journalEntryDescriptionTemplate": "T", "creditNoteNumberFormat": "A",
             "supplierInternalNumberFormat": "FF", "roundTo5Centimes": false,
             "minimumInvoiceAmount": null,
+            // Story 43-7 (#823) : le plafond, champ sans défaut de la mise à jour.
+            "groupSettlementMaxDifference": "5.0000",
         });
         for (i, (column, _)) in DESIGNATED_ACCOUNT_COLUMNS.iter().enumerate() {
             before[camel(column)] = serde_json::json!(i as i64 + 1);

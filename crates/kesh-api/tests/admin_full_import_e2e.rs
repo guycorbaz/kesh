@@ -6378,3 +6378,230 @@ async fn full_import_refuses_a_forged_account_kind_and_keeps_the_base(pool: MySq
         "la base est intacte après le refus"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Story 43-1a (#823, AC10) — la sauvegarde d'un règlement groupé
+// ---------------------------------------------------------------------------
+
+/// Un compte bancaire lié au 1020 du plan et une transaction `pending` de
+/// `amount` (CHF), rendus `(compte bancaire, transaction)`.
+async fn banque_et_transaction(
+    pool: &MySqlPool,
+    biz: &Business,
+    amount: rust_decimal::Decimal,
+) -> (i64, i64) {
+    let c = biz.ctx.company_id;
+    let bank_account_id = sqlx::query(
+        "INSERT INTO bank_accounts (company_id, bank_name, iban, journal_account_id) \
+         VALUES (?, 'Banque', 'CH9300762011623852957', ?)",
+    )
+    .bind(c)
+    .bind(biz.accounts["1020"])
+    .execute(pool)
+    .await
+    .expect("compte bancaire")
+    .last_insert_id() as i64;
+    let jour = chrono::NaiveDate::from_ymd_opt(2026, 6, 15).unwrap();
+    let import_id = sqlx::query(
+        "INSERT INTO bank_imports (company_id, bank_account_id, filename, file_hash, \
+         source_format, period_from, period_to, imported_by_user_id) \
+         VALUES (?, ?, 'groupe.xml', SHA2('groupe', 256), 'camt053', ?, ?, ?)",
+    )
+    .bind(c)
+    .bind(bank_account_id)
+    .bind(jour)
+    .bind(jour)
+    .bind(biz.ctx.user_id)
+    .execute(pool)
+    .await
+    .expect("import")
+    .last_insert_id() as i64;
+    let bt = sqlx::query(
+        "INSERT INTO bank_transactions (company_id, import_id, bank_account_id, booking_date, \
+         amount, currency, details) VALUES (?, ?, ?, ?, ?, 'CHF', 'virement groupé')",
+    )
+    .bind(c)
+    .bind(import_id)
+    .bind(bank_account_id)
+    .bind(jour)
+    .bind(amount)
+    .execute(pool)
+    .await
+    .expect("transaction")
+    .last_insert_id() as i64;
+    (bank_account_id, bt)
+}
+
+/// L'empreinte de ce que la 43-1a ajoute : règlements (ligne comprise),
+/// factures fournisseur (ligne de règlement), plafond.
+async fn empreinte_groupes(pool: &MySqlPool, company_id: i64) -> Vec<String> {
+    let mut out: Vec<String> = sqlx::query_scalar(
+        "SELECT CONCAT_WS('|', id, invoice_id, journal_entry_id, \
+         COALESCE(journal_entry_line_id, '-'), amount) FROM invoice_settlements \
+         WHERE company_id = ? ORDER BY id",
+    )
+    .bind(company_id)
+    .fetch_all(pool)
+    .await
+    .unwrap();
+    out.extend(
+        sqlx::query_scalar::<_, String>(
+            "SELECT CONCAT_WS('|', id, COALESCE(settlement_journal_entry_line_id, '-')) \
+             FROM supplier_invoices WHERE company_id = ? ORDER BY id",
+        )
+        .bind(company_id)
+        .fetch_all(pool)
+        .await
+        .unwrap(),
+    );
+    out.push(
+        sqlx::query_scalar::<_, String>(
+            "SELECT CAST(group_settlement_max_difference AS CHAR) \
+             FROM company_invoice_settings WHERE company_id = ?",
+        )
+        .bind(company_id)
+        .fetch_one(pool)
+        .await
+        .unwrap(),
+    );
+    out
+}
+
+/// AC10 — l'aller-retour `.keshbackup` d'une base qui porte un règlement groupé
+/// client : empreintes identiques, colonne de ligne et plafond compris.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_round_trips_a_grouped_settlement(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let biz = seed_business(&pool, "GR").await;
+    let c = biz.ctx.company_id;
+    let a = validated_invoice(&pool, &biz).await;
+    let b = validated_invoice(&pool, &biz).await;
+    let du_a = kesh_db::repositories::invoice_settlements::amount_due(&pool, a)
+        .await
+        .unwrap();
+    let du_b = kesh_db::repositories::invoice_settlements::amount_due(&pool, b)
+        .await
+        .unwrap();
+    let (bank_account_id, bt) = banque_et_transaction(&pool, &biz, du_a + du_b).await;
+    let mut tx = pool.begin().await.unwrap();
+    kesh_db::repositories::grouped_settlements::settle_invoices_in_tx(
+        &mut tx,
+        c,
+        bank_account_id,
+        bt,
+        &[a, b],
+        None,
+        1,
+        kesh_db::entities::audit_log::Acteur::utilisateur(biz.ctx.user_id),
+        chrono::NaiveDate::from_ymd_opt(2026, 11, 17).unwrap(),
+    )
+    .await
+    .expect("aucune erreur de base")
+    .expect("groupe réglé");
+    tx.commit().await.unwrap();
+    sqlx::query(
+        "UPDATE company_invoice_settings SET group_settlement_max_difference = 2.50 \
+         WHERE company_id = ?",
+    )
+    .bind(c)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let avant = empreinte_groupes(&pool, c).await;
+    assert!(
+        avant.iter().filter(|l| !l.contains("|-|")).count() >= 2,
+        "assertion de montage : deux règlements portent leur ligne — {avant:?}"
+    );
+
+    let backup = export_backup(&app, &biz.ctx.jwt).await;
+    let (manifest, data) = unzip(&backup);
+    import_ok(&app, &biz.ctx.jwt, &manifest, &data).await;
+
+    assert_eq!(empreinte_groupes(&pool, c).await, avant);
+}
+
+/// AC10 — une sauvegarde 0.18.0 (sans les trois colonnes de la 43-1a)
+/// s'importe : colonnes de ligne à `NULL`, plafond remis à 5.0000.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_of_a_0_18_0_backup_resets_the_group_ceiling(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let biz = seed_business(&pool, "G18").await;
+    let c = biz.ctx.company_id;
+    let a = validated_invoice(&pool, &biz).await;
+    let version: i32 = sqlx::query_scalar("SELECT version FROM invoices WHERE id = ?")
+        .bind(a)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    kesh_db::repositories::invoice_settlements_write::settle_invoice(
+        &pool,
+        biz.ctx.user_id,
+        c,
+        a,
+        kesh_db::entities::SettlementChoice::InternalAccount {
+            account_id: biz.accounts["1000"],
+        },
+        dec!(50.00),
+        chrono::NaiveDate::from_ymd_opt(2026, 4, 1).unwrap(),
+        version,
+    )
+    .await
+    .expect("règlement unitaire");
+    sqlx::query(
+        "UPDATE company_invoice_settings SET group_settlement_max_difference = 2.50 \
+         WHERE company_id = ?",
+    )
+    .bind(c)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let backup = export_backup(&app, &biz.ctx.jwt).await;
+    let (mut manifest, data) = unzip(&backup);
+    strip_column(
+        &mut manifest,
+        "invoice_settlements",
+        "journal_entry_line_id",
+    );
+    strip_column(
+        &mut manifest,
+        "supplier_invoices",
+        "settlement_journal_entry_line_id",
+    );
+    strip_column(
+        &mut manifest,
+        "company_invoice_settings",
+        "group_settlement_max_difference",
+    );
+    import_ok(&app, &biz.ctx.jwt, &manifest, &data).await;
+
+    let lignes: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM invoice_settlements \
+         WHERE company_id = ? AND journal_entry_line_id IS NOT NULL",
+    )
+    .bind(c)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(lignes, 0);
+    let reglements: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM invoice_settlements WHERE company_id = ?")
+            .bind(c)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(reglements, 1, "le règlement unitaire est restauré");
+    let plafond: rust_decimal::Decimal = sqlx::query_scalar(
+        "SELECT group_settlement_max_difference FROM company_invoice_settings \
+         WHERE company_id = ?",
+    )
+    .bind(c)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        plafond,
+        dec!(5.0000),
+        "le plafond revient à sa valeur par défaut"
+    );
+}

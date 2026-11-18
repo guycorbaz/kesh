@@ -45,6 +45,7 @@ pub mod products;
 pub mod profile;
 pub mod projects;
 pub mod reconciliation;
+pub mod reconciliation_group;
 pub mod reconciliation_rules;
 pub mod reports;
 pub mod session_settings;
