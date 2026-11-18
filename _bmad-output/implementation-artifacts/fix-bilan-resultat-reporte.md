@@ -172,6 +172,7 @@ deux « résultats reportés » côte à côte, dont l'un nul (l'ancien logiciel
   groupé à venir.**
   Tendance de la boucle : P1 (Sonnet, complète) 0 au-dessus de LOW, 3 LOW → corrigés ; la remédiation touche la
   production, d'où une **passe P2 ciblée** (`revue-p2-ciblee-prompt.md`).
+- 2026-11-18 — passe P2 ciblée (Sonnet, lecture seule) sur `69d20e34` et `ba8b56ac` : **0 au-dessus de LOW**, 2 LOW — LOW-1 `showsRetainedEarningsLine('')` rend `true` (le DTO porte toujours une chaîne décimale, sans effet) ; LOW-2 `balance_sheet.rs` importe `pdf::round_for_display` (dépendance du modèle vers le rendu, à déplacer après la fusion de `fix/pdf-montants-alignes`, tracé). **Boucle close.** Trend : P1 Sonnet 0 > LOW (3 LOW, corrigés) → P2 ciblée Sonnet 0 > LOW. Gate complet groupé à venir, avant tout push.
 
 ## Notes de version
 
