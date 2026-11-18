@@ -4,6 +4,28 @@
 
 > État au 2026-11-17, à la planification. Les fiches de l'Epic 43 ne sont pas encore écrites : ce qui la concerne ci-dessous est une **intention**, à confirmer à sa fiche. Ce document sera mis à jour mercredi 19 au matin, quand la migration sera arrêtée.
 
+## Coupure du 2026-11-18 — ce qui entre, ce qui sort
+
+**Décision de Guy du 2026-11-18 : la coupure est avancée au mercredi 2026-11-18**, au lancement de l'intégration. Le contenu est figé ; rien d'autre n'entre. Les sections suivantes gardent l'intention du 2026-11-17 ; celle-ci fait foi.
+
+**Le multi-devises (Epic 37, contributeur) est dans la 0.19.0** : il a été fusionné dans `main` le 2026-11-17 (PR #1247), avant les épiques de la release, avec ses trois migrations. La 0.19.0 porte donc **quatre migrations** depuis la 0.18.0 (trois de l'Epic 37, `20261114000001` à `…03`, et `20261118000001_grouped_settlements` de l'Epic 43), **95** au total ; aucune ne relève `kesh_version_min_required`, qui reste à 0.17.6. La sauvegarde complète d'avant la mise à jour est obligatoire ; le retour à la 0.18.0 passe par elle.
+
+| Entre dans la 0.19.0 | Issues |
+|---|---|
+| Epic 37 — comptabilité multi-devises (37-1 à 37-5) | refs #233 |
+| Epic 43 — 43-1a (règlement groupé, modèle et clients), 43-1b (fournisseurs), 43-2 (API), 43-3 (écran), 43-7 (plafond de l'écart) | #823 |
+| Epic 42 — 42-1 (= 36-16a, changer le compte analytique d'une facture client) | refs #1167 |
+| Epic 44 — 44-1a (QR-facture : grille SIX, *Payable by*, largeurs) | refs #944 |
+| Correction de la semaine — v0190-correction (client affiché ≠ client enregistré), v0190-nom-societe (nom de la société modifiable) | #1162, #1097 |
+
+| Sort de la 0.19.0 (statut `backlog`) | Motif |
+|---|---|
+| 43-4 (solde), 43-5 (paiements non rapprochés), 43-6 (raccord avec la réimputation) | coupure du 2026-11-18 (43-5 sortie dès le 2026-11-17 par Guy) |
+| 42-2 (facture fournisseur), 42-3 (écriture manuelle), 42-4 (solde) | coupure du 2026-11-18 (42-2 et 42-3 sorties dès le 2026-11-17) |
+| 44-1b (cascade des paliers), 44-2 (solde) | coupure du 2026-11-18 |
+
+Les épiques 42, 43 et 44 restent ouvertes (`in-progress`) ; #1167 et #944 restent ouvertes.
+
 ## Base de départ
 
 - `main` au tag **v0.18.0** (`8b50fd195`). Production (NAS) en 0.18.0. **91 migrations** ; `kesh_version_min_required` = 0.17.6.
