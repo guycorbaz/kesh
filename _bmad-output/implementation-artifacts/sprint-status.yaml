@@ -1169,4 +1169,4 @@ development_status:
   48-10-montants-ambigus-reglages-filtres: backlog  # = 36-18b ; #1173, #1175, #1176, #1177
 
   # 2026-11-18 — Correctif hors epic (Beat), non urgent, à la prochaine release planifiée, sans migration.
-  fix-cours-afc-bgn: review  # 2026-11-18 développé (branche fix/cours-afc-bgn, base main 70be12a6) : cours AFC des monnaies retirées (BGN, HRK…) retenus, comptes toujours en monnaie active ; revue de code P1 à lancer (kesh-gate-logs/fix-cours-afc-bgn/revue-p1-prompt.md)
+  fix-cours-afc-bgn: review  # 2026-11-18 : branche fix/cours-afc-bgn, main v0.19.0 reprise ; cours AFC des monnaies retirées (BGN, HRK…) retenus, comptes toujours en monnaie active ; revue close (P1, P1-2, P2 ciblée) ; gate complet groupé vert (integ/fixes-0.19.0 à 5fc6fb1b) ; PR à ouvrir
