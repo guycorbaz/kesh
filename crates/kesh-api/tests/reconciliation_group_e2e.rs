@@ -1874,7 +1874,9 @@ async fn la_recherche_reflete_la_retenue_d_un_lot(pool: MySqlPool) {
     let (s, body) = ctx.candidats(tx, "").await;
     assert_eq!(s, 200, "{body}");
     assert_eq!(body["candidates"].as_array().unwrap().len(), 2, "{body}");
-    assert_eq!(body["heldByPaymentBatch"], Value::Null, "{body}");
+    // P4-2 — la clé est **présente** et vaut `null` (l'index d'une clé absente
+    // rendrait aussi `Null`).
+    assert_retenue_nulle(&body);
 
     // Une facture ouverte de 30.00 dans un lot `generated` du compte.
     let retenue = ctx.facture_achat("FF-L", "30.00", "2026-06-01").await;
@@ -1915,6 +1917,53 @@ async fn la_recherche_reflete_la_retenue_d_un_lot(pool: MySqlPool) {
         json!({ "supplierInvoiceId": retenue, "paymentBatchId": lot }),
         "{body}"
     );
+
+    // P4-4 — sondes négatives.
+    // (1) Un crédit du même montant : la recherche client n'est pas touchée.
+    let c1 = ctx.facture("C-1", "10.00", "2026-06-01").await;
+    let c2 = ctx.facture("C-2", "20.00", "2026-06-01").await;
+    let credit = ctx.transaction("30.00", "2026-06-20").await;
+    let (s, body) = ctx.candidats(credit, "").await;
+    assert_eq!(s, 200, "{body}");
+    assert_eq!(body["direction"], "client", "{body}");
+    assert_eq!(ctx.ids_candidats(credit, "").await, vec![c1, c2], "{body}");
+    assert_retenue_nulle(&body);
+    // (2) Le lot sur un **autre** compte bancaire ne retient pas ce débit.
+    let autre_ledger = compte(&pool, ctx.company_id(), "1021", "Banque B", "Asset").await;
+    let autre_banque = ctx.compte_bancaire(IBAN_B, autre_ledger).await;
+    sqlx::query("UPDATE payment_batches SET bank_account_id = ? WHERE id = ?")
+        .bind(autre_banque)
+        .bind(lot)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (s, body) = ctx.candidats(tx, "").await;
+    assert_eq!(s, 200, "{body}");
+    assert_eq!(body["candidates"].as_array().unwrap().len(), 2, "{body}");
+    assert_retenue_nulle(&body);
+    // (3) Le lot rendu au compte puis **confirmé** ne retient plus rien. État
+    // forgé : sa facture reste `open` (la confirmation réelle la paierait, ce
+    // qui l'exclurait déjà par son statut) — seul le statut du lot change, ce
+    // qui isole le critère `pb.status = 'generated'`.
+    sqlx::query(
+        "UPDATE payment_batches SET bank_account_id = ?, status = 'confirmed' WHERE id = ?",
+    )
+    .bind(ctx.bank)
+    .bind(lot)
+    .execute(&pool)
+    .await
+    .unwrap();
+    // Hors de tout lot `generated`, FF-L redevient elle-même candidate.
+    assert_eq!(ctx.ids_candidats(tx, "").await, vec![a, b, retenue]);
+    let (_, body) = ctx.candidats(tx, "").await;
+    assert_retenue_nulle(&body);
+}
+
+/// La réponse de la recherche porte `heldByPaymentBatch`, à `null` (P4-2).
+fn assert_retenue_nulle(body: &Value) {
+    let objet = body.as_object().expect("objet");
+    assert!(objet.contains_key("heldByPaymentBatch"), "{body}");
+    assert_eq!(objet["heldByPaymentBatch"], Value::Null, "{body}");
 }
 
 /// AC7 — la vue et l'annulation d'un groupe fournisseur.
