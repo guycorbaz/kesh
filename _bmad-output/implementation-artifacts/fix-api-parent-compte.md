@@ -96,6 +96,17 @@ sans parent ; l'`UPDATE` de `accounts::update` n'écrit pas `parent_id` ; commen
 ## Change Log
 
 - 2026-11-18 — Correctif (`36d2706a`) et tests (`cc1f2d71`), base `70be12a6`.
+- 2026-11-18 — Gate ciblé au commit `cc1f2d71` (`binary(account_parent_change)` et les tests `put_*` d'`accounts_e2e`) :
+  7 passés. Mutations (`kesh-gate-logs/fix-api-parent-compte/mutations.log`) : **M1** `parent_id` non écrit → trois
+  tests rouges (`ranger_puis_detacher_un_compte_mouvemente`, `un_compte_ne_se_range_pas_sous_lui_meme`,
+  `put_range_un_compte_mouvemente_sous_un_groupe`) ; **M2** remontée des ancêtres en lecture simple → seul
+  `course_un_cycle_ferme_par_un_ancetre_concurrent_est_vu` rouge. **M3** (cycle non refusé), **M4** (nouveau parent
+  laissé imputable), **M5** (contrôles de change retirés) : **non concluantes** — les sept tests y échouent tous en
+  30 s à l'ouverture de leur base (`sqlx-core testing/mod.rs:226`) : le conteneur `kesh-mariadb-dev2` s'est arrêté en
+  cours de campagne (constaté : `container … is not running`), et le témoin sans mutation échoue de même. À rejouer.
+- 2026-11-18 — Écran (`f01e853d`) : champ parent du dialogue de modification, `parentCandidates`,
+  `parentFieldForUpdate` ; commentaire d'`accounts::create` (« `parent_id` immuable ») corrigé ; `sitesTotal` de la
+  garde i18n relevé par la garde, 3388 → 3392 (`front-test-unit-1-rouge-sitesTotal.log`). Dernier commit de code.
 
 ## Notes de version
 
@@ -115,7 +126,10 @@ Opus 5.5.
 
 ### Gates
 
-Voir `kesh-gate-logs/fix-api-parent-compte/`.
+Voir `kesh-gate-logs/fix-api-parent-compte/`. ⚠️ **Gates lourds non joués** (`test-fast.sh --ci`, `gate-ci.sh`, E2E
+complet) ni captures : le conteneur de gate `kesh-mariadb-dev2` est arrêté depuis la campagne de mutations, et un
+agent ne le redémarre pas. Joués : `cargo fmt --check`, `cargo clippy --workspace --all-targets -D warnings` (au
+dernier commit de code), gate frontend au dernier commit de code `f01e853d` : `check` 0 erreur (29 avertissements préexistants), `lint-i18n-ownership`, `test:unit` **4358 tests (271 fichiers)**, `build`.
 
 ### File List
 
