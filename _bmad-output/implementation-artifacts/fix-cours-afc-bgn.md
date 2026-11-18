@@ -120,6 +120,16 @@ Les flux de 2026 après mars (mensuels 2026-10, 2026-12 ; journalier du 13.11.20
   `chf_est_normalise_et_une_devise_refusee_en_mono_devise` ; **M3** `exiger_devise_connue` revenu à la seule liste
   active → rouge `fetch_retient_les_monnaies_retirees_publiees`. Gate ciblé (`cible-nextest-2.log`) : kesh-core et
   les trois binaires des cours et des comptes, 478/478 ; clippy du workspace vert (`cible-clippy.log`).
+- 2026-11-18 — Gates au dernier commit de code `102758bf` (journaux `kesh-gate-logs/fix-cours-afc-bgn/`) :
+  `scripts/test-fast.sh --ci` (base remise à zéro ; `KESH_NO_MEMGUARD=1`, la session n'ayant pas de bus systemd
+  utilisateur — premier essai en échec sur `mem-guard`, avant tout test) : **5953 passés, 13 ignorés**, un flaky
+  rejoué vert hors sujet (`admin_auto_backup_e2e disque_sature_pendant_l_ecriture`) (`gate-backend.log`) ; frontend
+  `check`, `lint-i18n-ownership`, `test:unit` **4353 tests (271 fichiers)**, `build` verts ; E2E complet
+  (`LANG=fr_CH.UTF-8`) **455 passés, 10 échecs, 18 ignorés**, les dix attendus : sept KF-029 (#97),
+  `backup-restore-new-install.spec.ts:262`, `:381`, `opening-balances.spec.ts:156` (`e2e.log`) ; captures après
+  (`captures-apres.log`) : `rejected: 0`, état sans erreur, `GET ?currency=BGN` → 200, ligne BGN au tableau, compte
+  BGN toujours `400 CURRENCY_UNKNOWN`. `scripts/gate-ci.sh` (copie `git archive` de `6ae0116b`, dont le code est celui de `102758bf`, `KESH_NO_MEMGUARD=1`) :
+  **5972 passés, 0 échoué, 17 ignorés** (`gate-ci.log`), cible de compilation supprimée ensuite.
 
 ## Notes de version
 
