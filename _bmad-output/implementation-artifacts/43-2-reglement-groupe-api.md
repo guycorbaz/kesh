@@ -571,6 +571,36 @@ Opus 5.5 (agent de développement, en autonomie), 2026-11-17.
     commit `ed8ab9c97`) ;
   - frontend non touché ; E2E à la clôture.
 
+#### Remédiation de la revue P2 et reprise de la branche d'épique (2026-11-18, décisions de l'orchestrateur)
+
+- **Revue P2** : 0 CRITICAL, 1 HIGH, 2 MEDIUM, 5 LOW (`kesh-gate-logs/e432/review-p2.md`).
+- **Partie A** (commit `5ace2a75d`) :
+  - P2-1 : sans objet, la 43-1b étant close (fiche, épique, C-43-18) ;
+  - P2-2 : garde `rang` ;
+  - P2-3 : guide, l. 733 ;
+  - P2-5 : lot mixte ;
+  - P2-6 : contexte du journal, `classify_db_error_to_failed_proposal` ;
+  - P2-8 : avoir avec sa ligne ;
+  - P2-4 au registre (C-e432-17), pour la 43-3 ; P2-7 en issue proposée.
+  - Gate ciblé : `cible-p2a.log`, commit `5ace2a75d`, 255 passés.
+- **Partie B** :
+  - Fusion de `origin/epic/43-transaction-plusieurs-factures` à `6238dfa18` : commit `866cd1434`.
+  - Deux conflits : `grouped_settlements.rs`, résolu par la version de l'épique (le corps provisoire cède à la 43-1b) ; `sprint-status.yaml`, 43-1a et 43-1b de l'épique, ligne 43-2 de la branche.
+  - Code : commit `f8ce94a5b`, dernier commit de code :
+    - `foreign: None` aux quatre littéraux de test ;
+    - `DifferenceAccountInForeignCurrency` traduite en `ACCOUNT_IN_FOREIGN_CURRENCY` (`accountId`, `currency`). La garde `rang` a fait échouer la compilation du test avant que la variante reçoive son rang 25 (`RANGS` = 26) : c'est sa sonde positive. La ligne est ajoutée à la table de test, à la fiche et au guide ;
+    - les `DbError` d'un groupe passent d'abord par `fx_failed_proposal` (M2) ;
+    - les trois tests fournisseur n'ont plus de `#[ignore]` et passent ;
+    - P2-5 prouvé autrement : une créance tenue en devise dans un exercice mono-devise fait refuser l'écriture (`MULTI_CURRENCY_DISABLED`, `fiscalYearId`), à côté d'un groupe réussi et écrit. Cela exerce aussi M2 ;
+    - un test HTTP du compte d'écart en devise.
+  - Tests à `f8ce94a5b` : `reconciliation_group_e2e.rs` 32 `#[sqlx::test]`, aucun `#[ignore]` ; unitaires 6.
+  - Bases `kesh_e432` et `kesh_e2e_e432` reconstruites à neuf (95 migrations).
+  - Gates :
+    - `scripts/test-fast.sh --ci` : **6059 passés, 0 échec, 13 ignorés** (`test-fast-p2b.log`, en-tête : commit `f8ce94a5b`) ;
+    - `scripts/gate-ci.sh kesh_ci_e432` : **6076 passés, 0 échoué, 17 ignorés** (`gate-ci-p2b.out`/`gate-ci-p2b.log`, en-tête : commit `f8ce94a5b`) ;
+    - frontend non touché ; E2E à la clôture.
+  - Mutations : aucune rejouée sur cette reprise. La garde `rang` a été éprouvée par la compilation, sur la vraie variante neuve.
+
 ### File List
 
 - `crates/kesh-db/src/repositories/reconciliation_group_candidates.rs` (neuf), `repositories/mod.rs`,
