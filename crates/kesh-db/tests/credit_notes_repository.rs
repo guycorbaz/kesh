@@ -1303,3 +1303,85 @@ async fn credit_note_copies_unpriced_lines(pool: MySqlPool) {
         1
     );
 }
+
+/// Story 49-1a (#1242) — AC9 (b) : l'avoir d'une facture dont les lignes
+/// chiffrées portent un compte explicite et qui porte un commentaire (compte
+/// `NULL` par contrainte) **n'exige pas** le compte de produit par défaut :
+/// archivé, il ne bloque pas l'avoir, et il n'est ni verrouillé ni posté.
+#[sqlx::test(migrations = "./test-schema")]
+async fn credit_note_unpriced_line_does_not_require_default_account(pool: MySqlPool) {
+    use kesh_db::entities::LineType;
+
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
+    let explicite = sqlx::query(
+        "INSERT INTO accounts (company_id, number, name, account_type) \
+         VALUES (?, '3200', 'Prestations', 'Revenue')",
+    )
+    .bind(seeded.company_id)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    let (inv, _) = invoices::create(
+        &pool,
+        seeded.admin_user_id,
+        NewInvoice {
+            company_id: seeded.company_id,
+            contact_id: contact,
+            date: d(2026, 6, 15),
+            due_date: None,
+            payment_terms: None,
+            project_id: None,
+            lines: vec![
+                NewInvoiceLine {
+                    description: "Prestation".into(),
+                    quantity: dec!(1),
+                    unit_price: dec!(1000.00),
+                    vat_rate: dec!(8.10),
+                    revenue_account_id: Some(explicite),
+                    line_type: LineType::Priced,
+                },
+                NewInvoiceLine {
+                    description: "Selon devis".into(),
+                    quantity: Decimal::ZERO,
+                    unit_price: Decimal::ZERO,
+                    vat_rate: Decimal::ZERO,
+                    revenue_account_id: None,
+                    line_type: LineType::Comment,
+                },
+            ],
+        },
+    )
+    .await
+    .expect("create invoice");
+    invoices::validate_invoice(&pool, seeded.company_id, inv.id, seeded.admin_user_id)
+        .await
+        .expect("validate invoice");
+    sqlx::query("UPDATE accounts SET active = FALSE WHERE id = ?")
+        .bind(seeded.accounts["3000"])
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let issued = credit_notes::create_credit_note(
+        &pool,
+        NewCreditNote {
+            company_id: seeded.company_id,
+            invoice_id: inv.id,
+            date: d(2026, 7, 1),
+        },
+        seeded.admin_user_id,
+    )
+    .await
+    .expect("le compte par défaut, archivé et non posté, ne bloque pas l'avoir");
+    assert!(
+        issued
+            .journal_entry
+            .lines
+            .iter()
+            .all(|l| l.account_id != seeded.accounts["3000"])
+    );
+    assert_eq!(issued.lines[1].line_type, LineType::Comment);
+    assert_eq!(issued.lines[1].revenue_account_id, None);
+}
