@@ -1,6 +1,6 @@
 # Story 43-7 : le plafond de l'écart d'un règlement groupé, réglé par l'administrateur (#823)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-17 dans la nuit par l'agent de rédaction de l'Epic 43 (Opus 5.5), workflow `bmad-create-story`,
 sur la décision de Guy du 2026-11-17 (Q4 : plafond configurable, 5.00 CHF par défaut) ; **alignée le 2026-11-18 sur le
@@ -239,8 +239,9 @@ Rapport : `kesh-gate-logs/e437/review-p2-ciblee.md` (1 MEDIUM, 2 LOW). Edit seul
 
 Rapport : `kesh-gate-logs/e437/review-p3-ciblee.md` (1 MEDIUM, 3 LOW). Edit seulement.
 - **C3-1 (MEDIUM)** : la phrase de B2-3 était fausse sur l'export CSV : `fmt_decimal` (`csv_tables.rs:108`, `{:.2}`) **tronque**
-  (`5.0060` → `5.00`) ; défaut antérieur, tracé en **#1245**, non corrigé ici. AC1 de la fiche, L-4 et manuel disent désormais :
-  l'audit porte la valeur brute à quatre décimales, l'export CSV la tronque à deux (#1245), l'écran et l'API l'arrondissent.
+  (`5.0060` → `5.00`) ; défaut antérieur, tracé en **#1245**, non corrigé ici. L'**AC1** de la fiche (dans le paragraphe qui précise la limite L-4,
+  ajouté en P2) et le **manuel** disent désormais : l'audit porte la valeur brute à quatre décimales, l'export CSV la tronque à
+  deux (#1245), l'écran et l'API l'arrondissent. Le texte de L-4 lui-même n'a pas changé (il ne parlait pas de l'export ; P4 L4-1).
 - **L3-1** : tests unitaires de `groupMaxChanged` (égal, différent, saisie illisible ou ambiguë, valeur rendue absente ou illisible).
 - **L3-3** : le manuel et la fiche donnent le chemin pour fixer exactement `5.01` quand `5.0060` est stocké (enregistrer `5.02`, puis `5.01`).
 - **L3-2** : écrit comme limite à L-4 de la fiche (piège latent si l'API rendait quatre décimales) ; pas de code.
@@ -266,3 +267,33 @@ Documentation : `docs/manual/fr/admin-manual.tex`, `docs/api-external.md`, cette
   (échelle : deux décimales à l'écran et à l'API, quatre en colonne ; audit `{before, after}` établi).
 - 2026-11-17 — Développement (Opus) : L-1 et L-4 traités à l'étape 0, AC1 à AC6 livrés (hors la seconde moitié de l'AC5, à la 43-2),
   trois mutations tuées, gates au passage en `review` sur la fusion jetable avec la tête de la 43-1a ; `Status: review`.
+- 2026-11-18 — **Clôture** (Change Log final de la boucle de revue).
+  - **Tendance par passe** : P1 (trois lentilles B, E, A, Opus) : 0 CRITICAL, 0 HIGH, **1 MEDIUM** (B1-1, convergent avec E1-2 et
+    A1-1 : l'écran réécrivait au centime un plafond stocké à quatre décimales), une dizaine de LOW, tous remédiés. P2 (ciblée,
+    **Haiku**) : **1 MEDIUM** (B2-1, comparaison du texte saisi et non des valeurs), 2 LOW. P3 (ciblée, **Haiku**) : **1 MEDIUM**
+    (C3-1, la phrase sur l'export CSV était fausse : il tronque, #1245), 3 LOW. P4 (ciblée, **Haiku**) : 0 MEDIUM, **1 LOW** (L4-1,
+    note de remédiation qui attribuait à L-4 un texte qui n'y était pas). P5 (ciblée, **Sonnet**) : **0 / 0 / 0 / 1 LOW** (L5-1, le
+    même que L4-1, corrigé : « AC1 et manuel »). Boucle close sur la P5, sans finding au-dessus de LOW.
+  - **Écart à la règle « modèle différent de la passe précédente »** : les passes P2, P3 et P4 ont toutes été faites par Haiku, à la
+    suite. La P5 sous Sonnet a été ajoutée pour clore la boucle conformément à la règle.
+  - **Reclassements** : aucun finding reclassé en dette. Le défaut de l'export CSV (C3-1) sort de la story : **#1245**, non corrigé
+    ici. Les limites L-4 (affichage au centime d'une valeur à quatre décimales posée par SQL) et L3-2 (écran qui suppose l'API
+    arrondie) sont assumées et écrites (fiche, manuel).
+  - **Clôture, sur la base commune** : fusion de `origin/epic/43-transaction-plusieurs-factures` (`6238dfa18`, 43-1a, 43-1b et reprise
+    de `main` avec l'Epic 37, migration 95), fusion `11eb56338`. Conflits : `grouped_settlements.rs` (fin de fichier, les deux blocs
+    gardés) et `i18n-keys.test.ts` (`sitesTotal` **3388 + 6 = 3394**, la garde le confirme au Vitest complet) ; le squash de test n'a
+    pas conflit. **Deux interactions sans conflit de texte** avec l'Epic 37, vues au compilateur et au test : `account_currency_repository.rs`
+    construit un `CompanyInvoiceSettingsUpdate` (champ ajouté), et `designated_changes_follows_designated_account_columns` désérialise
+    la mise à jour en JSON (champ ajouté au JSON) ; commits `fix(43-7)` dédiés.
+  - **Gates de clôture** (dernier commit de code = celui qui précède ce commit de clôture ; journaux `kesh-gate-logs/e437/`) :
+    `test-fast --ci` **6023 passés, 0 échoué, 13 ignorés** (`cloture-test-fast-2.log` ; un premier passage, `cloture-test-fast.log`, avait
+    rougi sur `designated_changes_…`, corrigé) ; `gate-ci kesh_ci_e437` **6040 passés, 0 échoué, 17 ignorés**
+    (`cloture-gate-ci-3.log`) ; Vitest complet **4391 passés, 272 fichiers** (`vitest-cloture.log`), `npm run check` 0 erreur
+    (`cloture-check.log`), `lint-i18n-ownership` PASS, `npm run build` exit 0 (`cloture-build.log`) ; **E2E complet** (script
+    `e2e-cloture.sh`, port 3437, base `kesh_e2e_e437`) : **458 passés, 7 échoués, 18 ignorés** (`e2e-cloture.log`), les sept échecs
+    étant exactement ceux de la KF-029 (#97) de `docs/testing.md` (`mode-expert.spec.ts:26` et `:41`, `onboarding-path-b.spec.ts:65`
+    et `:92`, `onboarding.spec.ts:57`, `:77` et `:150`), aucun autre. Incidents de gate sans rapport avec le code : un compile tué par
+    oomd (exit 137), puis deux `gate-ci` interrompus par **disque plein** (`target/` de ce worktree à 92 Go, nettoyé par `cargo clean`,
+    puis rejeu complet vert).
+  - **Captures** refaites sur le build fusionné : `kesh-gate-logs/e437/captures/{1-defaut,2-ambigu,3-au-dela,4-enregistre}.png`.
+  - **Issue** : #1245 (export CSV qui tronque). Aucune autre à ouvrir.
