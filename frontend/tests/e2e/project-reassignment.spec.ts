@@ -331,7 +331,7 @@ test('une facture réglée en groupe : le refus s’affiche, rien ne change', as
 		await expect(error).toContainText('réglée avec d');
 		await expect(page.getByTestId('project-reassign-warning')).toHaveCount(0);
 		await expect(page.getByTestId('project-reassign-confirm')).toHaveCount(0);
-		await capture(page, testInfo, 'refus-groupe');
+		await page.screenshot({ path: capturePath(testInfo, '43-6-refus-groupe'), fullPage: true });
 
 		expect(await lineProjects(ctx, a)).toEqual(before);
 		const fiche = await (await ctx.get(`/api/v1/invoices/${a}`)).json();

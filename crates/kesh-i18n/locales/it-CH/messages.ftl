@@ -4060,7 +4060,7 @@ error-project-reassignment-closed-period = { $entryCount ->
 }
 error-project-reassignment-closed-period-admin-only = Solo un amministratore connesso all'interfaccia web può cambiare il conto analitico di un esercizio chiuso o di un periodo bloccato: chiederlo a un amministratore.
 error-project-reassignment-grouped-settlement = Questa fattura è stata saldata insieme ad altre con uno stesso bonifico: il suo conto analitico non si può cambiare. Annullate prima la riconciliazione di questo pagamento raggruppato.
-projects-reassign-open =Cambia il conto analitico
+projects-reassign-open = Cambia il conto analitico
 projects-reassign-title = Cambia il conto analitico
 projects-reassign-body = Il documento e tutte le sue registrazioni passano al conto analitico scelto. Importi, conti, date, numeri, abbinamento e riconciliazione non cambiano.
 projects-reassign-none = — Nessuno
