@@ -260,11 +260,23 @@ describe('CancelReconciliationDialog — règlement groupé (Story 43-3)', () =>
 		const texte = (await findByTestId('reconciliation-cancel-confirm-text')).textContent ?? '';
 		expect(texte).toContain('le règlement des factures F-12, #15 sera retiré');
 		expect(getAllByTestId('reconciliation-cancel-group-invoice').map((li) => li.textContent?.trim())).toEqual([
-			'F-12 — 500.0000',
-			'#15 — 300.0000',
+			'F-12 — 500.00',
+			'#15 — 300.00',
 		]);
+		// Revue P1 (A L-2, B-L6, B-L7) : montants au centime, écart dit avec son sens.
 		expect(getByTestId('reconciliation-cancel-group-gap').textContent).toBe(
-			"L'écart de -0.40 passé au compte 6940 Frais bancaires sera contre-passé avec elle.",
+			'Moins-payé de 0.40, passé au compte 6940 Frais bancaires, sera contre-passé avec l’écriture.',
+		);
+	});
+
+	// Revue P1 (E-L11) : un écart dont le compte n'a pas pu être relu reste annoncé.
+	it('écart sans compte relu : la contre-passation de l’écart reste annoncée', async () => {
+		mockApi.getReconciliationTransaction.mockResolvedValue(
+			view({ ...groupe, gap: '0.40', differenceAccount: null }),
+		);
+		const { findByTestId } = monter();
+		expect((await findByTestId('reconciliation-cancel-group-gap')).textContent).toBe(
+			'Trop-perçu de 0.40 sera contre-passé avec l’écriture.',
 		);
 	});
 

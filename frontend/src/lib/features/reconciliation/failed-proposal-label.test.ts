@@ -19,7 +19,9 @@
 // littéraux de ses refus (`grep -oE '"[A-Z][A-Z_]{4,}"'` sur `group_refusal_to_failed_proposal`,
 // les codes y étant écrits sur une ligne à part après `fail(`) et de ceux de `reconciliation.rs`.
 // Deux codes neufs, `RECONCILIATION_GROUP_INVALID` et `RECONCILIATION_GROUP_DIFFERENCE_TOO_LARGE`
-// (relevé sur la branche de la 43-2, commit `70f74f964`) : 39 codes.
+// (relevé sur la branche de la 43-2, commit `70f74f964`) : 39 codes. Depuis la fusion de l'Epic 37
+// (43-2 `d20095425`) : **48** — les huit codes de `fx_failed_proposal` (Story 37-3b) et
+// `ACCOUNT_IN_FOREIGN_CURRENCY`, que le groupe pose pour le compte de l'écart.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -533,7 +535,6 @@ describe('failedProposalLabel — règlement groupé (Story 43-3)', () => {
 	it('les replis des clés neuves égalent le catalogue fr-CH', () => {
 		const cas: [string, unknown, typeof GROUP | undefined][] = [
 			['RECONCILIATION_GROUP_INVALID', { reason: 'too_few' }, undefined],
-			['RECONCILIATION_GROUP_INVALID', { reason: 'too_many' }, undefined],
 			['RECONCILIATION_GROUP_INVALID', { reason: 'duplicate' }, undefined],
 			['RECONCILIATION_GROUP_INVALID', { reason: 'difference_account_required' }, undefined],
 			['RECONCILIATION_GROUP_INVALID', {}, undefined],
@@ -554,6 +555,11 @@ describe('failedProposalLabel — règlement groupé (Story 43-3)', () => {
 		calls.length = 0;
 		const max = failedProposalLabel('RECONCILIATION_GROUP_DIFFERENCE_TOO_LARGE', { maxDifference: '5.00' });
 		expect(max).toBe(valeurFr(calls[0])?.replace('{ $max }', '5.00'));
+		// Revue P1 (B-L9) : le plafond de 50 n'est plus écrit en dur dans le libellé.
+		calls.length = 0;
+		const trop = failedProposalLabel('RECONCILIATION_GROUP_INVALID', { reason: 'too_many' });
+		expect(valeurFr(calls[0])).toContain('{ $max }');
+		expect(trop).toBe(valeurFr(calls[0])?.replace('{ $max }', '50'));
 		calls.length = 0;
 		const num = failedProposalLabel('ACCOUNT_NOT_POSTABLE', { rejected: [{ accountNumber: '6900' }] }, GROUP);
 		expect(num).toBe(valeurFr(calls[0])?.replace('{ $numbers }', '6900'));

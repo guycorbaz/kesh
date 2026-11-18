@@ -25,7 +25,7 @@
   réponse dépassée ignorée).
 -->
 <script lang="ts">
-	import { untrack } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
@@ -54,6 +54,7 @@
 		isDifferenceAccountRefusal,
 	} from './failed-proposal-label';
 	import {
+		MAX_GROUP_INVOICES,
 		NO_CHOICE,
 		candidateNumber,
 		decompose,
@@ -66,11 +67,12 @@
 		parseUnits,
 		prefillAccount,
 		selectAccount,
-		submitBlock,
+		submitBlocks,
 		type AccountChoice,
 		type DesignatedAccounts,
 		type GroupFamily,
 	} from './group-settlement';
+	import { gapSenseLabel } from './gap-label';
 	import { createLatestRequest, createSessionGuard } from './modal-guards';
 
 	type Props = {
@@ -100,7 +102,7 @@
 	/** Le délai anti-rebond de la recherche (D4). */
 	const SEARCH_DEBOUNCE_MS = 250;
 	/** Le plafond du nombre de factures d'un groupe (43-1a, `too_many`). */
-	const MAX_INVOICES = 50;
+	const MAX_INVOICES = MAX_GROUP_INVOICES;
 
 	/**
 	 * D5 — la facture n'est plus réglable : retirée des imputées, nommée, la recherche relue (elle
@@ -131,6 +133,13 @@
 
 	const session = createSessionGuard();
 	const latest = createLatestRequest<GroupCandidatesResponse>(SEARCH_DEBOUNCE_MS);
+	// Revue P1 (B-L11) : un délai anti-rebond en attente ne part pas après le démontage.
+	onDestroy(() => latest.cancel());
+	/**
+	 * Revue P1 (E-L2) : l'ouverture qui a lancé la lecture des réglages. Distincte de `session`,
+	 * qu'une soumission renouvelle : une soumission partie avant leur arrivée ne les perd plus.
+	 */
+	let openToken = 0;
 
 	let query = $state('');
 	let results = $state<GroupCandidate[]>([]);
@@ -166,8 +175,9 @@
 	const differenceAccountId = $derived(
 		effectiveDifferenceAccount(choice, prefill, accounts, bankLedgerAccountId),
 	);
-	const block = $derived(
-		submitBlock({
+	/** Toutes les causes qui retiennent *Enregistrer* (revue P1 : aucune n'en masque une autre). */
+	const blocks = $derived(
+		submitBlocks({
 			count: imputed.length,
 			decomposition,
 			maxDifference,
@@ -175,65 +185,77 @@
 			differenceAccountId,
 		}),
 	);
+	/** Au moins deux factures : avant, l'écran n'annonce aucun écart (revue P1, A M-1, E-M1). */
+	const enoughInvoices = $derived(imputed.length >= 2);
+	const tooLarge = $derived(blocks.includes('gap-too-large'));
 	/** Le total imputé, au brut s'il porte une fraction de centime (D3). */
 	const totalText = $derived(decomposition ? formatTotal(decomposition.total) : '');
-	const gapAbs = $derived(
-		decomposition ? formatUnits(decomposition.gap < 0n ? -decomposition.gap : decomposition.gap) : '',
-	);
 
 	/** Le libellé de l'écart : son sens et son montant, au centime (D2 bis, C-43-26). */
 	const gapText = $derived.by(() => {
-		if (!decomposition) return '';
-		if (block === 'gap-too-large') {
-			return i18nMsg('reconciliation-group-gap-too-large', 'Écart trop grand (au plus { $max })', {
-				max: maxDifference ?? '',
-			});
+		if (!decomposition || !enoughInvoices) return '—';
+		const label = gapSenseLabel(family, decomposition.gap);
+		if (tooLarge) {
+			return i18nMsg(
+				'reconciliation-group-gap-too-large',
+				'Écart trop grand : { $gap } (au plus { $max })',
+				{ gap: label, max: maxDifference ?? '' },
+			);
 		}
-		switch (sense) {
-			case 'client-under':
-				return i18nMsg('reconciliation-group-gap-client-under', 'Moins-payé de { $amount }', {
-					amount: gapAbs,
-				});
-			case 'client-over':
-				return i18nMsg('reconciliation-group-gap-client-over', 'Trop-perçu de { $amount }', {
-					amount: gapAbs,
-				});
-			case 'supplier-over':
-				return i18nMsg(
-					'reconciliation-group-gap-supplier-over',
-					'Débit supérieur aux factures de { $amount }',
-					{ amount: gapAbs },
-				);
-			case 'supplier-under':
-				return i18nMsg(
-					'reconciliation-group-gap-supplier-under',
-					'Débit inférieur aux factures de { $amount }',
-					{ amount: gapAbs },
-				);
-			default:
-				return i18nMsg('reconciliation-group-gap-none', 'Aucun écart');
-		}
+		return label;
 	});
 
-	/** Le sélecteur n'apparaît que pour un écart non nul dans le plafond. */
+	/**
+	 * Le sélecteur n'apparaît que pour un écart non nul, dans le plafond, d'au moins deux
+	 * factures, le plafond lu.
+	 */
 	const showAccount = $derived(
-		decomposition !== null && decomposition.gap !== 0n && block !== 'gap-too-large',
+		decomposition !== null &&
+			enoughInvoices &&
+			decomposition.gap !== 0n &&
+			!tooLarge &&
+			!blocks.includes('unreadable'),
 	);
 
-	/** Le texte qui dit pourquoi *Enregistrer* reste inactif, s'il y a lieu. */
-	const blockText = $derived.by(() => {
-		switch (block) {
-			case 'too-few':
-				return i18nMsg('reconciliation-group-min-two', 'Ajoutez au moins deux factures.');
-			case 'account-required':
-				// Le même texte que le refus du serveur (`difference_account_required`).
-				return failedProposalLabel('RECONCILIATION_GROUP_INVALID', {
-					reason: 'difference_account_required',
-				});
-			default:
-				return '';
-		}
-	});
+	/**
+	 * Les phrases qui disent pourquoi *Enregistrer* reste inactif — une par cause (revue P1,
+	 * B-L4, E-L6). L'arrondi sans compte a son propre avis, plus haut.
+	 */
+	const blockTexts = $derived(
+		blocks.flatMap((b): string[] => {
+			switch (b) {
+				case 'too-few':
+					return [
+						i18nMsg('reconciliation-group-min-two', 'Ajoutez au moins deux factures.'),
+					];
+				case 'unreadable':
+					return [
+						i18nMsg(
+							'reconciliation-group-block-unreadable',
+							'Kesh n’a pas pu lire un montant ou le plafond de l’écart : relancez la recherche.',
+						),
+					];
+				case 'gap-too-large':
+					return enoughInvoices
+						? [
+								i18nMsg(
+									'reconciliation-group-block-gap-too-large',
+									'L’écart dépasse le plafond admis : ajoutez ou retirez une facture, ou réglez la transaction autrement.',
+								),
+							]
+						: [];
+				case 'account-required':
+					// Le même texte que le refus du serveur (`difference_account_required`).
+					return [
+						failedProposalLabel('RECONCILIATION_GROUP_INVALID', {
+							reason: 'difference_account_required',
+						}),
+					];
+				default:
+					return [];
+			}
+		}),
+	);
 
 	// À chaque ouverture, fermeture ou changement de transaction : session neuve ; à l'ouverture,
 	// remise à zéro, lecture des comptes désignés et première recherche (par le nom de la
@@ -243,9 +265,11 @@
 	$effect(() => {
 		const ouverte = open ? proposal : null;
 		untrack(() => {
-			const mySession = session.next();
+			session.next();
+			const myOpen = ++openToken;
 			latest.cancel();
 			submitting = false;
+			searching = false;
 			if (!ouverte) return;
 			query = ouverte.transaction.counterpartyName ?? '';
 			results = [];
@@ -262,22 +286,25 @@
 			accountError = '';
 			refusals = [];
 			errorMsg = '';
-			void loadDesignated(mySession);
+			void loadDesignated(myOpen);
 			search(true);
 		});
 	});
 
-	/** Les comptes désignés (préremplissage, compte d'arrondi) ; illisibles : `null` (C-e433-2). */
-	async function loadDesignated(mySession: number): Promise<void> {
+	/**
+	 * Les comptes désignés (préremplissage, compte d'arrondi) ; illisibles : `null` (C-e433-2).
+	 * Gardés par l'ouverture, non par la session : une soumission ne les perd pas (E-L2).
+	 */
+	async function loadDesignated(myOpen: number): Promise<void> {
 		try {
 			const s = await getInvoiceSettings();
-			if (!session.isCurrent(mySession)) return;
+			if (myOpen !== openToken) return;
 			designated = {
 				roundingAccountId: s.defaultRoundingAccountId,
 				bankFeesAccountId: s.defaultBankFeesAccountId,
 			};
 		} catch {
-			if (session.isCurrent(mySession)) designated = null;
+			if (myOpen === openToken) designated = null;
 		}
 	}
 
@@ -308,6 +335,8 @@
 				onError: (e) => {
 					if (!session.isCurrent(mySession)) return;
 					searching = false;
+					// Revue P1 (E-L5) : l'invite « d'autres factures » ne survit pas à une erreur.
+					hasMore = false;
 					const fermer = isApiError(e) ? FERMER_SUR_RECHERCHE[e.code] : undefined;
 					if (fermer !== undefined) {
 						closeStale(failedProposalLabel(fermer));
@@ -325,6 +354,7 @@
 		toast.error(message);
 		session.next();
 		latest.cancel();
+		searching = false;
 		onOpenChange(false);
 		onStale();
 	}
@@ -333,14 +363,24 @@
 		if (imputed.length >= MAX_INVOICES || imputed.some((x) => x.id === c.id)) return;
 		imputed = [...imputed, c];
 		results = results.filter((x) => x.id !== c.id);
-		refusals = [];
+		clearMessages();
 		search(true);
 	}
 
 	function removeInvoice(id: number): void {
 		imputed = imputed.filter((x) => x.id !== id);
-		refusals = [];
+		clearMessages();
 		search(true);
+	}
+
+	/**
+	 * Revue P1 (B-L1, E-L4) : un refus ou une erreur ne survit pas à un changement du groupe — le
+	 * seul geste qui change l'écart et son signe.
+	 */
+	function clearMessages(): void {
+		refusals = [];
+		accountError = '';
+		errorMsg = '';
 	}
 
 	function onAccountSelect(id: number | null): void {
@@ -348,7 +388,7 @@
 		accountError = '';
 	}
 
-	/** Le numéro d'une facture en cause dans un refus : `details.invoiceNumber`, sinon la liste imputée. */
+	/** L'identifiant de la facture en cause dans un refus (`invoiceId` ou `supplierInvoiceId`). */
 	function refusedInvoiceId(details: unknown): number | null {
 		if (typeof details !== 'object' || details === null) return null;
 		const d = details as { invoiceId?: unknown; supplierInvoiceId?: unknown };
@@ -356,6 +396,7 @@
 		return typeof id === 'number' ? id : null;
 	}
 
+	/** Le numéro d'une facture en cause dans un refus : `details.invoiceNumber`, sinon la liste imputée. */
 	function refusedInvoiceName(details: unknown): string | null {
 		const number = detailString(details, 'invoiceNumber');
 		if (number !== null) return number;
@@ -381,37 +422,44 @@
 	}
 
 	/**
-	 * Relit les restes dus des factures imputées (C-e433-4) : chacune cherchée par son numéro ;
-	 * une facture que la recherche ne rend plus n'est plus réglable, elle est retirée et nommée.
+	 * Relit les restes dus des factures imputées (C-e433-4, C-e433-12) : chacune cherchée par son
+	 * numéro. Une facture que la recherche ne rend pas — numéro absent, recherche trop large,
+	 * erreur — n'est **jamais** retirée ni dite « plus réglable » : la recherche textuelle ne le
+	 * prouve pas (revue P1, B-M2, E-L1). Elle reste, avec son montant d'avant, et la phrase dit
+	 * qu'elle n'a pas pu être relue ; le serveur tranchera à l'enregistrement.
 	 */
 	async function rereadImputed(txId: number, mySession: number): Promise<void> {
 		const current = imputed;
 		const reread = await Promise.all(
-			current.map(async (c) => {
+			current.map(async (c): Promise<GroupCandidate | null> => {
+				const number = candidateNumber(c);
+				if (number.startsWith('#')) return null;
 				try {
-					const r = await getGroupCandidates(txId, { q: candidateNumber(c), limit: 100 });
+					const r = await getGroupCandidates(txId, { q: number, limit: 100 });
 					return r.candidates.find((x) => x.kind === c.kind && x.id === c.id) ?? null;
 				} catch {
-					return c;
+					return null;
 				}
 			}),
 		);
 		if (!session.isCurrent(mySession)) return;
-		const kept: GroupCandidate[] = [];
-		const removed: string[] = [];
-		current.forEach((c, i) => {
+		const notReread: string[] = [];
+		imputed = current.map((c, i) => {
 			const fresh = reread[i];
-			if (fresh === null) removed.push(candidateNumber(c));
-			else kept.push(fresh);
+			if (fresh === null) {
+				notReread.push(candidateNumber(c));
+				return c;
+			}
+			return fresh;
 		});
-		imputed = kept;
 		refusals = [
 			...refusals,
-			...removed.map((number) =>
-				i18nMsg('reconciliation-group-refusal-invoice', 'Facture { $number } : { $label }', {
-					number,
-					label: failedProposalLabel('RECONCILIATION_INVOICE_NOT_ELIGIBLE'),
-				}),
+			...notReread.map((number) =>
+				i18nMsg(
+					'reconciliation-group-not-reread',
+					'Facture { $number } : son reste dû n’a pas pu être relu ; Kesh le vérifiera à l’enregistrement.',
+					{ number },
+				),
 			),
 		];
 	}
@@ -445,7 +493,9 @@
 		}
 		if (stale) await rereadImputed(txId, mySession);
 		if (!session.isCurrent(mySession)) return;
-		if (isDifferenceAccountRefusal(f.errorCode, f.details, sentAccountId)) {
+		// Sous le sélecteur seulement s'il est affiché après la relecture ; sinon avec les autres
+		// refus : jamais un refus muet (revue P1, B-M3, E-M2).
+		if (isDifferenceAccountRefusal(f.errorCode, f.details, sentAccountId) && showAccount) {
 			accountError = failedProposalLabel(f.errorCode, f.details, {
 				group: true,
 				differenceAccountId: sentAccountId,
@@ -478,7 +528,7 @@
 				'reconciliation-group-amounts-changed',
 				'Les montants ont changé avant l’enregistrement. Écart réellement passé : { $gap } (compte { $account }) ; arrondi passé au compte d’arrondi : { $rounding }.',
 				{
-					gap: formatUnits(gap),
+					gap: gapSenseLabel(family, gap),
 					account: accountLabel(a.differenceAccountId),
 					rounding: formatSignedUnits(rounding),
 				},
@@ -487,7 +537,7 @@
 	}
 
 	async function submit(): Promise<void> {
-		if (!proposal || block !== null || submitting || !decomposition) return;
+		if (!proposal || blocks.length > 0 || submitting || !decomposition) return;
 		const txId = proposal.bankTransactionId;
 		const ids = imputed.map((c) => c.id);
 		const sentAccountId = decomposition.gap !== 0n ? differenceAccountId : null;
@@ -502,6 +552,8 @@
 						...account,
 					};
 		latest.cancel();
+		// Revue P1 (B-M1) : la recherche avortée ne rendra rien ; son état « Recherche… » tombe ici.
+		searching = false;
 		const mySession = session.next();
 		submitting = true;
 		errorMsg = '';
@@ -511,20 +563,21 @@
 			const r = await acceptProposals(bankAccountId, [body]);
 			const accepted = r.accepted.find((a) => a.bankTransactionId === txId);
 			if (accepted) {
+				const successText = i18nMsg(
+					'reconciliation-group-success',
+					'Règlement enregistré : { $count } factures réglées par cette transaction.',
+					{ count: ids.length },
+				);
 				if (!session.isCurrent(mySession)) {
-					// Fermée pendant l'envoi : le règlement a eu lieu ; le parent relit sa liste si
-					// aucune modale n'est ouverte, une modale rouverte n'est pas touchée.
+					// Fermée pendant l'envoi : le règlement a eu lieu, et le toast le dit (revue P1,
+					// E-L7) ; le parent relit sa liste si aucune modale n'est ouverte, une modale
+					// rouverte n'est pas touchée.
+					toast.success(successText);
 					if (!open) onSuccess();
 					return;
 				}
 				checkCoherence(accepted);
-				toast.success(
-					i18nMsg(
-						'reconciliation-group-success',
-						'Règlement enregistré : { $count } factures réglées par cette transaction.',
-						{ count: ids.length },
-					),
-				);
+				toast.success(successText);
 				onSuccess();
 				onOpenChange(false);
 				return;
@@ -554,8 +607,10 @@
 
 		{#if proposal}
 			<p class="text-sm text-text-muted" data-testid="group-tx-summary">
-				{formatSwissDate(proposal.transaction.valueDate ?? proposal.transaction.bookingDate)} — {proposal
-					.transaction.amount}
+				<!-- Revue P1 (A L-1, E-L8) : le montant au centime, comme au pied de la fenêtre. -->
+				{formatSwissDate(proposal.transaction.valueDate ?? proposal.transaction.bookingDate)} — {displayDue(
+					proposal.transaction.amount,
+				)}
 				{proposal.transaction.currency}{#if proposal.transaction.counterpartyName}
 					{' '}— {proposal.transaction.counterpartyName}{/if}
 			</p>
@@ -582,7 +637,7 @@
 				/>
 			</div>
 
-			<section class="mt-2" data-testid="group-results-section">
+			<section class="mt-2" data-testid="group-results-section" aria-live="polite">
 				{#if searching}
 					<p class="text-sm text-text-muted" data-testid="group-loading">
 						{i18nMsg('reconciliation-group-loading', 'Recherche…')}
@@ -671,7 +726,7 @@
 						</table>
 					</div>
 				{/if}
-				{#if hasMore && !searching}
+				{#if hasMore && !searching && !searchError}
 					<p class="mt-1 text-sm text-text-muted" data-testid="group-has-more">
 						{i18nMsg(
 							'reconciliation-group-has-more',
@@ -703,9 +758,22 @@
 					</p>
 				{:else}
 					<table
-						class="mt-1 w-full table-auto text-sm [&_td]:px-2 [&_td]:py-1"
+						class="mt-1 w-full table-auto text-sm [&_td]:px-2 [&_td]:py-1 [&_th]:px-2"
 						data-testid="group-imputed-table"
 					>
+						<!-- Revue P1 (B-L5) : des colonnes nommées pour un lecteur d'écran. -->
+						<thead class="sr-only">
+							<tr>
+								<th>{i18nMsg('reconciliation-group-col-invoice', 'Facture')}</th>
+								<th>
+									{family === 'client'
+										? i18nMsg('reconciliation-group-col-client', 'Client')
+										: i18nMsg('reconciliation-group-col-supplier', 'Fournisseur')}
+								</th>
+								<th>{i18nMsg('reconciliation-group-col-due', 'Reste dû')}</th>
+								<th>{i18nMsg('reconciliation-group-remove', 'Retirer')}</th>
+							</tr>
+						</thead>
 						<tbody>
 							{#each imputed as c (`${c.kind}-${c.id}`)}
 								<tr data-testid="group-imputed-row" data-invoice-id={c.id}>
@@ -739,7 +807,7 @@
 			</section>
 
 			<section class="mt-4 border-t pt-3 text-sm" data-testid="group-footer">
-				<dl class="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1">
+				<dl class="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1" aria-live="polite">
 					<dt>{i18nMsg('reconciliation-group-total-transaction', 'Montant du relevé')}</dt>
 					<dd class="text-right" data-testid="group-transaction-amount">
 						{decomposition ? formatUnits(decomposition.transaction) : proposal.transaction.amount}
@@ -748,15 +816,15 @@
 					<dd class="text-right" data-testid="group-total-imputed">{totalText}</dd>
 					<dt>{i18nMsg('reconciliation-group-gap-label', 'Écart')}</dt>
 					<dd
-						class="text-right font-semibold {block === 'gap-too-large' ? 'text-destructive' : ''}"
+						class="text-right font-semibold {tooLarge && enoughInvoices ? 'text-destructive' : ''}"
 						data-testid="group-gap"
-						data-gap-sense={sense ?? 'none'}
+						data-gap-sense={enoughInvoices ? (sense ?? 'none') : 'none'}
 					>
 						{gapText}
 					</dd>
 				</dl>
 
-				{#if decomposition && decomposition.rounding !== 0n}
+				{#if decomposition && enoughInvoices && decomposition.rounding !== 0n}
 					<!-- D2 bis — l'arrondi est une information, avec ou sans écart. -->
 					<p class="mt-2 text-text-muted" data-testid="group-rounding">
 						{i18nMsg(
@@ -765,9 +833,10 @@
 							{ amount: formatSignedUnits(decomposition.rounding) },
 						)}
 					</p>
-					{#if block === 'rounding-not-configured'}
+					{#if blocks.includes('rounding-not-configured')}
 						<p
 							class="mt-1 rounded-md border border-warning bg-warning/10 px-3 py-2"
+							role="status"
 							data-testid="group-rounding-not-configured"
 						>
 							{i18nMsg(
@@ -809,6 +878,7 @@
 				<ul
 					class="mt-2 list-disc rounded-md border border-destructive bg-destructive/10 py-2 pr-3 pl-8 text-sm text-destructive"
 					role="alert"
+					aria-live="assertive"
 					data-testid="group-refusals"
 				>
 					{#each refusals as r, i (i)}
@@ -827,8 +897,13 @@
 				</div>
 			{/if}
 
-			{#if blockText}
-				<p class="mt-2 text-sm text-text-muted" data-testid="group-block-hint">{blockText}</p>
+			{#if blockTexts.length > 0}
+				<!-- Une phrase par cause qui retient Enregistrer (revue P1, B-L4, E-L6). -->
+				<div class="mt-2 text-sm text-text-muted" id="group-block-hint" data-testid="group-block-hint">
+					{#each blockTexts as t, i (i)}
+						<p data-testid="group-block-reason">{t}</p>
+					{/each}
+				</div>
 			{/if}
 		{/if}
 
@@ -841,7 +916,12 @@
 			>
 				{i18nMsg('reconciliation-group-cancel', 'Annuler')}
 			</Button>
-			<Button onclick={submit} disabled={submitting || block !== null} data-testid="group-submit">
+			<Button
+				onclick={submit}
+				disabled={submitting || blocks.length > 0}
+				aria-describedby={blockTexts.length > 0 ? 'group-block-hint' : undefined}
+				data-testid="group-submit"
+			>
 				{i18nMsg('reconciliation-group-submit', 'Enregistrer')}
 			</Button>
 		</Dialog.Footer>

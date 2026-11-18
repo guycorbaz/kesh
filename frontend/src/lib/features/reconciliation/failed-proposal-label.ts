@@ -15,7 +15,9 @@
  * `INACTIVE_OR_INVALID_ACCOUNTS` (le règlement d'une facture fournisseur). Un code apparu depuis
  * retombe sur le repli, qui **montre le code brut** : mieux vaut un code qu'une case vide.
  *
- * Story 43-3 (#823, AC4) — **39 codes** : le règlement groupé (Story 43-2) pose ses refus dans
+ * Story 43-3 (#823, AC4) — **39 codes** à la story, **48** depuis la fusion de l'Epic 37 (les huit
+ * codes de `fx_failed_proposal`, Story 37-3b, et `ACCOUNT_IN_FOREIGN_CURRENCY`, que le groupe pose
+ * pour le compte de l'écart) : le règlement groupé (Story 43-2) pose ses refus dans
  * `crates/kesh-api/src/routes/reconciliation_group.rs`, par `group_refusal_to_failed_proposal`,
  * et y ajoute deux codes neufs, `RECONCILIATION_GROUP_INVALID` (par `details.reason` :
  * `too_few`, `too_many`, `duplicate`, `difference_account_required`) et
@@ -92,6 +94,7 @@
  */
 import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 import { fxRefusalMessage } from '$lib/features/journal-entries/fx-refusals';
+import { MAX_GROUP_INVOICES } from './group-settlement';
 
 /**
  * Numéros des comptes non imputables d'un `details` de la forme
@@ -540,7 +543,8 @@ export function failedProposalLabel(
 			if (reason === 'too_many') {
 				return i18nMsg(
 					'reconciliation-failed-group-too-many',
-					'Un règlement de plusieurs factures en compte au plus 50.'
+					'Un règlement de plusieurs factures en compte au plus { $max }.',
+					{ max: MAX_GROUP_INVOICES }
 				);
 			}
 			if (reason === 'duplicate') {

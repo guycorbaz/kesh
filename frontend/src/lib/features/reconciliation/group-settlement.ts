@@ -170,8 +170,9 @@ export function prefillAccount(
 
 /**
  * Le choix de l'utilisateur dans le sélecteur du compte de l'écart. `byUser` se pose à toute
- * sélection (même du compte prérempli) et se lève quand le champ est vidé ; tant qu'il est
- * posé, le compte reste, quel que soit le signe de l'écart (fiche, D2 bis).
+ * sélection (même du compte prérempli) et au vidage du champ ; tant qu'il est posé, le choix
+ * reste — un compte, ou le champ vide —, quel que soit le signe de l'écart (fiche, D2 bis ;
+ * le vidage, revue P1, C-e433-13).
  */
 export interface AccountChoice {
 	byUser: boolean;
@@ -181,10 +182,16 @@ export interface AccountChoice {
 /** Aucun choix : le préremplissage s'applique. */
 export const NO_CHOICE: AccountChoice = { byUser: false, accountId: null };
 
-/** Le choix après une sélection dans le sélecteur ; `null` = champ vidé. */
+/**
+ * Le choix après un geste dans le sélecteur ; `null` = champ vidé par l'utilisateur, qui reste
+ * vide (le « × » a un effet réel, revue P1, C-e433-13) jusqu'à ce qu'il choisisse un compte.
+ */
 export function selectAccount(id: number | null): AccountChoice {
-	return id === null ? NO_CHOICE : { byUser: true, accountId: id };
+	return { byUser: true, accountId: id };
 }
+
+/** Le plafond du nombre de factures d'un règlement groupé (43-1a, `too_many`). */
+export const MAX_GROUP_INVOICES = 50;
 
 /**
  * Le compte effectivement montré et envoyé (choix C-e433-3) : le choix de l'utilisateur s'il
@@ -226,22 +233,32 @@ export interface SubmitInput {
 }
 
 /**
- * Ce qui empêche l'envoi, ou `null` si *Enregistrer* est actif (fiche, D3) : au moins deux
- * factures ; si `r ≠ 0`, un compte d'arrondi désigné ; si `e ≠ 0`, `|e| ≤ maxDifference` et
- * un compte choisi. Avec `e = 0`, le plafond ne joue pas, même réglé à 0.00, comme le serveur.
+ * **Toutes** les causes qui empêchent l'envoi, dans l'ordre où l'écran les dit ; vide si
+ * *Enregistrer* est actif (fiche, D3) : au moins deux factures ; si `r ≠ 0`, un compte
+ * d'arrondi désigné ; si `e ≠ 0`, `|e| ≤ maxDifference` et un compte choisi. Avec `e = 0`, le
+ * plafond ne joue pas, même réglé à 0.00, comme le serveur. Une cause n'en masque aucune autre
+ * (revue P1, A M-1, E-M1 : l'écart au-delà du plafond s'annonçait « dans le plafond » sous
+ * deux factures). Le compte n'est demandé que si l'écart est dans le plafond, et d'au moins
+ * deux factures (sous deux, l'écran n'annonce aucun écart).
  */
-export function submitBlock(input: SubmitInput): SubmitBlock | null {
-	if (input.count < 2) return 'too-few';
+export function submitBlocks(input: SubmitInput): SubmitBlock[] {
+	const blocks: SubmitBlock[] = [];
+	if (input.count < 2) blocks.push('too-few');
 	const dec = input.decomposition;
-	if (dec === null) return 'unreadable';
-	if (dec.rounding !== 0n && input.roundingDesignated === false) return 'rounding-not-configured';
+	if (dec === null) return [...blocks, 'unreadable'];
+	if (dec.rounding !== 0n && input.roundingDesignated === false) blocks.push('rounding-not-configured');
 	if (dec.gap !== 0n) {
 		const max = parseUnits(input.maxDifference);
-		if (max === null) return 'unreadable';
-		if (abs(dec.gap) > max) return 'gap-too-large';
-		if (input.differenceAccountId === null) return 'account-required';
+		if (max === null) blocks.push('unreadable');
+		else if (abs(dec.gap) > max) blocks.push('gap-too-large');
+		else if (input.differenceAccountId === null && input.count >= 2) blocks.push('account-required');
 	}
-	return null;
+	return blocks;
+}
+
+/** La première cause qui empêche l'envoi, ou `null` si *Enregistrer* est actif. */
+export function submitBlock(input: SubmitInput): SubmitBlock | null {
+	return submitBlocks(input)[0] ?? null;
 }
 
 /** Le numéro affichable d'une candidate : numéro client, numéro interne, à défaut celui du fournisseur. */

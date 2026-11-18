@@ -1115,8 +1115,11 @@ const ATTENDU = {
 	// Fusion de l'épique (`d54bad428`, 43-7 comprise) dans la 43-3 (2026-11-18) : relevé par la garde
 	// après la fusion (`kesh-gate-logs/e433/fusion-epic-releve-1.log`), non additionné : 3456.
 	// Puis l'avis `reconciliation-group-held-by-batch` (revue P4 de la 43-2, P4-1), un littéral :
-	// **3457**, relevé par la garde (`kesh-gate-logs/e433/held-by-batch-releve-1.log`).
-	sitesTotal: 3457,
+	// **3457**, relevé par la garde (`kesh-gate-logs/e433/front-complet-review.log`, vert à 3457).
+	// Remédiation de la revue P1 de la 43-3 : **3466**, relevé par la garde (« expected 3466 to be
+	// 3457 », `kesh-gate-logs/e433/rem1-vitest-1.log`) — causes d'Enregistrer inactif, relecture,
+	// en-tête des factures imputées, écart sans compte à l'annulation, fin d'un groupe fournisseur.
+	sitesTotal: 3466,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

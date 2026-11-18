@@ -19,6 +19,7 @@ import {
 	prefillAccount,
 	selectAccount,
 	submitBlock,
+	submitBlocks,
 	type SubmitInput,
 } from './group-settlement';
 
@@ -163,6 +164,19 @@ describe('Enregistrer — ce qui le retient (D3)', () => {
 		expect(submitBlock(input({ count: 0 }))).toBe('too-few');
 	});
 
+	// Revue P1 (A M-1, E-M1) : une cause n'en masque aucune autre ; sous deux factures, le compte
+	// n'est pas demandé.
+	it('toutes les causes : moins de deux factures n’efface pas le plafond, ni l’arrondi', () => {
+		const grand = decompose('293.60', []);
+		expect(submitBlocks(input({ count: 0, decomposition: grand }))).toEqual(['too-few', 'gap-too-large']);
+		expect(submitBlocks(input({ count: 1, differenceAccountId: null }))).toEqual(['too-few']);
+		const arrondiEtGrand = decompose('26.00', ['10.0049', '10.0000']);
+		expect(
+			submitBlocks(input({ decomposition: arrondiEtGrand, roundingDesignated: false })),
+		).toEqual(['rounding-not-configured', 'gap-too-large']);
+		expect(submitBlocks(input({}))).toEqual([]);
+	});
+
 	it('écart dans le plafond, compte choisi → actif', () => {
 		expect(submitBlock(input({}))).toBeNull();
 	});
@@ -255,10 +269,11 @@ describe('choix gardé (D2 bis, C-e433-3)', () => {
 		expect(selectAccount(6940)).toEqual({ byUser: true, accountId: 6940 });
 	});
 
-	it('vider le champ lève le drapeau : le préremplissage revient', () => {
+	// Revue P1 (C-e433-13) : le « × » d'un champ prérempli a un effet réel.
+	it('vider le champ le laisse vide, même si un préremplissage existe', () => {
 		const choice = selectAccount(null);
-		expect(choice).toEqual(NO_CHOICE);
-		expect(effectiveDifferenceAccount(choice, 6940, ACCOUNTS, BANK)).toBe(6940);
+		expect(choice).toEqual({ byUser: true, accountId: null });
+		expect(effectiveDifferenceAccount(choice, 6940, ACCOUNTS, BANK)).toBeNull();
 	});
 
 	it('un choix sorti de la liste (banque) retombe à vide', () => {

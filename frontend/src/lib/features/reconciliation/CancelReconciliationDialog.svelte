@@ -36,6 +36,8 @@
 		reconciliationCancelMessage,
 	} from './reconciliation-cancel';
 	import type { GroupedPieceRef } from './reconciliation.types';
+	import { displayDue, parseUnits } from './group-settlement';
+	import { gapSenseLabel } from './gap-label';
 
 	/** Story 43-3 — le numéro d'une facture d'un groupe, `#id` à défaut. */
 	function pieceLabel(p: GroupedPieceRef): string {
@@ -97,17 +99,30 @@
 
 	/**
 	 * Story 43-3 — l'écart du groupe et son compte, tels que le serveur les rend (`gap`,
-	 * `differenceAccount`, recalculés par la 43-2) ; rien si l'écart est nul ou le compte absent.
+	 * `differenceAccount`, recalculés par la 43-2), l'écart dit avec son **sens**, comme dans la
+	 * modale (revue P1, A L-2, E-L11) ; annoncé même si son compte n'a pas pu être relu ; rien si
+	 * l'écart est nul ou illisible.
 	 */
 	const groupGapText = $derived.by(() => {
 		if (view?.kind !== 'grouped_settlement') return null;
-		const gap = view.gap ?? null;
+		const gap = parseUnits(view.gap ?? null);
+		if (gap === null || gap === 0n) return null;
+		const family = (view.groupedInvoices ?? []).some((g) => g.kind === 'supplier_invoice')
+			? 'supplier'
+			: 'client';
+		const label = gapSenseLabel(family, gap);
 		const account = view.differenceAccount ?? null;
-		if (gap === null || account === null || /^-?0(\.0+)?$/.test(gap)) return null;
+		if (account === null) {
+			return i18nMsg(
+				'reconciliation-cancel-confirm-group-gap-no-account',
+				'{ $gap } sera contre-passé avec l’écriture.',
+				{ gap: label },
+			);
+		}
 		return i18nMsg(
 			'reconciliation-cancel-confirm-group-gap',
-			"L'écart de { $gap } passé au compte { $account } sera contre-passé avec elle.",
-			{ gap, account: `${account.number} ${account.name}` },
+			'{ $gap }, passé au compte { $account }, sera contre-passé avec l’écriture.',
+			{ gap: label, account: `${account.number} ${account.name}` },
 		);
 	});
 
@@ -211,7 +226,7 @@
 				<ul class="list-disc pl-6 text-sm" data-testid="reconciliation-cancel-group-invoices">
 					{#each groupedInvoices as g (`${g.kind}-${g.id}`)}
 						<li data-testid="reconciliation-cancel-group-invoice" data-invoice-id={g.id}>
-							{pieceLabel(g)} — {g.amount}
+							{pieceLabel(g)} — {displayDue(g.amount)}
 						</li>
 					{/each}
 				</ul>

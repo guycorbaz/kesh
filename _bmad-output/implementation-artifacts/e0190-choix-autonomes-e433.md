@@ -75,3 +75,29 @@ HTTP sans interception. Autre option : fabriquer chaque état en base (compte pa
 groupée, plus de 50 candidates) — plusieurs heures pour des captures. La recherche « sans résultat » est interceptée
 aussi : la recherche de la 43-2 est une disjonction de jetons, et un terme fait de jetons uniques à l'exécution trouvait
 encore le tiers du décor (`e2e-group-3.log`).
+
+**C-e433-12 — Relecture des montants : une facture non retrouvée reste (revue P1, B-M2, E-L1 ; remplace la
+seconde moitié de C-e433-4).** L'API n'offre aucune lecture d'une candidate par identifiant avec son reste dû
+**brut** et ses conditions de réglabilité (date, lot) : `GET /invoices/{id}` rend un `amountDue` sans garantie de
+brut, et rien n'existe pour une facture fournisseur. La relecture garde donc la recherche par numéro, mais une
+facture qu'elle ne rend pas — numéro absent (`#id`), recherche trop large, erreur — n'est **jamais** retirée ni dite
+« plus réglable » : elle reste, avec son montant d'avant, et une phrase dit qu'elle n'a pas pu être relue ; le
+serveur tranche à l'enregistrement, et ses refus nommés (D5) la retirent s'il le faut. Autre option : relire par
+`GET /invoices/{id}` pour les clients seulement — deux chemins pour une même grandeur, et un reste dû dont la forme
+n'est pas celle du calcul.
+
+**C-e433-13 — Le « × » du compte de l'écart laisse le champ vide (revue P1, B-L2).** Vider le champ pose le choix
+« aucun compte » (`selectAccount(null)` → `{ byUser: true, accountId: null }`) : le préremplissage ne revient pas,
+le compte est demandé, et *Enregistrer* le dit. La fiche (D2 bis) disait « [le drapeau] se lève si l'utilisateur
+vide le champ » : le geste n'avait alors aucun effet visible, le compte prérempli réapparaissant aussitôt. Le choix
+se lève à la réouverture de la modale.
+
+**C-e433-14 — Hors story, noté (revue P1, E-L10).** Un plafond stocké à quatre décimales par une écriture SQL
+directe (5.0050) est rendu arrondi par l'API (`maxDifference` à deux décimales, 5.01) : l'écran admet un écart que
+le `POST` refuse, et le refus revient à chaque clic. Angle mort de la 43-7 (le réglage par l'écran est au centime),
+renvoyé à la 43-7 et à #1245.
+
+**C-e433-15 — Fermeture pendant l'envoi (revue P1, E-L7).** Corrigé en partie : le toast de succès part même la
+modale fermée. Reste : modale rouverte sur une autre transaction pendant l'envoi, le parent ne relit pas sa liste
+(appeler `onSuccess` fermerait la modale rouverte) ; la ligne réglée reste jusqu'à la relecture suivante, et un
+geste dessus finit en `NOT_PENDING` (toast et fermeture). Une issue est demandée au rapport.

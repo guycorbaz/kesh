@@ -216,6 +216,21 @@ describe('GroupSettlementModal — ouverture et recherche (D2, AC2)', () => {
 		expect(texte(r, 'group-block-hint')).toBe('Ajoutez au moins deux factures.');
 	});
 
+	// Revue P1 (A M-1, E-M1) : sous deux factures, aucun écart annoncé, aucun sélecteur — le
+	// montant entier n'est jamais présenté comme un trop-perçu à imputer.
+	it('0 puis 1 facture : aucun écart annoncé, aucun sélecteur, aucun arrondi', async () => {
+		serve([inv(12, '10.0049'), inv(15, '300.0000', 'Autre SàRL')]);
+		const { r } = monter(proposal('799.60'));
+		await r.findAllByTestId('group-result-row');
+		expect(texte(r, 'group-gap')).toBe('—');
+		expect(r.queryByTestId('group-account-section')).toBeNull();
+		await ajouter(r, 12);
+		expect(texte(r, 'group-gap')).toBe('—');
+		expect(r.queryByTestId('group-account-section')).toBeNull();
+		expect(r.queryByTestId('group-rounding')).toBeNull();
+		expect(texte(r, 'group-block-hint')).toBe('Ajoutez au moins deux factures.');
+	});
+
 	it('une facture ajoutée part dans exclude et quitte les résultats ; retirée, elle y revient', async () => {
 		serve([inv(12, '500.0000'), inv(15, '300.0000', 'Autre SàRL')]);
 		const { r } = monter();
@@ -417,9 +432,28 @@ describe('GroupSettlementModal — écart, arrondi et compte (D2 bis, D3)', () =
 
 	it('écart au-delà du plafond lu dans la réponse (1.00) : « Écart trop grand », pas de sélecteur, inactif', async () => {
 		const { r } = await deuxFactures('798.99', ['500.0000', '300.0000'], { maxDifference: '1.00' });
-		expect(texte(r, 'group-gap')).toBe('Écart trop grand (au plus 1.00)');
+		expect(texte(r, 'group-gap')).toBe('Écart trop grand : Moins-payé de 1.01 (au plus 1.00)');
 		expect(r.queryByTestId('group-account-section')).toBeNull();
 		expect(submit(r).disabled).toBe(true);
+		// Revue P1 (B-L4) : une phrase dit pourquoi Enregistrer reste inactif.
+		expect(texte(r, 'group-block-hint')).toContain('L’écart dépasse le plafond admis');
+	});
+
+	// Revue P1 (A M-1, E-M1) : sans compte d'arrondi désigné, l'écart au-delà du plafond reste
+	// annoncé « trop grand », sans sélecteur.
+	it.each([
+		['avec compte d’arrondi désigné', 6960],
+		['sans compte d’arrondi désigné', null],
+	] as const)('deux factures au-delà du plafond, %s : « Écart trop grand », aucun sélecteur', async (_cas, arrondi) => {
+		mockSettings.mockResolvedValue(settings(arrondi, 6940));
+		// 10.0049 + 10.0000 payés 26.00 : e = +6.00 (plafond 5.00), r = −0.0049.
+		const { r } = await deuxFactures('26.00', ['10.0049', '10.0000']);
+		await waitFor(() =>
+			expect(texte(r, 'group-gap')).toBe('Écart trop grand : Trop-perçu de 6.00 (au plus 5.00)'),
+		);
+		expect(r.queryByTestId('group-account-section')).toBeNull();
+		expect(submit(r).disabled).toBe(true);
+		if (arrondi === null) await r.findByTestId('group-rounding-not-configured');
 	});
 
 	it('compte désigné archivé : champ vide, compte demandé, Enregistrer inactif', async () => {
@@ -494,9 +528,52 @@ describe('GroupSettlementModal — écart, arrondi et compte (D2 bis, D3)', () =
 		await fireEvent.click(submit(r));
 		await waitFor(() => expect(mockToast.warning).toHaveBeenCalledTimes(1));
 		const message = mockToast.warning.mock.calls[0][0] as string;
-		expect(message).toContain('-0.50');
+		// Revue P1 (B-L7) : l'écart passé est dit avec son sens.
+		expect(message).toContain('Moins-payé de 0.50');
 		expect(message).toContain('6940 Frais bancaires');
 	});
+
+	it('vider le champ prérempli le laisse vide, et le compte est demandé (C-e433-13)', async () => {
+		const { r } = await deuxFactures('799.60', ['500.0000', '300.0000']);
+		await waitFor(() => expect(champCompte()?.value).toBe('6940 — Frais bancaires'));
+		const effacer = r
+			.getByTestId('group-account-section')
+			.querySelector('button[aria-label="Effacer le compte sélectionné"]');
+		expect(effacer, 'le bouton « × » du champ').toBeTruthy();
+		await fireEvent.mouseDown(effacer as HTMLElement);
+		await fireEvent.click(effacer as HTMLElement);
+		await waitFor(() => expect(champCompte()?.value).toBe(''));
+		expect(texte(r, 'group-block-hint')).toBe('Choisissez le compte de l’écart.');
+		expect(submit(r).disabled).toBe(true);
+	});
+
+	it('un refus du compte s’efface quand le groupe change (B-L1, E-L4)', async () => {
+		serve([inv(12, '500.0000'), inv(15, '300.0000', 'Autre SàRL'), inv(16, '0.1000')]);
+		const { r } = monter(proposal('799.60'));
+		await ajouter(r, 12);
+		await ajouter(r, 15);
+		await waitFor(() => expect(submit(r).disabled).toBe(false));
+		mockApi.acceptProposals.mockResolvedValue({
+			accepted: [],
+			failed: [{ bankTransactionId: TX, errorCode: 'ACCOUNT_NOT_FOUND', details: { missingAccountIds: [6940] } }],
+		});
+		await fireEvent.click(submit(r));
+		await r.findByTestId('group-account-error');
+		await ajouter(r, 16);
+		expect(r.queryByTestId('group-account-error')).toBeNull();
+	});
+
+	it('cinquante factures au plus : Ajouter grisé, la phrase le dit (E-L9)', async () => {
+		const pool = Array.from({ length: 51 }, (_, i) => inv(100 + i, '1.0000', `Tiers ${i}`));
+		serve(pool);
+		const { r } = monter(proposal('50.00'));
+		for (let i = 0; i < 50; i += 1) await ajouter(r, 100 + i);
+		await r.findByTestId('group-max-reached');
+		expect(texte(r, 'group-max-reached')).toBe('Un règlement compte au plus 50 factures.');
+		await waitFor(() =>
+			expect(r.getAllByTestId('group-add').every((b) => (b as HTMLButtonElement).disabled)).toBe(true),
+		);
+	}, 30000);
 });
 
 describe('GroupSettlementModal — refus (D5, AC4)', () => {
@@ -698,6 +775,72 @@ describe('GroupSettlementModal — refus (D5, AC4)', () => {
 		expect(texte(r, 'group-load-error')).toBe('Le compte bancaire est clos.');
 		expect(cb.onStale).not.toHaveBeenCalled();
 	});
+
+	// Revue P1 (E-L5) : l'invite « d'autres factures » ne survit pas à une erreur de recherche.
+	it('hasMore puis erreur de recherche : l’invite disparaît', async () => {
+		serve([inv(12, '500.0000')], { hasMore: true });
+		const { r } = monter();
+		await r.findByTestId('group-has-more');
+		mockApi.getGroupCandidates.mockRejectedValue({ code: 'BANK_ACCOUNT_CLOSED', message: 'Clos.', status: 409 });
+		await fireEvent.input(r.getByTestId('group-search-input'), { target: { value: 'x' } });
+		await r.findByTestId('group-load-error');
+		expect(r.queryByTestId('group-has-more')).toBeNull();
+	});
+
+	// Revue P1 (B-M3, E-M2, B-M2, E-L1 ; C-e433-12) : une relecture impossible ne retire rien et
+	// ne dit pas la facture « plus réglable » ; le refus, sans sélecteur, s'affiche avec les autres.
+	it('difference_account_required, relecture impossible : factures gardées, refus visible, relecture dite', async () => {
+		serve([inv(12, '500.0000'), inv(15, '300.0000', 'Autre SàRL')]);
+		const { r } = monter(proposal('800.00'));
+		await ajouter(r, 12);
+		await ajouter(r, 15);
+		await waitFor(() => expect(submit(r).disabled).toBe(false));
+		mockApi.getGroupCandidates.mockRejectedValue({ code: 'DATABASE_ERROR', message: 'x', status: 500 });
+		mockApi.acceptProposals.mockResolvedValue({
+			accepted: [],
+			failed: [
+				{
+					bankTransactionId: TX,
+					errorCode: 'RECONCILIATION_GROUP_INVALID',
+					details: { reason: 'difference_account_required', gap: '-0.40' },
+				},
+			],
+		});
+		await fireEvent.click(submit(r));
+		await r.findAllByTestId('group-refusal');
+		const textes = r.getAllByTestId('group-refusal').map((x) => x.textContent?.trim());
+		expect(textes).toContain('Facture F-12 : son reste dû n’a pas pu être relu ; Kesh le vérifiera à l’enregistrement.');
+		expect(textes).toContain('Choisissez le compte de l’écart.');
+		expect(r.getAllByTestId('group-imputed-row')).toHaveLength(2);
+		expect(r.queryByTestId('group-account-error')).toBeNull();
+	});
+
+	it('relecture : une facture absente de la recherche reste, sans être dite « plus réglable »', async () => {
+		const pool = [inv(12, '500.0000'), inv(15, '300.0000', 'Autre SàRL')];
+		serve(pool);
+		const { r } = monter(proposal('800.00'));
+		await ajouter(r, 12);
+		await ajouter(r, 15);
+		await waitFor(() => expect(submit(r).disabled).toBe(false));
+		// La recherche par numéro ne retrouve plus F-15 (numéro trop partagé, fenêtre tronquée…).
+		pool.splice(1, 1);
+		mockApi.acceptProposals.mockResolvedValue({
+			accepted: [],
+			failed: [
+				{
+					bankTransactionId: TX,
+					errorCode: 'RECONCILIATION_GROUP_DIFFERENCE_TOO_LARGE',
+					details: { gap: '-6.00', maxDifference: '5.00' },
+				},
+			],
+		});
+		await fireEvent.click(submit(r));
+		await r.findAllByTestId('group-refusal');
+		const textes = r.getAllByTestId('group-refusal').map((x) => x.textContent ?? '');
+		expect(textes.some((t) => t.includes('F-15 : son reste dû n’a pas pu être relu'))).toBe(true);
+		expect(textes.some((t) => t.includes('n\'est pas éligible'))).toBe(false);
+		expect(r.getAllByTestId('group-imputed-row')).toHaveLength(2);
+	});
 });
 
 describe('GroupSettlementModal — gardes de concurrence (D4, AC3)', () => {
@@ -762,7 +905,28 @@ describe('GroupSettlementModal — gardes de concurrence (D4, AC3)', () => {
 			failed: [],
 		});
 		await waitFor(() => expect(cb.onSuccess).toHaveBeenCalledTimes(1));
-		expect(mockToast.success).not.toHaveBeenCalled();
+		// Revue P1 (E-L7) : le règlement passé est dit, même la modale fermée.
+		expect(mockToast.success).toHaveBeenCalledTimes(1);
+	});
+
+	// Revue P1 (B-M1) : une recherche avortée par l'envoi ne laisse pas « Recherche… » affiché.
+	it('envoi pendant une recherche : « Recherche… » ne reste pas affiché après un refus', async () => {
+		serve([inv(12, '500.0000'), inv(15, '300.0000', 'Autre SàRL')]);
+		const { r } = monter(proposal('800.00'));
+		await ajouter(r, 12);
+		// La recherche relancée par le second ajout ne répond jamais.
+		mockApi.getGroupCandidates.mockImplementation(() => new Promise(() => {}));
+		const boutons = await r.findAllByTestId('group-add');
+		await fireEvent.click(boutons.find((b) => b.getAttribute('data-invoice-id') === '15') as HTMLElement);
+		await r.findByTestId('group-loading');
+		mockApi.acceptProposals.mockResolvedValue({
+			accepted: [],
+			failed: [{ bankTransactionId: TX, errorCode: 'PERIOD_LOCKED', details: null }],
+		});
+		await waitFor(() => expect(submit(r).disabled).toBe(false));
+		await fireEvent.click(submit(r));
+		await r.findByTestId('group-refusal');
+		expect(r.queryByTestId('group-loading')).toBeNull();
 	});
 });
 

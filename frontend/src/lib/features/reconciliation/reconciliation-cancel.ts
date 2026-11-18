@@ -108,6 +108,14 @@ export function reconciliationCancelDoneMessage(result: CancelReconciliationResp
 	}
 	// Story 43-3 (#823, AC5) — un règlement groupé défait rouvre ses N factures.
 	const reopened = result.cancelledInvoices?.length ?? 0;
+	// Revue P1 (B-L12) : des factures fournisseur redeviennent validées, à payer, non « à régler ».
+	if (reopened > 0 && result.cancelledInvoices?.some((p) => p.kind === 'supplier_invoice')) {
+		return i18nMsg(
+			'reconciliation-cancel-done-group-supplier',
+			'Rapprochement annulé : { $count } factures fournisseur redeviennent validées, à payer.',
+			{ count: reopened },
+		);
+	}
 	if (reopened > 0) {
 		return i18nMsg(
 			'reconciliation-cancel-done-group',

@@ -413,8 +413,13 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
  * **Fusion de la 43-2 (Epic 37 compris) dans la 43-3** (2026-11-18) : relevé par la garde après la
  * fusion (`kesh-gate-logs/e433/fusion-432-releve-1.log`, verte à 128), non additionné — 119 + 9
  * (Story 43-3) ; `ecartee` **22**, `conforme` **106**.
+ *
+ * **128 → 129** (remédiation de la revue P1 de la 43-3) : `gapSenseLabel`
+ * (`reconciliation/gap-label.ts`, tout par `i18nMsg`) ; `blockText` devient `blockTexts` (hors
+ * suffixe) ; `ecartee` **22 → 21**, `conforme` **106 → 108**, relevés par la garde
+ * (`kesh-gate-logs/e433/rem1-vitest-1.log`), non additionnés.
  */
-const CANDIDATES_ATTENDUES = 128;
+const CANDIDATES_ATTENDUES = 129;
 
 /** Les trois délimiteurs de littéral en JS/TS. */
 const QUOTES = ["'", '"', '`'];
@@ -931,7 +936,7 @@ describe('libellés en dur — l’angle mort #255', () => {
 			else if (c.retours.length > 0) classes.ecartee += 1;
 			else classes.conforme += 1;
 		}
-		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 22, conforme: 106 });
+		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 21, conforme: 108 });
 		// La somme est recalculée depuis les classes, jamais depuis le total qu'elle contrôle.
 		const somme = Object.values(classes).reduce((a, b) => a + b, 0);
 		expect(somme).toBe(CANDIDATES_ATTENDUES);
