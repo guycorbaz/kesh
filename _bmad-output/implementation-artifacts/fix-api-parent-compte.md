@@ -148,6 +148,21 @@ sans parent ; l'`UPDATE` de `accounts::update` n'écrit pas `parent_id` ; commen
   des candidats et un `data-testid`. **Gate complet groupé à venir.**
 - La remédiation touche la production : passe P2 ciblée requise (`revue-p2-ciblee-prompt.md`).
 - 2026-11-18 — passe P2 ciblée (Sonnet, lecture seule) sur `4241e6b7`..`3e1bfbb0` : **0 au-dessus de LOW**, 4 LOW. P2-4 (phrase soudée de `docs/api-external.md`) corrigée par l'orchestrateur ; P2-1 (formulation du refus quand le parent est déjà non imputable), P2-2 (comptes E2E non nettoyés), P2-3 (nom de variable d'un test) tracés en issues. **Boucle close.** Trend : P1 Opus 3 MEDIUM + 5 LOW → P2 ciblée Sonnet 0 > LOW. Gate complet groupé à venir, avant tout push.
+- 2026-11-18 — **Reprise de `main` après la v0.19.0, puis gate complet groupé.** `origin/main` (`773df80d`, tag
+  `v0.19.0`) repris par fusion (`f47532f4`), sans rebase ; conflits résolus en gardant les deux intentions (`sprint-status.yaml` : les deux blocs ; `docs/api-external.md` : le paragraphe du correctif et celui de `groupSettlementMaxDifference` gardés, les lignes `ACCOUNT_PARENT_*` ajoutées à celles de `main`, « Depuis la v0.19.0 » de `main` ; la mention « release qui suit la v0.18.0 » du correctif, devenue fausse, portée à « la v0.19.0 » ; `i18n-keys.test.ts` : `sitesTotal` **3499**, relevé par la garde, non additionné — 3495 de la 0.19.0 + 4 du correctif).
+  Gate ciblé après la reprise : `fmt`, `clippy` du workspace, nextest des bibliothèques `kesh-db` et `kesh-api` et de neuf binaires (`account_currency_repository`, `account_parent_change`, `credit_card_repository`, `invoice_write_off`, `invoices_validate_vat`, `letterings`, `supplier_invoices_repository`, `accounts_e2e`, `journal_entry_reversal_e2e`) **1539 passés, 5 ignorés**, Vitest `src/lib/features/accounts` et garde i18n **76 tests (6 fichiers)** (`kesh-gate-logs/fix-api-parent-compte/reprise-v0190-*.log`). Puis `origin/main` `37c2f875` (documentation seule : `CLAUDE.md`, bilan de la
+  0.19.0, `sprint-status.yaml`) repris de même. **Gate complet groupé** sur la branche jetable `integ/fixes-0.19.0`
+  (`773df80d` + les quatre correctifs fusionnés dans l'ordre PDF, monnaies retirées, résultat reporté, parent du
+  compte ; seul conflit, `sprint-status.yaml`), **au commit `5fc6fb1b`**, base `kesh_integ` remise à zéro :
+  `scripts/test-fast.sh --ci` **6165 passés, 14 ignorés** ; frontend `check` 0 erreur (29 avertissements
+  préexistants), `lint-i18n-ownership`, `test:unit` **4627 tests (278 fichiers)**, `build` ; **E2E complet**
+  (`LANG=fr_CH.UTF-8`, port 3382) **478 passés, 10 échecs, 18 ignorés** — les dix attendus, jugés un à un : sept KF-029
+  (#97 : `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`,
+  `:150`), `backup-restore-new-install.spec.ts:262`, `:381`, `opening-balances.spec.ts:156` (`docs/testing.md`
+  inchangé par la 0.19.0) ; `scripts/gate-ci.sh` (copie `git archive`) **6184 passés, 0 échoué, 18 ignorés**.
+  Journaux : `kesh-gate-logs/integ-fixes-0.19.0/` (`gate-backend.log`, `front-*.log`, `e2e.log`, `gate-ci.log`) ; un
+  premier essai, arrêté par le disque plein de la station, est gardé dans `avorte-disque-plein/`. Le commit de
+  documentation `37c2f875` n'a pas été rejoué au gate (aucun code).
 
 ## Notes de version
 
@@ -166,6 +181,9 @@ sans parent ; l'`UPDATE` de `accounts::update` n'écrit pas `parent_id` ; commen
 Opus 5.5.
 
 ### Gates
+
+**Gate complet groupé (2026-11-18)** : vert au commit `5fc6fb1b` de `integ/fixes-0.19.0` — chiffres au Change Log,
+journaux dans `kesh-gate-logs/integ-fixes-0.19.0/`.
 
 Journaux dans `kesh-gate-logs/fix-api-parent-compte/`. **Gate ciblé vert ; gate complet groupé à venir** (décision de
 Beat du 2026-11-18 : `scripts/test-fast.sh --ci`, l'E2E complet et `scripts/gate-ci.sh` se joueront une seule fois, sur
