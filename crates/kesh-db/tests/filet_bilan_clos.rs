@@ -123,12 +123,14 @@ fn corps(s: &SeededCompany, date: NaiveDate) -> NewJournalEntry {
                 debit: dec!(100.00),
                 credit: dec!(0),
                 project_id: None,
+                foreign: None,
             },
             NewJournalEntryLine {
                 account_id: s.accounts["1100"],
                 debit: dec!(0),
                 credit: dec!(100.00),
                 project_id: None,
+                foreign: None,
             },
         ],
     }

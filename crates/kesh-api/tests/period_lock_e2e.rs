@@ -177,6 +177,8 @@ async fn make_account(pool: &MySqlPool, company_id: i64, number: &str, ty: Accou
             parent_id: None,
             role: None,
             postable: true,
+            currency: None,
+            own_fx_accounts: None,
         },
     )
     .await
@@ -210,12 +212,14 @@ async fn make_entry(
                     debit: dec!(100.00),
                     credit: dec!(0),
                     project_id: projects.0,
+                    foreign: None,
                 },
                 NewJournalEntryLine {
                     account_id: c,
                     debit: dec!(0),
                     credit: dec!(100.00),
                     project_id: projects.1,
+                    foreign: None,
                 },
             ],
         },
@@ -706,12 +710,14 @@ async fn la_garde_tient_sous_les_flux_automatiques(pool: MySqlPool) {
                     debit: dec!(5000.00),
                     credit: dec!(0),
                     project_id: None,
+                    foreign: None,
                 },
                 NewJournalEntryLine {
                     account_id: c,
                     debit: dec!(0),
                     credit: dec!(5000.00),
                     project_id: None,
+                    foreign: None,
                 },
             ],
         },

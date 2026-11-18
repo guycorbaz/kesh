@@ -4,6 +4,7 @@
 //! comme API standard. Les méthodes spécifiques (`find_by_username`,
 //! `list_by_company`, `close`) s'ajoutent là où c'est nécessaire.
 
+pub mod account_balances;
 pub mod accounts;
 pub mod api_keys;
 pub mod audit_log;
@@ -23,7 +24,9 @@ pub mod credit_notes;
 pub mod dunning_eligibility;
 pub mod dunning_levels;
 pub mod email_templates;
+pub mod exchange_rates;
 pub mod fiscal_years;
+pub mod fx_revaluation;
 pub mod grouped_settlements;
 pub mod imported_supplier_invoices;
 pub mod installation_settings;
@@ -33,6 +36,8 @@ pub mod invoice_settlements;
 pub mod invoice_settlements_write;
 pub mod invoices;
 pub mod journal_entries;
+pub mod journal_entry_conversions;
+pub(crate) mod journal_entry_fx;
 pub mod journal_entry_number_sequences;
 pub mod letterings;
 pub mod mcp_keys;
@@ -47,6 +52,7 @@ pub mod products;
 pub mod projects;
 pub mod reconciliation;
 pub mod reconciliation_cancel;
+pub mod reconciliation_group_candidates;
 pub mod reconciliation_link;
 pub mod reconciliation_rules;
 pub mod refresh_tokens;

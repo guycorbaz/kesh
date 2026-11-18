@@ -279,6 +279,8 @@ const SITES: &[(&str, &str, Motif, usize, Raison, &str)] = &[
         "démarrage (`bootstrap.rs:411`) et restauration (`admin.rs:553`, `require_not_pat`) ; acteur choisi par l'appelant"),
     ("crates/kesh-db/src/repositories/companies.rs", "unlock_books", User, 1, AdminSansCle,
         "`unlock_company_books` (lib.rs:488), `require_not_pat`"),
+    ("crates/kesh-db/src/repositories/companies.rs", "update_currency_settings", User, 1, AdminSansCle,
+        "`update_currency_settings` (lib.rs:479), `require_not_pat` — Story 37-1"),
     ("crates/kesh-db/src/repositories/company_dunning_settings.rs", "update", User, 1, AdminSansCle,
         "`update_dunning_settings` (lib.rs:302), `require_not_pat`"),
     ("crates/kesh-db/src/repositories/company_invoice_settings.rs", "update", User, 1, AdminSansCle,
@@ -434,6 +436,13 @@ const REFERENCES: &[(&str, &str, &[Reference])] = &[
     ("companies::unlock_books", "crates/kesh-db/src/repositories/companies.rs",
         &[("crates/kesh-api/src/routes/companies.rs", "unlock_company_books", 1)]),
     ("routes::companies::unlock_company_books", "crates/kesh-api/src/routes/companies.rs", &[(LIB, ROUTEUR, 1)]),
+    // Deux : l'appel, et le libellé du rejeu (`retry_on_deadlock("companies::update_currency_settings", …)`).
+    // Plus le routeur : le handler porte le même nom, et le texte
+    // `routes::companies::update_currency_settings` de `lib.rs` contient le chemin du dépôt.
+    ("companies::update_currency_settings", "crates/kesh-db/src/repositories/companies.rs",
+        &[("crates/kesh-api/src/routes/companies.rs", "update_currency_settings", 2),
+          (LIB, ROUTEUR, 1)]),
+    ("routes::companies::update_currency_settings", "crates/kesh-api/src/routes/companies.rs", &[(LIB, ROUTEUR, 1)]),
     ("company_dunning_settings::update", "crates/kesh-db/src/repositories/company_dunning_settings.rs",
         &[("crates/kesh-api/src/routes/company_dunning_settings.rs", "update_dunning_settings", 1)]),
     ("routes::company_dunning_settings::update_dunning_settings", "crates/kesh-api/src/routes/company_dunning_settings.rs", &[(LIB, ROUTEUR, 1)]),

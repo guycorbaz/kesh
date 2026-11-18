@@ -36,7 +36,39 @@ export interface CompanyJson {
 	website: string | null;
 	/** Borne **inclusive** du verrou de période (Story 24-4c, #380). `null` = aucun verrou. */
 	booksLockedThrough: string | null;
+	/**
+	 * Story 37-1 (AC-2) — comptabilité multi-devises activée. **Irréversible** :
+	 * passe de `false` à `true`, jamais l'inverse (CR-7). Toujours présent.
+	 */
+	multiCurrencyEnabled: boolean;
+	/** Story 37-1 (AC-3) — compte de gains de change de la société, `null` en mono-devise. */
+	fxGainAccountId: number | null;
+	/** Story 37-1 (AC-3) — compte de pertes de change de la société, `null` en mono-devise. */
+	fxLossAccountId: number | null;
+	/**
+	 * Story 37-1 (AC-3, R7) — compte de conversion (compte de bilan en CHF par
+	 * lequel passe une conversion entre deux devises), `null` en mono-devise.
+	 */
+	fxTransitAccountId: number | null;
+	/** Story 37-1 (AC-2) — devise principale, constante : toujours `"CHF"`. */
+	baseCurrency: string;
 	/** Verrou optimiste — requis par les routes `PUT /companies/current/*`. */
+	version: number;
+}
+
+/**
+ * Story 37-1 (AC-3) — corps de `PUT /api/v1/companies/current/currency-settings`
+ * (Administrateur en session seul ; une clé d'API reçoit `API_KEY_ADMIN_FORBIDDEN`).
+ *
+ * Activer exige les trois comptes ; une fois actif, `multiCurrencyEnabled: false`
+ * est refusé (409 `MULTI_CURRENCY_IRREVERSIBLE`) et aucun compte ne peut être vidé
+ * (400 `FX_ACCOUNT_INVALID`, `reason: "missing"`).
+ */
+export interface UpdateCurrencySettingsRequest {
+	multiCurrencyEnabled: boolean;
+	fxGainAccountId: number | null;
+	fxLossAccountId: number | null;
+	fxTransitAccountId: number | null;
 	version: number;
 }
 

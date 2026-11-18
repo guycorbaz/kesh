@@ -1,9 +1,13 @@
 <script lang="ts">
-	// Story 29-1a (#232, AC5) — le panneau « Préparer la clôture » : les huit
-	// contrôles préalables (K8, brouillons fournisseur : Story v017-4b, #849, AC-26),
-	// dans l'ordre que rend le serveur, chacun avec son état
-	// et un lien vers l'écran où l'on agit. Il ne recalcule rien : statuts, compteurs
-	// et écarts sont ceux du serveur. Il ne bloque rien non plus.
+	// Story 29-1a (#232, AC5) — le panneau « Préparer la clôture » : les neuf
+	// contrôles préalables (K8, brouillons fournisseur : Story v017-4b, #849, AC-26 ;
+	// K9, comptes en devise non réévalués : Story 37-5, AC-9), dans l'ordre que rend
+	// le serveur, chacun avec son état et un lien vers l'écran où l'on agit. Il ne
+	// recalcule rien : statuts, compteurs et écarts sont ceux du serveur. Le panneau
+	// ne bloque rien par lui-même ; K1 et K9 sont bloquants parce que la clôture
+	// refuse dans ces cas. K9 en attention montre directement l'aperçu de la
+	// réévaluation (Comptable, Administrateur) et son bouton « Réévaluer » ; K9 `ok` :
+	// ni avis, ni aperçu, ni requête.
 	//
 	// ⛔ Trois états, jamais confondus (M-a10, M-a22) : pendant le chargement, un
 	// état d'attente et AUCUNE ligne de contrôle ; après un échec, « indisponible » ;
@@ -12,12 +16,20 @@
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import { formatChfBalance } from '$lib/features/bank-accounts/format';
 	import { formatSwissDate } from '$lib/features/reports/reports.api';
-	import { checkHelp, checkTitle, entryReasonText, notCheckableText } from './closing-checks-labels';
+	import {
+		checkHelp,
+		checkTitle,
+		entryReasonText,
+		notCheckableText,
+		notRevaluedText
+	} from './closing-checks-labels';
+	import RevaluationPanel from './RevaluationPanel.svelte';
 	import type {
 		ClosingCheck,
 		ClosingChecksResponse,
 		ClosingFiscalYearRef,
 		NextFiscalYearRef,
+		NotRevaluedAccount,
 		PendingByAccount,
 		StatementIssue
 	} from './fiscal-years.types';
@@ -28,8 +40,13 @@
 		checks: ClosingChecksResponse | null;
 		/** Admin / Comptable : le lien « Créer l’exercice suivant » de K7. */
 		onCreateFiscalYear?: () => void;
+		/** Admin / Comptable : l'aperçu de la réévaluation et « Réévaluer » dans l'avis de K9. */
+		canRevalue?: boolean;
+		/** Relire les contrôles (après une réévaluation ou une récupération de cours). */
+		onChecksChanged?: () => void;
 	}
-	let { loadState, checks, onCreateFiscalYear }: Props = $props();
+	let { loadState, checks, onCreateFiscalYear, canRevalue = false, onChecksChanged }: Props =
+		$props();
 
 	function severityClass(c: ClosingCheck): string {
 		if (c.status === 'ok') return 'text-success';
@@ -105,6 +122,9 @@
 	function statementIssues(c: ClosingCheck): StatementIssue[] {
 		return (c.details.accounts ?? []) as StatementIssue[];
 	}
+	function notRevaluedAccounts(c: ClosingCheck): NotRevaluedAccount[] {
+		return (c.details.accounts ?? []) as NotRevaluedAccount[];
+	}
 	function earlierName(c: ClosingCheck): string {
 		return (c.details.fiscalYear as ClosingFiscalYearRef | null | undefined)?.name ?? '';
 	}
@@ -132,7 +152,7 @@
 	<p class="mb-3 text-sm text-text-muted">
 		{i18nMsg(
 			'fiscal-years-checks-intro',
-			'Ces contrôles ne bloquent rien : ils signalent ce qui reste à faire ou paraît anormal dans l’exercice. Ils lisent les comptes à cet instant.'
+			'Ces contrôles signalent ce qui reste à faire ou paraît anormal dans l’exercice ; deux d’entre eux, marqués « Bloquant », empêchent la clôture. Ils lisent les comptes à cet instant.'
 		)}
 	</p>
 	<ul class="flex flex-col gap-3" data-testid="fiscal-year-checks-list">
@@ -310,6 +330,32 @@
 								<a class="text-xs text-primary underline" href="/supplier-invoices?status=draft" data-testid="fiscal-year-checks-link-{check.code}">
 									{i18nMsg('fiscal-years-checks-k8-link', 'Ouvrir les brouillons de factures fournisseurs')}
 								</a>
+							{:else if check.code === 'FOREIGN_ACCOUNTS_NOT_REVALUED'}
+								<!-- Story 37-5 (AC-9) — K9 : les comptes concernés ; pour Comptable et
+								     Administrateur, l'aperçu de la réévaluation, lu avant tout clic, et
+								     « Réévaluer », qui passe les écritures montrées. -->
+								<p>
+									{i18nMsg(
+										'fiscal-years-checks-k9-attention',
+										'{ $count } compte(s) en devise non réévalué(s) au cours de clôture : la clôture est refusée tant que leur écart n’est pas nul.',
+										{ count: check.count }
+									)}
+								</p>
+								<ul class="ml-4 list-disc text-xs" data-testid="fiscal-year-checks-k9-accounts">
+									{#each notRevaluedAccounts(check) as a (a.accountId)}
+										<li>{notRevaluedText(a)}</li>
+									{/each}
+								</ul>
+								{#if canRevalue && checks}
+									<div class="mt-2" data-testid="fiscal-year-checks-k9-preview">
+										<RevaluationPanel
+											fiscalYearId={checks.fiscalYearId}
+											mode="notice"
+											onPosted={() => onChecksChanged?.()}
+											onRatesFetched={() => onChecksChanged?.()}
+										/>
+									</div>
+								{/if}
 							{/if}
 							{#if check.code === 'BANK_STATEMENT_AT_YEAR_END' && (check.details.notCheckable ?? []).length > 0}
 								<ul class="mt-1 ml-4 list-disc text-xs text-text-muted" data-testid="fiscal-year-checks-not-checkable">

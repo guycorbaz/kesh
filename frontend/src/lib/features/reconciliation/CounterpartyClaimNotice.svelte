@@ -11,6 +11,8 @@
 <script lang="ts">
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
+	// fx-filtre-comptes : exempté — lit les comptes pour un libellé ; la liste lui
+	// arrive déjà filtrée par `counterpartyAccounts`.
 	import { claimRoleOfId } from './reconciliation-counterparties';
 
 	type Props = {

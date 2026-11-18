@@ -11,15 +11,17 @@ use serde::Deserialize;
 
 use crate::mcp::outil::{ContexteMcp, FuturOutil, McpTool, arguments};
 use crate::mcp::outils::commun::{SensDuTri, decalage, limite};
-use crate::mcp::sortie::{Date, Montant, Resume, TexteNonFiable, donnees, sortie};
+use crate::mcp::sortie::{Code, Date, Devise, Montant, Resume, TexteNonFiable, donnees, sortie};
 use crate::mcp::textes::depuis_app_error;
 use crate::services::acces::Portee;
 use crate::services::ecritures::{self, DemandeListeEcritures};
 
-/// Taille de page par défaut (§ *Les tailles mesurées*).
-pub const LIMITE_DEFAUT: i64 = 12;
+/// Taille de page par défaut (§ *Les tailles mesurées*). Story 37-3a (AC-8) :
+/// re-mesurée avec des lignes en devise (un élément à trois lignes, dont une
+/// en devise, mesure 1249 o) — 22 / 12 → 18 / 10.
+pub const LIMITE_DEFAUT: i64 = 10;
 /// Taille de page maximale de l'outil.
-pub const LIMITE_MAX_MCP: i64 = 22;
+pub const LIMITE_MAX_MCP: i64 = 18;
 
 /// La liste.
 pub struct KeshEcritures;
@@ -127,6 +129,12 @@ sortie! {
         credit: Montant,
         projet_id: Option<i64>,
         lettrage: Option<i64>,
+        // Story 37-3a (AC-8) : la partie en devise — devise **du compte**,
+        // montant, cours, provenance ; présents à `null` sur une ligne CHF.
+        devise: Option<Code<Devise>>,
+        montant_devise: Option<Montant>,
+        cours: Option<Montant>,
+        source_cours: Option<Code<kesh_db::entities::RateProvenance>>,
     }
 }
 
@@ -180,14 +188,21 @@ fn ecriture(e: kesh_db::entities::JournalEntryWithLines) -> Ecriture {
         contre_passe: entry.reverses_entry_id,
         lignes: lines
             .into_iter()
-            .map(|l| Ligne {
-                id: l.id,
-                compte_id: l.account_id,
-                ordre: l.line_order,
-                debit: Montant(l.debit),
-                credit: Montant(l.credit),
-                projet_id: l.project_id,
-                lettrage: l.lettering_key,
+            .map(|l| {
+                let devise = l.foreign();
+                Ligne {
+                    id: l.id,
+                    compte_id: l.account_id,
+                    ordre: l.line_order,
+                    debit: Montant(l.debit),
+                    credit: Montant(l.credit),
+                    projet_id: l.project_id,
+                    lettrage: l.lettering_key,
+                    montant_devise: devise.as_ref().map(|f| Montant(f.amount)),
+                    cours: devise.as_ref().map(|f| Montant(f.rate)),
+                    source_cours: devise.as_ref().map(|f| Code::Connu(f.source)),
+                    devise: devise.map(|f| Code::depuis_str(f.currency)),
+                }
             })
             .collect(),
     }
@@ -206,7 +221,7 @@ impl McpTool for KeshEcritures {
     }
 
     fn schema_entree(&self) -> &'static str {
-        r#"{"type":"object","properties":{"description":{"type":"string"},"accountId":{"type":"integer","minimum":1},"amountMin":{"type":"string"},"amountMax":{"type":"string"},"dateFrom":{"type":"string","format":"date"},"dateTo":{"type":"string","format":"date"},"journal":{"type":"string","enum":["Achats","Ventes","Banque","Caisse","OD"]},"sortBy":{"type":"string","enum":["entryDate","entryNumber","journal","description"]},"sortDir":{"type":"string","enum":["asc","desc"]},"limit":{"type":"integer","minimum":1,"maximum":22,"default":12},"offset":{"type":"integer","minimum":0}},"additionalProperties":false}"#
+        r#"{"type":"object","properties":{"description":{"type":"string"},"accountId":{"type":"integer","minimum":1},"amountMin":{"type":"string"},"amountMax":{"type":"string"},"dateFrom":{"type":"string","format":"date"},"dateTo":{"type":"string","format":"date"},"journal":{"type":"string","enum":["Achats","Ventes","Banque","Caisse","OD"]},"sortBy":{"type":"string","enum":["entryDate","entryNumber","journal","description"]},"sortDir":{"type":"string","enum":["asc","desc"]},"limit":{"type":"integer","minimum":1,"maximum":18,"default":10},"offset":{"type":"integer","minimum":0}},"additionalProperties":false}"#
     }
 
     fn portee(&self) -> Portee {

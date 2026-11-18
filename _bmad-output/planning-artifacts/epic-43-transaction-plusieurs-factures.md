@@ -128,9 +128,12 @@ le justifie par la possession, comme la 43-1a pour les clés vers une ligne.
 
 **C-43-18 — Ordre de sortie à la coupure** (le premier nommé sort le premier ; la 43-5 n'y figure plus, sortie de la 0.19.0,
 C-43-17) : **43-7**
-(le plafond reste à sa valeur par défaut, non modifiable) ; **43-1b** (avec les commits fournisseur de 43-2 et 43-3) ;
-**43-3** (l'API seule reste utile à la clé d'API de Guy) ; **43-2**. La **43-6 ne sort jamais** si la 42-1 et la 43-1a sont
-publiées ensemble. La **43-1a** n'est publiée qu'avec la 43-2 et la 43-6 ; sans elles, l'epic entier sort.
+(le plafond reste à sa valeur par défaut, non modifiable) ; **43-3** (l'API seule reste utile à la clé d'API de Guy) ;
+**43-2**. La **43-1b est close le 2026-11-18** et versée dans `epic/43-transaction-plusieurs-factures` (`c22647e7a`) : elle
+ne sort plus, et le commit fournisseur de la 43-2 (D4, `70f74f964`) sort avec elle, sans procédure de retrait (décision
+de l'orchestrateur du 2026-11-18, revue P2 de la 43-2, P2-1) ; le commit fournisseur de la 43-3 suit la 43-3. La **43-6
+ne sort jamais** si la 42-1 et la 43-1a sont publiées ensemble. La **43-1a** n'est publiée qu'avec la 43-2 et la 43-6 ;
+sans elles, l'epic entier sort.
 
 **C-43-19 — Verrous et versions** *(récrit, H-A ; précisé à la P3 de la 43-1a)* : **la méthode de l'unitaire, à deux
 écarts près** — l'ordre des deux `UPDATE` (factures avant transaction, sans effet) et l'absence de score et de fenêtre haute

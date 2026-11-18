@@ -87,6 +87,8 @@
 	import AlreadyBookedConfirmDialog from './AlreadyBookedConfirmDialog.svelte';
 	import { alreadyBookedWarning, describeTransaction, isAlreadyBooked } from './already-booked';
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
+	// fx-filtre-comptes : exempté — passe les comptes aux modales de rapprochement,
+	// filtrées par `counterpartyAccounts`.
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 	import { listBankAccounts } from '$lib/features/bank-accounts/bank-accounts.api';
 

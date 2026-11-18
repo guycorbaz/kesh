@@ -91,6 +91,7 @@
  * Le code brut reste en `title` de chaque refus, pour le support.
  */
 import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
+import { fxRefusalMessage } from '$lib/features/journal-entries/fx-refusals';
 
 /**
  * Numéros des comptes non imputables d'un `details` de la forme
@@ -213,6 +214,10 @@ export function isDifferenceAccountRefusal(
 		case 'ACCOUNT_NOT_FOUND':
 		case 'ACCOUNT_NOT_POSTABLE':
 			return true;
+		// Epic 37 (43-2) — le compte de l'écart tenu en devise (`details.accountId` = le compte
+		// envoyé) : seul ce compte-là est contrôlé ainsi dans un groupe.
+		case 'ACCOUNT_IN_FOREIGN_CURRENCY':
+			return differenceAccountId !== null && detailNumber(details, 'accountId') === differenceAccountId;
 		case 'SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT':
 			return isGroupAccountClaimRefusal(details, differenceAccountId);
 		case 'RECONCILIATION_GROUP_INVALID':
@@ -254,6 +259,14 @@ export function failedProposalLabel(
 			return i18nMsg(
 				'reconciliation-failed-account-not-found',
 				'Un compte de contrepartie est introuvable ou archivé.'
+			);
+		// Epic 37, posé dans `failed[]` par le règlement groupé (43-2) : la clé globale, qui nomme
+		// la devise (`details.currency`).
+		case 'ACCOUNT_IN_FOREIGN_CURRENCY':
+			return i18nMsg(
+				'error-account-in-foreign-currency',
+				'Ce compte est tenu en { $currency } : il ne peut pas servir ici, où Kesh comptabilise en CHF.',
+				{ currency: detailString(details, 'currency') ?? '' }
 			);
 		case 'ACCOUNT_NOT_POSTABLE': {
 			const numbers = rejectedAccountNumbers(details);
@@ -561,6 +574,33 @@ export function failedProposalLabel(
 				'L’écart entre la transaction et les factures dépasse le plafond admis.'
 			);
 		}
+		// Story 37-3b (reçu de la 37-3a, AC-5) — refus propres aux devises, rendus par
+		// `fx_failed_proposal` : le rapprochement passe en CHF.
+		case 'ACCOUNT_REQUIRES_CURRENCY':
+			return i18nMsg(
+				'reconciliation-failed-account-requires-currency',
+				'Le compte de contrepartie est tenu en devise : un rapprochement passe en CHF. Choisissez un compte en CHF, ou passez l’écriture en devise depuis le journal.'
+			);
+		case 'FX_MULTIPLE_CURRENCIES':
+			return i18nMsg(
+				'reconciliation-failed-fx-multiple-currencies',
+				'L’écriture porterait deux devises étrangères : une écriture n’en porte qu’une.'
+			);
+		case 'ENTRY_IS_FX_REVALUATION':
+			return i18nMsg(
+				'reconciliation-failed-fx-revaluation',
+				'L’écriture visée est une réévaluation des comptes en devise : elle ne se modifie pas.'
+			);
+		case 'MULTI_CURRENCY_DISABLED':
+		case 'RATE_UNAVAILABLE':
+		case 'FX_ACCOUNT_IN_CHF':
+		case 'FX_CURRENCY_MISMATCH':
+		case 'FX_RATE_NOT_AFC':
+			return fxRefusalMessage(
+				code,
+				details && typeof details === 'object' ? (details as Record<string, unknown>) : undefined,
+				''
+			);
 		default:
 			return i18nMsg('reconciliation-failed-unknown', 'Refus non reconnu ({ $code }).', { code });
 	}
@@ -593,6 +633,15 @@ function groupAccountLabel(
 			return i18nMsg(
 				'reconciliation-failed-group-account-not-found',
 				'Le compte choisi pour l’écart est introuvable ou archivé.'
+			);
+		case 'ACCOUNT_IN_FOREIGN_CURRENCY':
+			if (differenceAccountId === null || detailNumber(details, 'accountId') !== differenceAccountId) {
+				return null;
+			}
+			return i18nMsg(
+				'reconciliation-failed-group-account-foreign-currency',
+				'Le compte choisi pour l’écart est tenu en { $currency } : choisissez un compte en CHF.',
+				{ currency: detailString(details, 'currency') ?? '' }
 			);
 		case 'ACCOUNT_NOT_POSTABLE': {
 			const numbers = rejectedAccountNumbers(details);

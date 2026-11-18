@@ -247,12 +247,15 @@ pub fn settlement_journal_lines(
             debit: paid,
             credit: Decimal::ZERO,
             project_id: None,
+            // Story 37-3a (AC-5) : les chemins automatiques n'écrivent qu'en CHF.
+            foreign: None,
         },
         NewJournalEntryLine {
             account_id: receivable_account_id,
             debit: Decimal::ZERO,
             credit: settled,
             project_id: None,
+            foreign: None,
         },
     ];
     let gap = paid - settled;
@@ -273,6 +276,7 @@ pub fn settlement_journal_lines(
                 Decimal::ZERO
             },
             project_id: None,
+            foreign: None,
         });
     }
     Ok(lines)
@@ -335,6 +339,7 @@ pub fn write_off_journal_lines(
             debit: nature_debit,
             credit: Decimal::ZERO,
             project_id: None,
+            foreign: None,
         });
     }
     if separate_gap {
@@ -356,6 +361,7 @@ pub fn write_off_journal_lines(
                 Decimal::ZERO
             },
             project_id: None,
+            foreign: None,
         });
     }
     if !vat_shares.is_empty() {
@@ -367,6 +373,7 @@ pub fn write_off_journal_lines(
             debit: share.vat_amount,
             credit: Decimal::ZERO,
             project_id: None,
+            foreign: None,
         }));
     }
     lines.push(NewJournalEntryLine {
@@ -374,6 +381,7 @@ pub fn write_off_journal_lines(
         debit: Decimal::ZERO,
         credit: amount,
         project_id: None,
+        foreign: None,
     });
     Ok(lines)
 }

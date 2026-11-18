@@ -105,6 +105,13 @@ pub const TABLES_TO_TRUNCATE: &[&str] = &[
     // plus, enfant de companies (RESTRICT) ; sa place suit celle de
     // `company_invoice_settings`, autre ligne de réglages de société.
     "mcp_server_settings",
+    // Story 37-2 — cours de change retenus par la société : enfant de companies
+    // + users (RESTRICT), sans enfant propre ; sa place suit celle de
+    // `mcp_server_settings`, autre table de réglages de société. Vidée à la
+    // remise à zéro (absente de `RESET_PRESERVED_TABLES`) : un cours retenu est
+    // une donnée de la société. Inscrite à `ABSENCES_ADMISES_EPIC_37` : une
+    // sauvegarde antérieure, sans elle, se réimporte.
+    "exchange_rates",
     "bank_transactions", // Story 8-1b — enfant de bank_imports + bank_accounts.
     "bank_imports",      // Story 8-1b — enfant de bank_accounts + companies.
     "bank_profiles",     // Story 8-2 — enfant de companies (CASCADE).
@@ -125,6 +132,119 @@ pub const TABLES_TO_TRUNCATE: &[&str] = &[
     "users",
     "companies",
 ];
+
+/// Une table ou une colonne qu'une sauvegarde antérieure à l'Epic 37 peut ne
+/// pas porter (Story 37-1, AC-6) — voir [`ABSENCES_ADMISES_EPIC_37`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Absence {
+    /// Une table de [`TABLES_TO_TRUNCATE`], « traitée comme vide » à l'import.
+    Table(&'static str),
+    /// Une colonne `(table, colonne)`, prise à son défaut à l'import.
+    Colonne(&'static str, &'static str),
+}
+
+/// Une absence admise, avec la version de la migration qui ajoute la table ou
+/// la colonne.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AbsenceAdmise {
+    /// La table ou la colonne.
+    pub absence: Absence,
+    /// La version de la migration de l'Epic 37 qui l'ajoute.
+    pub migration: i64,
+}
+
+/// **Liste close** des absences qu'admet l'import d'une sauvegarde antérieure
+/// à l'Epic 37 (multi-devises ; Story 37-1, AC-6, R1) : une telle sauvegarde est
+/// forcément mono-devise, ses tables et colonnes manquantes prennent leur état
+/// vide ou leur défaut. Toute autre absence de table reste refusée (400), et la
+/// fenêtre d'import ne bouge pas (`post_restore::creates_application_table`
+/// ignore les tables de cette liste).
+///
+/// Les **colonnes** sont déjà tolérées par la règle générique
+/// (`missing_required_columns` ne refuse qu'une colonne
+/// [`ColumnConstraint::is_required`]) : elles figurent ici pour être **gardées**
+/// — un test vérifie que chacune existe au schéma et n'est pas obligatoire,
+/// que chaque table listée est dans [`TABLES_TO_TRUNCATE`], et que chaque entrée
+/// est ajoutée par une migration de l'Epic 37 (≥ `20261114000001`) dont le SQL la
+/// crée. Les stories suivantes de l'epic y inscrivent leurs tables et colonnes.
+pub const ABSENCES_ADMISES_EPIC_37: &[AbsenceAdmise] = &[
+    // Story 37-1 — `20261114000001_multi_currency_settings`.
+    AbsenceAdmise {
+        absence: Absence::Colonne("companies", "multi_currency_enabled"),
+        migration: 20261114000001,
+    },
+    AbsenceAdmise {
+        absence: Absence::Colonne("companies", "fx_gain_account_id"),
+        migration: 20261114000001,
+    },
+    AbsenceAdmise {
+        absence: Absence::Colonne("companies", "fx_loss_account_id"),
+        migration: 20261114000001,
+    },
+    AbsenceAdmise {
+        absence: Absence::Colonne("companies", "fx_transit_account_id"),
+        migration: 20261114000001,
+    },
+    AbsenceAdmise {
+        absence: Absence::Colonne("accounts", "currency"),
+        migration: 20261114000001,
+    },
+    AbsenceAdmise {
+        absence: Absence::Colonne("accounts", "fx_gain_account_id"),
+        migration: 20261114000001,
+    },
+    AbsenceAdmise {
+        absence: Absence::Colonne("accounts", "fx_loss_account_id"),
+        migration: 20261114000001,
+    },
+    AbsenceAdmise {
+        absence: Absence::Colonne("fiscal_years", "multi_currency"),
+        migration: 20261114000001,
+    },
+    AbsenceAdmise {
+        absence: Absence::Colonne("fiscal_years", "opening_rate_kind"),
+        migration: 20261114000001,
+    },
+    AbsenceAdmise {
+        absence: Absence::Colonne("fiscal_years", "closing_rate_kind"),
+        migration: 20261114000001,
+    },
+    // Story 37-2 — `20261114000002_exchange_rates` : les cours retenus par la
+    // société. Une sauvegarde antérieure est mono-devise, sans cours retenu :
+    // la table reste vide après l'import (R1).
+    AbsenceAdmise {
+        absence: Absence::Table("exchange_rates"),
+        migration: 20261114000002,
+    },
+    // Story 37-3a — `20261114000003_journal_lines_foreign_currency` : la partie
+    // en devise d'une ligne d'écriture. Une sauvegarde antérieure est
+    // mono-devise : ses lignes restent en CHF (trois colonnes `NULL`).
+    AbsenceAdmise {
+        absence: Absence::Colonne("journal_entry_lines", "amount_currency"),
+        migration: 20261114000003,
+    },
+    AbsenceAdmise {
+        absence: Absence::Colonne("journal_entry_lines", "exchange_rate"),
+        migration: 20261114000003,
+    },
+    AbsenceAdmise {
+        absence: Absence::Colonne("journal_entry_lines", "rate_source"),
+        migration: 20261114000003,
+    },
+];
+
+/// Première migration de l'Epic 37 : toute entrée de
+/// [`ABSENCES_ADMISES_EPIC_37`] est ajoutée par une migration de version
+/// supérieure ou égale.
+pub const PREMIERE_MIGRATION_EPIC_37: i64 = 20261114000001;
+
+/// Vrai si `table` peut manquer à une sauvegarde importée
+/// ([`ABSENCES_ADMISES_EPIC_37`]) : elle est alors traitée comme vide.
+pub fn table_absente_admise(table: &str) -> bool {
+    ABSENCES_ADMISES_EPIC_37
+        .iter()
+        .any(|a| matches!(a.absence, Absence::Table(t) if t == table))
+}
 
 /// Les tables que la **remise à zéro** d'une installation (`kesh_seed::reset_demo`)
 /// **conserve** — Story 15-7b2 (AC 3, choix C-15-7-10, #279).
@@ -959,6 +1079,10 @@ mod tests {
         "_kesh_version",
         "_kesh_backup_schedule",
         "_kesh_installation_settings",
+        // Story 37-2 — valeurs publiées par la source des cours et état de la
+        // dernière récupération : données de l'installation, jamais sauvegardées.
+        "_kesh_fetched_exchange_rates",
+        "_kesh_exchange_rate_fetch",
     ];
 
     /// Story v0174-mise-a-jour (#847, T16) — **la convention du préfixe**, sur
@@ -1000,6 +1124,96 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// Le SQL décommenté d'une migration, en majuscules, blancs réduits à un
+    /// espace et accents graves retirés — pour y chercher une création.
+    fn sql_normalise(sql: &str) -> String {
+        crate::sql_lexical::split_statements(sql)
+            .join(";")
+            .to_ascii_uppercase()
+            .replace('`', "")
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
+    /// Story 37-1 (AC-6) — **la liste close des absences admises est gardée** :
+    /// chaque colonne existe au schéma et n'est **pas** obligatoire (une
+    /// modification future en `NOT NULL` sans défaut rougit ici), chaque table
+    /// est dans [`TABLES_TO_TRUNCATE`], et chaque entrée est ajoutée par une
+    /// migration de l'Epic 37 (≥ [`PREMIERE_MIGRATION_EPIC_37`], au `MIGRATOR`)
+    /// dont le SQL crée la table ou ajoute la colonne — la liste ne peut pas
+    /// servir à excuser autre chose.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn absences_admises_epic_37_sont_gardees(pool: MySqlPool) {
+        assert!(!ABSENCES_ADMISES_EPIC_37.is_empty());
+        for entree in ABSENCES_ADMISES_EPIC_37 {
+            assert!(
+                entree.migration >= PREMIERE_MIGRATION_EPIC_37,
+                "{entree:?} : migration antérieure à l'Epic 37"
+            );
+            let migration = crate::MIGRATOR
+                .migrations
+                .iter()
+                .find(|m| m.version == entree.migration)
+                .unwrap_or_else(|| panic!("{entree:?} : migration absente du MIGRATOR"));
+            let sql = sql_normalise(&migration.sql);
+            match entree.absence {
+                Absence::Table(table) => {
+                    assert!(
+                        TABLES_TO_TRUNCATE.contains(&table),
+                        "{table} : hors de TABLES_TO_TRUNCATE"
+                    );
+                    let cree = format!("CREATE TABLE {}", table.to_ascii_uppercase());
+                    assert!(
+                        sql.contains(&cree),
+                        "{table} : la migration {} ne la crée pas",
+                        entree.migration
+                    );
+                }
+                Absence::Colonne(table, colonne) => {
+                    assert!(
+                        TABLES_TO_TRUNCATE.contains(&table),
+                        "{table} : hors de TABLES_TO_TRUNCATE"
+                    );
+                    let contraintes = column_constraints(&pool, table).await.unwrap();
+                    let c = contraintes
+                        .iter()
+                        .find(|c| c.name == colonne)
+                        .unwrap_or_else(|| panic!("{table}.{colonne} : absente du schéma"));
+                    assert!(
+                        !c.is_required(),
+                        "{table}.{colonne} est devenue obligatoire : une sauvegarde 0.17.6 \
+                         ne se réimporterait plus"
+                    );
+                    let alter = format!("ALTER TABLE {} ", table.to_ascii_uppercase());
+                    let ajout = format!("ADD COLUMN {} ", colonne.to_ascii_uppercase());
+                    assert!(
+                        sql.split(';')
+                            .any(|st| st.trim_start().starts_with(&alter) && st.contains(&ajout)),
+                        "{table}.{colonne} : la migration {} ne l'ajoute pas",
+                        entree.migration
+                    );
+                }
+            }
+        }
+    }
+
+    /// [`table_absente_admise`] ne vaut que pour une table de la liste :
+    /// `exchange_rates` depuis la Story 37-2 (37-1 n'y inscrivait que des
+    /// colonnes).
+    #[test]
+    fn table_absente_admise_ne_vaut_que_pour_la_liste() {
+        for t in TABLES_TO_TRUNCATE {
+            let listee = ABSENCES_ADMISES_EPIC_37
+                .iter()
+                .any(|a| matches!(a.absence, Absence::Table(x) if x == *t));
+            assert_eq!(table_absente_admise(t), listee, "{t}");
+        }
+        assert!(table_absente_admise("exchange_rates"));
+        assert!(!table_absente_admise("companies"));
+        assert!(!table_absente_admise("table_inconnue"));
     }
 
     /// Garantit que [`TABLES_TO_TRUNCATE`] reste synchro avec le schéma réel.

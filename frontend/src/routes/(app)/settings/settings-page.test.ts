@@ -38,6 +38,13 @@ vi.mock('$lib/features/settings/settings.api', () => ({
 	releaseBooksLock: (...a: unknown[]) => releaseBooksLockMock(...a),
 	fetchSessionSettings: (...a: unknown[]) => fetchSessionSettingsMock(...a),
 	updateSessionSettings: (...a: unknown[]) => updateSessionSettingsMock(...a),
+	updateCurrencySettings: (...a: unknown[]) => updateCurrencySettingsMock(...a),
+}));
+// Story 37-1 (AC-7) : le bloc multi-devises lit le plan comptable pour ses sélecteurs
+// (une liste vide ici ; ses cas sont dans `CurrencySettingsSection.test.ts`).
+const updateCurrencySettingsMock = vi.fn();
+vi.mock('$lib/features/accounts/accounts.api', () => ({
+	fetchAccounts: () => Promise.resolve([]),
 }));
 
 import Page from './+page.svelte';
@@ -1206,4 +1213,60 @@ describe('page Paramètres — conflit de version des trois éditions (Story 34-
 			release(societe({ version: 2 }).company);
 		});
 	}
+});
+
+// Story 37-1 (AC-7) — le bloc multi-devises vit dans la section Comptabilité ;
+// éditable par l'Administrateur seul (ses cas détaillés : `CurrencySettingsSection.test.ts`).
+describe('page Paramètres — Comptabilité multi-devises (Story 37-1)', () => {
+	beforeEach(() => {
+		vi.resetAllMocks();
+		fetchSessionSettingsMock.mockResolvedValue({ sessionIdleMinutes: 60, version: 0, min: 1, max: 1440 });
+	});
+
+	it('Administrateur : la case est rendue, active, avec le bouton Enregistrer', async () => {
+		authState.login({ userId: '1', username: 'admin', role: 'Admin', expiresIn: 900 }, { broadcast: false });
+		fetchCompanyCurrentMock.mockResolvedValue(reponse(null));
+		const { findByTestId, getByTestId } = render(Page);
+		const box = (await findByTestId('settings-currency-enabled')) as HTMLInputElement;
+		expect(box.disabled).toBe(false);
+		expect(getByTestId('settings-currency-save')).toBeTruthy();
+		authState.clearSession({ broadcast: false });
+	});
+
+	it('Comptable : lecture seule — case désactivée, aucun bouton', async () => {
+		authState.login({ userId: '2', username: 'u', role: 'Comptable', expiresIn: 900 }, { broadcast: false });
+		fetchCompanyCurrentMock.mockResolvedValue(reponse(null));
+		const { findByTestId, queryByTestId } = render(Page);
+		const box = (await findByTestId('settings-currency-enabled')) as HTMLInputElement;
+		expect(box.disabled).toBe(true);
+		expect(queryByTestId('settings-currency-save')).toBeNull();
+		expect(updateCurrencySettingsMock).not.toHaveBeenCalled();
+		authState.clearSession({ broadcast: false });
+	});
+});
+
+// Story 37-2 (AC-6) — la carte « Cours de change », visible en multi-devises seulement.
+describe('page Paramètres — carte Cours de change (Story 37-2)', () => {
+	beforeEach(() => {
+		vi.resetAllMocks();
+		fetchSessionSettingsMock.mockResolvedValue({ sessionIdleMinutes: 60, version: 0, min: 1, max: 1440 });
+	});
+
+	it('multi-devises : la carte mène à /settings/exchange-rates', async () => {
+		const r = reponse(null);
+		r.company = { ...r.company, multiCurrencyEnabled: true };
+		fetchCompanyCurrentMock.mockResolvedValue(r);
+		const { findByTestId } = render(Page);
+		expect(await findByTestId('settings-exchange-rates')).toBeTruthy();
+		expect((await findByTestId('settings-exchange-rates-manage-link')).getAttribute('href')).toBe(
+			'/settings/exchange-rates',
+		);
+	});
+
+	it('mono-devise : pas de carte', async () => {
+		fetchCompanyCurrentMock.mockResolvedValue(reponse(null));
+		const { findByTestId, queryByTestId } = render(Page);
+		await findByTestId('settings-currency-enabled');
+		expect(queryByTestId('settings-exchange-rates')).toBeNull();
+	});
 });

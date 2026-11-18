@@ -296,6 +296,9 @@ function fy(
 		startDate,
 		endDate,
 		status,
+		multiCurrency: false,
+		openingRateKind: 'day',
+		closingRateKind: 'day',
 		createdAt: '2026-01-01T00:00:00',
 		updatedAt: '2026-01-01T00:00:00'
 	};

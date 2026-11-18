@@ -89,6 +89,12 @@ function societe(bank: boolean): CompanyCurrentResponse {
 			website: null,
 			booksLockedThrough: null,
 			version: 3,
+			// Story 37-1 (intégration de la v0.18.0) : société mono-devise.
+			multiCurrencyEnabled: false,
+			fxGainAccountId: null,
+			fxLossAccountId: null,
+			fxTransitAccountId: null,
+			baseCurrency: 'CHF',
 		},
 		bankAccounts: bank
 			? [
@@ -114,6 +120,10 @@ const EXERCICE: FiscalYearResponse = {
 	status: 'Open',
 	createdAt: '2026-11-15T10:00:00',
 	updatedAt: '2026-11-15T10:00:00',
+	// Story 37-1 (intégration de la v0.18.0) : exercice mono-devise.
+	multiCurrency: false,
+	openingRateKind: 'day',
+	closingRateKind: 'day',
 };
 
 async function au(step: number, isDemo = false) {

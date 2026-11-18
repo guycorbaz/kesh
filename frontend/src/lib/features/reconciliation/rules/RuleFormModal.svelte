@@ -4,7 +4,10 @@
 <script lang="ts">
 	import { errorMessageOf } from '$lib/shared/utils/error-message';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
-	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
+	import {
+		withoutForeignCurrency,
+		type AccountResponse,
+	} from '$lib/features/accounts/accounts.types';
 	import { withCurrentAccount } from '$lib/features/accounts/account-options';
 	import { listProjects } from '$lib/features/projects/projects.api';
 	import type { ProjectResponse } from '$lib/features/projects/projects.types';
@@ -41,8 +44,9 @@
 	let submitting = $state(false);
 	let errorMsg = $state<string | null>(null);
 
+	// Story 37-3b (AC-4) : ni compte en devise, filtré ici, à l'entrée du composant.
 	const eligibleAccounts = $derived(
-		accounts.filter(
+		withoutForeignCurrency(accounts).filter(
 			(a) =>
 				a.active &&
 				a.postable && // 14-3b : le compte de la règle sera effectivement posté

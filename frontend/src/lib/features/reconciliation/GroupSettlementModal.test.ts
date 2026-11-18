@@ -73,6 +73,8 @@ const ACCOUNTS: AccountResponse[] = [
 	account(6960, '6960', 'Différences d’arrondi'),
 	account(6970, '6970', 'Pertes sur débiteurs'),
 	account(6941, '6941', 'Frais archivé', { active: false }),
+	// Epic 37 — un compte tenu en devise : jamais offert ni prérempli (le rapprochement passe en CHF).
+	account(6945, '6945', 'Frais en euros', { currency: 'EUR' }),
 ];
 
 function proposal(amount = '799.60', id = TX, counterpartyName: string | null = 'Exemple SA'): ReconciliationProposal {
@@ -414,6 +416,19 @@ describe('GroupSettlementModal — écart, arrondi et compte (D2 bis, D3)', () =
 		await waitFor(() => expect(submit(r).disabled).toBe(false));
 	});
 
+	it('Epic 37 — un compte en devise n’est ni prérempli ni offert dans le sélecteur', async () => {
+		mockSettings.mockResolvedValue(settings(6960, 6945));
+		const { r } = await deuxFactures('799.60', ['500.0000', '300.0000']);
+		await r.findByTestId('group-account-section');
+		expect(champCompte()?.value).toBe('');
+		const champ = champCompte() as HTMLInputElement;
+		await fireEvent.focus(champ);
+		await fireEvent.input(champ, { target: { value: '69' } });
+		const options = (await r.findAllByRole('option')).map((o) => o.textContent ?? '');
+		expect(options.some((t) => t.includes('6940'))).toBe(true);
+		expect(options.some((t) => t.includes('6945'))).toBe(false);
+	});
+
 	it('choix gardé : le compte choisi reste quand le signe change et quand le sélecteur disparaît puis revient', async () => {
 		serve([inv(12, '500.0000'), inv(15, '300.0000', 'Autre SàRL'), inv(16, '0.8000'), inv(17, '0.4000')]);
 		const { r } = monter(proposal('800.40'));
@@ -540,6 +555,11 @@ describe('GroupSettlementModal — refus (D5, AC4)', () => {
 			'Le compte choisi pour l’écart est le compte de la banque de cette transaction : choisissez-en un autre.',
 		],
 		['ACCOUNT_NOT_FOUND', { missingAccountIds: [6940] }, 'Le compte choisi pour l’écart est introuvable ou archivé.'],
+		[
+			'ACCOUNT_IN_FOREIGN_CURRENCY',
+			{ accountId: 6940, currency: 'EUR' },
+			'Le compte choisi pour l’écart est tenu en EUR : choisissez un compte en CHF.',
+		],
 		[
 			'ACCOUNT_NOT_POSTABLE',
 			{ rejected: [{ accountId: 6940, accountNumber: '6940' }] },

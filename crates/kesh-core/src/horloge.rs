@@ -254,6 +254,48 @@ mod tests {
         }
     }
 
+    /// Story 37-2 (AC-4) — minuit de Zurich en UTC, aux deux changements d'heure, au passage
+    /// d'année et en plein été ; et l'aller-retour avec [`jour_suisse`]. Écrit pour l'aide
+    /// `debut_jour_suisse` de la 37-2, remplacée à l'intégration de la v0.18.0 par
+    /// [`debut_du_jour_suisse`] de la Story 36-10, de même contrat (une seule fonction).
+    #[test]
+    fn debut_du_jour_suisse_aux_changements_d_heure() {
+        let cas = [
+            (
+                (2026, 3, 29),
+                "2026-03-28T23:00:00Z",
+                "nuit du passage à l'heure d'été",
+            ),
+            (
+                (2026, 3, 30),
+                "2026-03-29T22:00:00Z",
+                "premier minuit d'été",
+            ),
+            (
+                (2026, 10, 25),
+                "2026-10-24T22:00:00Z",
+                "nuit du passage à l'heure d'hiver",
+            ),
+            (
+                (2026, 10, 26),
+                "2026-10-25T23:00:00Z",
+                "premier minuit d'hiver",
+            ),
+            ((2027, 1, 1), "2026-12-31T23:00:00Z", "31 → 1er, hiver"),
+            ((2026, 7, 1), "2026-06-30T22:00:00Z", "30 → 1er, été"),
+        ];
+        for ((a, m, j), attendu, motif) in cas {
+            let jour = NaiveDate::from_ymd_opt(a, m, j).unwrap();
+            assert_eq!(debut_du_jour_suisse(jour), instant(attendu), "{motif}");
+            assert_eq!(jour_suisse(debut_du_jour_suisse(jour)), jour, "{motif}");
+            assert_eq!(
+                jour_suisse(debut_du_jour_suisse(jour) - chrono::TimeDelta::seconds(1)),
+                jour.pred_opt().unwrap(),
+                "{motif} : la seconde d'avant est la veille"
+            );
+        }
+    }
+
     #[test]
     fn l_horloge_fixe_rend_le_jour_suisse() {
         for (i, _, motif) in AC1 {

@@ -95,6 +95,18 @@ const EXPECTED_KEYS: Record<string, string> = {
 	// Story 43-3 — les deux codes neufs de la 43-2 (sans `details` : leur forme générique).
 	RECONCILIATION_GROUP_INVALID: 'reconciliation-failed-group-invalid',
 	RECONCILIATION_GROUP_DIFFERENCE_TOO_LARGE: 'reconciliation-failed-group-difference-too-large-generic',
+	// Epic 37 dans le règlement groupé (43-2, `reconciliation_group.rs`) : le compte de l'écart en
+	// devise ; sans discriminant, la clé globale.
+	ACCOUNT_IN_FOREIGN_CURRENCY: 'error-account-in-foreign-currency',
+	// Story 37-3b — les huit codes de `fx_failed_proposal` (37-3a, AC-5).
+	ACCOUNT_REQUIRES_CURRENCY: 'reconciliation-failed-account-requires-currency',
+	FX_MULTIPLE_CURRENCIES: 'reconciliation-failed-fx-multiple-currencies',
+	ENTRY_IS_FX_REVALUATION: 'reconciliation-failed-fx-revaluation',
+	MULTI_CURRENCY_DISABLED: 'error-fx-screen-multi-currency-disabled',
+	RATE_UNAVAILABLE: 'error-fx-screen-rate-unavailable',
+	FX_ACCOUNT_IN_CHF: 'error-fx-screen-account-in-chf',
+	FX_CURRENCY_MISMATCH: 'error-fx-screen-currency-mismatch',
+	FX_RATE_NOT_AFC: 'error-fx-screen-rate-not-afc-manual',
 };
 
 describe('failedProposalLabel', () => {
@@ -102,8 +114,8 @@ describe('failedProposalLabel', () => {
 		calls.length = 0;
 	});
 
-	it('couvre les 39 codes relevés', () => {
-		expect(Object.keys(EXPECTED_KEYS)).toHaveLength(39);
+	it('couvre les 48 codes relevés (37 + trois du règlement groupé, Stories 43-2 et 43-3, + les huit de `fx_failed_proposal`, Story 37-3b)', () => {
+		expect(Object.keys(EXPECTED_KEYS)).toHaveLength(48);
 	});
 
 	// Story 28-4b (#642, AC13) — le refus d'un compte clos (compte clos dans un autre
@@ -452,6 +464,12 @@ describe('failedProposalLabel — règlement groupé (Story 43-3)', () => {
 			'reconciliation-failed-account-not-postable',
 		],
 		['ACCOUNT_NOT_POSTABLE', {}, 'reconciliation-failed-group-account-not-postable-generic', 'reconciliation-failed-account-not-postable-generic'],
+		[
+			'ACCOUNT_IN_FOREIGN_CURRENCY',
+			{ accountId: 6940, currency: 'EUR' },
+			'reconciliation-failed-group-account-foreign-currency',
+			'error-account-in-foreign-currency',
+		],
 		[
 			'SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT',
 			{ accountId: 6940, accountNumber: '6940', claim: 'receivable', role: 'counterparty' },

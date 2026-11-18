@@ -106,6 +106,13 @@ export function modificationBlockerLabel(
 				'journal-entries-modify-blocked-detached-settlement',
 				'Ce paiement appartient à une facture fournisseur annulée : l’argent est sorti, il reste figé. Corrigez-le par une contre-passation.'
 			);
+		case 'ENTRY_IS_FX_REVALUATION':
+			// Story 37-3b (AC-3) — une écriture de réévaluation (37-5) ne se modifie
+			// pas ; « Supprimer » reste offert (la fiche le décide).
+			return i18nMsg(
+				'journal-entries-modify-blocked-fx-revaluation',
+				'Cette écriture est une réévaluation des comptes en devise : elle ne se modifie pas. Supprimez-la, puis réévaluez de nouveau.'
+			);
 		case 'ENTRY_LETTERED':
 			// Story 15-1a-ii (AC8) — le code du groupe est suffixé par la fiche,
 			// comme un numéro de pièce.

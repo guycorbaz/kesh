@@ -624,6 +624,11 @@ pub struct ReconciliationCancellation {
     /// Story 43-1a — les factures d'un **règlement groupé** défait (vide
     /// sinon) ; `invoice_id` et `supplier_invoice_id` restent alors `None`.
     pub grouped_invoices: Vec<super::grouped_settlements::GroupedViewInvoice>,
+    /// Story 43-2 (#823) — le genre du rapprochement défait, tel que le geste
+    /// l'a classé (y compris quand seul le lien a été retiré, où
+    /// `invoice_id` et `supplier_invoice_id` restent `None`) : le `kind` de la
+    /// réponse de `POST …/cancel`.
+    pub kind: ReconciliationKind,
 }
 
 /// Annule le rapprochement de `bank_transaction_id` **dans une transaction
@@ -735,6 +740,7 @@ pub async fn cancel_in_tx(
             invoice_id: None,
             supplier_invoice_id: None,
             grouped_invoices: done.invoices,
+            kind,
         });
     }
     if let ReconciliationKind::InvoiceSettlement { invoice_id, .. } = kind {
@@ -968,6 +974,7 @@ pub async fn cancel_in_tx(
         invoice_id,
         supplier_invoice_id,
         grouped_invoices: Vec::new(),
+        kind,
     })
 }
 

@@ -114,12 +114,14 @@ async fn validated_invoice(
             debit: ttc,
             credit: Decimal::ZERO,
             project_id: None,
+            foreign: None,
         },
         NewJournalEntryLine {
             account_id: seeded.accounts["3000"],
             debit: Decimal::ZERO,
             credit: total_ht,
             project_id: None,
+            foreign: None,
         },
     ];
     for rate in kesh_core::accounting::vat::vat_breakdown_by_rate(lines.iter().copied()) {
@@ -128,6 +130,7 @@ async fn validated_invoice(
             debit: Decimal::ZERO,
             credit: rate.vat_amount,
             project_id: None,
+            foreign: None,
         });
     }
     let je = kesh_db::repositories::journal_entries::create(
@@ -384,12 +387,14 @@ async fn issue_490_a_sub_half_centime_remainder_is_written_off_as_rounding(pool:
                     debit: dec!(9.9960),
                     credit: Decimal::ZERO,
                     project_id: None,
+                    foreign: None,
                 },
                 NewJournalEntryLine {
                     account_id: seeded.accounts["1100"],
                     debit: Decimal::ZERO,
                     credit: dec!(9.9960),
                     project_id: None,
+                    foreign: None,
                 },
             ],
         },
@@ -1518,6 +1523,10 @@ mod tva_due_type {
                 account_type,
                 role,
                 postable: a.postable,
+                // Story 37-1 : devise et comptes de différence propres inchangés
+                // (intégration de la v0.18.0).
+                currency: Default::default(),
+                own_fx_accounts: Default::default(),
             },
             true,
         )

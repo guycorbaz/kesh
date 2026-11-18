@@ -169,6 +169,8 @@ async fn make_account(pool: &MySqlPool, company_id: i64, number: &str, ty: Accou
             parent_id: None,
             role: None,
             postable: true,
+            currency: None,
+            own_fx_accounts: None,
         },
     )
     .await
@@ -305,12 +307,14 @@ async fn la_contre_passation_par_la_route_sous_un_posterieur_clos_rend_400(pool:
                     debit: dec!(100.00),
                     credit: dec!(0),
                     project_id: None,
+                    foreign: None,
                 },
                 NewJournalEntryLine {
                     account_id: c,
                     debit: dec!(0),
                     credit: dec!(100.00),
                     project_id: None,
+                    foreign: None,
                 },
             ],
         },

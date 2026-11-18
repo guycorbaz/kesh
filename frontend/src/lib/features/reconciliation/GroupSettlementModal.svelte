@@ -771,6 +771,7 @@
 							value={differenceAccountId}
 							onSelect={onAccountSelect}
 							allowClear={true}
+							excludeForeignCurrency={true}
 							disabled={submitting}
 						/>
 						{#if accountError}

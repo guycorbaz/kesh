@@ -258,7 +258,18 @@ pub async fn settle_invoice(
             // archivé → `InactiveOrInvalidAccounts` ; (b) sinon, non imputable
             // → `AccountsNotPostable`, qui nomme le compte.
             match account {
-                Some((true, true, _)) => account_id,
+                Some((true, true, _)) => {
+                    // Story 37-3a (AC-5) — un compte en devise est refusé
+                    // (400 `ACCOUNT_IN_FOREIGN_CURRENCY`) : le règlement s'écrit
+                    // en CHF.
+                    super::accounts::refuse_foreign_currency_accounts_in_tx(
+                        &mut tx,
+                        company_id,
+                        &[account_id],
+                    )
+                    .await?;
+                    account_id
+                }
                 Some((true, false, number)) => {
                     return Err(DbError::accounts_not_postable([NonPostableAccount {
                         account_id,

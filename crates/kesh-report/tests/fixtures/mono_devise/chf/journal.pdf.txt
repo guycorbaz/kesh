@@ -1,0 +1,50 @@
+CI Test Company
+Journaux
+Période : 01.01.2026  31.12.2026
+ Achats 
+31.05.2026 | #3 | Fournitures
+4000
+Charges CI
+77.35
+0.00
+1000
+Caisse CI
+0.00
+77.35
+Total débit
+77.35
+77.35
+ Ventes 
+14.02.2026 | #1 | Vente février
+1000
+Caisse CI
+990.00
+0.00
+3000
+Ventes CI
+0.00
+990.00
+Total débit
+990.00
+990.00
+ Banque 
+01.03.2026 | #2 | Versement
+1100
+Banque CI
+1'500.00
+0.00
+1000
+Caisse CI
+0.00
+1'500.00
+Total débit
+1'500.00
+1'500.00
+ Caisse 
+(aucune écriture)
+ OD 
+(aucune écriture)
+Total général
+2'567.35
+2'567.35
+page 1 / 1

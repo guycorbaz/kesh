@@ -17,6 +17,9 @@ pub struct CompteDuPlan {
     pub compte: Account,
     /// Le compte peut-il porter des lettrages (Story 15-1b) ?
     pub lettrable: bool,
+    /// La devise du compte est-elle verrouillée (Story 37-1, AC-4) : le compte
+    /// porte au moins une ligne d'écriture.
+    pub devise_verrouillee: bool,
 }
 
 /// Exigence de [`lister`] : tous rôles (`GET /api/v1/accounts`,
@@ -30,7 +33,8 @@ pub const EXIGENCE_LISTER: Exigence = Exigence {
 ///
 /// Dans l'ordre d'aujourd'hui : la société est lue d'abord (erreur `Internal` si
 /// elle manque — jeton orphelin, cf. `helpers::get_company_for`), puis les
-/// comptes, puis la lettrabilité de tout le plan en **une** requête.
+/// comptes, puis la lettrabilité de tout le plan en **une** requête, puis le
+/// verrou de devise de tout le plan en une requête (Story 37-1).
 pub async fn lister(
     acces: &ContexteAcces,
     lecture: &Lecture,
@@ -46,11 +50,18 @@ pub async fn lister(
     // Story 15-1b (AC11) : la lettrabilité de tout le plan en UNE requête.
     let mut conn = lecture.pool().acquire().await.map_err(map_db_error)?;
     let lettrables = letterings::letterable_account_ids(&mut conn, acces.company_id()).await?;
+    // Story 37-1 (AC-4) : le verrou de devise de tout le plan, en UNE requête.
+    let verrouilles = accounts::currency_locked_account_ids(&mut conn, acces.company_id()).await?;
     Ok(list
         .into_iter()
         .map(|compte| {
             let lettrable = lettrables.contains(&compte.id);
-            CompteDuPlan { compte, lettrable }
+            let devise_verrouillee = verrouilles.contains(&compte.id);
+            CompteDuPlan {
+                compte,
+                lettrable,
+                devise_verrouillee,
+            }
         })
         .collect())
 }

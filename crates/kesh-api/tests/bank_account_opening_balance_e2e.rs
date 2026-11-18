@@ -142,6 +142,8 @@ async fn create_acc(
             parent_id: None,
             role,
             postable: true,
+            currency: None,
+            own_fx_accounts: None,
         },
     )
     .await
@@ -268,12 +270,14 @@ impl Ctx {
                         debit: dec!(10),
                         credit: Decimal::ZERO,
                         project_id: None,
+                        foreign: None,
                     },
                     NewJournalEntryLine {
                         account_id: self.debts,
                         debit: Decimal::ZERO,
                         credit: dec!(10),
                         project_id: None,
+                        foreign: None,
                     },
                 ],
             },

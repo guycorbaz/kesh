@@ -1,6 +1,6 @@
 # Story 43-2 : un règlement pour plusieurs factures — l'API de la réconciliation (#823)
 
-Status: ready-for-dev
+Status: review
 
 *Fiche rédigée le 2026-11-17 par l'agent de rédaction de l'Epic 43 (Opus 5.5), workflow `bmad-create-story`, code lu à
 `8b50fd195` ; révisée le soir même (décisions de Guy), puis **remédiée après sa validation P1**
@@ -8,7 +8,7 @@ Status: ready-for-dev
 Dev Notes, étape 0), puis après ses validations P2 et P3, et sur la **décision de Guy du 2026-11-17 sur la différence**
 (`kesh-gate-logs/e43/decision-difference.md`). Release **0.19.0**. **La recherche (tâche TR : dépôt et route) ne dépend
 d'aucun commit de la 43-1a et part tout de suite** ; le reste part du commit T3 de la 43-1a, dont le contrat est celui
-figé dans `kesh-gate-logs/e43/t3.md` (commit `241839568` ; code dans `/home/gcorbaz/devel/kesh-43-1a`) ; se fusionne
+figé dans `kesh-gate-logs/e43/t3.md` (commit `241839568`, branche `story/43-1a-reglement-groupe-modele`) ; se fusionne
 après elle. Les champs fournisseur de la vue (AC7) dépendent de l'AC6 bis de la **43-1b**. Aucune migration. Décisions : C-43-1 à
 C-43-26 (fichier d'épique), qui font foi. Validation terminée en P5 (0/0/0/5) ; correction de C-43-25 (arrondi automatique) relue par une passe ciblée.*
 
@@ -90,7 +90,8 @@ refus par proposition du *Pattern batch*.
 - **D4 — Type fournisseur retirable** (C-43-18) : la variante `SupplierInvoiceGroup`, sa branche du pré-vol, du `match` de
   `bank_transaction_id()` et de l'aiguillage, le **message de l'extracteur passé de cinq à six types**, la famille
   fournisseur de la recherche et de la vue, et leurs tests vivent dans **un seul commit** à part, retirable si la 43-1b
-  sort ; un test fixe le texte du message à cinq types avant ce commit, à six après.
+  sort ; un test fixe le texte du message à cinq types avant ce commit, à six après. *Annoté le 2026-11-18 : la 43-1b est
+  close ce jour et D4 sort avec elle ; le commit n'est plus retirable (§ Ordre de retrait).*
 - **D5 — Montants bruts de bout en bout (H2, C-43-21).** Un reste dû peut porter quatre décimales (10.0050) ; le serveur
   calcule l'écart sur le brut. Le contrat rend donc le **brut** (`amountDueRaw`, `difference`, `settledInvoices[].amount`,
   chaînes à quatre décimales) **et** le centime pour l'affichage (`amountDue`). L'écran calcule en entiers de 1/10 000 sur le
@@ -222,11 +223,12 @@ fournisseur) pour que l'écran la nomme (43-3).
 | `InvoiceNotEligible { reason }` | `RECONCILIATION_INVOICE_NOT_ELIGIBLE` | `reason` : `invoice_not_validated`, `invoice_already_paid`, `invoice_journal_entry_not_set`, `nothing_due`, `supplier_invoice_not_open`, `supplier_invoice_in_payment_batch`, `race_during_update` (version) |
 | `HeldByPaymentBatch` | `RECONCILIATION_SUPPLIER_PAYMENT_HOLD` | `reason: "other_invoice_in_payment_batch"`, ids |
 | `SaleEntryMalformed` | `INVOICE_SALE_ENTRY_MALFORMED` | `reason: "no_debit_line_on_sale_entry"` |
-| `BankAccountNotConfigured` / `NotFound` / `Closed` | `BANK_ACCOUNT_NOT_CONFIGURED` / `BANK_ACCOUNT_NOT_FOUND` / `BANK_ACCOUNT_CLOSED` | — |
+| `BankAccountNotConfigured` / `NotFound` / `Closed` | `BANK_ACCOUNT_NOT_CONFIGURED` / `BANK_ACCOUNT_NOT_FOUND` / `BANK_ACCOUNT_CLOSED` | `bankAccountId` pour `NOT_CONFIGURED` et `CLOSED`, comme l'unitaire (revue P1, B6) ; — pour `NOT_FOUND` |
 | `ClaimAccount { claim, role }` (compte de tiers égal à la banque, ou compte d'arrondi ou de différence égal à un compte de tiers des factures du groupe) | `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT` | comme `claim_account_failed_proposal` : `accountId`, `accountNumber`, `claim`, `role` ∈ rôles **réels** — `counterparty` (créance ou dette = banque, **avec `bankAccountId`** ; **compte de différence choisi**, **sans `bankAccountId`**, `accountId` = `differenceAccountId` envoyé — D9), `rounding` (compte d'arrondi) |
 | `DifferenceAccountIsBankLedger` (contrôle 1) | `VALIDATION_ERROR` | `reason: "counterparty_equals_bank_ledger"` (D9) |
 | compte de différence manquant, archivé ou d'une autre société (contrôle 2) | `ACCOUNT_NOT_FOUND` | `missingAccountIds: [id]` |
 | `DifferenceAccountNotPostable` (contrôle 3) | `ACCOUNT_NOT_POSTABLE` | comme `non_postable_failed_proposal` (:682), numéro du compte compris |
+| `DifferenceAccountInForeignCurrency` (Epic 37, après le contrôle 3 ; annotation de `t3.md` du 2026-11-18) | `ACCOUNT_IN_FOREIGN_CURRENCY` | `accountId`, `currency`, comme `DbError::AccountInForeignCurrency` (`errors.rs`) |
 | `DifferenceAccountRequired` | `RECONCILIATION_GROUP_INVALID` | `reason: "difference_account_required"`, `gap` |
 | `PaymentBeforeInvoiceDate` | `RECONCILIATION_INVOICE_NOT_ELIGIBLE` | `reason: "payment_date_before_invoice_date"`, `tolerance_days` (comme `date_refusal_failed_proposal`, :2316-2335) **plus** `invoiceId` / `supplierInvoiceId` et `invoiceNumber`, que `group_refusal_to_failed_proposal` **ajoute** (L5) |
 | `DifferenceTooLarge` | `RECONCILIATION_GROUP_DIFFERENCE_TOO_LARGE` | `transactionAmount`, `sumApplied`, `gap`, `maxDifference` |
@@ -437,21 +439,22 @@ dépôt de `find_group_candidates` dans `crates/kesh-db/tests/reconciliation_gro
 
 ## Tâches
 
-- [ ] **T0** — Étape 0 : LOW restants (Dev Notes) ; signatures du commit T3 de la 43-1a relues contre § *Exigences* ;
+- [x] **T0** — Étape 0 : LOW restants (Dev Notes) ; signatures du commit T3 de la 43-1a relues contre § *Exigences* ;
   écart → au Change Log et à l'orchestrateur.
-- [ ] **TR (d'abord)** — Recherche : `reconciliation_group_candidates.rs` (dépôt, **gate complet**) puis la route (AC5).
+- [x] **TR (d'abord)** — Recherche : `reconciliation_group_candidates.rs` (dépôt, **gate complet**) puis la route (AC5).
   *Nommée TR pour ne pas la confondre avec le « commit T3 » de la 43-1a* (P5, L5).
   **Ne dépend d'aucun commit de la 43-1a** (ni migration, ni dépôt de règlement) : elle part tout de suite, en parallèle.
-- [ ] **T1** — Variante client, pré-vol (`differenceAccountId` ≤ 0 compris), `bank_transaction_id()`, extracteur à cinq
+- [x] **T1** — Variante client, pré-vol (`differenceAccountId` ≤ 0 compris), `bank_transaction_id()`, extracteur à cinq
   types, aiguillage (AC1). Attend le commit T3 de la 43-1a.
-- [ ] **T2** — `reconciliation_group.rs` : `invoice_group`, conversions D2, gardes D6 et D9 (AC2, AC4, AC6, AC8) ; les
+- [x] **T2** — `reconciliation_group.rs` : `invoice_group`, conversions D2, gardes D6 et D9 (AC2, AC4, AC6, AC8) ; les
   fonctions privées de `reconciliation.rs` qu'il emploie (`lettering_error_to_failed_proposal`, `refuse_wrong_direction`,
   `SettlementDirection`, `date_refusal_failed_proposal`, `claim_account_failed_proposal`, `period_locked_failed_proposal`,
   `non_postable_failed_proposal`, `counterparty_is_bank_ledger_failed_proposal`) passent en **`pub(super)`** (L1) ; aucun
-  test d'intégration n'en a besoin (vérifié à l'étape 0 : `pub(super)` est invisible de `tests/`). — [ ] **T4** — Vue et annulation (AC7). — [ ] **T5** — `docs/api-external.md` (AC9) ;
+  test d'intégration n'en a besoin (vérifié à l'étape 0 : `pub(super)` est invisible de `tests/`). — [x] **T4** — Vue et annulation (AC7). — [x] **T5** — `docs/api-external.md` (AC9) ;
   accès (AC10).
-- [ ] **T6** — **Commit D4** : `supplier_invoice_group` et sa famille partout, message à six types (AC3).
-- [ ] **T7** — Gates ; Dev Agent Record ; prompt de revue P1 (lentilles B, E, A ; `docs/api-external.md` nommé).
+- [x] **T6** — **Commit D4** : `supplier_invoice_group` et sa famille partout, message à six types (AC3). Tests qui
+  règlent un groupe fournisseur marqués `#[ignore]` (exigent la 43-1b).
+- [x] **T7** — Gates ; Dev Agent Record ; prompt de revue P1 (lentilles B, E, A ; `docs/api-external.md` nommé).
 
 ## Note de version
 
@@ -475,8 +478,12 @@ différence interdit réemploie des codes existants (D9). `RECONCILIATION_UNDERP
 
 ### Ordre de retrait (si le temps manque)
 
-Le commit fournisseur (D4) ; puis les champs de vue et d'annulation `cancelBlockedInvoice` et `cancelledInvoices` (la 43-3
-écrit alors la limite) ; jamais la recherche, l'acceptation client ni les refus de la différence.
+**Le commit fournisseur (D4, `70f74f964`) n'est plus retirable** : la **43-1b est close le 2026-11-18** et versée dans
+`epic/43-transaction-plusieurs-factures` (`c22647e7a`) ; D4 sort avec elle (décision de l'orchestrateur du 2026-11-18,
+revue P2, P2-1). La barrière et la procédure de retrait écrites à la remédiation P1 sont levées.
+
+Si le temps manque : les champs de vue et d'annulation `cancelBlockedInvoice` et `cancelledInvoices` (la 43-3 écrit
+alors la limite) ; jamais la recherche, l'acceptation (client et fournisseur) ni les refus de la différence.
 
 ### LOW à l'étape 0
 
@@ -501,9 +508,112 @@ résolu en gardant les deux).
 
 ### Agent Model Used
 
+Opus 5.5 (agent de développement, en autonomie), 2026-11-17.
+
 ### Completion Notes List
 
+- **Commits** : `b32c3d42f` (recherche, `invoice_group`, vue, annulation, guide d'API) ; `7994a7a34` (trois défauts de test) ;
+  **`70f74f964` = commit D4** (type fournisseur, retirable) ; `6e656ad88` (test de `conclude`, mutation a) — **dernier commit
+  de code de la story** ; `420bd6317` = fusion de la branche de la 43-1a (C-e432-12) ; puis fiches seules.
+- **Tests ajoutés** (périmètre `cf77cff18`..`6e656ad88`, recomptés par `grep -c`) : `kesh-api/tests/reconciliation_group_e2e.rs`
+  25 `#[sqlx::test]`, dont **3 `#[ignore]`** (groupe fournisseur : exigent la 43-1b, `pay_supplier_invoices_in_tx` encore
+  `unimplemented!`) ; `kesh-db/tests/reconciliation_group_candidates.rs` 7 ; unitaires : 5 dans `reconciliation_group.rs`,
+  1 dans `reconciliation_group_candidates.rs`.
+- **Rouges** (`kesh-gate-logs/e432/rouges.log`) : le code de TR, T1, T2 et T4 a été écrit avant ses tests (aucun « rouge
+  d'abord » strict, dit au journal) ; les huit rouges rencontrés étaient des défauts de test, corrigés (`7994a7a34`).
+- **Mutations** (`kesh-gate-logs/e432/mut/campagne.py`, `campagne.log`, `campagne-a2.log`) : (b) à (h) **tuées** au commit
+  `70f74f964` par les tests annoncés ; (a) **survivante** au premier passage (aucun test n'atteignait une `DbError` dans le
+  chemin groupé), puis **tuée** par `the_conclusion_keeps_errors_in_the_proposal` (`6e656ad88`) — ⚠️ ce rejeu a été troublé :
+  j'ai restauré le fichier à la main pendant qu'il tournait (17:47:29), le binaire muté était probablement déjà compilé ;
+  verdict « probable », à rejouer si la revue le demande. (f) tue dix tests, dont des tests sans rapport avec la date :
+  probablement par erreur SQL du motif muté plutôt que par l'assertion de borne.
+- **Gates au passage en review** (base `kesh_e432` remise à neuf avant) :
+  - `scripts/test-fast.sh --ci` au commit `420bd6317` : **5589 passés, 0 échec, 16 ignorés**
+    (`kesh-gate-logs/e432/test-fast-review-2.log`) ;
+  - `scripts/gate-ci.sh kesh_ci_e432` au commit `420bd6317` : **5596 passés, 0 échoué, 20 ignorés**
+    (`kesh-gate-logs/e432/gate-ci-review.log`) ;
+  - le premier `test-fast --ci`, au commit `6e656ad88` sur la base `241839568`, rendait 17 rouges, tous dans du code et des
+    tests de la 43-1a, corrigés par elle après cette base (`test-fast-review.log`, C-e432-12) ;
+  - frontend : non touché, non lancé ; **E2E non lancé** (règle `e35-dev-commun.md` : à la clôture).
+- **Non exécuté** : les trois tests fournisseur `#[ignore]` (43-1b) ; aucune capture (aucun contrôle visible : l'écran est la
+  43-3).
+- **Choix** : C-e432-1 à C-e432-12 (`e0190-choix-autonomes-e432.md`). Code écrit par l'outil Edit seulement ; la campagne
+  de mutations applique ses motifs par script (permis pour les mutations).
+
+#### Remédiation de la revue P1 (2026-11-17 au soir, décisions de l'orchestrateur)
+
+- **Commit de code** : `ed8ab9c97` (dernier commit de code). Revue P1 : 0 CRITICAL, 1 HIGH (B1/E1/A4), 6 MEDIUM, ~30 LOW
+  (`kesh-gate-logs/e432/review-p1-{B,E,A}.md`).
+- **Traité** : barrière de release de D4 (fiche, § *Ordre de retrait* ; épique, sous C-43-18) ; corps provisoire de
+  `pay_supplier_invoices_in_tx` en `Err(DbError::Invariant)` (C-e432-13) ; `bankAccountId` des refus `BANK_ACCOUNT_CLOSED` et
+  `…_NOT_CONFIGURED` (B6, C-e432-10 révisé) ; test en table des 25 variantes de `GroupRefusal` (A2/B4) ; `effective_limit`
+  extraite et testée (E4/B9) ; tests B2, A3, B3, B10, B11, A14, E3, E2/A13, E6, A6 (dont le retrait seul, assertion ajoutée
+  à `reconciliation_link_entry_e2e.rs`), A12 ; guide d'API A10, A11/B7, B12 ; registre E8, E9, E10 (C-e432-14 à 16) ; T7
+  cochée (A9) ; journaux de gate en-têtés de leur commit (A7).
+- **Non traité, par décision** : E5 (disjonction `hasMore` redondante tant que `limit ≤ 100 < 500`, non demandée) ; E8 écrit
+  seulement (C-e432-14) ; E10 en issue proposée (C-e432-16).
+- **Tests à `ed8ab9c97`** (recomptés par `grep -c`) : `reconciliation_group_e2e.rs` 31 `#[sqlx::test]` dont 3 `#[ignore]` ;
+  `reconciliation_group_candidates.rs` (dépôt) 7 ; unitaires de `reconciliation_group.rs` 6.
+- **Mutations** :
+  - (f) de la première campagne était **non concluante** (motif invalide : `? IS NOT NULL` suivi du `?` du bind, erreur
+    SQL) ; rejouée avec des mutants valides (`mut/campagne2.py`, `campagne2.log`, au commit `ed8ab9c97`) : (f1) client tuée
+    par `client_candidates_follow_the_settlement_rules` et `la_recherche_d_un_credit_…`, (f2) fournisseur tuée par
+    `supplier_candidates_follow_the_settlement_rules` ;
+  - neuves, toutes tuées : (i) reste dû → TTC (`campagne2-i.log`, mutant corrigé après un premier motif qui ne compilait
+    pas), (j) `HAVING` retiré, (k) statut client retiré, (l) TTC fournisseur `>= 0`, (m) tri retiré, (n) plafond de `limit`
+    retiré, (o) `bankAccountId` retiré ;
+  - (a) rejouée seule sans écriture concurrente (`campagne-a3.log`) : **tuée** par
+    `the_conclusion_keeps_errors_in_the_proposal` et par `le_type_fournisseur_se_desserialise_et_ne_panique_pas`.
+- **Gates** (base `kesh_e432` remise à neuf avant) :
+  - ciblé : `kesh-gate-logs/e432/cible-3.log`, commit `ed8ab9c97`, 99 passés ;
+  - `scripts/test-fast.sh --ci` : **5596 passés, 0 échec, 16 ignorés** (`test-fast-p1.log`, en-tête : commit `ed8ab9c97`) ;
+  - `scripts/gate-ci.sh kesh_ci_e432` : **5603 passés, 0 échoué, 20 ignorés** (`gate-ci-p1.out`/`gate-ci-p1.log`, en-tête :
+    commit `ed8ab9c97`) ;
+  - frontend non touché ; E2E à la clôture.
+
+#### Remédiation de la revue P2 et reprise de la branche d'épique (2026-11-18, décisions de l'orchestrateur)
+
+- **Revue P2** : 0 CRITICAL, 1 HIGH, 2 MEDIUM, 5 LOW (`kesh-gate-logs/e432/review-p2.md`).
+- **Partie A** (commit `5ace2a75d`) :
+  - P2-1 : sans objet, la 43-1b étant close (fiche, épique, C-43-18) ;
+  - P2-2 : garde `rang` ;
+  - P2-3 : guide, l. 733 ;
+  - P2-5 : lot mixte ;
+  - P2-6 : contexte du journal, `classify_db_error_to_failed_proposal` ;
+  - P2-8 : avoir avec sa ligne ;
+  - P2-4 au registre (C-e432-17), pour la 43-3 ; P2-7 en issue proposée.
+  - Gate ciblé : `cible-p2a.log`, commit `5ace2a75d`, 255 passés.
+- **Partie B** :
+  - Fusion de `origin/epic/43-transaction-plusieurs-factures` à `6238dfa18` : commit `866cd1434`.
+  - Deux conflits : `grouped_settlements.rs`, résolu par la version de l'épique (le corps provisoire cède à la 43-1b) ; `sprint-status.yaml`, 43-1a et 43-1b de l'épique, ligne 43-2 de la branche.
+  - Code : commit `f8ce94a5b`, dernier commit de code :
+    - `foreign: None` aux quatre littéraux de test ;
+    - `DifferenceAccountInForeignCurrency` traduite en `ACCOUNT_IN_FOREIGN_CURRENCY` (`accountId`, `currency`). La garde `rang` a fait échouer la compilation du test avant que la variante reçoive son rang 25 (`RANGS` = 26) : c'est sa sonde positive. La ligne est ajoutée à la table de test, à la fiche et au guide ;
+    - les `DbError` d'un groupe passent d'abord par `fx_failed_proposal` (M2) ;
+    - les trois tests fournisseur n'ont plus de `#[ignore]` et passent ;
+    - P2-5 prouvé autrement : une créance tenue en devise dans un exercice mono-devise fait refuser l'écriture (`MULTI_CURRENCY_DISABLED`, `fiscalYearId`), à côté d'un groupe réussi et écrit. Cela exerce aussi M2 ;
+    - un test HTTP du compte d'écart en devise.
+  - Tests à `f8ce94a5b` : `reconciliation_group_e2e.rs` 32 `#[sqlx::test]`, aucun `#[ignore]` ; unitaires 6.
+  - Bases `kesh_e432` et `kesh_e2e_e432` reconstruites à neuf (95 migrations).
+  - Gates :
+    - `scripts/test-fast.sh --ci` : **6059 passés, 0 échec, 13 ignorés** (`test-fast-p2b.log`, en-tête : commit `f8ce94a5b`) ;
+    - `scripts/gate-ci.sh kesh_ci_e432` : **6076 passés, 0 échoué, 17 ignorés** (`gate-ci-p2b.out`/`gate-ci-p2b.log`, en-tête : commit `f8ce94a5b`) ;
+    - frontend non touché ; E2E à la clôture.
+  - Mutations : aucune rejouée sur cette reprise. La garde `rang` a été éprouvée par la compilation, sur la vraie variante neuve.
+
 ### File List
+
+- `crates/kesh-db/src/repositories/reconciliation_group_candidates.rs` (neuf), `repositories/mod.rs`,
+  `repositories/reconciliation_cancel.rs` (champ `kind`, C-e432-4)
+- `crates/kesh-db/tests/reconciliation_group_candidates.rs` (neuf)
+- `crates/kesh-api/src/routes/reconciliation_group.rs` (neuf), `routes/reconciliation.rs`, `routes/mod.rs`, `lib.rs`
+- `crates/kesh-api/tests/reconciliation_group_e2e.rs` (neuf) ; `crates/kesh-api/tests/reconciliation_link_entry_e2e.rs`
+  (deux assertions du retrait seul, revue P1, A6)
+- `crates/kesh-db/src/repositories/grouped_settlements.rs` (corps provisoire de `pay_supplier_invoices_in_tx`, C-e432-13 ;
+  fichier de la 43-1a)
+- `_bmad-output/planning-artifacts/epic-43-transaction-plusieurs-factures.md` (barrière de release de D4)
+- `docs/api-external.md`
+- `_bmad-output/implementation-artifacts/e0190-choix-autonomes-e432.md` (neuf), cette fiche, son prompt de revue P1
 
 ## Change Log
 
@@ -563,3 +673,25 @@ résolu en gardant les deux).
   `t3.md` existant, `DifferenceAccountNotUsable` inexistante, chemin `decomposition` du contrat final, `maxDifference` à
   deux décimales ; LOW-7 : sonde « un groupe n'est jamais un retrait seul » à l'AC7 ; dépendance de l'AC7 envers l'AC6 bis
   et l'AC6 de la 43-1b (HIGH-1).
+- 2026-11-17 (développement, étape 0) — **Clôture de la validation** : P1 Sonnet 0/2/7/8 → P2 Opus 0/0/6/6 → P3 Sonnet
+  0/0/3/6 → P4 Opus 0/0/2/6 → P5 Sonnet 0/0/0/5 → P6 ciblée (43-2, 43-3, épique) 1/1/0/4 → passe contre `t3.md`
+  (quatre fiches et l'épique) 0/2/4/9 → passe ciblée 2 0/0/0/4 (rapports `kesh-gate-logs/e43/validation-43-23-p6-ciblee.md`,
+  `validation-fiches-contre-t3.md`, `validation-fiches-p-ciblee-2.md`, totaux relus) ; la dernière passe ne rend rien
+  au-dessus de LOW. LOW traités :
+  - **L-3 (ciblée 2)** : l. 11, chemin local `/home/gcorbaz/devel/kesh-43-1a` remplacé par la branche
+    `story/43-1a-reglement-groupe-modele` (ligne lue : « commit `241839568` ; code dans `/home/gcorbaz/devel/kesh-43-1a` »).
+    L-1, L-2, L-4 de la même passe portent sur la 43-7 et l'épique : hors de cette fiche.
+  - **L-5 (MCP)** : `git grep -n -i 'reconciliation\|ReconciliationKind' -- crates/kesh-api/src/mcp*` ne rend rien ; aucun
+    outil MCP ne lit la réconciliation, rien à faire.
+  - **L6 (P3, message du lettrage)** : laissé tel quel (C-e432-8) ; ligne lue :
+    `tracing::error!("encaissement : lettrage de la facture impossible : {err}");` (`routes/reconciliation.rs`).
+  - **L4 (P5, compte d'arrondi égal à la banque)** : l'unitaire ne le compare qu'à la créance (`refuse_if_claim_account(…,
+    receivable_account_id, ClaimSubject::Designated(GapAccountRole::Rounding))`, `routes/reconciliation.rs`, (c-bis)), le
+    dépôt de la 43-1a aussi (`if receivables.contains(&id)`, `grouped_settlements.rs`) : la mention reste retirée.
+  - **Échelle des `Decimal`** : formatage explicite par `fixed(montant, décimales)` (`reconciliation_group.rs`), test
+    `fixed_writes_the_requested_scale`.
+  - **Contrat `t3.md` relu contre la table des refus** : les vingt-cinq variantes de la liste finale ont leur bras dans
+    `group_refusal_to_failed_proposal` (`match` sans joker : la compilation le garantit) ; `DifferenceAccountInvalid` →
+    `ACCOUNT_NOT_FOUND`, `DifferenceAccountNotPostable` → `ACCOUNT_NOT_POSTABLE`. Écart : `ReconciliationCancellation` ne
+    portait pas le genre du rapprochement, exigé par la réponse de `POST …/cancel` → champ `kind` ajouté au dépôt
+    (C-e432-4), à signaler à la 43-1a.
