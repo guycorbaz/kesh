@@ -1146,7 +1146,11 @@ const ATTENDU = {
 	// deux relevés ci-dessus (+17 littéraux de la 36-16a), à confirmer par la garde.
 	// Union de la 0.19.0 (fusion d'epic/42-reimputation-analytique) : valeur de HEAD gardée à
 	// la résolution, à relever par la garde au raccord qui suit (C-e350-18).
-	sitesTotal: 3468,
+	// Raccord de l'intégration de la 0.19.0 (2026-11-18) : **3495**, relevé par la garde après les
+	// fusions de l'Epic 43, d'epic/v0190-correction et d'epic/42 (« expected 3495 to be 3468 »,
+	// `kesh-gate-logs/rel0190/vitest-compteurs-1.log`), non additionné — il égale 3468 + 10
+	// (v0190-correction et v0190-nom-societe) + 17 (36-16a), les côtés gardés.
+	sitesTotal: 3495,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/
