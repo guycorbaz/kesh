@@ -132,3 +132,26 @@ passait devant le rang 1 de la seconde facture. Réversible.
   puis premier règlement). Même exposition que l'unitaire, élargie à n factures ; le dé-rapprochement est rejoué sur 1213
   par la route (`retry_app_on_deadlock`) ; **l'avoir, non vérifié** : la 43-2 (ou la route de l'avoir) doit dire s'il
   est rejoué, sinon le noter au manuel.
+
+**C-e431a-17 — Reprise de `main` après l'Epic 37 (2026-11-18, branche `chore/43-reprise-main`)** — source : revue
+d'intégration de la PR #1247, lentille I (`kesh-gate-logs/e37int/review-I.md`, M1, M2, L2, L3, L5) ; liste
+`kesh-gate-logs/e43/reprise-main-e37.md`. Ce qui change pour la 43-1a :
+
+- **Migration** : `20261118000001` devient la **95ᵉ**, après `20261114000001` à `…003` (multi-devise) ; l'hypothèse
+  du fichier d'épique (« celle du multi-devise prend un horodatage postérieur ») est démentie, sans contradiction de
+  règles : la migration reste non breaking, aucune colonne commune. Garde de montée `total == 95`, fenêtre
+  `total - 61` (frontière 34) ; `draft_migration_preserves_a_populated_base` pose et retire les colonnes multi-devises
+  **et** les trois de la 43-1a ; audit 95 (84 `tracked-by-sqlx`, 11 `yes`) ; squash régénéré
+  (`scripts/regen-test-schema.sh`), seul écart de fond avec `main` : cette migration. Bases `kesh_e431a*` d'avant la
+  reprise : à reconstruire.
+- **M1** : `NewJournalEntryLine` porte `foreign` sans `Default` ; le règlement groupé pose `foreign: None` sur chaque
+  ligne (chemin automatique, CHF seulement — convention de l'Epic 37), les tests passent par `test_fixtures::chf_line` ;
+  `create_copying_projects_in_tx` passe `PorteeDevises::UneSeule` (ni ouverture ni complément ; garde
+  `chf_line_lexical`).
+- **M2** : nouveau refus `GroupRefusal::DifferenceAccountInForeignCurrency { account_id, currency }` — le compte choisi
+  pour l'écart tenu en devise. Lu dans le `SELECT … FOR UPDATE` de `difference_account_refusal` (règle commune
+  `difference_accounts`, les deux bras), après « non imputable » (ordre du règlement unitaire de l'Epic 37). Banque,
+  créances et compte d'arrondi n'ont pas besoin du même contrôle : l'Epic 37 interdit déjà la devise à un compte lié à
+  un compte bancaire ou désigné aux réglages. La 43-2 traduit le refus en `ACCOUNT_IN_FOREIGN_CURRENCY` (annoté à
+  `kesh-gate-logs/e43/t3.md`). Test rouge d'abord (`a_foreign_currency_difference_account_is_refused`, rouge
+  `MultiCurrencyDisabled`), puis correction. Réversible : la variante se retire avec son bras de `match`.

@@ -297,3 +297,12 @@ Traités selon les décisions de l'orchestrateur :
   sur `kesh_e2e_e431b`, port 3477 (`e2e-cloture.log`, script `e2e-cloture.sh`) : **437 passés, 7 échecs, 18 ignorés**
   — les sept de la KF-029 (#97), un par un : `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`,
   `onboarding.spec.ts:57`, `:77`, `:150` ; aucun échec variable. Statut `done`.
+- 2026-11-18 (reprise de `main` après l'Epic 37, branche `chore/43-reprise-main`, `6f152a5f8` à `69c4d1db7`) — Bras
+  fournisseur : `foreign: None` sur la banque et chaque dette ; refus `DifferenceAccountInForeignCurrency` par la règle
+  commune `difference_accounts`, test rouge (`grouped_settlements_supplier.rs`,
+  `a_foreign_currency_difference_account_is_refused`, rouge `MultiCurrencyDisabled`) puis vert ; registre
+  C-e431b-19 (détail commun : C-e431a-17 de la 43-1a). Gates au commit `69c4d1db7`, bases remises à neuf (journaux
+  `kesh-gate-logs/e43r/`) : `test-fast --ci` 6013/13 ; `gate-ci` 6030/0/17 (au second tirage, le premier rouge sur
+  `disque_sature_pendant_l_ecriture`, hors de l'Epic 43, vert rejoué seul) ; frontend vert (Vitest 4353) ; E2E 458
+  passés, 18 ignorés, et les sept échecs de la KF-029 seuls : `mode-expert.spec.ts:26`, `:41`,
+  `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`.

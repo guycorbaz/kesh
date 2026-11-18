@@ -693,3 +693,14 @@ schéma d'avant (`lettering_documents_backfill.rs`, `migrations_upgrade_path.rs`
   test d'entrelacement de B-1 rouge sur le code d'avant puis vert ; mutation 5 (ancien ordre têtes/queue) tuée. Gates de
   clôture au dernier commit de code `f711dd2de` (tableau *Gates*) : `test-fast --ci` 5554/13, `gate-ci` 5561/0/17,
   frontend vert (Vitest 3948), E2E 437 passés et les sept échecs de la KF-029 seuls. **Statut `done`.**
+- 2026-11-18 (reprise de `main` après l'Epic 37, branche `chore/43-reprise-main` ; `6f152a5f8` fusion, `776392b52`
+  rouge, `9bfc33c69` correction, `69c4d1db7` test de l'Epic 37 adapté) — Migration désormais **95ᵉ** (`total == 95`,
+  `total - 61`, audit 95/84/11, squash régénéré) ; M1 (`foreign: None`, `chf_line`, `PorteeDevises::UneSeule`) ; M2
+  (`DifferenceAccountInForeignCurrency`, test rouge `MultiCurrencyDisabled` puis vert) ; détail au registre,
+  C-e431a-17. Interaction sans conflit de texte trouvée au gate : `designated_changes_follows_designated_account_columns`
+  (Story 37-1) ne connaissait pas `groupSettlementMaxDifference`. Gates au commit `69c4d1db7`, bases remises à neuf :
+  `test-fast --ci` **6013 passés, 13 ignorés** (`kesh-gate-logs/e43r/test-fast-ci-3.log`) ; `gate-ci.sh kesh_ci_e43r`
+  **6030/0/17** (`gate-ci-2.log` ; le premier tirage `gate-ci-1.log` a rougi sur `disque_sature_pendant_l_ecriture`,
+  binaire `admin_auto_backup_e2e`, hors de l'Epic 43, vert trois fois rejoué seul, `rejeu-disque-sature.log`) ;
+  frontend complet vert (Vitest **4353 tests, 271 fichiers**) ; E2E complet sur `kesh_e2e_e43r` recréée vide
+  (`e2e-reprise.log`) : **458 passés, 7 échecs, 18 ignorés** — les sept de la KF-029 seuls.

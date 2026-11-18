@@ -160,3 +160,11 @@ toute écriture sans règlement client ni fournisseur ; c'est ce que fait le tes
 de `supplier_difference_account_of` (privée, appelée par la vue après la classification) reste inatteignable. Le
 contrôle des positions de cette fonction, que le test adapté n'atteint plus (il tombe sur le recoupement, C-e431b-15),
 est tenu par `debt_lines_out_of_their_positions_make_the_view_an_invariant`.)*
+
+**C-e431b-19 — Reprise de `main` après l'Epic 37 (2026-11-18, branche `chore/43-reprise-main`)** — le détail commun
+est à C-e431a-17 (registre de la 43-1a). Pour le bras fournisseur : `foreign: None` sur la ligne de banque (au crédit)
+et sur chaque ligne de dette de `pay_supplier_invoices_in_tx`, et sur les lignes d'arrondi et d'écart
+(`push_difference_lines`, commune) ; le refus `DifferenceAccountInForeignCurrency` vient de la règle commune
+`difference_accounts` qu'a extraite la 43-1b (revue P1, B-3), sans code propre au bras. Test rouge d'abord
+(`grouped_settlements_supplier.rs`, `a_foreign_currency_difference_account_is_refused` : rouge `MultiCurrencyDisabled`,
+puis vert), avec l'ordre « non imputable avant devise » et une sonde positive.
