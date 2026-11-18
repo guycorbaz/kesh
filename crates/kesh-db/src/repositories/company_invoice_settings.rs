@@ -2152,6 +2152,8 @@ mod designated_changes_tests {
             "journalEntryDescriptionTemplate": "T", "creditNoteNumberFormat": "A",
             "supplierInternalNumberFormat": "FF", "roundTo5Centimes": false,
             "minimumInvoiceAmount": null,
+            // Story 43-7 (#823) : le plafond, champ sans défaut de la mise à jour.
+            "groupSettlementMaxDifference": "5.0000",
         });
         for (i, (column, _)) in DESIGNATED_ACCOUNT_COLUMNS.iter().enumerate() {
             before[camel(column)] = serde_json::json!(i as i64 + 1);
