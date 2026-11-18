@@ -263,6 +263,7 @@ account-field-parent-optional = Conto padre (facoltativo)
 accounts-parent-none = Nessuno
 accounts-parent-archived = Il conto padre { $number } è archiviato. Riattivatelo prima.
 error-account-parent-cycle = Il conto { $number } è questo conto stesso o uno dei suoi sottoconti: un conto non può essere collocato sotto sé stesso.
+error-account-parent-has-entries = Il conto { $number } porta delle registrazioni: collocandovi sotto questo conto, diventerebbe non imputabile con un saldo che nessuna registrazione potrebbe più correggere. Scegliete un conto di gruppo senza registrazioni.
 accounts-role-invalid-for-type = Il ruolo { $role } non può essere attribuito a un conto di tipo { $type }.
 accounts-role-conflict-generic = Questo ruolo è appena stato attribuito a un altro conto. Ricaricate la pagina.
 accounts-reactivate-without-role = Riattivare senza il ruolo

@@ -321,11 +321,16 @@ async fn parent_de_change_ou_en_devise_mouvemente_refuse(pool: MySqlPool) {
     )
     .await
     .unwrap();
-    // Sous l'un de ses comptes propres en place : `g` est désigné (par `eur`).
-    assert!(matches!(
-        ranger(&pool, &s, eur.id, ParentChange::Under(g)).await,
-        Err(DbError::AccountIsFxDifferenceAccount { .. })
-    ));
+    // Sous l'un de ses comptes propres qu'il garde : `g` deviendrait non
+    // imputable — jugé sur l'état après le `PUT` (revue P1-4).
+    match ranger(&pool, &s, eur.id, ParentChange::Under(g)).await {
+        Err(DbError::FxAccountInvalid {
+            field: FxAccountField::Gain,
+            reason: FxAccountReason::NotPostable,
+            holder_account_id,
+        }) => assert_eq!(holder_account_id, Some(eur.id)),
+        autre => panic!("FX_ACCOUNT_INVALID notPostable attendu, obtenu {autre:?}"),
+    }
     // Sous l'un des comptes propres que le même `PUT` lui donne : `g2`, encore
     // désigné par personne, deviendrait non imputable.
     let g2 = compte(&pool, &s, "6952", None).await;
@@ -361,6 +366,146 @@ async fn parent_de_change_ou_en_devise_mouvemente_refuse(pool: MySqlPool) {
     }
     assert_eq!(lire(&pool, a).await.parent_id, None);
     assert_eq!(lire(&pool, eur.id).await.parent_id, None);
+}
+
+/// Revue P1-4 : le même `PUT` qui retire à `eur` son compte propre `g` peut le
+/// ranger sous `g` — après le geste, `g` n'est plus désigné par personne. Mais
+/// un compte que d'**autres** comptes désignent reste refusé.
+#[sqlx::test(migrations = "./test-schema")]
+async fn sous_son_ancien_compte_propre_retire_dans_le_meme_put(pool: MySqlPool) {
+    let s = seed_accounting_company(&pool).await.unwrap();
+    sqlx::query("UPDATE companies SET multi_currency_enabled = TRUE WHERE id = ?")
+        .bind(s.company_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let mut ids = Vec::new();
+    for (numero, type_) in [
+        ("6951", "Revenue"),
+        ("6961", "Expense"),
+        ("6952", "Revenue"),
+    ] {
+        let id = compte(&pool, &s, numero, None).await;
+        sqlx::query("UPDATE accounts SET account_type = ? WHERE id = ?")
+            .bind(type_)
+            .bind(id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        ids.push(id);
+    }
+    let (g, p, g2) = (ids[0], ids[1], ids[2]);
+
+    // Le `PUT` d'un compte : devise, comptes propres `(gain, p)`, parent.
+    async fn poser(
+        pool: &MySqlPool,
+        s: &SeededCompany,
+        id: i64,
+        currency: CurrencyChange,
+        gain: i64,
+        loss: i64,
+        parent: ParentChange,
+    ) -> Result<Account, DbError> {
+        let a = lire(pool, id).await;
+        accounts::update(
+            pool,
+            id,
+            a.version,
+            s.admin_user_id,
+            AccountUpdate {
+                name: a.name.clone(),
+                account_type: a.account_type,
+                role: None,
+                postable: true,
+                currency,
+                own_fx_accounts: OwnFxAccountsChange::Own(OwnFxAccounts { gain, loss }),
+                parent,
+            },
+            false,
+        )
+        .await
+    }
+    let eur_ = CurrencyChange::Foreign("EUR".into());
+    let mut en_devise = Vec::new();
+    for (numero, gain) in [("1022", g), ("1023", g2), ("1024", g2)] {
+        let id = compte(&pool, &s, numero, None).await;
+        poser(
+            &pool,
+            &s,
+            id,
+            eur_.clone(),
+            gain,
+            p,
+            ParentChange::Unchanged,
+        )
+        .await
+        .unwrap();
+        en_devise.push(id);
+    }
+    let (eur, usd, eur2) = (en_devise[0], en_devise[1], en_devise[2]);
+    let _ = usd;
+
+    // Seul `eur` désigne `g`, et ce `PUT` le lui retire : accepté.
+    let apres = poser(
+        &pool,
+        &s,
+        eur,
+        CurrencyChange::Unchanged,
+        g2,
+        p,
+        ParentChange::Under(g),
+    )
+    .await
+    .unwrap();
+    assert_eq!(apres.parent_id, Some(g));
+    assert_eq!(apres.fx_gain_account_id, Some(g2));
+    assert!(!lire(&pool, g).await.postable);
+
+    // `g2` est désigné par `usd` et `eur` : `eur2` ne se range pas dessous.
+    match poser(
+        &pool,
+        &s,
+        eur2,
+        CurrencyChange::Unchanged,
+        g2,
+        p,
+        ParentChange::Under(g2),
+    )
+    .await
+    {
+        Err(DbError::AccountIsFxDifferenceAccount { .. }) => {}
+        autre => panic!("ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT attendu, obtenu {autre:?}"),
+    }
+    assert_eq!(lire(&pool, eur2).await.parent_id, None);
+}
+
+/// Revue P1-2 (décision de Beat) : un parent qui porte des écritures, même en
+/// CHF, est refusé ; le même compte, sans écriture, est accepté.
+#[sqlx::test(migrations = "./test-schema")]
+async fn parent_mouvemente_refuse(pool: MySqlPool) {
+    let s = seed_accounting_company(&pool).await.unwrap();
+    let a = compte(&pool, &s, "1050", None).await;
+    let vierge = compte(&pool, &s, "10", None).await;
+    let mouvemente = compte(&pool, &s, "11", None).await;
+    ligne(&pool, &s, mouvemente).await;
+    match ranger(&pool, &s, a, ParentChange::Under(mouvemente)).await {
+        Err(DbError::AccountParentHasEntries {
+            parent_account_id,
+            parent_number,
+        }) => {
+            assert_eq!(parent_account_id, mouvemente);
+            assert_eq!(parent_number, "11");
+        }
+        autre => panic!("ACCOUNT_PARENT_HAS_ENTRIES attendu, obtenu {autre:?}"),
+    }
+    let m = lire(&pool, mouvemente).await;
+    assert!(m.postable, "le parent refusé reste imputable");
+    assert_eq!(lire(&pool, a).await.parent_id, None);
+    // La sonde : le parent sans écriture passe.
+    let ok = ranger(&pool, &s, a, ParentChange::Under(vierge))
+        .await
+        .unwrap();
+    assert_eq!(ok.parent_id, Some(vierge));
 }
 
 /// La course : `D` est sous `B`, `A` sous `C`. Une transaction non commitée

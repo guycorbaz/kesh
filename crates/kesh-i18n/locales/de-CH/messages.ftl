@@ -263,6 +263,7 @@ account-field-parent-optional = Übergeordnetes Konto (optional)
 accounts-parent-none = Keines
 accounts-parent-archived = Das übergeordnete Konto { $number } ist archiviert. Reaktivieren Sie es zuerst.
 error-account-parent-cycle = Das Konto { $number } ist dieses Konto selbst oder eines seiner Unterkonten: Ein Konto kann nicht unter sich selbst eingeordnet werden.
+error-account-parent-has-entries = Das Konto { $number } enthält Buchungen: Würde dieses Konto darunter eingeordnet, würde es mit einem Saldo nicht bebuchbar, den keine Erfassung mehr korrigieren könnte. Wählen Sie ein Gruppenkonto ohne Buchungen.
 accounts-role-invalid-for-type = Die Rolle { $role } kann keinem Konto vom Typ { $type } zugewiesen werden.
 accounts-role-conflict-generic = Diese Rolle wurde soeben einem anderen Konto zugewiesen. Bitte laden Sie die Seite neu.
 accounts-reactivate-without-role = Ohne Rolle reaktivieren

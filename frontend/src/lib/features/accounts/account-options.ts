@@ -121,36 +121,44 @@ export function bankAccountsNotLinkedTo<T extends { journalAccountId: number | n
 }
 
 /**
- * Les comptes proposés comme **parent** de `accountId` (correctif
- * `fix-api-parent-compte`) : les comptes actifs, **sauf** le compte lui-même
- * et ses sous-comptes à tous les niveaux — le serveur refuserait le cycle
- * (409 `ACCOUNT_PARENT_CYCLE`) ; l'écran ne le propose pas.
+ * Les comptes proposés comme **parent** (correctif `fix-api-parent-compte`).
  *
- * `accountId` à `null` (création) : tous les comptes actifs. Le serveur reste
- * le juge (parent archivé entre-temps, compte de change, compte en devise
- * mouvementé) : ce filtre n'écarte que ce qui ne peut jamais passer.
+ * - À la **création** (`account` à `null`) : tous les comptes actifs — le
+ *   comportement d'avant, inchangé.
+ * - À la **modification** : les comptes actifs, **sauf** le compte lui-même et
+ *   ses sous-comptes à tous les niveaux (le serveur refuserait le cycle, 409
+ *   `ACCOUNT_PARENT_CYCLE`), et **sauf** les comptes qui portent des écritures
+ *   (`currencyLocked` : au moins une ligne d'écriture — le serveur refuserait,
+ *   409 `ACCOUNT_PARENT_HAS_ENTRIES`, revue P1-2). Le parent **actuel** reste
+ *   proposé même s'il porte des écritures, pour que le champ l'affiche.
+ *
+ * Le serveur reste le juge (parent archivé ou mouvementé entre-temps, compte de
+ * change) : ce filtre n'écarte que ce qui ne peut pas passer.
  */
 export function parentCandidates(
 	accounts: AccountResponse[],
-	accountId: number | null,
+	account: Pick<AccountResponse, 'id' | 'parentId'> | null,
 ): AccountResponse[] {
-	const exclus = new Set<number>();
-	if (accountId !== null) {
-		exclus.add(accountId);
-		// Point fixe : un compte est exclu dès que son parent l'est. Borné par
-		// le nombre de comptes, même si la liste reçue portait un cycle.
-		let ajoute = true;
-		while (ajoute) {
-			ajoute = false;
-			for (const a of accounts) {
-				if (a.parentId !== null && exclus.has(a.parentId) && !exclus.has(a.id)) {
-					exclus.add(a.id);
-					ajoute = true;
-				}
+	if (account === null) return accounts.filter((a) => a.active);
+	const exclus = new Set<number>([account.id]);
+	// Point fixe : un compte est exclu dès que son parent l'est. Borné par le
+	// nombre de comptes, même si la liste reçue portait un cycle.
+	let ajoute = true;
+	while (ajoute) {
+		ajoute = false;
+		for (const a of accounts) {
+			if (a.parentId !== null && exclus.has(a.parentId) && !exclus.has(a.id)) {
+				exclus.add(a.id);
+				ajoute = true;
 			}
 		}
 	}
-	return accounts.filter((a) => a.active && !exclus.has(a.id));
+	return accounts.filter(
+		(a) =>
+			a.active &&
+			!exclus.has(a.id) &&
+			(a.currencyLocked !== true || a.id === account.parentId),
+	);
 }
 
 /**

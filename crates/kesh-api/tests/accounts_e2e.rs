@@ -1223,6 +1223,19 @@ async fn put_range_un_compte_mouvemente_sous_un_groupe(pool: MySqlPool) {
     mk_entry(&pool, company_id, fy, admin_id, banque, caisse, jour).await;
     let groupe = mk_account(&pool, company_id, admin_id, "10", None).await;
 
+    // Revue P1-2 : un parent qui porte des écritures est refusé, avec un
+    // message traduit et le parent en `details`.
+    let (status, body) =
+        put_parent(&app, &token, &pool, banque, json!({ "parentId": caisse })).await;
+    assert_eq!(status, 409, "{body}");
+    assert_eq!(body["error"]["code"], "ACCOUNT_PARENT_HAS_ENTRIES");
+    assert_eq!(body["error"]["details"]["parentAccountId"], caisse);
+    assert_eq!(body["error"]["details"]["parentNumber"], "1000");
+    assert!(
+        body["error"]["message"].as_str().unwrap().contains("1000"),
+        "{body}"
+    );
+
     let (status, body) =
         put_parent(&app, &token, &pool, banque, json!({ "parentId": groupe })).await;
     assert_eq!(status, 200, "{body}");

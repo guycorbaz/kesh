@@ -4570,6 +4570,28 @@ impl IntoResponse for AppError {
                         &t_args("error-account-parent-cycle", &fallback, &args),
                     )
                 }
+                DbError::AccountParentHasEntries {
+                    parent_account_id,
+                    parent_number,
+                } => {
+                    let mut args = FluentArgs::new();
+                    args.set("number", parent_number.clone());
+                    coded_response(
+                        StatusCode::CONFLICT,
+                        "ACCOUNT_PARENT_HAS_ENTRIES",
+                        t_args(
+                            "error-account-parent-has-entries",
+                            &format!(
+                                "Le compte {parent_number} porte des écritures : y ranger ce compte le rendrait non imputable avec un solde qu'aucune saisie ne pourrait plus corriger. Choisissez un compte de groupe sans écriture."
+                            ),
+                            &args,
+                        ),
+                        serde_json::json!({
+                            "parentAccountId": parent_account_id,
+                            "parentNumber": parent_number,
+                        }),
+                    )
+                }
                 DbError::AccountParentNotFound => build_response(
                     StatusCode::BAD_REQUEST,
                     "VALIDATION_ERROR",

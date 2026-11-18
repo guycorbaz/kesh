@@ -204,13 +204,14 @@
 	});
 
 	// Options de parent : à la création, les comptes actifs ; à la modification
-	// (correctif `fix-api-parent-compte`), sans le compte ni ses sous-comptes.
+	// (correctif `fix-api-parent-compte`), sans le compte, ses sous-comptes ni
+	// les comptes qui portent des écritures (voir `parentCandidates`).
 	function toParentOptions(candidates: AccountResponse[]) {
 		return candidates.map((a) => ({ value: String(a.id), label: `${a.number} — ${a.name}` }));
 	}
 	let parentOptions = $derived(toParentOptions(parentCandidates(accounts, null)));
 	let editParentOptions = $derived(
-		toParentOptions(parentCandidates(accounts, editAccount?.id ?? null))
+		toParentOptions(parentCandidates(accounts, editAccount))
 	);
 
 	// --- API ---

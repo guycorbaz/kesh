@@ -309,8 +309,9 @@ pub async fn create(pool: &MySqlPool, user_id: i64, new: NewAccount) -> Result<A
     // devient donc un compte de regroupement. Les chemins qui créent une
     // relation de parenté sont celui-ci, le seed et, depuis le correctif
     // `fix-api-parent-compte`, le changement de parent d'[`update`], qui
-    // applique la même règle ; la normalisation d'[`update`] couvre le reste. Le scope `company_id` est défensif : sans lui, un `parentId`
-    // pointant sur une autre société ferait écrire hors du tenant courant.
+    // applique la même règle ; la normalisation d'[`update`] couvre le reste.
+    // Le scope `company_id` est défensif : sans lui, un `parentId` pointant sur
+    // une autre société ferait écrire hors du tenant courant.
     // Pas de bump de `version` : `postable` est ici une conséquence structurelle,
     // pas une modification demandée par un utilisateur sur le parent.
     if let Some(parent_id) = new.parent_id {
@@ -899,70 +900,6 @@ where
     Ok((count, closed_fiscal_years))
 }
 
-/// Met à jour un compte actif (nom, type, rôle, postabilité, devise, comptes
-/// propres et — depuis le correctif `fix-api-parent-compte` — parent).
-/// Verrouillage optimiste + audit log (Story 3.5).
-/// Retourne `IllegalStateTransition` si le compte est archivé.
-///
-/// # Parent (correctif `fix-api-parent-compte`)
-///
-/// `changes.parent` est à trois états (inchangé / racine / sous un compte),
-/// résolu sous le `FOR UPDATE` du compte. Un parent qui change passe, après
-/// les gardes de devise et avant les refus existants (rôle singleton, compte
-/// bancaire lié, écritures), les contrôles de [`create`] — parent de la
-/// société, actif, ni compte de différence de change, ni compte en devise
-/// mouvementé, ni l'un des comptes propres du compte — **plus** le refus d'un
-/// cycle ([`DbError::AccountParentCycle`]) : voir [`guard_parent_change_in_tx`].
-/// Le nouveau parent devient non imputable (comme à la création) ; l'ancien
-/// garde son état. Le compte déplacé garde sa postabilité, ses écritures et
-/// son historique : seule la hiérarchie change. Verrous supplémentaires : le
-/// nouveau parent `FOR UPDATE` **après** le compte, puis ses ancêtres en
-/// lecture verrouillante — deux déplacements croisés qui fermeraient un cycle
-/// se sérialisent (ou s'interbloquent, et la route les rejoue).
-///
-/// `confirm_retype` (Story 25-2-a, [#382], [#274]) : autorise le changement
-/// d'`account_type` d'un compte **qui porte des écritures**. Sans lui, un tel
-/// changement est refusé par [`DbError::AccountHasEntries`], qui en nomme
-/// l'ampleur. ⚠️ Il ne dispense d'**aucune** autre garde — ni du verrou
-/// optimiste, ni de l'interdit sur compte archivé.
-///
-/// Story 34-11a2 (#972, C-e341-31, C-e341-40) — la ligne `accounts` est prise
-/// **`FOR UPDATE` en tête** (elle était lue sans verrou), puis un changement de
-/// type est refusé par [`DbError::AccountLinkedToBankAccount`] si un compte
-/// bancaire **non archivé** lié à ce compte n'admet plus le nouveau type (carte :
-/// passif seulement ; compte bancaire : actif ou passif), avant la garde des
-/// écritures. La création, le `PUT` et le `PATCH` d'un compte bancaire relisent
-/// le type du compte lié `LOCK IN SHARE MODE` dans leur transaction
-/// ([`type_in_share_mode`]) : les deux gestes se sérialisent sur cette ligne.
-/// Un retypage qui passe le premier fait refuser le lien ; un lien qui passe le
-/// premier est vu ici, sa transaction commitée avant que le `FOR UPDATE` ne
-/// rende la main (la lecture des comptes bancaires est elle-même verrouillante,
-/// donc la dernière version commitée). Ordre des verrous : `accounts` puis
-/// `bank_accounts`, celui des routes bancaires.
-///
-/// # Devise et comptes de différence propres (Story 37-1, AC-4, AC-4 bis)
-///
-/// `changes.currency` et `changes.own_fx_accounts` sont à trois états
-/// (inchangé / CHF ou par défaut / valeur), **résolus ici**, sous le
-/// `FOR UPDATE` du compte. Ordre des refus, jugés sur l'**état résultant** :
-/// compte introuvable ou archivé → version → no-op → `MULTI_CURRENCY_DISABLED`
-/// → `ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT` (devise posée, retypage hors du type de
-/// la désignation, `postable = false`, rôle `DefaultRevenue`) →
-/// `ACCOUNT_CURRENCY_LOCKED` (devise changée sur un compte qui porte une ligne)
-/// → `ACCOUNT_CURRENCY_IN_USE` (devise posée sur un compte qui garde son rôle,
-/// ou désigné par un site de configuration) → `ACCOUNT_IN_FOREIGN_CURRENCY`
-/// (rôle posé sur un compte qui sera en devise) → `FX_ACCOUNT_INVALID` des
-/// comptes propres → refus existants (rôle singleton, compte bancaire lié,
-/// écritures).
-///
-/// **Verrous** : `company_id` (immuable) lu **sur le pool**, avant `begin()` —
-/// jamais `LOCK IN SHARE MODE` sur la ligne du compte, qui se promouvrait en
-/// exclusif ; puis `companies` en partage (en `FOR UPDATE`, **premier**
-/// verrou, quand le geste porte des comptes propres), les réglages de
-/// facturation en partage, le compte `FOR UPDATE` (son `company_id` relu est
-/// comparé à la lecture hors transaction : écart → `NotFound`), puis, sous ce
-/// verrou, les désignations, la ligne d'écriture et les liens en lecture
-/// verrouillante.
 /// Les contrôles d'un changement de parent d'[`update`] (correctif
 /// `fix-api-parent-compte`) : ceux de [`create`], **plus** le refus d'un
 /// cycle. Ordre des refus :
@@ -972,15 +909,20 @@ where
 ///    (la route l'a déjà refusé, même message que la création) ; archivé →
 ///    [`DbError::AccountParentArchived`] (même remarque) ;
 /// 3. un sous-compte du compte, à quelque niveau → `AccountParentCycle` ;
-/// 4. un compte de différence de change → `ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT`,
-///    un compte en devise mouvementé → `ACCOUNT_FOREIGN_PARENT_HAS_ENTRIES`
-///    (comme [`create`]) ;
+/// 4. un compte de différence de change de la société, ou désigné compte
+///    propre par un **autre** compte → `ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT` ; un
+///    compte d'actif ou de passif en devise mouvementé →
+///    `ACCOUNT_FOREIGN_PARENT_HAS_ENTRIES` (comme [`create`]) ; tout autre compte
+///    qui porte une ligne d'écriture → [`DbError::AccountParentHasEntries`]
+///    (`ACCOUNT_PARENT_HAS_ENTRIES`, revue P1-2 — **plus strict que
+///    [`create`]**, qui l'accepte) ;
 /// 5. l'un des comptes propres **résultants** du compte → `FX_ACCOUNT_INVALID`
 ///    `notPostable` (il deviendrait non imputable — revue de code P2 de la
 ///    37-1, 37-1-CR-P2-8, appliquée à la création).
 ///
 /// **Verrous** : le parent `FOR UPDATE` (il passera non imputable), puis
-/// chacun de ses ancêtres en `LOCK IN SHARE MODE`, en remontant : lus
+/// chacun de ses ancêtres en `LOCK IN SHARE MODE`, en remontant (puis les
+/// désignations et les lignes d'écriture du parent, en lecture verrouillante) : lus
 /// verrouillés, ils sont la dernière version commitée, si bien qu'un
 /// déplacement concurrent qui fermerait le cycle par l'autre bout est vu, ou
 /// s'interbloque avec celui-ci (InnoDB en annule un, que la route rejoue, et
@@ -1032,9 +974,24 @@ async fn guard_parent_change_in_tx(
         .flatten();
     }
 
-    let hits = fx_designations_of_in_tx(tx, account.company_id, state, new_parent_id).await?;
+    // Revue P1-4 : la désignation propre **du compte lui-même** se juge sur
+    // l'état après le `PUT` (étape 5 ci-dessous, comptes propres résolus) ;
+    // seules les désignations des **autres** comptes refusent ici.
+    let hits =
+        fx_designations_excluding_in_tx(tx, account.company_id, state, new_parent_id, account.id)
+            .await?;
     refuse_designated(hits, |_| true)?;
     refuse_foreign_parent_with_entries_in_tx(tx, new_parent_id).await?;
+    // Revue P1-2 (décision de Beat) : un parent qui porte des écritures, en
+    // quelque devise, passerait non imputable avec son solde, que plus aucune
+    // saisie ne corrigerait — refusé. Après le refus propre à la devise, qui
+    // garde son code. ⚠️ La création ne le refuse pas (écart tracé).
+    if has_journal_line_locked(tx, new_parent_id).await? {
+        return Err(DbError::AccountParentHasEntries {
+            parent_account_id: new_parent_id,
+            parent_number,
+        });
+    }
 
     if let Some(own) = own_fx {
         for (field, id) in [
@@ -1053,6 +1010,72 @@ async fn guard_parent_change_in_tx(
     Ok(())
 }
 
+/// Met à jour un compte actif (nom, type, rôle, postabilité, devise, comptes
+/// propres et — depuis le correctif `fix-api-parent-compte` — parent).
+/// Verrouillage optimiste + audit log (Story 3.5).
+/// Retourne `IllegalStateTransition` si le compte est archivé.
+///
+/// # Parent (correctif `fix-api-parent-compte`)
+///
+/// `changes.parent` est à trois états (inchangé / racine / sous un compte),
+/// résolu sous le `FOR UPDATE` du compte. Un parent qui change passe, après
+/// les gardes de devise et avant les refus existants (rôle singleton, compte
+/// bancaire lié, écritures), les contrôles de [`create`] — parent de la
+/// société, actif, ni compte de différence de change, ni compte en devise
+/// mouvementé, ni l'un des comptes propres du compte — **plus** le refus d'un
+/// cycle ([`DbError::AccountParentCycle`]) et d'un parent qui porte des
+/// écritures ([`DbError::AccountParentHasEntries`]) : voir
+/// [`guard_parent_change_in_tx`].
+/// Le nouveau parent devient non imputable (comme à la création) ; l'ancien
+/// garde son état. Le compte déplacé garde sa postabilité, ses écritures et
+/// son historique : seule la hiérarchie change. Verrous supplémentaires : le
+/// nouveau parent `FOR UPDATE` **après** le compte, puis ses ancêtres en
+/// lecture verrouillante — deux déplacements croisés qui fermeraient un cycle
+/// se sérialisent (ou s'interbloquent, et la route les rejoue).
+///
+/// `confirm_retype` (Story 25-2-a, [#382], [#274]) : autorise le changement
+/// d'`account_type` d'un compte **qui porte des écritures**. Sans lui, un tel
+/// changement est refusé par [`DbError::AccountHasEntries`], qui en nomme
+/// l'ampleur. ⚠️ Il ne dispense d'**aucune** autre garde — ni du verrou
+/// optimiste, ni de l'interdit sur compte archivé.
+///
+/// Story 34-11a2 (#972, C-e341-31, C-e341-40) — la ligne `accounts` est prise
+/// **`FOR UPDATE` en tête** (elle était lue sans verrou), puis un changement de
+/// type est refusé par [`DbError::AccountLinkedToBankAccount`] si un compte
+/// bancaire **non archivé** lié à ce compte n'admet plus le nouveau type (carte :
+/// passif seulement ; compte bancaire : actif ou passif), avant la garde des
+/// écritures. La création, le `PUT` et le `PATCH` d'un compte bancaire relisent
+/// le type du compte lié `LOCK IN SHARE MODE` dans leur transaction
+/// ([`type_in_share_mode`]) : les deux gestes se sérialisent sur cette ligne.
+/// Un retypage qui passe le premier fait refuser le lien ; un lien qui passe le
+/// premier est vu ici, sa transaction commitée avant que le `FOR UPDATE` ne
+/// rende la main (la lecture des comptes bancaires est elle-même verrouillante,
+/// donc la dernière version commitée). Ordre des verrous : `accounts` puis
+/// `bank_accounts`, celui des routes bancaires.
+///
+/// # Devise et comptes de différence propres (Story 37-1, AC-4, AC-4 bis)
+///
+/// `changes.currency` et `changes.own_fx_accounts` sont à trois états
+/// (inchangé / CHF ou par défaut / valeur), **résolus ici**, sous le
+/// `FOR UPDATE` du compte. Ordre des refus, jugés sur l'**état résultant** :
+/// compte introuvable ou archivé → version → no-op → `MULTI_CURRENCY_DISABLED`
+/// → `ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT` (devise posée, retypage hors du type de
+/// la désignation, `postable = false`, rôle `DefaultRevenue`) →
+/// `ACCOUNT_CURRENCY_LOCKED` (devise changée sur un compte qui porte une ligne)
+/// → `ACCOUNT_CURRENCY_IN_USE` (devise posée sur un compte qui garde son rôle,
+/// ou désigné par un site de configuration) → `ACCOUNT_IN_FOREIGN_CURRENCY`
+/// (rôle posé sur un compte qui sera en devise) → `FX_ACCOUNT_INVALID` des
+/// comptes propres → refus existants (rôle singleton, compte bancaire lié,
+/// écritures).
+///
+/// **Verrous** : `company_id` (immuable) lu **sur le pool**, avant `begin()` —
+/// jamais `LOCK IN SHARE MODE` sur la ligne du compte, qui se promouvrait en
+/// exclusif ; puis `companies` en partage (en `FOR UPDATE`, **premier**
+/// verrou, quand le geste porte des comptes propres), les réglages de
+/// facturation en partage, le compte `FOR UPDATE` (son `company_id` relu est
+/// comparé à la lecture hors transaction : écart → `NotFound`), puis, sous ce
+/// verrou, les désignations, la ligne d'écriture et les liens en lecture
+/// verrouillante.
 pub async fn update(
     pool: &MySqlPool,
     id: i64,
@@ -2393,6 +2416,21 @@ pub async fn fx_designations_of_in_tx(
     state: &CompanyCurrencyState,
     account_id: i64,
 ) -> Result<Vec<FxDesignationHit>, DbError> {
+    // `0` : aucune ligne ne porte cet identifiant (AUTO_INCREMENT démarre à 1).
+    fx_designations_excluding_in_tx(conn, company_id, state, account_id, 0).await
+}
+
+/// [`fx_designations_of_in_tx`], sans les désignations propres portées par le
+/// compte `exclude_holder` (correctif `fix-api-parent-compte`, revue P1-4) :
+/// le changement de parent juge celles du compte déplacé sur l'état après son
+/// `PUT`. Mêmes lectures verrouillantes, par les mêmes index.
+async fn fx_designations_excluding_in_tx(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    state: &CompanyCurrencyState,
+    account_id: i64,
+    exclude_holder: i64,
+) -> Result<Vec<FxDesignationHit>, DbError> {
     let mut hits: Vec<FxDesignationHit> = [
         (state.fx_gain_account_id, FxDesignation::Gain),
         (state.fx_loss_account_id, FxDesignation::Loss),
@@ -2408,19 +2446,23 @@ pub async fn fx_designations_of_in_tx(
 
     let gain: Option<(i64, String)> = sqlx::query_as(
         "SELECT id, number FROM accounts FORCE INDEX (idx_accounts_fx_gain) \
-         WHERE company_id = ? AND fx_gain_account_id = ? ORDER BY id LIMIT 1 LOCK IN SHARE MODE",
+         WHERE company_id = ? AND fx_gain_account_id = ? AND id <> ? \
+         ORDER BY id LIMIT 1 LOCK IN SHARE MODE",
     )
     .bind(company_id)
     .bind(account_id)
+    .bind(exclude_holder)
     .fetch_optional(&mut *conn)
     .await
     .map_err(map_db_error)?;
     let loss: Option<(i64, String)> = sqlx::query_as(
         "SELECT id, number FROM accounts FORCE INDEX (idx_accounts_fx_loss) \
-         WHERE company_id = ? AND fx_loss_account_id = ? ORDER BY id LIMIT 1 LOCK IN SHARE MODE",
+         WHERE company_id = ? AND fx_loss_account_id = ? AND id <> ? \
+         ORDER BY id LIMIT 1 LOCK IN SHARE MODE",
     )
     .bind(company_id)
     .bind(account_id)
+    .bind(exclude_holder)
     .fetch_optional(&mut *conn)
     .await
     .map_err(map_db_error)?;
