@@ -2040,6 +2040,21 @@ pub enum DbError {
     )]
     ProjectReassignmentClosedPeriodAdminOnly(ClosedPeriodExposure),
 
+    /// La facture est réglée dans un **groupe** (Story 43-6, #823, #1167) : un
+    /// de ses règlements porte un identifiant de ligne
+    /// (`invoice_settlements.journal_entry_line_id`), et son écriture porte
+    /// aussi la banque, les différences et les créances des autres factures.
+    /// Le geste, qui réimpute ses écritures **entières**, les réécrirait : il
+    /// refuse, sans rien écrire. → `409 PROJECT_REASSIGNMENT_GROUPED_SETTLEMENT`,
+    /// `details { invoiceId, journalEntryId }` (la plus petite écriture groupée).
+    #[error(
+        "La facture {invoice_id} est réglée dans un groupe (écriture {journal_entry_id}) : son compte analytique ne se change pas"
+    )]
+    ProjectReassignmentGroupedSettlement {
+        invoice_id: i64,
+        journal_entry_id: i64,
+    },
+
     // --- Lettrage (Story 15-1a-i, #518) — refus de la primitive unique ---
     //
     // ⚠️ L'ordre des variantes ci-dessous suit les RANGS des refus de
@@ -2511,6 +2526,9 @@ impl DbError {
             Self::ProjectReassignmentClosedPeriod(_) => "PROJECT_REASSIGNMENT_CLOSED_PERIOD",
             Self::ProjectReassignmentClosedPeriodAdminOnly(_) => {
                 "PROJECT_REASSIGNMENT_CLOSED_PERIOD_ADMIN_ONLY"
+            }
+            Self::ProjectReassignmentGroupedSettlement { .. } => {
+                "PROJECT_REASSIGNMENT_GROUPED_SETTLEMENT"
             }
             Self::LetteringTooFewLines => "LETTERING_TOO_FEW_LINES",
             Self::LetteringTooManyLines { .. } => "LETTERING_TOO_MANY_LINES",

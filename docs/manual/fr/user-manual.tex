@@ -3574,7 +3574,7 @@ Dès qu'un écart existe, un sélecteur \emph{Compte de l'écart} apparaît sous
 
 \textbf{Défaire un règlement groupé.} \emph{Annuler le rapprochement} (\S\ref{sec:annuler-rapprochement}) le défait \textbf{en entier}~: toutes ses factures redeviennent à régler, l'écriture est contre-passée, écart compris. Une facture ne se retire pas seule d'un règlement groupé.
 
-\textbf{Limites.} La ligne de la banque et la ligne de l'écart d'un règlement groupé ne portent \textbf{aucun compte analytique}~; la ligne de chaque facture porte celui de sa facture. Le \textbf{changement de compte analytique} d'une facture réglée en groupe est refusé en version~0.19.0. Un paiement \textbf{déjà enregistré} --- règlement saisi depuis la fiche --- ne s'ajoute pas à un règlement groupé~; seules des factures encore à régler s'y ajoutent. Seules les transactions en CHF se règlent ainsi.
+\textbf{Limites.} La ligne de la banque et la ligne de l'écart d'un règlement groupé ne portent \textbf{aucun compte analytique}~; la ligne de chaque facture porte celui de sa facture. Le \textbf{changement de compte analytique} d'une facture réglée en groupe est refusé (\S\ref{sec:reimputation-analytique})~; il redevient possible une fois le rapprochement du groupe annulé. Un paiement \textbf{déjà enregistré} --- règlement saisi depuis la fiche --- ne s'ajoute pas à un règlement groupé~; seules des factures encore à régler s'y ajoutent. Seules les transactions en CHF se règlent ainsi.
 
 \textbf{Un lot de paiement (pain.001) n'est pas un règlement groupé.} Seules les factures fournisseur \textbf{ouvertes et hors de tout lot de paiement} se règlent par ce geste. Une facture d'un lot \textbf{en cours} (fichier généré) est refusée, et celle d'un lot \textbf{confirmé} est déjà payée~: le débit d'un lot de plusieurs factures, passé en une ligne par la banque, reste à \textbf{rejeter} (\S\ref{sec:matching-fournisseur}). Pour régler ces factures ici, annulez d'abord le lot~: elles redeviennent ouvertes et hors lot, et le débit se règle alors par ce geste.
 
@@ -4240,6 +4240,12 @@ inactif tant que rien n'a changé.
           compris) et le solde du reste d'une facture payée~; la vente et l'avoir d'une facture
           annulée. Les rapports \emph{Dépenses} et \emph{Rendement par compte analytique}
           suivent aussitôt.
+    \item \textbf{Une facture réglée avec d'autres par un même virement}
+          (\S\ref{sec:reglement-groupe})~: le geste est \textbf{refusé}, et Kesh le dit~; rien
+          n'est écrit. L'écriture de ce règlement porte aussi la banque, l'écart et les autres
+          factures, qui changeraient avec elle. \emph{Annulez le rapprochement} du règlement
+          groupé~: la facture se réimpute alors comme une autre, et l'écriture du groupe et sa
+          contre-passation gardent leur compte analytique.
     \item \textbf{Ce qu'il ne touche pas}~: aucun montant, aucun compte du plan, aucune date,
           aucun numéro, aucun lettrage, aucun rapprochement, aucun règlement ni statut.
     \item \textbf{Les paires annulées}~: un règlement annulé et sa contre-passation ne sont plus
