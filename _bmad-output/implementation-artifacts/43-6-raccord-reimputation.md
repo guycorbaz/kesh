@@ -116,8 +116,11 @@ réimputation limitée à la ligne (plutôt qu'un refus) pourra alors être prop
     réglée en groupe est refusée même quand rien ne changerait ;
   - `docs/api-external.md`, tableau général des codes (:1248-1249) : rangée neuve, « *(Depuis la v0.19.0.)* » ;
   - `docs/manual/fr/user-manual.tex` § `sec:reimputation-analytique` (:4229), puce « Ce que le geste touche » (:4238-4242) :
-    l'exception de la facture réglée avec d'autres par un même virement, et le dé-rapprochement qui la lève. Seul le
-    manuel FR a ce paragraphe ; PDF non commités.
+    l'exception de la facture réglée avec d'autres par un même virement, et le dé-rapprochement qui la lève ;
+  - `docs/manual/fr/user-manual.tex:3575-3577` (règlement groupé, *Défaire* et *Limites*) : la phrase « Le changement de
+    compte analytique d'une facture réglée en groupe est refusé en version~0.19.0 » devient vraie avec la story ; y ajouter
+    le renvoi à `\S\ref{sec:reimputation-analytique}` et la levée par l'annulation du rapprochement. **Les deux sites se
+    relisent ensemble** (validation P2, V2-1). Seul le manuel FR traite de la réimputation ; PDF non commités.
 - [ ] **T7 — Recette visuelle** (AC7).
 - [ ] **T8 — Gates** du prompt de développement ; mutations déclarées (ci-dessous).
 
@@ -148,9 +151,11 @@ La route (`routes/invoices.rs:1336-1348`) ne traduit rien (`?` seul) et ne chang
 (`audit_route_registry.rs`) non plus : ni route ni action d'audit neuves. Aucune route fournisseur ni outil MCP de
 réimputation n'existe en 0.19.0 ; une clé d'API passe par la même route et reçoit le même refus.
 
-**Verrous** : le refus, dans l'étape (3), ne crée pas de cycle. Le geste prend `companies FOR UPDATE` d'abord ; le groupe
-client prend `companies` en partagé (clé étrangère) avant d'insérer `invoice_settlements` et de mettre à jour `invoices`
-(C-43-19). Si le geste passe d'abord, l'`UPDATE invoices … AND version = <lue>` du groupe échoue en `race_during_update`.
+**Verrous** : aucun verrou neuf ; la lecture des règlements est celle de la 42-1, avec une colonne de plus. Les cycles
+connus avec `cancel_in_tx` (dé-rapprochement du groupe, qui verrouille les règlements avant la facture) et avec le groupe
+client sont bornés par le rejeu des routes `Rejouee` (doc du module, :40-44) ; la 43-6 ne les aggrave pas (validation P2,
+V2-2). Un geste qui refuse n'écrit rien, donc ne fait échouer aucun groupe concurrent ; seul un geste qui réussit (facture
+sans règlement groupé) incrémente la version de la facture.
 
 Petite : prête **mercredi soir** sur une branche de travail réunie.
 
@@ -173,3 +178,7 @@ Petite : prête **mercredi soir** sur une branche de travail réunie.
   énoncé de story, refus dans la lecture verrouillante de l'étape (3) et précédence sur « rien à faire » et les refus aval
   (AC4), AC5 groupe dé-rapproché, AC6 sans clé frontend, AC7 recette visuelle, tâches, sites réels, mutations. Prémisses
   relues au code de `753baf088`.
+- 2026-11-18 — Validation P2 (Sonnet, contexte frais, `kesh-gate-logs/e436/validation-p2.md`) : 0 CRITICAL, 0 HIGH,
+  0 MEDIUM, 2 LOW (V2-1 second site du manuel `user-manual.tex:3575-3577` ajouté à T6 ; V2-2 Dev Notes *Verrous*
+  reformulées). **Validation terminée** sur cette passe. Tendance : P1 (Opus) 0/0/2/6 → P2 (Sonnet) 0/0/0/2 ;
+  aucun reclassement.
