@@ -98,13 +98,32 @@ factures que la banque débite en une seule ligne (issue \#823) ») et `:3253` (
 enregistrées séparément … (issue \#823) »), et leurs trois reflets dans le PDF. Vrais pour l'écran tant que la 43-3 n'est
 pas livrée, faux pour l'API dès la 43-2 : la 43-3, qui écrit le manuel de l'écran, les réécrit. Le guide d'API
 (`docs/api-external.md:733`) est, lui, corrigé par la 43-2.
+*Annoté le 2026-11-18 (revue P3, P3-1) : la prémisse était fausse.* Un **lot** de paiement (confirmé ou `generated`) reste
+refusé par le règlement groupé (`supplier_invoice_not_open`, `supplier_invoice_in_payment_batch`) et C-43-10 le sort de la
+0.19.0 : les phrases du manuel sur le lot (`user-manual.tex:3393`, `:3446`, seconde moitié de `:3538`, numéros d'après la
+reprise de l'Epic 37) restent vraies ; seule la première moitié de `:3538` (« un paiement qui règle plusieurs factures
+enregistrées séparément ») devient fausse avec la 43-3. La correction P2-3 du guide, qui disait le lot réglable, a été
+défaite : le lot est revenu dans la liste « à rejeter », et une phrase à part dit que des factures **ouvertes hors lot** se
+règlent par `supplier_invoice_group`. L'orchestrateur a corrigé la consigne de la 43-3 pour le manuel.
 
 **C-e432-18 — La garde de couverture de la table des refus** (revue P2, P2-2). `rang(&GroupRefusal)`, dans le module de
 test de `reconciliation_group.rs`, est un `match` exhaustif sans joker : une variante neuve fait échouer la compilation du
 test. Le test exige une ligne par rang `0..RANGS`. Angle mort assumé : qui ajoute le bras de `rang` sans augmenter `RANGS`
-ni ajouter de ligne voit le test passer ; le commentaire de `RANGS` dit la règle.
+ni ajouter de ligne voit le test passer ; le commentaire de `RANGS` dit la règle. *Annoté le 2026-11-18 (revue P3,
+P3-2) : le commentaire de `rang` disait aussi « et que `RANGS` grandisse », ce que le compilateur ne garantit pas ; il dit
+désormais l'angle mort. Déduire `RANGS` du `match` exigerait d'énumérer les variantes sans les nommer
+(`strum::EnumCount`, dépendance non ajoutée) : un tableau d'exemples écrit à la main aurait le même trou.*
 
 **C-e432-19 — Le journal d'une erreur de groupe nomme le groupe** (revue P2, P2-6). Le classement de
 `lettering_error_to_failed_proposal` est extrait en `classify_db_error_to_failed_proposal(bt, err, contexte)` ; l'unitaire
 garde « encaissement : lettrage de la facture impossible », le groupe journalise « règlement groupé : erreur de la
 proposition ». Classement `INTERNAL_ERROR` par proposition accepté par l'orchestrateur (C-e432-13).
+
+**C-e432-20 — La recherche d'un débit reflète la retenue d'un lot** (revue P3, P3-4, AC5). Le règlement groupé
+fournisseur applique, pour chaque facture, la garde (d) de l'unitaire : une **autre** facture ouverte, au montant exact du
+débit, engagée dans un lot `generated` du compte de la transaction, refuse tout groupe
+(`RECONCILIATION_SUPPLIER_PAYMENT_HOLD`). La route de recherche appelle la **même** fonction
+(`reconciliation::find_open_supplier_invoice_in_account_batch`, « trois lecteurs » devenus quatre) : si elle trouve une
+facture, la liste est vide et `heldByPaymentBatch: { supplierInvoiceId, paymentBatchId }` dit pourquoi (champ additif,
+`null` sinon) ; jamais une liste vide muette. Autre option : un filtre dans la requête des candidates, qui aurait recopié
+le critère. Lecture ordinaire, comme la proposition (tolérance C-30-1-39).

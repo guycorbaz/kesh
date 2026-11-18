@@ -1,6 +1,6 @@
 # Story 43-2 : un règlement pour plusieurs factures — l'API de la réconciliation (#823)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-17 par l'agent de rédaction de l'Epic 43 (Opus 5.5), workflow `bmad-create-story`, code lu à
 `8b50fd195` ; révisée le soir même (décisions de Guy), puis **remédiée après sa validation P1**
@@ -290,6 +290,11 @@ centime, `amountDueRaw` = `total_amount` brut ; pas de `totalTtc` distinct. Vale
 (`invoice`, `supplier_invoice`), comme `candidateType` (`reconciliation.types.ts:27`), partout
 dans ce contrat. `transactionAmount` est **signé** comme la transaction (`-1250.00` pour un débit) ; la différence se
 calcule sur la valeur absolue (L-2).
+
+**Retenue par un lot (revue P3, P3-4, C-e432-20)** — pour un **débit**, si une facture fournisseur ouverte au montant exact
+est engagée dans un lot `generated` **de ce compte bancaire** (`find_open_supplier_invoice_in_account_batch`, la garde (d)
+du `POST`), la réponse rend `direction: "supplier"`, `candidates: []`, `hasMore: false` et `heldByPaymentBatch:
+{ supplierInvoiceId, paymentBatchId }` ; le champ vaut `null` sinon (additif).
 
 ### Vue et annulation (M5)
 
@@ -587,7 +592,7 @@ Opus 5.5 (agent de développement, en autonomie), 2026-11-17.
   - Fusion de `origin/epic/43-transaction-plusieurs-factures` à `6238dfa18` : commit `866cd1434`.
   - Deux conflits : `grouped_settlements.rs`, résolu par la version de l'épique (le corps provisoire cède à la 43-1b) ; `sprint-status.yaml`, 43-1a et 43-1b de l'épique, ligne 43-2 de la branche.
   - Code : commit `f8ce94a5b`, dernier commit de code :
-    - `foreign: None` aux quatre littéraux de test ;
+    - `foreign: None` aux quatre littéraux de test ; *annoté le 2026-11-18 (revue P3, P3-8) : six lignes, sur trois gabarits (`facture_sur` ×2, `facture_achat` ×2, `monter` de `reconciliation_group_candidates.rs` ×2) ;*
     - `DifferenceAccountInForeignCurrency` traduite en `ACCOUNT_IN_FOREIGN_CURRENCY` (`accountId`, `currency`). La garde `rang` a fait échouer la compilation du test avant que la variante reçoive son rang 25 (`RANGS` = 26) : c'est sa sonde positive. La ligne est ajoutée à la table de test, à la fiche et au guide ;
     - les `DbError` d'un groupe passent d'abord par `fx_failed_proposal` (M2) ;
     - les trois tests fournisseur n'ont plus de `#[ignore]` et passent ;
@@ -600,6 +605,60 @@ Opus 5.5 (agent de développement, en autonomie), 2026-11-17.
     - `scripts/gate-ci.sh kesh_ci_e432` : **6076 passés, 0 échoué, 17 ignorés** (`gate-ci-p2b.out`/`gate-ci-p2b.log`, en-tête : commit `f8ce94a5b`) ;
     - frontend non touché ; E2E à la clôture.
   - Mutations : aucune rejouée sur cette reprise. La garde `rang` a été éprouvée par la compilation, sur la vraie variante neuve.
+
+#### Remédiation de la revue P3 (2026-11-18)
+
+- **Revue P3** : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 7 LOW (`kesh-gate-logs/e432/review-p3.md`).
+- **Tests** (commit `fb53fd53f`) : P3-4 en rouge d'abord (`la_recherche_reflete_la_retenue_d_un_lot`, `rouge-p3.log` :
+  33 passés, 1 échec, le test neuf, au commit `fb53fd53f`) ; P3-5 (lot mixte sorti en
+  `un_lot_mixte_garde_une_erreur_de_base_dans_sa_proposition`, état forgé déclaré inatteignable ; sonde du compte d'écart
+  sur le même compte rendu au CHF) ; P3-6 (factures `paid`, trois lignes d'écriture, transaction `reconciled`, écart au
+  débit du compte choisi).
+- **Code et documentation** (commit `7bc319aff`) :
+  - P3-4 : `get_group_candidates` appelle, pour un débit, `find_open_supplier_invoice_in_account_batch` (la garde (d) du
+    `POST`) ; si une facture retient le montant, liste vide et `heldByPaymentBatch { supplierInvoiceId, paymentBatchId }`
+    (C-e432-20, contrat de la fiche, guide) ; doc-comment de la fonction : « quatre lecteurs » ;
+  - P3-1 : guide, le lot de paiement revient dans la liste « à rejeter », phrase à part pour les factures ouvertes hors lot ;
+    C-e432-17 annoté ;
+  - P3-2 : commentaire de `rang` aligné sur l'angle mort de C-e432-18 ;
+  - P3-3 : `fx_failed_proposal`, « quatre sites », nommés ;
+  - P3-7 : ligne « contrôle des devises » du guide, défense en profondeur ;
+  - P3-8 : entrée de la partie B annotée (six lignes, trois gabarits).
+- **Gates** (base `kesh_e432` remise à neuf avant, 95 migrations, `base-p3.log`) :
+  - ciblé `binary(reconciliation_group_e2e)` : **34 passés** (`cible-p3.log`) ;
+  - `scripts/test-fast.sh --ci` : **6061 passés, 0 échec, 13 ignorés** (`test-fast-p3.log`, en-tête : commit `7bc319aff`) ;
+  - `scripts/gate-ci.sh kesh_ci_e432` : **6078 passés, 0 échoué, 17 ignorés**, 254 binaires (`gate-ci-p3.out`/`gate-ci-p3.log`,
+    en-tête : commit `7bc319aff`, somme des lignes `test result:` recomptée) ;
+  - frontend non touché ; E2E à la clôture.
+- Mutations : aucune rejouée ; le rouge de P3-4 au commit d'avant le correctif en tient lieu pour la garde neuve.
+
+#### Revue P4 et clôture (2026-11-18)
+
+- **Revue P4** (Sonnet, ciblée sur `fb53fd53f` + `7bc319aff`) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 3 LOW
+  (`kesh-gate-logs/e432/review-p4.md`) ; aucun défaut du code de production.
+  - **P4-1 (MEDIUM) transféré à la 43-3** (décision de l'orchestrateur) : l'écran ne lit pas `heldByPaymentBatch` ; la
+    43-3 l'affichera. Il ne compte pas pour la boucle de la 43-2.
+  - P4-2 : `assert_retenue_nulle` vérifie que la clé `heldByPaymentBatch` est **présente** (`contains_key`) et vaut `null` ;
+    le champ est ajouté à l'exemple JSON du guide.
+  - P4-3 : le guide dit le sens de `supplierInvoiceId` — la facture tenue par le lot dans la recherche, la facture du groupe
+    dans le refus du `POST` — avec renvoi à #1260.
+  - P4-4 : sondes négatives dans `la_recherche_reflete_la_retenue_d_un_lot` — un crédit du même montant (recherche client
+    non touchée), le lot sur un autre compte bancaire (ne retient pas), le lot confirmé (état forgé : sa facture reste
+    `open`, pour isoler le critère `pb.status = 'generated'` ; elle redevient elle-même candidate). Un premier montage
+    passait la facture à `paid` sans règlement : refusé par `chk_supplier_invoices_paid_has_settlement`, d'où l'état forgé.
+  - Commit `218246b32`, dernier commit de code ; ciblé `binary(reconciliation_group_e2e)` : 34 passés (`cible-p4.log`).
+- **Fusion** de `origin/epic/43-transaction-plusieurs-factures` à `d54bad428` (43-7 close) : commit `0d52e0e04`, sans
+  conflit ; 95 migrations, inchangé.
+- **Gates de clôture** au commit `218246b32`, bases `kesh_e432` et `kesh_e2e_e432` remises à neuf :
+  - `scripts/test-fast.sh --ci` : **6071 passés, 0 échec, 13 ignorés** (`test-fast-clo.log`) ;
+  - `scripts/gate-ci.sh kesh_ci_e432` : **6088 passés, 0 échoué, 17 ignorés**, 255 binaires (`gate-ci-clo.out`/`.log`,
+    somme des lignes `test result:` recomptée) ;
+  - frontend (`frontend-clo.log`) : `npm run check` 0 erreur (29 avertissements), `lint-i18n-ownership` PASS, Vitest
+    **272 fichiers, 4391 tests passés**, `npm run build` vert ;
+  - **E2E complet** (`e2e-cloture.sh`, port 3432 vérifié libre, montage de `docs/testing.md`) : **458 passés, 7 échoués,
+    18 ignorés** (`e2e-cloture.log`). Les sept échecs sont les sept de la KF-029 (#97), un par un :
+    `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150` ;
+    `git log main..HEAD` sur ces trois fichiers ne rend aucun commit ; aucune pollution.
 
 ### File List
 
@@ -695,3 +754,12 @@ Opus 5.5 (agent de développement, en autonomie), 2026-11-17.
     `ACCOUNT_NOT_FOUND`, `DifferenceAccountNotPostable` → `ACCOUNT_NOT_POSTABLE`. Écart : `ReconciliationCancellation` ne
     portait pas le genre du rapprochement, exigé par la réponse de `POST …/cancel` → champ `kind` ajouté au dépôt
     (C-e432-4), à signaler à la 43-1a.
+- 2026-11-18 (revue de code, clôture) — **Boucle de revue de code close.** Tendance par passe (C/H/M/L) :
+  P1, trois lentilles en Opus (B, E, A ; 12, 10 et 14 findings bruts, dédoublonnés) 0/1/6/~30 → P2 Sonnet complète 0/1/2/5 →
+  P3 Opus complète 0/0/1/7 → P4 Sonnet ciblée 0/0/1/3. Le MEDIUM de la P4 (P4-1, l'écran ne lit pas `heldByPaymentBatch`)
+  porte sur l'écran : **transféré à la 43-3** par l'orchestrateur, il ne compte pas pour la boucle de la 43-2 ; aucun
+  finding de la P4 ne touche le code de production. LOW de la P4 traités (P4-2 à P4-4, tests et guide). Reclassements :
+  P2-1 sans objet (43-1b close) ; P2-4 au registre (C-e432-17) pour la 43-3 ; P3-1 a défait la correction P2-3, dont la
+  prémisse était fausse. Issues ouvertes par la boucle : **#1259** (le repli `LIKE` de la recherche ne découpe le terme que
+  sur les blancs) et **#1260** (refus de lot de paiement du règlement groupé fournisseur moins détaillés que l'unitaire).
+  Gates de clôture et E2E au commit `218246b32` (Dev Agent Record). Statut : `done`.

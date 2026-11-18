@@ -746,6 +746,19 @@ pub struct GroupCandidatesResponse {
     /// Vrai si la troncature à `limit` a coupé, ou si le plafond de lecture
     /// (`GROUP_CANDIDATES_SCAN_LIMIT`) a été dépassé.
     pub has_more: bool,
+    /// Pour un **débit** seulement : la facture qui retient son montant exact
+    /// dans un lot de paiement `generated` de ce compte (revue P3, P3-4,
+    /// C-e432-20). La liste est alors vide — tout groupe serait refusé en
+    /// `RECONCILIATION_SUPPLIER_PAYMENT_HOLD` ; `null` sinon.
+    pub held_by_payment_batch: Option<HeldByPaymentBatch>,
+}
+
+/// La retenue d'un débit par un lot de paiement (`heldByPaymentBatch`).
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct HeldByPaymentBatch {
+    pub supplier_invoice_id: i64,
+    pub payment_batch_id: i64,
 }
 
 /// Le nombre de candidates rendues pour `limit` : absent ou `≤ 0` → 50,
@@ -860,10 +873,32 @@ pub async fn get_group_candidates(
         max_difference: fixed(max_difference, 2),
         candidates: Vec::new(),
         has_more: false,
+        held_by_payment_batch: None,
     };
     let Some((family, latest_invoice_date)) = family_of(&t) else {
         return Ok(Json(response));
     };
+    if family == CandidateFamily::Supplier {
+        // La garde (d) du règlement fournisseur, par la **même** fonction
+        // (C-e432-20) : la liste n'offre jamais ce que le `POST` refuserait
+        // (AC5). Lecture ordinaire, comme la proposition (C-30-1-39).
+        if let Some(held) =
+            kesh_db::repositories::reconciliation::find_open_supplier_invoice_in_account_batch(
+                &state.pool,
+                company_id,
+                bank_account_id,
+                t.amount.abs(),
+            )
+            .await?
+        {
+            response.direction = Some(GroupDirection::Supplier);
+            response.held_by_payment_batch = Some(HeldByPaymentBatch {
+                supplier_invoice_id: held.supplier_invoice_id,
+                payment_batch_id: held.payment_batch_id,
+            });
+            return Ok(Json(response));
+        }
+    }
     let found = find_group_candidates(
         &state.pool,
         GroupCandidatesQuery {
@@ -968,9 +1003,11 @@ mod tests {
 
     /// Le rang d'une variante — `match` exhaustif **sans joker** (revue P2,
     /// P2-2) : une variante neuve de [`GroupRefusal`] fait échouer la
-    /// **compilation** de ce module jusqu'à ce qu'elle reçoive son rang (et que
-    /// [`RANGS`] grandisse), puis le test en table jusqu'à ce qu'elle y ait sa
-    /// ligne.
+    /// **compilation** de ce module jusqu'à ce qu'elle reçoive son rang, puis
+    /// le test en table jusqu'à ce qu'elle y ait sa ligne. ⚠️ Angle mort
+    /// assumé (C-e432-18) : rien ne force [`RANGS`] à grandir ni les rangs à
+    /// être uniques — un bras neuf au rang `RANGS`, `RANGS` laissé tel quel et
+    /// sans ligne de table, laisse passer le test.
     fn rang(r: &GroupRefusal) -> usize {
         match r {
             GroupRefusal::TooFew { .. } => 0,
