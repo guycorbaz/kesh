@@ -193,7 +193,7 @@ la rétrospective avec leur raison (`CLAUDE.md` § *Priorités des défauts*).
 | `routes/(app)/settings/+page.svelte` | 48-13 (#1243) ; 48-15 (#1333) ; v0200-menu-sous-groupes (peut-être) | blocs distincts ; la 48-15 après la 48-13 |
 | `crates/kesh-api/src/routes/onboarding.rs` (`set_coordinates`) | 48-13 (#1226) ; 48-15 (#1334) | la 48-15 part de la 48-13 fusionnée |
 | `routes/(app)/contacts/+page.svelte`, `routes/(app)/products/+page.svelte` | 48-15 ; 48-10 (`products`) | blocs distincts ; le second arrivé résout |
-| `scripts/recette-montee.sh`, manuel d'administration ×4 | 49-1a, 49-1d | la 49-1d complète ce que pose la 49-1a |
+| `scripts/recette-montee.sh`, manuel d'administration (FR, seul existant) | 49-1a, 49-1d | la 49-1d complète ce que pose la 49-1a |
 | catalogues i18n (4 locales), `sprint-status.yaml` | tous | chaque épique dans son bloc ; conflits résolus en gardant les deux côtés |
 | `sitesTotal`, totaux de l'audit des migrations, schéma de test | 48-*, 49-* | recomptés après chaque fusion |
 | manuels `.tex` (4 langues) | tous ; le menu change les chemins | le menu fusionne en dernier ; PDF régénérés à la release seulement |

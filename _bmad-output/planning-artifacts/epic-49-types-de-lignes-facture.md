@@ -122,7 +122,7 @@ précise à la fiche) :
 | 49-1-types-de-lignes | **découpée** le 2026-11-18 (`split`) en 49-1a à 49-1d | — | — |
 | 49-1a-types-de-lignes-migration-api | La migration, `LineType`, les dépôts, la validation, la reprise des avoirs, les lecteurs filtrés (TVA, validation, avoir), exports, MCP ; **API gardée** : seul `priced` est accepté, `comment` et `heading` refusés `400` ; paragraphe « Pour les intégrations » du manuel d'administration (×4) | **oui** | — |
 | 49-1b-types-de-lignes-pdf | Rendu PDF d'un commentaire (pleine largeur, sans quantité ni prix), facture **et** avoir ; test avant / après d'une facture et d'un avoir de la 0.19.0 ; PDF figé servi tel quel ; regel | non | 49-1a |
-| 49-1c-types-de-lignes-ecran | Sélecteur de type, ligne de commentaire, affichage dans l'avoir, i18n ×4, E2E, manuel utilisateur ×4 ; **ouvre `comment`** dans l'API ; traite `verify_vat_rates_against_db` (ne collecter que les taux des lignes `priced`) | non | 49-1a, 49-1b |
+| 49-1c-types-de-lignes-ecran | Sélecteur de type, ligne de commentaire, affichage dans l'avoir, i18n ×4, E2E, manuel utilisateur (FR, seul existant) ; **ouvre `comment`** dans l'API ; traite `verify_vat_rates_against_db` (ne collecter que les taux des lignes `priced`) | non | 49-1a, 49-1b |
 | 49-1d-types-de-lignes-recette-montee | Gate de la release, sans code de production : peuplement de `scripts/recette-montee.sh` (factures validées payées et impayées, avoir, règlement groupé, PDF figés et non figés), **`credit_notes` et `credit_note_lines` ajoutées à l'empreinte** (`TABLES=`), `--diff-attendu` des deux tables de lignes, `docs/testing.md`, section « Passer à la 0.20.0 » du manuel d'administration (×4) | non | 49-1a |
 | 49-2-reordonnancement-lignes | Réordonner les lignes d'un brouillon : ↑ / ↓, et glisser-déposer si la fiche le juge sûr | non | 49-1c |
 | 49-3-titres-de-section | Titre de section, sans montant : saisie, rendu PDF, reprise dans les avoirs ; **ouvre `heading`** | non (posée par 49-1a) | 49-1a, 49-1b, 49-1c |
@@ -194,10 +194,10 @@ sous-total doit être juste en HT et TTC et par taux, ou attendre. Ils feront l'
 
 | Story | Backend | Frontend | Docs, i18n, tests |
 |---|---|---|---|
-| 49-1a | `kesh-db/migrations/` (la migration), `test-schema/0001_schema_squash.sql`, `post_restore.rs` (triage P7), `backup.rs` ; entités `invoice.rs`, `credit_note.rs` ; dépôts `invoices.rs`, `credit_notes.rs`, `invoice_settlements_write.rs` et les autres lecteurs de `invoice_lines` / `credit_note_lines` ; `kesh-api` : `routes/invoices.rs` (`validate_line`, garde), `routes/credit_notes.rs`, `exports/csv_tables.rs`, `exports/global.rs`, `mcp/outils/factures.rs`, `errors.rs` ; `kesh-report/src/vat_report.rs` (un filtre) ; `kesh-seed/src/pieges.rs` (un littéral) | — | `docs/migrations-idempotence-audit.md`, `docs/api-external.md`, manuel d'administration ×4 (« Pour les intégrations »), tests d'intégration `kesh-db` / `kesh-api` |
+| 49-1a | `kesh-db/migrations/` (la migration), `test-schema/0001_schema_squash.sql`, `post_restore.rs` (triage P7), `backup.rs` ; entités `invoice.rs`, `credit_note.rs` ; dépôts `invoices.rs`, `credit_notes.rs`, `invoice_settlements_write.rs` et les autres lecteurs de `invoice_lines` / `credit_note_lines` ; `kesh-api` : `routes/invoices.rs` (`validate_line`, garde), `routes/credit_notes.rs`, `exports/csv_tables.rs`, `exports/global.rs`, `mcp/outils/factures.rs`, `errors.rs` ; `kesh-report/src/vat_report.rs` (un filtre) ; `kesh-seed/src/pieges.rs` (un littéral) | — | `docs/migrations-idempotence-audit.md`, `docs/api-external.md`, manuel d'administration (FR, seul existant) (« Pour les intégrations »), tests d'intégration `kesh-db` / `kesh-api` |
 | 49-1b | `kesh-qrbill/src/types.rs`, `pdf.rs` ; `kesh-api/src/routes/invoice_pdf_service.rs`, `issued_invoice_pdf.rs`, `credit_notes.rs` (PDF de l'avoir) | — | test avant / après du rendu |
-| 49-1c | `kesh-api/src/routes/invoices.rs` (retrait de la garde pour `comment`, `verify_vat_rates_against_db`), `routes/vat.rs` | `components/invoices/InvoiceForm.svelte`, `ProductPicker.svelte` ; `features/invoices/` ; `features/credit-notes/` ; `routes/(app)/invoices/`, `routes/(app)/credit-notes/` | `kesh-i18n` ×4, manuel utilisateur ×4, Vitest, E2E |
-| 49-1d | — (aucun code de production) | — | `scripts/recette-montee.sh`, `docs/testing.md`, manuel d'administration ×4 (« Passer à la 0.20.0 ») |
+| 49-1c | `kesh-api/src/routes/invoices.rs` (retrait de la garde pour `comment`, `verify_vat_rates_against_db`), `routes/vat.rs` | `components/invoices/InvoiceForm.svelte`, `ProductPicker.svelte` ; `features/invoices/` ; `features/credit-notes/` ; `routes/(app)/invoices/`, `routes/(app)/credit-notes/` | `kesh-i18n` ×4, manuel utilisateur (FR, seul existant), Vitest, E2E |
+| 49-1d | — (aucun code de production) | — | `scripts/recette-montee.sh`, `docs/testing.md`, manuel d'administration (FR, seul existant) (« Passer à la 0.20.0 ») |
 | 49-2 | probablement aucun (ordre préservé par `update`) | `components/invoices/InvoiceForm.svelte`, `features/invoices/` | i18n, manuel utilisateur, Vitest, E2E |
 | 49-3 | `kesh-api/src/routes/invoices.rs` (garde `heading`) ; `kesh-qrbill/src/pdf.rs` (rendu du titre) | `components/invoices/InvoiceForm.svelte`, `features/invoices/`, `features/credit-notes/` | i18n, `docs/api-external.md`, manuel utilisateur, tests |
 
@@ -213,7 +213,7 @@ frontend (`components/invoices`, `features/invoices`, `features/credit-notes`, r
 |---|---|---|
 | `lib/components/invoices/InvoiceForm.svelte` | 48-13 (#1233) | **la 48-13 se fusionne d'abord** (arbitrage de Guy du 2026-11-18) ; 49-1c, 49-2, 49-3 partent ensuite de la branche à jour |
 | `crates/kesh-qrbill/src/pdf.rs`, `types.rs` | PR #1327 de Beat (`largeurs.rs`, `lib.rs`) | le second arrivé résout |
-| manuel d'administration ×4 | 49-1a (« Pour les intégrations ») et 49-1d (« Passer à la 0.20.0 ») | la 49-1d complète ce que pose la 49-1a |
+| manuel d'administration (FR, seul existant) | 49-1a (« Pour les intégrations ») et 49-1d (« Passer à la 0.20.0 ») | la 49-1d complète ce que pose la 49-1a |
 | catalogues i18n (4 locales), `sprint-status.yaml`, `sitesTotal`, totaux de l'audit des migrations, schéma de test | toutes | blocs par épique ; compteurs recomptés après fusion |
 | manuels `.tex` | toutes ; le menu (v0200-menu-sous-groupes) fusionne en dernier | PDF jamais commités |
 
