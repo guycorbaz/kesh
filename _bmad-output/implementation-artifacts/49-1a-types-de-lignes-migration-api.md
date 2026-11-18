@@ -1,6 +1,6 @@
 # Story 49-1a : types de lignes de la facture client — la migration, le modèle, les dépôts et l'API gardée (#1242)
 
-Status: ready-for-dev
+Status: review
 
 *Fiche rédigée le 2026-11-18 par l'agent de rédaction de la 49-1 (Sonnet 5.5), par le workflow `bmad-create-story`, en découpant la
 49-1 (`kesh-gate-logs/e491/decoupage-49-1.md`, règle de splitting préventif : neuf modules). Code lu à `773df80da` (v0.19.0), worktree
@@ -404,24 +404,24 @@ commit de code (AC15) : elle prouve que l'écran de la 0.19.0 crée, modifie, va
 
 ## Tâches
 
-- [ ] **T0 — Étape 0, avant d'écrire.** (a) Relire les lignes citées de § *Ce qui se lit au code* à la tête du worktree
+- [x] **T0 — Étape 0, avant d'écrire.** (a) Relire les lignes citées de § *Ce qui se lit au code* à la tête du worktree
   (`git -C /home/gcorbaz/devel/kesh-49-1 log -1 --format=%H` : `773df80da` ou son descendant dans l'épique) ; une ligne qui a bougé se
   déclare au Change Log. (b) **Rejouer la sonde de D13** sur le MariaDB de dev (un `ALTER` unique par table, deux fois, trois formes `IF [NOT] EXISTS`) ; coller la sortie.
   (c) Rejouer que `ADD CONSTRAINT … CHECK` référençant la colonne **ajoutée dans le même `ALTER`** valide les lignes existantes
   (`quantity > 0`, `unit_price >= 0`) sans erreur. (d) Relever que `information_schema.COLUMNS.COLUMN_DEFAULT` rend `'priced'` (donc
   `has_default`, `backup.rs:795`). (e) **Sonder le retour (V1-5)** sur un schéma jetable `kesh_e491_*` (supprimé ensuite) : montée, retour par le SQL de l'en-tête (AC1 c) sur les deux tables, vérifier que les contraintes d'origine sont revenues (`information_schema.CHECK_CONSTRAINTS`) et qu'un `INSERT` de forme 0.19.0 passe, puis **remontée** ; si le `ALTER` du *1°* échoue, le scinder et le dire au Change Log. Si l'une des trois ne se rejoue pas, **s'arrêter et le dire** (rapport).
-- [ ] **T1 — La migration** (AC1) et son audit (AC3 a), `regen-test-schema.sh` (AC3 d), P6 (AC3 b).
-- [ ] **T2 — Entités, constantes de colonnes, littéraux** (AC5). Compiler d'abord (`cargo check --workspace --all-targets`) : les 67 +
+- [x] **T1 — La migration** (AC1) et son audit (AC3 a), `regen-test-schema.sh` (AC3 d), P6 (AC3 b).
+- [x] **T2 — Entités, constantes de colonnes, littéraux** (AC5). Compiler d'abord (`cargo check --workspace --all-targets`) : les 67 +
   4 littéraux se trouvent au compilateur ; **un seul commit** pour cette mécanique.
-- [ ] **T3 — Dépôts** : `insert_lines`, `compute_total`, `is_no_op_change`, snapshots (AC6, AC7) ; `validate_invoice` (AC8) ;
+- [x] **T3 — Dépôts** : `insert_lines`, `compute_total`, `is_no_op_change`, snapshots (AC6, AC7) ; `validate_invoice` (AC8) ;
   `create_credit_note` (AC9) ; `vat_report` et `invoice_settlements_write` (AC10).
-- [ ] **T4 — API** (AC11, AC12) : DTO, `validate_line` par type, `LineType::open_to_api()`.
-- [ ] **T5 — Exports, MCP, `docs/api-external.md`** (AC13).
-- [ ] **T6 — Tests** T1 à T12 ; **journaux de rouge** dans `kesh-gate-logs/e491a/`.
+- [x] **T4 — API** (AC11, AC12) : DTO, `validate_line` par type, `LineType::open_to_api()`.
+- [x] **T5 — Exports, MCP, `docs/api-external.md`** (AC13).
+- [x] **T6 — Tests** T1 à T12 ; **journaux de rouge** dans `kesh-gate-logs/e491a/`.
 - [ ] **T7 — Gates** : `scripts/test-fast.sh` en cours de boucle (`kesh-db` touché : **gate complet** dès le premier patch de dépôt,
   `CLAUDE.md` § *Exception `kesh-db`*), base remise à zéro avant le gate complet, E2E complet au dernier commit de code ; démarrage
   sur base persistante (P8). **Le story file n'affirme que ce qui a tourné.**
-- [ ] **T8 — Dev Agent Record, Change Log, statuts** ; ne **pas** toucher `sprint-status.yaml` (l'orchestrateur tient les statuts).
+- [x] **T8 — Dev Agent Record, Change Log, statuts** ; ne **pas** toucher `sprint-status.yaml` (l'orchestrateur tient les statuts).
 
 ## Note de version
 
@@ -473,7 +473,170 @@ commit de code (AC15) : elle prouve que l'écran de la 0.19.0 crée, modifie, va
 
 ## Dev Agent Record
 
-*(vide — à remplir au développement)*
+*Agent de développement : Opus 5.5 (`bmad-dev-story`), 2026-11-18, worktree `kesh-49-1`, clé `e491`. Registre :
+`_bmad-output/implementation-artifacts/e0200-choix-autonomes-e491.md` (C-e491-1 à 8). Journaux :
+`/home/gcorbaz/devel/kesh-gate-logs/e491/`.*
+
+### Nom de la migration (C-e491-1)
+
+Écrite le 2026-11-18 : **`20261118000002_invoice_line_types.sql`**, non `20261119000001`. Partout où la fiche écrit
+`20261119000001`, lire `20261118000002` (AC1, AC2, T1, SQL de retour de l'en-tête : `DELETE FROM _sqlx_migrations WHERE version =
+20261118000002`). Propagé : en-tête de la migration, `docs/migrations-idempotence-audit.md`, `migrations_upgrade_path.rs`
+(`LINE_TYPES_VERSION`), squash.
+
+### T0 — sonde (verdict : montée, rejeu, retour, remontée **tiennent**)
+
+MariaDB `10.11.19-MariaDB-ubu2204` (conteneur de dev). Schéma jetable `kesh_e491_t0` monté par les **95 migrations précédentes**
+(`sqlx migrate run` sur une copie des fichiers, `kesh-gate-logs/e491/t0/mig95/`), deux lignes de facture et une d'avoir de forme
+0.19.0, puis **le fichier de la migration lui-même** appliqué deux fois (`t0/sonde-montee.log`) : (b) les deux applications passent,
+la seconde sans effet (formes `IF [NOT] EXISTS` acceptées dans un seul `ALTER`, y compris un `CHECK` qui référence la colonne
+ajoutée dans le même `ALTER`) ; (c) les lignes existantes (`quantity` 1 et 2, `unit_price` 1200 et 50.5) passent les `CHECK` neufs ;
+(d) `information_schema.COLUMNS.COLUMN_DEFAULT` = `'priced'`, `IS_NULLABLE` = `NO`, sur les deux tables ; toutes les lignes `priced` ;
+contraintes d'avant présentes, `uq_*_position` dans `TABLE_CONSTRAINTS`. Contraintes (`t0/sonde-contraintes-retour.log`) :
+commentaire neutre admis ; commentaire `quantity = 1` → `ERROR 4025 … chk_invoice_lines_unpriced_neutral` ; `priced` `quantity =
+0` → `chk_invoice_lines_priced_quantity` ; `subtotal` neutre → `chk_invoice_lines_line_type`. (e) **Retour** par le SQL de
+l'en-tête, deux tables, après suppression du commentaire (la requête de garde rendait 1, puis 0) : `retour-ok`, les cinq `CHECK`
+d'origine par table revenus (dont `chk_*_quantity_positive`), colonne absente, un `INSERT` de forme 0.19.0 passe, `quantity = 0`
+refusé par `chk_invoice_lines_quantity_positive` ; **remontée** : `remontee-ok`, lignes `priced`, 14 `CHECK`. Le `ALTER` du 1° du
+retour (trois `DROP CONSTRAINT` en un) n'a pas eu à être scindé. Schéma `kesh_e491_t0` supprimé ensuite. Verdict d'idempotence :
+**`yes`** (D13 tient).
+
+### Étape 0 — lignes relues
+
+- T0 (a) : `git diff --stat 773df80da..fe01a0179` ne nomme que la fiche ; les lignes citées de § *Ce qui se lit au code* sont donc
+  celles de `773df80da`. Lignes relues à l'écriture (avant patch) : `invoices.rs:47-48` `pub(crate) const LINE_COLUMNS: &str = "id,
+  invoice_id, position, description, quantity, \ unit_price, vat_rate, line_total, revenue_account_id, created_at";` ;
+  `invoices.rs:2269`/`:2312` `if lines_before.iter().any(|l| l.revenue_account_id.is_none()) {` (à `:2337` et `:2380` du fichier
+  après mes ajouts en tête) ; `invoices.rs:2382-2383` `"UPDATE invoice_lines SET revenue_account_id = ? \ WHERE invoice_id = ? AND
+  revenue_account_id IS NULL"` ; `credit_notes.rs:515-518` `let triplets … .map(|l| (l.line_total, l.vat_rate,
+  l.revenue_account_id))` ; `credit_notes.rs:793-799` `INSERT INTO credit_note_lines … VALUES (?, ?, ?, ?, ?, ?, ?, ?)` ;
+  `vat_report.rs:119-125` ; `invoice_settlements_write.rs:647` ; `mcp/sortie.rs:90-114` (macro sans attribut de champ) et `:132`
+  (`champ_enum!`) ; `routes/invoices.rs:69-87` (DTO) et `:475-543` (`validate_line`).
+- Piège (b) : `git grep -n "/ .*quantity\|quantity.*/" -- 'crates/*/src/*'` rejoué : **sortie vide** — aucun lecteur ne divise par
+  la quantité.
+- LOW de la P6 (V6-1 à V6-4) : déjà portés par la fiche ; V6-1 vérifié au code (`LineType` ajouté à `champ_enum!`, la macro
+  `sortie!` inchangée ; un doc-comment `///` sur le champ `type_ligne` ne compilait pas — attribut de champ, Ma26 — remplacé par
+  `//`).
+
+### P6 (AC3 b)
+
+`grep -rn "migrations.len()\|apply_migrations_up_to" crates/` rejoué : tous les sites hors `migrations_upgrade_path.rs` résolvent
+**par version** (`common::migrations_before`, `pre_upgrade_backup/tests.rs:186-194` — `restantes = len() - appliquees` avec
+`appliquees` résolu par version et assertion de montage —, `sauvegarde_avant_migration.rs:28-43`, `grouped_settlements.rs:1301`,
+backfills). Dans `migrations_upgrade_path.rs`, réécrits au même patch : `:49`, `:51`, `:68-69`, `:135-140` (`total, 96`, « 95
+précédentes + Story 49-1a »), `:142`, `:150`, `:157`, `:159-160`, `:237`, `:240`, `:309` ; ligne d'historique ajoutée « Story 49-1a :
+61 → 62, frontière inchangée (96 - 62 = 34) ». Rejeu `git grep -nE "\b95\b|\b61\b|\b60\b"` après patch
+(`kesh-gate-logs/e491/p6-grep-apres.log`) : `:100`, `:101`, `:135`, `:167`, `:168`, `:229`, `:230`, `:232` = **historique** ;
+`:140` = message (« 95 précédentes ») ; `:160` = la consigne réécrite (« Le laisser à 61 avec `total = 96` ») ; `:1767`, `:1776`
+(`dec!(99.95)`), `:1920` (`session_idle_minutes, 60`) = **sans rapport**, laissés.
+
+### P7 (AC3 c), P5, squash
+
+Migration **DDL seul** : aucune ligne à `POST_RESTORE_BACKFILLS` ni à `EXEMPT_MIGRATIONS` ; « DDL seul ; le `DEFAULT` rétro-remplit »
+au tableau d'audit. Audit : ligne `yes` ; `ls crates/kesh-db/migrations/*.sql | wc -l` = 96 ; `grep -c '^| \`20'` = 96 ;
+partition `yes` 12 + `tracked-by-sqlx` 84 + `no` 0 = 96 ; en-tête et `Total` à 96 (« + 1 Story 49-1a »). Squash régénéré par
+`scripts/regen-test-schema.sh` (« 96 migrations appliquées », rejeu vérifié, 50 tables).
+
+### Ce qui a été fait
+
+- **Migration** (AC1) : un `ALTER TABLE` par table, `ADD COLUMN IF NOT EXISTS line_type VARCHAR(16) NOT NULL DEFAULT 'priced'`,
+  `DROP CONSTRAINT IF EXISTS chk_*_quantity_positive`, trois `ADD CONSTRAINT IF NOT EXISTS` ; en-tête (a) à (e), SQL de retour en
+  `--`. Aucun `Cargo.toml`, aucun `UPDATE _kesh_version`.
+- **Entités** (AC5) : `entities/line_type.rs` — `LineType { Priced, Comment, Heading }`, `Default = Priced`, `as_str`, `FromStr`,
+  `Display`, serde minuscule, `Type`/`Encode`/`Decode` MySQL (patron d'`ApiKeyScope`), `is_priced()`, **`open_to_api()`** (D9) ;
+  `InvoiceLine.line_type`, `NewInvoiceLine.line_type` (`#[serde(default)]`), `CreditNoteLine.line_type`. Une seule liste de
+  colonnes par table (C-e491-2) : `invoice_line_columns!` (`LINE_COLUMNS` et la forme `il.` de l'export),
+  `credit_note_line_columns!` (`SELECT_CREDIT_NOTE_LINES_SQL` pour les deux lectures, forme `cnl.` de l'export). Les **67 littéraux
+  `NewInvoiceLine {`** existants (`git grep -F "NewInvoiceLine {" fe01a0179 -- 'crates/*' | grep -v "pub struct" | wc -l` = 67) et les
+  **4 `InvoiceLine {`** sont complétés à l'outil Edit ; le même décompte à `HEAD` rend 84 (17 littéraux neufs : 2 de production,
+  `validate_line` et `validate_unpriced_line`, et 15 des tests neufs).
+- **Dépôts** : `new_line_total` (zéro pour une ligne non chiffrée), `compute_total` (lignes chiffrées), `ensure_unpriced_lines_are_neutral`
+  (D10, appelée au début de `create`, d'`update` et dans `insert_lines`, C-e491-3), `insert_lines` écrit `line_type` ;
+  `explicit_line_account_sites` alimenté par les seules lignes chiffrées (création, modification, validation) ; `is_no_op_change`
+  compare `line_type` ; `"lineType"` aux snapshots d'audit de la facture et de l'avoir ; `validate_invoice` :
+  `priced_line_without_account` pour le site « compte par défaut », la matérialisation (`UPDATE … AND line_type = 'priced'`) et la
+  boucle en mémoire ; `create_credit_note` : `triplets` et sites « compte par défaut » sur les lignes chiffrées, copie de
+  `line_type` ; `vat_report.rs` et `invoice_settlements_write.rs` filtrent `line_type = 'priced'`.
+- **API** (AC11, AC12) : `CreateInvoiceLineRequest.line_type` (`#[serde(default)]`), `quantity`/`unit_price`/`vat_rate` en
+  `Option<Decimal>` ; `validate_line` exige les trois montants d'une ligne chiffrée (« Ligne N : la quantité / le prix unitaire / le
+  taux de TVA est obligatoire »), messages d'avant inchangés ; `validate_unpriced_line` (C-e491-4) ; `lineType` dans
+  `InvoiceLineResponse` et `CreditNoteLineResponse`.
+- **Exports, MCP, docs** (AC13) : `line_type` en dernière colonne des deux CSV ; `LigneFacture.type_ligne` et `LineType` à
+  `champ_enum!` ; `docs/api-external.md` (sous-section « Les lignes d'une facture client », C-e491-8) ; manuel d'administration FR,
+  squelette « Passer à la 0.20.0 » (`\label{sec:maj-0-20-0}`, « Pour les intégrations », C-e491-7) ; **aucun manuel utilisateur, aucun
+  PDF** ; `docs/manual/{de,en,it}` non touchés (n'existent pas).
+- **Non-régression** (AC14) : `git diff 773df80da..HEAD -- crates/kesh-qrbill crates/kesh-api/src/routes/issued_invoice_pdf.rs
+  frontend` **vide** ; `invoice_pdf_service.rs` et `invoice_email.rs` : un seul ajout chacun, `line_type: …::Priced` dans le littéral
+  de test.
+
+### Transmis à la 49-1d (par ce Change Log)
+
+- **Une sauvegarde 0.20.0 est refusée par la 0.19.0** : la colonne source `line_type` est inconnue de la destination
+  (`admin_backup/import.rs:615-637`, `errors.rs:3174`) → `IMPORT_SCHEMA_MISMATCH` (`400`), message fr-CH « Le schéma de ce backup
+  est incompatible avec cette version de Kesh. Mettez à jour Kesh ou utilisez un backup compatible. »
+- **Verdict de D13 : `yes`** — un échec entre les deux `ALTER` laisse `invoice_lines` migrée et la migration non inscrite ; au
+  redémarrage, le rejeu est sans effet sur `invoice_lines` et termine `credit_note_lines` (pas de `1060`).
+- **Seuil MCP** (C-e491-6, `kesh-gate-logs/e491/mesure-mcp.log`) : une ligne de `kesh_facture` pèse 282 o dont 29 o pour
+  `typeLigne` ; socle 672 o ; une facture passe sous les 24 576 o jusqu'à **94 lignes sans la clé, 84 avec**. Une facture existante
+  de 85 à 94 lignes passerait en `TropVolumineux` du seul fait de la clé ; les factures réelles en ont quelques-unes. La story **ne
+  s'arrête pas** sur ce constat (C-e491-6) ; l'orchestrateur en décide.
+
+### Mutations (34, `kesh-gate-logs/e491/mut/`)
+
+Banc versionné : `muter.py` (motif unique exigé, code commité avant, restauration `git restore --worktree` + `touch`), `specs.py`
+(une spec JSON par mutation), `lancer.sh` (une mutation à la fois, sous le verrou de la voie base) ; résumé `resume.log` ; un
+journal par mutation. Code muté au commit `16c168cfc` ; `git status` propre après la campagne. **Chaque rouge est une assertion**
+(`panicked` dans le journal), aucun n'est une erreur de compilation (`grep -c "could not compile\|error\[E"` = 0 sur les 32).
+
+| Test | Mutations → verdict |
+|---|---|
+| T1 | (1) `unit_price + 0.0001` sur une ligne de facture ; (2) `description` d'une ligne d'avoir ; (3) `rounding_amount + 0.01` (`updated_at` figé) ; (4) `credit_notes.total_amount + 0.01` (`updated_at` figé) ; (5) `pdf_language = 'DE'` — chacune **ajoutée à la migration** : **ROUGE** ×5, par l'assertion d'empreinte (« une colonne d'avant a changé ») ; témoin : `credit_note_lines` vidée avant l'empreinte → **ROUGE** ; liste de colonnes vide → **ROUGE** (erreur SQL d'un `CONCAT_WS` vide, non une assertion : déclarée) |
+| T2 | par table, `chk_*_line_type` retirée, `chk_*_priced_quantity` retirée, `chk_*_unpriced_neutral` retirée, `chk_*_quantity_positive` remise (au squash) : **ROUGE** ×8 |
+| T3 | `line_type` `NOT NULL` sans `DEFAULT` (squash) : **ROUGE** |
+| T4 | `b.line_type == c.line_type` retiré de `is_no_op_change` ; `"lineType"` retiré du snapshot ; neutralité non contrôlée (D10) : **ROUGE** ×3 |
+| T5 | `AND line_type = 'priced'` retiré de l'`UPDATE` (jeu 1, 500 par `chk_invoice_lines_unpriced_neutral`) ; site « compte par défaut » sur `any(is_none)` (jeu 2) ; boucle en mémoire sur `is_none` : **ROUGE** ×3 |
+| T6 | `line_type` non copié ; commentaire copié avec un compte ; sites « compte par défaut » de l'avoir sans filtre (tué par `credit_note_unpriced_line_does_not_require_default_account`) : **ROUGE** ×3 |
+| T7 | filtre du rapport TVA retiré : **ROUGE** |
+| T8 | contre-épreuve, commentaire à `unit_price = 1` : **ROUGE** |
+| T9 | `open_to_api()` vrai pour `comment` : **ROUGE** |
+| T10 | `line_type` retiré de l'en-tête de `invoice_lines.csv` : **ROUGE** |
+| T11 | type codé en dur `Priced` ; clé absente : **ROUGE** ×2 |
+| T12 | un `UPDATE` ajouté à la migration : `every_data_backfill_migration_is_triaged` **ROUGE** |
+| Équivalentes (VERT, déclarées) | `triplets` de l'avoir sans filtre (une ligne neutre ne pèse rien dans la contre-passation ; le compte par défaut verrouillé en plus n'est refusé qu'aux sites, que le filtre gardé couvre) ; filtre de `invoice_settlements_write.rs:647` retiré (`vat_breakdown_by_rate` écarte le taux 0 — filtre d'intention, AC10 c) |
+
+**Non jouée** : T9 « retirer l'`Option` » — un champ `Option` sans `#[serde(default)]` reste facultatif pour serde (absence =
+`None`), et le rendre `Decimal` ne compile pas sans réécrire `validate_line` ; le refus du champ manquant est tenu par
+`missing_amount_is_400_and_unknown_type_is_422` et `priced_line_requires_each_amount`.
+
+### Gates (tels qu'ils ont tourné ; dernier commit de code : `aae45788d`)
+
+| Gate | Journal (`kesh-gate-logs/e491/`) | Commit | Résultat |
+|---|---|---|---|
+| `cargo check --workspace --all-targets` | `check-3.log` (vide = sans erreur), puis incrémental | avant `ac5471e07` | vert |
+| `cargo fmt --check`, `clippy --workspace --all-targets -D warnings` | sortie de console (deux `type_complexity` de tests corrigés) | avant `ac5471e07` | vert |
+| gate ciblé des tests neufs | `cible-1.log` (35 tests : 33 verts, 2 rouges de test — forme `"1.0000"`, arrondi à 5 centimes sans compte —, corrigés), `cible-2.log` (3/3), `cible-3.log` (1/1), `mesure-mcp.log` | `ac5471e07` et suivants | vert |
+| `scripts/test-fast.sh --ci`, base `kesh_e491` remise à neuf | `test-fast-review.log` | `16c168cfc` | **rouge** : 6159/6160, `test_schema_guard::published_migrations_keep_their_checksums` (registre `migrations.sha384` à compléter) — corrigé en `aae45788d`, `cible-4.log` (7/7) |
+| `scripts/test-fast.sh --ci`, base remise à neuf | `test-fast-review-2.log` | `aae45788d` | **vert** : 6160 passés, 14 ignorés (fmt et clippy compris) |
+| `scripts/gate-ci.sh kesh_ci_e491` (voie 1) | `gate-ci-review.log` | `aae45788d` | **vert** : 6177 passés, 0 échoué, 18 ignorés |
+| frontend (`check`, `lint-i18n-ownership`, `test:unit`, `build`) | — | — | **non lancé** : frontend non touché |
+| E2E Playwright complet ; démarrage sur base persistante (P8) | — | — | **non lancés** : à la clôture |
+
+Contrôle des mots-clés de fermeture (`git log origin/epic/49-types-de-lignes-facture..HEAD --format=%B | grep -niE …`) : vide.
+
+### File List
+
+Neufs : `crates/kesh-db/migrations/20261118000002_invoice_line_types.sql`, `crates/kesh-db/src/entities/line_type.rs`,
+`crates/kesh-db/tests/invoice_line_types.rs`, `crates/kesh-api/tests/invoice_line_types_e2e.rs`,
+`_bmad-output/implementation-artifacts/e0200-choix-autonomes-e491.md`,
+`_bmad-output/implementation-artifacts/49-1a-types-de-lignes-migration-api-review-prompt-p1.md`.
+Modifiés (code) : `crates/kesh-db/src/entities/{mod,invoice,credit_note}.rs`,
+`crates/kesh-db/src/repositories/{invoices,credit_notes,invoice_settlements_write}.rs`, `crates/kesh-db/src/backup.rs` (littéral de
+test), `crates/kesh-db/test-schema/0001_schema_squash.sql` (régénéré), `crates/kesh-report/src/vat_report.rs`,
+`crates/kesh-api/src/routes/{invoices,credit_notes}.rs`, `crates/kesh-api/src/routes/{invoice_email,invoice_pdf_service}.rs`
+(littéraux de test), `crates/kesh-api/src/exports/csv_tables.rs`, `crates/kesh-api/src/mcp/{sortie.rs,outils/factures.rs}`,
+`crates/kesh-seed/src/pieges.rs`. Modifiés (docs) : `docs/migrations-idempotence-audit.md`, `docs/api-external.md`,
+`docs/manual/fr/admin-manual.tex`. Modifiés (tests) : ceux du Change Log (littéraux complétés, tests neufs, montages partiels),
+`crates/kesh-db/tests/common/mod.rs` (`colonnes_types_de_ligne`).
 
 ## Change Log
 
@@ -486,3 +649,4 @@ commit de code (AC15) : elle prouve que l'écran de la 0.19.0 crée, modifie, va
 | 2026-11-18 | **Passe de validation P4** (Sonnet, `kesh-gate-logs/e491/validation-49-1a-p4.md` : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 6 LOW). **Remédiation** : V4-1 T1/AC2 peuplent au moins une facture au **PDF figé** (quatre `pdf_*`, `pdf_language = 'FR'`, `CHECK` de `20261003000001:30-34`) et une non figée — le cas des factures réelles de Guy — ; mutation 5 = `SET pdf_language = 'DE' WHERE pdf_language = 'FR'` ; témoin `pdf_sha256 IS NOT NULL` ; V4-2 citation `lettering_documents_backfill.rs:176-177` ; V4-3 témoin chiffré en constantes par table, lui-même éprouvé (`rouge-T1-temoin.log`) ; V4-4 P6 : `:159` ajouté, jeton `\b60\b`, lignes d'historique `:101`, `:167`, `:229` exceptées ; V4-5 **décision de l'orchestrateur** : `type_ligne` **omis** de la sortie MCP pour une ligne `priced` (aucune facture existante ne grossit), mesure conservée, la story s'arrête et le dit si une facture à commentaires franchit le plafond (pas de troncature), T11 réécrit ; V4-6 « Une migration », « Ce qu'il faut savoir » et le `\label{sec:maj-0-20-0}` assignés (label dans le squelette de la 49-1a, paragraphes à la 49-1d), message exact de `IMPORT_SCHEMA_MISMATCH` transmis à la 49-1d ; V4-7 en-tête. Modèles : Sonnet (rédaction), Opus (P1), Sonnet (P2), Opus (P3), Sonnet (P4) ; la P5 prend Opus. |
 | 2026-11-18 | **Passe de validation P5 ciblée** (Opus, `kesh-gate-logs/e491/validation-49-1a-p5-ciblee.md` : 0 CRITICAL, 1 HIGH, 1 MEDIUM, 5 LOW). **Remédiation** : V5-1 (HIGH) — **le défaut venait d'une décision de l'orchestrateur (V4-5), retirée** : la macro `sortie!` n'admet aucun attribut de champ (`sortie.rs:90-114`), un `Option` sérialise `null` ; retour au **champ toujours présent** : `typeLigne` sur chaque ligne de la sortie MCP `kesh_facture`, **ajout de clé non cassant pour toute facture, existante comprise** (D14, AC13 b et e, Note de version, `api-external.md`), mesure de taille conservée (la story s'arrête si le plafond est franchi du seul fait du champ), T11 vérifie la clé elle-même, jamais `is_null()` ; V5-2 `updated_at = updated_at` aux mutations visant `invoices` et `credit_notes` (`ON UPDATE CURRENT_TIMESTAMP(3)`, `20260416000001:27`, `20260627000001:39`) ; V5-3 motif exact de la facture figée (survie silencieuse) ; V5-4 comptes de lignes tirés de l'empreinte elle-même ; V5-5 Dev Notes alignées (introduction, « Une migration », « Ce qu'il faut savoir ») ; V5-6 AC13 (e) : `typeLigne` présent sur chaque ligne ; V5-7 sites du jeton `\b60\b` classés. Modèles : Sonnet (rédaction), Opus (P1), Sonnet (P2), Opus (P3), Sonnet (P4), Opus (P5 ciblée). |
 | 2026-11-18 | **Validation terminée — Change Log final** (une entrée). **Tendance des findings par passe** (CRITICAL/HIGH/MEDIUM/LOW) : P1 Opus 0/0/7/8 → P2 Sonnet 0/0/2/8 → P3 Opus 0/0/2/6 → P4 Sonnet 0/0/1/6 → P5 ciblée Opus 0/1/1/5 → P6 ciblée Sonnet 0/0/0/4 ; arrêt sur une passe sans finding au-dessus de LOW. **Modèles** : Sonnet (rédaction), Opus (P1), Sonnet (P2), Opus (P3), Sonnet (P4), Opus (P5 ciblée), Sonnet (P6 ciblée). **Signaux** : « recycle partiel » (V3-1 né du correctif V2-2) déclaré au Project Lead par l'orchestrateur à la P3 ; **le HIGH de la P5 (V5-1) venait d'une décision de l'orchestrateur (V4-5, omission de `type_ligne`), retirée** au profit du champ toujours présent. **Reclassements** : aucun. **LOW de la P6 corrigés après la dernière passe** (non relus par une passe de plus : fiche seule, aucun code de production) : V6-1 `LineType` à la liste `champ_enum!` de `sortie.rs:132`, V6-2 mesure MCP discriminante et conduite, V6-3 T1 en une liste numérotée de cinq mutations, V6-4 `:162` hors de la liste des sites sortis. Statut : `ready-for-dev`. |
+| 2026-11-18/19 | **Développement** (Opus 5.5, `bmad-dev-story`) — détail au Dev Agent Record. Migration nommée `20261118000002_invoice_line_types.sql` (C-e491-1 : écrite le 2026-11-18 ; lire ce nom partout où la fiche écrit `20261119000001`). T0 : montée, rejeu, retour et remontée **tiennent** sur MariaDB 10.11.19, verdict D13 `yes`. **Sites et tests hors de la fiche, découverts au développement** (inventaire « clos » complété, Dev Notes (c)) : (1) **`crates/kesh-db/migrations.sha384`**, registre des checksums des migrations publiées (garde P8, `test_schema_guard.rs::published_migrations_keep_their_checksums`, rouge au premier `test-fast`) — ligne `20261118000002` ajoutée (commit `aae45788d`) ; (2) `explicit_line_account_sites` (création, modification, validation) alimenté par les seules lignes chiffrées ; (3) le sous-cas AC9 (b) « compte par défaut archivé » n'avait aucun test : `credit_note_unpriced_line_does_not_require_default_account` ajouté (tue la mutation des sites de l'avoir) ; (4) `crates/kesh-db/tests/common/mod.rs` gagne `colonnes_types_de_ligne`, posé puis retiré par les deux montages partiels nommés (motif : `invoices::create` écrit `line_type`). **Tests existants modifiés au-delà des littéraux** : `grouped_settlements.rs::the_upgrade_keeps_unit_settlements_and_allows_a_group` et `lettering_documents_backfill.rs::colonne_posterieure` (motif ci-dessus) ; `migrations_upgrade_path.rs` (P6). Aucun autre, `test-fast --ci` vert. Journaux de rouge dans `kesh-gate-logs/e491/mut/` (non `e491a/`, qui n'existe pas). **Écarts** : `cargo check` lancé une fois sous `mem-guard` seul, sans le verrou de la voie base (compilation sans MariaDB, voie tenue 25 minutes par le `gate-ci` de la 48-13) ; un remplacement multiple (`replace_all`) de l'outil Edit par fichier pour les littéraux ; aucun `sed -i` ni script sur le code hors du banc de mutations. **Frontend non touché** (`git diff --stat` ne nomme aucun fichier sous `frontend/`) ; ses gates ne sont pas relancés (consigne : « frontend complet s'il est touché »). **Ce qui n'a pas tourné** : E2E Playwright complet et démarrage sur base persistante (P8, `cargo run`), à la clôture (T7 reste ouverte pour eux). Recette visuelle : sans objet (aucun contrôle visible). Statut : `review`. |
