@@ -228,6 +228,7 @@ fournisseur) pour que l'écran la nomme (43-3).
 | `DifferenceAccountIsBankLedger` (contrôle 1) | `VALIDATION_ERROR` | `reason: "counterparty_equals_bank_ledger"` (D9) |
 | compte de différence manquant, archivé ou d'une autre société (contrôle 2) | `ACCOUNT_NOT_FOUND` | `missingAccountIds: [id]` |
 | `DifferenceAccountNotPostable` (contrôle 3) | `ACCOUNT_NOT_POSTABLE` | comme `non_postable_failed_proposal` (:682), numéro du compte compris |
+| `DifferenceAccountInForeignCurrency` (Epic 37, après le contrôle 3 ; annotation de `t3.md` du 2026-11-18) | `ACCOUNT_IN_FOREIGN_CURRENCY` | `accountId`, `currency`, comme `DbError::AccountInForeignCurrency` (`errors.rs`) |
 | `DifferenceAccountRequired` | `RECONCILIATION_GROUP_INVALID` | `reason: "difference_account_required"`, `gap` |
 | `PaymentBeforeInvoiceDate` | `RECONCILIATION_INVOICE_NOT_ELIGIBLE` | `reason: "payment_date_before_invoice_date"`, `tolerance_days` (comme `date_refusal_failed_proposal`, :2316-2335) **plus** `invoiceId` / `supplierInvoiceId` et `invoiceNumber`, que `group_refusal_to_failed_proposal` **ajoute** (L5) |
 | `DifferenceTooLarge` | `RECONCILIATION_GROUP_DIFFERENCE_TOO_LARGE` | `transactionAmount`, `sumApplied`, `gap`, `maxDifference` |

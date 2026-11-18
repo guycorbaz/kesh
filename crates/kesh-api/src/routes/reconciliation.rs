@@ -758,7 +758,10 @@ fn counterparty_is_bank_ledger_error(field: &str) -> AppError {
 ///
 /// ⛔ **Un seul constructeur pour les trois sites** (patron de
 /// [`period_locked_failed_proposal`]). `None` pour toute autre variante.
-fn fx_failed_proposal(bank_transaction_id: i64, err: &DbError) -> Option<FailedProposal> {
+pub(super) fn fx_failed_proposal(
+    bank_transaction_id: i64,
+    err: &DbError,
+) -> Option<FailedProposal> {
     let (error_code, details) = match err {
         // Même forme de `details` que la réponse HTTP (`errors.rs`) : la clé
         // `fiscalYearId` n'est posée que pour un exercice (revue de code P1).

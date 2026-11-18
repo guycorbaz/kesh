@@ -42,8 +42,9 @@ use crate::middleware::auth::CurrentUser;
 use super::reconciliation::{
     AcceptedProposal, FailedProposal, SettlementDirection, bank_account_of_transaction,
     classify_db_error_to_failed_proposal, counterparty_is_bank_ledger_failed_proposal,
-    later_fiscal_year_closed_failed_proposal, link_preflight, non_postable_failed_proposal,
-    payment_before_invoice_details, period_locked_failed_proposal, refuse_wrong_direction,
+    fx_failed_proposal, later_fiscal_year_closed_failed_proposal, link_preflight,
+    non_postable_failed_proposal, payment_before_invoice_details, period_locked_failed_proposal,
+    refuse_wrong_direction,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -236,10 +237,17 @@ fn conclude(
 /// `details.message` pour le reste (un interblocage est rejoué par le lot).
 /// Le journal nomme le règlement groupé (revue P2, P2-6). Jamais une
 /// `AppError`.
+///
+/// Epic 37 (reprise de `main`, M2) : un refus du contrôle central des
+/// devises passe **d'abord** par `fx_failed_proposal` (code canonique et
+/// `details` du refus HTTP), jamais en `DATABASE_ERROR`.
 pub(super) fn group_error_to_failed_proposal(
     bank_transaction_id: i64,
     err: DbError,
 ) -> FailedProposal {
+    if let Some(fp) = fx_failed_proposal(bank_transaction_id, &err) {
+        return fp;
+    }
     classify_db_error_to_failed_proposal(
         bank_transaction_id,
         err,
@@ -456,6 +464,17 @@ pub(super) fn group_refusal_to_failed_proposal(
                 account_number,
             }],
         ),
+        // Epic 37 — le compte choisi est tenu en devise : le code et les
+        // `details` du refus HTTP du règlement unitaire
+        // (`DbError::AccountInForeignCurrency`, `errors.rs`).
+        GroupRefusal::DifferenceAccountInForeignCurrency {
+            account_id,
+            currency,
+        } => FailedProposal {
+            bank_transaction_id,
+            error_code: "ACCOUNT_IN_FOREIGN_CURRENCY".to_string(),
+            details: Some(serde_json::json!({ "accountId": account_id, "currency": currency })),
+        },
         GroupRefusal::RoundingAccountNotConfigured => fail("ROUNDING_ACCOUNT_NOT_CONFIGURED", None),
         GroupRefusal::PeriodLocked {
             locked_through,
@@ -945,7 +964,7 @@ mod tests {
 
     /// Le nombre de variantes de [`GroupRefusal`], tenu par [`rang`] : un bras
     /// neuf prend le rang `RANGS`, puis `RANGS` grandit d'un.
-    const RANGS: usize = 25;
+    const RANGS: usize = 26;
 
     /// Le rang d'une variante — `match` exhaustif **sans joker** (revue P2,
     /// P2-2) : une variante neuve de [`GroupRefusal`] fait échouer la
@@ -979,6 +998,7 @@ mod tests {
             GroupRefusal::PeriodLocked { .. } => 22,
             GroupRefusal::LaterFiscalYearClosed { .. } => 23,
             GroupRefusal::FiscalYearInvalid { .. } => 24,
+            GroupRefusal::DifferenceAccountInForeignCurrency { .. } => 25,
         }
     }
 
@@ -1195,6 +1215,14 @@ mod tests {
                 },
                 "ACCOUNT_NOT_POSTABLE",
                 Some(json!({ "rejected": [{ "accountId": 5, "accountNumber": "69" }] })),
+            ),
+            (
+                GroupRefusal::DifferenceAccountInForeignCurrency {
+                    account_id: 5,
+                    currency: "EUR".into(),
+                },
+                "ACCOUNT_IN_FOREIGN_CURRENCY",
+                Some(json!({ "accountId": 5, "currency": "EUR" })),
             ),
             (
                 GroupRefusal::RoundingAccountNotConfigured,

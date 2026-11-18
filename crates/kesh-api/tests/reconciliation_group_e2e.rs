@@ -293,6 +293,27 @@ impl Ctx {
         date: &str,
         project_id: Option<i64>,
     ) -> i64 {
+        self.facture_sur(
+            client,
+            numero,
+            montant,
+            date,
+            project_id,
+            self.seeded.accounts["1100"],
+        )
+        .await
+    }
+
+    /// Une facture validée dont l'écriture de vente débite `receivable`.
+    async fn facture_sur(
+        &self,
+        client: &str,
+        numero: &str,
+        montant: &str,
+        date: &str,
+        project_id: Option<i64>,
+        receivable: i64,
+    ) -> i64 {
         let s = &self.seeded;
         let contact_id = self.contact(client).await;
         let amount = dec(montant);
@@ -330,16 +351,18 @@ impl Ctx {
                 project_id: None,
                 lines: vec![
                     NewJournalEntryLine {
-                        account_id: s.accounts["1100"],
+                        account_id: receivable,
                         debit: amount,
                         credit: Decimal::ZERO,
                         project_id: None,
+                        foreign: None,
                     },
                     NewJournalEntryLine {
                         account_id: s.accounts["3000"],
                         debit: Decimal::ZERO,
                         credit: amount,
                         project_id: None,
+                        foreign: None,
                     },
                 ],
             },
@@ -1639,13 +1662,8 @@ async fn l_acces(pool: MySqlPool) {
 }
 
 // ============================================================
-// AC3, AC6, AC7 — le type fournisseur (D4) : exigent la 43-1b
+// AC3, AC6, AC7 — le type fournisseur (D4), sur l'implémentation de la 43-1b
 // ============================================================
-//
-// `grouped_settlements::pay_supplier_invoices_in_tx` est encore
-// `unimplemented!` au contrat T3 de la 43-1a : ces tests ne tournent qu'une fois
-// la Story 43-1b fusionnée (`cargo nextest run --run-ignored all`). Retirer le
-// `#[ignore]` à la reprise de sa branche.
 
 impl Ctx {
     /// Une facture fournisseur validée avec son écriture d'achat
@@ -1670,12 +1688,14 @@ impl Ctx {
                         debit: amount,
                         credit: Decimal::ZERO,
                         project_id: None,
+                        foreign: None,
                     },
                     NewJournalEntryLine {
                         account_id: s.accounts["2000"],
                         debit: Decimal::ZERO,
                         credit: amount,
                         project_id: None,
+                        foreign: None,
                     },
                 ],
             },
@@ -1719,7 +1739,6 @@ impl Ctx {
 
 /// AC3 — deux factures fournisseur réglées au montant exact par un débit.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
-#[ignore = "exige la 43-1b : pay_supplier_invoices_in_tx, vue et dé-rapprochement fournisseur"]
 async fn un_groupe_fournisseur_se_regle(pool: MySqlPool) {
     let ctx = monter(&pool).await;
     let a = ctx.facture_achat("FF-1", "120.00", "2026-06-01").await;
@@ -1749,7 +1768,6 @@ async fn un_groupe_fournisseur_se_regle(pool: MySqlPool) {
 /// AC6 — l'écart fournisseur : un débit supérieur aux factures, compte choisi,
 /// `gap` positif ; sans compte, refusé.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
-#[ignore = "exige la 43-1b : pay_supplier_invoices_in_tx, vue et dé-rapprochement fournisseur"]
 async fn l_ecart_fournisseur(pool: MySqlPool) {
     let ctx = monter(&pool).await;
     let a = ctx.facture_achat("FF-1", "120.00", "2026-06-01").await;
@@ -1763,9 +1781,36 @@ async fn l_ecart_fournisseur(pool: MySqlPool) {
     assert_eq!(ok["differenceAccountId"], ctx.frais);
 }
 
+/// Epic 37 — un compte d'écart tenu en devise est refusé
+/// (`ACCOUNT_IN_FOREIGN_CURRENCY`, `details { accountId, currency }`), rien
+/// d'écrit ; le même compte en CHF passe (sonde).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn un_compte_d_ecart_en_devise_est_refuse(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let a = ctx.facture("D-1", "500.00", "2026-06-01").await;
+    let b = ctx.facture("D-2", "300.00", "2026-06-01").await;
+    let tx = ctx.transaction("799.60", "2026-06-20").await;
+    let en_devise = compte(&pool, ctx.company_id(), "6905", "Écarts EUR", "Expense").await;
+    sqlx::query("UPDATE accounts SET currency = 'EUR' WHERE id = ?")
+        .bind(en_devise)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let empreinte = ctx.empreinte().await;
+    let (_, ko) = ctx.grouper(tx, &[a, b], Some(en_devise)).await;
+    assert_eq!(ko["errorCode"], "ACCOUNT_IN_FOREIGN_CURRENCY", "{ko}");
+    assert_eq!(
+        ko["details"],
+        json!({ "accountId": en_devise, "currency": "EUR" })
+    );
+    assert_eq!(ctx.empreinte().await, empreinte, "rien d'écrit");
+    let (ok, ko) = ctx.grouper(tx, &[a, b], Some(ctx.frais)).await;
+    assert!(ko.is_null(), "{ko}");
+    assert_eq!(ok["gap"], "-0.40");
+}
+
 /// AC7 — la vue et l'annulation d'un groupe fournisseur.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
-#[ignore = "exige la 43-1b : pay_supplier_invoices_in_tx, vue et dé-rapprochement fournisseur"]
 async fn la_vue_et_l_annulation_d_un_groupe_fournisseur(pool: MySqlPool) {
     let ctx = monter(&pool).await;
     let a = ctx.facture_achat("FF-1", "120.00", "2026-06-01").await;
@@ -1805,11 +1850,11 @@ async fn la_vue_et_l_annulation_d_un_groupe_fournisseur(pool: MySqlPool) {
 // Revue P1 — sondes et bords
 // ============================================================
 
-/// B1/E1, B2 — le type fournisseur : une proposition bien formée sur une
-/// transaction inexistante passe l'extracteur et le pré-vol (`200`,
-/// `BANK_TRANSACTION_NOT_FOUND`), ce qu'un type inconnu ne fait pas (`400`) ;
-/// sur un vrai débit, avant la 43-1b, le lot rend `200` et un refus de la
-/// proposition — jamais une panique.
+/// B2 — le type fournisseur : une proposition bien formée sur une transaction
+/// inexistante passe l'extracteur et le pré-vol (`200`,
+/// `BANK_TRANSACTION_NOT_FOUND`), ce qu'un type inconnu ne fait pas (`400`).
+/// P2-5, M2 (Epic 37) — un lot mixte : une `DbError` d'un groupe à côté d'un
+/// groupe réussi.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn le_type_fournisseur_se_desserialise_et_ne_panique_pas(pool: MySqlPool) {
     let ctx = monter(&pool).await;
@@ -1829,21 +1874,46 @@ async fn le_type_fournisseur_se_desserialise_et_ne_panique_pas(pool: MySqlPool) 
         .await;
     assert_refus(s, &b, 400, "VALIDATION_ERROR");
 
-    // P2-5 — un lot mixte : un groupe client qui réussit, puis une proposition
-    // dont le dépôt rend une `DbError` (le corps provisoire de
-    // `pay_supplier_invoices_in_tx`, avant la 43-1b) : la réussie est écrite et
-    // rendue, l'autre refusée seule, le lot en `200`.
+    // P2-5 — un lot mixte : un groupe client qui réussit, puis un groupe dont le
+    // dépôt rend une `DbError` — ses factures portent leur créance sur un
+    // compte tenu en devise dans un exercice mono-devise (état forgé : le
+    // contrôle central refuse l'écriture). M2 : le refus sort par
+    // `fx_failed_proposal` (`MULTI_CURRENCY_DISABLED`), jamais en
+    // `DATABASE_ERROR`. La réussie est écrite et rendue, l'autre n'écrit rien.
     let x = ctx.facture("M-1", "10.00", "2026-06-01").await;
     let y = ctx.facture("M-2", "20.00", "2026-06-01").await;
     let credit = ctx.transaction("30.00", "2026-06-20").await;
-    let tx = ctx.transaction("-30.00", "2026-06-20").await;
-    let a = ctx.facture_achat("FF-1", "10.00", "2026-06-01").await;
-    let c = ctx.facture_achat("FF-2", "20.00", "2026-06-01").await;
+    let creance_eur = compte(&pool, ctx.company_id(), "1105", "Débiteurs EUR", "Asset").await;
+    let a = ctx
+        .facture_sur(
+            "Client EUR",
+            "M-3",
+            "10.00",
+            "2026-06-01",
+            None,
+            creance_eur,
+        )
+        .await;
+    let c = ctx
+        .facture_sur(
+            "Client EUR 2",
+            "M-4",
+            "20.00",
+            "2026-06-01",
+            None,
+            creance_eur,
+        )
+        .await;
+    sqlx::query("UPDATE accounts SET currency = 'EUR' WHERE id = ?")
+        .bind(creance_eur)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let tx = ctx.transaction("30.00", "2026-06-20").await;
     let (s, b) = ctx
         .accepter(json!([
             { "type": "invoice_group", "bankTransactionId": credit, "invoiceIds": [x, y] },
-            { "type": "supplier_invoice_group", "bankTransactionId": tx,
-              "supplierInvoiceIds": [a, c] }
+            { "type": "invoice_group", "bankTransactionId": tx, "invoiceIds": [a, c] }
         ]))
         .await;
     assert_eq!(s, 200, "{b}");
@@ -1851,7 +1921,14 @@ async fn le_type_fournisseur_se_desserialise_et_ne_panique_pas(pool: MySqlPool) 
     assert_eq!(b["accepted"][0]["bankTransactionId"], credit, "{b}");
     assert_eq!(b["failed"].as_array().unwrap().len(), 1, "{b}");
     assert_eq!(b["failed"][0]["bankTransactionId"], tx, "{b}");
-    assert_eq!(b["failed"][0]["errorCode"], "INTERNAL_ERROR", "{b}");
+    assert_eq!(
+        b["failed"][0]["errorCode"], "MULTI_CURRENCY_DISABLED",
+        "{b}"
+    );
+    assert_eq!(
+        b["failed"][0]["details"]["fiscalYearId"], ctx.seeded.fiscal_year_id,
+        "{b}"
+    );
     for id in [x, y] {
         let paid = ctx
             .scalaire(
