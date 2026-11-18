@@ -560,44 +560,55 @@ test.describe('Règlement groupé — l’écran (Story 43-3, #823)', () => {
 		}
 	});
 
-	// Revue P1 (A L-4) : « retenu par un lot » sur un DÉBIT réel ; la retenue elle-même est
-	// interceptée (le champ `heldByPaymentBatch` n'arrive qu'avec la tête définitive de la 43-2).
+	// Revue P1 (A L-4), revue P2 (L-4) : « retenu par un lot » sur un DÉBIT réel, contre l'API
+	// réelle (`heldByPaymentBatch` de la 43-2) — un lot `generated` de ce compte porte une facture
+	// fournisseur du montant exact du débit. Aucune interception.
 	test('un débit dont le montant est retenu par un lot : l’avis nomme le lot', async ({ page }, testInfo) => {
 		const unique = `${Date.now()}-retenu`;
 		const today = todayInZurich();
 		const bankAccountId = await wiredBankAccountViaApi(page, TEST_IBAN);
 		const ctx = await authedApiContext(page);
-		const importId = await createManualDebitStatementViaApi(page, {
-			bankAccountId,
-			bookingDate: today,
-			amount: ((30000 + (Date.now() % 20000)) / 100).toFixed(2),
-			counterpartyName: `Fournisseur ${unique}`,
-			details: `Débit retenu ${unique}`,
+		const amount = ((30000 + (Date.now() % 20000)) / 100).toFixed(2);
+		const si = await createSupplierInvoiceViaApi(page, {
+			supplierName: `Fournisseur ${unique}`,
+			number: `FL-${unique}`,
+			paymentReference: null,
+			invoiceDate: today,
+			dueDate: today,
+			amount,
+			creditorIban: 'CH5604835012345678009',
 		});
-		const txId = ((await (await ctx.get(`/api/v1/bank-imports/${importId}`)).json()) as {
-			transactions: Array<{ id: number }>;
-		}).transactions[0].id;
-		await page.route('**/group-candidates**', async (route) => {
-			const reponse = await route.fetch();
-			const corps = await reponse.json();
-			await route.fulfill({
-				response: reponse,
-				json: {
-					...corps,
-					candidates: [],
-					hasMore: false,
-					heldByPaymentBatch: { supplierInvoiceId: 1, paymentBatchId: 31 },
-				},
-			});
-		});
+		let batchId: number | null = null;
+		let importId: number | null = null;
+		let txId: number | null = null;
 		try {
+			const res = await ctx.post('/api/v1/payment-batches', {
+				data: { bankAccountId, requestedExecutionDate: today, supplierInvoiceIds: [si.supplierInvoiceId] },
+			});
+			expect(res.ok(), await res.text()).toBeTruthy();
+			const corps = (await res.json()) as { batch: { id: number } | null; failed?: unknown };
+			expect(corps.batch, JSON.stringify(corps.failed)).toBeTruthy();
+			batchId = corps.batch!.id;
+			importId = await createManualDebitStatementViaApi(page, {
+				bankAccountId,
+				bookingDate: today,
+				amount,
+				counterpartyName: `Fournisseur ${unique}`,
+				details: `Débit retenu ${unique}`,
+			});
+			txId = ((await (await ctx.get(`/api/v1/bank-imports/${importId}`)).json()) as {
+				transactions: Array<{ id: number }>;
+			}).transactions[0].id;
+			const reponse = page.waitForResponse((r) => r.url().includes('/group-candidates'));
 			const { modal } = await openGroup(page, bankAccountId, txId);
-			await expect(modal.getByTestId('group-held-by-batch')).toContainText('lot de paiement n° 31');
+			const lu = (await (await reponse).json()) as { heldByPaymentBatch: { paymentBatchId: number } | null };
+			expect(lu.heldByPaymentBatch?.paymentBatchId).toBe(batchId);
+			await expect(modal.getByTestId('group-held-by-batch')).toContainText(`lot de paiement n° ${batchId}`);
 			await expect(modal.getByTestId('group-gap')).toHaveText('—');
 			await modal.screenshot({ path: capturePath(testInfo, '43-3-retenu-par-un-lot') });
 		} finally {
-			await page.unroute('**/group-candidates**');
-			await cleanup(ctx, txId, importId);
+			if (batchId !== null) await ctx.post(`/api/v1/payment-batches/${batchId}/cancel`, { data: {} });
+			if (txId !== null && importId !== null) await cleanup(ctx, txId, importId);
 			await disposeContextSafe(ctx);
 		}
 	});
