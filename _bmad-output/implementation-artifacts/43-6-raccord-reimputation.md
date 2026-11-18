@@ -16,14 +16,14 @@ En 0.19.0, seul le geste **client** de la 42-1 existe. `reassign_invoice` (`proj
 de règlement de la facture (`SELECT journal_entry_id FROM invoice_settlements …`, :443-453), puis
 `lock_entries_and_lines_in_tx` (:143), `entries_that_change` (:204), `period_exposure_in_tx` (:232) et
 `reassign_lines_in_tx` (:352-363, `UPDATE journal_entry_lines SET project_id = ? WHERE entry_id IN (…)`) raisonnent **par
-écriture**. Sur une écriture groupée (43-1a), il réimputerait la ligne de banque, les lignes de différence et les lignes des
+écriture**. Sur une écriture groupée (43-1a), il réimputerait la ligne de banque, la ligne d'écart éventuelle et les lignes des
 autres factures, sans le dire.
 
 ## Story
 
 **En tant que** Comptable ou Administrateur qui change le compte analytique d'une facture client après coup (geste de la
 42-1), **je veux** que Kesh refuse ce geste sur une facture réglée avec d'autres par un même virement, avec un message qui
-le dit, **afin que** la ligne de banque, les différences et les créances des autres factures du groupe ne changent pas de
+le dit, **afin que** la ligne de banque, l'écart éventuel et les créances des autres factures du groupe ne changent pas de
 compte analytique à mon insu.
 
 ## Décision
@@ -126,9 +126,13 @@ réimputation limitée à la ligne (plutôt qu'un refus) pourra alors être prop
 
 ## Tests et mutations
 
-- **Garde retirée** : AC1 rougit (les lignes de banque et de l'autre facture changent de compte).
+- **Garde retirée** : AC1 rougit sur le statut (`200` au lieu de `409`, `mut/M1.log`) ; les assertions sur les lignes de
+  banque et de l'autre facture ne sont alors pas atteintes (revue P1, B2).
 - **Garde déplacée** après l'étape (4), (5) ou (7) : AC4 rougit (`200`, `ILLEGAL_STATE_TRANSITION`/`NOT_FOUND` ou
-  `…CLOSED_PERIOD_ADMIN_ONLY` au lieu du code de groupe).
+  `…CLOSED_PERIOD_ADMIN_ONLY` au lieu du code de groupe) ; chaque volet rougit seul (M2a/M2c compte inconnu, M2e compte
+  archivé, M2d période close, M2b rien à faire).
+- **Minimum pris sur tous les règlements** (déclencheur gardé) : le test de la facture réglée en partie puis groupée
+  rougit (`journalEntryId` du règlement unitaire ; revue P1, E1, M6).
 - **Garde placée avant le contrôle de version** : AC3 rougit.
 - **AC5** n'a pas de mutation propre de la garde : il prouve que le refus ne survit pas au groupe (un critère qui
   chercherait l'écriture groupée par un autre chemin que `invoice_settlements`, par exemple par les lignes de créance,
@@ -195,13 +199,26 @@ la reprise (`kesh-gate-logs/e436/reprise-prompt.md`), de `8a75833ec` au passage 
   - M3, garde avant la version : AC3 rougit (code de groupe au lieu de `OPTIMISTIC_LOCK_CONFLICT`) ;
   - M4 (écran), le code traité comme la période close : le test Vitest rougit ;
   - M5 (repli Rust divergent du catalogue) : **survivante** avant `65c15ff62` (`M5.log`, G9 ne listait pas la clé), tuée
-    après (`M5-bis.log`).
+    après (`M5-bis.log`) ;
+  - M2e (revue P1, A1), garde entre (5) et (6) et contrôle « compte inconnu » neutralisé dans `projects.rs` : le volet
+    « compte archivé » d'AC4 rougit seul (`ILLEGAL_STATE_TRANSITION` au lieu du code de groupe, `M2e.log`) ;
+  - M6 (revue P1, E1), déclencheur gardé mais minimum pris sur tous les règlements : le test neuf
+    `the_grouped_refusal_names_the_group_entry_after_a_partial_settlement` rougit (`journalEntryId` 3, l'unitaire, au lieu
+    de 4, le groupe ; `M6.log`).
   AC5 n'a pas de mutation propre (fiche, « Tests et mutations ») : non-régression déclarée.
+- **Revue P1** : `project_reassignment_e2e.rs` passe à 33 `#[sqlx::test]` (test E1 ; helper `grouped_pair_after`, règlement
+  unitaire de 40.— depuis la fiche avant le groupe, qui règle le reste). Gate ciblé au commit de la remédiation, voie 2 :
+  `cargo fmt --check` vert, `cargo clippy --workspace --all-targets -D warnings` vert (`e436/revue-p1-clippy.log`),
+  `nextest binary(project_reassignment_e2e) | binary(textes_coherents)` **63 passés sur 63** (`e436/revue-p1-cible.log`).
+  Vitest non relancé : aucun test frontend ne lit les messages modifiés (le test du dialogue simule un message français).
+  `test-fast`, `gate-ci` et E2E non relancés : à la clôture, après la passe ciblée.
 - **Recette visuelle** (AC7) : `/home/gcorbaz/devel/kesh-gate-logs/e436/captures/43-6-refus-groupe.png` — dialogue
   *Changer le compte analytique* sur une facture réglée en groupe, refus affiché dans `project-reassign-error`, ni
   avertissement ni *Confirmer* ; thème clair, base jetable de l'E2E (`kesh_e2e_e436`), prise par l'E2E complet. Artefact de
   la capture pleine page : le voile du dialogue ne couvre que la hauteur de la fenêtre (le bas de la page reste net) —
-  propre à `fullPage: true`, non à l'écran.
+  propre à `fullPage: true`, non à l'écran. **Écart à la lettre d'AC7** (revue P1, A4) : AC7 dit « base de
+  démonstration » ; la capture vient de la base **jetable** de l'E2E, peuplée de données synthétiques par la spec (aucune
+  donnée réelle). Le contenu exigé (dialogue, refus, thème clair) est conforme ; l'équivalence est assumée (C-e436-7).
 - **Reprise** : bases `kesh_e436`, `kesh_e2e_e436` (voie 2) recréées, migrées (95 migrations du worktree), `kesh_e436`
   semée ; `kesh_ci_e436` recréée par `gate-ci.sh`. Aucune erreur d'artefact cargo : rien n'a été nettoyé dans `target/`.
   Attente de mem-guard (mybibli) de 10 h 59 à 11 h 20. Toutes les constructions en `-j 2`, une commande lourde à la fois.
@@ -260,3 +277,14 @@ la reprise (`kesh-gate-logs/e436/reprise-prompt.md`), de `8a75833ec` au passage 
   reprise : espace de `projects-reassign-open` rétabli dans les quatre catalogues et capture renommée `43-6-refus-groupe`
   (`8a75833ec`, C-e436-5) ; mutations M2c et M2d ajoutées (C-e436-6) ; gates du passage en revue verts (Dev Agent Record) ;
   statut `review`. Gate-ci et E2E de clôture à rejouer au dernier commit de code.
+- 2026-11-18 — Revue de code P1 (trois lentilles B, E, A, Opus ×3, contexte frais, `kesh-gate-logs/e436/review-p1-{B,E,A}.md`) :
+  **0 CRITICAL, 0 HIGH, 0 MEDIUM, 8 LOW** (A1 à A4, B1, B2, E1, E2 ; B1 et E2 sont le même constat). Tous corrigés dans la
+  story (règle du 2026-11-14) : A1 mutation M2e ; A2 de-CH « Das analytische Konto dieser Rechnung … » (it-CH « il suo »
+  en minuscule et en-CH « its » relus, sans ambiguïté) ; A3 « l'écart éventuel » aux trois sites (manuel :4245,
+  `api-external.md` :618 et :1251), plus les doc-comments `kesh-db/src/errors.rs` et `project_reassignment.rs` et la fiche
+  (grep du symptôme ; le message i18n et le repli Rust ne nomment pas l'écart) ; A4 écart déclaré (C-e436-7) ; E1 test de
+  la facture réglée en partie puis groupée et mutation M6 ; B1/E2 phrase sur le dé-rapprochement refusé aux deux sites du
+  manuel et aux deux de `api-external.md`, liste lue au code (`grouped_settlements::group_cancel_blocker` : facture
+  créditée, solde existant, puis `settlement_entry_cancel_blocker` : exercice clos, lettrage figé, autre transaction liée,
+  compte archivé, pas d'exercice ouvert au jour), message inchangé ; B2 commentaire du test AC1 et fiche (« Tests et
+  mutations ») : rouge sur le statut. Aucun reclassement. Passe ciblée à suivre sur le commit de remédiation.

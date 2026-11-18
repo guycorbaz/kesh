@@ -32,4 +32,18 @@ option : paramétrer le préfixe du helper — plus large que la story. Réversi
 il rougit dès la première (`404`, compte inconnu), si bien que le volet « période close » n'était prouvé par aucune
 mutation. M2c (garde entre (5) et (6)) rougit encore sur le compte visé ; M2d (garde après (7) **et** contrôle du compte
 visé neutralisé) isole la période close : `403` au lieu de `409`. Journaux `kesh-gate-logs/e436/mut/M2c.log`, `M2d.log`.
-Autre option : scinder le test en trois — plus de montage, même preuve. Réversible.
+Autre option : scinder le test en trois — plus de montage, même preuve. Réversible. *Complété à la revue P1 (A1)* : M2e
+(garde entre (5) et (6), contrôle « compte inconnu » neutralisé dans `projects::validate_taggable_in_tx`) isole le volet
+« compte archivé » (`ILLEGAL_STATE_TRANSITION` au lieu du code de groupe, `mut/M2e.log`).
+
+**C-e436-7 — Recette visuelle sur la base jetable de l'E2E** (revue P1, A4). AC7 et le `CLAUDE.md` disent « base de
+démonstration » ; la capture `e436/captures/43-6-refus-groupe.png` est prise par l'E2E complet sur `kesh_e2e_e436`, base
+jetable peuplée par la spec de données synthétiques. Le but de la règle — voir l'état touché, en thème clair, hors de
+toute donnée réelle — est atteint ; la capture montre la valeur réelle du serveur. Autre option : relancer un backend sur
+une base de démonstration (`kesh-seed`) et monter le groupe à la main — même image, sans preuve de plus. Réversible.
+
+**C-e436-8 — Le message du refus garde son remède** (revue P1, B1/E2). « Annulez d'abord le rapprochement » est parfois
+impossible (dé-rapprochement refusé : exercice clos, lettrage figé, facture créditée ou soldée…). Le message ne change
+pas : le refus de l'annulation dit lui-même sa raison. La limite s'écrit au manuel (deux sites) et dans `api-external.md`
+(deux sites), avec renvoi au § *Annuler un rapprochement*. Autre option : un second message pour ce cas — il exigerait
+d'évaluer les refus du dé-rapprochement dans le geste. Réversible.

@@ -2043,7 +2043,7 @@ pub enum DbError {
     /// La facture est réglée dans un **groupe** (Story 43-6, #823, #1167) : un
     /// de ses règlements porte un identifiant de ligne
     /// (`invoice_settlements.journal_entry_line_id`), et son écriture porte
-    /// aussi la banque, les différences et les créances des autres factures.
+    /// aussi la banque, l'écart éventuel et les créances des autres factures.
     /// Le geste, qui réimpute ses écritures **entières**, les réécrirait : il
     /// refuse, sans rien écrire. → `409 PROJECT_REASSIGNMENT_GROUPED_SETTLEMENT`,
     /// `details { invoiceId, journalEntryId }` (la plus petite écriture groupée).

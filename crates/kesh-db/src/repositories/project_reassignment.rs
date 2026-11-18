@@ -398,7 +398,7 @@ pub async fn reassign_lines_in_tx(
 /// - `version` est celle de la facture, exigée : périmée → `409
 ///   OPTIMISTIC_LOCK_CONFLICT`, même si le compte ne change pas.
 /// - **Règlement groupé** (Story 43-6, #823) — un règlement de la facture porte
-///   une ligne attribuée : son écriture porte aussi la banque, les différences
+///   une ligne attribuée : son écriture porte aussi la banque, l'écart éventuel
 ///   et les créances des autres factures, que le geste réécrirait. → `409
 ///   PROJECT_REASSIGNMENT_GROUPED_SETTLEMENT`, juste après la version, avant
 ///   le « rien à faire » et tout autre refus ; rien n'est écrit. Après

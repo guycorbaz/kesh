@@ -1592,11 +1592,30 @@ async fn grouped_pair(
     pa: Option<i64>,
     pb: Option<i64>,
 ) -> (i64, i64, i64, i64) {
+    grouped_pair_after(pool, ctx, pa, pb, None).await
+}
+
+/// [`grouped_pair`], la facture `a` ayant d'abord reçu, depuis sa fiche, un
+/// règlement unitaire de `partial` (écriture propre, ligne non attribuée) : le
+/// groupe ne règle alors que son reste.
+async fn grouped_pair_after(
+    pool: &MySqlPool,
+    ctx: &Ctx,
+    pa: Option<i64>,
+    pb: Option<i64>,
+    partial: Option<Decimal>,
+) -> (i64, i64, i64, i64) {
     let d = sale_day();
     let a = ctx.validated(pa, d).await;
     let b = ctx.validated(pb, d).await;
+    let mut total = dec!(200.00);
+    if let Some(amount) = partial {
+        ctx.settle(a, &amount.to_string(), d + Duration::days(5))
+            .await;
+        total -= amount;
+    }
     let tx_id = ctx
-        .bank_transaction(pool, a, dec!(200.00), d + Duration::days(10))
+        .bank_transaction(pool, a, total, d + Duration::days(10))
         .await;
     let body = ctx
         .post_ok(
@@ -1651,8 +1670,9 @@ fn assert_grouped_refusal(status: u16, body: &Value, invoice_id: i64, group: i64
 /// 43-6 AC1 — la réimputation d'une facture réglée en groupe est refusée :
 /// `409`, `details` exacts, rien d'écrit — ni lignes (banque, créance de
 /// l'autre facture), ni factures, ni versions, ni trace. Mutation : la garde
-/// retirée, les lignes de l'écriture groupée changent de compte et ce test
-/// rougit.
+/// retirée, le geste rend `200` au lieu de `409` et ce test rougit sur le
+/// statut (`mut/M1.log`) ; les assertions sur les lignes ne sont alors pas
+/// atteintes.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn a_grouped_settlement_is_refused(pool: MySqlPool) {
     let ctx = setup(&pool).await;
@@ -1684,6 +1704,37 @@ async fn a_grouped_settlement_is_refused(pool: MySqlPool) {
     assert!(audits(&pool, "invoice.project_reassigned").await.is_empty());
 }
 
+/// 43-6 AC1 (revue P1, E1) — la facture `a` réglée en partie depuis sa fiche
+/// (40.—, écriture propre, plus ancienne), puis groupée pour son reste :
+/// `details.journalEntryId` est l'écriture du **groupe**, non celle du
+/// règlement unitaire. Mutation : le déclencheur gardé, mais le minimum pris
+/// sur **tous** les règlements, ce test rougit (`mut/M6.log`).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn the_grouped_refusal_names_the_group_entry_after_a_partial_settlement(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let (a, _, _, group) =
+        grouped_pair_after(&pool, &ctx, Some(ctx.p), Some(ctx.p), Some(dec!(40.00))).await;
+    let unit: Vec<i64> = sqlx::query_scalar(
+        "SELECT journal_entry_id FROM invoice_settlements \
+         WHERE invoice_id = ? AND journal_entry_line_id IS NULL",
+    )
+    .bind(a)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(unit.len(), 1, "montage : un règlement unitaire");
+    assert!(unit[0] < group, "montage : l'unitaire est le plus ancien");
+    let before = snapshot(&pool, ctx.seeded.company_id).await;
+    let version = ctx.version(a).await;
+
+    let (status, body) = ctx
+        .reassign(&ctx.admin, a, Some(ctx.q), version, None)
+        .await;
+
+    assert_grouped_refusal(status, &body, a, group);
+    assert_eq!(snapshot(&pool, ctx.seeded.company_id).await, before);
+}
+
 /// 43-6 AC3 — ordre amont : une version périmée sur une facture groupée rend
 /// le refus de version, non le code de groupe. Mutation : la garde avant le
 /// contrôle de version, ce test rougit.
@@ -1702,7 +1753,8 @@ async fn a_stale_version_comes_before_the_grouped_refusal(pool: MySqlPool) {
 /// avant le compte visé inconnu (`404`) ou archivé (`409
 /// ILLEGAL_STATE_TRANSITION`) et avant la période close d'un Comptable
 /// (`403`). Mutation : la garde déplacée après l'étape (5) ou (7), ce test
-/// rougit.
+/// rougit ; chaque volet rougit seul — compte inconnu (`mut/M2a`, `M2c`),
+/// compte archivé (`M2e`), période close (`M2d`).
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn the_grouped_refusal_comes_before_target_and_closed_period(pool: MySqlPool) {
     let ctx = setup(&pool).await;
