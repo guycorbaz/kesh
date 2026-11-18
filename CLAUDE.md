@@ -6,7 +6,7 @@ Règles et décisions en vigueur pour travailler sur Kesh. Ce fichier ne porte n
 
 **Kesh** est un logiciel de comptabilité suisse pour particuliers et petites entreprises, développé avec le cadre BMAD. Backend Rust (Axum), frontend SvelteKit, MariaDB ; application web seulement ; configuration par variables d'environnement ; déploiement par docker-compose. PRD : `_bmad-output/planning-artifacts/prd.md` (QR-facture 2.2, pain.001.001.03, CAMT.053.001.04, FR/DE/IT/EN).
 
-- **Dernière release : v0.18.0** (2026-11-16), sans migration ; `kesh_version_min_required` = 0.17.6.
+- **Dernière release : v0.19.0** (2026-11-18), **avec quatre migrations** ; `kesh_version_min_required` = 0.17.6.
 - **Kesh est en production** : Guy tient ses livres réels sur le NAS depuis le 2026-10-31. Version en fonction : **0.18.0**, depuis le 2026-11-16. Ces deux lignes se mettent à jour à chaque release et à chaque mise à jour du NAS.
 - **Jalon ouvert** : « Première clôture d'exercice tenue dans Kesh » (J9 de la fiche de projet). Le jour où il est atteint, cette section se réécrit.
 - **Les décomptes** (migrations, tests, stories, issues) ne s'écrivent pas ici : ils vont à la PR de release, au journal `kesh-gate-logs/rel<version>/` et à la rétrospective. Ils se recomptent depuis la source :
