@@ -104,6 +104,12 @@ sans parent ; l'`UPDATE` de `accounts::update` n'écrit pas `parent_id` ; commen
   laissé imputable), **M5** (contrôles de change retirés) : **non concluantes** — les sept tests y échouent tous en
   30 s à l'ouverture de leur base (`sqlx-core testing/mod.rs:226`) : le conteneur `kesh-mariadb-dev2` s'est arrêté en
   cours de campagne (constaté : `container … is not running`), et le témoin sans mutation échoue de même. À rejouer.
+- 2026-11-18 — Mutations M3 à M5 rejouées après le redémarrage du conteneur (`mutations-2.log`, sous `heavy.sh` et
+  `mem-guard`) : témoin sans mutation 7/7 vert ; **M3** (cycle non refusé) → `un_compte_ne_se_range_pas_sous_lui_meme`,
+  `course_un_cycle_ferme_par_un_ancetre_concurrent_est_vu`, `put_parent_refuse_ce_que_la_creation_refuse_et_le_cycle`
+  rouges ; **M4** (nouveau parent laissé imputable) → `ranger_puis_detacher_un_compte_mouvemente`,
+  `put_range_un_compte_mouvemente_sous_un_groupe` rouges ; **M5** (contrôles de change retirés) →
+  `parent_de_change_ou_en_devise_mouvemente_refuse` rouge.
 - 2026-11-18 — Écran (`f01e853d`) : champ parent du dialogue de modification, `parentCandidates`,
   `parentFieldForUpdate` ; commentaire d'`accounts::create` (« `parent_id` immuable ») corrigé ; `sitesTotal` de la
   garde i18n relevé par la garde, 3388 → 3392 (`front-test-unit-1-rouge-sitesTotal.log`). Dernier commit de code.
@@ -126,10 +132,29 @@ Opus 5.5.
 
 ### Gates
 
-Voir `kesh-gate-logs/fix-api-parent-compte/`. ⚠️ **Gates lourds non joués** (`test-fast.sh --ci`, `gate-ci.sh`, E2E
-complet) ni captures : le conteneur de gate `kesh-mariadb-dev2` est arrêté depuis la campagne de mutations, et un
-agent ne le redémarre pas. Joués : `cargo fmt --check`, `cargo clippy --workspace --all-targets -D warnings` (au
-dernier commit de code), gate frontend au dernier commit de code `f01e853d` : `check` 0 erreur (29 avertissements préexistants), `lint-i18n-ownership`, `test:unit` **4358 tests (271 fichiers)**, `build`.
+Journaux dans `kesh-gate-logs/fix-api-parent-compte/`. **Gate ciblé vert ; gate complet groupé à venir** (décision de
+Beat du 2026-11-18 : `scripts/test-fast.sh --ci`, l'E2E complet et `scripts/gate-ci.sh` se joueront une seule fois, sur
+une branche d'intégration réunissant plusieurs correctifs). Au dernier commit de code `f01e853d` :
+
+- `cargo fmt --check` et `cargo clippy --workspace --all-targets -D warnings` : verts (`gate-cible.console.log`,
+  `cible-clippy.log`).
+- `cargo nextest run --profile ci` ciblé, base `kesh_fix44` remise à zéro : **2025 passés, 6 ignorés, 31 binaires**
+  (`cible-nextest.log`) — bibliothèques de `kesh-db` (tests d'`accounts.rs`) et de `kesh-api` (tests d'`errors.rs`),
+  `kesh-i18n`, et les binaires qui appellent `accounts::update` ou `PUT /accounts/{id}`, ou gardent schéma de test,
+  textes et registres : `account_parent_change`, `accounts_e2e`, `account_currency_e2e`,
+  `account_currency_repository`, `accounts_designated_archive_e2e`, `bank_accounts_e2e`, `credit_card_e2e`,
+  `credit_card_repository`, `designated_account_type_e2e`, `exchange_rates_api_e2e`, `idor_multi_tenant_e2e`,
+  `invoice_write_off`, `invoices_validate_vat`, `jour_suisse_nuit_e2e`, `journal_entry_reversal_e2e`, `letterings`,
+  `letterings_e2e`, `open_items_e2e`, `reconciliation_e2e`, `rejeu_interblocage_e2e`, `reports_e2e`,
+  `supplier_invoice_draft_e2e`, `supplier_invoices_repository`, `test_schema_guard`, `textes_coherents`,
+  `audit_label_registry`, `audit_route_registry`, `i18n_e2e`.
+- Frontend : `check` 0 erreur (29 avertissements préexistants), `lint-i18n-ownership`, `test:unit` **4358 tests
+  (271 fichiers)**, `build`.
+- E2E ciblé (port 3380, base `kesh_e2e_fix44` neuve) : `accounts.spec.ts`, `multi-currency.spec.ts`, `smoke.spec.ts` —
+  **17 passés** (`e2e-cible.log`).
+- Captures (thème clair) : `captures/avant/01` (dialogue sans champ parent, frontend de `70be12a6`),
+  `captures/apres/01` à `05` (champ, liste ouverte, parent choisi, 1000 indenté sous le groupe 10 devenu
+  « Non postable », groupe 10 sans lui-même ni son sous-compte 1000 dans ses options).
 
 ### File List
 
