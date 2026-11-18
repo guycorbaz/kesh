@@ -132,6 +132,20 @@ export async function downloadProjectReport(
 }
 
 /**
+ * `true` si la **ligne calculée** « Résultat reporté (calculé) » du bilan doit être
+ * affichée : seulement quand `retainedEarnings` est **non nul** (correctif
+ * fix-bilan-resultat-reporte). À zéro, elle n'apporte rien et se confond avec le
+ * compte physique de report itemisé juste au-dessus ; non nulle, elle signale un
+ * résultat d'exercices antérieurs qu'aucune écriture n'a encore reporté. Le total des
+ * capitaux propres l'inclut toujours. Pendant backend :
+ * `BalanceSheet::shows_retained_earnings_line` (PDF, CSV), tenu en parallèle comme
+ * `isReportEmpty`. Une valeur illisible (`NaN`) reste affichée, comme avant.
+ */
+export function showsRetainedEarningsLine(bs: BalanceSheetDto): boolean {
+	return Number(bs.retainedEarnings) !== 0;
+}
+
+/**
  * Helper Pass 1 AA-11 / BH-11 : détecte si un rapport est "vide" pour afficher
  * le message UX `reports-error-no-entries-in-period` (UX-DR38).
  */

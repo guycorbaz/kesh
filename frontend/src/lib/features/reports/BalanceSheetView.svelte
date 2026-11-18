@@ -4,7 +4,13 @@
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import { accountRoleKey, type AccountRole } from '$lib/features/accounts/accounts.types';
 	import AccountCurrencyBalance from './AccountCurrencyBalance.svelte';
-	import { formatReportAmount, formatSwissDate, isReportEmpty, ledgerHref } from './reports.api';
+	import {
+		formatReportAmount,
+		formatSwissDate,
+		isReportEmpty,
+		ledgerHref,
+		showsRetainedEarningsLine,
+	} from './reports.api';
 	import type { AccountBalance, BalanceSheetDto } from './reports.types';
 
 	interface Props {
@@ -13,6 +19,8 @@
 	let { dto }: Props = $props();
 
 	let empty = $derived(isReportEmpty('balance-sheet', dto));
+	// Ligne calculée « Résultat reporté » omise à zéro (correctif fix-bilan-resultat-reporte).
+	let showRetained = $derived(showsRetainedEarningsLine(dto));
 
 	const fmt = formatReportAmount;
 
@@ -94,7 +102,8 @@
 	// Story 14-3c (D1) : la ligne CALCULÉE doit être explicitement marquée « (calculé) »
 	// pour la distinguer d'un compte physique de rôle RetainedEarnings itemisé au-dessus.
 	// Le cas perte reste `reports-retained-earnings-loss` (« Perte reportée ») comme
-	// aujourd'hui ; le cas bénéfice/nul utilise la nouvelle clé marquée calculée.
+	// aujourd'hui ; le cas bénéfice utilise la nouvelle clé marquée calculée (le cas nul
+	// n'est plus affiché : `showRetained`, correctif fix-bilan-resultat-reporte).
 	let retainedLabel = $derived(
 		retainedBig.lt(0)
 			? i18nMsg('reports-retained-earnings-loss', 'Perte reportée')
@@ -236,12 +245,14 @@
 								</tr>
 							{/each}
 						{/each}
-						<tr>
-							<td colspan="2" class="px-2 py-1 {retainedClass}">{retainedLabel}</td>
-							<td class="px-2 py-1 text-right font-mono {retainedClass}"
-								>{fmt(dto.retainedEarnings)}</td
-							>
-						</tr>
+						{#if showRetained}
+							<tr data-testid="balance-sheet-retained-earnings">
+								<td colspan="2" class="px-2 py-1 {retainedClass}">{retainedLabel}</td>
+								<td class="px-2 py-1 text-right font-mono {retainedClass}"
+									>{fmt(dto.retainedEarnings)}</td
+								>
+							</tr>
+						{/if}
 						<tr>
 							<td colspan="2" class="px-2 py-1 {equityClass}">{equityLabel}</td>
 							<td class="px-2 py-1 text-right font-mono {equityClass}">{fmt(dto.equityResult)}</td>
