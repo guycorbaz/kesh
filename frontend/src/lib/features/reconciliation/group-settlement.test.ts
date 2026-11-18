@@ -220,6 +220,22 @@ describe('Enregistrer — ce qui le retient (D3)', () => {
 		const exact = decompose('800.00', ['500.00', '300.00']);
 		expect(submitBlock(input({ decomposition: exact, maxDifference: null }))).toBeNull();
 	});
+
+	// Revue P2 (M-1) : sous deux factures, un plafond non lu (chargement) n'est pas un montant
+	// illisible ; seule la cause « deux factures » est dite.
+	it('plafond pas encore lu, moins de deux factures → seulement « deux factures »', () => {
+		expect(submitBlocks(input({ count: 0, maxDifference: null }))).toEqual(['too-few']);
+		expect(submitBlocks(input({ count: 1, maxDifference: null }))).toEqual(['too-few']);
+	});
+
+	// Revue P2 (L-1) : le serveur a demandé un compte alors que l'écart calculé est nul.
+	it('écart nul, le serveur demande un compte → compte demandé tant qu’aucun n’est choisi', () => {
+		const exact = decompose('800.00', ['500.00', '300.00']);
+		const base = { decomposition: exact, differenceAccountId: null };
+		expect(submitBlocks(input(base))).toEqual([]);
+		expect(submitBlocks(input({ ...base, serverWantsAccount: true }))).toEqual(['account-required']);
+		expect(submitBlocks(input({ ...base, serverWantsAccount: true, differenceAccountId: 6940 }))).toEqual([]);
+	});
 });
 
 describe('sens, libellé et préremplissage (C-43-26)', () => {

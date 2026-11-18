@@ -86,6 +86,20 @@ serveur tranche à l'enregistrement, et ses refus nommés (D5) la retirent s'il 
 `GET /invoices/{id}` pour les clients seulement — deux chemins pour une même grandeur, et un reste dû dont la forme
 n'est pas celle du calcul.
 
+*Revue P2 (L-1).* La phrase « non relue » ne s'efface plus avec les refus : elle reste tant que la facture est
+imputée sans avoir été relue, dit que l'écart affiché peut être faux et comment la relire (la retirer puis l'ajouter
+de nouveau : ajoutée depuis la recherche, elle porte un reste dû frais). Quand le serveur a demandé un compte de
+l'écart (`difference_account_required`), le sélecteur s'affiche même si l'écart calculé à l'écran est nul : l'écran
+ne reste plus dans l'impasse d'un refus qu'aucun geste ne lève.
+
+*Pourquoi deux codes seulement.* La relecture ne part que sur `RECONCILIATION_GROUP_DIFFERENCE_TOO_LARGE` et
+`RECONCILIATION_GROUP_INVALID` / `difference_account_required` : ce sont les seuls refus du règlement groupé qui
+portent sur l'écart, donc sur les montants. Les autres disent une facture (`RETIRER_SUR`, retirée et nommée), la
+transaction (`FERMER_SUR`, fermeture), un compte ou une configuration — rien qu'une relecture des restes dus ne
+change. Recherche d'un autre refus de montant (`grep -rhoE "RECONCILIATION_[A-Z_]+" crates/*/src`, 2026-11-18) :
+seul `RECONCILIATION_AMOUNT_MISMATCH`, propre au règlement d'**une** facture fournisseur (`|tx| = TTC`), que le
+groupe n'émet pas. Aucun code n'est ajouté.
+
 **C-e433-13 — Le « × » du compte de l'écart laisse le champ vide (revue P1, B-L2).** Vider le champ pose le choix
 « aucun compte » (`selectAccount(null)` → `{ byUser: true, accountId: null }`) : le préremplissage ne revient pas,
 le compte est demandé, et *Enregistrer* le dit. La fiche (D2 bis) disait « [le drapeau] se lève si l'utilisateur
@@ -100,4 +114,4 @@ renvoyé à la 43-7 et à #1245.
 **C-e433-15 — Fermeture pendant l'envoi (revue P1, E-L7).** Corrigé en partie : le toast de succès part même la
 modale fermée. Reste : modale rouverte sur une autre transaction pendant l'envoi, le parent ne relit pas sa liste
 (appeler `onSuccess` fermerait la modale rouverte) ; la ligne réglée reste jusqu'à la relecture suivante, et un
-geste dessus finit en `NOT_PENDING` (toast et fermeture). Une issue est demandée au rapport.
+geste dessus finit en `NOT_PENDING` (toast et fermeture). Tracé par l'issue #1262 (revue P2, L-7).

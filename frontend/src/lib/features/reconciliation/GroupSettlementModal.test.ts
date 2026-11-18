@@ -33,6 +33,7 @@ vi.mock('svelte-sonner', () => ({
 vi.mock('$lib/shared/utils/i18n.svelte', () => ({
 	i18nMsg: (_key: string, fallback: string, args?: Record<string, string | number>) =>
 		args ? fallback.replace(/\{\s*\$(\w+)\s*\}/g, (_, k) => String(args[k] ?? '')) : fallback,
+	i18nLocale: () => 'fr-CH',
 }));
 
 import * as api from './reconciliation.api';
@@ -307,6 +308,16 @@ describe('GroupSettlementModal — ouverture et recherche (D2, AC2)', () => {
 		await r.findByTestId('group-loading');
 		expect(texte(r, 'group-loading')).toBe('Recherche…');
 	});
+
+	// Revue P2 (M-1) : pendant le chargement, le plafond n'est pas encore lu ; ce n'est pas un
+	// montant illisible, et sous deux factures l'écran n'annonce rien de l'écart.
+	it('pendant le chargement, une seule phrase : « Ajoutez au moins deux factures. »', async () => {
+		mockApi.getGroupCandidates.mockReturnValue(new Promise(() => {}));
+		mockSettings.mockReturnValue(new Promise(() => {}));
+		const { r } = monter();
+		await r.findByTestId('group-loading');
+		expect(texte(r, 'group-block-hint')).toBe('Ajoutez au moins deux factures.');
+	});
 });
 
 describe('GroupSettlementModal — écart, arrondi et compte (D2 bis, D3)', () => {
@@ -432,7 +443,7 @@ describe('GroupSettlementModal — écart, arrondi et compte (D2 bis, D3)', () =
 
 	it('écart au-delà du plafond lu dans la réponse (1.00) : « Écart trop grand », pas de sélecteur, inactif', async () => {
 		const { r } = await deuxFactures('798.99', ['500.0000', '300.0000'], { maxDifference: '1.00' });
-		expect(texte(r, 'group-gap')).toBe('Écart trop grand : Moins-payé de 1.01 (au plus 1.00)');
+		expect(texte(r, 'group-gap')).toBe('Écart trop grand : moins-payé de 1.01 (au plus 1.00)');
 		expect(r.queryByTestId('group-account-section')).toBeNull();
 		expect(submit(r).disabled).toBe(true);
 		// Revue P1 (B-L4) : une phrase dit pourquoi Enregistrer reste inactif.
@@ -449,7 +460,7 @@ describe('GroupSettlementModal — écart, arrondi et compte (D2 bis, D3)', () =
 		// 10.0049 + 10.0000 payés 26.00 : e = +6.00 (plafond 5.00), r = −0.0049.
 		const { r } = await deuxFactures('26.00', ['10.0049', '10.0000']);
 		await waitFor(() =>
-			expect(texte(r, 'group-gap')).toBe('Écart trop grand : Trop-perçu de 6.00 (au plus 5.00)'),
+			expect(texte(r, 'group-gap')).toBe('Écart trop grand : trop-perçu de 6.00 (au plus 5.00)'),
 		);
 		expect(r.queryByTestId('group-account-section')).toBeNull();
 		expect(submit(r).disabled).toBe(true);
@@ -788,8 +799,11 @@ describe('GroupSettlementModal — refus (D5, AC4)', () => {
 	});
 
 	// Revue P1 (B-M3, E-M2, B-M2, E-L1 ; C-e433-12) : une relecture impossible ne retire rien et
-	// ne dit pas la facture « plus réglable » ; le refus, sans sélecteur, s'affiche avec les autres.
-	it('difference_account_required, relecture impossible : factures gardées, refus visible, relecture dite', async () => {
+	// ne dit pas la facture « plus réglable ». Revue P2 (L-1, L-2) : l'écran ne reste pas dans
+	// l'impasse — le serveur a demandé un compte, le sélecteur s'affiche alors même que l'écart
+	// calculé ici est nul ; « Choisissez le compte de l'écart » n'est dit qu'une fois ; la phrase
+	// « non relue » dit comment relire, et survit aux refus.
+	it('difference_account_required, relecture impossible : sélecteur affiché, phrase dite une fois, envoi possible', async () => {
 		serve([inv(12, '500.0000'), inv(15, '300.0000', 'Autre SàRL')]);
 		const { r } = monter(proposal('800.00'));
 		await ajouter(r, 12);
@@ -807,12 +821,69 @@ describe('GroupSettlementModal — refus (D5, AC4)', () => {
 			],
 		});
 		await fireEvent.click(submit(r));
-		await r.findAllByTestId('group-refusal');
-		const textes = r.getAllByTestId('group-refusal').map((x) => x.textContent?.trim());
-		expect(textes).toContain('Facture F-12 : son reste dû n’a pas pu être relu ; Kesh le vérifiera à l’enregistrement.');
-		expect(textes).toContain('Choisissez le compte de l’écart.');
+		await r.findByTestId('group-account-section');
 		expect(r.getAllByTestId('group-imputed-row')).toHaveLength(2);
+		expect(r.getAllByTestId('group-not-reread-item').map((x) => x.textContent?.trim())).toEqual([
+			'Facture F-12 : son reste dû n’a pas pu être relu, l’écart affiché peut être faux. Retirez-la puis ajoutez-la de nouveau pour le relire.',
+			'Facture F-15 : son reste dû n’a pas pu être relu, l’écart affiché peut être faux. Retirez-la puis ajoutez-la de nouveau pour le relire.',
+		]);
+		// Une seule fois, sous le pied ; ni sous le sélecteur, ni avec les refus.
+		const modale = r.getByTestId('group-settlement-modal').textContent ?? '';
+		expect(modale.split('Choisissez le compte de l’écart.').length - 1).toBe(1);
+		expect(texte(r, 'group-block-hint')).toBe('Choisissez le compte de l’écart.');
 		expect(r.queryByTestId('group-account-error')).toBeNull();
+		expect(submit(r).disabled).toBe(true);
+		// Le compte choisi, l'envoi part avec lui.
+		await choisirCompte(r, '6940');
+		await waitFor(() => expect(submit(r).disabled).toBe(false));
+		mockApi.acceptProposals.mockResolvedValue({ accepted: [], failed: [] });
+		await fireEvent.click(submit(r));
+		await waitFor(() => expect(mockApi.acceptProposals).toHaveBeenCalledTimes(2));
+		expect(mockApi.acceptProposals.mock.calls[1][1][0]).toMatchObject({ differenceAccountId: 6940 });
+	});
+
+	// Revue P2 (L-1) : la phrase « non relue » survit aux refus et aux autres changements du
+	// groupe ; elle tombe quand la facture est retirée puis ajoutée de nouveau (montant frais).
+	it('« non relue » reste tant que la facture n’est pas relue ; retirée puis rajoutée, elle tombe', async () => {
+		const pool = [inv(12, '500.0000'), inv(15, '300.0000', 'Autre SàRL'), inv(18, '0.4000', 'Tiers')];
+		serve(pool);
+		const { r } = monter(proposal('800.40'));
+		await ajouter(r, 12);
+		await ajouter(r, 15);
+		await waitFor(() => expect(submit(r).disabled).toBe(false));
+		// La relecture de F-15 échoue, celle de F-12 passe.
+		const servi = mockApi.getGroupCandidates.getMockImplementation();
+		mockApi.getGroupCandidates.mockImplementation(async (tx, q = {}) => {
+			if (q.q === 'F-15') throw { code: 'DATABASE_ERROR', message: 'x', status: 500 };
+			return servi!(tx, q);
+		});
+		mockApi.acceptProposals.mockResolvedValue({
+			accepted: [],
+			failed: [
+				{
+					bankTransactionId: TX,
+					errorCode: 'RECONCILIATION_GROUP_DIFFERENCE_TOO_LARGE',
+					details: { gap: '6.00', maxDifference: '0.10' },
+				},
+			],
+		});
+		await fireEvent.click(submit(r));
+		await r.findByTestId('group-not-reread-item');
+		expect(r.getAllByTestId('group-not-reread-item')).toHaveLength(1);
+		expect(texte(r, 'group-not-reread-item')).toContain('Facture F-15');
+		// Un autre ajout efface le refus, pas la phrase.
+		await ajouter(r, 18);
+		expect(r.queryByTestId('group-refusal')).toBeNull();
+		expect(texte(r, 'group-not-reread-item')).toContain('Facture F-15');
+		// Retirée puis rajoutée : relue, la phrase tombe.
+		const retirer = r
+			.getAllByTestId('group-remove')
+			.find((b) => b.closest('[data-invoice-id]')?.getAttribute('data-invoice-id') === '15');
+		await fireEvent.click(retirer as HTMLElement);
+		expect(r.queryByTestId('group-not-reread')).toBeNull();
+		mockApi.getGroupCandidates.mockImplementation(servi!);
+		await ajouter(r, 15);
+		expect(r.queryByTestId('group-not-reread')).toBeNull();
 	});
 
 	it('relecture : une facture absente de la recherche reste, sans être dite « plus réglable »', async () => {
@@ -835,9 +906,9 @@ describe('GroupSettlementModal — refus (D5, AC4)', () => {
 			],
 		});
 		await fireEvent.click(submit(r));
-		await r.findAllByTestId('group-refusal');
+		await r.findAllByTestId('group-not-reread-item');
+		expect(texte(r, 'group-not-reread-item')).toContain('F-15 : son reste dû n’a pas pu être relu');
 		const textes = r.getAllByTestId('group-refusal').map((x) => x.textContent ?? '');
-		expect(textes.some((t) => t.includes('F-15 : son reste dû n’a pas pu être relu'))).toBe(true);
 		expect(textes.some((t) => t.includes('n\'est pas éligible'))).toBe(false);
 		expect(r.getAllByTestId('group-imputed-row')).toHaveLength(2);
 	});
@@ -924,9 +995,39 @@ describe('GroupSettlementModal — gardes de concurrence (D4, AC3)', () => {
 			failed: [{ bankTransactionId: TX, errorCode: 'PERIOD_LOCKED', details: null }],
 		});
 		await waitFor(() => expect(submit(r).disabled).toBe(false));
+		// La recherche relancée après le refus (revue P2, L-3) répond, elle.
+		serve([inv(12, '500.0000'), inv(15, '300.0000', 'Autre SàRL')]);
 		await fireEvent.click(submit(r));
 		await r.findByTestId('group-refusal');
-		expect(r.queryByTestId('group-loading')).toBeNull();
+		await waitFor(() => expect(r.queryByTestId('group-loading')).toBeNull());
+	});
+
+	// Revue P2 (L-3) : l'envoi avorte la recherche relancée par un retrait ; après un refus, elle
+	// repart, et la facture retirée revient dans les résultats.
+	it('retrait puis envoi pendant la recherche : après le refus, la facture retirée revient', async () => {
+		const pool = [inv(12, '500.0000'), inv(15, '300.0000', 'Autre SàRL'), inv(18, '0.4000', 'Tiers')];
+		serve(pool);
+		const { r } = monter(proposal('800.40'));
+		await ajouter(r, 12);
+		await ajouter(r, 15);
+		await ajouter(r, 18);
+		await waitFor(() => expect(r.queryByTestId('group-loading')).toBeNull());
+		// La recherche relancée par le retrait de F-18 ne répond jamais : l'envoi l'avorte.
+		mockApi.getGroupCandidates.mockImplementationOnce(() => new Promise(() => {}));
+		const retirer = r.getAllByTestId('group-remove').find((b) => b.getAttribute('data-invoice-id') === '18');
+		await fireEvent.click(retirer as HTMLElement);
+		await r.findByTestId('group-loading');
+		expect(r.queryAllByTestId('group-result-row')).toHaveLength(0);
+		mockApi.acceptProposals.mockResolvedValue({
+			accepted: [],
+			failed: [{ bankTransactionId: TX, errorCode: 'PERIOD_LOCKED', details: null }],
+		});
+		await waitFor(() => expect(submit(r).disabled).toBe(false));
+		await fireEvent.click(submit(r));
+		await r.findByTestId('group-refusal');
+		await waitFor(() =>
+			expect(r.getAllByTestId('group-result-row').map((x) => x.getAttribute('data-invoice-id'))).toEqual(['18']),
+		);
 	});
 });
 

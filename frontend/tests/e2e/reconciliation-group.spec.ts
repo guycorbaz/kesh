@@ -358,7 +358,7 @@ test.describe('Règlement groupé — l’écran (Story 43-3, #823)', () => {
 			await add(modal, s.fa.number, s.fa.id);
 			await add(modal, s.fb.number, s.fb.id);
 			await expect(modal.getByTestId('group-gap')).toHaveText(
-				'Écart trop grand : Moins-payé de 6.00 (au plus 5.00)',
+				'Écart trop grand : moins-payé de 6.00 (au plus 5.00)',
 			);
 			await expect(modal.getByTestId('group-block-hint')).toContainText('L’écart dépasse le plafond admis');
 			await expect(modal.getByTestId('group-account-section')).toHaveCount(0);

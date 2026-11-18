@@ -230,6 +230,12 @@ export interface SubmitInput {
 	roundingDesignated: boolean | null;
 	/** Le compte de l'écart effectif. */
 	differenceAccountId: number | null;
+	/**
+	 * Le serveur a refusé l'envoi faute de compte de l'écart (`difference_account_required`) :
+	 * le compte est demandé même si l'écart calculé à l'écran est nul (montants changés entre la
+	 * recherche et l'envoi, relecture impossible — revue P2, L-1).
+	 */
+	serverWantsAccount?: boolean;
 }
 
 /**
@@ -249,9 +255,14 @@ export function submitBlocks(input: SubmitInput): SubmitBlock[] {
 	if (dec.rounding !== 0n && input.roundingDesignated === false) blocks.push('rounding-not-configured');
 	if (dec.gap !== 0n) {
 		const max = parseUnits(input.maxDifference);
-		if (max === null) blocks.push('unreadable');
-		else if (abs(dec.gap) > max) blocks.push('gap-too-large');
+		// Revue P2 (M-1) : un plafond encore non lu (`null` pendant le chargement) n'est pas un
+		// montant illisible ; sous deux factures, l'écran n'annonce rien de l'écart.
+		if (max === null) {
+			if (input.count >= 2) blocks.push('unreadable');
+		} else if (abs(dec.gap) > max) blocks.push('gap-too-large');
 		else if (input.differenceAccountId === null && input.count >= 2) blocks.push('account-required');
+	} else if (input.serverWantsAccount && input.differenceAccountId === null && input.count >= 2) {
+		blocks.push('account-required');
 	}
 	return blocks;
 }

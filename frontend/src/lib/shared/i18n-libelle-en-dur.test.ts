@@ -418,8 +418,13 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
  * (`reconciliation/gap-label.ts`, tout par `i18nMsg`) ; `blockText` devient `blockTexts` (hors
  * suffixe) ; `ecartee` **22 → 21**, `conforme` **106 → 108**, relevés par la garde
  * (`kesh-gate-logs/e433/rem1-vitest-1.log`), non additionnés.
+ *
+ * **129 → 130** (remédiation de la revue P2 de la 43-3) : `senseLabel`
+ * (`reconciliation/gap-label.ts`, tout par `i18nMsg`), séparé de `gapSenseLabel` pour la
+ * minuscule en milieu de phrase ; `ecartee` **21**, `conforme` **108 → 109**, relevés par la
+ * garde (`kesh-gate-logs/e433/rem2-vitest-1.log`), non additionnés.
  */
-const CANDIDATES_ATTENDUES = 129;
+const CANDIDATES_ATTENDUES = 130;
 
 /** Les trois délimiteurs de littéral en JS/TS. */
 const QUOTES = ["'", '"', '`'];
@@ -936,7 +941,7 @@ describe('libellés en dur — l’angle mort #255', () => {
 			else if (c.retours.length > 0) classes.ecartee += 1;
 			else classes.conforme += 1;
 		}
-		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 21, conforme: 108 });
+		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 21, conforme: 109 });
 		// La somme est recalculée depuis les classes, jamais depuis le total qu'elle contrôle.
 		const somme = Object.values(classes).reduce((a, b) => a + b, 0);
 		expect(somme).toBe(CANDIDATES_ATTENDUES);

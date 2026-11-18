@@ -156,6 +156,16 @@
 	let choice = $state<AccountChoice>(NO_CHOICE);
 	let accountError = $state('');
 	let refusals = $state<string[]>([]);
+	/**
+	 * Revue P2 (L-1) : le serveur a demandé un compte de l'écart (`difference_account_required`) ;
+	 * le sélecteur s'affiche même si l'écart calculé ici est nul. Tombe quand le groupe change.
+	 */
+	let serverWantsAccount = $state(false);
+	/**
+	 * Revue P2 (L-1) : les factures imputées dont la relecture a échoué ; leur phrase reste tant
+	 * qu'elles sont imputées sans avoir été relues (elle ne s'efface pas avec les refus).
+	 */
+	let notReread = $state<number[]>([]);
 	let submitting = $state(false);
 	let errorMsg = $state('');
 
@@ -183,6 +193,7 @@
 			maxDifference,
 			roundingDesignated: designated === null ? null : designated.roundingAccountId !== null,
 			differenceAccountId,
+			serverWantsAccount,
 		}),
 	);
 	/** Au moins deux factures : avant, l'écran n'annonce aucun écart (revue P1, A M-1, E-M1). */
@@ -194,25 +205,25 @@
 	/** Le libellé de l'écart : son sens et son montant, au centime (D2 bis, C-43-26). */
 	const gapText = $derived.by(() => {
 		if (!decomposition || !enoughInvoices) return '—';
-		const label = gapSenseLabel(family, decomposition.gap);
 		if (tooLarge) {
+			// Revue P2 (L-5) : le sens, inséré après le deux-points, prend une minuscule.
 			return i18nMsg(
 				'reconciliation-group-gap-too-large',
 				'Écart trop grand : { $gap } (au plus { $max })',
-				{ gap: label, max: maxDifference ?? '' },
+				{ gap: gapSenseLabel(family, decomposition.gap, true), max: maxDifference ?? '' },
 			);
 		}
-		return label;
+		return gapSenseLabel(family, decomposition.gap);
 	});
 
 	/**
-	 * Le sélecteur n'apparaît que pour un écart non nul, dans le plafond, d'au moins deux
-	 * factures, le plafond lu.
+	 * Le sélecteur n'apparaît que pour un écart non nul — ou un compte que le serveur a demandé
+	 * (revue P2, L-1) —, dans le plafond, d'au moins deux factures, le plafond lu.
 	 */
 	const showAccount = $derived(
 		decomposition !== null &&
 			enoughInvoices &&
-			decomposition.gap !== 0n &&
+			(decomposition.gap !== 0n || serverWantsAccount) &&
 			!tooLarge &&
 			!blocks.includes('unreadable'),
 	);
@@ -285,6 +296,8 @@
 			choice = NO_CHOICE;
 			accountError = '';
 			refusals = [];
+			serverWantsAccount = false;
+			notReread = [];
 			errorMsg = '';
 			void loadDesignated(myOpen);
 			search(true);
@@ -363,25 +376,43 @@
 		if (imputed.length >= MAX_INVOICES || imputed.some((x) => x.id === c.id)) return;
 		imputed = [...imputed, c];
 		results = results.filter((x) => x.id !== c.id);
+		// Ajoutée depuis la recherche, son reste dû est frais (revue P2, L-1).
+		notReread = notReread.filter((x) => x !== c.id);
 		clearMessages();
 		search(true);
 	}
 
 	function removeInvoice(id: number): void {
 		imputed = imputed.filter((x) => x.id !== id);
+		notReread = notReread.filter((x) => x !== id);
 		clearMessages();
 		search(true);
 	}
 
 	/**
 	 * Revue P1 (B-L1, E-L4) : un refus ou une erreur ne survit pas à un changement du groupe — le
-	 * seul geste qui change l'écart et son signe.
+	 * seul geste qui change l'écart et son signe. La phrase « non relue » reste, elle, tant que
+	 * la facture est imputée sans relecture (revue P2, L-1).
 	 */
 	function clearMessages(): void {
 		refusals = [];
 		accountError = '';
 		errorMsg = '';
+		serverWantsAccount = false;
 	}
+
+	/** Les phrases des factures imputées dont le reste dû n'a pas pu être relu (revue P2, L-1). */
+	const notRereadTexts = $derived(
+		imputed
+			.filter((c) => notReread.includes(c.id))
+			.map((c) =>
+				i18nMsg(
+					'reconciliation-group-not-reread',
+					'Facture { $number } : son reste dû n’a pas pu être relu, l’écart affiché peut être faux. Retirez-la puis ajoutez-la de nouveau pour le relire.',
+					{ number: candidateNumber(c) },
+				),
+			),
+	);
 
 	function onAccountSelect(id: number | null): void {
 		choice = selectAccount(id);
@@ -425,8 +456,13 @@
 	 * Relit les restes dus des factures imputées (C-e433-4, C-e433-12) : chacune cherchée par son
 	 * numéro. Une facture que la recherche ne rend pas — numéro absent, recherche trop large,
 	 * erreur — n'est **jamais** retirée ni dite « plus réglable » : la recherche textuelle ne le
-	 * prouve pas (revue P1, B-M2, E-L1). Elle reste, avec son montant d'avant, et la phrase dit
-	 * qu'elle n'a pas pu être relue ; le serveur tranchera à l'enregistrement.
+	 * prouve pas (revue P1, B-M2, E-L1). Elle reste, avec son montant d'avant, et une phrase qui
+	 * demeure tant qu'elle n'est pas relue dit que l'écart peut être faux et comment la relire
+	 * (revue P2, L-1).
+	 *
+	 * Seuls deux refus déclenchent la relecture : `RECONCILIATION_GROUP_DIFFERENCE_TOO_LARGE` et
+	 * `difference_account_required`, les seuls refus du groupe qui portent sur l'écart, donc sur
+	 * les montants (registre, C-e433-12).
 	 */
 	async function rereadImputed(txId: number, mySession: number): Promise<void> {
 		const current = imputed;
@@ -443,25 +479,16 @@
 			}),
 		);
 		if (!session.isCurrent(mySession)) return;
-		const notReread: string[] = [];
+		const failed: number[] = [];
 		imputed = current.map((c, i) => {
 			const fresh = reread[i];
 			if (fresh === null) {
-				notReread.push(candidateNumber(c));
+				failed.push(c.id);
 				return c;
 			}
 			return fresh;
 		});
-		refusals = [
-			...refusals,
-			...notReread.map((number) =>
-				i18nMsg(
-					'reconciliation-group-not-reread',
-					'Facture { $number } : son reste dû n’a pas pu être relu ; Kesh le vérifiera à l’enregistrement.',
-					{ number },
-				),
-			),
-		];
+		notReread = failed;
 	}
 
 	/** D5 — un refus de la proposition, selon son genre. */
@@ -483,16 +510,32 @@
 			search(true);
 			return;
 		}
-		const stale =
-			f.errorCode === 'RECONCILIATION_GROUP_DIFFERENCE_TOO_LARGE' ||
-			(f.errorCode === 'RECONCILIATION_GROUP_INVALID' &&
-				failureReason(f.details) === 'difference_account_required');
+		const accountRequired =
+			f.errorCode === 'RECONCILIATION_GROUP_INVALID' &&
+			failureReason(f.details) === 'difference_account_required';
+		const stale = f.errorCode === 'RECONCILIATION_GROUP_DIFFERENCE_TOO_LARGE' || accountRequired;
 		if (f.errorCode === 'RECONCILIATION_GROUP_DIFFERENCE_TOO_LARGE') {
 			const max = detailString(f.details, 'maxDifference');
 			if (max !== null) maxDifference = max;
 		}
 		if (stale) await rereadImputed(txId, mySession);
 		if (!session.isCurrent(mySession)) return;
+		if (accountRequired) {
+			// Revue P2 (L-1) : le serveur veut un compte ; le sélecteur s'affiche, même si l'écart
+			// calculé ici reste nul (relecture impossible). Revue P2 (L-2) : la phrase « Choisissez
+			// le compte de l'écart » est déjà dite sous le pied (`account-required`) ; elle ne
+			// se répète pas sous le sélecteur.
+			serverWantsAccount = true;
+			if (showAccount) {
+				if (!blocks.includes('account-required')) {
+					accountError = failedProposalLabel(f.errorCode, f.details, {
+						group: true,
+						differenceAccountId: sentAccountId,
+					});
+				}
+				return;
+			}
+		}
 		// Sous le sélecteur seulement s'il est affiché après la relecture ; sinon avec les autres
 		// refus : jamais un refus muet (revue P1, B-M3, E-M2).
 		if (isDifferenceAccountRefusal(f.errorCode, f.details, sentAccountId) && showAccount) {
@@ -540,7 +583,8 @@
 		if (!proposal || blocks.length > 0 || submitting || !decomposition) return;
 		const txId = proposal.bankTransactionId;
 		const ids = imputed.map((c) => c.id);
-		const sentAccountId = decomposition.gap !== 0n ? differenceAccountId : null;
+		const sentAccountId =
+			decomposition.gap !== 0n || serverWantsAccount ? differenceAccountId : null;
 		const account = sentAccountId === null ? {} : { differenceAccountId: sentAccountId };
 		const body: AcceptProposalInput =
 			family === 'client'
@@ -551,6 +595,11 @@
 						supplierInvoiceIds: ids,
 						...account,
 					};
+		// Revue P2 (L-3) : une recherche en cours (relancée par un ajout ou un retrait) est avortée
+		// par l'envoi ; si la modale reste ouverte, elle est relancée, sans quoi la liste des
+		// résultats resterait périmée (une facture retirée n'y reviendrait pas).
+		const searchAborted = latest.busy();
+		let settled = false;
 		latest.cancel();
 		// Revue P1 (B-M1) : la recherche avortée ne rendra rien ; son état « Recherche… » tombe ici.
 		searching = false;
@@ -563,6 +612,7 @@
 			const r = await acceptProposals(bankAccountId, [body]);
 			const accepted = r.accepted.find((a) => a.bankTransactionId === txId);
 			if (accepted) {
+				settled = true;
 				const successText = i18nMsg(
 					'reconciliation-group-success',
 					'Règlement enregistré : { $count } factures réglées par cette transaction.',
@@ -589,7 +639,10 @@
 			if (!session.isCurrent(mySession)) return;
 			errorMsg = errorMessageOf(e);
 		} finally {
-			if (session.isCurrent(mySession)) submitting = false;
+			if (session.isCurrent(mySession)) {
+				submitting = false;
+				if (searchAborted && !settled && open && !latest.busy()) search(true);
+			}
 		}
 	}
 </script>
@@ -883,6 +936,19 @@
 				>
 					{#each refusals as r, i (i)}
 						<li data-testid="group-refusal">{r}</li>
+					{/each}
+				</ul>
+			{/if}
+
+			{#if notRereadTexts.length > 0}
+				<!-- Revue P2 (L-1) : reste affiché tant que la facture n'est pas relue. -->
+				<ul
+					class="mt-2 list-disc rounded-md border border-warning bg-warning/10 py-2 pr-3 pl-8 text-sm"
+					role="status"
+					data-testid="group-not-reread"
+				>
+					{#each notRereadTexts as t, i (i)}
+						<li data-testid="group-not-reread-item">{t}</li>
 					{/each}
 				</ul>
 			{/if}
