@@ -1,6 +1,6 @@
 # Story 48-10 : les montants « 1.250 » des réglages, du catalogue et des filtres — prix d'article, frais de rappel, montant minimal, filtres des écritures (#1173, #1175, #1176, #1177)
 
-Status: ready-for-dev
+Status: review
 
 *Fiche **reprise de la 36-18b** (`36-18b-montants-ambigus-reglages-filtres.md`, créée le 2026-11-15 par le découpage de la
 36-18, `backlog`, jamais validée, écrite à `fed34a9c7`) : la 36-18b est `superseded` au `sprint-status`, la 48-10 la remplace.
@@ -257,17 +257,17 @@ Une mutation équivalente se dit au Dev Agent Record.
 
 ## Tâches
 
-- [ ] **Étape 0** : relire les lignes citées à la tête de la branche ; rejouer les motifs d'inventaire (`kesh-gate-logs/e4810/etape0-inventaires.log`) ; AC2 (`curl` des frais) et
+- [x] **Étape 0** : relire les lignes citées à la tête de la branche ; rejouer les motifs d'inventaire (`kesh-gate-logs/e4810/etape0-inventaires.log`) ; AC2 (`curl` des frais) et
       AC3 (forme du minimum rendue) ; valeurs de départ du contrôle des manuels (AC9) ; relire les LOW du dernier rapport de validation. Constater que la 48-15 n'a pas
       changé `formValidation` depuis la fiche, et que la 43-7 n'a pas changé le bloc du plafond.
-- [ ] Tests d'abord (AC1 à AC5, AC7, AC12) ; `product-helpers.ts` et la page (D1) ; `settings/dunning` (D2) ; `settings/invoicing` (D3) ; `journal-entries/+page.svelte` (D4,
+- [x] Tests d'abord (AC1 à AC5, AC7, AC12) ; `product-helpers.ts` et la page (D1) ; `settings/dunning` (D2) ; `settings/invoicing` (D3) ; `journal-entries/+page.svelte` (D4,
       en dernier) ; quatre `messages.ftl` (D5) ; `i18n-keys.test.ts` recompté (AC8).
-- [ ] E2E (AC6), rouge d'abord ; manuels (AC9), `.tex` seuls, contrôle `.tex` à la clôture ; captures (AC11) ; mutations M1 à M20.
-- [ ] Gates (`e35-dev-commun.md` § *Quels gates, quand*, voie B pour le frontend) : en cours, Vitest ciblé, `npm run check`, `npm run lint-i18n-ownership` ; **passage en `review`** :
+- [x] E2E (AC6), rouge d'abord ; manuels (AC9), `.tex` seuls, contrôle `.tex` à la clôture ; captures (AC11) ; mutations M1 à M20.
+- [x] Gates (`e35-dev-commun.md` § *Quels gates, quand*, voie B pour le frontend) : en cours, Vitest ciblé, `npm run check`, `npm run lint-i18n-ownership` ; **passage en `review`** :
       bases remises à neuf, `scripts/test-fast.sh --ci`, `scripts/gate-ci.sh kesh_ci_e4810` (voie A, son verrou), frontend complet, **pas d'E2E** ; **remédiations** :
       `test-fast.sh --ci` et frontend complet ; **clôture** : `gate-ci` et E2E complet sur `kesh_e2e_e4810` recréée, au dernier commit de code, échecs nommés contre
       `docs/testing.md` § *Les échecs attendus*. Une commande lourde à la fois, `CARGO_BUILD_JOBS=2`, `scripts/mem-guard.sh --status` avant chacune, verrou `.gate.lock`.
-- [ ] Fin du développement : `Status: review`, prompt de revue P1 (`48-10-montants-ambigus-reglages-filtres-review-prompt-p1.md`) qui **nomme les manuels (PDF compris,
+- [x] Fin du développement : `Status: review`, prompt de revue P1 (`48-10-montants-ambigus-reglages-filtres-review-prompt-p1.md`) qui **nomme les manuels (PDF compris,
       aplatis avant de greper) et les captures**. Ne pas écrire `CHANGELOG.md` ni `sprint-status.yaml`.
 
 ## Note de version
@@ -329,11 +329,122 @@ Chaque montant part tel que tapé, et le filtre traverse la frontière HTTP : AC
 
 ### Agent Model Used
 
+Opus 5.5 (`bmad-dev-story`, en autonomie), 2026-11-19, worktree `kesh-48-10`, clé `e4810`, port 3410, bases `kesh_e4810`,
+`kesh_e2e_e4810`, `kesh_ci_e4810` sur `kesh-mariadb-dev` (voie 1).
+
 ### Debug Log References
+
+Tous sous `/home/gcorbaz/devel/kesh-gate-logs/e4810/` :
+
+- **Étape 0** : `etape0-inventaires.log` (37 champs `inputmode="decimal"`, identiques à l'inventaire de la fiche, sonde positive
+  `settings/dunning/+page.svelte:284`) ; `etape0-dunning.log` (`PUT` et `POST /api/v1/dunning-levels` avec `"1.250"` → 400
+  « Les frais de rappel ne peuvent avoir plus de 2 décimales. », niveaux relus inchangés, rendus `"0.00"`, `"20.00"`, `"40.00"`) ;
+  `etape0-minimum.log` (forme rendue : `5` et `5.00` → `5.0000` ; `1.25` → `1.2500` ; **`1.250` accepté et rendu `1.2500`**, le
+  défaut #1176 constaté ; `1250.5` → `1250.5000`) ; `etape0-manuels.log` (`.tex` : quatre lignes de départ ; PDF : 4 occurrences
+  au manuel utilisateur, 0 au manuel d'administration ; DE/IT/EN : aucun, relancé depuis la racine avec sonde positive après un
+  premier essai à pathspec relative muette, dit au journal).
+- **Rouges** : `rouges.log` (commit `3cba47602`, tests non commités) — **59 rouges** sur 163 tests des cinq fichiers ;
+  `e2e-rouges.log` — sources remises à `af4e0e313`, frontend construit (`build-front-rouge.log`) : **4 rouges** sur 8, les
+  requêtes parties avec `"unitPrice":"1.250"` (deux fois : clic forcé et Entrée), `"feeAmount":"1.250"`, le `PUT` des réglages, et
+  la borne envoyée ; sources restaurées par `git restore --worktree` puis `touch`.
+- **Verts** : `verts-cibles-1.log` (163/163, cinq fichiers) ; `check-1.log` (`svelte-check` 0 erreur, 29 avertissements tous hors
+  des fichiers de la story ; `lint-i18n-ownership` vert ; `i18n-keys.test.ts` rouge « expected 3496 to be 3495 ») ; `check-2.log`
+  (11/11 après relevé) ; `e2e-verts-1.log` (7/8 : une assertion fausse de **mon** test, corrigée par `a61314f1f`),
+  `e2e-verts-2.log` (**8/8**, captures écrites).
+- **Mutations** : `mut/resume.log`, `mut/M*.log`, script `mut/mutations-e4810.py` — **26 mutations jouées (M1 à M20, M4, M10 et
+  M16 déclinées), 26 tuées, 0 survivante, 0 équivalente** ; code à `a61314f1f`.
+- **Gates du passage en revue** : voir § *Completion Notes*, *Gates*.
 
 ### Completion Notes List
 
+**Étape 0.** Lignes citées relues à `3cba47602` : la 48-15 n'a pas changé `formValidation` (`products/+page.svelte:328-340`, nom
+puis prix, comme la fiche) ; la 43-7 n'a pas changé le bloc du plafond (`settings/invoicing/+page.svelte:76-100`, `:763-786`).
+Les huit LOW de la P3 de validation sont déjà traités dans le texte de la fiche (Change Log, entrée « Validation terminée ») ;
+aucun ne demandait de geste au code. Rien de la fiche n'était « à confirmer » hors des deux constats AC2 et AC3, faits.
+
+**Écart à la lettre de D1 (C-e4810-1).** `if (formError === priceMessage) formError = ''` ne marche pas : `oninput` (délégué en
+Svelte 5) s'exécute après la mise à jour de `formPrice` par `bind:value`, et `priceMessage` y vaut déjà celui de la saisie
+corrigée (`''`). Le test d'AC12 (« Entrée sur 1.250 puis correction ») l'aurait rougi. `onPriceInput` compare donc `formError` aux
+**trois** messages du prix ; même intention (le doublon de nom et les taux de TVA restent).
+
+**Le reste suit D1 à D6** : `normalizePriceInput(raw): string | null` = `amountEntryPayload(raw.trim())`, garde `if (unitPrice ===
+null) return;` ; `isValidPrice` et `PRICE_RE` retirés avec leurs tests (AC10) ; le prix illisible garde « Format de prix
+invalide », le négatif son message ; frais, minimum et bornes par `readJournalAmount(….trim())` ; minimum `minimumBlocked` au
+bouton et garde de `save()` ; bornes omises de la requête et de l'URL par `amountBound`, la saisie jamais réécrite. Une clé neuve
+(D5), quatre locales. Écrans hors périmètre, aides communes, serveur : intacts (`git diff --stat af4e0e313`, AC7).
+
+**Usage réel de Guy (aucune forme juste refusée, aucune saisie perdue, aucun montant enregistré modifié).** AC5 : douze formes
+justes au prix, sept aux frais, huit au minimum et aux bornes, acceptées sans message et envoyées normalisées (« 1'250 » → `1250`,
+« 1,25 » → `1.25`, « 1250.0000 » gardé) ; deviennent refusées, comme la fiche le prévoit, la forme ambiguë et ce que la grammaire
+du journal ne lit pas (`1e3`, `.5`, `5.`, signe, blanc intérieur, plus de quatre décimales — testé aux frais et au prix). Saisie
+conservée après refus : testée aux quatre écrans (Vitest et E2E). Réouvertures : article à `1.2340`, `1.2500`, `1500.0000`,
+`0.1230`, niveau à `10.00`, minimum à `5.00`, `5.0000`, `1.2500`, `1250.5000` (formes réelles d'`etape0-minimum.log`) — aucun
+message, renvoyés **à la même valeur** (tuées M3, M12, M13). Aucune donnée relue ni réécrite : la story ne touche ni facture, ni
+avoir, ni PDF.
+
+**Manuels (AC9).** Cinq phrases (`user-manual.tex` : item *Montant* de la recherche, item *Prix unitaire HT*, § *Le montant
+minimum d'une facture* ; `admin-manual.tex` : item *Frais*, § *Montant minimum d'une facture*). Contrôle de clôture sur le `.tex` :
+`/usr/bin/grep -n 'refusé comme ambigu'` rend neuf lignes (quatre de départ, `:1029`, `:1456`, `:1770`, `:2105`, plus `:901`,
+`:1424`, `:1495` et admin `:1348`, `:3911`). PDF **non régénérés** (intégration). Le garde `textes_coherents`
+(`les_comptes_cites_en_exemple…`) a pris l'exemple `1234.125` pour un compte (rouge de `test-fast`, ci-dessous) : réécrit
+`1'234.125`.
+
+**E2E (AC6)** : quatre tests ajoutés à `montants-ambigus.spec.ts`, en-tête réécrit au nom de la 48-10 ; rouges sur les sources de
+la base, verts au code (8/8). **E2E complet non lancé** (clôture).
+
+**Captures (AC11)** — `captures/`, douze `e4810-*.png`, thème clair, base jetable `kesh_e2e_e4810` : `article-prix-ambigu`,
+`article-prix-illisible`, `article-prix-1250-enregistre`, `article-rouvert-1.2340`, `rappel-frais-ambigu`,
+`rappel-frais-illisible`, `rappel-frais-1250-enregistre`, `minimum-ambigu`, `minimum-illisible`, `minimum-1250-enregistre-relu`,
+`filtre-ambigu`, `filtre-signet-ambigu`. Regardées : message rouge sous le champ, bordure rouge, saisie conservée. (Les
+`e3618a-*.png` du même dossier viennent des tests de la 36-18a rejoués par la même spec.)
+
+**Écarts à la consigne Edit.** Le bloc de tests des filtres a été **ajouté par `cat >>`** à la fin de
+`journal-entries-list-page.test.ts` (un ajout en fin de fichier, relu ensuite et vert), au lieu de l'outil Edit : l'outil n'y
+manquait de rien, c'est un geste d'habitude. Les mutations passent par un script (permis).
+
+**Gates.**
+- `test-fast --ci` (`review-test-fast.log`, commit `90a6e08b0`, bases remises à neuf, `bases.log`) : 6155 tests, **6154 verts,
+  1 rouge** — `kesh-api::textes_coherents::les_comptes_cites_en_exemple_existent_dans_les_plans_livres`, causé par l'exemple
+  `1234.125` du manuel. Corrigé par `7d8c779ca` (documentation seule) ; binaire rejoué seul : `textes-coherents-1.log` (rouge,
+  avant que l'édition ne soit appliquée), `textes-coherents-2.log` (30/30). `gate-ci` rejoue toute la suite à `7d8c779ca`.
+- `gate-ci.sh kesh_ci_e4810` (`review-gate-ci.log`, commit `7d8c779ca`, base de CI recréée) : **6172 passés, 0 échoué,
+  18 ignorés**, code 0.
+- Frontend complet (`review-front.log`, commit `7d8c779ca`) : `check` 0 erreur (29 avertissements, aucun dans les fichiers de la
+  story), `lint-i18n-ownership` vert, `build` vert, **`test:unit` 1 rouge** : `e2e-selecteurs-traduits.test.ts` (garde KF-043) —
+  mes quatre tests E2E visaient « Créer » et « Modifier » par leur libellé traduit. Corrigé par `e4bf86564` (sélecteurs de
+  structure) ; puis (`review-front-2.log`, commit `e4bf86564`) **`test:unit` 4750/4750** et `check` 0 erreur ; garde rejoué seul
+  (`garde-selecteurs.log`, vert) ; spec E2E rejouée (`e2e-verts-3.log`, **8/8**). `lint-i18n-ownership` et `build` non rejoués à
+  `e4bf86564` (le commit ne touche que la spec E2E, hors de leur champ) ; `test-fast` et `gate-ci` non plus (aucun code Rust ni
+  fichier lu par un test Rust).
+- **Non lancés** : E2E complet (clôture), régénération des PDF (intégration).
+
+**Commits.** `e076b9913` (code, tests, catalogues, registre), `a61314f1f` (spec E2E), `90a6e08b0` (manuels, prompt de revue),
+`7d8c779ca` (manuel), `e4bf86564` (spec E2E, sélecteurs — **dernier commit de code**, tests seulement ; dernier code de production :
+`e076b9913`), puis le commit de la fiche (statut `review`). Diff de la revue : `git diff 3cba47602 e4bf86564`.
+
+**Fichiers communs.** `i18n-keys.test.ts` (`sitesTotal` 3495 → 3496, relevé par la garde) et les quatre `messages.ftl` : à
+recompter et à unir à la fusion avec les autres stories de l'Epic 48. Aucun fichier de Beat touché.
+
+**Statut à poser au `sprint-status.yaml`** (par l'orchestrateur) : `48-10-montants-ambigus-reglages-filtres: review`.
+
 ### File List
+
+- `frontend/src/lib/features/products/product-helpers.ts` (modifié)
+- `frontend/src/lib/features/products/product-helpers.test.ts` (modifié)
+- `frontend/src/routes/(app)/products/+page.svelte` (modifié)
+- `frontend/src/routes/(app)/products/products-page.test.ts` (modifié)
+- `frontend/src/routes/(app)/settings/dunning/+page.svelte` (modifié)
+- `frontend/src/routes/(app)/settings/dunning/dunning-page.test.ts` (neuf)
+- `frontend/src/routes/(app)/settings/invoicing/+page.svelte` (modifié)
+- `frontend/src/routes/(app)/settings/invoicing/settings-invoicing-page.test.ts` (modifié)
+- `frontend/src/routes/(app)/journal-entries/+page.svelte` (modifié)
+- `frontend/src/routes/(app)/journal-entries/journal-entries-list-page.test.ts` (modifié)
+- `frontend/src/lib/shared/i18n-keys.test.ts` (modifié, `sitesTotal`)
+- `frontend/tests/e2e/montants-ambigus.spec.ts` (modifié)
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl` (une clé chacun)
+- `docs/manual/fr/user-manual.tex`, `docs/manual/fr/admin-manual.tex` (modifiés ; PDF non commités)
+- `_bmad-output/implementation-artifacts/e0200-choix-autonomes-e4810.md` (neuf, C-e4810-1 à 5)
+- `_bmad-output/implementation-artifacts/48-10-montants-ambigus-reglages-filtres-review-prompt-p1.md` (neuf)
 
 ## Change Log
 
@@ -345,3 +456,11 @@ Chaque montant part tel que tapé, et le filtre traverse la frontière HTTP : AC
   déjà corrigé, aucun hors des quatre issues) ; (f) AC7 « aucun montant enregistré modifié » ajoutée, note de version et sortie à la coupure alignées sur la 0.20.0 ; (g) mocks
   d'`i18nMsg` sans interpolation relevés (M10). Validations : voir les entrées suivantes.
 - 2026-11-19 — **Validation terminée** (boucle de trois passes). **Tendance** : P1 (Opus 5.5) 0 CRITICAL / 0 HIGH / 2 MEDIUM / 9 LOW → P2 (Sonnet 5.5) 0/0/2/6 → P3 ciblée (Opus 5.5, sur le seul commit de la dernière remédiation) 0/0/0/8. **MEDIUM nés de la remédiation** : ceux de la P2 sont nés de la remédiation P1 (AC5 emportée par une édition, prix vide sans lieu d'affichage) ; ceux de la P1 portaient sur la D3 non réemployée (frais, prix) et sur la preuve du rouge (M10, M4). Aucun MEDIUM né de la remédiation P2 : la sévérité est retombée. **Remédiations** : P1 — D3 aux quatre sites (message sous le champ, `aria-*`, AC12), cas illisible aux AC3 et AC4, M4 et M10 déclinées, M12 et M13, filets déclarés, `formValidation` et `normalizePriceInput` fixés, numéros de ligne, inventaire reclassé, « -5 » illisible, bouton du minimum, angles morts (quantités C-e360-6, cours, serveur et API C-e350-19) sans issue, mock de `page.url`, en-tête de l'E2E ; P2 — AC5 rétablie, pied du prix vide, `formError`, `aria-invalid="false"`, M11 redéfinie et M14 à M20, « ni claire ni vide », « 12.1250 » ; **les huit LOW de la P3 corrigés après la dernière passe, dans le texte de la fiche** (terme `minimumBlocked`, `formError` borné à `priceMessage`, `priceMessage` défini et scénarios « Entrée » défensifs, règle « 12.1250 » bornée à 1 à 999 non groupé, exemple `' 1250 '`, Dev Note du pied de formulaire, garde `:363-364`, filets sans mutation) — texte seul, aucun code de production : la règle n'exige pas de passe de plus. **Reclassement** : #1173 et #1176 passent P1 (décision de Guy du 2026-11-19). Compte : 12 AC, 20 mutations (23 lignes, M4 et M10 déclinées), D1 à D6.
+- 2026-11-19 — **Développement** (Opus 5.5, `bmad-dev-story`), statut `review`. Étape 0 : constats AC2 (400 serveur sur « 1.250 »)
+  et AC3 (minimum rendu à quatre décimales, « 1.250 » accepté et lu `1.2500`), inventaire rejoué identique (37 champs), lignes
+  relues (48-15 et 43-7 inchangées). Rouges : 59 Vitest, 4 E2E. Code : D1 à D6 ; **un écart à la lettre de D1** (C-e4810-1 :
+  remise à zéro de `formError` comparée aux trois messages du prix, la formule de la fiche échouant à cause de l'ordre des écouteurs
+  Svelte 5). Mutations : 26 jouées (M16 déclinée en quatre en plus de M4 et M10), 26 tuées. Deux rouges de gate nés de la story et
+  corrigés dans la story : garde du manuel `textes_coherents` (exemple `1234.125` → `1'234.125`, `7d8c779ca`) et garde des sélecteurs
+  E2E traduits (`e4bf86564`). Gates : voir le Dev Agent Record. E2E complet : à la clôture. Écart à la consigne Edit : un ajout par
+  `cat >>` (bloc de tests des filtres).

@@ -14,8 +14,9 @@ juste ne doit devenir refusée, aucune saisie ne doit se perdre, aucun montant e
 
 Worktree `/home/gcorbaz/devel/kesh-48-10`, branche `story/48-10-montants-ambigus-reglages-filtres`, partie de `af4e0e313` (tête de
 `epic/48-corrections-0-20-0` avec la 48-13 et la 48-15 fusionnées). Les commits `bae6cc6ca` à `3cba47602` ne portent que la fiche
-(validation). Le diff à relire, **aplati** : `git -C /home/gcorbaz/devel/kesh-48-10 diff 3cba47602 <DERNIER_COMMIT_DE_CODE>`
-(voir le Dev Agent Record de la fiche, § *Commits*, pour le dernier commit de code et ceux qui ne portent que la fiche). Langue
+(validation). Le diff à relire, **aplati** : `git -C /home/gcorbaz/devel/kesh-48-10 diff 3cba47602 e4bf86564`
+(`e4bf86564` = dernier commit de code, spec E2E seule ; `e076b9913` = dernier code de production ; `90a6e08b0` et `7d8c779ca` ne
+portent que les manuels et ce prompt ; le commit qui suit ne porte que la fiche et ce prompt — Dev Agent Record, § *Commits*). Langue
 du rapport : français. Modèle : **Opus ou Sonnet** (première passe : jamais Haiku). Contexte frais.
 
 Lis d'abord (lentilles E et A ; la lentille B lit le diff avant) : la fiche
@@ -26,7 +27,9 @@ M1 à M20, Dev Notes, **Note de version**, **Change Log** et **Dev Agent Record*
 journaux hors dépôt (lecture seule) sous `/home/gcorbaz/devel/kesh-gate-logs/e4810/` : `etape0-inventaires.log`,
 `etape0-dunning.log`, `etape0-minimum.log`, `etape0-manuels.log`, `rouges.log`, `verts-cibles-1.log`, `check-1.log`, `check-2.log`,
 `e2e-verts-1.log`, `e2e-verts-2.log`, `e2e-rouges.log`, `mut/resume.log` et `mut/M*.log`, et les journaux des gates du passage en
-revue que nomme le Dev Agent Record. Les scripts qui les ont produits sont à côté (`e2e-e4810.sh`, `mut/mutations-e4810.py`) : lis-les,
+revue : `bases.log`, `review-test-fast.log` (un rouge, `textes_coherents`, né du manuel), `textes-coherents-1.log`,
+`textes-coherents-2.log`, `review-gate-ci.log`, `review-front.log` (un rouge, garde des sélecteurs E2E traduits),
+`garde-selecteurs.log`, `review-front-2.log`, `e2e-verts-3.log`. Les scripts qui les ont produits sont à côté (`e2e-e4810.sh`, `mut/mutations-e4810.py`) : lis-les,
 ne les lance pas. **Captures** (thème clair, base jetable `kesh_e2e_e4810`, prises par la spec E2E) sous
 `/home/gcorbaz/devel/kesh-gate-logs/e4810/captures/` : les douze fichiers `e4810-*.png` (article ambigu, illisible, enregistré,
 rouvert à `1.2340` ; frais ambigus, illisibles, enregistrés ; minimum ambigu, illisible, enregistré et relu ; filtre ambigu ; signet
@@ -103,7 +106,7 @@ Regarde les `e4810-*.png` si ton outil lit les images, et compare chacune à l'�
    réécrit) — un test qui passerait **à vide** ? Les rouges (`rouges.log` : 59 ; `e2e-rouges.log` : les requêtes parties avec
    `1.250`) ; les mutations M1 à M20 (`mut/resume.log`, `mut/M*.log`) : chacune tuée par le test qu'elle vise ? Propose des
    mutations plausibles non jouées.
-8. **Le périmètre** (AC7, AC10) : `git diff --stat af4e0e313 <DERNIER_COMMIT_DE_CODE>` ne nomme ni `crates/` hors
+8. **Le périmètre** (AC7, AC10) : `git diff --stat af4e0e313 e4bf86564` ne nomme ni `crates/` hors
    `kesh-i18n/locales/`, ni `balance.ts`, `amount-entry-message.ts`, `unit-price.ts`, `group-settlement-max.ts`, ni `InvoiceForm`, ni
    `invoices/[id]` ; aucun `CHANGELOG.md`, aucun `sprint-status.yaml`, aucun PDF ; la note de version de la fiche.
 
