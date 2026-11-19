@@ -582,8 +582,14 @@ partition `yes` 12 + `tracked-by-sqlx` 84 + `no` 0 = 96 ; en-tête et `Total` à
   Reprise : `DELETE FROM _sqlx_migrations WHERE version = 20261118000002 AND success = 0`, puis redémarrer ; le rejeu est sans effet
   sur `invoice_lines` et termine `credit_note_lines`. Prouvé par `migrations_upgrade_path.rs::line_types_migration_resumes_after_a_half_run`.
   Le paragraphe « Si la migration échoue au milieu » de la 0.19.0 (`admin-manual.tex`) disait la même erreur (`1060` sans ligne
-  inscrite) : corrigé dans cette story ; pour la 0.19.0, retirer la ligne ne suffit pas (le rejeu échouerait en 1060), la sauvegarde
-  `pre-upgrade/` reste la reprise.
+  inscrite) : corrigé dans cette story ; pour la 0.19.0, dès qu'un premier `ALTER` a été posé, retirer la ligne ne suffit pas (le
+  rejeu échouerait en 1060), la sauvegarde `pre-upgrade/` reste la reprise la plus sûre.
+- **Consigne pour la section « Si la migration échoue au milieu » de la 0.20.0** (revue P2, LOW-2) : elle reprend **exactement** la
+  procédure du test `line_types_migration_resumes_after_a_half_run` — Kesh refuse de démarrer (`dirty` au journal), on retire la
+  ligne `DELETE FROM _sqlx_migrations WHERE version = 20261118000002 AND success = 0`, on redémarre, le rejeu termine la migration
+  sans effet sur ce qui était déjà posé — **et** le cas « premier `ALTER` échoué entièrement » : rien n'est posé, la même reprise
+  suffit (les formes `IF [NOT] EXISTS` rendent le rejeu sûr dans les deux cas). La sauvegarde d'avant la mise à jour reste le recours
+  si la reprise échoue.
 - **Seuil MCP** (C-e491-6, **tranché par l'orchestrateur le 2026-11-19 : limite acceptée, suivie par #1347**,
   `kesh-gate-logs/e491/mesure-mcp.log`, `cible-p1-*.log`) : une ligne **minimale** de `kesh_facture` pèse 282 o dont 29 o pour
   `typeLigne` ; socle 672 o ; une facture passe sous les 24 576 o jusqu'à **94 lignes sans la clé, 84 avec** — **bornes hautes** :
