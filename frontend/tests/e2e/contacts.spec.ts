@@ -203,7 +203,7 @@ test.describe('Page contacts — CRUD', () => {
 		await page.fill('#form-street', 'Rue des Essais');
 		await page.fill('#form-npa', '1000');
 		await page.fill('#form-city', 'Lausanne');
-		await page.getByRole('button', { name: 'Créer' }).click();
+		await page.getByTestId('contact-form-submit').click();
 		await expect(page.getByText(uniqueName)).toBeVisible({ timeout: 5000 });
 
 		const row = page.locator('tr', { hasText: uniqueName }).first();
@@ -211,11 +211,13 @@ test.describe('Page contacts — CRUD', () => {
 		const rue71 = 'R'.repeat(71);
 		await page.fill('#form-street', rue71);
 		await expect(page.locator('#form-street')).toHaveValue(rue71);
-		await page.getByRole('button', { name: 'Enregistrer' }).click();
+		await page.getByTestId('contact-form-submit').click();
 
-		await expect(
-			page.getByRole('dialog').getByText('adresse : le champ rue dépasse 70 caractères (71)')
-		).toBeVisible({ timeout: 5000 });
+		// Le message est celui du serveur (`address_input.rs`, `check_lengths`), non traduit.
+		await expect(page.getByTestId('contact-form-error')).toHaveText(
+			'adresse : le champ rue dépasse 70 caractères (71)',
+			{ timeout: 5000 }
+		);
 		await expect(page.locator('#form-street')).toHaveValue(rue71);
 		await page.getByRole('dialog').getByRole('button', { name: 'Annuler' }).click();
 

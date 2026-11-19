@@ -1142,14 +1142,19 @@
 			{/if}
 
 			{#if formError}
-				<p class="text-sm text-destructive">{formError}</p>
+				<!-- Story 48-15 : `data-testid` pour l'E2E (garde KF-043 : jamais un libellé traduit). -->
+				<p class="text-sm text-destructive" data-testid="contact-form-error">{formError}</p>
 			{/if}
 
 			<div class="flex justify-end gap-2 pt-2">
 				<Button type="button" variant="outline" onclick={() => (formOpen = false)}>
 					{i18nMsg('contact-form-cancel', 'Annuler')}
 				</Button>
-				<Button type="submit" disabled={formSubmitting || !!formValidation}>
+				<Button
+					type="submit"
+					disabled={formSubmitting || !!formValidation}
+					data-testid="contact-form-submit"
+				>
 					{editing
 						? i18nMsg('contact-form-submit-edit', 'Enregistrer')
 						: i18nMsg('contact-form-submit-create', 'Créer')}
