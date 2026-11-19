@@ -14,21 +14,50 @@
 //! `sanitize_filename`, `split_lines`) — couplage route→service plutôt que
 //! route→route.
 
-use kesh_db::entities::{BankAccount, Company, Invoice, InvoiceLine, contact::Contact};
+use kesh_db::entities::{BankAccount, Company, Invoice, InvoiceLine, LineType, contact::Contact};
 use kesh_db::errors::DbError;
 use kesh_db::repositories::{
     bank_accounts, contacts, invoice_reminders, invoice_settlements, invoices,
 };
 use kesh_i18n::Locale;
 use kesh_qrbill::{
-    Address, AddressType, Currency, InvoiceLinePdf, InvoicePdfData, InvoiceVatLinePdf, QrBillData,
-    QrBillError, QrBillI18n, Reference, ReminderPdf,
+    Address, AddressType, Currency, InvoiceLinePdf, InvoicePdfData, InvoiceVatLinePdf, LinePdfKind,
+    QrBillData, QrBillError, QrBillI18n, Reference, ReminderPdf,
     validation::{build_qrr, normalize_iban},
 };
 use rust_decimal::Decimal;
 use std::collections::HashMap;
 
 use crate::errors::AppError;
+
+/// Story 49-1b (#1242, D10) — **le seul** constructeur d'une ligne du PDF, pour la facture,
+/// le rappel et l'avoir : il porte le seul `match` du type de ligne de la base vers celui de
+/// `kesh-qrbill`, **exhaustif et sans joker** — un type de ligne neuf ne compile plus tant
+/// que son rendu n'est pas décidé. Les montants sont recopiés tels quels : une ligne non
+/// chiffrée porte zéro (contrainte `chk_*_unpriced_neutral`, 49-1a), le rendu ne les dessine
+/// pas.
+pub(crate) fn ligne_pdf(
+    description: &str,
+    line_type: LineType,
+    quantity: Decimal,
+    unit_price: Decimal,
+    vat_rate: Decimal,
+    line_total: Decimal,
+) -> InvoiceLinePdf {
+    let kind = match line_type {
+        LineType::Priced => LinePdfKind::Priced,
+        LineType::Comment => LinePdfKind::Comment,
+        LineType::Heading => LinePdfKind::Heading,
+    };
+    InvoiceLinePdf {
+        kind,
+        description: description.to_string(),
+        quantity,
+        unit_price,
+        vat_rate,
+        line_total,
+    }
+}
 
 /// #151 : construit le récapitulatif TVA par taux pour le PDF à partir des
 /// paires `(line_total_ht, vat_rate)` d'un document (facture ou avoir).
@@ -395,12 +424,15 @@ fn build_qrbill_inputs(
 
     let invoice_lines_pdf: Vec<InvoiceLinePdf> = lines
         .iter()
-        .map(|l| InvoiceLinePdf {
-            description: l.description.clone(),
-            quantity: l.quantity,
-            unit_price: l.unit_price,
-            vat_rate: l.vat_rate,
-            line_total: l.line_total,
+        .map(|l| {
+            ligne_pdf(
+                &l.description,
+                l.line_type,
+                l.quantity,
+                l.unit_price,
+                l.vat_rate,
+                l.line_total,
+            )
         })
         .collect();
 
@@ -965,6 +997,40 @@ pub(crate) async fn fetch_country(
 mod tests {
     use super::*;
     use rust_decimal_macros::dec;
+
+    /// **T11 (Story 49-1b, AC8, D10)** — `ligne_pdf` recopie tous les champs d'une ligne
+    /// chiffrée, et traduit chacun des trois types de ligne vers son rendu. Le `match` est
+    /// exhaustif et sans joker : le compilateur refuse un type neuf non traduit.
+    #[test]
+    fn le_match_de_type_est_exhaustif_et_neutre_pour_priced() {
+        let l = ligne_pdf(
+            "Conseil",
+            LineType::Priced,
+            dec!(3),
+            dec!(120.50),
+            dec!(8.10),
+            dec!(361.50),
+        );
+        assert_eq!(l.kind, LinePdfKind::Priced);
+        assert_eq!(
+            (
+                l.description.as_str(),
+                l.quantity,
+                l.unit_price,
+                l.vat_rate,
+                l.line_total
+            ),
+            ("Conseil", dec!(3), dec!(120.50), dec!(8.10), dec!(361.50))
+        );
+        for (line_type, attendu) in [
+            (LineType::Priced, LinePdfKind::Priced),
+            (LineType::Comment, LinePdfKind::Comment),
+            (LineType::Heading, LinePdfKind::Heading),
+        ] {
+            let l = ligne_pdf("x", line_type, dec!(0), dec!(0), dec!(0), dec!(0));
+            assert_eq!(l.kind, attendu, "{line_type:?}");
+        }
+    }
 
     #[test]
     fn sanitize_filename_replaces_non_alphanumeric() {

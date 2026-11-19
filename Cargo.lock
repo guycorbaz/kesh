@@ -2101,6 +2101,7 @@ version = "0.19.0"
 dependencies = [
  "chrono",
  "kesh-core",
+ "kesh-qrbill",
  "printpdf",
  "qrcodegen",
  "rust_decimal",

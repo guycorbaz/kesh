@@ -9,6 +9,8 @@
 //! - [`build_payload`] — the raw SIX payload string (for tests / external usage).
 //! - [`parse_spc_payload`] — decode a scanned SPC payload back into typed data.
 
+#[cfg(feature = "test-support")]
+pub mod empreinte;
 pub mod generator;
 pub(crate) mod largeurs;
 pub mod parser;
@@ -24,7 +26,7 @@ pub use pdf::{
     generate_credit_note_pdf_with_date, generate_qr_bill_pdf, generate_qr_bill_pdf_with_date,
 };
 pub use types::{
-    Address, AddressType, Currency, InvoiceLinePdf, InvoicePdfData, InvoiceVatLinePdf, QrBillData,
-    QrBillError, QrBillI18n, Reference, ReminderPdf,
+    Address, AddressType, Currency, InvoiceLinePdf, InvoicePdfData, InvoiceVatLinePdf, LinePdfKind,
+    QrBillData, QrBillError, QrBillI18n, Reference, ReminderPdf,
 };
 pub use validation::{champ_vide_pour_qr, first_qr_refused_char, is_iso_3166_alpha2, validate};

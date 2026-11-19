@@ -23,8 +23,8 @@ use crate::generator::{build_payload, render_qr_image};
 use crate::largeurs::largeur_mm;
 use crate::texte::texte_imprime;
 use crate::types::{
-    Address, AddressType, InvoicePdfData, QrBillData, QrBillError, QrBillI18n, Reference,
-    ReminderPdf,
+    Address, AddressType, InvoicePdfData, LinePdfKind, QrBillData, QrBillError, QrBillI18n,
+    Reference, ReminderPdf,
 };
 use chrono::{Datelike, NaiveDate};
 use kesh_core::text::is_invisible;
@@ -397,6 +397,16 @@ fn build_meta_lines(
 /// de capacité en tient compte, ce qui évite de pénaliser un avoir pour une
 /// zone QR inexistante (#151 code-review).
 ///
+/// **Lignes de la pièce** (Story 49-1b, #1242) : une ligne chiffrée
+/// ([`LinePdfKind::Priced`]) se dessine dans ses cinq colonnes, sa description, **au-delà de
+/// 45 caractères, réduite à 44 suivis de « … »** (`truncate_display`) — inchangé depuis la 0.19.0 : la
+/// lever changerait le PDF de factures déjà émises et d'avoirs jamais figés (D8, #1363). Un
+/// commentaire ([`LinePdfKind::Comment`]), et jusqu'à la Story 49-3 un titre de section
+/// ([`LinePdfKind::Heading`]), se dessine sur toute la largeur, sans colonne chiffrée, **coupé**
+/// en lignes de texte sans rien tronquer ([`lignes_de_commentaire`]) : c'est un texte libre,
+/// qui n'a pas de colonne à respecter. Chaque ligne de texte prend le pas d'une ligne (5 mm)
+/// et passe par la garde de capacité.
+///
 /// *(Ce doc-comment était devenu orphelin : l'extraction de `build_meta_lines`
 /// en T9 s'était insérée ENTRE lui et sa fonction, si bien que rustdoc
 /// l'attribuait au mauvais symbole et décrivait un paramètre `content_floor`
@@ -625,12 +635,33 @@ fn draw_invoice_section(
         4.5 * recap.len() as f32 + 1.0
     } + reminder_block_height(inv.reminder.as_ref());
 
+    // Défense — capacité visuelle dépassée (lignes + récap TVA). On refuse proprement
+    // plutôt que tronquer ou chevaucher la zone sous le plancher (QR pour une facture).
+    // Erreur dédiée `TooManyLines` → le handler la mappe en 400 « trop de lignes »
+    // actionnable (et non un 500 opaque). Story 49-1b (D6) : la garde vaut pour CHAQUE
+    // ligne dessinée, ligne de texte d'un commentaire comprise, et rend toujours le
+    // nombre de lignes de la pièce.
+    let plancher_des_lignes = content_floor + 15.0 + recap_reserve;
     for line in &inv.lines {
-        if ty < content_floor + 15.0 + recap_reserve {
-            // Défense — capacité visuelle dépassée (lignes + récap TVA). On refuse
-            // proprement plutôt que tronquer ou chevaucher la zone sous le plancher
-            // (QR pour une facture). Erreur dédiée `TooManyLines` → le handler la
-            // mappe en 400 « trop de lignes » actionnable (et non un 500 opaque).
+        match line.kind {
+            LinePdfKind::Priced => {}
+            // Story 49-1b (D1) : le titre de section prend le chemin du commentaire
+            // jusqu'à sa mise en évidence (Story 49-3) — jamais `0.00 … 0.00%`.
+            LinePdfKind::Comment | LinePdfKind::Heading => {
+                for texte in lignes_de_commentaire(&line.description) {
+                    if ty < plancher_des_lignes {
+                        return Err(QrBillError::TooManyLines(inv.lines.len()));
+                    }
+                    // Un paragraphe vide est une ligne vide : elle consomme son pas.
+                    if !texte.is_empty() {
+                        layer.use_text(texte, COMMENTAIRE_TAILLE, Mm(col_desc), Mm(ty), helv);
+                    }
+                    ty -= 5.0;
+                }
+                continue;
+            }
+        }
+        if ty < plancher_des_lignes {
             return Err(QrBillError::TooManyLines(inv.lines.len()));
         }
         layer.use_text(
@@ -1091,12 +1122,97 @@ fn largeur_valeur(texte: &str) -> f32 {
 /// que la colonne, que seule leur concaténation redonne. Le dernier morceau d'un mot coupé
 /// reste ouvert au mot suivant.
 fn couper_ligne(ligne: &str, largeur: f32) -> Vec<String> {
+    couper_ligne_a(ligne, largeur, VALEUR_TAILLE)
+}
+
+/// Taille du texte d'un commentaire du tableau des lignes, en pt : celle d'une ligne chiffrée
+/// (Story 49-1b, D3 — Helvetica, ni gras ni italique : aucune police neuve au document).
+const COMMENTAIRE_TAILLE: f32 = 9.0;
+
+/// Largeur utile d'un commentaire, en mm : de la colonne de la description (20 mm) à la fin
+/// du filet du tableau (`PAGE_W - 20`), soit 170 mm (Story 49-1b, D5).
+const COMMENTAIRE_LARGEUR: f32 = PAGE_W - 20.0 - 20.0;
+
+/// Le texte d'un commentaire tel qu'il s'imprime, avant la coupe (Story 49-1b, D5, revue P1
+/// E-2 à E-5) : un caractère par caractère, sans [`texte_code`](crate::texte::texte_code)
+/// (qui sert le code QR et changerait ’ en `'` et — en `-`, que WinAnsi porte) :
+/// - **saut de ligne** : `\r\n`, `\r` seul, `\n`, VT, FF, U+0085, U+2028 et U+2029 → `\n` ;
+/// - **tout autre blanc** (`char::is_whitespace` : tabulation, U+00A0, U+202F, U+2009,
+///   U+3000…) → une espace, sans quoi deux mots se colleraient (la coupe ne sépare que sur
+///   `' '`, et `lopdf` retire ce que WinAnsi ne porte pas) ;
+/// - U+00AD (trait d'union conditionnel) retiré ;
+/// - les 125 lettres du § 4.1.1 hors WinAnsi repliées sur leur base
+///   ([`repli`](crate::texte::repli)) ;
+/// - tout caractère que WinAnsi ne porte pas (largeur nulle : CJK, émoji, U+200B…) retiré :
+///   `lopdf` ne l'imprimerait pas, et la chaîne mesurée doit être la chaîne dessinée.
+fn texte_de_commentaire(description: &str) -> String {
+    let mut texte = String::with_capacity(description.len());
+    let mut car = description.chars().peekable();
+    while let Some(c) = car.next() {
+        match c {
+            '\r' => {
+                if car.peek() == Some(&'\n') {
+                    car.next();
+                }
+                texte.push('\n');
+            }
+            '\n' | '\u{0B}' | '\u{0C}' | '\u{85}' | '\u{2028}' | '\u{2029}' => texte.push('\n'),
+            c if c.is_whitespace() => texte.push(' '),
+            '\u{00AD}' => {}
+            c => {
+                let base = crate::texte::repli(c).map_or_else(|| c.to_string(), str::to_string);
+                texte.extend(
+                    base.chars()
+                        .filter(|b| largeur_mm(&b.to_string(), COMMENTAIRE_TAILLE, false) > 0.0),
+                );
+            }
+        }
+    }
+    texte
+}
+
+/// Les lignes de texte d'un commentaire (ou d'un titre de section, D1), telles qu'elles
+/// s'impriment (Story 49-1b, D5) : le texte de [`texte_de_commentaire`], découpé en
+/// paragraphes sur `\n`, chacun coupé à [`COMMENTAIRE_LARGEUR`] par [`couper_ligne_a`] à
+/// [`COMMENTAIRE_TAILLE`]. Un paragraphe vide **intérieur** donne une ligne vide (l'aération
+/// voulue) ; les lignes vides **en tête et en fin** sont retirées (revue P1, E-4 et L2 : une
+/// fin faite de blancs ne consomme aucun pas, et ne fait pas refuser une pièce au seuil de
+/// capacité) ; une description sans rien d'imprimable ne donne **aucune** ligne. Rien n'est
+/// tronqué : un mot plus large que la ligne se coupe au dernier caractère qui tient.
+fn lignes_de_commentaire(description: &str) -> Vec<String> {
+    let mut lignes: Vec<String> = texte_de_commentaire(description)
+        .split('\n')
+        .flat_map(|paragraphe| {
+            let lignes = couper_ligne_a(paragraphe, COMMENTAIRE_LARGEUR, COMMENTAIRE_TAILLE);
+            if lignes.is_empty() {
+                vec![String::new()]
+            } else {
+                lignes
+            }
+        })
+        .collect();
+    while lignes.last().is_some_and(String::is_empty) {
+        lignes.pop();
+    }
+    let premiere = lignes
+        .iter()
+        .position(|l| !l.is_empty())
+        .unwrap_or(lignes.len());
+    lignes.drain(..premiere);
+    lignes
+}
+
+/// [`couper_ligne`] à la taille `taille` (pt) : la même coupe, mesurée à une autre taille.
+/// Sert au commentaire du tableau des lignes, à 9 pt (Story 49-1b, D5) ; la section de
+/// paiement l'appelle à [`VALEUR_TAILLE`] par [`couper_ligne`]. Une seule coupe : DRY.
+fn couper_ligne_a(ligne: &str, largeur: f32, taille: f32) -> Vec<String> {
     debug_assert!(largeur > 0.0, "une largeur nulle ne coupe rien");
+    let mesure = |texte: &str| largeur_mm(texte, taille, false);
     let mut lignes = Vec::new();
     let mut courante = String::new();
     for mot in ligne.split(' ').filter(|mot| !mot.is_empty()) {
         if !courante.is_empty() {
-            if largeur_valeur(&format!("{courante} {mot}")) <= largeur {
+            if mesure(&format!("{courante} {mot}")) <= largeur {
                 courante.push(' ');
                 courante.push_str(mot);
                 continue;
@@ -1104,7 +1220,7 @@ fn couper_ligne(ligne: &str, largeur: f32) -> Vec<String> {
             lignes.push(std::mem::take(&mut courante));
         }
         for c in mot.chars() {
-            if !courante.is_empty() && largeur_valeur(&format!("{courante}{c}")) > largeur {
+            if !courante.is_empty() && mesure(&format!("{courante}{c}")) > largeur {
                 lignes.push(std::mem::take(&mut courante));
             }
             courante.push(c);
@@ -1953,6 +2069,7 @@ mod tests {
             debtor_address_lines: vec!["Marktgasse 28".into(), "9400 Rorschach".into()],
             debtor_client_number: None,
             lines: vec![InvoiceLinePdf {
+                kind: LinePdfKind::Priced,
                 description: "Conseil stratégique".into(),
                 quantity: dec!(10),
                 unit_price: dec!(120.00),
@@ -1985,65 +2102,28 @@ mod tests {
         );
     }
 
-    /// Les textes dessinés d'un PDF, en mm depuis le bas à gauche, par relecture du
-    /// contenu : `load_mem`, `get_page_content`, `Content::decode`, puis pour chaque
-    /// `Tj`, le décodage WinAnsi, à la position du `Td` précédent.
-    ///
-    /// ⚠️ `Document::extract_text` n'est pas employé : il lit en StandardEncoding et
-    /// rend `Shne` pour `Söhne` (constaté à l'étape 0 de la Story 33-12a).
+    // Story 49-1b (D4) — les lecteurs du contenu d'un PDF sont ceux du comparateur unique,
+    // `crate::empreinte` (feature `test-support`, activée pour les tests de la crate) : un
+    // seul extracteur, celui qui prouve aussi l'égalité avant / après du rendu.
+
+    /// Les textes dessinés d'un PDF, en mm depuis le bas à gauche ([`crate::empreinte::textes`]).
     fn textes_du_pdf(bytes: &[u8]) -> Vec<(f32, f32, String)> {
-        const MM_PAR_POINT: f32 = 25.4 / 72.0;
-        let mut textes = Vec::new();
-        let mut position = (0.0, 0.0);
-        for op in operations_du_pdf(bytes) {
-            match op.operator.as_str() {
-                "Td" => {
-                    position = (
-                        nombre(&op.operands[0]) * MM_PAR_POINT,
-                        nombre(&op.operands[1]) * MM_PAR_POINT,
-                    );
-                }
-                "Tj" => textes.push((position.0, position.1, texte_du_tj(&op))),
-                _ => {}
-            }
-        }
-        textes
+        crate::empreinte::textes(bytes)
     }
 
-    /// Les opérations de contenu d'un PDF, pages à la suite. Une QR-facture n'a qu'une
-    /// page : ses lecteurs ne remettent ni position ni couleur à zéro entre deux pages.
+    /// Les opérations de contenu d'un PDF, pages à la suite ([`crate::empreinte::operations`]).
     fn operations_du_pdf(bytes: &[u8]) -> Vec<printpdf::lopdf::content::Operation> {
-        use printpdf::lopdf::{Document, content::Content};
-
-        let doc = Document::load_mem(bytes).expect("PDF relisible");
-        doc.get_pages()
-            .values()
-            .flat_map(|page| {
-                let brut = doc.get_page_content(*page).expect("contenu de page");
-                Content::decode(&brut)
-                    .expect("contenu décodable")
-                    .operations
-            })
-            .collect()
+        crate::empreinte::operations(bytes)
     }
 
-    /// Une opérande numérique de contenu PDF.
+    /// Une opérande numérique de contenu PDF ([`crate::empreinte::nombre`]).
     fn nombre(o: &printpdf::lopdf::Object) -> f32 {
-        use printpdf::lopdf::Object;
-        match o {
-            Object::Integer(i) => *i as f32,
-            Object::Real(r) => *r,
-            autre => panic!("opérande numérique attendue : {autre:?}"),
-        }
+        crate::empreinte::nombre(o)
     }
 
-    /// Le texte d'un `Tj`, décodé en WinAnsi.
+    /// Le texte d'un `Tj`, décodé en WinAnsi ([`crate::empreinte::texte_du_tj`]).
     fn texte_du_tj(op: &printpdf::lopdf::content::Operation) -> String {
-        use printpdf::lopdf::{Document, Object};
-        let Object::String(octets, _) = &op.operands[0] else {
-            panic!("opérande de Tj inattendue : {:?}", op.operands);
-        };
-        Document::decode_text(Some("WinAnsiEncoding"), octets)
+        crate::empreinte::texte_du_tj(op)
     }
 
     /// Le texte dessiné à `(x, y)` mm, à la tolérance des arrondis en points.
@@ -2928,6 +3008,7 @@ mod tests {
         let fits_at = |n: usize, rounding: Decimal| {
             let lines: Vec<InvoiceLinePdf> = (0..n)
                 .map(|i| InvoiceLinePdf {
+                    kind: LinePdfKind::Priced,
                     description: format!("Ligne {i}"),
                     quantity: dec!(1),
                     unit_price: dec!(1.00),
@@ -3028,6 +3109,7 @@ mod tests {
         let with_lines = |n: usize, r: Option<ReminderPdf>| InvoicePdfData {
             lines: (0..n)
                 .map(|i| InvoiceLinePdf {
+                    kind: LinePdfKind::Priced,
                     description: format!("Ligne {i}"),
                     quantity: dec!(1),
                     unit_price: dec!(100.00),
@@ -3086,6 +3168,7 @@ mod tests {
                     _ => dec!(3.80),
                 };
                 InvoiceLinePdf {
+                    kind: LinePdfKind::Priced,
                     description: format!("Ligne {i}"),
                     quantity: dec!(1),
                     unit_price: dec!(100.00),
@@ -3134,6 +3217,7 @@ mod tests {
         let (data, base, i18n) = invoice_fixture();
         let lines: Vec<InvoiceLinePdf> = (0..5)
             .map(|i| InvoiceLinePdf {
+                kind: LinePdfKind::Priced,
                 description: format!("Ligne {i}"),
                 quantity: dec!(1),
                 unit_price: dec!(100.00),
@@ -3170,6 +3254,7 @@ mod tests {
         let (_data, base, i18n) = invoice_fixture();
         let lines: Vec<InvoiceLinePdf> = (0..12)
             .map(|i| InvoiceLinePdf {
+                kind: LinePdfKind::Priced,
                 description: format!("Prestation créditée {i}"),
                 quantity: dec!(1),
                 unit_price: dec!(50.00),
@@ -5424,5 +5509,413 @@ mod tests {
         println!("pire_cas_boites_independantes : {mots} mots relevés dans la section de paiement");
         assert!(mots > 30, "montage : mots relevés ({mots})");
         assert!(ecarts.is_empty(), "{ecarts:#?}");
+    }
+
+    // ----- Story 49-1b (#1242) — le rendu d'une ligne de commentaire -----
+
+    /// Ordonnée de la première ligne du tableau, en mm (`PAGE_H - 130 - 5 - 3`).
+    const PREMIERE_LIGNE_Y: f32 = 159.0;
+    /// Les abscisses des quatre colonnes chiffrées, en mm.
+    const COLONNES_CHIFFREES: [f32; 4] = [110.0, 130.0, 160.0, 180.0];
+
+    /// Une ligne chiffrée sans TVA, d'une unité.
+    fn chiffree(description: &str, total: Decimal) -> InvoiceLinePdf {
+        InvoiceLinePdf {
+            kind: LinePdfKind::Priced,
+            description: description.into(),
+            quantity: dec!(1),
+            unit_price: total,
+            vat_rate: Decimal::ZERO,
+            line_total: total,
+        }
+    }
+
+    /// Une ligne non chiffrée du type donné, aux valeurs neutres (contrainte de la 49-1a).
+    fn non_chiffree(kind: LinePdfKind, texte: &str) -> InvoiceLinePdf {
+        InvoiceLinePdf {
+            kind,
+            description: texte.into(),
+            quantity: Decimal::ZERO,
+            unit_price: Decimal::ZERO,
+            vat_rate: Decimal::ZERO,
+            line_total: Decimal::ZERO,
+        }
+    }
+
+    fn commentaire(texte: &str) -> InvoiceLinePdf {
+        non_chiffree(LinePdfKind::Comment, texte)
+    }
+
+    /// La facture de la fixture, réduite à ces lignes, sans TVA ni arrondi (donc sans
+    /// récapitulatif), ses sommes faites comme `kesh-api` les fait (toutes les lignes).
+    fn piece(lignes: Vec<InvoiceLinePdf>) -> InvoicePdfData {
+        let (_, base, _) = invoice_fixture();
+        let somme: Decimal = lignes.iter().map(|l| l.line_total).sum();
+        InvoicePdfData {
+            lines: lignes,
+            subtotal_ht: somme,
+            vat_lines: vec![],
+            rounding: Decimal::ZERO,
+            total: somme,
+            ..base
+        }
+    }
+
+    /// Le PDF d'une facture.
+    fn pdf_facture(inv: &InvoicePdfData) -> Result<Vec<u8>, QrBillError> {
+        let (data, _, i18n) = invoice_fixture();
+        generate_qr_bill_pdf_with_date(&data, inv, &i18n, fixed_date())
+    }
+
+    /// Le PDF d'un avoir.
+    fn pdf_avoir(inv: &InvoicePdfData) -> Result<Vec<u8>, QrBillError> {
+        generate_credit_note_pdf_with_date(inv, &QrBillI18n::default(), fixed_date())
+    }
+
+    /// Les textes dessinés à la hauteur `y` (à la tolérance des arrondis en points).
+    fn textes_a_hauteur(textes: &[(f32, f32, String)], y: f32) -> Vec<(f32, String)> {
+        textes
+            .iter()
+            .filter(|(_, ty, _)| (ty - y).abs() < 0.01)
+            .map(|(x, _, t)| (*x, t.clone()))
+            .collect()
+    }
+
+    /// **T4 (AC3)** — un commentaire se dessine à `x = 20` mm, sur toute la largeur, et rien
+    /// n'est dessiné aux quatre colonnes chiffrées à sa hauteur : ni « 0.00 », ni « % ». Sur
+    /// la facture, l'avoir et le rappel (le gabarit est le même).
+    #[test]
+    fn un_commentaire_se_dessine_pleine_largeur_sans_colonnes() {
+        let inv = piece(vec![
+            chiffree("Prestation A", dec!(100.00)),
+            commentaire("Note de chantier : accès par la cour"),
+            chiffree("Prestation B", dec!(50.00)),
+        ]);
+        let rappel = InvoicePdfData {
+            reminder: Some(reminder(dec!(0), dec!(150.00), dec!(20.00))),
+            ..inv.clone()
+        };
+        let y = PREMIERE_LIGNE_Y - 5.0;
+        for (nom, pdf) in [
+            ("facture", pdf_facture(&inv)),
+            ("avoir", pdf_avoir(&inv)),
+            ("rappel", pdf_facture(&rappel)),
+        ] {
+            let textes = textes_du_pdf(&pdf.unwrap_or_else(|e| panic!("{nom} : {e}")));
+            let a_hauteur = textes_a_hauteur(&textes, y);
+            assert_eq!(a_hauteur.len(), 1, "{nom} : le texte seul : {a_hauteur:?}");
+            assert!(
+                (a_hauteur[0].0 - 20.0).abs() < 0.01,
+                "{nom} : {a_hauteur:?}"
+            );
+            assert_eq!(a_hauteur[0].1, "Note de chantier : accès par la cour");
+            for (x, t) in &a_hauteur {
+                assert!(
+                    COLONNES_CHIFFREES.iter().all(|c| (x - c).abs() >= 0.01),
+                    "{nom} : un texte à la colonne {x} : {t:?}"
+                );
+                assert!(!t.contains("0.00") && !t.contains('%'), "{nom} : {t:?}");
+            }
+        }
+        // AC10, revue P1 A-4 — un commentaire n'ajoute aucune ressource : les polices et les
+        // ressources d'un PDF avec commentaire sont celles du même PDF sans.
+        let sans = piece(vec![
+            chiffree("Prestation A", dec!(100.00)),
+            chiffree("Prestation B", dec!(50.00)),
+        ]);
+        for (nom, avec, sans) in [
+            ("facture", pdf_facture(&inv), pdf_facture(&sans)),
+            ("avoir", pdf_avoir(&inv), pdf_avoir(&sans)),
+        ] {
+            let (avec, sans) = (
+                crate::empreinte::empreinte(&avec.unwrap()),
+                crate::empreinte::empreinte(&sans.unwrap()),
+            );
+            assert_eq!(avec.polices, sans.polices, "{nom} : polices");
+            assert_eq!(avec.ressources, sans.ressources, "{nom} : ressources");
+            assert_eq!(
+                avec.polices.lines().count(),
+                2,
+                "{nom} : Helvetica et sa grasse"
+            );
+        }
+    }
+
+    /// Un commentaire de 600 caractères environ : des mots courts, et un mot de 90 `W`.
+    fn commentaire_long() -> (String, Vec<&'static str>) {
+        let courts = [
+            "Selon",
+            "devis",
+            "accepté",
+            "le",
+            "9",
+            "octobre,",
+            "les",
+            "travaux",
+            "comprennent",
+            "la",
+            "préparation",
+            "des",
+            "supports,",
+            "deux",
+            "couches",
+            "de",
+            "peinture",
+            "mate",
+            "sur",
+            "les",
+            "murs",
+            "et",
+            "le",
+            "plafond",
+            "du",
+            "séjour,",
+            "la",
+            "protection",
+            "des",
+            "sols",
+            "et",
+            "l'évacuation",
+            "des",
+            "déchets.",
+        ];
+        let mut mots: Vec<&'static str> = Vec::new();
+        let mut texte = String::new();
+        let w = "W".repeat(90);
+        for tour in 0..3 {
+            for m in courts {
+                mots.push(m);
+                texte.push_str(m);
+                texte.push(' ');
+            }
+            if tour == 1 {
+                texte.push_str(&w);
+                texte.push(' ');
+            }
+        }
+        (texte.trim_end().to_string(), mots)
+    }
+
+    /// Les lignes de texte d'un commentaire telles que dessinées sur un avoir qui ne porte
+    /// que lui : les textes à `x = 20` mm, sous l'en-tête du tableau.
+    fn lignes_dessinees(description: &str) -> Vec<(f32, String)> {
+        let inv = InvoicePdfData {
+            payment_terms: None,
+            ..piece(vec![commentaire(description)])
+        };
+        textes_du_pdf(&pdf_avoir(&inv).expect("avoir"))
+            .into_iter()
+            .filter(|(x, y, _)| (x - 20.0).abs() < 0.01 && *y < PREMIERE_LIGNE_Y + 0.01)
+            .map(|(_, y, t)| (y, t))
+            .collect()
+    }
+
+    /// **T5 (AC4)** — un commentaire long se coupe sans rien perdre, selon le contrat de
+    /// `couper_ligne` : (1) le texte sans blancs (après `texte_imprime`) égale la
+    /// concaténation des lignes sans blancs ; (2) un mot court n'est jamais coupé ; (3) chaque
+    /// ligne mesure au plus 170 mm. Puis `\n`, ligne vide, `\r`, tabulation, `\n` finaux,
+    /// description blanche — vérifiés sur les lignes **dessinées**.
+    #[test]
+    fn un_commentaire_long_se_coupe_sans_rien_perdre() {
+        let (texte, mots_courts) = commentaire_long();
+        assert!(texte.chars().count() >= 600, "montage : {}", texte.len());
+        let lignes = lignes_dessinees(&texte);
+        assert!(lignes.len() > 3, "montage : {lignes:?}");
+        // Le pas : 5 mm d'une ligne de texte à la suivante, depuis la première ligne.
+        for (i, (y, _)) in lignes.iter().enumerate() {
+            assert!(
+                (y - (PREMIERE_LIGNE_Y - 5.0 * i as f32)).abs() < 0.01,
+                "{lignes:?}"
+            );
+        }
+        let sans_blancs = |s: &str| s.chars().filter(|c| !c.is_whitespace()).collect::<String>();
+        // (1) Rien ne se perd.
+        assert_eq!(
+            lignes
+                .iter()
+                .map(|(_, l)| sans_blancs(l))
+                .collect::<String>(),
+            // Le texte source lui-même : il ne porte que des caractères WinAnsi.
+            sans_blancs(&texte),
+        );
+        // (2) Un mot court n'est jamais coupé : les jetons des lignes, hors morceaux du mot
+        // de `W`, sont les mots courts, entiers et dans l'ordre.
+        let jetons: Vec<String> = lignes
+            .iter()
+            .flat_map(|(_, l)| l.split(' ').map(String::from).collect::<Vec<_>>())
+            .filter(|j| !j.is_empty() && !j.chars().all(|c| c == 'W'))
+            .collect();
+        assert_eq!(jetons, mots_courts);
+        // (3) Rien ne dépasse.
+        for (_, l) in &lignes {
+            let largeur = largeur_mm(l, 9.0, false);
+            assert!(largeur <= 170.0, "{largeur} mm : {l:?}");
+        }
+
+        let dessin =
+            |d: &str| -> Vec<String> { lignes_dessinees(d).into_iter().map(|(_, t)| t).collect() };
+        // `\n` : un saut ; `\n\n` : une ligne vide, qui consomme son pas sans rien dessiner.
+        let saut = lignes_dessinees("un\n\ndeux");
+        assert_eq!(
+            saut.iter().map(|(_, t)| t.as_str()).collect::<Vec<_>>(),
+            ["un", "deux"]
+        );
+        assert!((saut[0].0 - saut[1].0 - 10.0).abs() < 0.01, "{saut:?}");
+        assert_eq!(lignes_de_commentaire("un\n\ndeux"), ["un", "", "deux"]);
+        // CRLF d'un copier-coller.
+        assert_eq!(dessin("un\r\ndeux"), ["un", "deux"]);
+        // Tabulation : une espace, les mots restent séparés.
+        assert_eq!(dessin("un\tdeux"), ["un deux"]);
+        // `\n` finaux ignorés.
+        assert_eq!(lignes_de_commentaire("un\n"), ["un"]);
+        assert_eq!(lignes_de_commentaire("un\n\n"), ["un"]);
+        // U+00A0 devient une espace.
+        assert_eq!(dessin("un\u{a0}deux"), ["un deux"]);
+        // Description blanche : rien, et aucune ligne consommée.
+        for blanche in ["   ", "\n", " \n\t\r\n ", "\u{a0}\u{ad}"] {
+            assert!(lignes_de_commentaire(blanche).is_empty(), "{blanche:?}");
+            assert!(dessin(blanche).is_empty(), "{blanche:?}");
+        }
+
+        // Revue P1, E-2 — un `\r` seul est un saut de ligne, pas une colle.
+        assert_eq!(dessin("un\rdeux"), ["un", "deux"]);
+        // E-3 — les autres sauts (U+2028, U+2029, U+0085, VT, FF) sautent ; les autres blancs
+        // (U+202F, U+2009, U+3000) séparent les mots.
+        for saut in ['\u{2028}', '\u{2029}', '\u{85}', '\u{0B}', '\u{0C}'] {
+            assert_eq!(dessin(&format!("un{saut}deux")), ["un", "deux"], "{saut:?}");
+        }
+        assert_eq!(
+            dessin("1\u{202F}000 «\u{202F}texte\u{2009}»\u{3000}fin"),
+            ["1 000 « texte » fin"]
+        );
+        // E-3 — rien d'imprimable (hors WinAnsi : CJK, émoji, U+200B) : aucune ligne, aucun
+        // pas ; mêlé à du texte, le caractère disparaît sans coller ses voisins.
+        for rien in ["汉字", "🙂", "\u{200B}", "汉字\n🙂"] {
+            assert!(lignes_de_commentaire(rien).is_empty(), "{rien:?}");
+            assert!(dessin(rien).is_empty(), "{rien:?}");
+        }
+        assert_eq!(dessin("un 汉 deux"), ["un deux"]);
+        // E-4, L2 — des blancs en tête ou en fin ne consomment aucune ligne ; un paragraphe
+        // vide intérieur reste une ligne vide.
+        for (texte, attendu) in [
+            ("un\n \n", vec!["un"]),
+            ("un\n\t", vec!["un"]),
+            ("un\n\u{ad}", vec!["un"]),
+            ("\u{ad}\nun", vec!["un"]),
+            ("\n\nun", vec!["un"]),
+            (" \n un \n\n deux \n ", vec!["un", "", "deux"]),
+        ] {
+            assert_eq!(lignes_de_commentaire(texte), attendu, "{texte:?}");
+        }
+        let fin_blanche = lignes_dessinees("un\n \n\t");
+        assert_eq!(fin_blanche.len(), 1, "{fin_blanche:?}");
+        // E-5 — l'apostrophe typographique et le tiret cadratin, que WinAnsi porte, restent
+        // tels quels (comme dans la description d'une ligne chiffrée) ; une lettre hors
+        // WinAnsi se replie sur sa base.
+        assert_eq!(dessin("l’atelier — suite"), ["l’atelier — suite"]);
+        assert_eq!(dessin("Łódź Ĳssel"), ["Lódz IJssel"]);
+    }
+
+    /// **T6 (AC5 b)** — à sommes égales, un commentaire de `n` lignes de texte ne change que
+    /// les ordonnées de ce qui le suit dans la section des lignes (lignes, récapitulatif,
+    /// total), d'exactement `n × 5` mm ; l'en-tête et la section de paiement ne bougent pas.
+    /// Ce test ne prouve pas les sommes (AC5 a : `kesh-api`).
+    #[test]
+    fn un_commentaire_decale_de_n_fois_5_mm() {
+        let a = chiffree("Prestation A", dec!(100.00));
+        let b = chiffree("Prestation B", dec!(50.00));
+        let sans = textes_du_pdf(&pdf_facture(&piece(vec![a.clone(), b.clone()])).unwrap());
+        let avec_pdf = pdf_facture(&piece(vec![a, commentaire("premier\nsecond"), b])).unwrap();
+        let avec: Vec<(f32, f32, String)> = textes_du_pdf(&avec_pdf)
+            .into_iter()
+            .filter(|(x, _, t)| !((x - 20.0).abs() < 0.01 && (t == "premier" || t == "second")))
+            .collect();
+        assert_eq!(sans.len(), avec.len(), "mêmes textes, hors commentaire");
+        let n = 2.0;
+        let mut decales = 0;
+        for ((sx, sy, st), (ax, ay, at)) in sans.iter().zip(&avec) {
+            assert_eq!(st, at);
+            assert!((sx - ax).abs() < 0.01, "{st:?} : x {sx} ≠ {ax}");
+            let attendu = if *sy < PREMIERE_LIGNE_Y - 0.01 && *sy > SEP_Y {
+                decales += 1;
+                n * 5.0
+            } else {
+                0.0
+            };
+            assert!(
+                (sy - ay - attendu).abs() < 0.01,
+                "{st:?} : y {sy} → {ay}, décalage attendu {attendu}"
+            );
+        }
+        assert!(
+            decales >= 3,
+            "montage : ligne B et total au moins ({decales})"
+        );
+    }
+
+    /// **T7 (AC6, D1)** — un titre de section se dessine **exactement** comme un commentaire
+    /// de même texte : même empreinte de rendu. Sa mise en évidence est l'objet de la
+    /// **Story 49-3**, qui remplacera ce test.
+    #[test]
+    fn un_titre_de_section_se_rend_comme_un_commentaire_en_49_1b() {
+        let rendu = |kind| {
+            let inv = piece(vec![
+                non_chiffree(kind, "Travaux du lot B"),
+                chiffree("Peinture", dec!(950.00)),
+            ]);
+            crate::empreinte::empreinte(&pdf_facture(&inv).unwrap())
+        };
+        let titre = rendu(LinePdfKind::Heading);
+        assert_eq!(titre, rendu(LinePdfKind::Comment));
+        let a_sa_hauteur = textes_a_hauteur(&titre.textes, PREMIERE_LIGNE_Y);
+        assert_eq!(
+            a_sa_hauteur
+                .iter()
+                .map(|(_, t)| t.as_str())
+                .collect::<Vec<_>>(),
+            ["Travaux du lot B"],
+            "un titre ne s'imprime jamais en 0.00"
+        );
+    }
+
+    /// **T8 (AC7, D6)** — la capacité se garde par ligne de texte : sur une facture sans
+    /// récapitulatif, huit lignes de texte tiennent, la neuvième est refusée en
+    /// `TooManyLines(n)` (`n` = lignes de la pièce) ; rien n'est dessiné sous le plancher ; la
+    /// même pièce tient sur un avoir.
+    #[test]
+    fn la_capacite_se_garde_par_ligne_de_texte() {
+        let paragraphes = |k: usize| {
+            (1..=k)
+                .map(|i| format!("ligne {i}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        let huit = piece(vec![commentaire(&paragraphes(8))]);
+        let textes = textes_du_pdf(&pdf_facture(&huit).expect("huit lignes tiennent"));
+        let du_commentaire: Vec<_> = textes
+            .iter()
+            .filter(|(_, _, t)| t.starts_with("ligne "))
+            .collect();
+        assert_eq!(du_commentaire.len(), 8);
+        assert!(
+            du_commentaire
+                .iter()
+                .all(|(_, y, _)| *y >= SEP_Y + 15.0 - 0.01),
+            "{du_commentaire:?}"
+        );
+        let neuf = piece(vec![commentaire(&paragraphes(9))]);
+        assert!(matches!(
+            pdf_facture(&neuf),
+            Err(QrBillError::TooManyLines(1))
+        ));
+        let avec_chiffree = piece(vec![
+            chiffree("Prestation", dec!(10.00)),
+            commentaire(&paragraphes(8)),
+        ]);
+        assert!(matches!(
+            pdf_facture(&avec_chiffree),
+            Err(QrBillError::TooManyLines(2))
+        ));
+        assert!(pdf_avoir(&neuf).is_ok(), "l'avoir, pleine page, la tient");
     }
 }
