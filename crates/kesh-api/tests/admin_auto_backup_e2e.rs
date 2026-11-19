@@ -11,8 +11,8 @@ use std::fs::File;
 use std::io::{self, Seek, SeekFrom, Write};
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use chrono::{NaiveDateTime, TimeDelta, Utc};
@@ -43,14 +43,43 @@ const TEST_JWT_SECRET: &[u8] = b"test-secret-32-bytes-minimum-test-secret-paddin
 
 /// Environnement injecté : espace libre, et écrivain qui échoue ou tronque
 /// après `limite` octets.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 enum Ecrivain {
     Normal,
-    /// `StorageFull` dès que plus de `n` octets ont été écrits.
+    /// Un disque plein à `n` octets (Story 48-14, #1261, D6) : une écriture qui
+    /// prolongerait le fichier au-delà de la position `n` n'écrit que ce qui
+    /// tient, puis tout prolongement rend `StorageFull` ; une réécriture à
+    /// l'intérieur de ce qui est déjà écrit réussit.
     PleinApres(u64),
     /// Écrit au plus `n` octets, prétend avoir écrit le reste (archive
     /// tronquée).
     TronqueApres(u64),
+    /// KF-063 (#1261) — l'**ancien** modèle du disque plein, gardé pour la
+    /// seule reproduction déterministe ([`kf063_reproduction_deterministe`],
+    /// ignorée) : `StorageFull` dès que le **cumul** des octets écrits,
+    /// réécritures comprises, dépasserait `n`. Faux pour un disque qui accepte
+    /// la réécriture d'un octet déjà alloué : il refuse une réécriture
+    /// d'en-tête de zip après recul, d'où la panique du `Drop` (`debug_assert!`
+    /// de `zip-2.6.1/src/write.rs:1078`).
+    AncienCumul(u64),
+    /// Écrit normalement et relève chaque écriture (diagnostic de KF-063).
+    Sonde(Arc<Mutex<Vec<Trace>>>),
+}
+
+/// Une écriture relevée par [`Ecrivain::Sonde`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Trace {
+    /// Position du fichier avant l'écriture.
+    position: u64,
+    /// Longueur demandée.
+    longueur: usize,
+    /// L'écriture tombe entièrement dans ce qui est déjà écrit (après un recul).
+    reecriture: bool,
+    /// Octets écrits avant elle, réécritures comprises (l'unité de
+    /// [`Ecrivain::AncienCumul`]).
+    cumul_avant: u64,
+    /// Fin du fichier avant elle.
+    fin_avant: u64,
 }
 
 struct TestEnv {
@@ -87,21 +116,68 @@ impl TestEnv {
 /// L'écrivain de test : possède le clone du descripteur.
 struct EcrivainDeTest {
     fichier: File,
+    /// Octets écrits, réécritures comprises (unité de [`Ecrivain::AncienCumul`]).
     ecrit: u64,
+    /// Fin du fichier : la plus grande position atteinte par une écriture.
+    fin: u64,
     mode: Ecrivain,
+}
+
+impl EcrivainDeTest {
+    fn new(fichier: File, mode: Ecrivain) -> Self {
+        Self {
+            fichier,
+            ecrit: 0,
+            fin: 0,
+            mode,
+        }
+    }
+
+    /// Écrit et tient `ecrit` et `fin` à jour.
+    fn ecrire(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let pos = self.fichier.stream_position()?;
+        let w = self.fichier.write(buf)?;
+        self.ecrit += w as u64;
+        self.fin = self.fin.max(pos + w as u64);
+        Ok(w)
+    }
 }
 
 impl Write for EcrivainDeTest {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        match self.mode {
+        match self.mode.clone() {
             Ecrivain::Normal => self.fichier.write(buf),
             Ecrivain::PleinApres(n) => {
+                // Story 48-14 (#1261, D6) : la limite se juge sur la POSITION. Ce qui
+                // tient jusqu'à `n` s'écrit ; au-delà, `StorageFull` (jamais `Ok(0)`,
+                // que `write_all` changerait en `WriteZero`). Une réécriture à
+                // l'intérieur de ce qui est écrit réussit, comme sur un disque réel.
+                let pos = self.fichier.stream_position()?;
+                if pos >= n {
+                    return Err(io::Error::from(io::ErrorKind::StorageFull));
+                }
+                let garde = usize::try_from(n - pos)
+                    .unwrap_or(usize::MAX)
+                    .min(buf.len());
+                self.ecrire(&buf[..garde])
+            }
+            Ecrivain::AncienCumul(n) => {
                 if self.ecrit + buf.len() as u64 > n {
                     return Err(io::Error::from(io::ErrorKind::StorageFull));
                 }
-                let w = self.fichier.write(buf)?;
-                self.ecrit += w as u64;
-                Ok(w)
+                self.ecrire(buf)
+            }
+            Ecrivain::Sonde(journal) => {
+                let position = self.fichier.stream_position()?;
+                let trace = Trace {
+                    position,
+                    longueur: buf.len(),
+                    reecriture: position + buf.len() as u64 <= self.fin,
+                    cumul_avant: self.ecrit,
+                    fin_avant: self.fin,
+                };
+                journal.lock().unwrap().push(trace);
+                self.ecrire(buf)
             }
             Ecrivain::TronqueApres(n) => {
                 let pos = self.fichier.stream_position()?;
@@ -136,11 +212,7 @@ impl BackupEnv for TestEnv {
         Ok(self.libre)
     }
     fn wrap_writer(&self, file: File) -> Box<dyn WriteSeek> {
-        Box::new(EcrivainDeTest {
-            fichier: file,
-            ecrit: 0,
-            mode: self.ecrivain,
-        })
+        Box::new(EcrivainDeTest::new(file, self.ecrivain.clone()))
     }
 }
 
@@ -641,34 +713,254 @@ async fn premiere_sauvegarde_compte_les_documents(pool: MySqlPool) {
     );
 }
 
+/// Un tour par limite de `limites` (écrivain [`Ecrivain::PleinApres`]) : chacun
+/// rend `disk_full`, sans fichier neuf ni `.partial`, les déposées intactes,
+/// `last_status = "disk_full"`. Rend le nombre de tours joués.
+async fn balayer(
+    i: &Install,
+    pool: &MySqlPool,
+    deposees: &[String],
+    limites: impl Iterator<Item = u64>,
+) -> usize {
+    let mut joues = 0;
+    for (k, n) in limites.enumerate() {
+        let issue = run_once(
+            &i.state,
+            TestEnv::avec(u64::MAX, Ecrivain::PleinApres(n)),
+            instant(k as i64),
+            Trigger::Schedule,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            issue,
+            RunOutcome::Done(RunStatus::Failure(FailureStatus::DiskFull)),
+            "limite {n}"
+        );
+        assert_eq!(
+            i.noms_auto(),
+            deposees,
+            "limite {n} : ni fichier neuf, ni .partial, ni suppression"
+        );
+        assert_eq!(
+            reglage(pool).await.last_status.as_deref(),
+            Some("disk_full"),
+            "limite {n}"
+        );
+        joues += 1;
+    }
+    joues
+}
+
 /// Disque saturé pendant l'écriture → `disk_full`, `.partial` supprimé, les 8
 /// déposées restent 8 (tue M-c13, M-c14).
+///
+/// Story 48-14 (#1261, KF-063, D7, AC12) : le tour se joue pour **128 limites
+/// consécutives** à partir de 2048, au lieu d'une seule : la variabilité venait
+/// de la suite des longueurs écrites (horodatages du montage), qui faisait
+/// tomber la limite tantôt sur une réécriture d'en-tête de zip, tantôt
+/// ailleurs ; l'écrivain de D6 accepte désormais la réécriture, et le balayage
+/// couvre toutes les positions d'une fenêtre.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn disque_sature_pendant_l_ecriture(pool: MySqlPool) {
     let i = monter(pool.clone()).await;
     let deposees = i.deposer(8);
     i.retention(3).await;
+    let joues = balayer(&i, &pool, &deposees, 2048..2048 + 128).await;
+    assert_eq!(joues, 128, "décompte anti-muet des limites jouées");
+}
+
+/// Story 48-14 (#1261, D7, AC12) — disque saturé **à la fermeture** de
+/// l'archive : 128 limites prises dans le répertoire central, fenêtre
+/// `[S − 160, S − 32)` où `S` est la taille d'une archive complète, mesurée par
+/// un tour réussi **avant** de déposer les huit sauvegardes (rétention haute,
+/// fichier retiré ensuite). La dérive de `S` d'un tour à l'autre (le manifeste
+/// porte `export_date` à la seconde) est de quelques octets ; le répertoire
+/// central d'une cinquantaine d'entrées dépasse largement 160 octets.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn disque_sature_a_la_fermeture(pool: MySqlPool) {
+    let i = monter(pool.clone()).await;
+    i.retention(60).await;
+    let issue = run_once(&i.state, TestEnv::large(), instant(-10_000), Trigger::Schedule)
+        .await
+        .unwrap();
+    assert!(
+        matches!(issue, RunOutcome::Done(RunStatus::Success(_))),
+        "{issue:?}"
+    );
+    let ecrites = i.noms_auto();
+    assert_eq!(ecrites.len(), 1, "la mesure écrit une archive : {ecrites:?}");
+    let chemin = i.auto().join(&ecrites[0]);
+    let taille = std::fs::metadata(&chemin).unwrap().len();
+    let central = {
+        let z = zip::ZipArchive::new(File::open(&chemin).unwrap()).unwrap();
+        z.central_directory_start()
+    };
+    assert!(
+        central + 160 < taille,
+        "le répertoire central ({central}..{taille}) couvre la fenêtre"
+    );
+    std::fs::remove_file(&chemin).unwrap();
+    let deposees = i.deposer(8);
+    i.retention(3).await;
+    let joues = balayer(&i, &pool, &deposees, taille - 160..taille - 32).await;
+    assert_eq!(joues, 128, "décompte anti-muet des limites jouées");
+}
+
+/// AC11 (#1261, D6) — l'écrivain modélise un disque plein comme le système :
+/// une écriture qui prolongerait le fichier au-delà de la limite n'écrit que
+/// ce qui tient, puis tout prolongement rend `StorageFull` ; une réécriture à
+/// l'intérieur de ce qui est déjà écrit (après un recul, comme zip le fait
+/// pour l'en-tête de chaque entrée) réussit. À la limite exacte, `Err`, jamais
+/// `Ok(0)` (que `write_all` changerait en `WriteZero`, classé `failed`).
+#[test]
+fn plein_apres_refuse_de_prolonger_et_accepte_la_reecriture() {
+    const N: u64 = 32;
+    let dossier = tempfile::tempdir().unwrap();
+    let fichier = File::options()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(dossier.path().join("plein.bin"))
+        .unwrap();
+    let mut e = EcrivainDeTest::new(fichier, Ecrivain::PleinApres(N));
+    e.write_all(&[1u8; N as usize]).expect("N octets tiennent");
+
+    // Réécriture de 4 octets après recul (l'en-tête d'une entrée zip).
+    e.seek(SeekFrom::Start(14)).unwrap();
+    assert_eq!(
+        e.write(&[2u8; 4]).expect("une réécriture à l'intérieur réussit"),
+        4
+    );
+
+    // À la limite exacte : refus, de genre `StorageFull`, jamais `Ok(0)`.
+    e.seek(SeekFrom::Start(N)).unwrap();
+    match e.write(&[3u8]) {
+        Ok(w) => panic!("Ok({w}) à la position N : un disque plein refuse"),
+        Err(err) => assert_eq!(err.kind(), io::ErrorKind::StorageFull),
+    }
+
+    // À cheval sur la limite : ce qui tient, puis le refus.
+    e.seek(SeekFrom::Start(N - 4)).unwrap();
+    assert_eq!(e.write(&[4u8; 10]).expect("ce qui tient s'écrit"), 4);
+    match e.write(&[4u8; 6]) {
+        Ok(w) => panic!("Ok({w}) au-delà de N : un disque plein refuse"),
+        Err(err) => assert_eq!(err.kind(), io::ErrorKind::StorageFull),
+    }
+
+    e.flush().unwrap();
+    let contenu = std::fs::read(dossier.path().join("plein.bin")).unwrap();
+    assert_eq!(contenu.len() as u64, N, "le fichier ne dépasse jamais N");
+    assert_eq!(&contenu[14..18], &[2u8; 4], "la réécriture est en place");
+    assert_eq!(&contenu[N as usize - 4..], &[4u8; 4]);
+}
+
+/// Un tour réussi sous la sonde : la suite des écritures et la position de
+/// l'en-tête de `manifest.json` ; l'archive écrite est retirée (`auto/` vide).
+async fn tour_sonde(i: &Install, ms: i64) -> (Vec<Trace>, u64) {
+    let journal = Arc::new(Mutex::new(Vec::new()));
     let issue = run_once(
         &i.state,
-        TestEnv::avec(u64::MAX, Ecrivain::PleinApres(2048)),
-        instant(0),
+        TestEnv::avec(u64::MAX, Ecrivain::Sonde(journal.clone())),
+        instant(ms),
         Trigger::Schedule,
     )
     .await
     .unwrap();
-    assert_eq!(
-        issue,
-        RunOutcome::Done(RunStatus::Failure(FailureStatus::DiskFull))
+    assert!(
+        matches!(issue, RunOutcome::Done(RunStatus::Success(_))),
+        "{issue:?}"
     );
+    let noms: Vec<String> = i
+        .noms_auto()
+        .into_iter()
+        .filter(|n| n.ends_with(".keshbackup"))
+        .collect();
+    assert_eq!(noms.len(), 1, "une seule archive : {noms:?}");
+    let chemin = i.auto().join(&noms[0]);
+    let manifeste = {
+        let mut z = zip::ZipArchive::new(File::open(&chemin).unwrap()).unwrap();
+        z.by_name("manifest.json").unwrap().header_start()
+    };
+    std::fs::remove_file(&chemin).unwrap();
+    let traces = journal.lock().unwrap().clone();
+    (traces, manifeste)
+}
+
+/// KF-063 (#1261, AC13) — reproduction **déterministe** de la panique de
+/// l'ancien écrivain : une sonde relève la suite des écritures d'un tour ; deux
+/// tours donnent la même suite jusqu'au manifeste exclu (seul `export_date`, à
+/// la seconde, varie) ; une réécriture de 4 octets d'avant le manifeste est
+/// choisie, de cumul `c` ; l'ancien écrivain, à chaque limite de `[c, c + 3]`,
+/// rend `failed` (la panique de `zip-2.6.1/src/write.rs:1078` s'écrit sur
+/// stderr) ; l'écrivain de D6, limite à la position de cette réécriture ou à la
+/// fin du fichier à cet instant, rend `disk_full`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+#[ignore = "diagnostic de KF-063 (#1261, AC13), joué à la main : --ignored --nocapture ; la panique attendue de zip s'écrit sur stderr"]
+async fn kf063_reproduction_deterministe(pool: MySqlPool) {
+    let i = monter(pool.clone()).await;
+    i.retention(60).await;
+    let (t1, m1) = tour_sonde(&i, 0).await;
+    let (t2, m2) = tour_sonde(&i, 1_000).await;
+    assert_eq!(m1, m2, "le manifeste commence au même octet");
+    let avant = |t: &[Trace]| -> Vec<Trace> {
+        t.iter().take_while(|x| x.position < m1).cloned().collect()
+    };
     assert_eq!(
-        i.noms_auto(),
-        deposees,
-        "ni fichier neuf, ni .partial, ni suppression"
+        avant(&t1),
+        avant(&t2),
+        "deux tours écrivent la même suite jusqu'au manifeste exclu"
     );
-    assert_eq!(
-        reglage(&pool).await.last_status.as_deref(),
-        Some("disk_full")
-    );
+    println!("KF-063 sonde : {} écritures, manifeste à {m1}", t1.len());
+    for (k, t) in t1.iter().enumerate() {
+        println!(
+            "KF-063 sonde #{k:03} position={} longueur={} reecriture={} cumul_avant={} fin_avant={}",
+            t.position, t.longueur, t.reecriture, t.cumul_avant, t.fin_avant
+        );
+    }
+    let r = t1
+        .iter()
+        .find(|x| x.reecriture && x.longueur == 4 && x.position < m1)
+        .expect("une réécriture de 4 octets avant le manifeste")
+        .clone();
+    println!("KF-063 réécriture choisie : {r:?}");
+
+    let mut ms = 2_000;
+    for n in r.cumul_avant..=r.cumul_avant + 3 {
+        let issue = run_once(
+            &i.state,
+            TestEnv::avec(u64::MAX, Ecrivain::AncienCumul(n)),
+            instant(ms),
+            Trigger::Schedule,
+        )
+        .await
+        .unwrap();
+        ms += 1_000;
+        println!("KF-063 ancien écrivain, limite (cumul) {n} : {issue:?}");
+        assert_eq!(
+            issue,
+            RunOutcome::Done(RunStatus::Failure(FailureStatus::Failed)),
+            "ancien écrivain à {n}"
+        );
+    }
+    for n in [r.position, r.fin_avant] {
+        let issue = run_once(
+            &i.state,
+            TestEnv::avec(u64::MAX, Ecrivain::PleinApres(n)),
+            instant(ms),
+            Trigger::Schedule,
+        )
+        .await
+        .unwrap();
+        ms += 1_000;
+        println!("KF-063 écrivain de D6, limite (position) {n} : {issue:?}");
+        assert_eq!(
+            issue,
+            RunOutcome::Done(RunStatus::Failure(FailureStatus::DiskFull)),
+            "écrivain de D6 à {n}"
+        );
+    }
 }
 
 /// Archive tronquée (relecture impossible) → `failed`, fichier supprimé, les 8
