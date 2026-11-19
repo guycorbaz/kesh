@@ -167,7 +167,7 @@ Aucun site hors périmètre sans issue : le seul fait voisin est la réduction �
   une ligne de `match`).
 - **D2 — Un champ `kind: LinePdfKind` à `InvoiceLinePdf`**, énumération **propre à `kesh-qrbill`** (`Priced`, `Comment`,
   `Heading`), non le `LineType` de `kesh-db` (`kesh-qrbill` ne dépend que de `kesh-core`, `Cargo.toml` : DD-14, jamais de
-  `kesh-db`). Le champ est obligatoire : 11 littéraux à mettre à jour (inventaire), aucun oubli possible (le compilateur le
+  `kesh-db`). Le champ est obligatoire : **9 littéraux à mettre à jour** (inventaire : les 11 moins les deux de `kesh-api` en production, `invoice_pdf_service.rs:398` et `credit_notes.rs:312`, **remplacés** par `ligne_pdf`, D10), aucun oubli possible (le compilateur le
   dit). *Écartées* : (a) rendre `quantity`, `unit_price`, `vat_rate`, `line_total` optionnels (`Option<Decimal>`) — le chemin
   chiffré, celui qui **ne doit pas bouger**, changerait de types partout ; (b) un `Default` sur `InvoiceLinePdf` (un champ
   oublié passerait en silence `Priced`, justement ce que l'on veut éviter pour `heading`) ; (c) **filtrer** les commentaires
@@ -178,19 +178,23 @@ Aucun site hors périmètre sans issue : le seul fait voisin est la réduction �
   *Écartée* : un commentaire en italique (`BuiltinFont::HelveticaOblique`) — plus lisible comme « note », mais ajoute une
   police à **tout** PDF (si l'ajout est inconditionnel) ou la crée à la demande (un second chemin de création du
   document) ; au choix de la 49-3 ou d'une story ultérieure.
-- **D4 — Le test avant / après compare le CONTENU rendu, non les octets du fichier.** le `/ID` change à chaque rendu
+- **D4 — Le test avant / après compare le CONTENU rendu, non les octets du fichier.** Le `/ID` change à chaque rendu
   (`pdf.rs:55-57`, `golden_test.rs:3-6`) : l'égalité brute des octets est exclue. La référence est donc, par scénario, (a) le
   **SHA-256 de la suite complète des opérations de contenu** de la page (chaque opérateur et ses opérandes, dans l'ordre :
   textes, positions, polices, traits, rectangles du QR, couleurs — tout ce qui se dessine), (b) le **dictionnaire complet de chaque police** (`BaseFont`, `Encoding`…), la `MediaBox` et le nombre de pages
   (le dictionnaire `Info` porte la date : exclu et dit tel), (c) en lisible, la liste `(x, y, texte)` de
   `textes_du_pdf`, pour qu'un rouge **se lise** et ne soit pas qu'un condensat. Le fichier de référence est un fichier texte
-  du dépôt, diffable. **Un seul comparateur** calcule cette empreinte : il est exposé par `kesh-qrbill` sous une feature
-  `test-support` (ou `#[doc(hidden)] pub`), **non activée en production**, et appelé par T0, T0-bis, T1 et T3 ; les
-  helpers privés de `pdf.rs::tests` (`textes_du_pdf`, `operations_du_pdf`, `texte_du_tj`) s'en servent aussi. Aucune
+  du dépôt, diffable. **Un seul comparateur** calcule cette empreinte : il est exposé par `kesh-qrbill` **seulement** sous une feature
+  `test-support` (pas de `#[doc(hidden)] pub` : il ne doit jamais entrer dans le binaire de production), appelé par T0,
+  T0-bis, T1 et T3 ; contrôle : `cargo tree -e normal -p kesh-api -f '{p} {f}'` ne montre pas `test-support`. Les helpers
+  privés de `pdf.rs::tests` (`textes_du_pdf`, `operations_du_pdf`, `texte_du_tj`) se **rebranchent** sur lui **sans le
+  modifier**. **Le comparateur est gelé avec les fixtures** : il entre dans le commit de capture et n'est plus modifié
+  ensuite (AC1) ; un test (T1-bis) le prouve **rouge** sur deux rendus différents. Aucune
   seconde implémentation (ni recopie dans `kesh-api`, ni `pdf_contains` comme comparateur : DRY).
   **La référence est capturée avant tout changement du rendu**, sur `cbdd70026` (équivalent de `773df80da` pour le rendu,
-  voir ci-dessus), **dans un commit à part**, par un test `#[ignore]` (`capturer_references_avant_0_20_0`), et **ne se
-  modifie plus** : AC1 exige `git diff <commit de capture>..HEAD -- <fixtures>` vide. *Écartées* : (a) capturer sur un
+  voir ci-dessus), **dans un commit à part** (le **commit de capture**, dont le contenu est énuméré à l'étape 0), par un test `#[ignore]`
+  (`capturer_references_avant_0_20_0`) qui **refuse d'écraser** une référence existante (il échoue si le fichier existe,
+  sauf variable d'environnement explicite), et **ne se modifie plus** : AC1 exige `git diff <commit de capture>..HEAD -- <fixtures>` vide. *Écartées* : (a) capturer sur un
   worktree de `773df80da` (20 à 50 Go de cible cargo, pour un résultat prouvé identique par un `git diff` vide) ; (b) ne
   comparer que `textes_du_pdf` (texte et positions) — il laisse passer un trait, une couleur ou une police qui bouge ;
   (c) comparer la taille en octets (la méthode des tests de la 16-3a : un delta de taille ne voit pas un déplacement).
@@ -201,7 +205,7 @@ Aucun site hors périmètre sans issue : le seul fait voisin est la réduction �
   condensat des opérations pour acquis, l'octet neutralisé comme amélioration permise.
 - **D5 — Un commentaire se coupe, il ne se tronque pas.** Largeur utile : de `col_desc` (20 mm) à 190 mm = **170 mm**, à
   9 pt, mesurée par `largeur_mm(texte, 9.0, false)` ; texte passé d'abord par `texte_imprime` (la chaîne mesurée est la
-  chaîne dessinée, consigne de `largeurs.rs`) ; coupe sur `\n` en paragraphes (le champ accepte des sauts de ligne :
+  chaîne dessinée, consigne de `largeurs.rs`) ; coupe sur `\n` en paragraphes (les `\r` sont retirés avant, CRLF d'un copier-coller ; un `\n` **final** est ignoré, il ne crée pas de ligne blanche ; la tabulation se traite comme un blanc de mot : à vérifier à l'étape 0 contre `texte_imprime` et `largeur_mm`, et à tester en T5) (le champ accepte des sauts de ligne :
   `validate_line` ne fait que `trim`, `invoices.rs:507`), puis gloutonne à la frontière de mot, un mot plus large que la
   ligne se coupe au dernier caractère qui tient. **`couper_ligne` (8 pt, adresse de la QR) est généralisée par une taille**
   (`couper_ligne_a(ligne, largeur, taille)` ; `couper_ligne` en devient l'appel à `VALEUR_TAILLE`) — pas de seconde
@@ -287,11 +291,15 @@ vert. Les tests de rendu fabriquent leurs lignes **sans l'API** :
   Pour chacun : le condensat des opérations de contenu, la liste de polices, le nombre de pages et la liste lisible
   `(x, y, texte)` **égalent** le fichier de référence capturé **avant** le changement (D4) ; `git diff <commit de
   capture>..HEAD -- crates/kesh-qrbill/tests/fixtures/avant-0.20.0/ crates/kesh-api/tests/fixtures/avant-0.20.0/` est
-  **vide**.
+  **vide**, **de même** pour le fichier du comparateur et `crates/kesh-qrbill/Cargo.toml` (hors ajouts du commit de capture
+  lui-même : vide après lui) ; le **hash du commit de capture** est consigné au Dev Agent Record et en première ligne de
+  chaque dossier de fixtures ; il est **ancêtre** du premier commit qui porte `LinePdfKind` :
+  `git merge-base --is-ancestor <capture> <premier commit portant LinePdfKind>` (code 0) ; `git diff --stat cbdd70026
+  <capture>` ne nomme **que** les chemins énumérés à l'étape 0.
 - **AC2 — Même épreuve par la base et le HTTP (niveau `kesh-api`).** Quatre pièces faites **seulement de lignes `priced`**,
   créées par le dépôt, validées, rendues par `GET /api/v1/invoices/{id}/pdf` ou `…/credit-notes/{id}/pdf` : (a) facture à
   une ligne et un taux ; (b) facture **multi-taux** (7.70 et 2.60) ; (c) facture à arrondi non nul ; (d) **avoir** d'une facture **distincte** (b'), de même contenu que (b) : créer un avoir annule la facture d'origine
-  (`credit_notes.rs:843` `UPDATE invoices SET status = 'cancelled'`) et son regel serait refusé (`InvoiceCancelled`). Le contenu rendu (même condensat, même liste de polices) égale la référence capturée avant le changement ;
+  (`crates/kesh-db/src/repositories/credit_notes.rs:843` `UPDATE invoices SET status = 'cancelled'`) et son regel serait refusé (`InvoiceCancelled`). Le contenu rendu (même condensat, même liste de polices) égale la référence capturée avant le changement ;
   pour (a) et (b), le **regel** (`POST …/pdf/refreeze` après suppression du fichier archivé, D7 c) rend le même contenu. La
   **QR-facture** (section de paiement, IBAN, montant, référence) fait partie du contenu comparé.
 - **AC3 — Un commentaire s'imprime sur toute la largeur, sans colonnes.** Pour une ligne `kind = Comment`, le texte est
@@ -346,8 +354,12 @@ vert. Les tests de rendu fabriquent leurs lignes **sans l'API** :
   `kesh-gate-logs/e491b/captures/`, jointes au Dev Agent Record et au prompt de revue ; une capture se **lit** (le
   commentaire est lisible, sans colonnes, aligné à gauche).
 - **AC13 — Coordination.** La story ne touche ni `crates/kesh-qrbill/src/largeurs.rs`, ni `kesh-report/`, ni les
-  catalogues i18n, ni `sprint-status.yaml`, ni `CHANGELOG.md` ; le seul changement de `lib.rs` est l'**ajout de
-  `LinePdfKind` à la ligne de ré-export de `InvoiceLinePdf`** (`lib.rs:27`).
+  catalogues i18n, ni `sprint-status.yaml`, ni `CHANGELOG.md` ; les changements de `lib.rs` sont **exactement** : (i) `LinePdfKind` ajouté à la
+  ligne de ré-export de `InvoiceLinePdf` (`lib.rs:27`) ; (ii) le module du comparateur et son ré-export, sous
+  `#[cfg(feature = "test-support")]` (commit de capture) ; hors `lib.rs`, la story ne touche que les `Cargo.toml` et
+  `Cargo.lock` énumérés à l'étape 0 : `[features] test-support` et `sha2` rendu optionnel sous cette feature dans
+  `kesh-qrbill/Cargo.toml`, la dev-dépendance `kesh-qrbill = { …, features = ["test-support"] }` dans
+  `kesh-api/Cargo.toml`, `Cargo.lock` (régénéré).
 - **AC14 — Gates.** § *Tâches*, dernière tâche ; le Dev Agent Record n'affirme que ce qui a tourné.
 
 ## Tests à écrire, et la preuve du rouge
@@ -356,8 +368,9 @@ Journaux de rouge dans `kesh-gate-logs/e491b/` (`rouge-T<n>-<m>.log`), commande 
 
 | # | Test | Ce qu'il prouve | Preuve du rouge |
 |---|---|---|---|
-| T0 | `crates/kesh-qrbill/tests/rendu_avant_apres.rs::capturer_references_avant_0_20_0` (`#[ignore]`) | écrit les références de l'AC1 dans `tests/fixtures/avant-0.20.0/` **avant** tout changement ; même commit que T0-bis | l'étape 0 le lance **deux fois** : deux sorties identiques (journal `t0-stabilite.log`) ; sinon la cause se nomme (D4) |
-| T0-bis | `crates/kesh-api/tests/pdf_avant_apres_e2e.rs::capturer_references_http_avant_0_20_0` (`#[ignore]`, V1-1) | sur `cbdd70026`, crée par le dépôt les pièces de l'AC2, les rend par le service et le HTTP (facture jamais téléchargée, regel) et écrit leurs références dans `kesh-api/tests/fixtures/avant-0.20.0/` ; **même commit que T0**, avant toute source de la story | lancé **deux fois** : sorties identiques, sinon la cause se nomme (la date de création va dans `Info`, hors empreinte : à confirmer) ; `git diff <capture>..HEAD -- crates/kesh-api/tests/fixtures/avant-0.20.0/` vide à la clôture |
+| T0 | `crates/kesh-qrbill/tests/rendu_avant_apres.rs::capturer_references_avant_0_20_0` (`#[ignore]`, échoue si la référence existe) | écrit les références de l'AC1 dans `tests/fixtures/avant-0.20.0/` **avant** tout changement ; même commit que T0-bis | l'étape 0 le lance **deux fois** : deux sorties identiques (journal `t0-stabilite.log`) ; sinon la cause se nomme (D4) |
+| T0-bis | `crates/kesh-api/tests/pdf_avant_apres_e2e.rs::capturer_references_http_avant_0_20_0` (`#[ignore]`, échoue si la référence existe, V1-1) | sur `cbdd70026`, crée par le dépôt les pièces de l'AC2, les rend par le service et le HTTP (facture jamais téléchargée, regel) et écrit leurs références dans `kesh-api/tests/fixtures/avant-0.20.0/` ; **même commit que T0**, avant toute source de la story | lancé **deux fois sur le même montage fixe** que T3 (`sqlx::test`, graines et dates d'émission et d'échéance posées : numéro de facture et identifiants viennent de la base) : sorties identiques, sinon la cause se nomme (la date de création va dans `Info`, hors empreinte : à confirmer) ; `git diff <capture>..HEAD -- crates/kesh-api/tests/fixtures/avant-0.20.0/` vide à la clôture |
+| T1-bis | `rendu_avant_apres.rs::le_comparateur_rougit_sur_deux_rendus_differents` (V2-2) | le comparateur donne des empreintes **différentes** pour deux rendus d'une même pièce différant par un décalage de `0.01` mm, un texte changé d'un caractère, un nombre d'opération changé d'un cheveu, et un PDF fabriqué directement avec `printpdf` qui porte une police intégrée de plus (le rendu de production ne se mute pas avant la capture) ; **commit de capture**, comparateur gelé | rouge **par construction** : le test affirme l'inégalité ; mutation du comparateur (il ignore les coordonnées) → **ROUGE** (`rouge-T1bis.log`) |
 | T1 | `rendu_avant_apres.rs::neuf_pieces_chiffrees_se_rendent_comme_en_0_19_0` (AC1) | neuf scénarios (S1 à S9) égaux à leur référence, condensat + polices + pages + liste lisible | quatre mutations numérotées, chacune **ajoutée au code de rendu** : (1) `col_qty` décalé de `0.1` mm ; (2) `ty -= 5.0` → `ty -= 5.01` à la fin de la boucle ; (3) une ligne chiffrée passée **par le chemin du commentaire** (`kind` forcé) ; (4) `BuiltinFont::HelveticaOblique` ajoutée au document, jamais utilisée (**ne bouge aucune opération de contenu** : seule la liste de polices la tue, ce qui éprouve la comparaison des ressources) → **ROUGE** ×4 (`rouge-T1-1.log` à `-4.log`) |
 | T2 | `rendu_avant_apres.rs::les_deux_coupes_de_la_qr_sont_inchangees` (S8 : adresse ; S9 : message au palier P0) | la section de paiement égale la référence pour l'adresse **et** pour le message | mutation : `couper_ligne` appelle `couper_ligne_a` avec `9.0` au lieu de `VALEUR_TAILLE` → **ROUGE** pour **chacun** des deux chemins (S8 puis S9 vus rougir séparément, `rouge-T2-1.log`, `-2.log`) |
 | T3 | `kesh-api/tests/pdf_avant_apres_e2e.rs::quatre_pieces_chiffrees_se_rendent_comme_en_0_19_0` (AC2) | (a) à (d) par la base et le HTTP, le regel de (a) et (b) ; références capturées par **T0-bis** | mutations : `ligne_pdf` met `Comment` pour toute ligne → **ROUGE** ; `ligne_pdf` perd `line_total` (`Decimal::ZERO`) → **ROUGE** ; chacune tuée par la comparaison, non par un `assert!(status == 200)` (`rouge-T3-1.log`, `-2.log`) |
@@ -366,8 +379,8 @@ Journaux de rouge dans `kesh-gate-logs/e491b/` (`rouge-T<n>-<m>.log`), commande 
 | T6 | `pdf.rs::tests::un_commentaire_decale_de_n_fois_5_mm` (AC5 b) | [A, C, B] contre [A, B] à sommes fournies égales : ordonnées décalées de `n × 5.0`, abscisses et textes inchangés | mutation : le commentaire ne consomme pas son pas (`ty` non décrémenté) → **ROUGE** (`rouge-T6.log`) ; ce test **ne prouve pas** les sommes (AC5 a, T9, T10) |
 | T7 | `pdf.rs::tests::un_titre_de_section_se_rend_comme_un_commentaire_en_49_1b` (AC6) | `Heading` = `Comment` au texte près ; nomme la 49-3 | mutation : `Heading` retombe sur le chemin chiffré → **ROUGE** (`rouge-T7.log`) |
 | T8 | `pdf.rs::tests::la_capacite_se_garde_par_ligne_de_texte` (AC7) | refus `TooManyLines(n)` au seuil, succès sur l'avoir, aucun texte sous le plancher | mutation : la garde ne s'applique qu'à la **première** ligne de texte d'un commentaire → **ROUGE** (texte sous `SEP_Y`, ou `Ok` à tort) (`rouge-T8.log`) |
-| T9 | `kesh-api/tests/invoice_pdf_e2e.rs::pdf_d_une_facture_a_commentaire_l_imprime` (AC3, AC5 a, AC7) | facture `[A, commentaire, B]` créée **au dépôt**, validée, `GET /pdf` 200 ; le PDF contient le commentaire (recherche du texte en hexadécimal, comme `pdf_contains`, `invoice_frozen_pdf_e2e.rs:379`, ou relecture `lopdf` à confirmer à l'étape 0), pas de « 0.00 » à sa ligne ; **AC5 a** : `[A, B]` créée au dépôt donne les mêmes textes de récapitulatif, le même TTC et le même montant de QR (relus dans le PDF, par le comparateur exposé) ; un commentaire de mille caractères rend `400 INVOICE_TOO_MANY_LINES_FOR_PDF` | mutations : `ligne_pdf` met `Priced` à tout (le commentaire s'imprime `0.00`) → **ROUGE** ; **au site réel des sommes** : `vat_lines_pdf` garde les taux `<= 0` (ligne « TVA 0.0% »), ou `subtotal_ht` compte une ligne non chiffrée → **ROUGE** (`rouge-T9-1.log` à `-3.log`) |
-| T10 | `kesh-api/tests/invoice_pdf_e2e.rs::pdf_d_un_avoir_reprend_le_commentaire` (AC3, AC5) | avoir d'une facture à commentaire : `GET …/credit-notes/{id}/pdf` imprime le commentaire pleine largeur ; **AC5 a pour l'avoir** : mêmes sommes, TTC et récapitulatif que l'avoir de `[A, B]` (facture distincte) | mutations : `credit_notes.rs` n'appelle pas `ligne_pdf` (ancienne fermeture) → **ROUGE** ; la somme de l'avoir (`credit_notes.rs:330`) compte une ligne non chiffrée → **ROUGE** (`rouge-T10-1.log`, `-2.log`) |
+| T9 | `kesh-api/tests/invoice_pdf_e2e.rs::pdf_d_une_facture_a_commentaire_l_imprime` (AC3, AC5 a, AC7) | facture `[A, commentaire, B]` créée **au dépôt**, validée, `GET /pdf` 200 ; le PDF contient le commentaire (recherche du texte en hexadécimal, comme `pdf_contains`, `invoice_frozen_pdf_e2e.rs:379`, ou relecture `lopdf` à confirmer à l'étape 0), pas de « 0.00 » à sa ligne ; **AC5 a** : `[A, B]` créée au dépôt donne les mêmes textes de récapitulatif, le même TTC et le même montant de QR (relus dans le PDF, par le comparateur exposé) ; un commentaire de mille caractères rend `400 INVOICE_TOO_MANY_LINES_FOR_PDF` | mutations : `ligne_pdf` met `Priced` à tout (le commentaire s'imprime `0.00`) → **ROUGE** ; **au site réel des sommes, mutations qui changent une valeur** : (2) le wrapper `vat_lines_pdf` (`invoice_pdf_service.rs:37`) ajoute une ligne `InvoiceVatLinePdf { rate_percent: 0, … }` quand une paire a un taux `<= 0` (ligne « TVA 0.0% » au récapitulatif ; **le filtre réel est `kesh-core/src/accounting/vat.rs:132`**, que l'AC8 veut inchangé : on ne le mute pas, une mutation y ferait échouer `validate_invoice` avant l'assertion) ; (3) `subtotal_ht` (`:408`) devient `lines.iter().map(\|l\| l.line_total).sum::<Decimal>() + Decimal::from(nombre de lignes non chiffrées)` → **ROUGE** ×3 (`rouge-T9-1.log` à `-3.log`). **D9 est protégé par construction** (la contrainte `chk_*_unpriced_neutral` interdit une ligne non chiffrée à `line_total ≠ 0`) : (3) vérifie seulement que la comparaison `[A,C,B]` = `[A,B]` lit bien la somme ; compter « sans changement » une ligne à 0 serait un mutant équivalent, écarté |
+| T10 | `kesh-api/tests/invoice_pdf_e2e.rs::pdf_d_un_avoir_reprend_le_commentaire` (AC3, AC5) | avoir d'une facture à commentaire : `GET …/credit-notes/{id}/pdf` imprime le commentaire pleine largeur ; **AC5 a pour l'avoir** : mêmes sommes, TTC et récapitulatif que l'avoir de `[A, B]` (facture distincte) | mutations : `credit_notes.rs` n'appelle pas `ligne_pdf` (ancienne fermeture) → **ROUGE** ; (2) `subtotal_ht` de l'avoir (`credit_notes.rs:330`) ajoute `Decimal::from(nombre de lignes non chiffrées)` (même raisonnement que T9 (3) : mutation qui change la valeur) → **ROUGE** (`rouge-T10-1.log`, `-2.log`) |
 | T11 | `invoice_pdf_service.rs::tests::le_match_de_type_est_exhaustif_et_neutre_pour_priced` (AC8) | `ligne_pdf` pour `Priced` : tous les champs recopiés ; les trois `LineType` énumérés ; `Priced` → `LinePdfKind::Priced` | mutation : `Comment` → `Priced` dans le `match` → **ROUGE** (`rouge-T11.log`) |
 | T12 | `kesh-api/tests/invoice_frozen_pdf_e2e.rs::un_pdf_fige_est_servi_tel_quel_meme_si_le_rendu_aurait_change` (AC9 a) | un fichier archivé de contenu **autre** (octets d'un PDF quelconque + SHA-256 posé par SQL de forme 0.19.0, quatre colonnes `pdf_*`) est servi octet pour octet ; le regel d'un fichier absent rend le contenu neuf | mutation : `get_or_freeze` rend toujours (ignore `is_frozen`) → **ROUGE** (`rouge-T12.log`) |
 | T13 | épreuve, non test neuf : `invoice_pdf_e2e`, `invoice_frozen_pdf_e2e`, `invoice_send_email_e2e`, `golden_test`, les tests de `pdf.rs` existants | **verts sans modification de leurs assertions** (les littéraux gagnent `kind: LinePdfKind::Priced`, rien d'autre) | — |
@@ -378,22 +391,28 @@ touche** (`touch`) avant la reconstruction : cargo garde sinon le binaire muté.
 ## Tâches
 
 - [ ] **Étape 0 — lire et capturer, dans cet ordre, avant tout changement du rendu.** (1) Rejouer `git diff --stat
-  773df80da..HEAD -- crates/kesh-qrbill crates/kesh-api/src/routes/issued_invoice_pdf.rs` (**vide**) ; (2) ajouter le
-  comparateur exposé (feature `test-support`, V1-2) — **seule modification de source permise avant la capture**, qui ne
-  touche aucune ligne de rendu ; (3) écrire T0 (`kesh-qrbill`) **et T0-bis** (`kesh-api`, `#[ignore]`, qui crée les pièces
-  de l'AC2 par le dépôt, les rend par le service — facture jamais téléchargée, puis regel — et range les références) ; (4)
-  lancer chacun **deux fois**, vérifier la stabilité (D4), journaux `t0-stabilite.log` ; (5) **commiter les références et
-  les deux tests de capture seuls** (`test(49-1b) : références du rendu de la 0.19.0 (refs #1242)`), avec
-  `git diff cbdd70026 <commit de capture> -- 'crates/*/src/*'` ne montrant que le comparateur ; (6) **seulement alors**,
-  écrire le code de la story (`LinePdfKind`, `couper_ligne_a`, `ligne_pdf`…). Vérifier que `couper_ligne` a **deux**
-  appelants de production (`pdf.rs:1283`, adresse, et `pdf.rs:1351`, message au palier P0) : `git grep -n "couper_ligne("
-  -- crates`.
+  773df80da..HEAD -- crates/kesh-qrbill crates/kesh-api/src/routes/issued_invoice_pdf.rs` (**vide**) ; (2) écrire le
+  comparateur exposé (module sous `#[cfg(feature = "test-support")]`, V1-2), les deux tests de capture (T0 et T0-bis,
+  `#[ignore]`, qui **échouent si la référence existe déjà**) et le test du comparateur (T1-bis) ; (3) lancer T0 et T0-bis
+  **deux fois chacun** sur le même montage fixe (V2-9), vérifier la stabilité (D4), journaux `t0-stabilite.log` ; (4)
+  **un seul commit de capture** (`test(49-1b) : références du rendu de la 0.19.0 (refs #1242)`) qui contient **exactement** :
+  le comparateur et son `lib.rs` (deux lignes sous feature), `kesh-qrbill/Cargo.toml` et `kesh-api/Cargo.toml`
+  (`[features]`, `sha2` optionnel, dev-dépendance), `Cargo.lock`, les trois tests (T0, T0-bis, T1-bis) et les fixtures,
+  et **aucune ligne de rendu** : `git diff cbdd70026 <capture> -- crates/kesh-qrbill/src/pdf.rs
+  crates/kesh-qrbill/src/types.rs crates/kesh-qrbill/src/largeurs.rs 'crates/kesh-api/src/routes/*'` est **vide** ;
+  (5) **consigner son hash** au Dev Agent Record et en première ligne de chaque dossier de fixtures ; (6) **seulement
+  alors**, écrire le code de la story (`LinePdfKind`, `couper_ligne_a`, `ligne_pdf`…), le premier commit de rendu ayant ce
+  commit pour **ancêtre** (`git merge-base --is-ancestor <capture> <premier commit portant LinePdfKind>`). Vérifier que
+  `couper_ligne` a **deux** appelants de production (`pdf.rs:1283`, adresse, et `pdf.rs:1351`, message au palier P0) :
+  `git grep -n "couper_ligne(" -- crates`.
 - [ ] **`kesh-qrbill`** : `LinePdfKind` et `InvoiceLinePdf::kind` (`types.rs`, `lib.rs:27`) ; `couper_ligne_a` (D5) ;
   le chemin du commentaire dans `draw_invoice_section` (D1, D3, D5, D6) ; mise à jour des littéraux (`pdf.rs` ×6,
-  `golden_test.rs`, `examples/capture_qr_facture.rs`) ; `README.md` de la crate.
+  `golden_test.rs`, `examples/capture_qr_facture.rs`) ; `README.md` de la crate. **Le comparateur, `[features]`, `sha2`
+  optionnel et `Cargo.lock` sont du commit de capture, non de la story** (étape 0).
 - [ ] **`kesh-api`** : `ligne_pdf` et son `match` (D10) dans `invoice_pdf_service.rs` ; ses deux appelants (`:396`,
-  `credit_notes.rs:310`) ; le littéral de `qr_decode.rs:885`. **Aucune autre ligne** (AC8, AC13).
-- [ ] **Tests** T1 à T12, avec leurs rouges (journaux dans `kesh-gate-logs/e491b/`).
+  `credit_notes.rs:310`) ; le littéral de `qr_decode.rs:885` ; **la dev-dépendance `kesh-qrbill` avec `features = ["test-support"]`** de
+  `kesh-api/Cargo.toml` est du commit de capture. **Aucune autre ligne** (AC8, AC13).
+- [ ] **Tests** T1 à T12 (T0, T0-bis et T1-bis sont du commit de capture), avec leurs rouges (journaux dans `kesh-gate-logs/e491b/`).
 - [ ] **Captures** (AC12) : étendre l'exemple de capture, produire les PNG dans `kesh-gate-logs/e491b/captures/`, les lire.
 - [ ] **Gates** (`e35-dev-commun.md` § *Quels gates, quand*, voie A : base et Rust). **Aucun module `kesh-db`** : en cours de
   boucle, gate ciblé — `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
@@ -458,7 +477,7 @@ touche** (`touch`) avant la reconstruction : cargo garde sinon le binaire muté.
   seules opérations de contenu ne le verrait pas ; (b) `couper_ligne` a **deux** appelants de production, l'**adresse** de la QR (`pdf.rs:1283`) et le **message** au palier P0
   (`pdf.rs:1351`, présent sur toute facture numérotée) : la généraliser par une taille sans changer son résultat à 8 pt (T2) ; (c) un `Heading` en base **existe peut-être déjà** par import ou SQL : le
   rendu D1 le protège ; (d) `truncate_display` (44 caractères et « … ») est **voulu pour une ligne chiffrée** tant que D8 n'est pas
-  traité : ne pas « harmoniser » ; (e) une description du dépôt peut contenir `\n`, `\r`, U+00A0 : D5.
+  traité : ne pas « harmoniser » ; (e) une description du dépôt peut contenir `\n`, `\r`, tabulation, U+00A0 : D5.
 - **Aucune donnée réelle** de Guy dans la fiche, les fixtures, les tests, les captures ou les journaux : tout est
   **synthétique** (noms, adresses et IBAN de la directive SIX ou de la fixture de `pdf.rs`). `~/kesh/` est en lecture seule,
   jamais lu ni écrit.
@@ -476,3 +495,4 @@ touche** (`touch`) avant la reconstruction : cargo garde sinon le binaire muté.
 |---|---|
 | 2026-11-19 | **Création de la fiche** (Sonnet 5.5, `bmad-create-story`). Code lu à `cbdd70026`. Dix décisions (D1 à D10) ; quatorze AC ; treize tests. Points arrêtés : le titre de section est rendu comme un commentaire en 49-1b, sa mise en évidence reste à la 49-3 (D1) ; avant / après par le **contenu rendu** (condensat des opérations, polices, pages, liste lisible), référence capturée **avant** tout changement sur `cbdd70026` (rendu prouvé égal à celui de `773df80da` par un `git diff` vide), non par les octets du fichier (le `/ID` change) (D4) ; un commentaire se coupe, ne se tronque pas, et **la réduction à 44 caractères et « … » d'une description chiffrée reste hors périmètre (#1363)** (D5, D8) ; aucune migration, aucune clé i18n, aucune police neuve. Deux issues à ouvrir (Dev Notes). Validation non lancée. Statut : `ready-for-dev`. |
 | 2026-11-19 | **Validation P1** (Opus 5.5, `kesh-gate-logs/e491b/validation-p1.md` : 0 CRITICAL, 1 HIGH, 5 MEDIUM, 7 LOW). **Remédiation** (décisions de l'orchestrateur) : V1-1 (HIGH) T0-bis côté `kesh-api`, capture avant toute source, ordre de l'étape 0 écrit ; V1-2 un seul comparateur exposé (`test-support`) ; V1-3 `couper_ligne` a deux appelants de production (`pdf.rs:1351`, message P0), scénario S9, T2 sur les deux chemins ; V1-4 preuve de D9 au niveau `kesh-api` (facture et avoir, mutations aux sites réels), T6 réduit à la mise en page ; V1-5 AC4/T5 selon le contrat réel de `couper_ligne` ; V1-6 « 44 caractères suivis de « … » » (#1363 corrigée par l'orchestrateur) ; V1-7 formulation de l'octet, `MediaBox` et dictionnaire des polices à l'empreinte ; V1-8 avoir sur une facture distincte ; V1-9 limite dite et note de version nuancée ; V1-10 filtre de gate et passage en review ; V1-11 deux écarts déclarés ; V1-12 sortie d'inventaire et README ; V1-13 WinAnsi et `CHECK` exacts. Modèles : Sonnet (rédaction), Opus (P1). Une passe 2 reste à lancer (modèle différent). |
+| 2026-11-19 | **Validation P2** (Sonnet 5.5, `kesh-gate-logs/e491b/validation-p2.md` : 0 CRITICAL, 0 HIGH, 4 MEDIUM, 5 LOW). **Remédiation** : V2-1 contenu exact du commit de capture (comparateur, `Cargo.toml`/`Cargo.lock`, trois tests, fixtures, aucune ligne de rendu), hash consigné, ancêtre du premier commit de rendu (`merge-base --is-ancestor`), tests de capture qui refusent d'écraser ; V2-2 comparateur gelé, helpers de `pdf.rs::tests` rebranchés sans le modifier, test T1-bis qui le prouve rouge ; V2-3 mutations de T9/T10 qui changent une valeur, D9 dit protégé par construction ; V2-4 AC13 et tâches nomment `lib.rs`, `[features]`, `sha2` optionnel, dev-dépendance, `Cargo.lock` ; V2-5 pas de `doc(hidden)` en production, contrôle `cargo tree` ; V2-6 chemin `kesh-db` de la citation 843 ; V2-7 site réel du filtre de TVA (`kesh-core`), mutation du wrapper ; V2-8 `\r`, `\n` final, tabulation ; V2-9 neuf littéraux restants, montage fixe de T0-bis et T3. Modèles : Sonnet (rédaction), Opus (P1), Sonnet (P2). Une passe 3 reste à lancer (modèle différent). |
