@@ -253,7 +253,7 @@ Filets déclarés (ne rougissent sans aucune mutation de la story) : rue 71 par 
 | Vitest de la garde et de la page des contacts | `867be3a79` (avant commit) | `vert-vitest-garde.log` | 54 / 54 |
 | frontend complet, seconde prise | `867be3a79` | `front-{check,lint-i18n-ownership,test-unit,build}-review2.log` | `check` 0 erreur (29 avertissements, les mêmes qu'à la clôture de la 48-13, aucun dans un fichier de la story) ; `lint-i18n-ownership` vert ; `test:unit` **4646 / 4646** (278 fichiers) ; `build` vert |
 | E2E ciblé `contacts.spec.ts`, seconde prise | `867be3a79` | `e2e-contacts2.log` | 9 verts, 2 ignorés, port libéré |
-| `scripts/gate-ci.sh kesh_ci_e4815`, seconde prise | `867be3a79` | `gate-ci-review2.log` | GATECI2 |
+| `scripts/gate-ci.sh kesh_ci_e4815`, seconde prise | `867be3a79` | `gate-ci-review2.log` | **6169 passés, 0 échoué**, 18 ignorés |
 
 `867be3a79` ne touche que l'écran des contacts (deux `data-testid`) et la spec E2E. `test-fast --ci` n'est **pas** rejoué à ce
 commit (joué à `81cd199fd`) ; `gate-ci`, qui couvre les mêmes binaires un processus par binaire, l'est (des tests Rust lisent des
