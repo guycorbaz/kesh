@@ -1927,3 +1927,120 @@ describe('ReconciliationProposals — transaction déjà comptabilisée (Story 3
 		},
 	);
 });
+
+// Story 48-14 (#1262, D3, AC7, T5) — un règlement groupé abouti alors que sa fenêtre a été
+// fermée pendant l'envoi (`onSettledInBackground`) : sans modale ouverte, la liste est relue
+// aussitôt, avec le bilan ; une modale ouverte — l'une des cinq : règlement groupé, écriture
+// manuelle, éclatement, rattachement, confirmation « déjà comptabilisée » — n'est ni démontée ni
+// refermée, et la relecture part à sa fermeture, une seule fois. Les attentes portent sur le
+// NOMBRE d'appels de `getProposals` : une doublure remonte après une relecture, sa présence seule
+// ne prouve rien.
+describe('ReconciliationProposals — règlement groupé abouti en arrière-plan (Story 48-14, #1262)', () => {
+	function ligne(id: number, alreadyBooked = false): GetProposalsResponse['proposals'][number] {
+		const p = makeProposalWithCandidate(id, 100 + id, 1.0);
+		return {
+			...p,
+			alreadyBooked: alreadyBooked ? { settlementCount: 0, entryCount: 1, matchedElsewhereCount: 0 } : null,
+		};
+	}
+
+	async function monter(proposals = [ligne(1), ligne(2)]) {
+		mockApi.getProposals.mockResolvedValue({ proposals, hasMore: false } satisfies GetProposalsResponse);
+		const view = render(ReconciliationProposals, { bankAccountId: 17 });
+		await view.findAllByTestId('reconciliation-row');
+		return view;
+	}
+
+	/** Laisse passer les microtâches et un rendu. */
+	async function laisser(): Promise<void> {
+		await new Promise((res) => setTimeout(res, 0));
+		await tick();
+	}
+
+	/** Le bilan affiché, blancs réduits. */
+	function bilan(view: Awaited<ReturnType<typeof monter>>): string {
+		return (view.getByTestId('reconciliation-success').textContent ?? '').replace(/\s+/g, ' ').trim();
+	}
+
+	function stub(view: Awaited<ReturnType<typeof monter>>, testid: string, modal: string): HTMLElement {
+		const el = view.getAllByTestId(testid).find((b) => b.getAttribute('data-modal') === modal);
+		expect(el, `${testid} de la modale ${modal}`).toBeTruthy();
+		return el as HTMLElement;
+	}
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		mockApi.acceptProposals.mockResolvedValue({ accepted: [], failed: [] } satisfies AcceptResponse);
+	});
+
+	afterEach(() => cleanup());
+
+	it('aucune modale ouverte : la liste est relue aussitôt, et le bilan dit « 1 opération(s) réussie(s). »', async () => {
+		const view = await monter();
+		const avant = mockApi.getProposals.mock.calls.length;
+		await fireEvent.click(view.getByTestId('stub-group-background'));
+		await vi.waitFor(() => expect(mockApi.getProposals).toHaveBeenCalledTimes(avant + 1));
+		await vi.waitFor(() => expect(bilan(view)).toContain('1 opération(s) réussie(s).'));
+	});
+
+	it.each([
+		['manual-match-button', 'manual'],
+		['split-button', 'split'],
+		['link-settlement-button', 'link'],
+		['group-settlement-button', 'group'],
+	])(
+		'%s ouverte : pas de relecture, la modale reste ; fermée, une relecture et le bilan',
+		async (bouton, modale) => {
+			const view = await monter();
+			await fireEvent.click(view.getAllByTestId(bouton)[0]);
+			await view.findByTestId('stub-modal-success');
+			const avant = mockApi.getProposals.mock.calls.length;
+			await fireEvent.click(view.getByTestId('stub-group-background'));
+			await laisser();
+			expect(mockApi.getProposals).toHaveBeenCalledTimes(avant);
+			expect(stub(view, 'stub-modal-success', modale)).toBeTruthy();
+			expect(view.queryByTestId('reconciliation-success')).toBeNull();
+			await fireEvent.click(stub(view, 'stub-modal-close', modale));
+			await laisser();
+			expect(mockApi.getProposals).toHaveBeenCalledTimes(avant + 1);
+			await vi.waitFor(() => expect(bilan(view)).toContain('1 opération(s) réussie(s).'));
+			await laisser();
+			expect(mockApi.getProposals).toHaveBeenCalledTimes(avant + 1);
+		},
+	);
+
+	it('confirmation « déjà comptabilisée » ouverte : ni refermée ni relue, la sélection gardée ; Annuler relit une fois', async () => {
+		const view = await monter([ligne(1, true), ligne(2)]);
+		await fireEvent.click(view.getAllByTestId('tx-checkbox')[1]);
+		await fireEvent.click(view.getAllByTestId('manual-match-button')[0]);
+		await view.findByTestId('already-booked-confirm');
+		const avant = mockApi.getProposals.mock.calls.length;
+		await fireEvent.click(view.getByTestId('stub-group-background'));
+		await laisser();
+		expect(mockApi.getProposals).toHaveBeenCalledTimes(avant);
+		expect(view.getByTestId('already-booked-confirm')).toBeTruthy();
+		expect((view.getAllByTestId('tx-checkbox')[1] as HTMLInputElement).checked).toBe(true);
+		await fireEvent.click(view.getByTestId('already-booked-confirm-cancel'));
+		await laisser();
+		expect(mockApi.getProposals).toHaveBeenCalledTimes(avant + 1);
+		await laisser();
+		expect(mockApi.getProposals).toHaveBeenCalledTimes(avant + 1);
+	});
+
+	it.each([['stub-group-success-then-close'], ['stub-group-close-then-stale']])(
+		'drapeau armé, la fenêtre du groupe fermée par %s : une seule relecture',
+		async (fermeture) => {
+			const view = await monter();
+			await fireEvent.click(view.getAllByTestId('group-settlement-button')[0]);
+			await view.findByTestId('stub-modal-success');
+			const avant = mockApi.getProposals.mock.calls.length;
+			await fireEvent.click(view.getByTestId('stub-group-background'));
+			await laisser();
+			expect(mockApi.getProposals).toHaveBeenCalledTimes(avant);
+			await fireEvent.click(view.getByTestId(fermeture));
+			await laisser();
+			await laisser();
+			expect(mockApi.getProposals).toHaveBeenCalledTimes(avant + 1);
+		},
+	);
+});

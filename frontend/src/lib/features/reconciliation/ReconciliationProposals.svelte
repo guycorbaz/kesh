@@ -180,6 +180,11 @@
 		// la fonction lit avant son premier `await`, et une lecture ferait de chaque demande de
 		// confirmation le déclencheur d'une relecture, qui la refermerait aussitôt.
 		pendingGesture = null;
+		// Story 48-14 (#1262, D3) — toute relecture consomme la relecture différée d'un règlement
+		// abouti en arrière-plan ; éteinte AVANT le premier `await`, pour que la microtâche de
+		// `flushPendingReload` la voie éteinte. Variable non réactive : aucune dépendance de
+		// l'`$effect` ci-dessous.
+		reloadPending = false;
 		const myGen = ++loadGen;
 		loading = true;
 		errorMsg = null;
@@ -335,6 +340,49 @@
 	}
 
 	/**
+	 * Story 48-14 (#1262, D3) — un règlement groupé a abouti en arrière-plan, alors que la liste
+	 * n'a pas été relue. Toute relecture démonte la modale ouverte (les modales vivent sous
+	 * `{:else}` de `{#if loading}`) et referme la confirmation : la relecture attend donc qu'aucune
+	 * modale ne soit ouverte. Non réactif : lu seulement dans la microtâche de `flushPendingReload`.
+	 */
+	let reloadPending = false;
+
+	/** Une des cinq modales est ouverte : les quatre fenêtres et la confirmation « déjà comptabilisée ». */
+	function anyModalOpen(): boolean {
+		return groupOpen || manualOpen || splitOpen || linkOpen || pendingGesture !== null;
+	}
+
+	/** Ce que fait le succès immédiat d'un règlement groupé : nouveau bilan, liste relue. */
+	async function reloadAfterGroupSettlement(): Promise<void> {
+		clearBatchReport();
+		lastSuccessCount = 1;
+		await load();
+	}
+
+	/** D3 — le règlement a abouti, sa fenêtre fermée pendant l'envoi : relu aussitôt, ou différé. */
+	async function onGroupSettledInBackground(): Promise<void> {
+		if (anyModalOpen()) {
+			reloadPending = true;
+			return;
+		}
+		await reloadAfterGroupSettlement();
+	}
+
+	/**
+	 * D3 — une modale vient de se fermer par un chemin qui ne relit pas lui-même (Annuler, Échap) :
+	 * la relecture différée part, si aucune modale n'est plus ouverte. Hors de la pile d'appel
+	 * (`queueMicrotask`) : une modale enchaîne fermeture et relecture dans un ordre qui varie
+	 * (`onSuccess` puis `onOpenChange(false)`, ou `onOpenChange(false)` puis `onStale`) ; la
+	 * relecture qu'elle lance éteint le drapeau avant la microtâche — une seule relecture.
+	 */
+	function flushPendingReload(): void {
+		queueMicrotask(() => {
+			if (!reloadPending || anyModalOpen()) return;
+			void reloadAfterGroupSettlement();
+		});
+	}
+
+	/**
 	 * Story 34-4 (#828, AC-6) — le geste qui attend la confirmation d'une ligne signalée « déjà
 	 * comptabilisée », et les lignes signalées qu'il concerne (relevées à la demande).
 	 * *Accepter*, *Écriture manuelle*, *Éclater* et, depuis la Story 43-3 (#823, D1), *Régler
@@ -450,9 +498,13 @@
 		runGesture({ kind: gesture.kind, proposal: current });
 	}
 
-	/** *Annuler* : rien n'est fait. */
+	/**
+	 * *Annuler* : rien n'est fait. Story 48-14 (#1262, D3) : la relecture différée d'un règlement
+	 * groupé abouti pendant que la confirmation était ouverte part maintenant.
+	 */
 	function cancelGesture(): void {
 		pendingGesture = null;
+		flushPendingReload();
 	}
 
 	// Story 29-6 (#665, AC10) — une ligne sans proposition se coche (pour
@@ -873,7 +925,10 @@
 			open={manualOpen}
 			onOpenChange={(v) => {
 				manualOpen = v;
-				if (!v) manualProposal = null;
+				if (!v) {
+					manualProposal = null;
+					flushPendingReload();
+				}
 			}}
 			{bankAccountId}
 			proposal={manualProposal}
@@ -886,7 +941,10 @@
 			open={splitOpen}
 			onOpenChange={(v) => {
 				splitOpen = v;
-				if (!v) splitProposal = null;
+				if (!v) {
+					splitProposal = null;
+					flushPendingReload();
+				}
 			}}
 			{bankAccountId}
 			proposal={splitProposal}
@@ -899,7 +957,10 @@
 			open={linkOpen}
 			onOpenChange={(v) => {
 				linkOpen = v;
-				if (!v) linkProposal = null;
+				if (!v) {
+					linkProposal = null;
+					flushPendingReload();
+				}
 			}}
 			proposal={linkProposal}
 			onSuccess={onLinkSuccess}
@@ -909,7 +970,10 @@
 			open={groupOpen}
 			onOpenChange={(v) => {
 				groupOpen = v;
-				if (!v) groupProposal = null;
+				if (!v) {
+					groupProposal = null;
+					flushPendingReload();
+				}
 			}}
 			{bankAccountId}
 			proposal={groupProposal}
@@ -917,6 +981,7 @@
 			{bankLedgerAccountId}
 			onSuccess={onGroupSuccess}
 			onStale={onGroupStale}
+			onSettledInBackground={onGroupSettledInBackground}
 		/>
 
 		<AlreadyBookedConfirmDialog

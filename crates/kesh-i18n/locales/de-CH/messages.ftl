@@ -1717,6 +1717,7 @@ reconciliation-group-block-unreadable = Kesh konnte einen Betrag oder die Obergr
 reconciliation-group-block-gap-too-large = Die Differenz übersteigt die zulässige Obergrenze: Fügen Sie eine Rechnung hinzu oder entfernen Sie eine, oder gleichen Sie die Transaktion anders ab.
 reconciliation-group-not-reread = Rechnung { $number }: Ihr offener Betrag konnte nicht neu gelesen werden, die angezeigte Differenz kann falsch sein. Entfernen Sie die Rechnung und fügen Sie sie erneut hinzu, um ihn neu zu lesen.
 reconciliation-group-reread-retry = Die offenen Beträge wurden neu gelesen: Prüfen Sie die Differenz und speichern Sie erneut.
+reconciliation-group-reread-blocked = Es wurde nichts gespeichert: Beachten Sie, was das Speichern noch verhindert.
 reconciliation-group-account-check-retry = Kesh verlangt ein Konto für die Differenz: Prüfen Sie das gewählte Konto und speichern Sie erneut.
 reconciliation-group-rounding-info = Rundung von { $amount } auf das Rundungskonto gebucht
 reconciliation-group-rounding-not-configured = Es ist kein Konto für Rundungsdifferenzen festgelegt: Bitten Sie den Administrator, eines festzulegen.

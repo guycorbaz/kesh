@@ -1717,6 +1717,7 @@ reconciliation-group-block-unreadable = Kesh non ha potuto leggere un importo o 
 reconciliation-group-block-gap-too-large = La differenza supera il limite ammesso: aggiungete o togliete una fattura, o riconciliate la transazione in altro modo.
 reconciliation-group-not-reread = Fattura { $number }: il suo residuo non ha potuto essere riletto, la differenza indicata può essere errata. Toglietela e aggiungetela di nuovo per rileggerlo.
 reconciliation-group-reread-retry = I residui sono stati riletti: verificate la differenza, poi registrate di nuovo.
+reconciliation-group-reread-blocked = Non è stato registrato nulla: vedete che cosa impedisce ancora la registrazione.
 reconciliation-group-account-check-retry = Kesh chiede un conto per la differenza: verificate il conto scelto, poi registrate di nuovo.
 reconciliation-group-rounding-info = Arrotondamento di { $amount } registrato sul conto di arrotondamento
 reconciliation-group-rounding-not-configured = Non è designato alcun conto per le differenze di arrotondamento: chiedete all'amministratore di impostarlo.

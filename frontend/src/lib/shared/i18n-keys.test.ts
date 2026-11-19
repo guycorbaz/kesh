@@ -1163,7 +1163,10 @@ const ATTENDU = {
 	// `kesh-gate-logs/v0200cm/vert-vitest.log`), relevé par la garde : le seul site neuf est
 	// `contact-error-address-country-alone` (page des contacts, pays seul). La ligne du motif
 	// d'un bouton grisé (#1349) affiche `formValidation` : aucun site neuf.
-	sitesTotal: 3503,
+	// Story 48-14 (#1263, D1) : **3503 → 3504** (« expected 3504 to be 3503 »), relevé par la
+	// garde : le seul site neuf est `reconciliation-group-reread-blocked` (règlement groupé,
+	// demande de compte après relecture sans sélecteur).
+	sitesTotal: 3504,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

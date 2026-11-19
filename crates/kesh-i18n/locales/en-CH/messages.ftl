@@ -1717,6 +1717,7 @@ reconciliation-group-block-unreadable = Kesh could not read an amount or the dif
 reconciliation-group-block-gap-too-large = The difference exceeds the allowed limit: add or remove an invoice, or reconcile the transaction another way.
 reconciliation-group-not-reread = Invoice { $number }: its amount due could not be read again, so the difference shown may be wrong. Remove it and add it again to read it again.
 reconciliation-group-reread-retry = The amounts due have been read again: check the difference, then save again.
+reconciliation-group-reread-blocked = Nothing was saved: see what still prevents saving.
 reconciliation-group-account-check-retry = Kesh requires an account for the difference: check the chosen account, then save again.
 reconciliation-group-rounding-info = Rounding of { $amount } posted to the rounding account
 reconciliation-group-rounding-not-configured = No rounding-difference account is designated: ask the administrator to set one.
