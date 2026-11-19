@@ -484,7 +484,8 @@ test('article, prix : « 1.250 » refusé comme ambigu, rien n’est écrit ; «
 		await expect(page.locator('#form-price')).toHaveValue('1.250');
 
 		await page.fill('#form-price', "12'34");
-		await expect(page.getByTestId('product-form-price-error')).toContainText('4 décimales au plus');
+		// D1 : l'illisible garde le message actuel du prix (`product-error-price-invalid`).
+		await expect(page.getByTestId('product-form-price-error')).toContainText('Format de prix invalide');
 		await capture(page, testInfo, 'article-prix-illisible', 'e4810');
 
 		await page.fill('#form-price', "1'250");
