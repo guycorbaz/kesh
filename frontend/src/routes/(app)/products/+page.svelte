@@ -320,10 +320,19 @@
 		formOpen = true;
 	}
 
+	// Story 48-15 (C-e4815-4) — le nom n'a plus de `maxlength`, qui coupait en silence un texte
+	// collé (le nom devient la désignation de la ligne de facture, et donc du PDF). L'écran le
+	// juge lui-même : le refus désactive le bouton, et son MOTIF s'affiche sous le champ — sans
+	// quoi le bouton grisé serait un refus muet. Lu aussi par `formValidation`, à la même place.
+	let nameTooLongMsg = $derived(
+		formName.trim().length > 255
+			? i18nMsg('product-error-name-too-long', 'Le nom doit faire au plus 255 caractères')
+			: ''
+	);
+
 	let formValidation = $derived.by(() => {
 		if (!formName.trim()) return i18nMsg('product-error-name-required', 'Le nom est obligatoire');
-		if (formName.trim().length > 255)
-			return i18nMsg('product-error-name-too-long', 'Le nom doit faire au plus 255 caractères');
+		if (nameTooLongMsg) return nameTooLongMsg;
 		const cls = classifyPriceInput(formPrice);
 		if (cls === 'empty')
 			return i18nMsg('product-error-price-required', 'Le prix est obligatoire');
@@ -634,8 +643,12 @@
 					bind:value={formName}
 					oninput={() => (formTouched = true)}
 					required
-					maxlength={255}
 				/>
+				{#if nameTooLongMsg}
+					<p class="text-xs text-destructive mt-1" data-testid="product-name-too-long">
+						{nameTooLongMsg}
+					</p>
+				{/if}
 			</div>
 
 			<div>

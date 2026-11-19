@@ -187,6 +187,54 @@ test.describe('Page contacts — CRUD', () => {
 		await page.getByRole('dialog').getByRole('button', { name: 'Archiver' }).click();
 		await expect(page.getByText(uniqueName)).toHaveCount(0, { timeout: 5000 });
 	});
+
+	// Story 48-15 (#1331, AC5) — une rue trop longue n'est plus coupée en silence par
+	// le navigateur : elle part entière, le serveur la refuse en le disant, la saisie
+	// reste, et le contact n'est pas modifié. NPA et localité renseignés : sans eux,
+	// l'écran refuse d'abord (« NPA et localité obligatoires ») et le message du
+	// serveur n'apparaît jamais. Rouge si `maxlength={70}` revient sur `#form-street`
+	// (M6 rejouée en E2E) : `fill` respecte l'attribut comme un collage.
+	test('une rue de 71 caractères collée est refusée en le disant, non coupée', async ({ page }) => {
+		await goToContacts(page);
+
+		const uniqueName = `TestContact Rue ${Date.now()}`;
+		await page.getByRole('button', { name: /Nouveau contact/ }).click();
+		await page.fill('#form-name', uniqueName);
+		await page.fill('#form-street', 'Rue des Essais');
+		await page.fill('#form-npa', '1000');
+		await page.fill('#form-city', 'Lausanne');
+		await page.getByRole('button', { name: 'Créer' }).click();
+		await expect(page.getByText(uniqueName)).toBeVisible({ timeout: 5000 });
+
+		const row = page.locator('tr', { hasText: uniqueName }).first();
+		await row.getByRole('button', { name: /Modifier/ }).click();
+		const rue71 = 'R'.repeat(71);
+		await page.fill('#form-street', rue71);
+		await expect(page.locator('#form-street')).toHaveValue(rue71);
+		await page.getByRole('button', { name: 'Enregistrer' }).click();
+
+		await expect(
+			page.getByRole('dialog').getByText('adresse : le champ rue dépasse 70 caractères (71)')
+		).toBeVisible({ timeout: 5000 });
+		await expect(page.locator('#form-street')).toHaveValue(rue71);
+		await page.getByRole('dialog').getByRole('button', { name: 'Annuler' }).click();
+
+		// Le contact n'a pas changé : relu par l'API, non par l'écran.
+		const resp = await page.request.get(
+			`/api/v1/contacts?search=${encodeURIComponent(uniqueName)}`
+		);
+		expect(resp.ok()).toBe(true);
+		const { items } = (await resp.json()) as {
+			items: { name: string; addressStructured: { street: string } | null }[];
+		};
+		const relu = items.find((c) => c.name === uniqueName);
+		expect(relu?.addressStructured?.street).toBe('Rue des Essais');
+
+		// Cleanup.
+		await row.getByRole('button', { name: /Archiver/ }).click();
+		await page.getByRole('dialog').getByRole('button', { name: 'Archiver' }).click();
+		await expect(page.getByText(uniqueName)).toHaveCount(0, { timeout: 5000 });
+	});
 });
 
 test.describe('Page contacts — accessibilité', () => {

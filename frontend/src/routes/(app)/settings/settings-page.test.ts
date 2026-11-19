@@ -1519,8 +1519,8 @@ describe('page Paramètres — nom de la société (Story v0190-nom-societe)', (
 // Story 48-13 (#1243, D4) — l'adresse, le téléphone et le site web de la société ne
 // tronquent plus un texte trop long : sans `maxlength`, le texte part entier, le serveur
 // le refuse (il nomme le champ et le nombre pour l'adresse, le maximum pour le téléphone
-// et le site), l'écran affiche son message et garde la saisie. L'e-mail garde son
-// `maxlength={320}` : le serveur ne le borne pas encore (48-15, #1333).
+// et le site), l'écran affiche son message et garde la saisie. L'e-mail a perdu le sien
+// à la 48-15 (#1333), qui l'a borné côté serveur : son bloc de test suit celui-ci.
 //
 // ⚠️ Dans jsdom, un `maxlength` ne contraint pas une valeur posée par programme : les cas
 // « part entier » passent AVEC l'attribut (filets, sans preuve du rouge). Le rouge est
@@ -1559,7 +1559,9 @@ describe('page Paramètres — un texte trop long n’est plus coupé (Story 48-
 		authState.clearSession({ broadcast: false });
 	});
 
-	it('AC4 — aucun des cinq champs de l’adresse, ni le téléphone ni le site web n’a de `maxlength` ; l’e-mail garde le sien (M4)', async () => {
+	// Story 48-15 (#1333) : l'e-mail a perdu son `maxlength` à son tour ; son assertion
+	// (présence, ici à la 48-13) est devenue une assertion d'absence, au bloc de la 48-15.
+	it('AC4 — aucun des cinq champs de l’adresse, ni le téléphone ni le site web n’a de `maxlength` (M4)', async () => {
 		const { findByTestId, getByTestId } = render(Page);
 		await fireEvent.click(await findByTestId('settings-company-address-edit'));
 		for (const champ of ['street', 'building', 'postal-code', 'city', 'country']) {
@@ -1570,8 +1572,6 @@ describe('page Paramètres — un texte trop long n’est plus coupé (Story 48-
 		for (const champ of ['phone', 'website']) {
 			expect(getByTestId(`settings-company-${champ}-input`).hasAttribute('maxlength'), champ).toBe(false);
 		}
-		await fireEvent.click(getByTestId('settings-company-email-edit'));
-		expect(getByTestId('settings-company-email-input').getAttribute('maxlength')).toBe('320');
 	});
 
 	it('AC4 — une rue de 71 caractères part entière ; le refus du serveur s’affiche, la saisie reste ; raccourcie, elle s’enregistre', async () => {
@@ -1658,4 +1658,54 @@ describe('page Paramètres — un texte trop long n’est plus coupé (Story 48-
 			expect((getByTestId(`settings-company-${champ}-input`) as HTMLInputElement).value).toBe(valeur);
 		});
 	}
+});
+
+// Story 48-15 (#1333, AC8) — l'e-mail de la société n'est plus coupé à 320 par un
+// `maxlength` : il part entier, le serveur le refuse en le disant
+// (`error-company-email-too-long`), la saisie reste.
+describe('page Paramètres — l’e-mail de la société ne coupe pas un texte collé (Story 48-15, #1333)', () => {
+	// Le message que rend le serveur (`error-company-email-too-long`, fr-CH).
+	const REFUS = "L'adresse e-mail de la société est trop longue (320 caractères au plus).";
+
+	function societe(): CompanyCurrentResponse {
+		const base = reponse(null);
+		return {
+			...base,
+			company: { ...base.company, email: 'info@test.ch' } as CompanyCurrentResponse['company'],
+		};
+	}
+
+	beforeEach(() => {
+		vi.resetAllMocks();
+		fetchSessionSettingsMock.mockResolvedValue({ sessionIdleMinutes: 60, version: 0, min: 1, max: 1440 });
+		authState.login({ userId: '1', username: 'u', role: 'Admin', expiresIn: 900 }, { broadcast: false });
+		fetchCompanyCurrentMock.mockResolvedValue(societe());
+	});
+
+	afterEach(() => {
+		authState.clearSession({ broadcast: false });
+	});
+
+	// Rouge par M19 (`maxlength={320}` remis). Sonde positive : le champ est trouvé
+	// (`getByTestId` lève sinon) avant l'assertion d'absence.
+	it('e-mail de la société : aucun maxlength', async () => {
+		const { findByTestId, getByTestId } = render(Page);
+		await fireEvent.click(await findByTestId('settings-company-email-edit'));
+		const champ = getByTestId('settings-company-email-input');
+		expect(champ.tagName).toBe('INPUT');
+		expect(champ.hasAttribute('maxlength')).toBe(false);
+	});
+
+	it('321 caractères : part entier ; le refus du serveur s’affiche, la saisie reste', async () => {
+		const valeur = `${'a'.repeat(310)}@example.ch`;
+		updateCompanyEmailMock.mockRejectedValueOnce({ code: 'VALIDATION_ERROR', message: REFUS, status: 400 });
+		const { findByTestId, getByTestId } = render(Page);
+		await fireEvent.click(await findByTestId('settings-company-email-edit'));
+		await fireEvent.input(getByTestId('settings-company-email-input'), { target: { value: valeur } });
+		await fireEvent.click(getByTestId('settings-company-email-save'));
+
+		expect((await findByTestId('settings-company-email-error')).textContent?.trim()).toBe(REFUS);
+		expect(updateCompanyEmailMock).toHaveBeenCalledWith({ email: valeur, version: 1 });
+		expect((getByTestId('settings-company-email-input') as HTMLInputElement).value).toBe(valeur);
+	});
 });

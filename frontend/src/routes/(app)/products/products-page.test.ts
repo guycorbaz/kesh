@@ -167,3 +167,48 @@ describe('fiche produit — Entrée dans le compte de produit (Story 36-1)', () 
 		expect(champ.value).toBe('zzz');
 	});
 });
+
+// Story 48-15 (AC7) — le nom de l'article finit sur le PDF de facture (il devient
+// la désignation de la ligne) : un nom collé trop long est refusé en le disant,
+// non coupé en silence à 255 par un `maxlength`.
+describe('fiche produit — le nom ne coupe pas un texte collé (Story 48-15)', () => {
+	async function ouvrirCreation(): Promise<HTMLInputElement> {
+		render(Page);
+		await settle();
+		const bouton = [...document.querySelectorAll('button')].find((b) =>
+			/Nouveau produit/.test(b.textContent ?? '')
+		);
+		if (!bouton) throw new Error('bouton « Nouveau produit » introuvable');
+		await fireEvent.click(bouton);
+		await settle();
+		// Sonde positive : le champ est TROUVÉ avant l'assertion d'absence.
+		const champ = document.querySelector<HTMLInputElement>('#form-name');
+		if (!champ) throw new Error('champ #form-name introuvable : dialogue non monté');
+		return champ;
+	}
+
+	// Rouge par M12 (`maxlength={255}` remis).
+	it('nom de l’article : aucun maxlength', async () => {
+		const champ = await ouvrirCreation();
+		expect(champ.tagName).toBe('INPUT');
+		expect(champ.hasAttribute('maxlength')).toBe(false);
+	});
+
+	// C-e4815-4 — l'écran juge lui-même la longueur du nom : le bouton se désactive, et
+	// le MOTIF s'affiche sous le champ, sans attendre une soumission que le bouton
+	// désactivé n'atteindrait jamais (sinon, le refus serait muet).
+	it('un nom de 256 caractères collé est refusé en le disant, la saisie reste, rien ne part', async () => {
+		const champ = await ouvrirCreation();
+		await fireEvent.input(champ, { target: { value: 'A'.repeat(256) } });
+		await settle();
+		expect(document.querySelector('[data-testid="product-name-too-long"]')?.textContent).toContain(
+			'255 caractères'
+		);
+		const soumettre = [...champ.form!.querySelectorAll('button')].find(
+			(b) => b.getAttribute('type') === 'submit'
+		);
+		expect(soumettre?.disabled).toBe(true);
+		expect(createProductMock).not.toHaveBeenCalled();
+		expect(champ.value).toBe('A'.repeat(256));
+	});
+});

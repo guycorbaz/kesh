@@ -903,12 +903,13 @@
 					{#if emailEditing}
 						<dd class="mt-1 flex max-w-md items-start gap-2">
 							<div class="flex-1">
+								<!-- Story 48-15 (#1333) : pas de `maxlength` (il coupait en silence un texte
+								     collé) ; le serveur refuse au-delà de 320 caractères et le dit. -->
 								<Input
 									type="email"
 									bind:value={emailValue}
 									readonly={emailSubmitting}
 									class={PENDING_FIELD}
-									maxlength={320}
 									data-testid="settings-company-email-input"
 								/>
 								<CompanyConflictNotice notice={emailConflict} testid="settings-company-email-conflict" field="email" />
