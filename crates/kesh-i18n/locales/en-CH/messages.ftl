@@ -4081,3 +4081,26 @@ projects-reassign-warning-locked = Entries locked through { $date }.
 projects-reassign-warning-reports = The analytical reports for this period will change.
 projects-reassign-confirm = Confirm
 projects-reassign-done = Analytical account changed.
+
+## #1348 (0.20.0) — server refusals whose key was missing from the catalogue.
+error-onboarding-reset-forbidden = Resetting the onboarding is not allowed on this instance.
+error-invoice-already-paid = The invoice is already paid — no reminder can be recorded.
+error-dunning-level-not-found = The requested reminder level does not exist in the configuration.
+error-reminder-date-in-future = The date of a reminder cannot be in the future.
+error-invoice-not-paused = This invoice is not paused.
+error-dunning-paused = Reminders are paused for this invoice.
+error-level-already-sent = This reminder level has already been processed (concurrent sending, or a level may not be skipped).
+error-reminder-sent-but-invoice-gone = The reminder was sent, but the invoice vanished before it could be recorded.
+error-reminder-sent-but-not-recorded = The reminder was sent but could not be recorded. The sending is traced in the audit log.
+error-batch-too-large = Too many invoices in the batch (maximum 20).
+error-batch-exceeds-send-quota = The batch exceeds the sending quota ({ $max } e-mails per window).
+reconciliation-errors-lock-release-failed = Internal failure while releasing the lock. Try again.
+reconciliation-errors-fiscal-year-closed = Reconciliation impossible: the fiscal year is not open for this date.
+reconciliation-errors-transaction-not-pending = Bank transaction not found or already reconciled.
+error-inbox-import-already-running = An import of the folder is already running. Try again shortly.
+error-import-not-pending-completion = This imported invoice is no longer awaiting completion.
+error-source-document-not-found = This invoice has no stored supporting document.
+error-imported-invoice-not-found = This imported invoice cannot be found.
+error-source-document-gone = The supporting document was not restored (metadata only).
+error-data-length-or-range = A value provided is too long or out of range.
+error-invalid-input-generic = Invalid input

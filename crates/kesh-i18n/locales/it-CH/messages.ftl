@@ -4076,3 +4076,26 @@ projects-reassign-warning-locked = Registrazioni bloccate fino al { $date }.
 projects-reassign-warning-reports = I rapporti analitici di questo periodo cambieranno.
 projects-reassign-confirm = Conferma
 projects-reassign-done = Conto analitico cambiato.
+
+## #1348 (0.20.0) — rifiuti del server la cui chiave mancava al catalogo.
+error-onboarding-reset-forbidden = Il ripristino dell'onboarding non è consentito su questa istanza.
+error-invoice-already-paid = La fattura è già pagata — non è possibile registrare alcun sollecito.
+error-dunning-level-not-found = Il livello di sollecito richiesto non esiste nella configurazione.
+error-reminder-date-in-future = La data di un sollecito non può essere nel futuro.
+error-invoice-not-paused = Questa fattura non è sospesa.
+error-dunning-paused = I solleciti sono sospesi per questa fattura.
+error-level-already-sent = Questo livello di sollecito è già stato trattato (invio concorrente o salto di livello non consentito).
+error-reminder-sent-but-invoice-gone = Il sollecito è stato inviato, ma la fattura è scomparsa prima della registrazione.
+error-reminder-sent-but-not-recorded = Il sollecito è stato inviato, ma non è stato possibile registrarlo. L'invio è tracciato nel registro di audit.
+error-batch-too-large = Troppe fatture nel lotto (massimo 20).
+error-batch-exceeds-send-quota = Il lotto supera la quota di invio ({ $max } e-mail per finestra).
+reconciliation-errors-lock-release-failed = Errore interno durante il rilascio del blocco. Riprova.
+reconciliation-errors-fiscal-year-closed = Riconciliazione impossibile: l'esercizio contabile non è aperto per questa data.
+reconciliation-errors-transaction-not-pending = Transazione bancaria non trovata o già riconciliata.
+error-inbox-import-already-running = Un'importazione della cartella è già in corso. Riprova tra qualche istante.
+error-import-not-pending-completion = Questa fattura importata non è più in attesa di completamento.
+error-source-document-not-found = Questa fattura non ha alcun documento giustificativo archiviato.
+error-imported-invoice-not-found = Questa fattura importata non è stata trovata.
+error-source-document-gone = Il documento giustificativo non è stato ripristinato (solo metadati).
+error-data-length-or-range = Un valore fornito è troppo lungo o fuori intervallo.
+error-invalid-input-generic = Inserimento non valido

@@ -4154,3 +4154,28 @@ projects-reassign-warning-locked = Écritures verrouillées jusqu'au { $date }.
 projects-reassign-warning-reports = Les rapports analytiques de cette période changeront.
 projects-reassign-confirm = Confirmer
 projects-reassign-done = Compte analytique changé.
+
+## #1348 (0.20.0) — refus du serveur dont la clé manquait au catalogue : l'utilisateur et
+## les clients de l'API lisaient la clé brute. Texte fr-CH = repli de `errors.rs`
+## (garde `les_replis_rust_suivent_le_catalogue`).
+error-onboarding-reset-forbidden = Le reset de l'onboarding n'est pas autorisé sur cette instance.
+error-invoice-already-paid = La facture est déjà payée — aucun rappel ne peut être enregistré.
+error-dunning-level-not-found = Le niveau de rappel demandé n'existe pas dans la configuration.
+error-reminder-date-in-future = La date d'un rappel ne peut pas être dans le futur.
+error-invoice-not-paused = Cette facture n'est pas suspendue.
+error-dunning-paused = Les rappels sont suspendus pour cette facture.
+error-level-already-sent = Ce niveau de rappel a déjà été traité (envoi concurrent ou saut de niveau interdit).
+error-reminder-sent-but-invoice-gone = Le rappel a été envoyé mais la facture a disparu avant l'enregistrement.
+error-reminder-sent-but-not-recorded = Le rappel a été envoyé mais n'a pas pu être enregistré. L'envoi est tracé dans le journal d'audit.
+error-batch-too-large = Trop de factures dans le lot (maximum 20).
+error-batch-exceeds-send-quota = Le lot dépasse le quota d'envoi ({ $max } e-mails par fenêtre).
+reconciliation-errors-lock-release-failed = Échec interne de libération du verrou. Réessayez.
+reconciliation-errors-fiscal-year-closed = Réconciliation impossible : l'exercice comptable n'est pas ouvert pour cette date.
+reconciliation-errors-transaction-not-pending = Transaction bancaire introuvable ou déjà réconciliée.
+error-inbox-import-already-running = Un import du répertoire est déjà en cours. Réessayez dans quelques instants.
+error-import-not-pending-completion = Cette facture importée n'est plus en attente de complétion.
+error-source-document-not-found = Cette facture n'a pas de justificatif stocké.
+error-imported-invoice-not-found = Cette facture importée est introuvable.
+error-source-document-gone = Le justificatif n'a pas été restauré (métadonnées seules).
+error-data-length-or-range = Une valeur fournie est trop longue ou hors plage.
+error-invalid-input-generic = Entrée invalide
