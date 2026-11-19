@@ -225,27 +225,25 @@ const HOTE: &[&str] = &[
 /// n'admet le littéral que dans `kesh-core/src/horloge.rs`.
 ///
 /// Story 49-1b (#1242) : `KESH_REFERENCES`, le mode des tests de capture du rendu
-/// des PDF (`ecrire` ou `comparer`), lue par `kesh_qrbill::empreinte`, module de
-/// [`MODULES_DE_SOUTIEN_AUX_TESTS`] que le binaire servi ne compile pas.
+/// des PDF (`ecrire` ou `comparer`), lue par `kesh_qrbill::empreinte`, module que
+/// seule la feature `test-support` compile ([`FEATURES_DE_TEST`]). Le nom y est un
+/// littéral (le comparateur est gelé) : il entre dans l'ensemble lu, que (T) et (E)
+/// parcourent par [`lues_distribuees`], qui écarte les variables de test. Sa lecture
+/// reste une occurrence de la liste fermée [`EMPLACEMENTS_AUTORISES`] : toute autre
+/// lecture ajoutée au module rougit (L).
 const VARIABLES_DE_TEST: &[&str] = &[kesh_core::horloge::NOM_VARIABLE_INSTANT, "KESH_REFERENCES"];
 
-/// Fichiers de `crates/*/src` réservés aux tests par une **feature** de test, et non
-/// par `cfg(test)` : leur module n'est déclaré que sous `#[cfg(feature =
-/// "test-support")]`, et la feature n'est activée que par des dev-dépendances. Ils ne
-/// sont pas du code de production : (L), (E) et (T) ne les lisent pas (sans quoi leur
-/// lecture d'une variable de test exigerait de la transmettre et de la documenter).
-/// C'est l'angle mort « module hors ligne » de l'en-tête, levé pour ces seuls fichiers.
-///
-/// `(fichier, lib.rs qui le déclare, déclaration exacte)`. Contrôle de la raison
-/// (`modules_de_soutien_aux_tests_hors_production`) : la déclaration figure telle
-/// quelle dans le `lib.rs`, et `test-support` n'apparaît dans aucun `Cargo.toml` hors
-/// d'une section `[dev-dependencies]` ou `[features]`. Que la construction de
-/// production ne l'active pas se prouve par `cargo build --release -p kesh-api -v`
-/// (Story 49-1b, D4) : hors de portée de ce test, qui ne compile rien.
-const MODULES_DE_SOUTIEN_AUX_TESTS: &[(&str, &str, &str)] = &[(
-    "kesh-qrbill/src/empreinte.rs",
-    "kesh-qrbill/src/lib.rs",
-    "#[cfg(feature = \"test-support\")]\npub mod empreinte;\n",
+/// Features **de test** du workspace : `(manifeste relatif à la racine, ligne de
+/// définition exacte)`. Une telle feature ne doit entrer dans aucune construction de
+/// production. Contrôles (`la_feature_de_test_n_entre_pas_en_production`) : (1) dans
+/// tout `Cargo.toml` du dépôt, racine comprise, son nom n'apparaît que sur sa ligne de
+/// définition ou sous `[dev-dependencies]` — jamais dans une autre liste de
+/// `[features]` (`default` compris), ni sous `[dependencies]` ou
+/// `[workspace.dependencies]` ; (2) le graphe résolu des dépendances **normales** de
+/// `kesh-api` (`cargo tree -e normal --offline`) ne l'active pas.
+const FEATURES_DE_TEST: &[(&str, &str)] = &[(
+    "crates/kesh-qrbill/Cargo.toml",
+    "test-support = [\"dep:sha2\"]",
 )];
 
 /// Variables de `.env.example` que le code ne lit pas, utilisées par le
@@ -1349,6 +1347,25 @@ const EMPLACEMENTS_AUTORISES: &[Autorisation] = &[
         1,
     ),
     autorise(ONBOARDING, "reset", "env_flag_enabled", Forme::Litteral, 1),
+    // Story 49-1b (#1242) — le comparateur du rendu des PDF, module de la seule feature
+    // de test `test-support` ([`FEATURES_DE_TEST`]), lit le mode de ses tests de
+    // capture (`KESH_REFERENCES`, [`VARIABLES_DE_TEST`]). Gelé depuis la capture des
+    // références : sa lecture ne passe pas par `env_nonempty`. Ces deux occurrences
+    // exactement ; toute autre lecture ajoutée au module rougit.
+    autorise(
+        "kesh-qrbill/src/empreinte.rs",
+        "mode_references",
+        "env",
+        Forme::Exacte("env :: var ( \"KESH_REFERENCES\" )"),
+        1,
+    ),
+    autorise(
+        "kesh-qrbill/src/empreinte.rs",
+        "mode_references",
+        "env",
+        Forme::Exacte("env :: VarError :: NotPresent"),
+        1,
+    ),
     // Story 35-5a0 (#929) — l'horloge des TESTS lit l'instant fixé
     // (`KESH_TEST_INSTANT`, [`VARIABLES_DE_TEST`]) ; `main.rs` ne l'appelle pas
     // (garde `date_du_jour_garde.rs`). Nom porté par une constante : il n'entre
@@ -1873,12 +1890,6 @@ fn sources_du_depot() -> Vec<(String, String)> {
                 .unwrap_or_else(|e| panic!("lecture de {} impossible : {e}", p.display()));
             (relatif, contenu)
         })
-        // Story 49-1b — hors production : voir `MODULES_DE_SOUTIEN_AUX_TESTS`.
-        .filter(|(relatif, _)| {
-            !MODULES_DE_SOUTIEN_AUX_TESTS
-                .iter()
-                .any(|(fichier, _, _)| relatif == fichier)
-        })
         .collect();
     sources.sort();
     sources
@@ -1953,7 +1964,7 @@ fn transmission() {
     let (y, p, _) = services();
     let dockerfile = lire("Dockerfile");
     echouer_si(
-        controle_transmission(&y, &p, &dockerfile, &lues()),
+        controle_transmission(&y, &p, &dockerfile, &lues_distribuees()),
         "(T) transmission",
     );
 }
@@ -2019,7 +2030,7 @@ fn valeurs() {
 fn env_example() {
     let (y, _, y_source) = services();
     echouer_si(
-        controle_env_example(&lire(".env.example"), &y, &y_source, &lues()),
+        controle_env_example(&lire(".env.example"), &y, &y_source, &lues_distribuees()),
         "(E) .env.example",
     );
 }
@@ -2067,56 +2078,212 @@ fn fantomes() {
     echouer_si(controle_fantomes(&corpus, &lues()), "(F) fantômes");
 }
 
-/// Story 49-1b — chaque fichier exclu par [`MODULES_DE_SOUTIEN_AUX_TESTS`] n'est déclaré
-/// que sous sa feature de test, et la feature `test-support` n'est activée par aucune
-/// dépendance normale : elle n'apparaît dans un `Cargo.toml` que sous `[features]` (sa
-/// définition) ou `[dev-dependencies]`. Sonde positive : la feature est bien nommée par
-/// au moins une dev-dépendance (sans quoi le contrôle passerait à vide).
-#[test]
-fn modules_de_soutien_aux_tests_hors_production() {
-    let crates = racine().join("crates");
-    for (fichier, lib, declaration) in MODULES_DE_SOUTIEN_AUX_TESTS {
-        assert!(crates.join(fichier).is_file(), "{fichier} absent");
-        let source = std::fs::read_to_string(crates.join(lib)).expect("lib.rs lisible");
-        assert!(
-            source.contains(declaration),
-            "{lib} ne déclare pas {fichier} par {declaration:?}"
-        );
-        let module = Path::new(fichier).file_stem().unwrap().to_string_lossy();
-        assert_eq!(
-            source.matches(&format!("mod {module};")).count(),
-            1,
-            "{lib} : une seule déclaration du module {module}"
-        );
-    }
+/// L'ensemble lu **distribué** : [`lues`] sans les [`VARIABLES_DE_TEST`], que le binaire
+/// servi ne lit pas (`variables_de_test_hors_distribution` contrôle leur absence des
+/// compose et de `.env.example`). C'est l'ensemble que (T) et (E) exigent transmis et
+/// documenté.
+fn lues_distribuees() -> BTreeSet<&'static str> {
+    lues()
+        .into_iter()
+        .filter(|n| !VARIABLES_DE_TEST.contains(n))
+        .collect()
+}
+
+/// Story 49-1b — les écarts d'un `Cargo.toml` (`chemin` relatif à la racine, `texte`) à
+/// la règle des [`FEATURES_DE_TEST`] : le nom d'une feature de test n'y apparaît que sur
+/// sa propre ligne de définition (dans son manifeste, sous `[features]`) ou sous une
+/// section `[dev-dependencies…]`. Toute autre occurrence l'active, ou peut l'activer,
+/// dans une construction de production : `default = [...]` ou autre liste de
+/// `[features]`, `[dependencies]`, `[workspace.dependencies]`, `[target.….dependencies]`,
+/// une liste sur plusieurs lignes. Rend aussi le nombre d'occurrences en dev.
+fn controle_manifeste_features_de_test(chemin: &str, texte: &str) -> (Vec<String>, usize) {
+    let mut erreurs = Vec::new();
     let mut en_dev = 0;
-    for c in std::fs::read_dir(&crates)
-        .expect("crates/ lisible")
-        .flatten()
-    {
-        let manifeste = c.path().join("Cargo.toml");
-        let Ok(texte) = std::fs::read_to_string(&manifeste) else {
+    let mut section = String::new();
+    for (i, ligne) in texte.lines().enumerate() {
+        let l = ligne.trim();
+        if l.starts_with('[') {
+            section = l.to_string();
             continue;
-        };
-        let mut section = String::new();
-        for ligne in texte.lines() {
-            let l = ligne.trim();
-            if l.starts_with('[') {
-                section = l.to_string();
-            } else if !l.starts_with('#') && l.contains("test-support") {
-                assert!(
-                    section == "[features]" || section == "[dev-dependencies]",
-                    "{} : `test-support` sous {section} : {l}",
-                    manifeste.display()
-                );
-                en_dev += usize::from(section == "[dev-dependencies]");
+        }
+        let code = l.split('#').next().unwrap_or_default().trim();
+        for (manifeste, definition) in FEATURES_DE_TEST {
+            let nom = definition.split(" =").next().unwrap_or_default();
+            if !code.contains(nom) {
+                continue;
+            }
+            if section.starts_with("[dev-dependencies") {
+                en_dev += 1;
+            } else if !(section == "[features]" && chemin == *manifeste && code == *definition) {
+                erreurs.push(format!(
+                    "{chemin}:{} : la feature de test `{nom}` nommée sous {section} : {l}",
+                    i + 1
+                ));
             }
         }
     }
+    (erreurs, en_dev)
+}
+
+/// Story 49-1b — sondes négatives et positives de [`controle_manifeste_features_de_test`],
+/// sur des manifestes fabriqués.
+#[test]
+fn s_features_de_test() {
+    let qr = "crates/kesh-qrbill/Cargo.toml";
+    let api = "crates/kesh-api/Cargo.toml";
+    let refuse = |chemin: &str, texte: &str| {
+        let (erreurs, _) = controle_manifeste_features_de_test(chemin, texte);
+        assert!(
+            !erreurs.is_empty(),
+            "devait être refusé : {chemin}\n{texte}"
+        );
+    };
+    // La définition seule, et une dev-dépendance : admises.
+    let (e, dev) = controle_manifeste_features_de_test(
+        qr,
+        "[features]\ntest-support = [\"dep:sha2\"]\n\n[dev-dependencies]\n\
+         kesh-qrbill = { path = \".\", features = [\"test-support\"] }\n",
+    );
+    assert!(e.is_empty(), "{e:?}");
+    assert_eq!(dev, 1);
+    // Activations refusées.
+    refuse(
+        qr,
+        "[features]\ntest-support = [\"dep:sha2\"]\ndefault = [\"test-support\"]\n",
+    );
+    refuse(
+        api,
+        "[features]\ndefault = [\"kesh-qrbill/test-support\"]\n",
+    );
+    refuse(
+        api,
+        "[features]\nfoo = [\n    \"kesh-qrbill/test-support\",\n]\n",
+    );
+    refuse(api, "[features]\ntest-support = [\"dep:sha2\"]\n");
+    refuse(
+        api,
+        "[dependencies]\nkesh-qrbill = { path = \"../kesh-qrbill\", features = [\"test-support\"] }\n",
+    );
+    refuse(
+        api,
+        "[dependencies]\nkesh-qrbill = { path = \"../kesh-qrbill\", features = [\n  \"test-support\",\n] }\n",
+    );
+    refuse(
+        api,
+        "[dependencies.kesh-qrbill]\nfeatures = [\"test-support\"]\n",
+    );
+    refuse(
+        "Cargo.toml",
+        "[workspace.dependencies]\nkesh-qrbill = { path = \"crates/kesh-qrbill\", features = [\"test-support\"] }\n",
+    );
+    refuse(
+        api,
+        "[target.'cfg(unix)'.dependencies]\nkesh-qrbill = { path = \"../kesh-qrbill\", features = [\"test-support\"] }\n",
+    );
+}
+
+/// Story 49-1b — une feature de test ([`FEATURES_DE_TEST`]) n'entre pas en production :
+/// (1) chaque `Cargo.toml` du dépôt, **racine comprise**, ne la nomme que sur sa ligne de
+/// définition ou sous `[dev-dependencies]` ([`controle_manifeste_features_de_test`], sondé
+/// par `s_features_de_test`) ; (2) le graphe **résolu** des dépendances normales de
+/// `kesh-api`, le binaire servi (`Dockerfile` : `cargo build --release -p kesh-api`),
+/// ne l'active pas — par `cargo tree -e normal --offline`, qui ne compile ni ne télécharge
+/// rien ; sonde positive : avec les dev-dépendances (`-e normal,dev`), elle apparaît.
+#[test]
+fn la_feature_de_test_n_entre_pas_en_production() {
+    // (1) Les manifestes.
+    let mut manifestes = vec!["Cargo.toml".to_string()];
+    for c in std::fs::read_dir(racine().join("crates"))
+        .expect("crates/ lisible")
+        .flatten()
+    {
+        if c.path().join("Cargo.toml").is_file() {
+            manifestes.push(format!(
+                "crates/{}/Cargo.toml",
+                c.file_name().to_string_lossy()
+            ));
+        }
+    }
+    assert!(
+        manifestes.iter().any(|m| m == "Cargo.toml") && manifestes.len() >= 10,
+        "montage : racine et crates lues ({manifestes:?})"
+    );
+    let mut erreurs = Vec::new();
+    let mut en_dev = 0;
+    for m in &manifestes {
+        let (e, d) = controle_manifeste_features_de_test(m, &lire(m));
+        erreurs.extend(e);
+        en_dev += d;
+    }
+    for (manifeste, definition) in FEATURES_DE_TEST {
+        assert!(
+            lire(manifeste).lines().any(|l| l.trim() == *definition),
+            "{manifeste} ne porte plus la définition {definition:?}"
+        );
+    }
     assert!(
         en_dev > 0,
-        "sonde : aucune dev-dépendance n'active test-support"
+        "sonde : aucune dev-dépendance n'active la feature de test"
     );
+    echouer_si(erreurs, "features de test dans les manifestes");
+
+    // (2) Le graphe résolu.
+    let normal = arbre_des_features("normal");
+    let avec_dev = arbre_des_features("normal,dev");
+    for (_, definition) in FEATURES_DE_TEST {
+        let nom = definition.split(" =").next().unwrap_or_default();
+        let actives: Vec<&str> = normal.lines().filter(|l| l.contains(nom)).collect();
+        assert!(
+            actives.is_empty(),
+            "la feature de test `{nom}` est active dans les dépendances normales de kesh-api : {actives:?}"
+        );
+        assert!(
+            avec_dev.contains(nom),
+            "sonde : `{nom}` devrait apparaître avec les dev-dépendances"
+        );
+    }
+}
+
+/// `cargo tree -p kesh-api -e <arêtes> --offline -f "{p} {f}"`, borné à deux minutes.
+fn arbre_des_features(aretes: &str) -> String {
+    let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
+    let enfant = std::process::Command::new(cargo)
+        .current_dir(racine())
+        .args([
+            "tree",
+            "-p",
+            "kesh-api",
+            "-e",
+            aretes,
+            "--offline",
+            "-f",
+            "{p} {f}",
+        ])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("cargo tree lancé");
+    let pid = enfant.id();
+    // La sortie se lit dans un fil (un tube plein bloquerait l'enfant) ; l'attente est bornée.
+    let (envoi, reception) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = envoi.send(enfant.wait_with_output());
+    });
+    let sortie = match reception.recv_timeout(std::time::Duration::from_secs(120)) {
+        Ok(sortie) => sortie.expect("sortie de cargo tree"),
+        Err(_) => {
+            let _ = std::process::Command::new("kill")
+                .arg(pid.to_string())
+                .status();
+            panic!("cargo tree -e {aretes} : plus de deux minutes");
+        }
+    };
+    assert!(
+        sortie.status.success(),
+        "cargo tree -e {aretes} : {}",
+        String::from_utf8_lossy(&sortie.stderr)
+    );
+    String::from_utf8(sortie.stdout).expect("UTF-8")
 }
 
 /// Story 35-5a0 — une variable de tests n'est ni transmise par un compose

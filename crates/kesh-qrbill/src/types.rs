@@ -193,7 +193,7 @@ pub struct ReminderPdf {
 /// propre type de ligne vers celui-ci, par un `match` exhaustif.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LinePdfKind {
-    /// Ligne chiffrée : description (réduite à 44 caractères et « … »), quantité, prix
+    /// Ligne chiffrée : description (au-delà de 45 caractères, réduite à 44 et « … »), quantité, prix
     /// unitaire, taux de TVA et total, dans leurs colonnes.
     Priced,
     /// Commentaire : le texte seul, sur toute la largeur du tableau, coupé en lignes aux

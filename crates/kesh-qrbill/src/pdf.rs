@@ -398,8 +398,8 @@ fn build_meta_lines(
 /// zone QR inexistante (#151 code-review).
 ///
 /// **Lignes de la pièce** (Story 49-1b, #1242) : une ligne chiffrée
-/// ([`LinePdfKind::Priced`]) se dessine dans ses cinq colonnes, sa description **réduite à
-/// 44 caractères suivis de « … »** (`truncate_display`) — inchangé depuis la 0.19.0 : la
+/// ([`LinePdfKind::Priced`]) se dessine dans ses cinq colonnes, sa description, **au-delà de
+/// 45 caractères, réduite à 44 suivis de « … »** (`truncate_display`) — inchangé depuis la 0.19.0 : la
 /// lever changerait le PDF de factures déjà émises et d'avoirs jamais figés (D8, #1363). Un
 /// commentaire ([`LinePdfKind::Comment`]), et jusqu'à la Story 49-3 un titre de section
 /// ([`LinePdfKind::Heading`]), se dessine sur toute la largeur, sans colonne chiffrée, **coupé**
@@ -1133,30 +1133,57 @@ const COMMENTAIRE_TAILLE: f32 = 9.0;
 /// du filet du tableau (`PAGE_W - 20`), soit 170 mm (Story 49-1b, D5).
 const COMMENTAIRE_LARGEUR: f32 = PAGE_W - 20.0 - 20.0;
 
+/// Le texte d'un commentaire tel qu'il s'imprime, avant la coupe (Story 49-1b, D5, revue P1
+/// E-2 à E-5) : un caractère par caractère, sans [`texte_code`](crate::texte::texte_code)
+/// (qui sert le code QR et changerait ’ en `'` et — en `-`, que WinAnsi porte) :
+/// - **saut de ligne** : `\r\n`, `\r` seul, `\n`, VT, FF, U+0085, U+2028 et U+2029 → `\n` ;
+/// - **tout autre blanc** (`char::is_whitespace` : tabulation, U+00A0, U+202F, U+2009,
+///   U+3000…) → une espace, sans quoi deux mots se colleraient (la coupe ne sépare que sur
+///   `' '`, et `lopdf` retire ce que WinAnsi ne porte pas) ;
+/// - U+00AD (trait d'union conditionnel) retiré ;
+/// - les 125 lettres du § 4.1.1 hors WinAnsi repliées sur leur base
+///   ([`repli`](crate::texte::repli)) ;
+/// - tout caractère que WinAnsi ne porte pas (largeur nulle : CJK, émoji, U+200B…) retiré :
+///   `lopdf` ne l'imprimerait pas, et la chaîne mesurée doit être la chaîne dessinée.
+fn texte_de_commentaire(description: &str) -> String {
+    let mut texte = String::with_capacity(description.len());
+    let mut car = description.chars().peekable();
+    while let Some(c) = car.next() {
+        match c {
+            '\r' => {
+                if car.peek() == Some(&'\n') {
+                    car.next();
+                }
+                texte.push('\n');
+            }
+            '\n' | '\u{0B}' | '\u{0C}' | '\u{85}' | '\u{2028}' | '\u{2029}' => texte.push('\n'),
+            c if c.is_whitespace() => texte.push(' '),
+            '\u{00AD}' => {}
+            c => {
+                let base = crate::texte::repli(c).map_or_else(|| c.to_string(), str::to_string);
+                texte.extend(
+                    base.chars()
+                        .filter(|b| largeur_mm(&b.to_string(), COMMENTAIRE_TAILLE, false) > 0.0),
+                );
+            }
+        }
+    }
+    texte
+}
+
 /// Les lignes de texte d'un commentaire (ou d'un titre de section, D1), telles qu'elles
-/// s'impriment (Story 49-1b, D5) : les `\r` retirés (CRLF d'un copier-coller), chaque
-/// tabulation remplacée par une espace (sans quoi deux mots se colleraient : la coupe ne
-/// sépare que sur `' '` et `lopdf` retire la tabulation), tous les `\n` finaux ignorés ; puis
-/// chaque paragraphe (séparé par `\n`) passé par [`texte_imprime`] et coupé à
-/// [`COMMENTAIRE_LARGEUR`] par [`couper_ligne_a`] à [`COMMENTAIRE_TAILLE`]. Un paragraphe
-/// vide donne une ligne vide ; une description entièrement blanche ne donne **aucune**
-/// ligne. Rien n'est tronqué : un mot plus large que la ligne se coupe au dernier caractère
-/// qui tient.
+/// s'impriment (Story 49-1b, D5) : le texte de [`texte_de_commentaire`], découpé en
+/// paragraphes sur `\n`, chacun coupé à [`COMMENTAIRE_LARGEUR`] par [`couper_ligne_a`] à
+/// [`COMMENTAIRE_TAILLE`]. Un paragraphe vide **intérieur** donne une ligne vide (l'aération
+/// voulue) ; les lignes vides **en tête et en fin** sont retirées (revue P1, E-4 et L2 : une
+/// fin faite de blancs ne consomme aucun pas, et ne fait pas refuser une pièce au seuil de
+/// capacité) ; une description sans rien d'imprimable ne donne **aucune** ligne. Rien n'est
+/// tronqué : un mot plus large que la ligne se coupe au dernier caractère qui tient.
 fn lignes_de_commentaire(description: &str) -> Vec<String> {
-    let texte: String = description
-        .chars()
-        .filter(|c| *c != '\r')
-        .map(|c| if c == '\t' { ' ' } else { c })
-        .collect();
-    let lignes: Vec<String> = texte
-        .trim_end_matches('\n')
+    let mut lignes: Vec<String> = texte_de_commentaire(description)
         .split('\n')
         .flat_map(|paragraphe| {
-            let lignes = couper_ligne_a(
-                &texte_imprime(paragraphe),
-                COMMENTAIRE_LARGEUR,
-                COMMENTAIRE_TAILLE,
-            );
+            let lignes = couper_ligne_a(paragraphe, COMMENTAIRE_LARGEUR, COMMENTAIRE_TAILLE);
             if lignes.is_empty() {
                 vec![String::new()]
             } else {
@@ -1164,11 +1191,14 @@ fn lignes_de_commentaire(description: &str) -> Vec<String> {
             }
         })
         .collect();
-    // Blanche, quels que soient ses blancs (U+00A0, U+00AD compris, que `texte_imprime`
-    // efface) : rien à dessiner, aucune ligne consommée.
-    if lignes.iter().all(String::is_empty) {
-        return Vec::new();
+    while lignes.last().is_some_and(String::is_empty) {
+        lignes.pop();
     }
+    let premiere = lignes
+        .iter()
+        .position(|l| !l.is_empty())
+        .unwrap_or(lignes.len());
+    lignes.drain(..premiere);
     lignes
 }
 
@@ -5587,6 +5617,28 @@ mod tests {
                 assert!(!t.contains("0.00") && !t.contains('%'), "{nom} : {t:?}");
             }
         }
+        // AC10, revue P1 A-4 — un commentaire n'ajoute aucune ressource : les polices et les
+        // ressources d'un PDF avec commentaire sont celles du même PDF sans.
+        let sans = piece(vec![
+            chiffree("Prestation A", dec!(100.00)),
+            chiffree("Prestation B", dec!(50.00)),
+        ]);
+        for (nom, avec, sans) in [
+            ("facture", pdf_facture(&inv), pdf_facture(&sans)),
+            ("avoir", pdf_avoir(&inv), pdf_avoir(&sans)),
+        ] {
+            let (avec, sans) = (
+                crate::empreinte::empreinte(&avec.unwrap()),
+                crate::empreinte::empreinte(&sans.unwrap()),
+            );
+            assert_eq!(avec.polices, sans.polices, "{nom} : polices");
+            assert_eq!(avec.ressources, sans.ressources, "{nom} : ressources");
+            assert_eq!(
+                avec.polices.lines().count(),
+                2,
+                "{nom} : Helvetica et sa grasse"
+            );
+        }
     }
 
     /// Un commentaire de 600 caractères environ : des mots courts, et un mot de 90 `W`.
@@ -5683,7 +5735,8 @@ mod tests {
                 .iter()
                 .map(|(_, l)| sans_blancs(l))
                 .collect::<String>(),
-            sans_blancs(&texte_imprime(&texte)),
+            // Le texte source lui-même : il ne porte que des caractères WinAnsi.
+            sans_blancs(&texte),
         );
         // (2) Un mot court n'est jamais coupé : les jetons des lignes, hors morceaux du mot
         // de `W`, sont les mots courts, entiers et dans l'ordre.
@@ -5716,13 +5769,51 @@ mod tests {
         // `\n` finaux ignorés.
         assert_eq!(lignes_de_commentaire("un\n"), ["un"]);
         assert_eq!(lignes_de_commentaire("un\n\n"), ["un"]);
-        // U+00A0 devient une espace (`texte_imprime`).
+        // U+00A0 devient une espace.
         assert_eq!(dessin("un\u{a0}deux"), ["un deux"]);
         // Description blanche : rien, et aucune ligne consommée.
         for blanche in ["   ", "\n", " \n\t\r\n ", "\u{a0}\u{ad}"] {
             assert!(lignes_de_commentaire(blanche).is_empty(), "{blanche:?}");
             assert!(dessin(blanche).is_empty(), "{blanche:?}");
         }
+
+        // Revue P1, E-2 — un `\r` seul est un saut de ligne, pas une colle.
+        assert_eq!(dessin("un\rdeux"), ["un", "deux"]);
+        // E-3 — les autres sauts (U+2028, U+2029, U+0085, VT, FF) sautent ; les autres blancs
+        // (U+202F, U+2009, U+3000) séparent les mots.
+        for saut in ['\u{2028}', '\u{2029}', '\u{85}', '\u{0B}', '\u{0C}'] {
+            assert_eq!(dessin(&format!("un{saut}deux")), ["un", "deux"], "{saut:?}");
+        }
+        assert_eq!(
+            dessin("1\u{202F}000 «\u{202F}texte\u{2009}»\u{3000}fin"),
+            ["1 000 « texte » fin"]
+        );
+        // E-3 — rien d'imprimable (hors WinAnsi : CJK, émoji, U+200B) : aucune ligne, aucun
+        // pas ; mêlé à du texte, le caractère disparaît sans coller ses voisins.
+        for rien in ["汉字", "🙂", "\u{200B}", "汉字\n🙂"] {
+            assert!(lignes_de_commentaire(rien).is_empty(), "{rien:?}");
+            assert!(dessin(rien).is_empty(), "{rien:?}");
+        }
+        assert_eq!(dessin("un 汉 deux"), ["un deux"]);
+        // E-4, L2 — des blancs en tête ou en fin ne consomment aucune ligne ; un paragraphe
+        // vide intérieur reste une ligne vide.
+        for (texte, attendu) in [
+            ("un\n \n", vec!["un"]),
+            ("un\n\t", vec!["un"]),
+            ("un\n\u{ad}", vec!["un"]),
+            ("\u{ad}\nun", vec!["un"]),
+            ("\n\nun", vec!["un"]),
+            (" \n un \n\n deux \n ", vec!["un", "", "deux"]),
+        ] {
+            assert_eq!(lignes_de_commentaire(texte), attendu, "{texte:?}");
+        }
+        let fin_blanche = lignes_dessinees("un\n \n\t");
+        assert_eq!(fin_blanche.len(), 1, "{fin_blanche:?}");
+        // E-5 — l'apostrophe typographique et le tiret cadratin, que WinAnsi porte, restent
+        // tels quels (comme dans la description d'une ligne chiffrée) ; une lettre hors
+        // WinAnsi se replie sur sa base.
+        assert_eq!(dessin("l’atelier — suite"), ["l’atelier — suite"]);
+        assert_eq!(dessin("Łódź Ĳssel"), ["Lódz IJssel"]);
     }
 
     /// **T6 (AC5 b)** — à sommes égales, un commentaire de `n` lignes de texte ne change que

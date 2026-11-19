@@ -15,6 +15,14 @@
 //! ⛔ Un seul montage ([`derouler`]) sert à la capture et à la comparaison : les pièces,
 //! leur ordre de création (identifiants, numéros, références QRR) et leurs dates ne
 //! changent pas après la capture.
+//!
+//! **Ancrage** (revue P1, L4) : « 0.19.0 » veut dire ici le code de `cbdd70026`, soit la
+//! 0.19.0 (`773df80da`) plus la 49-1a. Entre les deux, `kesh-qrbill` et le gel sont
+//! inchangés, mais les lectures des lignes de `kesh-db` (`repositories/invoices.rs`,
+//! `credit_notes.rs`) ont changé : l'égalité avec ce que la 0.19.0 servait **par le HTTP**
+//! repose aussi sur la revue de la 49-1a (même `ORDER BY position`, colonne `line_type`
+//! ajoutée) ; la montée réelle d'une base 0.19.0 est éprouvée par la 49-1d. Angles morts du
+//! comparateur : voir `rendu_avant_apres.rs`.
 
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
@@ -72,7 +80,8 @@ fn dossier_des_references() -> PathBuf {
 struct TestApp {
     base_url: String,
     client: reqwest::Client,
-    documents: PathBuf,
+    /// Le dossier des documents du serveur ; retiré quand le test se termine (revue P1, L6).
+    documents: tempfile::TempDir,
     token: String,
 }
 
@@ -108,10 +117,11 @@ async fn spawn_app(pool: MySqlPool) -> TestApp {
         TimeDelta::minutes(30),
         12,
     );
-    let documents =
-        std::env::temp_dir().join(format!("kesh-pdf-avant-apres-{}", uuid::Uuid::new_v4()));
-    std::fs::create_dir_all(&documents).unwrap();
-    config.documents_dir = documents.to_string_lossy().to_string();
+    let documents = tempfile::Builder::new()
+        .prefix("kesh-pdf-avant-apres-")
+        .tempdir()
+        .expect("dossier des documents");
+    config.documents_dir = documents.path().to_string_lossy().to_string();
     let rate_limiter = kesh_api::middleware::rate_limit::RateLimiter::new(&config);
     let i18n = Arc::new(
         kesh_i18n::I18nBundle::load(
@@ -325,6 +335,7 @@ async fn derouler(pool: MySqlPool, mode: ModeReferences) -> Vec<String> {
             .unwrap();
         let fichier = app
             .documents
+            .path()
             .join(inv.pdf_storage_path.as_deref().expect("facture figée"));
         std::fs::remove_file(&fichier).expect("suppression du fichier archivé");
         let resp = app

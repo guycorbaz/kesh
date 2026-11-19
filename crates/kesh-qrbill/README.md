@@ -17,7 +17,7 @@ let pdf_bytes: Vec<u8> = generate_qr_bill_pdf(&qr_data, &invoice_data, &i18n)?;
 ```
 
 Each `InvoiceLinePdf` carries a `kind` (`LinePdfKind`): a `Priced` line fills the five
-columns (its description shortened to 44 characters and "…"), while a `Comment` (and,
+columns (its description, when longer than 45 characters, shortened to 44 and "…"), while a `Comment` (and,
 until its own styling, a `Heading`) prints its text alone across the full table width,
 wrapped at word boundaries without truncation.
 

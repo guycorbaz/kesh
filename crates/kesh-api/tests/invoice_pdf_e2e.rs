@@ -1053,6 +1053,38 @@ async fn pdf_d_une_facture_a_commentaire_l_imprime(pool: MySqlPool) {
     let pdf_avec = pdf_200(&app, &token, &format!("/api/v1/invoices/{id_avec}/pdf")).await;
     let pdf_sans = pdf_200(&app, &token, &format!("/api/v1/invoices/{id_sans}/pdf")).await;
     assert_commentaire_pleine_largeur(&pdf_avec);
+    // AC9 b et c (revue P1, A-3) — jamais téléchargée, elle s'est figée ; le regel d'un
+    // fichier perdu la rend de nouveau, commentaire compris.
+    let figee = invoices::find_by_id(&pool, company_id, id_avec)
+        .await
+        .unwrap()
+        .unwrap();
+    let chemin = figee
+        .pdf_storage_path
+        .as_deref()
+        .expect("figée au premier rendu");
+    let fichier = std::path::Path::new(&test_config().documents_dir).join(chemin);
+    assert_eq!(
+        std::fs::read(&fichier).expect("fichier figé"),
+        pdf_avec,
+        "le fichier figé est le PDF servi"
+    );
+    std::fs::remove_file(&fichier).unwrap();
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/invoices/{id_avec}/pdf/refreeze")))
+        .header("Authorization", format!("Bearer {token}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "regel");
+    let regele = pdf_200(&app, &token, &format!("/api/v1/invoices/{id_avec}/pdf")).await;
+    assert_commentaire_pleine_largeur(&regele);
+    assert_eq!(
+        kesh_qrbill::empreinte::empreinte(&regele),
+        kesh_qrbill::empreinte::empreinte(&pdf_avec),
+        "le regel rend le même contenu"
+    );
     let (haut_avec, qr_avec) = sommes_lues(&pdf_avec);
     let (haut_sans, qr_sans) = sommes_lues(&pdf_sans);
     assert!(

@@ -234,7 +234,8 @@ fn ligne_49(
 }
 
 /// Une facture de la capture 49-1b, ses sommes faites comme `kesh-api` les fait (toutes les
-/// lignes ; une ligne non chiffrée porte zéro).
+/// lignes ; une ligne non chiffrée porte zéro), arrondi à 5 centimes compris : le réglage
+/// par défaut d'une société (revue P1, L3).
 fn facture_49(numero: &str, lines: Vec<InvoiceLinePdf>) -> InvoicePdfData {
     let subtotal_ht: Decimal = lines.iter().map(|l| l.line_total).sum();
     let mut vat_lines: Vec<InvoiceVatLinePdf> = Vec::new();
@@ -248,13 +249,16 @@ fn facture_49(numero: &str, lines: Vec<InvoiceLinePdf>) -> InvoicePdfData {
             }),
         }
     }
-    let total = subtotal_ht + vat_lines.iter().map(|v| v.amount).sum::<Decimal>();
+    let brut = subtotal_ht + vat_lines.iter().map(|v| v.amount).sum::<Decimal>();
+    let vingt = Decimal::new(20, 0);
+    let rounding = (brut * vingt).round() / vingt - brut;
     InvoicePdfData {
         invoice_number: numero.into(),
         lines,
         subtotal_ht,
         vat_lines,
-        total,
+        rounding,
+        total: brut + rounding,
         ..facture()
     }
 }
@@ -301,11 +305,18 @@ fn pieces_49_1b() -> Vec<(&'static str, bool, InvoicePdfData)> {
         ligne_49(Priced, "Peinture du séjour", 1, 95_000, 810),
         ligne_49(Priced, "Ponçage des boiseries", 3, 4_500, 810),
     ];
-    let temoin = vec![
-        ligne_49(Priced, "Prestation 1", 1, 3_331, 810),
-        ligne_49(Priced, "Prestation 2", 2, 3_331, 260),
-        ligne_49(Priced, "Prestation 3", 3, 3_331, 810),
-    ];
+    // Le témoin : la facture S2 de l'AC1 (cinq lignes à 33.31, deux taux, arrondi -0.02).
+    let temoin = (1..=5)
+        .map(|i| {
+            ligne_49(
+                Priced,
+                &format!("Prestation {i}"),
+                i,
+                3_331,
+                if i % 2 == 1 { 810 } else { 260 },
+            )
+        })
+        .collect();
     let mut avoir = facture_49("AV-2026-0003", entre_deux.clone());
     avoir.origin_reference = Some("F-2026-0101".into());
     avoir.due_date = None;

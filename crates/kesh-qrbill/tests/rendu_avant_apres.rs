@@ -13,6 +13,16 @@
 //! des opérations de contenu, polices, ressources, `MediaBox`, pages, et la liste lisible
 //! des textes. Les octets du fichier ne peuvent pas servir (`/ID` et XMP aléatoires).
 //!
+//! **Ancrage** (revue P1, L4) : les références sont celles de `cbdd70026` (0.19.0 + 49-1a) ;
+//! `kesh-qrbill` y est identique à la 0.19.0 (`773df80da`), seul le comparateur s'y ajoute.
+//!
+//! **Angles morts du comparateur** (revue P1, E-6 et L5 ; il est gelé, ils s'écrivent ici) :
+//! il ne lit, de chaque page, que le contenu, les ressources et la `MediaBox`. Il ne voit
+//! **pas** les autres attributs de page (`/CropBox`, `/Rotate`, `/UserUnit`, `/Annots`),
+//! ni le catalogue (`/OpenAction`, `/Outlines`, `/ViewerPreferences`), ni `Info`, la XMP et
+//! le trailer. Un rendu qui y toucherait garderait la même empreinte ; aucun code de la
+//! 49-1b n'y touche.
+//!
 //! ⛔ Les scénarios ne changent pas après la capture : un scénario modifié comparerait
 //! autre chose que ce qui a été capturé. Les lignes se construisent par le seul [`ligne`].
 
