@@ -1,6 +1,6 @@
 # Story 48-10 : les montants « 1.250 » des réglages, du catalogue et des filtres — prix d'article, frais de rappel, montant minimal, filtres des écritures (#1173, #1175, #1176, #1177)
 
-Status: review
+Status: done
 
 *Fiche **reprise de la 36-18b** (`36-18b-montants-ambigus-reglages-filtres.md`, créée le 2026-11-15 par le découpage de la
 36-18, `backlog`, jamais validée, écrite à `fed34a9c7`) : la 36-18b est `superseded` au `sprint-status`, la 48-10 la remplace.
@@ -509,3 +509,18 @@ complet, joué après le commit. Puis le commit de la fiche, du registre et du p
   corrigés dans la story : garde du manuel `textes_coherents` (exemple `1234.125` → `1'234.125`, `7d8c779ca`) et garde des sélecteurs
   E2E traduits (`e4bf86564`). Gates : voir le Dev Agent Record. E2E complet : à la clôture. Écart à la consigne Edit : un ajout par
   `cat >>` (bloc de tests des filtres).
+- 2026-11-19 — **Revue de code terminée, story close** (boucle de trois passes). **Tendance** : P1 complète, trois lentilles
+  B/E/A (Opus 5.5) 0 CRITICAL / 0 HIGH / 0 MEDIUM / 14 LOW → P2 ciblée (Sonnet 5.5, sur `531397f5a` et `d1afc9384`) 0/0/0/3 →
+  P3 ciblée (Haiku, sur `db9b3a4fd`) 0/0/0/1. Aucune passe au-dessus de LOW. **LOW corrigés dans la story** (règle du
+  2026-11-14) : les quatorze de la P1 (`531397f5a`, `d1afc9384` — l'écart à « un seul commit de code » vient du compteur
+  `sitesTotal`, révélé après le premier commit — ; preuve refaite : captures, bases, prémisse de C-e4810-1 par `M19-litteral`),
+  les trois de la P2 (`db9b3a4fd`, commentaires seuls). **Reclassement** : le LOW D1 de la P3 (le doc-comment
+  d'`amount-entry-centimes.ts` cite « 10.01000 » comme forme que le serveur accepterait, alors qu'il la refuse) n'est pas corrigé
+  — consigne de l'orchestrateur de ne plus toucher au code — et est tracé en **#1384** (P4, `documentation`, milestone v0.20.0).
+  Priorités : #1173 et #1176 P1 (décision de Guy du 2026-11-19), #1175 P3, #1177 P4. **Gates de clôture**, au commit
+  `8d6ffeaf6` (dernier commit de code : `db9b3a4fd`), bases remises à neuf (`bases-cloture.log`) : `gate-ci.sh kesh_ci_e4810`
+  **6172 passés, 0 échoué**, 18 ignorés (`cloture-gate-ci.log`) ; frontend complet — `check` 0 erreur, `lint-i18n-ownership` vert,
+  `test:unit` **4772/4772**, `build` vert (`cloture-front.log`) ; **E2E complet** sur `kesh_e2e_e4810` (`cloture-e2e.log`) :
+  488 passés, 18 ignorés, **7 échecs, tous attendus** — les sept de la KF-029 (#97) du tableau de `docs/testing.md`
+  § *Les échecs attendus*, un à un : `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`,
+  `onboarding.spec.ts:57`, `:77`, `:150` ; aucun échec de pollution. PDF des manuels : à l'intégration.
