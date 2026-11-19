@@ -119,3 +119,59 @@ export function bankAccountsNotLinkedTo<T extends { journalAccountId: number | n
 ): T[] {
 	return bankAccounts.filter((b) => b.journalAccountId === null || !ids.has(b.journalAccountId));
 }
+
+/**
+ * Les comptes proposés comme **parent** (correctif `fix-api-parent-compte`).
+ *
+ * - À la **création** (`account` à `null`) : tous les comptes actifs — le
+ *   comportement d'avant, inchangé.
+ * - À la **modification** : les comptes actifs, **sauf** le compte lui-même et
+ *   ses sous-comptes à tous les niveaux (le serveur refuserait le cycle, 409
+ *   `ACCOUNT_PARENT_CYCLE`), et **sauf** les comptes qui portent des écritures
+ *   (`currencyLocked` : au moins une ligne d'écriture — le serveur refuserait,
+ *   409 `ACCOUNT_PARENT_HAS_ENTRIES`, revue P1-2). Le parent **actuel** reste
+ *   proposé même s'il porte des écritures, pour que le champ l'affiche.
+ *
+ * Le serveur reste le juge (parent archivé ou mouvementé entre-temps, compte de
+ * change) : ce filtre n'écarte que ce qui ne peut pas passer.
+ */
+export function parentCandidates(
+	accounts: AccountResponse[],
+	account: Pick<AccountResponse, 'id' | 'parentId'> | null,
+): AccountResponse[] {
+	if (account === null) return accounts.filter((a) => a.active);
+	const exclus = new Set<number>([account.id]);
+	// Point fixe : un compte est exclu dès que son parent l'est. Borné par le
+	// nombre de comptes, même si la liste reçue portait un cycle.
+	let ajoute = true;
+	while (ajoute) {
+		ajoute = false;
+		for (const a of accounts) {
+			if (a.parentId !== null && exclus.has(a.parentId) && !exclus.has(a.id)) {
+				exclus.add(a.id);
+				ajoute = true;
+			}
+		}
+	}
+	return accounts.filter(
+		(a) =>
+			a.active &&
+			!exclus.has(a.id) &&
+			(a.currencyLocked !== true || a.id === account.parentId),
+	);
+}
+
+/**
+ * Le champ `parentId` d'un `PUT /accounts/{id}` (correctif
+ * `fix-api-parent-compte`) : **absent** si le parent choisi est celui du
+ * compte (absent = inchangé côté serveur), sinon l'identifiant choisi, ou
+ * `null` pour « Aucun » (racine). `selected` est la valeur du `<select>` :
+ * `''` pour « Aucun », l'identifiant en texte sinon.
+ */
+export function parentFieldForUpdate(
+	account: Pick<AccountResponse, 'parentId'>,
+	selected: string,
+): { parentId?: number | null } {
+	const parentId = selected === '' ? null : Number(selected);
+	return parentId === account.parentId ? {} : { parentId };
+}

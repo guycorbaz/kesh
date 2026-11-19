@@ -1150,7 +1150,15 @@ const ATTENDU = {
 	// fusions de l'Epic 43, d'epic/v0190-correction et d'epic/42 (« expected 3495 to be 3468 »,
 	// `kesh-gate-logs/rel0190/vitest-compteurs-1.log`), non additionné — il égale 3468 + 10
 	// (v0190-correction et v0190-nom-societe) + 17 (36-16a), les côtés gardés.
-	sitesTotal: 3495,
+	// Correctif `fix-api-parent-compte` (2026-11-18) : **3388 → 3392**, relevé par la garde
+	// (« expected 3392 to be 3388 », `kesh-gate-logs/fix-api-parent-compte/front-test-unit.log`) —
+	// le champ parent du dialogue de modification (`accounts/+page.svelte`) : son libellé
+	// `account-field-parent-optional` et trois `accounts-parent-none`, comme à la création.
+	// Reprise de `origin/main` (v0.19.0) dans `fix/api-parent-compte` (2026-11-18) : relevé par la
+	// garde après la fusion : **3499** (« expected 3499 to be +0 »,
+	// `kesh-gate-logs/fix-api-parent-compte/reprise-v0190-i18n-1.log`), non additionné — il égale
+	// 3495 (0.19.0) + 4 (le champ parent du dialogue de modification), les deux côtés gardés.
+	sitesTotal: 3499,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

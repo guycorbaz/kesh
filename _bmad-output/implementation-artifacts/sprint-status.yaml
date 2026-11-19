@@ -1196,3 +1196,6 @@ development_status:
 
   # 2026-11-18 — Release 0.20.0 : l'amélioration de la release (une par release, décision de Guy du 2026-11-17), hors épique.
   v0200-menu-sous-groupes: backlog  # #1253 (P4) : menu Administration en sous-groupes (Comptabilité, Banque, Facturation, Système) ; frontend seul, sans migration ; manuels des quatre langues ; à fusionner en dernier (chemins des manuels)
+
+  # 2026-11-18 — Correctif hors epic (Beat), non urgent, à la prochaine release planifiée, sans migration.
+  fix-api-parent-compte: review  # 2026-11-18 : branche fix/api-parent-compte, main v0.19.0 reprise ; PUT /accounts/{id} accepte parentId (absent = inchangé, null = racine), contrôles de la création, refus du cycle (409 ACCOUNT_PARENT_CYCLE), champ parent de l'écran de modification ; revue close (P1, P2 ciblée 0 > LOW) ; gate complet groupé vert (integ/fixes-0.19.0 à 5fc6fb1b) ; PR à ouvrir
