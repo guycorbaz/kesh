@@ -1150,7 +1150,12 @@ const ATTENDU = {
 	// fusions de l'Epic 43, d'epic/v0190-correction et d'epic/42 (« expected 3495 to be 3468 »,
 	// `kesh-gate-logs/rel0190/vitest-compteurs-1.log`), non additionné — il égale 3468 + 10
 	// (v0190-correction et v0190-nom-societe) + 17 (36-16a), les côtés gardés.
-	sitesTotal: 3495,
+	// Story 48-10 (#1177, D5) : **3495 → 3496** (« expected 3496 to be 3495 »,
+	// `kesh-gate-logs/e4810/check-1.log`), relevé par la garde : le seul site neuf est
+	// `journal-entries-filter-amount-not-applied` (liste des écritures). Les messages du prix, des
+	// frais et du minimum passent par `amountEntryMessage` (aucun site neuf). Compteur partagé
+	// avec les autres stories de l'Epic 48 : à relever de nouveau après la fusion (AC8).
+	sitesTotal: 3496,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

@@ -20,7 +20,8 @@
 // `@testing-library/svelte` (Svelte 5).
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent } from '@testing-library/svelte';
+import { render, fireEvent, cleanup } from '@testing-library/svelte';
+import Big from 'big.js';
 import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 import type { ProductResponse } from '$lib/features/products/products.types';
 
@@ -28,8 +29,11 @@ vi.mock('$app/environment', () => ({ browser: true }));
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 vi.mock('$app/state', () => ({ page: { url: new URL('http://localhost/products') } }));
 
+// Story 48-10 (M10) : le mock interpole `{ $max }`, comme celui de
+// `journal-entries-list-page.test.ts` — sans quoi un nombre de décimales faux resterait invisible.
 vi.mock('$lib/shared/utils/i18n.svelte', () => ({
-	i18nMsg: (_key: string, fallback: string) => fallback,
+	i18nMsg: (_key: string, fallback: string, args?: Record<string, string | number>) =>
+		args ? fallback.replace(/\{\s*\$(\w+)\s*\}/g, (_, n) => String(args[n] ?? '')) : fallback,
 }));
 
 const notifyErrorMock = vi.fn();
@@ -224,5 +228,200 @@ describe('fiche produit — le nom ne coupe pas un texte collé (Story 48-15)', 
 		await fireEvent.input(champ, { target: { value: 'A'.repeat(196) + '𝔸'.repeat(60) } });
 		await settle();
 		expect(champ.form!.textContent).toContain('Le nom doit faire au plus 255 caractères');
+	});
+});
+
+// Story 48-10 (#1173 ; AC1, AC5, AC7, AC12) — le prix d'un article se lit comme le montant
+// d'une écriture : « 1.250 » refusé comme ambigu, sous le champ, sans envoi ni perte de
+// saisie ; « 1'250 » part `1250`. Avant la story, « 1.250 » partait et le serveur le lisait 1,25.
+describe('fiche produit — prix ambigu (Story 48-10)', () => {
+	const AMBIGU = 'Montant ambigu';
+	// Les rendus des blocs précédents ne sont pas démontés (aucun nettoyage automatique sans
+	// `globals`) : leurs dialogues ouverts porteraient eux aussi un `#form-price`.
+	beforeEach(() => cleanup());
+
+	function article(unitPrice: string): ProductResponse {
+		return {
+			id: 77,
+			companyId: 1,
+			name: 'Abonnement',
+			description: null,
+			unitPrice,
+			vatRate: '8.10',
+			defaultRevenueAccountId: null,
+			active: true,
+			version: 4,
+			createdAt: '',
+			updatedAt: '',
+		};
+	}
+
+	function prix(): HTMLInputElement {
+		const champ = document.querySelector<HTMLInputElement>('#form-price');
+		if (!champ) throw new Error('champ #form-price introuvable : dialogue non monté');
+		return champ;
+	}
+	const messageSousLeChamp = () => document.querySelector('[data-testid="product-form-price-error"]');
+	const piedRouge = () => document.querySelector('[data-testid="product-form-error"]');
+	const soumettre = () =>
+		[...prix().form!.querySelectorAll('button')].find((b) => b.getAttribute('type') === 'submit')!;
+
+	async function ouvrirCreation(): Promise<void> {
+		render(Page);
+		await settle();
+		const bouton = [...document.querySelectorAll('button')].find((b) =>
+			/Nouveau produit/.test(b.textContent ?? '')
+		);
+		if (!bouton) throw new Error('bouton « Nouveau produit » introuvable');
+		await fireEvent.click(bouton);
+		await settle();
+		const nom = document.querySelector<HTMLInputElement>('#form-name')!;
+		await fireEvent.input(nom, { target: { value: 'Conseil' } });
+	}
+
+	async function ouvrirEdition(unitPrice: string): Promise<void> {
+		listProductsMock.mockResolvedValue({ items: [article(unitPrice)], total: 1, limit: 20, offset: 0 });
+		const { getByLabelText } = render(Page);
+		await settle();
+		await fireEvent.click(getByLabelText('Modifier'));
+		await settle();
+	}
+
+	async function taper(valeur: string): Promise<void> {
+		await fireEvent.input(prix(), { target: { value: valeur } });
+		await settle();
+	}
+
+	/** Soumission par Entrée, rejouée comme le navigateur (`requestSubmit`, cf. Story 36-1). */
+	async function entree(): Promise<void> {
+		prix().form!.requestSubmit();
+		await settle();
+	}
+
+	// AC1 — rouge avant le correctif : « 1.250 » partait (`unitPrice: '1.250'`).
+	it('création : « 1.250 » → message ambigu sous le champ, rien ne part, saisie conservée (M1)', async () => {
+		await ouvrirCreation();
+		await taper('1.250');
+		expect(messageSousLeChamp()?.textContent).toContain(AMBIGU);
+		expect(soumettre().disabled).toBe(true);
+		await entree();
+		expect(createProductMock).not.toHaveBeenCalled();
+		expect(updateProductMock).not.toHaveBeenCalled();
+		expect(prix().value).toBe('1.250');
+	});
+
+	it('modification : « 1,250 » → message ambigu, `updateProduct` non appelé', async () => {
+		await ouvrirEdition('150.0000');
+		await taper('1,250');
+		expect(messageSousLeChamp()?.textContent).toContain(AMBIGU);
+		await entree();
+		expect(updateProductMock).not.toHaveBeenCalled();
+		expect(prix().value).toBe('1,250');
+	});
+
+	// AC1 — rouge avant le correctif : « 1'250 » était refusé (« Format de prix invalide »).
+	it("création : « 1'250 » part `1250` (M2)", async () => {
+		createProductMock.mockResolvedValue(article('1250.0000'));
+		await ouvrirCreation();
+		await taper("1'250");
+		expect(messageSousLeChamp()).toBeNull();
+		await entree();
+		expect(createProductMock).toHaveBeenCalledTimes(1);
+		expect(createProductMock.mock.calls[0][0]).toMatchObject({ unitPrice: '1250' });
+	});
+
+	// AC5 — rien de juste n'est refusé ; la charge part normalisée (M14 : « 1250 » bordé de blancs).
+	for (const [saisie, charge] of [
+		['1.25', '1.25'],
+		['1250', '1250'],
+		["1'250.50", '1250.50'],
+		['1’250', '1250'],
+		['1,25', '1.25'],
+		['0.50', '0.50'],
+		[' 1250 ', '1250'],
+		['1250.0000', '1250.0000'],
+		['12.1250', '12.1250'],
+		['0.125', '0.125'],
+		['1234.125', '1234.125'],
+		["1'234.125", '1234.125'],
+	]) {
+		it(`création : « ${saisie} » accepté sans message, part « ${charge} »`, async () => {
+			createProductMock.mockResolvedValue(article('1.0000'));
+			await ouvrirCreation();
+			await taper(saisie);
+			expect(messageSousLeChamp()).toBeNull();
+			expect(prix().getAttribute('aria-invalid')).not.toBe('true');
+			await entree();
+			expect(createProductMock).toHaveBeenCalledTimes(1);
+			expect(createProductMock.mock.calls[0][0]).toMatchObject({ unitPrice: charge });
+		});
+	}
+
+	it('« abc » et « -1 » : refus sous le champ, avec leurs messages actuels, rien ne part', async () => {
+		await ouvrirCreation();
+		await taper('abc');
+		expect(messageSousLeChamp()?.textContent).toContain('Format de prix invalide');
+		await taper('-1');
+		expect(messageSousLeChamp()?.textContent).toContain('Le prix doit être positif ou nul');
+		await taper('1e3');
+		expect(messageSousLeChamp()?.textContent).toContain('Format de prix invalide');
+		await entree();
+		expect(createProductMock).not.toHaveBeenCalled();
+	});
+
+	// AC1, AC7 — un article rouvert sans toucher au prix : aucun message, la valeur d'origine
+	// repart (jamais un montant reformaté qui change de valeur). FILETS (M3 les tue).
+	for (const [serveur, champ] of [
+		['1.2340', '1.2340'],
+		['1.2500', '1.25'],
+		['1500.0000', '1500.00'],
+		['0.1230', '0.1230'],
+	]) {
+		it(`rouvert au prix ${serveur} → champ « ${champ} », sans message, enregistrable à la même valeur (M3)`, async () => {
+			updateProductMock.mockResolvedValue(article(serveur));
+			await ouvrirEdition(serveur);
+			expect(prix().value).toBe(champ);
+			expect(messageSousLeChamp()).toBeNull();
+			expect(soumettre().disabled).toBe(false);
+			await entree();
+			expect(updateProductMock).toHaveBeenCalledTimes(1);
+			const envoye = (updateProductMock.mock.calls[0][1] as { unitPrice: string }).unitPrice;
+			expect(new Big(envoye).eq(new Big(serveur))).toBe(true);
+		});
+	}
+
+	// AC1 — prix effacé : le motif reste visible au pied (M20), bouton désactivé.
+	it('prix effacé à l’édition → « Le prix est obligatoire » visible au pied, bouton désactivé (M20)', async () => {
+		await ouvrirEdition('150.0000');
+		await taper('');
+		expect(prix().form!.textContent).toContain('Le prix est obligatoire');
+		expect(messageSousLeChamp()).toBeNull();
+		expect(soumettre().disabled).toBe(true);
+	});
+
+	// AC12 — accessibilité du refus, et retour à l'état neutre après correction (M16).
+	it('« 1.250 » : aria-invalid et aria-describedby nomment le message ; corrigé, ils le quittent', async () => {
+		await ouvrirCreation();
+		await taper('1.250');
+		const msg = messageSousLeChamp()!;
+		expect(msg.id).toBe('form-price-error');
+		expect(prix().getAttribute('aria-invalid')).toBe('true');
+		expect((prix().getAttribute('aria-describedby') ?? '').split(' ')).toContain(msg.id);
+		await taper("1'250");
+		expect(['false', null]).toContain(prix().getAttribute('aria-invalid'));
+		expect((prix().getAttribute('aria-describedby') ?? '').split(' ')).not.toContain('form-price-error');
+	});
+
+	// AC12 (V2-3) — Entrée sur « 1.250 », puis correction : aucun message rouge périmé au pied (M19).
+	it('Entrée sur « 1.250 », puis correction en « 1’250 » → aucun message rouge au pied', async () => {
+		await ouvrirCreation();
+		await taper('1.250');
+		await entree();
+		// Le message du prix n'est pas répété au pied : il est déjà sous le champ.
+		expect(piedRouge()).toBeNull();
+		expect(createProductMock).not.toHaveBeenCalled();
+		await taper("1'250");
+		expect(piedRouge()).toBeNull();
+		expect(prix().form!.textContent).not.toContain(AMBIGU);
 	});
 });

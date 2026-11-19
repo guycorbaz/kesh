@@ -17,6 +17,8 @@
 		updateDunningSettings,
 		type DunningLevelResponse,
 	} from '$lib/features/dunning';
+	import { readJournalAmount } from '$lib/features/journal-entries/balance';
+	import { amountEntryMessage } from '$lib/features/journal-entries/amount-entry-message';
 
 	// IDs DOM stables et HTTP-LAN-safe ($props.id() — pas de crypto.randomUUID,
 	// indisponible hors secure-context sur déploiement NAS HTTP, cf. #145).
@@ -35,6 +37,17 @@
 	let fFee = $state('0.00');
 	let formError = $state('');
 	let submitting = $state(false);
+	// Story 48-10 (#1175, D2 ; D3 de la 36-18a) — les frais se lisent comme le montant d'une
+	// écriture, dérivés de la saisie rognée : « 1'250 » part `1250` ; « 1.250 » est refusé comme
+	// ambigu SOUS LE CHAMP (avant, il partait brut, et le serveur répondait « plus de 2
+	// décimales », qui poussait à écrire `1.25`) ; « 1e3 », « -5 », « 10.01000 », que `Number`
+	// lisait, sont illisibles. Bornes (0 à `FEE_MAX`) et échelle restent jugées par le serveur.
+	let feeReading = $derived(readJournalAmount(fFee.trim()));
+	let feeError = $derived(
+		feeReading.kind === 'ambiguous' || feeReading.kind === 'unreadable'
+			? amountEntryMessage(feeReading.kind, 2)
+			: '',
+	);
 	let confirmDelete = $state<DunningLevelResponse | null>(null);
 
 	let graceInput = $state('5');
@@ -101,19 +114,23 @@
 			formError = i18nMsg('dunning-form-error-delay', 'Le délai doit être un entier positif.');
 			return;
 		}
-		if (fFee.trim() === '' || Number.isNaN(Number(fFee))) {
+		const fee = feeReading;
+		if (fee.kind === 'empty') {
 			formError = i18nMsg('dunning-form-error-fee', 'Les frais doivent être un montant valide.');
 			return;
 		}
+		// Story 48-10 (D2) : ambigu ou illisible, le refus est déjà sous le champ ; rien ne part,
+		// le formulaire reste ouvert sur la saisie.
+		if (fee.kind !== 'clear') return;
 		submitting = true;
 		try {
 			if (mode.kind === 'create') {
-				await createDunningLevel({ delayDays: delay, feeAmount: fFee });
+				await createDunningLevel({ delayDays: delay, feeAmount: fee.payload });
 				toast.success(i18nMsg('dunning-created', 'Niveau de rappel ajouté.'));
 			} else if (mode.kind === 'edit') {
 				await updateDunningLevel(mode.level.id, {
 					delayDays: delay,
-					feeAmount: fFee,
+					feeAmount: fee.payload,
 					version: mode.level.version,
 				});
 				toast.success(i18nMsg('dunning-updated', 'Niveau de rappel mis à jour.'));
@@ -281,13 +298,28 @@
 						<!-- type="text" (pas number) : le montant décimal doit rester une STRING
 						     ($lib/components/ui/input coerce type=number en nombre, cassant le Decimal
 						     backend qui attend une string via serde-str). Bornes validées serveur. -->
-						<Input id="{uid}-fee" type="text" inputmode="decimal" bind:value={fFee} data-testid="dunning-form-fee" class="w-32" />
+						<Input
+							id="{uid}-fee"
+							type="text"
+							inputmode="decimal"
+							bind:value={fFee}
+							data-testid="dunning-form-fee"
+							class={feeError ? 'w-32 border-destructive' : 'w-32'}
+							aria-invalid={!!feeError}
+							aria-describedby={feeError ? `${uid}-fee-error` : undefined}
+						/>
 					</div>
 					<div class="flex gap-2">
 						<Button onclick={submitForm} disabled={submitting} data-testid="dunning-form-submit">{i18nMsg('dunning-form-submit', 'Enregistrer')}</Button>
 						<Button variant="outline" onclick={closeForm}>{i18nMsg('dunning-form-cancel', 'Annuler')}</Button>
 					</div>
 				</div>
+				<!-- Story 48-10 (D2) : le refus des frais, hors du bloc commun (qui ne désigne pas le champ). -->
+				{#if feeError}
+					<p id="{uid}-fee-error" class="mt-2 text-sm text-error" role="alert" data-testid="dunning-form-fee-error">
+						{feeError}
+					</p>
+				{/if}
 				{#if formError}<p class="mt-2 text-sm text-error" data-testid="dunning-form-error" role="alert">{formError}</p>{/if}
 			</section>
 		{/if}

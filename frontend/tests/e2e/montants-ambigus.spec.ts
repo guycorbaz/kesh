@@ -13,8 +13,12 @@
  * 2xx, relecture comparée **en valeur** (le serveur rend `1250.0000`).
  *
  * Décor synthétique, créé par l'API. Les captures (thème clair) s'écrivent dans
- * `KESH_E2E_CAPTURES_DIR`, sinon dans la sortie du test (hors dépôt). La 36-18b complètera ce
- * fichier (prix d'article, frais de rappel, montant minimal, filtres).
+ * `KESH_E2E_CAPTURES_DIR`, sinon dans la sortie du test (hors dépôt).
+ *
+ * Story 48-10 (#1173, #1175, #1176, #1177 ; AC6, AC11), qui reprend la 36-18b : les écrans de
+ * réglage et de filtre — prix d'un article, frais d'un niveau de rappel, montant minimal d'une
+ * facture, bornes de montant du filtre des écritures (une requête de lecture, non d'écriture :
+ * la borne ambiguë est omise de la requête et de l'URL). Captures préfixées `e4810-`.
  */
 import path from 'node:path';
 import Big from 'big.js';
@@ -35,9 +39,14 @@ import {
 import { invoiceVersionViaApi, todayInZurich } from './helpers/api-fixtures';
 
 /** Le dossier des captures : `KESH_E2E_CAPTURES_DIR`, sinon la sortie du test (hors dépôt). */
-async function capture(page: Page, testInfo: TestInfo, name: string): Promise<void> {
+async function capture(
+	page: Page,
+	testInfo: TestInfo,
+	name: string,
+	prefixe: 'e3618a' | 'e4810' = 'e3618a',
+): Promise<void> {
 	const dossier = process.env.KESH_E2E_CAPTURES_DIR;
-	const fichier = `e3618a-${name}.png`;
+	const fichier = `${prefixe}-${name}.png`;
 	await page.screenshot({
 		path: dossier ? path.join(dossier, fichier) : testInfo.outputPath(fichier),
 		fullPage: true,
@@ -431,4 +440,254 @@ test('règlement : « 1.250 » refusé comme ambigu, rien n’est écrit ; « 1�
 	} finally {
 		await disposeContextSafe(ctx);
 	}
+});
+
+// ---------------------------------------------------------------------------
+// Story 48-10 — #1173, prix d'un article
+// ---------------------------------------------------------------------------
+
+const PRODUCT_WRITES: WriteRoute[] = [
+	{ method: 'POST', path: /^\/api\/v1\/products$/ },
+	{ method: 'PUT', path: /^\/api\/v1\/products\/\d+$/ },
+];
+
+type Product = { id: number; name: string; unitPrice: string };
+
+async function productsNamed(ctx: APIRequestContext, name: string): Promise<Product[]> {
+	const r = await ctx.get(`/api/v1/products?search=${encodeURIComponent(name)}&limit=100`);
+	expect(r.ok(), `articles : ${r.status()}`).toBeTruthy();
+	return ((await r.json()) as { items: Product[] }).items.filter((p) => p.name === name);
+}
+
+test('article, prix : « 1.250 » refusé comme ambigu, rien n’est écrit ; « 1’250 » part 1250', async ({
+	page,
+}, testInfo) => {
+	await seedTestState('with-company');
+	await login(page);
+	const ctx = await authedApiContext(page);
+	try {
+		const name = `Article montants ${suffix()}`;
+		await page.goto('/products');
+		await page.getByRole('button', { name: /Nouveau produit/ }).click();
+		const writes = countWrites(page, PRODUCT_WRITES);
+		await page.fill('#form-name', name);
+		await page.fill('#form-price', '1.250');
+		await expect.soft(page.getByTestId('product-form-price-error')).toContainText('Montant ambigu');
+		await expect.soft(page.locator('#form-price')).toHaveAttribute('aria-invalid', 'true');
+		await expect.soft(page.getByRole('button', { name: 'Créer' })).toBeDisabled();
+		await capture(page, testInfo, 'article-prix-ambigu', 'e4810');
+		await page.getByRole('button', { name: 'Créer' }).click({ force: true });
+		await page.locator('#form-price').press('Enter');
+		await page.waitForTimeout(300);
+		expect(writes(), 'aucune requête d’écriture d’article').toEqual([]);
+		expect(await productsNamed(ctx, name), 'aucun article créé').toEqual([]);
+		await expect(page.locator('#form-price')).toHaveValue('1.250');
+
+		await page.fill('#form-price', "12'34");
+		await expect(page.getByTestId('product-form-price-error')).toContainText('4 décimales au plus');
+		await capture(page, testInfo, 'article-prix-illisible', 'e4810');
+
+		await page.fill('#form-price', "1'250");
+		await expect(page.getByTestId('product-form-price-error')).toHaveCount(0);
+		const sent = waitForWrite(page, PRODUCT_WRITES);
+		await page.getByRole('button', { name: 'Créer' }).click();
+		const req = await sent;
+		expect((req.postDataJSON() as { unitPrice: string }).unitPrice).toBe('1250');
+		const res = await req.response();
+		expect(res?.ok(), `création : ${res?.status()}`).toBeTruthy();
+		await expect(page.locator('tbody').getByText(name)).toBeVisible();
+		await capture(page, testInfo, 'article-prix-1250-enregistre', 'e4810');
+		const [lu] = await productsNamed(ctx, name);
+		expect(new Big(lu.unitPrice).eq(1250), `prix relu : ${lu.unitPrice}`).toBe(true);
+
+		// AC1, AC11 — un article au prix 1.2340 se rouvre « 1.2340 », sans message.
+		const millieme = `Article millième ${suffix()}`;
+		const created = await ctx.post('/api/v1/products', {
+			data: { name: millieme, description: null, unitPrice: '1.2340', vatRate: '8.10' },
+		});
+		expect(created.ok(), `article : ${created.status()} ${await created.text()}`).toBeTruthy();
+		await page.goto(`/products?search=${encodeURIComponent(millieme)}`);
+		await page.locator('tbody tr', { hasText: millieme }).getByLabel('Modifier').click();
+		await expect(page.locator('#form-price')).toHaveValue('1.2340');
+		await expect(page.getByTestId('product-form-price-error')).toHaveCount(0);
+		await capture(page, testInfo, 'article-rouvert-1.2340', 'e4810');
+	} finally {
+		await disposeContextSafe(ctx);
+	}
+});
+
+// ---------------------------------------------------------------------------
+// Story 48-10 — #1175, frais d'un niveau de rappel
+// ---------------------------------------------------------------------------
+
+const DUNNING_WRITES: WriteRoute[] = [
+	{ method: 'POST', path: /^\/api\/v1\/dunning-levels$/ },
+	{ method: 'PUT', path: /^\/api\/v1\/dunning-levels\/\d+$/ },
+];
+
+type DunningLevel = { id: number; levelNumber: number; feeAmount: string };
+
+async function dunningLevels(ctx: APIRequestContext): Promise<DunningLevel[]> {
+	const r = await ctx.get('/api/v1/dunning-levels');
+	expect(r.ok(), `niveaux : ${r.status()}`).toBeTruthy();
+	return (await r.json()) as DunningLevel[];
+}
+
+test('rappels, frais : « 1.250 » refusé comme ambigu, rien n’est écrit ; « 1’250 » part 1250', async ({
+	page,
+}, testInfo) => {
+	await seedTestState('with-company');
+	await login(page);
+	const ctx = await authedApiContext(page);
+	try {
+		await page.goto('/settings/dunning');
+		await expect(page.getByTestId('dunning-level-row')).toHaveCount(3, { timeout: 5000 });
+		const before = await dunningLevels(ctx);
+		const writes = countWrites(page, DUNNING_WRITES);
+		await page.getByTestId('dunning-level-row').nth(1).getByRole('button', { name: 'Modifier' }).click();
+		await page.getByTestId('dunning-form-fee').fill('1.250');
+		await expect.soft(page.getByTestId('dunning-form-fee-error')).toContainText('Montant ambigu');
+		await expect.soft(page.getByTestId('dunning-form-fee')).toHaveAttribute('aria-invalid', 'true');
+		await page.getByTestId('dunning-form-submit').click();
+		await page.waitForTimeout(300);
+		expect(writes(), 'aucune requête d’écriture de niveau').toEqual([]);
+		await capture(page, testInfo, 'rappel-frais-ambigu', 'e4810');
+		expect(await dunningLevels(ctx), 'niveaux inchangés').toEqual(before);
+		await expect(page.getByTestId('dunning-form-fee')).toHaveValue('1.250');
+
+		await page.getByTestId('dunning-form-fee').fill("12'34");
+		await expect(page.getByTestId('dunning-form-fee-error')).toContainText('2 décimales au plus');
+		await capture(page, testInfo, 'rappel-frais-illisible', 'e4810');
+
+		await page.getByTestId('dunning-form-fee').fill("1'250");
+		await expect(page.getByTestId('dunning-form-fee-error')).toHaveCount(0);
+		const sent = waitForWrite(page, DUNNING_WRITES);
+		await page.getByTestId('dunning-form-submit').click();
+		const req = await sent;
+		expect((req.postDataJSON() as { feeAmount: string }).feeAmount).toBe('1250');
+		const res = await req.response();
+		expect(res?.ok(), `modification : ${res?.status()}`).toBeTruthy();
+		await expect(page.getByTestId('dunning-form-fee')).toHaveCount(0);
+		await capture(page, testInfo, 'rappel-frais-1250-enregistre', 'e4810');
+		const lu = (await dunningLevels(ctx)).find((l) => l.id === before[1].id)!;
+		expect(new Big(lu.feeAmount).eq(1250), `frais relus : ${lu.feeAmount}`).toBe(true);
+	} finally {
+		await disposeContextSafe(ctx);
+	}
+});
+
+// ---------------------------------------------------------------------------
+// Story 48-10 — #1176, montant minimal d'une facture
+// ---------------------------------------------------------------------------
+
+const INVOICE_SETTINGS_WRITES: WriteRoute[] = [
+	{ method: 'PUT', path: /^\/api\/v1\/company\/invoice-settings$/ },
+];
+
+async function minimumInvoiceAmount(ctx: APIRequestContext): Promise<string | null> {
+	const r = await ctx.get('/api/v1/company/invoice-settings');
+	expect(r.ok(), `réglages : ${r.status()}`).toBeTruthy();
+	return ((await r.json()) as { minimumInvoiceAmount: string | null }).minimumInvoiceAmount;
+}
+
+test('facturation, montant minimum : « 1.250 » refusé comme ambigu, rien n’est écrit ; « 1’250 » part 1250', async ({
+	page,
+}, testInfo) => {
+	await seedTestState('with-company');
+	await login(page);
+	const ctx = await authedApiContext(page);
+	try {
+		const before = await minimumInvoiceAmount(ctx);
+		await page.goto('/settings/invoicing');
+		const field = page.getByTestId('settings-minimum-invoice-amount');
+		await expect(field).toBeVisible();
+		const writes = countWrites(page, INVOICE_SETTINGS_WRITES);
+		await field.fill('1.250');
+		await expect.soft(page.getByTestId('settings-minimum-invoice-amount-error')).toContainText(
+			'Montant ambigu',
+		);
+		await expect.soft(field).toHaveAttribute('aria-invalid', 'true');
+		await expect.soft(page.getByTestId('settings-invoicing-save')).toBeDisabled();
+		await capture(page, testInfo, 'minimum-ambigu', 'e4810');
+		await page.getByTestId('settings-invoicing-save').click({ force: true });
+		await field.press('Enter');
+		await page.waitForTimeout(300);
+		expect(writes(), 'aucune requête d’écriture des réglages').toEqual([]);
+		expect(await minimumInvoiceAmount(ctx), 'minimum inchangé').toBe(before);
+		await expect(field).toHaveValue('1.250');
+
+		await field.fill("12'34");
+		await expect(page.getByTestId('settings-minimum-invoice-amount-error')).toContainText(
+			'2 décimales au plus',
+		);
+		await capture(page, testInfo, 'minimum-illisible', 'e4810');
+
+		await field.fill("1'250");
+		await expect(page.getByTestId('settings-minimum-invoice-amount-error')).toHaveCount(0);
+		const sent = waitForWrite(page, INVOICE_SETTINGS_WRITES);
+		await page.getByTestId('settings-invoicing-save').click();
+		const req = await sent;
+		expect(
+			(req.postDataJSON() as { minimumInvoiceAmount: string | null }).minimumInvoiceAmount,
+		).toBe('1250');
+		const res = await req.response();
+		expect(res?.ok(), `enregistrement : ${res?.status()}`).toBeTruthy();
+		const lu = await minimumInvoiceAmount(ctx);
+		expect(lu !== null && new Big(lu).eq(1250), `minimum relu : ${lu}`).toBe(true);
+		// Rouvert : la forme rendue par le serveur (`1250.0000`) se relit sans message.
+		await page.reload();
+		await expect(field).toHaveValue(lu!);
+		await expect(page.getByTestId('settings-minimum-invoice-amount-error')).toHaveCount(0);
+		await capture(page, testInfo, 'minimum-1250-enregistre-relu', 'e4810');
+	} finally {
+		await disposeContextSafe(ctx);
+	}
+});
+
+// ---------------------------------------------------------------------------
+// Story 48-10 — #1177, bornes de montant du filtre des écritures (lecture)
+// ---------------------------------------------------------------------------
+
+/** La prochaine lecture de la liste des écritures (`GET /api/v1/journal-entries`). */
+function nextListRequest(page: Page): Promise<Request> {
+	return page.waitForRequest(
+		(req) => req.method() === 'GET' && new URL(req.url()).pathname === '/api/v1/journal-entries',
+	);
+}
+
+test('filtre des écritures : « 1’250 » filtre à 1250, « 1.250 » n’est pas appliqué et le dit', async ({
+	page,
+}, testInfo) => {
+	await seedTestState('with-data');
+	await login(page);
+	await page.goto('/journal-entries');
+	const min = page.locator('#filter-amount-min');
+	await expect(min).toBeVisible();
+
+	let req = nextListRequest(page);
+	await min.fill("1'250");
+	expect(new URL((await req).url()).searchParams.get('amountMin')).toBe('1250');
+	await expect(page).toHaveURL(/[?&]amountMin=1250(&|$)/);
+
+	req = nextListRequest(page);
+	await min.fill('1.250');
+	expect(new URL((await req).url()).searchParams.has('amountMin'), 'borne ambiguë omise').toBe(false);
+	await expect(page.getByTestId('journal-entries-filter-amount-min-problem')).toContainText(
+		'Montant ambigu',
+	);
+	await expect(page.getByTestId('journal-entries-filter-amount-min-problem')).toContainText(
+		'pas appliqué',
+	);
+	await expect(page).not.toHaveURL(/amountMin=/);
+	await expect(min).toHaveValue('1.250');
+	await capture(page, testInfo, 'filtre-ambigu', 'e4810');
+
+	// Signet ancien : la borne s'affiche, n'est pas envoyée, l'URL la retire.
+	req = nextListRequest(page);
+	await page.goto('/journal-entries?amountMin=1.250');
+	expect(new URL((await req).url()).searchParams.has('amountMin'), 'signet : borne omise').toBe(false);
+	await expect(page.getByTestId('journal-entries-filter-amount-min-problem')).toBeVisible();
+	await expect(page.locator('#filter-amount-min')).toHaveValue('1.250');
+	await expect(page).not.toHaveURL(/amountMin=/);
+	await capture(page, testInfo, 'filtre-signet-ambigu', 'e4810');
 });

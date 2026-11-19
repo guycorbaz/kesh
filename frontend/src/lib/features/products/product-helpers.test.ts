@@ -3,7 +3,6 @@ import {
 	classifyPriceInput,
 	formatPrice,
 	formatVatRate,
-	isValidPrice,
 	normalizePriceInput
 } from './product-helpers';
 
@@ -49,44 +48,8 @@ describe('formatVatRate', () => {
 	});
 });
 
-describe('isValidPrice', () => {
-	it('accepte les entiers et décimaux valides', () => {
-		expect(isValidPrice('0')).toBe(true);
-		expect(isValidPrice('100')).toBe(true);
-		expect(isValidPrice('1500.00')).toBe(true);
-		expect(isValidPrice('0.0001')).toBe(true);
-	});
-
-	it('rejette la chaîne vide (prix requis)', () => {
-		expect(isValidPrice('')).toBe(false);
-		expect(isValidPrice('   ')).toBe(false);
-	});
-
-	it('tolère les espaces en tête/queue (paste)', () => {
-		expect(isValidPrice(' 10.50 ')).toBe(true);
-		expect(isValidPrice('\t100\n')).toBe(true);
-	});
-
-	it('rejette les zéros en tête superflus', () => {
-		expect(isValidPrice('007.50')).toBe(false);
-		expect(isValidPrice('01')).toBe(false);
-	});
-
-	it('rejette le point sans partie entière', () => {
-		expect(isValidPrice('.5')).toBe(false);
-	});
-
-	it('rejette plus de 4 décimales', () => {
-		expect(isValidPrice('1.23456')).toBe(false);
-	});
-
-	it('rejette les nombres négatifs ou avec caractères parasites', () => {
-		expect(isValidPrice('-1')).toBe(false);
-		expect(isValidPrice('1,50')).toBe(false);
-		expect(isValidPrice('abc')).toBe(false);
-	});
-});
-
+// Story 48-10 (#1173, D1) : `isValidPrice` et `PRICE_RE`, sans appelant de production, sont
+// retirés avec leurs tests ; le prix se lit comme le montant d'une écriture (`readJournalAmount`).
 describe('normalizePriceInput', () => {
 	it('remplace la virgule décimale par un point (clavier mobile suisse)', () => {
 		expect(normalizePriceInput('10,50')).toBe('10.50');
@@ -95,11 +58,34 @@ describe('normalizePriceInput', () => {
 
 	it('trim les espaces', () => {
 		expect(normalizePriceInput('  10.50  ')).toBe('10.50');
+		// AC5 : une espace avant et après, collée depuis un tableur (M14).
+		expect(normalizePriceInput(' 1250 ')).toBe('1250');
 	});
 
 	it('laisse inchangé un input déjà normalisé', () => {
 		expect(normalizePriceInput('10.50')).toBe('10.50');
 		expect(normalizePriceInput('0')).toBe('0');
+	});
+
+	// Story 48-10 (AC1, AC5) — la charge d'une lecture claire ; `null` sinon (M2).
+	it("retire l'apostrophe des milliers : « 1'250 » → 1250, « 1’250.50 » → 1250.50", () => {
+		expect(normalizePriceInput("1'250")).toBe('1250');
+		expect(normalizePriceInput('1’250.50')).toBe('1250.50');
+		expect(normalizePriceInput("1'250.50")).toBe('1250.50');
+	});
+
+	it('rend null pour le vide, l’ambigu et l’illisible', () => {
+		expect(normalizePriceInput('')).toBeNull();
+		expect(normalizePriceInput('   ')).toBeNull();
+		expect(normalizePriceInput('1.250')).toBeNull();
+		expect(normalizePriceInput('1,250')).toBeNull();
+		expect(normalizePriceInput('abc')).toBeNull();
+		expect(normalizePriceInput("12'34")).toBeNull();
+	});
+
+	it('garde les zéros de tête et de fin (« 007.50 », « 1250.0000 »)', () => {
+		expect(normalizePriceInput('007.50')).toBe('007.50');
+		expect(normalizePriceInput('1250.0000')).toBe('1250.0000');
 	});
 });
 
@@ -124,5 +110,46 @@ describe('classifyPriceInput', () => {
 		expect(classifyPriceInput('abc')).toBe('invalid');
 		expect(classifyPriceInput('1.23456')).toBe('invalid');
 		expect(classifyPriceInput('.5')).toBe('invalid');
+	});
+
+	// Story 48-10 (#1173, AC1) — rouge avant le correctif : « 1.250 » était `ok`, lu 1,25 (M1).
+	it('« 1.250 » et « 1,250 » sont ambigus', () => {
+		expect(classifyPriceInput('1.250')).toBe('ambiguous');
+		expect(classifyPriceInput('1,250')).toBe('ambiguous');
+		expect(classifyPriceInput('12.125')).toBe('ambiguous');
+		expect(classifyPriceInput(' 1.250 ')).toBe('ambiguous');
+	});
+
+	// AC1 — rouge avant le correctif : « 1'250 » était `invalid`, « 007.50 » aussi.
+	it("« 1'250 », « 007.50 » sont acceptés", () => {
+		expect(classifyPriceInput("1'250")).toBe('ok');
+		expect(classifyPriceInput('007.50')).toBe('ok');
+	});
+
+	// AC5 — rien de juste ne devient refusé (filets, sauf les formes groupées).
+	it('les formes justes restent acceptées', () => {
+		for (const raw of [
+			'1.25',
+			'1250',
+			"1'250.50",
+			'1’250',
+			'1,25',
+			'0.50',
+			' 1250 ',
+			'1250.0000',
+			'12.1250',
+			'0.125',
+			'1234.125',
+			"1'234.125",
+		]) {
+			expect(classifyPriceInput(raw), raw).toBe('ok');
+		}
+	});
+
+	// AC5 — ce que la grammaire du journal ne lit pas devient illisible.
+	it('exposant, point sans chiffre, blanc intérieur, plus de quatre décimales : invalid', () => {
+		for (const raw of ['1e3', '.5', '5.', '1 250', '10.01000', "12'34"]) {
+			expect(classifyPriceInput(raw), raw).toBe('invalid');
+		}
 	});
 });

@@ -23,6 +23,7 @@
 	} from '$lib/features/invoices/invoice-number-format';
 	import { groupMaxChanged, readGroupMax } from '$lib/features/invoices/group-settlement-max';
 	import { amountEntryMessage } from '$lib/features/journal-entries/amount-entry-message';
+	import { readJournalAmount } from '$lib/features/journal-entries/balance';
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
 	import {
 		isForeignCurrencyAccount,
@@ -72,6 +73,19 @@
 	let roundTo5 = $state(true);
 	// Story 25-4-e : vide = aucun seuil.
 	let minimumAmount = $state('');
+	// Story 48-10 (#1176, D3) — le minimum se lit comme le montant d'une écriture, sur le modèle
+	// de l'écart admis ci-dessous : « 1'250 » part `1250` ; « 1.250 » (que le serveur acceptait et
+	// lisait un franc vingt-cinq) est refusé comme ambigu, sous le champ, et bloque
+	// l'enregistrement. Le vide reste « aucun seuil ». L'échelle reste jugée par le serveur.
+	let minimumReading = $derived(readJournalAmount(minimumAmount.trim()));
+	let minimumBlocked = $derived(
+		minimumReading.kind === 'ambiguous' || minimumReading.kind === 'unreadable',
+	);
+	let minimumError = $derived(
+		minimumReading.kind === 'ambiguous' || minimumReading.kind === 'unreadable'
+			? amountEntryMessage(minimumReading.kind, 2)
+			: '',
+	);
 	// Story 43-7 (#823) : l'écart admis dans un règlement de plusieurs factures.
 	let groupMax = $state('5.00');
 	let groupMaxReading = $derived(readGroupMax(groupMax));
@@ -306,6 +320,12 @@
 			notifyError(groupMaxError);
 			return;
 		}
+		// Story 48-10 (D3) : Entrée sur un minimum ambigu ou illisible n'envoie rien.
+		const minimumRead = minimumReading;
+		if (minimumRead.kind === 'ambiguous' || minimumRead.kind === 'unreadable') {
+			notifyError(minimumError);
+			return;
+		}
 		submitting = true;
 		try {
 			const updated = await updateInvoiceSettings({
@@ -320,7 +340,7 @@
 				defaultVatDecompteAccountId: vatDecompteId,
 				defaultRoundingAccountId: roundingId,
 				roundTo5Centimes: roundTo5,
-				minimumInvoiceAmount: minimumAmount.trim() === '' ? null : minimumAmount.trim(),
+				minimumInvoiceAmount: minimumRead.kind === 'clear' ? minimumRead.payload : null,
 				defaultDiscountAccountId: writeOff.discount,
 				defaultBankFeesAccountId: writeOff.bankFees,
 				defaultBadDebtAccountId: writeOff.badDebt,
@@ -737,10 +757,30 @@
 					type="text"
 					inputmode="decimal"
 					data-testid="settings-minimum-invoice-amount"
-					class="w-full rounded-md border border-border bg-white px-3 py-2 text-sm"
+					class="w-full rounded-md border bg-white px-3 py-2 text-sm"
+					class:border-border={!minimumError}
+					class:border-destructive={!!minimumError}
+					aria-invalid={!!minimumError}
+					aria-describedby={minimumError
+						? `${uid}-minimum-error ${uid}-minimum-hint`
+						: `${uid}-minimum-hint`}
 					bind:value={minimumAmount}
 				/>
-				<p class="mt-1 text-xs text-text-muted" data-testid="settings-minimum-hint">
+				{#if minimumError}
+					<p
+						id="{uid}-minimum-error"
+						class="mt-1 text-xs text-destructive"
+						role="alert"
+						data-testid="settings-minimum-invoice-amount-error"
+					>
+						{minimumError}
+					</p>
+				{/if}
+				<p
+					id="{uid}-minimum-hint"
+					class="mt-1 text-xs text-text-muted"
+					data-testid="settings-minimum-hint"
+				>
 					{i18nMsg(
 						'settings-invoicing-minimum-hint',
 						"Une facture dont le total est inférieur ne peut pas être validée. Laissez vide pour n'appliquer aucun seuil. Les avoirs ne sont pas concernés.",
@@ -803,6 +843,7 @@
 				data-testid="settings-invoicing-save"
 				disabled={submitting ||
 					!groupMaxReading.ok ||
+					minimumBlocked ||
 					formatBlocked ||
 					creditNoteFormatBlocked ||
 					!supplierFormatValidation.ok ||
