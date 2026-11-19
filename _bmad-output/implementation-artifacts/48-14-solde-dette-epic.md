@@ -284,16 +284,23 @@ horodatages à la milliseconde posés au montage (`created_at datetime(3) NOT NU
 octets d'une exécution à l'autre, et avec elle **l'écriture sur laquelle tombe l'octet 2048** : une réécriture de 4
 octets (rouge) ou une autre (vert). Chaque petite entrée compte environ trois réécritures de 4 octets pour quelques
 dizaines d'octets écrits : une fraction des positions possibles donne le rouge (non chiffrée ici ; la preuve est la
-reproduction déterministe d'AC13, non ce raisonnement). **`-j1` n'y est pour rien**
-(ni la charge de la station) : seule l'horloge du montage change la suite. Le titre de l'issue le dit à tort ; le
-rapport le signale.
+reproduction déterministe d'AC13, non ce raisonnement). **`-j1` n'y est pour rien** ; la charge de la station peut
+jouer **indirectement**, par l'étalement des horodatages du montage (un montage lent les disperse, un montage rapide en
+donne d'identiques, ce qui change la compression) — compatible avec deux rouges sous charge et 20/20 vert seul, sans
+être établi. Le titre de l'issue le disait à tort ; il a été corrigé le 2026-11-19 avec l'accord de Guy.
 
 **Et la production ?** Elle est compilée en `--release` (`Dockerfile:6` — `RUN cargo build --release -p kesh-api \`) :
 `debug_assert!` y est absent ; `file.compressed_size = file_end - self.stats.start;` (`write.rs:1079`) déborde sans
 panique, puis `update_local_file_header` refuse (`:1929`–`:1933`, « Large file option has not been set ») et le `Drop`
 l'avale (`:1629`) ; l'erreur rendue reste l'erreur d'origine, `StorageFull`, classée `DiskFull`. **La sauvegarde
 automatique classe donc correctement un disque plein, y compris à la fermeture de l'archive** (la question de l'issue)
-— ce que le code dit ; le Lot D le fait tenir par un test (AC12). Aucune ligne de production ne change pour #1261.
+— ce que le code dit, **à la lecture**. AC12 ne l'exerce que pour un disque qui accepte les réécritures (l'écrivain
+de D6). **Angle mort assumé** : sur un système de fichiers à copie sur écriture — **Btrfs**, que le manuel
+d'administration recommande pour le NAS (`admin-manual.tex:2129`–`:2130`), et où `routes/admin.rs:762` note déjà que
+« `ENOSPC` et `EDQUOT` surgissent souvent » —, une réécriture d'en-tête peut échouer ; c'est le cas que l'ancien
+écrivain modélisait. En `--release`, la lecture ci-dessus le classe `DiskFull` ; en build de test, ce cas panique
+toujours (`debug_assert!` de `write.rs:1078`) et **ne se teste donc pas** : il n'est établi que par la lecture du
+code compilé en `--release`. Aucune ligne de production ne change pour #1261.
 
 Fait connexe, sans portée en production : en build de débogage, la panique laisse le `.partial`
 (`routes/admin.rs:783`–`:806`, `write_backup_file`, sans garde de destruction) ; le tour suivant le supprime
@@ -326,7 +333,13 @@ docs/manual/fr/user-manual.tex:3579:\textbf{Un refus.} … Un refus du compte de
   relus… » (test `GroupSettlementModal.test.ts:761`). Le PDF dit de même (`pdftotext docs/manual/fr/user-manual.pdf - |
   tr '\n' ' ' | tr -s ' '` → « …si Kesh demande un compte alors que l’écart aﬀiché est nul, le sélecteur s’aﬀiche quand
   même. »). La phrase décrit la branche que le Lot A modifie : elle se réécrit dans cette story (AC4).
-- Lot B : le manuel ne décrit pas la fermeture pendant l'envoi ; rien ne change.
+- Lot B : le manuel ne décrit pas la fermeture pendant l'envoi. `user-manual.tex:3490` dit de la confirmation « déjà
+  comptabilisée » : « \emph{Annuler}, la touche Échap ou un clic hors de la confirmation ne font rien » et « une
+  relecture de la liste \textbf{referme} une confirmation ouverte ». Après D3, *Annuler* peut lancer la relecture
+  différée d'un règlement abouti en arrière-plan. **Verdict : inchangé** — l'annulation elle-même ne fait toujours
+  rien ; la relecture est celle du règlement, que la page relit « après chaque geste » (même paragraphe) ; et D3
+  **renforce** la phrase « une relecture referme une confirmation ouverte » en la rendant impossible pendant qu'elle est
+  ouverte, sans la contredire (la relecture attend sa fermeture).
 - Lots C et D : `git grep -n -i "disk.full\|disque plein\|disque saturé" -- docs/manual/fr/*.tex` ne rend que des
   passages de la restauration et des migrations (`admin-manual.tex:2183`, `:2330`, `:2335`, `:2564`) ; aucun
   comportement visible ne change. Rien.
@@ -368,18 +381,36 @@ le compte serait de sept ; il ne découpe pas davantage, les quatre lots étant 
   - aucune modale ouverte → ce que fait aujourd'hui `onGroupSuccess` (bilan effacé, « 1 opération(s) réussie(s). »,
     relecture) ;
   - une modale ouverte → un drapeau `reloadPending = true` ; la relecture part **à la fermeture** de cette modale par un
-    chemin qui ne relit pas lui-même (Annuler ou Échap d'une des quatre modales ; *Annuler* de la confirmation,
-    `cancelGesture`, `:454`), et elle fait alors ce que fait le cas immédiat (bilan effacé, « 1 opération(s)
-    réussie(s). », relecture). *Continuer quand même* de la confirmation (`confirmGesture`, `:438`) ouvre une modale —
-    le drapeau attend sa fermeture — ou lance *Accepter* / *Rejeter*, qui relisent eux-mêmes ;
+    chemin qui ne relit pas lui-même (Annuler ou Échap d'une des quatre modales ; *Annuler* ou Échap de la
+    confirmation, tous deux par `cancelGesture`, `:454`, via `AlreadyBookedConfirmDialog.svelte:43` —
+    `onOpenChange={(v) => !v && onCancel()}`), et elle fait alors ce que fait le cas immédiat (bilan effacé,
+    « 1 opération(s) réussie(s). », relecture). *Continuer quand même* de la confirmation (`confirmGesture`, `:438`)
+    ouvre une modale — le drapeau attend sa fermeture — ou lance *Accepter* / *Rejeter*, qui relisent eux-mêmes ;
+  - **où la relecture différée se déclenche** : dans le `onOpenChange` des quatre modales (`:874`, `:887`, `:900`,
+    `:910`, quand `v` est faux) et dans `cancelGesture`, le parent **ne relit pas sur place** : il appelle une fonction
+    `flushPendingReload()` qui programme, par `queueMicrotask`, la vérification « `reloadPending` vrai **et** aucune des
+    cinq modales ouverte » — et ne relit qu'alors. Ce report hors de la pile d'appel est nécessaire parce que les
+    modales enchaînent deux appels dans un ordre qui varie : succès puis fermeture (`GroupSettlementModal.svelte:660`–`:661`,
+    `onSuccess(); onOpenChange(false);`, de même les trois autres modales), mais **fermeture puis `onStale`** dans
+    `closeStale` (`GroupSettlementModal.svelte:366`–`:373` : `onOpenChange(false); onStale();`). Dans les deux ordres, le
+    gestionnaire qui relit (`onGroupSuccess`, `onGroupStale`, `:322`–`:335`) appelle `load()` **dans la même pile
+    synchrone**, et `load()` éteint le drapeau avant son premier `await` (ci-dessous) : quand la microtâche s'exécute,
+    le drapeau est éteint et elle ne relit pas. **Une seule relecture** dans tous les cas ;
   - **le drapeau s'éteint dans `load()`** (`reloadPending = false;`, écrit sans lecture préalable, à côté de
     `pendingGesture = null;` `:182`, pour ne pas devenir une dépendance de l'`$effect` `:202`–`:204`) : toute relecture,
     d'où qu'elle vienne (`onGroupSuccess`, `onGroupStale`, `onManualSuccess`, *Accepter*, *Rejeter*, `$effect` de
-    `limit`), le consomme ; aucune relecture double, aucune relecture perdue ; le bilan affiché est alors celui du chemin
-    qui a relu.
+    `limit`), le consomme ; aucune relecture double ; le bilan affiché est alors celui du chemin qui a relu. Le
+    drapeau doit s'éteindre **avant le premier `await` de `load()`** (sinon la microtâche le verrait encore armé) ;
+  - **un échec d'*Accepter* / *Rejeter*** (lancés depuis la confirmation, `:518`–`:520`, `:537`–`:540` : `await load()`
+    dans le `try`, le `catch` ne relit pas) laisse le drapeau armé : il se consomme à la prochaine relecture ou à la
+    prochaine fermeture d'une modale. La relecture différée n'est donc pas perdue, mais elle peut attendre le geste
+    suivant ; cas rare, sans effet sur les livres, assumé.
   *Écartées* : (a) appeler `onSuccess` sans condition — ferme la fenêtre rouverte (`:325`–`:326`) ; (b) relire
   aussitôt — `load()` démonte la modale ouverte (`:555`, `:184`), referme la confirmation (`:182`) et perd la saisie ; (c) retirer la ligne localement de
-  `proposals` sans relire — la liste vidée bascule sur `:561` et démonte aussi la modale ; (d) une relecture silencieuse
+  `proposals` sans relire — la liste vidée bascule sur `:561` et démonte aussi la modale ; (e) relire
+  synchroniquement dans `onOpenChange` — relit deux fois quand `closeStale` enchaîne `onOpenChange(false)` puis
+  `onStale()` ; (f) inverser l'ordre de `closeStale` — touche la modale pour un défaut du parent, et laisse le parent
+  dépendant d'un ordre d'appel ; (d) une relecture silencieuse
   sans `loading` — change la sémantique de `load()` pour tous ses appelants (35-4, 29-9).
 - **D4 (#1255) — trois aides privées, l'ordre de chaque bras intact.** Dans `grouped_settlements.rs` :
   `lock_entry_fiscal_year_in_tx(tx, company_id, entry_id) -> Result<i64, DbError>` (le verrou de l'écriture et de son
@@ -393,12 +424,24 @@ le compte serait de sept ; il ne découpe pas davantage, les quatre lots étant 
   `(grouped_settlements.rs, "unlink_group_transaction_in_tx")` entre en `Statut::Gardee("appelé par cancel_in_tx et
   supplier_cancel_in_tx seuls, après leur bank_accounts::ensure_open_in_tx ; revérifié en dernier par
   recheck_open_locked_in_tx")` ; `supplier_cancel_in_tx` garde la sienne (l'`UPDATE supplier_invoices`). **Le
-  troisième inventaire suit les aides** : `lock_entry_fiscal_year_in_tx(`, `unlink_group_transaction_in_tx(` et
-  `audit_group_cancelled_in_tx(` entrent dans `GESTES_VERROUILLANTS_CODE` (la revérification doit les suivre, sauf
-  l'aide d'audit) ; `audit_group_cancelled_in_tx(` compte dans la borne « avant l'audit » de `fautes_en_dernier`
-  (aujourd'hui seule `audit_log::insert_in_tx(` y compte) : la revérification doit la précéder ; une **sonde
-  synthétique** de plus, à côté des tests synthétiques existants (`:1695`, `:1751`), rougit si l'une des aides de
-  verrou ou de lien est appelée après `recheck_open_locked_in_tx`, ou l'aide d'audit avant lui. `FENETRE`,
+  troisième inventaire suit les aides**, selon son mécanisme exact (`bank_account_closed_inventory.rs`, relu) :
+  `fautes_en_dernier` exige que la revérification suive **toute** entrée de `GESTES_VERROUILLANTS_CODE`, sans
+  exception (`:1362`–`:1365` : `for g in GESTES_VERROUILLANTS_CODE { for (p, _) in corps.match_indices(g) { garder(a.corps.0
+  + p, g); } }`, puis `:1371` : `Some((p, g)) if a.position < p =>` faute), et précède le premier
+  `audit_log::insert_in_tx(` (`:1381` : `if let Some(q) = corps.find("audit_log::insert_in_tx(")`). Donc :
+  - **seules** `lock_entry_fiscal_year_in_tx(` et `unlink_group_transaction_in_tx(` entrent dans
+    `GESTES_VERROUILLANTS_CODE` ; le test qui verrouille la liste jeton par jeton,
+    `the_last_acquisition_rule_sees_each_locking_token` (`:1781`), reçoit leurs deux cas dans sa table
+    `let appels: [&str; 5] = [` (`:1800`, qui passe à 7) ; son décompte `assert_eq!(joues, 10, "décompte anti-muet des
+    cas joués");` (`:1837`) passe à **12**, et son doc-comment « chacune des dix entrées » (`:1772`) à « douze » ; son
+    contrôle de couverture (`:1854`, « un appel verrouillant sans cas construit (ou un cas sans appel) ») rougit
+    sinon ;
+  - `audit_group_cancelled_in_tx(` **n'entre pas** dans `GESTES_VERROUILLANTS_CODE` (la revérification devrait à la fois
+    la suivre et la précéder : la garde rougirait sur tout code) ; il entre **seulement** dans la borne « avant
+    l'audit » : `:1381` devient le minimum des positions de `audit_log::insert_in_tx(` et de
+    `audit_group_cancelled_in_tx(`, et la faute nomme le jeton trouvé ; un **cas construit** « suit l'aide d'audit »
+    rejoint la table `cas` de `the_last_acquisition_rule_reports_each_fault_on_built_cases` (`:1666`, tableau
+    `[…; 7]` qui passe à 8), à côté du cas « suit l'audit ». `FENETRE`,
   `ANNULATIONS`, `letterings_lexical.rs` et `audit_acteur_garde.rs` (aucun site de `grouped_settlements.rs`, motif
   `NewAuditLogEntry::par` hors de ses cibles) ne bougent pas. L'ordre des verrous se prouve par cette garde et par la
   comparaison bloc par bloc du diff, non par AC9. *Écartées* : (a) une seule fonction paramétrée par la
@@ -462,7 +505,9 @@ le compte serait de sept ; il ne découpe pas davantage, les quatre lots étant 
    transaction) ne relit pas une seconde fois. **La confirmation « déjà comptabilisée » ouverte compte comme une
    modale** : un règlement abouti en arrière-plan ne la referme pas et ne vide pas la sélection ; *Annuler* la ferme et
    lance la relecture une fois. L'invariant « jamais de relecture sous une modale ouverte » se constate pour **chacune
-   des cinq** (règlement groupé, écriture manuelle, éclatement, rattachement, confirmation).
+   des cinq** (règlement groupé, écriture manuelle, éclatement, rattachement, confirmation). Drapeau armé, la fenêtre
+   rouverte refusée sur sa transaction (`closeStale` : `onOpenChange(false)` puis `onStale()`) : `getProposals` est
+   appelé **une** fois ; de même dans l'ordre du succès (`onSuccess()` puis `onOpenChange(false)`).
 8. Dans le navigateur (E2E) : deux transactions ; règlement groupé lancé sur la première, fenêtre fermée (Échap)
    pendant l'envoi retenu, fenêtre rouverte sur la seconde, envoi relâché ; la fenêtre rouverte reste ouverte et
    intacte ; fermée, la liste ne montre plus la première transaction.
@@ -472,11 +517,16 @@ le compte serait de sept ; il ne découpe pas davantage, les quatre lots étant 
 9. **Règlements et écritures existants identiques.** Pour un groupe client et un groupe fournisseur dé-rapprochés, l'état
    qui suit le geste est **le même avant et après la réécriture**, comparé champ par champ par un test écrit **avant**
    elle : la ligne `bank_transactions` (`status`, `matched_entry_id`, `auto_match_rejected_at`, `version`), l'écriture
-   inverse et ses lignes (comptes, débit, crédit, montants, `reverses_entry_id`), chaque facture (client : `paid_at`,
+   inverse — son en-tête (numéro, date, exercice, libellé, `reverses_entry_id`) — et ses lignes (comptes, débit,
+   crédit, montants), chaque facture (client : `paid_at`,
    `version`, reste dû ; fournisseur : `status`, colonnes de règlement, `version`), les lettrages, et **chaque ligne
    d'audit écrite par le geste, entière hors horodatage** — `action`, `entity_type`, `entity_id`, `actor_user_id`,
    `actor_api_key_id`, `details_json` (`serde_json::Value`, égalité complète, éléments de la liste compris) —, **dans
-   l'ordre des identifiants** (donc l'ordre d'écriture : audits par facture, puis `reconciliation.cancelled`). Le geste
+   l'ordre des identifiants** : **toutes** les lignes d'identifiant supérieur au dernier avant le geste, sans filtre
+   d'action — le délettrage (`lettering.removed`, `letterings.rs:1428`), la contre-passation (`journal_entry.created`
+   de l'inverse, `journal_entry.reversed`, `journal_entries.rs:3341`, et un `lettering.created` par ligne libre d'un
+   compte lettrable s'il y en a), les audits par facture, puis `reconciliation.cancelled` ; la suite exacte se relève
+   sur l'ancien code et s'écrit en dur. Le geste
    est joué **avec une clé d'API**, pour que `actor_api_key_id` soit non nul. Avant le dé-rapprochement, le test pose
    par un `UPDATE` direct un `auto_match_rejected_at` **non nul** sur la transaction réconciliée d'un groupe (l'autre
    garde `NULL`) : après le geste, la colonne vaut `NULL`, et `wasPreviouslyRejected` vaut `true` pour l'un, `false`
@@ -488,8 +538,10 @@ le compte serait de sept ; il ne découpe pas davantage, les quatre lots étant 
     exercice, ni l'`UPDATE bank_transactions`, ni l'audit `reconciliation.cancelled` : chacun est écrit une fois
     (`grep -c` cité au Dev Agent Record : 1 occurrence de `SET matched_entry_id = NULL` dans `grouped_settlements.rs`,
     1 de `"reconciliation.cancelled"`). `bank_account_closed_inventory.rs` et `letterings_lexical.rs` sont verts, avec
-    le registre, `GESTES_VERROUILLANTS_CODE` et la borne « avant l'audit » ajustés selon D4 ; la sonde synthétique de
-    D4 rougit sur un corps où une aide de verrou ou de lien suit `recheck_open_locked_in_tx`.
+    le registre, `GESTES_VERROUILLANTS_CODE` (deux aides) et la borne « avant l'audit » (l'aide d'audit) ajustés selon
+    D4 ; `the_last_acquisition_rule_sees_each_locking_token` joue **12** cas, dont un par aide de verrou ou de lien
+    placée après `recheck_open_locked_in_tx` ; `the_last_acquisition_rule_reports_each_fault_on_built_cases` joue le
+    cas « suit l'aide d'audit ».
 
 **Lot D — #1261**
 
@@ -501,10 +553,15 @@ le compte serait de sept ; il ne découpe pas davantage, les quatre lots étant 
     "disk_full"`) pour chacune d'au moins 128 limites consécutives à partir de 2048 ; `disque_sature_a_la_fermeture`
     de même pour au moins 64 limites de la fenêtre du répertoire central (D7).
 13. Le Dev Agent Record établit la cause par une **reproduction déterministe** de la panique avec l'ancien écrivain :
-    une sonde relève la suite des écritures (position, longueur, réécriture ou non) d'un tour, une limite est choisie
-    sur une réécriture de 4 octets, l'ancien écrivain y rend `Failed` avec la panique `write.rs:1078` dans le journal
-    (`/home/gcorbaz/devel/kesh-gate-logs/e4814/kf063-repro.log`) ; puis l'écrivain de D6, à la même limite, rend
-    `DiskFull`. Le code de production de la sauvegarde ne change pas (`git diff --stat` cité : aucun fichier de
+    une sonde relève la suite des écritures d'un tour — position, longueur, réécriture ou non, **et cumul des octets
+    écrits avant chacune** (l'unité de l'ancien écrivain, `admin_auto_backup_e2e.rs:99`, qui juge sur un cumul, non
+    sur une position) ; une réécriture de 4 octets est choisie, de cumul `c` ; l'ancien écrivain, à une limite
+    `n ∈ [c, c + 3]`, rend `Failed` avec la panique `write.rs:1078` dans le journal
+    (`/home/gcorbaz/devel/kesh-gate-logs/e4814/kf063-repro.log`) ; puis l'écrivain de D6, à la **position** de cette
+    réécriture, rend `DiskFull`. La sonde vaut parce que, dans un même test, l'archive est identique d'un tour à
+    l'autre : `_kesh_backup_schedule` n'est pas exportée (`kesh-db/src/backup.rs:34`–`:36`) et la sauvegarde n'écrit
+    aucun audit (`admin_backup/export.rs:3`) ; la sonde le vérifie (deux tours, même suite) avant de s'en servir — ce
+    qui fonde aussi la mesure de `S` de D7. Le code de production de la sauvegarde ne change pas (`git diff --stat` cité : aucun fichier de
     `crates/kesh-api/src/`).
 
 **Communs**
@@ -525,19 +582,39 @@ restauration, `touch` du fichier. Journaux dans `/home/gcorbaz/devel/kesh-gate-l
 | T2 (AC2) écart trop grand, relus | idem | D1 | dans `rouge-t1-t3.log` ; M1 |
 | T3 (AC3) une relue, une non relue, trop grand | idem | D1 | dans `rouge-t1-t3.log` ; M1 |
 | T4 (AC6) rouverte, puis succès | `GroupSettlementModal.test.ts`, bloc « gardes de concurrence » | D3 (modale) | rouge naturel (`onSettledInBackground` jamais appelé) : `rouge-t4.log` ; **M2** : `if (!open) onSuccess();` remis → rouge, `mut-m2.log`. Le test existant `:1024` (« fermée pendant l’envoi, le règlement passé : le parent relit sa liste ») attend désormais `onSettledInBackground` : sa mise à jour se déclare au Change Log |
-| T5 (AC7) parent : différé puis relu à la fermeture (bilan compris) ; immédiat sans modale ; pas de double relecture ; une fois par modale ouverte parmi les cinq, confirmation « déjà comptabilisée » comprise (ouverte : pas de relecture, sélection gardée ; *Annuler* : une relecture) | `ReconciliationProposals.test.ts` (la doublure `ModalSuccessStubGroup.test.svelte` reçoit la prop et deux boutons : « arrière-plan », « fermer ») | D3 (parent) | rouge naturel : `rouge-t5.log` ; **M3** : relecture immédiate au lieu du drapeau → rouge (la modale démontée, `getProposals` appelé) `mut-m3.log` ; **M4** : drapeau jamais consommé à la fermeture → rouge `mut-m4.log` ; **M9** : `pendingGesture !== null` retiré de la condition « modale ouverte » → rouge (cas de la confirmation) `mut-m9.log` |
+| T5 (AC7) parent : différé puis relu à la fermeture (bilan compris) ; immédiat sans modale ; pas de double relecture ; une fois par modale ouverte parmi les cinq, confirmation « déjà comptabilisée » comprise (ouverte : pas de relecture, sélection gardée ; *Annuler* : une relecture) | `ReconciliationProposals.test.ts`, avec les doublures décrites sous ce tableau | D3 (parent) | rouge naturel : `rouge-t5.log` ; **M3** : relecture immédiate au lieu du drapeau → rouge (`getProposals` appelé au clic « arrière-plan » alors que la doublure manuelle est ouverte) `mut-m3.log` ; **M4** : drapeau jamais consommé à la fermeture → rouge (aucun appel de `getProposals` après « fermer » de chacune des quatre doublures) `mut-m4.log` ; **M9** : `pendingGesture !== null` retiré de la condition « modale ouverte » → rouge (la confirmation, réelle, se referme au clic « arrière-plan ») `mut-m9.log` ; **M11** : relecture synchrone dans `onOpenChange` au lieu de `queueMicrotask` → rouge (deux appels de `getProposals` au bouton « fermer puis `onStale` ») `mut-m11.log` |
 | T6 (AC8) E2E deux transactions | `frontend/tests/e2e/reconciliation-group.spec.ts` (`page.route` sur `**/api/v1/reconciliation/accept`, retenue puis `route.continue()`, comme `:727`) | D3 | rouge naturel (la première transaction reste listée après la fermeture) : `e2e-rouge-t6.log` ; M2 rejouée en E2E : `e2e-m2.log` |
 | T7 (AC1–AC2) E2E refus après relecture | même spec (`page.route` sur `accept` et sur `group-candidates` pour la relecture, comme `:722`–`:745`) | D1 | rouge naturel : `e2e-rouge-t7.log` ; M1 rejouée : `e2e-m1.log` |
 | T8 (AC9) caractérisation client | `crates/kesh-db/tests/grouped_settlements.rs` | — (test de non-régression) | **écrit et vert sur l'ancien code**, commité avant la réécriture : `carac-avant.log` ; vert après : `carac-apres.log` ; **M5** : `auto_match_rejected_at = NULL` retiré de l'aide → rouge `mut-m5.log` (non vide : le test a posé une valeur non nulle avant le geste, AC9) ; **M6** : clé de liste de l'audit changée (`"invoices"` → `"members"`) → rouge `mut-m6.log` ; **M8** : `entity_id` de l'audit de l'aide pris sur `entry_id` au lieu de `bt.id` → rouge `mut-m8.log` |
 | T9 (AC9) caractérisation fournisseur | `crates/kesh-db/tests/grouped_settlements_supplier.rs` | idem | dans `carac-avant.log` / `carac-apres.log` ; M5, M6 (clé `"supplier_invoices"`), M8 |
 | T10 (AC9) second groupe intact | les deux fichiers | idem | dans `carac-*.log` ; **M7** : l'`UPDATE` de l'aide sans `AND id = ?` (toutes les transactions réconciliées de la société) → rouge `mut-m7.log` |
 | T11 (AC10) gardes statiques | `bank_account_closed_inventory.rs`, `letterings_lexical.rs` (existants) | D4 | **rouges à la réécriture tant que le registre n'est pas ajusté** : `inventaire-rouge.log` (attendu, preuve qu'ils voient l'extraction), puis verts |
-| T11 bis (AC10) sonde synthétique des aides | `bank_account_closed_inventory.rs`, à côté des sondes `:1695`, `:1751` | D4 (listes étendues) | rouge sans l'ajout des aides à `GESTES_VERROUILLANTS_CODE` et à la borne d'audit : `rouge-t11bis.log` |
+| T11 bis (AC10) cas construits des aides | `bank_account_closed_inventory.rs` : deux cas dans `appels` de `the_last_acquisition_rule_sees_each_locking_token` (`:1800`, `joues` à 12) ; un cas « suit l'aide d'audit » dans `cas` de `the_last_acquisition_rule_reports_each_fault_on_built_cases` (`:1666`) | D4 (listes étendues) | rouges tant que les aides de verrou et de lien manquent à `GESTES_VERROUILLANTS_CODE` (« aucun geste verrouillant » au lieu de « précède ») et que l'aide d'audit manque à la borne de `:1381` : `rouge-t11bis.log` |
 | T12 (AC11) écrivain, sans base | `admin_auto_backup_e2e.rs` (`#[test]`) | D6 | rouge avec l'ancien `PleinApres` (la réécriture refusée) : `rouge-t12.log` ; l'assertion « jamais `Ok(0)` à la position `n` » rougit sur un écrivain qui rend `Ok(0)` (**M10**, `mut-m10.log`) |
 | T13 (AC12) balayage pendant l'écriture | `admin_auto_backup_e2e.rs::disque_sature_pendant_l_ecriture` | D6 | avec l'ancien écrivain, au moins une limite de la fenêtre rend `Failed` **si** une réécriture y tombe — non garanti (une grosse entrée peut couvrir la fenêtre) : **filet déclaré**, journal `t13-ancien-ecrivain.log` qui dit ce qui s'est produit ; la preuve déterministe est T12 et AC13 |
 | T14 (AC12) balayage à la fermeture | `admin_auto_backup_e2e.rs::disque_sature_a_la_fermeture` | — | filet déclaré : il ne prouve la fermeture **qu'avec l'écrivain de D6**, dont la limite est une position d'archive. Avec l'ancien écrivain, qui juge sur un cumul comptant les réécritures (une douzaine d'octets par entrée), ces limites tombent quelques centaines d'octets **avant** le répertoire central, dans les dernières entrées : son comportement n'y est **pas prédit** (journal `t14-ancien-ecrivain.log`, sans conclusion). Les preuves du rouge restent T12 et AC13 |
 
-Numérotation : **M1 à M10, uniques, un journal chacune** ; le rejeu d'une mutation en E2E a son journal `e2e-m<N>.log`
+**Les doublures de T5** (`ReconciliationProposals.test.ts:52`–`:64` remplace les quatre modales ; aujourd'hui
+`ModalSuccessStub.test.svelte` n'accepte que `open`, `onSuccess`, `bankLedgerAccountId`, `modal`, ne rend son bouton que
+sous `{#if open}`, et ses enveloppes `ModalSuccessStub{Manual,Split,Link,Group}.test.svelte` ne passent pas
+`onOpenChange`) :
+
+- `ModalSuccessStub.test.svelte` reçoit un `onOpenChange` facultatif et, sous `{#if open}`, un bouton « fermer »
+  (`data-testid="stub-modal-close"`, `data-modal`) qui appelle `onOpenChange(false)` — l'Annuler/Échap d'une vraie
+  modale ; les quatre enveloppes le transmettent (le parent le passe déjà, `ReconciliationProposals.svelte:874`, `:887`,
+  `:900`, `:910`) ;
+- `ModalSuccessStubGroup.test.svelte` reçoit en plus `onSettledInBackground` et `onStale` ; son bouton « arrière-plan »
+  (`stub-group-background`) est rendu **hors** de `{#if open}` — le règlement en arrière-plan part d'une fenêtre du
+  groupe fermée, pendant qu'une autre modale est ouverte ; sous `{#if open}`, deux boutons rejouent l'ordre réel des
+  modales : `stub-group-success-then-close` (`onSuccess(); onOpenChange(false);`) et `stub-group-close-then-stale`
+  (`onOpenChange(false); onStale();`) ;
+- le test joue une ligne par modale ouverte : les quatre doublures (ouverte, « arrière-plan » → `getProposals` non
+  appelé et la doublure toujours là ; « fermer » → un appel) et la confirmation, réelle (ouverte, « arrière-plan » →
+  toujours ouverte, sélection gardée ; *Annuler* → un appel) ; puis les deux ordres de fermeture avec relecture, drapeau
+  armé → un seul appel chacun. Les attentes portent sur le **nombre d'appels** de `getProposals` (la doublure remonte
+  après une relecture, `manualOpen` restant vrai : sa présence seule ne prouve rien).
+
+Numérotation : **M1 à M11, uniques, un journal chacune** ; le rejeu d'une mutation en E2E a son journal `e2e-m<N>.log`
 sans numéro neuf.
 
 ## Tâches
@@ -566,13 +643,14 @@ pas atteignable dans le navigateur : le dire au rapport, garder T4–T5).
    aplati.
 
 **Lot B — #1262** (frontend) :
-10. T4, T5 rouges ; D3 (modale, parent, doublure) ; verts ; M2, M3, M4, M9 ; test `:1024` mis à jour.
+10. T4, T5 rouges ; D3 (modale, parent, doublures de T5) ; verts ; M2, M3, M4, M9, M11 ; test `:1024` mis à jour.
 
 **E2E et recette** :
 11. T6, T7 ; suite E2E complète sur `kesh_e2e_e4814` ; captures (Lot A : refus après relecture — arrondi (AC1),
     plafond (AC2), et une facture relue avec une non relue, où la phrase neuve et la liste « non relue » cohabitent
     (AC3) ; Lot B : la fenêtre rouverte intacte après le toast, la liste **encore périmée** derrière elle (relecture
-    différée), puis la liste relue après la fermeture) dans `kesh-gate-logs/e4814/captures/`,
+    différée), puis la liste relue après la fermeture ; la confirmation « déjà comptabilisée » restée ouverte après le
+    toast, sélection gardée) dans `kesh-gate-logs/e4814/captures/`,
     jointes au Dev Agent Record et au prompt de la revue de code.
 
 **Gates** : gate ciblé entre deux passes pour les lots frontend et Lot D ; **gate complet à chaque passe dès que le
@@ -647,3 +725,4 @@ du règlement groupé, revues P1 à P4) ; fiches 43-1a et 43-1b (dé-rapprocheme
 |---|---|---|---|
 | 2026-11-19 | 0.1 | Création de la fiche (`bmad-create-story`), lue à `59bdd104f` : quatre lots (#1263, #1262, #1255, #1261) ; cause de KF-063 établie au code (réécriture d'en-tête de zip interrompue après recul → `debug_assert` du `Drop`, `write.rs:1078` → panique → `Failed` ; variabilité par les horodatages du montage, non par `-j1`) ; relecture de la liste différée (toute relecture démonte la modale ouverte) ; cinq modules ; trois issues demandées (Lien, Écriture manuelle et Éclater, dé-rapprochement unitaire) | Opus 5.5 |
 | 2026-11-19 | 0.2 | Validation P1 (Sonnet 5.5, passe complète) : 0 CRITICAL, 0 HIGH, 4 MEDIUM, 7 LOW ; tous appliqués. V1-1 : les trois aides de D4 entrent dans `GESTES_VERROUILLANTS_CODE`, l'aide d'audit dans la borne « avant l'audit » de `fautes_en_dernier`, sonde synthétique T11 bis ; V1-2 : la confirmation « déjà comptabilisée » (`pendingGesture`) compte comme modale ouverte (D3, AC7, M9), invariant testé sur les cinq modales ; V1-3 : AC9 compare la ligne d'audit entière hors horodatage, dans l'ordre des identifiants, geste joué avec une clé d'API (M8) ; V1-4 : `auto_match_rejected_at` non nul posé avant le geste, valeurs attendues en dur ; V1-5 : le drapeau s'éteint dans `load()`, bilan de la relecture différée dit ; V1-6 : raison de T14 corrigée (comportement de l'ancien écrivain non prédit) ; V1-7 : `S` mesuré avant les dépôts, jamais `Ok(0)` à la limite (M10) ; V1-8 : `ReconciliationProposals.svelte:555`, `export.rs:169`–`:171` ; V1-9 : éléments des listes d'audit, `audit_acteur_garde.rs` écrit non concernée ; V1-10 : captures AC3 et Lot B avant fermeture ; V1-11 : modules comptés à la crate (cinq), trois issues ouvertes par l'orchestrateur avant la clôture. Mutations M1 à M10. Rapport : `kesh-gate-logs/e4814/validation-p1.md` | Opus 5.5 |
+| 2026-11-19 | 0.3 | Validation P2 (Opus 5.5, passe complète) : 0 CRITICAL, 0 HIGH, 3 MEDIUM, 6 LOW ; tous appliqués. **Signal de recyclage** (règle de splitting préventif) : deux des trois MEDIUM naissent de la remédiation de la P1 — V2-1 de V1-1 (l'aide d'audit mise dans `GESTES_VERROUILLANTS_CODE`, dont la règle `:1362`–`:1371` n'admet pas d'exception, et le test de couverture `:1781`/`:1837` ignoré), V2-3 de V1-2 (doublures de T5 incapables de jouer AC7 sur les cinq modales) ; cause : corrections écrites sans relire le mécanisme exact de la garde et des doublures. Déclaré à Guy par l'orchestrateur ; la P3 sera complète, non ciblée. Remédiations, mécanisme relu avant chaque correctif : V2-1 — seules les aides de verrou et de lien entrent dans `GESTES_VERROUILLANTS_CODE`, avec leurs cas dans `appels` (`:1800`) et `joues` à 12 (`:1837`) ; l'aide d'audit n'entre que dans la borne de `:1381`, avec un cas construit dans `:1666` (T11 bis) ; V2-2 — la relecture différée part par `queueMicrotask` depuis `onOpenChange` et `cancelGesture`, `load()` éteignant le drapeau avant son premier `await` : une seule relecture dans l'ordre de `closeStale` (`onOpenChange(false); onStale()`) comme dans celui du succès ; cas ajouté à AC7 et T5, mutation M11 ; V2-3 — doublures décrites (base avec `onOpenChange` et « fermer » ; groupe avec « arrière-plan » hors de `{#if open}` et les deux ordres réels) ; M3, M4, M9 jugés sur le nombre d'appels de `getProposals` ; V2-4 — « aucune relecture perdue » retiré, l'échec d'*Accepter*/*Rejeter* écrit comme cas assumé ; V2-5 — `user-manual.tex:3490` jugé (inchangé) et capture de la confirmation restée ouverte ; V2-6 — angle mort assumé : la copie sur écriture (Btrfs, recommandé par le manuel d'administration) n'est établie qu'à la lecture du code en `--release`, non par AC12 ; V2-7 — « ni la charge de la station » retiré (effet indirect possible, non établi) ; V2-8 — la sonde d'AC13 relève le cumul, unité de l'ancien écrivain ; identité de l'archive d'un tour à l'autre fondée (`backup.rs:34`–`:36`, `export.rs:3`) ; V2-9 — AC9 prend toutes les lignes d'audit du geste sans filtre (délettrage, contre-passation, factures, transaction) et l'en-tête de l'écriture inverse. Mutations M1 à M11. Rapport : `kesh-gate-logs/e4814/validation-p2.md` | Opus 5.5 |
