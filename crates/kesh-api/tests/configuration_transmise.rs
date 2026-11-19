@@ -2230,18 +2230,66 @@ fn la_feature_de_test_n_entre_pas_en_production() {
     // (2) Le graphe résolu.
     let normal = arbre_des_features("normal");
     let avec_dev = arbre_des_features("normal,dev");
-    for (_, definition) in FEATURES_DE_TEST {
+    for (manifeste, definition) in FEATURES_DE_TEST {
         let nom = definition.split(" =").next().unwrap_or_default();
-        let actives: Vec<&str> = normal.lines().filter(|l| l.contains(nom)).collect();
+        let paquet = manifeste
+            .trim_start_matches("crates/")
+            .trim_end_matches("/Cargo.toml");
+        let sans_dev = features_du_paquet(&normal, paquet);
         assert!(
-            actives.is_empty(),
-            "la feature de test `{nom}` est active dans les dépendances normales de kesh-api : {actives:?}"
+            !sans_dev.is_empty(),
+            "montage : `{paquet}` absent des dépendances normales de kesh-api"
         );
         assert!(
-            avec_dev.contains(nom),
-            "sonde : `{nom}` devrait apparaître avec les dev-dépendances"
+            sans_dev.iter().all(|f| !f.iter().any(|x| x == nom)),
+            "la feature de test `{nom}` est active sur `{paquet}` dans les dépendances normales de kesh-api : {sans_dev:?}"
+        );
+        // Sonde positive : avec les dev-dépendances, la ligne de ce paquet porte la feature.
+        assert!(
+            features_du_paquet(&avec_dev, paquet)
+                .iter()
+                .any(|f| f.iter().any(|x| x == nom)),
+            "sonde : `{paquet}` devrait porter `{nom}` avec les dev-dépendances"
         );
     }
+}
+
+/// Les features de chaque ligne de `paquet` (dépendance, donc précédée d'une espace) dans une
+/// sortie de `cargo tree -f "{p} {f}"` (`├── kesh-qrbill v0.19.0 (/chemin) test-support`,
+/// suivie de ` (*)` si le paquet est déjà développé plus haut) : la liste qui suit la
+/// parenthèse du chemin, séparée par des virgules. Une entrée par occurrence du paquet.
+fn features_du_paquet(arbre: &str, paquet: &str) -> Vec<Vec<String>> {
+    let marque = format!(" {paquet} v");
+    arbre
+        .lines()
+        .filter_map(|l| {
+            let reste = &l[l.find(&marque)?..];
+            let reste = reste.trim_end().trim_end_matches("(*)").trim_end();
+            let apres = reste.rsplit_once(')').map_or("", |(_, f)| f);
+            Some(
+                apres
+                    .split(',')
+                    .map(|f| f.trim().to_string())
+                    .filter(|f| !f.is_empty())
+                    .collect(),
+            )
+        })
+        .collect()
+}
+
+/// Story 49-1b (revue P2, L1) — [`features_du_paquet`] sur des lignes de `cargo tree`.
+#[test]
+fn s_features_du_paquet() {
+    let arbre = "kesh-api v0.19.0 (/d/crates/kesh-api)\n\
+                 ├── kesh-qrbill v0.19.0 (/d/crates/kesh-qrbill) test-support\n\
+                 │   └── tiers v1.0.0 test-support,std\n\
+                 └── kesh-qrbill v0.19.0 (/d/crates/kesh-qrbill)  (*)\n\
+                 └── autre-kesh-qrbill v1.0.0 test-support\n";
+    assert_eq!(
+        features_du_paquet(arbre, "kesh-qrbill"),
+        vec![vec!["test-support".to_string()], vec![]]
+    );
+    assert!(features_du_paquet(arbre, "absent").is_empty());
 }
 
 /// `cargo tree -p kesh-api -e <arêtes> --offline -f "{p} {f}"`, borné à deux minutes.
@@ -2256,6 +2304,8 @@ fn arbre_des_features(aretes: &str) -> String {
             "-e",
             aretes,
             "--offline",
+            // Un `Cargo.lock` en retard rougit au lieu d'être réécrit en plein test.
+            "--locked",
             "-f",
             "{p} {f}",
         ])
