@@ -692,3 +692,82 @@ fn codes_des_motifs_d_ecart() {
     );
     assert_eq!(RatesError::Malformed("x").code(), "malformed");
 }
+
+// ============================================================
+// Correctif `fix-cours-afc-bgn` : monnaies retirées publiées par l'AFC
+// ============================================================
+
+/// Tous les codes que l'AFC a publiés de 2000 à 2026, relevés le 2026-11-18
+/// (cours mensuels de janvier, mars, juin, septembre et décembre de chaque
+/// année ; cours journaliers de chaque fin de trimestre, et des 04.01.2000,
+/// 03.01.2005, 15.01.2026, 13.11.2026). Les codes seuls, aucun cours : le
+/// dépôt ne porte aucun cours officiel (C-37-1).
+const CODES_PUBLIES_PAR_L_AFC_2000_2026: &[&str] = &[
+    "AED", "ALL", "ARS", "ATS", "AUD", "AZN", "BAM", "BDT", "BEF", "BGN", "BHD", "BRL", "CAD",
+    "CLP", "CNY", "COP", "CRC", "CYP", "CZK", "DEM", "DKK", "DOP", "DZD", "EEK", "EGP", "ESP",
+    "ETB", "EUR", "FIM", "FRF", "GBP", "GEL", "GRD", "GTQ", "HKD", "HNL", "HRK", "HUF", "IDR",
+    "IEP", "ILS", "INR", "ISK", "ITL", "JPY", "KES", "KHR", "KRW", "KWD", "KYD", "KZT", "LBP",
+    "LKR", "LTL", "LVL", "LYD", "MAD", "MTL", "MUR", "MXN", "MYR", "NGN", "NLG", "NOK", "NZD",
+    "OMR", "PAB", "PEN", "PHP", "PKR", "PLN", "PTE", "QAR", "RON", "RSD", "RUB", "SAR", "SEK",
+    "SGD", "SIT", "SKK", "THB", "TND", "TRY", "TWD", "TZS", "UAH", "USD", "UYU", "VEF", "VES",
+    "VND", "ZAR",
+];
+
+/// Aucun code publié par l'AFC de 2000 à 2026 n'est écarté comme
+/// `code_invalid` — ni le lev bulgare (BGN, écarté à chaque mois de 2024 à la
+/// recette de l'exercice 2024), ni la kuna (HRK), ni les monnaies d'avant
+/// l'euro — et chacun est retenu sous son code.
+#[test]
+fn aucun_code_publie_par_l_afc_n_est_ecarte() {
+    assert_eq!(CODES_PUBLIES_PAR_L_AFC_2000_2026.len(), 93);
+    let devises: Vec<String> = CODES_PUBLIES_PAR_L_AFC_2000_2026
+        .iter()
+        .map(|c| devise(&c.to_ascii_lowercase(), &format!("100 {c}"), "12.5"))
+        .collect();
+    let r = parse_monthly_rates(mensuel("2024-01", &devises).as_bytes()).unwrap();
+    assert!(r.rejected.is_empty(), "{:?}", ecartes(&r));
+    assert_eq!(codes(&r), CODES_PUBLIES_PAR_L_AFC_2000_2026);
+}
+
+/// Le lev bulgare de 2024 (forme du cours mensuel réel : code en minuscules,
+/// unité 100) : retenu, cours par unité calculé ; une monnaie retirée que
+/// l'AFC ne publie pas (peso cubain convertible) reste écartée.
+#[test]
+fn lev_bulgare_retenu_peso_convertible_ecarte() {
+    let xml = mensuel(
+        "2024-01",
+        &[
+            usd(),
+            devise("bgn", "100 BGN", "44.0532"),
+            devise("cuc", "1 CUC", "0.86"),
+        ],
+    );
+    let r = parse_monthly_rates(xml.as_bytes()).unwrap();
+    assert_eq!(codes(&r), ["USD", "BGN"]);
+    let bgn = &r.rates[1];
+    assert_eq!(bgn.published_unit, 100);
+    assert_eq!(bgn.published_rate, dec!(44.0532));
+    assert_eq!(bgn.rate_per_unit, dec!(0.440532));
+    assert_eq!(
+        ecartes(&r),
+        [("cuc".to_string(), RejectReason::CodeInvalid)]
+    );
+}
+
+/// Cours journalier : la kuna et le lev, tels que l'AFC les publie encore au
+/// 31.12.2024, sont retenus.
+#[test]
+fn kuna_et_lev_retenus_au_cours_journalier() {
+    let xml = format!(
+        "<wechselkurse xmlns=\"https://www.backend-rates.bazg.admin.ch/xmldaily\">\
+         <datum>31.12.2024</datum><zeit>07:00:05</zeit><gueltigkeit>01.01.2025</gueltigkeit>{}{}{}\
+         </wechselkurse>",
+        devise("eur", "1 EUR", "0.94"),
+        devise("bgn", "100 BGN", "48.06"),
+        devise("hrk", "100 HRK", "12.47"),
+    );
+    let r = parse_daily_rates(xml.as_bytes()).unwrap();
+    assert!(r.rejected.is_empty(), "{:?}", r.rejected);
+    let lus: Vec<&str> = r.rates.iter().map(|p| p.currency.as_str()).collect();
+    assert_eq!(lus, ["EUR", "BGN", "HRK"]);
+}
