@@ -1175,3 +1175,183 @@ async fn account_response_porte_devise_verrou_et_comptes_propres(pool: MySqlPool
     let apres: Value = res.json().await.unwrap();
     assert_eq!(apres["currencyLocked"], true, "{apres}");
 }
+
+// ============================================================
+// Correctif `fix-api-parent-compte` — `PUT /accounts/{id}` accepte `parentId`
+// ============================================================
+
+/// Le `PUT` d'un compte, nom, type, rôle et postabilité tels qu'en base, plus
+/// les champs de `extra` (dont `parentId`) ; rend `(statut, corps)`.
+async fn put_parent(
+    app: &TestApp,
+    token: &str,
+    pool: &MySqlPool,
+    id: i64,
+    extra: Value,
+) -> (u16, Value) {
+    let a = accounts::find_by_id(pool, id).await.unwrap().unwrap();
+    let mut body = json!({
+        "name": a.name, "accountType": a.account_type.as_str(),
+        "role": a.role.map(|r| r.as_str()), "postable": a.postable, "version": a.version,
+    });
+    for (k, v) in extra.as_object().unwrap() {
+        body[k] = v.clone();
+    }
+    let res = app
+        .client
+        .put(app.url(&format!("/api/v1/accounts/{id}")))
+        .bearer_auth(token)
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    let status = res.status().as_u16();
+    (status, res.json().await.unwrap())
+}
+
+/// Le défaut relevé à la recette 2024 : un compte livré, qui porte des
+/// écritures, se range après coup sous un compte de groupe ; `null` le rend
+/// racine ; l'absence du champ ne change rien.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn put_range_un_compte_mouvemente_sous_un_groupe(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let (company_id, admin_id, token) = setup(&pool).await;
+    let jour = common::jour::aujourd_hui_test();
+    let fy = mk_fiscal_year(&pool, company_id, admin_id, jour).await;
+    let banque = mk_account(&pool, company_id, admin_id, "1020", None).await;
+    let caisse = mk_account(&pool, company_id, admin_id, "1000", None).await;
+    mk_entry(&pool, company_id, fy, admin_id, banque, caisse, jour).await;
+    let groupe = mk_account(&pool, company_id, admin_id, "10", None).await;
+
+    // Revue P1-2 : un parent qui porte des écritures est refusé, avec un
+    // message traduit et le parent en `details`.
+    let (status, body) =
+        put_parent(&app, &token, &pool, banque, json!({ "parentId": caisse })).await;
+    assert_eq!(status, 409, "{body}");
+    assert_eq!(body["error"]["code"], "ACCOUNT_PARENT_HAS_ENTRIES");
+    assert_eq!(body["error"]["details"]["parentAccountId"], caisse);
+    assert_eq!(body["error"]["details"]["parentNumber"], "1000");
+    assert!(
+        body["error"]["message"].as_str().unwrap().contains("1000"),
+        "{body}"
+    );
+
+    let (status, body) =
+        put_parent(&app, &token, &pool, banque, json!({ "parentId": groupe })).await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["parentId"], groupe);
+    assert_eq!(body["postable"], true, "le compte déplacé reste imputable");
+    let g = accounts::find_by_id(&pool, groupe).await.unwrap().unwrap();
+    assert!(!g.postable, "le groupe devient un compte de regroupement");
+
+    // Absent : inchangé (et no-op, sans bump de version).
+    let version = body["version"].clone();
+    let (status, body) = put_parent(&app, &token, &pool, banque, json!({})).await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["parentId"], groupe);
+    assert_eq!(body["version"], version);
+
+    // `null` : racine.
+    let (status, body) = put_parent(&app, &token, &pool, banque, json!({ "parentId": null })).await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["parentId"], Value::Null);
+}
+
+/// Les contrôles de la création, rendus par le `PUT` avec les mêmes codes, et
+/// le cycle : le compte lui-même, puis l'un de ses sous-comptes.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn put_parent_refuse_ce_que_la_creation_refuse_et_le_cycle(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let (company_id, admin_id, token) = setup(&pool).await;
+    let groupe = mk_account(&pool, company_id, admin_id, "10", None).await;
+    let enfant = accounts::create(
+        &pool,
+        admin_id,
+        NewAccount::new(
+            company_id,
+            "100",
+            "Liquidités",
+            AccountType::Asset,
+            Some(groupe),
+        ),
+    )
+    .await
+    .unwrap()
+    .id;
+    let petit_enfant = accounts::create(
+        &pool,
+        admin_id,
+        NewAccount::new(
+            company_id,
+            "1000",
+            "Caisse",
+            AccountType::Asset,
+            Some(enfant),
+        ),
+    )
+    .await
+    .unwrap()
+    .id;
+
+    // Le compte lui-même, puis un sous-compte de deuxième niveau.
+    for cible in [groupe, petit_enfant] {
+        let (status, body) =
+            put_parent(&app, &token, &pool, groupe, json!({ "parentId": cible })).await;
+        assert_eq!(status, 409, "{body}");
+        assert_eq!(body["error"]["code"], "ACCOUNT_PARENT_CYCLE");
+    }
+    // Message traduit qui nomme le parent demandé.
+    let (_, body) = put_parent(
+        &app,
+        &token,
+        &pool,
+        groupe,
+        json!({ "parentId": petit_enfant }),
+    )
+    .await;
+    assert!(
+        body["error"]["message"].as_str().unwrap().contains("1000"),
+        "{body}"
+    );
+
+    // Parent d'une autre société : 400, comme à la création (anti-énumération).
+    let autre = create_company(&pool, "Autre SA").await;
+    let admin_b = create_user(&pool, "admin_b", Role::Admin, autre).await;
+    let etranger = mk_account(&pool, autre, admin_b, "20", None).await;
+    let (status, body) = put_parent(
+        &app,
+        &token,
+        &pool,
+        petit_enfant,
+        json!({ "parentId": etranger }),
+    )
+    .await;
+    assert_eq!(status, 400, "{body}");
+    assert_eq!(body["error"]["code"], "VALIDATION_ERROR");
+    assert_eq!(body["error"]["message"], "parent account not found");
+
+    // Parent archivé : 400, comme à la création.
+    let archive = mk_account(&pool, company_id, admin_id, "19", None).await;
+    accounts::archive(&pool, archive, 1, admin_id)
+        .await
+        .unwrap();
+    let (status, body) = put_parent(
+        &app,
+        &token,
+        &pool,
+        petit_enfant,
+        json!({ "parentId": archive }),
+    )
+    .await;
+    assert_eq!(status, 400, "{body}");
+    assert_eq!(body["error"]["message"], "parent account is archived");
+
+    // Rien n'a bougé.
+    let pe = accounts::find_by_id(&pool, petit_enfant)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(pe.parent_id, Some(enfant));
+    let g = accounts::find_by_id(&pool, groupe).await.unwrap().unwrap();
+    assert_eq!(g.parent_id, None);
+}

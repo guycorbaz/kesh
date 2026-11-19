@@ -99,6 +99,7 @@ fn tel_quel(a: &Account) -> AccountUpdate {
         postable: a.postable,
         currency: CurrencyChange::Unchanged,
         own_fx_accounts: OwnFxAccountsChange::Unchanged,
+        parent: Default::default(),
     }
 }
 

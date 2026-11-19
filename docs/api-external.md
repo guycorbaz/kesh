@@ -1168,6 +1168,32 @@ sous-comptes actifs, désignation, version. `PUT /company/invoice-settings` ne
 refuse plus un compte archivé reconduit à l'identique ; choisir un compte archivé
 reste refusé.
 
+**Ranger un compte sous un autre après sa création** *(depuis la release qui suit
+la v0.19.0 ; changement additif)*. `PUT /accounts/{id}` accepte `parentId`, à
+**trois états** comme `currency` : **absent = parent inchangé** (un client qui ne
+connaît pas le champ ne détache rien), `null` = le compte devient racine, un
+identifiant = le nouveau parent. Le parent passe les contrôles de `POST
+/accounts` : introuvable ou d'une autre société → `400 VALIDATION_ERROR`
+(« parent account not found ») ; archivé → `400 VALIDATION_ERROR` (« parent
+account is archived ») ; compte de différence de change, de la société ou propre
+à un compte en devise → `409 ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT` ; compte d'actif ou
+de passif en devise qui porte des écritures → `409
+ACCOUNT_FOREIGN_PARENT_HAS_ENTRIES` ; l'un des comptes de différence propres que
+le compte garde ou reçoit dans le même `PUT` → `400 FX_ACCOUNT_INVALID`
+`notPostable`. **Plus strict que la création** : tout autre parent qui porte des
+écritures, en CHF compris, → **`409 ACCOUNT_PARENT_HAS_ENTRIES`** (`details {
+parentAccountId, parentNumber }`) — il passerait non imputable avec un solde
+qu'aucune saisie ne corrigerait plus ; `POST /accounts` l'accepte encore. Un compte ne se range pas non plus sous lui-même ni sous l'un de ses
+sous-comptes, à quelque niveau : **`409 ACCOUNT_PARENT_CYCLE`**, le message nomme
+le parent demandé. Rien n'est écrit sur un refus. Comme à la création, le nouveau
+parent — forcément sans écriture — devient **non imputable** (compte de
+regroupement) ; l'ancien garde son
+état — il redevient imputable par un `PUT` avec `postable: true` s'il n'a plus de
+sous-compte actif. Le compte déplacé garde son type, sa postabilité, ses écritures
+et son solde : seule la hiérarchie change (les rapports ne la lisent pas). Trace
+`account.updated`, `parentId` dans `before` et `after`. Renvoyer le parent en
+place est un no-op (ni version, ni trace).
+
 *Depuis la v0.19.0* ([#823](https://github.com/guycorbaz/kesh/issues/823)), `GET` et `PUT /company/invoice-settings`
 portent `groupSettlementMaxDifference` : l'**écart admis** (moins-payé ou
 trop-perçu, passé au compte choisi) d'un règlement de plusieurs factures, en
@@ -1279,6 +1305,8 @@ Les erreurs sont renvoyées en JSON avec ce format :
 | `400` | `LATER_FISCAL_YEAR_CLOSED` | `PUT` et `DELETE /journal-entries/{id}` : un exercice **postérieur** à celui de l'écriture est clôturé ; son bilan, cumulatif, reprend l'écriture. `POST /fiscal-years` : un exercice postérieur à la date de début demandée est clôturé — un exercice ne se crée pas avant un exercice clôturé (message propre à la création). `details.fiscalYearId` / `details.fiscalYearName` nomment le plus proche. Depuis la Story 15-12b (#543), aussi **toute création** d'écriture dans un tel exercice — `POST /journal-entries`, contre-passation, validation, règlement et dévalidation d'une facture, factures fournisseur, soldes de départ, rapprochements et leurs annulations — et, dans `failed[]` de `POST /reconciliation/accept`, la proposition concernée (`200`). ⚠️ Angles morts assumés : les champs qui annoncent un geste possible ne le prédisent pas — `cancellable` / `cancelBlockedBy` / `settlementCancelBlockedBy` des annulations ([#568](https://github.com/guycorbaz/kesh/issues/568)) et `canComplete` / `completeReason` de `GET /opening-balances/status` ; le refus vient alors au `POST`. *(Depuis la v0.13.0.)* |
 | `400` | `PERIOD_LOCKED` | La date d'une écriture (ou, au `PUT`, son ancienne date) est dans la période verrouillée — seuil inclusif. `details.lockedThrough` (la borne du verrou) et `details.attempted` (la date refusée), en `AAAA-MM-JJ` *(depuis la v0.17.4)*. Dans `failed[]` de `POST /reconciliation/accept`, la proposition concernée porte déjà ces deux noms, et `projectId`. |
 | `409` | `EARLIER_FISCAL_YEAR_OPEN` | `POST /fiscal-years/{id}/close` : un exercice **antérieur** est encore ouvert — les exercices se clôturent dans l'ordre, le bilan étant cumulatif. `details.fiscalYearId` / `details.fiscalYearName` nomment le **plus ancien** antérieur ouvert, à clôturer d'abord. ⚠️ **Changement de contrat** : une intégration qui clôturait hors d'ordre reçoit désormais ce refus. Un exercice déjà clos rend `409 ILLEGAL_STATE_TRANSITION`, qui parle d'abord. *(Depuis la v0.13.0.)* |
+| `409` | `ACCOUNT_PARENT_HAS_ENTRIES` | `PUT /accounts/{id}` : le `parentId` demandé porte au moins une ligne d'écriture ; rangé dessous, il passerait non imputable avec un solde qu'aucune saisie ne corrigerait plus. `details: { parentAccountId, parentNumber }`. Rien n'est écrit. Un compte d'actif ou de passif en devise mouvementé rend `ACCOUNT_FOREIGN_PARENT_HAS_ENTRIES`. `POST /accounts` ne le refuse pas. *(Depuis la release qui suit la v0.19.0.)* |
+| `409` | `ACCOUNT_PARENT_CYCLE` | `PUT /accounts/{id}` : le `parentId` demandé est le compte lui-même ou l'un de ses sous-comptes, à quelque niveau — le ranger dessous fermerait un cycle. Rien n'est écrit. *(Depuis la release qui suit la v0.19.0.)* |
 | `409` | `FOREIGN_ACCOUNTS_NOT_REVALUED` | `POST /fiscal-years/{id}/close` : un compte de bilan en devise n'est pas réévalué au cours de clôture retenu par la société, ou sa devise n'a pas de cours alors qu'il porte un solde. `details` = ceux du contrôle `FOREIGN_ACCOUNTS_NOT_REVALUED` (`accounts[]`, au plus 20). Vient après `ILLEGAL_STATE_TRANSITION`, `EARLIER_FISCAL_YEAR_OPEN` et `OPTIMISTIC_LOCK_CONFLICT` (genre de clôture changé). Exercice mono-devise : jamais. ⚠️ **Changement de contrat** *(depuis la v0.19.0)*. |
 | `400` | `FX_REVALUATION_ACCOUNT_INVALID` | `POST /fiscal-years/{id}/fx-revaluation[/preview]` : `accountIds` vide, en double, de plus de 498 identifiants, ou hors des comptes admissibles (de bilan, en devise, actifs, imputables, de la société — même réponse pour un compte inexistant et d'une autre société). `details { reason, accountIds }`. Note ¹⁰ᵇ. *(Depuis la v0.19.0.)* |
 | `409` | `NEXT_FISCAL_YEAR_MISSING` | `POST /journal-entries/{id}/reverse-at-next-fiscal-year-start` : aucun exercice ne suit celui de l'écriture — créez l'exercice suivant, puis recommencez. `details.fiscalYearName` nomme l'exercice **de l'écriture**. *(Depuis la v0.14.0.)* |
@@ -1318,7 +1346,7 @@ Les erreurs sont renvoyées en JSON avec ce format :
 | `400` | `FX_CONVERSION_TRANSIT_UNBALANCED` | `POST /journal-entries/conversions` : le compte de conversion n'est pas au débit net de l'une et au crédit net de l'autre écriture pour le même CHF. `details { entry1, entry2 }` (soldes nets). *(Depuis la v0.19.0.)* |
 | `409` | `ENTRY_IS_FX_REVALUATION` | `PUT /journal-entries/{id}` : l'écriture est une réévaluation de fin d'exercice — elle ne se modifie pas ; la supprimer et réévaluer de nouveau. `details: {}` ; c'est aussi la valeur de `modificationBlockedBy`. *(Depuis la v0.19.0.)* |
 | `409` | `ACCOUNT_CURRENCY_LOCKED` | `PUT /accounts/{id}` : la devise d'un compte qui porte des écritures ne change plus. `details: {}`. *(Depuis la v0.19.0.)* |
-| `409` | `ACCOUNT_FOREIGN_PARENT_HAS_ENTRIES` | `POST /accounts` : le compte parent (`parentId`) est un compte d'actif ou de passif en devise qui porte des écritures ; le sous-compte le rendrait non imputable avec son solde, hors d'atteinte de la réévaluation de fin d'exercice. `details: { parentAccountId, parentNumber, currency }`. *(Depuis la v0.19.0.)* |
+| `409` | `ACCOUNT_FOREIGN_PARENT_HAS_ENTRIES` | `POST /accounts` et, depuis la release qui suit la v0.19.0, `PUT /accounts/{id}` : le compte parent (`parentId`) est un compte d'actif ou de passif en devise qui porte des écritures ; le sous-compte le rendrait non imputable avec son solde, hors d'atteinte de la réévaluation de fin d'exercice. `details: { parentAccountId, parentNumber, currency }`. *(Depuis la v0.19.0.)* |
 | `409` | `ACCOUNT_CURRENCY_IN_USE` | `PUT /accounts/{id}` : une devise posée sur un compte employé en CHF. `details.site` (`role`, `invoiceSettings`, `bankAccount`, `product`, `reconciliationRule`) et l'identifiant du site. *(Depuis la v0.19.0.)* |
 | `409` | `ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT` | Archivage, retypage, `postable: false`, devise, sous-compte, rôle `DefaultRevenue` ou désignation de produit par défaut d'un compte de différence de change désigné. `details.designation` (`gain` \| `loss` \| `transit`), `details.holderAccountId` et `details.holderNumber` pour un compte propre. *(Depuis la v0.19.0.)* |
 | `404` | `NOT_FOUND` | Ressource absente ou appartenant à une autre company (anti-énumération). Certaines ressources renvoient un code spécifique (ex. `ACCOUNT_NOT_FOUND`). |

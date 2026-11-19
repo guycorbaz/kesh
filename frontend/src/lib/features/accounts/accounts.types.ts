@@ -162,6 +162,13 @@ export interface UpdateAccountRequest {
 	 */
 	fxGainAccountId?: number | null;
 	fxLossAccountId?: number | null;
+	/**
+	 * Correctif `fix-api-parent-compte` — **absent = parent inchangé**, `null` =
+	 * racine, valeur = nouveau parent (même société, actif ; ni le compte ni
+	 * l'un de ses sous-comptes → 409 `ACCOUNT_PARENT_CYCLE`). Le formulaire ne
+	 * l'envoie que s'il change (`parentFieldForUpdate`).
+	 */
+	parentId?: number | null;
 }
 
 /**
