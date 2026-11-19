@@ -464,7 +464,10 @@ complet, joué après le commit. Puis le commit de la fiche, du registre et du p
 - `test-fast --ci` (`remed-p1-test-fast.log`, commit `531397f5a`, bases remises à neuf) : **6155/6155**, 14 ignorés.
 - Frontend (`remed-p1-front.log`, commit `531397f5a`) : `check` 0 erreur, `lint-i18n-ownership` vert, `build` vert,
   `test:unit` 1 rouge (`sitesTotal`) ; puis `remed-p1-front-2.log` (commit `d1afc9384`) : **`test:unit` 4772/4772**.
-- Spec E2E de la story : `remed-p1-e2e.log` — RESULTAT_E2E.
+- Spec E2E de la story : `remed-p1-e2e.log` (en-tête `# commit d1afc9384`, frontend construit à `531397f5a` ; joué après les
+  deux commits) — **8/8**. Captures rafraîchies par ce passage (11 h 31, après les commits), regardées :
+  `e4810-minimum-ambigu.png` (bouton estompé), `e4810-rappel-frais-ambigu.png` (message sous le champ *Frais*),
+  `e4810-filtre-ambigu.png` (les deux écritures listées, borne non appliquée), `e4810-filtre-illisible.png` (neuve).
 - **Non lancés** : `gate-ci` et E2E complet (clôture) ; PDF (intégration).
 
 ### File List
