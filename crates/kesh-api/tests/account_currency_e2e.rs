@@ -231,7 +231,9 @@ async fn chf_est_normalise_et_une_devise_refusee_en_mono_devise(pool: MySqlPool)
     assert_eq!((st, code(&e)), (409, "MULTI_CURRENCY_DISABLED"), "{e}");
     assert_eq!(e["error"]["details"], json!({}));
 
-    for inconnu in ["XYZ", "US", "éur", ""] {
+    // `BGN`, `HRK` : monnaies retirées, admises pour un cours de change
+    // seulement (correctif `fix-cours-afc-bgn`) — jamais pour un compte.
+    for inconnu in ["XYZ", "US", "éur", "", "BGN", "HRK"] {
         let (st, e) = creer(
             &ctx,
             json!({ "number": "1023", "name": "Banque", "accountType": "Asset", "currency": inconnu }),
@@ -271,6 +273,48 @@ async fn devise_absente_inchangee_null_rend_chf(pool: MySqlPool) {
     for cle in CLES_DEVISE {
         assert!(a.get(cle).is_none(), "{cle} : {a}");
     }
+}
+
+/// Correctif `fix-cours-afc-bgn` (revue P1-2) : une monnaie retirée (`BGN`,
+/// `HRK`), admise pour un cours de change, ne se pose pas non plus par
+/// `PUT /accounts/{id}` — ni sur un compte en CHF, ni sur un compte en USD
+/// sans écriture —, en multi-devises : `400 CURRENCY_UNKNOWN`, devise et
+/// version inchangées en base.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn monnaie_retiree_refusee_a_la_modification_d_un_compte(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    multi(&pool, &ctx).await;
+    let chf = compte(&pool, ctx.s.company_id, "1021", "Asset", None).await;
+    let usd = compte(&pool, ctx.s.company_id, "1022", "Asset", Some("USD")).await;
+    for (id, avant) in [(chf, None), (usd, Some("USD"))] {
+        for retiree in ["BGN", "HRK", "bgn"] {
+            let (version_avant,): (i32,) =
+                sqlx::query_as("SELECT version FROM accounts WHERE id = ?")
+                    .bind(id)
+                    .fetch_one(&pool)
+                    .await
+                    .unwrap();
+            let (st, e) = modifier(&pool, &ctx, id, json!({ "currency": retiree })).await;
+            assert_eq!(
+                (st, code(&e)),
+                (400, "CURRENCY_UNKNOWN"),
+                "{id} → {retiree} : {e}"
+            );
+            assert_eq!(e["error"]["details"]["value"], retiree);
+            let (devise, version): (Option<String>, i32) =
+                sqlx::query_as("SELECT currency, version FROM accounts WHERE id = ?")
+                    .bind(id)
+                    .fetch_one(&pool)
+                    .await
+                    .unwrap();
+            assert_eq!(devise.as_deref(), avant, "{id} → {retiree}");
+            assert_eq!(version, version_avant, "{id} → {retiree}");
+        }
+    }
+    // Sonde positive : la même route pose une monnaie active.
+    let (st, a) = modifier(&pool, &ctx, chf, json!({ "currency": "EUR" })).await;
+    assert_eq!(st, 200, "{a}");
+    assert_eq!(a["currency"], "EUR");
 }
 
 // ============================================================
