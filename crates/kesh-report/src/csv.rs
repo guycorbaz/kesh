@@ -135,7 +135,8 @@ fn write_bom<W: Write>(writer: &mut W) -> Result<(), ReportError> {
 /// l'ordre par rôle fixé en backend (**sans en-têtes de groupe** — le format linéaire
 /// une-ligne-par-compte porte le regroupement par l'ordre), puis **deux lignes
 /// calculées** distinctes (Story 14-1) : « Résultat reporté (calculé) »
-/// (`retained_earnings`) + « Résultat de l'exercice » (`equity_result`), enfin
+/// (`retained_earnings`, **omise quand elle est nulle** — correctif
+/// fix-bilan-resultat-reporte) + « Résultat de l'exercice » (`equity_result`), enfin
 /// `Total capitaux propres`. Les comptes de rôle equity **ne figurent plus** dans
 /// `Passifs` (partition D2) — `Total passifs` = dettes réelles seules. Libellés
 /// **hardcodés FR-CH** (i18n sérialiseurs déférée, limitation L1/L4/L11 — D3).
@@ -207,20 +208,25 @@ pub fn render_balance_sheet_csv<W: Write>(
     // dans le format linéaire CSV, AC-C). Puis les deux lignes **calculées** distinctes
     // (« Résultat reporté (calculé) » marquée calculée pour la distinguer d'un compte
     // physique de rôle RetainedEarnings — collision D1). Le report à-nouveau DOIT figurer
-    // sinon le bilan exporté est déséquilibré.
+    // dès qu'il est non nul, sinon le bilan exporté est déséquilibré ; nul, il est omis
+    // comme au PDF et à l'écran (`shows_retained_earnings_line`, correctif
+    // fix-bilan-resultat-reporte) — sans effet sur le total ni l'équation.
     for ab in &bs.equity {
         write_account_balance(&mut wtr, "CapitauxPropres", ab, fx)?;
     }
-    write_fx_record(
-        &mut wtr,
-        &[
-            "CapitauxPropres",
-            "",
-            "Résultat reporté (calculé)",
-            &format_amount_iso(bs.retained_earnings),
-        ],
-        balance_row_extra(None, fx),
-    )?;
+    if bs.shows_retained_earnings_line() {
+        write_fx_record(
+            &mut wtr,
+            &[
+                "CapitauxPropres",
+                "",
+                "Résultat reporté (calculé)",
+                // Arrondie comme la règle qui la montre (revue P1, LOW-1).
+                &format_amount_iso(round_for_display(bs.retained_earnings)),
+            ],
+            balance_row_extra(None, fx),
+        )?;
+    }
     write_fx_record(
         &mut wtr,
         &[
@@ -1370,9 +1376,10 @@ mod tests {
             body.contains("CapitauxPropres;2970;Bénéfice reporté;500.00"),
             "{body}"
         );
-        // Ligne calculée explicitement marquée « (calculé) » (D1).
-        assert!(body.contains("Résultat reporté (calculé)"), "{body}");
-        assert!(body.contains("Total capitaux propres"), "{body}");
+        // Ligne calculée nulle : omise (correctif fix-bilan-resultat-reporte) — seul le
+        // compte physique 2970 porte le report, sans ligne « (calculé) » à 0.00 à côté.
+        assert!(!body.contains("Résultat reporté (calculé)"), "{body}");
+        assert!(body.contains("Total capitaux propres;;;2500.00"), "{body}");
         // Le capital NE figure PAS dans une ligne Passifs (partition D2).
         assert!(
             !body.contains("Passifs;2800"),
@@ -1381,6 +1388,56 @@ mod tests {
         // La dette réelle reste bien dans Passifs.
         assert!(body.contains("Passifs;2000;Fournisseurs;500.00"), "{body}");
         assert!(body.contains("Total passifs;;;500.00"), "{body}");
+
+        // Même bilan, report calculé NON nul (collision D1 active) : la ligne calculée
+        // est marquée « (calculé) », distincte du compte physique 2970, juste après les
+        // comptes et avant « Résultat de l'exercice », et comptée au total.
+        let mut bs = bs;
+        bs.retained_earnings = dec!(300);
+        bs.total_assets = dec!(3300);
+        let mut buf = Vec::new();
+        render_balance_sheet_csv(&bs, &mut buf).unwrap();
+        let body = String::from_utf8(buf[3..].to_vec()).unwrap();
+        assert!(
+            body.contains(
+                "CapitauxPropres;2970;Bénéfice reporté;500.00\r\n\
+                 CapitauxPropres;;Résultat reporté (calculé);300.00\r\n\
+                 CapitauxPropres;;Résultat de l'exercice;0.00\r\n"
+            ),
+            "{body}"
+        );
+        assert!(body.contains("Total capitaux propres;;;2800.00"), "{body}");
+        assert!(
+            body.contains("Total passifs + capitaux propres;;;3300.00"),
+            "{body}"
+        );
+
+        // Revue P1, LOW-1 : la règle juge la valeur arrondie au centime. Sous le
+        // demi-centime, la ligne est omise (ni « 0.00 » ni « -0.00 ») ; au
+        // demi-centime, elle paraît, arrondie loin de zéro.
+        for (retained, line) in [
+            (dec!(0.004), None),
+            (dec!(-0.004), None),
+            (
+                dec!(0.005),
+                Some("CapitauxPropres;;Résultat reporté (calculé);0.01\r\n"),
+            ),
+            (
+                dec!(-0.005),
+                Some("CapitauxPropres;;Résultat reporté (calculé);-0.01\r\n"),
+            ),
+        ] {
+            let mut bs = bs.clone();
+            bs.retained_earnings = retained;
+            let mut buf = Vec::new();
+            render_balance_sheet_csv(&bs, &mut buf).unwrap();
+            let body = String::from_utf8(buf[3..].to_vec()).unwrap();
+            match line {
+                Some(l) => assert!(body.contains(l), "{retained} : {body}"),
+                None => assert!(!body.contains("Résultat reporté"), "{retained} : {body}"),
+            }
+            assert!(!body.contains(";-0.00"), "{retained} : {body}");
+        }
     }
 
     #[test]
