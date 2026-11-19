@@ -319,9 +319,16 @@ libellés des lignes chiffrées et … les commentaires ») : porté par **#1411
   0.20.0 (la migration de la 49-1a les pose toutes en `priced`) et celui des fixtures de test existantes, qui n'ont pas le
   champ (`git grep -n "lineType" -- frontend/src` vide) — elles restent **inchangées et inertes**, et l'optionnel les garde
   valides pour `npm run check`. L'API, elle, renvoie toujours le champ depuis la 49-1a. **Le filtre du total est dans
-  l'assistant** : `computeInvoiceTotal(lines: Pick<CreateInvoiceLineRequest, 'lineType' | 'quantity' | 'unitPrice'>[])`
-  (`lineType` facultatif dans ce `Pick`) n'additionne que les lignes `estChiffree` ; `InvoiceForm.svelte:529-533` lui
-  passe `lineType` en plus. Les dérivés de `InvoiceForm` (`inactiveRates`, le repli `_vatPlaceholder`, `validateClient`,
+  l'assistant**, dont le paramètre s'écrit explicitement :
+  `computeInvoiceTotal(lines: { lineType?: InvoiceLineType; quantity: string; unitPrice: string }[]): string` —
+  `lineType` **optionnel** (absent = chiffrée, règle ci-dessus), `quantity` et `unitPrice` **des `string` obligatoires**,
+  comme aujourd'hui (`invoice-helpers.ts:40`, `Pick<CreateInvoiceLineRequest, 'quantity' | 'unitPrice'>` où ces deux
+  champs sont aujourd'hui obligatoires). Un `Pick` du `CreateInvoiceLineRequest` modifié est **écarté** : il garderait
+  `lineType` obligatoire et rendrait `quantity` et `unitPrice` optionnels, l'inverse de l'intention. Ce type compile avec
+  la fixture existante `invoice-helpers.test.ts:25-29` (`{ quantity: '4.5', unitPrice: '200.00' }`, sans `lineType`) et
+  avec l'appelant `InvoiceForm.svelte:529-533`, qui lui passe `lineType` en plus et des montants `string` (type d'état
+  de D5) ; le corps (`new Big(l.quantity).times(l.unitPrice)`, `:46`) ne change pas, il est seulement précédé du filtre
+  `estChiffree`. Les dérivés de `InvoiceForm` (`inactiveRates`, le repli `_vatPlaceholder`, `validateClient`,
   `invalidRevenueAccountLines`) filtrent par le même `estChiffree`. Un commentaire n'exige qu'un texte non blanc (« Ligne
   N : le texte du commentaire est obligatoire », clé i18n). *Écartée* : `lineType` obligatoire dans les types de réponse
   (exact pour l'API, mais impose de retoucher toutes les fixtures existantes et rendrait AC8 (c) invérifiable telle
@@ -345,7 +352,7 @@ libellés des lignes chiffrées et … les commentaires ») : porté par **#1411
   #1401, borné par son corps aux libellés des lignes et aux commentaires, **ne se reproduit donc pas par la saisie**, au
   `POST` comme au `PUT` (`create_invoice` `:770` et `update_invoice` `:863` passent tous deux par `validate_lines`) ; il ne
   se voit qu'en écrivant au dépôt sans passer par l'API : les tests de la 49-1b, et les **écritures de reprise** (import
-  d'installation, `kesh-db/src/backup.rs:2526` `invoices::create`), qui recopient le texte tel qu'il est stocké sans
+  d'installation, `kesh-db/src/backup.rs:831` `pub async fn restore_tables_in_tx(`), qui recopient le texte tel qu'il est stocké sans
   normaliser — sans effet sur des lignes nées d'une saisie par l'API, ce que T5 établit. Un test unitaire le protège déjà
   (`invoices.rs:2035` `validate_line_normalizes_description_to_nfc`) ; T5 le prouve de bout en bout. **Décision de Guy du
   2026-11-19** : #1401 se ferme par la PR de la 0.20.0 sur la foi de T5 (mot-clé dans le **corps de la PR**, jamais dans
@@ -353,7 +360,7 @@ libellés des lignes chiffrées et … les commentaires ») : porté par **#1411
   `kesh-qrbill` (un second endroit pour la même règle, et un changement du chemin chiffré, interdit par les contraintes de
   production).
 - **D10 — #1400 (caractères que la police n'a pas) : hors du code de cette story, documenté au manuel ; rattachée à la
-  49-4 par décision de Guy du 2026-11-19** (`epic-49-types-de-lignes-facture.md:130`). Motifs, qui ont fondé la décision : (a) un remède limité au commentaire (repli dans `texte_de_commentaire`) laisserait la ligne
+  49-4 par décision de Guy du 2026-11-19** (`epic-49-types-de-lignes-facture.md:130`). Motifs de la fiche : (a) un remède limité au commentaire (repli dans `texte_de_commentaire`) laisserait la ligne
   chiffrée dans le même défaut — **l'issue se résoudrait par morceaux sur deux releases**, ce que la règle de Guy du
   2026-11-19 interdit (« scinder avant ») ; (b) un remède sur la ligne chiffrée (repli au rendu) **change le rendu de
   factures existantes** dont le PDF n'est pas figé — exactement ce que la 49-4 fait déjà pour les désignations longues
@@ -375,7 +382,8 @@ libellés des lignes chiffrées et … les commentaires ») : porté par **#1411
   commentaire de l'orchestrateur sur #1364). La consigne de la 49-1b est donc **renvoyée à la 49-4 par décision de Guy** ;
   la 49-1c n'écrit aucun contrôle de capacité. Elle garde la borne de 1000 caractères du serveur (`MAX_DESCRIPTION_LEN`)
   et le **dit au manuel** : chaque ligne imprimée d'un commentaire prend la place d'une ligne de facture ; une facture en
-  tient **huit au plus, moins avec le récapitulatif de TVA** (`invoice_pdf_service.rs:81-87`). *Écartée* : un compteur côté
+  tient **huit au plus, moins avec le récapitulatif de TVA** (`invoice_pdf_service.rs:88-89` : « sans récap : … ⇒ **8
+  lignes** tiennent ; avec un récap multi-taux, moins »). *Écartée* : un compteur côté
   écran (il dupliquerait la mesure de largeur de `kesh-qrbill`, que seul le serveur sait faire — DRY). Le risque qu'un
   commentaire long rende une facture validée impossible à imprimer (#1110) est levé par la règle de sortie, non par
   cette story.
@@ -426,10 +434,21 @@ libellés des lignes chiffrées et … les commentaires ») : porté par **#1411
   `tests/fixtures/avant-0.20.0/`) ; (c) à l'écran, une facture et un avoir faits de lignes chiffrées s'affichent comme avant :
   les cas existants de `invoice-display-page.test.ts`, `credit-note-display-page.test.ts`, `InvoiceForm.test.ts` et
   `invoice-helpers.test.ts` sont verts **sans modification de leurs fixtures ni de leurs assertions** — leurs lignes, sans
-  `lineType`, sont chiffrées par la règle de D6 ; contrôle : `git diff --numstat 5156f2b7b..HEAD -- <ces quatre
-  fichiers>` montre des ajouts seulement (suppressions à 0, hors lignes d'`import` nommées au Dev Agent Record) ; (d) un
-  brouillon chiffré-seulement ouvert et réenregistré envoie les mêmes champs qu'avant, plus `lineType: "priced"` sur chaque
-  ligne (T8, comparaison `toEqual` à la charge attendue), que le serveur traite à l'identique (49-1a AC11).
+  `lineType`, sont chiffrées par la règle de D6 —, **à une exception nommée** : le test `AC9 a`
+  (`InvoiceForm.test.ts:1607` `it('AC9 a — ouvert puis enregistré sans geste : le corps envoyé est celui du brouillon
+  chargé', …`, assertion `:1626` `expect(updateInvoiceMock.mock.calls[0]).toEqual([`) gagne `lineType: 'priced'` sur chaque
+  ligne attendue (`:1635-1649`), et **c'est la seule modification permise d'une assertion existante**. Deux contrôles :
+  (1) **rejeu** des quatre fichiers **tels qu'ils sont à `5156f2b7b`** contre le code de la story — chaque fichier copié par
+  `git show 5156f2b7b:<f>` sous un nom temporaire hors du commit, à côté de l'original (pour que ses imports relatifs se
+  résolvent), `npx vitest run <copie>`, sortie journalisée (`kesh-gate-logs/e491c/rejeu-tests-5156f2b7b.log`), copie
+  supprimée ; **seul échec attendu : `AC9 a`**, pour le seul ajout de `lineType` (le journal montre le diff de
+  `toEqual`) ; (2) `git diff --numstat 5156f2b7b..HEAD -- <ces quatre fichiers>` : des ajouts seulement, hors lignes
+  d'`import` nommées au Dev Agent Record. (d) Un brouillon chiffré-seulement ouvert et réenregistré envoie les mêmes champs
+  qu'avant, plus `lineType: "priced"` sur chaque ligne, que le serveur traite à l'identique (49-1a AC11) : **la preuve est
+  le test `AC9 a` modifié** (comparaison `toEqual` à la charge attendue). À `5156f2b7b`, c'est le seul `toEqual` sur une
+  charge de lignes dans les quatre fichiers (les autres sont des `toMatchObject` ou des lectures d'un champ, rapport P2,
+  V2-1) ; le développement le revérifie par
+  `git grep -n "toEqual" 5156f2b7b -- <ces quatre fichiers>` et nomme au Dev Agent Record tout autre site trouvé.
 - **AC9 — Textes.** Toute chaîne **neuve** passe par `i18nMsg`, avec sa clé dans les **quatre** catalogues
   (`crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`), dans le bloc de l'Epic 49 ; `npm run
   lint-i18n-ownership` vert ; `sitesTotal` de `frontend/src/lib/shared/i18n-keys.test.ts` (3495 à `5156f2b7b`) **recompté
@@ -448,10 +467,13 @@ libellés des lignes chiffrées et … les commentaires ») : porté par **#1411
   **exemples** le signe moins U+2212, les traits d'union U+2010 / U+2011, le grec, le cyrillique, les flèches, ≤ / ≥, les
   émojis — et le conseil d'écrire le moins en trait d'union ordinaire (« Remise −50 » s'imprimerait « Remise 50 »,
   \#1400) ; `:1924` dit que l'avoir reprend aussi les commentaires ; (b) `docs/api-external.md:512` et `admin-manual.tex:2559` : `comment` accepté (D11), `heading`
-  refusé ; (c) aucun PDF de manuel commité ; (d) `git grep -n -E "comment.*(réservées|pour l.instant)|refusés pour
-  l.instant" -- docs` ne nomme plus `comment`.
+  refusé ; (c) aucun PDF de manuel commité ; (d) contrôles **positifs** : `git grep -n "n'est pas encore disponible" -- docs`
+  ne cite plus que `heading` (aucune occurrence de « le type de ligne comment ») ; `git grep -n -F "\"comment\"" --
+  docs/api-external.md` et `git grep -n -F "\texttt{comment}" -- docs/manual/fr/admin-manual.tex` nomment chacun la phrase
+  qui dit `comment` **accepté**, citée au Dev Agent Record.
 - **AC11 — E2E et recette visuelle.** Un spec Playwright joue le parcours (T10) ; les captures de chaque état touché
-  (formulaire avec commentaire, fiche facture brouillon et validée, fiche avoir, PDF de la facture saisie à l'écran) sont
+  (formulaire avec commentaire ; formulaire **bloqué sur un commentaire vide**, avec le bandeau qui nomme la ligne ; fiche
+  facture brouillon et validée ; fiche avoir ; PDF de la facture saisie à l'écran) sont
   prises **sur une base de démonstration** (`kesh_e2e_e491c` peuplée par le seed de démonstration), thème clair, rangées
   dans `kesh-gate-logs/e491c/captures/`, jointes au Dev Agent Record et au prompt de revue, et **lues**.
 - **AC12 — Gates.** § *Tâches*, dernière tâche ; le Dev Agent Record n'affirme que ce qui a tourné.
@@ -472,7 +494,7 @@ test suivant (`git diff` vide sur le fichier muté, copié au journal).
 | T5 | `invoice_line_types_e2e.rs::nfd_comment_prints_with_its_accent` (neuf, #1401) | AC7 : réponse en NFC (U+00E9, `chars().count()` égal) **au `POST`, puis au `PUT`** (brouillon réenregistré avec un second texte en NFD, relu en NFC) ; facture validée (`POST …/validate`) ; `GET …/pdf` 200 ; `kesh_qrbill::empreinte::textes` contient `Café offert` pour le commentaire **et** pour le libellé chiffré | mutation : `.nfc()` retiré de `invoices.rs:507` → **ROUGE** (`rouge-T5.log`) ; la mutation touche du code de production **le temps du journal seulement** |
 | T6 | `invoice_line_types_e2e.rs::comment_typed_at_the_api_reaches_the_pdf_and_the_credit_note` (neuf) | AC6 : PDF de la facture (commentaire à `x = 20`, rien aux colonnes 110 / 130 / 160 / 180 à sa hauteur), écriture égale à celle de `[A, B]` (comptes, montants), avoir par `POST /api/v1/credit-notes` : ligne 2 `comment`, PDF de l'avoir qui l'imprime | mutation : T1 (garde refermée) → **ROUGE** au premier `POST` ; mutation : `ligne_pdf` met `LinePdfKind::Priced` pour `Comment` → **ROUGE** sur le PDF (`rouge-T6.log`) |
 | T7 | `frontend/src/lib/features/invoices/invoice-lines.test.ts` (neuf) | D5, D6 : `ligneDepuisReponse` garde `lineType` (trois types) et pose `priced` pour une ligne **sans** `lineType` ; `estChiffree` vrai pour `undefined` et `priced`, faux pour `comment` et `heading` ; `ligneAEnvoyer` : chiffrée = champs d'aujourd'hui + `lineType: 'priced'`, commentaire = `{lineType, description}` **exactement** (`toEqual`), `heading` gardé ; `estLigneDeTexte` ; `computeInvoiceTotal` (cas neufs dans `invoice-helpers.test.ts`) ignore une ligne `comment` qui porterait des montants et compte une ligne sans `lineType` | mutations : `ligneDepuisReponse` omet `lineType` → **ROUGE** ; `ligneAEnvoyer` d'un commentaire garde `quantity` → **ROUGE** ; le filtre `estChiffree` retiré de `computeInvoiceTotal` → **ROUGE** ; `estChiffree` réduit à `l.lineType === 'priced'` → **ROUGE** (cas `undefined`) (`rouge-T7.log`) |
-| T8 | `frontend/src/lib/components/invoices/InvoiceForm.test.ts` (nouveau `describe` « Story 49-1c ») | AC3, AC4, AC8 d : bouton « Commentaire » → `textarea`, pas de `invoice-line-vat-rate` ni de compte pour cette ligne, total inchangé ; commentaire vide → message nommant la ligne ; brouillon `[chiffrée, commentaire]` ouvert puis enregistré → charge de l'AC4 ; **même chose après « Recharger »** sur conflit (`OPTIMISTIC_LOCK_CONFLICT`) ; brouillon chiffré-seulement → mêmes champs qu'avant + `lineType: 'priced'` ; brouillon à taux désactivé + commentaire : le message ne nomme que la ligne chiffrée | mutations : `initLines` n'appelle plus `ligneDepuisReponse` (recopie sans `lineType`) → **ROUGE** ; idem pour `reloadFromServer` → **ROUGE** sur le seul cas du conflit ; `validateClient` contrôle la quantité d'un commentaire → **ROUGE** (`rouge-T8.log`) |
+| T8 | `frontend/src/lib/components/invoices/InvoiceForm.test.ts` (nouveau `describe` « Story 49-1c ») | AC3, AC4, AC8 d : bouton « Commentaire » → `textarea`, pas de `invoice-line-vat-rate` ni de compte pour cette ligne, total inchangé ; commentaire vide → message nommant la ligne ; brouillon `[chiffrée, commentaire]` ouvert puis enregistré → charge de l'AC4 ; **même chose après « Recharger »** sur conflit (`OPTIMISTIC_LOCK_CONFLICT`) ; brouillon chiffré-seulement → mêmes champs qu'avant + `lineType: 'priced'` : **porté par le test existant `AC9 a`** (`:1607`, assertion `:1626`), dont la charge attendue gagne `lineType: 'priced'` — seule assertion existante modifiée (AC8 c), pas de cas neuf ; brouillon à taux désactivé + commentaire : le message ne nomme que la ligne chiffrée | mutations : `initLines` n'appelle plus `ligneDepuisReponse` (recopie sans `lineType`) → **ROUGE** ; idem pour `reloadFromServer` → **ROUGE** sur le seul cas du conflit ; `validateClient` contrôle la quantité d'un commentaire → **ROUGE** (`rouge-T8.log`) |
 | T9 | `invoice-display-page.test.ts` et `credit-note-display-page.test.ts` (cas neufs) | AC5 : la rangée du commentaire a **une** cellule (`colspan` 6), le texte avec son saut de ligne, ni « (défaut société) », ni montant ; une rangée `heading` idem ; la rangée chiffrée inchangée | mutation : le commentaire passe par la rangée chiffrée (prédicat `estLigneDeTexte` rendu `false`) → **ROUGE** sur les deux fichiers (`rouge-T9.log`) |
 | T10 | `frontend/tests/e2e/invoice-comment-lines.spec.ts` (neuf) | AC3 à AC6 dans le navigateur : nouvelle facture, ligne libre, « Commentaire » (deux lignes de texte), ligne du catalogue ; enregistrer ; rouvrir (édition) : le commentaire est là, à sa place ; enregistrer de nouveau ; valider ; la fiche montre le commentaire pleine largeur ; `GET …/pdf` 200 ; créer l'avoir ; la fiche de l'avoir montre le commentaire | mutation : T1 (garde refermée), backend reconstruit → **ROUGE** à l'enregistrement (400 affiché) (`rouge-T10.log`, un seul spec lancé : `npx playwright test invoice-comment-lines`) |
 | T11 | épreuve, non test neuf : `rendu_avant_apres`, `pdf_avant_apres_e2e`, `invoice_pdf_e2e`, `invoice_frozen_pdf_e2e`, `invoice_line_types` (`kesh-db`), `invoices.spec.ts`, `credit-notes.spec.ts` | AC8 : verts **sans modification** de leurs assertions | — |
@@ -492,7 +514,8 @@ test suivant (`git diff` vide sur le fichier muté, copié au journal).
   `invoice-helpers.ts` (total) ; `InvoiceForm.svelte` (bouton, rangée de commentaire, deux relectures par le mapper,
   envoi par `ligneAEnvoyer`, `validateClient`, `inactiveRates`, `_vatPlaceholder`, total) et T8 ; fiche facture et fiche
   avoir (D7) et T9. `ProductPicker.svelte` **ne change pas** (écart au tableau de l'épique : la ligne produit est inchangée).
-- [ ] **Fixtures et types** (V1-2) : aucune fixture existante ne se modifie (règle de D6) ; `npm run check` après le
+- [ ] **Fixtures et types** (V1-2, V2-1) : aucune fixture existante ne se modifie (règle de D6) ; seule l'assertion
+  du test `AC9 a` (`InvoiceForm.test.ts:1626`) change (AC8 c) ; rejeu des quatre fichiers de `5156f2b7b` (AC8 c (1)) ; `npm run check` après le
   changement des types, sortie copiée (`kesh-gate-logs/e491c/check-types.log`) ; si un fichier ne compile plus, corriger le
   **type**, non la fixture, et le dire au Dev Agent Record.
 - [ ] **i18n** : clés neuves ×4 (bouton, aide du champ, `aria-label` « Commentaire — ligne N », message du commentaire vide,
@@ -543,11 +566,14 @@ test suivant (`git diff` vide sur le fichier muté, copié au journal).
   `heading`, son écran → **49-3** ; désignation longue (#1363) et capacité du PDF avant la validation (#1364) → **49-4** ;
   recette de montée et « Passer à la 0.20.0 » → **49-1d** ; sous-totaux → **#1330** ; #1400 → **49-4** (décision de
   Guy, D10) ; nom et adresse du contact en NFD → **#1411** (« Plus tard »).
-- **Questions de la fiche, tranchées par Guy le 2026-11-19** (portées au fichier d'épique, `c91a5bac4`) :
+- **Questions de la fiche, tranchées par Guy le 2026-11-19.** Sources : le fichier d'épique (`c91a5bac4` :
+  `epic-49-types-de-lignes-facture.md:130` pour #1400, `:154` pour la règle de sortie), `sprint-status.yaml:1191` et
+  `:1195` (#1401, #1400) ; #1411 est l'issue ouverte par l'orchestrateur ; le commentaire du 2026-11-19 sur #1364.
   1. **#1400** → la **49-4** (D10) ;
-  2. **#1401** → fermée par la PR de la 0.20.0 sur la foi de T5 (D9) ; issue distincte pour le contact : **#1411** ;
-  3. **règle de sortie : la 49-1c ne sort pas sans la 49-4** (D12) ; à la coupure, si la 49-4 n'est pas close, la 49-1c
-     sort avec elle.
+  2. **#1401** → fermée par la PR de la 0.20.0 sur la foi de T5 (D9) ; le nom et l'adresse du contact : **#1411** ;
+  3. **règle de sortie : la 49-1c ne sort pas sans la 49-4** (D12). **Repli à la coupure** : si la 49-4 n'est pas close,
+     **la 49-1c est retirée de la release avec elle**, et avec elles la **49-2** et la **49-3** (qui dépendent de la
+     49-1c, `epic-49-types-de-lignes-facture.md:128-129`) ainsi que la **fermeture de #1401** (T5 ne serait pas livré).
 - **Écarts au fichier d'épique, déclarés** : (a) `kesh-db/src/entities/line_type.rs` change (la garde y vit), absent du
   tableau ; (b) `routes/vat.rs` **ne change pas** (D4) ; (c) `ProductPicker.svelte` ne change pas ; (d)
   `docs/api-external.md` et le manuel d'administration changent (D11).
@@ -565,6 +591,12 @@ test suivant (`git diff` vide sur le fichier muté, copié au journal).
   - Catalogues i18n ×4, `sitesTotal` : toutes les stories (48-14 en parallèle) ; blocs par épique, compteur recompté après
     fusion.
   - `docs/api-external.md` : la 49-3 y écrira l'ouverture de `heading`.
+  - **La 49-4** (sort avec la 49-1c) : `docs/manual/fr/user-manual.tex:1594` et `:1456`, et peut-être
+    `InvoiceForm.svelte` (#1364, contrôle de capacité avant la validation). **Consigne pour la 49-4** : quand elle traite
+    #1400 (caractères signalés au lieu de disparaître) et #1364 (capacité contrôlée avant la validation), elle **reprend**
+    les phrases que la 49-1c écrit au manuel — « disparaît du PDF sans avertissement » (`:1594`) et « huit au plus, moins
+    avec le récapitulatif de TVA » (`:1456`) —, qui deviendraient fausses. L'orchestrateur porte cette consigne au fichier
+    d'épique, à la ligne de la 49-4.
   - PR #1327 de Beat : outre `kesh-qrbill` et `kesh-report`, elle touche les **quatre catalogues i18n** et
     **`docs/manual/fr/user-manual.tex`** (`gh pr view 1327 --json files` ; hunks vers `:4082`, `:4181`, et fr-CH `:2165`),
     distincts de ceux de la 49-1c (`:1456`, `:1594`, `:1924`) : pas de conflit de texte attendu ; le second arrivé garde
@@ -599,3 +631,4 @@ test suivant (`git diff` vide sur le fichier muté, copié au journal).
 |---|---|
 | 2026-11-19 | **Création** de la fiche (Opus 5.5, `bmad-create-story`), code lu à `5156f2b7b` (49-1a, 49-1b et 48-13 dans la branche). Périmètre : ouverture de `comment` (garde), `verify_vat_rates_against_db` limité aux lignes chiffrées, écran de saisie et relecture typée du brouillon, affichage dans la facture et l'avoir, i18n ×4, E2E, manuel utilisateur, plus `docs/api-external.md` et le paragraphe « Pour les intégrations » du manuel d'administration (écart déclaré, D11). #1401 dans le périmètre par la preuve (D9) ; #1400 hors du code, documentée, arbitrage proposé (D10) ; #1364 à la 49-4 (D12). Cinq modules au grain de la crate. Validation P1 à lancer : `49-1c-types-de-lignes-ecran-validation-prompt-p1.md`. |
 | 2026-11-19 | **Validation P1** (Sonnet 5.5, passe complète, contexte frais ; `kesh-gate-logs/e491c/validation-49-1c-p1.md`) : **0/0/2/6**. **Décisions de Guy du 2026-11-19** sur les trois questions de la fiche (orchestrateur : `c91a5bac4`, fusion `2cce7b905`) : #1400 → 49-4 ; #1401 fermée par la PR de la 0.20.0 sur la foi de T5, contact → #1411 ; la 49-1c ne sort pas sans la 49-4. **Remédiation** (Opus 5.5) : **V1-1** (MEDIUM) levée sur le fond par ces décisions — en-tête, D9, D10, D12 (consigne de la 49-1b `:243`, `:474` renvoyée à la 49-4 par décision de Guy), Dev Notes (questions marquées tranchées, règle de sortie, issue du contact = #1411) ; **V1-2** (MEDIUM) — D6 fixe la règle d'une ligne sans type (`estChiffree` vrai pour `undefined`, `lineType` optionnel dans les types de réponse, fixtures existantes inchangées), D5 donne au formulaire son type d'état aux montants `string` (`npm run check` vert sans garde), le filtre du total est dans `computeInvoiceTotal` ; T7 gagne le cas `undefined` et deux mutations ; AC8 (c) contrôlé par `git diff --numstat` sur quatre fichiers de test ; tâche « Fixtures et types » ; **V1-3** T5 et AC7 jouent aussi le `PUT`, D9 nomme les écritures de reprise (`backup.rs:2526`) et le test unitaire existant (`invoices.rs:2035`) ; **V1-4** AC10 (a) dit la règle de ce qu'un commentaire perd, les quatre caractères deviennent des exemples, conseil du trait d'union ; **V1-5** AC10 (a) : « huit au plus, moins avec le récapitulatif de TVA » (`invoice_pdf_service.rs:81-87`, remplace la citation inexacte `pdf.rs:629`), facture de commentaires seuls non validable, boutons nommés pour la première fois, « depuis la version~0.20.0 » ; **V1-6** PR #1327 : catalogues et `user-manual.tex` communs, hunks distincts ; **V1-7** compte des modules à la crate seulement (cinq), phrase du « six » retirée ; **V1-8** `pdf.rs:668`, `vat.rs:85-86`. Propagation grepée dans la fiche : `pdf.rs:637`, `83-86`, `pdf.rs:629`, `environ huit`, « six » (restent les seuls « six cellules », vrais), « issue à ouvrir », « arbitr ». Aucun reclassement. Passe suivante : P2 complète sur Opus, `49-1c-types-de-lignes-ecran-validation-prompt-p2.md`. |
+| 2026-11-19 | **Validation P2** (Opus 5.5, passe complète, contexte frais ; `kesh-gate-logs/e491c/validation-49-1c-p2.md`) : **0/0/1/7** ; les huit findings de la P1 levés sur le fond. **Remédiation** (Opus 5.5) : **V2-1** (MEDIUM) — AC8 (c) et T8 nomment l'exception : le test `AC9 a` (`InvoiceForm.test.ts:1607`, assertion `:1626`) gagne `lineType: 'priced'` et devient la preuve d'AC8 (d), seule assertion existante modifiée ; **V2-2** signature explicite de `computeInvoiceTotal` (`lineType` optionnel, `quantity` et `unitPrice` `string` obligatoires), vérifiée à la lecture contre `invoice-helpers.ts:40-46` et la fixture `invoice-helpers.test.ts:25-29` ; **V2-3** AC8 (c) ajoute le rejeu des quatre fichiers de test pris à `5156f2b7b` (seul échec attendu : `AC9 a`) ; **V2-4** citations `backup.rs:831` (`restore_tables_in_tx`) et `invoice_pdf_service.rs:88-89` — **annotation datée** : l'entrée P1 ci-dessus citait `backup.rs:2526` (code de test) et `:81-87`, inexacts à leur date ; **V2-5** AC10 (d) en contrôles positifs ; **V2-6** la 49-4 aux fichiers communs, avec sa consigne de reprise des phrases du manuel (à porter au fichier d'épique par l'orchestrateur) ; **V2-7** sources des décisions nommées (épique pour #1400 et la règle, `sprint-status.yaml` pour #1401, #1411 issue de l'orchestrateur), « motifs de la fiche » au lieu de motifs prêtés à Guy, repli à la coupure écrit sans ambiguïté (49-1c retirée avec la 49-4, et avec elles 49-2, 49-3, fermeture de #1401) ; **V2-8** capture du formulaire bloqué sur un commentaire vide. Propagation grepée dans la fiche : `backup.rs:2526`, `81-87`, `Pick<CreateInvoiceLineRequest, 'lineType'`, « qui ont fondé », « sort avec elle », `comment.*(réservées` (restent seulement dans l'entrée P1, annotée ici). Aucun reclassement. Passe suivante : P3 **ciblée** sur le seul commit de cette remédiation, Sonnet, `49-1c-types-de-lignes-ecran-validation-prompt-p3-ciblee.md`. |
