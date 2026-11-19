@@ -1155,7 +1155,11 @@ const ATTENDU = {
 	// `journal-entries-filter-amount-not-applied` (liste des écritures). Les messages du prix, des
 	// frais et du minimum passent par `amountEntryMessage` (aucun site neuf). Compteur partagé
 	// avec les autres stories de l'Epic 48 : à relever de nouveau après la fusion (AC8).
-	sitesTotal: 3496,
+	// Revue P1 de la 48-10 : **3496 → 3502** (« expected 3502 to be 3496 »,
+	// `kesh-gate-logs/e4810/remed-p1-front.log`), relevé par la garde : cinq sites dans
+	// `nonPriceMessages()` (fiche article : nom, doublon, taux de TVA) et un dans `onFeeInput()`
+	// (rappels : le message du délai), tous de clés existantes.
+	sitesTotal: 3502,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/
