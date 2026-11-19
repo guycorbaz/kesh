@@ -1,6 +1,6 @@
 # Story 49-1b : types de lignes de la facture client — le rendu PDF d'un commentaire, pour la facture et l'avoir (#1242)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-19 par l'agent de rédaction de la 49-1b (Sonnet 5.5), par le workflow `bmad-create-story`.
 Release **0.20.0** (coupure jeudi 2026-11-26 au soir). **Aucune migration**, aucune clé i18n, aucun changement d'écran ni de
@@ -703,6 +703,26 @@ Revue P2 (Sonnet 5.5, complète, `kesh-gate-logs/e491b/review-p2.md`) : 0/0/0/4.
 
 **Pas lancé** : `gate-ci` et E2E, à la clôture après la passe P3.
 
+### Clôture (au dernier commit de code `c69162665`, HEAD `fed666d04`)
+
+Revue P3 ciblée (Haiku) : 0/0/0/2, boucle terminée ; ses deux LOW, sur le code de test de la garde, tracés par
+l'orchestrateur en **#1402** et **#1403** (P4, `technical-debt`), non corrigés ici.
+
+- **Bases remises à neuf** (`kesh_e491b` migrée et semée, `kesh_e2e_e491b` recréée vide), journal `cloture.log`.
+- **`scripts/gate-ci.sh kesh_ci_e491b`** (`gate-ci-cloture.log`) : **6198 passés, 0 échoué, 20 ignorés**, 260 binaires,
+  code 0. `la_feature_de_test_n_entre_pas_en_production` et `s_features_du_paquet` passent sous `cargo test` (un processus
+  par binaire), comme sous nextest.
+- **E2E complet** (`e2e-cloture.sh`, `e2e-cloture.log`, `e2e-cloture-playwright.log` ; recette de `docs/testing.md`
+  § *Prérequis Playwright local*, backend `target/debug/kesh-api` sur le port 3492, base `kesh_e2e_e491b`, dossiers
+  `/tmp/kesh-e2e-e491b/r1/{inbox,documents,backup}`, `KESH_TEST_MODE=true` des deux côtés ; `/health` :
+  `"smtpConfigured":true` ; « Permission denied » au journal du backend : 0) : **480 passés, 7 échoués, 18 ignorés**
+  (21,7 min). Les sept échecs, jugés fichier par fichier contre `docs/testing.md` § *Les échecs attendus* : ce sont
+  exactement les sept lignes KF-029 (#97) du tableau — `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`,
+  `:92`, `onboarding.spec.ts:57`, `:77`, `:150`. Aucune pollution, aucun autre rouge. Backend arrêté par son PID, port
+  3492 libre avant et après.
+- **Frontend** : non touché par la story, gate frontend non lancé (le `vite build` de l'E2E a réussi :
+  `e2e-frontend-build.log`).
+
 ### Fichiers
 
 `crates/kesh-qrbill/src/{empreinte,lib,pdf,texte,types}.rs`, `crates/kesh-qrbill/Cargo.toml`, `crates/kesh-qrbill/README.md`,
@@ -728,3 +748,4 @@ Revue P2 (Sonnet 5.5, complète, `kesh-gate-logs/e491b/review-p2.md`) : 0/0/0/4.
 | 2026-11-19 | **Développement** (Opus 5.5, `bmad-dev-story`). Étape 0 dans l'ordre : commit C (`709370ed5`, après un premier essai `a8b15b240` arrêté par l'assertion de son propre scénario S2, aucune référence écrite), capture dans un worktree détaché propre (T0, T0-bis : `ecrire` puis `comparer`, stables), commit F (`12be35434`, fixtures seules), retrait du worktree sans `--force`, contrôles de l'AC1 (1) à (7) conformes ; puis le code (`03afbfbca`) : `LinePdfKind`, `couper_ligne_a`, chemin du commentaire, `ligne_pdf`. T1 à T12 verts ; T1, T2, T3 prouvent que le rendu chiffré est celui de la 0.19.0. 21 mutations tuées, une équivalente déclarée (T12 de la fiche ; T12-b tuée). Garde `configuration_transmise` adaptée (`89f5e77cb`, C-e491b-5 ; G-1, G-2 tuées). Gates du passage en review verts à `89f5e77cb` (`test-fast --ci` 6179/6179, `gate-ci` 6196 passés). Écarts : premier C, suppression des fixtures de capture par `mv` (pas de `rm`), mutant équivalent T12, garde de configuration. Statut : `review`. |
 | 2026-11-19 | **Revue P1** (trois lentilles B, E, A, Opus 5.5 ; `kesh-gate-logs/e491b/review-p1-{B,E,A}.md`) : 0 CRITICAL, 0 HIGH, 1 MEDIUM (relevé par les trois lentilles : la garde de la feature de test admettait une activation en production), 15 LOW ; preuve avant / après confirmée par les trois. **Remédiation** (`4dd9932ea`, Opus 5.5) : garde de configuration (C-e491b-6), chemin des commentaires (E-2 à E-5, L2), tests (A-3, A-4, L6), témoin S2 et captures (A-2, L3), écrits (A-5, L4, L5, E-6) ; détail au Dev Agent Record, § *Remédiation de la revue P1*. T1, T2, T3 verts et AC1 rejoué : chemin chiffré inchangé. `test-fast --ci` 6180/6180 ; 14 mutations tuées. Prochaine passe : **P2 complète**, lentille unique, Sonnet (`49-1b-types-de-lignes-pdf-review-prompt-p2.md`). Statut : `review`. |
 | 2026-11-19 | **Revue P2** (Sonnet 5.5, complète, lentille unique ; `kesh-gate-logs/e491b/review-p2.md`) : 0/0/0/4 ; preuve avant / après confirmée. **L1 corrigé** (`c69162665`, Opus 5.5) : `cargo tree --locked`, sonde positive et contrôle négatif sur les seules lignes de `kesh-qrbill` ; vert sous nextest et sous `cargo test` (un processus par binaire). **L2 et L3 tracés** par l'orchestrateur en **#1400** (P3) et **#1401** (P4), non corrigés ici, cités à la tâche pour la 49-1c. **L4** : mutations jouées sans changement de code — trois tuées, plus P2-L4b2 ; P2-L4b équivalente (bras U+00AD redondant). Prochaine passe : **P3 ciblée**, Haiku, sur le seul commit `c69162665` (`49-1b-types-de-lignes-pdf-review-prompt-p3-ciblee.md`). Statut : `review`. |
+| 2026-11-19 | **Clôture — Change Log final de la revue de code** (une entrée). **Tendance des findings par passe** (CRITICAL/HIGH/MEDIUM/LOW) : P1 trois lentilles B, E, A, **Opus 5.5** : 0/0/1/15 (le même MEDIUM relevé par les trois : la garde de la feature de test admettait une activation en production) → P2 complète, lentille unique, **Sonnet 5.5** : 0/0/0/4 → P3 ciblée sur le seul commit `c69162665`, **Haiku** : 0/0/0/2 ; arrêt sur une passe sans finding au-dessus de LOW. **Modèles** : Opus 5.5 (développement et remédiations `4dd9932ea`, `c69162665`), Opus (P1), Sonnet (P2), Haiku (P3 ciblée). **Reclassements** : aucun ; aucun MEDIUM reclassé en dette. **Mutants équivalents déclarés** : T12 de la fiche (`render_and_pose` refait le contrôle du gel ; T12-b tuée) et P2-L4b (bras U+00AD redondant ; P2-L4b2 tuée). **Issues** : **#1399** (P4, montants à droite au-delà du filet, antérieur à la 0.20.0) ; **#1400** (P3, caractères hors WinAnsi perdus dans un commentaire, dont U+2212) et **#1401** (P4, accents en NFD), cités à la tâche pour la 49-1c ; **#1402** et **#1403** (P4, `technical-debt`, code de test de `features_du_paquet`), LOW de la P3, non corrigés ; #1363 (réduction à 44 caractères, hors périmètre, D8). **Gates de clôture** au dernier commit de code `c69162665` : bases remises à neuf ; `gate-ci.sh kesh_ci_e491b` 6198 passés, 0 échoué (`gate-ci-cloture.log`) ; **E2E complet** 480 passés, 7 échoués, 18 ignorés, les sept échecs étant exactement les sept KF-029 (#97) de `docs/testing.md`, jugés fichier par fichier (`e2e-cloture-playwright.log`). La preuve avant / après tient à chaque passe : T1, T2, T3 verts, contrôles de l'AC1 conformes. Statut : `done`. |
