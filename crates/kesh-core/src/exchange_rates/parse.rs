@@ -60,7 +60,8 @@ const MAX_UNIT: u32 = 1_000_000;
 /// Un cours publié valide, pour une devise.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PublishedRate {
-    /// Code ISO 4217 (majuscules, jamais `CHF`).
+    /// Code ISO 4217 (majuscules, jamais `CHF`) : monnaie active ou retirée
+    /// ([`crate::currency::WITHDRAWN_CURRENCIES`]).
     pub currency: CurrencyCode,
     /// Unité publiée en tête de `<waehrung>` (1, 100, 1000, 10000…).
     pub published_unit: i32,
@@ -79,8 +80,9 @@ pub enum RejectReason {
     Missing,
     /// Texte ou attribut au-delà de [`MAX_TEXT_BYTES`] octets.
     TooLong,
-    /// Code hors des trois lettres ASCII, absent de la liste ISO 4217
-    /// embarquée, ou `CHF`.
+    /// Code hors des trois lettres ASCII, absent des deux listes embarquées
+    /// (monnaies actives et monnaies retirées,
+    /// [`crate::currency::is_rate_currency`]), ou `CHF`.
     CodeInvalid,
     /// `<waehrung>` hors de la grammaire `^[1-9][0-9]{0,6} [A-Za-z]{3}$`.
     UnitInvalid,
@@ -582,7 +584,9 @@ fn trier_devises(
 }
 
 /// Le code d'une devise : trois lettres ASCII (blancs ASCII de bord retirés),
-/// dans la liste ISO 4217 embarquée, différent de `CHF`.
+/// monnaie active **ou retirée** ([`CurrencyCode::parse_rate_currency`] :
+/// l'AFC publie le lev bulgare, la kuna… pour les périodes où ils avaient
+/// cours), différent de `CHF`.
 fn lire_code(t: &TexteBorne) -> Option<CurrencyCode> {
     if t.trop_long {
         return None;
@@ -591,7 +595,9 @@ fn lire_code(t: &TexteBorne) -> Option<CurrencyCode> {
     if brut.len() != 3 || !brut.bytes().all(|b| b.is_ascii_alphabetic()) {
         return None;
     }
-    CurrencyCode::parse(brut).ok().filter(|c| !c.is_base())
+    CurrencyCode::parse_rate_currency(brut)
+        .ok()
+        .filter(|c| !c.is_base())
 }
 
 /// Le texte d'un enfant lu, présent et borné, blancs ASCII de bord retirés.
