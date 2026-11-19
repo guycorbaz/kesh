@@ -52,9 +52,13 @@
 	let feeError = $derived(feeProblem ? amountEntryMessage(feeProblem, 2) : '');
 
 	/**
-	 * Revue P1 (B2) — à la saisie des frais, le message du bloc commun s'efface, sauf celui du délai :
-	 * « Les frais doivent être un montant valide » ou un refus du serveur ne restent pas empilés,
-	 * périmés, sous le refus affiché sous le champ.
+	 * Revue P1 (B2) — à la saisie des frais, le message du bloc commun s'efface, sauf le refus du délai
+	 * posé par l'écran (`dunning-form-error-delay`) : « Les frais doivent être un montant valide » ou un
+	 * refus du serveur ne restent pas empilés, périmés, sous le refus affiché sous le champ.
+	 *
+	 * Revue P2 (C2), choix assumé : un refus du **serveur** est effacé quelle que soit sa cause, délai
+	 * compris (le `catch` de `submitForm` pose `e.message`, qui ne dit pas le champ). La soumission
+	 * suivante le redit s'il tient encore ; un délai négatif ou non entier est déjà arrêté par l'écran.
 	 */
 	function onFeeInput() {
 		const delayMessage = i18nMsg('dunning-form-error-delay', 'Le délai doit être un entier positif.');

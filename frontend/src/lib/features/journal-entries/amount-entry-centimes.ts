@@ -6,8 +6,12 @@
  * une borne : **deux décimales significatives au plus**, ce que le message illisible annonce
  * (`amountEntryMessage(…, 2)`) et ce que le serveur exige (`scale_within(…, 2)`). « 10.0100 » reste
  * clair (les zéros de fin ne comptent pas) et part `10.01` ; « 10.125 » ou « 0.125 » sont
- * illisibles ici, au lieu d'être refusés par le serveur dans un autre bloc. Aucune forme que le
- * serveur accepte n'est refusée : il lit déjà la valeur à deux décimales au plus.
+ * illisibles ici, au lieu d'être refusés par le serveur dans un autre bloc. La borne ne refuse
+ * aucune forme que le serveur accepte : il lit déjà la valeur à deux décimales au plus.
+ *
+ * ⚠️ Exception, héritée de la grammaire du journal et antérieure à cette borne : une forme hors de
+ * `readJournalAmount` reste illisible même quand le serveur l'accepterait — plus de quatre décimales
+ * écrites, même nulles (« 10.01000 »), « .5 », « 5. », exposant, signe (revue P2, C1).
  */
 
 import { readJournalAmount } from './balance';
