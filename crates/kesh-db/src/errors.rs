@@ -556,6 +556,32 @@ pub struct SupplierUnvalidationHint {
     pub entry_date: Option<chrono::NaiveDate>,
 }
 
+/// La facture fournisseur **existante** qu'un refus de doublon nomme (Story
+/// 48-12a, #975, D1) : la plus petite en identifiant parmi celles du même
+/// refus ; à la dévalidation d'une annulée, la facture **active** qui s'oppose.
+/// Exposée en `details : { supplierInvoiceId, internalNumber, status }`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExistingSupplierInvoice {
+    /// Son identifiant.
+    pub id: i64,
+    /// Son numéro interne — `None` pour un brouillon jamais validé.
+    pub internal_number: Option<String>,
+    /// Son statut (`draft`, `open`, `paid` ; jamais `cancelled`).
+    pub status: String,
+}
+
+/// Le geste qu'un refus de doublon arrête (Story 48-12a, D1, D6bis) : il
+/// décide de `details.confirmable` et du message.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DuplicateGesture {
+    /// Création, modification d'un brouillon, complétion d'un document : la
+    /// règle 1 (même numéro dans la même année civile) n'a **aucune** sortie.
+    Entry,
+    /// Repassage en brouillon d'une facture **annulée** (D6bis, décision de Guy
+    /// du 2026-11-19) : les deux règles se lèvent par `confirmNotDuplicate`.
+    Unvalidation,
+}
+
 /// Ce qui empêche d'**annuler un règlement** (Story 25-3-a-1, #414).
 ///
 /// ⛔ **Une tête propre à chaque pièce, une queue commune.** Le rang 1 est
@@ -1828,6 +1854,31 @@ pub enum DbError {
         hint: SupplierUnvalidationHint,
     },
 
+    /// **Règle 1 du refus de doublon** (Story 48-12a, #975, D1) : une facture
+    /// non annulée du même fournisseur porte le même numéro de facture du
+    /// fournisseur (blancs retirés, casse ignorée) dans la même **année
+    /// civile** de la date de facture. → **409** `SUPPLIER_INVOICE_DUPLICATE`,
+    /// `details : { supplierInvoiceId, internalNumber, status, confirmable }` ;
+    /// `confirmable` vaut `false` pour [`DuplicateGesture::Entry`] (aucune
+    /// sortie), `true` pour [`DuplicateGesture::Unvalidation`] (D6bis).
+    #[error("Facture fournisseur en double : même numéro dans la même année ({})", .existing.id)]
+    SupplierInvoiceDuplicate {
+        existing: ExistingSupplierInvoice,
+        gesture: DuplicateGesture,
+    },
+
+    /// **Règle 2 du refus de doublon** (Story 48-12a, #975, D1) : une facture
+    /// non annulée du même fournisseur porte la même date et le même total TTC,
+    /// et l'une au moins des deux n'a pas de numéro du fournisseur (règle 3).
+    /// → **409** `SUPPLIER_INVOICE_PROBABLE_DUPLICATE`, toujours
+    /// `confirmable: true` — `confirmNotDuplicate: true` le lève, inscrit au
+    /// journal d'audit (`supplier_invoice.duplicate_confirmed`).
+    #[error("Facture fournisseur probablement en double : même date et même montant ({})", .existing.id)]
+    SupplierInvoiceProbableDuplicate {
+        existing: ExistingSupplierInvoice,
+        gesture: DuplicateGesture,
+    },
+
     /// L'écriture ne peut pas être contre-passée (Story 24-4a, #380).
     ///
     /// C'est un **conflit d'état**, pas une donnée invalide → HTTP **409**, avec
@@ -2518,6 +2569,8 @@ impl DbError {
                 "SUPPLIER_INVOICE_HAS_PAYMENT_BATCH_HISTORY"
             }
             Self::SupplierInvoiceNotUnvalidatable { blocker, .. } => blocker.code(),
+            Self::SupplierInvoiceDuplicate { .. } => "SUPPLIER_INVOICE_DUPLICATE",
+            Self::SupplierInvoiceProbableDuplicate { .. } => "SUPPLIER_INVOICE_PROBABLE_DUPLICATE",
             Self::EntryIsReversed => "ENTRY_IS_REVERSED",
             // ⚠️ Repli générique, comme `EntryNotReversable` : le code EXPOSÉ
             // vient du mappage `kesh-api`, qui rend `guard.code()`.

@@ -9,7 +9,9 @@ const cp = (...codes: number[]) => String.fromCodePoint(...codes);
 
 /**
  * Les sept blancs de l'ensemble ÉCRIT de l'AC12-bis — la même liste que le test Rust
- * `create_accepts_and_normalizes_payment_details` (`inbox_import_e2e.rs`) : `\s` en
+ * `create_accepts_and_normalizes_payment_details` (`inbox_import_e2e.rs`) et le test
+ * unitaire `les_sept_blancs_de_l_ensemble_ecrit` de la définition du serveur
+ * (`crates/kesh-core/src/payment_text.rs`) : `\s` en
  * JavaScript et `char::is_whitespace` en Rust ne coïncident pas d'eux-mêmes (U+0085,
  * U+FEFF), d'où une liste tenue des deux côtés.
  *

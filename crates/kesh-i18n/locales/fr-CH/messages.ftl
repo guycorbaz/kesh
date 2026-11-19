@@ -56,6 +56,10 @@ error-supplier-invoice-unvalidate-blocked-paid-reconciled = Cette facture fourni
 error-supplier-invoice-unvalidate-blocked-detached-payment = Cette facture a été annulée alors qu'elle était payée : son paiement (écriture n° { $entry } du { $entryDate }) reste au grand livre. Si ce paiement n'a pas eu lieu, contre-passez-le d'abord depuis sa fiche, puis repassez la facture en brouillon.
 error-supplier-invoice-unvalidate-blocked-detached-payment-reconciled = Cette facture a été annulée alors qu'elle était payée : son paiement (écriture n° { $entry } du { $entryDate }) est rapproché de la transaction bancaire du { $date }. Si ce paiement n'a pas eu lieu, annulez d'abord ce rapprochement, depuis le détail de l'import bancaire — il contre-passera le paiement —, puis repassez la facture en brouillon.
 error-supplier-invoice-due-before-invoice-date = L'échéance ({ $dueDate }) précède la date de la facture ({ $invoiceDate }).
+# Story 48-12a (#975) — refus d'une facture fournisseur en double ; un seul texte par refus, partagé avec l'écran (48-12b).
+error-supplier-invoice-duplicate = Une facture de ce fournisseur porte déjà ce numéro pour la même année. Si c’est la même facture, ne l’enregistrez pas une seconde fois. Si le fournisseur a recommencé sa numérotation en cours d’année, ajoutez un caractère au numéro, par exemple « 15-b ».
+error-supplier-invoice-probable-duplicate = Une facture de ce fournisseur porte déjà la même date et le même montant. Si c’est la même facture, ne l’enregistrez pas une seconde fois ; sinon, confirmez que ce n’est pas un doublon.
+error-supplier-invoice-duplicate-unvalidate = Une facture équivalente non annulée existe. Repasser celle-ci en brouillon en ferait un doublon : ne le faites que pour la retirer ou la corriger ensuite.
 
 # Lettrage (Story 15-1a-i, #518)
 error-lettering-too-few-lines = Un lettrage réunit au moins deux lignes distinctes.
@@ -3547,6 +3551,7 @@ audit-log-action-supplier-invoice-updated = Brouillon de facture fournisseur mod
 audit-log-action-supplier-invoice-validated = Facture fournisseur validée
 audit-log-action-supplier-invoice-unvalidated = Facture fournisseur repassée en brouillon
 audit-log-action-supplier-invoice-deleted = Brouillon de facture fournisseur supprimé
+audit-log-action-supplier-invoice-duplicate-confirmed = Doublon de facture fournisseur confirmé
 audit-log-action-imported-supplier-invoice-created = Document importé
 audit-log-action-imported-supplier-invoice-completed = Document traité (facture créée)
 audit-log-action-imported-supplier-invoice-discarded = Document retiré de la liste

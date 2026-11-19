@@ -56,6 +56,10 @@ error-supplier-invoice-unvalidate-blocked-paid-reconciled = Diese Lieferantenrec
 error-supplier-invoice-unvalidate-blocked-detached-payment = Diese Rechnung wurde storniert, als sie bezahlt war: Ihre Zahlung (Buchung Nr. { $entry } vom { $entryDate }) bleibt im Hauptbuch. Hat diese Zahlung nicht stattgefunden, stornieren Sie sie zuerst über ihre Buchung und setzen Sie die Rechnung dann in den Entwurf zurück.
 error-supplier-invoice-unvalidate-blocked-detached-payment-reconciled = Diese Rechnung wurde storniert, als sie bezahlt war: Ihre Zahlung (Buchung Nr. { $entry } vom { $entryDate }) ist mit der Banktransaktion vom { $date } abgeglichen. Hat diese Zahlung nicht stattgefunden, heben Sie zuerst diesen Abgleich im Detail des Bankimports auf – er storniert die Zahlung – und setzen Sie die Rechnung dann in den Entwurf zurück.
 error-supplier-invoice-due-before-invoice-date = Die Fälligkeit ({ $dueDate }) liegt vor dem Rechnungsdatum ({ $invoiceDate }).
+# Story 48-12a (#975) — doppelte Lieferantenrechnung abgelehnt; ein Text pro Ablehnung, mit dem Bildschirm geteilt (48-12b).
+error-supplier-invoice-duplicate = Eine Rechnung dieses Lieferanten trägt bereits diese Nummer im selben Jahr. Ist es dieselbe Rechnung, erfassen Sie sie nicht ein zweites Mal. Hat der Lieferant seine Nummerierung im Lauf des Jahres neu begonnen, fügen Sie der Nummer ein Zeichen hinzu, zum Beispiel «15-b».
+error-supplier-invoice-probable-duplicate = Eine Rechnung dieses Lieferanten trägt bereits dasselbe Datum und denselben Betrag. Ist es dieselbe Rechnung, erfassen Sie sie nicht ein zweites Mal; andernfalls bestätigen Sie, dass es kein Duplikat ist.
+error-supplier-invoice-duplicate-unvalidate = Eine gleichwertige, nicht stornierte Rechnung existiert. Diese in den Entwurf zurückzusetzen, ergäbe ein Duplikat: Tun Sie es nur, um sie danach zu entfernen oder zu korrigieren.
 
 # Lettrage (Story 15-1a-i, #518)
 error-lettering-too-few-lines = Ein Ausgleich umfasst mindestens zwei verschiedene Zeilen.
@@ -3468,6 +3472,7 @@ audit-log-action-supplier-invoice-updated = Lieferantenrechnungsentwurf aktualis
 audit-log-action-supplier-invoice-validated = Lieferantenrechnung validiert
 audit-log-action-supplier-invoice-unvalidated = Lieferantenrechnung in den Entwurf zurückgesetzt
 audit-log-action-supplier-invoice-deleted = Lieferantenrechnungsentwurf gelöscht
+audit-log-action-supplier-invoice-duplicate-confirmed = Duplikat einer Lieferantenrechnung bestätigt
 audit-log-action-imported-supplier-invoice-created = Dokument importiert
 audit-log-action-imported-supplier-invoice-completed = Dokument bearbeitet (Rechnung erstellt)
 audit-log-action-imported-supplier-invoice-discarded = Dokument aus der Liste entfernt

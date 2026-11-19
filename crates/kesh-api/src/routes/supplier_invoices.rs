@@ -346,6 +346,20 @@ pub struct CreateSupplierInvoiceRequest {
     /// Projet analytique (Epic 19, Story 19-3) — document-level, optionnel.
     pub project_id: Option<i64>,
     pub lines: Vec<CreateSupplierInvoiceLineRequest>,
+    /// Story 48-12a (#975, D5) — `confirmNotDuplicate`, facultatif : `true` lève
+    /// le refus `SUPPLIER_INVOICE_PROBABLE_DUPLICATE` (même date et même montant)
+    /// et l'inscrit au journal d'audit ; il ne lève **jamais**
+    /// `SUPPLIER_INVOICE_DUPLICATE` (même numéro dans la même année). Partagé par
+    /// la création, le `PUT` (corps aplati) et la complétion.
+    #[serde(default)]
+    pub confirm_not_duplicate: bool,
+}
+
+impl CreateSupplierInvoiceRequest {
+    /// La politique anti-doublon que demande le corps (Story 48-12a, D5).
+    pub(crate) fn duplicate_policy(&self) -> supplier_invoices::DuplicatePolicy {
+        supplier_invoices::DuplicatePolicy::from_confirmation(self.confirm_not_duplicate)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -356,28 +370,17 @@ pub struct CreateSupplierInvoiceRequest {
 /// `supplier_invoices.payment_reference VARCHAR(64)`.
 const PAYMENT_REFERENCE_MAX_CHARS: usize = 64;
 
-/// Retire d'une coordonnée de paiement l'ensemble de blancs **écrit** de
-/// l'AC12-bis : les caractères `White_Space` d'Unicode (`char::is_whitespace` —
-/// espace, tabulation, U+00A0, U+202F, U+0085… compris) plus U+200B (espace de
-/// largeur nulle) et U+FEFF (BOM).
-///
-/// ⚠️ La même liste est tenue côté écran par `normalizeIban`
-/// (`frontend/src/lib/shared/utils/iban.ts`), et un test de chaque côté porte
-/// les mêmes sept caractères : `\s` en JavaScript et `is_whitespace` en Rust ne
-/// coïncident pas d'eux-mêmes. `Iban::new` n'ôte que l'espace ASCII et refuse
-/// tout non-ASCII : sans cette normalisation, un IBAN collé depuis un PDF (avec
-/// des insécables) serait refusé.
-pub(crate) fn normalize_payment_field(raw: &str) -> String {
-    raw.chars().filter(|c| !is_payment_blank(*c)).collect()
-}
-
-/// Un caractère de l'ensemble de blancs de l'AC12-bis — **seule** définition côté
-/// serveur, partagée par [`normalize_payment_field`] (qui les retire tous) et par le
-/// rognage de la référence libre (qui ne les retire qu'aux extrémités : revue P1 de
-/// la 30-2b, B3 — un U+200B final collé depuis un PDF n'est plus stocké ni compté).
-fn is_payment_blank(c: char) -> bool {
-    c.is_whitespace() || c == '\u{200B}' || c == '\u{FEFF}'
-}
+// L'ensemble de blancs **écrit** de l'AC12-bis (`White_Space` d'Unicode, plus
+// U+200B et U+FEFF) et sa normalisation ont leur **seule** définition côté serveur
+// dans `kesh_core::payment_text` depuis la Story 48-12a (#975) : `kesh-db` s'en
+// sert aussi pour comparer les numéros de facture du refus de doublon. Ici,
+// `normalize_payment_field` retire tous les blancs, et le rognage de la référence
+// libre (`validate_payment_details`) ne les retire qu'aux extrémités (revue P1 de
+// la 30-2b, B3 — un U+200B final collé depuis un PDF n'est plus stocké ni compté).
+// La même liste est tenue côté écran par `normalizeIban`
+// (`frontend/src/lib/shared/utils/iban.ts`), un test de chaque côté portant les
+// mêmes sept caractères.
+use kesh_core::payment_text::{is_payment_blank, normalize_payment_field};
 
 /// Une coordonnée de paiement **présente** : sa forme normalisée n'est pas vide.
 /// Une chaîne vide ou faite de blancs vaut absente (AC11, AC12-bis).
@@ -663,6 +666,13 @@ pub struct UpdateSupplierInvoiceRequest {
 #[serde(rename_all = "camelCase")]
 pub struct SupplierInvoiceVersionRequest {
     pub version: i32,
+    /// Story 48-12a (#975, D6bis) — `confirmNotDuplicate`, facultatif, lu par la
+    /// **seule dévalidation** : `true` lève le refus de doublon (les deux règles)
+    /// d'une facture annulée repassée en brouillon alors qu'une facture
+    /// équivalente est active, et l'inscrit au journal d'audit. Sans effet sur la
+    /// validation, qui ne compare pas.
+    #[serde(default)]
+    pub confirm_not_duplicate: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -736,8 +746,16 @@ pub async fn create_supplier_invoice(
     let company = get_company_for(&current_user, &state.pool).await?;
     // Story 30-2b (AC12-bis, AC13) : conversion commune, coordonnées validées.
     let new = req.to_new_supplier_invoice(company.id, PaymentSource::Body)?;
+    // Story 48-12a (#975) : le refus de doublon, levé (règle 2 seulement) par
+    // `confirmNotDuplicate`.
+    let policy = req.duplicate_policy();
     let created = kesh_db::retry::retry_on_deadlock("supplier_invoices::create", || {
-        supplier_invoices::create_draft(&state.pool, new.clone(), current_user.user_id)
+        supplier_invoices::create_draft_with_policy(
+            &state.pool,
+            new.clone(),
+            current_user.user_id,
+            policy,
+        )
     })
     .await?;
     Ok((
@@ -814,7 +832,18 @@ async fn update_supplier_invoice_once(
         .await
         .map_err(|e| AppError::Database(map_db_error(e)))?;
     let result = async {
-        supplier_invoices::lock_draft_in_tx(&mut tx, company_id, id, req.version).await?;
+        // Story 48-12a (#975, D3) : la facture puis le fournisseur du corps,
+        // AVANT la lecture ordinaire du document joint — sans quoi l'instantané
+        // de la transaction naîtrait avant le verrou du fournisseur, et la
+        // comparaison anti-doublon ne verrait pas une facture concurrente.
+        supplier_invoices::lock_draft_and_supplier_in_tx(
+            &mut tx,
+            company_id,
+            id,
+            req.version,
+            req.invoice.contact_id,
+        )
+        .await?;
         let document = imported_supplier_invoices::find_by_supplier_invoice_id_scoped(
             &mut *tx, company_id, id,
         )
@@ -831,8 +860,16 @@ async fn update_supplier_invoice_once(
                 .invoice
                 .to_new_supplier_invoice(company_id, PaymentSource::Body)?,
         };
-        supplier_invoices::update_draft_in_tx(&mut tx, company_id, id, req.version, new, user_id)
-            .await?;
+        supplier_invoices::update_draft_in_tx_with_policy(
+            &mut tx,
+            company_id,
+            id,
+            req.version,
+            new,
+            user_id,
+            req.invoice.duplicate_policy(),
+        )
+        .await?;
         Ok::<(), AppError>(())
     }
     .await;
@@ -916,8 +953,11 @@ pub async fn unvalidate_supplier_invoice(
     let company = get_company_for(&current_user, &state.pool).await?;
     // Story 35-5a0 — la date du jour, lue une fois (bloqueurs de la vue).
     let aujourd_hui = state.horloge.aujourd_hui();
+    // Story 48-12a (#975, D6bis) : une annulée qui ferait doublon se repasse en
+    // brouillon par `confirmNotDuplicate: true`, inscrit au journal d'audit.
+    let policy = supplier_invoices::DuplicatePolicy::from_confirmation(req.confirm_not_duplicate);
     let view = kesh_db::retry::retry_on_deadlock("supplier_invoices::unvalidate", || {
-        supplier_invoices::unvalidate(
+        supplier_invoices::unvalidate_with_policy(
             &state.pool,
             company.id,
             id,
@@ -925,6 +965,7 @@ pub async fn unvalidate_supplier_invoice(
             // Story 35-8a1 (#892 item 11) : la clé d'API, quand il y en a une.
             Acteur::from(&current_user),
             aujourd_hui,
+            policy,
         )
     })
     .await?;

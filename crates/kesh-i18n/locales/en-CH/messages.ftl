@@ -56,6 +56,10 @@ error-supplier-invoice-unvalidate-blocked-paid-reconciled = This supplier invoic
 error-supplier-invoice-unvalidate-blocked-detached-payment = This invoice was cancelled while it was paid: its payment (entry no. { $entry } of { $entryDate }) remains in the general ledger. If this payment did not take place, reverse it first from its entry, then return the invoice to draft.
 error-supplier-invoice-unvalidate-blocked-detached-payment-reconciled = This invoice was cancelled while it was paid: its payment (entry no. { $entry } of { $entryDate }) is matched to the bank transaction of { $date }. If this payment did not take place, cancel this reconciliation first, from the bank import detail — it will reverse the payment —, then return the invoice to draft.
 error-supplier-invoice-due-before-invoice-date = The due date ({ $dueDate }) is before the invoice date ({ $invoiceDate }).
+# Story 48-12a (#975) — duplicate supplier invoice refused; one text per refusal, shared with the screen (48-12b).
+error-supplier-invoice-duplicate = An invoice from this supplier already has this number for the same year. If it is the same invoice, do not record it a second time. If the supplier restarted its numbering during the year, add a character to the number, for example “15-b”.
+error-supplier-invoice-probable-duplicate = An invoice from this supplier already has the same date and the same amount. If it is the same invoice, do not record it a second time; otherwise, confirm that it is not a duplicate.
+error-supplier-invoice-duplicate-unvalidate = An equivalent invoice that is not cancelled exists. Returning this one to draft would make a duplicate: only do it to remove or correct it afterwards.
 
 # Lettrage (Story 15-1a-i, #518)
 error-lettering-too-few-lines = A matching group brings together at least two distinct lines.
@@ -3474,6 +3478,7 @@ audit-log-action-supplier-invoice-updated = Supplier invoice draft updated
 audit-log-action-supplier-invoice-validated = Supplier invoice validated
 audit-log-action-supplier-invoice-unvalidated = Supplier invoice returned to draft
 audit-log-action-supplier-invoice-deleted = Supplier invoice draft deleted
+audit-log-action-supplier-invoice-duplicate-confirmed = Supplier invoice duplicate confirmed
 audit-log-action-imported-supplier-invoice-created = Document imported
 audit-log-action-imported-supplier-invoice-completed = Document processed (invoice created)
 audit-log-action-imported-supplier-invoice-discarded = Document removed from the list

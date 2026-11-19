@@ -56,6 +56,10 @@ error-supplier-invoice-unvalidate-blocked-paid-reconciled = Questa fattura forni
 error-supplier-invoice-unvalidate-blocked-detached-payment = Questa fattura è stata annullata quando era pagata: il suo pagamento (scrittura n. { $entry } del { $entryDate }) resta nel libro mastro. Se questo pagamento non è avvenuto, stornalo prima dalla sua scheda, poi riporta la fattura in bozza.
 error-supplier-invoice-unvalidate-blocked-detached-payment-reconciled = Questa fattura è stata annullata quando era pagata: il suo pagamento (scrittura n. { $entry } del { $entryDate }) è riconciliato con la transazione bancaria del { $date }. Se questo pagamento non è avvenuto, annulla prima questa riconciliazione, dal dettaglio dell'importazione bancaria — stornerà il pagamento —, poi riporta la fattura in bozza.
 error-supplier-invoice-due-before-invoice-date = La scadenza ({ $dueDate }) precede la data della fattura ({ $invoiceDate }).
+# Story 48-12a (#975) — fattura fornitore doppia rifiutata; un solo testo per rifiuto, condiviso con lo schermo (48-12b).
+error-supplier-invoice-duplicate = Una fattura di questo fornitore porta già questo numero nello stesso anno. Se è la stessa fattura, non registratela una seconda volta. Se il fornitore ha ricominciato la numerazione durante l'anno, aggiungete un carattere al numero, per esempio «15-b».
+error-supplier-invoice-probable-duplicate = Una fattura di questo fornitore porta già la stessa data e lo stesso importo. Se è la stessa fattura, non registratela una seconda volta; altrimenti, confermate che non è un doppione.
+error-supplier-invoice-duplicate-unvalidate = Esiste una fattura equivalente non annullata. Riportare questa in bozza creerebbe un doppione: fatelo solo per toglierla o correggerla in seguito.
 
 # Lettrage (Story 15-1a-i, #518)
 error-lettering-too-few-lines = Un abbinamento riunisce almeno due righe distinte.
@@ -3469,6 +3473,7 @@ audit-log-action-supplier-invoice-updated = Bozza di fattura fornitore aggiornat
 audit-log-action-supplier-invoice-validated = Fattura fornitore convalidata
 audit-log-action-supplier-invoice-unvalidated = Fattura fornitore riportata in bozza
 audit-log-action-supplier-invoice-deleted = Bozza di fattura fornitore eliminata
+audit-log-action-supplier-invoice-duplicate-confirmed = Doppione di fattura fornitore confermato
 audit-log-action-imported-supplier-invoice-created = Documento importato
 audit-log-action-imported-supplier-invoice-completed = Documento trattato (fattura creata)
 audit-log-action-imported-supplier-invoice-discarded = Documento tolto dall'elenco
