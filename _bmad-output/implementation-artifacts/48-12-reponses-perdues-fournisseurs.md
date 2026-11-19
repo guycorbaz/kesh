@@ -53,7 +53,7 @@ Tout est lu à `af4e0e313` (tête de la branche d'épique, 48-13 et 48-15 fusion
      `settings/+page.svelte:140-146` (imports `:19-27`) ;
    - 34-5 (#951) et 34-8 (#938), règlements et fiche fournisseur : `unknown-outcome.ts:65-68` (`isSettlementOutcomeUnknown`),
      dont le doc-comment (`:56-62`) écrit que la page d'édition (#986), la complétion (#985) et la création (#975) **ne sont pas
-     couvertes** : c'est le périmètre de cette story.
+     couvertes** : c'est le périmètre de cette story (le doc-comment lui-même n'est pas retouché, voir D7).
 7. **Un décor d'E2E existe pour la réponse perdue.** `frontend/tests/e2e/supplier-invoice-unknown-outcome.spec.ts:1-12` : la
    coupure est réelle (`route.fetch()` envoie au serveur, puis `route.abort()` jette la réponse) ; un `abort()` seul n'écrirait rien.
 
@@ -150,21 +150,12 @@ Le **module** de D7 est conçu pour servir à ces sites sans réécriture.
 
 ## Modules et découpage
 
-**Décompte au grain du fichier d'épique** (`main:…/epic-48-corrections-0-20-0.md:205`, `:210-214`), les modules **modifiés**, **sans le lot B** (V5-3) :
+**Décompte au grain du fichier d'épique** (`main:…/epic-48-corrections-0-20-0.md:205`, `:210-214`), les modules **modifiés**, **sans le lot B** :
 1. `features/supplier-invoices` ; 2. la route `supplier-invoices` (`new`, `[id]/edit`) ; 3. `features/imported-supplier-invoices`
-(`listImported` reçoit un paramètre `CallOptions`, `imported-supplier-invoices.api.ts:50`, V5-3) ; 4. `shared/utils`
-(`unknown-outcome.ts`, doc-comment) ; 5. `kesh-i18n` ; 6. les manuels. **Six modules, au-dessus du plafond de cinq.** (Avec le lot B
-réintégré : huit, par `features/bank-accounts` et la route `bank-accounts`.)
-**Règle** : « la 48-12 se découpe si elle dépasse cinq modules, ou écrit sa dérogation » (`:218`) : la dérogation est **maintenue**,
-sur le nouveau décompte.
-
-## Dérogation règle de splitting
-
-Décision du Project Lead (Guy) du 2026-11-19, option (a) de l'orchestrateur : la 48-12 ne se découpe pas. **À reconfirmer** avec la
-réduction au lot A (le nombre de modules reste six, mais ce ne sont plus les mêmes ; le décompte précédent était faux, V5-3).
-- **Six modules** (liste ci-dessus) pour **un seul motif** — « relire, juger, montrer » (D1) — sur **une seule famille d'écrans**, les factures fournisseur : une création, une complétion, une modification. Aucun module n'est propre à un lot : le lot B, reporté, ne fait pas partie du périmètre.
-- **Ce motif sort du critère du `CLAUDE.md`** (qui vise un découpage créant des cycles de dépendances ou des fusions intermédiaires intestables) : la dérogation est un **choix du Project Lead**, non une exemption de droit. Découper trois écrans voisins qui partagent `resend-guard.ts`, les catalogues, `sitesTotal` et le manuel créerait des fiches qui se recoupent.
-- **Signaux de recyclage** : le HIGH de la P3 (V3-1) est né du correctif de la P2 (V2-2) ; le HIGH de la P5 (V5-1) est né du correctif de la P4 (V4-8). Les deux signaux ont été **déclarés au Project Lead par l'orchestrateur** (le premier le 2026-11-19, le second le 2026-11-19) ; la réponse est la **réduction de la story au lot A** et la **suppression de la fusion automatique** (décision de Guy du 2026-11-19).
+(`listImported` reçoit un paramètre `CallOptions`, `imported-supplier-invoices.api.ts:50`) ; 4. `kesh-i18n` ; 5. le manuel français.
+**Cinq modules, au plafond de la règle de splitting** : ni découpage, ni dérogation. `shared/utils` **ne compte plus** : la retouche du
+doc-comment de `unknown-outcome.ts` est **retirée du périmètre** (elle n'est pas nécessaire au correctif ; voir la limite en D7).
+(Avec le lot B réintégré : **huit** modules, par `features/bank-accounts` et la route `bank-accounts` ; une réintégration rouvrirait la question du plafond.)
 
 ## Décisions
 
@@ -253,12 +244,12 @@ pure (D7, comparaison de D1-bis, verdicts nommés `already-saved` / `unchanged` 
 
 **D7. Où vit la logique.** Pure et testable à part, dans `frontend/src/lib/features/supplier-invoices/` : `resend-guard.ts`
 (machine d'états et verdicts de D2, jugement de D4 sans fusion, comparaisons de D1-bis) ; les avis de D3 et le **composant de conflit
-côte à côte** de D4 sont dans le même dossier. `isSettlementOutcomeUnknown` (`unknown-outcome.ts:65`) est réutilisée telle quelle ;
-son doc-comment (`:56-62`) est réécrit, ainsi que celui de `[id]/edit/+page.svelte:21-22` (« `OPTIMISTIC_LOCK_CONFLICT` invite à recharger »).
+côte à côte** de D4 sont dans le même dossier. `isSettlementOutcomeUnknown` (`unknown-outcome.ts:65`) est réutilisée **telle quelle, fichier non modifié**. Le doc-comment de `[id]/edit/+page.svelte:21-22` (« `OPTIMISTIC_LOCK_CONFLICT` invite à recharger ») est réécrit (même module que la page).
+**Limite notée** : le doc-comment de `unknown-outcome.ts:56-62` (« ne sont pas couvertes ici la page de modification d'un brouillon, la complétion ni la création ») deviendra faux une fois la story faite ; sa correction (module `shared/utils`, hors périmètre pour tenir cinq modules) est une **issue P4 que l'orchestrateur ouvre**.
 
 ## Lot B — reporté à la 0.21.0 (réintégrable dans la 0.20.0 si les ressources le permettent, décision de Guy)
 
-**Sans AC actifs** : cette section ne fait pas partie du périmètre de la story. Elle est conservée pour que le lot revienne sans réécriture. Il couvre **#984** (édition d'un compte bancaire) et l'**archivage** d'un compte sur 409 (V1-6). À sa réintégration : modules ajoutés `features/bank-accounts` et la route `bank-accounts` (**huit modules** au grain de l'épique), garde de double envoi de `submitCreate`, `submitUpdateFull` (après `e.preventDefault()`, `:468`, `:548-549`) et `confirmArchive`, avec la règle de D1-bis (`trim` des comptes bancaires comme `str::trim`, `bank_accounts.rs:506`, `:549`, test U+0085) et le **conflit sans fusion de D4** (« votre version » / « la version enregistrée », deux choix explicites) au lieu de la fusion `companyEditConflict` ci-dessous, qui est **écartée** pour la même raison que pour D4 ; à reconfirmer par une validation du lot.
+**Sans AC actifs** : cette section ne fait pas partie du périmètre de la story. Elle est conservée pour que le lot revienne sans réécriture. Il couvre **#984** (édition d'un compte bancaire) et l'**archivage** d'un compte sur 409 (V1-6). À sa réintégration : modules ajoutés `features/bank-accounts` et la route `bank-accounts` (**huit modules** au grain de l'épique), garde de double envoi de `submitCreate`, `submitUpdateFull` (après `e.preventDefault()`, `:468`, `:548-549`) et `confirmArchive`, avec la règle de D1-bis (`trim` des comptes bancaires comme `str::trim`, `bank_accounts.rs:506`, `:549`, test U+0085) et le **conflit sans fusion de D4** (« votre version » / « la version enregistrée », deux choix explicites) au lieu de la fusion `companyEditConflict` ci-dessous, qui est **écartée** pour la même raison que pour D4 ; à reconfirmer par une validation du lot, **et la question du plafond de cinq modules (huit avec lui) à rouvrir**.
 
 **Lecture du code (reprise du point 5)**
 
@@ -334,7 +325,7 @@ E2E exigé : défaut visible dans le navigateur et à la frontière HTTP. **Filt
 
 ## Tâches
 
-**Lot A.** A1 : `resend-guard.ts` (D1-bis, D2 et sa requête de relecture, D4 sans fusion, D7) et ses tests ; `listSupplierInvoices` et `listImported` reçoivent `CallOptions` (V2-4). A2 : `new/+page.svelte` (D2, D3) et `SupplierInvoiceForm.svelte` (D6, bouton « Enregistrer quand même », avis). A3 : `[id]/edit/+page.svelte` (D4 : conflit côte à côte, deux boutons, remontage du formulaire sur `initial` repris, doc-comment) ; composant de conflit ; texte de repli de `supplier-invoices-err-stale`. A4 : `unknown-outcome.ts` (doc-comment).
+**Lot A.** A1 : `resend-guard.ts` (D1-bis, D2 et sa requête de relecture, D4 sans fusion, D7) et ses tests ; `listSupplierInvoices` et `listImported` reçoivent `CallOptions` (V2-4). A2 : `new/+page.svelte` (D2, D3) et `SupplierInvoiceForm.svelte` (D6, bouton « Enregistrer quand même », avis). A3 : `[id]/edit/+page.svelte` (D4 : conflit côte à côte, deux boutons, remontage du formulaire sur `initial` repris, doc-comment) ; composant de conflit ; texte de repli de `supplier-invoices-err-stale`. (Aucune retouche de `shared/utils/unknown-outcome.ts` : D7.)
 **Communs.** C0 (étape 0) : relire les points 2 à 4 de « Ce qui se lit au code » contre la branche d'épique à jour. C1 : catalogues (quatre locales), `i18n-keys.test.ts` (`sitesTotal`) et gardes de repli recomptés. C2 : manuel français (`user-manual.tex`). C3 : E2E et captures. C4 : gates. C5 : Dev Agent Record, Change Log, Note de version.
 **Lot B (reporté).** B1 : `bank-accounts/+page.svelte` (conflit sans fusion, archivage, garde, valeurs lisibles) ; `listBankAccounts` reçoit `CallOptions`. B2 : tests de la page.
 
@@ -364,12 +355,12 @@ Factures fournisseur : après une réponse perdue (coupure, délai), Kesh relit 
 
 ## Dev Notes
 
-- **Hors périmètre** : le lot B (#984, archivage), reporté à la 0.21.0 ; voir l'inventaire (issues #1354 à #1362, #1363 « description tronquée à 44 caractères + « … » sur le PDF » et #1364 « facture validée trop longue pour son PDF » — **toutes deux hors de cette story** —, #1365 à #1373 ; #1373 porte aussi `users/+page.svelte:122`, `:168`, `:209`, `:254`).
+- **Hors périmètre** : le lot B (#984, archivage), reporté à la 0.21.0 ; la correction du doc-comment de `unknown-outcome.ts` (issue P4 à ouvrir par l'orchestrateur) ; voir l'inventaire (issues #1354 à #1362, #1363 « description tronquée à 44 caractères + « … » sur le PDF » et #1364 « facture validée trop longue pour son PDF » — **toutes deux hors de cette story** —, #1365 à #1373 ; #1373 porte aussi `users/+page.svelte:122`, `:168`, `:209`, `:254`).
 - **Fichiers communs** (tableau du fichier d'épique) : `i18n-keys.test.ts` (`sitesTotal`) et les catalogues, avec 48-1, 48-2, 48-10, 48-13, 48-15 **et l'Epic 49** (fichiers communs du fichier d'épique) ; manuels `.tex`. `supplier-invoices/[id]/+page.svelte` (48-1) et `SupplierCreatePanel.svelte` (48-15, fusionnée) ne sont **pas** touchés. Côté serveur : rien.
-- **Modules** : voir « Modules et découpage » et « Dérogation règle de splitting » (six, sans le lot B).
+- **Modules** : voir « Modules et découpage » (cinq, sans le lot B ; aucune dérogation).
 - **Ce qui doit rester vrai** : aucune saisie n'est jamais vidée par un refus ; **aucun champ n'est repris sans clic** ; une facture client, un avoir et leur PDF sont inchangés ; la règle « un appariement propose, il ne crée jamais » (le signalement ne refuse rien).
 - **Coordination** : la PR #1327 de Beat ne touche aucun de ces fichiers.
-- **Références** : fiches 34-5, 34-6, 34-8 ; `company-conflict.ts` (patron écarté pour D4) ; `unknown-outcome.ts` ; `supplier-invoice-unknown-outcome.spec.ts`.
+- **Références** : fiches 34-5, 34-6, 34-8 ; `company-conflict.ts` (patron écarté pour D4) ; `unknown-outcome.ts` (réutilisé, non modifié) ; `supplier-invoice-unknown-outcome.spec.ts`.
 - **Statut** : `drafted` jusqu'à la fin de la validation ; `48-12-reponses-perdues-fournisseurs: ready-for-dev` se pose ensuite (orchestrateur, `sprint-status.yaml`).
 
 ## Dev Agent Record
@@ -388,3 +379,5 @@ Factures fournisseur : après une réponse perdue (coupure, délai), Kesh relit 
 - 2026-11-19 — Annotation (V5-7) : l'entrée P4 ci-dessus annonçait « vocabulaire des verdicts unifié » ; c'était faux à sa date (D1 disait « rien n'a été écrit », D4 « rien n'a changé ailleurs »). Corrigé à la P5 : *déjà enregistré* / *rien n'a changé ailleurs* / *conflit*.
 - 2026-11-19 — Validation P5 (Opus, 0/1/4/4 ; `kesh-gate-logs/e4812/validation-p5.md`), **second signal « recycle »** (le HIGH V5-1 naît de la fusion d'en-tête V4-8), **déclaré au Project Lead par l'orchestrateur** ; **décision de Guy du 2026-11-19 : la story est réduite au lot A** (#975, #985, #986) ; le lot B (#984, archivage) est reporté à la 0.21.0, conservé sans AC actifs. Remédiation (Sonnet) : V5-1 et V5-2 **plus aucune fusion automatique** ; D4 affiche côte à côte « votre version » et « la version enregistrée » avec deux choix explicites, rien n'est repris sans clic (AC-6, tests, mutation « reprise silencieuse d'un champ ») ; V5-3 modules recomptés sans le lot B : **six** (`features/supplier-invoices`, route `supplier-invoices`, `features/imported-supplier-invoices`, `shared/utils`, `kesh-i18n`, manuels), dérogation **maintenue** sur ce décompte et à reconfirmer ; V5-4 test paramétré sur les quatorze champs de D1-bis, mutation « retirer un champ » pour chacun ; V5-5 signaux déclarés ci-dessus ; V5-6 AC et tests `ILLEGAL_STATE_TRANSITION` et 404 ; V5-7 vocabulaire des verdicts aligné (annotation ci-dessus) ; V5-8 filtre `contactId` testé, `q` tronqué à 128 caractères, `order` retiré ; V5-9 D5 retient le booléen de `reload()` (lot B reporté).
   **Table des renvois (P5)** : AC-1 : D2, D1-bis ; M : `trim`, total sans numéro, filtre `contactId`, plafond de pages. AC-2, AC-3 : D1, D2. AC-4 : D2 ; M : relire au clic « quand même ». AC-5 : D3 ; M : complété sans `supplierInvoiceId`, « déjà traité » sur relecture en échec. AC-6 : D4, D1-bis ; M : retirer un champ du comparateur (quatorze), `zip` sans contrôle de longueur, normaliseur décimal, normalisation de la référence, reprise silencieuse d'un champ, version adoptée sans clic ou sur relecture en échec, fusion d'en-tête automatique. AC-7 : D6 ; M : retirer la garde. AC-8 : tous (revue). AC-9 : D2, D3, D4 (clés neuves). AC-10 : manuel français (D2, D3, D4). Lot B : aucun AC actif.
+- 2026-11-19 — Cinq modules, **dérogation devenue sans objet après la réduction et le retrait de la retouche de `shared/utils`** (décision de l'orchestrateur). Le **décompte de six** annoncé de la P1 à la P5 était faux à ses dates : la première rédaction omettait `features/imported-supplier-invoices` (`listImported` reçoit un `CallOptions`) et comptait `shared/utils` ; sans le lot B, au grain de l'épique, le décompte était six (avec `shared/utils`), et il tombe à **cinq** en retirant la retouche du doc-comment de `unknown-outcome.ts` (devenu une limite notée en D7, issue P4 à ouvrir par l'orchestrateur). La section « Dérogation règle de splitting » et ses mentions sont retirées ; les entrées P3 à P5 ci-dessus, qui la décrivent, ne se corrigent pas (historique à leur date). Lot B reporté : décompte de huit avec lui. Relecture entière de la fiche après la recomposition par script : restes corrigés (point 6 du « Ce qui se lit au code », D7, tâche A4, Dev Notes, note de limite du lot B).
+  **Table des renvois** : AC-1 : D2, D1-bis. AC-2, AC-3 : D1, D2. AC-4 : D2. AC-5 : D3. AC-6 : D4, D1-bis. AC-7 : D6. AC-8 : tous. AC-9 : D2, D3, D4. AC-10 : manuel français. Modules : cinq, aucune dérogation. Mutations : voir le tableau des tests (inchangé).
