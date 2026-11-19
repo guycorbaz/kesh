@@ -23,7 +23,10 @@
 	} from '$lib/features/invoices/invoice-number-format';
 	import { groupMaxChanged, readGroupMax } from '$lib/features/invoices/group-settlement-max';
 	import { amountEntryMessage } from '$lib/features/journal-entries/amount-entry-message';
-	import { readJournalAmount } from '$lib/features/journal-entries/balance';
+	import {
+		centimesEntryProblem,
+		readCentimesEntry,
+	} from '$lib/features/journal-entries/amount-entry-centimes';
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
 	import {
 		isForeignCurrencyAccount,
@@ -76,16 +79,14 @@
 	// Story 48-10 (#1176, D3) — le minimum se lit comme le montant d'une écriture, sur le modèle
 	// de l'écart admis ci-dessous : « 1'250 » part `1250` ; « 1.250 » (que le serveur acceptait et
 	// lisait un franc vingt-cinq) est refusé comme ambigu, sous le champ, et bloque
-	// l'enregistrement. Le vide reste « aucun seuil ». L'échelle reste jugée par le serveur.
-	let minimumReading = $derived(readJournalAmount(minimumAmount.trim()));
-	let minimumBlocked = $derived(
-		minimumReading.kind === 'ambiguous' || minimumReading.kind === 'unreadable',
-	);
-	let minimumError = $derived(
-		minimumReading.kind === 'ambiguous' || minimumReading.kind === 'unreadable'
-			? amountEntryMessage(minimumReading.kind, 2)
-			: '',
-	);
+	// l'enregistrement. Le vide reste « aucun seuil ». Revue P1 (B4, B5) : lu AU CENTIME
+	// (`readCentimesEntry`), comme le message (« 2 décimales au plus ») et le serveur
+	// (`scale_within(min.normalize(), 2)`) ; un seul prédicat (`minimumProblem`) commande le
+	// message, le bouton et la garde de `save()`.
+	let minimumReading = $derived(readCentimesEntry(minimumAmount));
+	let minimumProblem = $derived(centimesEntryProblem(minimumReading));
+	let minimumBlocked = $derived(minimumProblem !== null);
+	let minimumError = $derived(minimumProblem ? amountEntryMessage(minimumProblem, 2) : '');
 	// Story 43-7 (#823) : l'écart admis dans un règlement de plusieurs factures.
 	let groupMax = $state('5.00');
 	let groupMaxReading = $derived(readGroupMax(groupMax));
@@ -322,7 +323,7 @@
 		}
 		// Story 48-10 (D3) : Entrée sur un minimum ambigu ou illisible n'envoie rien.
 		const minimumRead = minimumReading;
-		if (minimumRead.kind === 'ambiguous' || minimumRead.kind === 'unreadable') {
+		if (minimumBlocked) {
 			notifyError(minimumError);
 			return;
 		}

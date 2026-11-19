@@ -357,19 +357,38 @@
 	});
 
 	/**
-	 * Story 48-10 (D1, M19) — à la saisie du prix, un refus du prix posé dans `formError` par une
-	 * soumission (Entrée) s'efface : il ne reste au pied aucun message du prix périmé. Le refus du
-	 * serveur (doublon de nom) et le message des taux de TVA, qui ne viennent pas du prix, restent.
+	 * Les messages du pied qui ne viennent PAS du prix : le nom (vide, trop long, doublon refusé
+	 * par le serveur) et les taux de TVA (chargement, échec). Une saisie du prix ne les efface pas.
+	 */
+	function nonPriceMessages(): string[] {
+		return [
+			i18nMsg('product-error-name-required', 'Le nom est obligatoire'),
+			i18nMsg('product-error-name-too-long', 'Le nom doit faire au plus 255 caractères'),
+			i18nMsg('product-error-name-duplicate', 'Un produit avec ce nom existe déjà'),
+			i18nMsg(
+				'product-error-vat-fetch-failed',
+				'Impossible de charger les taux TVA. Vérifiez la connexion réseau et rechargez la page.'
+			),
+			i18nMsg('product-error-vat-loading', 'Chargement des taux TVA en cours, veuillez patienter…')
+		];
+	}
+
+	/**
+	 * Story 48-10 (D1, M19 ; revue P1, B1, E1) — à la saisie du prix, le message rouge du pied
+	 * s'efface, **sauf** s'il désigne autre chose que le prix (`nonPriceMessages`) : le refus du
+	 * prix posé par une soumission (ambigu, illisible, négatif, mais aussi « Le prix est
+	 * obligatoire ») et un refus du serveur sur le prix (plafond, échelle) ne restent pas périmés
+	 * sous un prix corrigé. Un refus du serveur sur une autre cause que celles nommées s'efface
+	 * aussi : la soumission suivante le redit s'il tient encore.
 	 *
-	 * ⚠️ On compare à TOUS les messages du prix, non au seul `priceMessage` : le gestionnaire
-	 * `oninput` (délégué) s'exécute APRÈS la mise à jour de `formPrice` par `bind:value`, si bien
-	 * que `priceMessage` y vaut déjà celui de la NOUVELLE saisie (`''` après correction) — la
-	 * comparaison au seul `priceMessage` laisserait le message ambigu périmé au pied (C-e4810-1).
+	 * ⚠️ La formule de la fiche (`formError === priceMessage`) ne suffit pas : le gestionnaire
+	 * `oninput` (délégué en Svelte 5) s'exécute APRÈS la mise à jour de `formPrice` par
+	 * `bind:value`, si bien que `priceMessage` y vaut déjà celui de la NOUVELLE saisie (`''` après
+	 * correction). Constaté par la mutation `M19-litteral` (`kesh-gate-logs/e4810/mut/`, C-e4810-1).
 	 */
 	function onPriceInput() {
 		formTouched = true;
-		const priceMessages = (['ambiguous', 'negative', 'invalid'] as const).map(priceMessageFor);
-		if (formError !== '' && priceMessages.includes(formError)) formError = '';
+		if (formError !== '' && !nonPriceMessages().includes(formError)) formError = '';
 	}
 
 	async function submitForm() {

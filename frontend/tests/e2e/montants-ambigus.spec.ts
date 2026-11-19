@@ -36,7 +36,11 @@ import {
 	authedApiContext,
 	disposeContextSafe,
 } from './helpers/test-state';
-import { invoiceVersionViaApi, todayInZurich } from './helpers/api-fixtures';
+import {
+	createJournalEntryViaApi,
+	invoiceVersionViaApi,
+	todayInZurich,
+} from './helpers/api-fixtures';
 
 /** Le dossier des captures : `KESH_E2E_CAPTURES_DIR`, sinon la sortie du test (hors dépôt). */
 async function capture(
@@ -50,6 +54,9 @@ async function capture(
 	await page.screenshot({
 		path: dossier ? path.join(dossier, fichier) : testInfo.outputPath(fichier),
 		fullPage: true,
+		// Revue P1 de la 48-10 (A1) : les transitions finies, sinon un bouton qui vient de se
+		// désactiver est saisi à pleine opacité.
+		animations: 'disabled',
 	});
 }
 
@@ -666,14 +673,25 @@ test('filtre des écritures : « 1’250 » filtre à 1250, « 1.250 » n’est 
 }, testInfo) => {
 	await seedTestState('with-data');
 	await login(page);
+	// Revue P1 (E3, A3) : deux écritures, l'une sous 1250, l'autre au-dessus — la liste montre ce
+	// que le filtre applique ou omet.
+	const petite = `Écriture petite ${suffix()}`;
+	const grande = `Écriture grande ${suffix()}`;
+	await createJournalEntryViaApi(page, petite, '100.00');
+	await createJournalEntryViaApi(page, grande, '2000.00');
 	await page.goto('/journal-entries');
 	const min = page.locator('#filter-amount-min');
 	await expect(min).toBeVisible();
+	await expect(page.getByText(petite)).toBeVisible();
+	await expect(page.getByText(grande)).toBeVisible();
 
 	let req = nextListRequest(page);
 	await min.fill("1'250");
 	expect(new URL((await req).url()).searchParams.get('amountMin')).toBe('1250');
 	await expect(page).toHaveURL(/[?&]amountMin=1250(&|$)/);
+	// Appliqué : seule la grande écriture reste.
+	await expect(page.getByText(grande)).toBeVisible();
+	await expect(page.getByText(petite)).toHaveCount(0);
 
 	req = nextListRequest(page);
 	await min.fill('1.250');
@@ -686,7 +704,20 @@ test('filtre des écritures : « 1’250 » filtre à 1250, « 1.250 » n’est 
 	);
 	await expect(page).not.toHaveURL(/amountMin=/);
 	await expect(min).toHaveValue('1.250');
+	// Non appliqué : la liste s'affiche sans la borne, les deux écritures reviennent.
+	await expect(page.getByText(petite)).toBeVisible();
+	await expect(page.getByText(grande)).toBeVisible();
 	await capture(page, testInfo, 'filtre-ambigu', 'e4810');
+
+	// Revue P1 (A2) : « 12'34 », illisible, n'est pas appliqué non plus.
+	req = nextListRequest(page);
+	await min.fill("12'34");
+	expect(new URL((await req).url()).searchParams.has('amountMin'), 'borne illisible omise').toBe(false);
+	await expect(page.getByTestId('journal-entries-filter-amount-min-problem')).toContainText(
+		'4 décimales au plus',
+	);
+	await expect(page.getByText(petite)).toBeVisible();
+	await capture(page, testInfo, 'filtre-illisible', 'e4810');
 
 	// Signet ancien : la borne s'affiche, n'est pas envoyée, l'URL la retire.
 	req = nextListRequest(page);
@@ -695,5 +726,7 @@ test('filtre des écritures : « 1’250 » filtre à 1250, « 1.250 » n’est 
 	await expect(page.getByTestId('journal-entries-filter-amount-min-problem')).toBeVisible();
 	await expect(page.locator('#filter-amount-min')).toHaveValue('1.250');
 	await expect(page).not.toHaveURL(/amountMin=/);
+	await expect(page.getByText(petite)).toBeVisible();
+	await expect(page.getByText(grande)).toBeVisible();
 	await capture(page, testInfo, 'filtre-signet-ambigu', 'e4810');
 });

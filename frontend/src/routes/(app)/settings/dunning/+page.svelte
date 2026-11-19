@@ -17,7 +17,10 @@
 		updateDunningSettings,
 		type DunningLevelResponse,
 	} from '$lib/features/dunning';
-	import { readJournalAmount } from '$lib/features/journal-entries/balance';
+	import {
+		centimesEntryProblem,
+		readCentimesEntry,
+	} from '$lib/features/journal-entries/amount-entry-centimes';
 	import { amountEntryMessage } from '$lib/features/journal-entries/amount-entry-message';
 
 	// IDs DOM stables et HTTP-LAN-safe ($props.id() — pas de crypto.randomUUID,
@@ -41,13 +44,22 @@
 	// écriture, dérivés de la saisie rognée : « 1'250 » part `1250` ; « 1.250 » est refusé comme
 	// ambigu SOUS LE CHAMP (avant, il partait brut, et le serveur répondait « plus de 2
 	// décimales », qui poussait à écrire `1.25`) ; « 1e3 », « -5 », « 10.01000 », que `Number`
-	// lisait, sont illisibles. Bornes (0 à `FEE_MAX`) et échelle restent jugées par le serveur.
-	let feeReading = $derived(readJournalAmount(fFee.trim()));
-	let feeError = $derived(
-		feeReading.kind === 'ambiguous' || feeReading.kind === 'unreadable'
-			? amountEntryMessage(feeReading.kind, 2)
-			: '',
-	);
+	// lisait, sont illisibles. Revue P1 (B4) : lus AU CENTIME (`readCentimesEntry`), comme le message
+	// le dit (« 2 décimales au plus ») et comme le serveur l'exige — « 10.125 » est illisible ici,
+	// « 10.0100 » part `10.01`. Les bornes (0 à `FEE_MAX`) restent jugées par le serveur.
+	let feeReading = $derived(readCentimesEntry(fFee));
+	let feeProblem = $derived(centimesEntryProblem(feeReading));
+	let feeError = $derived(feeProblem ? amountEntryMessage(feeProblem, 2) : '');
+
+	/**
+	 * Revue P1 (B2) — à la saisie des frais, le message du bloc commun s'efface, sauf celui du délai :
+	 * « Les frais doivent être un montant valide » ou un refus du serveur ne restent pas empilés,
+	 * périmés, sous le refus affiché sous le champ.
+	 */
+	function onFeeInput() {
+		const delayMessage = i18nMsg('dunning-form-error-delay', 'Le délai doit être un entier positif.');
+		if (formError !== '' && formError !== delayMessage) formError = '';
+	}
 	let confirmDelete = $state<DunningLevelResponse | null>(null);
 
 	let graceInput = $state('5');
@@ -303,23 +315,30 @@
 							type="text"
 							inputmode="decimal"
 							bind:value={fFee}
+							oninput={onFeeInput}
 							data-testid="dunning-form-fee"
 							class={feeError ? 'w-32 border-destructive' : 'w-32'}
 							aria-invalid={!!feeError}
 							aria-describedby={feeError ? `${uid}-fee-error` : undefined}
 						/>
+						<!-- Story 48-10 (D2 ; revue P1, B3) : le refus des frais SOUS LE CHAMP, hors du
+						     bloc commun (qui ne désigne pas le champ). -->
+						{#if feeError}
+							<p
+								id="{uid}-fee-error"
+								class="mt-1 max-w-xs text-xs text-error"
+								role="alert"
+								data-testid="dunning-form-fee-error"
+							>
+								{feeError}
+							</p>
+						{/if}
 					</div>
 					<div class="flex gap-2">
 						<Button onclick={submitForm} disabled={submitting} data-testid="dunning-form-submit">{i18nMsg('dunning-form-submit', 'Enregistrer')}</Button>
 						<Button variant="outline" onclick={closeForm}>{i18nMsg('dunning-form-cancel', 'Annuler')}</Button>
 					</div>
 				</div>
-				<!-- Story 48-10 (D2) : le refus des frais, hors du bloc commun (qui ne désigne pas le champ). -->
-				{#if feeError}
-					<p id="{uid}-fee-error" class="mt-2 text-sm text-error" role="alert" data-testid="dunning-form-fee-error">
-						{feeError}
-					</p>
-				{/if}
 				{#if formError}<p class="mt-2 text-sm text-error" data-testid="dunning-form-error" role="alert">{formError}</p>{/if}
 			</section>
 		{/if}

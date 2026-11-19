@@ -191,6 +191,15 @@ describe('journal — bornes de montant du filtre (Story 48-10)', () => {
 			});
 
 			// La grammaire du journal n'admet aucun signe : « -5 » n'atteint plus le serveur.
+			// Revue P1 — une borne ambiguë bordée de blancs : rognée, puis refusée comme ambiguë.
+			it('«  1.250  » (bordé de blancs) → ambigu, borne omise, saisie gardée', async () => {
+				const { container, getByTestId } = await monter();
+				const input = await taper(container, id, ' 1.250 ');
+				expect(getByTestId(testid).textContent).toContain('Montant ambigu');
+				expect(derniereRequete()[cle]).toBeUndefined();
+				expect(input.value).toBe(' 1.250 ');
+			});
+
 			it('« -5 » → illisible, borne omise', async () => {
 				const { container, getByTestId } = await monter();
 				await taper(container, id, '-5');

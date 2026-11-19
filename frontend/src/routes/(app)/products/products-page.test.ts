@@ -292,9 +292,13 @@ describe('fiche produit — prix ambigu (Story 48-10)', () => {
 		await settle();
 	}
 
-	/** Soumission par Entrée, rejouée comme le navigateur (`requestSubmit`, cf. Story 36-1). */
+	/**
+	 * Soumission du formulaire, **même bouton désactivé** (`fireEvent.submit`) : scénario défensif
+	 * de la fiche (D1). Revue P1 : `requestSubmit()` n'émet rien dans jsdom quand le bouton par
+	 * défaut est désactivé — les tests « Entrée » sur une saisie refusée ne soumettaient donc rien.
+	 */
 	async function entree(): Promise<void> {
-		prix().form!.requestSubmit();
+		await fireEvent.submit(prix().form!);
 		await settle();
 	}
 
@@ -423,5 +427,51 @@ describe('fiche produit — prix ambigu (Story 48-10)', () => {
 		await taper("1'250");
 		expect(piedRouge()).toBeNull();
 		expect(prix().form!.textContent).not.toContain(AMBIGU);
+	});
+
+	// Revue P1 (B1) — prix vide + Entrée, puis prix saisi : « Le prix est obligatoire » ne reste pas
+	// en rouge au pied sous un prix rempli.
+	it('prix vide + Entrée, puis « 12.50 » → plus de message rouge au pied (M24)', async () => {
+		await ouvrirCreation();
+		await entree();
+		expect(piedRouge()?.textContent).toContain('Le prix est obligatoire');
+		await taper('12.50');
+		expect(piedRouge()).toBeNull();
+	});
+
+	// Revue P1 (E1) — un refus du serveur sur le prix ne reste pas au pied après correction.
+	it('refus du serveur sur le prix, puis correction du prix → plus de message rouge au pied (M24)', async () => {
+		const plafond = 'Le prix unitaire doit être inférieur ou égal à 1 000 000 000';
+		createProductMock.mockRejectedValue({ code: 'VALIDATION_ERROR', status: 400, message: plafond });
+		await ouvrirCreation();
+		await taper('2000000000');
+		await entree();
+		expect(piedRouge()?.textContent).toContain(plafond);
+		await taper('200');
+		expect(piedRouge()).toBeNull();
+	});
+
+	// Ce qui ne vient pas du prix reste : le doublon de nom refusé par le serveur.
+	it('doublon de nom refusé par le serveur : une saisie du prix ne l’efface pas', async () => {
+		createProductMock.mockRejectedValue({ code: 'RESOURCE_CONFLICT', status: 409, message: 'conflit' });
+		await ouvrirCreation();
+		await taper('12.50');
+		await entree();
+		expect(piedRouge()?.textContent).toContain('Un produit avec ce nom existe déjà');
+		await taper('13.50');
+		expect(piedRouge()?.textContent).toContain('Un produit avec ce nom existe déjà');
+	});
+
+	// Revue P1 (E2) — nom vide ET prix ambigu : le motif du nom reste au pied, le refus du prix sous
+	// le champ (mutation du pied `formValidation !== priceMessage` → `!priceMessage`, M25).
+	it('nom vide et « 1.250 » : motif du nom au pied, refus du prix sous le champ, bouton désactivé (M25)', async () => {
+		await ouvrirCreation();
+		await fireEvent.input(document.querySelector<HTMLInputElement>('#form-name')!, {
+			target: { value: '' },
+		});
+		await taper('1.250');
+		expect(prix().form!.textContent).toContain('Le nom est obligatoire');
+		expect(messageSousLeChamp()?.textContent).toContain(AMBIGU);
+		expect(soumettre().disabled).toBe(true);
 	});
 });

@@ -9,6 +9,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
+import Big from 'big.js';
 import { authState } from '$lib/app/stores/auth.svelte';
 import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 import type { InvoiceSettingsResponse } from '$lib/features/invoices/invoices.types';
@@ -697,9 +698,26 @@ describe('Administration → Facturation — montant minimum ambigu (Story 48-10
 		const error = await findByTestId('settings-minimum-invoice-amount-error');
 		expect(error.textContent).toContain('Montant illisible');
 		expect(error.textContent).toContain('2 décimales au plus');
+		// Revue P1 : le bouton se désactive aussi pour l'illisible (M17 sur `unreadable`).
+		expect((await findByTestId('settings-invoicing-save')).hasAttribute('disabled')).toBe(true);
 		await enregistrer(container);
 		expect(updateInvoiceSettingsMock).not.toHaveBeenCalled();
 	});
+
+	// Revue P1 (B4) — la lecture coïncide avec le message : plus de deux décimales significatives
+	// sont illisibles ici (le serveur les refusait, `scale_within(min.normalize(), 2)`).
+	it.each(['0.125', '10.1250', '1.2345'])(
+		'« %s » → illisible, « 2 décimales au plus », bouton désactivé, aucun appel (M21)',
+		async (saisie) => {
+			const { input, findByTestId, container } = await ouvrir();
+			await fireEvent.input(input, { target: { value: saisie } });
+			const error = await findByTestId('settings-minimum-invoice-amount-error');
+			expect(error.textContent).toContain('2 décimales au plus');
+			expect((await findByTestId('settings-invoicing-save')).hasAttribute('disabled')).toBe(true);
+			await enregistrer(container);
+			expect(updateInvoiceSettingsMock).not.toHaveBeenCalled();
+		},
+	);
 
 	// AC3 — rouge avant le correctif : « 1'250 » partait tel quel.
 	it("« 1'250 » part `1250`", async () => {
@@ -729,7 +747,10 @@ describe('Administration → Facturation — montant minimum ambigu (Story 48-10
 		['1,25', '1.25'],
 		['0.50', '0.50'],
 		[' 1250 ', '1250'],
-		['1250.0000', '1250.0000'],
+		// Revue P1 (B4) : les zéros de fin au-delà du centime ne comptent pas ; la charge est
+		// ramenée au centime, même valeur.
+		['1250.0000', '1250.00'],
+		['10.0100', '10.01'],
 	])('« %s » accepté sans message, part « %s » (M9)', async (saisie, charge) => {
 		const { input, queryByTestId, container } = await ouvrir();
 		await fireEvent.input(input, { target: { value: saisie } });
@@ -741,17 +762,23 @@ describe('Administration → Facturation — montant minimum ambigu (Story 48-10
 
 	// AC3, AC7 — FILETS (M13 les tue) : rouvert à `5.00` et à la forme réelle rendue par le
 	// serveur (`5.0000`, `1.2500`, relevées à l'étape 0, `kesh-gate-logs/e4810/etape0-minimum.log`),
-	// aucun message, et la valeur repart égale.
-	it.each(['5.00', '5.0000', '1.2500', '1250.5000'])(
-		'rouvert à %s : aucun message, renvoyé à la même valeur (M13)',
-		async (stored) => {
-			const { queryByTestId, container } = await ouvrir(stored);
-			expect(queryByTestId('settings-minimum-invoice-amount-error')).toBeNull();
-			await enregistrer(container);
-			await waitFor(() => expect(updateInvoiceSettingsMock).toHaveBeenCalledTimes(1));
-			expect(updateInvoiceSettingsMock.mock.calls[0][0]).toMatchObject({ minimumInvoiceAmount: stored });
-		},
-	);
+	// aucun message, et la valeur repart égale — comparée EN VALEUR : depuis la revue P1 (B4), la
+	// charge est ramenée au centime (`5.0000` part `5.00`), sans changer la valeur.
+	it.each([
+		['5.00', '5.00'],
+		['5.0000', '5.00'],
+		['1.2500', '1.25'],
+		['1250.5000', '1250.50'],
+	])('rouvert à %s : aucun message, renvoyé à la même valeur, « %s » (M13)', async (stored, charge) => {
+		const { queryByTestId, container } = await ouvrir(stored);
+		expect(queryByTestId('settings-minimum-invoice-amount-error')).toBeNull();
+		await enregistrer(container);
+		await waitFor(() => expect(updateInvoiceSettingsMock).toHaveBeenCalledTimes(1));
+		const envoye = (updateInvoiceSettingsMock.mock.calls[0][0] as { minimumInvoiceAmount: string })
+			.minimumInvoiceAmount;
+		expect(envoye).toBe(charge);
+		expect(new Big(envoye).eq(new Big(stored))).toBe(true);
+	});
 
 	// AC12 — accessibilité du refus (M16).
 	it('« 1.250 » : aria-invalid et aria-describedby nomment le message ; corrigé, ils le quittent', async () => {

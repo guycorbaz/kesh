@@ -200,4 +200,55 @@ describe('niveaux de rappel — frais ambigus (Story 48-10, #1175)', () => {
 		expect(['false', null]).toContain(frais().getAttribute('aria-invalid'));
 		expect((frais().getAttribute('aria-describedby') ?? '').split(' ')).not.toContain(id);
 	});
+
+	// Revue P1 (B3) — le refus est rendu SOUS LE CHAMP des frais (dans son bloc), non sous la rangée.
+	it('le refus des frais est dans le bloc du champ des frais (M22)', async () => {
+		await ouvrir('create');
+		await taper('1.250');
+		expect(frais().parentElement!.contains(messageSousLeChamp())).toBe(true);
+	});
+
+	// Revue P1 (B2) — le message du bloc commun ne reste pas empilé, périmé, sous le refus du champ.
+	it('frais vides puis « 1.250 » : le message du bloc commun s’efface, le refus du champ reste (M23)', async () => {
+		await ouvrir('create');
+		await taper('');
+		await enregistrer();
+		expect(blocCommun()?.textContent).toContain('Les frais doivent être un montant valide.');
+		await taper('1.250');
+		expect(blocCommun()).toBeNull();
+		expect(messageSousLeChamp()?.textContent).toContain(AMBIGU);
+	});
+
+	it('un refus du délai n’est pas effacé par une saisie des frais', async () => {
+		await ouvrir('create');
+		await fireEvent.input(document.querySelector('[data-testid="dunning-form-delay"]')!, {
+			target: { value: '-1' },
+		});
+		await enregistrer();
+		expect(blocCommun()?.textContent).toContain('Le délai doit être un entier positif.');
+		await taper('12.50');
+		expect(blocCommun()?.textContent).toContain('Le délai doit être un entier positif.');
+	});
+
+	// Revue P1 (B4) — la lecture coïncide avec le message « 2 décimales au plus ».
+	for (const saisie of ['10.1250', '0.125', '1.2345']) {
+		it(`« ${saisie} » → illisible, « 2 décimales au plus », rien ne part (M21)`, async () => {
+			await ouvrir('create');
+			await taper(saisie);
+			expect(messageSousLeChamp()?.textContent).toContain(ILLISIBLE_2);
+			await enregistrer();
+			expect(createMock).not.toHaveBeenCalled();
+		});
+	}
+
+	// Revue P1 (B4) — les zéros de fin ne comptent pas, et la charge est ramenée au centime : le
+	// serveur des frais compte les décimales écrites (`scale_within(fee, 2)`, sans `normalize`).
+	it('« 10.0100 » accepté sans message, part `10.01`', async () => {
+		await ouvrir('create');
+		await taper('10.0100');
+		expect(messageSousLeChamp()).toBeNull();
+		await enregistrer();
+		await waitFor(() => expect(createMock).toHaveBeenCalledTimes(1));
+		expect(createMock.mock.calls[0][0]).toMatchObject({ feeAmount: '10.01' });
+	});
 });
