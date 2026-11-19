@@ -209,7 +209,9 @@ fn scenarios() -> Vec<(&'static str, Vec<u8>)> {
     {
         let (mut data, mut inv) = facture(
             "F-2026-0002",
-            lignes(5, dec!(33.33), &[dec!(8.10), dec!(2.60)]),
+            // 499.65 HT + 24.28 + 5.19 = 529.12 : arrondi de -0.02 (33.33 tombait sur un
+            // total rond, refusé par l'assertion ci-dessous à la première capture).
+            lignes(5, dec!(33.31), &[dec!(8.10), dec!(2.60)]),
             Decimal::ZERO,
         );
         let brut = inv.total;
