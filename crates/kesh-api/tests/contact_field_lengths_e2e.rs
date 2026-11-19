@@ -293,6 +293,27 @@ async fn put_refuses_a_71_character_first_or_last_name(pool: MySqlPool) {
     }
 }
 
+/// Revue P1 (B4, E3), AC9 — la borne compte des **caractères** sur la valeur
+/// **rognée**, comme la colonne `VARCHAR(70)` en `utf8mb4` : 70 « é » (140
+/// octets) entourés de blancs sont acceptés et stockés rognés, 70 « ß » aussi ;
+/// 71 « é » sont refusés. Rouge si la borne comptait en octets (mutation M21,
+/// `exceeds_len` en `len()`).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn multibyte_and_padded_names_are_counted_in_characters_after_trimming(pool: MySqlPool) {
+    let (app, token) = setup(&pool).await;
+    let (first, last) = ("é".repeat(70), "ß".repeat(70));
+    let (status, created) = post(&app, &token, &personne(&format!("  {first}  "), &last)).await;
+    assert_eq!(
+        status, 201,
+        "70 caractères multi-octets, blancs autour : {created}"
+    );
+    assert_eq!(created["firstName"], first.as_str(), "stocké rogné, entier");
+    assert_eq!(created["lastName"], last.as_str());
+
+    let (status, body) = post(&app, &token, &personne(&"é".repeat(71), "Dupont")).await;
+    assert_refus_nomme(status, &body, "Prénom : 70 caractères maximum");
+}
+
 /// AC2 (filet) et AC9 — 70 et 70 : acceptés, stockés entiers ; le même contact
 /// se réenregistre tel quel (`200`). Une valeur déjà en base tient dans son
 /// `VARCHAR(70)` : la borne égale la colonne, aucune donnée existante n'est

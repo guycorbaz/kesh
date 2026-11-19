@@ -51,3 +51,14 @@ Chaque choix : contexte, option retenue, autres options, réversibilité.
 - **Écarté** : ne rien afficher (refus muet) ; réactiver le bouton pour laisser `submitForm` afficher `formError` (change le
   comportement de toute la validation de l'écran, hors périmètre) ; un message neuf par champ (clé neuve, quatre catalogues).
 - **Réversibilité** : totale (écran seul).
+- **Amendement — revue P1 (B1 = E1 = A1, MEDIUM ; décision de l'orchestrateur du 2026-11-19)** : « ordre et texte inchangés » ne
+  tenait pas. Une raison sociale de plus de 255 caractères, collée en type « Entreprise » puis laissée par une bascule vers
+  « Personne » (`formName` n'est remis à zéro qu'à l'ouverture), grisait le bouton **sans motif visible** : le champ et son motif
+  n'existent qu'en « Entreprise ». Le refus était de plus sans objet : pour une personne, le serveur recompose le nom depuis le
+  prénom et le nom (`contacts.rs`, branche `ContactType::Personne`). **Désormais, la raison sociale ne se juge qu'en type
+  « Entreprise »** (`formContactType === 'Entreprise' && …`) : `formValidation` change donc pour une personne (la longueur de
+  `formName` n'y compte plus), ordre et texte restant ceux d'avant pour une entreprise. Dans le même correctif : la longueur se
+  compte en **caractères** (`[...formName.trim()].length`, comme `chars().count()` du serveur ; B2, E2), à la page des contacts et à
+  celle des articles ; le délai n'accepte que des **chiffres** (`/^\d+$/` avant `Number`, qui lisait « 0x1E » comme 30 ; B5, E5).
+  **Écarté** : vider `formName` à la bascule (perd la saisie si l'utilisateur revient en « Entreprise ») ; afficher le motif hors
+  des deux branches (garde un refus sans objet pour une personne).

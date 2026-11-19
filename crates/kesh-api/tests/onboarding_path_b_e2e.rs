@@ -1388,7 +1388,7 @@ async fn coordinates_rejects_a_lone_71_character_last_name_1334(pool: MySqlPool)
 /// enregistré entier : la borne égale la colonne. Rend la ligne enregistrée.
 /// (Prénom 70 et nom 70 ensemble feraient un nom composé de 141, refusé par la
 /// 48-13 : ce n'est pas le cas jugé ici.)
-async fn assert_lone_70_accepted(pool: MySqlPool, cle: &str) -> CompanyRow {
+async fn assert_lone_70_accepted(pool: MySqlPool, cle: &str, valeur: &str) -> CompanyRow {
     let app = spawn_app(pool.clone()).await;
     create_test_company(&pool).await;
     ensure_admin_user(&pool, &test_config()).await.unwrap();
@@ -1396,7 +1396,7 @@ async fn assert_lone_70_accepted(pool: MySqlPool, cle: &str) -> CompanyRow {
     advance_to_step_5(&app, &token).await;
 
     let mut corps = json!({ "name": "Démo SA", "address": adresse_valide(), "ideNumber": null });
-    corps[cle] = json!("x".repeat(70));
+    corps[cle] = json!(valeur);
     let (status, body) = post_coordinates(&app, &token, corps).await;
     assert_eq!(status, 200, "{cle} seul de 70 accepté : {body}");
     assert_eq!(body["stepCompleted"], 6);
@@ -1405,9 +1405,23 @@ async fn assert_lone_70_accepted(pool: MySqlPool, cle: &str) -> CompanyRow {
     lignes.remove(0)
 }
 
+/// Revue P1 (B4, E3) — la borne compte des **caractères** sur la valeur
+/// **rognée** : un prénom seul de 70 « é » (140 octets), entouré de blancs, est
+/// accepté et stocké rogné. Rouge si la borne comptait en octets (mutation M21).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn coordinates_count_a_lone_first_name_in_characters_after_trimming_1334(pool: MySqlPool) {
+    let prenom = "é".repeat(70);
+    let ligne = assert_lone_70_accepted(pool, "firstName", &format!("  {prenom}  ")).await;
+    assert_eq!(
+        ligne.1.as_deref(),
+        Some(prenom.as_str()),
+        "stocké rogné, entier"
+    );
+}
+
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn coordinates_accept_a_lone_70_character_first_name_1334(pool: MySqlPool) {
-    let ligne = assert_lone_70_accepted(pool, "firstName").await;
+    let ligne = assert_lone_70_accepted(pool, "firstName", &"x".repeat(70)).await;
     assert_eq!(
         ligne.1.as_deref(),
         Some("x".repeat(70).as_str()),
@@ -1417,7 +1431,7 @@ async fn coordinates_accept_a_lone_70_character_first_name_1334(pool: MySqlPool)
 
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn coordinates_accept_a_lone_70_character_last_name_1334(pool: MySqlPool) {
-    let ligne = assert_lone_70_accepted(pool, "lastName").await;
+    let ligne = assert_lone_70_accepted(pool, "lastName", &"x".repeat(70)).await;
     assert_eq!(
         ligne.2.as_deref(),
         Some("x".repeat(70).as_str()),

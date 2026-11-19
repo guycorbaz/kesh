@@ -206,36 +206,51 @@ test.describe('Page contacts — CRUD', () => {
 		await page.getByTestId('contact-form-submit').click();
 		await expect(page.getByText(uniqueName)).toBeVisible({ timeout: 5000 });
 
-		const row = page.locator('tr', { hasText: uniqueName }).first();
-		await row.getByRole('button', { name: /Modifier/ }).click();
-		const rue71 = 'R'.repeat(71);
-		await page.fill('#form-street', rue71);
-		await expect(page.locator('#form-street')).toHaveValue(rue71);
-		await page.getByTestId('contact-form-submit').click();
-
-		// Le message est celui du serveur (`address_input.rs`, `check_lengths`), non traduit.
-		await expect(page.getByTestId('contact-form-error')).toHaveText(
-			'adresse : le champ rue dépasse 70 caractères (71)',
-			{ timeout: 5000 }
-		);
-		await expect(page.locator('#form-street')).toHaveValue(rue71);
-		await page.getByRole('dialog').getByRole('button', { name: 'Annuler' }).click();
-
-		// Le contact n'a pas changé : relu par l'API, non par l'écran.
-		const resp = await page.request.get(
-			`/api/v1/contacts?search=${encodeURIComponent(uniqueName)}`
-		);
-		expect(resp.ok()).toBe(true);
-		const { items } = (await resp.json()) as {
-			items: { name: string; addressStructured: { street: string } | null }[];
+		/** Le contact, relu par l'API (non par l'écran). */
+		const relire = async () => {
+			const resp = await page.request.get(
+				`/api/v1/contacts?search=${encodeURIComponent(uniqueName)}`
+			);
+			expect(resp.ok()).toBe(true);
+			const { items } = (await resp.json()) as {
+				items: {
+					id: number;
+					version: number;
+					name: string;
+					addressStructured: { street: string } | null;
+				}[];
+			};
+			return items.find((c) => c.name === uniqueName);
 		};
-		const relu = items.find((c) => c.name === uniqueName);
-		expect(relu?.addressStructured?.street).toBe('Rue des Essais');
 
-		// Cleanup.
-		await row.getByRole('button', { name: /Archiver/ }).click();
-		await page.getByRole('dialog').getByRole('button', { name: 'Archiver' }).click();
-		await expect(page.getByText(uniqueName)).toHaveCount(0, { timeout: 5000 });
+		// Revue P1 (B3, E6) : le contact s'archive dans un `finally`, par l'API, même si une
+		// assertion échoue en route — la base de la suite est rendue telle qu'elle a été trouvée.
+		try {
+			const row = page.locator('tr', { hasText: uniqueName }).first();
+			await row.getByRole('button', { name: /Modifier/ }).click();
+			const rue71 = 'R'.repeat(71);
+			await page.fill('#form-street', rue71);
+			await expect(page.locator('#form-street')).toHaveValue(rue71);
+			await page.getByTestId('contact-form-submit').click();
+
+			// Le message est celui du serveur (`address_input.rs`, `check_lengths`), non traduit.
+			await expect(page.getByTestId('contact-form-error')).toHaveText(
+				'adresse : le champ rue dépasse 70 caractères (71)',
+				{ timeout: 5000 }
+			);
+			await expect(page.locator('#form-street')).toHaveValue(rue71);
+
+			// Le contact n'a pas changé.
+			expect((await relire())?.addressStructured?.street).toBe('Rue des Essais');
+		} finally {
+			const contact = await relire();
+			if (contact) {
+				const archive = await page.request.put(`/api/v1/contacts/${contact.id}/archive`, {
+					data: { version: contact.version }
+				});
+				expect(archive.ok()).toBe(true);
+			}
+		}
 	});
 });
 

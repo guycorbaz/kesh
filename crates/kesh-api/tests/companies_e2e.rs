@@ -604,6 +604,40 @@ async fn company_email_is_bounded_at_320_by_the_route(pool: MySqlPool) {
     assert_eq!(corps["email"], at_limit.as_str());
 }
 
+/// Revue P1 (B4, E3), AC9 — la borne de l'e-mail compte des **caractères** sur
+/// la valeur **rognée**, comme la colonne `VARCHAR(320)` en `utf8mb4` : 320
+/// caractères dont 309 « é » (629 octets), entourés de blancs, sont acceptés et
+/// stockés rognés ; 321 sont refusés. Rouge si la borne comptait en octets
+/// (mutation M20, `e.len()`).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn company_email_bound_counts_characters_after_trimming(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    create_test_company(&pool).await;
+    ensure_admin_user(&pool, &test_config()).await.unwrap();
+    let token = login(&app).await;
+    let version = |company: &serde_json::Value| company["version"].as_i64().unwrap();
+
+    let at_limit = format!("{}@example.ch", "é".repeat(309));
+    assert_eq!(at_limit.chars().count(), 320);
+    assert!(
+        at_limit.len() > 320,
+        "montage : plus d'octets que de caractères"
+    );
+    let v = version(&current_company(&app, &token).await);
+    let (status, corps) = put_company_email(&app, &token, &format!("  {at_limit}  "), v).await;
+    assert_eq!(
+        status, 200,
+        "320 caractères multi-octets, blancs autour : {corps}"
+    );
+    assert_eq!(corps["email"], at_limit.as_str(), "stocké rogné, entier");
+
+    let too_long = format!("{}@example.ch", "é".repeat(310));
+    let v = version(&current_company(&app, &token).await);
+    let (status, corps) = put_company_email(&app, &token, &too_long, v).await;
+    assert_eq!(status, 400, "{corps}");
+    assert_eq!(corps["error"]["code"], "VALIDATION_ERROR", "{corps}");
+}
+
 /// **Un champ OMIS du payload efface la valeur** — comportement épinglé, pas
 /// défendu (revue de code, passe 3).
 ///

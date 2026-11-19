@@ -1075,7 +1075,8 @@ describe('48-15 — aucun champ du contact ne coupe un texte collé', () => {
 			addressStructured: { street: string };
 		};
 		expect(envoye.addressStructured.street).toBe('R'.repeat(71));
-		expect(document.body.textContent).toContain(refus);
+		// Revue P1 (A6) : `formError` lui-même, non le `body` (le toast porte le même texte).
+		expect(zone('contact-form-error').textContent).toBe(refus);
 		expect((champ('form-street') as HTMLInputElement).value).toBe('R'.repeat(71));
 
 		createContactMock.mockResolvedValueOnce(c({ id: 40, name: 'Démo SA' }));
@@ -1096,7 +1097,7 @@ describe('48-15 — aucun champ du contact ne coupe un texte collé', () => {
 		await soumettre();
 		const envoye = createContactMock.mock.calls[0][0] as { firstName: string };
 		expect(envoye.firstName).toBe('P'.repeat(71));
-		expect(document.body.textContent).toContain(refus);
+		expect(zone('contact-form-error').textContent).toBe(refus);
 		expect((champ('form-firstname') as HTMLInputElement).value).toBe('P'.repeat(71));
 	});
 
@@ -1130,5 +1131,88 @@ describe('48-15 — aucun champ du contact ne coupe un texte collé', () => {
 		expect(boutonCreer().disabled).toBe(true);
 		expect((champ('form-name') as HTMLInputElement).value).toBe('R'.repeat(256));
 		expect(createContactMock).not.toHaveBeenCalled();
+	});
+
+	// Revue P1 (E4) — les états du motif, un `it` chacun.
+	const motifNom = () => document.querySelector('[data-testid="contact-name-too-long"]');
+	const motifDelai = () => document.querySelector('[data-testid="contact-payment-terms-days-error"]');
+
+	it('motif de la raison sociale : ramenée à 255, il disparaît et le bouton se réactive', async () => {
+		await ouvrirEn('Entreprise');
+		await saisir('form-name', 'R'.repeat(256), 20);
+		expect(motifNom()).not.toBeNull();
+		await saisir('form-name', 'R'.repeat(255), 20);
+		expect(motifNom()).toBeNull();
+		expect(boutonCreer().disabled).toBe(false);
+	});
+
+	// Revue P1 (B1 = E1 = A1) — rouge sans le correctif (mutation M22) : le bouton restait grisé,
+	// sans motif, la raison sociale (et son motif) n'existant pas en type « Personne ».
+	it('bascule vers « Personne » après une raison sociale de 256 : aucun refus muet, la personne se crée', async () => {
+		createContactMock.mockResolvedValueOnce(c({ id: 41, name: 'Jean Dupont' }));
+		await ouvrirEn('Entreprise');
+		await saisir('form-name', 'R'.repeat(256), 20);
+		expect(boutonCreer().disabled).toBe(true);
+		await fireEvent.change(champ('form-type'), { target: { value: 'Personne' } });
+		await settle(20);
+		await saisir('form-firstname', 'Jean', 20);
+		await saisir('form-lastname', 'Dupont', 20);
+		expect(boutonCreer().disabled).toBe(false);
+		await soumettre();
+		expect(createContactMock).toHaveBeenCalledWith(
+			expect.objectContaining({ contactType: 'Personne', firstName: 'Jean', lastName: 'Dupont' })
+		);
+	});
+
+	// Revue P1 (B2, E2) — rouge sans le correctif (mutation M23) : compté en unités UTF-16, un nom
+	// de 200 caractères dont 60 hors du plan de base (260 unités) était refusé ; le serveur l'accepte.
+	it('raison sociale : compte en caractères, non en unités UTF-16 (200 caractères dont 60 hors BMP)', async () => {
+		await ouvrirEn('Entreprise');
+		const nom = 'R'.repeat(140) + '𝔸'.repeat(60);
+		expect([...nom].length).toBe(200);
+		expect(nom.length).toBe(260);
+		await saisir('form-name', nom, 20);
+		expect(motifNom()).toBeNull();
+		expect(boutonCreer().disabled).toBe(false);
+		await saisir('form-name', 'R'.repeat(196) + '𝔸'.repeat(60), 20);
+		expect(motifNom()).not.toBeNull();
+	});
+
+	// Revue P1 (B5, E5) — rouge sans le correctif (mutation M25) : `Number` lisait « 0x1E » comme 30
+	// et « 3e2 » comme 300, valeurs acceptées et envoyées sans que l'utilisateur les ait écrites.
+	for (const ecrit of ['0x1E', '3e2', 'abc', '30.0', '-1']) {
+		it(`délai « ${ecrit} » : refusé en le disant, rien ne part`, async () => {
+			await ouvrirEn('Entreprise');
+			await saisir('form-name', 'Démo SA', 20);
+			await saisir('form-payment-terms-days', ecrit, 20);
+			expect(motifDelai()?.textContent).toContain('entre 0 et 365');
+			expect(boutonCreer().disabled).toBe(true);
+		});
+	}
+
+	it('délai vidé : le motif disparaît, le bouton se réactive', async () => {
+		await ouvrirEn('Entreprise');
+		await saisir('form-name', 'Démo SA', 20);
+		await saisir('form-payment-terms-days', '1000', 20);
+		expect(motifDelai()).not.toBeNull();
+		await saisir('form-payment-terms-days', '', 20);
+		expect(motifDelai()).toBeNull();
+		expect(boutonCreer().disabled).toBe(false);
+	});
+
+	it('ouverture d’une fiche existante valide : aucun motif', async () => {
+		repondre(
+			{},
+			[c({ id: 42, name: 'Démo Existante SA', defaultPaymentTermsDays: 30 } as Partial<ContactResponse> & {
+				id: number;
+				name: string;
+			})]
+		);
+		render(Page);
+		await settle(30);
+		await ouvrirEdition();
+		expect((champ('form-payment-terms-days') as HTMLInputElement).value).toBe('30');
+		expect(motifNom()).toBeNull();
+		expect(motifDelai()).toBeNull();
 	});
 });

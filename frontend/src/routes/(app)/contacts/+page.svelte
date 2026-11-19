@@ -447,16 +447,25 @@
 	// bouton, et son MOTIF s'affiche sous le champ — sans quoi le bouton grisé serait un refus
 	// muet, `formError` ne se remplissant qu'à une soumission qu'il n'atteint jamais. Les deux
 	// messages sont lus aussi par `formValidation`, à la même place qu'avant.
+	//
+	// Revue P1 (B1 = E1 = A1) : la raison sociale ne se juge qu'en type « Entreprise », le seul où
+	// son champ (et donc son motif) existe et où le serveur la lit — pour une personne, il recompose
+	// le nom depuis le prénom et le nom. Sinon, une raison sociale trop longue restée d'une bascule
+	// vers « Personne » griserait le bouton sans motif visible.
+	// Revue P1 (B2, E2) : compte en caractères (points de code), comme le serveur
+	// (`chars().count()`), non en unités UTF-16.
 	let nameTooLongMsg = $derived(
-		formName.trim().length > 255
+		formContactType === 'Entreprise' && [...formName.trim()].length > 255
 			? i18nMsg('contact-error-name-too-long', 'Le nom doit faire au plus 255 caractères')
 			: ''
 	);
-	// #245 : vide OU entier 0..365 (miroir de la borne backend).
+	// #245 : vide OU entier 0..365 (miroir de la borne backend). Revue P1 (B5, E5) : des chiffres
+	// seulement — `Number` lirait « 0x1E » comme 30 et « 3e2 » comme 300, une valeur que
+	// l'utilisateur n'a pas écrite.
 	let paymentTermsDaysMsg = $derived.by(() => {
-		if (formPaymentTermsDays.trim() === '') return '';
-		const d = Number(formPaymentTermsDays.trim());
-		return !Number.isInteger(d) || d < 0 || d > 365
+		const t = formPaymentTermsDays.trim();
+		if (t === '') return '';
+		return !/^\d+$/.test(t) || Number(t) > 365
 			? i18nMsg(
 					'contact-error-payment-terms-days-range',
 					'Le délai de paiement doit être un nombre entier entre 0 et 365 jours'
