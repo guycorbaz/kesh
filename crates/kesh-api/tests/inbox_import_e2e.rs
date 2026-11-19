@@ -3583,9 +3583,11 @@ async fn journal_entry_detail_shows_the_document(pool: MySqlPool) {
         "pay relit la facture"
     );
 
+    // Story 48-12a (#975) : le numéro du fournisseur est unique par corps
+    // (`complete_body`) — celui que la création a reçu, non un littéral.
     let attendu = json!({
         "supplierInvoiceId": inv,
-        "supplierInvoiceNumber": "FF-2026-100",
+        "supplierInvoiceNumber": created["supplierInvoiceNumber"],
         "internalNumber": "FF-2020-001",
         "originalFilename": "facture.png",
     });
