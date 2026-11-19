@@ -33,6 +33,9 @@
 //! par plusieurs octets (U+2022 aux octets 0x7F, 0x81…), le premier octet est retenu, comme
 //! `lopdf::encodings::string_to_bytes`.
 //!
+//! [`largeur_mm`] sert aussi à `kesh-report`, qui aligne à droite les montants de ses PDF
+//! de rapports, écrits dans les mêmes deux polices (correctif `fix-pdf-montants-alignes`).
+//!
 //! ⚠️ **La table vaut pour ces deux polices seulement.** Le jour où le PDF embarque une autre
 //! police (#943), elle est à engendrer de nouveau, depuis les métriques de celle-ci.
 
@@ -496,17 +499,19 @@ fn chasse(c: char, gras: bool) -> Option<u16> {
 /// La largeur de `texte` imprimé en Helvetica (ou Helvetica-Bold si `gras`) à `taille`
 /// points, en millimètres : la somme des chasses, sans crénage (printpdf n'en applique pas).
 ///
-/// Un caractère sans entrée compte **zéro** : [`WINANSI`] porte tous les octets imprimables
-/// (`table_triee_et_complete`), si bien qu'un caractère sans entrée n'a pas d'octet, et
+/// Un caractère sans entrée compte **zéro** : la table `WINANSI` (`pub(crate)`, interne au crate) porte tous les
+/// octets imprimables (`table_triee_et_complete`), si bien qu'un caractère sans entrée n'a pas d'octet, et
 /// `lopdf` le retire à l'écriture (`lopdf-0.31.0/src/encodings/mod.rs:14-18`,
 /// `string_to_bytes`) : il ne s'imprime pas. Une espace insécable (U+00A0, que WinAnsi place à
 /// 0xA0 sous le nom `space`, déjà pris par 0x20) en est un exemple. La largeur rendue est donc
 /// celle du texte réellement imprimé (revue P1, B-2) — à la condition que `texte` soit
-/// **exactement la chaîne passée à `use_text`**, donc, pour un champ d'adresse ou de message,
-/// le résultat de [`crate::texte::texte_imprime`] : avant ce repli, une lettre hors WinAnsi
+/// **exactement la chaîne passée à `use_text`**, donc, pour un champ d'adresse ou de message
+/// de la QR-facture, le résultat de `texte_imprime` (module interne `texte`) ; un appelant hors
+/// de ce crate (`kesh-report`) mesure de même la chaîne exacte qu'il écrit. Avant ce repli, une
+/// lettre hors WinAnsi
 /// (`Ĳ`, qui s'imprime `IJ`) compterait zéro et la largeur serait sous-estimée (revue P2
 /// ciblée, LOW-1).
-pub(crate) fn largeur_mm(texte: &str, taille: f32, gras: bool) -> f32 {
+pub fn largeur_mm(texte: &str, taille: f32, gras: bool) -> f32 {
     let milliemes: u32 = texte
         .chars()
         .map(|c| u32::from(chasse(c, gras).unwrap_or(0)))

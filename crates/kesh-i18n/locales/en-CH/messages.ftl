@@ -2075,6 +2075,9 @@ reports-filename-project-return = return-by-analytical-account
 reports-filename-general-ledger = general-ledger
 reports-pdf-header-period = Period
 reports-pdf-empty-message = No entries in the selected period.
+# Correctif fix-pdf-montants-alignes — en-têtes des colonnes de montant d'un rapport PDF qui contient un compte en devise.
+reports-pdf-col-base-currency = CHF
+reports-pdf-col-foreign-currency = Currency
 
 # Story 9-2b — Global ZIP export (data sovereignty) — 12 keys
 nav-export-global = Global export
