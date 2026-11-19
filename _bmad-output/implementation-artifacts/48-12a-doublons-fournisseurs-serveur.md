@@ -1,6 +1,6 @@
 # Story 48-12a : Refus serveur des factures fournisseur en double (numéro comparé par année civile)
 
-Status: ready-for-dev (validation terminée à la P5, 2026-11-19 ; la clé de `sprint-status.yaml` est posée par l'orchestrateur à la fin de la boucle de la 48-12b, la sortie étant commune)
+Status: ready-for-dev (validation terminée à la P5, 2026-11-19 ; clé posée dans `sprint-status.yaml` à la fin de la boucle de la 48-12b, le 2026-11-19 ; sortie commune)
 
 Issue : **#975** (côté serveur) — `bug`, **P2**. Release 0.20.0, Epic 48. Voie : **base et Rust**. Pas de migration. **La 48-12b (écran, #975 côté écran et #985) dépend de cette fiche, et les deux sortent dans la même release** : si la 48-12b n'est pas close à la coupure, les deux partent ensemble à la release suivante (jamais de sortie isolée de la 48-12a). Fiche-mère : `48-12-reponses-perdues-fournisseurs.md` (inventaire, reports 0.21.0, historique).
 
@@ -262,7 +262,7 @@ Sous `scripts/mem-guard.sh`, une commande lourde à la fois, `flock` du verrou d
 - **Ce qui doit rester vrai** : aucune migration ; une facture client, un avoir et leur PDF inchangés ; **les données existantes ne bougent pas** (aucun backfill, aucun refus rétroactif) ; le refus absolu n'a pas de sortie à la création, à la modification et à la complétion ; aucune facture client existante, aucun avoir ni leur PDF ne change — les factures déjà émises par Guy et remises sur papier ne sont touchées par rien (D3ter ne change que la réponse à un interblocage) ; toute confirmation est tracée à l'audit ; la règle ne lit **jamais** les exercices ; la précédence des refus existants ne change pas, hors l'insertion documentée du refus de doublon.
 - **Hors périmètre** : l'écran (48-12b) ; #986 et le lot comptes bancaires, reportés à la 0.21.0 (fiche-mère `48-12-reponses-perdues-fournisseurs.md`) ; les autres écrans de création (inventaire de la fiche-mère) ; un contrôle à la **validation** d'un brouillon (non demandé ; conséquence écrite en D6bis).
 - **Références** : `accounts::archive` et `confirm_designated` (#486, `accounts.rs:1249`, `:1290`) ; `unvalidate_in_tx` (doc « Précédence » et « Ordre des verrous ») ; `attendre_une_requete_en_cours` (`test_fixtures.rs:593`) ; fiche 34-8.
-- **Statut** : `ready-for-dev` (validation terminée à la P5) ; la clé de `sprint-status.yaml` reste à poser par l'orchestrateur, à la fin de la boucle de la 48-12b (sortie commune).
+- **Statut** : `ready-for-dev` (validation terminée à la P5) ; clé `48-12a-doublons-fournisseurs-serveur: ready-for-dev` posée dans `sprint-status.yaml` le 2026-11-19, à la fin de la boucle de la 48-12b (sortie commune).
 
 ## Dev Agent Record
 

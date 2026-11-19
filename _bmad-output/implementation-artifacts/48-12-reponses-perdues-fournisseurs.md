@@ -1,6 +1,6 @@
 # Story 48-12 : Réponses perdues — fiche-mère (renvoi vers la 48-12a et la 48-12b)
 
-Status: renvoi (la story est **découpée** ; voir `48-12a-doublons-fournisseurs-serveur.md` et `48-12b-doublons-fournisseurs-ecran.md`, toutes deux `drafted`)
+Status: renvoi (la story est **découpée** ; voir `48-12a-doublons-fournisseurs-serveur.md` et `48-12b-doublons-fournisseurs-ecran.md`, toutes deux **`ready-for-dev`** depuis le 2026-11-19 — la 48-12a, validation terminée à la P5 (0/0/0/9), la 48-12b, validation terminée à la P6 (0/0/0/9) ; sortie commune ; `sprint-status.yaml` : `48-12-reponses-perdues-fournisseurs: split`, `48-12a-doublons-fournisseurs-serveur` et `48-12b-doublons-fournisseurs-ecran` : `ready-for-dev`)
 
 **Cette fiche n'est plus une story à développer.** Décisions de Guy du 2026-11-19 : la 48-12 se découpe en **48-12a** (serveur, #975 : règle anti-doublon sous verrou, cinq modules, pas d'AC écran) puis **48-12b** (écran, #975 côté écran et #985, cinq modules, **dépend de la 48-12a**). Elle est **conservée** pour ce que les deux fiches ne portent pas : l'**inventaire par le symptôme** (sites hors périmètre et issues), les **reports à la 0.21.0** (#986, lot comptes bancaires, avec les findings P6 non traités) et l'**historique** des passes de validation (Change Log). *Choix* : un renvoi court plutôt qu'un retrait, pour ne pas perdre ces trois éléments ; l'orchestrateur remplace la clé `48-12-reponses-perdues-fournisseurs` de `sprint-status.yaml` par `48-12a-…` et `48-12b-…`.
 
