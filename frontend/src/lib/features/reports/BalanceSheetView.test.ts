@@ -125,6 +125,58 @@ describe('BalanceSheetView — fonds propres par rôle (Story 14-3c)', () => {
 	});
 });
 
+describe('BalanceSheetView — ligne calculée « Résultat reporté » (fix-bilan-resultat-reporte)', () => {
+	// Revue P1, LOW-3 : la table se repère par son data-testid, non par sa position.
+	const equityContent = (getByTestId: (id: string) => HTMLElement) =>
+		getByTestId('balance-sheet-equity').textContent ?? '';
+
+	// Revue P1, LOW-1 : un résidu sous le demi-centime s'arrondit à zéro, comme il
+	// s'afficherait — la ligne est omise, ni « 0.00 » ni « -0.00 ».
+	it.each(['0', '0.00', '-0', '0.004', '-0.004'])(
+		'omet la ligne calculée quand le report vaut %s, total capitaux propres inchangé',
+		(zero) => {
+			// 50'000 (comptes) + report + 1'200 → 51'200.00 à l'affichage.
+			const { getByTestId, queryByTestId } = render(BalanceSheetView, {
+				dto: makeDto({ retainedEarnings: zero, totalAssets: '51200' }),
+			});
+			expect(queryByTestId('balance-sheet-retained-earnings')).toBeNull();
+			const equity = equityContent(getByTestId);
+			expect(equity).not.toContain('Résultat reporté');
+			expect(equity).not.toContain('Perte reportée');
+			expect(equity).not.toContain('-0.00');
+			// Le compte physique de report et le résultat de l'exercice restent.
+			expect(equity).toContain('2970');
+			expect(equity).toContain("Bénéfice de l'exercice");
+			expect(equity).toMatch(/51.200\.00/);
+		},
+	);
+
+	it('affiche la ligne calculée non nulle (bénéfice reporté) avec son montant', () => {
+		const { getByTestId } = render(BalanceSheetView, { dto: makeDto() });
+		const row = getByTestId('balance-sheet-retained-earnings');
+		expect(row.textContent).toContain('Résultat reporté (calculé)');
+		expect(row.textContent).toMatch(/5.000\.00/);
+	});
+
+	it('affiche au demi-centime la ligne arrondie loin de zéro (« 0.01 »)', () => {
+		const { getByTestId } = render(BalanceSheetView, {
+			dto: makeDto({ retainedEarnings: '0.005' }),
+		});
+		const row = getByTestId('balance-sheet-retained-earnings');
+		expect(row.textContent).toContain('Résultat reporté (calculé)');
+		expect(row.textContent).toContain('0.01');
+	});
+
+	it('affiche la ligne calculée négative sous « Perte reportée »', () => {
+		const { getByTestId } = render(BalanceSheetView, {
+			dto: makeDto({ retainedEarnings: '-0.05' }),
+		});
+		const row = getByTestId('balance-sheet-retained-earnings');
+		expect(row.textContent).toContain('Perte reportée');
+		expect(row.textContent).toContain('-0.05');
+	});
+});
+
 describe('BalanceSheetView — Story 37-4, compte en devise', () => {
 	it('montre « USD 1’309.00 » à côté du nom d’un compte en devise, rien pour un compte CHF', () => {
 		const base = makeDto();
