@@ -50,3 +50,30 @@ Développement en autonomie (Opus 5.5), release 0.20.0, Epic 48. Fiche :
 - **Retenu** : `beforeEach(() => cleanup())` dans le bloc de la 48-10 ; `afterEach(cleanup)` dans le fichier neuf
   `dunning-page.test.ts`. Les blocs existants ne changent pas.
 - **Réversibilité** : triviale.
+
+## C-e4810-6 — Revue P1 (B4, B5) : une lecture « au centime » pour les frais et le minimum, dans un module neuf
+
+- **Contexte** : le message illisible des frais et du minimum dit « 2 décimales au plus », mais la lecture du journal en
+  admettait quatre ; « 0.125 » ou « 10.1250 » partaient et le serveur les refusait dans un autre bloc. Le minimum écrivait
+  aussi trois fois le même prédicat.
+- **Retenu** : `features/journal-entries/amount-entry-centimes.ts` (`readCentimesEntry`, `centimesEntryProblem`) : la
+  lecture du journal, puis « deux décimales significatives au plus » (illisible sinon) ; la charge est ramenée au centime
+  quand la saisie écrit des zéros au-delà (« 10.0100 » → `10.01`, « 5.0000 » → `5.00`), parce que le serveur des frais
+  compte les décimales écrites (`scale_within(fee, 2)` sans `normalize`). Aucune forme acceptée par le serveur n'est
+  refusée ; un minimum rouvert à `5.0000` repart `5.00`, même valeur. Un seul prédicat (`minimumProblem`) commande le
+  message, le bouton et la garde de `save()`.
+- **Écartées** : modifier `balance.ts` (protégé par D6 et AC7) ; garder la lecture à quatre décimales et dire l'écart en
+  dette (le message resterait faux).
+- **Réversibilité** : locale à deux écrans et un module.
+
+## C-e4810-7 — Revue P1 (B1, E1) : la saisie du prix efface tout message du pied sauf ceux du nom et des taux de TVA
+
+- **Contexte** : C-e4810-1 n'effaçait que les trois refus du prix sous le champ ; « Le prix est obligatoire » et un refus du
+  serveur sur le prix (plafond, échelle) restaient périmés au pied.
+- **Retenu** : liste fermée des messages qui ne viennent pas du prix (nom vide, nom trop long, doublon de nom, taux de TVA
+  en chargement ou en échec) ; tout autre message s'efface à la saisie du prix. Un refus du serveur d'une autre cause
+  s'efface aussi : la soumission suivante le redit s'il tient encore.
+- **Écartées** : mémoriser l'origine de chaque `formError` (cinq sites d'écriture) ; une issue P4 (le correctif est court).
+- **Réversibilité** : locale à `products/+page.svelte`.
+- **Prémisse de C-e4810-1, constatée** (revue P1, A4) : la mutation `M19-litteral` (formule littérale de D1) rougit le
+  test d'AC12 « Entrée sur 1.250, puis correction » (`kesh-gate-logs/e4810/mut/M19-litteral.log`).

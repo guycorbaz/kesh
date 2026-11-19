@@ -427,6 +427,46 @@ recompter et à unir à la fusion avec les autres stories de l'Epic 48. Aucun fi
 
 **Statut à poser au `sprint-status.yaml`** (par l'orchestrateur) : `48-10-montants-ambigus-reglages-filtres: review`.
 
+#### Remédiation P1 (2026-11-19)
+
+Revue P1 (trois lentilles Opus) : 0/0/0/14 (`review-p1-{B,E,A}.md`). LOW corrigés dans la story (règle du 2026-11-14), sur
+demande de l'orchestrateur :
+
+- **B1, E1** (C-e4810-7) : la saisie du prix efface tout message rouge du pied sauf ceux du nom et des taux de TVA
+  (`nonPriceMessages()`) ; doc-comment réécrit.
+- **B2, B3** : rappels — `onFeeInput()` efface le bloc commun (sauf le refus du délai) ; le refus des frais est rendu dans le
+  bloc du champ *Frais*.
+- **B4, B5** (C-e4810-6) : lecture au centime des frais et du minimum (`amount-entry-centimes.ts`, neuf) — « 0.125 »,
+  « 10.1250 » illisibles avec « 2 décimales au plus » ; « 10.0100 » part `10.01` ; un minimum rouvert à `5.0000` repart `5.00`
+  (même valeur ; les tests de réouverture comparent désormais aussi en valeur) ; un seul prédicat `minimumProblem`.
+- **Tests** : E2 (nom vide et « 1.250 »), bouton désactivé sur `12'34` au minimum, borne « ␣1.250␣ », B1, E1, doublon de nom
+  conservé, unités de `readCentimesEntry`. L'aide `entree()` des tests de l'article passe de `requestSubmit()` à
+  `fireEvent.submit` : `requestSubmit()` n'émet rien dans jsdom quand le bouton par défaut est désactivé, si bien que les tests
+  « Entrée » sur une saisie refusée ne soumettaient rien (constaté par l'échec du test B1).
+- **E2E** (E3, A3, A1, A2) : le filtre porte sur deux écritures créées par l'API (100.00 et 2000.00) ; « 1'250 » n'en montre
+  qu'une, « 1.250 », « 12'34 » et le signet les deux ; capture `e4810-filtre-illisible.png` ajoutée ; l'aide `capture` prend
+  `animations: 'disabled'`.
+- **A4** : la prémisse de C-e4810-1 est constatée — la mutation `M19-litteral` (formule littérale de D1) rougit le test
+  d'AC12 (`mut/M19-litteral.log`).
+- **A5, A6** : bases remises à neuf, commandes et sorties journalisées (`bases-remed-p1.log`) ; spec E2E rejouée après le
+  commit, en-tête de commit au journal (`remed-p1-e2e.log`).
+
+**Commits** : `531397f5a` (code et tests de la remédiation), `d1afc9384` (compteur `sitesTotal` 3496 → 3502, six sites de clés
+existantes, relevé par la garde) — **écart** à « un seul commit de code » : le compteur ne s'est révélé qu'au `test:unit`
+complet, joué après le commit. Puis le commit de la fiche, du registre et du prompt P2.
+
+**Ce qui a tourné** (journaux sous `kesh-gate-logs/e4810/`) :
+- Vitest ciblé : `remed-p1-vitest-1.log` (4 rouges : trois dus à mon exemple « 10.125 », ambigu et non illisible, remplacé
+  par « 10.1250 » ; un dû à `requestSubmit`), `remed-p1-vitest-2.log` (**185/185**) ; `remed-p1-check-pre.log` (0 erreur).
+- Mutations (code à `531397f5a`, `mut/mutations-e4810-p1.py`, `mut/resume.log`) : **8 jouées, 8 tuées** — `M19-litteral`,
+  `M24` (effacement borné aux trois refus), `M25` (pied `!priceMessage`, E2), `M21` (borne des deux décimales retirée), `M26`
+  (charge non ramenée), `M22` (refus sous la rangée), `M23` (bloc commun non effacé), `M17u` (bouton seulement sur l'ambigu).
+- `test-fast --ci` (`remed-p1-test-fast.log`, commit `531397f5a`, bases remises à neuf) : **6155/6155**, 14 ignorés.
+- Frontend (`remed-p1-front.log`, commit `531397f5a`) : `check` 0 erreur, `lint-i18n-ownership` vert, `build` vert,
+  `test:unit` 1 rouge (`sitesTotal`) ; puis `remed-p1-front-2.log` (commit `d1afc9384`) : **`test:unit` 4772/4772**.
+- Spec E2E de la story : `remed-p1-e2e.log` — RESULTAT_E2E.
+- **Non lancés** : `gate-ci` et E2E complet (clôture) ; PDF (intégration).
+
 ### File List
 
 - `frontend/src/lib/features/products/product-helpers.ts` (modifié)
@@ -443,8 +483,10 @@ recompter et à unir à la fusion avec les autres stories de l'Epic 48. Aucun fi
 - `frontend/tests/e2e/montants-ambigus.spec.ts` (modifié)
 - `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl` (une clé chacun)
 - `docs/manual/fr/user-manual.tex`, `docs/manual/fr/admin-manual.tex` (modifiés ; PDF non commités)
-- `_bmad-output/implementation-artifacts/e0200-choix-autonomes-e4810.md` (neuf, C-e4810-1 à 5)
+- `frontend/src/lib/features/journal-entries/amount-entry-centimes.ts` et `.test.ts` (neufs, remédiation P1)
+- `_bmad-output/implementation-artifacts/e0200-choix-autonomes-e4810.md` (neuf, C-e4810-1 à 7)
 - `_bmad-output/implementation-artifacts/48-10-montants-ambigus-reglages-filtres-review-prompt-p1.md` (neuf)
+- `_bmad-output/implementation-artifacts/48-10-montants-ambigus-reglages-filtres-review-prompt-p2-ciblee.md` (neuf)
 
 ## Change Log
 
