@@ -470,13 +470,16 @@ test('article, prix : « 1.250 » refusé comme ambigu, rien n’est écrit ; «
 		await page.goto('/products');
 		await page.getByRole('button', { name: /Nouveau produit/ }).click();
 		const writes = countWrites(page, PRODUCT_WRITES);
+		// Le bouton de soumission du dialogue, par sa structure : un libellé traduit ne vaut
+		// qu'en français (garde `e2e-selecteurs-traduits.test.ts`, KF-043).
+		const creer = page.locator('form:has(#form-price) button[type="submit"]');
 		await page.fill('#form-name', name);
 		await page.fill('#form-price', '1.250');
 		await expect.soft(page.getByTestId('product-form-price-error')).toContainText('Montant ambigu');
 		await expect.soft(page.locator('#form-price')).toHaveAttribute('aria-invalid', 'true');
-		await expect.soft(page.getByRole('button', { name: 'Créer' })).toBeDisabled();
+		await expect.soft(creer).toBeDisabled();
 		await capture(page, testInfo, 'article-prix-ambigu', 'e4810');
-		await page.getByRole('button', { name: 'Créer' }).click({ force: true });
+		await creer.click({ force: true });
 		await page.locator('#form-price').press('Enter');
 		await page.waitForTimeout(300);
 		expect(writes(), 'aucune requête d’écriture d’article').toEqual([]);
@@ -491,7 +494,7 @@ test('article, prix : « 1.250 » refusé comme ambigu, rien n’est écrit ; «
 		await page.fill('#form-price', "1'250");
 		await expect(page.getByTestId('product-form-price-error')).toHaveCount(0);
 		const sent = waitForWrite(page, PRODUCT_WRITES);
-		await page.getByRole('button', { name: 'Créer' }).click();
+		await creer.click();
 		const req = await sent;
 		expect((req.postDataJSON() as { unitPrice: string }).unitPrice).toBe('1250');
 		const res = await req.response();
@@ -508,7 +511,8 @@ test('article, prix : « 1.250 » refusé comme ambigu, rien n’est écrit ; «
 		});
 		expect(created.ok(), `article : ${created.status()} ${await created.text()}`).toBeTruthy();
 		await page.goto(`/products?search=${encodeURIComponent(millieme)}`);
-		await page.locator('tbody tr', { hasText: millieme }).getByLabel('Modifier').click();
+		// Premier bouton de la ligne : « Modifier » (le second archive).
+		await page.locator('tbody tr', { hasText: millieme }).locator('button').first().click();
 		await expect(page.locator('#form-price')).toHaveValue('1.2340');
 		await expect(page.getByTestId('product-form-price-error')).toHaveCount(0);
 		await capture(page, testInfo, 'article-rouvert-1.2340', 'e4810');
@@ -545,7 +549,8 @@ test('rappels, frais : « 1.250 » refusé comme ambigu, rien n’est écrit ; �
 		await expect(page.getByTestId('dunning-level-row')).toHaveCount(3, { timeout: 5000 });
 		const before = await dunningLevels(ctx);
 		const writes = countWrites(page, DUNNING_WRITES);
-		await page.getByTestId('dunning-level-row').nth(1).getByRole('button', { name: 'Modifier' }).click();
+		// Premier bouton de la ligne : « Modifier » (le second supprime).
+		await page.getByTestId('dunning-level-row').nth(1).locator('button').first().click();
 		await page.getByTestId('dunning-form-fee').fill('1.250');
 		await expect.soft(page.getByTestId('dunning-form-fee-error')).toContainText('Montant ambigu');
 		await expect.soft(page.getByTestId('dunning-form-fee')).toHaveAttribute('aria-invalid', 'true');
