@@ -1159,7 +1159,11 @@ const ATTENDU = {
 	// `kesh-gate-logs/e4810/remed-p1-front.log`), relevé par la garde : cinq sites dans
 	// `nonPriceMessages()` (fiche article : nom, doublon, taux de TVA) et un dans `onFeeInput()`
 	// (rappels : le message du délai), tous de clés existantes.
-	sitesTotal: 3502,
+	// Story v0200-corrections-mineures (#1342) : **3502 → 3503** (« expected 3503 to be 3502 »,
+	// `kesh-gate-logs/v0200cm/vert-vitest.log`), relevé par la garde : le seul site neuf est
+	// `contact-error-address-country-alone` (page des contacts, pays seul). La ligne du motif
+	// d'un bouton grisé (#1349) affiche `formValidation` : aucun site neuf.
+	sitesTotal: 3503,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

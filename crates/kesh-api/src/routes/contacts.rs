@@ -24,7 +24,7 @@ use kesh_db::repositories::contacts::{self, ContactSortBy};
 
 use crate::AppState;
 use crate::errors::AppError;
-use crate::helpers::{PERSON_NAME_PART_MAX, get_company_for, validate_text_len};
+use crate::helpers::{PERSON_NAME_PART_MAX, get_company_for, optional_visible, validate_text_len};
 use crate::middleware::auth::CurrentUser;
 use crate::routes::ListResponse;
 use crate::services::acces::ContexteAcces;
@@ -376,9 +376,13 @@ fn validate_common(
 ) -> Result<ValidatedFields, AppError> {
     // #213 — Personne : prénom + nom séparés, `name` recomposé « Prénom Nom ».
     // Entreprise : raison sociale unique (prénom/nom laissés vides).
-    let clean = |o: Option<String>| o.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+    // #1343 (0.20.0) — un champ fait de caractères invisibles (U+00AD seul, que
+    // `trim` laisse) est refusé en le nommant ; vide, il garde le message d'avant.
     let (trimmed_name, first_name, last_name) = match contact_type {
-        ContactType::Personne => match (clean(first_name), clean(last_name)) {
+        ContactType::Personne => match (
+            optional_visible(first_name.as_deref(), "Prénom")?,
+            optional_visible(last_name.as_deref(), "Nom")?,
+        ) {
             (Some(f), Some(l)) => {
                 // Story 48-15 (#1334) — chacun borné à sa colonne (`VARCHAR(70)`),
                 // avant le nom composé : le refus nomme le champ, au lieu du
@@ -394,12 +398,11 @@ fn validate_common(
             }
         },
         ContactType::Entreprise => {
-            let n = name.trim().to_string();
-            if n.is_empty() {
+            let Some(n) = optional_visible(Some(&name), "Raison sociale")? else {
                 return Err(AppError::Validation(
                     "La raison sociale est obligatoire pour une entreprise".into(),
                 ));
-            }
+            };
             (n, None, None)
         }
     };

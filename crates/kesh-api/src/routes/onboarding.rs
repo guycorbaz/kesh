@@ -523,12 +523,11 @@ pub async fn set_coordinates(
 ) -> Result<Json<OnboardingResponse>, AppError> {
     // #213 — personne physique (prénom + nom) → `name` recomposé ; sinon raison
     // sociale telle quelle. Le frontend décide selon l'OrgType choisi en amont.
-    let clean = |o: &Option<String>| {
-        o.as_ref()
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-    };
-    let (first_name, last_name) = (clean(&body.first_name), clean(&body.last_name));
+    // #1343 (0.20.0) — un prénom ou un nom fait de caractères invisibles (U+00AD
+    // seul, que `trim` laisse) est refusé en nommant le champ ; absent ou vide, il
+    // garde sa sémantique (le nom de la société vient alors de `name`).
+    let first_name = crate::helpers::optional_visible(body.first_name.as_deref(), "Prénom")?;
+    let last_name = crate::helpers::optional_visible(body.last_name.as_deref(), "Nom")?;
     // Story 48-15 (#1334) — le prénom et le nom, **chacun quand il est fourni**,
     // sont bornés à leur colonne (`companies.first_name` / `last_name`,
     // `VARCHAR(70)`), avant le nom composé : un prénom seul (le nom de la société

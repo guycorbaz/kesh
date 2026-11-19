@@ -2524,6 +2524,7 @@ contact-salutation-madame = Frau
 # lecteur. Orthographe suisse : Strasse s'écrit avec deux s, et aucune ligne de DONNEES de
 # ce fichier n'emploie l'eszett. (Revue de code 23-1b, passe 1.)
 contact-error-address-npa-city = PLZ und Ort sind erforderlich, wenn eine Adresse erfasst wird
+contact-error-address-country-alone = Ein Land allein ist keine Adresse: Erfassen Sie PLZ und Ort, oder leeren Sie das Land.
 contacts-country-unknown = Der Ländercode « { $code } » ist kein bekannter ISO-Code: Die QR-Rechnung dieses Kontakts kann nicht erstellt werden. Korrigieren Sie ihn (CH, FR, DE…); die übrigen Felder werden gespeichert, ohne ihn zu ändern.
 contact-error-person-name = Vorname und Name sind für eine Person erforderlich
 contact-persons-add = Hinzufügen
@@ -4075,3 +4076,26 @@ projects-reassign-warning-locked = Buchungen gesperrt bis zum { $date }.
 projects-reassign-warning-reports = Die analytischen Berichte dieser Periode ändern sich.
 projects-reassign-confirm = Bestätigen
 projects-reassign-done = Analytisches Konto geändert.
+
+## #1348 (0.20.0) — Ablehnungen des Servers, deren Schlüssel im Katalog fehlte.
+error-onboarding-reset-forbidden = Das Zurücksetzen des Onboardings ist auf dieser Instanz nicht erlaubt.
+error-invoice-already-paid = Die Rechnung ist bereits bezahlt — es kann keine Mahnung erfasst werden.
+error-dunning-level-not-found = Die verlangte Mahnstufe existiert in der Konfiguration nicht.
+error-reminder-date-in-future = Das Datum einer Mahnung darf nicht in der Zukunft liegen.
+error-invoice-not-paused = Diese Rechnung ist nicht ausgesetzt.
+error-dunning-paused = Die Mahnungen sind für diese Rechnung ausgesetzt.
+error-level-already-sent = Diese Mahnstufe wurde bereits bearbeitet (gleichzeitiger Versand oder unzulässiges Überspringen einer Stufe).
+error-reminder-sent-but-invoice-gone = Die Mahnung wurde gesendet, aber die Rechnung ist vor der Erfassung verschwunden.
+error-reminder-sent-but-not-recorded = Die Mahnung wurde gesendet, konnte aber nicht erfasst werden. Der Versand ist im Audit-Protokoll festgehalten.
+error-batch-too-large = Zu viele Rechnungen im Stapel (maximal 20).
+error-batch-exceeds-send-quota = Der Stapel überschreitet das Versandkontingent ({ $max } E-Mails pro Zeitfenster).
+reconciliation-errors-lock-release-failed = Interner Fehler beim Freigeben der Sperre. Versuchen Sie es erneut.
+reconciliation-errors-fiscal-year-closed = Abstimmung nicht möglich: Das Geschäftsjahr ist für dieses Datum nicht offen.
+reconciliation-errors-transaction-not-pending = Banktransaktion nicht gefunden oder bereits abgeglichen.
+error-inbox-import-already-running = Ein Import des Ordners läuft bereits. Versuchen Sie es in Kürze erneut.
+error-import-not-pending-completion = Diese importierte Rechnung wartet nicht mehr auf Vervollständigung.
+error-source-document-not-found = Zu dieser Rechnung ist kein Beleg gespeichert.
+error-imported-invoice-not-found = Diese importierte Rechnung wurde nicht gefunden.
+error-source-document-gone = Der Beleg wurde nicht wiederhergestellt (nur Metadaten).
+error-data-length-or-range = Ein angegebener Wert ist zu lang oder liegt ausserhalb des zulässigen Bereichs.
+error-invalid-input-generic = Ungültige Eingabe

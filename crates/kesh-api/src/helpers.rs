@@ -55,6 +55,34 @@ pub fn exceeds_len(value: &str, max: usize) -> bool {
     value.chars().count() > max
 }
 
+/// Un nom **facultatif à ce niveau** (prénom, nom, raison sociale), jugé sur ce qui
+/// se voit — #1343 (0.20.0).
+///
+/// - `None`, vide ou blanc après `trim` → `Ok(None)` : l'appelant garde sa
+///   sémantique d'un champ absent (message « obligatoire » ou repli sur un autre
+///   champ) ;
+/// - **entièrement invisible** ([`kesh_core::text::is_invisible`] : trait d'union
+///   conditionnel U+00AD, espaces de largeur nulle, BOM…) → refus `400` qui nomme
+///   `field` et dit le geste — le champ **paraît vide** à l'écran, l'utilisateur ne
+///   voit pas ce qu'il doit corriger ;
+/// - sinon → `Ok(Some(valeur rognée))`. Un texte qui **mêle** invisible et visible
+///   (« Jean\u{AD}Pierre ») passe inchangé, comme dans
+///   `routes::contacts::normalize_optional`.
+///
+/// `str::trim` ne retire pas ces caractères : un prénom fait du seul U+00AD comptait
+/// pour renseigné et s'imprimait en espace de tête. Message en français (#710).
+pub fn optional_visible(value: Option<&str>, field: &str) -> Result<Option<String>, AppError> {
+    let Some(rogne) = value.map(str::trim).filter(|v| !v.is_empty()) else {
+        return Ok(None);
+    };
+    if rogne.chars().all(kesh_core::text::is_invisible) {
+        return Err(AppError::Validation(format!(
+            "{field} : aucun caractère visible (un trait d'union conditionnel seul, par exemple) — effacez le champ et saisissez-le de nouveau"
+        )));
+    }
+    Ok(Some(rogne.to_string()))
+}
+
 /// Récupère la company de l'utilisateur courant.
 ///
 /// Utilisé par les handlers pour charger la Company complète depuis le
@@ -128,5 +156,34 @@ mod tests {
         };
         assert_eq!(user.user_id, 123);
         assert_eq!(user.company_id, 5);
+    }
+
+    /// #1343 (story v0200-corrections-mineures, AC11) — `optional_visible`. Rouge : M16.
+    #[test]
+    fn optional_visible_refuses_only_the_entirely_invisible_1343() {
+        for vide in [None, Some(""), Some("  ")] {
+            assert!(
+                matches!(optional_visible(vide, "Prénom"), Ok(None)),
+                "{vide:?}"
+            );
+        }
+        for invisible in ["\u{AD}", "\u{200B}\u{FEFF}", " \u{AD} "] {
+            match optional_visible(Some(invisible), "Prénom") {
+                Err(AppError::Validation(m)) => assert_eq!(
+                    m,
+                    "Prénom : aucun caractère visible (un trait d'union conditionnel seul, par exemple) — effacez le champ et saisissez-le de nouveau",
+                    "{invisible:?}"
+                ),
+                autre => panic!("{invisible:?} : refus attendu, obtenu {autre:?}"),
+            }
+        }
+        assert_eq!(
+            optional_visible(Some(" Jean "), "Prénom").unwrap(),
+            Some("Jean".to_string())
+        );
+        assert_eq!(
+            optional_visible(Some("Jean\u{AD}Pierre"), "Prénom").unwrap(),
+            Some("Jean\u{AD}Pierre".to_string())
+        );
     }
 }

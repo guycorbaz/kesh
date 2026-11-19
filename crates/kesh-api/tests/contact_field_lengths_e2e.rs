@@ -397,3 +397,137 @@ async fn pdf_fields_are_refused_past_their_bound_and_accepted_at_it(pool: MySqlP
         assert_eq!(status, 201, "à la borne, accepté : {created}");
     }
 }
+
+/// Story v0200-corrections-mineures (#1336, AC4, filet) — l'écran ne coupe plus
+/// l'e-mail ni le téléphone : le serveur refuse ce qui dépasse, `error.code` lu,
+/// et accepte la borne. Refus préexistants (`contacts.rs`, `MAX_EMAIL_LEN`,
+/// `MAX_PHONE_LEN`) : ce test ne rougit sous aucune mutation de la story.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn email_and_phone_are_refused_past_their_bound_and_accepted_at_it_1336(pool: MySqlPool) {
+    let (app, token) = setup(&pool).await;
+    let courriel = |n: usize| format!("{}@example.com", "a".repeat(n - "@example.com".len()));
+
+    let (status, rendu) = post(
+        &app,
+        &token,
+        &entreprise("Démo SA", json!({ "email": courriel(321) })),
+    )
+    .await;
+    assert_refus_nomme(status, &rendu, "L'email doit faire au plus 320 caractères");
+    let (status, rendu) = post(
+        &app,
+        &token,
+        &entreprise("Démo SA", json!({ "phone": "0".repeat(51) })),
+    )
+    .await;
+    assert_refus_nomme(
+        status,
+        &rendu,
+        "Le téléphone doit faire au plus 50 caractères",
+    );
+    assert_eq!(contact_count(&pool).await, 0, "rien d'écrit");
+
+    for body in [
+        entreprise("Démo SA 1", json!({ "email": courriel(320) })),
+        entreprise("Démo SA 2", json!({ "phone": "0".repeat(50) })),
+    ] {
+        let (status, created) = post(&app, &token, &body).await;
+        assert_eq!(status, 201, "à la borne, accepté : {created}");
+    }
+}
+
+/// Le geste que dit tout refus d'un champ invisible (#1343, D5).
+const GESTE_1343: &str = "effacez le champ et saisissez-le de nouveau";
+
+/// Story v0200-corrections-mineures (#1343, AC11) — `POST` : un prénom, un nom ou
+/// une raison sociale faits du seul trait d'union conditionnel sont refusés, le
+/// message nomme le champ et dit le geste ; rien n'est écrit. Rouges : M13
+/// (prénom), M14 (raison sociale), M16.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn invisible_names_are_refused_and_named_1343(pool: MySqlPool) {
+    let (app, token) = setup(&pool).await;
+    for (body, prefixe) in [
+        (
+            personne("\u{AD}", "Dupont"),
+            "Prénom : aucun caractère visible",
+        ),
+        (personne("Jean", "\u{AD}"), "Nom : aucun caractère visible"),
+        (
+            entreprise("\u{AD}", json!({})),
+            "Raison sociale : aucun caractère visible",
+        ),
+    ] {
+        let (status, rendu) = post(&app, &token, &body).await;
+        assert_refus_nomme(status, &rendu, prefixe);
+        let message = rendu["error"]["message"].as_str().unwrap_or_default();
+        assert!(message.contains(GESTE_1343), "geste absent : {message}");
+    }
+    assert_eq!(contact_count(&pool).await, 0, "rien d'écrit");
+}
+
+/// AC11 — `PUT` : même refus, et le contact reste tel qu'il était.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn put_refuses_invisible_names_1343(pool: MySqlPool) {
+    let (app, token) = setup(&pool).await;
+    let (status, created) = post(&app, &token, &personne("Jean", "Dupont")).await;
+    assert_eq!(status, 201, "{created}");
+    let id = created["id"].as_i64().expect("id");
+    let version = created["version"].as_i64().expect("version");
+    for (first, last, prefixe) in [
+        ("\u{AD}", "Dupont", "Prénom : aucun caractère visible"),
+        ("Jean", "\u{200B}\u{FEFF}", "Nom : aucun caractère visible"),
+    ] {
+        let mut body = personne(first, last);
+        body["version"] = json!(version);
+        let (status, refus) = put(&app, &token, id, &body).await;
+        assert_refus_nomme(status, &refus, prefixe);
+        let message = refus["error"]["message"].as_str().unwrap_or_default();
+        assert!(message.contains(GESTE_1343), "geste absent : {message}");
+        let relu = get(&app, &token, id).await;
+        assert_eq!(relu["firstName"], "Jean");
+        assert_eq!(relu["version"], json!(version), "rien d'écrit");
+    }
+
+    // Revue P1 (A2) — la raison sociale invisible d'une « Entreprise », en `PUT`. Rouge : M14.
+    let (status, societe) = post(&app, &token, &entreprise("Démo SA", json!({}))).await;
+    assert_eq!(status, 201, "{societe}");
+    let id = societe["id"].as_i64().expect("id");
+    let mut body = entreprise("\u{AD}", json!({}));
+    body["version"] = societe["version"].clone();
+    let (status, refus) = put(&app, &token, id, &body).await;
+    assert_refus_nomme(status, &refus, "Raison sociale : aucun caractère visible");
+    let message = refus["error"]["message"].as_str().unwrap_or_default();
+    assert!(message.contains(GESTE_1343), "geste absent : {message}");
+    let relu = get(&app, &token, id).await;
+    assert_eq!(relu["name"], "Démo SA");
+    assert_eq!(relu["version"], societe["version"], "rien d'écrit");
+}
+
+/// AC11 (filets) — un prénom vide garde le message d'aujourd'hui ; un prénom qui
+/// MÊLE invisible et visible passe tel quel ; le même contact se réenregistre
+/// (AC12 b).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn empty_and_mixed_names_keep_their_behaviour_1343(pool: MySqlPool) {
+    let (app, token) = setup(&pool).await;
+    let (status, rendu) = post(&app, &token, &personne("", "Dupont")).await;
+    assert_refus_nomme(
+        status,
+        &rendu,
+        "Le prénom et le nom sont obligatoires pour une personne",
+    );
+    let (status, rendu) = post(&app, &token, &entreprise("  ", json!({}))).await;
+    assert_refus_nomme(
+        status,
+        &rendu,
+        "La raison sociale est obligatoire pour une entreprise",
+    );
+
+    let (status, created) = post(&app, &token, &personne("Jean\u{AD}Pierre", "Dupont")).await;
+    assert_eq!(status, 201, "{created}");
+    assert_eq!(created["firstName"], "Jean\u{AD}Pierre");
+    let id = created["id"].as_i64().expect("id");
+    let mut body = personne("Jean\u{AD}Pierre", "Dupont");
+    body["version"] = created["version"].clone();
+    let (status, rendu) = put(&app, &token, id, &body).await;
+    assert_eq!(status, 200, "réenregistré : {rendu}");
+}

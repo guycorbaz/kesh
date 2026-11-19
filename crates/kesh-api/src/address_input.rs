@@ -43,6 +43,8 @@ impl StructuredAddressInput {
     }
 
     /// `true` si aucun composant significatif n'est renseigné (adresse absente).
+    /// Le pays n'en est pas : un pays seul, autre que CH, est refusé par
+    /// [`Self::validate_optional_keeping`] (#1342).
     pub fn is_blank(&self) -> bool {
         self.street.trim().is_empty()
             && self.building.trim().is_empty()
@@ -143,7 +145,8 @@ impl StructuredAddressInput {
     }
 
     /// Validation **optionnelle** (contact / débiteur) : `None` si le bloc est
-    /// entièrement vide ; sinon longueurs vérifiées. Une adresse partielle est
+    /// entièrement vide (pays « CH », vide ou absent) ; refus d'un pays seul autre
+    /// que CH (#1342) ; sinon longueurs vérifiées. Une adresse partielle est
     /// acceptée au niveau contact — le bloc débiteur du QR n'est émis que si
     /// l'adresse est complète (cf. génération).
     /// Le pays doit être un code ISO connu (#817) ; c'est la validation d'une
@@ -162,6 +165,15 @@ impl StructuredAddressInput {
         stored_country: Option<&str>,
     ) -> Result<Option<StructuredAddress>, AppError> {
         if self.is_blank() {
+            // #1342 (0.20.0) — un pays seul, autre que CH, est une saisie que l'on
+            // jetait en silence : il est refusé. « CH » seul (ou vide, ou absent)
+            // reste « pas d'adresse » : c'est le préremplissage de l'écran et le
+            // défaut du serveur, indiscernable d'une absence (limite assumée).
+            if self.normalized_country() != "CH" {
+                return Err(AppError::Validation(
+                    "adresse : un pays seul ne fait pas une adresse — saisissez le NPA et la localité, ou videz le pays".into(),
+                ));
+            }
             return Ok(None);
         }
         self.check_lengths(stored_country)?;
@@ -303,5 +315,38 @@ mod tests {
         let mut a = addr(None);
         a.city = "Lau\u{AD}sanne".into();
         assert!(a.validate_required().is_ok());
+    }
+
+    /// #1342 (story v0200-corrections-mineures, AC6) — un pays seul, autre que CH,
+    /// est refusé ; « CH » seul, vide ou absent reste « pas d'adresse » ; un pays
+    /// avec NPA et localité fait une adresse. Rouge sans la règle : M7.
+    #[test]
+    fn a_lone_country_other_than_ch_is_refused_1342() {
+        let seul = |country: Option<&str>| StructuredAddressInput {
+            country: country.map(str::to_string),
+            ..Default::default()
+        };
+        for c in ["FR", "fr", " de ", "Suisse"] {
+            let m = message(seul(Some(c)).validate_optional_keeping(None));
+            assert!(m.contains("un pays seul"), "{c} : {m}");
+            let m = message(seul(Some(c)).validate_optional_keeping(Some("FR")));
+            assert!(m.contains("un pays seul"), "{c} (mise à jour) : {m}");
+        }
+        for c in [Some("CH"), Some(" ch "), Some(""), None] {
+            assert!(
+                seul(c)
+                    .validate_optional()
+                    .expect("pas d'adresse")
+                    .is_none(),
+                "{c:?}"
+            );
+        }
+        let a = StructuredAddressInput {
+            postal_code: "75002".into(),
+            city: "Paris".into(),
+            country: Some("FR".into()),
+            ..Default::default()
+        };
+        assert_eq!(a.validate_optional().unwrap().unwrap().country, "FR");
     }
 }
