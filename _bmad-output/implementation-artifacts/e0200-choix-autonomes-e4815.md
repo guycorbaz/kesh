@@ -33,18 +33,21 @@ Chaque choix : contexte, option retenue, autres options, réversibilité.
 - **Écarté** : modifier `contact_payment_terms_e2e.rs` (hors de la liste des fichiers de la fiche).
 - **Réversibilité** : totale.
 
-## C-e4815-4 — Le motif d'un refus de l'écran s'affiche sous le champ (raison sociale, délai, nom d'article)
+## C-e4815-4 — Le motif d'un refus de l'écran des contacts s'affiche sous le champ (raison sociale, délai)
 
-- **Contexte** : trois des champs du PDF sont jugés **aussi par l'écran** : la raison sociale (`formName.trim().length > 255`,
-  `contacts/+page.svelte:453-454`), le délai de paiement (0 à 365, `:459-468`) et le nom de l'article (`products/+page.svelte:
-  324-325`). Leur refus rend `formValidation` non vide, ce qui **désactive** le bouton (`contacts/+page.svelte:1132`,
-  `products/+page.svelte:732`, `disabled={formSubmitting || !!formValidation}`) ; le motif n'est affiché qu'à la soumission
-  (`formError = formValidation`), qu'un bouton désactivé n'atteint jamais. Le `maxlength` rendait ce cas inatteignable (le texte
-  collé était coupé). Le retirer sans plus ferait passer d'une coupure muette à un **refus muet** (bouton grisé sans explication),
-  contraire à la story (« refusé en le disant ») et à l'AC7 / l'AC12 (6), qui attendent le message « entre 0 et 365 jours ».
-- **Retenu** : chacun des trois messages devient une valeur dérivée (`nameTooLongMsg`, `paymentTermsDaysMsg`, et `nameTooLongMsg`
-  de la page des articles), lue par `formValidation` à la même place qu'avant (ordre et texte inchangés) **et** affichée sous son
-  champ, en `text-destructive`, avec un `data-testid`. Aucune clé neuve, aucun site `i18nMsg` de plus (l'appel se déplace).
+- **Contexte** : deux des champs du PDF sont jugés **aussi par l'écran des contacts** : la raison sociale
+  (`formName.trim().length > 255`, `contacts/+page.svelte:452-453` à `45eb99ddd`) et le délai de paiement (0 à 365, `:459-468`).
+  Leur refus rend `formValidation` non vide, ce qui **désactive** le bouton (`:1132`, `disabled={formSubmitting ||
+  !!formValidation}`) ; le motif n'est affiché qu'à la soumission (`formError = formValidation`, `:477`), qu'un bouton désactivé
+  n'atteint jamais. Le `maxlength` rendait ce cas inatteignable (le texte collé était coupé). Le retirer sans plus ferait passer d'une
+  coupure muette à un **refus muet** (bouton grisé sans explication), contraire à la story (« refusé en le disant ») et à l'AC7 /
+  l'AC12 (6), qui attendent le message « entre 0 et 365 jours ». **La page des articles n'est pas concernée** : elle affiche déjà le
+  motif au pied du formulaire dès la frappe (`products/+page.svelte:737-738` au commit `865e54132`, `{:else if formTouched &&
+  formValidation}`) ; le premier ajout y faisait doublon, vu à la capture `08`, retiré au commit de la recette.
+- **Retenu** : les deux messages deviennent des valeurs dérivées (`nameTooLongMsg`, `paymentTermsDaysMsg`), lues par
+  `formValidation` à la même place qu'avant (ordre et texte inchangés) **et** affichées sous leur champ, en `text-destructive`, avec
+  un `data-testid` (`contact-name-too-long`, `contact-payment-terms-days-error`). Aucune clé neuve, aucun site `i18nMsg` de plus
+  (l'appel se déplace).
 - **Écarté** : ne rien afficher (refus muet) ; réactiver le bouton pour laisser `submitForm` afficher `formError` (change le
   comportement de toute la validation de l'écran, hors périmètre) ; un message neuf par champ (clé neuve, quatre catalogues).
 - **Réversibilité** : totale (écran seul).

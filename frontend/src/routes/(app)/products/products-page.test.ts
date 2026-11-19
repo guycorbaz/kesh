@@ -194,16 +194,13 @@ describe('fiche produit — le nom ne coupe pas un texte collé (Story 48-15)', 
 		expect(champ.hasAttribute('maxlength')).toBe(false);
 	});
 
-	// C-e4815-4 — l'écran juge lui-même la longueur du nom : le bouton se désactive, et
-	// le MOTIF s'affiche sous le champ, sans attendre une soumission que le bouton
-	// désactivé n'atteindrait jamais (sinon, le refus serait muet).
+	// L'écran juge lui-même la longueur du nom : le bouton se désactive, et le motif
+	// s'affiche au pied du formulaire dès la frappe (`formTouched && formValidation`).
 	it('un nom de 256 caractères collé est refusé en le disant, la saisie reste, rien ne part', async () => {
 		const champ = await ouvrirCreation();
 		await fireEvent.input(champ, { target: { value: 'A'.repeat(256) } });
 		await settle();
-		expect(document.querySelector('[data-testid="product-name-too-long"]')?.textContent).toContain(
-			'255 caractères'
-		);
+		expect(champ.form!.textContent).toContain('Le nom doit faire au plus 255 caractères');
 		const soumettre = [...champ.form!.querySelectorAll('button')].find(
 			(b) => b.getAttribute('type') === 'submit'
 		);
