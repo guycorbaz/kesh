@@ -1,6 +1,6 @@
 # Story 49-1c : types de lignes de la facture client — l'écran, la ligne de commentaire, l'ouverture de `comment` dans l'API (#1242)
 
-Status: ready-for-dev
+Status: in-progress
 
 *Fiche rédigée le 2026-11-19 par l'agent de rédaction de la 49-1c (Opus 5.5), par le workflow `bmad-create-story`.
 Release **0.20.0** (coupure jeudi 2026-11-26 au soir). **Aucune migration** (celle de la release est la 49-1a,
