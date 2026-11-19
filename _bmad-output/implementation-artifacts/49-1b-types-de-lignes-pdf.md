@@ -668,7 +668,10 @@ Traité :
   quand le commentaire s'ouvre, la phrase « le reste du corps (libellés des lignes, conditions…) n'a pas ce repli et perd
   encore ces lettres » devient fausse pour lui — un commentaire **replie** les 125 lettres sur leur base (Čolić →
   « Colic »), comme le nom et l'adresse, et **garde** ’ et — (« le reste du corps les garde tels quels » reste vrai) ; le
-  libellé d'une ligne chiffrée, lui, n'a toujours pas le repli.
+  libellé d'une ligne chiffrée, lui, n'a toujours pas le repli. La même phrase devra dire ce qu'un commentaire **perd**
+  encore (revue P2, tracé par l'orchestrateur) : tout caractère que WinAnsi ne porte pas disparaît sans avertissement
+  (signe moins U+2212, tirets U+2010 et U+2011, flèches, grec, cyrillique, lettres latines hors des 125) — **#1400** (P3) ;
+  une lettre accentuée saisie en décomposé (NFD, `e` + U+0301) perd son accent — **#1401** (P4).
 
 **Ce qui a tourné** (journaux dans `kesh-gate-logs/e491b/`) :
 - gate ciblé, avec `binary(configuration_transmise)` (`gate-cible-p1-1.log`) : clippy du workspace vert, 1049 tests verts ;
@@ -680,6 +683,25 @@ Traité :
 **Pas lancé** : `gate-ci` (à la clôture, consigne) et E2E (à la clôture).
 
 **Non traité, sans issue** : aucun. Les findings de la P1 sont tous traités ci-dessus.
+
+### Remédiation de la revue P2 (commit `c69162665`)
+
+Revue P2 (Sonnet 5.5, complète, `kesh-gate-logs/e491b/review-p2.md`) : 0/0/0/4.
+
+- **L1, corrigé** : `--locked` ajouté à `cargo tree` ; le contrôle négatif et la sonde positive ne lisent plus que les
+  lignes de `kesh-qrbill` (`features_du_paquet`, sondé par `s_features_du_paquet`). **Joué** (`l1-p2.log`, HEAD
+  `c69162665`) : clippy du workspace vert ; `cargo nextest run -p kesh-api --test configuration_transmise` : 34 sur 34 ;
+  `cargo test -p kesh-api --test configuration_transmise -- --test-threads=1` (un processus par binaire) : 34 passés,
+  0 échoué.
+- **L2 et L3, non corrigés** : tracés par l'orchestrateur en **#1400** (P3, caractères hors WinAnsi perdus, dont U+2212) et
+  **#1401** (P4, accents en NFD) ; cités à la tâche pour la 49-1c ci-dessus.
+- **L4, joué sans changement de code** (`mut/bilan.log`, section « Revue P2, L4 ») : P2-L4a (filtre de largeur nulle
+  retiré), P2-L4c (lignes vides de tête gardées), P2-L4d (`repli` retiré) **tuées** ; pour U+00AD, P2-L4b (bras retiré)
+  **survit, mutant équivalent** — U+00AD n'a pas de largeur WinAnsi, le filtre le retire de toute façon, le bras est
+  redondant (gardé pour la lisibilité) —, et P2-L4b2 (U+00AD imprimé `-`) est **tuée**. G-5 rejouée sur la sonde
+  resserrée : tuée. Toutes par le test visé, sans erreur de compilation.
+
+**Pas lancé** : `gate-ci` et E2E, à la clôture après la passe P3.
 
 ### Fichiers
 
@@ -705,3 +727,4 @@ Traité :
 | 2026-11-19 | **Validation terminée — Change Log final** (une entrée). **Tendance des findings par passe** (CRITICAL/HIGH/MEDIUM/LOW) : P1 Opus 0/1/5/7 → P2 Sonnet 0/0/4/5 → P3 ciblée Opus 0/1/3/5 → P4 Sonnet 0/0/3/7 → P5 ciblée Opus 0/0/2/4 → P6 ciblée Sonnet 0/0/1/4 → P7 ciblée Haiku 0/0/0/1 ; arrêt sur une passe sans finding au-dessus de LOW. **Modèles** : Sonnet (rédaction), Opus (P1), Sonnet (P2), Opus (P3 ciblée), Sonnet (P4), Opus (P5 ciblée), Sonnet (P6 ciblée), Haiku (P7 ciblée). **Signaux « recycle »** : deux, déclarés au Project Lead par l'orchestrateur (P3 : défauts nés de la remédiation dans le mécanisme de capture ; P5 : MEDIUM nés de la remédiation P4 dans le test du comparateur). **Deux simplifications retenues** : la capture des références dans un worktree propre et détaché (commits C puis F, avant tout code de rendu), et T1-bis réduit à « l'empreinte distingue les six paires fabriquées » avec une seule mutation. **Reclassements** : aucun. **LOW de la P7 corrigé après la dernière passe** (texte seul, aucun code : D4 et T1-bis disent « l'empreinte distingue les six paires fabriquées », sans généraliser). Statut : `ready-for-dev`. |
 | 2026-11-19 | **Développement** (Opus 5.5, `bmad-dev-story`). Étape 0 dans l'ordre : commit C (`709370ed5`, après un premier essai `a8b15b240` arrêté par l'assertion de son propre scénario S2, aucune référence écrite), capture dans un worktree détaché propre (T0, T0-bis : `ecrire` puis `comparer`, stables), commit F (`12be35434`, fixtures seules), retrait du worktree sans `--force`, contrôles de l'AC1 (1) à (7) conformes ; puis le code (`03afbfbca`) : `LinePdfKind`, `couper_ligne_a`, chemin du commentaire, `ligne_pdf`. T1 à T12 verts ; T1, T2, T3 prouvent que le rendu chiffré est celui de la 0.19.0. 21 mutations tuées, une équivalente déclarée (T12 de la fiche ; T12-b tuée). Garde `configuration_transmise` adaptée (`89f5e77cb`, C-e491b-5 ; G-1, G-2 tuées). Gates du passage en review verts à `89f5e77cb` (`test-fast --ci` 6179/6179, `gate-ci` 6196 passés). Écarts : premier C, suppression des fixtures de capture par `mv` (pas de `rm`), mutant équivalent T12, garde de configuration. Statut : `review`. |
 | 2026-11-19 | **Revue P1** (trois lentilles B, E, A, Opus 5.5 ; `kesh-gate-logs/e491b/review-p1-{B,E,A}.md`) : 0 CRITICAL, 0 HIGH, 1 MEDIUM (relevé par les trois lentilles : la garde de la feature de test admettait une activation en production), 15 LOW ; preuve avant / après confirmée par les trois. **Remédiation** (`4dd9932ea`, Opus 5.5) : garde de configuration (C-e491b-6), chemin des commentaires (E-2 à E-5, L2), tests (A-3, A-4, L6), témoin S2 et captures (A-2, L3), écrits (A-5, L4, L5, E-6) ; détail au Dev Agent Record, § *Remédiation de la revue P1*. T1, T2, T3 verts et AC1 rejoué : chemin chiffré inchangé. `test-fast --ci` 6180/6180 ; 14 mutations tuées. Prochaine passe : **P2 complète**, lentille unique, Sonnet (`49-1b-types-de-lignes-pdf-review-prompt-p2.md`). Statut : `review`. |
+| 2026-11-19 | **Revue P2** (Sonnet 5.5, complète, lentille unique ; `kesh-gate-logs/e491b/review-p2.md`) : 0/0/0/4 ; preuve avant / après confirmée. **L1 corrigé** (`c69162665`, Opus 5.5) : `cargo tree --locked`, sonde positive et contrôle négatif sur les seules lignes de `kesh-qrbill` ; vert sous nextest et sous `cargo test` (un processus par binaire). **L2 et L3 tracés** par l'orchestrateur en **#1400** (P3) et **#1401** (P4), non corrigés ici, cités à la tâche pour la 49-1c. **L4** : mutations jouées sans changement de code — trois tuées, plus P2-L4b2 ; P2-L4b équivalente (bras U+00AD redondant). Prochaine passe : **P3 ciblée**, Haiku, sur le seul commit `c69162665` (`49-1b-types-de-lignes-pdf-review-prompt-p3-ciblee.md`). Statut : `review`. |
