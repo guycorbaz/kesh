@@ -16,8 +16,20 @@ rust_decimal = { version = "1.41", features = ["maths"] }
 chrono = "0.4"
 thiserror = "2"
 time = "0.3"
+# Story 49-1b (#1242, D4) — le condensat du comparateur `empreinte`, sous la seule
+# feature `test-support` : absent de toute construction de production.
+sha2 = { version = "0.10", optional = true }
+
+[features]
+# Story 49-1b (#1242, D4) — le comparateur du rendu (`empreinte`), réservé aux tests :
+# activé pour les tests de la crate par l'auto-dev-dépendance ci-dessous, et pour ceux de
+# `kesh-api` par sa dev-dépendance. Jamais `required-features` (un test sauté en silence).
+test-support = ["dep:sha2"]
 
 [dev-dependencies]
+# Story 49-1b (#1242, D4) — auto-dev-dépendance : les tests de la crate voient
+# `test-support` (résolveur 3 : la feature n'entre pas dans un build de production).
+kesh-qrbill = { path = ".", features = ["test-support"] }
 rxing = "0.7"
 sha2 = "0.10"
 rust_decimal_macros = "1.40"

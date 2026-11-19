@@ -9,6 +9,8 @@
 //! - [`build_payload`] — the raw SIX payload string (for tests / external usage).
 //! - [`parse_spc_payload`] — decode a scanned SPC payload back into typed data.
 
+#[cfg(feature = "test-support")]
+pub mod empreinte;
 pub mod generator;
 pub(crate) mod largeurs;
 pub mod parser;

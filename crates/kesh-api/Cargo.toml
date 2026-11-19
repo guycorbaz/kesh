@@ -139,3 +139,7 @@ yaml-rust2 = "0.13.0"
 # d'une page image JPEG (filtre DCT). Déjà au Cargo.lock par `kesh-qrbill` :
 # aucun paquet neuf.
 printpdf = "0.7"
+# Story 49-1b (#1242, D4) — le comparateur du rendu (`kesh_qrbill::empreinte`), pour la
+# preuve avant / après du PDF par la base et le HTTP. Fonctionnalité de dev-dépendance :
+# elle n'entre pas dans `cargo build --release -p kesh-api` (résolveur 3).
+kesh-qrbill = { path = "../kesh-qrbill", features = ["test-support"] }
