@@ -59,17 +59,24 @@ pub async fn ecriture(pool: &MySqlPool, id: i64) -> Value {
     .await
     .expect("écriture");
     #[allow(clippy::type_complexity)]
-    let lignes: Vec<(i32, String, Decimal, Decimal, Option<i64>, Option<i64>, Option<String>)> =
-        sqlx::query_as(
-            "SELECT l.line_order, a.number, l.debit, l.credit, l.project_id, \
+    let lignes: Vec<(
+        i32,
+        String,
+        Decimal,
+        Decimal,
+        Option<i64>,
+        Option<i64>,
+        Option<String>,
+    )> = sqlx::query_as(
+        "SELECT l.line_order, a.number, l.debit, l.credit, l.project_id, \
                     l.lettering_key, l.lettering_origin \
              FROM journal_entry_lines l JOIN accounts a ON a.id = l.account_id \
              WHERE l.entry_id = ? ORDER BY l.line_order",
-        )
-        .bind(id)
-        .fetch_all(pool)
-        .await
-        .expect("lignes");
+    )
+    .bind(id)
+    .fetch_all(pool)
+    .await
+    .expect("lignes");
     json!({
         "entry_number": number,
         "entry_date": date.to_string(),

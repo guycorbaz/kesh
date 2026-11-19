@@ -239,11 +239,15 @@ const REGISTRE: &[(&str, &str, Statut)] = &[
             "bank_accounts::ensure_open_in_tx sur le compte de la transaction, étape (5) ; transaction pending (I1) et pré-vol R1 de la route",
         ),
     ),
+    // Story 48-14 (#1255, D4) — le lien défait des deux bras du
+    // dé-rapprochement groupé, extrait en aide : `cancel_in_tx` n'a plus de
+    // littéral visé et sort du registre ; `supplier_cancel_in_tx` garde son
+    // entrée (l'`UPDATE supplier_invoices`).
     (
         "kesh-db/src/repositories/grouped_settlements.rs",
-        "cancel_in_tx",
+        "unlink_group_transaction_in_tx",
         Statut::Gardee(
-            "bank_accounts::ensure_open_in_tx sur bt.bank_account_id, après le verrou de l'écriture et de son exercice",
+            "appelé par cancel_in_tx et supplier_cancel_in_tx seuls, après leur bank_accounts::ensure_open_in_tx ; revérifié en dernier par recheck_open_locked_in_tx",
         ),
     ),
     // Story 43-1b (#823) — le paiement groupé fournisseur et son
@@ -613,8 +617,10 @@ fn every_bank_account_writer_is_classified() {
     // dé-rapprochement (`UPDATE bank_transactions`, `DELETE invoice_settlements`).
     // Story 43-1b (#823) : 41 → 45 — le paiement groupé fournisseur et son
     // dé-rapprochement (chacun `UPDATE supplier_invoices`, `UPDATE
-    // bank_transactions`).
-    assert_eq!(sites.len(), 45, "sites vus :\n{}", detail.join("\n"));
+    // bank_transactions`). Story 48-14 (#1255, D4) : 45 → 44 — les deux
+    // `UPDATE bank_transactions` du dé-rapprochement groupé (client et
+    // fournisseur) n'en font plus qu'un, dans `unlink_group_transaction_in_tx`.
+    assert_eq!(sites.len(), 44, "sites vus :\n{}", detail.join("\n"));
 }
 
 /// Second inventaire (AC8, C-28-4-22) — chaque appelant du créateur de
@@ -918,16 +924,29 @@ const GESTES_VERROUILLANTS_SQL: [&str; 5] = [
 /// règlement annulé de W9 (`cancel_settlement_in_tx(`) — la liste de la fiche
 /// —, et la dissolution du lettrage de pièce, ajoutée au développement (elle
 /// écrit, et précède toujours la contre-passation : sans effet sur l'issue,
-/// elle ferme un angle mort de plus). ⚠️ **Angle mort** : un geste
-/// verrouillant appelé sous un nom absent de cette liste, ou un SQL assemblé
-/// hors littéral, n'est pas suivi.
-const GESTES_VERROUILLANTS_CODE: [&str; 5] = [
+/// elle ferme un angle mort de plus). Story 48-14 (#1255, D4) : les deux aides
+/// verrouillantes du dé-rapprochement groupé, `lock_entry_fiscal_year_in_tx(`
+/// (le `FOR UPDATE` de l'écriture et de son exercice) et
+/// `unlink_group_transaction_in_tx(` (l'`UPDATE bank_transactions`), sorties
+/// des corps de `cancel_in_tx` et `supplier_cancel_in_tx`. ⚠️ **Angle mort** :
+/// un geste verrouillant appelé sous un nom absent de cette liste, ou un SQL
+/// assemblé hors littéral, n'est pas suivi.
+const GESTES_VERROUILLANTS_CODE: [&str; 7] = [
     "reverse_in_tx(",
     "reverse_owned_in_tx(",
     "cancel_settlement_in_tx(",
     "dissolve_invoice_document_group_in_tx(",
     "dissolve_supplier_invoice_document_group_in_tx(",
+    "lock_entry_fiscal_year_in_tx(",
+    "unlink_group_transaction_in_tx(",
 ];
+
+/// Les appels d'audit qui bornent « avant l'audit » la revérification de
+/// [`Position::EnDernier`] : l'écrivain d'audit, et (Story 48-14, #1255, D4)
+/// l'aide d'audit du dé-rapprochement groupé. Hors de
+/// [`GESTES_VERROUILLANTS_CODE`] : la revérification devrait à la fois la suivre
+/// et la précéder.
+const APPELS_D_AUDIT: [&str; 2] = ["audit_log::insert_in_tx(", "audit_group_cancelled_in_tx("];
 
 /// Le statut d'une fonction de `G` au regard de la fenêtre de la clôture.
 /// Depuis la Story 29-4b, aucune fenêtre n'est plus ouverte : la variante
@@ -1336,8 +1355,10 @@ fn fautes_de_la_fenetre(
 /// revérification `a` doit suivre le **dernier** geste verrouillant du corps —
 /// jetons SQL dans les littéraux (`dans_le_corps`, positions
 /// `Litteral.debut`), appels dans la copie masquée (`masque`, chaînes et
-/// commentaires effacés), positions mêlées —, et précéder le premier
-/// `audit_log::insert_in_tx(` du corps s'il y en a un. Un corps sans aucun
+/// commentaires effacés), positions mêlées —, et précéder le premier appel
+/// d'audit du corps s'il y en a un ([`APPELS_D_AUDIT`] :
+/// `audit_log::insert_in_tx(`, et l'aide d'audit du dé-rapprochement groupé
+/// depuis la Story 48-14). Un corps sans aucun
 /// geste verrouillant est lui-même une faute : la règle n'y prouverait rien.
 fn fautes_en_dernier(
     a: &AppelReverification,
@@ -1378,11 +1399,17 @@ fn fautes_en_dernier(
         )),
         Some(_) => {}
     }
-    if let Some(q) = corps.find("audit_log::insert_in_tx(")
+    // Le premier appel d'audit du corps, quel qu'il soit (Story 48-14, D4 : le
+    // minimum des positions des jetons de `APPELS_D_AUDIT`), et la faute le nomme.
+    let premier_audit = APPELS_D_AUDIT
+        .iter()
+        .filter_map(|jeton| corps.find(jeton).map(|q| (q, *jeton)))
+        .min();
+    if let Some((q, jeton)) = premier_audit
         && a.position > a.corps.0 + q
     {
         fautes.push(format!(
-            "(iii) {}::{} : la revérification suit « audit_log::insert_in_tx( »",
+            "(iii) {}::{} : la revérification suit « {jeton} »",
             a.fichier, a.fonction
         ));
     }
@@ -1682,7 +1709,7 @@ fn the_last_acquisition_rule_reports_each_fault_on_built_cases() {
     )];
     let faute = |suite: &str| format!("(iii) {fichier}::cancel_in_tx : {suite}");
     let recheck = "super::bank_accounts::recheck_open_locked_in_tx(tx, c, b).await?;";
-    let cas: [(&str, String, Vec<String>); 7] = [
+    let cas: [(&str, String, Vec<String>); 8] = [
         (
             "contrôle",
             format!(
@@ -1753,6 +1780,19 @@ fn the_last_acquisition_rule_reports_each_fault_on_built_cases() {
             ),
             vec![faute("la revérification suit « audit_log::insert_in_tx( »")],
         ),
+        // Story 48-14 (#1255, D4) — l'aide d'audit du dé-rapprochement groupé
+        // borne « avant l'audit » comme `audit_log::insert_in_tx(`.
+        (
+            "suit l'aide d'audit",
+            format!(
+                "let _ = \"UPDATE t SET a = 1 WHERE id = ?\";\n\
+                 audit_group_cancelled_in_tx(tx, u, bt, e, r, l).await?;\n\
+                 {recheck}"
+            ),
+            vec![faute(
+                "la revérification suit « audit_group_cancelled_in_tx( »",
+            )],
+        ),
         (
             "aucun geste verrouillant",
             format!("let _ = \"SELECT id FROM t WHERE id = ?\";\n{recheck}"),
@@ -1769,7 +1809,7 @@ fn the_last_acquisition_rule_reports_each_fault_on_built_cases() {
 }
 
 /// T29b-4, volet inverse jeton par jeton (Story 29-4b, #651, revue de code P1,
-/// B-1) — chacune des dix entrées de [`GESTES_VERROUILLANTS_SQL`] et de
+/// B-1) — chacune des douze entrées de [`GESTES_VERROUILLANTS_SQL`] et de
 /// [`GESTES_VERROUILLANTS_CODE`] est la cible d'un cas construit : un geste
 /// portant ce seul jeton, placé **après** la revérification, doit rendre
 /// exactement la faute « précède « <jeton> » ». La table des cas est écrite
@@ -1797,12 +1837,16 @@ fn the_last_acquisition_rule_sees_each_locking_token() {
             "SELECT a FROM t WHERE id = ? LOCK IN SHARE MODE",
         ),
     ];
-    let appels: [&str; 5] = [
+    // Story 48-14 (#1255, D4) : les deux aides verrouillantes du dé-rapprochement
+    // groupé (verrou de l'écriture et de son exercice, lien défait).
+    let appels: [&str; 7] = [
         "reverse_in_tx(",
         "reverse_owned_in_tx(",
         "cancel_settlement_in_tx(",
         "dissolve_invoice_document_group_in_tx(",
         "dissolve_supplier_invoice_document_group_in_tx(",
+        "lock_entry_fiscal_year_in_tx(",
+        "unlink_group_transaction_in_tx(",
     ];
     let cas = litteraux
         .iter()
@@ -1834,7 +1878,7 @@ fn the_last_acquisition_rule_sees_each_locking_token() {
         );
         joues += 1;
     }
-    assert_eq!(joues, 10, "décompte anti-muet des cas joués");
+    assert_eq!(joues, 12, "décompte anti-muet des cas joués");
     // Couverture, après les cas (un jeton retiré rougit d'abord par son cas) :
     // chaque entrée des deux listes a son cas, et réciproquement.
     assert_eq!(

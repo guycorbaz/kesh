@@ -2075,7 +2075,10 @@ async fn unreconciling_a_supplier_group_leaves_the_characterised_state(pool: MyS
     // Prémisse de M7 : même statut, même version pour les deux transactions.
     let t1 = caracterisation::transaction_bancaire(&pool, bt).await;
     let t2 = caracterisation::transaction_bancaire(&pool, bt2).await;
-    assert_eq!((&t1["status"], &t1["version"]), (&t2["status"], &t2["version"]));
+    assert_eq!(
+        (&t1["status"], &t1["version"]),
+        (&t2["status"], &t2["version"])
+    );
 
     let key = caracterisation::cle_api(&pool, m.s.company_id, m.s.admin_user_id).await;
     let cle = Acteur {

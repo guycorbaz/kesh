@@ -781,15 +781,24 @@ async fn disque_sature_pendant_l_ecriture(pool: MySqlPool) {
 async fn disque_sature_a_la_fermeture(pool: MySqlPool) {
     let i = monter(pool.clone()).await;
     i.retention(60).await;
-    let issue = run_once(&i.state, TestEnv::large(), instant(-10_000), Trigger::Schedule)
-        .await
-        .unwrap();
+    let issue = run_once(
+        &i.state,
+        TestEnv::large(),
+        instant(-10_000),
+        Trigger::Schedule,
+    )
+    .await
+    .unwrap();
     assert!(
         matches!(issue, RunOutcome::Done(RunStatus::Success(_))),
         "{issue:?}"
     );
     let ecrites = i.noms_auto();
-    assert_eq!(ecrites.len(), 1, "la mesure écrit une archive : {ecrites:?}");
+    assert_eq!(
+        ecrites.len(),
+        1,
+        "la mesure écrit une archive : {ecrites:?}"
+    );
     let chemin = i.auto().join(&ecrites[0]);
     let taille = std::fs::metadata(&chemin).unwrap().len();
     let central = {
@@ -830,7 +839,8 @@ fn plein_apres_refuse_de_prolonger_et_accepte_la_reecriture() {
     // Réécriture de 4 octets après recul (l'en-tête d'une entrée zip).
     e.seek(SeekFrom::Start(14)).unwrap();
     assert_eq!(
-        e.write(&[2u8; 4]).expect("une réécriture à l'intérieur réussit"),
+        e.write(&[2u8; 4])
+            .expect("une réécriture à l'intérieur réussit"),
         4
     );
 
@@ -904,9 +914,8 @@ async fn kf063_reproduction_deterministe(pool: MySqlPool) {
     let (t1, m1) = tour_sonde(&i, 0).await;
     let (t2, m2) = tour_sonde(&i, 1_000).await;
     assert_eq!(m1, m2, "le manifeste commence au même octet");
-    let avant = |t: &[Trace]| -> Vec<Trace> {
-        t.iter().take_while(|x| x.position < m1).cloned().collect()
-    };
+    let avant =
+        |t: &[Trace]| -> Vec<Trace> { t.iter().take_while(|x| x.position < m1).cloned().collect() };
     assert_eq!(
         avant(&t1),
         avant(&t2),
