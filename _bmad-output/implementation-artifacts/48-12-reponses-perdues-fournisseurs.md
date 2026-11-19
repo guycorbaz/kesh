@@ -1,6 +1,6 @@
 # Story 48-12 : Réponses perdues — factures fournisseur et comptes bancaires
 
-Status: ready-for-dev
+Status: drafted (validation en cours ; `ready-for-dev` se pose à la clôture de la validation et à la décision de découpage, par l'orchestrateur)
 
 Issues : #975, #984, #985, #986 (toutes `bug`, **P2**). Release 0.20.0, Epic 48. Voie : frontend (aucun code Rust, aucune migration).
 
@@ -77,11 +77,13 @@ Symptôme : « une écriture dont la réponse peut se perdre se renvoie sans rel
 git grep -nE "await create[A-Z][A-Za-z]*\(" -- 'frontend/src/routes' 'frontend/src/lib/*.svelte' 'frontend/src/lib/**/*.svelte' ':!*.test.ts'
 # 2. mises à jour appelées depuis un écran
 git grep -nE "await update[A-Z][A-Za-z]*\(" -- 'frontend/src/routes' 'frontend/src/lib/*.svelte' 'frontend/src/lib/**/*.svelte' ':!*.test.ts'
+# 3. (V2-8) écritures sous d'autres verbes, cherchées par le symptôme et non par le nom
+git grep -nE "apiClient\.(post|put)" -- 'frontend/src/lib/features/*.api.ts' 'frontend/src/lib/features/*/*.api.ts' ':!*.test.ts'
 # 3. écrans qui reconnaissent une issue inconnue
 git grep -lE "isUnknownOutcome|isSettlementOutcomeUnknown" -- frontend/src ':!*.test.ts'
 ```
 
-La commande 3 rend sept fichiers : `AutoBackupSection.svelte`, `AdminRestorePanel.svelte`, `mcp-sends-format.ts`, `unknown-outcome.ts`,
+La commande 4 rend sept fichiers : `AutoBackupSection.svelte`, `AdminRestorePanel.svelte`, `mcp-sends-format.ts`, `unknown-outcome.ts`,
 `invoices/[id]/+page.svelte`, `invoices/due-dates/+page.svelte`, `supplier-invoices/[id]/+page.svelte` : **aucun écran de création**.
 
 Sortie de la commande 1 (25 sites, copiée) :
@@ -113,7 +115,7 @@ routes/(app)/settings/vat-rates/+page.svelte:121 et :153       createVatRate (de
 routes/(app)/supplier-invoices/new/+page.svelte:149            createSupplierInvoice / completeImport
 ```
 
-La commande 2 rend 27 sites ; ceux qui envoient une `version` ou la boucle 409 sont classés ci-dessous.
+La commande 2 rend **26** sites ; ceux qui envoient une `version` ou bouclent sur un 409 sont classés ci-dessous.
 
 ### Dans la story
 
@@ -127,6 +129,8 @@ La commande 2 rend 27 sites ; ceux qui envoient une `version` ou la boucle 409 s
 
 ### Hors périmètre, couvert par une issue ouverte par l'orchestrateur (#1354 à #1362)
 
+Correspondance (ordre de l'ouverture) : #1354 facture client, #1355 écriture, **#1356 lot de paiement** (rattachée à la 0.20.0 par Guy, hors de cette story), #1357 avoir, #1358 contact, #1359 compte bancaire, #1360 créations diverses, #1361 liaison compte bancaire (409), #1362 clé d'idempotence durable.
+
 | Site | Symptôme | Issue (objet) |
 |---|---|---|
 | `createInvoice`, `InvoiceForm.svelte:732` (fichier de l'Epic 49) | doublon de facture client | facture client |
@@ -139,18 +143,18 @@ La commande 2 rend 27 sites ; ceux qui envoient une `version` ou la boucle 409 s
 | `updateBankAccountJournalLink`, `BankAccountJournalLinkForm.svelte:86` et `:111` | 409 en boucle sur la version de la prop | liaison compte bancaire (409) |
 | angle mort de D2 | requête en vol au-delà de la relecture | clé d'idempotence durable (migration) |
 
-### Hors périmètre, **absents de la table de la première rédaction** (issue à ouvrir par l'orchestrateur, numéro à reporter)
+### Hors périmètre, **absents de la table de la première rédaction** (issues ouvertes par l'orchestrateur)
 
 | Site (fichier:ligne) | Symptôme | Gravité |
 |---|---|---|
-| `createConversion`, `ConversionAssistant.svelte:266` (`POST /journal-entries/conversions`) | un rejeu écrit **deux écritures au journal** de plus | **la plus élevée** (erreur comptable, candidat P1) |
-| `createManualStatement`, `ManualStatementForm.svelte:182` | relevé saisi à la main doublé (transactions à rapprocher en double) | élevée, à constater (dédoublonnage éventuel) |
-| `createBankImport`, `BankImportUpload.svelte:292` | réimport d'un relevé | à constater (le fichier est peut-être déjà refusé par son empreinte) |
-| `createLettering`, `OpenItemsScreen.svelte:322` | lettrage rejoué | moyenne |
-| `updateProject`, `settings/projects/+page.svelte:115` avec `version: mode.project.version` et un `catch` qui n'écrit que `formError` (`:123-126`) | **boucle 409** sur la version périmée, comme #984 | moyenne |
-| `updateContact`, `contacts/+page.svelte:536` ; `updateProduct`, `products/+page.svelte:382` | le formulaire se ferme sur 409 : saisie perdue | moyenne (selon la lecture du validateur, à relire) |
-| `createRule` `RuleFormModal.svelte:106`, `createDunningLevel` `dunning/+page.svelte:111`, `createVatRate` `vat-rates/+page.svelte:121`, `:153`, `createContactPerson` `ContactPersonsManager.svelte:56`, `createMcpKey` `McpKeysSection.svelte:152`, `createMcpPrompt` `McpPromptsList.svelte:67` | doublon de paramétrage | basse |
-| autres `update*` de la commande 2 (`updateAccount`, `updateDunningLevel`, `updateFiscalYear`, `updateVatRate`, `updateRule`, `updateEmailTemplate`, `updateInvoiceSettings`…) | **non examinés** une à une | à constater avant de les ouvrir |
+| `createConversion`, `ConversionAssistant.svelte:266` (`POST /journal-entries/conversions`) — **#1365** (rattachée à la 0.20.0 par Guy, hors de cette story) | un rejeu écrit **deux écritures au journal** de plus | **la plus élevée** (erreur comptable, candidat P1) |
+| `createManualStatement`, `ManualStatementForm.svelte:182` — **#1366** | relevé saisi à la main doublé (transactions à rapprocher en double) | élevée, à constater (dédoublonnage éventuel) |
+| `createBankImport`, `BankImportUpload.svelte:292` — **#1367** | réimport d'un relevé | à constater (le fichier est peut-être déjà refusé par son empreinte) |
+| `createLettering`, `OpenItemsScreen.svelte:322` — **#1368** | lettrage rejoué | moyenne |
+| `updateProject` (comptes analytiques), `settings/projects/+page.svelte:115` — **#1369** ; avec `version: mode.project.version` et un `catch` qui n'écrit que `formError` (`:123-126`) | **boucle 409** sur la version périmée, comme #984 | moyenne |
+| `updateContact`, `contacts/+page.svelte:536` — **#1370** ; `updateProduct`, `products/+page.svelte:382` — **#1371** | le formulaire se ferme sur 409 : saisie perdue | moyenne (selon la lecture du validateur, à relire) |
+| **#1372** : `createRule` `RuleFormModal.svelte:106`, `createDunningLevel` `dunning/+page.svelte:111`, `createVatRate` `vat-rates/+page.svelte:121`, `:153`, `createContactPerson` `ContactPersonsManager.svelte:56`, `createMcpKey` `McpKeysSection.svelte:152`, `createMcpPrompt` `McpPromptsList.svelte:67` | doublon de paramétrage | basse |
+| autres `update*` de la commande 2 (`updateAccount`, `updateDunningLevel`, `updateFiscalYear`, `updateVatRate`, `updateRule`, `updateEmailTemplate`, `updateInvoiceSettings`…) **et** écritures sous d'autres verbes, trouvées par la commande 3 : `postRevaluation` (`RevaluationPanel.svelte:172` ; la réévaluation calcule un écart incrémental, `fx_revaluation.rs:317`), `generateOpeningBalances` (`opening-balances/+page.svelte:410`), `sendReminderBatch` (`invoices/reminders/+page.svelte:155`), `apiClient.post/put` direct de `users/+page.svelte:122` et `:168` | **non examinés**, sondés seulement, aucun jugé défectueux | à constater : issue **#1373** |
 
 Le **module** de D7 est conçu pour servir à ces sites sans réécriture.
 
@@ -182,8 +186,7 @@ détection serveur sur le contenu* : refuserait une facture légitimement sembla
 **D1-bis (commune). Règle de comparaison (V1-5).** Un jugement compare `stored` (relu) à la saisie **sous la forme que le serveur
 range**, jamais littéralement : montants, quantités et taux comparés en décimal (`Big.eq`, quatre décimales : `"100.0000"` égale
 `"100.00"`) ; IBAN, QR-IBAN et référence normalisés comme le serveur (`normalizeIban`, `supplier-invoice-form.ts:334` ; blancs,
-insécables compris, retirés) ; `trim`, et vide ⇔ `null`. Sur les comptes bancaires, ces normaliseurs sont passés à
-`companyEditConflict`. Le cas « je viens d'enregistrer moi-même » (réponse perdue, puis second clic) **doit** rendre
+insécables compris, retirés) ; `trim`, et vide ⇔ `null`. **La référence de paiement (V2-6)** se normalise comme le serveur (`supplier_invoices.rs:458-473`) : tous les blancs sont retirés si l'IBAN saisi est un QR-IBAN (`normalize_payment_field`), sinon `trim` seulement. **Les lignes (V2-2)** : l'égalité compare **chaque ligne, position par position, sur ses cinq champs** (description, quantité, prix unitaire, taux de TVA, compte de charge), chacun normalisé ; le total et le nombre de lignes ne servent qu'à l'**affichage** de l'avis, jamais à l'égalité. Sur les comptes bancaires, ces normaliseurs sont passés à `companyEditConflict`. Le cas « je viens d'enregistrer moi-même » (réponse perdue, puis second clic) **doit** rendre
 *déjà enregistré*, jamais « modifié entre-temps » : un test le fixe avec les formes du serveur (`"100.0000"`, IBAN sans blancs), et
 une mutation retire le normaliseur. Ces fonctions sont pures et testées à part (D7).
 
@@ -194,9 +197,10 @@ Après une issue inconnue de `createSupplierInvoice`, l'écran lit `listSupplier
 brouillons de **même fournisseur, même date de facture, même numéro** (`trim`, absent = absent) ; **quand le numéro manque,
 le total normalisé (D1-bis) entre dans la comparaison** (sans numéro, deux factures légitimes du même jour se confondraient).
 Le libellé est **neutre** : « Un brouillon semblable existe déjà », jamais « votre facture a été enregistrée » (V1-2). Chaque
-brouillon trouvé montre son total, une marque « total différent de votre saisie » quand il diffère, et un lien vers sa fiche.
+brouillon trouvé montre son total, une marque « total différent de votre saisie » quand il diffère, et un lien vers sa fiche, **ouvert dans un nouvel onglet** (`target="_blank" rel="noopener"`, V2-3) : un lien ordinaire quitterait la page et ferait perdre une saisie que la fiche dit conserver ; le lien de D3, lui, peut rester ordinaire (la facture existe).
 Verdicts : *trouvé* ; *non trouvé* (« Aucune facture semblable n'a été enregistrée : vous pouvez réessayer ») ; *non vérifiable*
 (relecture en échec, détectée explicitement, ou plus de résultats que la page n'en rend ; message dédié et lien vers la liste).
+**Relecture (V2-4)** : `listSupplierInvoices` reçoit un paramètre `CallOptions` et la relecture passe `{ retry: false }`, comme D4 pour `getSupplierInvoice` : sans cela, un réseau coupé fait rejouer le `GET` (~14 s, et jusqu'à ~150 s sur des délais) avec `saving` vrai, et le verdict n'arrive pas (`api-client.ts:414`, délais `:37`, `:42`) ; le précédent E2E choisit un `500` pour cela.
 **Machine d'états (V1-1)** :
 - l'issue inconnue déclenche **une** relecture, d'où le verdict ;
 - verdict *trouvé* ou *non vérifiable* : le bouton devient « Enregistrer quand même », et **ce clic envoie, sans relecture** ;
@@ -212,7 +216,7 @@ légitime impossible.
 une clé durable (issue « clé d'idempotence »).
 
 **D3 (#985). Sur `IMPORT_NOT_PENDING_COMPLETION` ou issue inconnue, relire le document : trois issues (V1-3).**
-Relire `listImported('completed')` puis, au besoin, `listImported('to_complete')` (aucun n'est paginé) :
+Relire `listImported('completed')` puis, au besoin, `listImported('to_complete')` (aucun n'est paginé ; `listImported` reçoit un paramètre `CallOptions` et la relecture passe `{ retry: false }`, V2-4) :
 - *complété avec facture* (`supplierInvoiceId` renseigné) : **avis**, non erreur : « Ce document a déjà été traité : la facture a
   été enregistrée en brouillon » avec le lien `/supplier-invoices/<id>`, saisie en place, envoi désactivé ;
 - *encore à traiter* : « Aucune facture n'a été enregistrée : vous pouvez réessayer », bouton actif ;
@@ -228,17 +232,19 @@ Sur un 409 de version ou une issue inconnue du `PUT`, la page relit `getSupplier
 fonction pure (D7, comparaison de D1-bis) sur les seuls champs **envoyés** (avec QR, les coordonnées de paiement ne partent pas) :
 - **`stored.status !== 'draft'`** (V1-16) : un collègue a validé entre-temps (`lock_draft_in_tx` refuse le statut avant la
   version : `409 ILLEGAL_STATE_TRANSITION`) ; renvoi à la fiche avec `supplier-invoices-edit-not-draft`, sans verdict de comparaison ;
-- *déjà enregistré* (`stored` égale la saisie) : succès, notification, retour à la fiche ;
-- *rien n'a changé ailleurs* (`stored` égale la copie lue à l'ouverture, hors version) : « rechargé, vous pouvez enregistrer de
+- *déjà enregistré* (l'en-tête **et chacune des lignes**, sur leurs cinq champs, égalent la saisie, D1-bis) : succès, notification, retour à la fiche. Une ligne qui ne diffère que par sa description ou son compte rend *autre chose a été écrit*, jamais *déjà enregistré* ;
+- *rien n'a changé ailleurs* (`stored` égale la copie de base, mêmes règles d'égalité, hors version) : « rechargé, vous pouvez enregistrer de
   nouveau », version fraîche adoptée ;
 - *autre chose a été écrit* : avis qui **nomme les champs** en désaccord avec la valeur enregistrée (fournisseur, numéro, date,
-  échéance, projet ; pour les lignes, le total TTC et le nombre de lignes enregistrés), saisie intacte ; la version fraîche
+  échéance, projet ; pour les lignes, le **numéro de chaque ligne en désaccord**, avec le total TTC et le nombre de lignes enregistrés, à titre d'affichage), saisie intacte ; la version fraîche
   n'est adoptée qu'avec cet avis affiché ;
 - *relecture en échec* : « Conflit de version et rechargement impossible — rechargez la page », **aucune version adoptée**.
+**Copie de base (V2-7)** : prise à l'ouverture, elle devient `stored` à chaque relecture réussie (comme en 34-6, `company-conflict.ts:7-13`) ; sinon un troisième écrit jugerait contre la base d'origine et classerait de travers « repris » et « enregistré entre-temps ». **Relecture (V2-4)** : `getSupplierInvoice(id, { retry: false })`.
+**Texte de repli (V2-11)** : la branche `OPTIMISTIC_LOCK_CONFLICT` de `describeSubmitError` (`supplier-invoice-form.ts:440-448`, clé `supplier-invoices-err-stale`) est **gardée comme repli** et son texte réécrit (« Cette facture a été modifiée entre-temps : rechargez la page pour voir son état. », sans « refaites votre correction »), quatre locales ; ses tests (`supplier-invoice-form.test.ts`) suivent.
 *Écartée — fusion à trois voies des lignes* : sans identifiant de ligne stable, elle inventerait des rapprochements.
 
 **D6 (lots A et B). Garde synchrone contre le double envoi.** `SupplierInvoiceForm.submit` (`:376`) revient d'emblée si `saving` ;
-même garde en tête de `submitCreate`, `submitUpdateFull` et `confirmArchive` (`submitting`) de la page des comptes bancaires.
+même garde dans `submitCreate`, `submitUpdateFull` (**après** `e.preventDefault()`, `:468`, `:548-549`, V2-5 : une garde qui reviendrait avant laisserait le navigateur soumettre le formulaire et perdre la saisie) et `confirmArchive` (`submitting`) de la page des comptes bancaires.
 
 **D7. Où vit la logique.** Pure et testable à part, dans `frontend/src/lib/features/supplier-invoices/` : `resend-guard.ts`
 (machine d'états et verdicts de D2, jugement de D4, comparaisons de D1-bis) ; les avis de D3 et D4 sont des composants du même
@@ -256,6 +262,7 @@ saisie sur `bankName`, `description`, `iban`, `qrIban`, `isPrimary`, `journalAcc
 D1-bis. *Déjà enregistré* : formulaire fermé, toast. *Sinon* : version relue adoptée **avec l'avis affiché**, champs non touchés
 repris de la valeur relue, champs en désaccord **nommés avec la valeur enregistrée** ; un avis dit qu'enregistrer de nouveau
 les remplacera. Compte disparu de la liste : `closeOrphanMode` agit déjà (`staleNotice`).
+**Relecture (V2-4)** : `listBankAccounts` reçoit un paramètre `CallOptions` et la relecture de conflit passe `{ retry: false }`. **Copie de base et champs (V2-7)** : la base devient `stored` à chaque relecture réussie ; pour une **carte**, seuls les champs envoyés se jugent (`bankName`, `description`, `cardLast4`, `journalAccountId` ; `submitUpdateFull` `:557-566`) ; `isPrimary` et `journalAccountId` sont rendus en chaîne avant d'entrer dans `companyEditConflict` (type `string | null | undefined`).
 **Archivage** : `confirmArchive` appelle `refreshAfterVersionConflict(err)` comme `confirmClose` (même fichier, même boucle) ;
 son échec de relecture se dit de même.
 **Valeurs affichées (V1-15)** : `journalAccountId` s'affiche par le numéro et le nom du compte (liste `accounts` déjà chargée par
@@ -270,8 +277,8 @@ champs ; textes `settings-company-conflict-changed`, `-merged`, `-empty` neutres
 
 **Lot A**
 1. **AC-1 (#975).** Création sans document, réponse perdue après l'écriture : l'écran relit et signale « un brouillon semblable
-   existe déjà » (total, marque « total différent » le cas échéant, lien). Un seul brouillon existe tant que l'utilisateur n'a pas
-   cliqué « Enregistrer quand même ».
+   existe déjà » (total, marque « total différent » le cas échéant, lien en nouvel onglet). Un seul brouillon existe tant que
+   l'utilisateur n'a pas cliqué « Enregistrer quand même ».
 2. **AC-2 (#975).** Réponse perdue avant l'écriture : « aucune facture semblable » ; le renvoi crée un seul brouillon ; la saisie
    n'a jamais été perdue. Cas « brouillon préexistant, requête perdue avant écriture » : l'écran **n'affirme pas** que la saisie est
    enregistrée, et le renvoi reste possible.
@@ -281,23 +288,26 @@ champs ; textes `settings-company-conflict-changed`, `-merged`, `-empty` neutres
 5. **AC-5 (#985).** Complétion perdue : document complété = avis et lien, envoi désactivé ; **encore à traiter = « aucune facture
    enregistrée, réessayez »** ; retiré = message actuel ; relecture en échec = message d'issue inconnue.
 6. **AC-6 (#986).** Modification enregistrée dont la réponse est perdue : reconnue, retour à la fiche, y compris avec les formes du
-   serveur (`"100.0000"`, IBAN sans blancs) ; concurrente différente : champs nommés, version adoptée avec l'avis ; relecture en
-   échec : aucune version adoptée ; facture relue non brouillon : renvoi à la fiche.
-7. **AC-8a.** Deux événements `submit` consécutifs sur le formulaire des factures n'envoient qu'une requête.
+   serveur (`"100.0000"`, IBAN sans blancs, QRR avec espaces) ; une ligne qui ne diffère que par sa description ou son compte
+   rend « modifié entre-temps », jamais « déjà enregistré » ; concurrente différente : champs nommés, version adoptée avec l'avis ;
+   relecture en échec : aucune version adoptée ; facture relue non brouillon : renvoi à la fiche.
+7. **AC-7.** Deux événements `submit` consécutifs sur le formulaire des factures n'envoient qu'une requête.
 
 **Lot B**
-8. **AC-7 (#984).** Après un 409 sur l'édition d'un compte bancaire : relecture explicite ; échec = message dédié et aucune version
+8. **AC-8 (#984).** Après un 409 sur l'édition d'un compte bancaire : relecture explicite ; échec = message dédié et aucune version
    adoptée ; *déjà enregistré* ferme avec un toast ; sinon champs en désaccord nommés avec des valeurs lisibles (compte, Oui/Non),
    second clic avec la version relue **après** l'avis. Aucun chemin n'envoie la version fraîche sans avoir montré.
-9. **AC-7b (archivage).** Un 409 d'archivage relit la liste ; le second essai part avec la version relue.
-10. **AC-8b.** Garde de double envoi sur `submitCreate`, `submitUpdateFull`, `confirmArchive`.
+9. **AC-9 (archivage).** Un 409 d'archivage relit la liste ; le second essai part avec la version relue.
+10. **AC-10.** Garde de double envoi sur `submitCreate`, `submitUpdateFull`, `confirmArchive`, **après** `preventDefault()`
+    (`defaultPrevented` vérifié).
 
 **Communs**
-11. **AC-9 (production).** Aucun fichier de `kesh-api`, `kesh-db`, `kesh-qrbill`, `InvoiceForm.svelte` ; ni facture client, ni avoir,
+11. **AC-11 (production).** Aucun fichier de `kesh-api`, `kesh-db`, `kesh-qrbill`, `InvoiceForm.svelte` ; ni facture client, ni avoir,
     ni PDF touchés ; la page d'édition ne s'ouvre que sur un brouillon (`edit/+page.svelte:86`).
-12. **AC-10.** Clés neuves dans les quatre locales ; `sitesTotal` et les gardes de repli recomptés depuis la source.
-13. **AC-11 (manuels).** Les phrases devenues fausses sont **réécrites** (voir « Manuels ») ; le contrôle final greppe « recharger »,
-    « ne relit pas encore » et « déjà été traité » dans les quatre `.tex`.
+12. **AC-12.** Clés neuves dans les quatre locales ; `sitesTotal` et les gardes de repli recomptés depuis la source.
+13. **AC-13 (manuel).** Les phrases devenues fausses sont **réécrites** dans `docs/manual/fr/user-manual.tex` (seul manuel existant :
+    `docs/manual/{de,en,it}/` ne portent qu'un `README.md` « traductions non encore créées ») ; le contrôle final greppe « recharger »,
+    « ne relit pas encore » et « déjà été traité » dans ce `.tex` et dans son PDF aplati après `make fr` (non commité).
 
 ## Tests à écrire, et la preuve du rouge
 
@@ -308,13 +318,13 @@ Chaque test neuf rougit sans le correctif ; journaux dans `/home/gcorbaz/devel/k
 |---|---|---|
 | verdicts *trouvé* / *non trouvé* / *non vérifiable* ; clé avec numéro ; clé avec total quand le numéro manque ; vrai doublon **et** facture légitime semblable (même jour, total différent) | `resend-guard.test.ts` (neuf) | la fonction n'existe pas ; mutations : retirer `trim`, ôter le total quand le numéro manque |
 | machine d'états : « Enregistrer quand même » = un `POST`, sans relecture ; reset à la modification | `resend-guard.test.ts`, `new-page.test.ts` | aujourd'hui le second clic poste sans signal ; mutation : « relire aussi au clic Enregistrer quand même » |
-| jugement d'une facture : `already-saved` (formes du serveur) / `unchanged` / `changed` / `status ≠ draft` ; champs QR exclus | `resend-guard.test.ts` | idem ; mutations : retirer le normaliseur décimal, comparer les champs QR |
+| jugement d'une facture : `already-saved` (formes du serveur) / `unchanged` / `changed` / `status ≠ draft` ; champs QR exclus ; **une ligne qui ne diffère que par sa description ou son compte de charge → `changed`, jamais `already-saved`** ; QR-IBAN avec QRR saisie avec espaces → `already-saved` | `resend-guard.test.ts` | idem ; mutations : retirer le normaliseur décimal, comparer les champs QR, **comparer seulement le total et le nombre de lignes**, retirer la normalisation de la référence |
 | création : brouillon trouvé → libellé neutre, marque « total différent » ; relecture impossible → aucun `POST` sans « quand même » (AC-3) | `new-page.test.ts` | aujourd'hui le second clic poste |
-| complétion : 409 → avis + lien ; **encore à traiter → réessayer** ; retiré → message actuel ; relecture en échec | `new-page.test.ts` | aujourd'hui, message d'échec |
+| complétion : 409 → avis + lien ; **encore à traiter → réessayer** ; retiré → message actuel ; relecture en échec | `new-page.test.ts` | aujourd'hui, message d'échec ; mutations : traiter « complété sans `supplierInvoiceId` » comme « complété avec facture », afficher « déjà traité » sur relecture en échec |
 | édition : 409 → `stored` égale la saisie → succès ; 409 concurrent → avis, version adoptée avec l'avis ; **relecture en échec → aucune version adoptée** ; statut ≠ draft → fiche | `edit-page.test.ts` | aujourd'hui, message « rechargez » ; mutations : « adopter la version sans avis », « adopter sur relecture en échec » |
-| double `submit` synchrone | `SupplierInvoiceForm.test.ts`, `bank-accounts-page.test.ts` | pas de garde |
-| compte bancaire : 409 → `already-saved` ferme ; `changed` nomme les champs, valeurs lisibles ; second envoi avec la version relue ; **relecture en échec → aucune version adoptée** ; IBAN saisi avec blancs égal l'IBAN relu | `bank-accounts-page.test.ts` | ni relecture ni avis aujourd'hui |
-| archivage : 409 → relecture, version relue | `bank-accounts-page.test.ts` | pas de `refreshAfterVersionConflict` |
+| double `submit` synchrone ; sur la page des comptes, `defaultPrevented` vrai au second événement | `SupplierInvoiceForm.test.ts`, `bank-accounts-page.test.ts` | pas de garde ; mutations : retirer la garde `saving` / `submitting`, la placer avant `preventDefault()` |
+| compte bancaire : 409 → `already-saved` ferme ; `changed` nomme les champs, valeurs lisibles ; second envoi avec la version relue ; **relecture en échec → aucune version adoptée** ; IBAN saisi avec blancs égal l'IBAN relu ; carte : seuls les champs envoyés se jugent | `bank-accounts-page.test.ts` | ni relecture ni avis aujourd'hui ; mutations : retirer `normalizeIban` du comparateur, adopter la version quand la relecture a échoué |
+| archivage : 409 → relecture, version relue | `bank-accounts-page.test.ts` | pas de `refreshAfterVersionConflict` ; mutation : ne pas relire au second essai |
 | **E2E lot A** : `route.fetch()` + `route.abort()` sur `POST /api/v1/supplier-invoices` (puis second clic ; l'API confirme **un** brouillon avant « quand même »), sur `POST …/complete` (y compris **coupure avant écriture** : le document reste à traiter, l'avis dit « réessayez »), sur le `PUT` | `supplier-invoice-lost-response.spec.ts` (neuf) | aujourd'hui deux brouillons / échec annoncé à tort |
 | **E2E lot B** : modification concurrente par l'API entre l'ouverture et l'envoi ; avis, puis second clic ; archivage sur 409 | `bank-accounts-conflict.spec.ts` (neuf) | aucun avis aujourd'hui |
 
@@ -326,26 +336,31 @@ mutation est suivie d'un `touch` du fichier restauré.
 
 ## Tâches
 
-**Lot A.** A1 : `resend-guard.ts` (D1-bis, D2, D4, D7) et ses tests. A2 : `new/+page.svelte` (D2, D3) et
-`SupplierInvoiceForm.svelte` (D6, bouton « Enregistrer quand même », avis). A3 : `[id]/edit/+page.svelte` (D4, doc-comment).
+**Lot A.** A1 : `resend-guard.ts` (D1-bis, D2, D4, D7) et ses tests ; `listSupplierInvoices` et `listImported` reçoivent `CallOptions` (V2-4). A2 : `new/+page.svelte` (D2, D3) et
+`SupplierInvoiceForm.svelte` (D6, bouton « Enregistrer quand même », avis). A3 : `[id]/edit/+page.svelte` (D4, doc-comment) ; texte de repli de `supplier-invoices-err-stale` (V2-11).
 A4 : `unknown-outcome.ts` (doc-comment).
-**Lot B.** B1 : `bank-accounts/+page.svelte` (D5, D6, archivage, valeurs lisibles, avis). B2 : tests de la page.
+**Lot B.** B1 : `bank-accounts/+page.svelte` (D5, D6, archivage, valeurs lisibles, avis) ; `listBankAccounts` reçoit `CallOptions` (V2-4). B2 : tests de la page.
 **Communs.** C0 (étape 0) : relire les points 2 à 5 de « Ce qui se lit au code » contre la branche d'épique à jour. C1 : catalogues
-(quatre locales), `i18n-keys.test.ts` (`sitesTotal`) et gardes de repli recomptés. C2 : manuels. C3 : E2E et captures. C4 : gates.
+(quatre locales), `i18n-keys.test.ts` (`sitesTotal`) et gardes de repli recomptés. C2 : manuel français (`user-manual.tex`). C3 : E2E et captures. C4 : gates.
 C5 : Dev Agent Record, Change Log, Note de version.
 
 ## Manuels
 
-`git grep -n "brouillon" -- docs/manual/fr/user-manual.tex` ; à **réécrire**, non compléter (V1-8), avec leurs équivalents
-`de`/`it`/`en` (`.tex`, sans PDF) :
+Seul `docs/manual/fr/user-manual.tex` existe (V2-1) : `docs/manual/de/`, `it/` et `en/` ne portent qu'un `README.md` (« traductions
+non encore créées »). **Aucun équivalent DE/IT/EN n'est à écrire** ; les traductions à venir sont l'affaire de leurs stories. Les
+ajouts portent « depuis la version~0.20.0 » (`docs-numeros-de-release`). `git grep -n "brouillon" -- docs/manual/fr/user-manual.tex` ; à
+**réécrire**, non compléter (V1-8) :
 - `user-manual.tex:2208-2210` (« Si la facture a été modifiée entre-temps dans une autre session, l'enregistrement est refusé et
-  vous invite à recharger la page ») : décrire la relecture, « déjà enregistré », les champs nommés, et l'archivage de compte ;
-- `user-manual.tex:2368-2370` (« La page de *modification* d'un brouillon ne relit pas encore la facture : après une coupure
-  pendant l'enregistrement, rechargez-la avant de réessayer ») : **supprimer**, la page relit ; le PDF aplati contient la phrase
-  (`pdftotext … | tr '\n' ' ' | tr -s ' ' | grep -c 'ne relit pas encore la facture'` rend 1), à vérifier absente après `make fr` ;
+  vous invite à recharger la page ») : décrire la relecture, « déjà enregistré », les champs nommés (une ligne modifiée ailleurs
+  est nommée, non confondue avec l'enregistrement de l'utilisateur) ;
+- la phrase **« La page de *modification* d'un brouillon ne relit pas encore la facture : après une coupure pendant l'enregistrement,
+  rechargez-la avant de réessayer. »** (fin de la ligne `:2368` et lignes `:2369-2370`, V2-9) : **supprimer la phrase seule**, pas la
+  ligne entière (`:2368` commence par « refuse, et la fiche relit la facture pour montrer ce qui est écrit. », qui reste vrai) ; le PDF
+  aplati la contient (`pdftotext … | tr '\n' ' ' | tr -s ' ' | grep -c 'ne relit pas encore la facture'` rend 1), à vérifier absente
+  après `make fr` ;
 - à **ajouter** : une phrase sous « Créer la facture d'un document » (`user-manual.tex:2682`, la complétion ; non `:2234`, qui est
   « Le document d'un brouillon ») et sous la saisie (`:2082`) : après une réponse perdue Kesh relit et ne double pas sans
-  « Enregistrer quand même » ; un paragraphe sous `sec:comptes-bancaires` (`:2802`), sur le modèle de `:1524` (#953).
+  « Enregistrer quand même » ; un paragraphe sous `sec:comptes-bancaires` (`:2802`), sur le modèle de `:1524` (#953), archivage compris.
 - `admin-manual.tex` : aucun changement attendu (contrat d'API inchangé ; ses mentions `:2768-2842` sont de l'historique de
   versions) ; à constater à l'étape 0. Les PDF ne se commitent pas.
 
@@ -370,7 +385,7 @@ archivage) montre l'écriture concurrente avant de proposer de la remplacer (ref
 
 ## Dev Notes
 
-- **Hors périmètre** : voir l'inventaire (issues #1354 à #1362 et issues à ouvrir par l'orchestrateur).
+- **Hors périmètre** : voir l'inventaire (issues #1354 à #1362, #1365 à #1373).
 - **Fichiers communs** (tableau du fichier d'épique) : `i18n-keys.test.ts` (`sitesTotal`) et les catalogues, avec 48-1, 48-2, 48-10,
   48-13, 48-15 ; manuels `.tex`. `supplier-invoices/[id]/+page.svelte` (48-1) et `SupplierCreatePanel.svelte` (48-15, fusionnée)
   ne sont **pas** touchés. Côté serveur : rien.
@@ -379,8 +394,8 @@ archivage) montre l'écriture concurrente avant de proposer de la remplacer (ref
   inchangés ; la règle « un appariement propose, il ne crée jamais » (le signalement ne refuse rien).
 - **Coordination** : la PR #1327 de Beat ne touche aucun de ces fichiers.
 - **Références** : fiches 34-5, 34-6, 34-8 ; `company-conflict.ts` ; `unknown-outcome.ts` ; `supplier-invoice-unknown-outcome.spec.ts`.
-- **Statut à poser** (`sprint-status.yaml`, par l'orchestrateur) : `48-12-reponses-perdues-fournisseurs: ready-for-dev`, après la
-  validation et la décision de découpage.
+- **Statut** : `drafted` jusqu'à la fin de la validation ; `48-12-reponses-perdues-fournisseurs: ready-for-dev` se pose ensuite, avec la
+  décision de découpage (orchestrateur, `sprint-status.yaml`).
 
 ## Dev Agent Record
 
@@ -390,3 +405,4 @@ archivage) montre l'écriture concurrente avant de proposer de la remplacer (ref
 
 - 2026-11-19 — Création de la fiche (Claude Sonnet 5.5, `bmad-create-story`). Lecture au code à `af4e0e313`. Écart relevé à l'issue #984 : sa prémisse (« écrase ») ne se vérifie plus à la tête de la branche (l'écran renvoie la version périmée et rend de nouveau 409, sans rien expliquer) ; l'exigence de montrer avant de remplacer est reprise de l'issue.
 - 2026-11-19 — Validation P1 (Opus, 0/0/10/8 ; `kesh-gate-logs/e4812/validation-p1.md`), remédiation (Sonnet) : V1-1 machine d'états de D2 (« quand même » n'envoie sans relire) ; V1-2 libellé neutre, total quand le numéro manque ; V1-3 trois issues de D3 ; V1-4 relecture en échec explicite (D1, D4, D5) ; V1-5 règle de comparaison D1-bis ; V1-6 phrase corrigée, archivage dans le lot B ; V1-7 inventaire rejoué, commandes et sortie écrites, sites absents ajoutés ; V1-8 deux phrases du manuel à réécrire ; V1-9 gates Rust ajoutés ; V1-10 deux lots, six modules au grain de l'épique, décision en attente ; V1-11 à V1-18 (citations, liste des modules, tests manquants, filtre de méthode E2E, valeurs lisibles, statut non brouillon, commandes, angle mort du détachement). Aucun fait de la remédiation n'a été relu par une seconde passe : P2 requise (Sonnet).
+- 2026-11-19 — Validation P2 (Sonnet, 0/0/2/11 ; `kesh-gate-logs/e4812/validation-p2.md`), remédiation : V2-1 manuel français seul, AC et tâche C2 corrigés ; V2-2 égalité des lignes sur cinq champs, test et mutation ; V2-3 lien en nouvel onglet ; V2-4 `retry: false` et `CallOptions` sur les trois relectures ; V2-5 garde après `preventDefault()` ; V2-6 référence normalisée comme le serveur ; V2-7 base mise à jour à chaque relecture, champs d'une carte, valeurs en chaîne ; V2-8 26 sites, commande 4, sites non examinés vers #1373 ; V2-9 phrase du manuel supprimée seule, « depuis la version 0.20.0 » ; V2-10 mutations nommées ; V2-11 texte de repli de `supplier-invoices-err-stale` réécrit ; V2-12 AC renumérotés (AC-1 à AC-13) ; V2-13 statut `drafted`. Numéros d'issues reportés (#1356, #1365 à #1373). Une passe P3 (Opus), qui peut être ciblée sur ce commit, reste à faire.
