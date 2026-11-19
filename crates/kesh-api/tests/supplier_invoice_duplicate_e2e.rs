@@ -196,14 +196,12 @@ fn code(b: &Value) -> &str {
     b["error"]["code"].as_str().unwrap_or("")
 }
 
-fn statut_document(pool: &MySqlPool, doc: i64) -> impl std::future::Future<Output = String> + '_ {
-    async move {
-        sqlx::query_scalar("SELECT status FROM imported_supplier_invoices WHERE id = ?")
-            .bind(doc)
-            .fetch_one(pool)
-            .await
-            .unwrap()
-    }
+async fn statut_document(pool: &MySqlPool, doc: i64) -> String {
+    sqlx::query_scalar("SELECT status FROM imported_supplier_invoices WHERE id = ?")
+        .bind(doc)
+        .fetch_one(pool)
+        .await
+        .unwrap()
 }
 
 // ---------------------------------------------------------------------------
