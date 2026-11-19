@@ -1,6 +1,6 @@
 # Story 48-12a : Refus serveur des factures fournisseur en double (numéro comparé par année civile)
 
-Status: ready-for-dev (validation terminée à la P5, 2026-11-19 ; clé posée dans `sprint-status.yaml` à la fin de la boucle de la 48-12b, le 2026-11-19 ; sortie commune)
+Status: review (développement terminé le 2026-11-19, dernier commit de code `974bf1c35` ; revue P1 à lancer — prompt `48-12a-doublons-fournisseurs-serveur-review-prompt-p1.md` ; sortie commune avec la 48-12b)
 
 Issue : **#975** (côté serveur) — `bug`, **P2**. Release 0.20.0, Epic 48. Voie : **base et Rust**. Pas de migration. **La 48-12b (écran, #975 côté écran et #985) dépend de cette fiche, et les deux sortent dans la même release** : si la 48-12b n'est pas close à la coupure, les deux partent ensemble à la release suivante (jamais de sortie isolée de la 48-12a). Fiche-mère : `48-12-reponses-perdues-fournisseurs.md` (inventaire, reports 0.21.0, historique).
 
@@ -266,7 +266,151 @@ Sous `scripts/mem-guard.sh`, une commande lourde à la fois, `flock` du verrou d
 
 ## Dev Agent Record
 
-(vide)
+**Agent** : Claude Opus 5.5, `bmad-dev-story`, 2026-11-19, en autonomie. Worktree `/home/gcorbaz/devel/kesh-48-12`, branche
+`story/48-12-reponses-perdues-fournisseurs`, base `a8ffbb488` (fusion de `epic/48-corrections-0-20-0`). Clé des bases `e4812`
+(`kesh_e4812`, `kesh_e2e_e4812`, `kesh_ci_e4812`, créées par l'agent). Journaux : `/home/gcorbaz/devel/kesh-gate-logs/e4812/dev/`.
+
+### Commits
+
+- `b387e17db` — S1 à S5 : `kesh-core/src/payment_text.rs` (blancs et numéro, une définition), `DbError`, dépôt (verrou,
+  comparaison, `DuplicatePolicy`, variantes `…_with_policy`, audit), routes (création, `PUT`, complétion, dévalidation, rejeu de
+  `POST`/`PUT /invoices`), catalogues, gardes d'audit ; tests `kesh-db/tests/supplier_invoice_duplicate.rs`.
+- `d38354b24` — tests pilotés (`kesh-db/tests/supplier_invoice_duplicate_lock.rs`), contrat HTTP et routes
+  (`kesh-api/tests/supplier_invoice_duplicate_e2e.rs`), rejeu des factures client (`rejeu_interblocage_e2e.rs`).
+- `a3e67632c` — S6 : manuels, `docs/api-external.md`, Pattern 5, `README.md`.
+- `e906bc479` — relevé des fixtures et gardes qui suivent le code ; G25 (« compte analytique ») au guide de l'API.
+- `c448d2415` — deux lints clippy des tests neufs.
+- `974bf1c35` — `journal_entry_detail_shows_the_document` lit le numéro reçu (le premier `gate-ci` l'a fait rougir : sous
+  `cargo test`, un processus par binaire, le compteur de `complete_body` avance d'un test à l'autre, et le littéral `FF-2026-100`
+  ne tenait que sous nextest). **Dernier commit de code de la 48-12a.**
+- le commit qui suit ne porte que la fiche, `sprint-status.yaml` et le prompt de la revue P1.
+
+### Étape 0 — citations relues au code de la base
+
+Relues à `a8ffbb488` avant le code : `repositories/supplier_invoices.rs` (`create_draft_in_tx` `:650`, `lock_draft_in_tx` `:706`,
+`update_draft_in_tx` `:756`, `unvalidate_in_tx` `:1181`, `UPDATE … status = 'draft'` `:1420`, étapes (1) à (10)),
+`routes/supplier_invoices.rs` (`:371`, `:378`, `:471`, `:739`, `:817`, `:818`, `:834`), `routes/imported_supplier_invoices.rs`
+(`:45`, `:410`, verrou du staging, `new_from_document`, création), `kesh-db/src/errors.rs:1584`, `:2488`,
+`kesh-api/src/errors.rs:4428`, `routes/invoices.rs:744-745`, `:803`, `invoices.rs:686`, `:1113`, `:1145-1147` : **toutes exactes**
+(les numéros de ligne de la fiche tenaient). `invoices::create` et `invoices::update` n'écrivent rien hors de leur transaction
+(lecture de leur corps : `pool.begin()` puis `tx.commit()`). Aucun point de la fiche faux au code.
+
+### Ce qui a été fait
+
+- **D2** — `kesh_core::payment_text` : `is_payment_blank`, `normalize_payment_field`, `normalize_supplier_invoice_number` ;
+  doc-comment qui nomme `text::is_invisible` et l'écart ; `kesh-api` importe (plus aucune définition dans `kesh-api`) ; renvois de
+  `iban.ts` et `iban.test.ts` (commentaires seulement).
+- **D1, D3, D4, D5, D6, D6bis** — dans `repositories/supplier_invoices.rs`, section « Story 48-12a » : `DuplicatePolicy`,
+  `DuplicateRule`, `DuplicateCandidate`, `find_duplicate` (décision **pure** : règle 1 d'abord, plus petit identifiant),
+  `lock_supplier_in_tx` (`SELECT id FROM contacts WHERE id = ? AND company_id = ? FOR UPDATE`, rend `false` sans erreur),
+  `guard_duplicates_in_tx` (lecture ordinaire des candidates sous le verrou, politique), `lock_draft_and_supplier_in_tx` ;
+  `create_draft_with_policy` / `create_draft_in_tx_with_policy` (verrou en première instruction), `update_draft_in_tx_with_policy`
+  (verrous facture puis fournisseur du corps ; D6 sur les quatre éléments, comparés à la facture verrouillée),
+  `unvalidate_with_policy` / `unvalidate_in_tx_with_policy` (fournisseur verrouillé après les transactions rapprochées de l'étape
+  (3), annulée seulement ; contrôle en « (6 bis) », entre l'exercice clos et la dissolution) ; anciennes signatures gardées
+  (`Refuse`). Audit `supplier_invoice.duplicate_confirmed` dans la même transaction : `user` à la saisie, `par(acteur)` à la
+  dévalidation.
+- **D7** — `DbError::SupplierInvoiceDuplicate` / `SupplierInvoiceProbableDuplicate` (`ExistingSupplierInvoice`,
+  `DuplicateGesture`), codes ; `kesh-api/src/errors.rs` : `supplier_invoice_duplicate_response`, `details.confirmable`, trois
+  textes (replis égaux au catalogue fr-CH) ; trois clés `error-supplier-invoice-*` et le libellé d'audit aux quatre catalogues ;
+  `audit_labels.rs`.
+- **Routes** — `confirmNotDuplicate` (`#[serde(default)]`) sur `CreateSupplierInvoiceRequest` (donc `PUT` aplati et complétion)
+  et sur `SupplierInvoiceVersionRequest` (lu par la seule dévalidation) ; `update_supplier_invoice_once` prend
+  `lock_draft_and_supplier_in_tx` **avant** la lecture du document joint ; complétion par `create_draft_in_tx_with_policy`.
+- **D3ter** — `POST /invoices` et `PUT /invoices/{id}` enveloppés par `retry_on_deadlock("invoices::create"|"invoices::update")`.
+- **Gardes** — `audit_acteur_garde.rs` (lignes renommées vers `…_with_policy`, deux sites chacune) ; `audit_route_registry.rs`
+  (point (vi) : trente-quatre, recompté — détecteur « `retry` dans le corps des handlers `SansEcritureAuJournal` » : 34 handlers dont
+  4 faux positifs `retry_after` (`invoice_email` ×3, `setup::create_admin`), plus `exchange_rates::acknowledge_notices` que le
+  détecteur manque, soit 31 handlers, plus les 3 hors routes = 34, `sans-ecriture-rejouees.txt`) ;
+  `supplier_invoice_response_e2e.rs` et `bank_account_closed_inventory.rs` suivent la fonction englobante.
+- **S6** — relevé B : les 24 rangs « oui — 48-12a », plus `user-manual.tex` (rôle du numéro du fournisseur) et `README.md:44` ;
+  paragraphe « Pour les intégrations » de la 0.20.0 ouvert au manuel d'administration (§ `sec:maj-0-20-0`, commentaire pour
+  l'intégration : la 49-1a ouvre la même section sur sa branche) ; renvoi périmé `create_in_tx` corrigé à `:306` **et** `:342`
+  du Pattern 5. Le paragraphe neuf du manuel utilisateur porte le label `sec:doublons-fournisseur`, que la 48-12b référence.
+- **Relevé des fixtures (après S2)** : `test-fast --no-lint` s'arrête au premier échec (`test-fast-releve-fixtures-d38354b24.log`,
+  2 rouges, `admin_full_import_e2e`) ; relevé complet par `cargo nextest run --no-fail-fast`
+  (`nextest-releve-fixtures-2.log`) : **39 rouges** — fixtures à numéro fixe ou sans numéro (même date, même montant) et trois
+  gardes statiques ; corrigés par des numéros uniques ou, pour les brouillons sans numéro du décor des numéros internes, la
+  confirmation (`Confirmed`, règle 2 seulement) ; **la règle n'a pas été touchée** ; relance des dix binaires :
+  `nextest-fixtures-corrigees.log`, 348 / 348. `kesh-seed` : aucune correction (un fournisseur neuf par démonstration).
+- **Relevé A** rejoué au code (`releve-A-dev.log`) : aucun écrivain neuf des tables enfants de `contacts` hors de ceux de la story ;
+  le seul `FOR UPDATE` neuf sur `contacts` est `lock_supplier_in_tx`.
+
+### Rouges d'abord, et mutations
+
+Le code a été écrit avant les tests (écart à « rouge d'abord ») : **chaque test neuf a été rougi par mutation**, ce que la fiche
+admet. Script versionné `mut-12a/muter.py` (motif vérifié unique ; restauration `git restore --worktree` puis `touch`) ; journaux
+`mut-12a/M*.log`, `mut-12a/resume.log`, `mut-12a/resume-2.log`. **38 mutations, 38 tuées**, chacune par le test qu'elle vise
+(relu au journal) : M01-M03 (normalisation : `to_lowercase`, espace ASCII seul, U+200B), M04 (`trim_matches` → `trim`,
+`create_accepts_and_normalizes_payment_details`), M05-M06 (filtres fournisseur et société), M07 (règle 1 levée à la saisie), M08-M10
+(toute l'histoire ; découpage d'exercice 07-06 ; borne décalée d'un jour), M11-M13 (total, date, règle 3), M14 (annulées), M15-M17
+(D6 : soi-même, toujours, jamais), M18 (audit absent), M19-M22 (dévalidation : non contrôlée, validée contrôlée, règle 1 non
+levée, audit par `user`), M23-M24 (précédence de saisie, verrou qui rend `NotFound`), M25-M29 (verrous : retiré, après la lecture
+ordinaire, `lock_draft_in_tx` seul, fournisseur avant la facture, fournisseur aussitôt après (1)), M30 (contrôle avant l'étape
+(6)), M31-M32 (lecture ordinaire avant le verrou dans la route `PUT`, dans la complétion), M33 (champ ignoré), M34 (message de
+création à la dévalidation), M35 (règle 1 sans « si c'est la même facture »), M36-M37 (enveloppes retirées : un seul essai), M38
+(traduction allemande retirée). ⚠️ Au premier passage, M04, M31, M32, M36 et M37 rendaient « TUÉE » pour une erreur du shell
+(`-E test(…)` sans guillemets, exit 2) : verdict faux, script corrigé (guillemets ; un échec du shell n'est plus compté), les cinq
+rejouées (`resume-2.log`), cette fois tuées par leur test ; les premiers journaux sont gardés (`*-premier-passage-shell-casse.log.txt`).
+**Non jouées** : « contrôler après l'étape (9) » de la dévalidation (la précédence est tenue par M30 et par le test de paire
+« période verrouillée », qui rougirait aussi ; non mutée) ; « comparer l'année de l'échéance » (le code ne lit pas l'échéance :
+mutation sans objet, l'assertion du test reste). Les mutations ont tourné sur `e906bc479` ; le commit suivant ne change que deux
+lints de tests.
+
+### Gates
+
+Au passage en `review`, au dernier commit de code **`974bf1c35`**, bases remises à neuf avant chaque gate
+(`reset-bases.sh`, `bases-12a-review-*.log`), sous `mem-guard` et le verrou de la voie base :
+
+- `cargo fmt --all -- --check` et `cargo clippy --workspace --all-targets -- -D warnings` : verts (`clippy-12a.log`, à `c448d2415` ;
+  le commit suivant ne change qu'une assertion de test).
+- `scripts/gate-ci.sh kesh_ci_e4812` : **6202 passés, 0 échoué, 18 ignorés** (`review-12a-gate-ci-2.log`, console
+  `review-12a-gate-ci-2.console`). Un premier passage à `c448d2415` avait rougi `inbox_import_e2e::journal_entry_detail_shows_the_document`
+  (`review-12a-gate-ci.log`, 1817 passés, 1 échoué, arrêt au premier binaire en échec) : corrigé par `974bf1c35`, binaire relancé
+  seul en un processus (`inbox-import-cargo-test.log`, 49 / 49), puis `gate-ci` complet.
+- `scripts/test-fast.sh --ci` : **6185 passés, 14 ignorés** à `974bf1c35` (`review-12a-test-fast-ci-3.log`) ; même compte à
+  `c448d2415` (`review-12a-test-fast-ci-2.log`).
+- Frontend (catalogues partagés) : `npm run check` **0 erreur** (29 avertissements préexistants, aucun dans un fichier touché),
+  `npm run lint-i18n-ownership` **PASS** (`review-12a-front.log`, à `974bf1c35`).
+- **E2E : non lancé à ce passage** (règle des gates : pas d'E2E au passage en `review`) ; la 48-12a n'a pas d'écran. L'E2E complet se
+  joue à la fin de la 48-12b, au dernier commit de code de la branche, et couvre les deux fiches.
+- PDF des manuels : régénérés hors commit (`make admin user`, `make-manuels-12a.log`), contrôle aplati `controle-pdf-12a.log`
+  (phrases périmées 0 dans les deux PDF, « 15-b » présent : 2 au manuel utilisateur, 1 au manuel d'administration), puis PDF
+  restaurés (`git restore`) : **aucun PDF commité**.
+
+### Choix et écarts
+
+- **C-e4812a-1** — le numéro de la facture citée et le statut viennent de la **même lecture** que la comparaison (pas de relecture).
+- **C-e4812a-2** — `AND id <> ?` lié à `0` quand aucune facture n'est à exclure (les identifiants commencent à 1) : une requête au
+  lieu de deux.
+- **C-e4812a-3** — à la modification, les quatre éléments se comparent à la facture **verrouillée** (`lock_draft_in_tx`), non à
+  une relecture ordinaire.
+- **C-e4812a-4** — textes français avec l'apostrophe typographique (’), comme `error-account-designated-in-settings` ; replis Rust
+  égaux.
+- **Écart — journaux** : la fiche nomme `kesh-gate-logs/e4812a/` ; le prompt d'appel nomme `e4812/dev/` (et `e4812/dev/mut-12a/`) :
+  suivi le prompt.
+- **Écart — consigne « outil Edit »** : les documents (`docs/api-external.md`, manuels `.tex`, `README.md`,
+  `MULTI-TENANT-SCOPING-PATTERNS.md`) ont été édités par de courts scripts `python3` de remplacement, chaque motif vérifié unique
+  avant écriture (assertion) ; le code Rust et les tests, par l'outil Edit. Motif : des paragraphes de plusieurs centaines de
+  caractères, plus sûrs à remplacer d'un bloc avec contrôle d'unicité ; l'outil Edit n'en manque pas pour autant.
+- **Écart — rouge d'abord** : tests écrits après le code, tous rougis par mutation (ci-dessus).
+- **Mise de côté** : le travail commencé de la 48-12b a été mis de côté (`git stash`) pendant les gates de la 48-12a, pour que
+  chacun mesure exactement l'état commité ; aucun fichier de la 48-12a n'y figure.
+
+### File List
+
+`crates/kesh-core/src/payment_text.rs` (neuf), `crates/kesh-core/src/lib.rs`, `crates/kesh-db/src/errors.rs`,
+`crates/kesh-db/src/repositories/supplier_invoices.rs`, `crates/kesh-api/src/errors.rs`, `crates/kesh-api/src/audit_labels.rs`,
+`crates/kesh-api/src/routes/supplier_invoices.rs`, `crates/kesh-api/src/routes/imported_supplier_invoices.rs`,
+`crates/kesh-api/src/routes/invoices.rs`, `crates/kesh-i18n/locales/{fr,de,en,it}-CH/messages.ftl` ; tests neufs
+`crates/kesh-db/tests/supplier_invoice_duplicate.rs`, `crates/kesh-db/tests/supplier_invoice_duplicate_lock.rs`,
+`crates/kesh-api/tests/supplier_invoice_duplicate_e2e.rs` ; tests modifiés `crates/kesh-api/tests/{rejeu_interblocage_e2e,
+audit_acteur_garde, audit_route_registry, supplier_invoice_response_e2e, bank_account_closed_inventory, admin_full_import_e2e,
+inbox_import_e2e, supplier_invoice_draft_e2e}.rs`, `crates/kesh-db/tests/{supplier_invoices_repository, payment_batches_repository,
+filet_bilan_clos, supplier_invoices_internal_number}.rs` ; `frontend/src/lib/shared/utils/iban.ts`, `iban.test.ts` (commentaires) ;
+`docs/api-external.md`, `docs/manual/fr/user-manual.tex`, `docs/manual/fr/admin-manual.tex`, `docs/MULTI-TENANT-SCOPING-PATTERNS.md`,
+`README.md` ; `_bmad-output/implementation-artifacts/sprint-status.yaml`, cette fiche, son prompt de revue P1. **Modules** : cinq
+(`kesh-core`, `kesh-db`, `kesh-api`, `kesh-i18n`, documentation) ; les deux renvois de `iban.ts` ne comptent pas (V3-9).
 
 ## Change Log
 
@@ -281,3 +425,13 @@ Sous `scripts/mem-guard.sh`, une commande lourde à la fois, `flock` du verrou d
   - **Décisions de Guy (2026-11-19)** : critère 1 par année civile, refus absolu, contournement « 15-b » ; critère 2 avec `confirmNotDuplicate` audité ; règle 3 ; annulées exclues ; numéro facultatif ; rejeu à la modification sur quatre éléments ; pas de migration ; dévalidation d'une annulée contrôlée (V1-4), puis **levée par confirmation explicite et auditée** (D6bis) ; sortie commune avec la 48-12b ; **rejeu de `POST /invoices`** (D3ter) ; **extension du rejeu à `PUT /invoices/{id}` approuvée** (D3ter, relevé A ligne 6).
   - **Findings de la P5, prémisse lue au code, aucun réfuté** : **V5-1** — `admin-manual.tex:3278` et `api-external.md:671` énumèrent les traces de la dévalidation : la trace `duplicate_confirmed` ajoutée aux rangs 38 et 165. **V5-2** — `README.md:44` porte la phrase « librement » d'`api-external.md:653` : « oui, 48-12a ». **V5-3** — `user-manual.tex:2176` (rôle du numéro du fournisseur), trouvé hors commande : « oui, 48-12a », motif manquant nommé. **V5-4** — la commande exige gawk et une locale UTF-8 (sous `LC_ALL=C` : 181 paragraphes) : prérequis et `LC_ALL=C.UTF-8 gawk` écrits, contrôle positif 240 (rejouée : 240). **V5-5** — `company_invoice_settings.rs:1214` (`LOCK IN SHARE MODE`) : les comptes de l'avoir sont en S, le cas « avec 1 à 3 » retiré (aucun cycle). **V5-6** — `backup.rs:1069-1070` ouvre le module de tests : `:2474` passe à la ligne 12, `:2123`, `:2315` dits de test. **V5-7** — `invoices.rs:1145-1147` (`Some(pid)` et `!= prior_project_id`) : condition « pose un projet non nul différent de l'ancien » à la ligne 6 et en D3ter ; le test du rejeu de `PUT /invoices/{id}` pose un projet neuf et change le contact. **V5-8** — chaque rang « oui » du relevé B porte sa fiche : 24 à la 48-12a, 3 à la 48-12b (91, 106, et 107, qui passe à la 48-12b avec la phrase « autre session » `:2715-2717`) ; pour 68, 80, 84, 88, la 48-12b écrit dans un paragraphe neuf à la suite. **V5-9** — AC-12 : contrôle négatif sur les phrases discriminantes, positif sur « 15-b », `.tex` et PDF aplatis.
   - **Décomptes recomptés** : relevé A, 13 lignes ; relevé B, 240 paragraphes par la commande (27 « oui » : 24 + 3 ; 213 « non » en dix-sept groupes), plus 2 sites hors commande (`user-manual.tex:2176`, `README.md:44`). Modules : cinq.
+- 2026-11-19 — **Développement (Claude Opus 5.5, `bmad-dev-story`) ; passage en `review`.** Commits `b387e17db` à `974bf1c35` (Dev
+  Agent Record, § *Commits*). Étape 0 : citations relues à `a8ffbb488`, toutes exactes. Livré : D1 à D7, D3bis (relevé A rejoué,
+  aucun écrivain neuf), D3ter (rejeu de `POST` et `PUT /invoices`), D6bis ; S6 (relevé B : les 24 rangs « oui — 48-12a », plus
+  `user-manual.tex` — rôle du numéro — et `README.md`) ; paragraphe « Pour les intégrations » de la 0.20.0 ouvert au manuel
+  d'administration. Tests neufs : 12 (règles, dépôt), 5 (verrous pilotés), 6 (HTTP), 2 (rejeu) ; relevé des fixtures après S2 :
+  39 rouges de fixtures et de gardes, corrigés sans toucher la règle. **38 mutations, 38 tuées** (cinq rejouées après une erreur du
+  shell du script, dite au Dev Agent Record). Gates à `974bf1c35` : `gate-ci` 6202 / 0 / 18, `test-fast --ci` 6185 / 14 ignorés, frontend `check` et `lint-i18n-ownership` verts ; E2E à la fin de la 48-12b. Écarts déclarés :
+  dossier des journaux (`e4812/dev/`, prompt d'appel), documents édités par scripts à motif unique, tests écrits après le code
+  (rougis par mutation). Aucune migration, aucun PDF commité, aucune facture client ni avoir touché. Prompt de la revue P1 :
+  `48-12a-doublons-fournisseurs-serveur-review-prompt-p1.md` (trois lentilles Opus, B, E, A).
