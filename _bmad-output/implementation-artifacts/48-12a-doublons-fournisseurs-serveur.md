@@ -435,3 +435,6 @@ filet_bilan_clos, supplier_invoices_internal_number}.rs` ; `frontend/src/lib/sha
   dossier des journaux (`e4812/dev/`, prompt d'appel), documents édités par scripts à motif unique, tests écrits après le code
   (rougis par mutation). Aucune migration, aucun PDF commité, aucune facture client ni avoir touché. Prompt de la revue P1 :
   `48-12a-doublons-fournisseurs-serveur-review-prompt-p1.md` (trois lentilles Opus, B, E, A).
+- 2026-11-20 — E2E complet joué à la fin de la 48-12b : la règle 2 de la 48-12a faisait rougir trois tests de
+  `supplier-internal-number.spec.ts` (décor de brouillons sans numéro, même date, même montant) ; décor corrigé dans la 48-12b
+  (`f35c56925`, `confirmNotDuplicate: true`). Aucun changement du code de la 48-12a.

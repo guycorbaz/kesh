@@ -1,6 +1,6 @@
 # Story 48-12b : Écran — refus de doublon visible, repassage en brouillon et complétion d'un document dont la réponse est perdue
 
-Status: ready-for-dev (validation terminée à la P6, 2026-11-19 ; sortie commune avec la 48-12a)
+Status: review (développement terminé le 2026-11-20 ; sortie commune avec la 48-12a)
 
 Issues : **#975** (côté écran) et **#985** (complétion d'un document importé annoncée en échec) — `bug`, **P2**. Release 0.20.0, Epic 48. Voie : **frontend**. Pas de migration, aucun code Rust. **Dépend de la 48-12a** (`48-12a-doublons-fournisseurs-serveur.md` : codes `409 SUPPLIER_INVOICE_DUPLICATE` et `409 SUPPLIER_INVOICE_PROBABLE_DUPLICATE`, `details : { supplierInvoiceId, internalNumber, status, confirmable }`, champ `confirmNotDuplicate` — création, `PUT`, complétion et **dévalidation d'une facture annulée** —, audit, et les trois messages `error-supplier-invoice-*`, texte unique partagé avec l'écran) : elle se fusionne **avant**. **Les deux fiches sortent dans la même release : si la 48-12b n'est pas close à la coupure, les deux partent ensemble à la release suivante** ; aucune sortie isolée de la 48-12a. Fiche-mère : `48-12-reponses-perdues-fournisseurs.md`.
 
@@ -198,7 +198,118 @@ Factures fournisseur : quand Kesh refuse une facture comme doublon, l'écran mon
 
 ## Dev Agent Record
 
-(vide)
+**Agent** : Claude Opus 5.5, `bmad-dev-story`, 2026-11-19, en autonomie, à la suite de la 48-12a, même worktree
+(`/home/gcorbaz/devel/kesh-48-12`), même branche (`story/48-12-reponses-perdues-fournisseurs`), mêmes bases (`kesh_e4812`,
+`kesh_e2e_e4812`, `kesh_ci_e4812`). Journaux : `/home/gcorbaz/devel/kesh-gate-logs/e4812/dev/`.
+
+### Commits
+
+- `16fc5742b` — toute la story : table A (`SupplierInvoiceForm.svelte`, `supplier-invoice-form.ts`, `SupplierInvoiceNotice.svelte`),
+  complétion E8/E9 (`new/+page.svelte`, `listImported(status, call?)`), modification (`invoiceId`), fiche (table B, F4),
+  `unvalidateSupplierInvoice(…, confirmNotDuplicate?)`, dix-sept clés `supplier-invoices-*` aux quatre catalogues, compteurs
+  recomptés (`sitesTotal` 3502 → 3523, `CANDIDATES_ATTENDUES` 130 → 132, `CLES_RELEVEES` 463 → 480), manuel utilisateur,
+  tests Vitest et spec E2E `supplier-invoice-duplicate.spec.ts`.
+- `3a10dba62` — le test A-E5 change la saisie pendant le gel (sans quoi « corps reformé depuis l'état » vivait).
+- `f7280c030` — **recette visuelle** : la saisie figée avait l'apparence d'une saisie active (`<fieldset disabled>` ne
+  grise rien) → `disabled:opacity-60` sur le `fieldset` ; spec E2E : la capture E3 attend la réponse 201 du `POST`.
+- `f35c56925` — le premier E2E complet a fait rougir `supplier-internal-number.spec.ts` (trois tests,
+  `409 SUPPLIER_INVOICE_PROBABLE_DUPLICATE`) : son décor crée des brouillons sans numéro de même date et même montant, que la
+  règle 2 de la 48-12a refuse ; le décor envoie `confirmNotDuplicate: true`. **Dernier commit de code** (spec E2E seule).
+- le commit qui suit ne porte que la fiche, `sprint-status.yaml` et le prompt de la revue P1.
+
+### Étape 0
+
+Les citations de la fiche (`Ce qui se lit au code`) ont été relues au code de la branche, après la 48-12a : exactes ; aucun point
+de la fiche faux au code. Cinq modules, aucun sixième ; `SupplierCreatePanel.svelte` et `InvoiceForm.svelte` non touchés.
+
+### Ce qui a été fait
+
+- **Table A** — `SupplierFormState` E1 à E9, `canWriteEntry` (E1, E4, E7), `canSubmitFrom`, `canConfirmFrom` ; un seul
+  `<fieldset disabled>` autour des contrôles qui écrivent la saisie ; « Enregistrer » caché en E5, inactif hors E1/E4/E7, pendant
+  un scan et panneau ouvert ; deux gardes distinctes (envoi, confirmation) ; corps **gardé** (`keptReq`) renvoyé tel quel avec le
+  drapeau ; état après un rejet décidé par `stateAfterRejection` (doublon lisible → E4/E5 sur `confirmable`, issue inconnue par
+  `isSettlementOutcomeUnknown` → E6, sinon E7) ; avis tirés des clés `error-supplier-invoice-*` (jamais de `err.message` quand
+  `details` est lisible) ; doublon sans `details` lisible → E7 avec le message du serveur.
+- **Relevé C** — scan, `onSupplierCreated` et `$effect` de l'échéance gardés par `canWriteEntry` ; contact créé hors saisie ajouté
+  à la liste, non sélectionné, avec la notification « Fournisseur créé, non sélectionné ».
+- **E6** — trois textes (création, modification, complétion), « reprendre la saisie » sans requête ni vidage ; après une
+  confirmation coupée, pas de bouton de confirmation.
+- **E8/E9** — `onRefusal` (complétion seule) appelé dans un `try` ; `relireApresRefus` ne relit que sur `NOT_PENDING` ou une issue
+  inconnue (`to_complete` puis `completed`, `{ retry: false }`) ; trouvé complété avec facture → E9 (prop `locked`, lien
+  `target="_blank"`), encore à traiter → E7 « pour l'instant », relecture en échec → E6.
+- **Table B** — `duplicateRefusal` (avec la version), effacé par `clearRefusals`, au départ de `attach`, après la confirmation de
+  `detach`, par `reloadAfterRefusal` ; F4 : texte de dévalidation, lien, « Repasser en brouillon malgré tout » sur `confirmable`
+  seul ; drapeau envoyé seulement si `=== true` (fiche et API) ; doublon illisible → F6 (`err.message`).
+- **Manuel** — `user-manual.tex` (rangs 68, 80, 84, 88, 91, 106, 107 du relevé B).
+
+### Gates
+
+- **Vitest ciblé** pendant le développement, puis **frontend complet** au dernier commit de code `f7280c030` :
+  `npm run check` 0, `lint-i18n-ownership` 0, `test:unit` **281 fichiers / 4839 tests verts**, `build` 0
+  (`final-front.log`).
+- **Manuel** — `make user` puis texte aplati (`controle-pdf-12b.log`) : « Ce n’est pas un doublon » 2, « n’a pas été
+  enregistrée » 1, « qu’elle correspond à votre saisie » 1, « Repasser en brouillon malgré tout » 2, « Modifier la saisie » 2,
+  « reprendre la saisie » 3 ; négatifs « relit pas encore » 0, « document traité entre-temps dans une autre session » 0.
+  PDF restauré (`git restore`), non commité.
+- **gate-ci** au dernier commit de code `f7280c030`, bases `kesh_e4812` et `kesh_e2e_e4812` remises à neuf avant :
+  `scripts/gate-ci.sh kesh_ci_e4812` → **6202 passés, 0 échoué, 18 ignorés**, code 0 (`final-gate-ci.log`). La 48-12b ne
+  touche aucun code Rust.
+- `f35c56925` ne touche qu'une spec E2E : gate-ci (`f7280c030`) non rejoué (aucun Rust ni code de `src/`) ; `npm run check`
+  rejoué, 0 erreur (`final-front-check-2.log`).
+- **E2E complet** (recette `docs/testing.md`, backend du worktree sur `kesh_e2e_e4812` remise à neuf, port 3812,
+  `e2e-e4812.sh`) :
+  - à `f7280c030` : 493 passés, 17 ignorés, **10 rouges** — les sept de la KF-029 et trois de `supplier-internal-number.spec.ts`
+    (`:138`, `:220`, `:261`, refus de doublon probable, voir `f35c56925`) (`e2e-complet.log`) ;
+  - à `f35c56925` : **496 passés, 17 ignorés, 7 rouges**, fichier par fichier exactement les sept de la KF-029 —
+    `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`
+    (`e2e-complet-2.log`). Les sept tests de `supplier-invoice-duplicate.spec.ts` passent.
+
+### Mutations (`e4812/dev/mut-12b/`, script `muter.py`, restauration `git restore` puis `touch`)
+
+**47 jouées : 46 tuées, une vivante (B45), couverte par B47** (`resume.log` pour B01 à B46, une trace par mutation) — B45
+(« avis non effacé par `reloadAfterRefusal` ») **vit seule**, car chaque relecture suit un geste qui a déjà effacé l'avis
+(`clearRefusals`) ; retirées **ensemble**, les deux défenses meurent (trois tests rouges, dont D6). B01 a été rejouée après
+`f7280c030` (le `fieldset` a changé de forme ; `B01-…-avant-attenuation.log.txt` garde la première trace). Mutations jouées
+ensemble par équivalence : B34 (`locked` ignoré **et** E9 posé par le formulaire), B40 (gestionnaire passé tel quel **et** drapeau
+par vérité), B27 (deux chemins de lecture illisible).
+
+### Recette visuelle (`/home/gcorbaz/devel/kesh-gate-logs/e4812/dev/captures/`, thème clair, base E2E de démonstration)
+
+Quinze captures, prises par le test « recette visuelle » et les parcours de `supplier-invoice-duplicate.spec.ts`
+(`KESH_E2E_CAPTURES_DIR`) : `e4812b-E2-envoi`, `-E3-enregistre`, `-E4-doublon`, `-E5-doublon-probable`, `-E6-creation`,
+`-E6-modification`, `-E6-completion`, `-E7-pour-l-instant`, `-E7-doublon-sans-details`, `-E9-deja-enregistree`,
+`-F4-repassage-doublon`, `-F6-doublon-sans-details`, `-E1-scan-en-cours`, `-E1-panneau-ouvert`,
+`-C2-fournisseur-non-selectionne` (`.png`). E8 n'est pas capturé (visuellement E2, V5-8), ni la notification de C1
+(inatteignable, relevé C). La capture E6-création porte aussi le bandeau « Base de données temporairement indisponible » :
+il vient du 503 injecté par la spec (comportement existant de l'interface), non de la story.
+
+### Écarts déclarés
+
+- Journaux et captures sous `e4812/dev/` (consigne de l'orchestrateur), non `e4812b/` comme l'écrit la fiche.
+- AC-9 : le négatif « dans une autre session » reste présent **une fois** dans `user-manual.tex`, au rang 80, texte de la
+  48-12a (« … par une autre personne ou dans une autre session ») ; le jeton n'est pas discriminant. La phrase visée,
+  « document traité entre-temps dans une autre session », est absente du `.tex` et du PDF.
+- Quelques fichiers de test ont été prolongés par script (`python3`, `cat >>`) plutôt que par l'outil d'édition ; le code de
+  production l'a été par l'outil d'édition.
+- `f7280c030` ajoute un style (`disabled:opacity-60`) que la fiche ne nomme pas : défaut trouvé par la recette visuelle,
+  corrigé dans la story.
+- Les tests ont été écrits avec le code, non avant ; le rouge est prouvé par les mutations.
+- Le titre du test D6 de `supplier-unknown-outcome-page.test.ts` nomme la mutation « avis non effacé par
+  `reloadAfterRefusal` », qu'il ne tue pas seul (B45 vivante, équivalente au code actuel) ; il la tue avec la défense de
+  `clearRefusals` (B47). Titre non retouché après le dernier commit de code : point laissé à la revue.
+
+### File List
+
+`crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl` ; `docs/manual/fr/user-manual.tex` ;
+`frontend/src/lib/features/imported-supplier-invoices/imported-supplier-invoices.api.ts` ;
+`frontend/src/lib/features/supplier-invoices/` : `SupplierInvoiceForm.svelte`, `SupplierInvoiceForm.test.ts`,
+`SupplierInvoiceNotice.svelte` (neuf), `supplier-invoice-form.ts`, `supplier-invoice-form.test.ts`, `supplier-invoices.api.ts`,
+`supplier-invoices.api.test.ts` (neuf), `supplier-invoices.types.ts` ; `frontend/src/lib/shared/` : `i18n-keys.test.ts`,
+`i18n-libelle-en-dur.test.ts`, `i18n-un-repli-par-cle.test.ts` ; `frontend/src/routes/(app)/supplier-invoices/` :
+`new/+page.svelte`, `new/new-page.test.ts`, `[id]/+page.svelte`, `[id]/edit/+page.svelte`, `[id]/edit/edit-page.test.ts`,
+`[id]/supplier-invoice-draft-page.test.ts`, `[id]/supplier-unknown-outcome-page.test.ts` ;
+`frontend/tests/e2e/supplier-invoice-duplicate.spec.ts` (neuf) ; `_bmad-output/implementation-artifacts/sprint-status.yaml`,
+cette fiche, `48-12b-doublons-fournisseurs-ecran-review-prompt-p1.md` (neuf).
 
 ## Change Log
 
@@ -214,3 +325,8 @@ Factures fournisseur : quand Kesh refuse une facture comme doublon, l'écran mon
   - **Décisions de Guy (2026-11-19)** : découpage en 48-12a et 48-12b, sortie commune ; l'écran décrit par une **table d'états** ; **issue inconnue** : formulaire figé, ni confirmation ni renvoi, vérifier dans la liste (E6) ; **sortie de E6** par « J'ai vérifié… — reprendre la saisie », sans envoi, avec sa variante « modification » ; **dévalidation confirmée** d'une annulée en doublon (F4) ; **texte de E9** : « Cette pièce a déjà été enregistrée comme facture. Ouvrez-la pour vérifier qu'elle correspond à votre saisie. »
   - **Findings de la P6, prémisse lue au code, aucun réfuté** : **V6-1** — deux clics synchrones sur la confirmation = une requête (test A-E5, mutation « confirmation sans garde d'état ») ; « confirmation hors E5 » dite inatteignable, testée en unitaire sur la décision de l'état (AC-7). **V6-2** — E8 figé, test et mutation « formulaire réactivé avant la fin de `onRefusal` ». **V6-3** — le lien de E9 s'ouvre dans un nouvel onglet ; la règle vaut pour tous les liens d'avis. **V6-4** — table B, F4 : « du relevé D **marqué « effacé »** ». **V6-5** — C3 : `suppliers` réaffecté par C2 (hors saisie) et `select` (saisie) seulement. **V6-6** — jeton négatif court « dans une autre session », sans trait d'union. **V6-7** — `onScanFile` `:326-367`. **V6-8** — captures de E7 et F6 avec un doublon sans `details`. **V6-9** — fiche-mère : état exact des deux fiches.
   - **Statut** : `ready-for-dev` ; clés `48-12a-doublons-fournisseurs-serveur` et `48-12b-doublons-fournisseurs-ecran` posées dans `sprint-status.yaml` (orchestrateur, par délégation), `48-12-reponses-perdues-fournisseurs` passée à `split`. Modules : cinq.
+- 2026-11-20 — Développement (Claude Opus 5.5, `bmad-dev-story`) : `16fc5742b`, `3a10dba62`, `f7280c030`, `f35c56925`. Mutations :
+  47 jouées, 46 tuées, B45 vivante seule (défense redondante), tuée avec `clearRefusals` (B47). Recette visuelle : un défaut
+  trouvé et corrigé (saisie figée d'apparence active, `f7280c030`) ; quinze captures. E2E complet : un défaut de décor induit par
+  la 48-12a trouvé et corrigé (`f35c56925`), puis seulement les sept rouges de la KF-029. gate-ci 6202/0/18, frontend complet
+  vert. Statut `review` ; prompt de la revue P1 à côté de la fiche.
