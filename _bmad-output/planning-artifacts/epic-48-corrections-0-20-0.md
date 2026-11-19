@@ -195,8 +195,8 @@ Les autres (#1256 à #1260, #1264, #1265 ; P4) restent ouvertes, hors de la rele
 **Lancement** (voie B, plan § *Voies*) : 48-13 et 48-11 d'abord (prioritaires ; 48-11 dès la fusion de #1327), la 48-15
 dès la 48-13 fusionnée, puis 48-12, 48-10, 48-1, 48-2, et la 48-14 en dernier.
 
-**Sortie à la coupure, si le temps manque** (décisions de Guy du 2026-11-18) : la **48-14** sort la première, puis la
-**48-2**, puis selon l'avancement 48-1, 48-10, 48-12 ; la **48-15 sort avant la 48-11 et la 48-13**, prioritaires, qui
+**Sortie à la coupure, si le temps manque** (décisions de Guy des 2026-11-18 et 2026-11-19) : la **48-14** sort la
+première, puis **v0200-corrections-mineures** (décision de Guy du 2026-11-19), puis la **48-2**, puis selon l'avancement 48-1, 48-10, 48-12 ; la **48-15 sort avant la 48-11 et la 48-13**, prioritaires, qui
 sont les dernières à sortir. Une story sortie retourne à une épique
 ultérieure (kesh:D11) ; l'Epic 48 se clôt avec la release.
 
