@@ -2758,6 +2758,7 @@ settings-company-address-country-unknown = Der Ländercode « { $code } » der G
 settings-company-address-help = Adresse des Ausstellers und Zahlungsempfängers auf Ihren Rechnungen und QR-Rechnungen. PLZ und Ort sind Pflichtfelder; Land als zweistelliger ISO-Code. Ein bereits fixiertes PDF ändert sich nicht.
 error-company-phone-too-long = Die Telefonnummer der Firma ist zu lang (höchstens 50 Zeichen).
 error-company-website-too-long = Die Website-Adresse der Firma ist zu lang (höchstens 255 Zeichen).
+error-company-email-too-long = Die E-Mail-Adresse der Firma ist zu lang (höchstens 320 Zeichen).
 error-invoice-pdf-header-overflow = Der Dokumentkopf passt nicht auf die Seite. Entfernen Sie eine Kontaktangabe — Telefon, E-Mail oder Website — in den Einstellungen: Kürzen schafft keinen Platz, jede Angabe belegt eine ganze Zeile. Oder verringern Sie die Zeilenzahl der Empfängeradresse.
 
 # Story 23-2 (#283) — parité de-CH : les 57 clés qui n'existaient qu'en fr-CH.

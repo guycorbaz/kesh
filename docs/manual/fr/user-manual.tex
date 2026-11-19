@@ -1347,10 +1347,10 @@ Une sauvegarde \texttt{.keshbackup} écrite \textbf{par une version antérieure 
 
 \begin{itemize}
     \item \textbf{Type} : \textbf{Entreprise} (raison sociale) ou \textbf{Personne} (prénom + nom séparés).
-    \item \textbf{Nom} : raison sociale pour une entreprise ; \textbf{prénom et nom} pour une personne.
+    \item \textbf{Nom} : raison sociale pour une entreprise ; \textbf{prénom et nom} pour une personne. Le prénom et le nom comptent 70 caractères au plus chacun~: plus longs, ils sont \textbf{refusés, jamais coupés}, et le message nomme le champ.
     \item \textbf{IDE} (si société suisse soumise à inscription au RC).
     \item \textbf{Numéro de client} (optionnel) : la référence sous laquelle \emph{vous} identifiez ce client. Elle est \textbf{libre} --- Kesh ne la génère pas et ne l'impose pas ---, doit être unique dans votre société, et figure sur le PDF de facture (voir \ref{sec:numero-client}).
-    \item \textbf{Adresse structurée} : rue, numéro, NPA, localité, pays en \emph{champs séparés}. Ce format « structuré » (type S) est celui exigé par les banques suisses sur les QR-factures — le NPA et la localité sont requis pour générer une facture. Le NPA reste libre (adresses étrangères possibles). Le pays est un code ISO à deux lettres \textbf{connu} («~CH~», «~FR~», «~DE~»…)~: depuis la version~0.17.4, un code inconnu («~SU~» pour «~Suisse~», «~XX~») est refusé à l'enregistrement, avec un message qui le nomme. Un contact enregistré avant la~0.17.4 avec un tel code se lit toujours et \textbf{se modifie} sans toucher au pays~; l'écran signale alors le code inconnu sous le champ \emph{Pays} --- la QR-facture de ce contact ne pourra pas être produite tant qu'il n'est pas corrigé. Un pays changé doit être valide.
+    \item \textbf{Adresse structurée} : rue, numéro, NPA, localité, pays en \emph{champs séparés}. Ce format « structuré » (type S) est celui exigé par les banques suisses sur les QR-factures — le NPA et la localité sont requis pour générer une facture. Le NPA reste libre (adresses étrangères possibles). Le pays est un code ISO à deux lettres \textbf{connu} («~CH~», «~FR~», «~DE~»…)~: depuis la version~0.17.4, un code inconnu («~SU~» pour «~Suisse~», «~XX~») est refusé à l'enregistrement, avec un message qui le nomme. Un contact enregistré avant la~0.17.4 avec un tel code se lit toujours et \textbf{se modifie} sans toucher au pays~; l'écran signale alors le code inconnu sous le champ \emph{Pays} --- la QR-facture de ce contact ne pourra pas être produite tant qu'il n'est pas corrigé. Un pays changé doit être valide. La rue compte 70 caractères au plus, le numéro et le NPA 16, la localité 35~: un champ trop long, même collé, est \textbf{refusé, jamais coupé}, le message nomme le champ et le nombre de caractères saisis, et votre saisie reste à l'écran.
     \item \textbf{Email}, \textbf{Téléphone} (optionnels).
     \item \textbf{Compte comptable par défaut} : par exemple 1100 (Débiteurs) pour un client.
     \item \textbf{Conditions de paiement} : par exemple « 30 jours net ».
@@ -1513,7 +1513,7 @@ Le bloc en haut à gauche du PDF porte votre \textbf{nom}, votre \textbf{adresse
 \textbf{Chaque champ est facultatif, et un champ vide ne laisse aucun blanc sur le document} : la ligne correspondante n'est simplement pas imprimée. Si vous ne renseignez rien, votre facture est exactement celle que vous aviez avant --- aucune mise en page ne bouge.
 \end{keshnote}
 
-\textbf{L'e-mail que vous avez peut-être déjà renseigné} comme adresse de réponse des envois apparaît désormais lui aussi sur le PDF. Si vous ne le souhaitez pas, il suffit de le vider --- mais notez qu'il sert aussi de \emph{Reply-To} aux factures envoyées par e-mail (cf. \S\ref{sec:envoi-email}).
+\textbf{L'e-mail que vous avez peut-être déjà renseigné} comme adresse de réponse des envois apparaît désormais lui aussi sur le PDF. Si vous ne le souhaitez pas, il suffit de le vider --- mais notez qu'il sert aussi de \emph{Reply-To} aux factures envoyées par e-mail (cf. \S\ref{sec:envoi-email}). L'adresse compte 320 caractères au plus~: plus longue, elle est refusée, jamais coupée, et le message dit le maximum.
 
 Les \textbf{avoirs} portent les mêmes coordonnées, à l'identique.
 

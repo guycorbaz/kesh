@@ -1345,3 +1345,96 @@ async fn coordinates_after_step_5_leave_the_company_unchanged_1226(pool: MySqlPo
     assert_eq!(companies_snapshot(&pool).await, configuree);
     assert_eq!(step_completed(&app, &token).await, 6);
 }
+
+// ─── Story 48-15 (#1334) : le prénom et le nom, bornés chacun à 70 ───
+
+/// AC3 — un **prénom seul** de 71 caractères (le nom de la société vient alors
+/// de `name`) est refusé en `400 VALIDATION_ERROR` qui nomme « Prénom », sans
+/// rien écrire. Sans la borne, il partait à `companies.first_name`
+/// `VARCHAR(70)` et MariaDB rendait `DATA_LENGTH_OR_RANGE`, qui ne nomme rien.
+/// Rouge sans le contrôle : M4.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn coordinates_rejects_a_lone_71_character_first_name_1334(pool: MySqlPool) {
+    assert_name_refused(
+        pool,
+        json!({
+            "name": "Démo SA",
+            "firstName": "P".repeat(71),
+            "address": adresse_valide(),
+            "ideNumber": null
+        }),
+        &["Prénom : 70 caractères maximum"],
+    )
+    .await;
+}
+
+/// AC3 — idem pour un **nom seul** de 71 caractères. Rouge sans le contrôle : M5.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn coordinates_rejects_a_lone_71_character_last_name_1334(pool: MySqlPool) {
+    assert_name_refused(
+        pool,
+        json!({
+            "name": "Démo SA",
+            "lastName": "N".repeat(71),
+            "address": adresse_valide(),
+            "ideNumber": null
+        }),
+        &["Nom : 70 caractères maximum"],
+    )
+    .await;
+}
+
+/// AC3 (filets) et AC9 — un prénom seul (ou un nom seul) de 70 est accepté et
+/// enregistré entier : la borne égale la colonne. Rend la ligne enregistrée.
+/// (Prénom 70 et nom 70 ensemble feraient un nom composé de 141, refusé par la
+/// 48-13 : ce n'est pas le cas jugé ici.)
+async fn assert_lone_70_accepted(pool: MySqlPool, cle: &str, valeur: &str) -> CompanyRow {
+    let app = spawn_app(pool.clone()).await;
+    create_test_company(&pool).await;
+    ensure_admin_user(&pool, &test_config()).await.unwrap();
+    let token = login(&app).await;
+    advance_to_step_5(&app, &token).await;
+
+    let mut corps = json!({ "name": "Démo SA", "address": adresse_valide(), "ideNumber": null });
+    corps[cle] = json!(valeur);
+    let (status, body) = post_coordinates(&app, &token, corps).await;
+    assert_eq!(status, 200, "{cle} seul de 70 accepté : {body}");
+    assert_eq!(body["stepCompleted"], 6);
+    let mut lignes = companies_snapshot(&pool).await;
+    assert_eq!(lignes.len(), 1);
+    lignes.remove(0)
+}
+
+/// Revue P1 (B4, E3) — la borne compte des **caractères** sur la valeur
+/// **rognée** : un prénom seul de 70 « é » (140 octets), entouré de blancs, est
+/// accepté et stocké rogné. Rouge si la borne comptait en octets (mutation M21).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn coordinates_count_a_lone_first_name_in_characters_after_trimming_1334(pool: MySqlPool) {
+    let prenom = "é".repeat(70);
+    let ligne = assert_lone_70_accepted(pool, "firstName", &format!("  {prenom}  ")).await;
+    assert_eq!(
+        ligne.1.as_deref(),
+        Some(prenom.as_str()),
+        "stocké rogné, entier"
+    );
+}
+
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn coordinates_accept_a_lone_70_character_first_name_1334(pool: MySqlPool) {
+    let ligne = assert_lone_70_accepted(pool, "firstName", &"x".repeat(70)).await;
+    assert_eq!(
+        ligne.1.as_deref(),
+        Some("x".repeat(70).as_str()),
+        "stocké entier"
+    );
+}
+
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn coordinates_accept_a_lone_70_character_last_name_1334(pool: MySqlPool) {
+    let ligne = assert_lone_70_accepted(pool, "lastName", &"x".repeat(70)).await;
+    assert_eq!(
+        ligne.2.as_deref(),
+        Some("x".repeat(70).as_str()),
+        "stocké entier"
+    );
+}

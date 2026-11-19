@@ -320,9 +320,14 @@
 		formOpen = true;
 	}
 
+	// Story 48-15 : le nom n'a plus de `maxlength`, qui coupait en silence un texte collé (le
+	// nom devient la désignation de la ligne de facture, et donc du PDF). Trop long, il est
+	// refusé ici, et le motif s'affiche au pied du formulaire (`formTouched && formValidation`).
+	// Revue P1 (B2, E2) : compté en caractères (points de code), comme le serveur
+	// (`products.rs`, `chars().count()`), non en unités UTF-16.
 	let formValidation = $derived.by(() => {
 		if (!formName.trim()) return i18nMsg('product-error-name-required', 'Le nom est obligatoire');
-		if (formName.trim().length > 255)
+		if ([...formName.trim()].length > 255)
 			return i18nMsg('product-error-name-too-long', 'Le nom doit faire au plus 255 caractères');
 		const cls = classifyPriceInput(formPrice);
 		if (cls === 'empty')
@@ -634,7 +639,6 @@
 					bind:value={formName}
 					oninput={() => (formTouched = true)}
 					required
-					maxlength={255}
 				/>
 			</div>
 

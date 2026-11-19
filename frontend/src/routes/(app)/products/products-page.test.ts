@@ -167,3 +167,62 @@ describe('fiche produit — Entrée dans le compte de produit (Story 36-1)', () 
 		expect(champ.value).toBe('zzz');
 	});
 });
+
+// Story 48-15 (AC7) — le nom de l'article finit sur le PDF de facture (il devient
+// la désignation de la ligne) : un nom collé trop long est refusé en le disant,
+// non coupé en silence à 255 par un `maxlength`.
+describe('fiche produit — le nom ne coupe pas un texte collé (Story 48-15)', () => {
+	async function ouvrirCreation(): Promise<HTMLInputElement> {
+		render(Page);
+		await settle();
+		const bouton = [...document.querySelectorAll('button')].find((b) =>
+			/Nouveau produit/.test(b.textContent ?? '')
+		);
+		if (!bouton) throw new Error('bouton « Nouveau produit » introuvable');
+		await fireEvent.click(bouton);
+		await settle();
+		// Sonde positive : le champ est TROUVÉ avant l'assertion d'absence.
+		const champ = document.querySelector<HTMLInputElement>('#form-name');
+		if (!champ) throw new Error('champ #form-name introuvable : dialogue non monté');
+		return champ;
+	}
+
+	// Rouge par M12 (`maxlength={255}` remis).
+	it('nom de l’article : aucun maxlength', async () => {
+		const champ = await ouvrirCreation();
+		expect(champ.tagName).toBe('INPUT');
+		expect(champ.hasAttribute('maxlength')).toBe(false);
+	});
+
+	// L'écran juge lui-même la longueur du nom : le bouton se désactive, et le motif
+	// s'affiche au pied du formulaire dès la frappe (`formTouched && formValidation`).
+	// FILET (revue P1, A5) : non-régression du motif existant de la page ; il ne rougit sous
+	// aucune mutation de la story (M24 est tuée par le test suivant).
+	it('un nom de 256 caractères collé est refusé en le disant, la saisie reste, rien ne part', async () => {
+		const champ = await ouvrirCreation();
+		await fireEvent.input(champ, { target: { value: 'A'.repeat(256) } });
+		await settle();
+		expect(champ.form!.textContent).toContain('Le nom doit faire au plus 255 caractères');
+		const soumettre = [...champ.form!.querySelectorAll('button')].find(
+			(b) => b.getAttribute('type') === 'submit'
+		);
+		expect(soumettre?.disabled).toBe(true);
+		expect(createProductMock).not.toHaveBeenCalled();
+		expect(champ.value).toBe('A'.repeat(256));
+	});
+
+	// Revue P1 (B2, E2) — rouge sans le correctif (mutation M24) : compté en unités UTF-16, un nom
+	// de 200 caractères dont 60 hors du plan de base (260 unités) était refusé ; le serveur l'accepte.
+	it('le nom se compte en caractères, non en unités UTF-16 (200 caractères dont 60 hors BMP)', async () => {
+		const champ = await ouvrirCreation();
+		const nom = 'A'.repeat(140) + '𝔸'.repeat(60);
+		expect([...nom].length).toBe(200);
+		expect(nom.length).toBe(260);
+		await fireEvent.input(champ, { target: { value: nom } });
+		await settle();
+		expect(champ.form!.textContent).not.toContain('Le nom doit faire au plus 255 caractères');
+		await fireEvent.input(champ, { target: { value: 'A'.repeat(196) + '𝔸'.repeat(60) } });
+		await settle();
+		expect(champ.form!.textContent).toContain('Le nom doit faire au plus 255 caractères');
+	});
+});

@@ -442,6 +442,37 @@
 			(!formPostalCode.trim() || !formCity.trim())
 	);
 
+	// Story 48-15 (C-e4815-4) — la raison sociale et le délai n'ont plus de `maxlength`, qui
+	// coupait en silence un texte collé. L'écran les juge lui-même : leur refus désactive le
+	// bouton, et son MOTIF s'affiche sous le champ — sans quoi le bouton grisé serait un refus
+	// muet, `formError` ne se remplissant qu'à une soumission qu'il n'atteint jamais. Les deux
+	// messages sont lus aussi par `formValidation`, à la même place qu'avant.
+	//
+	// Revue P1 (B1 = E1 = A1) : la raison sociale ne se juge qu'en type « Entreprise », le seul où
+	// son champ (et donc son motif) existe et où le serveur la lit — pour une personne, il recompose
+	// le nom depuis le prénom et le nom. Sinon, une raison sociale trop longue restée d'une bascule
+	// vers « Personne » griserait le bouton sans motif visible.
+	// Revue P1 (B2, E2) : compte en caractères (points de code), comme le serveur
+	// (`chars().count()`), non en unités UTF-16.
+	let nameTooLongMsg = $derived(
+		formContactType === 'Entreprise' && [...formName.trim()].length > 255
+			? i18nMsg('contact-error-name-too-long', 'Le nom doit faire au plus 255 caractères')
+			: ''
+	);
+	// #245 : vide OU entier 0..365 (miroir de la borne backend). Revue P1 (B5, E5) : des chiffres
+	// seulement — `Number` lirait « 0x1E » comme 30 et « 3e2 » comme 300, une valeur que
+	// l'utilisateur n'a pas écrite.
+	let paymentTermsDaysMsg = $derived.by(() => {
+		const t = formPaymentTermsDays.trim();
+		if (t === '') return '';
+		return !/^\d+$/.test(t) || Number(t) > 365
+			? i18nMsg(
+					'contact-error-payment-terms-days-range',
+					'Le délai de paiement doit être un nombre entier entre 0 et 365 jours'
+				)
+			: '';
+	});
+
 	let formValidation = $derived.by(() => {
 		if (formContactType === 'Personne') {
 			if (!formFirstName.trim() || !formLastName.trim())
@@ -449,23 +480,13 @@
 		} else if (!formName.trim()) {
 			return i18nMsg('contact-error-name-required', 'La raison sociale est obligatoire');
 		}
-		if (formName.trim().length > 255)
-			return i18nMsg('contact-error-name-too-long', 'Le nom doit faire au plus 255 caractères');
+		if (nameTooLongMsg) return nameTooLongMsg;
 		if (addressPartial)
 			return i18nMsg('contact-error-address-npa-city', 'NPA et localité obligatoires si une adresse est saisie');
 		if (formIde.trim() && !validateIdeFormat(formIde.trim())) {
 			return i18nMsg('contact-error-ide-invalid', 'Numéro IDE suisse invalide');
 		}
-		// #245 : vide OU entier 0..365 (miroir de la borne backend).
-		if (formPaymentTermsDays.trim() !== '') {
-			const d = Number(formPaymentTermsDays.trim());
-			if (!Number.isInteger(d) || d < 0 || d > 365) {
-				return i18nMsg(
-					'contact-error-payment-terms-days-range',
-					'Le délai de paiement doit être un nombre entier entre 0 et 365 jours'
-				);
-			}
-		}
+		if (paymentTermsDaysMsg) return paymentTermsDaysMsg;
 		return '';
 	});
 
@@ -861,6 +882,10 @@
 			</div>
 
 			{#if formContactType === 'Personne'}
+				<!-- Story 48-15 (#1334) : ni ces deux champs ni ceux de l'adresse, de la raison
+				     sociale, du numéro de client, du délai et des conditions de paiement n'ont de
+				     `maxlength` : il coupait en silence un texte collé. Le serveur refuse ce qui
+				     dépasse la colonne et le dit (`formError`), la saisie reste. -->
 				<div class="grid grid-cols-2 gap-3">
 					<div>
 						<label for="form-firstname">{i18nMsg('field-first-name', 'Prénom')} *</label>
@@ -869,7 +894,6 @@
 							type="text"
 							bind:value={formFirstName}
 							oninput={scheduleNameProbe}
-							maxlength={70}
 						/>
 					</div>
 					<div>
@@ -879,7 +903,6 @@
 							type="text"
 							bind:value={formLastName}
 							oninput={scheduleNameProbe}
-							maxlength={70}
 						/>
 					</div>
 				</div>
@@ -903,8 +926,12 @@
 						type="text"
 						bind:value={formName}
 						oninput={scheduleNameProbe}
-						maxlength={255}
 					/>
+					{#if nameTooLongMsg}
+						<p class="text-xs text-destructive mt-1" data-testid="contact-name-too-long">
+							{nameTooLongMsg}
+						</p>
+					{/if}
 				</div>
 			{/if}
 
@@ -989,23 +1016,23 @@
 				<div class="grid grid-cols-3 gap-3">
 					<div class="col-span-2">
 						<label for="form-street" class="text-xs text-muted-foreground">{i18nMsg('field-street', 'Rue')}</label>
-						<Input id="form-street" type="text" bind:value={formStreet} maxlength={70} />
+						<Input id="form-street" type="text" bind:value={formStreet} />
 					</div>
 					<div>
 						<label for="form-building" class="text-xs text-muted-foreground">{i18nMsg('field-building', 'N°')}</label>
-						<Input id="form-building" type="text" bind:value={formBuilding} maxlength={16} />
+						<Input id="form-building" type="text" bind:value={formBuilding} />
 					</div>
 					<div>
 						<label for="form-npa" class="text-xs text-muted-foreground">{i18nMsg('field-postal-code', 'NPA')}</label>
-						<Input id="form-npa" type="text" bind:value={formPostalCode} maxlength={16} />
+						<Input id="form-npa" type="text" bind:value={formPostalCode} />
 					</div>
 					<div class="col-span-2">
 						<label for="form-city" class="text-xs text-muted-foreground">{i18nMsg('field-city', 'Localité')}</label>
-						<Input id="form-city" type="text" bind:value={formCity} maxlength={35} />
+						<Input id="form-city" type="text" bind:value={formCity} />
 					</div>
 					<div>
 						<label for="form-country" class="text-xs text-muted-foreground">{i18nMsg('field-country', 'Pays')}</label>
-						<Input id="form-country" type="text" bind:value={formCountry} maxlength={2} placeholder="CH" />
+						<Input id="form-country" type="text" bind:value={formCountry} placeholder="CH" />
 					</div>
 					{#if countryUnknownNotice}
 						<p class="col-span-3 text-xs text-warning" data-testid="contact-country-unknown">
@@ -1063,7 +1090,6 @@
 					id="form-client-number"
 					type="text"
 					bind:value={formClientNumber}
-					maxlength={50}
 					placeholder="CLI-2026-00042"
 				/>
 				<p class="text-xs text-muted-foreground mt-1">
@@ -1083,9 +1109,13 @@
 					type="text"
 					inputmode="numeric"
 					bind:value={formPaymentTermsDays}
-					maxlength={3}
 					placeholder="30"
 				/>
+				{#if paymentTermsDaysMsg}
+					<p class="text-xs text-destructive mt-1" data-testid="contact-payment-terms-days-error">
+						{paymentTermsDaysMsg}
+					</p>
+				{/if}
 				<p class="text-xs text-muted-foreground mt-1">
 					{i18nMsg(
 						'contact-form-payment-terms-days-hint',
@@ -1102,7 +1132,6 @@
 					id="form-payment-terms"
 					type="text"
 					bind:value={formPaymentTerms}
-					maxlength={100}
 					disabled={paymentTermsDaysSet}
 					placeholder={i18nMsg('contact-form-payment-terms-placeholder', 'ex: 30 jours net')}
 				/>
@@ -1122,14 +1151,19 @@
 			{/if}
 
 			{#if formError}
-				<p class="text-sm text-destructive">{formError}</p>
+				<!-- Story 48-15 : `data-testid` pour l'E2E (garde KF-043 : jamais un libellé traduit). -->
+				<p class="text-sm text-destructive" data-testid="contact-form-error">{formError}</p>
 			{/if}
 
 			<div class="flex justify-end gap-2 pt-2">
 				<Button type="button" variant="outline" onclick={() => (formOpen = false)}>
 					{i18nMsg('contact-form-cancel', 'Annuler')}
 				</Button>
-				<Button type="submit" disabled={formSubmitting || !!formValidation}>
+				<Button
+					type="submit"
+					disabled={formSubmitting || !!formValidation}
+					data-testid="contact-form-submit"
+				>
 					{editing
 						? i18nMsg('contact-form-submit-edit', 'Enregistrer')
 						: i18nMsg('contact-form-submit-create', 'Créer')}

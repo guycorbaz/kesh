@@ -2898,6 +2898,7 @@ settings-company-address-country-unknown = Le code pays « { $code } » de la so
 settings-company-address-help = Adresse de l’émetteur et du créancier sur vos factures et leurs QR-factures. NPA et localité obligatoires ; pays en code ISO à deux lettres. Un PDF déjà figé ne change pas.
 error-company-phone-too-long = Le numéro de téléphone de la société est trop long (50 caractères au plus).
 error-company-website-too-long = L'adresse du site web de la société est trop longue (255 caractères au plus).
+error-company-email-too-long = L'adresse e-mail de la société est trop longue (320 caractères au plus).
 error-invoice-pdf-header-overflow = L'en-tête du document ne tient pas sur la page. Supprimez une coordonnée — téléphone, e-mail ou site web — dans les Paramètres : les raccourcir ne libère aucune place, chaque coordonnée occupe une ligne entière. Ou réduisez le nombre de lignes de l'adresse du destinataire.
 
 # Story 23-3 (#316) — domaine supplier-invoices : 119 clés, absentes des QUATRE catalogues.

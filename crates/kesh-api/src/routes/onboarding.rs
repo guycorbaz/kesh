@@ -529,6 +529,17 @@ pub async fn set_coordinates(
             .filter(|s| !s.is_empty())
     };
     let (first_name, last_name) = (clean(&body.first_name), clean(&body.last_name));
+    // Story 48-15 (#1334) — le prénom et le nom, **chacun quand il est fourni**,
+    // sont bornés à leur colonne (`companies.first_name` / `last_name`,
+    // `VARCHAR(70)`), avant le nom composé : un prénom seul (le nom de la société
+    // vient alors de `name`) partait sinon à la base sans contrôle et revenait en
+    // `DATA_LENGTH_OR_RANGE`, qui ne nomme pas le champ.
+    if let Some(f) = &first_name {
+        crate::helpers::validate_text_len(f, crate::helpers::PERSON_NAME_PART_MAX, "Prénom")?;
+    }
+    if let Some(l) = &last_name {
+        crate::helpers::validate_text_len(l, crate::helpers::PERSON_NAME_PART_MAX, "Nom")?;
+    }
     let name = match (&first_name, &last_name) {
         (Some(f), Some(l)) => format!("{f} {l}"),
         _ => body.name.trim().to_string(),

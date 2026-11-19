@@ -985,3 +985,234 @@ describe('#817 — le pays d’une adresse', () => {
 		expect(document.body.textContent).toContain(refus);
 	});
 });
+
+// ---------------------------------------------------------------------------
+// Story 48-15 (#1331, #1334, AC4, AC7, AC8) — un texte trop long est refusé en
+// le disant, jamais coupé en silence par un `maxlength`
+// ---------------------------------------------------------------------------
+
+describe('48-15 — aucun champ du contact ne coupe un texte collé', () => {
+	/**
+	 * Le champ est d'abord TROUVÉ (`champ()` lève sinon : une assertion d'absence
+	 * sur un sélecteur vide passerait à vide), puis on exige qu'il ne porte aucun
+	 * `maxlength`. ⚠️ C'est l'attribut qui porte le rouge : dans jsdom, un
+	 * `maxlength` ne contraint pas une valeur posée par programme.
+	 */
+	function sansMaxlength(id: string) {
+		const el = champ(id);
+		expect(el.tagName).toBe('INPUT');
+		expect(el.hasAttribute('maxlength')).toBe(false);
+	}
+
+	async function ouvrirEn(type: 'Entreprise' | 'Personne') {
+		repondre({});
+		render(Page);
+		await settle(20);
+		await ouvrirCreation();
+		if (type === 'Personne') {
+			await fireEvent.change(champ('form-type'), { target: { value: 'Personne' } });
+			await settle(20);
+		}
+	}
+
+	async function soumettre() {
+		const form = champ('form-email').closest('form') as HTMLFormElement;
+		await fireEvent.submit(form);
+		await settle(30);
+	}
+
+	// AC4 (#1331) — l'adresse : rouge par M6 à M10, une mutation par champ.
+	for (const [id, nom] of [
+		['form-street', 'rue'],
+		['form-building', 'numéro'],
+		['form-npa', 'NPA'],
+		['form-city', 'localité'],
+		['form-country', 'pays']
+	] as const) {
+		it(`${nom} : aucun maxlength`, async () => {
+			await ouvrirEn('Entreprise');
+			sansMaxlength(id);
+		});
+	}
+
+	// AC7 — les champs du PDF : rouge par M13 (numéro de client), M14
+	// (conditions), M15 (raison sociale), M16 (délai). L'article : products-page.
+	for (const [id, nom] of [
+		['form-client-number', 'numéro de client'],
+		['form-payment-terms', 'conditions de paiement'],
+		['form-name', 'raison sociale'],
+		['form-payment-terms-days', 'délai de paiement']
+	] as const) {
+		it(`${nom} : aucun maxlength`, async () => {
+			// La raison sociale n'existe qu'en type « Entreprise » (le type par défaut).
+			await ouvrirEn('Entreprise');
+			sansMaxlength(id);
+		});
+	}
+
+	// AC8 (#1334) — le prénom et le nom : rouge par M17, M18. Ils n'existent
+	// qu'en type « Personne ».
+	for (const [id, nom] of [
+		['form-firstname', 'prénom'],
+		['form-lastname', 'nom de famille']
+	] as const) {
+		it(`${nom} : aucun maxlength`, async () => {
+			await ouvrirEn('Personne');
+			sansMaxlength(id);
+		});
+	}
+
+	it('AC4 : une rue de 71 caractères part entière, son refus s’affiche, la saisie reste ; raccourcie, elle s’enregistre', async () => {
+		const refus = 'adresse : le champ rue dépasse 70 caractères (71)';
+		createContactMock.mockRejectedValueOnce({ code: 'VALIDATION_ERROR', status: 400, message: refus });
+		await ouvrirEn('Entreprise');
+		await saisir('form-name', 'Démo SA', 20);
+		await saisir('form-street', 'R'.repeat(71), 20);
+		await saisir('form-npa', '1000', 20);
+		await saisir('form-city', 'Lausanne', 20);
+		await soumettre();
+		const envoye = createContactMock.mock.calls[0][0] as {
+			addressStructured: { street: string };
+		};
+		expect(envoye.addressStructured.street).toBe('R'.repeat(71));
+		// Revue P1 (A6) : `formError` lui-même, non le `body` (le toast porte le même texte).
+		expect(zone('contact-form-error').textContent).toBe(refus);
+		expect((champ('form-street') as HTMLInputElement).value).toBe('R'.repeat(71));
+
+		createContactMock.mockResolvedValueOnce(c({ id: 40, name: 'Démo SA' }));
+		await saisir('form-street', 'R'.repeat(70), 20);
+		await soumettre();
+		expect(createContactMock).toHaveBeenCalledTimes(2);
+		const second = createContactMock.mock.calls[1][0] as { addressStructured: { street: string } };
+		expect(second.addressStructured.street).toBe('R'.repeat(70));
+		expect(document.querySelector('#form-street')).toBeNull();
+	});
+
+	it('AC8 : un prénom de 71 caractères part entier, le refus qui nomme « Prénom » s’affiche, la saisie reste', async () => {
+		const refus = 'Prénom : 70 caractères maximum';
+		createContactMock.mockRejectedValueOnce({ code: 'VALIDATION_ERROR', status: 400, message: refus });
+		await ouvrirEn('Personne');
+		await saisir('form-firstname', 'P'.repeat(71), 20);
+		await saisir('form-lastname', 'Dupont', 20);
+		await soumettre();
+		const envoye = createContactMock.mock.calls[0][0] as { firstName: string };
+		expect(envoye.firstName).toBe('P'.repeat(71));
+		expect(zone('contact-form-error').textContent).toBe(refus);
+		expect((champ('form-firstname') as HTMLInputElement).value).toBe('P'.repeat(71));
+	});
+
+	/** Le bouton de soumission du formulaire ouvert. */
+	function boutonCreer(): HTMLButtonElement {
+		const form = champ('form-email').closest('form') as HTMLFormElement;
+		const b = [...form.querySelectorAll('button')].find((x) => x.getAttribute('type') === 'submit');
+		if (!b) throw new Error('bouton de soumission introuvable');
+		return b as HTMLButtonElement;
+	}
+
+	// AC7, C-e4815-4 — l'écran juge lui-même le délai et la raison sociale : le bouton se
+	// désactive, et le MOTIF s'affiche sous le champ, sans attendre une soumission que le
+	// bouton désactivé n'atteindrait jamais (sinon, le refus serait muet).
+	it('AC7 : un délai de quatre chiffres collé est refusé en le disant (« entre 0 et 365 »), non tronqué en « 100 »', async () => {
+		await ouvrirEn('Entreprise');
+		await saisir('form-name', 'Démo SA', 20);
+		await saisir('form-payment-terms-days', '1000', 20);
+		expect(zone('contact-payment-terms-days-error').textContent).toContain('entre 0 et 365');
+		expect(boutonCreer().disabled).toBe(true);
+		expect((champ('form-payment-terms-days') as HTMLInputElement).value).toBe('1000');
+		await saisir('form-payment-terms-days', '30', 20);
+		expect(document.querySelector('[data-testid="contact-payment-terms-days-error"]')).toBeNull();
+		expect(boutonCreer().disabled).toBe(false);
+	});
+
+	it('AC7 : une raison sociale de 256 caractères collée est refusée en le disant, non coupée à 255', async () => {
+		await ouvrirEn('Entreprise');
+		await saisir('form-name', 'R'.repeat(256), 20);
+		expect(zone('contact-name-too-long').textContent).toContain('255 caractères');
+		expect(boutonCreer().disabled).toBe(true);
+		expect((champ('form-name') as HTMLInputElement).value).toBe('R'.repeat(256));
+		expect(createContactMock).not.toHaveBeenCalled();
+	});
+
+	// Revue P1 (E4) — les états du motif, un `it` chacun.
+	const motifNom = () => document.querySelector('[data-testid="contact-name-too-long"]');
+	const motifDelai = () => document.querySelector('[data-testid="contact-payment-terms-days-error"]');
+
+	it('motif de la raison sociale : ramenée à 255, il disparaît et le bouton se réactive', async () => {
+		await ouvrirEn('Entreprise');
+		await saisir('form-name', 'R'.repeat(256), 20);
+		expect(motifNom()).not.toBeNull();
+		await saisir('form-name', 'R'.repeat(255), 20);
+		expect(motifNom()).toBeNull();
+		expect(boutonCreer().disabled).toBe(false);
+	});
+
+	// Revue P1 (B1 = E1 = A1) — rouge sans le correctif (mutation M22) : le bouton restait grisé,
+	// sans motif, la raison sociale (et son motif) n'existant pas en type « Personne ».
+	it('bascule vers « Personne » après une raison sociale de 256 : aucun refus muet, la personne se crée', async () => {
+		createContactMock.mockResolvedValueOnce(c({ id: 41, name: 'Jean Dupont' }));
+		await ouvrirEn('Entreprise');
+		await saisir('form-name', 'R'.repeat(256), 20);
+		expect(boutonCreer().disabled).toBe(true);
+		await fireEvent.change(champ('form-type'), { target: { value: 'Personne' } });
+		await settle(20);
+		await saisir('form-firstname', 'Jean', 20);
+		await saisir('form-lastname', 'Dupont', 20);
+		expect(boutonCreer().disabled).toBe(false);
+		await soumettre();
+		expect(createContactMock).toHaveBeenCalledWith(
+			expect.objectContaining({ contactType: 'Personne', firstName: 'Jean', lastName: 'Dupont' })
+		);
+	});
+
+	// Revue P1 (B2, E2) — rouge sans le correctif (mutation M23) : compté en unités UTF-16, un nom
+	// de 200 caractères dont 60 hors du plan de base (260 unités) était refusé ; le serveur l'accepte.
+	it('raison sociale : compte en caractères, non en unités UTF-16 (200 caractères dont 60 hors BMP)', async () => {
+		await ouvrirEn('Entreprise');
+		const nom = 'R'.repeat(140) + '𝔸'.repeat(60);
+		expect([...nom].length).toBe(200);
+		expect(nom.length).toBe(260);
+		await saisir('form-name', nom, 20);
+		expect(motifNom()).toBeNull();
+		expect(boutonCreer().disabled).toBe(false);
+		await saisir('form-name', 'R'.repeat(196) + '𝔸'.repeat(60), 20);
+		expect(motifNom()).not.toBeNull();
+	});
+
+	// Revue P1 (B5, E5) — rouge sans le correctif (mutation M25) : `Number` lisait « 0x1E » comme 30
+	// et « 3e2 » comme 300, valeurs acceptées et envoyées sans que l'utilisateur les ait écrites.
+	for (const ecrit of ['0x1E', '3e2', 'abc', '30.0', '-1']) {
+		it(`délai « ${ecrit} » : refusé en le disant, rien ne part`, async () => {
+			await ouvrirEn('Entreprise');
+			await saisir('form-name', 'Démo SA', 20);
+			await saisir('form-payment-terms-days', ecrit, 20);
+			expect(motifDelai()?.textContent).toContain('entre 0 et 365');
+			expect(boutonCreer().disabled).toBe(true);
+		});
+	}
+
+	it('délai vidé : le motif disparaît, le bouton se réactive', async () => {
+		await ouvrirEn('Entreprise');
+		await saisir('form-name', 'Démo SA', 20);
+		await saisir('form-payment-terms-days', '1000', 20);
+		expect(motifDelai()).not.toBeNull();
+		await saisir('form-payment-terms-days', '', 20);
+		expect(motifDelai()).toBeNull();
+		expect(boutonCreer().disabled).toBe(false);
+	});
+
+	it('ouverture d’une fiche existante valide : aucun motif', async () => {
+		repondre(
+			{},
+			[c({ id: 42, name: 'Démo Existante SA', defaultPaymentTermsDays: 30 } as Partial<ContactResponse> & {
+				id: number;
+				name: string;
+			})]
+		);
+		render(Page);
+		await settle(30);
+		await ouvrirEdition();
+		expect((champ('form-payment-terms-days') as HTMLInputElement).value).toBe('30');
+		expect(motifNom()).toBeNull();
+		expect(motifDelai()).toBeNull();
+	});
+});
