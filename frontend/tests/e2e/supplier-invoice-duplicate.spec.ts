@@ -379,15 +379,21 @@ test('recette visuelle : E2, E3, E1 inactif (scan, panneau), notification de C2,
 		await expect(page.getByTestId('supplier-invoice-submit')).toHaveText('…');
 		await expect(page.getByTestId('supplier-invoice-number')).toBeDisabled();
 		await capture(page, testInfo, 'e4812b-E2-envoi');
-		// E3 — succès, navigation retenue : figé, jamais réactivé.
+		// E3 — succès reçu, navigation retenue : toujours figé, jamais réactivé. L'état E3
+		// n'est posé qu'à la résolution de `onSubmit`, qui attend la navigation : à l'écran,
+		// il ne se distingue pas de E2 (« … », saisie figée) — ce que la table A dit.
 		const e3 = verrou();
 		await page.route('**/_app/immutable/nodes/**', async (route) => {
 			await e3.attendre;
 			await route.fallback();
 		});
+		const reponse = page.waitForResponse(
+			(r) => r.request().method() === 'POST' && /\/api\/v1\/supplier-invoices$/.test(new URL(r.url()).pathname),
+		);
 		e2.relacher();
-		await expect(page.getByTestId('supplier-invoice-submit')).not.toHaveText('…');
+		expect((await reponse).status(), 'le brouillon est créé').toBe(201);
 		await expect(page.getByTestId('supplier-invoice-number')).toBeDisabled();
+		await expect(page.getByTestId('supplier-invoice-submit')).toBeDisabled();
 		await capture(page, testInfo, 'e4812b-E3-enregistre');
 		e3.relacher();
 		await page.waitForURL(/\/supplier-invoices\/\d+$/);

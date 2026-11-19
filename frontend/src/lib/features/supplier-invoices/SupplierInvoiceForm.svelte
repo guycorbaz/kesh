@@ -698,8 +698,13 @@
 	}}
 >
 	<!-- Story 48-12b (table A) — UN `<fieldset disabled>` enveloppe tous les contrôles qui
-	     écrivent la saisie ; figé en E2, E3, E5, E6, E8, E9, sans rien vider. -->
-	<fieldset class="m-0 min-w-0 space-y-4 border-0 p-0" disabled={frozen} data-testid="supplier-invoice-entry">
+	     écrivent la saisie ; figé en E2, E3, E5, E6, E8, E9, sans rien vider. Atténué quand il
+	     est figé : un champ inactif doit aussi en avoir l'air (recette visuelle). -->
+	<fieldset
+		class="m-0 min-w-0 space-y-4 border-0 p-0 disabled:opacity-60"
+		disabled={frozen}
+		data-testid="supplier-invoice-entry"
+	>
 	{#if scanOffered}
 		<!-- Story 12.4 : scan QR-facture → pré-remplissage des coordonnées. Story v017-4b
 		     (AC-23) : seulement si `document === null && !hasDocument`. -->
