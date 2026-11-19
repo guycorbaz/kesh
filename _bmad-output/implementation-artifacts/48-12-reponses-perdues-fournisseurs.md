@@ -1,10 +1,10 @@
 # Story 48-12 : Réponses perdues — factures fournisseur et comptes bancaires
 
-Status: drafted (validation en cours ; `ready-for-dev` se pose à la clôture de la validation et à la décision de découpage, par l'orchestrateur)
+Status: drafted (validation en cours ; `ready-for-dev` se pose à la clôture de la validation, par l'orchestrateur)
 
 Issues : #975, #984, #985, #986 (toutes `bug`, **P2**). Release 0.20.0, Epic 48. Voie : frontend (aucun code Rust, aucune migration).
 
-**Deux lots ordonnés** (V1-10), pour qu'un découpage 48-12a / 48-12b ou une dérogation ne demande aucune réécriture : **lot A**, factures fournisseur (#975, #985, #986, tâches A1 à A4) ; **lot B**, comptes bancaires (#984 et l'archivage sur 409, tâches B1 à B2). Le décompte des modules et la décision sont sous « Modules et découpage ».
+**Deux lots ordonnés** (V1-10) : **lot A**, factures fournisseur (#975, #985, #986, tâches A1 à A4) ; **lot B**, comptes bancaires (#984 et l'archivage sur 409, tâches B1 à B2). Le décompte des modules et la dérogation de splitting sont sous « Modules et découpage » et « Dérogation règle de splitting ».
 
 ## Story
 
@@ -77,13 +77,13 @@ Symptôme : « une écriture dont la réponse peut se perdre se renvoie sans rel
 git grep -nE "await create[A-Z][A-Za-z]*\(" -- 'frontend/src/routes' 'frontend/src/lib/*.svelte' 'frontend/src/lib/**/*.svelte' ':!*.test.ts'
 # 2. mises à jour appelées depuis un écran
 git grep -nE "await update[A-Z][A-Za-z]*\(" -- 'frontend/src/routes' 'frontend/src/lib/*.svelte' 'frontend/src/lib/**/*.svelte' ':!*.test.ts'
-# 3. (V2-8) écritures sous d'autres verbes, cherchées par le symptôme et non par le nom
-git grep -nE "apiClient\.(post|put)" -- 'frontend/src/lib/features/*.api.ts' 'frontend/src/lib/features/*/*.api.ts' ':!*.test.ts'
-# 3. écrans qui reconnaissent une issue inconnue
+# 3. (V2-8, V3-3) écritures sous d'autres verbes, cherchées par le symptôme et non par le nom : tout appel direct à `apiClient`, hors tests et hors `*.api.ts`
+git grep -nE "apiClient\.(post|put|patch|delete|postFormData)\b" -- 'frontend/src/**/*.svelte' 'frontend/src/**/*.ts' ':!*.test.ts' ':!*.api.ts'
+# 4. écrans qui reconnaissent une issue inconnue (la sortie est ci-dessous)
 git grep -lE "isUnknownOutcome|isSettlementOutcomeUnknown" -- frontend/src ':!*.test.ts'
 ```
 
-La commande 4 rend sept fichiers : `AutoBackupSection.svelte`, `AdminRestorePanel.svelte`, `mcp-sends-format.ts`, `unknown-outcome.ts`,
+La commande 3 rend sept appels directs (copiés) : `lib/app/stores/mode.svelte.ts:57` (`PUT /profile/mode`) et `lib/app/stores/session-idle.svelte.ts:373` (`POST /auth/activity`), qui **ne sont pas des écritures de livres** ; `routes/login/+page.svelte:56` (connexion) ; et `routes/(app)/users/+page.svelte:122` (`POST /users`), `:168` (`PUT /users/{id}`), `:209` (`PUT …/disable`), `:254` (`PUT …/reset-password`), classés ci-dessous. La commande 4 rend sept fichiers : `AutoBackupSection.svelte`, `AdminRestorePanel.svelte`, `mcp-sends-format.ts`, `unknown-outcome.ts`,
 `invoices/[id]/+page.svelte`, `invoices/due-dates/+page.svelte`, `supplier-invoices/[id]/+page.svelte` : **aucun écran de création**.
 
 Sortie de la commande 1 (25 sites, copiée) :
@@ -154,7 +154,7 @@ Correspondance (ordre de l'ouverture) : #1354 facture client, #1355 écriture, *
 | `updateProject` (comptes analytiques), `settings/projects/+page.svelte:115` — **#1369** ; avec `version: mode.project.version` et un `catch` qui n'écrit que `formError` (`:123-126`) | **boucle 409** sur la version périmée, comme #984 | moyenne |
 | `updateContact`, `contacts/+page.svelte:536` — **#1370** ; `updateProduct`, `products/+page.svelte:382` — **#1371** | le formulaire se ferme sur 409 : saisie perdue | moyenne (selon la lecture du validateur, à relire) |
 | **#1372** : `createRule` `RuleFormModal.svelte:106`, `createDunningLevel` `dunning/+page.svelte:111`, `createVatRate` `vat-rates/+page.svelte:121`, `:153`, `createContactPerson` `ContactPersonsManager.svelte:56`, `createMcpKey` `McpKeysSection.svelte:152`, `createMcpPrompt` `McpPromptsList.svelte:67` | doublon de paramétrage | basse |
-| autres `update*` de la commande 2 (`updateAccount`, `updateDunningLevel`, `updateFiscalYear`, `updateVatRate`, `updateRule`, `updateEmailTemplate`, `updateInvoiceSettings`…) **et** écritures sous d'autres verbes, trouvées par la commande 3 : `postRevaluation` (`RevaluationPanel.svelte:172` ; la réévaluation calcule un écart incrémental, `fx_revaluation.rs:317`), `generateOpeningBalances` (`opening-balances/+page.svelte:410`), `sendReminderBatch` (`invoices/reminders/+page.svelte:155`), `apiClient.post/put` direct de `users/+page.svelte:122` et `:168` | **non examinés**, sondés seulement, aucun jugé défectueux | à constater : issue **#1373** |
+| autres `update*` de la commande 2 (`updateAccount`, `updateDunningLevel`, `updateFiscalYear`, `updateVatRate`, `updateRule`, `updateEmailTemplate`, `updateInvoiceSettings`…) **et** écritures sous d'autres verbes : `postRevaluation` (`RevaluationPanel.svelte:172` ; la réévaluation calcule un écart incrémental, `fx_revaluation.rs:317`), `generateOpeningBalances` (`settings/opening-balances/+page.svelte:410`), `sendReminderBatch` (`invoices/reminders/+page.svelte:155`) ; appels directs de la commande 3 dans `users/+page.svelte` : `:122` (création), `:168`, `:209` (désactivation), `:254` (réinitialisation du mot de passe) | **non examinés**, sondés seulement, aucun jugé défectueux | à constater : issue **#1373** |
 
 Le **module** de D7 est conçu pour servir à ces sites sans réécriture.
 
@@ -165,10 +165,15 @@ Le **module** de D7 est conçu pour servir à ces sites sans réécriture.
 4. `shared/utils` (`unknown-outcome.ts`, doc-comment seul) ; 5. `kesh-i18n` ; 6. les manuels. `features/imported-supplier-invoices`
 et `features/bank-accounts` ne sont **pas** modifiés (lecture seule du premier ; aucun fichier de `features/bank-accounts` dans le
 lot B) : ils ne comptent pas. **Six modules, au-dessus du plafond de cinq.**
-**Règle** : « la 48-12 se découpe si elle dépasse cinq modules, ou écrit sa dérogation » (`:218`). **Décision en attente**
-(l'orchestrateur la demande au Project Lead) : soit 48-12a (lot A : modules 1, 2, 4, 5, 6) et 48-12b (lot B : modules 3, 5, 6),
-soit une section `Dérogation règle de splitting` (motif : un seul motif, écrans voisins). La fiche est rangée en lots pour que
-l'un ou l'autre ne demande aucune réécriture. La clé 48-12 reste ce qu'elle est tant que la décision n'est pas rendue.
+**Règle** : « la 48-12 se découpe si elle dépasse cinq modules, ou écrit sa dérogation » (`:218`). La story **reste unique**, avec la dérogation ci-dessous.
+
+## Dérogation règle de splitting
+
+Décision du Project Lead (Guy) du 2026-11-19, option (a) de l'orchestrateur : la 48-12 ne se découpe pas.
+- **Six modules au grain du fichier d'épique** (liste ci-dessus), un de plus que le plafond de cinq.
+- **Un même motif** — « relire, juger, montrer » (D1) — appliqué à **deux familles d'écrans** : les factures fournisseur (lot A) et les comptes bancaires (lot B). Le lot B n'ajoute que la route `bank-accounts` ; `kesh-i18n` et le manuel sont communs.
+- **Deux lots ordonnés** : A (#975, #985, #986, tâches A1 à A4), puis B (#984 et l'archivage, B1 et B2) ; les gates et l'E2E se jouent une fois, à la fin.
+- *Découper* aurait créé deux fiches dont les catalogues, `sitesTotal` et le manuel se recoupent, pour un motif identique.
 
 ## Décisions
 
@@ -186,7 +191,7 @@ détection serveur sur le contenu* : refuserait une facture légitimement sembla
 **D1-bis (commune). Règle de comparaison (V1-5).** Un jugement compare `stored` (relu) à la saisie **sous la forme que le serveur
 range**, jamais littéralement : montants, quantités et taux comparés en décimal (`Big.eq`, quatre décimales : `"100.0000"` égale
 `"100.00"`) ; IBAN, QR-IBAN et référence normalisés comme le serveur (`normalizeIban`, `supplier-invoice-form.ts:334` ; blancs,
-insécables compris, retirés) ; `trim`, et vide ⇔ `null`. **La référence de paiement (V2-6)** se normalise comme le serveur (`supplier_invoices.rs:458-473`) : tous les blancs sont retirés si l'IBAN saisi est un QR-IBAN (`normalize_payment_field`), sinon `trim` seulement. **Les lignes (V2-2)** : l'égalité compare **chaque ligne, position par position, sur ses cinq champs** (description, quantité, prix unitaire, taux de TVA, compte de charge), chacun normalisé ; le total et le nombre de lignes ne servent qu'à l'**affichage** de l'avis, jamais à l'égalité. Sur les comptes bancaires, ces normaliseurs sont passés à `companyEditConflict`. Le cas « je viens d'enregistrer moi-même » (réponse perdue, puis second clic) **doit** rendre
+insécables compris, retirés) ; `trim`, et vide ⇔ `null`. **La référence de paiement (V2-6, V3-2)** se normalise comme le serveur (`supplier_invoices.rs:458-473`) : avec un QR-IBAN, tous les blancs sont retirés (`normalize_payment_field`) ; sans, elle est **rognée aux deux bouts par l'ensemble de blancs du serveur** (`trim_matches(is_payment_blank)`, `:378`, `:470` : `char::is_whitespace`, dont U+0085, plus U+200B et U+FEFF), puis **vide après normalisation ⇔ `null`** (`present`, `:383`). `String.prototype.trim` ne retire ni U+200B ni U+0085 : une **fonction pure** de `resend-guard.ts` reproduit cet ensemble, testée avec un U+200B final collé. **Les lignes (V2-2, V3-1)** : l'égalité exige d'abord **le même nombre de lignes**, puis, **position par position, chaque ligne égale sur ses cinq champs** (description, quantité, prix unitaire, taux de TVA, compte de charge), chacun normalisé, puis l'en-tête. Une ligne **supprimée** ou **ajoutée** ne rend donc jamais *déjà enregistré* (le serveur remplace toutes les lignes, `repositories/supplier_invoices.rs:802`, `:585-599`). Le total, dérivé, ne sert qu'à l'**affichage** de l'avis. **Le côté « saisie » (V3-5)** est le **corps tel qu'il est parti** (le même objet que le `PUT`, issu de `linesForServer` et `paymentFields`, `supplier-invoice-form.ts:203-212`, `:328-345`, et `fNumber.trim() || null`), jamais le formulaire brut (« 12,50 », « 1'250 »), sur lequel `Big` lèverait ou différerait ; le côté « base » est la **réponse du serveur**, non les champs rouverts par `formLineFromResponse`. Sur les comptes bancaires, ces normaliseurs sont passés à `companyEditConflict`. Le cas « je viens d'enregistrer moi-même » (réponse perdue, puis second clic) **doit** rendre
 *déjà enregistré*, jamais « modifié entre-temps » : un test le fixe avec les formes du serveur (`"100.0000"`, IBAN sans blancs), et
 une mutation retire le normaliseur. Ces fonctions sont pures et testées à part (D7).
 
@@ -232,7 +237,7 @@ Sur un 409 de version ou une issue inconnue du `PUT`, la page relit `getSupplier
 fonction pure (D7, comparaison de D1-bis) sur les seuls champs **envoyés** (avec QR, les coordonnées de paiement ne partent pas) :
 - **`stored.status !== 'draft'`** (V1-16) : un collègue a validé entre-temps (`lock_draft_in_tx` refuse le statut avant la
   version : `409 ILLEGAL_STATE_TRANSITION`) ; renvoi à la fiche avec `supplier-invoices-edit-not-draft`, sans verdict de comparaison ;
-- *déjà enregistré* (l'en-tête **et chacune des lignes**, sur leurs cinq champs, égalent la saisie, D1-bis) : succès, notification, retour à la fiche. Une ligne qui ne diffère que par sa description ou son compte rend *autre chose a été écrit*, jamais *déjà enregistré* ;
+- *déjà enregistré* (même nombre de lignes, l'en-tête **et chacune des lignes**, sur leurs cinq champs, égalent le corps envoyé, D1-bis) : succès, notification, retour à la fiche. Une ligne qui ne diffère que par sa description ou son compte, une ligne **supprimée** ou **ajoutée** rendent *autre chose a été écrit* (ou *rien n'a changé ailleurs* si `stored` égale la base), jamais *déjà enregistré* ;
 - *rien n'a changé ailleurs* (`stored` égale la copie de base, mêmes règles d'égalité, hors version) : « rechargé, vous pouvez enregistrer de
   nouveau », version fraîche adoptée ;
 - *autre chose a été écrit* : avis qui **nomme les champs** en désaccord avec la valeur enregistrée (fournisseur, numéro, date,
@@ -288,8 +293,9 @@ champs ; textes `settings-company-conflict-changed`, `-merged`, `-empty` neutres
 5. **AC-5 (#985).** Complétion perdue : document complété = avis et lien, envoi désactivé ; **encore à traiter = « aucune facture
    enregistrée, réessayez »** ; retiré = message actuel ; relecture en échec = message d'issue inconnue.
 6. **AC-6 (#986).** Modification enregistrée dont la réponse est perdue : reconnue, retour à la fiche, y compris avec les formes du
-   serveur (`"100.0000"`, IBAN sans blancs, QRR avec espaces) ; une ligne qui ne diffère que par sa description ou son compte
-   rend « modifié entre-temps », jamais « déjà enregistré » ; concurrente différente : champs nommés, version adoptée avec l'avis ;
+   serveur (`"100.0000"`, IBAN sans blancs, QRR avec espaces) ; une ligne qui ne diffère que par sa description ou son compte,
+   une ligne **supprimée** (brouillon de trois lignes, la troisième retirée, envoi perdu avant l'écriture) ou **ajoutée**
+   rendent « modifié entre-temps » ou « rien n'a changé ailleurs », jamais « déjà enregistré » ; concurrente différente : champs nommés, version adoptée avec l'avis ;
    relecture en échec : aucune version adoptée ; facture relue non brouillon : renvoi à la fiche.
 7. **AC-7.** Deux événements `submit` consécutifs sur le formulaire des factures n'envoient qu'une requête.
 
@@ -318,7 +324,7 @@ Chaque test neuf rougit sans le correctif ; journaux dans `/home/gcorbaz/devel/k
 |---|---|---|
 | verdicts *trouvé* / *non trouvé* / *non vérifiable* ; clé avec numéro ; clé avec total quand le numéro manque ; vrai doublon **et** facture légitime semblable (même jour, total différent) | `resend-guard.test.ts` (neuf) | la fonction n'existe pas ; mutations : retirer `trim`, ôter le total quand le numéro manque |
 | machine d'états : « Enregistrer quand même » = un `POST`, sans relecture ; reset à la modification | `resend-guard.test.ts`, `new-page.test.ts` | aujourd'hui le second clic poste sans signal ; mutation : « relire aussi au clic Enregistrer quand même » |
-| jugement d'une facture : `already-saved` (formes du serveur) / `unchanged` / `changed` / `status ≠ draft` ; champs QR exclus ; **une ligne qui ne diffère que par sa description ou son compte de charge → `changed`, jamais `already-saved`** ; QR-IBAN avec QRR saisie avec espaces → `already-saved` | `resend-guard.test.ts` | idem ; mutations : retirer le normaliseur décimal, comparer les champs QR, **comparer seulement le total et le nombre de lignes**, retirer la normalisation de la référence |
+| jugement d'une facture : `already-saved` (formes du serveur) / `unchanged` / `changed` / `status ≠ draft` ; champs QR exclus ; **une ligne qui ne diffère que par sa description ou son compte de charge → `changed`, jamais `already-saved`** ; **`stored` moins sa dernière ligne, et `stored` plus une ligne → jamais `already-saved`** ; QR-IBAN avec QRR saisie avec espaces → `already-saved` ; référence libre avec un U+200B final → `already-saved`, référence de seuls blancs du serveur ⇔ `null` | `resend-guard.test.ts` | idem ; mutations : retirer le normaliseur décimal, comparer les champs QR, **comparer seulement le total et le nombre de lignes**, **comparer par `zip` sans contrôle de longueur**, retirer la normalisation de la référence, la remplacer par `trim` seul |
 | création : brouillon trouvé → libellé neutre, marque « total différent » ; relecture impossible → aucun `POST` sans « quand même » (AC-3) | `new-page.test.ts` | aujourd'hui le second clic poste |
 | complétion : 409 → avis + lien ; **encore à traiter → réessayer** ; retiré → message actuel ; relecture en échec | `new-page.test.ts` | aujourd'hui, message d'échec ; mutations : traiter « complété sans `supplierInvoiceId` » comme « complété avec facture », afficher « déjà traité » sur relecture en échec |
 | édition : 409 → `stored` égale la saisie → succès ; 409 concurrent → avis, version adoptée avec l'avis ; **relecture en échec → aucune version adoptée** ; statut ≠ draft → fiche | `edit-page.test.ts` | aujourd'hui, message « rechargez » ; mutations : « adopter la version sans avis », « adopter sur relecture en échec » |
@@ -385,17 +391,16 @@ archivage) montre l'écriture concurrente avant de proposer de la remplacer (ref
 
 ## Dev Notes
 
-- **Hors périmètre** : voir l'inventaire (issues #1354 à #1362, #1365 à #1373).
+- **Hors périmètre** : voir l'inventaire (issues #1354 à #1362, #1365 à #1373 ; #1373 porte aussi `users/+page.svelte:122`, `:168`, `:209`, `:254`).
 - **Fichiers communs** (tableau du fichier d'épique) : `i18n-keys.test.ts` (`sitesTotal`) et les catalogues, avec 48-1, 48-2, 48-10,
   48-13, 48-15 ; manuels `.tex`. `supplier-invoices/[id]/+page.svelte` (48-1) et `SupplierCreatePanel.svelte` (48-15, fusionnée)
   ne sont **pas** touchés. Côté serveur : rien.
-- **Modules** : voir « Modules et découpage » (six au grain du fichier d'épique ; décision en attente).
+- **Modules** : voir « Modules et découpage » et « Dérogation règle de splitting » (six au grain du fichier d'épique ; story unique par décision du 2026-11-19).
 - **Ce qui doit rester vrai** : aucune saisie n'est jamais vidée par un refus ; une facture client, un avoir et leur PDF sont
   inchangés ; la règle « un appariement propose, il ne crée jamais » (le signalement ne refuse rien).
 - **Coordination** : la PR #1327 de Beat ne touche aucun de ces fichiers.
 - **Références** : fiches 34-5, 34-6, 34-8 ; `company-conflict.ts` ; `unknown-outcome.ts` ; `supplier-invoice-unknown-outcome.spec.ts`.
-- **Statut** : `drafted` jusqu'à la fin de la validation ; `48-12-reponses-perdues-fournisseurs: ready-for-dev` se pose ensuite, avec la
-  décision de découpage (orchestrateur, `sprint-status.yaml`).
+- **Statut** : `drafted` jusqu'à la fin de la validation ; `48-12-reponses-perdues-fournisseurs: ready-for-dev` se pose ensuite (orchestrateur, `sprint-status.yaml`).
 
 ## Dev Agent Record
 
@@ -406,3 +411,5 @@ archivage) montre l'écriture concurrente avant de proposer de la remplacer (ref
 - 2026-11-19 — Création de la fiche (Claude Sonnet 5.5, `bmad-create-story`). Lecture au code à `af4e0e313`. Écart relevé à l'issue #984 : sa prémisse (« écrase ») ne se vérifie plus à la tête de la branche (l'écran renvoie la version périmée et rend de nouveau 409, sans rien expliquer) ; l'exigence de montrer avant de remplacer est reprise de l'issue.
 - 2026-11-19 — Validation P1 (Opus, 0/0/10/8 ; `kesh-gate-logs/e4812/validation-p1.md`), remédiation (Sonnet) : V1-1 machine d'états de D2 (« quand même » n'envoie sans relire) ; V1-2 libellé neutre, total quand le numéro manque ; V1-3 trois issues de D3 ; V1-4 relecture en échec explicite (D1, D4, D5) ; V1-5 règle de comparaison D1-bis ; V1-6 phrase corrigée, archivage dans le lot B ; V1-7 inventaire rejoué, commandes et sortie écrites, sites absents ajoutés ; V1-8 deux phrases du manuel à réécrire ; V1-9 gates Rust ajoutés ; V1-10 deux lots, six modules au grain de l'épique, décision en attente ; V1-11 à V1-18 (citations, liste des modules, tests manquants, filtre de méthode E2E, valeurs lisibles, statut non brouillon, commandes, angle mort du détachement). Aucun fait de la remédiation n'a été relu par une seconde passe : P2 requise (Sonnet).
 - 2026-11-19 — Validation P2 (Sonnet, 0/0/2/11 ; `kesh-gate-logs/e4812/validation-p2.md`), remédiation : V2-1 manuel français seul, AC et tâche C2 corrigés ; V2-2 égalité des lignes sur cinq champs, test et mutation ; V2-3 lien en nouvel onglet ; V2-4 `retry: false` et `CallOptions` sur les trois relectures ; V2-5 garde après `preventDefault()` ; V2-6 référence normalisée comme le serveur ; V2-7 base mise à jour à chaque relecture, champs d'une carte, valeurs en chaîne ; V2-8 26 sites, commande 4, sites non examinés vers #1373 ; V2-9 phrase du manuel supprimée seule, « depuis la version 0.20.0 » ; V2-10 mutations nommées ; V2-11 texte de repli de `supplier-invoices-err-stale` réécrit ; V2-12 AC renumérotés (AC-1 à AC-13) ; V2-13 statut `drafted`. Numéros d'issues reportés (#1356, #1365 à #1373). Une passe P3 (Opus), qui peut être ciblée sur ce commit, reste à faire.
+- 2026-11-19 — Validation P3 ciblée (Opus, 0/1/2/2 ; `kesh-gate-logs/e4812/validation-p3-ciblee.md`), remédiation (Sonnet) : V3-1 (HIGH) l'égalité « déjà enregistré » exige le même nombre de lignes, puis chaque ligne sur cinq champs (D1-bis, D4, AC-6, tests « ligne en moins / en plus », mutation `zip` sans contrôle de longueur) ; V3-2 référence libre rognée par l'ensemble de blancs du serveur, vide ⇔ `null`, test U+200B ; V3-3 commande 3 élargie à `frontend/src` hors `*.api.ts`, sortie copiée, `users/+page.svelte:122`, `:168`, `:209`, `:254` vers #1373, stores `mode` et `session-idle` classés hors livres ; V3-4 commandes renumérotées 1 à 4 ; V3-5 la saisie comparée est le corps envoyé, la base la réponse du serveur. Dérogation à la règle de splitting ajoutée (décision de Guy du 2026-11-19), « découpage en attente » et 48-12a / 48-12b retirés. Statut laissé à `drafted`.
+  **Table des renvois** (AC / mutations M / décisions D) : AC-1 : D2, D1-bis ; M : `trim`, total sans numéro. AC-2, AC-3 : D1, D2. AC-4 : D2 ; M : relire au clic « quand même ». AC-5 : D3 ; M : complété sans `supplierInvoiceId`, « déjà traité » sur relecture en échec. AC-6 : D4, D1-bis ; M : normaliseur décimal, champs QR, total et nombre seuls, **`zip` sans contrôle de longueur**, normalisation de la référence. AC-7 : D6 ; M : retirer la garde. AC-8 : D5, D1-bis ; M : `normalizeIban`, version adoptée sur relecture en échec. AC-9 : D5 ; M : ne pas relire au second essai. AC-10 : D6 ; M : garde avant `preventDefault()`. AC-11 : tous. AC-12 : D4 (repli), D5. AC-13 : manuel français.
