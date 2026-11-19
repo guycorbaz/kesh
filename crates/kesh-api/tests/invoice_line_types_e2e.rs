@@ -125,12 +125,13 @@ async fn monter(pool: &MySqlPool) -> Monte {
             last_name: None,
             is_client: true,
             is_supplier: false,
-            address: Some("Rue 1\n1000 Lausanne".into()),
-            address_street: None,
-            address_building: None,
-            address_postal_code: None,
-            address_city: None,
-            address_country: None,
+            // Story 49-1c : adresse structurée, qu'exige la QR-facture du PDF (T5, T6).
+            address: None,
+            address_street: Some("Marktgasse".into()),
+            address_building: Some("28".into()),
+            address_postal_code: Some("9400".into()),
+            address_city: Some("Rorschach".into()),
+            address_country: Some("CH".into()),
             email: None,
             phone: None,
             ide_number: None,
@@ -778,8 +779,15 @@ async fn pdf_200(m: &Monte, chemin: &str) -> Vec<u8> {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status(), 200, "GET {chemin}");
-    resp.bytes().await.unwrap().to_vec()
+    let status = resp.status();
+    let octets = resp.bytes().await.unwrap().to_vec();
+    assert_eq!(
+        status,
+        200,
+        "GET {chemin} : {}",
+        String::from_utf8_lossy(&octets)
+    );
+    octets
 }
 
 /// Colonnes chiffrées du PDF de facture (mm), comme `invoice_pdf_e2e.rs` (49-1b).
