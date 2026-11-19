@@ -12,6 +12,12 @@
  * ⚠️ Confort de saisie : la liste qui fait autorité est celle du serveur, qui
  * refuse un code inconnu (400 `CURRENCY_UNKNOWN`). Les deux listes doivent rester
  * identiques (ordre alphabétique, aucun doublon ; `iso4217.test.ts`).
+ *
+ * Les monnaies **retirées** dont l'AFC publie les cours (`BGN`, `HRK`…,
+ * `WITHDRAWN_CURRENCIES` de `kesh-core`) n'y figurent pas : le serveur les admet
+ * pour un cours de change seulement, jamais pour un compte. L'écran des cours
+ * les montre quand elles sont publiées (« Toutes les devises publiées ») ; il ne
+ * les propose pas à l'ajout.
  */
 export const ISO_4217_CURRENCIES: readonly string[] = [
 	'AED', 'AFN', 'ALL', 'AMD', 'AOA', 'ARS', 'AUD', 'AWG', 'AZN',
