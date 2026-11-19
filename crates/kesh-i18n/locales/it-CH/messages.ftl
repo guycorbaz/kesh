@@ -2522,6 +2522,7 @@ contact-salutation-madame = Signora
 # au singulier contre 11 messages de courtoisie. « NPA » est l'usage de la Poste suisse en
 # italien, et non « CAP » qui est italien.
 contact-error-address-npa-city = NPA e località sono obbligatori se viene inserito un indirizzo
+contact-error-address-country-alone = Un paese da solo non fa un indirizzo: inserire NPA e località, oppure svuotare il paese.
 contacts-country-unknown = Il codice paese « { $code } » non è un codice ISO noto: la QR-fattura di questo contatto non potrà essere prodotta. Correggilo (CH, FR, DE…); gli altri campi si registrano senza modificarlo.
 contact-error-person-name = Nome e cognome sono obbligatori per una persona
 contact-persons-add = Aggiungi

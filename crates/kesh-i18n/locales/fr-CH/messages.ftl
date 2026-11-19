@@ -2654,6 +2654,7 @@ contact-salutation-madame = Madame
 # catalogue a un précédent (`onboarding-field-ide-hint = optionnel, format CHE-…`), et les
 # messages d'erreur restent sans point final comme les 78 autres du fichier.
 contact-error-address-npa-city = NPA et localité obligatoires si une adresse est saisie
+contact-error-address-country-alone = Un pays seul ne fait pas une adresse : saisissez le NPA et la localité, ou videz le pays.
 contacts-country-unknown = Le code pays « { $code } » n’est pas un code ISO connu : la QR-facture de ce contact ne pourra pas être produite. Corrigez-le (CH, FR, DE…) ; les autres champs s’enregistrent sans y toucher.
 contact-error-person-name = Prénom et nom obligatoires pour une personne
 contact-persons-add = Ajouter

@@ -2529,6 +2529,7 @@ contact-salutation-madame = Ms
 # choisi contre le cognat étroit `Stadt`/`Ville`/`Città` parce que beaucoup de communes
 # suisses ne sont pas des villes. « City » est précisément ce cognat étroit.
 contact-error-address-npa-city = Postal code and city are required when an address is entered
+contact-error-address-country-alone = A country alone is not an address: enter the postal code and city, or clear the country.
 contacts-country-unknown = The country code "{ $code }" is not a known ISO code: the QR-bill of this contact cannot be produced. Correct it (CH, FR, DE…); the other fields are saved without changing it.
 contact-error-person-name = First name and last name are required for a contact person
 contact-persons-add = Add

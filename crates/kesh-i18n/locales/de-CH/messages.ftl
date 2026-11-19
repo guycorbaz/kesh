@@ -2524,6 +2524,7 @@ contact-salutation-madame = Frau
 # lecteur. Orthographe suisse : Strasse s'écrit avec deux s, et aucune ligne de DONNEES de
 # ce fichier n'emploie l'eszett. (Revue de code 23-1b, passe 1.)
 contact-error-address-npa-city = PLZ und Ort sind erforderlich, wenn eine Adresse erfasst wird
+contact-error-address-country-alone = Ein Land allein ist keine Adresse: Erfassen Sie PLZ und Ort, oder leeren Sie das Land.
 contacts-country-unknown = Der Ländercode « { $code } » ist kein bekannter ISO-Code: Die QR-Rechnung dieses Kontakts kann nicht erstellt werden. Korrigieren Sie ihn (CH, FR, DE…); die übrigen Felder werden gespeichert, ohne ihn zu ändern.
 contact-error-person-name = Vorname und Name sind für eine Person erforderlich
 contact-persons-add = Hinzufügen

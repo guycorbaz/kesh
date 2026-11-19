@@ -252,6 +252,93 @@ test.describe('Page contacts — CRUD', () => {
 			}
 		}
 	});
+
+	// Story v0200-corrections-mineures (#1336, AC5) — un e-mail de 321 caractères collé
+	// n'est plus coupé à 320 : il part entier, le serveur le refuse en le disant, la saisie
+	// reste, aucun contact n'est créé. Rouge si `maxlength={320}` revient sur `#form-email`
+	// (M5 rejouée en E2E) : `fill` respecte l'attribut comme un collage.
+	test('un e-mail de 321 caractères collé est refusé en le disant, non coupé', async ({ page }) => {
+		await goToContacts(page);
+		const uniqueName = `TestContact Mail ${Date.now()}`;
+		const courriel = 'a'.repeat(309) + '@example.com';
+		expect(courriel).toHaveLength(321);
+
+		const relire = async () => {
+			const resp = await page.request.get(
+				`/api/v1/contacts?search=${encodeURIComponent(uniqueName)}`
+			);
+			expect(resp.ok()).toBe(true);
+			const { items } = (await resp.json()) as {
+				items: { id: number; version: number; name: string }[];
+			};
+			return items.find((c) => c.name === uniqueName);
+		};
+
+		try {
+			await page.getByRole('button', { name: /Nouveau contact/ }).click();
+			await page.fill('#form-name', uniqueName);
+			await page.fill('#form-email', courriel);
+			await expect(page.locator('#form-email')).toHaveValue(courriel);
+			await page.getByTestId('contact-form-submit').click();
+
+			// Message du serveur (`contacts.rs`, `MAX_EMAIL_LEN`), non traduit.
+			await expect(page.getByTestId('contact-form-error')).toContainText('320', {
+				timeout: 5000
+			});
+			await expect(page.locator('#form-email')).toHaveValue(courriel);
+			expect(await relire()).toBeUndefined();
+		} finally {
+			const contact = await relire();
+			if (contact) {
+				await page.request.put(`/api/v1/contacts/${contact.id}/archive`, {
+					data: { version: contact.version }
+				});
+			}
+		}
+	});
+
+	// Story v0200-corrections-mineures (#1342, #1349, AC9) — le motif d'un bouton grisé
+	// s'affiche au-dessus des boutons. Les assertions portent sur un motif NON VIDE, non sur
+	// un texte : le catalogue chargé diffère des replis. Rien n'est enregistré. Rouge si
+	// `blockedReason` reste vide (M9 rejouée en E2E).
+	test('un bouton grisé dit pourquoi : pays seul, adresse partielle, IDE mal formé', async ({
+		page
+	}) => {
+		await goToContacts(page);
+		await page.getByRole('button', { name: /Nouveau contact/ }).click();
+		const bouton = page.getByTestId('contact-form-submit');
+		const motif = page.getByTestId('contact-form-blocked-reason');
+
+		// (a) Raison sociale d'abord : le motif du nom est levé.
+		await page.fill('#form-name', `TestContact Motif ${Date.now()}`);
+		await expect(motif).toHaveText('');
+		await expect(bouton).toBeEnabled();
+		// Pays « FR » seul : seul motif possible.
+		await page.fill('#form-country', 'FR');
+		await expect(bouton).toBeDisabled();
+		await expect(motif).toBeVisible();
+		await expect(motif).not.toHaveText('');
+		// NPA et localité : l'adresse est complète.
+		await page.fill('#form-npa', '75002');
+		await page.fill('#form-city', 'Paris');
+		await expect(bouton).toBeEnabled();
+		await expect(motif).toHaveText('');
+
+		// (b) Adresse partielle : rue seule.
+		await page.fill('#form-npa', '');
+		await page.fill('#form-city', '');
+		await page.fill('#form-country', 'CH');
+		await page.fill('#form-street', 'Rue des Essais');
+		await expect(bouton).toBeDisabled();
+		await expect(motif).not.toHaveText('');
+		await page.fill('#form-street', '');
+		await expect(bouton).toBeEnabled();
+
+		// (c) IDE mal formé.
+		await page.fill('#form-ide', 'CHE-12');
+		await expect(bouton).toBeDisabled();
+		await expect(motif).not.toHaveText('');
+	});
 });
 
 test.describe('Page contacts — accessibilité', () => {

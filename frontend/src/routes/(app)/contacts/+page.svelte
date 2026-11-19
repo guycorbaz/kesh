@@ -442,6 +442,18 @@
 			(!formPostalCode.trim() || !formCity.trim())
 	);
 
+	// #1342 (0.20.0) — un pays seul, autre que CH, ne fait pas une adresse : le serveur le
+	// refuse (il était jeté en silence). « CH » seul est le préremplissage : il veut dire « pas
+	// d'adresse ». Même normalisation que le serveur (rogné, majuscules ASCII).
+	let countryAlone = $derived(
+		!formStreet.trim() &&
+			!formBuilding.trim() &&
+			!formPostalCode.trim() &&
+			!formCity.trim() &&
+			formCountry.trim() !== '' &&
+			formCountry.trim().replace(/[a-z]/g, (ch) => ch.toUpperCase()) !== 'CH'
+	);
+
 	// Story 48-15 (C-e4815-4) — la raison sociale et le délai n'ont plus de `maxlength`, qui
 	// coupait en silence un texte collé. L'écran les juge lui-même : leur refus désactive le
 	// bouton, et son MOTIF s'affiche sous le champ — sans quoi le bouton grisé serait un refus
@@ -483,12 +495,27 @@
 		if (nameTooLongMsg) return nameTooLongMsg;
 		if (addressPartial)
 			return i18nMsg('contact-error-address-npa-city', 'NPA et localité obligatoires si une adresse est saisie');
+		if (countryAlone)
+			return i18nMsg(
+				'contact-error-address-country-alone',
+				'Un pays seul ne fait pas une adresse : saisissez le NPA et la localité, ou videz le pays.'
+			);
 		if (formIde.trim() && !validateIdeFormat(formIde.trim())) {
 			return i18nMsg('contact-error-ide-invalid', 'Numéro IDE suisse invalide');
 		}
 		if (paymentTermsDaysMsg) return paymentTermsDaysMsg;
 		return '';
 	});
+
+	// #1349 (0.20.0) — le motif qui grise le bouton s'affiche AU-DESSUS de lui. Dérivé de
+	// `formValidation`, la source même du `disabled` : aucun motif, présent ou futur, ne peut
+	// griser le bouton sans se dire. Sauf ceux qui s'affichent déjà SOUS LEUR CHAMP (raison
+	// sociale trop longue, délai hors bornes) : jamais deux fois le même texte.
+	let blockedReason = $derived(
+		formValidation && formValidation !== nameTooLongMsg && formValidation !== paymentTermsDaysMsg
+			? formValidation
+			: ''
+	);
 
 	// #245 : préséance jours > texte — quand le délai est renseigné, le texte
 	// libre est désactivé (libellé auto-généré côté serveur).
@@ -984,12 +1011,15 @@
 
 			<div>
 				<label for="form-email">{i18nMsg('contact-form-email', 'Email')}</label>
-				<Input id="form-email" type="email" bind:value={formEmail} maxlength={320} />
+				<!-- #1336 (0.20.0) : ni l'e-mail ni le téléphone n'ont de `maxlength`, qui coupait en
+				     silence un texte collé. Le serveur refuse au-delà de 320 et 50 caractères et le dit
+				     (`formError`), la saisie reste. -->
+				<Input id="form-email" type="email" bind:value={formEmail} />
 			</div>
 
 			<div>
 				<label for="form-phone">{i18nMsg('contact-form-phone', 'Téléphone')}</label>
-				<Input id="form-phone" type="tel" bind:value={formPhone} maxlength={50} />
+				<Input id="form-phone" type="tel" bind:value={formPhone} />
 			</div>
 
 			<div>
@@ -1154,6 +1184,16 @@
 				<!-- Story 48-15 : `data-testid` pour l'E2E (garde KF-043 : jamais un libellé traduit). -->
 				<p class="text-sm text-destructive" data-testid="contact-form-error">{formError}</p>
 			{/if}
+
+			<!-- #1349 (0.20.0) : pourquoi le bouton est grisé. Toujours dans le DOM (annoncée par
+			     `aria-live`), vide quand rien ne bloque ; discrète : c'est une indication. -->
+			<p
+				data-testid="contact-form-blocked-reason"
+				class="text-xs text-muted-foreground"
+				aria-live="polite"
+			>
+				{blockedReason}
+			</p>
 
 			<div class="flex justify-end gap-2 pt-2">
 				<Button type="button" variant="outline" onclick={() => (formOpen = false)}>
