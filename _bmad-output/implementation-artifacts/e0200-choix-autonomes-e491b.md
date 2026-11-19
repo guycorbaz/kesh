@@ -41,3 +41,22 @@ retenue, autres options, réversibilité.*
   faute de fixtures. Ils appellent la même fonction de vérification que T0 et T0-bis, en mode `comparer`, ajoutés
   au même fichier après F.
 - **Réversible** : sans objet.
+
+## C-e491b-5 — La garde `configuration_transmise` exclut le comparateur, fichier de soutien aux tests
+
+- **Contexte** : `scripts/test-fast.sh --ci` (journal `kesh-gate-logs/e491b/test-fast-review.log`, HEAD `03afbfbca`) rougit
+  sur trois tests de `configuration_transmise` (`env_example`, `lectures`, `transmission`) : la garde lit tout
+  `crates/*/src`, y voit `env::var("KESH_REFERENCES")` dans `kesh-qrbill/src/empreinte.rs` et exige que la variable
+  passe par `config::env_nonempty`, soit transmise par les compose et documentée dans `.env.example`. Or ce module n'est
+  déclaré que sous `#[cfg(feature = "test-support")]` (jamais compilé en production, D4), et le comparateur est **gelé
+  depuis F** (AC1 (6)) : il ne peut pas être modifié.
+- **Retenu** : la garde gagne une liste fermée `MODULES_DE_SOUTIEN_AUX_TESTS` (ce seul fichier), exclue de son analyse —
+  l'angle mort « module hors ligne » que son en-tête décrit déjà pour `cfg(test)` —, avec un test de la raison
+  (`modules_de_soutien_aux_tests_hors_production` : déclaration exacte sous la feature dans `lib.rs`, et `test-support`
+  absent de tout `Cargo.toml` hors `[features]` et `[dev-dependencies]`, sonde positive comprise) ; `KESH_REFERENCES`
+  entre dans `VARIABLES_DE_TEST` (contrôle existant : absente de `.env.example` et des compose).
+- **Autres** : (a) modifier `empreinte.rs` pour lire la variable autrement — interdit par le gel de l'AC1 (6) ; (b) documenter
+  `KESH_REFERENCES` dans `.env.example` et la transmettre — faux, c'est une variable de test ; (c) déplacer la lecture du
+  mode dans les fichiers de test — même interdit que (a) pour `mode_references`.
+- **Réversible** : oui ; à revoir si d'autres modules de soutien aux tests apparaissent (une règle générale par
+  feature serait alors préférable à une liste).

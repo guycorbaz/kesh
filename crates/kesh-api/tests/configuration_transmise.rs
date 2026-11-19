@@ -223,7 +223,30 @@ const HOTE: &[&str] = &[
 /// deux compose et de `.env.example`.
 /// Le nom est lu sur la constante, non recopié : la garde de la date du jour
 /// n'admet le littéral que dans `kesh-core/src/horloge.rs`.
-const VARIABLES_DE_TEST: &[&str] = &[kesh_core::horloge::NOM_VARIABLE_INSTANT];
+///
+/// Story 49-1b (#1242) : `KESH_REFERENCES`, le mode des tests de capture du rendu
+/// des PDF (`ecrire` ou `comparer`), lue par `kesh_qrbill::empreinte`, module de
+/// [`MODULES_DE_SOUTIEN_AUX_TESTS`] que le binaire servi ne compile pas.
+const VARIABLES_DE_TEST: &[&str] = &[kesh_core::horloge::NOM_VARIABLE_INSTANT, "KESH_REFERENCES"];
+
+/// Fichiers de `crates/*/src` réservés aux tests par une **feature** de test, et non
+/// par `cfg(test)` : leur module n'est déclaré que sous `#[cfg(feature =
+/// "test-support")]`, et la feature n'est activée que par des dev-dépendances. Ils ne
+/// sont pas du code de production : (L), (E) et (T) ne les lisent pas (sans quoi leur
+/// lecture d'une variable de test exigerait de la transmettre et de la documenter).
+/// C'est l'angle mort « module hors ligne » de l'en-tête, levé pour ces seuls fichiers.
+///
+/// `(fichier, lib.rs qui le déclare, déclaration exacte)`. Contrôle de la raison
+/// (`modules_de_soutien_aux_tests_hors_production`) : la déclaration figure telle
+/// quelle dans le `lib.rs`, et `test-support` n'apparaît dans aucun `Cargo.toml` hors
+/// d'une section `[dev-dependencies]` ou `[features]`. Que la construction de
+/// production ne l'active pas se prouve par `cargo build --release -p kesh-api -v`
+/// (Story 49-1b, D4) : hors de portée de ce test, qui ne compile rien.
+const MODULES_DE_SOUTIEN_AUX_TESTS: &[(&str, &str, &str)] = &[(
+    "kesh-qrbill/src/empreinte.rs",
+    "kesh-qrbill/src/lib.rs",
+    "#[cfg(feature = \"test-support\")]\npub mod empreinte;\n",
+)];
 
 /// Variables de `.env.example` que le code ne lit pas, utilisées par le
 /// service MariaDB de `docker-compose.yml` (et sa `DATABASE_URL`). Contrôle :
@@ -1850,6 +1873,12 @@ fn sources_du_depot() -> Vec<(String, String)> {
                 .unwrap_or_else(|e| panic!("lecture de {} impossible : {e}", p.display()));
             (relatif, contenu)
         })
+        // Story 49-1b — hors production : voir `MODULES_DE_SOUTIEN_AUX_TESTS`.
+        .filter(|(relatif, _)| {
+            !MODULES_DE_SOUTIEN_AUX_TESTS
+                .iter()
+                .any(|(fichier, _, _)| relatif == fichier)
+        })
         .collect();
     sources.sort();
     sources
@@ -2036,6 +2065,58 @@ fn fantomes() {
     let mut corpus = corpus_texte();
     corpus.extend(corpus_code());
     echouer_si(controle_fantomes(&corpus, &lues()), "(F) fantômes");
+}
+
+/// Story 49-1b — chaque fichier exclu par [`MODULES_DE_SOUTIEN_AUX_TESTS`] n'est déclaré
+/// que sous sa feature de test, et la feature `test-support` n'est activée par aucune
+/// dépendance normale : elle n'apparaît dans un `Cargo.toml` que sous `[features]` (sa
+/// définition) ou `[dev-dependencies]`. Sonde positive : la feature est bien nommée par
+/// au moins une dev-dépendance (sans quoi le contrôle passerait à vide).
+#[test]
+fn modules_de_soutien_aux_tests_hors_production() {
+    let crates = racine().join("crates");
+    for (fichier, lib, declaration) in MODULES_DE_SOUTIEN_AUX_TESTS {
+        assert!(crates.join(fichier).is_file(), "{fichier} absent");
+        let source = std::fs::read_to_string(crates.join(lib)).expect("lib.rs lisible");
+        assert!(
+            source.contains(declaration),
+            "{lib} ne déclare pas {fichier} par {declaration:?}"
+        );
+        let module = Path::new(fichier).file_stem().unwrap().to_string_lossy();
+        assert_eq!(
+            source.matches(&format!("mod {module};")).count(),
+            1,
+            "{lib} : une seule déclaration du module {module}"
+        );
+    }
+    let mut en_dev = 0;
+    for c in std::fs::read_dir(&crates)
+        .expect("crates/ lisible")
+        .flatten()
+    {
+        let manifeste = c.path().join("Cargo.toml");
+        let Ok(texte) = std::fs::read_to_string(&manifeste) else {
+            continue;
+        };
+        let mut section = String::new();
+        for ligne in texte.lines() {
+            let l = ligne.trim();
+            if l.starts_with('[') {
+                section = l.to_string();
+            } else if !l.starts_with('#') && l.contains("test-support") {
+                assert!(
+                    section == "[features]" || section == "[dev-dependencies]",
+                    "{} : `test-support` sous {section} : {l}",
+                    manifeste.display()
+                );
+                en_dev += usize::from(section == "[dev-dependencies]");
+            }
+        }
+    }
+    assert!(
+        en_dev > 0,
+        "sonde : aucune dev-dépendance n'active test-support"
+    );
 }
 
 /// Story 35-5a0 — une variable de tests n'est ni transmise par un compose
