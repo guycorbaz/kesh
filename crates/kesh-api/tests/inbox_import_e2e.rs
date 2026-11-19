@@ -1834,10 +1834,17 @@ fn complete_body(
     unit: Decimal,
     vat: Decimal,
 ) -> Value {
+    // Story 48-12a (#975) : un numéro du fournisseur par corps — la règle anti-doublon
+    // refuse le même numéro du même fournisseur dans la même année.
+    static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(100);
+    let numero = format!(
+        "FF-2026-{}",
+        N.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    );
     json!({
         "contactId": supplier_id,
         "invoiceDate": "2026-06-15",
-        "supplierInvoiceNumber": "FF-2026-100",
+        "supplierInvoiceNumber": numero,
         "dueDate": "2026-07-15",
         "lines": [{
             "description": "Prestation",

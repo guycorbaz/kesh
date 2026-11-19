@@ -324,7 +324,9 @@ const REGISTRE: &[(&str, &str, Statut)] = &[
     // brouillon a ses écrivains, dont aucun ne nomme un compte bancaire.
     (
         "kesh-db/src/repositories/supplier_invoices.rs",
-        "create_draft_in_tx",
+        // Story 48-12a (#975) : le corps de `create_draft_in_tx` est passé dans
+        // `create_draft_in_tx_with_policy` ; celle-là en est l'enveloppe d'une ligne.
+        "create_draft_in_tx_with_policy",
         Statut::SansCompteBancaire(
             "la facture naît brouillon ; l'INSERT ne nomme aucun settlement_*",
         ),
@@ -338,7 +340,8 @@ const REGISTRE: &[(&str, &str, Statut)] = &[
     ),
     (
         "kesh-db/src/repositories/supplier_invoices.rs",
-        "update_draft_in_tx",
+        // Story 48-12a (#975) : le corps est passé dans `update_draft_in_tx_with_policy`.
+        "update_draft_in_tx_with_policy",
         Statut::SansCompteBancaire(
             "brouillon seulement (statut gardé) ; l'UPDATE ne nomme aucun settlement_*",
         ),
@@ -353,7 +356,8 @@ const REGISTRE: &[(&str, &str, Statut)] = &[
     ),
     (
         "kesh-db/src/repositories/supplier_invoices.rs",
-        "unvalidate_in_tx",
+        // Story 48-12a (#975) : le corps est passé dans `unvalidate_in_tx_with_policy`.
+        "unvalidate_in_tx_with_policy",
         Statut::SansCompteBancaire(
             "facture validée non payée (statut gardé) : aucun settlement_* ; l'UPDATE n'en nomme aucun",
         ),
