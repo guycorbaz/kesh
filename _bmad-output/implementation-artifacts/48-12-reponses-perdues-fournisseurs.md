@@ -1,22 +1,25 @@
-# Story 48-12 : Réponses perdues — factures fournisseur (lot B, comptes bancaires, reporté à la 0.21.0)
+# Story 48-12 : Refus serveur des factures fournisseur en double, et complétion d'un document dont la réponse est perdue
 
-Status: drafted (validation en cours ; `ready-for-dev` se pose à la clôture de la validation, par l'orchestrateur)
+Status: drafted (conception refondue le 2026-11-19 ; validation à reprendre ; `ready-for-dev` se pose à la clôture de la validation, par l'orchestrateur)
 
-Issues dans le périmètre : #975, #985, #986 (toutes `bug`, **P2**) — **lot A**. Release 0.20.0, Epic 48. Voie : frontend (aucun code Rust, aucune migration).
-**Hors périmètre actif** : #984 (comptes bancaires) et l'archivage d'un compte sur 409 — **lot B, reporté à la 0.21.0** par décision de Guy du 2026-11-19 (réintégrable dans la 0.20.0 si les ressources le permettent, décision de Guy) ; il reste écrit plus bas, sans AC actifs.
+Issues dans le périmètre : **#975** (création : réponse perdue puis second clic = second brouillon) et **#985** (complétion d'un document importé annoncée en échec) — toutes deux `bug`, **P2**. Release 0.20.0, Epic 48.
+**Reportés à la 0.21.0** (décisions de Guy du 2026-11-19), conservés plus bas **sans AC actifs** : **#986** (conflit de version à la modification d'une facture fournisseur) et le **lot comptes bancaires** (#984, archivage). **Contrairement aux versions précédentes de cette fiche, la correction de #975 est dans le serveur** : une règle anti-doublon sous verrou, sans migration, pour toute création et toute modification, quel que soit le chemin (écran, complétion d'un document importé, API par clé).
 
 ## Story
 
 En tant que comptable qui tient des factures fournisseur réelles (dettes, lots de paiement pain.001),
-je veux qu'une réponse perdue (délai, coupure) ou un conflit de version ne me fasse ni enregistrer deux fois la même
-facture, ni remplacer en silence l'écriture d'un autre, ni croire échouée une écriture qui a réussi,
+je veux que Kesh **refuse d'enregistrer deux fois la même facture fournisseur** (même numéro chez le même fournisseur, ou même
+date et même montant sans numéro à comparer), quel que soit le chemin par lequel elle arrive,
 afin que mes dettes restent justes et qu'aucune facture ne soit payée deux fois, sans que je perde jamais ma saisie.
 
 **Usage réel.** Guy saisit ses factures fournisseur et en tire des lots pain.001. Un doublon de brouillon, une fois validé,
-double la dette (compte 2000) et peut être payé deux fois. C'est le seul des trois défauts qui touche les livres ; les deux
-autres font croire à un échec ou font perdre du temps. Le correctif ne supprime jamais une saisie, **ne reprend jamais un champ
-de lui-même** (aucune fusion automatique) : il **relit avant de proposer de réessayer**, et, en cas de conflit sur une
-modification, il **montre les deux versions côte à côte** et laisse l'utilisateur choisir.
+double la dette (compte 2000) et peut être payé deux fois. Une réponse perdue suivie d'un second clic (#975) n'est qu'une cause
+parmi d'autres (double saisie, document déjà saisi à la main, intégration par clé d'API) : la règle se pose donc **là où l'écriture
+se fait**. Le correctif ne supprime jamais une saisie : le refus la laisse intacte et montre la facture existante.
+
+**Conséquence à signaler (règle « numéro identique = refus absolu »).** Un fournisseur dont la numérotation **repart à un** chaque
+année, ou qui réutilise un numéro, verra sa nouvelle facture refusée sans exception tant que l'ancienne n'est pas **annulée** ; la
+voie de sortie est d'annuler l'ancienne (les annulées sont exclues) ou de saisir un numéro distinct (par exemple préfixé de l'année).
 
 ## Ce qui se lit au code
 
@@ -39,21 +42,24 @@ Tout est lu à `af4e0e313` (tête de la branche d'épique, 48-13 et 48-15 fusion
    code en « Ce document a déjà été traité ou retiré de la liste. » : un échec, alors que la facture existe. Le document
    `completed` porte `supplierInvoiceId` (`imported-supplier-invoices.types.ts`, interface `ImportedSupplierInvoice`) et
    `listImported('completed')` existe (`imported-supplier-invoices.api.ts:50-52`).
-4. **#986, édition.** `[id]/edit/+page.svelte:128-132` : `updateSupplierInvoice(id, { ...req, version: invoice.version })`.
-   `invoice.version` n'est jamais relu après l'envoi. Une réponse perdue après un `PUT` réussi, puis un second clic, part avec la
-   version d'avant : `409 OPTIMISTIC_LOCK_CONFLICT` (`supplier_invoices.rs:772-808`, `lock_draft_in_tx` avec `req.version`).
-   `supplier-invoice-form.ts:440-448` dit « modifiée entre-temps : rechargez la page, puis refaites votre correction » : faux
-   quand la modification est précisément celle qu'on a envoyée, et recharger fait perdre la saisie.
-5. **(Lot B, reporté — #984 et l'archivage)** : voir la section « Lot B — reporté à la 0.21.0 », qui porte la lecture du code.
-6. **Le précédent de Kesh : relire, juger, montrer, jamais d'idempotence serveur.** `git grep -n -i "idempot"` ne trouve aucune
-   clé d'idempotence dans `crates/` ni dans `frontend/src` (les occurrences sont des commentaires sur des gestes rejouables,
-   ex. `bank_accounts.rs:1644`). Les patrons existants sont tous « relecture + jugement » :
-   - 34-6 (#953), la société : `frontend/src/lib/features/settings/company-conflict.ts` — `companyEditConflict` (fusion à trois
-     voies, issues `unchanged` / `already-saved` / `changed`), `conflictNotice`, `CompanyConflictNotice.svelte`, branchés dans
-     `settings/+page.svelte:140-146` (imports `:19-27`) ;
-   - 34-5 (#951) et 34-8 (#938), règlements et fiche fournisseur : `unknown-outcome.ts:65-68` (`isSettlementOutcomeUnknown`),
-     dont le doc-comment (`:56-62`) écrit que la page d'édition (#986), la complétion (#985) et la création (#975) **ne sont pas
-     couvertes** : c'est le périmètre de cette story (le doc-comment lui-même n'est pas retouché, voir D7).
+4. **Le serveur n'a aucun contrôle de doublon.** `create_draft_in_tx` (`crates/kesh-db/src/repositories/supplier_invoices.rs:650`) enchaîne
+   `check_draft_input_in_tx` (`:502` : lignes non vides, projet, fournisseur `is_supplier`, forme des lignes, comptes de charge), le calcul
+   du total (`draft_total`), l'`INSERT` (`:657-679`), les lignes (`insert_lines`), la relecture et l'audit `supplier_invoice.created` (`:684-693`).
+   `supplier_invoices` n'a **aucune unicité** sur (société, fournisseur, numéro) (`migrations/20260628000001_supplier_invoices.sql`). Les deux seules
+   écritures d'un brouillon passent par `create_draft_in_tx` et `update_draft_in_tx` (`:756`) ; leurs appelants hors tests : `routes/supplier_invoices.rs:740` (création, enveloppée par
+   `kesh_db::retry::retry_on_deadlock`), `:817-834` (modification : `lock_draft_in_tx` `FOR UPDATE` sur la facture puis `update_draft_in_tx`),
+   `routes/imported_supplier_invoices.rs:203` (complétion : staging verrouillé, `new_from_document`, puis `create_draft_in_tx`) ; `kesh-seed/src/pieges.rs:613` appelle `create_validated`
+   (données de démonstration). Le service MCP des factures fournisseur ne crée ni ne modifie (`services/factures_fournisseur.rs` : lecture).
+5. **Un précédent exact : le refus 409 qu'on lève par un champ de confirmation.** `accounts::archive` reçoit `confirm_designated: bool`
+   (`crates/kesh-db/src/repositories/accounts.rs:1249`) et rend `DbError::AccountDesignatedInSettings { … }` (`:1290-1292`, déclarée `kesh-db/src/errors.rs:1584`, code `:2488`) ;
+   la route lit `confirm_designated` du corps (`routes/accounts.rs:225`, `:540`) ; `kesh-api/src/errors.rs:4428` la range dans un sous-match **exhaustif** sur `DbError`
+   (« pas de `_ =>` », `:4228-4230`) ; l'API le documente (`docs/api-external.md`, `confirmDesignated`). La règle neuve suit ce patron.
+6. **Verrous.** Aucun code ne prend `FOR UPDATE` sur `contacts` (`git grep -n "FOR UPDATE" -- crates/kesh-db/src/repositories | grep -i contacts` ne rend qu'un commentaire, `contacts.rs:562`) ;
+   `check_draft_input_in_tx` est écrit **sans verrou** (doc-comment `:493`, C-v017-4-28) et la création ne prend que les verrous **partagés** des clés étrangères, d'où le rejeu sur interblocage
+   (`retry_on_deadlock`, `retry_app_on_deadlock` pour le `PUT` et la complétion, C-v017-4-37). La règle devra donc **prendre un verrou exclusif** (D3) et le dire.
+7. **Contrat de l'API.** `docs/api-external.md:659` (`POST /api/v1/supplier-invoices`, « inchangé »), `:1015` (complétion : corps de `POST /supplier-invoices`), `:1021` (validation des coordonnées de paiement) ;
+   `docs/manual/fr/admin-manual.tex` : un paragraphe « Pour les intégrations » par version (`:2588`, `:2618`, `:2665`). Les actions d'audit se déclarent dans `kesh-api/src/audit_labels.rs:209-214`
+   et se traduisent (`messages.ftl:3541-3548`, quatre locales) ; `audit_acteur_garde.rs:364`, `:370` suit `create_draft_in_tx` et `update_draft_in_tx`.
 7. **Un décor d'E2E existe pour la réponse perdue.** `frontend/tests/e2e/supplier-invoice-unknown-outcome.spec.ts:1-12` : la
    coupure est réelle (`route.fetch()` envoie au serveur, puis `route.abort()` jette la réponse) ; un `abort()` seul n'écrirait rien.
 
@@ -111,11 +117,11 @@ La commande 2 rend **26** sites ; ceux qui envoient une `version` ou bouclent su
 
 | Site | Symptôme | Lot |
 |---|---|---|
-| `createSupplierInvoice`, `new/+page.svelte:149` | doublon de brouillon (#975) | A |
-| `completeImport`, `new/+page.svelte:149` | échec annoncé à tort (#985) | A |
-| `updateSupplierInvoice`, `[id]/edit/+page.svelte:130` | échec annoncé à tort (#986) | A |
-| `updateBankAccount`, `bank-accounts/+page.svelte:575` (`edit-full`) | 409 sans relecture (#984) | **B, reporté à la 0.21.0** (hors périmètre actif) |
-| `archiveBankAccount`, `bank-accounts/+page.svelte:586-598` | 409 sans relecture, version périmée renvoyée (V1-6) | **B, reporté à la 0.21.0** (hors périmètre actif) |
+| `createSupplierInvoice`, `new/+page.svelte:149` | doublon de brouillon (#975) | S puis E |
+| `completeImport`, `new/+page.svelte:149` | échec annoncé à tort (#985) ; doublon refusé par la règle serveur | S puis E |
+| `updateSupplierInvoice`, `[id]/edit/+page.svelte:130` | la **règle anti-doublon** s'applique aussi à la modification (D6) ; le **conflit de version** (#986) est reporté à la 0.21.0 | S ; #986 reporté |
+| `updateBankAccount`, `bank-accounts/+page.svelte:575` (`edit-full`) | 409 sans relecture (#984) | reporté à la 0.21.0 |
+| `archiveBankAccount`, `bank-accounts/+page.svelte:586-598` | 409 sans relecture, version périmée renvoyée (V1-6) | reporté à la 0.21.0 |
 
 ### Hors périmètre, couvert par une issue ouverte par l'orchestrateur (#1354 à #1362)
 
@@ -146,64 +152,47 @@ Correspondance (ordre de l'ouverture) : #1354 facture client, #1355 écriture, *
 | **#1372** : `createRule` `RuleFormModal.svelte:106`, `createDunningLevel` `dunning/+page.svelte:111`, `createVatRate` `vat-rates/+page.svelte:121`, `:153`, `createContactPerson` `ContactPersonsManager.svelte:56`, `createMcpKey` `McpKeysSection.svelte:152`, `createMcpPrompt` `McpPromptsList.svelte:67` | doublon de paramétrage | basse |
 | autres `update*` de la commande 2 (`updateAccount`, `updateDunningLevel`, `updateFiscalYear`, `updateVatRate`, `updateRule`, `updateEmailTemplate`, `updateInvoiceSettings`…) **et** écritures sous d'autres verbes : `postRevaluation` (`RevaluationPanel.svelte:172` ; la réévaluation calcule un écart incrémental, `fx_revaluation.rs:317`), `generateOpeningBalances` (`settings/opening-balances/+page.svelte:410`), `sendReminderBatch` (`invoices/reminders/+page.svelte:155`) ; appels directs de la commande 3 dans `users/+page.svelte` : `:122` (création), `:168`, `:209` (désactivation), `:254` (réinitialisation du mot de passe) | **non examinés**, sondés seulement, aucun jugé défectueux | à constater : issue **#1373** |
 
-Le **module** de D7 est conçu pour servir à ces sites sans réécriture.
+La règle de D1 est **propre aux factures fournisseur** ; les sites ci-dessus relèvent d'issues distinctes.
 
 ## Modules et découpage
 
-**Décompte au grain du fichier d'épique** (`main:…/epic-48-corrections-0-20-0.md:205`, `:210-214`), les modules **modifiés**, **sans le lot B** :
-1. `features/supplier-invoices` ; 2. la route `supplier-invoices` (`new`, `[id]/edit`) ; 3. `features/imported-supplier-invoices`
-(`listImported` reçoit un paramètre `CallOptions`, `imported-supplier-invoices.api.ts:50`) ; 4. `kesh-i18n` ; 5. le manuel français.
-**Cinq modules, au plafond de la règle de splitting** : ni découpage, ni dérogation. `shared/utils` **ne compte plus** : la retouche du
-doc-comment de `unknown-outcome.ts` est **retirée du périmètre** (elle n'est pas nécessaire au correctif ; voir la limite en D7).
-(Avec le lot B réintégré : **huit** modules, par `features/bank-accounts` et la route `bank-accounts` ; une réintégration rouvrirait la question du plafond.)
+**Décompte au grain du fichier d'épique** (`main:…/epic-48-corrections-0-20-0.md:205`, `:210-214`), les modules **modifiés** :
+1. `kesh-db` (repository `supplier_invoices.rs`, `errors.rs`, tests) ; 2. `kesh-api` (`routes/supplier_invoices.rs`, `errors.rs`, `audit_labels.rs`, tests) ;
+3. `kesh-i18n` (quatre locales : messages des refus, libellé d'audit, textes de l'écran) ; 4. `frontend/features/supplier-invoices` ;
+5. la route `supplier-invoices` (`new`, `[id]/edit`) ; 6. `features/imported-supplier-invoices` (`listImported` reçoit un `CallOptions`, D9) ;
+7. la documentation : `docs/api-external.md`, manuel français (utilisateur et administration). **Sept modules, au-dessus du plafond de cinq : aucune dérogation.**
+**Le découpage proposé** (au rapport, à décider par le Project Lead) suit les lots de la fiche : **48-12a (lot S, serveur)** : `kesh-db`, `kesh-api`, `kesh-i18n`, `docs/api-external.md` = **quatre**, livrable seul (l'API est protégée, l'écran affiche encore un message générique) ; **48-12b (lot E, écran)** : `features/supplier-invoices`, route `supplier-invoices`, `features/imported-supplier-invoices`, `kesh-i18n`, manuel français = **cinq**, après la 48-12a. La fiche est rangée en lots pour qu'il ne demande aucune réécriture.
 
 ## Décisions
 
-**D1 (commune). Un motif : relire, juger, montrer ; aucune clé d'idempotence serveur.**
-Chaque écran, sur un refus qui peut venir d'une écriture déjà faite (409 de version, `IMPORT_NOT_PENDING_COMPLETION`) ou sur une
-issue inconnue (`isSettlementOutcomeUnknown`), **relit l'état écrit**, le **compare à la saisie** et dit lequel des trois cas
-vaut : *déjà enregistré*, *rien n'a changé ailleurs*, *conflit* (un seul nom par verdict, repris par D4 et les tests). La saisie reste toujours en place. **Une relecture qui
-échoue se détecte explicitement et se dit** ; aucun jugement ne se fait sur un état périmé, et aucune version n'est adoptée alors.
-*Écartée — clé d'idempotence serveur* : elle exige un stockage durable des clés, donc une **migration**, et la release n'en
-admet qu'une (celle de la 49-1) ; en mémoire, elle serait perdue au redémarrage du conteneur. *Écartée — désactiver le bouton
-après une issue inconnue* : l'utilisateur dont l'écriture n'a pas eu lieu serait bloqué et devrait ressaisir. *Écartée —
-détection serveur sur le contenu* : refuserait une facture légitimement semblable ; le dépôt signale, il ne tranche pas
-(`CLAUDE.md`, « un appariement propose, il ne crée jamais »).
+### Lot S — la règle, dans le serveur
 
-**D1-bis (commune). Règle de comparaison (V1-5).** Un jugement compare `stored` (relu) à la saisie **sous la forme que le serveur
-range**, jamais littéralement : montants, quantités et taux comparés en décimal (`Big.eq`, quatre décimales : `"100.0000"` égale
-`"100.00"`) ; IBAN, QR-IBAN et référence normalisés comme le serveur (`normalizeIban`, `supplier-invoice-form.ts:334` ; blancs,
-insécables compris, retirés) ; `trim`, et vide ⇔ `null`. **La référence de paiement (V2-6, V3-2)** se normalise comme le serveur (`supplier_invoices.rs:458-473`) : avec un QR-IBAN, tous les blancs sont retirés (`normalize_payment_field`) ; sans, elle est **rognée aux deux bouts par l'ensemble de blancs du serveur** (`trim_matches(is_payment_blank)`, `:471` ; `is_payment_blank` définie à `:378` : `char::is_whitespace`, dont U+0085, plus U+200B et U+FEFF), puis **vide après normalisation ⇔ `null`** (`present`, `:384`). `String.prototype.trim` ne retire ni U+200B ni U+0085 : une **fonction pure** de `resend-guard.ts` reproduit cet ensemble, testée avec un U+200B final collé. **Les lignes (V2-2, V3-1)** : l'égalité exige d'abord **le même nombre de lignes**, puis, **position par position, chaque ligne égale sur ses cinq champs** (description, quantité, prix unitaire, taux de TVA, compte de charge), chacun normalisé, puis **l'en-tête, dont les champs sont énumérés (V4-1)** : les neuf du corps du `PUT` — `contactId`, `supplierInvoiceNumber` (`trim`, vide ⇔ `null`), `invoiceDate`, `dueDate` (vide ⇔ `null`), `projectId`, et, **seulement sans QR verrouillé**, `creditorIban`, `creditorQrIban` (`normalizeIban`), `paymentReference` (règle ci-dessus), `expectedPaymentAmount` (décimal, vide ⇔ `null`, `Big.eq`) ; **omettre l'un d'eux jetterait une correction non écrite** (IBAN et montant attendu partent au lot pain.001). Une ligne **supprimée** ou **ajoutée** ne rend donc jamais *déjà enregistré* (le serveur remplace toutes les lignes, `repositories/supplier_invoices.rs:802`, `:585-599`). Le total, dérivé, ne sert qu'à l'**affichage** de l'avis. **Le côté « saisie » (V3-5)** est le **corps tel qu'il est parti** (le même objet que le `PUT`, issu de `linesForServer` et `paymentFields`, `supplier-invoice-form.ts:203-212`, `:328-345`, et `fNumber.trim() || null`), jamais le formulaire brut (« 12,50 », « 1'250 »), sur lequel `Big` lèverait ou différerait ; le côté « base » est la **réponse du serveur**, non les champs rouverts par `formLineFromResponse`. Le cas « je viens d'enregistrer moi-même » (réponse perdue, puis second clic) **doit** rendre
-*déjà enregistré*, jamais *conflit* : un test le fixe avec les formes du serveur (`"100.0000"`, IBAN sans blancs), et
-une mutation retire le normaliseur. Ces fonctions sont pures et testées à part (D7).
+**D1. La règle anti-doublon (décisions de Guy du 2026-11-19).** Pour toute **création** et toute **modification** d'une facture fournisseur, sous verrou, sans migration :
+1. **Même société, même fournisseur (`contactId`), même numéro de facture du fournisseur** (non vide, comparé après normalisation, D2) → **refus absolu** `409 SUPPLIER_INVOICE_DUPLICATE`, sans exception ni sortie ;
+2. **Même société, même fournisseur, même date de facture, même total TTC** → **refus par défaut** `409 SUPPLIER_INVOICE_PROBABLE_DUPLICATE`, **avec une sortie explicite** : un champ de requête `confirmNotDuplicate: true` que l'écran n'envoie qu'après le clic sur « Ce n'est pas un doublon, enregistrer » ; la confirmation est **inscrite au journal d'audit** (D5) ;
+3. **si les deux factures portent un numéro du fournisseur, seul le numéro décide** : deux numéros différents ne sont **jamais** un doublon, même date et même montant ; le critère 2 ne s'applique que si **l'une au moins** des deux n'a pas de numéro ;
+4. les factures **annulées** (`status = 'cancelled'`) sont **exclues** de la comparaison ; brouillons, validées et payées comptent ;
+5. le **numéro reste facultatif** ; les données existantes ne bougent pas : le contrôle ne vaut que pour une nouvelle saisie ou une modification (D6).
+Les deux refus portent `details : { supplierInvoiceId, internalNumber, status }` (identifiant, numéro interne — `null` pour un brouillon jamais validé — et statut de **la facture existante** ; s'il y en a plusieurs, celle d'identifiant le plus petit).
+*Écartée — relecture et signalement côté écran* (conception précédente) : elle ne protège ni la double saisie, ni la complétion, ni l'API, et laisse une fenêtre quand la requête est encore en vol. *Écartée — clé d'idempotence durable* : migration, exclue de la release. *Écartée — contrainte `UNIQUE` en base* : migration, et elle ne porterait pas la règle 2.
 
-### Lot A — factures fournisseur
+**D2. Normalisation et comparaison.** Une fonction **pure** de `kesh-db` (testée seule) normalise le numéro : tous les blancs retirés (`char::is_whitespace`, plus U+200B et U+FEFF, l'ensemble de `is_payment_blank`, `routes/supplier_invoices.rs:378`), puis `to_lowercase()` ; vide après normalisation = **absent**. Le total comparé est le **total TTC calculé** (`draft_total`) du côté nouveau, et `total_amount` stocké du côté existant, en égalité de valeur décimale. La comparaison se fait **en Rust** sur les factures **du même fournisseur** (`SELECT id, internal_number, supplier_invoice_number, status, invoice_date, total_amount FROM supplier_invoices WHERE company_id = ? AND contact_id = ? AND status <> 'cancelled'` et, à la modification, `AND id <> ?`) : une normalisation SQL des blancs Unicode serait fragile, et le nombre de factures d'un fournisseur reste petit. Ordre de décision : **d'abord** le refus absolu (règle 1) sur toutes les candidates, **puis** le refus probable (règle 2, avec la règle 3) ; la facture citée est la plus petite en identifiant parmi celles du même refus.
 
-**D2 (#975). Relire les brouillons et signaler un brouillon semblable, sans jamais refuser ni affirmer.**
-Après une issue inconnue de `createSupplierInvoice`, l'écran lit la liste des brouillons (requête ci-dessous) et cherche les
-brouillons de **même fournisseur, même date de facture, même numéro** (`trim`, absent = absent) ; **quand le numéro manque,
-le total normalisé (D1-bis) entre dans la comparaison** (sans numéro, deux factures légitimes du même jour se confondraient).
-Le libellé est **neutre** : « Un brouillon semblable existe déjà », jamais « votre facture a été enregistrée » (V1-2). Chaque
-brouillon trouvé montre son total, une marque « total différent de votre saisie » quand il diffère, et un lien vers sa fiche, **ouvert dans un nouvel onglet** (`target="_blank" rel="noopener"`, V2-3) : un lien ordinaire quitterait la page et ferait perdre une saisie que la fiche dit conserver ; le lien de D3, lui, peut rester ordinaire (la facture existe).
-Verdicts : *trouvé* ; *non trouvé* (« Aucune facture semblable n'a été enregistrée : vous pouvez réessayer ») ; *non vérifiable*
-(relecture en échec, détectée explicitement, ou plus de résultats que la page n'en rend ; message dédié et lien vers la liste).
-**Requête de relecture (V4-3), avec ce que le serveur offre, sans le toucher** : `ListSupplierInvoicesQuery` n'a aucun filtre par fournisseur, date ou numéro. L'écran envoie `status: ['draft']` (un **tableau**), `q` = **le numéro saisi s'il existe**, sinon **le nom du fournisseur**, **tronqué au préfixe de 128 caractères** (`RECHERCHE_MAX_CARACTERES = 128`, `services/factures_fournisseur.rs:70` ; au-delà, le serveur rend 400 ; un nom de contact peut compter 255 caractères) (`q` cherche le numéro interne, le numéro du fournisseur et le nom : un `q` sur le nom rend aussi des homonymes, **filtrés côté client sur `contactId`**, y compris avec un `q` par numéro : `q` cherche aussi le numéro d'un autre fournisseur, `repositories/supplier_invoices.rs:329-331` ; test et mutation « omettre le filtre `contactId` » : un faux *trouvé* fait abandonner une vraie saisie), `limit: 100` (le tri par défaut est la date décroissante), et **parcourt les pages** (`offset`) jusqu'à `total`, avec un **plafond écrit de 5 pages** ; au-delà, verdict *non vérifiable*, **dit à l'écran** (jamais silencieux), avec le lien vers la liste. Le **total de la saisie** vient de `sumTtc` (`supplier-invoice-form.ts:88`, parité avec le serveur), comparé à `totalAmount` en `Big.eq`. Le cas courant est **vérifiable** : avec un numéro, `q` rend quelques brouillons ; sans numéro, les brouillons d'un seul fournisseur tiennent largement dans 500 lignes. Un test couvre un fournisseur dont les brouillons dépassent une page (parcours) et un autre qui dépasse le plafond (*non vérifiable* dit).
-**Relecture (V2-4)** : `listSupplierInvoices` reçoit un paramètre `CallOptions` et la relecture passe `{ retry: false }`, comme D4 pour `getSupplierInvoice` : sans cela, un réseau coupé fait rejouer le `GET` (~14 s, et jusqu'à ~150 s sur des délais) avec `saving` vrai, et le verdict n'arrive pas (`api-client.ts:414`, délais `:37`, `:42`) ; le précédent E2E choisit un `500` pour cela.
-**Machine d'états (V1-1)** :
-- l'issue inconnue déclenche **une** relecture, d'où le verdict ;
-- verdict *trouvé* ou *non vérifiable* : le bouton devient « Enregistrer quand même », et **ce clic envoie, sans relecture** ;
-- verdict *non trouvé* : le clic ordinaire relit **une fois** puis envoie si le résultat est encore *non trouvé* (couvre
-  l'écriture tardive du serveur) ; un brouillon apparu entre-temps rend le verdict *trouvé* et n'envoie pas ;
-- toute modification du fournisseur, de la date, du numéro ou du total remet le verdict à zéro (l'issue reste « inconnue » : la
-  relecture se refera au clic ordinaire suivant) ;
-- un envoi réussi remet tout à zéro. Le signalement **propose, ne bloque jamais** : « Enregistrer quand même » est toujours possible.
-*Écartée — critère sur le seul numéro/date/fournisseur avec total en simple affichage* : sans numéro, un faux « déjà créé » fait
-abandonner une vraie saisie. *Écartée — relire aussi au clic « Enregistrer quand même »* : boucle possible, second brouillon
-légitime impossible.
-*Angle mort assumé* : une requête restée en vol côté serveur au-delà de la relecture du clic suivant. Il se ferme seulement par
-une clé durable (issue « clé d'idempotence »).
+**D3. Verrou.** Avant la comparaison, la transaction prend `SELECT id FROM contacts WHERE id = ? AND company_id = ? FOR UPDATE` sur **la ligne du fournisseur** : deux envois simultanés pour le même fournisseur se **sérialisent**, le second voit la facture du premier à la comparaison et est refusé. Le rejeu sur interblocage des trois chemins existe déjà (point 6 du code). L'ordre des verrous est écrit au doc-comment : **création** : fournisseur puis `INSERT` ; **modification** : facture (`lock_draft_in_tx`) puis fournisseur ; **complétion** : staging puis fournisseur. Un test de concurrence (deux créations simultanées, un seul succès) et un test sans verrou (mutation) le prouvent. *Écartée — verrou sur la société (`companies`)* : sérialise toutes les créations de la société. *Écartée — pas de verrou* : deux envois simultanés passeraient (« TOCTOU »).
 
-**D3 (#985). Sur `IMPORT_NOT_PENDING_COMPLETION` ou issue inconnue, relire le document : trois issues (V1-3).**
+**D4. Ordre des refus.** La comparaison se fait **après** `check_draft_input_in_tx` (lignes, projet, fournisseur, forme, comptes : les refus de saisie passent d'abord, et le total n'est calculable qu'après) et **avant** l'`INSERT`. Pour la complétion, `ImportNotPendingCompletion` (statut du staging), puis les règles « document » (`new_from_document`), puis cette règle : un document déjà complété rend toujours `409 IMPORT_NOT_PENDING_COMPLETION`, jamais un refus de doublon (D9). Un refus **annule** la transaction : le document reste `to_complete`, rien n'est écrit.
+
+**D5. Confirmation et audit.** `CreateSupplierInvoiceRequest` (donc le corps du `PUT`, qui l'aplatit, `routes/supplier_invoices.rs:654-658`, et celui de la complétion) reçoit `confirm_not_duplicate: bool` (`#[serde(default)]`, `confirmNotDuplicate`), transmis au repository sous la forme d'un paramètre explicite (patron `confirm_designated`, `DuplicatePolicy { Refuse, Confirmed }`) : `create_draft_in_tx` et `update_draft_in_tx` gardent leur nom, reçoivent la politique, et les appelants de tests et de démonstration passent `Refuse`. La confirmation **ne lève jamais le refus absolu** (règle 1). Quand la règle 2 **aurait refusé** (une facture existante répond au critère) et que `Confirmed` la laisse passer, le repository écrit, **dans la même transaction**, une entrée d'audit `supplier_invoice.duplicate_confirmed` (acteur, facture créée ou modifiée, `details : { supplierInvoiceId, internalNumber }` de la facture existante qui aurait refusé). Elle se déclare dans `audit_labels.rs` et se traduit dans les quatre catalogues (`audit-log-action-supplier-invoice-duplicate-confirmed`). Un `confirmNotDuplicate: true` sans doublon probable n'écrit **rien** de plus.
+
+**D6. À la modification.** La règle ne se rejoue que si l'un des quatre éléments qui la fondent **change** par rapport à la facture avant modification : **fournisseur, numéro (normalisé), date de facture, total TTC**. Sans changement de ces quatre, la modification passe (corriger une description, une échéance ou un IBAN d'une facture qui était déjà, avant 0.20.0, le double d'une autre ne doit pas être bloqué : « les données existantes ne bougent pas »). La facture modifiée est exclue de la comparaison (`id <> ?`). Même verrou (D3).
+
+**D7. Contrat de l'API (changement à signaler).** Deux codes neufs, `409 SUPPLIER_INVOICE_DUPLICATE` et `409 SUPPLIER_INVOICE_PROBABLE_DUPLICATE`, avec `details` ; un champ de requête neuf, facultatif, `confirmNotDuplicate`. Une intégration qui créait deux fois la même facture **reçoit désormais un refus**. Documenté dans `docs/api-external.md` (`POST` et `PUT /supplier-invoices`, complétion `POST /imported-supplier-invoices/{id}/complete`, au même endroit que « Les coordonnées de paiement se valident à un seul endroit »), dans le paragraphe « Pour les intégrations » du manuel d'administration, et à la **Note de version** (« changement de contrat »). Messages (clés `error-supplier-invoice-duplicate`, `error-supplier-invoice-probable-duplicate`, quatre locales) : une phrase pour l'utilisateur, dans la langue de l'installation, sans le numéro de la facture existante dans le texte (il est dans `details`).
+
+### Lot E — l'écran, et la complétion
+
+**D8. Le refus à l'écran.** `describeSubmitError` (`supplier-invoice-form.ts`) reconnaît les deux codes et le formulaire (`SupplierInvoiceForm.svelte`) affiche, **saisie intacte**, un avis qui **montre la facture existante** (numéro interne s'il existe, sinon « brouillon n° … » par son identifiant ; **lien vers sa fiche dans un nouvel onglet**, `target="_blank" rel="noopener"`). Pour `SUPPLIER_INVOICE_PROBABLE_DUPLICATE`, l'avis porte le bouton **« Ce n'est pas un doublon, enregistrer »** : il renvoie la même saisie avec `confirmNotDuplicate: true`, **une seule fois** ; toute modification du fournisseur, du numéro, de la date ou d'une ligne **efface l'avis** (la confirmation ne vaut que pour la saisie qui a été montrée). Pour `SUPPLIER_INVOICE_DUPLICATE`, **aucun bouton** : l'utilisateur corrige le numéro ou ouvre la facture existante. **La réponse perdue suivie d'un second clic aboutit à ce refus** : c'est la correction de #975, sans relecture ni verdict côté écran. Valable pour la création, la modification (`[id]/edit`) et la complétion (même formulaire).
+
+**D9 (#985). Sur `IMPORT_NOT_PENDING_COMPLETION` ou issue inconnue, relire le document : quatre issues (V1-3).**
 Relire `listImported('completed')` puis, au besoin, `listImported('to_complete')` (aucun n'est paginé ; `listImported` reçoit un paramètre `CallOptions` et la relecture passe `{ retry: false }`, V2-4) :
 - *complété avec facture* (`supplierInvoiceId` renseigné) : **avis**, non erreur : « Ce document a déjà été traité : la facture a
   été enregistrée » (la relecture ne lit que le document : la facture peut avoir été validée depuis, le lien montre son état) avec le lien `/supplier-invoices/<id>`, saisie en place, envoi désactivé ;
@@ -216,7 +205,107 @@ L'avis est neutre sur l'auteur. *Angle mort assumé (V1-18)* : un document compl
 `to_complete`, `supplier_invoice_id` à `NULL`) se complète de nouveau : une complétion perdue, suivie d'un détachement puis d'un
 renvoi, crée une seconde facture. Rare ; écrit, non traité.
 
-**D4 (#986). Relire la facture, juger, et en cas de conflit montrer les deux versions côte à côte : aucune reprise sans clic.**
+**D9 (suite, simplification).** Avec la règle serveur, D9 ne garde que ce qui reste vrai : le second clic d'une complétion dont la réponse s'est perdue rend `IMPORT_NOT_PENDING_COMPLETION` (le statut du staging se juge avant la règle de doublon, D4) ; l'écran **relit le document** pour dire la vérité. Les issues de D9 ci-dessus restent ; aucune relecture des brouillons n'est faite.
+
+**D10. Garde synchrone contre le double envoi (écran).** `SupplierInvoiceForm.submit` (`:376`) revient d'emblée si `saving` : sans elle, deux événements `submit` émis avant le rendu qui désactive le bouton envoient deux requêtes dont la seconde serait **refusée** (doublon) mais produirait un avis trompeur ; le bouton de confirmation porte la même garde.
+
+**D11. Où vit la logique.** **Serveur** : la règle et la normalisation dans `crates/kesh-db/src/repositories/supplier_invoices.rs` (ou un module voisin pur), les variantes `DbError::SupplierInvoiceDuplicate { … }` et `SupplierInvoiceProbableDuplicate { … }` (`errors.rs`, code `:2449`-`:2488`), leur rangement dans le sous-match exhaustif de `kesh-api/src/errors.rs` (autour de `:4428`). **Écran** : `supplier-invoice-form.ts` (cas des deux codes), un petit composant d'avis dans `features/supplier-invoices/`.
+
+## Critères d'acceptation
+
+**Lot S (serveur)**
+1. **AC-S1 (règle 1).** Une création, une modification ou une complétion dont le fournisseur et le numéro normalisé (blancs retirés, casse ignorée) sont ceux d'une facture non annulée de la société rend `409 SUPPLIER_INVOICE_DUPLICATE`, `details.supplierInvoiceId` / `internalNumber` / `status` de l'existante ; **rien n'est écrit** ; `confirmNotDuplicate: true` n'y change rien.
+2. **AC-S2 (règle 2).** Sans numéro à comparer (l'un au moins des deux n'en a pas), même fournisseur, même date, même total TTC : `409 SUPPLIER_INVOICE_PROBABLE_DUPLICATE` ; avec `confirmNotDuplicate: true` la facture s'enregistre et **une entrée d'audit `supplier_invoice.duplicate_confirmed`** est écrite dans la même transaction.
+3. **AC-S3 (règle 3).** Deux factures portant **chacune** un numéro différent ne sont jamais un doublon, même date et même montant.
+4. **AC-S4 (règle 4).** Une facture annulée ne compte pas : on recrée une facture au numéro d'une annulée, ou au même date/total.
+5. **AC-S5 (règle 5 et D6).** Le numéro reste facultatif ; une modification qui ne change ni le fournisseur, ni le numéro, ni la date, ni le total passe même si la facture était déjà le double d'une autre ; une modification exclut la facture elle-même de la comparaison.
+6. **AC-S6 (concurrence, D3).** Deux créations simultanées de la même facture : **une seule** réussit, l'autre rend `SUPPLIER_INVOICE_DUPLICATE` (ou `PROBABLE_` selon le cas) ; aucun interblocage ne remonte (rejeu existant).
+7. **AC-S7 (ordre, D4).** Un refus de saisie (ligne, compte, projet, fournisseur non fournisseur) passe avant le refus de doublon ; pour la complétion, un document déjà complété rend `IMPORT_NOT_PENDING_COMPLETION` ; un refus de doublon laisse le document `to_complete`.
+8. **AC-S8 (chemins).** La règle vaut par l'écran, la complétion et une **clé d'API `read-write`** (`POST` et `PUT /supplier-invoices`, `POST …/complete`) ; les données de démonstration (`kesh-seed`) et les tests existants **ne dépendent pas d'un doublon** (fixtures corrigées, jamais la règle).
+9. **AC-S9 (contrat).** `docs/api-external.md` décrit les deux codes, `details` et `confirmNotDuplicate` ; le manuel d'administration, « Pour les intégrations », le signale ; la Note de version dit « changement de contrat ». Aucune migration ; aucune facture client, aucun avoir, aucun PDF touché.
+
+**Lot E (écran et complétion)**
+10. **AC-E1 (#975).** Création : réponse perdue après l'écriture, puis second clic : l'écran montre l'avis de doublon (lien vers la facture existante, nouvel onglet), la saisie est intacte, **un seul** brouillon existe.
+11. **AC-E2.** Refus probable : bouton « Ce n'est pas un doublon, enregistrer » qui renvoie une fois avec `confirmNotDuplicate: true` ; toute modification de la saisie efface l'avis ; refus absolu : aucun bouton.
+12. **AC-E3 (#985).** Complétion perdue : document complété = avis et lien, envoi désactivé ; encore à traiter = « aucune facture enregistrée, réessayez » ; retiré = message actuel ; relecture en échec = message d'issue inconnue ; document complété sans `supplierInvoiceId` = message d'issue inconnue.
+13. **AC-E4.** Deux événements `submit` consécutifs n'envoient qu'une requête ; le bouton de confirmation porte la même garde.
+14. **AC-E5.** Clés neuves dans les quatre locales (messages d'erreur, libellé d'audit, avis de l'écran) ; `sitesTotal` et les gardes de repli recomptés depuis la source.
+15. **AC-E6 (manuel).** `docs/manual/fr/user-manual.tex` (seul manuel utilisateur existant) décrit la règle (numéro identique refusé, date et montant identiques à confirmer, annulées exclues, l'exemple de la numérotation qui repart à un) ; le contrôle final vérifie **positivement** « Ce n'est pas un doublon » dans le `.tex` et le PDF aplati après `make fr` (non commité).
+
+## Tests à écrire, et la preuve du rouge
+
+Chaque test neuf rougit sans le correctif ; journaux dans `/home/gcorbaz/devel/kesh-gate-logs/e4812/`. **Rouge d'abord** : chaque test est écrit et joué rouge avant le code, ou rougi par mutation.
+
+| Test | Fichier | Mutation qui doit le rougir |
+|---|---|---|
+| normalisation : `"FA 2026-1"`, `"fa2026-1"`, `"FA\u{A0}2026-1"`, `" FA2026-1\u{200B}"` égales ; vide ou blancs seuls = absent | unitaire `kesh-db` (fonction pure) | retirer `to_lowercase`, ne retirer que l'espace ASCII, ne pas retirer U+200B |
+| règle 1 : même fournisseur et même numéro → refus ; `details` exacts ; `confirm` sans effet ; autre fournisseur ou autre société → accepté | `kesh-db/tests/supplier_invoice_duplicate.rs` (neuf) | omettre le filtre `contact_id`, omettre le filtre société, laisser `Confirmed` lever la règle 1 |
+| règle 2 : sans numéro, même date et même total → refus probable ; `Confirmed` passe et écrit `supplier_invoice.duplicate_confirmed` ; total ou date différents → accepté | idem | omettre le total, omettre la date, ne pas écrire l'audit |
+| règle 3 : deux numéros différents, même date et même total → accepté ; un numéro et un absent, même date et total → refus probable | idem | « le numéro ne décide pas » (appliquer la règle 2 aux deux numéros) |
+| règle 4 : annulée exclue (numéro et date/total) ; brouillon, validée, payée comptent | idem | retirer `status <> 'cancelled'` |
+| modification : exclut la facture elle-même ; changement de fournisseur, de numéro, de date, de total rejoue la règle ; aucun changement des quatre = passe même si doublon préexistant | idem | retirer `id <> ?`, rejouer toujours la règle |
+| concurrence : deux `tokio::spawn` de `create_draft` identiques → un `Ok`, un refus | idem | retirer le `FOR UPDATE` du fournisseur |
+| ordre : refus de saisie (compte non imputable) avant le refus de doublon ; refus de doublon ne laisse aucune ligne | idem | comparer avant `check_draft_input_in_tx` |
+| API : `POST` deux fois → `201` puis `409` (codes, `details`) ; avec `confirmNotDuplicate` ; `PUT` ; clé `read-write` ; complétion : doublon → `409`, document `to_complete` ; second passage → `IMPORT_NOT_PENDING_COMPLETION` | `kesh-api/tests/supplier_invoice_duplicate_e2e.rs` (neuf) | idem ; ignorer le champ `confirmNotDuplicate` du corps |
+| audit : `supplier_invoice.duplicate_confirmed` listée (`audit_labels.rs`), traduite quatre locales, garde `audit_acteur_garde.rs` à jour | gardes existantes | retirer la traduction d'une locale |
+| écran : `describeSubmitError` des deux codes ; avis + lien `target="_blank"` ; bouton (probable seulement) envoie une fois avec le drapeau ; une modification efface l'avis ; double `submit` synchrone | `supplier-invoice-form.test.ts`, `SupplierInvoiceForm.test.ts`, `new-page.test.ts` | pas de garde ; drapeau envoyé sans clic ; avis conservé après modification |
+| complétion (D9) : 409 → avis + lien ; encore à traiter → réessayer ; retiré → message actuel ; relecture en échec ; complété sans `supplierInvoiceId` | `new-page.test.ts` | traiter « complété sans `supplierInvoiceId` » comme complété, « déjà traité » sur relecture en échec |
+| **E2E** : `route.fetch()` + `route.abort()` sur `POST /api/v1/supplier-invoices` (numéro saisi), second clic → avis de doublon avec lien, un seul brouillon (contrôle par l'API) ; sans numéro, doublon probable puis confirmation → deux brouillons ; coupure de `POST …/complete` → avis « déjà traité » ou « réessayez » | `supplier-invoice-duplicate.spec.ts` (neuf) | aujourd'hui deux brouillons |
+
+E2E exigé : défaut visible dans le navigateur et à la frontière HTTP ; **filtrer `route.request().method()` et ne couper qu'une fois** ; précédent `supplier-invoice-unknown-outcome.spec.ts:163`, `:283`. Recette visuelle (`CLAUDE.md`) : captures, thème clair, de chaque état neuf (avis absolu, avis probable avec bouton, avis de complétion) dans `kesh-gate-logs/e4812/captures/`. Chaque mutation est suivie d'un `touch` du fichier restauré (cargo garde le binaire muté).
+
+**Étape 0 obligatoire** : jouer `scripts/test-fast.sh --no-lint` **avant** le code pour relever les tests existants qui créent deux factures au même fournisseur avec le même numéro ou la même date et le même total (`kesh-db/tests/supplier_invoices_*`, `supplier_invoice*e2e`, `kesh-seed/src/pieges.rs:613`) ; leurs **fixtures** se corrigent (numéros distincts, ou `Confirmed` pour la règle 2) ; la règle 1 n'a pas de sortie.
+
+## Tâches
+
+**Lot S.** S1 : `DbError` (deux variantes, codes, `errors.rs` de `kesh-db`) et sous-match exhaustif de `kesh-api/src/errors.rs`. S2 : fonction pure de normalisation et de comparaison ; `DuplicatePolicy` ; contrôle sous verrou dans `create_draft_in_tx` et `update_draft_in_tx` (D2 à D6) ; audit `supplier_invoice.duplicate_confirmed`. S3 : `routes/supplier_invoices.rs` (champ `confirm_not_duplicate`, transmission à la création et au `PUT`) et `routes/imported_supplier_invoices.rs` (complétion). S4 : `audit_labels.rs`, catalogues (quatre locales : messages d'erreur, libellé d'audit). S5 : `docs/api-external.md` et manuel d'administration (« Pour les intégrations »). S6 : tests Rust et correction des fixtures.
+**Lot E.** E1 : `supplier-invoice-form.ts`, `SupplierInvoiceForm.svelte`, composant d'avis, D8 et D10 ; `new/+page.svelte` (D3, `listImported` reçoit `CallOptions`, `{ retry: false }` sur la relecture). E2 : catalogues de l'écran, `sitesTotal`, gardes de repli. E3 : manuel utilisateur français. E4 : E2E et captures.
+**Communs.** C0 (étape 0, ci-dessus). C1 : gates (voir « Gates »). C2 : Dev Agent Record, Change Log, Note de version.
+
+## Manuels et documentation
+
+Seul `docs/manual/fr/user-manual.tex` existe pour l'utilisateur (`docs/manual/{de,it,en}/` ne portent qu'un `README.md`, « traductions non encore créées ») : **aucun équivalent DE/IT/EN à écrire**. Les ajouts portent « depuis la version~0.20.0 » (`docs-numeros-de-release`).
+- **Manuel utilisateur** (`user-manual.tex`, saisie `:2072-2090`, brouillon `:2195`, complétion `:2682`) : décrire la règle (numéro du fournisseur identique = refusé sans exception ; même date et même montant sans numéro à comparer = refusé, avec le bouton « Ce n'est pas un doublon, enregistrer » ; annulées exclues ; l'exemple de la numérotation qui repart à un et ses deux sorties).
+- **Manuel d'administration** (`admin-manual.tex`, un paragraphe « Pour les intégrations » par version, p. ex. `:2588`, `:2618`, `:2665`) : le changement de contrat de l'API (deux codes, `details`, `confirmNotDuplicate`), à la section de la 0.20.0 (à créer si elle n'existe pas encore, avec l'orchestrateur).
+- **`docs/api-external.md`** (`:659`, `:1015`, `:1021`) : voir D7. Les PDF ne se commitent pas.
+
+## Gates
+
+Selon `e0190-dev.md` et `e35-dev-commun.md` § *Quels gates, quand*. **Cette story modifie du Rust et des catalogues** : gate Rust complet.
+- Entre les passes : `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo nextest run -E 'binary(<le binaire touché>)'` ; `npm --prefix frontend run check`, `lint-i18n-ownership`, vitest ciblé.
+- **Exception `kesh-db`** (`CLAUDE.md`) : dès qu'un patch touche un repository, **gate complet même en cours de boucle** ; base remise à zéro avant tout gate complet.
+- **Au passage en `review`** : `scripts/test-fast.sh --ci`, puis `scripts/gate-ci.sh`, plus `npm run check`, `lint-i18n-ownership`, `test:unit`, `build`.
+- **À la clôture** : `gate-ci` et **E2E complet** au dernier commit de code (montage `docs/testing.md`, `KESH_COOKIE_SECURE=false`, `KESH_TEST_MODE=true` des deux côtés) ; « vert » = les seuls échecs attendus.
+Sous `scripts/mem-guard.sh`, une commande lourde à la fois, `flock` du verrou de la voie (base et Rust).
+
+## Note de version
+
+**Changement de contrat de l'API.** Kesh refuse d'enregistrer deux fois la même facture fournisseur : même fournisseur et même numéro (comparé sans blancs ni casse) = refus `409 SUPPLIER_INVOICE_DUPLICATE`, sans exception ; même fournisseur, même date et même total sans numéro à comparer = refus `409 SUPPLIER_INVOICE_PROBABLE_DUPLICATE`, que l'écran lève par « Ce n'est pas un doublon, enregistrer » et qu'une intégration lève par `confirmNotDuplicate: true` (inscrit au journal d'audit) ; les factures annulées ne comptent pas. La règle vaut à la création, à la modification et à la complétion d'un document, et l'écran montre la facture existante. Une complétion dont la réponse s'est perdue dit désormais la vérité au lieu d'annoncer un échec (refs #975, refs #985).
+
+## Reportés à la 0.21.0 — sans AC actifs
+
+Décisions de Guy du 2026-11-19. Ce qui suit **ne fait pas partie du périmètre** ; il est conservé pour que #986 et le lot comptes bancaires reviennent sans réécriture. Les renvois « D… » de cette section (D1-bis, D4, D5, D6, D7) visent **la numérotation d'avant la refonte**, non celle des décisions actives ci-dessus. Les conceptions écrites ci-dessous (conflit côte à côte, D1-bis, D5) **ont reçu des findings de la passe P6** qui ne sont **pas traités** : à reprendre avant toute réintégration.
+
+**Findings P6 à traiter à la réintégration** (`kesh-gate-logs/e4812/validation-p6.md`, 0/1/2/3, troisième signal « recycle » dans la règle de conflit) : V6-1 (HIGH) la base remise à `stored` sur conflit rend `unchanged` au clic ordinaire suivant et adopte la version fraîche sans clic ; V6-2 la source de « Garder ma version » et la garde des deux boutons ne sont pas définies (la page n'a ni la saisie courante ni `saving`) ; V6-3 `status ≠ draft` jette la saisie en renvoyant à la fiche ; V6-4 « Reprendre la version enregistrée » destructif sans avertissement, repli `supplier-invoices-err-stale` mort ; V6-5 mutations manquantes pour `ILLEGAL_STATE_TRANSITION`, 404, `unchanged` ; V6-6 fichier d'épique à aligner. La conception de #986 est à reprendre **sur la base de la règle serveur de cette fiche** (qui réduit déjà les cas de 409 dus à un doublon).
+
+### #986 — conflit de version à la modification (conception écrite avant la refonte)
+
+**Lecture du code** (point 4) :
+
+4. **#986, édition.** `[id]/edit/+page.svelte:128-132` : `updateSupplierInvoice(id, { ...req, version: invoice.version })`.
+   `invoice.version` n'est jamais relu après l'envoi. Une réponse perdue après un `PUT` réussi, puis un second clic, part avec la
+   version d'avant : `409 OPTIMISTIC_LOCK_CONFLICT` (`supplier_invoices.rs:772-808`, `lock_draft_in_tx` avec `req.version`).
+   `supplier-invoice-form.ts:440-448` dit « modifiée entre-temps : rechargez la page, puis refaites votre correction » : faux
+   quand la modification est précisément celle qu'on a envoyée, et recharger fait perdre la saisie.
+
+**D1-bis (comparateur du conflit, #986). Règle de comparaison (V1-5).** Un jugement compare `stored` (relu) à la saisie **sous la forme que le serveur
+range**, jamais littéralement : montants, quantités et taux comparés en décimal (`Big.eq`, quatre décimales : `"100.0000"` égale
+`"100.00"`) ; IBAN, QR-IBAN et référence normalisés comme le serveur (`normalizeIban`, `supplier-invoice-form.ts:334` ; blancs,
+insécables compris, retirés) ; `trim`, et vide ⇔ `null`. **La référence de paiement (V2-6, V3-2)** se normalise comme le serveur (`supplier_invoices.rs:458-473`) : avec un QR-IBAN, tous les blancs sont retirés (`normalize_payment_field`) ; sans, elle est **rognée aux deux bouts par l'ensemble de blancs du serveur** (`trim_matches(is_payment_blank)`, `:471` ; `is_payment_blank` définie à `:378` : `char::is_whitespace`, dont U+0085, plus U+200B et U+FEFF), puis **vide après normalisation ⇔ `null`** (`present`, `:384`). `String.prototype.trim` ne retire ni U+200B ni U+0085 : une **fonction pure** de `resend-guard.ts` reproduit cet ensemble, testée avec un U+200B final collé. **Les lignes (V2-2, V3-1)** : l'égalité exige d'abord **le même nombre de lignes**, puis, **position par position, chaque ligne égale sur ses cinq champs** (description, quantité, prix unitaire, taux de TVA, compte de charge), chacun normalisé, puis **l'en-tête, dont les champs sont énumérés (V4-1)** : les neuf du corps du `PUT` — `contactId`, `supplierInvoiceNumber` (`trim`, vide ⇔ `null`), `invoiceDate`, `dueDate` (vide ⇔ `null`), `projectId`, et, **seulement sans QR verrouillé**, `creditorIban`, `creditorQrIban` (`normalizeIban`), `paymentReference` (règle ci-dessus), `expectedPaymentAmount` (décimal, vide ⇔ `null`, `Big.eq`) ; **omettre l'un d'eux jetterait une correction non écrite** (IBAN et montant attendu partent au lot pain.001). Une ligne **supprimée** ou **ajoutée** ne rend donc jamais *déjà enregistré* (le serveur remplace toutes les lignes, `repositories/supplier_invoices.rs:802`, `:585-599`). Le total, dérivé, ne sert qu'à l'**affichage** de l'avis. **Le côté « saisie » (V3-5)** est le **corps tel qu'il est parti** (le même objet que le `PUT`, issu de `linesForServer` et `paymentFields`, `supplier-invoice-form.ts:203-212`, `:328-345`, et `fNumber.trim() || null`), jamais le formulaire brut (« 12,50 », « 1'250 »), sur lequel `Big` lèverait ou différerait ; le côté « base » est la **réponse du serveur**, non les champs rouverts par `formLineFromResponse`. Le cas « je viens d'enregistrer moi-même » (réponse perdue, puis second clic) **doit** rendre
+*déjà enregistré*, jamais *conflit* : un test le fixe avec les formes du serveur (`"100.0000"`, IBAN sans blancs), et
+une mutation retire le normaliseur. Ces fonctions sont pures et testées à part (D7).
+
+**D4 (#986, conflit sans fusion). Relire la facture, juger, et en cas de conflit montrer les deux versions côte à côte : aucune reprise sans clic.**
 Sur un 409 de version, un **`409 ILLEGAL_STATE_TRANSITION`** (le brouillon n'en est plus un ; `describeSubmitError` n'a aujourd'hui aucun
 cas pour lui) ou une issue inconnue du `PUT`, la page relit `getSupplierInvoice(id, { retry: false })` et juge par une fonction
 pure (D7, comparaison de D1-bis, verdicts nommés `already-saved` / `unchanged` / `conflict`, **sans réutiliser `kind` de
@@ -240,14 +329,8 @@ pure (D7, comparaison de D1-bis, verdicts nommés `already-saved` / `unchanged` 
 **Texte de repli** : la branche `OPTIMISTIC_LOCK_CONFLICT` de `describeSubmitError` (`supplier-invoice-form.ts:440-448`, clé `supplier-invoices-err-stale`) est **gardée comme repli** et son texte réécrit (« Cette facture a été modifiée entre-temps : rechargez la page pour voir son état. »), quatre locales ; ses tests (`supplier-invoice-form.test.ts`) suivent.
 *Écartée — fusion automatique des champs (patron de la 34-6, `companyEditConflict`)* : elle peut, après une issue inconnue, rétablir en silence la propre correction de l'utilisateur ; les coordonnées de paiement forment un groupe couplé ; elle a produit deux HIGH recyclés. *Écartée — fusion à trois voies des lignes* : sans identifiant de ligne stable, elle inventerait des rapprochements. *Écartée — reprendre la version fraîche dès la relecture* : c'est l'écrasement silencieux de #984, sous une autre forme.
 
-**D6. Garde synchrone contre le double envoi.** `SupplierInvoiceForm.submit` (`:376`) revient d'emblée si `saving` ; même garde sur les deux boutons du conflit de D4 (« Garder ma version », « Reprendre la version enregistrée »). (La garde des comptes bancaires est au lot B, reporté.)
 
-**D7. Où vit la logique.** Pure et testable à part, dans `frontend/src/lib/features/supplier-invoices/` : `resend-guard.ts`
-(machine d'états et verdicts de D2, jugement de D4 sans fusion, comparaisons de D1-bis) ; les avis de D3 et le **composant de conflit
-côte à côte** de D4 sont dans le même dossier. `isSettlementOutcomeUnknown` (`unknown-outcome.ts:65`) est réutilisée **telle quelle, fichier non modifié**. Le doc-comment de `[id]/edit/+page.svelte:21-22` (« `OPTIMISTIC_LOCK_CONFLICT` invite à recharger ») est réécrit (même module que la page).
-**Limite notée** : le doc-comment de `unknown-outcome.ts:56-62` (« ne sont pas couvertes ici la page de modification d'un brouillon, la complétion ni la création ») deviendra faux une fois la story faite ; sa correction (module `shared/utils`, hors périmètre pour tenir cinq modules) est une **issue P4 que l'orchestrateur ouvre**.
-
-## Lot B — reporté à la 0.21.0 (réintégrable dans la 0.20.0 si les ressources le permettent, décision de Guy)
+### Lot B — comptes bancaires (réintégrable dans la 0.20.0 si les ressources le permettent, décision de Guy)
 
 **Sans AC actifs** : cette section ne fait pas partie du périmètre de la story. Elle est conservée pour que le lot revienne sans réécriture. Il couvre **#984** (édition d'un compte bancaire) et l'**archivage** d'un compte sur 409 (V1-6). À sa réintégration : modules ajoutés `features/bank-accounts` et la route `bank-accounts` (**huit modules** au grain de l'épique), garde de double envoi de `submitCreate`, `submitUpdateFull` (après `e.preventDefault()`, `:468`, `:548-549`) et `confirmArchive`, avec la règle de D1-bis (`trim` des comptes bancaires comme `str::trim`, `bank_accounts.rs:506`, `:549`, test U+0085) et le **conflit sans fusion de D4** (« votre version » / « la version enregistrée », deux choix explicites) au lieu de la fusion `companyEditConflict` ci-dessous, qui est **écartée** pour la même raison que pour D4 ; à reconfirmer par une validation du lot, **et la question du plafond de cinq modules (huit avec lui) à rouvrir**.
 
@@ -287,81 +370,16 @@ brut, la page lui passe des valeurs **déjà formatées**. Clés neuves : l'avis
 champs ; textes `settings-company-conflict-changed`, `-merged`, `-empty` neutres) restent dans `features/settings/`.
 *Écartée — déplacer en `shared/`* : toucherait le module de la 34-6.
 
-## Critères d'acceptation
-
-**Lot A (actifs)**
-1. **AC-1 (#975).** Création sans document, réponse perdue après l'écriture : l'écran relit et signale « un brouillon semblable existe déjà » (total, marque « total différent » le cas échéant, lien en nouvel onglet). Un seul brouillon existe tant que l'utilisateur n'a pas cliqué « Enregistrer quand même ».
-2. **AC-2 (#975).** Réponse perdue avant l'écriture : « aucune facture semblable » ; le renvoi crée un seul brouillon ; la saisie n'a jamais été perdue. Cas « brouillon préexistant, requête perdue avant écriture » : l'écran **n'affirme pas** que la saisie est enregistrée, et le renvoi reste possible.
-3. **AC-3 (#975).** Relecture impossible : l'écran le dit, renvoie à la liste, n'écrit rien sans « Enregistrer quand même ».
-4. **AC-4 (#975, machine d'états).** « Enregistrer quand même » envoie **sans relire** (exactement un `POST`) ; un clic ordinaire après verdict *non trouvé* relit une fois ; modifier fournisseur, date, numéro ou total remet le verdict à zéro.
-5. **AC-5 (#985).** Complétion perdue : document complété = avis et lien, envoi désactivé ; **encore à traiter = « aucune facture enregistrée, réessayez »** ; retiré = message actuel ; relecture en échec = message d'issue inconnue.
-6. **AC-6 (#986).** Modification enregistrée dont la réponse est perdue : reconnue (*déjà enregistré*), retour à la fiche, y compris avec les formes du serveur (`"100.0000"`, IBAN sans blancs, QRR avec espaces). **Un conflit n'est jamais fusionné** : *conflit* affiche « votre version » et « la version enregistrée » côte à côte (en-tête et lignes, champs en désaccord marqués) avec deux boutons, « Garder ma version » (renvoi avec la version relue) et « Reprendre la version enregistrée » (le formulaire prend la version relue) ; **tant qu'aucun bouton n'est cliqué, le formulaire et la version sont inchangés** ; aucun champ n'est repris en silence. Une ligne qui ne diffère que par sa description ou son compte, une ligne **supprimée** ou **ajoutée**, **un seul champ** quelconque de D1-bis non écrit (neuf d'en-tête, cinq de ligne) rendent *conflit*, jamais *déjà enregistré*. Scénario V5-1 : issue inconnue, relecture en échec, champ rétabli à sa valeur de base, 409, relecture réussie → *conflit* montré, rien repris. Relecture en échec : aucun jugement, aucune version adoptée. `ILLEGAL_STATE_TRANSITION` ou facture relue non brouillon : renvoi à la fiche (`supplier-invoices-edit-not-draft`) ; relecture en 404 : « Cette facture n'existe plus ».
-7. **AC-7.** Deux événements `submit` consécutifs sur le formulaire des factures n'envoient qu'une requête ; les deux boutons du conflit portent la même garde.
-
-**Communs**
-8. **AC-8 (production).** Aucun fichier de `kesh-api`, `kesh-db`, `kesh-qrbill`, `InvoiceForm.svelte` ; ni facture client, ni avoir, ni PDF touchés ; la page d'édition ne s'ouvre que sur un brouillon (`edit/+page.svelte:86`).
-9. **AC-9.** Clés neuves (D2, D3, D4 : conflit, 404, repli) dans les quatre locales ; `sitesTotal` et les gardes de repli recomptés depuis la source.
-10. **AC-10 (manuel).** Les phrases devenues fausses sont **réécrites** dans `docs/manual/fr/user-manual.tex` (seul manuel existant : `docs/manual/{de,en,it}/` ne portent qu'un `README.md`) ; le contrôle final greppe « recharger la page » et « ne relit pas encore » (absents après la réécriture) et vérifie **positivement** « Enregistrer quand même » et « Garder ma version » (au moins une occurrence dans le `.tex` et le PDF aplati après `make fr`, non commité). Le manuel ne dit pas « déjà été traité » (il dit « déjà traité », `:2593`) : ce motif n'est pas contrôlé.
-
-**Lot B — reporté** : aucun AC actif (relecture, version relue après avis, garde de double envoi, archivage : à réécrire à la réintégration, sur le conflit sans fusion).
-
-## Tests à écrire, et la preuve du rouge
-
-Chaque test neuf rougit sans le correctif ; journaux dans `/home/gcorbaz/devel/kesh-gate-logs/e4812/`. Les fixtures portent les **formes du serveur** (`"100.0000"`, IBAN sans blancs).
-
-| Test | Fichier | Rougit parce que |
-|---|---|---|
-| verdicts *trouvé* / *non trouvé* / *non vérifiable* (dont fournisseur à plus d'une page de brouillons, et plus que le plafond de 5 pages) ; clé avec numéro ; clé avec total quand le numéro manque ; vrai doublon **et** facture légitime semblable ; **brouillon d'un autre fournisseur de même numéro, et homonyme → pas *trouvé*** ; `q` tronqué à 128 caractères | `resend-guard.test.ts` (neuf) | la fonction n'existe pas ; mutations : retirer `trim`, ôter le total quand le numéro manque, **omettre le filtre `contactId`** |
-| machine d'états : « Enregistrer quand même » = un `POST`, sans relecture ; reset à la modification | `resend-guard.test.ts`, `new-page.test.ts` | aujourd'hui le second clic poste sans signal ; mutation : « relire aussi au clic Enregistrer quand même » |
-| **comparateur, un test par champ (V5-4)** : test paramétré « seul le champ F diffère → jamais `already-saved`, verdict `conflict` » sur les **quatorze** champs — neuf d'en-tête (`contactId`, `supplierInvoiceNumber`, `invoiceDate`, `dueDate`, `projectId`, `creditorIban`, `creditorQrIban`, `paymentReference`, `expectedPaymentAmount`) et cinq de ligne (description, quantité, prix unitaire, taux de TVA, compte de charge) ; condition QR (champs de paiement exclus quand le QR est verrouillé) | `resend-guard.test.ts` | mutation « **retirer un champ du comparateur** », jouée pour **chacun** des quatorze champs (tableau de mutations, une ligne par champ) |
-| jugement : `already-saved` (formes du serveur) / `unchanged` / `conflict` / `status ≠ draft` ; **`stored` moins sa dernière ligne, plus une ligne → jamais `already-saved`** ; QR-IBAN avec QRR saisie avec espaces → `already-saved` ; référence libre avec un U+200B final → `already-saved`, référence de seuls blancs du serveur ⇔ `null` | `resend-guard.test.ts` | idem ; mutations : normaliseur décimal, champs QR, total et nombre seuls, **`zip` sans contrôle de longueur**, normalisation de la référence, `trim` seul |
-| création : brouillon trouvé → libellé neutre, marque « total différent » ; relecture impossible → aucun `POST` sans « quand même » | `new-page.test.ts` | aujourd'hui le second clic poste |
-| complétion : 409 → avis + lien ; **encore à traiter → réessayer** ; retiré → message actuel ; relecture en échec | `new-page.test.ts` | aujourd'hui, message d'échec ; mutations : « complété sans `supplierInvoiceId` » traité comme complété, « déjà traité » sur relecture en échec |
-| édition : 409 → `already-saved` → succès ; **409 concurrent → conflit côte à côte, formulaire et version inchangés avant tout clic** ; « Garder ma version » → renvoi avec la version relue ; « Reprendre la version enregistrée » → le formulaire prend la version relue ; **issue inconnue, relecture en échec, champ rétabli à sa base, 409, relecture → conflit montré, rien repris (V5-1)** ; relecture en échec → aucun jugement ni version ; **`ILLEGAL_STATE_TRANSITION` → relecture → fiche** ; **relecture 404 → « Cette facture n'existe plus »** | `edit-page.test.ts` | aujourd'hui, message « rechargez » ; mutations : **« reprise silencieuse d'un champ »**, « adopter la version sans clic », « adopter sur relecture en échec », « fusion d'en-tête automatique » |
-| double `submit` synchrone ; double clic sur « Garder ma version » | `SupplierInvoiceForm.test.ts`, `edit-page.test.ts` | pas de garde ; mutation : retirer la garde `saving` |
-| **E2E** : `route.fetch()` + `route.abort()` sur `POST /api/v1/supplier-invoices` (puis second clic ; l'API confirme **un** brouillon avant « quand même »), sur `POST …/complete` (y compris **coupure avant écriture** : le document reste à traiter, l'avis dit « réessayez »), sur le `PUT` ; **conflit** : modification concurrente par l'API, puis « Garder ma version » et « Reprendre la version enregistrée » | `supplier-invoice-lost-response.spec.ts` (neuf) | aujourd'hui deux brouillons / échec annoncé à tort / pas de conflit montré |
-
-E2E exigé : défaut visible dans le navigateur et à la frontière HTTP. **Filtrer `route.request().method()` et ne couper qu'une fois** : la route du `PUT` (`/supplier-invoices/<id>`) intercepterait sinon la relecture `GET` de D4 ; de même le `POST /supplier-invoices` et la relecture `GET /supplier-invoices?status=draft` ; précédent `supplier-invoice-unknown-outcome.spec.ts:163` et `:283`. Recette visuelle (`CLAUDE.md`) : captures, thème clair, de chaque état neuf (dont le conflit côte à côte) dans `kesh-gate-logs/e4812/captures/`. Chaque mutation est suivie d'un `touch` du fichier restauré. *(Les tests du lot B, reporté, sont à écrire à sa réintégration.)*
-
-## Tâches
-
-**Lot A.** A1 : `resend-guard.ts` (D1-bis, D2 et sa requête de relecture, D4 sans fusion, D7) et ses tests ; `listSupplierInvoices` et `listImported` reçoivent `CallOptions` (V2-4). A2 : `new/+page.svelte` (D2, D3) et `SupplierInvoiceForm.svelte` (D6, bouton « Enregistrer quand même », avis). A3 : `[id]/edit/+page.svelte` (D4 : conflit côte à côte, deux boutons, remontage du formulaire sur `initial` repris, doc-comment) ; composant de conflit ; texte de repli de `supplier-invoices-err-stale`. (Aucune retouche de `shared/utils/unknown-outcome.ts` : D7.)
-**Communs.** C0 (étape 0) : relire les points 2 à 4 de « Ce qui se lit au code » contre la branche d'épique à jour. C1 : catalogues (quatre locales), `i18n-keys.test.ts` (`sitesTotal`) et gardes de repli recomptés. C2 : manuel français (`user-manual.tex`). C3 : E2E et captures. C4 : gates. C5 : Dev Agent Record, Change Log, Note de version.
-**Lot B (reporté).** B1 : `bank-accounts/+page.svelte` (conflit sans fusion, archivage, garde, valeurs lisibles) ; `listBankAccounts` reçoit `CallOptions`. B2 : tests de la page.
-
-## Manuels
-
-Seul `docs/manual/fr/user-manual.tex` existe : `docs/manual/de/`, `it/` et `en/` ne portent qu'un `README.md` (« traductions non encore créées »). **Aucun équivalent DE/IT/EN n'est à écrire.** Les ajouts portent « depuis la version~0.20.0 » (`docs-numeros-de-release`). `git grep -n "brouillon" -- docs/manual/fr/user-manual.tex` ; à **réécrire**, non compléter :
-- `user-manual.tex:2208-2210` (« Si la facture a été modifiée entre-temps dans une autre session, l'enregistrement est refusé et vous invite à recharger la page ») : décrire la relecture, « déjà enregistré », et le **conflit côte à côte** avec ses deux choix, « Garder ma version » et « Reprendre la version enregistrée » (rien n'est repris sans clic) ;
-- la phrase **« La page de *modification* d'un brouillon ne relit pas encore la facture : après une coupure pendant l'enregistrement, rechargez-la avant de réessayer. »** (fin de la ligne `:2368` et lignes `:2369-2370`) : **supprimer la phrase seule**, pas la ligne entière (`:2368` commence par « refuse, et la fiche relit la facture pour montrer ce qui est écrit. », qui reste vrai) ; le PDF aplati la contient (`pdftotext … | tr '\n' ' ' | tr -s ' ' | grep -c 'ne relit pas encore la facture'` rend 1), à vérifier absente après `make fr` ;
-- à **ajouter** : une phrase sous « Créer la facture d'un document » (`user-manual.tex:2682`, la complétion ; non `:2234`) et sous la saisie (`:2082`) : après une réponse perdue Kesh relit et ne double pas sans « Enregistrer quand même ».
-- `admin-manual.tex` : aucun changement attendu (contrat d'API inchangé ; ses mentions `:2768-2842` sont de l'historique de versions) ; à constater à l'étape 0. Les PDF ne se commitent pas. *(Le paragraphe des comptes bancaires est au lot B, reporté.)*
-
-## Gates
-
-Selon `e0190-dev.md` et `e35-dev-commun.md` § *Quels gates, quand* (V1-9). Les catalogues vivent dans `crates/kesh-i18n/locales/`,
-lus par des tests Rust (`loader.rs` `parity_between_locales`, `no_new_select_expression_reaches_the_frontend_dictionary`,
-`kesh-api/tests/textes_coherents.rs`) : **aucune modification Rust, mais les gates Rust se lancent**.
-- Entre les passes : `npm --prefix frontend run check`, `lint-i18n-ownership`, vitest ciblé.
-- **Au passage en `review`** : `scripts/test-fast.sh --ci`, puis `scripts/gate-ci.sh`, plus `npm run check`, `lint-i18n-ownership`,
-  `test:unit`, `build`.
-- **À la clôture** : `gate-ci` et **E2E complet** au dernier commit de code (montage `docs/testing.md`, `KESH_COOKIE_SECURE=false`,
-  `KESH_TEST_MODE=true` des deux côtés) ; « vert » = les seuls échecs attendus.
-Sous `scripts/mem-guard.sh`, une commande lourde à la fois, `flock` du verrou de la voie.
-
-## Note de version
-
-Factures fournisseur : après une réponse perdue (coupure, délai), Kesh relit au lieu de laisser un second clic doubler le brouillon (il signale le brouillon semblable et demande « Enregistrer quand même »), reconnaît une modification ou une complétion déjà enregistrée au lieu de l'annoncer en échec ; en cas de conflit sur la modification d'un brouillon, il montre côte à côte votre version et la version enregistrée et laisse choisir, sans rien reprendre de lui-même (refs #975, refs #985, refs #986).
 
 ## Dev Notes
 
-- **Hors périmètre** : le lot B (#984, archivage), reporté à la 0.21.0 ; la correction du doc-comment de `unknown-outcome.ts` (issue P4 à ouvrir par l'orchestrateur) ; voir l'inventaire (issues #1354 à #1362, #1363 « description tronquée à 44 caractères + « … » sur le PDF » et #1364 « facture validée trop longue pour son PDF » — **toutes deux hors de cette story** —, #1365 à #1373 ; #1373 porte aussi `users/+page.svelte:122`, `:168`, `:209`, `:254`).
-- **Fichiers communs** (tableau du fichier d'épique) : `i18n-keys.test.ts` (`sitesTotal`) et les catalogues, avec 48-1, 48-2, 48-10, 48-13, 48-15 **et l'Epic 49** (fichiers communs du fichier d'épique) ; manuels `.tex`. `supplier-invoices/[id]/+page.svelte` (48-1) et `SupplierCreatePanel.svelte` (48-15, fusionnée) ne sont **pas** touchés. Côté serveur : rien.
-- **Modules** : voir « Modules et découpage » (cinq, sans le lot B ; aucune dérogation).
-- **Ce qui doit rester vrai** : aucune saisie n'est jamais vidée par un refus ; **aucun champ n'est repris sans clic** ; une facture client, un avoir et leur PDF sont inchangés ; la règle « un appariement propose, il ne crée jamais » (le signalement ne refuse rien).
+- **Hors périmètre** : #986 (conflit de version à la modification) et le lot comptes bancaires (#984, archivage), reportés à la 0.21.0 (voir « Reportés ») ; la correction du doc-comment de `shared/utils/unknown-outcome.ts` (issue P4 à ouvrir par l'orchestrateur) ; les autres écrans de création (inventaire : issues #1354 à #1362, #1363 « description tronquée à 44 caractères + « … » sur le PDF » et #1364 « facture validée trop longue pour son PDF » — **toutes deux hors de cette story** —, #1365 à #1373 ; #1373 porte aussi `users/+page.svelte:122`, `:168`, `:209`, `:254`).
+- **Fichiers communs** (tableau du fichier d'épique) : catalogues i18n (quatre locales), `i18n-keys.test.ts` (`sitesTotal`), `audit_route_registry.rs`, manuels `.tex`, avec 48-1, 48-2, 48-10, 48-13, 48-15 **et l'Epic 49** ; `routes/supplier_invoices.rs` et `repositories/supplier_invoices.rs` avec la **48-1** (réimputation d'une facture fournisseur) : le second arrivé résout. `SupplierCreatePanel.svelte` (48-15, fusionnée) et `InvoiceForm.svelte` (Epic 49) ne sont **pas** touchés.
+- **Modules** : sept, découpage proposé 48-12a (serveur, quatre) / 48-12b (écran, cinq) ; voir « Modules et découpage ».
+- **Ce qui doit rester vrai** : aucune saisie n'est jamais vidée par un refus ; aucune migration ; une facture client, un avoir et leur PDF inchangés ; **les données existantes ne bougent pas** (aucun backfill, aucun refus rétroactif) ; le refus absolu n'a pas de sortie ; le signalement probable propose, la confirmation est tracée à l'audit.
 - **Coordination** : la PR #1327 de Beat ne touche aucun de ces fichiers.
-- **Références** : fiches 34-5, 34-6, 34-8 ; `company-conflict.ts` (patron écarté pour D4) ; `unknown-outcome.ts` (réutilisé, non modifié) ; `supplier-invoice-unknown-outcome.spec.ts`.
-- **Statut** : `drafted` jusqu'à la fin de la validation ; `48-12-reponses-perdues-fournisseurs: ready-for-dev` se pose ensuite (orchestrateur, `sprint-status.yaml`).
+- **Références** : fiche 34-8 ; `accounts::archive` et `confirm_designated` (#486) ; `supplier-invoice-unknown-outcome.spec.ts` ; `accounts.rs:1249`, `:1290`.
+- **Statut** : `drafted` ; `48-12-reponses-perdues-fournisseurs: ready-for-dev` se pose à la clôture de la validation (orchestrateur, `sprint-status.yaml`).
 
 ## Dev Agent Record
 
@@ -381,3 +399,4 @@ Factures fournisseur : après une réponse perdue (coupure, délai), Kesh relit 
   **Table des renvois (P5)** : AC-1 : D2, D1-bis ; M : `trim`, total sans numéro, filtre `contactId`, plafond de pages. AC-2, AC-3 : D1, D2. AC-4 : D2 ; M : relire au clic « quand même ». AC-5 : D3 ; M : complété sans `supplierInvoiceId`, « déjà traité » sur relecture en échec. AC-6 : D4, D1-bis ; M : retirer un champ du comparateur (quatorze), `zip` sans contrôle de longueur, normaliseur décimal, normalisation de la référence, reprise silencieuse d'un champ, version adoptée sans clic ou sur relecture en échec, fusion d'en-tête automatique. AC-7 : D6 ; M : retirer la garde. AC-8 : tous (revue). AC-9 : D2, D3, D4 (clés neuves). AC-10 : manuel français (D2, D3, D4). Lot B : aucun AC actif.
 - 2026-11-19 — Cinq modules, **dérogation devenue sans objet après la réduction et le retrait de la retouche de `shared/utils`** (décision de l'orchestrateur). Le **décompte de six** annoncé de la P1 à la P5 était faux à ses dates : la première rédaction omettait `features/imported-supplier-invoices` (`listImported` reçoit un `CallOptions`) et comptait `shared/utils` ; sans le lot B, au grain de l'épique, le décompte était six (avec `shared/utils`), et il tombe à **cinq** en retirant la retouche du doc-comment de `unknown-outcome.ts` (devenu une limite notée en D7, issue P4 à ouvrir par l'orchestrateur). La section « Dérogation règle de splitting » et ses mentions sont retirées ; les entrées P3 à P5 ci-dessus, qui la décrivent, ne se corrigent pas (historique à leur date). Lot B reporté : décompte de huit avec lui. Relecture entière de la fiche après la recomposition par script : restes corrigés (point 6 du « Ce qui se lit au code », D7, tâche A4, Dev Notes, note de limite du lot B).
   **Table des renvois** : AC-1 : D2, D1-bis. AC-2, AC-3 : D1, D2. AC-4 : D2. AC-5 : D3. AC-6 : D4, D1-bis. AC-7 : D6. AC-8 : tous. AC-9 : D2, D3, D4. AC-10 : manuel français. Modules : cinq, aucune dérogation. Mutations : voir le tableau des tests (inchangé).
+- 2026-11-19 — **Refonte de la conception, décisions de Guy du 2026-11-19** : la story **change de conception** et **la boucle de validation repart** sur cette conception (déclaré au Project Lead par l'orchestrateur ; troisième signal « recycle » : le HIGH de la P6, V6-1, naît de la règle de conflit de #986). **Périmètre** : #975 et #985 ; **#986 part en 0.21.0** avec le lot comptes bancaires, sa conception (D1-bis, D4, D5, findings P6) conservée sous « Reportés ». **Nouvelle règle, dans le serveur** (sous verrou, sans migration, création **et** modification, tout chemin) : numéro de fournisseur identique (non vide, blancs retirés, casse ignorée) = refus absolu `409 SUPPLIER_INVOICE_DUPLICATE` ; même fournisseur, même date et même total TTC = refus par défaut `409 SUPPLIER_INVOICE_PROBABLE_DUPLICATE`, levé par `confirmNotDuplicate` et tracé à l'audit ; si les deux factures portent un numéro, seul le numéro décide ; annulées exclues ; numéro facultatif ; données existantes intactes. Décisions de conception de la fiche (Sonnet) : verrou `FOR UPDATE` sur la ligne du fournisseur ; comparaison en Rust sur les factures du fournisseur ; règle rejouée à la modification seulement si fournisseur, numéro, date ou total changent ; `DuplicatePolicy` sur le patron `confirm_designated` ; audit `supplier_invoice.duplicate_confirmed` ; changement de contrat de l'API à la Note de version, à `docs/api-external.md` et au manuel d'administration. **Retirés** : D2 (relecture des brouillons, verdicts, requête de relecture, plafond de pages) et D4 (conflit côte à côte) comme conceptions actives ; D3 (#985) et la garde de double envoi (D10) restent. **Modules** : sept au grain de l'épique (`kesh-db`, `kesh-api`, `kesh-i18n`, `features/supplier-invoices`, route `supplier-invoices`, `features/imported-supplier-invoices`, documentation), **aucune dérogation** ; découpage proposé 48-12a (serveur, quatre) / 48-12b (écran, cinq). **Conséquence signalée** : un fournisseur dont la numérotation repart à un voit ses nouvelles factures refusées tant que les anciennes ne sont pas annulées.
