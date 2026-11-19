@@ -9,11 +9,15 @@ Release **0.20.0** (coupure jeudi 2026-11-26 au soir). **Aucune migration** (cel
 `InvoiceForm.svelte` : la 48-13 d'abord, arbitrage de Guy du 2026-11-18). Sources : `epic-49-types-de-lignes-facture.md`
 (§ 49-1, tableau des fichiers), `release-0.20.0.md`, `kesh-gate-logs/e491/decoupage-49-1.md`, les fiches closes
 `49-1a-types-de-lignes-migration-api.md` et `49-1b-types-de-lignes-pdf.md` (décisions, dettes renvoyées ici), les issues
-#1242, #1400, #1401. Les choix de cette fiche sont D1 à D12.*
+#1242, #1400, #1401 ; les **décisions de Guy du 2026-11-19** sur les trois questions de la fiche (portées par l'orchestrateur
+au fichier d'épique, `c91a5bac4`, et au `sprint-status.yaml`, fusion `2cce7b905`). Les choix de cette fiche sont D1 à D12.
+Validation P1 (Sonnet) remédiée, voir le Change Log.*
 
 **Issues** : `refs #1242`, `refs #1400`, `refs #1401` ; **aucun mot-clé de fermeture** dans un commit. #1242 ne se ferme
 pas avec cette story (réordonnancement 49-2, titres 49-3, sous-totaux #1330). #1364 (capacité du PDF contrôlée avant la
-validation) va à la **49-4**, pas ici.
+validation) et #1400 vont à la **49-4**, pas ici ; #1411 (nom et adresse du contact en NFD) est au milestone
+« Plus tard ». **Règle de sortie** (décision de Guy du 2026-11-19, `epic-49-types-de-lignes-facture.md:154`) : **la 49-1c
+ne sort pas sans la 49-4**, ni sans la 49-1b.
 
 ## Story
 
@@ -240,7 +244,7 @@ autre écran ne lit une facture client : `git grep -n "getInvoice(" -- frontend/
 `InvoiceForm`) et `InvoiceForm.svelte:771` lui-même.
 
 **S4 — « un caractère du commentaire disparaît du PDF sans avertissement »** (#1400, #1401) : traité en D9 et D10 ;
-le chemin du commentaire est `pdf.rs:1148` (`texte_de_commentaire`), celui de la ligne chiffrée `pdf.rs:637`
+le chemin du commentaire est `pdf.rs:1148` (`texte_de_commentaire`), celui de la ligne chiffrée `pdf.rs:668`
 (`truncate_display`, 49-1b D8). Les autres champs du PDF qui pourraient perdre un accent saisi en NFD :
 
 ```
@@ -254,7 +258,8 @@ crates/kesh-api/src/routes/products.rs:195:    let description = normalize_optio
 Les libellés des lignes (`:507`) et les conditions de paiement (`:501`) sont normalisés ; **le nom et l'adresse du
 contact ne le sont pas** (`git grep -n -i "nfc" -- crates/kesh-api/src/routes/contacts.rs` est vide), alors qu'ils
 s'impriment au corps de la facture et à la section de paiement. Hors du champ de #1401 tel que son corps le borne (« les
-libellés des lignes chiffrées et … les commentaires ») : **issue à ouvrir** (§ *Dev Notes*).
+libellés des lignes chiffrées et … les commentaires ») : porté par **#1411** (ouverte par l'orchestrateur, milestone
+« Plus tard »).
 
 ## Décisions
 
@@ -283,7 +288,7 @@ libellés des lignes chiffrées et … les commentaires ») : **issue à ouvrir*
   `l.line_type.is_priced()`), remplace la collecte aux **deux** sites (`:771`, `:864`) — DRY, et un seul endroit à muter
   pour la preuve du rouge. `vat.rs` **ne change pas** (écart au tableau des fichiers de l'épique, qui le nomme : il ne
   connaît pas les lignes, et ses appelants d'articles n'ont pas de type). Une facture faite de commentaires seuls passe une
-  liste vide, déjà acceptée (`vat.rs:83-86`, `if unique.is_empty() { return Ok(()); }`). *Écartées* : (a) filtrer dans
+  liste vide, déjà acceptée (`vat.rs:85` `    if unique.is_empty() {`, `:86` `        return Ok(());`). *Écartées* : (a) filtrer dans
   `vat.rs` en lui passant les lignes (couple la liste blanche au modèle de facture) ; (b) tolérer le taux `0` dans
   `verify_vat_rates_against_db` (ouvrirait le 0 % désactivé à une ligne **chiffrée**, ce que la liste blanche interdit).
 - **D5 — L'écran relit et renvoie le type de chaque ligne, par un seul passage.** Un module neuf
@@ -291,20 +296,36 @@ libellés des lignes chiffrées et … les commentaires ») : **issue à ouvrir*
   formulaire : `ligneDepuisReponse(l: InvoiceLineResponse)` (utilisée par `initLines` **et** `reloadFromServer`, qui ne
   recopient plus les champs à la main — l'avertissement de `:783-788` devient sans objet, le mapper étant unique) et
   `ligneAEnvoyer(l)` (une ligne chiffrée : les champs d'aujourd'hui plus `lineType: 'priced'` ; une ligne non chiffrée :
-  **`{ lineType, description }` seulement**). Une ligne `heading` relue (créée par import ou par SQL, l'API la refusant)
+  **`{ lineType, description }` seulement**). **L'état du formulaire a son propre type** : `LigneFormulaire = { lineType:
+  InvoiceLineType; description: string; quantity: string; unitPrice: string; vatRate: string; revenueAccountId: number |
+  null; _uiKey: string; _vatPlaceholder?: boolean }` remplace `LineState` (`InvoiceForm.svelte:112`, aujourd'hui
+  `CreateInvoiceLineRequest & {…}`). Ses champs de montant **restent des `string`** (une ligne de commentaire y porte `''`,
+  jamais envoyé) : les `bind:value={line.quantity}` (`:979`), `{line.unitPrice}` (`:985`), `{line.vatRate}` (`:991`) et
+  `new Big(l.quantity)` (`:610`) gardent leur type, et **`npm run check` reste vert** sans garde ajoutée dans le gabarit.
+  Seul `ligneAEnvoyer` produit un `CreateInvoiceLineRequest`. Une ligne `heading` relue (créée par import ou par SQL, l'API la refusant)
   **garde son type** au renvoi : le serveur la refuse alors en le disant (« … heading n'est pas encore disponible »), au
   lieu qu'elle redevienne chiffrée ou commentaire en silence. Cette limite n'est pas écrite au manuel : un tel brouillon
   ne se crée ni par l'interface ni par l'API ; elle est dite en Dev Notes et la 49-3 la lève. *Écartées* : (a) recopier `lineType` dans les deux
   `map` existants (deux sites à tenir identiques, le défaut même que la 16-1a a payé) ; (b) une union discriminée
   TypeScript complète (`PricedLine | TextLine`) dans tout `InvoiceForm` — juste, mais réécrit les 1158 lignes du composant
   pour un gain que le mapper unique et ses tests donnent déjà.
-- **D6 — Les types miroirs.** `invoices.types.ts` gagne `export type InvoiceLineType = 'priced' | 'comment' | 'heading';`,
-  `lineType: InvoiceLineType` dans `InvoiceLineResponse` et dans `CreditNoteLineResponse` ; dans
-  `CreateInvoiceLineRequest`, `lineType: InvoiceLineType` (toujours envoyé par l'écran) et `quantity`, `unitPrice`,
-  `vatRate` **optionnels** (le contrat de la 49-1a, `invoices.rs:96-100`). `computeInvoiceTotal` et les dérivés de
-  `InvoiceForm` (`inactiveRates`, le repli `_vatPlaceholder`, `validateClient`, `invalidRevenueAccountLines`) **ne lisent que
-  les lignes chiffrées**, par un prédicat unique `estChiffree(l)` de `invoice-lines.ts`. Un commentaire n'exige qu'un
-  texte non blanc (« Ligne N : le texte du commentaire est obligatoire », clé i18n).
+- **D6 — Les types miroirs, et la règle d'une ligne sans type.** `invoices.types.ts` gagne
+  `export type InvoiceLineType = 'priced' | 'comment' | 'heading';` ; `InvoiceLineResponse` et `CreditNoteLineResponse`
+  gagnent `lineType?: InvoiceLineType` — **optionnel**, documenté « absent = `priced` » ; dans `CreateInvoiceLineRequest`,
+  `lineType: InvoiceLineType` (toujours envoyé par l'écran) et `quantity`, `unitPrice`, `vatRate` **optionnels** (le
+  contrat de la 49-1a, `invoices.rs:96-100`). **Règle par défaut** (V1-2) : `estChiffree(l) = l.lineType === undefined ||
+  l.lineType === 'priced'`, et `estLigneDeTexte(t) = t === 'comment' || t === 'heading'` ; `ligneDepuisReponse` pose
+  `lineType: l.lineType ?? 'priced'`. Une ligne sans type est donc **chiffrée** : c'est le seul cas des données d'avant la
+  0.20.0 (la migration de la 49-1a les pose toutes en `priced`) et celui des fixtures de test existantes, qui n'ont pas le
+  champ (`git grep -n "lineType" -- frontend/src` vide) — elles restent **inchangées et inertes**, et l'optionnel les garde
+  valides pour `npm run check`. L'API, elle, renvoie toujours le champ depuis la 49-1a. **Le filtre du total est dans
+  l'assistant** : `computeInvoiceTotal(lines: Pick<CreateInvoiceLineRequest, 'lineType' | 'quantity' | 'unitPrice'>[])`
+  (`lineType` facultatif dans ce `Pick`) n'additionne que les lignes `estChiffree` ; `InvoiceForm.svelte:529-533` lui
+  passe `lineType` en plus. Les dérivés de `InvoiceForm` (`inactiveRates`, le repli `_vatPlaceholder`, `validateClient`,
+  `invalidRevenueAccountLines`) filtrent par le même `estChiffree`. Un commentaire n'exige qu'un texte non blanc (« Ligne
+  N : le texte du commentaire est obligatoire », clé i18n). *Écartée* : `lineType` obligatoire dans les types de réponse
+  (exact pour l'API, mais impose de retoucher toutes les fixtures existantes et rendrait AC8 (c) invérifiable telle
+  qu'écrite).
 - **D7 — À l'écran, un commentaire est du texte sur toute la largeur.** Dans le formulaire : un `<textarea>` (plusieurs
   lignes, `\n` gardés, comme le PDF les imprime, 49-1b D5) qui couvre les colonnes description à total (`colspan` 5) ; la
   cellule de suppression reste. Sur la fiche facture et la fiche avoir : une cellule unique `colspan` 6 (toutes les
@@ -321,36 +342,43 @@ libellés des lignes chiffrées et … les commentaires ») : **issue à ouvrir*
   normalisée NFC à la saisie (`invoices.rs:507`) avant d'être écrite : un commentaire collé depuis macOS (`e` + U+0301)
   s'écrit `é` (U+00E9) et s'imprime avec son accent. La story le **prouve** par un test HTTP de bout en bout (T5 : saisie
   NFD → réponse NFC → PDF imprimé avec la lettre accentuée), qui protège désormais ce comportement. Le défaut décrit par
-  #1401, borné par son corps aux libellés des lignes et aux commentaires, **ne se reproduit donc pas par la saisie** ; il
-  ne se voyait qu'en écrivant au dépôt sans passer par l'API (ce que font les tests de la 49-1b). *Proposition à
-  l'orchestrateur* : fermer #1401 par la PR de la 0.20.0 sur la foi de T5 (mot-clé dans le **corps de la PR**, jamais dans
-  un commit), et ouvrir une issue distincte pour le nom et l'adresse du contact (S4). *Écartée* : normaliser aussi dans
+  #1401, borné par son corps aux libellés des lignes et aux commentaires, **ne se reproduit donc pas par la saisie**, au
+  `POST` comme au `PUT` (`create_invoice` `:770` et `update_invoice` `:863` passent tous deux par `validate_lines`) ; il ne
+  se voit qu'en écrivant au dépôt sans passer par l'API : les tests de la 49-1b, et les **écritures de reprise** (import
+  d'installation, `kesh-db/src/backup.rs:2526` `invoices::create`), qui recopient le texte tel qu'il est stocké sans
+  normaliser — sans effet sur des lignes nées d'une saisie par l'API, ce que T5 établit. Un test unitaire le protège déjà
+  (`invoices.rs:2035` `validate_line_normalizes_description_to_nfc`) ; T5 le prouve de bout en bout. **Décision de Guy du
+  2026-11-19** : #1401 se ferme par la PR de la 0.20.0 sur la foi de T5 (mot-clé dans le **corps de la PR**, jamais dans
+  un commit) ; le nom et l'adresse du contact sont portés par **#1411** (milestone « Plus tard »). *Écartée* : normaliser aussi dans
   `kesh-qrbill` (un second endroit pour la même règle, et un changement du chemin chiffré, interdit par les contraintes de
   production).
-- **D10 — #1400 (U+2212, U+2010/U+2011, grec, cyrillique) : hors du code de cette story, documenté au manuel ; à rattacher
-  à la 49-4.** Motifs : (a) un remède limité au commentaire (repli dans `texte_de_commentaire`) laisserait la ligne
+- **D10 — #1400 (caractères que la police n'a pas) : hors du code de cette story, documenté au manuel ; rattachée à la
+  49-4 par décision de Guy du 2026-11-19** (`epic-49-types-de-lignes-facture.md:130`). Motifs, qui ont fondé la décision : (a) un remède limité au commentaire (repli dans `texte_de_commentaire`) laisserait la ligne
   chiffrée dans le même défaut — **l'issue se résoudrait par morceaux sur deux releases**, ce que la règle de Guy du
   2026-11-19 interdit (« scinder avant ») ; (b) un remède sur la ligne chiffrée (repli au rendu) **change le rendu de
   factures existantes** dont le PDF n'est pas figé — exactement ce que la 49-4 fait déjà pour les désignations longues
   (#1363), avec sa propre preuve avant / après : c'est la story qui sait faire ce geste ; (c) un refus ou un repli **à la
   saisie** (dans `validate_line`) exigerait que l'API connaisse l'ensemble des caractères imprimables **par chemin**
   (le commentaire replie 125 lettres, la ligne chiffrée non) — une seconde source de vérité de ce que dessine `kesh-qrbill`.
-  Ce que la 49-1c fait : le manuel dit, pour le commentaire, ce qu'il garde et ce qu'il perd (T-manuel, AC10).
-  **Arbitrage demandé** (§ *Dev Notes*). *Écartée* : le repli U+2212 → « - » dans le seul chemin du commentaire (sans
+  Ce que la 49-1c fait : le manuel dit, pour le commentaire, ce qu'il garde et ce qu'il perd (AC10 a), **par la règle**
+  et non par une liste close ; la 49-4 reprendra la phrase quand elle traitera #1400. *Écartée* : le repli U+2212 → « - » dans le seul chemin du commentaire (sans
   risque pour les factures existantes, mais morcelle l'issue).
 - **D11 — Les documents suivent l'ouverture.** `docs/api-external.md:512` et `admin-manual.tex:2559` disent que
   `comment` est **accepté** depuis la 0.20.0 (contrat de D3, valeurs neutres, aucun compte, hors total et TVA) et que
   `heading` reste refusé. Le tableau des fichiers de l'épique ne range pas ces deux documents parmi ceux de la 49-1c :
   **écart déclaré**, inévitable (ils deviendraient faux à la fusion). Le paragraphe de l'administration est dans la
   section que complète la **49-1d** en parallèle : hunk à garder des deux côtés à la fusion (§ *Dev Notes*).
-- **D12 — Pas de borne de longueur propre au commentaire.** La 49-1b demandait à la 49-1c de « borner ou signaler la
-  longueur d'un commentaire » (49-1b, Dev Notes, D6) ; ce besoin est devenu **#1364** (capacité du PDF contrôlée avant la
-  validation), que Guy a rattachée à la **49-4** le 2026-11-19. La 49-1c garde la borne de 1000 caractères du serveur
-  (`MAX_DESCRIPTION_LEN`) et le **dit au manuel** : chaque ligne imprimée d'un commentaire prend la place d'une ligne de
-  facture, et une facture tient environ huit lignes (49-1b, `pdf.rs:629`). *Écartée* : un compteur côté écran (il
-  dupliquerait la mesure de largeur de `kesh-qrbill`, que seul le serveur sait faire — DRY). **Risque dit** (§ *Dev
-  Notes*) : si la 49-4 ne sort pas à la coupure, un commentaire long peut rendre impossible l'impression d'une facture
-  validée, comme neuf lignes chiffrées le font déjà en 0.19.0 (#1110).
+- **D12 — Pas de borne de longueur propre au commentaire ; la capacité est la 49-4, et la 49-1c ne sort pas sans elle.**
+  La 49-1b demandait à la 49-1c de « borner ou signaler la longueur d'un commentaire » (`49-1b-types-de-lignes-pdf.md:243`
+  et `:474`) ; ce besoin est **#1364** (capacité du PDF contrôlée avant la validation), que **Guy a rattachée à la 49-4 le
+  2026-11-19**, avec la règle de sortie **« la 49-1c ne sort pas sans la 49-4 »** (`epic-49-types-de-lignes-facture.md:154` ;
+  commentaire de l'orchestrateur sur #1364). La consigne de la 49-1b est donc **renvoyée à la 49-4 par décision de Guy** ;
+  la 49-1c n'écrit aucun contrôle de capacité. Elle garde la borne de 1000 caractères du serveur (`MAX_DESCRIPTION_LEN`)
+  et le **dit au manuel** : chaque ligne imprimée d'un commentaire prend la place d'une ligne de facture ; une facture en
+  tient **huit au plus, moins avec le récapitulatif de TVA** (`invoice_pdf_service.rs:81-87`). *Écartée* : un compteur côté
+  écran (il dupliquerait la mesure de largeur de `kesh-qrbill`, que seul le serveur sait faire — DRY). Le risque qu'un
+  commentaire long rende une facture validée impossible à imprimer (#1110) est levé par la règle de sortie, non par
+  cette story.
 
 ## Critères d'acceptation
 
@@ -384,7 +412,8 @@ libellés des lignes chiffrées et … les commentaires ») : **issue à ouvrir*
   colonnes de montant à sa hauteur (49-1b AC3) ; l'écriture de vente est celle de `[A, B]` ; l'avoir créé par
   `POST /api/v1/credit-notes` porte la ligne `comment` à la même position, et son PDF l'imprime.
 - **AC7 — #1401 : un accent saisi en forme décomposée s'imprime.** Un commentaire et un libellé de ligne chiffrée envoyés
-  en NFD (`"Café offert"`) sont relus en NFC (`"Café offert"`, U+00E9) et le PDF de la facture validée porte
+  en NFD (`"Cafe\u{0301} offert"`) sont relus en NFC (`"Café offert"`, U+00E9), **au `POST` et au `PUT`**, et le PDF de
+  la facture validée porte
   `Café offert` (relecture par `kesh_qrbill::empreinte::textes`).
 - **AC8 — Les factures et avoirs existants restent identiques (lignes, totaux, TVA, écritures, numéros, PDF).**
   (a) `git diff 5156f2b7b..HEAD -- crates/kesh-qrbill crates/kesh-core crates/kesh-report crates/kesh-db/migrations
@@ -394,23 +423,31 @@ libellés des lignes chiffrées et … les commentaires ») : **issue à ouvrir*
   seul `src/entities/line_type.rs` change ; (b) les preuves avant / après de la 49-1b
   (`kesh-qrbill/tests/rendu_avant_apres.rs`, `kesh-api/tests/pdf_avant_apres_e2e.rs`) et `invoice_frozen_pdf_e2e.rs` sont
   **vertes sans modification** (`git diff 5156f2b7b..HEAD` vide sur ces fichiers et sur les deux dossiers
-  `tests/fixtures/avant-0.20.0/`) ; (c) à l'écran, une facture et un avoir faits de lignes chiffrées s'affichent comme avant
-  (tests existants de `invoice-display-page.test.ts` et `credit-note-display-page.test.ts` verts **sans modification de
-  leurs assertions**) ; (d) un brouillon chiffré-seulement ouvert et réenregistré envoie les mêmes champs qu'avant, plus
-  `lineType: "priced"` sur chaque ligne (T8), que le serveur traite à l'identique (49-1a AC11).
+  `tests/fixtures/avant-0.20.0/`) ; (c) à l'écran, une facture et un avoir faits de lignes chiffrées s'affichent comme avant :
+  les cas existants de `invoice-display-page.test.ts`, `credit-note-display-page.test.ts`, `InvoiceForm.test.ts` et
+  `invoice-helpers.test.ts` sont verts **sans modification de leurs fixtures ni de leurs assertions** — leurs lignes, sans
+  `lineType`, sont chiffrées par la règle de D6 ; contrôle : `git diff --numstat 5156f2b7b..HEAD -- <ces quatre
+  fichiers>` montre des ajouts seulement (suppressions à 0, hors lignes d'`import` nommées au Dev Agent Record) ; (d) un
+  brouillon chiffré-seulement ouvert et réenregistré envoie les mêmes champs qu'avant, plus `lineType: "priced"` sur chaque
+  ligne (T8, comparaison `toEqual` à la charge attendue), que le serveur traite à l'identique (49-1a AC11).
 - **AC9 — Textes.** Toute chaîne **neuve** passe par `i18nMsg`, avec sa clé dans les **quatre** catalogues
   (`crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`), dans le bloc de l'Epic 49 ; `npm run
   lint-i18n-ownership` vert ; `sitesTotal` de `frontend/src/lib/shared/i18n-keys.test.ts` (3495 à `5156f2b7b`) **recompté
   depuis la source**, l'écart ventilé au Dev Agent Record. Les en-têtes et boutons existants en français codé en dur
   (« Ligne libre », « Depuis catalogue », en-têtes du tableau) **restent** tels quels (même arbitrage qu'AC6-bis de la
   16-1b, cité `InvoiceForm.svelte:960-964`).
-- **AC10 — Documents.** (a) `user-manual.tex` : l'item « Lignes de facture » (`:1456`) décrit les trois gestes (ligne
-  libre, depuis le catalogue, commentaire), dit qu'un commentaire est hors du total, de la TVA et de l'écriture, qu'il se
-  place par l'ordre des ajouts, qu'il s'imprime sur toute la largeur et sur plusieurs lignes, que chaque ligne imprimée
-  prend la place d'une ligne de facture (une facture en tient environ huit) ; le paragraphe de `:1594` dit que le
-  commentaire **replie** les 125 lettres sur leur base et garde ’ et —, et ce qu'il **perd** encore sans avertissement
-  (signe moins U+2212, traits d'union U+2010 / U+2011, grec, cyrillique, \#1400) ; `:1924` dit que l'avoir reprend aussi
-  les commentaires ; (b) `docs/api-external.md:512` et `admin-manual.tex:2559` : `comment` accepté (D11), `heading`
+- **AC10 — Documents.** (a) `user-manual.tex` : l'item « Lignes de facture » (`:1456`) **nomme pour la première fois**
+  les trois boutons — « Ligne libre », « Depuis catalogue », « Commentaire » ; aucun n'est nommé au manuel aujourd'hui —, et
+  dit, avec la mention « depuis la version~0.20.0 » pour le commentaire (convention du manuel) : qu'un commentaire est
+  hors du total, de la TVA et de l'écriture ; qu'il se place par l'ordre des ajouts ; qu'il s'imprime sur toute la largeur
+  et sur plusieurs lignes ; que chaque ligne imprimée prend la place d'une ligne de facture, et qu'une facture en tient
+  **huit au plus, moins avec le récapitulatif de TVA** ; qu'une facture faite de commentaires seuls s'enregistre en
+  brouillon mais ne se valide pas (total nul). Le paragraphe de `:1594` dit que le commentaire **replie** les 125 lettres
+  sur leur base et garde ’ et —, et **la règle** de ce qu'il perd : tout caractère hors du jeu Windows-1252, hors ces 125
+  lettres, disparaît du PDF sans avertissement (`pdf.rs:1146-1147`, doc-comment de `texte_de_commentaire`) — avec pour
+  **exemples** le signe moins U+2212, les traits d'union U+2010 / U+2011, le grec, le cyrillique, les flèches, ≤ / ≥, les
+  émojis — et le conseil d'écrire le moins en trait d'union ordinaire (« Remise −50 » s'imprimerait « Remise 50 »,
+  \#1400) ; `:1924` dit que l'avoir reprend aussi les commentaires ; (b) `docs/api-external.md:512` et `admin-manual.tex:2559` : `comment` accepté (D11), `heading`
   refusé ; (c) aucun PDF de manuel commité ; (d) `git grep -n -E "comment.*(réservées|pour l.instant)|refusés pour
   l.instant" -- docs` ne nomme plus `comment`.
 - **AC11 — E2E et recette visuelle.** Un spec Playwright joue le parcours (T10) ; les captures de chaque état touché
@@ -432,9 +469,9 @@ test suivant (`git diff` vide sur le fichier muté, copié au journal).
 | T2 | `routes/invoices.rs::tests` (tests unitaires de `validate_line`, réécriture de celui de `:1913`) | `comment` accepté avec valeurs neutres ; `comment` avec quantité, prix, taux ou compte non nuls refusé `400` nommant la ligne ; `heading` refusé « pas encore disponible » | mutation T1 (garde refermée) → **ROUGE** ; mutation : `validate_unpriced_line` saute le contrôle `revenue_account_id` → **ROUGE** (`rouge-T2.log`) |
 | T3 | `kesh-api/tests/invoice_line_types_e2e.rs::comment_is_accepted_at_post_and_put` (neuf) et `::heading_is_refused_without_writing` (réécriture de `unpriced_types_are_refused_without_writing`) | AC1 par le HTTP : 201/200, positions, valeurs neutres, totaux égaux à `[A, B]`, `GET` relit le type ; `heading` 400 sans écriture | mutation T1 → **ROUGE** sur le premier ; mutation `Self::Heading => true` → **ROUGE** sur le second (`rouge-T3.log`) |
 | T4 | `invoice_line_types_e2e.rs::comment_ignores_the_vat_rate_whitelist` (neuf) | AC2 : 0 % désactivé (`UPDATE vat_rates SET active = FALSE WHERE company_id = ? AND rate = 0`, assertion qu'**une** ligne a changé) ; `POST`/`PUT` à commentaire acceptés ; ligne chiffrée à 0 % refusée ; facture de commentaires seuls enregistrée | mutation : `taux_des_lignes_chiffrees` rend tous les taux (le filtre retiré) → **ROUGE** au `POST` **et** au `PUT` (deux assertions, un journal) (`rouge-T4.log`) |
-| T5 | `invoice_line_types_e2e.rs::nfd_comment_prints_with_its_accent` (neuf, #1401) | AC7 : réponse en NFC (U+00E9, `chars().count()` égal) ; facture validée (`POST …/validate`) ; `GET …/pdf` 200 ; `kesh_qrbill::empreinte::textes` contient `Café offert` pour le commentaire **et** pour le libellé chiffré | mutation : `.nfc()` retiré de `invoices.rs:507` → **ROUGE** (`rouge-T5.log`) ; la mutation touche du code de production **le temps du journal seulement** |
+| T5 | `invoice_line_types_e2e.rs::nfd_comment_prints_with_its_accent` (neuf, #1401) | AC7 : réponse en NFC (U+00E9, `chars().count()` égal) **au `POST`, puis au `PUT`** (brouillon réenregistré avec un second texte en NFD, relu en NFC) ; facture validée (`POST …/validate`) ; `GET …/pdf` 200 ; `kesh_qrbill::empreinte::textes` contient `Café offert` pour le commentaire **et** pour le libellé chiffré | mutation : `.nfc()` retiré de `invoices.rs:507` → **ROUGE** (`rouge-T5.log`) ; la mutation touche du code de production **le temps du journal seulement** |
 | T6 | `invoice_line_types_e2e.rs::comment_typed_at_the_api_reaches_the_pdf_and_the_credit_note` (neuf) | AC6 : PDF de la facture (commentaire à `x = 20`, rien aux colonnes 110 / 130 / 160 / 180 à sa hauteur), écriture égale à celle de `[A, B]` (comptes, montants), avoir par `POST /api/v1/credit-notes` : ligne 2 `comment`, PDF de l'avoir qui l'imprime | mutation : T1 (garde refermée) → **ROUGE** au premier `POST` ; mutation : `ligne_pdf` met `LinePdfKind::Priced` pour `Comment` → **ROUGE** sur le PDF (`rouge-T6.log`) |
-| T7 | `frontend/src/lib/features/invoices/invoice-lines.test.ts` (neuf) | D5, D6 : `ligneDepuisReponse` garde `lineType` (trois types) ; `ligneAEnvoyer` : chiffrée = champs d'aujourd'hui + `lineType: 'priced'`, commentaire = `{lineType, description}` **exactement** (`toEqual`), `heading` gardé ; `estChiffree`, `estLigneDeTexte` ; `computeInvoiceTotal` ignore les lignes non chiffrées | mutations : `ligneDepuisReponse` omet `lineType` → **ROUGE** ; `ligneAEnvoyer` d'un commentaire garde `quantity` → **ROUGE** ; le total compte les commentaires (prédicat retiré) → **ROUGE** (`rouge-T7.log`) |
+| T7 | `frontend/src/lib/features/invoices/invoice-lines.test.ts` (neuf) | D5, D6 : `ligneDepuisReponse` garde `lineType` (trois types) et pose `priced` pour une ligne **sans** `lineType` ; `estChiffree` vrai pour `undefined` et `priced`, faux pour `comment` et `heading` ; `ligneAEnvoyer` : chiffrée = champs d'aujourd'hui + `lineType: 'priced'`, commentaire = `{lineType, description}` **exactement** (`toEqual`), `heading` gardé ; `estLigneDeTexte` ; `computeInvoiceTotal` (cas neufs dans `invoice-helpers.test.ts`) ignore une ligne `comment` qui porterait des montants et compte une ligne sans `lineType` | mutations : `ligneDepuisReponse` omet `lineType` → **ROUGE** ; `ligneAEnvoyer` d'un commentaire garde `quantity` → **ROUGE** ; le filtre `estChiffree` retiré de `computeInvoiceTotal` → **ROUGE** ; `estChiffree` réduit à `l.lineType === 'priced'` → **ROUGE** (cas `undefined`) (`rouge-T7.log`) |
 | T8 | `frontend/src/lib/components/invoices/InvoiceForm.test.ts` (nouveau `describe` « Story 49-1c ») | AC3, AC4, AC8 d : bouton « Commentaire » → `textarea`, pas de `invoice-line-vat-rate` ni de compte pour cette ligne, total inchangé ; commentaire vide → message nommant la ligne ; brouillon `[chiffrée, commentaire]` ouvert puis enregistré → charge de l'AC4 ; **même chose après « Recharger »** sur conflit (`OPTIMISTIC_LOCK_CONFLICT`) ; brouillon chiffré-seulement → mêmes champs qu'avant + `lineType: 'priced'` ; brouillon à taux désactivé + commentaire : le message ne nomme que la ligne chiffrée | mutations : `initLines` n'appelle plus `ligneDepuisReponse` (recopie sans `lineType`) → **ROUGE** ; idem pour `reloadFromServer` → **ROUGE** sur le seul cas du conflit ; `validateClient` contrôle la quantité d'un commentaire → **ROUGE** (`rouge-T8.log`) |
 | T9 | `invoice-display-page.test.ts` et `credit-note-display-page.test.ts` (cas neufs) | AC5 : la rangée du commentaire a **une** cellule (`colspan` 6), le texte avec son saut de ligne, ni « (défaut société) », ni montant ; une rangée `heading` idem ; la rangée chiffrée inchangée | mutation : le commentaire passe par la rangée chiffrée (prédicat `estLigneDeTexte` rendu `false`) → **ROUGE** sur les deux fichiers (`rouge-T9.log`) |
 | T10 | `frontend/tests/e2e/invoice-comment-lines.spec.ts` (neuf) | AC3 à AC6 dans le navigateur : nouvelle facture, ligne libre, « Commentaire » (deux lignes de texte), ligne du catalogue ; enregistrer ; rouvrir (édition) : le commentaire est là, à sa place ; enregistrer de nouveau ; valider ; la fiche montre le commentaire pleine largeur ; `GET …/pdf` 200 ; créer l'avoir ; la fiche de l'avoir montre le commentaire | mutation : T1 (garde refermée), backend reconstruit → **ROUGE** à l'enregistrement (400 affiché) (`rouge-T10.log`, un seul spec lancé : `npx playwright test invoice-comment-lines`) |
@@ -455,6 +492,9 @@ test suivant (`git diff` vide sur le fichier muté, copié au journal).
   `invoice-helpers.ts` (total) ; `InvoiceForm.svelte` (bouton, rangée de commentaire, deux relectures par le mapper,
   envoi par `ligneAEnvoyer`, `validateClient`, `inactiveRates`, `_vatPlaceholder`, total) et T8 ; fiche facture et fiche
   avoir (D7) et T9. `ProductPicker.svelte` **ne change pas** (écart au tableau de l'épique : la ligne produit est inchangée).
+- [ ] **Fixtures et types** (V1-2) : aucune fixture existante ne se modifie (règle de D6) ; `npm run check` après le
+  changement des types, sortie copiée (`kesh-gate-logs/e491c/check-types.log`) ; si un fichier ne compile plus, corriger le
+  **type**, non la fixture, et le dire au Dev Agent Record.
 - [ ] **i18n** : clés neuves ×4 (bouton, aide du champ, `aria-label` « Commentaire — ligne N », message du commentaire vide,
   et toute autre chaîne neuve), dans le bloc de l'Epic 49 ; `sitesTotal` recompté ; `npm run lint-i18n-ownership`.
 - [ ] **E2E** : T10 ; captures (AC11) prises sur `kesh_e2e_e491c` avec le seed de démonstration, puis le PDF de la facture
@@ -501,20 +541,13 @@ test suivant (`git diff` vide sur le fichier muté, copié au journal).
 
 - **Hors périmètre, avec la story qui le prend** : réordonnancement (↑ / ↓) → **49-2** ; titre de section, ouverture de
   `heading`, son écran → **49-3** ; désignation longue (#1363) et capacité du PDF avant la validation (#1364) → **49-4** ;
-  recette de montée et « Passer à la 0.20.0 » → **49-1d** ; sous-totaux → **#1330** ; #1400 → **à arbitrer** (D10 : la
-  fiche propose la 49-4).
-- **Arbitrages demandés à Guy (par l'orchestrateur)** :
-  1. **#1400** (D10) : la rattacher à la 49-4 (même code de rendu des lignes, même preuve avant / après), à une release
-     ultérieure, ou la scinder (le commentaire seul en 49-1c, la ligne chiffrée ailleurs) ? La fiche ne la traite pas en
-     code et la documente au manuel.
-  2. **#1401** (D9) : la fermer par la PR de la 0.20.0 sur la foi de T5, et ouvrir une issue pour le nom et l'adresse du
-     contact ?
-  3. **Couplage 49-1c / 49-4** (D12) : la 49-1c peut sortir sans la 49-4 (un commentaire long a le même effet que neuf
-     lignes chiffrées aujourd'hui, #1110, #1364) ; si Guy veut que la saisie d'un commentaire ne sorte pas sans le contrôle
-     de capacité, la règle de sortie s'écrit au fichier d'épique.
-- **Issue à ouvrir (demandée à l'orchestrateur, une par problème)** : *« PDF de facture : le nom et l'adresse du client
-  saisis en forme décomposée (NFD) perdent leurs accents »* — `routes/contacts.rs` ne normalise pas en NFC (S4) ; P4 ;
-  à vérifier d'abord par une saisie réelle (la fiche n'a pas reproduit).
+  recette de montée et « Passer à la 0.20.0 » → **49-1d** ; sous-totaux → **#1330** ; #1400 → **49-4** (décision de
+  Guy, D10) ; nom et adresse du contact en NFD → **#1411** (« Plus tard »).
+- **Questions de la fiche, tranchées par Guy le 2026-11-19** (portées au fichier d'épique, `c91a5bac4`) :
+  1. **#1400** → la **49-4** (D10) ;
+  2. **#1401** → fermée par la PR de la 0.20.0 sur la foi de T5 (D9) ; issue distincte pour le contact : **#1411** ;
+  3. **règle de sortie : la 49-1c ne sort pas sans la 49-4** (D12) ; à la coupure, si la 49-4 n'est pas close, la 49-1c
+     sort avec elle.
 - **Écarts au fichier d'épique, déclarés** : (a) `kesh-db/src/entities/line_type.rs` change (la garde y vit), absent du
   tableau ; (b) `routes/vat.rs` **ne change pas** (D4) ; (c) `ProductPicker.svelte` ne change pas ; (d)
   `docs/api-external.md` et le manuel d'administration changent (D11).
@@ -522,8 +555,7 @@ test suivant (`git diff` vide sur le fichier muté, copié au journal).
   (`decoupage-49-1.md` § 1), **cinq modules** — `kesh-db` (un fichier), `kesh-api`, frontend (`components/invoices`,
   `features/invoices`, `features/credit-notes`, routes `invoices` et `credit-notes`, comptés une fois comme au découpage),
   `kesh-i18n`, manuels et `docs/`. **Au plafond, sans le dépasser** ; le découpage en comptait quatre pour la 49-1c, faute
-  d'y voir `kesh-db`. Si l'on compte `features/invoices` et `features/credit-notes` à part, six : **à dire au Project
-  Lead**. Aucun recyclage de défauts constatable avant la validation. Pas de section « Dérogation ».
+  d'y voir `kesh-db`. La règle se compte à la crate : **cinq**, au plafond, à dire au Project Lead. Aucun recyclage de défauts constatable avant la validation. Pas de section « Dérogation ».
 - **Fichiers communs avec les autres stories de la release** :
   - `InvoiceForm.svelte` : la 48-13 est déjà dans la branche (`5156f2b7b`) ; **la 49-2 et la 49-3 partent de la 49-1c**.
     Le mapper `invoice-lines.ts` est le point d'appui de la 49-2 (ordre) et de la 49-3 (`heading`).
@@ -533,7 +565,10 @@ test suivant (`git diff` vide sur le fichier muté, copié au journal).
   - Catalogues i18n ×4, `sitesTotal` : toutes les stories (48-14 en parallèle) ; blocs par épique, compteur recompté après
     fusion.
   - `docs/api-external.md` : la 49-3 y écrira l'ouverture de `heading`.
-  - PR #1327 de Beat : **aucun fichier commun** (elle touche `kesh-qrbill` `largeurs.rs`, `lib.rs`, `kesh-report`).
+  - PR #1327 de Beat : outre `kesh-qrbill` et `kesh-report`, elle touche les **quatre catalogues i18n** et
+    **`docs/manual/fr/user-manual.tex`** (`gh pr view 1327 --json files` ; hunks vers `:4082`, `:4181`, et fr-CH `:2165`),
+    distincts de ceux de la 49-1c (`:1456`, `:1594`, `:1924`) : pas de conflit de texte attendu ; le second arrivé garde
+    les deux.
 - **Ce qui doit rester vrai** : (1) aucune facture ni aucun avoir existants ne change (AC8) ; (2) `heading` reste refusé
   par l'API ; (3) le chemin de rendu du PDF n'est pas touché (`kesh-qrbill` et les services PDF hors du diff) ; (4) un
   brouillon relu et réenregistré ne change jamais le type d'une ligne.
@@ -563,3 +598,4 @@ test suivant (`git diff` vide sur le fichier muté, copié au journal).
 | Date | Entrée |
 |---|---|
 | 2026-11-19 | **Création** de la fiche (Opus 5.5, `bmad-create-story`), code lu à `5156f2b7b` (49-1a, 49-1b et 48-13 dans la branche). Périmètre : ouverture de `comment` (garde), `verify_vat_rates_against_db` limité aux lignes chiffrées, écran de saisie et relecture typée du brouillon, affichage dans la facture et l'avoir, i18n ×4, E2E, manuel utilisateur, plus `docs/api-external.md` et le paragraphe « Pour les intégrations » du manuel d'administration (écart déclaré, D11). #1401 dans le périmètre par la preuve (D9) ; #1400 hors du code, documentée, arbitrage proposé (D10) ; #1364 à la 49-4 (D12). Cinq modules au grain de la crate. Validation P1 à lancer : `49-1c-types-de-lignes-ecran-validation-prompt-p1.md`. |
+| 2026-11-19 | **Validation P1** (Sonnet 5.5, passe complète, contexte frais ; `kesh-gate-logs/e491c/validation-49-1c-p1.md`) : **0/0/2/6**. **Décisions de Guy du 2026-11-19** sur les trois questions de la fiche (orchestrateur : `c91a5bac4`, fusion `2cce7b905`) : #1400 → 49-4 ; #1401 fermée par la PR de la 0.20.0 sur la foi de T5, contact → #1411 ; la 49-1c ne sort pas sans la 49-4. **Remédiation** (Opus 5.5) : **V1-1** (MEDIUM) levée sur le fond par ces décisions — en-tête, D9, D10, D12 (consigne de la 49-1b `:243`, `:474` renvoyée à la 49-4 par décision de Guy), Dev Notes (questions marquées tranchées, règle de sortie, issue du contact = #1411) ; **V1-2** (MEDIUM) — D6 fixe la règle d'une ligne sans type (`estChiffree` vrai pour `undefined`, `lineType` optionnel dans les types de réponse, fixtures existantes inchangées), D5 donne au formulaire son type d'état aux montants `string` (`npm run check` vert sans garde), le filtre du total est dans `computeInvoiceTotal` ; T7 gagne le cas `undefined` et deux mutations ; AC8 (c) contrôlé par `git diff --numstat` sur quatre fichiers de test ; tâche « Fixtures et types » ; **V1-3** T5 et AC7 jouent aussi le `PUT`, D9 nomme les écritures de reprise (`backup.rs:2526`) et le test unitaire existant (`invoices.rs:2035`) ; **V1-4** AC10 (a) dit la règle de ce qu'un commentaire perd, les quatre caractères deviennent des exemples, conseil du trait d'union ; **V1-5** AC10 (a) : « huit au plus, moins avec le récapitulatif de TVA » (`invoice_pdf_service.rs:81-87`, remplace la citation inexacte `pdf.rs:629`), facture de commentaires seuls non validable, boutons nommés pour la première fois, « depuis la version~0.20.0 » ; **V1-6** PR #1327 : catalogues et `user-manual.tex` communs, hunks distincts ; **V1-7** compte des modules à la crate seulement (cinq), phrase du « six » retirée ; **V1-8** `pdf.rs:668`, `vat.rs:85-86`. Propagation grepée dans la fiche : `pdf.rs:637`, `83-86`, `pdf.rs:629`, `environ huit`, « six » (restent les seuls « six cellules », vrais), « issue à ouvrir », « arbitr ». Aucun reclassement. Passe suivante : P2 complète sur Opus, `49-1c-types-de-lignes-ecran-validation-prompt-p2.md`. |
