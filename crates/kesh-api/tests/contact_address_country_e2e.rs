@@ -394,3 +394,44 @@ async fn ch_alone_or_no_country_means_no_address_1342(pool: MySqlPool) {
     assert_eq!(st, 201, "{body}");
     assert_eq!(body["addressStructured"]["country"], "FR");
 }
+
+/// Revue P1 (E1) — le geste que le manuel prescrit pour retirer l'adresse d'un contact
+/// étranger : vider aussi le pays. Un contact porteur d'une adresse en « FR », renvoyé avec
+/// le seul pays « CH » (le repli de l'écran pour un pays vidé) ou sans pays, ressort **sans**
+/// adresse : `address_country` relu `NULL`. Filet : ne rougit sous aucune mutation de la story.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn a_foreign_address_is_removed_by_clearing_the_country_1342(pool: MySqlPool) {
+    let (app, token, _) = setup(&pool).await;
+    for (i, pays) in [Some("CH"), None].into_iter().enumerate() {
+        let nom = format!("Retrait FR {i}");
+        let (st, created) = send(
+            &app,
+            &token,
+            "POST",
+            "/api/v1/contacts",
+            json!({ "contactType": "Entreprise", "name": nom, "isClient": true,
+                    "addressStructured": address("FR") }),
+        )
+        .await;
+        assert_eq!(st, 201, "{created}");
+        let id = created["id"].as_i64().unwrap();
+        assert_eq!(stored_country(&pool, id).await.as_deref(), Some("FR"));
+        let (st, after) = send(
+            &app,
+            &token,
+            "PUT",
+            &format!("/api/v1/contacts/{id}"),
+            json!({ "contactType": "Entreprise", "name": nom, "isClient": true,
+                    "addressStructured": pays_seul(pays), "version": created["version"] }),
+        )
+        .await;
+        assert_eq!(st, 200, "{pays:?} : {after}");
+        assert_eq!(stored_country(&pool, id).await, None, "{pays:?}");
+        assert_eq!(
+            after["addressStructured"],
+            json!({ "street": "", "building": "", "postalCode": "", "city": "",
+                    "country": null }),
+            "{pays:?} : adresse retirée"
+        );
+    }
+}

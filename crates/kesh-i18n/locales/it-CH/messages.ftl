@@ -4079,7 +4079,7 @@ projects-reassign-confirm = Conferma
 projects-reassign-done = Conto analitico cambiato.
 
 ## #1348 (0.20.0) — rifiuti del server la cui chiave mancava al catalogo.
-error-onboarding-reset-forbidden = Il ripristino dell'onboarding non è consentito su questa istanza.
+error-onboarding-reset-forbidden = La reimpostazione dell'onboarding non è consentita su questa istanza.
 error-invoice-already-paid = La fattura è già pagata — non è possibile registrare alcun sollecito.
 error-dunning-level-not-found = Il livello di sollecito richiesto non esiste nella configurazione.
 error-reminder-date-in-future = La data di un sollecito non può essere nel futuro.

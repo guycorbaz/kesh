@@ -481,10 +481,26 @@ async fn put_refuses_invisible_names_1343(pool: MySqlPool) {
         body["version"] = json!(version);
         let (status, refus) = put(&app, &token, id, &body).await;
         assert_refus_nomme(status, &refus, prefixe);
+        let message = refus["error"]["message"].as_str().unwrap_or_default();
+        assert!(message.contains(GESTE_1343), "geste absent : {message}");
         let relu = get(&app, &token, id).await;
         assert_eq!(relu["firstName"], "Jean");
         assert_eq!(relu["version"], json!(version), "rien d'écrit");
     }
+
+    // Revue P1 (A2) — la raison sociale invisible d'une « Entreprise », en `PUT`. Rouge : M14.
+    let (status, societe) = post(&app, &token, &entreprise("Démo SA", json!({}))).await;
+    assert_eq!(status, 201, "{societe}");
+    let id = societe["id"].as_i64().expect("id");
+    let mut body = entreprise("\u{AD}", json!({}));
+    body["version"] = societe["version"].clone();
+    let (status, refus) = put(&app, &token, id, &body).await;
+    assert_refus_nomme(status, &refus, "Raison sociale : aucun caractère visible");
+    let message = refus["error"]["message"].as_str().unwrap_or_default();
+    assert!(message.contains(GESTE_1343), "geste absent : {message}");
+    let relu = get(&app, &token, id).await;
+    assert_eq!(relu["name"], "Démo SA");
+    assert_eq!(relu["version"], societe["version"], "rien d'écrit");
 }
 
 /// AC11 (filets) — un prénom vide garde le message d'aujourd'hui ; un prénom qui

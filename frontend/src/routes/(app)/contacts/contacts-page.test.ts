@@ -1437,6 +1437,26 @@ describe('v0200 — un bouton grisé dit pourquoi, un pays seul est refusé', ()
 		expect(motif()).toBe('');
 	});
 
+	// Revue P1 (B3) — un refus du serveur ne vaut que pour la saisie soumise : modifiée, il
+	// s'efface, et la ligne du bouton grisé dit seule ce qui bloque encore. Rouge : M22
+	// (`formErrorShown` ramené à `formError`).
+	it('B3 : le refus du serveur s’efface dès que la saisie change ; le motif du bouton prend le relais (M22)', async () => {
+		const refus =
+			"Prénom : aucun caractère visible (un trait d'union conditionnel seul, par exemple) — effacez le champ et saisissez-le de nouveau";
+		createContactMock.mockRejectedValueOnce({ code: 'VALIDATION_ERROR', status: 400, message: refus });
+		await ouvrirEn('Personne');
+		await saisir('form-firstname', '­', 20);
+		await saisir('form-lastname', 'Dupont', 20);
+		const form = champ('form-email').closest('form') as HTMLFormElement;
+		await fireEvent.submit(form);
+		await settle(30);
+		expect(zone('contact-form-error').textContent).toBe(refus);
+		// Le geste du message : effacer le champ. Le refus périmé disparaît.
+		await saisir('form-firstname', '', 20);
+		expect(document.querySelector('[data-testid="contact-form-error"]')).toBeNull();
+		grisePour('Prénom et nom obligatoires pour une personne');
+	});
+
 	it('AC8 : formulaire valide → ligne vide, bouton actif', async () => {
 		await ouvrirEn('Entreprise');
 		await saisir('form-name', 'Démo SA', 20);

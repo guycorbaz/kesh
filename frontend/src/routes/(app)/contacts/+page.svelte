@@ -166,6 +166,37 @@
 	let formSalutation = $state<Salutation>('Neutre');
 	let formSubmitting = $state(false);
 	let formError = $state('');
+	// #1349 (0.20.0, revue P1 B3) — un refus de soumission ne vaut que pour la saisie
+	// soumise : `formErrorSignature` la fige au départ de `submitForm`, et le refus ne
+	// s'affiche que tant que la saisie lui est égale. Dès qu'un champ change, il s'efface,
+	// et la ligne du bouton grisé (`blockedReason`) dit seule ce qui bloque encore.
+	let formErrorSignature = $state('');
+	const formSignature = $derived(
+		JSON.stringify([
+			formContactType,
+			formName,
+			formFirstName,
+			formLastName,
+			formIsClient,
+			formIsSupplier,
+			formEmail,
+			formPhone,
+			formStreet,
+			formBuilding,
+			formPostalCode,
+			formCity,
+			formCountry,
+			formIde,
+			formClientNumber,
+			formPaymentTerms,
+			formPaymentTermsDays,
+			formLanguage,
+			formSalutation
+		])
+	);
+	const formErrorShown = $derived(
+		formError && formSignature === formErrorSignature ? formError : ''
+	);
 
 	// --- Archive dialog state ---
 	let archiveOpen = $state(false);
@@ -522,6 +553,7 @@
 	let paymentTermsDaysSet = $derived(formPaymentTermsDays.trim() !== '');
 
 	async function submitForm() {
+		formErrorSignature = formSignature;
 		formError = formValidation;
 		if (formError) return;
 
@@ -1180,9 +1212,9 @@
 				<ContactPersonsManager contactId={editing.id} />
 			{/if}
 
-			{#if formError}
+			{#if formErrorShown}
 				<!-- Story 48-15 : `data-testid` pour l'E2E (garde KF-043 : jamais un libellé traduit). -->
-				<p class="text-sm text-destructive" data-testid="contact-form-error">{formError}</p>
+				<p class="text-sm text-destructive" data-testid="contact-form-error">{formErrorShown}</p>
 			{/if}
 
 			<!-- #1349 (0.20.0) : pourquoi le bouton est grisé. Toujours dans le DOM (annoncée par
