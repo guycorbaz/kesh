@@ -2084,7 +2084,33 @@ ouvre sa fiche~: la facture s'y relit, s'y corrige au besoin, puis s'y \textbf{v
 c'est la validation qui passe l'écriture d'achat (charge et TVA préalable au débit, dette
 fournisseur au crédit). Saisissez, puis validez~: voir \S\ref{sec:brouillon-fournisseur}. Pour
 créer la facture d'un document reçu dans le dossier d'import, voir
-\S\ref{sec:import-factures}~: la même saisie s'y fait à côté du document.
+\S\ref{sec:import-factures}~: la même saisie s'y fait à côté du document. Depuis la
+version~0.20.0, l'enregistrement refuse une facture déjà saisie (\S\ref{sec:doublons-fournisseur}).
+
+\paragraph{Les doublons.}\label{sec:doublons-fournisseur} Depuis la version~0.20.0, Kesh
+\textbf{refuse d'enregistrer deux fois la même facture fournisseur}. Il compare la facture aux
+factures du \textbf{même fournisseur} qui ne sont pas annulées~:
+\begin{itemize}
+    \item \textbf{même numéro du fournisseur dans la même année} --- l'année civile de la date de
+          facture~; les espaces et les majuscules ne comptent pas, «~FA 2026-1~» et
+          «~fa2026-1~» sont le même numéro~: l'enregistrement est \textbf{refusé}, sans
+          exception. Si c'est la même facture, ne l'enregistrez pas une seconde fois. Deux
+          factures «~15~» de deux années différentes sont acceptées --- un fournisseur qui
+          repart à un chaque année est respecté ---, et la limite d'un exercice comptable n'y
+          change rien. Si le fournisseur a recommencé sa numérotation \textbf{en cours d'année}
+          (cas rare), ajoutez un caractère au numéro, par exemple «~15-b~»~;
+    \item \textbf{même date et même montant}, quand l'une au moins des deux factures n'a pas de
+          numéro~: l'enregistrement est refusé \textbf{par défaut}, comme doublon probable~;
+          si ce n'est pas la même facture, une \textbf{confirmation explicite} l'enregistre, et
+          le journal d'audit la garde. Deux factures qui portent chacune un numéro
+          \textbf{différent} ne sont jamais un doublon, même de même date et de même montant.
+\end{itemize}
+Les factures \textbf{annulées} ne comptent pas~: une facture annulée par erreur se ressaisit. Le
+numéro du fournisseur reste facultatif, et les factures déjà enregistrées ne changent pas~: la
+règle vaut pour une nouvelle saisie, la création de la facture d'un document
+(\S\ref{sec:import-factures}), une modification qui change le fournisseur, le numéro, la date
+ou le montant (\S\ref{sec:brouillon-fournisseur}), et le repassage en brouillon d'une facture
+annulée (\S\ref{sec:repasser-brouillon}). Une intégration par clé d'API reçoit les mêmes refus.
 
 \paragraph{Les dates.} La date de la facture est proposée au jour même. À côté d'un document,
 elle est de plus \textbf{marquée «~à vérifier~»}~: un avis sous le champ demande de la vérifier sur
@@ -2173,7 +2199,7 @@ type d'origine), puis relancez la validation.
 
 \subsection{Le numéro interne}\label{sec:numero-interne-fournisseur}
 
-Depuis la version~0.17.5, Kesh attribue à chaque facture fournisseur \textbf{validée} un \textbf{numéro interne} unique dans la société, \texttt{FF-2026-001} au format par défaut, pour classer et retrouver les \textbf{factures papier}. Le numéro du fournisseur reste, facultatif~: il sert aux recherches, mais deux fournisseurs peuvent avoir la même numérotation, et certains n'en ont pas. La liste montre les deux, en deux colonnes~; la colonne \emph{N° interne} se trie, et le champ de recherche trouve le numéro interne, le numéro du fournisseur et le nom du fournisseur. Les nouvelles écritures portent les deux au libellé~: \emph{Facture fournisseur FF-2026-001 (ABC-123) - Dupont SA}, \emph{Règlement fournisseur FF-2026-001 (ABC-123) - Dupont SA}~; les écritures d'avant la mise à jour gardent le leur.
+Depuis la version~0.17.5, Kesh attribue à chaque facture fournisseur \textbf{validée} un \textbf{numéro interne} unique dans la société, \texttt{FF-2026-001} au format par défaut, pour classer et retrouver les \textbf{factures papier}. Le numéro du fournisseur reste, facultatif~: il sert aux recherches et, depuis la version~0.20.0, au refus des doublons (\S\ref{sec:doublons-fournisseur}), mais deux fournisseurs peuvent avoir la même numérotation, et certains n'en ont pas. La liste montre les deux, en deux colonnes~; la colonne \emph{N° interne} se trie, et le champ de recherche trouve le numéro interne, le numéro du fournisseur et le nom du fournisseur. Les nouvelles écritures portent les deux au libellé~: \emph{Facture fournisseur FF-2026-001 (ABC-123) - Dupont SA}, \emph{Règlement fournisseur FF-2026-001 (ABC-123) - Dupont SA}~; les écritures d'avant la mise à jour gardent le leur.
 
 \textbf{Quand il naît.} À la validation, jamais avant~: un brouillon jamais validé n'en a pas, et sa fiche dit «~Attribué à la validation~». Une facture repassée en brouillon \textbf{garde} le sien, et le reprend à sa revalidation. Les factures déjà saisies et validées l'ont reçu à la mise à jour vers la version~0.17.5, par ordre de date.
 
@@ -2207,7 +2233,14 @@ fiche ne propose ni \emph{Payer} ni \emph{Annuler la facture}~; elle propose~:
           saisie pré-rempli~; \emph{Enregistrer} remplace la facture --- fournisseur, numéro du fournisseur,
           dates, coordonnées, compte analytique, lignes ---, toujours sans rien passer au journal. Si la
           facture a été modifiée entre-temps dans une autre session, l'enregistrement est refusé
-          et vous invite à recharger la page. Un compte analytique \textbf{archivé} déjà imputé au brouillon
+          et vous invite à recharger la page. Depuis la version~0.20.0, une modification qui change
+          le \textbf{fournisseur}, le \textbf{numéro du fournisseur}, la \textbf{date} ou le
+          \textbf{montant total} rejoue le refus des doublons (\S\ref{sec:doublons-fournisseur}),
+          la facture elle-même mise à part~; une modification qui ne touche aucun des quatre passe,
+          même si la facture était déjà, avant cette version, le double d'une autre. Changer la
+          date d'un tel doublon, même dans la même année, est refusé sans sortie~: supprimez le
+          brouillon en trop (administrateur), annulez la facture en double, ou donnez à l'une un
+          autre numéro («~15-b~»). Un compte analytique \textbf{archivé} déjà imputé au brouillon
           reste affiché, marqué «~(archivé)~» --- même sous un compte analytique parent archivé lui
           aussi (depuis la version~0.17.4)~; la validation le refuse toujours (ci-dessous)~:
           choisissez-en un autre avant de valider.
@@ -2225,7 +2258,8 @@ fiche ne propose ni \emph{Payer} ni \emph{Annuler la facture}~; elle propose~:
           annulé ou confirmé puis son règlement annulé, et qu'il ait été annulé ou non avant
           d'être repassé en brouillon --- \textbf{ne se supprime pas}~: l'historique de
           l'ordre transmis à la banque se garde. Corrigez-le et validez-le~; s'il n'est pas dû,
-          validez-le puis annulez-le (\S\ref{sec:annuler-facture-fournisseur}).
+          validez-le puis annulez-le (\S\ref{sec:annuler-facture-fournisseur}). C'est aussi le
+          geste qui retire un doublon enregistré.
 \end{description}
 Le contrôle de clôture \emph{Factures fournisseur en brouillon} (\S\ref{sec:preparer-cloture})
 signale les brouillons datés dans l'exercice.
@@ -2259,7 +2293,17 @@ disparaître, \textbf{supprime l'écriture d'achat et sa contre-passation}~: la 
 écritures garde \textbf{deux trous}, que le journal d'audit explique --- il garde le contenu
 complet des deux écritures, la facture telle qu'elle était, et l'annulation d'origine. Le
 brouillon obtenu se corrige et se valide de nouveau, ou, par un administrateur, se supprime
-(\S\ref{sec:brouillon-fournisseur}). Annuler reste le geste par défaut pour une facture qui
+(\S\ref{sec:brouillon-fournisseur}). \textbf{Depuis la version~0.20.0}, si une facture
+\textbf{équivalente non annulée} existe --- même fournisseur et même numéro dans la même année,
+ou même date et même montant quand l'une des deux n'a pas de numéro
+(\S\ref{sec:doublons-fournisseur}) ---, le repassage est \textbf{refusé par défaut}~: la facture
+resterait en double de l'autre. Il passe par une \textbf{confirmation explicite}, que le journal
+d'audit garde. Ne le faites que pour \textbf{retirer} ou \textbf{corriger} ensuite le brouillon
+obtenu~: le retirer, c'est le supprimer --- par un administrateur, une intégration par clé d'API
+ne le peut pas ---, ou, s'il a figuré dans un lot de paiement, le valider puis l'annuler, ce qui
+le remet à zéro aux livres~; le corriger, c'est changer son numéro, sa date ou son montant, et
+la règle des doublons s'y rejoue. Le valider sans rien changer doublerait la dette~: la
+validation ne compare pas. Annuler reste le geste par défaut pour une facture qui
 n'était pas due~: l'achat et sa contre-passation restent aux livres, la correction se voit.
 Repasser une annulée en brouillon est un second geste, délibéré.
 
@@ -2304,6 +2348,11 @@ Le repassage en brouillon est refusé, et la fiche dit pourquoi et quoi faire d'
           d'un exercice clôturé (le refus nomme alors celui-ci)~: un administrateur doit rouvrir
           les exercices clôturés, en commençant par le plus récent
           (\S\ref{sec:reouverture-exercice})~;
+    \item (annulée, depuis la version~0.20.0) une facture \textbf{équivalente non annulée}
+          existe (\S\ref{sec:doublons-fournisseur})~: le refus nomme la facture active~; si
+          vous voulez bien la repasser en brouillon pour la retirer ou la corriger, confirmez-le
+          (le journal d'audit garde la confirmation). Ce refus vient après celui de l'exercice
+          clôturé et avant celui du verrou de période~;
     \item la date de l'achat ou de la contre-passation est sous le \textbf{verrou de période}~:
           le refus nomme la date du verrou (depuis la version~0.17.4)~; un administrateur fait
           reculer le verrou avant elle (\S\ref{sec:verrou-periode})~;
@@ -2455,7 +2504,9 @@ lui reste joint.
 \label{sec:annuler-facture-fournisseur}
 
 Une facture fournisseur saisie par erreur --- doublon, mauvais fournisseur, facture qui n'était
-pas due --- s'annule depuis sa fiche, \textbf{qu'elle soit validée ou déjà payée}~: bouton
+pas due --- s'annule depuis sa fiche (depuis la version~0.20.0, Kesh refuse la plupart des
+doublons dès la saisie, \S\ref{sec:doublons-fournisseur}~; un doublon enregistré avant, ou
+confirmé, s'annule toujours ainsi), \textbf{qu'elle soit validée ou déjà payée}~: bouton
 \emph{Annuler la facture} (comptable ou administrateur). Kesh passe une écriture inverse de
 l'achat, \textbf{datée du jour}, liée à l'écriture d'origine~: la charge et l'impôt préalable
 reviennent à zéro, et la facture passe à \emph{annulée}. Le journal d'audit nomme le geste.
@@ -2474,7 +2525,9 @@ contre-passation \textbf{restent au journal} et au grand livre, nettes à zéro 
 loi demande d'une correction (art.~958f CO). Annuler laisse donc l'achat et sa contre-passation
 aux livres~; depuis la version~0.17.2, une facture annulée \textbf{saisie par erreur} --- qui
 n'aurait jamais dû l'être --- \textbf{repasse en brouillon}, puis se corrige ou se supprime,
-sous les gardes dites (\S\ref{sec:repasser-brouillon}).
+sous les gardes dites (\S\ref{sec:repasser-brouillon})~; depuis la version~0.20.0, si une
+facture équivalente est active, le repassage demande une confirmation, gardée au journal
+d'audit.
 
 \textbf{Une liste paginée et filtrée.} Depuis la version~0.17.2, la liste montre
 \textbf{50 factures par page}, avec leur nombre et les boutons \emph{Précédent} et \emph{Suivant}~:
@@ -2509,7 +2562,11 @@ date la plus récente du lettrage et/ou rouvre les exercices clôturés, selon l
 a été \textbf{archivé} (réactivez-le), aucun exercice ouvert ne couvre la date du jour
 (créez-le), ou la facture figure dans un \textbf{lot de paiement en cours} (annulez d'abord le
 lot). Une facture annulée ne se \emph{désannule} pas~; si l'annulation était une erreur,
-repassez-la en brouillon (\S\ref{sec:repasser-brouillon}), puis validez-la de nouveau.
+repassez-la en brouillon (\S\ref{sec:repasser-brouillon}), puis validez-la de nouveau. Depuis
+la version~0.20.0, si une facture équivalente a été saisie entre-temps (le même numéro du
+fournisseur dans la même année, ou la même date et le même montant), le repassage demande une
+confirmation~: la valider de nouveau, sans rien changer, doublerait la dette~; retirez plutôt
+l'une des deux.
 
 \subsection{Paiements par fichier pain.001}
 \label{sec:paiements-fournisseurs}
@@ -2763,13 +2820,16 @@ aucun fichier n'est supprimé. C'est le geste qui corrige une pièce jointe par 
 détachez-la, puis joignez la bonne.
 
 \begin{keshwarning}
-\textbf{Un document détaché redevient un document à traiter, avec QR compris}~: rien
-n'empêche d'en \emph{créer une facture} une seconde fois, et la première facture n'est ni
-annulée ni signalée. Si c'est la facture elle-même qui est fausse~: un brouillon se
+\textbf{Un document détaché redevient un document à traiter, avec QR compris}~: on peut en
+\emph{créer une facture} de nouveau, et la première facture n'est ni annulée ni modifiée.
+Depuis la version~0.20.0, une facture identique à la première --- même fournisseur et même
+numéro dans la même année, ou même date et même montant sans numéro --- est refusée comme
+doublon (\S\ref{sec:doublons-fournisseur})~; une saisie modifiée, ou confirmée, passe. Si c'est la facture elle-même qui est fausse~: un brouillon se
 \textbf{supprime} (administrateur) --- son document redevient «~à traiter~» ---~; une facture
-validée --- ou annulée, saisie par erreur --- se repasse en brouillon puis se supprime, ou se
-corrige (\S\ref{sec:repasser-brouillon})~; une facture qui n'était pas due s'annule. Puis
-traitez le document.
+validée --- ou annulée, saisie par erreur, avec une confirmation si une facture équivalente est
+active --- se repasse en brouillon puis se supprime, ou se corrige
+(\S\ref{sec:repasser-brouillon})~; une facture qui n'était pas due s'annule. Puis traitez le
+document.
 \end{keshwarning}
 
 Le détail d'une \textbf{écriture} d'achat ou de règlement d'une facture fournisseur qui a un
@@ -4735,7 +4795,9 @@ Selon l'action :
     \item Facture fournisseur~: un brouillon se corrige, ou se supprime (administrateur)~; une
           facture validée dont la saisie est fausse se repasse en brouillon, se corrige et se
           revalide (\S\ref{sec:repasser-brouillon})~; une facture annulée par erreur se repasse
-          en brouillon, ses écritures d'achat et de contre-passation supprimées~; une facture qui n'était pas due s'annule depuis
+          en brouillon, ses écritures d'achat et de contre-passation supprimées --- avec une
+          confirmation, depuis la version~0.20.0, si une facture équivalente est active
+          (\S\ref{sec:doublons-fournisseur})~; une facture qui n'était pas due s'annule depuis
           sa fiche, validée ou payée (\S\ref{sec:annuler-facture-fournisseur})~; payée, son règlement reste au grand
           livre, détaché --- un paiement sans facture. La fiche de ce paiement n'offre ni «~Modifier~» ni «~Supprimer~»~: elle affiche le motif, et la contre-passation reste disponible.
     \item Rapprochement bancaire~: il s'annule depuis le détail de l'import bancaire, ou depuis
