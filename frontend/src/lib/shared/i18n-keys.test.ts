@@ -1150,7 +1150,11 @@ const ATTENDU = {
 	// fusions de l'Epic 43, d'epic/v0190-correction et d'epic/42 (« expected 3495 to be 3468 »,
 	// `kesh-gate-logs/rel0190/vitest-compteurs-1.log`), non additionné — il égale 3468 + 10
 	// (v0190-correction et v0190-nom-societe) + 17 (36-16a), les côtés gardés.
-	sitesTotal: 3495,
+	// Story 49-1c (#1242) : **3495 → 3499** (« expected 3499 to be 3495 »,
+	// `kesh-gate-logs/e491c/rouge-T12.log`) — quatre littéraux neufs, tous dans
+	// `InvoiceForm.svelte` (19 → 23 appels) : bouton « Commentaire », aide et `aria-label` du
+	// champ, message du commentaire vide. À recompter après la fusion avec la 48-14.
+	sitesTotal: 3499,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

@@ -4073,3 +4073,9 @@ projects-reassign-warning-locked = Buchungen gesperrt bis zum { $date }.
 projects-reassign-warning-reports = Die analytischen Berichte dieser Periode ändern sich.
 projects-reassign-confirm = Bestätigen
 projects-reassign-done = Analytisches Konto geändert.
+
+# Epic 49 — Story 49-1c (#1242) : la ligne de commentaire de la facture client
+invoice-line-add-comment = Kommentar
+invoice-line-comment-placeholder = Text über die ganze Breite der Rechnung, ohne Betrag
+invoice-line-comment-aria = Kommentar — Zeile { $n }
+invoice-line-comment-required-error = Zeile { $line }: Der Text des Kommentars ist erforderlich

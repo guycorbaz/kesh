@@ -1634,6 +1634,7 @@ describe('InvoiceForm — le client choisi n’est plus écrasé par un chargeme
 				version: 1,
 				lines: [
 					{
+						lineType: 'priced',
 						description: 'Ligne 1',
 						quantity: '1',
 						unitPrice: '100.00',
@@ -1641,6 +1642,7 @@ describe('InvoiceForm — le client choisi n’est plus écrasé par un chargeme
 						revenueAccountId: SERVICES.id,
 					},
 					{
+						lineType: 'priced',
 						description: 'Ligne 2',
 						quantity: '1',
 						unitPrice: '100.00',
@@ -1651,5 +1653,162 @@ describe('InvoiceForm — le client choisi n’est plus écrasé par un chargeme
 			},
 		]);
 		expect(total()).toContain('200.00');
+	});
+});
+
+// Story 49-1c (#1242, T8) — la ligne de commentaire dans le formulaire : saisie, envoi,
+// et relecture typée du brouillon, à l'ouverture comme après un conflit de version.
+describe('InvoiceForm — ligne de commentaire (Story 49-1c)', () => {
+	/** Une ligne de commentaire telle que l'API la rend (valeurs neutres). */
+	function commentaire(position: number, description: string) {
+		return {
+			id: 100 + position,
+			invoiceId: 7,
+			position,
+			lineType: 'comment' as const,
+			description,
+			quantity: '0.0000',
+			unitPrice: '0.0000',
+			vatRate: '0.00',
+			lineTotal: '0.0000',
+			revenueAccountId: null,
+			createdAt: '',
+		};
+	}
+
+	/** Brouillon `[chiffrée, commentaire]` : la ligne chiffrée porte un compte. */
+	function brouillonAvecCommentaire(texte = 'Merci de votre confiance'): InvoiceResponse {
+		return {
+			...invoiceWith([SERVICES.id]),
+			lines: [{ ...line(1, SERVICES.id), lineType: 'priced' }, commentaire(2, texte)],
+		} as unknown as InvoiceResponse;
+	}
+
+	const LIGNES_ATTENDUES = [
+		{
+			lineType: 'priced',
+			description: 'Ligne 1',
+			quantity: '1',
+			unitPrice: '100.00',
+			vatRate: '8.10',
+			revenueAccountId: SERVICES.id,
+		},
+		{ lineType: 'comment', description: 'Merci de votre confiance' },
+	];
+
+	function commentFields(container: HTMLElement): HTMLTextAreaElement[] {
+		return Array.from(container.querySelectorAll('[data-testid="invoice-line-comment"]'));
+	}
+
+	it('AC3 — « Commentaire » ajoute en fin de tableau un champ multiligne, sans taux, compte ni total ; le total ne change pas', async () => {
+		const { container, getByTestId } = render(InvoiceForm, { invoice: invoiceWith([null]) });
+		await settle();
+		const total = () => container.querySelector('tfoot')?.textContent ?? '';
+		expect(total()).toContain('100.00');
+		const tauxAvant = container.querySelectorAll('[data-testid="invoice-line-vat-rate"]').length;
+		const comptesAvant = accountInputs(container).length;
+
+		await fireEvent.click(getByTestId('invoice-add-comment-line'));
+		await settle();
+
+		const [champ] = commentFields(container);
+		expect(champ.tagName).toBe('TEXTAREA');
+		expect(champ.getAttribute('aria-label')).toBe('Commentaire — ligne 2');
+		const rangees = container.querySelectorAll('[data-testid="invoice-lines-table"] tbody > tr');
+		expect(rangees[rangees.length - 1].getAttribute('data-testid')).toBe('invoice-line-comment-row');
+		// La rangée du commentaire : une cellule de texte sur six colonnes, puis la suppression.
+		const cellules = rangees[rangees.length - 1].querySelectorAll(':scope > td');
+		expect(cellules).toHaveLength(2);
+		expect(cellules[0].getAttribute('colspan')).toBe('6');
+		expect(container.querySelectorAll('[data-testid="invoice-line-vat-rate"]')).toHaveLength(tauxAvant);
+		expect(accountInputs(container)).toHaveLength(comptesAvant);
+
+		await fireEvent.input(champ, { target: { value: 'Merci\nà bientôt' } });
+		await settle();
+		expect(total()).toContain('100.00');
+	});
+
+	it('AC3 — un commentaire vide bloque l’envoi en nommant la ligne', async () => {
+		const { container, getByTestId } = render(InvoiceForm, { invoice: invoiceWith([null]) });
+		await settle();
+		await fireEvent.click(getByTestId('invoice-add-comment-line'));
+		await settle();
+		await fireEvent.click(getByTestId('create-invoice-button'));
+		await settle();
+		expect(updateInvoiceMock).not.toHaveBeenCalled();
+		expect(getByTestId('invoice-form-error').textContent).toContain(
+			'Ligne 2 : le texte du commentaire est obligatoire',
+		);
+		expect(commentFields(container)).toHaveLength(1);
+	});
+
+	it('AC3, AC4 — brouillon [chiffrée, commentaire] ouvert puis enregistré : chaque ligne part avec son type', async () => {
+		updateInvoiceMock.mockResolvedValue({ id: 7 });
+		const { container, getByTestId } = render(InvoiceForm, { invoice: brouillonAvecCommentaire() });
+		await settle();
+		expect(commentFields(container).map((c) => c.value)).toEqual(['Merci de votre confiance']);
+		await fireEvent.click(getByTestId('create-invoice-button'));
+		await settle();
+		expect(updateInvoiceMock).toHaveBeenCalledTimes(1);
+		const sent = updateInvoiceMock.mock.calls[0][1] as { lines: unknown[] };
+		expect(sent.lines).toEqual(LIGNES_ATTENDUES);
+	});
+
+	it('AC4 — de même après « Recharger » sur un conflit de version', async () => {
+		updateInvoiceMock.mockRejectedValueOnce({
+			code: 'OPTIMISTIC_LOCK_CONFLICT',
+			status: 409,
+			message: 'conflit',
+		});
+		getInvoiceMock.mockResolvedValue(brouillonAvecCommentaire());
+		// Départ : un brouillon chiffré seulement ; le serveur, lui, porte le commentaire.
+		const { container, getByTestId, getByText } = render(InvoiceForm, {
+			invoice: invoiceWith([SERVICES.id]),
+		});
+		await settle();
+		expect(commentFields(container)).toHaveLength(0);
+		await fireEvent.click(getByTestId('create-invoice-button'));
+		await settle();
+		await fireEvent.click(getByText('Recharger'));
+		await settle();
+		expect(commentFields(container).map((c) => c.value)).toEqual(['Merci de votre confiance']);
+
+		updateInvoiceMock.mockResolvedValue({ id: 7 });
+		await fireEvent.click(getByTestId('create-invoice-button'));
+		await settle();
+		expect(updateInvoiceMock).toHaveBeenCalledTimes(2);
+		const sent = updateInvoiceMock.mock.calls[1][1] as { lines: unknown[] };
+		expect(sent.lines).toEqual(LIGNES_ATTENDUES);
+	});
+
+	it('AC4 — une ligne heading relue repart heading', async () => {
+		updateInvoiceMock.mockResolvedValue({ id: 7 });
+		const brouillon = {
+			...invoiceWith([null]),
+			lines: [line(1, null), { ...commentaire(2, 'Travaux'), lineType: 'heading' }],
+		} as unknown as InvoiceResponse;
+		const { getByTestId } = render(InvoiceForm, { invoice: brouillon });
+		await settle();
+		await fireEvent.click(getByTestId('create-invoice-button'));
+		await settle();
+		const sent = updateInvoiceMock.mock.calls[0][1] as { lines: unknown[] };
+		expect(sent.lines[1]).toEqual({ lineType: 'heading', description: 'Travaux' });
+	});
+
+	it('AC3 — taux désactivé : le refus ne nomme que la ligne chiffrée, jamais le commentaire', async () => {
+		const brouillon = {
+			...invoiceWith([null]),
+			lines: [commentaire(1, 'Préambule'), { ...line(2, null), vatRate: '7.70' }],
+		} as unknown as InvoiceResponse;
+		const { container, getByTestId } = render(InvoiceForm, { invoice: brouillon });
+		await settle();
+		// Un seul sélecteur de taux : celui de la ligne chiffrée.
+		expect(container.querySelectorAll('[data-testid="invoice-line-vat-rate"]')).toHaveLength(1);
+		await fireEvent.click(getByTestId('create-invoice-button'));
+		await settle();
+		expect(updateInvoiceMock).not.toHaveBeenCalled();
+		expect(getByTestId('invoice-form-error').textContent).toBe(
+			'Ligne 2 : le taux de TVA 7.70% a été désactivé. Choisissez un taux actif.',
+		);
 	});
 });
