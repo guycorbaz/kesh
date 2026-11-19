@@ -413,6 +413,7 @@ error-date-outside-fiscal-year-generic = Das Datum liegt nicht im aktuellen Gesc
 journal-entries-filter-description = Beschreibung
 journal-entries-filter-amount-min = Betrag min
 journal-entries-filter-amount-max = Betrag max
+journal-entries-filter-amount-not-applied = Dieser Filter wird erst angewendet, wenn der Betrag korrigiert ist.
 journal-entries-filter-date-from = Von Datum
 journal-entries-filter-date-to = Bis Datum
 journal-entries-filter-journal = Journal

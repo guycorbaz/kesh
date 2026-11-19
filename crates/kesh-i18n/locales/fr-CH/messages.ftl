@@ -407,6 +407,7 @@ error-date-outside-fiscal-year-generic = La date n'est pas dans l'exercice coura
 journal-entries-filter-description = Libellé
 journal-entries-filter-amount-min = Montant min
 journal-entries-filter-amount-max = Montant max
+journal-entries-filter-amount-not-applied = Ce filtre n'est pas appliqué tant que le montant n'est pas corrigé.
 journal-entries-filter-date-from = Date début
 journal-entries-filter-date-to = Date fin
 journal-entries-filter-journal = Journal
