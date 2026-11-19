@@ -1,6 +1,6 @@
 # Story v0200-corrections-mineures : Corrections mineures de la 0.20.0 — message « valeur trop longue » et vingt autres clés absentes, e-mail et téléphone des contacts, pays seul, bouton grisé sans motif, nom fait d'un caractère invisible, doc-comment de l'issue inconnue (#1348, #1336, #1342, #1349, #1343, #1375)
 
-Status: ready-for-dev
+Status: review
 
 *Fiche rédigée le 2026-11-19 (Opus 5.5, en autonomie), workflow `bmad-create-story`. Worktree `/home/gcorbaz/devel/kesh-v0200-cm`, branche `story/v0200-corrections-mineures`, partie de `epic/48-corrections-0-20-0` = `a051e17e5` (qui porte la 48-13, la 48-15 et la 48-10 fusionnées). Release **0.20.0** (coupure le jeudi 2026-11-26 au soir, sortie le vendredi 2026-11-27). Périmètre : **décision de Guy du 2026-11-19** (« issues mineures ajoutées à la 0.20.0 ») ; #1375 ajoutée par **décision de l'orchestrateur du 2026-11-19** (validation P1, V1-2) ; garde générale de l'i18n sortie vers #1406 par **décision de Guy du 2026-11-19** (§ Découpage). Story rangée au bloc de l'Epic 48 du `sprint-status.yaml`, clé sans numéro d'ordre ; elle y serait la neuvième : voir Dev Notes. **Aucune migration** : aucune colonne ne change ; si le développement en découvre une, il s'arrête et le dit (`e0200-commun.md` § Migrations).*
 
@@ -218,13 +218,107 @@ Filets déclarés (ne rougissent sous aucune mutation de la story) : refus serve
 
 ### Agent Model Used
 
-(à remplir)
+Opus 5.5 (`claude-opus-5-5`), en autonomie, workflow `bmad-dev-story`, le 2026-11-19. Clé `v0200cm` ; bases `kesh_v0200cm`, `kesh_e2e_v0200cm`, `kesh_ci_v0200cm` (voie 1, `127.0.0.1:3306`) ; backend de test sur le port 3420 ; journaux sous `/home/gcorbaz/devel/kesh-gate-logs/v0200cm/` (cité ci-dessous `v0200cm/`).
 
 ### Debug Log References
 
+**Commits de code** (trois, base `a051e17e5`) : `7eec3962e` (#1348 : 21 clés ×4, `errors.rs` en `t_args`, `TABLE`, test des 21 clés, test du quota) ; `cca96e590` (serveur #1343 et #1342 : `optional_visible`, `onboarding.rs`, `contacts.rs`, `contact_persons.rs`, `address_input.rs`, tests Rust) ; `d0efdb33e` (écrans #1336, #1342, #1349, #1343 ; clé d'écran ×4 ; `sitesTotal` ; doc-comment #1375 ; manuel `.tex` ; E2E). **Dernier commit de code : `d0efdb33e`.**
+
+**Étape 0** (`v0200cm/etape0.log`, à `aec979db2`, code identique à `a051e17e5`) : les 21 clés relues, chacune absente des quatre catalogues (`catalogues=0`), son site dans `errors.rs` une ligne **plus bas** que le tableau de la fiche (la fiche cite la ligne de `&t(` ou de `let msg = t(`, le journal celle de la clé : `2580`, `2671` … `6027` ; `error-invalid-input-generic` à `5991`, comme la fiche) — aucune prémisse démentie ; `grep -cF '"Entrée invalide"' errors.rs` → 2 ; `grep -n maxlength contacts/+page.svelte` → `987`, `992` (plus les commentaires `445`, `887`) ; la 48-12b **n'est pas fusionnée** dans `epic/48-corrections-0-20-0` (`a051e17e5`) ; sa branche est à `dcd0bbe3e` (« sortie de l'issue inconnue », plus récente que le `6e805dd4c` de la fiche) : **cas (ii) de D6**. Inventaire de #1343 refait par le symptôme (`git grep -nE 'first_name|last_name'` filtré sur `trim|is_empty|clean|norm`, puis `name.trim()` des routes) : les sites 1 à 3 de la fiche, plus `invoice_email.rs:130` — qui **lit** le nom d'un contact pour la formule d'appel, n'écrit rien : hors du symptôme (route qui écrit un nom) ; les autres `name.trim()` (comptes, produits, projets, exercices, clés d'API, banque, utilisateurs) ne sont pas des noms de personne ou de société. Les six branches de `formValidation` relues (`contacts/+page.svelte:476-491` à `a051e17e5`) ; fichiers de test confirmés.
+
+**Les 21 codes, ce que l'écran en fait** (`git grep -lw <CODE> -- frontend/src ':!*.test.ts'`, journal `etape0.log`, puis lecture des sites) :
+
+| Code | Écran |
+|---|---|
+| `ONBOARDING_RESET_FORBIDDEN`, `DUNNING_LEVEL_NOT_FOUND`, `LEVEL_ALREADY_SENT`, `BATCH_EXCEEDS_SEND_QUOTA`, `RECONCILIATION_LOCK_RELEASE_FAILED`, `DATA_LENGTH_OR_RANGE`, `INVALID_INPUT` (branche générique) | absent de l'écran : affiché tel quel (`err.message`) là où il survient, et API seule sinon |
+| `INVOICE_ALREADY_PAID`, `DUNNING_PAUSED` | traduits par l'écran pour un **lot** (`reminder-error-label.ts:12-15`, `errorCode` d'un `FailedReminder`) ; le refus unitaire passe par `err.message` |
+| `REMINDER_DATE_IN_FUTURE` | prévenu à l'écran (`ManualReminderDialog.svelte:77-80`) ; un refus du serveur passerait par `err.message` |
+| `INVOICE_NOT_PAUSED` | traduit (`invoices/[id]/+page.svelte:731-733`) |
+| `REMINDER_SENT_BUT_INVOICE_GONE`, `REMINDER_SENT_BUT_NOT_RECORDED` | affichés tels quels (`invoices/reminders/+page.svelte:222-226`, `notifyError(err.message)`) |
+| `BATCH_TOO_LARGE` | prévenu à l'écran (plafond `BATCH_CAP`, `invoices/reminders/+page.svelte:37-38`) ; sinon tel quel |
+| `RECONCILIATION_FISCAL_YEAR_CLOSED`, `RECONCILIATION_TRANSACTION_NOT_PENDING` | traduits (`failed-proposal-label.ts:313`, `:500`) |
+| `INBOX_IMPORT_ALREADY_RUNNING`, `IMPORT_NOT_PENDING_COMPLETION`, `IMPORTED_INVOICE_NOT_FOUND`, `SOURCE_DOCUMENT_NOT_FOUND`, `SOURCE_DOCUMENT_GONE` | traduits par l'écran de l'import et la fiche fournisseur (`supplier-invoices/import/+page.svelte:232`, `:304`, `:312`, `:328` ; `supplier-invoice-form.ts:484`, `:492` ; `supplier-invoices/[id]/+page.svelte:750`, `:754` ; `DocumentPreview.svelte:59`) |
+
+Sept codes absents de l'écran, quatorze nommés : conforme à la fiche.
+
+**Rouges avant correctif** :
+- `v0200cm/rouge-21-cles.log` — `cles_de_1348_traduites_dans_les_quatre_locales` : « **168 manques** » = 21 clés × 4 locales × 2 motifs (absente du catalogue, clé brute rendue).
+- `v0200cm/rouge-quota.log` — `send_reminder_batch_over_send_quota_returns_422` : « le quota manque au message : « error-batch-exceeds-send-quota » » (clé brute).
+- `v0200cm/rouge-serveur.log` — 13 tests neufs : **8 rouges** (les refus neufs de #1342 et #1343, dont le cas U+200B **par son message** : « Le nom de la société contient un caractère que la QR-facture n'admet pas : « \u{200b} » … ne commence pas par « Prénom : aucun caractère visible » ») et **5 verts**, les filets (« CH » seul / vide / absent, e-mail 321 et téléphone 51 de #1336, noms vides ou mêlés, prénom absent).
+- `v0200cm/rouge-vitest.log` — **16 rouges** sur 82 (ligne de motif absente, `maxlength` présents, alerte de l'interlocuteur) ; verts avant correctif : les deux tests « e-mail de 321 / téléphone de 51 part entier » (jsdom ne contraint pas une valeur posée par programme ; c'est l'attribut qui porte le rouge, tests « aucun maxlength ») et le filet « erreur qui n'est pas une `ApiError` ».
+
+**Mutations** (un journal par mutation, `v0200cm/mut/<Mn>.log` : diff de la mutation, tests, « == restauré » ; restauration `git restore --worktree` puis `touch` ; scripts `mut/run-mut-rust.sh`, `mut/run-mut-front.sh` ; geste posé par l'outil Edit). **Toutes tuées** :
+
+| Mutation | Rouges | Verts notables |
+|---|---|---|
+| M1 | `cles_de_1348…` (« 8 manques »), `les_replis_rust_suivent_le_catalogue` | `parity_between_locales` **vert** |
+| M5 | Vitest « e-mail : aucun maxlength » (1/78) ; **rejeu E2E** (`mut/e2e-M5.log`, frontend reconstruit muté) : `contacts.spec.ts:260` rouge, `toHaveValue` — la valeur du champ est coupée à 320 | — |
+| M6 | Vitest « téléphone : aucun maxlength » (1/78) | — |
+| M7 | `a_lone_country_other_than_ch_is_refused_1342` (unitaire), `a_lone_foreign_country_is_refused_1342` | filet `ch_alone_or_no_country_means_no_address_1342` |
+| M8 | **3** Vitest : AC7 « FR seul », AC7 « contact étranger », AC8 « pays seul » | AC7 « CH seul, ou vidé » |
+| M9 | **8** Vitest : AC8 ×6 (prénom, nom, raison sociale, adresse partielle, pays seul, IDE) + AC7 ×2 ; **rejeu E2E** (`mut/e2e-M9.log`) : `contacts.spec.ts:304` rouge à `:319`, `expect(motif).toBeVisible()` — « Received: hidden », la ligne `<p … data-testid="contact-form-blocked-reason"></p>` vide | « jamais deux fois » ×2, formulaire valide |
+| M10 | **2** Vitest « jamais deux fois » (raison sociale 256, délai 400) | — |
+| M11 | `coordinates_rejects_an_invisible_first_name_1343`, `…_zero_width_first_name_with_its_own_message_1343` (par son **message**) | nom, filets |
+| M12 | `coordinates_rejects_an_invisible_last_name_1343` | prénom, filets |
+| M13 | `invisible_names_are_refused_and_named_1343`, `put_refuses_invisible_names_1343` | filet `empty_and_mixed…` |
+| M14 | `invisible_names_are_refused_and_named_1343` (cas « Entreprise », `contactType` relu au journal) | `put_refuses…` (personnes seules) |
+| M15 | `invisible_person_names_are_refused_and_named_1343` (201 au lieu de 400) | — |
+| M16 | **7** : l'unitaire `optional_visible…`, les trois de l'assistant, les deux des contacts, celui des interlocuteurs | les trois filets |
+| M17 | Vitest « une ApiError du serveur → l'alerte affiche son message » | filet « pas une ApiError » |
+| M18 | quota : « le quota manque au message : « Le lot dépasse le quota d'envoi (⁨{$max}⁩ e-mails par fenêtre). » » | — |
+| M19 | `cles_de_1348…` (« 8 manques »), `les_replis…` | `parity_between_locales` **vert** |
+| M21 | `cles_de_1348…` (« 1 manques : DeCh / … quota non interpolé »), `les_replis…` (« de-CH : error-batch-exceeds-send-quota sans { $max } ») | parité |
+
+⚠️ **M19, premier passage nul** : les quatre éditions de la première prise ont échoué (fichiers relus avant la restauration de M1) ; le script a tourné **sans mutation posée** (3 verts) ; journal écrasé par la seconde prise, mutation posée (`git diff --stat` : 4 suppressions, copié au journal). Déclaré ici, sans effet sur le verdict.
+
+**Gates**, tels qu'ils ont tourné :
+- En cours de développement : `v0200cm/vert-1348.log` (73 tests : `package(kesh-i18n)`, `binary(textes_coherents)`, le test du quota — verts) ; `v0200cm/gate-cible-serveur.log` (`cargo clippy --workspace --all-targets -- -D warnings` vert, puis le filtre ciblé de la fiche : **894 passés**, 5 ignorés) ; `cargo fmt --all -- --check` vert avant chaque commit ; Vitest ciblé + `npm run check` + `npm run lint-i18n-ownership` : `v0200cm/vert-vitest-2.log` (93 passés).
+- **Passage en `review`**, au commit `d0efdb33e` : base `kesh_v0200cm` remise à neuf (migrations + seed) ; **`scripts/gate-ci.sh kesh_ci_v0200cm`** : « gate-ci : **6187 passés, 0 échoués, 18 ignorés** », code 0 (`v0200cm/gate-ci.log`, `gate-ci.console`) ; **frontend complet** : `npm run check` (0 erreur, 29 avertissements préexistants, aucun dans les fichiers touchés — `front-check.log`), `npm run lint-i18n-ownership` (PASS, `front-lint-i18n-ownership.log`), `npm run test:unit` (**280 fichiers, 4791 tests passés**, `front-test-unit.log`), `npm run build` (fait, `front-build.log`). **`scripts/test-fast.sh --ci` : non lancé** (la consigne d'appel nomme `gate-ci`, qui rejoue la suite de la CI ; le gate ciblé nextest a tourné) — à lancer par l'orchestrateur s'il le veut.
+- **E2E complet**, au commit `d0efdb33e`, montage de `docs/testing.md` § *Prérequis Playwright local* (`KESH_COOKIE_SECURE=false`, `KESH_TEST_MODE=true` des deux côtés, `KESH_HOST=127.0.0.1`, quatre `KESH_SMTP_*`, `KESH_INBOX_DIR` / `KESH_DOCUMENTS_DIR` passés au backend **et** au runner, `KESH_ADMIN_BACKUP_DIR`, `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE`), base `kesh_e2e_v0200cm` recréée vide, backend `target/debug/kesh-api` sur 3420 (`/health` : `smtpConfigured: true`), frontend construit au même commit — script `v0200cm/backend-v0200cm.sh`, journal `v0200cm/e2e-complet.log` (+ `.backend`) : **490 passés, 7 échoués, 18 ignorés** (21,9 min). Les sept rouges, jugés fichier par fichier contre `docs/testing.md` § *Les échecs attendus* : `mode-expert.spec.ts:26` (bouton « Mode » introuvable), `mode-expert.spec.ts:41` (URL), `onboarding-path-b.spec.ts:65` et `:92` (`#coord-address` introuvable), `onboarding.spec.ts:57`, `:77` (URL), `:150` (`#coord-address`) — **les sept KF-029 (#97)**, aucun de pollution, aucun autre. `git log a051e17e5..HEAD -- <ces trois specs>` : 0 commit. Les deux tests neufs de `contacts.spec.ts` passent (`:260` e-mail de 321, `:304` motif du bouton grisé).
+- **Rejeux E2E des mutations** : M5 et M9, tuées (tableau des mutations ; `v0200cm/mut/e2e-M5.log`, `e2e-M9.log`, + `.build`, `.e2e`, `.e2e.backend` ; script `mut/run-mut-e2e.sh`). Le frontend a été **reconstruit propre** ensuite (`v0200cm/front-build-final.log`), au code de `d0efdb33e`.
+- **Recette visuelle** (AC15), thème clair, base `kesh_e2e_v0200cm`, données factices « Démo SA », script `v0200cm/captures-v0200cm.mjs` (chaque prise vérifie d'abord l'état : bouton grisé, motif non vide, valeur entière, texte de l'alerte), journaux `v0200cm/captures.log` et `captures-10.log` ; captures dans `v0200cm/captures/` : `01-entreprise-vide-motif.png` (motif « Le nom est obligatoire », texte du catalogue), `02-personne-sans-nom-motif.png`, `03-adresse-partielle-motif.png`, `04-pays-fr-seul-motif.png`, `05-ide-mal-forme-motif.png` (« Numéro IDE suisse invalide (format ou checksum) »), `06-raison-sociale-256-sous-le-champ.png` (ligne du bouton vide, vérifiée), `07-email-321-refuse-saisie-entiere.png`, `08-telephone-51-refuse.png`, `09-personne-prenom-invisible-refuse.png`, `10-assistant-prenom-invisible-toast.png`, `11-interlocuteur-prenom-invisible-alerte.png`, `12-contact-fr-adresse-videe-motif.png`. La capture 10 a été **reprise** (`captures-10.log`, `SEULE=10`) : la première prise montrait l'écran sans le toast (attente sur le texte, non sur le toast visible) ; écrasée par la seconde.
+
 ### Completion Notes List
 
+- **#1348** : 21 clés aux quatre catalogues, en bloc commenté en fin de fichier, même ordre dans les quatre ; texte fr-CH = repli de son site, mot pour mot (continuations `\` jointes : `error-reminder-sent-but-not-recorded`, `reconciliation-errors-fiscal-year-closed`) ; traductions selon `docs/i18n-glossaire.md` (Mahnung / sollecito ; Stapel / lotto / batch ; Geschäftsjahr / esercizio contabile / fiscal year ; Beleg / documento giustificativo / supporting document ; Audit-Protokoll / registro di audit / audit log ; Abstimmung pour la réconciliation, « abgeglichen » pour une transaction, comme `reconciliation-errors-already-reconciled`). `errors.rs` : seul le site du quota change (diff ci-dessous). `TABLE` : 21 entrées, `error-invalid-input-generic` à **2** sites, le quota avec `("{ $max }", "{max}")` (table de paramètres écrite en ligne) ; la `TABLE` garde sa longueur `[…; 9]`. `dette-parite-connue.txt` inchangé (`git diff --stat` vide).
+- **#1336** : `maxlength` retirés de `#form-email` et `#form-phone`, un commentaire dit pourquoi ; tests Vitest (sonde positive par `champ()`, un `it` par champ ; charge entière, refus affiché, saisie gardée) ; filet Rust `email_and_phone_are_refused_past_their_bound_and_accepted_at_it_1336` (`error.code` lu, 320 et 50 acceptés) ; E2E.
+- **#1342** : serveur (`validate_optional_keeping`, message de D3 a, doc-comments d'`is_blank` et de `validate_optional`) ; écran (`countryAlone`, clé `contact-error-address-country-alone` juste après `contact-error-address-npa-city` aux quatre catalogues, branche placée après `addressPartial`). Normalisation de l'écran : rognage puis majuscules **ASCII seulement** (`replace(/[a-z]/g, …)`), comme `to_ascii_uppercase` du serveur.
+- **#1349** : `blockedReason` dérivé de `formValidation`, vide quand le motif égale `nameTooLongMsg` ou `paymentTermsDaysMsg` ; `<p data-testid="contact-form-blocked-reason" class="text-xs text-muted-foreground" aria-live="polite">` toujours dans le DOM, juste au-dessus des boutons. Le commentaire de `contacts-page.test.ts` (AC-b3, « `formValidation` n'est PAS rendu… ») est réécrit (propagation V2-9).
+- **#1343** : `helpers::optional_visible` (message exact de D5) ; appelée par `onboarding.rs` (prénom, nom — absent ou vide : sémantique d'avant), `contacts.rs::validate_common` (prénom, nom ; raison sociale — vide : messages d'avant), `contact_persons.rs::validate` (prénom, nom). `ContactPersonsManager.svelte` : `catch (err)` et `(isApiError(err) && err.message) || i18nMsg(…)` (patron `SupplierCreatePanel.svelte`) ; le mock de test hisse `createMock`.
+- **#1375 — cas (ii)** : la 48-12b n'est pas fusionnée ; doc-comment écrit d'après sa **fiche** à `dcd0bbe3e` (branche `story/48-12-reponses-perdues-fournisseurs`) : table d'états, ligne `E6 Issue inconnue` (« création ou modification : `isSettlementOutcomeUnknown` en E2 … formulaire **figé** »), ligne `E8 Relecture du document` (« complétion : `IMPORT_NOT_PENDING_COMPLETION` ou `isSettlementOutcomeUnknown` en E2 »), « Hors périmètre : **#986** (conflit de version à la modification) … reportés à la 0.21.0 ». **À relire par l'orchestrateur à la seconde fusion** contre le code de la 48-12b (D6). `grep -nF 'ni la création (#975)' unknown-outcome.ts` → vide (code 1) ; le diff du fichier ne touche que le commentaire (copié au Change Log).
+- **Manuel** (`docs/manual/fr/user-manual.tex`, `.tex` seulement) : AC14 a à f ; avant / après dans `v0200cm/manuel-avant.txt` et `manuel-apres.txt`. Le paragraphe neuf (AC14 d) suit la liste (`:1359`). Manuels DE / IT / EN : sans objet. `docs/api-external.md` : non touché (décision de l'AC14).
+- **Compteurs** : `sitesTotal` 3502 → **3503**, relevé par la garde (« expected 3503 to be 3502 », `v0200cm/vert-vitest.log`) : un site neuf (`contact-error-address-country-alone`). Clés neuves : **22** (21 serveur + 1 écran) aux quatre catalogues.
+- **Tests ajoutés** (recomptés sur `git diff a051e17e5 d0efdb33e`) : **15** tests Rust (`#[test]` / `#[sqlx::test]`) — 1 `loader.rs`, 1 `address_input.rs`, 1 `helpers.rs`, 5 `onboarding_path_b_e2e.rs`, 4 `contact_field_lengths_e2e.rs`, 1 `contact_persons_e2e.rs`, 2 `contact_address_country_e2e.rs` — et 1 test Rust **étendu** (`send_reminder_batch_over_send_quota_returns_422`) ; **19** `it(` Vitest (17 `contacts-page.test.ts`, 2 `ContactPersonsManager.test.ts`) ; **2** `test(` E2E (`contacts.spec.ts`). Deux aides Rust neuves dans `onboarding_path_b_e2e.rs` (`coordinates_refused`, socle d'`assert_name_refused`, et `assert_invisible_refused`), deux dans `contact_address_country_e2e.rs`.
+- **AC12 a** : `git diff a051e17e5...d0efdb33e --stat -- crates/kesh-api/src/routes/invoice_pdf_service.rs crates/kesh-qrbill crates/kesh-report 'frontend/src/routes/(app)/invoices' frontend/src/lib/components/invoices` → **sortie vide**. **AC12 c** : `git diff … --stat -- crates/kesh-db` → vide. **AC12 d** : diff de `errors.rs` = le seul site du quota (copié au Change Log).
+- **Modules** : cinq, comme la fiche (`kesh-api`, `kesh-i18n`, frontend `contacts`, manuels, frontend `shared/utils`) ; `SupplierCreatePanel.svelte`, `onboarding/+page.svelte`, `docs/api-external.md`, `kesh-db` non touchés. Aucune migration.
+- **Écart à la fiche** : aucun sur le fond. Forme : la table de paramètres du quota est écrite en ligne dans la `TABLE` plutôt qu'en constante nommée.
+- **Ouvert** : `scripts/test-fast.sh --ci` non lancé ; relecture de #1375 à la seconde fusion (orchestrateur) ; statut `review` posé ici au `sprint-status.yaml` (clé présente sur la branche).
+
 ### File List
+
+- `crates/kesh-api/src/errors.rs`
+- `crates/kesh-api/src/helpers.rs`
+- `crates/kesh-api/src/address_input.rs`
+- `crates/kesh-api/src/routes/contacts.rs`
+- `crates/kesh-api/src/routes/onboarding.rs`
+- `crates/kesh-api/src/routes/contact_persons.rs`
+- `crates/kesh-api/tests/textes_coherents.rs`
+- `crates/kesh-api/tests/invoice_send_email_e2e.rs`
+- `crates/kesh-api/tests/onboarding_path_b_e2e.rs`
+- `crates/kesh-api/tests/contact_field_lengths_e2e.rs`
+- `crates/kesh-api/tests/contact_persons_e2e.rs`
+- `crates/kesh-api/tests/contact_address_country_e2e.rs`
+- `crates/kesh-i18n/src/loader.rs`
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`
+- `frontend/src/routes/(app)/contacts/+page.svelte`
+- `frontend/src/routes/(app)/contacts/contacts-page.test.ts`
+- `frontend/src/lib/features/contacts/ContactPersonsManager.svelte`
+- `frontend/src/lib/features/contacts/ContactPersonsManager.test.ts`
+- `frontend/src/lib/shared/i18n-keys.test.ts`
+- `frontend/src/lib/shared/utils/unknown-outcome.ts`
+- `frontend/tests/e2e/contacts.spec.ts`
+- `docs/manual/fr/user-manual.tex`
+- `_bmad-output/implementation-artifacts/v0200-corrections-mineures.md`, `v0200-corrections-mineures-review-prompt-p1.md`, `sprint-status.yaml`
 
 ## Change Log
 
@@ -274,3 +368,13 @@ Filets déclarés (ne rougissent sous aucune mutation de la story) : refus serve
   - **V4-5** : « #1348, sa part clés, entièrement réglée ; la garde demandée par l'issue part à #1406 » (§ Découpage) ;
   - **V4-6** : `errors.rs` commun aussi avec la 48-1 et la 48-2 (`epic-48-corrections-0-20-0.md:201-202`), aux Dev Notes.
   **Reclassements** : V1-13 (#1405) tracé hors périmètre ; V3-1 (MEDIUM) traité par découpage ; V3-8 sans objet après découpage ; aucun MEDIUM reclassé en dette. **Décompte** des findings de la boucle : 14 (P1) + 9 (P2) + 8 (P3) + 6 (P4) = **37** (C 0, H 0, M 5 + 1 + 1 + 0 = 7, L 9 + 8 + 7 + 6 = 30). **Modules : cinq.** Statut : **`ready-for-dev`**.
+- **2026-11-19 — développement** (Opus 5.5, en autonomie ; `bmad-dev-story`). **Étape 0** (`kesh-gate-logs/v0200cm/etape0.log`) : aucune prémisse démentie. Commande des 21 clés et sa sortie (extrait ; journal complet) :
+  ```
+  $ for k in <21 clés>; do cat crates/kesh-i18n/locales/*/messages.ftl | /usr/bin/grep -c "^$k ="; /usr/bin/grep -nF "\"$k\"" crates/kesh-api/src/errors.rs; done
+  error-onboarding-reset-forbidden catalogues=0 errors.rs:2580,
+  error-invoice-already-paid catalogues=0 errors.rs:2671,
+  …
+  error-data-length-or-range catalogues=0 errors.rs:6027,
+  error-invalid-input-generic catalogues=0 errors.rs:5991,
+  ```
+  (21 lignes, toutes `catalogues=0` ; chaque ligne est celle de la clé, une sous l'appel `t(` cité au tableau.) Classification des 21 codes : au Dev Agent Record. 48-12b non fusionnée : **cas (ii)** de D6, lu sur sa fiche à `dcd0bbe3e`. Inventaire de #1343 refait : sites 1 à 3 confirmés, `invoice_email.rs:130` lu et écarté (lecture d'un nom, aucune écriture). **Code** : trois commits (`7eec3962e`, `cca96e590`, `d0efdb33e`), tests d'abord, rouges journalisés, puis correctifs. **AC12 d** — `git diff a051e17e5...d0efdb33e -- crates/kesh-api/src/errors.rs` : un seul hunk, `@@ -2753,14 +2753,21 @@`, le bras `AppError::BatchExceedsSendQuota { max }` passé de `&t("error-batch-exceeds-send-quota", &format!(…))` à `FluentArgs` + `&t_args("error-batch-exceeds-send-quota", &format!(…), &args)`, repli inchangé. **AC16** — `git diff a051e17e5...d0efdb33e -- frontend/src/lib/shared/utils/unknown-outcome.ts` : un hunk dans le doc-comment de `isSettlementOutcomeUnknown` (`@@ -58,9 +58,14 @@`), aucune ligne de code. **AC12 a** : sortie vide ; **AC12 c** (`kesh-db`) : vide. **Mutations** : 17 jouées (M1, M5 à M19, M21), **17 tuées** ; M19 rejouée une fois (premier passage sans mutation posée, déclaré). **Gates** : `gate-ci` 6187 / 0 / 18 ; frontend complet vert (4791 tests) ; E2E complet 490 / 7 / 18, les sept KF-029 seules ; `test-fast --ci` non lancé. **Recette visuelle** : douze captures (capture 10 reprise). **Écarts à la fiche** : aucun sur le fond (table de paramètres du quota écrite en ligne). **Décomptes** recomptés sur le diff : 15 tests Rust neufs + 1 étendu, 19 `it(` Vitest, 2 `test(` E2E ; 22 clés neuves ×4 ; `sitesTotal` 3502 → 3503. Statut : **`review`** ; revue de code P1 à lancer (prompt `v0200-corrections-mineures-review-prompt-p1.md`, trois lentilles Opus B, E, A).
