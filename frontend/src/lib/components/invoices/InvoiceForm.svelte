@@ -177,6 +177,10 @@
 	 * un autre message reste (revue P2, F1).
 	 */
 	function onContactDraftChange(unresolved: boolean) {
+		// Story 48-13 (D10) : un texte tapé est un geste de l'utilisateur. La réponse
+		// tardive du chargement initial ne doit pas l'effacer (`ContactPicker` jette son
+		// brouillon quand `selected` change) ; le texte reste, et l'envoi est refusé.
+		if (unresolved) contactGen++;
 		contactUnresolved = unresolved;
 		if (!unresolved && errorMsg === contactUnresolvedMessage()) errorMsg = '';
 	}
@@ -275,6 +279,15 @@
 	// de ce composant réutilise l'instance avec une autre facture, le flag se
 	// réinitialise automatiquement.
 	let initialContactInvoiceId = $state<number | null>(null);
+	/**
+	 * Story 48-13 (#1233, D1) — génération du client affiché. Le chargement initial
+	 * du client capture sa valeur ; tout geste qui fixe le client par ailleurs
+	 * (choix dans la liste, texte tapé — D10 —, rechargement sur conflit — D2) la
+	 * fait avancer, et la réponse tardive du chargement initial, succès ou échec,
+	 * est alors jetée sans bruit : elle ne remplace plus le client choisi et ne
+	 * réécrit plus le bandeau d'erreur. Non réactif, comme `reloadSeq`.
+	 */
+	let contactGen = 0;
 
 	// Story 2.6: Invoice settings validation
 	let invoiceSettings = $state<InvoiceSettingsResponse | null>(null);
@@ -401,11 +414,15 @@
 		if (initialContactInvoiceId === invoice.id) return;
 		if (selectedContact && selectedContact.id === invoice.contactId) return;
 		initialContactInvoiceId = invoice.id;
+		const myGen = ++contactGen;
 		getContact(invoice.contactId)
 			.then((c) => {
+				// Story 48-13 (D1) : l'utilisateur a fixé le client entre-temps.
+				if (myGen !== contactGen) return;
 				selectedContact = c;
 			})
 			.catch((err) => {
+				if (myGen !== contactGen) return;
 				// Rendre l'échec visible : sinon le submit sera bloqué par
 				// « Veuillez sélectionner un contact » sans feedback.
 				errorMsg = isApiError(err)
@@ -447,6 +464,8 @@
 	});
 
 	function onContactSelect(c: ContactResponse) {
+		// Story 48-13 (D1) : le choix jette la réponse tardive du chargement initial.
+		contactGen++;
 		selectedContact = c;
 		// Efface un éventuel message d'erreur « Impossible de charger le contact
 		// initial » dès que l'utilisateur sélectionne manuellement un contact.
@@ -742,6 +761,10 @@
 			return;
 		}
 		const seq = ++reloadSeq;
+		// Story 48-13 (D2) : défensif — le client rechargé du serveur prime sur une
+		// réponse tardive du chargement initial. Inatteignable par l'interface (un
+		// envoi exige un client, donc un choix qui a déjà avancé la génération).
+		contactGen++;
 		reloading = true;
 		conflictError = '';
 		try {

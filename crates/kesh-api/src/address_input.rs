@@ -94,17 +94,18 @@ impl StructuredAddressInput {
         }
     }
 
-    /// Validation **requise** (créancier / société) : NPA et localité obligatoires
-    /// (SIX type S), longueurs respectées.
-    /// Le pays doit être un code ISO connu (#817) : aucune valeur n'est encore
-    /// enregistrée à l'assistant.
+    /// Première moitié de [`Self::validate_required_for_qr`], **privée** (Story 48-13,
+    /// revue P1, E4) : NPA et localité obligatoires (SIX type S), longueurs
+    /// respectées, pays en code ISO connu (#817). Elle ne juge pas le jeu de
+    /// caractères : une route qui l'appellerait seule rouvrirait #1226 (une adresse
+    /// acceptée puis refusée par la QR-facture). Les routes appellent
+    /// `validate_required_for_qr`.
     ///
     /// « Obligatoire » se juge par la règle de la QR-facture,
     /// [`kesh_qrbill::champ_vide_pour_qr`], et non par `trim().is_empty()` : un champ
     /// fait du seul trait d'union conditionnel (U+00AD), que `trim` laisse, serait
-    /// accepté ici puis refusé au PDF (revue de l'intégration 0.17.5, M-1). La règle
-    /// vaut pour l'assistant comme pour la correction de l'adresse.
-    pub fn validate_required(&self) -> Result<StructuredAddress, AppError> {
+    /// accepté ici puis refusé au PDF (revue de l'intégration 0.17.5, M-1).
+    fn validate_required(&self) -> Result<StructuredAddress, AppError> {
         self.check_lengths(None)?;
         for (label, value) in [("NPA", &self.postal_code), ("localité", &self.city)] {
             if kesh_qrbill::champ_vide_pour_qr(value) {
@@ -116,10 +117,12 @@ impl StructuredAddressInput {
         Ok(self.build())
     }
 
-    /// [`Self::validate_required`], plus le jeu de caractères de la QR-facture : pour
-    /// la correction de l'adresse de la société (Story 33-5, #909), qui ne doit pas
-    /// annoncer un succès en laissant la QR-facture en panne. La règle reste celle de
-    /// `kesh-qrbill`, et le refus nomme le champ et le caractère.
+    /// `validate_required` (privée), plus le jeu de caractères de la QR-facture : pour
+    /// l'adresse de la société, créancière de toute QR-facture, à l'assistant
+    /// (`set_coordinates`, Story 48-13, #1226) comme à sa correction dans les
+    /// paramètres (Story 33-5, #909). Ni l'un ni l'autre ne doit annoncer un succès en
+    /// laissant la QR-facture en panne. La règle reste celle de `kesh-qrbill`, et le
+    /// refus nomme le champ et le caractère.
     pub fn validate_required_for_qr(&self) -> Result<StructuredAddress, AppError> {
         let address = self.validate_required()?;
         for (label, value) in [

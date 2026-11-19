@@ -541,8 +541,9 @@
 	}
 
 	// Story 33-5 (#909) — corriger l'adresse après l'assistant, sur le patron des
-	// deux éditions ci-dessus. Le pays reste un champ libre de deux lettres, comme
-	// aux contacts : le serveur juge, l'écran affiche son message.
+	// deux éditions ci-dessus. Le pays est un champ libre (Story 48-13, #1243 : sans
+	// `maxlength`) ; le serveur juge la forme (deux lettres) et le code, l'écran
+	// affiche son message et garde la saisie.
 	/** Adresse vide d'une édition pas encore ouverte : le pays par défaut du serveur. */
 	function emptyAddress(): Record<(typeof ADDRESS_FIELDS)[number], string> {
 		return { street: '', building: '', postalCode: '', city: '', country: 'CH' };
@@ -815,30 +816,34 @@
 					</dd>
 					{#if addressEditing}
 						<dd class="mt-2 max-w-md space-y-2">
+							<!-- Story 48-13 (#1243, D4) : aucun `maxlength` sur les champs de l'adresse.
+							     Il coupait en silence un texte collé, enregistré coupé ; le serveur refuse
+							     un champ trop long en nommant le champ et le nombre (`check_lengths`), et
+							     la saisie reste. Même règle que le nom (C-v0190c-25). -->
 							<div class="grid grid-cols-3 gap-2">
 								<div class="col-span-2">
 									<label for="company-address-street" class="text-xs text-text-muted">{msg('field-street', 'Rue')}</label>
-									<Input id="company-address-street" type="text" bind:value={addressForm.street} readonly={addressSubmitting} class={PENDING_FIELD} maxlength={70} data-testid="settings-company-address-street-input" />
+									<Input id="company-address-street" type="text" bind:value={addressForm.street} readonly={addressSubmitting} class={PENDING_FIELD} data-testid="settings-company-address-street-input" />
 									<CompanyConflictNotice notice={addressConflict} testid="settings-company-address-conflict" field="street" />
 								</div>
 								<div>
 									<label for="company-address-building" class="text-xs text-text-muted">{msg('field-building', 'N°')}</label>
-									<Input id="company-address-building" type="text" bind:value={addressForm.building} readonly={addressSubmitting} class={PENDING_FIELD} maxlength={16} data-testid="settings-company-address-building-input" />
+									<Input id="company-address-building" type="text" bind:value={addressForm.building} readonly={addressSubmitting} class={PENDING_FIELD} data-testid="settings-company-address-building-input" />
 									<CompanyConflictNotice notice={addressConflict} testid="settings-company-address-conflict" field="building" />
 								</div>
 								<div>
 									<label for="company-address-postal-code" class="text-xs text-text-muted">{msg('field-postal-code', 'NPA')}</label>
-									<Input id="company-address-postal-code" type="text" bind:value={addressForm.postalCode} readonly={addressSubmitting} class={PENDING_FIELD} maxlength={16} data-testid="settings-company-address-postal-code-input" />
+									<Input id="company-address-postal-code" type="text" bind:value={addressForm.postalCode} readonly={addressSubmitting} class={PENDING_FIELD} data-testid="settings-company-address-postal-code-input" />
 									<CompanyConflictNotice notice={addressConflict} testid="settings-company-address-conflict" field="postalCode" />
 								</div>
 								<div>
 									<label for="company-address-city" class="text-xs text-text-muted">{msg('field-city', 'Localité')}</label>
-									<Input id="company-address-city" type="text" bind:value={addressForm.city} readonly={addressSubmitting} class={PENDING_FIELD} maxlength={35} data-testid="settings-company-address-city-input" />
+									<Input id="company-address-city" type="text" bind:value={addressForm.city} readonly={addressSubmitting} class={PENDING_FIELD} data-testid="settings-company-address-city-input" />
 									<CompanyConflictNotice notice={addressConflict} testid="settings-company-address-conflict" field="city" />
 								</div>
 								<div>
 									<label for="company-address-country" class="text-xs text-text-muted">{msg('field-country', 'Pays')}</label>
-									<Input id="company-address-country" type="text" bind:value={addressForm.country} readonly={addressSubmitting} class={PENDING_FIELD} maxlength={2} placeholder="CH" data-testid="settings-company-address-country-input" />
+									<Input id="company-address-country" type="text" bind:value={addressForm.country} readonly={addressSubmitting} class={PENDING_FIELD} placeholder="CH" data-testid="settings-company-address-country-input" />
 									<CompanyConflictNotice notice={addressConflict} testid="settings-company-address-conflict" field="country" />
 								</div>
 							</div>
@@ -956,12 +961,14 @@
 					</dt>
 					{#if contactEditing}
 						<dd class="mt-1 max-w-md space-y-2">
+							<!-- Story 48-13 (#1243, D4) : ni le téléphone ni le site web ne portent de
+							     `maxlength` (il coupait en silence) ; le serveur refuse un texte trop long
+							     (`MAX_PHONE_LEN`, `MAX_WEBSITE_LEN`) et la saisie reste. -->
 							<Input
 								type="text"
 								bind:value={phoneValue}
 								readonly={contactSubmitting}
 								class={PENDING_FIELD}
-								maxlength={50}
 								placeholder={msg('settings-field-company-phone', 'Téléphone')}
 								data-testid="settings-company-phone-input"
 							/>
@@ -971,7 +978,6 @@
 								bind:value={websiteValue}
 								readonly={contactSubmitting}
 								class={PENDING_FIELD}
-								maxlength={255}
 								placeholder={msg('settings-field-company-website', 'Site web')}
 								data-testid="settings-company-website-input"
 							/>

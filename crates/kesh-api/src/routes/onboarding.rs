@@ -533,13 +533,16 @@ pub async fn set_coordinates(
         (Some(f), Some(l)) => format!("{f} {l}"),
         _ => body.name.trim().to_string(),
     };
-    if name.is_empty() {
-        return Err(AppError::Validation(
-            "Le nom (ou prénom + nom) ne peut pas être vide".into(),
-        ));
-    }
+    // Story 48-13 (#1226, D5) — le nom (composé « prénom nom » pour une personne
+    // physique : c'est lui qui part au PDF) et l'adresse sont jugés par les règles
+    // de la QR-facture, celles des routes de correction des réglages : vide au sens
+    // de la QR, 70 caractères au plus et jeu de caractères pour le nom ; longueurs,
+    // NPA et localité, jeu de caractères pour l'adresse. Sans quoi un nom ou une
+    // adresse acceptés ici faisaient refuser la première QR-facture. Refus de forme
+    // avant le verrou d'étape, comme avant.
+    let name = super::companies::validate_company_name_for_qr(&name)?;
     // Adresse structurée requise (créancier QR-bill type S, #213).
-    let address = body.address.validate_required()?;
+    let address = body.address.validate_required_for_qr()?;
 
     // Validate IDE via kesh-core if provided. Le message de `kesh-core` nomme
     // déjà le champ (« Numéro IDE invalide : … ») : servi tel quel, sans second
