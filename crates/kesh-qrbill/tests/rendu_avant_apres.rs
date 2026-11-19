@@ -24,8 +24,8 @@ use kesh_qrbill::empreinte::{
     sources_sha256,
 };
 use kesh_qrbill::{
-    Address, AddressType, Currency, InvoiceLinePdf, InvoicePdfData, InvoiceVatLinePdf, QrBillData,
-    QrBillI18n, Reference, ReminderPdf, generate_credit_note_pdf_with_date,
+    Address, AddressType, Currency, InvoiceLinePdf, InvoicePdfData, InvoiceVatLinePdf, LinePdfKind,
+    QrBillData, QrBillI18n, Reference, ReminderPdf, generate_credit_note_pdf_with_date,
     generate_qr_bill_pdf_with_date, validation::build_qrr,
 };
 use printpdf::{BuiltinFont, Color, Line, Mm, OffsetDateTime, PdfDocument, Point, Rgb};
@@ -64,6 +64,7 @@ fn date_figee() -> OffsetDateTime {
 /// **Le seul constructeur de ligne des scénarios** : une ligne chiffrée.
 fn ligne(description: &str, quantite: Decimal, prix: Decimal, taux: Decimal) -> InvoiceLinePdf {
     InvoiceLinePdf {
+        kind: LinePdfKind::Priced,
         description: description.into(),
         quantity: quantite,
         unit_price: prix,
@@ -392,6 +393,36 @@ fn capturer_references_avant_0_20_0() {
         "écarts à la référence :\n{}",
         ecarts.join("\n")
     );
+}
+
+/// **T1 (AC1)** — les neuf pièces chiffrées se rendent comme en 0.19.0 : condensat des
+/// opérations, polices, ressources, `MediaBox`, pages et textes égaux à leur référence.
+#[test]
+fn neuf_pieces_chiffrees_se_rendent_comme_en_0_19_0() {
+    let ecarts = verifier(ModeReferences::Comparer, |_| true);
+    assert!(
+        ecarts.is_empty(),
+        "le rendu d'une pièce chiffrée a changé depuis la 0.19.0 :\n{}",
+        ecarts.join("\n")
+    );
+}
+
+/// **T2 (AC1, D5)** — les deux coupes de la section de paiement que la généralisation de
+/// `couper_ligne` touche sont inchangées : l'adresse (S8) et le message au palier P0 (S9).
+/// Chaque scénario se compare et se rapporte **séparément**.
+#[test]
+fn les_deux_coupes_de_la_qr_sont_inchangees() {
+    let mut rouges = Vec::new();
+    for scenario in [
+        "S8-facture-sans-reference-adresses-longues",
+        "S9-facture-message-long",
+    ] {
+        let ecarts = verifier(ModeReferences::Comparer, |nom| nom == scenario);
+        if !ecarts.is_empty() {
+            rouges.push(format!("{scenario} ROUGE :\n{}", ecarts.join("\n")));
+        }
+    }
+    assert!(rouges.is_empty(), "{}", rouges.join("\n\n"));
 }
 
 // ----- T1-bis : l'empreinte distingue un rendu d'un autre -----

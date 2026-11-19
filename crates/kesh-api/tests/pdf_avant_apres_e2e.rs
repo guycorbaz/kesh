@@ -361,3 +361,16 @@ async fn capturer_references_http_avant_0_20_0(pool: MySqlPool) {
         ecarts.join("\n")
     );
 }
+
+/// **T3 (AC2)** — les quatre pièces chiffrées (a) à (d), créées au dépôt et rendues par le
+/// HTTP (facture jamais téléchargée, avoir), puis le regel de (a) et (b), se rendent comme
+/// en 0.19.0 : même montage que la capture, références relues.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn quatre_pieces_chiffrees_se_rendent_comme_en_0_19_0(pool: MySqlPool) {
+    let ecarts = derouler(pool, ModeReferences::Comparer).await;
+    assert!(
+        ecarts.is_empty(),
+        "le PDF d'une pièce chiffrée a changé depuis la 0.19.0 :\n{}",
+        ecarts.join("\n")
+    );
+}

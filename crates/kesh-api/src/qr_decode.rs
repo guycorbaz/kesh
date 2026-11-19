@@ -867,7 +867,7 @@ mod tests {
     /// PDF du témoin vectoriel : une facture QR émise par `kesh-qrbill`, dont la
     /// QR-facture est celle de `render_spc_qr_png` (version basse).
     fn pdf_temoin_vectoriel() -> Vec<u8> {
-        use kesh_qrbill::{InvoiceLinePdf, InvoicePdfData, QrBillI18n};
+        use kesh_qrbill::{InvoiceLinePdf, InvoicePdfData, LinePdfKind, QrBillI18n};
         let facture = InvoicePdfData {
             invoice_number: "F-TEST-1".into(),
             invoice_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 31).unwrap(),
@@ -883,6 +883,7 @@ mod tests {
             debtor_address_lines: vec!["Chemin des Essais 7".into(), "1998 Exempleville".into()],
             debtor_client_number: None,
             lines: vec![InvoiceLinePdf {
+                kind: LinePdfKind::Priced,
                 description: "Prestation de test".into(),
                 quantity: dec!(1),
                 unit_price: dec!(100.00),

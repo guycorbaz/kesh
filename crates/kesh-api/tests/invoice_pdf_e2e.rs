@@ -189,6 +189,18 @@ async fn seed_validated_invoice(
             vat_rate: dec!(7.70),
         })
         .collect();
+    seed_validated_invoice_with(pool, company_id, contact_id, user_id, lines).await
+}
+
+/// [`seed_validated_invoice`] aux lignes données (Story 49-1b : des lignes de commentaire
+/// créées **au dépôt**, qui accepte les trois types ; la garde de l'API reste fermée).
+async fn seed_validated_invoice_with(
+    pool: &MySqlPool,
+    company_id: i64,
+    contact_id: i64,
+    user_id: i64,
+    lines: Vec<NewInvoiceLine>,
+) -> i64 {
     let new = NewInvoice {
         company_id,
         contact_id,
@@ -910,4 +922,206 @@ async fn refus_du_pdf_d_un_avoir_sans_contact(pool: MySqlPool) {
     let m = body["error"]["message"].as_str().unwrap();
     assert_eq!(m, fr("credit-note-pdf-error-contact-missing"));
     assert_ne!(m, fr("invoice-pdf-error-contact-missing"));
+}
+
+// ----- Story 49-1b (#1242) — une ligne de commentaire sur le PDF -----
+
+/// Le commentaire des tests de la 49-1b.
+const COMMENTAIRE: &str = "Appartement 3 pieces, 2e etage";
+/// Les colonnes chiffrées du tableau des lignes, en mm.
+const COLONNES_CHIFFREES: [f32; 4] = [110.0, 130.0, 160.0, 180.0];
+
+/// Une ligne chiffrée à 8.10 %.
+fn chiffree(description: &str, prix: rust_decimal::Decimal) -> NewInvoiceLine {
+    NewInvoiceLine {
+        revenue_account_id: None,
+        line_type: kesh_db::entities::LineType::Priced,
+        description: description.into(),
+        quantity: dec!(1),
+        unit_price: prix,
+        vat_rate: dec!(8.10),
+    }
+}
+
+/// Une ligne de commentaire, aux valeurs neutres (`chk_invoice_lines_unpriced_neutral`).
+fn commentaire(texte: &str) -> NewInvoiceLine {
+    NewInvoiceLine {
+        revenue_account_id: None,
+        line_type: kesh_db::entities::LineType::Comment,
+        description: texte.into(),
+        quantity: dec!(0),
+        unit_price: dec!(0),
+        vat_rate: dec!(0),
+    }
+}
+
+/// `[A, commentaire, B]` et `[A, B]`.
+fn lignes_avec_et_sans() -> (Vec<NewInvoiceLine>, Vec<NewInvoiceLine>) {
+    let a = || chiffree("Loyer", dec!(100.00));
+    let b = || chiffree("Charges", dec!(50.00));
+    (vec![a(), commentaire(COMMENTAIRE), b()], vec![a(), b()])
+}
+
+async fn get_bytes(app: &TestApp, token: &str, chemin: &str) -> reqwest::Response {
+    app.client
+        .get(app.url(chemin))
+        .header("Authorization", format!("Bearer {token}"))
+        .send()
+        .await
+        .unwrap()
+}
+
+async fn pdf_200(app: &TestApp, token: &str, chemin: &str) -> Vec<u8> {
+    let resp = get_bytes(app, token, chemin).await;
+    assert_eq!(resp.status(), 200, "GET {chemin}");
+    resp.bytes().await.unwrap().to_vec()
+}
+
+/// Vérifie le commentaire sur le PDF : à `x = 20` mm, seul à sa hauteur, sans « 0.00 » ni
+/// « % » ni texte aux colonnes chiffrées.
+fn assert_commentaire_pleine_largeur(pdf: &[u8]) {
+    let textes = kesh_qrbill::empreinte::textes(pdf);
+    let (x, y, _) = textes
+        .iter()
+        .find(|(_, _, t)| t == COMMENTAIRE)
+        .unwrap_or_else(|| panic!("le commentaire n'est pas imprimé : {textes:#?}"))
+        .clone();
+    assert!((x - 20.0).abs() < 0.01, "x = {x}");
+    for (tx, _, t) in textes.iter().filter(|(_, ty, _)| (ty - y).abs() < 0.01) {
+        assert!(
+            COLONNES_CHIFFREES.iter().all(|c| (tx - c).abs() >= 0.01),
+            "texte à une colonne chiffrée à la hauteur du commentaire : {t:?} à {tx}"
+        );
+        assert!(!t.contains("0.00") && !t.contains('%'), "{t:?}");
+    }
+}
+
+/// Les sommes lues dans le PDF : les textes des colonnes de droite de la section haute
+/// (montants des lignes, récapitulatif, total ; x ≥ 130 mm, au-dessus du séparateur), et
+/// les montants de la section de paiement (QR).
+fn sommes_lues(pdf: &[u8]) -> (Vec<String>, Vec<String>) {
+    let textes = kesh_qrbill::empreinte::textes(pdf);
+    let haut = textes
+        .iter()
+        .filter(|(x, y, _)| *x >= 129.99 && *y > 105.0 && *y < 159.01)
+        .map(|(_, _, t)| t.clone())
+        .collect();
+    let est_montant = |t: &str| {
+        let (entier, decimales) = t.split_once('.').unwrap_or(("", ""));
+        !entier.is_empty()
+            && entier
+                .chars()
+                .all(|c| c.is_ascii_digit() || c == ' ' || c == '\'')
+            && decimales.len() == 2
+            && decimales.chars().all(|c| c.is_ascii_digit())
+    };
+    let qr = textes
+        .iter()
+        .filter(|(_, y, t)| *y < 105.0 && est_montant(t))
+        .map(|(_, _, t)| t.clone())
+        .collect();
+    (haut, qr)
+}
+
+/// **T9 (Story 49-1b, AC3, AC5 a, AC7)** — une facture `[A, commentaire, B]` créée au dépôt
+/// et validée s'imprime avec son commentaire pleine largeur, sans colonnes ; elle porte
+/// **les mêmes** montants, récapitulatif, total et montant de QR que `[A, B]` (D9 : une
+/// ligne non chiffrée n'ajoute rien aux sommes). Un commentaire de mille caractères ne tient
+/// pas sur la page : `400 INVOICE_TOO_MANY_LINES_FOR_PDF` (D6).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn pdf_d_une_facture_a_commentaire_l_imprime(pool: MySqlPool) {
+    let (admin_id, company_id) = seed_base(&pool).await;
+    let contact_id = seed_contact(&pool, company_id, admin_id, true).await;
+    seed_primary_bank(&pool, company_id, true).await;
+    let (avec, sans) = lignes_avec_et_sans();
+    let id_avec = seed_validated_invoice_with(&pool, company_id, contact_id, admin_id, avec).await;
+    let id_sans = seed_validated_invoice_with(&pool, company_id, contact_id, admin_id, sans).await;
+    let long: String = "Commentaire de mille caracteres. ".repeat(30);
+    let long = format!("{long}{}", "x".repeat(1000 - long.chars().count()));
+    assert_eq!(long.chars().count(), 1000);
+    let id_long = seed_validated_invoice_with(
+        &pool,
+        company_id,
+        contact_id,
+        admin_id,
+        vec![chiffree("Loyer", dec!(100.00)), commentaire(&long)],
+    )
+    .await;
+
+    let app = spawn_app(pool.clone()).await;
+    let token = login(&app).await;
+    let pdf_avec = pdf_200(&app, &token, &format!("/api/v1/invoices/{id_avec}/pdf")).await;
+    let pdf_sans = pdf_200(&app, &token, &format!("/api/v1/invoices/{id_sans}/pdf")).await;
+    assert_commentaire_pleine_largeur(&pdf_avec);
+    let (haut_avec, qr_avec) = sommes_lues(&pdf_avec);
+    let (haut_sans, qr_sans) = sommes_lues(&pdf_sans);
+    assert!(
+        haut_sans.iter().any(|t| t.contains("162.15")),
+        "montage : le total TTC de [A, B] est lu ({haut_sans:?})"
+    );
+    assert!(!qr_sans.is_empty(), "montage : le montant de QR est lu");
+    assert_eq!(haut_avec, haut_sans, "montants, récapitulatif et total");
+    assert_eq!(qr_avec, qr_sans, "montant de la QR");
+
+    let resp = get_bytes(&app, &token, &format!("/api/v1/invoices/{id_long}/pdf")).await;
+    assert_eq!(resp.status(), 400);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(
+        body["error"]["code"], "INVOICE_TOO_MANY_LINES_FOR_PDF",
+        "{body}"
+    );
+}
+
+/// **T10 (Story 49-1b, AC3, AC5 a)** — l'avoir d'une facture à commentaire reprend le
+/// commentaire, pleine largeur, et porte les mêmes montants, récapitulatif et total que
+/// l'avoir d'une facture `[A, B]` distincte.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn pdf_d_un_avoir_reprend_le_commentaire(pool: MySqlPool) {
+    let (admin_id, company_id) = seed_base(&pool).await;
+    let contact_id = seed_contact(&pool, company_id, admin_id, true).await;
+    seed_primary_bank(&pool, company_id, true).await;
+    let (avec, sans) = lignes_avec_et_sans();
+    let mut avoirs = Vec::new();
+    for lignes in [avec, sans] {
+        let invoice_id =
+            seed_validated_invoice_with(&pool, company_id, contact_id, admin_id, lignes).await;
+        let avoir = credit_notes::create_credit_note(
+            &pool,
+            NewCreditNote {
+                company_id,
+                invoice_id,
+                date: NaiveDate::from_ymd_opt(2026, 4, 20).unwrap(),
+            },
+            admin_id,
+        )
+        .await
+        .unwrap();
+        avoirs.push(avoir.credit_note.id);
+    }
+
+    let app = spawn_app(pool.clone()).await;
+    let token = login(&app).await;
+    let pdf_avec = pdf_200(
+        &app,
+        &token,
+        &format!("/api/v1/credit-notes/{}/pdf", avoirs[0]),
+    )
+    .await;
+    let pdf_sans = pdf_200(
+        &app,
+        &token,
+        &format!("/api/v1/credit-notes/{}/pdf", avoirs[1]),
+    )
+    .await;
+    assert_commentaire_pleine_largeur(&pdf_avec);
+    let (haut_avec, _) = sommes_lues(&pdf_avec);
+    let (haut_sans, _) = sommes_lues(&pdf_sans);
+    assert!(
+        haut_sans.iter().any(|t| t.contains("162.15")),
+        "montage : le total TTC de l'avoir de [A, B] est lu ({haut_sans:?})"
+    );
+    assert_eq!(
+        haut_avec, haut_sans,
+        "montants, récapitulatif et total de l'avoir"
+    );
 }

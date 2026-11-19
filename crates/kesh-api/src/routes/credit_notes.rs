@@ -25,7 +25,7 @@ use crate::helpers::get_company_for;
 use crate::middleware::auth::CurrentUser;
 use crate::routes::ListResponse;
 use crate::routes::invoice_pdf_service::{
-    CauseRefusPdf, build_i18n, map_qrbill_error, refus, sanitize_filename, split_lines,
+    CauseRefusPdf, build_i18n, ligne_pdf, map_qrbill_error, refus, sanitize_filename, split_lines,
 };
 
 #[derive(Serialize)]
@@ -309,12 +309,15 @@ pub async fn get_credit_note_pdf(
 
     let pdf_lines: Vec<InvoiceLinePdf> = lines
         .iter()
-        .map(|l| InvoiceLinePdf {
-            description: l.description.clone(),
-            quantity: l.quantity,
-            unit_price: l.unit_price,
-            vat_rate: l.vat_rate,
-            line_total: l.line_total,
+        .map(|l| {
+            ligne_pdf(
+                &l.description,
+                l.line_type,
+                l.quantity,
+                l.unit_price,
+                l.vat_rate,
+                l.line_total,
+            )
         })
         .collect();
 

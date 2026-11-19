@@ -16,6 +16,11 @@ use kesh_qrbill::{generate_qr_bill_pdf, validate, QrBillData, InvoicePdfData, Qr
 let pdf_bytes: Vec<u8> = generate_qr_bill_pdf(&qr_data, &invoice_data, &i18n)?;
 ```
 
+Each `InvoiceLinePdf` carries a `kind` (`LinePdfKind`): a `Priced` line fills the five
+columns (its description shortened to 44 characters and "…"), while a `Comment` (and,
+until its own styling, a `Heading`) prints its text alone across the full table width,
+wrapped at word boundaries without truncation.
+
 - [`build_payload`] — raw SIX payload string (32/33 lines, SIX 2.2 §3 order).
 - [`validate`] — static validation (IBAN mod-97, QR-IBAN IID range, QRR
   mod-10 recursive checksum, field lengths, currency, amount bounds).

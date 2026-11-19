@@ -1114,3 +1114,49 @@ async fn refiger_refuse_nomme_le_champ_et_le_caractere(pool: MySqlPool) {
     assert!(m.contains("localité du client"), "{m}");
     assert!(m.contains("U+2013"), "{m}");
 }
+
+/// **T12 (Story 49-1b, AC9 a et c, D7)** — le PDF archivé fait foi : une facture dont le
+/// fichier figé a un contenu **autre** que celui que le code rendrait (un PDF émis par une
+/// version antérieure, posé ici par SQL sur les quatre colonnes `pdf_*`, forme de la
+/// 0.19.0) est servie **octet pour octet** ; le regel, après la perte du fichier, rend de
+/// nouveau avec le code en fonction.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn un_pdf_fige_est_servi_tel_quel_meme_si_le_rendu_aurait_change(pool: MySqlPool) {
+    let s = seed(&pool, None).await;
+    let id = seed_invoice(&pool, &s, 1).await;
+    let app = spawn_app(pool.clone(), MockMailer::new(), unique_dir("documents")).await;
+    let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
+    let rendu = pdf_bytes(&app, &token, id).await;
+    let inv = invoice(&pool, &s, id).await;
+
+    // Le fichier archivé d'une autre version : d'autres octets, d'autres textes.
+    let archive = b"%PDF-1.7\n% PDF archive synthetique d'une version anterieure\n%%EOF\n".to_vec();
+    std::fs::write(frozen_file(&app, &inv), &archive).unwrap();
+    sqlx::query(
+        "UPDATE invoices SET pdf_storage_path = ?, pdf_sha256 = ?, \
+         pdf_frozen_at = '2026-11-02 10:00:00.000', pdf_language = 'FR' WHERE id = ?",
+    )
+    .bind(inv.pdf_storage_path.as_deref().unwrap())
+    .bind(sha256(&archive))
+    .bind(id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let servi = pdf_bytes(&app, &token, id).await;
+    assert_eq!(
+        sha256(&servi),
+        sha256(&archive),
+        "le fichier archivé, tel quel"
+    );
+    assert_ne!(sha256(&servi), sha256(&rendu));
+
+    // Le fichier perdu : le regel rend avec le code en fonction (même contenu que le premier
+    // rendu, aux métadonnées près).
+    std::fs::remove_file(frozen_file(&app, &invoice(&pool, &s, id).await)).unwrap();
+    assert_eq!(refreeze(&app, &token, id).await.status(), 200);
+    let regele = pdf_bytes(&app, &token, id).await;
+    assert_eq!(
+        kesh_qrbill::empreinte::empreinte(&regele),
+        kesh_qrbill::empreinte::empreinte(&rendu)
+    );
+}
