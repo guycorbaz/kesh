@@ -1455,6 +1455,9 @@ describe('SupplierInvoiceForm — table A (Story 48-12b)', () => {
 		(r.getByTestId('supplier-invoice-form') as HTMLFormElement).requestSubmit();
 		await tick();
 		expect(r.onSubmit).toHaveBeenCalledTimes(1);
+		// Une valeur changée par programme pendant le gel ne part pas : la confirmation
+		// renvoie le corps GARDÉ, non l'état courant de la saisie.
+		await fireEvent.input(r.getByTestId('supplier-invoice-number'), { target: { value: 'AUTRE' } });
 		const btn = r.getByTestId('supplier-invoice-confirm-not-duplicate');
 		btn.click();
 		btn.click();
