@@ -635,9 +635,55 @@ Manuels : non touchés (Dev Notes, « Aucun manuel ne change »).
    antérieur à la 0.20.0, visible sur toute facture (captures `49-1b-*.png`) ; P4, cosmétique.
 3. (déjà ouverte, #1363) la description d'une ligne chiffrée réduite à 44 caractères et « … ».
 
+### Remédiation de la revue P1 (commit `4dd9932ea`)
+
+Revue P1 (trois lentilles Opus, `kesh-gate-logs/e491b/review-p1-{B,E,A}.md`) : 0/0/1/15 ; la preuve avant / après tient.
+Traité :
+
+- **MEDIUM B-M1 = A-1 = E-1 et L1** (garde `configuration_transmise`) : C-e491b-6. Plus d'exclusion de fichier ; les
+  deux lectures exactes d'`empreinte.rs` autorisées ; (T) et (E) lisent `lues_distribuees` ; `FEATURES_DE_TEST` contrôlée
+  dans tous les manifestes, racine comprise, et dans le graphe résolu (`cargo tree -e normal --offline`, sonde positive
+  `normal,dev`) ; sondes négatives `s_features_de_test` (`default`, feature d'un autre crate, liste sur plusieurs lignes,
+  `[dependencies]`, `[dependencies.x]`, `[workspace.dependencies]`, `[target.….dependencies]`).
+- **Chemin des commentaires et des titres seul** (`texte_de_commentaire`, `lignes_de_commentaire`) : E-2 (`\r` seul =
+  saut), E-3 (sauts Unicode, blancs Unicode en espace, caractères sans largeur WinAnsi retirés : un commentaire fait de
+  CJK ne consomme rien), E-4 et L2 (lignes vides de tête et de fin retirées), E-5 (plus de `texte_code` : ’ et — gardés,
+  lettres hors WinAnsi repliées par `texte::repli`, devenu `pub(crate)` sans autre changement).
+- **Preuve que le chemin chiffré n'a pas bougé** : `git diff -U0 03afbfbca 4dd9932ea -- crates/kesh-qrbill/src/pdf.rs`
+  ne nomme que le doc-comment de la l. 401, le bloc des deux fonctions du commentaire (l. 1136-1201) et des tests ;
+  `texte.rs` ne change que la visibilité de `repli` et son doc-comment. T1, T2, T3 verts à `4dd9932ea`
+  (`gate-cible-p1-1.log`) ; contrôles de l'AC1 rejoués (`ac1-controles-p1.log` : (1) et (6) vides, 18 sources égales,
+  (5) rc=0).
+- **Tests** : A-4 (T4 : polices et ressources d'une facture et d'un avoir à commentaire égales à celles sans) ; A-3 (T9 :
+  la facture à commentaire jamais téléchargée s'est figée, le fichier figé est le PDF servi, le regel la rend avec le
+  commentaire et la même empreinte) ; T5 gagne E-2 à E-5 et L2 ; L6 (`TempDir` dans `pdf_avant_apres_e2e.rs`).
+- **Captures** (A-2, L3) : le témoin est la facture S2 (cinq lignes à 33.31, deux taux, « Arrondi CHF -0.02 »), toutes les
+  pièces de la capture portent l'arrondi à 5 centimes ; six PNG refaits et relus (`captures/`, les anciens sous
+  `captures/avant-p1/`).
+- **Écrits** : A-5 (`README.md:20`, `types.rs:196`, doc-comment de `draw_invoice_section` : réduction au-delà de 45
+  caractères) ; L4, E-6 et L5 dans les en-têtes de `rendu_avant_apres.rs` et `pdf_avant_apres_e2e.rs` (ancrage à
+  `cbdd70026` = 0.19.0 + 49-1a ; angles morts du comparateur : `/CropBox`, `/Rotate`, `/UserUnit`, `/Annots`,
+  catalogue, `Info`, XMP, trailer) ; le comparateur gelé n'est pas touché.
+- **Manuel, E-5** : `user-manual.tex:1594` reste vrai en 0.20.0 (aucun commentaire créable). **Tâche pour la 49-1c** :
+  quand le commentaire s'ouvre, la phrase « le reste du corps (libellés des lignes, conditions…) n'a pas ce repli et perd
+  encore ces lettres » devient fausse pour lui — un commentaire **replie** les 125 lettres sur leur base (Čolić →
+  « Colic »), comme le nom et l'adresse, et **garde** ’ et — (« le reste du corps les garde tels quels » reste vrai) ; le
+  libellé d'une ligne chiffrée, lui, n'a toujours pas le repli.
+
+**Ce qui a tourné** (journaux dans `kesh-gate-logs/e491b/`) :
+- gate ciblé, avec `binary(configuration_transmise)` (`gate-cible-p1-1.log`) : clippy du workspace vert, 1049 tests verts ;
+- `test-fast --ci` sur bases remises à neuf (`test-fast-p1.log`, HEAD `4dd9932ea`) : **6180 sur 6180**, 16 ignorés ;
+- mutations (`mut/bilan.log`, section « Remédiation P1 ») : **14 tuées**, chacune par le test visé, sans erreur de
+  compilation — G-3 à G-8 (garde), P1-E2 à P1-E5 (commentaire), et la reprise de T5-1, T5-2, T6, T8 sur le chemin réécrit ;
+  G-1 et G-2 de la P1 portaient sur l'exclusion retirée : sans objet.
+
+**Pas lancé** : `gate-ci` (à la clôture, consigne) et E2E (à la clôture).
+
+**Non traité, sans issue** : aucun. Les findings de la P1 sont tous traités ci-dessus.
+
 ### Fichiers
 
-`crates/kesh-qrbill/src/{empreinte,lib,pdf,types}.rs`, `crates/kesh-qrbill/Cargo.toml`, `crates/kesh-qrbill/README.md`,
+`crates/kesh-qrbill/src/{empreinte,lib,pdf,texte,types}.rs`, `crates/kesh-qrbill/Cargo.toml`, `crates/kesh-qrbill/README.md`,
 `crates/kesh-qrbill/examples/capture_qr_facture.rs`, `crates/kesh-qrbill/tests/{rendu_avant_apres,golden_test}.rs`,
 `crates/kesh-qrbill/tests/fixtures/avant-0.20.0/` (10 fichiers), `crates/kesh-api/Cargo.toml`,
 `crates/kesh-api/src/routes/{invoice_pdf_service,credit_notes}.rs`, `crates/kesh-api/src/qr_decode.rs`,
@@ -658,3 +704,4 @@ Manuels : non touchés (Dev Notes, « Aucun manuel ne change »).
 | 2026-11-19 | **Validation P6 ciblée** (Sonnet 5.5, `kesh-gate-logs/e491b/validation-p6-ciblee.md` : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 4 LOW). T1-bis simplifié tient ; propagation au texte seul. **Remédiation** : V6-1 D4 ne promet plus « composante par composante » (même formulation que T1-bis) ; V6-2 mutation « empreinte constante » ; V6-3 `#[sqlx::test]` pour T0-bis seul (T0 sans base) ; V6-4 droit `\_sqlx\_test%` (`docs/testing.md:22`) ; V6-5 `Cargo.lock` conditionnel (« s'il change ») aux lignes 206, 384, 386, 420, 441, `MediaBox` à la ligne T1. **Grep du symptôme sur toute la fiche** (`grep -n "composante par composante\|condensat vide\|Cargo.lock\|MediaBox\|sqlx::test"` ; sortie hors Change Log : lignes 184, 192, 206, 306, 315, 384, 386, 396, 397, 398, 420, 424, 441, soit D4, la liste des chemins du commit C, l'AC1, les tâches et les lignes T0-bis, T1-bis, T1 du tableau) : aucun « composante par composante » ni « condensat vide » hors des entrées historiques ; tous les `Cargo.lock` sont conditionnels ; `MediaBox` figure à D4, AC1, T1 et T1-bis ; `sqlx::test` à T0 (négation) et T0-bis. Une passe 7 reste à lancer, ciblée ou complète selon l'orchestrateur. |
 | 2026-11-19 | **Validation terminée — Change Log final** (une entrée). **Tendance des findings par passe** (CRITICAL/HIGH/MEDIUM/LOW) : P1 Opus 0/1/5/7 → P2 Sonnet 0/0/4/5 → P3 ciblée Opus 0/1/3/5 → P4 Sonnet 0/0/3/7 → P5 ciblée Opus 0/0/2/4 → P6 ciblée Sonnet 0/0/1/4 → P7 ciblée Haiku 0/0/0/1 ; arrêt sur une passe sans finding au-dessus de LOW. **Modèles** : Sonnet (rédaction), Opus (P1), Sonnet (P2), Opus (P3 ciblée), Sonnet (P4), Opus (P5 ciblée), Sonnet (P6 ciblée), Haiku (P7 ciblée). **Signaux « recycle »** : deux, déclarés au Project Lead par l'orchestrateur (P3 : défauts nés de la remédiation dans le mécanisme de capture ; P5 : MEDIUM nés de la remédiation P4 dans le test du comparateur). **Deux simplifications retenues** : la capture des références dans un worktree propre et détaché (commits C puis F, avant tout code de rendu), et T1-bis réduit à « l'empreinte distingue les six paires fabriquées » avec une seule mutation. **Reclassements** : aucun. **LOW de la P7 corrigé après la dernière passe** (texte seul, aucun code : D4 et T1-bis disent « l'empreinte distingue les six paires fabriquées », sans généraliser). Statut : `ready-for-dev`. |
 | 2026-11-19 | **Développement** (Opus 5.5, `bmad-dev-story`). Étape 0 dans l'ordre : commit C (`709370ed5`, après un premier essai `a8b15b240` arrêté par l'assertion de son propre scénario S2, aucune référence écrite), capture dans un worktree détaché propre (T0, T0-bis : `ecrire` puis `comparer`, stables), commit F (`12be35434`, fixtures seules), retrait du worktree sans `--force`, contrôles de l'AC1 (1) à (7) conformes ; puis le code (`03afbfbca`) : `LinePdfKind`, `couper_ligne_a`, chemin du commentaire, `ligne_pdf`. T1 à T12 verts ; T1, T2, T3 prouvent que le rendu chiffré est celui de la 0.19.0. 21 mutations tuées, une équivalente déclarée (T12 de la fiche ; T12-b tuée). Garde `configuration_transmise` adaptée (`89f5e77cb`, C-e491b-5 ; G-1, G-2 tuées). Gates du passage en review verts à `89f5e77cb` (`test-fast --ci` 6179/6179, `gate-ci` 6196 passés). Écarts : premier C, suppression des fixtures de capture par `mv` (pas de `rm`), mutant équivalent T12, garde de configuration. Statut : `review`. |
+| 2026-11-19 | **Revue P1** (trois lentilles B, E, A, Opus 5.5 ; `kesh-gate-logs/e491b/review-p1-{B,E,A}.md`) : 0 CRITICAL, 0 HIGH, 1 MEDIUM (relevé par les trois lentilles : la garde de la feature de test admettait une activation en production), 15 LOW ; preuve avant / après confirmée par les trois. **Remédiation** (`4dd9932ea`, Opus 5.5) : garde de configuration (C-e491b-6), chemin des commentaires (E-2 à E-5, L2), tests (A-3, A-4, L6), témoin S2 et captures (A-2, L3), écrits (A-5, L4, L5, E-6) ; détail au Dev Agent Record, § *Remédiation de la revue P1*. T1, T2, T3 verts et AC1 rejoué : chemin chiffré inchangé. `test-fast --ci` 6180/6180 ; 14 mutations tuées. Prochaine passe : **P2 complète**, lentille unique, Sonnet (`49-1b-types-de-lignes-pdf-review-prompt-p2.md`). Statut : `review`. |

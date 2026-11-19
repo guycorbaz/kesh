@@ -60,3 +60,22 @@ retenue, autres options, réversibilité.*
   mode dans les fichiers de test — même interdit que (a) pour `mode_references`.
 - **Réversible** : oui ; à revoir si d'autres modules de soutien aux tests apparaissent (une règle générale par
   feature serait alors préférable à une liste).
+- **Remplacé par C-e491b-6** (revue P1, `4dd9932ea`) : l'exclusion de fichier est retirée.
+
+## C-e491b-6 — La garde autorise la seule lecture de `KESH_REFERENCES`, et contrôle la feature de test dans le graphe
+
+- **Contexte** : la revue P1 (MEDIUM B-M1 = A-1 = E-1, LOW L1) montre que C-e491b-5 laissait passer une activation de
+  `test-support` en production (`default = [...]`, feature d'un autre crate, `[workspace.dependencies]` de la racine,
+  non lue), et que l'exclusion couvrait tout le fichier.
+- **Retenu** : (a) plus d'exclusion de fichier ; les deux occurrences exactes de `mode_references` entrent dans
+  `EMPLACEMENTS_AUTORISES` (idiome de `horloge_de_test`) ; le littéral `KESH_REFERENCES` reste dans l'ensemble lu, mais
+  (T) et (E) lisent `lues_distribuees`, qui écarte les `VARIABLES_DE_TEST` (dont `variables_de_test_hors_distribution`
+  contrôle l'absence des compose et de `.env.example`) ; (b) `FEATURES_DE_TEST` et
+  `la_feature_de_test_n_entre_pas_en_production` : dans tous les `Cargo.toml`, racine comprise, la feature n'apparaît
+  que sur sa ligne de définition ou sous `[dev-dependencies…]` (sondes négatives `s_features_de_test`) ; et le graphe
+  résolu des dépendances normales de `kesh-api` (`cargo tree -e normal --offline`, borné à deux minutes, sortie lue dans
+  un fil) ne l'active pas, avec sonde positive (`-e normal,dev`).
+- **Autres** : `cargo metadata` (sa résolution unifie les features des dev-dépendances : elle ne distingue pas les
+  dépendances normales) ; garder l'exclusion de fichier et ne durcir que les manifestes (L1 non traité).
+- **Réversible** : oui. **Risque dit** : le test lance `cargo` ; s'il ne trouvait pas `cargo` (variable `CARGO` absente
+  et `cargo` hors du `PATH`), il rougirait, bruyamment.
