@@ -1,6 +1,6 @@
 -- SQUASH DU SCHÉMA DE TEST — Story 22-5 (#251). GÉNÉRÉ, NE PAS ÉDITER.
 -- Régénérer : scripts/regen-test-schema.sh
--- Équivalent des 95 migrations de crates/kesh-db/migrations/,
+-- Équivalent des 96 migrations de crates/kesh-db/migrations/,
 -- rejouées en UN batch DDL par base éphémère de test.
 --
 -- Le garde-fou crates/kesh-db/tests/test_schema_guard.rs compare ce schéma
@@ -532,17 +532,20 @@ CREATE TABLE `credit_note_lines` (
   `line_total` decimal(19,4) NOT NULL,
   `created_at` datetime(3) NOT NULL DEFAULT current_timestamp(3),
   `revenue_account_id` bigint(20) DEFAULT NULL,
+  `line_type` varchar(16) NOT NULL DEFAULT 'priced',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_credit_note_lines_position` (`credit_note_id`,`position`),
   KEY `idx_credit_note_lines_credit_note` (`credit_note_id`),
   KEY `idx_credit_note_lines_revenue_account` (`revenue_account_id`),
   CONSTRAINT `fk_credit_note_lines_credit_note` FOREIGN KEY (`credit_note_id`) REFERENCES `credit_notes` (`id`) ON DELETE CASCADE,
   CONSTRAINT `fk_credit_note_lines_revenue_account` FOREIGN KEY (`revenue_account_id`) REFERENCES `accounts` (`id`),
-  CONSTRAINT `chk_credit_note_lines_quantity_positive` CHECK (`quantity` > 0),
   CONSTRAINT `chk_credit_note_lines_unit_price_non_negative` CHECK (`unit_price` >= 0),
   CONSTRAINT `chk_credit_note_lines_vat_rate_range` CHECK (`vat_rate` >= 0 and `vat_rate` <= 100),
   CONSTRAINT `chk_credit_note_lines_description_not_empty` CHECK (char_length(trim(`description`)) > 0),
-  CONSTRAINT `chk_credit_note_lines_line_total_non_negative` CHECK (`line_total` >= 0)
+  CONSTRAINT `chk_credit_note_lines_line_total_non_negative` CHECK (`line_total` >= 0),
+  CONSTRAINT `chk_credit_note_lines_line_type` CHECK (cast(`line_type` as char charset binary) in ('priced','comment','heading')),
+  CONSTRAINT `chk_credit_note_lines_priced_quantity` CHECK (`line_type` <> 'priced' or `quantity` > 0),
+  CONSTRAINT `chk_credit_note_lines_unpriced_neutral` CHECK (`line_type` = 'priced' or `quantity` = 0 and `unit_price` = 0 and `vat_rate` = 0 and `line_total` = 0 and `revenue_account_id` is null)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `credit_note_number_sequences`;
@@ -758,17 +761,20 @@ CREATE TABLE `invoice_lines` (
   `line_total` decimal(19,4) NOT NULL,
   `created_at` datetime(3) NOT NULL DEFAULT current_timestamp(3),
   `revenue_account_id` bigint(20) DEFAULT NULL,
+  `line_type` varchar(16) NOT NULL DEFAULT 'priced',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_invoice_lines_position` (`invoice_id`,`position`),
   KEY `idx_invoice_lines_invoice` (`invoice_id`),
   KEY `idx_invoice_lines_revenue_account` (`revenue_account_id`),
   CONSTRAINT `fk_invoice_lines_invoice` FOREIGN KEY (`invoice_id`) REFERENCES `invoices` (`id`) ON DELETE CASCADE,
   CONSTRAINT `fk_invoice_lines_revenue_account` FOREIGN KEY (`revenue_account_id`) REFERENCES `accounts` (`id`),
-  CONSTRAINT `chk_invoice_lines_quantity_positive` CHECK (`quantity` > 0),
   CONSTRAINT `chk_invoice_lines_unit_price_non_negative` CHECK (`unit_price` >= 0),
   CONSTRAINT `chk_invoice_lines_vat_rate_range` CHECK (`vat_rate` >= 0 and `vat_rate` <= 100),
   CONSTRAINT `chk_invoice_lines_description_not_empty` CHECK (char_length(trim(`description`)) > 0),
-  CONSTRAINT `chk_invoice_lines_line_total_non_negative` CHECK (`line_total` >= 0)
+  CONSTRAINT `chk_invoice_lines_line_total_non_negative` CHECK (`line_total` >= 0),
+  CONSTRAINT `chk_invoice_lines_line_type` CHECK (cast(`line_type` as char charset binary) in ('priced','comment','heading')),
+  CONSTRAINT `chk_invoice_lines_priced_quantity` CHECK (`line_type` <> 'priced' or `quantity` > 0),
+  CONSTRAINT `chk_invoice_lines_unpriced_neutral` CHECK (`line_type` = 'priced' or `quantity` = 0 and `unit_price` = 0 and `vat_rate` = 0 and `line_total` = 0 and `revenue_account_id` is null)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `invoice_number_sequences`;

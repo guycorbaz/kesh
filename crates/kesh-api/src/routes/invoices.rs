@@ -25,6 +25,7 @@ use serde::{Deserialize, Serialize};
 use unicode_normalization::UnicodeNormalization;
 
 use kesh_core::listing::SortDirection;
+use kesh_db::entities::LineType;
 use kesh_db::entities::invoice::{Invoice, InvoiceLine, InvoiceUpdate, NewInvoice, NewInvoiceLine};
 use kesh_db::errors::DbError;
 use kesh_db::repositories::{
@@ -64,13 +65,39 @@ const MAX_LINES: usize = 200;
 // DTOs
 // ---------------------------------------------------------------------------
 
+/// `lineType` d'une ligne reçue : `null` et absence valent `priced` ; une valeur
+/// inconnue reste une erreur de désérialisation (`422`).
+fn line_type_or_default<'de, D>(d: D) -> Result<LineType, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Option::<LineType>::deserialize(d).map(Option::unwrap_or_default)
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateInvoiceLineRequest {
+    /// Type de la ligne (Story 49-1a), `priced` par défaut : un corps de la
+    /// 0.19.0, qui ne l'envoie pas, est accepté à l'identique. `comment` et
+    /// `heading` sont reconnus mais **refusés** (`400`) tant que la garde
+    /// [`LineType::open_to_api`] ne les ouvre pas ; une valeur inconnue est un
+    /// rejet de l'extracteur (`422`). Un `null` vaut l'absence, comme pour les
+    /// montants et `revenueAccountId` (revue P1, B1/E3/A7) : `#[serde(default)]`
+    /// seul ne couvre que la clé absente.
+    #[serde(default, deserialize_with = "line_type_or_default")]
+    pub line_type: LineType,
     pub description: String,
-    pub quantity: Decimal,
-    pub unit_price: Decimal,
-    pub vat_rate: Decimal,
+    /// Quantité, prix unitaire et taux de TVA : **exigés pour une ligne
+    /// chiffrée** par [`validate_line`] (`400 VALIDATION_ERROR` nommant la ligne
+    /// et le champ), absents ou nuls pour une ligne non chiffrée (Story 49-1a,
+    /// D8). `Option` + `#[serde(default)]` pour que l'absence se juge par type,
+    /// et non par l'extracteur.
+    #[serde(default)]
+    pub quantity: Option<Decimal>,
+    #[serde(default)]
+    pub unit_price: Option<Decimal>,
+    #[serde(default)]
+    pub vat_rate: Option<Decimal>,
     /// Compte de produit de la ligne (Story 16-1a, #152 / CR #265). Absent ou
     /// `null` = repli sur le compte de produit par défaut de la société.
     ///
@@ -158,8 +185,11 @@ pub struct InvoiceLineResponse {
     pub line_total: Decimal,
     /// Compte de produit de la ligne (Story 16-1a). `null` sur un brouillon qui
     /// suit le compte par défaut de la société ; toujours renseigné sur une
-    /// facture validée par ce binaire (matérialisation D2).
+    /// facture validée par ce binaire (matérialisation D2), sauf sur une ligne
+    /// non chiffrée, qui n'en a jamais.
     pub revenue_account_id: Option<i64>,
+    /// Type de la ligne (Story 49-1a) : `priced`, `comment` ou `heading`.
+    pub line_type: LineType,
     pub created_at: NaiveDateTime,
 }
 
@@ -175,6 +205,7 @@ impl From<InvoiceLine> for InvoiceLineResponse {
             vat_rate: l.vat_rate,
             line_total: l.line_total,
             revenue_account_id: l.revenue_account_id,
+            line_type: l.line_type,
             created_at: l.created_at,
         }
     }
@@ -487,32 +518,48 @@ fn validate_line(req: CreateInvoiceLineRequest, index: usize) -> Result<NewInvoi
         )));
     }
 
-    if req.quantity <= Decimal::ZERO {
+    if !req.line_type.is_priced() {
+        return validate_unpriced_line(req, description, index);
+    }
+
+    // Story 49-1a (D8) : les trois montants, optionnels à la désérialisation,
+    // sont exigés d'une ligne chiffrée — un champ manquant rend `400` nommant la
+    // ligne et le champ, et non plus le `422` de l'extracteur.
+    let required = |v: Option<Decimal>, champ: &str| {
+        v.ok_or_else(|| {
+            AppError::Validation(format!("Ligne {} : {champ} est obligatoire", index + 1))
+        })
+    };
+    let quantity = required(req.quantity, "la quantité")?;
+    let unit_price = required(req.unit_price, "le prix unitaire")?;
+    let vat_rate = required(req.vat_rate, "le taux de TVA")?;
+
+    if quantity <= Decimal::ZERO {
         return Err(AppError::Validation(format!(
             "Ligne {} : la quantité doit être strictement positive",
             index + 1
         )));
     }
-    if !scale_within(&req.quantity, MAX_DECIMAL_SCALE) {
+    if !scale_within(&quantity, MAX_DECIMAL_SCALE) {
         return Err(line_scale_error(index, "la quantité"));
     }
-    if req.quantity > *MAX_QUANTITY {
+    if quantity > *MAX_QUANTITY {
         return Err(AppError::Validation(format!(
             "Ligne {} : quantité trop élevée",
             index + 1
         )));
     }
 
-    if req.unit_price < Decimal::ZERO {
+    if unit_price < Decimal::ZERO {
         return Err(AppError::Validation(format!(
             "Ligne {} : le prix unitaire doit être positif ou nul",
             index + 1
         )));
     }
-    if !scale_within(&req.unit_price, MAX_DECIMAL_SCALE) {
+    if !scale_within(&unit_price, MAX_DECIMAL_SCALE) {
         return Err(line_scale_error(index, "le prix unitaire"));
     }
-    if req.unit_price > *MAX_UNIT_PRICE {
+    if unit_price > *MAX_UNIT_PRICE {
         return Err(AppError::Validation(format!(
             "Ligne {} : prix unitaire trop élevé",
             index + 1
@@ -521,7 +568,7 @@ fn validate_line(req: CreateInvoiceLineRequest, index: usize) -> Result<NewInvoi
 
     // Anti-overflow : `qty × unit_price` doit rester sous `MAX_LINE_TOTAL`
     // pour garantir que `Σ line_total` sur MAX_LINES tient dans DECIMAL(19,4).
-    let line_total = req.quantity * req.unit_price;
+    let line_total = quantity * unit_price;
     if line_total > *MAX_LINE_TOTAL {
         return Err(AppError::Validation(format!(
             "Ligne {} : total de ligne trop élevé",
@@ -531,14 +578,59 @@ fn validate_line(req: CreateInvoiceLineRequest, index: usize) -> Result<NewInvoi
 
     Ok(NewInvoiceLine {
         description,
-        quantity: req.quantity,
-        unit_price: req.unit_price,
-        vat_rate: req.vat_rate,
+        quantity,
+        unit_price,
+        vat_rate,
         // Story 16-1a : aucune validation ici — la conformité du compte
         // (société, actif, type `Revenue`, imputable) exige un aller-retour DB
         // et se fait en une seule requête batchée côté repository, dans la
         // transaction. Valider ligne par ligne ici ferait jusqu'à 200 requêtes.
         revenue_account_id: req.revenue_account_id,
+        line_type: LineType::Priced,
+    })
+}
+
+/// Ligne non chiffrée (`comment`, `heading` — Story 49-1a, D8, D9) : la
+/// description seule ; quantité, prix et taux **absents ou nuls**, aucun
+/// compte. Puis **la garde** : un type que [`LineType::open_to_api`] ne
+/// retient pas est refusé, avant toute écriture et avant toute lecture des
+/// taux de TVA (`verify_vat_rates_against_db`, qui suit `validate_lines`).
+fn validate_unpriced_line(
+    req: CreateInvoiceLineRequest,
+    description: String,
+    index: usize,
+) -> Result<NewInvoiceLine, AppError> {
+    let line_type = req.line_type;
+    let neutral = |v: Option<Decimal>, champ: &str| match v {
+        None => Ok(()),
+        Some(d) if d.is_zero() => Ok(()),
+        Some(_) => Err(AppError::Validation(format!(
+            "Ligne {} : une ligne de type {line_type} ne porte pas {champ}",
+            index + 1
+        ))),
+    };
+    neutral(req.quantity, "de quantité")?;
+    neutral(req.unit_price, "de prix unitaire")?;
+    neutral(req.vat_rate, "de taux de TVA")?;
+    if req.revenue_account_id.is_some() {
+        return Err(AppError::Validation(format!(
+            "Ligne {} : une ligne de type {line_type} ne porte pas de compte de produit",
+            index + 1
+        )));
+    }
+    if !line_type.open_to_api() {
+        return Err(AppError::Validation(format!(
+            "Ligne {} : le type de ligne {line_type} n'est pas encore disponible",
+            index + 1
+        )));
+    }
+    Ok(NewInvoiceLine {
+        description,
+        quantity: Decimal::ZERO,
+        unit_price: Decimal::ZERO,
+        vat_rate: Decimal::ZERO,
+        revenue_account_id: None,
+        line_type,
     })
 }
 
@@ -1725,12 +1817,155 @@ mod tests {
 
     fn line(desc: &str, qty: Decimal, price: Decimal, vat: Decimal) -> CreateInvoiceLineRequest {
         CreateInvoiceLineRequest {
+            line_type: LineType::Priced,
             revenue_account_id: None,
             description: desc.into(),
-            quantity: qty,
-            unit_price: price,
-            vat_rate: vat,
+            quantity: Some(qty),
+            unit_price: Some(price),
+            vat_rate: Some(vat),
         }
+    }
+
+    fn unpriced(t: LineType) -> CreateInvoiceLineRequest {
+        CreateInvoiceLineRequest {
+            line_type: t,
+            revenue_account_id: None,
+            description: "Note".into(),
+            quantity: None,
+            unit_price: None,
+            vat_rate: None,
+        }
+    }
+
+    fn message(e: AppError) -> String {
+        match e {
+            AppError::Validation(m) => m,
+            other => panic!("attendu Validation, reçu {other:?}"),
+        }
+    }
+
+    /// Story 49-1a (AC11) : un corps de la 0.19.0 — sans `lineType` — se
+    /// désérialise en ligne chiffrée et se valide à l'identique.
+    #[test]
+    fn body_0_19_0_without_line_type_is_priced() {
+        let req: CreateInvoiceLineRequest = serde_json::from_value(serde_json::json!({
+            "description": "Loyer",
+            "quantity": "1",
+            "unitPrice": "1200",
+            "vatRate": "0.00",
+        }))
+        .unwrap();
+        assert_eq!(req.line_type, LineType::Priced);
+        let v = validate_line(req, 0).unwrap();
+        assert_eq!(v.line_type, LineType::Priced);
+        assert_eq!((v.quantity, v.unit_price), (dec!(1), dec!(1200)));
+    }
+
+    /// Revue P1 (B1/E3/A7) : `"lineType": null` vaut l'absence, `priced`.
+    #[test]
+    fn null_line_type_is_priced() {
+        let req: CreateInvoiceLineRequest = serde_json::from_value(serde_json::json!({
+            "lineType": null, "description": "Loyer",
+            "quantity": "1", "unitPrice": "1200", "vatRate": "0.00",
+        }))
+        .expect("null vaut l'absence");
+        assert_eq!(req.line_type, LineType::Priced);
+    }
+
+    /// Story 49-1a (D8) : un `lineType` inconnu est un rejet de
+    /// désérialisation (l'extracteur rend `422`).
+    #[test]
+    fn unknown_line_type_fails_deserialization() {
+        for t in ["subtotal", "product", "Priced"] {
+            let r: Result<CreateInvoiceLineRequest, _> =
+                serde_json::from_value(serde_json::json!({
+                    "lineType": t, "description": "X",
+                    "quantity": "1", "unitPrice": "1", "vatRate": "0",
+                }));
+            assert!(r.is_err(), "{t} doit être refusé à la désérialisation");
+        }
+    }
+
+    /// Story 49-1a (AC11) : chaque montant manquant d'une ligne chiffrée est
+    /// nommé, avec le rang de la ligne.
+    #[test]
+    fn priced_line_requires_each_amount() {
+        let mut q = line("X", dec!(1), dec!(10), dec!(8.10));
+        q.quantity = None;
+        assert_eq!(
+            message(validate_line(q, 2).unwrap_err()),
+            "Ligne 3 : la quantité est obligatoire"
+        );
+        let mut p = line("X", dec!(1), dec!(10), dec!(8.10));
+        p.unit_price = None;
+        assert_eq!(
+            message(validate_line(p, 0).unwrap_err()),
+            "Ligne 1 : le prix unitaire est obligatoire"
+        );
+        let mut v = line("X", dec!(1), dec!(10), dec!(8.10));
+        v.vat_rate = None;
+        assert_eq!(
+            message(validate_line(v, 0).unwrap_err()),
+            "Ligne 1 : le taux de TVA est obligatoire"
+        );
+    }
+
+    /// Story 49-1a (D9) : la garde refuse `comment` et `heading`, même
+    /// neutres, avec le rang dans la liste entière.
+    #[test]
+    fn unpriced_types_are_not_yet_open() {
+        for (t, nom) in [
+            (LineType::Comment, "comment"),
+            (LineType::Heading, "heading"),
+        ] {
+            assert_eq!(
+                message(validate_line(unpriced(t), 1).unwrap_err()),
+                format!("Ligne 2 : le type de ligne {nom} n'est pas encore disponible")
+            );
+            // Montants explicitement nuls : neutres, toujours refusés par la garde.
+            let mut z = unpriced(t);
+            z.quantity = Some(dec!(0));
+            z.unit_price = Some(dec!(0));
+            z.vat_rate = Some(dec!(0.00));
+            assert!(message(validate_line(z, 0).unwrap_err()).contains("pas encore disponible"));
+        }
+    }
+
+    /// Story 49-1a (AC11) : une ligne non chiffrée qui porte un montant ou un
+    /// compte est refusée en nommant le champ, avant la garde.
+    #[test]
+    fn unpriced_line_rejects_amounts_and_account() {
+        type Muter = fn(&mut CreateInvoiceLineRequest);
+        let cas: [(Muter, &str); 4] = [
+            (|r| r.quantity = Some(dec!(1)), "de quantité"),
+            (|r| r.unit_price = Some(dec!(1)), "de prix unitaire"),
+            (|r| r.vat_rate = Some(dec!(8.10)), "de taux de TVA"),
+            (|r| r.revenue_account_id = Some(7), "de compte de produit"),
+        ];
+        for (muter, champ) in cas {
+            let mut r = unpriced(LineType::Comment);
+            muter(&mut r);
+            assert_eq!(
+                message(validate_line(r, 0).unwrap_err()),
+                format!("Ligne 1 : une ligne de type comment ne porte pas {champ}")
+            );
+        }
+        let mut vide = unpriced(LineType::Comment);
+        vide.description = "  ".into();
+        assert!(message(validate_line(vide, 0).unwrap_err()).contains("description"));
+    }
+
+    /// Story 49-1a (AC11) : `validate_lines` rejette un type non ouvert — le
+    /// gestionnaire ne collecte donc aucun taux (`verify_vat_rates_against_db`
+    /// suit `validate_lines`), même entre deux lignes chiffrées valides.
+    #[test]
+    fn validate_lines_rejects_closed_type_before_rates() {
+        let lignes = vec![
+            line("A", dec!(1), dec!(10), dec!(8.10)),
+            unpriced(LineType::Comment),
+            line("B", dec!(1), dec!(10), dec!(8.10)),
+        ];
+        assert!(message(validate_lines(lignes).unwrap_err()).starts_with("Ligne 2 :"));
     }
 
     #[test]

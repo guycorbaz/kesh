@@ -1628,6 +1628,7 @@ async fn seed_open_invoice_for(pool: &MySqlPool, ctx: &Ctx, contact_name: &str) 
             project_id: None,
             lines: vec![NewInvoiceLine {
                 revenue_account_id: None,
+                line_type: kesh_db::entities::LineType::Priced,
                 description: "Prestation".into(),
                 quantity: dec!(1),
                 unit_price: dec!(500),

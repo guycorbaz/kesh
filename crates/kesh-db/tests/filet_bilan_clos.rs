@@ -307,6 +307,7 @@ async fn brouillon(pool: &MySqlPool, s: &SeededCompany, contact: i64) -> i64 {
             project_id: None,
             lines: vec![NewInvoiceLine {
                 revenue_account_id: None,
+                line_type: kesh_db::entities::LineType::Priced,
                 description: "Prestation".into(),
                 quantity: dec!(1),
                 unit_price: dec!(500.00),

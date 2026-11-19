@@ -643,12 +643,17 @@ pub async fn write_off_invoice(
 
     // (5) La TVA corrigée, au prorata des taux (escompte, perte).
     let shares = if nature.corrects_vat() {
-        let lines: Vec<(Decimal, Decimal)> =
-            sqlx::query_as("SELECT line_total, vat_rate FROM invoice_lines WHERE invoice_id = ?")
-                .bind(invoice_id)
-                .fetch_all(&mut *tx)
-                .await
-                .map_err(map_db_error)?;
+        // Story 49-1a (AC10 c) : les lignes chiffrées seules. Une ligne neutre
+        // ne changerait rien (`vat_breakdown_by_rate` écarte le taux 0) ; le
+        // filtre dit l'intention.
+        let lines: Vec<(Decimal, Decimal)> = sqlx::query_as(
+            "SELECT line_total, vat_rate FROM invoice_lines \
+             WHERE invoice_id = ? AND line_type = 'priced'",
+        )
+        .bind(invoice_id)
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(map_db_error)?;
         let total_ttc = kesh_core::accounting::vat::invoice_total_ttc_rounded(
             lines.iter().copied(),
             rounding_amount,

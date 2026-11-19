@@ -260,6 +260,7 @@ async fn facture(
                 unit_price: amount,
                 vat_rate: dec!(0),
                 revenue_account_id: Some(s.accounts["3000"]),
+                line_type: kesh_db::entities::LineType::Priced,
             }],
         },
     )
@@ -1317,7 +1318,10 @@ async fn the_upgrade_keeps_unit_settlements_and_allows_a_group(pool: MySqlPool) 
     );
 
     // Le peuplement, au schéma d'avant : une facture réglée par une écriture
-    // unitaire, une facture fournisseur payée.
+    // unitaire, une facture fournisseur payée. Story 49-1a : le dépôt de la
+    // facture écrit `line_type`, colonne d'une migration postérieure — posée le
+    // temps du semis, retirée avant la montée.
+    common::colonnes_types_de_ligne(&pool, true).await;
     let m = monter(&pool).await;
     let reglee = facture(&pool, &m, "AV-1", dec!(80.00), jour(5, 1), None).await;
     let reglement = journal_entries::create(
@@ -1384,6 +1388,7 @@ async fn the_upgrade_keeps_unit_settlements_and_allows_a_group(pool: MySqlPool) 
     );
 
     // La montée.
+    common::colonnes_types_de_ligne(&pool, false).await;
     kesh_db::MIGRATOR.run(&pool).await.expect("montée");
 
     assert_eq!(

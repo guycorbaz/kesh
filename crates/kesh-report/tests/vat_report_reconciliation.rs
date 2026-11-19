@@ -94,6 +94,7 @@ async fn create_validated_invoice(
             .iter()
             .map(|(rate, price)| NewInvoiceLine {
                 revenue_account_id: None,
+                line_type: kesh_db::entities::LineType::Priced,
                 description: "Ligne".into(),
                 quantity: dec!(1),
                 unit_price: *price,
@@ -206,6 +207,7 @@ async fn reconciliation_unaffected_by_multi_account_ventilation(pool: MySqlPool)
                 unit_price: dec!(1000),
                 vat_rate: dec!(8.10),
                 revenue_account_id: None,
+                line_type: kesh_db::entities::LineType::Priced,
             },
             NewInvoiceLine {
                 description: "Prestations".into(),
@@ -213,6 +215,7 @@ async fn reconciliation_unaffected_by_multi_account_ventilation(pool: MySqlPool)
                 unit_price: dec!(500),
                 vat_rate: dec!(2.60),
                 revenue_account_id: Some(extra[0]),
+                line_type: kesh_db::entities::LineType::Priced,
             },
             NewInvoiceLine {
                 description: "Marchandises".into(),
@@ -220,6 +223,7 @@ async fn reconciliation_unaffected_by_multi_account_ventilation(pool: MySqlPool)
                 unit_price: dec!(400),
                 vat_rate: dec!(8.10),
                 revenue_account_id: Some(extra[1]),
+                line_type: kesh_db::entities::LineType::Priced,
             },
         ],
         project_id: None,
@@ -573,4 +577,100 @@ async fn credit_note_excludes_vat_from_report(pool: MySqlPool) {
         "réconciliation reste cohérente après avoir (delta {})",
         after.reconciliation_delta
     );
+}
+
+/// Story 49-1a (#1242) — T7 (AC10 a) : une facture validée portant un
+/// commentaire et un titre donne **exactement** le même rapport TVA que la même
+/// facture sans eux — mêmes lignes, même base, même TVA, même écart de
+/// réconciliation, **sans ligne « 0 % » fantôme**. Les deux factures sont
+/// datées de deux mois distincts ; chaque rapport porte sur son mois.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn vat_report_ignores_unpriced_lines(pool: MySqlPool) {
+    use kesh_db::entities::LineType;
+
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let contact = seed_contact(&pool, &seeded).await;
+    let ligne = |lt: LineType, rate: Decimal, price: Decimal| NewInvoiceLine {
+        description: "Ligne".into(),
+        quantity: if lt == LineType::Priced {
+            dec!(1)
+        } else {
+            Decimal::ZERO
+        },
+        unit_price: price,
+        vat_rate: rate,
+        revenue_account_id: None,
+        line_type: lt,
+    };
+    let chiffrees = [
+        ligne(LineType::Priced, dec!(8.10), dec!(1000)),
+        ligne(LineType::Priced, dec!(2.60), dec!(250)),
+    ];
+    for (mois, lignes) in [
+        (6, chiffrees.to_vec()),
+        (
+            7,
+            vec![
+                ligne(LineType::Heading, Decimal::ZERO, Decimal::ZERO),
+                chiffrees[0].clone(),
+                ligne(LineType::Comment, Decimal::ZERO, Decimal::ZERO),
+                chiffrees[1].clone(),
+            ],
+        ),
+    ] {
+        let (inv, _) = invoices::create(
+            &pool,
+            seeded.admin_user_id,
+            NewInvoice {
+                company_id: seeded.company_id,
+                contact_id: contact,
+                date: ymd(2026, mois, 15),
+                due_date: None,
+                payment_terms: None,
+                lines: lignes,
+                project_id: None,
+            },
+        )
+        .await
+        .unwrap();
+        invoices::validate_invoice(&pool, seeded.company_id, inv.id, seeded.admin_user_id)
+            .await
+            .expect("validate_invoice");
+    }
+
+    let rapport = |mois: u32| {
+        let pool = pool.clone();
+        let fy = seeded.fiscal_year_id;
+        let company = seeded.company_id;
+        async move {
+            let r = vat_report::generate(
+                &pool,
+                company,
+                &ReportPeriod {
+                    fiscal_year_id: fy,
+                    start_date: ymd(2026, mois, 1),
+                    end_date: ymd(2026, mois, 28),
+                },
+            )
+            .await
+            .unwrap();
+            let mut v = serde_json::to_value(&r).unwrap();
+            v.as_object_mut().unwrap().remove("period");
+            (r, v)
+        }
+    };
+    let (sans, sans_json) = rapport(6).await;
+    let (avec, avec_json) = rapport(7).await;
+
+    assert_eq!(
+        avec_json, sans_json,
+        "rapport identique, période mise à part"
+    );
+    assert_eq!(avec.rows.len(), 2, "deux taux, aucune ligne « 0 % »");
+    assert!(
+        avec.rows.iter().all(|r| r.rate > Decimal::ZERO),
+        "aucun taux 0 % fantôme"
+    );
+    assert_eq!(avec.total_base_ht, dec!(1250));
+    assert_eq!(avec.reconciliation_delta, sans.reconciliation_delta);
 }

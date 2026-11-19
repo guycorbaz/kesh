@@ -1258,6 +1258,7 @@ mod tests {
             vat_rate: dec!(8.10),
             line_total: dec!(1000.00),
             revenue_account_id: None,
+            line_type: kesh_db::entities::LineType::Priced,
             created_at: chrono::NaiveDateTime::default(),
         }]
     }

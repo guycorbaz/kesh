@@ -601,6 +601,7 @@ async fn generate_fixture_0_14_0(pool: MySqlPool) {
             payment_terms: Some("30 jours net".into()),
             lines: vec![NewInvoiceLine {
                 revenue_account_id: None,
+                line_type: kesh_db::entities::LineType::Priced,
                 description: "Prestation fictive".into(),
                 quantity: dec!(1),
                 unit_price: dec!(100.00),

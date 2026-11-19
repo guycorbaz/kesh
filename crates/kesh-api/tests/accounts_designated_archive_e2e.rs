@@ -309,6 +309,7 @@ async fn draft_invoice(
                 unit_price: price,
                 vat_rate: vat,
                 revenue_account_id: revenue,
+                line_type: kesh_db::entities::LineType::Priced,
             }],
         },
     )

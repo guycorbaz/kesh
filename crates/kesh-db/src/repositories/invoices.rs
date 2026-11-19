@@ -44,8 +44,38 @@ use crate::util::search::{escape_boolean_ft, escape_like};
 // de la facture d'origine) — une seule liste de colonnes à maintenir. Story
 // 16-1a : la duplication précédente est ce qui rendait l'ajout d'une colonne
 // silencieusement incomplet (échec `query_as` au runtime, pas à la compilation).
-pub(crate) const LINE_COLUMNS: &str = "id, invoice_id, position, description, quantity, \
-    unit_price, vat_rate, line_total, revenue_account_id, created_at";
+//
+// Story 49-1a : la forme préfixée de l'export (`il.`) était une seconde liste en
+// dur ; la macro les tire toutes deux d'une seule énumération.
+macro_rules! invoice_line_columns {
+    ($p:literal) => {
+        concat!(
+            $p,
+            "id, ",
+            $p,
+            "invoice_id, ",
+            $p,
+            "position, ",
+            $p,
+            "description, ",
+            $p,
+            "quantity, ",
+            $p,
+            "unit_price, ",
+            $p,
+            "vat_rate, ",
+            $p,
+            "line_total, ",
+            $p,
+            "revenue_account_id, ",
+            $p,
+            "line_type, ",
+            $p,
+            "created_at"
+        )
+    };
+}
+pub(crate) const LINE_COLUMNS: &str = invoice_line_columns!("");
 
 /// Les colonnes de [`Invoice`], dans l'ordre de l'entité — **la seule liste**
 /// (Story 25-6-b, #387). Elles étaient énumérées en dur à quatre endroits, et
@@ -89,8 +119,11 @@ fn invoice_snapshot_json(inv: &Invoice, lines: &[InvoiceLine]) -> serde_json::Va
                 // Story 16-1a : compte de produit de la ligne. `null` sur un
                 // brouillon (repli sur le défaut société) ; toujours renseigné
                 // dans le snapshot « after » d'une validation, la
-                // matérialisation de D2 précédant l'audit.
+                // matérialisation de D2 précédant l'audit — sauf sur une ligne
+                // non chiffrée, qui n'a jamais de compte (Story 49-1a).
                 "revenueAccountId": l.revenue_account_id,
+                // Story 49-1a (AC7) : le type figure au « before » et à l'« after ».
+                "lineType": l.line_type.as_str(),
             })
         })
         .collect();
@@ -460,11 +493,49 @@ fn compute_line_total(qty: Decimal, unit_price: Decimal) -> Decimal {
     (qty * unit_price).round_dp(4)
 }
 
-/// Somme les `line_total` d'un ensemble de `NewInvoiceLine`.
+/// `line_total` d'une ligne à créer : `quantity × unit_price` pour une ligne
+/// chiffrée, **zéro** pour un commentaire ou un titre (Story 49-1a, AC6).
+fn new_line_total(l: &NewInvoiceLine) -> Decimal {
+    if l.line_type.is_priced() {
+        compute_line_total(l.quantity, l.unit_price)
+    } else {
+        Decimal::ZERO
+    }
+}
+
+/// Somme les `line_total` d'un ensemble de `NewInvoiceLine` — des seules
+/// lignes chiffrées (Story 49-1a : une ligne non chiffrée vaut zéro).
 fn compute_total(lines: &[NewInvoiceLine]) -> Decimal {
-    lines.iter().fold(Decimal::ZERO, |acc, l| {
-        acc + compute_line_total(l.quantity, l.unit_price)
-    })
+    lines
+        .iter()
+        .filter(|l| l.line_type.is_priced())
+        .fold(Decimal::ZERO, |acc, l| acc + new_line_total(l))
+}
+
+/// Story 49-1a (D10) : une ligne `comment` ou `heading` porte des valeurs
+/// **neutres** — quantité, prix unitaire et taux à zéro, aucun compte. Le dépôt
+/// refuse toute autre forme par `DbError::Invariant` au lieu de la normaliser en
+/// silence : le gestionnaire HTTP a déjà pré-validé (comme pour une liste vide),
+/// une ligne non neutre ici est une erreur de l'appelant. Le rang cité est
+/// `idx + 1`, celui de la liste entière, tous types confondus (D11).
+fn ensure_unpriced_lines_are_neutral(lines: &[NewInvoiceLine]) -> Result<(), DbError> {
+    for (idx, l) in lines.iter().enumerate() {
+        if l.line_type.is_priced() {
+            continue;
+        }
+        let neutral = l.quantity.is_zero()
+            && l.unit_price.is_zero()
+            && l.vat_rate.is_zero()
+            && l.revenue_account_id.is_none();
+        if !neutral {
+            return Err(DbError::Invariant(format!(
+                "ligne {} : une ligne de type {} ne porte ni quantité, ni prix, ni taux, ni compte",
+                idx + 1,
+                l.line_type
+            )));
+        }
+    }
+    Ok(())
 }
 
 /// Insère les lignes d'une facture dans la transaction.
@@ -473,13 +544,14 @@ async fn insert_lines(
     invoice_id: i64,
     lines: &[NewInvoiceLine],
 ) -> Result<Vec<InvoiceLine>, DbError> {
+    ensure_unpriced_lines_are_neutral(lines)?;
     let mut out = Vec::with_capacity(lines.len());
     for (idx, l) in lines.iter().enumerate() {
-        let line_total = compute_line_total(l.quantity, l.unit_price);
+        let line_total = new_line_total(l);
         let res = sqlx::query(
             "INSERT INTO invoice_lines (invoice_id, position, description, quantity, \
-             unit_price, vat_rate, line_total, revenue_account_id) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+             unit_price, vat_rate, line_total, revenue_account_id, line_type) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(invoice_id)
         .bind(idx as i32)
@@ -491,6 +563,7 @@ async fn insert_lines(
         // Story 16-1a : `None` est persisté tel quel (liaison tardive D2) —
         // la matérialisation du compte effectif a lieu à la validation, pas ici.
         .bind(l.revenue_account_id)
+        .bind(l.line_type)
         .execute(&mut **tx)
         .await
         .map_err(map_db_error)?;
@@ -682,6 +755,14 @@ where
         .collect()
 }
 
+/// Une ligne **chiffrée** sans compte explicite : celle qui poste sur le compte
+/// de produit par défaut de la société et que la validation matérialise
+/// (Story 16-1a, D2). Une ligne non chiffrée n'a jamais de compte et ne poste
+/// rien (Story 49-1a, AC8).
+fn priced_line_without_account(l: &InvoiceLine) -> bool {
+    l.line_type.is_priced() && l.revenue_account_id.is_none()
+}
+
 /// Crée une facture brouillon + ses lignes + audit log, atomiquement.
 pub async fn create(
     pool: &MySqlPool,
@@ -696,6 +777,9 @@ pub async fn create(
         ));
     }
 
+    // Story 49-1a (D10) : avant toute lecture, pour qu'un compte posé sur un
+    // commentaire rende `Invariant`, non un refus de compte de produit.
+    ensure_unpriced_lines_are_neutral(&new.lines)?;
     let total = compute_total(&new.lines);
     let mut tx = pool.begin().await.map_err(map_db_error)?;
 
@@ -715,7 +799,13 @@ pub async fn create(
     // Les lignes sans compte ne sont PAS contrôlées ici : leur compte effectif
     // est le défaut société, résolu et re-validé seulement au posting (AC8-bis).
     {
-        let sites = explicit_line_account_sites(&new.lines, |l| l.revenue_account_id);
+        // Story 49-1a (AC6) : seules les lignes chiffrées portent un compte.
+        let sites = explicit_line_account_sites(&new.lines, |l| {
+            l.line_type
+                .is_priced()
+                .then_some(l.revenue_account_id)
+                .flatten()
+        });
         if !sites.is_empty() {
             let default_revenue =
                 match read_default_revenue_account_id(&mut tx, new.company_id).await {
@@ -1089,6 +1179,9 @@ fn is_no_op_change(
             // compte de produit d'une ligne serait vu comme un no-op — la
             // modification serait silencieusement perdue avec un `200 OK`.
             && b.revenue_account_id == c.revenue_account_id
+            // Story 49-1a (AC7) : même défaut pour le type — changer seulement
+            // le type d'une ligne est une modification.
+            && b.line_type == c.line_type
     })
 }
 
@@ -1123,6 +1216,8 @@ pub async fn update(
             "repository invoices::update appelé avec lines vide (handler doit pré-valider)".into(),
         ));
     }
+    // Story 49-1a (D10) : comme à la création, avant toute lecture.
+    ensure_unpriced_lines_are_neutral(&changes.lines)?;
 
     let mut tx = pool.begin().await.map_err(map_db_error)?;
 
@@ -1268,7 +1363,13 @@ pub async fn update(
     // (Revue de code 16-1a passe 2 : le commentaire d'origine annonçait
     // l'inverse de ce que fait le code.)
     {
-        let sites = explicit_line_account_sites(&changes.lines, |l| l.revenue_account_id);
+        // Story 49-1a (AC6) : seules les lignes chiffrées portent un compte.
+        let sites = explicit_line_account_sites(&changes.lines, |l| {
+            l.line_type
+                .is_priced()
+                .then_some(l.revenue_account_id)
+                .flatten()
+        });
         if !sites.is_empty() {
             let default_revenue = match read_default_revenue_account_id(&mut tx, company_id).await {
                 Ok(d) => d,
@@ -2265,8 +2366,16 @@ pub async fn validate_invoice(
         //
         // `settings` est déjà chargé : on le réutilise, on ne relit pas.
         {
-            let mut sites = explicit_line_account_sites(&lines_before, |l| l.revenue_account_id);
-            if lines_before.iter().any(|l| l.revenue_account_id.is_none()) {
+            // Story 49-1a (AC8 a, d) : seules les lignes chiffrées postent ; un
+            // commentaire (compte `NULL` par contrainte) ne fait pas exiger le
+            // compte par défaut.
+            let mut sites = explicit_line_account_sites(&lines_before, |l| {
+                l.line_type
+                    .is_priced()
+                    .then_some(l.revenue_account_id)
+                    .flatten()
+            });
+            if lines_before.iter().any(priced_line_without_account) {
                 // `None` en numéro de ligne : aucune ligne ne porte ce compte,
                 // le message le nomme « le compte de produit par défaut de la
                 // société ».
@@ -2309,10 +2418,13 @@ pub async fn validate_invoice(
         // journal d'audit.
         let lines_pre_materialization = lines_before.clone();
 
-        if lines_before.iter().any(|l| l.revenue_account_id.is_none()) {
+        // Story 49-1a (AC8 b) : `AND line_type = 'priced'` est OBLIGATOIRE —
+        // poser un compte sur un commentaire violerait
+        // `chk_invoice_lines_unpriced_neutral` (500 SQL à la validation).
+        if lines_before.iter().any(priced_line_without_account) {
             sqlx::query(
                 "UPDATE invoice_lines SET revenue_account_id = ? \
-                 WHERE invoice_id = ? AND revenue_account_id IS NULL",
+                 WHERE invoice_id = ? AND revenue_account_id IS NULL AND line_type = 'priced'",
             )
             .bind(revenue_account_id)
             .bind(invoice_id)
@@ -2333,7 +2445,7 @@ pub async fn validate_invoice(
             // Le snapshot « before » n'est PAS concerné : il lit
             // `lines_pre_materialization`, figée juste au-dessus.
             for line in &mut lines_before {
-                if line.revenue_account_id.is_none() {
+                if priced_line_without_account(line) {
                     line.revenue_account_id = Some(revenue_account_id);
                 }
             }
@@ -3046,14 +3158,14 @@ pub async fn list_all_lines_by_company(
     pool: &MySqlPool,
     company_id: i64,
 ) -> Result<Vec<InvoiceLine>, DbError> {
-    sqlx::query_as::<_, InvoiceLine>(
-        "SELECT il.id, il.invoice_id, il.position, il.description, il.quantity, \
-         il.unit_price, il.vat_rate, il.line_total, il.revenue_account_id, il.created_at \
-         FROM invoice_lines il \
+    sqlx::query_as::<_, InvoiceLine>(concat!(
+        "SELECT ",
+        invoice_line_columns!("il."),
+        " FROM invoice_lines il \
          JOIN invoices i ON il.invoice_id = i.id \
          WHERE i.company_id = ? \
-         ORDER BY il.invoice_id, il.position",
-    )
+         ORDER BY il.invoice_id, il.position"
+    ))
     .bind(company_id)
     .fetch_all(pool)
     .await
@@ -3147,6 +3259,7 @@ mod tests {
     ) -> InvoiceLine {
         InvoiceLine {
             revenue_account_id,
+            line_type: crate::entities::LineType::Priced,
             id: 1,
             invoice_id: 1,
             position: 1,
@@ -3557,6 +3670,7 @@ mod tests {
     fn sample_line(desc: &str, qty: Decimal, price: Decimal) -> NewInvoiceLine {
         NewInvoiceLine {
             revenue_account_id: None,
+            line_type: crate::entities::LineType::Priced,
             description: desc.to_string(),
             quantity: qty,
             unit_price: price,
@@ -5716,6 +5830,7 @@ mod tests {
     fn line_to_new(l: &InvoiceLine) -> NewInvoiceLine {
         NewInvoiceLine {
             revenue_account_id: None,
+            line_type: l.line_type,
             description: l.description.clone(),
             quantity: l.quantity,
             unit_price: l.unit_price,
