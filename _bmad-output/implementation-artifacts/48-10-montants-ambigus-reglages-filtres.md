@@ -11,7 +11,7 @@ l'avancement, 49-3, 49-2, 49-1c, 48-1** (plan de la release). **Aucune migration
 développement en découvre le besoin, il s'arrête et le dit). Bases `kesh_e4810`, `kesh_e2e_e4810` (voie B), `kesh_ci_e4810`
 (`gate-ci`, voie A). **Les décisions communes sont celles de la 36-18a** (`36-18a-montants-ambigus-livres.md`, `done`, D1 à D4 et
 D9), **dont le code est dans `main`** : cette fiche les réemploie et ne les répète pas. Inventaires bruts :
-`/home/gcorbaz/devel/kesh-gate-logs/e4810/fiche-inventaires.log`. Validation P1 faite et remédiée, P2 remédiée (voir le Change Log) ; P3 non lancée.*
+`/home/gcorbaz/devel/kesh-gate-logs/e4810/fiche-inventaires.log`. Validation P1 faite et remédiée, P2 remédiée (voir le Change Log) ; validation terminée (P3 ciblée, 0/0/0/8, LOW corrigés dans le texte).*
 
 ## Story
 
@@ -24,7 +24,7 @@ prix d'article mille fois trop bas ne passe pas sur mes factures et que le filtr
 et la facturation. Un montant lu mille fois trop petit est une erreur comptable silencieuse : un prix d'article « 1.250 » devient
 1,25 franc sur toute facture qui reprend l'article. Les AC prouvent, **aux quatre sites**, le refus explicite d'un montant ambigu,
 sans perte de saisie, et qu'aucune requête d'écriture ne part.
-**Priorités sur GitHub** : #1173 **P3**, #1175 **P3**, #1176 **P3**, #1177 **P4** (le fichier d'épique dit « P3, P4 »). Le critère du `CLAUDE.md` classerait P1 une « erreur comptable » : un prix lu mille fois trop bas en relève ; l'orchestrateur le signale au Project Lead, **la fiche ne réétiquette rien**.
+**Priorités sur GitHub** : #1173 **P1**, #1176 **P1**, #1175 **P3**, #1177 **P4** : **#1173 et #1176 sont relevées en P1 par décision de Guy du 2026-11-19** (un prix ou un minimum lu mille fois trop bas est une erreur comptable silencieuse, critère P1 du `CLAUDE.md`) ; le fichier d'épique dit encore « P3, P4 », à jour au prochain recompte.
 
 ## Ce qui se lit au code (`af4e0e313`)
 
@@ -128,10 +128,10 @@ viennent du code neuf : l'aide `amountEntryMessage` (aucun texte de message écr
   avec une **garde** (`if (price === null) return;`). `isValidPrice` et `PRICE_RE`, sans appelant de production, sont **retirés** avec leurs tests ; « 007.50 » et « 01 » deviennent acceptés
   (zéros de tête gardés dans la charge). **Affichage (D3 de la 36-18a)** : tout refus du prix **autre que le vide** (`ambiguous`, `invalid`, `negative`) se pose **sous le champ** (`id="form-price-error"`,
   `data-testid="product-form-price-error"`, champ en `aria-invalid="true"`, `aria-describedby`, bordure `border-destructive`) — l'ambigu avec `amountEntryMessage('ambiguous', 4)`, l'illisible et le
-  négatif avec leurs clés actuelles. **`formValidation` rend ce même texte** (il commande le bouton `disabled` `:736` et la garde `:361-362`) ; le pied du formulaire (`:726-730`) garde
+  négatif avec leurs clés actuelles. **`formValidation` rend ce même texte** (il commande le bouton `disabled` `:736` et la garde `:363-364`) ; le pied du formulaire (`:726-730`) garde
   `formValidation` pour **le nom** (vide, trop long) **et pour le prix vide** (`product-error-price-required`, qui n'a pas de lieu sous le champ : seuls `ambiguous`, `invalid` et `negative` passent
   sous le champ) ; après **Entrée** (`formError` = ce texte, rouge, `:726`), il **ne répète pas** le message du prix déjà affiché sous le champ (`{#if formError && formError !== priceMessage}`).
-  **`formError` est remis à `''` dès que la saisie du prix change** (`oninput` du prix, `:663`) : une correction après Entrée ne laisse aucun message rouge périmé sous un champ juste. Rouvert : **inchangé**, jamais ambigu (AC1).
+  **`priceMessage`** = le message affiché sous le champ (`''` pour le prix vide et pour un prix lisible). **À la saisie du prix** (`oninput`, `:663`), `formError` n'est remis à `''` **que s'il égale `priceMessage`** (`if (formError === priceMessage) formError = ''`) : une correction après Entrée ne laisse aucun message du prix périmé, et le refus du serveur (doublon de nom) ou le message des taux de TVA, qui ne viennent pas du prix, restent. Les scénarios « Entrée » (D1, AC12, M19) sont **défensifs** : un bouton de soumission désactivé n'envoie pas le formulaire par Entrée dans le navigateur, le test passe par `fireEvent.submit` / `requestSubmit()`. Rouvert : **inchangé**, jamais ambigu (AC1).
   *Écartées* : garder `PRICE_RE` et y ajouter le prédicat (une seconde grammaire) ; remplacer `product-error-price-invalid` par `common-amount-unreadable` (hors du défaut, quatre locales de plus) ;
   laisser le prix au seul pied du formulaire (hors de la D3 commune).
 - **D2 — Frais de rappel (#1175)** : **D3 de la 36-18a réemployée telle quelle** : la lecture est **dérivée de la saisie** (`feeReading = $derived(readJournalAmount(fFee.trim()))`), non
@@ -142,7 +142,7 @@ viennent du code neuf : l'aide `amountEntryMessage` (aucun texte de message écr
   échelle au serveur. *Écartée* : le message dans `formError` (le bloc ne désigne pas le champ).
 - **D3 — Montant minimal (#1176)** : sur le modèle de `groupMax` de la même page : `minimumReading = $derived(readJournalAmount(minimumAmount.trim()))` ; vide → `null`
   (inchangé) ; `ambiguous` / `unreadable` → message `amountEntryMessage(problem, 2)` sous le champ (`data-testid="settings-minimum-invoice-amount-error"`, `id`,
-  `aria-describedby`, bordure, `aria-invalid`), le **bouton Enregistrer désactivé** tant que la lecture n'est **ni claire ni vide** (un minimum vide, « aucun seuil », reste enregistrable) (comme `!groupMaxReading.ok`, `+page.svelte:804-805`),
+  `aria-describedby`, bordure, `aria-invalid`), le **bouton Enregistrer désactivé** (`disabled={submitting || … || minimumBlocked}`, avec `minimumBlocked = minimumReading.kind === 'ambiguous' || minimumReading.kind === 'unreadable'` ; `minimumReading` est toujours un objet, on ne le nie pas) tant que la lecture n'est **ni claire ni vide** (un minimum vide, « aucun seuil », reste enregistrable) (comme `!groupMaxReading.ok`, `+page.svelte:804-805`),
   et `save()` s'arrête **avant** l'appel, par `notifyError` du même texte, comme pour le plafond ; `clear` → `payload`.
   L'**échelle** (plus de deux décimales significatives) reste jugée par le serveur, comme avant ; elle n'est pas dupliquée ici (hors du défaut). Contrairement au
   plafond du règlement, le minimum est envoyé à chaque enregistrement (comportement inchangé) : sa forme rouverte ne peut pas être ambiguë (AC3).
@@ -182,9 +182,9 @@ viennent du code neuf : l'aide `amountEntryMessage` (aucun texte de message écr
    omise ; « -5 » → **illisible** (la grammaire du journal n'admet aucun signe : la borne n'atteint jamais le serveur) ; « 1'250 » → `amountMin: '1250'` et `?amountMin=1250` ; URL
    `?amountMin=1.250` → message au chargement, borne non envoyée ; « 100 » → `amountMin: '100'` ; mêmes cas pour *Montant max*.
 5. **AC5 — Rien de juste n'est refusé** : pour chacun des quatre sites, un test par forme — « 1.25 », « 1250 », « 1'250.50 », « 1’250 », « 1,25 », « 0.50 » — sans message,
-   charge envoyée normalisée ; une saisie bordée de blancs (« 1250 ») sans message, envoyée `1250` (les quatre sites rognent) ; « 1250.0000 » (zéros de fin) accepté à l'article, au
+   charge envoyée normalisée ; une saisie bordée de blancs (`' 1250 '`, une espace avant et après) sans message, envoyée `1250` (les quatre sites rognent) ; « 1250.0000 » (zéros de fin) accepté à l'article, au
    minimum et aux filtres ; les formes rouvertes d'AC1 à AC3 sans message. Seules deviennent refusées la forme de la règle et ce que la grammaire du journal ne lit pas —
-   `1e3`, `.5`, `5.`, signe, blanc intérieur, **plus de quatre décimales, même nulles** — : un test le constate aux frais (« 10.01000 », que `Number` lisait). À l'article, un prix à trois décimales significatives se saisit « 12.1250 » (V2-8) : « 12.1250 » est accepté.
+   `1e3`, `.5`, `5.`, signe, blanc intérieur, **plus de quatre décimales, même nulles** — : un test le constate aux frais (« 10.01000 », que `Number` lisait). À l'article, un prix de **1 à 999 francs, non groupé, à trois décimales** (« 12.125 ») se saisit « 12.1250 » (V2-8) : « 12.1250 » est accepté ; « 0.125 », « 1234.125 » et « 1'234.125 » restent acceptés tels quels.
 6. **AC6 — E2E** (`frontend/tests/e2e/montants-ambigus.spec.ts`, créé par la 36-18a, dont l'en-tête annonce ce complément : un `test` de plus par écran, mêmes aides
    `countWrites`, `waitForWrite`, `capture`) : « 1.250 » → message visible ; l'écouteur `page.on('request')`, armé avant le clic, compte les seules requêtes d'écriture
    de l'écran, par **méthode et route** — `POST /api/v1/products` et `PUT /api/v1/products/{id}` (`products.api.ts:40`, `:47`), `POST /api/v1/dunning-levels` et
@@ -198,7 +198,7 @@ viennent du code neuf : l'aide `amountEntryMessage` (aucun texte de message écr
    à la source** après la fusion (le compteur est partagé avec les autres stories de l'Epic 48), sans addition à la main.
 9. **AC9 — Manuels** (`docs/manual/fr/*.tex` ; PDF à l'intégration, jamais commités) : une phrase par écran, qui renvoie à la règle de *Saisie d'une écriture en partie
    double* (`user-manual.tex:561`), porte la chaîne exacte `refusé comme ambigu`, l'exemple `1.250`, la forme `1'250` et la limite de décimales — `user-manual.tex`
-   item *Prix unitaire HT* (`:1424`, qui dit aussi que trois décimales s'écrivent « 12.1250 »), § *Le montant minimum d'une facture* (`:1495`), § *Recherche d'écritures*, item *Montant* (`:901`, la borne non appliquée) ;
+   item *Prix unitaire HT* (`:1424`, qui dit aussi qu'un prix de 1 à 999 francs à trois décimales s'écrit « 12.1250 »), § *Le montant minimum d'une facture* (`:1495`), § *Recherche d'écritures*, item *Montant* (`:901`, la borne non appliquée) ;
    `admin-manual.tex` item *Frais* (`:1348`) et § *Montant minimum d'une facture* (`:3911`). **Contrôle de clôture, sur le `.tex`** :
    `/usr/bin/grep -n 'refusé comme ambigu' docs/manual/fr/user-manual.tex docs/manual/fr/admin-manual.tex` rend, en plus des **quatre lignes de départ** (`user-manual.tex:1029`,
    `:1456`, `:1770`, `:2105`), une ligne dans chacune des cinq sections citées. **Contrôle d'intégration seulement** (PDF régénéré après l'union) :
@@ -218,7 +218,7 @@ viennent du code neuf : l'aide `amountEntryMessage` (aucun texte de message écr
 - **Rouges attendus** : AC1 (`classifyPriceInput('1.250') === 'ok'` ; « 1'250 » `invalid`) ; AC2 (`feeAmount: '1.250'` part ; « 1'250 » refusé) ; AC3
   (`minimumInvoiceAmount: '1.250'`) ; AC4 (`amountMin: '1.250'`) ; AC6 (chaque requête part avec `1.250`).
 - **Verts au départ, et déclarés filets** (ils ne prouvent rien du correctif) : le prix d'article rouvert (jamais ambigu par construction), les montants rouverts aux frais et au
-  minimum, « 1.25 » et « 1250 » partout. Chacun a **sa mutation** qui le fait rougir : M3 (article), M12 (frais), M13 (minimum) ; M2, M5, M9, M14 et M15 ne visent pas les réouvertures.
+  minimum, « 1.25 » et « 1250 » partout. Les **réouvertures** ont chacune leur mutation : M3 (article), M12 (frais), M13 (minimum) ; « 1.25 » et « 1250 » nus restent des filets **sans mutation** ; M2, M5, M9, M14 et M15 ne visent pas les réouvertures.
 - **Mocks** : `products-page.test.ts:30-32` et `settings-invoicing-page.test.ts:18` mockent `i18nMsg` **sans interpolation** : un `{ $max }` y resterait invisible et les
   mutations M10a à M10c survivraient. Le mock est aligné sur celui de `journal-entries-list-page.test.ts:20-22` (interpolation) dans le test et le nouveau fichier du dunning. Pour le cas « URL `?amountMin=1.250` » (AC4), le mock de `page.url` de `journal-entries-list-page.test.ts:12-13` est **figé** : il devient mutable (`vi.hoisted`, un objet dont l'`URL` se règle par test), et l'URL écrite se lit dans les appels du mock `goto` (`:15`) (V1-9). Un test du bouton : voir AC3 (V1-7).
 - **E2E rouge** : sources remises à la base par `git restore --source=<base> --worktree -- <fichiers>` après commit, frontend construit, spec rouge, sources restaurées
@@ -248,7 +248,7 @@ Vitest seul ; dossier `/home/gcorbaz/devel/kesh-gate-logs/e4810/mut/`) :
 | M14 | article : `normalizePriceInput` / la lecture sans `trim()` | AC5 (« 1250 » bordé de blancs) |
 | M15 | filtres : `buildQuery` lit la saisie sans `trim()` | AC5 (« 1250 » bordé de blancs) |
 | M16 | retrait de `aria-invalid` ou de `aria-describedby` sur un champ fautif (un par site) | AC12 |
-| M17 | minimum : `disabled` sans le terme `!minimumReading` (bouton jamais désactivé) | AC3 |
+| M17 | minimum : `disabled` sans le terme `minimumBlocked` (bouton jamais désactivé) | AC3 |
 | M18 | minimum : la garde de `save()` retirée | AC3 (soumission par Entrée d'un « 1.250 ») |
 | M19 | prix : `formError` non remis à zéro à la correction | AC12 (Entrée puis correction) |
 | M20 | prix : le pied ne montre plus `product-error-price-required` | AC1 (prix effacé) |
@@ -278,7 +278,7 @@ Une mutation équivalente se dit au Dev Agent Record.
   écriture : « 1.250 » n'est plus lu 1,25 franc en silence ; il est refusé comme ambigu (le filtre ne s'applique pas, et l'écran le dit), et le message dit comment
   l'écrire (`1'250` ou `1.25`). L'apostrophe des milliers et la virgule décimale sont acceptées ; la saisie à exposant (`1e3`), sans chiffre avant ou après le point
   (`.5`, `5.`) ou à plus de quatre décimales, même nulles, n'est plus lue. Les frais de rappel ne disent plus seulement « deux décimales au plus » d'un montant ambigu.
-  Un prix d'article à trois décimales significatives s'écrit désormais avec la quatrième, **« 12.1250 »** (et non « 12.125 », ambigu). **Avant la 0.20.0**, un prix d'article ou un montant minimal tapé avec trois chiffres après le point ou la virgule (« 1.250 ») a été lu sans avertissement comme un franc
+  Un prix d'article de 1 à 999 francs, non groupé, à trois décimales s'écrit désormais avec la quatrième, **« 12.1250 »** (et non « 12.125 », ambigu ; « 0.125 » et « 1234.125 » ne changent pas). **Avant la 0.20.0**, un prix d'article ou un montant minimal tapé avec trois chiffres après le point ou la virgule (« 1.250 ») a été lu sans avertissement comme un franc
   vingt-cinq : relisez vos articles et votre montant minimal saisis ainsi, et les factures qui ont repris un tel prix. Aucune donnée enregistrée n'est modifiée par cette
   version. (refs #1173, refs #1175, refs #1176, refs #1177)
 
@@ -300,7 +300,7 @@ documentation, hors décompte). Ni les modules ni la nature des défauts ne se r
 
 ### Fichiers communs avec les autres stories de l'Epic 48 (fichier d'épique, tableau « Fichiers communs »)
 
-- `routes/(app)/products/+page.svelte` : **48-15, déjà fusionnée** (nom et motif au pied du formulaire) ; blocs distincts de celui du prix, rien à résoudre.
+- `routes/(app)/products/+page.svelte` : **48-15, déjà fusionnée** (nom et motif au pied du formulaire) ; pas de conflit de texte, **mais la 48-10 change la condition du pied** (`:726-730`) que la 48-15 emploie pour le motif du nom : les tests de la 48-15 restent verts (AC10), et le commentaire `:322-325` (« le motif s'affiche au pied du formulaire (`formTouched && formValidation`) ») est mis à jour. Déjà fusionnée dans la base de la branche : à rebaser au code.
 - `routes/(app)/journal-entries/+page.svelte` : la **48-2** (détail, `[id]/`) touche un autre fichier de l'espace ; pas de conflit attendu.
 - `settings/invoicing/+page.svelte` : 43-7 déjà fusionnée ; la 48-14 (solde) ne le nomme pas ; à recontrôler à l'étape 0.
 - `messages.ftl` ×4, manuels, `i18n-keys.test.ts` (`sitesTotal`) : partagés avec les 48-1, 48-2, 48-12, 48-13, 48-15 et l'Epic 49 ; chaque story dans son bloc, un conflit se
@@ -344,6 +344,4 @@ Chaque montant part tel que tapé, et le filtre traverse la frontière HTTP : AC
   `:1126`, `:1197`, `:881`, `:1338`, `:3856` à `:1424`, `:1495`, `:901`, `:1348`, `:3911`) ; (e) inventaire refait par le symptôme sur le code actuel (trente-sept champs, un site neuf
   déjà corrigé, aucun hors des quatre issues) ; (f) AC7 « aucun montant enregistré modifié » ajoutée, note de version et sortie à la coupure alignées sur la 0.20.0 ; (g) mocks
   d'`i18nMsg` sans interpolation relevés (M10). Validations : voir les entrées suivantes.
-
-- 2026-11-19 — **Validation P1** (Opus 5.5, `kesh-gate-logs/e4810/validation-p1.md`, 0 CRITICAL, 0 HIGH, 2 MEDIUM, 9 LOW), remédiée par l'orchestrateur et l'agent de rédaction (Sonnet 5.5) : V1-1 D3 réemployée aux quatre sites (message sous le champ, `id`, `aria-invalid`, `aria-describedby`, frais et prix compris ; AC12 constate les attributs) ; V1-2 un cas illisible aux AC3 et AC4, M4 et M10 déclinées, deux mutations de réouverture (M12, M13), les tests de réouverture déclarés filets, M11 dite équivalente à M7 ; V1-3 valeur de `formValidation` pour l'ambigu et signature `string | null` ; V1-4 trois numéros de ligne ; V1-5 trois lignes de l'inventaire reclassées ; V1-6 « -5 » illisible, D4 corrigée ; V1-7 bouton désactivé (AC3) ; V1-8 angles morts écrits sans issue (décision de l'orchestrateur : quantités C-e360-6, cours, serveur et API C-e350-19) ; V1-9 mock de `page.url` ; V1-10 priorités GitHub écrites ; V1-11 en-tête de l'E2E réécrit à l'AC6. Tendance : 0/0/2/9 à la P1.
-- 2026-11-19 — **Validation P2** (Sonnet 5.5, `kesh-gate-logs/e4810/validation-p2.md`, 0/0/2/6), remédiée : V2-1 AC5 rétablie en entier (matrice des formes justes aux quatre sites, « 10.01000 », « 12.1250 ») ; V2-2 le pied garde le nom vide et le prix vide, test « prix effacé » (AC1, M20) ; V2-3 `formError` remis à zéro à la correction du prix (AC12, M19) ; V2-4 AC12 : `aria-invalid` à `"false"` ou absent ; V2-5 mutations M14 à M18 (trim article et filtres, attributs, bouton, garde de `save()`), M11 redéfinie sur le `$effect` ; V2-6 « ni claire ni vide », bouton actif pour un minimum vide (AC3) ; V2-7 en-tête à jour ; V2-8 « 12.1250 » à la note de version et au manuel de l'article. Tendance : P1 0/0/2/9, P2 0/0/2/6 (les deux MEDIUM nés de la remédiation P1).
+- 2026-11-19 — **Validation terminée** (boucle de trois passes). **Tendance** : P1 (Opus 5.5) 0 CRITICAL / 0 HIGH / 2 MEDIUM / 9 LOW → P2 (Sonnet 5.5) 0/0/2/6 → P3 ciblée (Opus 5.5, sur le seul commit de la dernière remédiation) 0/0/0/8. **MEDIUM nés de la remédiation** : ceux de la P2 sont nés de la remédiation P1 (AC5 emportée par une édition, prix vide sans lieu d'affichage) ; ceux de la P1 portaient sur la D3 non réemployée (frais, prix) et sur la preuve du rouge (M10, M4). Aucun MEDIUM né de la remédiation P2 : la sévérité est retombée. **Remédiations** : P1 — D3 aux quatre sites (message sous le champ, `aria-*`, AC12), cas illisible aux AC3 et AC4, M4 et M10 déclinées, M12 et M13, filets déclarés, `formValidation` et `normalizePriceInput` fixés, numéros de ligne, inventaire reclassé, « -5 » illisible, bouton du minimum, angles morts (quantités C-e360-6, cours, serveur et API C-e350-19) sans issue, mock de `page.url`, en-tête de l'E2E ; P2 — AC5 rétablie, pied du prix vide, `formError`, `aria-invalid="false"`, M11 redéfinie et M14 à M20, « ni claire ni vide », « 12.1250 » ; **les huit LOW de la P3 corrigés après la dernière passe, dans le texte de la fiche** (terme `minimumBlocked`, `formError` borné à `priceMessage`, `priceMessage` défini et scénarios « Entrée » défensifs, règle « 12.1250 » bornée à 1 à 999 non groupé, exemple `' 1250 '`, Dev Note du pied de formulaire, garde `:363-364`, filets sans mutation) — texte seul, aucun code de production : la règle n'exige pas de passe de plus. **Reclassement** : #1173 et #1176 passent P1 (décision de Guy du 2026-11-19). Compte : 12 AC, 20 mutations (23 lignes, M4 et M10 déclinées), D1 à D6.
