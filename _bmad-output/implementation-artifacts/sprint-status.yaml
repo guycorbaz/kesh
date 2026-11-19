@@ -1,3 +1,6 @@
+# last_updated: 2026-11-18 (découpages : 48-13 → 48-13 et 48-15-troncatures-silencieuses (#1331 à #1334, dérogation à la règle de splitting, décision de Guy) ; Epic 48 à huit stories, dérogation à la borne de six élargie ; 49-1 split en 49-1a à 49-1d (règle de splitting, neuf modules) ; 48-13, 48-15 et 49-1a en validation (P3))
+# last_updated: 2026-11-18 (kickoff de la 0.20.0 révisé sur les réponses de Guy aux points ouverts : sous-totaux repoussés, 49-3-titres-et-sous-totaux renommée 49-3-titres-de-section ; #1234 retirée de la 48-13 ; 48-13 fusionnée avant l'Epic 49 ; issues de la solde #1263, #1262, #1261, #1255 au milestone v0.20.0)
+# last_updated: 2026-11-18 (kickoff de la 0.20.0 en autonomie, release-0.20.0.md : Epic 48 sort du réservoir et devient l'épique corrective de la release, sept stories par dérogation à la borne de six (décision de Guy du 2026-11-18), 48-11 à 48-14 ajoutées, 48-3 à 48-9 hors 0.20.0 ; Epic 49 ouverte, types de lignes de la facture client (#1242), seule migration de la release ; v0200-menu-sous-groupes (#1253), amélioration de la release)
 # last_updated: 2026-11-18 (après la v0.19.0 : Epics 42, 43, 44 closes avec la release, restes et clés de l'Epic 36 versés à l'Epic 48 (réservoir) ; 36-16a superseded = 42-1 ; décisions de Guy, page « après la 0.19.0 »)
 # last_updated: 2026-11-16 (rétrospective de l'Epic 36 tenue en autonomie, epic-36-retro-2026-11-16.md ; v0.18.0 publiée ; epic-36 done ; stories non faites reprises dans une épique neuve, Epic 42 et suivantes, décision de Guy du 2026-11-16 ; 36-16a done, non publiée)
 # last_updated: 2026-11-15 (kickoff de la 0.18.0 sur epic/36-0.18.0 : décisions de Guy D1 à D7 et M1 du 2026-11-15 ; 36-18 ajoutée ; 36-13 sortie de l'epic, Epic 41)
@@ -1154,19 +1157,45 @@ development_status:
   epic-44-retrospective: done  # 2026-11-18 : le bilan release-0.19.0-bilan-2026-11-18.md en tient lieu (Q2 de Guy).
 
   # 2026-11-18 — Epic 48, RÉSERVOIR des stories non faites des Epics 36, 42, 43 et 44 (décision de Guy, page « après la 0.19.0 », Q2).
-  # Ce n'est pas encore une épique de release : le kickoff de la 0.20.0 en tire au plus six stories (orientation de Guy : surtout des bugs,
-  # une ou deux fonctionnalités) ; le reste part à une épique ultérieure. Les fiches gardent leur nom d'origine.
-  epic-48: backlog  # réservoir ; kickoff à tenir pour la 0.20.0 (vendredi 2026-11-27)
-  48-1-reimputation-facture-fournisseur: backlog  # = 42-2 = 36-16b (fiche 36-16b-reimputation-facture-fournisseur.md, remédiée P1 sur story/42-2-reimputation-facture-fournisseur, 04dedba10) ; CR #1167 ; dépend de settlement_journal_entry_line_id (Epic 43, publiée)
-  48-2-reimputation-ecriture-manuelle: backlog  # = 42-3 = 36-16c (fiche 36-16c-reimputation-ecriture-manuelle.md) ; #1167 se ferme avec elle
-  48-3-paiements-non-rapproches: backlog  # = 43-5 (fiche 43-5-paiements-non-rapproches.md, trace de conception) ; à rapprocher de l'état « envoyée » (#1236) ; migration 20261118000002 non écrite
-  48-4-qr-facture-cascade: backlog  # = 44-1b (fiche 44-1b-qr-facture-cascade.md) ; #944, #1230 ; paliers R2, R3, P1, P2 ; à valider avant développement
-  48-5-tests-bornes-anterieures: ready-for-dev  # = 36-7b ; #1125 (KF-060) ; les 9 rouges sous instant antérieur
-  48-6-acteur-tiers-catalogue: backlog  # = 36-11a ; refs #431
-  48-7-acteur-facturation-client: backlog  # = 36-11b ; refs #431 ; après 48-6
-  48-8-acteur-fournisseurs-paiements: backlog  # = 36-11c ; refs #431 ; après 48-7
-  48-9-acteur-reglages-restauration: backlog  # = 36-11d ; #431, #1132 ; après 48-8
-  48-10-montants-ambigus-reglages-filtres: backlog  # = 36-18b ; #1173, #1175, #1176, #1177
+  # 2026-11-18, kickoff de la 0.20.0 : l'Epic 48 devient l'épique corrective de la release 0.20.0 (vendredi 2026-11-27, coupure jeudi
+  # 2026-11-26 au soir) ; fichier epic-48-corrections-0-20-0.md. Sept stories retenues — 48-1, 48-2, 48-10 à 48-14 —, par dérogation à
+  # la borne de six (décision de Guy du 2026-11-18) ; huit le même jour avec la 48-15, découpée de la 48-13 (décision de Guy). Les clés 48-3 à 48-9 restent hors 0.20.0, pour une release ultérieure.
+  # Les fiches existantes gardent leur nom d'origine.
+  epic-48: in-progress  # kickoff 2026-11-18 ; release 0.20.0 ; huit stories (48-1, 48-2, 48-10 à 48-15) ; dérogation à la borne de six, décisions de Guy du 2026-11-18 (sept, puis huit avec la 48-15) ; à la coupure, la 48-14 puis la 48-2 sortent les premières, la 48-15 avant la 48-11 et la 48-13, prioritaires
+  48-0-kickoff: done  # 2026-11-18 : epic-48-corrections-0-20-0.md, release-0.20.0.md
+  48-1-reimputation-facture-fournisseur: backlog  # release 0.20.0 (kickoff du 2026-11-18). — = 42-2 = 36-16b (fiche 36-16b-reimputation-facture-fournisseur.md, remédiée P1 sur story/42-2-reimputation-facture-fournisseur, 04dedba10) ; CR #1167 ; dépend de settlement_journal_entry_line_id (Epic 43, publiée)
+  48-2-reimputation-ecriture-manuelle: backlog  # release 0.20.0 (kickoff du 2026-11-18) ; sort la deuxième à la coupure, après la 48-14. — = 42-3 = 36-16c (fiche 36-16c-reimputation-ecriture-manuelle.md) ; #1167 se ferme avec elle
+  48-3-paiements-non-rapproches: backlog  # hors 0.20.0, pour une release ultérieure (kickoff du 2026-11-18). — = 43-5 (fiche 43-5-paiements-non-rapproches.md, trace de conception) ; à rapprocher de l'état « envoyée » (#1236) ; migration 20261118000002 non écrite
+  48-4-qr-facture-cascade: backlog  # hors 0.20.0, pour une release ultérieure (kickoff du 2026-11-18). — = 44-1b (fiche 44-1b-qr-facture-cascade.md) ; #944, #1230 ; paliers R2, R3, P1, P2 ; à valider avant développement
+  48-5-tests-bornes-anterieures: ready-for-dev  # hors 0.20.0, pour une release ultérieure (kickoff du 2026-11-18). — = 36-7b ; #1125 (KF-060) ; les 9 rouges sous instant antérieur
+  48-6-acteur-tiers-catalogue: backlog  # hors 0.20.0, pour une release ultérieure (kickoff du 2026-11-18). — = 36-11a ; refs #431
+  48-7-acteur-facturation-client: backlog  # hors 0.20.0, pour une release ultérieure (kickoff du 2026-11-18). — = 36-11b ; refs #431 ; après 48-6
+  48-8-acteur-fournisseurs-paiements: backlog  # hors 0.20.0, pour une release ultérieure (kickoff du 2026-11-18). — = 36-11c ; refs #431 ; après 48-7
+  48-9-acteur-reglages-restauration: backlog  # hors 0.20.0, pour une release ultérieure (kickoff du 2026-11-18). — = 36-11d ; #431, #1132 ; après 48-8
+  48-10-montants-ambigus-reglages-filtres: backlog  # release 0.20.0 (kickoff du 2026-11-18). — = 36-18b (fiche 36-18b-montants-ambigus-reglages-filtres.md) ; #1173, #1175, #1176, #1177
+  48-11-arrondi-au-centime: backlog  # release 0.20.0, prioritaire ; #1245 (P2) : `{:.2}` tronque un Decimal ; une fonction commune « arrondir au centime puis formater », un test par site, une garde ; part de main APRÈS la fusion de la PR #1327 de Beat (crates/kesh-report/src/pdf.rs)
+  48-12-reponses-perdues-fournisseurs: backlog  # release 0.20.0 ; #975, #984, #985, #986 (P2) : doublon ou écrasement après une réponse perdue ou un 409 (factures fournisseur, comptes bancaires)
+  48-13-avant-la-vraie-facture: backlog  # fiche en validation (P3) ; découpée à sa validation P2 (2026-11-18) : #1331 à #1334 passées à la 48-15. — release 0.20.0, prioritaire ; #1233, #1243, #1226 : chemin de la première facture client QR ; se fusionne AVANT les stories de l'Epic 49 qui touchent InvoiceForm.svelte (arbitrage de Guy du 2026-11-18) ; #1234 retirée le 2026-11-18, renvoyée à « Plus tard »
+  48-14-solde-dette-epic: backlog  # release 0.20.0 ; story de solde : dette des revues de la 0.19.0 (règlement groupé) ; plafond QUATRE issues, fixé au kickoff du 2026-11-18 : #1263, #1262, #1261, #1255, au milestone v0.20.0 ; sort la première à la coupure
+  48-15-troncatures-silencieuses: backlog  # fiche en validation (P3) ; release 0.20.0 ; #1331, #1332, #1333, #1334 et cinq champs du PDF (nom d'article, numéro de client, conditions de paiement, raison sociale, délai de paiement) ; née de la 48-13 à sa validation P2 (2026-11-18) ; dérogation à la règle de splitting (sept domaines, un même geste mécanique en deux lots, décision de Guy) ; part de la 48-13 fusionnée (set_coordinates) ; ne bloque pas l'Epic 49 ; sort avant la 48-11 et la 48-13 ; hors périmètre : #1335 à #1340
+  epic-48-retrospective: optional
+
+  # 2026-11-18 — Epic 49 « Types de lignes de la facture client » (#1242, P2, demande de Guy, échéance fin novembre), release 0.20.0 ;
+  # fichier epic-49-types-de-lignes-facture.md ; porte la SEULE migration de la 0.20.0 (49-1). Menée en parallèle de l'Epic 48,
+  # écart assumé à « une épique en cours par développeur » (décision de Guy du 2026-11-18, pour la vitesse).
+  epic-49: in-progress  # kickoff 2026-11-18 ; release 0.20.0 (vendredi 2026-11-27, coupure jeudi 2026-11-26 au soir) ; six stories depuis le découpage de la 49-1 (49-1a à 49-1d, 49-2, 49-3) ; une migration (49-1a)
+  49-0-kickoff: done  # 2026-11-18 : epic-49-types-de-lignes-facture.md, release-0.20.0.md
+  49-1-types-de-lignes: split  # 2026-11-18 : découpée (règle de splitting, neuf modules ; kesh-gate-logs/e491/decoupage-49-1.md) en 49-1a, 49-1b, 49-1c, 49-1d ; la 49-1a ne sort jamais sans la 49-1d, la 49-1c pas sans la 49-1b ; trois types stockés (priced, comment, heading), pas de sous-total (#1330). — #1242 ; FACTURES RÉELLES EN PRODUCTION (complément de Guy du 2026-11-18) : la migration conserve à l'identique chaque facture et avoir existants (type établi à la fiche, sinon type unique « chiffré »), triage P7, PDF des factures émises inchangé (test avant/après), recette de montée avec factures réelles simulées ; types produit, sans produit, commentaire ; migration qui pose d'emblée les types produit, sans produit, commentaire et titre (sous-total seulement si la fiche établit qu'il ne préjuge pas de son sens TVA, sinon sa propre migration plus tard) et les contraintes par type, sur invoice_lines ET credit_note_lines ; non breaking : colonnes NOT NULL, valeurs neutres, CHECK assouplis par type ; rendu PDF ; avoirs qui reprennent commentaires et titres ; splitting préventif à juger à la fiche
+  49-1a-types-de-lignes-migration-api: backlog  # fiche en validation (P3) ; #1242 ; la migration de la release (trois types stockés, contraintes par type sur invoice_lines et credit_note_lines, lignes existantes en priced), modèle, dépôts, reprise des avoirs, exports, MCP ; API gardée (seule priced) ; manuel d'administration « Pour les intégrations » ; ne sort jamais sans la 49-1d
+  49-1b-types-de-lignes-pdf: backlog  # #1242 ; rendu PDF d'un commentaire, facture et avoir ; test avant/après d'une facture et d'un avoir de la 0.19.0 ; PDF figé servi tel quel ; après 49-1a
+  49-1c-types-de-lignes-ecran: backlog  # #1242 ; écran, i18n, E2E, manuel utilisateur ; ouvre comment ; traite verify_vat_rates_against_db ; après 49-1a et 49-1b ; ne sort pas sans la 49-1b ; après la 48-13 (InvoiceForm.svelte)
+  49-1d-types-de-lignes-recette-montee: backlog  # #1242 ; gate de la release : recette de montée avec factures réelles simulées, credit_notes et credit_note_lines dans l'empreinte, section « Passer à la 0.20.0 » du manuel d'administration ; liée à la 49-1a (elles sortent ensemble ou pas)
+  49-2-reordonnancement-lignes: backlog  # #1242 ; ↑/↓ en brouillon (glisser-déposer si la fiche le juge sûr) ; après 49-1c
+  49-3-titres-de-section: backlog  # #1242 ; titre de section sans montant ; rendu PDF ; reprise dans les avoirs ; ouvre heading ; après 49-1a, 49-1b et 49-1c ; clé renommée le 2026-11-18 (était 49-3-titres-et-sous-totaux) : les sous-totaux sont repoussés à une release ultérieure, décision de Guy (justesse HT/TTC et par taux), issue « sous-totaux de section » à ouvrir
+  epic-49-retrospective: optional
+
+  # 2026-11-18 — Release 0.20.0 : l'amélioration de la release (une par release, décision de Guy du 2026-11-17), hors épique.
+  v0200-menu-sous-groupes: backlog  # #1253 (P4) : menu Administration en sous-groupes (Comptabilité, Banque, Facturation, Système) ; frontend seul, sans migration ; manuels des quatre langues ; à fusionner en dernier (chemins des manuels)
 
   # 2026-11-18 — Correctif hors epic (Beat), non urgent, à la prochaine release planifiée, sans migration.
   fix-pdf-rapports-mise-en-page: review  # 2026-11-18 : branche fix/pdf-montants-alignes, PR #1327 ; montants des PDF de rapports alignés à droite, titre des propriétés accentué, en-têtes de devise en multi-devises ; revue close (P1 Opus 0 > LOW, P2 ciblée 1 MEDIUM corrigé, P3 ciblée 0 > LOW) ; gate complet groupé vert (integ/fixes-0.19.0 à 5fc6fb1b)
