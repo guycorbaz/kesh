@@ -2826,4 +2826,25 @@ async fn kesh_facture_porte_le_type_de_chaque_ligne(pool: MySqlPool) {
         max_avec >= 40,
         "une facture courante doit rester servie : {max_avec} lignes au plus"
     );
+
+    // Revue P1 (A1) : la plus grosse facture des données semées. `seed_demo`
+    // n'en sème aucune ; la plus lourde est celle des pièges (`pieges::semer`,
+    // une ligne à la description de 1 000 caractères).
+    let p = societe_piegee(&pool, "Société pièges 49-1a", 'A').await;
+    let jeton_p = cle_de(&pool, &p, &LECTURE, SendValidation::Exempt).await;
+    let t = texte(
+        &b.appeler(&jeton_p, "kesh_facture", json!({ "id": p.p.facture }))
+            .await,
+    );
+    let cle_p: usize = t
+        .lines()
+        .filter(|l| l.contains("\"typeLigne\""))
+        .map(|l| l.len() + 2)
+        .sum();
+    eprintln!(
+        "MESURE kesh_facture (facture des pièges, la plus lourde semée) : {} o avec la clé, {} o sans",
+        t.len(),
+        t.len() - cle_p
+    );
+    assert!(t.len() < MCP_ENVOI_OCTETS_MAX);
 }

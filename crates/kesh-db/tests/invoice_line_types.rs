@@ -299,6 +299,27 @@ async fn constraints_by_type(pool: MySqlPool) {
             t,
             "line_type",
         );
+        // Revue P1 (E2/B2) : le domaine est fermé à l'octet. Sous la collation
+        // de la table (insensible à la casse, PAD SPACE), ces valeurs égalent
+        // `'priced'` : montants d'une ligne chiffrée, pour que seul
+        // `chk_*_line_type` (`BINARY`) puisse les refuser.
+        for v in ["PRICED", "priced ", "Priced"] {
+            assert_refused_by(
+                insert_raw(
+                    &pool,
+                    t,
+                    parent,
+                    next(),
+                    &Raw {
+                        line_type: Some(v),
+                        ..Raw::priced(dec!(1))
+                    },
+                )
+                .await,
+                t,
+                "line_type",
+            );
+        }
 
         // Un INSERT de forme 0.19.0, sans `line_type`, passe et donne `priced`.
         let p = next();

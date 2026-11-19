@@ -543,7 +543,7 @@ CREATE TABLE `credit_note_lines` (
   CONSTRAINT `chk_credit_note_lines_vat_rate_range` CHECK (`vat_rate` >= 0 and `vat_rate` <= 100),
   CONSTRAINT `chk_credit_note_lines_description_not_empty` CHECK (char_length(trim(`description`)) > 0),
   CONSTRAINT `chk_credit_note_lines_line_total_non_negative` CHECK (`line_total` >= 0),
-  CONSTRAINT `chk_credit_note_lines_line_type` CHECK (`line_type` in ('priced','comment','heading')),
+  CONSTRAINT `chk_credit_note_lines_line_type` CHECK (cast(`line_type` as char charset binary) in ('priced','comment','heading')),
   CONSTRAINT `chk_credit_note_lines_priced_quantity` CHECK (`line_type` <> 'priced' or `quantity` > 0),
   CONSTRAINT `chk_credit_note_lines_unpriced_neutral` CHECK (`line_type` = 'priced' or `quantity` = 0 and `unit_price` = 0 and `vat_rate` = 0 and `line_total` = 0 and `revenue_account_id` is null)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -772,7 +772,7 @@ CREATE TABLE `invoice_lines` (
   CONSTRAINT `chk_invoice_lines_vat_rate_range` CHECK (`vat_rate` >= 0 and `vat_rate` <= 100),
   CONSTRAINT `chk_invoice_lines_description_not_empty` CHECK (char_length(trim(`description`)) > 0),
   CONSTRAINT `chk_invoice_lines_line_total_non_negative` CHECK (`line_total` >= 0),
-  CONSTRAINT `chk_invoice_lines_line_type` CHECK (`line_type` in ('priced','comment','heading')),
+  CONSTRAINT `chk_invoice_lines_line_type` CHECK (cast(`line_type` as char charset binary) in ('priced','comment','heading')),
   CONSTRAINT `chk_invoice_lines_priced_quantity` CHECK (`line_type` <> 'priced' or `quantity` > 0),
   CONSTRAINT `chk_invoice_lines_unpriced_neutral` CHECK (`line_type` = 'priced' or `quantity` = 0 and `unit_price` = 0 and `vat_rate` = 0 and `line_total` = 0 and `revenue_account_id` is null)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

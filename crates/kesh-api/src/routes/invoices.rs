@@ -65,6 +65,15 @@ const MAX_LINES: usize = 200;
 // DTOs
 // ---------------------------------------------------------------------------
 
+/// `lineType` d'une ligne reçue : `null` et absence valent `priced` ; une valeur
+/// inconnue reste une erreur de désérialisation (`422`).
+fn line_type_or_default<'de, D>(d: D) -> Result<LineType, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Option::<LineType>::deserialize(d).map(Option::unwrap_or_default)
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateInvoiceLineRequest {
@@ -72,8 +81,10 @@ pub struct CreateInvoiceLineRequest {
     /// 0.19.0, qui ne l'envoie pas, est accepté à l'identique. `comment` et
     /// `heading` sont reconnus mais **refusés** (`400`) tant que la garde
     /// [`LineType::open_to_api`] ne les ouvre pas ; une valeur inconnue est un
-    /// rejet de l'extracteur (`422`).
-    #[serde(default)]
+    /// rejet de l'extracteur (`422`). Un `null` vaut l'absence, comme pour les
+    /// montants et `revenueAccountId` (revue P1, B1/E3/A7) : `#[serde(default)]`
+    /// seul ne couvre que la clé absente.
+    #[serde(default, deserialize_with = "line_type_or_default")]
     pub line_type: LineType,
     pub description: String,
     /// Quantité, prix unitaire et taux de TVA : **exigés pour une ligne
@@ -1848,6 +1859,17 @@ mod tests {
         let v = validate_line(req, 0).unwrap();
         assert_eq!(v.line_type, LineType::Priced);
         assert_eq!((v.quantity, v.unit_price), (dec!(1), dec!(1200)));
+    }
+
+    /// Revue P1 (B1/E3/A7) : `"lineType": null` vaut l'absence, `priced`.
+    #[test]
+    fn null_line_type_is_priced() {
+        let req: CreateInvoiceLineRequest = serde_json::from_value(serde_json::json!({
+            "lineType": null, "description": "Loyer",
+            "quantity": "1", "unitPrice": "1200", "vatRate": "0.00",
+        }))
+        .expect("null vaut l'absence");
+        assert_eq!(req.line_type, LineType::Priced);
     }
 
     /// Story 49-1a (D8) : un `lineType` inconnu est un rejet de

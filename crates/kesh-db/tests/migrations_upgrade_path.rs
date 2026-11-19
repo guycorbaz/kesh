@@ -3838,3 +3838,134 @@ async fn line_types_migration_keeps_real_invoices(pool: MySqlPool) {
     vente.sort();
     assert_eq!(contre, vente, "l'écriture de l'avoir inverse la vente");
 }
+
+/// Story 49-1a, revue P1 (E1, B3, A5, E4) — **une migration interrompue entre
+/// ses deux `ALTER`**, et la reprise que l'en-tête de la migration, l'audit
+/// d'idempotence et le manuel d'administration décrivent.
+///
+/// sqlx-mysql 0.8.6 inscrit la migration **avant** de l'exécuter (`success =
+/// FALSE`, `execution_time = -1`) ; le premier `ALTER` de MariaDB valide
+/// implicitement cette ligne. L'état laissé par une coupure entre les deux
+/// `ALTER` est donc : `invoice_lines` migrée, `credit_note_lines` intacte, une
+/// ligne `success = 0`. Le test reconstitue exactement cet état (la ligne telle
+/// que sqlx l'écrit, puis le seul premier `ALTER` du fichier), puis vérifie :
+/// (1) `MIGRATOR.run()` refuse (`MigrateError::Dirty`) — Kesh ne démarre pas ;
+/// (2) après `DELETE … AND success = 0`, `MIGRATOR.run()` passe : le rejeu est
+/// sans effet sur `invoice_lines` et termine `credit_note_lines` ; (3) le schéma
+/// final est celui d'une montée ordinaire, et la ligne de la migration est
+/// `success = 1`.
+#[sqlx::test(migrations = false)]
+async fn line_types_migration_resumes_after_a_half_run(pool: MySqlPool) {
+    apply_migrations_up_to(
+        &pool,
+        common::migrations_before(LINE_TYPES_VERSION, LINE_TYPES_LABEL),
+    )
+    .await
+    .expect("apply_migrations_up_to(avant invoice_line_types) failed");
+    let m = kesh_db::MIGRATOR
+        .migrations
+        .iter()
+        .find(|m| m.version == LINE_TYPES_VERSION)
+        .expect("migration présente");
+
+    // La ligne que sqlx écrit avant le script (sqlx-mysql `migrate.rs`).
+    sqlx::query(
+        "INSERT INTO _sqlx_migrations (version, description, success, checksum, execution_time) \
+         VALUES (?, ?, FALSE, ?, -1)",
+    )
+    .bind(m.version)
+    .bind(m.description.as_ref())
+    .bind(m.checksum.as_ref())
+    .execute(&pool)
+    .await
+    .unwrap();
+    // Le seul premier `ALTER` du fichier (en-tête compris), puis la « coupure ».
+    let (premier, reste) = m
+        .sql
+        .split_once("\nALTER TABLE credit_note_lines")
+        .expect("le second ALTER porte sur credit_note_lines");
+    assert!(premier.contains("ALTER TABLE invoice_lines") && !reste.is_empty());
+    sqlx::raw_sql(premier)
+        .execute(&pool)
+        .await
+        .expect("premier ALTER");
+
+    let colonne = |table: &'static str| {
+        let pool = pool.clone();
+        async move {
+            sqlx::query_scalar::<_, i64>(
+                "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() \
+                 AND TABLE_NAME = ? AND COLUMN_NAME = 'line_type'",
+            )
+            .bind(table)
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+        }
+    };
+    assert_eq!(
+        (
+            colonne("invoice_lines").await,
+            colonne("credit_note_lines").await
+        ),
+        (1, 0),
+        "état à mi-chemin : la première table seule"
+    );
+
+    // (1) Kesh refuse de démarrer.
+    match kesh_db::MIGRATOR.run(&pool).await {
+        Err(sqlx::migrate::MigrateError::Dirty(v)) => assert_eq!(v, LINE_TYPES_VERSION),
+        autre => panic!("attendu Dirty({LINE_TYPES_VERSION}), reçu {autre:?}"),
+    }
+
+    // (2) La reprise documentée.
+    let retirees =
+        sqlx::query("DELETE FROM _sqlx_migrations WHERE version = 20261118000002 AND success = 0")
+            .execute(&pool)
+            .await
+            .unwrap()
+            .rows_affected();
+    assert_eq!(retirees, 1, "la ligne success = 0 existait");
+    kesh_db::MIGRATOR
+        .run(&pool)
+        .await
+        .expect("le rejeu après le retrait de la ligne passe");
+
+    // (3) Le schéma final.
+    assert_eq!(
+        (
+            colonne("invoice_lines").await,
+            colonne("credit_note_lines").await
+        ),
+        (1, 1)
+    );
+    for t in ["invoice_lines", "credit_note_lines"] {
+        let checks: Vec<String> = sqlx::query_scalar(
+            "SELECT CONSTRAINT_NAME FROM information_schema.CHECK_CONSTRAINTS \
+             WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = ? ORDER BY CONSTRAINT_NAME",
+        )
+        .bind(t)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        let attendues: Vec<String> = [
+            "description_not_empty",
+            "line_total_non_negative",
+            "line_type",
+            "priced_quantity",
+            "unit_price_non_negative",
+            "unpriced_neutral",
+            "vat_rate_range",
+        ]
+        .iter()
+        .map(|c| format!("chk_{t}_{c}"))
+        .collect();
+        assert_eq!(checks, attendues, "{t} : contraintes après la reprise");
+    }
+    let succes: bool = sqlx::query_scalar("SELECT success FROM _sqlx_migrations WHERE version = ?")
+        .bind(LINE_TYPES_VERSION)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert!(succes, "la migration est inscrite réussie");
+}

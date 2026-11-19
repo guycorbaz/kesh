@@ -104,6 +104,8 @@ struct Monte {
     app: TestApp,
     token: String,
     contact_id: i64,
+    /// Compte de caisse (1000) de la fixture, contrepartie d'un règlement.
+    caisse: i64,
 }
 
 async fn monter(pool: &MySqlPool) -> Monte {
@@ -144,6 +146,7 @@ async fn monter(pool: &MySqlPool) -> Monte {
         app,
         token,
         contact_id,
+        caisse: seeded.accounts["1000"],
     }
 }
 
@@ -224,6 +227,123 @@ async fn body_0_19_0_is_accepted_and_reads_back_priced(pool: MySqlPool) {
     let id = created["id"].as_i64().unwrap();
     let lu = m.lire(&format!("/api/v1/invoices/{id}")).await;
     assert_eq!(lu["lines"][0]["lineType"], "priced");
+
+    // Revue P1 (B1/E3/A7) : `"lineType": null` vaut l'absence.
+    let mut avec_null = ligne_0_19_0();
+    avec_null["lineType"] = Value::Null;
+    let (status, created) = m
+        .envoyer(
+            reqwest::Method::POST,
+            "/api/v1/invoices",
+            &m.corps(json!([avec_null])),
+        )
+        .await;
+    assert_eq!(status, 201, "lineType null : {created}");
+    assert_eq!(created["lines"][0]["lineType"], "priced");
+}
+
+/// Les clés d'une ligne de facture en 0.19.0, plus la seule ajoutée par la
+/// 0.20.0 : `lineType` (AC12).
+const CLES_DE_LIGNE: [&str; 11] = [
+    "createdAt",
+    "description",
+    "id",
+    "invoiceId",
+    "lineTotal",
+    "lineType",
+    "position",
+    "quantity",
+    "revenueAccountId",
+    "unitPrice",
+    "vatRate",
+];
+
+/// Contrôle une ligne rendue : exactement les clés de la 0.19.0 plus
+/// `lineType`, et les valeurs du corps envoyé.
+fn ligne_conforme(contexte: &str, l: &Value) {
+    let mut cles: Vec<&str> = l.as_object().unwrap().keys().map(String::as_str).collect();
+    cles.sort_unstable();
+    assert_eq!(cles, CLES_DE_LIGNE, "{contexte} : clés de la ligne");
+    assert_eq!(l["lineType"], "priced", "{contexte}");
+    assert_eq!(l["description"], "Loyer", "{contexte}");
+    assert_eq!(l["quantity"], "1.0000", "{contexte}");
+    assert_eq!(l["unitPrice"], "1200.0000", "{contexte}");
+    assert_eq!(l["vatRate"], "8.10", "{contexte}");
+    assert_eq!(l["lineTotal"], "1200.0000", "{contexte}");
+    assert_eq!(l["position"], 0, "{contexte}");
+}
+
+/// AC12 (revue P1, A4) — à chaque réponse qui porte la facture, la ligne a
+/// la forme de la 0.19.0 plus `lineType` : `POST`, `PUT` réussi, `GET`,
+/// `validate`, `unvalidate`, règlement.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn every_invoice_response_carries_the_line_type(pool: MySqlPool) {
+    let m = monter(&pool).await;
+    let (status, created) = m
+        .envoyer(
+            reqwest::Method::POST,
+            "/api/v1/invoices",
+            &m.corps(json!([ligne_0_19_0()])),
+        )
+        .await;
+    assert_eq!(status, 201, "{created}");
+    ligne_conforme("POST", &created["lines"][0]);
+    let id = created["id"].as_i64().unwrap();
+
+    let mut put = m.corps(json!([ligne_0_19_0()]));
+    put["paymentTerms"] = json!("30 jours");
+    put["version"] = created["version"].clone();
+    let (status, modifiee) = m
+        .envoyer(
+            reqwest::Method::PUT,
+            &format!("/api/v1/invoices/{id}"),
+            &put,
+        )
+        .await;
+    assert_eq!(status, 200, "{modifiee}");
+    assert_ne!(
+        modifiee["version"], created["version"],
+        "PUT réel, non no-op"
+    );
+    ligne_conforme("PUT", &modifiee["lines"][0]);
+    ligne_conforme(
+        "GET",
+        &m.lire(&format!("/api/v1/invoices/{id}")).await["lines"][0],
+    );
+
+    let chemin_validation = format!("/api/v1/invoices/{id}/validate");
+    let vide = json!({});
+    let valider = || m.envoyer(reqwest::Method::POST, &chemin_validation, &vide);
+    let (status, validee) = valider().await;
+    assert_eq!(status, 200, "{validee}");
+    ligne_conforme("validate", &validee["lines"][0]);
+    let (status, devalidee) = m
+        .envoyer(
+            reqwest::Method::POST,
+            &format!("/api/v1/invoices/{id}/unvalidate"),
+            &json!({ "version": validee["version"] }),
+        )
+        .await;
+    assert_eq!(status, 200, "{devalidee}");
+    ligne_conforme("unvalidate", &devalidee["lines"][0]);
+    let (status, validee) = valider().await;
+    assert_eq!(status, 200, "{validee}");
+
+    let (status, reglee) = m
+        .envoyer(
+            reqwest::Method::POST,
+            &format!("/api/v1/invoices/{id}/settlements"),
+            &json!({
+                "settlementType": "internal_account",
+                "accountId": m.caisse,
+                "amount": "100.00",
+                "settledOn": "2026-06-20",
+                "version": validee["version"],
+            }),
+        )
+        .await;
+    assert_eq!(status, 200, "{reglee}");
+    ligne_conforme("settlements", &reglee["invoice"]["lines"][0]);
 }
 
 /// D9 — `comment` et `heading` refusés `400` au `POST` et au `PUT`, sans
