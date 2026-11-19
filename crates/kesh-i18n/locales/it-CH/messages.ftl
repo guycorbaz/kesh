@@ -413,6 +413,7 @@ error-date-outside-fiscal-year-generic = La data non rientra nell'esercizio corr
 journal-entries-filter-description = Descrizione
 journal-entries-filter-amount-min = Importo min
 journal-entries-filter-amount-max = Importo max
+journal-entries-filter-amount-not-applied = Questo filtro non è applicato finché l'importo non è corretto.
 journal-entries-filter-date-from = Data inizio
 journal-entries-filter-date-to = Data fine
 journal-entries-filter-journal = Giornale

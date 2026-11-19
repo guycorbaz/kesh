@@ -413,6 +413,7 @@ error-date-outside-fiscal-year-generic = The date is not within the current fisc
 journal-entries-filter-description = Description
 journal-entries-filter-amount-min = Amount min
 journal-entries-filter-amount-max = Amount max
+journal-entries-filter-amount-not-applied = This filter is not applied until the amount is corrected.
 journal-entries-filter-date-from = From date
 journal-entries-filter-date-to = To date
 journal-entries-filter-journal = Journal
