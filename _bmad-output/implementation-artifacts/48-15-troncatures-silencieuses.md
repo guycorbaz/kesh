@@ -1,6 +1,6 @@
 # Story 48-15 : Troncatures silencieuses — adresse du client, pays du fournisseur, e-mail de la société, prénom et nom, cinq champs du PDF (#1331, #1332, #1333, #1334)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-18 (Sonnet 5.5), **découpée de la 48-13 après la validation P2** (V2-2 : la 48-13, élargie à ces sites sur décision de Guy du 2026-11-18 « diminuer le nombre de bugs », touchait neuf modules au grain du domaine ;
 l'orchestrateur a déclaré le signal de splitting au Project Lead et coupé la story). Worktree `kesh-48-13`, branche `story/48-13-avant-la-vraie-facture` pour l'instant (la branche `story/48-15-troncatures-silencieuses` se crée depuis
@@ -305,8 +305,16 @@ même contact → 200), `company_email_is_bounded_at_320_by_the_route` (e-mail d
 - **La clé `error-data-length-or-range` n'existe dans aucun catalogue** : `t()` rend alors la clé brute (`errors.rs:76-81`,
   `bundle.format(locale, key, None)`), si bien qu'en production le refus générique de MariaDB s'affiche « error-data-length-or-range »
   (vu dans `rouge-rust.log` : `{"error":{"code":"DATA_LENGTH_OR_RANGE","message":"error-data-length-or-range"}}` quand l'i18n est
-  initialisée, comme en production). P3 ou P4 selon le triage ; une issue.
+  initialisée, comme en production). Ouverte par l'orchestrateur : **#1348**.
 - #1342 (pays saisi seul jeté sans refus) : déjà ouverte, citée par la fiche.
+- Revue P2, L1 : les états du bouton grisé encore sans motif visible sur le formulaire des contacts, **antérieurs à la story**
+  (aucun n'est ouvert par elle) : **#1349**, ouverte par l'orchestrateur.
+- Revue P2, L2 — **limite négligeable assumée** : le `trim()` de JavaScript et celui de Rust (`str::trim`, espaces blancs Unicode)
+  ne couvrent pas exactement les mêmes caractères (U+FEFF est retiré par JavaScript et non par Rust ; U+0085 l'inverse). À la
+  borne exacte, une valeur entourée de ces seuls caractères peut être comptée d'un caractère de différence entre l'écran et le
+  serveur ; le serveur décide toujours, et son refus s'affiche. Sans issue.
+- La description d'un article (`maxlength={1000}`) ne passe pas sur la facture (`InvoiceForm.svelte` ne recopie que `p.name`) :
+  hors PDF, reste à #1340.
 
 ### Décalages relevés à l'étape 0 (fiche écrite sur `773df80da`, code lu à `45eb99ddd`)
 
@@ -395,3 +403,30 @@ Décisions de l'orchestrateur du 2026-11-19, toutes dans la story. Rapports : `k
   AC4/AC8 sur `contact-form-error`, test des articles déclaré filet. Mutations neuves M20 à M25, toutes tuées. Gate ciblé vert
   (Vitest 82 / 82, `check`, `fmt`, `clippy`, nextest 45 / 45). Aucun reclassement. Suite : passe ciblée de l'orchestrateur sur
   `3aaefa33c`. Détail : Dev Agent Record, « Remédiation de la revue P1 ».
+- **2026-11-19 — revue de code P2, passe complète en contexte frais (Sonnet ; `kesh-gate-logs/e4815/review-p2.md`, prompt
+  `review-p2-prompt.md`)** : **0 / 0 / 0 / 2** — **boucle de revue terminée**. L1 (boutons grisés sans motif, antérieurs à la story)
+  : **#1349** ; L2 (`trim` de JavaScript et de Rust) : limite négligeable assumée, écrite au Dev Agent Record. Constat de
+  développement : **#1348** (clé `error-data-length-or-range` absente des catalogues). La description d'article ne passe pas sur la
+  facture : #1340.
+- **2026-11-19 — clôture, statut `done`** (Opus 5.5). **Change Log final de la boucle de revue** : P1 trois lentilles (Opus ×3 :
+  B, E, A) **0/0/3/14** (un MEDIUM vu trois fois, dédoublonné par l'orchestrateur) → remédiation `3aaefa33c` (MEDIUM et quatorze LOW
+  traités dans la story ; mutations M20 à M25) → P2 complète (Sonnet) **0/0/0/2**. Tendance au-dessus de LOW : 3 puis 0. Modèles
+  alternés : Opus, puis Sonnet. Aucun reclassement. Gates de clôture au dernier commit de code `3aaefa33c` (HEAD `6349030f1`, qui
+  ne porte en plus que la fiche ; bases `kesh_e4815`, `kesh_e2e_e4815` et `kesh_ci_e4815` remises à neuf ; enchaînement
+  `cloture-4815.sh`, `cloture.log`) :
+
+  | Gate | Journal | Résultat |
+  |---|---|---|
+  | `scripts/test-fast.sh --ci` | `test-fast-ci-cloture.log` | **6155 / 6155**, 14 ignorés |
+  | `scripts/gate-ci.sh kesh_ci_e4815` | `gate-ci-cloture.log` | **6172 passés, 0 échoué**, 18 ignorés |
+  | `npm run check` | `front-check-cloture.log` | 0 erreur, 29 avertissements (les mêmes, aucun dans un fichier de la story) |
+  | `npm run lint-i18n-ownership` | `front-lint-i18n-ownership-cloture.log` | vert |
+  | `npm run test:unit` | `front-test-unit-cloture.log` | **4657 / 4657** |
+  | `npm run build` | `front-build-cloture.log` | vert |
+  | **E2E complet** (`docs/testing.md`, `KESH_COOKIE_SECURE=false`, base `kesh_e2e_e4815` recréée, dossiers `/tmp/kesh-e2e-e4815/cloture/`) | `e2e-complet-cloture.log` (+ `.backend`) | **484 verts, 7 échecs, 18 ignorés** ; port 3415 libéré |
+
+  **Les 7 échecs, jugés un par un** contre `docs/testing.md` § *Les échecs attendus* : `mode-expert.spec.ts:26`, `:41`,
+  `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150` — **exactement les sept de la KF-029 (#97)** ; aucun
+  échec de pollution, aucun autre. Le test neuf (`contacts.spec.ts:197`, AC5) est vert. Le rouge connu
+  `disque_sature_pendant_l_ecriture` (KF-063, #1261) ne s'est pas produit au `gate-ci` : pas de rejeu. Statut : **`done`**
+  (`sprint-status.yaml` : `done`, posé par l'orchestrateur).
