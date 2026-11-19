@@ -80,8 +80,20 @@
 		linesInvalid,
 		paymentFields,
 		sumTtc,
+		canConfirmFrom,
+		canSubmitFrom,
+		canWriteEntry,
+		citedInvoiceLabel,
+		duplicateRefusalText,
+		readDuplicateRefusal,
+		stateAfterRejection,
+		type DuplicateRefusal,
+		type RefusalNotice,
+		type SupplierFormState,
 		type SupplierInvoiceFormInitial,
 	} from './supplier-invoice-form';
+	import { isSettlementOutcomeUnknown } from '$lib/shared/utils/unknown-outcome';
+	import SupplierInvoiceNotice from './SupplierInvoiceNotice.svelte';
 	import { amountEntryProblem } from '$lib/features/journal-entries/balance';
 	import { amountEntryMessage } from '$lib/features/journal-entries/amount-entry-message';
 	import { addDaysIso, hasSubCentime } from '$lib/features/invoices/invoice-helpers';
@@ -129,6 +141,20 @@
 		hasDocument?: boolean;
 		/** Story v017-4b (AC-23) — le brouillon édité, ou `null` à la création. */
 		initial?: SupplierInvoiceFormInitial | null;
+		/**
+		 * Story 48-12b (E6, variante « modification ») — l'identifiant de la facture
+		 * éditée : le lien de l'avis d'issue inconnue mène à sa fiche.
+		 */
+		invoiceId?: number | null;
+		/**
+		 * Story 48-12b (D2bis) — la page de complétion relit le document après un refus
+		 * (`IMPORT_NOT_PENDING_COMPLETION` ou issue inconnue) et rend ce qu'elle a vu ;
+		 * `null` pour tout autre refus, que le formulaire traite seul. Appelée dans un
+		 * `try/catch` : si elle lève, l'issue est inconnue (E6).
+		 */
+		onRefusal?: (err: unknown) => Promise<RefusalNotice | null>;
+		/** Story 48-12b (D2bis, E9) — la pièce est déjà enregistrée : formulaire figé. */
+		locked?: boolean;
 	}
 
 	let {
@@ -141,7 +167,28 @@
 		onSubmit,
 		hasDocument = false,
 		initial = null,
+		invoiceId = null,
+		onRefusal,
+		locked = false,
 	}: Props = $props();
+
+	/**
+	 * Story 48-12b (D1, table A) — l'état du formulaire. `locked` (posé par la page de
+	 * complétion) fige en E9, en plus de l'état propre au formulaire.
+	 */
+	let formState = $state<SupplierFormState>('E1');
+	const effectiveState = $derived<SupplierFormState>(locked ? 'E9' : formState);
+	/** Figé : aucun contrôle qui écrit la saisie n'est actif (`<fieldset disabled>`). */
+	const frozen = $derived(!canWriteEntry(effectiveState));
+	/** Le refus de doublon affiché (E4, E5), avec la facture citée. */
+	let duplicate = $state<DuplicateRefusal | null>(null);
+	/** La facture que la complétion a déjà enregistrée (E9). */
+	let completedInvoiceId = $state<number | null>(null);
+	/**
+	 * L'instantané du corps envoyé, formé AVANT l'`await` : c'est lui, et lui seul, que
+	 * renvoie la confirmation (avec `confirmNotDuplicate: true`).
+	 */
+	let keptReq: CreateSupplierInvoiceRequest | null = null;
 
 	/** Le document porte un QR : coordonnées de paiement verrouillées (AC11). */
 	const qrLocked = $derived(document !== null && document.creditorIban !== null);
@@ -241,6 +288,9 @@
 	let dueFollows = $state(start.dueFollows);
 	$effect(() => {
 		if (!dueFollows) return;
+		// Story 48-12b (relevé C, C3) — défense en profondeur : hors d'un état de saisie,
+		// l'effet n'écrit pas l'échéance (il peut courir pendant un gel, par C2).
+		if (!canWriteEntry(effectiveState)) return;
 		if (!fInvoiceDate) {
 			fDueDate = '';
 			return;
@@ -270,7 +320,8 @@
 	let scannedCreditorName = $state('');
 
 	let showNewSupplier = $state(false);
-	let saving = $state(false);
+	/** Un envoi (E2) ou la relecture du document (E8) est en cours : « Enregistrer » dit « … ». */
+	const saving = $derived(effectiveState === 'E2' || effectiveState === 'E8');
 	let formError = $state('');
 	/**
 	 * Story 36-18a (revue P1, A1 ; revue P2, R3 ; revue P3, R1) — le refus d'envoi d'un
@@ -315,6 +366,22 @@
 	}
 
 	function onSupplierCreated(contact: ContactResponse) {
+		// Story 48-12b (relevé C, C2) — la création du contact peut se résoudre après
+		// « Annuler » et un envoi : hors d'un état de saisie, le contact entre dans la
+		// liste (il existe au serveur) mais n'est pas sélectionné.
+		if (!canWriteEntry(effectiveState)) {
+			if (!suppliers.some((s) => s.id === contact.id)) {
+				suppliers = [...suppliers, contact].sort((a, b) => a.name.localeCompare(b.name));
+			}
+			showNewSupplier = false;
+			notifyWarning(
+				i18nMsg(
+					'supplier-invoices-new-supplier-created-not-selected',
+					'Fournisseur créé, non sélectionné.',
+				),
+			);
+			return;
+		}
 		select(contact);
 		showNewSupplier = false;
 		notifySuccess(
@@ -343,6 +410,18 @@
 				return;
 			}
 			const p = scanToPrefill(await scanQrSupplierInvoice(spc));
+			// Story 48-12b (relevé C, C1) — défense en profondeur : « Enregistrer » est
+			// inactif pendant un scan, si bien qu'aucun chemin d'interface ne fait résoudre
+			// un scan hors d'un état de saisie ; s'il se résolvait là, il n'écrirait rien.
+			if (!canWriteEntry(effectiveState)) {
+				notifyWarning(
+					i18nMsg(
+						'supplier-invoices-scan-ignored',
+						'Lecture du QR ignorée : le formulaire n’était plus en saisie.',
+					),
+				);
+				return;
+			}
 			scannedQrIban = p.creditorQrIban !== '';
 			fIban = p.creditorQrIban || p.creditorIban;
 			fReference = p.paymentReference;
@@ -373,7 +452,14 @@
 		return formatExactAmount(amount) || amount;
 	}
 
+	/**
+	 * Story 48-12b (table A) — l'envoi ordinaire, depuis E1, E4, E7 seulement, sans scan
+	 * en cours et panneau « nouveau fournisseur » fermé. Garde **synchrone** : deux
+	 * événements `submit` émis avant le rendu n'envoient qu'une requête (le second trouve
+	 * E2). Gestionnaire du `<form>` : il ne lit jamais de drapeau de son argument.
+	 */
 	async function submit() {
+		if (!canSubmitFrom(effectiveState) || scanning || showNewSupplier) return;
 		formError = '';
 		amountError = '';
 		ibanError = '';
@@ -459,22 +545,127 @@
 					...base,
 					...paymentFields({ iban: fIban, reference: fReference, expectedAmount: fExpectedAmount }),
 				};
-		saving = true;
+		await send(req, false);
+	}
+
+	/**
+	 * Story 48-12b — envoie `req` (E2) ; avec `confirm === true`, le même corps plus
+	 * `confirmNotDuplicate: true`. Le corps est gardé avant l'`await` (instantané). Succès →
+	 * E3 : le formulaire reste figé jusqu'à la navigation, jamais réactivé.
+	 */
+	async function send(req: CreateSupplierInvoiceRequest, confirm: boolean) {
+		keptReq = req;
+		formState = 'E2';
+		duplicate = null;
+		completedInvoiceId = null;
+		formError = '';
+		amountError = '';
 		try {
-			await onSubmit(req);
+			await onSubmit(confirm === true ? { ...req, confirmNotDuplicate: true } : req);
+			formState = 'E3';
 		} catch (err) {
-			// La saisie reste intacte : rien n'est vidé ici (AC16).
-			const e = describeSubmitError(err);
-			if (e.field === 'iban') ibanError = e.message;
-			else if (e.field === 'reference') referenceError = e.message;
-			else if (e.field === 'due') dueServerError = e.message;
-			else if (e.field === 'line' && e.line !== undefined && e.line >= 1 && e.line <= fLines.length)
-				lineServerError = { index: e.line - 1, message: e.message };
-			else formError = e.message;
-		} finally {
-			saving = false;
+			await afterRejection(err);
 		}
 	}
+
+	/**
+	 * Story 48-12b (table A, sorties de E2 et E8 ; D2bis) — le rejet de l'envoi. La page
+	 * de complétion relit d'abord le document (`onRefusal`, E8) ; sinon, ou si elle rend
+	 * `null`, la table décide : E4, E5, E6 ou E7. La saisie n'est jamais vidée (AC16).
+	 */
+	async function afterRejection(err: unknown) {
+		if (onRefusal) {
+			formState = 'E8';
+			let notice: RefusalNotice | null;
+			try {
+				notice = await onRefusal(err);
+			} catch {
+				formState = 'E6';
+				return;
+			}
+			if (notice !== null) {
+				applyNotice(notice);
+				return;
+			}
+		}
+		const next = stateAfterRejection(err, isSettlementOutcomeUnknown);
+		if (next === 'E4' || next === 'E5') {
+			duplicate = readDuplicateRefusal(err);
+			formState = next;
+			return;
+		}
+		if (next === 'E6') {
+			formState = 'E6';
+			return;
+		}
+		const e = describeSubmitError(err);
+		if (e.field === 'iban') ibanError = e.message;
+		else if (e.field === 'reference') referenceError = e.message;
+		else if (e.field === 'due') dueServerError = e.message;
+		else if (e.field === 'line' && e.line !== undefined && e.line >= 1 && e.line <= fLines.length)
+			lineServerError = { index: e.line - 1, message: e.message };
+		else formError = e.message;
+		formState = 'E7';
+	}
+
+	/** Story 48-12b (E8 → E9, E7, E6) — ce que la page de complétion a relu. */
+	function applyNotice(notice: RefusalNotice) {
+		switch (notice.kind) {
+			case 'completed':
+				if (notice.invoiceId === undefined) {
+					formState = 'E6';
+					return;
+				}
+				completedInvoiceId = notice.invoiceId;
+				formState = 'E9';
+				return;
+			case 'pending':
+				formError = i18nMsg(
+					'supplier-invoices-err-not-yet',
+					'Aucune facture n’est enregistrée pour l’instant : vous pouvez réessayer.',
+				);
+				formState = 'E7';
+				return;
+			case 'gone':
+				formError = i18nMsg(
+					'supplier-invoices-err-not-pending',
+					'Ce document a déjà été traité ou retiré de la liste.',
+				);
+				formState = 'E7';
+				return;
+			case 'unknown':
+				formState = 'E6';
+				return;
+		}
+	}
+
+	/**
+	 * Story 48-12b (E5) — « Ce n'est pas un doublon, enregistrer » : renvoie **le corps
+	 * gardé**, une seule fois, avec le drapeau passé explicitement. Garde synchrone : deux
+	 * clics avant le rendu n'envoient qu'une requête (le second trouve E2).
+	 */
+	function confirmNotDuplicate() {
+		if (!canConfirmFrom(effectiveState) || keptReq === null) return;
+		void send(keptReq, true);
+	}
+
+	/** Story 48-12b (E5 → E1) — « Modifier la saisie » : l'avis s'efface. */
+	function modifyEntry() {
+		if (effectiveState !== 'E5') return;
+		duplicate = null;
+		formState = 'E1';
+	}
+
+	/** Story 48-12b (E6 → E1) — « J'ai vérifié… — reprendre la saisie » : rien n'est envoyé. */
+	function resumeEntry() {
+		if (effectiveState !== 'E6') return;
+		formState = 'E1';
+	}
+
+	/** Le nom du fournisseur choisi (lien de vérification de l'avis E6). */
+	const supplierName = $derived(suppliers.find((s) => s.id === fContactId)?.name ?? '');
+	/** La variante « modification » de l'avis E6 (V3-4). */
+	const editing = $derived(initial !== null);
 
 	/**
 	 * Story v0174-correctifs-3 (#872, C-v0174c-18) — le libellé d'une option de projet ;
@@ -506,6 +697,9 @@
 		void submit();
 	}}
 >
+	<!-- Story 48-12b (table A) — UN `<fieldset disabled>` enveloppe tous les contrôles qui
+	     écrivent la saisie ; figé en E2, E3, E5, E6, E8, E9, sans rien vider. -->
+	<fieldset class="m-0 min-w-0 space-y-4 border-0 p-0" disabled={frozen} data-testid="supplier-invoice-entry">
 	{#if scanOffered}
 		<!-- Story 12.4 : scan QR-facture → pré-remplissage des coordonnées. Story v017-4b
 		     (AC-23) : seulement si `document === null && !hasDocument`. -->
@@ -964,23 +1158,120 @@
 		{/if}
 	</div>
 
+	</fieldset>
+
 	{#if formError || amountError}
 		<p class="text-sm text-destructive" role="alert" data-testid="supplier-invoice-form-error">
 			{formError || amountError}
 		</p>
 	{/if}
 
-	<button
-		type="submit"
-		class="rounded bg-primary px-4 py-2 text-sm text-primary-foreground disabled:opacity-60"
-		data-testid="supplier-invoice-submit"
-		disabled={saving}
-	>
-		<!-- Story v017-4b (AC-24 (a)) : la création enregistre un brouillon. -->
-		{saving
-			? '…'
-			: initial === null
-				? i18nMsg('supplier-invoices-save-draft', 'Enregistrer le brouillon')
-				: i18nMsg('supplier-invoices-save', 'Enregistrer')}
-	</button>
+	<!-- Story 48-12b — les avis, hors du `<fieldset>` : leurs liens et boutons restent
+	     actifs quand la saisie est figée. -->
+	{#if duplicate !== null && (effectiveState === 'E4' || effectiveState === 'E5')}
+		<SupplierInvoiceNotice
+			testid={effectiveState === 'E5' ? 'supplier-invoice-probable-duplicate' : 'supplier-invoice-duplicate'}
+			text={duplicateRefusalText(duplicate.code, 'entry')}
+			link={{
+				href: `/supplier-invoices/${duplicate.supplierInvoiceId}`,
+				label: citedInvoiceLabel(duplicate.internalNumber, duplicate.supplierInvoiceId),
+				prefix: i18nMsg('supplier-invoices-cited-prefix', 'Facture déjà enregistrée :') + ' ',
+				testid: 'supplier-invoice-duplicate-link',
+			}}
+		>
+			{#if effectiveState === 'E5' && duplicate.confirmable}
+				<button
+					type="button"
+					class="rounded bg-primary px-3 py-1 text-sm text-primary-foreground"
+					data-testid="supplier-invoice-confirm-not-duplicate"
+					onclick={() => confirmNotDuplicate()}
+				>
+					{i18nMsg('supplier-invoices-confirm-not-duplicate', 'Ce n’est pas un doublon, enregistrer')}
+				</button>
+				<button
+					type="button"
+					class="rounded border px-3 py-1 text-sm"
+					data-testid="supplier-invoice-modify-entry"
+					onclick={() => modifyEntry()}
+				>
+					{i18nMsg('supplier-invoices-modify-entry', 'Modifier la saisie')}
+				</button>
+			{/if}
+		</SupplierInvoiceNotice>
+	{/if}
+	{#if effectiveState === 'E6'}
+		<SupplierInvoiceNotice
+			testid="supplier-invoice-unknown-outcome"
+			text={editing
+				? i18nMsg(
+						'supplier-invoices-unknown-outcome-edit',
+						'La modification a peut-être été enregistrée. Vérifiez sur la fiche si votre modification a été enregistrée ; si oui, rechargez cette page avant de modifier encore.',
+					)
+				: i18nMsg(
+						'supplier-invoices-unknown-outcome-create',
+						'L’enregistrement a peut-être abouti. Vérifiez dans la liste si la facture existe avant de la saisir de nouveau.',
+					)}
+			link={editing && invoiceId !== null
+				? {
+						href: `/supplier-invoices/${invoiceId}`,
+						label: i18nMsg('supplier-invoices-unknown-outcome-edit-link', 'Ouvrir la fiche de la facture'),
+						testid: 'supplier-invoice-unknown-outcome-link',
+					}
+				: {
+						href: `/supplier-invoices?q=${encodeURIComponent(supplierName)}`,
+						label: i18nMsg(
+							'supplier-invoices-unknown-outcome-create-link',
+							'Voir les factures de ce fournisseur',
+						),
+						testid: 'supplier-invoice-unknown-outcome-link',
+					}}
+		>
+			<button
+				type="button"
+				class="rounded border px-3 py-1 text-sm"
+				data-testid="supplier-invoice-resume-entry"
+				onclick={() => resumeEntry()}
+			>
+				{editing
+					? i18nMsg(
+							'supplier-invoices-resume-entry-edit',
+							'J’ai vérifié, elle n’a pas été enregistrée — reprendre la saisie',
+						)
+					: i18nMsg(
+							'supplier-invoices-resume-entry-create',
+							'J’ai vérifié, elle n’existe pas — reprendre la saisie',
+						)}
+			</button>
+		</SupplierInvoiceNotice>
+	{/if}
+	{#if effectiveState === 'E9' && completedInvoiceId !== null}
+		<SupplierInvoiceNotice
+			testid="supplier-invoice-already-completed"
+			text={i18nMsg(
+				'supplier-invoices-already-completed',
+				'Cette pièce a déjà été enregistrée comme facture. Ouvrez-la pour vérifier qu’elle correspond à votre saisie.',
+			)}
+			link={{
+				href: `/supplier-invoices/${completedInvoiceId}`,
+				label: i18nMsg('supplier-invoices-already-completed-link', 'Ouvrir la facture'),
+				testid: 'supplier-invoice-already-completed-link',
+			}}
+		/>
+	{/if}
+
+	{#if effectiveState !== 'E5'}
+		<button
+			type="submit"
+			class="rounded bg-primary px-4 py-2 text-sm text-primary-foreground disabled:opacity-60"
+			data-testid="supplier-invoice-submit"
+			disabled={!canSubmitFrom(effectiveState) || scanning || showNewSupplier}
+		>
+			<!-- Story v017-4b (AC-24 (a)) : la création enregistre un brouillon. -->
+			{saving
+				? '…'
+				: initial === null
+					? i18nMsg('supplier-invoices-save-draft', 'Enregistrer le brouillon')
+					: i18nMsg('supplier-invoices-save', 'Enregistrer')}
+		</button>
+	{/if}
 </form>

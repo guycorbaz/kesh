@@ -94,8 +94,13 @@ export async function validateSupplierInvoice(
 export async function unvalidateSupplierInvoice(
 	id: number,
 	version: number,
+	confirmNotDuplicate?: unknown,
 ): Promise<SupplierInvoiceResponse> {
-	return apiClient.post(`/api/v1/supplier-invoices/${id}/unvalidate`, { version });
+	// Story 48-12b (règle du drapeau, V4-1, V5-1) — le drapeau n'entre dans le corps que
+	// s'il vaut EXACTEMENT `true` : un événement de clic ou un objet passé par erreur
+	// laisse le corps `{ version }`, et le refus de doublon n'est jamais levé en silence.
+	const body = confirmNotDuplicate === true ? { version, confirmNotDuplicate: true } : { version };
+	return apiClient.post(`/api/v1/supplier-invoices/${id}/unvalidate`, body);
 }
 
 /** Règle une facture fournisseur (choix binaire virement / compte interne). */

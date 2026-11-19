@@ -3201,6 +3201,24 @@ supplier-invoices-err-amount = Le total des lignes ({$actual}) ne correspond pas
 supplier-invoices-err-currency = Devise non supportée (CHF uniquement). Retirez le document de la liste, ou créez la facture sans document puis joignez-le.
 supplier-invoices-err-iban-ref = Incohérence entre l’IBAN et la référence QRR du QR-code.
 supplier-invoices-err-not-pending = Ce document a déjà été traité ou retiré de la liste.
+# Story 48-12b (#975, #985) — avis de l'écran : doublon, issue inconnue, pièce déjà enregistrée.
+supplier-invoices-err-not-yet = Aucune facture n’est enregistrée pour l’instant : vous pouvez réessayer.
+supplier-invoices-cited-draft = brouillon n° { $id }
+supplier-invoices-cited-prefix = Facture déjà enregistrée :
+supplier-invoices-cited-active-prefix = Facture active :
+supplier-invoices-confirm-not-duplicate = Ce n’est pas un doublon, enregistrer
+supplier-invoices-modify-entry = Modifier la saisie
+supplier-invoices-unknown-outcome-create = L’enregistrement a peut-être abouti. Vérifiez dans la liste si la facture existe avant de la saisir de nouveau.
+supplier-invoices-unknown-outcome-create-link = Voir les factures de ce fournisseur
+supplier-invoices-resume-entry-create = J’ai vérifié, elle n’existe pas — reprendre la saisie
+supplier-invoices-unknown-outcome-edit = La modification a peut-être été enregistrée. Vérifiez sur la fiche si votre modification a été enregistrée ; si oui, rechargez cette page avant de modifier encore.
+supplier-invoices-unknown-outcome-edit-link = Ouvrir la fiche de la facture
+supplier-invoices-resume-entry-edit = J’ai vérifié, elle n’a pas été enregistrée — reprendre la saisie
+supplier-invoices-already-completed = Cette pièce a déjà été enregistrée comme facture. Ouvrez-la pour vérifier qu’elle correspond à votre saisie.
+supplier-invoices-already-completed-link = Ouvrir la facture
+supplier-invoices-unvalidate-anyway = Repasser en brouillon malgré tout
+supplier-invoices-scan-ignored = Lecture du QR ignorée : le formulaire n’était plus en saisie.
+supplier-invoices-new-supplier-created-not-selected = Fournisseur créé, non sélectionné.
 supplier-invoices-err-doc-not-found = Document introuvable.
 supplier-invoices-err-fiscal-year = Aucun exercice ouvert ne couvre cette date.
 # Les sept motifs de `INVALID_PAYMENT_DETAILS` (AC12-bis), affichés sous le champ nommé.

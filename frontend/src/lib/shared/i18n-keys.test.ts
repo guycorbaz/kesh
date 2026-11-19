@@ -1159,7 +1159,11 @@ const ATTENDU = {
 	// `kesh-gate-logs/e4810/remed-p1-front.log`), relevé par la garde : cinq sites dans
 	// `nonPriceMessages()` (fiche article : nom, doublon, taux de TVA) et un dans `onFeeInput()`
 	// (rappels : le message du délai), tous de clés existantes.
-	sitesTotal: 3502,
+	// Story 48-12b (#975, #985) : **3502 → 3523** (« expected 3523 to be 3502 »,
+	// `kesh-gate-logs/e4812/dev/vitest-12b-complet-1.log`), relevé par la garde : vingt-trois sites
+	// ajoutés et deux retirés (le bouton d'envoi déplacé hors du `<fieldset>`) dans
+	// `SupplierInvoiceForm.svelte`, `supplier-invoice-form.ts` et la fiche `[id]/+page.svelte`.
+	sitesTotal: 3523,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

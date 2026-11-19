@@ -55,7 +55,9 @@ vi.mock('$lib/features/supplier-invoices/supplier-invoices.api', () => ({
 	cancelSupplierInvoice: (id: number) => cancelMock(id),
 	cancelSupplierInvoiceSettlement: (id: number) => cancelSettlementMock(id),
 	validateSupplierInvoice: (id: number, v: number) => validateMock(id, v),
-	unvalidateSupplierInvoice: (id: number, v: number) => unvalidateMock(id, v),
+	// Story 48-12b (règle du drapeau) : le mock transmet TOUS ses arguments — un troisième
+	// argument inattendu rougit les assertions `(9, 3)`.
+	unvalidateSupplierInvoice: (...args: unknown[]) => unvalidateMock(...args),
 	deleteSupplierInvoice: vi.fn(),
 }));
 vi.mock('$lib/features/bank-accounts/bank-accounts.api', () => ({
@@ -641,5 +643,158 @@ describe('fiche fournisseur — le second clic après une relecture en échec (r
 		await GESTURES[0].act(v);
 		await v.findByTestId('supplier-unknown-outcome');
 		expect(getMock).toHaveBeenLastCalledWith(9, { retry: false });
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Story 48-12b (#975, table B, relevé D) — le repassage en brouillon d'une annulée en
+// doublon : l'avis F4, son bouton, et chaque site qui l'efface.
+// ---------------------------------------------------------------------------
+
+const CANCELLED: Partial<SupplierInvoiceResponse> = { status: 'cancelled', cancellable: false };
+const F4_TEXT =
+	'Une facture équivalente non annulée existe. Repasser celle-ci en brouillon en ferait un doublon : ne le faites que pour la retirer ou la corriger ensuite.';
+const dupRefusal = (code: string, confirmable = true, details = true) => ({
+	code,
+	status: 409,
+	message: 'Message du serveur.',
+	...(details ? { details: { supplierInvoiceId: 21, internalNumber: 'FF-2026-021', status: 'open', confirmable } } : {}),
+});
+
+/** Ouvre la fiche d'une annulée, repasse en brouillon, et attend l'avis F4. */
+async function enF4(start: Partial<SupplierInvoiceResponse> = {}) {
+	getMock.mockResolvedValue(inv({ ...CANCELLED, ...start }));
+	unvalidateMock.mockRejectedValueOnce(dupRefusal('SUPPLIER_INVOICE_DUPLICATE'));
+	const v = render(Page);
+	await GESTURES[4].act(v);
+	await v.findByTestId('supplier-invoice-unvalidate-duplicate');
+	return v;
+}
+
+describe('fiche d’une annulée — le refus de doublon au repassage (table B, Story 48-12b)', () => {
+	for (const code of ['SUPPLIER_INVOICE_DUPLICATE', 'SUPPLIER_INVOICE_PROBABLE_DUPLICATE']) {
+		it(`${code} : avis F4 (texte du repassage, facture active, nouvel onglet), facture toujours annulée`, async () => {
+			getMock.mockResolvedValue(inv(CANCELLED));
+			unvalidateMock.mockRejectedValueOnce(dupRefusal(code));
+			const v = render(Page);
+			await GESTURES[4].act(v);
+			const notice = await v.findByTestId('supplier-invoice-unvalidate-duplicate');
+			// Mutation « texte de création (15-b) sur la fiche ».
+			expect(v.getByTestId('supplier-invoice-unvalidate-duplicate-text').textContent).toBe(F4_TEXT);
+			expect(notice.textContent).not.toContain('15-b');
+			const link = v.getByTestId('supplier-invoice-unvalidate-duplicate-link');
+			expect(link.getAttribute('href')).toBe('/supplier-invoices/21');
+			expect(link.getAttribute('target')).toBe('_blank');
+			expect(link.getAttribute('rel')).toBe('noopener');
+			expect(link.textContent).toBe('FF-2026-021');
+			expect(v.getByTestId('supplier-invoice-status').textContent).toBe('Annulée');
+			// Les deux codes ne passent pas par `supplierInvoiceUnvalidateMessage`.
+			expect(v.queryByTestId('supplier-invoice-unvalidate-error')).toBeNull();
+			// Mutation « bouton absent sur SUPPLIER_INVOICE_DUPLICATE ».
+			expect(v.getByTestId('supplier-invoice-unvalidate-anyway')).toBeTruthy();
+		});
+	}
+
+	it('le dialogue confirmé appelle (id, version), sans troisième argument (règle du drapeau)', async () => {
+		await enF4();
+		// Mutation « gestionnaire passé tel quel et drapeau testé par sa vérité » :
+		// l'événement du clic partirait en drapeau, (9, 3, true).
+		expect(unvalidateMock).toHaveBeenCalledTimes(1);
+		expect(unvalidateMock.mock.calls[0]).toEqual([9, 3]);
+	});
+
+	it('« Repasser en brouillon malgré tout » renvoie la version affichée avec le drapeau, puis F3', async () => {
+		const v = await enF4();
+		unvalidateMock.mockResolvedValueOnce(inv({ status: 'draft', purchaseJournalEntryId: null, version: 4 }));
+		await fireEvent.click(v.getByTestId('supplier-invoice-unvalidate-anyway'));
+		await waitFor(() => expect(unvalidateMock).toHaveBeenCalledTimes(2));
+		expect(unvalidateMock.mock.calls[1]).toEqual([9, 3, true]);
+		await waitFor(() => expect(v.getByTestId('supplier-invoice-status').textContent).toBe('Brouillon'));
+		expect(v.queryByTestId('supplier-invoice-unvalidate-duplicate')).toBeNull();
+	});
+
+	it('D2 : au départ du « malgré tout », l’avis et le bouton disparaissent', async () => {
+		const v = await enF4();
+		let finir: (x: unknown) => void = () => {};
+		unvalidateMock.mockReturnValueOnce(new Promise((r) => (finir = r)));
+		await fireEvent.click(v.getByTestId('supplier-invoice-unvalidate-anyway'));
+		await waitFor(() => expect(v.queryByTestId('supplier-invoice-unvalidate-duplicate')).toBeNull());
+		expect(v.queryByTestId('supplier-invoice-unvalidate-anyway')).toBeNull();
+		finir(inv({ status: 'draft', purchaseJournalEntryId: null, version: 4 }));
+	});
+
+	it('confirmable: false : avis sans bouton', async () => {
+		getMock.mockResolvedValue(inv(CANCELLED));
+		unvalidateMock.mockRejectedValueOnce(dupRefusal('SUPPLIER_INVOICE_DUPLICATE', false));
+		const v = render(Page);
+		await GESTURES[4].act(v);
+		await v.findByTestId('supplier-invoice-unvalidate-duplicate');
+		expect(v.queryByTestId('supplier-invoice-unvalidate-anyway')).toBeNull();
+	});
+
+	it('F6 : un des deux codes sans details lisibles → le message du serveur, sans avis F4', async () => {
+		getMock.mockResolvedValue(inv(CANCELLED));
+		unvalidateMock.mockRejectedValueOnce(dupRefusal('SUPPLIER_INVOICE_PROBABLE_DUPLICATE', true, false));
+		const v = render(Page);
+		await GESTURES[4].act(v);
+		// Mutation « doublon illisible affiché en F4 ».
+		expect((await v.findByTestId('supplier-invoice-unvalidate-error')).textContent?.trim()).toBe(
+			'Message du serveur.',
+		);
+		expect(v.queryByTestId('supplier-invoice-unvalidate-duplicate')).toBeNull();
+	});
+
+	it('D1 : repasser de nouveau efface l’avis avant l’envoi', async () => {
+		const v = await enF4();
+		let finir: (x: unknown) => void = () => {};
+		unvalidateMock.mockReturnValueOnce(new Promise((r) => (finir = r)));
+		await GESTURES[4].act(v);
+		await waitFor(() => expect(v.queryByTestId('supplier-invoice-unvalidate-duplicate')).toBeNull());
+		expect(unvalidateMock.mock.calls[1]).toEqual([9, 3]);
+		finir(inv({ status: 'draft', purchaseJournalEntryId: null, version: 4 }));
+	});
+
+	for (const [issue, reponse] of [
+		['succès', 'ok'],
+		['refus', 'refus'],
+		['issue inconnue', 'perdue'],
+	] as const) {
+		it(`D4 : joindre un document (${issue}) efface l’avis (mutation « avis non effacé par attach »)`, async () => {
+			const v = await enF4();
+			if (reponse === 'ok') attachMock.mockResolvedValue(inv({ ...CANCELLED, sourceDocument: DOC }));
+			else if (reponse === 'refus') attachMock.mockRejectedValue(REFUSED);
+			else attachMock.mockRejectedValue(LOST);
+			await GESTURES[5].act(v);
+			await waitFor(() => expect(attachMock).toHaveBeenCalled());
+			await waitFor(() => expect(v.queryByTestId('supplier-invoice-unvalidate-duplicate')).toBeNull());
+		});
+
+		it(`D5 : détacher le document, après confirmation (${issue}), efface l’avis`, async () => {
+			const v = await enF4({ sourceDocument: DOC });
+			if (reponse === 'ok') detachMock.mockResolvedValue(inv(CANCELLED));
+			else if (reponse === 'refus') detachMock.mockRejectedValue(REFUSED);
+			else detachMock.mockRejectedValue(LOST);
+			await GESTURES[6].act(v);
+			await waitFor(() => expect(detachMock).toHaveBeenCalled());
+			await waitFor(() => expect(v.queryByTestId('supplier-invoice-unvalidate-duplicate')).toBeNull());
+		});
+	}
+
+	it('D5 : une boîte de détachement annulée garde l’avis (mutation « avis effacé par une boîte annulée »)', async () => {
+		const v = await enF4({ sourceDocument: DOC });
+		(window.confirm as unknown as ReturnType<typeof vi.fn>).mockReturnValue(false);
+		await fireEvent.click(await v.findByTestId('supplier-invoice-detach'));
+		expect(detachMock).not.toHaveBeenCalled();
+		expect(v.getByTestId('supplier-invoice-unvalidate-duplicate')).toBeTruthy();
+	});
+
+	it('D6 : une relecture (issue inconnue d’un geste suivant) efface l’avis (mutation « avis non effacé par reloadAfterRefusal »)', async () => {
+		const v = await enF4();
+		// Un repassage dont la réponse se perd : relecture, encadré « vérifiez », plus d'avis F4.
+		unvalidateMock.mockRejectedValueOnce(LOST);
+		getMock.mockResolvedValue(inv(CANCELLED));
+		await GESTURES[4].act(v);
+		await v.findByTestId('supplier-unknown-outcome');
+		expect(v.queryByTestId('supplier-invoice-unvalidate-duplicate')).toBeNull();
 	});
 });

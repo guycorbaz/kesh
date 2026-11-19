@@ -77,7 +77,15 @@
 	import AttachDocumentPicker from '$lib/features/imported-supplier-invoices/AttachDocumentPicker.svelte';
 	import { isStaleDocumentRefusal } from '$lib/features/imported-supplier-invoices/stale-refusal';
 	import { formatSwissDate } from '$lib/features/reports/reports.api';
-	import { readableAmount } from '$lib/features/supplier-invoices/supplier-invoice-form';
+	import {
+		citedInvoiceLabel,
+		duplicateRefusalText,
+		readableAmount,
+		readDuplicateRefusal,
+		SUPPLIER_DUPLICATE_CODES,
+		type DuplicateRefusal,
+	} from '$lib/features/supplier-invoices/supplier-invoice-form';
+	import SupplierInvoiceNotice from '$lib/features/supplier-invoices/SupplierInvoiceNotice.svelte';
 	import { supplierInvoiceShortLabel } from '$lib/features/supplier-invoices/supplier-invoice-label';
 
 	const id = Number(page.params.id);
@@ -134,6 +142,13 @@
 	let unvalidateOpen = $state(false);
 	let unvalidating = $state(false);
 	let unvalidateError = $state('');
+	/**
+	 * Story 48-12b (table B, F4) — le refus de doublon du repassage en brouillon d'une
+	 * annulée, avec la version refusée. Effacé par UNE fonction (`clearDuplicateRefusal`),
+	 * appelée par `clearRefusals` et aux sites du relevé D (joindre, détacher, relire) ;
+	 * n'est affiché que sur la facture annulée, à la version du refus (filet dérivé).
+	 */
+	let duplicateRefusal = $state<{ refusal: DuplicateRefusal; version: number } | null>(null);
 	let deleteOpen = $state(false);
 	let deleting = $state(false);
 	let deleteError = $state('');
@@ -444,6 +459,7 @@
 	function clearRefusals() {
 		validateError = '';
 		unvalidateError = '';
+		clearDuplicateRefusal();
 		deleteError = '';
 		clearBlockErrors();
 	}
@@ -523,18 +539,43 @@
 	}
 
 	/**
+	 * Story 48-12b (table B, relevé D) — **la seule** fonction qui efface l'avis F4 :
+	 * appelée par `clearRefusals` (D1, D2, D11), au début de `attach` (D4), après la
+	 * confirmation de `detach` (D5) et à toute réaffectation de `invoice` par
+	 * `reloadAfterRefusal` (D6).
+	 */
+	function clearDuplicateRefusal() {
+		duplicateRefusal = null;
+	}
+
+	/** L'avis F4 ne s'affiche que sur la facture annulée, à la version refusée (filet). */
+	const shownDuplicateRefusal = $derived(
+		duplicateRefusal !== null &&
+			invoice?.status === 'cancelled' &&
+			invoice.version === duplicateRefusal.version
+			? duplicateRefusal.refusal
+			: null,
+	);
+
+	/**
 	 * Repasse la facture en brouillon (Story v017-4b, AC-22 ; v0172-annulees, AC-12) : son
 	 * écriture d'achat — et, annulée, sa contre-passation — est supprimée, elle redevient un
 	 * brouillon modifiable. Un refus dit son motif et nomme l'objet à défaire
 	 * (`supplierInvoiceUnvalidateMessage`, AC-25, AC-8), à partir de `details`.
 	 */
-	async function confirmUnvalidate() {
+	async function confirmUnvalidate(confirmNotDuplicate?: boolean) {
 		if (!invoice || unvalidating) return;
 		unvalidating = true;
 		clearCycleErrors();
 		const wasCancelled = invoice.status === 'cancelled';
+		const version = invoice.version;
 		try {
-			invoice = await unvalidateSupplierInvoice(invoice.id, invoice.version);
+			// Story 48-12b (règle du drapeau, V4-1, V5-1) — testé par `=== true`, jamais par
+			// sa vérité ; sans drapeau, l'appel ne porte PAS de troisième argument.
+			invoice =
+				confirmNotDuplicate === true
+					? await unvalidateSupplierInvoice(invoice.id, version, true)
+					: await unvalidateSupplierInvoice(invoice.id, version);
 			unvalidateOpen = false;
 			notifySuccess(
 				wasCancelled
@@ -551,7 +592,18 @@
 			unvalidateOpen = false;
 			// Story 34-8 (AC-8) ; ce qui reste est une `ApiError` (revue P2, B-2 = A-2).
 			if (await rereadAfterUnknownOutcome(err)) return;
-			if (isApiError(err)) {
+			// Story 48-12b (table B, F4, F6) — les deux codes de doublon sont interceptés
+			// AVANT `supplierInvoiceUnvalidateMessage` (sa liste reste à douze codes) : lisibles,
+			// l'avis F4 ; sans `details` lisibles, le message du serveur (F6).
+			const dup = readDuplicateRefusal(err);
+			if (dup !== null) {
+				duplicateRefusal = { refusal: dup, version };
+			} else if (
+				isApiError(err) &&
+				(SUPPLIER_DUPLICATE_CODES as readonly string[]).includes(err.code)
+			) {
+				unvalidateError = err.message;
+			} else if (isApiError(err)) {
 				// `details` : le lot, la transaction, l'écriture de paiement (AC-8) ; ou,
 				// revue P1 (E-4), le nom de l'exercice postérieur clos.
 				unvalidateError = supplierInvoiceUnvalidateMessage(
@@ -604,6 +656,8 @@
 			// un échec est ici déjà traité (`reread-failed`).
 			const statusBefore = invoice?.status;
 			invoice = await getSupplierInvoice(id, { retry: false });
+			// Story 48-12b (relevé D, D6) — l'avis F4 ne survit à aucune relecture.
+			clearDuplicateRefusal();
 			cycleOutcome = 'known';
 			// Revue P3 de la 34-8 (A-1 = B-1 = E-1) : quand le statut a changé, les blocs de
 			// statut ont changé avec lui, et les refus rendus dedans n'ont plus d'objet — gardés,
@@ -633,6 +687,8 @@
 	 *   l'encadré `reread-failed` dit de recharger la page.
 	 */
 	async function attach(importedSupplierInvoiceId: number) {
+		// Story 48-12b (relevé D, D4) — joindre efface l'avis F4, dès le début.
+		clearDuplicateRefusal();
 		cycleOutcome = 'known';
 		try {
 			invoice = await attachSourceDocument(id, importedSupplierInvoiceId);
@@ -708,6 +764,8 @@
 		// Revue P3 de la 34-8 (B-2) et P4 ciblée (C-2) : après la confirmation — une boîte
 		// annulée n'efface ni l'encadré d'une issue inconnue, ni le refus d'avant.
 		detachError = '';
+		// Story 48-12b (relevé D, D5) — après la confirmation, jamais par une boîte annulée.
+		clearDuplicateRefusal();
 		cycleOutcome = 'known';
 		detaching = true;
 		try {
@@ -936,6 +994,37 @@
 		<p class="mb-6 text-sm text-destructive" role="alert" data-testid="supplier-invoice-unvalidate-error">
 			{unvalidateError}
 		</p>
+	{/if}
+	<!-- Story 48-12b (table B, F4) — le repassage d'une annulée refusé comme doublon : le
+	     texte du serveur, la facture active citée (nouvel onglet), et, si `confirmable`, le
+	     repassage confirmé. -->
+	{#if shownDuplicateRefusal !== null}
+		<div class="mb-6">
+			<SupplierInvoiceNotice
+				testid="supplier-invoice-unvalidate-duplicate"
+				text={duplicateRefusalText(shownDuplicateRefusal.code, 'unvalidate')}
+				link={{
+					href: `/supplier-invoices/${shownDuplicateRefusal.supplierInvoiceId}`,
+					label: citedInvoiceLabel(
+						shownDuplicateRefusal.internalNumber,
+						shownDuplicateRefusal.supplierInvoiceId,
+					),
+					prefix: i18nMsg('supplier-invoices-cited-active-prefix', 'Facture active :') + ' ',
+					testid: 'supplier-invoice-unvalidate-duplicate-link',
+				}}
+			>
+				{#if shownDuplicateRefusal.confirmable && canManage}
+					<Button
+						variant="destructive"
+						data-testid="supplier-invoice-unvalidate-anyway"
+						disabled={unvalidating}
+						onclick={() => confirmUnvalidate(true)}
+					>
+						{i18nMsg('supplier-invoices-unvalidate-anyway', 'Repasser en brouillon malgré tout')}
+					</Button>
+				{/if}
+			</SupplierInvoiceNotice>
+		</div>
 	{/if}
 	<!-- Story 34-8 (#938, AC-8, C-e348-1) : l'issue inconnue d'un des sept gestes, en
 	     encadré persistant — non une notification, qui passerait. Rendu ici, hors des blocs
@@ -1280,7 +1369,7 @@
 				variant="destructive"
 				data-testid="supplier-invoice-unvalidate-confirm"
 				disabled={unvalidating}
-				onclick={confirmUnvalidate}
+				onclick={() => confirmUnvalidate(false)}
 			>
 				{i18nMsg('supplier-invoices-unvalidate', 'Repasser en brouillon')}
 			</Button>

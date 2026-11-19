@@ -2112,6 +2112,17 @@ règle vaut pour une nouvelle saisie, la création de la facture d'un document
 ou le montant (\S\ref{sec:brouillon-fournisseur}), et le repassage en brouillon d'une facture
 annulée (\S\ref{sec:repasser-brouillon}). Une intégration par clé d'API reçoit les mêmes refus.
 
+\paragraph{À l'écran, un doublon refusé.} Depuis la version~0.20.0, le refus s'affiche sous le
+formulaire, \textbf{sans perdre la saisie}, avec un lien vers la facture déjà enregistrée --- son
+numéro interne, ou «~brouillon n°~\ldots~» ---, qui s'ouvre \textbf{dans un nouvel onglet} pour
+la comparer. Pour le \textbf{même numéro}, la saisie reste modifiable et aucun bouton ne lève le
+refus~: si c'est la même facture, quittez la page~; sinon, changez le numéro («~15-b~») et
+enregistrez~; l'avis s'efface à l'envoi suivant. Pour un \textbf{doublon probable} (même date et
+même montant, sans numéro à comparer), le formulaire se fige et propose deux boutons~:
+\emph{Ce n'est pas un doublon, enregistrer} envoie la même saisie, confirmée --- le journal
+d'audit garde la confirmation ---, et \emph{Modifier la saisie} rend le formulaire modifiable,
+l'envoi suivant étant de nouveau contrôlé.
+
 \paragraph{Les dates.} La date de la facture est proposée au jour même. À côté d'un document,
 elle est de plus \textbf{marquée «~à vérifier~»}~: un avis sous le champ demande de la vérifier sur
 le document (la date du jour n'est presque jamais celle d'une facture reçue), jusqu'à ce que vous la \textbf{modifiiez} ou
@@ -2261,6 +2272,9 @@ fiche ne propose ni \emph{Payer} ni \emph{Annuler la facture}~; elle propose~:
           validez-le puis annulez-le (\S\ref{sec:annuler-facture-fournisseur}). C'est aussi le
           geste qui retire un doublon enregistré.
 \end{description}
+\textbf{À l'écran, la modification} (depuis la version~0.20.0) montre les mêmes avis qu'à la
+saisie (\S\ref{sec:doublons-fournisseur})~: même numéro refusé, la saisie restant modifiable~;
+doublon probable, avec \emph{Ce n'est pas un doublon, enregistrer} et \emph{Modifier la saisie}.
 Le contrôle de clôture \emph{Factures fournisseur en brouillon} (\S\ref{sec:preparer-cloture})
 signale les brouillons datés dans l'exercice.
 
@@ -2306,6 +2320,11 @@ la règle des doublons s'y rejoue. Le valider sans rien changer doublerait la de
 validation ne compare pas. Annuler reste le geste par défaut pour une facture qui
 n'était pas due~: l'achat et sa contre-passation restent aux livres, la correction se voit.
 Repasser une annulée en brouillon est un second geste, délibéré.
+
+\textbf{À l'écran, le repassage refusé} (depuis la version~0.20.0)~: si une facture équivalente
+est active (\S\ref{sec:doublons-fournisseur}), la fiche de l'annulée affiche le refus et la
+facture active, à ouvrir dans un nouvel onglet~; la facture reste annulée. Le bouton
+\emph{Repasser en brouillon malgré tout} confirme le repassage, que le journal d'audit garde.
 
 \emph{Lecture de Kesh, non avis juridique~:} le Code des obligations demande une comptabilité
 vérifiable (art.~957a CO) et des supports dont l'intégrité se garde (art.~958f CO, OLICo
@@ -2370,6 +2389,10 @@ ne dit pas que ce lot l'a payée~: il dit seulement qu'elle y figure. Une factur
 figuré dans un lot repasse en brouillon, mais ce brouillon \textbf{ne se supprime pas}~:
 l'historique de l'ordre transmis à la banque se garde.
 
+Le refus de doublon du repassage s'affiche, lui, au-dessus des autres refus, avec la facture
+active et, pour la lever, \emph{Repasser en brouillon malgré tout}~; joindre ou détacher le
+document de la facture, ou toute relecture de la fiche, efface cet avis.
+
 \subsection{Régler une facture fournisseur}\label{sec:regler-facture-fournisseur}
 
 Une facture fournisseur \textbf{validée} se règle de deux façons~: depuis sa \textbf{fiche}, ci-dessous,
@@ -2414,9 +2437,16 @@ brouillon, joindre ou détacher son document. La fiche relit alors la facture et
 encadré, que l'issue n'est pas connue~: vérifiez ce que montre la fiche relue avant de réessayer.
 Si la relecture elle-même échoue, l'encadré le dit~: rechargez la page avant de réessayer. Un second
 envoi ne s'écrit pas deux fois~: la facture --- ou son document --- a changé entre-temps, Kesh le
-refuse, et la fiche relit la facture pour montrer ce qui est écrit. La page de \emph{modification}
-d'un brouillon ne relit pas encore la facture~: après une coupure pendant l'enregistrement,
-rechargez-la avant de réessayer.
+refuse, et la fiche relit la facture pour montrer ce qui est écrit. \textbf{Pendant la saisie},
+depuis la version~0.20.0~: si la réponse se perd pendant l'\textbf{enregistrement} d'une facture,
+le formulaire \textbf{se fige}, garde votre saisie et dit que l'enregistrement a \textbf{peut-être
+abouti}~; un lien ouvre, dans un nouvel onglet, la liste des factures du fournisseur. Vérifiez si
+la facture existe~: si oui, quittez la page~; sinon, \emph{J'ai vérifié, elle n'existe pas ---
+reprendre la saisie} rend la saisie modifiable \textbf{sans rien envoyer}, et l'enregistrement
+reste votre geste --- si la facture existait, Kesh le refuse comme doublon. Sur la page de
+\emph{modification}, l'avis dit que la modification a peut-être été enregistrée et le lien ouvre
+la fiche~: si elle l'a été, rechargez la page avant de modifier encore~; sinon, \emph{J'ai
+vérifié, elle n'a pas été enregistrée --- reprendre la saisie}.
 
 \textbf{Lettrage.} Une facture fournisseur \textbf{payée} est \textbf{lettrée} d'office~: sa
 ligne d'achat au compte créanciers et celle du paiement sur ce compte forment un groupe de
@@ -2758,7 +2788,13 @@ proche de celui du créancier (« nom proche » --- formes juridiques comme SA, 
 accents ignorés, « Müller » rapproché de « Mueller »). \textbf{Aucun n'est choisi d'office}~:
 cliquez \emph{Retenir} sur le bon, choisissez-en un autre dans la liste, ou créez-le par
 \emph{Nouveau fournisseur} (le nom et, pour une adresse structurée du QR, l'adresse sont
-pré-remplis). Sans QR, rien n'est proposé.
+pré-remplis). Sans QR, rien n'est proposé. Depuis la version~0.20.0, si la réponse se perd
+pendant l'enregistrement, Kesh relit le document~: s'il a été enregistré, l'écran le dit ---
+«~Cette pièce a déjà été enregistrée comme facture. Ouvrez-la pour vérifier qu'elle correspond à
+votre saisie.~» ---, avec un lien vers la facture, qui s'ouvre dans un nouvel onglet, et le
+formulaire reste figé~; s'il est encore à traiter, «~Aucune facture n'est enregistrée pour
+l'instant~: vous pouvez réessayer.~»~; si la relecture échoue, l'avis de la saisie (vérifier,
+puis reprendre la saisie).
 
 \begin{keshwarning}
 \textbf{Une proposition n'est qu'une proposition.} Son absence ne prouve pas que le
@@ -2772,9 +2808,11 @@ Vérifiez avant de retenir.
 À l'enregistrement, le document quitte la liste et l'écran ouvre la fiche du brouillon
 créé (« Brouillon enregistré. »). Un refus --- une ligne qui n'est pas au centime
 (\S\ref{sec:saisie-facture-fournisseur}), total différent du QR, coordonnée de paiement
-invalide (sous le champ concerné), échéance antérieure à la date, document traité entre-temps
-dans une autre session --- s'affiche sans perdre la saisie, et le document reste dans la
-liste. Ce qu'exige l'écriture d'achat --- compte créanciers ou TVA récupérable imputable,
+invalide (sous le champ concerné), échéance antérieure à la date, doublon
+(\S\ref{sec:doublons-fournisseur}) --- s'affiche sans perdre la saisie, et le document reste
+dans la liste. Un document qu'une autre personne a enregistré pendant votre saisie mène à
+«~Cette pièce a déjà été enregistrée comme facture~», avec le lien vers elle, depuis la
+version~0.20.0. Ce qu'exige l'écriture d'achat --- compte créanciers ou TVA récupérable imputable,
 exercice ouvert (\S\ref{sec:saisie-facture-fournisseur}) --- se vérifie à la
 \textbf{validation}, depuis la version~0.17.0. Un lien vers un document qui n'est plus à traiter affiche « Ce document n'est plus à
 traiter. » et renvoie à la liste.

@@ -41,7 +41,8 @@ const candidatesMock = vi.fn();
 const fetchDocMock = vi.fn();
 const completeMock = vi.fn();
 vi.mock('$lib/features/imported-supplier-invoices/imported-supplier-invoices.api', () => ({
-	listImported: (s: string) => listImportedMock(s),
+	// Story 48-12b (D2) : le mock transmet `CallOptions` (`{ retry: false }` de la relecture).
+	listImported: (...args: unknown[]) => listImportedMock(...args),
 	getSupplierCandidates: (id: number) => candidatesMock(id),
 	fetchImportedSourceDocument: (id: number) => fetchDocMock(id),
 	completeImport: (id: number, req: unknown) => completeMock(id, req),
@@ -229,5 +230,165 @@ describe('page /supplier-invoices/new', () => {
 		await findByTestId('supplier-invoice-new-forbidden');
 		expect(queryByTestId('supplier-invoice-form')).toBeNull();
 		expect(listContactsMock).not.toHaveBeenCalled();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Story 48-12b (#985, #975 ; table A, E5 à E9 ; D2, D2bis) — la complétion relue, et le
+// refus de doublon à la complétion.
+// ---------------------------------------------------------------------------
+
+const NOT_PENDING = {
+	code: 'IMPORT_NOT_PENDING_COMPLETION',
+	status: 409,
+	message: 'Ce document n’est plus à traiter.',
+};
+const LOST = { code: 'NETWORK_ERROR', status: 0, message: 'Réseau indisponible' };
+const OLD_MESSAGE = 'Ce document a déjà été traité ou retiré de la liste.';
+const FOR_NOW = 'Aucune facture n’est enregistrée pour l’instant : vous pouvez réessayer.';
+const COMPLETED_TEXT =
+	'Cette pièce a déjà été enregistrée comme facture. Ouvrez-la pour vérifier qu’elle correspond à votre saisie.';
+
+/** La page de complétion du document 7, le formulaire rempli ; rend le rendu. */
+async function completionPrete() {
+	completeMock.mockReset();
+	url.value = new URL('http://localhost/supplier-invoices/new?document=7');
+	listImportedMock.mockResolvedValueOnce([doc()]);
+	listContactsMock.mockResolvedValue({
+		items: [{ id: 1, name: 'Dubarde SA', isSupplier: true }],
+		total: 1,
+		limit: 200,
+		offset: 0,
+	});
+	const r = render(Page);
+	await r.findByTestId('supplier-invoice-form');
+	const q = (id: string) => r.container.querySelector(`[data-testid="${id}"]`) as HTMLInputElement;
+	const sup = q('supplier-invoice-supplier') as unknown as HTMLSelectElement;
+	sup.value = '1';
+	await fireEvent.change(sup);
+	await fireEvent.input(q('supplier-invoice-date'), { target: { value: '2026-10-01' } });
+	await fireEvent.input(q('supplier-invoice-line-desc'), { target: { value: 'Prestation' } });
+	await fireEvent.input(q('supplier-invoice-line-unit-price'), { target: { value: '100.00' } });
+	const acc = q('supplier-invoice-line-account') as unknown as HTMLSelectElement;
+	acc.value = '40';
+	await fireEvent.change(acc);
+	return r;
+}
+
+describe('complétion relue (#985, E8 → E9, E7, E6)', () => {
+	it('IMPORT_NOT_PENDING_COMPLETION : to_complete PUIS completed, sans rejeu → E9 figé, lien nouvel onglet, ancien message absent', async () => {
+		const r = await completionPrete();
+		completeMock.mockRejectedValue(NOT_PENDING);
+		listImportedMock
+			.mockResolvedValueOnce([])
+			.mockResolvedValueOnce([doc({ status: 'completed', supplierInvoiceId: 55 })]);
+		await fireEvent.click(r.getByTestId('supplier-invoice-submit'));
+		const notice = await r.findByTestId('supplier-invoice-already-completed');
+		expect(r.getByTestId('supplier-invoice-already-completed-text').textContent).toBe(COMPLETED_TEXT);
+		const link = r.getByTestId('supplier-invoice-already-completed-link');
+		expect(link.getAttribute('href')).toBe('/supplier-invoices/55');
+		// Mutation « lien de E9 dans le même onglet ».
+		expect(link.getAttribute('target')).toBe('_blank');
+		// Mutation « lire completed d'abord » : l'ordre et `{ retry: false }`.
+		expect(listImportedMock.mock.calls.slice(1)).toEqual([
+			['to_complete', { retry: false }],
+			['completed', { retry: false }],
+		]);
+		// Mutation « relancer l'erreur d'origine après la relecture » : l'ancien message absent.
+		expect(r.container.textContent).not.toContain(OLD_MESSAGE);
+		expect(notice).toBeTruthy();
+		// Mutation « locked ignoré » (avec la garde du formulaire, défense en profondeur).
+		expect(r.getByTestId('supplier-invoice-number').matches(':disabled')).toBe(true);
+		expect((r.getByTestId('supplier-invoice-submit') as HTMLButtonElement).disabled).toBe(true);
+	});
+
+	it('issue inconnue de la complétion, document complété → E9 aussi', async () => {
+		const r = await completionPrete();
+		completeMock.mockRejectedValue(LOST);
+		listImportedMock
+			.mockResolvedValueOnce([])
+			.mockResolvedValueOnce([doc({ status: 'completed', supplierInvoiceId: 56 })]);
+		await fireEvent.click(r.getByTestId('supplier-invoice-submit'));
+		await r.findByTestId('supplier-invoice-already-completed');
+	});
+
+	it('encore à traiter → E7 « pour l’instant », saisie active', async () => {
+		const r = await completionPrete();
+		completeMock.mockRejectedValue(LOST);
+		listImportedMock.mockResolvedValueOnce([doc()]);
+		await fireEvent.click(r.getByTestId('supplier-invoice-submit'));
+		await waitFor(() => expect(r.getByTestId('supplier-invoice-form-error').textContent?.trim()).toBe(FOR_NOW));
+		expect((r.getByTestId('supplier-invoice-submit') as HTMLButtonElement).disabled).toBe(false);
+	});
+
+	it('retiré (ni à traiter ni complété) → E7, message actuel', async () => {
+		const r = await completionPrete();
+		completeMock.mockRejectedValue(NOT_PENDING);
+		listImportedMock.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+		await fireEvent.click(r.getByTestId('supplier-invoice-submit'));
+		await waitFor(() =>
+			expect(r.getByTestId('supplier-invoice-form-error').textContent?.trim()).toBe(OLD_MESSAGE),
+		);
+	});
+
+	it('complété sans supplierInvoiceId → E6 (mutation « traité comme complété »)', async () => {
+		const r = await completionPrete();
+		completeMock.mockRejectedValue(NOT_PENDING);
+		listImportedMock.mockResolvedValueOnce([]).mockResolvedValueOnce([doc({ status: 'completed' })]);
+		await fireEvent.click(r.getByTestId('supplier-invoice-submit'));
+		await r.findByTestId('supplier-invoice-unknown-outcome');
+		expect(r.queryByTestId('supplier-invoice-already-completed')).toBeNull();
+	});
+
+	it('relecture en échec → E6, jamais « déjà traité » (mutation « déjà traité sur relecture en échec »)', async () => {
+		const r = await completionPrete();
+		completeMock.mockRejectedValue(NOT_PENDING);
+		listImportedMock.mockRejectedValueOnce({ code: 'INTERNAL_ERROR', status: 500, message: 'panne' });
+		await fireEvent.click(r.getByTestId('supplier-invoice-submit'));
+		await r.findByTestId('supplier-invoice-unknown-outcome');
+		expect(r.container.textContent).not.toContain(OLD_MESSAGE);
+	});
+
+	it('doublon probable à la complétion → E5, AUCUNE relecture (mutation « onRefusal pour tout code »)', async () => {
+		const r = await completionPrete();
+		completeMock.mockRejectedValueOnce({
+			code: 'SUPPLIER_INVOICE_PROBABLE_DUPLICATE',
+			status: 409,
+			message: 'x',
+			details: { supplierInvoiceId: 12, internalNumber: null, status: 'draft', confirmable: true },
+		});
+		await fireEvent.click(r.getByTestId('supplier-invoice-submit'));
+		await r.findByTestId('supplier-invoice-probable-duplicate');
+		expect(listImportedMock).toHaveBeenCalledTimes(1);
+		// La confirmation renvoie le corps gardé, avec le drapeau.
+		completeMock.mockResolvedValueOnce({ id: 33, status: 'draft' });
+		await fireEvent.click(r.getByTestId('supplier-invoice-confirm-not-duplicate'));
+		await waitFor(() => expect(completeMock).toHaveBeenCalledTimes(2));
+		expect(completeMock.mock.calls[1][1]).toEqual({ ...completeMock.mock.calls[0][1], confirmNotDuplicate: true });
+	});
+
+	it('E8 figé : relecture en attente → aucun contrôle de saisie actif, « Enregistrer » inactif', async () => {
+		const r = await completionPrete();
+		completeMock.mockRejectedValue(NOT_PENDING);
+		listImportedMock.mockReturnValueOnce(new Promise(() => {}));
+		await fireEvent.click(r.getByTestId('supplier-invoice-submit'));
+		await waitFor(() => expect(listImportedMock).toHaveBeenCalledTimes(2));
+		expect(r.getByTestId('supplier-invoice-number').matches(':disabled')).toBe(true);
+		expect((r.getByTestId('supplier-invoice-submit') as HTMLButtonElement).disabled).toBe(true);
+	});
+
+	it('E6 par relecture en échec, reprise, renvoi → IMPORT_NOT_PENDING → E8 → E9 (V4-3)', async () => {
+		const r = await completionPrete();
+		completeMock.mockRejectedValue(LOST);
+		listImportedMock.mockRejectedValueOnce({ code: 'INTERNAL_ERROR', status: 500, message: 'panne' });
+		await fireEvent.click(r.getByTestId('supplier-invoice-submit'));
+		await r.findByTestId('supplier-invoice-unknown-outcome');
+		await fireEvent.click(r.getByTestId('supplier-invoice-resume-entry'));
+		completeMock.mockRejectedValue(NOT_PENDING);
+		listImportedMock
+			.mockResolvedValueOnce([])
+			.mockResolvedValueOnce([doc({ status: 'completed', supplierInvoiceId: 57 })]);
+		await fireEvent.click(r.getByTestId('supplier-invoice-submit'));
+		await r.findByTestId('supplier-invoice-already-completed');
 	});
 });
