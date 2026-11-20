@@ -377,50 +377,40 @@ le compte serait de sept ; il ne découpe pas davantage, les quatre lots étant 
   coordonnait trois propositions qui ne s'excluaient pas (« quand une facture n'a pas pu être relue, le sélecteur
   s'affiche » est faux dans l'état d'AC3, `showAccount` exigeant `!tooLarge`). *Écartée* : laisser la phrase (P3 « manuel qui décrit
   autre chose que le code » sur la branche même qu'on touche).
-- **D3 (#1262) — la relecture est différée jusqu'à ce qu'aucune modale ne soit ouverte.** La modale ne choisit plus :
-  quand l'envoi aboutit alors que sa session a changé (fermée pendant l'envoi), elle dit le succès (toast, inchangé)
-  et appelle une prop neuve **`onSettledInBackground`** (au lieu de `if (!open) onSuccess();`). Le parent :
-  - « une modale est ouverte » veut dire : l'une des **cinq** — `groupOpen`, `manualOpen`, `splitOpen`, `linkOpen`, ou la
-    confirmation « déjà comptabilisée » (`pendingGesture !== null`, `:922`) ;
-  - aucune modale ouverte → ce que fait aujourd'hui `onGroupSuccess` (bilan effacé, « 1 opération(s) réussie(s). »,
-    relecture) ;
-  - une modale ouverte → un drapeau `reloadPending = true` ; la relecture part **à la fermeture** de cette modale par un
-    chemin qui ne relit pas lui-même (Annuler ou Échap d'une des quatre modales ; *Annuler* ou Échap de la
-    confirmation, tous deux par `cancelGesture`, `:454`, via `AlreadyBookedConfirmDialog.svelte:43` —
-    `onOpenChange={(v) => !v && onCancel()}`), et elle fait alors ce que fait le cas immédiat (bilan effacé,
-    « 1 opération(s) réussie(s). », relecture). *Continuer quand même* de la confirmation (`confirmGesture`, `:438`)
-    ouvre une modale — le drapeau attend sa fermeture — ou lance *Accepter* / *Rejeter*, qui relisent eux-mêmes ;
-  - **où la relecture différée se déclenche** : dans le `onOpenChange` des quatre modales (`:874`, `:887`, `:900`,
-    `:910`, quand `v` est faux) et dans `cancelGesture`, le parent **ne relit pas sur place** : il appelle une fonction
-    `flushPendingReload()` qui programme, par `queueMicrotask`, la vérification « `reloadPending` vrai **et** aucune des
-    cinq modales ouverte » — et ne relit qu'alors. Ce report hors de la pile d'appel est nécessaire parce que les
-    modales enchaînent deux appels dans un ordre qui varie : succès puis fermeture (`GroupSettlementModal.svelte:660`–`:661`,
-    `onSuccess(); onOpenChange(false);`, de même les trois autres modales), mais **fermeture puis `onStale`** dans
-    `closeStale` (`GroupSettlementModal.svelte:366`–`:373` : `onOpenChange(false); onStale();`). Dans les deux ordres, le
-    gestionnaire qui relit (`onGroupSuccess`, `onGroupStale`, `:322`–`:335`) appelle `load()` **dans la même pile
-    synchrone**, et `load()` éteint le drapeau avant son premier `await` (ci-dessous) : quand la microtâche s'exécute,
-    le drapeau est éteint et elle ne relit pas. **Une seule relecture** dans tous les cas ;
-  - **le drapeau s'éteint dans `load()`** (`reloadPending = false;`, écrit sans lecture préalable, à côté de
-    `pendingGesture = null;` `:182`, pour ne pas devenir une dépendance de l'`$effect` `:202`–`:204`) : toute relecture,
-    d'où qu'elle vienne (`onGroupSuccess`, `onGroupStale`, `onManualSuccess`, *Accepter*, *Rejeter*, `$effect` de
-    `limit`), le consomme ; aucune relecture double ; le bilan affiché est alors celui du chemin qui a relu. Le
-    drapeau doit s'éteindre **avant le premier `await` de `load()`** (sinon la microtâche le verrait encore armé) ;
-  - **un échec d'*Accepter* / *Rejeter*** (lancés depuis la confirmation, `:518`–`:520`, `:537`–`:540` : `await load()`
-    dans le `try`, le `catch` ne relit pas) laisse le drapeau armé : il se consomme à la prochaine relecture ou à la
-    prochaine fermeture d'une modale. La relecture différée n'est donc pas perdue, mais elle peut attendre le geste
-    suivant ; cas rare, sans effet sur les livres, assumé.
-  - ***Révisée à la revue P1 (E2, B4)*** — ce qui précède sur le drapeau et le bilan est remplacé ainsi : le drapeau
-    devient un compteur non réactif, `settledInBackground` (les règlements aboutis en arrière-plan dont la liste n'est
-    pas relue). (i) La relecture attend aussi la fin d'un lot *Accepter* / *Rejeter* en cours (`reloadMustWait()` =
-    `anyModalOpen() || busy`) : sa relecture effacerait le relevé du lot (E2) ; le `finally` des deux lots appelle
-    `flushPendingReload()`, si bien qu'un lot en échec ne laisse plus la relecture attendre le geste suivant. (ii)
-    `load()` prend le compteur et le remet à zéro avant son premier `await` (même raison qu'avant), puis **ajoute ces
-    règlements au bilan** de la relecture qui les consomme, après l'`await` (B4 : le bilan ne se perd plus quand un
-    autre geste relit) ; `reloadAfterGroupSettlement` n'écrit plus « 1 », c'est `load()` qui compte ; `onGroupStale`
-    ouvre un nouveau bilan quand il en consomme. (iii) Une relecture en échec rend ses règlements à l'attente (la liste
-    n'est pas relue) ; une relecture **dépassée** les compte au bilan sans les rendre, la relecture plus récente,
-    partie après elle, les voyant déjà (reprise de la remédiation : rendus à l'attente, ils auraient armé une relecture
-    superflue et manqué au bilan ; atteignable parce que la fin d'un envoi survit au démontage de sa modale).
+- **D3 (#1262) — la relecture est différée jusqu'à ce qu'aucune modale ne soit ouverte ni aucun lot en cours.**
+  *Réécrite aux revues de code P1 (E2, B4) et P2 (P2-1).* La modale ne choisit plus : quand l'envoi aboutit alors que sa
+  session a changé (fermée pendant l'envoi), elle dit le succès (toast, inchangé) et appelle une prop neuve
+  **`onSettledInBackground`** (au lieu de `if (!open) onSuccess();`). Le parent :
+  - tient un **compteur non réactif `settledInBackground`** : les règlements aboutis en arrière-plan dont la liste n'est
+    pas encore relue. `onGroupSettledInBackground` l'incrémente, puis relit aussitôt si rien ne retient la relecture ;
+  - « la relecture est retenue » (`reloadMustWait()`) veut dire : l'une des **cinq** modales ouverte — `groupOpen`,
+    `manualOpen`, `splitOpen`, `linkOpen`, ou la confirmation « déjà comptabilisée » (`pendingGesture !== null`) — **ou**
+    un lot *Accepter* / *Rejeter* en cours (`busy`) : une relecture démonte la modale ouverte et referme la confirmation,
+    et pendant un lot elle effacerait le relevé de ses lignes ;
+  - rien ne retient → `reloadAfterGroupSettlement` : nouveau bilan (`clearBatchReport()`), relecture ;
+  - **où la relecture différée se déclenche** : dans le `onOpenChange` des quatre modales (quand `v` est faux) et dans
+    `cancelGesture` (Annuler ou Échap de la confirmation, via `AlreadyBookedConfirmDialog.svelte:43`), le parent ne
+    relit pas sur place : `flushPendingReload()` programme, par `queueMicrotask`, la vérification « compteur non nul
+    **et** rien ne retient » — et ne relit qu'alors. Ce report hors de la pile d'appel est nécessaire parce que les
+    modales enchaînent deux appels dans un ordre qui varie : succès puis fermeture (`onSuccess(); onOpenChange(false);`)
+    mais **fermeture puis `onStale`** dans `closeStale` (`onOpenChange(false); onStale();`). Dans les deux ordres, le
+    gestionnaire qui relit appelle `load()` dans la même pile synchrone, et `load()` consomme le compteur avant son
+    premier `await` : la microtâche le trouve à zéro. **Une seule relecture** dans tous les cas. *Continuer quand
+    même* (`confirmGesture`) ouvre une modale — l'attente continue — ou lance *Accepter* / *Rejeter*, qui relisent
+    eux-mêmes ;
+  - **la fin d'un lot ne relit pas** (revue P2, P2-1) : une relecture lancée du `finally` d'`onAccept` / `onReject`
+    effacerait le bilan, les refus ou l'erreur du lot qui vient de finir. Un règlement abouti pendant le lot est consommé
+    par la relecture du lot ; abouti pendant cette relecture, ou le lot en échec, il attend la relecture suivante
+    (fermeture d'une modale, autre geste, autre règlement abouti). Cas rare, sans effet sur les livres, assumé : la liste
+    peut rester périmée d'une ligne jusqu'au geste suivant, le toast ayant dit le succès ;
+  - **`load()` consomme le compteur et le compte au bilan** : il le prend et le remet à zéro avant son premier `await`
+    (écriture sans lecture réactive : aucune dépendance de l'`$effect` de `limit`), puis, après l'`await`, l'**ajoute à
+    `lastSuccessCount`** — le bilan affiché est celui du chemin qui a relu, **plus** les règlements qu'il a consommés
+    (le succès du groupe : 1 + les règlements en attente ; *Accepter* : N + ceux-là). `onGroupStale` ouvre un nouveau
+    bilan quand il consomme un règlement en attente. Une relecture **en échec** rend ses règlements à l'attente (la liste
+    n'est pas relue) ; une relecture **dépassée** (succès ou échec) les compte au bilan sans les rendre : la relecture
+    plus récente, partie après elle, les voit déjà. Deux relectures en vol sont atteignables parce que la fin d'un envoi
+    survit au démontage de sa modale (`{#if loading}`).
   *Écartées* : (a) appeler `onSuccess` sans condition — ferme la fenêtre rouverte (`:325`–`:326`) ; (b) relire
   aussitôt — `load()` démonte la modale ouverte (`:555`, `:184`), referme la confirmation (`:182`) et perd la saisie ; (c) retirer la ligne localement de
   `proposals` sans relire — la liste vidée bascule sur `:561` et démonte aussi la modale ; (d) une relecture
@@ -520,15 +510,17 @@ le compte serait de sept ; il ne découpe pas davantage, les quatre lots étant 
    état (une facture qu'on y a imputée y reste, la recherche tapée aussi).
 7. Au parent, un règlement abouti en arrière-plan alors qu'une modale est ouverte **ne relit pas** la liste
    (`getProposals` non appelé) et ne démonte pas la modale ; **à sa fermeture** (Annuler ou Échap), la liste est relue
-   une fois, et la transaction réglée n'y figure plus. Sans modale ouverte, la relecture est immédiate et
-   « 1 opération(s) réussie(s). » s'affiche (comportement d'aujourd'hui, `onGroupSuccess`) ; différée puis lancée par
-   Annuler ou Échap, la relecture affiche le même bilan. Un chemin de fermeture qui relit déjà (succès, refus de la
-   transaction) ne relit pas une seconde fois. **La confirmation « déjà comptabilisée » ouverte compte comme une
+   une fois, et la transaction réglée n'y figure plus. Sans modale ouverte ni lot en cours, la relecture est immédiate
+   et le bilan compte les règlements consommés (« 1 opération(s) réussie(s). » pour un seul) ; différée puis lancée
+   par Annuler ou Échap, la relecture affiche le même bilan ; consommée par un autre chemin qui relit, elle s'ajoute à
+   son bilan (le succès du groupe : « 2 opération(s) réussie(s). »). Un lot *Accepter* / *Rejeter* en cours retient la
+   relecture comme une modale, et la fin d'un lot ne relit pas : son bilan, ses refus et son erreur restent. Un chemin
+   de fermeture qui relit déjà (succès, refus de la transaction) ne relit pas une seconde fois. **La confirmation « déjà comptabilisée » ouverte compte comme une
    modale** : un règlement abouti en arrière-plan ne la referme pas et ne vide pas la sélection ; *Annuler* la ferme et
    lance la relecture une fois. L'invariant « la fin d'un envoi du règlement groupé ne relit jamais la liste sous une modale
    ouverte » se constate pour **chacune des cinq** (règlement groupé, écriture manuelle, éclatement, rattachement,
    confirmation). Les relectures lancées par la fin d'un envoi des autres modales restent hors de cette garantie
-   (#1412 et les deux issues conditionnelles des Dev Notes). Drapeau armé, la fenêtre
+   (#1412, #1417 pour *Écriture manuelle*, #1418 pour *Éclater*). Un règlement en attente, la fenêtre
    rouverte refusée sur sa transaction (`closeStale` : `onOpenChange(false)` puis `onStale()`) : `getProposals` est
    appelé **une** fois ; de même dans l'ordre du succès (`onSuccess()` puis `onOpenChange(false)`).
 8. Dans le navigateur (E2E) : deux transactions ; règlement groupé lancé sur la première, fenêtre fermée (Échap)
@@ -608,7 +600,7 @@ restauration, `touch` du fichier. Journaux dans `/home/gcorbaz/devel/kesh-gate-l
 | T3 (AC3) une relue, une non relue, trop grand | idem | D1 | dans `rouge-t1-t3.log` ; M1 |
 | T3 bis (AC3 bis) relecture qui rend un montant illisible (`unreadable` au pied) | idem | D1 | dans `rouge-t1-t3.log` ; M1 |
 | T4 (AC6) rouverte, puis succès | `GroupSettlementModal.test.ts`, bloc « gardes de concurrence » | D3 (modale) | rouge naturel (`onSettledInBackground` jamais appelé) : `rouge-t4.log` ; **M2** : `if (!open) onSuccess();` remis → rouge, `mut-m2.log`. Le test existant `:1024` (« fermée pendant l’envoi, le règlement passé : le parent relit sa liste ») attend désormais `onSettledInBackground` : sa mise à jour se déclare au Change Log |
-| T5 (AC7) parent : différé puis relu à la fermeture (bilan compris) ; immédiat sans modale ; pas de double relecture ; une fois par modale ouverte parmi les cinq, confirmation « déjà comptabilisée » comprise (ouverte : pas de relecture, sélection gardée ; *Annuler* : une relecture) | `ReconciliationProposals.test.ts`, avec les doublures décrites sous ce tableau | D3 (parent) | rouge naturel : `rouge-t5.log` ; **M3** : relecture immédiate au lieu du drapeau → rouge (`getProposals` appelé au clic « arrière-plan » alors que la doublure manuelle est ouverte) `mut-m3.log` ; **M4** : drapeau jamais consommé à la fermeture → rouge (aucun appel de `getProposals` après « fermer » de chacune des quatre doublures) `mut-m4.log` ; **M9** : `pendingGesture !== null` retiré de la condition « modale ouverte » → rouge (la confirmation, réelle, se referme au clic « arrière-plan ») `mut-m9.log` ; **M11** : relecture synchrone dans `onOpenChange` au lieu de `queueMicrotask` → rouge (deux appels de `getProposals` au bouton « fermer puis `onStale` ») `mut-m11.log` |
+| T5 (AC7) parent : différé puis relu à la fermeture (bilan compris) ; immédiat sans modale ; pas de double relecture ; une fois par modale ouverte parmi les cinq, confirmation « déjà comptabilisée » comprise (ouverte : pas de relecture, sélection gardée ; *Annuler* : une relecture) ; *revues P1 et P2* : lot en cours (relecture retenue), fin de lot sans relecture (bilan, refus et erreur gardés), bilan des règlements consommés (succès du groupe, autre modale, fenêtre périmée), relectures en échec et dépassées | `ReconciliationProposals.test.ts`, avec les doublures décrites sous ce tableau | D3 (parent) | rouge naturel : `rouge-t5.log` ; **M3** : relecture immédiate au lieu du drapeau → rouge (`getProposals` appelé au clic « arrière-plan » alors que la doublure manuelle est ouverte) `mut-m3.log` ; **M4** : drapeau jamais consommé à la fermeture → rouge (aucun appel de `getProposals` après « fermer » de chacune des quatre doublures) `mut-m4.log` ; **M9** : `pendingGesture !== null` retiré de la condition « modale ouverte » → rouge (la confirmation, réelle, se referme au clic « arrière-plan ») `mut-m9.log` ; **M11** : relecture synchrone dans `onOpenChange` au lieu de `queueMicrotask` → rouge (deux appels de `getProposals` au bouton « fermer puis `onStale` ») `mut-m11.log` |
 | T6 (AC8) E2E deux transactions | `frontend/tests/e2e/reconciliation-group.spec.ts` (`page.route` sur `**/api/v1/reconciliation/accept`, retenue puis `route.continue()`, comme `:727`) | D3 | rouge naturel (la première transaction reste listée après la fermeture) : `e2e-rouge-t6.log` ; M2 rejouée en E2E : `e2e-m2.log` |
 | T7 (AC1–AC2) E2E refus après relecture | même spec (`page.route` sur `accept` et sur `group-candidates` pour la relecture, comme `:722`–`:745`) | D1 | rouge naturel : `e2e-rouge-t7.log` ; M1 rejouée : `e2e-m1.log` |
 | T8 (AC9) caractérisation client | `crates/kesh-db/tests/grouped_settlements.rs` | — (test de non-régression) | **écrit et vert sur l'ancien code**, commité avant la réécriture : `carac-avant.log` ; vert après : `carac-apres.log` ; **M5** : `auto_match_rejected_at = NULL` retiré de l'aide → rouge `mut-m5.log` (non vide : le test a posé une valeur non nulle avant le geste, AC9) ; **M6** : clé de liste de l'audit changée (`"invoices"` → `"members"`) → rouge `mut-m6.log` ; **M8** : `entity_id` de l'audit de l'aide pris sur `entry_id` au lieu de `bt.id` → rouge `mut-m8.log` |
@@ -636,8 +628,8 @@ sous `{#if open}`, et ses enveloppes `ModalSuccessStub{Manual,Split,Link,Group}.
   (`onOpenChange(false); onStale();`) ;
 - le test joue une ligne par modale ouverte : les quatre doublures (ouverte, « arrière-plan » → `getProposals` non
   appelé et la doublure toujours là ; « fermer » → un appel) et la confirmation, réelle (ouverte, « arrière-plan » →
-  toujours ouverte, sélection gardée ; *Annuler* → un appel) ; puis les deux ordres de fermeture avec relecture, drapeau
-  armé → un seul appel chacun. Les attentes portent sur le **nombre d'appels** de `getProposals` (la doublure remonte
+  toujours ouverte, sélection gardée ; *Annuler* → un appel) ; puis les deux ordres de fermeture avec relecture, un
+  règlement en attente → un seul appel chacun, et le bilan (2 au succès, 1 à la fenêtre périmée). Les attentes portent sur le **nombre d'appels** de `getProposals` (la doublure remonte
   après une relecture, `manualOpen` restant vrai : sa présence seule ne prouve rien).
 
 Numérotation : **M1 à M11, uniques, un journal chacune** ; le rejeu d'une mutation en E2E a son journal `e2e-m<N>.log`
@@ -707,9 +699,9 @@ doublons cherchés : #1235 (« LinkSettlementModal : ni anti-rebond ni abandon�
   unitaire (D5) : **#1413** (ouverte).
 - `ManualMatchModal.svelte:146`–`:147` — la fin d'un envoi d'*Écriture manuelle* agit sur la modale rouverte
   entre-temps (motif de #1007) ; **prémisse non jouée** (la fenêtre se ferme-t-elle par Échap pendant l'envoi ?) :
-  **une issue**, ouverte par l'orchestrateur si l'étape 0 du développement confirme la prémisse.
+  **une issue**, ouverte par l'orchestrateur si l'étape 0 du développement confirme la prémisse — confirmée : **#1417**.
 - `TransactionSplitModal.svelte:338`–`:339` — même motif pour *Éclater*, défaut distinct : **une autre issue**, même
-  condition. (Le Change Log 0.1 annonçait « trois issues demandées » : décision datée, remplacée ici.)
+  condition — confirmée : **#1418**. (Le Change Log 0.1 annonçait « trois issues demandées » : décision datée, remplacée ici.)
 - Les autres issues de la dette du règlement groupé (#1256 à #1260, #1264, #1265, P4) restent ouvertes, hors release.
 - `GroupSettlementModal.svelte:929` — « Arrondi de … passé au compte d'arrondi » s'affiche même sans compte d'arrondi
   désigné, juste au-dessus de l'avis qui le dit (défaut antérieur à la story, rendu visible par la recette, revue P1
@@ -768,7 +760,8 @@ Journaux sous `/home/gcorbaz/devel/kesh-gate-logs/e4814/` (hors dépôt).
   `etape0-echap-pendant-envoi.log`, 2 tests verts) : vraies modales, vrai `Dialog` de bits-ui, envoi retenu (promesse
   jamais résolue), *Annuler* grisé, `keyDown Escape` sur le contenu → `onOpenChange(false)` appelé. Ni l'une ni l'autre
   n'intercepte Échap (`Dialog.Root {open} {onOpenChange}`, `ManualMatchModal.svelte:168`, `TransactionSplitModal.svelte:353`).
-  La prémisse des deux issues conditionnelles est donc confirmée : **deux issues à ouvrir** (une par composant). Pour la
+  La prémisse des deux issues conditionnelles est donc confirmée : **deux issues à ouvrir** (une par composant ;
+  ouvertes depuis : #1417, #1418). Pour la
   fenêtre du règlement groupé, la même prémisse est jouée dans le navigateur par T6 (Échap pendant l'envoi retenu).
 - **Reproduction déterministe de KF-063 (AC13)** : voir Lot D.
 - Écart à la consigne Edit : le test de caractérisation fournisseur a d'abord été ajouté en fin de fichier par
@@ -787,7 +780,8 @@ puis restauré — non commité. Rouges naturels T1, T2, T3, T3 bis (« Choisiss
 `rouge-t1-t5.log`.
 
 **Lot B — #1262 (D3).** Modale : `if (!open) onSuccess();` devient `onSettledInBackground();` (prop neuve). Parent :
-`anyModalOpen()` (cinq modales), `onGroupSettledInBackground` (relit aussitôt ou arme `reloadPending`, non réactif),
+`anyModalOpen()` (cinq modales), `onGroupSettledInBackground` (relit aussitôt ou arme un drapeau non réactif,
+`reloadPending`, devenu le compteur `settledInBackground` aux revues de code — D3 réécrite),
 `flushPendingReload()` par `queueMicrotask` depuis les quatre `onOpenChange(false)` et `cancelGesture`, drapeau éteint
 dans `load()` avant son premier `await`. Doublures de T5 étendues (`onOpenChange`, « fermer », « arrière-plan » hors de
 `{#if open}`, les deux ordres réels de fermeture). Le test existant « fermée pendant l’envoi, le règlement passé »
@@ -909,7 +903,7 @@ remédiation P1 sont plus bas.)
 - `sprint-status.yaml` : le kickoff étant dans `main`, la clé 48-14 passe à `in-progress` au début et à `review` à la
   fin (consigne d'appel).
 
-**Hors périmètre, à ouvrir par l'orchestrateur (une issue par problème).**
+**Hors périmètre, ouvertes par l'orchestrateur (une issue par problème) : #1417 et #1418.**
 - `ManualMatchModal.svelte` : la fin d'un envoi d'*Écriture manuelle* (`onSuccess(); onOpenChange(false);`, `:146`–`:147`)
   agit sur la fenêtre rouverte entre-temps — prémisse **confirmée** (Échap ferme la fenêtre pendant l'envoi).
 - `TransactionSplitModal.svelte` : même défaut pour *Éclater* (`:338`–`:339`), prémisse **confirmée**.
@@ -961,6 +955,31 @@ sont d'avant l'arrêt, les autres d'après.
 **pas d'E2E complet** (à la clôture). Toutes les commandes cargo, Vitest et Playwright sous `mem-guard` et le verrou de leur
 voie (`.gate.lock`, `.gate-front.lock`), une prise à la fois.
 
+**Remédiation de la revue de code P2** (Sonnet, passe complète, `kesh-gate-logs/e4814/review-p2.md`, 0/0/0/4 ; les quatre
+LOW corrigés dans la story, règle du 2026-11-14, prémisse relue au code d'abord ; commit de remédiation qui porte cette section, cité au Change Log 0.7).
+
+| Finding | Devenu |
+|---|---|
+| P2-1 (production) | `flushPendingReload()` retiré du `finally` d'`onAccept` et d'`onReject` (remède le plus simple) : la fin d'un lot ne relit plus, son bilan, ses refus et son erreur restent ; un règlement en attente est consommé par la relecture suivante (D3 réécrite, cas assumé). Ce correctif **remplace** l'appel ajouté pour E2 à la P1 (tableau ci-dessus) ; le test « lot Accepter en échec : la relecture différée part à la fin du lot » est remplacé par « lot Accepter en échec : le message d'échec reste… », et un test « règlement abouti pendant la relecture finale du lot » est ajouté. Les deux **rouges sur le code d'avant** (`p2-rouge-p21.log` : une relecture de trop), verts après (`p2-vert.log`, 103/103). |
+| P2-2 | cinquième cas construit de la sonde (garde seulement en commentaire et en chaîne → faute) ; M21 (`masque[*de..p]` → `source[*de..p]`) tuée (`p2-rust-cible.log`) ; les trois angles morts (jeton seul : turbofish, référence, alias ; garde par position textuelle, non par dominance ; définition écartée par `ends_with("fn")`) écrits au doc-comment de `fautes_des_appelants_du_lien`. |
+| P2-3 | le mutant 1 (`flushPendingReload()` du `finally` d'`onReject`) disparaît avec le correctif de P2-1. Les quatre autres ont chacun un test et sont tués, restauration par `git restore` puis `touch` (`mut/muter-front.sh`) : M17 (`settledInBackground += settled;` du `catch`) → « relecture en échec » ; M18 (`lastSuccessCount += settled;` du `catch` dépassé) → « relecture dépassée en échec » ; M19 (`clearBatchReport()` d'`onGroupStale`) → « fenêtre périmée qui consomme un règlement en attente » ; M20 (`lastSuccessCount = 1;` d'`onGroupSuccess` déplacé après `await load()`) → l'`it.each` des deux ordres de fermeture, qui lit désormais le bilan. Journaux `mut-m17.log` à `mut-m20.log`, un rouge chacun, le test visé. |
+| P2-4 | D3 réécrite (compteur, lot, fin de lot sans relecture, bilan), AC7 et T5 alignés, DAR du Lot B annoté, titre de l'`it.each` renommé (« règlement en attente, … bilan »), #1417 et #1418 cités (Dev Notes, AC7, DAR). |
+
+**Provenance (remarque de l'axe 9 de la P2).** `p1r-rust-cible.log` et `p1r-front.log` s'ouvrent à `HEAD = fbeee9e53` sur
+un arbre de travail modifié ; le commit `752423715` a suivi à 09:37. Que cet arbre fût le contenu de `752423715` ne tient
+qu'à l'ordre des opérations, non au journal. `p1r-e2e-gates.console` (E2E, clippy, `gate-ci`), lui, s'ouvre à
+`752423715` avec un arbre où seule la documentation était modifiée. Les gates de clôture ci-dessous sont rejoués **au
+commit**, arbre de code propre (`git status --porcelain` en tête de chaque journal).
+
+**Mutations de la remédiation P2** : M17 à M21, toutes tuées (tableau ci-dessus).
+
+**Décomptes de la remédiation P2** (`git diff b37b16b89` au commit de remédiation P2) : Vitest +4 `it` nets (`ReconciliationProposals.test.ts` :
+5 ajoutés, dont 1 qui remplace « lot Accepter en échec » d'avant ; l'`it.each` modifié ; 99 → 103 cas) ; Rust +1 cas construit (aucun `#[test]` neuf) ; 3 fichiers de code et de test.
+
+**Gates de clôture**, au dernier commit de code (commit de remédiation P2) (journaux sous `kesh-gate-logs/e4814/`) :
+
+<GATES2>
+
 ### File List
 
 Code et tests (22 fichiers, `git diff --name-status 0a7447001 HEAD`) :
@@ -992,3 +1011,4 @@ Fiche et suivi : la présente fiche, `_bmad-output/implementation-artifacts/spri
 | 2026-11-19 | 0.4 | **Validation terminée.** Tendance : P1 Sonnet 5.5 (complète) 0/0/4/7 → P2 Opus 5.5 (complète) 0/0/3/6, **signal de recyclage** (V2-1 né de V1-1, V2-3 de V1-2) déclaré au Project Lead → P3 Sonnet 5.5 (complète, non ciblée à cause du recyclage) 0/0/0/8 : aucun finding au-dessus de LOW, les mécanismes qui avaient recyclé tiennent. Modèles alternés Sonnet ↔ Opus ↔ Sonnet ; aucune passe ciblée ni Haiku. Reclassements : aucun. Les huit LOW de la P3 appliqués sans passe de plus : V3-1 citations `:1362`–`:1366`, `:1372` ; V3-2 « une cinquantaine d'entrées » (45 tables, recompté) ; V3-3 archive identique jusqu'au manifeste exclu (`export_date`, `manifest.rs:119`) ; V3-4 M7 rattrapée par la garde `rows_affected()` au geste, non par l'empreinte ; V3-5 troisième état de la chute (`unreadable`) : AC3 bis et T3 bis ; V3-6 invariant restreint à la fin d'un envoi du règlement groupé ; V3-7 une issue par problème : #1412 et #1413 ouvertes, deux issues conditionnelles (Écriture manuelle, Éclater) ; V3-8 écartées de D3 dans l'ordre. **Aveu de la P3** : une commande composée de son étape 16 contenait `cargo tree -i 2>/dev/null | head -0`, hors des commandes permises ; lecture seule, sans effet, déclaré par la passe. Rapports : `kesh-gate-logs/e4814/validation-p1.md`, `-p2.md`, `-p3.md` | Opus 5.5 |
 | 2026-11-20 | 0.5 | **Développement (`bmad-dev-story`), passage en `review`.** Commits de code : `58e7f8682` (Lots A et B, i18n, manuel), `dbe67c669` (caractérisation T8–T10 **avant** réécriture ; Lot D), `2f0ab63b0` (réécriture du Lot C, gardes), `8077fb851` (E2E), `96f160d4a` (T7 corrigé, dernier commit de code). Étape 0 : Échap ferme *Écriture manuelle* et *Éclater* pendant l'envoi (sonde Vitest) → deux issues à ouvrir ; KF-063 reproduite de façon déterministe (cumul 61, `write.rs:1078`). Rouges d'abord pour chaque lot ; M1 à M11 tuées, M1 et M2 aussi rejouées en E2E. Gates à `96f160d4a` : `test-fast --ci` 6175/6175, `gate-ci` 6192/0/19, frontend complet 4805/4805 ; E2E complet à la clôture. Écarts déclarés au Dev Agent Record (décompte anti-muet 45 → 44, `APPELS_D_AUDIT`, archive nextest de l'ancien code, preuve du rouge de T6/T7 par M2/M1, M6 côté client seulement, `cat >>` et un `sed -i` sans effet, chevauchements brefs de commandes lourdes). Prompt de la revue P1 : `48-14-solde-dette-epic-review-prompt-p1.md` | Opus 5.5 |
 | 2026-11-20 | 0.6 | **Remédiation de la revue de code P1** (trois lentilles Opus : B 0/0/0/5, E 0/0/1/3, A 0/0/1/7 ; total 0/0/2/15). Commit de code `752423715`. MEDIUM : E1/B1 — inventaire des appelants de l'aide de lien (`APPELANTS_LIEN_GROUPE`, garde avant l'appel) et sa sonde synthétique ; A1/B3 — paragraphe *Un refus.* et D2 en conditions qui s'excluent, contrôle du PDF compilé qui discrimine. LOW corrigés : E2 (un lot en cours retient la relecture), B4 (le bilan compte les règlements consommés ; D3 révisée), E4 (clé commune refusée en `Invariant`), B2 (cas « entre les deux audits », M16), A5 (M12), B5/E3/A8 (reproduction de KF-063), A2/A3/A4/A6 (DAR) ; A7 → #1419. Reprise après l'arrêt par systemd-oomd (04:23) : le chemin « réponse dépassée » de `load()` rendait les règlements à l'attente — compté au bilan, test et M15. Mutations M12 à M16 tuées. Gates à `752423715` : `gate-ci` 6195/0/19, frontend complet 4809/4809, clippy vert, E2E T6, T6 bis, T7 3/3 ; E2E complet à la clôture. Prochaine passe : P2, Sonnet, complète (`48-14-solde-dette-epic-review-prompt-p2.md`). | Opus 5.5 |
+| 2026-11-20 | 0.7 | **Remédiation de la revue de code P2** (Sonnet 5.5, passe complète : 0/0/0/4). Tendance : P1 Opus 5.5 (trois lentilles B, E, A) 0/0/2/15 → P2 Sonnet 5.5 0/0/0/4 ; aucun finding au-dessus de LOW, la boucle peut se clore ; les quatre LOW, nés de la remédiation P1, corrigés dans la story (règle du 2026-11-14) et soumis à une passe ciblée Haiku. P2-1 : la fin d'un lot ne relit plus (`flushPendingReload()` retiré des `finally`), tests rouges puis verts (`p2-rouge-p21.log`, `p2-vert.log`) ; P2-2 : cinquième cas construit, M21 tuée, trois angles morts écrits ; P2-3 : quatre tests, M17 à M20 tuées (le cinquième mutant disparaît avec P2-1) ; P2-4 : D3, AC7, T5, DAR et titre du test réécrits, #1417 et #1418 cités, remarque de provenance des journaux p1r. Reclassements : aucun. Gates de clôture au commit (voir Dev Agent Record). Prompt de la passe ciblée : `48-14-solde-dette-epic-review-prompt-p3-haiku.md`. | Opus 5.5 |

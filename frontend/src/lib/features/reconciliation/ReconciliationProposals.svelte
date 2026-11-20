@@ -392,8 +392,8 @@
 	}
 
 	/**
-	 * D3 — une modale vient de se fermer par un chemin qui ne relit pas lui-même (Annuler, Échap),
-	 * ou un lot vient de finir : la relecture différée part, si plus rien ne la retient. Hors de la
+	 * D3 — une modale vient de se fermer par un chemin qui ne relit pas lui-même (Annuler, Échap) :
+	 * la relecture différée part, si plus rien ne la retient (jamais à la fin d'un lot, revue P2). Hors de la
 	 * pile d'appel (`queueMicrotask`) : une modale enchaîne fermeture et relecture dans un ordre qui
 	 * varie (`onSuccess` puis `onOpenChange(false)`, ou `onOpenChange(false)` puis `onStale`) ; la
 	 * relecture qu'elle lance consomme l'attente avant la microtâche — une seule relecture.
@@ -594,10 +594,11 @@
 		} catch (e) {
 			errorMsg = errorMessageOf(e);
 		} finally {
+			// Story 48-14 (revue P2, P2-1) : pas de relecture différée ici — elle effacerait le bilan,
+			// les refus ou l'erreur du lot qui vient de finir. Un règlement abouti pendant le lot est
+			// consommé par la relecture du lot ; abouti après elle, ou le lot en échec, il attend la
+			// relecture suivante (fermeture d'une modale, autre geste), qui le compte au bilan.
 			busy = false;
-			// Story 48-14 (revue P1, E2) : un règlement abouti pendant le lot attendait sa fin ;
-			// la relecture du lot l'a consommé, sinon (échec) il part maintenant.
-			flushPendingReload();
 		}
 	}
 
@@ -616,9 +617,8 @@
 		} catch (e) {
 			errorMsg = errorMessageOf(e);
 		} finally {
+			// Story 48-14 (revue P2, P2-1) : voir `onAccept`.
 			busy = false;
-			// Story 48-14 (revue P1, E2) : voir `onAccept`.
-			flushPendingReload();
 		}
 	}
 </script>

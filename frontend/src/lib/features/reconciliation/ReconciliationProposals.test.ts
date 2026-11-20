@@ -2027,9 +2027,14 @@ describe('ReconciliationProposals — règlement groupé abouti en arrière-plan
 		expect(mockApi.getProposals).toHaveBeenCalledTimes(avant + 1);
 	});
 
-	it.each([['stub-group-success-then-close'], ['stub-group-close-then-stale']])(
-		'drapeau armé, la fenêtre du groupe fermée par %s : une seule relecture',
-		async (fermeture) => {
+	// Revue P2 (P2-3) : le bilan aussi — le succès du groupe compte son règlement et celui qui
+	// attendait (2) ; la fenêtre périmée ouvre un nouveau bilan, celui du règlement en attente (1).
+	it.each([
+		['stub-group-success-then-close', '2 opération(s) réussie(s).'],
+		['stub-group-close-then-stale', '1 opération(s) réussie(s).'],
+	])(
+		'règlement en attente, la fenêtre du groupe fermée par %s : une seule relecture, bilan « %s »',
+		async (fermeture, attendu) => {
 			const view = await monter();
 			await fireEvent.click(view.getAllByTestId('group-settlement-button')[0]);
 			await view.findByTestId('stub-modal-success');
@@ -2041,6 +2046,7 @@ describe('ReconciliationProposals — règlement groupé abouti en arrière-plan
 			await laisser();
 			await laisser();
 			expect(mockApi.getProposals).toHaveBeenCalledTimes(avant + 1);
+			await vi.waitFor(() => expect(bilan(view)).toContain(attendu));
 		},
 	);
 
@@ -2080,9 +2086,11 @@ describe('ReconciliationProposals — règlement groupé abouti en arrière-plan
 		expect(refus).not.toContain('TX #');
 	});
 
-	// Revue P1 (E2) — le lot échoue : rien ne l'a relu, la relecture différée part à sa fin.
-	it('lot Accepter en échec : la relecture différée part à la fin du lot, avec le bilan du règlement', async () => {
+	// Revue P2 (P2-1) — le lot échoue : son message d'échec reste ; la fin du lot ne relit pas (une
+	// relecture effacerait l'erreur), le règlement attend la relecture suivante, qui le compte.
+	it('lot Accepter en échec : le message d’échec reste, aucune relecture à la fin du lot ; la relecture suivante compte le règlement', async () => {
 		const view = await monter();
+		const rappel = (globalThis as { __stubGroupBackground?: () => void }).__stubGroupBackground;
 		await fireEvent.click(view.getAllByTestId('tx-checkbox')[0]);
 		let echouer!: (e: unknown) => void;
 		mockApi.acceptProposals.mockImplementation(() => new Promise((_, rej) => (echouer = rej)));
@@ -2091,10 +2099,53 @@ describe('ReconciliationProposals — règlement groupé abouti en arrière-plan
 		await laisser();
 		await fireEvent.click(view.getByTestId('stub-group-background'));
 		await laisser();
+		echouer({ code: 'DATABASE_ERROR', message: 'échec du lot', status: 500 });
+		await laisser();
+		await laisser();
 		expect(mockApi.getProposals).toHaveBeenCalledTimes(avant);
-		echouer({ code: 'DATABASE_ERROR', message: 'x', status: 500 });
+		expect(view.getByTestId('reconciliation-error')).toBeTruthy();
+		// Un second règlement abouti : sa relecture consomme aussi le premier.
+		rappel!();
+		await vi.waitFor(() => expect(bilan(view)).toContain('2 opération(s) réussie(s).'));
+		expect(mockApi.getProposals).toHaveBeenCalledTimes(avant + 1);
+	});
+
+	// Revue P2 (P2-1) — un règlement abouti PENDANT la relecture finale du lot (`busy` encore vrai)
+	// attend : la fin du lot ne relit pas, le bilan et les refus du lot restent.
+	it('règlement abouti pendant la relecture finale du lot : le bilan et les refus du lot restent', async () => {
+		const view = await monter();
+		const rappel = (globalThis as { __stubGroupBackground?: () => void }).__stubGroupBackground;
+		const cases = view.getAllByTestId('tx-checkbox');
+		await fireEvent.click(cases[0]);
+		await fireEvent.click(cases[1]);
+		mockApi.acceptProposals.mockResolvedValue({
+			accepted: [
+				{
+					bankTransactionId: 1,
+					invoiceId: 101,
+					supplierInvoiceId: null,
+					journalEntryId: 9,
+					score: { total: 1, amountScore: 1, referenceScore: 1, contactScore: 0 },
+				},
+			],
+			failed: [{ bankTransactionId: 2, errorCode: 'PERIOD_LOCKED', details: null }],
+		} satisfies AcceptResponse);
+		const liste = { proposals: [ligne(1), ligne(2)], hasMore: false } satisfies GetProposalsResponse;
+		let relire!: (r: GetProposalsResponse) => void;
+		mockApi.getProposals.mockImplementation(
+			() => new Promise<GetProposalsResponse>((res) => (relire = res)),
+		);
+		const avant = mockApi.getProposals.mock.calls.length;
+		await fireEvent.click(view.getByTestId('reconciliation-accept-btn'));
 		await vi.waitFor(() => expect(mockApi.getProposals).toHaveBeenCalledTimes(avant + 1));
-		await vi.waitFor(() => expect(bilan(view)).toContain('1 opération(s) réussie(s).'));
+		rappel!();
+		mockApi.getProposals.mockResolvedValue(liste);
+		relire(liste);
+		await laisser();
+		await laisser();
+		expect(mockApi.getProposals).toHaveBeenCalledTimes(avant + 1);
+		expect(bilan(view)).toContain('1 opération(s) réussie(s).');
+		expect(view.getByTestId('reconciliation-failed-item')).toBeTruthy();
 	});
 
 	// Revue P1 (B4) — la relecture différée consommée par un autre geste (succès d'*Écriture
@@ -2112,6 +2163,83 @@ describe('ReconciliationProposals — règlement groupé abouti en arrière-plan
 		await laisser();
 		await laisser();
 		expect(mockApi.getProposals).toHaveBeenCalledTimes(avant + 1);
+	});
+
+	// Revue P2 (P2-3) — une relecture en échec rend son règlement à l'attente : la relecture
+	// suivante le compte.
+	it('relecture en échec : le règlement attend, la relecture suivante le compte', async () => {
+		const view = await monter();
+		const rappel = (globalThis as { __stubGroupBackground?: () => void }).__stubGroupBackground;
+		const liste = { proposals: [ligne(1), ligne(2)], hasMore: false } satisfies GetProposalsResponse;
+		mockApi.getProposals.mockRejectedValueOnce({ code: 'DATABASE_ERROR', message: 'x', status: 500 });
+		const avant = mockApi.getProposals.mock.calls.length;
+		await fireEvent.click(view.getByTestId('stub-group-background'));
+		await vi.waitFor(() => expect(view.getByTestId('reconciliation-error')).toBeTruthy());
+		mockApi.getProposals.mockResolvedValue(liste);
+		rappel!();
+		await vi.waitFor(() => expect(bilan(view)).toContain('2 opération(s) réussie(s).'));
+		expect(mockApi.getProposals).toHaveBeenCalledTimes(avant + 2);
+	});
+
+	// Revue P2 (P2-3) — une relecture dépassée qui échoue compte aussi son règlement au bilan.
+	it('relecture dépassée en échec : son règlement compte au bilan, sans relecture de plus', async () => {
+		const view = await monter();
+		const rappel = (globalThis as { __stubGroupBackground?: () => void }).__stubGroupBackground;
+		const resoudre: Array<(r: GetProposalsResponse) => void> = [];
+		const rejeter: Array<(e: unknown) => void> = [];
+		mockApi.getProposals.mockImplementation(
+			() =>
+				new Promise<GetProposalsResponse>((res, rej) => {
+					resoudre.push(res);
+					rejeter.push(rej);
+				}),
+		);
+		const avant = mockApi.getProposals.mock.calls.length;
+		await fireEvent.click(view.getByTestId('stub-group-background'));
+		await laisser();
+		rappel!();
+		await laisser();
+		expect(mockApi.getProposals).toHaveBeenCalledTimes(avant + 2);
+		const liste = { proposals: [ligne(1), ligne(2)], hasMore: false } satisfies GetProposalsResponse;
+		resoudre[1](liste);
+		await laisser();
+		rejeter[0]({ code: 'DATABASE_ERROR', message: 'x', status: 500 });
+		await vi.waitFor(() => expect(bilan(view)).toContain('2 opération(s) réussie(s).'));
+		mockApi.getProposals.mockResolvedValue(liste);
+		await fireEvent.click(view.getAllByTestId('manual-match-button')[0]);
+		await view.findByTestId('stub-modal-success');
+		await fireEvent.click(stub(view, 'stub-modal-close', 'manual'));
+		await laisser();
+		await laisser();
+		expect(mockApi.getProposals).toHaveBeenCalledTimes(avant + 2);
+	});
+
+	// Revue P2 (P2-3) — la fenêtre du groupe périmée consomme un règlement en attente : elle ouvre
+	// un nouveau bilan, au lieu d'ajouter au bilan d'un lot ancien.
+	it('fenêtre périmée qui consomme un règlement en attente : nouveau bilan, pas celui du lot d’avant', async () => {
+		const view = await monter();
+		const cases = view.getAllByTestId('tx-checkbox');
+		await fireEvent.click(cases[0]);
+		await fireEvent.click(cases[1]);
+		const accepte = (id: number) => ({
+			bankTransactionId: id,
+			invoiceId: 100 + id,
+			supplierInvoiceId: null,
+			journalEntryId: 9 + id,
+			score: { total: 1, amountScore: 1, referenceScore: 1, contactScore: 0 },
+		});
+		mockApi.acceptProposals.mockResolvedValue({
+			accepted: [accepte(1), accepte(2)],
+			failed: [],
+		} satisfies AcceptResponse);
+		await fireEvent.click(view.getByTestId('reconciliation-accept-btn'));
+		await vi.waitFor(() => expect(bilan(view)).toContain('2 opération(s) réussie(s).'));
+		await fireEvent.click(view.getAllByTestId('group-settlement-button')[0]);
+		await view.findByTestId('stub-modal-success');
+		await fireEvent.click(view.getByTestId('stub-group-background'));
+		await laisser();
+		await fireEvent.click(view.getByTestId('stub-group-close-then-stale'));
+		await vi.waitFor(() => expect(bilan(view)).toContain('1 opération(s) réussie(s).'));
 	});
 
 	// Reprise de la revue P1 (B4) — deux relectures en vol : la fin d'un envoi survit au démontage

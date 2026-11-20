@@ -680,6 +680,19 @@ const APPEL_LIEN_GROUPE: &str = "unlink_group_transaction_in_tx(";
 /// appelant. La ligne de définition (`fn unlink_group_transaction_in_tx(`) est
 /// écartée ; les tests et les commentaires aussi (copie masquée). Rend aussi
 /// l'ensemble des appelants vus (anti-muet).
+///
+/// **Angles morts assumés** (revue P2, P2-2 ; la fonction est privée à
+/// `grouped_settlements.rs`, ce qui borne le risque) :
+/// - (i) seul le jeton `unlink_group_transaction_in_tx(` est cherché : un appel
+///   avec turbofish (`…::<T>(`), une référence de fonction sans parenthèse
+///   (`.map(unlink_group_transaction_in_tx)`) ou un `use … as alias` ne sont pas
+///   vus ;
+/// - (ii) la garde est jugée par position textuelle dans le corps (un
+///   `ensure_open_in_tx(` placé avant l'appel), non par dominance : une garde
+///   dans une branche morte ou un `if` précédent la satisfait ;
+/// - (iii) la définition est écartée sur le texte qui précède le jeton
+///   (`ends_with("fn")`) : un appel écrit juste après le mot `fn` d'une autre
+///   construction le serait aussi.
 fn fautes_des_appelants_du_lien(
     sources: &[(String, String)],
     attendus: &[(&str, &str)],
@@ -801,6 +814,24 @@ fn the_group_unlink_caller_inventory_reports_each_fault_on_built_cases() {
              bank_accounts::ensure_open_in_tx("
         )],
         "garde après l'appel"
+    );
+    // Revue P2 (P2-2) — la garde seulement en commentaire et en chaîne : la copie
+    // masquée ne la voit pas, la faute est rendue (le mutant « source au lieu de
+    // masque » la verrait et resterait vert).
+    let garde_masquee = base.replacen(
+        "super::bank_accounts::ensure_open_in_tx(tx, c, b).await?;",
+        "// super::bank_accounts::ensure_open_in_tx(tx, c, b) en commentaire\n\
+         let _ = \"ensure_open_in_tx(\";",
+        1,
+    );
+    assert_ne!(garde_masquee, base, "montage du cas masqué");
+    assert_eq!(
+        jouer(garde_masquee),
+        vec![format!(
+            "{fichier}::cancel_in_tx : l'appel de l'aide de lien n'est précédé d'aucun \
+             bank_accounts::ensure_open_in_tx("
+        )],
+        "garde seulement en commentaire et en chaîne"
     );
     // Un bras classé qui n'appelle plus l'aide.
     let sans_appel = base.replacen("unlink_group_transaction_in_tx(tx, c, bt).await?;", "", 1);
