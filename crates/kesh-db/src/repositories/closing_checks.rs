@@ -470,6 +470,10 @@ const MAX_LISTED: usize = 20;
 const FISCAL_YEAR_SQL: &str = "SELECT id, company_id, name, start_date, end_date, status, multi_currency, opening_rate_kind, closing_rate_kind, created_at, updated_at \
      FROM fiscal_years WHERE id = ? AND company_id = ?";
 
+/// Une ligne de [`PENDING_SQL`] : compte bancaire, banque, description,
+/// prestataire (Story 38-11d), transactions en attente, dont rejetées.
+type PendingRow = (i64, String, Option<String>, Option<String>, i64, i64);
+
 /// K2 : transactions `pending` datées dans Y, par compte bancaire ; les
 /// rejetées par l'utilisateur (`auto_match_rejected_at`) comptées à part.
 const PENDING_SQL: &str = "SELECT bt.bank_account_id, ba.bank_name, ba.description, ba.provider, \
@@ -680,14 +684,13 @@ async fn pending_bank_transactions(
     company_id: i64,
     y: &FiscalYear,
 ) -> Result<ClosingCheck, DbError> {
-    let rows: Vec<(i64, String, Option<String>, Option<String>, i64, i64)> =
-        sqlx::query_as(PENDING_SQL)
-            .bind(company_id)
-            .bind(y.start_date)
-            .bind(y.end_date)
-            .fetch_all(&mut *conn)
-            .await
-            .map_err(map_db_error)?;
+    let rows: Vec<PendingRow> = sqlx::query_as(PENDING_SQL)
+        .bind(company_id)
+        .bind(y.start_date)
+        .bind(y.end_date)
+        .fetch_all(&mut *conn)
+        .await
+        .map_err(map_db_error)?;
     let accounts: Vec<PendingByAccount> = rows
         .into_iter()
         .map(
