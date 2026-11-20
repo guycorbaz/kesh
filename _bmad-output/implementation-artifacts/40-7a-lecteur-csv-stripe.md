@@ -35,7 +35,8 @@ lié —, afin que l'import (40-7b) n'ait plus qu'à ranger ces lignes dans le c
    décodage → `StripeCsvError::Encoding(CsvError)`. Lecture par le crate `csv` déjà en dépendance :
    `ReaderBuilder::new().has_headers(false)`, virgule, guillemets doubles, `flexible(false)` (une ligne qui n'a pas
    autant de cellules que l'en-tête → erreur de ligne `FIELD_COUNT`) ; **numéro de ligne** = celui du fichier
-   (`record.position().line()`, 1 = l'en-tête) ; lignes entièrement vides sautées. Fichier vide (`CsvError::EmptyFile`,
+   (`record.position().line()`, 1 = l'en-tête), sauf après une ligne vide au milieu du fichier (§ *Limite connue*, amendé
+   le 2026-11-20 après la revue P2) ; lignes entièrement vides sautées. Fichier vide (`CsvError::EmptyFile`,
    rendu en `Empty`) ou sans ligne de données → `StripeCsvError::Empty`. Taille : la borne est celle de la route (40-7b).
    **Type d'erreur fermé** : `StripeCsvError` = `Empty`, `Encoding(CsvError)`, `MissingColumns(Vec<String>)`,
    `DuplicateColumn(String)`, `Lines(Vec<StripeLineError>)` (AC-5), chacun avec un code stable (`STRIPE_CSV_EMPTY`,
@@ -227,13 +228,19 @@ M1 : `gross - fee` passé en `checked_sub` (un débordement est une erreur de li
 
 ### Gate de la remédiation (2026-11-20)
 
-`cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test -p kesh-import` (140 + 5 + 6 + 5 + 29 + 10 + 20 passés, dont `stripe_csv` 20/20 ; 1 ignoré) et `cargo publish --dry-run --allow-dirty -p kesh-import` (`--allow-dirty` : arbre non commité au moment du gate) verts ; journal `kesh-gate-logs/s40-7a/p1-remed2.log`. Mutation : `net != gross - fee` rétabli, `extreme_amounts_never_panic_on_the_net_check` rougit (panique « Subtraction overflowed » de `rust_decimal`) ; code restauré. Gate complet non rejoué (aucun code hors `kesh-import`).
+`cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test -p kesh-import` (140 + 5 + 6 + 5 + 29 + 10 + 20 passés, dont `stripe_csv` 20/20 ; 1 ignoré) et `cargo publish --dry-run --allow-dirty -p kesh-import` (`--allow-dirty` : arbre non commité au moment du gate) verts ; journal `kesh-gate-logs/s40-7a/p1-remed2.log`. Mutation : `net != gross - fee` rétabli, `extreme_amounts_never_panic_on_the_net_check` rougit (panique « Subtraction overflowed » de `rust_decimal`) ; code restauré. *(Annoté le 2026-11-20, revue P2 : cette mutation n'est pas au journal `p1-remed2.log` ; elle a été rejouée par la passe P2 sur une copie hors dépôt — M1 rétabli rougit, tri retiré rougit `several_line_errors_come_out_sorted_by_line`, restauration 20/20 — `kesh-gate-logs/s40-7a/revue-p2-rapport.md`.)* Gate complet non rejoué (aucun code hors `kesh-import`).
+
+### Remédiation de la revue P2 ciblée (2026-11-20, orchestrateur, fiche seulement)
+
+P2 ciblée (Haiku) sur `3bcaf532` : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 2 LOW (`kesh-gate-logs/s40-7a/revue-p2-rapport.md`). F1 (dette sans propriétaire nommé ni story planifiée) : propriétaire Beat, story `40-9-solde-dette` ajoutée au registre, issue à ouvrir. F2 (AC-1 contredite par le test de la ligne vide) : AC-1 amendée pour renvoyer à la limite, issue à ouvrir. F3 : plafond puis tri écrits. F4 : mutation annotée (rejouée par la P2). Aucune ligne de code touchée ; une passe ciblée P3 suit (règle de clôture).
 
 ## Limite connue : numéro de ligne après une ligne vide
 
-Le crate `csv` donne à un enregistrement qui suit une ligne vide au milieu du fichier le numéro de cette ligne vide : l'erreur est rapportée une ligne trop tôt par ligne vide précédente. Limite partagée avec PayPal et Wise (documentée dans `read_records`, `csv/by_name.rs`, branche `epic/39-wise`) ; le lecteur ne la contourne pas, sur décision du coordinateur. Tenue par le test ci-dessus ; les lignes vides de fin de fichier ne comptent pas.
+Le crate `csv` donne à un enregistrement qui suit une ligne vide au milieu du fichier le numéro de cette ligne vide : l'erreur est rapportée une ligne trop tôt par ligne vide précédente. Limite partagée avec PayPal et Wise (documentée dans `read_records`, `csv/by_name.rs`, branche `epic/39-wise`) ; le lecteur ne la contourne pas, sur décision du coordinateur. Tenue par le test ci-dessus ; les lignes vides de fin de fichier ne comptent pas. Issue à ouvrir avec l'accord de Beat (même liste que la dette ci-dessous), commune aux trois lecteurs ; le test `line_after_a_blank_line_takes_the_blank_line_number` fige ce comportement pour qu'une correction future se voie.
+
+Plafond des erreurs de ligne : la collecte garde les cent premières erreurs dans l'ordre de lecture, puis les trie par ligne (`stripe.rs`, `struct Errors`) — les erreurs rendues sont les premières lues, triées.
 
 ## Dette technique
 
-- **Boucle de lecture, collecte plafonnée des erreurs de ligne et troncature des valeurs, recopiées de `paypal.rs`** (`stripe.rs` : troncature de `StripeLineError::new`, `struct Errors`, décodage et lecture des enregistrements ; trois copies avec le lecteur Wise de la 39-11a). Propriétaire : Epic 38–40. Remédiation planifiée : extraction dans `kesh-import/src/csv/` une fois les trois lecteurs (PayPal, Wise 39-11a, Stripe) en place, dans la story de solde de l'Epic 40.
+- **Boucle de lecture, collecte plafonnée des erreurs de ligne et troncature des valeurs, recopiées de `paypal.rs`** (`stripe.rs` : troncature de `StripeLineError::new`, `struct Errors`, décodage et lecture des enregistrements ; trois copies avec le lecteur Wise de la 39-11a). Propriétaire : Beat (contributeur des Epics 38 à 40). Remédiation planifiée : story `40-9-solde-dette` (`backlog`, `sprint-status.yaml`), extraction dans `kesh-import/src/csv/` une fois les trois lecteurs (PayPal, Wise 39-11a, Stripe) en place ; issue à ouvrir avec l'accord de Beat (`kesh-gate-logs/epic-38-kiss/issues-a-ouvrir.md`).
 

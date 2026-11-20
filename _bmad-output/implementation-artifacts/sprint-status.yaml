@@ -1191,6 +1191,7 @@ development_status:
   40-7d-ecrans-manuel-stripe: ready-for-dev  # 2026-11-20, phase 1 KISS : écrans, manuel utilisateur, E2E
   40-8a-client-api-stripe: ready-for-dev  # 2026-11-20, phase 2 : client de l'API, clé restreinte KESH_STRIPE_<n>_KEY
   40-8b-telechargement-stripe: ready-for-dev  # 2026-11-20, phase 2 : téléchargement par période, reprise sur 429, KESH_STRIPE_PARALLEL (1 à 6)
+  40-9-solde-dette: backlog  # 2026-11-20, story de solde de l'Epic 40 (règle « une story de solde à la fin de chaque epic ») : extraction commune de la boucle de lecture, de la collecte plafonnée et de la troncature des lecteurs PayPal, Wise et Stripe dans kesh-import/src/csv/ (dette de la 40-7a, revue P1 M2) ; propriétaire Beat
 
   # 2026-11-17 — Release 0.19.0 (publiée le 2026-11-20, coupure le 2026-11-19 au soir ; coupure avancée au 2026-11-18, décision de Guy) : correction de la semaine, hors epic.
   v0190-correction: done  # #1162 ; release 0.19.0 ; sans migration, frontend seul (ContactPicker) ; fiche rédigée le 2026-11-17 (Sonnet 5.5), validée (8 passes) ; développée le 2026-11-17 (Opus 5.5) ; revue P1 à P3 terminée, décision D4 de Guy ; close le 2026-11-17 (gate-ci et E2E complet au commit 23ff6338d) ; peut glisser à la 0.20.0 (décision de Guy du 2026-11-17) ; scindée le 2026-11-17 : #1097 passe à v0190-nom-societe ; issue liée #1228
