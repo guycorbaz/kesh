@@ -1,6 +1,6 @@
 # Story 38-11b : réglages du compte PayPal et import du CSV, ventilé par devise (migration de l'epic)
 
-Status: drafted
+Status: ready-for-dev
 
 *Fiche rédigée le 2026-11-20, branche `epic/38-paypal`, numéros de ligne relevés après la fusion de `origin/main`
 (commit de fusion `43ceb541`), revérifiés à la validation P1 sur `origin/main` `fd04099f` (arbre `crates/` identique).

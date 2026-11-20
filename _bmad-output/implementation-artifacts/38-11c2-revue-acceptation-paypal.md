@@ -1,6 +1,6 @@
 # Story 38-11c2 : revue et acceptation PayPal — moteur commun aux prestataires, ventes rattachées, frais, règles, conversions, retraits, écarts
 
-Status: drafted
+Status: ready-for-dev
 
 *Fiche rédigée le 2026-11-20 sous la clé 38-11c (branche `epic/38-paypal`, numéros de ligne relevés après la fusion
 de `origin/main` `43ceb541`, revérifiés sur `origin/main` `fd04099f`), **découpée à la validation P3** (décision de

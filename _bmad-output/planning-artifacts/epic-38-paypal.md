@@ -184,7 +184,7 @@ Source : `kesh-gate-logs/epic-38-kiss/phase2-decisions.md`. Deux stories, après
   démarrage comme `KESH_SMTP_*` ; rien en base ni dans la sauvegarde, pas de coffre. Application PayPal à la seule
   fonction « Transaction Search ». Les clés d'API de Kesh, hachées, ne conviennent pas : le secret doit être relu.
 - **Même modèle, mêmes doublons, même rapprochement** : l'API se convertit en lignes de 38-11a, l'import de 38-11b les
-  ventile, 38-11c les rapproche sans changement ; doublons par identifiant de transaction, CSV et téléchargement
+  ventile, 38-11c1 et 38-11c2 les rapprochent sans changement ; doublons par identifiant de transaction, CSV et téléchargement
   mélangeables.
 - **Réserves** (relevé du 2026-11-20, détail à la fiche 38-12a) : 31 jours, 500 par page, trois heures de délai, trois
   ans d'historique **confirmés** ; 429 et `Retry-After`, flux OAuth, nom de la fonction de l'application, signe des
@@ -920,7 +920,7 @@ cadrage**.
 
 ### 38-4 — Critères neufs des règles d'affectation
 
-*(Reportée en phase 2 (2026-11-20), sauf ce que reprend 38-11c (critères e-mail exact et type PayPal, sens) — voir § *Phase 1 KISS*.)*
+*(Reportée en phase 2 (2026-11-20), sauf ce que reprend 38-11c2 (critères e-mail exact et type PayPal, sens) — voir § *Phase 1 KISS*.)*
 
 - *Intention* : une règle reconnaît une transaction de prestataire par courriel, **boutique (préfixe du numéro de
   facture, B24)**, nom d'article ou code d'événement, et se restreint par sens, devise et compte — pour proposer le bon
@@ -974,7 +974,7 @@ cadrage**.
 
 ### 38-6a — Propositions de prestataire : ventes, achats, frais
 
-*(Reportée en phase 2 (2026-11-20), sauf ce que reprend 38-11c (frais, achats par règle ; aucune écriture de vente) — voir § *Phase 1 KISS*.)*
+*(Reportée en phase 2 (2026-11-20), sauf ce que reprend 38-11c2 (frais, achats par règle ; aucune écriture de vente) — voir § *Phase 1 KISS*.)*
 
 - *Intention* : chaque vente ou achat téléchargé reçoit une proposition complète, acceptée en lot.
 - *Périmètre* : E15 ; constructeur pur multi-lignes dans `kesh-reconciliation` (à côté de `manual.rs:68`, qui reste
@@ -1000,7 +1000,7 @@ cadrage**.
 
 ### 38-6b — Conversions, retraits, remboursements, litiges ; file « à examiner »
 
-*(Reportée en phase 2 (2026-11-20), sauf ce que reprend 38-11c (conversions au même CHF, retraits, « à examiner ») — voir § *Phase 1 KISS*.)*
+*(Reportée en phase 2 (2026-11-20), sauf ce que reprend 38-11c2 (conversions au même CHF, retraits, « à examiner ») — voir § *Phase 1 KISS*.)*
 
 - *Intention* : les mouvements qui ne sont ni vente ni achat se proposent juste, ou attendent un humain.
 - *Périmètre* : E16 ; paire de conversion vers `POST /journal-entries/conversions` (A31) ; rattachement des retraits
@@ -1022,7 +1022,7 @@ cadrage**.
 
 ### 38-6c — Rattachement aux écritures existantes ; API des scripts externes (B17, B21)
 
-*(Reportée en phase 2 (2026-11-20), sauf ce que reprend 38-11c (rattachement en devise, un par un ; ni lot ni groupe) — voir § *Phase 1 KISS*.)*
+*(Reportée en phase 2 (2026-11-20), sauf ce que reprend 38-11c1 (rattachement en devise, un par un ; ni lot ni groupe) — voir § *Phase 1 KISS*.)*
 
 *Découpée le 2026-11-15 (D-P2-3) en **38-6c1** (rattachement en devise, suggestions, lot, recherche, API des scripts,
 exercice clos ; aucune migration) et **38-6c2** (groupe d'écritures B28, table `bank_transaction_extra_entries`,

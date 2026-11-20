@@ -1,6 +1,6 @@
 # Story 38-11a : lecteur du CSV PayPal « Balance affecting transactions » (`kesh-import`)
 
-Status: drafted
+Status: ready-for-dev
 
 *Fiche rédigée le 2026-11-20, branche `epic/38-paypal`, numéros de ligne relevés après la fusion de `origin/main`
 (v0.19.0 et suivants, commit de fusion `43ceb541`). Epic 38, **phase 1 KISS** (décision de Beat du 2026-11-20,

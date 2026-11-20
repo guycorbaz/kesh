@@ -1,6 +1,6 @@
 # Story 38-11c1 : rattachement en devise, autre côté à deux branches, filtres et sens des règles
 
-Status: drafted
+Status: ready-for-dev
 
 *Fiche née le 2026-11-20 du découpage de l'ancienne 38-11c (validation P3, décision de l'orchestrateur, proposée à la
 validation P1), branche `epic/38-paypal`, numéros de ligne relevés sur `origin/main` `fd04099f`. Epic 38, **phase 1

@@ -1,6 +1,6 @@
 # Story 38-11d : écrans PayPal, manuel utilisateur, API externe, E2E
 
-Status: drafted
+Status: ready-for-dev
 
 *Fiche rédigée le 2026-11-20, branche `epic/38-paypal`, après la fusion de `origin/main` (commit `43ceb541`). Epic
 38, **phase 1 KISS** (décision de Beat du 2026-11-20). **Dépend de** : 38-11b, 38-11c1 (rattachement en devise, filtres), 38-11c2 (routes de revue et d'acceptation). Reprend, réduits,
