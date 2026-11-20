@@ -1180,8 +1180,8 @@ development_status:
   40-7b-compte-stripe-et-import: ready-for-dev  # 2026-11-20, phase 1 KISS : réglages Stripe (frais, compte de versement), import ventilé par devise ; migration 20261120000003_stripe_import, non breaking
   40-7c-rapprochement-stripe: ready-for-dev  # 2026-11-20, phase 1 KISS : revue et acceptation (moteur de 38-11c) — charges → ventes proposées, frais et versements proposés, écarts ; validation P2 : rattachement d'office retiré (décision de l'orchestrateur), non découpée
   40-7d-ecrans-manuel-stripe: ready-for-dev  # 2026-11-20, phase 1 KISS : écrans, manuel utilisateur, E2E
-  40-8a-client-api-stripe: drafted  # 2026-11-20, phase 2 : client de l'API, clé restreinte KESH_STRIPE_<n>_KEY
-  40-8b-telechargement-stripe: drafted  # 2026-11-20, phase 2 : téléchargement par période, reprise sur 429, KESH_STRIPE_PARALLEL (1 à 6)
+  40-8a-client-api-stripe: ready-for-dev  # 2026-11-20, phase 2 : client de l'API, clé restreinte KESH_STRIPE_<n>_KEY
+  40-8b-telechargement-stripe: ready-for-dev  # 2026-11-20, phase 2 : téléchargement par période, reprise sur 429, KESH_STRIPE_PARALLEL (1 à 6)
 
   # 2026-11-17 — Release 0.19.0 (publiée le 2026-11-20, coupure le 2026-11-19 au soir ; coupure avancée au 2026-11-18, décision de Guy) : correction de la semaine, hors epic.
   v0190-correction: done  # #1162 ; release 0.19.0 ; sans migration, frontend seul (ContactPicker) ; fiche rédigée le 2026-11-17 (Sonnet 5.5), validée (8 passes) ; développée le 2026-11-17 (Opus 5.5) ; revue P1 à P3 terminée, décision D4 de Guy ; close le 2026-11-17 (gate-ci et E2E complet au commit 23ff6338d) ; peut glisser à la 0.20.0 (décision de Guy du 2026-11-17) ; scindée le 2026-11-17 : #1097 passe à v0190-nom-societe ; issue liée #1228

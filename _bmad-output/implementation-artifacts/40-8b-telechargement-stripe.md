@@ -1,6 +1,6 @@
 # Story 40-8b : téléchargement Stripe par période — route, tâche, écran, manuels
 
-Status: drafted
+Status: ready-for-dev
 
 *Fiche rédigée le 2026-11-20, branche `epic/40-stripe`, chemins relevés sur `origin/main` au commit `fd04099f`. Epic 40,
 **phase 2** (décision de Beat du 2026-11-20). **Dépend de** : 40-8a (client), 40-7b (import CSV), du **cœur commun `ProviderLine`** (`provider_imports.rs`) extrait par 38-12a — ou par 40-7b s'il passe

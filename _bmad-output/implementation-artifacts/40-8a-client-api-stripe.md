@@ -1,6 +1,6 @@
 # Story 40-8a : client de l'API Stripe — clé restreinte en variable d'environnement, versements et transactions de solde
 
-Status: drafted
+Status: ready-for-dev
 
 *Fiche rédigée le 2026-11-20, branche `epic/40-stripe`, numéros de ligne relevés sur `origin/main` au commit `fd04099f`.
 Epic 40, **phase 2** (décision de Beat du 2026-11-20, § *Phase 2* du fichier d'epic). **Dépend de** : la phase 1 (40-7a à
