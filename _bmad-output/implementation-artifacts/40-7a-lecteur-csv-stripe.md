@@ -1,6 +1,6 @@
 # Story 40-7a : lecteur du CSV Stripe « Itemized payout reconciliation » (`kesh-import`)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-20, branche `epic/40-stripe`, numéros de ligne relevés sur `origin/main` au commit `fd04099f`
 (repris dans la branche par la fusion `7dcb54ab`). Epic 40, **phase 1 KISS** (décision de Beat du 2026-11-20, § *Phase 1
@@ -244,3 +244,15 @@ Plafond des erreurs de ligne : la collecte garde les cent premières erreurs **d
 
 - **Boucle de lecture, collecte plafonnée des erreurs de ligne et troncature des valeurs, recopiées de `paypal.rs`** (`stripe.rs` : troncature de `StripeLineError::new`, `struct Errors`, décodage et lecture des enregistrements ; trois copies avec le lecteur Wise de la 39-11a). Propriétaire : Beat (contributeur des Epics 38 à 40). Remédiation planifiée : story `40-9-solde-dette` (`backlog`, `sprint-status.yaml`), extraction dans `kesh-import/src/csv/` une fois les trois lecteurs (PayPal, Wise 39-11a, Stripe) en place ; issue à ouvrir avec l'accord de Beat (`kesh-gate-logs/epic-38-kiss/issues-a-ouvrir.md`).
 
+
+
+### Clôture (2026-11-20, orchestrateur)
+
+Gate backend complet au dernier commit de code (`3bcaf532` ; HEAD `548f2f39`, fiches seules) : `scripts/test-fast.sh --ci`,
+**6244 passés, 14 ignorés**, 862 s, cible propre `kesh-targets/kesh-wt40`, base `kesh_s407a` sur `kesh-mariadb-dev6`
+(place 4 de `heavy.sh`) ; un test instable rejoué vert au second essai, sans rapport avec la story
+(`admin_auto_backup_e2e::disque_sature_pendant_l_ecriture`, déjà vu instable au gate de la 39-11a) ; journal
+`kesh-gate-logs/s40-7a/gate-final.log`. Boucle de revue : P1 Opus (0/0/2 MEDIUM/6 LOW) → P2 ciblée Haiku (0/0/2/2)
+→ P3 ciblée Sonnet (0/0/1/2) → P4 ciblée Haiku (0/0/1/4 ; le MEDIUM levé par décision de Beat sur la taille de l'epic)
+→ P5 ciblée Sonnet (0/0/0/0). Reste en issue à ouvrir : la limite du numéro de ligne après une ligne vide (commune
+aux trois lecteurs) et la dette 40-9.
