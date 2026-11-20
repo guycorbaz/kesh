@@ -177,8 +177,8 @@ Source : `kesh-gate-logs/epic-38-kiss/phase2-decisions.md`. Deux stories, après
 
 | Clé | Objet | Modules | Dépend de | Migration |
 |---|---|---|---|---|
-| `38-12a` | identifiants par variables d'environnement, client de l'API (jeton, fenêtres de 31 jours, pages de 500, reprise sur 429, parallélisme), conversion vers `PaypalRow`, tâche et routes | `kesh-import`, `kesh-api`, `kesh-i18n` | 38-11a à 38-11c | non |
-| `38-12b` | bouton, période, progression, manuels (administration, utilisateur), `api-external.md`, E2E | `frontend`, `kesh-i18n`, manuels et docs | 38-12a, 38-11d | non |
+| `38-12a` | identifiants par variables d'environnement, client de l'API (jeton, fenêtres de 30 jours de Zurich sous la limite de 31 jours, pages de 500, reprise sur 429, parallélisme), conversion vers `PaypalRow`, tâche et routes | `kesh-import`, `kesh-api`, `kesh-i18n` | 38-11a, 38-11b, 38-11c1, 38-11c2 | non |
+| `38-12b` | bouton sur la page PayPal de 38-11d, période, progression, manuels (administration, utilisateur), `api-external.md`, E2E | `frontend`, `kesh-i18n`, manuels et docs | 38-12a, 38-11d | non |
 
 - **Identifiants** : `KESH_PAYPAL_<n>_ACCOUNT` (libellé du compte PayPal de 38-11b), `_CLIENT_ID`, `_SECRET`, validés au
   démarrage comme `KESH_SMTP_*` ; rien en base ni dans la sauvegarde, pas de coffre. Application PayPal à la seule
@@ -186,11 +186,16 @@ Source : `kesh-gate-logs/epic-38-kiss/phase2-decisions.md`. Deux stories, après
 - **Même modèle, mêmes doublons, même rapprochement** : l'API se convertit en lignes de 38-11a, l'import de 38-11b les
   ventile, 38-11c1 et 38-11c2 les rapprochent sans changement ; doublons par identifiant de transaction, CSV et téléchargement
   mélangeables.
-- **Réserves** (relevé du 2026-11-20, détail à la fiche 38-12a) : 31 jours, 500 par page, trois heures de délai, trois
-  ans d'historique **confirmés** ; 429 et `Retry-After`, flux OAuth, nom de la fonction de l'application, signe des
-  frais, libellés de type du CSV pour chaque code `T…` **non confirmés**.
+- **Réserves** (relevé du 2026-11-20, complété à la validation P1 de la phase 2 ; détail à la fiche 38-12a) : 31
+  jours, 500 par page, trois heures de délai, trois ans d'historique, flux OAuth, 429 `RATE_LIMIT_REACHED`, fuseau du
+  compte pour les dates **confirmés** ; `Retry-After`, hôte réel, nom de la fonction de l'application, signe des frais,
+  `payer_info` d'un débit, libellés de type du CSV pour chaque code `T…` **non confirmés** — vérifiés au développement
+  par quelques appels réels en lecture seule (`kesh-gate-logs/appel-reel.sh`, autorisation de Beat du 2026-11-20), jamais
+  en test ni en CI. Les libellés des types sont tenus par ceux que lit la phase 1 (`classify` de 38-11c2,
+  `PAYPAL_NEUTRAL_PAIR_TYPES` de 38-11b), test de couverture à l'appui.
 - **Plus tard encore** : téléchargement périodique (automatisme), story à part. Fichiers communs : ceux de 38-11b à
-  38-11d, plus `config.rs` et `lib.rs` de `kesh-api`.
+  38-11d, plus `config.rs` et `lib.rs` de `kesh-api`, `crates/kesh-import/src/paypal.rs` (contrôles partagés),
+  `audit_route_registry.rs` et la phrase du registre du manuel d'administration (comptes recomptés).
 
 ## Modules touchés
 
