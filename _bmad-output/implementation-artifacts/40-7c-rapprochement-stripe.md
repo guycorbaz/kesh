@@ -5,7 +5,7 @@ Status: ready-for-dev
 *Fiche rédigée le 2026-11-20, branche `epic/40-stripe`, numéros de ligne relevés sur `origin/main` au commit `fd04099f`.
 Epic 40, **phase 1 KISS** (décision de Beat du 2026-11-20). **Dépend de** : 40-7b (transactions Stripe importées,
 paramètres, compte de versement) ; **38-11c** (revue et acceptation PayPal : rattachement en devise — conditions 1 et 3
-de la règle —, `build_review`, moteur d'acceptation, proposition `link_sale` exécutée par `link_entry_in_tx`, écriture de
+de la règle —, `build_review`, moteur d'acceptation, proposition générique `link_entry` exécutée par `link_entry_in_tx`, écriture de
 la proposition `fee`, `mark_reconciled_in_tx`, `with_account_locks` de 38-11b, enveloppe de rejeu) ; **39-11c** (le
 même moteur **paramétré par le prestataire**, et la réception d'un versement Stripe proposée côté Wise, 39-11c AC-4) ;
 Epic 37 (lignes en devise, cours mensuel retenu). **Suivie par** : 40-7d (écrans). Relue à la validation P2 contre les
@@ -43,20 +43,20 @@ ressaisie et de voir mes erreurs.
    (T0, au Change Log). Réponses de la forme de 38-11c (`{ account, fiscalYearId, proposals, gaps, toReview, counts }` ;
    `{ accepted, failed }`), montants en chaînes décimales, champs en camelCase. La revue porte sur les transactions
    **pending** des comptes bancaires `provider = 'stripe'` du libellé, datées dans l'exercice ; refus 404 compte
-   introuvable (code de 40-7b AC-4), 404 `FISCAL_YEAR_NOT_FOUND`. **Rattachement en devise** : celui de 38-11c AC-1
+   introuvable (code de 40-7b AC-4), 404 `FISCAL_YEAR_NOT_FOUND`. **Rattachement en devise** : celui de 38-11c1 AC-1
    (conditions 1 et 3), **utilisé, non refait**, testé ici sur un compte Stripe EUR. **La condition 4 (autre côté d'un
    virement) n'est pas touchée par cette story** : la revue Stripe ne rattache aucune réception (AC-5) ; le prédicat
    de l'autre côté (`other_side_predicate`, `reconciliation_link.rs:698`) s'écrit en **un texte unique à deux
-   branches**, **attribué à la 38-11c** par 39-11c AC-3 (relevé de la P2 de l'Epic 39) — ⚠️ la fiche 38-11c (P2, `f022700f`) ne le reprend pas (aucune occurrence d'`other_side_predicate`) : à défaut c'est 39-11c qui l'écrit (son repli), 40-7c en dernier recours, à vérifier à T0 : `(bt.bank_account_id <> ? AND
+   branches**, **attribué à la 38-11c** par 39-11c AC-3 (relevé de la P2 de l'Epic 39) — ⚠️ **porté par 38-11c1 AC-1b**, au même texte (phase 1 de l'Epic 38 validée P3, 2026-11-20), que cette story **réutilise** sans l'écrire ; texte, pour mémoire : `(bt.bank_account_id <> ? AND
    ((bt.currency = ? AND bt.amount = -(M)) OR (bt.currency <> ? AND SIGN(bt.amount) = -SIGN(M))) AND exclusions)` —
    même devise : montant opposé exact (virement, versement Stripe) ; devise différente : signe opposé (les deux côtés
    d'une conversion) —, la devise de `t` en **paramètre commun** (devise du compte du plan, comme `t.bank_account_id`).
    ⛔ **Aucun `AND bt.currency = …` isolé** : il contredirait la branche de conversion. 40-7c ne l'écrit pas ; elle en
    teste le cas Stripe (réception Wise EUR rattachée à l'écriture d'un versement EUR ; une transaction CHF de même
-   nombre refusée, puisqu'elle n'est ni de même devise ni de signe opposé) ; si, à T0, ni 38-11c ni 39-11c ne l'ont
-   écrit, 40-7c écrit **ce même texte à deux branches**, tests des deux branches compris. Les autres gestes de la réconciliation restent en CHF (refus `RECONCILIATION_CURRENCY_MISMATCH`,
+   nombre refusée, puisqu'elle n'est ni de même devise ni de signe opposé) ; si, à T0, ni 38-11c1 ni 39-11c ne l'ont
+   écrit (Epic 38 pas encore dans `main`), 40-7c écrit **ce même texte à deux branches**, tests des deux branches compris. Les autres gestes de la réconciliation restent en CHF (refus `RECONCILIATION_CURRENCY_MISMATCH`,
    `crates/kesh-api/src/routes/reconciliation.rs:4387-4396`, inchangé) : limite écrite au manuel par 40-7d.
-2. **AC-2 — Charge → vente : une proposition `link_sale`.** Classement (fonction pure neuve,
+2. **AC-2 — Charge → vente : une proposition `link_entry`.** Classement (fonction pure neuve,
    `crates/kesh-reconciliation/src/stripe.rs`, `classify(tx) -> StripeKind`, sur `provider_type`, le signe et le
    suffixe `:FEE` de `transaction_id`, constante de 38-11b) : `Fee` (suffixe `:FEE`, quel que soit le signe ; ou
    catégorie `fee`) ; `Charge` (catégorie `charge`, montant > 0) ; `Payout` (`payout`) ; `Other` (le reste :
@@ -70,14 +70,14 @@ ressaisie et de voir mes erreurs.
    transaction (`transaction_id` pour PayPal, `reference` pour Stripe) ; une requête, la recherche en Rust, jamais un
    `LIKE` par transaction. La décision est **celle de `build_review`** (38-11c AC-5, encaissement) : exactement une
    écriture, sur le compte du plan **du même compte bancaire**, mouvement en devise = brut, non rattachée → proposition
-   **`link_sale { bankTransactionId, journalEntryId }`** ; aucune → écart `receipt_without_sale` ; une, mais sur un autre
+   **`link_entry { bankTransactionId, journalEntryId }`** ; aucune → écart `receipt_without_sale` ; une, mais sur un autre
    compte (devise différente), de mouvement différent ou déjà rattachée → écart `amount_or_currency_mismatch` ;
    plusieurs → « à examiner » `ambiguous_sale` ; écriture de vente non rattachée dont aucun jeton n'est l'identifiant
    d'une transaction (pending ou rapprochée) de ces comptes bancaires → écart `sale_without_receipt` — **les codes de
    38-11c**, aucun code jumeau (l'écran les libelle « charge sans vente », « vente sans charge » pour Stripe, 40-7d).
    ⚠️ **Rien n'est rattaché d'office** (`CLAUDE.md`, « Un appariement automatique propose, il ne crée jamais » ;
    décision de l'orchestrateur du 2026-11-20, validation P2) : le rattachement n'a lieu qu'à l'acceptation (AC-6),
-   comme le `link_sale` de 38-11c ; « Tout cocher » puis « Accepter la sélection » (40-7d) en fait un geste.
+   comme le `link_entry` de 38-11c2 ; « Tout cocher » puis « Accepter la sélection » (40-7d) en fait un geste.
 3. **AC-3 — Frais : une proposition `fee`.** Pour une transaction `Fee` : compte de frais réglé (40-7b) → proposition
    **`fee { bankTransactionId, feeAccountId }`** de 38-11c ; sinon « à examiner » `fee_account_missing` (code de 38-11c).
    À l'acceptation, **l'écriture de la proposition `fee` de 38-11c AC-8**, inchangée : journal Banque,
@@ -111,7 +111,7 @@ ressaisie et de voir mes erreurs.
      reprend pas. À l'acceptation : le compte de versement se lit depuis les paramètres du compte Stripe **avant les
      verrous** avec les comptes des propositions, et **son compte bancaire entre dans l'ensemble verrouillé**
      (`with_account_locks`, identifiants croissants) ; **relu sous verrou** (le client ne le désigne pas ; changé
-     depuis la lecture ou la revue, ou archivé → `failed[]` `PROVIDER_PROPOSAL_STALE`, ou le code périmé de 38-11c ;
+     depuis la lecture ou la revue, ou archivé → `failed[]` `PROVIDER_PROPOSAL_STALE` (38-11c2) ;
      clos → `BankAccountClosed` en `failed[]`, par `ensure_open_in_tx`, comme `link_entry_in_tx`) ; contrôles de la
      contrepartie : ceux de la proposition `fee` **adaptés** — compte du plan du compte de versement actif, imputable,
      de la devise du transit, de type actif (le contrôle « compte de charge » du compte de frais ne s'y applique pas),
@@ -137,13 +137,13 @@ ressaisie et de voir mes erreurs.
    attente ; aucune des deux revues n'écrit pour la réception.
    « À examiner » `refund` et `other_category` (`details: { category }`) pour les transactions `Other` ; leur part de
    frais suit l'AC-3. L'utilisateur passe l'écriture à la main (en devise, 37-3b) puis la rattache (en devise, AC-1).
-6. **AC-6 — Acceptation.** `POST /api/v1/stripe/accept`, corps `{ account, proposals: [ {type, …} ] }` (`link_sale`,
+6. **AC-6 — Acceptation.** `POST /api/v1/stripe/accept`, corps `{ account, proposals: [ {type, …} ] }` (`link_entry`,
    `fee`, `payout`), par **le moteur d'acceptation de 38-11c AC-7** : comptes bancaires lus avant les verrous,
    `with_account_locks` (38-11b), une transaction de base, un point de sauvegarde par proposition, chaque proposition
    **rejugée** sous verrou (transaction encore pending, même genre, même écriture, mêmes paramètres ; sinon `failed[]`
    périmé), *Pattern batch* (`CLAUDE.md`) : 400 global seulement pour un corps mal formé, vide, de plus de
    `MAX_IN_CLAUSE_IDS` (`repositories/reconciliation.rs:1121`) propositions ou portant deux fois la même transaction ;
-   tout le reste → `failed[]` (`FailedProposal`, `routes/reconciliation.rs:576`), HTTP 200. `link_sale` →
+   tout le reste → `failed[]` (`FailedProposal`, `routes/reconciliation.rs:576`), HTTP 200. `link_entry` →
    `reconciliation_link::link_entry_in_tx` (`:1156`), ses refus (`LinkRefusal`) sous leurs codes. **Registre des routes
    auditées** (`crates/kesh-api/tests/audit_route_registry.rs:440`) : `("post", "stripe::accept_proposals", Traced,
    Rejouee)` (nom du module au choix de la reprise, aligné sur celui de PayPal et de Wise ; **jamais `post_accept`** : l’exemption `RETRY_WITH_AUTORISE` ne regarde que le nom de la fonction, angle mort (d) de `audit_route_registry.rs:376-378`, et une `fn post_accept` appelant `retry_with` ne ferait pas rougir le test), handler sous
@@ -154,7 +154,7 @@ ressaisie et de voir mes erreurs.
    compte de `the_registry_partition_is_what_the_story_declares` (`:1082`) relevé de un, phrase et somme du manuel
    d'administration (`.tex`, `le_manuel_dit_le_compte_du_registre`, `:1194`), **recomptés** depuis la source après la
    fusion des Epics 38 et 39. Le `GET` n'écrit rien (hors du balayage du registre). Trace par proposition acceptée (la
-   trace de 38-11c, généralisée par 39-11c, ou `stripe.proposal_accepted`), sous l'acteur
+   trace générique `provider.proposal_accepted` de 38-11c2), sous l'acteur
    (`NewAuditLogEntry::for_actor`), inscrite à `audit_acteur_garde.rs` ; traces des écritures (`journal_entries::
    create_in_tx`) et des rattachements comme en 38-11c. **L'import (40-7b) n'appelle pas la revue** : l'écran importe,
    puis recharge la revue (40-7d) ; un script d'API fait de même. Un second appel de la revue après acceptation ne
@@ -224,8 +224,7 @@ rattachée.
   écriture en devise de l'Epic 37. Le transit d'un versement peut donc garder un petit écart en CHF (vente passée au cours
   du jour de la boutique, frais et versement au cours du mois) : la réévaluation de fin d'exercice (37-5) le traite.
 - **Taille (validation P2)** : le découpage 40-7c1 / 40-7c2 écrit en P1 n'est **pas appliqué** — la fiche ne porte plus
-  ni la condition 4 de la règle, ni la proposition de réception, ni de moteur propre (revue et acceptation de 38-11c,
-  généralisées par 39-11c) ; il reste le classement, trois lectures, deux gestionnaires minces et la proposition
+  ni la condition 4 de la règle, ni la proposition de réception, ni de moteur propre (revue et acceptation de 38-11c2, génériques) ; il reste le classement, trois lectures, deux gestionnaires minces et la proposition
   `payout`. **Si, à T0, le moteur de 38-11c n'est pas paramétré par le prestataire** (39-11c non développée), la
   généralisation est le morceau à détacher, en fiche `40-7c0`, avant cette fiche.
 - Date de l'écriture du versement : la date du versement du rapport (`automatic_payout_effective_at`), que Stripe donne
@@ -286,3 +285,4 @@ rattachée.
   second versement proposé) → limite écrite. Contrôles de contrepartie de `fee` à relever à T0 pour le compte de
   versement (actif, non de charge).
 - 2026-11-20 — validation P4 ciblée (Claude Haiku 5.5, contexte frais ; une lentille : le seul commit `bb40b420`, contre `origin/main` et les fiches sœurs) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 0 LOW, remédiés (rapport `kesh-gate-logs/epic-39-40-kiss/validation/40-7-P4-ciblee.md`). MEDIUM : l'exemption `RETRY_WITH_AUTORISE` désigne le handler par son seul nom (angle mort (d) de `audit_route_registry.rs:376-378`) ; le handler `stripe::post_accept` est renommé `stripe::accept_proposals` dans le registre (AC-6), avec la consigne de ne jamais nommer un handler de cette fiche `post_accept`. Les autres points de la P3 ciblée sont relus sans écart.
+- 2026-11-20 — alignement sur la phase 1 de l'Epic 38 (Claude Sonnet 5.5, contexte frais ; fiches 38-11c1, 38-11c2, 38-11d et rapport de validation P3 de `28623871` lus) : `link_sale` → `link_entry` (AC-2, AC-6 et renvois) ; AC-1 : le prédicat de l'autre côté est porté par 38-11c1 AC-1b au même texte, la mention « 38-11c ne le reprend pas » est retirée, repli conservé seulement si l'Epic 38 arrive après ; rattachement en devise = 38-11c1 AC-1 ; code périmé `PROVIDER_PROPOSAL_STALE`, trace `provider.proposal_accepted` ; moteur de 38-11c2 générique. Rapport `kesh-gate-logs/epic-39-40-kiss/validation/alignement-38-P3.md`.

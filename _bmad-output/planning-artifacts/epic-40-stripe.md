@@ -50,7 +50,7 @@ réception Wise ou bancaire de l'autre — d'où « jamais compté deux fois ».
 |---|---|---|---|---|
 | **40-7a** | lecteur du CSV « Itemized payout reconciliation » (colonnes par noms, `source_id` exigé, montants en forme fermée, net = brut − frais) ; aide d'en-tête commune `csv/by_name.rs` | `kesh-import` | 38-11a | — |
 | **40-7b** | réglages Stripe d'un compte bancaire (compte de frais, **compte de versement**), import ventilé par devise, versements, doublons ; **appelle** le cœur d'import commun de 38-11b / 39-11b | `kesh-db`, `kesh-api`, `kesh-import` (lecture), `kesh-i18n` | 40-7a, 38-11b, 39-11b | **une**, non breaking (une colonne) |
-| **40-7c** | revue et acceptation (moteur de 38-11c paramétré, comme Wise) : charge → vente proposée (identifiant + brut + devise), frais et versements proposés, écarts (versement sans réception compris) ; le rattachement en devise est celui de 38-11c, l'autre côté en devise celui de 39-11c | `kesh-db`, `kesh-reconciliation`, `kesh-api`, `kesh-i18n` | 40-7b, 38-11c, 39-11c | — |
+| **40-7c** | revue et acceptation (moteur de 38-11c2 paramétré, comme Wise) : charge → vente proposée (identifiant + brut + devise), frais et versements proposés, écarts (versement sans réception compris) ; le rattachement en devise et l'autre côté en devise sont ceux de 38-11c1 (AC-1, AC-1b) | `kesh-db`, `kesh-reconciliation`, `kesh-api`, `kesh-i18n` | 40-7b, 38-11c1, 38-11c2 | — |
 | **40-7d** | page Stripe sur le composant de PayPal généralisé (import, propositions acceptées en lot, écarts), paramètres du compte, `withoutProviders`, manuel utilisateur, `api-external.md`, E2E, captures | `frontend`, `kesh-i18n`, `docs/manual`, `docs/api-external.md` | 40-7b, 40-7c, 38-11d (39-11b pour l'E2E) | — |
 
 **Migration (phase 1)** : `20261120000003_stripe_import` (40-7b) — **une seule instruction** : `bank_accounts.payout_bank_account_id`
@@ -62,7 +62,7 @@ sauvegarde d'avant la mise à jour reste exigée. Rien d'autre : les colonnes de
 la liste `ABSENCES_ADMISES_EPIC_37` n'est pas touchée (propre à l'Epic 37).
 
 **Décisions de l'orchestrateur (2026-11-20), appliquées aux fiches** : (1) migration réduite à `payout_bank_account_id` ;
-(2) rattachement en devise porté par 38-11c, 40-7c le réutilise ; (3) conversions : règle commune — un côté CHF, une
+(2) rattachement en devise porté par 38-11c1, 40-7c le réutilise ; (3) conversions : règle commune — un côté CHF, une
 écriture ; deux devises étrangères, deux écritures au même CHF par le compte de conversion (sans objet pour Stripe en
 phase 1 : un compte de versement est de même devise) ; (4) « sans conversion automatique » = montants en devise d'origine,
 CHF au cours mensuel retenu (Epic 37) ; (5) le versement est un virement entre deux comptes propres (34-11b), rattaché à
@@ -71,7 +71,7 @@ le rapprochement sont des routes distinctes (`stripe-imports` ; `stripe/review` 
 recharge la revue après l'import ; la route d'acceptation écrit au journal, donc `Traced, Rejouee` au registre ; la page Stripe est à côté de la page PayPal
 (`reconciliation/stripe/`) ; un versement qui porte un `payout_reversal` reste « à examiner ». **Décision de
 l'orchestrateur (validation P2, 2026-11-20)** : une charge n'est **pas** rattachée d'office à la vente — c'est une
-proposition acceptée par l'utilisateur, en lot possible, comme le `link_sale` de 38-11c (`CLAUDE.md`, « un
+proposition acceptée par l'utilisateur, en lot possible, comme le `link_entry` de 38-11c2 (`CLAUDE.md`, « un
 appariement automatique propose, il ne crée jamais ») ; d'où, pour la simplicité, la revue et l'acceptation de 38-11c
 pour tout le rapprochement Stripe (frais et versements proposés aussi, acceptés d'un geste « Tout cocher », 40-7c).
 
@@ -109,10 +109,9 @@ transaction du versement dans `?payout=` ; `Stripe-Version` à épingler ; table
 - **C-40-K3 — Rattachement en devise.** Aujourd'hui, le rattachement d'une transaction à une écriture existante ne vaut
   qu'en CHF (`transaction_can_be_linked_to_entry`, `crates/kesh-db/src/repositories/reconciliation_link.rs:535-537`), et
   les gestes de la réconciliation refusent une transaction en devise (`RECONCILIATION_CURRENCY_MISMATCH`,
-  `routes/reconciliation.rs:4387`). PayPal (EUR, USD) et Stripe en ont besoin tous deux : **tenu** pour les conditions 1 et 3 par 38-11c AC-1. La
+  `routes/reconciliation.rs:4387`). PayPal (EUR, USD) et Stripe en ont besoin tous deux : **tenu** pour les conditions 1 et 3 par 38-11c1 AC-1. La
   condition 4 (`other_side_predicate`) s'écrit en un texte unique à deux branches — même devise : montant opposé ;
-  devise différente : signe opposé —, devise de `t` en paramètre commun, **attribué à la 38-11c** (39-11c AC-3, P2 de
-  l'Epic 39 ; la fiche 38-11c ne le reprend pas à `f022700f` : à défaut 39-11c, puis 40-7c, validation P3) ; aucun `AND bt.currency = …` isolé. 40-7c ne l'écrit pas, elle teste le cas Stripe et ne l'écrit qu'à
+  devise différente : signe opposé —, devise de `t` en paramètre commun, **porté par 38-11c1 AC-1b** (même texte ; phase 1 de l'Epic 38 validée P3, `28623871` ; repli 39-11c, puis 40-7c, seulement si l'Epic 38 arrive après) ; aucun `AND bt.currency = …` isolé. 40-7c ne l'écrit pas, elle teste le cas Stripe et ne l'écrit qu'à
   défaut, dans ce même texte (validation P2).
 - **C-40-K4 — Recherche d'une vente par identifiant au libellé** : une fonction, paramétrée par le motif du jeton
   (`TXN <id>` pour PayPal, `ch_…`/`py_…` pour Stripe), partagée avec 38-11c : **la lecture des écritures de vente** (une
@@ -137,7 +136,7 @@ transaction du versement dans `?payout=` ; `Stripe-Version` à épingler ; table
 - **Q-40-K4 — Date de l'écriture du versement** : la date du versement du rapport (`automatic_payout_effective_at`),
   donnée par Stripe comme l'arrivée attendue en banque ; à confirmer.
 - **Q-40-K5 — Ordre des epics** : la phase 1 de Stripe suppose celle de PayPal fusionnée (38-11a à 38-11d) et, pour la
-  réception sur Wise, celle de l'Epic 39. Si 38-11c ne généralise pas le rattachement en devise, 40-7c grossit d'autant
+  réception sur Wise, celle de l'Epic 39. Si 38-11c1 ne généralise pas le rattachement en devise, 40-7c grossit d'autant
   (toujours quatre modules).
 
 ## Registre (2026-11-20)

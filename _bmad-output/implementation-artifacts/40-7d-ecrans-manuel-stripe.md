@@ -4,7 +4,7 @@ Status: ready-for-dev
 
 *Fiche rédigée le 2026-11-20, branche `epic/40-stripe`, chemins relevés sur `origin/main` au commit `fd04099f`. Epic 40,
 **phase 1 KISS** (décision de Beat du 2026-11-20). **Dépend de** : 40-7b, 40-7c ; les écrans PayPal de la phase 1 de
-l'Epic 38 (38-11d : page, feature, `withoutPaypal`, modale de rattachement, manuel, `api-external.md`, E2E), dont elle
+l'Epic 38 (38-11d : page, feature, `provider.ts` / `withoutProviders`, modale de rattachement, manuel, `api-external.md`, E2E), dont elle
 reprend les composants sans les recopier ; la phase 1 de l'Epic 39 pour la seule E2E (réception côté Wise). Dernière story de la phase 1.*
 
 ## Story
@@ -35,11 +35,11 @@ manuel me dise comment exporter le bon rapport de Stripe et ce que Kesh en fait.
    compte lié change). Les refus de 40-7b AC-2 s'affichent sur leur champ (codes traduits aux quatre locales). Aucun
    composant recopié de PayPal : le bloc commun est paramétré (DRY ; s'il est propre à PayPal, il est généralisé ici,
    tests Vitest de 38-11d **inchangés en assertions**). ⚠️ **Là où un compte Stripe ne doit pas paraître** :
-   `isPaypal` / `withoutPaypal` de 38-11d (`frontend/src/lib/features/bank-accounts/paypal.ts`, patron de
-   `credit-card.ts:39`) deviennent **`isProvider` / `withoutProviders`** (`provider !== null`) et s'appliquent aux mêmes
-   quatre sélecteurs (`BankImportUpload.svelte`, `ManualStatementForm.svelte`, `SettleInvoiceDialog.svelte`,
-   `reconciliation/+page.svelte`) — sans quoi un compte Stripe s'offre à l'import d'un relevé bancaire ou au règlement
-   d'une facture, que le serveur refuse (`BANK_ACCOUNT_IS_PROVIDER`) ; Vitest : chaque site, avec un compte Stripe, PayPal
+   `isProvider` / `withoutProviders` sont **déjà livrés par 38-11d** (`frontend/src/lib/features/bank-accounts/provider.ts`,
+   `provider !== null`, patron de `credit-card.ts:39`) et appliqués à **cinq sélecteurs** (`BankImportUpload.svelte`,
+   `ManualStatementForm.svelte`, `SettleInvoiceDialog.svelte`, `reconciliation/+page.svelte`, paiement d'une facture
+   fournisseur `supplier-invoices/[id]/+page.svelte`) : **réutilisés, non regénéralisés** ; cette story ne fait que les tester avec un compte Stripe (sans eux, un compte Stripe s'offrirait à l'import d'un relevé bancaire ou au règlement
+   d'une facture, que le serveur refuse (`BANK_ACCOUNT_IS_PROVIDER`)) ; Vitest : chaque site, avec un compte Stripe, PayPal
    et Wise. `BankAccountSummary` porte le prestataire et `payoutBankAccountId` sous la forme de la réponse de 40-7b.
 2. **AC-2 — Page Stripe et import.** Page `frontend/src/routes/(app)/reconciliation/stripe/+page.svelte`, sur le
    **composant de la page PayPal généralisé** (38-11d AC-3 à AC-5, paramétré par le prestataire par 39-11d AC-2 :
@@ -57,7 +57,7 @@ manuel me dise comment exporter le bon rapport de Stripe et ce que Kesh en fait.
    dit où ajouter la colonne dans Stripe ; `automatic_payout_id` vide : prendre le rapport des versements automatiques ;
    la devise sans compte nomme les devises. Rappel affiché : « les ventes viennent des boutiques ; importez-les avant le
    rapport Stripe ».
-3. **AC-3 — Propositions, écarts, à examiner.** Genres de proposition : « Rattachement à la vente n° … » (`link_sale`),
+3. **AC-3 — Propositions, écarts, à examiner.** Genres de proposition : « Rattachement à la vente n° … » (`link_entry`),
    « Frais » (`fee`), « Versement vers <compte de versement> » (`payout`, compte et libellé portés par la proposition de la revue, 40-7c AC-4), à cocher, « Tout cocher », **« Accepter la
    sélection »** → `POST /api/v1/stripe/accept` (par paquets, compte rendu cumulé : acceptées, et chaque refus avec son
    message, par le module de libellés de 38-11d généralisé par 39-11d, délégation à `failedProposalLabel`). Écarts —
@@ -118,7 +118,7 @@ manuel me dise comment exporter le bon rapport de Stripe et ce que Kesh en fait.
 
 ## Tâches
 
-- [ ] T1 — Bloc de paramètres prestataire généralisé, champs Stripe, `withoutProviders` aux quatre sélecteurs (AC-1).
+- [ ] T1 — Bloc de paramètres prestataire généralisé, champs Stripe, `withoutProviders` (déjà livré par 38-11d) testé aux cinq sélecteurs (AC-1).
 - [ ] T2 — Page Stripe sur le composant généralisé : import, compte rendu, revue (AC-2).
 - [ ] T3 — Propositions, acceptation, écarts, à examiner, libellés (AC-3).
 - [ ] T4 — Manuel et `api-external.md` (AC-4).
@@ -168,3 +168,4 @@ Stripe » du manuel utilisateur et de `docs/api-external.md`.
   0 MEDIUM, 2 LOW, remédiés (rapport `kesh-gate-logs/epic-39-40-kiss/validation/40-7-P3-ciblee.md`). LOW : le libellé
   « Versement vers <compte> » exige que la proposition de la revue porte le compte de versement (40-7c AC-4 d) ; deux
   limites ajoutées au manuel (réception sur un autre exercice, annulation du côté Stripe).
+- 2026-11-20 — alignement sur la phase 1 de l'Epic 38 (Claude Sonnet 5.5, contexte frais ; fiches 38-11c1, 38-11c2, 38-11d et rapport de validation P3 de `28623871` lus) : `link_sale` → `link_entry` ; `provider.ts` / `withoutProviders` déjà livrés par 38-11d sur cinq sites : réutilisés, non regénéralisés (plus de `withoutPaypal`, plus de « quatre sélecteurs »). Rapport `kesh-gate-logs/epic-39-40-kiss/validation/alignement-38-P3.md`.
