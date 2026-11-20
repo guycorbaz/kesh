@@ -33,6 +33,8 @@ vi.mock('$lib/features/contacts/contacts.api', () => ({
 }));
 
 import SupplierInvoiceForm from './SupplierInvoiceForm.svelte';
+import { scanQrSupplierInvoice } from './supplier-invoices.api';
+import { decodeQrFromImageFile, scanToPrefill } from './supplier-invoice-scan';
 import { todayLocal } from '$lib/features/open-items/open-items';
 
 function contact(id: number, name: string): ContactResponse {
@@ -518,6 +520,20 @@ describe('SupplierInvoiceForm — une ligne au centime (Story v017-3b, #687, AC-
 		expect(onSubmit).not.toHaveBeenCalled();
 	});
 
+	// Story 36-18a (revue P3, R1) : corriger le prix lève le refus « pas au centime », comme le
+	// marqueur vivant de la ligne — le bandeau ne doit pas le contredire.
+	it('le refus « pas au centime » s’efface à la saisie du prix (M30)', async () => {
+		const { container, getByTestId, queryByTestId } = renderForm({});
+		await selectSupplier(container, '1');
+		await fillLine(container, '0.005');
+		await fireEvent.click(getByTestId('supplier-invoice-submit'));
+		await tick();
+		expect(getByTestId('supplier-invoice-form-error').textContent?.trim()).toBe(DEDIE);
+		await fireEvent.input(getByTestId('supplier-invoice-line-unit-price'), { target: { value: '10.00' } });
+		expect(queryByTestId('supplier-invoice-line-subcentime')).toBeNull();
+		expect(queryByTestId('supplier-invoice-form-error')).toBeNull();
+	});
+
 	it('un refus serveur désigne sa ligne, traduit, sans perdre la saisie', async () => {
 		const { container, getByTestId, getAllByTestId } = renderForm({
 			onSubmit: async () => {
@@ -989,5 +1005,319 @@ describe('SupplierInvoiceForm — date proposée et échéance qui suit (v0172, 
 		await fireEvent.click(getByTestId('supplier-invoice-submit'));
 		await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
 		expect(onSubmit.mock.calls[0][0]).toMatchObject({ invoiceDate: '2026-11-05', dueDate: '2026-12-05' });
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Story 36-18a (#1159, #1172 ; D2, D3, D6, D7 ; AC3, AC4, AC6) — le prix unitaire et le
+// montant attendu se lisent comme le montant d'une écriture.
+// ---------------------------------------------------------------------------
+
+const AMBIGU =
+	"Montant ambigu : un point ou une virgule suivis de trois chiffres peuvent séparer les milliers. Écrivez 1'250 pour mille deux cent cinquante, ou 1.25 pour un franc vingt-cinq.";
+const ILLISIBLE_4 =
+	"Montant illisible : chiffres, apostrophe des milliers (1'250), point ou virgule décimale, 4 décimales au plus.";
+
+describe('SupplierInvoiceForm — le prix unitaire « 1.250 » (Story 36-18a, #1159)', () => {
+	it('« 1.250 » : message sous la ligne, total sans la ligne, « Ligne 1 : prix unitaire ambigu », rien ne part (M9)', async () => {
+		const { container, getByTestId, onSubmit } = renderForm({ document: null });
+		await selectSupplier(container, '1');
+		await fillLine(container, '1.250');
+		expect(getByTestId('supplier-invoice-line-unit-price-ambiguous').textContent?.trim()).toBe(AMBIGU);
+		const price = getByTestId('supplier-invoice-line-unit-price');
+		expect(price.getAttribute('aria-invalid')).toBe('true');
+		expect(price.getAttribute('aria-describedby')).toBe(
+			getByTestId('supplier-invoice-line-unit-price-ambiguous').id,
+		);
+		expect(getByTestId('supplier-invoice-sum-ttc').textContent).toContain('0.00');
+		await fireEvent.click(getByTestId('supplier-invoice-submit'));
+		await tick();
+		expect(getByTestId('supplier-invoice-form-error').textContent?.trim()).toBe(
+			"Ligne 1 : prix unitaire ambigu — écrivez 1'250 pour mille deux cent cinquante francs, ou 1.25 pour un franc vingt-cinq.",
+		);
+		expect(onSubmit).not.toHaveBeenCalled();
+	});
+
+	it('« 12’34 » : message illisible sous la ligne et à l’envoi', async () => {
+		const { container, getByTestId, onSubmit } = renderForm({ document: null });
+		await selectSupplier(container, '1');
+		await fillLine(container, "12'34");
+		expect(getByTestId('supplier-invoice-line-unit-price-unreadable').textContent?.trim()).toBe(
+			ILLISIBLE_4,
+		);
+		await fireEvent.click(getByTestId('supplier-invoice-submit'));
+		await tick();
+		expect(getByTestId('supplier-invoice-form-error').textContent?.trim()).toBe(
+			"Ligne 1 : prix unitaire illisible — chiffres, apostrophe des milliers (1'250), point ou virgule décimale, quatre décimales au plus.",
+		);
+		expect(onSubmit).not.toHaveBeenCalled();
+	});
+
+	it('« 1’250 », quantité 2 → unitPrice 1250, quantity 2 ; la quantité « 1.250 » reste acceptée', async () => {
+		const { container, getByTestId, onSubmit, queryByTestId } = renderForm({ document: null });
+		await selectSupplier(container, '1');
+		await fillLine(container, "1'250");
+		await fireEvent.input(getByTestId('supplier-invoice-line-qty'), { target: { value: '2' } });
+		expect(queryByTestId('supplier-invoice-line-unit-price-ambiguous')).toBeNull();
+		await fireEvent.click(getByTestId('supplier-invoice-submit'));
+		await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+		expect(onSubmit.mock.calls[0][0].lines[0]).toMatchObject({ unitPrice: '1250', quantity: '2' });
+
+		await fireEvent.input(getByTestId('supplier-invoice-line-qty'), { target: { value: '1.250' } });
+		await fireEvent.click(getByTestId('supplier-invoice-submit'));
+		await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(2));
+		expect(onSubmit.mock.calls[1][0].lines[0].quantity).toBe('1.250');
+	});
+
+	it.each([
+		['1.25', '1.25'],
+		['1250', '1250'],
+		["1'250.50", '1250.50'],
+		['1’250', '1250'],
+		['1,25', '1.25'],
+		['0.50', '0.50'],
+		['  1250  ', '1250'],
+	])('« %s » : aucun message, envoyé %s (AC6)', async (raw, sent) => {
+		const { container, getByTestId, onSubmit, queryByTestId } = renderForm({ document: null });
+		await selectSupplier(container, '1');
+		await fillLine(container, raw);
+		expect(queryByTestId('supplier-invoice-line-unit-price-ambiguous')).toBeNull();
+		expect(queryByTestId('supplier-invoice-line-unit-price-unreadable')).toBeNull();
+		await fireEvent.click(getByTestId('supplier-invoice-submit'));
+		await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+		expect(onSubmit.mock.calls[0][0].lines[0].unitPrice).toBe(sent);
+	});
+
+	it('un brouillon rouvert au prix 1.2340 se montre 1.2340, sans message, et repart 1.2340 (M10)', async () => {
+		const brouillon = initial();
+		// Quantité 10 : 10 × 1.234 = 12.34, au centime (sinon #687 refuse la ligne).
+		brouillon.lines[0] = {
+			...brouillon.lines[0],
+			quantity: '10.0000',
+			unitPrice: '1.2340',
+			lineTotal: '12.34',
+		};
+		const { getByTestId, onSubmit, queryByTestId } = renderForm({ document: null, initial: brouillon });
+		expect((getByTestId('supplier-invoice-line-unit-price') as HTMLInputElement).value).toBe('1.2340');
+		expect(queryByTestId('supplier-invoice-line-unit-price-ambiguous')).toBeNull();
+		await fireEvent.click(getByTestId('supplier-invoice-submit'));
+		await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+		expect(onSubmit.mock.calls[0][0].lines[0].unitPrice).toBe('1.2340');
+	});
+});
+
+describe('SupplierInvoiceForm — le prix unitaire, revue P1 (E5, A1)', () => {
+	it('une ligne complète puis une ligne à « 1.250 » : le message nomme la ligne 2 (E5, M22)', async () => {
+		const { container, getByTestId, getAllByTestId, onSubmit } = renderForm({ document: null });
+		await selectSupplier(container, '1');
+		await fillLine(container, '10.00');
+		await fireEvent.click(getByTestId('supplier-invoice-add-line'));
+		const second = getAllByTestId('supplier-invoice-line')[1];
+		const q = (id: string) => second.querySelector(`[data-testid="${id}"]`) as HTMLInputElement;
+		await fireEvent.input(q('supplier-invoice-line-desc'), { target: { value: 'Seconde' } });
+		await fireEvent.input(q('supplier-invoice-line-unit-price'), { target: { value: '1.250' } });
+		await fireEvent.click(getByTestId('supplier-invoice-submit'));
+		await tick();
+		expect(getByTestId('supplier-invoice-form-error').textContent?.trim()).toBe(
+			"Ligne 2 : prix unitaire ambigu — écrivez 1'250 pour mille deux cent cinquante francs, ou 1.25 pour un franc vingt-cinq.",
+		);
+		expect(onSubmit).not.toHaveBeenCalled();
+	});
+
+	it('la saisie du prix efface le refus de l’envoi précédent (A1, M21)', async () => {
+		const { container, getByTestId, queryByTestId } = renderForm({ document: null });
+		await selectSupplier(container, '1');
+		await fillLine(container, '1.250');
+		await fireEvent.click(getByTestId('supplier-invoice-submit'));
+		await tick();
+		expect(getByTestId('supplier-invoice-form-error').textContent).toContain('Ligne 1 : prix unitaire ambigu');
+		await fireEvent.input(getByTestId('supplier-invoice-line-unit-price'), { target: { value: "12'34" } });
+		expect(queryByTestId('supplier-invoice-form-error')).toBeNull();
+		expect(getByTestId('supplier-invoice-line-unit-price-unreadable')).not.toBeNull();
+	});
+
+	// Revue P2 (R3) : la saisie n'efface que le refus d'un montant, jamais un refus sans rapport.
+	it('« Sélectionnez un fournisseur » survit à la saisie du prix et du montant attendu (R3, M28)', async () => {
+		const { container, getByTestId } = renderForm({ document: null });
+		await fillLine(container, '10.00');
+		await fireEvent.click(getByTestId('supplier-invoice-submit'));
+		await tick();
+		const refus = 'Sélectionnez un fournisseur.';
+		expect(getByTestId('supplier-invoice-form-error').textContent?.trim()).toBe(refus);
+		await fireEvent.input(getByTestId('supplier-invoice-line-unit-price'), { target: { value: '12.00' } });
+		expect(getByTestId('supplier-invoice-form-error').textContent?.trim()).toBe(refus);
+		await fireEvent.input(getByTestId('supplier-invoice-expected-amount'), { target: { value: '12.00' } });
+		expect(getByTestId('supplier-invoice-form-error').textContent?.trim()).toBe(refus);
+	});
+
+	it('un refus du serveur survit à la saisie du prix (R3, M28)', async () => {
+		const { container, getByTestId } = renderForm({
+			document: null,
+			onSubmit: async () => {
+				throw { code: 'FISCAL_YEAR_INVALID', status: 400, message: 'serveur' };
+			},
+		});
+		await selectSupplier(container, '1');
+		await fillLine(container, '10.00');
+		await fireEvent.click(getByTestId('supplier-invoice-submit'));
+		const refus = 'Aucun exercice ouvert ne couvre cette date.';
+		await waitFor(() =>
+			expect(getByTestId('supplier-invoice-form-error').textContent?.trim()).toBe(refus),
+		);
+		await fireEvent.input(getByTestId('supplier-invoice-line-unit-price'), { target: { value: '12.00' } });
+		expect(getByTestId('supplier-invoice-form-error').textContent?.trim()).toBe(refus);
+	});
+});
+
+describe('SupplierInvoiceForm — le montant attendu « 1.250 » (Story 36-18a, #1172)', () => {
+	async function setExpected(getByTestId: (id: string) => HTMLElement, value: string) {
+		await fireEvent.input(getByTestId('supplier-invoice-expected-amount'), { target: { value } });
+	}
+
+	it('« 1.250 » sans QR : message sous le champ et en tête, rien ne part (M11)', async () => {
+		const { container, getByTestId, onSubmit } = renderForm({ document: null });
+		await selectSupplier(container, '1');
+		await fillLine(container, '10.00');
+		await setExpected(getByTestId, '1.250');
+		expect(getByTestId('supplier-invoice-expected-amount-ambiguous').textContent?.trim()).toBe(AMBIGU);
+		const field = getByTestId('supplier-invoice-expected-amount');
+		expect(field.getAttribute('aria-invalid')).toBe('true');
+		expect(field.getAttribute('aria-describedby')).toBe(
+			getByTestId('supplier-invoice-expected-amount-ambiguous').id,
+		);
+		await fireEvent.click(getByTestId('supplier-invoice-submit'));
+		await tick();
+		expect(getByTestId('supplier-invoice-form-error').textContent?.trim()).toBe(AMBIGU);
+		expect(onSubmit).not.toHaveBeenCalled();
+	});
+
+	it('« 12’34 » : message illisible, rien ne part', async () => {
+		const { container, getByTestId, onSubmit } = renderForm({ document: null });
+		await selectSupplier(container, '1');
+		await fillLine(container, '10.00');
+		await setExpected(getByTestId, "12'34");
+		expect(getByTestId('supplier-invoice-expected-amount-unreadable').textContent?.trim()).toBe(
+			ILLISIBLE_4,
+		);
+		await fireEvent.click(getByTestId('supplier-invoice-submit'));
+		await tick();
+		expect(onSubmit).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		["1'250", '1250'],
+		['1.25', '1.25'],
+		['1,25', '1.25'],
+		['  1250  ', '1250'],
+		['0.50', '0.50'],
+	])('« %s » → expectedPaymentAmount %s ; vide → null', async (raw, sent) => {
+		const { container, getByTestId, onSubmit } = renderForm({ document: null });
+		await selectSupplier(container, '1');
+		await fillLine(container, '10.00');
+		await setExpected(getByTestId, raw);
+		await fireEvent.click(getByTestId('supplier-invoice-submit'));
+		await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+		expect(onSubmit.mock.calls[0][0].expectedPaymentAmount).toBe(sent);
+		await setExpected(getByTestId, '');
+		await fireEvent.click(getByTestId('supplier-invoice-submit'));
+		await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(2));
+		expect(onSubmit.mock.calls[1][0].expectedPaymentAmount).toBeNull();
+	});
+
+	it('rouvert à 1.2340 : 1.2340, sans message (M12)', () => {
+		const { getByTestId, queryByTestId } = renderForm({
+			document: null,
+			initial: initial({ expectedPaymentAmount: '1.2340' }),
+		});
+		expect((getByTestId('supplier-invoice-expected-amount') as HTMLInputElement).value).toBe('1.2340');
+		expect(queryByTestId('supplier-invoice-expected-amount-ambiguous')).toBeNull();
+	});
+
+	// Revue P1 (E1 = B1) : ce test ne prouve que l'absence du champ en mode « document avec
+	// QR » (montant en lecture seule) ; le chemin du scan est mené par les tests suivants.
+	it('document avec QR : pas de champ du montant attendu, donc aucun message', () => {
+		const { queryByTestId } = renderForm({ document: qrDoc({ amount: '1250.00' }) });
+		expect(queryByTestId('supplier-invoice-expected-amount-ambiguous')).toBeNull();
+		expect(queryByTestId('supplier-invoice-expected-amount-unreadable')).toBeNull();
+	});
+
+	/** Mène le scan navigateur (`onScanFile`) jusqu'au pré-remplissage, montant `amount`. */
+	async function scan(container: HTMLElement, amount: string) {
+		vi.mocked(decodeQrFromImageFile).mockResolvedValue('SPC\n0200\n1');
+		vi.mocked(scanQrSupplierInvoice).mockResolvedValue({} as never);
+		vi.mocked(scanToPrefill).mockReturnValue({
+			creditorIban: 'CH9300762011623852957',
+			creditorQrIban: '',
+			paymentReference: '',
+			expectedAmount: amount,
+			currency: 'CHF',
+			creditorName: 'Dubarde SA',
+		});
+		const input = container.querySelector('[data-testid="supplier-invoice-scan-file"]') as HTMLInputElement;
+		const file = new File(['x'], 'qr.png', { type: 'image/png' });
+		Object.defineProperty(input, 'files', { value: [file], configurable: true });
+		await fireEvent.change(input);
+		await waitFor(() =>
+			expect((container.querySelector('[data-testid="supplier-invoice-iban"]') as HTMLInputElement).value).toBe(
+				'CH9300762011623852957',
+			),
+		);
+	}
+
+	it('scan d’un QR à 1250.00 : champ 1250.00, aucun message, envoyé 1250.00 (E1, M19)', async () => {
+		const { container, getByTestId, queryByTestId, onSubmit } = renderForm({ document: null });
+		await selectSupplier(container, '1');
+		await fillLine(container, '1250.00');
+		await scan(container, '1250.00');
+		expect((getByTestId('supplier-invoice-expected-amount') as HTMLInputElement).value).toBe('1250.00');
+		expect(queryByTestId('supplier-invoice-expected-amount-ambiguous')).toBeNull();
+		expect(queryByTestId('supplier-invoice-expected-amount-unreadable')).toBeNull();
+		await fireEvent.click(getByTestId('supplier-invoice-submit'));
+		await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+		expect(onSubmit.mock.calls[0][0].expectedPaymentAmount).toBe('1250.00');
+	});
+
+	it('scan d’un QR hors norme à 1.250 : pré-rempli 1.25, non refusé comme ambigu (B3 = E2, M20)', async () => {
+		const { container, getByTestId, queryByTestId, onSubmit } = renderForm({ document: null });
+		await selectSupplier(container, '1');
+		await fillLine(container, '1.25');
+		await scan(container, '1.250');
+		expect((getByTestId('supplier-invoice-expected-amount') as HTMLInputElement).value).toBe('1.25');
+		expect(queryByTestId('supplier-invoice-expected-amount-ambiguous')).toBeNull();
+		await fireEvent.click(getByTestId('supplier-invoice-submit'));
+		await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+		expect(onSubmit.mock.calls[0][0].expectedPaymentAmount).toBe('1.25');
+	});
+
+	it('la saisie du montant attendu efface le refus de l’envoi précédent (A1, M21)', async () => {
+		const { container, getByTestId, queryByTestId } = renderForm({ document: null });
+		await selectSupplier(container, '1');
+		await fillLine(container, '10.00');
+		await fireEvent.input(getByTestId('supplier-invoice-expected-amount'), { target: { value: '1.250' } });
+		await fireEvent.click(getByTestId('supplier-invoice-submit'));
+		await tick();
+		expect(getByTestId('supplier-invoice-form-error').textContent?.trim()).toBe(AMBIGU);
+		await fireEvent.input(getByTestId('supplier-invoice-expected-amount'), { target: { value: "12'34" } });
+		expect(queryByTestId('supplier-invoice-form-error')).toBeNull();
+		expect(getByTestId('supplier-invoice-expected-amount-unreadable')).not.toBeNull();
+	});
+
+	it('ordre des gardes : l’échéance antérieure passe avant le montant attendu, qui passe avant le prix', async () => {
+		const { container, getByTestId, onSubmit, queryByTestId } = renderForm({ document: null });
+		await selectSupplier(container, '1');
+		await setDate(container, '2026-05-10');
+		await fillLine(container, '1.250');
+		await setDue(container, '2026-05-09');
+		await setExpected(getByTestId, '1.250');
+		await fireEvent.click(getByTestId('supplier-invoice-submit'));
+		await tick();
+		// Échéance : son message sous son champ, rien en tête.
+		expect(getByTestId('supplier-invoice-due-error')).not.toBeNull();
+		expect(queryByTestId('supplier-invoice-form-error')).toBeNull();
+		await setDue(container, '2026-05-10');
+		await fireEvent.click(getByTestId('supplier-invoice-submit'));
+		await tick();
+		expect(getByTestId('supplier-invoice-form-error').textContent?.trim()).toBe(AMBIGU);
+		expect(onSubmit).not.toHaveBeenCalled();
 	});
 });

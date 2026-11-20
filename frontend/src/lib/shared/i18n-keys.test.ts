@@ -1055,7 +1055,6 @@ const ATTENDU = {
 	// be 3300`) — les 50 sites de la 37-5 (voir plus bas).
 	// Revue de code P2 (37-5) : **3350 → 3352**, relevé par la garde (`expected 3352 to be 3350`) — les
 	// deux sites de l'avis « compte non imputable » (aperçu, K9).
-	sitesTotal: 3352,
 	// Story 37-4 (AC-6) : **3184 → 3190** sur sa branche (partie de 946aa86a), relevé par la garde
 	// (`expected 3190 to be 3184`) et ventilé au code : 3 sites dans
 	// `features/reports/GeneralLedgerView.svelte` (`reports-fx-revaluation-balance`,
@@ -1072,6 +1071,86 @@ const ATTENDU = {
 	// `closing-checks-labels.ts`) et de la page des exercices. Fusion de `epic/37-multi-devises`
 	// à `03f4599d` (37-3b terminée) dans la 37-5 : **3350**, la valeur ci-dessus, relevée par la
 	// garde après cette fusion (non additionnée).
+	// Story 36-17 (#1187) : **3050 → 3081** sur sa branche, relevé par la garde
+	// (« expected 3081 to be 3050 », `kesh-gate-logs/e36-17/front-test-unit-1.log`) avant d'écrire
+	// ce nombre — les cinq écrans neufs de `features/onboarding/` et les textes neufs de
+	// `routes/onboarding/+page.svelte`, moins les deux clés mortes de D2. Que des littéraux. À
+	// relever de nouveau à l'union de la 0.18.0 (C-e350-18).
+	// Remédiation de la revue P1 de la 36-17 : **3081 → 3083**, relevé par la garde (« expected 3083
+	// to be 3081 », `kesh-gate-logs/e36-17/rem1-front-test-unit-releve.log`) —
+	// `onboarding-done-credit-card` (B7/E7) et `onboarding-finalize-remedy-link` (E10), deux littéraux.
+	// Intégration de la 0.18.0 (2026-11-16), après les fusions des 36-10, 36-19, 36-17, 36-9 et
+	// 36-12a : **3083 → 3082**, relevé par la garde (« expected 3082 to be 3083 »,
+	// `kesh-gate-logs/rel0180/releve-compteurs-1.log`) — `onboarding-finalize-remedy` retirée (la
+	// 36-19 corrige #1200) ; les quatre autres stories n'ajoutent aucun site.
+	// Story 36-18a (#1050, #1159, #1172, #1174 ; AC8) : **3082 → 3086**, relevé par la garde
+	// (« expected 3087 to be 3082 », `kesh-gate-logs/e36-18/vitest-cible-dev.log` ; puis 3086,
+	// valeur posée et constatée verte une fois fusionné un doublon d'`invoice-error-amount-positive`
+	// du règlement — ce second relevé n'est pas au journal)
+	// — `common-amount-ambiguous` et
+	// `common-amount-unreadable` (`journal-entries/amount-entry-message.ts`),
+	// `supplier-invoices-err-line-unit-price-ambiguous` et `-unreadable`
+	// (`SupplierInvoiceForm.svelte`) : quatre littéraux.
+	// Story 43-3 (#823, AC6), côté client : **3086 → 3142** — la story entière a été relevée à
+	// 3146 par la garde (« expected 3146 to be 3086 », `kesh-gate-logs/e433/vitest-i18n-releve-1.log`),
+	// dont quatre sites du côté fournisseur (D6), dans un commit à part : 60 − 4 = 56 sites,
+	// 36 dans `reconciliation/GroupSettlementModal.svelte` (neuf) et 20 dans les fichiers touchés
+	// (`failed-proposal-label.ts`, `reconciliation-cancel.ts`, `CancelReconciliationDialog.svelte`,
+	// `ReconciliationProposals.svelte`), recomptés par `grep -c 'i18nMsg('` ; que des littéraux.
+	// À relever de nouveau à l'union de la 0.19.0 (C-e350-18).
+	// Story 43-3, côté fournisseur (D6, commit retirable) : **3142 → 3146** — les quatre sites
+	// `reconciliation-group-gap-supplier-over`, `-under`, `-col-supplier`
+	// (`GroupSettlementModal.svelte`) et `reconciliation-cancel-confirm-group-supplier`
+	// (`CancelReconciliationDialog.svelte`) ; la valeur relevée par la garde pour la story entière.
+	// Intégration de main (v0.18.0) dans l'Epic 37 (2026-11-17) : **3388**, relevé par la garde après la
+	// fusion (`expected 3388 to be 0`, `kesh-gate-logs/integration-main-37/vitest-1.log`), non
+	// additionné — il égale 3050 + 302 (Epic 37) + 36 (Epic 36), les deux côtés gardés.
+	// Fusion de la 43-2 (`d20095425`, Epic 37 compris) dans la 43-3 (2026-11-18) : relevé par la
+	// garde après la fusion (« expected 3450 », `kesh-gate-logs/e433/fusion-432-releve-1.log`), non
+	// additionné — il égale 3388 + 60 (Story 43-3) + 2 (le refus `ACCOUNT_IN_FOREIGN_CURRENCY`,
+	// libellé global et forme du groupe, `failed-proposal-label.ts`).
+	// Story 43-7 (#823), fusionnée avec la tête de l'Epic 43 : **3388 + 6 = 3394** — six littéraux de
+	// l'écran *Administration → Facturation* : `settings-invoicing-group-max-{title,label,hint,scale,
+	// range,required}` (la garde confirme à la fusion : `kesh-gate-logs/e437/vitest-cloture.log`).
+	// Fusion de l'épique (`d54bad428`, 43-7 comprise) dans la 43-3 (2026-11-18) : relevé par la garde
+	// après la fusion (`kesh-gate-logs/e433/fusion-epic-releve-1.log`), non additionné : 3456.
+	// Puis l'avis `reconciliation-group-held-by-batch` (revue P4 de la 43-2, P4-1), un littéral :
+	// **3457**, relevé par la garde (`kesh-gate-logs/e433/front-complet-review.log`, vert à 3457).
+	// Remédiation de la revue P1 de la 43-3 : **3466**, relevé par la garde (« expected 3466 to be
+	// 3457 », `kesh-gate-logs/e433/rem1-vitest-1.log`) — causes d'Enregistrer inactif, relecture,
+	// en-tête des factures imputées, écart sans compte à l'annulation, fin d'un groupe fournisseur.
+	// Revue P3 ciblée de la 43-3 (L-A, L-B) : **3468**, relevé par la garde (« expected 3468 to be
+	// 3466 », `kesh-gate-logs/e433/rem3-vitest-1.log`) — `reread-retry`, `account-check-retry`.
+	// Branche epic/v0190-correction, partie de la 0.18.0 (avant l'Epic 37 et l'Epic 43) :
+	// 3086 → 3087 (v0190-correction, #1162, D4) : `invoice-contact-unresolved-error`
+	// (`InvoiceForm.svelte`), un littéral — recompté par la garde, non estimé.
+	// 3087 → 3095 (v0190-nom-societe, #1097) : le bloc nom de `settings/+page.svelte`, huit
+	// littéraux — `settings-company-name-required`, `-saved`, `-conflict`,
+	// `-conflict-reload-failed`, `common-save`, `common-cancel`, `common-edit`, `common-error`
+	// (« expected 3095 to be 3087 », `kesh-gate-logs/v0190n/vitest-i18n-1.log`).
+	// 3095 → 3096 (v0190-nom-societe, revue P1 E3) : `settings-company-name-too-long`, le refus
+	// local de la longueur — un littéral, garde verte à 3096 (`vitest-i18n-3.log`).
+	// Union de la 0.19.0 (fusion d'epic/v0190-correction) : valeur de HEAD gardée à la
+	// résolution, à relever par la garde au raccord qui suit (C-e350-18).
+	// Branche epic/42-reimputation-analytique, partie de la 0.18.0 (avant l'Epic 37 et l'Epic 43) :
+	// Story 36-16a (#1167) : **3082 → 3098**, relevé par la garde (« expected 3098 to be 3082 »,
+	// `kesh-gate-logs/e36-16/vitest-i18n-1.log`) — seize littéraux : treize dans
+	// `features/projects/ProjectReassignDialog.svelte` (dont `common-cancel` et `error-unexpected`),
+	// trois sur la fiche facture (`projects-reassign-open`, `projects-reassign-done`,
+	// `invoice-detail-project-label` comme libellé de la rangée). Sur une base qui porte la 36-15
+	// non fusionnée (C-36-16a-1) : à relever de nouveau à l'union de la 0.18.0 (C-e350-18).
+	// Puis **3098 → 3099** (« expected 3099 to be 3098 », `kesh-gate-logs/e36-16/vitest-cible-4.log`) :
+	// le sélecteur `projects-reassign-warning-entries`, que le dictionnaire du frontend résout
+	// sans arguments, scindé en deux clés plates `-one` et `-other` (deux littéraux pour un).
+	// Epic 42-1 (ex-36-16a), portée sur `main` après la v0.18.0 : **3086 → 3103**, union des
+	// deux relevés ci-dessus (+17 littéraux de la 36-16a), à confirmer par la garde.
+	// Union de la 0.19.0 (fusion d'epic/42-reimputation-analytique) : valeur de HEAD gardée à
+	// la résolution, à relever par la garde au raccord qui suit (C-e350-18).
+	// Raccord de l'intégration de la 0.19.0 (2026-11-18) : **3495**, relevé par la garde après les
+	// fusions de l'Epic 43, d'epic/v0190-correction et d'epic/42 (« expected 3495 to be 3468 »,
+	// `kesh-gate-logs/rel0190/vitest-compteurs-1.log`), non additionné — il égale 3468 + 10
+	// (v0190-correction et v0190-nom-societe) + 17 (36-16a), les côtés gardés.
+	sitesTotal: 3495,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

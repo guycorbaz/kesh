@@ -28,6 +28,46 @@ pub fn init_error_i18n(bundle: std::sync::Arc<I18nBundle>, locale: Locale) {
     *guard = Some((bundle, locale));
 }
 
+/// La réponse d'un refus, à laquelle s'ajoute `details.<cle> = valeur` — le
+/// rang de l'élément visé d'un corps à plusieurs entrées. **Mécanisme
+/// commun** (conversion : `details.entry`, Story 37-3b ; acquittement des
+/// corrections de cours : `details.notice`, revue d'intégration de l'équipe de
+/// Guy) : un refus sans `details` en reçoit (`{ cle: valeur }`), un refus qui en
+/// porte les garde et y ajoute la clé. Le corps produit par l'erreur est relu,
+/// complété et réécrit ; statut et en-têtes sont gardés (hors
+/// `Content-Length`). Un corps qui n'est pas du JSON est rendu tel quel.
+pub(crate) async fn refus_avec_detail(
+    err: AppError,
+    cle: &str,
+    valeur: serde_json::Value,
+) -> Response {
+    let (mut parts, body) = err.into_response().into_parts();
+    let bytes = match axum::body::to_bytes(body, 1 << 20).await {
+        Ok(b) => b,
+        Err(_) => {
+            return AppError::Internal("corps d'un refus illisible".into()).into_response();
+        }
+    };
+    let mut value: serde_json::Value = match serde_json::from_slice(&bytes) {
+        Ok(v) => v,
+        Err(_) => return Response::from_parts(parts, axum::body::Body::from(bytes)),
+    };
+    if let Some(error) = value.get_mut("error").and_then(|e| e.as_object_mut()) {
+        let details = error
+            .entry("details")
+            .or_insert_with(|| serde_json::json!({}));
+        if !details.is_object() {
+            *details = serde_json::json!({});
+        }
+        if let Some(map) = details.as_object_mut() {
+            map.insert(cle.into(), valeur);
+        }
+    }
+    parts.headers.remove(axum::http::header::CONTENT_LENGTH);
+    let body = serde_json::to_vec(&value).unwrap_or_else(|_| bytes.to_vec());
+    Response::from_parts(parts, axum::body::Body::from(body))
+}
+
 /// Résout un message d'erreur via i18n, avec fallback sur le message par défaut.
 ///
 /// Exposé `pub(crate)` pour permettre aux handlers de construire des messages
@@ -1734,6 +1774,53 @@ fn build_response(status: StatusCode, code: &'static str, message: &str) -> Resp
         .into_response()
 }
 
+/// Corps des deux refus de période close d'un changement de compte analytique
+/// (Story 36-16a, #1167) : `409 PROJECT_REASSIGNMENT_CLOSED_PERIOD` pour un
+/// Administrateur en session sans accusé, `403
+/// PROJECT_REASSIGNMENT_CLOSED_PERIOD_ADMIN_ONLY` pour tout autre auteur. Les
+/// mêmes `details { entryCount, fiscalYears, lockedThrough }`, pour que l'écran
+/// nomme l'exercice, la borne du verrou et le nombre d'écritures.
+fn closed_period_response(
+    exposure: &kesh_db::errors::ClosedPeriodExposure,
+    admin_only: bool,
+) -> Response {
+    let (status, code, key, fallback) = if admin_only {
+        (
+            StatusCode::FORBIDDEN,
+            "PROJECT_REASSIGNMENT_CLOSED_PERIOD_ADMIN_ONLY",
+            "error-project-reassignment-closed-period-admin-only",
+            // Revue P1, B-3 : le même refus sert le Comptable en session et la
+            // clé d'API ; il dit qui peut agir, sans renvoyer le Comptable vers
+            // l'interface où il est déjà.
+            "Seul un Administrateur connecté à l'interface web peut changer le compte \
+             analytique d'un exercice clos ou d'une période verrouillée : demandez-le à un \
+             Administrateur.",
+        )
+    } else {
+        (
+            StatusCode::CONFLICT,
+            "PROJECT_REASSIGNMENT_CLOSED_PERIOD",
+            "error-project-reassignment-closed-period",
+            "Changer le compte analytique modifierait des écritures d'un exercice clos ou \
+             d'une période verrouillée. Confirmez pour continuer.",
+        )
+    };
+    let mut args = FluentArgs::new();
+    args.set("entryCount", exposure.entry_count as i64);
+    let body = serde_json::json!({
+        "error": {
+            "code": code,
+            "message": t_args(key, fallback, &args),
+            "details": {
+                "entryCount": exposure.entry_count,
+                "fiscalYears": exposure.fiscal_years,
+                "lockedThrough": exposure.locked_through.map(|d| d.to_string()),
+            },
+        }
+    });
+    (status, Json(body)).into_response()
+}
+
 /// Corps `400` d'un refus qui nomme un exercice **postérieur** (Stories 15-8a,
 /// 15-12a, 37-1) : un seul gabarit pour les trois messages — celui des
 /// écritures (`error-later-fiscal-year-closed`) et celui de la création d'un
@@ -2072,7 +2159,7 @@ fn designated_account_wrong_type_response(
         .collect();
     phrases.push(t(
         "error-designated-account-wrong-type-action",
-        "Rien n’a été enregistré. Un administrateur doit corriger le réglage concerné — désigner un compte du bon type, ou rendre au compte son type d’origine —, puis la validation pourra être relancée telle quelle.",
+        "Rien n’a été enregistré. Un administrateur doit corriger le réglage concerné — désigner un compte du bon type, ou rendre au compte son type d’origine —, puis l’opération pourra être relancée telle quelle.",
     ));
     let body = serde_json::json!({
         "error": {
@@ -5548,6 +5635,39 @@ impl IntoResponse for AppError {
                     });
                     (StatusCode::BAD_REQUEST, Json(body)).into_response()
                 }
+                // Story 36-16a (#1167) — changer le compte analytique d'écritures
+                // d'une période close : `409` à l'Administrateur en session (il
+                // confirme), `403` à tout autre auteur. Les mêmes `details`, pour
+                // que l'écran nomme l'exercice, la borne du verrou et le nombre
+                // d'écritures.
+                DbError::ProjectReassignmentClosedPeriod(exposure) => {
+                    closed_period_response(&exposure, false)
+                }
+                DbError::ProjectReassignmentClosedPeriodAdminOnly(exposure) => {
+                    closed_period_response(&exposure, true)
+                }
+                // Story 43-6 (#823, #1167) — une facture réglée dans un groupe :
+                // son écriture porte aussi la banque et les autres factures.
+                // Le message vient d'ici ; l'écran l'affiche tel quel.
+                DbError::ProjectReassignmentGroupedSettlement {
+                    invoice_id,
+                    journal_entry_id,
+                } => {
+                    let body = serde_json::json!({
+                        "error": {
+                            "code": "PROJECT_REASSIGNMENT_GROUPED_SETTLEMENT",
+                            "message": t(
+                                "error-project-reassignment-grouped-settlement",
+                                "Cette facture est réglée avec d'autres par un même virement : son compte analytique ne se change pas. Annulez d'abord le rapprochement de ce règlement groupé.",
+                            ),
+                            "details": {
+                                "invoiceId": invoice_id,
+                                "journalEntryId": journal_entry_id,
+                            },
+                        }
+                    });
+                    (StatusCode::CONFLICT, Json(body)).into_response()
+                }
                 DbError::IllegalStateTransition(m) => {
                     tracing::warn!("illegal state: {m}");
                     build_response(
@@ -5570,6 +5690,18 @@ impl IntoResponse for AppError {
                     &t(
                         "error-inactive-accounts",
                         "Un ou plusieurs comptes sont archivés ou invalides.",
+                    ),
+                ),
+                // Story 36-19 (#1200, C-36-19-8) — aucune route ne l'atteint : la
+                // finalisation convertit elle-même ce refus, en nommant chaque
+                // réglage en défaut. Ce bras, exigé par le match exhaustif, rend
+                // un message générique traduit, sous le code de ce refus.
+                DbError::DefaultInvoiceAccountsUnavailable(_) => build_response(
+                    StatusCode::BAD_REQUEST,
+                    "VALIDATION_ERROR",
+                    &t(
+                        "error-default-invoice-accounts-unavailable",
+                        "Les comptes par défaut de facturation ne sont pas utilisables : terminez leur désignation dans Administration → Facturation.",
                     ),
                 ),
                 // Story 15-5a (#429, choix C3/C16/C18/C29) — un compte de la
@@ -5631,10 +5763,13 @@ impl IntoResponse for AppError {
                 }
                 // Story 35-3 (#537) — un compte DÉSIGNÉ dans les réglages de
                 // facturation n'a plus le TYPE que son réglage exige (retypé après
-                // sa désignation) et la validation veut y écrire. Code propre, et
-                // non `INACTIVE_OR_INVALID_ACCOUNTS`, anonyme : le compte vient des
-                // réglages, non de la requête, et le Comptable qui valide doit
-                // savoir lequel et où le faire corriger.
+                // sa désignation) et une écriture veut y passer : la validation
+                // d'une facture ou d'une facture fournisseur, et, depuis la Story
+                // 36-9 (#1044), le solde du reste (TVA due). Code propre, et non
+                // `INACTIVE_OR_INVALID_ACCOUNTS`, anonyme : le compte vient des
+                // réglages, non de la requête, et le Comptable qui agit doit
+                // savoir lequel et où le faire corriger. Bras générique, quelle
+                // que soit la route : la phrase d'action est neutre (D4).
                 DbError::DesignatedAccountsWrongType(accounts) => {
                     designated_account_wrong_type_response(&accounts)
                 }
@@ -6442,6 +6577,43 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// Story 36-19 (#1200, AC11) — le bras de
+    /// `DbError::DefaultInvoiceAccountsUnavailable` rend `400 VALIDATION_ERROR`
+    /// (égal à `error_code()`) et le texte de la clé
+    /// `error-default-invoice-accounts-unavailable` du catalogue `fr-CH`. Tue
+    /// M12 (autre clé ou autre code). L'égalité du repli et du FTL est aussi la
+    /// part de G9 (`textes_coherents.rs`).
+    #[tokio::test]
+    async fn default_invoice_accounts_unavailable_maps_to_validation_error() {
+        use kesh_db::errors::{
+            DefaultInvoiceAccountCause, DefaultInvoiceSetting, UnavailableDefaultInvoiceAccount,
+        };
+        let catalogue = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../kesh-i18n/locales/fr-CH/messages.ftl"
+        ))
+        .expect("catalogue fr-CH");
+        let attendu = catalogue
+            .lines()
+            .find_map(|l| l.strip_prefix("error-default-invoice-accounts-unavailable = "))
+            .expect("clé absente du catalogue")
+            .to_string();
+        let err =
+            DbError::DefaultInvoiceAccountsUnavailable(vec![UnavailableDefaultInvoiceAccount {
+                setting: DefaultInvoiceSetting::Receivable,
+                cause: DefaultInvoiceAccountCause::NoRoleAccount,
+            }]);
+        assert_eq!(
+            err.error_code(),
+            "VALIDATION_ERROR",
+            "repli de error_code()"
+        );
+        let (status, body) = response_body(AppError::Database(err).into_response()).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body["error"]["code"], "VALIDATION_ERROR");
+        assert_eq!(body["error"]["message"], attendu);
     }
 
     /// Story 15-1a-i (#518) — chaque refus du lettrage a son statut, son code

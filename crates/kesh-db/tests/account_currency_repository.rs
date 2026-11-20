@@ -1100,6 +1100,7 @@ fn reglages_tels_quels(
         default_discount_account_id: r.default_discount_account_id,
         default_bank_fees_account_id: r.default_bank_fees_account_id,
         default_bad_debt_account_id: r.default_bad_debt_account_id,
+        group_settlement_max_difference: r.group_settlement_max_difference,
     }
 }
 
@@ -1153,6 +1154,18 @@ async fn reglages_de_facturation_gardes_inverses(pool: MySqlPool) {
     })
     .await
     .unwrap();
+    // Revue P1 de l'intégration de la v0.18.0 (M1) : le compte de pertes aux frais
+    // bancaires, le compte de conversion aux débiteurs — admis, comme la
+    // finalisation de l'assistant les désigne (même règle,
+    // `accounts::designation_refusal_in_tx`).
+    let r = reglages(&pool, &s, |u| {
+        u.default_bank_fees_account_id = Some(fx.perte);
+        u.default_receivable_account_id = Some(fx.transit);
+    })
+    .await
+    .unwrap();
+    assert_eq!(r.default_bank_fees_account_id, Some(fx.perte));
+    assert_eq!(r.default_receivable_account_id, Some(fx.transit));
 
     // Inchangé (motif C4) : rien n'est rejugé. Le compte d'arrondi passe en
     // devise par SQL ; un autre réglage s'enregistre.

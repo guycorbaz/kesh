@@ -871,7 +871,7 @@
 				</th>
 				{#if showProjectColumn}
 					<th class="text-left py-2 text-sm font-medium w-44">
-						{i18nMsg('journal-entry-form-col-project', 'Projet')}
+						{i18nMsg('journal-entry-form-col-project', 'Compte analytique')}
 					</th>
 				{/if}
 				<th class="w-10"></th>
@@ -954,7 +954,7 @@
 							<select
 								bind:value={lines[i].projectId}
 								data-testid="journal-entry-line-project-{i}"
-								aria-label={i18nMsg('journal-entry-form-col-project', 'Projet')}
+								aria-label={i18nMsg('journal-entry-form-col-project', 'Compte analytique')}
 								class="w-full h-9 rounded-md border border-input bg-background px-2 text-sm"
 							>
 								<option value={null}>{i18nMsg('journal-entry-project-none', '— Aucun')}</option>
@@ -963,7 +963,7 @@
 									     actifs) : option ad-hoc pour préserver la valeur au round-trip
 									     (le backend exempte les tags pré-existants de la validation). -->
 									<option value={line.projectId}>
-										{i18nMsg('journal-entry-project-archived', 'Projet archivé')}
+										{i18nMsg('journal-entry-project-archived', 'Compte analytique archivé')}
 									</option>
 								{/if}
 								{#each projects.filter((p) => p.parentId === null) as root (root.id)}

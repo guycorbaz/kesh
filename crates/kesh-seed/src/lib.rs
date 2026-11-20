@@ -380,8 +380,9 @@ async fn final_attempt(pool: &MySqlPool, facts: &DemoFacts) -> Result<(), SeedAt
 ///
 /// Séquence de verrous, telle qu'écrite à la ligne `seed_demo` du Pattern 5
 /// (`docs/MULTI-TENANT-SCOPING-PATTERNS.md`) : `onboarding_state → companies →
-/// accounts (TVA, puis rôles de insert_with_defaults_in_tx) →
-/// company_invoice_settings → vat_rates → audit_log` — l'ordre de `finalize`
+/// accounts (TVA, puis rôles et comptes du plan de insert_with_defaults_in_tx) →
+/// company_invoice_settings (puis, en partagé, comptes désignés et comptes
+/// bancaires — Story 36-19) → vat_rates → audit_log` — l'ordre de `finalize`
 /// (réglages puis taux), précédé des trois comptes de TVA (Story 31-5, #707).
 /// Ne commite jamais.
 ///
@@ -411,15 +412,17 @@ async fn final_body(
     // 3. Les trois comptes de TVA verrouillés AVANT la ligne de réglages (ordre
     //    `accounts → company_invoice_settings`, Story 31-5, #707), puis les
     //    réglages de facturation (lectures verrouillantes des comptes de rôle),
-    //    la désignation de la TVA sur la ligne NEUVE seulement, et les quatre
+    //    la désignation de la TVA sur une ligne dont l'enveloppe a posé les
+    //    comptes — NEUVE, ou VIERGE et complétée (Story 36-19) —, et les quatre
     //    taux de TVA — l'ordre de `finalize`.
     let vat_accounts =
         company_invoice_settings::lock_vat_role_accounts_in_tx(tx, facts.company_id).await?;
     let (_settings, invoice_settings_created) =
         company_invoice_settings::insert_with_defaults_in_tx(tx, facts.company_id).await?;
     if invoice_settings_created {
-        // Ligne créée par cette transaction : personne ne l'a lue, aucun
-        // `version` à bumper (C-31-5-4).
+        // Ligne créée, ou vierge et complétée, par cette transaction, qui la
+        // tient en `FOR UPDATE` : personne ne l'a lue depuis, aucun `version`
+        // à bumper (C-31-5-4 ; Story 36-19, revue P1 B1/E5).
         company_invoice_settings::designate_vat_accounts_in_tx(tx, facts.company_id, &vat_accounts)
             .await?;
     }
@@ -445,6 +448,10 @@ async fn final_body(
                 "accounts_created": facts.accounts_created,
                 "fiscal_year_id": facts.fiscal_year_id,
                 "vat_rates_created": rates.len(),
+                // Story 36-19 (revue P2, LOW-1) : `true` si la démonstration a
+                // posé les comptes d'une ligne qui n'en avait aucun — ligne créée,
+                // ou ligne VIERGE (créée avant par un `GET` des réglages) qu'elle
+                // a complétée. Le nom de la clé, contrat d'audit, n'est pas changé.
                 "invoice_settings_created": invoice_settings_created,
             })),
         ),

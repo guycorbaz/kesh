@@ -260,8 +260,30 @@ const PREFIXES = [
  * ⚠️ **Story 37-1** (AC-11) : **434 → 441** (+7), relevé par la garde (`expected 441 to be
  * 434`) : les sept `onboarding-fiscal-year-*` de la section « Premier exercice » (relais `msg`
  * et `i18nMsg` de `routes/onboarding/+page.svelte`), un repli chacune. Aucune retirée.
+ *
+ * ⚠️ **Story 36-17** (#1187) : **434 → 453** (+19), relevé par la garde (`expected 453 to be
+ * 434`) : vingt et une clés `onboarding-` neuves de la fin de l'assistant (`-state-load-error`,
+ * `-retry`, `-finalizing`, `-finalizing-desc`, `-finalize-remedy`, dix `-done-*`, `-start`,
+ * `-demo-loading`, `-demo-ready`, `-demo-navigate-error`, `-fallback`, `-fallback-reload`), un
+ * repli chacune, et deux retirées (`-already-finalized`, `-finalize-incomplete`, mortes, D2).
+ * Remédiation de la revue P1 : **453 → 455** (+2, `expected 455 to be 453`),
+ * `onboarding-done-credit-card` et `onboarding-finalize-remedy-link`.
+ *
+ * Intégration de la 0.18.0 (2026-11-16) : **455 → 454** (−1, `expected 454 to be 455`,
+ * `kesh-gate-logs/rel0180/releve-compteurs-1.log`), `onboarding-finalize-remedy` retirée (la
+ * 36-19 corrige #1200).
+ *
+ * Story 36-18a (#1159) : **454 → 456** (+2), relevé par la garde au Vitest complet
+ * (`expected 456 to be 454`, ligne affichée à la console, non conservée au journal
+ * `kesh-gate-logs/e36-18/review-front.log`, qui ne porte que « 1 failed ») —
+ * `supplier-invoices-err-line-unit-price-ambiguous` et `-unreadable`, un repli chacune
+ * (`SupplierInvoiceForm.svelte`).
+ *
+ * Intégration de main (v0.18.0) dans l'Epic 37 (2026-11-17) : **463**, relevé par la garde après la
+ * fusion (`expected 463 to be 0`, `kesh-gate-logs/integration-main-37/vitest-1.log`), non
+ * additionné — 434 + 7 (Story 37-1) + 22 (Epic 36).
  */
-const CLES_RELEVEES = 441;
+const CLES_RELEVEES = 463;
 
 
 /** Relève, pour chaque clé du domaine, l'ensemble de ses replis littéraux distincts. */

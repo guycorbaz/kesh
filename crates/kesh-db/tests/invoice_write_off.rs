@@ -1439,8 +1439,9 @@ async fn a_nature_on_the_receivable_is_refused_before_a_missing_vat_payable(pool
     assert_nothing_written(&pool, inv, v, n).await;
 }
 
-/// Story 15-6b — **TVA due = créance** : aucun contrôle de type ne garde ce
-/// compte au moment d'écrire ; la comparaison est sa seule garde.
+/// Story 15-6b — **TVA due = créance** : la créance retypée en passif passe le
+/// contrôle de type de la TVA due (Story 36-9) ; la comparaison est alors sa
+/// seule garde.
 #[sqlx::test(migrations = "./test-schema")]
 async fn a_vat_payable_account_that_is_the_receivable_is_refused(pool: MySqlPool) {
     let seeded = company(&pool).await;
@@ -1470,6 +1471,399 @@ async fn a_vat_payable_account_that_is_the_receivable_is_refused(pool: MySqlPool
         "{err:?}"
     );
     assert_nothing_written(&pool, inv, v, n).await;
+}
+
+// ---------------------------------------------------------------------------
+// Story 36-9 (#1044) — le compte de TVA due du solde contrôle son type
+// ---------------------------------------------------------------------------
+
+/// Story 36-9 (#1044) — le solde du reste en escompte ou en perte écrit la
+/// correction de TVA sur le compte de TVA due **des réglages** : s'il n'est plus
+/// un passif (retypé depuis sa désignation), le solde est refusé
+/// `DesignatedAccountsWrongType`, comme la validation d'une facture (Story 35-3),
+/// et rien n'est écrit. Retypage par `accounts::update`, le chemin réel, sauf
+/// l'AC5 (exception écrite).
+mod tva_due_type {
+    use super::*;
+    use kesh_db::entities::{AccountRole, AccountType, AccountUpdate};
+    use kesh_db::errors::DesignatedSetting;
+    use kesh_db::repositories::accounts;
+    use kesh_db::test_fixtures::attendre_une_requete_en_cours;
+
+    /// Motifs de la requête verrouillante de `vat_payable_account_for_write`
+    /// (Story 36-9, D1) : la liste de colonnes la distingue du verrou partagé de
+    /// la validation (`… active, postable, account_type FROM accounts FORCE
+    /// INDEX`) et de celui des comptes de nature (`SELECT id FROM accounts`).
+    const ACCESSEUR_TVA: &[&str] = &[
+        "SELECT id, number, postable, account_type FROM accounts WHERE id",
+        "FOR UPDATE",
+    ];
+
+    /// Modifie un compte par `accounts::update` (celui de `PUT
+    /// /api/v1/accounts/{id}`), confirmation du retypage donnée : type et rôle
+    /// donnés, nom et imputabilité inchangés.
+    async fn update_account(
+        pool: &MySqlPool,
+        seeded: &SeededCompany,
+        account_id: i64,
+        account_type: AccountType,
+        role: Option<AccountRole>,
+    ) {
+        let a = accounts::find_by_id(pool, account_id)
+            .await
+            .unwrap()
+            .expect("compte");
+        accounts::update(
+            pool,
+            account_id,
+            a.version,
+            seeded.admin_user_id,
+            AccountUpdate {
+                name: a.name,
+                account_type,
+                role,
+                postable: a.postable,
+                // Story 37-1 : devise et comptes de différence propres inchangés
+                // (intégration de la v0.18.0).
+                currency: Default::default(),
+                own_fx_accounts: Default::default(),
+            },
+            true,
+        )
+        .await
+        .expect("accounts::update : le retypage d'un compte désigné passe");
+    }
+
+    /// `(id, numéro, réglage, attendu, réel)` d'un `DesignatedAccountsWrongType`.
+    fn wrong_type(err: DbError) -> Vec<(i64, String, DesignatedSetting, AccountType, AccountType)> {
+        match err {
+            DbError::DesignatedAccountsWrongType(list) => list
+                .iter()
+                .map(|a| {
+                    (
+                        a.account_id,
+                        a.account_number.clone(),
+                        a.setting,
+                        a.expected_type,
+                        a.actual_type,
+                    )
+                })
+                .collect(),
+            other => panic!("attendu DesignatedAccountsWrongType, obtenu {other:?}"),
+        }
+    }
+
+    /// Le refus attendu pour la TVA due `2000` de type `actual`.
+    fn vat_refusal(
+        seeded: &SeededCompany,
+        actual: AccountType,
+    ) -> Vec<(i64, String, DesignatedSetting, AccountType, AccountType)> {
+        vec![(
+            seeded.accounts["2000"],
+            "2000".to_string(),
+            DesignatedSetting::VatPayable,
+            AccountType::Liability,
+            actual,
+        )]
+    }
+
+    /// AC1 — la TVA due `2000`, de rôle `VatPayable`, retypée en actif **en
+    /// gardant son rôle** (un rôle de bilan admet l'actif) : l'escompte et la
+    /// perte sont refusés, rien n'est écrit.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn a_vat_payable_retyped_as_an_asset_keeping_its_role_is_refused(pool: MySqlPool) {
+        let seeded = company(&pool).await;
+        let vat = seeded.accounts["2000"];
+        update_account(
+            &pool,
+            &seeded,
+            vat,
+            AccountType::Liability,
+            Some(AccountRole::VatPayable),
+        )
+        .await;
+        assert_eq!(
+            accounts::find_by_id(&pool, vat)
+                .await
+                .unwrap()
+                .unwrap()
+                .role,
+            Some(AccountRole::VatPayable),
+            "montage : le rôle est posé"
+        );
+        let discount = validated_invoice(&pool, &seeded, &[(dec!(100.00), dec!(8.1))]).await;
+        let bad_debt = validated_invoice(&pool, &seeded, &[(dec!(100.00), dec!(8.1))]).await;
+        update_account(
+            &pool,
+            &seeded,
+            vat,
+            AccountType::Asset,
+            Some(AccountRole::VatPayable),
+        )
+        .await;
+        assert_eq!(
+            accounts::find_by_id(&pool, vat)
+                .await
+                .unwrap()
+                .unwrap()
+                .role,
+            Some(AccountRole::VatPayable),
+            "montage : le rôle est gardé au retypage"
+        );
+
+        for (inv, nature) in [(discount, Nature::Discount), (bad_debt, Nature::BadDebt)] {
+            let (v, n) = (version(&pool, inv).await, entry_count(&pool).await);
+            let err = write_off(&pool, &seeded, inv, nature)
+                .await
+                .expect_err("le solde est refusé");
+            assert_eq!(
+                wrong_type(err),
+                vat_refusal(&seeded, AccountType::Asset),
+                "{nature:?}"
+            );
+            assert_nothing_written(&pool, inv, v, n).await;
+        }
+    }
+
+    /// AC2 — la TVA due sans rôle, retypée seule en charge : même refus.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn a_vat_payable_retyped_as_an_expense_is_refused(pool: MySqlPool) {
+        let seeded = company(&pool).await;
+        let inv = validated_invoice(&pool, &seeded, &[(dec!(100.00), dec!(8.1))]).await;
+        update_account(
+            &pool,
+            &seeded,
+            seeded.accounts["2000"],
+            AccountType::Expense,
+            None,
+        )
+        .await;
+        let (v, n) = (version(&pool, inv).await, entry_count(&pool).await);
+
+        let err = write_off(&pool, &seeded, inv, Nature::Discount)
+            .await
+            .expect_err("le solde est refusé");
+        assert_eq!(wrong_type(err), vat_refusal(&seeded, AccountType::Expense));
+        assert_nothing_written(&pool, inv, v, n).await;
+    }
+
+    /// Revue P1 (B3, E2) — la TVA due retypée en **produit** : même refus. Le
+    /// contrôle est « n'est plus un passif », non une liste de types.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn a_vat_payable_retyped_as_a_revenue_is_refused(pool: MySqlPool) {
+        let seeded = company(&pool).await;
+        let inv = validated_invoice(&pool, &seeded, &[(dec!(100.00), dec!(8.1))]).await;
+        update_account(
+            &pool,
+            &seeded,
+            seeded.accounts["2000"],
+            AccountType::Revenue,
+            None,
+        )
+        .await;
+        let (v, n) = (version(&pool, inv).await, entry_count(&pool).await);
+
+        let err = write_off(&pool, &seeded, inv, Nature::BadDebt)
+            .await
+            .expect_err("le solde est refusé");
+        assert_eq!(wrong_type(err), vat_refusal(&seeded, AccountType::Revenue));
+        assert_nothing_written(&pool, inv, v, n).await;
+    }
+
+    /// AC3 — garde de non-régression (vert au départ) : ce qui ne corrige pas la
+    /// TVA ne lit pas le compte de TVA due, même retypé — frais bancaires et
+    /// reste d'arrondi d'une facture à TVA, escompte d'une facture sans TVA, et
+    /// (revue P1, E1) escompte d'un reste si petit d'une facture à TVA que sa
+    /// part de TVA s'arrondit à zéro (`write_off_vat_shares` l'omet).
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn what_does_not_correct_vat_passes_with_a_retyped_vat_payable(pool: MySqlPool) {
+        let seeded = company(&pool).await;
+        let vat = seeded.accounts["2000"];
+        let fees = validated_invoice(&pool, &seeded, &[(dec!(100.00), dec!(8.1))]).await;
+        let rounding = validated_invoice(&pool, &seeded, &[(dec!(100.00), dec!(8.1))]).await;
+        let no_vat = validated_invoice(&pool, &seeded, &[(dec!(100.00), dec!(0))]).await;
+        let tiny = validated_invoice(&pool, &seeded, &[(dec!(100.00), dec!(8.1))]).await;
+        // 108.10 − 108.06 : un reste de 4 centimes, soldable en reste d'arrondi.
+        settle_cash(&pool, &seeded, rounding, dec!(108.06)).await;
+        // 108.10 − 108.04 : un reste de 6 centimes ; sa TVA, 0.06 × 8.10 / 108.10
+        // = 0.0045, s'arrondit à 0.00 : aucune part, la TVA due n'est pas lue.
+        settle_cash(&pool, &seeded, tiny, dec!(108.04)).await;
+        update_account(&pool, &seeded, vat, AccountType::Asset, None).await;
+
+        for (inv, nature) in [
+            (fees, Nature::BankFees),
+            (rounding, Nature::Rounding),
+            (no_vat, Nature::Discount),
+            (tiny, Nature::Discount),
+        ] {
+            let out = write_off(&pool, &seeded, inv, nature)
+                .await
+                .unwrap_or_else(|e| panic!("{nature:?} : le solde passe : {e:?}"));
+            let lines = entry_lines(&pool, out.journal_entry_id).await;
+            // Revue P1 (B1) : l'écriture existe et crédite la créance — sans quoi
+            // le `all` ci-dessous passerait à vide.
+            assert!(
+                lines
+                    .iter()
+                    .any(|(account, _, credit)| *account == seeded.accounts["1100"]
+                        && *credit > Decimal::ZERO),
+                "{nature:?} : la créance est créditée : {lines:?}"
+            );
+            assert!(
+                lines.iter().all(|(account, _, _)| *account != vat),
+                "{nature:?} : aucune ligne sur la TVA due : {lines:?}"
+            );
+        }
+    }
+
+    /// AC4 — **ordre des refus** du compte de TVA due (D2, D3) : retypé et
+    /// archivé → `ConfigurationRequired` ; retypé et non imputable → le refus de
+    /// type ; désigné sur la créance non retypée (un actif) → le refus de type,
+    /// avant la comparaison à la créance.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn the_type_comes_after_archived_and_before_non_postable_and_claim(pool: MySqlPool) {
+        let seeded = company(&pool).await;
+        let vat = seeded.accounts["2000"];
+        let inv = validated_invoice(&pool, &seeded, &[(dec!(100.00), dec!(8.1))]).await;
+        update_account(&pool, &seeded, vat, AccountType::Asset, None).await;
+        let (v, n) = (version(&pool, inv).await, entry_count(&pool).await);
+
+        // Retypé ET archivé : l'archivage prime.
+        sqlx::query("UPDATE accounts SET active = FALSE WHERE id = ?")
+            .bind(vat)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let err = write_off(&pool, &seeded, inv, Nature::Discount)
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(err, DbError::ConfigurationRequired(ref s) if s == "default_vat_payable_account_id"),
+            "{err:?}"
+        );
+        assert_nothing_written(&pool, inv, v, n).await;
+
+        // Retypé ET non imputable : le type prime.
+        sqlx::query("UPDATE accounts SET active = TRUE, postable = FALSE WHERE id = ?")
+            .bind(vat)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let err = write_off(&pool, &seeded, inv, Nature::Discount)
+            .await
+            .unwrap_err();
+        assert_eq!(wrong_type(err), vat_refusal(&seeded, AccountType::Asset));
+        assert_nothing_written(&pool, inv, v, n).await;
+
+        // Désigné sur la créance `1100`, non retypée (un actif) : le type d'abord.
+        designate(
+            &pool,
+            &seeded,
+            "default_vat_payable_account_id",
+            Some(seeded.accounts["1100"]),
+        )
+        .await;
+        let err = write_off(&pool, &seeded, inv, Nature::Discount)
+            .await
+            .unwrap_err();
+        assert_eq!(
+            wrong_type(err),
+            vec![(
+                seeded.accounts["1100"],
+                "1100".to_string(),
+                DesignatedSetting::VatPayable,
+                AccountType::Liability,
+                AccountType::Asset,
+            )]
+        );
+        assert_nothing_written(&pool, inv, v, n).await;
+    }
+
+    /// AC4 — une nature égale à la créance précède le refus de type de la TVA
+    /// due : la nature est lue et comparée avant.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn a_nature_on_the_receivable_precedes_a_retyped_vat_payable(pool: MySqlPool) {
+        let seeded = company(&pool).await;
+        let inv = validated_invoice(&pool, &seeded, &[(dec!(100.00), dec!(8.1))]).await;
+        update_account(
+            &pool,
+            &seeded,
+            seeded.accounts["2000"],
+            AccountType::Asset,
+            None,
+        )
+        .await;
+        retype_receivable(&pool, &seeded, "Expense").await;
+        designate(
+            &pool,
+            &seeded,
+            "default_discount_account_id",
+            Some(seeded.accounts["1100"]),
+        )
+        .await;
+        let (v, n) = (version(&pool, inv).await, entry_count(&pool).await);
+
+        let err = write_off(&pool, &seeded, inv, Nature::Discount)
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(
+                err,
+                DbError::SettlementCounterpartyIsClaimAccount {
+                    role: SettlementAccountRole::WriteOffNature,
+                    ..
+                }
+            ),
+            "la nature précède le type de la TVA due : {err:?}"
+        );
+        assert_nothing_written(&pool, inv, v, n).await;
+    }
+
+    /// AC5 — **le type se lit frais, sous le verrou** (patron
+    /// `the_type_is_read_fresh_under_the_lock` de la 35-3) : une transaction tient
+    /// `2000` `FOR UPDATE` et le retype en actif sans conclure ; le solde est vu
+    /// en attente sur l'accesseur de la TVA due ; la transaction valide ; le
+    /// solde lit le type validé et refuse.
+    ///
+    /// Exception à la règle « retypage par `accounts::update` » : celui-ci
+    /// commite lui-même et ne se tient pas ouvert. Sous une lecture du type
+    /// séparée et non verrouillante (mutation M3), l'instantané REPEATABLE READ
+    /// du solde, ouvert avant le retypage, y verrait encore un passif.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn the_vat_payable_type_is_read_fresh_under_the_lock(pool: MySqlPool) {
+        let seeded = company(&pool).await;
+        let vat = seeded.accounts["2000"];
+        let inv = validated_invoice(&pool, &seeded, &[(dec!(100.00), dec!(8.1))]).await;
+        let (v, n) = (version(&pool, inv).await, entry_count(&pool).await);
+
+        let mut bloqueuse = pool.begin().await.unwrap();
+        sqlx::query("SELECT id, name FROM accounts WHERE id = ? FOR UPDATE")
+            .bind(vat)
+            .fetch_all(&mut *bloqueuse)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE accounts SET account_type = 'Asset' WHERE id = ?")
+            .bind(vat)
+            .execute(&mut *bloqueuse)
+            .await
+            .unwrap();
+        let (p, c, u) = (pool.clone(), seeded.company_id, seeded.admin_user_id);
+        let tache = tokio::spawn(async move {
+            invoice_settlements_write::write_off_invoice(&p, u, c, inv, Nature::Discount, D(), v)
+                .await
+        });
+        let vue = attendre_une_requete_en_cours(&pool, ACCESSEUR_TVA, || tache.is_finished()).await;
+        assert!(
+            vue,
+            "le solde n'a pas été vu en attente sur l'accesseur de la TVA due : {:?}",
+            tache.await.map(|r| r.map(|o| o.journal_entry_id))
+        );
+        bloqueuse.commit().await.unwrap();
+
+        let err = tache.await.expect("tâche").expect_err("refusé");
+        assert_eq!(wrong_type(err), vat_refusal(&seeded, AccountType::Asset));
+        assert_nothing_written(&pool, inv, v, n).await;
+    }
 }
 
 // ---------------------------------------------------------------------------

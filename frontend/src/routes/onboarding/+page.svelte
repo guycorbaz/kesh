@@ -14,6 +14,7 @@
 	import { accountIdsWithRole } from '$lib/features/accounts/account-options';
 	import {
 		BANK_ACCOUNT_DESCRIPTION_MAX,
+		bankAccountName,
 		linkableLedgerAccounts,
 		preselectedBankLedgerId,
 	} from '$lib/features/bank-accounts/format';
@@ -24,19 +25,58 @@
 		defaultFiscalYearEnd,
 		defaultFiscalYearStart,
 		fiscalYearRangeProblem,
+		readSavedFiscalYear,
+		saveFiscalYear,
+		clearSavedFiscalYear,
 	} from '$lib/features/onboarding/premier-exercice';
+	import { fetchCompanyCurrent } from '$lib/features/settings/settings.api';
+	import { listFiscalYears } from '$lib/features/fiscal-years/fiscal-years.api';
+	import { ONBOARDING_LANGUAGES, onboardingScreenFor } from '$lib/features/onboarding/onboarding-screens';
+	import OnboardingUnloaded from '$lib/features/onboarding/OnboardingUnloaded.svelte';
+	import OnboardingFinalizeScreen from '$lib/features/onboarding/OnboardingFinalizeScreen.svelte';
+	import OnboardingDone, { type OnboardingSummary } from '$lib/features/onboarding/OnboardingDone.svelte';
+	import OnboardingDemo from '$lib/features/onboarding/OnboardingDemo.svelte';
+	import OnboardingFallback from '$lib/features/onboarding/OnboardingFallback.svelte';
 
 	function msg(key: string, fallback: string): string {
 		return i18nMsg(key, fallback);
 	}
 
+	// Story 36-17 (#1187) — les drapeaux locaux de la fin de l'assistant (fiche, D3, D7).
+	//
+	// `finalizing` est posé AVANT l'appel de l'étape bancaire et avant tout rappel de
+	// `finalize()`, remis à faux dans le `finally` de la finalisation (ou à l'échec de
+	// l'étape bancaire). Il ne se lit pas sur `onboardingState.loading` : entre la fin de
+	// `skipBank()` (son `finally`) et le `_loading = true` de `finalize()`, l'état
+	// « étape 7, chargé, au repos » existe, et l'écran de reprise s'y rendrait un instant.
+	let finalizing = $state(false);
+	/** L'échec de la dernière finalisation : son motif, et s'il appelle la phrase de remède. */
+	let finalizeError = $state<{ motif: string; remedy: boolean } | null>(null);
+	let demoLoading = $state(false);
+	let demoMotif = $state<string | null>(null);
+	let unloadedMotif = $state<string | null>(null);
+
+	/** L'écran de l'état (fiche, D8) : chaque combinaison en a un. */
+	const screen = $derived(
+		onboardingScreenFor({
+			loaded: onboardingState.loaded,
+			stepCompleted: onboardingState.stepCompleted,
+			isDemo: onboardingState.isDemo,
+			finalizing,
+			finalizeFailed: finalizeError !== null,
+			demoLoading,
+		})
+	);
+
 	// Story 31-1b (AC15, #503) — restaurer une sauvegarde au lieu de configurer :
 	// aux étapes 0 à 2 seulement (avant le choix démo / production, qui crée des
 	// données), et pour l'Administrateur seulement (le compte créé par /setup
-	// l'est ; le serveur refuse de toute façon les autres rôles, 403).
+	// l'est ; le serveur refuse de toute façon les autres rôles, 403). Story 36-17 :
+	// pas pendant le chargement des données de démonstration.
 	const showRestoreLink = $derived(
 		onboardingState.loaded &&
 			onboardingState.stepCompleted <= 2 &&
+			!demoLoading &&
 			authState.currentUser?.role === 'Admin'
 	);
 
@@ -73,14 +113,41 @@
 		}
 	}
 
+	// Story 36-17 (#1187, D7) : un indicateur pendant le chargement, puis une navigation
+	// ATTENDUE ; si elle échoue, l'écran « démo prête » reste, avec son motif et
+	// *Commencer*. Un refus du chargement lui-même reste un toast sur l'écran du choix.
 	async function chooseDemoPath() {
+		demoLoading = true;
 		try {
 			await onboardingState.seedDemo();
-			goto('/');
 		} catch (err) {
 			toast.error(
 				errorMessageOf(err, msg('onboarding-demo-load-error', 'Erreur lors du chargement des données de démo'))
 			);
+			return;
+		} finally {
+			demoLoading = false;
+		}
+		try {
+			await goto('/');
+		} catch (err) {
+			demoMotif = errorMessageOf(
+				err,
+				msg('onboarding-demo-navigate-error', "Kesh n'a pas pu s'ouvrir : cliquez sur Commencer.")
+			);
+		}
+	}
+
+	// Story 36-17 (#1187, D9) : *Réessayer* de l'écran « état non lu ».
+	async function retryFetchState() {
+		unloadedMotif = null;
+		try {
+			await onboardingState.fetchState();
+		} catch (err) {
+			// Le constat est déjà à l'écran : le motif ne le suit que s'il en dit plus.
+			const constat = msg('onboarding-state-load-error', "L'état de la configuration n'a pas pu être lu.");
+			const motif = errorMessageOf(err, constat);
+			unloadedMotif = motif === constat ? null : motif;
 		}
 	}
 
@@ -241,11 +308,22 @@
 	// qu'elle n'a pas été retouchée. Les deux boutons envoient ces dates à
 	// `finalize`, et restent désactivés, avec le motif, tant qu'elles ne
 	// conviennent pas.
+	//
+	// Revue P1 de l'intégration de la v0.18.0 (H1) : la saisie est gardée pour l'onglet
+	// (`sessionStorage`, `premier-exercice.ts`) et relue ici, pour survivre au lien de
+	// remède d'un refus de finalisation (*Administration → Facturation*) et au retour par
+	// la bannière ; les dates restent affichées et modifiables sur les écrans d'échec et
+	// de reprise (`premierExercice`, ci-dessous). Effacée après une finalisation réussie.
 	const fyDefaultStart = defaultFiscalYearStart(todayLocal());
-	let fyStart = $state(fyDefaultStart);
-	let fyEnd = $state(defaultFiscalYearEnd(fyDefaultStart) ?? '');
-	let fyEndTouched = $state(false);
+	const fySaved = readSavedFiscalYear();
+	let fyStart = $state(fySaved?.start ?? fyDefaultStart);
+	let fyEnd = $state(fySaved?.end ?? defaultFiscalYearEnd(fyDefaultStart) ?? '');
+	let fyEndTouched = $state(fySaved?.endTouched ?? false);
 	const fyProblem = $derived(fiscalYearRangeProblem(fyStart, fyEnd));
+
+	function keepFiscalYear() {
+		saveFiscalYear({ start: fyStart, end: fyEnd, endTouched: fyEndTouched });
+	}
 
 	function setFyStart(value: string) {
 		fyStart = value;
@@ -253,11 +331,13 @@
 			const end = defaultFiscalYearEnd(value);
 			if (end !== null) fyEnd = end;
 		}
+		keepFiscalYear();
 	}
 
 	function setFyEnd(value: string) {
 		fyEnd = value;
 		fyEndTouched = true;
+		keepFiscalYear();
 	}
 
 	function fyProblemText(): string {
@@ -282,39 +362,119 @@
 	// 1100/3000 manquants » s'affichait donc « Finalisation échouée ». Toute erreur autre
 	// que « déjà finalisé » passe désormais par `errorMessageOf` : le motif du serveur,
 	// sinon le message de la finalisation.
-	function reportFinalizeError(err: unknown) {
+	//
+	// Story 36-17 (#1187, D2, D5) : l'échec s'affiche À L'ÉCRAN de l'étape 7, avec
+	// *Réessayer* — plus de toast passager sur une page vide. Sous `VALIDATION_ERROR` (le
+	// seul refus de validation de la finalisation, reconnu au code et non au texte), un
+	// lien vers *Administration → Facturation* suit le motif, qui nomme le réglage en
+	// défaut et son remède (36-19, #1200 ; la phrase de remède de la 36-17 est retirée à
+	// l'intégration de la 0.18.0). « Déjà finalisé » relit
+	// l'état et montre son écran ; une relecture en échec s'affiche de même.
+	async function reportFinalizeError(err: unknown) {
 		if (isApiError(err) && err.code === 'ONBOARDING_STEP_ALREADY_COMPLETED') {
-			toast.error(
-				msg(
-					'onboarding-already-finalized',
-					"L'onboarding est déjà finalisé. Veuillez recharger la page."
-				)
-			);
+			try {
+				await onboardingState.fetchState();
+			} catch (relecture) {
+				finalizeError = {
+					motif: errorMessageOf(
+						relecture,
+						msg('onboarding-state-load-error', "L'état de la configuration n'a pas pu être lu.")
+					),
+					remedy: false,
+				};
+			}
 			return;
 		}
-		toast.error(errorMessageOf(err, msg('onboarding-finalize-error', 'Finalisation échouée — réessayez.')));
+		finalizeError = {
+			motif: errorMessageOf(err, msg('onboarding-finalize-error', 'Finalisation échouée — réessayez.')),
+			remedy: isApiError(err) && err.code === 'VALIDATION_ERROR',
+		};
 	}
 
-	// P6-L7: defense-in-depth — never navigate to / unless the backend confirmed
-	// stepCompleted == 8. A bug or race that returns a stale snapshot would
-	// otherwise drop the user into the main app with onboarding incomplete.
-	function navigateHomeIfFinalized() {
-		if (onboardingState.stepCompleted === 8) {
-			goto('/');
-		} else {
-			toast.error(
-				msg(
-					'onboarding-finalize-incomplete',
-					"La finalisation n'a pas été confirmée. Veuillez recharger la page."
-				)
+	// Story 36-17 (#1187, D1, D3) : la finalisation, après l'étape bancaire ou par
+	// *Réessayer* / *Terminer la configuration*. Ordre du geste : effacer l'erreur, poser
+	// `finalizing`, appeler — pendant une relance, « Configuration en cours… » s'affiche,
+	// non l'écran d'échec. Aucune navigation d'office : l'étape 8 rend la page
+	// « Configuration terminée », dont *Commencer* recharge l'application.
+	//
+	// Story 37-1 (AC-11), intégration de la v0.18.0 : chaque finalisation — après l'étape
+	// bancaire, *Réessayer* après un échec, *Terminer la configuration* à la reprise — envoie
+	// les dates du premier exercice choisies sur la page (`finalizeBody`). Sans elles, un
+	// *Réessayer* créerait l'exercice aux dates par défaut du serveur, en silence.
+	//
+	// Revue P1 de l'intégration (H1) : la saisie survit au rechargement et au départ par le
+	// lien de remède (relue de `sessionStorage` ; à défaut de stockage, les dates par défaut
+	// de l'assistant, l'année civile du jour) ; les dates sont sous les yeux de l'utilisateur
+	// sur les écrans d'échec et de reprise. Elle est effacée après une finalisation réussie.
+	async function runFinalize() {
+		finalizeError = null;
+		finalizing = true;
+		try {
+			await onboardingState.finalize(finalizeBody());
+			clearSavedFiscalYear();
+		} catch (err) {
+			await reportFinalizeError(err);
+		} finally {
+			finalizing = false;
+		}
+	}
+
+	/**
+	 * *Réessayer* et *Terminer la configuration* ne répondent pas pendant un appel (D3), ni
+	 * tant que les dates du premier exercice ne conviennent pas (37-1, AC-11 ; revue P1 de
+	 * l'intégration, H1).
+	 */
+	const finalizeDisabled = $derived(finalizing || onboardingState.loading || fyProblem !== null);
+
+	/** *Réessayer*, *Terminer la configuration*, ou la touche Entrée dans un champ de date. */
+	function finalizeAgain() {
+		if (finalizeDisabled) return;
+		void runFinalize();
+	}
+
+	// Story 36-17 (#1187, D6) : le récapitulatif de la page terminée, lu une fois à son
+	// affichage. De chaque compte bancaire, seul son nom d'affichage (`bankAccountName` : la
+	// banque et la description) est recopié : aucun IBAN n'atteint l'écran.
+	let summary = $state<OnboardingSummary | null>(null);
+	let summaryError = $state<string | null>(null);
+	let summaryRequested = false;
+
+	async function loadSummary() {
+		try {
+			const [current, years] = await Promise.all([fetchCompanyCurrent(), listFiscalYears()]);
+			summary = {
+				companyName: current.company.name,
+				orgType: current.company.orgType,
+				accountingLanguage: current.company.accountingLanguage,
+				fiscalYears: [...years]
+					.sort((a, b) => a.startDate.localeCompare(b.startDate))
+					.map((y) => ({ name: y.name, startDate: y.startDate, endDate: y.endDate })),
+				bankAccounts: current.bankAccounts.map((compte) => ({
+					name: bankAccountName(compte),
+					card: compte.accountKind === 'credit_card',
+				})),
+			};
+		} catch (err) {
+			summaryError = errorMessageOf(
+				err,
+				msg('onboarding-done-summary-error', "Le récapitulatif n'a pas pu être lu.")
 			);
 		}
 	}
+
+	$effect(() => {
+		if (screen === 'done' && !summaryRequested) {
+			summaryRequested = true;
+			// Une configuration terminée n'a plus de premier exercice à choisir.
+			clearSavedFiscalYear();
+			void loadSummary();
+		}
+	});
 
 	async function submitBankAccount() {
 		// Revue P1 (B-2) : pas d'envoi avant la fin du chargement de la liste (le
 		// bouton est désactivé ; ce garde couvre la touche Entrée).
-		if (bankLedgerLoading) return;
+		if (bankLedgerLoading || finalizing) return;
 		// Story 37-1 (AC-11) : dates du premier exercice d'abord (bouton désactivé ;
 		// ce garde couvre la touche Entrée) — rien ne s'enregistre avant.
 		if (fyProblem !== null) return;
@@ -322,6 +482,9 @@
 			toast.error(msg('onboarding-bank-required', 'Nom de banque et IBAN sont obligatoires'));
 			return;
 		}
+		// Story 36-17 (D3) : posé AVANT l'étape bancaire, pour qu'aucun instant de l'étape 7
+		// ne rende l'écran de reprise avant la finalisation.
+		finalizing = true;
 		try {
 			// Story 34-1 (AC-1) : description et compte lié toujours envoyés, `null`
 			// compris — un champ absent vaudrait « inchangé » côté serveur.
@@ -333,89 +496,165 @@
 				journalAccountId: bankJournalAccountId,
 			});
 		} catch (err) {
+			finalizing = false;
 			toast.error(
 				errorMessageOf(err, msg('onboarding-bank-save-error', 'Erreur lors de la sauvegarde du compte bancaire'))
 			);
 			return;
 		}
-		try {
-			await onboardingState.finalize(finalizeBody());
-			navigateHomeIfFinalized();
-		} catch (err) {
-			reportFinalizeError(err);
-		}
+		await finalizeAfterBankStep();
 	}
 
 	async function handleSkipBank() {
+		// Revue P1 (B3, E3) : même garde de réentrée que `submitBankAccount` — un second appel
+		// relancerait `skipBank`, dont le refus remettrait `finalizing` à faux pendant la
+		// finalisation du premier.
+		if (finalizing) return;
+		// Story 37-1 (AC-11) : dates du premier exercice d'abord.
 		if (fyProblem !== null) return;
+		finalizing = true;
 		try {
 			await onboardingState.skipBank();
 		} catch (err) {
+			finalizing = false;
 			toast.error(
 				errorMessageOf(err, msg('onboarding-bank-skip-error', 'Erreur lors du saut du compte bancaire'))
 			);
 			return;
 		}
-		try {
-			await onboardingState.finalize(finalizeBody());
-			navigateHomeIfFinalized();
-		} catch (err) {
-			reportFinalizeError(err);
+		await finalizeAfterBankStep();
+	}
+
+	// Revue P1 (E5) : la finalisation ne part qu'à l'étape 7, la seule où son écran (échec,
+	// en cours) se lit. Si l'étape bancaire rendait un autre état, la page montre simplement
+	// l'écran de cet état, boutons actifs, plutôt qu'un refus muet.
+	async function finalizeAfterBankStep() {
+		if (onboardingState.stepCompleted !== 7) {
+			finalizing = false;
+			return;
 		}
+		await runFinalize();
 	}
 
 	const cardClass = "rounded-lg border border-border bg-white p-6 text-left shadow-sm transition-colors hover:border-primary hover:bg-primary-light/5";
 </script>
 
-{#if onboardingState.loading && !onboardingState.loaded}
-	<div class="flex justify-center p-8">
-		<p class="text-text-muted">{msg('common-loading', 'Chargement…')}</p>
-	</div>
+<!-- Story 37-1 (AC-11) : le premier exercice — au-dessus du compte bancaire (écran 6), et,
+     depuis la revue P1 de l'intégration de la v0.18.0 (H1), sur les écrans d'échec et de
+     reprise de la finalisation, au-dessus de *Réessayer* / *Terminer la configuration* :
+     aucune finalisation ne part sur des dates que l'utilisateur n'a pas sous les yeux. Les
+     champs sont ceux de l'écran Exercices (`type="date"`) ; la forme suisse JJ.MM.AAAA se
+     relit sous les champs. -->
+{#snippet premierExercice()}
+	<section class="mb-8 flex flex-col gap-4" data-testid="onboarding-fiscal-year">
+		<h2 class="text-center text-xl font-semibold">
+			{msg('onboarding-fiscal-year-title', 'Premier exercice')}
+		</h2>
+		<div class="grid grid-cols-2 gap-3">
+			<div>
+				<label for="fy-start" class="mb-1 block text-sm font-medium">
+					{msg('onboarding-fiscal-year-start', 'Début')}
+				</label>
+				<Input
+					id="fy-start"
+					type="date"
+					bind:value={() => fyStart, setFyStart}
+					data-testid="onboarding-fiscal-year-start"
+				/>
+			</div>
+			<div>
+				<label for="fy-end" class="mb-1 block text-sm font-medium">
+					{msg('onboarding-fiscal-year-end', 'Fin')}
+				</label>
+				<Input
+					id="fy-end"
+					type="date"
+					bind:value={() => fyEnd, setFyEnd}
+					data-testid="onboarding-fiscal-year-end"
+					aria-invalid={fyProblem !== null}
+					aria-describedby={fyProblem !== null ? 'fy-problem' : undefined}
+				/>
+			</div>
+		</div>
+		{#if fyProblem === null}
+			<p class="text-sm" data-testid="onboarding-fiscal-year-summary">
+				{i18nMsg('onboarding-fiscal-year-summary', 'Du { $start } au { $end }', {
+					start: formatSwissDate(fyStart),
+					end: formatSwissDate(fyEnd),
+				})}
+			</p>
+		{:else}
+			<p id="fy-problem" class="text-sm text-destructive" role="alert" data-testid="onboarding-fiscal-year-problem">
+				{fyProblemText()}
+			</p>
+		{/if}
+		<p class="text-sm text-text-muted" data-testid="onboarding-fiscal-year-immutable">
+			{msg('onboarding-fiscal-year-immutable', 'Les dates d’un exercice ne se modifient plus une fois créé.')}
+		</p>
+	</section>
+{/snippet}
 
-{:else if onboardingState.stepCompleted === 0}
+<!--
+	Story 36-17 (#1187, D8) : un écran pour chaque état, choisi par `onboardingScreenFor`.
+	Chaque écran porte `data-testid="onboarding-screen-<id>"` (les étapes 0 à 6 par une
+	enveloppe, sans autre changement de leur contenu) ; le détecteur
+	`onboarding-screens.test.ts` exige exactement un écran par état.
+-->
+{#if screen === 'unloaded'}
+	<OnboardingUnloaded loading={onboardingState.loading} motif={unloadedMotif} onRetry={retryFetchState} />
+
+{:else if screen === '0'}
 	<!-- Step 1 : Langue -->
+	<div data-testid="onboarding-screen-0">
 	<div class="grid grid-cols-2 gap-4">
-		{#each [['FR', 'Français'], ['DE', 'Deutsch'], ['IT', 'Italiano'], ['EN', 'English']] as [code, label]}
-			<button class={cardClass + " text-center text-lg font-medium"} onclick={() => chooseLanguage(code)} disabled={onboardingState.loading}>
+		{#each ONBOARDING_LANGUAGES as [code, label]}
+			<button class={cardClass + " text-center text-lg font-medium"} onclick={() => chooseLanguage(code)} disabled={onboardingState.loading} data-testid={`onboarding-language-${code}`}>
 				{label}
 			</button>
 		{/each}
 	</div>
+	</div>
 
-{:else if onboardingState.stepCompleted === 1}
+{:else if screen === '1'}
 	<!-- Step 2 : Mode -->
+	<div data-testid="onboarding-screen-1">
 	<h2 class="mb-6 text-center text-xl font-semibold">
 		{msg('onboarding-choose-mode', 'Choisissez votre mode d\'utilisation')}
 	</h2>
 	<div class="flex flex-col gap-4">
-		<button class={cardClass} onclick={() => chooseMode('guided')} disabled={onboardingState.loading}>
+		<button class={cardClass} onclick={() => chooseMode('guided')} disabled={onboardingState.loading} data-testid="onboarding-mode-guided">
 			<div class="text-lg font-medium">{msg('onboarding-mode-guided', 'Guidé')}</div>
 			<div class="mt-1 text-sm text-text-muted">{msg('onboarding-mode-guided-desc', 'Espacements généreux, aide contextuelle, confirmations avant actions')}</div>
 		</button>
-		<button class={cardClass} onclick={() => chooseMode('expert')} disabled={onboardingState.loading}>
+		<button class={cardClass} onclick={() => chooseMode('expert')} disabled={onboardingState.loading} data-testid="onboarding-mode-expert">
 			<div class="text-lg font-medium">{msg('onboarding-mode-expert', 'Expert')}</div>
 			<div class="mt-1 text-sm text-text-muted">{msg('onboarding-mode-expert-desc', 'Interface compacte, raccourcis clavier, actions directes')}</div>
 		</button>
 	</div>
+	</div>
 
-{:else if onboardingState.stepCompleted === 2}
+{:else if screen === '2'}
 	<!-- Step 3 : Chemin A/B -->
+	<div data-testid="onboarding-screen-2">
 	<h2 class="mb-6 text-center text-xl font-semibold">
 		{msg('onboarding-choose-path', 'Comment souhaitez-vous commencer ?')}
 	</h2>
 	<div class="flex flex-col gap-4">
-		<button class={cardClass} onclick={chooseDemoPath} disabled={onboardingState.loading}>
+		<button class={cardClass} onclick={chooseDemoPath} disabled={onboardingState.loading} data-testid="onboarding-path-demo">
 			<div class="text-lg font-medium">{msg('onboarding-path-demo', 'Explorer avec des données de démo')}</div>
 			<div class="mt-1 text-sm text-text-muted">{msg('onboarding-path-demo-desc', 'Découvrez Kesh avec des données fictives réalistes')}</div>
 		</button>
-		<button class={cardClass} onclick={chooseProductionPath} disabled={onboardingState.loading}>
+		<button class={cardClass} onclick={chooseProductionPath} disabled={onboardingState.loading} data-testid="onboarding-path-production">
 			<div class="text-lg font-medium">{msg('onboarding-path-production', 'Configurer pour la production')}</div>
 			<div class="mt-1 text-sm text-text-muted">{msg('onboarding-path-production-desc', 'Configurez votre organisation pour commencer à travailler')}</div>
 		</button>
 	</div>
+	</div>
 
-{:else if onboardingState.stepCompleted === 3}
-	<!-- Step 4 : Type d'organisation -->
+{:else if screen === '3'}
+	<!-- Step 4 : Type d'organisation (chemin production seulement : la démo à l'étape 3
+	     a son propre écran, `demo-ready`) -->
+	<div data-testid="onboarding-screen-3">
 	<h2 class="mb-6 text-center text-xl font-semibold">
 		{msg('onboarding-choose-org-type', 'Type d\'organisation')}
 	</h2>
@@ -433,9 +672,11 @@
 			<div class="mt-1 text-sm text-text-muted">{msg('onboarding-org-pme-desc', 'Petite et moyenne entreprise (SA, Sàrl)')}</div>
 		</button>
 	</div>
+	</div>
 
-{:else if onboardingState.stepCompleted === 4}
+{:else if screen === '4'}
 	<!-- Step 5 : Langue comptable -->
+	<div data-testid="onboarding-screen-4">
 	<h2 class="mb-6 text-center text-xl font-semibold">
 		{msg('onboarding-choose-accounting-lang', 'Langue comptable')}
 	</h2>
@@ -443,15 +684,17 @@
 		{msg('onboarding-accounting-lang-desc', 'Langue des libellés du plan comptable (découplée de la langue de l\'interface)')}
 	</p>
 	<div class="grid grid-cols-2 gap-4">
-		{#each [['FR', 'Français'], ['DE', 'Deutsch'], ['IT', 'Italiano'], ['EN', 'English']] as [code, label]}
-			<button class={cardClass + " text-center text-lg font-medium"} onclick={() => chooseAccountingLang(code)} disabled={onboardingState.loading}>
+		{#each ONBOARDING_LANGUAGES as [code, label]}
+			<button class={cardClass + " text-center text-lg font-medium"} onclick={() => chooseAccountingLang(code)} disabled={onboardingState.loading} data-testid={`onboarding-accounting-lang-${code}`}>
 				{label}
 			</button>
 		{/each}
 	</div>
+	</div>
 
-{:else if onboardingState.stepCompleted === 5}
+{:else if screen === '5'}
 	<!-- Step 6 : Coordonnées -->
+	<div data-testid="onboarding-screen-5">
 	<h2 class="mb-6 text-center text-xl font-semibold">
 		{msg('onboarding-coordinates-title', 'Coordonnées de votre organisation')}
 	</h2>
@@ -520,62 +763,17 @@
 			</label>
 			<Input id="coord-ide" bind:value={coordIde} placeholder="CHE-123.456.789" />
 		</div>
-		<Button type="submit" disabled={onboardingState.loading}>
+		<Button type="submit" disabled={onboardingState.loading} data-testid="onboarding-coordinates-submit">
 			{msg('onboarding-next', 'Continuer')}
 		</Button>
 	</form>
+	</div>
 
-{:else if onboardingState.stepCompleted === 6}
-	<!-- Step 7 : Compte bancaire -->
-	<!-- Story 37-1 (AC-11) : le premier exercice, au-dessus du compte bancaire. Les
-	     champs sont ceux de l'écran Exercices (`type="date"`) ; la forme suisse
-	     JJ.MM.AAAA se relit sous les champs. -->
-	<section class="mb-8 flex flex-col gap-4" data-testid="onboarding-fiscal-year">
-		<h2 class="text-center text-xl font-semibold">
-			{msg('onboarding-fiscal-year-title', 'Premier exercice')}
-		</h2>
-		<div class="grid grid-cols-2 gap-3">
-			<div>
-				<label for="fy-start" class="mb-1 block text-sm font-medium">
-					{msg('onboarding-fiscal-year-start', 'Début')}
-				</label>
-				<Input
-					id="fy-start"
-					type="date"
-					bind:value={() => fyStart, setFyStart}
-					data-testid="onboarding-fiscal-year-start"
-				/>
-			</div>
-			<div>
-				<label for="fy-end" class="mb-1 block text-sm font-medium">
-					{msg('onboarding-fiscal-year-end', 'Fin')}
-				</label>
-				<Input
-					id="fy-end"
-					type="date"
-					bind:value={() => fyEnd, setFyEnd}
-					data-testid="onboarding-fiscal-year-end"
-					aria-invalid={fyProblem !== null}
-					aria-describedby={fyProblem !== null ? 'fy-problem' : undefined}
-				/>
-			</div>
-		</div>
-		{#if fyProblem === null}
-			<p class="text-sm" data-testid="onboarding-fiscal-year-summary">
-				{i18nMsg('onboarding-fiscal-year-summary', 'Du { $start } au { $end }', {
-					start: formatSwissDate(fyStart),
-					end: formatSwissDate(fyEnd),
-				})}
-			</p>
-		{:else}
-			<p id="fy-problem" class="text-sm text-destructive" role="alert" data-testid="onboarding-fiscal-year-problem">
-				{fyProblemText()}
-			</p>
-		{/if}
-		<p class="text-sm text-text-muted" data-testid="onboarding-fiscal-year-immutable">
-			{msg('onboarding-fiscal-year-immutable', 'Les dates d’un exercice ne se modifient plus une fois créé.')}
-		</p>
-	</section>
+{:else if screen === '6'}
+	<!-- Step 7 : Compte bancaire (reste affiché pendant l'appel de l'étape bancaire,
+	     boutons désactivés, jusqu'au passage à l'étape 7 — Story 36-17, D3) -->
+	<div data-testid="onboarding-screen-6">
+	{@render premierExercice()}
 
 	<h2 class="mb-6 text-center text-xl font-semibold">
 		{msg('onboarding-bank-title', 'Compte bancaire principal')}
@@ -660,17 +858,44 @@
 				type="button"
 				variant="outline"
 				onclick={handleSkipBank}
-				disabled={onboardingState.loading || fyProblem !== null}
+				disabled={onboardingState.loading || finalizing || fyProblem !== null}
 				class="flex-1"
 				data-testid="onboarding-skip-bank"
 			>
 				{msg('onboarding-skip-bank', 'Configurer plus tard')}
 			</Button>
-			<Button type="submit" disabled={onboardingState.loading || bankLedgerLoading || fyProblem !== null} class="flex-1">
+			<Button
+				type="submit"
+				disabled={onboardingState.loading || bankLedgerLoading || finalizing || fyProblem !== null}
+				class="flex-1"
+				data-testid="onboarding-bank-save"
+			>
 				{msg('onboarding-save', 'Enregistrer')}
 			</Button>
 		</div>
 	</form>
+	</div>
+
+{:else if screen === 'finalizing' || screen === 'finalize-error' || screen === 'resume'}
+	<OnboardingFinalizeScreen
+		mode={screen}
+		motif={finalizeError?.motif ?? null}
+		remedy={finalizeError?.remedy ?? false}
+		disabled={finalizeDisabled}
+		onFinalize={finalizeAgain}
+		fiscalYear={premierExercice}
+		resumeText={msg('incomplete-banner-text', "Configuration incomplète : terminez-la avant d'utiliser Kesh.")}
+		resumeCta={msg('incomplete-banner-cta', 'Terminer la configuration')}
+	/>
+
+{:else if screen === 'done'}
+	<OnboardingDone {summary} {summaryError} />
+
+{:else if screen === 'demo-loading' || screen === 'demo-ready'}
+	<OnboardingDemo mode={screen} motif={demoMotif} />
+
+{:else}
+	<OnboardingFallback />
 {/if}
 
 {#if showRestoreLink}

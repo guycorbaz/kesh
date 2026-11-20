@@ -394,6 +394,12 @@ pub async fn societe_complete(
     )
     .await?;
     let mut tx = pool.begin().await.map_err(map_db_error)?;
+    // `companies` d'abord, dans l'ordre global du dépôt (`companies` → `accounts`) :
+    // `insert_with_defaults_in_tx` le prend en partage depuis la Story 37-1, après
+    // les comptes de TVA verrouillés ci-dessous (revue P1 de l'intégration de la
+    // v0.18.0, L3). Sans effet sur une société neuve, sans concurrent.
+    accounts::lock_company_currency_in_tx(&mut tx, societe.id, accounts::CompanyLock::Share)
+        .await?;
     let tva = company_invoice_settings::lock_vat_role_accounts_in_tx(&mut tx, societe.id).await?;
     let (_, cree) =
         company_invoice_settings::insert_with_defaults_in_tx(&mut tx, societe.id).await?;

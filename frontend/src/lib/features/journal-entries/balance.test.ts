@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import Big from 'big.js';
 import {
+	amountEntryPayload,
+	amountEntryProblem,
 	classifyLine,
 	computeBalance,
-	defaultAmountReader,
 	formatSwissAmount,
 	isValidAmount,
 	journalAmountReader,
@@ -102,7 +103,7 @@ describe('computeBalance', () => {
 			{ debit: '100.00', credit: '' },
 			{ debit: '', credit: '100.00' }
 		];
-		const r = computeBalance(lines);
+		const r = computeBalance(lines, journalAmountReader);
 		expect(r.isBalanced).toBe(true);
 		expect(r.diff.eq(0)).toBe(true);
 	});
@@ -113,7 +114,7 @@ describe('computeBalance', () => {
 			{ debit: '0.05', credit: '' },
 			{ debit: '', credit: '20.00' }
 		];
-		const r = computeBalance(lines);
+		const r = computeBalance(lines, journalAmountReader);
 		expect(r.isBalanced).toBe(true);
 		expect(r.totalDebit.eq(new Big('20'))).toBe(true);
 	});
@@ -123,7 +124,7 @@ describe('computeBalance', () => {
 			{ debit: '100', credit: '' },
 			{ debit: '', credit: '80' }
 		];
-		const r = computeBalance(lines);
+		const r = computeBalance(lines, journalAmountReader);
 		expect(r.isBalanced).toBe(false);
 		expect(r.diff.eq(new Big(20))).toBe(true);
 	});
@@ -132,7 +133,7 @@ describe('computeBalance', () => {
 		const r = computeBalance([
 			{ debit: '', credit: '' },
 			{ debit: '', credit: '' }
-		]);
+		], journalAmountReader);
 		expect(r.isBalanced).toBe(false);
 	});
 
@@ -140,7 +141,7 @@ describe('computeBalance', () => {
 		const r = computeBalance([
 			{ debit: '10.99999', credit: '' },
 			{ debit: '', credit: '10.99999' }
-		]);
+		], journalAmountReader);
 		expect(r.hasInvalidAmount).toBe(true);
 		expect(r.isBalanced).toBe(false);
 	});
@@ -149,47 +150,52 @@ describe('computeBalance', () => {
 		const r = computeBalance([
 			{ debit: '10,50', credit: '' },
 			{ debit: '', credit: '10,50' }
-		]);
+		], journalAmountReader);
 		expect(r.isBalanced).toBe(true);
 	});
 });
 
 describe('classifyLine', () => {
+	// Story 36-18a (D5) : le lecteur est obligatoire ; les attentes sont celles d'avant
+	// (aucun de ces montants n'est ambigu).
+	const classify = (line: { accountId: number | null; debit: string; credit: string }) =>
+		classifyLine(line, journalAmountReader);
+
 	it('vide', () => {
-		expect(classifyLine({ accountId: null, debit: '', credit: '' })).toBe('empty');
+		expect(classify({ accountId: null, debit: '', credit: '' })).toBe('empty');
 	});
 
 	it('valide avec débit seul', () => {
-		expect(classifyLine({ accountId: 1, debit: '100', credit: '' })).toBe('valid');
+		expect(classify({ accountId: 1, debit: '100', credit: '' })).toBe('valid');
 	});
 
 	it('valide avec crédit seul', () => {
-		expect(classifyLine({ accountId: 1, debit: '', credit: '50' })).toBe('valid');
+		expect(classify({ accountId: 1, debit: '', credit: '50' })).toBe('valid');
 	});
 
 	it('partial : compte sans montant', () => {
-		expect(classifyLine({ accountId: 1, debit: '', credit: '' })).toBe('partial');
+		expect(classify({ accountId: 1, debit: '', credit: '' })).toBe('partial');
 	});
 
 	it('partial : montant sans compte', () => {
-		expect(classifyLine({ accountId: null, debit: '100', credit: '' })).toBe('partial');
+		expect(classify({ accountId: null, debit: '100', credit: '' })).toBe('partial');
 	});
 
 	it('partial : débit ET crédit > 0', () => {
-		expect(classifyLine({ accountId: 1, debit: '50', credit: '50' })).toBe('partial');
+		expect(classify({ accountId: 1, debit: '50', credit: '50' })).toBe('partial');
 	});
 
 	it('partial : montant invalide', () => {
-		expect(classifyLine({ accountId: 1, debit: '10.99999', credit: '' })).toBe('partial');
+		expect(classify({ accountId: 1, debit: '10.99999', credit: '' })).toBe('partial');
 	});
 
 	it('partial : montant = 0', () => {
-		expect(classifyLine({ accountId: 1, debit: '0', credit: '' })).toBe('partial');
+		expect(classify({ accountId: 1, debit: '0', credit: '' })).toBe('partial');
 	});
 });
 
 // Story 36-3 (#1051, AC3) — la lecture d'un montant du journal : l'apostrophe des
-// milliers admise, l'ambiguïté « 1.234 » refusée ; la lecture par défaut inchangée.
+// milliers admise, l'ambiguïté « 1.234 » refusée.
 describe('readJournalAmount (Story 36-3, AC3)', () => {
 	// Revue P1 (A1, B1) : « 0001.234 » — les zéros de tête ne comptent pas ; « 1.000 » aussi.
 	it.each(['1.234', '1,234', '12.500', '001.234', '0001.234', '123.456', '1.250', '1.000'])(
@@ -276,16 +282,11 @@ describe('lecteurs de computeBalance et classifyLine (Story 36-3, AC3)', () => {
 		{ debit: '', credit: '1.234' }
 	];
 
-	it('non-régression : la lecture par défaut ne change pas', () => {
+	// Story 36-18a (D5, V2-5) : le lecteur par défaut est retiré ; reste la non-régression
+	// d'`isValidAmount`, que gardent les quantités et le relevé manuel.
+	it('non-régression : isValidAmount ne change pas', () => {
 		expect(isValidAmount('1.234')).toBe(true);
 		expect(isValidAmount("1'234")).toBe(false);
-		const r = computeBalance(ambigu);
-		expect(r.isBalanced).toBe(true);
-		expect(r.totalDebit.eq(new Big('1.234'))).toBe(true);
-		expect(r.totalCredit.eq(new Big('1.234'))).toBe(true);
-		expect(defaultAmountReader('1.234')?.eq(new Big('1.234'))).toBe(true);
-		expect(defaultAmountReader("1'234")).toBeNull();
-		expect(defaultAmountReader('')?.eq(0)).toBe(true);
 	});
 
 	it('avec journalAmountReader, « 1.234 » rend l’écriture invalide', () => {
@@ -314,8 +315,6 @@ describe('lecteurs de computeBalance et classifyLine (Story 36-3, AC3)', () => {
 		expect(
 			classifyLine({ accountId: 1, debit: "1'234,50", credit: '' }, journalAmountReader)
 		).toBe('valid');
-		// Défaut inchangé.
-		expect(classifyLine({ accountId: 1, debit: '1.234', credit: '' })).toBe('valid');
 	});
 });
 
@@ -332,5 +331,41 @@ describe('lineAmountProblem (Story 36-3, D4)', () => {
 		expect(lineAmountProblem("1'234,50", '')).toBeNull();
 		expect(lineAmountProblem('', '')).toBeNull();
 		expect(lineAmountProblem('1.2340', '')).toBeNull();
+	});
+});
+
+// Story 36-18a (#1050, #1159, #1172, #1174 ; D1, AC1) — les aides communes aux écrans qui
+// écrivent un montant. Mutation M1 : `amountEntryPayload` rend `payload` pour `ambiguous`.
+describe('amountEntryPayload et amountEntryProblem (Story 36-18a, D1)', () => {
+	const clairs: [string, string][] = [
+		["1'250", '1250'],
+		['1’250.50', '1250.50'],
+		['1,25', '1.25'],
+		['1250', '1250'],
+		['0.500', '0.500'],
+		['1234.567', '1234.567'],
+		['1.2340', '1.2340']
+	];
+	it.each(clairs)('« %s » → charge %s, sans problème', (raw, payload) => {
+		expect(amountEntryPayload(raw)).toBe(payload);
+		expect(amountEntryProblem(raw)).toBeNull();
+	});
+
+	it.each(['1.250', '12,500', '001.250'])('« %s » est ambigu : aucune charge', (raw) => {
+		expect(amountEntryPayload(raw)).toBeNull();
+		expect(amountEntryProblem(raw)).toBe('ambiguous');
+	});
+
+	it.each(["12'50", '-5', '1e3', '.5', '5.', '10.01000', ' 1250'])(
+		'« %s » est illisible : aucune charge',
+		(raw) => {
+			expect(amountEntryPayload(raw)).toBeNull();
+			expect(amountEntryProblem(raw)).toBe('unreadable');
+		}
+	);
+
+	it('le vide : aucune charge, aucun message (un prix effacé ne part pas à zéro)', () => {
+		expect(amountEntryPayload('')).toBeNull();
+		expect(amountEntryProblem('')).toBeNull();
 	});
 });

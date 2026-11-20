@@ -200,7 +200,10 @@ async fn open_items_balance_matches_the_ledger_and_the_trial_balance(pool: MySql
     )
     .await
     .expect("contre-passation");
-    // Le groupe à cheval : 2024-06-30 et 2026-03-01 (au-dessus de la borne).
+    // Le groupe à cheval : 2024-06-30 et jour − 30 (au-dessus de la borne). Story 36-7a
+    // (#1125) : `a2` suit le jour, sous le verrou glissant de la fixture (jour − 300) ;
+    // l'ancien `2026-03-01` y passait dès le 2026-12-26, et le lettrage était refusé
+    // (`LetteringAllLinesInClosedPeriods`).
     let (_, a1) = ecriture(
         &pool,
         company,
@@ -213,7 +216,7 @@ async fn open_items_balance_matches_the_ledger_and_the_trial_balance(pool: MySql
         &pool,
         company,
         fy,
-        ymd(2026, 3, 1),
+        jours_avant(30),
         &[(creance, dec!(0), dec!(100)), (contre, dec!(100), dec!(0))],
     )
     .await;

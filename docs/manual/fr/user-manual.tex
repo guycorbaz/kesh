@@ -221,7 +221,19 @@ Si vous souhaitez \textbf{tenir votre comptabilité réelle}, choisissez le mode
     \item \textbf{Compte bancaire} : nom de la banque, IBAN et QR-IBAN éventuel, puis, facultatifs, la \textbf{description} du compte (60 caractères au plus) et le \textbf{compte comptable lié} --- celui que la réconciliation passe en écriture. La liste ne propose que les comptes actifs et imputables de type actif ou passif, sans le compte débiteurs ni le compte créanciers~; le compte \textbf{1020} y est \textbf{présélectionné s'il existe} --- une simple proposition de l'écran, que vous changez ou retirez (\emph{Non configuré}). La description et le compte lié \textbf{se modifient ensuite} dans \emph{Administration} → \emph{Comptes bancaires}, comme la page le rappelle. Cette étape peut aussi être passée et complétée plus tard (cf. \S\ref{sec:comptes-bancaires}). Un compte bancaire créé sans compte lié ne se réconcilie pas tant qu'on ne l'a pas lié.
 \end{enumerate}
 
-Dès que vous avez choisi la langue comptable, Kesh met en place le plan comptable de votre type d'organisation, libellé dans cette langue. À la finalisation, il crée votre premier exercice aux dates choisies sur la dernière page (l'année civile en cours si vous gardez les dates proposées)~; un client de l'API qui finalise sans donner de dates obtient l'année civile en cours. L'exercice est créé \emph{mono-devise} (tout en francs suisses)~: la comptabilité multi-devises se règle ensuite, dans les paramètres (\S\ref{sec:multi-devises}). Vous êtes alors prêt à saisir vos premières écritures.
+Dès que vous avez choisi la langue comptable, Kesh met en place le plan comptable de votre type d'organisation, libellé dans cette langue. À la finalisation, il crée votre premier exercice aux dates choisies sur la dernière page (l'année civile en cours si vous gardez les dates proposées~; un client de l'API qui finalise sans donner de dates obtient l'année civile en cours), et désigne les comptes par défaut de facturation que votre plan comptable fournit (compte débiteurs, compte de produit par défaut, compte créanciers, comptes d'arrondi, d'escompte, de frais bancaires et de pertes)~: depuis la version~0.18.0, il le fait \textbf{même si vous avez ouvert avant} le journal, les comptes bancaires, une facture ou les réglages de facturation, et \textbf{sans remplacer un compte que vous y avez déjà choisi}~; si vous avez déjà modifié et enregistré ces réglages (un \emph{Enregistrer} sans rien changer ne compte pas), seuls le compte débiteurs et le compte de produit par défaut, s'ils sont vides, sont complétés. S'il ne peut pas terminer, le message nomme le réglage en défaut, sa cause et le geste qui la lève (par exemple désigner le compte dans \emph{Administration} → \emph{Facturation}). Un compte facultatif inutilisable --- un compte créanciers lié à un compte bancaire, un compte devenu non imputable parce que vous y avez créé un sous-compte, un compte tenu en devise --- n'est pas désigné~: le réglage reste vide, à désigner dans \emph{Administration} → \emph{Facturation}. Si vous avez activé le multi-devises avant la fin de l'assistant, la finalisation suit les règles de l'écran \emph{Facturation} (\S\ref{sec:multi-devises-comptes})~: un compte tenu en devise n'est désigné à aucun réglage, et un compte de gains ou de pertes de change ne devient pas compte de produit par défaut --- s'il porte ce rôle, le message le dit, en nommant, pour un compte propre, le compte en devise qui le désigne~; aux autres réglages (frais bancaires, arrondi…) il est désigné, comme le compte de conversion. L'exercice est créé \emph{mono-devise} (tout en francs suisses), et la finalisation ne règle aucun des trois comptes de change de la société (gains de change, pertes de change, conversion)~: ceux-là, comme le reste de la comptabilité multi-devises, se règlent ensuite, dans les paramètres (\S\ref{sec:multi-devises}).
+
+\paragraph{La fin de l'assistant.} Depuis la version~0.18.0 (\#1187), chaque étape de l'assistant a son écran, jusqu'au bout~:
+
+\begin{itemize}
+    \item après l'étape du compte bancaire (\emph{Enregistrer} ou \emph{Configurer plus tard}), l'écran «~Configuration en cours…~» s'affiche pendant que Kesh met en place les réglages de facturation, les taux de TVA et le premier exercice~; ne fermez pas la page~;
+    \item vient ensuite la page \textbf{«~Configuration terminée~»}, qui rappelle ce qui a été créé --- la société, le plan comptable (type d'organisation et langue comptable), l'exercice et ses dates, le compte bancaire s'il a été saisi (nom de la banque et description, jamais l'IBAN) --- et ce qui reste à faire~: désigner les comptes de TVA si vous êtes assujetti, ajouter le compte bancaire si vous l'avez passé. Le bouton \emph{Commencer} ouvre Kesh~; si le récapitulatif ne peut pas être lu, une ligne le dit, et \emph{Commencer} reste disponible~;
+    \item si la mise en place échoue, son motif reste affiché, avec \emph{Réessayer}~; aucune page vide, aucun rechargement nécessaire~; quand le motif nomme un réglage de facturation en défaut, un lien ouvre \emph{Administration} → \emph{Facturation}. Les dates du premier exercice restent affichées sous le motif, et modifiables~: \emph{Réessayer} --- ou la touche Entrée dans un champ de date --- crée l'exercice aux dates affichées, et reste désactivé, avec le motif, tant qu'elles ne conviennent pas~;
+    \item si vous rechargez la page ou revenez à l'assistant avant la fin de la mise en place, il affiche «~Configuration incomplète : terminez-la avant d'utiliser Kesh.~» et \emph{Terminer la configuration}, qui la reprend --- il ne la relance jamais de lui-même~; les dates du premier exercice choisies sont de nouveau affichées au-dessus du bouton, et modifiables, et \emph{Terminer la configuration} crée l'exercice aux dates affichées --- c'est le cas aussi quand vous revenez après avoir suivi le lien vers \emph{Administration} → \emph{Facturation}. Kesh garde ces dates pour l'onglet du navigateur~: dans un autre onglet, ou si le navigateur ne conserve rien (navigation privée stricte, stockage bloqué), ce sont les dates proposées (l'année civile en cours) qui s'affichent --- vérifiez-les avant de terminer. Dans l'application, une bannière porte la même phrase tant que la configuration n'est pas terminée. Rechargée une fois la configuration terminée, la page de l'assistant montre de nouveau la page «~Configuration terminée~»~;
+    \item en mode démonstration, «~Chargement des données de démonstration…~» s'affiche pendant leur chargement, puis Kesh s'ouvre.
+\end{itemize}
+
+Vous êtes alors prêt à saisir vos premières écritures.
 
 Les comptes de TVA ne sont pas désignés d'office~: un assujetti les désigne dans \emph{Administration} → \emph{Facturation} (TVA due, impôt préalable, décompte) avant sa première facture avec TVA, sans quoi la validation est refusée («~Configuration incomplète : configurez les paramètres de facturation avant de valider.~»).
 
@@ -498,7 +510,7 @@ Lors de la mise à jour vers cette version, Kesh a \textbf{pré-attribué les r�
 \end{keshwarning}
 
 \begin{keshnote}
-Dans cette version, l'indicateur \emph{postable} \textbf{bloque la saisie manuelle} : Kesh refuse une écriture saisie à la main dont une ligne vise un compte non imputable — un compte de regroupement, le compte de résultat de l'exercice ou un compte de clôture. Les autres chemins d'écriture le vérifient aussi~: la validation d'une facture contrôle le compte de produit de chaque ligne, l'enregistrement d'un règlement son compte de contrepartie, la saisie d'une facture fournisseur son compte de charge~; le rapprochement bancaire — manuel, éclaté, ou par acceptation d'une proposition — refuse un compte de contrepartie non imputable, et une règle d'affectation ne peut ni être créée sur un tel compte, ni y être déplacée, ni être réactivée s'il l'est devenu. Les réglages de facturation refusent un compte non imputable \textbf{au moment où vous le désignez}, et la fiche d'un compte bancaire refuse d'y lier un tel compte. Un compte \textbf{désigné dans les réglages de facturation} et devenu non imputable \emph{après} sa désignation --- la créance, la TVA due, le compte créanciers, la TVA récupérable --- est contrôlé \textbf{au moment où une écriture automatique veut l'utiliser}~: la validation d'une facture et l'enregistrement d'une facture fournisseur --- saisie à la main ou créée depuis un document importé --- sont alors refusés, avec un message qui nomme le compte et renvoie à \emph{Administration} → \emph{Facturation}, où un administrateur doit désigner à sa place un compte imputable --- l'un de ses sous-comptes, si vous l'avez scindé. Ces mêmes validations contrôlent aussi le \textbf{type} de ces quatre comptes \emph{(depuis la 0.17.7)}~: un compte changé de type depuis sa désignation --- une créance passée en passif ou en charge, des créanciers passés en actif --- est refusé de la même façon, et ce refus passe avant celui d'un compte non imputable. Deux exceptions, voulues~: l'\textbf{avoir} n'est pas soumis à ce contrôle, pour qu'une facture émise reste toujours annulable --- il crédite la créance que la facture a débitée, lue sur l'écriture de la facture et non dans les réglages, et relit la TVA due dans les réglages au moment de l'avoir, sans la contrôler~; et le \textbf{compte de produit par défaut} n'est pas soumis au contrôle d'\textbf{imputabilité} à l'usage --- son type et son archivage restent contrôlés à la validation. Le \textbf{solde du reste} d'un règlement relit lui aussi la TVA due dans les réglages sans en contrôler le type (limite connue, \#1044). Enfin, le \textbf{règlement} d'une facture déjà validée continue de solder la créance sur le compte que la facture a débité, même si ce compte a changé de type depuis.
+Dans cette version, l'indicateur \emph{postable} \textbf{bloque la saisie manuelle} : Kesh refuse une écriture saisie à la main dont une ligne vise un compte non imputable — un compte de regroupement, le compte de résultat de l'exercice ou un compte de clôture. Les autres chemins d'écriture le vérifient aussi~: la validation d'une facture contrôle le compte de produit de chaque ligne, l'enregistrement d'un règlement son compte de contrepartie, la saisie d'une facture fournisseur son compte de charge~; le rapprochement bancaire — manuel, éclaté, ou par acceptation d'une proposition — refuse un compte de contrepartie non imputable, et une règle d'affectation ne peut ni être créée sur un tel compte, ni y être déplacée, ni être réactivée s'il l'est devenu. Les réglages de facturation refusent un compte non imputable \textbf{au moment où vous le désignez}, et la fiche d'un compte bancaire refuse d'y lier un tel compte. Un compte \textbf{désigné dans les réglages de facturation} et devenu non imputable \emph{après} sa désignation --- la créance, la TVA due, le compte créanciers, la TVA récupérable --- est contrôlé \textbf{au moment où une écriture automatique veut l'utiliser}~: la validation d'une facture et l'enregistrement d'une facture fournisseur --- saisie à la main ou créée depuis un document importé --- sont alors refusés, avec un message qui nomme le compte et renvoie à \emph{Administration} → \emph{Facturation}, où un administrateur doit désigner à sa place un compte imputable --- l'un de ses sous-comptes, si vous l'avez scindé. Ces mêmes validations contrôlent aussi le \textbf{type} de ces quatre comptes \emph{(depuis la 0.17.7)}~: un compte changé de type depuis sa désignation --- une créance passée en passif ou en charge, des créanciers passés en actif --- est refusé de la même façon, et ce refus passe avant celui d'un compte non imputable. Deux exceptions, voulues~: l'\textbf{avoir} n'est pas soumis à ce contrôle, pour qu'une facture émise reste toujours annulable --- il crédite la créance que la facture a débitée, lue sur l'écriture de la facture et non dans les réglages, et relit la TVA due dans les réglages au moment de l'avoir, sans la contrôler~; et le \textbf{compte de produit par défaut} n'est pas soumis au contrôle d'\textbf{imputabilité} à l'usage --- son type et son archivage restent contrôlés à la validation. Le \textbf{solde du reste} d'un règlement en escompte ou en perte, qui corrige la TVA sur le compte \emph{TVA due} des réglages, en contrôle lui aussi le type \emph{(depuis la 0.18.0)}~: un compte \emph{TVA due} qui n'est plus un passif fait refuser le solde, sans rien écrire, avec le même message que la validation (voir «~Solder le reste~»). Enfin, le \textbf{règlement} d'une facture déjà validée continue de solder la créance sur le compte que la facture a débité, même si ce compte a changé de type depuis.
 
 Trois cas échappent encore à ce contrôle, parce qu'un compte peut devenir non imputable \emph{après} avoir été choisi — typiquement quand vous lui créez des sous-comptes~: (1)~le compte comptable d'un compte bancaire \textbf{déjà lié} reste accepté, et continue de servir au rapprochement et aux règlements~; (2)~une règle d'affectation active dont le compte est devenu non imputable reste affichée «~Active~», mais Kesh ne la propose plus~; (3)~le compte de produit d'une \textbf{fiche article} n'est pas contrôlé sur la fiche — il l'est sur la ligne de facture, sauf s'il s'agit du compte de produit par défaut.
 
@@ -752,16 +764,17 @@ faite le 1\textsuperscript{er} janvier à minuit et demi est datée du 1\textsup
 janvier, dans le nouvel exercice. Il en va de même de tout ce que Kesh juge \textbf{au jour}~:
 l'exercice que montre l'accueil, une facture échue (fiche, liste, échéancier et son export), les
 jours de retard d'un rappel et les factures à rappeler, les postes ouverts et la balance âgée
-arrêtés à aujourd'hui, la fin d'un rapport de projet cumulé sans date de fin, la date de clôture
+arrêtés à aujourd'hui, la fin d'un rapport de compte analytique cumulé sans date de fin, la date de clôture
 d'un compte bancaire quand elle n'est pas donnée (par l'API), l'exercice de la société de
 démonstration, les réponses du serveur MCP, et la date du nom des fichiers exportés
 (sauvegarde, export comptable complet, journal d'audit, échéancier). L'écran propose la veille
 de ce même jour comme borne du verrou, quel que soit le fuseau de votre poste~; pour une date que
 vous saisissez (une date de facture), il propose la date \textbf{de votre poste} --- pour un
 poste réglé sur la Suisse, ce sont les mêmes. Les \textbf{heures} enregistrées (journal d'audit,
-envoi d'un rappel) restent en UTC~; le \textbf{jour} d'un envoi de rappel est celui de Zurich pour
-le délai du rappel suivant --- la fenêtre de 30~jours de la réconciliation compte encore, elle,
-depuis le jour UTC du dernier rappel. Le paiement d'une facture n'est pas une heure mais une
+envoi d'un rappel) restent en UTC~; le \textbf{jour} d'un envoi de rappel est celui de Zurich, pour
+le délai du rappel suivant comme pour la fenêtre de 30~jours de la réconciliation, et les filtres
+du journal d'audit choisissent des jours de Zurich (\emph{depuis la version 0.18.0~; avant, le
+jour UTC}). Le paiement d'une facture n'est pas une heure mais une
 \textbf{date}, celle du règlement~: l'export de l'échéancier la reprend telle quelle.
 \emph{Depuis la version 0.17.7~; avant, c'était le jour UTC du serveur, qui ne change
 qu'à une ou deux heures du matin à Zurich.}
@@ -928,7 +941,7 @@ Dans une société passée en \textbf{multi-devises}, un exercice ne se crée pa
 
 Avant de clôturer --- et à tout moment de l'année ---, le bouton \emph{Préparer la clôture} d'un exercice ouvert (\emph{Administration} → \emph{Exercices comptables}, colonne \emph{Actions}) ouvre un panneau qui passe l'exercice en revue~: neuf \textbf{contrôles préalables}, chacun avec son état --- \emph{Rien à signaler}, ou ce qui reste à faire --- et un lien vers l'écran où l'on agit. Le panneau est offert à \textbf{tous les rôles}, Consultation comprise~: il ne fait que lire.
 
-Le panneau ne bloque rien par lui-même~: \textbf{deux contrôles}, marqués \emph{Bloquant}, empêchent la clôture, parce que la clôture elle-même refuse dans ces cas --- l'exercice antérieur encore ouvert et, depuis l'Epic~37, le compte en devise non réévalué. Les sept autres ne l'empêchent pas. Le dialogue de clôture en rappelle le résultat au-dessus de sa confirmation (« Aucun point à vérifier », ou la liste des points)~; une clôture se défait d'ailleurs par une réouverture motivée (\S\ref{sec:reouverture-exercice}).
+Le panneau ne bloque rien par lui-même~: \textbf{deux contrôles}, marqués \emph{Bloquant}, empêchent la clôture, parce que la clôture elle-même refuse dans ces cas --- l'exercice antérieur encore ouvert et, depuis la version~0.19.0, le compte en devise non réévalué. Les sept autres ne l'empêchent pas. Le dialogue de clôture en rappelle le résultat au-dessus de sa confirmation (« Aucun point à vérifier », ou la liste des points)~; une clôture se défait d'ailleurs par une réouverture motivée (\S\ref{sec:reouverture-exercice}).
 
 \begin{description}
     \item[Exercices antérieurs] Un exercice plus ancien est encore ouvert~: le panneau nomme le plus ancien, qu'il faut clôturer d'abord. Ce contrôle bloque, et c'est la clôture elle-même qui bloque (le bouton \emph{Clôturer} est alors désactivé).
@@ -939,7 +952,7 @@ Le panneau ne bloque rien par lui-même~: \textbf{deux contrôles}, marqués \em
     \item[Écritures incohérentes] Des écritures déséquilibrées, à moins de deux lignes, datées hors de leur exercice, ou appartenant à un autre exercice mais datées dans celui-ci. Chaque écriture listée mène à sa fiche.
     \item[Exercice suivant] Aucun exercice ne suit celui-ci~: créez-le pour y passer les écritures de l'année qui vient --- et pour contre-passer vos transitoires au début de cet exercice (\S\ref{sec:transitoires}). Bouton~: \emph{Créer l'exercice suivant}, qui ouvre la création d'un exercice (administrateur et comptable).
     \item[Factures fournisseur en brouillon] Depuis la version~0.17.0~: des factures fournisseur datées dans l'exercice sont restées en \textbf{brouillon}~: jamais validées, leur achat n'est pas en comptabilité (\S\ref{sec:brouillon-fournisseur}). Le panneau nomme les \textbf{vingt premiers} brouillons, par leur numéro interne pour un brouillon qui en a gardé un (\S\ref{sec:numero-interne-fournisseur}), chacun menant à sa fiche, et dit «~… et N autres~» au-delà~; le lien \emph{Ouvrir les brouillons de factures fournisseurs} ouvre la liste des factures fournisseurs \textbf{filtrée sur les brouillons, de tous les exercices} (depuis la version~0.17.2)~: son compte peut donc dépasser celui du contrôle, qui ne compte que les brouillons datés dans l'exercice.
-    \item[Comptes en devise à réévaluer] Depuis l'Epic~37, exercice multi-devises seulement~: un compte de bilan en devise a, au cours de clôture retenu par la société, un \textbf{écart} non nul --- il n'est pas (ou plus) réévalué ---, ou sa devise n'a \textbf{pas de cours de clôture} alors qu'il porte un solde. Ce contrôle \textbf{bloque}~: le bouton \emph{Clôturer} est désactivé, et la clôture refuse. Le panneau nomme les comptes concernés et, pour un comptable ou un administrateur, \textbf{montre directement l'aperçu} de la réévaluation (\S\ref{sec:reevaluation-devises})~; son bouton \emph{Réévaluer} passe les écritures montrées, puis le panneau relit les contrôles. Un compte \textbf{archivé} à écart non nul compte aussi~: réactivez-le pour le réévaluer. Il en va de même d'un compte rendu \textbf{non imputable} qui porte encore un solde~: l'aperçu le montre sans case à cocher, la clôture le compte~; rendez-le imputable pour le réévaluer. (Un compte en devise mouvementé ne reçoit pas de sous-compte, \S\ref{sec:devise-compte}~: il ne devient donc pas non imputable par ce chemin, d'où il ne pourrait plus revenir.) Un compte que vous ne réévaluez pas (poste non monétaire) bloque la clôture tant que son écart n'est pas nul~: tenez un tel poste sur un compte \textbf{en CHF}.
+    \item[Comptes en devise à réévaluer] Depuis la version~0.19.0, exercice multi-devises seulement~: un compte de bilan en devise a, au cours de clôture retenu par la société, un \textbf{écart} non nul --- il n'est pas (ou plus) réévalué ---, ou sa devise n'a \textbf{pas de cours de clôture} alors qu'il porte un solde. Ce contrôle \textbf{bloque}~: le bouton \emph{Clôturer} est désactivé, et la clôture refuse. Le panneau nomme les comptes concernés et, pour un comptable ou un administrateur, \textbf{montre directement l'aperçu} de la réévaluation (\S\ref{sec:reevaluation-devises})~; son bouton \emph{Réévaluer} passe les écritures montrées, puis le panneau relit les contrôles. Un compte \textbf{archivé} à écart non nul compte aussi~: réactivez-le pour le réévaluer. Il en va de même d'un compte rendu \textbf{non imputable} qui porte encore un solde~: l'aperçu le montre sans case à cocher, la clôture le compte~; rendez-le imputable pour le réévaluer. (Un compte en devise mouvementé ne reçoit pas de sous-compte, \S\ref{sec:devise-compte}~: il ne devient donc pas non imputable par ce chemin, d'où il ne pourrait plus revenir.) Un compte que vous ne réévaluez pas (poste non monétaire) bloque la clôture tant que son écart n'est pas nul~: tenez un tel poste sur un compte \textbf{en CHF}.
 \end{description}
 
 \keshscreenshot{rd-controle-cloture.png}{Préparer la clôture : le contrôle bloquant « Comptes en devise à réévaluer » et son aperçu.}
@@ -1013,7 +1026,7 @@ Si vous migrez vers Kesh depuis un autre logiciel comptable, l'écran \emph{Admi
 \begin{enumerate}
     \item \textbf{Préparez le bilan de clôture} de votre ancien logiciel (actifs, passifs, capitaux propres, report à-nouveau accumulé).
     \item \textbf{Ouvrez l'écran} : la grille liste vos comptes de bilan actifs et postables (actifs et passifs — jamais les comptes de produits ou de charges, qui fausseraient le résultat de l'exercice).
-    \item \textbf{Saisissez les soldes} colonne Débit ou Crédit, ligne par ligne. Le total débit, le total crédit et la différence s'affichent en direct.
+    \item \textbf{Saisissez les soldes} colonne Débit ou Crédit, ligne par ligne. Le total débit, le total crédit et la différence s'affichent en direct. Un solde se lit comme le montant d'une écriture (cf. \emph{Saisie d'une écriture en partie double})~: point ou virgule décimale, quatre décimales au plus, apostrophe des milliers (\texttt{1'250})~; un espace avant ou après le montant, collé depuis un tableur, est ignoré. \textbf{\texttt{1.250} est refusé comme ambigu}~: écrivez \texttt{1'250} pour mille deux cent cinquante francs, ou \texttt{1.25} pour un franc vingt-cinq~; le message s'affiche sous la ligne, et l'écriture ne se génère pas tant qu'une ligne porte un montant ambigu ou illisible. Depuis la version~0.18.0~; avant, \texttt{1.250} était lu un franc vingt-cinq sans avertissement.
     \item \textbf{Équilibrez via le report à-nouveau} : posez votre report accumulé sur le compte de rôle \emph{Bénéfice/perte reporté} (2970 dans les plans standards) — au crédit pour un bénéfice cumulé, au \textbf{débit} pour une perte reportée.
     \item \textbf{Générez} : le bouton \emph{Générer l'écriture d'ouverture} (actif seulement une fois la saisie équilibrée) crée \textbf{une écriture OD équilibrée datée au 1\textsuperscript{er} jour de votre premier exercice}. Votre bilan est juste dès le premier jour.
 \end{enumerate}
@@ -1102,7 +1115,7 @@ Chaque exercice est \emph{mono-devise} ou \emph{multi-devises}~; son mode se pos
 
 \subsection{La devise d'un compte}\label{sec:devise-compte}
 
-En multi-devises, \emph{Administration} → \emph{Plan comptable} affiche la devise d'un compte en devise à côté de son numéro (rien pour un compte en CHF), et le formulaire de création et de modification d'un compte un champ \emph{Devise}~: \emph{CHF (devise principale)} ou un code de devise à trois lettres (\texttt{EUR}, \texttt{USD}, \texttt{GBP}\ldots). Choisir CHF revient à ne pas donner de devise. Un compte de regroupement peut porter une devise, à titre informatif~; ses sous-comptes n'en héritent pas. Un compte d'\textbf{actif ou de passif en devise qui porte déjà des écritures} ne reçoit pas de sous-compte (\texttt{409 ACCOUNT\_\allowbreak FOREIGN\_\allowbreak PARENT\_\allowbreak HAS\_\allowbreak ENTRIES})~: il deviendrait non imputable en gardant son solde, que la réévaluation de fin d'exercice ne pourrait plus corriger, et la clôture serait bloquée. Créez plutôt un compte voisin, ou le sous-compte avant la première écriture. En mono-devise, le champ n'existe pas, et une devise envoyée par l'API est refusée (\texttt{409 MULTI\_\allowbreak CURRENCY\_\allowbreak DISABLED}).
+En multi-devises, \emph{Administration} → \emph{Plan comptable} affiche la devise d'un compte en devise à côté de son numéro (rien pour un compte en CHF), et le formulaire de création et de modification d'un compte un champ \emph{Devise}~: \emph{CHF (devise principale)} ou un code de devise à trois lettres (\texttt{EUR}, \texttt{USD}, \texttt{GBP}\ldots), parmi les monnaies \textbf{en cours} --- une monnaie retirée, comme le lev bulgare (\texttt{BGN}), n'est pas proposée et l'API la refuse (\texttt{400 CURRENCY\_\allowbreak UNKNOWN}). Choisir CHF revient à ne pas donner de devise. Un compte de regroupement peut porter une devise, à titre informatif~; ses sous-comptes n'en héritent pas. Un compte d'\textbf{actif ou de passif en devise qui porte déjà des écritures} ne reçoit pas de sous-compte (\texttt{409 ACCOUNT\_\allowbreak FOREIGN\_\allowbreak PARENT\_\allowbreak HAS\_\allowbreak ENTRIES})~: il deviendrait non imputable en gardant son solde, que la réévaluation de fin d'exercice ne pourrait plus corriger, et la clôture serait bloquée. Créez plutôt un compte voisin, ou le sous-compte avant la première écriture. En mono-devise, le champ n'existe pas, et une devise envoyée par l'API est refusée (\texttt{409 MULTI\_\allowbreak CURRENCY\_\allowbreak DISABLED}).
 
 \keshscreenshot{md-plan-colonne-devise.png}{Plan comptable en multi-devises : la devise des comptes en devise s'affiche à côté de leur numéro.}
 
@@ -1156,7 +1169,7 @@ Ces cours sont \textbf{indicatifs et non contraignants}~: chaque cours peut êtr
 
 \subsubsection{Le tableau d'un exercice}
 
-L'écran montre \textbf{un tableau par exercice}~; la liste en haut de l'écran propose les exercices \textbf{multi-devises} (par défaut celui qui couvre aujourd'hui, sinon le plus récent) --- un exercice mono-devise n'a pas de cours et n'y figure pas. Le tableau a \textbf{une ligne par devise} --- celles des comptes de la société~; \emph{Ajouter une devise} en ajoute une, et la case \emph{Toutes les devises publiées} montre aussi les devises qu'aucun compte ne porte --- et \textbf{une colonne par mois de l'exercice}, du premier au dernier, dans l'ordre de l'exercice~: «~juil. 2024~» à «~juin 2025~» pour un exercice au 1er juillet. Kesh n'impose aucune durée d'exercice~: un exercice raccourci ou allongé, lors d'un changement de date de clôture, a moins ou plus de douze colonnes (six pour un exercice de six mois, dix-huit pour dix-huit mois)~; un exercice qui commence en cours de mois (le 15.03.2024, par exemple) a pour premier mois ce mois-là, et treize colonnes s'il dure un an. Suivent les colonnes \textbf{Ouverture} et \textbf{Clôture} (ci-dessous). Seul le tableau défile horizontalement~; la colonne des devises reste en place.
+L'écran montre \textbf{un tableau par exercice}~; la liste en haut de l'écran propose les exercices \textbf{multi-devises} (par défaut celui qui couvre aujourd'hui, sinon le plus récent) --- un exercice mono-devise n'a pas de cours et n'y figure pas. Le tableau a \textbf{une ligne par devise} --- celles des comptes de la société~; \emph{Ajouter une devise} en ajoute une, et la case \emph{Toutes les devises publiées} montre aussi les devises qu'aucun compte ne porte, y compris les monnaies \textbf{retirées} que l'AFC publie pour les périodes où elles avaient cours (le lev bulgare \texttt{BGN} jusqu'en mars 2026, la kuna croate \texttt{HRK}, les monnaies remplacées par l'euro\ldots)~; leurs cours se lisent et se saisissent, mais aucun compte ne s'ouvre dans une monnaie retirée --- et \textbf{une colonne par mois de l'exercice}, du premier au dernier, dans l'ordre de l'exercice~: «~juil. 2024~» à «~juin 2025~» pour un exercice au 1er juillet. Kesh n'impose aucune durée d'exercice~: un exercice raccourci ou allongé, lors d'un changement de date de clôture, a moins ou plus de douze colonnes (six pour un exercice de six mois, dix-huit pour dix-huit mois)~; un exercice qui commence en cours de mois (le 15.03.2024, par exemple) a pour premier mois ce mois-là, et treize colonnes s'il dure un an. Suivent les colonnes \textbf{Ouverture} et \textbf{Clôture} (ci-dessous). Seul le tableau défile horizontalement~; la colonne des devises reste en place.
 
 \keshscreenshot{md-cours-tableau.png}{L'écran Cours de change : un tableau par exercice, une ligne par devise ; sous chaque case, l'origine du cours (« AFC \protect\keshcoche{} » ou « AFC : 0.9300 » avec la flèche \protect$\uparrow$ pour le cours saisi).}
 
@@ -1209,6 +1222,7 @@ Chaque passage qui a un cours à récupérer revérifie aussi le cours du \textb
     \item \emph{Récupérer les cours manquants} demande, colonne par colonne, les cours qui manquent dans le tableau --- une case sans valeur publiée, ou sans cours retenu pour une devise d'un compte. Il reste offert sur un exercice clôturé, que la récupération automatique ignore. Un mois au-delà du mois suivant ou un jour qui n'est pas encore passé ne se récupèrent pas~: la raison s'affiche au survol, et la case reste saisissable. Kesh ne tient aucun cours antérieur au 1er janvier 2000~: une telle case ne se récupère ni ne se saisit. Un échec s'affiche sur les cases de sa colonne sans arrêter les suivantes~;
     \item \emph{Revérifier les cours publiés} redemande les colonnes déjà présentes~: c'est par là qu'une correction de l'AFC sur un autre mois que le mois courant se découvre.
 \end{itemize}
+Une colonne obtenue de l'AFC il y a moins d'un quart d'heure n'est pas redemandée~: Kesh rend ce qu'il en tient déjà --- et un échec ne se redemande pas non plus avant un quart d'heure. Une correction publiée entre-temps se découvre à la revérification suivante.
 
 \subsubsection{Quand l'AFC corrige un cours}\label{sec:cours-correction}
 
@@ -1435,7 +1449,7 @@ dans la recherche. La forme imprimée sur les documents officiels,
 \keshscreenshot{facture-nouvelle.png}{Création d'une facture multi-lignes avec sélection du client.}  % TODO capture: form nouvelle facture
 
 \begin{itemize}
-    \item \textbf{Client} : sélection dans le carnet d'adresses (ou création à la volée).
+    \item \textbf{Client} : se choisit \textbf{dans la liste} du carnet d'adresses, que la frappe filtre~: un clic choisit un client, \emph{Entrée} choisit celui que la frappe ou les flèches ont mis en évidence. Tant qu'un texte tapé n'a pas été choisi dans la liste, \textbf{la facture ne s'enregistre pas}~: ni \emph{Entrée} ni le bouton ne la font partir, le message «~Choisissez le client dans la liste~» le dit, et le texte reste affiché pour que vous puissiez choisir (un champ vidé au clavier puis quitté réaffiche le client retenu). Dans les filtres des listes de factures et d'échéances, un texte non choisi est abandonné en quittant le champ. Un client absent de la liste se crée d'abord dans \emph{Contacts}.
     \item \textbf{Date de facture} : par défaut aujourd'hui.
     \item \textbf{Date d'échéance} : calculée automatiquement selon les conditions de paiement du client (modifiable).
     \item \textbf{Numéro} : généré automatiquement selon le pattern configuré (cf. \emph{Numérotation}).
@@ -1503,9 +1517,11 @@ Le bloc en haut à gauche du PDF porte votre \textbf{nom}, votre \textbf{adresse
 
 Les \textbf{avoirs} portent les mêmes coordonnées, à l'identique.
 
-\textbf{Corriger votre adresse} : même section, bouton \textbf{Modifier} en face de « Adresse » (administrateurs). Rue, numéro, NPA, localité et pays se corrigent là, sans repasser par l'assistant~; NPA et localité sont obligatoires --- un champ qui ne porte qu'un caractère invisible, comme le trait d'union conditionnel collé d'un traitement de texte, compte pour vide, ici comme à l'assistant ---, et le pays s'écrit en code ISO à deux lettres \textbf{connu} («~CH~», «~FR~», «~DE~»…). Si le pays enregistré n'est pas un code connu --- une société configurée avant la version~0.17.4 peut porter «~SU~» ---, un avis le dit dans cette section, et les QR-factures ne se produisent pas tant qu'il n'est pas corrigé~: un code inconnu reste refusé, même inchangé. De même, un caractère que la QR-facture n'admet pas est refusé, et le message nomme le champ et le caractère~; ce message peut être rédigé en français quelle que soit la langue de l'interface (\#710). Une société configurée avant que l'adresse ne soit découpée en champs n'a que son ancien texte, affiché au-dessus du formulaire~: renseignez les champs une fois, ils le remplacent (l'ancien texte reste au journal d'audit), et le PDF ne réclame plus l'adresse de l'entreprise --- il lui faut toujours un compte bancaire principal et l'adresse du client. Le nom et l'IDE ne se modifient pas ici.
+\textbf{Corriger votre adresse} : même section, bouton \textbf{Modifier} en face de « Adresse » (administrateurs). Rue, numéro, NPA, localité et pays se corrigent là, sans repasser par l'assistant~; NPA et localité sont obligatoires --- un champ qui ne porte qu'un caractère invisible, comme le trait d'union conditionnel collé d'un traitement de texte, compte pour vide, ici comme à l'assistant ---, et le pays s'écrit en code ISO à deux lettres \textbf{connu} («~CH~», «~FR~», «~DE~»…). Si le pays enregistré n'est pas un code connu --- une société configurée avant la version~0.17.4 peut porter «~SU~» ---, un avis le dit dans cette section, et les QR-factures ne se produisent pas tant qu'il n'est pas corrigé~: un code inconnu reste refusé, même inchangé. De même, un caractère que la QR-facture n'admet pas est refusé, et le message nomme le champ et le caractère~; ce message peut être rédigé en français quelle que soit la langue de l'interface (\#710). Une société configurée avant que l'adresse ne soit découpée en champs n'a que son ancien texte, affiché au-dessus du formulaire~: renseignez les champs une fois, ils le remplacent (l'ancien texte reste au journal d'audit), et le PDF ne réclame plus l'adresse de l'entreprise --- il lui faut toujours un compte bancaire principal et l'adresse du client.
 
-\textbf{Si quelqu'un a modifié la société entre-temps} --- un autre administrateur, ou vous-même dans un autre onglet ---, votre enregistrement de l'adresse, de l'e-mail ou du téléphone et du site est refusé, et Kesh relit la société avant de vous laisser recommencer (\#953). Sous chaque champ que vous aviez modifié et qu'un autre a changé, il montre la valeur \emph{enregistrée entre-temps}, «~(vide)~» si elle a été effacée~; votre saisie reste, et un avis dit qu'\textbf{enregistrer de nouveau remplacera} ces valeurs. Les champs que vous n'aviez pas touchés prennent la valeur enregistrée, signalée sous le champ par «~Repris de l'enregistrement entre-temps~»~: le second clic ne rétablit donc pas l'ancienne valeur sur la correction d'un collègue. Si la société porte déjà vos valeurs --- la réponse à votre premier clic s'est perdue, ou la même correction a été faite ailleurs ---, l'édition se ferme sur «~déjà enregistrées~». Si aucun champ du bloc que vous éditez n'a été changé ailleurs à une autre valeur que la vôtre (c'est par exemple un autre bloc de la société qui a bougé), le message dit seulement que les données ont été rechargées, et vous pouvez enregistrer de nouveau sans rien écraser. Cela vaut pour chaque bloc ouvert à la fois~: un bloc resté ouvert pendant que vous en enregistriez un autre ne remplace pas en silence ce qu'un autre a écrit dans ses propres champs entre-temps~; son enregistrement est refusé à son tour, et vous le montre.
+\textbf{Corriger le nom de votre entreprise} : même section, bouton \textbf{Modifier} en face de « Nom » (administrateurs). Le nom compte 70 caractères au plus et s'écrit dans le jeu de caractères de la QR-facture~; un nom vide, trop long ou qui porte un caractère refusé est refusé, et le message dit pourquoi --- en français, comme celui de l'adresse (\#710). Un nom saisi à l'assistant et refusé ensuite par la QR-facture se corrige ainsi, sans repasser par l'assistant. Le nom corrigé vaut pour les factures, les avoirs, les e-mails, les ordres de paiement et tout ce que Kesh produit ensuite, rapports compris~; le PDF d'une facture déjà figé ne change pas. Pour une personne physique, le prénom et le nom saisis à l'assistant ne changent pas~: seul le nom affiché, celui des documents, est corrigé. Seul l'IDE ne se modifie pas ici.
+
+\textbf{Si quelqu'un a modifié la société entre-temps} --- un autre administrateur, ou vous-même dans un autre onglet ---, votre enregistrement du nom, de l'adresse, de l'e-mail ou du téléphone et du site est refusé, et Kesh relit la société avant de vous laisser recommencer (\#953). Sous chaque champ que vous aviez modifié et qu'un autre a changé, il montre la valeur \emph{enregistrée entre-temps}, «~(vide)~» si elle a été effacée~; votre saisie reste, et un avis dit qu'\textbf{enregistrer de nouveau remplacera} ces valeurs. Les champs que vous n'aviez pas touchés prennent la valeur enregistrée, signalée sous le champ par «~Repris de l'enregistrement entre-temps~»~: le second clic ne rétablit donc pas l'ancienne valeur sur la correction d'un collègue. Si la société porte déjà vos valeurs --- la réponse à votre premier clic s'est perdue, ou la même correction a été faite ailleurs ---, l'édition se ferme sur «~déjà enregistrées~». Si aucun champ du bloc que vous éditez n'a été changé ailleurs à une autre valeur que la vôtre (c'est par exemple un autre bloc de la société qui a bougé), le message dit seulement que les données ont été rechargées, et vous pouvez enregistrer de nouveau sans rien écraser. Cela vaut pour chaque bloc ouvert à la fois~: un bloc resté ouvert pendant que vous en enregistriez un autre ne remplace pas en silence ce qu'un autre a écrit dans ses propres champs entre-temps~; son enregistrement est refusé à son tour, et vous le montre.
 
 \textbf{Une facture déjà émise ne change plus} : vos coordonnées s'impriment sur les factures dont le PDF n'est pas encore figé. Celui d'une facture déjà téléchargée ou envoyée reste tel qu'il a été émis (cf. \S\ref{sec:pdf-fige}).
 
@@ -1573,17 +1589,21 @@ Le PDF est téléchargeable depuis la facture validée — pour l'imprimer (envo
 Le choix du format dépend du compte bancaire principal : s'il porte un QR-IBAN, la QR-facture utilise ce QR-IBAN et une référence QRR ; sinon, son IBAN, sans référence structurée.
 \end{keshtip}
 
-\paragraph{Les caractères d'une QR-facture.} Depuis la version~0.17.5, Kesh admet tout le jeu de caractères de la directive SIX (\S~4.1.1)~: un nom comme \emph{Müller \& Söhne} reçoit sa QR-facture, là où le téléchargement du PDF était refusé, et les lettres roumaines Ș, ș, Ț, ț passent aussi. Dans le code QR, l'apostrophe typographique devient une apostrophe droite, le tiret cadratin un trait d'union, l'espace insécable une espace~; le trait d'union conditionnel et les blancs en début ou en fin de champ sont retirés. Les guillemets typographiques, le tiret demi-cadratin et les points de suspension restent refusés (issue \#942). Depuis la version~0.17.7, le téléchargement refusé \textbf{nomme le champ et le caractère à corriger}, et dit où le corriger, par exemple~: «~La localité du client contient un caractère refusé par la QR-facture~: «~–~» (U+2013). Corrigez la fiche du client dans le carnet d'adresses.~» Le nom de l'entreprise fait exception~: il ne se modifie pas encore depuis l'interface (issue \#1097), et le message le dit au lieu de renvoyer à un écran. Le refus de l'envoi par e-mail, d'un rappel seul et du refigeage dit la même chose, et le compte-rendu d'un lot de rappels la reprend, après le libellé «~Facture non imprimable en PDF~». Un caractère invisible (un saut de ligne, une espace de largeur nulle) s'écrit échappé, comme \keshcommand{\textbackslash n}, suivi de son point de code. Ces caractères se cherchent dans le nom et l'adresse du client et de l'entreprise, et dans le \textbf{numéro de facture}, qui entre dans la communication du code QR~: une facture validée ne se corrige pas, c'est alors le format de numérotation, dans \emph{Administration → Facturation}, qui est à revoir pour les factures suivantes. De même, une adresse incomplète nomme le champ vide («~Adresse du client incomplète~: la localité est vide.~»), y compris quand il ne porte qu'un caractère invisible, et un code pays hors de la liste ISO nomme la partie et le code («~Le pays de l'entreprise («~SU~») n'est pas un code ISO valide.~»).
+\paragraph{Les caractères d'une QR-facture.} Depuis la version~0.17.5, Kesh admet tout le jeu de caractères de la directive SIX (\S~4.1.1)~: un nom comme \emph{Müller \& Söhne} reçoit sa QR-facture, là où le téléchargement du PDF était refusé, et les lettres roumaines Ș, ș, Ț, ț passent aussi. Dans le code QR, l'apostrophe typographique devient une apostrophe droite, le tiret cadratin un trait d'union, l'espace insécable une espace~; le trait d'union conditionnel et les blancs en début ou en fin de champ sont retirés. Les guillemets typographiques, le tiret demi-cadratin et les points de suspension restent refusés (issue \#942). Depuis la version~0.17.7, le téléchargement refusé \textbf{nomme le champ et le caractère à corriger}, et dit où le corriger, par exemple~: «~La localité du client contient un caractère refusé par la QR-facture~: «~–~» (U+2013). Corrigez la fiche du client dans le carnet d'adresses.~» Le nom de l'entreprise se corrige dans \emph{Paramètres → Organisation} depuis la version~0.19.0, et le message y renvoie. Le refus de l'envoi par e-mail, d'un rappel seul et du refigeage dit la même chose, et le compte-rendu d'un lot de rappels la reprend, après le libellé «~Facture non imprimable en PDF~». Un caractère invisible (un saut de ligne, une espace de largeur nulle) s'écrit échappé, comme \keshcommand{\textbackslash n}, suivi de son point de code. Ces caractères se cherchent dans le nom et l'adresse du client et de l'entreprise, et dans le \textbf{numéro de facture}, qui entre dans la communication du code QR~: une facture validée ne se corrige pas, c'est alors le format de numérotation, dans \emph{Administration → Facturation}, qui est à revoir pour les factures suivantes. De même, une adresse incomplète nomme le champ vide («~Adresse du client incomplète~: la localité est vide.~»), y compris quand il ne porte qu'un caractère invisible, et un code pays hors de la liste ISO nomme la partie et le code («~Le pays de l'entreprise («~SU~») n'est pas un code ISO valide.~»).
 
-\textbf{Sur les champs qu'il imprime, l'imprimé dit la même chose que le code, à deux exceptions près, assumées~: 125 lettres, et les espaces multiples.} Première exception~: la police du PDF ne porte pas 125 lettres du jeu (Č, ł, Ș\ldots). Au reçu et à la partie paiement, et pour le nom et l'adresse de l'émetteur et du destinataire au corps d'une facture, d'un rappel ou d'un avoir, elles s'impriment désormais par leur lettre de base~: \emph{Čolić} s'imprime «~Colic~», alors que le code QR, lu par la banque, garde \emph{Čolić}. Jusqu'ici, elles disparaissaient du papier («~oli~»). Une police embarquée lèvera cet écart (issue \#943)~; d'ici là, le \textbf{reste du corps} (libellés des lignes, conditions, téléphone, e-mail et site) n'a pas ce repli et perd encore ces lettres. Seconde exception~: plusieurs espaces de suite s'impriment comme une seule dans les adresses du reçu et de la partie paiement. Dans le nom et l'adresse de l'émetteur et du destinataire, au corps d'une facture, d'un rappel ou d'un avoir, l'apostrophe typographique et le tiret cadratin s'impriment aussi en apostrophe droite et en trait d'union, comme au code QR, au reçu et à la partie paiement~; le reste du corps les garde tels quels. Un message long peut aussi sortir de la feuille, faute de borne de largeur (issue \#944)~: le code QR, lui, le porte entier.
+\textbf{Sur les champs qu'il imprime, l'imprimé dit la même chose que le code, à deux exceptions près, assumées~: 125 lettres, et les espaces multiples.} Première exception~: la police du PDF ne porte pas 125 lettres du jeu (Č, ł, Ș\ldots). Au reçu et à la partie paiement, et pour le nom et l'adresse de l'émetteur et du destinataire au corps d'une facture, d'un rappel ou d'un avoir, elles s'impriment désormais par leur lettre de base~: \emph{Čolić} s'imprime «~Colic~», alors que le code QR, lu par la banque, garde \emph{Čolić}. Jusqu'ici, elles disparaissaient du papier («~oli~»). Une police embarquée lèvera cet écart (issue \#943)~; d'ici là, le \textbf{reste du corps} (libellés des lignes, conditions, téléphone, e-mail et site) n'a pas ce repli et perd encore ces lettres. Seconde exception~: plusieurs espaces de suite s'impriment comme une seule dans les adresses du reçu et de la partie paiement. Dans le nom et l'adresse de l'émetteur et du destinataire, au corps d'une facture, d'un rappel ou d'un avoir, l'apostrophe typographique et le tiret cadratin s'impriment aussi en apostrophe droite et en trait d'union, comme au code QR, au reçu et à la partie paiement~; le reste du corps les garde tels quels. Depuis la version~0.19.0, un message long se coupe sur plusieurs lignes en partie paiement, au lieu de sortir de la feuille, et se raccourcit par «~...~» si les adresses ne lui laissent pas la place (ci-dessous)~: le code QR, lui, le porte entier.
 
 \textbf{La partie paiement s'imprime depuis la version~0.17.5.} Auparavant, tout son texte (compte, créancier, référence, message, montant, débiteur) sortait en blanc sur blanc~; seuls son titre et le code QR se voyaient, et le code QR restait lu par les banques.
 
-\textbf{Le reçu et la partie paiement portent l'adresse entière.} Depuis la version~0.17.5, le créancier et le débiteur s'y impriment sur trois lignes~: le nom, la rue et le numéro, le NPA et la localité, que le papier omettait jusqu'ici alors que le code QR les porte. Hors de Suisse, Liechtenstein compris, le pays précède le NPA (\texttt{LI-9490 Vaduz}, \texttt{DE-78462 Konstanz}). Une ligne vide ne s'imprime pas, et une ligne trop longue se coupe entre deux mots, ou à la limite pour un mot plus long, à 27~caractères au reçu et à 46 en partie paiement~: rien n'est tronqué. Le reçu porte désormais aussi la référence, s'il y en a une.
+\textbf{Le reçu et la partie paiement portent l'adresse.} Depuis la version~0.17.5, le créancier et le débiteur s'y impriment par leur nom, leur rue et leur numéro, leur NPA et leur localité, que le papier omettait jusqu'ici alors que le code QR les porte. Hors de Suisse, Liechtenstein compris, le pays précède le NPA (\texttt{LI-9490 Vaduz}, \texttt{DE-78462 Konstanz}). Une ligne vide ne s'imprime pas, et une ligne trop longue se coupe entre deux mots, ou au dernier caractère qui tient pour un mot plus long. Le reçu porte aussi la référence, s'il y en a une. Une adresse ordinaire s'imprime entière~; seule une adresse très longue est raccourcie (ci-dessous).
 
-\textbf{Ce que cette coupe ne garantit pas.} Elle compte des caractères, non des largeurs~: une ligne faite de lettres très larges peut encore atteindre le code QR au reçu, ou sortir de la feuille à droite en partie paiement, et deux adresses remplissant tous leurs champs jusqu'à leur limite peuvent descendre hors de la feuille. Le code QR, lui, reste complet (issue \#944). Une ligne de 28 à 37~caractères, qui tenait au reçu, se coupe désormais en deux.
+\textbf{La section de paiement suit la grille de la directive} (\emph{depuis la version~0.19.0}). La coupe des lignes \textbf{mesure la largeur} de chaque lettre, au lieu de compter des caractères~: une ligne s'arrête à la marge du reçu, ou au bord droit de la feuille en partie paiement, même faite de lettres très larges, et ne touche plus le code QR. \emph{Payable par} s'imprime désormais dans la section d'information, comme la directive le demande~: au reçu, sous la référence et avant le montant~; en partie paiement, dans la colonne de droite, sous les informations supplémentaires, et non plus à gauche sous le montant. Le montant est à la même hauteur au reçu et en partie paiement, et ne remonte plus quand la facture n'a pas de référence. Le code QR descend de 5~mm et la colonne de droite se décale d'un millimètre, pour laisser autour du code QR l'espace libre de 5~mm de la directive~; l'intitulé du point de dépôt remonte à la place que lui donnent les exemples de SIX.
 
-\textbf{Un PDF déjà figé ne change pas} (\S\ref{sec:pdf-fige})~: il garde sa partie paiement sans texte et son adresse sans NPA ni localité (issue \#957). Une facture jamais ouverte, ou un rappel régénéré, prendra le nouveau rendu.
+\textbf{Une adresse très longue est raccourcie au lieu de faire échouer le PDF} (\emph{depuis la version~0.19.0}). Au reçu, quand les adresses ne tiennent pas au-dessus du montant --- des noms sur plusieurs lignes, par exemple ---, le créancier et le débiteur y perdent ensemble leur rue et leur numéro --- chacun la sienne, s'il en a une ---, comme la directive le permet au récépissé~; leurs noms et leurs localités restent entiers. Si c'est encore trop long, chaque adresse n'y garde que son nom et sa localité, sur une ligne chacun, raccourcis par «~...~» s'il le faut. En partie paiement, si tout ne tient pas, le message tient sur une ligne et chaque ligne d'adresse aussi, raccourcis de même. La longueur d'une adresse admise ne fait plus échouer le PDF --- seul un code QR trop dense le refuse encore, comme avant, quand le message et les adresses ensemble dépassent ce que le code peut porter lisiblement ---, et le code QR, lu par la banque, porte toujours l'adresse entière.
+
+\textbf{Deux lignes à découper, chacune avec ses ciseaux} (\emph{depuis la version~0.18.0}). Comme la directive SIX l'exige pour une QR-facture envoyée en PDF (\S~3.7), le récépissé et la partie paiement sont délimités par deux lignes pointillées~: l'horizontale, au-dessus de la section de paiement, et une \textbf{verticale} entre le récépissé et la partie paiement, qui manquait jusqu'ici. Chacune porte un symbole de ciseaux, pour que le débiteur qui imprime la facture sache où couper. L'intitulé du \textbf{point de dépôt}, au bas du récépissé, est désormais \textbf{aligné à droite}, comme la directive le demande~: il finit à 5~mm de la ligne verticale dans toutes les langues, là où il débordait jusqu'au bord de la partie paiement en allemand, en anglais et en italien. Dans la version~0.18.0, le code QR et le reste du bulletin ne bougeaient pas, et deux limites demeuraient~: une ligne d'adresse du récépissé faite de capitales très larges pouvait atteindre la ligne verticale, qui la traversait alors, et un récépissé aux adresses très longues pouvait recouvrir l'intitulé du point de dépôt. La version~0.19.0 les lève toutes deux (ci-dessus).
+
+\textbf{Un PDF déjà figé ne change pas} (\S\ref{sec:pdf-fige})~: il garde sa partie paiement sans texte et son adresse sans NPA ni localité (issue \#957), et, émis avant la version~0.18.0, sa seule ligne horizontale, sans ciseaux~; émis avant la version~0.19.0, son ancienne mise en page, \emph{Payable par} sous le montant. Une facture jamais ouverte, un rappel régénéré, ou un PDF refigé par un administrateur, prend le nouveau rendu, grille de la directive comprise depuis la version~0.19.0.
 
 \subsubsection{Le PDF émis est figé}\label{sec:pdf-fige}
 
@@ -1744,6 +1764,14 @@ Un règlement \textbf{partiel} est permis~: la facture reste validée, avec son 
 redevient «~payée~» quand le solde atteint zéro. Un montant supérieur au reste dû est
 \textbf{refusé}, de même qu'un montant à plus de deux décimales.
 
+\textbf{Le montant saisi.} Depuis la version~0.18.0, le montant d'un règlement se lit comme
+celui d'une écriture (cf. \emph{Saisie d'une écriture en partie double})~: point ou virgule
+décimale, apostrophe des milliers (\texttt{1'250}), deux décimales au plus (les zéros de fin ne
+comptent pas~: \texttt{10.0100} passe). \textbf{\texttt{10.000} est refusé comme ambigu}~:
+écrivez \texttt{10.00} ou \texttt{10'000}~; de même \texttt{1.250}~: \texttt{1'250} pour mille
+deux cent cinquante francs. Une saisie à exposant (\texttt{1e3}), ou à plus de quatre décimales
+écrites, n'est plus lue~; avant la 0.18.0, ce champ l'acceptait.
+
 \textbf{Au centime.} Une facture dont le total porte plus de deux décimales (quantité ou prix
 fractionnaire) se règle au \textbf{reste dû arrondi au centime}~: c'est le montant que le
 dialogue propose. Payer 10.01 une facture de 10.0050 la \textbf{solde}~: l'écriture porte alors
@@ -1771,7 +1799,16 @@ distingue de ce qui a été encaissé (\emph{Déjà réglé} / \emph{Soldé}). U
 \textbf{refusé}, sans rien écrire, si le compte de la nature, le compte de différences d'arrondi
 ou le compte de TVA due est le \textbf{compte débiteurs de la facture} (un compte débiteurs
 changé de type depuis, puis désigné)~: un administrateur doit en désigner un autre dans
-\emph{Administration} → \emph{Facturation}. Un solde s'\textbf{annule}
+\emph{Administration} → \emph{Facturation}. De même, \emph{depuis la 0.18.0}, un solde en
+\emph{escompte accordé} ou en \emph{perte sur débiteur} qui corrige de la TVA est
+\textbf{refusé}, sans rien écrire, si le compte \emph{TVA due} des paramètres a été
+\textbf{changé de type} depuis sa désignation (il n'est plus un passif)~: le dialogue reste
+ouvert et le message nomme le compte, le réglage et le type qu'il demande (un passif). Un
+administrateur désigne alors un compte de passif dans \emph{Administration} →
+\emph{Facturation}, ou rend au compte son type dans le plan comptable~; le solde se confirme
+ensuite tel quel. Les \emph{frais bancaires} et le \emph{reste d'arrondi}, qui ne corrigent pas la
+TVA, ne sont pas concernés, non plus qu'un reste de quelques centimes dont la part de TVA,
+arrondie au centime, est nulle. Un solde s'\textbf{annule}
 comme un règlement --- bouton \emph{Annuler le solde}, contre-passation datée du jour, TVA
 comprise.
 
@@ -2036,7 +2073,7 @@ rien à saisir). Renseigner le fournisseur (un contact marqué « fournisseur »
 fournisseur} (facultatif~: celui qu'il a écrit sur sa facture ; Kesh attribue le sien à la validation,
 \S\ref{sec:numero-interne-fournisseur}), la date,
 l'échéance éventuelle, les coordonnées de paiement (IBAN ou QR-IBAN du créancier,
-référence, montant attendu --- toutes facultatives), le projet analytique éventuel et les
+référence, montant attendu --- toutes facultatives), le compte analytique éventuel et les
 lignes (description, montant, compte de charge, taux de TVA applicable --- l'impôt
 préalable est comptabilisé automatiquement). Le bouton \emph{Scanner une QR-facture}
 pré-remplit IBAN, référence et montant depuis une image de la QR-facture.
@@ -2062,9 +2099,16 @@ signalée sous son champ, avec les deux dates, et la facture n'est pas enregistr
 égale à la date, ou absente, est acceptée.
 
 \paragraph{Les montants.} Quantité, prix et montant attendu s'écrivent avec un point ou une
-\textbf{virgule} décimale («~12,50~»)~: Kesh les lit tels quels et les enregistre au point. Une
-quantité laissée vide vaut~1, au total affiché comme à l'enregistrement~; un prix est
-obligatoire. Le \textbf{total} TTC qui s'affiche sous les lignes, pendant la saisie, porte ses
+\textbf{virgule} décimale («~12,50~»), et Kesh les enregistre au point. Depuis la version~0.18.0,
+le \textbf{prix unitaire} et le \textbf{montant attendu} se lisent comme le montant d'une écriture
+(cf. \emph{Saisie d'une écriture en partie double})~: quatre décimales au plus, apostrophe des
+milliers (\texttt{1'250}). \textbf{\texttt{1.250} est refusé comme ambigu}~: écrivez
+\texttt{1'250} pour mille deux cent cinquante francs, ou \texttt{1.25} pour un franc vingt-cinq~;
+le message s'affiche sous le champ, et la facture n'est pas enregistrée --- pour un prix, le
+message nomme la ligne. Un prix ou un montant attendu enregistré qui se lirait ambigu une fois
+écrit au plus court (\texttt{1.234}) se rouvre sur quatre décimales (\texttt{1.2340}), forme qui
+n'est pas refusée. La quantité n'est pas concernée. Une quantité laissée vide vaut~1, au total
+affiché comme à l'enregistrement~; un prix est obligatoire. Le \textbf{total} TTC qui s'affiche sous les lignes, pendant la saisie, porte ses
 décimales exactes~: une ligne à 99.9999 s'y lit 99.9999, non 100.00.
 
 \paragraph{Une ligne se saisit au centime.} Depuis la version~0.17.0, la quantité et le prix
@@ -2161,17 +2205,17 @@ fiche ne propose ni \emph{Payer} ni \emph{Annuler la facture}~; elle propose~:
 \begin{description}
     \item[Modifier] (comptable ou administrateur) ouvre la page d'édition, le formulaire de la
           saisie pré-rempli~; \emph{Enregistrer} remplace la facture --- fournisseur, numéro du fournisseur,
-          dates, coordonnées, projet, lignes ---, toujours sans rien passer au journal. Si la
+          dates, coordonnées, compte analytique, lignes ---, toujours sans rien passer au journal. Si la
           facture a été modifiée entre-temps dans une autre session, l'enregistrement est refusé
-          et vous invite à recharger la page. Un projet \textbf{archivé} déjà imputé au brouillon
-          reste affiché, marqué «~(archivé)~» --- même sous un projet parent archivé lui
+          et vous invite à recharger la page. Un compte analytique \textbf{archivé} déjà imputé au brouillon
+          reste affiché, marqué «~(archivé)~» --- même sous un compte analytique parent archivé lui
           aussi (depuis la version~0.17.4)~; la validation le refuse toujours (ci-dessous)~:
           choisissez-en un autre avant de valider.
     \item[Valider] (comptable ou administrateur), après confirmation, passe l'écriture d'achat,
           datée de la date de la facture~; la facture devient \emph{Validée}, et sa fiche mène à
           l'écriture (\emph{Voir l'écriture d'achat}). La validation vérifie ce qu'exige une
           écriture~: un exercice ouvert qui couvre la date de la facture, une date hors de la
-          période verrouillée, des comptes actifs et imputables, un projet non archivé, les
+          période verrouillée, des comptes actifs et imputables, un compte analytique non archivé, les
           comptes créanciers et de TVA récupérable des paramètres. Un refus s'affiche sous le
           bouton~; la facture reste un brouillon, rien n'est écrit.
     \item[Supprimer le brouillon] (administrateur seulement), après confirmation, le supprime~;
@@ -3282,9 +3326,11 @@ fichier ne signale pas une période déjà saisie à la main.
 \paragraph{Limites.}
 \begin{itemize}
     \item \textbf{En CHF}~: les montants se saisissent et s'enregistrent en francs suisses, et
-          l'écran le dit. Kesh ne connaît pas encore de compte en devise étrangère (\#233) et ne
-          contrôle donc rien~: ne saisissez pas ici le relevé d'un compte tenu dans une autre
-          devise.
+          l'écran le dit. Un compte bancaire est toujours lié à un compte comptable en francs
+          suisses~: depuis la version~0.19.0, Kesh refuse de lier un compte bancaire à un compte
+          tenu en devise (\S\ref{sec:multi-devises}). Le relevé d'un compte tenu dans une autre
+          devise ne se saisit donc pas ici~; les relevés en devise sont prévus pour une version
+          ultérieure (\#233).
     \item \textbf{500 lignes} au plus par relevé~; un relevé plus long se saisit en plusieurs
           périodes.
     \item Un \textbf{compte clos} refuse la saisie, comme l'import
@@ -3344,13 +3390,13 @@ La réconciliation consiste à passer en comptabilité les transactions bancaire
 
 \subsubsection{Algorithme de matching}\label{sec:algorithme-matching}
 
-À l'ouverture de la page de réconciliation, Kesh cherche, pour chaque transaction bancaire en attente \textbf{créditrice}, en CHF, les factures \textbf{client} qui pourraient lui correspondre --- et pour chaque transaction \textbf{débitrice}, les factures \textbf{fournisseur} (paragraphe «~Un débit~» ci-dessous). Un crédit ne règle jamais une facture fournisseur, un débit jamais une facture client. Une facture est \textbf{candidate} si elle est validée et pas encore payée, si le paiement --- la \textbf{date de valeur} de la transaction, à défaut sa date de comptabilisation --- tombe \textbf{au plus 30 jours après la plus tardive de ces dates}~: la date de la facture, son échéance, son dernier rappel (un rappel annulé ne compte pas)~; et \textbf{au plus un jour avant la date de la facture}~; et si \textbf{ce qui reste à payer} --- son \textbf{reste dû} : le montant total, moins l'avoir éventuel, moins les règlements déjà enregistrés --- \textbf{n'est pas inférieur au montant} de la transaction et ne le dépasse pas de plus de 5 centimes. Un paiement qui dépasserait le reste dû serait un trop-perçu, refusé~; un paiement un peu inférieur est accepté comme règlement partiel, la facture restant ouverte pour la différence, que l'on solde depuis sa fiche (\S\ref{sec:reglement-client}). Seul l'écart d'arrondi au centime d'un reste à plus de deux décimales --- un demi-centime au plus --- est admis au-dessous~: il passe sur le compte de différences d'arrondi. Un virement qui \textbf{solde} une facture déjà réglée en partie est donc reconnu : la proposition porte sur le reste, pas sur le montant d'origine. Un paiement reçu \textbf{avant l'échéance} est proposé lui aussi, même plus de 30 jours après la facture (des conditions à 60 jours, par exemple), et un paiement reçu dans les 30 jours qui suivent l'échéance, ou le dernier rappel, l'est également. Un paiement reçu \textbf{plus de 30 jours après l'échéance} (ou après la date de la facture, si elle n'a pas d'échéance) et \textbf{sans rappel depuis 30 jours} n'est en revanche \textbf{pas proposé}~: enregistrez alors le règlement depuis la fiche de la facture (\S\ref{sec:reglement-client}), \textbf{puis rattachez la transaction à ce règlement} (\emph{Rattacher à une écriture existante}, \S\ref{sec:rattacher-reglement})~: elle passe rapprochée, sans écriture. De même, un client qui a payé \textbf{quelques centimes de trop} n'est pas proposé --- ni une règle d'affectation à la place de sa facture, quand la référence du paiement ou le nom du client la désigne~: la ligne reste «~Aucune correspondance~». Enregistrez le règlement du reste dû depuis la fiche de la facture, puis \textbf{rattachez la transaction à ce règlement} (\S\ref{sec:rattacher-reglement})~: elle passe rapprochée, sans écriture, et l'écart de quelques centimes, affiché avant la confirmation, reste au compte de la banque --- traitez l'écart (remboursement au client, ou écriture manuelle).
+À l'ouverture de la page de réconciliation, Kesh cherche, pour chaque transaction bancaire en attente \textbf{créditrice}, en CHF, les factures \textbf{client} qui pourraient lui correspondre --- et pour chaque transaction \textbf{débitrice}, les factures \textbf{fournisseur} (paragraphe «~Un débit~» ci-dessous). Un crédit ne règle jamais une facture fournisseur, un débit jamais une facture client. Une facture est \textbf{candidate} si elle est validée et pas encore payée, si le paiement --- la \textbf{date de valeur} de la transaction, à défaut sa date de comptabilisation --- tombe \textbf{au plus 30 jours après la plus tardive de ces dates}~: la date de la facture, son échéance, son dernier rappel (le jour de son envoi à Zurich, depuis la version~0.18.0~; un rappel annulé ne compte pas)~; et \textbf{au plus un jour avant la date de la facture}~; et si \textbf{ce qui reste à payer} --- son \textbf{reste dû} : le montant total, moins l'avoir éventuel, moins les règlements déjà enregistrés --- \textbf{n'est pas inférieur au montant} de la transaction et ne le dépasse pas de plus de 5 centimes. Un paiement qui dépasserait le reste dû serait un trop-perçu, refusé~; un paiement un peu inférieur est accepté comme règlement partiel, la facture restant ouverte pour la différence, que l'on solde depuis sa fiche (\S\ref{sec:reglement-client}). Seul l'écart d'arrondi au centime d'un reste à plus de deux décimales --- un demi-centime au plus --- est admis au-dessous~: il passe sur le compte de différences d'arrondi. Un virement qui \textbf{solde} une facture déjà réglée en partie est donc reconnu : la proposition porte sur le reste, pas sur le montant d'origine. Un paiement reçu \textbf{avant l'échéance} est proposé lui aussi, même plus de 30 jours après la facture (des conditions à 60 jours, par exemple), et un paiement reçu dans les 30 jours qui suivent l'échéance, ou le dernier rappel, l'est également. Un paiement reçu \textbf{plus de 30 jours après l'échéance} (ou après la date de la facture, si elle n'a pas d'échéance) et \textbf{sans rappel depuis 30 jours} n'est en revanche \textbf{pas proposé}~: enregistrez alors le règlement depuis la fiche de la facture (\S\ref{sec:reglement-client}), \textbf{puis rattachez la transaction à ce règlement} (\emph{Rattacher à une écriture existante}, \S\ref{sec:rattacher-reglement})~: elle passe rapprochée, sans écriture. De même, un client qui a payé \textbf{quelques centimes de trop} n'est pas proposé --- ni une règle d'affectation à la place de sa facture, quand la référence du paiement ou le nom du client la désigne~: la ligne reste «~Aucune correspondance~». Enregistrez le règlement du reste dû depuis la fiche de la facture, puis \textbf{rattachez la transaction à ce règlement} (\S\ref{sec:rattacher-reglement})~: elle passe rapprochée, sans écriture, et l'écart de quelques centimes, affiché avant la confirmation, reste au compte de la banque --- traitez l'écart (remboursement au client, ou écriture manuelle).
 
 \paragraph{Une facture datée de plus d'un jour après le paiement n'est pas proposée.}\label{sec:facture-posterieure} Un paiement ne peut pas précéder la facture qu'il règle de \textbf{plus d'un jour}. Depuis la version~0.13.3, la proposition applique la même règle que l'acceptation, sur la même date --- la \textbf{date de valeur} de la transaction, à défaut sa date de comptabilisation~: une facture datée de \textbf{plus d'un jour après} le paiement n'est donc plus proposée, et une facture proposée n'est plus refusée parce qu'elle serait postérieure au paiement. Ce refus ne se voit plus que si la facture a été \textbf{redatée} entre l'affichage des propositions et leur acceptation~: la ligne apparaît alors dans les \emph{Échecs partiels} avec le motif «~Le paiement est daté de plus d'un jour avant la facture~». De même, si un \textbf{rappel est annulé} entre l'affichage des propositions et leur acceptation, la date qui fait courir les 30 jours peut reculer, et la facture être refusée pour un paiement trop tardif~: la ligne apparaît dans les \emph{Échecs partiels}, avec le motif générique de la facture non éligible. Le règlement saisi depuis la fiche de la facture, ou depuis la page des échéances, refuse lui aussi un règlement daté avant la facture~: l'écran n'accepte aucune date antérieure à la date de la facture, et son calendrier n'en propose aucune. Il n'a en revanche aucune limite de 30 jours~: c'est par lui qu'on enregistre un paiement que la réconciliation ne propose pas (reçu plus de 30 jours après l'échéance et le dernier rappel) --- en rattachant ensuite la transaction à ce règlement (\S\ref{sec:rattacher-reglement}). Vérifiez la date de la facture~: si le paiement est réellement antérieur --- un acompte, par exemple ---, il ne règle pas cette facture.
 
 \paragraph{Un débit~: les factures fournisseur.}\label{sec:matching-fournisseur} Depuis la version~0.14.0, une transaction \textbf{débitrice} en CHF reçoit les factures \textbf{fournisseur validées} et non payées (\S\ref{sec:factures-fournisseurs}) qui pourraient lui correspondre --- c'est le processus pour qui saisit après coup les factures des paiements de son relevé~: \textbf{saisir, puis valider} la facture, puis laisser la réconciliation la régler. Un \textbf{brouillon} n'est jamais proposé (\S\ref{sec:brouillon-fournisseur}). Une facture fournisseur est \textbf{candidate} si elle est validée et non payée, si son \textbf{total} (TTC) est \textbf{exactement} égal au montant du débit --- le paiement d'une facture fournisseur est toujours du total, sans paiement partiel ni tolérance~; un total à plus de deux décimales n'est jamais proposé, ce qui depuis la version~0.17.0 ne se produit plus que pour une facture enregistrée avant (\S\ref{sec:facture-fournisseur-sous-centime}) ---, si elle n'est \textbf{pas engagée dans un lot de paiement en cours} (\S\ref{sec:paiements-fournisseurs}), et si le paiement tombe \textbf{au plus 7 jours avant la date de la facture} (un achat payé en ligne, facturé à l'expédition) et \textbf{au plus un an après la plus tardive de sa date et de son échéance} --- sa date seule, si elle n'a pas d'échéance. La date à laquelle la facture a été \textbf{saisie} ne compte pas~: une facture saisie des mois après le paiement est proposée. Elle est notée comme une facture client, à une différence près~: la \textbf{référence} du paiement compte si elle est \textbf{égale} à la référence de paiement de la facture (la référence QR ou SCOR qu'elle porte) ou au numéro du fournisseur --- le numéro interne n'y entre jamais, il ne figure sur aucun relevé~; espaces ignorés, majuscules ou minuscules indifférentes ---, en entier et sur six caractères au moins~; un numéro court («~1~», «~Loyer~») ou une référence qui n'en contient qu'une partie ne compte pas. À score égal, la facture échue la première passe en tête (\S\ref{sec:imputation-score-egal}).
 
-\textbf{Un lot de paiement en cours sur ce compte.} Si une facture fournisseur validée du montant \textbf{exact} du débit figure dans un lot de paiement \textbf{en cours} (fichier généré, non confirmé) sur le compte bancaire de la transaction, la ligne ne propose \textbf{rien} --- ni facture, ni règle --- et dit pourquoi, en nommant la facture, par son numéro interne, et le lot~: ce débit est peut-être le paiement de ce lot, et accepter une autre facture du même montant (la mensualité suivante, typiquement) réglerait deux fois la même dépense. Si le débit est bien le paiement du lot, \textbf{annulez le lot}~: la facture sera alors proposée ici. Sinon, passez la transaction par une écriture manuelle (\S\ref{sec:ecriture-manuelle}). Si vous \textbf{confirmez} plutôt le lot, la confirmation enregistre un paiement par facture~: un lot d'\textbf{une} facture produit un paiement égal au débit, qui se rattache ensuite à lui (\S\ref{sec:rattacher-reglement})~; un lot de \textbf{plusieurs} factures débité par la banque en une seule ligne ne s'y rattache pas --- aucun paiement n'égale la somme --- et la transaction resterait en attente (issue \#823~; voir l'encadré «~Dépense déjà réglée~» ci-dessous). Un lot \textbf{oublié} --- fichier généré mais jamais transmis à la banque --- retient ainsi, tant qu'il reste en cours, tout débit de ce montant sur ce compte, sans limite de date~: annulez-le (\S\ref{sec:paiements-fournisseurs}).
+\textbf{Un lot de paiement en cours sur ce compte.} Si une facture fournisseur validée du montant \textbf{exact} du débit figure dans un lot de paiement \textbf{en cours} (fichier généré, non confirmé) sur le compte bancaire de la transaction, la ligne ne propose \textbf{rien} --- ni facture, ni règle --- et dit pourquoi, en nommant la facture, par son numéro interne, et le lot~: ce débit est peut-être le paiement de ce lot, et accepter une autre facture du même montant (la mensualité suivante, typiquement) réglerait deux fois la même dépense. Si le débit est bien le paiement du lot, \textbf{annulez le lot}~: la facture sera alors proposée ici. Sinon, passez la transaction par une écriture manuelle (\S\ref{sec:ecriture-manuelle}). Si vous \textbf{confirmez} plutôt le lot, la confirmation enregistre un paiement par facture~: un lot d'\textbf{une} facture produit un paiement égal au débit, qui se rattache ensuite à lui (\S\ref{sec:rattacher-reglement})~; un lot de \textbf{plusieurs} factures débité par la banque en une seule ligne ne s'y rattache pas --- aucun paiement n'égale la somme --- et la transaction resterait en attente (issue \#1236~; voir l'encadré «~Dépense déjà réglée~» ci-dessous). Un lot \textbf{oublié} --- fichier généré mais jamais transmis à la banque --- retient ainsi, tant qu'il reste en cours, tout débit de ce montant sur ce compte, sans limite de date~: annulez-le (\S\ref{sec:paiements-fournisseurs}).
 
 Chaque candidate reçoit un score, somme de trois critères :
 
@@ -3403,7 +3449,7 @@ depuis la version~0.17.6, à l'écriture du virement déjà rapprochée de l'aut
 (\S\ref{sec:rattacher-reglement}, «~Un virement entre deux de vos comptes~»). Restent sans écriture
 à laquelle se rattacher, et donc à \textbf{rejeter} plutôt qu'à imputer (\emph{Rejeter},
 ci-dessous) --- rejetée, la transaction empêche toujours la clôture du compte bancaire~: un lot de
-\textbf{plusieurs} factures que la banque débite en une seule ligne (issue \#823)~; un paiement passé
+\textbf{plusieurs} factures que la banque débite en une seule ligne (issue \#1236)~; un paiement passé
 sur un \textbf{ancien} compte du grand livre de la banque, ou sur un \textbf{autre} compte
 bancaire relié à un autre compte du grand livre (issue \#827)~; un paiement qui inclut des frais de rappel (issue \#401).
 Ces cas ne sont pas signalés sur leur ligne.
@@ -3437,7 +3483,7 @@ Pour imputer une transaction autrement qu'à la candidate affichée, utilisez le
     \item «~\emph{Cette transaction semble déjà comptabilisée}~»~: le dialogue \emph{Rattacher à une écriture existante} lui proposerait au moins une écriture --- une écriture \textbf{non rapprochée} dont le mouvement sur le compte du grand livre de la banque égale le montant de la transaction, ou, pour un crédit, le règlement par virement sur ce compte d'une facture client, au montant ou d'au plus 5~centimes de moins (\S\ref{sec:rattacher-reglement}). L'avertissement dit combien. Rattachez-la plutôt que de passer une écriture~: le mouvement serait compté deux fois~;
     \item «~\emph{Cette transaction est probablement l'autre côté d'un virement entre vos comptes}~»~: l'écriture que le dialogue proposerait est celle d'un virement, \textbf{déjà rapprochée} d'une transaction \textbf{de sens contraire} d'un \textbf{autre} de vos comptes bancaires --- le débit du compte courant vers l'épargne, par exemple, une fois rapproché de l'écriture du virement, signale le crédit du relevé de l'épargne. Rattachez-la \textbf{à cette écriture} (\emph{Rattacher à une écriture existante})~: le virement n'a qu'une écriture, rapprochée de ses deux côtés~; une seconde écriture le compterait deux fois. Quand le dialogue propose \textbf{plusieurs} écritures de virement, et rien d'autre, l'avertissement le dit au pluriel («~N \emph{écritures de virement sont déjà rapprochées}~…~»)~: rattachez la transaction à \textbf{celle de son virement}. Quand le dialogue propose aussi d'autres écritures, l'avertissement compte à part les deux sortes~: la première forme pour les écritures \textbf{non rapprochées} («~une écriture~», ou leur nombre), puis «~\emph{s'y ajoute l'écriture d'un virement}~» (ou «~\emph{s'y ajoutent} N \emph{écritures de virement}~»), déjà rapprochée(s) d'un autre de vos comptes~: si la transaction est l'autre côté de ce virement, c'est à cette écriture qu'il faut la rattacher. \keshAttention\ Deux comptes bancaires qui \textbf{partagent} le même compte du grand livre sont indiscernables pour ce signal~: un débit sans rapport, du même montant, sur le compte qui partage le grand livre du premier côté reçoit le même conseil --- vérifiez la date et le libellé avant de rattacher~; rattaché à tort, il prendrait la place du vrai côté, que Kesh refuserait ensuite comme troisième transaction. Le signal se fonde sur l'écriture et sur les deux transactions, non sur le compte du grand livre auquel l'autre compte bancaire est relié aujourd'hui~: une recette rapprochée sur un autre compte, dans le \textbf{même} sens, n'est jamais dite l'autre côté d'un virement, même si ce compte a été relié ailleurs depuis --- et elle n'est pas proposée au rattachement.
 \end{itemize}
-Sur une ligne signalée, \emph{Accepter} et \emph{Rejeter} --- si la sélection en contient au moins une ---, \emph{Écriture manuelle} et \emph{Éclater} ouvrent d'abord une \textbf{confirmation}, qui nomme chaque transaction signalée (date, montant, contrepartie)~: \emph{Continuer quand même} reprend le geste (le lot entier, pour \emph{Accepter})~; \emph{Annuler}, la touche Échap ou un clic hors de la confirmation ne font rien. Pour \emph{Rejeter} (depuis la version~0.17.7), la confirmation dit ce que fait le rejet~: il retire les transactions cochées de la liste \textbf{sans passer d'écriture} --- si l'une est un mouvement réel qui n'est pas encore aux livres, il y manquera~; si elle y est déjà, rattachez-la plutôt (\emph{Rattacher à une écriture existante})~; un rejet s'annule depuis le détail de son import (\emph{Annuler le rejet}). \emph{Rejeter quand même} rejette \textbf{toutes} les transactions cochées, signalées ou non. La confirmation ne nomme pas l'écriture qui ressemble à la transaction (issue \#1052)~: ouvrez \emph{Rattacher à une écriture existante} sur sa ligne pour la voir. Depuis la version~0.17.7, une relecture de la liste \textbf{referme} une confirmation ouverte, sans rien faire~: elle ne peut pas être validée sur des lignes qui ne sont plus celles de la liste. \emph{Rattacher à une écriture existante} ne demande rien. Kesh ne refuse rien et ne rattache rien d'office~: le signal se fonde sur le \textbf{montant} --- et, pour l'autre côté d'un virement, sur une transaction de sens contraire déjà rapprochée sur un autre de vos comptes bancaires ---, jamais sur la date ni sur le libellé~; c'est à vous d'en juger. La page est relue après chaque geste~: une ligne rattachée disparaît, et l'autre côté d'un virement est signalé à la relecture suivante.
+Sur une ligne signalée, \emph{Accepter} et \emph{Rejeter} --- si la sélection en contient au moins une ---, \emph{Écriture manuelle}, \emph{Éclater} et, depuis la version~0.19.0, \emph{Régler plusieurs factures\ldots} (\S\ref{sec:reglement-groupe}) ouvrent d'abord une \textbf{confirmation}, qui nomme chaque transaction signalée (date, montant, contrepartie)~: \emph{Continuer quand même} reprend le geste (le lot entier, pour \emph{Accepter})~; \emph{Annuler}, la touche Échap ou un clic hors de la confirmation ne font rien. Pour \emph{Rejeter} (depuis la version~0.17.7), la confirmation dit ce que fait le rejet~: il retire les transactions cochées de la liste \textbf{sans passer d'écriture} --- si l'une est un mouvement réel qui n'est pas encore aux livres, il y manquera~; si elle y est déjà, rattachez-la plutôt (\emph{Rattacher à une écriture existante})~; un rejet s'annule depuis le détail de son import (\emph{Annuler le rejet}). \emph{Rejeter quand même} rejette \textbf{toutes} les transactions cochées, signalées ou non. La confirmation ne nomme pas l'écriture qui ressemble à la transaction (issue \#1052)~: ouvrez \emph{Rattacher à une écriture existante} sur sa ligne pour la voir. Depuis la version~0.17.7, une relecture de la liste \textbf{referme} une confirmation ouverte, sans rien faire~: elle ne peut pas être validée sur des lignes qui ne sont plus celles de la liste. \emph{Rattacher à une écriture existante} ne demande rien. Kesh ne refuse rien et ne rattache rien d'office~: le signal se fonde sur le \textbf{montant} --- et, pour l'autre côté d'un virement, sur une transaction de sens contraire déjà rapprochée sur un autre de vos comptes bancaires ---, jamais sur la date ni sur le libellé~; c'est à vous d'en juger. La page est relue après chaque geste~: une ligne rattachée disparaît, et l'autre côté d'un virement est signalé à la relecture suivante.
 
 Le signal ne regarde \textbf{aucune date}~: une écriture non rapprochée d'un \textbf{montant récurrent} --- un loyer saisi à la main, un abonnement --- signale chaque transaction suivante du même montant, et l'\textbf{écriture d'ouverture} qui porte le solde de départ de la banque (\S\ref{sec:soldes-depart}), qui n'est jamais rapprochée, signale toute transaction de son montant (issue \#982). Un paiement passé sur un autre compte du grand livre, ou sur un ancien, n'est pas signalé (issue \#827), ni une transaction en double d'une autre déjà rapprochée sur ce même compte, que l'import écarte. Le second côté d'un virement n'est signalé que si les deux côtés sont \textbf{du même montant}, rapprochés d'une seule écriture~: un virement amputé de frais, dont les deux côtés diffèrent d'un arrondi, ou passé en plusieurs écritures, n'est pas signalé. À l'inverse, une écriture de virement rapprochée d'un côté signale \textbf{chaque} transaction en attente de même montant et de sens contraire sur vos autres comptes bancaires~: si deux crédits de ce montant attendent sur le compte d'épargne --- le virement et, par exemple, un loyer encaissé ---, les deux sont signalés, et un seul est l'autre côté du virement~; ne rattachez que celui-là, l'autre se traite pour lui-même. Une fois l'écriture rapprochée de ses deux côtés, elle n'est plus proposée ni signalée nulle part. Les deux listes du dialogue de rattachement s'arrêtent chacune à 50~: le nombre que donne l'avertissement les additionne, et vaut donc 100 au plus. Un compte bancaire \textbf{clos} n'affiche aucun avertissement~: le rattachement y est refusé. Si une ligne porte à la fois l'avis d'un lot de paiement en cours et l'avertissement, regardez d'abord l'avertissement~: si une écriture déjà passée correspond au débit, rattachez-le à elle~; le conseil de l'avis --- annuler le lot, ou passer une écriture manuelle --- ne vaut que s'il n'y en a aucune.
 
@@ -3451,7 +3497,7 @@ Pour passer en comptabilité une transaction qu'aucune facture ne règle --- int
 
 \begin{enumerate}
     \item Cliquer sur \emph{Écriture manuelle} sur la ligne de la transaction.
-    \item Choisir le \textbf{compte de contrepartie}~: le sélecteur propose \textbf{tout compte actif et imputable} de la société, de toute classe, \textbf{sauf celui de la banque} --- le compte du grand livre relié au compte bancaire (voir plus bas). Ouverte sans rien taper, la liste ne montre que les \textbf{premiers} comptes du plan (vingt au plus, dans l'ordre des numéros)~: tapez le numéro ou une partie du nom pour atteindre les autres. Compléter au besoin la description, la date de valeur et le projet analytique.
+    \item Choisir le \textbf{compte de contrepartie}~: le sélecteur propose \textbf{tout compte actif et imputable} de la société, de toute classe, \textbf{sauf celui de la banque} --- le compte du grand livre relié au compte bancaire (voir plus bas). Ouverte sans rien taper, la liste ne montre que les \textbf{premiers} comptes du plan (vingt au plus, dans l'ordre des numéros)~: tapez le numéro ou une partie du nom pour atteindre les autres. Compléter au besoin la description, la date de valeur et le compte analytique.
     \item Cliquer sur \emph{Passer l'écriture}.
 \end{enumerate}
 
@@ -3495,12 +3541,44 @@ L'avis ne suit que le \textbf{rôle} du compte, jamais son numéro~: un compte d
 \begin{itemize}
     \item un paiement de client qui dépasse son règlement de \textbf{plus de 5 centimes} --- c'est le cas du client qui paie le reste dû \emph{et} les frais de rappel (\S\ref{sec:relances-user}, issue \#401)~; une écriture, elle, ne se rattache qu'au montant exact~;
     \item un règlement ou une écriture passés sur \textbf{un autre compte bancaire} relié à un autre compte du grand livre (le dialogue de règlement propose le compte principal)~: annulez le règlement, puis enregistrez-le de nouveau sur le bon compte (issue \#827)~;
-    \item un paiement qui règle \textbf{plusieurs factures} enregistrées séparément, ou un lot de paiement de \textbf{plusieurs} factures débité en une ligne~: une transaction se rattache à une seule écriture, et aucune n'égale la somme (issue \#823)~;
+    \item un paiement qui règle \textbf{plusieurs factures} dont les règlements sont déjà enregistrés séparément (issue \#1272), ou un lot de paiement de \textbf{plusieurs} factures débité en une ligne (issue \#1236)~: une transaction se rattache à une seule écriture, et aucune n'égale la somme. Des factures \textbf{ouvertes, hors de tout lot de paiement}, se règlent en revanche ensemble par la transaction elle-même (\S\ref{sec:reglement-groupe})~;
     \item une \textbf{troisième} transaction à une écriture déjà rapprochée de ses deux côtés, ou une seconde du même compte bancaire, du même sens, ou d'un compte bancaire qui partage le même compte du grand livre~; une seconde transaction à une écriture de \textbf{règlement} déjà rapprochée~;
     \item le second côté d'un virement \textbf{éclaté} sur plus de deux comptes bancaires (une écriture qui débite deux comptes et en crédite un)~: aucune transaction n'y est de montant opposé à celle du premier côté~;
     \item une écriture passée sur un \textbf{ancien} compte du grand livre du compte bancaire, avant qu'il soit relié à un autre (issue \#827)~;
     \item le paiement d'une facture fournisseur dont le total porte plus de deux décimales --- une facture enregistrée avant la version~0.17.0~: il n'égale au centime aucune transaction (\S\ref{sec:facture-fournisseur-sous-centime}).
 \end{itemize}
+
+\subsection{Régler plusieurs factures par une transaction}\label{sec:reglement-groupe}
+
+\textbf{Quand.} Depuis la version~0.19.0, une transaction du relevé qui paie \textbf{plusieurs factures} encore à régler --- un client qui règle trois factures d'un seul virement, un débit qui paie deux factures fournisseur --- se rapproche d'elles en une fois. Les factures peuvent être de \textbf{tiers différents}~; elles sont toutes de la même famille~: un \textbf{crédit} règle des factures \textbf{clients} validées, un \textbf{débit} des factures \textbf{fournisseur} validées, à payer --- jamais les deux ensemble.
+
+\textbf{Le geste.} Sur la ligne de la transaction --- en CHF, de montant non nul, comme pour \emph{Rattacher à une écriture existante} ---, \emph{Régler plusieurs factures\ldots}. La fenêtre rappelle la transaction (date, montant, contrepartie), puis~:
+\begin{enumerate}
+    \item \textbf{chercher} une facture par le nom du tiers, son numéro --- pour une facture fournisseur, son numéro interne ou celui du fournisseur --- ou la référence du paiement~; le champ est prérempli par le nom de la contrepartie, sans qu'aucune facture soit choisie d'office. La liste ne propose que les factures que la transaction peut régler, datées au plus tard de sa date (avec la même tolérance que la réconciliation)~; quand il en reste au-delà, elle invite à préciser la recherche. Elle est vide, et le dit, quand aucune facture ne correspond à la recherche, ou, pour un débit, quand son montant est retenu par un \textbf{lot de paiement en cours} sur ce compte~: la fenêtre nomme alors le lot, dont ce débit est peut-être le paiement, et rappelle de l'annuler d'abord pour régler ses factures ici~;
+    \item \textbf{ajouter} chaque facture d'un clic~: elle passe dans les \emph{Factures imputées}, avec son reste dû, et quitte les résultats~; \emph{Retirer} la remet dans la liste. Deux factures au moins, cinquante au plus~;
+    \item lire le \textbf{pied de la fenêtre}~: le \emph{Montant du relevé}, le \emph{Total imputé} et l'\emph{Écart}, chacun écrit en toutes lettres --- l'écart n'est annoncé qu'à partir de deux factures~; tant qu'\emph{Enregistrer} reste grisé, une phrase sous le pied dit pourquoi~;
+    \item s'il reste un écart, choisir son \textbf{compte} (voir ci-dessous), puis \emph{Enregistrer}.
+\end{enumerate}
+Kesh passe \textbf{une} écriture --- la banque d'un côté, le compte débiteurs (ou créanciers) de chaque facture de l'autre, et l'écart s'il y en a un ---, enregistre \textbf{un règlement par facture} et lettre chacune. Le bilan dit «~1 opération(s) réussie(s).~» et la ligne quitte la liste.
+
+\textbf{L'écart.} C'est la différence entre le montant du relevé et le total imputé, au centime. Il est admis dans \textbf{les deux sens}~:
+\begin{itemize}
+    \item pour des factures \textbf{clients}, «~Moins-payé~» quand le client a versé moins que les factures (frais bancaires retenus, petite perte), «~Trop-perçu~» quand il a versé plus (un montant arrondi vers le haut)~;
+    \item pour des factures \textbf{fournisseur}, «~Débit supérieur aux factures~» ou «~Débit inférieur aux factures~».
+\end{itemize}
+Dès qu'un écart existe, un sélecteur \emph{Compte de l'écart} apparaît sous lui~: l'écart se comptabilise sur le compte que \textbf{vous} choisissez. Le sélecteur propose tout compte actif et imputable tenu en CHF, sauf celui de la banque de la transaction~; les comptes tenus dans une autre devise n'y figurent pas. Le compte débiteurs ou créanciers d'une facture du règlement y figure, mais Kesh le refuse à l'enregistrement, et le dit sous le sélecteur. Le champ est \textbf{prérempli}, quand c'est possible, par le compte de frais bancaires désigné (moins-payé, débit supérieur) ou par le compte de différences d'arrondi désigné (trop-perçu, débit inférieur) --- seulement si ce compte est utilisable~; sinon il reste vide. Un compte que vous choisissez reste choisi même si l'écart change de sens~; un champ que vous videz reste vide jusqu'à ce que vous choisissiez un compte. Sans compte, \emph{Enregistrer} reste grisé. L'écart est borné par le \textbf{plafond} de la société, réglé par un administrateur (5.00 par défaut)~: au-delà, la fenêtre affiche «~Écart trop grand~» et n'enregistre pas --- retirez ou ajoutez une facture, ou réglez la transaction autrement.
+
+\textbf{L'arrondi.} Un reste dû peut porter une fraction de centime (une facture à 10.0050, par exemple). La part sous le centime de la différence --- au plus un demi-centime --- part seule au \textbf{compte de différences d'arrondi}, comme pour le règlement d'une seule facture~: la fenêtre l'indique («~Arrondi de \ldots{} passé au compte d'arrondi~»), avec ou sans écart, et ne demande aucun compte pour elle. Si aucun compte d'arrondi n'est désigné, elle le dit avant l'envoi et n'enregistre pas. Le plafond ne porte jamais sur l'arrondi.
+
+\textbf{Une ligne signalée «~déjà comptabilisée~»} demande d'abord confirmation, comme \emph{Écriture manuelle} et \emph{Éclater} (\S\ref{sec:deja-comptabilisee}).
+
+\textbf{Un refus.} Si une facture n'est plus réglable entre la recherche et l'enregistrement --- payée ailleurs, dans un lot de paiement en cours, datée après le paiement ---, Kesh la retire des factures imputées et la nomme («~Facture \ldots~: \ldots~»)~; rien n'est enregistré, les autres restent prêtes. Un refus du compte de l'écart s'affiche sous le sélecteur, ou avec les autres refus quand le sélecteur n'est pas affiché~; si Kesh demande un compte alors que l'écart affiché est nul, le sélecteur s'affiche quand même. Si l'écart refusé vient de restes dus qui ont changé entre-temps, Kesh relit les montants des factures imputées~; une facture qu'il ne parvient pas à relire reste dans le règlement, avec son montant d'avant, et la fenêtre le dit tant qu'elle n'est pas relue~: l'écart affiché peut alors être faux. Pour la relire, retirez-la puis ajoutez-la de nouveau. Si la transaction elle-même n'est plus à rapprocher (rapprochée ailleurs, rejetée, supprimée), la fenêtre le dit, se ferme et la liste est relue.
+
+\textbf{Défaire un règlement groupé.} \emph{Annuler le rapprochement} (\S\ref{sec:annuler-rapprochement}) le défait \textbf{en entier}~: toutes ses factures redeviennent à régler, l'écriture est contre-passée, écart compris. Une facture ne se retire pas seule d'un règlement groupé.
+
+\textbf{Limites.} La ligne de la banque et la ligne de l'écart d'un règlement groupé ne portent \textbf{aucun compte analytique}~; la ligne de chaque facture porte celui de sa facture. Le \textbf{changement de compte analytique} d'une facture réglée en groupe est refusé (\S\ref{sec:reimputation-analytique})~; il redevient possible une fois le rapprochement du groupe annulé. Quand ce rapprochement ne peut pas s'annuler --- exercice clôturé, lettrage figé, facture créditée ou soldée (\S\ref{sec:annuler-rapprochement}) ---, la facture garde son compte analytique. Un paiement \textbf{déjà enregistré} --- règlement saisi depuis la fiche --- ne s'ajoute pas à un règlement groupé~; seules des factures encore à régler s'y ajoutent. Seules les transactions en CHF se règlent ainsi.
+
+\textbf{Un lot de paiement (pain.001) n'est pas un règlement groupé.} Seules les factures fournisseur \textbf{ouvertes et hors de tout lot de paiement} se règlent par ce geste. Une facture d'un lot \textbf{en cours} (fichier généré) est refusée, et celle d'un lot \textbf{confirmé} est déjà payée~: le débit d'un lot de plusieurs factures, passé en une ligne par la banque, reste à \textbf{rejeter} (\S\ref{sec:matching-fournisseur}). Pour régler ces factures ici, annulez d'abord le lot~: elles redeviennent ouvertes et hors lot, et le débit se règle alors par ce geste.
 
 \subsection{Éclatement d'une transaction (split)}
 
@@ -3510,7 +3588,7 @@ Cas d'usage : un prélèvement de carte de crédit de CHF 480 couvre des frais d
 
 \begin{enumerate}
     \item Cliquer sur \emph{Éclater} sur la ligne de la transaction.
-    \item Saisir les lignes~: pour chacune, un \textbf{compte} --- choisi dans le même sélecteur que l'écriture manuelle (tout compte actif et imputable, sauf celui de la banque~; l'avis débiteurs ou créanciers s'affiche sous la ligne concernée) ---, un montant, une description et, au besoin, un projet analytique. Deux lignes au moins, cinquante au plus~; la somme doit égaler le montant de la transaction. Un montant s'écrit en chiffres, avec un point ou une virgule décimale, l'apostrophe des milliers (\texttt{1'200.50}) et deux décimales au plus --- la saisie en admet jusqu'à quatre, les zéros au-delà de deux étant admis (\texttt{60.0000} vaut \texttt{60.00}) ---, sans signe ni espace, pas même en tête ou en fin de saisie~; un montant ambigu (\texttt{1.234}, qui peut se lire mille deux cent trente-quatre), illisible ou plus fin que le centime est signalé.
+    \item Saisir les lignes~: pour chacune, un \textbf{compte} --- choisi dans le même sélecteur que l'écriture manuelle (tout compte actif et imputable, sauf celui de la banque~; l'avis débiteurs ou créanciers s'affiche sous la ligne concernée) ---, un montant, une description et, au besoin, un compte analytique. Deux lignes au moins, cinquante au plus~; la somme doit égaler le montant de la transaction. Un montant s'écrit en chiffres, avec un point ou une virgule décimale, l'apostrophe des milliers (\texttt{1'200.50}) et deux décimales au plus --- la saisie en admet jusqu'à quatre, les zéros au-delà de deux étant admis (\texttt{60.0000} vaut \texttt{60.00}) ---, sans signe ni espace, pas même en tête ou en fin de saisie~; un montant ambigu (\texttt{1.234}, qui peut se lire mille deux cent trente-quatre), illisible ou plus fin que le centime est signalé.
     \item Cliquer sur \emph{Éclater}. Le bouton reste grisé tant qu'une ligne est incomplète ou que la somme n'égale pas le montant~; le message sous les lignes dit alors ce qui manque~: le compte ou le montant de quelle ligne, ou, quand toutes les lignes sont lues, la somme que les montants doivent atteindre et l'écart actuel. L'indicateur au-dessus constate l'état («~Balance non équilibrée --- attendu \ldots, écart \ldots~», l'écart étant «~non calculable~» tant qu'une ligne n'a pas de montant lu), puis dit «~Balance équilibrée~» et le montant quand la somme est juste.
 \end{enumerate}
 
@@ -3534,7 +3612,7 @@ Exemple : le loyer est prélevé chaque mois par la régie. Une règle «~Loyer~
     \item Choisir le \textbf{type} de correspondance --- \emph{Contrepartie contient}, \emph{Contrepartie exacte}, \emph{Référence contient} ou \emph{IBAN exact} --- et saisir la \textbf{valeur} cherchée. Une règle porte \textbf{une seule} condition. Le type ne se choisit qu'à la création~: il ne se modifie plus ensuite. Une règle \emph{Contrepartie exacte} écrite sur un nom qu'une version antérieure à la~0.17.4 avait lu tronqué (un nom à «~\&~», par exemple «~Fils~» pour «~Dupont \& Fils~») ne reconnaît plus le nom désormais lu en entier~: corrigez sa valeur.
     \item Choisir le \textbf{compte de contrepartie}~: un compte de charge ou de produit, actif et imputable.
     \item Fixer la \textbf{priorité}, de 1 à 1000~: le \textbf{plus petit} nombre l'emporte.
-    \item Au besoin, choisir un \textbf{projet analytique par défaut}.
+    \item Au besoin, choisir un \textbf{compte analytique par défaut}.
     \item Cliquer sur \emph{Créer}.
 \end{enumerate}
 
@@ -3582,6 +3660,13 @@ Avant de confirmer, Kesh dit ce qui va se passer. À la confirmation~:
     \item la transaction redevient \textbf{à rapprocher}, et réapparaît dans la réconciliation,
           prête à être rattachée à la bonne pièce.
 \end{itemize}
+
+\paragraph{Un règlement de plusieurs factures.} Depuis la version~0.19.0, un règlement groupé
+(\S\ref{sec:reglement-groupe}) s'annule \textbf{en entier} --- jamais une facture seule. La
+confirmation liste ses factures, qui redeviendront toutes à régler (ou, pour des factures
+fournisseur, validées, à payer), et nomme l'écart et son compte, contre-passés avec l'écriture.
+Quand l'annulation est refusée à cause d'\textbf{une} de ses factures --- créditée, soldée, ou
+lettrage figé ---, Kesh nomme cette facture («~Une des factures de ce rapprochement, \ldots~»).
 
 \paragraph{Un côté d'un virement rapproché des deux côtés.} Depuis la version~0.17.6, quand
 l'écriture du rapprochement est aussi rapprochée de l'\textbf{autre côté} d'un virement --- une
@@ -3969,8 +4054,9 @@ Dans une société passée en multi-devises (\S\ref{sec:multi-devises}), un comp
 (\S\ref{sec:devise-compte}) se lit aux rapports \textbf{dans les deux devises}~: son montant en CHF,
 comme tout compte, et, à côté, le même montant \textbf{dans sa devise} --- de quoi rapprocher un
 compte PayPal ou Wise de son relevé, et contrôler la réévaluation de fin d'exercice. Un compte en CHF
-ne change pas, et une société sans compte en devise voit ses rapports \textbf{exactement comme
-avant}, exports compris.
+ne change pas, et une société sans compte en devise voit ses rapports \textbf{comme avant}, à l'écran
+comme en PDF, et ses exports CSV avec les mêmes colonnes (seul l'échappement des cellules de texte,
+\S\ref{sec:rapports-exports}, peut y changer une cellule).
 
 \begin{itemize}
     \item \textbf{La devise est celle du compte.} Le solde en devise d'un compte est la somme des
@@ -3999,11 +4085,11 @@ avant}, exports compris.
           livre, «~À reporter~» et «~Report~» portent aussi le report en devise. Le CSV ajoute, seulement
           si le rapport contient un compte en devise, des colonnes en devise (\texttt{Devise},
           \texttt{SoldeDevise}, \texttt{DebitDevise}, \texttt{Cours}\ldots), vides pour un compte en
-          CHF~; sinon, le fichier est identique à celui d'avant. Les montants en devise sont arrondis
+          CHF~; sinon, ses colonnes sont celles d'avant. Les montants en devise sont arrondis
           au centime, le cours est écrit par unité (de quatre à dix décimales).
     \item \textbf{Journal.} À l'écran, une ligne en devise porte sous elle son montant et son cours~;
           le PDF et le CSV du journal ne changent pas.
-    \item \textbf{Restent en CHF}~: l'accueil, les rapports par projet, le rapport TVA et la balance
+    \item \textbf{Restent en CHF}~: l'accueil, les rapports par compte analytique, le rapport TVA et la balance
           âgée --- une écriture en devise y compte pour son montant en CHF ---, ainsi que les postes
           ouverts et le lettrage.
 \end{itemize}
@@ -4082,13 +4168,13 @@ que la concordance annuelle exige (art.~72 al.~1 LTVA), et Kesh ne l'outille pas
 \small \emph{Limitation actuelle (v0.3)} : le format de décompte officiel AFC (e-décompte ESTV) et la méthode des taux de la dette fiscale nette (TDFN) ne sont pas encore couverts. Le décompte de Kesh fournit les montants (due, récupérable, solde net) à reporter manuellement sur le formulaire AFC.
 \end{quote}
 
-\subsection{Visualisation et exports}
+\subsection{Visualisation et exports}\label{sec:rapports-exports}
 
 Tous les rapports se \textbf{consultent à l'écran}. Pour les emporter :
 
 \begin{itemize}
     \item \textbf{PDF et CSV} — bilan, compte de résultat, balance des comptes, grand livre,
-          journal des écritures, décompte TVA, et les deux rapports par projet.
+          journal des écritures, décompte TVA, et les deux rapports par compte analytique.
     \item \textbf{CSV seulement} — la \textbf{balance âgée des créances}, dont l'export est de
           surcroît réservé aux rôles \emph{Comptable} et \emph{Administrateur}.
 \end{itemize}
@@ -4098,45 +4184,102 @@ Le PDF est paginé et destiné à être présenté ou archivé ; le CSV est dest
 un tableur. Aucun des deux n'est tronqué, même quand l'écran l'est.
 \end{keshnote}
 
+\paragraph{Les cellules de texte du CSV.} Pour qu'un tableur lise toujours un libellé comme du
+texte, et jamais comme une formule, une cellule de texte d'un export CSV de rapport --- libellé
+d'écriture, numéro ou nom de compte, nom de contact, de compte analytique ou d'exercice --- qui
+commence par \texttt{=}, \texttt{+}, \texttt{-} ou \texttt{@} est précédée d'une apostrophe
+(\texttt{'}), et une tabulation ou un retour à la ligne y est remplacé par une espace. Les montants
+ne sont jamais touchés~: \texttt{-12.50} reste un nombre. C'est la règle que suivaient déjà les
+autres exports CSV de Kesh (factures, export global)~; elle s'applique aux rapports depuis la
+version qui apporte le multi-devises, \textbf{que la société soit multi-devises ou non}~: un CSV de
+rapport peut donc différer de celui d'une version antérieure sur ces seules cellules.
+
 %%─────────────────────────────────────────────────────────────────────────────
-\section{Comptabilité analytique par projet}
+\section{Comptabilité analytique}
 
-Kesh permet de rattacher chaque opération comptable à un \textbf{projet} pour l'analyser
-isolément — typiquement pour capter \emph{toutes} les dépenses d'une rénovation
-déductible, ou pour suivre le \emph{rendement} d'un investissement.
+Kesh permet de rattacher chaque opération comptable à un \textbf{compte analytique} pour
+l'analyser isolément. Un compte analytique suit ce que vous voulez isoler~: un immeuble, un
+véhicule, une activité, un chantier --- typiquement pour capter \emph{toutes} les dépenses
+d'une rénovation déductible, ou pour suivre le \emph{rendement} d'un investissement. Il
+s'ajoute au compte du plan comptable, il ne le remplace pas~: une charge reste passée sur son
+compte de charges, et le compte analytique dit à quoi elle se rapporte.
 
-\subsection{Créer et organiser des projets}
+\subsection{Créer et organiser des comptes analytiques}
 
-Dans \emph{Administration} → \emph{Projets analytiques}, créez vos projets (code court + nom).
-Un projet peut avoir des \textbf{sous-projets} (deux niveaux au maximum : projet →
-sous-projet). Un projet dont des écritures dépendent ne se supprime pas mais
-s'\textbf{archive} (il disparaît des sélecteurs mais reste dans l'historique et les rapports).
+Dans \emph{Administration} → \emph{Comptes analytiques}, créez vos comptes analytiques (code
+court + nom). Un compte analytique peut avoir des \textbf{sous-comptes analytiques} (deux
+niveaux au maximum : compte analytique → sous-compte analytique). Un compte analytique dont des
+écritures dépendent ne se supprime pas mais s'\textbf{archive} (il disparaît des sélecteurs
+mais reste dans l'historique et les rapports).
 
-\subsection{Affecter un projet aux écritures}
+\subsection{Affecter un compte analytique aux écritures}
 
 L'affectation est \textbf{optionnelle} et disponible sur \textbf{tous les flux de saisie} :
 \begin{itemize}
-    \item \textbf{Écritures manuelles} — un sélecteur de projet \emph{par ligne} (une écriture
-          de régularisation peut ainsi ventiler ses charges sur plusieurs projets).
-    \item \textbf{Factures de vente et fournisseurs} — un projet au niveau du document,
-          propagé à toutes les lignes de l'écriture générée.
-    \item \textbf{Réconciliation bancaire} — projet lors d'une écriture manuelle,
-          projet \emph{par ligne} lors d'une ventilation, et \textbf{projet par défaut}
-          sur une règle d'affectation (chaque transaction réconciliée via la règle est
-          alors taguée automatiquement).
+    \item \textbf{Écritures manuelles} — un sélecteur de compte analytique \emph{par ligne}
+          (une écriture de régularisation peut ainsi ventiler ses charges sur plusieurs
+          comptes analytiques).
+    \item \textbf{Factures de vente et fournisseurs} — un compte analytique au niveau du
+          document, propagé à toutes les lignes de l'écriture générée.
+    \item \textbf{Réconciliation bancaire} — compte analytique lors d'une écriture manuelle,
+          compte analytique \emph{par ligne} lors d'une ventilation, et \textbf{compte
+          analytique par défaut} sur une règle d'affectation (chaque transaction réconciliée
+          via la règle est alors taguée automatiquement).
 \end{itemize}
 
-\subsection{Les deux rapports par projet}
+\subsection{Changer le compte analytique après coup}
+\label{sec:reimputation-analytique}
 
-Dans \emph{Rapports}, deux onglets exploitent la dimension projet (exportables PDF/CSV,
-en vue par \textbf{exercice} ou \textbf{cumulée depuis l'origine} du projet, avec
-\textbf{agrégation des sous-projets}) :
+Un brouillon de facture se corrige dans son formulaire. Une facture client \textbf{validée,
+payée ou annulée} garde, elle, le bouton \emph{Changer le compte analytique} sur sa fiche
+(Comptable et Administrateur). Le dialogue propose les comptes analytiques actifs, celui que la
+facture porte s'il est archivé, et «~— Aucun~» pour retirer le compte~; \emph{Enregistrer} reste
+inactif tant que rien n'a changé.
+
 \begin{itemize}
-    \item \textbf{Dépenses par projet} — toutes les charges taguées, groupées par
-          sous-projet puis par compte, avec sous-totaux et total. Chaque compte se
+    \item \textbf{Ce que le geste touche}~: la facture et \textbf{toutes ses écritures}, chacune
+          de toutes ses lignes --- la vente, les règlements (ceux d'un rapprochement bancaire
+          compris) et le solde du reste d'une facture payée~; la vente et l'avoir d'une facture
+          annulée. Les rapports \emph{Dépenses} et \emph{Rendement par compte analytique}
+          suivent aussitôt.
+    \item \textbf{Une facture réglée avec d'autres par un même virement}
+          (\S\ref{sec:reglement-groupe})~: le geste est \textbf{refusé}, et Kesh le dit~; rien
+          n'est écrit. L'écriture de ce règlement porte aussi la banque, l'écart éventuel et les
+          autres factures, qui changeraient avec elle. \emph{Annulez le rapprochement} du
+          règlement groupé~: la facture se réimpute alors comme une autre, et l'écriture du groupe
+          et sa contre-passation gardent leur compte analytique. Quand ce rapprochement ne peut
+          pas s'annuler --- exercice de son écriture clôturé, lettrage figé par une période close,
+          une des factures du groupe créditée ou soldée, et les autres raisons dites en
+          \S\ref{sec:annuler-rapprochement} ---, la facture garde son compte analytique.
+    \item \textbf{Ce qu'il ne touche pas}~: aucun montant, aucun compte du plan, aucune date,
+          aucun numéro, aucun lettrage, aucun rapprochement, aucun règlement ni statut.
+    \item \textbf{Les paires annulées}~: un règlement annulé et sa contre-passation ne sont plus
+          rattachés à la facture~; ils gardent leur compte analytique, et leur effet net sur ce
+          compte est nul.
+    \item \textbf{Exercice clos ou période verrouillée}~: si une écriture qui changerait est
+          dans un exercice clos (ou suivi d'un exercice clos), ou datée au plus tard de la date
+          du verrou des livres, le geste est \textbf{réservé à l'Administrateur connecté à
+          l'interface web}, comme la réouverture d'un exercice et la levée du verrou. Kesh
+          l'avertit~--- exercice clos ou date du verrou, nombre d'écritures, et le fait que les
+          rapports analytiques de cette période changeront~--- et lui demande de
+          \emph{Confirmer}. Un Comptable, ou une clé d'API, reçoit un refus qui le dit, et rien
+          n'est écrit.
+    \item \textbf{La trace}~: chaque changement est inscrit au journal d'audit (\emph{Compte
+          analytique de la facture changé}), avec l'ancien et le nouveau compte, les écritures
+          touchées, et si une période close a été confirmée~; une clé d'API y est nommée.
+\end{itemize}
+
+\subsection{Les deux rapports par compte analytique}
+
+Dans \emph{Rapports}, deux onglets exploitent la dimension analytique (exportables PDF/CSV,
+en vue par \textbf{exercice} ou \textbf{cumulée depuis l'origine} du compte analytique, avec
+\textbf{agrégation des sous-comptes analytiques}) :
+\begin{itemize}
+    \item \textbf{Dépenses par compte analytique} — toutes les charges taguées, groupées par
+          sous-compte analytique puis par compte, avec sous-totaux et total. Chaque compte se
           \textbf{déplie} pour afficher les écritures qui le composent (drill-down).
           Idéal pour préparer une déclaration fiscale sans rien oublier.
-    \item \textbf{Rendement par projet} — \textbf{coût investi} (charges + actifs immobilisés
+    \item \textbf{Rendement par compte analytique} — \textbf{coût investi} (charges + actifs immobilisés
           ; la trésorerie banque/caisse en est exclue pour ne pas gonfler le coût),
           \textbf{revenus}, \textbf{résultat net} et \textbf{rendement \%}
           (revenus / coût investi).
@@ -4158,7 +4301,7 @@ ouvert (CSV), accompagné d'un manifeste portant l'empreinte SHA-256 de chaque f
 
 \begin{keshwarning}[title={\faExclamationTriangle\ Ce que cet export couvre, et ce qu'il ne couvre pas}]
 Il porte \textbf{toute votre comptabilité}~: ventes, achats, avoirs, règlements, banque,
-grand livre, projets analytiques et journal d'audit --- la liste exacte suit. Ce qu'il ne
+grand livre, comptes analytiques et journal d'audit --- la liste exacte suit. Ce qu'il ne
 contient pas est dit plus bas, avec la raison~: des réglages techniques et des secrets, et,
 point à retenir, les \textbf{fichiers} des pièces justificatives, dont seul le chemin figure.
 
@@ -4180,7 +4323,7 @@ contestation, complétez cet export par un dispositif d'archivage tiers.
 
 \subsection{Contenu du ZIP}
 
-L'archive contient \textbf{un fichier CSV par table}, plus un manifeste. Les trente tables
+L'archive contient \textbf{un fichier CSV par table}, plus un manifeste. Les trente et une tables
 couvrent l'ensemble de votre comptabilité~:
 
 \begin{itemize}
@@ -4197,6 +4340,7 @@ couvrent l'ensemble de votre comptabilité~:
     \item \textbf{Banque}~: \texttt{bank\_accounts.csv}, \texttt{bank\_imports.csv},
           \texttt{bank\_transactions.csv}, \texttt{reconciliation\_rules.csv}, \texttt{bank\_profiles.csv}.
     \item \textbf{Paramètres et traçabilité}~: \texttt{company.csv}, \texttt{vat\_rates.csv},
+          \texttt{exchange\_rates.csv} (les cours de change retenus par la société),
           \texttt{company\_invoice\_settings.csv}, \texttt{dunning\_levels.csv},
           \texttt{company\_dunning\_settings.csv}, et \texttt{audit\_log.csv} --- le journal d'audit.
     \item \texttt{metadata.json}~: le manifeste (version de Kesh, date, auteur, et le hash
@@ -4336,9 +4480,11 @@ transactions à rapprocher) est prévu mais pas encore disponible.
           \textbf{numéro d'entité exige un type}~: le champ reste inactif tant qu'aucun type n'est
           choisi, et se vide quand vous changez de type --- un numéro ne désigne une pièce que dans
           son type. Un numéro nul, négatif ou non entier est ignoré.
-    \item \textbf{Les dates filtrent sur des jours UTC}, alors que le tableau affiche l'heure
-          \textbf{locale}. Une opération faite peu après minuit, heure suisse, appartient donc au
-          jour UTC \emph{précédent}~: si elle manque, élargissez la période d'un jour. Une date de
+    \item \textbf{Les dates filtrent sur des jours de Zurich}~: une opération faite peu après
+          minuit, heure suisse, appartient au jour où elle a eu lieu. Le tableau affiche l'heure de
+          votre \textbf{poste} --- pour un poste réglé sur la Suisse, la même. \emph{Depuis la
+          version 0.18.0~; avant, les dates filtraient sur des jours UTC, et une opération faite
+          entre minuit et une heure du matin (deux en été) paraissait à la veille.} Une date de
           début postérieure à la date de fin est refusée par l'écran.
     \item \textbf{Le tableau}~: la date, l'auteur (tel qu'il s'appelait au moment de l'opération,
           et «~clé API~» si elle a été faite par une clé d'API --- \emph{pour une partie des
@@ -4373,7 +4519,8 @@ transactions à rapprocher) est prévu mais pas encore disponible.
           type et le numéro d'entité.
     \item \textbf{L'export CSV} reprend les filtres affichés, avec des heures en UTC et les libellés
           dans la langue de l'installation~; son \textbf{nom} porte la date du jour de Zurich
-          (\S\ref{sec:date-du-jour}), alors que ses lignes et ses filtres restent en UTC. Il est \textbf{plafonné à 10~000 lignes}~: au-delà, un
+          (\S\ref{sec:date-du-jour}), et ses filtres choisissent, comme à l'écran, des jours de
+          Zurich. Il est \textbf{plafonné à 10~000 lignes}~: au-delà, un
           message vous demande d'affiner les filtres. \emph{À l'export, une période inversée est
           refusée par le serveur avec un message qui n'est pas encore traduit.}
 \end{itemize}
@@ -4731,11 +4878,11 @@ Disponibles depuis la version 0.2.0 :
 Fonctionnalités non encore disponibles :
 
 \begin{itemize}
-    \item Mono-devise CHF (multi-devises prévu pour une version ultérieure).
+    \item Factures, factures fournisseur et relevés bancaires en devise (la comptabilité multi-devises, ses écritures et ses rapports sont disponibles depuis la version~0.19.0, \S\ref{sec:multi-devises}~; les pièces et les relevés restent en CHF). Le lettrage manuel d'un compte en devise raisonne en CHF, et le règlement de plusieurs factures par une transaction est réservé au CHF.
     \item Décompte TVA au format officiel AFC / e-décompte ESTV (les montants du décompte Kesh sont à reporter manuellement sur le formulaire AFC).
     \item Avoir \emph{partiel} et avoir sur facture \emph{déjà encaissée}, même en partie (l'avoir total sur une facture sans aucun règlement est, lui, disponible — cf. \S\ref{sec:avoirs}).
     \item Sélecteur de langue dans l'interface (la langue de l'interface est celle de l'installation, \texttt{KESH\_LANG} ; le sélecteur est prévu pour une version ultérieure).
-    \item Pas de signature électronique qualifiée (QES) sur les exports (verdict (b) de la recherche réglementaire, prévu Epic 14).
+    \item Pas de signature électronique qualifiée (QES) sur les exports (verdict (b) de la recherche réglementaire, prévu dans une version ultérieure).
     \item Format PDF standard, non PDF/A (migration prévue selon ISO 19005).
 \end{itemize}
 

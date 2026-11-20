@@ -7,6 +7,7 @@ import type {
 	CancelReconciliationResponse,
 	EntryCandidatesResponse,
 	GetProposalsResponse,
+	GroupCandidatesResponse,
 	LinkEntryResponse,
 	LinkCandidatesResponse,
 	LinkResponse,
@@ -210,6 +211,42 @@ export async function getEntryCandidates(
 ): Promise<EntryCandidatesResponse> {
 	return apiClient.get<EntryCandidatesResponse>(
 		`/api/v1/reconciliation/transactions/${bankTransactionId}/entry-candidates`,
+	);
+}
+
+/** Story 43-3 (#823) — les paramètres de la recherche des factures d'un règlement groupé. */
+export interface GroupCandidatesQuery {
+	/** Le terme cherché (nom du tiers, numéro, référence) ; vide : aucun filtre. */
+	q?: string;
+	/** Les factures déjà imputées, que la liste ne rend plus (50 au plus). */
+	exclude?: readonly number[];
+	/** Le nombre de factures rendues (50 par défaut, 100 au plus, côté serveur). */
+	limit?: number;
+}
+
+/**
+ * Story 43-3 (#823) — les factures qu'une transaction peut régler ensemble (Story 43-2) :
+ * clients `validated` pour un crédit, fournisseur `open` pour un débit, tous tiers, datées au
+ * plus tard à la borne du `POST`. Une transaction de montant nul ou hors CHF rend
+ * `direction: null` et une liste vide. Refus : `404 NOT_FOUND` (transaction supprimée),
+ * `404 RECONCILIATION_TRANSACTION_NOT_PENDING`, `409 BANK_ACCOUNT_CLOSED`,
+ * `412 BANK_ACCOUNT_NOT_CONFIGURED`.
+ *
+ * `retry: false` : la recherche se relance à chaque frappe ; un échec est affiché, non rejoué.
+ */
+export async function getGroupCandidates(
+	bankTransactionId: number,
+	query: GroupCandidatesQuery = {},
+): Promise<GroupCandidatesResponse> {
+	const qs = new URLSearchParams();
+	const q = query.q?.trim() ?? '';
+	if (q !== '') qs.set('q', q);
+	if (query.exclude && query.exclude.length > 0) qs.set('exclude', query.exclude.join(','));
+	if (query.limit !== undefined) qs.set('limit', query.limit.toString());
+	const suffix = qs.toString() === '' ? '' : `?${qs.toString()}`;
+	return apiClient.get<GroupCandidatesResponse>(
+		`/api/v1/reconciliation/transactions/${bankTransactionId}/group-candidates${suffix}`,
+		{ retry: false },
 	);
 }
 

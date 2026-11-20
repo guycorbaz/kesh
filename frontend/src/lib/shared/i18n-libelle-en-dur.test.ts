@@ -383,8 +383,48 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
  * `ecartee` **15 → 18**) ; dans `closing-checks-labels.ts`, `notRevaluedText` (textes par
  * `i18nMsg` seulement : `conforme` **97 → 98**). Relevé par la garde après la fusion, non
  * additionné.
+ *
+ * **92 → 95, et les déclarations sont NOMMÉES** (Story 36-17, #1187) : dans
+ * `lib/features/onboarding/OnboardingDone.svelte`, `orgTypeLabel` (le type d'organisation du
+ * récapitulatif : chaque branche par `i18nMsg`, la valeur inconnue rendue telle quelle) et
+ * `summaryErrorText` (par `i18nMsg`) ; dans `lib/features/onboarding/onboarding-screens.ts`,
+ * `onboardingLanguageLabel` (le nom d'une langue lu dans la table `ONBOARDING_LANGUAGES`, nom
+ * de chaque langue dans sa propre langue, qui ne se traduit pas — aucun `return` d'un
+ * littéral). `conforme` **78 → 81** ; `ecartee` ne bouge pas. Relevé par la garde
+ * (`expected 95 to be 92`, `kesh-gate-logs/e36-17/front-test-unit-1.log`), non additionné.
+ *
+ * **95 → 104, et les déclarations sont NOMMÉES** (Story 43-3, #823) : dans
+ * `lib/features/reconciliation/GroupSettlementModal.svelte`, `gapText`, `totalText`,
+ * `blockText` (vides tant que rien n'est calculé ou retenu, sinon par `i18nMsg` ou un montant
+ * mis en forme), `accountLabel` (`'—'` sans compte, sinon un gabarit) et `refusalText` (par
+ * `i18nMsg`) ; dans `CancelReconciliationDialog.svelte`, `pieceLabel` (un numéro ou `#id`) et
+ * `groupGapText` (par `i18nMsg`) ; dans `failed-proposal-label.ts`, `groupAccountLabel` (par
+ * `i18nMsg`) et `groupLabel` (son résultat). `ecartee` **14 → 18** (des retours neutres, `''`
+ * ou `'—'`, aucun libellé), `conforme` **81 → 86**, relevés par la garde et non attribués un à
+ * un. Relevé par la garde (« expected 104
+ * to be 95 », `kesh-gate-logs/e433/vitest-i18n-releve-2.log`), non additionné ; les neuf sont
+ * les seules déclarations neuves du diff de la story à porter un suffixe `Label`, `Text` ou
+ * `Display`.
+ *
+ * **Intégration de main (v0.18.0) dans l'Epic 37** (2026-11-17) : **119**, relevé par la garde après
+ * la fusion (`expected 119 to be 0`, `kesh-gate-logs/integration-main-37/vitest-1.log`), non
+ * additionné — 92 + 24 (Epic 37) + 3 (Story 36-17) ; `ecartee` **18**, `conforme` **101**.
+ *
+ * **Fusion de la 43-2 (Epic 37 compris) dans la 43-3** (2026-11-18) : relevé par la garde après la
+ * fusion (`kesh-gate-logs/e433/fusion-432-releve-1.log`, verte à 128), non additionné — 119 + 9
+ * (Story 43-3) ; `ecartee` **22**, `conforme` **106**.
+ *
+ * **128 → 129** (remédiation de la revue P1 de la 43-3) : `gapSenseLabel`
+ * (`reconciliation/gap-label.ts`, tout par `i18nMsg`) ; `blockText` devient `blockTexts` (hors
+ * suffixe) ; `ecartee` **22 → 21**, `conforme` **106 → 108**, relevés par la garde
+ * (`kesh-gate-logs/e433/rem1-vitest-1.log`), non additionnés.
+ *
+ * **129 → 130** (remédiation de la revue P2 de la 43-3) : `senseLabel`
+ * (`reconciliation/gap-label.ts`, tout par `i18nMsg`), séparé de `gapSenseLabel` pour la
+ * minuscule en milieu de phrase ; `ecartee` **21**, `conforme` **108 → 109**, relevés par la
+ * garde (`kesh-gate-logs/e433/rem2-vitest-1.log`), non additionnés.
  */
-const CANDIDATES_ATTENDUES = 116;
+const CANDIDATES_ATTENDUES = 130;
 
 /** Les trois délimiteurs de littéral en JS/TS. */
 const QUOTES = ["'", '"', '`'];
@@ -901,7 +941,7 @@ describe('libellés en dur — l’angle mort #255', () => {
 			else if (c.retours.length > 0) classes.ecartee += 1;
 			else classes.conforme += 1;
 		}
-		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 18, conforme: 98 });
+		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 21, conforme: 109 });
 		// La somme est recalculée depuis les classes, jamais depuis le total qu'elle contrôle.
 		const somme = Object.values(classes).reduce((a, b) => a + b, 0);
 		expect(somme).toBe(CANDIDATES_ATTENDUES);

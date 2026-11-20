@@ -130,17 +130,55 @@ registre). Les fiches passent ensuite par `bmad-create-story`, puis la boucle de
 | Ordre | Story | Issues | Impact | Objet | Remarques |
 |---|---|---|---|---|---|
 | 6 | **36-6** | #823 | I2 | Une transaction qui règle plusieurs écritures (lot pain.001 de plusieurs factures, virement entre comptes propres) | fonction attendue par Guy ; **migration possible** (un lien transaction → écriture unique aujourd'hui, `matched_entry`), **acceptée par Guy le 2026-11-14** dans la release de fin d'epic, sauvegarde d'avant la mise à jour exigée : la fiche la dit avant d'écrire ; découpage préventif probable |
-| 7 | **36-7** | #1125 (KF-060) | I4 aujourd'hui, **bloquant au 2027-01-01** | Désancrer de 2026 les tests à exercice ou date fixe | **à terminer d'ici le 2026-12-28** (décision de Guy, Q1) ; critère E1 : `scripts/test-fast.sh --ci` et l'E2E complet verts sous `KESH_TEST_INSTANT=2027-01-04T10:00:00Z`, sonde positive jointe |
+| 7 | **36-7** | #1125 (KF-060) | I4 aujourd'hui, **bloquant au 2027-01-01** *(précisé le 2026-11-15, validation P2 de la fiche 36-7a, V2-3 : `open_items_invariant` rougit à l'heure réelle dès le 2026-12-26 — verrou des livres à aujourd'hui − 300 jours ; sans effet si la 0.18.0 sort au 2026-12-15)* | Désancrer de 2026 les tests à exercice ou date fixe | **à terminer d'ici le 2026-12-28** (décision de Guy, Q1) ; critère E1 : `scripts/test-fast.sh --ci` et l'E2E complet verts sous `KESH_TEST_INSTANT=2027-01-04T10:00:00Z`, sonde positive jointe |
 | 8 | **36-8** | #1158, #268 | I3 | Remarque (note interne) éditable sur chaque écriture, et note interne par facture émise et reçue | **porte une migration** (non breaking attendue) : release à sauvegarde exigée, en tête des notes et au manuel d'administration |
 | 9 | **36-9** | #1044 | I1 | Le solde du reste d'un règlement contrôle le type du compte de TVA due, comme la 35-3 à la validation | même patron que la 35-3 (Q6) ; #525 reste dans le report de la TVA |
 | 10 | **36-10** | #1147, #1053 | I3 | Les dernières dates en UTC : filtres et export du journal d'audit, date d'exigibilité d'une facture rappelée | une story pour les deux (Q11) ; prolonge les 35-5a à 35-5c |
 | 11 | **36-11a** à **36-11d** | #431, #1132 | I3 | L'acteur de la requête partout où un handler authentifié trace — la 35-8b (`superseded`) découpée en quatre lots par domaine | C-e360-9 ; findings V1-1 à V1-7 de `kesh-gate-logs/e35-8b-validation-p1.md` à traiter dans les fiches ; `closes #431` au dernier lot |
 | 12 | **36-12** | #944 | I3 | QR-facture : ciseaux, ligne de séparation, place de *Payable by*, largeurs (SIX § 3.7) | C-e350-1 ; touche le rendu de chaque QR-facture : **après** la première facture réelle de Guy |
-| 13 | **36-13** | #235 (P1) | I1 (conformité, art. 957a CO) | Pièces justificatives sur les écritures | **à placer avant la clôture de l'exercice 2026** (Q5) ; migration et stockage probables ; sera découpée à sa fiche, voire portée par un epic à elle |
+| 13 | **36-13** | #235 (P1) | I1 (conformité, art. 957a CO) | Pièces justificatives sur les écritures | **à placer avant la clôture de l'exercice 2026** (Q5) ; migration et stockage probables ; sera découpée à sa fiche, voire portée par un epic à elle — **sortie de l'Epic 36 le 2026-11-15 : Epic 41** (D3) |
 | 14 | **36-15** | #1161 (CR) | I4 | Parler de « compte analytique » plutôt que de « projet analytique » : vocabulaire visible seulement (écrans, quatre langues, manuels), identifiants internes `project*` gardés | ajoutée le 2026-11-14 sur décision de Guy (C-e360-15) ; **sans migration** ni changement de contrat de l'API ; avant la première clôture d'exercice, pour que les rapports portent le bon terme ; une seule story, faite d'un seul geste |
 | 15 | **36-16** | #1167 (CR) | I3 | *Changer le compte analytique* d'une facture client ou fournisseur, quel que soit son statut (payée comprise), et d'une écriture manuelle passée : la facture et toutes ses écritures (vente ou achat, règlements, avoirs, solde) réimputées d'un geste, audité, sans toucher montant, compte, date, numéro, lettrage ni rapprochement | ajoutée le 2026-11-14 sur décision de Guy (C-e360-16) ; **après 36-15** (même objet, vocabulaire fixé) ; sans migration attendue ; touche `kesh-db` : gate complet en boucle ; exercice clos permis avec avertissement (même principe que #1158) |
 | 16 | **36-17** | #1187 | I2 (installation neuve : page blanche, rechargement manuel) | Assistant de configuration : un écran pour chaque étape (7 et 8 comprises), « Configuration en cours… » pendant la finalisation, page « Configuration terminée » avec *Commencer*, échec de finalisation affiché avec *Réessayer* | ajoutée le 2026-11-14 sur décision de Guy (C-e360-18), défaut rapporté par un utilisateur en 0.17.6 ; frontend seul, sans migration ; avant la story de solde |
 | 17 | **36-14** | dette des stories 36-* | selon les issues | **Story de solde** : la dette ouverte par les stories de l'epic, **plafonnée à huit issues** dans au plus cinq modules (C-e360-10) | en fin d'epic, avant le tag ; règle « Tarir la source, puis solder » |
+| 18 | **36-18** | #1050, #1159, #1172 à #1177 | I1 à I4 | Les autres montants « 1.250 » : la règle de la 36-3 (« 1.234 » ambigu refusé, apostrophe des milliers admise) étendue aux sept écrans qui **écrivent** un montant — soldes de départ, prix fournisseur, paiement attendu, prix d'un article, règlement d'une facture, frais de rappel, montant minimal ; les filtres de la liste des écritures (#1177, P4) en dernier | ajoutée le 2026-11-15 sur décision de Guy (D6) ; sans migration ; deux lots si plus de cinq modules |
+
+### Phase 2 — décisions de Guy du 2026-11-15
+
+*Pages de décision du 2026-11-15 (archivées dans le dossier de projet, `gestion/pages-de-decision/`) : synthèse des
+releases et des epics, puis planification de la phase 2, version 2. Numérotation à deux niveaux depuis le même jour :
+une release planifiée monte le chiffre mineur.*
+
+- **Deux releases** (D2) : **0.18.0, sans migration, au plus tard le 2026-12-15** (coupure le 2026-12-11), puis **0.19.0,
+  avec les migrations**, non datée. Milestones GitHub `v0.18.0` et `v0.19.0` ; projet GitHub « Kesh », champ *Epic* = 36.
+- **0.18.0** : 36-7 (#1125) **d'abord** (D1), puis 36-9, 36-10, 36-15 et 36-17 en parallèle, puis 36-16, 36-12 (après la
+  première facture réelle de Guy, déjà émise — D7) et 36-18 (D6). **Aucune migration** : une story qui en exigerait une
+  s'arrête et passe à la 0.19.0.
+- **0.19.0** : 36-6 (#823), **découpée d'emblée** à sa fiche — 36-6a modèle, migration et API ; 36-6b réconciliation et
+  écran ; éventuellement 36-6c lots pain.001 (D4) ; 36-8 (#1158, #268) ; les quatre lots 36-11a à 36-11d (D5 ; s'ils ne
+  tiennent pas, les lots non commencés passent à un epic suivant) ; 36-14, la story de solde.
+- **36-19 (#1200, ajoutée par l'orchestrateur le 2026-11-15, dans la 0.18.0)** : la finalisation de l'assistant de
+  configuration complète les comptes vides d'une ligne de réglages de facturation déjà créée (par tout appel à
+  `getInvoiceSettings()` : journal, comptes bancaires, factures), sans écraser une désignation de l'utilisateur. Défaut
+  trouvé à la validation de la fiche 36-17, qui reste frontend et ne doit pas en dépendre ; choix prudent et réversible,
+  « limites voisines » (règles de cet epic), sans migration.
+- **Découpages des fiches de la 0.18.0** (règle de splitting préventif et règle de Guy du 2026-11-15, stories courtes ; décidés par l'orchestrateur à la rédaction ou à la validation des fiches) :
+  **36-7** → 36-7a (treize rouges de 2027, fusion avant le 2026-12-26) et 36-7b (neuf rouges sous instant antérieur) ;
+  **36-12** → 36-12a (lignes de séparation, ciseaux et déplacement minimal du point de dépôt, publiable seule) et
+  36-12b (grille, *Payable by*, largeurs mesurées, cascade ; peut glisser à la 0.19.0) ; **36-16** → 36-16a (facture
+  client, le patron), 36-16b (facture fournisseur), 36-16c (écriture manuelle) ; **36-18** → 36-18a (écrans qui
+  écrivent dans les livres) et 36-18b (réglages et filtres). Les sous-stories b et c partent de leur « a » fusionnée.
+  36-15, 36-16a et 36-18a attendent l'arbitrage de Guy sur les traductions de « compte analytique » — **rendu le
+  2026-11-16 : option A** (*analytisches Konto*, *conto analitico*, *analytical account*).
+- **Périmètre de la 0.18.0 arrêté le 2026-11-16** (accord de Guy) : 36-7a, 36-9, 36-10, 36-12a, 36-15, 36-16a, 36-17,
+  36-18a, 36-19 ; 36-7b si elle tient. **36-12b, 36-16b, 36-16c et 36-18b passent à la 0.19.0** ; #944, #1167, #1173,
+  #1175, #1176 et #1177, qui se ferment avec leur dernière sous-story, passent au milestone v0.19.0.
+- **36-13 (#235) sort de l'Epic 36** et devient l'**Epic 41** (D3), lancée dès la fin de l'Epic 36, avant la clôture de
+  l'exercice 2026 ; milestone « Plus tard ».
+- **Mandat** (M1) : autonomie jusqu'à l'image 0.18.0 publiée ; jalons notifiés (PR ouverte, tag, image) ; la fusion de la
+  PR de release attend l'accord de Guy. Branche de la release : **`epic/36-0.18.0`**, d'où partent et où reviennent les
+  branches `story/36-*` (règles de travail à plusieurs, PR #1195). L'Epic 36 est la dernière à s'étendre sur plusieurs
+  releases (« un epic = une release » à partir de l'Epic 37).
 
 **Lots de l'acteur** (C-e360-9 ; le rayon exact se chiffre à l'étape 0 de chaque fiche, V1-4) :
 

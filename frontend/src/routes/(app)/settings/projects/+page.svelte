@@ -52,7 +52,7 @@
 		} catch (err) {
 			loadError = isApiError(err)
 				? err.message
-				: i18nMsg('projects-load-error', 'Impossible de charger les projets.');
+				: i18nMsg('projects-load-error', 'Impossible de charger les comptes analytiques.');
 		} finally {
 			loading = false;
 		}
@@ -94,11 +94,11 @@
 	async function submit() {
 		formError = null;
 		if (!fCode.trim()) {
-			formError = i18nMsg('projects-err-code', 'Le code du projet est requis.');
+			formError = i18nMsg('projects-err-code', 'Le code du compte analytique est requis.');
 			return;
 		}
 		if (!fName.trim()) {
-			formError = i18nMsg('projects-err-name', 'Le nom du projet est requis.');
+			formError = i18nMsg('projects-err-name', 'Le nom du compte analytique est requis.');
 			return;
 		}
 		submitting = true;
@@ -113,10 +113,10 @@
 			};
 			if (mode.kind === 'edit') {
 				await updateProject(mode.project.id, { ...base, version: mode.project.version });
-				toast.success(i18nMsg('projects-updated', 'Projet mis à jour.'));
+				toast.success(i18nMsg('projects-updated', 'Compte analytique mis à jour.'));
 			} else {
 				await createProject(base);
-				toast.success(i18nMsg('projects-created', 'Projet créé.'));
+				toast.success(i18nMsg('projects-created', 'Compte analytique créé.'));
 			}
 			mode = { kind: 'none' };
 			await load();
@@ -133,10 +133,10 @@
 		try {
 			if (p.archived) {
 				await unarchiveProject(p.id, p.version);
-				toast.success(i18nMsg('projects-unarchived', 'Projet désarchivé.'));
+				toast.success(i18nMsg('projects-unarchived', 'Compte analytique désarchivé.'));
 			} else {
 				await archiveProject(p.id, p.version);
-				toast.success(i18nMsg('projects-archived', 'Projet archivé.'));
+				toast.success(i18nMsg('projects-archived', 'Compte analytique archivé.'));
 			}
 			await load();
 		} catch (err) {
@@ -156,27 +156,27 @@
 </script>
 
 <svelte:head>
-	<title>{i18nMsg('projects-title', 'Projets analytiques')} — Kesh</title>
+	<title>{i18nMsg('projects-title', 'Comptes analytiques')} — Kesh</title>
 </svelte:head>
 
 <div class="mb-6 flex items-center justify-between">
 	<div>
-		<h1 class="text-2xl font-semibold">{i18nMsg('projects-title', 'Projets analytiques')}</h1>
+		<h1 class="text-2xl font-semibold">{i18nMsg('projects-title', 'Comptes analytiques')}</h1>
 		<p class="text-sm text-text-muted">
 			{i18nMsg(
 				'projects-subtitle',
-				'Regroupez vos dépenses et revenus par projet (rénovation, investissement) pour les analyser isolément.',
+				'Regroupez vos dépenses et revenus par compte analytique (un immeuble, un véhicule, une rénovation, une activité) pour les analyser isolément.',
 			)}
 		</p>
 	</div>
 	<Button data-testid="project-new" onclick={openCreate}>
-		{i18nMsg('projects-new', 'Nouveau projet')}
+		{i18nMsg('projects-new', 'Nouveau compte analytique')}
 	</Button>
 </div>
 
 <label class="mb-4 flex items-center gap-2 text-sm">
 	<input type="checkbox" checked={includeArchived} onchange={onToggleArchivedFilter} />
-	{i18nMsg('projects-show-archived', 'Afficher les projets archivés')}
+	{i18nMsg('projects-show-archived', 'Afficher les comptes analytiques archivés')}
 </label>
 
 {#if mode.kind !== 'none'}
@@ -190,8 +190,8 @@
 	>
 		<h2 class="font-medium">
 			{mode.kind === 'edit'
-				? i18nMsg('projects-form-edit', 'Modifier le projet')
-				: i18nMsg('projects-form-create', 'Nouveau projet')}
+				? i18nMsg('projects-form-edit', 'Modifier le compte analytique')
+				: i18nMsg('projects-form-create', 'Nouveau compte analytique')}
 		</h2>
 		<div class="grid grid-cols-2 gap-3">
 			<label class="block text-sm">
@@ -207,9 +207,9 @@
 				<Input bind:value={fDescription} />
 			</label>
 			<label class="block text-sm">
-				{i18nMsg('projects-field-parent', 'Projet parent (optionnel)')}
+				{i18nMsg('projects-field-parent', 'Compte analytique parent (optionnel)')}
 				<select class="mt-1 w-full rounded border px-2 py-1" bind:value={fParentId}>
-					<option value={null}>{i18nMsg('projects-parent-none', '— Aucun (projet racine)')}</option>
+					<option value={null}>{i18nMsg('projects-parent-none', '— Aucun (compte analytique racine)')}</option>
 					{#each roots as r (r.id)}
 						<!-- Une racine archivée ne peut pas être parent (le backend rejette) → exclue. -->
 						{#if !r.archived && !(mode.kind === 'edit' && mode.project.id === r.id)}
@@ -249,7 +249,7 @@
 	<p class="text-sm text-destructive">{loadError}</p>
 {:else if projects.length === 0}
 	<p class="text-sm text-text-muted" data-testid="projects-empty">
-		{i18nMsg('projects-empty', 'Aucun projet. Créez votre premier projet pour commencer.')}
+		{i18nMsg('projects-empty', 'Aucun compte analytique. Créez votre premier compte analytique pour commencer.')}
 	</p>
 {:else}
 	<ul class="space-y-2" data-testid="projects-list">

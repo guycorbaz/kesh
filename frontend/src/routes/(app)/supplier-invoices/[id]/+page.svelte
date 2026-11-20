@@ -814,7 +814,7 @@
 		<dt class="text-text-muted">{i18nMsg('supplier-invoices-col-total', 'TTC')}</dt>
 		<dd><SupplierInvoiceTotal totalAmount={invoice.totalAmount} status={invoice.status} /></dd>
 		{#if projectLabel}
-			<dt class="text-text-muted">{i18nMsg('supplier-invoices-detail-project', 'Projet analytique')}</dt>
+			<dt class="text-text-muted">{i18nMsg('supplier-invoices-detail-project', 'Compte analytique')}</dt>
 			<dd data-testid="supplier-invoice-project">{projectLabel}</dd>
 		{/if}
 		{#if invoice.creditorIban}

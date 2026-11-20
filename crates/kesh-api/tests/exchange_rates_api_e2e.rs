@@ -1196,6 +1196,45 @@ async fn les_corrections_s_annoncent_par_societe(pool: MySqlPool) {
         .collect();
     let (s, _) = ctx.post(ACK, json!({ "notices": trop })).await;
     assert_eq!(s, 400);
+
+    // Une entrée refusée est nommée (revue d'intégration de l'équipe de
+    // Guy) : `details.notice`, rang 1-based, et « Entrée n » au message ;
+    // rien n'est acquitté.
+    let bonne = json!({ "currency": "USD", "kind": "month", "rateDate": "2025-12-01",
+        "publishedRate": "0.91" });
+    let mut lot: Vec<Value> = (0..499).map(|_| bonne.clone()).collect();
+    lot.insert(
+        41,
+        json!({ "currency": "USD", "kind": "month", "rateDate": "2025-12-01",
+            "publishedRate": "0,91" }),
+    );
+    let (s, b) = ctx.post(ACK, json!({ "notices": lot })).await;
+    assert_eq!(s, 400, "{b}");
+    assert_eq!(b["error"]["code"], "VALIDATION_ERROR");
+    assert_eq!(b["error"]["details"]["notice"], 42, "{b}");
+    assert!(
+        b["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("Entrée 42"),
+        "{b}"
+    );
+    let (s, b) = ctx
+        .post(
+            ACK,
+            json!({ "notices": [bonne, { "currency": "XXY", "kind": "month",
+                "rateDate": "2025-12-01", "publishedRate": "0.91" }] }),
+        )
+        .await;
+    assert_eq!(s, 400, "{b}");
+    assert_eq!(b["error"]["code"], "CURRENCY_UNKNOWN");
+    assert_eq!(b["error"]["details"]["notice"], 2, "{b}");
+    assert_eq!(b["error"]["details"]["value"], "XXY", "{b}");
+    assert_eq!(
+        notices_de(ctx.jwt.clone()).await.len(),
+        1,
+        "rien d'acquitté"
+    );
 }
 
 // ============================================================

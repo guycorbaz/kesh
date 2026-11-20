@@ -10,6 +10,7 @@
 //! - [`parse_spc_payload`] — decode a scanned SPC payload back into typed data.
 
 pub mod generator;
+pub(crate) mod largeurs;
 pub mod parser;
 pub mod pdf;
 pub(crate) mod texte;
