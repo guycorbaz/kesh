@@ -54,6 +54,12 @@ use crate::routes::bank_imports::{
 };
 use crate::routes::bank_statements_manual::MANUAL_STATEMENT_LOCK_TIMEOUT_SECS;
 
+/// Les actions de trace que les appelants passent à [`import_lines`]
+/// (`ImportRequest::audit_action`) : écrites en toutes lettres ici pour que
+/// l'inventaire des sites d'audit indirects (`audit_label_registry`) les relise,
+/// et contrôlées à l'écriture. *(Ajout de la 40-7b.)*
+pub const AUDIT_ACTIONS: [&str; 2] = ["paypal_import.created", "stripe_import.created"];
+
 /// Une transaction à importer, indépendante du format d'origine.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ProviderLine {
@@ -567,6 +573,11 @@ async fn write_under_locks(
         });
     }
 
+    debug_assert!(
+        AUDIT_ACTIONS.contains(&request.audit_action),
+        "action de trace inconnue : {}",
+        request.audit_action
+    );
     let mut details = request.audit_details.clone();
     details.insert("currencies".into(), serde_json::json!(reports));
     audit_log::insert_in_tx(
