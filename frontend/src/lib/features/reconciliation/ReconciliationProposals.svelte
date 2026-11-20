@@ -595,9 +595,10 @@
 			errorMsg = errorMessageOf(e);
 		} finally {
 			// Story 48-14 (revue P2, P2-1) : pas de relecture différée ici — elle effacerait le bilan,
-			// les refus ou l'erreur du lot qui vient de finir. Un règlement abouti pendant le lot est
-			// consommé par la relecture du lot ; abouti après elle, ou le lot en échec, il attend la
-			// relecture suivante (fermeture d'une modale, autre geste), qui le compte au bilan.
+			// les refus ou l'erreur du lot qui vient de finir. Un règlement abouti pendant le lot, avant
+			// sa relecture, est consommé par elle ; abouti pendant cette relecture ou après elle, ou le
+			// lot en échec, il attend la relecture suivante (fermeture d'une modale, autre geste), qui le
+			// compte au bilan.
 			busy = false;
 		}
 	}
