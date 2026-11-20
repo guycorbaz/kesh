@@ -235,7 +235,13 @@ Claude Opus 5.5 (worktree `kesh-wt38`, branche `epic/38-paypal`), 2026-11-20.
 - **Gates au commit de code `ca34a3f4`** — gate ciblé (cible-1, avant le correctif du montage) puis
   `s38_11c1` 4/4 ; **gate backend complet** (base `kesh_s3811c1` remise à zéro : DROP/CREATE, migrations, seed),
   `scripts/test-fast.sh --ci` : fmt, clippy `-D warnings`, nextest **6220 exécutés, 6220 passés, 14 ignorés**
-  (`kesh-gate-logs/s38-11c1/gate-backend.log`). gate-ci et E2E : voir ci-dessous.
+  (`kesh-gate-logs/s38-11c1/gate-backend.log`) ; **`scripts/gate-ci.sh`** sur une copie `git archive` de `ca34a3f4` :
+  **6239 passés, 0 échoué, 18 ignorés** (`gate-ci.log`, cible supprimée après) ; **E2E complet** (frontend rebâti,
+  base neuve `kesh_e2e_s3811c1`, `LANG=fr_CH.UTF-8`) : **477 passés, 10 échecs, 18 ignorés** (46 min, `e2e.log`) —
+  les dix jugés un à un, tous attendus : les sept de la KF-029 (#97 : `mode-expert:26`, `:41`,
+  `onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`, `:150`) et `backup-restore-new-install:262`, `:381`,
+  `opening-balances:156`. Frontend non modifié : `npm run check`, `lint-i18n-ownership`, `test:unit` non rejoués
+  (seul `npm run build` l'a été, pour l'E2E).
 - **Hors périmètre, laissé à 38-11d** (fiche) : `docs/api-external.md` (`:926`, `:944`, `:1293`), miroir `canLink`
   de l'écran ; les champs des règles ne sont pas décrits dans `api-external.md` (seul le code `ACCOUNT_NOT_POSTABLE`
   y nomme la route) — à écrire avec les écrans. Aucun frontend touché.
