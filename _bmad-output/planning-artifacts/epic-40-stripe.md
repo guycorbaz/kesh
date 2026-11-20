@@ -84,6 +84,7 @@ elle sert aux quatre fiches et à la phase 2.
 |---|---|---|---|---|
 | **40-8a** | client de l'API : clé restreinte `rk_…` en variables `KESH_STRIPE_<n>_ACCOUNT` / `KESH_STRIPE_<n>_KEY` (lecteur du socle S1), versements payés **par `arrival_date`** et leurs transactions de solde (`?payout=`), pagination par curseur, traduction en lignes du rapport **aux dates de Zurich** ; aucune fenêtre (curseurs) ; Σ net ≠ montant du versement → échec, rien d'écrit | `kesh-api`, `kesh-import` (lecture) | phase 1 | — |
 | **40-8b** | téléchargement par période : route sur le socle (tâche, état, reprise commune), `KESH_STRIPE_PARALLEL` (1 à 6), même chemin que le CSV ; dialogue générique de 38-12b ; manuels, E2E | `kesh-api`, `frontend`, `kesh-i18n`, `docs/manual` | 40-8a, socle S1 à S9 | — |
+| **40-9** | story de solde de l'epic : la dette des stories de l'epic (plafond 5 issues), dont l'extraction commune de la boucle de lecture CSV des trois lecteurs | `kesh-import` (et selon la dette retenue) | 40-7a à 40-8b | — |
 
 Plus tard encore : le téléchargement périodique (automatisme), story à part ; le contrôle de solde et la créance à la
 clôture (ancienne 40-4, `deferred`) ; les rapports joints (ancienne 40-5, `deferred`, avec 38-10).
@@ -205,13 +206,13 @@ en propre : sa conversion, son jeu d'étapes, ses codes `<PRESTATAIRE>_*` propre
 
 | Clé | Statut | Commentaire |
 |---|---|---|
-| 40-7a-lecteur-csv-stripe | drafted | phase 1 |
-| 40-7b-compte-stripe-et-import | drafted | phase 1, migration |
-| 40-7c-rapprochement-stripe | drafted | phase 1 |
-| 40-7d-ecrans-manuel-stripe | drafted | phase 1 |
-| 40-8a-client-api-stripe | drafted | phase 2 |
-| 40-8b-telechargement-stripe | drafted | phase 2 |
-| 40-9-solde-dette | backlog | story de solde de l'epic (ajoutée le 2026-11-20, revue P2 de la 40-7a) : la dette des stories de l'epic, plafonnée à **5 issues** ; première dette inscrite : la boucle de lecture CSV commune aux trois lecteurs (M2 de la P1 de la 40-7a) |
+| 40-7a-lecteur-csv-stripe | review (au 2026-11-20 ; le registre fait foi : `sprint-status.yaml`) | phase 1 |
+| 40-7b-compte-stripe-et-import | ready-for-dev (au 2026-11-20 ; le registre fait foi : `sprint-status.yaml`) | phase 1, migration |
+| 40-7c-rapprochement-stripe | ready-for-dev (au 2026-11-20 ; le registre fait foi : `sprint-status.yaml`) | phase 1 |
+| 40-7d-ecrans-manuel-stripe | ready-for-dev (au 2026-11-20 ; le registre fait foi : `sprint-status.yaml`) | phase 1 |
+| 40-8a-client-api-stripe | ready-for-dev (au 2026-11-20 ; le registre fait foi : `sprint-status.yaml`) | phase 2 |
+| 40-8b-telechargement-stripe | ready-for-dev (au 2026-11-20 ; le registre fait foi : `sprint-status.yaml`) | phase 2 |
+| 40-9-solde-dette | backlog | story de solde de l'epic (ajoutée le 2026-11-20, revue P2 de la 40-7a) : la dette des stories de l'epic, plafonnée à **5 issues** ; dettes inscrites : la boucle de lecture, la collecte plafonnée des erreurs et la troncature des valeurs, communes aux trois lecteurs CSV (M2 de la P1 de la 40-7a) |
 | 40-1-client-stripe | superseded | remplacée par 40-8a et 40-8b (clé en variable d'environnement, sans coffre ni connexion) |
 | 40-2-classement-des-types-stripe | superseded | remplacée par 40-7c (catégories du rapport) |
 | 40-3-versements-et-rattachement | superseded | remplacée par 40-7b (transaction de versement) et 40-7c |
@@ -219,12 +220,13 @@ en propre : sa conversion, son jeu d'étapes, ses codes `<PRESTATAIRE>_*` propre
 | 40-5-rapports-joints | deferred | suit 38-10, elle-même reportée |
 | 40-6-ecrans-et-manuels | superseded | remplacée par 40-7d et 40-8b |
 
-## Taille de l'epic (déclarée le 2026-11-20)
+## Taille de l'epic — décision de kickoff (Beat, 2026-11-20)
 
-Sept stories, story de solde comprise (40-7a à 40-7d, 40-8a, 40-8b, 40-9) : au-delà de la borne de six de `CLAUDE.md`
-(§ *Numérotation des versions*), admise parce que l'Epic 40 livre une **fonctionnalité nouvelle** (import Stripe) ;
-dépassement déclaré ici, faute de l'avoir été au cadrage KISS du 2026-11-20. Story de solde : **40-9**, plafond de
-**5 issues** de la dette des stories de l'epic.
+Le cadrage KISS du 2026-11-20 **est le kickoff** de l'Epic 40 tel qu'il se livre ; il remplace celui du 2026-11-15
+(six stories, conservé en historique). Sept stories, story de solde comprise (40-7a à 40-7d, 40-8a, 40-8b, 40-9) :
+au-delà de la borne de six de `CLAUDE.md` (§ *Numérotation des versions*), admis pour une **fonctionnalité nouvelle**
+(l'import Stripe, une seule fonctionnalité livrée en un epic). Décision de Beat du 2026-11-20 : « même avec 7 ou 8
+stories, c'est d'accord ». Story de solde : **40-9**, plafond de **5 issues** de la dette des stories de l'epic.
 
 ## Règles de cet epic (inchangées)
 
@@ -262,7 +264,7 @@ DDL s'arrête et le dit (C-40-0).
 fusionnée localement dans `epic/40-stripe`, puis **une PR** vers le dépôt de Guy (remote `beat`), **après celles des
 Epics 37, 38 et 39**. Pas d'issue GitHub à ce stade ; issues et PR à la fin.
 
-**Cible** : la release de l'Epic 38 ou une suivante (aucune migration, aucun relèvement) — à Guy (Q-40-9).
+**Cible** : la release de l'Epic 38 ou une suivante (aucune migration, aucun relèvement) — à Guy (Q-40-release).
 
 ## Intention — remplacé (2026-11-20)
 
@@ -868,7 +870,7 @@ Alignements inter-fiches issus de la validation P2 des fiches 40-1 à 40-6, repo
 - **Q-40-8 — Droits de la clé (recette)** : droits *Read* minimaux pour `balance`, `balance_transactions`, l'expansion
   des sources (charges, paiements, remboursements, versements, litiges) et `GET /v1/account` ; noms exacts au tableau de
   bord.
-- **Q-40-9 — Release (Guy)** : sans migration, avec la release de l'Epic 38 ou après.
+- **Q-40-release — Release (Guy)** : sans migration, avec la release de l'Epic 38 ou après.
 - **Q-40-10 — Liquidité (Guy)** : un compte bancaire Kesh lié à une créance (1101–1103) doit-il apparaître dans les
   totaux de trésorerie de l'accueil, ou en être écarté ? (40-4 recense, Guy tranche.)
 - **Q-40-11 — Conversions entre soldes Stripe (Beat)** : en fait-il ? Sinon G19 suffit.
