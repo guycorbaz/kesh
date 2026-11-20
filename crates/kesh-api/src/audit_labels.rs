@@ -194,6 +194,9 @@ pub const ACTIONS: &[&str] = &[
     "project.created",
     "project.unarchived",
     "project.updated",
+    // Story 38-11c2 — une proposition de la revue d'un compte de prestataire
+    // acceptée (PayPal ; Wise et Stripe l'émettent telle quelle).
+    "provider.proposal_accepted",
     "reconciliation.accepted",
     "reconciliation.cancelled",
     "reconciliation.entry_linked",

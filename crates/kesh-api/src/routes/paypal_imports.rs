@@ -74,9 +74,9 @@ use crate::routes::bank_imports::{
 use crate::routes::bank_statements_manual::MANUAL_STATEMENT_LOCK_TIMEOUT_SECS;
 
 /// Suffixe de l'identifiant de la transaction des **frais** d'une ligne
-/// PayPal : `<id>:FEE`. Un identifiant PayPal n'a jamais de `:` (38-11a,
-/// AC-3), si bien que le suffixe ne peut heurter un identifiant réel.
-pub const PAYPAL_FEE_SUFFIX: &str = ":FEE";
+/// PayPal : `<id>:FEE`, défini avec le classement PayPal qui le lit (Story
+/// 38-11c2, `kesh_reconciliation::paypal`) — une seule définition.
+pub use kesh_reconciliation::paypal::PAYPAL_FEE_SUFFIX;
 
 /// Types PayPal d'une **retenue neutre** : une paire de deux lignes de ces
 /// types (même devise, même `Reference Txn ID` non vide, brut opposé, frais

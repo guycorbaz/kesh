@@ -791,7 +791,7 @@ pub(super) fn fx_failed_proposal(
     })
 }
 
-fn project_error_to_failed_proposal(
+pub(super) fn project_error_to_failed_proposal(
     bank_transaction_id: i64,
     project_id: Option<i64>,
     err: DbError,
@@ -4594,26 +4594,27 @@ async fn accept_one_rule(
     let journal_entry_id = je.entry.id;
 
     // Step 13 — UPDATE bank_transactions optimistic lock (pattern accept_one_split).
-    let bank_tx_update = sqlx::query(
-        "UPDATE bank_transactions \
-         SET matched_entry_id = ?, status = 'reconciled', \
-             auto_match_rejected_at = NULL, updated_at = NOW(3), \
-             version = version + 1 \
-         WHERE id = ? AND company_id = ? AND status = 'pending' \
-           AND version = ?",
+    // Story 38-11c2 (AC-8) : l'`UPDATE` vit dans le dépôt
+    // (`reconciliation::mark_reconciled_in_tx`), partagé avec le moteur des
+    // prestataires ; refus et textes inchangés (le message est celui de
+    // l'erreur sqlx, comme avant l'extraction).
+    let updated = reconciliation_repo::mark_reconciled_in_tx(
+        tx,
+        company_id,
+        bank_transaction_id,
+        journal_entry_id,
+        bt.version,
     )
-    .bind(journal_entry_id)
-    .bind(bank_transaction_id)
-    .bind(company_id)
-    .bind(bt.version)
-    .execute(&mut **tx)
     .await
     .map_err(|e| FailedProposal {
         bank_transaction_id,
         error_code: "DATABASE_ERROR".to_string(),
-        details: Some(serde_json::json!({ "message": e.to_string() })),
+        details: Some(serde_json::json!({ "message": match &e {
+            DbError::Sqlx(inner) => inner.to_string(),
+            other => other.to_string(),
+        } })),
     })?;
-    if bank_tx_update.rows_affected() != 1 {
+    if !updated {
         return Err(FailedProposal {
             bank_transaction_id,
             error_code: "RECONCILIATION_ALREADY_RECONCILED".to_string(),
@@ -7105,7 +7106,7 @@ async fn link_entry_once(
 /// (`accept_one_*`, C-28-4-14) : sur un compte clos que la fenêtre de la
 /// v0.13.3 (#651, fermée en v0.13.4) aurait laissé avec une transaction en
 /// attente, c'est ce pré-vol, lecture fraîche en autocommit, qui les arrête.
-fn closed_account_failed(
+pub(super) fn closed_account_failed(
     bank_transaction_ids: &[i64],
     bank_account_id: i64,
 ) -> Vec<FailedProposal> {
