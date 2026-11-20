@@ -1,6 +1,6 @@
 # Story 40-7a : lecteur du CSV Stripe « Itemized payout reconciliation » (`kesh-import`)
 
-Status: drafted
+Status: ready-for-dev
 
 *Fiche rédigée le 2026-11-20, branche `epic/40-stripe`, numéros de ligne relevés sur `origin/main` au commit `fd04099f`
 (repris dans la branche par la fusion `7dcb54ab`). Epic 40, **phase 1 KISS** (décision de Beat du 2026-11-20, § *Phase 1

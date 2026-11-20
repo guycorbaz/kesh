@@ -1,6 +1,6 @@
 # Story 40-7d : écrans, manuel et E2E du compte Stripe (phase 1)
 
-Status: drafted
+Status: ready-for-dev
 
 *Fiche rédigée le 2026-11-20, branche `epic/40-stripe`, chemins relevés sur `origin/main` au commit `fd04099f`. Epic 40,
 **phase 1 KISS** (décision de Beat du 2026-11-20). **Dépend de** : 40-7b, 40-7c ; les écrans PayPal de la phase 1 de

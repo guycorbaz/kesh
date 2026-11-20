@@ -1,6 +1,6 @@
 # Story 40-7c : rapprochement Stripe — revue et acceptation : charges rattachées aux ventes des boutiques, frais et versements écrits, écarts listés
 
-Status: drafted
+Status: ready-for-dev
 
 *Fiche rédigée le 2026-11-20, branche `epic/40-stripe`, numéros de ligne relevés sur `origin/main` au commit `fd04099f`.
 Epic 40, **phase 1 KISS** (décision de Beat du 2026-11-20). **Dépend de** : 40-7b (transactions Stripe importées,

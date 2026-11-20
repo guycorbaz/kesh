@@ -1176,10 +1176,10 @@ development_status:
   40-4-controle-de-solde: deferred  # 2026-11-20, refonte KISS : après la phase 2 ; avant : validée le 2026-11-15 (cycle P1–P5)
   40-5-rapports-joints: deferred  # 2026-11-20, refonte KISS : suit 38-10, reportée ; avant : validée le 2026-11-15 (cycle P1–P5)
   40-6-ecrans-et-manuels: superseded  # 2026-11-20, refonte KISS : remplacée par 40-7d et 40-8b ; avant : validée le 2026-11-15 (cycle P1–P5)
-  40-7a-lecteur-csv-stripe: drafted  # 2026-11-20, phase 1 KISS : lecteur du CSV « Itemized payout reconciliation » (kesh-import)
-  40-7b-compte-stripe-et-import: drafted  # 2026-11-20, phase 1 KISS : réglages Stripe (frais, compte de versement), import ventilé par devise ; migration 20261120000003_stripe_import, non breaking
-  40-7c-rapprochement-stripe: drafted  # 2026-11-20, phase 1 KISS : revue et acceptation (moteur de 38-11c) — charges → ventes proposées, frais et versements proposés, écarts ; validation P2 : rattachement d'office retiré (décision de l'orchestrateur), non découpée
-  40-7d-ecrans-manuel-stripe: drafted  # 2026-11-20, phase 1 KISS : écrans, manuel utilisateur, E2E
+  40-7a-lecteur-csv-stripe: ready-for-dev  # 2026-11-20, phase 1 KISS : lecteur du CSV « Itemized payout reconciliation » (kesh-import)
+  40-7b-compte-stripe-et-import: ready-for-dev  # 2026-11-20, phase 1 KISS : réglages Stripe (frais, compte de versement), import ventilé par devise ; migration 20261120000003_stripe_import, non breaking
+  40-7c-rapprochement-stripe: ready-for-dev  # 2026-11-20, phase 1 KISS : revue et acceptation (moteur de 38-11c) — charges → ventes proposées, frais et versements proposés, écarts ; validation P2 : rattachement d'office retiré (décision de l'orchestrateur), non découpée
+  40-7d-ecrans-manuel-stripe: ready-for-dev  # 2026-11-20, phase 1 KISS : écrans, manuel utilisateur, E2E
   40-8a-client-api-stripe: drafted  # 2026-11-20, phase 2 : client de l'API, clé restreinte KESH_STRIPE_<n>_KEY
   40-8b-telechargement-stripe: drafted  # 2026-11-20, phase 2 : téléchargement par période, reprise sur 429, KESH_STRIPE_PARALLEL (1 à 6)
 
