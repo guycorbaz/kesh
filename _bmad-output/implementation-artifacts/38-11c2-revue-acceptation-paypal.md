@@ -1,6 +1,6 @@
 # Story 38-11c2 : revue et acceptation PayPal — moteur commun aux prestataires, ventes rattachées, frais, règles, conversions, retraits, écarts
 
-Status: ready-for-dev
+Status: review
 
 *Fiche rédigée le 2026-11-20 sous la clé 38-11c (branche `epic/38-paypal`, numéros de ligne relevés après la fusion
 de `origin/main` `43ceb541`, revérifiés sur `origin/main` `fd04099f`), **découpée à la validation P3** (décision de
@@ -238,14 +238,14 @@ sans saisie, et de trouver les erreurs des boutiques.
 
 ## Tâches
 
-- [ ] T3 — `provider_review.rs` (types communs, `build_review` paramétré) ; `paypal.rs` : `classify`, `txn_ids_in`,
+- [x] T3 — `provider_review.rs` (types communs, `build_review` paramétré) ; `paypal.rs` : `classify`, `txn_ids_in`,
   paramétrage, appariement des conversions, retrait ; `conversion.rs` : `plan_conversion` ; tests purs (AC-4, AC-5,
   AC-8).
-- [ ] T4 — Lectures communes de la revue (transactions, clés, écritures de vente, mouvements) et route `GET` (AC-6).
-- [ ] T5 — `mark_reconciled_in_tx` extraite ; `create_provider_conversion_in_tx` ; moteur `provider_accept.rs`
+- [x] T4 — Lectures communes de la revue (transactions, clés, écritures de vente, mouvements) et route `GET` (AC-6).
+- [x] T5 — `mark_reconciled_in_tx` extraite ; `create_provider_conversion_in_tx` ; moteur `provider_accept.rs`
   (verrous, points de sauvegarde, interblocage remonté, rejugement, `write_provider_entry`) ; route `POST`
   `paypal::accept_proposals` (rejeu, registre, phrase du manuel d'administration), traces (AC-7, AC-8).
-- [ ] T6 — Codes, i18n (AC-9) ; non-régression (AC-11).
+- [x] T6 — Codes, i18n (AC-9) ; non-régression (AC-11).
 
 *(T1 et T2 de l'ancienne 38-11c : 38-11c1.)*
 
@@ -297,6 +297,108 @@ proposition ; liste des écarts et des lignes à examiner.
   ⚠️ 40-7c AC-2 et AC-6 nomment la proposition de rattachement `link_sale` : le nom servi est **`link_entry`** (celui
   de 39-11c AC-4), écart signalé à l'Epic 40 au rapport de la P3.
 
+## Dev Agent Record
+
+*Développée le 2026-11-20 (Claude Opus 5.5), worktree `kesh-wt38c2`, branche `story/38-11c2` partie de
+`epic/38-paypal` à `ca34a3f4` (38-11c1 comprise, en revue en parallèle).*
+
+### Ce qui est livré (fichiers)
+
+- `crates/kesh-reconciliation/src/provider_review.rs` (neuf) — revue **pure et commune** : `ProviderKind`,
+  `ProviderSpec` (classement, clé de rattachement, extraction des identifiants, prédicat d'appariement des
+  conversions, motif d'une conversion sans paire et sa place, libellés), `build_review`, `Proposal` (sérialisée
+  et relue : la revue la sert, l'acceptation la reçoit), `ReviewProposal`/`ReviewFinding`, `conversion_halves`,
+  `pair_conversion`, `matching_rule`, `counts` ; genres propres d'un prestataire rendus sans décision
+  (`ProviderKind::Specific` → `Review::specific`). Aucun nom de prestataire.
+- `crates/kesh-reconciliation/src/paypal.rs` (neuf) — `classify`, `txn_ids_in` (sans regex), `conversion_match`,
+  `entry_label`, `SPEC` ; `PAYPAL_FEE_SUFFIX` y vit désormais (l'import le réexporte, une seule définition).
+- `crates/kesh-reconciliation/src/conversion.rs` (neuf) — `plan_conversion` (une écriture si un côté est en CHF,
+  deux au même CHF sinon), types du plan dans `kesh-db` (`ConversionLeg`, `ConversionPlan`). `kesh-reconciliation`
+  dépend désormais de `kesh-core` (crate interne : `rate_from_chf`, `fx_chf`).
+- `crates/kesh-db/src/repositories/provider_review.rs` (neuf) — lectures de la revue (exercice, comptes sur les
+  mêmes comptes du plan, transactions pending de l'exercice, toutes les transactions de ces comptes, écritures de
+  vente en **une** requête, comptes admis pour une règle, compte du plan du principal) et du rejugement.
+- `journal_entry_conversions::create_provider_conversion_in_tx` (neuve ; `create_conversion_in_tx` inchangée,
+  appelée pour la forme à deux écritures) ; `reconciliation::mark_reconciled_in_tx` (neuve, extraite de l'étape 13
+  d'`accept_one_rule`, qui l'appelle ; message `DATABASE_ERROR` inchangé : texte de l'erreur sqlx).
+- `crates/kesh-api/src/routes/provider_accept.rs` (neuf) — moteur commun : revue (`load_review_in_tx`, `review`),
+  pré-vol (`prepare_accept`), tentative (`accept_once` : une transaction, `with_account_locks` sur elle, réglages
+  relus sous les verrous, point de sauvegarde par proposition), `db_refusal`/`entry_refusal` (1213 → `Abort`,
+  remonté **avant** tout `ROLLBACK TO SAVEPOINT`), `rejudge`, `check_counterparty` (`CounterpartyRule`),
+  `write_provider_entry`, `mark_reconciled`, les cinq genres (`accept_link_entry`, `accept_fee`, `accept_rule`,
+  `accept_withdrawal`, `accept_conversion`), trace `provider.proposal_accepted`. Trait `EngineProposal` : Stripe
+  y branche son type de proposition (`payout`) en déléguant les genres communs à `accept_common` ;
+  `prepare_accept` prend les comptes à verrouiller en plus.
+- `crates/kesh-api/src/routes/paypal.rs` (neuf) — `review`, `accept_proposals` (`retry_app_on_deadlock`,
+  opération `paypal::accept`) ; routes dans `lib.rs` (groupe comptable).
+- Codes : `PROVIDER_PROPOSAL_STALE` (constante du moteur, `details.reason`) ; libellés des écarts, des motifs et
+  de l'action d'audit aux quatre locales ; `audit_labels.rs`.
+- Registres : `audit_route_registry.rs` (route `Traced, Rejouee` ; 159 routes, 151 tracées, 31 rejouées, 163 au
+  registre), `bank_account_closed_inventory.rs` (écrivain déplacé dans `mark_reconciled_in_tx`), phrase du manuel
+  d'administration (`.tex` seul : « 151 des 159 », « 151 + 4 + 4 = 159 ») ; doc « absence de cycle » de
+  `link_entry_in_tx` complétée.
+
+### Écarts à la fiche, décidés au développement
+
+1. **Appariement des conversions** : la fiche dit « même `end_to_end_id` » ; le fichier fictif de 38-11a croise
+   les références (chaque moitié pointe l'identifiant de l'autre). Le prédicat PayPal admet les deux formes
+   (`paypal::conversion_match`) ; le moteur prend un **prédicat** (`ProviderSpec::conversion_match`) au lieu d'une
+   clé, pour que Wise y mette « même `transaction_id` ».
+2. **Rattachement d'un encaissement** : une vente déjà rattachée à la relecture rend la proposition périmée
+   (`entry_linked`) avant `link_entry_in_tx` ; après le lien, une lecture **verrouillante** (`other_links_locked`)
+   refuse une vente rattachée entre-temps depuis un autre compte (les lectures du lot ouvrent l'instantané avant
+   le verrou de l'écriture : le « corollaire » du doc-comment de `link_entry_in_tx`). Limite écrite : pour un genre
+   propre au prestataire (Wise, autre côté légitime), seule la garde de `link_entry_in_tx` s'applique.
+3. **Rejugement d'un rattachement** : l'unicité de la vente (« exactement une ») n'est pas recalculée sous verrou ;
+   l'identifiant au libellé, la vente non rattachée et la règle de `link_entry_in_tx` (mouvement, devise,
+   contre-passation) le sont.
+4. Une transaction de genre propre rendue par la revue reste au prestataire (`Review::specific`).
+
+### Tests (recomptés le 2026-11-20, périmètre `ca34a3f4..HEAD`)
+
+- Purs : 28 — `provider_review.rs` 13, `paypal.rs` 8, `conversion.rs` 4, `provider_accept.rs` 3.
+- HTTP : `paypal_reconciliation_e2e.rs`, 16 (revue puis tout accepter ; conversion CHF en une écriture puis
+  annulation d'un côté ; acceptée deux fois ; vente rattachée entre-temps ; cours absent ; contrepartie et règle
+  périmée ; refus globaux ; clé `read` ; clé `read-write` tracée ; interblocage rejoué par genre : frais, règle,
+  retrait, conversion à une et à deux écritures, rattachement ; coût de la revue).
+- Tests existants : aucune assertion changée hors décomptes des registres (`audit_route_registry.rs` : 159, 151,
+  163, 31 ×2) et le déplacement d'entrée de `bank_account_closed_inventory.rs` ; `reconciliation_rules_e2e.rs`
+  (accept_one_rule) inchangé, 52 tests aux deux bornes.
+
+### Gates
+
+⚠️ Les premières compilations ont tourné sur l'ancienne cible partagée (`kesh-target`), abandonnée le 2026-11-20
+(crates d'une autre worktree pris pour à jour) : elles n'ont servi qu'à corriger la compilation et clippy et ne
+valent pas gate. **Tout gate déclaré ci-dessous a tourné sur la cible propre** `kesh-targets/kesh-wt38c2`
+(`CARGO_INCREMENTAL=0`), base `kesh_s3811c2` sur `kesh-mariadb-dev2` (3307), par `heavy.sh`.
+
+- Gate ciblé (base remise à zéro, fmt, clippy workspace, nextest des binaires touchés) au commit `59acd9fd` :
+  1034 passés, 7 ignorés (`kesh-gate-logs/s38-11c2/cible-1.log`, `nextest-full.log`).
+- Coût de la revue, 600 transactions et 600 écritures : voir le Change Log.
+- Gate backend complet (`scripts/test-fast.sh --ci`, base remise à zéro) au commit `59acd9fd` : **6264 passés, 14
+  ignorés** (`gate-backend.log`).
+- Frontend (aucun fichier frontend touché) : `npm run check` vert, `lint-i18n-ownership` vert, Vitest **4612 tests,
+  278 fichiers**, `npm run build` vert (`front-*.log`).
+- E2E complet (`LANG=fr_CH.UTF-8`, backend de la cible propre, base `kesh_e2e_s3811c2`) : **477 passés, 10 échecs,
+  18 ignorés** — les dix attendus, jugés un à un : les sept de la KF-029 (#97 : `mode-expert:26`, `:41`,
+  `onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`, `:150`), `backup-restore-new-install:262`, `:381`,
+  `opening-balances:156` (`e2e.log`).
+- gate-ci : **non joué**. Le 2026-11-21, `mem-guard` ne joint pas le bus systemd utilisateur (« Connection refused », station) ; à rejouer avant la fusion.
+
+### Coût de la revue (AC-5)
+
+Mesuré le 2026-11-20 par `cout_de_la_revue_600_transactions_600_ecritures` (`--no-capture`, base de test de la
+cible propre) : **194 ms** pour la revue d'un compte PayPal à 600 transactions pending et 600 écritures de vente (plus
+le fichier de 38-11a), 600 rattachements proposés (`cout-revue.log`). Une requête pour les écritures de vente,
+extraction en Rust.
+
+### Completion Notes
+
+Moteur générique livré pour Wise et Stripe : genres propres (`ProviderKind::Specific`), prédicat d'appariement,
+place du motif d'une conversion sans paire, clé de rattachement, libellés au paramétrage ; type de proposition
+propre par `EngineProposal` ; comptes supplémentaires à verrouiller par `prepare_accept`. Écran, manuel utilisateur
+et `docs/api-external.md` : 38-11d.
+
 ## Change Log
 
 - 2026-11-20 — fiche rédigée sous la clé 38-11c (phase 1 KISS), non validée.
@@ -333,3 +435,9 @@ proposition ; liste des écarts et des lignes à examiner.
   `mark_reconciled_in_tx`. Vérifié : `is_app_deadlock` = 1213 seul (`crates/kesh-api/src/retry.rs:29-30`), 1305 = `MARIADB_SAVEPOINT_DOES_NOT_EXIST`
   (`routes/reconciliation.rs:2171`), `is_deadlock_error` ne reconnaît que `DbError::Sqlx` 1213 (`kesh-db/src/retry.rs`).
 - 2026-11-20 — validation P5, ciblée sur le commit `b4962a59` (Claude Haiku 5.5, contexte frais) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW remédié (renvoi `retry.rs:32` de la ligne ci-dessus, fonction à `:29`, corps à `:30` de `crates/kesh-api/src/retry.rs` ; précisé en chemin complet). Rapport `kesh-gate-logs/epic-38-kiss/validation/38-11-P5-ciblee.md`.
+- 2026-11-20 — développée (Claude Opus 5.5), commits `ecd54a38` (implémentation) et `59acd9fd` (correctifs du gate
+  ciblé : action d'audit en littéral, décompte des routes rejouées 31, colonne `actor_api_key_id` d'un test, date
+  non ambiguë du CSV de conversion, deux écarts attendus dans un test pur). Gates sur la cible propre (voir le Dev
+  Agent Record) ; les essais faits sur l'ancienne cible partagée ne comptent pas. Écarts à la fiche : appariement
+  des conversions par prédicat (références communes ou croisées), contrôle verrouillant après le rattachement d'un
+  encaissement. En revue.
