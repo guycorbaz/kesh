@@ -836,7 +836,36 @@ autrement — la liste est celle de sa D3, comme à l'AC14 (V4-4).)*
 
 ## Dev Agent Record
 
-*(vide)*
+### Reprise (pause décidée par Guy le 2026-11-20 ; reprise le mardi 2026-11-24 au matin)
+
+**Où j'en suis.** Étape 0 faite et commitée (`53b4b2538` : LOW V5-1 à V5-4, issues #1444 à #1448, statut `in-progress`) ;
+`kesh-gate-logs/rel0200/perte-assumee.sh` livré (hors dépôt), sondé (`e491d/dev/perte-assumee-sonde.log` : code 3 sur trois
+mutations), joué à la tête (`e491d/dev/perte-assumee-etape0.log` : code 0). Code partiel commité par `e137ae1e9` (« pause »).
+**T0 non jouée** : la sonde `kesh-gate-logs/e491d/t0/sonde-t0.sh` est écrite mais n'a jamais démarré (arrêtée dans la file du
+verrou `.gate.lock` ; aucun conteneur créé). Ce qu'elle doit établir ne l'est donc **pas encore** : forme de la réponse de
+création du compte bancaire, compte d'arrondi du preset, arrondi non nul de F4 (`100.00`/8.10 + `33.33`/2.60 + `10.01`/0.00),
+statut `cancelled` de la facture après l'avoir, chemin `pdf_storage_path` (`<sha256>.pdf` à la racine ?), lisibilité des fichiers
+après `docker cp`, `410` et regel sans ligne ` ERROR ` au journal, champ `totalBaseHt` du rapport TVA, numéro dans le texte
+`mutool` d'une facture et d'un avoir, égalité stricte des tables après `full-import` dans une 0.19.0 neuve. Établi hors image :
+`mutool 1.27.0` rend une trame PNM par page sur la sortie standard (`draw -q -r 300 -c rgb -F pnm -o - f.pdf <page>`),
+`mutool info` donne `Pages: N`, le « warning: ICC » va sur la sortie d'erreur.
+
+**Code commité en l'état, partiel et non éprouvé.** `scripts/recette-montee.sh` : préconditions, huit factures, avoir, groupe,
+contrôles de la phase 1, `credit_notes`/`credit_note_lines` dans `TABLES`, projection par ajout (tables et `api`), rapport TVA,
+`docker cp` et retrait de F8, PDF des phases 2, 4 et 5, phase 6 (code 16), `KESH_MUTOOL`. `scripts/tests/recette-montee.test.sh` :
+factices refaits (`docker` : `cp` et nouvelles requêtes ; `curl` : pièces, PDF, `410`, regel, avoir, groupe, TVA ; `mutool`
+factice ; `KESH_MUTOOL` à chaque lancement ; nominal à six phases, S6, S9, S12, S13). `bash -n` vert sur les deux ; **le test n'a
+jamais tourné**. Manquent : S1 à S5, S7, S8, S10, S11, S14 comme scénarios propres ; `.env_remove("KESH_MUTOOL")` dans
+`crates/kesh-db/tests/recette_montee_script.rs` ; T6 à T12.
+
+**Prochaine étape exacte.** 1) Jouer T0 :
+`cd /home/gcorbaz/devel/kesh-49-1d && flock /tmp/station-heavy.lock flock /home/gcorbaz/devel/kesh-gate-logs/.gate.lock scripts/mem-guard.sh /home/gcorbaz/devel/kesh-gate-logs/e491d/t0/sonde-t0.sh > /home/gcorbaz/devel/kesh-gate-logs/e491d/t0/sonde-t0.log 2>&1`
+(image `gcorbaz/kesh:0.19.0` déjà tirée, `sha256:2d82a944…`) ; écrire ici ses surprises avant tout autre code, corriger le script.
+2) Lancer le test shell seul (`bash scripts/tests/recette-montee.test.sh`, factices seulement), le mettre au vert, ajouter les
+scénarios manquants, puis les mutations (journaux sous `kesh-gate-logs/e491d/mut/`). 3) T5 à T12 dans l'ordre de la fiche.
+
+**Bases à recréer** (`docs/testing.md` § *Base de dev jetable*) : `kesh_e491d`, `kesh_e2e_e491d`, `kesh_ci_e491d` — aucune n'a
+encore été créée. Sonde et recette ont leurs propres conteneurs `mariadb:10.11` en tmpfs.
 
 ## Change Log
 
