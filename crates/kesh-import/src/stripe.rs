@@ -117,6 +117,10 @@ pub struct StripePayoutRow {
     pub balance_transaction_id: String,
     /// Date de la transaction, dans le fuseau de l'export.
     pub date: NaiveDate,
+    /// Cellule de création **telle qu'écrite** (date, ou date et heure), rognée :
+    /// l'import en reprend le texte dans le libellé de la transaction (Story
+    /// 40-7b, amendement du 2026-11-20).
+    pub created: String,
     /// Date de disponibilité des fonds, si écrite.
     pub available_on: Option<NaiveDate>,
     /// Code de devise, trois lettres ASCII majuscules.
@@ -554,6 +558,7 @@ fn read_row(
         payout_date: payout_date?,
         balance_transaction_id: balance_transaction_id?,
         date: created?,
+        created: text(created_col)?,
         available_on: available_on.flatten(),
         currency: currency?,
         gross: gross?,

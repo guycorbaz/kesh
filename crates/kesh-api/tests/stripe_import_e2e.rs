@@ -452,7 +452,10 @@ async fn import_ventile_par_devise_puis_doublons(pool: MySqlPool) {
     assert_eq!(reference.as_deref(), Some("ch_TEST0001"));
     assert_eq!(versement.as_deref(), Some("po_TEST0001"));
     assert_eq!(valeur, NaiveDate::from_ymd_opt(2020, 2, 3));
-    assert_eq!(details, "Vente fictive A");
+    assert_eq!(
+        details,
+        "Encaissement Stripe de 100.00 CHF -3.20=96.80 CHF BRUT - txn_TEST0001 (2020-01-29 10:15:04- Vente fictive A) - po_TEST0001"
+    );
     // Frais : opposé du champ `fee` ; frais rendus d'un remboursement : positifs.
     let frais: Decimal = sqlx::query_scalar(
         "SELECT amount FROM bank_transactions WHERE transaction_id = 'txn_TEST0001:FEE'",

@@ -58,8 +58,8 @@ use crate::errors::AppError;
 use crate::middleware::auth::CurrentUser;
 use crate::routes::provider_imports::{
     self, CurrencyReport, DETAILS_MAX_CHARS, FEE_SUFFIX, ImportRequest, ImportSource,
-    NAME_MAX_CHARS, PROVIDER_TYPE_MAX_CHARS, ProviderLine, TXID_COLUMN_MAX_CHARS, bounded,
-    import_lines, load_balances, truncate_chars,
+    NAME_MAX_CHARS, PROVIDER_TYPE_MAX_CHARS, ProviderLine, TXID_COLUMN_MAX_CHARS, import_lines,
+    load_balances, truncate_chars,
 };
 
 /// Longueur maximale d'un identifiant (transaction de solde, versement) admis
@@ -73,9 +73,11 @@ pub const STRIPE_ID_MAX_CHARS: usize = TXID_COLUMN_MAX_CHARS - FEE_SUFFIX.len();
 pub const PAYOUT_PROVIDER_TYPE: &str = "payout";
 
 /// Début du libellé d'une transaction de frais.
-const FEE_DETAILS_PREFIX: &str = "Frais Stripe";
-/// Libellé d'une transaction de versement.
-const PAYOUT_DETAILS: &str = "Versement Stripe";
+const FEE_DETAILS_PREFIX: &str = "Frais Stripe · ";
+/// Début du libellé d'une transaction de versement.
+const PAYOUT_DETAILS_PREFIX: &str = "Versement Stripe";
+/// Catégorie dont le libellé dit « Encaissement » (les autres disent leur catégorie).
+const CHARGE_CATEGORY: &str = "charge";
 
 // ---------------------------------------------------------------------------
 // DTO
@@ -157,6 +159,38 @@ pub fn check_id_lengths(rows: &[StripePayoutRow]) -> Result<(), StripeCsvError> 
     }
 }
 
+/// Le **libellé** d'une ligne du rapport — amendement de la 40-7b du 2026-11-20
+/// (demande du Project Lead, format de son tableur Crésus) :
+///
+/// `<Encaissement si catégorie = charge, sinon la catégorie> Stripe de <brut>
+/// <DEVISE> -<frais>=<net> <DEVISE> BRUT - <balance_transaction_id> (<created>-
+/// <description>) - <versement>`
+///
+/// Les montants sont ceux **lus** (formes `Decimal` du lecteur, devise en
+/// majuscules), `<created>` la cellule de création telle qu'écrite, la
+/// description vide si absente. Le signe de `-<frais>` est littéral : des frais
+/// rendus (`-0.60`) s'écrivent `--0.60`. Les identifiants `txn_…` et `po_…`
+/// restent cherchables dans le texte (rapprochement, dépannage ; repris par le
+/// libellé des écritures, Story 40-7c).
+pub fn row_label(row: &StripePayoutRow) -> String {
+    let kind = if row.category == CHARGE_CATEGORY {
+        "Encaissement"
+    } else {
+        row.category.as_str()
+    };
+    format!(
+        "{kind} Stripe de {gross} {cur} -{fee}={net} {cur} BRUT - {txn} ({created}- {description}) - {payout}",
+        gross = row.gross,
+        fee = row.fee,
+        net = row.net,
+        cur = row.currency,
+        txn = row.balance_transaction_id,
+        created = row.created,
+        description = row.description.as_deref().map(str::trim).unwrap_or(""),
+        payout = row.payout_id,
+    )
+}
+
 /// Les lignes neutres d'une ligne du rapport — Story 40-7b (AC-5) : le **brut**
 /// (si non nul, `amount = gross`) et les **frais** (si non nuls, `amount =
 /// −fee` : le champ `fee` est positif quand Stripe prélève, négatif quand il
@@ -188,15 +222,17 @@ pub fn provider_lines_of_row(row: &StripePayoutRow) -> Vec<ProviderLine> {
 
     let mut out = Vec::with_capacity(2);
     if !row.gross.is_zero() {
-        let details = bounded(&row.description, DETAILS_MAX_CHARS)
-            .unwrap_or_else(|| row.category.trim().to_string());
-        out.push(base(row.gross, row.balance_transaction_id.clone(), details));
+        out.push(base(
+            row.gross,
+            row.balance_transaction_id.clone(),
+            row_label(row),
+        ));
     }
     if !row.fee.is_zero() {
         out.push(base(
             -row.fee,
             format!("{}{FEE_SUFFIX}", row.balance_transaction_id),
-            format!("{FEE_DETAILS_PREFIX} · {}", row.category.trim()),
+            format!("{FEE_DETAILS_PREFIX}{}", row_label(row)),
         ));
     }
     out
@@ -214,7 +250,10 @@ fn payout_line(payout_id: &str, first: &StripePayoutRow, net: Decimal) -> Provid
         amount: -net,
         currency: first.currency.clone(),
         reference: Some(truncate_chars(payout_id, TXID_COLUMN_MAX_CHARS)),
-        details: PAYOUT_DETAILS.to_string(),
+        details: format!(
+            "{PAYOUT_DETAILS_PREFIX} {payout_id} {net} {cur}",
+            cur = first.currency
+        ),
         end_to_end_id: Some(truncate_chars(payout_id, NAME_MAX_CHARS)),
         counterparty_name: None,
         counterparty_email: None,
@@ -371,6 +410,7 @@ mod tests {
             payout_date: NaiveDate::from_ymd_opt(2020, 2, 3).unwrap(),
             balance_transaction_id: id.into(),
             date: NaiveDate::from_ymd_opt(2020, 1, 30).unwrap(),
+            created: "2020-01-30 14:02:41".into(),
             available_on: None,
             currency: "CHF".into(),
             gross,
@@ -524,6 +564,53 @@ mod tests {
             ["txn_A", "txn_A:FEE", "txn_B"]
         );
         assert_eq!(duplicates, 2 + 1);
+    }
+
+    /// Amendement du 2026-11-20 — le libellé suit le format du tableur Crésus du
+    /// Project Lead, au caractère près, pour le brut, les frais et le versement
+    /// (fixture fictive de 40-7a).
+    #[test]
+    fn les_libelles_suivent_le_format_du_tableur() {
+        let rows = fixture_rows();
+        let ligne = |id: &str| {
+            rows.iter()
+                .find(|r| r.balance_transaction_id == id)
+                .unwrap()
+        };
+        // Encaissement (catégorie `charge`), brut puis frais.
+        let lignes = provider_lines_of_row(ligne("txn_TEST0001"));
+        assert_eq!(
+            lignes[0].details,
+            "Encaissement Stripe de 100.00 CHF -3.20=96.80 CHF BRUT - txn_TEST0001 (2020-01-29 10:15:04- Vente fictive A) - po_TEST0001"
+        );
+        assert_eq!(
+            lignes[1].details,
+            "Frais Stripe · Encaissement Stripe de 100.00 CHF -3.20=96.80 CHF BRUT - txn_TEST0001 (2020-01-29 10:15:04- Vente fictive A) - po_TEST0001"
+        );
+        // Une autre catégorie dit sa catégorie ; frais nuls : « -0.00 ».
+        assert_eq!(
+            provider_lines_of_row(ligne("txn_TEST0004"))[0].details,
+            "fee Stripe de -0.50 CHF -0.00=-0.50 CHF BRUT - txn_TEST0004 (2020-02-01 00:00:00- Frais fictifs de la plateforme) - po_TEST0001"
+        );
+        // Frais rendus : le signe de `-<frais>` est littéral.
+        assert_eq!(
+            provider_lines_of_row(ligne("txn_TEST0003"))[0].details,
+            "refund Stripe de -20.00 CHF --0.60=-19.40 CHF BRUT - txn_TEST0003 (2020-01-31 09:40:12- Remboursement fictif de la vente A) - po_TEST0001"
+        );
+        // Devise en majuscules, description absente : parenthèse « (… - ) ».
+        let mut r = row("txn_X", "po_X", "5.00", "0");
+        r.currency = "EUR".into();
+        assert_eq!(
+            row_label(&r),
+            "Encaissement Stripe de 5.00 EUR -0=5.00 EUR BRUT - txn_X (2020-01-30 14:02:41- ) - po_X"
+        );
+        // Versement : identifiant et somme des nets.
+        let (lines, _) = lines_of(&rows, "CHF");
+        let versement = lines
+            .iter()
+            .find(|l| l.transaction_id == "po_TEST0001")
+            .unwrap();
+        assert_eq!(versement.details, "Versement Stripe po_TEST0001 125.15 CHF");
     }
 
     /// Un identifiant plus long que sa colonne (frais `:FEE` compris) est une
