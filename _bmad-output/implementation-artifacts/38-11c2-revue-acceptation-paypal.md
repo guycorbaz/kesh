@@ -330,5 +330,6 @@ proposition ; liste des écarts et des lignes à examiner.
   MEDIUM, 2 LOW, remédiés (rapport `kesh-gate-logs/epic-38-kiss/validation/38-11-P4-ciblee.md`). Conduit du 1213 nommé
   (écrivains oubliés de l'énumération, `with_account_locks`, `ReconciliationError`), contrepartie de l'absence du filet 1305
   écrite, test d'interblocage par genre, comportement d'`accept_one_rule` gardé après l'extraction de
-  `mark_reconciled_in_tx`. Vérifié : `is_app_deadlock` = 1213 seul (`retry.rs:32`), 1305 = `MARIADB_SAVEPOINT_DOES_NOT_EXIST`
+  `mark_reconciled_in_tx`. Vérifié : `is_app_deadlock` = 1213 seul (`crates/kesh-api/src/retry.rs:29-30`), 1305 = `MARIADB_SAVEPOINT_DOES_NOT_EXIST`
   (`routes/reconciliation.rs:2171`), `is_deadlock_error` ne reconnaît que `DbError::Sqlx` 1213 (`kesh-db/src/retry.rs`).
+- 2026-11-20 — validation P5, ciblée sur le commit `b4962a59` (Claude Haiku 5.5, contexte frais) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW remédié (renvoi `retry.rs:32` de la ligne ci-dessus, fonction à `:29`, corps à `:30` de `crates/kesh-api/src/retry.rs` ; précisé en chemin complet). Rapport `kesh-gate-logs/epic-38-kiss/validation/38-11-P5-ciblee.md`.
