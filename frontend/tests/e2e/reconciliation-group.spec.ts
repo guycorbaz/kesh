@@ -828,4 +828,231 @@ test.describe('Règlement groupé — l’écran (Story 43-3, #823)', () => {
 			await disposeContextSafe(s.ctx);
 		}
 	});
+
+	// Story 48-14 (#1262, AC8, T6) — la fenêtre fermée par Échap pendant l'envoi retenu, puis
+	// rouverte sur une autre transaction : quand l'envoi aboutit, la fenêtre rouverte reste ouverte
+	// et intacte (la liste derrière elle encore périmée) ; fermée, la liste est relue et la
+	// transaction réglée n'y figure plus.
+	test('48-14 — règlement abouti fenêtre fermée puis rouverte : la liste se relit à la fermeture', async ({
+		page,
+	}, testInfo) => {
+		const s = await clientScene(page, 't6', 0);
+		const s2 = await clientScene(page, 't6b', 0);
+		expect(s2.bankAccountId).toBe(s.bankAccountId);
+		let relacher!: () => void;
+		const retenu = new Promise<void>((res) => (relacher = res));
+		await page.route('**/api/v1/reconciliation/accept', async (route) => {
+			await retenu;
+			await route.continue();
+		});
+		try {
+			const { modal } = await openGroup(page, s.bankAccountId, s.txId);
+			await add(modal, s.fa.number, s.fa.id);
+			await add(modal, s.fb.number, s.fb.id);
+			await expect(modal.getByTestId('group-gap')).toHaveText('Aucun écart');
+			await modal.getByTestId('group-submit').click();
+			// Prémisse (fiche, étape 0) : Échap ferme la fenêtre pendant l'envoi.
+			await page.keyboard.press('Escape');
+			await expect(modal).toBeHidden();
+			const ligne1 = page.locator(`[data-testid="reconciliation-row"][data-tx-id="${s.txId}"]`);
+			const ligne2 = page.locator(`[data-testid="reconciliation-row"][data-tx-id="${s2.txId}"]`);
+			await ligne2.getByTestId('group-settlement-button').click();
+			await expect(modal).toBeVisible();
+			await add(modal, s2.fa.number, s2.fa.id);
+			relacher();
+			await expect(page.locator('[data-sonner-toast][data-type="success"]').first()).toBeVisible({
+				timeout: 10000,
+			});
+			// La fenêtre rouverte reste, intacte ; la liste derrière elle n'est pas encore relue.
+			await expect(modal).toBeVisible();
+			await expect(
+				modal.locator(`[data-testid="group-imputed-row"][data-invoice-id="${s2.fa.id}"]`),
+			).toBeVisible();
+			await expect(ligne1).toHaveCount(1);
+			await page.screenshot({ path: capturePath(testInfo, '48-14-rouverte-intacte-liste-perimee') });
+			await page.keyboard.press('Escape');
+			await expect(modal).toBeHidden();
+			await expect(ligne1).toHaveCount(0, { timeout: 10000 });
+			await expect(ligne2).toBeVisible();
+			await page.screenshot({ path: capturePath(testInfo, '48-14-liste-relue-apres-fermeture') });
+		} finally {
+			relacher();
+			await page.unroute('**/api/v1/reconciliation/accept');
+			await cleanup(s.ctx, s.txId, s.importId);
+			await cleanup(s2.ctx, s2.txId, s2.importId);
+			await disposeContextSafe(s.ctx);
+			await disposeContextSafe(s2.ctx);
+		}
+	});
+
+	// Story 48-14 (#1262, AC7) — la confirmation « déjà comptabilisée » compte comme une modale : un
+	// règlement abouti en arrière-plan ne la referme pas et ne vide pas la sélection ; Annuler la
+	// ferme, et la liste est relue.
+	test('48-14 — règlement abouti pendant la confirmation « déjà comptabilisée » : relu à Annuler', async ({
+		page,
+	}, testInfo) => {
+		const s = await clientScene(page, 't6c', 0);
+		const s2 = await clientScene(page, 't6d', 0);
+		let entryId: number | null = null;
+		let relacher!: () => void;
+		const retenu = new Promise<void>((res) => (relacher = res));
+		try {
+			const ba = ((await (await s2.ctx.get('/api/v1/bank-accounts')).json()) as Array<{
+				id: number;
+				journalAccountId: number | null;
+			}>).find((b) => b.id === s2.bankAccountId);
+			const entry = await s2.ctx.post('/api/v1/journal-entries', {
+				data: {
+					entryDate: todayInZurich(),
+					journal: 'Banque',
+					description: `Déjà comptabilisée 48-14 ${s2.unique}`,
+					lines: [
+						{ accountId: ba!.journalAccountId, debit: s2.amount, credit: '0' },
+						{ accountId: fees.id, debit: '0', credit: s2.amount },
+					],
+				},
+			});
+			expect(entry.status(), await entry.text()).toBe(201);
+			entryId = ((await entry.json()) as { id: number }).id;
+			await page.route('**/api/v1/reconciliation/accept', async (route) => {
+				await retenu;
+				await route.continue();
+			});
+			const { modal } = await openGroup(page, s.bankAccountId, s.txId);
+			await add(modal, s.fa.number, s.fa.id);
+			await add(modal, s.fb.number, s.fb.id);
+			await modal.getByTestId('group-submit').click();
+			await page.keyboard.press('Escape');
+			await expect(modal).toBeHidden();
+			const ligne1 = page.locator(`[data-testid="reconciliation-row"][data-tx-id="${s.txId}"]`);
+			const ligne2 = page.locator(`[data-testid="reconciliation-row"][data-tx-id="${s2.txId}"]`);
+			await ligne2.getByTestId('tx-checkbox').check();
+			await ligne2.getByTestId('group-settlement-button').click();
+			const confirmation = page.getByTestId('already-booked-confirm');
+			await expect(confirmation).toBeVisible();
+			relacher();
+			await expect(page.locator('[data-sonner-toast][data-type="success"]').first()).toBeVisible({
+				timeout: 10000,
+			});
+			await expect(confirmation).toBeVisible();
+			await expect(ligne2.getByTestId('tx-checkbox')).toBeChecked();
+			await page.screenshot({ path: capturePath(testInfo, '48-14-confirmation-restee-ouverte') });
+			await confirmation.getByTestId('already-booked-confirm-cancel').click();
+			await expect(confirmation).toBeHidden();
+			await expect(ligne1).toHaveCount(0, { timeout: 10000 });
+			await expect(ligne2).toBeVisible();
+		} finally {
+			relacher();
+			await page.unroute('**/api/v1/reconciliation/accept');
+			if (entryId !== null) {
+				await s2.ctx.post(`/api/v1/journal-entries/${entryId}/reverse`, { data: {} });
+			}
+			await cleanup(s.ctx, s.txId, s.importId);
+			await cleanup(s2.ctx, s2.txId, s2.importId);
+			await disposeContextSafe(s.ctx);
+			await disposeContextSafe(s2.ctx);
+		}
+	});
+
+	// Story 48-14 (#1263, AC1 à AC3, T7) — le serveur demande un compte (`difference_account_required`,
+	// refus simulé) ; la relecture des restes dus (réponse altérée) laisse l'enregistrement retenu,
+	// sans sélecteur : la fenêtre dit que rien n'a été enregistré, jamais « Choisissez le compte de
+	// l'écart ». Trois états : arrondi sans compte d'arrondi, écart au-delà du plafond, et une
+	// facture relue avec une autre non relue.
+	test('48-14 — demande de compte après relecture, sans sélecteur : « Rien n’a été enregistré »', async ({
+		page,
+	}, testInfo) => {
+		const s = await clientScene(page, 't7', 0);
+		let mode: 'aucun' | 'arrondi' | 'plafond' | 'non-relue' = 'aucun';
+		await page.route('**/api/v1/reconciliation/accept', async (route) => {
+			await route.fulfill({
+				json: {
+					accepted: [],
+					failed: [
+						{
+							bankTransactionId: s.txId,
+							errorCode: 'RECONCILIATION_GROUP_INVALID',
+							details: { reason: 'difference_account_required', gap: '-0.40' },
+						},
+					],
+				},
+			});
+		});
+		await page.route('**/group-candidates**', async (route) => {
+			if (mode === 'non-relue' && route.request().url().includes(encodeURIComponent(s.fb.number))) {
+				return route.fulfill({ status: 500, json: { code: 'DATABASE_ERROR', message: 'x' } });
+			}
+			const reponse = await route.fetch();
+			const corps = (await reponse.json()) as {
+				candidates: Array<{ id: number; amountDue: string; amountDueRaw: string }>;
+			};
+			const plus = mode === 'arrondi' ? 0.0049 : mode === 'aucun' ? 0 : 100;
+			await route.fulfill({
+				response: reponse,
+				json: {
+					...corps,
+					candidates: corps.candidates.map((c) =>
+						c.id === s.fa.id && plus !== 0
+							? {
+									...c,
+									amountDueRaw: (Number(c.amountDueRaw) + plus).toFixed(4),
+									amountDue: (Number(c.amountDueRaw) + plus).toFixed(2),
+								}
+							: c,
+					),
+				},
+			});
+		});
+		await page.route('**/api/v1/company/invoice-settings', async (route) => {
+			const reponse = await route.fetch();
+			const corps = await reponse.json();
+			await route.fulfill({
+				response: reponse,
+				json: mode === 'arrondi' ? { ...corps, defaultRoundingAccountId: null } : corps,
+			});
+		});
+		try {
+			for (const etat of ['arrondi', 'plafond', 'non-relue'] as const) {
+				mode = 'aucun';
+				// Le réglage d'arrondi est lu à l'ouverture : l'état « arrondi » le retire dès là.
+				if (etat === 'arrondi') mode = 'arrondi';
+				const { modal } = await openGroup(page, s.bankAccountId, s.txId);
+				mode = 'aucun';
+				await add(modal, s.fa.number, s.fa.id);
+				await add(modal, s.fb.number, s.fb.id);
+				await expect(modal.getByTestId('group-gap')).toHaveText('Aucun écart');
+				await expect(modal.getByTestId('group-submit')).toBeEnabled();
+				mode = etat;
+				await modal.getByTestId('group-submit').click();
+				await expect(modal.getByTestId('group-refusal')).toHaveText(
+					'Rien n’a été enregistré : voyez ce qui retient encore l’enregistrement.',
+				);
+				await expect(modal).not.toContainText('Choisissez le compte de l’écart.');
+				await expect(modal.getByTestId('group-account-section')).toHaveCount(0);
+				await expect(modal.getByTestId('group-submit')).toBeDisabled();
+				if (etat === 'arrondi') {
+					await expect(modal.getByTestId('group-rounding-not-configured')).toBeVisible();
+				} else {
+					await expect(modal.getByTestId('group-block-hint')).toContainText(
+						'L’écart dépasse le plafond admis',
+					);
+				}
+				if (etat === 'non-relue') {
+					await expect(modal.getByTestId('group-not-reread-item')).toContainText(
+						`Facture ${s.fb.number}`,
+					);
+				}
+				await modal.screenshot({ path: capturePath(testInfo, `48-14-refus-apres-relecture-${etat}`) });
+				mode = 'aucun';
+				await page.keyboard.press('Escape');
+				await expect(modal).toBeHidden();
+			}
+		} finally {
+			await page.unroute('**/api/v1/company/invoice-settings');
+			await page.unroute('**/group-candidates**');
+			await page.unroute('**/api/v1/reconciliation/accept');
+			await cleanup(s.ctx, s.txId, s.importId);
+			await disposeContextSafe(s.ctx);
+		}
+	});
 });
