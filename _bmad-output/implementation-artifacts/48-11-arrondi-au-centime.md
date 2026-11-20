@@ -1,4 +1,4 @@
-# Story 48-11 : Les montants à deux décimales sont arrondis au centime, non tronqués — exports CSV, rapports CSV et PDF (#1245 ; #1430)
+# Story 48-11 : Les montants à deux décimales sont arrondis au centime, non tronqués — rapports CSV et PDF ; l'export global écrit chaque colonne à son échelle (#1245 ; #1430)
 
 Status: ready-for-dev
 
@@ -6,14 +6,16 @@ Status: ready-for-dev
 `epic/48-corrections-0-20-0` à **`08c47a6cc`** (qui porte la PR #1327 de Beat — alignement à droite des PDF de rapports — et la PR #1346 —
 `round_for_display`). **Tout le code cité est lu à `08c47a6cc`.** Release **0.20.0** (coupure le jeudi 2026-11-26 au soir), story
 **prioritaire** de l'Epic 48 (plan `release-0.20.0.md`, ligne 2 ; fichier d'épique § *48-11*). **Aucune migration** : aucun montant stocké ne
-change ; seuls changent des affichages et des fichiers produits, au demi-centime près. Journaux : `/home/gcorbaz/devel/kesh-gate-logs/e4811/`.
+change ; seuls changent des fichiers produits — les rapports au demi-centime près, l'export global dans sa **forme** (chaque colonne à
+l'échelle du schéma, décision de Guy du 2026-11-20, D5). Journaux : `/home/gcorbaz/devel/kesh-gate-logs/e4811/`.
 Clé courte des bases : `e4811` (`kesh_e4811`, `kesh_ci_e4811`, `kesh_e2e_e4811`).*
 
 ## Story
 
 En tant que comptable qui tient ses livres dans Kesh et remet à son fiduciaire les rapports PDF et CSV et l'export global, je veux que
-chaque montant à deux décimales y soit **arrondi au centime**, le demi-centime s'éloignant de zéro, comme à l'écran, afin qu'un montant
-de 10.0050 ne s'imprime plus 10.00 dans un fichier et 10.01 à l'écran.
+chaque montant à deux décimales des rapports y soit **arrondi au centime**, le demi-centime s'éloignant de zéro, comme à l'écran, et que
+l'export global rende chaque valeur **sans perte**, à l'échelle où Kesh la garde, afin qu'un montant de 10.0050 ne s'imprime plus 10.00
+dans un rapport quand l'écran dit 10.01, ni 10.00 dans l'export quand la base dit 10.0050.
 
 ## Ce qui se lit au code (`08c47a6cc`)
 
@@ -117,15 +119,16 @@ n'a pas le défaut.**
 | `kesh-report/src/pdf.rs:1394-1395` `format_rate` (2 appels) | `format!("{rate:.2} %")` | taux de TVA du rapport TVA (`DECIMAL(5,2)` : ne tronque rien aujourd'hui) | **corrigé** (D4) |
 | `kesh-report/src/pdf.rs:1666-1668` `format_rendement` (1 appel) | `Some(p) => format!("{p:.2}%"),` | rendement d'un projet (déjà arrondi au pair, `project_report.rs:437`) | **corrigé** (D4) |
 | `kesh-report/src/pdf.rs:355-359` `format_currency_amount` (5 appels) | `format_swiss_amount(round_for_display(amount))` | montants en devise (Story 37-4) | **sain** ; simplifié par D3 |
+| `kesh-report/src/pdf.rs:899`, `:1116` ; `csv.rs:225` — appels **directs** de `round_for_display` | `round_for_display(bs.retained_earnings),` ; `format_swiss_amount(round_for_display(v.unwrap_or_default()))` ; `&format_amount_iso(round_for_display(bs.retained_earnings)),` | ligne « Résultat reporté (calculé) » du bilan (PDF, CSV), montants en devise de la balance PDF | **sains**, redondants après D3 : **retirés** (D3) |
 | `kesh-report/src/pdf.rs:368-373` `format_exchange_rate` | `format!("{r:.prec$}", prec = scale as usize)` après `round_dp_with_strategy(10, …MidpointAwayFromZero)` et `prec = scale.max(4)` | cours de change | **assumé** : la précision n'est jamais inférieure à l'échelle de la valeur (elle **complète**, ne coupe pas) |
 | `kesh-report/src/pdf.rs:3337` | `"{nom} : « {} » finit à {bord:.3} mm, …"` | un `f32` de géométrie, dans `mod tests` (`:2161`) | **assumé** : pas un `Decimal` |
 | `kesh-report/src/csv.rs:50-51` `format_amount_iso` (62 appels hors tests) | `format!("{amount:.2}")` | tous les montants CHF des CSV de rapports | **corrigé** (D3) |
 | `kesh-report/src/csv.rs:58-59` `format_currency_amount_iso` | `format_amount_iso(round_for_display(amount))` | montants en devise | **sain** ; simplifié par D3 |
 | `kesh-report/src/csv.rs:745-747` `format_rendement` (2 appels) | `Some(p) => format!("{p:.2}%"),` | rendement d'un projet | **corrigé** (D4) |
 | `kesh-report/src/balance_sheet.rs:69`, `:142` | `use crate::pdf::round_for_display;` / `!round_for_display(self.retained_earnings).is_zero()` | le modèle du bilan importe une fonction du module de rendu (**#1430**) | **corrigé** (D2) |
-| `kesh-api/src/exports/csv_tables.rs:108-109` `fmt_decimal` (29 appels, plus 5 de `fmt_opt_decimal` `:113`) | `format!("{d:.2}")` | export global : débit, crédit, prix, quantité, taux, totaux, frais, soldes de relevé, réglages de facturation | **corrigé** (D3, D5) |
-| `kesh-api/src/exports/csv_tables.rs:119-120` `fmt_opt_decimal_scale` (3 appels) | `d.map(\|d\| format!("{d:.scale$}"))` | `amount_currency` à 4, `exchange_rate` à 10 (`:430-431`) | **assumé** : précision égale à l'échelle de la colonne (`DECIMAL(19,4)`, `DECIMAL(20,10)`) : complète, ne coupe pas |
-| `kesh-api/src/exports/csv_tables.rs:880-881` `fmt_rate` | `format!("{d:.10}")` | cours `DECIMAL(20,10)` | **assumé** : idem |
+| `kesh-api/src/exports/csv_tables.rs:108-109` `fmt_decimal` (29 appels, plus 5 de `fmt_opt_decimal` `:113` : 34 sites, classés par colonne en D5) | `format!("{d:.2}")` | export global : débit, crédit, prix, quantité, taux, totaux, frais, soldes de relevé, réglages de facturation | **corrigé** (D5 : chaque colonne à l'échelle du schéma, sans arrondi) |
+| `kesh-api/src/exports/csv_tables.rs:119-120` `fmt_opt_decimal_scale` (2 appels, `:430-431`) | `d.map(\|d\| format!("{d:.scale$}"))` | `amount_currency` à 4, `exchange_rate` à 10 | **sain** ; devient le formateur unique de l'export (D5) : précision égale à l'échelle de la colonne, elle complète et ne coupe pas |
+| `kesh-api/src/exports/csv_tables.rs:880-881` `fmt_rate` (`fmt_opt_rate` `:886`) | `format!("{d:.10}")` | cours `DECIMAL(20,10)` (`exchange_rates.rate`, `acknowledged_rate`) | **sain** ; délègue au formateur unique (D5, DRY) |
 | `kesh-api/src/routes/bank_statements_manual.rs:551-555` `amount_string` (14 appels : réponses, détails d'audit, `BankStatementUnbalanced`) | `format!("{:.2}", d)` | sommes d'un relevé saisi (bornées à deux décimales, `kesh-core/src/bank_imports/manual.rs:43` `MANUAL_AMOUNT_MAX_DECIMALS: u32 = 2`), mais aussi le solde de clôture du relevé **précédent**, lu en base (`opening_gap`, `:524-547`), qui peut venir d'un CAMT | **corrigé** (D3) |
 | `kesh-api/src/routes/company_invoice_settings.rs:45-49` `group_max_for_display` | `"{:.2}",` sur `value.round_dp_with_strategy(2, …MidpointAwayFromZero)` | plafond de l'écart d'un règlement groupé | **sain** ; **délègue** à la fonction commune (D3, DRY), tests existants `:599-600` en filet |
 | `kesh-api/src/routes/reconciliation_group.rs:640-646` `fixed` | `round_dp_with_strategy(dp, MidpointAwayFromZero)` puis `rescale(dp)` | candidates d'un règlement groupé | **sain** (pas de précision de format) ; hors périmètre (D3) |
@@ -133,17 +136,18 @@ n'a pas le défaut.**
 | `kesh-qrbill/src/generator.rs:110-115` `format_amount_payload` | `format!("{:.2}", rounded)` après `MidpointAwayFromZero` (`:114`) | montant de la QR-facture | **sain**, **non touché** (factures émises, D7) |
 | `kesh-qrbill/src/pdf.rs:1665-1698` `format_signed_ch`, `format_ch` | `round_dp_with_strategy(decimals, …MidpointAwayFromZero)` (`:1676`) | montants du PDF des factures et avoirs | **sain**, **non touché** (D7) |
 | `kesh-qrbill/src/pdf.rs` (13 occurrences : `:84`, et `:4299` à `:5400` dans `mod tests` `:1901`) | `{:.3}mm`, `({:.2}, {:.2})` | `f32` de géométrie (module du QR, positions) | **assumé** : pas un `Decimal` |
-| `kesh-payment/src/pain001/mod.rs:124-126` `amt` | `format!("{:.2}", d.round_dp(2))` | montants du pain.001 | **sain** pour la troncature (arrondi avant) ; **arrondi au pair** : hors périmètre, voir #822 et la question Q2 |
+| `kesh-payment/src/pain001/mod.rs:124-126` `amt` | `format!("{:.2}", d.round_dp(2))` | montants du pain.001 | **sain** pour la troncature (arrondi avant) ; **arrondi au pair** : hors périmètre, issue **#1441** (décision de Guy du 2026-11-20, Q2) |
 | `kesh-i18n/src/formatting.rs:16-22` `format_money` | `format!("{:.2}", abs)` après `MidpointAwayFromZero` (`:17`) | formatage i18n | **sain** ; `kesh-i18n` ne dépend d'aucun crate interne : non migré (D3) |
 | `kesh-core/src/exchange_rates/parse/tests.rs:335`, `:339` | `"{kurs:.20}"` | message d'un test | **assumé** : test, pas un montant |
-| `kesh-report/src/project_report.rs:437` `rendement_pct` | `.round_dp(2)` | rendement **au pair** (12.345 → 12.34) | hors symptôme (arrondi d'un autre mode, non troncature) : **issue à ouvrir** (I1) |
-| `kesh-db/src/repositories/invoices.rs:459-461` `compute_line_total` | `(qty * unit_price).round_dp(4)` | **total de ligne stocké, au pair**, alors que l'écran l'estime au demi supérieur (`invoice-helpers.ts:31` `.round(4, ROUND_HALF_UP)`) | hors symptôme, **valeur stockée d'une facture** : **issue à ouvrir** (I2), jamais dans cette story |
+| `kesh-report/src/project_report.rs:437` `rendement_pct` | `.round_dp(2)` | rendement **au pair** (12.345 → 12.34) | hors symptôme (arrondi d'un autre mode, non troncature) : issue **#1442** (I1) |
+| `kesh-db/src/repositories/invoices.rs:459-461` `compute_line_total` | `(qty * unit_price).round_dp(4)` | **total de ligne stocké, au pair**, alors que l'écran l'estime au demi supérieur (`invoice-helpers.ts:31` `.round(4, ROUND_HALF_UP)`) | hors symptôme, **valeur stockée d'une facture** : issue **#1443** (I2), jamais dans cette story |
 | `kesh-core/src/accounting/vat.rs:148` | `rate_percent.round_dp(2)` | taux `DECIMAL(5,2)` : sans effet | sain |
 
 **Le défaut de #1245 se trouve à cinq sites** (`format_swiss_amount`, `format_amount_iso`, `fmt_decimal`, `amount_string`, et les deux
 formateurs de taux et rendement, `{:.2}` sur un `Decimal` qui ne tronquent rien aujourd'hui mais tronqueraient à la première valeur à
 trois décimales). **Le PDF des factures (`kesh-qrbill`) n'a pas le défaut** : il arrondit déjà (`format_ch`, `:1676`) ; rien n'y est à
-proposer.
+proposer. Le remède diffère selon le site : les rapports et `amount_string` **arrondissent** au centime (D3, D4) ; l'export global
+**cesse de couper** et écrit chaque colonne à son échelle (D5, décision de Guy du 2026-11-20, Q1).
 
 **Ce qui sort à tort aujourd'hui, concrètement** : un rapport (journal, grand livre, balance, bilan, compte de résultat, TVA, échéancier,
 projets) en PDF ou CSV dont une ligne ou un total porte une fraction de centime ; l'export global (débit/crédit d'une écriture saisie à
@@ -155,7 +159,12 @@ quatre décimales, total de ligne d'une facture à quantité ou prix fractionnai
 `kesh-report/src/balance_sheet.rs:69` `use crate::pdf::round_for_display;` et `:142` `!round_for_display(self.retained_earnings).is_zero()` :
 le modèle dépend du module de présentation. La fonction commune de cette story (dans `kesh-core`) **absorbe** `round_for_display` :
 `balance_sheet.rs` l'importe de `kesh_core`, `pdf.rs` et `csv.rs` aussi, et le CSV du bilan arrondit comme sa ligne affichée — les deux
-griefs de #1430. **#1430 se ferme avec la story** (mot-clé de fermeture dans le corps de la PR d'intégration, jamais dans un commit).
+griefs de #1430. **#1430 se ferme avec la story** (mot-clé de fermeture dans le corps de la PR d'intégration, jamais dans un commit) :
+**décision de Guy du 2026-11-20**, l'issue est rattachée au milestone **v0.20.0** (elle était à « Plus tard »).
+
+`csv.rs:25` (`use crate::pdf::{format_exchange_rate, round_for_display};`) garde après la story l'import de `format_exchange_rate` depuis
+`pdf.rs` : une dépendance du CSV au module PDF **subsiste**, entre deux modules de présentation ; elle n'est pas celle de #1430 (le
+**modèle** du bilan qui dépend du rendu) et reste hors périmètre.
 
 ### Dépendances
 
@@ -182,9 +191,11 @@ filtré sur `csv|export|rapport|report|pdf` : seuls `admin-manual.tex:3915` et `
     identiques ; la mention « les formateurs ne font qu'un `{:.2}` » se réécrit) ;
   - `pub fn format_two_decimals(amount: Decimal) -> String` — `round_for_display` puis **exactement deux décimales**, point décimal, sans
     séparateur, signe `-` seulement si le montant arrondi est non nul. **Seul `{:.2}` admis sur un `Decimal` de montant** dans le dépôt :
-    la valeur arrondie a une échelle ≤ 2, la précision ne fait plus que compléter.
-  `kesh-report/src/pdf.rs`, `csv.rs` et `balance_sheet.rs` importent les deux de `kesh_core::types`. Ferme **#1430** (dépendance à rebours
-  retirée, une seule règle d'arrondi dans un même export). **Option écartée** : un module d'arrondi dans `kesh-report` (laisse `kesh-api`
+    la valeur arrondie a une échelle ≤ 2, la précision ne fait plus que compléter (l'autre précision admise sur un montant est celle de
+    l'export global, égale à l'échelle de la colonne, D5).
+  `kesh-report/src/pdf.rs`, `csv.rs` et `balance_sheet.rs` importent de `kesh_core::types` ce qu'ils emploient (`pdf.rs` et `csv.rs` :
+  `format_two_decimals` ; `balance_sheet.rs` : `round_for_display`). Ferme **#1430** (dépendance à rebours retirée, une seule règle
+  d'arrondi dans un même rapport). **Option écartée** : un module d'arrondi dans `kesh-report` (laisse `kesh-api`
   sans la fonction, et `kesh-api` en a besoin) ; **option écartée** : une méthode sur `Money` (les sites manipulent des `Decimal` nus ;
   les envelopper ajoute du bruit sans garantie de plus).
 - **D3 — les sites corrigés délèguent, sans se dupliquer** :
@@ -192,7 +203,14 @@ filtré sur `csv|export|rapport|report|pdf` : seuls `admin-manual.tex:3915` et `
     (le second arrondi devient redondant) ;
   - `format_swiss_amount` (`pdf.rs:316`) part de `format_two_decimals(amount)` au lieu de `format!("{amount:.2}")` ; le commentaire `:317`
     devient vrai ; `format_currency_amount` (`:355`) n'appelle plus `round_for_display` lui-même ;
-  - `fmt_decimal` (`csv_tables.rs:108`) = `format_two_decimals(d)` ; l'en-tête `:17` et le doc-comment `:107` se réécrivent ;
+  - **les appels directs de `round_for_display` dans un formatage se retirent** : `pdf.rs:358` et `csv.rs:59` (ci-dessus),
+    `pdf.rs:899` (`bs.retained_earnings` passe tel quel : la boucle le formate par `format_swiss_amount`, qui arrondit), `pdf.rs:1116`
+    (`format_swiss_amount(v.unwrap_or_default())`), `csv.rs:225` (`format_amount_iso(bs.retained_earnings)`). Après la story,
+    `round_for_display` ne s'appelle plus hors de `kesh-core` qu'en **un** site de production, `balance_sheet.rs:142` (un prédicat, non un
+    formatage), et dans le test `pdf.rs:3102-3107` : `pdf.rs` ne l'important plus en production, le module de tests reçoit **une** ligne
+    `use kesh_core::types::round_for_display;` (sinon le `use` de production serait inutilisé et `clippy -D warnings` rougirait) ; ses
+    assertions ne changent pas. Le lien intra-doc de `balance_sheet.rs:126` vise `kesh_core::types::round_for_display` ;
+  - `fmt_decimal` (`csv_tables.rs:108`) **ne délègue pas** à la fonction commune : l'export global n'arrondit pas (D5) ;
   - `amount_string` (`bank_statements_manual.rs:551`) = `format_two_decimals(d)` (le traitement du zéro négatif, `:552-554`, est porté
     par la fonction commune) ;
   - `group_max_for_display` (`company_invoice_settings.rs:45`) = `format_two_decimals(value)` (aucun changement de sortie ; DRY).
@@ -204,23 +222,67 @@ filtré sur `csv|export|rapport|report|pdf` : seuls `admin-manual.tex:3915` et `
   arrondi en amont) ; les y faire passer laisse **un seul** `{:.2}` sur un `Decimal` dans `kesh-report`, ce qui rend la garde simple.
   **Option écartée** : les laisser, nommés à la garde (une exception de plus par fichier, et la première valeur à trois décimales
   tronquerait en silence). Le **mode au pair** du rendement (`project_report.rs:437`) reste : issue I1.
-- **D5 — l'export global arrondit au centime, comme le kickoff le décide** (fichier d'épique, § *48-11* : `csv_tables.rs:109`, « à
-  corriger »). Les colonnes à quatre décimales (`quantity`, `unit_price`, `line_total`, `debit`, `credit`, `total_amount`) sortent donc
-  **arrondies** à deux, au lieu d'être **tronquées**. **Option écartée, soumise à Guy (Q1)** : écrire chaque colonne **à son échelle**
-  (`DECIMAL(19,4)` → quatre décimales), comme la Story 37-3a l'a fait pour `amount_currency` et `exchange_rate` (`csv_tables.rs:430-431`) :
-  sans perte, mais elle change la forme de toutes les colonnes de l'export et s'écarte du remède décidé au kickoff ; une quantité de
-  0.125 sort 0.13 sous D5, 0.1250 sous l'option écartée. La fiche ne tranche pas ce désaccord : elle suit le kickoff et le déclare.
+- **D5 — l'export global écrit chaque colonne à l'échelle de sa colonne dans le schéma, sans arrondi** (**décision de Guy du
+  2026-11-20, Q1**, qui remplace le remède du kickoff — « arrondir au centime », fichier d'épique § *48-11*). C'est la règle que la
+  Story 37-3a a posée pour `amount_currency` et `exchange_rate` (`csv_tables.rs:430-431`), étendue à toutes les colonnes `DECIMAL` de
+  l'export. Une valeur lue en base a au plus l'échelle de sa colonne : une précision **égale** à cette échelle complète par des zéros et
+  ne coupe jamais. Exemples : un débit de `10.0050` sort `10.0050` (non `10.01`, ni `10.00`) ; une quantité de `0.125` sort `0.1250` ;
+  `150.25` sort `150.2500` ; un taux de TVA `8.10` sort `8.10`.
+  - **Un seul formateur dans `csv_tables.rs`** : `fmt_decimal` et `fmt_opt_decimal` disparaissent ; `fmt_decimal_scale(d: Decimal,
+    scale: usize) -> String` (`format!("{d:.scale$}")`) et `fmt_opt_decimal_scale` (`:119`, qui l'emploie) servent les 38 colonnes ;
+    `fmt_rate` (`:880`) devient `fmt_decimal_scale(d, DEC_20_10)` (DRY). L'échelle s'écrit à chaque site par une **constante nommée
+    d'après le type SQL** — `DEC_19_4 = 4`, `DEC_18_2 = 2`, `DEC_7_2 = 2`, `DEC_5_2 = 2`, `DEC_20_10 = 10` —, si bien qu'un relecteur
+    confronte le site au schéma sans calcul. **Option écartée** : deux formateurs à échelle figée (`fmt_dec4`, `fmt_dec2`) — les
+    cours à dix décimales en demanderaient un troisième, et l'échelle n'y serait plus lisible au type SQL.
+  - **Classement des 34 sites de `fmt_decimal`/`fmt_opt_decimal`** (lignes à `08c47a6cc` ; type lu au schéma,
+    `crates/kesh-db/test-schema/0001_schema_squash.sql`, que `test_schema_guard.rs` tient égal aux migrations ; extraction dans
+    `kesh-gate-logs/e4811/q1-echelles-colonnes.txt`) — **ensemble clos** :
+
+    | Échelle | Constante | Sites (`csv_tables.rs`) | Colonnes | Nombre |
+    |---|---|---|---|---|
+    | 4 | `DEC_19_4` | `:419`, `:420` | `journal_entry_lines.debit`, `.credit` | 2 |
+    | 4 | `DEC_19_4` | `:537` | `products.unit_price` | 1 |
+    | 4 | `DEC_19_4` | `:597`, `:598` | `invoices.total_amount`, `.rounding_amount` | 2 |
+    | 4 | `DEC_19_4` | `:656`, `:657`, `:659` | `invoice_lines.quantity`, `.unit_price`, `.line_total` | 3 |
+    | 4 | `DEC_19_4` | `:1103` (opt.), `:1107` | `company_invoice_settings.minimum_invoice_amount`, `.group_settlement_max_difference` | 2 |
+    | 4 | `DEC_19_4` | `:1259`, `:1260` | `credit_notes.total_amount`, `.rounding_amount` | 2 |
+    | 4 | `DEC_19_4` | `:1297`, `:1298`, `:1300` | `credit_note_lines.quantity`, `.unit_price`, `.line_total` | 3 |
+    | 4 | `DEC_19_4` | `:1355`, `:1359` (opt.) | `supplier_invoices.total_amount`, `.expected_payment_amount` | 2 |
+    | 4 | `DEC_19_4` | `:1405`, `:1406`, `:1408` | `supplier_invoice_lines.quantity`, `.unit_price`, `.line_total` | 3 |
+    | 4 | `DEC_19_4` | `:1447` | `payment_batches.total_amount` | 1 |
+    | 4 | `DEC_19_4` | `:1484` | `payment_batch_items.amount` | 1 |
+    | 4 | `DEC_19_4` | `:1523` | `invoice_settlements.amount` | 1 |
+    | 4 | `DEC_19_4` | `:1755` (opt.) | `imported_supplier_invoices.amount` | 1 |
+    | 2 | `DEC_5_2` | `:538`, `:658`, `:1299`, `:1407`, `:863` | `products.vat_rate`, `invoice_lines.vat_rate`, `credit_note_lines.vat_rate`, `supplier_invoice_lines.vat_rate`, `vat_rates.rate` | 5 |
+    | 2 | `DEC_7_2` | `:962`, `:1035` | `dunning_levels.fee_amount`, `invoice_reminders.fee_amount` | 2 |
+    | 2 | `DEC_18_2` | `:764` (opt.), `:765` (opt.), `:814` | `bank_imports.opening_balance`, `.closing_balance`, `bank_transactions.amount` | 3 |
+
+    **24 sites à quatre décimales, 10 à deux : 34.** S'y ajoutent les quatre colonnes déjà à leur échelle — `amount_currency`
+    (`DEC_19_4`, `:430`), `journal_entry_lines.exchange_rate` (`DEC_20_10`, `:431`), `exchange_rates.rate` et `.acknowledged_rate`
+    (`DEC_20_10`, par `fmt_rate`, `:923`, `:926`) — : **38 colonnes `DECIMAL` exportées, 25 à quatre décimales, 10 à deux, 3 à dix**,
+    soit exactement les 38 colonnes `DECIMAL` des tables de `TABLES_EXPORTEES` au schéma (la seule autre table à colonnes `DECIMAL`,
+    `_kesh_fetched_exchange_rates`, est une table système hors export). Ce décompte est celui que le test de pleine échelle (AC13)
+    écrit à la main.
+  - **Ce qui change pour qui lit l'export** : la **forme** des 25 colonnes à quatre décimales (`150.25` → `150.2500`), jamais leur
+    valeur ; un tableur relit le même nombre ; un script qui compare des chaînes (`== "150.25"`) ou lit à deux décimales fixes est à
+    adapter. Les colonnes à deux décimales ne changent pas. Note de version (section *Modifié*) et manuels (D8) le disent.
+  - **Option écartée** (le remède du kickoff) : arrondir l'export global au centime par la fonction commune — l'export de
+    souveraineté perdrait la fraction de centime que la base garde ; c'est ce que Guy a refusé le 2026-11-20.
 - **D6 — la garde** (`crates/kesh-api/tests/arrondi_centime_garde.rs`, nouveau ; patron `date_du_jour_garde.rs` : listes closes à égalité
   stricte par fichier, ce fichier exclu nommément) :
   - **Famille 1 — précision de format** : sur `crates/*/src/**/*.rs`, lignes `//` retirées, compte des occurrences de
     `\{[A-Za-z_0-9.]*:[^{}"]*\.([0-9]+|[A-Za-z_][A-Za-z_0-9]*\$|\*)\}` (précision fixe, nommée `x$` ou passée en argument `.*`, avec ou
     sans largeur ni alignement ; la chaîne de format peut être seule sur sa ligne). Liste close **après** la story, une justification
-    écrite par fichier, **23 occurrences dans 8 fichiers** : `kesh-core/src/types/money.rs` 1 (la fonction commune) ;
-    `kesh-api/src/exports/csv_tables.rs` 2 (`.scale$`, `.10` : échelle de colonne) ; `kesh-core/src/exchange_rates/parse/tests.rs` 2
-    (test) ; `kesh-i18n/src/formatting.rs` 1 (arrondi `:17`) ; `kesh-payment/src/pain001/mod.rs` 1 (arrondi au pair, #822) ;
-    `kesh-qrbill/src/generator.rs` 1 (arrondi `:114`) ; `kesh-qrbill/src/pdf.rs` 13 (`f32`) ; `kesh-report/src/pdf.rs` 2 (`.prec$` de
-    `format_exchange_rate`, `f32` du test `:3337`). Tout autre fichier doit compter **0** ; un compte qui diffère, dans un sens ou dans
-    l'autre, rougit et nomme le fichier.
+    écrite par fichier, **22 occurrences dans 8 fichiers** (recompté le 2026-11-20 sur `crates/*/src/**/*.rs`, 334 fichiers, lignes `//`
+    retirées : 30 occurrences / 10 fichiers aujourd'hui ; après la story −3 `kesh-report/src/pdf.rs`, −2 `kesh-report/src/csv.rs`, −2
+    `csv_tables.rs` (`{d:.2}` et `{d:.10}` disparaissent, `{d:.scale$}` reste), −1 `bank_statements_manual.rs`, −1
+    `company_invoice_settings.rs`, +1 `money.rs` = 22) : `kesh-core/src/types/money.rs` 1 (la fonction commune) ;
+    `kesh-api/src/exports/csv_tables.rs` 1 (`.scale$` de `fmt_decimal_scale` : précision égale à l'échelle de la colonne, constante
+    `DEC_*` — complète, ne coupe pas ; **prouvé par le test de pleine échelle, AC13**, sans quoi cette justification serait vraie par
+    construction) ; `kesh-core/src/exchange_rates/parse/tests.rs` 2 (test) ; `kesh-i18n/src/formatting.rs` 1 (arrondi `:17`) ;
+    `kesh-payment/src/pain001/mod.rs` 1 (arrondi au pair, **#1441**) ; `kesh-qrbill/src/generator.rs` 1 (arrondi `:114`) ;
+    `kesh-qrbill/src/pdf.rs` 13 (`f32`) ; `kesh-report/src/pdf.rs` 2 (`.prec$` de `format_exchange_rate`, `f32` du test `:3337`). Tout
+    autre fichier doit compter **0** ; un compte qui diffère, dans un sens ou dans l'autre, rougit et nomme le fichier.
   - **Famille 2 — troncature explicite** : `\.trunc\(\)`, `trunc_with_scale\(`, `RoundingStrategy::(ToZero|RoundDown)` ; liste close :
     `kesh-core/src/bank_imports/manual.rs` 1, `kesh-api/src/routes/mcp_server_settings.rs` 1 (ni l'un ni l'autre n'affiche un montant).
   - **Sonde positive** (la garde n'est pas vraie par construction) : la fonction de comptage, appliquée à un texte écrit dans le test
@@ -231,16 +293,37 @@ filtré sur `csv|export|rapport|report|pdf` : seuls `admin-manual.tex:3915` et `
   - **Angles morts assumés** (écrits dans le doc-comment de la garde) : un `Decimal` écrit par `{}` ou `to_string()` sort à son échelle
     (quatre décimales) sans rien couper — c'est le symptôme de #813, non celui-ci ; une précision construite à l'exécution hors d'un
     littéral (aucun site) ; un découpage maison au point (R3 : aucun site sur un montant) ; le frontend (big.js arrondit, R5) ; l'arrondi
-    au pair `round_dp(` (autre mode, non une troncature : I1, I2, #822).
+    au pair `round_dp(` (autre mode, non une troncature : #1442, #1443, #1441) ; les **stratégies d'arrondi que la famille 2 ne nomme
+    pas** — `RoundingStrategy::MidpointTowardZero` et `RoundHalfDown` (le demi vers zéro : `10.0050` → `10.00`, le symptôme même de
+    #1245), `ToNegativeInfinity` (vers le bas), `.floor()`, `.to_i64()` après une multiplication par 100 — : **aucun site** aujourd'hui
+    (`grep` sur `crates/*/src`, lignes non commentées, le 2026-11-20 : vide), une forme future n'est pas vue ; la famille 2 n'est pas
+    élargie pour ne pas confondre une troncature et un arrondi d'un autre mode, que la relecture juge ; enfin la **liste close compte
+    par fichier** : un échange à compte égal dans un même fichier (un `{:.3}` de `f32` retiré de `kesh-qrbill/src/pdf.rs`, un `{:.2}` de
+    `Decimal` ajouté au même fichier) laisse la garde verte — la relecture du diff de tout fichier listé le voit, la garde non.
   **Option écartée** : une garde par liste blanche de **fonctions** (« `{:.2}` interdit hors de `format_two_decimals` ») — elle ne voit pas
   une précision nommée ni un `f32`, et doit savoir lire le Rust ; la liste close par fichier est le patron éprouvé du dépôt.
 - **D7 — factures réelles** : rien dans `kesh-qrbill`, ni dans `invoice_pdf_service.rs`, ni dans les écrans de facture. Le PDF d'une
   facture ou d'un avoir, archivé ou régénéré, reste identique octet pour octet à ce que la 0.19.0 rend (il arrondit déjà).
-- **D8 — le manuel** : `admin-manual.tex:3915`, la phrase « l'export CSV des réglages la \textbf{tronque} … (\texttt{5.00}, défaut connu,
-  issue~\#1245) ; l'écran et l'API l'\textbf{arrondissent} (\texttt{5.01}) » devient « l'écran, l'API et, depuis la 0.20.0, l'export CSV
-  des réglages l'\textbf{arrondissent} (\texttt{5.01}) ». `.tex` seulement. Aucune autre langue ne porte la section. **Option écartée** :
-  une phrase neuve aux quatre manuels sur l'arrondi des rapports (le format visible ne change pas — toujours deux décimales — ; seul un
-  centime faux devient juste).
+- **D8 — les manuels** (`.tex` seulement, PDF non commité ; seul le français existe — `docs/manual/{de,en,it}/` ne portent qu'un
+  `README.md`) :
+  - `admin-manual.tex:3915`, la phrase « l'export CSV des réglages la \textbf{tronque} à deux décimales (\texttt{5.00}, défaut connu,
+    issue~\#1245) ; l'écran et l'API l'\textbf{arrondissent} (\texttt{5.01}) » devient « l'export CSV des réglages l'écrit tel quel, à
+    quatre décimales (\texttt{5.0060}), depuis la 0.20.0 ; l'écran et l'API l'\textbf{arrondissent} (\texttt{5.01}) ».
+  - `user-manual.tex`, § *Contenu du ZIP* (`\subsection{Contenu du ZIP}`, après la liste des tables) : une phrase — « Chaque nombre
+    s'y écrit à l'échelle où Kesh le garde, sans arrondi : quatre décimales pour les montants, prix, quantités et totaux
+    (\texttt{150.2500}), deux pour les taux de TVA, les frais de rappel et les montants et soldes des relevés, dix pour les cours de
+    change ; point décimal, sans séparateur des milliers. » Aucune phrase du manuel ne décrit aujourd'hui la précision de l'export
+    (A8 de la validation P1) : sans elle, la forme nouvelle ne serait écrite nulle part qu'au journal des modifications.
+  - `admin-manual.tex`, section `\subsubsection{Passer à la 0.20.0}\label{sec:maj-0-20-0}` — **ouverte par la story** si elle n'existe
+    pas à son étape 0 (précédent : la Story 36-9 a ouvert « Passer à la 0.18.0 » pour son seul paragraphe, commentaire LaTeX à l'appui,
+    `admin-manual.tex:2574-2577`), placée avant `sec:maj-0-19-0` ; sinon le paragraphe s'ajoute à la section existante —, paragraphe
+    `\paragraph{Pour les intégrations.}` : « \textbf{L'export global change de forme} : les montants, prix, quantités et totaux s'y
+    écrivent à quatre décimales (\texttt{150.25} devient \texttt{150.2500}), à l'échelle où Kesh les garde ; aucune valeur ne change, un
+    tableur relit le même nombre, mais un script qui compare des chaînes ou lit deux décimales fixes est à adapter. Les taux, les frais
+    de rappel et les montants des relevés restent à deux décimales. » L'introduction de la section (sauvegarde, migrations) et les
+    paragraphes des autres stories s'écrivent à l'intégration de la release.
+  **Option écartée** : une phrase neuve sur l'arrondi des **rapports** (leur format visible ne change pas — toujours deux décimales — ;
+  seul un centime faux devient juste).
 - **D9 — pas d'E2E Playwright, des tests de route** : le défaut se voit à la frontière HTTP (fichiers téléchargés), non dans un contrôle
   de l'écran. Les tests `sqlx::test` de route lisent les **octets que le navigateur télécharge** ; un Playwright n'y ajouterait que le
   clic sur un lien de téléchargement, déjà couvert par les specs existantes. **Aucune recette visuelle** : aucun contrôle visible n'est
@@ -258,34 +341,73 @@ filtré sur `csv|export|rapport|report|pdf` : seuls `admin-manual.tex:3915` et `
 3. **AC3 — PDF des rapports** (`kesh-report/src/pdf.rs`, tests, avec `pdf_text`) : `format_swiss_amount(dec!(1234.5678)) == "1'234.57"`,
    `(dec!(10.0050)) == "10.01"`, `(dec!(-0.0040)) == "0.00"` ; un rendu `render_trial_balance_pdf` d'une ligne à `10.0050` montre
    `10.01` ; `format_rate(dec!(8.125)) == "8.13 %"` ; `format_rendement(Some(dec!(12.345))) == "12.35%"` ; les tests existants
-   (`:2352-2381`, et `:2687` « ni 0.00 ni -0.00 ») restent verts **sans modification**.
-4. **AC4 — export global** (`kesh-api/src/exports/csv_tables.rs`, test unitaire ; `crates/kesh-api/tests/exports_global_e2e.rs`, test de
-   route) : `fmt_decimal(dec!(10.0050)) == "10.01"` ; par la route `GET` de l'export global, une écriture dont une ligne porte
-   `10.0050` au débit (posée par l'API ou par SQL dans la base de test) sort `10.01` dans le CSV des lignes d'écriture, et un réglage
-   `group_settlement_max_difference` posé à `5.0060` par SQL sort `5.01` dans le CSV des réglages de facturation (le cas du manuel,
-   `admin-manual.tex:3915`) ; `amount_currency` et `exchange_rate` sortent **inchangés** (quatre et dix décimales).
-5. **AC5 — rapports par la route** (`crates/kesh-api/tests/reports_export_e2e.rs`) : une écriture à `10.0050` (débit/crédit) dans un
-   exercice ; `GET …/trial-balance/export?…&format=csv` porte `10.01` ; la même en `format=pdf`, texte extrait, porte `10.01` (ou, si
-   l'extraction n'est pas disponible côté `kesh-api`, l'AC3 en tient lieu et le Dev Agent Record le dit).
+   (`:2352-2381`, `:2687` « ni 0.00 ni -0.00 », et `:3100-3109` `le_montant_en_devise_s_arrondit_avant_formatage`) restent verts avec
+   leurs **assertions inchangées** — seule modification admise : la ligne `use kesh_core::types::round_for_display;` ajoutée au module de
+   tests (D3).
+4. **AC4 — export global** (`kesh-api/src/exports/csv_tables.rs`, tests unitaires ; `crates/kesh-api/tests/exports_global_e2e.rs`, test
+   de route) : `fmt_decimal_scale(dec!(10.0050), DEC_19_4) == "10.0050"`, `fmt_decimal_scale(dec!(150.25), DEC_19_4) == "150.2500"`,
+   `fmt_decimal_scale(dec!(8.10), DEC_5_2) == "8.10"` ; par la route `GET` de l'export global, une écriture dont une ligne porte
+   `10.0050` au débit (posée par SQL dans la base de test) sort `10.0050` dans `journal_entry_lines.csv`, et un réglage
+   `group_settlement_max_difference` posé à `5.0060` par SQL sort `5.0060` dans `company_invoice_settings.csv` (le cas du manuel,
+   `admin-manual.tex:3915`) ; `amount_currency` et `exchange_rate` sortent **inchangés** (quatre et dix décimales) ; un taux de TVA et
+   un solde de relevé restent à deux décimales. Les tests unitaires qui figent les deux décimales **se réécrivent** :
+   `serialize_journal_entry_lines_csv_decimal_two_decimals` (`csv_tables.rs:2455`, attendu `;150.2500;0.0000;;;;;;\r\n`, renommé
+   `serialize_journal_entry_lines_csv_decimal_column_scale`), et les attendus de `:2485` (`1125.8300;0.0000`), `:2496`, `:2518`,
+   `:2519` (`150.2500;0.0000`). `exports_global_e2e.rs:2045` (`"7777.77"` cherché par `contains`) reste vert sans modification
+   (`7777.7700` le contient) : à dire au Dev Agent Record, non à corriger.
+5. **AC5 — rapports par la route** (`crates/kesh-api/tests/reports_export_e2e.rs`) : une écriture à `1234.0050` (débit/crédit) dans un
+   exercice ; `GET …/trial-balance/export?…&format=csv` porte `1234.01` ; la même en `format=pdf` porte `1'234.01`. **Le texte se lit
+   côté `kesh-api`, c'est établi** : `printpdf` 0.7.0 ne compresse qu'hors `debug_assertions`
+   (`printpdf-0.7.0/src/pdf_document.rs:822-831`, `optimize` vide sous `debug_assertions`), et `[profile.test]` hérite de
+   `[profile.dev]` (`Cargo.toml:46-47`) ; chaque texte est un `Tj` hexadécimal (`pdf_layer.rs:385`). Le test cherche, dans le corps
+   passé en minuscules, l'hexadécimal Latin-1 de `1'234.01` (`31273233342e3031`) et l'absence de celui de `1'234.00`
+   (`31273233342e3030`), sans dupliquer `pdf_text` (privé aux tests de `kesh-report`). Pas d'autre voie admise.
 6. **AC6 — relevé saisi** (`bank_statements_manual.rs`, test unitaire du module) : `amount_string(dec!(10.0050)) == "10.01"`,
    `amount_string(dec!(-0)) == "0.00"`, `amount_string(dec!(50)) == "50.00"` (non-régression des réponses actuelles).
 7. **AC7 — le plafond de l'écart** : `group_max_for_display` délègue à `format_two_decimals` ; ses tests existants
    (`company_invoice_settings.rs:599-600`, `5.0050` → `5.01`, `5.0150` → `5.02`) restent verts sans modification.
-8. **AC8 — #1430** : `git grep -n 'crate::pdf::round_for_display\|fn round_for_display' -- crates/` ne rend que la définition dans
-   `kesh-core/src/types/money.rs` ; `balance_sheet.rs` importe de `kesh_core` ; les tests du bilan (`pdf.rs:2670-2690` et ceux de
-   `shows_retained_earnings_line`) restent verts.
-9. **AC9 — la garde** (D6) : `arrondi_centime_garde` est verte avec la liste close de 23 occurrences dans 8 fichiers (famille 1) et de
+8. **AC8 — #1430** : `git grep -nw 'round_for_display' -- crates/` (toutes formes, imports entre accolades compris) — sortie copiée
+   au Dev Agent Record — ne rend que : la définition et ses tests dans `kesh-core/src/types/money.rs` ; le réexport de
+   `kesh-core/src/types/mod.rs` ; des `use kesh_core::…round_for_display` ; `balance_sheet.rs:126` (lien intra-doc vers
+   `kesh_core::types::round_for_display`) et `:142` (le prédicat) ; le test `pdf.rs:3100-3109` et son `use`. Aucun appel dans
+   `kesh-report/src/pdf.rs` ni `csv.rs` hors de ce test (les cinq appels de formatage, `pdf.rs:358`, `:899`, `:1116`, `csv.rs:59`,
+   `:225`, sont retirés, D3). Et `grep -n 'crate::pdf' crates/kesh-report/src/balance_sheet.rs` est **vide** ; `csv.rs:25` n'importe
+   plus de `pdf.rs` que `format_exchange_rate`. Les tests du bilan (`pdf.rs:2670-2690` et ceux de `shows_retained_earnings_line`)
+   restent verts.
+9. **AC9 — la garde** (D6) : `arrondi_centime_garde` est verte avec la liste close de 22 occurrences dans 8 fichiers (famille 1) et de
    2 (famille 2) ; la sonde positive rend 6 et 2 ; le balayage voit plus de 100 fichiers.
 10. **AC10 — factures réelles** (contrainte de Guy du 2026-11-18) : `git diff origin/epic/48-corrections-0-20-0...HEAD --stat --
     crates/kesh-qrbill crates/kesh-api/src/routes/invoice_pdf_service.rs crates/kesh-db 'frontend/src/routes/(app)/invoices'
     frontend/src/lib/components/invoices frontend/src/lib/features/invoices` **vide** (sortie copiée au Dev Agent Record) ; les tests de
     `kesh-qrbill` (dont ceux des PDF de facture et d'avoir) passent sans modification ; aucune facture, aucun avoir, aucune écriture,
     aucun montant stocké ne change (aucune migration, aucun repository touché).
-11. **AC11 — manuel** (D8) : `sed -n '3915p' docs/manual/fr/admin-manual.tex | grep -c 'tronque'` rend 0 après la story (1 avant) ;
-    `git grep -n '1245' -- docs/manual` vide ; PDF non commité.
-12. **AC12 — propagation** (`CLAUDE.md`, § *Propagation post-patch*) : après le correctif, `git grep -nE ':\.2\}' -- crates/*/src/*`
-    (sortie copiée, chaque ligne justifiée par la liste de la garde) ; `git grep -n 'format_amount_iso\|cohérent .kesh-report::csv'`
-    sur les doc-comments : plus aucune phrase qui dit `{:.2}` pour un montant.
+11. **AC11 — manuels** (D8) : `git grep -n 'tronque' -- docs/manual/fr/admin-manual.tex` ne rend plus la phrase de
+    `sec:ecart-admis-reglement-groupe` (elle porte `5.0060`) ; `git grep -n '1245' -- docs/manual` vide ; `user-manual.tex` § *Contenu du
+    ZIP* porte la phrase de l'échelle ; `admin-manual.tex` porte `sec:maj-0-20-0` avec son paragraphe « Pour les intégrations » ; les
+    quatre langues : seul `fr` existe (constaté, sortie de `ls docs/manual/*/` copiée) ; PDF non commités.
+12. **AC12 — propagation** (`CLAUDE.md`, § *Propagation post-patch*) : après le correctif,
+    `git grep -nE '\{[A-Za-z_0-9.]*:[^{}"]*\.([0-9]+|[A-Za-z_][A-Za-z_0-9]*\$|\*)\}' -- 'crates/*/src/*'` — le motif **de la garde**,
+    qui voit `{d:>10.2}`, `.scale$` et `.*` — (sortie copiée ; 32 lignes à `08c47a6cc`, dont 7 de commentaires) : chaque ligne non
+    commentée appartient à un fichier de la liste close de D6 ; chaque ligne de commentaire est relue — aucune ne dit plus `{:.2}` ni
+    « deux décimales » pour un montant de l'export ou d'un rapport. Sites de commentaire à réécrire, recensés à `08c47a6cc` :
+    `csv_tables.rs:17` (« Decimal toujours formaté `{:.2}` » → « chaque `Decimal` à l'échelle de sa colonne, constantes `DEC_*` ;
+    les rapports (`kesh-report::csv`) arrondissent, l'export non »), `:107`, `:112`, `:429`, `:878` (doc-comments de formateurs qui
+    disparaissent ou changent), `:1778` et `:2459` (tests) ; `kesh-report/src/csv.rs:7`, `:48`, `:55` ; `pdf.rs:317`, `:344-345` (la
+    fonction déménage). `errors.rs:1563` et `kesh-qrbill/src/generator.rs:107`, `:111` restent vrais.
+13. **AC13 — l'export à pleine échelle, colonne par colonne** (`exports_global_e2e.rs`, test `sqlx::test` neuf,
+    `export_global_chaque_colonne_decimal_a_l_echelle_du_schema`) — ce qui empêche D5 et la justification de `csv_tables.rs` dans la
+    garde d'être vraies par construction :
+    - l'**ensemble des colonnes** se lit dans `information_schema.COLUMNS` (`TABLE_SCHEMA = DATABASE()`, `DATA_TYPE = 'decimal'`,
+      `TABLE_NAME` dans `TABLES_EXPORTEES`), avec `NUMERIC_SCALE` : source **différente** du code testé ; le test assert qu'il en
+      trouve **38** (25 à l'échelle 4, 10 à 2, 3 à 10), nombres **écrits à la main** — une colonne `DECIMAL` ajoutée par une migration
+      future rougit le test, qui la nomme ;
+    - chaque table porte au moins une ligne de la société (fixtures existantes du fichier — `seed_with_full_data` et les helpers de
+      `export_global_zip_onze_tables_neuves_sortent_et_sont_scopees`, `:1825`, extraits en fonction si nécessaire) ; chaque colonne y
+      reçoit par `UPDATE` une valeur **à pleine échelle**, dérivée de `NUMERIC_SCALE` seul : `1.` suivi des `s` premiers chiffres de
+      `1234567891` (`1.12`, `1.1234`, `1.1234567891`) ; une contrainte `CHECK` qui la refuserait reçoit une autre valeur à pleine échelle,
+      écrite dans le test avec son motif ;
+    - dans `<table>.csv`, l'en-tête porte le nom de la colonne, et la cellule de la ligne vaut **exactement** la chaîne posée (même
+      échelle, même chiffres) ; un échec nomme `table.colonne`, l'attendu et le lu.
 
 ## Tests à écrire, et la preuve du rouge
 
@@ -296,8 +418,9 @@ Ordre : **le test d'abord, rouge**, puis le correctif, vert. Journaux dans `/hom
 |---|---|---|
 | AC2 (`format_amount_iso`, rendu de la balance CSV, rendement) | le correctif de `csv.rs` | **rouge d'abord** : écrits avant le correctif, ils échouent sur `10.00` / `12.34%` ; `rouge-report.log` |
 | AC3 (`format_swiss_amount`, rendu PDF, `format_rate`, rendement) | le correctif de `pdf.rs` | rouge d'abord (`"10.00"`, `"-0.00"`, `"8.12 %"`) ; `rouge-report.log` |
-| AC4 (`fmt_decimal`, route de l'export global) | le correctif de `csv_tables.rs` | rouge d'abord (`10.00`, `5.00`) ; `rouge-api.log` |
-| AC5 (route des rapports) | le correctif de `csv.rs` / `pdf.rs` | rouge d'abord ; `rouge-api.log` |
+| AC4 (`fmt_decimal_scale`, route de l'export global) | le correctif de `csv_tables.rs` | rouge d'abord : la route rend `10.00` et `5.00` là où `10.0050` et `5.0060` sont attendus ; les tests unitaires réécrits (`150.2500`) rougissent contre `{d:.2}` ; `rouge-api.log` |
+| AC5 (route des rapports) | le correctif de `csv.rs` / `pdf.rs` | rouge d'abord (`1234.00`, hexadécimal de `1'234.00`) ; `rouge-api.log` |
+| AC13 (pleine échelle) | le correctif de `csv_tables.rs` | rouge d'abord : les 24 colonnes à quatre décimales de `fmt_decimal` sortent `1.12` au lieu de `1.1234` (les 14 autres sont déjà vertes : filets) ; `rouge-api.log` ; **M7** : une seule constante fausse (`DEC_18_2` au lieu de `DEC_19_4` pour `invoice_lines.line_total`) → rouge qui nomme `invoice_lines.line_total` (`mut-m7.log`) ; **M8** : `38` écrit à la main remplacé par `37` → rouge sur le décompte (`mut-m8.log`) |
 | AC6 (`amount_string(10.0050)`) | le correctif de `bank_statements_manual.rs` | rouge d'abord ; `rouge-api.log` ; les cas `-0` et `50` **ne rougissent pas** : filets |
 | AC1 (fonction commune, neuve) | — (elle n'existe pas avant) | **M1** : stratégie remplacée par `ToZero` dans `round_for_display` → AC1, AC2, AC3, AC4 rouges (`mut-m1.log`) ; **M2** : retrait du `if r.is_zero()` → les cas `-0.0040` rouges (`mut-m2.log`) ; **M3** : `MidpointNearestEven` → `10.0050` rouge (`mut-m3.log`) |
 | AC7 (plafond de l'écart) | **ne rougit pas** : sortie inchangée | filet déclaré (tests existants) |
@@ -305,7 +428,7 @@ Ordre : **le test d'abord, rouge**, puis le correctif, vert. Journaux dans `/hom
 | AC9 (garde) | un `{:.2}` réintroduit | **M4** : `let _ = format!("{:.2}", amount);` ajouté dans `kesh-report/src/csv.rs` → garde rouge, message qui nomme le fichier et dit 1 au lieu de 0 (`mut-m4.log`) ; **M5** : retrait d'un `{:.2}` légitime d'un fichier listé (par exemple la ligne de `money.rs` réécrite en `format!("{}", …)` le temps de la mutation) → rouge « 0 au lieu de 1 » (`mut-m5.log`) ; **M6** : `amount.trunc_with_scale(2)` ajouté dans `pdf.rs` → famille 2 rouge (`mut-m6.log`) ; la sonde positive rend 6 et 2 dans le même binaire |
 | AC10, AC11, AC12 | — | commandes et sorties copiées |
 
-Numérotation : **M1 à M6, uniques, un journal chacune.**
+Numérotation : **M1 à M8, uniques, un journal chacune.**
 
 ## Tâches
 
@@ -314,16 +437,20 @@ Numérotation : **M1 à M6, uniques, un journal chacune.**
    `company_invoice_settings.rs:45-49` ; `balance_sheet.rs:69`, `:142`) ; en copier trois au Change Log ; relancer la simulation de la
    garde (`garde-simulation-avant.txt`) et noter tout écart (une fusion de `main` peut avoir ajouté un site : il entre au tableau, corrigé
    ou assumé, avant d'écrire la liste close).
-2. Tests rouges (AC2 à AC6), journaux `rouge-*.log`.
+   Relire aussi le schéma (`q1-echelles-colonnes.txt` régénéré : 38 colonnes, 25/10/3) — une colonne `DECIMAL` ajoutée par une fusion
+   entre au tableau de D5 avant tout code.
+2. Tests rouges (AC2 à AC6, AC13), journaux `rouge-*.log`.
 3. `kesh-core` : `round_for_display`, `format_two_decimals`, réexport ; tests AC1 ; mutations M1 à M3.
-4. `kesh-report` : `pdf.rs` (retrait de `round_for_display`, `format_swiss_amount`, `format_currency_amount`, `format_rate`,
-   `format_rendement`), `csv.rs` (`format_amount_iso`, `format_currency_amount_iso`, `format_rendement`, en-tête `:7`), `balance_sheet.rs`
-   (import, #1430) ; tests AC2, AC3, AC8.
-5. `kesh-api` : `csv_tables.rs` (`fmt_decimal`, en-tête `:17`, doc `:107`), `bank_statements_manual.rs` (`amount_string`),
-   `company_invoice_settings.rs` (`group_max_for_display`) ; tests AC4 à AC7.
+4. `kesh-report` : `pdf.rs` (retrait de `round_for_display` et de ses appels de formatage `:358`, `:899`, `:1116` ; `format_swiss_amount`,
+   `format_currency_amount`, `format_rate`, `format_rendement` ; `use` du module de tests), `csv.rs` (`format_amount_iso`,
+   `format_currency_amount_iso`, `format_rendement`, appel `:225`, import `:25`, en-tête `:7`, doc `:48`, `:55`), `balance_sheet.rs`
+   (import, lien `:126`, #1430) ; tests AC2, AC3, AC8.
+5. `kesh-api` : `csv_tables.rs` (D5 : `fmt_decimal_scale`, constantes `DEC_*`, les 34 sites et `:430-431`, `fmt_rate` ; commentaires
+   de l'AC12 ; tests unitaires réécrits), `bank_statements_manual.rs` (`amount_string`), `company_invoice_settings.rs`
+   (`group_max_for_display`) ; tests AC4 à AC7, AC13 ; mutations M7, M8.
 6. Garde `crates/kesh-api/tests/arrondi_centime_garde.rs` (D6) ; mutations M4 à M6.
-7. Manuel (D8), `.tex` seulement ; propagation (AC12) ; contrôle AC10 ; Dev Agent Record. **Ne pas écrire `CHANGELOG.md` ni
-   `sprint-status.yaml`.**
+7. Manuels (D8 : trois sites), `.tex` seulement ; propagation (AC12) ; contrôle AC10 ; Dev Agent Record. **Ne pas écrire
+   `CHANGELOG.md` ni `sprint-status.yaml`.**
 
 ## Gates
 
@@ -341,48 +468,78 @@ Numérotation : **M1 à M6, uniques, un journal chacune.**
 
 ## Note de version
 
+*En tête de la note* : **l'export global change de forme** — tout outil qui le lit (tableur, import maison, script) y trouve
+désormais les montants, prix, quantités et totaux à **quatre décimales** (`150.2500`).
+
+**Modifié**
+
+- Export global : chaque nombre s'écrit à l'échelle où Kesh le garde, **sans arrondi ni coupe** — quatre décimales pour les montants,
+  prix, quantités et totaux, deux pour les taux de TVA, les frais de rappel et les montants et soldes des relevés, dix pour les cours
+  de change. Ces colonnes sortaient jusqu'ici à deux décimales **tronquées** (10.0050 sortait 10.00 ; le plafond de l'écart d'un
+  règlement groupé posé à 5.0060 sortait 5.00). Aucune valeur ne change, seule la forme : un tableur relit le même nombre, un script qui
+  compare des chaînes ou lit deux décimales fixes est à adapter (refs #1245).
+
 **Corrigé**
 
-- Rapports (PDF et CSV) et export global : les montants à deux décimales sont **arrondis au centime**, le demi-centime s'éloignant de
-  zéro, comme à l'écran ; ils étaient jusqu'ici **tronqués** — un montant de 10.0050 sortait 10.00 au lieu de 10.01, −10.0050 sortait
-  −10.00 au lieu de −10.01, et un résidu négatif sous le demi-centime s'imprimait « -0.00 ». Seuls les montants qui portent une fraction de
-  centime changent ; aucune donnée enregistrée n'est modifiée, et le PDF des factures et des avoirs, qui arrondissait déjà, ne change
-  pas (refs #1245).
-- Export global : le plafond de l'écart d'un règlement groupé sort arrondi comme à l'écran (5.0060 → 5.01, non plus 5.00) (refs #1245).
-- Interne : la règle d'arrondi d'affichage des rapports est commune au bilan, aux rapports PDF et CSV et à l'export global (refs #1430).
+- Rapports (PDF et CSV) : les montants à deux décimales sont **arrondis au centime**, le demi-centime s'éloignant de zéro, comme à
+  l'écran ; ils étaient jusqu'ici **tronqués** — un montant de 10.0050 sortait 10.00 au lieu de 10.01, −10.0050 sortait −10.00 au lieu
+  de −10.01, et un résidu négatif sous le demi-centime s'imprimait « -0.00 ». Seuls les montants qui portent une fraction de centime
+  changent ; aucune donnée enregistrée n'est modifiée, et le PDF des factures et des avoirs, qui arrondissait déjà, ne change pas
+  (refs #1245).
+- Interne : la règle d'arrondi d'affichage est commune au bilan et aux rapports PDF et CSV (refs #1430).
 
 ## Dev Notes
 
 - **Modules** (règle de décompte de la 48-15 : une **crate** backend, un **domaine** frontend, ou **les manuels** ; les tests suivent leur
   module) : (1) `kesh-core` (`types/money.rs`, `types/mod.rs`), (2) `kesh-report` (`pdf.rs`, `csv.rs`, `balance_sheet.rs`), (3) `kesh-api`
   (`exports/csv_tables.rs`, `routes/bank_statements_manual.rs`, `routes/company_invoice_settings.rs`, tests `exports_global_e2e.rs`,
-  `reports_export_e2e.rs`, `arrondi_centime_garde.rs`), (4) manuels (`admin-manual.tex`, une phrase). **Quatre modules : sous la borne
-  de cinq, pas de découpage.** Au grain du fichier de production : neuf fichiers, un même geste (déléguer à la fonction commune).
+  `reports_export_e2e.rs`, `arrondi_centime_garde.rs`), (4) manuels (`admin-manual.tex`, deux sites ; `user-manual.tex`, une phrase).
+  **Quatre modules : sous la borne de cinq, pas de découpage**, y compris sous la décision Q1 (elle change le geste dans
+  `csv_tables.rs`, non le nombre de modules). Au grain du fichier de production : neuf fichiers ; deux gestes — déléguer à la fonction
+  commune (rapports, relevé, plafond), écrire à l'échelle de la colonne (export global).
+- **Charge révisée** (après Q1) : la décision ajoute la réécriture des 36 appels de `csv_tables.rs` (34 + `:430-431`) avec leur
+  constante, cinq attendus de tests unitaires, le test de pleine échelle AC13 (fixtures de 19 tables à colonnes `DECIMAL`, la part la
+  plus lourde) et deux phrases de manuel de plus ; elle retire la délégation de `fmt_decimal`. Estimation : de **une journée** à **une
+  journée et demie** de développement, boucle de revue non comprise ; la story reste tenable avant la coupure du 2026-11-26.
 - **Dépendances** : part de `epic/48` à `08c47a6cc`, après la fusion de #1327 (décision de Guy du 2026-11-18) et de #1346. Ne bloque ni
-  n'est bloquée par l'Epic 49 (aucun fichier commun : l'Epic 49 touche `kesh-qrbill`, que cette story ne touche pas).
+  n'est bloquée par l'Epic 49 **pour ses propres fichiers** (l'Epic 49 touche `kesh-qrbill`, que cette story ne modifie pas). Mais la
+  garde **fige des comptes dans deux fichiers de l'Epic 49** : 13 occurrences dans `crates/kesh-qrbill/src/pdf.rs` (des `f32` de
+  géométrie, `:84` et `:4299` à `:5400`) et 1 dans `crates/kesh-qrbill/src/generator.rs`. **`kesh-qrbill/src/pdf.rs` est donc un fichier
+  commun avec l'Epic 49** au sens de la garde : tout `{:.N}` que l'Epic 49 y ajoute — même sur un `f32`, même légitime — rougit
+  `arrondi_centime_garde` chez le second arrivé, qui met à jour le compte attendu et sa justification (ou corrige le site s'il formate un
+  `Decimal` de montant). C'est voulu ; **le dire à l'Epic 49** dès la fusion de la story, comme à l'Epic 46.
 - **Fichiers communs** : `crates/kesh-report/src/pdf.rs` — PR #1327 et #1346 de Beat, **fusionnées** ; l'Epic 46 de Beat (rapports par
   groupes de comptes) touchera `kesh-report` : si sa branche est fusionnée dans `main` avant l'intégration, le second arrivé résout, et
   tout nouveau `{:.2}` de l'Epic 46 rougira la garde — c'est voulu ; **le dire à Beat** (canal technique) dès la fusion de la story.
   `admin-manual.tex` : toutes les stories ; PDF jamais commité.
-- **Ce qui doit rester vrai** : deux décimales exactement dans chaque montant de rapport et d'export (Excel relit une colonne
-  homogène, `csv.rs:48-49`) ; point décimal sans séparateur au CSV, apostrophe au PDF ; `amount_currency` à quatre et `exchange_rate` à
-  dix décimales dans l'export global ; un cours de change à quatre à dix décimales (`format_exchange_rate`) ; le PDF des factures inchangé.
+- **Ce qui doit rester vrai** : deux décimales exactement dans chaque montant de **rapport** (Excel relit une colonne homogène,
+  `csv.rs:48-49`) ; dans l'**export global**, qui fait exception depuis Q1, chaque colonne à **une seule** échelle, celle du schéma —
+  la colonne reste homogène, à quatre, deux ou dix décimales ; point décimal sans séparateur au CSV, apostrophe au PDF ;
+  `amount_currency` à quatre et `exchange_rate` à dix décimales dans l'export global ; un cours de change à quatre à dix décimales
+  (`format_exchange_rate`) ; le PDF des factures inchangé.
 - **Limite connue, inchangée** : chaque ligne et chaque total s'arrondissent séparément ; la somme des lignes affichées d'un rapport peut
   différer d'un centime du total affiché quand plusieurs lignes portent des fractions de centime (c'était déjà vrai, et pire, avec la
   troncature). Le total reste juste ; c'est la présentation de valeurs exactes.
-- **Production** : aucun montant stocké ne change ; un rapport ou un export **régénéré** après la mise à jour peut différer d'un centime
-  de celui que la 0.19.0 avait produit, sur les seules valeurs à fraction de centime. Rien à faire sur le NAS.
-- **Issues à ouvrir (demandées à l'orchestrateur)** :
-  - **I1** — `kesh-report/src/project_report.rs:437` : le rendement d'un projet s'arrondit **au pair** (`round_dp(2)`, 12.345 → 12.34),
-    non au demi loin de zéro comme le reste de l'affichage (P4).
-  - **I2** — `kesh-db/src/repositories/invoices.rs:460` : le total de ligne d'une facture se calcule **au pair** à quatre décimales
-    (`round_dp(4)`), alors que l'écran l'estime au demi supérieur (`invoice-helpers.ts:31`) ; divergence possible au cinquième chiffre
-    (quantité × prix à huit décimales) entre l'estimation de l'écran et la valeur enregistrée. **Valeur stockée d'une facture : à traiter
-    sans toucher aux factures émises** (P3).
-  - (Selon la réponse de Guy à Q1) **I3** — export global : les colonnes à quatre décimales sortent à deux.
-  - `kesh-payment/src/pain001/mod.rs:125` (`round_dp(2)`, au pair) : voisin de **#822** (CtrlSum) ; à rattacher à #822 ou à ouvrir à part,
-    au choix de l'orchestrateur (Q2).
-- Références : issue #1245 (et son commentaire du 2026-11-19 renvoyant à #813), #1430, #813, #822 ; fichier d'épique
+- **Production** : aucun montant stocké ne change. Un **rapport** régénéré après la mise à jour peut différer d'un centime de celui
+  que la 0.19.0 avait produit, sur les seules valeurs à fraction de centime. L'**export global** régénéré change de **forme**, non de
+  valeur : ses colonnes à quatre décimales s'écrivent `150.2500` au lieu de `150.25`, et une valeur à fraction de centime y paraît
+  entière (`10.0050`) au lieu d'être coupée (`10.00`). Rien à faire sur le NAS ; un export de la 0.19.0 déjà remis à un tiers reste
+  juste au centime tronqué près.
+- **Issues liées** (décisions de Guy du 2026-11-20, Q2 — ouvertes, hors story) :
+  - **#1442** (I1) — `kesh-report/src/project_report.rs:437` : le rendement d'un projet s'arrondit **au pair** (`round_dp(2)`,
+    12.345 → 12.34), non au demi loin de zéro comme le reste de l'affichage.
+  - **#1443** (I2) — `kesh-db/src/repositories/invoices.rs:460` : le total de ligne d'une facture se calcule **au pair** à quatre
+    décimales (`round_dp(4)`), alors que l'écran l'estime au demi supérieur (`invoice-helpers.ts:31`) ; divergence possible au
+    cinquième chiffre entre l'estimation de l'écran et la valeur enregistrée. **Valeur stockée d'une facture : à traiter sans toucher
+    aux factures émises.**
+  - **#1441** — `kesh-payment/src/pain001/mod.rs:125` (`round_dp(2)`) : les montants du pain.001 s'arrondissent au pair.
+  - L'ancienne I3 (« l'export global sort à deux décimales ») **tombe** : D5 la résout.
+- **#1245 et le corps de la PR d'intégration** : le remède écrit à #1245 (« une fonction commune, puis formater », « un test par
+  site ») ne s'applique plus à l'export global, qui n'arrondit pas (Q1) ; le corps de la PR le dit. La fermeture de #1245 reste juste :
+  rapports PDF et CSV arrondis, export global sans troncature.
+- **#1430** : rattachée au milestone **v0.20.0** par décision de Guy du 2026-11-20 (elle était à « Plus tard ») ; la story la ferme, par
+  le mot-clé de fermeture du corps de la PR d'intégration seulement, jamais dans un commit.
+- Références : issue #1245 (et son commentaire du 2026-11-19 renvoyant à #813), #1430, #813, #822, #1441, #1442, #1443 ; fichier d'épique
   `epic-48-corrections-0-20-0.md` § *48-11* ; plan `release-0.20.0.md` ; `48-15-troncatures-silencieuses.md` (forme, décompte des
   modules) ; garde modèle `crates/kesh-api/tests/date_du_jour_garde.rs` ; journaux d'inventaire `kesh-gate-logs/e4811/inv-*.txt`,
   `garde-simulation-*.txt`.
@@ -408,3 +565,34 @@ Numérotation : **M1 à M6, uniques, un journal chacune.**
   frontend sain ; `kesh-qrbill` sain et non touché. Mode : `MidpointAwayFromZero`, zéro sans signe (`round_for_display`, `pdf.rs:349-352`).
   #1430 se ferme avec la story. Quatre modules (crate, manuels). Issues demandées : I1, I2 (I3 selon Q1). Questions à Guy : Q1 (échelle de
   l'export global), Q2 (pain.001).
+- **2026-11-20 — validation P1 remédiée** (Opus 5.5 ; passe P1 Sonnet 5.5 sur `292af6883` : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 5 LOW ;
+  rapport `kesh-gate-logs/e4811/validation-p1.md`). Prémisse de chaque finding relue au code avant remède.
+  - **Décisions de Guy du 2026-11-20 intégrées.** **Q1** : l'export global écrit chaque colonne à l'échelle du schéma, sans arrondi —
+    D5 réécrite (formateur unique `fmt_decimal_scale`, constantes `DEC_*` nommées d'après le type SQL, classement fermé des 34 sites :
+    **24 à quatre décimales, 10 à deux** ; avec `:430-431` et `fmt_rate`, **38 colonnes `DECIMAL` exportées, 25 à 4, 10 à 2, 3 à 10**,
+    recomptées depuis `test-schema/0001_schema_squash.sql` — 40 colonnes `DECIMAL`, moins les 2 de `_kesh_fetched_exchange_rates`, seule
+    table hors `TABLES_EXPORTEES` —, journal `q1-echelles-colonnes.txt`) ; AC4 réécrit ; AC13 neuf (test de pleine échelle,
+    l'ensemble des colonnes lu dans `information_schema`, valeurs dérivées de `NUMERIC_SCALE`, décomptes écrits à la main) ; les cinq
+    attendus figés à deux décimales de `csv_tables.rs` (`:2461`, `:2485`, `:2496`, `:2518`, `:2519`) nommés ; D8 étendue (phrase
+    `admin-manual.tex:3915`, phrase de `user-manual.tex` § *Contenu du ZIP*, paragraphe « Pour les intégrations » d'une section
+    `sec:maj-0-20-0`) ; Note de version (export sous **Modifié**, mention en tête) ; *Production*, *Ce qui doit rester vrai* ; I3
+    tombe. **Q2** et issues : pain.001 → **#1441**, I1 → **#1442**, I2 → **#1443**. **#1430** rattachée à v0.20.0 (décision de Guy,
+    remplace V1-6).
+  - **V1-1 (MEDIUM) → corrigé** : AC8 par `git grep -nw 'round_for_display'` (toutes formes, l'import entre accolades de `csv.rs:25`
+    compris), liste fermée des lignes admises, `grep 'crate::pdf' balance_sheet.rs` vide ; sort écrit des appels directs (D3 : `pdf.rs:358`,
+    `:899`, `:1116`, `csv.rs:59`, `:225` retirés ; reste `balance_sheet.rs:142`) ; la dépendance `csv.rs` → `pdf.rs` par
+    `format_exchange_rate` dite, hors #1430.
+  - **V1-2 (LOW) → corrigé** : le test `pdf.rs:3100-3109` reçoit un `use` (AC3 le dit), le lien `balance_sheet.rs:126` vise `kesh_core`.
+  - **V1-3 (LOW) → corrigé** : stratégies non couvertes (`MidpointTowardZero`, `RoundHalfDown`, `ToNegativeInfinity`, `.floor()`,
+    `.to_i64()`) et échange à compte égal dans un fichier écrits aux angles morts de D6 (grep des formes, lignes non commentées : vide).
+  - **V1-4 (LOW) → corrigé** : `kesh-qrbill/src/pdf.rs` déclaré fichier commun avec l'Epic 49 au sens de la garde (13 occurrences
+    figées, plus 1 dans `generator.rs`), conséquence et consigne écrites aux Dev Notes.
+  - **V1-5 (LOW) → corrigé** : AC5 sans échappatoire (le texte du PDF se lit côté `kesh-api` : `printpdf-0.7.0/src/pdf_document.rs:822-831`
+    ne compresse qu'hors `debug_assertions`, lu) ; AC12 au motif de la garde (32 lignes à `08c47a6cc`, 25 non commentées), sites de
+    commentaire à réécrire recensés.
+  - **V1-6 (LOW) → résolu par décision** : #1430 au milestone v0.20.0 (vérifié par `gh issue view 1430` : `v0.20.0`).
+  - **Recomptes** (périmètre : `crates/*/src/**/*.rs`, 334 fichiers, lignes `//` retirées, code à `08c47a6cc`) : famille 1, **30 / 10**
+    avant (inchangé) et **22 / 8** après la story (était 23 : `csv_tables.rs` passe de 2 à 1 sous Q1) ; famille 2, 2 (inchangé) ;
+    formes de V1-3, 0. Correction d'un décompte faux à sa date : `fmt_opt_decimal_scale` a **2** appels (`:430-431`), non 3 (ligne du
+    tableau corrigée).
+  - **Charge révisée** : une journée à une journée et demie de développement (Dev Notes).
