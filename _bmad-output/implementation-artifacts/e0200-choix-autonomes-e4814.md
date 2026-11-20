@@ -39,9 +39,13 @@ autres options, réversibilité.
   d'autres travaux ; une demande `cargo nextest run` en file compile les sources **au moment où elle obtient le
   verrou**, ce qui interdisait de réécrire `grouped_settlements.rs` tant que la caractérisation sur l'ancien code
   n'avait pas tourné, et faisait compiler sous verrou.
-- **Retenu** : `cargo nextest archive` (sous `mem-guard`, hors verrou) fige les binaires de test d'un commit — l'ancien
-  code (`dbe67c669`), le code réécrit, chaque mutation Rust — ; un script unique (`jouer-archives.sh`) les joue sous une
-  seule prise du verrou. Les journaux citent l'archive et son commit.
+- **Retenu** : `cargo nextest archive` (sous `mem-guard`, hors verrou) fige les binaires de test de l'arbre de travail
+  — l'ancien code (contenu de `dbe67c669`), le code réécrit, chaque mutation Rust — ; un script unique
+  (`jouer-archives.sh`) les joue sous une seule prise du verrou. *Corrigé à la revue P1 (A4)* : les journaux citent
+  l'archive, **pas son commit** ; la provenance se déduit des horodatages (fiche, Dev Agent Record). Les archives
+  pèsent plusieurs Go chacune, leurs extractions plusieurs dizaines : le 2026-11-20 elles ont rempli le disque et
+  l'orchestrateur les a supprimées. Désormais : une archive à la fois, supprimée dès qu'elle a servi, ou le build
+  ordinaire.
 - **Autres options** : attendre le verrou avant chaque étape (plusieurs heures par étape) ; jouer hors verrou
   (interdit).
 - **Réversible** : oui ; les archives sous `target/` partent avec le worktree.

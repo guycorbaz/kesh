@@ -369,9 +369,13 @@ le compte serait de sept ; il ne découpe pas davantage, les quatre lots étant 
   faux : *Enregistrer* est grisé, et la relecture a pu échouer ; (c) afficher le sélecteur quand même — il ne
   débloquerait rien (écart trop grand, arrondi sans compte).
 - **D2 (#1263) — le manuel suit le code, phrase comprise que la story n'a pas cassée.** `user-manual.tex:3579` se
-  réécrit pour dire : le sélecteur s'affiche quand Kesh demande un compte et qu'une facture n'a pas pu être relue ;
-  relus tous, la fenêtre le dit et invite à vérifier l'écart ; si l'enregistrement reste retenu (écart trop grand,
-  arrondi sans compte), elle dit que rien n'a été enregistré. *Écartée* : laisser la phrase (P3 « manuel qui décrit
+  réécrit en conditions qui s'excluent, dans l'ordre du code (`showAccount`, puis les deux branches de
+  `handleRefusal`) : si l'écart relu dépasse le plafond ou qu'un montant est illisible, pas de sélecteur et « rien n'a
+  été enregistré » ; sinon, si l'écart relu n'est pas nul ou qu'une facture n'a pas pu être relue, le sélecteur ;
+  sinon (écart nul, toutes relues), « relus, vérifiez l'écart », à moins qu'un arrondi sans compte d'arrondi retienne
+  encore l'enregistrement (« rien n'a été enregistré »). *Révisée à la revue P1 (A1, B3)* : la première rédaction
+  coordonnait trois propositions qui ne s'excluaient pas (« quand une facture n'a pas pu être relue, le sélecteur
+  s'affiche » est faux dans l'état d'AC3, `showAccount` exigeant `!tooLarge`). *Écartée* : laisser la phrase (P3 « manuel qui décrit
   autre chose que le code » sur la branche même qu'on touche).
 - **D3 (#1262) — la relecture est différée jusqu'à ce qu'aucune modale ne soit ouverte.** La modale ne choisit plus :
   quand l'envoi aboutit alors que sa session a changé (fermée pendant l'envoi), elle dit le succès (toast, inchangé)
@@ -405,6 +409,18 @@ le compte serait de sept ; il ne découpe pas davantage, les quatre lots étant 
     dans le `try`, le `catch` ne relit pas) laisse le drapeau armé : il se consomme à la prochaine relecture ou à la
     prochaine fermeture d'une modale. La relecture différée n'est donc pas perdue, mais elle peut attendre le geste
     suivant ; cas rare, sans effet sur les livres, assumé.
+  - ***Révisée à la revue P1 (E2, B4)*** — ce qui précède sur le drapeau et le bilan est remplacé ainsi : le drapeau
+    devient un compteur non réactif, `settledInBackground` (les règlements aboutis en arrière-plan dont la liste n'est
+    pas relue). (i) La relecture attend aussi la fin d'un lot *Accepter* / *Rejeter* en cours (`reloadMustWait()` =
+    `anyModalOpen() || busy`) : sa relecture effacerait le relevé du lot (E2) ; le `finally` des deux lots appelle
+    `flushPendingReload()`, si bien qu'un lot en échec ne laisse plus la relecture attendre le geste suivant. (ii)
+    `load()` prend le compteur et le remet à zéro avant son premier `await` (même raison qu'avant), puis **ajoute ces
+    règlements au bilan** de la relecture qui les consomme, après l'`await` (B4 : le bilan ne se perd plus quand un
+    autre geste relit) ; `reloadAfterGroupSettlement` n'écrit plus « 1 », c'est `load()` qui compte ; `onGroupStale`
+    ouvre un nouveau bilan quand il en consomme. (iii) Une relecture en échec rend ses règlements à l'attente (la liste
+    n'est pas relue) ; une relecture **dépassée** les compte au bilan sans les rendre, la relecture plus récente,
+    partie après elle, les voyant déjà (reprise de la remédiation : rendus à l'attente, ils auraient armé une relecture
+    superflue et manqué au bilan ; atteignable parce que la fin d'un envoi survit au démontage de sa modale).
   *Écartées* : (a) appeler `onSuccess` sans condition — ferme la fenêtre rouverte (`:325`–`:326`) ; (b) relire
   aussitôt — `load()` démonte la modale ouverte (`:555`, `:184`), referme la confirmation (`:182`) et perd la saisie ; (c) retirer la ligne localement de
   `proposals` sans relire — la liste vidée bascule sur `:561` et démonte aussi la modale ; (d) une relecture
@@ -695,6 +711,9 @@ doublons cherchés : #1235 (« LinkSettlementModal : ni anti-rebond ni abandon�
 - `TransactionSplitModal.svelte:338`–`:339` — même motif pour *Éclater*, défaut distinct : **une autre issue**, même
   condition. (Le Change Log 0.1 annonçait « trois issues demandées » : décision datée, remplacée ici.)
 - Les autres issues de la dette du règlement groupé (#1256 à #1260, #1264, #1265, P4) restent ouvertes, hors release.
+- `GroupSettlementModal.svelte:929` — « Arrondi de … passé au compte d'arrondi » s'affiche même sans compte d'arrondi
+  désigné, juste au-dessus de l'avis qui le dit (défaut antérieur à la story, rendu visible par la recette, revue P1
+  A7) : **#1419**.
 
 **Fichiers communs avec les autres stories de la 0.20.0** :
 
@@ -796,6 +815,9 @@ d'audit ») ; verts : `inventaire-vert.log`, 16/16 (`bank_account_closed_invento
   `position 14, longueur 4, reecriture true, cumul_avant 61` (CRC de l'en-tête de la première entrée, après recul) ;
   l'ancien écrivain, limites 61, 62, 63, 64 → `Done(Failure(Failed))`, chaque fois avec la panique
   `zip-2.6.1/src/write.rs:1078:13` ; l'écrivain de D6, limite (position) 14 et 61 → `Done(Failure(DiskFull))`.
+  *Précision de la revue P1 (A8)* : seule la limite 61 (`fin_avant`, la fin du fichier au moment de la réécriture)
+  **exerce** la réécriture — acceptée, puis le prolongement suivant refusé ; la limite 14 (`position`) fait échouer
+  l'en-tête local de la première entrée avant toute réécriture : c'est un témoin, non une preuve.
   Choix C-e4814-1 : sonde et reproduction commitées derrière `#[ignore]`.
 - T12 rouge avec l'ancien `PleinApres` (`rouge-t12.log` : la réécriture refusée), vert ensuite ; M10 tuée.
 - T13 avec l'ancien écrivain (`t13-ancien-ecrivain.log`) : **rouge** — limite 2052, `Failed`, panique `write.rs:1078`
@@ -836,7 +858,15 @@ reste déjà gonflé pour l'état « arrondi » (premier rejeu de M1 rouge **ava
 la mutation). Captures (thème clair, base `kesh_e2e_e4814`, données factices), `kesh-gate-logs/e4814/captures/` :
 `48-14-refus-apres-relecture-arrondi.png`, `…-plafond.png`, `…-non-relue.png` (AC1 à AC3),
 `48-14-rouverte-intacte-liste-perimee.png`, `48-14-liste-relue-apres-fermeture.png` (AC6, AC8),
-`48-14-confirmation-restee-ouverte.png` (AC7).
+`48-14-confirmation-restee-ouverte.png` (AC7). *Précision de la revue P1 (A6)* : sur
+`48-14-rouverte-intacte-liste-perimee.png`, la liste derrière la fenêtre est sous le voile du dialogue ; la capture
+montre la fenêtre rouverte intacte, **pas** la liste périmée, que seule l'assertion de T6
+(`await expect(ligne1).toHaveCount(1);` avant la fermeture) prouve.
+
+**Journaux renommés par rapport à la fiche** (revue P1, A3) : `rouge-t1-t3.log`, `rouge-t4.log`, `rouge-t5.log` →
+`rouge-t1-t5.log` (un seul passage Vitest) ; `carac-avant.log` → `passage-2.log` (archive de l'ancien code) ;
+`carac-apres.log` inchangé ; `e2e-rouge-t6.log`, `e2e-rouge-t7.log` → remplacés par `e2e-m2.log` et `e2e-m1.log`
+(C-e4814-5) ; `mut-m*.log` et `kf063-repro.log` comme annoncé.
 
 **Gates du passage en `review`**, au dernier commit de code `96f160d4a` (journaux sous `kesh-gate-logs/e4814/`) :
 
@@ -860,7 +890,9 @@ de test à moi attendait ou tournait : deux commandes lourdes concomitantes du m
 **Décomptes** (depuis `0a7447001`, `git diff`) : Rust +5 tests (`admin_auto_backup_e2e.rs` 3, dont un ignoré ;
 `grouped_settlements.rs` 1 ; `grouped_settlements_supplier.rs` 1) et 3 cas construits ajoutés aux tests synthétiques de
 `bank_account_closed_inventory.rs` ; Vitest : `GroupSettlementModal.test.ts` +6 −1 `it` (5 nets, un renommé),
-`ReconciliationProposals.test.ts` +3 `it`/`it.each` (8 cas) ; E2E +3 `test`. 22 fichiers.
+`ReconciliationProposals.test.ts` +4 constructions — 2 `it`, 2 `it.each` — pour 8 cas (*corrigé à la revue P1, A2* : le
+relevé du 2026-11-20 disait « +3 ») ; E2E +3 `test`. 22 fichiers. (Décomptes au commit `96f160d4a` ; ceux de la
+remédiation P1 sont plus bas.)
 
 **Écarts à la fiche, déclarés.**
 - Le décompte anti-muet de `every_bank_account_writer_is_classified` passe de 45 à 44 (les deux `UPDATE
@@ -868,7 +900,12 @@ de test à moi attendait ou tournait : deux commandes lourdes concomitantes du m
 - La borne « avant l'audit » est une constante neuve `APPELS_D_AUDIT` (minimum des positions), et non une condition en
   dur ; le message nomme le jeton trouvé, comme D4 le demande.
 - La preuve « verte sur l'ancien code » de T8–T10 passe par une archive nextest (la voie base était tenue plus d'une
-  heure ; l'archive fige les binaires du commit `dbe67c669`).
+  heure). *Correction de la revue P1 (A4)* : la provenance de l'archive ne tient qu'aux horodatages, aucun journal ne
+  cite de commit — `archive-ancien-code.log` écrit à 00:22:03, construit sur l'arbre de travail ; commit `dbe67c669`
+  (tests de caractérisation et Lot D) à 00:22:18 ; réécriture `2f0ab63b0` à 00:41:04 ; `archive-apres.log` à 00:45:37.
+  Que l'arbre de travail ait alors porté les tests de `dbe67c669` sans réécriture de `grouped_settlements.rs` ne se
+  déduit que de cet ordre : aucun journal ne l'établit. Les archives ont été supprimées (disque plein) et ne se
+  recontrôlent plus.
 - `sprint-status.yaml` : le kickoff étant dans `main`, la clé 48-14 passe à `in-progress` au début et à `review` à la
   fin (consigne d'appel).
 
@@ -877,6 +914,52 @@ de test à moi attendait ou tournait : deux commandes lourdes concomitantes du m
   agit sur la fenêtre rouverte entre-temps — prémisse **confirmée** (Échap ferme la fenêtre pendant l'envoi).
 - `TransactionSplitModal.svelte` : même défaut pour *Éclater* (`:338`–`:339`), prémisse **confirmée**.
 - (#1412 et #1413 sont déjà ouvertes.)
+
+**Remédiation de la revue de code P1** (rapports `kesh-gate-logs/e4814/review-p1-{B,E,A}.md`, 0/0/2/15 ; commit de code
+`752423715`). La session a été interrompue le 2026-11-20 à 04:23 (systemd-oomd, pression mémoire de la station) et reprise
+à 09:30 ; les journaux `mut-m12.log` à `mut-m14.log`, `p1r-vitest.log`, `make-user-manual-p1r.log`, `controle-pdf-p1r.log`
+sont d'avant l'arrêt, les autres d'après.
+
+| Finding | Sévérité | Devenu |
+|---|---|---|
+| E1 (et B1) | MEDIUM | `APPELANTS_LIEN_GROUPE` et `every_group_unlink_caller_is_classified_and_guarded` : les appelants de `unlink_group_transaction_in_tx(` (définition, commentaires et tests écartés) égalent `{cancel_in_tx, supplier_cancel_in_tx}`, chacun avec `ensure_open_in_tx(` avant l'appel ; anti-muet à 2. Sonde synthétique `the_group_unlink_caller_inventory_reports_each_fault_on_built_cases` : contrôle vide ; troisième appelant → deux fautes (sans garde, non classé) ; garde après l'appel → une faute ; bras sans appel → une faute (`p1r-rust-cible.log`). Entrée du registre réécrite (« par ses appelants : inventaire des appelants »). |
+| A1 (et B3) | MEDIUM | `user-manual.tex:3579` en conditions qui s'excluent, dans l'ordre du code (D2 révisée) ; relu contre `GroupSettlementModal.svelte:230`–`:236` et `handleRefusal` `:538`–`:584`. Contrôle du PDF compilé localement (non commité), qui discrimine : les trois phrases neuves présentes dans le nouveau PDF et absentes de l'ancien, la phrase fautive absente des deux formes, « quand même. Si l'écart refusé » présente dans l'ancien seulement (`controle-pdf-p1r.log`, `make-user-manual-p1r.log`). |
+| E2 | LOW | `reloadMustWait()` = `anyModalOpen() \|\| busy` ; `flushPendingReload()` dans le `finally` d'`onAccept` et d'`onReject`. Tests : « lot Accepter en cours » (une relecture, relevé gardé, jamais « TX #… ») et « lot Accepter en échec » (la relecture part à la fin du lot). M13 tuée. |
+| B4 | LOW | compteur `settledInBackground` ; `load()` ajoute les règlements consommés au bilan. Tests : « relecture consommée par le succès d'une autre modale », et les deux ci-dessus. M14 tuée. **Reprise** : le chemin « réponse dépassée » rendait les règlements à l'attente (relecture superflue plus tard, bilan incomplet) ; il les compte désormais au bilan (D3 (iii)) ; test « relecture dépassée » (la doublure du groupe garde son `onSettledInBackground` hors du DOM, `ModalSuccessStubGroup.test.svelte`) ; M15 tuée. |
+| E4 | LOW | `group_cancelled_details` (extraite de l'aide d'audit) rend `DbError::Invariant` pour une clé de liste déjà présente, dans toutes les compilations ; test sur les neuf clés communes. |
+| B2 | LOW | cas construit « entre les deux audits » (9 cas au lieu de 8) ; M16 (`.min()` → `.max()`, `bank_account_closed_inventory.rs:1568`) tuée, ce seul cas rouge (`p1r-rust-cible.log`). |
+| A5 | LOW | M12 (consommation dans `load()` retirée) tuée : 3 rouges, dont les deux « une seule relecture » (`mut-m12.log`). |
+| B5, E3, A8 | LOW | `kf063_reproduction_deterministe` : la réécriture se choisit dans `avant(&t1)` seul (E3) ; une troisième sonde, après les tours de l'ancien écrivain, rend le même manifeste et le même préfixe (B5) ; commentaire et DAR : seule la limite `fin_avant` exerce la réécriture (A8). Rejoué : réécriture choisie inchangée (position 14, cumul 61), vert (`p1r-rust-cible.log`). |
+| A2, A3, A4, A6 | LOW | DAR corrigé plus haut (décompte, journaux renommés, provenance de l'archive par les seuls horodatages, capture de la liste périmée déclarée non probante). |
+| A7 | LOW | hors périmètre : **#1419**, ouverte par l'orchestrateur (Dev Notes). |
+
+**Mutations de la remédiation** (M12 à M16, toutes tuées) :
+
+| M | Mutation | Journal | Résultat |
+|---|---|---|---|
+| M12 | `settledInBackground = 0;` retiré de `load()` (A5) | `mut-m12.log` | 3 rouges |
+| M13 | `reloadMustWait()` sans `busy` | `mut-m13.log` | 2 rouges (les deux « lot Accepter ») |
+| M14 | `lastSuccessCount += settled;` retiré (succès) | `mut-m14.log` | 8 rouges |
+| M15 | réponse dépassée : règlements rendus à l'attente | `mut-m15.log` | 1 rouge (« relecture dépassée ») |
+| M16 | `.min()` → `.max()` du premier audit | `p1r-rust-cible.log` | 1 rouge (« entre les deux audits ») |
+
+**Décomptes de la remédiation** (`git diff fbeee9e53 752423715`) : Rust +3 tests (`bank_account_closed_inventory.rs` 2,
+`grouped_settlements.rs` 1) et 1 cas construit ; Vitest +4 `it` (`ReconciliationProposals.test.ts`) ; 7 fichiers, aucun neuf.
+
+**Gates de la remédiation** (journaux sous `kesh-gate-logs/e4814/`) :
+
+| Gate | Journal | Résultat |
+|---|---|---|
+| bases `kesh_e4814` (migrations, seed) et `kesh_e2e_e4814` recréées (MariaDB redémarré entre-temps) | `p1r-rust-cible.log`, `p1r-e2e-gates.console` | faites |
+| `cargo fmt --check`, nextest ciblé (`bank_account_closed_inventory`, `admin_auto_backup_e2e`, `grouped_settlements`, `grouped_settlements_supplier`, tests unitaires de `grouped_settlements`), KF-063 ignoré rejoué | `p1r-rust-cible.log` (arbre de travail = contenu de `752423715`) | vert ; **101 / 101** ; 1 / 1 |
+| frontend : `check`, `lint-i18n-ownership`, `test:unit`, `build` | `p1r-front.log` (arbre = contenu de `752423715`) | 0 erreur (29 avertissements, comme au passage en review) ; PASS ; **4809 / 4809** (280 fichiers) ; vert |
+| E2E T6, T6 bis, T7 (binaire et build du code remédié, captures `captures-p1r/`) | `p1r-e2e.log`, `p1r-e2e-gates.console` | **3 / 3** |
+| `cargo clippy --workspace --all-targets -- -D warnings` | `p1r-clippy.log` | vert |
+| `scripts/gate-ci.sh kesh_ci_e4814` (base recréée à neuf), à `752423715` | `p1r-gate-ci.log`, `p1r-gate-ci.console` | **6195 passés, 0 échoué, 19 ignorés** (257 binaires ; 6192 + 3) |
+
+`scripts/test-fast.sh --ci` n'a pas été rejoué (la consigne de la remédiation demande `gate-ci` et le frontend complet) ;
+**pas d'E2E complet** (à la clôture). Toutes les commandes cargo, Vitest et Playwright sous `mem-guard` et le verrou de leur
+voie (`.gate.lock`, `.gate-front.lock`), une prise à la fois.
 
 ### File List
 
@@ -908,3 +991,4 @@ Fiche et suivi : la présente fiche, `_bmad-output/implementation-artifacts/spri
 | 2026-11-19 | 0.3 | Validation P2 (Opus 5.5, passe complète) : 0 CRITICAL, 0 HIGH, 3 MEDIUM, 6 LOW ; tous appliqués. **Signal de recyclage** (règle de splitting préventif) : deux des trois MEDIUM naissent de la remédiation de la P1 — V2-1 de V1-1 (l'aide d'audit mise dans `GESTES_VERROUILLANTS_CODE`, dont la règle `:1362`–`:1371` n'admet pas d'exception, et le test de couverture `:1781`/`:1837` ignoré), V2-3 de V1-2 (doublures de T5 incapables de jouer AC7 sur les cinq modales) ; cause : corrections écrites sans relire le mécanisme exact de la garde et des doublures. Déclaré à Guy par l'orchestrateur ; la P3 sera complète, non ciblée. Remédiations, mécanisme relu avant chaque correctif : V2-1 — seules les aides de verrou et de lien entrent dans `GESTES_VERROUILLANTS_CODE`, avec leurs cas dans `appels` (`:1800`) et `joues` à 12 (`:1837`) ; l'aide d'audit n'entre que dans la borne de `:1381`, avec un cas construit dans `:1666` (T11 bis) ; V2-2 — la relecture différée part par `queueMicrotask` depuis `onOpenChange` et `cancelGesture`, `load()` éteignant le drapeau avant son premier `await` : une seule relecture dans l'ordre de `closeStale` (`onOpenChange(false); onStale()`) comme dans celui du succès ; cas ajouté à AC7 et T5, mutation M11 ; V2-3 — doublures décrites (base avec `onOpenChange` et « fermer » ; groupe avec « arrière-plan » hors de `{#if open}` et les deux ordres réels) ; M3, M4, M9 jugés sur le nombre d'appels de `getProposals` ; V2-4 — « aucune relecture perdue » retiré, l'échec d'*Accepter*/*Rejeter* écrit comme cas assumé ; V2-5 — `user-manual.tex:3490` jugé (inchangé) et capture de la confirmation restée ouverte ; V2-6 — angle mort assumé : la copie sur écriture (Btrfs, recommandé par le manuel d'administration) n'est établie qu'à la lecture du code en `--release`, non par AC12 ; V2-7 — « ni la charge de la station » retiré (effet indirect possible, non établi) ; V2-8 — la sonde d'AC13 relève le cumul, unité de l'ancien écrivain ; identité de l'archive d'un tour à l'autre fondée (`backup.rs:34`–`:36`, `export.rs:3`) ; V2-9 — AC9 prend toutes les lignes d'audit du geste sans filtre (délettrage, contre-passation, factures, transaction) et l'en-tête de l'écriture inverse. Mutations M1 à M11. Rapport : `kesh-gate-logs/e4814/validation-p2.md` | Opus 5.5 |
 | 2026-11-19 | 0.4 | **Validation terminée.** Tendance : P1 Sonnet 5.5 (complète) 0/0/4/7 → P2 Opus 5.5 (complète) 0/0/3/6, **signal de recyclage** (V2-1 né de V1-1, V2-3 de V1-2) déclaré au Project Lead → P3 Sonnet 5.5 (complète, non ciblée à cause du recyclage) 0/0/0/8 : aucun finding au-dessus de LOW, les mécanismes qui avaient recyclé tiennent. Modèles alternés Sonnet ↔ Opus ↔ Sonnet ; aucune passe ciblée ni Haiku. Reclassements : aucun. Les huit LOW de la P3 appliqués sans passe de plus : V3-1 citations `:1362`–`:1366`, `:1372` ; V3-2 « une cinquantaine d'entrées » (45 tables, recompté) ; V3-3 archive identique jusqu'au manifeste exclu (`export_date`, `manifest.rs:119`) ; V3-4 M7 rattrapée par la garde `rows_affected()` au geste, non par l'empreinte ; V3-5 troisième état de la chute (`unreadable`) : AC3 bis et T3 bis ; V3-6 invariant restreint à la fin d'un envoi du règlement groupé ; V3-7 une issue par problème : #1412 et #1413 ouvertes, deux issues conditionnelles (Écriture manuelle, Éclater) ; V3-8 écartées de D3 dans l'ordre. **Aveu de la P3** : une commande composée de son étape 16 contenait `cargo tree -i 2>/dev/null | head -0`, hors des commandes permises ; lecture seule, sans effet, déclaré par la passe. Rapports : `kesh-gate-logs/e4814/validation-p1.md`, `-p2.md`, `-p3.md` | Opus 5.5 |
 | 2026-11-20 | 0.5 | **Développement (`bmad-dev-story`), passage en `review`.** Commits de code : `58e7f8682` (Lots A et B, i18n, manuel), `dbe67c669` (caractérisation T8–T10 **avant** réécriture ; Lot D), `2f0ab63b0` (réécriture du Lot C, gardes), `8077fb851` (E2E), `96f160d4a` (T7 corrigé, dernier commit de code). Étape 0 : Échap ferme *Écriture manuelle* et *Éclater* pendant l'envoi (sonde Vitest) → deux issues à ouvrir ; KF-063 reproduite de façon déterministe (cumul 61, `write.rs:1078`). Rouges d'abord pour chaque lot ; M1 à M11 tuées, M1 et M2 aussi rejouées en E2E. Gates à `96f160d4a` : `test-fast --ci` 6175/6175, `gate-ci` 6192/0/19, frontend complet 4805/4805 ; E2E complet à la clôture. Écarts déclarés au Dev Agent Record (décompte anti-muet 45 → 44, `APPELS_D_AUDIT`, archive nextest de l'ancien code, preuve du rouge de T6/T7 par M2/M1, M6 côté client seulement, `cat >>` et un `sed -i` sans effet, chevauchements brefs de commandes lourdes). Prompt de la revue P1 : `48-14-solde-dette-epic-review-prompt-p1.md` | Opus 5.5 |
+| 2026-11-20 | 0.6 | **Remédiation de la revue de code P1** (trois lentilles Opus : B 0/0/0/5, E 0/0/1/3, A 0/0/1/7 ; total 0/0/2/15). Commit de code `752423715`. MEDIUM : E1/B1 — inventaire des appelants de l'aide de lien (`APPELANTS_LIEN_GROUPE`, garde avant l'appel) et sa sonde synthétique ; A1/B3 — paragraphe *Un refus.* et D2 en conditions qui s'excluent, contrôle du PDF compilé qui discrimine. LOW corrigés : E2 (un lot en cours retient la relecture), B4 (le bilan compte les règlements consommés ; D3 révisée), E4 (clé commune refusée en `Invariant`), B2 (cas « entre les deux audits », M16), A5 (M12), B5/E3/A8 (reproduction de KF-063), A2/A3/A4/A6 (DAR) ; A7 → #1419. Reprise après l'arrêt par systemd-oomd (04:23) : le chemin « réponse dépassée » de `load()` rendait les règlements à l'attente — compté au bilan, test et M15. Mutations M12 à M16 tuées. Gates à `752423715` : `gate-ci` 6195/0/19, frontend complet 4809/4809, clippy vert, E2E T6, T6 bis, T7 3/3 ; E2E complet à la clôture. Prochaine passe : P2, Sonnet, complète (`48-14-solde-dette-epic-review-prompt-p2.md`). | Opus 5.5 |
