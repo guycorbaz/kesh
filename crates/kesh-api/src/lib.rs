@@ -965,6 +965,11 @@ pub fn build_router_avec_registre(
         // `read-write` comme l'import). Corps JSON borné par une limite PROPRE,
         // indépendante de `KESH_BANK_IMPORT_MAX_MB` (revue de code P1, E1) :
         // 500 lignes pleines approchent 2,1 Mo, la limite est de 3 Mio.
+        .route("/api/v1/paypal/review", get(routes::paypal::review))
+        .route(
+            "/api/v1/paypal/accept",
+            post(routes::paypal::accept_proposals),
+        )
         .route(
             "/api/v1/bank-imports/manual/preview",
             post(routes::bank_statements_manual::preview).layer(

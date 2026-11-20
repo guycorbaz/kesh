@@ -1297,7 +1297,12 @@ pub struct EntryLinked {
 /// l'éclatement manuels), et le lot qui lettre une facture avant la
 /// transaction suivante, tiennent tous le **verrou nommé du compte de la
 /// transaction qu'ils écrivent**, pris avant : ils s'excluent avec ce geste sur
-/// le même compte, et n'écrivent aucune transaction d'un autre compte. Les
+/// le même compte, et n'écrivent aucune transaction d'un autre compte — sauf
+/// l'acceptation d'un prestataire (Story 38-11c2, `routes::provider_accept`),
+/// qui écrit des transactions de **plusieurs** comptes bancaires (les deux
+/// moitiés d'une conversion) : elle tient alors le verrou nommé de **chacun**
+/// (`with_account_locks`, pris avant toute écriture), si bien qu'elle s'exclut
+/// avec ce geste sur chacun des comptes qu'elle écrit. Les
 /// gestes sans verrou nommé (routes du journal, suppression d'un import) ne
 /// prennent jamais `t` après `je`. La suppression d'une écriture fait poser à
 /// InnoDB, au titre de la clé étrangère `ON DELETE SET NULL` de
