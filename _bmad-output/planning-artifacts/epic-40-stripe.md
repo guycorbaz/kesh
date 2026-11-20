@@ -48,16 +48,30 @@ réception Wise ou bancaire de l'autre — d'où « jamais compté deux fois ».
 
 | Story | Objet | Modules (≤ 5) | Dépend de | Migration |
 |---|---|---|---|---|
-| **40-7a** | lecteur du CSV « Itemized payout reconciliation » (colonnes par noms, `source_id` exigé, net = brut − frais) | `kesh-import` | 38-11a | — |
-| **40-7b** | réglages Stripe d'un compte bancaire (compte de frais, **compte de versement**), import ventilé par devise, versements, doublons ; chemin d'import de prestataire **commun** avec PayPal | `kesh-db`, `kesh-api`, `kesh-import` (lecture), `kesh-i18n` | 40-7a, 38-11b | **une**, non breaking |
-| **40-7c** | rapprochement : charge → vente (identifiant + brut + devise), frais et versements écrits, réception proposée, écarts ; **rattachement en devise** (C-40-K3) | `kesh-db`, `kesh-reconciliation`, `kesh-api`, `kesh-i18n` | 40-7b, 38-11c | — |
-| **40-7d** | écrans (réglages, bouton d'import, écarts), manuel utilisateur, E2E, captures | `frontend`, `kesh-i18n`, `docs/manual` | 40-7b, 40-7c, 38-11d | — |
+| **40-7a** | lecteur du CSV « Itemized payout reconciliation » (colonnes par noms, `source_id` exigé, montants en forme fermée, net = brut − frais) ; aide d'en-tête commune `csv/by_name.rs` | `kesh-import` | 38-11a | — |
+| **40-7b** | réglages Stripe d'un compte bancaire (compte de frais, **compte de versement**), import ventilé par devise, versements, doublons ; **appelle** le cœur d'import commun de 38-11b / 39-11b | `kesh-db`, `kesh-api`, `kesh-import` (lecture), `kesh-i18n` | 40-7a, 38-11b, 39-11b | **une**, non breaking (une colonne) |
+| **40-7c** | rapprochement : charge → vente (identifiant + brut + devise), frais et versements écrits, réception proposée, écarts ; ajoute la **devise à l'autre côté d'un virement** (le rattachement en devise est celui de 38-11c) | `kesh-db`, `kesh-reconciliation`, `kesh-api`, `kesh-i18n` | 40-7b, 38-11c, 39-11c | — |
+| **40-7d** | page Stripe (import puis rapprochement, écarts), paramètres du compte, `withoutProviders`, manuel utilisateur, `api-external.md`, E2E, captures | `frontend`, `kesh-i18n`, `docs/manual`, `docs/api-external.md` | 40-7b, 40-7c, 38-11d (39-11b pour l'E2E) | — |
 
-**Migration (phase 1)** : `20261120000003_stripe_import` (40-7b) — `bank_accounts.payout_bank_account_id` (clé étrangère
-sur la même table) et, si la contrainte de 38-11b n'admet que `'paypal'`, la même contrainte reposée avec `'stripe'`.
-Non breaking (P1, ⚠️) : `kesh_version_min_required` inchangé ; la sauvegarde d'avant la mise à jour reste exigée. Rien
-d'autre : les colonnes de prestataire (`provider`, `provider_account`, `fee_account_id`, `provider_type`,
-`counterparty_email`, index de doublon) sont celles de 38-11b.
+**Migration (phase 1)** : `20261120000003_stripe_import` (40-7b) — **une seule instruction** : `bank_accounts.payout_bank_account_id`
+(clé étrangère sur la même table) et son CHECK ; `chk_bank_accounts_provider` n'est **pas** reposée, 38-11b admet
+`'paypal'`, `'wise'` et `'stripe'` (décision de l'orchestrateur du 2026-11-20 ; si la contrainte fusionnée ne contient
+pas `'stripe'`, 40-7b s'arrête et le dit à l'Epic 38). Non breaking (P1, ⚠️) : `kesh_version_min_required` inchangé ; la
+sauvegarde d'avant la mise à jour reste exigée. Rien d'autre : les colonnes de prestataire (`provider`,
+`provider_account`, `fee_account_id`, `provider_type`, `counterparty_email`, index de doublon) sont celles de 38-11b ;
+la liste `ABSENCES_ADMISES_EPIC_37` n'est pas touchée (propre à l'Epic 37).
+
+**Décisions de l'orchestrateur (2026-11-20), appliquées aux fiches** : (1) migration réduite à `payout_bank_account_id` ;
+(2) rattachement en devise porté par 38-11c, 40-7c le réutilise ; (3) conversions : règle commune — un côté CHF, une
+écriture ; deux devises étrangères, deux écritures au même CHF par le compte de conversion (sans objet pour Stripe en
+phase 1 : un compte de versement est de même devise) ; (4) « sans conversion automatique » = montants en devise d'origine,
+CHF au cours mensuel retenu (Epic 37) ; (5) le versement est un virement entre deux comptes propres (34-11b), rattaché à
+la réception Wise ou bancaire, jamais compté deux fois. **Posé à la validation P1 (2026-11-20)** : l'import et le
+rapprochement sont **deux routes** (`stripe-imports`, `stripe-matching`), l'écran les enchaîne ; la route de rapprochement
+écrit au journal, donc `Traced, Rejouee` au registre ; la page Stripe est à côté de la page PayPal
+(`reconciliation/stripe/`) ; un versement qui porte un `payout_reversal` reste « à examiner » ; les charges se rattachent
+d'office à la vente (identifiant + brut + devise concordants, une seule écriture), à la différence de PayPal où le
+rattachement est une proposition acceptée — **à confirmer par Beat** (40-7c AC-2).
 
 **Fixture** : fictive (identifiants `…TEST…`, descriptions inventées), dans `crates/kesh-import/tests/fixtures/` (40-7a) ;
 elle sert aux quatre fiches et à la phase 2.
@@ -84,22 +98,24 @@ transaction du versement dans `?payout=` ; `Stripe-Version` à épingler ; table
 
 ## Contrats avec les Epics 38 et 39 (2026-11-20)
 
-- **C-40-K1 — Valeur `'stripe'` admise par la contrainte de 38-11b.** Recommandé à l'Epic 38 : que
-  `chk_bank_accounts_provider` admette d'emblée `('paypal', 'wise', 'stripe')`, pour qu'aucun epic ne retire et repose la
-  même contrainte. Sinon 40-7b la repose (AC-1).
+- **C-40-K1 — Valeur `'stripe'` admise par la contrainte de 38-11b.** **Tenu** : 38-11b (validée P1) pose
+  `chk_bank_accounts_provider` avec `('paypal', 'wise', 'stripe')`. 40-7b ne la repose pas ; si le code fusionné diffère,
+  elle s'arrête (AC-1).
 - **C-40-K2 — Chemin d'import commun** : ventilation par devise, `bank_imports`, verrous, empreinte, doublons et compte
-  rendu en **une** fonction recevant des lignes neutres (40-7b AC-7). Recommandé à 38-11b de l'écrire ainsi ; sinon
-  40-7b la déplace.
+  rendu en **une** fonction recevant des lignes neutres (40-7b AC-7). 38-11b ne le factorise pas dans sa fiche ; **39-11b** s'y engage (NFR-39-11b-2) : 40-7b
+  appelle ce cœur, et ne le déplace que si ni l'une ni l'autre ne l'a fait (AC-7).
 - **C-40-K3 — Rattachement en devise.** Aujourd'hui, le rattachement d'une transaction à une écriture existante ne vaut
   qu'en CHF (`transaction_can_be_linked_to_entry`, `crates/kesh-db/src/repositories/reconciliation_link.rs:535-537`), et
   les gestes de la réconciliation refusent une transaction en devise (`RECONCILIATION_CURRENCY_MISMATCH`,
-  `routes/reconciliation.rs:4387`). PayPal (EUR, USD) et Stripe en ont besoin tous deux : la généralisation est
-  attendue de 38-11c ; sinon 40-7c la porte (AC-1), dans les mêmes fonctions.
+  `routes/reconciliation.rs:4387`). PayPal (EUR, USD) et Stripe en ont besoin tous deux : **tenu** pour les conditions 1 et 3 par 38-11c AC-1 ; 40-7c
+  y ajoute la condition 4 (devise de l'autre côté d'un virement, `other_side_predicate`), que 38-11c ne touche pas.
 - **C-40-K4 — Recherche d'une vente par identifiant au libellé** : une fonction, paramétrée par le motif du jeton
-  (`TXN <id>` pour PayPal, `ch_…`/`py_…` pour Stripe), partagée avec 38-11c.
+  (`TXN <id>` pour PayPal, `ch_…`/`py_…` pour Stripe), partagée avec 38-11c : **la lecture des écritures de vente** (une
+  requête) et le rattachement sont communs, seule l'extraction des jetons (fonction pure) diffère.
 - **C-40-K5 — Epic 39 (Wise)** : l'import Wise **n'écrit aucune écriture** pour « Argent reçu de Stripe » et laisse la
   transaction en attente ; 40-7c la propose au rattachement à l'écriture du versement. Les comptes Wise EUR/USD sont
-  des comptes bancaires Kesh (compte de versement de 40-7b).
+  des comptes bancaires Kesh (compte de versement de 40-7b). 39-11c propose le même rattachement de son côté (± 5 jours) :
+  la fenêtre de 40-7c est la même, les deux écrans mènent au même lien, aucun n'écrit.
 - **C-40-K6 — Exécuteur de téléchargement commun (phase 2)** avec la phase 2 de PayPal : le premier des deux qui se
   développe l'écrit générique.
 
@@ -108,9 +124,9 @@ transaction du versement dans `?payout=` ; `Stripe-Version` à épingler ; table
 - **Q-40-K1 — Colonne `source_id`** (Beat) : le rapport de 2024 n'a pas la colonne de l'objet lié ; pour 2025, il faut
   l'exporter avec `source_id` (ou `charge_id`). Sans elle, aucun rattachement n'est possible : la phase 1 refuse le
   fichier en disant comment l'ajouter. À vérifier sur un export réel.
-- **Q-40-K2 — « Sans conversion automatique »** (Beat) : lu comme « aucune conversion d'une devise vers une autre » ; la
-  valeur CHF des lignes en devise suit l'Epic 37 (cours `afc` du mois), comme toute écriture en devise. Si Beat voulait
-  dire autre chose (p. ex. aucune valeur CHF), le modèle de l'Epic 37 ne le permet pas.
+- **Q-40-K2 — « Sans conversion automatique »** — **décidée par l'orchestrateur (2026-11-20)** : montants en devise d'origine,
+  CHF au cours mensuel retenu par la société (Epic 37), comme toute écriture en devise. Si Beat voulait dire autre chose
+  (p. ex. aucune valeur CHF), le modèle de l'Epic 37 ne le permet pas.
 - **Q-40-K3 — Compte de frais en devise ou en CHF** : 38-11b admet les deux (une écriture ne porte qu'une devise
   étrangère) ; 2024 avait un compte de frais par devise.
 - **Q-40-K4 — Date de l'écriture du versement** : la date du versement du rapport (`automatic_payout_effective_at`),
