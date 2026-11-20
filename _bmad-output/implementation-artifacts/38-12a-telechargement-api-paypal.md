@@ -50,7 +50,7 @@ par des appels réels en lecture seule (Notes de développement).*
 | Exigence | Texte | AC |
 |---|---|---|
 | `FR-38-12a-1` | Les identifiants se posent par variables d'environnement, une paire par compte PayPal, rattachée à son libellé ; rien en base, rien dans la sauvegarde. | AC-1, AC-2 |
-| `FR-38-12a-2` | Les transactions d'une période se téléchargent par fenêtres (31 jours au plus, limite de PayPal), pages de 500, avec reprise après une limitation de débit. | AC-4, AC-6 |
+| `FR-38-12a-2` | Les transactions d'une période se téléchargent par fenêtres (30 jours de Zurich au plus, sous la limite de 31 jours de PayPal), pages de 500, avec reprise après une limitation de débit. | AC-4, AC-6 |
 | `FR-38-12a-3` | Ce qui est téléchargé prend la forme du CSV de 38-11a, puis passe par la ventilation et les doublons de 38-11b. | AC-5, AC-7 |
 | `FR-38-12a-4` | Le téléchargement tourne en tâche de fond ; sa progression et son résultat se lisent par une route. | AC-8 |
 | `FR-38-12a-5` | Le parallélisme est réglé par `KESH_PAYPAL_PARALLEL` (1 par défaut, 6 au plus). | AC-3, AC-6 |
@@ -75,7 +75,19 @@ vers `PaypalRow`, la table des types et le passage `PaypalRow` → `ProviderLine
    `docker-compose.yml` et `docker-compose.prod.yml` transmettent chaque variable au conteneur en `${NOM:-}`, donc vide quand
    `.env` ne la pose pas — **ces deux fichiers et `.env.example` portent les séries 1 à 3**, `KESH_PAYPAL_BASE_URL` et
    `KESH_PAYPAL_PARALLEL` (au-delà de trois comptes, on ajoute les lignes : le manuel le dit, 38-12b AC-5) ; sans cela, des
-   identifiants posés au `.env` n'atteindraient jamais le serveur. Tout est lu
+   identifiants posés au `.env` n'atteindraient jamais le serveur. ⚠️ **La garde `crates/kesh-api/tests/configuration_transmise.rs`
+   (#550) s'étend dans cette story** : elle calcule l'ensemble des variables lues depuis les **littéraux** passés aux jetons
+   surveillés (`JETONS_SURVEILLES`, sites de la liste fermée `EMPLACEMENTS_AUTORISES`), exige que chaque variable lue soit
+   transmise par les deux compose (familles (T), sauf `EXCEPTIONS`) et ait sa ligne dans `.env.example` (E), que toute clé
+   transmise soit lue (T), et que tout jeton `KESH_…` du gabarit, des compose, du manuel français et des littéraux de la
+   production nomme une variable connue (F). Un nom construit (`format!("KESH_PAYPAL_{n}_SECRET")`) et le parcours des
+   variables du préfixe (numéro hors `1..=9`) lui sont invisibles ou interdits : sans extension, les lignes
+   `KESH_PAYPAL_1_…` des compose rougissent en (T) (« transmise, non lue ») et les séries 4 à 9 en (E). L'extension —
+   une **famille indexée** déclarée une fois par prestataire (préfixe, champs, `n` de 1 à 9 ; séries 1 à 3 exigées aux deux
+   compose et à `.env.example`, séries 4 à 9 admises absentes par une raison nommée, comme `EXCEPTIONS` ; les nouveaux
+   sites de lecture de `provider_env` inscrits à `EMPLACEMENTS_AUTORISES` en forme exacte ; la forme `KESH\_PAYPAL\_<n>\_…`
+   du manuel admise en (F)) — est **générique** (Wise et Stripe y ajoutent leur famille), testée par l'auto-test (S) de
+   la garde, et aucune liste fermée existante n'est relâchée pour les autres variables. Tout est lu
    **une fois**, au démarrage ; un compte PayPal de Kesh dont le libellé n'a pas de série reste sans téléchargement
    (le CSV continue). Le libellé est **propre à l'installation**, non à la société (une installation porte une société,
    manuel d'administration `:1079`) : limite écrite au manuel par 38-12b.
@@ -255,7 +267,7 @@ vers `PaypalRow`, la table des types et le passage `PaypalRow` → `ProviderLine
 ## Tâches
 
 - [ ] T0 — Reprendre `main` et les branches des Epics 39, 40 si fusionnées : socle déjà écrit ? cœur `ProviderLine` déjà factorisé ? État au Change Log.
-- [ ] T1 — `provider_env` générique, série PayPal, validation, masque `Debug` (AC-1 à AC-3) ; séries 1 à 3 aux deux fichiers `docker-compose` et à `.env.example`.
+- [ ] T1 — `provider_env` générique, série PayPal, validation, masque `Debug` (AC-1 à AC-3) ; séries 1 à 3 aux deux fichiers `docker-compose` et à `.env.example` ; famille indexée dans `configuration_transmise.rs` (AC-1).
 - [ ] T2 — `kesh-import::paypal_api` : lecture de page, table des types, conversion, contrôles partagés avec `read_row` (AC-5).
 - [ ] T3 — `provider_download` (`windows`, reprise, tâches, sémaphore), constructeur de client extrait, client PayPal (AC-4 à AC-6).
 - [ ] T4 — Appel du cœur commun `ProviderLine` (ou son extraction hors de la route PayPal) (AC-7).
@@ -277,7 +289,9 @@ client, client PayPal, routes, erreurs ; le `.tex` du manuel d'administration po
 
 ## Fichiers communs
 
-`crates/kesh-api/src/config.rs`, `lib.rs` (routes, état d'application), `errors.rs`, catalogues i18n (leur bloc),
+`crates/kesh-api/src/config.rs`, `lib.rs` (routes, état d'application), `errors.rs`, `docker-compose.yml`,
+`docker-compose.prod.yml`, `.env.example` et la garde `crates/kesh-api/tests/configuration_transmise.rs` (familles des trois
+prestataires), catalogues i18n (leur bloc),
 `crates/kesh-api/src/routes/paypal_imports.rs` de 38-11b et le cœur commun `ProviderLine` (38-11b, 39-11b, 40-7b),
 `crates/kesh-api/src/exchange_rates/source.rs` (constructeur de client extrait), modules du socle (appelés par 39-12a1,
 39-12a2, 40-8a, 40-8b), `crates/kesh-import/src/paypal.rs` de
@@ -341,3 +355,9 @@ rattrape, sans doublon.
   cœur `ProviderLine` que 38-11b ne factorise pas (extraction ici, `REGISTRE` de `bank_account_closed_inventory`) ;
   plafond de corps propre à PayPal (1 Mio des cours trop petit), délai de 60 s, lecture bornée extraite ; panique de la
   tâche ; bornes tronquées à la seconde ; `max_days` expliqué ; trace dans la transaction d'import.
+- 2026-11-20 — validation P3 ciblée sur le commit `dc83cdf6` (Claude Opus 5.5, contexte frais, une lentille) : 0 CRITICAL,
+  1 HIGH, 1 MEDIUM, 3 LOW pour les trois fichiers, remédiés (rapport `kesh-gate-logs/epic-38-kiss/validation/38-12-P3-ciblee.md`).
+  HIGH : la transmission par les compose (P2) heurtait la garde `configuration_transmise.rs` (#550), qui ne connaît que des
+  noms littéraux et exige « lue ⇔ transmise » et une ligne `.env.example` par variable lue — famille indexée à ajouter
+  (AC-1, T1, fichiers communs). Avec le message du coordinateur (P2 Wise/Stripe) : `FR-38-12a-2` à 30 jours (31 ne reste
+  qu'un cas de test de `windows`) ; aucune occurrence vivante de `detail` au singulier.

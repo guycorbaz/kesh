@@ -183,7 +183,7 @@ Source : `kesh-gate-logs/epic-38-kiss/phase2-decisions.md`. Deux stories, après
 - **Socle commun S1 à S9 avec les Epics 39 et 40** (texte identique de `epic-39-wise.md` et `epic-40-stripe.md`, § « Socle
   commun de la phase 2 », C-40-K6, validation P1 des phases 2 de Wise et de Stripe du 2026-11-20) : **38-12a, développée
   la première, l'écrit générique** — lecteur `provider_env`, mécanique `provider_download` (tâches en mémoire,
-  `windows(from, to, max_days)`, reprise unique 429/5xx, `Retry-After` borné à 120 s, sinon 5/10/20/40/60 s, six essais,
+  `windows(from, to, max_days, now)`, `max_days` par prestataire, reprise unique 429/5xx, `Retry-After` borné à 120 s, sinon 5/10/20/40/60 s, six essais,
   pause commune), routes `<prestataire>-downloads` aux sessions seules et état `{ state, steps, pausedUntilSeconds,
   result, error }`, codes `PROVIDER_*`, constructeur de client extrait de `exchange_rates/source.rs`, cœur d'import
   `ProviderLine`, test S9 ; 38-12b écrit le dialogue générique, `providerApi` et le serveur simulé commun
@@ -191,6 +191,9 @@ Source : `kesh-gate-logs/epic-38-kiss/phase2-decisions.md`. Deux stories, après
   appelle `windows` à 30 jours (une fenêtre de 31 jours de Zurich dépasse la limite de PayPal au passage à l'heure
   d'hiver).
 - **Validation P2 (2026-11-20)** : valeur vide = absente (les fichiers `docker-compose` transmettent `${NOM:-}`), série partielle seule refusée, séries 1 à 3 transmises par `docker-compose.yml`, `docker-compose.prod.yml` et `.env.example` ; le cœur `ProviderLine` n'est pas dans 38-11b : extrait par 38-12a ; `error.details`.
+- **Validation P3 ciblée (2026-11-20)** : la transmission des séries heurte la garde `configuration_transmise.rs` (#550), qui ne
+  lit que des noms littéraux : 38-12a y ajoute une **famille indexée** générique (séries 1 à 3 transmises, 4 à 9 admises
+  absentes) ; `providerApi` sans `scaKeyConfigured` ; fenêtres de PayPal à 30 jours partout.
 - **Identifiants** : `KESH_PAYPAL_<n>_ACCOUNT` (libellé du compte PayPal de 38-11b, propre à l'installation), `_CLIENT_ID`,
   `_SECRET`, validés au démarrage par `provider_env` (refus inconditionnel, contrairement à `KESH_SMTP_*`) ; rien en base
   ni dans la sauvegarde, pas de coffre. Application PayPal à la seule

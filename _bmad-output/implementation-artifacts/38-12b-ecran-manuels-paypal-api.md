@@ -30,9 +30,9 @@ Wise (39-12b) et Stripe (40-8b) les réutilisent.
 
 1. **AC-1 — Indicateur et bouton** (S7). La réponse des comptes bancaires (`crates/kesh-api/src/routes/bank_accounts.rs`)
    gagne, pour un compte de prestataire, le champ **générique** `providerApi: { configured: boolean, mode?: "live" |
-   "sandbox", scaKeyConfigured? }` (`configured` vrai si une série existe au libellé du compte, selon le prestataire du
-   compte, `provider_env` de 38-12a ; `mode` pour PayPal selon `KESH_PAYPAL_BASE_URL` ; `scaKeyConfigured` propre à
-   Wise, absent pour PayPal ; jamais un secret ; `null` pour un compte sans prestataire). **Page PayPal de 38-11d**
+   "sandbox" }` (`configured` vrai si une série existe au libellé du compte, selon le prestataire du
+   compte, `provider_env` de 38-12a ; `mode` pour PayPal selon `KESH_PAYPAL_BASE_URL` ; un champ propre à un autre
+   prestataire s'ajoute par sa fiche, le socle n'en porte aucun ; jamais un secret ; `null` pour un compte sans prestataire). **Page PayPal de 38-11d**
    (`reconciliation/paypal/+page.svelte`, feature `frontend/src/lib/features/paypal/`) : à côté de « Importer le CSV
    PayPal », bouton **« Télécharger depuis PayPal »** pour le compte PayPal choisi au sélecteur, visible de Comptable et
    plus quand `providerApi.configured` ; en mode `sandbox`, la mention « bac à sable » ; sinon une ligne d'aide « téléchargement non configuré : voir le manuel
@@ -70,8 +70,11 @@ Wise (39-12b) et Stripe (40-8b) les réutilisent.
    la rotation (changer le secret chez PayPal, puis dans l'environnement, redémarrer) ; (f) les refus de démarrage et
    leurs messages ; (f-bis) **où les poser** : au `.env` d'une installation par `docker-compose` (les fichiers `docker-compose.yml` et
    `docker-compose.prod.yml` transmettent les séries 1 à 3 ; au-delà, ajouter les lignes `KESH_PAYPAL_<n>_…` au fichier
-   de composition), et les deux **tableaux de variables** du manuel (celui des variables de configuration et celui de la
-   récupération par e-mail, `KESH\_SMTP\_HOST`) complétés ; une variable laissée vide vaut absente ; (g) au paragraphe des **accès sortants** (`sec:acces-sortant-cours`), le nouvel accès HTTPS (port
+   de composition), et les deux **tableaux de variables** du manuel : un paragraphe-tableau neuf au § des variables
+   d'environnement (`sec:env-vars`, à la suite de celui des e-mails sortants, patron `:840-862`) et le tableau de la
+   section PayPal écrite ici (patron de `sec:recovery-smtp`, `:1155`) — **jamais** le tableau SMTP lui-même ; la forme
+   `KESH\_PAYPAL\_<n>\_…` y est celle qu'admet la garde `configuration_transmise.rs` en (F) (famille indexée de 38-12a
+   AC-1) ; une variable laissée vide vaut absente ; (g) au paragraphe des **accès sortants** (`sec:acces-sortant-cours`), le nouvel accès HTTPS (port
    443) à l'hôte de PayPal, sans redirection, seulement quand un téléchargement est demandé. Les points **non
    confirmés** de la fiche 38-12a (nom exact de la fonction dans l'interface de PayPal, conditions d'accès du compte,
    hôte réel tant qu'il n'est pas relevé) sont écrits **comme à vérifier**, jamais comme acquis. Le PDF se contrôle à
@@ -82,7 +85,8 @@ Wise (39-12b) et Stripe (40-8b) les réutilisent.
    (rien d'enregistré), le mélange avec le CSV (aucun doublon), la limite des dates (fuseau du compte PayPal, sans
    conversion, comme pour le CSV). `docs/api-external.md` : les deux routes, **réservées aux sessions** (clés d'API
    refusées en `403 API_KEY_OPERATION_FORBIDDEN`), avec leurs codes ; les **quatre sites** qui comptent les opérations fermées aux clés suivent : les encarts de fermeture du § 4, la liste des
-   ressources (« à quatre exceptions près, toutes quatre fermées aux clés », qui devient « six » : les deux routes), le tableau
+   ressources (« à quatre exceptions près, toutes quatre fermées aux clés » : le nombre se **recompte** à la reprise de `main` ; les
+   deux routes y forment **une** exception, comme `/api/v1/audit-log*`, soit « cinq » si rien d'autre n'a changé), le tableau
    des fermetures et la ligne `API_KEY_OPERATION_FORBIDDEN` du tableau des codes d'erreur ; les codes `PROVIDER_*` des deux
    routes entrent à ce dernier tableau.
 7. **AC-7 — E2E.** `frontend/tests/e2e/paypal-download.spec.ts`. La configuration se lit au démarrage du backend : les
@@ -142,3 +146,7 @@ progression et le compte rendu ; le manuel d'administration décrit la création
   (voir 38-12a et `kesh-gate-logs/epic-38-kiss/validation/38-12-P2.md`), remédiés : variables à poser au `.env` par les
   fichiers `docker-compose` et aux deux tableaux de variables du manuel ; `error.details` (décision 3) ; quatre sites de
   `docs/api-external.md` pour les fermetures aux clés (« six » exceptions) ; arrêt du suivi et suivi perdu ; mock en CHF.
+- 2026-11-20 — validation P3 ciblée sur le commit `dc83cdf6` (Claude Opus 5.5, contexte frais ; voir 38-12a et
+  `kesh-gate-logs/epic-38-kiss/validation/38-12-P3-ciblee.md`) : MEDIUM — les « deux tableaux » désignaient le tableau de
+  la récupération par e-mail : tableau neuf au § `sec:env-vars` et tableau de la section PayPal ; LOW — « six » exceptions
+  → recompte, les deux routes en forment une ; `providerApi.scaKeyConfigured` retiré (socle amendé à la P2 Wise).
