@@ -1,6 +1,6 @@
 # Story 38-11a : lecteur du CSV PayPal « Balance affecting transactions » (`kesh-import`)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-20, branche `epic/38-paypal`, numéros de ligne relevés après la fusion de `origin/main`
 (v0.19.0 et suivants, commit de fusion `43ceb541`). Epic 38, **phase 1 KISS** (décision de Beat du 2026-11-20,
@@ -224,3 +224,9 @@ langue ou d'un autre rapport est refusé en nommant les colonnes qui manquent.
   `csv` retire lui-même un BOM UTF-8 en tête, si bien qu'un BOM non retranché ne ferait pas refuser le fichier ; le
   retranchement est gardé (défense en profondeur), mais aucun test ne peut le sonder (mutation constatée verte).
   Les 21 noms de remplissage de la fixture sont ceux de la fiche, non corrigés.
+
+- 2026-11-20 — revue de code P1 (Claude Sonnet 5.5, contexte frais) : 0 CRITICAL / 0 HIGH / 0 MEDIUM / 5 LOW ; boucle
+  close sur cette passe (rien au-dessus de LOW). LOW non corrigés, versés à la dette de l'epic
+  (`kesh-gate-logs/epic-38-kiss/issues-a-ouvrir.md`) : indice de date « slash » sans contrôle calendaire (LOW-1),
+  ordre FIELD_COUNT au plafond (LOW-2), branche Err du crate csv sans test (LOW-3), aide `amount` à deux décimales à
+  relire pour Wise/Stripe (LOW-4), phrase d'AC-1 sur le BOM (LOW-5). Rapport : `kesh-gate-logs/s38-11a/revue-p1-rapport.md`.
