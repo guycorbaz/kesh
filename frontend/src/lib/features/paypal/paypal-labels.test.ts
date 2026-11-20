@@ -80,7 +80,14 @@ describe('paypal-labels — revue', () => {
 
 describe('paypal-labels — refus de l’acceptation', () => {
 	it('codes propres : écrits en dur, traduits par paypal-failed-*', () => {
-		expect([...PAYPAL_OWN_FAILED_CODES]).toEqual(['PROVIDER_PROPOSAL_STALE']);
+		expect([...PAYPAL_OWN_FAILED_CODES]).toEqual([
+			'PROVIDER_PROPOSAL_STALE',
+			'FX_ACCOUNT_INVALID',
+			'FX_RATE_INVALID',
+			'NOT_FOUND',
+			'OPTIMISTIC_LOCK_CONFLICT',
+			'RECONCILIATION_ENTRY_NOT_LINKABLE',
+		]);
 		expect(paypalFailedLabel('PROVIDER_PROPOSAL_STALE')).toMatch(/^paypal-failed-proposal-stale\|/);
 	});
 
@@ -88,5 +95,38 @@ describe('paypal-labels — refus de l’acceptation', () => {
 		expect(paypalFailedLabel('RATE_UNAVAILABLE', { currency: 'EUR', month: '2020-03' })).not.toMatch(/^paypal-/);
 		expect(paypalFailedLabel('BANK_ACCOUNT_CLOSED')).not.toMatch(/^paypal-/);
 		expect(paypalFailedLabel('CODE_INCONNU')).toContain('reconciliation-failed-unknown');
+	});
+});
+
+/**
+ * Story 38-11d (AC-4) — les codes que la route PayPal peut poser dans `failed[]`, ÉCRITS
+ * EN DUR (jamais lus depuis le module : un test qui itérerait sur la table de production
+ * serait vert par construction). Relevé : les littéraux de `crates/kesh-api/src/routes/
+ * paypal.rs` et `provider_accept.rs`
+ * (`grep -ohE '"[A-Z][A-Z_]{4,}"' … | sort -u`, 15 codes, après la fusion de la 38-11c2,
+ * `ecd54a38`). Chacun a un libellé traduit : aucun ne retombe sur le repli « Refus non
+ * reconnu ».
+ */
+const CODES_ROUTE_PAYPAL = [
+	'ACCOUNT_NOT_FOUND',
+	'BANK_ACCOUNT_NOT_CONFIGURED',
+	'BANK_TRANSACTION_NOT_FOUND',
+	'DATABASE_ERROR',
+	'FX_ACCOUNT_INVALID',
+	'FX_RATE_INVALID',
+	'NOT_FOUND',
+	'OPTIMISTIC_LOCK_CONFLICT',
+	'PROVIDER_PROPOSAL_STALE',
+	'RATE_UNAVAILABLE',
+	'RECONCILIATION_ALREADY_RECONCILED',
+	'RECONCILIATION_ENTRY_NOT_LINKABLE',
+	'RECONCILIATION_FISCAL_YEAR_CLOSED',
+	'RECONCILIATION_TRANSACTION_NOT_PENDING',
+	'VALIDATION_ERROR',
+];
+
+describe('paypal-labels — codes de la route PayPal', () => {
+	it.each(CODES_ROUTE_PAYPAL)('%s a un libellé traduit', (code) => {
+		expect(paypalFailedLabel(code, {})).not.toContain('reconciliation-failed-unknown');
 	});
 });

@@ -1970,6 +1970,11 @@ reconciliation-rules-direction-debit = Uscite
 reconciliation-rules-filter-provider-type = Tipo PayPal = { $value }
 reconciliation-rules-filter-email = E-mail = { $value }
 paypal-failed-proposal-stale = La proposta non vale più: la transazione, la registrazione, la regola o i parametri del conto sono cambiati dalla revisione. Ricarichi la pagina.
+paypal-failed-fx-account-invalid = Nessun conto di conversione utilizzabile è designato: un amministratore deve sceglierne uno nei parametri della multivaluta.
+paypal-failed-fx-rate-invalid = Il cambio della conversione non si calcola dai due importi: registri a mano.
+paypal-failed-not-found = La transazione o la registrazione non si trova: è stata eliminata nel frattempo. Ricarichi la pagina.
+paypal-failed-optimistic-lock = La transazione è stata modificata nel frattempo. Ricarichi la pagina.
+paypal-failed-entry-not-linkable = La registrazione di vendita non è più collegabile a questa transazione (già collegata, stornata o modificata). Ricarichi la pagina.
 paypal-csv-line-field-count = numero di celle diverso dall’intestazione
 paypal-csv-line-date = data illeggibile o in un formato diverso dal file
 paypal-csv-line-amount = importo illeggibile

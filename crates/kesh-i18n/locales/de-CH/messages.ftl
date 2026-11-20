@@ -1970,6 +1970,11 @@ reconciliation-rules-direction-debit = Ausgänge
 reconciliation-rules-filter-provider-type = PayPal-Typ = { $value }
 reconciliation-rules-filter-email = E-Mail = { $value }
 paypal-failed-proposal-stale = Der Vorschlag gilt nicht mehr: Die Transaktion, die Buchung, die Regel oder die Einstellungen des Kontos haben sich seit der Durchsicht geändert. Laden Sie die Seite neu.
+paypal-failed-fx-account-invalid = Kein verwendbares Umrechnungskonto ist bestimmt: Ein Administrator muss eines in den Mehrwährungseinstellungen wählen.
+paypal-failed-fx-rate-invalid = Der Kurs der Umrechnung lässt sich aus den beiden Beträgen nicht berechnen: Buchen Sie von Hand.
+paypal-failed-not-found = Die Transaktion oder Buchung wurde nicht gefunden: Sie wurde inzwischen gelöscht. Laden Sie die Seite neu.
+paypal-failed-optimistic-lock = Die Transaktion wurde inzwischen geändert. Laden Sie die Seite neu.
+paypal-failed-entry-not-linkable = Die Verkaufsbuchung lässt sich dieser Transaktion nicht mehr zuordnen (bereits zugeordnet, storniert oder geändert). Laden Sie die Seite neu.
 paypal-csv-line-field-count = Anzahl Zellen weicht von der Kopfzeile ab
 paypal-csv-line-date = Datum unlesbar oder in einem anderen Format als die Datei
 paypal-csv-line-amount = Betrag unlesbar

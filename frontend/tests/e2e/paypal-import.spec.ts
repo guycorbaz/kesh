@@ -1,0 +1,293 @@
+/**
+ * Story 38-11d (AC-8) — l'écran PayPal, de l'écran au serveur.
+ *
+ * Société `with-company` (exercice ouvert au 01.01.2020) passée en multi-devises
+ * par l'API (compte de conversion désigné), comptes du plan EUR et USD du solde
+ * PayPal (le CHF prend un compte d'actif sans devise), compte de frais en CHF,
+ * cours mensuels de janvier à avril 2020 copiés dans les cours de la société
+ * (`POST /exchange-rates/fetch`, source factice du mode test) puis le cours EUR de
+ * février posé par `PUT /exchange-rates/rates`.
+ *
+ * 1. Le compte PayPal EUR se crée **par l'écran** (case « Compte PayPal », compte
+ *    du plan en devise, compte de frais) ; USD et CHF par l'API, même libellé.
+ * 2. Une règle « Fournisseur » avec le filtre « E-mail exact », **par l'écran**.
+ * 3. Trois écritures de vente « TXN … » par l'API (patron du script des
+ *    boutiques) : une juste (EUR), une de montant faux (CHF), une sans encaissement.
+ * 4. Import de la fixture fictive de 38-11a **par l'écran** (lue par chemin) :
+ *    compte rendu (insérées, doublons, écartées).
+ * 5. Revue : propositions, un écart de chaque genre, une ligne « à examiner » ;
+ *    « Tout cocher », « Accepter la sélection » : aucun refus, plus de proposition.
+ * 6. La ligne « à examiner » (remboursement) se rattache par la modale à une
+ *    écriture en EUR passée à la main.
+ *
+ * L'activation du multi-devises est irréversible : la spec reseede `with-company`
+ * en fin de parcours. Captures d'écran (thème clair) dans `KESH_CAPTURES_DIR`.
+ */
+
+import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { join } from 'node:path';
+import { seedTestState, clearAuthStorage, authedApiContext, disposeContextSafe } from './helpers/test-state';
+
+test.describe.configure({ mode: 'serial' });
+
+const CAPTURES = process.env.KESH_CAPTURES_DIR;
+const FIXTURE = join(process.cwd(), '../crates/kesh-import/tests/fixtures/paypal-balance-affecting-fictif.csv');
+const PAYPAL = 'PayPal www';
+
+async function capture(page: Page, name: string): Promise<void> {
+	if (CAPTURES) await page.screenshot({ path: join(CAPTURES, `${name}.png`), fullPage: true });
+}
+
+async function login(page: Page): Promise<void> {
+	await page.goto('/login');
+	await page.fill('#username', 'admin');
+	await page.fill('#password', 'admin123');
+	await page.click('button[type="submit"]');
+	await expect(page).toHaveURL('/');
+}
+
+async function api<T>(ctx: APIRequestContext, method: 'get' | 'post' | 'put', path: string, data?: unknown): Promise<T> {
+	const res = await ctx[method](path, data === undefined ? undefined : { data });
+	expect(res.ok(), `${method.toUpperCase()} ${path} : ${res.status()} ${await res.text()}`).toBeTruthy();
+	return (await res.json()) as T;
+}
+
+interface Ids {
+	eur: number;
+	usd: number;
+	chf: number;
+	fee: number;
+	revenue: number;
+	expense: number;
+}
+let ids: Ids;
+
+test.beforeAll(async () => {
+	await seedTestState('with-company');
+});
+
+test.afterAll(async () => {
+	await seedTestState('with-company');
+});
+
+test.beforeEach(async ({ page }) => {
+	await clearAuthStorage(page);
+});
+
+test('1 — préparation : multi-devises, comptes, cours ; compte PayPal EUR par l’écran', async ({ page }) => {
+	await login(page);
+	const ctx = await authedApiContext(page);
+	try {
+		const create = async (number: string, name: string, accountType: string, extra: object = {}) =>
+			(await api<{ id: number }>(ctx, 'post', '/api/v1/accounts', { number, name, accountType, ...extra })).id;
+		const transit = await create('1090', 'Compte de conversion', 'Asset');
+		const gain = await create('6840', 'Gains de change', 'Revenue');
+		const loss = await create('6940', 'Pertes de change', 'Expense');
+		const company = await api<{ company: { version: number } }>(ctx, 'get', '/api/v1/companies/current');
+		await api(ctx, 'put', '/api/v1/companies/current/currency-settings', {
+			multiCurrencyEnabled: true,
+			fxGainAccountId: gain,
+			fxLossAccountId: loss,
+			fxTransitAccountId: transit,
+			version: company.company.version,
+		});
+		const eur = await create('1051', 'PayPal EUR', 'Asset', { currency: 'EUR' });
+		const usd = await create('1052', 'PayPal USD', 'Asset', { currency: 'USD' });
+		const chf = await create('1053', 'PayPal CHF', 'Asset');
+		const fee = await create('6945', 'Frais PayPal', 'Expense');
+		const accounts = await api<Array<{ id: number; number: string; accountType: string; postable: boolean; active: boolean; currency?: string | null }>>(
+			ctx,
+			'get',
+			'/api/v1/accounts',
+		);
+		const firstOf = (type: string) =>
+			accounts.find((a) => a.accountType === type && a.postable && a.active && !a.currency && a.id !== fee && a.id !== gain && a.id !== loss)!.id;
+		ids = { eur, usd, chf, fee, revenue: firstOf('Revenue'), expense: firstOf('Expense') };
+		for (let month = 1; month <= 4; month++) {
+			await api(ctx, 'post', '/api/v1/exchange-rates/fetch', { year: 2020, month });
+		}
+		const list = await api<{ rates: Array<{ currency: string; row: { version: number } | null }> }>(
+			ctx,
+			'get',
+			'/api/v1/exchange-rates?month=2020-02',
+		);
+		const version = list.rates.find((r) => r.currency === 'EUR')!.row!.version;
+		await api(ctx, 'put', '/api/v1/exchange-rates/rates', {
+			currency: 'EUR',
+			kind: 'month',
+			rateDate: '2020-02-01',
+			rate: '0.94',
+			version,
+		});
+	} finally {
+		await disposeContextSafe(ctx);
+	}
+
+	// Le compte PayPal EUR, par l'écran.
+	await page.goto('/bank-accounts');
+	await page.getByTestId('create-bank-account-button').click();
+	await page.getByTestId('form-bank-name').fill('PayPal');
+	await page.getByTestId('form-is-paypal').check();
+	await page.getByTestId('form-paypal-account').fill(PAYPAL);
+	await page.getByTestId('form-journal-account').selectOption(String(ids.eur));
+	await page.getByTestId('form-fee-account').selectOption(String(ids.fee));
+	await expect(page.getByTestId('form-qr-iban')).toHaveCount(0);
+	await expect(page.getByTestId('form-is-primary')).toHaveCount(0);
+	await capture(page, '01-formulaire-compte-paypal');
+	await page.getByTestId('form-submit').click();
+	await expect(page.getByTestId('create-bank-account-form')).toHaveCount(0);
+	await expect(page.locator('[data-testid^="bank-account-paypal-"]').filter({ hasText: `${PAYPAL} · EUR` })).toHaveCount(1);
+
+	// USD et CHF par l'API, même libellé.
+	const ctx2 = await authedApiContext(page);
+	try {
+		for (const [ledger, label] of [
+			[ids.usd, 'USD'],
+			[ids.chf, 'CHF'],
+		] as const) {
+			await api(ctx2, 'post', '/api/v1/bank-accounts', {
+				bankName: `PayPal ${label}`,
+				journalAccountId: ledger,
+				paypal: { account: PAYPAL, feeAccountId: ids.fee },
+			});
+		}
+	} finally {
+		await disposeContextSafe(ctx2);
+	}
+	await page.reload();
+	await expect(page.locator('[data-testid^="bank-account-paypal-"]').filter({ hasText: `${PAYPAL} · USD` })).toHaveCount(1);
+	await capture(page, '02-liste-comptes-paypal');
+});
+
+test('2 — règle « Fournisseur » avec le filtre « E-mail exact », par l’écran', async ({ page }) => {
+	await login(page);
+	await page.goto('/reconciliation/rules');
+	await page.getByTestId('rules-create-button').click();
+	await page.getByTestId('rule-form-label').fill('Licences');
+	await page.getByTestId('rule-form-match-type').selectOption('counterparty_contains');
+	await page.getByTestId('rule-form-match-value').fill('Fournisseur');
+	await page.getByTestId('rule-form-counterparty-email').fill('Fournisseur@Example.invalid');
+	await page.getByTestId('rule-form-direction').selectOption('debit');
+	await page.getByTestId('rule-form-counterparty').selectOption(String(ids.expense));
+	await capture(page, '03-regle-avec-filtres');
+	await page.getByTestId('rule-form-submit').click();
+	const filters = page.locator('[data-testid^="rule-filter-"]');
+	await expect(filters.filter({ hasText: 'fournisseur@example.invalid' })).toHaveCount(1);
+	await expect(filters).toHaveCount(2);
+	await capture(page, '04-liste-regles-filtres');
+});
+
+test('3 — écritures de vente des boutiques, import par l’écran, compte rendu', async ({ page }) => {
+	await login(page);
+	const ctx = await authedApiContext(page);
+	try {
+		const sale = (entryDate: string, description: string, ledger: number, amount: string, currency?: string, rate?: string) => {
+			const chf = rate ? (Number(amount) * Number(rate)).toFixed(2) : amount;
+			return api(ctx, 'post', '/api/v1/journal-entries', {
+				entryDate,
+				journal: 'Ventes',
+				description,
+				lines: [
+					{
+						accountId: ledger,
+						debit: chf,
+						credit: '0',
+						...(currency ? { foreign: { amount, rate, rateSource: 'manual' } } : {}),
+					},
+					{ accountId: ids.revenue, debit: '0', credit: chf },
+				],
+			});
+		};
+		// Juste : même TXN, même brut, même devise.
+		await sale('2020-01-03', 'Commande 1001 TXN 0TEST00000000001A', ids.eur, '100.00', 'EUR', '0.93');
+		// Montant faux (la boutique a écrit 1200 au lieu de 1234.56).
+		await sale('2020-02-14', 'Commande 1002 TXN 0TEST00000000006F', ids.chf, '1200.00');
+		// Sans encaissement.
+		await sale('2020-03-20', 'Commande 1009 TXN 0TEST0000000000ZZ', ids.eur, '45.00', 'EUR', '0.93');
+	} finally {
+		await disposeContextSafe(ctx);
+	}
+
+	await page.goto('/reconciliation/paypal');
+	await expect(page.getByTestId('paypal-account')).toHaveValue(PAYPAL);
+	await page.getByTestId('paypal-fiscal-year').selectOption({ index: 0 });
+	await page.getByTestId('paypal-file-input').setInputFiles(FIXTURE);
+	const report = page.getByTestId('paypal-import-report');
+	await expect(report).toBeVisible();
+	await expect(page.getByTestId('paypal-import-report-EUR')).toContainText('insérée');
+	await expect(page.getByTestId('paypal-import-report-USD')).toContainText('insérée');
+	await expect(page.getByTestId('paypal-import-report-CHF')).toContainText('insérée');
+	await expect(page.getByTestId('paypal-import-report-skipped')).toContainText('2 ligne(s) non terminée(s), 1 ligne(s) Memo, 1 paire(s) neutre(s)');
+	await capture(page, '05-compte-rendu-import');
+});
+
+test('4 — revue : propositions, écarts, à examiner ; tout accepter', async ({ page }) => {
+	await login(page);
+	await page.goto('/reconciliation/paypal');
+	await expect(page.getByTestId('paypal-proposals-table')).toBeVisible();
+	const proposals = page.getByTestId('paypal-proposals-table');
+	await expect(proposals).toContainText('Vente rattachée');
+	await expect(proposals).toContainText('Frais');
+	await expect(proposals).toContainText('Règle Licences');
+	await expect(proposals).toContainText('Conversion');
+	await expect(proposals).toContainText('Retrait');
+	await capture(page, '06-propositions');
+	const gaps = page.getByTestId('paypal-gaps-table');
+	await expect(gaps).toContainText('Encaissement sans vente');
+	await expect(gaps).toContainText('Vente sans encaissement');
+	await expect(gaps).toContainText('Montant ou devise différents');
+	await gaps.scrollIntoViewIfNeeded();
+	await capture(page, '07-ecarts');
+	const toReview = page.getByTestId('paypal-to-review-table');
+	await expect(toReview).toContainText('Aucune règle');
+	await toReview.scrollIntoViewIfNeeded();
+	await capture(page, '08-a-examiner');
+
+	// Un retrait sans compte prérempli se choisit avant de cocher.
+	const withdrawalSelect = page.locator('[data-testid^="paypal-withdrawal-"]');
+	if ((await withdrawalSelect.count()) > 0) {
+		await withdrawalSelect.first().selectOption({ index: 1 });
+	}
+	await page.getByTestId('paypal-select-all').click();
+	await page.getByTestId('paypal-accept').click();
+	const acceptReport = page.getByTestId('paypal-accept-report');
+	await expect(acceptReport).toContainText('0 refusée(s)');
+	await expect(page.getByTestId('paypal-accept-failed')).toHaveCount(0);
+	await expect(page.getByTestId('paypal-proposals-empty')).toBeVisible();
+	await capture(page, '09-compte-rendu-acceptation');
+});
+
+test('5 — la ligne « à examiner » se rattache par la modale, en EUR', async ({ page }) => {
+	await login(page);
+	const ctx = await authedApiContext(page);
+	try {
+		// Le remboursement de Daniel, passé à la main en EUR : 30 EUR rendus.
+		await api(ctx, 'post', '/api/v1/journal-entries', {
+			entryDate: '2020-03-30',
+			journal: 'Banque',
+			description: 'Remboursement Daniel Fictif',
+			lines: [
+				{ accountId: ids.revenue, debit: '27.90', credit: '0' },
+				{ accountId: ids.eur, debit: '0', credit: '27.90', foreign: { amount: '30.00', rate: '0.93', rateSource: 'manual' } },
+			],
+		});
+	} finally {
+		await disposeContextSafe(ctx);
+	}
+	await page.goto('/reconciliation/paypal');
+	const refundRows = () => page.getByTestId('paypal-to-review').locator('tbody tr').filter({ hasText: 'Payment Refund' });
+	const row = refundRows();
+	await expect(row).toBeVisible();
+	await row.locator('[data-testid^="paypal-link-"]').click();
+	const modal = page.getByTestId('link-settlement-modal');
+	await expect(modal).toBeVisible();
+	await expect(modal.getByTestId('link-settlements-section')).toHaveCount(0);
+	const entryRow = modal.getByTestId('entry-candidate-row').filter({ hasText: 'Remboursement Daniel Fictif' });
+	await expect(entryRow).toContainText('-30.00 EUR');
+	await entryRow.getByTestId('entry-candidate-radio').check();
+	await capture(page, '10-rattachement-modale');
+	await modal.getByTestId('link-submit').click();
+	await expect(modal).toHaveCount(0);
+	await expect(refundRows()).toHaveCount(0);
+	await capture(page, '11-apres-rattachement');
+});
