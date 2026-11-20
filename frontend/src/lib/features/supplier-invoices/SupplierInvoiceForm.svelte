@@ -144,6 +144,11 @@
 		/**
 		 * Story 48-12b (E6, variante « modification ») — l'identifiant de la facture
 		 * éditée : le lien de l'avis d'issue inconnue mène à sa fiche.
+		 *
+		 * ⛔ **Obligatoire dès que `initial` est donné** (revue P1, B3) : sans lui, l'avis E6
+		 * mêlerait le texte et le bouton de la variante « modification » au lien de la
+		 * variante « création ». Seule la page d'édition passe `initial`, et elle passe
+		 * `invoiceId={invoice.id}`.
 		 */
 		invoiceId?: number | null;
 		/**
@@ -612,7 +617,8 @@
 	function applyNotice(notice: RefusalNotice) {
 		switch (notice.kind) {
 			case 'completed':
-				if (notice.invoiceId === undefined) {
+				// Revue P1 (E3) : `null` ou absent, la même défense — jamais E9 sans facture.
+				if (typeof notice.invoiceId !== 'number') {
 					formState = 'E6';
 					return;
 				}

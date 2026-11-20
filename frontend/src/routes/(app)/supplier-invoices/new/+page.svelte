@@ -173,7 +173,10 @@
 		const completed = await listImported('completed', { retry: false });
 		const found = completed.find((d) => d.id === current.id);
 		if (found === undefined) return { kind: 'gone' };
-		if (found.supplierInvoiceId === null) return { kind: 'unknown' };
+		// Revue P1 (E3) : tout ce qui n'est pas un nombre (`null`, champ absent) est
+		// « complété sans facture » → E6 ; `locked` n'est posé qu'avec une facture citable,
+		// sans quoi il figerait la saisie en E9 sans avis ni reprise.
+		if (typeof found.supplierInvoiceId !== 'number') return { kind: 'unknown' };
 		locked = true;
 		return { kind: 'completed', invoiceId: found.supplierInvoiceId };
 	}

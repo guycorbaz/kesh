@@ -119,6 +119,10 @@ function renderForm(opts: {
 	initial?: SupplierInvoiceFormInitial | null;
 	hasDocument?: boolean;
 	vatRates?: { id: number; rate: string }[];
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	projects?: any[];
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	onRefusal?: (err: unknown) => Promise<any>;
 }) {
 	const onSubmit = vi.fn(opts.onSubmit ?? (async () => {}));
 	const r = render(SupplierInvoiceForm, {
@@ -128,7 +132,7 @@ function renderForm(opts: {
 			expenseAccounts: [ACCOUNT as any],
 			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			vatRates: (opts.vatRates ?? []) as any,
-			projects: [],
+			projects: opts.projects ?? [],
 			document: opts.document ?? null,
 			proposals: opts.proposals ?? [],
 			onSubmit,
@@ -136,6 +140,7 @@ function renderForm(opts: {
 			// (leurs défauts — `null`, `false` — sont ce que la page de création passe).
 			...(opts.initial !== undefined ? { initial: opts.initial } : {}),
 			...(opts.hasDocument !== undefined ? { hasDocument: opts.hasDocument } : {}),
+			...(opts.onRefusal !== undefined ? { onRefusal: opts.onRefusal } : {}),
 		},
 	});
 	return { ...r, onSubmit };
@@ -1359,13 +1364,84 @@ async function remplir(r: ReturnType<typeof renderForm>) {
 	await fireEvent.input(r.getByTestId('supplier-invoice-number'), { target: { value: 'FA-1' } });
 }
 
+/** Un projet racine : le sélecteur de projet n'est rendu qu'avec au moins un projet. */
+const PROJET = {
+	id: 5,
+	parentId: null,
+	code: 'P-5',
+	name: 'Projet cinq',
+	description: null,
+	archived: false,
+	startDate: null,
+	endDate: null,
+	version: 1,
+	createdAt: '2026-01-01T00:00:00Z',
+	updatedAt: '2026-01-01T00:00:00Z',
+};
+
+/**
+ * Le décor « complet » de la table A (revue P1 de la 48-12b, A1) : un projet (sélecteur),
+ * une proposition d'un AUTRE fournisseur (« Retenir », actif), et, avec `hasDocument`, la
+ * date « à vérifier » (« C'est la bonne date ») à la place du scan — les deux sont
+ * exclusifs par construction (`scanOffered`). Après `remplir`, une seconde ligne : avec une
+ * seule ligne, le bouton de suppression est inactif par lui-même et l'assertion serait vide.
+ */
+function renderDecor(opts: { hasDocument?: boolean; nom?: string } = {}) {
+	return renderForm({
+		suppliers: [contact(1, opts.nom ?? 'Alpha SA'), contact(2, 'Beta SA')],
+		proposals: [{ contact: contact(2, 'Beta SA'), reason: 'iban' }],
+		projects: [PROJET],
+		...(opts.hasDocument ? { hasDocument: true } : {}),
+	});
+}
+
+/** `remplir`, puis une seconde ligne complète (description, prix, compte). */
+async function remplirDecor(r: ReturnType<typeof renderForm>) {
+	await remplir(r);
+	await fireEvent.click(r.getByTestId('supplier-invoice-add-line'));
+	const nth = (id: string) => r.container.querySelectorAll(`[data-testid="${id}"]`)[1] as HTMLInputElement;
+	await fireEvent.input(nth('supplier-invoice-line-desc'), { target: { value: 'Seconde' } });
+	await fireEvent.input(nth('supplier-invoice-line-unit-price'), { target: { value: '5.00' } });
+	const account = nth('supplier-invoice-line-account') as unknown as HTMLSelectElement;
+	account.value = '40';
+	await fireEvent.change(account);
+}
+
+/** Les espèces du décor sans document, puis avec document (scan ↔ date à vérifier). */
+const ESPECES_SANS_DOCUMENT = [
+	'champ',
+	'fournisseur',
+	'projet',
+	'retenir',
+	'ligne',
+	'ajout',
+	'suppression',
+	'scan',
+	'panneau',
+] as const;
+const ESPECES_AVEC_DOCUMENT = [
+	'champ',
+	'fournisseur',
+	'projet',
+	'retenir',
+	'date',
+	'ligne',
+	'ajout',
+	'suppression',
+	'panneau',
+] as const;
+type Espece = (typeof ESPECES_SANS_DOCUMENT)[number] | (typeof ESPECES_AVEC_DOCUMENT)[number];
+
 /** Les contrôles de chaque espèce qui écrivent la saisie (point 5 du code). */
-function controles(container: HTMLElement): Record<string, HTMLElement | null> {
+function controles(container: HTMLElement): Record<Espece, HTMLElement | null> {
 	const q = (id: string) => container.querySelector(`[data-testid="${id}"]`) as HTMLElement | null;
 	const removeLine = container.querySelector('[data-testid="supplier-invoice-line"] button') as HTMLElement | null;
 	return {
 		champ: q('supplier-invoice-number'),
 		fournisseur: q('supplier-invoice-supplier'),
+		projet: q('supplier-invoice-project'),
+		retenir: q('supplier-proposal-retain'),
+		date: q('supplier-invoice-date-confirm'),
 		ligne: q('supplier-invoice-line-desc'),
 		ajout: q('supplier-invoice-add-line'),
 		suppression: removeLine,
@@ -1374,33 +1450,58 @@ function controles(container: HTMLElement): Record<string, HTMLElement | null> {
 	};
 }
 
-function tousInactifs(container: HTMLElement) {
-	for (const [nom, el] of Object.entries(controles(container))) {
-		if (el === null) continue;
+/**
+ * Chaque espèce ATTENDUE est rendue — un contrôle absent fait échouer le test (plus de
+ * `continue` muet) — et inactive. Avec `actifs`, la même liste doit d'abord être active :
+ * la preuve que l'inactivité vient du gel, non du décor.
+ */
+function tousInactifs(container: HTMLElement, especes: readonly Espece[] = ESPECES_SANS_DOCUMENT) {
+	const c = controles(container);
+	for (const nom of especes) {
+		const el = c[nom];
+		expect(el, `${nom} rendu`).not.toBeNull();
 		// Un contrôle dans un `<fieldset disabled>` garde `disabled === false` en propriété :
 		// c'est `:disabled` qui le dit inactif.
-		expect(el.matches(':disabled'), `${nom} inactif`).toBe(true);
+		expect(el!.matches(':disabled'), `${nom} inactif`).toBe(true);
+	}
+}
+
+function tousActifs(container: HTMLElement, especes: readonly Espece[]) {
+	const c = controles(container);
+	for (const nom of especes) {
+		const el = c[nom];
+		expect(el, `${nom} rendu`).not.toBeNull();
+		expect(el!.matches(':disabled'), `${nom} actif avant l'envoi`).toBe(false);
 	}
 }
 
 describe('SupplierInvoiceForm — table A (Story 48-12b)', () => {
-	it('E2 : pendant l’envoi, chaque espèce de contrôle est inactive ; double submit = une requête', async () => {
-		let finir: () => void = () => {};
-		const r = renderForm({ onSubmit: () => new Promise<void>((res) => (finir = res)) });
-		await remplir(r);
-		const form = r.getByTestId('supplier-invoice-form') as HTMLFormElement;
-		await fireEvent.submit(form);
-		await fireEvent.submit(form);
-		await tick();
-		expect(r.onSubmit).toHaveBeenCalledTimes(1);
-		tousInactifs(r.container);
-		expect((r.getByTestId('supplier-invoice-submit') as HTMLButtonElement).disabled).toBe(true);
-		finir();
-	});
+	for (const [decor, avecDocument, especes] of [
+		['sans document', false, ESPECES_SANS_DOCUMENT],
+		['avec document', true, ESPECES_AVEC_DOCUMENT],
+	] as const) {
+		it(`E2 (${decor}) : pendant l’envoi, chaque espèce de contrôle est inactive ; double submit = une requête`, async () => {
+			let finir: () => void = () => {};
+			const r = renderDecor({ hasDocument: avecDocument });
+			r.onSubmit.mockImplementationOnce(() => new Promise<void>((res) => (finir = res)));
+			await remplirDecor(r);
+			// Chaque espèce est rendue et active avant l'envoi : l'inactivité qui suit vient
+			// du gel, non du décor (suppression comprise : deux lignes).
+			tousActifs(r.container, especes);
+			const form = r.getByTestId('supplier-invoice-form') as HTMLFormElement;
+			await fireEvent.submit(form);
+			await fireEvent.submit(form);
+			await tick();
+			expect(r.onSubmit).toHaveBeenCalledTimes(1);
+			tousInactifs(r.container, especes);
+			expect((r.getByTestId('supplier-invoice-submit') as HTMLButtonElement).disabled).toBe(true);
+			finir();
+		});
+	}
 
 	it('E3 : après un succès, avant la navigation, aucun contrôle de saisie n’est actif', async () => {
-		const r = renderForm({});
-		await remplir(r);
+		const r = renderDecor();
+		await remplirDecor(r);
 		await fireEvent.click(r.getByTestId('supplier-invoice-submit'));
 		await waitFor(() => expect(r.onSubmit).toHaveBeenCalledTimes(1));
 		await tick();
@@ -1442,10 +1543,10 @@ describe('SupplierInvoiceForm — table A (Story 48-12b)', () => {
 
 	it('E5 : figé ; la confirmation renvoie le corps GARDÉ avec le drapeau, une fois ; deux clics synchrones = une requête', async () => {
 		let finir: () => void = () => {};
-		const r = renderForm({});
+		const r = renderDecor();
 		r.onSubmit.mockRejectedValueOnce(dupErr('SUPPLIER_INVOICE_PROBABLE_DUPLICATE', true));
 		r.onSubmit.mockImplementationOnce(() => new Promise<void>((res) => (finir = res)));
-		await remplir(r);
+		await remplirDecor(r);
 		await fireEvent.click(r.getByTestId('supplier-invoice-submit'));
 		await r.findByTestId('supplier-invoice-probable-duplicate');
 		// Figé, « Enregistrer » masqué.
@@ -1490,9 +1591,9 @@ describe('SupplierInvoiceForm — table A (Story 48-12b)', () => {
 		['erreur hors ApiError', new TypeError('Failed to fetch')],
 	] as const) {
 		it(`E6 (${nom}) : figé, avis, lien liste encodé, aucun bouton d’envoi ni de confirmation ; reprise → E1 sans requête, saisie intacte`, async () => {
-			const r = renderForm({ suppliers: [contact(1, 'Dupont & Fils')] });
+			const r = renderDecor({ nom: 'Dupont & Fils' });
 			r.onSubmit.mockRejectedValueOnce(err);
-			await remplir(r);
+			await remplirDecor(r);
 			await fireEvent.click(r.getByTestId('supplier-invoice-submit'));
 			await r.findByTestId('supplier-invoice-unknown-outcome');
 			expect(r.getByTestId('supplier-invoice-unknown-outcome-text').textContent).toBe(
@@ -1509,6 +1610,20 @@ describe('SupplierInvoiceForm — table A (Story 48-12b)', () => {
 			expect(r.onSubmit).toHaveBeenCalledTimes(1);
 			expect((r.getByTestId('supplier-invoice-number') as HTMLInputElement).value).toBe('FA-1');
 			expect(r.getByTestId('supplier-invoice-number').matches(':disabled')).toBe(false);
+		});
+	}
+
+	for (const invoiceId of [null, undefined, '55']) {
+		it(`E8 → complété sans identifiant numérique (${String(invoiceId)}) → E6 avec reprise, jamais E9 (revue P1, E3)`, async () => {
+			const r = renderForm({
+				onRefusal: async () => ({ kind: 'completed', invoiceId }),
+			});
+			r.onSubmit.mockRejectedValueOnce(LOST);
+			await remplir(r);
+			await fireEvent.click(r.getByTestId('supplier-invoice-submit'));
+			await r.findByTestId('supplier-invoice-unknown-outcome');
+			expect(r.queryByTestId('supplier-invoice-already-completed')).toBeNull();
+			expect(r.getByTestId('supplier-invoice-resume-entry')).toBeTruthy();
 		});
 	}
 
@@ -1576,6 +1691,9 @@ describe('SupplierInvoiceForm — table A (Story 48-12b)', () => {
 			let finirContact: (c: ContactResponse) => void = () => {};
 			createContactMock.mockReturnValueOnce(new Promise((res) => (finirContact = res)));
 			listContactsMock.mockResolvedValue({ items: [], total: 0, limit: 20, offset: 0 });
+			// Revue P1 (B2) : le mock de module n'est remis à zéro nulle part — sans ceci,
+			// l'appel de l'itération E5 satisferait l'assertion de l'itération E6.
+			vi.mocked(notifyWarning).mockClear();
 			const r = renderForm({});
 			r.onSubmit.mockRejectedValueOnce(issue === 'E5' ? dupErr('SUPPLIER_INVOICE_PROBABLE_DUPLICATE', true) : LOST);
 			await remplir(r);
@@ -1595,6 +1713,7 @@ describe('SupplierInvoiceForm — table A (Story 48-12b)', () => {
 			// Mutation « onSupplierCreated sans contrôle d'état ».
 			expect(select.value).toBe('1');
 			expect((r.getByTestId('supplier-invoice-due') as HTMLInputElement).value).toBe(dueAvant);
+			expect(notifyWarning).toHaveBeenCalledTimes(1);
 			expect(notifyWarning).toHaveBeenCalledWith('Fournisseur créé, non sélectionné.');
 		});
 	}

@@ -340,6 +340,20 @@ describe('complétion relue (#985, E8 → E9, E7, E6)', () => {
 		expect(r.queryByTestId('supplier-invoice-already-completed')).toBeNull();
 	});
 
+	it('complété, supplierInvoiceId ABSENT (hors contrat) → E6 avec reprise, jamais E9 figé sans avis (revue P1, E3)', async () => {
+		const r = await completionPrete();
+		completeMock.mockRejectedValue(NOT_PENDING);
+		const sansChamp: Record<string, unknown> = { ...doc({ status: 'completed' }) };
+		delete sansChamp.supplierInvoiceId;
+		listImportedMock.mockResolvedValueOnce([]).mockResolvedValueOnce([sansChamp]);
+		await fireEvent.click(r.getByTestId('supplier-invoice-submit'));
+		await r.findByTestId('supplier-invoice-unknown-outcome');
+		expect(r.queryByTestId('supplier-invoice-already-completed')).toBeNull();
+		// Mutations « `=== null` à la page » (locked posé) : la reprise rend la saisie.
+		await fireEvent.click(r.getByTestId('supplier-invoice-resume-entry'));
+		expect(r.getByTestId('supplier-invoice-number').matches(':disabled')).toBe(false);
+	});
+
 	it('relecture en échec → E6, jamais « déjà traité » (mutation « déjà traité sur relecture en échec »)', async () => {
 		const r = await completionPrete();
 		completeMock.mockRejectedValue(NOT_PENDING);

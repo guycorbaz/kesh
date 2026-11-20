@@ -255,7 +255,10 @@ test('complétion coupée après l’écriture : E9, la pièce est déjà enregi
 		await page.getByTestId('supplier-invoice-submit').click();
 		const notice = page.getByTestId('supplier-invoice-already-completed');
 		await expect(notice).toBeVisible({ timeout: 40_000 });
-		await expect(notice).not.toContainText('déjà été traité ou retiré');
+		// L'ancien message « déjà traité » ne vivrait que dans l'erreur du formulaire, hors de
+		// l'avis : c'est elle qui doit être absente (revue P1, B1 — l'assertion sur l'avis
+		// était vraie par construction).
+		await expect(page.getByTestId('supplier-invoice-form-error')).toHaveCount(0);
 		const link = page.getByTestId('supplier-invoice-already-completed-link');
 		await expect(link).toHaveAttribute('target', '_blank');
 		const created = await invoicesOf(ctx, d);

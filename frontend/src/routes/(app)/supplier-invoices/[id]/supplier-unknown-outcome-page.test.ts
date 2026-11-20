@@ -85,6 +85,11 @@ vi.mock('$lib/features/imported-supplier-invoices/imported-supplier-invoices.api
 
 import Page from './+page.svelte';
 import { notifySuccess, notifyWarning } from '$lib/shared/utils/notify';
+import {
+	downloadSupplierInvoiceSourceDocument,
+	fetchSupplierInvoiceSourceDocument,
+} from '$lib/features/imported-supplier-invoices/imported-supplier-invoices.api';
+import { tick } from 'svelte';
 
 const VERIFY = 'L’issue n’est pas connue : la facture a été relue, vérifiez-la avant de réessayer.';
 const REREAD_FAILED =
@@ -788,7 +793,29 @@ describe('fiche d’une annulée — le refus de doublon au repassage (table B, 
 		expect(v.getByTestId('supplier-invoice-unvalidate-duplicate')).toBeTruthy();
 	});
 
-	it('D6 : une relecture (issue inconnue d’un geste suivant) efface l’avis (mutation « avis non effacé par reloadAfterRefusal »)', async () => {
+	for (const [issue, reponse] of [
+		['succès', 'ok'],
+		['document absent', 'absent'],
+	] as const) {
+		it(`D8 : l’aperçu et le téléchargement (${issue}) gardent l’avis et son bouton (mutation « viewSourceDocument efface l’avis »)`, async () => {
+			const v = await enF4({ sourceDocument: DOC });
+			// L'aperçu lit le document : une lecture qui reste en cours suffit ici.
+			vi.mocked(fetchSupplierInvoiceSourceDocument).mockReturnValue(new Promise(() => {}));
+			const telecharger = vi.mocked(downloadSupplierInvoiceSourceDocument);
+			if (reponse === 'ok') telecharger.mockResolvedValueOnce(undefined);
+			else telecharger.mockRejectedValueOnce({ code: 'SOURCE_DOCUMENT_NOT_FOUND', status: 404, message: 'x' });
+			// Aperçu ouvert puis refermé.
+			await fireEvent.click(v.getByTestId('supplier-invoice-source-document'));
+			await fireEvent.click(v.getByTestId('supplier-invoice-source-document'));
+			await fireEvent.click(v.getByTestId('supplier-invoice-source-download'));
+			await waitFor(() => expect(telecharger).toHaveBeenCalled());
+			await tick();
+			expect(v.getByTestId('supplier-invoice-unvalidate-duplicate')).toBeTruthy();
+			expect(v.getByTestId('supplier-invoice-unvalidate-anyway')).toBeTruthy();
+		});
+	}
+
+	it('D6 : une relecture (issue inconnue d’un geste suivant) efface l’avis (mutation B47 : avec la défense de clearRefusals — seule, « avis non effacé par reloadAfterRefusal » est équivalente)', async () => {
 		const v = await enF4();
 		// Un repassage dont la réponse se perd : relecture, encadré « vérifiez », plus d'avis F4.
 		unvalidateMock.mockRejectedValueOnce(LOST);
