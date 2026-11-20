@@ -211,12 +211,20 @@ en propre : sa conversion, son jeu d'étapes, ses codes `<PRESTATAIRE>_*` propre
 | 40-7d-ecrans-manuel-stripe | drafted | phase 1 |
 | 40-8a-client-api-stripe | drafted | phase 2 |
 | 40-8b-telechargement-stripe | drafted | phase 2 |
+| 40-9-solde-dette | backlog | story de solde de l'epic (ajoutée le 2026-11-20, revue P2 de la 40-7a) : la dette des stories de l'epic, plafonnée à **5 issues** ; première dette inscrite : la boucle de lecture CSV commune aux trois lecteurs (M2 de la P1 de la 40-7a) |
 | 40-1-client-stripe | superseded | remplacée par 40-8a et 40-8b (clé en variable d'environnement, sans coffre ni connexion) |
 | 40-2-classement-des-types-stripe | superseded | remplacée par 40-7c (catégories du rapport) |
 | 40-3-versements-et-rattachement | superseded | remplacée par 40-7b (transaction de versement) et 40-7c |
 | 40-4-controle-de-solde | deferred | contrôle de solde et créance à la clôture, après la phase 2 |
 | 40-5-rapports-joints | deferred | suit 38-10, elle-même reportée |
 | 40-6-ecrans-et-manuels | superseded | remplacée par 40-7d et 40-8b |
+
+## Taille de l'epic (déclarée le 2026-11-20)
+
+Sept stories, story de solde comprise (40-7a à 40-7d, 40-8a, 40-8b, 40-9) : au-delà de la borne de six de `CLAUDE.md`
+(§ *Numérotation des versions*), admise parce que l'Epic 40 livre une **fonctionnalité nouvelle** (import Stripe) ;
+dépassement déclaré ici, faute de l'avoir été au cadrage KISS du 2026-11-20. Story de solde : **40-9**, plafond de
+**5 issues** de la dette des stories de l'epic.
 
 ## Règles de cet epic (inchangées)
 

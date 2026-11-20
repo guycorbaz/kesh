@@ -33,7 +33,8 @@ lié —, afin que l'import (40-7b) n'ait plus qu'à ranger ces lignes dans le c
    `decode_bytes` (`crates/kesh-import/src/csv/encoding.rs:48`, `:107`) reçoit **`&bytes[bom_len..]`** (il ne retire pas
    le BOM ; le rapport de 2024 n'en porte pas, mais un BOM est admis) ; UTF-8 et ISO-8859-1. Erreur de détection ou de
    décodage → `StripeCsvError::Encoding(CsvError)`. Lecture par le crate `csv` déjà en dépendance :
-   `ReaderBuilder::new().has_headers(false)`, virgule, guillemets doubles, `flexible(false)` (une ligne qui n'a pas
+   `ReaderBuilder::new().has_headers(false)`, virgule, guillemets doubles, `flexible(false)` *(écart déclaré : le code use de `flexible(true)` et d'un contrôle
+   explicite, même effet, voir Dev Notes)* (une ligne qui n'a pas
    autant de cellules que l'en-tête → erreur de ligne `FIELD_COUNT`) ; **numéro de ligne** = celui du fichier
    (`record.position().line()`, 1 = l'en-tête), sauf après une ligne vide au milieu du fichier (§ *Limite connue*, amendé
    le 2026-11-20 après la revue P2) ; lignes entièrement vides sautées. Fichier vide (`CsvError::EmptyFile`,
@@ -232,13 +233,13 @@ M1 : `gross - fee` passé en `checked_sub` (un débordement est une erreur de li
 
 ### Remédiation de la revue P2 ciblée (2026-11-20, orchestrateur, fiche seulement)
 
-P2 ciblée (Haiku) sur `3bcaf532` : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 2 LOW (`kesh-gate-logs/s40-7a/revue-p2-rapport.md`). F1 (dette sans propriétaire nommé ni story planifiée) : propriétaire Beat, story `40-9-solde-dette` ajoutée au registre, issue à ouvrir. F2 (AC-1 contredite par le test de la ligne vide) : AC-1 amendée pour renvoyer à la limite, issue à ouvrir. F3 : plafond puis tri écrits. F4 : mutation annotée (rejouée par la P2). Aucune ligne de code touchée ; une passe ciblée P3 suit (règle de clôture).
+P2 ciblée (Haiku) sur `3bcaf532` : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 2 LOW (`kesh-gate-logs/s40-7a/revue-p2-rapport.md`). F1 (dette sans propriétaire nommé ni story planifiée) : propriétaire Beat, story `40-9-solde-dette` ajoutée au registre, issue à ouvrir. F2 (AC-1 contredite par le test de la ligne vide) : AC-1 amendée pour renvoyer à la limite, issue à ouvrir. F3 : plafond puis tri écrits. F4 : mutation annotée (rejouée par la P2). Aucune ligne de code touchée ; une passe ciblée P3 suit (règle de clôture). P3 ciblée (Sonnet) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 2 LOW — M1 (40-9 absente du fichier d'epic, plafond d'issues et dépassement de la borne de six non déclarés) remédié dans `epic-40-stripe.md` ; L1 (« ordre de collecte ») et L2 (`flexible`) corrigés ; P4 ciblée à suivre.
 
 ## Limite connue : numéro de ligne après une ligne vide
 
 Le crate `csv` donne à un enregistrement qui suit une ligne vide au milieu du fichier le numéro de cette ligne vide : l'erreur est rapportée une ligne trop tôt par ligne vide précédente. Limite partagée avec PayPal et Wise (documentée dans `read_records`, `csv/by_name.rs`, branche `epic/39-wise`) ; le lecteur ne la contourne pas, sur décision du coordinateur. Tenue par le test ci-dessus ; les lignes vides de fin de fichier ne comptent pas. Issue à ouvrir avec l'accord de Beat (même liste que la dette ci-dessous), commune aux trois lecteurs ; le test `line_after_a_blank_line_takes_the_blank_line_number` fige ce comportement pour qu'une correction future se voie.
 
-Plafond des erreurs de ligne : la collecte garde les cent premières erreurs dans l'ordre de lecture, puis les trie par ligne (`stripe.rs`, `struct Errors`) — les erreurs rendues sont les premières lues, triées.
+Plafond des erreurs de ligne : la collecte garde les cent premières erreurs **dans l'ordre de collecte** — d'abord toutes les erreurs `FIELD_COUNT` du fichier, puis les erreurs de cellule ligne par ligne —, puis les trie par ligne (`stripe.rs`, `struct Errors`) : au-delà de cent, les erreurs rendues ne sont pas forcément les premières du fichier.
 
 ## Dette technique
 
