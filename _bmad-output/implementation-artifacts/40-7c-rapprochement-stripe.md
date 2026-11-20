@@ -45,12 +45,16 @@ ressaisie et de voir mes erreurs.
    **pending** des comptes bancaires `provider = 'stripe'` du libellé, datées dans l'exercice ; refus 404 compte
    introuvable (code de 40-7b AC-4), 404 `FISCAL_YEAR_NOT_FOUND`. **Rattachement en devise** : celui de 38-11c AC-1
    (conditions 1 et 3), **utilisé, non refait**, testé ici sur un compte Stripe EUR. **La condition 4 (autre côté d'un
-   virement) n'est pas touchée par cette story** : la revue Stripe ne rattache aucune réception (AC-5) ; la devise de
-   l'autre côté appartient à la fiche qui rattache en devise l'autre côté d'une écriture — 39-11c AC-3 (deux branches
-   d'un seul `other_side_predicate`, `reconciliation_link.rs:698` : même devise et montant opposé, ou devise différente
-   et signe opposé) ou 38-11c ; 40-7c en teste le cas Stripe (réception Wise EUR rattachée à l'écriture d'un versement
-   EUR, une transaction CHF de même nombre refusée) et ne l'écrit qu'à défaut, **dans la forme à deux branches** de
-   39-11c (T0). Les autres gestes de la réconciliation restent en CHF (refus `RECONCILIATION_CURRENCY_MISMATCH`,
+   virement) n'est pas touchée par cette story** : la revue Stripe ne rattache aucune réception (AC-5) ; le prédicat
+   de l'autre côté (`other_side_predicate`, `reconciliation_link.rs:698`) s'écrit en **un texte unique à deux
+   branches**, **porté par la 38-11c** (relevé de la P2 de l'Epic 39, 39-11c AC-3) : `(bt.bank_account_id <> ? AND
+   ((bt.currency = ? AND bt.amount = -(M)) OR (bt.currency <> ? AND SIGN(bt.amount) = -SIGN(M))) AND exclusions)` —
+   même devise : montant opposé exact (virement, versement Stripe) ; devise différente : signe opposé (les deux côtés
+   d'une conversion) —, la devise de `t` en **paramètre commun** (devise du compte du plan, comme `t.bank_account_id`).
+   ⛔ **Aucun `AND bt.currency = …` isolé** : il contredirait la branche de conversion. 40-7c ne l'écrit pas ; elle en
+   teste le cas Stripe (réception Wise EUR rattachée à l'écriture d'un versement EUR ; une transaction CHF de même
+   nombre refusée, puisqu'elle n'est ni de même devise ni de signe opposé) ; si, à T0, ni 38-11c ni 39-11c ne l'ont
+   écrit, 40-7c écrit **ce même texte à deux branches**, tests des deux branches compris. Les autres gestes de la réconciliation restent en CHF (refus `RECONCILIATION_CURRENCY_MISMATCH`,
    `crates/kesh-api/src/routes/reconciliation.rs:4387-4396`, inchangé) : limite écrite au manuel par 40-7d.
 2. **AC-2 — Charge → vente : une proposition `link_sale`.** Classement (fonction pure neuve,
    `crates/kesh-reconciliation/src/stripe.rs`, `classify(tx) -> StripeKind`, sur `provider_type`, le signe et le
@@ -251,4 +255,6 @@ rattachée.
   le contrôle du total d'un versement ne bornait pas ses lignes (période, état) → pending ou rapprochées, toutes dates.
   LOW : compte de versement clos traité comme archivé. Découpage 40-7c1 / 40-7c2 non appliqué (fiche réduite, raison en
   Notes de développement).
-
+- 2026-11-20 — complément P2 (Claude Opus 5.5), sur relevé de la P2 de l'Epic 39 (`kesh-wt39` `02ed58c6`) : AC-1 cite
+  le texte unique à deux branches d'`other_side_predicate`, porté par la 38-11c, devise de `t` en paramètre commun, et
+  interdit un `AND bt.currency = …` isolé ; remédié dans la fiche, rapport P2 complété.

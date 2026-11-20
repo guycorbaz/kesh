@@ -110,9 +110,10 @@ transaction du versement dans `?payout=` ; `Stripe-Version` à épingler ; table
   qu'en CHF (`transaction_can_be_linked_to_entry`, `crates/kesh-db/src/repositories/reconciliation_link.rs:535-537`), et
   les gestes de la réconciliation refusent une transaction en devise (`RECONCILIATION_CURRENCY_MISMATCH`,
   `routes/reconciliation.rs:4387`). PayPal (EUR, USD) et Stripe en ont besoin tous deux : **tenu** pour les conditions 1 et 3 par 38-11c AC-1. La
-  condition 4 (devise de l'autre côté d'un virement, `other_side_predicate`) est réécrite en deux branches par 39-11c
-  AC-3 (« porté par 38-11c », que la fiche 38-11c validée P2 ne dit pas encore) ; 40-7c ne la touche pas, elle teste le
-  cas Stripe et ne l'écrit qu'à défaut, dans cette forme (validation P2).
+  condition 4 (`other_side_predicate`) s'écrit en un texte unique à deux branches — même devise : montant opposé ;
+  devise différente : signe opposé —, devise de `t` en paramètre commun, **porté par la 38-11c** (39-11c AC-3, P2 de
+  l'Epic 39) ; aucun `AND bt.currency = …` isolé. 40-7c ne l'écrit pas, elle teste le cas Stripe et ne l'écrit qu'à
+  défaut, dans ce même texte (validation P2).
 - **C-40-K4 — Recherche d'une vente par identifiant au libellé** : une fonction, paramétrée par le motif du jeton
   (`TXN <id>` pour PayPal, `ch_…`/`py_…` pour Stripe), partagée avec 38-11c : **la lecture des écritures de vente** (une
   requête) et le rattachement sont communs, seule l'extraction des jetons (fonction pure) diffère.

@@ -124,6 +124,11 @@ par devise, sans doublon, afin que chaque mouvement du solde Stripe attende son 
    avec `stripe_import.created` (`details` : compte Stripe, fichier, compte rendu).
 6. **AC-6 — Doublons et compte rendu.** Empreinte : SHA-256 de `fichier ‖ ":" ‖ devise` par `bank_imports`, refus de
    l'AC-4 si `find_by_company_and_hash` (`repositories/bank_imports.rs:308`) la trouve (même règle que 38-11b).
+   **Continuité : aucune règle pour Stripe.** Le rapport est découpé par versement et ne porte **aucun solde** (les
+   entrées `bank_imports` ont des soldes `NULL`, AC-5) : aucun avertissement de trou n'est calculé, et
+   `previous_statement_closing` (`bank_imports.rs:358`) ignore de toute façon un relevé sans solde. Si une phase
+   ultérieure en ajoutait une, elle lirait le chevauchement **comme la 39-11b AC-5** — `overlapping_statements` d'abord
+   (chevauchement : pas d'avertissement), puis `previous_statement_closing` — une seule définition.
    **Doublon de transaction** : une transaction du même compte bancaire porte déjà ce `transaction_id` (brut, `:FEE` ou
    versement) → ignorée ; la fenêtre date-montant-référence des imports bancaires (`find_in_dedup_window`,
    `repositories/bank_transactions.rs:83`) ne s'applique pas. Un rapport par devise puis le rapport toutes devises de la
@@ -223,4 +228,6 @@ s'importe d'un geste, ventilé par devise ; les doublons sont ignorés.
   37 ») → la liste est close, propre aux sauvegardes antérieures à l'Epic 37, et son test compte treize colonnes ;
   « cinq refus » `BANK_ACCOUNT_IS_PROVIDER` pour six sites ; `reason` `closed` du compte de versement. Propagé de la
   40-7c : revue rechargée après l'import (et non une route de rapprochement), écart `payout_without_receipt`.
-
+- 2026-11-20 — complément P2 (Claude Opus 5.5), sur relevé de la P2 de l'Epic 39 : l'AC-6 dit qu'il n'y a pas de règle
+  de continuité pour Stripe (rapport sans solde), et qu'une règle future lirait le chevauchement comme la 39-11b
+  (`overlapping_statements`, puis `previous_statement_closing`).
