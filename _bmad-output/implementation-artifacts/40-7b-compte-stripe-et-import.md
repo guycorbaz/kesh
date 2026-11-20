@@ -208,6 +208,14 @@ s'importe d'un geste, ventilé par devise ; les doublons sont ignorés.
 
 ## Change Log
 
+- 2026-11-20 — **amendement d'AC (demande de Beat, Project Lead de l'epic, relayée par l'orchestrateur)** : le libellé (`details`) des
+  transactions importées suit le format de son tableur Crésus — `<Encaissement si category = charge, sinon category> Stripe de
+  <gross> <DEVISE> -<fee>=<net> <DEVISE> BRUT - <balance_transaction_id> (<created>- <description>) - <payout_id>` ; frais :
+  même format préfixé « Frais Stripe · » ; versement : « Versement Stripe <payout_id> <Σ net> <DEVISE> » (AC-5, amendé ; la 40-7c
+  reprendra ce texte pour ses écritures). Réalisation : champ `created` (cellule telle qu'écrite) ajouté à `StripePayoutRow`
+  (40-7a, lecteur, additif), `row_label` dans `stripe_imports.rs`, tests exacts (`les_libelles_suivent_le_format_du_tableur`,
+  E2E). Choix : le signe de `-<frais>` est littéral (frais rendus : `--0.60`) ; description absente : `(<created>- )`.
+
 - 2026-11-20 — fiche rédigée (phase 1 KISS), non validée.
 - 2026-11-20 — validation P1 (Claude Sonnet 5.5, contexte frais) : 0 CRITICAL, 2 HIGH, 5 MEDIUM, 2 LOW, remédiés
   (rapport `kesh-gate-logs/epic-39-40-kiss/validation/40-7b-compte-stripe-et-import-P1.md`). HIGH : l'AC-8 inscrivait la
@@ -271,9 +279,61 @@ s'importe d'un geste, ventilé par devise ; les doublons sont ignorés.
   (159 routes, 151 tracées, 163 avec les routes de test), phrase du manuel d'administration (`.tex`, 151 des 159 ; 151 + 4 + 4
   = 159), `docs/api-external.md`.
 
-### Tests ajoutés (recomptés depuis la source, périmètre : `git diff epic/40-stripe...story/40-7b`)
+### Tests ajoutés (recomptés depuis la source ; périmètre `git diff 046f39e9..HEAD`, 046f39e9 = 40-7a)
 
-Voir « Gates » ci-dessous pour ce qui a **tourné**.
+19 tests nouveaux : `kesh-db/tests/stripe_import_schema.rs` 2 (CHECK jamais NULL, octet, FK `RESTRICT`) ;
+`kesh-api/tests/stripe_import_e2e.rs` 8 (ventilation et versements, rapport par devise puis tous, devise manquante / doublon de
+devise / compte clos, refus de tête et clés, création et refus du compte de versement, modification, six refus
+`BANK_ACCOUNT_IS_PROVIDER` + lot pain.001 + solde d'ouverture, cohabitation PayPal) ; `routes/stripe_imports.rs` 6 unitaires ;
+`admin_full_import_e2e.rs` 2 (aller-retour du compte de versement, sauvegarde sans la colonne) ; `routes/provider_imports.rs` 1
+(`deux_lignes_identiques_voisines_sont_deux_groupes`). Étendus : tests d'entité (JSON `stripe`), export CSV, registres d'audit
+(159 routes, 151 tracées, 163 avec les routes de test ; `SITES_INDIRECTS` à dix ; `ACTIONS` + `stripe_import.created`),
+`bank_account_opening_balance_e2e` (clé `stripe`), `migrations_upgrade_path` (97 / 63).
+
+### Défaut trouvé dans le cœur de la 38-12a (copie)
+
+`dedupe_lines` de la 38-12a groupe par **suites consécutives** de même `group_id` : deux lignes identiques côte à côte formaient
+UN groupe, la seconde n'était pas vue comme doublon (le test `doublon_dans_le_fichier_et_en_base` de `paypal_imports.rs` rougit
+sur la copie). Corrigé dans ma copie : un groupe se coupe aussi quand un identifiant de transaction se répète
+(`provider_imports.rs`). **À reporter dans la 38-12a** (même correctif, même test) — signalé à l'orchestrateur.
+
+### Mutations (sondes négatives, journal `kesh-gate-logs/s40-7b/mutations.log`, fichier restauré par `git checkout` après chacune)
+
+Garde de devise du compte de versement désactivée → `creer_un_solde_stripe_et_ses_refus` rouge ; correctif de `dedupe_lines`
+retiré → `deux_lignes_identiques_voisines_sont_deux_groupes` rouge ; signe des frais inversé → `brut_et_frais_chacun_de_son_signe`
+rouge ; signe du versement inversé → `le_versement_reprend_la_somme_des_nets` rouge (quatre sur quatre, panics de test, non erreurs
+de compilation). Non mutée : la CHECK `provider IS NOT NULL` (une mutation s'applique au squash, régénéré) — elle est éprouvée par
+`stripe_import_schema.rs` sur le schéma réel.
+
+### Gates (HEAD du dernier commit de code : `c760dc49`), cible propre `/home/beat/claude/kesh-targets/kesh-wt40b`, `CARGO_INCREMENTAL=0`
+
+- **Rejoués sur cible propre** (règle de l'orchestrateur du 2026-11-20) : tout gate joué avant sur la cible partagée
+  (`kesh-target`), dont le premier gate backend et le premier E2E (HEAD `a25a217c`, 10 échecs attendus), est **invalidé** et refait ;
+  les journaux sont sous `kesh-gate-logs/s40-7b/run1/`.
+- `scripts/test-fast.sh --ci` (fmt, clippy `-D warnings`, nextest) : **6262 tests exécutés, 6262 réussis, 14 ignorés** (journal
+  `gate-backend.log`, base `kesh_s407b` remise à zéro) ; `cargo publish --dry-run -p kesh-import` vert.
+  Incidents d'infrastructure, **sans rapport avec la story**, rejoués : un gate tué à 137 en compilation (mémoire) ; un gate à
+  542 échecs « database exists » (bases `_sqlx_test_*` laissées par un gate tué, registre sqlx effacé par la remise à zéro de la
+  base : `drop-stale.sh` ajouté avant la remise à zéro) ; trois gates perdus au disque plein de `kesh-mariadb-dev2` (tmpfs 8 Go,
+  journal d'annulation) et à sa recréation par l'orchestrateur (« table is full », base disparue).
+  Défauts réels trouvés par ces gates et corrigés : cinq tests de registres (`audit_label_registry` ×3 : action non littérale au
+  cœur d'import → `AUDIT_ACTIONS` en toutes lettres, `SITES_INDIRECTS` à dix ; `audit_route_registry` partition 129 → 130 et 162 →
+  163 ; `bank_account_opening_balance_e2e` : clé `stripe` ; comptes rendus d'audit de mon propre test).
+- Frontend (aucun fichier modifié) : `npm run check` 0 erreur, `lint-i18n-ownership` vert, `test:unit` **278 fichiers, 4612 tests
+  réussis**, `npm run build` vert (`node_modules` copié de la worktree de la 38 : un lien symbolique faisait échouer 265 fichiers
+  de test, relevé et rejoué).
+- E2E complet (`LANG=fr_CH.UTF-8`, port 3417, base `kesh_e2e_s407b`) : **476 réussis, 11 échecs, 18 ignorés** — dix attendus (les
+  sept de la KF-029, `backup-restore-new-install.spec.ts:262` et `:381`, `opening-balances.spec.ts:156`) et un onzième,
+  `bank-import.spec.ts:130` (le compte des lignes d'import avant/après un refus CAMT), absent du premier passage (477 réussis, 10
+  échecs) : pollution d'état entre specs (la liste des échecs qui changent d'identité d'un passage à l'autre, `docs/testing.md`) ;
+  rejoué seul (`e2e-un.sh tests/e2e/bank-import.spec.ts`, base neuve) : **6 réussis, 1 échec, le même** (`Expected 0, Received 1`).
+  Lecture du code du test (`bank-import.spec.ts:130-160`) : `rowsBefore` est compté juste après l'apparition du titre, **avant que
+  la liste n'ait fini de se charger** ; selon la durée du chargement il vaut 0 ou 1 (l'import créé par le test précédent du même
+  fichier). Le test est donc sujet à une course de sa propre écriture, **indépendante de cette story** (aucun fichier frontend ni la
+  route CAMT touchés) ; il a passé au premier E2E complet. ⚠️ Non reproduit sur la base de la branche d'epic (non rejoué faute de
+  temps de station) : à confirmer par la revue ; une issue est à ouvrir (« E2E bank-import : `rowsBefore` lu avant le chargement de
+  la liste »), demandée à l'orchestrateur.
+- `scripts/gate-ci.sh` : non rejoué (voir « Limites »).
 
 ### Limites et points hors périmètre relevés
 
@@ -291,6 +351,7 @@ Voir « Gates » ci-dessous pour ce qui a **tourné**.
 
 *Ajouté* — Un compte bancaire peut être le solde, dans une devise, d'un compte Stripe : sans IBAN, lié au compte de transit de
 la devise, avec son compte de frais et son compte de versement. Le rapport « Itemized payout reconciliation » s'importe d'un
-geste (`POST /api/v1/stripe-imports`), ventilé par devise ; les doublons sont ignorés.
+geste (`POST /api/v1/stripe-imports`), ventilé par devise ; les doublons sont ignorés. Le libellé de chaque transaction suit le
+format du tableur de Crésus de l'utilisateur (identifiants `txn_…` et `po_…` cherchables).
 *Migration* — `20261120000003_stripe_import`, non breaking : la sauvegarde d'avant la mise à jour reste exigée (base,
 `.keshbackup`, dossier des documents) ; le retour à la version précédente passe par elle.
