@@ -120,9 +120,6 @@ const LOCK_TIMEOUT_SECS: u32 = 5;
 /// réconciliation, `accept_one_rule`).
 const DESCRIPTION_MAX_CHARS: usize = 200;
 
-/// Action d'audit d'une proposition acceptée.
-pub const AUDIT_PROPOSAL_ACCEPTED: &str = "provider.proposal_accepted";
-
 // ---------------------------------------------------------------------------
 // Revue
 // ---------------------------------------------------------------------------
@@ -840,7 +837,7 @@ async fn audit_accepted(
         NewAuditLogEntry::for_actor(
             ctx.acteur.user_id,
             ctx.acteur.api_key_id,
-            AUDIT_PROPOSAL_ACCEPTED,
+            "provider.proposal_accepted",
             "bank_transaction",
             entity_id,
             Some(serde_json::json!({
