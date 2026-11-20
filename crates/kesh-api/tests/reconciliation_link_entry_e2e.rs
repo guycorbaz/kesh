@@ -70,6 +70,9 @@ const IBAN_A: &str = "CH4431999123000889012";
 const IBAN_B: &str = "CH9300762011623852957";
 const IBAN_C: &str = "CH5604835012345678009";
 
+/// La devise d'un compte du grand livre sans devise (Story 38-11c1).
+const CHF: &str = kesh_db::repositories::bank_accounts::BASE_CURRENCY;
+
 // ============================================================
 // Serveur et jetons (recopiés de `reconciliation_link_e2e.rs`)
 // ============================================================
@@ -672,7 +675,7 @@ impl Ctx {
                 .await
                 .unwrap()
                 .expect("transaction");
-        find_entry_candidates(&self.pool, self.company_id(), &t, ledger)
+        find_entry_candidates(&self.pool, self.company_id(), &t, ledger, CHF)
             .await
             .unwrap()
     }
@@ -2559,6 +2562,7 @@ async fn s34_4_ac8_la_lecture_par_page_egale_les_fonctions_du_dialogue(pool: MyS
         ctx.company_id(),
         a,
         ctx.ledger,
+        CHF,
         &transactions,
         tolerance,
     )
@@ -2571,11 +2575,11 @@ async fn s34_4_ac8_la_lecture_par_page_egale_les_fonctions_du_dialogue(pool: MyS
                 .await
                 .unwrap()
                 .len();
-        let attendu_ecritures = find_entry_candidates(&pool, ctx.company_id(), t, ctx.ledger)
+        let attendu_ecritures = find_entry_candidates(&pool, ctx.company_id(), t, ctx.ledger, CHF)
             .await
             .unwrap()
             .len();
-        let attendu_ailleurs = find_matched_elsewhere(&pool, ctx.company_id(), t, ctx.ledger)
+        let attendu_ailleurs = find_matched_elsewhere(&pool, ctx.company_id(), t, ctx.ledger, CHF)
             .await
             .unwrap()
             .len();
@@ -3544,4 +3548,435 @@ async fn s34_11b_a1_11_deux_liens_du_meme_sens_restent_bloques(pool: MySqlPool) 
     assert_eq!(vue["unlinkOnly"], false, "{vue}");
     assert_eq!(vue["cancelBlockedBy"], "MATCHED_BANK_TRANSACTION", "{vue}");
     assert_eq!(vue["cancelBlockedDocumentId"], debit_c, "{vue}");
+}
+
+// ============================================================
+// Story 38-11c1 — rattachement en devise, autre côté à deux branches
+// ============================================================
+
+/// Les comptes d'une société multi-devises (Story 38-11c1) : deux soldes
+/// PayPal créés par la route — A sur un compte du plan CHF, B sur un compte du
+/// plan EUR — et un compte bancaire ordinaire C qui partage le compte du plan
+/// EUR (lien posé en SQL, état admis).
+struct Devises {
+    plan_chf: i64,
+    plan_eur: i64,
+    a: i64,
+    b: i64,
+    c: i64,
+}
+
+/// Un compte du plan, de devise `devise` (`None` : CHF).
+async fn compte_en(pool: &MySqlPool, company: i64, numero: &str, devise: Option<&str>) -> i64 {
+    sqlx::query_scalar(
+        "INSERT INTO accounts (company_id, number, name, account_type, active, postable, currency) \
+         VALUES (?, ?, ?, 'Asset', 1, 1, ?) RETURNING id",
+    )
+    .bind(company)
+    .bind(numero)
+    .bind(format!("Compte {numero}"))
+    .bind(devise)
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+impl Ctx {
+    /// La société passe multi-devises (comptes de différence de change posés),
+    /// puis les comptes de [`Devises`].
+    async fn devises(&self) -> Devises {
+        let c = self.company_id();
+        let gain = sqlx::query_scalar::<_, i64>(
+            "INSERT INTO accounts (company_id, number, name, account_type, active, postable) \
+             VALUES (?, '6950', 'Gain de change', 'Revenue', 1, 1) RETURNING id",
+        )
+        .bind(c)
+        .fetch_one(&self.pool)
+        .await
+        .unwrap();
+        let perte = sqlx::query_scalar::<_, i64>(
+            "INSERT INTO accounts (company_id, number, name, account_type, active, postable) \
+             VALUES (?, '6960', 'Perte de change', 'Expense', 1, 1) RETURNING id",
+        )
+        .bind(c)
+        .fetch_one(&self.pool)
+        .await
+        .unwrap();
+        let transit = compte_en(&self.pool, c, "1090", None).await;
+        sqlx::query(
+            "UPDATE companies SET multi_currency_enabled = TRUE, fx_gain_account_id = ?, \
+             fx_loss_account_id = ?, fx_transit_account_id = ? WHERE id = ?",
+        )
+        .bind(gain)
+        .bind(perte)
+        .bind(transit)
+        .bind(c)
+        .execute(&self.pool)
+        .await
+        .unwrap();
+        sqlx::query("UPDATE fiscal_years SET multi_currency = TRUE WHERE id = ?")
+            .bind(self.seeded.fiscal_year_id)
+            .execute(&self.pool)
+            .await
+            .unwrap();
+        let plan_chf = compte_en(&self.pool, c, "1030", None).await;
+        let plan_eur = compte_en(&self.pool, c, "1031", Some("EUR")).await;
+        let mut soldes = Vec::new();
+        for ledger in [plan_chf, plan_eur] {
+            let (s, b) = self
+                .post(
+                    "/api/v1/bank-accounts",
+                    json!({
+                        "bankName": "PayPal",
+                        "journalAccountId": ledger,
+                        "paypal": { "account": "PayPal 38-11c1", "feeAccountId": null },
+                    }),
+                )
+                .await;
+            assert_eq!(s, 201, "solde PayPal : {b}");
+            soldes.push(b["id"].as_i64().unwrap());
+        }
+        let c_ord = self.banque_liee(IBAN_C, plan_eur).await;
+        Devises {
+            plan_chf,
+            plan_eur,
+            a: soldes[0],
+            b: soldes[1],
+            c: c_ord,
+        }
+    }
+
+    /// Une écriture saisie par la route, lignes JSON telles quelles (journal
+    /// Banque, cours manuel dans `foreign` pour une ligne en devise).
+    async fn ecriture_json(&self, date: &str, libelle: &str, lignes: Value) -> i64 {
+        let (s, b) = self
+            .post(
+                "/api/v1/journal-entries",
+                json!({
+                    "entryDate": date,
+                    "journal": "Banque",
+                    "description": libelle,
+                    "lines": lignes,
+                }),
+            )
+            .await;
+        assert_eq!(s, 201, "écriture : {b}");
+        b["id"].as_i64().unwrap()
+    }
+
+    /// La conversion de l'AC-1b : crédit du compte du plan CHF 100.00, débit
+    /// du compte du plan EUR 95.00 EUR au CHF 100.00 (cours manuel).
+    async fn conversion(&self, d: &Devises, date: &str) -> i64 {
+        self.ecriture_json(
+            date,
+            "Conversion CHF → EUR",
+            json!([
+                { "accountId": d.plan_chf, "debit": "0", "credit": "100.00" },
+                { "accountId": d.plan_eur, "debit": "100.00", "credit": "0",
+                  "foreign": { "amount": "95.00", "rate": "1.052632", "rateSource": "manual" } },
+            ]),
+        )
+        .await
+    }
+
+    /// Les écritures du second côté de `tx` (compte `bank`, compte du plan
+    /// `ledger` de devise `devise`), au dépôt.
+    async fn ailleurs(&self, bank: i64, tx: i64, ledger: i64, devise: &str) -> Vec<i64> {
+        let t =
+            reconciliation::find_pending_by_id_for_account(&self.pool, self.company_id(), bank, tx)
+                .await
+                .unwrap()
+                .expect("transaction");
+        find_matched_elsewhere(&self.pool, self.company_id(), &t, ledger, devise)
+            .await
+            .unwrap()
+            .iter()
+            .map(|c| c.journal_entry_id)
+            .collect()
+    }
+}
+
+/// AC-1 — une transaction en devise se rattache à une écriture d'un compte du
+/// plan de sa devise, le mouvement compté **en devise** : +95.00 EUR sur B
+/// trouve l'écriture « D compte EUR 95.00 EUR (CHF 100.00) / C produit », par
+/// la route et au dépôt ; +100.00 EUR (le montant en francs) ne la trouve pas
+/// (tue la mutation « mouvement en CHF pour un compte en devise ») ; une
+/// transaction CHF sur B et une EUR sur A ne sont pas rattachables
+/// (condition 1).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn s38_11c1_rattachement_en_devise(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let d = ctx.devises().await;
+    let e = ctx
+        .ecriture_json(
+            "2026-06-18",
+            "Vente boutique",
+            json!([
+                { "accountId": d.plan_eur, "debit": "100.00", "credit": "0",
+                  "foreign": { "amount": "95.00", "rate": "1.052632", "rateSource": "manual" } },
+                { "accountId": ctx.compte("3000"), "debit": "0", "credit": "100.00" },
+            ]),
+        )
+        .await;
+    let francs = ctx.transaction_en(d.b, "100.00", "EUR", "2026-06-18").await;
+    assert!(ctx.ids_candidates(francs).await.is_empty());
+    let (s, corps) = ctx.rattacher(francs, e).await;
+    assert_non_rattachable(s, &corps);
+    let chf_sur_b = ctx.transaction_en(d.b, "95.00", "CHF", "2026-06-18").await;
+    assert!(ctx.ids_candidates(chf_sur_b).await.is_empty());
+    let (s, corps) = ctx.rattacher(chf_sur_b, e).await;
+    assert_non_rattachable(s, &corps);
+    let eur_sur_a = ctx.transaction_en(d.a, "95.00", "EUR", "2026-06-18").await;
+    assert!(ctx.ids_candidates(eur_sur_a).await.is_empty());
+
+    let t = ctx.transaction_en(d.b, "95.00", "EUR", "2026-06-18").await;
+    assert_eq!(ctx.ids_candidates(t).await, vec![e]);
+    let (s, corps) = ctx.candidates(t).await;
+    assert_eq!(s, 200);
+    assert_eq!(corps["candidates"][0]["amount"], "95.00", "{corps}");
+    let (s, corps) = ctx.rattacher(t, e).await;
+    assert_eq!(s, 200, "{corps}");
+    assert_eq!(ctx.etat(t).await, ("reconciled".to_string(), Some(e)));
+}
+
+/// AC-1b, tests (a) à (f) — les deux côtés d'une conversion passée en une
+/// écriture se rattachent et se défont comme un virement entre ses comptes :
+/// (a) `t₁` = −100.00 CHF sur A rattachée ; (b) `t₂` = +95.00 EUR sur B listée
+/// en second côté (route, dépôt, lecture par page et `alreadyBooked`) puis
+/// rattachée ; (c) annuler `t₁` ne retire que son lien ; (d) `t₁` se rattache
+/// de nouveau ; (e) une troisième transaction est refusée, sur B et sur C qui
+/// partage le compte du plan EUR ; (f) annuler les deux côtés : la seconde
+/// annulation contre-passe l'écriture.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn s38_11c1_conversion_a_une_ecriture(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let d = ctx.devises().await;
+    let e = ctx.conversion(&d, "2026-06-18").await;
+    let t1 = ctx
+        .transaction_en(d.a, "-100.00", "CHF", "2026-06-18")
+        .await;
+    let t2 = ctx.transaction_en(d.b, "95.00", "EUR", "2026-06-18").await;
+
+    // (a)
+    assert_eq!(ctx.ids_candidates(t1).await, vec![e]);
+    assert_eq!(ctx.rattacher(t1, e).await.0, 200);
+
+    // (b) — second côté, par toutes les lectures.
+    assert_eq!(ctx.ids_candidates(t2).await, vec![e]);
+    assert_eq!(ctx.ailleurs(d.b, t2, d.plan_eur, "EUR").await, vec![e]);
+    let page_t2 = reconciliation::find_pending_by_id_for_account(&pool, ctx.company_id(), d.b, t2)
+        .await
+        .unwrap()
+        .expect("t₂");
+    let page = count_already_booked_for_page(
+        &pool,
+        ctx.company_id(),
+        d.b,
+        d.plan_eur,
+        "EUR",
+        std::slice::from_ref(&page_t2),
+        dec("0.05"),
+    )
+    .await
+    .unwrap();
+    let n = page.get(&t2).expect("t₂ dans la page");
+    assert_eq!(
+        (n.settlement_count, n.entry_count, n.matched_elsewhere_count),
+        (0, 1, 1)
+    );
+    let champ = ctx.deja_comptabilisee(d.b, t2).await;
+    assert_eq!(champ["entryCount"], 1, "{champ}");
+    assert_eq!(champ["matchedElsewhereCount"], 1, "{champ}");
+    let (s, corps) = ctx.candidates(t2).await;
+    assert_eq!(s, 200);
+    assert_eq!(corps["candidates"][0]["unlinkOnly"], true, "{corps}");
+    assert_eq!(ctx.rattacher(t2, e).await.0, 200);
+    assert_eq!(ctx.liens_vers(e).await, 2);
+
+    // (c) — annuler t₁ ne retire que son lien.
+    let ecritures = ctx.ecritures().await;
+    let (s, corps) = ctx.annuler_rapprochement(t1).await;
+    assert_eq!(s, 200, "{corps}");
+    assert_eq!(ctx.etat(t1).await, ("pending".to_string(), None));
+    assert_eq!(ctx.etat(t2).await, ("reconciled".to_string(), Some(e)));
+    assert_eq!(ctx.contre_passations_de(e).await, 0);
+    assert_eq!(ctx.ecritures().await, ecritures);
+
+    // (d) — t₁ se rattache de nouveau, en second côté cette fois.
+    assert_eq!(ctx.ids_candidates(t1).await, vec![e]);
+    assert_eq!(ctx.ailleurs(d.a, t1, d.plan_chf, CHF).await, vec![e]);
+    assert_eq!(ctx.rattacher(t1, e).await.0, 200);
+
+    // (e) — une troisième transaction est refusée, sur B et sur C.
+    for bank in [d.b, d.c] {
+        let t3 = ctx.transaction_en(bank, "95.00", "EUR", "2026-06-18").await;
+        assert!(ctx.ids_candidates(t3).await.is_empty(), "compte {bank}");
+        let (s, corps) = ctx.rattacher(t3, e).await;
+        assert_non_rattachable(s, &corps);
+    }
+    assert_eq!(ctx.liens_vers(e).await, 2);
+
+    // (f) — annuler les deux côtés : la seconde annulation contre-passe.
+    let (s, corps) = ctx.annuler_rapprochement(t1).await;
+    assert_eq!(s, 200, "{corps}");
+    assert_eq!(ctx.contre_passations_de(e).await, 0);
+    let (s, corps) = ctx.annuler_rapprochement(t2).await;
+    assert_eq!(s, 200, "{corps}");
+    assert_eq!(ctx.contre_passations_de(e).await, 1);
+    assert_eq!(ctx.etat(t1).await, ("pending".to_string(), None));
+    assert_eq!(ctx.etat(t2).await, ("pending".to_string(), None));
+}
+
+/// AC-1b, test (g) — **le signe de la seconde branche** : écriture « D compte
+/// du plan CHF 100.00 / D compte du plan EUR 95.00 EUR / C produit 200.00 » ;
+/// `t₁` = +100.00 CHF sur A rattachée ; `t₂` = +95.00 EUR sur B, de **même
+/// signe**, n'est pas l'autre côté : absente des candidates et du second côté,
+/// refusée, et l'autre côté de `t₁` à l'annulation est vide (le retrait seul
+/// n'est pas offert). Sans `SIGN(bt.amount) = -SIGN(M)` dans la seconde
+/// branche, les tests (a) à (f) restent verts et celui-ci rougit.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn s38_11c1_le_signe_de_la_seconde_branche(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let d = ctx.devises().await;
+    let e = ctx
+        .ecriture_json(
+            "2026-06-18",
+            "Deux encaissements",
+            json!([
+                { "accountId": d.plan_chf, "debit": "100.00", "credit": "0" },
+                { "accountId": d.plan_eur, "debit": "100.00", "credit": "0",
+                  "foreign": { "amount": "95.00", "rate": "1.052632", "rateSource": "manual" } },
+                { "accountId": ctx.compte("3000"), "debit": "0", "credit": "200.00" },
+            ]),
+        )
+        .await;
+    let t1 = ctx.transaction_en(d.a, "100.00", "CHF", "2026-06-18").await;
+    let t2 = ctx.transaction_en(d.b, "95.00", "EUR", "2026-06-18").await;
+    assert_eq!(ctx.rattacher(t1, e).await.0, 200);
+
+    assert!(ctx.ids_candidates(t2).await.is_empty());
+    assert!(ctx.ailleurs(d.b, t2, d.plan_eur, "EUR").await.is_empty());
+    let (s, corps) = ctx.rattacher(t2, e).await;
+    assert_non_rattachable(s, &corps);
+
+    let lie = reconciliation::find_by_ids_for_account(&pool, ctx.company_id(), d.a, &[t1])
+        .await
+        .unwrap()
+        .remove(&t1)
+        .expect("t₁");
+    let mut conn = pool.acquire().await.unwrap();
+    let autre = kesh_db::repositories::reconciliation_link::transfer_other_side(
+        &mut conn,
+        ctx.company_id(),
+        e,
+        &lie,
+    )
+    .await
+    .unwrap();
+    assert_eq!(autre, None);
+    // Et l'annulation de t₁ contre-passe (aucun autre côté).
+    let (s, corps) = ctx.annuler_rapprochement(t1).await;
+    assert_eq!(s, 200, "{corps}");
+    assert_eq!(ctx.contre_passations_de(e).await, 1);
+}
+
+/// AC-1, AC-8 de la 34-4 étendu (Story 38-11c1) — sur une page **EUR** (compte
+/// B, compte du plan EUR), la lecture par page rend les mêmes nombres que les
+/// fonctions du dialogue, avec une paire de devises différentes : le second
+/// côté d'une conversion rapprochée sur A (CHF), une vente EUR non rapprochée,
+/// un débit EUR sans écriture, le montant en francs (sans écriture) ; une
+/// transaction CHF et une nulle sur B sont absentes de la page.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn s38_11c1_la_lecture_par_page_eur_egale_les_fonctions_du_dialogue(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let d = ctx.devises().await;
+    let conv = ctx.conversion(&d, "2026-06-18").await;
+    let t1 = ctx
+        .transaction_en(d.a, "-100.00", "CHF", "2026-06-18")
+        .await;
+    assert_eq!(ctx.rattacher(t1, conv).await.0, 200);
+    let vente = ctx
+        .ecriture_json(
+            "2026-06-19",
+            "Vente EUR",
+            json!([
+                { "accountId": d.plan_eur, "debit": "21.00", "credit": "0",
+                  "foreign": { "amount": "20.00", "rate": "1.05", "rateSource": "manual" } },
+                { "accountId": ctx.compte("3000"), "debit": "0", "credit": "21.00" },
+            ]),
+        )
+        .await;
+
+    let montants = [
+        ("95.00", "EUR"),
+        ("20.00", "EUR"),
+        ("21.00", "EUR"),
+        ("-95.00", "EUR"),
+        ("100.00", "EUR"),
+        ("95.00", "CHF"),
+        ("0.00", "EUR"),
+    ];
+    let mut transactions = Vec::new();
+    for (m, devise) in montants {
+        let id = ctx.transaction_en(d.b, m, devise, "2026-06-19").await;
+        transactions.push(
+            reconciliation::find_pending_by_id_for_account(&pool, ctx.company_id(), d.b, id)
+                .await
+                .unwrap()
+                .expect("transaction"),
+        );
+    }
+    let tolerance = dec("0.05");
+    let page = count_already_booked_for_page(
+        &pool,
+        ctx.company_id(),
+        d.b,
+        d.plan_eur,
+        "EUR",
+        &transactions,
+        tolerance,
+    )
+    .await
+    .unwrap();
+    let mut vus = Vec::new();
+    for t in &transactions {
+        let ecritures = find_entry_candidates(&pool, ctx.company_id(), t, d.plan_eur, "EUR")
+            .await
+            .unwrap();
+        let ailleurs = find_matched_elsewhere(&pool, ctx.company_id(), t, d.plan_eur, "EUR")
+            .await
+            .unwrap();
+        match page.get(&t.id) {
+            None => {
+                assert!(t.amount.is_zero() || t.currency != "EUR", "{}", t.amount);
+                assert!(ecritures.is_empty() && ailleurs.is_empty());
+            }
+            Some(n) => {
+                assert_eq!(
+                    (n.settlement_count, n.entry_count, n.matched_elsewhere_count),
+                    (0, ecritures.len(), ailleurs.len()),
+                    "transaction de {} {}",
+                    t.amount,
+                    t.currency
+                );
+                vus.push((
+                    t.amount.to_string(),
+                    n.entry_count,
+                    n.matched_elsewhere_count,
+                ));
+            }
+        }
+    }
+    // Non vides là où il faut : le second côté (95.00) et la vente (20.00).
+    assert_eq!(
+        vus,
+        vec![
+            ("95.00".to_string(), 1, 1),
+            ("20.00".to_string(), 1, 0),
+            ("21.00".to_string(), 0, 0),
+            ("-95.00".to_string(), 0, 0),
+            ("100.00".to_string(), 0, 0),
+        ]
+    );
+    assert_eq!(ctx.liens_vers(vente).await, 0);
 }

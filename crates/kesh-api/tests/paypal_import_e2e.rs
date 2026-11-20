@@ -1307,3 +1307,88 @@ async fn les_autres_chemins_refusent_un_compte_paypal(pool: MySqlPool) {
         ecritures
     );
 }
+
+/// Story 38-11c1 (relevé P2-L1 de la revue de la 38-11b) — **l'import, victime
+/// d'un interblocage avec un geste de compte bancaire, est rejoué**. La
+/// transaction de test, alourdie (500 lignes de lest), tient la sentinelle
+/// `companies` en exclusif, comme un `POST`, `PUT`, `PATCH` ou archivage de
+/// compte bancaire ; l'import relit les soldes sous verrous partagés
+/// (`recheck_targets_locked`), puis attend `companies` à son `INSERT
+/// bank_imports` (clé étrangère) ; la transaction de test demande alors la
+/// ligne du solde EUR en exclusif : cycle à deux, l'import, plus léger, est
+/// annulé puis rejoué, `201`, une seule écriture. Sans l'enveloppe, `500`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn import_rejoue_un_interblocage_avec_un_geste_de_compte(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let (e, _, _) = ctx.trois_soldes().await;
+    let capture = common::capture_rejeu::CaptureRejeu::installer();
+
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS lest_rejeu (id INT AUTO_INCREMENT PRIMARY KEY, x INT) \
+         ENGINE=InnoDB",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let mut lourde = pool.begin().await.unwrap();
+    for _ in 0..10 {
+        sqlx::query("INSERT INTO lest_rejeu (x) SELECT seq FROM seq_1_to_50")
+            .execute(&mut *lourde)
+            .await
+            .unwrap();
+    }
+    sqlx::query("SELECT id FROM companies WHERE id = ? FOR UPDATE")
+        .bind(ctx.seeded.company_id)
+        .fetch_all(&mut *lourde)
+        .await
+        .unwrap();
+
+    let task = {
+        let client = ctx.app.client.clone();
+        let url = format!("{}/api/v1/paypal-imports", ctx.app.base_url);
+        let jwt = ctx.jwt.clone();
+        tokio::spawn(async move {
+            let form = multipart::Form::new()
+                .part(
+                    "file",
+                    multipart::Part::bytes(FIXTURE.to_vec())
+                        .file_name("Download.CSV")
+                        .mime_str("text/csv")
+                        .unwrap(),
+                )
+                .text("account", PAYPAL);
+            let resp = client
+                .post(url)
+                .bearer_auth(jwt)
+                .multipart(form)
+                .send()
+                .await
+                .unwrap();
+            let status = resp.status().as_u16();
+            (status, resp.json::<Value>().await.unwrap_or(Value::Null))
+        })
+    };
+    assert!(
+        attendre_une_requete_en_cours(&pool, &["INSERT INTO bank_imports"], || {
+            task.is_finished()
+        })
+        .await,
+        "l'import doit attendre `companies` à son INSERT, après sa relecture verrouillante"
+    );
+    sqlx::query("SELECT id FROM bank_accounts WHERE id = ? FOR UPDATE")
+        .bind(e)
+        .fetch_all(&mut *lourde)
+        .await
+        .expect("la transaction de test doit survivre à l'interblocage");
+    lourde.rollback().await.unwrap();
+
+    let (s, b) = task.await.unwrap();
+    assert_eq!(s, 201, "⛔ l'interblocage doit être rejoué : {b}");
+    capture.exiger_un_rejeu("paypal_imports::create");
+    assert_eq!(
+        ctx.count("SELECT COUNT(*) FROM audit_log WHERE action = 'paypal_import.created'")
+            .await,
+        1,
+        "une seule trace"
+    );
+}

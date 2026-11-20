@@ -2884,3 +2884,370 @@ async fn accept_rule_with_archived_bank_ledger_reports_not_configured(pool: MySq
     assert_rule_wrote_nothing_15_6d(&pool, tx_ok, ok_rule).await;
     assert_rule_wrote_nothing_15_6d(&pool, tx_bank, bank_rule).await;
 }
+
+// ============================================================
+// Story 38-11c1 (AC-2, AC-3) — filtres facultatifs et sens des règles
+// ============================================================
+
+/// `PATCH` d'une règle ; rend `(statut, corps)`.
+async fn patch_rule(app: &TestApp, jwt: &str, id: i64, body: Value) -> (u16, Value) {
+    let resp = app
+        .client
+        .patch(app.url(&format!("/api/v1/reconciliation/rules/{id}")))
+        .bearer_auth(jwt)
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    let s = resp.status().as_u16();
+    (s, resp.json().await.unwrap_or(Value::Null))
+}
+
+/// AC-2, AC-3 — création avec les trois filtres : rendus normalisés (type
+/// rogné, e-mail sans blanc et en minuscules), lus par le détail et la liste,
+/// et portés par la trace d'audit ; création sans filtre : `null`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn s38_11c1_creation_avec_filtres_et_sens(pool: MySqlPool) {
+    let ctx = setup_ctx(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let app = spawn_app(pool.clone()).await;
+    let r = create_rule_ok(
+        &app,
+        &ctx.jwt,
+        json!({
+            "label": "Ventes boutique",
+            "matchType": "counterparty_contains",
+            "matchValue": "Boutique",
+            "counterpartyAccountId": ctx.counterparty_account_id,
+            "providerType": "  Express Checkout Payment ",
+            "counterpartyEmail": " Client@Example.CH ",
+            "direction": "credit",
+        }),
+    )
+    .await;
+    assert_eq!(r["providerType"], "Express Checkout Payment");
+    assert_eq!(r["counterpartyEmail"], "client@example.ch");
+    assert_eq!(r["direction"], "credit");
+    let id = r["id"].as_i64().unwrap();
+
+    let detail: Value = app
+        .client
+        .get(app.url(&format!("/api/v1/reconciliation/rules/{id}")))
+        .bearer_auth(&ctx.jwt)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(detail["providerType"], "Express Checkout Payment");
+    assert_eq!(detail["counterpartyEmail"], "client@example.ch");
+    assert_eq!(detail["direction"], "credit");
+    let liste: Value = app
+        .client
+        .get(app.url("/api/v1/reconciliation/rules"))
+        .bearer_auth(&ctx.jwt)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(liste["items"][0]["direction"], "credit", "{liste}");
+
+    let trace: Value = sqlx::query_scalar(
+        "SELECT details_json FROM audit_log \
+         WHERE action = 'reconciliation_rule.created' AND entity_id = ?",
+    )
+    .bind(id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(trace["provider_type"], "Express Checkout Payment");
+    assert_eq!(trace["counterparty_email"], "client@example.ch");
+    assert_eq!(trace["direction"], "credit");
+
+    let sans = create_rule_ok(
+        &app,
+        &ctx.jwt,
+        json!({
+            "label": "Sans filtre",
+            "matchType": "counterparty_contains",
+            "matchValue": "Swisscom",
+            "counterpartyAccountId": ctx.counterparty_account_id,
+            "providerType": null,
+        }),
+    )
+    .await;
+    assert_eq!(sans["providerType"], Value::Null);
+    assert_eq!(sans["counterpartyEmail"], Value::Null);
+    assert_eq!(sans["direction"], Value::Null);
+}
+
+/// AC-2, AC-3 — refus de forme en `400 VALIDATION_ERROR`, rien d'écrit : type
+/// vide ou de 65 caractères, e-mail sans `@`, à deux `@`, sans partie locale ou
+/// sans domaine, sens inconnu (ou en majuscules) ; au `PATCH` aussi.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn s38_11c1_refus_des_filtres(pool: MySqlPool) {
+    let ctx = setup_ctx(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let app = spawn_app(pool.clone()).await;
+    let base = |cle: &str, valeur: Value| {
+        let mut b = json!({
+            "label": "R",
+            "matchType": "counterparty_contains",
+            "matchValue": "Boutique",
+            "counterpartyAccountId": ctx.counterparty_account_id,
+        });
+        b[cle] = valeur;
+        b
+    };
+    let cas = [
+        ("providerType", json!("   ")),
+        ("providerType", json!("x".repeat(65))),
+        ("counterpartyEmail", json!("client.example.ch")),
+        ("counterpartyEmail", json!("a@b@c")),
+        ("counterpartyEmail", json!("@example.ch")),
+        ("counterpartyEmail", json!("client@")),
+        (
+            "counterpartyEmail",
+            json!(format!("{}@x.ch", "a".repeat(250))),
+        ),
+        ("direction", json!("both")),
+        ("direction", json!("Credit")),
+    ];
+    for (cle, valeur) in &cas {
+        let resp = post_rule_raw(&app, &ctx.jwt, base(cle, valeur.clone())).await;
+        assert_eq!(resp.status(), 400, "{cle} = {valeur}");
+        let b: Value = resp.json().await.unwrap();
+        assert_eq!(
+            b["error"]["code"], "VALIDATION_ERROR",
+            "{cle} = {valeur} : {b}"
+        );
+    }
+    let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM reconciliation_rules")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(n, 0, "rien d'écrit");
+    // 64 caractères : admis.
+    create_rule_ok(&app, &ctx.jwt, base("providerType", json!("y".repeat(64)))).await;
+
+    let r = create_rule_ok(
+        &app,
+        &ctx.jwt,
+        json!({
+            "label": "R2",
+            "matchType": "counterparty_contains",
+            "matchValue": "Autre",
+            "counterpartyAccountId": ctx.counterparty_account_id,
+        }),
+    )
+    .await;
+    let id = r["id"].as_i64().unwrap();
+    for (cle, valeur) in &cas {
+        let mut corps = json!({ "expectedVersion": 1 });
+        corps[*cle] = valeur.clone();
+        let (s, b) = patch_rule(&app, &ctx.jwt, id, corps).await;
+        assert_eq!(
+            (s, &b["error"]["code"]),
+            (400, &json!("VALIDATION_ERROR")),
+            "{cle} : {b}"
+        );
+    }
+}
+
+/// AC-3 — `PATCH` : un filtre absent reste inchangé, `null` le retire, une
+/// valeur le pose (normalisée) ; la trace porte l'avant et l'après.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn s38_11c1_patch_absent_null_valeur(pool: MySqlPool) {
+    let ctx = setup_ctx(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let app = spawn_app(pool.clone()).await;
+    let r = create_rule_ok(
+        &app,
+        &ctx.jwt,
+        json!({
+            "label": "R",
+            "matchType": "counterparty_contains",
+            "matchValue": "Boutique",
+            "counterpartyAccountId": ctx.counterparty_account_id,
+            "providerType": "General Payment",
+            "counterpartyEmail": "a@b.ch",
+            "direction": "debit",
+        }),
+    )
+    .await;
+    let id = r["id"].as_i64().unwrap();
+
+    // Absents : inchangés.
+    let (s, b) = patch_rule(
+        &app,
+        &ctx.jwt,
+        id,
+        json!({ "expectedVersion": 1, "label": "R'" }),
+    )
+    .await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(b["providerType"], "General Payment");
+    assert_eq!(b["counterpartyEmail"], "a@b.ch");
+    assert_eq!(b["direction"], "debit");
+
+    // `null` retire, une valeur pose.
+    let (s, b) = patch_rule(
+        &app,
+        &ctx.jwt,
+        id,
+        json!({ "expectedVersion": 2, "providerType": null, "counterpartyEmail": " X@Y.CH",
+                "direction": "credit" }),
+    )
+    .await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(b["providerType"], Value::Null);
+    assert_eq!(b["counterpartyEmail"], "x@y.ch");
+    assert_eq!(b["direction"], "credit");
+    let stocke: (Option<String>, Option<String>, Option<String>) = sqlx::query_as(
+        "SELECT provider_type, counterparty_email, direction FROM reconciliation_rules WHERE id = ?",
+    )
+    .bind(id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(stocke, (None, Some("x@y.ch".into()), Some("credit".into())));
+    let trace: Value = sqlx::query_scalar(
+        "SELECT details_json FROM audit_log WHERE action = 'reconciliation_rule.updated' \
+         AND entity_id = ? ORDER BY id DESC LIMIT 1",
+    )
+    .bind(id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(trace["before"]["provider_type"], "General Payment");
+    assert_eq!(trace["after"]["provider_type"], Value::Null);
+    assert_eq!(trace["before"]["direction"], "debit");
+    assert_eq!(trace["after"]["direction"], "credit");
+    assert_eq!(trace["after"]["counterparty_email"], "x@y.ch");
+}
+
+/// AC-3 — le doublon de critère est refusé **quels que soient les filtres et
+/// le sens** (limite KISS de la 38-11b, AC-1) : même `matchType` et
+/// `matchValue`, autres filtres → `409 RECONCILIATION_RULE_DUPLICATE`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn s38_11c1_doublon_de_critere_a_filtres_differents(pool: MySqlPool) {
+    let ctx = setup_ctx(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let app = spawn_app(pool.clone()).await;
+    create_rule_ok(
+        &app,
+        &ctx.jwt,
+        json!({
+            "label": "Crédits",
+            "matchType": "counterparty_contains",
+            "matchValue": "Boutique",
+            "counterpartyAccountId": ctx.counterparty_account_id,
+            "direction": "credit",
+            "providerType": "Express Checkout Payment",
+        }),
+    )
+    .await;
+    let resp = post_rule_raw(
+        &app,
+        &ctx.jwt,
+        json!({
+            "label": "Débits",
+            "matchType": "counterparty_contains",
+            "matchValue": "Boutique",
+            "counterpartyAccountId": ctx.counterparty_account_id,
+            "direction": "debit",
+            "counterpartyEmail": "a@b.ch",
+        }),
+    )
+    .await;
+    assert_eq!(resp.status(), 409);
+    let b: Value = resp.json().await.unwrap();
+    assert_eq!(b["error"]["code"], "RECONCILIATION_RULE_DUPLICATE");
+}
+
+/// AC-3 — le sens s'applique au rapprochement existant (`GET /proposals`) :
+/// une règle `debit` ne propose rien pour un crédit, une règle `credit` le
+/// propose ; une règle filtrée par type ne vaut pas pour une transaction sans
+/// champ prestataire (CAMT).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn s38_11c1_le_sens_et_le_type_au_rapprochement(pool: MySqlPool) {
+    let ctx = setup_ctx(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let app = spawn_app(pool.clone()).await;
+    let r = create_rule_ok(
+        &app,
+        &ctx.jwt,
+        json!({
+            "label": "Boutique",
+            "matchType": "counterparty_contains",
+            "matchValue": "Boutique",
+            "counterpartyAccountId": ctx.counterparty_account_id,
+            "direction": "debit",
+        }),
+    )
+    .await;
+    let id = r["id"].as_i64().unwrap();
+    create_pending_bank_tx(
+        &pool,
+        ctx.company_id,
+        ctx.user_id,
+        ctx.bank_account_id,
+        dec!(42.00),
+        "Boutique SA",
+        None,
+        None,
+        "CHF",
+        Some(NaiveDate::from_ymd_opt(2026, 5, 10).unwrap()),
+    )
+    .await;
+    let regle_proposee = |app: &TestApp| {
+        let url = app.url(&format!(
+            "/api/v1/reconciliation/proposals?bankAccountId={}",
+            ctx.bank_account_id
+        ));
+        let client = app.client.clone();
+        let jwt = ctx.jwt.clone();
+        async move {
+            let body: Value = client
+                .get(url)
+                .bearer_auth(jwt)
+                .send()
+                .await
+                .unwrap()
+                .json()
+                .await
+                .unwrap();
+            body["proposals"][0]["candidates"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|c| c["candidateType"] == "rule")
+        }
+    };
+    assert!(
+        !regle_proposee(&app).await,
+        "règle débit, transaction crédit"
+    );
+    let (s, b) = patch_rule(
+        &app,
+        &ctx.jwt,
+        id,
+        json!({ "expectedVersion": 1, "direction": "credit" }),
+    )
+    .await;
+    assert_eq!(s, 200, "{b}");
+    assert!(
+        regle_proposee(&app).await,
+        "règle crédit, transaction crédit"
+    );
+    let (s, b) = patch_rule(
+        &app,
+        &ctx.jwt,
+        id,
+        json!({ "expectedVersion": 2, "providerType": "Express Checkout Payment" }),
+    )
+    .await;
+    assert_eq!(s, 200, "{b}");
+    assert!(
+        !regle_proposee(&app).await,
+        "règle filtrée par type, transaction CAMT"
+    );
+}

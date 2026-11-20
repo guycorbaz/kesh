@@ -161,7 +161,7 @@
 //!   `post`, `put`, `delete` et `patch`. Aucune route `GET` n'écrit au journal
 //!   aujourd'hui (remontée de l'AC1 : des `POST` et un `DELETE`) ; l'angle mort
 //!   est du même ordre que celui de l'audit (`GET /invoices/{id}/pdf`, plus bas).
-//! - **(vi)** **trente-deux routes `SansEcritureAuJournal` sont rejouées quand
+//! - **(vi)** **trente-trois routes `SansEcritureAuJournal` sont rejouées quand
 //!   même** : `fiscal_years::update_fiscal_year` (enveloppe `DbError`, opération
 //!   `fiscal_years::update_name`, Story 34-7, #945 : le renommage tient l'exercice
 //!   puis son homonyme par la lecture de doublon, alors que la clôture tient ses
@@ -350,9 +350,21 @@
 //!   récupération et la copie (mêmes clés uniques), et, pour les genres, avec
 //!   l'activation de 37-1 ; `put_rate` est tenue par
 //!   `exchange_rate_put_is_replayed_when_it_is_the_deadlock_victim`
-//!   (`rejeu_interblocage_e2e.rs`), les trois autres par leur revue.
+//!   (`rejeu_interblocage_e2e.rs`), les trois autres par leur revue. Et —
+//!   Story 38-11c1 (relevé P2-L1 de la revue de la 38-11b) —
+//!   `paypal_imports::create` (enveloppe `AppError`
+//!   `crate::retry::retry_app_on_deadlock`, opération `paypal_imports::create`) :
+//!   l'import PayPal n'écrit rien au journal, mais sa relecture verrouillante
+//!   des soldes pose des verrous partagés sur les lignes `bank_accounts` de la
+//!   société, puis son `INSERT bank_imports` demande `companies` en partage,
+//!   alors qu'un `POST`, `PUT`, `PATCH` ou archivage de compte bancaire tient
+//!   la sentinelle `companies` en exclusif puis demande une de ces lignes ;
+//!   tenue par `import_rejoue_un_interblocage_avec_un_geste_de_compte`
+//!   (`paypal_import_e2e.rs`).
 //!
-//!   **Décompte : trente-deux**, recompté le 2026-11-16 à la Story 37-2 depuis
+//!   **Décompte : trente-trois** le 2026-11-20 (Story 38-11c1), par ajout de
+//!   `paypal_imports::create` au décompte qui suit, **non recompté en entier**.
+//!   **Trente-deux**, recompté le 2026-11-16 à la Story 37-2 depuis
 //!   la table et le corps de chaque route : vingt-neuf handlers
 //!   `SansEcritureAuJournal` de `src/routes/` portent une enveloppe, plus
 //!   `onboarding::seed_demo` et `onboarding::reset`, rejouées dans `kesh-seed`,
