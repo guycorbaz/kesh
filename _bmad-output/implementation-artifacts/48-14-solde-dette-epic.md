@@ -1,6 +1,6 @@
 # Story 48-14 : Story de solde de l'Epic 48 — dette des revues du règlement groupé (#1263, #1262, #1261, #1255)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-19 (Opus 5.5), étape `bmad-create-story`, sans code. Worktree `/home/gcorbaz/devel/kesh-48-14`,
 branche `story/48-14-solde-dette-epic`, partie de `epic/48-corrections-0-20-0` (`59bdd104f`) ; **toutes les lignes citées
@@ -976,9 +976,39 @@ commit**, arbre de code propre (`git status --porcelain` en tête de chaque jour
 **Décomptes de la remédiation P2** (`git diff b37b16b89` au commit de remédiation P2) : Vitest +4 `it` nets (`ReconciliationProposals.test.ts` :
 5 ajoutés, dont 1 qui remplace « lot Accepter en échec » d'avant ; l'`it.each` modifié ; 99 → 103 cas) ; Rust +1 cas construit (aucun `#[test]` neuf) ; 3 fichiers de code et de test.
 
-**Gates de clôture**, au dernier commit de code (commit de remédiation P2) (journaux sous `kesh-gate-logs/e4814/`) :
+**Gates de clôture**, au dernier commit de code `8106fce83` (remédiation P3 : trois lignes de commentaire Svelte et la fiche),
+rejoués à `2f0814d9d` (même code, prompt P4 en plus), arbre de code propre en tête de chaque journal (journaux sous
+`kesh-gate-logs/e4814/`). Script `p2-cloture.sh` sous `.gate.lock` et `mem-guard`, bases `kesh_e4814` remises à neuf ;
+frontend par `p2-front.sh` sous `.gate-front.lock`.
 
-<GATES2>
+| Gate | Journal | Résultat |
+|---|---|---|
+| fmt | `clot.console` | rc=0 |
+| clippy `--workspace --all-targets -D warnings` | `clot-clippy.log` | rc=0 |
+| `gate-ci` (environnement fermé de la CI) | `clot-gate-ci.log`, `clot-gate-ci.console` | 6195 passés, 0 échoué, 19 ignorés, rc=0 |
+| frontend complet (check, lint-i18n-ownership, test:unit, build) | `clot-front-2.log` | rc=0 partout ; 280/280 fichiers, 4813/4813 tests |
+| E2E complet (Playwright, 518 tests) | `clot-e2e.log` | 493 passés, 18 ignorés, 7 échoués ; jugés fichier par fichier contre `docs/testing.md` § *Les échecs attendus* : `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150` — les sept KF-029 (#97) exactement, aucune pollution |
+
+Le premier frontend de clôture (`clot-front.log`, à `02387000b`, 4813/4813) a précédé la remédiation P3 ; il est remplacé par
+`clot-front-2.log`.
+
+**Passe ciblée P3** (Haiku 5.5, une lentille, commit `02387000b`, `kesh-gate-logs/e4814/review-p3.md`) : 0/0/1/2. P3-1
+(MEDIUM, procédure) : `02387000b` touche deux modules (frontend, test Rust) et réécrit D3 — CLAUDE.md exclut la passe ciblée
+dans ce cas ; prémisse vérifiée (`git show --stat 02387000b`), d'où la passe complète P4. P3-2 (LOW, production : commentaire
+de fin de lot de `ReconciliationProposals.svelte` qui omettait la relecture finale) et P3-3 (LOW, fiche : « drapeau » →
+compteur `settledInBackground`, T5 et M4) corrigés au commit `8106fce83`.
+
+**Revue de code P4** (Opus 5.5, passe complète, `kesh-gate-logs/e4814/review-p4.md`) : **0/0/0/5**, aucun finding au-dessus de
+LOW : la boucle se clôt. La passe établit au code que régler une seconde fois une ligne périmée après un lot est refusé
+(`TransactionNotPending` → `RECONCILIATION_ALREADY_RECONCILED`, `ROLLBACK TO SAVEPOINT`), chemin groupé compris. Sort des LOW :
+
+| Finding | Devenu |
+|---|---|
+| P4-1 (production : trois commentaires de `GroupSettlementModal` sur la relecture du parent) | #1451 — non corrigé ici, pour ne pas rouvrir la boucle avant la release 0.19.1 |
+| P4-2 (fiche : marqueur `<GATES2>`, P3 absente du DAR et du Change Log) | corrigé : tableau ci-dessus, entrée 0.8 du Change Log |
+| P4-3 (File List sans les prompts P2, P3, P4) | corrigé ci-dessous |
+| P4-4 (garde `bank_account_closed_inventory.rs:720` : jeton nu `ensure_open_in_tx(`) | #1452 — risque nul aujourd'hui (une seule définition, `bank_accounts.rs:982`) |
+| P4-5 (M21 jouée par `sed -i` et restaurée par `cp`, contre l'outil Edit de la fiche) | déclaré ici : écart de méthode, mutation saine (substitution visible, tuée sur le bon cas, restauration contrôlée par `cmp`) |
 
 ### File List
 
@@ -999,7 +1029,7 @@ Code et tests (22 fichiers, `git diff --name-status 0a7447001 HEAD`) :
 
 Fiche et suivi : la présente fiche, `_bmad-output/implementation-artifacts/sprint-status.yaml`,
 `_bmad-output/implementation-artifacts/e0200-choix-autonomes-e4814.md` (neuf),
-`_bmad-output/implementation-artifacts/48-14-solde-dette-epic-review-prompt-p1.md` (neuf).
+`_bmad-output/implementation-artifacts/48-14-solde-dette-epic-review-prompt-p1.md`, `-p2.md`, `-p3-haiku.md`, `-p4.md` (neufs).
 
 ## Change Log
 
@@ -1012,3 +1042,4 @@ Fiche et suivi : la présente fiche, `_bmad-output/implementation-artifacts/spri
 | 2026-11-20 | 0.5 | **Développement (`bmad-dev-story`), passage en `review`.** Commits de code : `58e7f8682` (Lots A et B, i18n, manuel), `dbe67c669` (caractérisation T8–T10 **avant** réécriture ; Lot D), `2f0ab63b0` (réécriture du Lot C, gardes), `8077fb851` (E2E), `96f160d4a` (T7 corrigé, dernier commit de code). Étape 0 : Échap ferme *Écriture manuelle* et *Éclater* pendant l'envoi (sonde Vitest) → deux issues à ouvrir ; KF-063 reproduite de façon déterministe (cumul 61, `write.rs:1078`). Rouges d'abord pour chaque lot ; M1 à M11 tuées, M1 et M2 aussi rejouées en E2E. Gates à `96f160d4a` : `test-fast --ci` 6175/6175, `gate-ci` 6192/0/19, frontend complet 4805/4805 ; E2E complet à la clôture. Écarts déclarés au Dev Agent Record (décompte anti-muet 45 → 44, `APPELS_D_AUDIT`, archive nextest de l'ancien code, preuve du rouge de T6/T7 par M2/M1, M6 côté client seulement, `cat >>` et un `sed -i` sans effet, chevauchements brefs de commandes lourdes). Prompt de la revue P1 : `48-14-solde-dette-epic-review-prompt-p1.md` | Opus 5.5 |
 | 2026-11-20 | 0.6 | **Remédiation de la revue de code P1** (trois lentilles Opus : B 0/0/0/5, E 0/0/1/3, A 0/0/1/7 ; total 0/0/2/15). Commit de code `752423715`. MEDIUM : E1/B1 — inventaire des appelants de l'aide de lien (`APPELANTS_LIEN_GROUPE`, garde avant l'appel) et sa sonde synthétique ; A1/B3 — paragraphe *Un refus.* et D2 en conditions qui s'excluent, contrôle du PDF compilé qui discrimine. LOW corrigés : E2 (un lot en cours retient la relecture), B4 (le bilan compte les règlements consommés ; D3 révisée), E4 (clé commune refusée en `Invariant`), B2 (cas « entre les deux audits », M16), A5 (M12), B5/E3/A8 (reproduction de KF-063), A2/A3/A4/A6 (DAR) ; A7 → #1419. Reprise après l'arrêt par systemd-oomd (04:23) : le chemin « réponse dépassée » de `load()` rendait les règlements à l'attente — compté au bilan, test et M15. Mutations M12 à M16 tuées. Gates à `752423715` : `gate-ci` 6195/0/19, frontend complet 4809/4809, clippy vert, E2E T6, T6 bis, T7 3/3 ; E2E complet à la clôture. Prochaine passe : P2, Sonnet, complète (`48-14-solde-dette-epic-review-prompt-p2.md`). | Opus 5.5 |
 | 2026-11-20 | 0.7 | **Remédiation de la revue de code P2** (Sonnet 5.5, passe complète : 0/0/0/4). Tendance : P1 Opus 5.5 (trois lentilles B, E, A) 0/0/2/15 → P2 Sonnet 5.5 0/0/0/4 ; aucun finding au-dessus de LOW, la boucle peut se clore ; les quatre LOW, nés de la remédiation P1, corrigés dans la story (règle du 2026-11-14) et soumis à une passe ciblée Haiku. P2-1 : la fin d'un lot ne relit plus (`flushPendingReload()` retiré des `finally`), tests rouges puis verts (`p2-rouge-p21.log`, `p2-vert.log`) ; P2-2 : cinquième cas construit, M21 tuée, trois angles morts écrits ; P2-3 : quatre tests, M17 à M20 tuées (le cinquième mutant disparaît avec P2-1) ; P2-4 : D3, AC7, T5, DAR et titre du test réécrits, #1417 et #1418 cités, remarque de provenance des journaux p1r. Reclassements : aucun. Gates de clôture au commit (voir Dev Agent Record). Prompt de la passe ciblée : `48-14-solde-dette-epic-review-prompt-p3-haiku.md`. | Opus 5.5 |
+| 2026-11-20 | 0.8 | **Clôture.** Revue de code, tendance par passe : P1 Opus 5.5 (trois lentilles) 0/0/2/15 → P2 Sonnet 5.5 (complète) 0/0/0/4 → P3 Haiku 5.5 (ciblée, `02387000b`) 0/0/1/2 → P4 Opus 5.5 (complète) 0/0/0/5. Reclassement : P3-1 (MEDIUM de procédure) résolu en passant à la passe complète P4 ; P4-1 → #1451, P4-4 → #1452 ; P3-2, P3-3, P4-2, P4-3 corrigés, P4-5 déclaré. Dernier commit de code `8106fce83` (commentaire). Gates de clôture à `2f0814d9d` : fmt, clippy verts ; `gate-ci` 6195/0/19 ; frontend 4813/4813 ; E2E 493 passés + les sept KF-029 attendus. Session de l'orchestrateur interrompue (crash) à 11 h 07, reprise par l'orchestrateur à 11 h 10 : boucle et gates menés par lui. La story part dans la release **0.19.1** (décision de Guy du 2026-11-20), et non dans la 0.20.0 comme le dit l'en-tête. | Opus 5.5 |
