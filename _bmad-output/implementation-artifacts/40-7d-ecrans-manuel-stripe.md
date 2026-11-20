@@ -58,7 +58,7 @@ manuel me dise comment exporter le bon rapport de Stripe et ce que Kesh en fait.
    la devise sans compte nomme les devises. Rappel affiché : « les ventes viennent des boutiques ; importez-les avant le
    rapport Stripe ».
 3. **AC-3 — Propositions, écarts, à examiner.** Genres de proposition : « Rattachement à la vente n° … » (`link_sale`),
-   « Frais » (`fee`), « Versement vers <compte de versement> » (`payout`), à cocher, « Tout cocher », **« Accepter la
+   « Frais » (`fee`), « Versement vers <compte de versement> » (`payout`, compte et libellé portés par la proposition de la revue, 40-7c AC-4), à cocher, « Tout cocher », **« Accepter la
    sélection »** → `POST /api/v1/stripe/accept` (par paquets, compte rendu cumulé : acceptées, et chaque refus avec son
    message, par le module de libellés de 38-11d généralisé par 39-11d, délégation à `failedProposalLabel`). Écarts —
    codes de 38-11c libellés pour Stripe : `receipt_without_sale` « Charge sans vente », `sale_without_receipt` « Vente
@@ -80,7 +80,9 @@ manuel me dise comment exporter le bon rapport de Stripe et ce que Kesh en fait.
    versement) ; ce que Kesh propose et ce qu'écrit l'acceptation ; chaque écart et quoi faire ; la réception sur Wise
    (proposée par la page Wise) ou à la banque (« déjà comptabilisée » à la réconciliation) à rattacher à l'écriture du
    versement, jamais comptée deux fois ; limites (remboursements, retours de versement et versements qui en portent à
-   passer à la main ; rattachement en devise seul, les autres gestes de la réconciliation restant en CHF ; aucun code TVA ;
+   passer à la main ; réception sur un autre exercice que le versement : l'écart `payout_without_receipt` demeure
+   jusqu'à son rattachement ; annuler le côté Stripe d'un versement dont la réception est rattachée ne retire que le
+   lien : rattacher de nouveau, ne pas accepter une seconde fois la proposition ; rattachement en devise seul, les autres gestes de la réconciliation restant en CHF ; aucun code TVA ;
    aucune conversion entre devises, un compte de versement de même devise ; monnaies à trois décimales non servies ;
    petit écart de change possible au compte de transit, traité par la réévaluation de fin d'exercice). Gardes de
    `textes_coherents.rs` **à connaître avant d'écrire** (relevées à 38-11d) : G2 interdit le mot capitalisé « Réglages »
@@ -162,4 +164,7 @@ Stripe » du manuel utilisateur et de `docs/api-external.md`.
   (revue, propositions à cocher, acceptation en lot), codes d'écart de 38-11c libellés pour Stripe, réception rattachée
   sur la page Wise ou à la réconciliation de la banque (aucune modale propre), E2E par l'acceptation à l'écran.
   Remédiation P1 vérifiée (`withoutProviders`, chemins frontend, gardes du manuel).
-
+- 2026-11-20 — validation P3 ciblée (Claude Sonnet 5.5, contexte frais ; propagation de la 40-7c) : 0 CRITICAL, 0 HIGH,
+  0 MEDIUM, 2 LOW, remédiés (rapport `kesh-gate-logs/epic-39-40-kiss/validation/40-7-P3-ciblee.md`). LOW : le libellé
+  « Versement vers <compte> » exige que la proposition de la revue porte le compte de versement (40-7c AC-4 d) ; deux
+  limites ajoutées au manuel (réception sur un autre exercice, annulation du côté Stripe).

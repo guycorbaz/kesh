@@ -47,7 +47,7 @@ ressaisie et de voir mes erreurs.
    (conditions 1 et 3), **utilisé, non refait**, testé ici sur un compte Stripe EUR. **La condition 4 (autre côté d'un
    virement) n'est pas touchée par cette story** : la revue Stripe ne rattache aucune réception (AC-5) ; le prédicat
    de l'autre côté (`other_side_predicate`, `reconciliation_link.rs:698`) s'écrit en **un texte unique à deux
-   branches**, **porté par la 38-11c** (relevé de la P2 de l'Epic 39, 39-11c AC-3) : `(bt.bank_account_id <> ? AND
+   branches**, **attribué à la 38-11c** par 39-11c AC-3 (relevé de la P2 de l'Epic 39) — ⚠️ la fiche 38-11c (P2, `f022700f`) ne le reprend pas (aucune occurrence d'`other_side_predicate`) : à défaut c'est 39-11c qui l'écrit (son repli), 40-7c en dernier recours, à vérifier à T0 : `(bt.bank_account_id <> ? AND
    ((bt.currency = ? AND bt.amount = -(M)) OR (bt.currency <> ? AND SIGN(bt.amount) = -SIGN(M))) AND exclusions)` —
    même devise : montant opposé exact (virement, versement Stripe) ; devise différente : signe opposé (les deux côtés
    d'une conversion) —, la devise de `t` en **paramètre commun** (devise du compte du plan, comme `t.bank_account_id`).
@@ -99,14 +99,23 @@ ressaisie et de voir mes erreurs.
      des retours de versement ; le sens de leur écriture n'est pas établi) ;
    - (b) aucun compte de versement réglé, ou le compte de versement archivé ou clos depuis → « à examiner »
      `payout_account_missing` ;
-   - (c) **contrôle de cohérence** : la somme de ces transactions (bruts et `:FEE`) ne vaut pas `−amount` → écart
+   - (c) **contrôle de cohérence** : la somme des transactions **autres que celle du versement** (bruts et `:FEE` ; la
+     transaction du versement porte elle aussi `end_to_end_id = payout_id`, 40-7b AC-5 — la compter ferait toujours
+     valoir la somme zéro, donc toujours un écart) ne vaut pas `−amount` → écart
      `payout_total_mismatch` (`details: { payoutId, expected, found }`), pas de proposition — le cas d'un versement
      importé en deux fichiers incomplets (total fixé au premier, lignes ajoutées par le second) ; ⚠️ il **ne voit pas**
      un rapport filtré importé d'un seul fichier (le total vient des mêmes lignes) : celui-là se voit à la réception
      (AC-5) ;
-   - (d) sinon proposition **`payout { bankTransactionId }`**. À l'acceptation : le compte de versement est **relu sous
-     verrou** depuis les paramètres du compte Stripe (le client ne le désigne pas ; changé, archivé ou clos depuis la
-     revue → `failed[]` `PROVIDER_PROPOSAL_STALE`, ou le code périmé de 38-11c), écriture datée de `booking_date` (la
+   - (d) sinon proposition **`payout { bankTransactionId }`** — la proposition de la **revue** porte en plus, pour
+     l'affichage (40-7d), `payoutBankAccountId` et le libellé du compte de versement, que le corps de l'acceptation ne
+     reprend pas. À l'acceptation : le compte de versement se lit depuis les paramètres du compte Stripe **avant les
+     verrous** avec les comptes des propositions, et **son compte bancaire entre dans l'ensemble verrouillé**
+     (`with_account_locks`, identifiants croissants) ; **relu sous verrou** (le client ne le désigne pas ; changé
+     depuis la lecture ou la revue, ou archivé → `failed[]` `PROVIDER_PROPOSAL_STALE`, ou le code périmé de 38-11c ;
+     clos → `BankAccountClosed` en `failed[]`, par `ensure_open_in_tx`, comme `link_entry_in_tx`) ; contrôles de la
+     contrepartie : ceux de la proposition `fee` **adaptés** — compte du plan du compte de versement actif, imputable,
+     de la devise du transit, de type actif (le contrôle « compte de charge » du compte de frais ne s'y applique pas),
+     relevé à T0 ; écriture datée de `booking_date` (la
      date du versement du rapport), libellé « Versement Stripe <payout_id> », compte du plan du compte de versement au
      débit, transit au crédit, montant net en devise d'origine — **même devise par construction** (40-7b AC-2), deux
      lignes au même montant en devise, au même cours, au même CHF : la forme de l'écriture `fee` de 38-11c pour une
@@ -121,7 +130,8 @@ ressaisie et de voir mes erreurs.
    ligne CAMT « déjà comptabilisée » (34-4) et la rattache par `POST /api/v1/reconciliation/transactions/{id}/link-entry`
    (`lib.rs:1046`) comme **autre côté** du virement (34-11b) ; aucune autre écriture. La revue Stripe liste en écart
    **`payout_without_receipt`** (`details: { payoutId, journalEntryId, payoutBankAccountId }`) tout versement de
-   l'exercice rapproché dont l'écriture ne porte **aucune** transaction du compte de versement — relevé pas encore
+   l'exercice rapproché dont l'écriture n'est pointée par **aucune** transaction d'un autre compte bancaire que Stripe
+   (la réception, quel que soit le compte de versement réglé depuis) — relevé pas encore
    importé, réception pas encore confirmée, **ou** rapport filtré dont le montant n'est pas le bon. *Contrat avec
    l'Epic 39 (C-40-K5)* : l'import Wise n'écrit rien pour « Argent reçu de Stripe » et laisse la transaction en
    attente ; aucune des deux revues n'écrit pour la réception.
@@ -150,13 +160,18 @@ ressaisie et de voir mes erreurs.
    puis recharge la revue (40-7d) ; un script d'API fait de même. Un second appel de la revue après acceptation ne
    propose plus ce qui a été accepté (transactions `reconciled`) ; une proposition acceptée deux fois → `failed[]`
    périmé, rien d'écrit (test). Annulation : le geste existant (`reconciliation_cancel`) défait un rattachement ou
-   contre-passe l'écriture d'un frais ou d'un versement (genre `Entry`, comme 38-11c).
+   contre-passe l'écriture d'un frais ou d'un versement (genre `Entry`, comme 38-11c) **tant que la réception n'est pas
+   rattachée** ; une fois rattachée, annuler le côté Stripe ne retire que son lien (34-11b) et la transaction redevient
+   proposable en `payout` : l'utilisateur la rattache de nouveau à l'écriture du versement (`link-entry`) au lieu
+   d'accepter la proposition, qui écrirait un second versement (limite écrite au manuel, 40-7d ; comportement à
+   confirmer à T0).
 
 ## Tâches
 
 - [ ] T0 — Relire 38-11c et 39-11c au code fusionné : moteur paramétré par le prestataire, lecture des écritures de
   vente, écriture `fee`, `mark_reconciled_in_tx`, code périmé, `other_side_predicate` (deux branches de 39-11c ?) ;
-  relever ce qui manque et le dire au Change Log.
+  relever ce qui manque et le dire au Change Log ; contrôles de contrepartie de `fee` (AC-4 d) et inventaire
+  `bank_account_closed_inventory` de la fonction d'écriture du versement.
 - [ ] T1 — `stripe.rs` : `classify`, `stripe_ids_in`, contrôles du versement (AC-2, AC-4, AC-5) ; tests purs.
 - [ ] T2 — Revue : lectures (écritures de vente paramétrées, lignes d'un versement, versements sans réception), route
   `GET` (AC-1 à AC-5).
@@ -258,3 +273,15 @@ rattachée.
 - 2026-11-20 — complément P2 (Claude Opus 5.5), sur relevé de la P2 de l'Epic 39 (`kesh-wt39` `02ed58c6`) : AC-1 cite
   le texte unique à deux branches d'`other_side_predicate`, porté par la 38-11c, devise de `t` en paramètre commun, et
   interdit un `AND bt.currency = …` isolé ; remédié dans la fiche, rapport P2 complété.
+- 2026-11-20 — validation P3 ciblée (Claude Sonnet 5.5, contexte frais ; une lentille : les patches P2 contre
+  `origin/main` et les fiches 38-11c et 39-11c à HEAD) : 0 CRITICAL, 0 HIGH, 3 MEDIUM, 3 LOW, remédiés (rapport
+  `kesh-gate-logs/epic-39-40-kiss/validation/40-7-P3-ciblee.md`). MEDIUM : le contrôle du total d'un versement
+  (AC-4 c) comptait la transaction du versement, qui porte elle aussi `end_to_end_id = payout_id` : somme toujours nulle,
+  écart toujours levé → exclue ; le compte de versement n'était ni dans l'ensemble verrouillé ni contrôlé ouvert à
+  l'écriture (clos entre la revue et l'acceptation) → lu avant les verrous, verrouillé, relu, `ensure_open_in_tx` ; la
+  proposition `payout` ne portait pas le compte de versement que 40-7d affiche. LOW : `other_side_predicate` dit « porté
+  par 38-11c » alors que la fiche 38-11c ne le reprend pas (repli 39-11c, puis 40-7c) ; `payout_without_receipt` lié au
+  compte de versement *actuel* (faux écart après un changement de réglage) → toute transaction d'un autre compte
+  bancaire que Stripe ; annulation du côté Stripe d'un versement dont la réception est rattachée (ne retire que le lien,
+  second versement proposé) → limite écrite. Contrôles de contrepartie de `fee` à relever à T0 pour le compte de
+  versement (actif, non de charge).

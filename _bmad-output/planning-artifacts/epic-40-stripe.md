@@ -111,8 +111,8 @@ transaction du versement dans `?payout=` ; `Stripe-Version` à épingler ; table
   les gestes de la réconciliation refusent une transaction en devise (`RECONCILIATION_CURRENCY_MISMATCH`,
   `routes/reconciliation.rs:4387`). PayPal (EUR, USD) et Stripe en ont besoin tous deux : **tenu** pour les conditions 1 et 3 par 38-11c AC-1. La
   condition 4 (`other_side_predicate`) s'écrit en un texte unique à deux branches — même devise : montant opposé ;
-  devise différente : signe opposé —, devise de `t` en paramètre commun, **porté par la 38-11c** (39-11c AC-3, P2 de
-  l'Epic 39) ; aucun `AND bt.currency = …` isolé. 40-7c ne l'écrit pas, elle teste le cas Stripe et ne l'écrit qu'à
+  devise différente : signe opposé —, devise de `t` en paramètre commun, **attribué à la 38-11c** (39-11c AC-3, P2 de
+  l'Epic 39 ; la fiche 38-11c ne le reprend pas à `f022700f` : à défaut 39-11c, puis 40-7c, validation P3) ; aucun `AND bt.currency = …` isolé. 40-7c ne l'écrit pas, elle teste le cas Stripe et ne l'écrit qu'à
   défaut, dans ce même texte (validation P2).
 - **C-40-K4 — Recherche d'une vente par identifiant au libellé** : une fonction, paramétrée par le motif du jeton
   (`TXN <id>` pour PayPal, `ch_…`/`py_…` pour Stripe), partagée avec 38-11c : **la lecture des écritures de vente** (une
