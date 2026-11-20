@@ -37,7 +37,7 @@ solde sans que la clé soit jamais en base ni dans une sauvegarde.
    (40-8b). Jamais écrite en base, dans l'audit, dans un `.keshbackup`, ni dans un message d'erreur. **Transmission au conteneur** (S1) : `KESH_STRIPE_1_*` à
    `KESH_STRIPE_3_*`, `KESH_STRIPE_BASE_URL`, `KESH_STRIPE_PARALLEL` ajoutées à `docker-compose.yml` et
    `docker-compose.prod.yml` en `${NOM:-}` (patron `KESH_SMTP_*`, `docker-compose.yml:117-122`) et à `.env.example`
-   (patron `:302-340`). Le libellé est **propre à
+   (patron `:302-340`). **Garde `configuration_transmise.rs` (#550)** : cette story **inscrit la famille `KESH_STRIPE_<n>_*`** (ACCOUNT, KEY ; séries 1 à 3 exigées, 4 à 9 admises absentes avec raison) à la famille indexée générique de 38-12a, sans relâcher aucune liste. Le libellé est **propre à
    l'installation** (S1) : manuel d'administration (40-8b) : les droits *Read* à donner et ce point.
 2. **AC-2 — Client** (`crates/kesh-api/src/stripe/`, client HTTP du socle S5 : rustls, aucune redirection, délais bornés ;
    **`reqwest` n'a pas la fonctionnalité `json` en dépendance normale** — `Cargo.toml:112` —, lire par `.bytes()` puis
@@ -69,7 +69,7 @@ solde sans que la clé soit jamais en base ni dans une sauvegarde.
    ⚠️ **Zurich et non UTC** : un instant entre 00:00 et 02:00 à Zurich a, en UTC, le jour d'avant — le 31 décembre à 23:30
    UTC est le 1er janvier à Zurich —, et mettrait la transaction dans le mauvais exercice. La transaction du versement
    lui-même (`type = payout`), **si `?payout=` la rend** (non confirmé), n'est pas une ligne. Le contrôle « Σ net des lignes
-   = montant du versement » (écart `PAYOUT_TOTAL_MISMATCH` de 40-7c, sans attendre l'import) prend le montant du versement dans
+   = montant du versement » (la même grandeur que l'écart `PAYOUT_TOTAL_MISMATCH` de 40-7c pour un CSV ; ici il est **bloquant**, ci-dessous) prend le montant du versement dans
    **l'objet versement** de `GET /v1/payouts` (`amount`), non dans une transaction de solde que Stripe peut ne pas rendre. **Issue d'un écart** (validation P2 : elle n'était pas
    dite) : Σ net ≠ `amount` → la tâche échoue en `PROVIDER_RESPONSE_INVALID`, `details: { provider: "stripe", payoutId,
    expected, found }`, **rien d'écrit** (socle S6) — l'import calcule la transaction du versement sur Σ net (40-7b AC-5) et
@@ -155,5 +155,7 @@ en variable d'environnement (`KESH_STRIPE_<n>_ACCOUNT`, `KESH_STRIPE_<n>_KEY`).
   `kesh-gate-logs/epic-39-40-kiss/validation/40-8-P2.md`) : 0 C, 0 H, 2 M, 3 L, remédiés. Ici : issue d'un écart entre Σ net
   et le montant du versement définie (échec `PROVIDER_RESPONSE_INVALID`, rien d'écrit) ; aucune fenêtre (Stripe sans
   `max_days`, décision de l'orchestrateur) ; `kesh-i18n` retiré des modules (aucun message propre).
-- 2026-11-20 — validation P2, complément (Claude Opus 5.5) : valeur vide = absente, séries 1 à 3 aux deux compose et à
+- 2026-11-20 — validation P3 ciblée (Claude Sonnet 5.5, contexte frais ; rapport `kesh-gate-logs/epic-39-40-kiss/validation/39-40-phase2-P3-ciblee.md`) : famille Stripe inscrite à la garde `configuration_transmise.rs` ; écart de versement distingué de l'écart non bloquant du CSV.
+- 2026-11-20 — validation P2, complément (Claude Opus 5.5)
+ : valeur vide = absente, séries 1 à 3 aux deux compose et à
   `.env.example` (corrections du socle relevées par la P2 de la 38-12).

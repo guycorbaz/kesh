@@ -34,7 +34,7 @@ frais, versements, écarts —, sans doublon si j'ai déjà importé le CSV.
    `routes/bank_imports.rs:1688`, comme 38-12a AC-8). Le `POST` est inscrit à `LIB_ROUTES`
    (`crates/kesh-api/tests/audit_route_registry.rs:440`) en `Traced, SansEcritureAuJournal` ; dans cette story, le compte de
    `the_registry_partition_is_what_the_story_declares` (`:1082`) relevé de un avec sa raison et la phrase « N des M routes à
-   verbe mutant » du manuel d'administration (lue par `le_manuel_dit_le_compte_du_registre`, `:1194`) mise à jour, comptes
+   verbe mutant » du manuel d'administration (lue par `le_manuel_dit_le_compte_du_registre`, `:1194`) mise à jour, **ainsi que la phrase « N + E + R = M »** du même paragraphe (même test) et la quatrième assertion (`LIB_ROUTES.len() + TEST_ENDPOINT_ROUTES.len()`), comptes
    **recomptés** après les stories fusionnées avant (validation P2). Refus dans cet ordre, rien lancé : 403
    `API_KEY_OPERATION_FORBIDDEN` → 400 `VALIDATION_ERROR` → 404 `PROVIDER_ACCOUNT_NOT_FOUND` (40-7b ;
    plus de `STRIPE_ACCOUNT_NOT_FOUND`) → 422 `PROVIDER_API_NOT_CONFIGURED` (aucune paire d'environnement ne porte ce libellé,
@@ -43,7 +43,7 @@ frais, versements, écarts —, sans doublon si j'ai déjà importé le CSV.
    `PROVIDER_DOWNLOAD_RUNNING` (une tâche du même compte tourne ; `details: { provider: "stripe", jobId }`, pour que l'écran
    reprenne le suivi). Réponse `202 { jobId }` ; `GET /api/v1/stripe-downloads/{jobId}`
    (société de l'appelant seulement, sinon 404) → `{ state, steps: { done, total }, pausedUntilSeconds, result, error: { code, message, details? } }` — la
-   forme commune (un seul nom, `details`), **sans `requests` ni `retries`**. Étapes : la lecture de la liste des versements (`total` nul jusqu'à sa fin),
+   forme commune (un seul nom, `details`), **sans `requests` ni `retries`**. **La panique de la tâche** → `INTERNAL_ERROR` (socle S4). Étapes : la lecture de la liste des versements (`total` nul jusqu'à sa fin),
    puis **une par versement** (« versement 5/12 »). `result` = compte rendu de 40-7b AC-6 suivi de celui de 40-7c AC-8. État en
    mémoire du processus, perdu au redémarrage (limite écrite au manuel) : **celui du socle S2**, non un exécuteur propre à Stripe.
 2. **AC-2 — Rythme et reprise : ceux du socle S2, sans variante propre à Stripe.** Liste des versements (pages de 100), puis
@@ -70,7 +70,7 @@ frais, versements, écarts —, sans doublon si j'ai déjà importé le CSV.
    dialogue ; jamais la clé). *Manuel d'administration* (`docs/manual/fr/admin-manual.tex`) : créer une **clé restreinte** au
    tableau de bord Stripe, droits *Read* seuls sur les versements et le solde (noms exacts **à relever**, 40-8a), variables
    `KESH_STRIPE_<n>_ACCOUNT` (libellé **propre à l'installation** : deux sociétés au même libellé atteignent le même compte
-   Stripe), `KESH_STRIPE_<n>_KEY`, `KESH_STRIPE_BASE_URL`, `KESH_STRIPE_PARALLEL` dans les **deux tableaux de variables**, comment aller **au-delà de trois
+   Stripe), `KESH_STRIPE_<n>_KEY`, `KESH_STRIPE_BASE_URL`, `KESH_STRIPE_PARALLEL` dans **un tableau neuf du § `sec:env-vars`** (modèle `:840-862`) **et** le tableau de la section Stripe, jamais le tableau SMTP (`:1155`),, comment aller **au-delà de trois
    comptes** (lignes à ajouter aux compose), la clé ni en base ni en sauvegarde (à
    reposer après une restauration sur un autre serveur), révocation ; que faire d'un `PROVIDER_API_ERROR` (vérifier d'abord les
    droits de la clé). *Manuel utilisateur* : le bouton, la période, les délais, les dates de Zurich. `.tex` seulement.
@@ -133,5 +133,7 @@ limite de débit, parallélisme réglable (`KESH_STRIPE_PARALLEL`, 1 à 6) ; mê
   ici, compte du registre et phrase du manuel relevés dans cette story, clé d'API refusée en 403
   `API_KEY_OPERATION_FORBIDDEN` sur les deux routes (comme 38-12a), 409 avec `details: { provider, jobId }`, `details` seul
   nom, une entrée `bank_imports` et un `filename` par devise.
-- 2026-11-20 — validation P2, complément (Claude Opus 5.5) : cœur `ProviderLine` extrait par 38-12a (ou 40-7b), appelé ici ;
+- 2026-11-20 — validation P3 ciblée (Claude Sonnet 5.5, contexte frais ; rapport `kesh-gate-logs/epic-39-40-kiss/validation/39-40-phase2-P3-ciblee.md`) : registre (deux phrases du manuel, quatre assertions), tableaux de variables (§ `sec:env-vars` neuf, jamais SMTP), panique de tâche → `INTERNAL_ERROR`.
+- 2026-11-20 — validation P2, complément (Claude Opus 5.5)
+ : cœur `ProviderLine` extrait par 38-12a (ou 40-7b), appelé ici ;
   manuel : deux tableaux de variables, au-delà de trois comptes.

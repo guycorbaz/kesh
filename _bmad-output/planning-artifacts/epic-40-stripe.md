@@ -139,8 +139,13 @@ en propre : sa conversion, son jeu d'étapes, ses codes `<PRESTATAIRE>_*` propre
   nomme la variable ; **les séries 1 à 3 de chaque prestataire, `KESH_<P>_BASE_URL` et `KESH_<P>_PARALLEL` sont transmises par
   `docker-compose.yml`, `docker-compose.prod.yml` et décrites dans `.env.example`** (patron des `KESH_SMTP_*`,
   `docker-compose.yml:117-122`, `.env.example:302-340`) — sans quoi le `.env` n'atteint pas le conteneur —, par la story de
-  phase 2 de chaque prestataire ; le manuel d'administration les porte dans ses deux tableaux de variables et dit comment aller
-  au-delà de trois comptes (lignes à ajouter au compose) ; champs privés, `Debug` masqué ; un contrôle propre au prestataire
+  phase 2 de chaque prestataire ; **la garde `crates/kesh-api/tests/configuration_transmise.rs` (#550)** exige qu'une variable soit lue
+  si et seulement si elle est transmise, une ligne `.env.example` par variable lue et des noms `KESH_…` connus, et les noms construits
+  par `format!` lui échappent : **38-12a y ajoute une famille indexée générique par prestataire** (séries 1 à 3 exigées, 4 à 9 admises
+  absentes avec raison, lectures de `provider_env` inscrites en forme exacte), Wise et Stripe y **inscrivent leur famille** (dont
+  `KESH_WISE_<n>_SCA_KEY_FILE`), sans relâcher aucune liste ; le manuel d'administration les porte dans **un tableau neuf du §
+  `sec:env-vars`** (modèle `:840-862`) **et** dans le tableau de la section du prestataire — **jamais** le tableau SMTP (`:1155`) —,
+  et dit comment aller au-delà de trois comptes (lignes à ajouter au compose) ; champs privés, `Debug` masqué ; un contrôle propre au prestataire
   s'y branche (clé Stripe `rk_`, fichier de clé SCA de Wise). Le libellé est **propre à l'installation**, non à la société.
 - **S2 — Mécanique de téléchargement** (`provider_download`) : table des tâches en mémoire (une par prestataire, société et
   libellé, purgée une heure après la fin), `windows(from, to, max_days, now)` pure (jours de Zurich ; **`max_days` par prestataire** — PayPal 30, Wise 468, Stripe
@@ -154,8 +159,9 @@ en propre : sa conversion, son jeu d'étapes, ses codes `<PRESTATAIRE>_*` propre
   d'API non admises : un secret de l'Administrateur sort)** — refusées sur le `POST` et le `GET`, dans le gestionnaire, avant
   tout, en 403 `API_KEY_OPERATION_FORBIDDEN` (patron de `bank_imports::delete`) ; le `POST` est inscrit à `LIB_ROUTES`
   (`audit_route_registry.rs`) en `Traced, SansEcritureAuJournal`, et la story qui l'ajoute relève **dans le même commit** le
-  compte de `the_registry_partition_is_what_the_story_declares` et la phrase « N des M routes à verbe mutant » du manuel
-  d'administration (`.tex`, lue par `le_manuel_dit_le_compte_du_registre`) ; 202 `{ jobId }` ; `GET …/{jobId}` (société de
+  compte de `the_registry_partition_is_what_the_story_declares` (**quatre** assertions : `LIB_ROUTES.len()`, `traced`, et la somme
+  avec `TEST_ENDPOINT_ROUTES`) et **les deux phrases** du manuel d'administration lues par `le_manuel_dit_le_compte_du_registre` —
+  « N des M routes à verbe mutant » **et** « N + E + R = M », même paragraphe (`.tex`) ; 202 `{ jobId }` ; `GET …/{jobId}` (société de
   l'appelant, sinon 404) → `{ state: running | done | failed, steps: { done, total: number | null }, pausedUntilSeconds,
   result, error: { code, message, details? } }` — **un seul nom, `details`**, dans l'état d'une tâche comme dans un refus
   HTTP.
@@ -163,6 +169,7 @@ en propre : sa conversion, son jeu d'étapes, ses codes `<PRESTATAIRE>_*` propre
   `PROVIDER_DOWNLOAD_RUNNING` (409, `details: { provider, jobId }`, pour que l'écran reprenne le suivi), `PROVIDER_PERIOD_INVALID` (400, `details.reason`), et, dans `error.code` d'une tâche,
   `PROVIDER_AUTH_FAILED`, `PROVIDER_PERMISSION_DENIED`, `PROVIDER_RATE_LIMITED`, `PROVIDER_UNAVAILABLE`,
   `PROVIDER_RESPONSE_INVALID`, `PROVIDER_API_ERROR` ; `details.provider` nomme le prestataire ; jamais le texte du prestataire.
+  **La panique d'une tâche** donne `INTERNAL_ERROR`, non `PROVIDER_API_ERROR` (qui accuserait le prestataire).
 - **S5 — Transport.** Un constructeur de client HTTP commun (rustls, aucune redirection, délais, `User-Agent`), extrait de
   `exchange_rates/source.rs:116-130` ; **`reqwest` n'a pas la fonctionnalité `json` en dépendance normale** (`Cargo.toml:112`) :
   `.bytes()` puis `serde_json`. Une adresse de base par prestataire (`https` ; `http` admis vers le seul bouclage), et **un seul
