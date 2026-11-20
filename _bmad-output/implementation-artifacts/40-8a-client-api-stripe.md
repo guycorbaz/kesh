@@ -28,12 +28,16 @@ solde sans que la clé soit jamais en base ni dans une sauvegarde.
 1. **AC-1 — Configuration**, par le **lecteur unique du socle S1** (`provider_env`, patron de `KESH_SMTP_PASSWORD`,
    `crates/kesh-api/src/config.rs:329-332` : champ privé, masqué dans `Debug`, accesseur ; `is_template_placeholder` `:1538`) :
    `KESH_STRIPE_<n>_ACCOUNT` (libellé, égal au `provider_account` d'un compte Stripe de 40-7b) et `KESH_STRIPE_<n>_KEY`,
-   `n` de 1 à 9, paires complètes ou absentes (une moitié seule → refus de démarrer, message qui nomme la variable) ;
+   `n` de 1 à 9, paires complètes ou absentes (une moitié seule → refus de démarrer, message qui nomme la variable ; une valeur **vide vaut
+   absente**, `env_nonempty`, `config.rs:1406` : sans variable Stripe, Kesh démarre) ;
    facultatives `KESH_STRIPE_BASE_URL` (défaut `https://api.stripe.com` ; `http` admis vers le seul bouclage, pour les tests,
    S5) et `KESH_STRIPE_PARALLEL` (S1 : 1 à 6, défaut 1 ; employée par 40-8b). **Contrôle propre à Stripe**, branché sur le
    lecteur : préfixe `rk_live_` ou `rk_test_` exigé, `sk_` refusé (« utilisez une clé restreinte en lecture »), valeur de gabarit
    `<…>` refusée comme ailleurs. Le mode (`live`/`test`) se lit au préfixe et se montre à l'écran par `providerApi.mode`
-   (40-8b). Jamais écrite en base, dans l'audit, dans un `.keshbackup`, ni dans un message d'erreur. Le libellé est **propre à
+   (40-8b). Jamais écrite en base, dans l'audit, dans un `.keshbackup`, ni dans un message d'erreur. **Transmission au conteneur** (S1) : `KESH_STRIPE_1_*` à
+   `KESH_STRIPE_3_*`, `KESH_STRIPE_BASE_URL`, `KESH_STRIPE_PARALLEL` ajoutées à `docker-compose.yml` et
+   `docker-compose.prod.yml` en `${NOM:-}` (patron `KESH_SMTP_*`, `docker-compose.yml:117-122`) et à `.env.example`
+   (patron `:302-340`). Le libellé est **propre à
    l'installation** (S1) : manuel d'administration (40-8b) : les droits *Read* à donner et ce point.
 2. **AC-2 — Client** (`crates/kesh-api/src/stripe/`, client HTTP du socle S5 : rustls, aucune redirection, délais bornés ;
    **`reqwest` n'a pas la fonctionnalité `json` en dépendance normale** — `Cargo.toml:112` —, lire par `.bytes()` puis
@@ -52,6 +56,9 @@ solde sans que la clé soit jamais en base ni dans une sauvegarde.
      `automatic = true` sont gardés (les autres → compte rendu, « versement manuel à examiner ») ;
    - pour chaque versement, `GET /v1/balance_transactions?payout=<po_…>&limit=100` (même pagination), dont Stripe dit qu'il
      rend, « *for automatic Stripe payouts only* », les transactions payées par ce versement.
+   - **Aucune fenêtre** : Stripe ne borne pas la période d'une liste, les curseurs suffisent ; le socle S2 n'est employé que
+     pour la reprise et le parallélisme, sans `windows` (Stripe n'a pas de `max_days`, décision de l'orchestrateur sur le
+     socle).
 3. **AC-3 — Traduction en lignes du rapport.** Fonction pure : transaction de solde → `StripePayoutRow` (40-7a AC-3) :
    `payout_id`, `payout_date` = **jour de Zurich** de l'`arrival_date` du versement, `balance_transaction_id` = `id`, `date`
    = **jour de Zurich** de `created` (`kesh_core::horloge::jour_suisse`, `:64`), `available_on` idem, `currency` en
@@ -63,7 +70,10 @@ solde sans que la clé soit jamais en base ni dans une sauvegarde.
    UTC est le 1er janvier à Zurich —, et mettrait la transaction dans le mauvais exercice. La transaction du versement
    lui-même (`type = payout`), **si `?payout=` la rend** (non confirmé), n'est pas une ligne. Le contrôle « Σ net des lignes
    = montant du versement » (écart `PAYOUT_TOTAL_MISMATCH` de 40-7c, sans attendre l'import) prend le montant du versement dans
-   **l'objet versement** de `GET /v1/payouts` (`amount`), non dans une transaction de solde que Stripe peut ne pas rendre. Le
+   **l'objet versement** de `GET /v1/payouts` (`amount`), non dans une transaction de solde que Stripe peut ne pas rendre. **Issue d'un écart** (validation P2 : elle n'était pas
+   dite) : Σ net ≠ `amount` → la tâche échoue en `PROVIDER_RESPONSE_INVALID`, `details: { provider: "stripe", payoutId,
+   expected, found }`, **rien d'écrit** (socle S6) — l'import calcule la transaction du versement sur Σ net (40-7b AC-5) et
+   40-7c ne verrait plus l'écart ; une liste incomplète écrirait un versement faux. Relancer plus tard est sans risque. Le
    même contrôle de cohérence que le lecteur (net = brut − frais) s'applique. Les lignes rendues passent ensuite par **le
    même chemin** que le CSV (40-7b AC-7) : CSV et téléchargement se mélangent, doublons par `balance_transaction_id`.
 4. **AC-4 — Erreurs**, codes **génériques** du socle S4 (`details: { provider: "stripe" }`), **jamais** le texte de Stripe
@@ -79,7 +89,7 @@ solde sans que la clé soit jamais en base ni dans une sauvegarde.
    quatre locales posés avec le socle S4 (38-12a) ; aucun ne contient la clé.
 5. **AC-5 — Tests sans réseau** (socle S5 et S9). Unitaires de la traduction (devise à deux décimales, à zéro décimale,
    refus de trois décimales, remboursement à frais négatif, **instant du 31 décembre à 23:30 UTC rendu au 1er janvier**, versement
-   dont `arrival_date` franchit l'année), de la configuration (paire incomplète, `sk_`, gabarit) ; un serveur `axum` **dans le
+   dont `arrival_date` franchit l'année, Σ net ≠ `amount` → `PROVIDER_RESPONSE_INVALID` avec `payoutId`), de la configuration (paire incomplète, `sk_`, gabarit) ; un serveur `axum` **dans le
    processus** (`127.0.0.1:0` = `KESH_STRIPE_BASE_URL`) sert des réponses **fictives** versionnées
    (`crates/kesh-api/tests/fixtures/stripe-api/*.json`, identifiants `TEST`), dont une pagination à deux pages, un 429, un 401 et
    un 400 ; il vérifie l'en-tête `Stripe-Version` et l'authentification reçues. Les lignes obtenues des réponses fictives
@@ -98,9 +108,12 @@ solde sans que la clé soit jamais en base ni dans une sauvegarde.
 Unitaires et tests d'intégration sans base sur le serveur simulé ; gate ciblé `binary(stripe_client)` ; gate complet au
 push.
 
-## Modules touchés (3)
+## Modules touchés (2)
 
-`kesh-api` (configuration, client), `kesh-import` (lecture seule du type `StripePayoutRow`), `kesh-i18n`.
+`kesh-api` (configuration, client), `kesh-import` (lecture seule du type `StripePayoutRow`) ; plus `docker-compose.yml`,
+`docker-compose.prod.yml`, `.env.example`. Aucun message propre : les
+`PROVIDER_*` et leurs messages aux quatre locales sont posés par le socle S4 (38-12a) ; `kesh-i18n` n'est pas touché
+(validation P2).
 
 ## Note de version
 
@@ -138,3 +151,9 @@ en variable d'environnement (`KESH_STRIPE_<n>_ACCOUNT`, `KESH_STRIPE_<n>_KEY`).
   MEDIUM — source simulée par trait au lieu du serveur HTTP commun, `reqwest` sans `json` ; MEDIUM — lecteur de
   configuration propre à Stripe au lieu du lecteur unique ; LOW — devises à trois décimales non traitées, `Stripe-Version`
   sans valeur ni relecture, `Bearer` et `charge_id` non justifiés.
+- 2026-11-20 — validation P2 (Claude Opus 5.5, contexte frais ; commune à 40-8a et 40-8b ; rapport
+  `kesh-gate-logs/epic-39-40-kiss/validation/40-8-P2.md`) : 0 C, 0 H, 2 M, 3 L, remédiés. Ici : issue d'un écart entre Σ net
+  et le montant du versement définie (échec `PROVIDER_RESPONSE_INVALID`, rien d'écrit) ; aucune fenêtre (Stripe sans
+  `max_days`, décision de l'orchestrateur) ; `kesh-i18n` retiré des modules (aucun message propre).
+- 2026-11-20 — validation P2, complément (Claude Opus 5.5) : valeur vide = absente, séries 1 à 3 aux deux compose et à
+  `.env.example` (corrections du socle relevées par la P2 de la 38-12).

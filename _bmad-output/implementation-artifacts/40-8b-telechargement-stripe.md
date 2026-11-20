@@ -3,7 +3,8 @@
 Status: drafted
 
 *Fiche rédigée le 2026-11-20, branche `epic/40-stripe`, chemins relevés sur `origin/main` au commit `fd04099f`. Epic 40,
-**phase 2** (décision de Beat du 2026-11-20). **Dépend de** : 40-8a (client), 40-7b (chemin d'import commun), 40-7c
+**phase 2** (décision de Beat du 2026-11-20). **Dépend de** : 40-8a (client), 40-7b (import CSV), du **cœur commun `ProviderLine`** (`provider_imports.rs`) extrait par 38-12a — ou par 40-7b s'il passe
+avant (socle S6) ; 40-8b l'appelle sans l'extraire, 40-7c
 (rapprochement) et du **socle S1 à S9** (fichier d'epic), écrit par 38-12a ou par la première fiche de phase 2 développée
 (C-40-K6) ; le dialogue d'écran est celui de 38-12b (S7). L'automatisme (téléchargement périodique) vient plus tard encore,
 story à part.*
@@ -28,14 +29,21 @@ frais, versements, écarts —, sans doublon si j'ai déjà importé le CSV.
 
 1. **AC-1 — Route et état** (socle S3). `POST /api/v1/stripe-downloads` `{ account, from, to }` : **Comptable et plus,
    sessions seules — clés d'API non admises** (la route fait sortir un appel authentifié par la clé de l'Administrateur ; la
-   version initiale admettait les clés `read-write`), registre des routes auditées (`crates/kesh-api/tests/audit_route_registry.rs`,
-   `LIB_ROUTES` `:440`). Refus dans cet ordre, rien lancé : 400 `VALIDATION_ERROR` → 404 `PROVIDER_ACCOUNT_NOT_FOUND` (40-7b ;
+   version initiale admettait les clés `read-write`) : une clé d'API est refusée sur le `POST` **et** le `GET`, dans le
+   gestionnaire, avant tout, en 403 `API_KEY_OPERATION_FORBIDDEN` (patron de `bank_imports::delete`,
+   `routes/bank_imports.rs:1688`, comme 38-12a AC-8). Le `POST` est inscrit à `LIB_ROUTES`
+   (`crates/kesh-api/tests/audit_route_registry.rs:440`) en `Traced, SansEcritureAuJournal` ; dans cette story, le compte de
+   `the_registry_partition_is_what_the_story_declares` (`:1082`) relevé de un avec sa raison et la phrase « N des M routes à
+   verbe mutant » du manuel d'administration (lue par `le_manuel_dit_le_compte_du_registre`, `:1194`) mise à jour, comptes
+   **recomptés** après les stories fusionnées avant (validation P2). Refus dans cet ordre, rien lancé : 403
+   `API_KEY_OPERATION_FORBIDDEN` → 400 `VALIDATION_ERROR` → 404 `PROVIDER_ACCOUNT_NOT_FOUND` (40-7b ;
    plus de `STRIPE_ACCOUNT_NOT_FOUND`) → 422 `PROVIDER_API_NOT_CONFIGURED` (aucune paire d'environnement ne porte ce libellé,
    40-8a AC-1 ; plus de `STRIPE_KEY_NOT_CONFIGURED`) → 400 `PROVIDER_PERIOD_INVALID` (`from` > `to`, `to` dans le futur à Zurich ;
    **plus de plafond de 366 jours** : la pagination par curseur borne chaque appel, la période est celle que Beat choisit) → 409
-   `PROVIDER_DOWNLOAD_RUNNING` (une tâche du même compte tourne). Réponse `202 { jobId }` ; `GET /api/v1/stripe-downloads/{jobId}`
-   (société de l'appelant seulement, sinon 404) → `{ state, steps: { done, total }, pausedUntilSeconds, result, error }` — la
-   forme commune, **sans `requests` ni `retries`**. Étapes : la lecture de la liste des versements (`total` nul jusqu'à sa fin),
+   `PROVIDER_DOWNLOAD_RUNNING` (une tâche du même compte tourne ; `details: { provider: "stripe", jobId }`, pour que l'écran
+   reprenne le suivi). Réponse `202 { jobId }` ; `GET /api/v1/stripe-downloads/{jobId}`
+   (société de l'appelant seulement, sinon 404) → `{ state, steps: { done, total }, pausedUntilSeconds, result, error: { code, message, details? } }` — la
+   forme commune (un seul nom, `details`), **sans `requests` ni `retries`**. Étapes : la lecture de la liste des versements (`total` nul jusqu'à sa fin),
    puis **une par versement** (« versement 5/12 »). `result` = compte rendu de 40-7b AC-6 suivi de celui de 40-7c AC-8. État en
    mémoire du processus, perdu au redémarrage (limite écrite au manuel) : **celui du socle S2**, non un exécuteur propre à Stripe.
 2. **AC-2 — Rythme et reprise : ceux du socle S2, sans variante propre à Stripe.** Liste des versements (pages de 100), puis
@@ -49,7 +57,8 @@ frais, versements, écarts —, sans doublon si j'ai déjà importé le CSV.
    client, pas de troupeau de clients à désynchroniser) ; au-delà → tâche `failed`, `PROVIDER_RATE_LIMITED`, **rien d'écrit**
    (l'import n'a lieu qu'une fois tout lu). 401/403 : arrêt immédiat, code de 40-8a AC-4.
 3. **AC-3 — Même résultat que le CSV.** Les lignes lues (40-8a AC-3) vont au chemin d'import commun (40-7b AC-7, socle S6) en
-   **une** transaction de base, `filename` = « API Stripe <from>–<to> », puis au rapprochement de 40-7c. **Empreinte** = SHA-256
+   **une** transaction de base, une entrée `bank_imports` par devise, `filename` = « API Stripe <devise> <from>–<to> » (comme
+   Wise ; l'empreinte est par devise), puis au rapprochement de 40-7c. **Empreinte** = SHA-256
    de `« stripe-api:<devise> » ‖ identifiants triés` ; **le refus `BANK_IMPORT_DUPLICATE_FILE` ne s'applique pas** à un
    téléchargement (la version initiale refusait un second téléchargement identique « comme le CSV », ce qui contredit PayPal et
    Wise et fait échouer, après lecture complète, une relance sans risque) : relancer la même période rend « 0 insérée » ; un
@@ -61,10 +70,11 @@ frais, versements, écarts —, sans doublon si j'ai déjà importé le CSV.
    dialogue ; jamais la clé). *Manuel d'administration* (`docs/manual/fr/admin-manual.tex`) : créer une **clé restreinte** au
    tableau de bord Stripe, droits *Read* seuls sur les versements et le solde (noms exacts **à relever**, 40-8a), variables
    `KESH_STRIPE_<n>_ACCOUNT` (libellé **propre à l'installation** : deux sociétés au même libellé atteignent le même compte
-   Stripe), `KESH_STRIPE_<n>_KEY`, `KESH_STRIPE_BASE_URL`, `KESH_STRIPE_PARALLEL`, la clé ni en base ni en sauvegarde (à
+   Stripe), `KESH_STRIPE_<n>_KEY`, `KESH_STRIPE_BASE_URL`, `KESH_STRIPE_PARALLEL` dans les **deux tableaux de variables**, comment aller **au-delà de trois
+   comptes** (lignes à ajouter aux compose), la clé ni en base ni en sauvegarde (à
    reposer après une restauration sur un autre serveur), révocation ; que faire d'un `PROVIDER_API_ERROR` (vérifier d'abord les
    droits de la clé). *Manuel utilisateur* : le bouton, la période, les délais, les dates de Zurich. `.tex` seulement.
-   `docs/api-external.md` : la route (sessions seules) et ses codes. **E2E** `frontend/tests/e2e/stripe-download.spec.ts`
+   `docs/api-external.md` : la route (sessions seules, 403 `API_KEY_OPERATION_FORBIDDEN`) et ses codes. **E2E** `frontend/tests/e2e/stripe-download.spec.ts`
    contre le **serveur de prestataire simulé de 38-12b** (S8, `KESH_E2E_PROVIDER_MOCK_PORT`, backend d'E2E démarré avec
    `KESH_STRIPE_1_*` et `KESH_STRIPE_BASE_URL` vers lui ; plus de route `_test` ni de `KESH_TEST_MODE` propres à Stripe) : sans
    variables, bouton absent ; période → progression → compte rendu ; relance → « 0 insérée » ; sans la variable du port,
@@ -81,7 +91,9 @@ frais, versements, écarts —, sans doublon si j'ai déjà importé le CSV.
 
 Unitaires de la boucle sur horloge et attente injectables (pas de sommeil réel) ; HTTP `#[sqlx::test]` contre le serveur
 Stripe simulé de 40-8a : succès séquentiel, `k = 3` égal à `k = 1`, 429 repris, 429 au-delà du plafond (rien d'écrit), 403,
-chevauchement CSV, double téléchargement, clé d'API → 403, deux tâches du même compte → 409 ; E2E du bouton. Gate complet au
+chevauchement CSV, double téléchargement, clé d'API → 403 `API_KEY_OPERATION_FORBIDDEN` sur le `POST` et le `GET`, deux
+tâches du même compte → 409 avec `details.jobId`, versement dont Σ net ≠ montant → `failed`, rien d'écrit ; registre et
+phrase du manuel au compte (`binary(audit_route_registry)`) ; E2E du bouton. Gate complet au
 push.
 
 ## Modules touchés (4)
@@ -117,3 +129,9 @@ limite de débit, parallélisme réglable (`KESH_STRIPE_PARALLEL`, 1 à 6) ; mê
   repris » non tranché, politique de reprise exponentielle à gigue et parallélisme ramené à 1 propres à Stripe, refus de
   l'empreinte sur un second téléchargement identique, E2E par route `_test` propre à Stripe ; LOW — pause fixe de 100 ms,
   plafond de 366 jours, mode `live`/`test` non rattaché à `providerApi`.
+- 2026-11-20 — validation P2 (Claude Opus 5.5, contexte frais ; rapport `kesh-gate-logs/epic-39-40-kiss/validation/40-8-P2.md`) :
+  ici, compte du registre et phrase du manuel relevés dans cette story, clé d'API refusée en 403
+  `API_KEY_OPERATION_FORBIDDEN` sur les deux routes (comme 38-12a), 409 avec `details: { provider, jobId }`, `details` seul
+  nom, une entrée `bank_imports` et un `filename` par devise.
+- 2026-11-20 — validation P2, complément (Claude Opus 5.5) : cœur `ProviderLine` extrait par 38-12a (ou 40-7b), appelé ici ;
+  manuel : deux tableaux de variables, au-delà de trois comptes.
