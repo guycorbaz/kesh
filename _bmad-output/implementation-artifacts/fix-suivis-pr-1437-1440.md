@@ -13,16 +13,17 @@ Quatre points tracés en issues à la revue du correctif `fix-api-parent-compte`
    (`crates/kesh-db/src/repositories/accounts.rs`) refuse tout parent qui porte une ligne d'écriture, qu'il soit
    imputable ou non (`has_journal_line_locked`, sans condition sur `postable`). Le texte, lui, disait « y ranger ce
    compte le rendrait non imputable » : faux quand le parent l'est déjà. **Décision** : une seule phrase qui vaut pour
-   les deux cas (« aucun compte ne se range sous lui, car son solde ne pourrait plus être corrigé par une saisie »),
-   dans les quatre locales et dans le repli de `crates/kesh-api/src/errors.rs` ; le code, les `details` et la règle ne
-   changent pas. `docs/api-external.md` (deux passages) suit.
+   les deux cas (« on n'y range pas d'autre compte, car un compte qui a des sous-comptes n'est pas imputable et son
+   solde ne se corrige plus par une saisie »), dans les quatre locales et dans le repli de
+   `crates/kesh-api/src/errors.rs` ; même correction pour `ACCOUNT_FOREIGN_PARENT_HAS_ENTRIES` ; le code, les
+   `details` et la règle ne changent pas. `docs/api-external.md` et `user-manual.tex:1131` suivent.
 2. **#1438 — E2E `accounts.spec.ts`.** Le bloc « changer le parent d'un compte » créait deux comptes sous un suffixe
    `Date.now()` à quatre chiffres et ne les archivait pas ; le `beforeAll` de la spec reseme la base, ce qui masquait
    le résidu d'une spec à l'autre, non d'une relance sur la même base. Corrigé : suffixe tiré au hasard et contrôlé
    contre les comptes existants (`includeArchived=true`), puis archivage du membre et du groupe dans un `finally`.
 3. **#1439 — ordre d'arbre.** `treeAccounts` (`+page.svelte`) calculait le niveau mais gardait l'ordre des numéros.
    Corrigé par `buildAccountTree` (`frontend/src/lib/features/accounts/account-options.ts`) : parcours en profondeur
-   depuis les racines (compte sans parent ou dont le parent n'est pas dans la liste), frères triés par numéro, un
+   depuis les racines (compte sans parent ou dont le parent n'est pas dans la liste), frères dans l'ordre reçu de l'API (collation SQL, sans retri), un
    compte pris dans un cycle (aucun chemin d'écriture n'en produit) ajouté à la fin au niveau 0.
 4. **#1440 — `account_parent_change.rs`.** La variable `usd` (ligne 445) désignait le compte 1023, **en EUR**, et n'était
    consommée que par `let _ = usd;`. Le compte reste nécessaire (il désigne `g2` avec `eur`) ; la liaison est retirée,
@@ -37,13 +38,13 @@ Quatre points tracés en issues à la revue du correctif `fix-api-parent-compte`
   `buildAccountTree`, captures avant/après).
 - **AC-3** — Le test E2E ne laisse aucun compte actif et ne dépend plus d'un suffixe d'horloge.
 - **AC-4** — Aucune variable de test ne porte un nom qui contredit son contenu.
-- **AC-5** — Aucune migration ; manuel `.tex` inchangé (aucune phrase ne reprenait le texte du refus).
+- **AC-5** — Aucune migration ; manuel `.tex` modifié à `user-manual.tex:1131` (phrase du refus `ACCOUNT_FOREIGN_PARENT_HAS_ENTRIES`), PDF non commités (régénérés à la release).
 
 ## Tâches
 
 - [x] Message du refus, quatre locales, repli, `api-external.md`.
 - [x] Test d'intégration du message ; mutation (repli de `errors.rs` ramené à l'ancien texte : rouge).
-- [x] `buildAccountTree`, `+page.svelte`, quatre tests Vitest ; mutation (ordre des numéros rendu : rouges).
+- [x] `buildAccountTree`, `+page.svelte`, cinq tests Vitest (dernier état, après la P1) ; la mutation « ordre des numéros rendu » visait l'ancien tri et n'a pas été rejouée sur le code sans tri (le test « ne retrie pas » la couvre par raisonnement).
 - [x] E2E : numéros libres, nettoyage.
 - [x] `usd` → liaison retirée.
 - [x] Captures avant/après (`kesh-gate-logs/fix-suivis/captures/`) : 1100 sous 1000 avant, sous le groupe 29 après.
@@ -72,6 +73,18 @@ Quatre points tracés en issues à la revue du correctif `fix-api-parent-compte`
   - L4 : `api-external.md` dit que la règle ne vaut que pour le `PUT` ; L5 : commentaire de `account_parent_change.rs`
     corrigé ; L6 : antécédent levé par la nouvelle rédaction.
   - Réserve E2E : les trois échecs hors KF-029 sont KF-065 (#1282) et KF-067 (#1284), hors du correctif.
+
+- 2026-11-20 — Remédiation de la revue P2 (0 CRITICAL, 0 HIGH, 1 MEDIUM, 5 LOW) :
+  - M1 : `PR.md` réécrit pour l'état actuel (nouveau message, jumeau, manuel, `buildAccountTree` sans tri, cinq tests
+    Vitest) ; aucun chiffre de gate tant que `chaine4`/`chaine5` ne sont pas finis.
+  - L1 : cette fiche propagée (Intention 1 et 3, tâches, AC-5).
+  - **À faire après les gates en cours** (fichiers de code, interdits pendant `chaine4`/`chaine5`) : L2, indentation
+    du corps du `try` dans `frontend/tests/e2e/accounts.spec.ts` (~290-380) ; L3, commentaire de
+    `crates/kesh-db/src/repositories/accounts.rs:2667` (« Le parent passerait non imputable avec son solde », incomplet
+    pour le `PUT`) ; L4, apostrophe du message fr en devise (`fr-CH/messages.ftl:1247` et repli `errors.rs:5039` :
+    « n'est pas imputable » droite contre « fin d’exercice » typographique, à unifier). Chacun appelle une passe
+    ciblée, et le gate complet doit repasser après eux.
+  - L5 : assumé (le test compare le repli ; les quatre `.ftl` sont contrôlés par `textes_coherents` et la garde i18n).
 
 ## Notes de version
 
