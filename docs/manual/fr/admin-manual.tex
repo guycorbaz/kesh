@@ -233,7 +233,7 @@ cd /opt/kesh
 Télécharger le fichier de référence depuis le dépôt officiel, \textbf{au tag de la version que décrit ce manuel} (\texttt{v\keshVersion}) --- non à la branche \texttt{main}, qui peut être en avance sur l'image publiée ; pour une autre version, remplacez le tag dans l'adresse :
 
 \begin{lstlisting}[language=bash]
-curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/v0.19.0/docker-compose.yml \
+curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/v0.19.1/docker-compose.yml \
     -o docker-compose.yml
 \end{lstlisting}
 
@@ -244,7 +244,7 @@ Ce fichier désigne l'image publiée \texttt{gcorbaz/kesh:latest} : \keshcommand
 Copier le fichier d'exemple et l'adapter :
 
 \begin{lstlisting}[language=bash]
-curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/v0.19.0/.env.example \
+curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/v0.19.1/.env.example \
     -o .env
 \end{lstlisting}
 
@@ -580,7 +580,7 @@ Télécharger le \keshpath{docker-compose.yml} canonique depuis le dépôt Kesh,
 
 \begin{lstlisting}[language=bash]
 cd /volume1/docker/kesh
-DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.19.0
+DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.19.1
 curl -fsSL "$DEPOT/docker-compose.prod.yml" -o docker-compose.yml
 curl -fsSL "$DEPOT/.env.example" -o .env
 
@@ -1755,7 +1755,7 @@ Les exports ne doivent pas rester dans le dossier de téléchargements : Synolog
 \Needspace{15\baselineskip}
     \item \textbf{Compose et \keshpath{.env.example} au tag de la version relevée, et variables qu'il lit.} Remplacez \texttt{0.15.0} par la version relevée. Les exemples de cette sous-section portent \texttt{0.15.0}, la version de ce manuel ; une production qui satisfait le prérequis porte \textbf{0.15.0 ou plus} : à une version suivante, l'exemple recopié tel quel donnerait une copie qui n'est pas celle de la production. Le contrôle~9 arrête une \textbf{image} d'une autre version ; le tag de \keshcommand{DEPOT}, lui, n'est contrôlé par rien : remplacez les deux.
 \begin{lstlisting}[language=bash]
-DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.19.0
+DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.19.1
 curl -fsSL "$DEPOT/docker-compose.yml" -o "$COPIE/docker-compose.yml"
 curl -fsSL "$DEPOT/.env.example" -o "$COPIE/.env"
 grep -oE '\$\{?[A-Za-z_][A-Za-z0-9_]*' "$COPIE/docker-compose.yml" \
@@ -2074,7 +2074,7 @@ Les deux scripts sont des fichiers du dépôt Kesh, \keshpath{scripts/synology/k
 
 \begin{lstlisting}[language=bash]
 cd /volume1/docker/kesh
-DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.19.0
+DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.19.1
 curl -fsSLO "$DEPOT/scripts/synology/kesh-dump.sh"
 curl -fsSLO "$DEPOT/scripts/synology/kesh-restore.sh"
 chmod 700 kesh-dump.sh kesh-restore.sh
@@ -2546,6 +2546,21 @@ L'opération s'inscrit au journal d'audit sous \emph{Réparation de l'installati
 La session ouverte doit être \textbf{rouverte} --- reconnexion, ou au plus la durée du \textbf{jeton d'accès} (\texttt{KESH\_JWT\_EXPIRY\_MINUTES}) plus une minute ; d'ici là, certains écrans de la société répondent par une erreur, d'autres s'affichent vides. Si le journal du serveur porte « réparation de l'installation au démarrage » suivi d'une erreur, voir la section \emph{Dépannage}.
 
 \textbf{Limite} : les données de démonstration laissées par une réinitialisation antérieure (taux de TVA, réglages de facturation, contacts, articles, factures, avoirs) qui désignent la société effacée restent en base, invisibles et inertes (\#546).
+
+\subsubsection{Passer à la 0.19.1}\label{sec:maj-0-19-1}
+\sloppy
+
+La 0.19.1 est une version intermédiaire, qui se pose sur la 0.19.0 : elle n'exige ni nouveau compose ni nouvelle variable de \keshpath{.env} ; on tire l'image et on redémarre (\S\ref{sec:mise-a-jour}). Depuis une version antérieure à la 0.19.0, appliquez d'abord les sections suivantes (\S\ref{sec:maj-0-19-0}). \textbf{Prenez avant la mise à jour la sauvegarde complète} --- la base, un \keshcommand{.keshbackup} et le dossier des documents ---, comme avant toute mise à jour d'une installation qui tient des livres : la 0.19.1 n'a pas de migration, mais c'est cette sauvegarde qui rattrape un imprévu.
+
+\paragraph{Aucune migration, retour à la 0.19.0 sans restauration.} \textbf{La 0.19.1 n'a aucune migration} : elle ne modifie pas le schéma, \texttt{kesh\_version\_min\_required} reste à \texttt{0.17.6}, et Kesh n'écrit \textbf{aucune} sauvegarde dans \keshpath{backup/pre-upgrade/} à cette mise à jour (il n'en écrit qu'avant une migration, \S\ref{sec:sauvegarde-avant-maj}). \textbf{Le retour à la 0.19.0 se fait sans restauration} : reprenez l'image \texttt{gcorbaz/kesh:0.19.0} dans le compose et redémarrez ; la 0.19.0 démarre sur la base telle que la 0.19.1 l'a laissée, et ce qui a été saisi entre-temps reste. Une sauvegarde \keshcommand{.keshbackup} prise en 0.19.0 s'importe dans la 0.19.1.
+
+\paragraph{Ce qu'il faut savoir.} Rien n'est à régler. \textbf{Les textes collés trop longs ne sont plus coupés en silence} : l'adresse de la société, son téléphone, son site web, son e-mail, et dans les contacts l'adresse, l'e-mail, le téléphone, le prénom et le nom, la raison sociale, le numéro de client, les conditions et le délai de paiement, ainsi que le nom d'un article, sont \textbf{refusés avec un message qui nomme le champ}, la saisie restant à l'écran (manuel utilisateur, \emph{Vos coordonnées sur la facture}, et les chapitres des contacts et des articles). \textbf{Un montant ambigu comme «~1.250~» est refusé} au prix d'un article, aux frais d'un niveau de rappel, au montant minimum d'une facture et aux bornes du filtre des écritures ; avant la 0.19.1, il y était lu un franc vingt-cinq en silence : relisez les articles et le montant minimum saisis ainsi. \textbf{L'assistant de configuration} contrôle le nom et l'adresse de la société comme la QR-facture les contrôlera. \textbf{Les PDF des rapports} alignent leurs montants à droite, et le bilan n'affiche plus la ligne «~Résultat reporté (calculé)~» quand elle vaut zéro. \textbf{Le compte parent d'un compte se change} après sa création, dans \emph{Modifier le compte}. \textbf{Les cours de l'AFC des monnaies retirées} (lev bulgare, kuna croate, monnaies remplacées par l'euro) sont retenus au lieu d'être écartés. \textbf{Aucune facture, aucun avoir et aucun PDF déjà émis ne change.}
+
+\begin{sloppypar}
+\paragraph{Pour les intégrations.} Les routes de création et de modification des contacts refusent (\texttt{400 VALIDATION\_ERROR}) un prénom ou un nom de plus de 70 caractères, une adresse faite du seul pays quand ce pays n'est pas \texttt{CH} (elle était acceptée et ignorée) et un prénom, un nom ou une raison sociale entièrement invisible ; la route de l'e-mail de la société refuse une adresse de plus de 320 caractères ; la route des coordonnées de l'assistant refuse un prénom ou un nom de plus de 70 caractères, un nom de société de plus de 70 caractères ou portant un caractère que la QR-facture n'admet pas. Aucune donnée enregistrée n'est modifiée ni refusée après coup. Le message (\texttt{error.message}) de vingt et un refus n'est plus la clé interne : un client qui comparait ce texte doit lire \texttt{error.code}. \texttt{PUT /api/v1/accounts/\allowbreak\{id\}} accepte \texttt{parentId} (absent : inchangé ; \texttt{null} : le compte devient racine), avec les refus \texttt{409 ACCOUNT\_PARENT\_CYCLE} et \texttt{409 ACCOUNT\_PARENT\_HAS\_ENTRIES} ; changement additif.
+\end{sloppypar}
+
+\fussy
 
 \subsubsection{Passer à la 0.19.0}\label{sec:maj-0-19-0}
 % Story 43-1a (#823, AC13) : section ouverte par la story pour sa migration ; le
