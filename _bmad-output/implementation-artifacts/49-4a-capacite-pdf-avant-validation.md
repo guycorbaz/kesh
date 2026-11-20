@@ -388,6 +388,69 @@ reconstruction (cargo garde sinon le binaire muté).
 
 ## Dev Agent Record
 
+### Reprise (pause de l'Epic 49 décidée par Guy le 2026-11-20, jusqu'au mardi 2026-11-24 au matin)
+
+**Où l'on en est.** Le code est **écrit et commité (`09d89db92`), mais il n'a jamais été compilé** : la seule commande lancée
+(`cargo clippy -p kesh-qrbill -p kesh-api --all-targets -- -D warnings`) attendait le verrou `.gate.lock` derrière trois autres
+agents ; elle a été interrompue avant de démarrer (journal `kesh-gate-logs/e494/dev/clippy-1.log` vide). **Aucun test n'a
+tourné, aucune mutation n'a été jouée** (rien à restaurer), aucun rouge n'est journalisé. Ce qui est écrit :
+
+- `kesh-qrbill` (`src/pdf.rs`) : géométrie partagée (`TABLEAU_Y`, `TABLEAU_EN_TETES_PAS`, `TABLEAU_FILET_PAS`, `LIGNE_PAS`,
+  `RESERVE_DU_TOTAL`, `ordonnee_premiere_ligne`, `plancher_des_lignes`), `lignes_imprimees`, `place_des_lignes`,
+  `LignesHorsPage`, `controler_les_lignes`, `lignes_du_recap` ; `draw_invoice_section` lit la géométrie partagée (mêmes
+  opérations `f32`, même ordre) ; T2 `tests::le_controle_et_le_rendu_s_accordent` (seuils écrits à la main, puis 600 pièces
+  engendrées) ; ré-export dans `src/lib.rs`. **Écart à juger** : le dessin parcourt `lignes_de_commentaire` lui-même, comme
+  avant ; `lignes_imprimees` en compte la longueur, mais le dessin ne l'appelle pas.
+- `kesh-api` : `invoice_pdf_service.rs` (`depasse_le_prefiltre`, extraite et appelée par `render_document` ; `lignes_pdf` ;
+  `controler_la_capacite_du_pdf` — contrôle géométrique **puis** pré-filtre ; doc-comment de `MAX_LINES_PER_PDF` réécrit,
+  V2-4) ; `routes/invoices.rs` (`validate_invoice_handler` : lecture du brouillon, réglage `round_to_5_centimes`, contrôle
+  avant la transaction ; let-chain, édition 2024) ; `errors.rs` (variante `InvoiceLinesDoNotFitPdf { besoin, place }`,
+  `message_lignes_hors_page`, réponse `400 INVOICE_LINES_DO_NOT_FIT_PDF`).
+- i18n : clé `error-invoice-lines-do-not-fit-pdf` dans les quatre catalogues (bloc « Epic 49 — Story 49-4a » en fin de
+  fichier) ; `tests/textes_coherents.rs` : entrée G9 et test neuf `le_refus_de_capacite_a_ses_deux_nombres_en_quatre_langues` (T4).
+- Tests : `crates/kesh-api/tests/invoice_validation_pdf_e2e.rs` (T1 : trois tests — AC1 (a) à (f), AC2, revalidation) ;
+  `frontend/tests/e2e/invoice-validation-pdf.spec.ts` (T6).
+- Documents : `docs/api-external.md` (section neuve après « un numéro impossible à produire » ; table des codes),
+  `docs/manual/fr/admin-manual.tex` (`sec:maj-0-20-0`, « Pour les intégrations »), `docs/manual/fr/user-manual.tex` (item
+  « Lignes de facture », `:1456` — repli de D7, la 49-1c n'étant pas fusionnée ; **le second arrivé réconcilie**). Contrôles de
+  l'AC9 passés par `git grep` le 2026-11-20 : phrase neuve à `:1456` avec « arrondi », « validation », « rappel », « avoir » ;
+  de même à `api-external.md:524` ; ancienne forme absente ; « trait d'union ordinaire | sans avertissement » : `:1029`,
+  identique à `f57f6ac80`. PDF des manuels non régénérés.
+- Hors dépôt : script T5 en lecture seule `kesh-gate-logs/e494/dev/controles-diff.sh <worktree> <base>` (sonde positive à
+  jouer) ; prompt de revue P1 en brouillon à côté de la fiche (`…-review-prompt-p1.md`, à compléter des journaux réels).
+
+**Prochaine étape exacte, à la reprise.**
+
+1. `git fetch origin` ; si `origin/epic/49-types-de-lignes-facture` a bougé (49-1c probable), la reprendre (commit de fusion
+   relu ; conflits attendus à `user-manual.tex:1456` et dans les catalogues : garder les deux, réécrire la phrase de la 49-1c
+   selon D7) ; recalculer `$BASE` et l'écrire ci-dessous.
+2. Recréer les bases si le conteneur a redémarré (`kesh_e494a` et `kesh_e2e_e494a` créées et migrées, `kesh_e494a` semée, le
+   2026-11-20 ; le tmpfs les efface à tout redémarrage) :
+   ```sh
+   cd /home/gcorbaz/devel/kesh-49-4
+   for b in kesh_e494a kesh_e2e_e494a; do
+     docker exec kesh-mariadb-dev mariadb -ukesh -pkesh_dev -e "DROP DATABASE IF EXISTS \`$b\`; CREATE DATABASE \`$b\`;" &&
+     DATABASE_URL=mysql://kesh:kesh_dev@127.0.0.1:3306/$b sqlx migrate run --source crates/kesh-db/migrations
+   done
+   docker exec -i kesh-mariadb-dev mariadb -ukesh -pkesh_dev kesh_e494a < scripts/seed-dev-db.sql
+   ```
+   (`kesh_ci_e494a` est recréée par `gate-ci.sh` lui-même.)
+3. Compiler et corriger, sous verrou et `mem-guard` (`CARGO_TARGET_DIR=/home/gcorbaz/devel/kesh-49-4/target`,
+   `CARGO_BUILD_JOBS=2`) :
+   `flock /home/gcorbaz/devel/kesh-gate-logs/.gate.lock scripts/mem-guard.sh cargo clippy -p kesh-qrbill -p kesh-api --all-targets -- -D warnings`,
+   puis `cargo fmt --all -- --check`.
+4. Gate ciblé (même enveloppe, `DATABASE_URL=mysql://kesh:kesh_dev@127.0.0.1:3306/kesh_e494a`) :
+   `cargo nextest run -E 'package(kesh-qrbill) | package(kesh-i18n) | binary(kesh_api) | binary(pdf_avant_apres_e2e) | binary(invoice_validation_pdf_e2e) | binary(invoice_pdf_e2e) | binary(invoice_frozen_pdf_e2e) | binary(invoice_send_email_e2e) | binary(dunning_reminders_e2e) | binary(invoice_line_types_e2e) | binary(textes_coherents)'`
+   — vérifier que T1 rend les nombres attendus et que « Ω » imprime zéro ligne (T2 l'assère).
+5. Commit du code **avant** les mutations ; puis rouges et mutations T1-1 à T1-5, T2-1 à T2-3, T3-1 et T3-2, T4 (clé retirée
+   d'`it-CH` : `parity_between_locales` et le test neuf), T5 (sonde positive), T6 (E2E sur binaire muté) ; journaux dans
+   `kesh-gate-logs/e494/dev/` ; restauration par `git restore --worktree -- <fichier>` puis `touch`.
+6. Recette visuelle (AC7, captures dans `kesh-gate-logs/e494/captures/`), puis gates de passage en `review` : bases remises à
+   neuf, `scripts/test-fast.sh --ci`, `scripts/gate-ci.sh kesh_ci_e494a`, frontend complet (`check`, `lint-i18n-ownership`,
+   `test:unit`, `build`, verrou `.gate-front.lock`), E2E complet sur `kesh_e2e_e494a` jugé fichier par fichier ; PDF des
+   manuels régénérés et contrôlés aplatis ; Dev Agent Record, statut `review` (fiche et `sprint-status.yaml`), prompt P1
+   complété.
+
 ### Base du diff (D5, V1-2)
 
 - 2026-11-20, étape 0 : `git fetch origin` ; `git log --oneline HEAD..origin/epic/49-types-de-lignes-facture` vide (la branche
