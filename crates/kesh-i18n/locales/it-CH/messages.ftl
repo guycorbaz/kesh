@@ -1792,6 +1792,16 @@ error-provider-currency-account-missing = Il file contiene movimenti in { $curre
 error-provider-account-length = Il nome del conto del prestatore è obbligatorio e conta al massimo 120 caratteri.
 error-provider-account-hidden-char = Il nome del conto del prestatore non può contenere né a capo né caratteri di controllo.
 error-paypal-csv-invalid = Questo file non è un estratto PayPal « Balance affecting transactions » leggibile. Nulla è stato importato.
+# Story 38-12a — scaricamento tramite l'API di un prestatore (base comune)
+error-provider-period-invalid = Periodo rifiutato: l'inizio deve precedere la fine, non essere nel futuro e risalire a meno di tre anni fa.
+error-provider-api-not-configured = Lo scaricamento non è configurato per questo conto: l'amministratore inserisce le credenziali nell'ambiente del server. L'importazione del file resta possibile.
+error-provider-download-running = Uno scaricamento è già in corso per questo conto: attenda che termini.
+error-provider-auth-failed = Il prestatore rifiuta le credenziali di questo conto: l'amministratore deve verificarle. Nulla è stato importato.
+error-provider-permission-denied = L'applicazione del prestatore non ha il diritto di leggere le transazioni: l'amministratore deve darle questa funzione. Nulla è stato importato.
+error-provider-rate-limited = Il prestatore limita il numero di richieste: riprovi più tardi. Nulla è stato importato.
+error-provider-unavailable = Il prestatore non risponde: riprovi più tardi. Nulla è stato importato.
+error-provider-response-invalid = Non è stato possibile leggere la risposta del prestatore. Nulla è stato importato.
+error-provider-api-error = Il prestatore ha rifiutato la richiesta. Nulla è stato importato.
 error-bank-account-is-provider = Questo conto è il saldo di un prestatore di pagamento: non riceve né estratti bancari né pagamenti di fatture. Importi il suo estratto con la sua rotta e regoli la fattura con un conto interno o una registrazione, poi colleghi la transazione.
 bank-accounts-labels-kind = Tipo di conto
 bank-accounts-kind-bank = Conto bancario

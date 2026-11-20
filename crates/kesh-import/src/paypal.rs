@@ -210,6 +210,9 @@ pub enum PaypalLineErrorCode {
     BalanceImpact,
     /// Cellule requise vide (`Type`, `Status`).
     Required,
+    /// Statut de l'API PayPal hors `S`, `P`, `D`, `V` (Story 38-12a ; le CSV
+    /// ne contrôle pas le libellé du statut).
+    Status,
 }
 
 impl PaypalLineErrorCode {
@@ -225,6 +228,7 @@ impl PaypalLineErrorCode {
             Self::TransactionId => "TRANSACTION_ID",
             Self::BalanceImpact => "BALANCE_IMPACT",
             Self::Required => "REQUIRED",
+            Self::Status => "STATUS",
         }
     }
 }
@@ -244,7 +248,10 @@ pub struct PaypalLineError {
 }
 
 impl PaypalLineError {
-    fn new(
+    /// Construit l'erreur, valeur tronquée à [`MAX_CSV_LINE_ERROR_VALUE_CHARS`]
+    /// caractères (suffixe `…`). Partagée avec la lecture de l'API
+    /// ([`crate::paypal_api`], Story 38-12a).
+    pub(crate) fn new(
         line: usize,
         field: Option<&'static str>,
         code: PaypalLineErrorCode,
@@ -544,6 +551,38 @@ pub fn parse_paypal_csv(bytes: &[u8]) -> Result<PaypalCsv, PaypalCsvError> {
     Ok(PaypalCsv { rows, date_order })
 }
 
+/// Devise d'une ligne : trois lettres ASCII, rendues en majuscules ; `None`
+/// sinon. Contrôle **partagé** du CSV ([`parse_paypal_csv`]) et de l'API
+/// ([`crate::paypal_api`], Story 38-12a).
+pub(crate) fn normalize_currency(raw: &str) -> Option<String> {
+    (raw.len() == 3 && raw.bytes().all(|b| b.is_ascii_alphabetic()))
+        .then(|| raw.to_ascii_uppercase())
+}
+
+/// Identifiant de transaction : mis en majuscules, puis `[0-9A-Z]` seuls
+/// (non vide : la cellule vide n'arrive pas ici) ; `None` sinon — un `_`,
+/// admis par le schéma de l'API, est refusé comme au CSV. Contrôle partagé
+/// du CSV et de l'API (Story 38-12a).
+pub(crate) fn normalize_transaction_id(raw: &str) -> Option<String> {
+    let id = raw.to_ascii_uppercase();
+    (!id.is_empty()
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_digit() || b.is_ascii_uppercase()))
+    .then_some(id)
+}
+
+/// Vrai si le signe du brut contredit le sens : négatif sur un `Credit`,
+/// positif sur un `Debit` (`Memo` : jamais). Contrôle partagé du CSV et de
+/// l'API (Story 38-12a).
+pub(crate) fn sign_mismatch(impact: BalanceImpact, gross: Decimal) -> bool {
+    match impact {
+        BalanceImpact::Credit => gross < Decimal::ZERO,
+        BalanceImpact::Debit => gross > Decimal::ZERO,
+        BalanceImpact::Memo => false,
+    }
+}
+
 /// Lit et contrôle une ligne ; rend `None` (erreurs poussées) si elle est
 /// fautive.
 fn read_row(
@@ -582,18 +621,13 @@ fn read_row(
     }
 
     let raw_currency = cell(COL_CURRENCY);
-    let currency = raw_currency
-        .filter(|c| c.len() == 3 && c.bytes().all(|b| b.is_ascii_alphabetic()))
-        .map(str::to_ascii_uppercase);
+    let currency = raw_currency.and_then(normalize_currency);
     if currency.is_none() {
         push(COL_CURRENCY, PaypalLineErrorCode::Currency, raw_currency);
     }
 
     let raw_id = cell(COL_TRANSACTION_ID);
-    let transaction_id = raw_id.map(str::to_ascii_uppercase).filter(|id| {
-        id.bytes()
-            .all(|b| b.is_ascii_digit() || b.is_ascii_uppercase())
-    });
+    let transaction_id = raw_id.and_then(normalize_transaction_id);
     if transaction_id.is_none() {
         push(
             COL_TRANSACTION_ID,
@@ -639,12 +673,7 @@ fn read_row(
             incoherent = true;
             push(COL_NET, PaypalLineErrorCode::NetMismatch, cell(COL_NET));
         }
-        let sign_mismatch = match balance_impact {
-            Some(BalanceImpact::Credit) => gross < Decimal::ZERO,
-            Some(BalanceImpact::Debit) => gross > Decimal::ZERO,
-            _ => false,
-        };
-        if sign_mismatch {
+        if balance_impact.is_some_and(|impact| sign_mismatch(impact, gross)) {
             incoherent = true;
             push(
                 COL_GROSS,
