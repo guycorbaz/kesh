@@ -15,7 +15,7 @@ import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 import { isApiError } from '$lib/shared/utils/api-error';
 import { errorMessageOf } from '$lib/shared/utils/error-message';
 import { failedProposalLabel } from '$lib/features/reconciliation/failed-proposal-label';
-import type { PaypalLineError, PaypalProposal } from './paypal.types';
+import type { PaypalFinding, PaypalLineError, PaypalProposal } from './paypal.types';
 
 /**
  * Codes des refus que l'écran traduit lui-même (`paypal-failed-*`) ; tout autre
@@ -196,6 +196,43 @@ export function gapKindLabel(kind: string): string {
 		default:
 			return kind;
 	}
+}
+
+/**
+ * Story 38-11d (revue P1, M3) — l'écriture d'un écart « montant ou devise différents » est-elle
+ * déjà rattachée à une autre transaction (`details.alreadyLinked`) ? Le serveur range ce cas
+ * sous le même code ; l'écran lui donne son propre libellé.
+ */
+function isAlreadyLinked(f: PaypalFinding): boolean {
+	return f.code === 'amount_or_currency_mismatch' && f.details?.alreadyLinked === true;
+}
+
+/** Libellé d'un écart : son genre, ou « vente déjà rattachée » pour une écriture déjà rattachée. */
+export function findingGapLabel(f: PaypalFinding): string {
+	if (isAlreadyLinked(f)) {
+		return i18nMsg('paypal-gap-already-linked', 'Vente déjà rattachée à une autre transaction');
+	}
+	return gapKindLabel(f.code);
+}
+
+/**
+ * Ce qu'un écart « montant ou devise différents » attend et trouve ; `null` pour un autre écart,
+ * des détails absents, ou une écriture déjà rattachée de même montant et devise (le libellé dit
+ * tout). Écriture sans débit au compte : « aucun débit trouvé », jamais « trouvé » suivi de rien.
+ */
+export function findingGapDetails(f: PaypalFinding): string | null {
+	const d = f.details;
+	if (!d || f.code !== 'amount_or_currency_mismatch') return null;
+	const s = (k: string) => (d[k] === null || d[k] === undefined ? '' : String(d[k]));
+	const expected = `${s('expectedAmount')} ${s('expectedCurrency')}`.trim();
+	if (s('foundAmount') === '') {
+		return i18nMsg('paypal-gap-mismatch-details-none', 'Attendu { $expected }, aucun débit trouvé dans l’écriture', {
+			expected,
+		});
+	}
+	const found = `${s('foundAmount')} ${s('foundCurrency')}`.trim();
+	if (isAlreadyLinked(f) && found === expected) return null;
+	return i18nMsg('paypal-gap-mismatch-details', 'Attendu { $expected }, trouvé { $found }', { expected, found });
 }
 
 /** Libellé d'un motif « à examiner ». */

@@ -104,6 +104,12 @@ describe('rule-filters — fonctions pures', () => {
 			changedFilters(before, { providerType: null, counterpartyEmail: 'a@b.ch', direction: 'debit' }),
 		).toEqual({ providerType: null, counterpartyEmail: 'a@b.ch' });
 	});
+
+	it('changedFilters : le sens changé ou effacé part (revue P1, mutation survivante)', () => {
+		const before = { providerType: null, counterpartyEmail: null, direction: 'debit' as const };
+		expect(changedFilters(before, { ...before, direction: 'credit' })).toEqual({ direction: 'credit' });
+		expect(changedFilters(before, { ...before, direction: null })).toEqual({ direction: null });
+	});
 });
 
 describe('RuleFormModal — filtres (Story 38-11d, AC-2)', () => {

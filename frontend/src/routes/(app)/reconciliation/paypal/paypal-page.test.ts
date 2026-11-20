@@ -90,6 +90,7 @@ function tx(id: number, date: string, extra: Record<string, unknown> = {}) {
 		providerType: 'Website Payment',
 		name: 'Client fictif',
 		transactionId: `0TESTTXN00000${id}`,
+		counterpartyEmail: null,
 		...extra,
 	};
 }
@@ -108,7 +109,12 @@ function review(): PaypalReview {
 			{ code: 'receipt_without_sale', transaction: tx(4, '2020-03-07') },
 			{ code: 'amount_or_currency_mismatch', transaction: tx(7, '2020-03-07'), entries: [{ journalEntryId: 41, entryNumber: 13, entryDate: '2020-03-07', description: 'Vente', ids: ['Y'] }], details: { expectedAmount: '10.00', expectedCurrency: 'EUR', foundAmount: '9.00', foundCurrency: 'EUR' } },
 		],
-		toReview: [{ code: 'no_rule', transaction: tx(5, '2020-03-08', { providerType: 'General Payment' }) }],
+		toReview: [
+			{
+				code: 'no_rule',
+				transaction: tx(5, '2020-03-08', { providerType: 'General Payment', counterpartyEmail: 'client@example.invalid' }),
+			},
+		],
 	};
 }
 
@@ -138,6 +144,7 @@ describe('page PayPal (Story 38-11d)', () => {
 		expect(r.getByTestId('paypal-gap-details').textContent).toContain('Attendu 10.00 EUR, trouvé 9.00 EUR');
 		expect(r.getByTestId('paypal-proposal-6').textContent).toContain('Règle Hébergement');
 		expect(r.getByTestId('paypal-to-review-5').textContent).toContain('Aucune règle');
+		expect(r.getByTestId('paypal-to-review-5').textContent).toContain('client@example.invalid');
 	});
 
 	it('import : compte rendu par devise, écartées, puis revue relue', async () => {
@@ -233,5 +240,108 @@ describe('page PayPal (Story 38-11d)', () => {
 		await waitFor(() => expect(reconciliationApi.getEntryCandidates).toHaveBeenCalledWith(5));
 		expect(reconciliationApi.getLinkCandidates).not.toHaveBeenCalled();
 		expect((await r.findByTestId('link-settlement-modal')).textContent).toContain('EUR');
+	});
+});
+
+// Revue P1 (L1, L2) — changement de compte, garde de génération, erreur au paquet 2,
+// relecture après l'acceptation, sélecteurs désactivés, retrait effacé.
+describe('page PayPal — robustesse (revue P1)', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		listBankAccountsMock.mockResolvedValue([paypalAccount(1, 'PayPal www'), paypalAccount(2, 'PayPal boutique')]);
+		reviewMock.mockResolvedValue(review());
+		acceptMock.mockResolvedValue({ accepted: [], failed: [] });
+	});
+
+	it('changer de compte relit la revue pour ce compte', async () => {
+		const r = render(Page);
+		await waitFor(() => expect(reviewMock).toHaveBeenCalledWith('PayPal boutique', 5));
+		await fireEvent.change(r.getByTestId('paypal-account'), { target: { value: 'PayPal www' } });
+		await waitFor(() => expect(reviewMock).toHaveBeenLastCalledWith('PayPal www', 5));
+	});
+
+	it('une réponse périmée (compte quitté) ne remplace pas la revue courante', async () => {
+		let resolveFirst: (v: PaypalReview) => void = () => {};
+		const stale = review();
+		stale.proposals = [];
+		reviewMock
+			.mockImplementationOnce(() => new Promise<PaypalReview>((res) => (resolveFirst = res)))
+			.mockResolvedValueOnce(review());
+		const r = render(Page);
+		await waitFor(() => expect(reviewMock).toHaveBeenCalledTimes(1));
+		await fireEvent.change(r.getByTestId('paypal-account'), { target: { value: 'PayPal www' } });
+		await waitFor(() => expect(r.getByTestId('paypal-proposal-1')).toBeTruthy());
+		resolveFirst(stale);
+		await new Promise((res) => setTimeout(res, 0));
+		expect(r.getByTestId('paypal-proposal-1')).toBeTruthy();
+		expect(r.queryByTestId('paypal-proposals-empty')).toBeNull();
+	});
+
+	it('erreur au paquet 2 : le paquet 1 compté, l’erreur dite, la revue relue', async () => {
+		const many = review();
+		many.proposals = Array.from({ length: 501 }, (_, i) => ({
+			type: 'fee' as const,
+			bankTransactionId: 100 + i,
+			feeAccountId: 60,
+			transaction: tx(100 + i, '2020-03-05'),
+		}));
+		reviewMock.mockResolvedValue(many);
+		acceptMock
+			.mockImplementationOnce(async (_a: string, bodies: unknown[]) => ({
+				accepted: bodies.map(() => ({ type: 'fee', bankTransactionIds: [], journalEntryIds: [] })),
+				failed: [],
+			}))
+			.mockRejectedValueOnce({ code: 'INTERNAL_ERROR', status: 500, message: 'Erreur du serveur' });
+		const r = render(Page);
+		await fireEvent.click(await r.findByTestId('paypal-select-all'));
+		const calls = reviewMock.mock.calls.length;
+		await fireEvent.click(r.getByTestId('paypal-accept'));
+		expect((await r.findByTestId('paypal-accept-error')).textContent).toContain('Erreur du serveur');
+		expect(r.getByTestId('paypal-accept-report').textContent).toContain('500 proposition(s) acceptée(s)');
+		await waitFor(() => expect(reviewMock.mock.calls.length).toBe(calls + 1));
+	});
+
+	it('pendant l’acceptation : sélecteurs et import désactivés, chaque paquet au compte de départ', async () => {
+		let release: () => void = () => {};
+		acceptMock.mockImplementationOnce(
+			() => new Promise((res) => (release = () => res({ accepted: [], failed: [] }))),
+		);
+		const r = render(Page);
+		await fireEvent.click(await r.findByTestId('paypal-check-1'));
+		await fireEvent.click(r.getByTestId('paypal-accept'));
+		await waitFor(() => expect((r.getByTestId('paypal-account') as HTMLSelectElement).disabled).toBe(true));
+		expect((r.getByTestId('paypal-fiscal-year') as HTMLSelectElement).disabled).toBe(true);
+		expect((r.getByTestId('paypal-import-button') as HTMLButtonElement).disabled).toBe(true);
+		release();
+		await waitFor(() => expect((r.getByTestId('paypal-account') as HTMLSelectElement).disabled).toBe(false));
+		expect(acceptMock.mock.calls[0][0]).toBe('PayPal boutique');
+	});
+
+	it('retrait : effacer le compte choisi décoche la proposition', async () => {
+		const r = render(Page);
+		const retrait = (await r.findByTestId('paypal-check-3')) as HTMLInputElement;
+		await fireEvent.change(r.getByTestId('paypal-withdrawal-3'), { target: { value: '20' } });
+		await fireEvent.click(retrait);
+		expect(retrait.checked).toBe(true);
+		await fireEvent.change(r.getByTestId('paypal-withdrawal-3'), { target: { value: '' } });
+		expect(retrait.checked).toBe(false);
+		expect(retrait.disabled).toBe(true);
+	});
+
+	it('écart d’une vente déjà rattachée : son libellé propre', async () => {
+		const r1 = review();
+		r1.gaps = [
+			{
+				code: 'amount_or_currency_mismatch',
+				transaction: tx(7, '2020-03-07'),
+				details: { expectedAmount: '10.00', expectedCurrency: 'EUR', foundAmount: '10.00', foundCurrency: 'EUR', alreadyLinked: true },
+			},
+		];
+		reviewMock.mockResolvedValue(r1);
+		const r = render(Page);
+		const row = await r.findByTestId('paypal-gap-amount_or_currency_mismatch');
+		expect(row.textContent).toContain('Vente déjà rattachée à une autre transaction');
+		expect(row.textContent).not.toContain('Montant ou devise différents');
+		expect(r.queryByTestId('paypal-gap-details')).toBeNull();
 	});
 });

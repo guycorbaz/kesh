@@ -22,7 +22,7 @@ import {
 import { chunkProposals, PAYPAL_ACCEPT_CHUNK } from './paypal.api';
 
 function tx(id: number, date: string, currency = 'EUR') {
-	return { id, bankAccountId: 1, date, amount: '10.00', currency, providerType: null, name: null, transactionId: null };
+	return { id, bankAccountId: 1, date, amount: '10.00', currency, providerType: null, name: null, transactionId: null, counterpartyEmail: null };
 }
 
 function year(id: number, startDate: string, endDate: string): FiscalYearResponse {

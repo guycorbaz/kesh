@@ -429,8 +429,11 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
  * `proposalActionLabel` (`paypal/paypal-review.ts`) et `failedLabel` (page PayPal), tous par
  * `i18nMsg` ou par délégation ; `ecartee` **21**, `conforme` **109 → 116**, relevés par la garde
  * (« expected 137 to be 130 »), non additionnés.
+ *
+ * **137 → 138** (revue P1 de la 38-11d, M3) : `findingGapLabel` (`paypal/paypal-labels.ts`, par
+ * `i18nMsg`) ; `conforme` **116 → 117**, relevé par la garde (« expected 138 to be 137 »).
  */
-const CANDIDATES_ATTENDUES = 137;
+const CANDIDATES_ATTENDUES = 138;
 
 /** Les trois délimiteurs de littéral en JS/TS. */
 const QUOTES = ["'", '"', '`'];
@@ -947,7 +950,7 @@ describe('libellés en dur — l’angle mort #255', () => {
 			else if (c.retours.length > 0) classes.ecartee += 1;
 			else classes.conforme += 1;
 		}
-		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 21, conforme: 116 });
+		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 21, conforme: 117 });
 		// La somme est recalculée depuis les classes, jamais depuis le total qu'elle contrôle.
 		const somme = Object.values(classes).reduce((a, b) => a + b, 0);
 		expect(somme).toBe(CANDIDATES_ATTENDUES);

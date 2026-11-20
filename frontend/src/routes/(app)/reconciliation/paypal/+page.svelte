@@ -31,7 +31,8 @@
 		importPaypalCsv,
 	} from '$lib/features/paypal/paypal.api';
 	import {
-		gapKindLabel,
+		findingGapDetails,
+		findingGapLabel,
 		paypalFailedLabel,
 		paypalImportErrorLines,
 		proposalKindLabel,
@@ -98,13 +99,11 @@
 			listBankAccounts(),
 			listFiscalYears(),
 			fetchAccounts(false),
-			listRules(1, 200),
+			allRules(),
 		]);
 		// Libellés des règles : best-effort, « Règle #id » sinon.
 		ruleLabels =
-			rules.status === 'fulfilled'
-				? new Map(rules.value.items.map((r) => [r.id, r.label]))
-				: new Map();
+			rules.status === 'fulfilled' ? new Map(rules.value.map((r) => [r.id, r.label])) : new Map();
 		if (ba.status === 'fulfilled') bankAccounts = ba.value;
 		else loadError = errorMessageOf(ba.reason);
 		if (fy.status === 'fulfilled') fiscalYears = fy.value;
@@ -115,6 +114,20 @@
 		loading = false;
 		await loadReview();
 	});
+
+	/**
+	 * Toutes les règles, page par page (le serveur borne une page à 200) : les libellés des
+	 * propositions « Règle … » au-delà de la première page (revue P1, L9).
+	 */
+	async function allRules(): Promise<{ id: number; label: string }[]> {
+		const out: { id: number; label: string }[] = [];
+		for (let page = 1; page <= 50; page++) {
+			const res = await listRules(page, 200);
+			out.push(...res.items);
+			if (res.items.length === 0 || out.length >= res.total) break;
+		}
+		return out;
+	}
 
 	/** Relit la revue du compte et de l'exercice choisis ; une réponse périmée est écartée. */
 	async function loadReview() {
@@ -198,7 +211,10 @@
 
 	/** Accepte la sélection, par paquets de 500, un à la fois, dans l'ordre des dates. */
 	async function acceptSelection() {
-		if (!review || selectedAccount === null) return;
+		// Le compte est figé avant la boucle (revue P1, L1) : les sélecteurs sont désactivés
+		// pendant l'acceptation, et chaque paquet part au même compte.
+		const account = selectedAccount;
+		if (!review || account === null) return;
 		const bodies = selectedBodies(review.proposals, selected, withdrawalAccounts);
 		if (bodies.length === 0) return;
 		const batches = chunkProposals(bodies);
@@ -208,7 +224,7 @@
 		try {
 			for (let i = 0; i < batches.length; i++) {
 				batchProgress = { current: i + 1, total: batches.length };
-				const res = await acceptPaypalProposals(selectedAccount, batches[i]);
+				const res = await acceptPaypalProposals(account, batches[i]);
 				report.accepted += res.accepted.length;
 				report.failed.push(...res.failed);
 			}
@@ -243,20 +259,6 @@
 	function findingDate(f: PaypalFinding): string {
 		const d = f.transaction?.date ?? f.entries?.[0]?.entryDate;
 		return d ? formatSwissDate(d) : '';
-	}
-
-	/**
-	 * Ce qu'un écart « montant ou devise différents » attend et trouve (`details`),
-	 * `null` pour un autre écart ou des détails absents.
-	 */
-	function gapDetailsLine(g: PaypalFinding): string | null {
-		const d = g.details;
-		if (!d || g.code !== 'amount_or_currency_mismatch') return null;
-		const s = (k: string) => (d[k] === null || d[k] === undefined ? '' : String(d[k]));
-		return i18nMsg('paypal-gap-mismatch-details', 'Attendu { $expected }, trouvé { $found }', {
-			expected: `${s('expectedAmount')} ${s('expectedCurrency')}`.trim(),
-			found: `${s('foundAmount')} ${s('foundCurrency')}`.trim(),
-		});
 	}
 
 	function failedLabel(f: PaypalFailedProposal): string {
@@ -302,6 +304,7 @@
 				id="paypal-account"
 				bind:value={selectedAccount}
 				onchange={onSelectionChange}
+				disabled={accepting || importing}
 				class="rounded border border-border px-3 py-2 text-sm"
 				data-testid="paypal-account"
 			>
@@ -318,6 +321,7 @@
 				id="paypal-fiscal-year"
 				bind:value={selectedYearId}
 				onchange={onSelectionChange}
+				disabled={accepting || importing}
 				class="rounded border border-border px-3 py-2 text-sm"
 				data-testid="paypal-fiscal-year"
 			>
@@ -335,7 +339,7 @@
 				onchange={onFileChosen}
 				data-testid="paypal-file-input"
 			/>
-			<Button onclick={() => fileInput?.click()} disabled={importing} data-testid="paypal-import-button">
+			<Button onclick={() => fileInput?.click()} disabled={importing || accepting} data-testid="paypal-import-button">
 				{importing
 					? i18nMsg('paypal-import-running', 'Import en cours…')
 					: i18nMsg('paypal-import-button', 'Importer le CSV PayPal')}
@@ -535,9 +539,9 @@
 							<tr class="border-b border-border" data-testid="paypal-gap-{g.code}">
 								<td class="py-2 pr-4 whitespace-nowrap">{findingDate(g)}</td>
 								<td class="py-2 pr-4">
-									{gapKindLabel(g.code)}
-									{#if gapDetailsLine(g) !== null}
-										<span class="block text-xs text-text-muted" data-testid="paypal-gap-details">{gapDetailsLine(g)}</span>
+									{findingGapLabel(g)}
+									{#if findingGapDetails(g) !== null}
+										<span class="block text-xs text-text-muted" data-testid="paypal-gap-details">{findingGapDetails(g)}</span>
 									{/if}
 								</td>
 								<td class="py-2 pr-4 text-right font-mono whitespace-nowrap">

@@ -62,8 +62,8 @@ export interface PaypalReviewTransaction {
 	name: string | null;
 	/** Identifiant chez le prestataire (suffixe `:FEE` des frais compris). */
 	transactionId: string | null;
-	/** E-mail de la contrepartie, s'il est servi. */
-	counterpartyEmail?: string | null;
+	/** E-mail de la contrepartie (importé du CSV ; revue P1 de la 38-11d, M5). */
+	counterpartyEmail: string | null;
 }
 
 /** Une écriture que nomme la revue (`EntrySummary`). */

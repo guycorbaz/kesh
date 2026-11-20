@@ -1154,8 +1154,10 @@ const ATTENDU = {
 	// **3521**, relevé par la garde (« expected 3521 to be 3495 »), non additionné ; puis la
 	// page PayPal (T3) : **3610** (« expected 3610 to be 3521 », puis 3609 → 3610) ; libellés des
 	// refus de la route PayPal : **3615** (« expected 3615 to be 3610 »), relevé après la
-	// fusion de la 38-11c2 (`ecd54a38`, sans site frontend).
-	sitesTotal: 3615,
+	// fusion de la 38-11c2 (`ecd54a38`, sans site frontend). Remédiation de la revue P1 de la
+	// 38-11d (K2 vers la page PayPal, écart d'une vente déjà rattachée, « aucun débit ») :
+	// **3618** (« expected 3618 to be 3615 »).
+	sitesTotal: 3618,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

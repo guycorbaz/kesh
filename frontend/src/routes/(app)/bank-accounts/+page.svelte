@@ -149,14 +149,18 @@
 	});
 	let feeCandidates = $derived(feeAccountCandidates(accounts, formLedgerCurrency));
 	let paypalLabels = $derived(paypalAccountLabels(bankAccounts));
-	// Le compte de frais se vide quand le compte du plan change (sa devise peut changer).
-	let previousLedgerId: number | null = null;
+	// Le compte de frais se vide seulement s'il n'est plus admis par la devise du compte du plan
+	// choisi (revue P1, L7 : le vider à tout changement effaçait en silence un compte de frais
+	// choisi avant le compte du plan). Il reste affiché tant que les comptes ne sont pas chargés.
 	$effect(() => {
-		const ledgerId = formJournalAccountId;
+		const candidates = feeCandidates;
 		untrack(() => {
-			if (ledgerId !== previousLedgerId) {
-				if (previousLedgerId !== null || formFeeAccountId !== null) formFeeAccountId = null;
-				previousLedgerId = ledgerId;
+			if (
+				accounts.length > 0 &&
+				formFeeAccountId !== null &&
+				!candidates.some((a) => a.id === formFeeAccountId)
+			) {
+				formFeeAccountId = null;
 			}
 		});
 	});
@@ -305,7 +309,6 @@
 		formPaypalAccount = '';
 		formFeeAccountId = null;
 		formWasPaypal = false;
-		previousLedgerId = null;
 	}
 
 
@@ -497,8 +500,6 @@
 		formIsPaypal = isPaypal(ba);
 		formWasPaypal = isPaypal(ba);
 		formPaypalAccount = ba.paypal?.account ?? '';
-		// Le compte du plan est connu à l'ouverture : le compte de frais n'est pas vidé.
-		previousLedgerId = ba.journalAccountId;
 		formFeeAccountId = ba.paypal?.feeAccountId ?? null;
 		mode = { kind: 'edit-full', id: ba.id };
 	}

@@ -9,6 +9,8 @@ vi.mock('$lib/shared/utils/i18n.svelte', () => ({
 }));
 
 import {
+	findingGapDetails,
+	findingGapLabel,
 	gapKindLabel,
 	paypalFailedLabel,
 	paypalImportErrorLines,
@@ -127,6 +129,66 @@ const CODES_ROUTE_PAYPAL = [
 
 describe('paypal-labels — codes de la route PayPal', () => {
 	it.each(CODES_ROUTE_PAYPAL)('%s a un libellé traduit', (code) => {
+		expect(paypalFailedLabel(code, {})).not.toContain('reconciliation-failed-unknown');
+	});
+});
+
+// Story 38-11d (revue P1, M3) — l'écriture déjà rattachée a son propre libellé ; jamais
+// « trouvé » suivi de rien.
+describe('paypal-labels — écart montant ou devise différents', () => {
+	const mismatch = (details: Record<string, unknown>) => ({ code: 'amount_or_currency_mismatch', details });
+
+	it('montant différent : attendu et trouvé', () => {
+		const f = mismatch({ expectedAmount: '10.00', expectedCurrency: 'EUR', foundAmount: '9.00', foundCurrency: 'EUR', alreadyLinked: false });
+		expect(findingGapLabel(f)).toContain('Montant ou devise différents');
+		expect(findingGapDetails(f)).toContain('Attendu 10.00 EUR, trouvé 9.00 EUR');
+	});
+
+	it('déjà rattachée, même montant : son libellé, aucun détail', () => {
+		const f = mismatch({ expectedAmount: '10.00', expectedCurrency: 'EUR', foundAmount: '10.00', foundCurrency: 'EUR', alreadyLinked: true });
+		expect(findingGapLabel(f)).toContain('Vente déjà rattachée à une autre transaction');
+		expect(findingGapDetails(f)).toBeNull();
+	});
+
+	it('déjà rattachée, autre montant : son libellé et l’écart', () => {
+		const f = mismatch({ expectedAmount: '10.00', expectedCurrency: 'EUR', foundAmount: '8.00', foundCurrency: 'EUR', alreadyLinked: true });
+		expect(findingGapLabel(f)).toContain('Vente déjà rattachée');
+		expect(findingGapDetails(f)).toContain('trouvé 8.00 EUR');
+	});
+
+	it('aucun débit trouvé : jamais « trouvé » suivi de rien', () => {
+		const f = mismatch({ expectedAmount: '10.00', expectedCurrency: 'EUR', foundAmount: null, foundCurrency: null, alreadyLinked: false });
+		expect(findingGapDetails(f)).toContain('Attendu 10.00 EUR, aucun débit trouvé');
+		expect(findingGapDetails(f)).not.toMatch(/trouvé\s*$/);
+	});
+
+	it('autre écart : aucun détail', () => {
+		expect(findingGapDetails({ code: 'receipt_without_sale' })).toBeNull();
+		expect(findingGapLabel({ code: 'receipt_without_sale' })).toContain('Encaissement sans vente');
+	});
+});
+
+/**
+ * Revue P1 (L3) — les codes que l'acceptation PayPal pose par conversion d'une erreur
+ * d'écriture (`entry_refusal`, `provider_accept.rs` : verrou de période, exercice postérieur
+ * clôturé, compte clos, refus du contrôle des lignes en devise par `fx_failed_proposal`),
+ * ÉCRITS EN DUR : aucun ne retombe sur le repli.
+ */
+const CODES_CONVERTIS = [
+	'PERIOD_LOCKED',
+	'LATER_FISCAL_YEAR_CLOSED',
+	'BANK_ACCOUNT_CLOSED',
+	'MULTI_CURRENCY_DISABLED',
+	'ACCOUNT_REQUIRES_CURRENCY',
+	'FX_MULTIPLE_CURRENCIES',
+	'ENTRY_IS_FX_REVALUATION',
+	'FX_ACCOUNT_IN_CHF',
+	'FX_CURRENCY_MISMATCH',
+	'FX_RATE_NOT_AFC',
+];
+
+describe('paypal-labels — codes convertis des refus d’écriture', () => {
+	it.each(CODES_CONVERTIS)('%s a un libellé traduit', (code) => {
 		expect(paypalFailedLabel(code, {})).not.toContain('reconciliation-failed-unknown');
 	});
 });

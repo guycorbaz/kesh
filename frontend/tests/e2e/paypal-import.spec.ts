@@ -26,6 +26,8 @@
 
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import { join } from 'node:path';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { seedTestState, clearAuthStorage, authedApiContext, disposeContextSafe } from './helpers/test-state';
 
 test.describe.configure({ mode: 'serial' });
@@ -36,6 +38,10 @@ const PAYPAL = 'PayPal www';
 
 async function capture(page: Page, name: string): Promise<void> {
 	if (CAPTURES) await page.screenshot({ path: join(CAPTURES, `${name}.png`), fullPage: true });
+}
+
+async function captureOf(page: Page, testId: string, name: string): Promise<void> {
+	if (CAPTURES) await page.getByTestId(testId).screenshot({ path: join(CAPTURES, `${name}.png`) });
 }
 
 async function login(page: Page): Promise<void> {
@@ -76,6 +82,10 @@ test.beforeEach(async ({ page }) => {
 
 test('1 — préparation : multi-devises, comptes, cours ; compte PayPal EUR par l’écran', async ({ page }) => {
 	await login(page);
+	// Avant tout compte PayPal : la page le dit, avec le lien vers les comptes bancaires.
+	await page.goto('/reconciliation/paypal');
+	await expect(page.getByTestId('paypal-no-account')).toBeVisible();
+	await capture(page, '00-aucun-compte-paypal');
 	const ctx = await authedApiContext(page);
 	try {
 		const create = async (number: string, name: string, accountType: string, extra: object = {}) =>
@@ -211,6 +221,13 @@ test('3 — écritures de vente des boutiques, import par l’écran, compte ren
 	await page.goto('/reconciliation/paypal');
 	await expect(page.getByTestId('paypal-account')).toHaveValue(PAYPAL);
 	await page.getByTestId('paypal-fiscal-year').selectOption({ index: 0 });
+	// Un fichier refusé d'abord : une phrase par cause, rien d'importé.
+	const dir = mkdtempSync(join(tmpdir(), 'kesh-paypal-'));
+	const broken = join(dir, 'paypal-colonnes.csv');
+	writeFileSync(broken, '"Date","Name","Type"\n"03/01/2020","Alice","Website Payment"\n');
+	await page.getByTestId('paypal-file-input').setInputFiles(broken);
+	await expect(page.getByTestId('paypal-import-error')).toContainText('Colonnes manquantes');
+	await captureOf(page, 'paypal-import-error', '05a-import-refuse');
 	await page.getByTestId('paypal-file-input').setInputFiles(FIXTURE);
 	const report = page.getByTestId('paypal-import-report');
 	await expect(report).toBeVisible();
@@ -236,24 +253,28 @@ test('4 — revue : propositions, écarts, à examiner ; tout accepter', async (
 	await expect(gaps).toContainText('Encaissement sans vente');
 	await expect(gaps).toContainText('Vente sans encaissement');
 	await expect(gaps).toContainText('Montant ou devise différents');
-	await gaps.scrollIntoViewIfNeeded();
-	await capture(page, '07-ecarts');
+	await captureOf(page, 'paypal-gaps', '07-ecarts');
 	const toReview = page.getByTestId('paypal-to-review-table');
 	await expect(toReview).toContainText('Aucune règle');
-	await toReview.scrollIntoViewIfNeeded();
-	await capture(page, '08-a-examiner');
+	await expect(toReview).toContainText('daniel@example.invalid');
+	await captureOf(page, 'paypal-to-review', '08-a-examiner');
 
-	// Un retrait sans compte prérempli se choisit avant de cocher.
+	// Sans compte bancaire principal, le retrait demande son compte de destination : la case
+	// reste grisée tant qu'il n'est pas choisi.
 	const withdrawalSelect = page.locator('[data-testid^="paypal-withdrawal-"]');
-	if ((await withdrawalSelect.count()) > 0) {
-		await withdrawalSelect.first().selectOption({ index: 1 });
-	}
+	await expect(withdrawalSelect).toHaveCount(1);
+	const withdrawalRow = proposals.locator('tbody tr').filter({ has: withdrawalSelect });
+	await expect(withdrawalRow.locator('input[type="checkbox"]')).toBeDisabled();
+	await withdrawalRow.screenshot(CAPTURES ? { path: join(CAPTURES, '06a-retrait-a-choisir.png') } : {});
+	await withdrawalSelect.selectOption({ index: 1 });
 	await page.getByTestId('paypal-select-all').click();
+	// Les frais du remboursement restent décochés : ils serviront au refus de l'étape 6.
+	await proposals.locator('tbody tr').filter({ hasText: '0TEST0000000000BL:FEE' }).locator('input[type="checkbox"]').uncheck();
 	await page.getByTestId('paypal-accept').click();
 	const acceptReport = page.getByTestId('paypal-accept-report');
 	await expect(acceptReport).toContainText('0 refusée(s)');
 	await expect(page.getByTestId('paypal-accept-failed')).toHaveCount(0);
-	await expect(page.getByTestId('paypal-proposals-empty')).toBeVisible();
+	await expect(proposals.locator('tbody tr')).toHaveCount(1);
 	await capture(page, '09-compte-rendu-acceptation');
 });
 
@@ -290,4 +311,63 @@ test('5 — la ligne « à examiner » se rattache par la modale, en EUR', async
 	await expect(modal).toHaveCount(0);
 	await expect(refundRows()).toHaveCount(0);
 	await capture(page, '11-apres-rattachement');
+});
+
+test('6 — une proposition acceptée ailleurs entre-temps est refusée, avec son motif', async ({ page }) => {
+	await login(page);
+	await page.goto('/reconciliation/paypal');
+	const proposals = page.getByTestId('paypal-proposals-table');
+	const row = proposals.locator('tbody tr').filter({ hasText: '0TEST0000000000BL:FEE' });
+	await expect(row).toBeVisible();
+	// Pendant que la page est ouverte, la même proposition est acceptée par l'API.
+	const ctx = await authedApiContext(page);
+	try {
+		const fy = await api<Array<{ id: number; startDate: string }>>(ctx, 'get', '/api/v1/fiscal-years');
+		const year = fy.find((y) => y.startDate <= '2020-03-30')!.id;
+		const review = await api<{ proposals: Array<{ type: string; bankTransactionId: number; feeAccountId: number }> }>(
+			ctx,
+			'get',
+			`/api/v1/paypal/review?account=${encodeURIComponent(PAYPAL)}&fiscalYearId=${year}`,
+		);
+		const fee = review.proposals.find((p) => p.type === 'fee')!;
+		const res = await api<{ accepted: unknown[]; failed: unknown[] }>(ctx, 'post', '/api/v1/paypal/accept', {
+			account: PAYPAL,
+			proposals: [{ type: 'fee', bankTransactionId: fee.bankTransactionId, feeAccountId: fee.feeAccountId }],
+		});
+		expect(res.accepted).toHaveLength(1);
+	} finally {
+		await disposeContextSafe(ctx);
+	}
+	await row.locator('input[type="checkbox"]').check();
+	await page.getByTestId('paypal-accept').click();
+	await expect(page.getByTestId('paypal-accept-report')).toContainText('1 refusée(s)');
+	await expect(page.getByTestId('paypal-accept-failed')).toContainText('ne vaut plus');
+	await captureOf(page, 'paypal-accept-report', '12-acceptation-avec-refus');
+	await expect(page.getByTestId('paypal-proposals-empty')).toBeVisible();
+});
+
+test('7 — compte principal : la case « Compte PayPal » est désactivée, avec son motif', async ({ page }) => {
+	await login(page);
+	const ctx = await authedApiContext(page);
+	let primaryId: number;
+	try {
+		const ledger = (
+			await api<{ id: number }>(ctx, 'post', '/api/v1/accounts', { number: '1059', name: 'Banque principale', accountType: 'Asset' })
+		).id;
+		primaryId = (
+			await api<{ id: number }>(ctx, 'post', '/api/v1/bank-accounts', {
+				bankName: 'Banque principale',
+				iban: 'CH9300762011623852957',
+				isPrimary: true,
+				journalAccountId: ledger,
+			})
+		).id;
+	} finally {
+		await disposeContextSafe(ctx);
+	}
+	await page.goto('/bank-accounts');
+	await page.getByTestId(`edit-button-${primaryId}`).click();
+	await expect(page.getByTestId('edit-is-paypal')).toBeDisabled();
+	await expect(page.getByTestId('edit-is-paypal-locked')).toBeVisible();
+	await captureOf(page, 'edit-bank-account-form', '13-principal-case-desactivee');
 });

@@ -162,7 +162,18 @@ describe('page des comptes bancaires — le compte PayPal (Story 38-11d, AC-1)',
 		expect(options(r.getByTestId('form-journal-account'))).not.toContain('22');
 	});
 
-	it('compte de frais : charges CHF ou de la devise du compte du plan, vidé quand ce compte change', async () => {
+	// Revue P1 (L7) — le compte de frais choisi avant le compte du plan n'est pas effacé en
+	// silence ; il ne l'est que si la devise du compte du plan ne l'admet plus.
+	it('compte de frais choisi avant le compte du plan : gardé s’il reste admis', async () => {
+		const r = render(Page);
+		await fireEvent.click(await r.findByTestId('create-bank-account-button'));
+		await fireEvent.click(await r.findByTestId('form-is-paypal'));
+		await fireEvent.change(await r.findByTestId('form-fee-account'), { target: { value: '60' } });
+		await fireEvent.change(await r.findByTestId('form-journal-account'), { target: { value: '22' } });
+		await waitFor(() => expect((r.getByTestId('form-fee-account') as HTMLSelectElement).value).toBe('60'));
+	});
+
+	it('compte de frais : charges CHF ou de la devise du compte du plan, vidé quand la devise ne l’admet plus', async () => {
 		const r = render(Page);
 		await fireEvent.click(await r.findByTestId('create-bank-account-button'));
 		await fireEvent.click(await r.findByTestId('form-is-paypal'));
@@ -172,6 +183,7 @@ describe('page des comptes bancaires — le compte PayPal (Story 38-11d, AC-1)',
 		expect(options(fee).slice(1)).toEqual(['60', '61']);
 		await fireEvent.change(fee, { target: { value: '61' } });
 		expect((fee as HTMLSelectElement).value).toBe('61');
+		// Compte du plan en CHF : le compte de frais EUR n'est plus admis, il se vide.
 		await fireEvent.change(r.getByTestId('form-journal-account'), { target: { value: '21' } });
 		await waitFor(() => expect(options(r.getByTestId('form-fee-account'))).not.toContain('61'));
 		expect((r.getByTestId('form-fee-account') as HTMLSelectElement).selectedIndex).toBe(0);
