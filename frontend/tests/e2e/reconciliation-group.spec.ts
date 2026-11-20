@@ -964,6 +964,7 @@ test.describe('Règlement groupé — l’écran (Story 43-3, #823)', () => {
 	}, testInfo) => {
 		const s = await clientScene(page, 't7', 0);
 		let mode: 'aucun' | 'arrondi' | 'plafond' | 'non-relue' = 'aucun';
+		let sansArrondi = false;
 		await page.route('**/api/v1/reconciliation/accept', async (route) => {
 			await route.fulfill({
 				json: {
@@ -1008,20 +1009,22 @@ test.describe('Règlement groupé — l’écran (Story 43-3, #823)', () => {
 			const corps = await reponse.json();
 			await route.fulfill({
 				response: reponse,
-				json: mode === 'arrondi' ? { ...corps, defaultRoundingAccountId: null } : corps,
+				json: sansArrondi ? { ...corps, defaultRoundingAccountId: null } : corps,
 			});
 		});
 		try {
 			for (const etat of ['arrondi', 'plafond', 'non-relue'] as const) {
+				// Le réglage d'arrondi est lu à l'ouverture : l'état « arrondi » le retire dès là. Les
+				// restes dus, eux, ne changent qu'à la relecture (`mode`, posé juste avant l'envoi) :
+				// une recherche de l'ouverture ne doit jamais rendre un reste gonflé (rejeu de M1 du
+				// 2026-11-20, rouge avant l'envoi).
+				sansArrondi = etat === 'arrondi';
 				mode = 'aucun';
-				// Le réglage d'arrondi est lu à l'ouverture : l'état « arrondi » le retire dès là.
-				if (etat === 'arrondi') mode = 'arrondi';
 				const { modal } = await openGroup(page, s.bankAccountId, s.txId);
-				mode = 'aucun';
 				await add(modal, s.fa.number, s.fa.id);
 				await add(modal, s.fb.number, s.fb.id);
 				await expect(modal.getByTestId('group-gap')).toHaveText('Aucun écart');
-				await expect(modal.getByTestId('group-submit')).toBeEnabled();
+				await expect(modal.getByTestId('group-submit')).toBeEnabled({ timeout: 15000 });
 				mode = etat;
 				await modal.getByTestId('group-submit').click();
 				await expect(modal.getByTestId('group-refusal')).toHaveText(
