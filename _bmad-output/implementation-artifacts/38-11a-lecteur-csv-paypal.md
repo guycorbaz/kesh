@@ -230,3 +230,10 @@ langue ou d'un autre rapport est refusé en nommant les colonnes qui manquent.
   (`kesh-gate-logs/epic-38-kiss/issues-a-ouvrir.md`) : indice de date « slash » sans contrôle calendaire (LOW-1),
   ordre FIELD_COUNT au plafond (LOW-2), branche Err du crate csv sans test (LOW-3), aide `amount` à deux décimales à
   relire pour Wise/Stripe (LOW-4), phrase d'AC-1 sur le BOM (LOW-5). Rapport : `kesh-gate-logs/s38-11a/revue-p1-rapport.md`.
+- 2026-11-20 — correctif post-revue : débordement des montants (M1 de la revue de la 40-7a). Un montant extrême
+  (`79228162514264337593543950335`) faisait paniquer `gross + fee` (`Decimal`) de `paypal.rs`, la forme fermée n'ayant
+  pas de borne de longueur. Remède : `csv/amount.rs` borne la partie entière à 15 chiffres (nus ou groupés par
+  milliers, quatre groupes au plus), ce qui protège tous les lecteurs ; `paypal.rs` contrôle le net par `checked_add`
+  et rend une erreur `Amount` au débordement. Tests : `refuses_extreme_values_without_panicking` (aide, bornes
+  comprises) et `extreme_amount_is_refused_without_panicking` (lecteur). Grep des autres `+`/`-` de `Decimal` de
+  `kesh-import/src/` : aucun autre (la négation de `camt053` ne déborde pas).

@@ -635,9 +635,18 @@ fn read_row(
 
     let mut incoherent = false;
     if let (Some(gross), Some(fee), Some(net)) = (gross, fee, net) {
-        if net != gross + fee {
-            incoherent = true;
-            push(COL_NET, PaypalLineErrorCode::NetMismatch, cell(COL_NET));
+        // `checked_add` : une somme qui déborde ne doit jamais paniquer ; elle
+        // est refusée comme montant (la forme fermée borne déjà les chiffres).
+        match gross.checked_add(fee) {
+            Some(sum) if net == sum => {}
+            Some(_) => {
+                incoherent = true;
+                push(COL_NET, PaypalLineErrorCode::NetMismatch, cell(COL_NET));
+            }
+            None => {
+                incoherent = true;
+                push(COL_GROSS, PaypalLineErrorCode::Amount, cell(COL_GROSS));
+            }
         }
         let sign_mismatch = match balance_impact {
             Some(BalanceImpact::Credit) => gross < Decimal::ZERO,
