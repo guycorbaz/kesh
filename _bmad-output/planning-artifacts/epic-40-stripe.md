@@ -82,8 +82,8 @@ elle sert aux quatre fiches et à la phase 2.
 
 | Story | Objet | Modules | Dépend de | Migration |
 |---|---|---|---|---|
-| **40-8a** | client de l'API : clé restreinte `rk_…` en variables `KESH_STRIPE_<n>_ACCOUNT` / `KESH_STRIPE_<n>_KEY`, versements payés et leurs transactions de solde (`?payout=`), pagination par curseur, traduction en lignes du rapport | `kesh-api`, `kesh-import` (lecture), `kesh-i18n` | phase 1 | — |
-| **40-8b** | téléchargement par période : route et bouton, progression, séquentiel avec pause, reprise sur 429, `KESH_STRIPE_PARALLEL` (1 à 6), même chemin que le CSV ; manuels | `kesh-api`, `frontend`, `kesh-i18n`, `docs/manual` | 40-8a | — |
+| **40-8a** | client de l'API : clé restreinte `rk_…` en variables `KESH_STRIPE_<n>_ACCOUNT` / `KESH_STRIPE_<n>_KEY` (lecteur du socle S1), versements payés **par `arrival_date`** et leurs transactions de solde (`?payout=`), pagination par curseur, traduction en lignes du rapport **aux dates de Zurich** | `kesh-api`, `kesh-import` (lecture), `kesh-i18n` | phase 1 | — |
+| **40-8b** | téléchargement par période : route sur le socle (tâche, état, reprise commune), `KESH_STRIPE_PARALLEL` (1 à 6), même chemin que le CSV ; dialogue générique de 38-12b ; manuels, E2E | `kesh-api`, `frontend`, `kesh-i18n`, `docs/manual` | 40-8a, socle S1 à S9 | — |
 
 Plus tard encore : le téléchargement périodique (automatisme), story à part ; le contrôle de solde et la créance à la
 clôture (ancienne 40-4, `deferred`) ; les rapports joints (ancienne 40-5, `deferred`, avec 38-10).
@@ -120,8 +120,46 @@ transaction du versement dans `?payout=` ; `Stripe-Version` à épingler ; table
   transaction en attente ; **39-11c la propose** au rattachement à l'écriture du versement (± 5 jours). Les comptes Wise
   EUR/USD sont des comptes bancaires Kesh (compte de versement de 40-7b). 40-7c ne la propose pas (doublon, validation
   P2) : elle liste le versement en écart `payout_without_receipt` tant que sa réception n'est pas rattachée.
-- **C-40-K6 — Exécuteur de téléchargement commun (phase 2)** avec la phase 2 de PayPal : le premier des deux qui se
-  développe l'écrit générique.
+- **C-40-K6 — Socle commun de la phase 2** avec PayPal (38-12a) et Wise (39-12a1, 39-12a2) : § suivante ; le premier des trois qui se développe l'écrit générique, les autres l'appellent.
+
+## Socle commun de la phase 2 (Epics 38, 39, 40) — contrat S1 à S9
+
+*Texte identique au fichier de l'Epic 39 ; décidé à la validation P1 des phases 2 de Wise et de Stripe (2026-11-20, rapport
+`39-12-P1.md`) pour que les trois prestataires partagent **un** code. **Écrit par la première fiche de phase 2 développée**
+(38-12a, normalement), **générique dès le départ** (C-40-K6) ; les deux autres l'appellent. Ce que chaque fiche garde
+en propre : sa conversion, son jeu d'étapes, ses codes `<PRESTATAIRE>_*` propres au format.*
+
+- **S1 — Configuration.** Un lecteur unique `provider_env` (kesh-api) lit `KESH_<P>_<n>_ACCOUNT` (libellé = `provider_account`
+  de 38-11b), les champs du prestataire (`_CLIENT_ID`/`_SECRET`, `_TOKEN`, `_KEY`…), des champs facultatifs, `KESH_<P>_BASE_URL`
+  et `KESH_<P>_PARALLEL` (1 à 6 strict, défaut 1) ; `n` de 1 à 9 ; série incomplète, libellé en double (sans casse), valeur vide
+  ou `<…>` → refus de démarrer, message qui nomme la variable ; champs privés, `Debug` masqué ; un contrôle propre au prestataire
+  s'y branche (clé Stripe `rk_`, fichier de clé SCA de Wise). Le libellé est **propre à l'installation**, non à la société.
+- **S2 — Mécanique de téléchargement** (`provider_download`) : table des tâches en mémoire (une par prestataire, société et
+  libellé, purgée une heure après la fin), `windows(from, to, max_days)` pure (jours de Zurich), **politique de reprise unique**
+  (429 et 5xx : `Retry-After` entier borné à 120 s, sinon 5, 10, 20, 40, 60 s ; six essais par requête ; **pause commune** à
+  tous les fils, sans réduire le parallélisme ; aucune pause fixe entre requêtes), permis de parallélisme, horloge et attente
+  injectables. Chaque prestataire écrit sa propre boucle d'étapes.
+- **S3 — Routes** `POST /api/v1/<prestataire>-downloads` (`paypal`, `wise`, `stripe`) : Comptable et plus, **sessions seules (clés
+  d'API non admises : un secret de l'Administrateur sort)**, registre des routes auditées ; 202 `{ jobId }` ; `GET …/{jobId}` →
+  `{ state: running | done | failed, steps: { done, total: number | null }, pausedUntilSeconds, result, error: { code, message,
+  detail? } }`.
+- **S4 — Codes génériques** (38-11b a déjà posé `PROVIDER_ACCOUNT_NOT_FOUND`…) : `PROVIDER_API_NOT_CONFIGURED` (422),
+  `PROVIDER_DOWNLOAD_RUNNING` (409), `PROVIDER_PERIOD_INVALID` (400, `details.reason`), et, dans `error.code` d'une tâche,
+  `PROVIDER_AUTH_FAILED`, `PROVIDER_PERMISSION_DENIED`, `PROVIDER_RATE_LIMITED`, `PROVIDER_UNAVAILABLE`,
+  `PROVIDER_RESPONSE_INVALID`, `PROVIDER_API_ERROR` ; `details.provider` nomme le prestataire ; jamais le texte du prestataire.
+- **S5 — Transport.** Un constructeur de client HTTP commun (rustls, aucune redirection, délais, `User-Agent`), extrait de
+  `exchange_rates/source.rs:116-130` ; **`reqwest` n'a pas la fonctionnalité `json` en dépendance normale** (`Cargo.toml:112`) :
+  `.bytes()` puis `serde_json`. Une adresse de base par prestataire (`https` ; `http` admis vers le seul bouclage), et **un seul
+  schéma de test** : un petit serveur `axum` dans le processus (`127.0.0.1:0`) joue le prestataire sur cette adresse — pas de
+  trait de source simulée.
+- **S6 — Import.** Tout est lu **avant** toute écriture ; les lignes passent par le **cœur commun** de 38-11b/39-11b (lignes
+  neutres `ProviderLine`), **une** transaction de base ; l'empreinte d'un téléchargement porte sur les identifiants triés et le
+  refus `BANK_IMPORT_DUPLICATE_FILE` **ne s'applique pas** (relancer rend « 0 insérée »).
+- **S7 — Écran.** Un dialogue générique (38-12b), paramétré par prestataire ; `providerApi: { configured, mode?, … }` sur le
+  compte bancaire.
+- **S8 — E2E.** Un seul serveur de prestataire simulé pour Playwright, port `KESH_E2E_PROVIDER_MOCK_PORT`.
+- **S9 — Secrets.** Un test au marqueur commun : aucun secret (jeton, clé, défi, signature) dans un journal, une réponse, une
+  erreur ou une trace d'audit.
 
 ## Questions et points douteux (2026-11-20)
 
@@ -816,3 +854,4 @@ Alignements inter-fiches issus de la validation P2 des fiches 40-1 à 40-6, repo
   (chaque fiche porte une section **Note de version**, assemblée à la release) ; manuels : `.tex` seulement, PDF régénérés à
   la release ; compteurs recomptés depuis la source après chaque reprise de `main`.
 - On trace toujours : un défaut voisin non traité se note au registre (C-40-7), pour devenir une issue avec la PR.
+- 2026-11-20 — Validation P1 de la phase 2 (Claude Sonnet 5.5, contexte frais, rapport `kesh-gate-logs/epic-39-40-kiss/validation/40-8-P1.md`) : **3 HIGH, 11 MEDIUM, 8 LOW, remédiés** pour les phases 2 de Wise et de Stripe (dont, pour Stripe : dates de Zurich et non UTC, versements filtrés par `arrival_date`) ; C-40-K6 devenu le socle commun S1 à S9 avec les Epics 38 et 39 (lecteur de configuration unique, mécanique de téléchargement et reprise uniques, codes `PROVIDER_*`, sessions seules, lecture complète avant écriture, serveur simulé HTTP, dialogue générique).
