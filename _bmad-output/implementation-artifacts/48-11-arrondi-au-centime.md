@@ -1,6 +1,6 @@
 # Story 48-11 : Les montants à deux décimales sont arrondis au centime, non tronqués — rapports CSV et PDF ; l'export global écrit chaque colonne à son échelle (#1245 ; #1430)
 
-Status: ready-for-dev
+Status: in-progress
 
 *Fiche rédigée le 2026-11-20 (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-48-11`, branche `story/48-11-arrondi-au-centime`, partie de
 `epic/48-corrections-0-20-0` à **`08c47a6cc`** (qui porte la PR #1327 de Beat — alignement à droite des PDF de rapports — et la PR #1346 —
@@ -263,8 +263,8 @@ filtré sur `csv|export|rapport|report|pdf` : seuls `admin-manual.tex:3915` et `
     soit exactement les 38 colonnes `DECIMAL` des tables de `TABLES_EXPORTEES` au schéma (la seule autre table à colonnes `DECIMAL`,
     `_kesh_fetched_exchange_rates`, est une table système hors export). Ce décompte est celui que le test de pleine échelle (AC13)
     écrit à la main.
-  - **Ce qui change pour qui lit l'export** : la **forme** des 25 colonnes à quatre décimales (`150.25` → `150.2500`), jamais leur
-    valeur ; un tableur relit le même nombre ; un script qui compare des chaînes (`== "150.25"`) ou lit à deux décimales fixes est à
+  - **Ce qui change pour qui lit l'export** : la **forme** des 25 colonnes à quatre décimales (`150.25` → `150.2500`) ; aucune valeur
+    enregistrée ne change, et une fraction de centime que l'export coupait jusqu'ici y paraît désormais entière (`10.0050`) ; un tableur relit le même nombre ; un script qui compare des chaînes (`== "150.25"`) ou lit à deux décimales fixes est à
     adapter. Les colonnes à deux décimales ne changent pas. Note de version (section *Modifié*) et manuels (D8) le disent.
   - **Option écartée** (le remède du kickoff) : arrondir l'export global au centime par la fonction commune — l'export de
     souveraineté perdrait la fraction de centime que la base garde ; c'est ce que Guy a refusé le 2026-11-20.
@@ -318,7 +318,8 @@ filtré sur `csv|export|rapport|report|pdf` : seuls `admin-manual.tex:3915` et `
     pas à son étape 0 (précédent : la Story 36-9 a ouvert « Passer à la 0.18.0 » pour son seul paragraphe, commentaire LaTeX à l'appui,
     `admin-manual.tex:2574-2577`), placée avant `sec:maj-0-19-0` ; sinon le paragraphe s'ajoute à la section existante —, paragraphe
     `\paragraph{Pour les intégrations.}` : « \textbf{L'export global change de forme} : les montants, prix, quantités et totaux s'y
-    écrivent à quatre décimales (\texttt{150.25} devient \texttt{150.2500}), à l'échelle où Kesh les garde ; aucune valeur ne change, un
+    écrivent à quatre décimales (\texttt{150.25} devient \texttt{150.2500}), à l'échelle où Kesh les garde ; aucune valeur enregistrée ne change (une fraction
+    de centime que l'export coupait jusqu'ici y paraît désormais entière, \texttt{10.0050}), un
     tableur relit le même nombre, mais un script qui compare des chaînes ou lit deux décimales fixes est à adapter. Les taux, les frais
     de rappel et les montants des relevés restent à deux décimales. » L'introduction de la section (sauvegarde, migrations) et les
     paragraphes des autres stories s'écrivent à l'intégration de la release. **La section sera ouverte trois fois** : elle l'est déjà,
@@ -423,6 +424,10 @@ filtré sur `csv|export|rapport|report|pdf` : seuls `admin-manual.tex:3915` et `
       `20261118000002_invoice_line_types.sql` de l'Epic 49 ; aucun déclencheur au schéma ; toutes les autres contraintes sur une
       colonne `DECIMAL` sont des bornes — `> 0`, `>= 0`, `<= 100`, `<= 10000`, `<= 1000000000` — que les valeurs par défaut
       respectent) :
+      - **L1, L2, L3 : trois lignes distinctes, sans devise au départ ; L3 se pose par un seul `UPDATE` des cinq colonnes**
+        (`amount_currency`, `exchange_rate`, `rate_source`, `debit`, `credit` : `chk_jel_fx_all_or_none` et `chk_jel_fx_chf` se
+        vérifient ligne par ligne, trois `UPDATE` successifs échoueraient au premier ; L1 et L2 restent sans devise, sinon `fx_chf`
+        refuse `1.1234`) ;
       - `journal_entry_lines` — `chk_jel_debit_credit_exclusive` (`debit = 0 and credit > 0 or debit > 0 and credit = 0`),
         `chk_jel_fx_all_or_none`, `chk_jel_fx_chf` (`debit + credit = round(amount_currency * exchange_rate, 2)` sur une ligne en
         devise hors réévaluation) : **trois lignes nommées**, prises parmi les lignes des écritures de `seed_with_full_data` —
@@ -439,13 +444,18 @@ filtré sur `csv|export|rapport|report|pdf` : seuls `admin-manual.tex:3915` et `
         `quantity`, `unit_price`, `vat_rate` et `line_total` à 0) : l'`UPDATE` vise **par son `id`** la ligne `priced` de la fixture,
         jamais « les lignes de la facture » ; la contrainte n'existe pas encore sur `epic/48`, elle existera après la fusion de
         l'Epic 49 ;
-    - **les fixtures** : 14 des 19 tables ont déjà un `INSERT` dans le fichier, `company_invoice_settings` vient du préréglage et
-      `journal_entry_lines` de `post_entry` (16) ; **trois sont à écrire**, aucune n'existant dans `exports_global_e2e.rs` (`:982`
+    - **les fixtures** : le test neuf **monte son propre jeu**, sans toucher aux fixtures des tests existants (leurs attendus de
+      comptes de lignes, `:982-996`, en dépendent) : une société seule, `seed_with_full_data` pour les écritures, puis une fonction
+      d'aide qui insère les tables restantes pour cette société. Les `INSERT` existants ne sont **pas** dans `seed_with_full_data`
+      (qui n'insère que `contacts`, `products`, `bank_accounts` et trois écritures) mais dans le corps de tests distincts
+      (`invoices`/`invoice_lines`, `bank_imports`/`bank_transactions`, `vat_rates`, et neuf tables dans
+      `export_global_zip_onze_tables_neuves_sortent_et_sont_scopees`, `:1825`) : ils se réécrivent dans la fonction d'aide. 14 des 19
+      tables ont un `INSERT` quelque part dans le fichier, `company_invoice_settings` vient du préréglage et `journal_entry_lines` de
+      `post_entry` (16) ; **trois sont à écrire**, aucune n'existant dans `exports_global_e2e.rs` (`:982`
       `("invoice_reminders.csv", 0)`, `:983-984` `dunning_levels` = 0) — un **niveau de relance** (`dunning_levels` : `level_number = 1`,
       `delay_days`, `fee_amount = 1.12`) ; un **rappel** (`invoice_reminders` : sur une facture de la fixture, `level_number = 1`,
-      `channel = 'manual'`, `sent_at`, `subject`, `body`, `fee_amount = 1.12`) ; un **cours retenu** (`exchange_rates`, ci-dessus). Les
-      helpers de `seed_with_full_data` et de `export_global_zip_onze_tables_neuves_sortent_et_sont_scopees` (`:1825`) s'extraient en
-      fonction si nécessaire ;
+      `channel = 'manual'`, `sent_at`, `subject`, `body`, `fee_amount = 1.12`) ; un **cours retenu** (`exchange_rates`, ci-dessus). La
+      fonction d'aide est neuve ; l'extraction des `INSERT` existants n'est pas admise si elle ajoute des lignes à un fixture partagé ;
     - dans `<table>.csv`, l'en-tête porte le nom de la colonne ; un échec nomme `table.colonne`, la clé de la ligne, l'attendu et le lu.
 
 ## Tests à écrire, et la preuve du rouge
@@ -514,9 +524,10 @@ désormais les montants, prix, quantités et totaux à **quatre décimales** (`1
 
 - Export global : chaque nombre s'écrit à l'échelle où Kesh le garde, **sans arrondi ni coupe** — quatre décimales pour les montants,
   prix, quantités et totaux, deux pour les taux de TVA, les frais de rappel et les montants et soldes des relevés, dix pour les cours
-  de change. Ces colonnes sortaient jusqu'ici à deux décimales **tronquées** (10.0050 sortait 10.00 ; le plafond de l'écart d'un
-  règlement groupé posé à 5.0060 sortait 5.00). Aucune valeur ne change, seule la forme : un tableur relit le même nombre, un script qui
-  compare des chaînes ou lit deux décimales fixes est à adapter (refs #1245).
+  de change. Les colonnes à quatre décimales sortaient jusqu'ici à deux décimales **tronquées** (10.0050 sortait 10.00 ; le plafond de
+  l'écart d'un règlement groupé posé à 5.0060 sortait 5.00). Aucune valeur enregistrée ne change ; pour les valeurs sans fraction de
+  centime seule la forme change (150.25 devient 150.2500) ; une fraction de centime que l'export coupait jusqu'ici y paraît désormais
+  entière. Un tableur relit le même nombre, un script qui compare des chaînes ou lit deux décimales fixes est à adapter (refs #1245).
 
 **Corrigé**
 
@@ -529,6 +540,8 @@ désormais les montants, prix, quantités et totaux à **quatre décimales** (`1
 
 ## Dev Notes
 
+- **Calendrier (V3-4)** : si le temps manque, l'AC13 est le seul morceau déplaçable (il ne touche pas la production) ; le déplacer
+  est une décision du Project Lead, à lui dire, non à prendre.
 - **Modules** (règle de décompte de la 48-15 : une **crate** backend, un **domaine** frontend, ou **les manuels** ; les tests suivent leur
   module) : (1) `kesh-core` (`types/money.rs`, `types/mod.rs`), (2) `kesh-report` (`pdf.rs`, `csv.rs`, `balance_sheet.rs`), (3) `kesh-api`
   (`exports/csv_tables.rs`, `routes/bank_statements_manual.rs`, `routes/company_invoice_settings.rs`, tests `exports_global_e2e.rs`,
@@ -666,3 +679,13 @@ désormais les montants, prix, quantités et totaux à **quatre décimales** (`1
   - **V2-5 (LOW) → corrigé** : `amount_string` reclassé en délégation défensive (solde précédent `DECIMAL(18,2)`, `bank_imports.rs:368`).
   - **V2-6 (LOW) → corrigé** : la liste fermée d'AC8 admet toute ligne de `money.rs`, dont l'appel dans `format_two_decimals`.
   - Décomptes inchangés par cette remédiation (garde 22 / 8, famille 2 : 2 ; 38 colonnes, 25/10/3 ; 34 sites, 24/10).
+- **2026-11-20 — validation P3 remédiée ; validation terminée** (Opus 5.5 ; passe P3 Sonnet 5.5 sur `97415d694`, contexte frais :
+  0 CRITICAL, 0 HIGH, 0 MEDIUM, 4 LOW ; rapport `kesh-gate-logs/e4811/validation-p3.md`). Tendance : **P1 0/0/1/5 (Sonnet) → P2
+  0/0/1/5 (Opus) → P3 0/0/0/4 (Sonnet)** ; aucun LOW ne recycle un défaut antérieur ; aucune passe de plus. Modèles alternés. Prémisses
+  relues dans le rapport (schéma, fixtures du fichier de test).
+  - **V3-1 (LOW) → corrigé** : « aucune valeur enregistrée ne change » (Note de version, D5, paragraphe du manuel d'administration de D8) ; la
+    fraction de centime coupée jusqu'ici paraît entière ; la forme seule change pour les valeurs sans fraction de centime.
+  - **V3-2 (LOW) → corrigé** : AC13 — le test neuf monte son propre jeu, sans toucher aux fixtures existantes ; les `INSERT` existants sont
+    situés (corps de tests distincts, non `seed_with_full_data`).
+  - **V3-3 (LOW) → corrigé** : AC13 — L1, L2, L3 distinctes, sans devise au départ ; L3 posée par un seul `UPDATE` des cinq colonnes.
+  - **V3-4 (LOW) → déclaré** : l'AC13 est le seul morceau déplaçable ; à dire au Project Lead si le temps manque (Dev Notes).
