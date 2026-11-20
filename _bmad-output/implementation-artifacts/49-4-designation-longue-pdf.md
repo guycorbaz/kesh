@@ -1,6 +1,16 @@
 # Story 49-4 : désignation longue sur le PDF de facture et d'avoir, capacité contrôlée à la validation, caractères signalés (#1363, #1364, #1400)
 
-Status: ready-for-dev
+Status: split
+
+> **Découpée le 2026-11-20** (décision de Guy, sur la recommandation de l'orchestrateur du 2026-11-19 et le finding V1-6 de la
+> validation P1, `kesh-gate-logs/e494/validation-49-4-p1.md`) en deux stories ; **cette fiche ne se développe plus** et reste
+> comme source des décisions d'avant le découpage :
+>
+> - **[49-4a — capacité du PDF contrôlée avant la validation](49-4a-capacite-pdf-avant-validation.md)** (#1364) : D4, D5, D7,
+>   D10 sur le dessin actuel, aucun PDF ne change ; condition de sortie de la 49-1c (« la 49-1c ne sort pas sans la 49-4a ») ;
+> - **[49-4b — désignation longue entière, caractères repliés ou signalés](49-4b-designation-longue-retour-ligne.md)** (#1363,
+>   #1400) : D1, D2, D3, D6, D8, D9, la dérogation, le finding HIGH V1-1 et les questions ouvertes à Guy ; sort en 0.20.0 si
+>   close le jeudi 2026-11-26, sinon #1363 et #1400 partent entières à la release suivante.
 
 *Fiche rédigée le 2026-11-19 par l'agent de rédaction de la 49-4 (Opus 5.5), workflow `bmad-create-story`. Release **0.20.0**
 (coupure jeudi 2026-11-26 au soir). **Aucune migration.** Code lu à la tête de la branche `story/49-4-designation-longue-pdf` =
@@ -544,3 +554,4 @@ reconstruction (cargo garde sinon le binaire muté).
 | Date | Entrée |
 |---|---|
 | 2026-11-19 | **Création de la fiche** (Opus 5.5, `bmad-create-story`). Code lu à `3379a971a` (49-1a et 49-1b fusionnées). Dix décisions : la désignation se coupe à 88 mm, montants à la première ligne (D1) ; une pièce d'avant qui ne tiendrait plus se rend comme en 0.19.0 (D2) ; dérogation écrite, étendue à l'avoir et au rappel, jamais figés — le rappel à confirmer par Guy (D3) ; capacité contrôlée à la validation par le plan même du rendu, course assumée, `kesh-db` intouché (D4) ; code neuf `INVOICE_LINES_DO_NOT_FIT_PDF` (D5) ; quatre tirets repliés, cinq invisibles retirés, tout autre caractère sans glyphe refusé à la validation, source unique (D6) ; aucun changement d'écran (D7) ; preuve avant / après par le mécanisme de la 49-1b, comparateur et fixtures gelés, S7 seule exclue (D8) ; manuel après la fusion de la 49-1c (D9) ; aucune écriture en base (D10). Treize AC, treize tests. Quatre modules. Aucune migration. Issues à ouvrir : deux (trois si la revue le juge). Validation P1 à lancer : `49-4-designation-longue-pdf-validation-prompt-p1.md`. Statut : `ready-for-dev`. |
+| 2026-11-20 | **Découpage** (Opus 5.5 ; décision de Guy du 2026-11-20) en `49-4a-capacite-pdf-avant-validation` (#1364 : capacité contrôlée à la validation sur le dessin actuel, findings P1 V1-3, V1-6, V1-8, V1-11, V1-12, V1-13 remédiés, V1-5 déclaré) et `49-4b-designation-longue-retour-ligne` (#1363, #1400 : findings P1 V1-1, V1-2, V1-3 T-SRC, V1-4, V1-7, V1-9, V1-10, V1-12 reportés ; questions ouvertes sur le rappel, le refus d'un caractère non imprimable et l'avoir). Statut `split` ; la fiche n'est plus modifiée. |
