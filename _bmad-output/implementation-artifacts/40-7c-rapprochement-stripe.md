@@ -145,8 +145,8 @@ ressaisie et de voir mes erreurs.
    `MAX_IN_CLAUSE_IDS` (`repositories/reconciliation.rs:1121`) propositions ou portant deux fois la même transaction ;
    tout le reste → `failed[]` (`FailedProposal`, `routes/reconciliation.rs:576`), HTTP 200. `link_sale` →
    `reconciliation_link::link_entry_in_tx` (`:1156`), ses refus (`LinkRefusal`) sous leurs codes. **Registre des routes
-   auditées** (`crates/kesh-api/tests/audit_route_registry.rs:440`) : `("post", "stripe::post_accept", Traced,
-   Rejouee)` (nom du module au choix de la reprise, aligné sur celui de PayPal et de Wise), handler sous
+   auditées** (`crates/kesh-api/tests/audit_route_registry.rs:440`) : `("post", "stripe::accept_proposals", Traced,
+   Rejouee)` (nom du module au choix de la reprise, aligné sur celui de PayPal et de Wise ; **jamais `post_accept`** : l’exemption `RETRY_WITH_AUTORISE` ne regarde que le nom de la fonction, angle mort (d) de `audit_route_registry.rs:376-378`, et une `fn post_accept` appelant `retry_with` ne ferait pas rougir le test), handler sous
    **`crate::retry::retry_app_on_deadlock`** (`crates/kesh-api/src/retry.rs:40`), **jamais** `retry_with` (réservé à
    `reconciliation::post_accept`, `RETRY_WITH_AUTORISE`, `:1303`, volet (c bis)) ; ⚠️ **piège du patron par
    proposition** (38-11c AC-7) : un interblocage levé dans une proposition n'est **jamais** rangé en `failed[]` — il
@@ -285,3 +285,4 @@ rattachée.
   bancaire que Stripe ; annulation du côté Stripe d'un versement dont la réception est rattachée (ne retire que le lien,
   second versement proposé) → limite écrite. Contrôles de contrepartie de `fee` à relever à T0 pour le compte de
   versement (actif, non de charge).
+- 2026-11-20 — validation P4 ciblée (Claude Haiku 5.5, contexte frais ; une lentille : le seul commit `bb40b420`, contre `origin/main` et les fiches sœurs) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 0 LOW, remédiés (rapport `kesh-gate-logs/epic-39-40-kiss/validation/40-7-P4-ciblee.md`). MEDIUM : l'exemption `RETRY_WITH_AUTORISE` désigne le handler par son seul nom (angle mort (d) de `audit_route_registry.rs:376-378`) ; le handler `stripe::post_accept` est renommé `stripe::accept_proposals` dans le registre (AC-6), avec la consigne de ne jamais nommer un handler de cette fiche `post_accept`. Les autres points de la P3 ciblée sont relus sans écart.
