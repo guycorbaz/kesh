@@ -1,6 +1,6 @@
 # Story 38-11d : écrans PayPal, manuel utilisateur, API externe, E2E
 
-Status: ready-for-dev
+Status: review
 
 *Fiche rédigée le 2026-11-20, branche `epic/38-paypal`, après la fusion de `origin/main` (commit `43ceb541`). Epic
 38, **phase 1 KISS** (décision de Beat du 2026-11-20). **Dépend de** : 38-11b, 38-11c1 (rattachement en devise, filtres), 38-11c2 (routes de revue et d'acceptation). Reprend, réduits,
@@ -197,12 +197,12 @@ de champs de 38-11c1 AC-3 (`providerType`, `counterpartyEmail`, `direction`, nul
 
 ## Tâches
 
-- [ ] T1 — Formulaires et liste des comptes bancaires, `provider.ts`, `withoutProviders` aux cinq sélecteurs (AC-1).
-- [ ] T2 — Règles : filtres et sens (AC-2).
-- [ ] T3 — Feature et page PayPal : import, propositions, écarts, à examiner, modale de rattachement ; i18n,
+- [x] T1 — Formulaires et liste des comptes bancaires, `provider.ts`, `withoutProviders` aux cinq sélecteurs (AC-1).
+- [x] T2 — Règles : filtres et sens (AC-2).
+- [x] T3 — Feature et page PayPal : import, propositions, écarts, à examiner, modale de rattachement ; i18n,
   `sitesTotal` (AC-3 à AC-5).
-- [ ] T4 — Manuel utilisateur, `docs/api-external.md`, passages rendus faux (AC-6, AC-7).
-- [ ] T5 — E2E, captures, suite complète (AC-8).
+- [x] T4 — Manuel utilisateur, `docs/api-external.md`, passages rendus faux (AC-6, AC-7).
+- [x] T5 — E2E, captures, suite complète (AC-8).
 
 ## Stratégie de tests
 
@@ -243,3 +243,155 @@ lignes à examiner ; paramètres PayPal au formulaire du compte bancaire ; filtr
   conversion à une écriture quand un côté est en CHF et son annulation, retrait depuis un solde CHF seulement ;
   proposition `link_entry` ; codes `PROVIDER_*` ; renvois à 38-11c1 / 38-11c2 ; paragraphe de décision et « à
   confirmer » périmés retirés.
+- 2026-11-20 — développée (`bmad-dev-story`) : commits `31aca7f0` (écrans), `62b9d281` (manuel, `api-external.md`),
+  `40516c88` (page alignée sur les formes de la revue), fusion de `story/38-11c2` (`ecd54a38`, sans conflit), `5d04b925`
+  (libellés des refus de la route, spec E2E). Statut `review`. Détail au Dev Agent Record.
+
+## Dev Agent Record
+
+### Agent Model Used
+
+Claude Opus 5.5 (`bmad-dev-story`), worktree `kesh-wt38d`, branche `story/38-11d`.
+
+### Implementation Plan / décisions
+
+- **AC-1** — `provider.ts` (`isPaypal`, `isProvider`, `withoutProviders`, `paypalAccountLabels`,
+  `feeAccountCandidates`, `paypalSummaryLine`, `paypalPayload`) ; `linkableLedgerAccounts` gagne
+  `allowForeignCurrency` ; formulaires de création et de modification (snippet `paypalFields`) : case sous *Compte
+  bancaire*, désactivée sur le compte principal avec son motif, `<datalist>` des libellés, compte de frais recalculé et
+  vidé au changement de compte du plan, IBAN facultatif (`null` si vide), QR-IBAN et principal masqués, `paypal: null`
+  au `PUT` d'un compte décoché qui en portait, absent sinon. **Décision** : le solde d'ouverture est masqué quand le
+  compte du plan est en devise (formulaire et bouton de ligne) — la route du solde d'ouverture n'écrit qu'en CHF ; le
+  manuel renvoie à une écriture en devise. « Lier » (`PATCH`) n'est pas offert sur un compte PayPal.
+- **`withoutProviders`, six sites** (cinq de la fiche + l'écran des lots pain.001, items 9 et 10 de
+  `a-faire-p3-38.md`) : import CSV/CAMT, saisie manuelle, règlement d'une facture client, réconciliation, paiement d'une
+  facture fournisseur, lots de paiement. **Écart à la fiche (module `kesh-api` touché)** : l'import, la saisie et la
+  réconciliation lisent les comptes de `GET /companies/current`, qui ne portait pas le prestataire ; `BankAccountJson`
+  gagne `provider` (changement additif, documenté à `api-external.md`, test
+  `companies_current_porte_le_prestataire_des_comptes`). Relevé des autres écrans (grep `listBankAccounts`,
+  `bankAccounts`) : accueil (affichage seul), *Paramètres → Facturation* (exclusion des comptes liés, juste avec un
+  compte PayPal), QR-facture (compte principal, jamais PayPal) — aucun autre site d'écriture.
+- **AC-2** — `rule-filters.ts` (normalisation miroir de `normalize_email`, `changedFilters` : au `PATCH` seuls les
+  filtres changés partent), trois champs au formulaire, filtres affichés à côté du critère dans la liste ; `parseRule`
+  sur toutes les lectures (champs absents → `null`).
+- **AC-3 à AC-5** — feature `features/paypal/` (`paypal.types.ts` aligné sur `provider_review.rs` /
+  `provider_accept.rs` de 38-11c2 : `transaction`, `otherTransaction`, `entry`, constats `code` / `entries` /
+  `details`), `paypal.api.ts` (import multipart, revue, acceptation, paquets de 500), `paypal-labels.ts` (une phrase
+  par cause de refus de l'import ; genres, écarts, motifs ; refus de l'acceptation : six codes propres
+  `paypal-failed-*`, les autres délégués à `failedProposalLabel`, non étendu), `paypal-review.ts` (exercice par défaut,
+  corps dans l'ordre des dates, retrait incomplet écarté). Page `reconciliation/paypal` : garde de génération, revue
+  relue après import et acceptation, retrait non cochable tant que sans compte (la société `with-company` n'a pas de
+  compte principal : sélecteur), libellés des règles lus par `listRules`. Menu `Mensuel`, `comptableOnly`.
+  `LinkSettlementModal` prend un `LinkTarget` (`Pick` de `ReconciliationProposal`) et ne charge les règlements que pour
+  un crédit **en CHF** ; montants des écritures suivis de la devise de la transaction. L'e-mail de la contrepartie
+  n'est pas servi par `TransactionSummary` (38-11c2) : la colonne reste vide (champ facultatif du type).
+- **AC-6, AC-7** — § `sec:comptes-paypal` du manuel (fin de *Import bancaire*), passages corrigés (`:1137`, limites du
+  relevé saisi, annexe, rattachement, règles : filtres et limite du doublon, règles en devise sur la page PayPal) ;
+  limite fournisseur et remède, angle mort complet (`get_proposals`, `split`) — items 4 et 10. `api-external.md` :
+  § « Rapprocher un compte PayPal » (revue, acceptation, filtres, script des boutiques, exemple `curl`), ligne du
+  tableau des ressources, `provider` de `GET /companies/current`, rattachement en devise (règle, tableau des refus,
+  § 10), `ACCOUNT_IN_FOREIGN_CURRENCY` sauf compte PayPal, angle mort de `:1001` complété, `PROVIDER_PROPOSAL_STALE`.
+  Le texte du `PATCH` disait déjà « refusé » sans réserve (item 4) : inchangé. Manuels DE/IT/EN : à traduire.
+- **i18n** — 107 clés neuves aux quatre locales (11 `bank-accounts-`, 11 `reconciliation-rules-`, 1 `nav-paypal`,
+  84 `paypal-`, recomptées sur les trois commits de la story) ; `sitesTotal` 3495 → **3615** et `CANDIDATES_ATTENDUES` 130 → **137** (conformes 109 → 116), relevés
+  par les gardes, non additionnés ; `bank-name-inventory` 5 → 7 pour la page des comptes (deux payloads PayPal).
+
+### Debug Log / gates (cible propre `kesh-targets/kesh-wt38d`, `CARGO_INCREMENTAL=0`, dev2 port 3307, `heavy.sh`)
+
+Aucun gate cargo n'a été joué sur l'ancienne cible partagée : rien à rejouer. Journaux : `kesh-gate-logs/s38-11d/`.
+Tous au commit `5d04b925` (dernier commit de code), `gates-all.sh` :
+
+- **Frontend** : `npm run check` 0 erreur (32 avertissements, tous antérieurs) ; `lint-i18n-ownership` vert ;
+  `test:unit` **4691/4691** (`front-test-unit.log`) ; `build` vert.
+- **E2E complet** : **482 passés, 10 échecs, 18 ignorés** (`e2e.log`) — les dix attendus, jugés un à un : les sept de la
+  KF-029 (`mode-expert:26`, `:41`, `onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`, `:150`),
+  `backup-restore-new-install:262`, `:381`, `opening-balances:156`. `paypal-import.spec.ts` 5/5 (aussi seul,
+  `e2e-cible.log`).
+- **Backend** `scripts/test-fast.sh --ci` : **rouge, rc 100** — 6265 exécutés, **6258 passés, 7 échecs**, 14 ignorés
+  (`gate-backend.log`). Les sept sont **tous dans le code fusionné de la 38-11c2** (aucun fichier de la 38-11d) :
+  `audit_label_registry` ×2, `audit_route_registry::every_replayed_route_calls_an_envelope` (31 routes rejouées pour
+  30 déclarées), `paypal_reconciliation_e2e` ×3 (colonne `api_key_id` inconnue, fixture à dates ambiguës, interblocage),
+  `kesh-reconciliation provider_review::tests::la_cle_de_rattachement_est_au_parametrage`. La 38-11c2 est encore
+  `in-progress`, ses fichiers en cours de modification dans `kesh-wt38c2` (`provider_accept.rs`,
+  `audit_route_registry.rs`, `paypal_reconciliation_e2e.rs`, `provider_review.rs`). Les tests de la 38-11d passent
+  (`companies_current_porte_le_prestataire_des_comptes`, `textes_coherents` entier).
+- **gate-ci** : **rouge, rc 101**, arrêté au binaire `audit_label_registry` (mêmes deux échecs de la 38-11c2 ; les
+  binaires précédents verts). Cible de la copie supprimée.
+- **À rejouer** après la fusion du correctif de la 38-11c2 : gate backend et gate-ci (la story ne touche que
+  `routes/companies.rs` et un test côté Rust).
+- **Mutations front** (`mutations-front-1.log`) : 9/9 rouges (`withoutProviders` de l'import, de la saisie, des lots ;
+  `allowForeignCurrency` ; `changedFilters` ; CHF de la modale ; `paypal: null` décochée ; case du principal ;
+  corps incomplets).
+- **Manuel** : compilé dans une copie (`kesh-gate-logs/s38-11d/manual/`, `latexmk -xelatex`, aucune référence
+  indéfinie au passage final), PDF non commité ; § lu aplati par `pdftotext`.
+- **Captures** (thème clair) : `kesh-gate-logs/s38-11d/captures/01` à `11` (formulaire du compte PayPal, liste,
+  règle avec filtres, liste des règles, compte rendu d'import, propositions, écarts, à examiner, compte rendu
+  d'acceptation, modale, après rattachement).
+
+### Completion Notes
+
+- Tests ajoutés (de `a02f3372` à `5d04b925`, déclarations `it`/`test` recomptées par fichier) : **60 Vitest**
+  (`provider.test.ts` 7 dont un `it.each` de six sites, `rule-filters.test.ts` 11, `paypal-labels.test.ts` 9 dont un
+  `it.each` de 15 codes, `paypal-review.test.ts` 7, `bank-accounts-page-paypal.test.ts` 12, `paypal-page.test.ts` 8,
+  `LinkSettlementModal.test.ts` 2, `bank-accounts.api`, `BankImportUpload`, `ManualStatementForm`,
+  `payment-batches-page` 1 chacun), **5 E2E**, **1 test d'intégration Rust**.
+- Prompt de la revue P1 : `kesh-gate-logs/s38-11d/revue-p1-prompt.md`.
+
+### File List
+
+- `crates/kesh-api/src/routes/companies.rs`
+- `crates/kesh-api/tests/companies_e2e.rs`
+- `crates/kesh-i18n/locales/de-CH/messages.ftl`
+- `crates/kesh-i18n/locales/en-CH/messages.ftl`
+- `crates/kesh-i18n/locales/fr-CH/messages.ftl`
+- `crates/kesh-i18n/locales/it-CH/messages.ftl`
+- `docs/api-external.md`
+- `docs/manual/fr/user-manual.tex`
+- `frontend/src/lib/features/bank-accounts/BankAccountJournalLinkForm-credit-card.test.ts`
+- `frontend/src/lib/features/bank-accounts/BankAccountJournalLinkForm.test.ts`
+- `frontend/src/lib/features/bank-accounts/bank-accounts.api.test.ts`
+- `frontend/src/lib/features/bank-accounts/bank-accounts.api.ts`
+- `frontend/src/lib/features/bank-accounts/bank-name-inventory.test.ts`
+- `frontend/src/lib/features/bank-accounts/format.ts`
+- `frontend/src/lib/features/bank-accounts/provider.test.ts`
+- `frontend/src/lib/features/bank-accounts/provider.ts`
+- `frontend/src/lib/features/bank-import/BankImportUpload.svelte`
+- `frontend/src/lib/features/bank-import/BankImportUpload.test.ts`
+- `frontend/src/lib/features/bank-import/ManualStatementForm.svelte`
+- `frontend/src/lib/features/bank-import/ManualStatementForm.test.ts`
+- `frontend/src/lib/features/homepage/HomepageCards.test.ts`
+- `frontend/src/lib/features/homepage/homepage.test.ts`
+- `frontend/src/lib/features/invoices/SettleInvoiceDialog.svelte`
+- `frontend/src/lib/features/paypal/paypal-labels.test.ts`
+- `frontend/src/lib/features/paypal/paypal-labels.ts`
+- `frontend/src/lib/features/paypal/paypal-review.test.ts`
+- `frontend/src/lib/features/paypal/paypal-review.ts`
+- `frontend/src/lib/features/paypal/paypal.api.ts`
+- `frontend/src/lib/features/paypal/paypal.types.ts`
+- `frontend/src/lib/features/reconciliation/LinkSettlementModal.svelte`
+- `frontend/src/lib/features/reconciliation/LinkSettlementModal.test.ts`
+- `frontend/src/lib/features/reconciliation/reconciliation.types.ts`
+- `frontend/src/lib/features/reconciliation/rules/RuleFormModal.svelte`
+- `frontend/src/lib/features/reconciliation/rules/RuleFormModal.test.ts`
+- `frontend/src/lib/features/reconciliation/rules/RulesList.svelte`
+- `frontend/src/lib/features/reconciliation/rules/RulesList.test.ts`
+- `frontend/src/lib/features/reconciliation/rules/rule-filters.test.ts`
+- `frontend/src/lib/features/reconciliation/rules/rule-filters.ts`
+- `frontend/src/lib/features/reconciliation/rules/rules.api.ts`
+- `frontend/src/lib/features/reconciliation/rules/rules.types.ts`
+- `frontend/src/lib/features/settings/settings.types.ts`
+- `frontend/src/lib/shared/i18n-keys.test.ts`
+- `frontend/src/lib/shared/i18n-libelle-en-dur.test.ts`
+- `frontend/src/routes/(app)/+layout.svelte`
+- `frontend/src/routes/(app)/bank-accounts/+page.svelte`
+- `frontend/src/routes/(app)/bank-accounts/bank-accounts-page-credit-card.test.ts`
+- `frontend/src/routes/(app)/bank-accounts/bank-accounts-page-paypal.test.ts`
+- `frontend/src/routes/(app)/bank-accounts/bank-accounts-page.test.ts`
+- `frontend/src/routes/(app)/payment-batches/+page.svelte`
+- `frontend/src/routes/(app)/payment-batches/payment-batches-page.test.ts`
+- `frontend/src/routes/(app)/reconciliation/+page.svelte`
+- `frontend/src/routes/(app)/reconciliation/paypal/+page.svelte`
+- `frontend/src/routes/(app)/reconciliation/paypal/paypal-page.test.ts`
+- `frontend/src/routes/(app)/supplier-invoices/[id]/+page.svelte`
+- `frontend/tests/e2e/paypal-import.spec.ts`
+- `_bmad-output/implementation-artifacts/38-11d-ecrans-manuel-e2e-paypal.md`, `_bmad-output/implementation-artifacts/sprint-status.yaml`
