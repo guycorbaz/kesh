@@ -92,16 +92,14 @@ Quatre points tracés en issues à la revue du correctif `fix-api-parent-compte`
   `frontend/src/routes/(app)/accounts/+page.svelte`, `frontend/tests/e2e/accounts.spec.ts`
 - `_bmad-output/implementation-artifacts/fix-suivis-pr-1437-1440.md`
 
-## Gates (dernier commit de code `fa899ab7`, journaux `kesh-gate-logs/fix-suivis/`)
+## Gates
 
-- Gate ciblé : fmt, clippy workspace, nextest 1334 passés, 5 ignorés (`cible-*.log`).
-- Frontend : `check`, `lint-i18n-ownership` verts ; `test:unit` **4631 tests (278 fichiers)** ; `build` vert.
-- **Cible cargo** : les gates ci-dessous ont d'abord tourné sur la cible partagée, abandonnée le 2026-11-20 (gates
-  faux possibles). Rejoués sur la cible propre `kesh-targets/kesh-wtfixsuivis` (`CARGO_INCREMENTAL=0`) :
-  `scripts/test-fast.sh --ci` **6166 passés, 14 ignorés** (`gate-backend.log`, identique au premier passage sur cible
-  partagée, `gate-backend-cible-partagee.log`).
-- `scripts/gate-ci.sh` (copie `git archive`, cible propre à la copie, donc non concernée) : **6185 passés, 0 échoué,
-  18 ignorés** (`gate-ci.log`).
-- E2E complet (`LANG=fr_CH.UTF-8`) sur la cible partagée, **avant la remédiation de la revue P1** : **478 passés, 10 échecs, 18 ignorés** — sept KF-029 (#97, `docs/testing.md`) et trois échecs hors de cette liste, **connus au registre et sans rapport avec le correctif** : `backup-restore-new-install.spec.ts:262` et `:381` (KF-065, #1282) et `opening-balances.spec.ts:156` (KF-067, #1284) ;
-  `accounts.spec.ts:292` vert (`e2e.log`). **Rejeu sur la cible propre : voir `e2e-r.log`, à joindre ici** (lancé,
-  en attente d'une place de `heavy.sh` à la rédaction).
+**Après la remédiation de la revue P1 (dernier commit de code `621dfbb6`)** : gate ciblé vert (`cible2-*.log` :
+fmt, clippy workspace, nextest 1344 passés, 5 ignorés, dont les deux tests neufs `put_parent_mouvemente_deja_non_imputable_message_exact`
+et `put_parent_en_devise_mouvemente_deja_non_imputable_message_exact`). `test-fast --ci`, frontend complet, E2E complet
+et `gate-ci.sh` au dernier commit de code : **à compléter** depuis `chaine4.console.log`, `chaine5.console.log` et les
+journaux `gate-backend.log`, `front-*.log`, `e2e-r.log`, `gate-ci.log` — rien n'est déclaré vert ici avant lecture.
+
+**Avant la remédiation (commit de code `fa899ab7`, historique)** : `test-fast --ci` 6166 passés, 14 ignorés ;
+Vitest 4631 (278 fichiers) ; `gate-ci.sh` 6185 passés, 18 ignorés ; E2E 478 passés, 10 échecs (sept KF-029, trois
+KF-065/KF-067 hors correctif), 18 ignorés — sur cible partagée pour l'E2E.
