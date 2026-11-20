@@ -13,7 +13,7 @@ Validation : P1 (Sonnet) faite et remédiée le 2026-11-19, sur les arbitrages d
 (`d4f5bba7f` : 49-4 au fichier d'épique, #1400 rattachée, « la 49-1c ne sort pas sans la 49-4 »). P2 (Opus) faite le 2026-11-19 ;
 remédiée le 2026-11-20 par l'**allègement décidé par Guy** (section *Allègement*) : les gestes rejoués après la montée, la
 reprise d'une migration interrompue, la constatation du refus d'une sauvegarde 0.20.0 et leurs contrôles annexes sortent de la
-story. Une P3 reste à lancer. La 49-4 a été découpée le 2026-11-20 en 49-4a et 49-4b (décision de Guy, branche
+story. P3 (Sonnet) faite et remédiée le 2026-11-20 ; une P4 reste à lancer. La 49-4 a été découpée le 2026-11-20 en 49-4a et 49-4b (décision de Guy, branche
 `story/49-4-designation-longue-pdf`, non encore fusionnée dans `epic/49`) : la dérogation au rendu est celle de la **49-4b** (D8).*
 
 **Issues** : `refs #1242` ; **aucun mot-clé de fermeture** dans un commit. #1242 ne se ferme pas avec cette story.
@@ -132,8 +132,13 @@ les factures « datées au plus tard du lendemain du paiement » ; le compte ban
   version de Kesh. Mettez à jour Kesh ou utilisez un backup compatible. ». Le refus **n'est pas écrit au journal du serveur** :
   `errors.rs:3167-3186` du tag construit la réponse `400` sans `tracing::` ; la table et la colonne sont dans le **corps de la
   réponse** (`error.details.table`, la première de l'ordre alphabétique — `credit_note_lines`, les tables étant tenues dans un
-  `BTreeMap`, `import.rs:91` du tag — et `error.details.unknownColumns` = `["line_type"]`) (validation P2, V2-2). **Établi au
-  code, non joué par cette story** (Allègement) ;
+  `BTreeMap`, `import.rs:91` du tag — et `error.details.unknownColumns` = `["line_type"]`) (validation P2, V2-2). **L'écran
+  n'affiche pas le message de l'API** (validation P3, V3-2) : l'écran de restauration de la 0.19.0 traduit le code lui-même,
+  `git show 773df80da:frontend/src/lib/features/admin-restore/AdminRestorePanel.svelte`, `:189-193`
+  `case 'IMPORT_SCHEMA_MISMATCH': {` … `'admin-restore-error-schema',` `'Schéma du backup incompatible avec cette version de Kesh (table { $table }).'`
+  (clé fr-CH `messages.ftl:2435`) : l'administrateur lit « Schéma du backup incompatible avec cette version de Kesh (table
+  credit_note_lines). » — la table est donc visible **à l'écran**, la colonne seulement dans la réponse. **Établi au code, non joué
+  par cette story** (Allègement) ;
   (b) **reprise d'une migration interrompue** : `DELETE FROM _sqlx_migrations WHERE version = 20261118000002 AND success = 0`,
   puis redémarrer ; le rejeu est sans effet sur ce qui était posé (formes `IF [NOT] EXISTS`), prouvé par
   `migrations_upgrade_path.rs::line_types_migration_resumes_after_a_half_run`. **Le manuel ne la prescrit pas** (Allègement) : il
@@ -226,9 +231,9 @@ crates/kesh-report/src/vat_report.rs:127:           AND il.line_type = 'priced' 
 | Site | Après la montée, sur les données d'avant |
 |---|---|
 | `vat_report.rs:127` (rapport TVA) | **tourne** : `GET /api/v1/reports/vat` de la période du peuplement, dans `api` (projection par ajout, D10) |
-| `invoices.rs:499`, `:511`, `:523`, `:763`, `:805`, `:1369`, `:2374`, `:2421-2427` (création, modification, validation, compte de produit) | **angle mort assumé** (Allègement) : la recette ne valide plus de brouillon d'avant ; preuve au niveau du code, 49-1a T5 (`invoices_validate_vat.rs::validation_ignores_unpriced_lines`, dont la mutation du filtre de `:2421-2427`) ; issue à ouvrir (Dev Notes) |
-| `credit_notes.rs:539`, `:668` (création d'avoir) | **angle mort assumé** (Allègement) : preuve au niveau du code, 49-1a T6 (`credit_notes_repository.rs::credit_note_copies_unpriced_lines`, « avoir d'une facture d'avant la montée : mêmes lignes, même écriture ») ; même issue |
-| `invoice_settlements_write.rs:651` (règlement) | **angle mort assumé** (Allègement) : filtre d'intention, sans effet sur des lignes toutes `priced` — sa suppression est une mutation **équivalente** (fiche 49-1a, tableau des mutations, `:624`) ; 49-1a T8 (parité du reste dû) ; même issue |
+| `invoices.rs:499`, `:511`, `:523`, `:763`, `:805`, `:1369`, `:2374`, `:2421-2427` (création, modification, validation, compte de produit) | **angle mort assumé** (Allègement) : la recette ne valide plus de brouillon d'avant. Sur des lignes toutes chiffrées, la parité avec la 0.19.0 repose sur la **suite existante passée inchangée** (perte assumée : `invoices_validate_vat`, `invoices_line_revenue_account`) ; le test de la 49-1a (`validation_ignores_unpriced_lines`) ne prouve que la neutralité des lignes non chiffrées ; issue à ouvrir (Dev Notes) |
+| `credit_notes.rs:539`, `:668` (création d'avoir) | **angle mort assumé** (Allègement) : parité sur la suite existante inchangée (`credit_notes_repository`) ; `credit_note_copies_unpriced_lines` (49-1a) compare, dans le même code, un avoir avec et sans lignes non chiffrées — aucune facture d'avant la montée ; même issue |
+| `invoice_settlements_write.rs:651` (règlement) | **angle mort assumé** (Allègement) : filtre d'intention, sans effet sur des lignes toutes `priced` — sa suppression est une mutation **équivalente** (fiche 49-1a, tableau des mutations, `:624`) ; parité sur la suite existante inchangée (`invoice_settlement`, `grouped_settlements`, `invoice_amount_due_parity`) ; même issue |
 | `routes/invoices.rs:521` (garde de l'API, `lineType` du corps) | hors recette : un corps de la 0.19.0 est éprouvé par la 49-1a (T9 de sa fiche) |
 
 Sites que la 49-1a a changés **hors du filtre**, relevés par une autre voie (`grep -rn "line_type" crates/*/src --include=*.rs`,
@@ -312,7 +317,10 @@ hors tests ; V2-11) :
   (e) 72 dpi (un demi-millimètre du bloc de paiement y passerait).
 - **D5 — La référence d'un rendu 0.19.0 se prend en phase 4, sur la base restaurée.** Télécharger F2, F4, F6 en phase 1 les
   figerait dans la base d'avant. La phase 4 restaure la base d'avant sous l'image 0.19.0 : **après** son empreinte (inchangée),
-  elle rend F2, F4, F6 et l'avoir A1 — la référence 0.19.0. La phase 2 (binaire neuf) les rend **après** son empreinte et le
+  elle rend F2, F4, F6 et l'avoir A1 — la référence 0.19.0 —, **avant** `journal_sans_erreur 4` et `arreter_image`
+  (`scripts/recette-montee.sh:628-634`) : un rendu qui journalise ` ERROR ` fait échouer la phase 4. Le conteneur du retour est
+  neuf (`--rm`) et son dossier des documents vide : F1, F5, F7, F8 y manquent, sans effet pour les quatre pièces non figées
+  rendues ; aucune pièce figée n'y est demandée (elle y rendrait `410`) (V3-9). La phase 2 (binaire neuf) les rend **après** son empreinte et le
   crochet. La référence du regel de F8 est son fichier figé de la phase 1. Une **phase 6 « Rendus »** (code **16**) compare, après
   les phases 4 et 5, **un nombre exact de paires : 5**, avec ou sans `--import` (F2, F4, F6, A1, regel de F8) ; une paire ne compte
   que si les deux PDF ont passé D1 (200, `%PDF-`), ont au moins une page et si **leur texte contient le numéro de la pièce**
@@ -365,18 +373,30 @@ hors tests ; V2-11) :
   `asOf` est le jour du serveur (`services/rapports.rs:733`) et ses tranches en dépendent (`kesh-report/src/aged_receivables.rs:84-89`)
   — une recette qui passe minuit rougirait à tort, et ce n'est pas un lecteur de lignes ; (c) **les gestes d'écriture rejoués
   après la montée** sur les données d'avant — validation d'un brouillon, création d'un avoir, règlement —, comparés à ceux de la
-  0.19.0 : sortis par l'**Allègement** (décision de Guy du 2026-11-20), perte assumée écrite à cette section.
+  0.19.0 : sortis par l'**Allègement** (décision de Guy du 2026-11-20) ; leur parité sur des lignes toutes chiffrées repose sur
+  la suite de tests existante, passée inchangée (perte assumée, section *Allègement* ; contrôle à T12).
 - **D11 — Le retour que le manuel prescrit se joue, dans un script d'intégration sur le modèle de la 0.19.0.**
   `kesh-gate-logs/rel0200/recette-complement-rel0200.sh` (hors dépôt, comme `rel0190/recette-complement-rel0190.sh`), écrit et
   joué par cette story, rejoué par l'intégration ; conteneurs `kesh-rel0200c-*`, label `kesh.rel0200c`, base `mariadb:10.11` en
   tmpfs, valeurs factices ; il prend en argument le dossier `$D` laissé par la recette (AC10) et y lit `backup/pre-upgrade/`. **Un
   seul jeu, le retour par `pre-upgrade/`** : une image 0.19.0 neuve, base vide, son administrateur créé au démarrage par
-  `KESH_ADMIN_USERNAME` / `KESH_ADMIN_PASSWORD` (valeurs factices), importe la sauvegarde `pre-upgrade/` écrite par la montée (nom
-  finissant par `-0.19.0-to-0.20.0.keshbackup` ; **exactement un** fichier de ce suffixe attendu, sinon échec) par
+  `KESH_ADMIN_USERNAME` / `KESH_ADMIN_PASSWORD` (valeurs factices), importe la sauvegarde `pre-upgrade/` écrite par la montée par
   `POST /api/v1/admin/full-import` — la route qu'appelle le lien *Restaurer une sauvegarde* de l'assistant (`lib.rs:372` du tag,
   `frontend/src/lib/features/admin-restore/admin-restore.api.ts:64` du tag ; même route que le précédent,
   `rel0190/recette-complement-rel0190.sh:292`) (V2-5) : `200`, et l'empreinte des tables de `TABLES` égale **strictement** celle
-  d'avant de la recette (`$D/journal/empreinte-avant/`). Journal attendu : `kesh-gate-logs/e491d/recette-complement.log` (à la
+  d'avant de la recette (`$D/journal/empreinte-avant/`).
+  **Le nom de la sauvegarde** (V3-1) : **exactement un** fichier `kesh-pre-upgrade-*-0.19.0-to-*.keshbackup` sous
+  `$D/backup/pre-upgrade/`, sinon échec ; la version d'arrivée se relève du nom et doit égaler la version que le binaire neuf
+  rend à `/health` (`routes/health.rs:25`, `env!("CARGO_PKG_VERSION")`), que la phase 2 de la recette écrit au journal
+  (`$D/journal/health-binaire.json`, T3). Le nom vient de `crates/kesh-api/src/main.rs:179` `let vers = env!("CARGO_PKG_VERSION");`
+  et de `pre_upgrade_backup.rs` (`kesh-pre-upgrade-{…}Z-{de}-to-{vers}.keshbackup`) : **à la tête de la story, les crates sont en
+  0.19.0** (`crates/kesh-api/Cargo.toml:3`) et le fichier finit par `-0.19.0-to-0.19.0.keshbackup` ; il ne finit par
+  `-0.19.0-to-0.20.0.keshbackup` qu'après le bump de `scripts/prepare-release.sh` (AC12).
+  **Les PDF figés reviennent** (V3-4) : après l'import, le script sert `GET /api/v1/invoices/{id}/pdf` de F1, F5 et F7 par la
+  0.19.0 neuve, et leurs octets égalent ceux téléchargés en phase 1 de la recette (gardés sous `$D`) ; F8, dont le fichier
+  manquait quand la montée a écrit la sauvegarde (D3), rend `410` — attendu, et dit au journal. Les tables seules ne verraient
+  pas une pièce perdue à l'écriture ou à l'import de la sauvegarde (une pièce absente n'y est qu'un `warn!`,
+  `admin_backup/export.rs:363-368`). Journal attendu : `kesh-gate-logs/e491d/recette-complement.log` (à la
   story), `kesh-gate-logs/rel0200/recette-complement-*.log` (au rejeu). Le manuel ne dit « constaté » que ce que ce jeu et la
   recette ont établi (AC14). *Écartées* : (a) laisser le retour à #920 et ne l'établir qu'au code ; (b) le mettre dans
   `scripts/recette-montee.sh`, dont la phase 4 revient par le dump ; (c) **le refus, par une 0.19.0 neuve, d'une sauvegarde
@@ -412,11 +432,17 @@ retour arrière par la sauvegarde d'avant la mise à jour (D11, AC11).
    avec `--import`, les PDF figés restant servis à l'octet de l'archive).
 
 **La perte assumée.** La recette ne prouve plus, sur l'image publiée et sur une base peuplée par elle, que valider un brouillon
-d'avant, émettre un avoir sur une facture d'avant ou en encaisser une **écrit en 0.20.0 ce qu'écrivait la 0.19.0**. Cette preuve
-repose sur les tests de la 49-1a, au niveau du code et sur des données synthétiques : T5 (`invoices_validate_vat.rs`, validation et
-filtre du compte de produit), T6 (`credit_notes_repository.rs`, avoir d'une facture d'avant la montée : mêmes lignes, même
-écriture), T7 (rapport TVA), T8 (parité du TTC et du reste dû) ; le filtre du règlement (`invoice_settlements_write.rs:651`) est un
-filtre d'intention, dont la suppression est une mutation équivalente (fiche 49-1a, `:624`). De même, la reprise d'une migration
+d'avant, émettre un avoir sur une facture d'avant ou en encaisser une **écrit en 0.20.0 ce qu'écrivait la 0.19.0**. Après la
+migration, une ligne d'avant est une ligne chiffrée (`DEFAULT 'priced'`) : sur de telles lignes, cette parité repose sur la
+**suite de tests existante**, écrite pour la 0.19.0 et **passée inchangée** en 0.20.0 — au niveau du code, sur des données
+synthétiques. Elle tient en ces binaires : validation et compte de produit (`invoices_validate_vat`,
+`invoices_line_revenue_account`), avoir (`credit_notes_repository`), règlement unitaire et groupé, reste dû (`invoice_settlement`,
+`grouped_settlements`, `invoice_amount_due_parity`, `invoice_ttc_parity`, `reconciliation_group_e2e`), rapport TVA
+(`vat_report_reconciliation`, `vat_report_e2e`). Ils passent au gate complet ; T12 prouve qu'aucune de leurs valeurs attendues n'a
+changé depuis le tag v0.19.0. Les tests ajoutés par la 49-1a dans ces fichiers (T5 à T8 de sa fiche) prouvent **autre chose** :
+qu'une ligne non chiffrée est ignorée par ces calculs — non que le calcul sur des lignes chiffrées est resté celui de la 0.19.0
+(V3-3). Le filtre du règlement (`invoice_settlements_write.rs:651`) est un filtre d'intention, dont la suppression est une
+mutation équivalente (fiche 49-1a, `:624`). De même, la reprise d'une migration
 interrompue n'est prouvée que par `migrations_upgrade_path.rs::line_types_migration_resumes_after_a_half_run` — c'est pourquoi le
 manuel ne la prescrit pas —, et le refus d'une sauvegarde 0.20.0 par la 0.19.0, que par la lecture du code du tag. Si la 49-4b
 n'entre pas dans la release, le rendu inchangé d'une désignation de plus de 44 caractères repose sur la 49-1b (D8 c). Issues à
@@ -469,7 +495,7 @@ ouvrir pour ce qui sort : Dev Notes.
   rendus de nouveau — facture jamais téléchargée, regel, avoir — **au même dessin** (AC5 ; ce que ce mot couvre et ne couvre pas :
   D4) pour les désignations de la forme de D1 (D8) ; rapport TVA identique (AC8) ; la même chose après l'import d'une sauvegarde
   0.19.0 (AC6), PDF figés servis à l'octet de l'archive. Ce que deviennent les gestes courants sur ces pièces après la montée n'est
-  pas prouvé ici (Allègement, perte assumée).
+  pas prouvé ici : la parité repose sur la suite existante passée inchangée (Allègement, perte assumée ; T12).
 
 **Le jeu réel**
 
@@ -495,12 +521,17 @@ ouvrir pour ce qui sort : Dev Notes.
   réelles ; la comparaison elle-même est éprouvée dans le script par le factice (S6).
   Après les rouges, `git status --porcelain` ne nomme pas la copie mutée.
 - **AC11 — Le retour du manuel (D11).** `kesh-gate-logs/rel0200/recette-complement-rel0200.sh` joué sur le `$D` de l'AC10 :
-  exactement une sauvegarde `pre-upgrade/` de suffixe `-0.19.0-to-0.20.0.keshbackup`, importée par
-  `POST /api/v1/admin/full-import` dans une 0.19.0 neuve → `200`, empreinte égale **strictement** à celle d'avant. Texte du
-  script et sortie (`recette-complement.log`) au Dev Agent Record.
+  exactement une sauvegarde `kesh-pre-upgrade-*-0.19.0-to-*.keshbackup`, dont la version d'arrivée égale celle de `/health` du
+  binaire neuf (à la tête de la story : `-0.19.0-to-0.19.0`, D11), importée par `POST /api/v1/admin/full-import` dans une 0.19.0
+  neuve → `200`, empreinte égale **strictement** à celle d'avant ; PDF de F1, F5, F7 servis à l'octet de la phase 1, F8 → `410`
+  (V3-4). Texte du script et sortie (`recette-complement.log`) au Dev Agent Record.
 - **AC12 — Rejeu au dernier commit de code de la release.** La fiche et `docs/testing.md` disent que l'intégration de la 0.20.0
   rejoue l'AC10 (vert et R1) et l'AC11 au dernier commit de code de la release (toutes stories fusionnées), journaux sous
-  `kesh-gate-logs/rel0200/`, et que la section du manuel (AC14) ne dit « constaté » que ce que ce rejeu a établi. Un écart de
+  `kesh-gate-logs/rel0200/`, et que la section du manuel (AC14) ne dit « constaté » que ce que ce rejeu a établi. **Le rejeu se
+  fait après le bump de `scripts/prepare-release.sh`** (lancé par l'intégration, jamais par cette story), binaire reconstruit
+  sur le commit qui porte le bump : c'est alors seulement que `/health` rend `0.20.0` et que la sauvegarde `pre-upgrade/` finit
+  par `-0.19.0-to-0.20.0.keshbackup` (V3-1). Il recompte aussi `ls crates/kesh-db/migrations/*.sql | wc -l` avant que le manuel
+  écrive le total (V3-6). Il se planifie avant le vendredi midi, sur la voie « Base et Rust ». Un écart de
   rendu, de rapport ou de réponse causé par une autre story revient à l'orchestrateur (D2, D8), jamais toléré en élargissant
   `--diff-attendu`. Le crochet `verifs-0200.sh` et `recette-complement-rel0200.sh` existent et se relisent en revue.
 
@@ -511,21 +542,28 @@ ouvrir pour ce qui sort : Dev Notes.
   l'est pas, avec la réserve de D4 sur « même dessin ») ; le peuplement, ses préconditions et ses contrôles (AC1) ; le rapport TVA
   (AC8) ; la phase 6, le code 16 et le décompte exact ; `mutool`, `sha256sum`, `KESH_MUTOOL` ; la durée **mesurée** du test ; le
   rejeu au dernier commit de code (AC12) et le script complémentaire (D11) ; **ce que la recette ne prouve pas** (section
-  *Allègement* : gestes après la montée, reprise d'une migration interrompue, refus d'une sauvegarde plus récente, rendu d'une
-  désignation longue).
+  *Allègement* : gestes après la montée — dont la parité repose sur la suite existante passée inchangée —, reprise d'une migration
+  interrompue, refus d'une sauvegarde plus récente, rendu d'une désignation longue).
 - **AC14 — Manuel d'administration FR, section « Passer à la 0.20.0 »** (`docs/manual/fr/admin-manual.tex`, `.tex` seulement,
   sur le modèle de `:2564-2586`), **en tête** : « **Prenez avant la mise à jour une sauvegarde manuelle complète** — la base, un
   `.keshbackup` et le dossier des documents » et « le retour à la 0.19.0 passe uniquement par la sauvegarde d'avant la mise à
   jour » ; puis l'introduction (« La 0.20.0 se pose sur la 0.19.0 », ni compose ni variable neuve) ; **« Une migration »**
-  (`20261118000002\_invoice\allowbreak\_line\allowbreak\_types`, 96 au total, non breaking, `kesh_version_min_required` reste à
-  `0.17.6`, aucune ligne existante modifiée — chacune reçoit le type « ligne chiffrée » —, sauvegarde `pre-upgrade/` au nom finissant
-  par `-0.19.0-to-0.20.0.keshbackup`, `KESH_SKIP_PRE_UPGRADE_BACKUP=0.20.0`) ; **« Le retour à la 0.19.0 »** (la 0.19.0 ne démarre
+  (`20261118000002\_invoice\allowbreak\_line\allowbreak\_types` ; le total, 96 à la tête de la story, est celui que recompte le
+  rejeu, AC12 ; non breaking, `kesh_version_min_required` reste à `0.17.6` ; aucune valeur existante réécrite : la colonne neuve
+  prend sa valeur par défaut, « ligne chiffrée », sur chaque ligne existante, `ADD COLUMN … DEFAULT 'priced'`, V3-6 ; sauvegarde
+  `pre-upgrade/` au nom finissant par `-0.19.0-to-0.20.0.keshbackup` — constaté seulement si le rejeu suit le bump, sinon établi
+  par le code, D11 et AC12 ; `KESH_SKIP_PRE_UPGRADE_BACKUP=0.20.0`) ; **« Le retour à la 0.19.0 »** (la 0.19.0 ne démarre
   plus sur la base migrée — journal « migration 20261118000002 was previously applied but is missing in the resolved migrations »,
-  constaté par la phase 3 de la recette ; elle refuse une sauvegarde 0.20.0 — **établi par le code** de la 0.19.0, non constaté :
-  l'écran affiche le message exact d'`IMPORT_SCHEMA_MISMATCH`, **distinct** d'`INVALID_BACKUP_STRUCTURE`, et le détail (table,
-  colonne) est dans la réponse de l'API, **non au journal du serveur** (V2-2) ; retour sur une base neuve par la sauvegarde d'avant
-  la mise à jour, depuis l'assistant, lien *Restaurer une sauvegarde* — constaté par l'AC11 ; une sauvegarde 0.19.0 s'importe dans
-  la 0.20.0 — constaté par la phase 5) ; **« Si la migration échoue au milieu »**, sur la consigne de la 0.19.0 : Kesh ne redémarre
+  constaté par la phase 3 de la recette ; elle refuse une sauvegarde 0.20.0 — **établi par le code** de la 0.19.0, non constaté —,
+  dit comme la section 0.17.5 (`admin-manual.tex:2674`) par son code, `IMPORT\_SCHEMA\_MISMATCH` (`400`), **distinct**
+  d'`INVALID\_BACKUP\_STRUCTURE`, et, si le texte de l'écran est cité, par celui que l'écran affiche réellement : « Schéma du backup
+  incompatible avec cette version de Kesh (table credit\_note\_lines). » (§ *Les fichiers de la 49-1a* (a)) — jamais le message
+  de la réponse de l'API ; la colonne en cause n'est que dans la réponse, rien n'est écrit au journal du serveur (V2-2, V3-2) ;
+  retour sur une base neuve par la sauvegarde d'avant la mise à jour : **vidage de sécurité de la base actuelle**, puis
+  installation 0.19.0 neuve sur une base vide, import depuis l'assistant, lien *Restaurer une sauvegarde* — constaté par l'AC11,
+  PDF archivés compris ; **tout ce qui a été saisi depuis la mise à jour est perdu, et les numéros écrits sur le papier depuis la
+  mise à jour sont à refaire** (phrases des sections 0.19.0 et 0.17.5, V3-5) ; une sauvegarde 0.19.0 s'importe dans la 0.20.0 —
+  constaté par la phase 5) ; **« Si la migration échoue au milieu »**, sur la consigne de la 0.19.0 : Kesh ne redémarre
   plus, et le journal porte « Échec des migrations : migration 20261118000002 is partially applied; fix and remove row from
   `_sqlx_migrations` table » (message cité au code, D11 et § *Les fichiers de la 49-1a*, non le mot *dirty*) ; **ne reprenez pas le
   schéma à la main, même si ce message vous y invite** ; revenez par la sauvegarde d'avant la mise à jour, comme au retour
@@ -541,9 +579,9 @@ ouvrir pour ce qui sort : Dev Notes.
   au niveau du code, 49-1b, D8 c). « Constaté » ne s'écrit que pour ce que l'AC10, l'AC11 et leur rejeu (AC12) ont joué. Le
   paragraphe « Pour les intégrations » de la 49-1a est **gardé** ; le commentaire `:2551-2555` retiré ou réécrit. Le paragraphe
   « Compatibilité » (`:2302`) gagne la phrase de la 0.20.0 : aucune table neuve, mais l'import compare aussi les **colonnes**
-  (une colonne de la sauvegarde inconnue de la version qui l'importe, ou une colonne obligatoire absente de la sauvegarde) et ce refus
-  a **son propre message**, « Le schéma de ce backup est incompatible avec cette version de Kesh. Mettez à jour Kesh ou utilisez un
-  backup compatible. » (code `IMPORT\_SCHEMA\_MISMATCH`) ; une sauvegarde 0.19.0 s'importe dans la 0.20.0, ses lignes devenant
+  (une colonne de la sauvegarde inconnue de la version qui l'importe, ou une colonne obligatoire absente de la sauvegarde) ; ce
+  refus porte **son propre code**, `IMPORT\_SCHEMA\_MISMATCH`, et l'écran de restauration le dit « Schéma du backup incompatible
+  avec cette version de Kesh (table …) », en nommant la table (V3-2) ; une sauvegarde 0.19.0 s'importe dans la 0.20.0, ses lignes devenant
   chiffrées ; l'inverse est refusé (\S\ref{sec:maj-0-20-0}). Le manuel compile (`make fr` vert, `Overfull \hbox` relevés), **PDF non
   commité**.
 
@@ -584,7 +622,7 @@ consigne chacun de ses appels.
 | S3 | `ECART_ANCIEN=api` (une clé d'avant change, dont une du rapport TVA) / `ECART=api` (une clé s'ajoute) / `ECART_TYPE=api` (un objet devient scalaire) | 12 / 0 / 12 (AC3, AC8) | projection `api` remplacée par `true` → S3a rend 0 : **rouge** ; contrôle de type retiré → S3c rend 0 : **rouge** |
 | S4 | `ECART_ANCIEN=credit_note_lines` **sans** la nommer | code 12 (elle est dans `TABLES`, AC2) | retirer `credit_note_lines` de `TABLES` → code 0 : **rouge** |
 | S5 | `PDF_FIGE_ALTERE=oui` (le `curl` factice sert d'autres octets en phase 2) | code 12, nomme la facture (AC4) | retirer la comparaison des octets → **rouge** |
-| S6 | `RENDU_ECART=oui` (le `mutool` factice rend une autre trame pour une pièce) | code 16, nomme la pièce (AC5) | retirer la comparaison des trames → code 0 : **rouge** |
+| S6 | `RENDU_ECART=oui` (le `mutool` factice rend une autre trame pour une pièce) ; nominal : au journal des factices, les quatre `GET …/pdf` de la phase 4 précèdent l'arrêt du conteneur du retour (D5, V3-9) | code 16, nomme la pièce (AC5) ; ordre des rendus de la phase 4 | retirer la comparaison des trames → code 0 : **rouge** ; déplacer les rendus de la phase 4 après `arreter_image` → l'assertion d'ordre **rougit** |
 | S7 | `RENDU_VIDE=oui` (le factice rend un texte sans le numéro, ou zéro page) ; `PDF_PAS_PDF=oui` (le `curl` factice sert un corps JSON en 200) | 16 ; 11 (D1, D5) | compter les paires sans contrôler le numéro → S7a rend 0 : **rouge** ; retirer le contrôle `%PDF-` → S7b ne rend pas 11 : **rouge** |
 | S8 | `REGEL_ECHEC=oui` (refreeze `409`) | code 12 (AC4) | ignorer le statut du regel → **rouge** |
 | S9 | nominal : `docker cp` appelé sur le conteneur du jeton, vers `$D/documents` ; `test.sh:414` (aucun montage) **inchangé et vert** | D3 | remplacer `docker cp` par un `-v` → l'assertion `:414` **rougit** |
@@ -596,8 +634,8 @@ consigne chacun de ses appels.
 
 **Le jeu réel** (AC10) est l'épreuve de bout en bout, avec ses rouges réels R1 et R2 et la sensibilité de la trame éprouvée hors
 script ; le script complémentaire (AC11) a ses propres contrôles (exactement un fichier `pre-upgrade/`, `200`, empreinte stricte),
-éprouvés par un rouge : une empreinte d'avant altérée d'une ligne fait échouer la comparaison (journal
-`recette-complement-rouge.log`). **E2E Playwright neuf** : aucun — la story ne change ni écran ni réponse HTTP ; la suite complète
+éprouvés par un rouge : une empreinte d'avant altérée d'une ligne fait échouer la comparaison, et une copie de la phase 1 du PDF de F1
+altérée d'un octet fait échouer celle des PDF (V3-4) (journal `recette-complement-rouge.log`). **E2E Playwright neuf** : aucun — la story ne change ni écran ni réponse HTTP ; la suite complète
 tourne tout de même au dernier commit de code (AC16).
 
 ## Tâches
@@ -610,13 +648,16 @@ tourne tout de même au dernier commit de code (AC16).
   `/tmp/documents` du conteneur ? `docker cp` le rend-il lisible par l'utilisateur ?), les taux `2.60` et `0.00` présents pour la
   société du preset et acceptés à la validation, un `410` puis un regel, le rapport TVA, ses paramètres (`ReportQuery`) et le champ
   du chiffre d'affaires (AC8) ; noter si un `410` ou un regel écrit une ligne ` ERROR ` (sinon `journal_sans_erreur` échouerait).
-  Vérifier `mutool draw -F pnm` (sortie standard ou `-o`, sortie multipage). Toute surprise s'écrit au Dev Agent Record **avant**
+  Vérifier `mutool draw -F pnm` (sortie standard ou `-o`, sortie multipage), et que `mutool draw -q -F txt` sur le PDF d'une
+  facture **et** sur celui d'un avoir de la sonde rend leur numéro (`invoiceNumber`, numéro de l'avoir ; police intégrée,
+  `crates/kesh-qrbill/src/pdf.rs:329`) — sans quoi aucune paire de D5 ne compterait (V3-7). Toute surprise s'écrit au Dev Agent Record **avant**
   d'écrire le script ; une prémisse fausse de D1 à D11 arrête la story et se dit.
 - [ ] **T1 — Peuplement** (AC1) : préconditions, huit factures (descriptions de la forme de D1), avoir, groupe, contrôles.
 - [ ] **T2 — Empreinte et projection** (AC2, AC3, AC8) : relevé des colonnes à `avant`, projections, `api` par clés et types,
   rapport TVA et son contrôle de non-vacuité, diff au journal.
-- [ ] **T3 — Documents et PDF** (AC4, AC6) : `docker cp`, retrait de F8, phase 2 (servis, `410`, regel, rendus), phase 5 (dossier
-  neuf, PDF figés servis à l'octet).
+- [ ] **T3 — Documents et PDF** (AC4, AC6) : `docker cp`, retrait de F8, phase 2 (servis, `410`, regel, rendus ; corps de
+  `/health` du binaire neuf écrit à `$D/journal/health-binaire.json`, lu par D11), phase 5 (dossier neuf, PDF figés servis à
+  l'octet).
 - [ ] **T4 — Phase 4 et phase 6** (AC5) : rendus 0.19.0 après l'empreinte du retour, comparaison trame (300 dpi) + texte + pages,
   décompte exact (5), code 16.
 - [ ] **T5 — Outils et relance** (AC7, D9) ; enveloppe Rust (`.env_remove("KESH_MUTOOL")`).
@@ -624,15 +665,23 @@ tourne tout de même au dernier commit de code (AC16).
   borne de `recette_montee_script.rs` (`timeout -k 10 600`, `:25`) relevée seulement si la mesure l'exige (dire la valeur).
 - [ ] **T7 — Crochet** `kesh-gate-logs/rel0200/verifs-0200.sh` (D7), texte intégral copié au Dev Agent Record.
 - [ ] **T8 — Recette réelle** (AC10), ses rouges réels R1 et R2, la sensibilité de la trame hors script ; copie mutée retirée.
-- [ ] **T9 — Script complémentaire** `kesh-gate-logs/rel0200/recette-complement-rel0200.sh` (D11, AC11), joué avec son rouge, texte
-  et sortie au Dev Agent Record.
+- [ ] **T9 — Script complémentaire** `kesh-gate-logs/rel0200/recette-complement-rel0200.sh` (D11, AC11) : nom `-0.19.0-to-*` et
+  version d'arrivée égale à `/health`, import, empreinte stricte, PDF de F1, F5, F7 à l'octet et F8 → `410` ; joué avec son rouge,
+  texte et sortie au Dev Agent Record (à la tête de la story, le nom finit par `-0.19.0-to-0.19.0`, D11).
 - [ ] **T10 — `docs/testing.md`** (AC13) ; grep du symptôme « aucun document » (`git grep -n -i -e "aucun document n'est peuplé" -e
   "vivent dans son" -- scripts docs crates`) : tous les sites traités.
 - [ ] **T11 — Manuel d'administration** (AC14) ; `make fr` sous le verrou de la voie « Frontend et manuels » et `mem-guard`
   (`flock "$GATE_LOGS/.gate-front.lock" scripts/mem-guard.sh make -C docs/manual fr`), puis `git checkout -- docs/manual/fr/*.pdf`
   (PDF jamais commités) ; vérifier le texte rendu (`pdftotext docs/manual/fr/admin-manual.pdf - | tr '\n' ' ' | tr -s ' '`) avant
   le `checkout` : aucun `DELETE`, aucun « dirty », le message de sqlx et « établi » pour le refus d'import.
-- [ ] **T12 — Gates** (AC16) et Dev Agent Record (ce qui a tourné, et seulement cela).
+- [ ] **T12 — Gates** (AC16) et Dev Agent Record (ce qui a tourné, et seulement cela). **Contrôle de la perte assumée** (V3-3) :
+  aucune valeur attendue de la suite existante n'a changé depuis le tag. Commande, sortie copiée au Dev Agent Record :
+  `git diff -U0 773df80da..HEAD -- 'crates/*/tests/*' | grep -E '^[-+][^-+]'` ; chaque ligne **retirée** (`-`) d'un fichier
+  de test qui existait au tag est citée et justifiée (commentaire, décompte de migrations, import, enveloppe) — aucune ne
+  touche une valeur attendue d'un test de lignes chiffrées ; les ajouts de `line_type` / `lineType` et les tests neufs de la
+  49-1a sont exceptés. Le pathspec se prouve par une sonde positive : `git diff --numstat 773df80da..HEAD --
+  crates/kesh-db/tests/migrations_upgrade_path.rs` rend des retraits non nuls (`crates/*/tests` sans `/*` ne désigne rien). Les
+  binaires nommés à la perte assumée passent au gate complet.
 
 ## Note de version
 
@@ -654,8 +703,17 @@ ou un rappel, une désignation plus longue s'imprime désormais en entier.)*
   shell (D1 à D10, quatorze scénarios, mutations) **deux jours** ; script complémentaire (D11, un seul jeu) **un quart à un
   demi-jour** ; manuel et `docs/testing.md` **un demi-jour** ; gates, recette réelle (vert, R1, R2, trame hors script), E2E
   complet **un jour** (chaque recette réelle prend plusieurs minutes de station, sous les verrous de la voie base) ; plus la boucle
-  de revue. Soit **trois jours et demi à quatre jours** à partir du lancement, contre cinq avant l'allègement : une journée de marge
-  pour une surprise de T0 si le développement part le 2026-11-21.
+  de revue. Soit **trois jours et demi à quatre jours** à partir du lancement, contre cinq avant l'allègement, **boucle de revue
+  non comprise** (au moins deux passes de modèles différents, gate complet et E2E complet au dernier commit) ; la remédiation
+  de la P3 ajoute peu (contrôle du nom et des PDF au script complémentaire, sonde de T0, contrôle de diff de T12) : marge d'une
+  journée environ si le développement part le 2026-11-21, absorbée en partie par la boucle de revue.
+- **Si le temps manque — ordre de coupe** (V3-8) : **rien ne se coupe dans la story** — ni AC, ni gate, ni preuve du rouge, ni
+  rejeu (AC12) ; les gates ne se rognent jamais pour tenir la date. **La 49-1a ne sort pas sans la 49-1d** : si la 49-1d n'est pas
+  close le **jeudi 2026-11-26 au soir**, **tout l'Epic 49 sort de la 0.20.0**, avec la migration, et la release part sans
+  migration (fichier d'épique, § *Ordre de sortie à la coupure* ; à dire en tête des notes). L'orchestrateur le constate à la
+  coupure et le dit au compte rendu ; le Project Lead garde le dernier mot. Une prémisse fausse révélée par T0 arrête la story
+  et se dit le jour même, pour que la décision se prenne avant jeudi. Le rejeu de l'AC12 se planifie avant le vendredi midi,
+  sur la voie « Base et Rust », que d'autres epics occupent aussi.
 - **Hors périmètre** : (a) la phase 4 du script revient par le dump ; le retour du manuel est joué par D11, #920 reste ouvert pour
   l'outillage du dépôt ; (b) rappels, séquences de numérotation : non peuplés ni comparés (inventaire) ; (c) la preuve de la
   dérogation de la 49-4b (sa fiche) ; (d) ce que l'**Allègement** a sorti (section dédiée). La story résout le premier point de #960
@@ -665,8 +723,10 @@ ou un rappel, une désignation plus longue s'imprime désormais en entier.)*
      numérotation*.
   2. `technical-debt`, P3 — *recette de montée : rejouer l'usage réel après la montée* — valider un brouillon d'avant, émettre un
      avoir sur une facture d'avant, en encaisser une, sous la version d'avant et sous la neuve, et comparer ce qu'elles écrivent
-     (ex-D10 de la 49-1d, sorti le 2026-11-20 ; la preuve repose aujourd'hui sur les tests de la 49-1a). Points connus à reprendre :
-     l'extrait doit porter `invoice_lines` (V2-1) et les colonnes d'instant en être exclues.
+     (ex-D10 de la 49-1d, sorti le 2026-11-20). Aujourd'hui, la parité sur des lignes toutes chiffrées repose sur la suite de
+     tests existante, passée inchangée (binaires nommés à la perte assumée, contrôle de diff de T12) ; les tests T5 à T8 de la
+     49-1a ne prouvent que la neutralité des lignes non chiffrées. Points connus à reprendre : l'extrait doit porter
+     `invoice_lines` (V2-1) et les colonnes d'instant en être exclues.
   3. `technical-debt`, P3 — *reprise d'une migration interrompue : jamais jouée avec le vrai binaire* — pour une migration écrite pour
      se rejouer (`20261118000002`), la reprise par `DELETE` de la ligne `success = 0` n'est prouvée que par
      `line_types_migration_resumes_after_a_half_run` ; le manuel ne la prescrit donc pas. Points connus : au redémarrage qui suit la
@@ -721,3 +781,4 @@ ou un rappel, une désignation plus longue s'imprime désormais en entier.)*
 | 2026-11-19 | Création de la fiche (workflow `bmad-create-story`), par l'agent de rédaction de la 49-1d (Opus 5.5) ; code lu à `f57f6ac80`. Neuf décisions (D1 à D9), quatorze AC, treize tests. Points arrêtés : peuplement par l'API de la 0.19.0 (huit factures, un avoir, un règlement groupé, quatre PDF figés dont un au fichier retiré) ; `--diff-attendu` réduit aux ajouts (projection sur les colonnes et les clés d'avant) ; documents copiés par `docker cp` sans montage ; PDF archivés à l'octet, rendus par trame et texte (`mutool`), référence 0.19.0 prise en phase 4, phase 6 « Rendus » (code 16) ; crochet de la release hors dépôt. Écarts au fichier d'épique déclarés (manuel FR seul, `api` nommé, test du script et enveloppe touchés). Une issue à ouvrir. Validation non lancée. Statut : `ready-for-dev`. |
 | 2026-11-19 | **Passe de validation P1** (Sonnet, contexte frais, `kesh-gate-logs/e491d/validation-49-1d-p1.md` : 0 CRITICAL, 0 HIGH, 6 MEDIUM, 4 LOW). **Remédiation** (Opus 5.5, sur les arbitrages de l'orchestrateur ; branche à jour d'`epic/49` par `d4f5bba7f`) : **V1-1** préconditions écrites à D1 et AC1 — compte bancaire principal (`invoice_pdf_service.rs:245`, `bank_accounts.rs:112`) et compte de différences d'arrondi (`invoices.rs:2324`) —, contrôle `HTTP 200` + en-tête `%PDF-` de chaque PDF (code 11) ; **V1-2** résolution fixée à 300 dpi, nombre de pages et code de `mutool` contrôlés, décompte **exact** de paires (5, ou 9 avec `--import`) dont le texte contient le numéro de la pièce, ce que « même dessin » prouve et ne prouve pas (D4), rouges réels de sensibilité R2 (projection), R3 (rendu, et F2 contre F4 sur les vrais PDF), R4 (gestes) ; **V1-3** dérogation de la 49-4 (`d4f5bba7f`, fichier d'épique `:130`, `:154`) dite à D8, AC14 et à la Note de version, phrase « comme en 0.19.0 » réduite aux désignations de 44 caractères au plus et conditionnée à la liste des stories fusionnées ; **V1-4** D11 et AC11 : script d'intégration `kesh-gate-logs/rel0200/recette-complement-rel0200.sh`, écrit et joué par la story, rejoué à la release — refus d'import d'une sauvegarde 0.20.0 par la 0.19.0, retour par `pre-upgrade/` dans une 0.19.0 neuve, reprise d'une migration interrompue avec le vrai binaire —, le manuel ne dit « constaté » que ce qui a été joué, la reprise précédée d'une sauvegarde et dite propre à cette migration ; **V1-5** second inventaire par le symptôme (lecteurs filtrés par `line_type`, commande et sortie), D10 et AC8 : rapport TVA et créances âgées dans `api`, validation de F3, avoir A2 sur F4 et règlement de F1 joués en phase 2 et en phase 4, extraits comparés en phase 6 ; **V1-6** `KESH_MUTOOL` posé à chaque scénario, journal du factice exigé, T11 et T13 réécrits pour que le rouge ne dépende pas du `mutool` de l'hôte. **LOW appliqués** : V1-7 F7 et A1 sous 44 caractères, option `--designation-longue` si la 49-4 n'entre pas ; V1-8 contrôles du crochet en `[ … ] \|\| exit 1`, compte d'avant lu au fichier d'empreinte, `'priced'` avec apostrophes ; V1-9 noms de colonnes entre apostrophes inverses, même type JSON exigé, A1 rendu après l'import, durée du test mesurée avant la revue ; V1-10 paragraphe « Compatibilité » : l'import compare aussi les colonnes, message exact. Onze décisions (D1 à D11), seize AC, seize tests, douze tâches *(annotation du 2026-11-20 : treize tâches, T0 à T12 — V2-9 ; décompte faux à sa date)*. Estimation de charge écrite aux Dev Notes (cinq jours environ). Modèles : Opus (rédaction et remédiation), Sonnet (P1) ; la P2, complète, prend Opus en contexte frais. Statut : `ready-for-dev`. |
 | 2026-11-20 | **Passe de validation P2** (Opus, contexte frais, `kesh-gate-logs/e491d/validation-49-1d-p2.md` : 0 CRITICAL, 0 HIGH, 3 MEDIUM, 9 LOW ; les dix findings de la P1 résolus sur le fond). Les trois MEDIUM naissent de D10 et D11, ajoutés par la remédiation de la P1 : **signal de recyclage** de la règle de splitting préventif, déclaré au Project Lead. **Remède : l'allègement que la P2 proposait, accepté par Guy le 2026-11-20** (section *Allègement*), au lieu d'un découpage. **Sortent** : les gestes rejoués après la montée (validation de F3, avoir A2, règlement de F1, extraits comparés ; ex-AC8 « gestes », ex-T15, ex-R4) ; la reprise d'une migration interrompue avec le vrai binaire (ex-D11 c, ex-AC11 c) et son paragraphe prescriptif au manuel, remplacé par la consigne de la 0.19.0 ; la constatation du refus d'une sauvegarde 0.20.0 par la 0.19.0 (ex-D11 a, ex-AC11 a, export du crochet), dite « établie par le code » ; les contrôles annexes : créances âgées, `--designation-longue` et ex-T16, R3 et R4 dans le script, rendus après l'import (décompte 9 → 5). **Restent** : D1 à D9, D10 réduit au rapport TVA, D11 réduit au retour par `pre-upgrade/` ; AC1 à AC16 (AC8 devient « rapport TVA », AC11 « le retour du manuel »). **Perte assumée** écrite : la preuve des gestes repose sur les tests de la 49-1a (T5, T6, T7, T8). **MEDIUM** : V2-1 **tombé** (extrait des gestes sorti ; repris dans l'issue à ouvrir n° 2) ; V2-2 **tombé** pour le jeu (a), son fait corrigé là où il reste (« Les fichiers de la 49-1a » (a), AC14 : refus non écrit au journal, détail dans la réponse) ; V2-3 **tombé** (reprise sortie ; issue n° 3 ; contrôle « exactement une sauvegarde `pre-upgrade/` » ajouté à D11, l'installation neuve de la phase 5 n'en écrivant pas, `pre_upgrade_backup.rs:161`). **LOW** : V2-4 corrigé (message exact de sqlx cité, *dirty* retiré ; l'imprécision de la section 0.19.0 → issue n° 5) ; V2-5 corrigé (`POST /api/v1/admin/full-import`, administrateur par `KESH_ADMIN_USERNAME`) ; V2-6 corrigé par retrait des créances âgées ; V2-7 corrigé (AC4 : `GET` → `410`, `POST …/refreeze` → `200` JSON, `GET` → `200` `%PDF-`) ; V2-8 **tombé** (R3 sorti du script, trame éprouvée hors script et par S6) ; V2-9 corrigé (Dev Notes réécrites, annotation datée du décompte des tâches, scénarios renommés S1 à S14) ; V2-10 corrigé (deux verrous de la voie base à l'AC10 et à l'AC16, verrou de la voie front pour `make fr`) ; V2-11 corrigé (symptôme énoncé sur le filtre, sites hors filtre ajoutés : rendu, réponse d'avoir, CSV, MCP) ; V2-12 corrigé (D2 et AC12 : un écart légitime causé par une autre story revient à l'orchestrateur). Relevés de la P2 sur les factices intégrés (lancements hors `lancer()`, assertion « liste exacte »). **Cohérence avec le découpage de la 49-4** (2026-11-20) : la dérogation est celle de la 49-4b, étendue par Guy à l'avoir (Q3) et au rappel (Q1) ; la recette tenait déjà l'avoir pour couvert (A1 sous 44 caractères) et ne rend aucun rappel ; descriptions de F2 à F8 bornées à ce que la 49-4b ne change pas (ASCII, espaces simples, aucune de bord) ; AC14 et Note de version nomment l'avoir et le rappel. Six issues à ouvrir (Dev Notes, dont une conditionnelle). Charge réestimée : trois jours et demi à quatre jours plus la boucle de revue. Quatorze scénarios (S1 à S14), treize tâches. Modèles : Opus (P2), Opus 5.5 (remédiation) ; la P3, complète, prend Sonnet en contexte frais. Statut inchangé : `ready-for-dev`, validation en cours. |
+| 2026-11-20 | **Passe de validation P3** (Sonnet, contexte frais, `kesh-gate-logs/e491d/validation-49-1d-p3.md` : 0 CRITICAL, 0 HIGH, 4 MEDIUM, 5 LOW) — **validation P3 remédiée** (Opus 5.5, prémisse de chaque finding relue au code). Tendance des MEDIUM : P1 → 6, P2 → 3, P3 → 4. Trois des quatre MEDIUM naissent de la remédiation précédente (V3-1 et V3-3 de la P2, V3-2 en partie de la P1) : ce sont des **erreurs de fait** (un suffixe non confronté à la version Cargo, un texte d'écran pris pour celui de l'API, des tests cités pour une preuve qu'ils ne portent pas), non le retour d'une structure sous une autre forme — pas de recyclage au sens de la règle de splitting ; V3-4 est une lacune antérieure de D11. **MEDIUM** : **V3-1** corrigé — prémisse lue, `crates/kesh-api/src/main.rs:179` `let vers = env!("CARGO_PKG_VERSION");`, crates en 0.19.0 à la tête de la story ; D11, AC11 et T9 exigent exactement un `kesh-pre-upgrade-*-0.19.0-to-*.keshbackup` dont la version d'arrivée égale `/health` du binaire neuf (écrit au journal par la phase 2, T3) ; AC12 : rejeu **après** le bump de `scripts/prepare-release.sh`, binaire reconstruit ; AC14 : le nom `-0.19.0-to-0.20.0` n'est « constaté » que si le rejeu suit le bump. **V3-2** corrigé — prémisse lue, `AdminRestorePanel.svelte:189-193` (tête et tag), clé `admin-restore-error-schema` ; AC14 et « Compatibilité » disent le code `IMPORT\_SCHEMA\_MISMATCH` (précédent de la section 0.17.5, `admin-manual.tex:2674`) et, s'ils citent l'écran, son texte réel, jamais le message de l'API ; § *Les fichiers de la 49-1a* (a) corrigé (la table se voit à l'écran). **V3-3** corrigé — prémisse lue, `credit_note_copies_unpriced_lines` compare deux avoirs dans le même code, sans facture d'avant ; la perte assumée, D10 (c), les trois lignes « angle mort » du second inventaire, AC9, AC13 et l'issue n° 2 disent désormais que la parité des gestes sur des lignes toutes chiffrées repose sur la **suite existante passée inchangée** (binaires nommés), les tests T5 à T8 de la 49-1a ne prouvant que la neutralité des lignes non chiffrées ; contrôle de diff ajouté à T12 (`git diff -U0 773df80da..HEAD -- 'crates/*/tests/*'`, retraits cités et justifiés, sonde positive du pathspec) ; à signaler à Guy par l'orchestrateur : la prémisse de sa décision était plus étroite qu'écrite. **V3-4** corrigé — prémisse lue, `admin_backup/export.rs:363-368` (`warn!` sur une pièce manquante) ; le script complémentaire sert, après l'import, les PDF de F1, F5, F7 et les compare à l'octet à la phase 1, F8 → `410` ; son rouge gagne un PDF altéré d'un octet. **LOW**, tous corrigés : V3-5 (AC14 : vidage de sécurité, perte des saisies, numéros sur papier à refaire) ; V3-6 (formule « valeur par défaut », total recompté au rejeu) ; V3-7 (T0 sonde `mutool draw -F txt` sur une facture et un avoir, `pdf.rs:329`) ; V3-8 (Dev Notes : boucle de revue hors estimation, **ordre de coupe** — rien ne se coupe dans la story, si la 49-1d n'est pas close jeudi 2026-11-26 au soir tout l'Epic 49 sort de la release, jamais de rognage des gates —, rejeu AC12 avant vendredi midi) ; V3-9 (D5 : rendus de la phase 4 avant `journal_sans_erreur 4` et `arreter_image`, conteneur neuf ; S6 contrôle l'ordre). Grep du symptôme fait (`0.19.0-to-0.20.0`, `IMPORT_SCHEMA_MISMATCH`, « T5 », « perte assumée ») : aucun reste contradictoire dans la fiche ; la fiche close de la 49-1a (AC13 e) écrit le nom de la release, juste pour l'image publiée, laissée telle quelle. Décomptes inchangés : D1 à D11, AC1 à AC16, S1 à S14, T0 à T12. Modèles : Opus (P2), Sonnet (P3), Opus 5.5 (remédiation) ; la P4, complète, prend Opus en contexte frais. Statut inchangé : `ready-for-dev`, validation en cours. |
