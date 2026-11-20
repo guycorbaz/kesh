@@ -429,6 +429,123 @@ async fn fetch_mois_ecrit_copie_et_audite(pool: MySqlPool) {
     assert!(b["lastRunAt"].as_str().unwrap().ends_with('Z'));
 }
 
+/// Correctif `fix-cours-afc-bgn` : le lev bulgare que l'AFC publie pour
+/// 2024 (et la kuna de ses cours journaliers) n'est plus écarté — `rejected`
+/// à 0, aucun `invalid_rates` à l'état ; la valeur publiée se lit et se
+/// filtre par `GET /exchange-rates`, et un cours de la société se saisit dans
+/// cette devise ; un compte, lui, ne s'ouvre toujours pas en BGN. Une
+/// monnaie retirée que l'AFC ne publie pas (CUC) reste écartée.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn fetch_retient_les_monnaies_retirees_publiees(pool: MySqlPool) {
+    let ctx = monter(&pool, false).await;
+    ctx.source.set_for(
+        mois(2024, 1),
+        MockBehavior::reply(MockReply::Xml(monthly_xml(
+            2024,
+            1,
+            &[("USD", 1, "0.8600"), ("BGN", 100, "44.0532")],
+        ))),
+    );
+    let (st, b) = ctx.fetch(json!({"year": 2024, "month": 1})).await;
+    assert_eq!(st, 200, "{b}");
+    assert_eq!(b["count"], 2, "{b}");
+    assert_eq!(b["rejected"], 0, "{b}");
+    assert_eq!(etat(&pool).await.unwrap().error, None);
+    let publie: Option<Decimal> = sqlx::query_scalar(
+        "SELECT rate_per_unit FROM _kesh_fetched_exchange_rates \
+         WHERE currency = 'BGN' AND kind = 'month' AND rate_date = '2024-01-01'",
+    )
+    .fetch_optional(&pool)
+    .await
+    .unwrap();
+    assert_eq!(publie, Some(dec!(0.440532)));
+
+    let (st, b) = ctx
+        .get(
+            "/api/v1/exchange-rates?month=2024-01&currency=BGN",
+            &ctx.jwt,
+        )
+        .await;
+    assert_eq!(st, 200, "{b}");
+    let cases = b["rates"].as_array().unwrap();
+    assert_eq!(cases.len(), 1, "{b}");
+    assert_eq!(cases[0]["currency"], "BGN");
+    assert_eq!(cases[0]["published"]["publishedUnit"], 100, "{b}");
+
+    // Un cours de la société se saisit en BGN (devise de cours).
+    let r = ctx
+        .client
+        .put(ctx.url("/api/v1/exchange-rates/rates"))
+        .bearer_auth(&ctx.jwt)
+        .json(
+            &json!({"currency": "BGN", "kind": "month", "rateDate": "2024-02-01",
+                      "rate": "0.45"}),
+        )
+        .send()
+        .await
+        .unwrap();
+    let st = r.status().as_u16();
+    let b: Value = r.json().await.unwrap_or(Value::Null);
+    assert_eq!(st, 200, "{b}");
+    assert_eq!(
+        retenu(&pool, ctx.s.company_id, "BGN", mois(2024, 2)).await,
+        Some(dec!(0.45))
+    );
+
+    // Un compte ne s'ouvre pas dans une monnaie retirée.
+    let (st, b) = ctx
+        .post(
+            "/api/v1/accounts",
+            &ctx.jwt,
+            json!({"number": "1031", "name": "Banque BGN", "accountType": "Asset",
+                   "currency": "BGN"}),
+        )
+        .await;
+    assert_eq!(st, 400, "{b}");
+    assert_eq!(b["error"]["code"], "CURRENCY_UNKNOWN", "{b}");
+
+    // Cours journalier : la kuna, encore publiée au 31.12.2024, est retenue.
+    ctx.source.set_for(
+        RateUnit::day(d(2024, 12, 31)),
+        MockBehavior::reply(MockReply::Xml(daily_xml(
+            d(2024, 12, 31),
+            &[
+                ("EUR", 1, "0.94000"),
+                ("BGN", 100, "48.06000"),
+                ("HRK", 100, "12.47000"),
+            ],
+        ))),
+    );
+    let (st, b) = ctx.fetch(json!({"date": "2024-12-31"})).await;
+    assert_eq!(st, 200, "{b}");
+    assert_eq!(
+        (b["count"].clone(), b["rejected"].clone()),
+        (json!(3), json!(0)),
+        "{b}"
+    );
+
+    // Une monnaie retirée que l'AFC ne publie pas reste écartée.
+    ctx.source.set_for(
+        mois(2024, 3),
+        MockBehavior::reply(MockReply::Xml(monthly_xml(
+            2024,
+            3,
+            &[("USD", 1, "0.8800"), ("CUC", 1, "0.8800")],
+        ))),
+    );
+    let (st, b) = ctx.fetch(json!({"year": 2024, "month": 3})).await;
+    assert_eq!(st, 200, "{b}");
+    assert_eq!(
+        (b["count"].clone(), b["rejected"].clone()),
+        (json!(1), json!(1)),
+        "{b}"
+    );
+    assert_eq!(
+        etat(&pool).await.unwrap().error.as_deref(),
+        Some("invalid_rates:1")
+    );
+}
+
 /// Pas encore publié : 404 `RATE_NOT_PUBLISHED`, état `not_published`, aucun
 /// audit ; mois (racine vide) comme jour (404 de `xmldaily`).
 #[sqlx::test(migrations = "../kesh-db/test-schema")]

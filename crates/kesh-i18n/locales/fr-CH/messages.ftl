@@ -262,6 +262,8 @@ accounts-retype-confirm = Changer le type quand même
 account-field-parent-optional = Compte parent (optionnel)
 accounts-parent-none = Aucun
 accounts-parent-archived = Le compte parent { $number } est archivé. Réactivez-le d'abord.
+error-account-parent-cycle = Le compte { $number } est ce compte ou l'un de ses sous-comptes : un compte ne peut pas être rangé sous lui-même.
+error-account-parent-has-entries = Le compte { $number } porte des écritures : y ranger ce compte le rendrait non imputable avec un solde qu'aucune saisie ne pourrait plus corriger. Choisissez un compte de groupe sans écriture.
 accounts-role-invalid-for-type = Le rôle { $role } ne peut pas être attribué à un compte de type { $type }.
 accounts-role-conflict-generic = Ce rôle vient d'être attribué à un autre compte. Rechargez la page.
 accounts-reactivate-without-role = Réactiver sans le rôle
@@ -2166,6 +2168,9 @@ reports-filename-project-return = rendement-par-compte-analytique
 reports-filename-general-ledger = grand-livre
 reports-pdf-header-period = Période
 reports-pdf-empty-message = Aucune écriture dans la période sélectionnée.
+# Correctif fix-pdf-montants-alignes — en-têtes des colonnes de montant d'un rapport PDF qui contient un compte en devise.
+reports-pdf-col-base-currency = CHF
+reports-pdf-col-foreign-currency = Devise
 
 # Story 9-2b — Export global ZIP (souveraineté des données) — 12 clés
 nav-export-global = Export global

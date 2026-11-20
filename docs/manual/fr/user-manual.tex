@@ -446,7 +446,7 @@ Le plan comptable est la colonne vertébrale de votre comptabilité. Kesh fourni
     \item \textbf{Numéro} : par exemple 1020.1 pour un sous-compte de la banque.
     \item \textbf{Nom} : par exemple « UBS compte courant ».
     \item \textbf{Type} : Actif, Passif, Produit ou Charge.
-    \item \textbf{Compte parent (optionnel)} : compte de niveau supérieur (1020 dans l'exemple). Il ne se choisit qu'à la création.
+    \item \textbf{Compte parent (optionnel)} : compte de niveau supérieur (1020 dans l'exemple). Il se change ensuite par \emph{Modifier le compte} (\S\ref{sec:modification-compte}).
     \item \textbf{Rôle} : fonction du compte dans l'application (\emph{Créances clients}, \emph{TVA due}, \emph{Capital}, \emph{Résultat de l'exercice}\ldots) ou \emph{Aucun}. Voir la section \emph{Rôles des comptes} ci-dessous.
     \item \textbf{Postable} : décocher pour un compte de regroupement (compte titre) sur lequel on ne saisit pas d'écriture.
 \end{itemize}
@@ -462,12 +462,25 @@ compte créanciers désignés dans \emph{Administration} → \emph{Facturation}.
 bancaire son solde comptable (\S\ref{sec:solde-comptable}) ; la réconciliation des relevés
 l'exige (\S\ref{sec:import-dans-kesh}).
 
-\subsection{Modification d'un compte}
+\subsection{Modification d'un compte}\label{sec:modification-compte}
 
 On modifie un compte actif par le bouton crayon de sa ligne (\emph{Modifier le compte}), présent pour
-les rôles Comptable et Administrateur ; aucune ligne du plan ne s'ouvre d'un clic. Vous pouvez modifier le \textbf{nom}, le \textbf{rôle} et
-l'indicateur \textbf{postable}. Le \textbf{numéro} n'est jamais modifiable après la création
-(pour préserver le journal d'audit), et le \textbf{compte parent} non plus. Le \textbf{type} se modifie librement tant que le compte ne porte aucune écriture ; au-delà, Kesh vous avertit avant de le laisser faire (voir ci-dessous).
+les rôles Comptable et Administrateur ; aucune ligne du plan ne s'ouvre d'un clic. Vous pouvez modifier le \textbf{nom}, le \textbf{rôle},
+l'indicateur \textbf{postable} et le \textbf{compte parent}. Le \textbf{numéro} n'est jamais modifiable après la création
+(pour préserver le journal d'audit). Le \textbf{type} se modifie librement tant que le compte ne porte aucune écriture ; au-delà, Kesh vous avertit avant de le laisser faire (voir ci-dessous).
+
+\paragraph{Ranger un compte sous un autre.} Le champ \textbf{Compte parent (optionnel)} range le
+compte sous un compte de groupe, ou le remet à la racine (\emph{Aucun}) --- utile pour reprendre la
+structure d'un ancien bilan sur les comptes du plan livré, même s'ils portent déjà des écritures.
+Seule la hiérarchie change : le compte garde son type, ses écritures et son solde. Comme à la
+création, le compte de groupe choisi devient \textbf{non postable} (compte de regroupement)~;
+c'est pourquoi il ne doit porter \textbf{aucune écriture} --- son solde ne se corrigerait plus.
+L'ancien parent garde son état, et redevient postable si vous cochez \textbf{Postable} une fois
+qu'il n'a plus de sous-compte actif. Le champ ne propose ni le compte lui-même, ni ses
+sous-comptes (un compte ne se range pas sous lui-même), ni les comptes qui portent des écritures.
+Kesh refuse aussi, comme à la création, un parent archivé et un compte de différence de change
+--- le message dit lequel. (À la \emph{création} d'un compte, un parent qui porte des écritures
+est encore accepté~: créez plutôt vos comptes de groupe sans écriture.)
 
 \begin{keshwarning}
 \textbf{Changer le type d'un compte qui porte des écritures reclasse tout son historique.} Le type — Actif, Passif, Produit, Charge — ne décrit pas seulement le compte : c'est lui qui décide dans quel état ses montants apparaissent. Les rapports le lisent \textbf{au moment où vous les demandez}, jamais au moment où l'écriture a été passée.
@@ -1115,7 +1128,7 @@ Chaque exercice est \emph{mono-devise} ou \emph{multi-devises}~; son mode se pos
 
 \subsection{La devise d'un compte}\label{sec:devise-compte}
 
-En multi-devises, \emph{Administration} → \emph{Plan comptable} affiche la devise d'un compte en devise à côté de son numéro (rien pour un compte en CHF), et le formulaire de création et de modification d'un compte un champ \emph{Devise}~: \emph{CHF (devise principale)} ou un code de devise à trois lettres (\texttt{EUR}, \texttt{USD}, \texttt{GBP}\ldots). Choisir CHF revient à ne pas donner de devise. Un compte de regroupement peut porter une devise, à titre informatif~; ses sous-comptes n'en héritent pas. Un compte d'\textbf{actif ou de passif en devise qui porte déjà des écritures} ne reçoit pas de sous-compte (\texttt{409 ACCOUNT\_\allowbreak FOREIGN\_\allowbreak PARENT\_\allowbreak HAS\_\allowbreak ENTRIES})~: il deviendrait non imputable en gardant son solde, que la réévaluation de fin d'exercice ne pourrait plus corriger, et la clôture serait bloquée. Créez plutôt un compte voisin, ou le sous-compte avant la première écriture. En mono-devise, le champ n'existe pas, et une devise envoyée par l'API est refusée (\texttt{409 MULTI\_\allowbreak CURRENCY\_\allowbreak DISABLED}).
+En multi-devises, \emph{Administration} → \emph{Plan comptable} affiche la devise d'un compte en devise à côté de son numéro (rien pour un compte en CHF), et le formulaire de création et de modification d'un compte un champ \emph{Devise}~: \emph{CHF (devise principale)} ou un code de devise à trois lettres (\texttt{EUR}, \texttt{USD}, \texttt{GBP}\ldots), parmi les monnaies \textbf{en cours} --- une monnaie retirée, comme le lev bulgare (\texttt{BGN}), n'est pas proposée et l'API la refuse (\texttt{400 CURRENCY\_\allowbreak UNKNOWN}). Choisir CHF revient à ne pas donner de devise. Un compte de regroupement peut porter une devise, à titre informatif~; ses sous-comptes n'en héritent pas. Un compte d'\textbf{actif ou de passif en devise qui porte déjà des écritures} ne reçoit pas de sous-compte (\texttt{409 ACCOUNT\_\allowbreak FOREIGN\_\allowbreak PARENT\_\allowbreak HAS\_\allowbreak ENTRIES})~: il deviendrait non imputable en gardant son solde, que la réévaluation de fin d'exercice ne pourrait plus corriger, et la clôture serait bloquée. Créez plutôt un compte voisin, ou le sous-compte avant la première écriture. En mono-devise, le champ n'existe pas, et une devise envoyée par l'API est refusée (\texttt{409 MULTI\_\allowbreak CURRENCY\_\allowbreak DISABLED}).
 
 \keshscreenshot{md-plan-colonne-devise.png}{Plan comptable en multi-devises : la devise des comptes en devise s'affiche à côté de leur numéro.}
 
@@ -1169,7 +1182,7 @@ Ces cours sont \textbf{indicatifs et non contraignants}~: chaque cours peut êtr
 
 \subsubsection{Le tableau d'un exercice}
 
-L'écran montre \textbf{un tableau par exercice}~; la liste en haut de l'écran propose les exercices \textbf{multi-devises} (par défaut celui qui couvre aujourd'hui, sinon le plus récent) --- un exercice mono-devise n'a pas de cours et n'y figure pas. Le tableau a \textbf{une ligne par devise} --- celles des comptes de la société~; \emph{Ajouter une devise} en ajoute une, et la case \emph{Toutes les devises publiées} montre aussi les devises qu'aucun compte ne porte --- et \textbf{une colonne par mois de l'exercice}, du premier au dernier, dans l'ordre de l'exercice~: «~juil. 2024~» à «~juin 2025~» pour un exercice au 1er juillet. Kesh n'impose aucune durée d'exercice~: un exercice raccourci ou allongé, lors d'un changement de date de clôture, a moins ou plus de douze colonnes (six pour un exercice de six mois, dix-huit pour dix-huit mois)~; un exercice qui commence en cours de mois (le 15.03.2024, par exemple) a pour premier mois ce mois-là, et treize colonnes s'il dure un an. Suivent les colonnes \textbf{Ouverture} et \textbf{Clôture} (ci-dessous). Seul le tableau défile horizontalement~; la colonne des devises reste en place.
+L'écran montre \textbf{un tableau par exercice}~; la liste en haut de l'écran propose les exercices \textbf{multi-devises} (par défaut celui qui couvre aujourd'hui, sinon le plus récent) --- un exercice mono-devise n'a pas de cours et n'y figure pas. Le tableau a \textbf{une ligne par devise} --- celles des comptes de la société~; \emph{Ajouter une devise} en ajoute une, et la case \emph{Toutes les devises publiées} montre aussi les devises qu'aucun compte ne porte, y compris les monnaies \textbf{retirées} que l'AFC publie pour les périodes où elles avaient cours (le lev bulgare \texttt{BGN} jusqu'en mars 2026, la kuna croate \texttt{HRK}, les monnaies remplacées par l'euro\ldots)~; leurs cours se lisent et se saisissent, mais aucun compte ne s'ouvre dans une monnaie retirée --- et \textbf{une colonne par mois de l'exercice}, du premier au dernier, dans l'ordre de l'exercice~: «~juil. 2024~» à «~juin 2025~» pour un exercice au 1er juillet. Kesh n'impose aucune durée d'exercice~: un exercice raccourci ou allongé, lors d'un changement de date de clôture, a moins ou plus de douze colonnes (six pour un exercice de six mois, dix-huit pour dix-huit mois)~; un exercice qui commence en cours de mois (le 15.03.2024, par exemple) a pour premier mois ce mois-là, et treize colonnes s'il dure un an. Suivent les colonnes \textbf{Ouverture} et \textbf{Clôture} (ci-dessous). Seul le tableau défile horizontalement~; la colonne des devises reste en place.
 
 \keshscreenshot{md-cours-tableau.png}{L'écran Cours de change : un tableau par exercice, une ligne par devise ; sous chaque case, l'origine du cours (« AFC \protect\keshcoche{} » ou « AFC : 0.9300 » avec la flèche \protect$\uparrow$ pour le cours saisi).}
 
@@ -3935,10 +3948,10 @@ La section \emph{Capitaux propres} est présentée \textbf{séparément des dett
 
 \begin{itemize}
     \item le \textbf{report d'ouverture physique} que vous avez saisi sur un compte (typiquement lors d'une reprise de comptabilité depuis un autre logiciel) — il apparaît sous son propre numéro de compte ;
-    \item le \textbf{« Résultat reporté (calculé) »} que Kesh calcule automatiquement à partir des résultats de vos exercices antérieurs — ligne distincte, explicitement marquée \emph{calculé}, sans numéro de compte.
+    \item le \textbf{« Résultat reporté (calculé) »} que Kesh calcule automatiquement à partir des résultats de vos exercices antérieurs tenus dans Kesh — ligne distincte, explicitement marquée \emph{calculé}, sans numéro de compte. Elle \textbf{n'apparaît que si elle n'est pas nulle} (arrondie au centime, comme elle s'affiche) : au premier exercice tenu dans Kesh, le report est porté par votre compte de report et la ligne calculée, qui vaudrait zéro, est omise. Non nulle, elle signale un résultat d'exercices antérieurs qu'aucune écriture n'a encore reporté.
 \end{itemize}
 
-Ces deux lignes ne sont jamais additionnées ni fusionnées. Cette présentation se retrouve à l'identique dans les exports PDF et CSV du bilan.
+Ces deux lignes ne sont jamais additionnées ni fusionnées. Cette présentation se retrouve à l'identique dans les exports PDF et CSV du bilan ; les données du bilan lues par l'API ou le serveur MCP donnent, elles, toujours le résultat reporté calculé, zéro compris.
 
 Filtres : date de référence (par défaut fin d'exercice en cours), exercice à comparer (N-1).
 
@@ -3976,7 +3989,8 @@ d'ouverture}, les \textbf{mouvements} débit et crédit, et le \textbf{solde de 
         celles du grand livre (\S\ref{sec:grand-livre}) sur la même période.
     \item \textbf{La ligne « Résultat reporté (calculé) ».} Kesh ne passe aucune écriture de clôture : le résultat des
         exercices antérieurs n'est porté par aucun compte. Une ligne calculée le montre, sous les comptes — la même
-        valeur qu'au bilan, « Perte reportée » à l'écran si elle est négative.
+        valeur qu'au bilan, « Perte reportée » à l'écran si elle est négative. Contrairement au bilan, la balance la
+        garde à zéro : elle entre dans le contrôle de l'ouverture.
     \item \textbf{Les montants sont signés selon la nature du compte} — positifs du côté naturel (débit pour un actif ou
         une charge, crédit pour un passif ou un produit). La somme visible des colonnes d'ouverture et de clôture n'est
         donc pas nulle ; le \textbf{contrôle} affiché sous l'ouverture (une coche) la vérifie en ramenant chaque solde au sens débit, résultat
@@ -4086,7 +4100,10 @@ comme en PDF, et ses exports CSV avec les mêmes colonnes (seul l'échappement d
           devises~: les totaux de la balance, du bilan et du compte de résultat restent en CHF. Seul
           un compte du grand livre, qui n'a qu'une devise, a ses totaux en devise.
     \item \textbf{Exports.} Le PDF reprend les secondes lignes et les mentions de l'écran~; au grand
-          livre, «~À reporter~» et «~Report~» portent aussi le report en devise. Le CSV ajoute, seulement
+          livre, «~À reporter~» et «~Report~» portent aussi le report en devise. Ses colonnes de montant
+          disent alors leur devise~: «~Devise~» et «~CHF~» en tête du bilan et du compte de résultat,
+          «~Débit CHF~», «~Crédit CHF~»\ldots{} à la balance et au grand livre, pour tous les comptes du
+          rapport~; sans compte en devise, ces en-têtes ne changent pas. Le CSV ajoute, seulement
           si le rapport contient un compte en devise, des colonnes en devise (\texttt{Devise},
           \texttt{SoldeDevise}, \texttt{DebitDevise}, \texttt{Cours}\ldots), vides pour un compte en
           CHF~; sinon, ses colonnes sont celles d'avant. Les montants en devise sont arrondis
@@ -4185,7 +4202,15 @@ Tous les rapports se \textbf{consultent à l'écran}. Pour les emporter :
 
 \begin{keshnote}
 Le PDF est paginé et destiné à être présenté ou archivé ; le CSV est destiné à être repris dans
-un tableur. Aucun des deux n'est tronqué, même quand l'écran l'est.
+un tableur. Aucun des deux ne perd de ligne, même quand l'écran en limite le nombre~; le PDF abrège
+seulement, d'un «~…~», les textes qui dépassent un nombre fixe de caractères (intitulé de compte de la balance,
+pièce, journal, libellé et contreparties du grand livre, nom d'un compte en devise au bilan et au
+compte de résultat). Dans le PDF, les montants sont \textbf{alignés à droite} dans leur colonne,
+les décimales l'une sous l'autre, totaux compris~; au bilan et au compte de résultat, le solde en
+devise («~USD 1'233.57~») l'est dans sa propre colonne. Les secondes lignes en petit du grand livre
+et de la balance, qui sont des phrases, restent alignées à gauche.
+Le titre du rapport, dans les propriétés du fichier PDF, garde ses accents («~Compte de
+résultat~», «~Décompte TVA~»).
 \end{keshnote}
 
 \paragraph{Les cellules de texte du CSV.} Pour qu'un tableur lise toujours un libellé comme du

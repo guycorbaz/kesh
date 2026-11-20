@@ -1163,7 +1163,18 @@ const ATTENDU = {
 	// `kesh-gate-logs/v0200cm/vert-vitest.log`), relevé par la garde : le seul site neuf est
 	// `contact-error-address-country-alone` (page des contacts, pays seul). La ligne du motif
 	// d'un bouton grisé (#1349) affiche `formValidation` : aucun site neuf.
-	sitesTotal: 3503,
+	// Correctif `fix-api-parent-compte` (2026-11-18) : **3388 → 3392**, relevé par la garde
+	// (« expected 3392 to be 3388 », `kesh-gate-logs/fix-api-parent-compte/front-test-unit.log`) —
+	// le champ parent du dialogue de modification (`accounts/+page.svelte`) : son libellé
+	// `account-field-parent-optional` et trois `accounts-parent-none`, comme à la création.
+	// Reprise de `origin/main` (v0.19.0) dans `fix/api-parent-compte` (2026-11-18) : relevé par la
+	// garde après la fusion : **3499** (« expected 3499 to be +0 »,
+	// `kesh-gate-logs/fix-api-parent-compte/reprise-v0190-i18n-1.log`), non additionné — il égale
+	// 3495 (0.19.0) + 4 (le champ parent du dialogue de modification), les deux côtés gardés.
+	// Reprise de main dans epic/48 (2026-11-20, après les fusions de #1346, #1327, #1351) : les deux côtés gardés,
+	// total relevé par la garde, non additionné : **3507** (« expected 3507 to be +0 »,
+	// `kesh-gate-logs/e48-reprise-main/vitest-compteur.log`).
+	sitesTotal: 3507,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

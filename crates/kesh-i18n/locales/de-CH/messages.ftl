@@ -262,6 +262,8 @@ accounts-retype-confirm = Kontotyp trotzdem ändern
 account-field-parent-optional = Übergeordnetes Konto (optional)
 accounts-parent-none = Keines
 accounts-parent-archived = Das übergeordnete Konto { $number } ist archiviert. Reaktivieren Sie es zuerst.
+error-account-parent-cycle = Das Konto { $number } ist dieses Konto selbst oder eines seiner Unterkonten: Ein Konto kann nicht unter sich selbst eingeordnet werden.
+error-account-parent-has-entries = Das Konto { $number } enthält Buchungen: Würde dieses Konto darunter eingeordnet, würde es mit einem Saldo nicht bebuchbar, den keine Erfassung mehr korrigieren könnte. Wählen Sie ein Gruppenkonto ohne Buchungen.
 accounts-role-invalid-for-type = Die Rolle { $role } kann keinem Konto vom Typ { $type } zugewiesen werden.
 accounts-role-conflict-generic = Diese Rolle wurde soeben einem anderen Konto zugewiesen. Bitte laden Sie die Seite neu.
 accounts-reactivate-without-role = Ohne Rolle reaktivieren
@@ -2076,6 +2078,9 @@ reports-filename-project-return = rendite-pro-analytisches-konto
 reports-filename-general-ledger = hauptbuch
 reports-pdf-header-period = Zeitraum
 reports-pdf-empty-message = Keine Buchungen im gewählten Zeitraum.
+# Correctif fix-pdf-montants-alignes — en-têtes des colonnes de montant d'un rapport PDF qui contient un compte en devise.
+reports-pdf-col-base-currency = CHF
+reports-pdf-col-foreign-currency = Währung
 
 # Story 9-2b — Globaler ZIP-Export (Datensouveränität) — 12 Schlüssel
 nav-export-global = Globaler Export

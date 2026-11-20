@@ -319,7 +319,7 @@ fn line(account_id: i64, debit: &str, credit: &str) -> Value {
 
 /// AC-A : 201, écriture OD datée `fy_start`, description dans la langue
 /// comptable de la company (fr-CH), présente au bilan (compte physique 2970
-/// itemisé dans equity, ligne calculée `retainedEarnings` = 0).
+/// itemisé dans equity, ligne calculée `retainedEarnings` = 0 au JSON, omise du CSV).
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_happy_path_od_at_fy_start_appears_in_balance_sheet(pool: MySqlPool) {
     let (app, token) = bootstrap_admin(&pool).await;
@@ -381,6 +381,29 @@ async fn post_happy_path_od_at_fy_start_appears_in_balance_sheet(pool: MySqlPool
     let retained_calc: Decimal = bs["retainedEarnings"].as_str().unwrap().parse().unwrap();
     assert_eq!(retained_calc, Decimal::ZERO);
     assert_eq!(bs["equationHolds"], true);
+
+    // Correctif fix-bilan-resultat-reporte : le JSON garde `retainedEarnings` (champ
+    // stable, ci-dessus), mais l'export CSV omet la ligne calculée nulle — seul le
+    // compte physique 2970 porte le report, et le total des capitaux propres est juste.
+    let resp = app
+        .client
+        .get(app.url(&format!(
+            "/api/v1/reports/balance-sheet/export?format=csv&fiscalYearId={}",
+            seed.fy_id
+        )))
+        .header("Authorization", auth(&token))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let csv = resp.text().await.unwrap();
+    assert!(csv.contains("CapitauxPropres;2970;"), "{csv}");
+    assert!(!csv.contains("Résultat reporté"), "{csv}");
+    assert!(csv.contains("Total capitaux propres;;;1000.00"), "{csv}");
+    assert!(
+        csv.contains("Total passifs + capitaux propres;;;1000.00"),
+        "{csv}"
+    );
 }
 
 /// AC-A happy path bis (P3-BH3-5) : report d'ouverture NÉGATIF (perte
