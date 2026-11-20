@@ -405,6 +405,53 @@ async fn sous_compte_refuse_sous_un_compte_en_devise_mouvemente(pool: MySqlPool)
     assert_eq!(crees, 0);
 }
 
+/// #1437 (jumeau) : le même refus, par `PUT`, sous un compte en devise
+/// mouvementé **déjà** non imputable — le message ne dit pas qu'il le
+/// « deviendrait ».
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn put_parent_en_devise_mouvemente_deja_non_imputable_message_exact(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    multi(&pool, &ctx).await;
+    let id = compte(&pool, ctx.s.company_id, "1020", "Asset", Some("USD")).await;
+    let je: i64 = sqlx::query_scalar(
+        "INSERT INTO journal_entries (company_id, fiscal_year_id, entry_number, entry_date, journal, description) \
+         VALUES (?, ?, 1, '2026-06-01', 'Banque', 'test') RETURNING id",
+    )
+    .bind(ctx.s.company_id)
+    .bind(ctx.s.fiscal_year_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO journal_entry_lines (entry_id, account_id, line_order, debit, credit) \
+         VALUES (?, ?, 1, 10, 0)",
+    )
+    .bind(je)
+    .bind(id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query("UPDATE accounts SET postable = FALSE WHERE id = ?")
+        .bind(id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let autre = compte(&pool, ctx.s.company_id, "1030", "Asset", None).await;
+    let (st, e) = modifier(&pool, &ctx, autre, json!({ "parentId": id })).await;
+    assert_eq!(
+        (st, code(&e)),
+        (409, "ACCOUNT_FOREIGN_PARENT_HAS_ENTRIES"),
+        "{e}"
+    );
+    assert_eq!(
+        e["error"]["message"],
+        "Le compte 1020 est tenu en USD et porte des écritures : il ne reçoit pas de \
+         sous-compte, car un compte qui a des sous-comptes n'est pas imputable et la \
+         réévaluation de fin d’exercice ne corrige plus son solde. Créez plutôt un compte voisin.",
+        "{e}"
+    );
+}
+
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn devise_refusee_sur_un_compte_employe_en_chf(pool: MySqlPool) {
     let ctx = monter(&pool).await;

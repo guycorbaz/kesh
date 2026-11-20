@@ -983,8 +983,8 @@ async fn guard_parent_change_in_tx(
     refuse_designated(hits, |_| true)?;
     refuse_foreign_parent_with_entries_in_tx(tx, new_parent_id).await?;
     // Revue P1-2 (décision de Beat) : un parent qui porte des écritures, en
-    // quelque devise, passerait non imputable avec son solde, que plus aucune
-    // saisie ne corrigerait — refusé. Après le refus propre à la devise, qui
+    // quelque devise, est (ou passe) non imputable avec son solde, que plus
+    // aucune saisie ne corrige — refusé. Après le refus propre à la devise, qui
     // garde son code. ⚠️ La création ne le refuse pas (écart tracé).
     if has_journal_line_locked(tx, new_parent_id).await? {
         return Err(DbError::AccountParentHasEntries {

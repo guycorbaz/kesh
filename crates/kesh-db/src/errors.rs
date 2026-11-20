@@ -1195,9 +1195,10 @@ pub enum DbError {
 
     /// Un sous-compte demandé sous un compte de **bilan en devise** qui porte
     /// au moins une ligne d'écriture (Story 37-5, 37-5-CR-P3-1) : le parent
-    /// deviendrait non imputable en gardant son solde, que la réévaluation ne
-    /// peut plus atteindre et que la clôture refuserait sans recours (un compte
-    /// qui a des sous-comptes actifs ne redevient pas imputable). Mappé vers
+    /// est non imputable (il l'est déjà s'il a des sous-comptes, il le devient
+    /// sinon) : son solde échappe à la réévaluation, que la clôture refuserait
+    /// sans recours (un compte qui a des sous-comptes actifs ne redevient pas
+    /// imputable). Mappé vers
     /// HTTP **409** `ACCOUNT_FOREIGN_PARENT_HAS_ENTRIES`,
     /// `details: { parentAccountId, parentNumber, currency }`.
     #[error("Le compte parent {parent_number} est en {currency} et porte des écritures")]
@@ -1665,8 +1666,9 @@ pub enum DbError {
     },
 
     /// Changement de parent refusé : le parent demandé porte au moins une ligne
-    /// d'écriture — rangé dessous, il passerait non imputable avec un solde
-    /// qu'aucune saisie ne corrigerait plus (correctif `fix-api-parent-compte`,
+    /// d'écriture — avec un sous-compte il est non imputable (déjà, par la
+    /// bascule de la création, ou par ce rangement), son solde qu'aucune saisie
+    /// ne corrige plus (correctif `fix-api-parent-compte`,
     /// revue P1-2 ; motif de [`DbError::AccountForeignParentHasEntries`],
     /// étendu à toute devise au `PUT`). HTTP 409 `ACCOUNT_PARENT_HAS_ENTRIES`.
     #[error("Le compte parent {parent_number} porte des écritures")]

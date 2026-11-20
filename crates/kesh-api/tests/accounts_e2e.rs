@@ -1257,9 +1257,11 @@ async fn put_range_un_compte_mouvemente_sous_un_groupe(pool: MySqlPool) {
     assert_eq!(body["parentId"], Value::Null);
 }
 
-/// #1437 : le refus d'un parent qui porte des écritures vaut aussi quand ce
-/// parent est **déjà** non imputable (bascule automatique antérieure) ; son
-/// message ne dit pas que le parent « deviendrait » non imputable.
+/// #1437 : le cas réel du parent « déjà non imputable ». Un parent mouvementé
+/// reçoit un sous-compte par `POST` (la création ne le refuse pas) et bascule
+/// alors en non imputable ; un `PUT` qui range un autre compte sous lui est
+/// refusé, avec un message vrai pour un parent qui a déjà un sous-compte :
+/// ni « aucun compte ne se range sous lui », ni « deviendrait ».
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn put_parent_mouvemente_deja_non_imputable_message_exact(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
@@ -1269,22 +1271,34 @@ async fn put_parent_mouvemente_deja_non_imputable_message_exact(pool: MySqlPool)
     let banque = mk_account(&pool, company_id, admin_id, "1020", None).await;
     let caisse = mk_account(&pool, company_id, admin_id, "1000", None).await;
     mk_entry(&pool, company_id, fy, admin_id, banque, caisse, jour).await;
-    sqlx::query("UPDATE accounts SET postable = FALSE WHERE id = ?")
-        .bind(caisse)
-        .execute(&pool)
+    let autre = mk_account(&pool, company_id, admin_id, "1030", None).await;
+
+    // La création accepte un parent mouvementé et le bascule en non imputable.
+    let res = app
+        .client
+        .post(app.url("/api/v1/accounts"))
+        .bearer_auth(&token)
+        .json(&json!({
+            "number": "1001", "name": "Petite caisse", "accountType": "Asset",
+            "parentId": caisse
+        }))
+        .send()
         .await
         .unwrap();
-    let autre = mk_account(&pool, company_id, admin_id, "1030", None).await;
+    assert_eq!(res.status(), 201, "{:?}", res.text().await);
+    let c = accounts::find_by_id(&pool, caisse).await.unwrap().unwrap();
+    assert!(!c.postable, "la bascule automatique a eu lieu");
 
     let (status, body) =
         put_parent(&app, &token, &pool, autre, json!({ "parentId": caisse })).await;
     assert_eq!(status, 409, "{body}");
     assert_eq!(body["error"]["code"], "ACCOUNT_PARENT_HAS_ENTRIES");
-    let message = body["error"]["message"].as_str().unwrap();
-    assert!(message.contains("1000"), "{body}");
-    assert!(
-        !message.contains("imputable") && !message.contains("rendrait"),
-        "le parent est déjà non imputable : {body}"
+    assert_eq!(
+        body["error"]["message"],
+        "Le compte 1000 porte des écritures : on n'y range pas d'autre compte, car un compte \
+         qui a des sous-comptes n'est pas imputable et son solde ne se corrige plus par une \
+         saisie. Choisissez un compte de groupe sans écriture.",
+        "{body}"
     );
 }
 
