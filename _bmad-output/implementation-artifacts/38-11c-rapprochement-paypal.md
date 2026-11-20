@@ -43,7 +43,9 @@ saisie, et de trouver les erreurs des boutiques.
      compte CHF faux, `USD` sur compte EUR faux).
    - **D'où vient la devise** : lue avec le compte du plan au pré-vol, sur le pool (`link_preflight`,
      `routes/reconciliation.rs:6552`, rend le couple compte du plan, devise ; `LinkEntryRequest` `:1060` gagne
-     `bank_ledger_currency`), jamais dans le geste, qui ne prend pas `bank_accounts` (doc de `link_entry_in_tx`). Lecture
+     `bank_ledger_currency` ; `link_preflight` est **partagé** avec les routes des règlements de la 29-8
+     (`get_link_candidates` `:6606`, `post_link_transaction` `:6697`), qui ignorent la devise rendue et restent CHF — quatre
+     appelants à mettre à jour), jamais dans le geste, qui ne prend pas `bank_accounts` (doc de `link_entry_in_tx`). Lecture
      sûre hors verrou : la devise d'un compte qui porte une ligne ne change plus (`ACCOUNT_CURRENCY_LOCKED`, 37-1), et
      sans ligne aucune écriture n'a de mouvement à égaler. `get_proposals` (`:1161-1172`) passe celle du compte de la
      page.
@@ -144,11 +146,22 @@ saisie, et de trouver les erreurs des boutiques.
 7. **AC-7 — Route d'acceptation** `POST /api/v1/paypal/accept` (Comptable et plus, clés d'API `read-write`
    admises), corps `{ account, proposals: [ {type, …} ] }` (formes de l'AC-5 ; `withdrawal` exige
    `counterpartyAccountId`). Inscrite à `LIB_ROUTES` (`audit_route_registry.rs:440`) en `Traced, Rejouee` : son
-   handler passe par l'enveloppe de rejeu sur interblocage (`retry_app_on_deadlock`, `crates/kesh-api/src/retry.rs:40`,
-   comme `post_accept`) ; compte du registre et phrase du manuel d'administration (`admin-manual.tex`, `.tex` seul)
+   handler appelle l'enveloppe **`retry_app_on_deadlock`** (`crates/kesh-api/src/retry.rs:40`) et **non** `retry_with`
+   que `post_accept` garde seul, par exception (`RETRY_WITH_AUTORISE = ["post_accept"]`, volet (c bis) du test, qui
+   refuse tout autre appel dans `src/routes/`). ⚠️ **Piège du patron par proposition** : `post_accept` rejoue aussi le
+   `ROLLBACK TO SAVEPOINT` qui échoue (1305) quand un 1213 levé *dans* une proposition a été absorbé en `FailedProposal`
+   alors qu'InnoDB a annulé toute la transaction (`accept_once`, `routes/reconciliation.rs:1949`, `TransactionAborted`).
+   La route neuve ne doit donc **jamais** ranger un interblocage dans `failed[]` : un `DbError` que `is_app_deadlock`
+   reconnaît, ou un échec de `ROLLBACK TO SAVEPOINT`, **remonte** en `AppError` (rejeu de toute l'opération par
+   l'enveloppe, comptes verrouillés repris) ; test sur le modèle de `rejeu_interblocage_e2e.rs` (une proposition qui
+   interbloque → rejeu, aucune ligne dans `failed[]`). Les comptes bancaires à verrouiller se lisent **avant** les
+   verrous, sur le pool, depuis les transactions des propositions (ceux d'une autre société ou inconnus → `failed[]`
+   `NOT_FOUND`) ; chaque proposition rejuge ensuite sous verrou ; compte du registre et phrase du manuel d'administration (`admin-manual.tex`, `.tex` seul)
    relevés de un, comme en 38-11b AC-4. *Pattern batch* (`CLAUDE.md`, *Pattern batch — FailedProposal per-proposal*) :
    400 global seulement pour un corps mal formé, vide, de plus de `MAX_IN_CLAUSE_IDS`
-   (`repositories/reconciliation.rs:1121`) propositions ou portant deux fois la même transaction ; tout le reste →
+   (`repositories/reconciliation.rs:1121`) propositions ou portant deux fois la même transaction (**les deux transactions
+   d'une conversion comptent**, `debitTransactionId` et `creditTransactionId` : une transaction ne figure qu'une fois
+   dans tout le corps) ; tout le reste →
    `failed[]` (`FailedProposal`, `routes/reconciliation.rs:576` : identifiant de transaction — la transaction
    **débitée** pour une conversion —, `errorCode` constant, `details`), HTTP 200 ; les erreurs de base d'une
    proposition (refus d'écriture : exercice clos, période verrouillée, `OptimisticLockConflict`, `BankAccountClosed`
@@ -199,7 +212,13 @@ saisie, et de trouver les erreurs des boutiques.
    - Après chaque écriture : la transaction (les deux pour une conversion) passe `reconciled` avec `matched_entry_id`
      par **une** fonction de dépôt neuve `mark_reconciled_in_tx` (contrôle de version, `rows_affected = 1`, sinon
      `RECONCILIATION_ALREADY_RECONCILED`), extraite de la mise à jour d'`accept_one_rule` (`:4569-4595`), qui
-     l'appelle désormais (DRY ; tests d'`accept_one_rule` verts). Conversion en deux écritures : chaque transaction
+     l'appelle désormais (DRY ; tests d'`accept_one_rule` verts). ⚠️ **Inventaire des écrivains d'un compte bancaire**
+     (`crates/kesh-api/tests/bank_account_closed_inventory.rs`, clé `(fichier, fonction)`, diff dans les deux sens) :
+     l'`UPDATE bank_transactions` quitte `accept_one_rule` — son entrée du `REGISTRE` (`Invariant("I1", …)`) rougit
+     « sans site » si l'`UPDATE` ne s'y trouve plus — et naît dans `mark_reconciled_in_tx` (`kesh-db/src/repositories/
+     reconciliation.rs`), à classer avec sa raison (`Invariant`, transaction `pending` sous le verrou du compte, pré-vol
+     des routes qui l'appellent) ; les fonctions d'écriture neuves de la route (si elles portent un littéral d'écriture
+     sur l'une des sept tables) s'y classent aussi. Tâche T5 et gate complet l'incluent. Conversion en deux écritures : chaque transaction
      pointe l'écriture de **son** compte (débitée → écriture 1, créditée → écriture 2) ; en une écriture, les deux la
      pointent.
    - Trace `paypal.proposal_accepted` par proposition acceptée (`details` : genre, transactions, écritures, règle),
@@ -216,7 +235,8 @@ saisie, et de trouver les erreurs des boutiques.
 10. **AC-10 — Ce que la story ne fait pas** (phase 2, au fichier d'epic) : aucune écriture de vente, de
     remboursement ni de litige ; aucun rattachement automatique (tout passe par l'acceptation) ; aucun groupe
     d'écritures ; aucun code TVA ; aucune règle à compte en devise ; aucune boutique par préfixe ni code
-    d'événement ; aucun retrait depuis un solde en devise. Un remboursement ou une retenue isolée va « à examiner » :
+    d'événement ; aucun retrait depuis un solde en devise. Une facture fournisseur ne se paie pas depuis un compte PayPal (limite de la phase 1, 38-11b AC-3 : les achats passent par les règles ;
+    remède : compte interne ou écriture à la main, puis rattachement, AC-1). Un remboursement ou une retenue isolée va « à examiner » :
     l'utilisateur passe l'écriture à la main (écriture en devise, 37-3b) puis la rattache (AC-1).
 11. **AC-11 — Non-régression.** Tests existants du rapprochement, des règles et du rattachement verts sans
     changement d'assertion (seuls les littéraux de construction gagnent leurs champs ; nombre au Change Log).
@@ -292,3 +312,10 @@ se rattache à une écriture existante sur un compte bancaire en devise.
   registre des routes et phrase du manuel d'administration ; frais positifs ; ventes encaissées par un compte bancaire
   partageant le compte du plan ; appariement des conversions par la date retiré ; `api-external.md` laissé à 38-11d ;
   lignes `:4604-4640` et `:4573-4600` corrigées (`:4597-4645`, `:4569-4595`).
+- 2026-11-20 — validation P2 (Claude Sonnet 5.5, contexte frais) : 0 CRITICAL, 0 HIGH, 3 MEDIUM, 1 LOW, remédiés dans la
+  fiche (rapport `kesh-gate-logs/epic-38-kiss/validation/38-11c-rapprochement-paypal-P2.md`). Principaux : la fiche
+  disait la route d'acceptation rejouée « comme `post_accept` » alors que `post_accept` est la seule à garder `retry_with`
+  (le test refuse tout autre appel) et que le patron par proposition absorbe un 1213 en `failed[]` puis échoue au
+  `ROLLBACK TO SAVEPOINT` : enveloppe `retry_app_on_deadlock`, interblocage jamais rangé en `failed[]` ; l'extraction de
+  `mark_reconciled_in_tx` déplace un écrivain de l'inventaire `bank_account_closed_inventory` ; les deux transactions
+  d'une conversion comptent dans le doublon du corps ; `link_preflight` partagé avec la 29-8 (quatre appelants).

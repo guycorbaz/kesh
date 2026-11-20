@@ -27,7 +27,7 @@ solde attende son rapprochement (38-11c).
 | `FR-38-11b-4` | Import **à la demande** (route et bouton) du CSV d'un compte PayPal : chaque devise va au compte bancaire de cette devise ; une devise sans compte refuse tout l'import en la nommant. | AC-4, AC-5 |
 | `FR-38-11b-5` | Lignes `Status ≠ Completed` et lignes `Memo` écartées ; paires de retenue neutres écartées ; doublons (même identifiant de transaction sur le même compte) ignorés ; tout est compté au compte rendu. | AC-5, AC-6 |
 | `FR-38-11b-6` | Une ligne avec frais donne deux transactions : le brut et les frais, **chacune de son signe** (frais négatifs d'ordinaire, positifs sur certains remboursements, 38-11a AC-5). | AC-5 |
-| `FR-38-11b-7` | Un compte PayPal est refusé **côté serveur** aux imports bancaires génériques (CAMT, CSV, saisie manuelle) et aux règlements de facture (client et fournisseur). | AC-3 |
+| `FR-38-11b-7` | Un compte PayPal est refusé **côté serveur** aux imports bancaires génériques (CAMT, CSV, saisie manuelle) et aux règlements de facture (client et fournisseur). Le refus du paiement d'une facture fournisseur est une **limite de la phase 1** (remède à l'AC-3). | AC-3 |
 | `NFR-38-11b-1` | **Une** migration, non breaking, DDL seul, sans `MODIFY COLUMN`. | AC-1 |
 | `NFR-38-11b-2` | Sauvegarde, réimport d'une sauvegarde 0.19.0, export CSV et remise à zéro restent justes. | AC-7 |
 | `NFR-38-11b-3` | Aucune modification du chemin d'import CAMT/CSV existant au-delà des champs neufs passés à `None` et du refus d'un compte PayPal. | AC-3, AC-8 |
@@ -116,7 +116,13 @@ solde attende son rapprochement (38-11c).
      (`:435-458`, refus `:444-452`) et le pré-vol (`:680-691`) — **ne s'appliquent pas** quand le compte est PayPal à
      l'issue du `POST` ou du `PUT` (état résultant : un `PUT` sans `paypal` sur un compte PayPal lié à un compte EUR
      reste admis) ; ils restent pour tout autre compte bancaire et pour le `PATCH` (tests existants de 37-1 verts,
-     inchangés). Le verrou partagé sur la devise du compte du plan (`accounts::type_in_share_mode`,
+     inchangés). **Mécanisme** : `validate_journal_account_id` (`:650`, quatre appelants : `POST` `:1013`, `PUT`
+     `:1446`, `PATCH` `:2073`, assistant `routes/onboarding.rs:672`) et `locked_ledger_type` (`:435`, appelée par le `POST`
+     et le `PUT` `:429` et par le `PATCH` `:2116`) gagnent un paramètre « compte PayPal à l'issue » ; le `POST` et le
+     `PUT` le passent vrai, le `PATCH` et l'assistant **toujours faux** (le `PATCH` d'un compte PayPal est de toute façon
+     refusé, ci-dessus). Un `PUT` qui **retire** `paypal` (`null`) d'un compte lié à un compte EUR est jugé sur l'état
+     résultant (plus PayPal) : 400 `ACCOUNT_IN_FOREIGN_CURRENCY`, test (s'il porte déjà une transaction, le 409
+     `PAYPAL_ACCOUNT_IN_USE` de l'AC-2 passe d'abord). Le verrou partagé sur la devise du compte du plan (`accounts::type_in_share_mode`,
      `repositories/accounts.rs:633`) reste la lecture qui juge.
    - Solde d'ouverture (`openingBalance` du `POST`, `enter_opening_balance` `:1265`) d'un compte PayPal en devise :
      refusé par le contrôle central existant des lignes en devise (`ACCOUNT_REQUIRES_CURRENCY`), constaté par un test,
@@ -127,13 +133,27 @@ solde attende son rapprochement (38-11c).
    - **Refus serveur** (nouveau code `BANK_ACCOUNT_IS_PROVIDER`, 409, `details: { bankAccountId }`) : aperçu et
      création d'un import CAMT ou CSV (`routes/bank_imports.rs` `preview` `:1029`, `create` `:1216`), aperçu et
      création d'un relevé saisi à la main (`routes/bank_statements_manual.rs` `:132`, `:221`), règlement d'une facture
-     client sur un compte PayPal (`invoice_settlements_write.rs:202-219`, `provider` lu dans la même instruction que
-     `account_kind`, refus après « clos » comme la carte) et paiement d'une facture fournisseur
-     (`supplier_invoices::pay_in_tx_as`, `:2018`, compte bancaire choisi). Le CSV PayPal passe par sa route (AC-4) ;
-     les rattachements à une écriture existante (38-11c) restent admis.
+     client sur un compte PayPal (`crates/kesh-db/src/repositories/invoice_settlements_write.rs:202-219`, `provider`
+     lu dans la même instruction que `account_kind`, refus après « clos » comme la carte,
+     `SettlementAccountIsCreditCard` de la 34-11a2 pour précédent : un `DbError` neuf, rendu 409) et paiement d'une
+     facture fournisseur (`supplier_invoices::pay_in_tx_as`, `crates/kesh-db/src/repositories/supplier_invoices.rs:2018`,
+     compte bancaire choisi : ce chemin ne refuse pas la carte aujourd'hui, le refus PayPal y est neuf). Le CSV PayPal
+     passe par sa route (AC-4) ; les rattachements à une écriture existante (38-11c) restent admis.
+   - ⚠️ **Limites écrites (décision de l'orchestrateur du 2026-11-20, validation P2)** — à reprendre au manuel par
+     38-11d : (a) **phase 1 : une facture fournisseur ne se paie pas depuis un compte PayPal** (KISS : les achats PayPal
+     passent par les règles, 38-11c) ; *remède* : régler la facture par le choix « compte interne » (un compte du plan),
+     ou passer l'écriture à la main (en devise pour un solde en devise, 37-3b), puis **rattacher** la transaction PayPal à
+     cette écriture (38-11c AC-1) ; (b) **angle mort assumé, comme la carte (34-11a2, C-e341-41)** : le refus ne couvre
+     que les deux écrivains ci-dessus ; l'acceptation d'une proposition « facture » ou « facture fournisseur » par la
+     réconciliation générique (`accept_one_invoice`, `routes/reconciliation.rs:3058`, `accept_one_supplier_invoice`,
+     `:3580`), les règlements groupés (`grouped_settlements.rs:784`, `:2325`) et le rattachement de règlement de la 29-8
+     (`link_in_tx`) ne refusent pas un compte PayPal CHF ; *remède* : ne pas accepter la proposition, la passer en
+     rejet ou la traiter par le rapprochement PayPal. Un point de traçage est à ouvrir pour la phase 2 (revue P2,
+     rapport).
 4. **AC-4 — Route d'import** `POST /api/v1/paypal-imports` (multipart : `file`, `account`), Comptable+, clés d'API
    `read-write` admises (comme `POST /api/v1/bank-imports`, `lib.rs:946`). Inscrite à `LIB_ROUTES`
-   (`crates/kesh-api/tests/audit_route_registry.rs:440`) en `Traced, SansEcritureAuJournal` ; le compte de
+   (`crates/kesh-api/tests/audit_route_registry.rs:440`) en `Traced, SansEcritureAuJournal` (statut `Traced` : c'est la
+   colonne que comptent `traced + exempt + no_matter`, la colonne de rejeu est à part) ; le compte de
    `the_registry_partition_is_what_the_story_declares` (157 au relevé) relevé de un avec sa raison, et la phrase « N
    des M routes à verbe mutant » et la somme « a + b + c = M » du manuel d'administration
    (`docs/manual/fr/admin-manual.tex`, lues par `le_manuel_dit_le_compte_du_registre`) mises à jour — **`.tex` seul**,
@@ -171,7 +191,13 @@ solde attende son rapprochement (38-11c).
    compte visé, pris par identifiant croissant : helper **neuf** `with_account_locks` dans
    `crates/kesh-reconciliation/src/mutex.rs` (à côté de `with_account_lock`, `:75` : `GET_LOCK` successifs sur la même
    connexion, ids triés et dédoublonnés, libérés en ordre inverse, `ReconciliationError::AccountLocked` au premier
-   délai dépassé, tous ceux déjà pris rendus), **partagé avec 38-11c** ; une seule transaction de base : tout ou rien.
+   délai dépassé, tous ceux déjà pris rendus), **partagé avec 38-11c**. **Patron de l'import existant**
+   (`create_under_account_lock`, `routes/bank_imports.rs:1532`) : les verrous se tiennent sur une connexion **dédiée**
+   (`lock_tx`, `MANUAL_STATEMENT_LOCK_TIMEOUT_SECS`) et l'écriture se fait dans une **seconde** transaction de base,
+   une seule pour toutes les devises (tout ou rien) ; un verrou non obtenu → 409 `RECONCILIATION_ACCOUNT_LOCKED`
+   (`AppError::ReconciliationAccountLocked`), rien d'écrit (test : verrou tenu sur le second compte → 409, rien écrit,
+   le premier verrou rendu). La recherche des doublons (AC-6) se fait **dans** cette transaction, sous les verrous.
+   (38-11c, dont l'acceptation écrit sous le verrou dans la transaction même, appelle le helper sur celle-ci.)
    Trace d'audit : `bank_import.created` par devise, comme l'import CSV (`routes/bank_imports.rs:1945`, `:1976`), plus
    `paypal_import.created` (`details` : compte PayPal, nom du fichier, compte rendu de l'AC-6), sous l'acteur
    (`NewAuditLogEntry::for_actor`).
@@ -197,7 +223,16 @@ solde attende son rapprochement (38-11c).
    parents : vérifié par `backup_inventory_matches_schema`).
 8. **AC-8 — Non-régression et i18n.** Tests des imports CAMT, CSV et manuels inchangés en assertions ; les
    constructions de `NewBankTransaction`, `BankAccount` et `ReconciliationRule` gagnent leurs champs (l'échec de
-   compilation les inventorie, nombre au Change Log). Codes neufs (`PAYPAL_LEDGER_REQUIRED`,
+   compilation les inventorie, nombre au Change Log). ⚠️ **Les écrivains SQL, eux, ne rougissent pas** : une liste de
+   colonnes qui oublie un champ le laisse `NULL` en silence. Sites à compléter, relevés sur `origin/main` :
+   `INSERT INTO bank_accounts` du `POST` (`routes/bank_accounts.rs:1165`) et du dépôt (`repositories/bank_accounts.rs:65`,
+   `:475`), la mise à jour du `PUT` (`update_for_company`), `INSERT INTO bank_transactions` de `create_with_transactions`
+   (`repositories/bank_imports.rs:151`), `INSERT INTO reconciliation_rules` (`repositories/reconciliation_rules.rs:218`)
+   et son `UPDATE` ; les listes `COLUMNS` (`bank_transactions.rs:21`, `reconciliation_rules.rs:27`, `bank_accounts`) ; le
+   test d'aller-retour de l'AC-7 et un test d'import qui relit `provider_type` et `counterparty_email` les tiennent.
+   Inventaire `crates/kesh-api/tests/bank_account_closed_inventory.rs` : toute fonction **neuve** qui écrit
+   `bank_accounts` ou `bank_transactions` (p. ex. un écrivain dédié aux réglages PayPal) se classe au `REGISTRE` avec sa
+   raison, faute de quoi le test rougit ; `create_with_transactions` y est déjà. Codes neufs (`PAYPAL_LEDGER_REQUIRED`,
    `PAYPAL_CURRENCY_DUPLICATE`, `PAYPAL_FEE_ACCOUNT_INVALID`, `PAYPAL_ACCOUNT_IN_USE`, `PAYPAL_ACCOUNT_NOT_FOUND`,
    `PAYPAL_CSV_INVALID`, `PAYPAL_CURRENCY_ACCOUNT_MISSING`, `BANK_ACCOUNT_IS_PROVIDER`) : `errors.rs` et messages aux
    quatre locales (`crates/kesh-i18n/locales/*`). L'entité `ReconciliationRule` porte les trois filtres (lus, écrits
@@ -245,7 +280,8 @@ solde attende son rapprochement (38-11c).
 *Ajouté* — Un compte bancaire peut être le solde, dans une devise, d'un compte PayPal : sans IBAN, lié à un compte du
 plan en devise, avec son compte de frais. Le CSV PayPal d'un exercice s'importe d'un geste, ventilé par devise ; une
 ligne avec frais donne deux transactions ; les doublons sont ignorés. Un compte PayPal ne reçoit ni relevé bancaire
-ni règlement de facture.
+ni règlement de facture, ni paiement de facture fournisseur (limite de la phase 1 : payer par un compte interne ou une
+écriture à la main, puis rattacher la transaction).
 *Migration* — `20261120000001_paypal_import`, non breaking : la sauvegarde d'avant la mise à jour reste exigée (base,
 `.keshbackup`, dossier des documents) ; le retour à la version précédente passe par elle.
 
@@ -272,3 +308,12 @@ ni règlement de facture.
   aux règlements ; registre `LIB_ROUTES` et phrase du manuel d'administration ; course de l'unicité par devise
   refusée à l'import ; `with_account_locks` partagé ; frais positifs ; `ABSENCES_ADMISES_EPIC_37` laissé tel quel ;
   ligne citée `create_under_account_lock` (`:1278` → `:1532`) retirée.
+- 2026-11-20 — validation P2 (Claude Sonnet 5.5, contexte frais) : 0 CRITICAL, 0 HIGH, 4 MEDIUM, 2 LOW, remédiés dans la
+  fiche (rapport `kesh-gate-logs/epic-38-kiss/validation/38-11b-compte-paypal-et-import-P2.md`). Principaux : refus du
+  paiement d'une facture fournisseur **maintenu** (décision de l'orchestrateur) et écrit comme limite avec son remède,
+  angle mort des acceptations de la réconciliation générique nommé (précédent carte 34-11a2), chemins de
+  `invoice_settlements_write.rs` et `supplier_invoices.rs` complétés ; mécanisme de la levée de C-37-9
+  (`validate_journal_account_id`, `locked_ledger_type`, quatre appelants, `PATCH` et assistant toujours faux, retrait de
+  `paypal` par `PUT`) ; verrous sur le patron de `create_under_account_lock` (connexion dédiée, seconde transaction,
+  409 `RECONCILIATION_ACCOUNT_LOCKED`) ; écrivains SQL à colonnes explicites (silencieux) et inventaire
+  `bank_account_closed_inventory` ; statut `Traced` du registre précisé.
