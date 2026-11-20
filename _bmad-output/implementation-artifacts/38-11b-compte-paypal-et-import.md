@@ -127,10 +127,18 @@ solde attende son rapprochement (38-11c2).
      `repositories/accounts.rs:633`) reste la lecture qui juge.
    - Solde d'ouverture (`openingBalance` du `POST`, `enter_opening_balance` `:1265`) d'un compte PayPal en devise :
      refusé par le contrôle central existant des lignes en devise (`ACCOUNT_REQUIRES_CURRENCY`), constaté par un test,
-     rien d'écrit ; en CHF, inchangé.
-   - Un compte PayPal n'est jamais principal (CHECK de l'AC-1) ; sans IBAN, il n'entre ni aux lots pain.001 ni à la
-     QR-facture, qui refusent sur `iban.is_none()` (doc de `bank_account.rs:125-142`) — vérifié par un test qui tente
-     un lot pain.001 depuis un compte PayPal sans IBAN (refus existant).
+     rien d'écrit ; en CHF, admis, et **le contrat de l'instantané de la 34-2 (AC-10, C-e341-38) tenu** : les gardes 2
+     à 4, appelées avant l'écriture d'ouverture, ne font que des lectures verrouillantes (revue P1, M1 ; test de
+     l'écriture croisée et test de création avec ouverture).
+   - **La devise du compte du plan lié à un compte PayPal ne change plus** (revue P1, M3), dans aucun sens (retirée,
+     posée, remplacée), même sans ligne d'écriture : `PUT /api/v1/accounts/{id}` → 409
+     `ACCOUNT_CURRENCY_PROVIDER_LINKED` (`details: { bankAccountId }`, code neuf, quatre locales), jugé après
+     `ACCOUNT_CURRENCY_LOCKED` et avant `ACCOUNT_CURRENCY_IN_USE`.
+   - Un compte PayPal n'est jamais principal (CHECK de l'AC-1) ; sans IBAN, il n'entre pas à la QR-facture, qui
+     refuse sur `iban.is_none()` (doc de `bank_account.rs:125-142`). **Lots pain.001** (revue P1, M2) : la création
+     d'un lot (`payment_batches::create_batch`, lecture du compte de l'étape (0)) refuse un compte PayPal, **IBAN ou
+     non**, en 409 `BANK_ACCOUNT_IS_PROVIDER`, après « clos » et avant l'absence d'IBAN — testé pour les deux, aucun
+     lot ; un compte devenu PayPal après la création d'un lot est refusé à la confirmation (`pay_in_tx`).
    - **Refus serveur** (nouveau code `BANK_ACCOUNT_IS_PROVIDER`, 409, `details: { bankAccountId }`) : aperçu et
      création d'un import CAMT ou CSV (`routes/bank_imports.rs` `preview` `:1029`, `create` `:1216`), aperçu et
      création d'un relevé saisi à la main (`routes/bank_statements_manual.rs` `:132`, `:221`), règlement d'une facture
@@ -138,23 +146,34 @@ solde attende son rapprochement (38-11c2).
      lu dans la même instruction que `account_kind`, refus après « clos » comme la carte,
      `SettlementAccountIsCreditCard` de la 34-11a2 pour précédent : un `DbError` neuf, rendu 409) et paiement d'une
      facture fournisseur (`supplier_invoices::pay_in_tx_as`, `crates/kesh-db/src/repositories/supplier_invoices.rs:2018`,
-     compte bancaire choisi : ce chemin ne refuse pas la carte aujourd'hui, le refus PayPal y est neuf). Le CSV PayPal
-     passe par sa route (AC-4) ; les rattachements à une écriture existante (38-11c1) restent admis.
+     compte bancaire choisi : ce chemin ne refuse pas la carte aujourd'hui, le refus PayPal y est neuf) — refus dont
+     héritent la confirmation d'un lot pain.001 et l'**acceptation d'une proposition « facture fournisseur »**
+     (`accept_one_supplier_invoice`, qui appelle `pay_in_tx_as`) : là, le refus sort en `FailedProposal`
+     `BANK_ACCOUNT_IS_PROVIDER` (`details: { bankAccountId }`, bras nommé de
+     `supplier_payment_error_to_failed_proposal`, revue P1, M2), et non en `DATABASE_ERROR`. Le CSV PayPal passe par sa
+     route (AC-4) ; les rattachements à une écriture existante (38-11c1) restent admis.
    - ⚠️ **Limites écrites (décision de l'orchestrateur du 2026-11-20, validation P2)** — à reprendre au manuel par
      38-11d : (a) **phase 1 : une facture fournisseur ne se paie pas depuis un compte PayPal** (KISS : les achats PayPal
      passent par les règles, 38-11c2) ; *remède* : régler la facture par le choix « compte interne » (un compte du plan),
      ou passer l'écriture à la main (en devise pour un solde en devise, 37-3b), puis **rattacher** la transaction PayPal à
-     cette écriture (38-11c1 AC-1) ; (b) **angle mort assumé, comme la carte (34-11a2, C-e341-41)** : le refus ne couvre
-     que les deux écrivains ci-dessus ; l'acceptation d'une proposition « facture » ou « facture fournisseur » par la
-     réconciliation générique (`accept_one_invoice`, `routes/reconciliation.rs:3058`, `accept_one_supplier_invoice`,
-     `:3580`), les règlements groupés (`grouped_settlements.rs:784`, `:2325`), le rattachement de règlement de la 29-8
-     (`link_in_tx`), **la lecture des propositions de la réconciliation générique** (`get_proposals`,
+     cette écriture (38-11c1 AC-1) ; (b) **angle mort assumé, comme la carte (34-11a2, C-e341-41)** — **inventaire
+     clos** des écrivains « compte bancaire choisi par l'appelant » (refait à la remédiation de la revue P1, M2) :
+     *refusent* le règlement client, le paiement fournisseur et ce qui l'appelle (confirmation d'un lot,
+     `accept_one_supplier_invoice`), la création d'un lot pain.001, les imports CAMT, CSV et manuels ; *ne refusent
+     pas* un compte PayPal **CHF** — l'acceptation d'une proposition « facture » (`accept_one_invoice`,
+     `routes/reconciliation.rs:2580`), les règlements groupés (`routes/reconciliation_group.rs`, qui appelle
+     `grouped_settlements.rs:784`, `:2325`), le rattachement de règlement de la 29-8 (`link_in_tx`,
+     `reconciliation_link`), **la lecture des propositions de la réconciliation générique** (`get_proposals`,
      `routes/reconciliation.rs:1091`, qui saute le hors-CHF mais propose règles et factures pour une transaction PayPal
-     **CHF**) et **l'acceptation d'une proposition « règle »** (`accept_one_rule`, `:4191`, refus hors CHF seulement,
-     `:4385-4395`) ne refusent pas un compte PayPal CHF — l'écran les masque (`withoutProviders`, 38-11d AC-1), l'API
-     non ; *remède* : ne pas accepter la proposition, la passer en
-     rejet ou la traiter par le rapprochement PayPal (38-11c2). Un point de traçage est à ouvrir pour la phase 2 (revue P2,
-     rapport).
+     **CHF**), **l'acceptation d'une proposition « règle »** (`accept_one_rule`, refus hors CHF seulement) et
+     **l'éclatement d'une proposition** (`accept_one_split`), la **saisie manuelle** et l'**éclatement** d'une transaction
+     (`post_manual`, `post_split`, `reconciliation_manual`, `reconciliation_split`). *Tranché* (revue P1) : angle mort
+     écrit, non refus — en CHF, ces chemins passent une écriture juste sur le compte du plan du solde (la transaction
+     contre sa contrepartie), et le rapprochement PayPal propre (38-11c2) n'existe pas encore ; l'écran les masque
+     (`withoutProviders`, 38-11d AC-1), l'API non ; *remède* : ne pas accepter la proposition, la passer en rejet ou la
+     traiter par le rapprochement PayPal (38-11c2). Le rattachement à une écriture existante (`link_entry`, 38-11c1)
+     est admis, non un angle mort. Un point de traçage est à ouvrir pour la phase 2
+     (`kesh-gate-logs/epic-38-kiss/issues-a-ouvrir.md`, point 1).
 4. **AC-4 — Route d'import** `POST /api/v1/paypal-imports` (multipart : `file`, `account`), Comptable+, clés d'API
    `read-write` admises (comme `POST /api/v1/bank-imports`, `lib.rs:946`). Inscrite à `LIB_ROUTES`
    (`crates/kesh-api/tests/audit_route_registry.rs:440`) en `Traced, SansEcritureAuJournal` (statut `Traced` : c'est la
@@ -287,8 +306,9 @@ solde attende son rapprochement (38-11c2).
 *Ajouté* — Un compte bancaire peut être le solde, dans une devise, d'un compte PayPal : sans IBAN, lié à un compte du
 plan en devise, avec son compte de frais. Le CSV PayPal d'un exercice s'importe d'un geste, ventilé par devise ; une
 ligne avec frais donne deux transactions ; les doublons sont ignorés. Un compte PayPal ne reçoit ni relevé bancaire
-ni règlement de facture, ni paiement de facture fournisseur (limite de la phase 1 : payer par un compte interne ou une
-écriture à la main, puis rattacher la transaction).
+ni règlement de facture, ni paiement de facture fournisseur, ni lot de paiement pain.001 (limite de la phase 1 : payer
+par un compte interne ou une écriture à la main, puis rattacher la transaction) ; la devise de son compte du plan ne
+change plus.
 *Migration* — `20261120000001_paypal_import`, non breaking : la sauvegarde d'avant la mise à jour reste exigée (base,
 `.keshbackup`, dossier des documents) ; le retour à la version précédente passe par elle.
 
@@ -434,6 +454,58 @@ seed) :
   frontend ; aucun écran — 38-11d).
 - Migration et T0 : `T0.log` (forme MariaDB, rejeu, SQL de retrait joué puis migration réappliquée).
 
+### Remédiation de la revue P1
+
+*Le 2026-11-20, rapport `kesh-gate-logs/s38-11b/revue-p1-rapport.md` (0 CRITICAL, 0 HIGH, 3 MEDIUM, 7 LOW). Prémisses
+relues au code avant correction : les trois MEDIUM et L1, L2 se vérifient ; pour L2, `end_to_end_id` était déjà
+tronqué à 255 (`NAME_MAX_CHARS`), seuls `transaction_id` (frais `:FEE`) et `reference` (`TXN `) débordaient.*
+
+- **M1** — `bank_accounts::list_provider_balances_locked` (neuve, `kesh-db`) : comptes bancaires `LOCK IN SHARE MODE`,
+  puis devises des comptes du plan par identifiant, sous le même verrou (deux instructions : la portée d'un verrou de
+  lecture sur une sous-requête scalaire n'est pas garantie). `check_provider_guards_in_tx` l'emploie : au `POST`, toutes
+  les lectures avant l'écriture d'ouverture sont verrouillantes ; doc-comments de `create_once` et de la garde mis à
+  jour.
+- **M2** — (1) `payment_batches::create_batch` lit `provider` à l'étape (0) et refuse `BankAccountIsProvider` après
+  « clos », avant l'IBAN ; (2) bras nommé `BANK_ACCOUNT_IS_PROVIDER` dans `supplier_payment_error_to_failed_proposal` ;
+  (3) inventaire clos et décision (angle mort écrit pour `accept_one_invoice`, `accept_one_rule`, `accept_one_split`,
+  règlements groupés, `link_in_tx`, saisie manuelle et éclatement) recopiés à l'AC-3, limite (b) corrigée ;
+  `docs/api-external.md` (paragraphe du compte PayPal, tables des erreurs).
+- **M3** — garde 3 bis de `accounts::guard_currency_update` : tout changement de devise d'un compte lié à un compte
+  bancaire de prestataire (`provider_bank_account_linked_in_tx`, `LOCK IN SHARE MODE`) → `DbError::AccountCurrencyProviderLinked`,
+  409 `ACCOUNT_CURRENCY_PROVIDER_LINKED` (clé `error-account-currency-provider-linked` aux quatre locales,
+  `docs/api-external.md`).
+- **L1** — `recheck_targets_locked` (route d'import), en tête de la transaction d'écriture, sous les verrous nommés :
+  relit les soldes par `list_provider_balances_locked` ; devise sans solde → 422 `PROVIDER_CURRENCY_ACCOUNT_MISSING`,
+  deux → 409 `PROVIDER_CURRENCY_DUPLICATE`, un autre compte que celui verrouillé → 409 `OPTIMISTIC_LOCK_CONFLICT`.
+- **L2** — `PAYPAL_TRANSACTION_ID_MAX_CHARS` (255 − `:FEE`, assertion de compilation pour `TXN `) et
+  `check_transaction_id_lengths`, appelée après la lecture : 422 `PAYPAL_CSV_INVALID` (`PAYPAL_CSV_LINES`, erreur de ligne
+  `transaction_id`) au lieu d'une erreur de base.
+- **L3 à L7** : dette, `kesh-gate-logs/epic-38-kiss/issues-a-ouvrir.md` (points 5 à 9 ; point 1 annoté).
+
+**Tests** (recomptés de `44d5069e` à `ac73d4ea`, `grep -cE '#\[(sqlx::)?test'` aux deux bornes) : 6 neufs —
+`paypal_import_e2e.rs` 8 → 10 (`la_devise_du_compte_du_plan_d_un_solde_paypal_ne_change_pas`,
+`import_relit_les_soldes_sous_ses_verrous`), `bank_account_opening_balance_e2e.rs` 20 → 22
+(`solde_paypal_chf_cree_avec_son_ouverture`, `ecriture_croisee_pendant_la_creation_d_un_solde_paypal_est_vue`),
+`reconciliation_e2e.rs` 136 → 137 (`accepting_a_supplier_invoice_on_a_provider_account_is_refused_by_name`),
+`paypal_imports.rs` 9 → 10 (`identifiant_de_transaction_borne_a_la_colonne`) ; 2 étendus
+(`les_autres_chemins_refusent_un_compte_paypal` : lot depuis un compte PayPal sans IBAN — le code attendu passe de
+`PAYMENT_BATCH_ACCOUNT_HAS_NO_IBAN` à `BANK_ACCOUNT_IS_PROVIDER` — et avec IBAN ; `import_refus_de_tete_roles_et_cles` :
+identifiant de 252 caractères → 422). **Sondes négatives** (`kesh-gate-logs/s38-11b/mutations-p1.log`, script
+`mutations-p1.py`, fichier restauré après chaque) : les six mutations (M1, M2a lot, M2b bras, M3, L1, L2) font chacune
+rougir leur test.
+
+**Gates** au dernier commit de code `ac73d4ea` :
+
+- gate ciblé pendant la remédiation (`cible-3.log` : fmt, clippy workspace `-D warnings`, 222 tests des binaires
+  touchés passés ; `cible-4.log` : `paypal_import_e2e` 10/10) ;
+- `scripts/test-fast.sh --ci` par `heavy.sh`, base `kesh_s3811b` remise à zéro avant (DROP/CREATE, migrations, seed) :
+  **6203 exécutés, 6203 passés, 14 ignorés** (`gate-backend-p1.log`) ;
+- `scripts/gate-ci.sh` sur une copie `git archive` de `ac73d4ea` : **6222 passés, 0 échoué, 18 ignorés**
+  (`gate-ci-p1.log`), cible de compilation supprimée ensuite ;
+- Vitest (les catalogues `.ftl` ont une clé neuve) : **278 fichiers, 4612 tests passés** (`front-vitest-p1.log`) ;
+  `npm run check`, `lint-i18n-ownership`, `build` et l'E2E Playwright **non lancés** (aucun fichier du frontend
+  touché).
+
 ### File List
 
 Hors dépôt : `kesh-gate-logs/s38-11b/` (T0, gates, mutations, prompt de revue).
@@ -483,6 +555,7 @@ Hors dépôt : `kesh-gate-logs/s38-11b/` (T0, gates, mutations, prompt de revue)
 - `crates/kesh-db/src/repositories/bank_imports.rs`
 - `crates/kesh-db/src/repositories/bank_transactions.rs`
 - `crates/kesh-db/src/repositories/invoice_settlements_write.rs`
+- `crates/kesh-db/src/repositories/payment_batches.rs`
 - `crates/kesh-db/src/repositories/reconciliation.rs`
 - `crates/kesh-db/src/repositories/reconciliation_link.rs`
 - `crates/kesh-db/src/repositories/reconciliation_rules.rs`
@@ -510,6 +583,7 @@ Hors dépôt : `kesh-gate-logs/s38-11b/` (T0, gates, mutations, prompt de revue)
 - `crates/kesh-db/tests/account_columns_inventory.rs`
 - `crates/kesh-db/tests/lettering_documents_backfill.rs`
 - `crates/kesh-api/tests/bank_account_opening_balance_e2e.rs`
+- `_bmad-output/implementation-artifacts/38-11d-ecrans-manuel-e2e-paypal.md` (revue P1 : phrase de l'angle mort)
 - `docs/api-external.md`
 - `docs/manual/fr/admin-manual.tex`
 - `docs/migrations-idempotence-audit.md`
@@ -543,3 +617,12 @@ Hors dépôt : `kesh-gate-logs/s38-11b/` (T0, gates, mutations, prompt de revue)
   38-11c1 / 38-11c2 après le découpage.
 - 2026-11-20 — validation P4 (Claude Sonnet 5.5, contexte frais) : renvois « 38-11c » nus désignés 38-11c1 ou 38-11c2 après le découpage ; aucun autre changement.
 - 2026-11-20 — développée (Claude Opus 5.5) : T0 à T5, statut `review` ; Dev Agent Record ci-dessus (écarts 1 à 7 à relire en revue P1, prompt `kesh-gate-logs/s38-11b/revue-p1-prompt.md`).
+- 2026-11-20 — revue de code P1 (passe complète, une lentille ; rapport `kesh-gate-logs/s38-11b/revue-p1-rapport.md`) :
+  0 CRITICAL, 0 HIGH, 3 MEDIUM, 7 LOW. **Revue P1 remédiée** (commits `f31fdbf2` code, `ac73d4ea` tests) : M1 (lectures
+  verrouillantes avant l'écriture d'ouverture, `list_provider_balances_locked`), M2 (lot pain.001 refusé dès la
+  création, `FailedProposal` `BANK_ACCOUNT_IS_PROVIDER` à l'acceptation d'une facture fournisseur, inventaire clos et
+  angle mort tranché à l'AC-3), M3 (`ACCOUNT_CURRENCY_PROVIDER_LINKED`, code neuf, quatre locales), L1 (relecture sous
+  les verrous nommés) et L2 (identifiant borné, 422) corrigés ; L3 à L7 à la dette (`issues-a-ouvrir.md`, points 5 à 9).
+  Symptômes grepés (code, fiche, `docs/api-external.md`, fiche 38-11d — phrase de l'angle mort reprise au manuel).
+  Gates complets verts (Dev Agent Record). Prochaine passe : P2 complète, Opus
+  (`kesh-gate-logs/s38-11b/revue-p2-prompt.md`).

@@ -155,8 +155,9 @@ de champs de 38-11c1 AC-3 (`providerType`, `counterpartyEmail`, `direction`, nul
    aucun code TVA, pas de téléchargement automatique (phase 2) ; **une facture fournisseur ne se paie pas depuis un
    compte PayPal** (38-11b AC-3 (a)) — remède : la régler par « compte interne », ou passer l'écriture à la main (en
    devise pour un solde en devise), puis rattacher la transaction PayPal à cette écriture ; **angle mort** (38-11b
-   AC-3 (b)) : par l'API, la réconciliation générique ne refuse pas une proposition « facture », « facture
-   fournisseur » ou « règle » sur un compte PayPal en francs — la traiter par la page PayPal. **Ce que la phase 1 rend faux, à corriger dans le
+   AC-3 (b)) : par l'API, la réconciliation générique ne refuse pas une proposition « facture » ou « règle », ni la
+   saisie manuelle ou l'éclatement d'une transaction, sur un compte PayPal en francs — la traiter par la page PayPal
+   (la proposition « facture fournisseur » et les lots pain.001 sont refusés, revue P1 de 38-11b). **Ce que la phase 1 rend faux, à corriger dans le
    même commit** (symptôme grepé : `tenu en devise`, `en devise` près de `relevé`, `restent en CHF`) : `:1137` (« un
    compte en devise ne peut pas être lié à un compte bancaire » : sauf un compte PayPal), `:3328-3333` (limites du
    relevé saisi : « un compte bancaire est toujours lié à un compte en francs suisses », « les relevés en devise sont
