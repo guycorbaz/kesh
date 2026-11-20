@@ -1,6 +1,6 @@
 # Story 38-11b : réglages du compte PayPal et import du CSV, ventilé par devise (migration de l'epic)
 
-Status: ready-for-dev
+Status: review
 
 *Fiche rédigée le 2026-11-20, branche `epic/38-paypal`, numéros de ligne relevés après la fusion de `origin/main`
 (commit de fusion `43ceb541`), revérifiés à la validation P1 sur `origin/main` `fd04099f` (arbre `crates/` identique).
@@ -247,16 +247,16 @@ solde attende son rapprochement (38-11c2).
 
 ## Tâches
 
-- [ ] T0 — Reprendre `main` ; relire les migrations de `main` et des Epics 47 et 49 ; date de la migration ; preuve
+- [x] T0 — Reprendre `main` ; relire les migrations de `main` et des Epics 47 et 49 ; date de la migration ; preuve
   MariaDB de la forme `DROP CONSTRAINT` + `ADD CONSTRAINT` du même nom.
-- [ ] T1 — Migration, squash, audit des migrations, test de migration (AC-1).
-- [ ] T2 — Entités et dépôts `bank_accounts`, `bank_transactions`, `reconciliation_rules` (champs neufs) ;
+- [x] T1 — Migration, squash, audit des migrations, test de migration (AC-1).
+- [x] T2 — Entités et dépôts `bank_accounts`, `bank_transactions`, `reconciliation_rules` (champs neufs) ;
   constructions existantes (AC-8).
-- [ ] T3 — Réglages PayPal aux routes des comptes bancaires, `PATCH` refusé, levée de C-37-9, refus aux autres chemins
+- [x] T3 — Réglages PayPal aux routes des comptes bancaires, `PATCH` refusé, levée de C-37-9, refus aux autres chemins
   (AC-2, AC-3).
-- [ ] T4 — `with_account_locks` ; route d'import, ventilation, paires neutres, doublons, compte rendu ; registre des
+- [x] T4 — `with_account_locks` ; route d'import, ventilation, paires neutres, doublons, compte rendu ; registre des
   routes et phrase du manuel d'administration (AC-4 à AC-6).
-- [ ] T5 — Sauvegarde, export CSV (AC-7) ; i18n (AC-8).
+- [x] T5 — Sauvegarde, export CSV (AC-7) ; i18n (AC-8).
 
 ## Stratégie de tests
 
@@ -304,6 +304,216 @@ ni règlement de facture, ni paiement de facture fournisseur (limite de la phase
   appliquée ne se modifie plus (P8), et son horodatage doit rester après celles de `main` (risque écrit au fichier
   d'epic).
 
+## Dev Agent Record
+
+*Développée le 2026-11-20 (Claude Opus 5.5), worktree `kesh-wt38`, branche `epic/38-paypal`, commits `efb5fb0c` (code,
+migration, tests, i18n, docs) et `c7790f59` (un `allow` clippy du test de schéma). Base : `ce221ae8` (38-11a `done`).
+Journaux : `kesh-gate-logs/s38-11b/`. Commits suivants : `0da7b6d0` (trois tests ajustés après le premier gate complet).*
+
+### T0 — reprise de `main`, date, forme MariaDB
+
+- `git fetch origin main` : `origin/main` n'a aucun commit absent de la branche ; dernière migration de `main`
+  `20261118000001_grouped_settlements`. Epic 49 (`20261118000002`, branche `origin/epic/49-…`) et Epic 47
+  (`20261119000001`) relues, hors de cette branche : `20261120000001` reste après elles.
+- **Preuve MariaDB 10.11.19** (`T0.log`, base jetable `kesh_s3811b_t0` sur `kesh-mariadb-dev2`) : dans **un seul**
+  `ALTER TABLE`, `DROP CONSTRAINT IF EXISTS x, ADD CONSTRAINT IF NOT EXISTS x` **retire la contrainte sans la reposer**
+  (l'`IF NOT EXISTS` est jugé sur l'état d'avant : `COUNT = 0` après le premier passage). Forme retenue :
+  `DROP CONSTRAINT IF EXISTS x, ADD CONSTRAINT x` (sans `IF NOT EXISTS`) dans le même `ALTER` : posée au premier
+  passage, présente au rejeu, refuse un compte `bank` sans IBAN (`ERROR 4025`). La migration entière, rejouée à la main
+  sur une base migrée, est sans effet (contraintes et index inchangés) → verdict `yes`. Le SQL de retrait écrit en tête
+  de la migration a été joué tel quel, puis la migration réappliquée (`T0.log`).
+- Clé étrangère : `ADD CONSTRAINT fk… FOREIGN KEY IF NOT EXISTS (…)` (la forme `ADD CONSTRAINT IF NOT EXISTS fk…
+  FOREIGN KEY` est une erreur 1064, constatée).
+
+### Ce qui est fait
+
+- **Migration** `20261120000001_paypal_import.sql` (AC-1), conforme à la fiche, avec deux constats de développement :
+  (1) la forme de la repose ci-dessus ; (2) **CHECK `chk_bank_accounts_provider` rendue null-sûre** (`provider IS NOT
+  NULL AND provider_account IS NOT NULL AND …`) : la rédaction de la fiche laissait passer un libellé sans prestataire
+  et un prestataire sans libellé (un CHECK qui vaut `NULL` est satisfait) — trouvé par le test de schéma, corrigé avant
+  toute application hors base jetable (P8). MariaDB retire l'index implicite `fk_bank_transactions_bank_account` au
+  profit du neuf `idx_bank_transactions_account_txid` (squash) ; le SQL de retrait le repose. Squash régénéré
+  (`scripts/regen-test-schema.sh`, client `mariadb` enveloppé en `--skip-ssl` dans `kesh-gate-logs/s38-11b/bin/` : le
+  client de la station exige TLS ; d'où aussi l'en-tête du dump, `40101`/`sandbox`, qui diffère de l'ancien).
+  `migrations.sha384` : ligne ajoutée. **P5** : ligne `yes` ; recomptés depuis la source : `ls …/*.sql | wc -l` = 96,
+  `grep -c '^| \`20'` = 96, `yes` 12 + `tracked-by-sqlx` 84 + `no` 0 = 96. **P6** : `grep -rn
+  "migrations.len()\|apply_migrations_up_to" crates/` (77 lignes) — tous les sites résolvent par version
+  (`migrations_before`) sauf `migrations_upgrade_path.rs::upgrade_path_preserves_data`, positionnel assumé : `total`
+  95 → 96 et `total - 61` → `total - 62`, frontière 34 inchangée (et les quatre mentions de 61/95 du fichier).
+  **P7** : DDL seul. **P8** : aucune migration appliquée touchée. Le semis de
+  `draft_migration_preserves_a_populated_{016,rc1}_base` appelle `pay_in_tx`, qui lit désormais `provider` sur un
+  schéma d'avant la migration : la colonne y est **prêtée** (ajoutée vide avant le semis, retirée avec les autres
+  colonnes postérieures), seul moyen de garder le semis par le code de production.
+- **Entités et dépôts** (T2) : `BankAccountProvider` aplati dans `BankAccount` (`#[sqlx(flatten)]`, `#[serde(flatten)]`,
+  JSON `provider` + `paypal`) ; `BankTransaction`/`NewBankTransaction` (`provider_type`, `counterparty_email`) ;
+  `ReconciliationRule`, `NewReconciliationRule`, `UpdateReconciliationRule` (trois filtres, `INSERT` et `UPDATE`
+  dynamique complétés ; l'API de la phase 1 passe `None`). **Source unique** des colonnes de `bank_transactions`
+  (`bank_imports::TX_COLUMNS` et `reconciliation::BANK_TX_COLUMNS` étaient deux copies). Écrivains SQL complétés :
+  `INSERT` du `POST`, `update_for_company` (`BankAccountPutFields` gagne trois champs), `INSERT INTO bank_transactions`
+  de `create_with_transactions`, `INSERT`/`UPDATE` de `reconciliation_rules`. **Laissés tels quels, délibérément** :
+  `bank_accounts::create` et `upsert_primary_in_tx` (ils créent un compte ordinaire, les trois colonnes prennent leur
+  `NULL` ; aucun ne peut créer un compte PayPal). Constructions inventoriées par le compilateur (E0063) : **52
+  initialiseurs** complétés (25 + 17 + 10 aux trois passes). Dépôt : `list_provider_balances`,
+  `count_transactions_locked`, `existing_transaction_ids`, `accounts::fee_account_facts_in_share_mode` (lecteurs ;
+  aucun écrivain neuf, l'inventaire `bank_account_closed_inventory` est resté vert).
+- **Routes des comptes bancaires** (T3, AC-2, AC-3) : corps `paypal` (`POST` ; `PUT` en double option : absent =
+  inchangé, `null` = retiré) ; garde 1 (libellé) dans `validate_bank_input`, fonction commune au `POST` et au `PUT` ;
+  gardes 2 à 4 dans **une** fonction, `check_provider_guards_in_tx`, appelée par les deux sous la sentinelle, après
+  la relecture du compte lié, avant tout exclusif sur `bank_accounts` ; garde 5 dans `refuse_provider_change_in_use`,
+  en pré-vol (pool) puis sous le `FOR UPDATE` de la ligne. Levée de C-37-9 : paramètre `provider` de
+  `validate_journal_account_id` et `locked_ledger_type`, vrai au `POST`/`PUT` sur l'état résultant, toujours faux au
+  `PATCH` et à l'assistant. `PATCH` d'un compte PayPal → `400 BANK_ACCOUNT_FIELD_NOT_ALLOWED` (`journalAccountId`), en
+  pré-vol et sous verrou. IBAN facultatif, QR-IBAN et principal refusés, carte + `paypal` refusée
+  (`CREDIT_CARD_FIELD_NOT_ALLOWED`, `field: paypal`). Traces : les trois champs aux `details`.
+  Refus `409 BANK_ACCOUNT_IS_PROVIDER` (`DbError::BankAccountIsProvider`) : imports CAMT/CSV (aperçu, création ; helper
+  `refuse_provider_account`), relevé manuel (aperçu, création, par `check_statement`), règlement client (après « clos »
+  et la carte, même instruction), paiement fournisseur (après « clos », même instruction).
+- **Import** (T4, AC-4 à AC-6) : `crates/kesh-api/src/routes/paypal_imports.rs` (fonctions pures `ventilate`,
+  `transactions_of_row`, `dedupe_rows`, constantes `PAYPAL_FEE_SUFFIX`, `PAYPAL_NEUTRAL_PAIR_TYPES`) ; route
+  `POST /api/v1/paypal-imports` (même limite de corps que l'import bancaire) ; `with_account_locks` dans
+  `kesh-reconciliation/src/mutex.rs` (le nom du verrou et le `GET_LOCK` extraits en deux helpers partagés avec
+  `with_account_lock`, sans changer son comportement). Registre `LIB_ROUTES` (`Traced, SansEcritureAuJournal`) :
+  157 → 158 routes, 149 → 150 tracées, registre complet 161 → 162, sans écriture au journal 128 → 129 ; manuel
+  d'administration (`.tex` seul) : « 150 des 158 », « 150 + 4 + 4 = 158 ». Action d'audit `paypal_import.created`
+  (`audit_labels`, quatre locales).
+- **AC-7** : trois exports CSV (colonnes **en fin de ligne**), aller-retour d'une sauvegarde et sauvegarde 0.19.0 sans
+  les huit colonnes (`admin_full_import_e2e.rs`) ; `ABSENCES_ADMISES_EPIC_37` et `TABLES_TO_TRUNCATE` non touchés.
+- **AC-8** : huit codes neufs (`errors.rs`) et treize clés aux quatre locales (dix messages d'erreur, deux de forme du
+  libellé, une action d'audit) ; messages `PROVIDER_*` sans nom de prestataire. `docs/api-external.md` : section « Le
+  compte PayPal et l'import de son relevé », table des ressources, huit lignes à la table des erreurs.
+
+### Écarts à la fiche (décidés, à relire en revue)
+
+1. **Ordre au `PUT`** : le pré-vol de la garde 5 (`PROVIDER_ACCOUNT_IN_USE`) passe **avant** les refus de forme, et
+   non seulement avant `ACCOUNT_IN_FOREIGN_CURRENCY` : sans cela, retirer `paypal` d'un compte mouvementé sans IBAN
+   rendait « IBAN invalide » au lieu du 409 qui dit la vraie raison. Au `POST`, l'ordre de la fiche est tenu (forme →
+   compte lié → unicité → frais) ; un `404` de compte lié inconnu (pré-vol existant) passe avant la garde 2.
+2. **Garde d'unicité sérialisée en fait** : la lecture se fait sous la sentinelle `companies` que prennent le `POST` et
+   le `PUT` ; la fiche la disait « non sérialisée ». Le refus d'ambiguïté de l'import (AC-4) reste, testé par une
+   ligne écrite en base.
+3. **Unités du compte rendu** : `inserted` et `duplicates` comptent des **transactions** (une ligne à frais en compte
+   deux) ; une ligne est ignorée entière si son identifiant a paru plus haut dans le fichier ou si sa transaction
+   brute **ou** ses frais sont déjà sur le compte.
+4. **Période et solde de clôture** d'une entrée : ceux des lignes **insérées** de la devise ; le solde est celui de la
+   ligne de date la plus tardive (à date égale, la dernière du fichier). Une devise tout en doublons n'a pas d'entrée
+   (fiche) — son empreinte n'est donc pas gardée.
+5. **Trace `paypal_import.created`** : `entity_type = bank_account`, `entity_id` = le plus petit identifiant des soldes
+   de ce compte PayPal (aucune entité « compte PayPal » n'existe en phase 1).
+6. **Libellé** : refusé aussi s'il porte un caractère caché ou un saut de ligne (prédicat commun
+   `is_hidden_in_line`), au-delà de la fiche ; libellé de détail plafonné à 500 caractères (borne de la saisie
+   manuelle), nom à 255, type à 64, adresse à 254.
+7. **Solde d'ouverture d'un compte PayPal EUR** : le test constate `ACCOUNT_REQUIRES_CURRENCY` sur un exercice
+   multi-devises ; sur un exercice mono-devise, le refus central est `MULTI_CURRENCY_DISABLED` (rien d'écrit non plus).
+
+### Tests (recomptés de `ce221ae8` à `efb5fb0c`, `grep -cE '#\[(sqlx::)?test'` aux deux bornes)
+
+23 tests neufs : `paypal_import_e2e.rs` 8 (HTTP), `paypal_imports.rs` 9 (unitaires de la ventilation),
+`paypal_import_schema.rs` 2 (contraintes), `admin_full_import_e2e.rs` 2 (AC-7), `bank_account.rs` 2 (JSON, borne) ; un
+test étendu (`serialize_bank_accounts_csv_porte_la_description`). **Sondes négatives** (`mutations.log`, chaque
+mutation annulée par `git checkout`) : refus PayPal du règlement retiré → 1 test rouge ; doublons en base ignorés → 2 ;
+levée de C-37-9 retirée sous verrou → 7 ; paires neutres importées → 3 ; garde 5 retirée → 1. La CHECK null-sûre a été
+trouvée par le test de schéma lui-même (rouge sur la rédaction de la fiche).
+
+### Gates
+
+Au dernier commit de code `0da7b6d0` (base `kesh_s3811b` remise à zéro avant chaque gate : DROP/CREATE, migrations,
+seed) :
+
+- `scripts/test-fast.sh --ci` (fmt, clippy `-D warnings`, nextest) par `heavy.sh` : **6197 exécutés, 6197 passés,
+  14 ignorés** (`gate-backend.log`). Deux runs précédents, rouges, ont été corrigés : un `too_many_arguments` du test
+  de schéma (clippy n'avait tourné qu'avant sa création), puis 5 tests (liste de clés de la réponse
+  `bank_account_opening_balance_e2e`, inventaire `account_columns_inventory` qui exigeait le classement de
+  `bank_accounts.fee_account_id`, trois tests de `lettering_documents_backfill` dont le montage paie une facture sur un
+  schéma d'avant la migration — colonne `provider` prêtée comme les autres colonnes postérieures).
+- `scripts/gate-ci.sh` sur une copie `git archive` de `0da7b6d0` (`gate-ci-src/`, conteneur `kesh-mariadb-dev2` par les
+  enveloppes, mem-guard actif) : **6216 passés, 0 échoué, 18 ignorés** (`gate-ci.log`) ; cible de compilation
+  supprimée ensuite.
+- Frontend : aucun fichier du frontend touché ; `npm run test:unit` lancé parce que des tests Vitest lisent les
+  catalogues `.ftl` : **278 fichiers, 4612 tests passés** (`front-vitest.log`, après `npm ci` dans le worktree).
+  `npm run check`, `lint-i18n-ownership`, `build` et l'**E2E Playwright non lancés** (la story ne touche aucun code du
+  frontend ; aucun écran — 38-11d).
+- Migration et T0 : `T0.log` (forme MariaDB, rejeu, SQL de retrait joué puis migration réappliquée).
+
+### File List
+
+Hors dépôt : `kesh-gate-logs/s38-11b/` (T0, gates, mutations, prompt de revue).
+
+- `_bmad-output/implementation-artifacts/38-11b-compte-paypal-et-import.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- `crates/kesh-api/src/audit_labels.rs`
+- `crates/kesh-api/src/errors.rs`
+- `crates/kesh-api/src/exports/csv_tables.rs`
+- `crates/kesh-api/src/lib.rs`
+- `crates/kesh-api/src/routes/bank_accounts.rs`
+- `crates/kesh-api/src/routes/bank_import_fingerprint.rs`
+- `crates/kesh-api/src/routes/bank_imports.rs`
+- `crates/kesh-api/src/routes/bank_statements_manual.rs`
+- `crates/kesh-api/src/routes/invoice_pdf_service.rs`
+- `crates/kesh-api/src/routes/mod.rs`
+- `crates/kesh-api/src/routes/onboarding.rs`
+- `crates/kesh-api/src/routes/paypal_imports.rs`
+- `crates/kesh-api/src/routes/reconciliation.rs`
+- `crates/kesh-api/src/routes/reconciliation_rules.rs`
+- `crates/kesh-api/tests/admin_full_import_e2e.rs`
+- `crates/kesh-api/tests/audit_route_registry.rs`
+- `crates/kesh-api/tests/bank_accounts_closed_e2e.rs`
+- `crates/kesh-api/tests/bank_imports_e2e.rs`
+- `crates/kesh-api/tests/dates_bornes_e2e.rs`
+- `crates/kesh-api/tests/jour_suisse_nuit_e2e.rs`
+- `crates/kesh-api/tests/paypal_import_e2e.rs`
+- `crates/kesh-api/tests/project_reassignment_e2e.rs`
+- `crates/kesh-api/tests/reconciliation_e2e.rs`
+- `crates/kesh-api/tests/reconciliation_group_e2e.rs`
+- `crates/kesh-api/tests/reconciliation_link_e2e.rs`
+- `crates/kesh-api/tests/reconciliation_link_entry_e2e.rs`
+- `crates/kesh-api/tests/reconciliation_manual_e2e.rs`
+- `crates/kesh-api/tests/reconciliation_rules_e2e.rs`
+- `crates/kesh-api/tests/reconciliation_split_e2e.rs`
+- `crates/kesh-api/tests/rejeu_interblocage_e2e.rs`
+- `crates/kesh-db/migrations.sha384`
+- `crates/kesh-db/migrations/20261120000001_paypal_import.sql`
+- `crates/kesh-db/src/backup.rs`
+- `crates/kesh-db/src/entities/bank_account.rs`
+- `crates/kesh-db/src/entities/bank_transaction.rs`
+- `crates/kesh-db/src/entities/mod.rs`
+- `crates/kesh-db/src/entities/reconciliation_rule.rs`
+- `crates/kesh-db/src/errors.rs`
+- `crates/kesh-db/src/repositories/accounts.rs`
+- `crates/kesh-db/src/repositories/bank_accounts.rs`
+- `crates/kesh-db/src/repositories/bank_imports.rs`
+- `crates/kesh-db/src/repositories/bank_transactions.rs`
+- `crates/kesh-db/src/repositories/invoice_settlements_write.rs`
+- `crates/kesh-db/src/repositories/reconciliation.rs`
+- `crates/kesh-db/src/repositories/reconciliation_link.rs`
+- `crates/kesh-db/src/repositories/reconciliation_rules.rs`
+- `crates/kesh-db/src/repositories/supplier_invoices.rs`
+- `crates/kesh-db/test-schema/0001_schema_squash.sql`
+- `crates/kesh-db/tests/account_currency_repository.rs`
+- `crates/kesh-db/tests/bank_accounts_repository.rs`
+- `crates/kesh-db/tests/bank_imports_repository.rs`
+- `crates/kesh-db/tests/bank_transactions_repository.rs`
+- `crates/kesh-db/tests/credit_card_repository.rs`
+- `crates/kesh-db/tests/migrations_upgrade_path.rs`
+- `crates/kesh-db/tests/paypal_import_schema.rs`
+- `crates/kesh-db/tests/reconciliation_repository.rs`
+- `crates/kesh-db/tests/reconciliation_rules_repository.rs`
+- `crates/kesh-i18n/locales/de-CH/messages.ftl`
+- `crates/kesh-i18n/locales/en-CH/messages.ftl`
+- `crates/kesh-i18n/locales/fr-CH/messages.ftl`
+- `crates/kesh-i18n/locales/it-CH/messages.ftl`
+- `crates/kesh-reconciliation/src/lib.rs`
+- `crates/kesh-reconciliation/src/manual.rs`
+- `crates/kesh-reconciliation/src/matching.rs`
+- `crates/kesh-reconciliation/src/mutex.rs`
+- `crates/kesh-reconciliation/src/rules.rs`
+- `crates/kesh-reconciliation/src/split.rs`
+- `crates/kesh-db/tests/account_columns_inventory.rs`
+- `crates/kesh-db/tests/lettering_documents_backfill.rs`
+- `crates/kesh-api/tests/bank_account_opening_balance_e2e.rs`
+- `docs/api-external.md`
+- `docs/manual/fr/admin-manual.tex`
+- `docs/migrations-idempotence-audit.md`
+
 ## Change Log
 
 - 2026-11-20 — fiche rédigée (phase 1 KISS), non validée.
@@ -332,3 +542,4 @@ ni règlement de facture, ni paiement de facture fournisseur (limite de la phase
   comptes bancaires avec `provider` (l'écran en tire `withoutProviders`, générique pour les Epics 39 et 40) ; renvois à
   38-11c1 / 38-11c2 après le découpage.
 - 2026-11-20 — validation P4 (Claude Sonnet 5.5, contexte frais) : renvois « 38-11c » nus désignés 38-11c1 ou 38-11c2 après le découpage ; aucun autre changement.
+- 2026-11-20 — développée (Claude Opus 5.5) : T0 à T5, statut `review` ; Dev Agent Record ci-dessus (écarts 1 à 7 à relire en revue P1, prompt `kesh-gate-logs/s38-11b/revue-p1-prompt.md`).
