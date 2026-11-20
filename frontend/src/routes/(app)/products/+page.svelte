@@ -31,6 +31,7 @@
 		formatVatRate,
 		normalizePriceInput
 	} from '$lib/features/products/product-helpers';
+	import { amountEntryMessage } from '$lib/features/journal-entries/amount-entry-message';
 	import Big from 'big.js';
 
 	import { getVatRates } from '$lib/features/vat-rates';
@@ -320,19 +321,75 @@
 		formOpen = true;
 	}
 
+	// Story 48-10 (#1173, D1) — le refus du prix, affiché SOUS LE CHAMP (D3 de la 36-18a) : un
+	// prix ambigu (« 1.250 », qui partait et que le serveur lisait 1,25), illisible ou négatif.
+	// `''` pour un prix lisible et pour le prix vide, dont le motif (« Le prix est obligatoire »)
+	// reste au pied du formulaire.
+	function priceMessageFor(cls: ReturnType<typeof classifyPriceInput>): string {
+		switch (cls) {
+			case 'ambiguous':
+				return amountEntryMessage('ambiguous', 4);
+			case 'negative':
+				return i18nMsg('product-error-price-negative', 'Le prix doit être positif ou nul');
+			case 'invalid':
+				return i18nMsg('product-error-price-invalid', 'Format de prix invalide');
+			default:
+				return '';
+		}
+	}
+	let priceClass = $derived(classifyPriceInput(formPrice));
+	let priceMessage = $derived(priceMessageFor(priceClass));
+
+	// Story 48-15 : le nom n'a plus de `maxlength`, qui coupait en silence un texte collé (le
+	// nom devient la désignation de la ligne de facture, et donc du PDF). Trop long, il est
+	// refusé ici, et le motif s'affiche au pied du formulaire (`formTouched && formValidation`).
+	// Revue P1 (B2, E2) : compté en caractères (points de code), comme le serveur
+	// (`products.rs`, `chars().count()`), non en unités UTF-16.
+	// Story 48-10 : le pied garde le motif du nom et du prix vide ; un prix ambigu, illisible
+	// ou négatif s'affiche sous son champ (`priceMessage`), et le pied ne le répète pas.
 	let formValidation = $derived.by(() => {
 		if (!formName.trim()) return i18nMsg('product-error-name-required', 'Le nom est obligatoire');
-		if (formName.trim().length > 255)
+		if ([...formName.trim()].length > 255)
 			return i18nMsg('product-error-name-too-long', 'Le nom doit faire au plus 255 caractères');
-		const cls = classifyPriceInput(formPrice);
-		if (cls === 'empty')
+		if (priceClass === 'empty')
 			return i18nMsg('product-error-price-required', 'Le prix est obligatoire');
-		if (cls === 'negative')
-			return i18nMsg('product-error-price-negative', 'Le prix doit être positif ou nul');
-		if (cls === 'invalid')
-			return i18nMsg('product-error-price-invalid', 'Format de prix invalide');
-		return '';
+		return priceMessage;
 	});
+
+	/**
+	 * Les messages du pied qui ne viennent PAS du prix : le nom (vide, trop long, doublon refusé
+	 * par le serveur) et les taux de TVA (chargement, échec). Une saisie du prix ne les efface pas.
+	 */
+	function nonPriceMessages(): string[] {
+		return [
+			i18nMsg('product-error-name-required', 'Le nom est obligatoire'),
+			i18nMsg('product-error-name-too-long', 'Le nom doit faire au plus 255 caractères'),
+			i18nMsg('product-error-name-duplicate', 'Un produit avec ce nom existe déjà'),
+			i18nMsg(
+				'product-error-vat-fetch-failed',
+				'Impossible de charger les taux TVA. Vérifiez la connexion réseau et rechargez la page.'
+			),
+			i18nMsg('product-error-vat-loading', 'Chargement des taux TVA en cours, veuillez patienter…')
+		];
+	}
+
+	/**
+	 * Story 48-10 (D1, M19 ; revue P1, B1, E1) — à la saisie du prix, le message rouge du pied
+	 * s'efface, **sauf** s'il désigne autre chose que le prix (`nonPriceMessages`) : le refus du
+	 * prix posé par une soumission (ambigu, illisible, négatif, mais aussi « Le prix est
+	 * obligatoire ») et un refus du serveur sur le prix (plafond, échelle) ne restent pas périmés
+	 * sous un prix corrigé. Un refus du serveur sur une autre cause que celles nommées s'efface
+	 * aussi : la soumission suivante le redit s'il tient encore.
+	 *
+	 * ⚠️ La formule de la fiche (`formError === priceMessage`) ne suffit pas : le gestionnaire
+	 * `oninput` (délégué en Svelte 5) s'exécute APRÈS la mise à jour de `formPrice` par
+	 * `bind:value`, si bien que `priceMessage` y vaut déjà celui de la NOUVELLE saisie (`''` après
+	 * correction). Constaté par la mutation `M19-litteral` (`kesh-gate-logs/e4810/mut/`, C-e4810-1).
+	 */
+	function onPriceInput() {
+		formTouched = true;
+		if (formError !== '' && !nonPriceMessages().includes(formError)) formError = '';
+	}
 
 	async function submitForm() {
 		// Garde anti double-submit : la touche Entrée peut déclencher le form
@@ -357,15 +414,17 @@
 		}
 		formError = formValidation;
 		if (formError) return;
+		// Story 48-10 (D1) : la charge d'une lecture claire (« 1'250 » → `1250`, « 10,50 » →
+		// `10.50`). `formValidation` vide garantit qu'elle existe ; la garde reste, défensive.
+		const unitPrice = normalizePriceInput(formPrice);
+		if (unitPrice === null) return;
 
 		formSubmitting = true;
 		try {
 			const payload = {
 				name: formName.trim(),
 				description: formDescription.trim() || null,
-				// Normalise la virgule décimale (claviers mobiles suisses) en point
-				// avant envoi au backend qui attend la représentation canonique.
-				unitPrice: normalizePriceInput(formPrice),
+				unitPrice,
 				vatRate: formVatRate,
 				// TOUJOURS envoyé, valeur ou `null`, jamais omis : le `PUT` est
 				// full-replace (D5 de 16-2a) et une clé absente EFFACERAIT le
@@ -634,7 +693,6 @@
 					bind:value={formName}
 					oninput={() => (formTouched = true)}
 					required
-					maxlength={255}
 				/>
 			</div>
 
@@ -651,15 +709,30 @@
 
 			<div>
 				<label for="form-price">{i18nMsg('product-form-price', 'Prix unitaire')} *</label>
+				<!-- Story 48-10 (#1173, D1 ; D3 de la 36-18a) : le refus du prix sous le champ,
+				     désigné par `aria-describedby` ; le prix vide garde son motif au pied. -->
 				<Input
 					id="form-price"
 					type="text"
 					inputmode="decimal"
 					bind:value={formPrice}
-					oninput={() => (formTouched = true)}
+					oninput={onPriceInput}
 					placeholder="0.00"
 					required
+					class={priceMessage ? 'border-destructive' : undefined}
+					aria-invalid={!!priceMessage}
+					aria-describedby={priceMessage ? 'form-price-error' : undefined}
 				/>
+				{#if priceMessage}
+					<p
+						id="form-price-error"
+						class="mt-1 text-xs text-destructive"
+						role="alert"
+						data-testid="product-form-price-error"
+					>
+						{priceMessage}
+					</p>
+				{/if}
 			</div>
 
 			<div>
@@ -719,9 +792,10 @@
 				</p>
 			</div>
 
-			{#if formError}
+			<!-- Story 48-10 (D1) : le pied ne répète pas le refus du prix, déjà sous le champ. -->
+			{#if formError && formError !== priceMessage}
 				<p class="text-sm text-destructive" data-testid="product-form-error">{formError}</p>
-			{:else if formTouched && formValidation}
+			{:else if formTouched && formValidation && formValidation !== priceMessage}
 				<p class="text-sm text-muted-foreground">{formValidation}</p>
 			{/if}
 

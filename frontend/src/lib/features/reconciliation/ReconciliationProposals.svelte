@@ -180,6 +180,16 @@
 		// la fonction lit avant son premier `await`, et une lecture ferait de chaque demande de
 		// confirmation le déclencheur d'une relecture, qui la refermerait aussitôt.
 		pendingGesture = null;
+		// Story 48-14 (#1262, D3) — toute relecture consomme les règlements groupés aboutis en
+		// arrière-plan ; consommés AVANT le premier `await`, pour que la microtâche de
+		// `flushPendingReload` ne relise pas une seconde fois. Variable non réactive : aucune
+		// dépendance de l'`$effect` ci-dessous. Revue P1 (B4) : ils s'ajoutent au bilan de la
+		// relecture qui les consomme, APRÈS le premier `await` (lire `lastSuccessCount` avant
+		// ferait de lui une dépendance de l'`$effect`). Une relecture en échec les rend à l'attente
+		// (la liste n'est pas relue) ; une relecture dépassée les compte au bilan, sans les rendre :
+		// la relecture plus récente, partie après elle, voit déjà ces règlements (reprise P1).
+		const settled = settledInBackground;
+		settledInBackground = 0;
 		const myGen = ++loadGen;
 		loading = true;
 		errorMsg = null;
@@ -187,12 +197,20 @@
 			// `limit` est lu ici, avant le premier `await` : l'`$effect` qui appelle `load()` le
 			// suit, si bien que changer `limit` recharge la liste.
 			const r = await getProposals(bankAccountId, limit);
-			if (myGen !== loadGen) return; // stale response, drop
+			if (myGen !== loadGen) {
+				lastSuccessCount += settled;
+				return; // stale response, drop
+			}
 			proposals = r.proposals;
 			hasMore = r.hasMore;
 			selected = new Set();
+			lastSuccessCount += settled;
 		} catch (e) {
-			if (myGen !== loadGen) return;
+			if (myGen !== loadGen) {
+				lastSuccessCount += settled;
+				return;
+			}
+			settledInBackground += settled;
 			errorMsg = errorMessageOf(e);
 		} finally {
 			if (myGen === loadGen) loading = false;
@@ -331,7 +349,60 @@
 	async function onGroupStale() {
 		groupOpen = false;
 		groupProposal = null;
+		// Story 48-14 (revue P1, B4) : la relecture comptera un règlement abouti en arrière-plan ;
+		// elle ouvre alors un nouveau bilan, plutôt que d'ajouter au bilan d'un geste ancien.
+		if (settledInBackground > 0) clearBatchReport();
 		await load();
+	}
+
+	/**
+	 * Story 48-14 (#1262, D3) — les règlements groupés aboutis en arrière-plan dont la liste n'a
+	 * pas encore été relue. Toute relecture démonte la modale ouverte (les modales vivent sous
+	 * `{:else}` de `{#if loading}`) et referme la confirmation : la relecture attend donc qu'aucune
+	 * modale ne soit ouverte, ni aucun lot *Accepter* / *Rejeter* en cours (revue P1, E2 : sa
+	 * relecture efface le relevé du lot). `load()` les consomme, quel que soit son appelant, et les
+	 * ajoute au bilan (revue P1, B4 : le bilan du règlement ne se perd pas). Non réactif.
+	 */
+	let settledInBackground = 0;
+
+	/** Une des cinq modales est ouverte : les quatre fenêtres et la confirmation « déjà comptabilisée ». */
+	function anyModalOpen(): boolean {
+		return groupOpen || manualOpen || splitOpen || linkOpen || pendingGesture !== null;
+	}
+
+	/** D3 — la relecture d'un règlement en arrière-plan attend : une modale ouverte, ou un lot en cours. */
+	function reloadMustWait(): boolean {
+		return anyModalOpen() || busy;
+	}
+
+	/**
+	 * Ce que fait le succès immédiat d'un règlement groupé : nouveau bilan, liste relue — `load()`
+	 * y compte les règlements en attente.
+	 */
+	async function reloadAfterGroupSettlement(): Promise<void> {
+		clearBatchReport();
+		await load();
+	}
+
+	/** D3 — le règlement a abouti, sa fenêtre fermée pendant l'envoi : relu aussitôt, ou différé. */
+	async function onGroupSettledInBackground(): Promise<void> {
+		settledInBackground += 1;
+		if (reloadMustWait()) return;
+		await reloadAfterGroupSettlement();
+	}
+
+	/**
+	 * D3 — une modale vient de se fermer par un chemin qui ne relit pas lui-même (Annuler, Échap) :
+	 * la relecture différée part, si plus rien ne la retient (jamais à la fin d'un lot, revue P2). Hors de la
+	 * pile d'appel (`queueMicrotask`) : une modale enchaîne fermeture et relecture dans un ordre qui
+	 * varie (`onSuccess` puis `onOpenChange(false)`, ou `onOpenChange(false)` puis `onStale`) ; la
+	 * relecture qu'elle lance consomme l'attente avant la microtâche — une seule relecture.
+	 */
+	function flushPendingReload(): void {
+		queueMicrotask(() => {
+			if (settledInBackground === 0 || reloadMustWait()) return;
+			void reloadAfterGroupSettlement();
+		});
 	}
 
 	/**
@@ -450,9 +521,13 @@
 		runGesture({ kind: gesture.kind, proposal: current });
 	}
 
-	/** *Annuler* : rien n'est fait. */
+	/**
+	 * *Annuler* : rien n'est fait. Story 48-14 (#1262, D3) : la relecture différée d'un règlement
+	 * groupé abouti pendant que la confirmation était ouverte part maintenant.
+	 */
 	function cancelGesture(): void {
 		pendingGesture = null;
+		flushPendingReload();
 	}
 
 	// Story 29-6 (#665, AC10) — une ligne sans proposition se coche (pour
@@ -519,6 +594,11 @@
 		} catch (e) {
 			errorMsg = errorMessageOf(e);
 		} finally {
+			// Story 48-14 (revue P2, P2-1) : pas de relecture différée ici — elle effacerait le bilan,
+			// les refus ou l'erreur du lot qui vient de finir. Un règlement abouti pendant le lot, avant
+			// sa relecture, est consommé par elle ; abouti pendant cette relecture ou après elle, ou le
+			// lot en échec, il attend la relecture suivante (fermeture d'une modale, autre geste), qui le
+			// compte au bilan.
 			busy = false;
 		}
 	}
@@ -538,6 +618,7 @@
 		} catch (e) {
 			errorMsg = errorMessageOf(e);
 		} finally {
+			// Story 48-14 (revue P2, P2-1) : voir `onAccept`.
 			busy = false;
 		}
 	}
@@ -873,7 +954,10 @@
 			open={manualOpen}
 			onOpenChange={(v) => {
 				manualOpen = v;
-				if (!v) manualProposal = null;
+				if (!v) {
+					manualProposal = null;
+					flushPendingReload();
+				}
 			}}
 			{bankAccountId}
 			proposal={manualProposal}
@@ -886,7 +970,10 @@
 			open={splitOpen}
 			onOpenChange={(v) => {
 				splitOpen = v;
-				if (!v) splitProposal = null;
+				if (!v) {
+					splitProposal = null;
+					flushPendingReload();
+				}
 			}}
 			{bankAccountId}
 			proposal={splitProposal}
@@ -899,7 +986,10 @@
 			open={linkOpen}
 			onOpenChange={(v) => {
 				linkOpen = v;
-				if (!v) linkProposal = null;
+				if (!v) {
+					linkProposal = null;
+					flushPendingReload();
+				}
 			}}
 			proposal={linkProposal}
 			onSuccess={onLinkSuccess}
@@ -909,7 +999,10 @@
 			open={groupOpen}
 			onOpenChange={(v) => {
 				groupOpen = v;
-				if (!v) groupProposal = null;
+				if (!v) {
+					groupProposal = null;
+					flushPendingReload();
+				}
 			}}
 			{bankAccountId}
 			proposal={groupProposal}
@@ -917,6 +1010,7 @@
 			{bankLedgerAccountId}
 			onSuccess={onGroupSuccess}
 			onStale={onGroupStale}
+			onSettledInBackground={onGroupSettledInBackground}
 		/>
 
 		<AlreadyBookedConfirmDialog

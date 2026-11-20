@@ -67,4 +67,34 @@ test.describe('Assistant — le motif du refus (#809)', () => {
 		await page.locator('form button[type="submit"]').click();
 		await expect(page.locator('#bank-name')).toBeVisible();
 	});
+
+	// Story 48-13 (#1226, AC8 b) — un nom que la QR-facture refuserait est refusé à
+	// l'assistant, avec le motif du serveur (70, et le nombre saisi) ; l'étape n'avance
+	// pas ; raccourci à 70 caractères, il passe.
+	test('nom de 71 caractères : refusé avec 70 et 71, puis 70 caractères passent (#1226)', async ({ page }) => {
+		const nom70 = `Démo ${'n'.repeat(65)}`;
+		await page.fill('#coord-name', `${nom70}n`);
+		await page.fill('#coord-npa', '1000');
+		await page.fill('#coord-city', 'Lausanne');
+		await page.fill('#coord-country', 'CH');
+		await page.locator('form button[type="submit"]').click();
+
+		const toast = page.locator('[data-sonner-toast]');
+		await expect(toast).toContainText('70');
+		await expect(toast).toContainText('(71)');
+		await expect(page.locator('#coord-name')).toHaveValue(`${nom70}n`);
+
+		const ctx = await authedApiContext(page);
+		try {
+			const res = await ctx.get('/api/v1/onboarding/state');
+			expect(res.ok()).toBeTruthy();
+			expect(((await res.json()) as { stepCompleted: number }).stepCompleted).toBe(5);
+		} finally {
+			await disposeContextSafe(ctx);
+		}
+
+		await page.fill('#coord-name', nom70);
+		await page.locator('form button[type="submit"]').click();
+		await expect(page.locator('#bank-name')).toBeVisible();
+	});
 });
