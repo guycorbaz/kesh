@@ -29,6 +29,12 @@
   `404 RECONCILIATION_TRANSACTION_NOT_PENDING` (transaction rapprochée ailleurs) — revue de
   code P1 de la 29-8, B3 (C-29-8-38).
 
+  Story 38-11d (AC-5) — la modale prend une **transaction seule** (`LinkTarget`, un `Pick` de
+  `ReconciliationProposal` : identifiant et résumé de la transaction), que la page PayPal construit
+  depuis une ligne « à examiner » et le rapprochement CHF depuis sa proposition ; elle ne charge
+  les règlements (route de la 29-8, restée CHF) que pour un crédit **en CHF**, et montre le
+  mouvement des écritures dans la devise de la transaction (`entry-candidates`, 38-11c1 AC-1).
+
   Garde de session (revue de code P1 de la 29-8, B1/E3, C-29-8-37) : chaque ouverture,
   fermeture ou changement de transaction ouvre une session neuve ; un chargement ou une
   soumission lancés dans une session précédente n'agissent jamais sur la modale courante.
@@ -41,11 +47,7 @@
 	import { formatSwissDate } from '$lib/features/reports/reports.api';
 	import { isApiError } from '$lib/shared/utils/api-client';
 	import { errorMessageOf } from '$lib/shared/utils/error-message';
-	import type {
-		EntryCandidate,
-		LinkCandidate,
-		ReconciliationProposal,
-	} from './reconciliation.types';
+	import type { EntryCandidate, LinkCandidate, LinkTarget } from './reconciliation.types';
 	import {
 		getEntryCandidates,
 		getLinkCandidates,
@@ -57,7 +59,7 @@
 	type Props = {
 		open: boolean;
 		onOpenChange: (v: boolean) => void;
-		proposal: ReconciliationProposal | null;
+		proposal: LinkTarget | null;
 		onSuccess: () => void;
 	};
 
@@ -91,9 +93,13 @@
 		'RECONCILIATION_TRANSACTION_NOT_PENDING',
 	]);
 
-	/** Un crédit : seul il a une section « règlements de factures clients » (29-8). */
-	function isCredit(p: ReconciliationProposal): boolean {
-		return Number(p.transaction.amount) > 0;
+	/**
+	 * Un crédit **en CHF** : seul il a une section « règlements de factures clients » (29-8 ;
+	 * la route des règlements reste CHF, Story 38-11d AC-5). Le nom est gardé : « crédit
+	 * réglable par un règlement client ».
+	 */
+	function isCredit(p: LinkTarget): boolean {
+		return Number(p.transaction.amount) > 0 && p.transaction.currency === 'CHF';
 	}
 
 	function choose(c: Choice) {
@@ -352,7 +358,7 @@
 											<td class="whitespace-nowrap">{formatSwissDate(e.entryDate)}</td>
 											<td class="whitespace-nowrap">{e.journal}</td>
 											<td>{e.description}</td>
-											<td class="text-right">{e.amount}</td>
+											<td class="text-right whitespace-nowrap">{e.amount} {proposal.transaction.currency}</td>
 											<td class="text-right">{e.daysApart}</td>
 										</tr>
 									{/each}

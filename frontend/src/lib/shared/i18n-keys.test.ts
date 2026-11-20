@@ -1150,7 +1150,11 @@ const ATTENDU = {
 	// fusions de l'Epic 43, d'epic/v0190-correction et d'epic/42 (« expected 3495 to be 3468 »,
 	// `kesh-gate-logs/rel0190/vitest-compteurs-1.log`), non additionné — il égale 3468 + 10
 	// (v0190-correction et v0190-nom-societe) + 17 (36-16a), les côtés gardés.
-	sitesTotal: 3495,
+	// Story 38-11d, T1 et T2 (paramètres PayPal du compte bancaire, filtres des règles) :
+	// **3521**, relevé par la garde (« expected 3521 to be 3495 »), non additionné ; puis la
+	// page PayPal (T3) : **3609** (« expected 3609 to be 3521 ») ; à relever de nouveau après la
+	// fusion de la 38-11c2.
+	sitesTotal: 3609,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

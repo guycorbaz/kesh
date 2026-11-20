@@ -607,6 +607,11 @@ pub struct BankAccountJson {
     pub account_kind: BankAccountKind,
     /// Story 34-11a1 (#972) — quatre derniers chiffres d'une carte, `null` sinon.
     pub card_last4: Option<String>,
+    /// Story 38-11d (AC-1) — prestataire dont le compte est le solde
+    /// (`"paypal"`), `null` pour un compte ordinaire : les écrans d'import
+    /// bancaire et de réconciliation qui lisent cette liste n'offrent pas un
+    /// compte de prestataire (`withoutProviders`).
+    pub provider: Option<String>,
     pub is_primary: bool,
     /// Story 8-5a-zero — compte du plan comptable lié (None = non configuré).
     pub journal_account_id: Option<i64>,
@@ -622,6 +627,7 @@ impl From<BankAccount> for BankAccountJson {
             qr_iban: b.qr_iban,
             account_kind: b.account_kind,
             card_last4: b.card_last4,
+            provider: b.provider_settings.provider,
             is_primary: b.is_primary,
             journal_account_id: b.journal_account_id,
         }

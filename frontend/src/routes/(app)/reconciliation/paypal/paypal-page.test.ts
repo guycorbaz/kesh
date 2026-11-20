@@ -1,0 +1,216 @@
+// Story 38-11d (AC-3 à AC-5) — la page PayPal : aucun compte, import et compte rendu,
+// refus traduits, propositions à cocher, retrait incomplet, acceptation par paquets,
+// écarts, à examiner et rattachement par la modale.
+
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, fireEvent, waitFor } from '@testing-library/svelte';
+import type { BankAccountSummary } from '$lib/features/bank-accounts/bank-accounts.api';
+import type { PaypalReview } from '$lib/features/paypal/paypal.types';
+
+vi.mock('$app/environment', () => ({ browser: true }));
+
+vi.mock('$lib/shared/utils/i18n.svelte', () => ({
+	i18nMsg: (_key: string, fallback: string, args?: Record<string, string | number>) =>
+		args ? fallback.replace(/\{\s*\$(\w+)\s*\}/g, (_, k) => String(args[k] ?? '')) : fallback,
+}));
+
+const listBankAccountsMock = vi.fn<() => Promise<BankAccountSummary[]>>();
+vi.mock('$lib/features/bank-accounts/bank-accounts.api', () => ({
+	listBankAccounts: () => listBankAccountsMock(),
+}));
+vi.mock('$lib/features/fiscal-years/fiscal-years.api', () => ({
+	listFiscalYears: async () => [
+		{ id: 5, companyId: 1, name: '2020', startDate: '2020-01-01', endDate: '2020-12-31', status: 'Open', multiCurrency: true },
+	],
+}));
+vi.mock('$lib/features/accounts/accounts.api', () => ({
+	fetchAccounts: async () => [
+		{ id: 20, number: '1020', name: 'Banque', accountType: 'Asset', active: true, postable: true },
+		{ id: 60, number: '6940', name: 'Frais PayPal', accountType: 'Expense', active: true, postable: true },
+	],
+}));
+vi.mock('$lib/features/reconciliation/reconciliation.api', () => ({
+	getLinkCandidates: vi.fn(async () => ({ bankTransactionId: 0, candidates: [] })),
+	getEntryCandidates: vi.fn(async () => ({ bankTransactionId: 0, candidates: [] })),
+	linkEntry: vi.fn(),
+	linkTransaction: vi.fn(),
+}));
+
+const importMock = vi.fn();
+const reviewMock = vi.fn();
+const acceptMock = vi.fn();
+vi.mock('$lib/features/paypal/paypal.api', async (importOriginal) => {
+	const real = await importOriginal<typeof import('$lib/features/paypal/paypal.api')>();
+	return {
+		...real,
+		importPaypalCsv: (...a: unknown[]) => importMock(...a),
+		getPaypalReview: (...a: unknown[]) => reviewMock(...a),
+		acceptPaypalProposals: (...a: unknown[]) => acceptMock(...a),
+	};
+});
+
+import * as reconciliationApi from '$lib/features/reconciliation/reconciliation.api';
+import Page from './+page.svelte';
+
+function paypalAccount(id: number, account: string): BankAccountSummary {
+	return {
+		id,
+		bankName: 'PayPal',
+		description: null,
+		iban: null,
+		qrIban: null,
+		accountKind: 'bank',
+		cardLast4: null,
+		provider: 'paypal',
+		paypal: { account, feeAccountId: 60 },
+		isPrimary: false,
+		journalAccountId: 31,
+		version: 1,
+		archived: false,
+		closedOn: null,
+		currentBalance: null,
+		lastTransactionDate: null,
+		statementClosingBalance: null,
+		statementDate: null,
+		ledgerBalanceAtStatement: null,
+		statementGap: null,
+	};
+}
+
+const tx = { amount: '10.00', currency: 'EUR', providerType: 'Website Payment', name: 'Client fictif', counterpartyEmail: null, transactionId: '0TESTTXN000001' };
+
+function review(): PaypalReview {
+	return {
+		account: 'PayPal www',
+		fiscalYearId: 5,
+		proposals: [
+			{ ...tx, type: 'link_entry', bankTransactionId: 1, date: '2020-03-05', journalEntryId: 40, entryNumber: 12 },
+			{ ...tx, type: 'fee', bankTransactionId: 2, date: '2020-03-05', feeAccountId: 60, amount: '-0.65' },
+			{ ...tx, type: 'withdrawal', bankTransactionId: 3, date: '2020-03-06', currency: 'CHF', counterpartyAccountId: null },
+		],
+		gaps: [{ ...tx, kind: 'receipt_without_sale', bankTransactionId: 4, date: '2020-03-07' }],
+		toReview: [{ ...tx, reason: 'no_rule', bankTransactionId: 5, date: '2020-03-08', providerType: 'General Payment' }],
+	};
+}
+
+describe('page PayPal (Story 38-11d)', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		listBankAccountsMock.mockResolvedValue([paypalAccount(1, 'PayPal www'), paypalAccount(2, 'PayPal www')]);
+		reviewMock.mockResolvedValue(review());
+		acceptMock.mockResolvedValue({ accepted: [{ type: 'fee', bankTransactionIds: [2], journalEntryIds: [9] }], failed: [] });
+	});
+
+	it('sans compte PayPal : le message et le lien vers les comptes bancaires', async () => {
+		listBankAccountsMock.mockResolvedValue([]);
+		const r = render(Page);
+		expect((await r.findByTestId('paypal-no-account')).textContent).toContain('Aucun compte PayPal');
+		expect(r.getByTestId('paypal-no-account-link').getAttribute('href')).toBe('/bank-accounts');
+		expect(reviewMock).not.toHaveBeenCalled();
+	});
+
+	it('libellés distincts, exercice courant ; la revue est lue pour ce couple', async () => {
+		const r = render(Page);
+		const select = (await r.findByTestId('paypal-account')) as HTMLSelectElement;
+		expect(Array.from(select.options).map((o) => o.value)).toEqual(['PayPal www']);
+		await waitFor(() => expect(reviewMock).toHaveBeenCalledWith('PayPal www', 5));
+		expect(await r.findByTestId('paypal-proposal-1')).toBeTruthy();
+		expect(r.getByTestId('paypal-gap-receipt_without_sale').textContent).toContain('Encaissement sans vente');
+		expect(r.getByTestId('paypal-to-review-5').textContent).toContain('Aucune règle');
+	});
+
+	it('import : compte rendu par devise, écartées, puis revue relue', async () => {
+		importMock.mockResolvedValue({
+			account: 'PayPal www',
+			currencies: [{ currency: 'EUR', bankAccountId: 1, importId: 3, inserted: 8, duplicates: 1 }],
+			skipped: { notCompleted: [{ transactionId: '0TESTX', type: 'Website Payment', status: 'Pending' }], memo: 2, neutralPairs: 1 },
+		});
+		const r = render(Page);
+		await waitFor(() => expect(reviewMock).toHaveBeenCalledTimes(1));
+		const input = (await r.findByTestId('paypal-file-input')) as HTMLInputElement;
+		const file = new File(['x'], 'paypal.csv', { type: 'text/csv' });
+		await fireEvent.change(input, { target: { files: [file] } });
+		await waitFor(() => expect(importMock).toHaveBeenCalledWith(file, 'PayPal www'));
+		expect((await r.findByTestId('paypal-import-report-EUR')).textContent).toContain('8 transaction(s) insérée(s), 1 doublon(s)');
+		expect(r.getByTestId('paypal-import-report-skipped').textContent).toContain('2 ligne(s) Memo');
+		expect(r.getByTestId('paypal-import-report-not-completed').textContent).toContain('Pending');
+		await waitFor(() => expect(reviewMock).toHaveBeenCalledTimes(2));
+	});
+
+	it('import refusé : une phrase par cause', async () => {
+		importMock.mockRejectedValue({
+			code: 'PAYPAL_CSV_INVALID',
+			status: 422,
+			message: 'x',
+			details: { reason: 'PAYPAL_CSV_MISSING_COLUMNS', columns: ['Gross'] },
+		});
+		const r = render(Page);
+		const input = (await r.findByTestId('paypal-file-input')) as HTMLInputElement;
+		await fireEvent.change(input, { target: { files: [new File(['x'], 'a.csv')] } });
+		expect((await r.findByTestId('paypal-import-error')).textContent).toContain('Colonnes manquantes : Gross');
+	});
+
+	it('retrait sans compte : non cochable, « Tout cocher » l’omet ; accepté une fois choisi', async () => {
+		const r = render(Page);
+		const retrait = (await r.findByTestId('paypal-check-3')) as HTMLInputElement;
+		expect(retrait.disabled).toBe(true);
+		await fireEvent.click(r.getByTestId('paypal-select-all'));
+		expect((r.getByTestId('paypal-check-1') as HTMLInputElement).checked).toBe(true);
+		expect(retrait.checked).toBe(false);
+		await fireEvent.change(r.getByTestId('paypal-withdrawal-3'), { target: { value: '20' } });
+		expect(retrait.disabled).toBe(false);
+		await fireEvent.click(retrait);
+		await fireEvent.click(r.getByTestId('paypal-accept'));
+		await waitFor(() => expect(acceptMock).toHaveBeenCalledTimes(1));
+		const [account, bodies] = acceptMock.mock.calls[0];
+		expect(account).toBe('PayPal www');
+		expect(bodies).toEqual([
+			{ type: 'link_entry', bankTransactionId: 1, journalEntryId: 40 },
+			{ type: 'fee', bankTransactionId: 2, feeAccountId: 60 },
+			{ type: 'withdrawal', bankTransactionId: 3, counterpartyAccountId: 20 },
+		]);
+		expect((await r.findByTestId('paypal-accept-report')).textContent).toContain('1 proposition(s) acceptée(s), 0 refusée(s)');
+	});
+
+	it('refus de l’acceptation : chacun avec son message', async () => {
+		acceptMock.mockResolvedValue({
+			accepted: [],
+			failed: [{ bankTransactionId: 1, errorCode: 'PROVIDER_PROPOSAL_STALE', details: null }],
+		});
+		const r = render(Page);
+		await fireEvent.click(await r.findByTestId('paypal-check-1'));
+		await fireEvent.click(r.getByTestId('paypal-accept'));
+		expect((await r.findByTestId('paypal-accept-failed')).textContent).toContain('La proposition ne vaut plus');
+	});
+
+	it('plus de 500 propositions : un paquet à la fois, compte rendu cumulé', async () => {
+		const many = review();
+		many.proposals = Array.from({ length: 501 }, (_, i) => ({
+			...tx,
+			type: 'fee' as const,
+			bankTransactionId: 100 + i,
+			date: '2020-03-05',
+			feeAccountId: 60,
+		}));
+		reviewMock.mockResolvedValue(many);
+		acceptMock.mockImplementation(async (_a: string, bodies: unknown[]) => ({
+			accepted: bodies.map(() => ({ type: 'fee', bankTransactionIds: [], journalEntryIds: [] })),
+			failed: [],
+		}));
+		const r = render(Page);
+		await fireEvent.click(await r.findByTestId('paypal-select-all'));
+		await fireEvent.click(r.getByTestId('paypal-accept'));
+		await waitFor(() => expect(acceptMock).toHaveBeenCalledTimes(2));
+		expect(acceptMock.mock.calls[0][1]).toHaveLength(500);
+		expect(acceptMock.mock.calls[1][1]).toHaveLength(1);
+		expect((await r.findByTestId('paypal-accept-report')).textContent).toContain('501 proposition(s) acceptée(s)');
+	});
+
+	it('à examiner : « Rattacher à une écriture » ouvre la modale sur la transaction, en devise', async () => {
+		const r = render(Page);
+		await fireEvent.click(await r.findByTestId('paypal-link-5'));
+		await waitFor(() => expect(reconciliationApi.getEntryCandidates).toHaveBeenCalledWith(5));
+		expect(reconciliationApi.getLinkCandidates).not.toHaveBeenCalled();
+		expect((await r.findByTestId('link-settlement-modal')).textContent).toContain('EUR');
+	});
+});

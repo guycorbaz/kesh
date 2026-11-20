@@ -54,6 +54,34 @@
 		}
 	}
 
+	/**
+	 * Story 38-11d (AC-2) — les filtres posés d'une règle, à côté du libellé de
+	 * son critère : « Type PayPal = … », « E-mail = … », « Entrées » / « Sorties ».
+	 */
+	function filterLabels(r: ReconciliationRule): string[] {
+		const out: string[] = [];
+		if (r.providerType) {
+			out.push(
+				i18nMsg('reconciliation-rules-filter-provider-type', 'Type PayPal = { $value }', {
+					value: r.providerType,
+				}),
+			);
+		}
+		if (r.counterpartyEmail) {
+			out.push(
+				i18nMsg('reconciliation-rules-filter-email', 'E-mail = { $value }', {
+					value: r.counterpartyEmail,
+				}),
+			);
+		}
+		if (r.direction === 'credit') {
+			out.push(i18nMsg('reconciliation-rules-direction-credit', 'Entrées'));
+		} else if (r.direction === 'debit') {
+			out.push(i18nMsg('reconciliation-rules-direction-debit', 'Sorties'));
+		}
+		return out;
+	}
+
 	async function handleToggleActive(rule: ReconciliationRule) {
 		busyId = rule.id;
 		errorMsg = null;
@@ -140,7 +168,15 @@
 					data-testid="rule-row-{r.id}"
 				>
 					<td class="py-2 pr-4">{r.label}</td>
-					<td class="py-2 pr-4">{matchTypeLabel(r.matchType)}</td>
+					<td class="py-2 pr-4">
+						{matchTypeLabel(r.matchType)}
+						{#each filterLabels(r) as f, i (i)}
+							<span
+								class="ml-1 rounded bg-surface-alt px-1.5 py-0.5 text-xs text-text-muted"
+								data-testid="rule-filter-{r.id}-{i}">{f}</span
+							>
+						{/each}
+					</td>
 					<td class="py-2 pr-4 font-mono text-xs">{r.matchValue}</td>
 					<td class="py-2 pr-4">{accountLabel(r.counterpartyAccountId)}</td>
 					<td class="py-2 pr-4">{r.priority}</td>

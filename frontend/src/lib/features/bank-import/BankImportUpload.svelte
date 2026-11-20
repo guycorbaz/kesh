@@ -40,14 +40,19 @@
 		bankAccountOptionLabel,
 		type BankAccountOptionSource,
 	} from '$lib/features/bank-accounts/format';
+	import { withoutProviders, type ProviderSource } from '$lib/features/bank-accounts/provider';
 	import { csvLineErrorLabel } from './csv-line-error-label';
 	import type { InvalidLinesPayload } from './bank-import.types';
 
 	type Props = {
-		bankAccounts: Array<BankAccountOptionSource & { id: number }>;
+		bankAccounts: Array<BankAccountOptionSource & ProviderSource & { id: number }>;
 		onSuccess?: (imported: BankImportResponse) => void;
 	};
-	let { bankAccounts, onSuccess }: Props = $props();
+	let { bankAccounts: allBankAccounts, onSuccess }: Props = $props();
+	// Story 38-11d (AC-1) — un compte de prestataire (PayPal) n'importe pas de relevé
+	// bancaire : le CSV bancaire refuse une devise étrangère et le CAMT n'a pas de compte
+	// PayPal. Son relevé s'importe par la page du prestataire.
+	const bankAccounts = $derived(withoutProviders(allBankAccounts));
 
 	/** Raison d'un aperçu : elle choisit le texte de l'indicateur (AC2). */
 	type PreviewReason = 'drop' | 'profile' | 'stale';
