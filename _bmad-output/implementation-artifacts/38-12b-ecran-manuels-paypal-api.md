@@ -154,3 +154,4 @@ progression et le compte rendu ; le manuel d'administration décrit la création
   `kesh-gate-logs/epic-38-kiss/validation/38-12-P4-ciblee.md`) : rien à remédier ici (tableaux § `sec:env-vars` et section
   PayPal, « cinq » exceptions, `scaKeyConfigured` absent : vérifiés au code de `origin/main`) ; la panique d'une tâche
   rend `INTERNAL_ERROR` (38-12a AC-8), ce que l'écran affiche comme tout code non listé.
+- 2026-11-20 — validation P5 ciblée sur les commits `977bf9ec` et `452606a3` (modèle : claude-haiku-5-5, contexte frais ; voir 38-12a et `kesh-gate-logs/epic-38-kiss/validation/38-12-P5-ciblee.md`) : rien à remédier ici ; l'AC-5 et le tableau PayPal sont cohérents avec l'AC-8 de 38-12a.
