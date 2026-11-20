@@ -129,7 +129,7 @@ n'a pas le défaut.**
 | `kesh-api/src/exports/csv_tables.rs:108-109` `fmt_decimal` (29 appels, plus 5 de `fmt_opt_decimal` `:113` : 34 sites, classés par colonne en D5) | `format!("{d:.2}")` | export global : débit, crédit, prix, quantité, taux, totaux, frais, soldes de relevé, réglages de facturation | **corrigé** (D5 : chaque colonne à l'échelle du schéma, sans arrondi) |
 | `kesh-api/src/exports/csv_tables.rs:119-120` `fmt_opt_decimal_scale` (2 appels, `:430-431`) | `d.map(\|d\| format!("{d:.scale$}"))` | `amount_currency` à 4, `exchange_rate` à 10 | **sain** ; devient le formateur unique de l'export (D5) : précision égale à l'échelle de la colonne, elle complète et ne coupe pas |
 | `kesh-api/src/exports/csv_tables.rs:880-881` `fmt_rate` (`fmt_opt_rate` `:886`) | `format!("{d:.10}")` | cours `DECIMAL(20,10)` (`exchange_rates.rate`, `acknowledged_rate`) | **sain** ; délègue au formateur unique (D5, DRY) |
-| `kesh-api/src/routes/bank_statements_manual.rs:551-555` `amount_string` (14 appels : réponses, détails d'audit, `BankStatementUnbalanced`) | `format!("{:.2}", d)` | sommes d'un relevé saisi (bornées à deux décimales, `kesh-core/src/bank_imports/manual.rs:43` `MANUAL_AMOUNT_MAX_DECIMALS: u32 = 2`), mais aussi le solde de clôture du relevé **précédent**, lu en base (`opening_gap`, `:524-547`), qui peut venir d'un CAMT | **corrigé** (D3) |
+| `kesh-api/src/routes/bank_statements_manual.rs:551-555` `amount_string` (14 appels : réponses, détails d'audit, `BankStatementUnbalanced`) | `format!("{:.2}", d)` | sommes d'un relevé saisi (bornées à deux décimales, `kesh-core/src/bank_imports/manual.rs:43` `MANUAL_AMOUNT_MAX_DECIMALS: u32 = 2`), et le solde de clôture du relevé **précédent**, lu en base (`opening_gap`, `:523-547`, par `bank_imports::previous_statement_closing`, `kesh-db/src/repositories/bank_imports.rs:368`, colonne `closing_balance` `DECIMAL(18,2)`) : **ne tronque rien aujourd'hui** — aucune valeur reçue n'a plus de deux décimales | **délégation défensive**, comme D4 : passe par la fonction commune pour la garde et pour la première valeur à trois décimales ; l'AC6 (`10.0050`) teste la délégation (D3) |
 | `kesh-api/src/routes/company_invoice_settings.rs:45-49` `group_max_for_display` | `"{:.2}",` sur `value.round_dp_with_strategy(2, …MidpointAwayFromZero)` | plafond de l'écart d'un règlement groupé | **sain** ; **délègue** à la fonction commune (D3, DRY), tests existants `:599-600` en filet |
 | `kesh-api/src/routes/reconciliation_group.rs:640-646` `fixed` | `round_dp_with_strategy(dp, MidpointAwayFromZero)` puis `rescale(dp)` | candidates d'un règlement groupé | **sain** (pas de précision de format) ; hors périmètre (D3) |
 | `kesh-api/src/errors.rs:1566` `chf_text` | `n.rescale(2)` si `scale < 2`, sinon valeur entière | refus `FX_AMOUNT_MISMATCH` : **sans arrondi voulu** (`:1561-1564`) | **sain** |
@@ -321,7 +321,12 @@ filtré sur `csv|export|rapport|report|pdf` : seuls `admin-manual.tex:3915` et `
     écrivent à quatre décimales (\texttt{150.25} devient \texttt{150.2500}), à l'échelle où Kesh les garde ; aucune valeur ne change, un
     tableur relit le même nombre, mais un script qui compare des chaînes ou lit deux décimales fixes est à adapter. Les taux, les frais
     de rappel et les montants des relevés restent à deux décimales. » L'introduction de la section (sauvegarde, migrations) et les
-    paragraphes des autres stories s'écrivent à l'intégration de la release.
+    paragraphes des autres stories s'écrivent à l'intégration de la release. **La section sera ouverte trois fois** : elle l'est déjà,
+    chacune avec son paragraphe « Pour les intégrations », sur `origin/epic/49-types-de-lignes-facture` (49-1a) et sur
+    `story/48-12-reponses-perdues-fournisseurs` (`admin-manual.tex:2550`) ; la story écrit sous le titre le même commentaire LaTeX que
+    la 48-12 (« section ouverte par la story pour son seul paragraphe ; les Stories 48-12 et 49-1a ouvrent la même section sur leur
+    branche : à l'intégration, garder les paragraphes sous un seul titre »), et **le second arrivé fusionne les paragraphes** sous un
+    seul `\subsubsection`.
   **Option écartée** : une phrase neuve sur l'arrondi des **rapports** (leur format visible ne change pas — toujours deux décimales — ;
   seul un centime faux devient juste).
 - **D9 — pas d'E2E Playwright, des tests de route** : le défaut se voit à la frontière HTTP (fichiers téléchargés), non dans un contrôle
@@ -359,7 +364,11 @@ filtré sur `csv|export|rapport|report|pdf` : seuls `admin-manual.tex:3915` et `
    exercice ; `GET …/trial-balance/export?…&format=csv` porte `1234.01` ; la même en `format=pdf` porte `1'234.01`. **Le texte se lit
    côté `kesh-api`, c'est établi** : `printpdf` 0.7.0 ne compresse qu'hors `debug_assertions`
    (`printpdf-0.7.0/src/pdf_document.rs:822-831`, `optimize` vide sous `debug_assertions`), et `[profile.test]` hérite de
-   `[profile.dev]` (`Cargo.toml:46-47`) ; chaque texte est un `Tj` hexadécimal (`pdf_layer.rs:385`). Le test cherche, dans le corps
+   `[profile.dev]` (`Cargo.toml:46-47`) ; la police des rapports est intégrée (`kesh-report/src/pdf.rs:440`,
+   `BuiltinFont::Helvetica`), donc le texte passe par `write_text` : un octet WinAnsi par caractère
+   (`pdf_layer.rs:461`, `lopdf::Document::encode_text(Some("WinAnsiEncoding"), &text)`), écrit en `Tj` hexadécimal (`:467`) — non
+   par `write_codepoints` (`:370-385`, deux octets par glyphe, polices externes) ; `write_right` (`pdf.rs:519-525`) écrit le montant en
+   un seul `Tj`. Le test cherche, dans le corps
    passé en minuscules, l'hexadécimal Latin-1 de `1'234.01` (`31273233342e3031`) et l'absence de celui de `1'234.00`
    (`31273233342e3030`), sans dupliquer `pdf_text` (privé aux tests de `kesh-report`). Pas d'autre voie admise.
 6. **AC6 — relevé saisi** (`bank_statements_manual.rs`, test unitaire du module) : `amount_string(dec!(10.0050)) == "10.01"`,
@@ -367,7 +376,8 @@ filtré sur `csv|export|rapport|report|pdf` : seuls `admin-manual.tex:3915` et `
 7. **AC7 — le plafond de l'écart** : `group_max_for_display` délègue à `format_two_decimals` ; ses tests existants
    (`company_invoice_settings.rs:599-600`, `5.0050` → `5.01`, `5.0150` → `5.02`) restent verts sans modification.
 8. **AC8 — #1430** : `git grep -nw 'round_for_display' -- crates/` (toutes formes, imports entre accolades compris) — sortie copiée
-   au Dev Agent Record — ne rend que : la définition et ses tests dans `kesh-core/src/types/money.rs` ; le réexport de
+   au Dev Agent Record — ne rend que : **toute ligne** de `kesh-core/src/types/money.rs` (la définition, son doc-comment, ses tests, et
+   l'appel dans `format_two_decimals`, D2) ; le réexport de
    `kesh-core/src/types/mod.rs` ; des `use kesh_core::…round_for_display` ; `balance_sheet.rs:126` (lien intra-doc vers
    `kesh_core::types::round_for_display`) et `:142` (le prédicat) ; le test `pdf.rs:3100-3109` et son `use`. Aucun appel dans
    `kesh-report/src/pdf.rs` ni `csv.rs` hors de ce test (les cinq appels de formatage, `pdf.rs:358`, `:899`, `:1116`, `csv.rs:59`,
@@ -401,13 +411,42 @@ filtré sur `csv|export|rapport|report|pdf` : seuls `admin-manual.tex:3915` et `
       `TABLE_NAME` dans `TABLES_EXPORTEES`), avec `NUMERIC_SCALE` : source **différente** du code testé ; le test assert qu'il en
       trouve **38** (25 à l'échelle 4, 10 à 2, 3 à 10), nombres **écrits à la main** — une colonne `DECIMAL` ajoutée par une migration
       future rougit le test, qui la nomme ;
-    - chaque table porte au moins une ligne de la société (fixtures existantes du fichier — `seed_with_full_data` et les helpers de
-      `export_global_zip_onze_tables_neuves_sortent_et_sont_scopees`, `:1825`, extraits en fonction si nécessaire) ; chaque colonne y
-      reçoit par `UPDATE` une valeur **à pleine échelle**, dérivée de `NUMERIC_SCALE` seul : `1.` suivi des `s` premiers chiffres de
-      `1234567891` (`1.12`, `1.1234`, `1.1234567891`) ; une contrainte `CHECK` qui la refuserait reçoit une autre valeur à pleine échelle,
-      écrite dans le test avec son motif ;
-    - dans `<table>.csv`, l'en-tête porte le nom de la colonne, et la cellule de la ligne vaut **exactement** la chaîne posée (même
-      échelle, même chiffres) ; un échec nomme `table.colonne`, l'attendu et le lu.
+    - **le principe vérifié** : pour chaque colonne, *la cellule du CSV vaut la valeur posée en base, écrite à `NUMERIC_SCALE`* (même
+      échelle, mêmes chiffres, zéros de queue compris). La comparaison se fait par **`(table, colonne, clé de la ligne)`** — la clé
+      est `id`, sauf `company_invoice_settings`, dont la clé est `company_id` —, la ligne étant **choisie par colonne** : une table peut
+      porter plusieurs lignes nommées quand ses contraintes interdisent de poser toutes ses colonnes sur une seule ;
+    - **valeur par défaut** : `1.` suivi des `s` premiers chiffres de `1234567891` (`1.12`, `1.1234`, `1.1234567891`), posée par
+      `UPDATE … WHERE <clé> = ?` sur une ligne de la société. Une valeur à zéros de queue (`1.2600`, `0.0000`) distingue aussi bien
+      `{:.2}` de `{:.4}` et s'admet là où une contrainte l'impose. **Toute dérogation à la valeur par défaut nomme sa contrainte**
+      dans le test ;
+    - **les dérogations, ensemble clos** (les contraintes `CHECK` des 19 tables relues au schéma à `08c47a6cc` et dans la migration
+      `20261118000002_invoice_line_types.sql` de l'Epic 49 ; aucun déclencheur au schéma ; toutes les autres contraintes sur une
+      colonne `DECIMAL` sont des bornes — `> 0`, `>= 0`, `<= 100`, `<= 10000`, `<= 1000000000` — que les valeurs par défaut
+      respectent) :
+      - `journal_entry_lines` — `chk_jel_debit_credit_exclusive` (`debit = 0 and credit > 0 or debit > 0 and credit = 0`),
+        `chk_jel_fx_all_or_none`, `chk_jel_fx_chf` (`debit + credit = round(amount_currency * exchange_rate, 2)` sur une ligne en
+        devise hors réévaluation) : **trois lignes nommées**, prises parmi les lignes des écritures de `seed_with_full_data` —
+        **L1** débit seul (`debit = 1.1234`, `credit = 0`, sans devise : cellules `1.1234` et `0.0000`) ; **L2** crédit seul
+        (`debit = 0`, `credit = 1.1234`, sans devise) ; **L3** en devise (`amount_currency = 1.1234`, `exchange_rate = 1.1234567891`,
+        `rate_source = 'manual'`, `debit = 1.26` = `round(1.1234 × 1.1234567891, 2)`, `credit = 0` : cellules `1.1234`,
+        `1.1234567891`, `1.2600`, `0.0000`). `debit` et `credit` se vérifient sur L1 et L2, `amount_currency` et `exchange_rate` sur
+        L3 (et `1.2600` sur L3 en filet) ;
+      - `exchange_rates` — `chk_exchange_rates_ack_pair` et `chk_exchange_rates_ack_afc` : la ligne porte `source = 'afc'` et un
+        `acknowledged_at` ; `rate = 1.1234567891`, `acknowledged_rate = 0.9876543210` (deux valeurs distinctes, pour qu'une colonne
+        lue à la place de l'autre rougisse) ; `chk_exchange_rates_currency` (pas `CHF`) et `chk_exchange_rates_month_day` (`kind =
+        'day'`, ou le 1er du mois pour `month`) ;
+      - `invoice_lines`, `credit_note_lines` — `chk_*_unpriced_neutral` de l'Epic 49 (49-1a : une ligne `comment` ou `heading` a
+        `quantity`, `unit_price`, `vat_rate` et `line_total` à 0) : l'`UPDATE` vise **par son `id`** la ligne `priced` de la fixture,
+        jamais « les lignes de la facture » ; la contrainte n'existe pas encore sur `epic/48`, elle existera après la fusion de
+        l'Epic 49 ;
+    - **les fixtures** : 14 des 19 tables ont déjà un `INSERT` dans le fichier, `company_invoice_settings` vient du préréglage et
+      `journal_entry_lines` de `post_entry` (16) ; **trois sont à écrire**, aucune n'existant dans `exports_global_e2e.rs` (`:982`
+      `("invoice_reminders.csv", 0)`, `:983-984` `dunning_levels` = 0) — un **niveau de relance** (`dunning_levels` : `level_number = 1`,
+      `delay_days`, `fee_amount = 1.12`) ; un **rappel** (`invoice_reminders` : sur une facture de la fixture, `level_number = 1`,
+      `channel = 'manual'`, `sent_at`, `subject`, `body`, `fee_amount = 1.12`) ; un **cours retenu** (`exchange_rates`, ci-dessus). Les
+      helpers de `seed_with_full_data` et de `export_global_zip_onze_tables_neuves_sortent_et_sont_scopees` (`:1825`) s'extraient en
+      fonction si nécessaire ;
+    - dans `<table>.csv`, l'en-tête porte le nom de la colonne ; un échec nomme `table.colonne`, la clé de la ligne, l'attendu et le lu.
 
 ## Tests à écrire, et la preuve du rouge
 
@@ -498,12 +537,22 @@ désormais les montants, prix, quantités et totaux à **quatre décimales** (`1
   `csv_tables.rs`, non le nombre de modules). Au grain du fichier de production : neuf fichiers ; deux gestes — déléguer à la fonction
   commune (rapports, relevé, plafond), écrire à l'échelle de la colonne (export global).
 - **Charge révisée** (après Q1) : la décision ajoute la réécriture des 36 appels de `csv_tables.rs` (34 + `:430-431`) avec leur
-  constante, cinq attendus de tests unitaires, le test de pleine échelle AC13 (fixtures de 19 tables à colonnes `DECIMAL`, la part la
-  plus lourde) et deux phrases de manuel de plus ; elle retire la délégation de `fmt_decimal`. Estimation : de **une journée** à **une
-  journée et demie** de développement, boucle de revue non comprise ; la story reste tenable avant la coupure du 2026-11-26.
+  constante, cinq attendus de tests unitaires, le test de pleine échelle AC13 (19 tables à colonnes `DECIMAL`, dont **trois fixtures
+  à écrire** — niveau de relance, rappel, cours retenu — et trois lignes d'écriture nommées pour les contraintes de
+  `journal_entry_lines` : la part la plus lourde) et deux phrases de manuel de plus ; elle retire la délégation de `fmt_decimal`.
+  Estimation : **une journée et demie** de développement, boucle de revue non comprise (la P2 a montré l'AC13 plus lourd qu'écrit) ;
+  la story reste tenable avant la coupure du 2026-11-26.
 - **Dépendances** : part de `epic/48` à `08c47a6cc`, après la fusion de #1327 (décision de Guy du 2026-11-18) et de #1346. Ne bloque ni
-  n'est bloquée par l'Epic 49 **pour ses propres fichiers** (l'Epic 49 touche `kesh-qrbill`, que cette story ne modifie pas). Mais la
-  garde **fige des comptes dans deux fichiers de l'Epic 49** : 13 occurrences dans `crates/kesh-qrbill/src/pdf.rs` (des `f32` de
+  n'est bloquée par l'Epic 49, mais **partage des fichiers avec lui** :
+  - `crates/kesh-api/src/exports/csv_tables.rs` et `crates/kesh-api/tests/exports_global_e2e.rs` — la 49-1a (`ac5471e07`, sur
+    `origin/epic/49-types-de-lignes-facture`) ajoute `il.line_type` deux lignes sous `fmt_decimal(il.line_total)` (`:659`, site de D5)
+    et sous `:1300`, et le test `export_global_zip_line_type_is_the_last_column`. Conflit de texte improbable, **interaction réelle** :
+    le second arrivé garde les deux intentions (colonne `line_type` en fin de ligne, échelle `DEC_19_4` des colonnes voisines) ;
+  - la migration de la 49-1a (`20261118000002_invoice_line_types.sql`) ajoute `chk_invoice_lines_unpriced_neutral` et
+    `chk_credit_note_lines_unpriced_neutral` : l'AC13 vise les lignes `priced` par leur `id` ; elle n'ajoute aucune colonne `DECIMAL`
+    (le décompte 38 tient après fusion) ;
+  - `admin-manual.tex`, `sec:maj-0-20-0` (D8) ;
+  - et la garde **fige des comptes dans deux fichiers de l'Epic 49** : 13 occurrences dans `crates/kesh-qrbill/src/pdf.rs` (des `f32` de
   géométrie, `:84` et `:4299` à `:5400`) et 1 dans `crates/kesh-qrbill/src/generator.rs`. **`kesh-qrbill/src/pdf.rs` est donc un fichier
   commun avec l'Epic 49** au sens de la garde : tout `{:.N}` que l'Epic 49 y ajoute — même sur un `f32`, même légitime — rougit
   `arrondi_centime_garde` chez le second arrivé, qui met à jour le compte attendu et sa justification (ou corrige le site s'il formate un
@@ -596,3 +645,24 @@ désormais les montants, prix, quantités et totaux à **quatre décimales** (`1
     formes de V1-3, 0. Correction d'un décompte faux à sa date : `fmt_opt_decimal_scale` a **2** appels (`:430-431`), non 3 (ligne du
     tableau corrigée).
   - **Charge révisée** : une journée à une journée et demie de développement (Dev Notes).
+- **2026-11-20 — validation P2 remédiée** (Opus 5.5 ; passe P2 Opus 5.5 sur `549e68c21`, contexte frais : 0 CRITICAL, 0 HIGH,
+  1 MEDIUM, 5 LOW ; rapport `kesh-gate-logs/e4811/validation-p2.md`). Tendance : **P1 0/0/1/5 (Sonnet) → P2 0/0/1/5 (Opus)** ; le
+  MEDIUM de la P2 et trois de ses LOW sont nés de la remédiation P1 (AC13, AC5, AC8), deux LOW sont préexistants. Prémisses relues
+  au schéma et au code avant remède.
+  - **V2-1 (MEDIUM) → corrigé** : AC13 réécrit — principe « la cellule vaut la valeur posée écrite à `NUMERIC_SCALE` », comparaison
+    par `(table, colonne, clé)` (clé `company_id` pour `company_invoice_settings`, `id` ailleurs) ; trois lignes nommées pour
+    `journal_entry_lines` (L1 débit seul, L2 crédit seul, L3 en devise à `debit = 1.26 = round(1.1234 × 1.1234567891, 2)`, cellule
+    `1.2600`) sous `chk_jel_debit_credit_exclusive`, `chk_jel_fx_all_or_none`, `chk_jel_fx_chf` ; `exchange_rates` à `source = 'afc'` et
+    `acknowledged_at` (`chk_exchange_rates_ack_pair`, `_ack_afc`), deux cours distincts ; toute dérogation nomme sa contrainte. Revue
+    des contraintes `CHECK` des 19 tables (schéma à `08c47a6cc`, 86 contraintes `CHECK` lues ; aucun déclencheur) et de la migration de la
+    49-1a : hors les trois cas nommés, toutes les contraintes sur une colonne `DECIMAL` sont des bornes que les valeurs par défaut
+    respectent ; `chk_*_unpriced_neutral` (49-1a) → `UPDATE` des lignes `priced` par `id`.
+  - **V2-2 (LOW) → corrigé** : les trois fixtures à écrire nommées (`dunning_levels`, `invoice_reminders`, `exchange_rates` ; décompte
+    des `INSERT` du fichier relu : 22 tables en ont, dont 14 des 19 ; avec le préréglage et `post_entry`, 16) ; charge révisée à une journée et demie.
+  - **V2-3 (LOW) → corrigé** : `csv_tables.rs` (`ac5471e07` : `line_type` sous `:659` et `:1300`), `exports_global_e2e.rs`, la contrainte
+    de la 49-1a et `sec:maj-0-20-0` (déjà ouverte sur `epic/49` et sur la 48-12) déclarés communs ; D8 : même commentaire LaTeX que la
+    48-12, le second arrivé fusionne les paragraphes.
+  - **V2-4 (LOW) → corrigé** : AC5 cite `write_text` (`pdf_layer.rs:461`, `:467`), la police intégrée (`pdf.rs:440`) et `write_right`.
+  - **V2-5 (LOW) → corrigé** : `amount_string` reclassé en délégation défensive (solde précédent `DECIMAL(18,2)`, `bank_imports.rs:368`).
+  - **V2-6 (LOW) → corrigé** : la liste fermée d'AC8 admet toute ligne de `money.rs`, dont l'appel dans `format_two_decimals`.
+  - Décomptes inchangés par cette remédiation (garde 22 / 8, famille 2 : 2 ; 38 colonnes, 25/10/3 ; 34 sites, 24/10).
