@@ -190,6 +190,7 @@ Source : `kesh-gate-logs/epic-38-kiss/phase2-decisions.md`. Deux stories, après
   (`KESH_E2E_PROVIDER_MOCK_PORT`). Wise (39-12a1, 39-12a2, 39-12b) et Stripe (40-8a, 40-8b) les appellent. PayPal
   appelle `windows` à 30 jours (une fenêtre de 31 jours de Zurich dépasse la limite de PayPal au passage à l'heure
   d'hiver).
+- **Validation P2 (2026-11-20)** : valeur vide = absente (les fichiers `docker-compose` transmettent `${NOM:-}`), série partielle seule refusée, séries 1 à 3 transmises par `docker-compose.yml`, `docker-compose.prod.yml` et `.env.example` ; le cœur `ProviderLine` n'est pas dans 38-11b : extrait par 38-12a ; `error.details`.
 - **Identifiants** : `KESH_PAYPAL_<n>_ACCOUNT` (libellé du compte PayPal de 38-11b, propre à l'installation), `_CLIENT_ID`,
   `_SECRET`, validés au démarrage par `provider_env` (refus inconditionnel, contrairement à `KESH_SMTP_*`) ; rien en base
   ni dans la sauvegarde, pas de coffre. Application PayPal à la seule

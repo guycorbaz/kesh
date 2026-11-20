@@ -71,13 +71,18 @@ vers `PaypalRow`, la table des types et le passage `PaypalRow` → `ProviderLine
    `KESH_<P>_PARALLEL` ; `n` de 1 à 9 ; un contrôle propre au prestataire s'y branche. Pour PayPal :
    `KESH_PAYPAL_<n>_ACCOUNT`, `KESH_PAYPAL_<n>_CLIENT_ID`, `KESH_PAYPAL_<n>_SECRET` ; `KESH_PAYPAL_BASE_URL` (défaut
    `https://api-m.paypal.com` ; `https://api-m.sandbox.paypal.com` pour un essai ; `https` exigé, `http` admis vers le
-   seul bouclage, `127.0.0.1` ou `localhost`, pour le serveur simulé, S5) ; `KESH_PAYPAL_PARALLEL` (AC-3). Tout est lu
+   seul bouclage, `127.0.0.1` ou `localhost`, pour le serveur simulé, S5) ; `KESH_PAYPAL_PARALLEL` (AC-3). Une valeur **vide ou blanche vaut absente**, comme partout dans `config.rs` (`env_nonempty`) : les fichiers
+   `docker-compose.yml` et `docker-compose.prod.yml` transmettent chaque variable au conteneur en `${NOM:-}`, donc vide quand
+   `.env` ne la pose pas — **ces deux fichiers et `.env.example` portent les séries 1 à 3**, `KESH_PAYPAL_BASE_URL` et
+   `KESH_PAYPAL_PARALLEL` (au-delà de trois comptes, on ajoute les lignes : le manuel le dit, 38-12b AC-5) ; sans cela, des
+   identifiants posés au `.env` n'atteindraient jamais le serveur. Tout est lu
    **une fois**, au démarrage ; un compte PayPal de Kesh dont le libellé n'a pas de série reste sans téléchargement
    (le CSV continue). Le libellé est **propre à l'installation**, non à la société (une installation porte une société,
    manuel d'administration `:1079`) : limite écrite au manuel par 38-12b.
 2. **AC-2 — Validation au démarrage et secrets** (S1). Contrairement à `KESH_SMTP_*` — qui ne refuse de démarrer que si
    la récupération de mot de passe est activée (`:1120`) et retombe en silence sur le port par défaut —, la validation
-   est **inconditionnelle** : série incomplète, valeur vide, libellé en double (sans casse), numéro hors `1..=9` (p. ex.
+   est **inconditionnelle** : série **partielle** (au moins une variable non vide, pas toutes ; une série entièrement vide est
+   absente, jamais refusée : c'est l'état de toute installation qui ne l'utilise pas), libellé en double (sans casse), numéro hors `1..=9` (p. ex.
    `KESH_PAYPAL_10_…`, repéré en parcourant les variables du préfixe), URL de base hors de la règle de S5 → **refus de
    démarrer** (`ConfigError` neuve), message qui nomme la variable, jamais sa valeur. Une valeur de la forme `<…>`
    (`is_template_placeholder`, `:1538`) est refusée, comme le mot de passe administrateur (`:650`) et le secret JWT
@@ -92,17 +97,24 @@ vers `PaypalRow`, la table des types et le passage `PaypalRow` → `ProviderLine
    plus, fin d'une fenêtre = seconde précédant le début de la suivante, fin de la dernière **ramenée à `now`** si elle
    est plus tard. PayPal l'appelle avec **`max_days = 30`** : une fenêtre de 31 jours de Zurich qui contient le passage
    à l'heure d'hiver dure 31 × 24 h + 1 h, au-delà de la limite de 31 jours de PayPal (unité non dite) ; 30 jours en
-   font au plus 30 × 24 h + 1 h. Bornes envoyées en UTC (`…Z`), à la seconde. `now` et le jour du jour viennent de
+   font au plus 30 × 24 h + 1 h. Bornes envoyées en UTC (`…Z`), **tronquées à la seconde** (`fin_du_jour_suisse` rend la dernière milliseconde du jour : sa
+   borne envoyée est `23:59:59` de Zurich, les horodatages de PayPal étant à la seconde). Règle de `max_days` du socle : la limite
+   du prestataire moins un jour quand elle ne se dit pas en jours entiers de Zurich (PayPal : 31 jours, unité non dite → 30). `now` et le jour du jour viennent de
    `state.horloge` (Epic 35 ; garde `date_du_jour_garde.rs`) ; le délai d'un jeton se mesure en `Instant`. Refus 400
    `PROVIDER_PERIOD_INVALID` (S4), `details: { provider: "paypal", reason }` avec `reason` ∈ {`from_after_to`,
-   `future`, `too_old`} — `too_old` si `from` est avant le même jour trois ans plus tôt (limite de l'API PayPal).
+   `future` (`from` après le jour de Zurich du jour ; une `to` future n'est **pas** refusée, elle est ramenée à `now`),
+   `too_old`} — `too_old` si `from` est avant le même jour trois ans plus tôt (limite de l'API PayPal).
    Propre à PayPal : pages de **500**, `page` de 1 à `total_pages`, `fields=all`, `balance_affecting_records_only=Y` ;
    sur 400 `RESULTSET_TOO_LARGE`, la fenêtre se coupe en deux et chaque moitié est reprise (récursif, plancher d'un
    jour : au-delà, échec `PROVIDER_API_ERROR` nommant la fenêtre ; `steps.total` grandit alors des moitiés).
 5. **AC-5 — Client et conversion.** Constructeur de client HTTP **commun** (S5), **extrait** de
    `exchange_rates/source.rs:116-130` (rustls, aucune redirection suivie — le jeton ne part jamais ailleurs —, délais
    de connexion et total, HTTPS seul hors bouclage, `User-Agent` sans donnée personnelle), que la source des cours
-   appelle ensuite ; corps de réponse **borné** (plafond en constante) — sans délai, une requête pendue laisserait la
+   appelle ensuite ; corps de réponse **borné** — par une constante **propre à PayPal** (16 Mio : `MAX_BODY_BYTES` des cours est de 1 Mio, trop
+   petit pour 500 transactions en `fields=all`), la boucle de lecture par morceaux de `source.rs:174-190` **extraite avec le
+   constructeur** (une fonction `lire_corps_borne(reponse, max)` commune, non recopiée), délai total de 60 s par requête
+   (constante PayPal, celui des cours — 20 s — est trop court pour une page de 500), délais réglables pour les tests
+   (patron `with_timeouts`, `source.rs:155`) — sans délai, une requête pendue laisserait la
    tâche « en cours » et le compte refusé en 409 jusqu'au redémarrage. `reqwest` est **déjà en dépendance**
    (`crates/kesh-api/Cargo.toml:112`, sans la fonctionnalité `json`) : `.bytes()` puis `serde_json` ; aucune
    dépendance neuve. Client PayPal (`crates/kesh-api/src/paypal_api/`) : jeton **un par tâche**, demandé au début,
@@ -142,8 +154,11 @@ vers `PaypalRow`, la table des types et le passage `PaypalRow` → `ProviderLine
    écrit, Kesh ne fait que proposer, mais le CSV et l'API ne se rapprocheraient plus de la même façon). Codes de départ
    (page de PayPal) : `T0000`, `T0001`, `T0002` (`Subscription Payment`), `T0003`, `T0006` (`Express Checkout Payment`),
    `T0007` (`Website Payment`), `T0011` (`Mobile Payment`), `T0013`, `T0200` (`General Currency Conversion`), `T0201`
-   (`User Initiated Currency Conversion`), `T0400` (`General Withdrawal`), `T0403`, `T1105`, `T1107` (`Payment
-   Refund`), `T1110`, `T1500` à `T1503`, `T2105` / `T2106` (`Payment Review Hold` / `Payment Review Release`). Le
+   (`User Initiated Currency Conversion`), `T0400` (`General Withdrawal`), `T0403`, `T1105` (page : « reversal of general account hold »), `T1107` (`Payment
+   Refund`), `T1110` (page : « hold on balance for dispute investigation »), `T1500` à `T1503` (`T1501` : « account hold
+   for open authorization »), `T2105` / `T2106` (`Payment Review Hold` / `Payment Review Release`). La page ne donne aucun
+   code évident pour `Reversal of Account Hold` (liste des paires neutres) : le test de couverture l'impose, le code se
+   trouve par l'appel réel. Le
    libellé attribué à un code **se vérifie au développement**, par appel réel joint au CSV de la même période sur
    l'identifiant de transaction (Notes de développement) ; un libellé non vérifié s'écrit tel en commentaire de la
    constante, jamais comme acquis. La fixture fictive de 38-11a (`paypal-balance-affecting-fictif.csv`) n'est **pas**
@@ -166,13 +181,17 @@ vers `PaypalRow`, la table des types et le passage `PaypalRow` → `ProviderLine
    neutres, séparation brut / `:FEE`) puis par le **cœur commun d'import** qui reçoit des lignes neutres
    (`ProviderLine` : devise, dates, montant, identifiants, référence, contrepartie, e-mail, type, détails ; recherche
    des comptes par devise, refus indépendants du format, `with_account_locks`, empreinte, doublons, compte rendu, **une**
-   transaction de base, tout ou rien). **Ce cœur est celui que 38-11b, ou à défaut 39-11b, a factorisé** (40-7b AC-7) :
-   38-12a l'**appelle** et ne crée aucun second chemin ; si, à la reprise, aucun ne l'a fait, 38-12a le **déplace** hors
-   de la route PayPal (`crates/kesh-api/src/routes/provider_imports.rs`), la route CSV l'appelle, ses tests **inchangés
-   en assertions** — état trouvé et décision au Change Log (T0). Ce qui diffère d'un import de fichier, et cela seul :
+   transaction de base, tout ou rien). **Ce cœur, la fiche 38-11b ne le factorise pas** (ses AC-5 et AC-6 décrivent la ventilation et l'import sur `PaypalRow`) ;
+   39-11b (NFR-39-11b-2) ou 40-7b peut l'avoir fait avant : à la reprise (T0), si un cœur existe, 38-12a l'**appelle** et ne
+   crée aucun second chemin ; sinon, **c'est 38-12a qui l'extrait** de la route PayPal en deux pièces : une fonction **pure**
+   `PaypalRow` → `ProviderLine` (écarts, paires neutres, séparation brut / `:FEE` de 38-11b AC-5, testée sans base) et le
+   cœur d'écriture (`crates/kesh-api/src/routes/provider_imports.rs`), que la route CSV appelle à son tour, ses tests
+   **inchangés en assertions**. ⚠️ **Le déplacement change le couple (fichier, fonction)** que
+   `bank_account_closed_inventory.rs` (`REGISTRE`) classe pour `create_with_transactions` et ses appelants : l'entrée
+   suit, avec sa raison, faute de quoi le test rougit. État trouvé et décision au Change Log (T0). Ce qui diffère d'un import de fichier, et cela seul :
    `filename` = « PayPal API <from>…<to> », `file_hash` = SHA-256 des identifiants retenus triés ‖ `":"` ‖ devise, **pas
    de refus `BANK_IMPORT_DUPLICATE_FILE`** (relancer la même période rend « 0 insérée »), trace `paypal_download.created`
-   à la place de `paypal_import.created` (jamais les deux) ; `source_format` reste `'CSV'` (valeur existante, aucun
+   à la place de `paypal_import.created` (jamais les deux), écrite **dans la même transaction** que l'import ; `source_format` reste `'CSV'` (valeur existante, aucun
    comportement n'en dépend, aucune migration) ; traces `bank_import.created` par devise comme à l'import. Les doublons
    se jugent par identifiant de transaction sur le compte bancaire (brut ou `:FEE`) : un CSV puis un téléchargement, ou
    l'inverse, ou deux téléchargements qui se chevauchent, ne créent rien en double. Un identifiant présent deux fois
@@ -196,14 +215,17 @@ vers `PaypalRow`, la table des types et le passage `PaypalRow` → `ProviderLine
    prestataire, cette société et ce libellé ; `details: { provider, jobId }`, pour que l'écran reprenne le suivi) ;
    sinon **202** `{ jobId }` (entier croissant du processus). `GET` : **société de l'appelant seulement**, sinon 404 ;
    réponse, forme commune de S3 : `{ state: "running" | "done" | "failed", steps: { done, total: number | null },
-   pausedUntilSeconds: number | null, result, error: { code, message, detail? } | null }` — pour PayPal une étape est
+   pausedUntilSeconds: number | null, result, error: { code, message, details? } | null }` — pour PayPal une étape est
    une fenêtre (`total` connu d'avance), `result` = la réponse 201 de 38-11b plus `lastRefreshed` (le plus ancien
-   `last_refreshed_datetime` des pages, « données de PayPal à jour jusqu'à »), `detail` = `{ provider, window?, page?,
+   `last_refreshed_datetime` des pages, « données de PayPal à jour jusqu'à »), `details` = `{ provider, window?, page?,
    lines? }`. Les refus qui ne se jugent qu'**après** la lecture, une fois les devises connues, passent en `failed`
    avec leur code et le contenu des `details` de 38-11b, rien d'écrit : `PROVIDER_RESPONSE_INVALID` (erreurs de ligne
-   de l'AC-5, au plus `MAX_CSV_LINE_ERRORS`, forme de `PaypalLineError`, dans `detail.lines`),
+   de l'AC-5, au plus `MAX_CSV_LINE_ERRORS`, forme de `PaypalLineError`, dans `details.lines`),
    `PROVIDER_CURRENCY_ACCOUNT_MISSING`, `PROVIDER_CURRENCY_DUPLICATE`, `BANK_ACCOUNT_CLOSED`,
-   `RECONCILIATION_ACCOUNT_LOCKED`. Les tâches vivent **en mémoire** du processus (table de `provider_download` dans
+   `RECONCILIATION_ACCOUNT_LOCKED`. La tâche est lancée par `tokio::spawn` ; **une panique ne laisse jamais une tâche « en cours »** (le compte resterait refusé
+   en 409 jusqu'au redémarrage) : le `JoinHandle` est surveillé et la tâche passe en `failed` `PROVIDER_API_ERROR`, un test
+   la fait paniquer. Le 409 ne vaut que **tant que la tâche tourne** : une tâche `done` ou `failed` ne bloque pas la
+   suivante. L'acteur (la session de la demande, jamais une clé) est capturé au `POST` et porté par la tâche. Les tâches vivent **en mémoire** du processus (table de `provider_download` dans
    l'état d'application, une tâche par prestataire, société et libellé ; `AppState::new_for_tests`, `lib.rs:148`, et les
    constructions de test reçoivent leur valeur), purgées une heure après leur fin (à chaque accès), **perdues au
    redémarrage** : relancer est sans risque (AC-7). Trace d'audit `paypal_download.created` (`details` : compte PayPal,
@@ -233,7 +255,7 @@ vers `PaypalRow`, la table des types et le passage `PaypalRow` → `ProviderLine
 ## Tâches
 
 - [ ] T0 — Reprendre `main` et les branches des Epics 39, 40 si fusionnées : socle déjà écrit ? cœur `ProviderLine` déjà factorisé ? État au Change Log.
-- [ ] T1 — `provider_env` générique, série PayPal, validation, masque `Debug` (AC-1 à AC-3).
+- [ ] T1 — `provider_env` générique, série PayPal, validation, masque `Debug` (AC-1 à AC-3) ; séries 1 à 3 aux deux fichiers `docker-compose` et à `.env.example`.
 - [ ] T2 — `kesh-import::paypal_api` : lecture de page, table des types, conversion, contrôles partagés avec `read_row` (AC-5).
 - [ ] T3 — `provider_download` (`windows`, reprise, tâches, sémaphore), constructeur de client extrait, client PayPal (AC-4 à AC-6).
 - [ ] T4 — Appel du cœur commun `ProviderLine` (ou son extraction hors de la route PayPal) (AC-7).
@@ -312,3 +334,10 @@ rattrape, sans doublon.
   extrait hors de la route PayPal, jamais un second chemin ; constructeur de client extrait de `source.rs:116-130` ;
   `KESH_PAYPAL_BASE_URL` selon S5 (`https`, `http` vers le bouclage) — l'ensemble fermé de la P1 est retiré ; test S9
   au marqueur commun ; T0 de reprise.
+- 2026-11-20 — validation P2 (Claude Sonnet 5.5, contexte frais) : 0 CRITICAL, 2 HIGH, 5 MEDIUM, 3 LOW pour cette fiche
+  (3 H, 8 M, 5 L avec 38-12b), remédiés (rapport `kesh-gate-logs/epic-38-kiss/validation/38-12-P2.md`). Principaux :
+  une valeur vide vaut absente (les fichiers `docker-compose` transmettent `${NOM:-}`) et **les séries doivent être
+  transmises par ces fichiers**, sans quoi aucun identifiant n'atteint le conteneur ; `detail` → `details` (décision 3) ;
+  cœur `ProviderLine` que 38-11b ne factorise pas (extraction ici, `REGISTRE` de `bank_account_closed_inventory`) ;
+  plafond de corps propre à PayPal (1 Mio des cours trop petit), délai de 60 s, lecture bornée extraite ; panique de la
+  tâche ; bornes tronquées à la seconde ; `max_days` expliqué ; trace dans la transaction d'import.

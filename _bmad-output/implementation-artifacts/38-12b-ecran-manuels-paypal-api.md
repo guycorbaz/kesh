@@ -50,8 +50,10 @@ Wise (39-12b) et Stripe (40-8b) les réutilisent.
    insérées, doublons, écartées par motif, par devise), « données de PayPal à jour jusqu'à … » (`result.lastRefreshed`), et la
    revue de la page se recharge ; à `failed`, le message traduit du code `PROVIDER_*` (ceux de 38-12a AC-6 et AC-8,
    dont `PROVIDER_CURRENCY_ACCOUNT_MISSING` qui nomme les devises comme à l'import CSV, et `PROVIDER_RESPONSE_INVALID`
-   qui liste les lignes de `error.detail.lines`) avec la fenêtre et la page de `error.detail`, et la mention « rien n'a été enregistré, relancez » ; fermer le dialogue
-   n'arrête pas la tâche, et le rouvrir la retrouve (409, AC-2). Aucun secret n'est affiché.
+   qui liste les lignes de `error.details.lines`) avec la fenêtre et la page de `error.details`, et la mention « rien n'a été enregistré, relancez » ; fermer le dialogue
+   n'arrête pas la tâche, et le rouvrir la retrouve (409, AC-2). Le suivi **s'arrête** à la fermeture du dialogue et au démontage
+   de la page (aucune interrogation orpheline) ; un `GET` en 404 (tâche purgée ou serveur redémarré) ou une erreur réseau
+   répétée affiche « suivi perdu : relancez la même période, rien n'est doublé » (38-12a AC-7). Aucun secret n'est affiché.
 4. **AC-4 — i18n.** Libellés, messages d'erreur et textes des AC-1 à AC-3 aux quatre locales
    (`crates/kesh-i18n/locales/*/messages.ftl`, clés au préfixe `paypal-` de la page et `provider-download-` du dialogue générique, `docs/i18n-key-ownership-pattern.md`) ;
    `sitesTotal` de `frontend/src/lib/shared/i18n-keys.test.ts` recompté depuis la source ; garde d'appartenance des clés
@@ -66,7 +68,10 @@ Wise (39-12b) et Stripe (40-8b) les réutilisent.
    que l'application ne fait jamais : écrire chez PayPal ; (d) les secrets ne sont **ni en base ni dans la
    sauvegarde** : après une restauration sur un autre serveur, on les repose ; ils appartiennent à l'installation ; (e)
    la rotation (changer le secret chez PayPal, puis dans l'environnement, redémarrer) ; (f) les refus de démarrage et
-   leurs messages ; (g) au paragraphe des **accès sortants** (`sec:acces-sortant-cours`), le nouvel accès HTTPS (port
+   leurs messages ; (f-bis) **où les poser** : au `.env` d'une installation par `docker-compose` (les fichiers `docker-compose.yml` et
+   `docker-compose.prod.yml` transmettent les séries 1 à 3 ; au-delà, ajouter les lignes `KESH_PAYPAL_<n>_…` au fichier
+   de composition), et les deux **tableaux de variables** du manuel (celui des variables de configuration et celui de la
+   récupération par e-mail, `KESH\_SMTP\_HOST`) complétés ; une variable laissée vide vaut absente ; (g) au paragraphe des **accès sortants** (`sec:acces-sortant-cours`), le nouvel accès HTTPS (port
    443) à l'hôte de PayPal, sans redirection, seulement quand un téléchargement est demandé. Les points **non
    confirmés** de la fiche 38-12a (nom exact de la fonction dans l'interface de PayPal, conditions d'accès du compte,
    hôte réel tant qu'il n'est pas relevé) sont écrits **comme à vérifier**, jamais comme acquis. Le PDF se contrôle à
@@ -76,8 +81,10 @@ Wise (39-12b) et Stripe (40-8b) les réutilisent.
    période, le délai de trois heures et la date « à jour jusqu'à », la progression et la pause, ce qu'un échec veut dire
    (rien d'enregistré), le mélange avec le CSV (aucun doublon), la limite des dates (fuseau du compte PayPal, sans
    conversion, comme pour le CSV). `docs/api-external.md` : les deux routes, **réservées aux sessions** (clés d'API
-   refusées en `403 API_KEY_OPERATION_FORBIDDEN`), avec leurs codes ; la liste des exceptions fermées aux clés (§ des
-   ressources, « à quatre exceptions près ») et le tableau des codes d'erreur suivent.
+   refusées en `403 API_KEY_OPERATION_FORBIDDEN`), avec leurs codes ; les **quatre sites** qui comptent les opérations fermées aux clés suivent : les encarts de fermeture du § 4, la liste des
+   ressources (« à quatre exceptions près, toutes quatre fermées aux clés », qui devient « six » : les deux routes), le tableau
+   des fermetures et la ligne `API_KEY_OPERATION_FORBIDDEN` du tableau des codes d'erreur ; les codes `PROVIDER_*` des deux
+   routes entrent à ce dernier tableau.
 7. **AC-7 — E2E.** `frontend/tests/e2e/paypal-download.spec.ts`. La configuration se lit au démarrage du backend : les
    deux cas se jouent donc dans **le même** démarrage, par deux comptes PayPal créés par la spec — (a) un compte dont le
    libellé n'a **pas** de paire : le bouton est absent ; (b) un compte au libellé de `KESH_PAYPAL_1_ACCOUNT`, le backend
@@ -86,7 +93,7 @@ Wise (39-12b) et Stripe (40-8b) les réutilisent.
    `frontend/tests/e2e/support/provider-mock.ts`, qui joue PayPal ici, Wise et Stripe ensuite) que la spec lance sur le
    port lu de `KESH_E2E_PROVIDER_MOCK_PORT` (ajout au montage de `docs/testing.md` ; le bloc de montage de `CLAUDE.md` n'est **pas**
    touché) : période de deux mois, progression visible, compte rendu, puis la revue de la page affiche les lignes ;
-   relancer la même période → « 0 insérée ». Sans la variable du port, (b) est **ignoré avec son motif écrit** (la ligne
+   relancer la même période → « 0 insérée ». Le serveur simulé ne sert que des transactions **en CHF** et le compte PayPal créé par la spec est en CHF avec son compte lié (sinon `PROVIDER_CURRENCY_ACCOUNT_MISSING`). Sans la variable du port, (b) est **ignoré avec son motif écrit** (la ligne
    s'ajoute aux ignorés connus de `docs/testing.md`, jamais comptée verte). Vitest : le dialogue (états `running`,
    pause, `done`, `failed`, refus par code, reprise sur 409) et l'indicateur `providerApi`.
 
@@ -131,3 +138,7 @@ progression et le compte rendu ; le manuel d'administration décrit la création
   alignement sur le socle commun S7 et S8 (`epic-39-wise.md`, `epic-40-stripe.md`) — `providerApi { configured, mode?,
   scaKeyConfigured? }` au lieu de `paypal.apiConfigured`, dialogue générique `provider-download`, état `steps`, codes
   `PROVIDER_*`, serveur simulé commun sur `KESH_E2E_PROVIDER_MOCK_PORT`.
+- 2026-11-20 — validation P2 (Claude Sonnet 5.5, contexte frais) : 0 CRITICAL, 1 HIGH, 3 MEDIUM, 2 LOW pour cette fiche
+  (voir 38-12a et `kesh-gate-logs/epic-38-kiss/validation/38-12-P2.md`), remédiés : variables à poser au `.env` par les
+  fichiers `docker-compose` et aux deux tableaux de variables du manuel ; `error.details` (décision 3) ; quatre sites de
+  `docs/api-external.md` pour les fermetures aux clés (« six » exceptions) ; arrêt du suivi et suivi perdu ; mock en CHF.
