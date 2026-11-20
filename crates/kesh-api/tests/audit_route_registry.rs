@@ -1620,8 +1620,8 @@ fn the_replay_partition_is_what_the_story_declares() {
     );
     assert_eq!(exemptees, 3, "full_import, /seed, /reset");
     assert_eq!(
-        sans_ecriture, 129,
-        "127 routes de lib.rs (38-11b : + 1 — l'import du CSV PayPal) — 126 avant (v0190-nom-societe : + 1 — le nom de la société, unie à l'Epic 37 par l'intégration de la 0.19.0) — 125 avant (37-5 : + 1 — l'aperçu de la réévaluation de fin d'exercice) — 124 avant (37-2 : + 5 — la récupération des cours de change, la saisie et le ↑ d'un cours retenu, l'acquittement des corrections, les genres d'un exercice) — 119 avant (37-1 : + 1 — le réglage multi-devises de la société) — 118 avant (34-2 : − 1 — la création d'un compte bancaire, reclassée \
+        sans_ecriture, 130,
+        "128 routes de lib.rs (40-7b : + 1 — l'import du rapport Stripe) — 127 avant (38-11b : + 1 — l'import du CSV PayPal) — 126 avant (v0190-nom-societe : + 1 — le nom de la société, unie à l'Epic 37 par l'intégration de la 0.19.0) — 125 avant (37-5 : + 1 — l'aperçu de la réévaluation de fin d'exercice) — 124 avant (37-2 : + 5 — la récupération des cours de change, la saisie et le ↑ d'un cours retenu, l'acquittement des corrections, les genres d'un exercice) — 119 avant (37-1 : + 1 — le réglage multi-devises de la société) — 118 avant (34-2 : − 1 — la création d'un compte bancaire, reclassée \
          `Rejouee`) — 119 avant (33-5 : + 1 — l'adresse de la société ; v0172-session : + 2 — le réglage de la durée d'inactivité \
          et le battement d'activité ; v017-4a : + 4 — la saisie fournisseur et la complétion \
          d'import reclassées, le `PUT` et le `DELETE` d'un brouillon) — 112 avant \
@@ -1653,7 +1653,8 @@ fn the_replay_partition_is_what_the_story_declares() {
     // Story 36-16a (#1167, 42-1), unie par l'intégration de la 0.19.0 : 160 → 161
     // (le changement de compte analytique d'une facture).
     // Story 38-11b (Epic 38) : 161 → 162 (l'import du CSV PayPal).
-    assert_eq!(tout.len(), 162);
+    // Story 40-7b (Epic 40) : 162 → 163 (l'import du rapport Stripe).
+    assert_eq!(tout.len(), 163);
 }
 
 /// Visiteur `syn` d'un fichier de routes : relève chaque appel à la primitive

@@ -96,6 +96,11 @@ const TYPE_DU_HELPER_EXERCICES: &str = "fiscal_year";
 /// site produit — établis en lisant les branches, pas en devinant.
 const SITES_INDIRECTS: &[(&str, &str, &[&str])] = &[
     (
+        "crates/kesh-api/src/routes/provider_imports.rs",
+        "le cœur commun des imports de prestataire écrit l'action que lui passe l'appelant (`ImportRequest::audit_action`, Story 38-12a, 40-7b)",
+        &["paypal_import.created", "stripe_import.created"],
+    ),
+    (
         "crates/kesh-api/src/routes/users.rs",
         "deux libellés selon que le RÔLE change (Story 25-1b)",
         &["user.role_changed", "user.updated"],

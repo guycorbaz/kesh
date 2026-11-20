@@ -549,7 +549,7 @@ async fn un_rapport_par_devise_puis_tous_ne_doublent_rien(pool: MySqlPool) {
             "{devise}"
         );
     }
-    assert_eq!(ctx.ecrit().await, (2, 15, 3));
+    assert_eq!(ctx.ecrit().await, (2, 15, 4));
     let (s, b) = ctx.importer(FIXTURE).await;
     assert_eq!(s, 201, "{b}");
     let chf = par_devise(&b, "CHF");
@@ -572,7 +572,7 @@ async fn un_rapport_par_devise_puis_tous_ne_doublent_rien(pool: MySqlPool) {
         (json!(5), json!(0))
     );
     // Aucune transaction doublée : les identifiants sont uniques par compte.
-    assert_eq!(ctx.ecrit().await, (3, 20, 4));
+    assert_eq!(ctx.ecrit().await, (3, 20, 6));
     assert_eq!(
         ctx.count(
             "SELECT COUNT(*) FROM (SELECT bank_account_id, transaction_id FROM bank_transactions \

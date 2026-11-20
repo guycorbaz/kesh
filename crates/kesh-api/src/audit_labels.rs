@@ -208,6 +208,9 @@ pub const ACTIONS: &[&str] = &[
     "reconciliation_rule.updated",
     "report.exported",
     "report.generated",
+    // Story 40-7b — l'import du rapport Stripe d'un compte Stripe (une entrée
+    // par import, en plus de `bank_import.created` par devise).
+    "stripe_import.created",
     "supplier_invoice.cancelled",
     "supplier_invoice.created",
     "supplier_invoice.deleted",
