@@ -1,6 +1,6 @@
 # Story 38-11b : réglages du compte PayPal et import du CSV, ventilé par devise (migration de l'epic)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-20, branche `epic/38-paypal`, numéros de ligne relevés après la fusion de `origin/main`
 (commit de fusion `43ceb541`), revérifiés à la validation P1 sur `origin/main` `fd04099f` (arbre `crates/` identique).
@@ -626,3 +626,10 @@ Hors dépôt : `kesh-gate-logs/s38-11b/` (T0, gates, mutations, prompt de revue)
   Symptômes grepés (code, fiche, `docs/api-external.md`, fiche 38-11d — phrase de l'angle mort reprise au manuel).
   Gates complets verts (Dev Agent Record). Prochaine passe : P2 complète, Opus
   (`kesh-gate-logs/s38-11b/revue-p2-prompt.md`).
+
+- 2026-11-20 — revue de code P2 (Claude Opus 5.5, contexte frais) : 0 CRITICAL / 0 HIGH / 0 MEDIUM / 5 LOW ; boucle close
+  (rien au-dessus de LOW). Versés à la dette (`kesh-gate-logs/epic-38-kiss/issues-a-ouvrir.md`) : P2-L1 interblocage
+  possible import ↔ routes des comptes (import non rejoué → 500, fenêtre de quelques ms, non reproduit), P2-L4 compte
+  ordinaire mouvementé passé PayPal par PUT (lot pain.001 antérieur), P2-L5 deux sens de la garde 3 bis sans test.
+  P2-L2 et P2-L3 (rédaction 38-11d, `api-external.md:1001`, angle mort complet) : à reprendre au développement de 38-11d.
+  Rapport : `kesh-gate-logs/s38-11b/revue-p2-rapport.md`.
