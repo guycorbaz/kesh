@@ -151,6 +151,27 @@ de remboursement et de litige proposées (le reste de 38-6a et 38-6b) ; rattache
 dans Kesh ; Stripe (Epic 40). La migration breaking de l'ancienne 38-2 (O1) et la question Q1 qui en dépendait
 tombent avec elle.
 
+## Phase 2 — téléchargement par l'API PayPal (décisions de Beat du 2026-11-20)
+
+Source : `kesh-gate-logs/epic-38-kiss/phase2-decisions.md`. Deux stories, après la phase 1 (38-11a à 38-11d) :
+
+| Clé | Objet | Modules | Dépend de | Migration |
+|---|---|---|---|---|
+| `38-12a` | identifiants par variables d'environnement, client de l'API (jeton, fenêtres de 31 jours, pages de 500, reprise sur 429, parallélisme), conversion vers `PaypalRow`, tâche et routes | `kesh-import`, `kesh-api`, `kesh-i18n` | 38-11a à 38-11c | non |
+| `38-12b` | bouton, période, progression, manuels (administration, utilisateur), `api-external.md`, E2E | `frontend`, `kesh-i18n`, manuels et docs | 38-12a, 38-11d | non |
+
+- **Identifiants** : `KESH_PAYPAL_<n>_ACCOUNT` (libellé du compte PayPal de 38-11b), `_CLIENT_ID`, `_SECRET`, validés au
+  démarrage comme `KESH_SMTP_*` ; rien en base ni dans la sauvegarde, pas de coffre. Application PayPal à la seule
+  fonction « Transaction Search ». Les clés d'API de Kesh, hachées, ne conviennent pas : le secret doit être relu.
+- **Même modèle, mêmes doublons, même rapprochement** : l'API se convertit en lignes de 38-11a, l'import de 38-11b les
+  ventile, 38-11c les rapproche sans changement ; doublons par identifiant de transaction, CSV et téléchargement
+  mélangeables.
+- **Réserves** (relevé du 2026-11-20, détail à la fiche 38-12a) : 31 jours, 500 par page, trois heures de délai, trois
+  ans d'historique **confirmés** ; 429 et `Retry-After`, flux OAuth, nom de la fonction de l'application, signe des
+  frais, libellés de type du CSV pour chaque code `T…` **non confirmés**.
+- **Plus tard encore** : téléchargement périodique (automatisme), story à part. Fichiers communs : ceux de 38-11b à
+  38-11d, plus `config.rs` et `lib.rs` de `kesh-api`.
+
 ## Modules touchés
 
 *(Reportée en phase 2 (2026-11-20) — voir § *Phase 1 KISS*.)*

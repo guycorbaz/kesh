@@ -1163,6 +1163,8 @@ development_status:
   38-11a-lecteur-csv-paypal: drafted  # 2026-11-20, phase 1 KISS : lecteur du CSV PayPal « Balance affecting transactions » (kesh-import) ; sept AC ; non validée
   38-11b-compte-paypal-et-import: drafted  # 2026-11-20, phase 1 KISS : réglages du compte PayPal, import ventilé par devise, doublons ; LA migration 20261120000001_paypal_import (non breaking) ; huit AC ; non validée
   38-11c-rapprochement-paypal: drafted  # 2026-11-20, phase 1 KISS : ventes rattachées par TXN (rattachement en devise), frais, règles type PayPal et e-mail exact, sens, conversions, retraits, écarts, à examiner ; onze AC ; non validée
+  38-12a-telechargement-api-paypal: drafted  # 2026-11-20, phase 2 : identifiants KESH_PAYPAL_<n>_*, client de l'API (fenêtres de 31 jours, 429, parallélisme), conversion vers le modèle du CSV, tâche et routes ; dix AC ; non validée
+  38-12b-ecran-manuels-paypal-api: drafted  # 2026-11-20, phase 2 : bouton, progression, manuels administration et utilisateur, api-external.md, E2E sur PayPal simulé ; sept AC ; non validée
   38-11d-ecrans-manuel-e2e-paypal: drafted  # 2026-11-20, phase 1 KISS : écrans, manuel utilisateur (.tex), api-external.md, E2E ; huit AC ; non validée
 
   # 2026-11-17 — Release 0.19.0 (publiée le 2026-11-20, coupure le 2026-11-19 au soir ; coupure avancée au 2026-11-18, décision de Guy) : correction de la semaine, hors epic.
