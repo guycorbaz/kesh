@@ -182,7 +182,8 @@ export type AccountTreeNode = AccountResponse & { level: number };
 /**
  * Met les comptes dans l'**ordre d'arbre** (issue #1439) : parcours en
  * profondeur depuis les racines, chaque compte suivi de ses sous-comptes, les
- * frères triés par numéro. Un compte rangé sous un groupe dont le numéro ne
+ * frères dans l'ordre reçu (celui de l'API, déjà trié par numéro : aucun nouveau
+ * tri, donc aucun écart possible avec la collation de la base). Un compte rangé sous un groupe dont le numéro ne
  * l'encadre pas (1100 sous un groupe 29) s'affiche ainsi sous son vrai parent,
  * et non sous le compte qui le précède dans l'ordre des numéros.
  *
@@ -191,13 +192,10 @@ export type AccountTreeNode = AccountResponse & { level: number };
  * n'est atteignable d'aucune racine : il est ajouté à la fin, au niveau 0,
  * pour ne jamais disparaître de l'écran.
  *
- * @param accounts comptes à ordonner, dans n'importe quel ordre
+ * @param accounts comptes à ordonner, dans l'ordre de l'API (par numéro)
  */
 export function buildAccountTree(accounts: AccountResponse[]): AccountTreeNode[] {
 	const ids = new Set(accounts.map((a) => a.id));
-	// Comparaison par unités de code, comme le tri SQL des numéros.
-	const byNumber = (a: AccountResponse, b: AccountResponse) =>
-		a.number < b.number ? -1 : a.number > b.number ? 1 : a.id - b.id;
 	const children = new Map<number | null, AccountResponse[]>();
 	for (const a of accounts) {
 		const key = a.parentId !== null && ids.has(a.parentId) ? a.parentId : null;
@@ -208,7 +206,7 @@ export function buildAccountTree(accounts: AccountResponse[]): AccountTreeNode[]
 	const out: AccountTreeNode[] = [];
 	const seen = new Set<number>();
 	const walk = (parent: number | null, level: number) => {
-		for (const a of (children.get(parent) ?? []).sort(byNumber)) {
+		for (const a of (children.get(parent) ?? [])) {
 			if (seen.has(a.id)) continue;
 			seen.add(a.id);
 			out.push({ ...a, level });
@@ -216,7 +214,7 @@ export function buildAccountTree(accounts: AccountResponse[]): AccountTreeNode[]
 		}
 	};
 	walk(null, 0);
-	for (const a of [...accounts].sort(byNumber)) {
+	for (const a of accounts) {
 		if (!seen.has(a.id)) {
 			seen.add(a.id);
 			out.push({ ...a, level: 0 });

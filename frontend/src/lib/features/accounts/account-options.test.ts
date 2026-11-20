@@ -220,8 +220,8 @@ describe('buildAccountTree', () => {
 		]);
 	});
 
-	it('parcourt en profondeur, frères triés par numéro, quel que soit l’ordre reçu', () => {
-		const arbre = buildAccountTree([C1101, C1100, C1090, G29, BANQUE]);
+	it('parcourt en profondeur, frères dans l’ordre reçu de l’API (par numéro)', () => {
+		const arbre = buildAccountTree([BANQUE, C1090, C1100, C1101, G29]);
 		expect(arbre.map((n) => [n.number, n.level])).toEqual([
 			['1020', 0],
 			['29', 0],
@@ -229,6 +229,11 @@ describe('buildAccountTree', () => {
 			['1100', 1],
 			['1101', 2],
 		]);
+	});
+
+	it('ne retrie pas les frères : l’ordre reçu est gardé', () => {
+		const arbre = buildAccountTree([C1100, C1090, G29]);
+		expect(arbre.map((n) => n.number)).toEqual(['29', '1100', '1090']);
 	});
 
 	it('traite un parent absent de la liste comme une racine', () => {
