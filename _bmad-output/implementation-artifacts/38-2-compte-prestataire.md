@@ -1,6 +1,8 @@
 # Story 38-2 : compte bancaire prestataire — compte `bank` et réglages de prestataire (D8, B16)
 
-Status: ready-for-dev
+Status: deferred
+
+*(2026-11-20 — reportée en phase 2 par la décision de Beat (phase 1 KISS, § « Phase 1 KISS » du fichier d'epic) ; validée le 2026-11-15, gardée telle quelle comme base de la phase 2. Ce qu'en reprend la phase 1 est dit dans les fiches 38-11a à 38-11d.)*
 
 *Fiche rédigée le 2026-11-15 (Opus), branche `epic/38-paypal`, numéros de ligne relevés au commit `8b3d548d`. Epic 38 :
 décisions E1, E11, E18, E19, E24 ; contrats **C-38-3** (et C-38-2 pour le refus de suppression d'une connexion,

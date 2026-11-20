@@ -160,18 +160,31 @@ pub async fn create_batch(
         //     verrou : l'IBAN d'un compte ne devient jamais nul (un compte
         //     `bank` en exige un, `chk_bank_accounts_bank_has_iban`, et le type
         //     ne change pas).
+        //     Story 38-11b (revue P1, M2) — `provider` lu ici aussi : le solde
+        //     d'un prestataire (PayPal) ne paie pas de facture fournisseur (AC-3,
+        //     limite (a)), IBAN ou non — refusé dès la création, après « clos »
+        //     et avant l'IBAN (la vraie raison d'abord), au lieu d'un lot généré
+        //     que la confirmation refuserait (`pay_in_tx`). Pas de
+        //     revérification sous verrou : un compte devenu PayPal après la
+        //     création du lot est refusé à la confirmation par `pay_in_tx`.
         #[allow(clippy::type_complexity)]
-        let bank: Option<(Option<i64>, bool, Option<chrono::NaiveDate>, Option<String>)> =
-            sqlx::query_as(
-                "SELECT journal_account_id, archived, closed_on, iban FROM bank_accounts \
-                 WHERE id = ? AND company_id = ?",
-            )
-            .bind(bank_account_id)
-            .bind(company_id)
-            .fetch_optional(&mut *tx)
-            .await
-            .map_err(map_db_error)?;
-        let (journal_account_id, archived, closed_on, iban) = bank.ok_or(DbError::NotFound)?;
+        let bank: Option<(
+            Option<i64>,
+            bool,
+            Option<chrono::NaiveDate>,
+            Option<String>,
+            Option<String>,
+        )> = sqlx::query_as(
+            "SELECT journal_account_id, archived, closed_on, iban, provider FROM bank_accounts \
+             WHERE id = ? AND company_id = ?",
+        )
+        .bind(bank_account_id)
+        .bind(company_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(map_db_error)?;
+        let (journal_account_id, archived, closed_on, iban, provider) =
+            bank.ok_or(DbError::NotFound)?;
         if archived {
             return Err(DbError::IllegalStateTransition(
                 "le compte bancaire source est archivé".into(),
@@ -179,6 +192,9 @@ pub async fn create_batch(
         }
         if closed_on.is_some() {
             return Err(DbError::BankAccountClosed { bank_account_id });
+        }
+        if provider.is_some() {
+            return Err(DbError::BankAccountIsProvider { bank_account_id });
         }
         if iban.is_none() {
             return Err(DbError::PaymentBatchAccountHasNoIban { bank_account_id });

@@ -1,6 +1,8 @@
 # Story 38-6b : Conversions, retraits, remboursements, litiges ; file « à examiner »
 
-Status: ready-for-dev
+Status: deferred
+
+*(2026-11-20 — reportée en phase 2 par la décision de Beat (phase 1 KISS, § « Phase 1 KISS » du fichier d'epic) ; validée le 2026-11-15, gardée telle quelle comme base de la phase 2. Ce qu'en reprend la phase 1 est dit dans les fiches 38-11a à 38-11d.)*
 
 - **Epic** : 38 (`_bmad-output/planning-artifacts/epic-38-paypal.md`, § *38-6b*, E7, E16, C-38-8, C-38-9) ; décisions de Beat
   B4, B7, B20 (`epics-38-40-cadrage.md`), qui priment.

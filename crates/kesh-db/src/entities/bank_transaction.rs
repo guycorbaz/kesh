@@ -96,6 +96,12 @@ pub struct BankTransaction {
     pub transaction_id: Option<String>,
     pub counterparty_iban: Option<String>,
     pub counterparty_name: Option<String>,
+    /// Story 38-11b — type de la transaction chez le prestataire (le `Type`
+    /// PayPal) ; `None` pour un import bancaire (CAMT, CSV, saisie manuelle).
+    pub provider_type: Option<String>,
+    /// Story 38-11b — adresse électronique de la contrepartie (import PayPal) ;
+    /// `None` pour un import bancaire.
+    pub counterparty_email: Option<String>,
     pub status: BankTransactionStatus,
     pub matched_entry_id: Option<i64>,
     /// Story 8-4 — timestamp de rejet manuel (POST /reconciliation/reject).
@@ -123,6 +129,11 @@ pub struct NewBankTransaction {
     pub transaction_id: Option<String>,
     pub counterparty_iban: Option<String>,
     pub counterparty_name: Option<String>,
+    /// Story 38-11b — voir [`BankTransaction::provider_type`] ; `None` pour
+    /// les chemins CAMT, CSV et manuel.
+    pub provider_type: Option<String>,
+    /// Story 38-11b — voir [`BankTransaction::counterparty_email`].
+    pub counterparty_email: Option<String>,
 }
 
 #[cfg(test)]

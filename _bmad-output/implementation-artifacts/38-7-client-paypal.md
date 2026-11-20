@@ -1,6 +1,8 @@
 # Story 38-7 : client PayPal — OAuth2, Transaction Search, soldes, « Tester la connexion »
 
-Status: ready-for-dev
+Status: deferred
+
+*(2026-11-20 — reportée en phase 2 par la décision de Beat (phase 1 KISS, § « Phase 1 KISS » du fichier d'epic) ; validée le 2026-11-15, gardée telle quelle comme base de la phase 2. Ce qu'en reprend la phase 1 est dit dans les fiches 38-11a à 38-11d.)*
 
 *Fiche rédigée le 2026-11-15 (Opus), branche `epic/38-paypal`. Epic 38 (`planning-artifacts/epic-38-paypal.md`),
 E2, E3, E9, E10, E20, E24 ; contrats C-38-1, C-38-2, C-38-5, C-38-11, C-38-12. Décisions B1, B8, B11, B12, B23.

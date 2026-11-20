@@ -8,13 +8,21 @@
 //! 3. Stricte rejet partiel (FR51 v0.1) : toute erreur ligne agrège dans
 //!    [`crate::CsvError::PartialFailure`] cap 100 (Pass 2 H'1).
 //!
+//! Aides des exports lus par noms de colonnes (Story 38-11a, PayPal ; reprises
+//! par Wise et Stripe) : [`by_name`] (en-tête par noms) et [`amount`]
+//! (montants à forme fermée).
+//!
 //! Pas de dépendance sur `kesh-core` ou `kesh-db` (crate publiable, cf.
 //! décision architecture #7).
 
+pub mod amount;
+pub mod by_name;
 pub mod encoding;
 pub mod parser;
 pub mod profile;
 
+pub use amount::parse_dot_decimal_amount;
+pub use by_name::{ColumnsByName, HeaderByNameError};
 pub use encoding::{DetectedEncoding, detect_encoding};
 pub use parser::{
     DEFAULT_CSV_CURRENCY, MAX_REPORTED_CURRENCIES, ParseCsvOutcome, empty_valid_sentinel_date,

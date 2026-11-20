@@ -99,6 +99,9 @@ fn make_rule(
         counterparty_account_id,
         priority,
         default_project_id: None,
+        counterparty_email: None,
+        direction: None,
+        provider_type: None,
     }
 }
 
@@ -118,6 +121,9 @@ fn make_rule_with_project(
         counterparty_account_id,
         priority,
         default_project_id,
+        counterparty_email: None,
+        direction: None,
+        provider_type: None,
     }
 }
 

@@ -1277,6 +1277,9 @@ async fn regles_de_reconciliation_refusent_un_compte_en_devise(pool: MySqlPool) 
         counterparty_account_id: compte,
         priority: 1,
         default_project_id: None,
+        counterparty_email: None,
+        direction: None,
+        provider_type: None,
     };
     let mut tx = pool.begin().await.unwrap();
     let err = reconciliation_rules::create_in_tx(&mut tx, c, s.admin_user_id, &regle(usd, "a"))

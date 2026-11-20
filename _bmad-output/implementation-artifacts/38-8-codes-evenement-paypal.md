@@ -1,6 +1,8 @@
 # Story 38-8 : codes d'événement PayPal → mouvements classés ; `invoice_id` → boutique ; surcharges
 
-Status: ready-for-dev
+Status: deferred
+
+*(2026-11-20 — reportée en phase 2 par la décision de Beat (phase 1 KISS, § « Phase 1 KISS » du fichier d'epic) ; validée le 2026-11-15, gardée telle quelle comme base de la phase 2. Ce qu'en reprend la phase 1 est dit dans les fiches 38-11a à 38-11d.)*
 
 *Fiche rédigée le 2026-11-15 (Opus), branche `epic/38-paypal`. Epic 38 (`planning-artifacts/epic-38-paypal.md`),
 E4, E6, E7, E8, E16, E20, E24 ; contrats C-38-4, C-38-5, C-38-11. Décisions B3, B4, B7, B20, B24. **Dépend de** 38-7

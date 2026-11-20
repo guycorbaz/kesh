@@ -648,6 +648,27 @@ pub async fn type_in_share_mode(
     Ok(row.map(|(currency, account_type, active)| (account_type, active, currency)))
 }
 
+/// Story 38-11b (AC-2) — ce qu'il faut savoir d'un compte pour en faire le
+/// **compte de frais** d'un compte PayPal : `(type, actif, imputable, devise)`,
+/// lu dans la transaction de l'appelant **sous verrou partagé**, comme
+/// [`type_in_share_mode`] (même ordre : après les réglages, avant
+/// `bank_accounts`). `None` si la ligne est absente ou d'une autre société.
+pub async fn fee_account_facts_in_share_mode(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    account_id: i64,
+) -> Result<Option<(AccountType, bool, bool, Option<String>)>, DbError> {
+    sqlx::query_as(
+        "SELECT account_type, active, postable, currency FROM accounts \
+         WHERE id = ? AND company_id = ? LOCK IN SHARE MODE",
+    )
+    .bind(account_id)
+    .bind(company_id)
+    .fetch_optional(conn)
+    .await
+    .map_err(map_db_error)
+}
+
 /// Le premier compte bancaire **non archivé** lié au compte `account_id` dont le
 /// type n'admet pas `new_type`, par `id` — `(id, nom d'affichage)` — Story
 /// 34-11a2 (#972, C-e341-31). Lecture `LOCK IN SHARE MODE` : elle voit la
@@ -782,6 +803,19 @@ async fn guard_currency_update(
     //    ne change plus (elle est celle de toutes ses lignes passées).
     if currency_changed && has_journal_line_locked(conn, before.id).await? {
         return Err(DbError::AccountCurrencyLocked);
+    }
+
+    // 3 bis. ACCOUNT_CURRENCY_PROVIDER_LINKED — Story 38-11b, revue P1 (M3) :
+    //    la devise d'un compte lié au solde d'un prestataire est celle du
+    //    solde ; elle ne change dans aucun sens (retirée, posée, remplacée), même
+    //    sans ligne d'écriture (le solde porte déjà ses transactions importées).
+    //    Avant la garde 4, dont le message (« employé en CHF ») ne dirait pas la
+    //    raison.
+    if currency_changed
+        && let Some(bank_account_id) =
+            provider_bank_account_linked_in_tx(conn, company_id, before.id).await?
+    {
+        return Err(DbError::AccountCurrencyProviderLinked { bank_account_id });
     }
 
     // 4. ACCOUNT_CURRENCY_IN_USE — un compte débité en CHF par un chemin
@@ -2530,6 +2564,26 @@ async fn has_journal_line_locked(
     .await
     .map_err(map_db_error)?;
     Ok(line.is_some())
+}
+
+/// Le premier compte bancaire **de prestataire** (`provider` non nul, archivé
+/// ou non) lié au compte du plan `account_id`, par `id` — Story 38-11b, revue
+/// P1 (M3). Lecture `LOCK IN SHARE MODE`, après le `FOR UPDATE` du compte :
+/// elle voit un lien posé pendant que la modification attendait la ligne.
+async fn provider_bank_account_linked_in_tx(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    account_id: i64,
+) -> Result<Option<i64>, DbError> {
+    sqlx::query_scalar(
+        "SELECT id FROM bank_accounts WHERE journal_account_id = ? AND company_id = ? \
+         AND provider IS NOT NULL ORDER BY id LIMIT 1 LOCK IN SHARE MODE",
+    )
+    .bind(account_id)
+    .bind(company_id)
+    .fetch_optional(conn)
+    .await
+    .map_err(map_db_error)
 }
 
 /// Le premier **site de configuration** (hors rôle, que l'appelant juge sur

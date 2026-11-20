@@ -184,6 +184,9 @@ pub const ACTIONS: &[&str] = &[
     "payment_batch.cancelled",
     "payment_batch.confirmed",
     "payment_batch.generated",
+    // Story 38-11b — l'import du CSV PayPal d'un compte PayPal (une entrée par
+    // import, en plus de `bank_import.created` par devise).
+    "paypal_import.created",
     "product.archived",
     "product.created",
     "product.updated",

@@ -1,5 +1,7 @@
 # Epic 38 — Comptes PayPal : téléchargement et imputation automatiques
 
+*Depuis le 2026-11-20 : **phase 1 KISS** — import du CSV PayPal à la demande et rapprochement (§ *Phase 1 KISS*, qui prime) ; le reste passe en phase 2.*
+
 **Cadrage : 2026-11-15** (branche `epic/38-paypal`), **révisé le même jour sur B16–B21** (§ *Révision B16–B21*)
 **puis sur B22–B26** (§ *Révision B22–B26*), arbitré O1–O12 après la rédaction des fiches et aligné sur la validation
 P1 (§ *Validation P1*, découpage de 38-3 en 38-3a et 38-3b), puis révisé sur B27–B28 (§ *Révision B27–B28*). Demande
@@ -14,6 +16,7 @@ critères neufs ; `kesh_version_min_required` relevé **en dernière instruction
 commit** (P2, P2-bis) — **numéro de release à Guy** (Q1). `source_format = 'PROVIDER_API'` n'exige aucun DDL et
 s'écrit à partir de 38-3b, sous ce même relèvement. Toutes les autres migrations de l'epic créent des tables ou
 ajoutent des colonnes `NULL`. `account_kind` ne reçoit toujours aucune valeur neuve (B16 maintenu). Détail en E19.
+*(Reportée en phase 2 (2026-11-20) — voir § *Phase 1 KISS*.)*
 
 **Numéro : 38** (35 et 36 réservés ailleurs ; 39 Wise, **40 Stripe**, provisoire en attendant Guy, B25). Une branche par
 story, fusionnée localement dans `epic/38-paypal`, puis **une PR** vers le dépôt de Guy (remote `beat`), **après celle
@@ -25,6 +28,7 @@ issues et PR s'ouvrent à la fin.
 **Release** : un epic = une release ; **16 stories**. Cet epic **dépasse la borne** de six stories des epics de
 correction ou d'amélioration (c'est une fonctionnalité nouvelle, ce que le kickoff déclare) ; **son découpage en
 plusieurs epics est à décider avec le Project Lead à la soumission** (décision de Beat, 2026-11-16).
+*(Reportée en phase 2 (2026-11-20) — voir § *Phase 1 KISS*.)*
 
 **Règles de travail à plusieurs** (alignement du 2026-11-16, `CLAUDE.md` § *Travailler à plusieurs développeurs*) :
 aucune ligne n'est écrite au `CHANGELOG.md` en cours d'epic (chaque fiche porte sa section *Note de version*, assemblée
@@ -33,7 +37,185 @@ régénèrent à la release) ; les compteurs (`LIB_ROUTES`, audit des migrations
 `EMPTY_BEFORE_RESET`, `Cargo.lock`, nombre de crates, nombre de contrôles de clôture) se recomptent depuis la source
 après chaque reprise de `main`.
 
+## Phase 1 KISS (décision de Beat du 2026-11-20)
+
+⛔ **Cette section prime sur tout le reste du fichier.** Ce qui suit à partir de « Modules touchés » est
+l'**historique** de la phase de cadrage du 2026-11-15 au 2026-11-17 ; les décisions qui ne valent plus y sont marquées
+« reportée en phase 2 (2026-11-20) ». Source : la page approuvée par Beat (`data-not-committed/epic-38-kiss.html`,
+version 2 du 2026-11-20, hors dépôt) et les notes sans donnée personnelle
+`kesh-gate-logs/epic-38-kiss/paypal-2024-comprendre.md`.
+
+**Pourquoi.** Beat doit rendre sa comptabilité 2025 le **dimanche 2026-11-23**. L'epic de seize stories (coffre des
+secrets, client de l'API PayPal, téléchargement planifié, TVA par défaut, groupes d'écritures, relevé joint) ne tient
+pas dans ce délai. La phase 1 garde le chemin le plus court : **un import CSV à la demande, un rapprochement par
+identifiant de transaction, la liste des écarts**, développable en une nuit.
+
+### Périmètre
+
+- **Import unique, à la demande** (bouton à l'écran et route de l'API), du CSV PayPal « Balance affecting
+  transactions » d'un exercice. Aucun automatisme, aucun appel réseau.
+- **Deux comptes PayPal**, plusieurs devises : **un compte bancaire Kesh par compte PayPal et par devise**, lié au
+  compte du plan de la devise (comptes en devise de l'Epic 37) — levée de C-37-9 pour ce seul cas (engagement D8 de
+  l'Epic 37).
+- **Réglages par compte bancaire** : le compte PayPal (libellé) et le **compte de frais**.
+- **Les ventes viennent des boutiques** : écritures déjà passées (débit du compte PayPal de la devise, crédit des
+  ventes 3132 ou 3140, « TXN <id> » ou « transaction <id> » dans le libellé, montant brut). Un encaissement PayPal se
+  **rattache** à l'écriture de vente de même identifiant, même montant brut et même devise — par le rattachement à une
+  écriture existante (v017-3a, `find_entry_candidates` / `link_entry_in_tx`, `reconciliation_link.rs:870`, `:1156`),
+  étendu aux transactions en devise. **Seuls les frais s'écrivent**, au compte de frais.
+- **Écarts listés** : encaissement sans vente ; vente sur le compte PayPal sans encaissement ; montant ou devise
+  différents.
+- **Achats par règle** : règles d'affectation existantes, plus deux **filtres facultatifs** sur toute règle —
+  `provider_type` (**type PayPal**, exact) et `counterparty_email` (**e-mail exact**) — et un **sens** facultatif ;
+  **aucune valeur neuve** de l'`ENUM` `match_type` (le critère existant reste obligatoire).
+- **Conversion**, règle commune aux trois prestataires (décision de l'orchestrateur du 2026-11-20) : **un côté en
+  CHF → une écriture** au CHF réel (cours déduit, provenance `manual`), les deux transactions rattachées à elle ;
+  **deux devises étrangères → deux écritures** au **même CHF** (Q3) par le compte de conversion — Kesh n'admet qu'une
+  devise étrangère par écriture (`FX_MULTIPLE_CURRENCIES`, 37-3a) ; la forme de 2024 (compte de transit) et celle de
+  `create_conversion` (37-3b). L'autre côté d'une écriture admet une transaction d'une autre devise et de signe
+  opposé (prédicat à deux branches, 38-11c1 AC-1b).
+- **Retrait** : virement vers le compte choisi (le compte bancaire principal par défaut), **depuis un solde CHF** ; un
+  retrait d'un solde en devise va « à examiner ».
+- **Doublons** (même identifiant de transaction sur le même compte) ignorés ; **Status ≠ Completed** écarté ; lignes
+  `Memo` et paires de retenue neutres écartées ; **le reste « à examiner »** (remboursements, litiges, conversions
+  sans paire, lignes sans règle).
+- **Aucun code TVA** (Q4 : aucun au grand livre 2024 sur ces lignes ; la TVA ne touche que les ventes « CH » des
+  boutiques, par leur compte de vente).
+- **Ventes 2025 des boutiques** : importées hors Kesh par un script sur l'API existante (`POST
+  /api/v1/journal-entries`, R1, recommandé) ; l'import des boutiques dans Kesh est en phase 2.
+
+### Règles
+
+- Kesh **propose**, l'utilisateur **accepte** (règle « un appariement automatique propose, il ne crée jamais ») ;
+  rien n'est écrit à la lecture de la revue ; l'acceptation suit le *Pattern batch*.
+- Une ligne PayPal avec frais donne **deux transactions** (brut et frais, `transaction_id` suffixé `:FEE`) : le brut
+  se rattache à la vente, les frais s'écrivent.
+- Le CSV est lu **par les noms de colonnes** (anglais) ; une autre langue est refusée en nommant les colonnes
+  manquantes.
+- Les dates sont celles de l'export, sans conversion de fuseau (limite au manuel).
+- Méthode du dépôt inchangée (fiche, validation, développement, revue en boucle, gate complet, E2E au dernier commit
+  de code) ; elle se tient en une nuit parce que les fiches sont courtes, non parce qu'on la saute.
+
+### Stories de la phase 1
+
+| Clé | Objet | Modules (≤ 5) | Dépend de | Migration |
+|---|---|---|---|---|
+| `38-11a` | lecteur du CSV PayPal | `kesh-import` | — | non |
+| `38-11b` | réglages du compte PayPal et import ventilé par devise, doublons | `kesh-db`, `kesh-api`, `kesh-import` (lecture), `kesh-i18n` | 38-11a, Epic 37 | **oui, la seule** |
+| `38-11c1` | rattachement en devise, autre côté à deux branches (conversions), filtres et sens des règles (AC-1 à AC-3 de l'ancienne 38-11c, plus AC-1b) | `kesh-db`, `kesh-reconciliation`, `kesh-api` | 38-11b | non |
+| `38-11c2` | revue et acceptation : moteur commun aux prestataires, ventes par TXN, frais, règles, conversions, retraits, écarts, « à examiner » (AC-4 à AC-11) | `kesh-reconciliation`, `kesh-db`, `kesh-api`, `kesh-i18n` | 38-11b, 38-11c1 | non |
+| `38-11d` | écrans, manuel utilisateur (`.tex`), `docs/api-external.md`, E2E | `frontend` (bank-accounts, bank-import, invoices, supplier-invoices, reconciliation, paypal), `kesh-i18n`, manuel, docs, E2E — 5 | 38-11b, 38-11c1, 38-11c2 | non |
+
+Cinq stories (`38-11c` découpée en `38-11c1` et `38-11c2` à la validation P3, numérotation des AC gardée : une mention
+« 38-11c AC-n » désigne c1 pour n ≤ 3, c2 au-delà), story de solde non prévue (la dette tracée en issues à la PR). Les
+clés `38-11a` à `38-11d` évitent toute collision avec les fiches 38-1 à 38-10, gardées comme historique et passées à
+`deferred` au registre.
+
+**Ce que la phase 1 sert aux Epics 39 (Wise) et 40 (Stripe)** — contrats relus à la validation P3 (fiches 39-11c,
+40-7c) : colonnes de 38-11b sans migration (`provider` ∈ {`paypal`, `wise`, `stripe`}) ; codes génériques `PROVIDER_*`
+(Q-39-10) ; rattachement en devise et prédicat de l'autre côté à deux branches (38-11c1) ; revue commune `build_review`
+paramétrée par le prestataire, la clé de rattachement (`transaction_id` pour PayPal et Wise, `reference` pour Stripe)
+et la fonction d'extraction des identifiants ; moteur d'acceptation commun (verrous, points de sauvegarde, interblocage
+remonté, rejugement, `PROVIDER_PROPOSAL_STALE`, trace `provider.proposal_accepted`), proposition générique `link_entry`,
+écriture commune des frais, règles et versements, `plan_conversion` (38-11c2) ; gestionnaires minces
+`<prestataire>::accept_proposals`, jamais `post_accept`.
+
+### Migration
+
+**Une**, `20261120000001_paypal_import.sql` (38-11b), **non breaking** au sens du ⚠️ de P1 :
+`kesh_version_min_required` reste à 0.17.6, aucune version Cargo relevée. Horodatage après les dernières de `main`
+(`20261118000001_grouped_settlements`), de l'Epic 49 (`20261118000002`) et de l'Epic 47 (`20261119000001`). Contenu :
+`bank_accounts` (`provider`, `provider_account`, `fee_account_id`, CHECK `chk_bank_accounts_provider` qui admet
+`paypal`, `wise` et `stripe` — les Epics 39 et 40 n'ont ainsi pas de migration —, contrainte d'IBAN reposée sous le
+même nom pour admettre un compte de prestataire sans IBAN) ; `bank_transactions` (`provider_type`,
+`counterparty_email`, un index) ; `reconciliation_rules` (trois **filtres `NULL`** : `provider_type`,
+`counterparty_email`, `direction`, avec leur CHECK ; l'index unique `uq_reconciliation_rules_match_active` n'est pas
+touché — limite écrite : deux règles actives de même critère et même valeur ne diffèrent pas par leurs seuls filtres).
+**Aucun `MODIFY COLUMN`, `CHANGE COLUMN`, `DROP COLUMN` ni `RENAME`** (P3 sans objet ; la valeur neuve de l'`ENUM`
+envisagée au cadrage est abandonnée, validation P1 de 38-11b). DDL seul (P7 sans objet) ; P5, P6, P8 à la fiche.
+
+### Fichiers communs (travail à plusieurs)
+
+| Fichier ou module | Touché par | Recoupe |
+|---|---|---|
+| `crates/kesh-db/migrations/`, `test-schema/0001_schema_squash.sql`, `docs/migrations-idempotence-audit.md` | 38-11b | Epics 47, 49 (une migration chacun) : compteurs **recomptés** après chaque fusion |
+| `crates/kesh-db/src/backup.rs` (`ABSENCES_ADMISES_EPIC_37`) | 38-11b | Epics 47, 49 s'ils ajoutent des colonnes |
+| `crates/kesh-api/src/exports/csv_tables.rs` | 38-11b | Epics 47, 49 |
+| `crates/kesh-api/src/routes/bank_accounts.rs` | 38-11b | — |
+| `crates/kesh-api/src/routes/reconciliation.rs`, `crates/kesh-db/src/repositories/reconciliation_link.rs` | 38-11c1 (pré-vol, rattachement en devise, prédicat), 38-11c2 (extraction de `mark_reconciled_in_tx`) | Epic 48 (corrections) à surveiller ; Epics 39 et 40 (prédicat, s'ils arrivent les premiers) |
+| `crates/kesh-reconciliation/src/rules.rs`, `routes/reconciliation_rules.rs` | 38-11c1 | — |
+| `crates/kesh-reconciliation/src/mutex.rs` (`with_account_locks`) | 38-11b | Epics 39, 40 (réutilisé) |
+| `crates/kesh-reconciliation/src/provider_review.rs`, `conversion.rs`, `crates/kesh-api/src/routes/provider_accept.rs`, `repositories/journal_entry_conversions.rs` | 38-11c2 | Epics 39, 40 (réutilisés, gestionnaires minces) |
+| `crates/kesh-api/tests/audit_route_registry.rs`, `admin-manual.tex` (compte du registre) | 38-11b, 38-11c2 | Epics 39, 40 : compte **recompté** après chaque fusion |
+| `crates/kesh-api/src/errors.rs`, catalogues i18n (quatre locales), `i18n-keys.test.ts` (`sitesTotal`) | toutes | tous : chacun son bloc, compteur recompté |
+| `frontend/src/routes/(app)/bank-accounts/`, `features/reconciliation/rules/`, `features/bank-accounts/format.ts`, `features/bank-import/BankImportUpload.svelte`, `ManualStatementForm.svelte`, `features/invoices/SettleInvoiceDialog.svelte`, `routes/(app)/reconciliation/+page.svelte`, `LinkSettlementModal.svelte`, `routes/(app)/supplier-invoices/[id]/+page.svelte` | 38-11d | `v0200-menu-sous-groupes` (menu) ; Epics 39, 40 (`withoutProviders`) |
+| `docs/manual/fr/user-manual.tex`, `docs/api-external.md` | 38-11d | Epics 47, 49 ; PDF jamais commités dans la branche |
+| `sprint-status.yaml` | toutes | bloc propre de l'Epic 38 |
+
+### Dépendances
+
+- **Epic 37** (dans `main` depuis la 0.19.0, `70be12a6`) : devise d'un compte, cours retenus
+  (`find_company_rate_in_tx`, `exchange_rates.rs:365`), lignes en devise, `create_conversion` (37-3b).
+- **Base** : la branche reprend `main` (fusion du 2026-11-20, `43ceb541`) ; l'Epic 37 y est.
+- **Release** : à convenir avec le Project Lead (un epic = une release). Pour ses livres 2025, Beat ne fait tourner un
+  build de la branche sur ses données réelles qu'en connaissance de cause : la migration y devient figée (P8), et son
+  horodatage doit rester après toute migration de `main` publiée ensuite.
+
+### Ce qui passe en phase 2
+
+Coffre des secrets et connexions (38-1) ; client et téléchargement par l'API PayPal, planifié et à la demande (38-3a,
+38-3b, 38-7) ; codes d'événement (38-8) ; boutique par préfixe du numéro de facture, critères article et code
+d'événement, filtres devise et compte (le reste de 38-4) ; code TVA par défaut d'un compte (38-5) ; écritures de vente,
+de remboursement et de litige proposées (le reste de 38-6a et 38-6b) ; rattachement en lot et groupe d'écritures
+(38-6c1, 38-6c2) ; écrans des connexions (38-9a) ; relevé joint et contrôle de clôture (38-10) ; import des boutiques
+dans Kesh ; Stripe (Epic 40). La migration breaking de l'ancienne 38-2 (O1) et la question Q1 qui en dépendait
+tombent avec elle.
+
+## Phase 2 — téléchargement par l'API PayPal (décisions de Beat du 2026-11-20)
+
+Source : `kesh-gate-logs/epic-38-kiss/phase2-decisions.md`. Deux stories, après la phase 1 (38-11a à 38-11d) :
+
+| Clé | Objet | Modules | Dépend de | Migration |
+|---|---|---|---|---|
+| `38-12a` | identifiants par variables d'environnement, client de l'API (jeton, fenêtres de 30 jours de Zurich sous la limite de 31 jours, pages de 500, reprise sur 429, parallélisme), conversion vers `PaypalRow`, tâche et routes | `kesh-import`, `kesh-api`, `kesh-i18n` | 38-11a, 38-11b, 38-11c1, 38-11c2 | non |
+| `38-12b` | bouton sur la page PayPal de 38-11d, période, progression, manuels (administration, utilisateur), `api-external.md`, E2E | `frontend`, `kesh-i18n`, manuels et docs | 38-12a, 38-11d | non |
+
+- **Socle commun S1 à S9 avec les Epics 39 et 40** (texte identique de `epic-39-wise.md` et `epic-40-stripe.md`, § « Socle
+  commun de la phase 2 », C-40-K6, validation P1 des phases 2 de Wise et de Stripe du 2026-11-20) : **38-12a, développée
+  la première, l'écrit générique** — lecteur `provider_env`, mécanique `provider_download` (tâches en mémoire,
+  `windows(from, to, max_days, now)`, `max_days` par prestataire, reprise unique 429/5xx, `Retry-After` borné à 120 s, sinon 5/10/20/40/60 s, six essais,
+  pause commune), routes `<prestataire>-downloads` aux sessions seules et état `{ state, steps, pausedUntilSeconds,
+  result, error }`, codes `PROVIDER_*`, constructeur de client extrait de `exchange_rates/source.rs`, cœur d'import
+  `ProviderLine`, test S9 ; 38-12b écrit le dialogue générique, `providerApi` et le serveur simulé commun
+  (`KESH_E2E_PROVIDER_MOCK_PORT`). Wise (39-12a1, 39-12a2, 39-12b) et Stripe (40-8a, 40-8b) les appellent. PayPal
+  appelle `windows` à 30 jours (une fenêtre de 31 jours de Zurich dépasse la limite de PayPal au passage à l'heure
+  d'hiver).
+- **Validation P2 (2026-11-20)** : valeur vide = absente (les fichiers `docker-compose` transmettent `${NOM:-}`), série partielle seule refusée, séries 1 à 3 transmises par `docker-compose.yml`, `docker-compose.prod.yml` et `.env.example` ; le cœur `ProviderLine` n'est pas dans 38-11b : extrait par 38-12a ; `error.details`.
+- **Validation P3 ciblée (2026-11-20)** : la transmission des séries heurte la garde `configuration_transmise.rs` (#550), qui ne
+  lit que des noms littéraux : 38-12a y ajoute une **famille indexée** générique (séries 1 à 3 transmises, 4 à 9 admises
+  absentes) ; `providerApi` sans `scaKeyConfigured` ; fenêtres de PayPal à 30 jours partout.
+- **Validation P4 ciblée (2026-11-20)** : la famille indexée de la garde `configuration_transmise.rs` couvre aussi `KESH_<P>_BASE_URL` et `KESH_<P>_PARALLEL` (noms sans numéro) ; panique d'une tâche de téléchargement = `INTERNAL_ERROR` ; `T1111` aux codes de départ de PayPal.
+- **Identifiants** : `KESH_PAYPAL_<n>_ACCOUNT` (libellé du compte PayPal de 38-11b, propre à l'installation), `_CLIENT_ID`,
+  `_SECRET`, validés au démarrage par `provider_env` (refus inconditionnel, contrairement à `KESH_SMTP_*`) ; rien en base
+  ni dans la sauvegarde, pas de coffre. Application PayPal à la seule
+  fonction « Transaction Search ». Les clés d'API de Kesh, hachées, ne conviennent pas : le secret doit être relu.
+- **Même modèle, mêmes doublons, même rapprochement** : l'API se convertit en lignes de 38-11a, l'import de 38-11b les
+  ventile, 38-11c1 et 38-11c2 les rapprochent sans changement ; doublons par identifiant de transaction, CSV et téléchargement
+  mélangeables.
+- **Réserves** (relevé du 2026-11-20, complété à la validation P1 de la phase 2 ; détail à la fiche 38-12a) : 31
+  jours, 500 par page, trois heures de délai, trois ans d'historique, flux OAuth, 429 `RATE_LIMIT_REACHED`, fuseau du
+  compte pour les dates **confirmés** ; `Retry-After`, hôte réel, nom de la fonction de l'application, signe des frais,
+  `payer_info` d'un débit, libellés de type du CSV pour chaque code `T…` **non confirmés** — vérifiés au développement
+  par quelques appels réels en lecture seule (`kesh-gate-logs/appel-reel.sh`, autorisation de Beat du 2026-11-20), jamais
+  en test ni en CI. Les libellés des types sont tenus par ceux que lit la phase 1 (`classify` de 38-11c2,
+  `PAYPAL_NEUTRAL_PAIR_TYPES` de 38-11b), test de couverture à l'appui.
+- **Plus tard encore** : téléchargement périodique (automatisme), story à part. Fichiers communs : ceux de 38-11b à
+  38-11d, plus `config.rs` et `lib.rs` de `kesh-api`, `crates/kesh-import/src/paypal.rs` (contrôles partagés),
+  `audit_route_registry.rs` et la phrase du registre du manuel d'administration (comptes recomptés).
+
 ## Modules touchés
+
+*(Reportée en phase 2 (2026-11-20) — voir § *Phase 1 KISS*.)*
 
 *(Liste tirée des fiches ; elle se relit à chaque reprise de `main`, pour voir tôt les recouvrements avec les autres
 epics en cours.)*
@@ -65,6 +247,8 @@ relevé joint (38-10) est **K10**, et l'avant-clôture compte dix contrôles (d�
 
 ## Intention
 
+*(Reportée en phase 2 (2026-11-20) — voir § *Phase 1 KISS*.)*
+
 Un compte PayPal *business* se tient dans Kesh **sans saisie** : Kesh télécharge chaque jour (ou à la demande) les
 mouvements de chaque solde de devise, les classe (vente, achat, frais, conversion, remboursement, litige, retrait), et
 les **propose** à l'imputation — brut au compte de produit ou de charge désigné par une **règle d'affectation**, TVA
@@ -76,6 +260,8 @@ L'epic pose d'abord le **socle commun** (B14) que réutiliseront Wise (39) et St
 les écrans, et le relevé joint.
 
 ## Dépendance à l'Epic 37 — et l'engagement D8
+
+*(Historique, 2026-11-15. L'Epic 37 est dans `main` depuis la 0.19.0 ; la levée de C-37-9 (D8) est reprise par 38-11b. Numéros de ligne périmés : ceux des fiches 38-11a à 38-11d, relevés le 2026-11-20, font foi.)*
 
 L'Epic 38 **ne se développe qu'après l'Epic 37** (fiches 37-1 à 37-5 `ready-for-dev`, aucune livrée au
 2026-11-15). Il en consomme :
@@ -125,6 +311,8 @@ boutique PayPal = **préfixe du numéro de facture** (`invoice_id`) · B25 Q3 re
 
 ## Inventaire du code existant (relevé le 2026-11-15)
 
+*(Historique, 2026-11-15. L'Epic 37 est dans `main` depuis la 0.19.0 ; la levée de C-37-9 (D8) est reprise par 38-11b. Numéros de ligne périmés : ceux des fiches 38-11a à 38-11d, relevés le 2026-11-20, font foi.)*
+
 | Domaine | Ce qui existe | Où |
 |---|---|---|
 | Comptes bancaires | `account_kind` `bank` \| `credit_card`, domaine fermé à l'octet, `iban` `NULL` mais **exigé d'un `bank`** (`chk_bank_accounts_bank_has_iban`, `:48-49` ; `validate_bank_input`, `routes/bank_accounts.rs:557-570`) — seule la carte en est dispensée ; `card_last4` ; migration **breaking** (min 0.17.6) | `migrations/20261110000001_bank_accounts_without_iban.sql:39-55` |
@@ -169,6 +357,8 @@ boutique PayPal = **préfixe du numéro de facture** (`invoice_id`) · B25 Q3 re
 | Sauvegarde | tables applicatives (ordre enfants → parents), tables conservées à la remise à zéro, tables système `_kesh_*` | `kesh-db/src/backup.rs:46, 137, 949` |
 
 ## Décisions d'architecture (E1…)
+
+*(Reportée en phase 2 (2026-11-20) — voir § *Phase 1 KISS*.)*
 
 - **E1 — Une connexion, plusieurs comptes.** Table applicative `payment_provider_connections` (société, `provider`
   `paypal`|…, libellé « PayPal Lightning », `fetch_from` (B8), `schedule` `daily`|`manual` (B9), état du dernier
@@ -480,6 +670,8 @@ boutique PayPal = **préfixe du numéro de facture** (`invoice_id`) · B25 Q3 re
 
 ## Registre des contrats entre stories
 
+*(Reportée en phase 2 (2026-11-20) — voir § *Phase 1 KISS*.)*
+
 - **C-38-0 — Une seule migration breaking, dans 38-2** (toutes) : E19, B22, O1 ; relèvement en dernière instruction,
   crates bumpés dans le même commit, numéro de release à Guy (Q1). Toute autre fiche qui découvre une valeur neuve à
   écrire dans une colonne existante à domaine fermé, un `MODIFY`/`CHANGE COLUMN` ou un `DROP` s'arrête et le dit.
@@ -574,6 +766,8 @@ boutique PayPal = **préfixe du numéro de facture** (`invoice_id`) · B25 Q3 re
 
 ## Stories
 
+*(Reportée en phase 2 (2026-11-20) — voir § *Phase 1 KISS*.)*
+
 | Story | Objet | Modules (≤ 5) | Dépend de | Migration |
 |---|---|---|---|---|
 | 38-0 | kickoff : décomptes, validation de ce fichier, numéro de release (Q1) | — | — | — |
@@ -610,6 +804,8 @@ aucun appel réseau en CI, recette visuelle) ne s'y répètent que là où la st
 
 ### 38-0 — Kickoff
 
+*(Fait le 2026-11-15.)*
+
 - *Intention* : ouvrir l'epic sur des décomptes mesurés et un fichier validé.
 - *Périmètre* : décomptes d'issues et de bugs (§ *Priorités des défauts*), objectif du tag, validation de ce fichier
   en boucle, numéro de release obtenu de Guy (Q1).
@@ -623,6 +819,8 @@ aucun appel réseau en CI, recette visuelle) ne s'y répètent que là où la st
   1. `NFR-38-0-1` — Décomptes recomptés à la source, commande et périmètre écrits avec le nombre.
 
 ### 38-1 — Coffre des secrets et connexions de prestataire
+
+*(Reportée en phase 2 (2026-11-20) — voir § *Phase 1 KISS*.)*
 
 - *Intention* : un Administrateur crée une connexion (PayPal, libellé, date de départ, réglage quotidien ou à la
   demande, réglages du prestataire) et y dépose ses secrets (secret de l'application REST), chiffrés, jamais réaffichés.
@@ -654,6 +852,8 @@ aucun appel réseau en CI, recette visuelle) ne s'y répètent que là où la st
      `backup.rs` et à la liste close R1.
 
 ### 38-2 — Compte bancaire prestataire : compte `bank` + réglages (D8, B16)
+
+*(Reportée en phase 2 (2026-11-20), sauf ce que reprend 38-11b (trois colonnes de `bank_accounts`, levée de C-37-9, migration non breaking) — voir § *Phase 1 KISS*.)*
 
 - *Intention* : chaque solde de devise d'une connexion devient un compte bancaire Kesh ordinaire, lié à un compte du
   plan déjà en devise (numéro, historique et soldes gardés), avec ses réglages de prestataire : connexion, devise,
@@ -688,6 +888,8 @@ aucun appel réseau en CI, recette visuelle) ne s'y répètent que là où la st
      le même commit, retour par la sauvegarde d'avant la mise à jour ; `account_kind` toujours `'bank'`.
 
 ### 38-3a et 38-3b — Téléchargement (découpage D-P1-1)
+
+*(Reportée en phase 2 (2026-11-20) — voir § *Phase 1 KISS*.)*
 
 38-3 touchait six modules ; elle est **découpée** (statut `split`) en **38-3a** — schéma non breaking (colonnes de
 prestataire, passages, soldes, point de reprise), lecture tolérante de `PROVIDER_API`, gardes (suppression d'en-tête,
@@ -739,6 +941,8 @@ cadrage**.
 
 ### 38-4 — Critères neufs des règles d'affectation
 
+*(Reportée en phase 2 (2026-11-20), sauf ce que reprend 38-11c2 (critères e-mail exact et type PayPal, sens) — voir § *Phase 1 KISS*.)*
+
 - *Intention* : une règle reconnaît une transaction de prestataire par courriel, **boutique (préfixe du numéro de
   facture, B24)**, nom d'article ou code d'événement, et se restreint par sens, devise et compte — pour proposer le bon
   sous-compte de ventes de la devise et de la boutique.
@@ -768,6 +972,8 @@ cadrage**.
 
 ### 38-5 — Code TVA par défaut d'un compte
 
+*(Reportée en phase 2 (2026-11-20) — voir § *Phase 1 KISS*.)*
+
 - *Intention* : un compte de produit ou de charge porte son genre et son taux de TVA par défaut, que les propositions
   appliquent (B6) et que la saisie manuelle pourra reprendre.
 - *Périmètre* : E13 ; colonnes `accounts`, champ du formulaire de compte, fonctions pures et miroir TS, gardes (taux
@@ -788,6 +994,8 @@ cadrage**.
   3. `NFR-38-5-3` — Migration non breaking.
 
 ### 38-6a — Propositions de prestataire : ventes, achats, frais
+
+*(Reportée en phase 2 (2026-11-20), sauf ce que reprend 38-11c2 (frais, achats par règle ; aucune écriture de vente) — voir § *Phase 1 KISS*.)*
 
 - *Intention* : chaque vente ou achat téléchargé reçoit une proposition complète, acceptée en lot.
 - *Périmètre* : E15 ; constructeur pur multi-lignes dans `kesh-reconciliation` (à côté de `manual.rs:68`, qui reste
@@ -813,6 +1021,8 @@ cadrage**.
 
 ### 38-6b — Conversions, retraits, remboursements, litiges ; file « à examiner »
 
+*(Reportée en phase 2 (2026-11-20), sauf ce que reprend 38-11c2 (conversions au même CHF, retraits, « à examiner ») — voir § *Phase 1 KISS*.)*
+
 - *Intention* : les mouvements qui ne sont ni vente ni achat se proposent juste, ou attendent un humain.
 - *Périmètre* : E16 ; paire de conversion vers `POST /journal-entries/conversions` (A31) ; rattachement des retraits
   (34-11b) ; inverse d'une écriture d'origine ; file (C-38-9).
@@ -832,6 +1042,8 @@ cadrage**.
   2. `NFR-38-6b-2` — Aucune écriture d'office ; *Pattern batch*.
 
 ### 38-6c — Rattachement aux écritures existantes ; API des scripts externes (B17, B21)
+
+*(Reportée en phase 2 (2026-11-20), sauf ce que reprend 38-11c1 (rattachement en devise, un par un ; ni lot ni groupe) — voir § *Phase 1 KISS*.)*
 
 *Découpée le 2026-11-15 (D-P2-3) en **38-6c1** (rattachement en devise, suggestions, lot, recherche, API des scripts,
 exercice clos ; aucune migration) et **38-6c2** (groupe d'écritures B28, table `bank_transaction_extra_entries`,
@@ -871,6 +1083,8 @@ fiches les renumérotent : `FR-38-6c-1..7` → `FR-38-6c1-1..7`, `NFR-38-6c-1..4
 
 ### 38-7 — Client PayPal
 
+*(Reportée en phase 2 (2026-11-20) — voir § *Phase 1 KISS*.)*
+
 - *Intention* : lire, pour une connexion PayPal, les soldes et les transactions qui changent le solde.
 - *Périmètre* : OAuth2 `client_credentials` (`clientId` des réglages, secret du coffre ; jeton gardé en mémoire
   jusqu'à expiration), `GET /v1/reporting/transactions` (`start_date`/`end_date` ≤ 31 jours, `fields=all`,
@@ -896,6 +1110,8 @@ fiches les renumérotent : `FR-38-6c-1..7` → `FR-38-6c1-1..7`, `NFR-38-6c-1..4
 
 ### 38-8 — Codes d'événement PayPal
 
+*(Reportée en phase 2 (2026-11-20) — voir § *Phase 1 KISS*.)*
+
 - *Intention* : chaque transaction PayPal devient un `ProviderMovement` classé, brut, frais, net, devise, liens.
 - *Périmètre* : table de correspondance par famille de codes `T00xx` (paiements : vente ou achat selon le signe),
   `T01xx` (frais), `T02xx` (conversion), `T03xx`/`T04xx` (dépôt, retrait banque), `T11xx` (inversions,
@@ -917,6 +1133,8 @@ fiches les renumérotent : `FR-38-6c-1..7` → `FR-38-6c1-1..7`, `NFR-38-6c-1..4
   2. `NFR-38-8-2` — Classement pur, sans base ni réseau.
 
 ### 38-9a et 38-9b — Écrans
+
+*(Reportée en phase 2 (2026-11-20), sauf le minimum repris par 38-11d — voir § *Phase 1 KISS*.)*
 
 - *38-9a* : liste et fiche des connexions (réglages, secrets en saisie seule, « Tester », « Télécharger maintenant »,
   état du dernier passage), soldes proposés (créer ou lier un compte, B2), compte bancaire prestataire et compte de
@@ -959,6 +1177,8 @@ fiches les renumérotent : `FR-38-6c-1..7` → `FR-38-6c1-1..7`, `NFR-38-6c-1..4
 
 ### 38-10 — Relevé joint à la main
 
+*(Reportée en phase 2 (2026-11-20) — voir § *Phase 1 KISS*.)*
+
 - *Intention* : le relevé annuel PayPal (PDF, sans API) se range au compte et à l'exercice, et son solde de clôture
   sert de **somme de contrôle** (B20).
 - *Périmètre* : E17, C-38-10, E20 (b) ; écran du compte bancaire (onglet *Relevés*, écart au solde comptable en
@@ -976,6 +1196,8 @@ fiches les renumérotent : `FR-38-6c-1..7` → `FR-38-6c1-1..7`, `NFR-38-6c-1..4
   3. `NFR-38-10-3` — Migration non breaking.
 
 ## Exigences (FR/NFR) par story
+
+*(Reportée en phase 2 (2026-11-20) — voir § *Phase 1 KISS*.)*
 
 Récapitulatif (B26) ; le texte de chaque exigence est dans la **fiche, qui fait foi** — les listes des sections
 ci-dessus sont celles du cadrage, les fiches en ont ajouté (*ajout*). **Forme définitive — issues GitHub ou fiches —
@@ -1012,6 +1234,8 @@ recompte (leurs décomptes lus ce jour-là égalent la table) : à recompter par
 
 ## Ce que réutiliseront les Epics 39 (Wise) et 40 (Stripe)
 
+*(Reportée en phase 2 (2026-11-20) — voir § *Phase 1 KISS*.)*
+
 **Réutilisé tel quel** : coffre des secrets et connexions (38-1), réglages de compte prestataire et compte de frais
 (38-2), cadre de téléchargement, passages, doublon, planification, soldes vus et contrôles (38-3a, 38-3b), règles étendues
 (38-4), TVA par défaut (38-5), propositions et file (38-6a, 38-6b), rattachement en lot et API des scripts (38-6c1, 38-6c2),
@@ -1031,6 +1255,8 @@ carte Wise (classement).
 versement rattaché au relevé bancaire comme un virement entre ses comptes (34-11b) ; créance à la clôture.
 
 ## Point TVA pour Guy (B6) — à lire
+
+*(Reportée en phase 2 (2026-11-20) — voir § *Phase 1 KISS*.)*
 
 Beat **est assujetti** à la TVA ; sa société sépare la TVA de ses ventes PayPal et Stripe et paie l'impôt sur les
 acquisitions de ses achats de services à l'étranger. Le report des **dix P1 du jalon « Vague 2 »** reposait sur ceci
@@ -1113,6 +1339,8 @@ B16–B21*) :
   (structs de réglages) ; 38-8 ne touche plus `kesh-api`.
 
 ## Questions ouvertes
+
+*(2026-11-20 : Q1 tombe avec la migration breaking de l'ancienne 38-2, reportée en phase 2 ; la phase 1 n'a qu'une migration non breaking. Q3, Q9, Q12 restent ouvertes pour la phase 2.)*
 
 *Closes* : Q2 (rattachement en lot, B17, E21), Q3 sauf l'analytique (B18, B19), Q4 et Q5 (décidées, E2), Q6 (B20,
 E16), Q7 (un critère principal + filtres, E14), Q8 (aucun outil MCP, E23), **Q10** (boutique = préfixe
@@ -1264,3 +1492,26 @@ clôture du relevé joint passé de K9 à K10 (l'Epic 37 prend K9) ; PDF des man
     à `default_project_id`, présenté comme le compte analytique d'une règle.
   - 36-10 : les dates sont celles de Zurich. Le téléchargement et ses fenêtres datées s'en servent déjà, par
     `kesh_core::horloge`.
+
+## Point du 2026-11-17 — release 0.19.0 de Guy, règles de `main`, Epic 37 terminé
+
+- **Epic 37 terminé** (six stories, gates et E2E verts), proposé par Beat pour la **0.19.0** (vendredi 2026-11-20),
+  en second arrivé derrière l'Epic 43 de Guy ; intégration de `main` (v0.18.0) en cours dans `epic/37-multi-devises`.
+- **#823 = Epic 43 de Guy**, priorité de la 0.19.0 : une transaction bancaire règle plusieurs factures, fournisseurs
+  et clients. Intention (plan `release-0.19.0.md`, à confirmer à sa fiche) : lever ou remplacer
+  `uq_invoice_settlements_entry`, ou une table de liaison transaction → règlements ; migration non breaking, la
+  92ᵉ, arrêtée le mercredi 2026-11-19. **La 38-6c2 se récrit sur ce modèle** après la publication de la 0.19.0 :
+  elle abandonne `bank_transaction_extra_entries` (B28) si l'Epic 43 couvre le groupe de 2 à 5 écritures de somme
+  exacte, le lot, l'API et l'annulation du groupe ; sinon elle l'étend, avec Guy. Revalidation ensuite.
+- **Base de l'epic** : `main` dit désormais « une branche d'epic n'est pas une base : un contributeur part de `main` ;
+  bâtir sur une branche d'epic non publiée demande l'accord du Project Lead ». L'Epic 38 s'appuie sur l'Epic 37
+  (devise du compte, cours, lignes en devise) : il **repartira de `main` après la publication de l'Epic 37**, ou
+  avec l'accord de Guy avant. Le développement ne commence pas avant.
+- **Release de l'Epic 38** : une seule (« un epic = une release »), après la 0.19.0. La 0.20.0 (2026-11-27) porte
+  déjà une migration de Guy (note interne) ; la migration breaking de la 38-2 se numérote et s'annonce au projet
+  GitHub avec Guy (Q1).
+- **Montants** : la règle du montant ambigu (« 1.250 » refusé, apostrophe des milliers admise, 36-3 / 36-18a)
+  s'applique aux champs de montant des écrans 38-9a et 38-9b (soldes de contrôle, relevés joints) : réemployer
+  l'utilitaire commun.
+- **Coordination** : un canal de courriel signé entre l'agent de Beat et celui de Guy est à l'essai depuis le
+  2026-11-17 (`agent-kesh@lightning-multicom.com`) ; rien ne part sans l'accord de Beat.

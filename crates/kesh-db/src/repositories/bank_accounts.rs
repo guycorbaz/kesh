@@ -51,7 +51,7 @@ use crate::errors::{DbError, map_db_error};
 /// [`find_by_id_in_tx`].
 macro_rules! columns {
     () => {
-        "id, company_id, bank_name, iban, qr_iban, account_kind, card_last4, is_primary, journal_account_id, version, archived, description, closed_on, created_at, updated_at"
+        "id, company_id, bank_name, iban, qr_iban, account_kind, card_last4, is_primary, journal_account_id, version, archived, description, closed_on, provider, provider_account, fee_account_id, created_at, updated_at"
     };
 }
 
@@ -324,6 +324,10 @@ pub struct PrimaryDetails {
 /// Issue de [`upsert_primary_in_tx`] : ce que l'upsert a **réellement** fait
 /// (Story 15-7a1). Permet à l'appelant de tracer la création, la modification
 /// (avec l'état d'avant) ou rien du tout.
+// Story 38-11b — `BankAccount` a gagné ses réglages de prestataire, et la
+// variante `Updated` en porte deux : valeur d'issue courte, rendue une fois par
+// l'assistant, sans intérêt à la mettre en boîte.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
 pub enum UpsertPrimaryOutcome {
     /// Aucun compte principal actif : un compte a été inséré.
@@ -675,6 +679,14 @@ pub struct BankAccountPutFields<'a> {
     /// `None` = effacés (remplacement complet) ; toujours `None` pour un compte
     /// bancaire.
     pub card_last4: Option<&'a str>,
+    /// Story 38-11b (AC-2) — réglages de prestataire **résultants**, déjà
+    /// validés par la route : `None` (les trois colonnes à `NULL`) pour un
+    /// compte ordinaire. Remplacement complet, comme les autres champs.
+    pub provider: Option<&'a str>,
+    /// Story 38-11b — libellé du compte du prestataire, rogné.
+    pub provider_account: Option<&'a str>,
+    /// Story 38-11b — compte de charge des frais.
+    pub fee_account_id: Option<i64>,
 }
 
 /// Met à jour TOUS les champs métier d'un bank_account (PUT v014-1).
@@ -766,7 +778,8 @@ pub async fn update_for_company(
     }
 
     let rows = sqlx::query(
-        "UPDATE bank_accounts SET bank_name = ?, iban = ?, qr_iban = ?, is_primary = ?, journal_account_id = ?, description = ?, card_last4 = ?, version = version + 1 \
+        "UPDATE bank_accounts SET bank_name = ?, iban = ?, qr_iban = ?, is_primary = ?, journal_account_id = ?, description = ?, card_last4 = ?, \
+         provider = ?, provider_account = ?, fee_account_id = ?, version = version + 1 \
          WHERE id = ? AND company_id = ? AND version = ?",
     )
     .bind(&new.bank_name)
@@ -776,6 +789,9 @@ pub async fn update_for_company(
     .bind(new_journal_account_id)
     .bind(fields.description)
     .bind(fields.card_last4)
+    .bind(fields.provider)
+    .bind(fields.provider_account)
+    .bind(fields.fee_account_id)
     .bind(id)
     .bind(company_id)
     .bind(expected_version)
@@ -1555,6 +1571,172 @@ pub async fn count_transactions_for_bank_account(
     .await
     .map_err(map_db_error)?;
     Ok(row.0)
+}
+
+/// Story 38-11b (AC-2) — nombre de transactions du compte, lu **en lecture
+/// verrouillante** (`LOCK IN SHARE MODE`) : la dernière version commitée, quelle
+/// que soit la vue de la transaction. Sert la garde « un compte PayPal qui porte
+/// déjà une transaction ne change ni de libellé ni de compte du plan »
+/// (`409 PROVIDER_ACCOUNT_IN_USE`), jugée après le `FOR UPDATE` de la ligne
+/// du compte : un import qui écrit attend ce verrou (clé étrangère).
+///
+/// Prend une connexion (`&mut *tx` dans une transaction) : le pré-vol du `PUT`
+/// l'appelle aussi sur une connexion du pool, hors transaction.
+pub async fn count_transactions_locked(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    bank_account_id: i64,
+) -> Result<i64, DbError> {
+    let row: (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM bank_transactions WHERE bank_account_id = ? AND company_id = ? \
+         LOCK IN SHARE MODE",
+    )
+    .bind(bank_account_id)
+    .bind(company_id)
+    .fetch_one(conn)
+    .await
+    .map_err(map_db_error)?;
+    Ok(row.0)
+}
+
+/// Un compte bancaire, solde d'un prestataire, avec la devise de son compte du
+/// plan — Story 38-11b (AC-2, AC-4).
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct ProviderBalance {
+    /// Le compte bancaire.
+    #[sqlx(flatten)]
+    pub account: BankAccount,
+    /// Devise du compte du plan lié (`None` = CHF, la monnaie de base, ou
+    /// aucun compte lié).
+    pub ledger_currency: Option<String>,
+}
+
+impl ProviderBalance {
+    /// La devise du solde, `CHF` pour la monnaie de base.
+    pub fn currency(&self) -> &str {
+        self.ledger_currency.as_deref().unwrap_or(BASE_CURRENCY)
+    }
+}
+
+/// La monnaie de base de Kesh : un compte du plan sans devise est en CHF.
+pub const BASE_CURRENCY: &str = "CHF";
+
+/// Les comptes bancaires **non archivés** (ouverts ou clos) qui sont le solde
+/// du compte `provider_account` du prestataire `provider`, par `id`, avec la
+/// devise de leur compte du plan — Story 38-11b (AC-2, AC-4).
+///
+/// La comparaison du libellé est celle de la **collation** de la colonne (sans
+/// casse, espaces finales ignorées) : « PayPal www » et « paypal WWW » sont le
+/// même compte PayPal. Lecture ordinaire, sur le pool : l'import la fait avant
+/// de prendre les verrous des comptes, puis contrôle l'ambiguïté (deux comptes
+/// pour une devise) et relit sous les verrous par
+/// [`list_provider_balances_locked`], que la garde d'unicité par devise des
+/// routes (`POST`, `PUT`) emploie aussi, sous la sentinelle `companies`.
+pub async fn list_provider_balances<'e, E>(
+    executor: E,
+    company_id: i64,
+    provider: &str,
+    provider_account: &str,
+) -> Result<Vec<ProviderBalance>, DbError>
+where
+    E: sqlx::Executor<'e, Database = MySql>,
+{
+    sqlx::query_as::<_, ProviderBalance>(concat!(
+        "SELECT ",
+        columns!(),
+        ", (SELECT a.currency FROM accounts a WHERE a.id = bank_accounts.journal_account_id) AS ledger_currency \
+         FROM bank_accounts \
+         WHERE company_id = ? AND archived = FALSE AND provider = ? AND provider_account = ? \
+         ORDER BY id",
+    ))
+    .bind(company_id)
+    .bind(provider)
+    .bind(provider_account)
+    .fetch_all(executor)
+    .await
+    .map_err(map_db_error)
+}
+
+/// [`list_provider_balances`] en **lectures verrouillantes** (`LOCK IN SHARE
+/// MODE`), dans la transaction de l'appelant — Story 38-11b, revue P1 (M1,
+/// L1).
+///
+/// Deux appelants, deux raisons :
+///
+/// - la garde d'unicité par devise du `POST` et du `PUT` des comptes bancaires
+///   (`check_provider_guards_in_tx`) : au `POST`, elle précède l'écriture
+///   d'ouverture, dont le contrat (Story 34-2, AC-10, C-e341-38) n'admet que
+///   des lectures verrouillantes avant elle — une lecture ordinaire ouvrirait
+///   l'instantané REPEATABLE READ, et la lecture « jamais mouvementé » du
+///   complément ne verrait plus une ligne commitée entre-temps sur le compte
+///   lié. Une lecture verrouillante lit le dernier état commité sans ouvrir
+///   d'instantané ;
+/// - l'import PayPal, qui relit sous les verrous nommés, dans sa transaction
+///   d'écriture, les comptes visés : un `PUT` qui retire les réglages d'un
+///   compte encore sans transaction (garde 5 passée) attend alors sa fin, ou
+///   l'import voit son effet.
+///
+/// Deux instructions, et non la sous-requête de [`list_provider_balances`] :
+/// la portée d'un `LOCK IN SHARE MODE` sur une sous-requête scalaire n'est pas
+/// garantie, et une lecture non verrouillante de `accounts` ouvrirait
+/// l'instantané. Les comptes du plan sont lus par identifiant, sous le même
+/// verrou partagé.
+pub async fn list_provider_balances_locked(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    provider: &str,
+    provider_account: &str,
+) -> Result<Vec<ProviderBalance>, DbError> {
+    let accounts: Vec<BankAccount> = sqlx::query_as(concat!(
+        "SELECT ",
+        columns!(),
+        " FROM bank_accounts \
+         WHERE company_id = ? AND archived = FALSE AND provider = ? AND provider_account = ? \
+         ORDER BY id LOCK IN SHARE MODE",
+    ))
+    .bind(company_id)
+    .bind(provider)
+    .bind(provider_account)
+    .fetch_all(&mut *conn)
+    .await
+    .map_err(map_db_error)?;
+    let mut ledger_ids: Vec<i64> = accounts
+        .iter()
+        .filter_map(|a| a.journal_account_id)
+        .collect();
+    ledger_ids.sort_unstable();
+    ledger_ids.dedup();
+    let mut currencies: std::collections::HashMap<i64, Option<String>> =
+        std::collections::HashMap::new();
+    if !ledger_ids.is_empty() {
+        let placeholders = vec!["?"; ledger_ids.len()].join(", ");
+        let sql = format!(
+            "SELECT id, currency FROM accounts WHERE company_id = ? AND id IN ({placeholders}) \
+             ORDER BY id LOCK IN SHARE MODE"
+        );
+        let mut q = sqlx::query_as::<_, (i64, Option<String>)>(&sql).bind(company_id);
+        for id in &ledger_ids {
+            q = q.bind(id);
+        }
+        currencies = q
+            .fetch_all(&mut *conn)
+            .await
+            .map_err(map_db_error)?
+            .into_iter()
+            .collect();
+    }
+    Ok(accounts
+        .into_iter()
+        .map(|account| {
+            let ledger_currency = account
+                .journal_account_id
+                .and_then(|id| currencies.get(&id).cloned().flatten());
+            ProviderBalance {
+                account,
+                ledger_currency,
+            }
+        })
+        .collect())
 }
 
 /// Le drapeau `is_primary` du compte `id`, lu **sous `FOR UPDATE`** dans la
