@@ -1257,6 +1257,37 @@ async fn put_range_un_compte_mouvemente_sous_un_groupe(pool: MySqlPool) {
     assert_eq!(body["parentId"], Value::Null);
 }
 
+/// #1437 : le refus d'un parent qui porte des écritures vaut aussi quand ce
+/// parent est **déjà** non imputable (bascule automatique antérieure) ; son
+/// message ne dit pas que le parent « deviendrait » non imputable.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn put_parent_mouvemente_deja_non_imputable_message_exact(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let (company_id, admin_id, token) = setup(&pool).await;
+    let jour = common::jour::aujourd_hui_test();
+    let fy = mk_fiscal_year(&pool, company_id, admin_id, jour).await;
+    let banque = mk_account(&pool, company_id, admin_id, "1020", None).await;
+    let caisse = mk_account(&pool, company_id, admin_id, "1000", None).await;
+    mk_entry(&pool, company_id, fy, admin_id, banque, caisse, jour).await;
+    sqlx::query("UPDATE accounts SET postable = FALSE WHERE id = ?")
+        .bind(caisse)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let autre = mk_account(&pool, company_id, admin_id, "1030", None).await;
+
+    let (status, body) =
+        put_parent(&app, &token, &pool, autre, json!({ "parentId": caisse })).await;
+    assert_eq!(status, 409, "{body}");
+    assert_eq!(body["error"]["code"], "ACCOUNT_PARENT_HAS_ENTRIES");
+    let message = body["error"]["message"].as_str().unwrap();
+    assert!(message.contains("1000"), "{body}");
+    assert!(
+        !message.contains("imputable") && !message.contains("rendrait"),
+        "le parent est déjà non imputable : {body}"
+    );
+}
+
 /// Les contrôles de la création, rendus par le `PUT` avec les mêmes codes, et
 /// le cycle : le compte lui-même, puis l'un de ses sous-comptes.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]

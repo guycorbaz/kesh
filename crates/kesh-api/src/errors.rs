@@ -4629,7 +4629,7 @@ impl IntoResponse for AppError {
                         t_args(
                             "error-account-parent-has-entries",
                             &format!(
-                                "Le compte {parent_number} porte des écritures : y ranger ce compte le rendrait non imputable avec un solde qu'aucune saisie ne pourrait plus corriger. Choisissez un compte de groupe sans écriture."
+                                "Le compte {parent_number} porte des écritures : aucun compte ne se range sous lui, car son solde ne pourrait plus être corrigé par une saisie. Choisissez un compte de groupe sans écriture."
                             ),
                             &args,
                         ),
