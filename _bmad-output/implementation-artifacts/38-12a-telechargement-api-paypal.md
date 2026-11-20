@@ -130,7 +130,7 @@ et la page des codes d'événement. À rejouer au développement ; ce n'est pas 
 8. **AC-8 — Tâche et routes.** `POST /api/v1/paypal-downloads` (corps `{ account, from, to }` ; **Comptable et plus** ;
    **clés d'API non admises** : la route fait sortir un appel authentifié par un secret de l'Administrateur ; inscrite
    au registre des routes auditées, `crates/kesh-api/tests/audit_route_registry.rs`, et à `LIB_ROUTES` si le dépôt la
-   compte). Refus dans l'ordre, rien lancé : 400 `VALIDATION_ERROR` → 404 `PAYPAL_ACCOUNT_NOT_FOUND` (38-11b) → 422
+   compte). Refus dans l'ordre, rien lancé : 400 `VALIDATION_ERROR` → 404 `PROVIDER_ACCOUNT_NOT_FOUND` (38-11b) → 422
    `PAYPAL_API_NOT_CONFIGURED` (aucune paire pour ce libellé) → 400 `PAYPAL_PERIOD_INVALID` / `PAYPAL_PERIOD_TOO_OLD` →
    409 `PAYPAL_DOWNLOAD_RUNNING` (une tâche tourne déjà pour ce compte PayPal) ; sinon **202** `{ jobId }`.
    `GET /api/v1/paypal-downloads/{jobId}` (même rôle, **société de l'appelant seulement**, sinon 404) : `{ state:

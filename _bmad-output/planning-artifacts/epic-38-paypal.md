@@ -65,12 +65,17 @@ identifiant de transaction, la liste des écarts**, développable en une nuit.
   étendu aux transactions en devise. **Seuls les frais s'écrivent**, au compte de frais.
 - **Écarts listés** : encaissement sans vente ; vente sur le compte PayPal sans encaissement ; montant ou devise
   différents.
-- **Achats par règle** : règles d'affectation existantes, plus deux critères neufs — **type PayPal** (exact) et
-  **e-mail exact** — et un **sens** facultatif.
-- **Conversion** : même montant CHF des deux côtés (Q3). Kesh n'admet qu'une devise étrangère par écriture
-  (`FX_MULTIPLE_CURRENCIES`, 37-3a) : une conversion EUR → USD s'écrit en **deux écritures** liées, par le compte de
-  conversion, au même CHF — la forme de 2024 (compte de transit 9901), et celle de `create_conversion` (37-3b).
-- **Retrait** : virement vers le compte choisi (le compte bancaire principal par défaut).
+- **Achats par règle** : règles d'affectation existantes, plus deux **filtres facultatifs** sur toute règle —
+  `provider_type` (**type PayPal**, exact) et `counterparty_email` (**e-mail exact**) — et un **sens** facultatif ;
+  **aucune valeur neuve** de l'`ENUM` `match_type` (le critère existant reste obligatoire).
+- **Conversion**, règle commune aux trois prestataires (décision de l'orchestrateur du 2026-11-20) : **un côté en
+  CHF → une écriture** au CHF réel (cours déduit, provenance `manual`), les deux transactions rattachées à elle ;
+  **deux devises étrangères → deux écritures** au **même CHF** (Q3) par le compte de conversion — Kesh n'admet qu'une
+  devise étrangère par écriture (`FX_MULTIPLE_CURRENCIES`, 37-3a) ; la forme de 2024 (compte de transit) et celle de
+  `create_conversion` (37-3b). L'autre côté d'une écriture admet une transaction d'une autre devise et de signe
+  opposé (prédicat à deux branches, 38-11c1 AC-1b).
+- **Retrait** : virement vers le compte choisi (le compte bancaire principal par défaut), **depuis un solde CHF** ; un
+  retrait d'un solde en devise va « à examiner ».
 - **Doublons** (même identifiant de transaction sur le même compte) ignorés ; **Status ≠ Completed** écarté ; lignes
   `Memo` et paires de retenue neutres écartées ; **le reste « à examiner »** (remboursements, litiges, conversions
   sans paire, lignes sans règle).
@@ -97,25 +102,37 @@ identifiant de transaction, la liste des écarts**, développable en une nuit.
 |---|---|---|---|---|
 | `38-11a` | lecteur du CSV PayPal | `kesh-import` | — | non |
 | `38-11b` | réglages du compte PayPal et import ventilé par devise, doublons | `kesh-db`, `kesh-api`, `kesh-import` (lecture), `kesh-i18n` | 38-11a, Epic 37 | **oui, la seule** |
-| `38-11c` | rapprochement : ventes par TXN, frais, règles type et e-mail, conversions, retraits, écarts, « à examiner » | `kesh-reconciliation`, `kesh-db`, `kesh-api`, `kesh-i18n` | 38-11b | non |
-| `38-11d` | écrans, manuel utilisateur (`.tex`), `docs/api-external.md`, E2E | `frontend`, `kesh-i18n`, manuel, docs, E2E | 38-11b, 38-11c | non |
+| `38-11c1` | rattachement en devise, autre côté à deux branches (conversions), filtres et sens des règles (AC-1 à AC-3 de l'ancienne 38-11c, plus AC-1b) | `kesh-db`, `kesh-reconciliation`, `kesh-api` | 38-11b | non |
+| `38-11c2` | revue et acceptation : moteur commun aux prestataires, ventes par TXN, frais, règles, conversions, retraits, écarts, « à examiner » (AC-4 à AC-11) | `kesh-reconciliation`, `kesh-db`, `kesh-api`, `kesh-i18n` | 38-11b, 38-11c1 | non |
+| `38-11d` | écrans, manuel utilisateur (`.tex`), `docs/api-external.md`, E2E | `frontend` (bank-accounts, bank-import, invoices, supplier-invoices, reconciliation, paypal), `kesh-i18n`, manuel, docs, E2E — 5 | 38-11b, 38-11c1, 38-11c2 | non |
 
-Quatre stories, story de solde non prévue (la dette tracée en issues à la PR). Les clés `38-11a` à `38-11d` évitent
-toute collision avec les fiches 38-1 à 38-10, gardées comme historique et passées à `deferred` au registre.
+Cinq stories (`38-11c` découpée en `38-11c1` et `38-11c2` à la validation P3, numérotation des AC gardée : une mention
+« 38-11c AC-n » désigne c1 pour n ≤ 3, c2 au-delà), story de solde non prévue (la dette tracée en issues à la PR). Les
+clés `38-11a` à `38-11d` évitent toute collision avec les fiches 38-1 à 38-10, gardées comme historique et passées à
+`deferred` au registre.
+
+**Ce que la phase 1 sert aux Epics 39 (Wise) et 40 (Stripe)** — contrats relus à la validation P3 (fiches 39-11c,
+40-7c) : colonnes de 38-11b sans migration (`provider` ∈ {`paypal`, `wise`, `stripe`}) ; codes génériques `PROVIDER_*`
+(Q-39-10) ; rattachement en devise et prédicat de l'autre côté à deux branches (38-11c1) ; revue commune `build_review`
+paramétrée par le prestataire, la clé de rattachement (`transaction_id` pour PayPal et Wise, `reference` pour Stripe)
+et la fonction d'extraction des identifiants ; moteur d'acceptation commun (verrous, points de sauvegarde, interblocage
+remonté, rejugement, `PROVIDER_PROPOSAL_STALE`, trace `provider.proposal_accepted`), proposition générique `link_entry`,
+écriture commune des frais, règles et versements, `plan_conversion` (38-11c2) ; gestionnaires minces
+`<prestataire>::accept_proposals`, jamais `post_accept`.
 
 ### Migration
 
 **Une**, `20261120000001_paypal_import.sql` (38-11b), **non breaking** au sens du ⚠️ de P1 :
 `kesh_version_min_required` reste à 0.17.6, aucune version Cargo relevée. Horodatage après les dernières de `main`
 (`20261118000001_grouped_settlements`), de l'Epic 49 (`20261118000002`) et de l'Epic 47 (`20261119000001`). Contenu :
-`bank_accounts` (`provider`, `provider_account`, `fee_account_id`, contrainte d'IBAN reposée sous le même nom pour
-admettre un compte PayPal sans IBAN) ; `bank_transactions` (`provider_type`, `counterparty_email`, un index) ;
-`reconciliation_rules` (deux valeurs **ajoutées en fin** de l'`ENUM` `match_type`, sous `-- breaking-skip-bump:`
-justifié — P4 —, et `direction`). DDL seul (P7 sans objet) ; P5, P6, P8 à la fiche. ⚠️ **Point à confirmer à la
-revue** : l'ajout de valeurs à l'`ENUM` est un `MODIFY COLUMN`, que P3 classe CRITICAL sans relèvement ; la
-justification P4 est celle de `20261118000001` (aucun binaire antérieur ne lit la base migrée ni une sauvegarde à
-colonnes neuves). Si la revue la refuse, l'alternative est deux colonnes de filtre `NULL` sur `reconciliation_rules`
-(sans nouveau type), au prix d'un critère principal obligatoire.
+`bank_accounts` (`provider`, `provider_account`, `fee_account_id`, CHECK `chk_bank_accounts_provider` qui admet
+`paypal`, `wise` et `stripe` — les Epics 39 et 40 n'ont ainsi pas de migration —, contrainte d'IBAN reposée sous le
+même nom pour admettre un compte de prestataire sans IBAN) ; `bank_transactions` (`provider_type`,
+`counterparty_email`, un index) ; `reconciliation_rules` (trois **filtres `NULL`** : `provider_type`,
+`counterparty_email`, `direction`, avec leur CHECK ; l'index unique `uq_reconciliation_rules_match_active` n'est pas
+touché — limite écrite : deux règles actives de même critère et même valeur ne diffèrent pas par leurs seuls filtres).
+**Aucun `MODIFY COLUMN`, `CHANGE COLUMN`, `DROP COLUMN` ni `RENAME`** (P3 sans objet ; la valeur neuve de l'`ENUM`
+envisagée au cadrage est abandonnée, validation P1 de 38-11b). DDL seul (P7 sans objet) ; P5, P6, P8 à la fiche.
 
 ### Fichiers communs (travail à plusieurs)
 
@@ -125,10 +142,13 @@ colonnes neuves). Si la revue la refuse, l'alternative est deux colonnes de filt
 | `crates/kesh-db/src/backup.rs` (`ABSENCES_ADMISES_EPIC_37`) | 38-11b | Epics 47, 49 s'ils ajoutent des colonnes |
 | `crates/kesh-api/src/exports/csv_tables.rs` | 38-11b | Epics 47, 49 |
 | `crates/kesh-api/src/routes/bank_accounts.rs` | 38-11b | — |
-| `crates/kesh-api/src/routes/reconciliation.rs`, `crates/kesh-db/src/repositories/reconciliation_link.rs` | 38-11c | Epic 48 (corrections) à surveiller |
-| `crates/kesh-reconciliation/src/rules.rs`, `routes/reconciliation_rules.rs` | 38-11c | — |
+| `crates/kesh-api/src/routes/reconciliation.rs`, `crates/kesh-db/src/repositories/reconciliation_link.rs` | 38-11c1 (pré-vol, rattachement en devise, prédicat), 38-11c2 (extraction de `mark_reconciled_in_tx`) | Epic 48 (corrections) à surveiller ; Epics 39 et 40 (prédicat, s'ils arrivent les premiers) |
+| `crates/kesh-reconciliation/src/rules.rs`, `routes/reconciliation_rules.rs` | 38-11c1 | — |
+| `crates/kesh-reconciliation/src/mutex.rs` (`with_account_locks`) | 38-11b | Epics 39, 40 (réutilisé) |
+| `crates/kesh-reconciliation/src/provider_review.rs`, `conversion.rs`, `crates/kesh-api/src/routes/provider_accept.rs`, `repositories/journal_entry_conversions.rs` | 38-11c2 | Epics 39, 40 (réutilisés, gestionnaires minces) |
+| `crates/kesh-api/tests/audit_route_registry.rs`, `admin-manual.tex` (compte du registre) | 38-11b, 38-11c2 | Epics 39, 40 : compte **recompté** après chaque fusion |
 | `crates/kesh-api/src/errors.rs`, catalogues i18n (quatre locales), `i18n-keys.test.ts` (`sitesTotal`) | toutes | tous : chacun son bloc, compteur recompté |
-| `frontend/src/routes/(app)/bank-accounts/`, `features/reconciliation/rules/` | 38-11d | `v0200-menu-sous-groupes` (menu) |
+| `frontend/src/routes/(app)/bank-accounts/`, `features/reconciliation/rules/`, `features/bank-accounts/format.ts`, `features/bank-import/BankImportUpload.svelte`, `ManualStatementForm.svelte`, `features/invoices/SettleInvoiceDialog.svelte`, `routes/(app)/reconciliation/+page.svelte`, `LinkSettlementModal.svelte`, `routes/(app)/supplier-invoices/[id]/+page.svelte` | 38-11d | `v0200-menu-sous-groupes` (menu) ; Epics 39, 40 (`withoutProviders`) |
 | `docs/manual/fr/user-manual.tex`, `docs/api-external.md` | 38-11d | Epics 47, 49 ; PDF jamais commités dans la branche |
 | `sprint-status.yaml` | toutes | bloc propre de l'Epic 38 |
 
