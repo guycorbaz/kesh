@@ -1174,7 +1174,12 @@ const ATTENDU = {
 	// Reprise de main dans epic/48 (2026-11-20, après les fusions de #1346, #1327, #1351) : les deux côtés gardés,
 	// total relevé par la garde, non additionné : **3507** (« expected 3507 to be +0 »,
 	// `kesh-gate-logs/e48-reprise-main/vitest-compteur.log`).
-	sitesTotal: 3507,
+	// Story 48-14 (#1263, D1) : **3503 → 3504** (« expected 3504 to be 3503 »), relevé par la
+	// garde : le seul site neuf est `reconciliation-group-reread-blocked` (règlement groupé,
+	// demande de compte après relecture sans sélecteur).
+	// Fusion de la 48-14 dans epic/48 (2026-11-20) : les deux côtés gardés, total relevé par la garde,
+	// non additionné : **3508** (« expected 3508 to be +0 », `kesh-gate-logs/e4814/fusion-epic-i18n.log`).
+	sitesTotal: 3508,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

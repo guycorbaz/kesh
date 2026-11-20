@@ -1788,17 +1788,7 @@ pub async fn cancel_in_tx(
             .ok_or(DbError::NotFound)?;
     }
     // L'écriture et son exercice, avant de juger.
-    let fiscal_year_id: i64 = sqlx::query_scalar(
-        "SELECT fy.id FROM journal_entries je \
-         JOIN fiscal_years fy ON fy.id = je.fiscal_year_id \
-         WHERE je.id = ? AND je.company_id = ? FOR UPDATE",
-    )
-    .bind(entry_id)
-    .bind(company_id)
-    .fetch_optional(&mut **tx)
-    .await
-    .map_err(map_db_error)?
-    .ok_or(DbError::NotFound)?;
+    let fiscal_year_id = lock_entry_fiscal_year_in_tx(tx, company_id, entry_id).await?;
     // Lecture non verrouillante APRÈS le verrou de l'exercice (règle de
     // placement de `bank_accounts::ensure_open_in_tx`, comme l'unitaire).
     super::bank_accounts::ensure_open_in_tx(tx, company_id, bt.bank_account_id).await?;
@@ -1823,21 +1813,7 @@ pub async fn cancel_in_tx(
     }
 
     // (2) Le lien défait.
-    let updated = sqlx::query(
-        "UPDATE bank_transactions \
-         SET matched_entry_id = NULL, status = 'pending', auto_match_rejected_at = NULL, \
-             version = version + 1, updated_at = NOW(3) \
-         WHERE id = ? AND company_id = ? AND status = 'reconciled' AND version = ?",
-    )
-    .bind(bt.id)
-    .bind(company_id)
-    .bind(bt.version)
-    .execute(&mut **tx)
-    .await
-    .map_err(map_db_error)?;
-    if updated.rows_affected() != 1 {
-        return Err(DbError::OptimisticLockConflict);
-    }
+    unlink_group_transaction_in_tx(tx, company_id, bt).await?;
 
     // (3) Le délettrage de chaque pièce.
     for (_, invoice_id, _, _) in &members {
@@ -1922,32 +1898,24 @@ pub async fn cancel_in_tx(
         )
         .await?;
     }
-    super::audit_log::insert_in_tx(
+    audit_group_cancelled_in_tx(
         tx,
-        NewAuditLogEntry::par(
-            acteur,
-            "reconciliation.cancelled",
-            "bank_transaction",
-            bt.id,
-            Some(serde_json::json!({
-                "kind": "grouped_settlement",
-                "matchedEntryId": entry_id,
-                "reversalJournalEntryId": reversal.entry.id,
-                "unlinkOnly": false,
-                "invoiceId": null,
-                "settlementId": null,
-                "supplierInvoiceId": null,
-                "invoices": members
-                    .iter()
-                    .map(|(s, i, n, _)| serde_json::json!({
+        acteur,
+        bt,
+        entry_id,
+        reversal.entry.id,
+        (
+            "invoices",
+            members
+                .iter()
+                .map(|(s, i, n, _)| {
+                    serde_json::json!({
                         "invoice_id": i,
                         "settlement_id": s,
                         "number": n,
-                    }))
-                    .collect::<Vec<_>>(),
-                "amount": bt.amount,
-                "wasPreviouslyRejected": bt.auto_match_rejected_at.is_some(),
-            })),
+                    })
+                })
+                .collect(),
         ),
     )
     .await?;
@@ -1997,17 +1965,7 @@ async fn supplier_cancel_in_tx(
         )));
     }
     // L'écriture et son exercice, avant de juger.
-    let fiscal_year_id: i64 = sqlx::query_scalar(
-        "SELECT fy.id FROM journal_entries je \
-         JOIN fiscal_years fy ON fy.id = je.fiscal_year_id \
-         WHERE je.id = ? AND je.company_id = ? FOR UPDATE",
-    )
-    .bind(entry_id)
-    .bind(company_id)
-    .fetch_optional(&mut **tx)
-    .await
-    .map_err(map_db_error)?
-    .ok_or(DbError::NotFound)?;
+    let fiscal_year_id = lock_entry_fiscal_year_in_tx(tx, company_id, entry_id).await?;
     super::bank_accounts::ensure_open_in_tx(tx, company_id, bt.bank_account_id).await?;
     // Les numéros et les lignes, maintenant que l'instantané naît après le verrou.
     let members = supplier_members(tx, company_id, entry_id).await?;
@@ -2031,21 +1989,7 @@ async fn supplier_cancel_in_tx(
     }
 
     // (2) Le lien défait.
-    let updated = sqlx::query(
-        "UPDATE bank_transactions \
-         SET matched_entry_id = NULL, status = 'pending', auto_match_rejected_at = NULL, \
-             version = version + 1, updated_at = NOW(3) \
-         WHERE id = ? AND company_id = ? AND status = 'reconciled' AND version = ?",
-    )
-    .bind(bt.id)
-    .bind(company_id)
-    .bind(bt.version)
-    .execute(&mut **tx)
-    .await
-    .map_err(map_db_error)?;
-    if updated.rows_affected() != 1 {
-        return Err(DbError::OptimisticLockConflict);
-    }
+    unlink_group_transaction_in_tx(tx, company_id, bt).await?;
 
     // (3) Le délettrage de chaque pièce (l'exercice tenu : celui du règlement).
     for m in &members {
@@ -2106,31 +2050,23 @@ async fn supplier_cancel_in_tx(
         )
         .await?;
     }
-    super::audit_log::insert_in_tx(
+    audit_group_cancelled_in_tx(
         tx,
-        NewAuditLogEntry::par(
-            acteur,
-            "reconciliation.cancelled",
-            "bank_transaction",
-            bt.id,
-            Some(serde_json::json!({
-                "kind": "grouped_settlement",
-                "matchedEntryId": entry_id,
-                "reversalJournalEntryId": reversal.entry.id,
-                "unlinkOnly": false,
-                "invoiceId": null,
-                "settlementId": null,
-                "supplierInvoiceId": null,
-                "supplier_invoices": members
-                    .iter()
-                    .map(|m| serde_json::json!({
+        acteur,
+        bt,
+        entry_id,
+        reversal.entry.id,
+        (
+            "supplier_invoices",
+            members
+                .iter()
+                .map(|m| {
+                    serde_json::json!({
                         "supplier_invoice_id": m.id,
                         "number": m.number,
-                    }))
-                    .collect::<Vec<_>>(),
-                "amount": bt.amount,
-                "wasPreviouslyRejected": bt.auto_match_rejected_at.is_some(),
-            })),
+                    })
+                })
+                .collect(),
         ),
     )
     .await?;
@@ -2147,6 +2083,130 @@ async fn supplier_cancel_in_tx(
             })
             .collect(),
     })
+}
+
+// ---------------------------------------------------------------------------
+// Story 48-14 (#1255, D4) — les gestes communs aux deux bras du dé-rapprochement
+// groupé. Chaque bras garde l'ordre de ses verrous (factures, écriture et
+// exercice, `ensure_open_in_tx`, refus, écritures, `recheck_open_locked_in_tx`
+// en dernier) et appelle ces aides à sa place. ⚠️ Les deux premières sont des
+// gestes verrouillants : elles figurent à `GESTES_VERROUILLANTS_CODE` de
+// `kesh-api/tests/bank_account_closed_inventory.rs` ; la troisième borne
+// « avant l'audit » de la même garde.
+// ---------------------------------------------------------------------------
+
+/// Verrouille l'écriture `entry_id` et son exercice (`FOR UPDATE`) et rend
+/// l'exercice.
+async fn lock_entry_fiscal_year_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    entry_id: i64,
+) -> Result<i64, DbError> {
+    sqlx::query_scalar(
+        "SELECT fy.id FROM journal_entries je \
+         JOIN fiscal_years fy ON fy.id = je.fiscal_year_id \
+         WHERE je.id = ? AND je.company_id = ? FOR UPDATE",
+    )
+    .bind(entry_id)
+    .bind(company_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(map_db_error)?
+    .ok_or(DbError::NotFound)
+}
+
+/// Défait le lien de la transaction `bt`, rapprochée, à la version lue :
+/// `pending`, `matched_entry_id` et `auto_match_rejected_at` à `NULL`, version
+/// incrémentée ; `OptimisticLockConflict` si la ligne a changé. Appelée par les
+/// deux bras après leur `bank_accounts::ensure_open_in_tx`.
+async fn unlink_group_transaction_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    bt: &crate::entities::bank_transaction::BankTransaction,
+) -> Result<(), DbError> {
+    let updated = sqlx::query(
+        "UPDATE bank_transactions \
+         SET matched_entry_id = NULL, status = 'pending', auto_match_rejected_at = NULL, \
+             version = version + 1, updated_at = NOW(3) \
+         WHERE id = ? AND company_id = ? AND status = 'reconciled' AND version = ?",
+    )
+    .bind(bt.id)
+    .bind(company_id)
+    .bind(bt.version)
+    .execute(&mut **tx)
+    .await
+    .map_err(map_db_error)?;
+    if updated.rows_affected() != 1 {
+        return Err(DbError::OptimisticLockConflict);
+    }
+    Ok(())
+}
+
+/// La charge de l'audit `reconciliation.cancelled` d'un dé-rapprochement
+/// groupé : la partie commune aux deux bras, plus `liste` (clé et éléments
+/// propres à la famille). Revue P1 (E4) : une clé de liste qui écraserait une
+/// clé commune (`"amount"`, `"kind"`…) est une erreur de programmation, refusée
+/// en `Invariant` dans toutes les compilations — jamais un écrasement muet.
+fn group_cancelled_details(
+    entry_id: i64,
+    reversal_id: i64,
+    amount: Decimal,
+    was_previously_rejected: bool,
+    liste: (&str, Vec<serde_json::Value>),
+) -> Result<serde_json::Value, DbError> {
+    let mut details = serde_json::json!({
+        "kind": "grouped_settlement",
+        "matchedEntryId": entry_id,
+        "reversalJournalEntryId": reversal_id,
+        "unlinkOnly": false,
+        "invoiceId": null,
+        "settlementId": null,
+        "supplierInvoiceId": null,
+        "amount": amount,
+        "wasPreviouslyRejected": was_previously_rejected,
+    });
+    if details.get(liste.0).is_some() {
+        return Err(DbError::Invariant(format!(
+            "audit du dé-rapprochement groupé : la clé de liste « {} » écraserait une clé \
+             commune",
+            liste.0
+        )));
+    }
+    details[liste.0] = serde_json::Value::Array(liste.1);
+    Ok(details)
+}
+
+/// L'audit `reconciliation.cancelled` d'un dé-rapprochement groupé. `liste`
+/// porte la clé et les éléments propres à la famille (`"invoices"` côté client,
+/// `"supplier_invoices"` côté fournisseur) ; le reste de la charge est commun
+/// ([`group_cancelled_details`]).
+async fn audit_group_cancelled_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    acteur: Acteur,
+    bt: &crate::entities::bank_transaction::BankTransaction,
+    entry_id: i64,
+    reversal_id: i64,
+    liste: (&str, Vec<serde_json::Value>),
+) -> Result<(), DbError> {
+    let details = group_cancelled_details(
+        entry_id,
+        reversal_id,
+        bt.amount,
+        bt.auto_match_rejected_at.is_some(),
+        liste,
+    )?;
+    super::audit_log::insert_in_tx(
+        tx,
+        NewAuditLogEntry::par(
+            acteur,
+            "reconciliation.cancelled",
+            "bank_transaction",
+            bt.id,
+            Some(details),
+        ),
+    )
+    .await?;
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -2690,6 +2750,42 @@ async fn supplier_lock_refusal(
 mod tests {
     use super::*;
     use rust_decimal_macros::dec;
+
+    /// Story 48-14 (revue P1, E4) — la charge commune de l'audit du
+    /// dé-rapprochement groupé : la clé de liste s'ajoute ; une clé commune
+    /// (chacune des neuf) est refusée, jamais écrasée.
+    #[test]
+    fn group_cancelled_details_refuses_a_list_key_that_overwrites_a_common_key() {
+        let d = group_cancelled_details(3, 7, dec!(299.60), true, ("invoices", vec![])).unwrap();
+        assert_eq!(d["invoices"], serde_json::json!([]));
+        assert_eq!(d["amount"], serde_json::json!(dec!(299.60)));
+        assert_eq!(d["kind"], "grouped_settlement");
+        let communes = [
+            "kind",
+            "matchedEntryId",
+            "reversalJournalEntryId",
+            "unlinkOnly",
+            "invoiceId",
+            "settlementId",
+            "supplierInvoiceId",
+            "amount",
+            "wasPreviouslyRejected",
+        ];
+        assert_eq!(
+            d.as_object().unwrap().len(),
+            communes.len() + 1,
+            "neuf clés communes et la liste"
+        );
+        for cle in communes {
+            assert!(
+                matches!(
+                    group_cancelled_details(3, 7, dec!(1), false, (cle, vec![])),
+                    Err(DbError::Invariant(_))
+                ),
+                "la clé commune « {cle} » doit être refusée"
+            );
+        }
+    }
 
     #[test]
     fn client_exact_amount_has_neither_rounding_nor_fees() {
