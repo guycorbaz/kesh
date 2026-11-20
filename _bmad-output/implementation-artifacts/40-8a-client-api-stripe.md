@@ -156,7 +156,8 @@ en variable d'environnement (`KESH_STRIPE_<n>_ACCOUNT`, `KESH_STRIPE_<n>_KEY`).
   et le montant du versement définie (échec `PROVIDER_RESPONSE_INVALID`, rien d'écrit) ; aucune fenêtre (Stripe sans
   `max_days`, décision de l'orchestrateur) ; `kesh-i18n` retiré des modules (aucun message propre).
 - 2026-11-20 — validation P3 ciblée (Claude Sonnet 5.5, contexte frais ; rapport `kesh-gate-logs/epic-39-40-kiss/validation/39-40-phase2-P3-ciblee.md`) : famille Stripe inscrite à la garde `configuration_transmise.rs` ; écart de versement distingué de l'écart non bloquant du CSV.
-- 2026-11-20 — validation P4 ciblée (Claude Haiku 5.5, contexte frais ; rapport `kesh-gate-logs/epic-39-40-kiss/validation/39-40-phase2-P4-ciblee.md`) : recette 2 : le rejeu passe par `appel-reel.sh` tant que Q-39-16 n'est pas tranchée (Q-39-15 était déjà prise, IBAN) ; registre : six `assert_eq!` dont cinq littéraux, les deux phrases du manuel ; garde : noms sans numéro `KESH_Stripe_BASE_URL` / `_PARALLEL` inscrits ; `payout_total_mismatch` (code exact de 40-7c).
+- 2026-11-20 — validation P4 ciblée (Claude Haiku 5.5, contexte frais ; rapport `kesh-gate-logs/epic-39-40-kiss/validation/39-40-phase2-P4-ciblee.md`) : registre : six `assert_eq!` dont cinq littéraux, les deux phrases du manuel ; garde : noms sans numéro `KESH_STRIPE_BASE_URL` et `KESH_STRIPE_PARALLEL` inscrits ; `payout_total_mismatch` (code exact de 40-7c).
+- 2026-11-20 — validation P5 ciblée (Claude Sonnet 5.5, contexte frais ; rapport `kesh-gate-logs/epic-39-40-kiss/validation/39-40-phase2-P5-ciblee.md`) : 0 C, 0 H, 0 M, 1 L, remédié : entrée P4 limitée à ce qui concerne Stripe (renvoi à la Q-39-16 de Wise retiré), casse des noms `KESH_STRIPE_BASE_URL` et `KESH_STRIPE_PARALLEL`.
 - 2026-11-20 — validation P2, complément (Claude Opus 5.5)
  : valeur vide = absente, séries 1 à 3 aux deux compose et à
   `.env.example` (corrections du socle relevées par la P2 de la 38-12).

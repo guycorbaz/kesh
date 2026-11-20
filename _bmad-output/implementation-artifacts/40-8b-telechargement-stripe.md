@@ -134,7 +134,8 @@ limite de débit, parallélisme réglable (`KESH_STRIPE_PARALLEL`, 1 à 6) ; mê
   `API_KEY_OPERATION_FORBIDDEN` sur les deux routes (comme 38-12a), 409 avec `details: { provider, jobId }`, `details` seul
   nom, une entrée `bank_imports` et un `filename` par devise.
 - 2026-11-20 — validation P3 ciblée (Claude Sonnet 5.5, contexte frais ; rapport `kesh-gate-logs/epic-39-40-kiss/validation/39-40-phase2-P3-ciblee.md`) : registre (deux phrases du manuel, six `assert_eq!`), tableaux de variables (§ `sec:env-vars` neuf, jamais SMTP), panique de tâche → `INTERNAL_ERROR`.
-- 2026-11-20 — validation P4 ciblée (Claude Haiku 5.5, contexte frais ; rapport `kesh-gate-logs/epic-39-40-kiss/validation/39-40-phase2-P4-ciblee.md`) : recette 2 : le rejeu passe par `appel-reel.sh` tant que Q-39-16 n'est pas tranchée (Q-39-15 était déjà prise, IBAN) ; registre : six `assert_eq!` dont cinq littéraux, les deux phrases du manuel ; garde : noms sans numéro `KESH_Stripe_BASE_URL` / `_PARALLEL` inscrits ; `payout_total_mismatch` (code exact de 40-7c).
+- 2026-11-20 — validation P4 ciblée (Claude Haiku 5.5, contexte frais ; rapport `kesh-gate-logs/epic-39-40-kiss/validation/39-40-phase2-P4-ciblee.md`) : registre : six `assert_eq!` dont cinq littéraux, les deux phrases du manuel ; garde : noms sans numéro `KESH_STRIPE_BASE_URL` et `KESH_STRIPE_PARALLEL` inscrits ; `payout_total_mismatch` (code exact de 40-7c).
+- 2026-11-20 — validation P5 ciblée (Claude Sonnet 5.5, contexte frais ; rapport `kesh-gate-logs/epic-39-40-kiss/validation/39-40-phase2-P5-ciblee.md`) : 0 C, 0 H, 0 M, 1 L, remédié : entrée P4 limitée à ce qui concerne Stripe (renvoi à la Q-39-16 de Wise retiré), casse des noms.
 - 2026-11-20 — validation P2, complément (Claude Opus 5.5)
  : cœur `ProviderLine` extrait par 38-12a (ou 40-7b), appelé ici ;
   manuel : deux tableaux de variables, au-delà de trois comptes.
