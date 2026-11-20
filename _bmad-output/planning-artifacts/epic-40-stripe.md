@@ -35,8 +35,8 @@ Guy, après celles des Epics 37 (fait, v0.19.0), 38 et 39.
 ## Phase 1 KISS
 
 **Le parcours** : ventes des boutiques au transit (identifiant au libellé) → rapport Stripe « Itemized payout
-reconciliation » (CSV) → bouton ou route d'API → rapprochement → frais et versements écrits → réception du versement
-proposée → écarts listés.
+reconciliation » (CSV) → bouton ou route d'API → revue : rattachements aux ventes, frais et versements **proposés**, acceptés en lot → écarts
+listés ; la réception du versement se rattache par la page Wise (39-11c) ou la réconciliation de la banque.
 
 **Le modèle, repris de l'Epic 38 (38-11b)** : chaque solde Stripe d'une devise est un **compte bancaire Kesh** marqué
 `provider = 'stripe'`, sans IBAN, lié au **compte de transit** de la devise (compte du plan en devise, Epic 37), avec son
@@ -50,8 +50,8 @@ réception Wise ou bancaire de l'autre — d'où « jamais compté deux fois ».
 |---|---|---|---|---|
 | **40-7a** | lecteur du CSV « Itemized payout reconciliation » (colonnes par noms, `source_id` exigé, montants en forme fermée, net = brut − frais) ; aide d'en-tête commune `csv/by_name.rs` | `kesh-import` | 38-11a | — |
 | **40-7b** | réglages Stripe d'un compte bancaire (compte de frais, **compte de versement**), import ventilé par devise, versements, doublons ; **appelle** le cœur d'import commun de 38-11b / 39-11b | `kesh-db`, `kesh-api`, `kesh-import` (lecture), `kesh-i18n` | 40-7a, 38-11b, 39-11b | **une**, non breaking (une colonne) |
-| **40-7c** | rapprochement : charge → vente (identifiant + brut + devise), frais et versements écrits, réception proposée, écarts ; ajoute la **devise à l'autre côté d'un virement** (le rattachement en devise est celui de 38-11c) | `kesh-db`, `kesh-reconciliation`, `kesh-api`, `kesh-i18n` | 40-7b, 38-11c, 39-11c | — |
-| **40-7d** | page Stripe (import puis rapprochement, écarts), paramètres du compte, `withoutProviders`, manuel utilisateur, `api-external.md`, E2E, captures | `frontend`, `kesh-i18n`, `docs/manual`, `docs/api-external.md` | 40-7b, 40-7c, 38-11d (39-11b pour l'E2E) | — |
+| **40-7c** | revue et acceptation (moteur de 38-11c paramétré, comme Wise) : charge → vente proposée (identifiant + brut + devise), frais et versements proposés, écarts (versement sans réception compris) ; le rattachement en devise est celui de 38-11c, l'autre côté en devise celui de 39-11c | `kesh-db`, `kesh-reconciliation`, `kesh-api`, `kesh-i18n` | 40-7b, 38-11c, 39-11c | — |
+| **40-7d** | page Stripe sur le composant de PayPal généralisé (import, propositions acceptées en lot, écarts), paramètres du compte, `withoutProviders`, manuel utilisateur, `api-external.md`, E2E, captures | `frontend`, `kesh-i18n`, `docs/manual`, `docs/api-external.md` | 40-7b, 40-7c, 38-11d (39-11b pour l'E2E) | — |
 
 **Migration (phase 1)** : `20261120000003_stripe_import` (40-7b) — **une seule instruction** : `bank_accounts.payout_bank_account_id`
 (clé étrangère sur la même table) et son CHECK ; `chk_bank_accounts_provider` n'est **pas** reposée, 38-11b admet
@@ -66,12 +66,14 @@ la liste `ABSENCES_ADMISES_EPIC_37` n'est pas touchée (propre à l'Epic 37).
 écriture ; deux devises étrangères, deux écritures au même CHF par le compte de conversion (sans objet pour Stripe en
 phase 1 : un compte de versement est de même devise) ; (4) « sans conversion automatique » = montants en devise d'origine,
 CHF au cours mensuel retenu (Epic 37) ; (5) le versement est un virement entre deux comptes propres (34-11b), rattaché à
-la réception Wise ou bancaire, jamais compté deux fois. **Posé à la validation P1 (2026-11-20)** : l'import et le
-rapprochement sont **deux routes** (`stripe-imports`, `stripe-matching`), l'écran les enchaîne ; la route de rapprochement
-écrit au journal, donc `Traced, Rejouee` au registre ; la page Stripe est à côté de la page PayPal
-(`reconciliation/stripe/`) ; un versement qui porte un `payout_reversal` reste « à examiner » ; les charges se rattachent
-d'office à la vente (identifiant + brut + devise concordants, une seule écriture), à la différence de PayPal où le
-rattachement est une proposition acceptée — **à confirmer par Beat** (40-7c AC-2).
+la réception Wise ou bancaire, jamais compté deux fois. **Posé à la validation P1 (2026-11-20), repris en P2** : l'import et
+le rapprochement sont des routes distinctes (`stripe-imports` ; `stripe/review` et `stripe/accept`, P2), l'écran
+recharge la revue après l'import ; la route d'acceptation écrit au journal, donc `Traced, Rejouee` au registre ; la page Stripe est à côté de la page PayPal
+(`reconciliation/stripe/`) ; un versement qui porte un `payout_reversal` reste « à examiner ». **Décision de
+l'orchestrateur (validation P2, 2026-11-20)** : une charge n'est **pas** rattachée d'office à la vente — c'est une
+proposition acceptée par l'utilisateur, en lot possible, comme le `link_sale` de 38-11c (`CLAUDE.md`, « un
+appariement automatique propose, il ne crée jamais ») ; d'où, pour la simplicité, la revue et l'acceptation de 38-11c
+pour tout le rapprochement Stripe (frais et versements proposés aussi, acceptés d'un geste « Tout cocher », 40-7c).
 
 **Fixture** : fictive (identifiants `…TEST…`, descriptions inventées), dans `crates/kesh-import/tests/fixtures/` (40-7a) ;
 elle sert aux quatre fiches et à la phase 2.
@@ -107,15 +109,17 @@ transaction du versement dans `?payout=` ; `Stripe-Version` à épingler ; table
 - **C-40-K3 — Rattachement en devise.** Aujourd'hui, le rattachement d'une transaction à une écriture existante ne vaut
   qu'en CHF (`transaction_can_be_linked_to_entry`, `crates/kesh-db/src/repositories/reconciliation_link.rs:535-537`), et
   les gestes de la réconciliation refusent une transaction en devise (`RECONCILIATION_CURRENCY_MISMATCH`,
-  `routes/reconciliation.rs:4387`). PayPal (EUR, USD) et Stripe en ont besoin tous deux : **tenu** pour les conditions 1 et 3 par 38-11c AC-1 ; 40-7c
-  y ajoute la condition 4 (devise de l'autre côté d'un virement, `other_side_predicate`), que 38-11c ne touche pas.
+  `routes/reconciliation.rs:4387`). PayPal (EUR, USD) et Stripe en ont besoin tous deux : **tenu** pour les conditions 1 et 3 par 38-11c AC-1. La
+  condition 4 (devise de l'autre côté d'un virement, `other_side_predicate`) est réécrite en deux branches par 39-11c
+  AC-3 (« porté par 38-11c », que la fiche 38-11c validée P2 ne dit pas encore) ; 40-7c ne la touche pas, elle teste le
+  cas Stripe et ne l'écrit qu'à défaut, dans cette forme (validation P2).
 - **C-40-K4 — Recherche d'une vente par identifiant au libellé** : une fonction, paramétrée par le motif du jeton
   (`TXN <id>` pour PayPal, `ch_…`/`py_…` pour Stripe), partagée avec 38-11c : **la lecture des écritures de vente** (une
   requête) et le rattachement sont communs, seule l'extraction des jetons (fonction pure) diffère.
 - **C-40-K5 — Epic 39 (Wise)** : l'import Wise **n'écrit aucune écriture** pour « Argent reçu de Stripe » et laisse la
-  transaction en attente ; 40-7c la propose au rattachement à l'écriture du versement. Les comptes Wise EUR/USD sont
-  des comptes bancaires Kesh (compte de versement de 40-7b). 39-11c propose le même rattachement de son côté (± 5 jours) :
-  la fenêtre de 40-7c est la même, les deux écrans mènent au même lien, aucun n'écrit.
+  transaction en attente ; **39-11c la propose** au rattachement à l'écriture du versement (± 5 jours). Les comptes Wise
+  EUR/USD sont des comptes bancaires Kesh (compte de versement de 40-7b). 40-7c ne la propose pas (doublon, validation
+  P2) : elle liste le versement en écart `payout_without_receipt` tant que sa réception n'est pas rattachée.
 - **C-40-K6 — Exécuteur de téléchargement commun (phase 2)** avec la phase 2 de PayPal : le premier des deux qui se
   développe l'écrit générique.
 

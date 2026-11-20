@@ -70,16 +70,16 @@ par devise, sans doublon, afin que chaque mouvement du solde Stripe attende son 
    `payoutBankAccountId` désigne un compte bancaire de la société, non archivé, **sans prestataire ou compte Wise** (un
    compte `stripe` ou `paypal` n'est jamais une destination de versement), dont le compte du plan est **dans la même
    devise** que le compte lié du compte Stripe ; sinon 400 `STRIPE_PAYOUT_ACCOUNT_INVALID`, `details: { bankAccountId,
-   reason }`, `reason` ∈ `not_found`, `archived`, `stripe`, `paypal`, `currency`. Absent admis (les versements vont
+   reason }`, `reason` ∈ `not_found`, `archived`, `closed`, `stripe`, `paypal`, `currency`. Absent admis (les versements vont
    alors « à examiner », 40-7c). Le compte de versement se change **même quand le compte Stripe porte des transactions** (il n'agit que sur
    les écritures à venir, comme le compte de frais). La réponse gagne `payoutBankAccountId` dans l'objet du
    prestataire ; entité `BankAccount` (`crates/kesh-db/src/entities/bank_account.rs`) et lectures du dépôt
    (`repositories/bank_accounts.rs`) portent la colonne ; la trace d'audit des créations et modifications l'inclut.
 3. **AC-3 — IBAN, devise, refus aux autres chemins : aucune seconde règle.** `validate_bank_input`
    (`crates/kesh-api/src/routes/bank_accounts.rs:548`), la levée de C-37-9 (`locked_ledger_type`, `:435`, et le
-   pré-vol des refus `ACCOUNT_IN_FOREIGN_CURRENCY`), le refus du `PATCH` du lien du compte du plan, et les **cinq refus
-   `BANK_ACCOUNT_IS_PROVIDER`** de 38-11b AC-3 (import CAMT/CSV, relevé saisi, règlement d'une facture client, paiement
-   d'une facture fournisseur) jugent « compte prestataire » par **`provider IS NOT NULL`** (état résultant pour les
+   pré-vol des refus `ACCOUNT_IN_FOREIGN_CURRENCY`), le refus du `PATCH` du lien du compte du plan, et les refus
+   **`BANK_ACCOUNT_IS_PROVIDER`** de 38-11b AC-3 (six sites : aperçu et création d'un import CAMT/CSV, aperçu et création
+   d'un relevé saisi, règlement d'une facture client, paiement d'une facture fournisseur) jugent « compte prestataire » par **`provider IS NOT NULL`** (état résultant pour les
    réglages) : si 38-11b ou 39-11b les ont écrits `provider = 'paypal'` ou `'wise'`, 40-7b en fait **une** expression
    (testée pour les trois prestataires, T0). Un compte Stripe n'est jamais principal (CHECK de 38-11b), n'entre ni aux
    lots pain.001 ni à la QR-facture (test de 38-11b étendu à `stripe`), et son solde d'ouverture en devise est refusé
@@ -87,7 +87,7 @@ par devise, sans doublon, afin que chaque mouvement du solde Stripe attende son 
 4. **AC-4 — Route d'import** `POST /api/v1/stripe-imports` (multipart : `file`, `account`), Comptable et plus, clés
    d'API `read-write` admises (comme `POST /api/v1/bank-imports`, `lib.rs:946`), inscrite à `LIB_ROUTES`
    (`crates/kesh-api/tests/audit_route_registry.rs:440`) en `Traced, SansEcritureAuJournal` (elle n'écrit **aucune
-   écriture** : le rapprochement est un second geste, 40-7c) ; le compte de `the_registry_partition_is_what_the_story_declares`
+   écriture** : la revue et l'acceptation sont d'autres routes, 40-7c) ; le compte de `the_registry_partition_is_what_the_story_declares`
    (`:1082`) relevé de un avec sa raison, la phrase « N des M routes à verbe mutant » et la somme du manuel
    d'administration (`docs/manual/fr/admin-manual.tex`, lues par `le_manuel_dit_le_compte_du_registre`) mises à jour —
    **`.tex` seul**, PDF à la release ; les nombres se **recomptent** depuis la source après la fusion des Epics 38 et 39.
@@ -99,7 +99,7 @@ par devise, sans doublon, afin que chaque mouvement du solde Stripe attende son 
    colonne *source_id* » — ou les erreurs de ligne, forme `CsvLineErrorPayload`, `crates/kesh-api/src/errors.rs:1541`,
    par `csv_line_error_to_payload`, `routes/bank_imports.rs:702`) → 422 `PROVIDER_CURRENCY_ACCOUNT_MISSING` (`details:
    { currencies }`, jamais de solde créé d'office) → 409 `BANK_ACCOUNT_CLOSED` → 422 `BANK_IMPORT_DUPLICATE_FILE`
-   (empreinte de l'AC-6). Aucun paramètre `match` : l'écran appelle l'import, puis le rapprochement (40-7c), deux routes.
+   (empreinte de l'AC-6). Aucun paramètre `match` : l'écran appelle l'import, puis recharge la revue (`GET /api/v1/stripe/review`, 40-7c).
 5. **AC-5 — Ventilation.** Par devise, **une** entrée `bank_imports` (`create_with_transactions`,
    `crates/kesh-db/src/repositories/bank_imports.rs:72`) sur le compte bancaire de la devise, `source_format = 'CSV'`
    (valeur existante, comme 38-11b), `filename`, période = première et dernière date de la devise, soldes `NULL`. Chaque
@@ -116,7 +116,7 @@ par devise, sans doublon, afin que chaque mouvement du solde Stripe attende son 
      « Versement Stripe ». (Le rapport est découpé par versement : toutes les lignes d'un versement y sont. ⚠️ Un
      fichier filtré par catégorie dans Stripe donne un total faux **que rien ne contrôle ici** — le montant du versement
      est calculé sur les mêmes lignes — : le seul garde-fou est que la réception du versement sur Wise ou à la banque
-     ne trouve pas son montant, `PAYOUT_WITHOUT_RECEIPT` de 40-7c ; le manuel dit de ne pas filtrer le rapport.)
+     ne trouve pas son montant, écart `payout_without_receipt` de 40-7c ; le manuel dit de ne pas filtrer le rapport.)
    La somme des transactions insérées d'une devise vaut zéro quand le fichier ne contient que des versements à Σ net ≠ 0
    (test). Import sous le verrou de **chaque** compte visé, par identifiant croissant : **`with_account_locks`**, le
    helper de 38-11b (`crates/kesh-reconciliation/src/mutex.rs`, à côté de `with_account_lock`, `:75`), appelé par le
@@ -142,9 +142,12 @@ par devise, sans doublon, afin que chaque mouvement du solde Stripe attende son 
    `information_schema`) ; aller-retour d'un compte Stripe avec compte de versement testé (`admin_full_import_e2e.rs`) ;
    une sauvegarde de la version précédente s'importe (colonne `NULL`, non obligatoire : la règle générique
    `missing_required_columns` ne refuse qu'une colonne obligatoire) — test. ⚠️ **`ABSENCES_ADMISES_EPIC_37`
-   (`crates/kesh-db/src/backup.rs:170`) n'est pas touchée** : la liste est propre à l'Epic 37 et son garde exige que
-   chaque entrée soit ajoutée par une migration ≥ `PREMIERE_MIGRATION_EPIC_37` (`:239`) ; y inscrire cette colonne
-   ferait échouer le test (même choix que 38-11b AC-7). Export CSV : colonne ajoutée à `serialize_bank_accounts_csv`
+   (`crates/kesh-db/src/backup.rs:170`) n'est pas touchée** : la liste est close, propre aux
+   sauvegardes **antérieures à l'Epic 37** (doc de `:155-169`), et le test qui la rejoue
+   (`full_import_of_a_0_17_6_backup_takes_the_multi_currency_defaults`, `admin_full_import_e2e.rs:5947`) en compte
+   les colonnes (`retirees == 13`) : y inscrire cette colonne le ferait échouer, sans rien apporter — une colonne
+   nullable passe déjà par la règle générique (même choix que 38-11b AC-7). *(Le motif écrit en P1 — un garde « ≥
+   `PREMIERE_MIGRATION_EPIC_37` » — était faux : `20261120000003` le satisfait.)* Export CSV : colonne ajoutée à `serialize_bank_accounts_csv`
    (`crates/kesh-api/src/exports/csv_tables.rs:680`) ; `chaque_colonne_du_schema_est_exportee_ou_ecartee` (`:2658`)
    vert. `TABLES_TO_TRUNCATE` (`backup.rs:46`) inchangé (vidage sous `FOREIGN_KEY_CHECKS = 0` ; FK sur la même
    table). Codes neufs : `STRIPE_PAYOUT_ACCOUNT_INVALID`, `STRIPE_CSV_INVALID` : `errors.rs` et messages aux quatre
@@ -171,7 +174,7 @@ par devise, sans doublon, afin que chaque mouvement du solde Stripe attende son 
   attendus ; réimport → 422 ; rapport par devise puis toutes devises → doublons ; fichier sans `source_id` → 422 avec la
   marche à suivre ; devise sans compte → 422, rien d'écrit ; compte clos → 409 ; clé d'API `read` → 403. Réglages :
   chaque refus de l'AC-2 (compte de versement Wise admis ; `stripe`, `paypal`, autre devise, archivé refusés ; changé
-  malgré des transactions) ; les cinq `BANK_ACCOUNT_IS_PROVIDER` sur un compte Stripe. Tests de l'import PayPal (et
+  malgré des transactions) ; les six `BANK_ACCOUNT_IS_PROVIDER` sur un compte Stripe. Tests de l'import PayPal (et
   Wise) relancés (AC-7).
 - **Migration** : test de l'AC-1 ; `test_schema_guard.rs`. Gate **complet** (exception `kesh-db`).
 
@@ -213,3 +216,11 @@ s'importe d'un geste, ventilé par devise ; les doublons sont ignorés.
   (compte Wise admis, PayPal refusé), refus `BANK_ACCOUNT_IS_PROVIDER` jugés sur `provider IS NOT NULL` ; cœur d'import
   commun attendu de 38-11b/39-11b, non « déplacé » d'office ; paramètre `match` retiré. LOW : `CsvLineErrorPayload`
   cité à `errors.rs:1541` ; versement de Σ net nul non créé.
+- 2026-11-20 — validation P2 (Claude Opus 5.5, contexte frais) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 3 LOW, remédiés (rapport
+  `kesh-gate-logs/epic-39-40-kiss/validation/40-7b-compte-stripe-et-import-P2.md`). Remédiation P1 vérifiée au code de
+  `origin/main` (migration, FK, CHECK, P1–P8, verrous, registre, sauvegarde). LOW : le motif de l'AC-8 pour ne pas
+  toucher `ABSENCES_ADMISES_EPIC_37` était faux (`20261120000003` satisfait le garde « ≥ première migration de l'Epic
+  37 ») → la liste est close, propre aux sauvegardes antérieures à l'Epic 37, et son test compte treize colonnes ;
+  « cinq refus » `BANK_ACCOUNT_IS_PROVIDER` pour six sites ; `reason` `closed` du compte de versement. Propagé de la
+  40-7c : revue rechargée après l'import (et non une route de rapprochement), écart `payout_without_receipt`.
+

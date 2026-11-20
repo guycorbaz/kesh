@@ -75,7 +75,8 @@ lié —, afin que l'import (40-7b) n'ait plus qu'à ranger ces lignes dans le c
    `MAX_CSV_LINE_ERROR_VALUE_CHARS`) : `net ≠ gross − fee` → `NET_MISMATCH` (convention Stripe : frais **positifs**
    quand ils sont prélevés, négatifs quand Stripe les rend — remboursement ; ce n'est pas celle de PayPal, où net =
    brut + frais ; aucun contrôle sur le signe des frais) ; un même `payout_id` sur deux devises →
-   `PAYOUT_CURRENCY_MIXED` (sur la seconde ligne fautive). Agrégation sous `MAX_CSV_LINE_ERRORS` (`error.rs:49`,
+   `PAYOUT_CURRENCY_MIXED` (sur la seconde ligne fautive). **Codes de ligne, liste fermée** (40-7d en traduit chacun) : `FIELD_COUNT`, `ID`, `DATE`, `CURRENCY` (devise qui n'est pas trois lettres ASCII), `AMOUNT`, `NET_MISMATCH`,
+   `PAYOUT_CURRENCY_MIXED`. Agrégation sous `MAX_CSV_LINE_ERRORS` (`error.rs:49`,
    réexporté `lib.rs:51-54`) dans `StripeCsvError::Lines(Vec<StripeLineError>)` ; une erreur refuse le fichier entier.
 6. **AC-6 — DRY et pureté.** 38-11a n'a pas de module commun : ses briques (lecture d'en-tête par noms avec requises /
    facultatives et refus listé, forme fermée des montants, agrégation plafonnée des erreurs de ligne, troncature des
@@ -154,3 +155,9 @@ lié (`source_id` ou `charge_id`) est refusé avec la marche à suivre pour l'aj
   fermé, numéros de ligne et `FIELD_COUNT` non repris de 38-11a ; module commun nommé `csv/by_name.rs` (39-11a), 38-11a
   n'en ayant pas écrit ; fixture sans dates de 2020 (E2E) ni versement `payout_reversal` seul ni versement EUR
   égal à la réception Wise. LOW : catalogue `fixtures/README.md` ; ordre des colonnes manquantes.
+- 2026-11-20 — validation P2 (Claude Opus 5.5, contexte frais) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW, remédié (rapport
+  `kesh-gate-logs/epic-39-40-kiss/validation/40-7a-lecteur-csv-stripe-P2.md`). Remédiation P1 vérifiée au code de
+  `origin/main` (`decode_bytes` sans retrait du BOM, `detect_encoding` rendant `bom_len`, `parse_amount` privé et
+  laxiste, `annee_recevable`, réexports) et contre 38-11a et 39-11a (`csv/by_name.rs`, forme fermée). LOW : la liste des
+  codes d'erreur de ligne n'était pas fermée (la devise invalide n'avait pas de code) → liste écrite.
+
