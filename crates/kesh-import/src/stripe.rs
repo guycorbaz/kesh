@@ -31,6 +31,7 @@ use std::collections::HashMap;
 use chrono::{NaiveDate, NaiveTime};
 use rust_decimal::Decimal;
 
+use crate::csv::by_name::normalize;
 use crate::csv::encoding::{decode_bytes, detect_encoding};
 use crate::csv::{ColumnsByName, HeaderByNameError, parse_dot_decimal_amount};
 use crate::error::{CsvError, MAX_CSV_LINE_ERROR_VALUE_CHARS, MAX_CSV_LINE_ERRORS};
@@ -312,15 +313,10 @@ fn valid_id(raw: &str) -> bool {
     !raw.is_empty() && raw.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
 }
 
-/// Nom normalisé comme le fait l'aide d'en-tête (`trim`, minuscules).
-fn norm(s: &str) -> String {
-    s.trim().to_lowercase()
-}
-
 /// Les requises absentes dans l'ordre de l'en-tête attendu, graphies
 /// alternatives comprises.
 fn missing_columns(header: &csv::StringRecord, plain_missing: &[String]) -> Vec<String> {
-    let has = |name: &str| header.iter().any(|h| norm(h) == name);
+    let has = |name: &str| header.iter().any(|h| normalize(h) == name);
     let mut out = Vec::new();
     for name in REQUIRED_PLAIN {
         // La date de création vient après `balance_transaction_id`.
@@ -538,8 +534,11 @@ fn read_row(
     }
 
     let mut incoherent = mixed;
+    // `checked_sub` : `gross - fee` panique au débordement de `Decimal`
+    // (montants extrêmes admis par la forme fermée) ; un débordement ne peut
+    // pas égaler `net`, c'est donc aussi une incohérence de ligne.
     if let (Some(gross), Some(fee), Some(net)) = (gross, fee, net)
-        && net != gross - fee
+        && gross.checked_sub(fee) != Some(net)
     {
         incoherent = true;
         push(COL_NET, StripeLineErrorCode::NetMismatch, cell(COL_NET));

@@ -366,3 +366,55 @@ fn error_collection_is_capped() {
     }
     assert_eq!(lines_err(&text).len(), MAX_CSV_LINE_ERRORS);
 }
+
+#[test]
+fn extreme_amounts_never_panic_on_the_net_check() {
+    // `Decimal::MAX - (-1)` déborde : erreur de ligne, jamais une panique.
+    let max = "79228162514264337593543950335";
+    let row = line_with(6, max)
+        .replace("3.20", "-1")
+        .replace("96.80", "0");
+    let l = lines_err(&format!("{HEADER}\n{row}\n"));
+    assert_eq!(
+        (l[0].line, l[0].field, l[0].code),
+        (2, Some("net"), StripeLineErrorCode::NetMismatch)
+    );
+}
+
+#[test]
+fn several_line_errors_come_out_sorted_by_line() {
+    // Ligne 2 : erreur de contenu ; ligne 3 : nombre de cellules. Le second
+    // type est collecté avant le premier, le tri rétablit l'ordre du fichier.
+    let text = format!(
+        "{HEADER}\n{}\npo_T1,2020-02-03,txn_T1\n{}\n",
+        line_with(8, "96.81"),
+        line_with(8, "96.82")
+    );
+    let l = lines_err(&text);
+    let got: Vec<_> = l.iter().map(|e| (e.line, e.code)).collect();
+    assert_eq!(
+        got,
+        vec![
+            (2, StripeLineErrorCode::NetMismatch),
+            (3, StripeLineErrorCode::FieldCount),
+            (4, StripeLineErrorCode::NetMismatch),
+        ]
+    );
+}
+
+#[test]
+fn line_after_a_blank_line_takes_the_blank_line_number() {
+    // Limite du crate `csv`, partagée avec PayPal et Wise : un enregistrement
+    // qui suit une ligne vide au milieu du fichier porte le numéro de cette
+    // ligne vide (ici 3, alors que sa ligne dans le fichier est la 4).
+    let text = format!(
+        "{HEADER}\n{}\n\n{}\n",
+        line_with(8, "96.80"),
+        line_with(8, "96.81")
+    );
+    let l = lines_err(&text);
+    assert_eq!(
+        (l[0].line, l[0].code),
+        (3, StripeLineErrorCode::NetMismatch)
+    );
+}

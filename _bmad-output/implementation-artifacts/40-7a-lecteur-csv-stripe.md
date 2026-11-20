@@ -44,8 +44,8 @@ lié —, afin que l'import (40-7b) n'ait plus qu'à ranger ces lignes dans le c
 2. **AC-2 — En-tête par noms.** Noms comparés après `trim`, sans casse. **Requises** : `automatic_payout_id`,
    `automatic_payout_effective_at`, `balance_transaction_id`, `created` **ou** `created_utc`, `currency`, `gross`,
    `fee`, `net`, `reporting_category`, et **au moins une** de `source_id`, `charge_id`. **Facultatives** :
-   `available_on` / `available_on_utc`, `description`, `customer_facing_amount`, `customer_facing_currency` (lues,
-   gardées, non contrôlées). Toute autre colonne est ignorée. Manquantes → `StripeCsvError::MissingColumns(Vec<String>)`,
+   `available_on` / `available_on_utc`, `description`, `customer_facing_amount`, `customer_facing_currency` (déclarées,
+   non contrôlées ; **non gardées** : `StripePayoutRow` suit l'AC-3, qui ne les porte pas — écart L2 de la P1). Toute autre colonne est ignorée. Manquantes → `StripeCsvError::MissingColumns(Vec<String>)`,
    toutes listées dans l'ordre ci-dessus ; l'absence des deux colonnes d'objet lié s'y nomme `source_id|charge_id` (le message de 40-7b dit :
    « dans Stripe, Rapports → Rapprochement des versements → Détaillé, ajoutez la colonne *source_id* »). Deux colonnes de
    même nom, ou `created` et `created_utc` ensemble → `DuplicateColumn(nom)`. *(Le rapport de 2024 de Beat, exporté du
@@ -189,7 +189,7 @@ repris tiennent déjà ce total. Le test-schéma et les gates complets de `kesh-
 
 ### Écarts et choix, dits
 
-- **AC-6 / T1** : rien à déplacer, 38-11a avait déjà écrit `by_name.rs` et `amount.rs` ; `paypal.rs` n'est pas touché.
+- **AC-6 / T1** : 38-11a avait déjà mis en commun `by_name.rs` et `amount.rs` ; la boucle de lecture, la collecte plafonnée des erreurs et la troncature des valeurs sont **recopiées** de `paypal.rs`, non mises en commun (corrigé à la revue P1, M2) : reclassé en dette technique, voir § *Dette technique*. `paypal.rs` n'est pas touché.
 - **Montants** : `parse_dot_decimal_amount` admet la virgule des milliers ; Stripe n'en écrit pas (AC-5), donc `parse_amount`
   de `stripe.rs` refuse toute cellule qui contient une virgule avant d'appeler l'aide commune.
 - **« L'une ou l'autre »** (`created`/`created_utc`, `source_id`/`charge_id`) : l'aide commune ne connaît que des
@@ -206,7 +206,7 @@ repris tiennent déjà ce total. Le test-schéma et les gates complets de `kesh-
 - **Date de disponibilité** : si `available_on` et `available_on_utc` sont toutes deux présentes, `available_on` prime.
 - **Versement EUR = « Argent reçu » Wise** : la fixture de 39-11a n'est pas dans cette branche ; le net EUR de
   `po_TEST0002` est écrit ici (**270.30**, tenu par un test) et 39-11a s'y alignera.
-- **Mutation vérifiée** : en neutralisant le refus de la virgule dans `parse_amount`, `decimal_comma_is_refused_never_read_as_hundred_times` rougit (journal `kesh-gate-logs/s40-7a/mutation-et-reel.log`) ; code restauré.
+- **Mutation vérifiée** : en neutralisant le refus de la virgule dans `parse_amount`, `decimal_comma_is_refused_never_read_as_hundred_times` rougit, **mais seul le sous-cas des milliers `1,234.50`** : `12,50` reste refusé par l'expression régulière commune (`csv/amount.rs`, milliers en groupes de trois), de sorte que le refus propre à `stripe.rs` ne tient que les milliers (journal `kesh-gate-logs/s40-7a/mutation-et-reel.log`) ; code restauré.
 
 ### Rapport réel de Beat, lecture locale
 
@@ -219,6 +219,21 @@ guillemets compris), aucune erreur de ligne (net, formes, dates, versements à u
 ### Gate
 
 Gate ciblé `kesh-import` (clippy `-D warnings` + `cargo test -p kesh-import`) ; journal
-`kesh-gate-logs/s40-7a/test-import-2.log`. **Gate complet non joué** (aucun code hors `kesh-import`) : à rejouer au
-gate complet de l'epic.
+`kesh-gate-logs/s40-7a/test-import-2.log`. Le gate complet n'avait pas été joué par le développement ; la revue P1 l'a joué au dernier commit de code (`scripts/test-fast.sh --ci` : 6241 exécutés, 6241 passés, 14 ignorés ; `cargo publish --dry-run -p kesh-import` vert ; journaux `kesh-gate-logs/s40-7a/`), y compris le test-schéma et les gates `kesh-db`/`kesh-api` de la fusion. Il se rejoue au gate complet de l'epic.
+
+### Remédiation de la revue P1 (2026-11-20)
+
+M1 : `gross - fee` passé en `checked_sub` (un débordement est une erreur de ligne `NET_MISMATCH`, plus une panique) ; test `extreme_amounts_never_panic_on_the_net_check`. M2 : reclassé en dette (ci-dessous). L1 : test `several_line_errors_come_out_sorted_by_line`. L2 : AC-2 alignée sur le code. L3 : `norm` remplacé par `csv::by_name::normalize` (`pub(crate)`). L4, L5 : textes ci-dessus. L6 : test `line_after_a_blank_line_takes_the_blank_line_number`, qui tient la limite des numéros de ligne (ci-dessous).
+
+### Gate de la remédiation (2026-11-20)
+
+`cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test -p kesh-import` (140 + 5 + 6 + 5 + 29 + 10 + 20 passés, dont `stripe_csv` 20/20 ; 1 ignoré) et `cargo publish --dry-run --allow-dirty -p kesh-import` (`--allow-dirty` : arbre non commité au moment du gate) verts ; journal `kesh-gate-logs/s40-7a/p1-remed2.log`. Mutation : `net != gross - fee` rétabli, `extreme_amounts_never_panic_on_the_net_check` rougit (panique « Subtraction overflowed » de `rust_decimal`) ; code restauré. Gate complet non rejoué (aucun code hors `kesh-import`).
+
+## Limite connue : numéro de ligne après une ligne vide
+
+Le crate `csv` donne à un enregistrement qui suit une ligne vide au milieu du fichier le numéro de cette ligne vide : l'erreur est rapportée une ligne trop tôt par ligne vide précédente. Limite partagée avec PayPal et Wise (documentée dans `read_records`, `csv/by_name.rs`, branche `epic/39-wise`) ; le lecteur ne la contourne pas, sur décision du coordinateur. Tenue par le test ci-dessus ; les lignes vides de fin de fichier ne comptent pas.
+
+## Dette technique
+
+- **Boucle de lecture, collecte plafonnée des erreurs de ligne et troncature des valeurs, recopiées de `paypal.rs`** (`stripe.rs` : troncature de `StripeLineError::new`, `struct Errors`, décodage et lecture des enregistrements ; trois copies avec le lecteur Wise de la 39-11a). Propriétaire : Epic 38–40. Remédiation planifiée : extraction dans `kesh-import/src/csv/` une fois les trois lecteurs (PayPal, Wise 39-11a, Stripe) en place, dans la story de solde de l'Epic 40.
 
