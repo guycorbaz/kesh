@@ -352,6 +352,54 @@ async fn project_return_json_and_export(pool: MySqlPool) {
     assert!(String::from_utf8_lossy(&csv_bytes[3..]).contains("Projet;SousProjet;CoutInvesti"));
 }
 
+/// Story 36-15 (CR #1161, AC-3) — le nom du fichier exporté suit le catalogue
+/// (`reports-filename-project-*`) : sur une société fr-CH, il dit « compte analytique »,
+/// pour les deux rapports et les deux formats. Les en-têtes CSV, eux, restent
+/// `Projet;SousProjet;…` (D5 : identifiants de colonnes) — tenus par les deux tests
+/// ci-dessus.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn export_filenames_say_compte_analytique(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let project = mk_project(&pool, seeded.company_id, "IMMEUBLE").await;
+    post_expense(&pool, &seeded, project).await;
+    let app = spawn_app(pool.clone()).await;
+    let jwt = forge_jwt(seeded.admin_user_id, seeded.company_id);
+
+    for (rapport, slug) in [
+        ("project-expenses", "depenses-par-compte-analytique"),
+        ("project-return", "rendement-par-compte-analytique"),
+    ] {
+        for format in ["pdf", "csv"] {
+            let resp = app
+                .client
+                .get(app.url(&format!(
+                    "/api/v1/reports/{rapport}/export?projectId={project}&mode=fiscal_year&fiscalYearId={}&format={format}",
+                    seeded.fiscal_year_id
+                )))
+                .bearer_auth(&jwt)
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(resp.status(), 200, "{rapport} {format}");
+            let disposition = resp
+                .headers()
+                .get("content-disposition")
+                .unwrap_or_else(|| panic!("{rapport} {format} : pas de Content-Disposition"))
+                .to_str()
+                .unwrap()
+                .to_string();
+            assert!(
+                disposition.contains(slug),
+                "{rapport} {format} : `{disposition}` ne contient pas `{slug}`"
+            );
+            assert!(
+                !disposition.to_lowercase().contains("projet"),
+                "{rapport} {format} : `{disposition}` dit encore « projet »"
+            );
+        }
+    }
+}
+
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn project_return_unknown_project_404(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();

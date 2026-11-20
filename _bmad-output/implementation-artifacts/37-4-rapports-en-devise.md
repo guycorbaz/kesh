@@ -286,7 +286,7 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
 *(Texte prêt à assembler au `CHANGELOG.md` à la release ; la fiche n'écrit jamais au `CHANGELOG.md`.)*
 
 - **Added** — grand livre, balance, bilan et compte de résultat en devise (JSON, écran, exports CSV et PDF) ; le journal gagne les champs en devise au JSON et à l'écran seulement ; champs MCP en devise.
-- **Inchangé** — CSV identique octet pour octet et PDF aux mêmes lignes de texte s'il n'y a aucun compte en devise ; accueil, projets, TVA et balance âgée restent en CHF.
+- **Inchangé** — s'il n'y a aucun compte en devise, CSV aux mêmes colonnes qu'avant et PDF aux mêmes lignes de texte ; accueil, projets, TVA et balance âgée restent en CHF. *(Corrigé à la revue d'intégration de l'équipe de Guy, 2026-11-17 — cette ligne disait « CSV identique octet pour octet » : vrai à la livraison de la 37-4, faux depuis l'échappement des cellules texte de la 37-5, qui peut changer une cellule d'un CSV de rapport même sans compte en devise ; Note de version de la 37-5.)*
 - **Compteurs** : recomptés depuis la source après chaque reprise de `main` (`sitesTotal`, catalogues i18n).
 
 ## Notes de développement

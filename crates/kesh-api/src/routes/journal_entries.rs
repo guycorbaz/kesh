@@ -1003,34 +1003,7 @@ async fn conversion_refusal(err: AppError) -> axum::response::Response {
     let AppError::ConversionEntry { entry, error } = err else {
         return err.into_response();
     };
-    let (mut parts, body) = error.into_response().into_parts();
-    let bytes = match axum::body::to_bytes(body, 1 << 20).await {
-        Ok(b) => b,
-        Err(_) => {
-            return AppError::Internal("corps d'un refus de conversion illisible".into())
-                .into_response();
-        }
-    };
-    let mut value: serde_json::Value = match serde_json::from_slice(&bytes) {
-        Ok(v) => v,
-        Err(_) => {
-            return axum::response::Response::from_parts(parts, axum::body::Body::from(bytes));
-        }
-    };
-    if let Some(error) = value.get_mut("error").and_then(|e| e.as_object_mut()) {
-        let details = error
-            .entry("details")
-            .or_insert_with(|| serde_json::json!({}));
-        if !details.is_object() {
-            *details = serde_json::json!({});
-        }
-        if let Some(map) = details.as_object_mut() {
-            map.insert("entry".into(), serde_json::json!(entry));
-        }
-    }
-    parts.headers.remove(axum::http::header::CONTENT_LENGTH);
-    let body = serde_json::to_vec(&value).unwrap_or_else(|_| bytes.to_vec());
-    axum::response::Response::from_parts(parts, axum::body::Body::from(body))
+    crate::errors::refus_avec_detail(*error, "entry", serde_json::json!(entry)).await
 }
 
 /// POST /api/v1/journal-entries/conversions — passe une conversion entre deux

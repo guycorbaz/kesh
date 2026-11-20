@@ -13,7 +13,7 @@
  */
 
 import Big from 'big.js';
-import { isValidAmount, parseAmount } from '$lib/features/journal-entries/balance';
+import { journalAmountReader, type AmountReader } from '$lib/features/journal-entries/balance';
 import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 
 /** Une ligne de la grille d'ouverture, réduite à ce qu'il faut pour les totaux. */
@@ -36,8 +36,18 @@ export interface OpeningTotals {
 	remainingGap: Big;
 }
 
+/**
+ * Story 36-18a (#1050, D5) — la lecture d'un solde de départ : celle d'une écriture
+ * (`journalAmountReader`), sur la saisie **rognée** (revue P1, B4, C-36-18-13 : un solde
+ * collé depuis un tableur, « 1250␣ », n'est pas refusé pour son blanc, comme au prix, au
+ * montant attendu et au règlement). « 1'250 » → 1250 ; « 1.250 » (ambigu) et une saisie
+ * illisible → `null`. Seul lecteur de l'écran : totaux, équilibre, messages et charge.
+ */
+export const openingAmountReader: AmountReader = (raw) => journalAmountReader(raw.trim());
+
+/** Un solde pour les totaux : non lu (ambigu ou illisible), il compte pour zéro. */
 function amount(raw: string): Big {
-	return isValidAmount(raw) ? parseAmount(raw) : new Big(0);
+	return openingAmountReader(raw) ?? new Big(0);
 }
 
 /** Totaux de l'AC 2. Un compte saisi contre sa nature compte avec son signe. */

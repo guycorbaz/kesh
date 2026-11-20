@@ -39,6 +39,8 @@ import { tick } from 'svelte';
 import Page from './+page.svelte';
 import { listInvoices } from '$lib/features/invoices/invoices.api';
 import { notifyError } from '$lib/shared/utils/notify';
+import { listContacts } from '$lib/features/contacts/contacts.api';
+import type { ContactResponse } from '$lib/features/contacts/contacts.types';
 
 function facture(over: Partial<InvoiceListItemResponse> = {}): InvoiceListItemResponse {
 	return {
@@ -127,5 +129,25 @@ describe('liste des factures — une date en cours de frappe (Story 33-4)', () =
 		await fireEvent.input(input, { target: { value: '0202-01-31' } });
 		await fireEvent.blur(input);
 		expect(input.value).toBe('2026-01-31');
+	});
+});
+
+// Story v0190-correction (#1162, AC3) — le bouton *Réinitialiser* remet le filtre
+// client à `null` : le champ doit le suivre et se vider (il gardait l'ancien nom).
+describe('liste des factures — Réinitialiser vide le champ client (v0190-correction)', () => {
+	it('un client choisi dans le filtre, Réinitialiser : le champ client est vide', async () => {
+		const client = { id: 1, name: 'Client Démo SA', ideNumber: null } as unknown as ContactResponse;
+		vi.mocked(listContacts).mockResolvedValueOnce({ items: [client], total: 1, offset: 0, limit: 50 });
+		const { findByTestId, findByRole, getByRole, getByPlaceholderText } = render(Page);
+		await findByTestId('invoice-row-date');
+		const champ = getByPlaceholderText('Tous les contacts') as HTMLInputElement;
+
+		await fireEvent.focus(champ);
+		await fireEvent.mouseDown(await findByRole('option', { name: /Client Démo SA/ }));
+		await waitFor(() => expect(champ.value).toBe('Client Démo SA'));
+
+		await fireEvent.click(getByRole('button', { name: 'Réinitialiser' }));
+		await tick();
+		expect(champ.value).toBe('');
 	});
 });

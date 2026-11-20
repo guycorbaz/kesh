@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { authState } from '$lib/app/stores/auth.svelte';
 import {
 	acceptProposals,
+	getGroupCandidates,
 	getLinkCandidates,
 	getProposals,
 	linkTransaction,
@@ -171,5 +172,85 @@ describe('reconciliation.api', () => {
 		const body = JSON.parse(init.body as string);
 		expect(body.splits[0].projectId).toBe(3);
 		expect(body.splits[1].projectId).toBeUndefined();
+	});
+
+	// Story 43-3 (#823) — la recherche des factures d'un règlement groupé (Story 43-2).
+	it('getGroupCandidates : chemin, q taillé, exclude joint par des virgules, sans rejeu', async () => {
+		await getGroupCandidates(41, { q: '  Exemple SA ', exclude: [12, 15] });
+		const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+		expect(url).toBe(
+			'/api/v1/reconciliation/transactions/41/group-candidates?q=Exemple+SA&exclude=12%2C15',
+		);
+		expect(init.method).toBe('GET');
+	});
+
+	it('getGroupCandidates : sans terme ni exclusion, aucun paramètre ; limit passé tel quel', async () => {
+		await getGroupCandidates(41);
+		expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/reconciliation/transactions/41/group-candidates');
+		mockFetch.mockClear();
+		await getGroupCandidates(41, { q: '   ', exclude: [], limit: 100 });
+		expect(mockFetch.mock.calls[0][0]).toBe(
+			'/api/v1/reconciliation/transactions/41/group-candidates?limit=100',
+		);
+	});
+
+	it('getGroupCandidates rend direction: null et une liste vide telles quelles', async () => {
+		mockFetch.mockResolvedValueOnce({
+			ok: true,
+			status: 200,
+			json: () =>
+				Promise.resolve({
+					direction: null,
+					transactionAmount: '20.00',
+					maxDifference: '5.00',
+					candidates: [],
+					hasMore: false,
+				}),
+			headers: new Headers(),
+		} as Response);
+		const r = await getGroupCandidates(41);
+		expect(r.direction).toBeNull();
+		expect(r.candidates).toEqual([]);
+	});
+
+	// L'élément d'`accepted[]` d'un groupe (43-2, M1) : cinq champs additifs, lus tels quels.
+	it('acceptProposals : invoice_group envoyé, élément d’accepted[] d’un groupe désérialisé', async () => {
+		const element = {
+			bankTransactionId: 41,
+			invoiceId: 0,
+			supplierInvoiceId: null,
+			journalEntryId: 905,
+			score: { total: 1, amountScore: 0, referenceScore: 0, contactScore: 0 },
+			difference: '-0.4000',
+			roundingDifference: '0.0000',
+			gap: '-0.40',
+			differenceAccountId: 6940,
+			settledInvoices: [
+				{ invoiceId: 12, amount: '500.0000' },
+				{ invoiceId: 15, amount: '300.0000' },
+			],
+		};
+		mockFetch.mockResolvedValueOnce({
+			ok: true,
+			status: 200,
+			json: () => Promise.resolve({ accepted: [element], failed: [] }),
+			headers: new Headers(),
+		} as Response);
+		const r = await acceptProposals(3, [
+			{ type: 'invoice_group', bankTransactionId: 41, invoiceIds: [12, 15], differenceAccountId: 6940 },
+		]);
+		const body = JSON.parse(mockFetch.mock.calls[0][1].body as string);
+		expect(body.proposals[0]).toEqual({
+			type: 'invoice_group',
+			bankTransactionId: 41,
+			invoiceIds: [12, 15],
+			differenceAccountId: 6940,
+		});
+		const a = r.accepted[0];
+		expect(a.gap).toBe('-0.40');
+		expect(a.roundingDifference).toBe('0.0000');
+		expect(a.difference).toBe('-0.4000');
+		expect(a.differenceAccountId).toBe(6940);
+		expect(a.settledInvoices?.map((s) => s.invoiceId)).toEqual([12, 15]);
 	});
 });

@@ -448,15 +448,12 @@ async fn main() {
         );
         Arc::new(mock)
     } else {
-        match kesh_api::exchange_rates::HttpRateSource::new() {
-            Ok(source) => Arc::new(source),
-            Err(e) => {
-                tracing::error!(
-                    "client HTTP des cours de change impossible à construire ({e}) — abandon."
-                );
-                std::process::exit(1);
-            }
-        }
+        // Revue d'intégration de l'équipe de Guy : un client HTTP impossible
+        // à construire n'empêche plus le démarrage (le serveur s'arrêtait,
+        // mono-devise compris) ; la récupération des cours répond 503.
+        kesh_api::exchange_rates::production_rate_source(
+            kesh_api::exchange_rates::HttpRateSource::new(),
+        )
     };
     let test_mode = config.test_mode;
 

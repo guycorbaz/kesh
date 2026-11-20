@@ -21,14 +21,16 @@
 	import {
 		complementCounterpart,
 		computeOpeningTotals,
+		openingAmountReader,
 		retainedEarningsWarning
 	} from '$lib/features/opening-balances/opening-balances-totals';
 	import {
 		computeBalance,
 		formatSwissAmount,
-		isValidAmount,
-		parseAmount
+		journalAmountPayload,
+		lineAmountProblem
 	} from '$lib/features/journal-entries/balance';
+	import { amountEntryMessage } from '$lib/features/journal-entries/amount-entry-message';
 	import { formatSwissDate } from '$lib/features/reports/reports.api';
 	import type Big from 'big.js';
 	// Story 37-3b (AC-1) — soldes d'ouverture en devise.
@@ -163,13 +165,17 @@
 		}
 	}
 
-	/** Le corps d'une ligne de grille (`foreign` pour un compte en devise). */
+	/**
+	 * Le corps d'une ligne de grille (`foreign` pour un compte en devise). Montants CHF par
+	 * `payloadOf` (Story 36-18a, D5 : la charge de la lecture du journal, `'0'` si vide) —
+	 * pour une ligne en devise, le CHF dérivé (`toFixed(2)`), toujours clair.
+	 */
 	function linePayload(r: GridRow | ComplementRow) {
 		const foreign = rowForeignPayload(r);
 		return {
 			accountId: r.account.id,
-			debit: r.debit === '' ? '0' : r.debit.replace(',', '.'),
-			credit: r.credit === '' ? '0' : r.credit.replace(',', '.'),
+			debit: payloadOf(r.debit),
+			credit: payloadOf(r.credit),
 			...(foreign ? { foreign } : {})
 		};
 	}
@@ -304,7 +310,41 @@
 	});
 
 	// Bandeau de total en direct (D3) — big.js via balance.ts, jamais parseFloat.
-	const balance = $derived(computeBalance(rows));
+	// Story 36-18a (#1050, D5) : chaque solde se lit comme le montant d'une écriture —
+	// « 1.250 » (ambigu) n'est plus lu 1,25 franc, il rend la saisie invalide.
+	// Revue P1 (B4, C-36-18-13) : sur la saisie rognée (`openingAmountReader`).
+	const balance = $derived(computeBalance(rows, openingAmountReader));
+
+	/** Story 36-18a (D5) — un montant que la lecture du journal ne rend pas (ambigu ou illisible). */
+	function unread(raw: string): boolean {
+		return openingAmountReader(raw) === null;
+	}
+
+	/**
+	 * Story 36-18a (D3, B4) — le refus à afficher sous une ligne, sur la saisie rognée.
+	 * Nommée `amountProblem` à l'intégration de la v0.18.0 dans l'Epic 37 : `rowProblem`
+	 * est le problème de la partie en devise d'une ligne (`opening-fx.ts`, 37-3b).
+	 */
+	function amountProblem(r: { debit: string; credit: string }): 'ambiguous' | 'unreadable' | null {
+		return lineAmountProblem(r.debit.trim(), r.credit.trim());
+	}
+
+	/** Story 36-18a (D5, B4) — la charge d'un solde : celle de la saisie rognée, `'0'` si vide. */
+	function payloadOf(raw: string): string {
+		return journalAmountPayload(raw.trim()) ?? '0';
+	}
+
+	/**
+	 * Story 36-18a (D5) — une ligne saisie : non vide, et soit à un montant non lu (gardée
+	 * par prudence, le bouton étant désactivé en amont), soit à un montant > 0.
+	 */
+	function isEnteredLine(r: { debit: string; credit: string }): boolean {
+		if (r.debit.trim() === '' && r.credit.trim() === '') return false;
+		const debit = openingAmountReader(r.debit);
+		const credit = openingAmountReader(r.credit);
+		if (debit === null || credit === null) return true;
+		return debit.gt(0) || credit.gt(0);
+	}
 
 	// Lignes non vides envoyées au POST (les autres sont ignorées). Une ligne
 	// dont les deux côtés valent 0 — vide OU « 0 »/« 0.00 » tapé explicitement —
@@ -317,15 +357,9 @@
 	// restent inclus par prudence — `balance.hasInvalidAmount` fait retomber
 	// `isBalanced` (balance.ts:65) et désactive le bouton en amont.
 	// Story 37-3b (AC-1) : une ligne en devise saisie n'est jamais retirée en
-	// silence, même sans CHF calculable (elle désactive alors l'envoi).
-	const nonEmptyRows = $derived(
-		rows.filter((r) => {
-			if (isFilledForeignRow(r)) return true;
-			if (r.debit === '' && r.credit === '') return false;
-			if (!isValidAmount(r.debit) || !isValidAmount(r.credit)) return true;
-			return parseAmount(r.debit).gt(0) || parseAmount(r.credit).gt(0);
-		})
-	);
+	// silence, même sans CHF calculable (elle désactive alors l'envoi). Intégration
+	// de la v0.18.0 : les lignes CHF se lisent par la lecture du journal (36-18a).
+	const nonEmptyRows = $derived(rows.filter((r) => isFilledForeignRow(r) || isEnteredLine(r)));
 	const gridIncomplete = $derived(rows.some(isIncompleteForeignRow));
 
 	const canGenerate = $derived(!submitting && balance.isBalanced && !gridIncomplete);
@@ -337,29 +371,26 @@
 
 	// Complément : lignes saisies, contrepartie en direct (arbitrage 3).
 	const complementLines = $derived(
-		complementRows.filter((r) => {
-			if (isFilledForeignRow(r)) return true;
-			if (r.debit === '' && r.credit === '') return false;
-			if (!isValidAmount(r.debit) || !isValidAmount(r.credit)) return true;
-			return parseAmount(r.debit).gt(0) || parseAmount(r.credit).gt(0);
-		})
+		complementRows.filter((r) => isFilledForeignRow(r) || isEnteredLine(r))
 	);
 	const complementInvalid = $derived(
-		complementRows.some(
-			(r) => !isValidAmount(r.debit) || !isValidAmount(r.credit) || isIncompleteForeignRow(r)
-		)
+		complementRows.some((r) => unread(r.debit) || unread(r.credit) || isIncompleteForeignRow(r))
 	);
 	const counterpart = $derived(complementCounterpart(complementLines));
 	const canSubmitComplement = $derived(
 		!completing && complementLines.length > 0 && !complementInvalid
 	);
 
-	/** Débit/Crédit mutuellement exclusifs par ligne : saisir l'un vide l'autre. */
-	function onDebitInput(row: GridRow) {
-		if (row.debit !== '') row.credit = '';
+	/**
+	 * Débit/Crédit mutuellement exclusifs par ligne : saisir l'un vide l'autre. Story 36-18a
+	 * (revue P2, R2) : sur la saisie rognée — un blanc seul, lu comme une cellule vide
+	 * (C-36-18-13), n'efface pas l'autre côté. Servent les deux grilles.
+	 */
+	function onDebitInput(row: { debit: string; credit: string }) {
+		if (row.debit.trim() !== '') row.credit = '';
 	}
-	function onCreditInput(row: GridRow) {
-		if (row.credit !== '') row.debit = '';
+	function onCreditInput(row: { debit: string; credit: string }) {
+		if (row.credit.trim() !== '') row.debit = '';
 	}
 
 	function roleLabel(account: AccountResponse): string {
@@ -374,6 +405,8 @@
 		gridRefusals = {};
 		const sent = nonEmptyRows.map((r) => r.account.id);
 		try {
+			// Story 36-18a (D5) : la charge de la lecture du journal (« 1'250 » → `1250`,
+			// vide → `0`), par `linePayload` ; jamais `null` ici, `canGenerate` exigeant `isBalanced`.
 			await generateOpeningBalances({ lines: nonEmptyRows.map(linePayload) });
 			notifySuccess(i18nMsg('opening-balances-success', 'Écriture d’ouverture générée.'));
 			// Comportement déterministe post-génération (P1-M2-BH) : recharger
@@ -418,6 +451,7 @@
 		complementRefusals = {};
 		const sent = complementLines.map((r) => r.account.id);
 		try {
+			// Story 36-18a (D5) : idem ; `canSubmitComplement` exige `!complementInvalid`.
 			await completeOpeningBalances({ lines: complementLines.map(linePayload) });
 			notifySuccess(i18nMsg('opening-balances-complete-success', 'Complément enregistré.'));
 			// Le compte complété disparaît de la liste : c'est le status qui le dit.
@@ -725,7 +759,9 @@
 							</tr>
 						</thead>
 						<tbody>
-							{#each complementRows as row, i (row.account.id)}
+							{#each complementRows as row (row.account.id)}
+								{@const problem = amountProblem(row)}
+								{@const problemId = `opening-balances-complete-amount-problem-${row.account.number}`}
 								<tr class="border-b border-border/50" data-testid="opening-balances-complete-row-{row.account.number}">
 									<td class="py-1.5 pr-2">
 										<span class="tabular-nums font-medium">{row.account.number}</span>
@@ -741,10 +777,9 @@
 											placeholder="0.00"
 											class="text-right tabular-nums"
 											bind:value={row.debit}
-											oninput={() => {
-												if (row.debit !== '') row.credit = '';
-											}}
-											aria-invalid={!isValidAmount(row.debit)}
+											oninput={() => onDebitInput(row)}
+											aria-invalid={unread(row.debit)}
+											aria-describedby={problem ? problemId : undefined}
 											aria-label={i18nMsg('opening-balances-debit-for', 'Débit du compte { $number } « { $name } »', { number: row.account.number, name: row.account.name })}
 											data-testid="opening-balances-complete-debit-{row.account.number}"
 										/>
@@ -756,10 +791,9 @@
 											placeholder="0.00"
 											class="text-right tabular-nums"
 											bind:value={row.credit}
-											oninput={() => {
-												if (row.credit !== '') row.debit = '';
-											}}
-											aria-invalid={!isValidAmount(row.credit)}
+											oninput={() => onCreditInput(row)}
+											aria-invalid={unread(row.credit)}
+											aria-describedby={problem ? problemId : undefined}
 											aria-label={i18nMsg('opening-balances-credit-for', 'Crédit du compte { $number } « { $name } »', { number: row.account.number, name: row.account.name })}
 											data-testid="opening-balances-complete-credit-{row.account.number}"
 										/>
@@ -776,11 +810,33 @@
 										</td>
 									</tr>
 								{/if}
+								{#if problem}
+									<!-- Story 36-18a (#1050, D3, D5) — le montant ambigu ou illisible, sous sa ligne. -->
+									<tr>
+										<td
+											colspan="3"
+											class="pb-2 text-xs text-destructive"
+											id={problemId}
+											data-testid="opening-balances-amount-{problem}"
+										>
+											{amountEntryMessage(problem, 4)}
+										</td>
+									</tr>
+								{/if}
 							{/each}
 						</tbody>
 					</table>
-					<p class="text-sm" data-testid="opening-balances-complete-counterpart" data-side={counterpart.side}>
-						{#if counterpart.side === 'credit'}
+					<!-- Story 36-18a (revue P1, E3) : tant qu'une ligne porte un montant ambigu ou
+					     illisible, aucune contrepartie n'est annoncée — elle serait calculée sans
+					     cette ligne (« 1.250 » seul donnait « Les lignes s'équilibrent »). -->
+					<p
+						class="text-sm"
+						data-testid="opening-balances-complete-counterpart"
+						data-side={complementInvalid ? 'invalid' : counterpart.side}
+					>
+						{#if complementInvalid}
+							<!-- Rien : le message sous la ligne fautive dit quoi corriger. -->
+						{:else if counterpart.side === 'credit'}
 							{i18nMsg(
 								'opening-balances-complete-counterpart-credit',
 								'Contrepartie : { $amount } au crédit du compte { $number }.',
@@ -861,7 +917,9 @@
 				</tr>
 			</thead>
 			<tbody>
-				{#each rows as row, i (row.account.id)}
+				{#each rows as row (row.account.id)}
+					{@const problem = amountProblem(row)}
+					{@const problemId = `opening-balances-amount-problem-${row.account.number}`}
 					<tr
 						class="border-b border-border/50"
 						data-testid="opening-balances-row-{row.account.number}"
@@ -889,7 +947,8 @@
 								class="text-right tabular-nums"
 								bind:value={row.debit}
 								oninput={() => onDebitInput(row)}
-								aria-invalid={!isValidAmount(row.debit)}
+								aria-invalid={unread(row.debit)}
+								aria-describedby={problem ? problemId : undefined}
 								aria-label={i18nMsg('opening-balances-debit-for', 'Débit du compte { $number } « { $name } »', { number: row.account.number, name: row.account.name })}
 								data-testid="opening-balances-debit-{row.account.number}"
 							/>
@@ -902,7 +961,8 @@
 								class="text-right tabular-nums"
 								bind:value={row.credit}
 								oninput={() => onCreditInput(row)}
-								aria-invalid={!isValidAmount(row.credit)}
+								aria-invalid={unread(row.credit)}
+								aria-describedby={problem ? problemId : undefined}
 								aria-label={i18nMsg('opening-balances-credit-for', 'Crédit du compte { $number } « { $name } »', { number: row.account.number, name: row.account.name })}
 								data-testid="opening-balances-credit-{row.account.number}"
 							/>
@@ -916,6 +976,19 @@
 						<tr>
 							<td colspan="3" class="pb-2 text-xs text-destructive" data-testid="opening-balances-row-refusal-{row.account.number}">
 								{gridRefusals[row.account.id]}
+							</td>
+						</tr>
+					{/if}
+					{#if problem}
+						<!-- Story 36-18a (#1050, D3, D5) — le montant ambigu ou illisible, sous sa ligne. -->
+						<tr>
+							<td
+								colspan="3"
+								class="pb-2 text-xs text-destructive"
+								id={problemId}
+								data-testid="opening-balances-amount-{problem}"
+							>
+								{amountEntryMessage(problem, 4)}
 							</td>
 						</tr>
 					{/if}

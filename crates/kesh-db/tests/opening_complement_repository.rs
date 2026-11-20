@@ -519,12 +519,15 @@ async fn les_refus_suivent_la_priorite(pool: MySqlPool) {
 
 #[sqlx::test(migrations = "./test-schema")]
 async fn un_compte_contre_passe_reste_mouvemente(pool: MySqlPool) {
-    let co = setup(&pool, &[year_span(2026)]).await;
+    // Story 36-7a (#1125) : l'exercice couvre N-1..N (N, l'année du jour du test),
+    // l'écriture se date en N-1, la contre-passation et le complément au jour.
+    let n = crate::jour::aujourd_hui_test().year();
+    let co = setup(&pool, &[(d(n - 1, 1, 1), d(n, 12, 31))]).await;
     let e = post(
         &pool,
         &co,
         co.fy[0],
-        d(2026, 2, 1),
+        d(n - 1, 2, 1),
         &[("1100", dec!(9), dec!(0)), ("2000", dec!(0), dec!(9))],
     )
     .await;
@@ -537,8 +540,9 @@ async fn un_compte_contre_passe_reste_mouvemente(pool: MySqlPool) {
     )
     .await
     .unwrap();
+    let today = crate::jour::aujourd_hui_test();
     assert_eq!(
-        refusal(complete(&pool, &co, &[debit(&co, "1100", dec!(5))], d(2026, 6, 1)).await).0,
+        refusal(complete(&pool, &co, &[debit(&co, "1100", dec!(5))], today).await).0,
         R::AccountMoved
     );
 }

@@ -39,7 +39,7 @@ use std::time::Instant;
 
 use chrono::{DateTime, Datelike, NaiveDate, TimeDelta, Utc};
 use kesh_core::exchange_rates::{RateUnit, next_month, unites_utiles};
-use kesh_core::horloge::{debut_jour_suisse, jour_suisse};
+use kesh_core::horloge::{debut_du_jour_suisse, jour_suisse};
 use kesh_db::errors::{DbError, map_db_error};
 use kesh_db::repositories::exchange_rates::{
     self as depot, FetchOutcomeStatus, FetchStatus, FetchTrigger,
@@ -52,7 +52,7 @@ pub use recuperation::{
 };
 pub use source::{
     HttpRateSource, MOCK_DAILY_RATES, MOCK_MONTHLY_RATES, MockBehavior, MockRateSource, MockReply,
-    RateFuture, RateSource, SourceError,
+    RateFuture, RateSource, SourceError, UnavailableRateSource, production_rate_source,
 };
 
 /// Délai avant le premier tour après le démarrage (AC-4 (a)).
@@ -120,7 +120,7 @@ pub fn prochain_reveil(now: DateTime<Utc>, etat: &EtatReveil) -> DateTime<Utc> {
             None => lendemain,
         }
     };
-    debut_jour_suisse(jour)
+    debut_du_jour_suisse(jour)
 }
 
 /// Lit l'état du calendrier ([`EtatReveil`]) au jour `aujourdhui` (Zurich).
@@ -331,7 +331,7 @@ pub fn spawn(state: AppState) {
                 Ok(e) => prochain_reveil(now, &e),
                 Err(e) => {
                     tracing::error!("récupération automatique des cours : calendrier : {e}");
-                    debut_jour_suisse(jour_suisse(now) + TimeDelta::days(1))
+                    debut_du_jour_suisse(jour_suisse(now) + TimeDelta::days(1))
                 }
             };
             let attente = (reveil - state.horloge.maintenant())
@@ -446,15 +446,15 @@ mod tests {
     fn mois_manquant_reveil_le_lendemain() {
         assert_eq!(
             prochain_reveil(a(2026, 11, 14), &MANQUANT),
-            debut_jour_suisse(d(2026, 11, 15))
+            debut_du_jour_suisse(d(2026, 11, 15))
         );
         assert_eq!(
             prochain_reveil(a(2026, 11, 30), &MANQUANT),
-            debut_jour_suisse(d(2026, 12, 1))
+            debut_du_jour_suisse(d(2026, 12, 1))
         );
         assert_eq!(
             prochain_reveil(a(2026, 12, 31), &MANQUANT),
-            debut_jour_suisse(d(2027, 1, 1))
+            debut_du_jour_suisse(d(2027, 1, 1))
         );
     }
 
@@ -463,15 +463,15 @@ mod tests {
     fn pause_apres_le_mois_suivant() {
         assert_eq!(
             prochain_reveil(a(2026, 11, 14), &present(d(2026, 11, 14))),
-            debut_jour_suisse(d(2026, 12, 8))
+            debut_du_jour_suisse(d(2026, 12, 8))
         );
         assert_eq!(
             prochain_reveil(a(2026, 11, 25), &present(d(2026, 11, 25))),
-            debut_jour_suisse(d(2026, 12, 19))
+            debut_du_jour_suisse(d(2026, 12, 19))
         );
         assert_eq!(
             prochain_reveil(a(2026, 11, 2), &present(d(2026, 11, 2))),
-            debut_jour_suisse(d(2026, 12, 1)),
+            debut_du_jour_suisse(d(2026, 12, 1)),
             "jamais avant le 1er du mois obtenu"
         );
     }
@@ -487,7 +487,7 @@ mod tests {
         };
         assert_eq!(
             prochain_reveil(a(2026, 12, 3), &etat),
-            debut_jour_suisse(d(2026, 12, 4))
+            debut_du_jour_suisse(d(2026, 12, 4))
         );
     }
 
@@ -501,7 +501,7 @@ mod tests {
         };
         assert_eq!(
             prochain_reveil(a(2026, 12, 15), &etat),
-            debut_jour_suisse(d(2027, 1, 1))
+            debut_du_jour_suisse(d(2027, 1, 1))
         );
     }
 
@@ -521,7 +521,7 @@ mod tests {
         let soir = "2026-07-01T22:30:00Z".parse::<DateTime<Utc>>().unwrap();
         assert_eq!(
             prochain_reveil(soir, &MANQUANT),
-            debut_jour_suisse(d(2026, 7, 3))
+            debut_du_jour_suisse(d(2026, 7, 3))
         );
     }
 
@@ -535,8 +535,8 @@ mod tests {
             let now = o.and_hms_opt(12, 0, 0).unwrap().and_utc();
             let t = next_month(o);
             let r = prochain_reveil(now, &present(o));
-            assert!(r <= debut_jour_suisse(t.with_day(25).unwrap()), "{o}");
-            assert!(r >= debut_jour_suisse(t), "{o}");
+            assert!(r <= debut_du_jour_suisse(t.with_day(25).unwrap()), "{o}");
+            assert!(r >= debut_du_jour_suisse(t), "{o}");
             assert!(r > now, "{o}");
             o = o.succ_opt().unwrap();
         }

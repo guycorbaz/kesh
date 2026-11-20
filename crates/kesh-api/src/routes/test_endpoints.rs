@@ -469,6 +469,24 @@ async fn rate_source_handler(
                 .map_err(|_| AppError::Validation(format!("`date` illisible : {t}")))
         })
         .transpose()?;
+    // Revue d'intégration de l'équipe de Guy (frein des réussites) : la
+    // source pilotée change ce qu'elle publie ; les réussites mémorisées du
+    // genre (ou de l'unité) s'oublient, pour qu'un `POST /fetch` la relise.
+    // Les échecs mémorisés restent (comportement d'avant).
+    state
+        .rate_fetch_memo
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .retain(|(kind, jour), e| {
+            let visee = *kind == req.kind
+                && date.is_none_or(|d| match req.kind {
+                    kesh_core::exchange_rates::RateKind::Month => {
+                        kesh_core::exchange_rates::first_of_month(d) == *jour
+                    }
+                    kesh_core::exchange_rates::RateKind::Day => d == *jour,
+                });
+            !(visee && e.echec.is_none())
+        });
     match date {
         Some(date) => source.set_for(
             match req.kind {

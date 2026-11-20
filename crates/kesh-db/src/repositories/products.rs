@@ -160,8 +160,9 @@ async fn guard_revenue_account_in_tx(
 ) -> Result<(), DbError> {
     let state =
         accounts::lock_company_currency_in_tx(tx, company_id, accounts::CompanyLock::Share).await?;
-    accounts::refuse_foreign_currency_in_tx(tx, company_id, account_id).await?;
-    accounts::refuse_fx_account_as_revenue_in_tx(tx, company_id, &state, account_id).await
+    // La règle partagée avec les réglages de facturation et la finalisation
+    // (`designation_refusal_in_tx`, revue P1 de l'intégration de la v0.18.0, M1).
+    accounts::refuse_designation_in_tx(tx, company_id, &state, account_id, true).await
 }
 
 /// Crée un produit avec audit log atomique.

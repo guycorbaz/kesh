@@ -425,6 +425,43 @@ pub(crate) async fn create_opening_in_tx(
     .await
 }
 
+/// [`create_in_tx`] **sans valider les projets par ligne** — Story 43-1a (#823,
+/// D7, C-43-20) : les projets viennent d'une pièce de la société, jamais d'une
+/// saisie.
+///
+/// Le règlement groupé porte, sur la ligne de créance de chaque facture, le
+/// projet de **sa** facture : une facture dont le projet a été archivé après sa
+/// validation doit se régler en groupe comme seule (l'unitaire passe le projet
+/// en en-tête, que `create_in_tx` ne revalide pas — test
+/// `pay_succeeds_when_project_archived_after_tagging`). Même réglage que la
+/// contre-passation, qui recopie les projets de l'origine.
+///
+/// ⛔ `pub(crate)` : seul appelant, `grouped_settlements` ; une saisie ne doit
+/// jamais l'atteindre.
+///
+/// Portée des devises : [`PorteeDevises::UneSeule`] — le règlement groupé n'est
+/// ni une ouverture ni un complément (reprise de `main` après l'Epic 37 ; garde
+/// lexicale `tests/chf_line_lexical.rs`), et toutes ses lignes sont en CHF.
+pub(crate) async fn create_copying_projects_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    fiscal_year_id: i64,
+    acteur: Acteur,
+    new: NewJournalEntry,
+    enforce_postable: bool,
+) -> Result<JournalEntryWithLines, DbError> {
+    create_in_tx_inner(
+        tx,
+        fiscal_year_id,
+        acteur,
+        new,
+        enforce_postable,
+        false,
+        None,
+        PorteeDevises::UneSeule,
+    )
+    .await
+}
+
 /// Corps de [`create_in_tx`], avec les deux réglages que la contre-passation
 /// (Story 24-4a, #380) est seule à employer.
 ///
@@ -2473,11 +2510,17 @@ const DOCUMENT_OWNERS_BATCH: usize = 500;
 ///   vecteur vide ; une écriture d'une autre société, ou inexistante, l'est
 ///   aussi.
 /// - **Au plus un propriétaire par type et par écriture : le plus petit
-///   `id`.** Sur des données saines (une pièce par type — invariant
-///   applicatif, non une contrainte : seul `invoice_settlements.journal_entry_id`
-///   est `UNIQUE`), c'est la seule ; sur des données qui le violent, le choix
-///   est déterministe, et `id` et `number` sortent **de la même ligne**
-///   (table dérivée `GROUP BY` + `MIN(id)` jointe en retour sur `id`).
+///   `id`.** Hors règlement groupé, une pièce par type (invariant applicatif,
+///   non une contrainte) ; sur des données qui le violent, le choix est
+///   déterministe, et `id` et `number` sortent **de la même ligne** (table
+///   dérivée `GROUP BY` + `MIN(id)` jointe en retour sur `id`). ⚠️ Depuis la
+///   Story 43-1a (#823), une écriture de **règlement groupé** porte plusieurs
+///   règlements clients (unicité `(journal_entry_id, invoice_id)`) ou paie
+///   plusieurs factures fournisseur : le motif `OwnedBySettlement` (ou
+///   `OwnedBySupplierInvoice`) nomme alors **le plus petit** d'entre eux. Le
+///   gel est juste — l'écriture est possédée —, le message ne nomme qu'une
+///   pièce (limite assumée de la fiche) ; le groupe se défait par le
+///   dé-rapprochement de sa transaction.
 /// - **Forme** : une instruction par tranche de 500 écritures, `UNION ALL` de
 ///   cinq blocs bornés par la liste et par `je.company_id`. Le bloc
 ///   fournisseur lit ses **deux** colonnes par un `UNION ALL` dans sa dérivée

@@ -296,6 +296,43 @@ impl MockBehavior {
     }
 }
 
+/// La source **de repli** quand le client HTTP de production ne se construit
+/// pas (revue d'intégration de l'équipe de Guy, 2026-11-17) : toute demande
+/// échoue en [`SourceError::Connect`], d'où un `503 RATE_SOURCE_UNAVAILABLE`
+/// à `POST /exchange-rates/fetch` et un état `error` / `connect` pour la tâche.
+/// Kesh démarre donc quand même : une société mono-devise n'en voit rien, une
+/// société multi-devises garde la saisie des cours. Aucun appel sortant.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct UnavailableRateSource;
+
+impl RateSource for UnavailableRateSource {
+    fn fetch_month(&self, _year: i32, _month: u32) -> RateFuture<'_> {
+        Box::pin(async { Err(SourceError::Connect) })
+    }
+
+    fn fetch_day(&self, _date: NaiveDate) -> RateFuture<'_> {
+        Box::pin(async { Err(SourceError::Connect) })
+    }
+}
+
+/// La source de production, depuis le résultat de la construction du client
+/// HTTP ([`HttpRateSource::new`]) : le client s'il est construit ; sinon une
+/// ligne `tracing::error!` et [`UnavailableRateSource`] — jamais un arrêt du
+/// serveur, que le multi-devises soit activé ou non.
+pub fn production_rate_source<E: std::fmt::Display>(
+    client: Result<HttpRateSource, E>,
+) -> Arc<dyn RateSource> {
+    match client {
+        Ok(source) => Arc::new(source),
+        Err(e) => {
+            tracing::error!(
+                "client HTTP des cours de change impossible à construire ({e}) — récupération des cours indisponible (503 RATE_SOURCE_UNAVAILABLE), saisie des cours possible."
+            );
+            Arc::new(UnavailableRateSource)
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 struct MockState {
     par_genre: HashMap<RateKind, MockBehavior>,
@@ -437,6 +474,21 @@ mod tests {
             assert_ne!(mensuel.rate_per_unit, journalier.rate_per_unit);
         }
         assert_eq!(s.call_count(), 2);
+    }
+
+    /// Client HTTP impossible à construire : la source de repli échoue en
+    /// `connect` pour un mois comme pour un jour, sans paniquer ; un client
+    /// construit est rendu tel quel.
+    #[tokio::test]
+    async fn source_de_repli_si_le_client_ne_se_construit_pas() {
+        let source = production_rate_source::<&str>(Err("tls indisponible"));
+        assert_eq!(
+            source.fetch_month(2026, 11).await,
+            Err(SourceError::Connect)
+        );
+        let jour = NaiveDate::from_ymd_opt(2026, 11, 16).unwrap();
+        assert_eq!(source.fetch_day(jour).await, Err(SourceError::Connect));
+        let _client = production_rate_source::<&str>(Ok(HttpRateSource::new().unwrap()));
     }
 
     /// Pilotage par genre puis par unité ; `reset` revient au défaut.

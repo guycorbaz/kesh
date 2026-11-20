@@ -72,8 +72,14 @@ vi.mock("$lib/features/reminders/reminders.api", () => ({
   pauseDunning: vi.fn(),
   resumeDunning: vi.fn(),
 }));
+// Story 36-16a (#1167) — deux comptes analytiques, et le geste qui en change.
+const reassignMock = vi.fn();
 vi.mock("$lib/features/projects/projects.api", () => ({
-  listProjects: vi.fn(async () => []),
+  listProjects: vi.fn(async () => [
+    { id: 11, parentId: null, code: "P", name: "Compte P", description: null, archived: false, startDate: null, endDate: null, version: 1, createdAt: "2026-01-01T00:00:00" },
+    { id: 12, parentId: null, code: "Q", name: "Compte Q", description: null, archived: false, startDate: null, endDate: null, version: 1, createdAt: "2026-01-01T00:00:00" },
+  ]),
+  reassignInvoiceProject: (...args: unknown[]) => reassignMock(...args),
 }));
 const createCreditNoteMock = vi.fn();
 vi.mock("$lib/features/credit-notes/credit-notes.api", () => ({
@@ -573,5 +579,50 @@ describe("fiche facture — règlement à une version périmée", () => {
     rendre(aRegler({ version: 4 }));
     await waitFor(() => expect(r.getByTestId("settle-conflict").textContent).toContain("Elle a été relue"));
     expect((r.getByTestId("settle-open") as HTMLButtonElement).disabled).toBe(false);
+  });
+});
+
+// Story 36-16a (#1167, T12) — après le changement de compte analytique, la fiche reprend la
+// facture RENDUE, version comprise : un règlement envoyé ensuite part avec la version
+// d'après le geste. Mutation : ne reprendre que `projectId` (le règlement partirait avec 3).
+describe("fiche facture — changer le compte analytique, puis régler", () => {
+  const aRegler = (partial: Partial<InvoiceResponse> = {}) =>
+    invoice({ paidAt: null, amountSettled: "0.00", amountDue: "100.00", projectId: 11, ...partial });
+
+  beforeEach(() => {
+    getInvoiceMock.mockReset();
+    getInvoiceMock.mockResolvedValue(aRegler());
+    listSettlementsMock.mockReset();
+    listSettlementsMock.mockResolvedValue([]);
+    settleMock.mockReset();
+    reassignMock.mockReset();
+  });
+
+  it("le règlement qui suit part avec la version rendue par le geste (ancienne + 1)", async () => {
+    reassignMock.mockResolvedValue({
+      invoice: aRegler({ projectId: 12, version: 4 }),
+      journalEntryIds: [9],
+    });
+    settleMock.mockResolvedValue({ invoice: aRegler({ projectId: 12, version: 5 }), fullySettled: false });
+    const r = render(Page);
+
+    await fireEvent.click(await r.findByTestId("invoice-reassign-project-button"));
+    await fireEvent.change(await r.findByTestId("project-reassign-select-5"), {
+      target: { value: "12" },
+    });
+    await fireEvent.click(r.getByTestId("project-reassign-save"));
+    await waitFor(() => expect(r.queryByTestId("project-reassign-save")).toBeNull());
+    expect(reassignMock).toHaveBeenCalledWith(5, 12, 3, false);
+    await waitFor(() => expect(r.getByTestId("invoice-project").textContent).toContain("Compte Q"));
+
+    await fireEvent.click(await r.findByTestId("settle-open"));
+    await fireEvent.change(await r.findByTestId("settle-type"), {
+      target: { value: "internal_account" },
+    });
+    await fireEvent.change(await r.findByTestId("settle-account"), { target: { value: "1" } });
+    await fireEvent.click(r.getByTestId("settle-confirm"));
+    await waitFor(() => expect(settleMock).toHaveBeenCalledTimes(1));
+    expect((settleMock.mock.calls[0][1] as { version: number }).version).toBe(4);
+    expect(getInvoiceMock).toHaveBeenCalledTimes(1);
   });
 });

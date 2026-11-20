@@ -65,7 +65,8 @@ découpe dès sa fiche (`CLAUDE.md` § *Règle de splitting préventif*). *Pourq
 branche vieillit peu, et ses conflits avec le travail des autres restent petits.
 
 *(La v0.17.8 est la dernière release numérotée à l'ancienne, où chaque release montait le chiffre de correction. L'Epic 36,
-réparti sur les releases 0.17.8, 0.18.0 et 0.19.0, est la dernière exception à « un epic = une release ».)*
+réparti sur les releases 0.17.8 et 0.18.0, est la dernière exception à « un epic = une release » : il se clôt avec la
+0.18.0, et son reste part dans des epics neufs.)*
 
 ## 4. Qui finit le premier sort le premier
 
@@ -158,3 +159,29 @@ PR d'un epic vers `main`, qui relit les commits de fusion et cherche ces interac
 - Elle ne remplace pas les gates locaux, qui restent la règle avant chaque `push` (`CLAUDE.md` § *Test Locally First*).
 - Le cache Rust n'est écrit que depuis `main` : le cache du dépôt est plafonné à 10 Go, et chaque branche qui écrirait
   le sien ferait tout recompiler aux autres. Détail : `docs/ci.md`.
+
+## 8. Une release par semaine
+
+Kesh sort **au moins une release par semaine** où le Project Lead est présent. La date tient ; c'est le périmètre qui
+s'ajuste, comme en Scrum.
+
+| Moment | Ce qui se passe |
+|---|---|
+| du vendredi au jeudi | les stories avancent ; chacune se fusionne dans la branche de son epic dès sa clôture |
+| **jeudi soir : coupure** | n'entre que ce qui est clos (revue terminée, gates et E2E complet verts) |
+| vendredi matin | intégration : dernières fusions, gates, recette de montée, revue du code d'intégration, PR |
+| vendredi midi | accord de fusion du Project Lead, puis tag et image |
+| vendredi après-midi ou samedi | le Project Lead met à jour son installation |
+
+- **Un epic ne s'étale jamais sur deux releases.** S'il n'aboutit pas à la coupure, on le **réduit** : les stories non
+  closes en sortent et retournent aux stories à faire, pour un epic d'une semaine suivante. Vous réduisez le vôtre
+  vous-même, ou il attend la semaine suivante sans retenir les autres. Une release peut porter les epics de plusieurs
+  développeurs.
+- **Une migration s'annonce d'avance**, au plan du projet GitHub : elle oblige à une sauvegarde avant la mise à jour.
+  Une story sortie de son epic emporte sa migration, et la release qui la portera se réannonce.
+- **Chaque release corrige au moins un ou deux bugs**, en plus de ses epics, choisis par impact. Le dosage s'adapte :
+  certaines semaines portent surtout des corrections et seulement une petite fonctionnalité.
+- **Un correctif urgent** (0.18.1) part quand il le faut, sans attendre le vendredi, et ne remplace pas la release de la
+  semaine.
+- **Une semaine d'absence du Project Lead est une semaine sans release** : il annonce ses dates d'avance, et le travail
+  continue pour la semaine de son retour.

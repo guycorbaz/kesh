@@ -1,0 +1,230 @@
+# Story v0190-nom-societe : le nom de la société se modifie dans *Paramètres → Organisation* (#1097)
+
+Status: done
+
+*Fiche rédigée le 2026-11-17 (Sonnet 5.5), worktree `kesh-v0190c`, branche `story/v0190-nom-societe` à créer depuis
+`epic/v0190-correction` (= `main` = v0.18.0, `8b50fd195`), par le workflow `bmad-create-story`. Issue de la scission de
+`v0190-correction` (règle de splitting : six modules ; décision de l'orchestrateur du 2026-11-17). Release **0.19.0** si elle est close
+le jeudi 2026-11-19 au soir, sinon **0.20.0** (accord de Guy du 2026-11-17). **Aucune migration** : `companies.name` existe
+(`VARCHAR(255) NOT NULL`, `crates/kesh-db/migrations/20260404000001_initial_schema.sql`, ligne `6:    name VARCHAR(255) NOT NULL,`),
+`CompanyUpdate` porte déjà `name` et `companies::update_in_tx` l'écrit déjà (`crates/kesh-db/src/repositories/companies.rs`,
+`SET name = ?, first_name = ?, …`) ; si le développement en découvre une, il s'arrête et le dit. Voie de développement : voie 2, clé `v0190c`.*
+
+## Story
+
+En tant qu'administrateur dont le nom saisi à l'assistant est refusé par la QR-facture, je veux corriger le nom de la société dans
+*Paramètres → Organisation*, afin de ne pas rester sans remède devant un PDF qui se refuse.
+
+## Ce qui se lit au code (`8b50fd195`)
+
+- Écran : `frontend/src/routes/(app)/settings/+page.svelte:640` `<dd>{data.company.name}</dd>` (section *Organisation*, sans édition). Modèle : le bloc e-mail — état
+  `:230-236` (`emailEditing`, `emailBase`, `emailVersion`, `emailConflict`), `startEmailEdit`, `saveEmail` (appelle `updateCompanyEmail`, puis `adoptCompany`, et sur
+  `OPTIMISTIC_LOCK_CONFLICT` `reloadAfterConflict`, patron de la 34-6) ; `const EMAIL_FIELDS = ['email'] as const;` `:62`, `isAdmin` `:229`. API :
+  `frontend/src/lib/features/settings/settings.api.ts:39` `updateCompanyAddress` (modèle), types `settings.types.ts:58-62` `UpdateCompanyAddressRequest`.
+- Serveur : `crates/kesh-api/src/routes/companies.rs` — `update_company_email` (`:112`), `update_company_contact_details`, `update_company_address` (`:344`)
+  reconstruisent chacune un `CompanyUpdate` complet avec `name: company.name.clone(),` ; aucune n'écrit `name`. Patron de la trace : `NewAuditLogEntry::user(… "company.updated", "company", …)`,
+  `details_json` `{before, after}` limité aux champs touchés, écrite seulement si `updated.version != company.version` (no-op KF-004). Routes : `crates/kesh-api/src/lib.rs:458-473`,
+  bloc `admin_routes` (`require_not_pat` : session seulement).
+- Contraintes de la QR-facture, publiques dans `kesh-qrbill` : `validation.rs:10` `pub const NAME_MAX: usize = 70;` (non ré-exportée à la racine : `lib.rs:30` n'exporte que
+  `champ_vide_pour_qr, first_qr_refused_char, is_iso_3166_alpha2, validate` ; `pub mod validation;` `lib.rs:18` l'expose : `kesh_qrbill::validation::NAME_MAX`) ; `validation.rs:244`
+  `pub fn champ_vide_pour_qr` ; `:213` `pub fn first_qr_refused_char`. Le PDF les applique au nom : `validation.rs:317-321`, et `crates/kesh-api/src/routes/invoice_pdf_service.rs:281` (chemin complet de ce fichier pour toute la fiche) `name: company.name.clone(),`, `:419` `creditor_name: company.name.clone(),`.
+- Modèle de validation : `address_input.rs` `validate_required_for_qr` (message qui nomme le champ et le caractère, français littéral, sans clé). L'assistant ne contrôle que « non vide » :
+  `crates/kesh-api/src/routes/onboarding.rs:535` `if name.is_empty() {` (et recompose `name` en « prénom nom » pour une personne physique, `:533`) — **issue #1226** (l'assistant n'applique pas les contrôles QR au nom), hors de cette story.
+- **Les trois refus du PDF disent que le nom « ne se modifie pas encore depuis l'interface »** — `invoice_pdf_service.rs:624`, `:704`, `:737` (replis) et les mêmes phrases aux quatre `messages.ftl` :
+  `invoice-pdf-error-charset-company-name`, `invoice-pdf-error-empty-company-name`, `invoice-pdf-error-too-long-company-name` (fr-CH `:999`, `:1011`, `:1018` ; de-CH `:937`, `:949`, `:956` ; it-CH et en-CH idem).
+  Deux gardes les **imposent** : `invoice_pdf_service.rs:1737` `if r.cle.ends_with("-company-name") {` / `!texte.contains("Organi")` et `crates/kesh-api/tests/invoice_pdf_e2e.rs:698`
+  (`assert!(!m.contains("organisation"), "{m}");`). La story les **inverse**.
+- Manuel : `docs/manual/fr/user-manual.tex`, § *Vos coordonnées sur la facture* (`:1221`), dernière phrase du paragraphe « Corriger votre adresse » (`:1235`) : « Le nom et l'IDE ne se modifient pas ici. » ; **et une seconde phrase, `:1305`** (paragraphe sur les caractères d'une QR-facture) :
+  « Le nom de l'entreprise fait exception~: il ne se modifie pas encore depuis l'interface (issue \#1097), et le message le dit au lieu de renvoyer à un écran. » (le PDF la porte aussi : `pdftotext docs/manual/fr/user-manual.pdf - | tr '\n' ' ' | tr -s ' ' | /usr/bin/grep -c 'fait exception'` → `1`) ;
+  `docs/manual/fr/admin-manual.tex:2667` est le paragraphe *Pays des adresses* de la note de montée de la **0.17.4** (section datée : **on n'y ajoute rien**, cf. D7). `docs/api-external.md` : aucune route `PUT /companies/current/*` n'y figure et elles refusent les clés d'API : **inchangé**.
+- **Gardes qui énumèrent les routes de la société** (inventaire par le symptôme : `/usr/bin/grep -rn -E "update_company_address" crates/kesh-api --include=*.rs`, hors `companies.rs` et `lib.rs`) : `crates/kesh-api/tests/admin_pat_denied_e2e.rs:83-85` ;
+  `crates/kesh-api/tests/audit_route_registry.rs:438-440` (registre des routes mutantes, `("put", "companies::update_company_address", Traced, SansEcritureAuJournal),` : diff ensembliste contre `lib.rs`, une route neuve non inscrite rougit) ;
+  `crates/kesh-api/tests/audit_acteur_garde.rs:215-219` (`("crates/kesh-api/src/routes/companies.rs", "update_company_address", User, 1, AdminSansCle, …)`) **et** `:413-415` (`("routes::companies::update_company_address", …, &[(LIB, ROUTEUR, 1)])`) : garde de l'acteur d'audit ;
+  `crates/kesh-api/tests/textes_coherents.rs:1351-1356` et `:1458` : la garde `MULTI_SOCIETE` exige que chaque occurrence de `\bcompanies\b` des manuels tombe dans un fragment assumé de `MULTI_SOCIETE_ASSUME`, trouvé une fois, et que le total soit exact, `MULTI_SOCIETE_TOTAL: usize = 22`.
+
+## Décisions
+
+- **D1 — une route dédiée `PUT /api/v1/companies/current/name`** (C-v0190c-4), sur le patron d'`update_company_email` : `UpdateCompanyNameRequest { name: String, version: i32 }`, même routeur Admin-only
+  (`lib.rs`, après la route `address`), rend `CompanyJson`. **Option écartée** : étendre `address` ou `contact-details` (blocs sans rapport, et le full-replace efface par omission).
+- **D2 — les contrôles** (C-v0190c-5), dans une fonction unique de `companies.rs` (`validate_company_name_for_qr`, DRY, testée à part), appelée **avant** la lecture de la société : `trim` ; **vide** au sens de la
+  QR-facture (`champ_vide_pour_qr`, non `trim().is_empty()`) → refus ; **plus de 70 caractères** (`chars().count() > kesh_qrbill::validation::NAME_MAX`) → refus qui dit le maximum et le nombre saisi ; **caractère que la
+  QR-facture n'admet pas** (`first_qr_refused_char`) → refus qui nomme le caractère et son point de code (`escape_debug`, `U+{:04X}`, comme `address_input.rs`). `400 VALIDATION_ERROR`, français littéral comme la route
+  d'adresse (pas de clé serveur neuve). **Limite assumée** (V2-N2) : les refus de cette route sont **en français seul**, alors que les refus du PDF existent en quatre langues ; un administrateur de langue allemande lit le refus du PDF en allemand et celui du nom
+  en français. Même limite que la route d'adresse (`user-manual.tex:1235`, « ce message peut être rédigé en français quelle que soit la langue de l'interface (\#710) ») ; **tracée par #710** (« Les refus de validation du backend (`AppError::Validation`) sont écrits en français en dur dans les routes », ouverte), qui la couvre.
+- **D3 — limite : `first_name` / `last_name` ne bougent pas** (C-v0190c-6, acceptée par l'orchestrateur le 2026-11-17). Pour une personne physique, l'assistant recompose `name` en « prénom nom » ; l'écran ne montre que `name` et
+  le PDF n'emploie que `name` (`invoice_pdf_service.rs:281`, `:419`). La route reporte `first_name` / `last_name` à l'identique (full-replace) : le nom corrigé peut différer de « prénom nom ». Limite écrite, **tracée par l'issue #1227**.
+- **D4 — audit et verrou** (C-v0190c-7). Transaction + `companies::update_in_tx` + `audit_log::insert_in_tx` comme les trois routes jumelles : verrou optimiste (`409 OPTIMISTIC_LOCK_CONFLICT`), no-op sans `version` ni audit,
+  `company.updated` avec `{"before": {"name": …}, "after": {"name": …}}` — aucune nouvelle action (`audit_labels.rs:106`). Les PDF déjà figés ne changent pas.
+- **D5 — l'écran** (C-v0190c-8). Le nom se lit comme aujourd'hui, avec le bouton **Modifier** (`isAdmin`) ; l'édition est le bloc e-mail transposé (`nameEditing`, `nameValue`, `nameBase`, `nameVersion`, `nameConflict`,
+  `NAME_FIELDS = ['name'] as const`, `nameValuesOf`), mêmes `adoptCompany`, `reloadAfterConflict`, `CompanyConflictNotice` (testid `settings-company-name-conflict`, `field="name"`), `maxlength={70}`. Vide → refus local
+  (`settings-company-name-required`) ; longueur et jeu de caractères : le message du serveur s'affiche tel quel. **Option écartée** : recopier le jeu de caractères dans le frontend.
+  **Normalisation** (V2-N4 b) : `nameValuesOf` compare la saisie au nom stocké, **rogné côté serveur** ; la règle commune (`normalizeCompanyValue`, `trim`, `company-conflict.ts:55-57` et `:87`) s'applique au nom **sans déclaration ni normaliseur ajouté** (N3-1) : une saisie « Nom␠ » après une écriture concurrente identique
+  s'affiche déjà « déjà enregistré » et non « conflit ». **Un nom déjà enregistré, trop long ou hors jeu** (V2-N3, le scénario de #1097) : `maxlength` n'agit que sur la saisie, non sur la valeur préremplie : *Modifier* pose le nom stocké tel quel, l'enregistrer sans le changer rend le `400` du
+  serveur, la saisie reste, le raccourcir l'enregistre.
+  **`syncOpenBlocks`** (C-v0190c-14, validation P1 V1-3) : `settings/+page.svelte:161-182`, appelée par `adoptCompany` (`:202-213`), laisse une édition ouverte adopter la version neuve quand un **autre** bloc enregistre
+  (`if (emailEditing && v > emailVersion && sameBlockValues(emailBase, emailValuesOf(company), EMAIL_FIELDS)) { emailVersion = v; }`, puis les blocs contact et adresse : C-e346-8, « les blocs portent des champs disjoints »). **Le bloc nom y ajoute sa branche**
+  (`nameEditing && v > nameVersion && sameBlockValues(nameBase, nameValuesOf(company), NAME_FIELDS)` → `nameVersion = v`) : sans elle, un nom en cours d'édition et une adresse enregistrée donnent un `409 OPTIMISTIC_LOCK_CONFLICT` parasite sur le nom, sans écriture concurrente réelle.
+- **D6 — les trois refus du PDF renvoient à l'écran** (C-v0190c-9) : les trois replis Rust et les douze phrases (3 clés × 4 locales) perdent « ne se modifie pas encore depuis l'interface » et disent
+  « Corrigez-le dans Paramètres → Organisation » (tournure de `invoice-pdf-error-too-long-company-street`, `invoice_pdf_service.rs:739-743`, `messages.ftl` fr-CH `:1019`). Les deux gardes s'inversent (le texte **contient** « Organi »).
+  `invoice_pdf_service.rs:1751` `assert_eq!(cles.len(), 42, "{cles:?}");` ne change pas : aucune clé ajoutée ni retirée.
+- **D7 — le manuel** (C-v0190c-10) : `user-manual.tex` — (1) `:1235`, remplacer « Le nom et l'IDE ne se modifient pas ici. » par une phrase qui dit que le **nom** se corrige là (bouton *Modifier* en face de « Nom », administrateurs,
+  70 caractères au plus, jeu de caractères de la QR-facture, un PDF figé ne change pas ; **le nom corrigé vaut pour les factures, avoirs, e-mails, ordres de paiement et tout ce que Kesh produit ensuite, rapports compris** (V2-N1) : `company.name` part aussi dans l'expéditeur des e-mails — `invoice_email.rs:580`, `:822`, `:1344` —, dans la variable `companyName` des modèles d'e-mail — `invoice_email.rs:180` —,
+  les avoirs — `credit_notes.rs:245` —, l'en-tête et le nom de fichier des rapports PDF/CSV — `reports.rs:665-673`, `:923-944` (`identite_societe`, `slugify`) ; `reports/+page.ts:55` —, le nom de fichier de l'export — `exports.rs:61` — et les ordres pain.001, `kesh-db/src/repositories/payment_batches.rs:936-937`, limite 70 de `kesh-payment/src/pain001/mod.rs:29`, compatible avec `NAME_MAX`) et que seul l'**IDE** ne s'y modifie pas ;
+  (2) **`:1305`**, remplacer « Le nom de l'entreprise fait exception~: il ne se modifie pas encore depuis l'interface (issue \#1097), et le message le dit au lieu de renvoyer à un écran. » par « Le nom de l'entreprise se corrige dans \emph{Paramètres → Organisation} depuis la version~0.19.0, et le message y renvoie. » ; **le numéro de version de cette phrase est posé à l'intégration par l'orchestrateur** (V2-N5, comme la section « Passer à la 0.19.0 ») : la story écrit `0.19.0`,
+  **à reposer à l'intégration** si la story glisse à la 0.20.0 (aucune garde ne lit un « depuis la version » en prose) ; la phrase du (1) étend d'une phrase la limite du français seul des refus de la route (V2-N2) ;
+  contrôle : `git grep -n -E "1097|modifie pas encore" -- docs/manual/fr/` **vide** après la story. (3) **`admin-manual.tex` : rien dans la note de montée de la 0.17.4 (`:2667`)** (C-v0190c-15, V1-5). La route `PUT /api/v1/companies/current/name` se dit à la **section « Passer à la 0.19.0 »**, écrite
+  à l'intégration par l'orchestrateur ; la story en fournit la phrase dans sa Note de version. Si la route doit entrer dans le manuel d'administration, la garde `MULTI_SOCIETE_ASSUME` (`textes_coherents.rs:1351-1356`) reçoit un fragment neuf ou élargi **et** `MULTI_SOCIETE_TOTAL`
+  passe de **22 à 23**, **recompté** depuis la source au lieu choisi (`:1458`). Pas de PDF commité : il se régénère à la release (contrôle aplati à la charge de l'orchestrateur).
+
+## Critères d'acceptation
+
+1. **AC1 — la route** (`crates/kesh-api/tests/company_address_e2e.rs`, section « Story v0190-nom-societe », harnais existant de ce fichier, un `put_name` à côté de `put_address`) :
+   a. `{"name":"Nom corrigé SA","version":v}` → `200`, nom relu égal, `version` + 1, `first_name`/`last_name`/adresse/e-mail/téléphone/site inchangés ;
+   b. rogné ; vide, blanc, U+00AD seul → `400`, rien d'écrit ; 70 caractères acceptés, 71 refusés (message : `70` et `71`) ; caractère hors jeu (« 张 », et, **au milieu du nom**, « Démo\u{2028}SA », « Démo\nSA ») refusé, message qui le nomme avec son point de code ;
+      `&`, `é`, U+2019 acceptés ; **cas de bord** : U+000A ou U+2028 **en bord de chaîne** sont rognés par `trim` (`White_Space` Unicode) puis le nom est accepté — patron `a_line_break_at_the_edge_is_trimmed_before_the_character_check`, `company_address_e2e.rs:301` ;
+   c. version périmée → `409` sans écriture ; un nom invalide à version périmée est un `400` (patron `an_invalid_address_at_a_stale_version_is_a_400`) ;
+   d. nom identique → no-op : `version` inchangée, aucune entrée d'audit ;
+   e. audit : une entrée `company.updated`, `details_json` = `{"before":{"name":…},"after":{"name":…}}` sans autre clé, acteur `user` (`common::audit_actor`) ;
+   f. bout en bout : un nom de 71 caractères posé en base fait refuser le PDF d'une facture validée (message renvoyant à Paramètres → Organisation) ; après correction par la route, le PDF se produit (patron `correcting_the_country_restores_the_qr_invoice`, `company_address_e2e.rs:570`) ;
+   g. Comptable → `403` ; clé d'API refusée (`admin_pat_denied_e2e.rs` : ajouter `("PUT", "/api/v1/companies/current/name")` à la liste `:83-85`) ;
+   g-bis. (V2-N4 a) société « d'avant les composants » : adresse seulement en texte libre, composants vides (montage SQL direct, patron `update_preserves_address_when_structured_columns_are_empty`, `companies_repository.rs:355` pour la fonction, montage `:362-369` ; filet de non-régression, vert dès l'écriture) : renommer ne produit ni `500` ni écrasement de `address` ;
+   h. **registres d'audit** (V1-4) : la route est inscrite à `audit_route_registry.rs` (`("put", "companies::update_company_name", Traced, SansEcritureAuJournal)`, à côté de `:438-440`) et à `audit_acteur_garde.rs` (ligne d'acteur `User, 1, AdminSansCle` à côté de `:215-219`, et ligne de site `("routes::companies::update_company_name", …, &[(LIB, ROUTEUR, 1)])` à côté de `:413-415`) ; ces deux binaires passent.
+2. **AC2 — les contrôles, à part** : tests unitaires de `validate_company_name_for_qr` (`mod tests` de `companies.rs`) : 0, 1, 70, 71 caractères, U+00AD seul, le premier caractère refusé d'une chaîne qui en porte deux.
+3. **AC3 — les refus du PDF** : trois messages (replis et catalogues, quatre locales) renvoyant à *Paramètres → Organisation* ; deux gardes inversées ; `cles.len() == 42` ; `cargo test -p kesh-api --test textes_coherents` vert.
+4. **AC4 — l'écran** (`settings-page.test.ts`, patron des blocs e-mail et adresse) : *Modifier* du nom réservé à l'administrateur ; l'enregistrement appelle `updateCompanyName({ name, version })`, affiche le nom reçu et le succès ; vide → refus local sans appel ; 400 → message affiché, saisie conservée ; `OPTIMISTIC_LOCK_CONFLICT` → même chemin que l'e-mail ; **(V1-3) édition du nom ouverte, enregistrement de l'e-mail (ou de l'adresse) : l'enregistrement du nom part avec la version neuve, sans conflit** (patron des tests existants des trois blocs dans `settings-page.test.ts` ; rouge sans la branche `nameEditing` de `syncOpenBlocks`) ;
+   refus de 71 caractères : valeur posée par le test (le `maxlength` ne s'applique pas à Vitest), 400 → message affiché ; **(V2-N3) nom stocké de 71 caractères (ou portant un caractère refusé) : *Modifier* le préremplit tel quel, l'enregistrer sans le changer rend le message du serveur, le raccourcir l'enregistre** ;
+   **(V2-N4 b)** saisie « Nom␠ » égale au nom stocké après rognage : « déjà enregistré », non « conflit » — **test de non-régression** du bloc nom (la règle commune le donne déjà ; il ne rougit pas sans la story, N3-1). `settings.api.test.ts` : l'appel `PUT` (URL, corps).
+5. **AC5 — E2E** (`frontend/tests/e2e/company-address.spec.ts`, ou `company-name.spec.ts`) : Modifier le nom, enregistrer, recharger : nom corrigé affiché ; **refus par un caractère hors jeu** (« 张 », ou le guillemet typographique « “ ») avec le message du serveur qui le nomme — **non** par 71 caractères : le `maxlength={70}` de D5 tronque la saisie, y compris `page.fill()`, et les 71 deviendraient 70, acceptés (patron `company-address.spec.ts:113`, qui refuse par `fill('SU')`, non par une longueur ; si l'on garde une variante longueur, vérifier la troncature au développement) ;
+   le refus de 71 caractères reste aux niveaux où le `maxlength` ne s'applique pas : Vitest (AC4) et Rust (AC1 b) ; **le nom est rendu tel qu'on l'a trouvé** (société partagée, comme `restoreAddress`). Captures (clair seulement) : bouton, édition, refus.
+6. **AC6 — compteurs et gardes** : `sitesTotal` (`frontend/src/lib/shared/i18n-keys.test.ts:1040`) recompté ; `npm run lint-i18n-ownership` vert ; clés `settings-company-name-saved`, `-required`, `-conflict`, `-conflict-reload-failed` des quatre catalogues rangées à côté de `settings-company-email-saved` (fr-CH `:2504`), même ordre ; `manuel.rs` et `textes_coherents` verts.
+7. **AC7 — le manuel** : D7 (les deux phrases de `user-manual.tex`, `:1235` et `:1305`), `.tex` seulement ; contrôles par `git grep` : `git grep -n -E "1097|modifie pas encore" -- docs/manual/fr/` vide ; `cargo test -p kesh-api --test textes_coherents` vert, `MULTI_SOCIETE_TOTAL` recompté si un fragment a été ajouté (22 → 23).
+
+## Tâches
+
+1. `companies.rs` : requête, `validate_company_name_for_qr`, `update_company_name` ; route dans `lib.rs` ; tests AC1, AC2 ; `admin_pat_denied_e2e.rs` ; **`audit_route_registry.rs` et `audit_acteur_garde.rs`** (AC1 h).
+2. `invoice_pdf_service.rs` (trois replis) et quatre `messages.ftl` ; inversion des deux gardes (AC3).
+3. `settings.api.ts`, `settings.types.ts`, `+page.svelte` (bloc nom, dont la branche `syncOpenBlocks`), clés i18n, tests AC4, E2E AC5, `sitesTotal`.
+4. Manuels (D7) ; **`textes_coherents.rs` : `MULTI_SOCIETE_ASSUME` et `MULTI_SOCIETE_TOTAL` (22 → 23)** si le chemin entre dans un manuel (D7, 3) ; la section `## Note de version` ci-dessous est assemblée par l'orchestrateur (la story n'écrit pas `CHANGELOG.md`).
+
+## Plan de coupure — tout ou rien, jalon mercredi 18 h
+
+**Les messages du PDF et l'écran ne se livrent pas séparément** (V2-N6) : D6 renvoie les trois refus du PDF vers *Paramètres → Organisation*, où le nom ne s'édite qu'avec le bloc de D5 ; la route sans l'écran (ou l'inverse) enverrait l'utilisateur vers un écran qui ne le laisse pas corriger.
+**Jalon : mercredi 2026-11-18, 18 h.** Si le gate ciblé de la route et de l'écran (`cargo nextest` des six binaires, Vitest de `settings`, `npm run check`) n'est pas vert à ce moment, la story **glisse en bloc** à la 0.20.0 : la route, les douze phrases, le bloc d'écran, les tests et le manuel ensemble ; les refus du
+PDF gardent alors « ne se modifie pas encore ». **L'orchestrateur ne fusionne jamais une moitié.** La coupure officielle reste le jeudi 2026-11-19 au soir pour ce qui est clos.
+
+## Gates
+
+Ceux de `e35-dev-commun.md` : gate ciblé en cours de développement (`npm run check`, Vitest de `settings` ; `cargo nextest run -E 'binary(company_address_e2e) | binary(textes_coherents) | binary(invoice_pdf_e2e) | binary(admin_pat_denied_e2e) | binary(audit_route_registry) | binary(audit_acteur_garde)'`, `fmt`, `clippy` workspace) ; `test-fast --ci` et `gate-ci` au passage en `review` ; `gate-ci` et E2E complet à la clôture, au dernier commit de code. `kesh-db` non touché.
+
+## Recette visuelle (captures, thème clair, base de démonstration, `kesh-gate-logs/v0190c/`)
+
+*Organisation* avec le bouton *Modifier* en face du nom ; édition ; refus d'un caractère hors jeu (le `maxlength` empêche de saisir 71 caractères) ; refus du PDF d'une facture (message renvoyant à *Paramètres → Organisation*).
+
+## Dev Notes
+
+- Taille : une route, une page, quatre catalogues, ~9 fichiers de test (dont les registres d'audit et `textes_coherents`), deux manuels ; cinq modules (kesh-api routes, kesh-api PDF, kesh-i18n, frontend settings, manuels).
+- **Registre des choix** : `_bmad-output/implementation-artifacts/e0190-choix-autonomes-v0190c.md` (C-v0190c-4 à 15).
+- Issues liées (ouvertes) : **#1226** (l'assistant n'applique pas les contrôles de la QR-facture au nom), **#1227** (`first_name`/`last_name` sans écran, limite D3).
+- Aucune donnée réelle dans les fixtures (« Démo SA »).
+
+## Change Log
+
+- **2026-11-17 — validation terminée** (fiche relue avec `v0190-correction` jusqu'à la P4) : P1 Opus 4 MEDIUM / 5 LOW → P2 Sonnet 0 MEDIUM / 6 LOW → P3 ciblée Opus 1 MEDIUM (N3-1, le normaliseur `trim` déjà donné par la règle commune) / 1 LOW (N3-2, ligne du patron g-bis) → P4 ciblée Haiku, aucun finding pour cette fiche (`validation-p4-ciblee.md` : « La boucle `v0190-nom-societe` peut se clore sur cette passe »). Rapports : `kesh-gate-logs/v0190c/validation-nom-societe-p1.md`, `-p2.md`, `-p3-ciblee.md`, `validation-p4-ciblee.md`.
+- **2026-11-17 — étape 0 du développement** (Opus 5.5, worktree `kesh-v0190n`, clé `v0190n`, voie 2). Le dernier rapport propre à la fiche (P3) ne laisse qu'un LOW, N3-2, déjà appliqué (AC1 g-bis cite `companies_repository.rs:355`, montage `:362-369`) ; ligne lue `crates/kesh-db/tests/companies_repository.rs:355` `async fn update_preserves_address_when_structured_columns_are_empty(pool: MySqlPool) {`. Prémisses relues avant d'écrire : `kesh-qrbill/src/validation.rs:10` `pub const NAME_MAX: usize = 70;`, `:213` `pub fn first_qr_refused_char(value: &str) -> Option<char> {`, `:244` `pub fn champ_vide_pour_qr(valeur: &str) -> bool {` ; `company-conflict.ts:55-57` `normalizeCompanyValue` = `(value ?? '').trim()` (N3-1 : aucun normaliseur ajouté) ; aucune migration (`20260404000001_initial_schema.sql:6` `name VARCHAR(255) NOT NULL,`).
+- **2026-11-17 — développement** : voir le Dev Agent Record. Écart à la fiche : quatre compteurs non inventoriés, dont celui du manuel d'administration (C-v0190c-23).
+- **2026-11-17 — revue de code terminée, clôture.**
+  - **Tendance de la revue** :
+    - P1, trois lentilles B/E/A (Sonnet), 0 CRITICAL / 0 HIGH / 0 MEDIUM / 8 LOW (`kesh-gate-logs/v0190n/review-p1-{B,E,A}.md`). Les LOW B1, B2, A1, A2, E1 à E4 ont été corrigés dans la story (`6794e82a0`), voir la section « Remédiation de la revue P1 » du Dev Agent Record.
+    - P2 ciblée sur `6794e82a0` (Haiku), 0 / 0 / 0 / 3 LOW (`review-p2-ciblee.md`). L2 (message de l'assertion `sans_ecriture`, qui redonne « 120 au total = 119 + /password-reset-token ») est corrigé par `293fc245c`, message de test seul. L1 et L3 sont tracés par #1244 ; l'adresse tronquée, hors périmètre, par #1243.
+    - Modèles : développement et remédiations Opus 5.5 ; P1 Sonnet ; P2 ciblée Haiku.
+  - **Gates de clôture** au **dernier commit de code `293fc245c`**, bases de la voie 2 remises à neuf (`migrate-cloture-*.log`) :
+    - `scripts/test-fast.sh --ci`, voie 2 : **5527 passés**, 13 ignorés (`test-fast-cloture.log`).
+    - `scripts/gate-ci.sh kesh_ci_v0190n`, voie 1 : **5534 passés, 0 échoué**, 17 ignorés (`gate-ci-cloture.log`). Un premier lancement, resté en attente du verrou de la voie 1, a été arrêté par son PID pour ne pas tourner en même temps que le frontend ; il n'a rien exécuté.
+    - Frontend complet : `check` 0 erreur ; `lint-i18n-ownership` PASS ; Vitest **247 fichiers, 4004 passés**, `sitesTotal` 3096 vert ; `build` vert (`front-{check,lint-i18n-ownership,test-unit,build}-cloture.log`).
+    - **E2E complet**, base `kesh_e2e_v0190n` recréée, frontend construit à `293fc245c` : **440 passés, 8 échoués, 18 ignorés** (`e2e-complet-cloture.log`). Les huit échecs, nommés un par un contre `docs/testing.md` § « Les échecs attendus » :
+      - les sept de la KF-029 (#97) : `mode-expert.spec.ts:26`, `:41` ; `onboarding-path-b.spec.ts:65`, `:92` ; `onboarding.spec.ts:57`, `:77`, `:150` ;
+      - le huitième, variable : `dunning.spec.ts:59` (« éditer la période de grâce », valeur relue « 5 » au lieu de « 10 » après rechargement), sans rapport avec la story. **Rejoué seul, il passe** (`e2e-rejeu-dunning.log`, 4 passés) : c'est la pollution d'état entre specs que la liste admet.
+
+## Dev Agent Record
+
+*Opus 5.5, 2026-11-17, worktree `/home/gcorbaz/devel/kesh-v0190n`, branche `story/v0190-nom-societe` partie de `epic/v0190-correction` (`b2e2ff67c`). Journaux : `/home/gcorbaz/devel/kesh-gate-logs/v0190n/`.*
+
+### Commits
+
+- `e4e176be0` — route `PUT /api/v1/companies/current/name`, `validate_company_name_for_qr` et ses tests unitaires, refus du PDF (trois replis, douze phrases), deux gardes inversées, registres d'audit et compteurs, manuel d'administration recompté.
+- `9cb4d4c34` — bloc nom de *Paramètres → Organisation*, API et types, quatre clés × quatre catalogues, tests de la page et de l'API, `sitesTotal`.
+- `e5b1f0161` — `company-name.spec.ts`, manuel utilisateur (D7). **Dernier commit de code.**
+- le commit suivant ne porte que la fiche, le registre, le prompt de revue P1 et `sprint-status.yaml`.
+
+### Ce qui est livré, par AC
+
+- **AC1** — `crates/kesh-api/src/routes/companies.rs` : `UpdateCompanyNameRequest`, `validate_company_name_for_qr` (rognage, `champ_vide_pour_qr`, `chars().count() > NAME_MAX`, `first_qr_refused_char`, dans l'ordre du PDF), `update_company_name` (nom jugé **avant** `get_company_for`, full-replace qui reporte tous les autres champs, `update_in_tx`, audit `company.updated` `{before:{name}, after:{name}}` seulement si la version a bougé) ; route `lib.rs:476-479` dans `admin_routes`. Tests : dix `#[sqlx::test]` neufs dans `company_address_e2e.rs` (a, b ×3, c, d, e, f, g, g-bis). Registres : `admin_pat_denied_e2e.rs`, `audit_route_registry.rs`, `audit_acteur_garde.rs` (h).
+- **AC2** — cinq `#[test]` dans `mod tests` de `companies.rs` (0/blanc/U+00AD, 1-70-71, rognage, premier caractère refusé, caractères admis).
+- **AC3** — replis `invoice_pdf_service.rs` et `messages.ftl` ×4 ; garde `texte.contains("Organi")` et `invoice_pdf_e2e.rs` inversées ; `cles.len() == 42` inchangé.
+- **AC4** — `+page.svelte` (bloc nom, `syncOpenBlocks`) ; douze cas neufs dans `settings-page.test.ts` (onze `it(`, dont un dans une boucle sur deux rôles) et un dans `settings.api.test.ts`.
+- **AC5** — `frontend/tests/e2e/company-name.spec.ts`, deux tests (correction relue après rechargement ; refus de « 张 » nommé avec `U+5F20`, rien d'écrit), nom restauré en `finally`.
+- **AC6** — clés `settings-company-name-saved`, `-required`, `-conflict`, `-conflict-reload-failed` ×4 après `settings-company-email-conflict-reload-failed` ; `sitesTotal` 3087 → 3095 (huit littéraux du bloc), relevé par la garde (`vitest-i18n-1.log` : « expected 3095 to be 3087 »).
+- **AC7** — `user-manual.tex` : paragraphe « Corriger le nom de votre entreprise » (remplace « Le nom et l'IDE ne se modifient pas ici. »), « du nom » ajouté au paragraphe des conflits, phrase du § *Les caractères d'une QR-facture* remplacée (« depuis la version~0.19.0 », **à reposer à l'intégration si la story glisse**). `git grep -n -E "1097|modifie pas encore" -- docs/manual/fr/` : vide. `MULTI_SOCIETE_TOTAL` reste à 22 (aucun manuel ne nomme la route). PDF non régénérés (à la release).
+
+### Décomptes (recomptés à `e5b1f0161`, périmètre `b2e2ff67c..e5b1f0161`)
+
+`company_address_e2e.rs` : 23 → 33 `sqlx::test` ; `companies.rs` : 0 → 5 `#[test]` ; `settings-page.test.ts` : 59 → 70 `it(` ; `settings.api.test.ts` : 5 → 6 `it(` ; `company-name.spec.ts` : 2 `test(` ; 21 fichiers, 1032 insertions, 42 suppressions.
+
+### Rouges
+
+- Les compteurs : `cible-1.log` (commit de travail, avant `e4e176be0`) — `admin_pat_denied_e2e` « left: (15, 39) right: (15, 38) », `audit_route_registry::le_manuel_dit_le_compte_du_registre` « left: [(139, 146)] right: [(140, 147)] » ; recomptés, puis `cible-2.log` vert (155 tests).
+- `sitesTotal` : `vitest-i18n-1.log` rouge (3095 contre 3087), puis `vitest-i18n-2.log` vert.
+- Les tests neufs n'ont pas été lancés sur le code d'origine (la route n'existait pas : 405) ; leur capacité à rougir est établie par les mutations ci-dessous.
+
+### Mutations (`mut/`, code commité avant, restauration `git restore --worktree` puis `touch`)
+
+Rust (`mutations-rust.py`, `resume-rust.log`, voie 2) : **7 tuées sur 7** — M1 vide jugé par `is_empty` (U+00AD passe), M2 sans contrôle du jeu, M3 borne `>=`, M4 nom non écrit, M5 clé en trop dans l'audit, M6 sans rognage, M7 une phrase de-CH revenue à « noch nicht ändern ». Frontend (`mutations-front.py`, `resume-front.log`) : **4 tuées sur 4** — F1 sans la branche `nameEditing` de `syncOpenBlocks` (les deux tests « nom en cours d'édition » rougissent), F2 sans refus local du vide, F3 envoi non rogné, F4 bouton *Modifier* pour tous les rôles. Non jouée, déclarée équivalente pour l'ordre jugement/lecture : déplacer `validate_company_name_for_qr` après `get_company_for` laisse le `400` à version périmée (le refus précède toujours `update_in_tx`) ; seul un `404` de société manquante changerait de place, cas que la session d'un administrateur ne produit pas.
+
+### Gates
+
+| Gate | Commit | Journal | Résultat |
+|---|---|---|---|
+| ciblé backend (six binaires + `companies::tests` + `invoice_pdf_service`) | arbre de `e4e176be0` | `cible-2.log` | 155 passés |
+| Vitest de `settings` | arbre de `9cb4d4c34` | `vitest-settings-1.log` | 4 fichiers, 121 passés |
+| `npm run check`, `lint-i18n-ownership` | arbre de `9cb4d4c34` | `check-1.log`, `lint-i18n-1.log` | 0 erreur ; PASS |
+| E2E `company-name.spec.ts` seul (voie 2, base `kesh_e2e_v0190n` recréée) | `e5b1f0161` | `e2e-company-name-2.log` | 2 passés |
+| **`scripts/test-fast.sh --ci`** (voie 2, bases remises à neuf) | `e5b1f0161` | `test-fast-review.log` | **5527 passés**, 13 ignorés |
+| **`scripts/gate-ci.sh kesh_ci_v0190n`** (voie 1) | `e5b1f0161` | `gate-ci-review.log`, puis `gate-ci-review-2.log` | 1er passage : **rouge** au binaire `mcp_transport_e2e`, `abandon_au_delai_le_permis_reste_pris` (« témoin : sonde servie », `mcp_transport_e2e.rs:1876`), 2145 passés, 1 échoué — **KF-061 (#1126)**, test temporel du transport MCP, sans rapport avec la story, relancé tel quel ; 2e passage : **5534 passés, 0 échoué, 17 ignorés** (= 5519 de `v0190-correction` + 10 `sqlx::test` + 5 `#[test]`) |
+| **frontend complet** (`check`, `lint-i18n-ownership`, `test:unit`, `build`) | `e5b1f0161` | `front-{check,lint-i18n-ownership,test-unit,build}-review.log` | `check` 0 erreur (29 avertissements, aucun sur `settings`) ; lint PASS ; Vitest **247 fichiers, 4002 passés** ; build vert |
+| E2E complet | — | — | **non lancé** : à la clôture |
+
+**Jalon du plan de coupure** (mercredi 2026-11-18, 18 h) : le gate ciblé de la route et de l'écran est vert le mardi 17 (`cible-2.log`, `vitest-settings-1.log`, `check-1.log`) ; aucune alerte écrite.
+
+### Captures (thème clair, base jetable `kesh_e2e_v0190n`, voie 2)
+
+`/home/gcorbaz/devel/kesh-gate-logs/v0190n/captures/` : `1-organisation-bouton-modifier.png`, `2-edition-du-nom.png`, `3-refus-caractere-hors-jeu.png`, `4-refus-du-pdf-renvoie-a-organisation.png` (toast « Le nom de l'entreprise dépasse 70 caractères (71). Raccourcissez-le dans Paramètres → Organisation. », nom de 71 caractères posé en SQL). Script : `captures.mjs`, lancé par `e2e-et-captures.sh`.
+
+### Écarts
+
+- **C-v0190c-23** : quatre compteurs hors de l'inventaire de la fiche, dont le compte du manuel d'administration (§ journal d'audit), recompté dans la story.
+- **Consigne Edit** : les tests AC1 ont été **ajoutés en fin de `company_address_e2e.rs` par un `cat >>`** (ajout pur, aucune ligne existante touchée), non par l'outil Edit ; tout le reste du code par Edit/Write. Pas de manque de l'outil : un réflexe, déclaré.
+- Les captures sont sous `kesh-gate-logs/v0190n/`, non `v0190c/` comme le dit la section « Recette visuelle » (clé de la voie de développement).
+
+### Ce qui reste
+
+- E2E complet et `gate-ci` de clôture, au dernier commit de code, sur demande de l'orchestrateur.
+- À l'intégration : la phrase « depuis la version~0.19.0 » (D7 (2)) si la story glisse ; la section « Passer à la 0.19.0 » du manuel d'administration (phrase dans la Note de version) ; les deux PDF des manuels.
+
+### Remédiation de la revue P1 (2026-11-17)
+
+Revue P1 (trois lentilles, `kesh-gate-logs/v0190n/review-p1-{B,E,A}.md`) : **rien au-dessus de LOW**. Les LOW sont corrigés dans la story, sur demande de l'orchestrateur ; une passe ciblée relira ce correctif.
+
+- **Commits** : `6794e82a0` (code et tests, **dernier commit de code**) ; `aa7ee1ac1` (registre, C-v0190c-25) ; le suivant porte cette section.
+- **E3** (C-v0190c-25) : `maxlength={70}` retiré du champ du nom ; la longueur se refuse localement, en points de code, par `settings-company-name-too-long` (quatre catalogues), sans appel, saisie gardée. Tests : Vitest « 71 caractères (un nom collé) », « 70 caractères après rognage, et hors du plan de base », V2-N3 scindé (nom stocké trop long : refus local ; nom stocké hors jeu : refus du serveur) ; E2E « un nom collé de 71 caractères n'est pas tronqué ». `sitesTotal` 3095 → 3096.
+- **B1, A1, E1** : les 59 références `lib.rs:N` de `audit_acteur_garde.rs` situées au-delà de la ligne 478 (55 lignes) décalées de +6 ; chacune contrôlée contre la base (`git show b2e2ff67c:crates/kesh-api/src/lib.rs | sed -n "$((n-6))p"` égale à `sed -n "${n}p"` de la tête : 0 écart) ; le doc-commentaire de `SITES` le dit.
+- **E2** : `lib.rs:266` (« exactement 54 (v0190-nom-societe ; 53 à la 33-5) », sur une seule ligne pour ne pas décaler la numérotation), `admin_pat_denied_e2e.rs:46-48` (« 54 constructeurs … 53 avant la v0190-nom-societe ») et `:800` (« les 54 couples »). Recompte à la source : 54 constructeurs entre les marqueurs (hors commentaires) ; `block_declares_exactly_the_listed_couples` vert dans `cible-p1.log`.
+- **A2** : message de l'assertion `sans_ecriture` réécrit en une chaîne lisible (« 119 routes de lib.rs (v0190-nom-societe : + 1) — 118 avant (34-2 …) — 119 avant (33-5 …) — 112 avant … plus /password-reset-token »).
+- **E4** : montage de g-bis à `address_country = 'CH'`, et le pays relu `CH` après le renommage.
+- **B2 et E3, mutations** (`mut/mutations-p1.py`, `resume-p1-rust.log`, `resume-p1-front.log`) : **5 tuées sur 5** — M8 audit écrit même sans changement (`an_identical_name_is_a_no_op_without_audit`), M9 e-mail non reporté et M10 prénom non reporté (`a_valid_name_is_written_and_nothing_else_moves`), F5 sans refus local de la longueur, F6 longueur comptée en unités UTF-16.
+- **Gates de la remédiation** (arbre de `6794e82a0`) : `cargo fmt --check` vert ; `clippy` workspace vert (`clippy-p1.log`) ; nextest ciblé des six binaires + `companies::tests` + `invoice_pdf_service`, **155 passés** (`cible-p1.log`) ; Vitest i18n + `settings` + `features/settings`, **134 passés** (`vitest-i18n-3.log`) ; `npm run check` 0 erreur (`check-p1.log`) ; `company-name.spec.ts` **3 passés** (`e2e-company-name-p1.log`, base `kesh_e2e_v0190n` recréée), captures refaites. **Non lancés** : `test-fast --ci`, Vitest complet, `gate-ci`, E2E complet — à la clôture.
+- Consigne Edit tenue pour tout le code et les tests de la remédiation.
+
+## Note de version
+
+**Corrigé**
+- Le **nom de la société** se corrige dans *Paramètres → Organisation* (bouton *Modifier*, administrateurs) : jusqu'à 70 caractères, jeu de caractères de la QR-facture ; le refus du PDF d'une facture dont le nom est vide, trop long ou refusé renvoie désormais à cet écran. Une route d'administration est ajoutée, `PUT /api/v1/companies/current/name` (session seulement), sans changement pour les clés d'API (refs #1097).

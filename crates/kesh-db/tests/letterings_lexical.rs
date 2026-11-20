@@ -396,13 +396,17 @@ fn invoice_settlement_writers_stay_in_their_module_and_sync() {
         "⛔ inventaire des écrivains de `invoice_settlements` (Story 15-1a2-i, AC8) :\n{}",
         fautes.join("\n")
     );
-    // Anti-muet : l'`INSERT` et le `DELETE` connus, et les trois créateurs.
-    assert_eq!(ecrivains, 2, "un INSERT et un DELETE de production");
+    // Anti-muet : l'`INSERT` et les deux `DELETE` connus (le second, celui du
+    // dé-rapprochement d'un groupe, Story 43-1a), et les quatre créateurs.
+    assert_eq!(ecrivains, 3, "un INSERT et deux DELETE de production");
     createurs.sort();
     assert_eq!(
         createurs,
         [
             "kesh-api/src/routes/reconciliation.rs::accept_one_invoice",
+            // Story 43-1a (#823) — le règlement groupé, qui synchronise chaque
+            // facture après les créations (étape 11).
+            "kesh-db/src/repositories/grouped_settlements.rs::settle_client_inner",
             "kesh-db/src/repositories/invoice_settlements_write.rs::settle_invoice",
             "kesh-db/src/repositories/invoice_settlements_write.rs::write_off_invoice",
         ],
@@ -569,19 +573,34 @@ fn ecrivains_du_reglement_fournisseur(source: &str) -> Vec<(String, bool, bool)>
     let fns = fonctions(&masque);
     ecritures_de_table(source, &["UPDATE"], "supplier_invoices")
         .into_iter()
+        // Story 43-1a (#823, M2) : les deux annulations vident le règlement par le
+        // fragment partagé `CLEAR_SETTLEMENT_SQL`, interpolé dans le littéral —
+        // il nomme `settlement_journal_entry_id` à leur place.
         .filter(|(p, _)| {
-            litteraux
-                .iter()
-                .any(|l| l.debut == *p && l.texte.contains("settlement_journal_entry_id"))
+            litteraux.iter().any(|l| {
+                l.debut == *p
+                    && (l.texte.contains("settlement_journal_entry_id")
+                        || l.texte.contains("{CLEAR_SETTLEMENT_SQL}"))
+            })
         })
         .map(|(p, _)| match fonction_englobante(&fns, p) {
             Some((nom, de, fin)) => {
                 let corps = &masque[*de..=*fin];
                 let synchronise = masque[p..*fin].contains("sync_supplier_invoice_in_tx(");
+                // Story 43-1b (#823) : le dé-rapprochement d'un groupe
+                // fournisseur contre-passe une écriture sans propriétaire
+                // (`reverse_in_tx(`), après avoir rouvert ses factures.
+                let contre_passe = [
+                    corps.find("reverse_owned_in_tx("),
+                    corps.find("reverse_in_tx("),
+                ]
+                .into_iter()
+                .flatten()
+                .min();
                 let dissout = matches!(
                     (
                         corps.find("dissolve_supplier_invoice_document_group_in_tx("),
-                        corps.find("reverse_owned_in_tx("),
+                        contre_passe,
                     ),
                     (Some(d), Some(r)) if d < r
                 );
@@ -592,7 +611,8 @@ fn ecrivains_du_reglement_fournisseur(source: &str) -> Vec<(String, bool, bool)>
         .collect()
 }
 
-/// AC8 (part ii) — chacun des trois `UPDATE supplier_invoices …
+/// AC8 (part ii) — chacun des cinq (trois avant la Story 43-1b, qui ajoute le
+/// paiement groupé et son dé-rapprochement) `UPDATE supplier_invoices …
 /// settlement_journal_entry_id` de production est dans une fonction qui
 /// synchronise le lettrage après lui (`pay_in_tx_as`, le corps de `pay_in_tx`
 /// depuis la Story 30-1b) ou qui le dissout avant de contre-passer (les deux
@@ -603,7 +623,8 @@ fn supplier_settlement_writers_sync_or_dissolve() {
     let mut ecrivains = Vec::new();
     for (fichier, source) in sources_de_production() {
         for (nom, synchronise, dissout) in ecrivains_du_reglement_fournisseur(&source) {
-            let attendu = if nom == "pay_in_tx_as" {
+            // Story 43-1b (#823) : le paiement groupé fournisseur est un paiement.
+            let attendu = if nom == "pay_in_tx_as" || nom == "pay_supplier_inner" {
                 synchronise
             } else {
                 dissout
@@ -628,11 +649,14 @@ fn supplier_settlement_writers_sync_or_dissolve() {
     assert_eq!(
         ecrivains,
         [
+            "kesh-db/src/repositories/grouped_settlements.rs::pay_supplier_inner",
+            "kesh-db/src/repositories/grouped_settlements.rs::supplier_cancel_in_tx",
             "kesh-db/src/repositories/supplier_invoices.rs::cancel_in_tx",
             "kesh-db/src/repositories/supplier_invoices.rs::cancel_settlement_in_tx",
             "kesh-db/src/repositories/supplier_invoices.rs::pay_in_tx_as",
         ],
-        "les trois écrivains connus — un site neuf se nomme ici"
+        "les cinq écrivains connus (Story 43-1b : le paiement groupé et son \
+         dé-rapprochement) — un site neuf se nomme ici"
     );
 
     // Le détecteur, éprouvé sur un source synthétique (anti-muet).

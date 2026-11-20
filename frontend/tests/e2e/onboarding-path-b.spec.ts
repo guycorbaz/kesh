@@ -29,7 +29,7 @@ test.describe('Onboarding Path B', () => {
 		// mais la bannière ne s'affiche qu'à stepCompleted===6 alors que skip-bank
 		// finalise (step 7/8) → jamais affichée. Nudge « config incomplète » basé sur
 		// l'absence de compte bancaire jamais implémenté. Décision produit requise.
-		test.fixme(true, 'KF-032 (#124) — bannière config-incomplète jamais affichée après finalize');
+		test.fixme(true, 'KF-032 (#124) — bannière config-incomplète jamais affichée après finalize'); // 36-17 (#1187) : bannière aux étapes 6 et 7, la finalisation mène à 8 (sans bannière) : attente toujours fausse, fixme gardé ; la fin passe par « Configuration terminée ».
 		// Step 1: Language
 		await page.click('button:has-text("Français")');
 
@@ -85,7 +85,7 @@ test.describe('Onboarding Path B', () => {
 		await page.locator('form button[type="submit"]').click();
 
 		// Should be in app WITHOUT blue banner
-		await expect(page).toHaveURL('/');
+		await expect(page).toHaveURL('/'); // 36-17 (#1187) : attente périmée — la fin passe par la page « Configuration terminée » et *Commencer* ; rouge avant d'ici (KF-029, #97, `#coord-address`).
 		await expect(page.locator('[data-testid="incomplete-config-banner"]')).not.toBeVisible();
 	});
 
@@ -112,6 +112,6 @@ test.describe('Onboarding Path B', () => {
 
 		// Skip bank → app accessible.
 		await page.click('button:has-text("Configurer plus tard")');
-		await expect(page).toHaveURL('/');
+		await expect(page).toHaveURL('/'); // 36-17 (#1187) : attente périmée — la fin passe par la page « Configuration terminée » et *Commencer* ; rouge avant d'ici (KF-029, #97, `#coord-address`).
 	});
 });

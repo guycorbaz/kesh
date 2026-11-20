@@ -378,6 +378,8 @@ pub async fn settle_invoice(
             company_id,
             invoice_id,
             journal_entry_id: je.entry.id,
+            // Règlement unitaire : toute la créance de l'écriture (Story 43-1a).
+            journal_entry_line_id: None,
             amount: settled_amount,
             settled_on,
             kind: crate::entities::SettlementKind::Choice(choice),
@@ -520,14 +522,23 @@ pub struct WriteOffOutcome {
 ///   le compte de la nature, celui du reste d'arrondi et celui de TVA due sont
 ///   comparés par **identifiant** à la créance lue sur la vente — le contrôle de
 ///   type des comptes désignés ne suffit pas (un compte qui porte des écritures
-///   change de type avec confirmation), et la TVA due n'en a aucun au moment
-///   d'écrire. Chaque comparaison suit la lecture de son compte et celle de la
-///   créance ; l'ordre des refus est donc celui des lectures : **nature**
-///   (`role: write_off_nature`, ou `rounding` pour la nature `rounding`), **reste
-///   d'arrondi** (`role: rounding` — même colonne de réglage), **TVA due**
-///   (`role: vat_payable`). Le premier égal est nommé ; une nature égale à la
-///   créance précède les refus de configuration du reste d'arrondi et de la TVA
-///   due.
+///   change de type avec confirmation, et une créance retypée en passif passe
+///   le type de la TVA due). Chaque comparaison suit la lecture de son compte
+///   et celle de la créance ; l'ordre des refus est donc celui des lectures :
+///   **nature** (`role: write_off_nature`, ou `rounding` pour la nature
+///   `rounding`), **reste d'arrondi** (`role: rounding` — même colonne de
+///   réglage), **TVA due** (`role: vat_payable`). Le premier égal est nommé ;
+///   une nature égale à la créance précède les refus de configuration du reste
+///   d'arrondi et de la TVA due, et le refus de type de celle-ci.
+/// - ⛔ **La TVA due doit rester un passif** (Story 36-9, #1044) : son accesseur
+///   ([`company_invoice_settings::vat_payable_account_for_write`]) refuse, sous
+///   son verrou, un compte retypé depuis sa désignation —
+///   `DesignatedAccountsWrongType`, le refus de la validation d'une facture
+///   (Story 35-3) —, après l'absent ou l'archivé et avant le non imputable
+///   (tous deux `ConfigurationRequired`). Ce refus précède la comparaison de la
+///   TVA due à la créance : une TVA due désignée sur la créance qui n'est pas un
+///   passif (restée un actif, ou retypée en charge ou en produit) est nommée par
+///   son type.
 #[allow(clippy::too_many_arguments)]
 pub async fn write_off_invoice(
     pool: &MySqlPool,
@@ -691,9 +702,10 @@ pub async fn write_off_invoice(
     } else {
         let vat =
             company_invoice_settings::vat_payable_account_for_write(&mut tx, company_id).await?;
-        // Story 15-6b — la TVA due n'est pas la créance. Aucun contrôle de type ne
-        // garde ce compte au moment d'écrire : cette comparaison est sa seule
-        // garde contre `D 1100 / C 1100`.
+        // Story 15-6b — la TVA due n'est pas la créance. Depuis la Story 36-9
+        // (#1044), l'accesseur refuse une TVA due qui n'est plus un passif ; mais
+        // une créance retypée en passif puis désignée TVA due passe ce contrôle :
+        // cette comparaison reste la garde contre `D 1100 / C 1100`.
         invoice_settlements::refuse_if_claim_account(
             &mut tx,
             company_id,
@@ -744,6 +756,8 @@ pub async fn write_off_invoice(
             company_id,
             invoice_id,
             journal_entry_id: je.entry.id,
+            // Solde unitaire : toute la créance de l'écriture (Story 43-1a).
+            journal_entry_line_id: None,
             amount,
             settled_on,
             kind: SettlementKind::WriteOff {
@@ -857,6 +871,25 @@ pub async fn settlement_cancel_blocker_unlinking(
     unlinking: Option<i64>,
     aujourd_hui: NaiveDate,
 ) -> Result<Option<SettlementCancelHit>, DbError> {
+    let (entry_id, head) = settlement_cancel_head(conn, company_id, settlement_id).await?;
+    if head.is_some() {
+        return Ok(head);
+    }
+    settlement_entry_cancel_blocker(conn, company_id, entry_id, unlinking, aujourd_hui).await
+}
+
+/// La **tête** client des motifs d'annulation d'un règlement — rang 1
+/// (facture créditée) et rang 1 bis (un solde existe) —, et l'écriture du
+/// règlement. Extraite de [`settlement_cancel_blocker_unlinking`], qui
+/// l'appelle avant la queue commune ; le dé-rapprochement d'un règlement
+/// groupé (Story 43-1a, revue P1 B-5) l'appelle pour **chaque** facture, puis
+/// la queue **une fois** pour l'écriture commune. ⛔ Les rangs 1 et 1 bis ne
+/// sont écrits qu'ici.
+pub(crate) async fn settlement_cancel_head(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    settlement_id: i64,
+) -> Result<(i64, Option<SettlementCancelHit>), DbError> {
     // Story 25-4-d2a : un solde existe-t-il sur la facture, et ce règlement
     // en est-il un ?
     let row: Option<(i64, String, String, bool)> = sqlx::query_as(
@@ -884,14 +917,48 @@ pub async fn settlement_cancel_blocker_unlinking(
     // antérieures à la 0.12.1 (la 0.12.0 acceptait cet avoir), restaurées ou
     // mises à jour sur place.
     if status != "validated" {
-        return Ok(Some((SettlementCancelBlocker::InvoiceCredited, None, None)));
+        return Ok((
+            entry_id,
+            Some((SettlementCancelBlocker::InvoiceCredited, None, None)),
+        ));
     }
     // Rang 1 bis (Story 25-4-d2a) : annuler d'abord le solde. Le solde lui-même
     // reste annulable.
     if write_off_exists && settlement_type != "write_off" {
-        return Ok(Some((SettlementCancelBlocker::WriteOffExists, None, None)));
+        return Ok((
+            entry_id,
+            Some((SettlementCancelBlocker::WriteOffExists, None, None)),
+        ));
     }
-    settlement_entry_cancel_blocker(conn, company_id, entry_id, unlinking, aujourd_hui).await
+    Ok((entry_id, None))
+}
+
+/// Retire **toutes** les lignes `invoice_settlements` d'une écriture de
+/// règlement groupé (Story 43-1a, #823, AC7 étape 4) — le seul `DELETE` des
+/// règlements hors de [`cancel_settlement_in_tx`], tenu dans ce module comme
+/// l'exige l'inventaire des écrivains (`letterings_lexical.rs`, AC8 de la
+/// 15-1a2-i).
+///
+/// ⛔ À n'appeler que par `grouped_settlements::cancel_in_tx`, **après** le
+/// délettrage de chaque facture du groupe et **avant** la contre-passation de
+/// l'écriture devenue sans propriétaire (D4) ; rend le nombre de lignes
+/// retirées.
+pub(crate) async fn delete_grouped_settlements_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    entry_id: i64,
+) -> Result<u64, DbError> {
+    Ok(
+        sqlx::query(
+            "DELETE FROM invoice_settlements WHERE company_id = ? AND journal_entry_id = ?",
+        )
+        .bind(company_id)
+        .bind(entry_id)
+        .execute(&mut **tx)
+        .await
+        .map_err(map_db_error)?
+        .rows_affected(),
+    )
 }
 
 /// Ce que rend une annulation de règlement.

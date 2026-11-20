@@ -1935,4 +1935,198 @@ mod tests {
         assert!(l[2].contains(";'@Loyer;'=6000;"), "{}", l[2]);
         assert!(l[2].ends_with(";-1.00"), "{}", l[2]);
     }
+
+    /// Balance âgée : le nom du contact sort échappé (formule neutralisée,
+    /// retour à la ligne et tabulation remplacés par une espace) ; les
+    /// montants, même négatifs, restent des nombres.
+    #[test]
+    fn balance_agee_echappe_le_nom_du_contact_pas_les_montants() {
+        let negatif = AgedBucket {
+            not_due: dec!(-12.50),
+            days_1_to_30: Decimal::ZERO,
+            days_31_to_60: Decimal::ZERO,
+            days_61_to_90: Decimal::ZERO,
+            days_over_90: Decimal::ZERO,
+            total: dec!(-12.50),
+        };
+        let contact = |id: i64, nom: &str| AgedReceivablesRow {
+            contact_id: id,
+            contact_name: nom.into(),
+            buckets: negatif.clone(),
+        };
+        let report = AgedReceivables {
+            as_of: NaiveDate::from_ymd_opt(2026, 7, 20).unwrap(),
+            rows: vec![
+                contact(1, "=HYPERLINK(\"x\")"),
+                contact(2, "+Alpha"),
+                contact(3, "-Beta"),
+                contact(4, "@Gamma"),
+                contact(5, "Delta\nSA\tSàrl"),
+                contact(6, " =Espace"),
+            ],
+            totals: negatif.clone(),
+        };
+        let mut buf = Vec::new();
+        render_aged_receivables_csv(&report, &mut buf).unwrap();
+        let body = String::from_utf8(buf[3..].to_vec()).unwrap();
+        let lignes: Vec<&str> = body.split("\r\n").filter(|l| !l.is_empty()).collect();
+        assert_eq!(lignes.len(), 8, "en-tête + 6 contacts + total : {body}");
+        assert!(
+            lignes[1].starts_with("\"'=HYPERLINK(\"\"x\"\")\";"),
+            "{}",
+            lignes[1]
+        );
+        assert!(lignes[2].starts_with("'+Alpha;"), "{}", lignes[2]);
+        assert!(lignes[3].starts_with("'-Beta;"), "{}", lignes[3]);
+        assert!(lignes[4].starts_with("'@Gamma;"), "{}", lignes[4]);
+        assert!(lignes[5].starts_with("Delta SA Sàrl;"), "{}", lignes[5]);
+        assert!(lignes[6].starts_with("' =Espace;"), "{}", lignes[6]);
+        for l in &lignes[1..] {
+            assert!(l.ends_with(";-12.50"), "montant négatif intact : {l}");
+        }
+    }
+
+    fn projet(id: i64, code: &str, nom: &str) -> crate::project_report::ProjectInfo {
+        crate::project_report::ProjectInfo {
+            id,
+            code: code.into(),
+            name: nom.into(),
+        }
+    }
+
+    /// Dépenses par projet : libellés de projet et de sous-projet, numéro et
+    /// nom de compte échappés ; montants négatifs intacts.
+    #[test]
+    fn depenses_par_projet_echappent_les_cellules_texte() {
+        use crate::project_report::{
+            ExpenseAccountRow, ProjectExpenseSection, ProjectExpensesReport,
+        };
+        let ligne = |id: i64, num: &str, nom: &str| ExpenseAccountRow {
+            account_id: id,
+            account_number: num.into(),
+            account_name: nom.into(),
+            amount: dec!(-7.25),
+            entries: vec![],
+        };
+        let report = ProjectExpensesReport {
+            report_type: "expenses".into(),
+            project: projet(1, "=P1", "Racine"),
+            mode: "fiscal_year".into(),
+            period_label: "2026".into(),
+            sections: vec![
+                ProjectExpenseSection {
+                    project: projet(1, "=P1", "Racine"),
+                    is_root: true,
+                    rows: vec![ligne(10, "+6000", "Loyer\nbureau")],
+                    subtotal: dec!(-7.25),
+                },
+                ProjectExpenseSection {
+                    project: projet(2, "@S1", "Sous\tprojet"),
+                    is_root: false,
+                    rows: vec![ligne(11, "6100", "-Frais")],
+                    subtotal: dec!(-7.25),
+                },
+            ],
+            grand_total: dec!(-14.50),
+        };
+        let mut buf = Vec::new();
+        render_project_expenses_csv(&report, &mut buf).unwrap();
+        let body = String::from_utf8(buf[3..].to_vec()).unwrap();
+        let lignes: Vec<Vec<&str>> = body
+            .split("\r\n")
+            .filter(|l| !l.is_empty())
+            .skip(1)
+            .map(|l| l.split(';').collect())
+            .collect();
+        assert_eq!(
+            lignes.len(),
+            5,
+            "2 comptes, 2 sous-totaux, 1 total : {body}"
+        );
+        assert_eq!(
+            lignes[0],
+            ["'=P1 — Racine", "", "'+6000", "Loyer bureau", "-7.25"]
+        );
+        assert_eq!(lignes[1][3], "Sous-total");
+        assert_eq!(
+            lignes[2],
+            [
+                "'=P1 — Racine",
+                "'@S1 — Sous projet",
+                "6100",
+                "'-Frais",
+                "-7.25"
+            ]
+        );
+        assert_eq!(
+            lignes[4],
+            ["'=P1 — Racine", "", "", "Total dépenses", "-14.50"]
+        );
+    }
+
+    /// Rendement par projet : libellés échappés ; montants négatifs et
+    /// pourcentages intacts.
+    #[test]
+    fn rendement_par_projet_echappe_les_libelles() {
+        use crate::project_report::{
+            ProjectReturnReport, ProjectReturnSection, ProjectReturnTotals,
+        };
+        let section = |p, is_root| ProjectReturnSection {
+            project: p,
+            is_root,
+            cout_investi: dec!(100),
+            revenus: dec!(40),
+            resultat_net: dec!(-60),
+            rendement_pct: Some(dec!(-60)),
+        };
+        let report = ProjectReturnReport {
+            report_type: "return".into(),
+            project: projet(1, "-P1", "Racine\r\nlongue"),
+            mode: "fiscal_year".into(),
+            period_label: "2026".into(),
+            sections: vec![
+                section(projet(1, "-P1", "Racine\r\nlongue"), true),
+                section(projet(2, "+S1", "Sous-projet"), false),
+            ],
+            totals: ProjectReturnTotals {
+                cout_investi: dec!(200),
+                revenus: dec!(80),
+                resultat_net: dec!(-120),
+                rendement_pct: Some(dec!(-60)),
+            },
+        };
+        let mut buf = Vec::new();
+        render_project_return_csv(&report, &mut buf).unwrap();
+        let body = String::from_utf8(buf[3..].to_vec()).unwrap();
+        let lignes: Vec<Vec<&str>> = body
+            .split("\r\n")
+            .filter(|l| !l.is_empty())
+            .skip(1)
+            .map(|l| l.split(';').collect())
+            .collect();
+        assert_eq!(lignes.len(), 3, "{body}");
+        assert_eq!(
+            lignes[0],
+            [
+                "'-P1 — Racine  longue",
+                "",
+                "100.00",
+                "40.00",
+                "-60.00",
+                "-60.00%"
+            ]
+        );
+        assert_eq!(lignes[1][1], "'+S1 — Sous-projet");
+        assert_eq!(
+            lignes[2],
+            [
+                "'-P1 — Racine  longue",
+                "Total",
+                "200.00",
+                "80.00",
+                "-120.00",
+                "-60.00%"
+            ]
+        );
+    }
 }

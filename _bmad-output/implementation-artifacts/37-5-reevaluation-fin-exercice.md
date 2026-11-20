@@ -858,7 +858,7 @@ le multi-devises, il n'y en a pas en production.
 
 *(Texte prêt à assembler au `CHANGELOG.md` à la release ; la fiche n'écrit jamais au `CHANGELOG.md`.)*
 
-- **Changed** — exports CSV des rapports (journal, grand livre, balance, bilan…) : une cellule de texte qui commence par `=`, `+`, `-` ou `@` est précédée d'une apostrophe, et tabulation et retours à la ligne y deviennent une espace ; les montants ne changent pas.
+- **Changed** — exports CSV des rapports (journal, grand livre, balance, bilan…) : une cellule de texte qui commence par `=`, `+`, `-` ou `@` est précédée d'une apostrophe, et tabulation et retours à la ligne y deviennent une espace ; les montants ne changent pas. *(Précisé à la revue d'intégration de l'équipe de Guy, 2026-11-17 :)* ce n'est pas propre aux sociétés multi-devises : un export CSV de rapport d'une société mono-devise peut lui aussi changer, sur ces seules cellules (journal, grand livre, balance, bilan, compte de résultat, balance âgée, rapports par compte analytique).
 - **Changed** — `GET …/closing-checks` : le motif `NOT_POSTABLE` s'ajoute à K9 (compte à solde devenu non imputable) ; la ligne d'aperçu porte `ACCOUNT_NOT_POSTABLE` ; `blockers[]` de l'aperçu peut porter `RATE_UNAVAILABLE` et `FX_VALUE_OUT_OF_RANGE`.
 
 - **Added** — réévaluation de fin d'exercice : aperçu puis passation des écritures de différence de change (action d'audit `fx_revaluation.posted`, erreur `FX_REVALUATION_ACCOUNT_INVALID`), depuis l'écran des exercices et par l'API.
