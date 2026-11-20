@@ -39,8 +39,8 @@ use kesh_db::entities::account::AccountType;
 use kesh_db::entities::audit_log::NewAuditLogEntry;
 use kesh_db::entities::bank_account::{
     BANK_ACCOUNT_BANK_NAME_MAX_CHARS, BANK_ACCOUNT_DESCRIPTION_MAX_CHARS, BankAccount,
-    BankAccountKind, NewBankAccount, PROVIDER_ACCOUNT_MAX_CHARS, PROVIDER_PAYPAL, PaypalSettings,
-    bank_account_display_name,
+    BankAccountKind, NewBankAccount, PROVIDER_ACCOUNT_MAX_CHARS, PROVIDER_PAYPAL, PROVIDER_STRIPE,
+    PaypalSettings, ProviderSettings, StripeSettings, bank_account_display_name,
 };
 use kesh_db::errors::{DbError, NonPostableAccount};
 use kesh_db::repositories::bank_accounts::BankAccountPutFields;
@@ -112,6 +112,11 @@ pub struct CreateBankAccountBody {
     /// bancaire ordinaire.
     #[serde(default)]
     pub paypal: Option<PaypalSettings>,
+    /// Story 40-7b (AC-2) — réglages Stripe, facultatifs : `{ account,
+    /// feeAccountId, payoutBankAccountId }`. Mêmes règles que `paypal` ; les
+    /// deux ensemble sont refusés (`400 VALIDATION_ERROR`).
+    #[serde(default)]
+    pub stripe: Option<StripeSettings>,
 }
 
 /// Sens d'un solde d'ouverture — Story 34-2 (#533, C-e341-7) : le solde **lu
@@ -208,6 +213,10 @@ pub struct UpdateBankAccountBody {
     /// posés ou remplacés.
     #[serde(default, deserialize_with = "crate::helpers::double_option")]
     pub paypal: Option<Option<PaypalSettings>>,
+    /// Story 40-7b (AC-2) — réglages Stripe : mêmes règles que `paypal`
+    /// (absents = inchangés, `null` = retirés).
+    #[serde(default, deserialize_with = "crate::helpers::double_option")]
+    pub stripe: Option<Option<StripeSettings>>,
     /// Optimistic lock.
     pub version: i32,
 }
@@ -308,7 +317,7 @@ impl_validation_extractor!(
 impl_validation_extractor!(
     CreateBankAccountBodyExtractor,
     CreateBankAccountBody,
-    "`bankName` str, `description?` str, `iban?` str, `qrIban?` str, `isPrimary?` bool, `journalAccountId?` i64, `accountKind?` (`bank` | `credit_card`), `cardLast4?` str, `openingBalance?` { `amount` str, `side` \"debit\" | \"credit\" }, `paypal?` { `account` str, `feeAccountId?` i64 }"
+    "`bankName` str, `description?` str, `iban?` str, `qrIban?` str, `isPrimary?` bool, `journalAccountId?` i64, `accountKind?` (`bank` | `credit_card`), `cardLast4?` str, `openingBalance?` { `amount` str, `side` \"debit\" | \"credit\" }, `paypal?` { `account` str, `feeAccountId?` i64 }, `stripe?` { `account` str, `feeAccountId?` i64, `payoutBankAccountId?` i64 }"
 );
 impl_validation_extractor!(
     OpeningBalanceBodyExtractor,
@@ -318,7 +327,7 @@ impl_validation_extractor!(
 impl_validation_extractor!(
     UpdateBankAccountBodyExtractor,
     UpdateBankAccountBody,
-    "`bankName` str, `description?` str, `iban?` str, `qrIban?` str, `isPrimary?` bool, `journalAccountId?` i64, `accountKind?` (`bank` | `credit_card`), `cardLast4?` str, `paypal?` { `account` str, `feeAccountId?` i64 } | null, `version` i32"
+    "`bankName` str, `description?` str, `iban?` str, `qrIban?` str, `isPrimary?` bool, `journalAccountId?` i64, `accountKind?` (`bank` | `credit_card`), `cardLast4?` str, `paypal?` { `account` str, `feeAccountId?` i64 } | null, `stripe?` { `account` str, `feeAccountId?` i64, `payoutBankAccountId?` i64 } | null, `version` i32"
 );
 impl_validation_extractor!(
     ArchiveBankAccountBodyExtractor,
@@ -372,9 +381,10 @@ struct ValidatedBankInput {
     qr_iban: Option<String>,
     /// Story 34-11a2 — quatre chiffres ASCII d'une carte, ou `None`.
     card_last4: Option<String>,
-    /// Story 38-11b (AC-2) — réglages PayPal **résultants**, libellé rogné et
-    /// contrôlé ; `None` pour un compte ordinaire.
-    paypal: Option<PaypalSettings>,
+    /// Story 38-11b (AC-2) — réglages de prestataire **résultants** (PayPal ;
+    /// Stripe depuis la 40-7b), libellé rogné et contrôlé ; `None` pour un
+    /// compte ordinaire.
+    provider: Option<ProviderSettings>,
 }
 
 /// Les champs d'un corps de création ou de `PUT`, tels que reçus, que
@@ -388,9 +398,9 @@ struct BankInputFields<'a> {
     qr_iban: Option<&'a str>,
     is_primary: bool,
     card_last4: Option<&'a str>,
-    /// Story 38-11b — réglages PayPal résultants (corps, ou ceux du compte si
-    /// le `PUT` ne les porte pas).
-    paypal: Option<&'a PaypalSettings>,
+    /// Story 38-11b — réglages de prestataire résultants (corps, ou ceux du
+    /// compte si le `PUT` ne les porte pas).
+    provider: Option<&'a ProviderSettings>,
 }
 
 /// Un champ facultatif **fourni** : présent et non vide après `trim` —
@@ -597,13 +607,13 @@ fn validate_bank_input(f: BankInputFields<'_>) -> Result<ValidatedBankInput, App
 
     // Story 38-11b (AC-2, garde 1) — le libellé du compte PayPal : rogné, 1 à
     // 120 caractères, jamais un numéro de carte.
-    let paypal = match f.paypal {
-        Some(settings) => Some(normalize_paypal_settings(settings)?),
+    let provider = match f.provider {
+        Some(settings) => Some(normalize_provider_settings(settings)?),
         None => None,
     };
 
     let (iban, qr_iban, card_last4) = match f.kind {
-        BankAccountKind::Bank if paypal.is_some() => {
+        BankAccountKind::Bank if provider.is_some() => {
             // Story 38-11b (AC-3) — compte PayPal : IBAN facultatif (contrôlé
             // s'il est donné), ni QR-IBAN, ni principal, ni quatre chiffres.
             if provided(f.card_last4).is_some() {
@@ -652,8 +662,8 @@ fn validate_bank_input(f: BankInputFields<'_>) -> Result<ValidatedBankInput, App
         BankAccountKind::CreditCard => {
             // Story 38-11b — une carte n'est jamais le solde d'un prestataire
             // (`chk_bank_accounts_provider` : `account_kind = 'bank'`).
-            if paypal.is_some() {
-                return Err(AppError::CreditCardFieldNotAllowed { field: "paypal" });
+            if let Some(p) = provider.as_ref() {
+                return Err(AppError::CreditCardFieldNotAllowed { field: p.provider });
             }
             if provided(f.iban).is_some() {
                 return Err(AppError::CreditCardFieldNotAllowed { field: "iban" });
@@ -692,16 +702,19 @@ fn validate_bank_input(f: BankInputFields<'_>) -> Result<ValidatedBankInput, App
         iban,
         qr_iban,
         card_last4,
-        paypal,
+        provider,
     })
 }
 
-/// Garde 1 des réglages PayPal — Story 38-11b (AC-2) : le libellé du compte
-/// PayPal rogné, de 1 à [`PROVIDER_ACCOUNT_MAX_CHARS`] caractères (`400
-/// VALIDATION_ERROR`), sans numéro de carte (`400 CARD_NUMBER_NOT_ALLOWED`,
-/// `field: paypal.account`). Le compte de frais passe tel quel : il est jugé
-/// dans la transaction ([`check_provider_guards_in_tx`]).
-fn normalize_paypal_settings(settings: &PaypalSettings) -> Result<PaypalSettings, AppError> {
+/// Garde 1 des réglages de prestataire — Story 38-11b (AC-2), généralisée par
+/// la 40-7b : le libellé du compte rogné, de 1 à [`PROVIDER_ACCOUNT_MAX_CHARS`]
+/// caractères (`400 VALIDATION_ERROR`), sans numéro de carte (`400
+/// CARD_NUMBER_NOT_ALLOWED`, `field: paypal.account` ou `stripe.account`), et
+/// — Story 40-7b — un compte de versement **refusé hors Stripe** (`400
+/// VALIDATION_ERROR`). Le compte de frais et le compte de versement passent
+/// tels quels : ils sont jugés dans la transaction
+/// ([`check_provider_guards_in_tx`]).
+fn normalize_provider_settings(settings: &ProviderSettings) -> Result<ProviderSettings, AppError> {
     let account = settings.account.trim();
     if account.is_empty() || account.chars().count() > PROVIDER_ACCOUNT_MAX_CHARS {
         return Err(AppError::Validation(crate::errors::t(
@@ -715,42 +728,84 @@ fn normalize_paypal_settings(settings: &PaypalSettings) -> Result<PaypalSettings
             "Le nom du compte du prestataire ne peut contenir ni saut de ligne ni caractère de contrôle.",
         )));
     }
-    refuse_card_number("paypal.account", account)?;
-    Ok(PaypalSettings {
+    refuse_card_number(
+        if settings.provider == PROVIDER_STRIPE {
+            "stripe.account"
+        } else {
+            "paypal.account"
+        },
+        account,
+    )?;
+    if settings.payout_bank_account_id.is_some() && settings.provider != PROVIDER_STRIPE {
+        return Err(AppError::Validation(
+            "payoutBankAccountId : réservé aux comptes Stripe".into(),
+        ));
+    }
+    Ok(ProviderSettings {
+        provider: settings.provider,
         account: account.to_string(),
         fee_account_id: settings.fee_account_id,
+        payout_bank_account_id: settings.payout_bank_account_id,
     })
 }
 
-/// Les réglages PayPal **résultants** d'un `PUT` — Story 38-11b (AC-2) :
-/// `paypal` absent du corps = ceux du compte, `null` = aucun, valeur = elle.
-fn resulting_paypal(
-    current: &BankAccount,
-    body: &Option<Option<PaypalSettings>>,
-) -> Option<PaypalSettings> {
-    match body {
-        None => current.provider_settings.paypal(),
-        Some(value) => value.clone(),
+/// Ramène les corps `paypal` et `stripe` à **un** prestataire — Story 40-7b :
+/// les deux ensemble sont refusés (`400 VALIDATION_ERROR`).
+fn choose_provider(
+    paypal: Option<&PaypalSettings>,
+    stripe: Option<&StripeSettings>,
+) -> Result<Option<ProviderSettings>, AppError> {
+    match (paypal, stripe) {
+        (Some(_), Some(_)) => Err(AppError::Validation(
+            "paypal et stripe : un compte n'a qu'un prestataire".into(),
+        )),
+        (Some(p), None) => Ok(Some(p.clone().into())),
+        (None, Some(s)) => Ok(Some(s.clone().into())),
+        (None, None) => Ok(None),
     }
 }
 
-/// Gardes 2 à 4 des réglages PayPal — Story 38-11b (AC-2), **une seule
-/// fonction** pour le `POST` et le `PUT`, jugée sur l'état résultant, dans la
-/// transaction, après la sentinelle `companies`, les réglages et la relecture
-/// du compte lié (`ledger_currency`, `None` = CHF), **avant** tout verrou
-/// exclusif sur `bank_accounts`. Dans l'ordre :
+/// Les réglages **résultants** d'un `PUT` — Story 38-11b (AC-2), 40-7b : un
+/// prestataire donné (non `null`) remplace ; `null` retire les réglages du
+/// compte **s'il porte ce prestataire** (un `paypal: null` sur un compte Stripe
+/// ne retire rien) ; absents, les réglages du compte restent. Les deux donnés
+/// ensemble : `400`.
+fn resulting_provider(
+    current: &BankAccount,
+    paypal: &Option<Option<PaypalSettings>>,
+    stripe: &Option<Option<StripeSettings>>,
+) -> Result<Option<ProviderSettings>, AppError> {
+    let given_paypal = paypal.as_ref().and_then(|p| p.as_ref());
+    let given_stripe = stripe.as_ref().and_then(|s| s.as_ref());
+    if given_paypal.is_some() || given_stripe.is_some() {
+        return choose_provider(given_paypal, given_stripe);
+    }
+    let settings = &current.provider_settings;
+    let removed = (matches!(paypal, Some(None)) && settings.is_paypal())
+        || (matches!(stripe, Some(None)) && settings.is_stripe());
+    Ok(if removed { None } else { settings.settings() })
+}
+
+/// Gardes 2 à 4 des réglages de prestataire — Story 38-11b (AC-2), 40-7b,
+/// **une seule fonction** pour le `POST`, le `PUT` et chaque prestataire, jugée
+/// sur l'état résultant, dans la transaction, après la sentinelle `companies`,
+/// les réglages et la relecture du compte lié (`ledger_currency`, `None` =
+/// CHF), **avant** tout verrou exclusif sur `bank_accounts`. Dans l'ordre :
 ///
 /// 2. compte du plan lié obligatoire (`400 PROVIDER_LEDGER_REQUIRED`) ;
-/// 3. un compte bancaire par devise et par compte PayPal : un autre compte non
-///    archivé de même libellé (collation, sans casse) lié à un compte de même
-///    devise → `409 PROVIDER_CURRENCY_DUPLICATE`. Lecture **verrouillante**
+/// 3. un compte bancaire par devise et par compte du prestataire : un autre
+///    compte non archivé du même prestataire et du même libellé (collation,
+///    sans casse) lié à un compte de même devise → `409
+///    PROVIDER_CURRENCY_DUPLICATE`. Lecture **verrouillante**
 ///    (`list_provider_balances_locked`, revue P1, M1), sous la sentinelle qui
 ///    sérialise le `POST` et le `PUT` : au `POST`, elle précède l'écriture
 ///    d'ouverture et ne doit pas ouvrir l'instantané ; l'import refuse aussi
 ///    une devise portée par deux comptes (AC-4), filet d'un écrivain futur ;
 /// 4. compte de frais : présent, actif, imputable, de type charge, en CHF ou
 ///    dans la devise du compte lié (une écriture ne porte qu'une devise
-///    étrangère) → sinon `400 PROVIDER_FEE_ACCOUNT_INVALID`.
+///    étrangère) → sinon `400 PROVIDER_FEE_ACCOUNT_INVALID` ;
+///    Pour Stripe (Story 40-7b), le compte de versement est aussi jugé ici :
+///    voir [`check_payout_destination_in_tx`] → `400 STRIPE_PAYOUT_ACCOUNT_INVALID`.
 ///
 /// La garde 5 (compte qui porte déjà une transaction) se juge après le verrou
 /// de la ligne : [`refuse_provider_change_in_use`].
@@ -758,11 +813,11 @@ async fn check_provider_guards_in_tx(
     tx: &mut Transaction<'_, MySql>,
     company_id: i64,
     self_id: Option<i64>,
-    paypal: Option<&PaypalSettings>,
+    provider: Option<&ProviderSettings>,
     journal_account_id: Option<i64>,
     ledger_currency: Option<&str>,
 ) -> Result<(), AppError> {
-    let Some(paypal) = paypal else {
+    let Some(provider) = provider else {
         return Ok(());
     };
     if journal_account_id.is_none() {
@@ -774,20 +829,20 @@ async fn check_provider_guards_in_tx(
     let duplicate = bank_accounts::list_provider_balances_locked(
         tx,
         company_id,
-        PROVIDER_PAYPAL,
-        &paypal.account,
+        provider.provider,
+        &provider.account,
     )
     .await?
     .into_iter()
     .find(|b| Some(b.account.id) != self_id && b.currency() == currency);
     if let Some(other) = duplicate {
         return Err(AppError::ProviderCurrencyDuplicate {
-            account: paypal.account.clone(),
+            account: provider.account.clone(),
             currency: currency.to_string(),
             bank_account_id: other.account.id,
         });
     }
-    if let Some(fee_id) = paypal.fee_account_id {
+    if let Some(fee_id) = provider.fee_account_id {
         let reason = match accounts::fee_account_facts_in_share_mode(tx, company_id, fee_id).await?
         {
             None | Some((_, false, _, _)) => Some("not_found"),
@@ -807,30 +862,79 @@ async fn check_provider_guards_in_tx(
             });
         }
     }
+    if let Some(payout_id) = provider.payout_bank_account_id {
+        check_payout_destination_in_tx(tx, company_id, self_id, payout_id, currency).await?;
+    }
     Ok(())
 }
 
-/// Garde 5 des réglages PayPal — Story 38-11b (AC-2) : retirer les réglages,
-/// changer le libellé ou le compte du plan d'un compte PayPal qui porte déjà
-/// une transaction → `409 PROVIDER_ACCOUNT_IN_USE` ; changer le compte de frais
-/// reste admis. `before` est l'état d'avant (le `PUT` le lit sous le `FOR
-/// UPDATE` de la ligne, le pré-vol sur le pool) ; le décompte est une lecture
-/// verrouillante. Sans objet pour un compte qui n'était pas PayPal.
+/// Garde 4-bis — Story 40-7b (AC-2) : le compte de versement d'un compte
+/// Stripe désigne un compte bancaire **de la société**, non archivé ni clos,
+/// **sans prestataire Stripe ni PayPal** (un compte Wise ou une banque
+/// ordinaire sont des destinations ; un compte Stripe ou PayPal n'en est
+/// jamais une), dont le compte du plan est **dans la devise** du solde Stripe
+/// (`currency`). Un compte qui se désignerait lui-même est un compte Stripe :
+/// refusé comme tel. `400 STRIPE_PAYOUT_ACCOUNT_INVALID`, `reason` ∈
+/// `not_found`, `archived`, `closed`, `stripe`, `paypal`, `currency`. Lecture
+/// verrouillante partagée (`payout_destination_locked`) : même contrat que les
+/// autres gardes (aucune lecture ordinaire avant l'écriture d'ouverture).
+async fn check_payout_destination_in_tx(
+    tx: &mut Transaction<'_, MySql>,
+    company_id: i64,
+    self_id: Option<i64>,
+    payout_id: i64,
+    currency: &str,
+) -> Result<(), AppError> {
+    let facts = if Some(payout_id) == self_id {
+        // Un compte Stripe ne se désigne pas lui-même (et sa ligne n'a pas à
+        // être relue : elle est refusée par construction).
+        None
+    } else {
+        bank_accounts::payout_destination_locked(tx, company_id, payout_id).await?
+    };
+    let reason = match facts {
+        None if Some(payout_id) == self_id => Some("stripe"),
+        None => Some("not_found"),
+        Some(f) if f.archived => Some("archived"),
+        Some(f) if f.closed => Some("closed"),
+        Some(f) if f.provider.as_deref() == Some(PROVIDER_STRIPE) => Some("stripe"),
+        Some(f) if f.provider.as_deref() == Some(PROVIDER_PAYPAL) => Some("paypal"),
+        Some(f) if f.currency() != currency => Some("currency"),
+        Some(_) => None,
+    };
+    match reason {
+        Some(reason) => Err(AppError::StripePayoutAccountInvalid {
+            bank_account_id: payout_id,
+            reason,
+        }),
+        None => Ok(()),
+    }
+}
+
+/// Garde 5 des réglages de prestataire — Story 38-11b (AC-2), 40-7b : retirer
+/// les réglages, **changer de prestataire**, changer le libellé ou le compte du
+/// plan d'un compte de prestataire qui porte déjà une transaction → `409
+/// PROVIDER_ACCOUNT_IN_USE` ; changer le compte de frais, **ou le compte de
+/// versement** (il n'agit que sur les écritures à venir), reste admis.
+/// `before` est l'état d'avant (le `PUT` le lit sous le `FOR UPDATE` de la
+/// ligne, le pré-vol sur le pool) ; le décompte est une lecture verrouillante.
+/// Sans objet pour un compte qui n'était pas d'un prestataire servi.
 async fn refuse_provider_change_in_use(
     conn: &mut sqlx::MySqlConnection,
     company_id: i64,
     before: &BankAccount,
-    paypal: Option<&PaypalSettings>,
+    provider: Option<&ProviderSettings>,
     journal_account_id: Option<i64>,
 ) -> Result<(), AppError> {
-    let Some(previous) = before.provider_settings.paypal() else {
+    let Some(previous) = before.provider_settings.settings() else {
         return Ok(());
     };
-    let changes = match paypal {
+    let changes = match provider {
         None => true,
         // Libellé comparé rogné : le pré-vol le reçoit avant la normalisation.
         Some(next) => {
-            next.account.trim() != previous.account
+            next.provider != previous.provider
+                || next.account.trim() != previous.account
                 || journal_account_id != before.journal_account_id
         }
     };
@@ -1226,7 +1330,7 @@ pub async fn create_bank_account(
         qr_iban: body.qr_iban.as_deref(),
         is_primary: body.is_primary,
         card_last4: body.card_last4.as_deref(),
-        paypal: body.paypal.as_ref(),
+        provider: choose_provider(body.paypal.as_ref(), body.stripe.as_ref())?.as_ref(),
     })?;
     let opening = parse_opening_balance(body.opening_balance.as_ref())?;
     if opening.is_some() && body.journal_account_id.is_none() {
@@ -1241,7 +1345,7 @@ pub async fn create_bank_account(
         kind,
         body.journal_account_id,
         true,
-        input.paypal.is_some(),
+        input.provider.is_some(),
     )
     .await?;
 
@@ -1349,7 +1453,7 @@ async fn create_once(
             current_user.company_id,
             input.kind,
             journal_account_id,
-            input.paypal.is_some(),
+            input.provider.is_some(),
         )
         .await?;
         // Story 38-11b (AC-2) — gardes PayPal 2 à 4, sur l'état résultant,
@@ -1360,7 +1464,7 @@ async fn create_once(
             &mut tx,
             current_user.company_id,
             None,
-            input.paypal.as_ref(),
+            input.provider.as_ref(),
             journal_account_id,
             ledger_currency.as_deref(),
         )
@@ -1405,11 +1509,11 @@ async fn create_once(
         // inchangé.
         // Story 38-11b (AC-2) — les réglages PayPal (trois colonnes `NULL` pour
         // un compte ordinaire).
-        let paypal = input.paypal.as_ref();
+        let provider = input.provider.as_ref();
         let result = sqlx::query(
             "INSERT INTO bank_accounts (company_id, bank_name, description, iban, qr_iban, is_primary, journal_account_id, account_kind, card_last4, \
-             provider, provider_account, fee_account_id) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+             provider, provider_account, fee_account_id, payout_bank_account_id) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(current_user.company_id)
         .bind(&input.bank_name)
@@ -1420,9 +1524,10 @@ async fn create_once(
         .bind(journal_account_id)
         .bind(input.kind)
         .bind(&input.card_last4)
-        .bind(paypal.map(|_| PROVIDER_PAYPAL))
-        .bind(paypal.map(|p| p.account.as_str()))
-        .bind(paypal.and_then(|p| p.fee_account_id))
+        .bind(provider.map(|p| p.provider))
+        .bind(provider.map(|p| p.account.as_str()))
+        .bind(provider.and_then(|p| p.fee_account_id))
+        .bind(provider.and_then(|p| p.payout_bank_account_id))
         .execute(&mut *tx)
         .await
         .map_err(|e| AppError::Database(kesh_db::errors::map_db_error(e)))?;
@@ -1463,6 +1568,7 @@ async fn create_once(
             "provider": inserted.provider_settings.provider,
             "provider_account": inserted.provider_settings.provider_account,
             "fee_account_id": inserted.provider_settings.fee_account_id,
+            "payout_bank_account_id": inserted.provider_settings.payout_bank_account_id,
         });
         // Story 34-2 (AC-3) — la trace nomme l'écriture d'ouverture passée avec
         // le compte ; sans solde, la trace d'avant, inchangée.
@@ -1687,7 +1793,7 @@ pub async fn update_bank_account(
     }
     let kind = current.account_kind;
     // Story 38-11b (AC-2) — l'état résultant des réglages PayPal.
-    let paypal = resulting_paypal(&current, &body.paypal);
+    let provider = resulting_provider(&current, &body.paypal, &body.stripe)?;
 
     // Story 38-11b (AC-2, AC-3) — pré-vol de la garde 5 (compte PayPal qui
     // porte des transactions), avant tout autre refus : un `PUT` qui retire les
@@ -1704,7 +1810,7 @@ pub async fn update_bank_account(
             &mut conn,
             current_user.company_id,
             &current,
-            paypal.as_ref(),
+            provider.as_ref(),
             body.journal_account_id,
         )
         .await?;
@@ -1717,7 +1823,7 @@ pub async fn update_bank_account(
         qr_iban: body.qr_iban.as_deref(),
         is_primary: body.is_primary,
         card_last4: body.card_last4.as_deref(),
-        paypal: paypal.as_ref(),
+        provider: provider.as_ref(),
     })?;
     validate_journal_account_id(
         &state.pool,
@@ -1726,7 +1832,7 @@ pub async fn update_bank_account(
         body.journal_account_id,
         // Postabilité contrôlée dans le dépôt, sous verrou, si changée (AC12).
         false,
-        input.paypal.is_some(),
+        input.provider.is_some(),
     )
     .await?;
 
@@ -1770,6 +1876,7 @@ fn full_update_audit_state(b: &BankAccount) -> serde_json::Value {
         "provider": b.provider_settings.provider,
         "provider_account": b.provider_settings.provider_account,
         "fee_account_id": b.provider_settings.fee_account_id,
+        "payout_bank_account_id": b.provider_settings.payout_bank_account_id,
     })
 }
 
@@ -1806,7 +1913,7 @@ async fn update_once(
             current_user.company_id,
             input.kind,
             journal_account_id,
-            input.paypal.is_some(),
+            input.provider.is_some(),
         )
         .await?;
         // Story 38-11b (AC-2) — gardes PayPal 2 à 4, état résultant.
@@ -1814,7 +1921,7 @@ async fn update_once(
             &mut tx,
             current_user.company_id,
             Some(id),
-            input.paypal.as_ref(),
+            input.provider.as_ref(),
             journal_account_id,
             ledger_currency.as_deref(),
         )
@@ -1850,9 +1957,13 @@ async fn update_once(
                 description: input.description.as_deref(),
                 iban: input.iban.as_deref(),
                 card_last4: input.card_last4.as_deref(),
-                provider: input.paypal.as_ref().map(|_| PROVIDER_PAYPAL),
-                provider_account: input.paypal.as_ref().map(|p| p.account.as_str()),
-                fee_account_id: input.paypal.as_ref().and_then(|p| p.fee_account_id),
+                provider: input.provider.as_ref().map(|p| p.provider),
+                provider_account: input.provider.as_ref().map(|p| p.account.as_str()),
+                fee_account_id: input.provider.as_ref().and_then(|p| p.fee_account_id),
+                payout_bank_account_id: input
+                    .provider
+                    .as_ref()
+                    .and_then(|p| p.payout_bank_account_id),
             },
             version,
             &claims,
@@ -1869,7 +1980,7 @@ async fn update_once(
             &mut tx,
             current_user.company_id,
             &before,
-            input.paypal.as_ref(),
+            input.provider.as_ref(),
             journal_account_id,
         )
         .await?;

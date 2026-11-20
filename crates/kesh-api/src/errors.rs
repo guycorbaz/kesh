@@ -996,6 +996,27 @@ pub enum AppError {
         details: serde_json::Value,
     },
 
+    /// Import Stripe : le fichier est refusé par le lecteur (40-7a) → `422
+    /// STRIPE_CSV_INVALID`, `details: { reason, … }` — `reason` est le code du
+    /// lecteur, avec `columns` (colonnes manquantes ; `source_id|charge_id`
+    /// s'accompagne de la marche à suivre dans Stripe) ou `lines` (erreurs de
+    /// ligne, forme `{ line, field, code, value }`).
+    #[error("Fichier Stripe refusé : {reason}")]
+    StripeCsvInvalid {
+        reason: &'static str,
+        details: serde_json::Value,
+    },
+
+    /// Compte de versement d'un compte Stripe refusé → `400
+    /// STRIPE_PAYOUT_ACCOUNT_INVALID`, `details: { bankAccountId, reason }`,
+    /// `reason` ∈ `not_found`, `archived`, `closed`, `stripe`, `paypal`,
+    /// `currency`.
+    #[error("Compte de versement refusé ({reason})")]
+    StripePayoutAccountInvalid {
+        bank_account_id: i64,
+        reason: &'static str,
+    },
+
     // ----- Story 34-11a2 (#972) — la carte de crédit -----
     /// Le nom ou la description d'un compte bancaire porte un **numéro de carte
     /// complet** (`kesh_core::card_number`, C-e341-15) → `400
@@ -3690,6 +3711,40 @@ impl IntoResponse for AppError {
                     }
                 });
                 (StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response()
+            }
+
+            AppError::StripeCsvInvalid { reason, details } => {
+                let mut details = details.clone();
+                if let serde_json::Value::Object(map) = &mut details {
+                    map.insert("reason".into(), serde_json::json!(reason));
+                }
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "STRIPE_CSV_INVALID",
+                        "message": t(
+                            "error-stripe-csv-invalid",
+                            "Ce fichier n'est pas un rapport Stripe « Itemized payout reconciliation » lisible. Rien n'a été importé.",
+                        ),
+                        "details": details,
+                    }
+                });
+                (StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response()
+            }
+            AppError::StripePayoutAccountInvalid {
+                bank_account_id,
+                reason,
+            } => {
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "STRIPE_PAYOUT_ACCOUNT_INVALID",
+                        "message": t(
+                            "error-stripe-payout-account-invalid",
+                            "Le compte de versement doit être un compte bancaire de la société, ouvert, sans prestataire Stripe ni PayPal, dans la même devise que le solde Stripe.",
+                        ),
+                        "details": { "bankAccountId": bank_account_id, "reason": reason }
+                    }
+                });
+                (StatusCode::BAD_REQUEST, Json(body)).into_response()
             }
 
             // ----- Story 8-2 — bank profiles + CSV import -----

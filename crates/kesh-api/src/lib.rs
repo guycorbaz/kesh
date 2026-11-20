@@ -961,6 +961,15 @@ pub fn build_router_avec_registre(
                 (state.config.bank_import_max_mib as usize) * 1024 * 1024,
             )),
         )
+        // Story 40-7b (Epic 40) : import du rapport Stripe « Itemized payout
+        // reconciliation » d'un compte Stripe, ventilé par devise (mêmes
+        // droits et même limite que l'import PayPal).
+        .route(
+            "/api/v1/stripe-imports",
+            post(routes::stripe_imports::create).layer(axum::extract::DefaultBodyLimit::max(
+                (state.config.bank_import_max_mib as usize) * 1024 * 1024,
+            )),
+        )
         // Story v016-2a (#816) : saisir un relevé à la main (Comptable+, clés
         // `read-write` comme l'import). Corps JSON borné par une limite PROPRE,
         // indépendante de `KESH_BANK_IMPORT_MAX_MB` (revue de code P1, E1) :

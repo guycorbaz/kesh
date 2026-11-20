@@ -51,7 +51,7 @@ use crate::errors::{DbError, map_db_error};
 /// [`find_by_id_in_tx`].
 macro_rules! columns {
     () => {
-        "id, company_id, bank_name, iban, qr_iban, account_kind, card_last4, is_primary, journal_account_id, version, archived, description, closed_on, provider, provider_account, fee_account_id, created_at, updated_at"
+        "id, company_id, bank_name, iban, qr_iban, account_kind, card_last4, is_primary, journal_account_id, version, archived, description, closed_on, provider, provider_account, fee_account_id, payout_bank_account_id, created_at, updated_at"
     };
 }
 
@@ -687,6 +687,8 @@ pub struct BankAccountPutFields<'a> {
     pub provider_account: Option<&'a str>,
     /// Story 38-11b — compte de charge des frais.
     pub fee_account_id: Option<i64>,
+    /// Story 40-7b — compte bancaire de versement (Stripe).
+    pub payout_bank_account_id: Option<i64>,
 }
 
 /// Met à jour TOUS les champs métier d'un bank_account (PUT v014-1).
@@ -779,7 +781,7 @@ pub async fn update_for_company(
 
     let rows = sqlx::query(
         "UPDATE bank_accounts SET bank_name = ?, iban = ?, qr_iban = ?, is_primary = ?, journal_account_id = ?, description = ?, card_last4 = ?, \
-         provider = ?, provider_account = ?, fee_account_id = ?, version = version + 1 \
+         provider = ?, provider_account = ?, fee_account_id = ?, payout_bank_account_id = ?, version = version + 1 \
          WHERE id = ? AND company_id = ? AND version = ?",
     )
     .bind(&new.bank_name)
@@ -792,6 +794,7 @@ pub async fn update_for_company(
     .bind(fields.provider)
     .bind(fields.provider_account)
     .bind(fields.fee_account_id)
+    .bind(fields.payout_bank_account_id)
     .bind(id)
     .bind(company_id)
     .bind(expected_version)
@@ -1737,6 +1740,71 @@ pub async fn list_provider_balances_locked(
             }
         })
         .collect())
+}
+
+/// Les faits d'un compte bancaire désigné comme **destination de versement**
+/// d'un compte Stripe — Story 40-7b (AC-2).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PayoutDestination {
+    /// Le compte est archivé.
+    pub archived: bool,
+    /// Le compte est clos (`closed_on` posé).
+    pub closed: bool,
+    /// Le prestataire du compte (`None` = compte bancaire ordinaire).
+    pub provider: Option<String>,
+    /// Devise du compte du plan lié (`None` = CHF ou aucun compte lié).
+    pub ledger_currency: Option<String>,
+}
+
+impl PayoutDestination {
+    /// La devise du compte, `CHF` pour la monnaie de base.
+    pub fn currency(&self) -> &str {
+        self.ledger_currency.as_deref().unwrap_or(BASE_CURRENCY)
+    }
+}
+
+/// Lit, **sous verrou partagé**, les faits du compte bancaire `id` de la
+/// société, pour juger une destination de versement Stripe — Story 40-7b
+/// (AC-2). `None` si le compte n'existe pas ou appartient à une autre société.
+/// Deux instructions verrouillantes (le compte, puis son compte du plan), comme
+/// [`list_provider_balances_locked`] : aucune lecture ordinaire, pour ne pas
+/// ouvrir l'instantané avant l'écriture d'ouverture du `POST`.
+pub async fn payout_destination_locked(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    id: i64,
+) -> Result<Option<PayoutDestination>, DbError> {
+    let Some(account) = sqlx::query_as::<_, BankAccount>(concat!(
+        "SELECT ",
+        columns!(),
+        " FROM bank_accounts WHERE company_id = ? AND id = ? LOCK IN SHARE MODE",
+    ))
+    .bind(company_id)
+    .bind(id)
+    .fetch_optional(&mut *conn)
+    .await
+    .map_err(map_db_error)?
+    else {
+        return Ok(None);
+    };
+    let ledger_currency = match account.journal_account_id {
+        Some(ledger_id) => sqlx::query_scalar::<_, Option<String>>(
+            "SELECT currency FROM accounts WHERE company_id = ? AND id = ? LOCK IN SHARE MODE",
+        )
+        .bind(company_id)
+        .bind(ledger_id)
+        .fetch_optional(&mut *conn)
+        .await
+        .map_err(map_db_error)?
+        .flatten(),
+        None => None,
+    };
+    Ok(Some(PayoutDestination {
+        archived: account.archived,
+        closed: account.is_closed(),
+        provider: account.provider_settings.provider.clone(),
+        ledger_currency,
+    }))
 }
 
 /// Le drapeau `is_primary` du compte `id`, lu **sous `FOR UPDATE`** dans la
