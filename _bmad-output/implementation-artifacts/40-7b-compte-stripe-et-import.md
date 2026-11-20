@@ -1,6 +1,6 @@
 # Story 40-7b : réglages du compte Stripe et import du rapport, ventilé par devise (migration de l'epic)
 
-Status: ready-for-dev
+Status: review
 
 *Fiche rédigée le 2026-11-20, branche `epic/40-stripe`, numéros de ligne relevés sur `origin/main` au commit `fd04099f`.
 Epic 40, **phase 1 KISS** (décision de Beat du 2026-11-20). **Dépend de** : 40-7a (lecteur) ; la **phase 1 de l'Epic 38
@@ -160,15 +160,15 @@ par devise, sans doublon, afin que chaque mouvement du solde Stripe attende son 
 
 ## Tâches
 
-- [ ] T0 — Reprendre `main`, les phases 1 des Epics 38 et 39 fusionnées ; relire au code : contrainte `provider`
+- [x] T0 — Reprendre `main`, les phases 1 des Epics 38 et 39 fusionnées ; relire au code : contrainte `provider`
   (`'stripe'` admis ?), objet des réglages et codes (`PAYPAL_*` ou `PROVIDER_*`), prédicat « compte prestataire » des
   cinq refus, cœur d'import commun ; date de la migration ; preuve MariaDB de la FK `RESTRICT` + CHECK sur la même
   colonne.
-- [ ] T1 — Migration, squash, audit, test de migration (AC-1).
-- [ ] T2 — Entité, dépôt, réglages Stripe aux routes des comptes bancaires (AC-2, AC-3).
-- [ ] T3 — Chemin d'import commun, déplacé de PayPal s'il le faut (AC-7).
-- [ ] T4 — Route, ventilation, versements, doublons, compte rendu (AC-4 à AC-6).
-- [ ] T5 — Sauvegarde, export, i18n (AC-8).
+- [x] T1 — Migration, squash, audit, test de migration (AC-1).
+- [x] T2 — Entité, dépôt, réglages Stripe aux routes des comptes bancaires (AC-2, AC-3).
+- [x] T3 — Chemin d'import commun, déplacé de PayPal s'il le faut (AC-7).
+- [x] T4 — Route, ventilation, versements, doublons, compte rendu (AC-4 à AC-6).
+- [x] T5 — Sauvegarde, export, i18n (AC-8).
 
 ## Stratégie de tests
 
@@ -231,3 +231,66 @@ s'importe d'un geste, ventilé par devise ; les doublons sont ignorés.
 - 2026-11-20 — complément P2 (Claude Opus 5.5), sur relevé de la P2 de l'Epic 39 : l'AC-6 dit qu'il n'y a pas de règle
   de continuité pour Stripe (rapport sans solde), et qu'une règle future lirait le chevauchement comme la 39-11b
   (`overlapping_statements`, puis `previous_statement_closing`).
+
+## Dev Agent Record
+
+### Implémentation (développement du 2026-11-20 / 21, branche `story/40-7b`)
+
+- **T0 (relu au code, sur `epic/40-stripe` + 38-11b)** : la contrainte `chk_bank_accounts_provider` admet déjà `'stripe'`
+  (migration `20261120000001`) ; la phase 1 de l'Epic 39 (39-11b) **n'est pas** dans la branche : pas d'objet générique, pas de
+  codes `PROVIDER_*` renommés au-delà de ceux de 38-11b (déjà génériques) ; les six refus `BANK_ACCOUNT_IS_PROVIDER` jugent
+  `provider IS NOT NULL` (`is_provider()`), rien à unifier (C-40-7b-3) ; 96 migrations avant, 97 après. FK `RESTRICT` + CHECK
+  sur la même colonne, rejeu hors sqlx et SQL de retour joués sur MariaDB 10.11 (`kesh-gate-logs/s40-7b/T0.log`).
+- **T1** : `20261120000003_stripe_import.sql` (une instruction), squash régénéré (`scripts/regen-test-schema.sh`, 97 migrations),
+  `migrations.sha384`, audit P5 (97 : en-tête et `Total` ; partitions 13 `yes` + 84 `tracked-by-sqlx`, recomptées), P6
+  (`migrations_upgrade_path.rs` : `total == 97`, fenêtre `total - 63`, frontière 34 ; les autres sites résolvent par version),
+  `account_columns_inventory.rs` (colonne `*_account_id` vers `bank_accounts`), `stripe_import_schema.rs`.
+  ⚠️ **Écart à la fiche** : la CHECK s'écrit `payout IS NULL OR (provider IS NOT NULL AND BINARY provider = 'stripe')` ; la forme
+  de la fiche laissait passer une destination sur un compte sans prestataire (CHECK NULL, satisfaite) (C-40-7b-4).
+- **T2** : entité (`StripeSettings`, `ProviderSettings`, `payout_bank_account_id`), dépôt (`payout_destination_locked`,
+  colonne aux `SELECT`/`UPDATE`), routes des comptes bancaires : corps `stripe` à côté de `paypal` (C-40-7b-1), **mêmes**
+  fonctions de garde (`ProviderSettings`), garde du compte de versement `check_payout_destination_in_tx`, garde 5 étendue au
+  changement de prestataire, audit.
+- **T3** : cœur d'import commun. **Aligné sur la forme de la 38-12a** (consigne du coordinateur) : `routes/provider_imports.rs`
+  et `routes/paypal_imports.rs` **recopiés** depuis `kesh-wt38p2` (état non commité lu le 2026-11-21), noms `ProviderLine`,
+  `ImportRequest`, `ImportSource`, `load_balances`, `import_lines`, `dedupe_lines`, `CurrencyReport`. **Ce qui devra être fusionné** (écarts
+  à la copie de la 38-12a) : (1) `ProviderLine.value_date: Option<NaiveDate>` (Stripe : `available_on`), pris par
+  `into_new_bank_transaction` ; une ligne `value_date: None` dans `paypal_imports.rs::provider_lines_of_row` et dans le
+  helper de test de `provider_imports.rs` ; (2) `provider_imports.rs` : section d'aides ajoutée avant `mod tests`
+  (`DETAILS_MAX_CHARS`, `NAME_MAX_CHARS`, `PROVIDER_TYPE_MAX_CHARS`, `FILENAME_MAX_BYTES`, `TXID_COLUMN_MAX_CHARS`, `FEE_SUFFIX`,
+  `truncate_chars`, `truncate_bytes`, `bounded`, `ProviderImportForm`, `parse_form`) — `paypal_imports.rs` garde ses copies privées
+  (à replier sur ces aides à l'intégration) ; (3) deux retouches de tests de `paypal_imports.rs` pour le compilateur et clippy
+  (`let lignes = provider_lines_of_row(&rows[2])` : temporaire emprunté ; tableau au lieu de `vec!`). Le paramètre futur
+  `rules: Option<&dyn DuplicateRules>` (Wise) s'ajoutera à `ImportRequest` sans toucher Stripe (`None`). Première version écrite
+  (`run` / `ProviderImport` / `ProviderEntry`) abandonnée au profit de cette forme.
+- **T4** : `routes/stripe_imports.rs` (route `POST /api/v1/stripe-imports`, `lib.rs`), `lines_of_currency` (brut, frais `−fee`,
+  versement `−Σ net`, Σ nul non créé), `check_id_lengths`, `csv_error` (hint `source_id|charge_id`), erreurs
+  `STRIPE_CSV_INVALID` et `STRIPE_PAYOUT_ACCOUNT_INVALID`.
+- **T5** : export CSV (`payout_bank_account_id`), sauvegarde (aller-retour et sauvegarde de la version précédente,
+  `admin_full_import_e2e.rs` ; `ABSENCES_ADMISES_EPIC_37` non touchée), i18n quatre locales (3 clés), registre d'audit
+  (159 routes, 151 tracées, 163 avec les routes de test), phrase du manuel d'administration (`.tex`, 151 des 159 ; 151 + 4 + 4
+  = 159), `docs/api-external.md`.
+
+### Tests ajoutés (recomptés depuis la source, périmètre : `git diff epic/40-stripe...story/40-7b`)
+
+Voir « Gates » ci-dessous pour ce qui a **tourné**.
+
+### Limites et points hors périmètre relevés
+
+- Archiver (non supprimer) un compte désigné comme destination de versement n'est pas refusé : la garde `archived` ne vaut qu'à
+  la pose ; à tracer en issue.
+- Aucun contrôle ne voit un rapport filtré par catégorie (écrit à la fiche et à l'API ; le manuel utilisateur relève de la 40-7d).
+- Manuel utilisateur (`.tex`) : non touché (écrans et manuel : 40-7d) ; manuel d'administration : une phrase (compte du registre).
+
+## Change Log
+
+- 2026-11-21 — développement de la story (Claude Sonnet 5.5) : migration, réglages Stripe, cœur d'import commun aligné sur la
+  38-12a, route d'import Stripe, sauvegarde, API, registre, i18n ; statut `review`.
+
+## Notes de version
+
+*Ajouté* — Un compte bancaire peut être le solde, dans une devise, d'un compte Stripe : sans IBAN, lié au compte de transit de
+la devise, avec son compte de frais et son compte de versement. Le rapport « Itemized payout reconciliation » s'importe d'un
+geste (`POST /api/v1/stripe-imports`), ventilé par devise ; les doublons sont ignorés.
+*Migration* — `20261120000003_stripe_import`, non breaking : la sauvegarde d'avant la mise à jour reste exigée (base,
+`.keshbackup`, dossier des documents) ; le retour à la version précédente passe par elle.
