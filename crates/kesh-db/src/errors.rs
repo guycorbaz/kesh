@@ -1619,6 +1619,20 @@ pub enum DbError {
         bank_account_id: i64,
     },
 
+    /// Le compte bancaire choisi est le solde d'un **prestataire** (PayPal) —
+    /// Story 38-11b (AC-3). Il ne reçoit ni règlement de facture client ni
+    /// paiement de facture fournisseur (limite de la phase 1 : passer par un
+    /// compte interne ou une écriture, puis rattacher la transaction). Levé par
+    /// `invoice_settlements_write::settle_invoice` et
+    /// `supplier_invoices::pay_in_tx_as` sur la ligne du compte lue sous verrou,
+    /// et par les routes des imports bancaires génériques (CAMT, CSV, saisie
+    /// manuelle). Mappé vers HTTP **409** `BANK_ACCOUNT_IS_PROVIDER`.
+    #[error("Le compte bancaire {bank_account_id} est le solde d'un prestataire de paiement")]
+    BankAccountIsProvider {
+        /// Le compte bancaire en cause.
+        bank_account_id: i64,
+    },
+
     /// Un rôle de compte **singleton** est déjà porté par un autre compte actif
     /// de la même société (Story 14-3a).
     ///
@@ -2488,6 +2502,7 @@ impl DbError {
             Self::AccountDesignatedInSettings { .. } => "ACCOUNT_DESIGNATED_IN_SETTINGS",
             Self::AccountLinkedToBankAccount { .. } => "ACCOUNT_LINKED_TO_BANK_ACCOUNT",
             Self::SettlementAccountIsCreditCard { .. } => "SETTLEMENT_ACCOUNT_IS_CREDIT_CARD",
+            Self::BankAccountIsProvider { .. } => "BANK_ACCOUNT_IS_PROVIDER",
             Self::AccountRoleAlreadyAssigned { .. } => "ACCOUNT_ROLE_ALREADY_ASSIGNED",
             Self::AccountParentArchived { .. } => "ACCOUNT_PARENT_ARCHIVED",
             Self::AccountRoleInvalidForType { .. } => "ACCOUNT_ROLE_INVALID_FOR_TYPE",

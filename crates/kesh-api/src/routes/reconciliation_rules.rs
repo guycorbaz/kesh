@@ -284,6 +284,9 @@ pub async fn post_create(
         counterparty_account_id: req.counterparty_account_id,
         priority: req.priority,
         default_project_id: req.default_project_id,
+        counterparty_email: None,
+        direction: None,
+        provider_type: None,
     };
     let match_type_for_err = req.match_type;
     let match_value_for_err = new_rule.match_value.clone();
@@ -406,6 +409,9 @@ pub async fn patch(
         priority: req.priority,
         active: req.active,
         default_project_id: req.default_project_id,
+        counterparty_email: None,
+        direction: None,
+        provider_type: None,
     };
 
     let match_type_for_err = current.match_type;

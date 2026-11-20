@@ -505,6 +505,8 @@ fn make_new_tx(
         transaction_id: None,
         counterparty_iban: None,
         counterparty_name: counterparty_name.map(String::from),
+        counterparty_email: None,
+        provider_type: None,
     }
 }
 

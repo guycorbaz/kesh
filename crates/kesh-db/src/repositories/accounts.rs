@@ -648,6 +648,27 @@ pub async fn type_in_share_mode(
     Ok(row.map(|(currency, account_type, active)| (account_type, active, currency)))
 }
 
+/// Story 38-11b (AC-2) — ce qu'il faut savoir d'un compte pour en faire le
+/// **compte de frais** d'un compte PayPal : `(type, actif, imputable, devise)`,
+/// lu dans la transaction de l'appelant **sous verrou partagé**, comme
+/// [`type_in_share_mode`] (même ordre : après les réglages, avant
+/// `bank_accounts`). `None` si la ligne est absente ou d'une autre société.
+pub async fn fee_account_facts_in_share_mode(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    account_id: i64,
+) -> Result<Option<(AccountType, bool, bool, Option<String>)>, DbError> {
+    sqlx::query_as(
+        "SELECT account_type, active, postable, currency FROM accounts \
+         WHERE id = ? AND company_id = ? LOCK IN SHARE MODE",
+    )
+    .bind(account_id)
+    .bind(company_id)
+    .fetch_optional(conn)
+    .await
+    .map_err(map_db_error)
+}
+
 /// Le premier compte bancaire **non archivé** lié au compte `account_id` dont le
 /// type n'admet pas `new_type`, par `id` — `(id, nom d'affichage)` — Story
 /// 34-11a2 (#972, C-e341-31). Lecture `LOCK IN SHARE MODE` : elle voit la

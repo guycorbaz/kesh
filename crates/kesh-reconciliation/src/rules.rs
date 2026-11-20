@@ -177,6 +177,8 @@ mod tests {
                 .unwrap()
                 .and_hms_opt(0, 0, 0)
                 .unwrap(),
+            counterparty_email: None,
+            provider_type: None,
         }
     }
 
@@ -209,6 +211,9 @@ mod tests {
                 .unwrap()
                 .and_hms_opt(0, 0, 0)
                 .unwrap(),
+            counterparty_email: None,
+            direction: None,
+            provider_type: None,
         }
     }
 

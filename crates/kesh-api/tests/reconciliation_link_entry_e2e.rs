@@ -650,6 +650,8 @@ impl Ctx {
                 transaction_id: None,
                 counterparty_iban: None,
                 counterparty_name: Some("Contrepartie SA".into()),
+                counterparty_email: None,
+                provider_type: None,
             }],
         )
         .await
@@ -1680,6 +1682,8 @@ async fn ac8_une_autre_societe_ne_voit_rien(pool: MySqlPool) {
             transaction_id: None,
             counterparty_iban: None,
             counterparty_name: None,
+            counterparty_email: None,
+            provider_type: None,
         }],
     )
     .await
@@ -2773,6 +2777,8 @@ async fn banc_cout_propositions_deja_comptabilisees(pool: MySqlPool) {
                 transaction_id: None,
                 counterparty_iban: None,
                 counterparty_name: Some(format!("Contrepartie {k}")),
+                counterparty_email: None,
+                provider_type: None,
             }
         })
         .collect();

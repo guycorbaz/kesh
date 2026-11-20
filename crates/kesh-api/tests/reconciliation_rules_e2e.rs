@@ -288,6 +288,8 @@ async fn create_pending_bank_tx(
             transaction_id: None,
             counterparty_iban: counterparty_iban.map(|s| s.into()),
             counterparty_name: Some(counterparty_name.into()),
+            counterparty_email: None,
+            provider_type: None,
         }],
     )
     .await

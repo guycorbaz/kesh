@@ -675,6 +675,8 @@ pub async fn set_bank_account(
         kesh_db::entities::BankAccountKind::Bank,
         requested_ledger,
         true,
+        // Story 38-11b (AC-3) — l'assistant ne crée jamais un compte PayPal.
+        false,
     )
     .await?;
     let details = bank_accounts::PrimaryDetails {

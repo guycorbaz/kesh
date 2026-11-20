@@ -7306,6 +7306,8 @@ mod batch_classification_tests {
             version: 1,
             created_at: at,
             updated_at: at,
+            counterparty_email: None,
+            provider_type: None,
         }
     }
 

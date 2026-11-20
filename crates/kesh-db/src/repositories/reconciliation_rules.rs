@@ -25,7 +25,8 @@ use crate::errors::{DbError, map_db_error};
 use crate::repositories::audit_log;
 
 const COLUMNS: &str = "id, company_id, label, match_type, match_value, counterparty_account_id, \
-     priority, active, default_project_id, applied_count, last_applied_at, version, created_at, updated_at";
+     priority, active, default_project_id, provider_type, counterparty_email, direction, \
+     applied_count, last_applied_at, version, created_at, updated_at";
 
 /// Détecte si un [`DbError::UniqueConstraintViolation`] provient de la
 /// contrainte `uq_reconciliation_rules_match_active`. Le message MariaDB
@@ -216,8 +217,9 @@ pub async fn create_in_tx(
 
     let result = sqlx::query(
         "INSERT INTO reconciliation_rules \
-         (company_id, label, match_type, match_value, counterparty_account_id, priority, default_project_id) \
-         VALUES (?, ?, ?, ?, ?, ?, ?)",
+         (company_id, label, match_type, match_value, counterparty_account_id, priority, default_project_id, \
+          provider_type, counterparty_email, direction) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(company_id)
     .bind(&new_rule.label)
@@ -226,6 +228,9 @@ pub async fn create_in_tx(
     .bind(new_rule.counterparty_account_id)
     .bind(new_rule.priority)
     .bind(new_rule.default_project_id)
+    .bind(&new_rule.provider_type)
+    .bind(&new_rule.counterparty_email)
+    .bind(&new_rule.direction)
     .execute(&mut **tx)
     .await
     .map_err(map_db_error)?;
@@ -351,6 +356,16 @@ pub async fn update_in_tx(
     if patch.default_project_id.is_some() {
         set_clauses.push("default_project_id = ?");
     }
+    // Story 38-11b — les trois filtres facultatifs (écrits par 38-11c1).
+    if patch.provider_type.is_some() {
+        set_clauses.push("provider_type = ?");
+    }
+    if patch.counterparty_email.is_some() {
+        set_clauses.push("counterparty_email = ?");
+    }
+    if patch.direction.is_some() {
+        set_clauses.push("direction = ?");
+    }
     // version est toujours incrémentée (sauf si patch totalement vide,
     // auquel cas on évite un UPDATE inutile). On n'incrémente pas non
     // plus si rien à patcher pour ne pas perturber l'optimistic lock
@@ -385,6 +400,17 @@ pub async fn update_in_tx(
     if let Some(v) = patch.default_project_id {
         // `Some(None)` efface (bind NULL), `Some(Some(id))` affecte.
         q = q.bind(v);
+    }
+    for v in [
+        &patch.provider_type,
+        &patch.counterparty_email,
+        &patch.direction,
+    ]
+    .into_iter()
+    .flatten()
+    {
+        // Même ordre que les clauses ci-dessus ; `Some(None)` lie NULL.
+        q = q.bind(v.clone());
     }
     q = q.bind(id).bind(company_id).bind(expected_version);
 

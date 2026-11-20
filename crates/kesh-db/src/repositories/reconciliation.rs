@@ -112,10 +112,8 @@ pub struct UnpaidInvoiceCandidate {
 }
 
 /// Colonnes BankTransaction pour SELECT (cohérent bank_transactions::COLUMNS).
-const BANK_TX_COLUMNS: &str = "id, company_id, import_id, bank_account_id, booking_date, value_date, \
-     amount, currency, reference, details, end_to_end_id, transaction_id, \
-     counterparty_iban, counterparty_name, status, matched_entry_id, \
-     auto_match_rejected_at, version, created_at, updated_at";
+/// Story 38-11b — reprend la source unique, non plus une copie.
+const BANK_TX_COLUMNS: &str = super::bank_transactions::COLUMNS;
 
 /// Un paiement règle une facture au plus **30 jours après sa date
 /// d'ancrage** — la plus tardive de sa date, de son échéance et de son
@@ -1367,6 +1365,8 @@ mod tests {
             version: 1,
             created_at: at,
             updated_at: at,
+            counterparty_email: None,
+            provider_type: None,
         }
     }
 
