@@ -462,7 +462,8 @@ async fn sous_son_ancien_compte_propre_retire_dans_le_meme_put(pool: MySqlPool) 
     assert_eq!(apres.fx_gain_account_id, Some(g2));
     assert!(!lire(&pool, g).await.postable);
 
-    // `g2` est désigné par le compte 1023 et par `eur` : `eur2` ne se range pas dessous.
+    // `g2` est désigné par le compte 1023, par `eur` (après le `PUT` ci-dessus) et
+    // par `eur2` lui-même : `eur2` ne se range pas dessous.
     match poser(
         &pool,
         &s,
