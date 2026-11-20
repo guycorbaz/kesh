@@ -121,7 +121,7 @@ pub struct ReconciliationRule {
     /// création/édition de la règle **et** re-validé à l'accept (le projet a
     /// pu être archivé entre-temps).
     pub default_project_id: Option<i64>,
-    /// Story 38-11b (AC-1) — filtre facultatif, servi par 38-11c1 : le type de
+    /// Story 38-11b (AC-1) — filtre facultatif, appliqué depuis la 38-11c1 : le type de
     /// la transaction chez le prestataire (`Type` PayPal). `None` = sans filtre.
     pub provider_type: Option<String>,
     /// Story 38-11b — filtre facultatif : adresse électronique de la
@@ -152,8 +152,9 @@ pub struct NewReconciliationRule {
     /// Projet analytique par défaut (Story 19-5). Validé par le repository
     /// (`create_in_tx`) via `projects::validate_taggable_in_tx` si `Some`.
     pub default_project_id: Option<i64>,
-    /// Story 38-11b — filtres facultatifs (voir [`ReconciliationRule`]) ;
-    /// l'API de la phase 1 les passe à `None`, 38-11c1 les écrit.
+    /// Story 38-11b — filtres facultatifs (voir [`ReconciliationRule`]),
+    /// écrits par l'API depuis la 38-11c1, validés et normalisés à la route
+    /// (`kesh_reconciliation::rules::filters_match` les applique).
     pub provider_type: Option<String>,
     pub counterparty_email: Option<String>,
     pub direction: Option<String>,

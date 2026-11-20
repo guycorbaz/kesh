@@ -30,6 +30,18 @@
 //! (`with_account_locks`), sur une connexion dédiée ; l'écriture se fait dans
 //! une **seconde** transaction, une seule pour toutes les devises (tout ou
 //! rien), patron de `create_under_account_lock`.
+//!
+//! **Rejeu sur interblocage** (Story 38-11c1, relevé P2-L1 de la revue de la
+//! 38-11b) : la prise des verrous et l'écriture forment **une** tentative
+//! ([`import_under_locks`]), rejouée par `retry_app_on_deadlock` (opération
+//! `paypal_imports::create`). La relecture verrouillante des soldes
+//! ([`recheck_targets_locked`]) pose ses verrous partagés sur les lignes
+//! `bank_accounts` de la société, puis l'`INSERT bank_imports` demande
+//! `companies` en partage par sa clé étrangère ; un `POST`, `PUT`, `PATCH` ou
+//! archivage de compte bancaire tient la sentinelle `companies` en exclusif
+//! puis demande une de ces lignes : interblocage, dont l'import, victime,
+//! rendait `500`. Rien n'est écrit hors de la transaction annulée : la
+//! tentative suivante relit tout sous les verrous.
 
 use std::collections::{BTreeMap, HashSet};
 
@@ -541,66 +553,18 @@ pub async fn create(
         .map(|b| b.account.id)
         .min()
         .expect("au moins un compte, contrôlé ci-dessus");
-    let mut lock_tx = state
-        .pool
-        .begin()
-        .await
-        .map_err(|e| AppError::Database(DbError::Sqlx(e)))?;
-    let mut outcome: Option<Result<Vec<CurrencyReport>, AppError>> = None;
-    let slot = &mut outcome;
-    let (pool, user, form_ref, targets_ref, skipped) = (
-        &state.pool,
-        &current_user,
-        &form,
-        &targets,
-        &ventilation.skipped,
-    );
-    let locked = with_account_locks(
-        &mut lock_tx,
-        company_id,
-        &ids,
-        MANUAL_STATEMENT_LOCK_TIMEOUT_SECS,
-        async move |_held| {
-            *slot = Some(
-                write_under_locks(pool, user, form_ref, targets_ref, skipped, audit_entity_id)
-                    .await,
-            );
-            Ok(())
-        },
-    )
-    .await;
-    drop(lock_tx);
-
-    let currencies = match (outcome, locked) {
-        (Some(written), Ok(())) => written?,
-        // L'écriture a conclu ; seul un `RELEASE_LOCK` a échoué (verrou rendu
-        // au retour de la connexion au pool, #842) : on rend son issue.
-        (Some(written), Err(e)) => {
-            tracing::error!(error = ?e, "import PayPal : libération des verrous en échec");
-            written?
-        }
-        (
-            None,
-            Err(ReconciliationError::AccountLocked {
-                bank_account_id,
-                timeout_secs,
-            }),
-        ) => {
-            return Err(AppError::ReconciliationAccountLocked {
-                bank_account_id,
-                timeout_secs,
-            });
-        }
-        (None, Err(ReconciliationError::Database(e))) => {
-            return Err(AppError::Database(DbError::Sqlx(e)));
-        }
-        (None, other) => {
-            tracing::error!(?other, "import PayPal : verrous des comptes non acquis");
-            return Err(AppError::Internal(
-                "verrous des comptes bancaires non acquis".to_string(),
-            ));
-        }
-    };
+    let currencies = crate::retry::retry_app_on_deadlock("paypal_imports::create", || {
+        import_under_locks(
+            &state.pool,
+            &current_user,
+            &form,
+            &targets,
+            &ventilation.skipped,
+            &ids,
+            audit_entity_id,
+        )
+    })
+    .await?;
 
     Ok((
         StatusCode::CREATED,
@@ -612,6 +576,71 @@ pub async fn create(
     ))
 }
 
+/// **Une tentative** de l'import (Story 38-11c1, P2-L1 de la 38-11b) : les
+/// verrous nommés des comptes `ids`, par identifiant croissant, sur une
+/// connexion dédiée, puis l'écriture ([`write_under_locks`]), conclue avant
+/// qu'ils soient rendus. Rejouée sur interblocage par l'appelant : une erreur
+/// sqlx sort en `AppError::Database(DbError::Sqlx(_))`, que reconnaît
+/// `crate::retry::is_app_deadlock`.
+async fn import_under_locks(
+    pool: &sqlx::MySqlPool,
+    current_user: &CurrentUser,
+    form: &PaypalImportForm,
+    targets: &[Target<'_>],
+    skipped: &SkippedLines,
+    ids: &[i64],
+    audit_entity_id: i64,
+) -> Result<Vec<CurrencyReport>, AppError> {
+    let mut lock_tx = pool
+        .begin()
+        .await
+        .map_err(|e| AppError::Database(DbError::Sqlx(e)))?;
+    let mut outcome: Option<Result<Vec<CurrencyReport>, AppError>> = None;
+    let slot = &mut outcome;
+    let locked = with_account_locks(
+        &mut lock_tx,
+        current_user.company_id,
+        ids,
+        MANUAL_STATEMENT_LOCK_TIMEOUT_SECS,
+        async move |_held| {
+            *slot = Some(
+                write_under_locks(pool, current_user, form, targets, skipped, audit_entity_id)
+                    .await,
+            );
+            Ok(())
+        },
+    )
+    .await;
+    drop(lock_tx);
+
+    match (outcome, locked) {
+        (Some(written), Ok(())) => written,
+        // L'écriture a conclu ; seul un `RELEASE_LOCK` a échoué (verrou rendu
+        // au retour de la connexion au pool, #842) : on rend son issue.
+        (Some(written), Err(e)) => {
+            tracing::error!(error = ?e, "import PayPal : libération des verrous en échec");
+            written
+        }
+        (
+            None,
+            Err(ReconciliationError::AccountLocked {
+                bank_account_id,
+                timeout_secs,
+            }),
+        ) => Err(AppError::ReconciliationAccountLocked {
+            bank_account_id,
+            timeout_secs,
+        }),
+        (None, Err(ReconciliationError::Database(e))) => Err(AppError::Database(DbError::Sqlx(e))),
+        (None, other) => {
+            tracing::error!(?other, "import PayPal : verrous des comptes non acquis");
+            Err(AppError::Internal(
+                "verrous des comptes bancaires non acquis".to_string(),
+            ))
+        }
+    }
+}
+
 /// Relit, **sous les verrous nommés** et par lectures verrouillantes, les
 /// soldes du compte PayPal, et refuse si les comptes visés ont changé depuis
 /// la lecture du pool — Story 38-11b, revue P1 (L1). Un `PUT` qui retire les
@@ -619,8 +648,11 @@ pub async fn create(
 /// ne prend pas le verrou nommé : sans cette relecture, l'import écrirait des
 /// transactions PayPal sur un compte devenu ordinaire. Le `PUT` tient la ligne
 /// en exclusif jusqu'à son commit ; la lecture partagée l'attend, puis voit son
-/// effet — ou le `PUT`, venu après, trouve les transactions et refuse (garde
-/// 5). Pour chaque devise visée : aucun solde → `422
+/// effet — ou le `PUT`, venu après le premier `INSERT`, trouve les transactions
+/// et refuse (garde 5). ⚠️ Entre cette relecture et le premier `INSERT`, un
+/// geste de compte bancaire qui tient la sentinelle `companies` et demande une
+/// ligne relue ici forme un **interblocage** (P2-L1 de la 38-11b) : l'import,
+/// victime, est rejoué ([`import_under_locks`]). Pour chaque devise visée : aucun solde → `422
 /// PROVIDER_CURRENCY_ACCOUNT_MISSING` ; deux → `409
 /// PROVIDER_CURRENCY_DUPLICATE` ; un autre compte que celui verrouillé → `409
 /// OPTIMISTIC_LOCK_CONFLICT` (à rejouer).

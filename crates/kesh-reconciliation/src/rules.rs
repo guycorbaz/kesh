@@ -3,9 +3,11 @@
 //! Helpers purs (zéro I/O) :
 //!
 //! - [`rule_matches`] : teste si une [`ReconciliationRule`] match une
-//!   [`BankTransaction`] selon son `match_type`. Sign-agnostic — une
-//!   rule s'applique aux crédits ET débits (Pass 1 P-H7 ECH-05 : NE
-//!   PAS hériter du sign filter 8-4 invoice).
+//!   [`BankTransaction`] selon son `match_type`, **et** ses filtres
+//!   facultatifs (Story 38-11c1, AC-2, AC-3 : type chez le prestataire,
+//!   e-mail exact, sens). Sans sens posé, une rule s'applique aux crédits ET
+//!   débits (Pass 1 P-H7 ECH-05 : NE PAS hériter du sign filter 8-4 invoice) ;
+//!   toutes les règles d'avant la 38-11c1 sont sans sens.
 //! - [`first_matching_rule`] : applique une liste ordonnée
 //!   `priority ASC, id ASC` (cf. [`kesh_db::repositories::reconciliation_rules::find_active_for_company`])
 //!   et retourne la première rule qui match ET dont
@@ -43,7 +45,66 @@ use std::collections::HashSet;
 ///   normalisation canonique (uppercase + strip whitespace) des deux
 ///   côtés (défense-en-profondeur — l'IBAN DB est censé être canonique
 ///   par construction au `post_create` rule).
+///
+/// Story 38-11c1 (AC-2, AC-3) : le critère **et** chaque filtre posé
+/// ([`filters_match`]) — le critère reste obligatoire, les filtres ne le
+/// remplacent pas.
 pub fn rule_matches(rule: &ReconciliationRule, tx: &BankTransaction) -> bool {
+    criterion_matches(rule, tx) && filters_match(rule, tx)
+}
+
+/// Les filtres facultatifs d'une règle (Story 38-11c1, AC-2, AC-3), chacun
+/// vrai s'il n'est pas posé :
+///
+/// - `provider_type` — égalité, après `trim` et sans casse ([`fn@normalize`]),
+///   avec [`BankTransaction::provider_type`] ;
+/// - `counterparty_email` — égalité, tout blanc retiré et en minuscules
+///   ([`normalize_email`]), avec [`BankTransaction::counterparty_email`] ;
+/// - `direction` — `credit` : montant > 0 ; `debit` : montant < 0 (un montant
+///   nul n'a pas de sens) ; toute autre valeur (exclue par
+///   `chk_reconciliation_rules_filters`) ne correspond à rien.
+///
+/// Une transaction sans champ prestataire (CAMT, CSV, saisie) ne satisfait
+/// jamais un filtre de type ou d'e-mail posé : une règle ainsi filtrée ne vaut
+/// que pour les transactions d'un prestataire.
+pub fn filters_match(rule: &ReconciliationRule, tx: &BankTransaction) -> bool {
+    let provider_type_ok = rule.provider_type.as_deref().is_none_or(|wanted| {
+        tx.provider_type
+            .as_deref()
+            .is_some_and(|got| normalize(got) == normalize(wanted))
+    });
+    let email_ok = rule.counterparty_email.as_deref().is_none_or(|wanted| {
+        tx.counterparty_email
+            .as_deref()
+            .is_some_and(|got| normalize_email(got) == normalize_email(wanted))
+    });
+    let direction_ok = match rule.direction.as_deref() {
+        None => true,
+        Some(DIRECTION_CREDIT) => tx.amount > rust_decimal::Decimal::ZERO,
+        Some(DIRECTION_DEBIT) => tx.amount < rust_decimal::Decimal::ZERO,
+        Some(_) => false,
+    };
+    provider_type_ok && email_ok && direction_ok
+}
+
+/// Sens « crédit » d'une règle (`reconciliation_rules.direction`).
+pub const DIRECTION_CREDIT: &str = "credit";
+/// Sens « débit » d'une règle (`reconciliation_rules.direction`).
+pub const DIRECTION_DEBIT: &str = "debit";
+
+/// Normalisation d'une adresse électronique (Story 38-11c1, AC-2) : **tout**
+/// blanc retiré, minuscules. Forme stockée par la route des règles, et forme
+/// comparée par [`filters_match`] des deux côtés.
+pub fn normalize_email(s: &str) -> String {
+    s.chars()
+        .filter(|c| !c.is_whitespace())
+        .collect::<String>()
+        .to_lowercase()
+}
+
+/// Le critère obligatoire d'une règle (`match_type`, `match_value`) — voir
+/// [`rule_matches`].
+fn criterion_matches(rule: &ReconciliationRule, tx: &BankTransaction) -> bool {
     use ReconciliationMatchType::*;
     match rule.match_type {
         CounterpartyContains => match_contains(tx.counterparty_name.as_deref(), &rule.match_value),
@@ -508,5 +569,127 @@ mod tests {
             Some(5),
             "must take first by id at equal priority (caller pré-trie via SQL)"
         );
+    }
+
+    // Story 38-11c1 (AC-2, AC-3) — les filtres facultatifs et le sens.
+
+    /// Une transaction PayPal : type, e-mail et montant donnés.
+    fn tx_paypal(
+        provider_type: Option<&str>,
+        counterparty_email: Option<&str>,
+        amount: &str,
+    ) -> BankTransaction {
+        let mut tx = make_tx(Some("Boutique SA"), None, None, None, None);
+        tx.provider_type = provider_type.map(String::from);
+        tx.counterparty_email = counterparty_email.map(String::from);
+        tx.amount = Decimal::from_str(amount).unwrap();
+        tx
+    }
+
+    fn rule_boutique() -> ReconciliationRule {
+        make_rule(
+            1,
+            ReconciliationMatchType::CounterpartyContains,
+            "boutique",
+            1,
+            100,
+            true,
+        )
+    }
+
+    // Filtre de type : égalité après trim, sans casse ; transaction sans type
+    // (CAMT, CSV, saisie) jamais retenue.
+    #[test]
+    fn rule_filtered_by_provider_type() {
+        let mut rule = rule_boutique();
+        rule.provider_type = Some("  Express Checkout Payment ".into());
+        assert!(rule_matches(
+            &rule,
+            &tx_paypal(Some("express checkout payment"), None, "10.00")
+        ));
+        assert!(!rule_matches(
+            &rule,
+            &tx_paypal(Some("General Payment"), None, "10.00")
+        ));
+        assert!(!rule_matches(
+            &rule,
+            &tx_paypal(Some("Express Checkout"), None, "10.00")
+        ));
+        assert!(!rule_matches(&rule, &tx_paypal(None, None, "10.00")));
+        // Le critère reste exigé : un type juste ne suffit pas.
+        let mut autre = tx_paypal(Some("Express Checkout Payment"), None, "10.00");
+        autre.counterparty_name = Some("Autre SA".into());
+        assert!(!rule_matches(&rule, &autre));
+    }
+
+    // Filtre d'e-mail : égalité, tout blanc retiré et minuscules.
+    #[test]
+    fn rule_filtered_by_counterparty_email() {
+        let mut rule = rule_boutique();
+        rule.counterparty_email = Some("client@example.ch".into());
+        assert!(rule_matches(
+            &rule,
+            &tx_paypal(None, Some(" Client@Example.CH "), "10.00")
+        ));
+        assert!(!rule_matches(
+            &rule,
+            &tx_paypal(None, Some("client@example.com"), "10.00")
+        ));
+        assert!(!rule_matches(
+            &rule,
+            &tx_paypal(None, Some("autre.client@example.ch"), "10.00")
+        ));
+        assert!(!rule_matches(&rule, &tx_paypal(None, None, "10.00")));
+        assert_eq!(normalize_email(" A b@C.ch\t"), "ab@c.ch");
+    }
+
+    // Sens : `credit` → montant > 0, `debit` → < 0, `None` → les deux ; un
+    // montant nul n'a aucun sens posé ; une valeur inconnue ne vaut rien.
+    #[test]
+    fn rule_filtered_by_direction() {
+        let mut rule = rule_boutique();
+        let credit = tx_paypal(None, None, "10.00");
+        let debit = tx_paypal(None, None, "-10.00");
+        let nul = tx_paypal(None, None, "0.00");
+        assert!(rule_matches(&rule, &credit) && rule_matches(&rule, &debit));
+        rule.direction = Some(DIRECTION_CREDIT.into());
+        assert!(rule_matches(&rule, &credit));
+        assert!(!rule_matches(&rule, &debit));
+        assert!(!rule_matches(&rule, &nul));
+        rule.direction = Some(DIRECTION_DEBIT.into());
+        assert!(!rule_matches(&rule, &credit));
+        assert!(rule_matches(&rule, &debit));
+        assert!(!rule_matches(&rule, &nul));
+        rule.direction = Some("Credit".into());
+        assert!(!rule_matches(&rule, &credit));
+    }
+
+    // Tous les filtres ensemble, et une règle non filtrée qui retient une
+    // transaction sans champ prestataire.
+    #[test]
+    fn rule_with_all_filters_and_unfiltered_rule() {
+        let mut rule = rule_boutique();
+        rule.provider_type = Some("Express Checkout Payment".into());
+        rule.counterparty_email = Some("client@example.ch".into());
+        rule.direction = Some(DIRECTION_CREDIT.into());
+        let juste = tx_paypal(
+            Some("Express Checkout Payment"),
+            Some("client@example.ch"),
+            "25.00",
+        );
+        assert!(rule_matches(&rule, &juste));
+        let mut faux_sens = juste.clone();
+        faux_sens.amount = Decimal::from_str("-25.00").unwrap();
+        assert!(!rule_matches(&rule, &faux_sens));
+        let mut faux_mail = juste.clone();
+        faux_mail.counterparty_email = Some("x@example.ch".into());
+        assert!(!rule_matches(&rule, &faux_mail));
+        let mut faux_type = juste.clone();
+        faux_type.provider_type = Some("Refund".into());
+        assert!(!rule_matches(&rule, &faux_type));
+
+        let non_filtree = rule_boutique();
+        assert!(rule_matches(&non_filtree, &tx_paypal(None, None, "-3.00")));
+        assert!(filters_match(&non_filtree, &tx_paypal(None, None, "0.00")));
     }
 }

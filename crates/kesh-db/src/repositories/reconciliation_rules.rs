@@ -259,6 +259,9 @@ pub async fn create_in_tx(
                 "counterparty_account_id": new_rule.counterparty_account_id,
                 "priority": new_rule.priority,
                 "default_project_id": new_rule.default_project_id,
+                "provider_type": new_rule.provider_type,
+                "counterparty_email": new_rule.counterparty_email,
+                "direction": new_rule.direction,
                 "active": true,
             })),
         ),
@@ -356,7 +359,7 @@ pub async fn update_in_tx(
     if patch.default_project_id.is_some() {
         set_clauses.push("default_project_id = ?");
     }
-    // Story 38-11b — les trois filtres facultatifs (écrits par 38-11c1).
+    // Story 38-11b — les trois filtres facultatifs (écrits par l'API depuis la 38-11c1).
     if patch.provider_type.is_some() {
         set_clauses.push("provider_type = ?");
     }
@@ -440,6 +443,9 @@ pub async fn update_in_tx(
                     "priority": before.priority,
                     "active": before.active,
                     "default_project_id": before.default_project_id,
+                    "provider_type": before.provider_type,
+                    "counterparty_email": before.counterparty_email,
+                    "direction": before.direction,
                 },
                 "after": {
                     "label": after.label,
@@ -447,6 +453,9 @@ pub async fn update_in_tx(
                     "priority": after.priority,
                     "active": after.active,
                     "default_project_id": after.default_project_id,
+                    "provider_type": after.provider_type,
+                    "counterparty_email": after.counterparty_email,
+                    "direction": after.direction,
                 },
             })),
         ),
