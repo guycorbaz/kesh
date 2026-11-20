@@ -34,7 +34,7 @@ frais, versements, écarts —, sans doublon si j'ai déjà importé le CSV.
    `routes/bank_imports.rs:1688`, comme 38-12a AC-8). Le `POST` est inscrit à `LIB_ROUTES`
    (`crates/kesh-api/tests/audit_route_registry.rs:440`) en `Traced, SansEcritureAuJournal` ; dans cette story, le compte de
    `the_registry_partition_is_what_the_story_declares` (`:1082`) relevé de un avec sa raison et la phrase « N des M routes à
-   verbe mutant » du manuel d'administration (lue par `le_manuel_dit_le_compte_du_registre`, `:1194`) mise à jour, **ainsi que la phrase « N + E + R = M »** du même paragraphe (même test) et la quatrième assertion (`LIB_ROUTES.len() + TEST_ENDPOINT_ROUTES.len()`), comptes
+   verbe mutant » du manuel d'administration (lue par `le_manuel_dit_le_compte_du_registre`, `:1194`) mise à jour, **ainsi que la phrase « N + E + R = M »** du même paragraphe (même test) et les assertions à valeur littérale qui bougent (`LIB_ROUTES.len()` 157, `traced` 149, `LIB_ROUTES.len() + TEST_ENDPOINT_ROUTES.len()` 161 : relevées de un ; `exempt` et `no_matter` inchangés), comptes
    **recomptés** après les stories fusionnées avant (validation P2). Refus dans cet ordre, rien lancé : 403
    `API_KEY_OPERATION_FORBIDDEN` → 400 `VALIDATION_ERROR` → 404 `PROVIDER_ACCOUNT_NOT_FOUND` (40-7b ;
    plus de `STRIPE_ACCOUNT_NOT_FOUND`) → 422 `PROVIDER_API_NOT_CONFIGURED` (aucune paire d'environnement ne porte ce libellé,
@@ -133,7 +133,8 @@ limite de débit, parallélisme réglable (`KESH_STRIPE_PARALLEL`, 1 à 6) ; mê
   ici, compte du registre et phrase du manuel relevés dans cette story, clé d'API refusée en 403
   `API_KEY_OPERATION_FORBIDDEN` sur les deux routes (comme 38-12a), 409 avec `details: { provider, jobId }`, `details` seul
   nom, une entrée `bank_imports` et un `filename` par devise.
-- 2026-11-20 — validation P3 ciblée (Claude Sonnet 5.5, contexte frais ; rapport `kesh-gate-logs/epic-39-40-kiss/validation/39-40-phase2-P3-ciblee.md`) : registre (deux phrases du manuel, quatre assertions), tableaux de variables (§ `sec:env-vars` neuf, jamais SMTP), panique de tâche → `INTERNAL_ERROR`.
+- 2026-11-20 — validation P3 ciblée (Claude Sonnet 5.5, contexte frais ; rapport `kesh-gate-logs/epic-39-40-kiss/validation/39-40-phase2-P3-ciblee.md`) : registre (deux phrases du manuel, six `assert_eq!`), tableaux de variables (§ `sec:env-vars` neuf, jamais SMTP), panique de tâche → `INTERNAL_ERROR`.
+- 2026-11-20 — validation P4 ciblée (Claude Haiku 5.5, contexte frais ; rapport `kesh-gate-logs/epic-39-40-kiss/validation/39-40-phase2-P4-ciblee.md`) : recette 2 : le rejeu passe par `appel-reel.sh` tant que Q-39-16 n'est pas tranchée (Q-39-15 était déjà prise, IBAN) ; registre : six `assert_eq!` dont cinq littéraux, les deux phrases du manuel ; garde : noms sans numéro `KESH_Stripe_BASE_URL` / `_PARALLEL` inscrits ; `payout_total_mismatch` (code exact de 40-7c).
 - 2026-11-20 — validation P2, complément (Claude Opus 5.5)
  : cœur `ProviderLine` extrait par 38-12a (ou 40-7b), appelé ici ;
   manuel : deux tableaux de variables, au-delà de trois comptes.

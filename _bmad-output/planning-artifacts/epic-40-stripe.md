@@ -142,8 +142,7 @@ en propre : sa conversion, son jeu d'étapes, ses codes `<PRESTATAIRE>_*` propre
   phase 2 de chaque prestataire ; **la garde `crates/kesh-api/tests/configuration_transmise.rs` (#550)** exige qu'une variable soit lue
   si et seulement si elle est transmise, une ligne `.env.example` par variable lue et des noms `KESH_…` connus, et les noms construits
   par `format!` lui échappent : **38-12a y ajoute une famille indexée générique par prestataire** (séries 1 à 3 exigées, 4 à 9 admises
-  absentes avec raison, lectures de `provider_env` inscrites en forme exacte), Wise et Stripe y **inscrivent leur famille** (dont
-  `KESH_WISE_<n>_SCA_KEY_FILE`), sans relâcher aucune liste ; le manuel d'administration les porte dans **un tableau neuf du §
+  absentes avec raison, lectures de `provider_env` inscrites en forme exacte), Wise et Stripe y **inscrivent leur famille** (dont `KESH_WISE_<n>_SCA_KEY_FILE`) ; les noms **sans numéro** `KESH_<P>_BASE_URL` et `KESH_<P>_PARALLEL` (construits par `format!`, et lus par le parcours `std::env::vars()`) sont inscrits en forme exacte à `EMPLACEMENTS_AUTORISES`, leurs lignes de `.env.example` sont commentées ou vides, jamais `<…>`, sans relâcher aucune liste ; le manuel d'administration les porte dans **un tableau neuf du §
   `sec:env-vars`** (modèle `:840-862`) **et** dans le tableau de la section du prestataire — **jamais** le tableau SMTP (`:1155`) —,
   et dit comment aller au-delà de trois comptes (lignes à ajouter au compose) ; champs privés, `Debug` masqué ; un contrôle propre au prestataire
   s'y branche (clé Stripe `rk_`, fichier de clé SCA de Wise). Le libellé est **propre à l'installation**, non à la société.
@@ -159,8 +158,7 @@ en propre : sa conversion, son jeu d'étapes, ses codes `<PRESTATAIRE>_*` propre
   d'API non admises : un secret de l'Administrateur sort)** — refusées sur le `POST` et le `GET`, dans le gestionnaire, avant
   tout, en 403 `API_KEY_OPERATION_FORBIDDEN` (patron de `bank_imports::delete`) ; le `POST` est inscrit à `LIB_ROUTES`
   (`audit_route_registry.rs`) en `Traced, SansEcritureAuJournal`, et la story qui l'ajoute relève **dans le même commit** le
-  compte de `the_registry_partition_is_what_the_story_declares` (**quatre** assertions : `LIB_ROUTES.len()`, `traced`, et la somme
-  avec `TEST_ENDPOINT_ROUTES`) et **les deux phrases** du manuel d'administration lues par `le_manuel_dit_le_compte_du_registre` —
+  compte de `the_registry_partition_is_what_the_story_declares` (**six** `assert_eq!` : cinq valeurs littérales — `LIB_ROUTES.len()` = 157, `traced` = 149, `exempt` et `no_matter` = 4, `LIB_ROUTES.len() + TEST_ENDPOINT_ROUTES.len()` = 161 — et l'égalité de la partition) et **les deux phrases** du manuel d'administration lues par `le_manuel_dit_le_compte_du_registre` —
   « N des M routes à verbe mutant » **et** « N + E + R = M », même paragraphe (`.tex`) ; 202 `{ jobId }` ; `GET …/{jobId}` (société de
   l'appelant, sinon 404) → `{ state: running | done | failed, steps: { done, total: number | null }, pausedUntilSeconds,
   result, error: { code, message, details? } }` — **un seul nom, `details`**, dans l'état d'une tâche comme dans un refus
