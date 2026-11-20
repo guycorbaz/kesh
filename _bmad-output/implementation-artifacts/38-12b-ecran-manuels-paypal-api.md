@@ -78,8 +78,8 @@ Wise (39-12b) et Stripe (40-8b) les réutilisent.
    443) à l'hôte de PayPal, sans redirection, seulement quand un téléchargement est demandé. Les points **non
    confirmés** de la fiche 38-12a (nom exact de la fonction dans l'interface de PayPal, conditions d'accès du compte,
    hôte réel tant qu'il n'est pas relevé) sont écrits **comme à vérifier**, jamais comme acquis. Le PDF se contrôle à
-   la régénération de la release (`pdftotext … | tr '\n' ' '`). *(La phrase du registre des routes est mise à jour par
-   38-12a.)*
+   la régénération de la release (`pdftotext … | tr '\n' ' '`). *(Les deux phrases du registre des routes et les assertions de `audit_route_registry` sont mises à jour par
+   38-12a AC-8.)*
 6. **AC-6 — Manuel utilisateur** (`docs/manual/fr/user-manual.tex`, section PayPal de 38-11d) : le téléchargement, la
    période, le délai de trois heures et la date « à jour jusqu'à », la progression et la pause, ce qu'un échec veut dire
    (rien d'enregistré), le mélange avec le CSV (aucun doublon), la limite des dates (fuseau du compte PayPal, sans

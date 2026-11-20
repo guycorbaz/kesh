@@ -217,11 +217,15 @@ vers `PaypalRow`, la table des types et le passage `PaypalRow` → `ProviderLine
    clé d'API est refusée sur les deux, dans le gestionnaire, avant tout, en 403 `API_KEY_OPERATION_FORBIDDEN`
    (`AppError::ApiKeyOperationForbidden`, patron de `bank_imports::delete`, `routes/bank_imports.rs:1688`) — un secret de
    l'Administrateur sort ; une clé `read` est arrêtée avant par le middleware. Le `POST` est inscrit à `LIB_ROUTES`
-   (`crates/kesh-api/tests/audit_route_registry.rs`) en `Traced, SansEcritureAuJournal` ; le compte de
-   `the_registry_partition_is_what_the_story_declares` est relevé de un avec sa raison, et la phrase « N des M routes à
-   verbe mutant » du manuel d'administration (`docs/manual/fr/admin-manual.tex`, lue par
-   `le_manuel_dit_le_compte_du_registre`) mise à jour **dans cette story** (son gate la lit) — **`.tex` seul**, comptes
-   **recomptés** après ceux de 38-11b et 38-11c2. Refus du `POST` dans l'ordre, rien lancé : 403 (clé d'API) → 400
+   (`crates/kesh-api/tests/audit_route_registry.rs`) en `Traced, SansEcritureAuJournal`. **Toutes les assertions de
+   `the_registry_partition_is_what_the_story_declares` sont recomptées depuis la source** : `LIB_ROUTES.len()` (+ 1, la raison
+   ajoutée à son message), `traced` (+ 1, ajouté à son énumération), `LIB_ROUTES.len() + TEST_ENDPOINT_ROUTES.len()` (+ 1,
+   « 161 » à l'origine) ; `exempt` (4) et `no_matter` (4) inchangées ; la somme `traced + exempt + no_matter = len` reste
+   vraie. **Les deux phrases** que `le_manuel_dit_le_compte_du_registre` lit dans le manuel d'administration
+   (`docs/manual/fr/admin-manual.tex`, paragraphe de l'audit, `:3302` à `origin/main`), **chacune exactement une fois**, sont
+   mises à jour **dans cette story** (son gate les lit) : « N des M routes à verbe mutant » (N = `traced`, M = `len`) et
+   « N + E + R = M » (`149 + 4 + 4 = 157` à l'origine) — **`.tex` seul**, comptes **recomptés** après ceux de 38-11b et
+   38-11c2 et des autres epics fusionnés (même règle que le socle S3 de `epic-39-wise.md`). Refus du `POST` dans l'ordre, rien lancé : 403 (clé d'API) → 400
    `VALIDATION_ERROR` → 404 `PROVIDER_ACCOUNT_NOT_FOUND` (38-11b) → 422 `PROVIDER_API_NOT_CONFIGURED` (aucune série pour
    ce libellé) → 400 `PROVIDER_PERIOD_INVALID` (AC-4) → 409 `PROVIDER_DOWNLOAD_RUNNING` (une tâche tourne déjà pour ce
    prestataire, cette société et ce libellé ; `details: { provider, jobId }`, pour que l'écran reprenne le suivi) ;
@@ -366,4 +370,5 @@ rattrape, sans doublon.
   famille indexée ne couvrait pas `KESH_PAYPAL_BASE_URL` et `KESH_PAYPAL_PARALLEL` (noms sans numéro, construits eux aussi) —
   ajoutés à la famille, avec le parcours `env::vars()` à inscrire en forme exacte. LOW : lignes `.env.example` commentées ou
   vides (pas de gabarit `<…>`) ; décisions de l'orchestrateur appliquées — panique de tâche en `INTERNAL_ERROR`, `T1111`
-  (« Cancellation of hold for dispute resolution », relevé sur la page publique des codes) aux codes de départ.
+  (« Cancellation of hold for dispute resolution », relevé sur la page publique des codes) aux codes de départ. Ajout du coordinateur (P3 Wise/Stripe, M2) :
+  les deux phrases du manuel et les assertions du registre écrites en toutes lettres à l'AC-8.
