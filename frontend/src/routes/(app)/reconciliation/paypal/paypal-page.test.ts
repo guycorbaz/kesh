@@ -29,6 +29,9 @@ vi.mock('$lib/features/accounts/accounts.api', () => ({
 		{ id: 60, number: '6940', name: 'Frais PayPal', accountType: 'Expense', active: true, postable: true },
 	],
 }));
+vi.mock('$lib/features/reconciliation/rules/rules.api', () => ({
+	listRules: async () => ({ items: [{ id: 3, label: 'Hébergement' }], total: 1, limit: 200, offset: 0 }),
+}));
 vi.mock('$lib/features/reconciliation/reconciliation.api', () => ({
 	getLinkCandidates: vi.fn(async () => ({ bankTransactionId: 0, candidates: [] })),
 	getEntryCandidates: vi.fn(async () => ({ bankTransactionId: 0, candidates: [] })),
@@ -77,19 +80,35 @@ function paypalAccount(id: number, account: string): BankAccountSummary {
 	};
 }
 
-const tx = { amount: '10.00', currency: 'EUR', providerType: 'Website Payment', name: 'Client fictif', counterpartyEmail: null, transactionId: '0TESTTXN000001' };
+function tx(id: number, date: string, extra: Record<string, unknown> = {}) {
+	return {
+		id,
+		bankAccountId: 1,
+		date,
+		amount: '10.00',
+		currency: 'EUR',
+		providerType: 'Website Payment',
+		name: 'Client fictif',
+		transactionId: `0TESTTXN00000${id}`,
+		...extra,
+	};
+}
 
 function review(): PaypalReview {
 	return {
 		account: 'PayPal www',
 		fiscalYearId: 5,
 		proposals: [
-			{ ...tx, type: 'link_entry', bankTransactionId: 1, date: '2020-03-05', journalEntryId: 40, entryNumber: 12 },
-			{ ...tx, type: 'fee', bankTransactionId: 2, date: '2020-03-05', feeAccountId: 60, amount: '-0.65' },
-			{ ...tx, type: 'withdrawal', bankTransactionId: 3, date: '2020-03-06', currency: 'CHF', counterpartyAccountId: null },
+			{ type: 'link_entry', bankTransactionId: 1, journalEntryId: 40, transaction: tx(1, '2020-03-05'), entry: { journalEntryId: 40, entryNumber: 12, entryDate: '2020-03-04', description: 'Vente', ids: ['X'] } },
+			{ type: 'fee', bankTransactionId: 2, feeAccountId: 60, transaction: tx(2, '2020-03-05', { amount: '-0.65' }) },
+			{ type: 'withdrawal', bankTransactionId: 3, counterpartyAccountId: null, transaction: tx(3, '2020-03-06', { currency: 'CHF' }) },
+			{ type: 'rule', bankTransactionId: 6, ruleId: 3, counterpartyAccountId: 60, transaction: tx(6, '2020-03-09') },
 		],
-		gaps: [{ ...tx, kind: 'receipt_without_sale', bankTransactionId: 4, date: '2020-03-07' }],
-		toReview: [{ ...tx, reason: 'no_rule', bankTransactionId: 5, date: '2020-03-08', providerType: 'General Payment' }],
+		gaps: [
+			{ code: 'receipt_without_sale', transaction: tx(4, '2020-03-07') },
+			{ code: 'amount_or_currency_mismatch', transaction: tx(7, '2020-03-07'), entries: [{ journalEntryId: 41, entryNumber: 13, entryDate: '2020-03-07', description: 'Vente', ids: ['Y'] }], details: { expectedAmount: '10.00', expectedCurrency: 'EUR', foundAmount: '9.00', foundCurrency: 'EUR' } },
+		],
+		toReview: [{ code: 'no_rule', transaction: tx(5, '2020-03-08', { providerType: 'General Payment' }) }],
 	};
 }
 
@@ -116,6 +135,8 @@ describe('page PayPal (Story 38-11d)', () => {
 		await waitFor(() => expect(reviewMock).toHaveBeenCalledWith('PayPal www', 5));
 		expect(await r.findByTestId('paypal-proposal-1')).toBeTruthy();
 		expect(r.getByTestId('paypal-gap-receipt_without_sale').textContent).toContain('Encaissement sans vente');
+		expect(r.getByTestId('paypal-gap-details').textContent).toContain('Attendu 10.00 EUR, trouvé 9.00 EUR');
+		expect(r.getByTestId('paypal-proposal-6').textContent).toContain('Règle Hébergement');
 		expect(r.getByTestId('paypal-to-review-5').textContent).toContain('Aucune règle');
 	});
 
@@ -157,6 +178,7 @@ describe('page PayPal (Story 38-11d)', () => {
 		await fireEvent.click(r.getByTestId('paypal-select-all'));
 		expect((r.getByTestId('paypal-check-1') as HTMLInputElement).checked).toBe(true);
 		expect(retrait.checked).toBe(false);
+		await fireEvent.click(r.getByTestId('paypal-check-6'));
 		await fireEvent.change(r.getByTestId('paypal-withdrawal-3'), { target: { value: '20' } });
 		expect(retrait.disabled).toBe(false);
 		await fireEvent.click(retrait);
@@ -186,11 +208,10 @@ describe('page PayPal (Story 38-11d)', () => {
 	it('plus de 500 propositions : un paquet à la fois, compte rendu cumulé', async () => {
 		const many = review();
 		many.proposals = Array.from({ length: 501 }, (_, i) => ({
-			...tx,
 			type: 'fee' as const,
 			bankTransactionId: 100 + i,
-			date: '2020-03-05',
 			feeAccountId: 60,
+			transaction: tx(100 + i, '2020-03-05'),
 		}));
 		reviewMock.mockResolvedValue(many);
 		acceptMock.mockImplementation(async (_a: string, bodies: unknown[]) => ({

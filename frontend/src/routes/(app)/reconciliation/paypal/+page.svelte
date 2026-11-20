@@ -45,16 +45,19 @@
 		selectedBodies,
 		withdrawalAccountCandidates,
 	} from '$lib/features/paypal/paypal-review';
+	import { listRules } from '$lib/features/reconciliation/rules/rules.api';
 	import type {
 		PaypalFailedProposal,
+		PaypalFinding,
 		PaypalImportResponse,
 		PaypalReview,
-		PaypalToReview,
 	} from '$lib/features/paypal/paypal.types';
 
 	let bankAccounts = $state<BankAccountSummary[]>([]);
 	let fiscalYears = $state<FiscalYearResponse[]>([]);
 	let accounts = $state<AccountResponse[]>([]);
+	// Libellés des règles, par identifiant : la revue ne sert que `ruleId`.
+	let ruleLabels = $state<Map<number, string>>(new Map());
 	let loading = $state(true);
 	let loadError = $state<string | null>(null);
 
@@ -91,11 +94,17 @@
 	let withdrawalChoices = $derived(withdrawalAccountCandidates(withoutForeignCurrency(accounts)));
 
 	onMount(async () => {
-		const [ba, fy, acc] = await Promise.allSettled([
+		const [ba, fy, acc, rules] = await Promise.allSettled([
 			listBankAccounts(),
 			listFiscalYears(),
 			fetchAccounts(false),
+			listRules(1, 200),
 		]);
+		// Libellés des règles : best-effort, « Règle #id » sinon.
+		ruleLabels =
+			rules.status === 'fulfilled'
+				? new Map(rules.value.items.map((r) => [r.id, r.label]))
+				: new Map();
 		if (ba.status === 'fulfilled') bankAccounts = ba.value;
 		else loadError = errorMessageOf(ba.reason);
 		if (fy.status === 'fulfilled') fiscalYears = fy.value;
@@ -213,18 +222,41 @@
 		}
 	}
 
-	function openLink(item: PaypalToReview) {
+	/** Ouvre la modale de rattachement sur la transaction d'une ligne « à examiner ». */
+	function openLink(item: PaypalFinding) {
+		const t = item.transaction;
+		if (!t) return;
 		linkTarget = {
-			bankTransactionId: item.bankTransactionId,
+			bankTransactionId: t.id,
 			transaction: {
-				bookingDate: item.date,
+				bookingDate: t.date,
 				valueDate: null,
-				amount: item.amount,
-				currency: item.currency,
-				counterpartyName: item.name,
+				amount: t.amount,
+				currency: t.currency,
+				counterpartyName: t.name,
 			},
 		};
 		linkOpen = true;
+	}
+
+	/** La date d'un écart : celle de sa transaction, sinon de sa première écriture. */
+	function findingDate(f: PaypalFinding): string {
+		const d = f.transaction?.date ?? f.entries?.[0]?.entryDate;
+		return d ? formatSwissDate(d) : '';
+	}
+
+	/**
+	 * Ce qu'un écart « montant ou devise différents » attend et trouve (`details`),
+	 * `null` pour un autre écart ou des détails absents.
+	 */
+	function gapDetailsLine(g: PaypalFinding): string | null {
+		const d = g.details;
+		if (!d || g.code !== 'amount_or_currency_mismatch') return null;
+		const s = (k: string) => (d[k] === null || d[k] === undefined ? '' : String(d[k]));
+		return i18nMsg('paypal-gap-mismatch-details', 'Attendu { $expected }, trouvé { $found }', {
+			expected: `${s('expectedAmount')} ${s('expectedCurrency')}`.trim(),
+			found: `${s('foundAmount')} ${s('foundCurrency')}`.trim(),
+		});
 	}
 
 	function failedLabel(f: PaypalFailedProposal): string {
@@ -440,11 +472,16 @@
 										data-testid="paypal-check-{proposalTransactionId(p)}"
 									/>
 								</td>
-								<td class="py-2 pr-4 whitespace-nowrap">{formatSwissDate(p.date)}</td>
-								<td class="py-2 pr-4">{proposalKindLabel(p)}</td>
-								<td class="py-2 pr-4 text-right font-mono whitespace-nowrap">{p.amount} {p.currency}</td>
-								<td class="py-2 pr-4">{p.name ?? ''}</td>
-								<td class="py-2 pr-4 font-mono text-xs">{p.transactionId ?? ''}</td>
+								<td class="py-2 pr-4 whitespace-nowrap">{formatSwissDate(p.transaction.date)}</td>
+								<td class="py-2 pr-4">{proposalKindLabel(p, ruleLabels)}</td>
+								<td class="py-2 pr-4 text-right font-mono whitespace-nowrap">
+									{p.transaction.amount} {p.transaction.currency}
+									{#if p.otherTransaction}
+										<span class="block text-xs text-text-muted">{p.otherTransaction.amount} {p.otherTransaction.currency}</span>
+									{/if}
+								</td>
+								<td class="py-2 pr-4">{p.transaction.name ?? ''}</td>
+								<td class="py-2 pr-4 font-mono text-xs">{p.transaction.transactionId ?? ''}</td>
 								<td class="py-2">
 									{#if needsAccount}
 										<label class="sr-only" for="paypal-withdrawal-{key}">
@@ -494,17 +531,25 @@
 					</thead>
 					<tbody>
 						{#each review.gaps as g, i (i)}
-							<tr class="border-b border-border" data-testid="paypal-gap-{g.kind}">
-								<td class="py-2 pr-4 whitespace-nowrap">{g.date ? formatSwissDate(g.date) : g.entryDate ? formatSwissDate(g.entryDate) : ''}</td>
-								<td class="py-2 pr-4">{gapKindLabel(g.kind)}</td>
-								<td class="py-2 pr-4 text-right font-mono whitespace-nowrap">{g.amount ?? ''} {g.currency ?? ''}</td>
-								<td class="py-2 pr-4">{g.name ?? ''}</td>
-								<td class="py-2 pr-4 font-mono text-xs">{g.transactionId ?? g.saleTransactionId ?? ''}</td>
+							{@const entry = g.entries?.[0]}
+							<tr class="border-b border-border" data-testid="paypal-gap-{g.code}">
+								<td class="py-2 pr-4 whitespace-nowrap">{findingDate(g)}</td>
+								<td class="py-2 pr-4">
+									{gapKindLabel(g.code)}
+									{#if gapDetailsLine(g) !== null}
+										<span class="block text-xs text-text-muted" data-testid="paypal-gap-details">{gapDetailsLine(g)}</span>
+									{/if}
+								</td>
+								<td class="py-2 pr-4 text-right font-mono whitespace-nowrap">
+									{#if g.transaction}{g.transaction.amount} {g.transaction.currency}{/if}
+								</td>
+								<td class="py-2 pr-4">{g.transaction?.name ?? entry?.description ?? ''}</td>
+								<td class="py-2 pr-4 font-mono text-xs">{g.transaction?.transactionId ?? entry?.ids.join(', ') ?? ''}</td>
 								<td class="py-2">
-									{#if g.journalEntryId}
-										<a class="text-primary underline" href="/journal-entries/{g.journalEntryId}">
+									{#if entry}
+										<a class="text-primary underline" href="/journal-entries/{entry.journalEntryId}">
 											{i18nMsg('paypal-entry-number', 'n° { $number }', {
-												number: String(g.entryNumber ?? g.journalEntryId),
+												number: String(entry.entryNumber),
 											})}
 										</a>
 									{/if}
@@ -541,20 +586,22 @@
 						</tr>
 					</thead>
 					<tbody>
-						{#each review.toReview as t (t.bankTransactionId)}
-							<tr class="border-b border-border" data-testid="paypal-to-review-{t.bankTransactionId}">
-								<td class="py-2 pr-4 whitespace-nowrap">{formatSwissDate(t.date)}</td>
-								<td class="py-2 pr-4">{toReviewReasonLabel(t.reason)}</td>
-								<td class="py-2 pr-4 text-right font-mono whitespace-nowrap">{t.amount} {t.currency}</td>
-								<td class="py-2 pr-4">{t.providerType ?? ''}</td>
-								<td class="py-2 pr-4">{t.name ?? ''}</td>
-								<td class="py-2 pr-4 text-xs">{t.counterpartyEmail ?? ''}</td>
+						{#each review.toReview as t, i (i)}
+							{@const tx = t.transaction}
+							<tr class="border-b border-border" data-testid="paypal-to-review-{tx?.id ?? `e${i}`}">
+								<td class="py-2 pr-4 whitespace-nowrap">{findingDate(t)}</td>
+								<td class="py-2 pr-4">{toReviewReasonLabel(t.code)}</td>
+								<td class="py-2 pr-4 text-right font-mono whitespace-nowrap">{#if tx}{tx.amount} {tx.currency}{/if}</td>
+								<td class="py-2 pr-4">{tx?.providerType ?? ''}</td>
+								<td class="py-2 pr-4">{tx?.name ?? ''}</td>
+								<td class="py-2 pr-4 text-xs">{tx?.counterpartyEmail ?? ''}</td>
 								<td class="py-2 whitespace-nowrap">
 									<button
 										type="button"
 										class="rounded border border-border px-2 py-1 text-xs"
 										onclick={() => openLink(t)}
-										data-testid="paypal-link-{t.bankTransactionId}"
+										disabled={!tx}
+										data-testid="paypal-link-{tx?.id ?? `e${i}`}"
 									>
 										{i18nMsg('paypal-link-entry', 'Rattacher à une écriture')}
 									</button>

@@ -21,45 +21,34 @@ import {
 } from './paypal-review';
 import { chunkProposals, PAYPAL_ACCEPT_CHUNK } from './paypal.api';
 
-const base = {
-	amount: '10.00',
-	currency: 'EUR',
-	providerType: null,
-	name: null,
-	counterpartyEmail: null,
-	transactionId: null,
-};
+function tx(id: number, date: string, currency = 'EUR') {
+	return { id, bankAccountId: 1, date, amount: '10.00', currency, providerType: null, name: null, transactionId: null };
+}
 
 function year(id: number, startDate: string, endDate: string): FiscalYearResponse {
 	return { id, companyId: 1, name: `E${id}`, startDate, endDate, status: 'Open', multiCurrency: true } as FiscalYearResponse;
 }
 
-const fee: PaypalProposal = { ...base, type: 'fee', bankTransactionId: 3, date: '2020-03-02', feeAccountId: 60 };
+const fee: PaypalProposal = { type: 'fee', bankTransactionId: 3, feeAccountId: 60, transaction: tx(3, '2020-03-02') };
 const link: PaypalProposal = {
-	...base,
 	type: 'link_entry',
 	bankTransactionId: 1,
-	date: '2020-03-05',
 	journalEntryId: 40,
-	entryNumber: 12,
+	transaction: tx(1, '2020-03-05'),
+	entry: { journalEntryId: 40, entryNumber: 12, entryDate: '2020-03-04', description: 'Vente TXN X', ids: ['X'] },
 };
 const conv: PaypalProposal = {
-	...base,
 	type: 'conversion',
-	bankTransactionId: 7,
-	date: '2020-03-01',
 	debitTransactionId: 7,
 	creditTransactionId: 8,
-	otherAmount: '11.00',
-	otherCurrency: 'USD',
+	transaction: tx(7, '2020-03-01'),
+	otherTransaction: tx(8, '2020-03-01', 'USD'),
 };
 const retrait: PaypalProposal = {
-	...base,
-	currency: 'CHF',
 	type: 'withdrawal',
 	bankTransactionId: 9,
-	date: '2020-03-03',
 	counterpartyAccountId: null,
+	transaction: tx(9, '2020-03-03', 'CHF'),
 };
 
 describe('paypal-review', () => {
@@ -97,7 +86,7 @@ describe('paypal-review', () => {
 
 	it('ce qui sera fait : une écriture si un côté est en CHF, deux sinon', () => {
 		expect(proposalActionLabel(conv, [])).toContain('Deux écritures');
-		expect(proposalActionLabel({ ...conv, otherCurrency: 'CHF' }, [])).toContain('Une écriture');
+		expect(proposalActionLabel({ ...conv, otherTransaction: tx(8, '2020-03-01', 'CHF') }, [])).toContain('Une écriture');
 		expect(proposalActionLabel(link, [])).toContain('n° 12');
 	});
 

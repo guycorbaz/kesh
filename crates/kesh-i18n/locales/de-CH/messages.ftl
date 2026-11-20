@@ -1985,6 +1985,7 @@ paypal-kind-withdrawal = Abhebung
 paypal-gap-receipt-without-sale = Zahlungseingang ohne Verkauf
 paypal-gap-sale-without-receipt = Verkauf ohne Zahlungseingang
 paypal-gap-amount-or-currency-mismatch = Betrag oder Währung abweichend
+paypal-gap-mismatch-details = Erwartet { $expected }, gefunden { $found }
 paypal-to-review-ambiguous-sale = Mehrere Verkäufe tragen diese TXN
 paypal-to-review-fee-account-missing = Gebührenkonto nicht eingestellt
 paypal-to-review-conversion-unpaired = Umrechnung ohne Gegenstück

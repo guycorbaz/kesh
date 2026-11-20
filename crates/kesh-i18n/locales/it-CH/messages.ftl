@@ -1985,6 +1985,7 @@ paypal-kind-withdrawal = Prelievo
 paypal-gap-receipt-without-sale = Incasso senza vendita
 paypal-gap-sale-without-receipt = Vendita senza incasso
 paypal-gap-amount-or-currency-mismatch = Importo o valuta diversi
+paypal-gap-mismatch-details = Atteso { $expected }, trovato { $found }
 paypal-to-review-ambiguous-sale = Più vendite portano questa TXN
 paypal-to-review-fee-account-missing = Conto delle commissioni non impostato
 paypal-to-review-conversion-unpaired = Conversione senza la sua coppia

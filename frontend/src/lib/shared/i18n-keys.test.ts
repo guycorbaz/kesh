@@ -1152,9 +1152,9 @@ const ATTENDU = {
 	// (v0190-correction et v0190-nom-societe) + 17 (36-16a), les côtés gardés.
 	// Story 38-11d, T1 et T2 (paramètres PayPal du compte bancaire, filtres des règles) :
 	// **3521**, relevé par la garde (« expected 3521 to be 3495 »), non additionné ; puis la
-	// page PayPal (T3) : **3609** (« expected 3609 to be 3521 ») ; à relever de nouveau après la
+	// page PayPal (T3) : **3610** (« expected 3610 to be 3521 », puis 3609 → 3610) ; à relever après la
 	// fusion de la 38-11c2.
-	sitesTotal: 3609,
+	sitesTotal: 3610,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

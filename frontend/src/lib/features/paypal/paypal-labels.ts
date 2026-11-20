@@ -130,15 +130,21 @@ export function paypalImportErrorLines(err: unknown): string[] {
 	}
 }
 
-/** Genre d'une proposition (colonne « Genre »). */
-export function proposalKindLabel(p: PaypalProposal): string {
+/**
+ * Genre d'une proposition (colonne « Genre ») ; `ruleLabels` : le libellé de
+ * chaque règle par identifiant (la revue ne sert que l'identifiant).
+ */
+export function proposalKindLabel(
+	p: PaypalProposal,
+	ruleLabels: ReadonlyMap<number, string> = new Map(),
+): string {
 	switch (p.type) {
 		case 'link_entry':
 			return i18nMsg('paypal-kind-link-entry', 'Vente rattachée');
 		case 'fee':
 			return i18nMsg('paypal-kind-fee', 'Frais');
 		case 'rule':
-			return i18nMsg('paypal-kind-rule', 'Règle { $label }', { label: p.ruleLabel ?? `#${p.ruleId}` });
+			return i18nMsg('paypal-kind-rule', 'Règle { $label }', { label: ruleLabels.get(p.ruleId) ?? `#${p.ruleId}` });
 		case 'conversion':
 			return i18nMsg('paypal-kind-conversion', 'Conversion');
 		case 'withdrawal':

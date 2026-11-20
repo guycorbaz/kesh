@@ -77,7 +77,11 @@ export function selectedBodies(
 ): PaypalAcceptProposal[] {
 	return [...proposals]
 		.filter((p) => selected.has(proposalKey(p)))
-		.sort((a, b) => a.date.localeCompare(b.date) || proposalTransactionId(a) - proposalTransactionId(b))
+		.sort(
+			(a, b) =>
+				a.transaction.date.localeCompare(b.transaction.date) ||
+				proposalTransactionId(a) - proposalTransactionId(b),
+		)
 		.map((p) => acceptBody(p, withdrawalAccounts))
 		.filter((b): b is PaypalAcceptProposal => b !== null);
 }
@@ -102,7 +106,7 @@ export function proposalActionLabel(p: PaypalProposal, accounts: readonly Accoun
 	switch (p.type) {
 		case 'link_entry':
 			return i18nMsg('paypal-action-link-entry', 'Rattachée à l’écriture n° { $number }', {
-				number: String(p.entryNumber ?? p.journalEntryId),
+				number: String(p.entry?.entryNumber ?? p.journalEntryId),
 			});
 		case 'fee':
 			return i18nMsg('paypal-action-fee', 'Écriture au compte de frais { $account }', {
@@ -113,7 +117,7 @@ export function proposalActionLabel(p: PaypalProposal, accounts: readonly Accoun
 				account: accountName(accounts, p.counterpartyAccountId),
 			});
 		case 'conversion':
-			return p.currency === 'CHF' || p.otherCurrency === 'CHF'
+			return p.transaction.currency === 'CHF' || p.otherTransaction?.currency === 'CHF'
 				? i18nMsg('paypal-action-conversion-one', 'Une écriture, au CHF réel')
 				: i18nMsg('paypal-action-conversion-two', 'Deux écritures, par le compte de conversion');
 		case 'withdrawal':
