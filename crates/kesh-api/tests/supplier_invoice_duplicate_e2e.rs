@@ -351,9 +351,20 @@ async fn completion_refuses_a_duplicate_and_keeps_the_document(pool: MySqlPool) 
     assert_eq!(s, 201);
     let doc = document(&pool, c.seeded.company_id, "dup-48-12a", None).await;
     let chemin = format!("/api/v1/imported-supplier-invoices/{doc}/complete");
-    let (s, e) = post(&c, &chemin, corps(&c, Some("D-1"), "2026-05-06", "12")).await;
-    assert_eq!((s, code(&e)), (409, "SUPPLIER_INVOICE_DUPLICATE"), "{e}");
-    assert_eq!(statut_document(&pool, doc).await, "to_complete");
+    // Par la session et par une clé `read-write` (AC-10, revue P1 A7).
+    let cle = cle_read_write(&c).await;
+    for jeton in [&c.admin, &cle] {
+        let (s, e) = envoyer(
+            &c,
+            reqwest::Method::POST,
+            &chemin,
+            jeton,
+            Some(corps(&c, Some("D-1"), "2026-05-06", "12")),
+        )
+        .await;
+        assert_eq!((s, code(&e)), (409, "SUPPLIER_INVOICE_DUPLICATE"), "{e}");
+        assert_eq!(statut_document(&pool, doc).await, "to_complete");
+    }
     let (s, e) = post(&c, &chemin, corps(&c, Some("D-2"), "2026-05-06", "12")).await;
     assert_eq!(s, 200, "{e}");
     let (s, e) = post(&c, &chemin, corps(&c, Some("D-2"), "2026-05-06", "12")).await;

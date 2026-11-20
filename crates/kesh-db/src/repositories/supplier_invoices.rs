@@ -613,6 +613,11 @@ pub async fn lock_supplier_in_tx(
 /// ⚠️ La lecture des candidates est **ordinaire** : elle n'est juste que sous le
 /// verrou du fournisseur ([`lock_supplier_in_tx`]), pris avant toute lecture
 /// ordinaire de la transaction.
+///
+/// La lecture est **bornée à l'année civile** de la facture jugée (1er janvier au
+/// 31 décembre, bornes comprises) : la règle 1 ne compare que dans cette année,
+/// la règle 2 que la même date, qui y tombe ; [`find_duplicate`] reste la seule
+/// décision, et le coût ne croît plus avec l'historique du fournisseur.
 #[allow(clippy::too_many_arguments)]
 async fn guard_duplicates_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
@@ -626,15 +631,24 @@ async fn guard_duplicates_in_tx(
     policy: DuplicatePolicy,
 ) -> Result<Option<DuplicateFinding>, DbError> {
     use crate::errors::DuplicateGesture;
+    use chrono::Datelike;
 
+    let year = invoice_date.year();
+    let first_day = NaiveDate::from_ymd_opt(year, 1, 1)
+        .ok_or_else(|| DbError::Invariant(format!("année civile hors bornes : {year}")))?;
+    let last_day = NaiveDate::from_ymd_opt(year, 12, 31)
+        .ok_or_else(|| DbError::Invariant(format!("année civile hors bornes : {year}")))?;
     let candidates: Vec<DuplicateCandidate> = sqlx::query_as(
         "SELECT id, internal_number, supplier_invoice_number, status, invoice_date, total_amount \
          FROM supplier_invoices \
-         WHERE company_id = ? AND contact_id = ? AND status <> 'cancelled' AND id <> ?",
+         WHERE company_id = ? AND contact_id = ? AND status <> 'cancelled' AND id <> ? \
+           AND invoice_date BETWEEN ? AND ?",
     )
     .bind(company_id)
     .bind(contact_id)
     .bind(exclude_id.unwrap_or(0))
+    .bind(first_day)
+    .bind(last_day)
     .fetch_all(&mut **tx)
     .await
     .map_err(map_db_error)?;
@@ -1589,6 +1603,15 @@ pub async fn unvalidate_with_policy(
 /// anti-doublon, `fetch_lines`) ; les lignes (dissolution) ; l'`UPDATE` ; enfin
 /// `delete_in_tx` ×2. Rejouée par la route
 /// (`retry_on_deadlock("supplier_invoices::unvalidate", …)`).
+///
+/// ⚠️ *Cycle possible entre deux repassages d'annulées du même fournisseur*
+/// (revue P1 de la 48-12a, E1) : U2 tient l'exercice N+1 de sa facture et
+/// attend le fournisseur, qu'U1 tient ; U1, à `delete_in_tx` sur son écriture
+/// de l'exercice N, balaie les exercices postérieurs (`find_later_closed_in_tx`,
+/// `FOR UPDATE`) et attend l'exercice N+1. Le cycle est neuf (avant la story, U2
+/// ne demandait pas le fournisseur) ; il repose sur le plan d'exécution et n'est
+/// pas piloté par un test. Il est **couvert par le rejeu de la route** : la
+/// victime est rejouée après le commit de l'autre, sans `500` ni écriture.
 ///
 /// ⚠️ **Second appelant de `delete_in_tx` avec `enforce_ownership = false`**,
 /// après `invoices::unvalidate` : la facture supprime **ses** propres

@@ -118,6 +118,11 @@ mod tests {
 
     #[test]
     fn la_casse_est_ignoree_mais_pas_les_autres_signes() {
+        // La casse (revue P1, A10 : sans majuscule, le test ne la tenait pas).
+        assert_eq!(
+            normalize_supplier_invoice_number(Some("Fa-1")),
+            normalize_supplier_invoice_number(Some("fA-1"))
+        );
         assert_eq!(
             normalize_supplier_invoice_number(Some("15")),
             normalize_supplier_invoice_number(Some(" 15 "))
@@ -125,6 +130,11 @@ mod tests {
         assert_ne!(
             normalize_supplier_invoice_number(Some("15")),
             normalize_supplier_invoice_number(Some("15-b"))
+        );
+        // Les autres signes restent : « 15-b » n'est pas « 15b ».
+        assert_ne!(
+            normalize_supplier_invoice_number(Some("15-b")),
+            normalize_supplier_invoice_number(Some("15b"))
         );
     }
 }

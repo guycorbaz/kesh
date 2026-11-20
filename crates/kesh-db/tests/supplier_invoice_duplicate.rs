@@ -400,6 +400,9 @@ async fn rule_1_compares_within_the_calendar_year(pool: MySqlPool) {
         (jour(2026, 12, 31), jour(2027, 1, 1), true),
         (jour(2026, 1, 1), jour(2026, 12, 31), false),
         (jour(2027, 1, 1), jour(2026, 12, 31), true),
+        // Borne haute comprise : l'existante du 31.12 compte pour une facture
+        // de la même année (lecture bornée à l'année civile, revue P1 B2).
+        (jour(2026, 12, 31), jour(2026, 6, 1), false),
     ];
     for (d1, d2, accepte) in cas {
         assert_eq!(
@@ -517,13 +520,36 @@ async fn rule_2_same_date_same_total_is_confirmable_and_audited(pool: MySqlPool)
     assert!(confirmations(&pool, s.invoice.id).await.is_empty());
 }
 
+/// Revue P1 (B2) — la lecture des candidates est bornée à l'année civile : la
+/// règle 2 tient encore aux deux bornes, le 1er janvier et le 31 décembre.
+/// Tue « borne basse exclue », « borne haute exclue », « année décalée ».
+#[sqlx::test(migrations = "./test-schema")]
+async fn rule_2_holds_on_both_bounds_of_the_calendar_year(pool: MySqlPool) {
+    let (seeded, f) = decor(&pool).await;
+    for date in [jour(2026, 1, 1), jour(2026, 12, 31)] {
+        let a = brouillon(&pool, &seeded, f, None, date, dec!(33)).await;
+        let err = creer(
+            &pool,
+            &seeded,
+            facture(&seeded, f.supplier_id, None, date, dec!(33)),
+            REFUSE,
+        )
+        .await
+        .expect_err("doublon probable à la borne");
+        assert!(
+            matches!(err, DbError::SupplierInvoiceProbableDuplicate { ref existing, .. } if existing.id == a.invoice.id),
+            "{date} : {err:?}"
+        );
+    }
+}
+
 /// AC-4 — deux numéros différents, même date et même total : jamais un
 /// doublon ; un numéro et un absent : refus probable (les deux sens). Tue
 /// « règle 2 appliquée à deux numéros ».
 #[sqlx::test(migrations = "./test-schema")]
 async fn rule_3_only_the_number_decides_when_both_have_one(pool: MySqlPool) {
     let (seeded, f) = decor(&pool).await;
-    brouillon(&pool, &seeded, f, Some("A-1"), jour(2026, 5, 1), dec!(50)).await;
+    let a1 = brouillon(&pool, &seeded, f, Some("A-1"), jour(2026, 5, 1), dec!(50)).await;
     brouillon(&pool, &seeded, f, Some("A-2"), jour(2026, 5, 1), dec!(50)).await;
     // Un blanc seul vaut absent.
     let err = creer(
@@ -540,8 +566,10 @@ async fn rule_3_only_the_number_decides_when_both_have_one(pool: MySqlPool) {
     )
     .await
     .expect_err("sans numéro contre numéroté");
+    // Deux candidates de la règle 2 (A-1, A-2) : la plus petite en identifiant
+    // est citée. Tue « `max_by_key` à la règle 2 ».
     assert!(
-        matches!(err, DbError::SupplierInvoiceProbableDuplicate { .. }),
+        matches!(err, DbError::SupplierInvoiceProbableDuplicate { ref existing, .. } if existing.id == a1.invoice.id),
         "{err:?}"
     );
     brouillon(&pool, &seeded, f, None, jour(2026, 6, 1), dec!(60)).await;
@@ -713,6 +741,23 @@ async fn update_replays_the_rule_only_when_one_of_the_four_changes(pool: MySqlPo
     let b = modifier(&pool, &seeded, &b, n, REFUSE)
         .await
         .expect("rien des quatre ne change");
+    // Le numéro ne change que par la casse et un blanc : **normalisé**, il ne
+    // change pas (D6) — passe. Tue « numéro brut comparé dans `key_changed` ».
+    let b = modifier(
+        &pool,
+        &seeded,
+        &b,
+        facture(
+            &seeded,
+            f.supplier_id,
+            Some("m-1\u{A0}"),
+            jour(2026, 3, 2),
+            dec!(10),
+        ),
+        REFUSE,
+    )
+    .await
+    .expect("numéro égal une fois normalisé");
     // Changement de date dans la même année : refusé, sans sortie.
     for policy in [REFUSE, CONFIRMED] {
         let err = modifier(
@@ -878,6 +923,46 @@ async fn entry_refusals_keep_their_precedence(pool: MySqlPool) {
     n.lines[0].expense_account_id = seeded.accounts["1000"];
     let err = creer(&pool, &seeded, n, REFUSE).await.expect_err("compte");
     assert!(matches!(err, DbError::InactiveOrInvalidAccounts), "{err:?}");
+    // Projet inconnu + doublon : le refus du projet d'abord (revue P1, A6).
+    let mut n = facture(
+        &seeded,
+        f.supplier_id,
+        Some("P-1"),
+        jour(2026, 1, 10),
+        dec!(10),
+    );
+    n.project_id = Some(999_999);
+    let err = creer(&pool, &seeded, n, REFUSE).await.expect_err("projet");
+    assert!(matches!(err, DbError::NotFound), "{err:?}");
+    // Contact qui n'est plus fournisseur + doublon : ce refus d'abord (A6).
+    sqlx::query("UPDATE contacts SET is_supplier = FALSE WHERE id = ?")
+        .bind(f.supplier_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let err = creer(
+        &pool,
+        &seeded,
+        facture(
+            &seeded,
+            f.supplier_id,
+            Some("P-1"),
+            jour(2026, 1, 10),
+            dec!(10),
+        ),
+        REFUSE,
+    )
+    .await
+    .expect_err("non fournisseur");
+    assert!(
+        matches!(err, DbError::IllegalStateTransition(ref m) if m.contains("pas un fournisseur")),
+        "{err:?}"
+    );
+    sqlx::query("UPDATE contacts SET is_supplier = TRUE WHERE id = ?")
+        .bind(f.supplier_id)
+        .execute(&pool)
+        .await
+        .unwrap();
     // Refus de doublon : aucune ligne écrite.
     let lignes_avant: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM supplier_invoice_lines")
         .fetch_one(&pool)
@@ -1147,6 +1232,37 @@ async fn unvalidation_duplicate_sits_between_closed_year_and_period_lock(pool: M
         .execute(&pool)
         .await
         .unwrap();
+
+    // Annulée dont l'achat est **rapproché**, et doublon : le rapprochement
+    // d'abord, avec ou sans confirmation (revue P1, A5 ; « payée » est vide par
+    // construction : une payée n'est pas annulée).
+    let r = annulee(&pool, &seeded, f, Some("R-9"), jour(2026, 3, 1), dec!(41)).await;
+    brouillon(&pool, &seeded, f, Some("R-9"), jour(2026, 3, 6), dec!(1)).await;
+    let achat: i64 =
+        sqlx::query_scalar("SELECT purchase_journal_entry_id FROM supplier_invoices WHERE id = ?")
+            .bind(r.0)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let t = fournisseur_rapproche::transaction_en_attente(
+        &pool,
+        &seeded,
+        f.bank_account_id,
+        jour(2026, 3, 2),
+        None,
+        dec!(-41),
+        None,
+        None,
+    )
+    .await;
+    fournisseur_rapproche::link_bank_transaction_for_test(&pool, t, achat).await;
+    for policy in [REFUSE, CONFIRMED] {
+        let err = repasser(&pool, &seeded, r, qui, policy)
+            .await
+            .expect_err("rapprochée");
+        assert_eq!(err.error_code(), "MATCHED_BANK_TRANSACTION", "{err:?}");
+    }
+    assert_eq!(statut(&pool, r.0).await, "cancelled");
 
     // Exercice de l'achat clos : son refus avant le doublon.
     sqlx::query("UPDATE fiscal_years SET status = 'Closed' WHERE company_id = ?")
