@@ -683,6 +683,31 @@ mod tests {
         );
     }
 
+    /// Montants en **chaînes** JSON (forme de l'API, relevée sur le compte réel) :
+    /// lus sans passer par un nombre flottant, au chiffre près, même à 17
+    /// chiffres significatifs. Un montant en **nombre** JSON est refusé (page
+    /// illisible), jamais arrondi en silence (`serde_json` sans
+    /// `arbitrary_precision` perdrait des chiffres au-delà de 15).
+    #[test]
+    fn un_montant_a_dix_sept_chiffres_se_lit_exactement_et_un_nombre_json_est_refuse() {
+        let page = br#"{"total_pages":1,"transaction_details":[{"transaction_info":{
+            "transaction_id":"0TESTGRAND","transaction_event_code":"T0007",
+            "transaction_initiation_date":"2024-01-02T10:00:00Z","transaction_status":"S",
+            "transaction_amount":{"currency_code":"CHF","value":"999999999999999.99"},
+            "fee_amount":{"currency_code":"CHF","value":"-0.01"}}}]}"#;
+        let p = parse_transactions_page(page).unwrap();
+        let r = to_paypal_row(&p.transactions[0], 1, &plus_one).unwrap();
+        assert_eq!(r.gross.to_string(), "999999999999999.99");
+        assert_eq!(r.net.to_string(), "999999999999999.98");
+        let nombre = br#"{"total_pages":1,"transaction_details":[{"transaction_info":{
+            "transaction_id":"0TESTGRAND",
+            "transaction_amount":{"currency_code":"CHF","value":999999999999999.99}}}]}"#;
+        assert_eq!(
+            parse_transactions_page(nombre),
+            Err(PaypalApiError::Malformed)
+        );
+    }
+
     #[test]
     fn la_table_est_fermee_et_sans_doublon() {
         let mut codes: Vec<&str> = PAYPAL_EVENT_TYPES.iter().map(|(c, _)| *c).collect();
