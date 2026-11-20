@@ -150,3 +150,7 @@ progression et le compte rendu ; le manuel d'administration décrit la création
   `kesh-gate-logs/epic-38-kiss/validation/38-12-P3-ciblee.md`) : MEDIUM — les « deux tableaux » désignaient le tableau de
   la récupération par e-mail : tableau neuf au § `sec:env-vars` et tableau de la section PayPal ; LOW — « six » exceptions
   → recompte, les deux routes en forment une ; `providerApi.scaKeyConfigured` retiré (socle amendé à la P2 Wise).
+- 2026-11-20 — validation P4 ciblée sur le commit `e6da3774` (Claude Sonnet 5.5, contexte frais ; voir 38-12a et
+  `kesh-gate-logs/epic-38-kiss/validation/38-12-P4-ciblee.md`) : rien à remédier ici (tableaux § `sec:env-vars` et section
+  PayPal, « cinq » exceptions, `scaKeyConfigured` absent : vérifiés au code de `origin/main`) ; la panique d'une tâche
+  rend `INTERNAL_ERROR` (38-12a AC-8), ce que l'écran affiche comme tout code non listé.

@@ -194,6 +194,7 @@ Source : `kesh-gate-logs/epic-38-kiss/phase2-decisions.md`. Deux stories, après
 - **Validation P3 ciblée (2026-11-20)** : la transmission des séries heurte la garde `configuration_transmise.rs` (#550), qui ne
   lit que des noms littéraux : 38-12a y ajoute une **famille indexée** générique (séries 1 à 3 transmises, 4 à 9 admises
   absentes) ; `providerApi` sans `scaKeyConfigured` ; fenêtres de PayPal à 30 jours partout.
+- **Validation P4 ciblée (2026-11-20)** : la famille indexée de la garde `configuration_transmise.rs` couvre aussi `KESH_<P>_BASE_URL` et `KESH_<P>_PARALLEL` (noms sans numéro) ; panique d'une tâche de téléchargement = `INTERNAL_ERROR` ; `T1111` aux codes de départ de PayPal.
 - **Identifiants** : `KESH_PAYPAL_<n>_ACCOUNT` (libellé du compte PayPal de 38-11b, propre à l'installation), `_CLIENT_ID`,
   `_SECRET`, validés au démarrage par `provider_env` (refus inconditionnel, contrairement à `KESH_SMTP_*`) ; rien en base
   ni dans la sauvegarde, pas de coffre. Application PayPal à la seule

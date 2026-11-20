@@ -83,11 +83,11 @@ vers `PaypalRow`, la table des types et le passage `PaypalRow` → `ProviderLine
    production nomme une variable connue (F). Un nom construit (`format!("KESH_PAYPAL_{n}_SECRET")`) et le parcours des
    variables du préfixe (numéro hors `1..=9`) lui sont invisibles ou interdits : sans extension, les lignes
    `KESH_PAYPAL_1_…` des compose rougissent en (T) (« transmise, non lue ») et les séries 4 à 9 en (E). L'extension —
-   une **famille indexée** déclarée une fois par prestataire (préfixe, champs, `n` de 1 à 9 ; séries 1 à 3 exigées aux deux
+   une **famille indexée** déclarée une fois par prestataire (préfixe, champs, `n` de 1 à 9, **et ses variables sans numéro, `KESH_<P>_BASE_URL` et `KESH_<P>_PARALLEL`**, construites elles aussi par `format!` et donc invisibles de l'ensemble lu : sans elles, `KESH_PAYPAL_BASE_URL` et `KESH_PAYPAL_PARALLEL` rougiraient en (T), (E) et (F) ; l'ensemble déclaré rejoint les noms **connus** de (T) « transmise, lue », (E) et (F), sans entrer dans l'ensemble lu que (L) calcule ; séries 1 à 3 exigées aux deux
    compose et à `.env.example`, séries 4 à 9 admises absentes par une raison nommée, comme `EXCEPTIONS` ; les nouveaux
-   sites de lecture de `provider_env` inscrits à `EMPLACEMENTS_AUTORISES` en forme exacte ; la forme `KESH\_PAYPAL\_<n>\_…`
+   sites de lecture de `provider_env` (appel de `env_nonempty` sur un nom construit **et** parcours `std::env::vars()` du préfixe, qui porte le jeton `env`) inscrits à `EMPLACEMENTS_AUTORISES` en forme exacte, avec leur nombre ; la forme `KESH\_PAYPAL\_<n>\_…`
    du manuel admise en (F)) — est **générique** (Wise et Stripe y ajoutent leur famille), testée par l'auto-test (S) de
-   la garde, et aucune liste fermée existante n'est relâchée pour les autres variables. Tout est lu
+   la garde, et aucune liste fermée existante n'est relâchée pour les autres variables. La garde (V) admet déjà les formes prévues (`${NOM:-}` d'une variable qui n'est dans aucune de ses listes fermées) ; les lignes `.env.example` des séries sont **commentées ou vides**, jamais au gabarit `<…>` (refusé au démarrage, AC-2). Tout est lu
    **une fois**, au démarrage ; un compte PayPal de Kesh dont le libellé n'a pas de série reste sans téléchargement
    (le CSV continue). Le libellé est **propre à l'installation**, non à la société (une installation porte une société,
    manuel d'administration `:1079`) : limite écrite au manuel par 38-12b.
@@ -167,7 +167,7 @@ vers `PaypalRow`, la table des types et le passage `PaypalRow` → `ProviderLine
    (page de PayPal) : `T0000`, `T0001`, `T0002` (`Subscription Payment`), `T0003`, `T0006` (`Express Checkout Payment`),
    `T0007` (`Website Payment`), `T0011` (`Mobile Payment`), `T0013`, `T0200` (`General Currency Conversion`), `T0201`
    (`User Initiated Currency Conversion`), `T0400` (`General Withdrawal`), `T0403`, `T1105` (page : « reversal of general account hold »), `T1107` (`Payment
-   Refund`), `T1110` (page : « hold on balance for dispute investigation »), `T1500` à `T1503` (`T1501` : « account hold
+   Refund`), `T1110` (page : « hold on balance for dispute investigation »), `T1111` (page : « cancellation of hold for dispute resolution », levée de `T1110`), `T1500` à `T1503` (`T1501` : « account hold
    for open authorization »), `T2105` / `T2106` (`Payment Review Hold` / `Payment Review Release`). La page ne donne aucun
    code évident pour `Reversal of Account Hold` (liste des paires neutres) : le test de couverture l'impose, le code se
    trouve par l'appel réel. Le
@@ -235,7 +235,7 @@ vers `PaypalRow`, la table des types et le passage `PaypalRow` → `ProviderLine
    de l'AC-5, au plus `MAX_CSV_LINE_ERRORS`, forme de `PaypalLineError`, dans `details.lines`),
    `PROVIDER_CURRENCY_ACCOUNT_MISSING`, `PROVIDER_CURRENCY_DUPLICATE`, `BANK_ACCOUNT_CLOSED`,
    `RECONCILIATION_ACCOUNT_LOCKED`. La tâche est lancée par `tokio::spawn` ; **une panique ne laisse jamais une tâche « en cours »** (le compte resterait refusé
-   en 409 jusqu'au redémarrage) : le `JoinHandle` est surveillé et la tâche passe en `failed` `PROVIDER_API_ERROR`, un test
+   en 409 jusqu'au redémarrage) : le `JoinHandle` est surveillé et la tâche passe en `failed` `INTERNAL_ERROR` (faute de Kesh, non du prestataire : `PROVIDER_API_ERROR` laisserait croire à une panne de PayPal ; décision de l'orchestrateur, 2026-11-20), un test
    la fait paniquer. Le 409 ne vaut que **tant que la tâche tourne** : une tâche `done` ou `failed` ne bloque pas la
    suivante. L'acteur (la session de la demande, jamais une clé) est capturé au `POST` et porté par la tâche. Les tâches vivent **en mémoire** du processus (table de `provider_download` dans
    l'état d'application, une tâche par prestataire, société et libellé ; `AppState::new_for_tests`, `lib.rs:148`, et les
@@ -361,3 +361,9 @@ rattrape, sans doublon.
   noms littéraux et exige « lue ⇔ transmise » et une ligne `.env.example` par variable lue — famille indexée à ajouter
   (AC-1, T1, fichiers communs). Avec le message du coordinateur (P2 Wise/Stripe) : `FR-38-12a-2` à 30 jours (31 ne reste
   qu'un cas de test de `windows`) ; aucune occurrence vivante de `detail` au singulier.
+- 2026-11-20 — validation P4 ciblée sur le commit `e6da3774` (Claude Sonnet 5.5, contexte frais, une lentille ; rapport
+  `kesh-gate-logs/epic-38-kiss/validation/38-12-P4-ciblee.md`) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 2 LOW, remédiés. MEDIUM : la
+  famille indexée ne couvrait pas `KESH_PAYPAL_BASE_URL` et `KESH_PAYPAL_PARALLEL` (noms sans numéro, construits eux aussi) —
+  ajoutés à la famille, avec le parcours `env::vars()` à inscrire en forme exacte. LOW : lignes `.env.example` commentées ou
+  vides (pas de gabarit `<…>`) ; décisions de l'orchestrateur appliquées — panique de tâche en `INTERNAL_ERROR`, `T1111`
+  (« Cancellation of hold for dispute resolution », relevé sur la page publique des codes) aux codes de départ.
