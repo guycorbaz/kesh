@@ -44,7 +44,8 @@ ait de quoi travailler.
      rendue et restent CHF — quatre appelants à mettre à jour), jamais dans le geste, qui ne prend pas `bank_accounts`
      (doc de `link_entry_in_tx`). Lecture sûre hors verrou : la devise d'un compte qui porte une ligne ne change plus
      (`ACCOUNT_CURRENCY_LOCKED`, 37-1), et sans ligne aucune écriture n'a de mouvement à égaler. `get_proposals`
-     (`:1161-1172`) passe celle du compte de la page.
+     (`:1161-1172`) passe celle du compte de la page, lue avec le compte bancaire de la page (`ba_check` ne porte que
+     `journal_account_id` : une lecture de la devise de ce compte du plan s'ajoute, sur le pool, à côté de `ba_check`).
    - Le mouvement de la condition 3 se compte **dans la devise du compte** quand elle n'est pas CHF :
      `ENTRY_MOVEMENTS` (`:800-804`) devient une fonction du genre de mouvement — CHF : `SUM(l.debit) - SUM(l.credit)`
      (texte d'aujourd'hui) ; devise : `SUM(CASE WHEN l.debit > 0 THEN l.amount_currency ELSE -l.amount_currency END)`
@@ -81,7 +82,10 @@ ait de quoi travailler.
      vaut `m.movement` dans la liste, le geste et la page (`linkable_side`, `:739`) ; dans `transfer_other_side`
      (`:773`), `M` = `?` = `t.amount`, **lié deux fois**. L'ordre des liaisons change dans `query_entry_sql` (`:818`),
      `count_already_booked_for_page` (commentaire « Ordre des `?` ») et `transfer_other_side` : relu à la revue de
-     code, chaque `bind` nommé.
+     code, chaque `bind` nommé. **Ordre des `?` du texte** : compte bancaire de `t`, devise de `t`, `M`, devise de `t`,
+     `M` — les deux devises et les deux `M` sont **entrelacés**, non groupés ; dans `transfer_other_side` : `company_id`,
+     `entry_id`, `t.id`, puis `t.bank_account_id`, `t.currency`, `t.amount`, `t.currency`, `t.amount` ; dans la liste, le
+     geste et la page, `M` est `m.movement` (aucune liaison) : compte, devise, devise.
    - Toutes les dérivées en héritent sans code propre : condition 4 de la liste et du geste (`linkable_side`),
      second côté (`find_matched_elsewhere` `:896`, `HAS_LINK`), décompte de page, annulation
      (`transfer_other_side`, lue par `reconciliation_cancel::entry_cancel_outlook` et `cancel_in_tx`,
@@ -104,7 +108,11 @@ ait de quoi travailler.
      seul son lien retiré, écriture non contre-passée, `t₂` toujours rapprochée ; (d) `t₁` rattachable de nouveau ;
      (e) une troisième transaction refusée — +95.00 EUR sur B (même compte) et +95.00 EUR sur un compte bancaire C
      partageant le compte du plan EUR (`NotLinkable`) ; (f) annulation des deux côtés → la seconde contre-passe
-     l'écriture. Le test d'égalité de la 34-4 couvre un compte en devise et une paire de devises différentes. Un
+     l'écriture ; (g) **le signe de la seconde branche** — écriture à trois lignes « débit compte du plan CHF 100.00 /
+     débit compte du plan EUR 95.00 EUR / crédit un compte de produit CHF 200.00 », `t₁` = +100.00 CHF sur A rattachée,
+     `t₂` = +95.00 EUR sur B **de même signe** : refusée (`NotLinkable`), absente du second côté, `transfer_other_side` de `t₁`
+     vide (sans ce test, supprimer `SIGN(bt.amount) = -SIGN(M)` de la seconde branche laisse (a) à (f) verts, et la
+     démonstration du plafond repose sur lui). Le test d'égalité de la 34-4 couvre un compte en devise et une paire de devises différentes. Un
      test unitaire du texte : les deux branches présentes, une seule occurrence de chaque `NOT EXISTS`.
 2. **AC-2 — Filtres des règles** (`crates/kesh-reconciliation/src/rules.rs`, entité `ReconciliationRule`,
    `crates/kesh-db/src/entities/reconciliation_rule.rs` ; colonnes posées par la migration de 38-11b, **aucune valeur
@@ -173,3 +181,6 @@ règles d'affectation acceptent deux filtres facultatifs, « type PayPal » et �
 - 2026-11-20 — fiche née du découpage de l'ancienne 38-11c (AC-1 à AC-3, validées P1 et P2 dans celle-ci : voir le
   Change Log de 38-11c2) ; AC-1b neuve ; validation P3 (Claude Opus 5.5, contexte frais), rapport
   `kesh-gate-logs/epic-38-kiss/validation/38-11-P3.md`.
+- 2026-11-20 — validation P4, ciblée sur l'AC-1b (Claude Sonnet 5.5, contexte frais) : 0 CRITICAL, 0 HIGH, 1 MEDIUM,
+  2 LOW, remédiés (rapport `kesh-gate-logs/epic-38-kiss/validation/38-11-P4-ciblee.md`). Test (g) du signe de la
+  seconde branche, ordre entrelacé des liaisons écrit, origine de la devise de `get_proposals`.

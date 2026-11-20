@@ -4,7 +4,7 @@ Status: drafted
 
 *Fiche rédigée le 2026-11-20, branche `epic/38-paypal` (phase 1 au commit `90428594`). Epic 38, **phase 2**
 (décisions de Beat du 2026-11-20, `kesh-gate-logs/epic-38-kiss/phase2-decisions.md`). **Dépend de** : 38-11a (modèle
-`PaypalRow`), 38-11b (comptes PayPal, ventilation et doublons), 38-11c (le rapprochement lit `bank_transactions`, rien à
+`PaypalRow`), 38-11b (comptes PayPal, ventilation et doublons), 38-11c2 (le rapprochement lit `bank_transactions`, rien à
 changer). **Suivie par** : 38-12b (écran, manuels, E2E). Scindée de 38-12b par la règle de splitting préventif : une seule
 fiche aurait porté l'outillage réseau, le travail en tâche de fond, l'écran, deux manuels et un E2E.*
 
@@ -85,7 +85,7 @@ et la page des codes d'événement. À rejouer au développement ; ce n'est pas 
    |---|---|
    | `date`, `time`, `time_zone` | `transaction_info.transaction_initiation_date` : date et heure **telles que données**, sans conversion ; `time_zone` = le décalage (`+01:00`) ; l'en-tête `PayPal-Enforce-ISO8601-Format: true` est envoyé |
    | `name` | `payer_info.payer_name` (nom complet, sinon prénom et nom) |
-   | `kind` | table code d'événement → libellé du CSV (ci-dessous) ; code inconnu → le code lui-même (`T9999`), la ligne ira « à examiner » (38-11c) |
+   | `kind` | table code d'événement → libellé du CSV (ci-dessous) ; code inconnu → le code lui-même (`T9999`), la ligne ira « à examiner » (38-11c2) |
    | `status` | `S` → `Completed`, `P` → `Pending`, `D` → `Denied`, `V` → `Reversed` ; autre → refus de la ligne |
    | `currency`, `gross` | `transaction_amount.currency_code`, `.value` |
    | `fee` | `fee_amount.value` ; absent → 0 ; positif refusé (`FEE_POSITIVE`, contrôle de 38-11a) |
@@ -125,7 +125,7 @@ et la page des codes d'événement. À rejouer au développement ; ce n'est pas 
    téléchargement, ou l'inverse, ou deux téléchargements qui se chevauchent, ne créent rien en double. L'empreinte
    (`file_hash`) d'un téléchargement est le SHA-256 des identifiants triés ‖ devise ; le refus
    `BANK_IMPORT_DUPLICATE_FILE` **ne s'applique pas** au téléchargement (relancer la même période rend `inserted: 0`).
-   Un identifiant présent deux fois dans la même réponse est gardé une fois. Le rapprochement (38-11c) lit ensuite ces
+   Un identifiant présent deux fois dans la même réponse est gardé une fois. Le rapprochement (38-11c2) lit ensuite ces
    lignes sans changement.
 8. **AC-8 — Tâche et routes.** `POST /api/v1/paypal-downloads` (corps `{ account, from, to }` ; **Comptable et plus** ;
    **clés d'API non admises** : la route fait sortir un appel authentifié par un secret de l'Administrateur ; inscrite
@@ -188,8 +188,9 @@ par compte ; les doublons se reconnaissent à l'identifiant de transaction, le C
 
 - Aucun appel au vrai PayPal en test ni en CI ; la première exécution réelle est celle de Beat, avec ses identifiants.
 - Si PayPal contredit une des hypothèses « non confirmées » (signe des frais, libellé `V`, fuseau, libellés de type), la
-  correction va à la table ou à la conversion, jamais aux règles de 38-11c.
+  correction va à la table ou à la conversion, jamais aux règles de 38-11c1 et 38-11c2.
 
 ## Change Log
 
 - 2026-11-20 — fiche rédigée (phase 2), non validée.
+- 2026-11-20 — validation P4 (Claude Sonnet 5.5, contexte frais) : renvois « 38-11c » nus désignés 38-11c1 ou 38-11c2 après le découpage ; aucun autre changement.

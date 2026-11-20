@@ -120,10 +120,18 @@ sans saisie, et de trouver les erreurs des boutiques.
      rejoue que le 1213 (`is_app_deadlock`). Le moteur teste donc **toute** erreur de base d'une proposition, après
      déballage (erreurs de l'écriture, `ConversionError`, `DbError` de `link_entry_in_tx`), par
      `kesh_db::retry::is_deadlock_error` **avant** tout `ROLLBACK TO SAVEPOINT`, et la remonte aussitôt en
-     `AppError::Database` : l'enveloppe rejoue toute l'opération, verrous repris ; **jamais** un interblocage dans
+     `AppError::Database` : le moteur couvre **aussi** `mark_reconciled_in_tx`, `increment_applied_count_in_tx`, la trace d'audit, les lectures
+     du rejugement et celles des cours (une `sqlx::Error` brute s'enveloppe `DbError::Sqlx` avant le test), et la remontée
+     traverse `with_account_locks`, dont la fermeture rend une `ReconciliationError` : le 1213 y reste une
+     `ReconciliationError::Database(sqlx::Error)` ou `Db(DbError::Sqlx)` (jamais converti en `Protocol(…)` ni en refus
+     métier), rendu `AppError::Database(DbError::Sqlx(_))` par la fonction de mappage du gestionnaire — c'est ce que
+     `is_app_deadlock` reconnaît ; les verrous nommés se rendent au retour de la fermeture, comme pour `accept_once`.
+     Contrepartie écrite : sans le filet du 1305 de `post_accept`, un interblocage qui échapperait à ce test (erreur
+     convertie en refus avant lui) finirait en 500 au `ROLLBACK TO SAVEPOINT`, non en rejeu — d'où le test d'interblocage
+     **par genre** de proposition (ci-dessous). L'enveloppe rejoue toute l'opération, verrous repris ; **jamais** un interblocage dans
      `failed[]`. Un échec de `ROLLBACK TO SAVEPOINT` pour une autre cause remonte en erreur (500, non rejouée). Test
-     sur le modèle de `rejeu_interblocage_e2e.rs` : une proposition qui interbloque → rejeu, aucune ligne dans
-     `failed[]`.
+     sur le modèle de `rejeu_interblocage_e2e.rs`, **pour chaque genre** (rattachement, frais, règle, retrait,
+     conversion à une et à deux écritures) : une proposition qui interbloque → rejeu, aucune ligne dans `failed[]`.
    - **Verrous** : les comptes bancaires à verrouiller se lisent **avant** les verrous, sur le pool, depuis les
      transactions des propositions (ceux d'une autre société ou inconnus → `failed[]` `NOT_FOUND`), plus les comptes
      **supplémentaires** que le prestataire déclare (Stripe : le compte de versement, 40-7c AC-4 d) ; puis une
@@ -199,7 +207,9 @@ sans saisie, et de trouver les erreurs des boutiques.
    - Après chaque écriture : la transaction (les deux pour une conversion) passe `reconciled` avec `matched_entry_id`
      par **une** fonction de dépôt neuve `mark_reconciled_in_tx` (contrôle de version, `rows_affected = 1`, sinon
      `RECONCILIATION_ALREADY_RECONCILED`), extraite de la mise à jour d'`accept_one_rule` (`:4569-4595`), qui
-     l'appelle désormais (DRY ; tests d'`accept_one_rule` verts). ⚠️ **Inventaire des écrivains d'un compte bancaire**
+     l'appelle désormais (DRY ; tests d'`accept_one_rule` verts : il garde sa propre conversion en `FailedProposal`, erreur de base →
+     `DATABASE_ERROR`, ligne non mise à jour → `RECONCILIATION_ALREADY_RECONCILED` avec `details: { reason:
+     "race_during_update" }`, textes inchangés). ⚠️ **Inventaire des écrivains d'un compte bancaire**
      (`crates/kesh-api/tests/bank_account_closed_inventory.rs`, clé `(fichier, fonction)`, diff dans les deux sens) :
      l'`UPDATE bank_transactions` quitte `accept_one_rule` — son entrée du `REGISTRE` (`Invariant("I1", …)`) rougit
      « sans site » si l'`UPDATE` ne s'y trouve plus — et naît dans `mark_reconciled_in_tx` (`kesh-db/src/repositories/
@@ -316,3 +326,9 @@ proposition ; liste des écarts et des lignes à examiner.
   conversion à une écriture pointée par les deux transactions, annulation par l'autre côté de seconde branche
   (38-11c1 AC-1b) ; doc « absence de cycle » de `link_entry_in_tx` complétée (plusieurs comptes écrits sous leurs
   verrous).
+- 2026-11-20 — validation P4, ciblée sur AC-5, AC-7, AC-8 (Claude Sonnet 5.5, contexte frais) : 0 CRITICAL, 0 HIGH, 0
+  MEDIUM, 2 LOW, remédiés (rapport `kesh-gate-logs/epic-38-kiss/validation/38-11-P4-ciblee.md`). Conduit du 1213 nommé
+  (écrivains oubliés de l'énumération, `with_account_locks`, `ReconciliationError`), contrepartie de l'absence du filet 1305
+  écrite, test d'interblocage par genre, comportement d'`accept_one_rule` gardé après l'extraction de
+  `mark_reconciled_in_tx`. Vérifié : `is_app_deadlock` = 1213 seul (`retry.rs:32`), 1305 = `MARIADB_SAVEPOINT_DOES_NOT_EXIST`
+  (`routes/reconciliation.rs:2171`), `is_deadlock_error` ne reconnaît que `DbError::Sqlx` 1213 (`kesh-db/src/retry.rs`).

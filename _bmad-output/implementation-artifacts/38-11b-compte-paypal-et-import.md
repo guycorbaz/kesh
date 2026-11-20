@@ -15,7 +15,7 @@ En tant que **Comptable** (les routes des comptes bancaires sont des routes Comp
 `crates/kesh-api/src/lib.rs:579`, `:1053-1060`), je veux faire d'un compte bancaire Kesh le solde, dans une devise,
 d'un de mes deux comptes PayPal — sans IBAN, lié à un compte du plan **déjà en devise**, avec son compte de frais —,
 puis importer d'un geste le CSV PayPal d'un exercice, ventilé par devise, sans doublon, afin que chaque mouvement du
-solde attende son rapprochement (38-11c).
+solde attende son rapprochement (38-11c2).
 
 ## Exigences
 
@@ -139,10 +139,10 @@ solde attende son rapprochement (38-11c).
      `SettlementAccountIsCreditCard` de la 34-11a2 pour précédent : un `DbError` neuf, rendu 409) et paiement d'une
      facture fournisseur (`supplier_invoices::pay_in_tx_as`, `crates/kesh-db/src/repositories/supplier_invoices.rs:2018`,
      compte bancaire choisi : ce chemin ne refuse pas la carte aujourd'hui, le refus PayPal y est neuf). Le CSV PayPal
-     passe par sa route (AC-4) ; les rattachements à une écriture existante (38-11c) restent admis.
+     passe par sa route (AC-4) ; les rattachements à une écriture existante (38-11c1) restent admis.
    - ⚠️ **Limites écrites (décision de l'orchestrateur du 2026-11-20, validation P2)** — à reprendre au manuel par
      38-11d : (a) **phase 1 : une facture fournisseur ne se paie pas depuis un compte PayPal** (KISS : les achats PayPal
-     passent par les règles, 38-11c) ; *remède* : régler la facture par le choix « compte interne » (un compte du plan),
+     passent par les règles, 38-11c2) ; *remède* : régler la facture par le choix « compte interne » (un compte du plan),
      ou passer l'écriture à la main (en devise pour un solde en devise, 37-3b), puis **rattacher** la transaction PayPal à
      cette écriture (38-11c1 AC-1) ; (b) **angle mort assumé, comme la carte (34-11a2, C-e341-41)** : le refus ne couvre
      que les deux écrivains ci-dessus ; l'acceptation d'une proposition « facture » ou « facture fournisseur » par la
@@ -331,3 +331,4 @@ ni règlement de facture, ni paiement de facture fournisseur (limite de la phase
   quels par 39-11b et 40-7b ; angle mort (b) de l'AC-3 complété de `get_proposals` et `accept_one_rule` ; réponse des
   comptes bancaires avec `provider` (l'écran en tire `withoutProviders`, générique pour les Epics 39 et 40) ; renvois à
   38-11c1 / 38-11c2 après le découpage.
+- 2026-11-20 — validation P4 (Claude Sonnet 5.5, contexte frais) : renvois « 38-11c » nus désignés 38-11c1 ou 38-11c2 après le découpage ; aucun autre changement.

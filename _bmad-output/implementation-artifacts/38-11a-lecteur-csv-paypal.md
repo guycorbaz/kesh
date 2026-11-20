@@ -4,7 +4,7 @@ Status: drafted
 
 *Fiche rédigée le 2026-11-20, branche `epic/38-paypal`, numéros de ligne relevés après la fusion de `origin/main`
 (v0.19.0 et suivants, commit de fusion `43ceb541`). Epic 38, **phase 1 KISS** (décision de Beat du 2026-11-20,
-§ *Phase 1 KISS* du fichier d'epic). **Dépend de** : rien. **Suivie par** : 38-11b (import), 38-11c (classement).*
+§ *Phase 1 KISS* du fichier d'epic). **Dépend de** : rien. **Suivie par** : 38-11b (import), 38-11c2 (classement).*
 
 ## Story
 
@@ -39,7 +39,7 @@ transaction, afin que l'import (38-11b) n'ait plus qu'à ranger ces lignes dans 
    ligne de données → `PaypalCsvError::Empty`. Les lignes entièrement vides (fin de fichier) sont sautées. Taille :
    la borne est celle de la route (38-11b), non du lecteur.
 2. **AC-2 — En-tête par noms.** La première ligne est l'en-tête ; les noms se comparent après `trim` et sans casse.
-   **Requises** (celles qu'un maillon aval lit : 38-11b et 38-11c) : `Date`, `Name`, `Type`, `Status`, `Currency`,
+   **Requises** (celles qu'un maillon aval lit : 38-11b et 38-11c2) : `Date`, `Name`, `Type`, `Status`, `Currency`,
    `Gross`, `Fee`, `Net`, `From Email Address`, `To Email Address`, `Transaction ID`, `Reference Txn ID`,
    `Balance Impact`. **Facultatives** (absentes = vides) : `Time`, `TimeZone` (affichées seulement, aucune
    conversion), `Item Title`, `Subject`, `Note`, `Balance`, `Invoice Number`. Les 41 colonnes du fichier
@@ -88,7 +88,7 @@ transaction, afin que l'import (38-11b) n'ait plus qu'à ranger ces lignes dans 
    un `FEE_POSITIVE` aurait refusé un fichier réel. Les erreurs s'agrègent (plafond `MAX_CSV_LINE_ERRORS`,
    `error.rs:49`) dans `PaypalCsvError::Lines(Vec<PaypalLineError>)` ; une seule erreur refuse le fichier entier
    (pas d'import partiel, comme le CSV bancaire). Conséquence pour 38-11b : une ligne de frais positifs donne une
-   transaction de frais **positive** (`:FEE`, `amount = fee`) ; 38-11c l'envoie « à examiner » ou à son classement
+   transaction de frais **positive** (`:FEE`, `amount = fee`) ; 38-11c2 l'envoie « à examiner » ou à son classement
    des frais (sens du montant à y lire, jamais supposé négatif).
 6. **AC-6 — Pureté et publication.** Aucune dépendance neuve ; aucune référence à un autre crate du workspace ;
    `cargo publish --dry-run -p kesh-import` (job `Backend (Rust)` de la CI) reste vert ; `csv/parser.rs` n'est pas
@@ -112,7 +112,7 @@ transaction, afin que l'import (38-11b) n'ait plus qu'à ranger ces lignes dans 
    *User Initiated Currency Conversion* (débit EUR, crédit USD, même `Reference Txn ID`), un *General Withdrawal*, une
    paire *Payment Review Hold* / *Payment Review Release*, un *Payment Refund* **à frais positifs**, une ligne
    `Pending`, une ligne `Denied`, une ligne `Memo`, un montant à milliers (`1,234.56`), une cellule `Note` sur deux
-   lignes entre guillemets. Elle sert aussi à 38-11b, 38-11c et à l'E2E de 38-11d.
+   lignes entre guillemets. Elle sert aussi à 38-11b, 38-11c2 et à l'E2E de 38-11d.
 
 ## Tâches
 
@@ -141,7 +141,7 @@ langue ou d'un autre rapport est refusé en nommant les colonnes qui manquent.
 
 ## Notes de développement
 
-- Reprise de l'ancienne fiche 38-7 (client PayPal, `deferred`) : seule l'idée du classement par type survit, en 38-11c.
+- Reprise de l'ancienne fiche 38-7 (client PayPal, `deferred`) : seule l'idée du classement par type survit, en 38-11c2.
 - Format relevé sur le fichier 2024 de Beat (notes sans donnée personnelle,
   `kesh-gate-logs/epic-38-kiss/paypal-2024-comprendre.md`) : 41 colonnes, UTF-8 avec BOM ; statuts `Completed`,
   `Pending`, `Denied`.
@@ -156,3 +156,4 @@ langue ou d'un autre rapport est refusé en nommant les colonnes qui manquent.
   nommées ; dates de la fixture sans exercice d'accueil en E2E (2020). LOW : numéro de ligne d'une cellule multiligne,
   `Time`/`TimeZone` requises sans usage, `MAX_CSV_LINE_ERRORS` cité à `lib.rs` (défini `error.rs:49`). Rapport :
   `kesh-gate-logs/epic-38-kiss/validation/38-11a-lecteur-csv-paypal-P1.md`.
+- 2026-11-20 — validation P4 (Claude Sonnet 5.5, contexte frais) : renvois « 38-11c » nus désignés 38-11c1 ou 38-11c2 après le découpage ; aucun autre changement.
