@@ -1,6 +1,6 @@
 # Story 38-11a : lecteur du CSV PayPal « Balance affecting transactions » (`kesh-import`)
 
-Status: ready-for-dev
+Status: review
 
 *Fiche rédigée le 2026-11-20, branche `epic/38-paypal`, numéros de ligne relevés après la fusion de `origin/main`
 (v0.19.0 et suivants, commit de fusion `43ceb541`). Epic 38, **phase 1 KISS** (décision de Beat du 2026-11-20,
@@ -116,10 +116,10 @@ transaction, afin que l'import (38-11b) n'ait plus qu'à ranger ces lignes dans 
 
 ## Tâches
 
-- [ ] T1 — `paypal.rs` : types, en-tête par noms, lecture des lignes (AC-1 à AC-3).
-- [ ] T2 — Dates à ordre décidé sur le fichier (AC-4).
-- [ ] T3 — Montants par forme fermée, contrôles de cohérence, agrégation (AC-5).
-- [ ] T4 — Fixture fictive et tests (AC-7) ; `cargo publish --dry-run -p kesh-import` (AC-6).
+- [x] T1 — `paypal.rs` : types, en-tête par noms, lecture des lignes (AC-1 à AC-3).
+- [x] T2 — Dates à ordre décidé sur le fichier (AC-4).
+- [x] T3 — Montants par forme fermée, contrôles de cohérence, agrégation (AC-5).
+- [x] T4 — Fixture fictive et tests (AC-7) ; `cargo publish --dry-run -p kesh-import` (AC-6).
 
 ## Stratégie de tests
 
@@ -146,6 +146,59 @@ langue ou d'un autre rapport est refusé en nommant les colonnes qui manquent.
   `kesh-gate-logs/epic-38-kiss/paypal-2024-comprendre.md`) : 41 colonnes, UTF-8 avec BOM ; statuts `Completed`,
   `Pending`, `Denied`.
 
+## Dev Agent Record
+
+### Implementation Plan
+
+- `csv/by_name.rs` — `ColumnsByName::locate(en-tête, requises, facultatives)` (noms après `trim`, sans casse ;
+  `HeaderByNameError::Missing` liste toutes les requises absentes, `Duplicate`), `cell(record, nom)` rend la cellule
+  après `trim` ou `None`.
+- `csv/amount.rs` — `parse_dot_decimal_amount` : regex `^-?([0-9]+|[0-9]{1,3}(,[0-9]{3})+)(\.[0-9]{1,2})?$`
+  (`[0-9]`, non `\d`, qui admet les chiffres Unicode), virgules retirées, `Decimal::from_str_exact`.
+- `paypal.rs` — deux passes : lecture des enregistrements (en-tête, nombre de cellules, lignes vides), puis décision
+  du format de date sur toutes les lignes (`decide_date_order` : format de la première date reconnue ; pour la barre
+  oblique, indices jour/mois comptés seulement pour une date plausible), puis contrôle de chaque ligne (`read_row`) ;
+  erreurs agrégées, plafonnées, triées par ligne. `csv/parser.rs` intact.
+
+### Debug Log
+
+- Test ISO-8859-1 sur la fixture ré-encodée : refusé `UnsupportedEncoding(Some("UTF-8"))` — `detect_encoding`
+  (partagé avec le CSV bancaire) n'examine que 1024 octets, tout ASCII ici. Test récrit sur un fichier court à accent
+  en première ligne ; la limite du détecteur commun reste hors de cette story (point ouvert ci-dessous).
+
+### Completion Notes
+
+- Tests ajoutés (de `5553bf95` à `1608bb62`, recomptés par `grep -c '#\[test\]'`) : 34 — `src/paypal.rs` 17,
+  `src/csv/by_name.rs` 5, `src/csv/amount.rs` 2, `tests/paypal_csv.rs` 10.
+- Sondes négatives (mutations temporaires, journal de séance, rien de commité) : contrôle `net = gross + fee` retiré,
+  signe `Credit` retiré, conflit d'ordre des dates accepté, virgule des milliers à 1–3 chiffres : chacune rougit au
+  moins un test ; BOM non retranché : vert (le crate `csv` le retire lui-même, voir Change Log).
+- Gate ciblé : `cargo nextest run -p kesh-import` (filtres `paypal`, `by_name`, `amount`, `binary(paypal_csv)`)
+  vert ; `cargo fmt --all` puis `cargo clippy --workspace --all-targets -D warnings` vert ;
+  `cargo publish --dry-run -p kesh-import` vert (AC-6).
+- **Gate backend complet au commit de code `1608bb62`** : `scripts/test-fast.sh --ci` (fmt, clippy, nextest), base
+  `kesh_s3811a` remise à zéro avant (DROP/CREATE, migrations, seed), rc 0 : **6174 tests exécutés, 6174 passés,
+  14 ignorés** — journal `kesh-gate-logs/s38-11a/gate-backend.log`.
+- **Non exécutés** : gates frontend, E2E complet et `scripts/gate-ci.sh` — la story ne touche que `kesh-import`, sans
+  frontend ni autre crate ; ils restent dus au dernier commit de code de la phase, avant le push.
+- Points ouverts : (a) `detect_encoding` refuse un fichier ISO-8859-1 dont les 1024 premiers octets sont ASCII
+  (défaut préexistant du détecteur commun, sans effet sur PayPal, qui exporte en UTF-8 avec BOM) — à tracer en
+  issue ; (b) la phrase d'AC-1 sur le BOM, à corriger dans la fiche si on la reprend.
+- Prompt de la revue P1 : `kesh-gate-logs/s38-11a/revue-p1-prompt.md`.
+
+### File List
+
+- `crates/kesh-import/src/paypal.rs` (neuf)
+- `crates/kesh-import/src/csv/by_name.rs` (neuf)
+- `crates/kesh-import/src/csv/amount.rs` (neuf)
+- `crates/kesh-import/src/csv/mod.rs`
+- `crates/kesh-import/src/lib.rs`
+- `crates/kesh-import/tests/paypal_csv.rs` (neuf)
+- `crates/kesh-import/tests/fixtures/paypal-balance-affecting-fictif.csv` (neuf)
+- `crates/kesh-import/tests/fixtures/README.md`
+- `_bmad-output/implementation-artifacts/38-11a-lecteur-csv-paypal.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+
 ## Change Log
 
 - 2026-11-20 — fiche rédigée (phase 1 KISS), non validée.
@@ -157,3 +210,17 @@ langue ou d'un autre rapport est refusé en nommant les colonnes qui manquent.
   `Time`/`TimeZone` requises sans usage, `MAX_CSV_LINE_ERRORS` cité à `lib.rs` (défini `error.rs:49`). Rapport :
   `kesh-gate-logs/epic-38-kiss/validation/38-11a-lecteur-csv-paypal-P1.md`.
 - 2026-11-20 — validation P4 (Claude Sonnet 5.5, contexte frais) : renvois « 38-11c » nus désignés 38-11c1 ou 38-11c2 après le découpage ; aucun autre changement.
+- 2026-11-20 — développement (`bmad-dev-story`), commit de code `1608bb62` : module `paypal.rs`, aides communes
+  `csv/by_name.rs` et `csv/amount.rs` (pour Wise, 39-11a, et Stripe, 40-7a), fixture fictive, 34 tests. Écarts à la
+  fiche, chacun voulu : (1) **doublon de colonne refusé seulement parmi les colonnes lues** (requises et
+  facultatives) — un doublon parmi les colonnes ignorées, ou plusieurs colonnes sans nom (virgule finale), ne rend
+  aucune lecture ambiguë et ne doit pas faire refuser un fichier réel ; (2) lecteur en `flexible(true)` avec contrôle
+  du nombre de cellules à la main : même erreur `FIELD_COUNT`, mais une ligne de seules cellules vides est sautée
+  avant d'être comptée ; (3) codes d'erreur de ligne que la fiche ne nommait pas : `CURRENCY`, `TRANSACTION_ID`,
+  `BALANCE_IMPACT`, `REQUIRED` (`Type` ou `Status` vide) ; `field` est `Option<&'static str>` (`None` pour
+  `FIELD_COUNT`) ; (4) `reference_txn_id` passé en majuscules, comme `transaction_id`, pour que 38-11c2 les compare ;
+  (5) `PaypalCsvError::Lines` garde la forme fermée de la fiche (pas de total au-delà du plafond : une liste de
+  `MAX_CSV_LINE_ERRORS` éléments peut être tronquée). Prémisse d'AC-1 relevée fausse, sans conséquence : le crate
+  `csv` retire lui-même un BOM UTF-8 en tête, si bien qu'un BOM non retranché ne ferait pas refuser le fichier ; le
+  retranchement est gardé (défense en profondeur), mais aucun test ne peut le sonder (mutation constatée verte).
+  Les 21 noms de remplissage de la fixture sont ceux de la fiche, non corrigés.
