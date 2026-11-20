@@ -120,13 +120,13 @@ transaction du versement dans `?payout=` ; `Stripe-Version` à épingler ; table
   transaction en attente ; **39-11c la propose** au rattachement à l'écriture du versement (± 5 jours). Les comptes Wise
   EUR/USD sont des comptes bancaires Kesh (compte de versement de 40-7b). 40-7c ne la propose pas (doublon, validation
   P2) : elle liste le versement en écart `payout_without_receipt` tant que sa réception n'est pas rattachée.
-- **C-40-K6 — Socle commun de la phase 2** avec PayPal (38-12a) et Wise (39-12a1, 39-12a2) : § suivante ; le premier des trois qui se développe l'écrit générique, les autres l'appellent.
+- **C-40-K6 — Socle commun de la phase 2** avec PayPal (38-12a) et Wise (39-12a1 à 39-12a3) : § suivante ; le premier des trois qui se développe l'écrit générique, les autres l'appellent.
 
 ## Socle commun de la phase 2 (Epics 38, 39, 40) — contrat S1 à S9
 
 *Texte identique au fichier de l'Epic 39 ; décidé à la validation P1 des phases 2 de Wise et de Stripe (2026-11-20, rapport
 `39-12-P1.md`), amendé à la validation P2 du même jour (S1 : vide = absente, séries 1 à 3 au compose ; S2 à S4 : `max_days` par prestataire, 409 avec `jobId`, un
-seul nom `details`, clé d'API en 403 `API_KEY_OPERATION_FORBIDDEN`, registre ; S6 : `ProviderLine` extrait par 38-12a ; rapports `39-12-P2.md`, `40-8-P2.md`) pour que
+seul nom `details`, clé d'API en 403 `API_KEY_OPERATION_FORBIDDEN`, registre ; S6 : `ProviderLine` extrait par 38-12a ; rapports `39-12-P2.md`, `40-8-P2.md` ; S1, S2, S9 amendés le 2026-11-20 par la voie activités de Wise : clé SCA retirée, Wise 366) pour que
 les trois prestataires partagent **un** code. **Écrit par la première fiche de phase 2 développée**
 (38-12a, normalement), **générique dès le départ** (C-40-K6) ; les deux autres l'appellent. Ce que chaque fiche garde
 en propre : sa conversion, son jeu d'étapes, ses codes `<PRESTATAIRE>_*` propres au format.*
@@ -142,12 +142,12 @@ en propre : sa conversion, son jeu d'étapes, ses codes `<PRESTATAIRE>_*` propre
   phase 2 de chaque prestataire ; **la garde `crates/kesh-api/tests/configuration_transmise.rs` (#550)** exige qu'une variable soit lue
   si et seulement si elle est transmise, une ligne `.env.example` par variable lue et des noms `KESH_…` connus, et les noms construits
   par `format!` lui échappent : **38-12a y ajoute une famille indexée générique par prestataire** (séries 1 à 3 exigées, 4 à 9 admises
-  absentes avec raison, lectures de `provider_env` inscrites en forme exacte), Wise et Stripe y **inscrivent leur famille** (dont `KESH_WISE_<n>_SCA_KEY_FILE`) ; les noms **sans numéro** `KESH_<P>_BASE_URL` et `KESH_<P>_PARALLEL` (construits par `format!`, et lus par le parcours `std::env::vars()`) sont inscrits en forme exacte à `EMPLACEMENTS_AUTORISES`, leurs lignes de `.env.example` sont commentées ou vides, jamais `<…>`, sans relâcher aucune liste ; le manuel d'administration les porte dans **un tableau neuf du §
+  absentes avec raison, lectures de `provider_env` inscrites en forme exacte), Wise et Stripe y **inscrivent leur famille** ; les noms **sans numéro** `KESH_<P>_BASE_URL` et `KESH_<P>_PARALLEL` (construits par `format!`, et lus par le parcours `std::env::vars()`) sont inscrits en forme exacte à `EMPLACEMENTS_AUTORISES`, leurs lignes de `.env.example` sont commentées ou vides, jamais `<…>`, sans relâcher aucune liste ; le manuel d'administration les porte dans **un tableau neuf du §
   `sec:env-vars`** (modèle `:840-862`) **et** dans le tableau de la section du prestataire — **jamais** le tableau SMTP (`:1155`) —,
   et dit comment aller au-delà de trois comptes (lignes à ajouter au compose) ; champs privés, `Debug` masqué ; un contrôle propre au prestataire
-  s'y branche (clé Stripe `rk_`, fichier de clé SCA de Wise). Le libellé est **propre à l'installation**, non à la société.
+  s'y branche (clé Stripe `rk_` ; Wise n'en a pas). Le libellé est **propre à l'installation**, non à la société.
 - **S2 — Mécanique de téléchargement** (`provider_download`) : table des tâches en mémoire (une par prestataire, société et
-  libellé, purgée une heure après la fin), `windows(from, to, max_days, now)` pure (jours de Zurich ; **`max_days` par prestataire** — PayPal 30, Wise 468, Stripe
+  libellé, purgée une heure après la fin), `windows(from, to, max_days, now)` pure (jours de Zurich ; **`max_days` par prestataire** — PayPal 30, Wise 366 (aucune borne de période à l'API des activités de Wise : la fenêtre ne découpe que la progression), Stripe
   sans fenêtre (curseurs, aucune borne de période) — : quand la limite du prestataire se compte en heures, sur des instants
   UTC, ou n'a pas d'unité dite, on prend **un jour de moins** qu'elle, pour couvrir le jour de 25 heures du passage à
   l'heure d'hiver ; fin ramenée à `now`), **politique de reprise unique**
@@ -182,7 +182,7 @@ en propre : sa conversion, son jeu d'étapes, ses codes `<PRESTATAIRE>_*` propre
 - **S7 — Écran.** Un dialogue générique (38-12b), paramétré par prestataire ; `providerApi: { configured, mode?, … }` sur le
   compte bancaire.
 - **S8 — E2E.** Un seul serveur de prestataire simulé pour Playwright, port `KESH_E2E_PROVIDER_MOCK_PORT`.
-- **S9 — Secrets.** Un test au marqueur commun : aucun secret (jeton, clé, défi, signature) dans un journal, une réponse, une
+- **S9 — Secrets.** Un test au marqueur commun : aucun secret (jeton, clé, secret client) dans un journal, une réponse, une
   erreur ou une trace d'audit.
 
 ## Questions et points douteux (2026-11-20)
