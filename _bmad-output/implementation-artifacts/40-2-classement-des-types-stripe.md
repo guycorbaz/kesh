@@ -1,6 +1,6 @@
 # Story 40-2 : classement des types Stripe — genres, codes courts, montants, liens, boutique, surcharges
 
-Status: ready-for-dev
+Status: superseded — remplacée le 2026-11-20 par la refonte KISS de l'Epic 40 (voir le registre du fichier d'epic) ; fiche gardée comme historique
 
 *Fiche rédigée le 2026-11-15 (Opus), branche `epic/40-stripe`, numéros de ligne relevés au commit `a2b1da9c`. Epic 40
 (`planning-artifacts/epic-40-stripe.md`) : G6, G7, G8, G9, G11, G14, G19 ; contrats C-40-0, **C-40-4** ; décisions de

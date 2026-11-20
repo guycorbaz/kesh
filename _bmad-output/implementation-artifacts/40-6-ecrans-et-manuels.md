@@ -1,6 +1,6 @@
 # Story 40-6 : écrans et manuels Stripe — connexion et clé restreinte, boutique, versements, écart ventilé ; E2E
 
-Status: ready-for-dev
+Status: superseded — remplacée le 2026-11-20 par la refonte KISS de l'Epic 40 (voir le registre du fichier d'epic) ; fiche gardée comme historique
 
 - **Epic** : 40 (`_bmad-output/planning-artifacts/epic-40-stripe.md`, § *40-6*, G4, G8, G10, G12, G13, G14, G17, G19,
   C-40-1 à C-40-6) ; décisions de Beat B3, B6, B10, B13, B17, B20, B21 (`epics-38-40-cadrage.md`), qui priment ;

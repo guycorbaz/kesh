@@ -1,6 +1,6 @@
 # Story 40-3 : versements Stripe — date d'arrivée, écriture datée de l'arrivée, rattachement à la ligne UBS, échecs
 
-Status: ready-for-dev
+Status: superseded — remplacée le 2026-11-20 par la refonte KISS de l'Epic 40 (voir le registre du fichier d'epic) ; fiche gardée comme historique
 
 *Fiche rédigée le 2026-11-15 (Opus), branche `epic/40-stripe`, numéros de ligne relevés au commit `a2b1da9c`. Epic 40
 (`planning-artifacts/epic-40-stripe.md`) : G1, G10, G11, G12 (créance au 31 décembre), G15, G18 ; contrats C-40-0,

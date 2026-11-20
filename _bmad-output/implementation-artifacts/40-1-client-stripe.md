@@ -1,6 +1,6 @@
 # Story 40-1 : client Stripe — connexion, clé restreinte, version épinglée, « Tester », transactions de solde, soldes
 
-Status: ready-for-dev
+Status: superseded — remplacée le 2026-11-20 par la refonte KISS de l'Epic 40 (voir le registre du fichier d'epic) ; fiche gardée comme historique
 
 *Fiche rédigée le 2026-11-15 (Opus), branche `epic/40-stripe`, numéros de ligne relevés au commit `a2b1da9c`. Epic 40
 (`planning-artifacts/epic-40-stripe.md`) : G3, G4, G5, G7 (contrôles de forme), G15, G16, G17 ; contrats **C-40-0**,

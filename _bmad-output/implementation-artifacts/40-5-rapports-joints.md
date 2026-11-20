@@ -1,6 +1,6 @@
 # Story 40-5 : rapports Stripe joints à la main — CSV admis par les relevés joints, solde de clôture saisi
 
-Status: ready-for-dev
+Status: deferred — reportée le 2026-11-20 après la phase 2 de l'Epic 40 (voir le registre du fichier d'epic)
 
 - **Epic** : 40 (`_bmad-output/planning-artifacts/epic-40-stripe.md`, § *40-5*, G13, C-40-0, C-40-2 (d), C-40-6) ;
   décisions de Beat **B10** (Stripe : pas de PDF, rapports joints à la main) et **B20** (le relevé est la somme de

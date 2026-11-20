@@ -1,6 +1,6 @@
 # Story 40-4 : contrôle de solde Stripe — versements en route, `available` et `pending`, créance hors trésorerie
 
-Status: ready-for-dev
+Status: deferred — reportée le 2026-11-20 après la phase 2 de l'Epic 40 (voir le registre du fichier d'epic)
 
 - **Epic** : 40 (`_bmad-output/planning-artifacts/epic-40-stripe.md`, § *40-4*, G1, G5, G10, G12, C-40-0, C-40-2 (c),
   C-40-6) ; décisions de Beat **B13** (créance « Débiteurs Stripe ») et **B20** (le relevé est la somme de contrôle),

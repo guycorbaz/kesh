@@ -1,3 +1,4 @@
+# last_updated: 2026-11-20 (Epic 40 : refonte KISS, décision de Beat — phase 1 40-7a à 40-7d, phase 2 40-8a et 40-8b, drafted ; 40-1, 40-2, 40-3, 40-6 superseded ; 40-4, 40-5 deferred)
 # last_updated: 2026-11-18 (découpages : 48-13 → 48-13 et 48-15-troncatures-silencieuses (#1331 à #1334, dérogation à la règle de splitting, décision de Guy) ; Epic 48 à huit stories, dérogation à la borne de six élargie ; 49-1 split en 49-1a à 49-1d (règle de splitting, neuf modules) ; 48-13, 48-15 et 49-1a en validation (P3))
 # last_updated: 2026-11-18 (kickoff de la 0.20.0 révisé sur les réponses de Guy aux points ouverts : sous-totaux repoussés, 49-3-titres-et-sous-totaux renommée 49-3-titres-de-section ; #1234 retirée de la 48-13 ; 48-13 fusionnée avant l'Epic 49 ; issues de la solde #1263, #1262, #1261, #1255 au milestone v0.20.0)
 # last_updated: 2026-11-18 (kickoff de la 0.20.0 en autonomie, release-0.20.0.md : Epic 48 sort du réservoir et devient l'épique corrective de la release, sept stories par dérogation à la borne de six (décision de Guy du 2026-11-18), 48-11 à 48-14 ajoutées, 48-3 à 48-9 hors 0.20.0 ; Epic 49 ouverte, types de lignes de la facture client (#1242), seule migration de la release ; v0200-menu-sous-groupes (#1253), amélioration de la release)
@@ -1167,14 +1168,20 @@ development_status:
   39-4-classement-des-types-wise: backlog
   39-5-releve-pdf: backlog
   39-6-ecrans-et-manuels: backlog
-  epic-40: in-progress  # 2026-11-15 : epic-40-stripe.md (cadrage, B3, B4, B6, B10, B12, B13, B14 de epics-38-40-cadrage.md ; socle de l'Epic 38, amendements de 39 repris ; G1–G19 ; aucune migration) ; numéro 40 provisoire, à confirmer par Guy (Q-40-1) ; demande de Beat ; après les Epics 37, 38 et 39, une PR à la fin
+  epic-40: in-progress  # 2026-11-20 : refonte KISS (décision de Beat du 2026-11-20) — phase 1 : 40-7a à 40-7d (import du rapport CSV à la demande, rapprochement avec les ventes des boutiques, une migration non breaking en 40-7b) ; phase 2 : 40-8a, 40-8b (API Stripe, clé restreinte en variable d'environnement) ; anciennes 40-1 à 40-6 superseded ou deferred. Avant : 2026-11-15 cadrage epic-40-stripe.md (G1–G19, aucune migration) ; après les Epics 37, 38 et 39, une PR à la fin
   40-0-kickoff: done  # cadrage écrit le 2026-11-15 (recette en mode test faite par l'orchestrateur) ; décomptes, validation du fichier d'epic et recette en mode réel de Beat à tenir (bloquent les fiches)
-  40-1-client-stripe: ready-for-dev  # validée le 2026-11-15 (cycle P1–P5 clos, 0 au-dessus de LOW)
-  40-2-classement-des-types-stripe: ready-for-dev  # validée le 2026-11-15 (cycle P1–P5 clos, 0 au-dessus de LOW)
-  40-3-versements-et-rattachement: ready-for-dev  # validée le 2026-11-15 (cycle P1–P5 clos, 0 au-dessus de LOW)
-  40-4-controle-de-solde: ready-for-dev  # validée le 2026-11-15 (cycle P1–P5 clos, 0 au-dessus de LOW)
-  40-5-rapports-joints: ready-for-dev  # validée le 2026-11-15 (cycle P1–P5 clos, 0 au-dessus de LOW)
-  40-6-ecrans-et-manuels: ready-for-dev  # validée le 2026-11-15 (cycle P1–P5 clos, 0 au-dessus de LOW)
+  40-1-client-stripe: superseded  # 2026-11-20, refonte KISS : remplacée par 40-8a et 40-8b (clé en variable d'environnement, sans coffre) ; avant : validée le 2026-11-15 (cycle P1–P5)
+  40-2-classement-des-types-stripe: superseded  # 2026-11-20, refonte KISS : remplacée par 40-7c ; avant : validée le 2026-11-15 (cycle P1–P5)
+  40-3-versements-et-rattachement: superseded  # 2026-11-20, refonte KISS : remplacée par 40-7b et 40-7c ; avant : validée le 2026-11-15 (cycle P1–P5)
+  40-4-controle-de-solde: deferred  # 2026-11-20, refonte KISS : après la phase 2 ; avant : validée le 2026-11-15 (cycle P1–P5)
+  40-5-rapports-joints: deferred  # 2026-11-20, refonte KISS : suit 38-10, reportée ; avant : validée le 2026-11-15 (cycle P1–P5)
+  40-6-ecrans-et-manuels: superseded  # 2026-11-20, refonte KISS : remplacée par 40-7d et 40-8b ; avant : validée le 2026-11-15 (cycle P1–P5)
+  40-7a-lecteur-csv-stripe: drafted  # 2026-11-20, phase 1 KISS : lecteur du CSV « Itemized payout reconciliation » (kesh-import)
+  40-7b-compte-stripe-et-import: drafted  # 2026-11-20, phase 1 KISS : réglages Stripe (frais, compte de versement), import ventilé par devise ; migration 20261120000003_stripe_import, non breaking
+  40-7c-rapprochement-stripe: drafted  # 2026-11-20, phase 1 KISS : charges → ventes des boutiques, frais et versements écrits, réception proposée, écarts ; rattachement en devise (C-40-K3)
+  40-7d-ecrans-manuel-stripe: drafted  # 2026-11-20, phase 1 KISS : écrans, manuel utilisateur, E2E
+  40-8a-client-api-stripe: drafted  # 2026-11-20, phase 2 : client de l'API, clé restreinte KESH_STRIPE_<n>_KEY
+  40-8b-telechargement-stripe: drafted  # 2026-11-20, phase 2 : téléchargement par période, reprise sur 429, KESH_STRIPE_PARALLEL (1 à 6)
 
   # 2026-11-17 — Release 0.19.0 (publiée le 2026-11-20, coupure le 2026-11-19 au soir ; coupure avancée au 2026-11-18, décision de Guy) : correction de la semaine, hors epic.
   v0190-correction: done  # #1162 ; release 0.19.0 ; sans migration, frontend seul (ContactPicker) ; fiche rédigée le 2026-11-17 (Sonnet 5.5), validée (8 passes) ; développée le 2026-11-17 (Opus 5.5) ; revue P1 à P3 terminée, décision D4 de Guy ; close le 2026-11-17 (gate-ci et E2E complet au commit 23ff6338d) ; peut glisser à la 0.20.0 (décision de Guy du 2026-11-17) ; scindée le 2026-11-17 : #1097 passe à v0190-nom-societe ; issue liée #1228
