@@ -2068,7 +2068,10 @@ pub async fn pay_in_tx_as(
                 // Story 38-11b (AC-3) — `provider` lu dans la même instruction :
                 // un compte PayPal → `BankAccountIsProvider`, après « clos »
                 // (limite de la phase 1 : payer par un compte interne ou une
-                // écriture, puis rattacher la transaction PayPal).
+                // écriture, puis rattacher la transaction PayPal). Appelants qui
+                // en héritent : la fiche, la confirmation d'un lot pain.001 et
+                // l'acceptation d'une proposition « facture fournisseur » de la
+                // réconciliation (`FailedProposal` nommé, revue P1, M2).
                 #[allow(clippy::type_complexity)]
                 let row: Option<(
                     Option<i64>,

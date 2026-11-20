@@ -743,8 +743,10 @@ fn resulting_paypal(
 /// 2. compte du plan lié obligatoire (`400 PROVIDER_LEDGER_REQUIRED`) ;
 /// 3. un compte bancaire par devise et par compte PayPal : un autre compte non
 ///    archivé de même libellé (collation, sans casse) lié à un compte de même
-///    devise → `409 PROVIDER_CURRENCY_DUPLICATE`. Lecture ordinaire, sous la
-///    sentinelle qui sérialise le `POST` et le `PUT` ; l'import refuse aussi
+///    devise → `409 PROVIDER_CURRENCY_DUPLICATE`. Lecture **verrouillante**
+///    (`list_provider_balances_locked`, revue P1, M1), sous la sentinelle qui
+///    sérialise le `POST` et le `PUT` : au `POST`, elle précède l'écriture
+///    d'ouverture et ne doit pas ouvrir l'instantané ; l'import refuse aussi
 ///    une devise portée par deux comptes (AC-4), filet d'un écrivain futur ;
 /// 4. compte de frais : présent, actif, imputable, de type charge, en CHF ou
 ///    dans la devise du compte lié (une écriture ne porte qu'une devise
@@ -767,8 +769,10 @@ async fn check_provider_guards_in_tx(
         return Err(AppError::ProviderLedgerRequired);
     }
     let currency = ledger_currency.unwrap_or(bank_accounts::BASE_CURRENCY);
-    let duplicate = bank_accounts::list_provider_balances(
-        &mut **tx,
+    // Lecture verrouillante (revue P1, M1) : au `POST`, cette garde précède
+    // l'écriture d'ouverture, qui n'admet avant elle aucune lecture ordinaire.
+    let duplicate = bank_accounts::list_provider_balances_locked(
+        tx,
         company_id,
         PROVIDER_PAYPAL,
         &paypal.account,
@@ -1299,7 +1303,9 @@ pub async fn create_bank_account(
 /// « jamais mouvementé » ne verrait pas une ligne commitée entre-temps sur le
 /// compte lié (la modification d'une écriture, qui ne prend pas `companies`).
 /// Avant le complément ne restent que des lectures verrouillantes (sentinelle
-/// `FOR UPDATE`, réglages `LOCK IN SHARE MODE`) ; le numéro lu par
+/// `FOR UPDATE`, réglages `LOCK IN SHARE MODE`, et, pour un compte PayPal, les
+/// gardes 2 à 4 de [`check_provider_guards_in_tx`] — Story 38-11b, revue P1,
+/// M1) ; le numéro lu par
 /// `refuse_if_ledger_is_claim_account` ne l'est que sur le chemin du refus.
 /// Le libellé se forme de la banque et de la description saisies : le
 /// complément n'a pas besoin de la ligne `bank_accounts`.
@@ -1347,7 +1353,9 @@ async fn create_once(
         )
         .await?;
         // Story 38-11b (AC-2) — gardes PayPal 2 à 4, sur l'état résultant,
-        // avant l'écriture d'ouverture, la démotion et l'`INSERT`.
+        // avant l'écriture d'ouverture, la démotion et l'`INSERT`. Toutes leurs
+        // lectures sont verrouillantes (revue P1, M1) : l'instantané n'est pas
+        // ouvert avant le complément (doc-comment ci-dessus).
         check_provider_guards_in_tx(
             &mut tx,
             current_user.company_id,

@@ -3427,6 +3427,14 @@ fn supplier_payment_error_to_failed_proposal(
             *fiscal_year_id,
             fiscal_year_name,
         ),
+        // Story 38-11b (revue P1, M2) — le solde d'un prestataire (PayPal) ne
+        // paie pas de facture fournisseur : `pay_in_tx_as` le refuse (AC-3,
+        // limite (a)) ; le refus sort nommé, non en `DATABASE_ERROR`.
+        DbError::BankAccountIsProvider { .. } => FailedProposal {
+            bank_transaction_id,
+            error_code: "BANK_ACCOUNT_IS_PROVIDER".to_string(),
+            details: Some(serde_json::json!({ "bankAccountId": bank_account_id })),
+        },
         // Défensifs : l'étape 3 tient le compte en exclusif et l'a refusé
         // avant, s'il était clos ou sans compte au grand livre.
         DbError::BankAccountClosed { .. } => FailedProposal {

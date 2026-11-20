@@ -1627,10 +1627,11 @@ pub const BASE_CURRENCY: &str = "CHF";
 ///
 /// La comparaison du libellé est celle de la **collation** de la colonne (sans
 /// casse, espaces finales ignorées) : « PayPal www » et « paypal WWW » sont le
-/// même compte PayPal. Lecture ordinaire : la garde d'unicité par devise des
-/// routes (`POST`, `PUT`) la fait sous la sentinelle `companies`, qui
-/// sérialise ces deux écrivains ; l'import la fait avant de prendre les verrous
-/// des comptes, puis contrôle l'ambiguïté (deux comptes pour une devise).
+/// même compte PayPal. Lecture ordinaire, sur le pool : l'import la fait avant
+/// de prendre les verrous des comptes, puis contrôle l'ambiguïté (deux comptes
+/// pour une devise) et relit sous les verrous par
+/// [`list_provider_balances_locked`], que la garde d'unicité par devise des
+/// routes (`POST`, `PUT`) emploie aussi, sous la sentinelle `companies`.
 pub async fn list_provider_balances<'e, E>(
     executor: E,
     company_id: i64,
@@ -1654,6 +1655,88 @@ where
     .fetch_all(executor)
     .await
     .map_err(map_db_error)
+}
+
+/// [`list_provider_balances`] en **lectures verrouillantes** (`LOCK IN SHARE
+/// MODE`), dans la transaction de l'appelant — Story 38-11b, revue P1 (M1,
+/// L1).
+///
+/// Deux appelants, deux raisons :
+///
+/// - la garde d'unicité par devise du `POST` et du `PUT` des comptes bancaires
+///   (`check_provider_guards_in_tx`) : au `POST`, elle précède l'écriture
+///   d'ouverture, dont le contrat (Story 34-2, AC-10, C-e341-38) n'admet que
+///   des lectures verrouillantes avant elle — une lecture ordinaire ouvrirait
+///   l'instantané REPEATABLE READ, et la lecture « jamais mouvementé » du
+///   complément ne verrait plus une ligne commitée entre-temps sur le compte
+///   lié. Une lecture verrouillante lit le dernier état commité sans ouvrir
+///   d'instantané ;
+/// - l'import PayPal, qui relit sous les verrous nommés, dans sa transaction
+///   d'écriture, les comptes visés : un `PUT` qui retire les réglages d'un
+///   compte encore sans transaction (garde 5 passée) attend alors sa fin, ou
+///   l'import voit son effet.
+///
+/// Deux instructions, et non la sous-requête de [`list_provider_balances`] :
+/// la portée d'un `LOCK IN SHARE MODE` sur une sous-requête scalaire n'est pas
+/// garantie, et une lecture non verrouillante de `accounts` ouvrirait
+/// l'instantané. Les comptes du plan sont lus par identifiant, sous le même
+/// verrou partagé.
+pub async fn list_provider_balances_locked(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    provider: &str,
+    provider_account: &str,
+) -> Result<Vec<ProviderBalance>, DbError> {
+    let accounts: Vec<BankAccount> = sqlx::query_as(concat!(
+        "SELECT ",
+        columns!(),
+        " FROM bank_accounts \
+         WHERE company_id = ? AND archived = FALSE AND provider = ? AND provider_account = ? \
+         ORDER BY id LOCK IN SHARE MODE",
+    ))
+    .bind(company_id)
+    .bind(provider)
+    .bind(provider_account)
+    .fetch_all(&mut *conn)
+    .await
+    .map_err(map_db_error)?;
+    let mut ledger_ids: Vec<i64> = accounts
+        .iter()
+        .filter_map(|a| a.journal_account_id)
+        .collect();
+    ledger_ids.sort_unstable();
+    ledger_ids.dedup();
+    let mut currencies: std::collections::HashMap<i64, Option<String>> =
+        std::collections::HashMap::new();
+    if !ledger_ids.is_empty() {
+        let placeholders = vec!["?"; ledger_ids.len()].join(", ");
+        let sql = format!(
+            "SELECT id, currency FROM accounts WHERE company_id = ? AND id IN ({placeholders}) \
+             ORDER BY id LOCK IN SHARE MODE"
+        );
+        let mut q = sqlx::query_as::<_, (i64, Option<String>)>(&sql).bind(company_id);
+        for id in &ledger_ids {
+            q = q.bind(id);
+        }
+        currencies = q
+            .fetch_all(&mut *conn)
+            .await
+            .map_err(map_db_error)?
+            .into_iter()
+            .collect();
+    }
+    Ok(accounts
+        .into_iter()
+        .map(|account| {
+            let ledger_currency = account
+                .journal_account_id
+                .and_then(|id| currencies.get(&id).cloned().flatten());
+            ProviderBalance {
+                account,
+                ledger_currency,
+            }
+        })
+        .collect())
 }
 
 /// Le drapeau `is_primary` du compte `id`, lu **sous `FOR UPDATE`** dans la

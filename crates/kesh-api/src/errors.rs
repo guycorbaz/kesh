@@ -5209,6 +5209,17 @@ impl IntoResponse for AppError {
                     ),
                     site.details(),
                 ),
+                // Story 38-11b, revue P1 (M3) — 409 : la devise du compte du
+                // plan d'un solde de prestataire ne change pas.
+                DbError::AccountCurrencyProviderLinked { bank_account_id } => coded_response(
+                    StatusCode::CONFLICT,
+                    "ACCOUNT_CURRENCY_PROVIDER_LINKED",
+                    t(
+                        "error-account-currency-provider-linked",
+                        "Ce compte est lié au solde d'un prestataire de paiement : sa devise est celle du solde et ne change pas.",
+                    ),
+                    serde_json::json!({ "bankAccountId": bank_account_id }),
+                ),
                 DbError::AccountInForeignCurrency {
                     account_id,
                     currency,

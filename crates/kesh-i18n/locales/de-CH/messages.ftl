@@ -1175,6 +1175,7 @@ error-exchange-rate-version-forbidden = Für dieses Feld ist noch kein Kurs fest
 error-account-currency-locked = Die Währung dieses Kontos kann nicht mehr geändert werden: Es enthält Buchungen, deren Währung sie ist.
 error-account-foreign-parent-has-entries = Das Konto { $number } wird in { $currency } geführt und enthält Buchungen: Es erhält kein Unterkonto, sonst würde es mit einem Saldo nicht bebuchbar, den die Bewertung zum Jahresende nicht mehr korrigieren könnte. Erstellen Sie stattdessen ein benachbartes Konto.
 error-account-currency-in-use = Dieses Konto wird in CHF verwendet (Rolle, Rechnungseinstellungen, Bankkonto, Artikel oder Abgleichsregel): Es kann keine Währung erhalten.
+error-account-currency-provider-linked = Dieses Konto ist mit dem Saldo eines Zahlungsdienstleisters verknüpft: Seine Währung ist die des Saldos und ändert sich nicht.
 error-account-in-foreign-currency = Dieses Konto wird in { $currency } geführt: Es kann hier nicht verwendet werden, da Kesh hier in CHF bucht.
 error-account-is-fx-difference-account = Dieses Konto ist ein Kursdifferenzkonto der Firma: Es kann weder archiviert, umtypisiert oder nicht bebuchbar gemacht werden noch eine Währung, ein Unterkonto oder eine Ertragsrolle erhalten.
 error-account-is-fx-difference-account-own = Dieses Konto ist ein Kursdifferenzkonto des Fremdwährungskontos { $number }: Es kann weder archiviert, umtypisiert oder nicht bebuchbar gemacht werden noch eine Währung, ein Unterkonto oder eine Ertragsrolle erhalten.

@@ -46,7 +46,11 @@ use kesh_db::entities::bank_transaction::NewBankTransaction;
 use kesh_db::errors::DbError;
 use kesh_db::repositories::bank_accounts::{self, ProviderBalance};
 use kesh_db::repositories::{audit_log, bank_imports, bank_transactions};
-use kesh_import::paypal::{BalanceImpact, PaypalCsvError, PaypalRow, parse_paypal_csv};
+use kesh_import::paypal::{
+    BalanceImpact, COL_TRANSACTION_ID, PaypalCsvError, PaypalLineError, PaypalLineErrorCode,
+    PaypalRow, parse_paypal_csv,
+};
+use kesh_import::{MAX_CSV_LINE_ERROR_VALUE_CHARS, MAX_CSV_LINE_ERRORS};
 use kesh_reconciliation::{ReconciliationError, with_account_locks};
 
 use crate::AppState;
@@ -84,6 +88,20 @@ const NAME_MAX_CHARS: usize = 255;
 const PROVIDER_TYPE_MAX_CHARS: usize = 64;
 const EMAIL_MAX_CHARS: usize = 254;
 const FILENAME_MAX_BYTES: usize = 255;
+/// Longueur de la colonne `bank_transactions.transaction_id`, et de
+/// `reference`, en caractères.
+const TXID_COLUMN_MAX_CHARS: usize = 255;
+/// Préfixe de la référence d'une transaction PayPal : `TXN <id>`.
+const REFERENCE_PREFIX: &str = "TXN ";
+/// Longueur maximale d'un identifiant de transaction PayPal admis à l'import —
+/// Story 38-11b, revue P1 (L2) : l'identifiant des frais (`<id>:FEE`) et la
+/// référence (`TXN <id>`) doivent tenir dans leur colonne de 255. Le lecteur
+/// (38-11a) ne borne pas la longueur ; au-delà, la ligne est refusée en `422
+/// PAYPAL_CSV_INVALID` (erreur de ligne `transaction_id`), et non par une
+/// erreur de la base (500). Un identifiant PayPal réel compte 17 caractères.
+pub const PAYPAL_TRANSACTION_ID_MAX_CHARS: usize = TXID_COLUMN_MAX_CHARS - PAYPAL_FEE_SUFFIX.len();
+const _: () =
+    assert!(REFERENCE_PREFIX.len() + PAYPAL_TRANSACTION_ID_MAX_CHARS <= TXID_COLUMN_MAX_CHARS);
 
 // ---------------------------------------------------------------------------
 // DTO
@@ -230,6 +248,36 @@ fn truncate_bytes(s: &str, max: usize) -> String {
     s[..end].to_string()
 }
 
+/// Refuse les lignes dont l'identifiant de transaction dépasse
+/// [`PAYPAL_TRANSACTION_ID_MAX_CHARS`] — Story 38-11b, revue P1 (L2) : erreurs
+/// de ligne `transaction_id`, au plus [`MAX_CSV_LINE_ERRORS`], valeur tronquée
+/// comme celles du lecteur. Toutes les lignes du fichier, quel que soit leur
+/// statut (un identifiant aussi long n'est pas un identifiant PayPal).
+pub fn check_transaction_id_lengths(rows: &[PaypalRow]) -> Result<(), PaypalCsvError> {
+    let errors: Vec<PaypalLineError> = rows
+        .iter()
+        .filter(|r| r.transaction_id.chars().count() > PAYPAL_TRANSACTION_ID_MAX_CHARS)
+        .take(MAX_CSV_LINE_ERRORS)
+        .map(|r| {
+            let mut value = truncate_chars(&r.transaction_id, MAX_CSV_LINE_ERROR_VALUE_CHARS);
+            if value.len() < r.transaction_id.len() {
+                value.push('…');
+            }
+            PaypalLineError {
+                line: r.line,
+                field: Some(COL_TRANSACTION_ID),
+                code: PaypalLineErrorCode::TransactionId,
+                value: Some(value),
+            }
+        })
+        .collect();
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(PaypalCsvError::Lines(errors))
+    }
+}
+
 /// Les identifiants des transactions qu'une ligne produit : le brut (si non
 /// nul) et les frais (si non nuls, `<id>:FEE`).
 pub fn row_transaction_ids(row: &PaypalRow) -> Vec<String> {
@@ -271,7 +319,7 @@ pub fn transactions_of_row(
         value_date: None,
         amount,
         currency: row.currency.clone(),
-        reference: Some(format!("TXN {}", row.transaction_id)),
+        reference: Some(format!("{REFERENCE_PREFIX}{}", row.transaction_id)),
         details: truncate_chars(&details, DETAILS_MAX_CHARS),
         end_to_end_id: opt(&row.reference_txn_id, NAME_MAX_CHARS),
         transaction_id: Some(transaction_id),
@@ -441,6 +489,7 @@ pub async fn create(
     }
 
     let csv = parse_paypal_csv(&form.file_bytes).map_err(csv_error)?;
+    check_transaction_id_lengths(&csv.rows).map_err(csv_error)?;
     let ventilation = ventilate(&csv.rows);
 
     let missing: Vec<String> = ventilation
@@ -563,6 +612,52 @@ pub async fn create(
     ))
 }
 
+/// Relit, **sous les verrous nommés** et par lectures verrouillantes, les
+/// soldes du compte PayPal, et refuse si les comptes visés ont changé depuis
+/// la lecture du pool — Story 38-11b, revue P1 (L1). Un `PUT` qui retire les
+/// réglages d'un compte encore sans transaction, ou change son compte du plan,
+/// ne prend pas le verrou nommé : sans cette relecture, l'import écrirait des
+/// transactions PayPal sur un compte devenu ordinaire. Le `PUT` tient la ligne
+/// en exclusif jusqu'à son commit ; la lecture partagée l'attend, puis voit son
+/// effet — ou le `PUT`, venu après, trouve les transactions et refuse (garde
+/// 5). Pour chaque devise visée : aucun solde → `422
+/// PROVIDER_CURRENCY_ACCOUNT_MISSING` ; deux → `409
+/// PROVIDER_CURRENCY_DUPLICATE` ; un autre compte que celui verrouillé → `409
+/// OPTIMISTIC_LOCK_CONFLICT` (à rejouer).
+async fn recheck_targets_locked(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    account: &str,
+    targets: &[Target<'_>],
+) -> Result<(), AppError> {
+    let balances =
+        bank_accounts::list_provider_balances_locked(tx, company_id, PROVIDER_PAYPAL, account)
+            .await?;
+    for target in targets {
+        let matching: Vec<&ProviderBalance> = balances
+            .iter()
+            .filter(|b| b.currency() == target.currency)
+            .collect();
+        match matching.as_slice() {
+            [] => {
+                return Err(AppError::ProviderCurrencyAccountMissing {
+                    currencies: vec![target.currency.clone()],
+                });
+            }
+            [only] if only.account.id == target.balance.account.id => {}
+            [_] => return Err(AppError::Database(DbError::OptimisticLockConflict)),
+            [_, second, ..] => {
+                return Err(AppError::ProviderCurrencyDuplicate {
+                    account: account.to_string(),
+                    currency: target.currency.clone(),
+                    bank_account_id: second.account.id,
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
 /// L'écriture, **sous les verrous** des comptes visés : une seule transaction
 /// pour toutes les devises (tout ou rien), conclue avant que les verrous soient
 /// rendus. Empreinte du fichier par devise (`422 BANK_IMPORT_DUPLICATE_FILE`
@@ -582,6 +677,11 @@ async fn write_under_locks(
         .begin()
         .await
         .map_err(|e| AppError::Database(DbError::Sqlx(e)))?;
+
+    if let Err(e) = recheck_targets_locked(&mut tx, company_id, &form.account, targets).await {
+        let _ = tx.rollback().await;
+        return Err(e);
+    }
 
     for target in targets {
         if let Some(existing) =
@@ -957,5 +1057,32 @@ mod tests {
             t.counterparty_name.as_ref().unwrap().chars().count(),
             NAME_MAX_CHARS
         );
+    }
+
+    /// Revue P1 (L2) — un identifiant de 251 caractères passe, et ses frais
+    /// (`:FEE`) comme sa référence (`TXN `) tiennent dans 255 ; à 252, la ligne
+    /// est refusée en erreur de ligne `transaction_id`, valeur tronquée.
+    #[test]
+    fn identifiant_de_transaction_borne_a_la_colonne() {
+        let max = "A".repeat(PAYPAL_TRANSACTION_ID_MAX_CHARS);
+        let ok = row(&max, "Website Payment", "EUR", "10.00", "-1.00");
+        assert!(check_transaction_id_lengths(std::slice::from_ref(&ok)).is_ok());
+        for t in transactions_of_row(&ok, 1, 1) {
+            assert!(t.transaction_id.unwrap().chars().count() <= TXID_COLUMN_MAX_CHARS);
+            assert!(t.reference.unwrap().chars().count() <= TXID_COLUMN_MAX_CHARS);
+        }
+        let mut long = ok.clone();
+        long.transaction_id.push('B');
+        long.line = 7;
+        match check_transaction_id_lengths(&[ok, long]) {
+            Err(PaypalCsvError::Lines(lines)) => {
+                assert_eq!(lines.len(), 1);
+                assert_eq!(lines[0].line, 7);
+                assert_eq!(lines[0].field, Some(COL_TRANSACTION_ID));
+                assert_eq!(lines[0].code, PaypalLineErrorCode::TransactionId);
+                assert!(lines[0].value.as_deref().unwrap().ends_with('…'));
+            }
+            other => panic!("refus attendu : {other:?}"),
+        }
     }
 }

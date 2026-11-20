@@ -1175,6 +1175,7 @@ error-exchange-rate-version-forbidden = No rate is set for this cell yet: the ve
 error-account-currency-locked = This account’s currency can no longer change: it carries entries, whose currency it is.
 error-account-foreign-parent-has-entries = Account { $number } is kept in { $currency } and carries entries: it cannot receive a sub-account, otherwise it would become non-postable with a balance that the year-end revaluation could no longer correct. Create a sibling account instead.
 error-account-currency-in-use = This account is used in CHF (role, invoicing settings, bank account, product or reconciliation rule): it cannot receive a currency.
+error-account-currency-provider-linked = This account is linked to a payment provider balance: its currency is the balance's currency and does not change.
 error-account-in-foreign-currency = This account is kept in { $currency }: it cannot be used here, where Kesh books in CHF.
 error-account-is-fx-difference-account = This account is an exchange difference account of the company: it cannot be archived, retyped, made non-postable, or receive a currency, a sub-account or a revenue role.
 error-account-is-fx-difference-account-own = This account is an exchange difference account of the foreign-currency account { $number }: it cannot be archived, retyped, made non-postable, or receive a currency, a sub-account or a revenue role.
