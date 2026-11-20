@@ -1,6 +1,8 @@
 # Story 38-6c1 : rattachement aux écritures existantes — en devise, en lot (2024) ; API des scripts externes
 
-Status: ready-for-dev
+Status: deferred
+
+*(2026-11-20 — reportée en phase 2 par la décision de Beat (phase 1 KISS, § « Phase 1 KISS » du fichier d'epic) ; validée le 2026-11-15, gardée telle quelle comme base de la phase 2. Ce qu'en reprend la phase 1 est dit dans les fiches 38-11a à 38-11d.)*
 
 *Fiche née le 2026-11-15 du découpage de 38-6c (D-P2-3, `38-p2-inter-fiches.md`) : elle en porte les AC-1 à AC-11,
 dans leur ordre et sous leur numéro ; le groupe d'écritures (B28 : table, paires, annulation) va en **38-6c2**.

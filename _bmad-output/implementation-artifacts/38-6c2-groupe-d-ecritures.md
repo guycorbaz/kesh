@@ -1,6 +1,8 @@
 # Story 38-6c2 : rattachement d'une transaction à un groupe d'écritures (B28) — paires suggérées, annulation du groupe
 
-Status: ready-for-dev
+Status: deferred
+
+*(2026-11-20 — reportée en phase 2 par la décision de Beat (phase 1 KISS, § « Phase 1 KISS » du fichier d'epic) ; validée le 2026-11-15, gardée telle quelle comme base de la phase 2. Ce qu'en reprend la phase 1 est dit dans les fiches 38-11a à 38-11d.)*
 
 > **À revoir après la fusion de l'Epic 36** : Guy construit #823 (36-6, une transaction rattachée à plusieurs
 > écritures) ; réutiliser son mécanisme plutôt que doubler la table `bank_transaction_extra_entries`.

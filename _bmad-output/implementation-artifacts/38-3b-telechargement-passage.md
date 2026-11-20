@@ -1,6 +1,8 @@
 # Story 38-3b : téléchargement — crate `kesh-providers`, transport, passage, planification et contrôle des soldes
 
-Status: ready-for-dev
+Status: deferred
+
+*(2026-11-20 — reportée en phase 2 par la décision de Beat (phase 1 KISS, § « Phase 1 KISS » du fichier d'epic) ; validée le 2026-11-15, gardée telle quelle comme base de la phase 2. Ce qu'en reprend la phase 1 est dit dans les fiches 38-11a à 38-11d.)*
 
 *Fiche née le 2026-11-15 du découpage de 38-3 (décision **D-P1-1** de l'orchestrateur, `38-p1-inter-fiches.md` :
 `38-3-telechargement-cadre.md` touchait six modules). Branche `epic/38-paypal`, numéros de ligne relevés au commit

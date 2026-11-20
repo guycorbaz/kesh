@@ -1,6 +1,8 @@
 # Story 38-10 : Relevé joint à la main — solde de clôture, écart aux contrôles de clôture
 
-Status: ready-for-dev
+Status: deferred
+
+*(2026-11-20 — reportée en phase 2 par la décision de Beat (phase 1 KISS, § « Phase 1 KISS » du fichier d'epic) ; validée le 2026-11-15, gardée telle quelle comme base de la phase 2. Ce qu'en reprend la phase 1 est dit dans les fiches 38-11a à 38-11d.)*
 
 - **Epic** : 38 (`_bmad-output/planning-artifacts/epic-38-paypal.md`, § *38-10*, E17, E18, E20 (b), C-38-10) ; décisions de
   Beat B10 et B20 (`epics-38-40-cadrage.md`), qui priment.
