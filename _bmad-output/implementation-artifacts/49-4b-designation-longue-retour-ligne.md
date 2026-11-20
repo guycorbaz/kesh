@@ -164,7 +164,8 @@ encore intégrés.)*
 - **Q1 (a) et (b)** : « on imprime le rappel avec le nouveau rendu ». La dérogation s'étend au rappel ; **pas de repli « comme en
   0.19.0 »** (désignations abrégées) sur un rappel. Conséquence à écrire en D2 et au manuel : un rappel qui ne tient pas avec le
   nouveau rendu est refusé comme aujourd'hui (`TooManyLines`), à confirmer par Guy si la fiche y voit une autre issue.
-  **Q1 (c)** (réserver le bloc de rappel à la validation des pièces à commentaires) : **non tranchée**, reposée à Guy le 2026-11-20.
+  **Q1 (c)** : « oui » (2026-11-20) — **réserver** le bloc de rappel à la validation des pièces à commentaires ; c'est la 49-4a
+  qui le fait (sa D2).
 - **Q2** : oui — la validation est refusée en nommant la ligne et le caractère (proposition de D4).
 - **Q3** : oui — la dérogation s'étend à l'avoir.
 

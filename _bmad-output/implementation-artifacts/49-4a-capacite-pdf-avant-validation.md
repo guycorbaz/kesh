@@ -128,15 +128,13 @@ sort pas sans la 49-4a ») : sans elle, un commentaire long rendrait une facture
   (f) un `tracing::warn!` après la validation, en rejouant le contrôle sur `validated.lines` (remède proposé par V1-8) — aucune
   infrastructure de test ne lit les journaux dans `kesh-api` (`grep -rln "traced_test\|logs_contain" crates/kesh-api` vide) :
   un avertissement non testé ; l'issue le trace mieux.
-- **D2 — Le contrôle ne réserve pas le bloc de rappel.** (Ex-D4 (e).) Le réserver réduirait la capacité de **toute** facture
-  d'environ trois lignes pour un rappel hypothétique. **Limite déclarée** (V1-5) : avec la 49-1c, une facture **à commentaires**
-  qui tient juste, validée, verra son **rappel** refusé au rendu (`TooManyLines`, phrase de #1110, « scindez la facture ») —
-  comportement de la 0.19.0 pour les lignes chiffrées, **neuf** pour les commentaires, que la 49-1c ouvre. L'arbitrage (réserver
-  le bloc pour les seules pièces à commentaires, ou accepter et le dire au manuel) **appartient à Guy** ; il est posé comme
-  **question ouverte Q1 de la fiche 49-4b** (décision de Guy du 2026-11-20 : les questions sur le rappel vont à la 49-4b). Il est
-  **rappelé au rapport de cette story** parce qu'il touche la sortie de la 49-4a avec la 49-1c : si Guy tranche « réserver »,
-  le changement se fait dans `controler_les_lignes` (un paramètre), en 49-4a si la décision arrive avant sa clôture, sinon en
-  49-4b.
+- **D2 — Le contrôle réserve le bloc de rappel pour les seules pièces à commentaires (décision de Guy du 2026-11-20, Q1 (c)).**
+  (Ex-D4 (e).) Une facture **à commentaires** (49-1c) qui tient juste, validée, ne doit pas voir son **rappel** refusé au rendu
+  (`TooManyLines`) : le contrôle de la validation compte, pour elle, le bloc de rappel (environ trois lignes), par un paramètre de
+  `controler_les_lignes`. Une facture **toutes lignes chiffrées** garde sa capacité actuelle (comportement de la 0.19.0, son
+  rappel pouvant être refusé comme aujourd'hui, sujet de la 49-4b). *Écarté* : réserver pour toute facture (trois lignes de moins
+  pour toutes) ; accepter le refus et le dire au manuel (arbitrage de Guy). **À propager** à la remédiation de la validation P1 :
+  Objet (rappel), D1/D4 (formule de la capacité), AC et tests (cas « facture à commentaires au seuil, rappel rendu »), manuel.
 - **D3 — Un code neuf pour le refus à la validation : `400 INVOICE_LINES_DO_NOT_FIT_PDF`.** (Ex-D5, phrase adaptée au dessin
   actuel.) La phrase dit ce qui est possible sur un brouillon, en **lignes imprimées** : *« Les lignes de cette facture ne tiennent
   pas sur la page de son PDF : elles demandent { $besoin } lignes imprimées, la page en offre { $place }. Retirez des lignes,
