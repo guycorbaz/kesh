@@ -19,6 +19,7 @@ use sqlx::MySqlPool;
 
 /// `INSERT` d'un compte bancaire aux colonnes données ; rend l'erreur MariaDB
 /// éventuelle, en texte.
+#[allow(clippy::too_many_arguments)] // une colonne par argument : la table qu'on éprouve
 async fn compte(
     pool: &MySqlPool,
     company_id: i64,
