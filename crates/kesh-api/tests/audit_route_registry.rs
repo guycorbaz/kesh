@@ -1464,10 +1464,11 @@ fn every_replayed_route_calls_an_envelope() {
         }
     }
     assert_eq!(
-        examinees, 30,
-        "les trente routes Rejouee ont été examinées (vingt-sept avant la conversion \
+        examinees, 31,
+        "les trente et une routes Rejouee ont été examinées (vingt-sept avant la conversion \
          entre devises, 37-3b, et la passation de la réévaluation de fin d'exercice, 37-5 ; \
-         36-16a : + le changement de compte analytique d'une facture)"
+         36-16a : + le changement de compte analytique d'une facture ; 38-11c2 : + \
+         l'acceptation de la revue PayPal)"
     );
 }
 

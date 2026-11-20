@@ -758,7 +758,7 @@ fn fichier_conversion_chf() -> Vec<u8> {
         .to_string();
     let ligne = |id: &str, devise: &str, montant: &str, reference: &str, sens: &str| {
         format!(
-            "\"10/03/2020\",\"10:00:00\",\"CET\",\"\",\"User Initiated Currency Conversion\",\"Completed\",\"{devise}\",\"{montant}\",\"0.00\",\"{montant}\",\"\",\"\",\"{id}\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"{reference}\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"{sens}\"\r\n"
+            "\"14/03/2020\",\"10:00:00\",\"CET\",\"\",\"User Initiated Currency Conversion\",\"Completed\",\"{devise}\",\"{montant}\",\"0.00\",\"{montant}\",\"\",\"\",\"{id}\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"{reference}\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"{sens}\"\r\n"
         )
     };
     let mut f = format!("{entete}\r\n");
@@ -1108,7 +1108,7 @@ async fn cle_read_write_acceptee_et_tracee(pool: MySqlPool) {
     assert_eq!(
         ctx.count(
             "SELECT COUNT(*) FROM audit_log WHERE action = 'provider.proposal_accepted' \
-             AND actor_type = 'api_key' AND api_key_id IS NOT NULL"
+             AND actor_type = 'api_key' AND actor_api_key_id IS NOT NULL"
         )
         .await,
         1
@@ -1287,7 +1287,8 @@ async fn interblocage_rejoue_conversion_a_deux_ecritures(pool: MySqlPool) {
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn interblocage_rejoue_conversion_a_une_ecriture(pool: MySqlPool) {
     let ctx = monter(&pool).await;
-    ctx.importer(&fichier_conversion_chf()).await;
+    let (s, b) = ctx.importer(&fichier_conversion_chf()).await;
+    assert_eq!(s, 201, "{b}");
     let debit = ctx.tx("0TESTCONVCHF00001").await;
     let credit = ctx.tx("0TESTCONVEUR00001").await;
     let avant = ctx.ecritures().await;

@@ -1079,8 +1079,12 @@ mod tests {
         t.reference = Some("IDREF".into());
         f.pending.push(t);
         f.sales.push(sale(100, "Vente IDREF", 1021, "USD", "25.00"));
-        // Par `transaction_id` : aucune vente.
-        assert_eq!(codes(&f.review(&SPEC).gaps), [GAP_RECEIPT_WITHOUT_SALE]);
+        // Par `transaction_id` : aucune vente, et la vente n'est encaissée par
+        // aucune clé.
+        assert_eq!(
+            codes(&f.review(&SPEC).gaps),
+            [GAP_SALE_WITHOUT_RECEIPT, GAP_RECEIPT_WITHOUT_SALE]
+        );
         // Par `reference` : rattachée.
         let spec = ProviderSpec {
             match_key: reference_key,
