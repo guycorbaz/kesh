@@ -9,6 +9,7 @@
   modale, ou aucune, est ouverte. Sous `{#if open}`, deux boutons rejouent l'ordre réel des
   appels de la modale : `stub-group-success-then-close` (`onSuccess(); onOpenChange(false);`,
   le succès) et `stub-group-close-then-stale` (`onOpenChange(false); onStale();`, `closeStale`).
+  `globalThis.__stubGroupBackground` garde `onSettledInBackground` après le démontage.
 -->
 <script lang="ts">
 	import ModalSuccessStub from './ModalSuccessStub.test.svelte';
@@ -23,6 +24,14 @@
 	};
 	let { open, onSuccess, onOpenChange, onStale, onSettledInBackground, bankLedgerAccountId }: Props =
 		$props();
+
+	// Reprise de la revue P1 (48-14) : la fin d'un envoi survit au démontage de la modale (toute
+	// relecture la démonte, `{#if loading}`). La doublure garde donc son `onSettledInBackground`
+	// hors du DOM, pour qu'un test le rappelle pendant une relecture en vol.
+	$effect(() => {
+		(globalThis as { __stubGroupBackground?: () => void }).__stubGroupBackground =
+			onSettledInBackground;
+	});
 </script>
 
 <ModalSuccessStub {open} {onSuccess} {onOpenChange} {bankLedgerAccountId} modal="group" />

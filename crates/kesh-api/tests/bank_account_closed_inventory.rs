@@ -18,7 +18,10 @@
 //! Second inventaire, **par appelant** : la garde du règlement par virement ne
 //! vit pas dans `invoice_settlements::create_in_tx` mais chez ses appelants
 //! (C-28-4-14) ; tout appel `invoice_settlements::create_in_tx(` hors tests
-//! exige donc un statut au [`APPELANTS_REGLEMENT`], diff dans les deux sens.
+//! exige donc un statut au [`APPELANTS_REGLEMENT`], diff dans les deux sens. De
+//! même (Story 48-14, #1255) : l'aide qui défait le lien d'un règlement groupé,
+//! `unlink_group_transaction_in_tx`, n'a pour appelants que ceux de
+//! [`APPELANTS_LIEN_GROUPE`], chacun après son `ensure_open_in_tx`.
 //!
 //! Troisième inventaire, **la fenêtre de la clôture** (Story 29-4a, #651,
 //! AC5) : l'ensemble clos des fonctions qui portent une garde non
@@ -247,7 +250,7 @@ const REGISTRE: &[(&str, &str, Statut)] = &[
         "kesh-db/src/repositories/grouped_settlements.rs",
         "unlink_group_transaction_in_tx",
         Statut::Gardee(
-            "appelé par cancel_in_tx et supplier_cancel_in_tx seuls, après leur bank_accounts::ensure_open_in_tx ; revérifié en dernier par recheck_open_locked_in_tx",
+            "par ses appelants : inventaire des appelants (APPELANTS_LIEN_GROUPE) — cancel_in_tx et supplier_cancel_in_tx seuls, chacun après son bank_accounts::ensure_open_in_tx ; revérifié en dernier par recheck_open_locked_in_tx",
         ),
     ),
     // Story 43-1b (#823) — le paiement groupé fournisseur et son
@@ -650,6 +653,164 @@ fn every_invoice_settlement_creator_is_classified() {
     );
     // Story 43-1a (#823) : 3 → 4, le règlement groupé client.
     assert_eq!(couples.len(), 4, "quatre créateurs de règlement connus");
+}
+
+/// Story 48-14 (#1255, revue P1 E1/B1) — l'aide qui défait le lien d'un
+/// règlement groupé (`unlink_group_transaction_in_tx`, l'`UPDATE
+/// bank_transactions` du registre) ne porte pas sa garde : elle est « gardée par
+/// ses appelants ». Ce troisième inventaire, sur le modèle
+/// d'[`APPELANTS_REGLEMENT`], en tient l'ensemble clos.
+const APPELANTS_LIEN_GROUPE: [(&str, &str); 2] = [
+    (
+        "kesh-db/src/repositories/grouped_settlements.rs",
+        "cancel_in_tx",
+    ),
+    (
+        "kesh-db/src/repositories/grouped_settlements.rs",
+        "supplier_cancel_in_tx",
+    ),
+];
+
+/// L'appel de l'aide de lien.
+const APPEL_LIEN_GROUPE: &str = "unlink_group_transaction_in_tx(";
+
+/// Les fautes de l'inventaire des appelants de l'aide de lien : tout appelant
+/// hors de `attendus`, toute entrée de `attendus` sans appel, et tout appel que
+/// `bank_accounts::ensure_open_in_tx(` ne précède pas dans le corps de son
+/// appelant. La ligne de définition (`fn unlink_group_transaction_in_tx(`) est
+/// écartée ; les tests et les commentaires aussi (copie masquée). Rend aussi
+/// l'ensemble des appelants vus (anti-muet).
+fn fautes_des_appelants_du_lien(
+    sources: &[(String, String)],
+    attendus: &[(&str, &str)],
+) -> (Vec<String>, BTreeSet<(String, String)>) {
+    let mut fautes = Vec::new();
+    let mut vus = BTreeSet::new();
+    for (fichier, source) in sources {
+        let (_, masque) = decouper(source);
+        let tests = blocs_de_test(&masque);
+        let fns = fonctions(&masque);
+        let mut depuis = 0;
+        while let Some(n) = masque[depuis..].find(APPEL_LIEN_GROUPE) {
+            let p = depuis + n;
+            depuis = p + APPEL_LIEN_GROUPE.len();
+            if masque[..p].trim_end().ends_with("fn")
+                || tests.iter().any(|(de, a)| p >= *de && p <= *a)
+            {
+                continue;
+            }
+            let Some((nom, de, _)) = fonction_englobante(&fns, p) else {
+                fautes.push(format!("{fichier} : appel hors fonction"));
+                continue;
+            };
+            vus.insert((fichier.clone(), nom.clone()));
+            if !masque[*de..p].contains("ensure_open_in_tx(") {
+                fautes.push(format!(
+                    "{fichier}::{nom} : l'appel de l'aide de lien n'est précédé d'aucun \
+                     bank_accounts::ensure_open_in_tx("
+                ));
+            }
+        }
+    }
+    let classes: BTreeSet<(String, String)> = attendus
+        .iter()
+        .map(|(f, n)| (f.to_string(), n.to_string()))
+        .collect();
+    for (f, n) in vus.difference(&classes) {
+        fautes.push(format!(
+            "{f}::{n} : appelant de l'aide de lien non classé (APPELANTS_LIEN_GROUPE)"
+        ));
+    }
+    for (f, n) in classes.difference(&vus) {
+        fautes.push(format!("{f}::{n} : appelant classé sans appel"));
+    }
+    (fautes, vus)
+}
+
+/// Story 48-14 (#1255, revue P1 E1/B1) — les appelants de l'aide de lien sont
+/// exactement les deux bras du dé-rapprochement groupé, chacun après son
+/// `ensure_open_in_tx`.
+#[test]
+fn every_group_unlink_caller_is_classified_and_guarded() {
+    let (fautes, vus) = fautes_des_appelants_du_lien(&sources_lues(), &APPELANTS_LIEN_GROUPE);
+    assert!(
+        fautes.is_empty(),
+        "⛔ aide de lien du règlement groupé (unlink_group_transaction_in_tx) : un \
+         compte clos doit être refusé avant elle :\n{}",
+        fautes.join("\n")
+    );
+    assert_eq!(vus.len(), 2, "anti-muet : deux appelants connus ({vus:?})");
+}
+
+/// Story 48-14 (#1255, revue P1 E1/B1) — sonde synthétique de l'inventaire des
+/// appelants de l'aide de lien : la définition est écartée ; un troisième
+/// appelant rougit (non classé, et sans garde) ; un appelant classé dont l'appel
+/// précède sa garde rougit ; un appel en commentaire ou dans un test ne compte pas.
+#[test]
+fn the_group_unlink_caller_inventory_reports_each_fault_on_built_cases() {
+    let fichier = "kesh-db/src/repositories/grouped_settlements.rs";
+    let attendus = [
+        (fichier, "cancel_in_tx"),
+        (fichier, "supplier_cancel_in_tx"),
+    ];
+    let base = "pub async fn cancel_in_tx() {\n\
+                super::bank_accounts::ensure_open_in_tx(tx, c, b).await?;\n\
+                unlink_group_transaction_in_tx(tx, c, bt).await?;\n}\n\
+                async fn supplier_cancel_in_tx() {\n\
+                super::bank_accounts::ensure_open_in_tx(tx, c, b).await?;\n\
+                unlink_group_transaction_in_tx(tx, c, bt).await?;\n}\n\
+                async fn unlink_group_transaction_in_tx(tx: T) -> R {\n\
+                // unlink_group_transaction_in_tx( — commentaire : ignoré\n}\n\
+                #[cfg(test)]\nmod tests { fn t() { unlink_group_transaction_in_tx(x); } }\n";
+    let jouer = |source: String| {
+        fautes_des_appelants_du_lien(&[(fichier.to_string(), source)], &attendus).0
+    };
+    // Contrôle : les deux bras, gardés, rien d'autre.
+    assert_eq!(jouer(base.to_string()), Vec::<String>::new(), "contrôle");
+    // Un troisième appelant, sans garde.
+    let troisieme = format!(
+        "{base}async fn defaire_le_lien() {{\nunlink_group_transaction_in_tx(tx, c, bt).await?;\n}}\n"
+    );
+    assert_eq!(
+        jouer(troisieme),
+        vec![
+            format!(
+                "{fichier}::defaire_le_lien : l'appel de l'aide de lien n'est précédé d'aucun \
+                 bank_accounts::ensure_open_in_tx("
+            ),
+            format!(
+                "{fichier}::defaire_le_lien : appelant de l'aide de lien non classé \
+                 (APPELANTS_LIEN_GROUPE)"
+            ),
+        ],
+        "troisième appelant"
+    );
+    // Un bras classé dont l'appel précède sa garde.
+    let inverse = base.replacen(
+        "super::bank_accounts::ensure_open_in_tx(tx, c, b).await?;\n\
+         unlink_group_transaction_in_tx(tx, c, bt).await?;",
+        "unlink_group_transaction_in_tx(tx, c, bt).await?;\n\
+         super::bank_accounts::ensure_open_in_tx(tx, c, b).await?;",
+        1,
+    );
+    assert_ne!(inverse, base, "montage du cas inversé");
+    assert_eq!(
+        jouer(inverse),
+        vec![format!(
+            "{fichier}::cancel_in_tx : l'appel de l'aide de lien n'est précédé d'aucun \
+             bank_accounts::ensure_open_in_tx("
+        )],
+        "garde après l'appel"
+    );
+    // Un bras classé qui n'appelle plus l'aide.
+    let sans_appel = base.replacen("unlink_group_transaction_in_tx(tx, c, bt).await?;", "", 1);
+    assert_eq!(
+        jouer(sans_appel),
+        vec![format!(
+            "{fichier}::cancel_in_tx : appelant classé sans appel"
+        )],
+        "appelant classé sans appel"
+    );
 }
 
 /// T-a34 (AC8) — le volet inverse du diff, et l'extraction elle-même, sur un
@@ -1709,7 +1870,7 @@ fn the_last_acquisition_rule_reports_each_fault_on_built_cases() {
     )];
     let faute = |suite: &str| format!("(iii) {fichier}::cancel_in_tx : {suite}");
     let recheck = "super::bank_accounts::recheck_open_locked_in_tx(tx, c, b).await?;";
-    let cas: [(&str, String, Vec<String>); 8] = [
+    let cas: [(&str, String, Vec<String>); 9] = [
         (
             "contrôle",
             format!(
@@ -1792,6 +1953,20 @@ fn the_last_acquisition_rule_reports_each_fault_on_built_cases() {
             vec![faute(
                 "la revérification suit « audit_group_cancelled_in_tx( »",
             )],
+        ),
+        // Story 48-14 (revue P1, B2) — la forme réelle des deux bras : audits par
+        // facture, puis l'aide d'audit. Une revérification glissée ENTRE les deux
+        // suit le premier audit : le minimum des positions doit le voir (un
+        // maximum ne verrait que l'aide, qui la suit).
+        (
+            "entre les deux audits",
+            format!(
+                "let _ = \"UPDATE t SET a = 1 WHERE id = ?\";\n\
+                 audit_log::insert_in_tx(tx, e).await?;\n\
+                 {recheck}\n\
+                 audit_group_cancelled_in_tx(tx, u, bt, e, r, l).await?;"
+            ),
+            vec![faute("la revérification suit « audit_log::insert_in_tx( »")],
         ),
         (
             "aucun geste verrouillant",

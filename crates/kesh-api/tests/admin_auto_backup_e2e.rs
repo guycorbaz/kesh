@@ -928,11 +928,12 @@ async fn kf063_reproduction_deterministe(pool: MySqlPool) {
             t.position, t.longueur, t.reecriture, t.cumul_avant, t.fin_avant
         );
     }
-    let r = t1
-        .iter()
-        .find(|x| x.reecriture && x.longueur == 4 && x.position < m1)
-        .expect("une réécriture de 4 octets avant le manifeste")
-        .clone();
+    // Revue P1 (E3) : la réécriture se choisit dans le seul préfixe prouvé
+    // identique d'un tour à l'autre (`avant`), jamais dans la suite entière.
+    let r = avant(&t1)
+        .into_iter()
+        .find(|x| x.reecriture && x.longueur == 4)
+        .expect("une réécriture de 4 octets avant le manifeste");
     println!("KF-063 réécriture choisie : {r:?}");
 
     let mut ms = 2_000;
@@ -953,6 +954,24 @@ async fn kf063_reproduction_deterministe(pool: MySqlPool) {
             "ancien écrivain à {n}"
         );
     }
+    // Revue P1 (B5) : la prémisse vaut aussi APRÈS les tours en échec (état de la
+    // base changé : `last_status`, `.partial` laissés) — une troisième sonde rend
+    // le même préfixe.
+    let (t3, m3) = tour_sonde(&i, ms).await;
+    ms += 1_000;
+    assert_eq!(
+        m3, m1,
+        "le manifeste commence au même octet après les échecs"
+    );
+    assert_eq!(
+        avant(&t3),
+        avant(&t1),
+        "le même préfixe après les tours de l'ancien écrivain"
+    );
+    // Revue P1 (A8) : la limite `fin_avant` (fin du fichier au moment de la
+    // réécriture) est celle qui EXERCE la réécriture — acceptée, puis le
+    // prolongement suivant refusé ; la limite `position` échoue dès l'en-tête de
+    // l'entrée, avant toute réécriture (témoin).
     for n in [r.position, r.fin_avant] {
         let issue = run_once(
             &i.state,
