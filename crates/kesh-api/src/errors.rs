@@ -488,6 +488,20 @@ pub enum AppError {
     #[error("Facture trop de lignes pour PDF : {0}")]
     InvoiceTooManyLinesForPdf(usize),
 
+    /// Story 49-4a (#1364, D3) — refus **à la validation** d'un brouillon dont les lignes ne
+    /// tiendraient pas sur la page de son PDF (`400 INVOICE_LINES_DO_NOT_FIT_PDF`), quand il
+    /// se corrige encore. Distinct d'[`AppError::InvoiceTooManyLinesForPdf`], le refus **au
+    /// rendu**, dont la phrase compte les lignes de la pièce : celui-ci dit les lignes
+    /// demandées (`besoin`) et offertes (`place`) — imprimées pour le contrôle géométrique,
+    /// de la pièce pour le pré-filtre `MAX_LINES_PER_PDF`.
+    #[error("Lignes hors de la page du PDF : {besoin} demandées, {place} offertes")]
+    InvoiceLinesDoNotFitPdf {
+        /// Lignes demandées.
+        besoin: usize,
+        /// Lignes offertes.
+        place: usize,
+    },
+
     /// En-tête du PDF (émetteur + destinataire) débordant sur le tableau des
     /// lignes — Story 16-3a (#151).
     ///
@@ -2318,6 +2332,19 @@ pub(crate) fn message_trop_de_lignes_pdf(n: usize) -> String {
     t_args("error-invoice-too-many-lines-for-pdf", &fallback, &args)
 }
 
+/// La phrase du refus [`AppError::InvoiceLinesDoNotFitPdf`] (Story 49-4a, D3), dans la langue
+/// de l'installation : ce qui est possible sur un brouillon. Elle ne dit pas « raccourcissez
+/// des désignations » : une désignation s'imprime sur une ligne, la raccourcir ne libère rien.
+pub(crate) fn message_lignes_hors_page(besoin: usize, place: usize) -> String {
+    let fallback = format!(
+        "Les lignes de cette facture ne tiennent pas sur la page de son PDF : elles demandent {besoin} lignes, la page en offre {place}. Retirez des lignes, raccourcissez les commentaires, ou répartissez les lignes sur deux factures. La facture reste un brouillon."
+    );
+    let mut args = FluentArgs::new();
+    args.set("besoin", besoin as i64);
+    args.set("place", place as i64);
+    t_args("error-invoice-lines-do-not-fit-pdf", &fallback, &args)
+}
+
 /// La phrase du refus [`AppError::InvoicePdfHeaderOverflow`] — même rôle que
 /// [`message_trop_de_lignes_pdf`] : seule source, pour la réponse
 /// `400 INVOICE_PDF_HEADER_OVERFLOW` et pour le lot de rappels (Story 35-2b).
@@ -2870,6 +2897,11 @@ impl IntoResponse for AppError {
                 StatusCode::BAD_REQUEST,
                 "INVOICE_TOO_MANY_LINES_FOR_PDF",
                 &message_trop_de_lignes_pdf(n),
+            ),
+            AppError::InvoiceLinesDoNotFitPdf { besoin, place } => build_response(
+                StatusCode::BAD_REQUEST,
+                "INVOICE_LINES_DO_NOT_FIT_PDF",
+                &message_lignes_hors_page(besoin, place),
             ),
             AppError::InvoicePdfHeaderOverflow => build_response(
                 StatusCode::BAD_REQUEST,

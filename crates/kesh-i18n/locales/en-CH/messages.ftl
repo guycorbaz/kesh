@@ -4079,3 +4079,6 @@ projects-reassign-warning-locked = Entries locked through { $date }.
 projects-reassign-warning-reports = The analytical reports for this period will change.
 projects-reassign-confirm = Confirm
 projects-reassign-done = Analytical account changed.
+
+# --- Epic 49 — Story 49-4a (#1364) : capacité du PDF de facture contrôlée à la validation ---
+error-invoice-lines-do-not-fit-pdf = The lines of this invoice do not fit on the page of its PDF: they need { $besoin } lines, the page offers { $place }. Remove lines, shorten the comments, or split the lines across two invoices. The invoice remains a draft.

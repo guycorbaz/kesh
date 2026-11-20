@@ -4073,3 +4073,6 @@ projects-reassign-warning-locked = Buchungen gesperrt bis zum { $date }.
 projects-reassign-warning-reports = Die analytischen Berichte dieser Periode ändern sich.
 projects-reassign-confirm = Bestätigen
 projects-reassign-done = Analytisches Konto geändert.
+
+# --- Epic 49 — Story 49-4a (#1364) : capacité du PDF de facture contrôlée à la validation ---
+error-invoice-lines-do-not-fit-pdf = Die Positionen dieser Rechnung passen nicht auf die Seite ihres PDF: Sie benötigen { $besoin } Zeilen, die Seite bietet { $place }. Entfernen Sie Positionen, kürzen Sie die Kommentare oder verteilen Sie die Positionen auf zwei Rechnungen. Die Rechnung bleibt ein Entwurf.

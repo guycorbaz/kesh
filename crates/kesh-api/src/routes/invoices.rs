@@ -928,12 +928,31 @@ pub async fn delete_invoice(
 ///
 /// ⚠️ **Rejouée sur interblocage** (Story 15-5e1, #536) par l'enveloppe
 /// `DbError` [`kesh_db::retry::retry_on_deadlock`].
+///
+/// **Capacité du PDF** (Story 49-4a, #1364) : un brouillon dont les lignes ne
+/// tiendraient pas sur la page de son PDF est refusé **avant** la transaction
+/// (`400 INVOICE_LINES_DO_NOT_FIT_PDF`), sans rien écrire — ni statut, ni numéro,
+/// ni écriture, ni version, ni compteur. Une pièce absente ou qui n'est pas un
+/// brouillon laisse parler `validate_invoice` (404, 409). ⚠️ Course assumée : un
+/// `PUT` concurrent du brouillon entre ce contrôle et la transaction peut faire
+/// valider des lignes non contrôlées ; le rendu les refuse alors comme avant.
 pub async fn validate_invoice_handler(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
     Path(id): Path<i64>,
 ) -> Result<Json<InvoiceResponse>, AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
+    if let Some((brouillon, lignes)) =
+        invoices::find_by_id_with_lines(&state.pool, company.id, id).await?
+        && brouillon.status == "draft"
+    {
+        let arrondi = kesh_db::repositories::company_invoice_settings::round_to_5_centimes(
+            &state.pool,
+            company.id,
+        )
+        .await?;
+        crate::routes::invoice_pdf_service::controler_la_capacite_du_pdf(&lignes, arrondi)?;
+    }
     // Review P3 : utiliser directement le résultat transactionnel au lieu
     // d'un re-fetch post-commit (évite une fenêtre de race + DB roundtrip).
     let validated = kesh_db::retry::retry_on_deadlock("invoices::validate", || {

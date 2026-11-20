@@ -4152,3 +4152,6 @@ projects-reassign-warning-locked = Écritures verrouillées jusqu'au { $date }.
 projects-reassign-warning-reports = Les rapports analytiques de cette période changeront.
 projects-reassign-confirm = Confirmer
 projects-reassign-done = Compte analytique changé.
+
+# --- Epic 49 — Story 49-4a (#1364) : capacité du PDF de facture contrôlée à la validation ---
+error-invoice-lines-do-not-fit-pdf = Les lignes de cette facture ne tiennent pas sur la page de son PDF : elles demandent { $besoin } lignes, la page en offre { $place }. Retirez des lignes, raccourcissez les commentaires, ou répartissez les lignes sur deux factures. La facture reste un brouillon.

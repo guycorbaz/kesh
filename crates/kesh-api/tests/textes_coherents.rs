@@ -737,6 +737,8 @@ fn les_replis_rust_suivent_le_catalogue() {
     const PAYS: &[(&str, &str)] = &[("{ $code }", "{code}")];
     // Story 35-2b (#955, revue P1 B1) — le nombre de lignes du refus « trop de lignes ».
     const LIGNES: &[(&str, &str)] = &[("{ $count }", "{n}")];
+    // Story 49-4a (#1364) — les lignes demandées et offertes du refus à la validation.
+    const BESOIN_PLACE: &[(&str, &str)] = &[("{ $besoin }", "{besoin}"), ("{ $place }", "{place}")];
     // Story 35-1 (#948) — le format de numérotation et le nom de l'exercice.
     const FORMAT_EXERCICE: &[(&str, &str)] = &[
         ("{ $format }", "{format}"),
@@ -773,6 +775,8 @@ fn les_replis_rust_suivent_le_catalogue() {
                 // Story 35-2b (#955, revue P1 B1) — un seul site : la fonction
                 // `message_trop_de_lignes_pdf`, commune à la route et au lot.
                 ("error-invoice-too-many-lines-for-pdf", 1, LIGNES),
+                // Story 49-4a (#1364, AC8) — un seul site : `message_lignes_hors_page`.
+                ("error-invoice-lines-do-not-fit-pdf", 1, BESOIN_PLACE),
                 // Story 15-1a2-0 (#518) — le rang 2 bis, un bras par famille, et
                 // le message neutre de `LETTERING_IS_DOCUMENT` (validation P1, R-2).
                 ("settlement-cancel-blocked-lettering-closed", 1, &[]),
@@ -3007,4 +3011,26 @@ fn le_vocabulaire_analytique_est_compte_analytique() {
         ecarts.len(),
         ecarts.join("\n  - ")
     );
+}
+
+/// **T4 (Story 49-4a, #1364, AC8)** — le refus de capacité à la validation a sa phrase dans
+/// les **quatre** catalogues, chacune avec les deux nombres (`$besoin`, `$place`) : une
+/// traduction qui en perdrait un dirait un refus sans ce qu'il faut retirer.
+#[test]
+fn le_refus_de_capacite_a_ses_deux_nombres_en_quatre_langues() {
+    for locale in ["fr-CH", "de-CH", "it-CH", "en-CH"] {
+        let catalogue = lire(&format!("crates/kesh-i18n/locales/{locale}/messages.ftl"));
+        let lignes: Vec<&str> = catalogue
+            .lines()
+            .filter(|l| l.starts_with("error-invoice-lines-do-not-fit-pdf ="))
+            .collect();
+        assert_eq!(lignes.len(), 1, "{locale} : {lignes:?}");
+        for variable in ["{ $besoin }", "{ $place }"] {
+            assert!(
+                lignes[0].contains(variable),
+                "{locale} : {variable} absent de {}",
+                lignes[0]
+            );
+        }
+    }
 }

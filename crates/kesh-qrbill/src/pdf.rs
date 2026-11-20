@@ -23,8 +23,8 @@ use crate::generator::{build_payload, render_qr_image};
 use crate::largeurs::largeur_mm;
 use crate::texte::texte_imprime;
 use crate::types::{
-    Address, AddressType, InvoicePdfData, LinePdfKind, QrBillData, QrBillError, QrBillI18n,
-    Reference, ReminderPdf,
+    Address, AddressType, Currency, InvoiceLinePdf, InvoicePdfData, InvoiceVatLinePdf,
+    LinePdfKind, QrBillData, QrBillError, QrBillI18n, Reference, ReminderPdf,
 };
 use chrono::{Datelike, NaiveDate};
 use kesh_core::text::is_invisible;
@@ -407,6 +407,12 @@ fn build_meta_lines(
 /// qui n'a pas de colonne à respecter. Chaque ligne de texte prend le pas d'une ligne (5 mm)
 /// et passe par la garde de capacité.
 ///
+/// **Capacité** (Story 49-4a, #1364, D1) : l'ordonnée du tableau, le pas et le plancher
+/// viennent de la géométrie partagée ([`TABLEAU_Y`], [`TABLEAU_EN_TETES_PAS`],
+/// [`TABLEAU_FILET_PAS`], [`LIGNE_PAS`], [`plancher_des_lignes`]), que lit aussi [`controler_les_lignes`], appelé à la validation
+/// d'une facture. La garde reste **ici**, avant chaque ligne dessinée : elle est l'oracle du
+/// contrôle, qui ne la remplace pas.
+///
 /// *(Ce doc-comment était devenu orphelin : l'extraction de `build_meta_lines`
 /// en T9 s'était insérée ENTRE lui et sa fonction, si bien que rustdoc
 /// l'attribuait au mauvais symbole et décrivait un paramètre `content_floor`
@@ -544,8 +550,9 @@ fn draw_invoice_section(
         y -= 4.0;
     }
 
-    // Lines table.
-    let mut ty = PAGE_H - 130.0;
+    // Lines table. Story 49-4a (#1364, D1) : la géométrie du tableau (ordonnée, pas,
+    // plancher) est celle que lit aussi `controler_les_lignes` — une seule source.
+    let mut ty = TABLEAU_Y;
 
     // ⚠️ GARDE DE CAPACITÉ HAUTE (Story 16-3a, #151) — symétrique de
     // `TooManyLines`, qui ne surveille que le plancher QR.
@@ -612,10 +619,10 @@ fn draw_invoice_section(
         Mm(ty),
         helv_bold,
     );
-    ty -= 5.0;
+    ty -= TABLEAU_EN_TETES_PAS;
     // Header underline.
     hline(layer, left, PAGE_W - 20.0, ty);
-    ty -= 3.0;
+    ty -= TABLEAU_FILET_PAS;
 
     // #151 : le bloc récap TVA (sous-total + 1 ligne par taux + espace) est
     // dessiné APRÈS la boucle et descend le curseur. On réserve sa hauteur dans
@@ -629,19 +636,17 @@ fn draw_invoice_section(
     // La réserve et le dessin lisent la MÊME liste (`recap_lines`) : ils ne
     // peuvent pas diverger.
     let recap = recap_lines(inv, i18n);
-    let recap_reserve = if recap.is_empty() {
-        0.0
-    } else {
-        4.5 * recap.len() as f32 + 1.0
-    } + reminder_block_height(inv.reminder.as_ref());
 
     // Défense — capacité visuelle dépassée (lignes + récap TVA). On refuse proprement
     // plutôt que tronquer ou chevaucher la zone sous le plancher (QR pour une facture).
     // Erreur dédiée `TooManyLines` → le handler la mappe en 400 « trop de lignes »
     // actionnable (et non un 500 opaque). Story 49-1b (D6) : la garde vaut pour CHAQUE
     // ligne dessinée, ligne de texte d'un commentaire comprise, et rend toujours le
-    // nombre de lignes de la pièce.
-    let plancher_des_lignes = content_floor + 15.0 + recap_reserve;
+    // nombre de lignes de la pièce. Story 49-4a (D1) : le plancher se calcule par
+    // `plancher_des_lignes`, que `controler_les_lignes` appelle aussi ; la garde, elle,
+    // reste ici, avant chaque ligne dessinée — c'est l'oracle du contrôle (T2).
+    let plancher_des_lignes =
+        plancher_des_lignes(content_floor, recap.len(), inv.reminder.as_ref());
     for line in &inv.lines {
         match line.kind {
             LinePdfKind::Priced => {}
@@ -656,7 +661,7 @@ fn draw_invoice_section(
                     if !texte.is_empty() {
                         layer.use_text(texte, COMMENTAIRE_TAILLE, Mm(col_desc), Mm(ty), helv);
                     }
-                    ty -= 5.0;
+                    ty -= LIGNE_PAS;
                 }
                 continue;
             }
@@ -693,7 +698,7 @@ fn draw_invoice_section(
             Mm(ty),
             helv,
         );
-        ty -= 5.0;
+        ty -= LIGNE_PAS;
     }
 
     // Total + récapitulatif TVA (#151, obligation LTVA art. 26).
@@ -733,7 +738,7 @@ fn draw_invoice_section(
     );
 
     // Story 25-4-b2 (#416) — le bloc du rappel, sous le total. Sa hauteur est
-    // RÉSERVÉE dans `recap_reserve` (garde `TooManyLines`) : ⛔ ne pas le traiter
+    // RÉSERVÉE dans `plancher_des_lignes` (garde `TooManyLines`) : ⛔ ne pas le traiter
     // comme `payment_terms` ci-dessous, qui se contente de clamper et tasserait
     // le bloc sur la zone de paiement au lieu de refuser.
     if let Some(r) = &inv.reminder {
@@ -765,6 +770,156 @@ fn draw_invoice_section(
     }
 
     Ok(())
+}
+
+// ----- Capacité du tableau des lignes (Story 49-4a, #1364, D1) -----
+//
+// La géométrie du tableau a **une seule source** : ces constantes et ces fonctions, que lisent
+// `draw_invoice_section` (qui garde sa garde, avant chaque ligne dessinée) et
+// `controler_les_lignes` (appelé à la validation d'une facture, sans document PDF). Deux
+// boucles, une seule écriture de ce qu'elles comptent : lignes imprimées, ordonnée, pas,
+// plancher. Le dessin reste l'oracle : `tests::le_controle_et_le_rendu_s_accordent` compare le
+// contrôle au rendu réel.
+
+/// Ordonnée des en-têtes de colonnes du tableau des lignes, en mm depuis le bas. Le tableau ne
+/// dépend pas de l'en-tête (un en-tête trop haut rend `HeaderOverflow`) : la capacité ne dépend
+/// que des lignes, du récapitulatif, du bloc de rappel et du plancher.
+const TABLEAU_Y: f32 = PAGE_H - 130.0;
+/// Descente des en-têtes de colonnes à leur filet, en mm.
+const TABLEAU_EN_TETES_PAS: f32 = 5.0;
+/// Descente du filet à la première ligne du tableau, en mm.
+const TABLEAU_FILET_PAS: f32 = 3.0;
+/// Pas d'une ligne imprimée (ligne chiffrée, ou ligne de texte d'un commentaire), en mm.
+const LIGNE_PAS: f32 = 5.0;
+/// Hauteur gardée au-dessus du plancher pour le filet et le total, en mm (#151).
+const RESERVE_DU_TOTAL: f32 = 15.0;
+
+/// L'ordonnée de la première ligne du tableau, par **la même suite d'opérations `f32`** que le
+/// dessin (en-têtes, puis descente au filet, puis à la première ligne) : 159 mm.
+fn ordonnee_premiere_ligne() -> f32 {
+    let mut ty = TABLEAU_Y;
+    ty -= TABLEAU_EN_TETES_PAS;
+    ty -= TABLEAU_FILET_PAS;
+    ty
+}
+
+/// Le plancher des lignes : une ligne ne se dessine pas sous lui (garde `ty < plancher`).
+/// `content_floor` (le séparateur QR d'une facture, `CONTENT_FLOOR_NO_QR` d'un avoir), plus le
+/// total, plus le récapitulatif (`4.5 × n + 1` mm s'il a `n > 0` lignes, celles de
+/// [`recap_lines`]), plus le bloc de rappel ([`reminder_block_height`]).
+fn plancher_des_lignes(
+    content_floor: f32,
+    lignes_du_recap: usize,
+    rappel: Option<&ReminderPdf>,
+) -> f32 {
+    let recap_reserve = if lignes_du_recap == 0 {
+        0.0
+    } else {
+        4.5 * lignes_du_recap as f32 + 1.0
+    } + reminder_block_height(rappel);
+    content_floor + RESERVE_DU_TOTAL + recap_reserve
+}
+
+/// Le nombre de lignes qu'une ligne de la pièce **imprime** : une pour une ligne chiffrée (sa
+/// désignation tient sur une ligne, réduite par `truncate_display`) ; pour un commentaire ou un
+/// titre, autant que [`lignes_de_commentaire`] en rend — la fonction même dont le dessin
+/// parcourt le résultat —, **zéro** pour une description sans rien d'imprimable.
+fn lignes_imprimees(line: &InvoiceLinePdf) -> usize {
+    match line.kind {
+        LinePdfKind::Priced => 1,
+        LinePdfKind::Comment | LinePdfKind::Heading => {
+            lignes_de_commentaire(&line.description).len()
+        }
+    }
+}
+
+/// La place du tableau, en lignes imprimées, au-dessus d'un plancher : la boucle du dessin
+/// **simulée** — même ordonnée de départ, mêmes soustractions successives de [`LIGNE_PAS`],
+/// même comparaison `ty < plancher` —, non une division, qui serait une seconde écriture de
+/// la boucle.
+fn place_des_lignes(plancher: f32) -> usize {
+    let mut ty = ordonnee_premiere_ligne();
+    let mut place = 0;
+    loop {
+        if ty < plancher {
+            return place;
+        }
+        place += 1;
+        ty -= LIGNE_PAS;
+    }
+}
+
+/// Le refus de [`controler_les_lignes`] : les lignes d'une facture demandent `besoin` lignes
+/// imprimées, la page en offre `place`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LignesHorsPage {
+    /// Lignes imprimées que demandent les lignes de la pièce.
+    pub besoin: usize,
+    /// Lignes imprimées que la page offre, récapitulatif réservé.
+    pub place: usize,
+}
+
+/// Story 49-4a (#1364, D1) — les lignes d'une **facture** tiennent-elles sur la page de son
+/// PDF ? Fonction **pure** (aucun document n'est produit), appelée à la validation, avant
+/// d'attribuer un numéro : une facture qui ne tiendrait pas est refusée quand le brouillon se
+/// corrige encore, au lieu d'être refusée au premier rendu.
+///
+/// Elle compte les lignes imprimées ([`lignes_imprimees`]) et la place au-dessus du plancher
+/// d'une facture (séparateur QR), récapitulatif réservé — compté par [`recap_lines`], qui ne lit
+/// que `vat_lines` et `rounding` (décidé au centime) —, **sans** bloc de rappel : un rappel
+/// d'une facture qui remplit juste sa page peut être refusé au rendu (décision de Guy du
+/// 2026-11-20, limite écrite au manuel ; plusieurs pages : #1374). Elle rend `Ok` **si et
+/// seulement si** le rendu de la facture (`generate_qr_bill_pdf_with_date`) ne refuse pas pour
+/// `TooManyLines` ; le pré-filtre `MAX_LINES_PER_PDF` de `kesh-api`, sur le nombre de lignes
+/// de la pièce, est hors de cette fonction.
+///
+/// # Errors
+///
+/// [`LignesHorsPage`] quand les lignes imprimées dépassent la place.
+pub fn controler_les_lignes(
+    lignes: &[InvoiceLinePdf],
+    vat_lines: &[InvoiceVatLinePdf],
+    rounding: Decimal,
+) -> Result<(), LignesHorsPage> {
+    let besoin: usize = lignes.iter().map(lignes_imprimees).sum();
+    let plancher = plancher_des_lignes(SEP_Y, lignes_du_recap(vat_lines, rounding), None);
+    let place = place_des_lignes(plancher);
+    if besoin > place {
+        Err(LignesHorsPage { besoin, place })
+    } else {
+        Ok(())
+    }
+}
+
+/// Le nombre de lignes du récapitulatif d'une facture, par [`recap_lines`] lui-même (seul le
+/// **nombre** compte : le `QrBillI18n` par défaut, comme [`reminder_block_height`], et une pièce
+/// minimale qui ne porte que ce que `recap_lines` lit — `vat_lines` et `rounding` ; le
+/// sous-total et la devise n'en changent pas le nombre).
+fn lignes_du_recap(vat_lines: &[InvoiceVatLinePdf], rounding: Decimal) -> usize {
+    let piece = InvoicePdfData {
+        invoice_number: String::new(),
+        invoice_date: NaiveDate::default(),
+        due_date: None,
+        payment_terms: None,
+        creditor_name: String::new(),
+        creditor_address_lines: Vec::new(),
+        creditor_ide: None,
+        creditor_phone: None,
+        creditor_email: None,
+        creditor_website: None,
+        debtor_name: String::new(),
+        debtor_address_lines: Vec::new(),
+        debtor_client_number: None,
+        lines: Vec::new(),
+        subtotal_ht: Decimal::ZERO,
+        vat_lines: vat_lines.to_vec(),
+        rounding,
+        total: Decimal::ZERO,
+        currency: Currency::Chf,
+        origin_reference: None,
+        reminder: None,
+    };
+    recap_lines(&piece, &QrBillI18n::default()).len()
 }
 
 // ----- Lignes de séparation et ciseaux (SIX § 3.7) -----
@@ -5917,5 +6072,169 @@ mod tests {
             Err(QrBillError::TooManyLines(2))
         ));
         assert!(pdf_avoir(&neuf).is_ok(), "l'avoir, pleine page, la tient");
+    }
+
+    // ----- Story 49-4a (#1364) — le contrôle de capacité et le rendu s'accordent -----
+
+    /// Générateur congruentiel à graine fixe : la famille engendrée est la même à chaque
+    /// exécution (aucune dépendance de hasard).
+    struct Graine(u64);
+
+    impl Graine {
+        /// Un entier dans `0..n`.
+        fn tirer(&mut self, n: usize) -> usize {
+            self.0 = self
+                .0
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            ((self.0 >> 33) % n as u64) as usize
+        }
+    }
+
+    /// Une facture aux lignes, taux de TVA et arrondi donnés (montants du récapitulatif
+    /// quelconques : seul leur nombre compte pour la place).
+    fn piece_engendree(
+        lignes: Vec<InvoiceLinePdf>,
+        taux: &[Decimal],
+        rounding: Decimal,
+    ) -> InvoicePdfData {
+        InvoicePdfData {
+            vat_lines: taux
+                .iter()
+                .map(|t| InvoiceVatLinePdf {
+                    rate_percent: *t,
+                    amount: dec!(1.00),
+                })
+                .collect(),
+            rounding,
+            ..piece(lignes)
+        }
+    }
+
+    /// Le contrôle de la validation, sur une pièce.
+    fn controle_de(inv: &InvoicePdfData) -> Result<(), LignesHorsPage> {
+        controler_les_lignes(&inv.lines, &inv.vat_lines, inv.rounding)
+    }
+
+    /// `n` lignes chiffrées.
+    fn chiffrees(n: usize) -> Vec<InvoiceLinePdf> {
+        (0..n)
+            .map(|i| chiffree(&format!("Prestation {}", i + 1), dec!(10.00)))
+            .collect()
+    }
+
+    /// **T2 (Story 49-4a, AC3)** — `controler_les_lignes` rend `Ok` **si et seulement si** le
+    /// rendu réel de la facture (`generate_qr_bill_pdf_with_date`) rend `Ok`, et quand il
+    /// refuse, c'est `TooManyLines`. L'oracle est la garde **du dessin**, non le plan du
+    /// contrôle : les deux boucles ne partagent que la géométrie et le compte des lignes.
+    /// Famille : les seuils exacts de chaque taille de récapitulatif (places 8, 6, 5, 5, 5, 4,
+    /// écrites à la main), puis 600 pièces engendrées (graine fixe) — lignes chiffrées,
+    /// commentaires vides, faits de blancs, sans rien d'imprimable, à paragraphes, longs ;
+    /// zéro à trois taux ; arrondi nul, non nul, ou nul au centime.
+    #[test]
+    fn le_controle_et_le_rendu_s_accordent() {
+        // Ce qu'un commentaire imprime, relu par la fonction du dessin : rien pour un texte
+        // sans rien d'imprimable (AC1 (e) de la story en dépend).
+        for vide in ["", "   ", "\n\n", "Ω", "\u{200B}", "Ω\nΩ"] {
+            assert_eq!(lignes_imprimees(&commentaire(vide)), 0, "{vide:?}");
+        }
+        assert_eq!(lignes_imprimees(&commentaire("un\ndeux\ntrois")), 3);
+        assert_eq!(lignes_imprimees(&chiffree(&"x".repeat(200), dec!(1))), 1);
+
+        let t1 = [dec!(8.10)];
+        let t2 = [dec!(8.10), dec!(2.60)];
+        let t3 = [dec!(8.10), dec!(2.60), dec!(3.80)];
+        // (taux, arrondi, place attendue) : récapitulatif de 0, 2, 2, 3, 3, 4, 4 et 5 lignes.
+        let seuils: [(&[Decimal], Decimal, usize); 8] = [
+            (&[], Decimal::ZERO, 8),
+            (&t1, Decimal::ZERO, 6),
+            (&[], dec!(0.02), 6),
+            (&t2, Decimal::ZERO, 5),
+            (&t1, dec!(-0.03), 5),
+            (&t3, Decimal::ZERO, 5),
+            (&t2, dec!(0.02), 5),
+            (&t3, dec!(0.02), 4),
+        ];
+        let mut famille = Vec::new();
+        for (taux, arrondi, place) in seuils {
+            let refus = controle_de(&piece_engendree(chiffrees(place + 1), taux, arrondi));
+            assert_eq!(
+                refus,
+                Err(LignesHorsPage {
+                    besoin: place + 1,
+                    place
+                }),
+                "place de {taux:?}, arrondi {arrondi}"
+            );
+            for n in [place, place + 1] {
+                famille.push(piece_engendree(chiffrees(n), taux, arrondi));
+                let mut avec_commentaire = chiffrees(n - 3);
+                avec_commentaire.insert(1, commentaire("un\ndeux\ntrois"));
+                famille.push(piece_engendree(avec_commentaire, taux, arrondi));
+            }
+        }
+
+        let long = "Commentaire assez long pour se couper. ".repeat(26);
+        let textes: [&str; 12] = [
+            "",
+            "   ",
+            "\n\n",
+            "Ω",
+            "\u{200B}",
+            "Note courte",
+            "un\ndeux",
+            "un\n\ndeux",
+            "\nencadré de blancs\n",
+            "Ω\nΩ\nx",
+            &long[..200],
+            &long,
+        ];
+        let taux_possibles = [dec!(8.10), dec!(2.60), dec!(3.80)];
+        let arrondis = [
+            Decimal::ZERO,
+            dec!(0.02),
+            dec!(-0.02),
+            dec!(0.004),
+            dec!(0.005),
+        ];
+        let mut graine = Graine(0x4934_a000_1364);
+        for _ in 0..600 {
+            let mut lignes = chiffrees(graine.tirer(11));
+            for _ in 0..graine.tirer(4) {
+                let position = graine.tirer(lignes.len() + 1);
+                lignes.insert(
+                    position,
+                    commentaire(textes[graine.tirer(textes.len())]),
+                );
+            }
+            let taux = &taux_possibles[..graine.tirer(4)];
+            let arrondi = arrondis[graine.tirer(arrondis.len())];
+            famille.push(piece_engendree(lignes, taux, arrondi));
+        }
+
+        let (mut acceptees, mut refusees) = (0, 0);
+        for inv in &famille {
+            match (controle_de(inv), pdf_facture(inv)) {
+                (Ok(()), Ok(_)) => acceptees += 1,
+                (Err(hors), Err(QrBillError::TooManyLines(n))) => {
+                    assert!(hors.besoin > hors.place, "{hors:?}");
+                    assert_eq!(n, inv.lines.len());
+                    refusees += 1;
+                }
+                (controle, rendu) => panic!(
+                    "le contrôle et le rendu divergent : contrôle {controle:?}, rendu {:?}, \
+                     {} lignes, {} taux, arrondi {}",
+                    rendu.map(|b| b.len()),
+                    inv.lines.len(),
+                    inv.vat_lines.len(),
+                    inv.rounding
+                ),
+            }
+        }
+        assert!(famille.len() >= 500, "famille : {}", famille.len());
+        assert!(
+            acceptees > 100 && refusees > 100,
+            "famille déséquilibrée : {acceptees} acceptées, {refusees} refusées"
+        );
     }
 }
