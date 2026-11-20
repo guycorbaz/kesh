@@ -23,8 +23,8 @@ use kesh_db::entities::contact::{ContactType, NewContact};
 use kesh_db::entities::{NewSupplierInvoice, NewSupplierInvoiceLine};
 use kesh_db::repositories::{contacts, supplier_invoices};
 use kesh_db::test_fixtures::{
-    SeededCompany, disable_rounding_to_5_centimes, mark_onboarding_complete,
-    seed_accounting_company,
+    SeededCompany, attendre_une_requete_en_cours, disable_rounding_to_5_centimes,
+    mark_onboarding_complete, seed_accounting_company,
 };
 use reqwest::multipart;
 use rust_decimal::Decimal;
@@ -589,6 +589,16 @@ async fn import_refus_de_tete_roles_et_cles(pool: MySqlPool) {
     );
     assert!(b["error"]["details"]["columns"].as_array().unwrap().len() > 3);
     assert_eq!(ctx.ecrit().await, (0, 0, 0));
+    // Revue P1 (L2) — un identifiant de transaction plus long que sa colonne
+    // (frais `:FEE` compris) : 422 et erreur de ligne, non une erreur de base.
+    let long =
+        std::str::from_utf8(FIXTURE)
+            .unwrap()
+            .replacen("0TEST00000000001A", &"A".repeat(252), 1);
+    let (s, b) = ctx.importer(long.as_bytes()).await;
+    assert_eq!((s, code(&b)), (422, "PAYPAL_CSV_INVALID"), "{b}");
+    assert_eq!(b["error"]["details"]["reason"], "PAYPAL_CSV_LINES");
+    assert_eq!(ctx.ecrit().await, (0, 0, 0));
 
     // Le libellé se compare sans casse.
     let consultation = forge_jwt(
@@ -626,6 +636,74 @@ async fn import_refus_de_tete_roles_et_cles(pool: MySqlPool) {
     .await
     .unwrap();
     assert_eq!((actor_type.as_str(), key), ("api_key", Some(cle_id)));
+}
+
+/// Revue P1 (L1) — un `PUT` qui retire les réglages PayPal du solde EUR
+/// (encore sans transaction : la garde 5 passe), non commité pendant que
+/// l'import a lu les soldes et pris ses verrous nommés : l'import relit sous
+/// ses verrous, attend le commit, voit le compte devenu ordinaire et refuse
+/// (`422 PROVIDER_CURRENCY_ACCOUNT_MISSING`, `EUR`), rien d'écrit. Le `PUT`
+/// est simulé par sa ligne tenue en exclusif (son `FOR UPDATE`). Tue la
+/// relecture sous les verrous (l'import écrirait sur le compte ordinaire).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn import_relit_les_soldes_sous_ses_verrous(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let (e, _, _) = ctx.trois_soldes().await;
+
+    let mut put = pool.begin().await.unwrap();
+    sqlx::query(
+        "UPDATE bank_accounts SET provider = NULL, provider_account = NULL, \
+         fee_account_id = NULL, iban = 'CH9300762011623852957' WHERE id = ?",
+    )
+    .bind(e)
+    .execute(&mut *put)
+    .await
+    .unwrap();
+
+    let task = {
+        let client = ctx.app.client.clone();
+        let url = format!("{}/api/v1/paypal-imports", ctx.app.base_url);
+        let jwt = ctx.jwt.clone();
+        tokio::spawn(async move {
+            let form = multipart::Form::new()
+                .part(
+                    "file",
+                    multipart::Part::bytes(FIXTURE.to_vec())
+                        .file_name("Download.CSV")
+                        .mime_str("text/csv")
+                        .unwrap(),
+                )
+                .text("account", PAYPAL);
+            let resp = client
+                .post(url)
+                .bearer_auth(jwt)
+                .multipart(form)
+                .send()
+                .await
+                .unwrap();
+            let status = resp.status().as_u16();
+            (status, resp.json::<Value>().await.unwrap_or(Value::Null))
+        })
+    };
+    assert!(
+        attendre_une_requete_en_cours(
+            &pool,
+            &["provider_account = ?", "LOCK IN SHARE MODE"],
+            || { task.is_finished() }
+        )
+        .await,
+        "l'import doit relire les soldes sous ses verrous, et attendre le PUT"
+    );
+    put.commit().await.unwrap();
+
+    let (s, b) = task.await.unwrap();
+    assert_eq!(
+        (s, code(&b)),
+        (422, "PROVIDER_CURRENCY_ACCOUNT_MISSING"),
+        "{b}"
+    );
+    assert_eq!(b["error"]["details"]["currencies"], json!(["EUR"]));
+    assert_eq!(ctx.ecrit().await, (0, 0, 0));
 }
 
 /// AC-5 — un verrou tenu sur le second compte (par identifiant) : `409
@@ -996,9 +1074,55 @@ async fn modifier_un_solde_paypal(pool: MySqlPool) {
 // AC-3 — les autres chemins refusent un compte PayPal
 // ============================================================
 
+/// Revue P1 (M3) — la devise du compte du plan d'un solde PayPal ne change
+/// pas, même sans ligne d'écriture : EUR → CHF (devise retirée) et EUR → USD
+/// → `409 ACCOUNT_CURRENCY_PROVIDER_LINKED` (`details.bankAccountId`), la
+/// devise reste EUR ; un compte EUR sans solde PayPal la change toujours.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn la_devise_du_compte_du_plan_d_un_solde_paypal_ne_change_pas(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let solde = ctx.solde(ctx.eur, None).await["id"].as_i64().unwrap();
+    let modifier = |id: i64, devise: Value| {
+        let ctx = &ctx;
+        async move {
+            let (nom, version): (String, i32) =
+                sqlx::query_as("SELECT name, version FROM accounts WHERE id = ?")
+                    .bind(id)
+                    .fetch_one(&ctx.pool)
+                    .await
+                    .unwrap();
+            ctx.put(
+                &format!("/api/v1/accounts/{id}"),
+                json!({ "name": nom, "accountType": "Asset", "role": null,
+                    "postable": true, "version": version, "currency": devise }),
+            )
+            .await
+        }
+    };
+    for devise in [Value::Null, json!("USD")] {
+        let (s, b) = modifier(ctx.eur, devise.clone()).await;
+        assert_eq!(
+            (s, code(&b)),
+            (409, "ACCOUNT_CURRENCY_PROVIDER_LINKED"),
+            "{devise} : {b}"
+        );
+        assert_eq!(b["error"]["details"]["bankAccountId"], solde);
+    }
+    let devise: Option<String> = sqlx::query_scalar("SELECT currency FROM accounts WHERE id = ?")
+        .bind(ctx.eur)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(devise.as_deref(), Some("EUR"));
+    // Témoin : le compte EUR sans solde PayPal change de devise.
+    let (s, b) = modifier(ctx.eur2, Value::Null).await;
+    assert_eq!(s, 200, "{b}");
+}
+
 /// AC-3 — import CAMT et relevé manuel, règlement de facture, paiement de
 /// facture fournisseur sur un compte PayPal : `409 BANK_ACCOUNT_IS_PROVIDER`,
-/// rien d'écrit ; lot pain.001 depuis un compte sans IBAN : refus existant ;
+/// rien d'écrit ; lot pain.001 depuis un compte PayPal, sans IBAN ou avec :
+/// `409 BANK_ACCOUNT_IS_PROVIDER` dès la création (revue P1, M2) ;
 /// solde d'ouverture d'un compte PayPal EUR : refus central des lignes en
 /// devise, rien d'écrit.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
@@ -1131,15 +1255,29 @@ async fn les_autres_chemins_refusent_un_compte_paypal(pool: MySqlPool) {
     let ecritures_apres = ctx.count("SELECT COUNT(*) FROM journal_entries").await;
     assert_eq!(ecritures_apres, ecritures, "rien d'écrit");
 
-    // Lot pain.001 depuis un compte sans IBAN : refus existant.
+    // Lot pain.001 (revue P1, M2) : refusé dès la création, avec ou sans IBAN
+    // (le refus du prestataire passe avant celui de l'IBAN), aucun lot.
     let (s, b) = ctx
         .post(
-            "/api/v1/payment-batches",
-            json!({ "bankAccountId": chf,
-            "requestedExecutionDate": "2026-06-25", "supplierInvoiceIds": [ff] }),
+            "/api/v1/bank-accounts",
+            json!({ "bankName": "PayPal", "iban": "CH9300762011623852957",
+            "journalAccountId": ctx.eur2, "paypal": { "account": "PayPal pro" } }),
         )
         .await;
-    assert_eq!(code(&b), "PAYMENT_BATCH_ACCOUNT_HAS_NO_IBAN", "{s} {b}");
+    assert_eq!(s, 201, "solde PayPal avec IBAN : {b}");
+    let avec_iban = b["id"].as_i64().unwrap();
+    for compte in [chf, avec_iban] {
+        let (s, b) = ctx
+            .post(
+                "/api/v1/payment-batches",
+                json!({ "bankAccountId": compte,
+                "requestedExecutionDate": "2026-06-25", "supplierInvoiceIds": [ff] }),
+            )
+            .await;
+        assert_eq!((s, code(&b)), (409, "BANK_ACCOUNT_IS_PROVIDER"), "{b}");
+        assert_eq!(b["error"]["details"]["bankAccountId"], compte);
+    }
+    assert_eq!(ctx.count("SELECT COUNT(*) FROM payment_batches").await, 0);
 
     // Solde d'ouverture d'un compte PayPal EUR : refusé par le contrôle central
     // des lignes en devise, ni compte ni écriture. (Le report à nouveau, rôle

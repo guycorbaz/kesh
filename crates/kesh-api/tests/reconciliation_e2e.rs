@@ -10938,6 +10938,54 @@ async fn monthly_invoices_and_a_batch_of_the_account(pool: MySqlPool) {
     assert_eq!(candidates[0]["supplierInvoiceId"], feb);
 }
 
+/// Story 38-11b, revue P1 (M2) — l'acceptation d'une proposition « facture
+/// fournisseur » sur le solde d'un prestataire (PayPal) : `pay_in_tx_as` la
+/// refuse (AC-3, limite (a)), et le refus sort en `FailedProposal`
+/// **nommé** `BANK_ACCOUNT_IS_PROVIDER` (`details.bankAccountId`), non en
+/// `DATABASE_ERROR` ; la facture reste ouverte, la transaction en attente.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn accepting_a_supplier_invoice_on_a_provider_account_is_refused_by_name(pool: MySqlPool) {
+    let c = setup_301b(&pool).await;
+    let (sid, _) = fournisseur_rapproche::facture_ouverte(
+        &pool,
+        &c.seeded,
+        c.f,
+        Some("FF-PAYPAL"),
+        None,
+        day_301b(3, 1),
+        Some(day_301b(3, 31)),
+        dec!(120.00),
+    )
+    .await;
+    let tx = tx_301b(&pool, &c, dec!(-120.00), None, Some(SUPPLIER_301B)).await;
+    sqlx::query(
+        "UPDATE bank_accounts SET is_primary = FALSE, provider = 'paypal', \
+         provider_account = 'PayPal www' WHERE id = ?",
+    )
+    .bind(c.f.bank_account_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let (code, details) = refusal_301b(&c, tx, sid).await;
+    assert_eq!(code, "BANK_ACCOUNT_IS_PROVIDER", "{details}");
+    assert_eq!(details["bankAccountId"], c.f.bank_account_id);
+    let (status,): (String,) = sqlx::query_as("SELECT status FROM supplier_invoices WHERE id = ?")
+        .bind(sid)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(status, "open", "facture restée ouverte");
+    let (reconciled,): (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM bank_transactions WHERE id = ? AND status = 'pending'",
+    )
+    .bind(tx)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(reconciled, 1, "transaction restée en attente");
+}
+
 /// T-b17 et T-b30 (AC-b6, AC-b16) — **l'acceptation nominale** : facture
 /// payée, au compte de l'import, `paid_at` = date de **valeur** de la
 /// transaction ; écriture `D créanciers / C banque` du TTC, datée de la date
