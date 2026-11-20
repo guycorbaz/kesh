@@ -55,17 +55,36 @@ Quatre points tracés en issues à la revue du correctif `fix-api-parent-compte`
   nextest kesh-db et kesh-api (lib), kesh-i18n, `account_parent_change`, `accounts_e2e`, `textes_coherents`,
   `test_schema_guard`, `i18n_e2e` : 1334 passés, 5 ignorés.
 
+- 2026-11-20 — Remédiation de la revue P1 (0 CRITICAL, 0 HIGH, 3 MEDIUM, 6 LOW) :
+  - M1 : `PR.md` porte un mot-clé par issue (`closes #1437, closes #1438, closes #1439, closes #1440`).
+  - M2 : `ACCOUNT_PARENT_HAS_ENTRIES` réécrit au présent, vrai que le parent soit déjà non imputable (bascule de la
+    création d'un sous-compte) ou non : « on n'y range pas d'autre compte, car un compte qui a des sous-comptes n'est
+    pas imputable et son solde ne se corrige plus par une saisie » (quatre locales, repli de `errors.rs`,
+    `api-external.md`, doc-comments de `kesh-db`). Le test monte le cas réel (parent mouvementé, `POST` d'un
+    sous-compte qui le bascule, `PUT` d'un autre compte dessous) et compare le message exact.
+  - M3 : même correction pour `ACCOUNT_FOREIGN_PARENT_HAS_ENTRIES` (choix : un seul message, vrai dans les deux cas,
+    plutôt que deux variantes selon `postable` ; le prédicat du refus ignore `postable`), sites `errors.rs`, quatre
+    locales, `api-external.md` (trois endroits), `user-manual.tex:1131`, doc-comments ; test `put_parent_en_devise_…`.
+  - L1 : `buildAccountTree` ne trie plus, il garde l'ordre de l'API (collation SQL) ; tests Vitest mis à jour (+1).
+  - L2 : création des comptes dans le `try` du nettoyage, `expect.soft` dans le `finally` (n'écrase pas l'erreur d'origine).
+  - L3 : les quatre locales sont contrôlées par `textes_coherents` et la garde i18n (clés présentes, mêmes arguments) ;
+    le test de message compare le repli de `errors.rs`.
+  - L4 : `api-external.md` dit que la règle ne vaut que pour le `PUT` ; L5 : commentaire de `account_parent_change.rs`
+    corrigé ; L6 : antécédent levé par la nouvelle rédaction.
+  - Réserve E2E : les trois échecs hors KF-029 sont KF-065 (#1282) et KF-067 (#1284), hors du correctif.
+
 ## Notes de version
 
 - **Fixed** — Plan comptable : le refus de ranger un compte sous un parent qui porte des écritures ne dit plus que ce
-  parent « deviendrait » non imputable quand il l'est déjà (#1437) ; le plan comptable affiche chaque compte sous son
+  parent « deviendrait » non imputable quand il l'est déjà, pour un compte en CHF comme en devise (#1437) ; le plan comptable affiche chaque compte sous son
   vrai parent, même quand les numéros ne l'encadrent pas (#1439).
 
 ## Dev Agent Record
 
 ### File List
 
-- `crates/kesh-api/src/errors.rs`, `crates/kesh-api/tests/accounts_e2e.rs`
+- `crates/kesh-api/src/errors.rs`, `crates/kesh-api/tests/accounts_e2e.rs`, `account_currency_e2e.rs`
+- `crates/kesh-db/src/errors.rs`, `crates/kesh-db/src/repositories/accounts.rs` (doc-comments), `docs/manual/fr/user-manual.tex`
 - `crates/kesh-db/tests/account_parent_change.rs`
 - `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`
 - `docs/api-external.md`
@@ -83,7 +102,6 @@ Quatre points tracés en issues à la revue du correctif `fix-api-parent-compte`
   partagée, `gate-backend-cible-partagee.log`).
 - `scripts/gate-ci.sh` (copie `git archive`, cible propre à la copie, donc non concernée) : **6185 passés, 0 échoué,
   18 ignorés** (`gate-ci.log`).
-- E2E complet (`LANG=fr_CH.UTF-8`) sur la cible partagée : **478 passés, 10 échecs, 18 ignorés** — les dix attendus
-  (sept KF-029, `backup-restore-new-install.spec.ts:262` et `:381`, `opening-balances.spec.ts:156`) ;
+- E2E complet (`LANG=fr_CH.UTF-8`) sur la cible partagée, **avant la remédiation de la revue P1** : **478 passés, 10 échecs, 18 ignorés** — sept KF-029 (#97, `docs/testing.md`) et trois échecs hors de cette liste, **connus au registre et sans rapport avec le correctif** : `backup-restore-new-install.spec.ts:262` et `:381` (KF-065, #1282) et `opening-balances.spec.ts:156` (KF-067, #1284) ;
   `accounts.spec.ts:292` vert (`e2e.log`). **Rejeu sur la cible propre : voir `e2e-r.log`, à joindre ici** (lancé,
   en attente d'une place de `heavy.sh` à la rédaction).
