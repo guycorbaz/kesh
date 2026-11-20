@@ -128,13 +128,14 @@ sort pas sans la 49-4a ») : sans elle, un commentaire long rendrait une facture
   (f) un `tracing::warn!` après la validation, en rejouant le contrôle sur `validated.lines` (remède proposé par V1-8) — aucune
   infrastructure de test ne lit les journaux dans `kesh-api` (`grep -rln "traced_test\|logs_contain" crates/kesh-api` vide) :
   un avertissement non testé ; l'issue le trace mieux.
-- **D2 — Le contrôle réserve le bloc de rappel pour les seules pièces à commentaires (décision de Guy du 2026-11-20, Q1 (c)).**
-  (Ex-D4 (e).) Une facture **à commentaires** (49-1c) qui tient juste, validée, ne doit pas voir son **rappel** refusé au rendu
-  (`TooManyLines`) : le contrôle de la validation compte, pour elle, le bloc de rappel (environ trois lignes), par un paramètre de
-  `controler_les_lignes`. Une facture **toutes lignes chiffrées** garde sa capacité actuelle (comportement de la 0.19.0, son
-  rappel pouvant être refusé comme aujourd'hui, sujet de la 49-4b). *Écarté* : réserver pour toute facture (trois lignes de moins
-  pour toutes) ; accepter le refus et le dire au manuel (arbitrage de Guy). **À propager** à la remédiation de la validation P1 :
-  Objet (rappel), D1/D4 (formule de la capacité), AC et tests (cas « facture à commentaires au seuil, rappel rendu »), manuel.
+- **D2 — Le contrôle ne réserve pas le bloc de rappel ; limite déclarée au manuel ; plusieurs pages en v0.21.0 (décision de Guy
+  du 2026-11-20, Q1 (c)).** Guy avait d'abord répondu « réserver » sur une estimation fausse de l'orchestrateur (« environ trois
+  lignes ») ; la validation P1 (addendum A1) a établi que garantir le rappel demande de réserver le pire cas, 18 mm (règlement
+  partiel et frais : quatre lignes), soit trois lignes imprimées seulement pour une facture à commentaires avec arrondi, aucune
+  avec trois taux et arrondi. Guy a alors décidé : **aucune réserve** ; une facture (à commentaires ou non) qui tient juste peut
+  voir son **rappel** refusé au rendu (`TooManyLines`) — **limite écrite au manuel**, avec la sortie (avoir) ; le remède est la
+  facture sur plusieurs pages, **#1374, milestone v0.21.0**, qui couvre le rappel. Les points A1 à A4 de l'addendum de la
+  validation P1 tombent avec cette décision, sauf ce qu'ils disent de la phrase du manuel (A3, joint à V1-3).
 - **D3 — Un code neuf pour le refus à la validation : `400 INVOICE_LINES_DO_NOT_FIT_PDF`.** (Ex-D5, phrase adaptée au dessin
   actuel.) La phrase dit ce qui est possible sur un brouillon, en **lignes imprimées** : *« Les lignes de cette facture ne tiennent
   pas sur la page de son PDF : elles demandent { $besoin } lignes imprimées, la page en offre { $place }. Retirez des lignes,
