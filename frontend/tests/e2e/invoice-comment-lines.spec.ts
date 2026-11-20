@@ -73,7 +73,9 @@ test.describe('Factures — ligne de commentaire (49-1c)', () => {
 		await createProductViaApi(page, produit);
 
 		await page.goto('/invoices/new');
-		await expect(page.getByRole('heading', { name: 'Nouvelle facture' })).toBeVisible();
+		// `data-testid` : un sélecteur ne vise pas un libellé traduit (garde KF-043).
+		const envoyer = page.getByTestId('create-invoice-button');
+		await expect(envoyer).toBeVisible();
 		const contact = page.getByRole('combobox', { name: /Rechercher un contact/ });
 		await contact.click();
 		await contact.fill(contactName);
@@ -93,7 +95,7 @@ test.describe('Factures — ligne de commentaire (49-1c)', () => {
 		await expect(page.getByTestId('invoice-line-vat-rate')).toHaveCount(1);
 
 		// Vide, il bloque l'envoi en nommant la ligne.
-		await page.getByRole('button', { name: 'Créer la facture' }).click();
+		await envoyer.click();
 		await expect(page.getByTestId('invoice-form-error')).toContainText(
 			'Ligne 2 : le texte du commentaire est obligatoire',
 		);
@@ -112,7 +114,7 @@ test.describe('Factures — ligne de commentaire (49-1c)', () => {
 		await expect(page.locator('[data-testid="invoice-lines-table"] tfoot')).toContainText('350.00');
 		await capture(page, '01-formulaire-avec-commentaire');
 
-		await page.getByRole('button', { name: 'Créer la facture' }).click();
+		await envoyer.click();
 		await expect(page).toHaveURL(/\/invoices\/\d+$/);
 		const invoiceId = Number(page.url().split('/').pop());
 
@@ -128,7 +130,7 @@ test.describe('Factures — ligne de commentaire (49-1c)', () => {
 		await expect(rangees).toHaveCount(3);
 		await expect(rangees.nth(1)).toHaveAttribute('data-testid', 'invoice-line-comment-row');
 		await expect(page.getByTestId('invoice-line-comment')).toHaveValue(COMMENTAIRE);
-		await page.getByRole('button', { name: 'Enregistrer' }).click();
+		await page.getByTestId('create-invoice-button').click();
 		await expect(page).toHaveURL(new RegExp(`/invoices/${invoiceId}$`));
 
 		const ctx = await authedApiContext(page);
