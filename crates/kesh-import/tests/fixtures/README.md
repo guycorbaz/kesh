@@ -110,3 +110,10 @@ Authorization*), un montant à milliers (`1,234.56`). Noms inventés, e-mails
 Générée par un script hors dépôt ; les valeurs attendues sont tenues en dur
 par `tests/paypal_csv.rs`. Sert aussi aux stories 38-11b, 38-11c2 et à l'E2E
 de 38-11d.
+
+## Stripe « Itemized payout reconciliation » (Story 40-7a)
+
+| Fichier | Cas couvert |
+|---|---|
+| `stripe-itemized-payout-fictif.csv` | Rapport inventé de toutes pièces : treize colonnes (les onze d'un rapport du tableau de bord **plus** `source_id` et `charge_id`), sans BOM, devises en minuscules, deux décimales, `net = gross − fee` partout, dates en 2020. Neuf lignes, quatre versements (`po_TEST0001` à `0004`), trois devises (CHF, EUR, USD) : `charge` avec frais, `refund` à frais négatifs, `fee` seule (brut négatif, frais nuls, sans objet lié) et `fee` à frais non nuls, une charge sans vente dans le jeu de rapprochement (`ch_TEST0099`), un versement qui ne porte qu'un `payout_reversal`. Le net EUR du versement `po_TEST0002` vaut 270.30. Identifiants `txn_TEST…`, `po_TEST…`, `ch_TEST…`, `re_TEST…`, `fee_TEST…` inventés. Valeurs attendues tenues en dur par `tests/stripe_csv.rs`. Sert aussi aux stories 40-7b à 40-7d et 40-8a. |
+| `stripe-itemized-payout-sans-source-fictif.csv` | Mêmes colonnes **sans** `source_id` ni `charge_id` (en-tête d'un export du tableau de bord à colonnes par défaut anciennes), trois lignes : refus `MissingColumns(["source_id\|charge_id"])`. |

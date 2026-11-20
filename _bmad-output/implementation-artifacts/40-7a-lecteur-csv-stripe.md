@@ -1,6 +1,6 @@
 # Story 40-7a : lecteur du CSV Stripe « Itemized payout reconciliation » (`kesh-import`)
 
-Status: ready-for-dev
+Status: review
 
 *Fiche rédigée le 2026-11-20, branche `epic/40-stripe`, numéros de ligne relevés sur `origin/main` au commit `fd04099f`
 (repris dans la branche par la fusion `7dcb54ab`). Epic 40, **phase 1 KISS** (décision de Beat du 2026-11-20, § *Phase 1
@@ -104,10 +104,10 @@ lié —, afin que l'import (40-7b) n'ait plus qu'à ranger ces lignes dans le c
 
 ## Tâches
 
-- [ ] T1 — Module commun `csv/by_name.rs` (en-tête, forme fermée des montants, erreurs), déplacé de `paypal.rs` (AC-6).
-- [ ] T2 — `stripe.rs` : types, en-tête, lignes, dates (AC-1 à AC-4).
-- [ ] T3 — Cohérence et agrégation (AC-5).
-- [ ] T4 — Fixtures fictives et tests ; `cargo publish --dry-run -p kesh-import` (AC-6, AC-7).
+- [x] T1 — Module commun `csv/by_name.rs` : **déjà écrit par 38-11a** (`by_name.rs`, `amount.rs`, fusionnés de `epic/38-paypal`) ; réutilisé, rien déplacé.
+- [x] T2 — `stripe.rs` : types, en-tête, lignes, dates (AC-1 à AC-4).
+- [x] T3 — Cohérence et agrégation (AC-5).
+- [x] T4 — Fixtures fictives et tests ; `cargo publish --dry-run -p kesh-import` (AC-6, AC-7).
 
 ## Stratégie de tests
 
@@ -160,4 +160,65 @@ lié (`source_id` ou `charge_id`) est refusé avec la marche à suivre pour l'aj
   `origin/main` (`decode_bytes` sans retrait du BOM, `detect_encoding` rendant `bom_len`, `parse_amount` privé et
   laxiste, `annee_recevable`, réexports) et contre 38-11a et 39-11a (`csv/by_name.rs`, forme fermée). LOW : la liste des
   codes d'erreur de ligne n'était pas fermée (la devise invalide n'avait pas de code) → liste écrite.
+- 2026-11-20 — développement (Claude Sonnet 5.5), voir Dev Agent Record. Statut `review`.
+
+## Dev Agent Record
+
+*Développement du 2026-11-20, branche `epic/40-stripe`, après fusion de `epic/38-paypal` (commit `9b48621d`).*
+
+### Fusion de `epic/38-paypal`
+
+Huit fichiers en conflit, tous résolus en gardant les deux intentions : `sprint-status.yaml` (bloc Epic 38 de la 38, blocs
+39 et 40 de la branche), `docs/api-external.md`, `audit_route_registry.rs`, `migrations_upgrade_path.rs`,
+`migrations.sha384`, `docs/migrations-idempotence-audit.md` et `0001_schema_squash.sql` (le côté Epic 38, qui porte la
+migration `paypal_import`, la branche Stripe n'ayant aucune migration ni route nouvelle), `admin-manual.tex` (compteur de
+routes de l'Epic 38). Compteurs : 96 migrations (`ls crates/kesh-db/migrations/*.sql | wc -l`), tous ceux des fichiers
+repris tiennent déjà ce total. Le test-schéma et les gates complets de `kesh-db`/`kesh-api` **n'ont pas été rejoués** ici
+(story `kesh-import` seule) ; ils le sont au gate complet de l'epic.
+
+### Réalisé
+
+- `crates/kesh-import/src/stripe.rs` (module neuf, réexporté par `lib.rs`) : `parse_stripe_payout_csv`, `StripePayoutRow`,
+  `StripePayoutCsv`, `StripeCsvError` (5 variantes à code stable `STRIPE_CSV_*`), `StripeLineError(Code)` (7 codes fermés).
+  Construit sur `csv::ColumnsByName` et `parse_dot_decimal_amount` de 38-11a, **sans duplication** ; le patron de
+  `paypal.rs` (décodage avec `bom_len`, `flexible(true)` + contrôle du nombre de cellules, numéros de ligne,
+  collecte plafonnée) est repris tel quel.
+- Fixtures fictives `stripe-itemized-payout-fictif.csv` (9 lignes, 4 versements, 3 devises, 2020) et
+  `stripe-itemized-payout-sans-source-fictif.csv` ; catalogue au `fixtures/README.md`.
+- Tests : `tests/stripe_csv.rs` (17 tests) et 4 tests unitaires dans `stripe.rs`.
+
+### Écarts et choix, dits
+
+- **AC-6 / T1** : rien à déplacer, 38-11a avait déjà écrit `by_name.rs` et `amount.rs` ; `paypal.rs` n'est pas touché.
+- **Montants** : `parse_dot_decimal_amount` admet la virgule des milliers ; Stripe n'en écrit pas (AC-5), donc `parse_amount`
+  de `stripe.rs` refuse toute cellule qui contient une virgule avant d'appeler l'aide commune.
+- **« L'une ou l'autre »** (`created`/`created_utc`, `source_id`/`charge_id`) : l'aide commune ne connaît que des
+  requises à nom unique ; les quatre sont déclarées facultatives et l'exigence se contrôle dans `stripe.rs`, qui refait
+  l'ordre de la liste des manquantes (`created|created_utc` après `balance_transaction_id`, `source_id|charge_id` en
+  dernier). Test de l'ordre complet.
+- **`FIELD_COUNT`** : `flexible(true)` et contrôle explicite, comme `paypal.rs`, plutôt que `flexible(false)` de la fiche —
+  même résultat (erreur de ligne, numéro de ligne, ligne vide finale sautée), sans dépendre de ce que le lecteur `csv`
+  rend après une erreur de longueur.
+- **Catégorie vide** : la fiche n'a pas de code pour elle et la liste est fermée ; elle prend le code `ID`, champ
+  `reporting_category`.
+- **`source_id` / `charge_id`** : non contrôlés au jeu de caractères (la fiche ne le demande que pour le versement et la
+  transaction de solde) ; ils sont gardés tels quels, `None` si vides.
+- **Date de disponibilité** : si `available_on` et `available_on_utc` sont toutes deux présentes, `available_on` prime.
+- **Versement EUR = « Argent reçu » Wise** : la fixture de 39-11a n'est pas dans cette branche ; le net EUR de
+  `po_TEST0002` est écrit ici (**270.30**, tenu par un test) et 39-11a s'y alignera.
+- **Mutation vérifiée** : en neutralisant le refus de la virgule dans `parse_amount`, `decimal_comma_is_refused_never_read_as_hundred_times` rougit (journal `kesh-gate-logs/s40-7a/mutation-et-reel.log`) ; code restauré.
+
+### Rapport réel de Beat, lecture locale
+
+Lecture seule, par un test jetable (supprimé, non commité) ; aucune valeur copiée ni citée. Les quatre CSV (toutes devises,
+CHF, EUR, USD) sont **refusés tels quels** par `MissingColumns(["source_id|charge_id"])` — le refus ne nomme que cette
+colonne, donc les huit autres requises et `created` y sont. Une fois la colonne `source_id` ajoutée (vide) par un test, ils
+se lisent : 52, 336, 4 et 280 lignes pour 52, 336, 4 et 280 enregistrements de données (comptés par le crate `csv`,
+guillemets compris), aucune erreur de ligne (net, formes, dates, versements à une devise).
+
+### Gate
+
+Gate ciblé `kesh-import` (clippy `-D warnings` + `cargo test -p kesh-import`) ; journal
+`kesh-gate-logs/s40-7a/test-import-2.log`. **Gate complet non joué** (aucun code hors `kesh-import`) : à rejouer au
+gate complet de l'epic.
 
