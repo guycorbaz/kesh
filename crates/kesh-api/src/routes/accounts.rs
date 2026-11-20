@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use kesh_db::entities::account::{
     Account, AccountRole, AccountType, AccountUpdate, CurrencyChange, NewAccount, OwnFxAccounts,
-    OwnFxAccountsChange,
+    OwnFxAccountsChange, ParentChange,
 };
 use kesh_db::errors::{DbError, FxAccountField, FxAccountReason, map_db_error};
 use kesh_db::repositories::{accounts, letterings};
@@ -62,6 +62,27 @@ pub struct CreateAccountRequest {
 
 fn default_true() -> bool {
     true
+}
+
+/// Le contrôle de forme d'un compte parent, **commun à la création et à la
+/// modification** (correctif `fix-api-parent-compte`) : il existe, appartient
+/// à la société courante et est actif. Sinon `400 VALIDATION_ERROR`.
+///
+/// Le scope société n'était pas vérifié à l'origine : un `parentId` d'une autre
+/// société était accepté (code review 14-3a — d'autant plus sensible que
+/// rattacher un enfant modifie la postabilité du parent). Lecture hors
+/// transaction : le dépôt relit le parent sous verrou à la modification
+/// (`accounts::update`), où il refuse en plus un cycle.
+async fn check_parent_in_company(
+    state: &AppState,
+    parent_id: i64,
+    company_id: i64,
+) -> Result<(), AppError> {
+    match accounts::find_by_id_in_company(&state.pool, parent_id, company_id).await? {
+        None => Err(AppError::Validation("parent account not found".into())),
+        Some(p) if !p.active => Err(AppError::Validation("parent account is archived".into())),
+        Some(_) => Ok(()),
+    }
 }
 
 /// Normalise une devise reçue (Story 37-1, AC-4) : `trim`, majuscules ASCII,
@@ -212,6 +233,13 @@ pub struct UpdateAccountRequest {
     /// Compte de pertes de change propre (Story 37-1, AC-4 bis).
     #[serde(default, deserialize_with = "present_or_null")]
     pub fx_loss_account_id: Option<Option<i64>>,
+    /// Compte parent (correctif `fix-api-parent-compte`), mêmes trois états
+    /// que `currency` : `None` = champ **absent** → parent **inchangé** ;
+    /// `Some(None)` = `null` → le compte devient racine ; `Some(Some(id))` =
+    /// le nouveau parent. Pas de 400 sur l'absence, pour la même raison que
+    /// `currency` : un client qui ne connaît pas le champ ne détache rien.
+    #[serde(default, deserialize_with = "present_or_null")]
+    pub parent_id: Option<Option<i64>>,
     pub version: i32,
 }
 
@@ -378,19 +406,8 @@ pub async fn create_account(
     };
     let own_fx_accounts = own_fx_for_create(req.fx_gain_account_id, req.fx_loss_account_id)?;
 
-    // Valider que le parent existe, appartient à la société courante et est actif.
-    // Le scope société n'était pas vérifié : un `parentId` d'une autre société
-    // était accepté (code review 14-3a — d'autant plus sensible maintenant que
-    // la création d'un enfant modifie la postabilité du parent).
     if let Some(pid) = req.parent_id {
-        let parent = accounts::find_by_id_in_company(&state.pool, pid, company.id).await?;
-        match parent {
-            None => return Err(AppError::Validation("parent account not found".into())),
-            Some(p) if !p.active => {
-                return Err(AppError::Validation("parent account is archived".into()));
-            }
-            _ => {}
-        }
+        check_parent_in_company(&state, pid, company.id).await?;
     }
 
     let new = NewAccount {
@@ -428,7 +445,9 @@ pub async fn create_account(
     ))
 }
 
-/// PUT /api/v1/accounts/{id} — modifie un compte (nom et type).
+/// PUT /api/v1/accounts/{id} — modifie un compte : nom, type, rôle,
+/// postabilité, devise, comptes propres et parent (`parentId`, correctif
+/// `fix-api-parent-compte` : absent = inchangé, `null` = racine).
 /// Story 6.2: Validate company exists (defensive: company_id staleness window).
 pub async fn update_account(
     State(state): State<AppState>,
@@ -482,6 +501,17 @@ pub async fn update_account(
     };
     let own_fx_accounts = own_fx_for_update(req.fx_gain_account_id, req.fx_loss_account_id, id)?;
 
+    // Correctif `fix-api-parent-compte` — le parent, mêmes contrôles de forme
+    // que la création ; le cycle et l'état sous verrou sont jugés par le dépôt.
+    let parent = match req.parent_id {
+        None => ParentChange::Unchanged,
+        Some(None) => ParentChange::Root,
+        Some(Some(pid)) => {
+            check_parent_in_company(&state, pid, current_user.company_id).await?;
+            ParentChange::Under(pid)
+        }
+    };
+
     let changes = AccountUpdate {
         name: trimmed_name,
         account_type: req.account_type,
@@ -489,6 +519,7 @@ pub async fn update_account(
         postable,
         currency,
         own_fx_accounts,
+        parent,
     };
 
     // Story 25-2-a : le dépôt refuse en 409 `ACCOUNT_HAS_ENTRIES` si le compte
