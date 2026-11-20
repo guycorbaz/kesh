@@ -180,8 +180,19 @@ Source : `kesh-gate-logs/epic-38-kiss/phase2-decisions.md`. Deux stories, après
 | `38-12a` | identifiants par variables d'environnement, client de l'API (jeton, fenêtres de 30 jours de Zurich sous la limite de 31 jours, pages de 500, reprise sur 429, parallélisme), conversion vers `PaypalRow`, tâche et routes | `kesh-import`, `kesh-api`, `kesh-i18n` | 38-11a, 38-11b, 38-11c1, 38-11c2 | non |
 | `38-12b` | bouton sur la page PayPal de 38-11d, période, progression, manuels (administration, utilisateur), `api-external.md`, E2E | `frontend`, `kesh-i18n`, manuels et docs | 38-12a, 38-11d | non |
 
-- **Identifiants** : `KESH_PAYPAL_<n>_ACCOUNT` (libellé du compte PayPal de 38-11b), `_CLIENT_ID`, `_SECRET`, validés au
-  démarrage comme `KESH_SMTP_*` ; rien en base ni dans la sauvegarde, pas de coffre. Application PayPal à la seule
+- **Socle commun S1 à S9 avec les Epics 39 et 40** (texte identique de `epic-39-wise.md` et `epic-40-stripe.md`, § « Socle
+  commun de la phase 2 », C-40-K6, validation P1 des phases 2 de Wise et de Stripe du 2026-11-20) : **38-12a, développée
+  la première, l'écrit générique** — lecteur `provider_env`, mécanique `provider_download` (tâches en mémoire,
+  `windows(from, to, max_days)`, reprise unique 429/5xx, `Retry-After` borné à 120 s, sinon 5/10/20/40/60 s, six essais,
+  pause commune), routes `<prestataire>-downloads` aux sessions seules et état `{ state, steps, pausedUntilSeconds,
+  result, error }`, codes `PROVIDER_*`, constructeur de client extrait de `exchange_rates/source.rs`, cœur d'import
+  `ProviderLine`, test S9 ; 38-12b écrit le dialogue générique, `providerApi` et le serveur simulé commun
+  (`KESH_E2E_PROVIDER_MOCK_PORT`). Wise (39-12a1, 39-12a2, 39-12b) et Stripe (40-8a, 40-8b) les appellent. PayPal
+  appelle `windows` à 30 jours (une fenêtre de 31 jours de Zurich dépasse la limite de PayPal au passage à l'heure
+  d'hiver).
+- **Identifiants** : `KESH_PAYPAL_<n>_ACCOUNT` (libellé du compte PayPal de 38-11b, propre à l'installation), `_CLIENT_ID`,
+  `_SECRET`, validés au démarrage par `provider_env` (refus inconditionnel, contrairement à `KESH_SMTP_*`) ; rien en base
+  ni dans la sauvegarde, pas de coffre. Application PayPal à la seule
   fonction « Transaction Search ». Les clés d'API de Kesh, hachées, ne conviennent pas : le secret doit être relu.
 - **Même modèle, mêmes doublons, même rapprochement** : l'API se convertit en lignes de 38-11a, l'import de 38-11b les
   ventile, 38-11c1 et 38-11c2 les rapprochent sans changement ; doublons par identifiant de transaction, CSV et téléchargement

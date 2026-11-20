@@ -24,35 +24,42 @@ identifiants.
 
 ## Critères d'acceptation
 
-1. **AC-1 — Indicateur et bouton.** La réponse des comptes bancaires (objet `paypal` de 38-11b,
-   `crates/kesh-api/src/routes/bank_accounts.rs`) gagne `paypal.apiConfigured: boolean` (vrai si une paire existe au
-   libellé du compte, `Config` de 38-12a ; la valeur des secrets n'y paraît jamais). **Page PayPal de 38-11d**
+*Socle commun S7 et S8* (`epic-39-wise.md`, `epic-40-stripe.md`) : cette fiche écrit le **dialogue générique**,
+paramétré par le prestataire (route `<prestataire>-downloads`, libellés), et le **serveur simulé commun** de l'E2E ;
+Wise (39-12b) et Stripe (40-8b) les réutilisent.
+
+1. **AC-1 — Indicateur et bouton** (S7). La réponse des comptes bancaires (`crates/kesh-api/src/routes/bank_accounts.rs`)
+   gagne, pour un compte de prestataire, le champ **générique** `providerApi: { configured: boolean, mode?: "live" |
+   "sandbox", scaKeyConfigured? }` (`configured` vrai si une série existe au libellé du compte, selon le prestataire du
+   compte, `provider_env` de 38-12a ; `mode` pour PayPal selon `KESH_PAYPAL_BASE_URL` ; `scaKeyConfigured` propre à
+   Wise, absent pour PayPal ; jamais un secret ; `null` pour un compte sans prestataire). **Page PayPal de 38-11d**
    (`reconciliation/paypal/+page.svelte`, feature `frontend/src/lib/features/paypal/`) : à côté de « Importer le CSV
    PayPal », bouton **« Télécharger depuis PayPal »** pour le compte PayPal choisi au sélecteur, visible de Comptable et
-   plus quand `apiConfigured` ; sinon une ligne d'aide « téléchargement non configuré : voir le manuel
+   plus quand `providerApi.configured` ; en mode `sandbox`, la mention « bac à sable » ; sinon une ligne d'aide « téléchargement non configuré : voir le manuel
    d'administration » (Administrateur seulement), et l'import CSV reste seul.
-2. **AC-2 — Fenêtre de dialogue.** Période (date de début, date de fin ; défaut : l'exercice choisi au sélecteur de la
-   page, fin ramenée à aujourd'hui), refus du serveur affichés par code (`PAYPAL_PERIOD_INVALID`,
-   `PAYPAL_PERIOD_TOO_OLD`, `PAYPAL_API_NOT_CONFIGURED`, `API_KEY_OPERATION_FORBIDDEN` n'est pas atteignable depuis
-   l'écran) ; sur 409 `PAYPAL_DOWNLOAD_RUNNING`, le dialogue **reprend le suivi** de la tâche en cours par le `jobId` de
-   `details` (38-12a AC-8) au lieu d'un message d'erreur. Texte permanent : « PayPal peut mettre jusqu'à trois heures à
+2. **AC-2 — Fenêtre de dialogue** (composant générique, `frontend/src/lib/features/provider-download/`). Période (date de début, date de fin ; défaut : l'exercice choisi au sélecteur de la
+   page, fin ramenée à aujourd'hui), refus du serveur affichés par code (`PROVIDER_PERIOD_INVALID`
+   selon `details.reason`, `PROVIDER_API_NOT_CONFIGURED` ; `API_KEY_OPERATION_FORBIDDEN` n'est pas atteignable depuis
+   l'écran) ; sur 409 `PROVIDER_DOWNLOAD_RUNNING`, le dialogue **reprend le suivi** de la tâche en cours par le `jobId`
+   de `details` (38-12a AC-8) au lieu d'un message d'erreur. Texte permanent : « PayPal peut mettre jusqu'à trois heures à
    publier une transaction ; l'historique remonte à trois ans ; le téléchargement se fait par tranches de 30 jours ».
 3. **AC-3 — Progression et résultat.** Après le 202, le dialogue interroge `GET /api/v1/paypal-downloads/{jobId}` toutes
-   les secondes : barre et texte « fenêtre `done`/`total` », message « PayPal demande de patienter, reprise dans `n` s »
+   les secondes : barre et texte « fenêtre `steps.done`/`steps.total` » (le nom de l'étape
+   est un paramètre du prestataire ; `total` nul → compteur sans barre), message « PayPal demande de patienter, reprise dans `n` s »
    quand `pausedUntilSeconds` est non nul ; à `done`, le **compte rendu de l'import CSV de 38-11d** (même composant :
-   insérées, doublons, écartées par motif, par devise), « données de PayPal à jour jusqu'à … » (`lastRefreshed`), et la
-   revue de la page se recharge ; à `failed`, le message traduit du code (ceux de 38-12a AC-6 et AC-8, dont
-   `PROVIDER_CURRENCY_ACCOUNT_MISSING` qui nomme les devises comme à l'import CSV, et `PAYPAL_API_ROW_INVALID` qui liste
-   les lignes) avec la fenêtre et la page, et la mention « rien n'a été enregistré, relancez » ; fermer le dialogue
+   insérées, doublons, écartées par motif, par devise), « données de PayPal à jour jusqu'à … » (`result.lastRefreshed`), et la
+   revue de la page se recharge ; à `failed`, le message traduit du code `PROVIDER_*` (ceux de 38-12a AC-6 et AC-8,
+   dont `PROVIDER_CURRENCY_ACCOUNT_MISSING` qui nomme les devises comme à l'import CSV, et `PROVIDER_RESPONSE_INVALID`
+   qui liste les lignes de `error.detail.lines`) avec la fenêtre et la page de `error.detail`, et la mention « rien n'a été enregistré, relancez » ; fermer le dialogue
    n'arrête pas la tâche, et le rouvrir la retrouve (409, AC-2). Aucun secret n'est affiché.
 4. **AC-4 — i18n.** Libellés, messages d'erreur et textes des AC-1 à AC-3 aux quatre locales
-   (`crates/kesh-i18n/locales/*/messages.ftl`, clés au préfixe `paypal-` de la feature, `docs/i18n-key-ownership-pattern.md`) ;
+   (`crates/kesh-i18n/locales/*/messages.ftl`, clés au préfixe `paypal-` de la page et `provider-download-` du dialogue générique, `docs/i18n-key-ownership-pattern.md`) ;
    `sitesTotal` de `frontend/src/lib/shared/i18n-keys.test.ts` recompté depuis la source ; garde d'appartenance des clés
    (`npm run lint-i18n-ownership`) verte.
 5. **AC-5 — Manuel d'administration** (`docs/manual/fr/admin-manual.tex`, `.tex` seul, aucun PDF commité). Section
    « Télécharger les transactions PayPal par l'API » : (a) les variables `KESH_PAYPAL_<n>_ACCOUNT`, `_CLIENT_ID`,
-   `_SECRET` (`n` de 1 à 9 ; le libellé **identique** à celui du compte PayPal de Kesh), `KESH_PAYPAL_BASE_URL` (réel ou
-   bac à sable seulement), `KESH_PAYPAL_PARALLEL` (1 par défaut, 6 au plus ; ce que le parallélisme risque : une
+   `_SECRET` (`n` de 1 à 9 ; le libellé **identique** à celui du compte PayPal de Kesh), `KESH_PAYPAL_BASE_URL` (réel par
+   défaut, bac à sable pour un essai), `KESH_PAYPAL_PARALLEL` (1 par défaut, 6 au plus ; ce que le parallélisme risque : une
    limitation de débit plus vite atteinte) ; (b) **créer l'application** dans l'espace développeurs de PayPal,
    application « Live », **en ne cochant que la fonction « Transaction Search »** (aucune fonction de paiement :
    l'application ne peut que lire), recopier l'identifiant client et le secret dans l'environnement du serveur ; (c) ce
@@ -74,17 +81,18 @@ identifiants.
 7. **AC-7 — E2E.** `frontend/tests/e2e/paypal-download.spec.ts`. La configuration se lit au démarrage du backend : les
    deux cas se jouent donc dans **le même** démarrage, par deux comptes PayPal créés par la spec — (a) un compte dont le
    libellé n'a **pas** de paire : le bouton est absent ; (b) un compte au libellé de `KESH_PAYPAL_1_ACCOUNT`, le backend
-   d'E2E démarré avec `KESH_PAYPAL_1_*` et `KESH_PAYPAL_BASE_URL=http://127.0.0.1:<port>` (admise sous
-   `KESH_TEST_MODE`, 38-12a AC-1) vers un petit serveur PayPal simulé que la spec lance sur le port lu de
-   `KESH_E2E_PAYPAL_MOCK_PORT` (ajout au montage de `docs/testing.md` ; le bloc de montage de `CLAUDE.md` n'est **pas**
+   d'E2E démarré avec `KESH_PAYPAL_1_*` et `KESH_PAYPAL_BASE_URL=http://127.0.0.1:<port>` (`http` admis
+   vers le seul bouclage, 38-12a AC-1) vers le **serveur de prestataire simulé commun** (S8 ;
+   `frontend/tests/e2e/support/provider-mock.ts`, qui joue PayPal ici, Wise et Stripe ensuite) que la spec lance sur le
+   port lu de `KESH_E2E_PROVIDER_MOCK_PORT` (ajout au montage de `docs/testing.md` ; le bloc de montage de `CLAUDE.md` n'est **pas**
    touché) : période de deux mois, progression visible, compte rendu, puis la revue de la page affiche les lignes ;
    relancer la même période → « 0 insérée ». Sans la variable du port, (b) est **ignoré avec son motif écrit** (la ligne
    s'ajoute aux ignorés connus de `docs/testing.md`, jamais comptée verte). Vitest : le dialogue (états `running`,
-   pause, `done`, `failed`, refus par code, reprise sur 409) et l'indicateur `apiConfigured`.
+   pause, `done`, `failed`, refus par code, reprise sur 409) et l'indicateur `providerApi`.
 
 ## Tâches
 
-- [ ] T1 — `apiConfigured` à la réponse des comptes (AC-1).
+- [ ] T1 — `providerApi` à la réponse des comptes (AC-1).
 - [ ] T2 — Bouton, dialogue, interrogation, i18n (AC-1 à AC-4).
 - [ ] T3 — Manuels et `docs/api-external.md` (AC-5, AC-6).
 - [ ] T4 — E2E, serveur simulé, `docs/testing.md` (AC-7).
@@ -97,11 +105,12 @@ clair), jointes au prompt de la revue.
 
 ## Modules touchés (3)
 
-`frontend` (page PayPal, E2E), `kesh-i18n` (+ `kesh-api` : le seul champ `apiConfigured`), manuels et `docs/`.
+`frontend` (page PayPal, E2E), `kesh-i18n` (+ `kesh-api` : le seul champ `providerApi`), manuels et `docs/`.
 
 ## Fichiers communs
 
-`frontend/src/routes/(app)/reconciliation/paypal/` et `frontend/src/lib/features/paypal/` (38-11d), catalogues i18n,
+`frontend/src/routes/(app)/reconciliation/paypal/` et `frontend/src/lib/features/paypal/` (38-11d),
+`frontend/src/lib/features/provider-download/` et le serveur simulé commun (réutilisés par 39-12b et 40-8b), catalogues i18n,
 `i18n-keys.test.ts`, manuels `.tex` (jamais le PDF dans la branche), `docs/api-external.md`, `docs/testing.md`.
 
 ## Note de version
@@ -118,3 +127,7 @@ progression et le compte rendu ; le manuel d'administration décrit la création
   des comptes bancaires ; E2E (a) et (b) dans un même démarrage par deux libellés ; chemin i18n réel
   (`crates/kesh-i18n/locales`, `frontend/src/lib/shared/i18n-keys.test.ts`) ; reprise du suivi sur 409 ; accès sortant
   et liste des exceptions de l'API externe aux manuels ; tranches de 30 jours.
+- 2026-11-20 — validation P1 de la phase 2, complément (Claude Opus 5.5, même passe, sur message du coordinateur) :
+  alignement sur le socle commun S7 et S8 (`epic-39-wise.md`, `epic-40-stripe.md`) — `providerApi { configured, mode?,
+  scaKeyConfigured? }` au lieu de `paypal.apiConfigured`, dialogue générique `provider-download`, état `steps`, codes
+  `PROVIDER_*`, serveur simulé commun sur `KESH_E2E_PROVIDER_MOCK_PORT`.
