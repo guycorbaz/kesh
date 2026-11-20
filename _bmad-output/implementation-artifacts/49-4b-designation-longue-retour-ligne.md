@@ -172,15 +172,12 @@ encore intégrés.)*
 
 ## Questions ouvertes à Guy (non tranchées)
 
-- **Q1 — Le rappel.** (V1-2, V1-5.) Trois volets, liés : (a) **la dérogation s'étend-elle au rappel ?** Un rappel n'est jamais
+- **Q1 — Le rappel.** (V1-2, V1-5.) Deux volets, liés : (a) **la dérogation s'étend-elle au rappel ?** Un rappel n'est jamais
   figé : tout rappel, même d'une facture d'avant, se rendra avec le code neuf (désignation entière) ; (b) **une facture née en
   0.20.0, toutes lignes chiffrées, qui tient juste** : son rappel, avec le bloc du rappel, ne tient plus ; D2 le rend alors « comme
   en 0.19.0 » — **désignations abrégées à 44 caractères et « … » sur le rappel alors que la facture les porte entières** —, ou bien
-  le rappel est refusé comme aujourd'hui (`TooManyLines`) ; (c) **une facture à commentaires qui tient juste** (49-1c avec la 49-4a) :
-  son rappel est refusé (pas de repli possible), avec la phrase de #1110 ; faut-il **réserver le bloc de rappel** dans le contrôle
-  de la validation pour les seules pièces à commentaires (environ trois lignes de moins), ou l'accepter et le dire au manuel ?
-  *Le volet (c) touche la sortie de la 49-4a avec la 49-1c* : si Guy tranche « réserver » avant la clôture de la 49-4a, elle le fait
-  (un paramètre de `controler_les_lignes`) ; sinon la 49-4b.
+  le rappel est refusé comme aujourd'hui (`TooManyLines`). *Le volet (c), la réserve du bloc de rappel, est tranché plus haut
+  (§ Réponses de Guy du 2026-11-20 : aucune réserve) et retiré d'ici le 2026-11-20 (V2-3 de la validation P2 de la 49-4a).*
 - **Q2 — Le refus d'un caractère non imprimable.** Refuser la validation d'une facture dont une ligne porte un caractère que la
   police n'a pas (grec, cyrillique, flèches, ≤ ≥, émojis, CJK, et les invisibles hors de la liste close de D4 : U+200E, U+200F,
   U+202A à U+202E…), en nommant la ligne et le caractère (proposition de D4) ; ou l'une des voies écartées : avertir sans bloquer

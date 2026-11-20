@@ -1,6 +1,6 @@
 # Story 49-4a : capacité du PDF de facture contrôlée avant la validation (#1364)
 
-Status: backlog
+Status: in-progress
 
 *Fiche issue du découpage de la `49-4-designation-longue-pdf` (décision de Guy du 2026-11-20, sur la recommandation de
 l'orchestrateur du 2026-11-19 et le finding V1-6 de la validation P1 de la 49-4 :
@@ -121,9 +121,11 @@ sort pas sans la 49-4a ») : sans elle, un commentaire long rendrait une facture
   ou 409 habituel), construit les `InvoiceLinePdf` par `ligne_pdf` et les `vat_lines` par `vat_lines_pdf` (exactement comme
   `render_document`, `invoice_pdf_service.rs:428-441`), l'arrondi par `kesh_core::accounting::vat::invoice_rounding` sur
   `invoice_total_ttc` des paires `(line_total, vat_rate)` et le réglage `round_to_5_centimes` (comme la validation,
-  `kesh-db/src/repositories/invoices.rs:2297-2301`), **applique le pré-filtre `MAX_LINES_PER_PDF` du rendu par la même fonction
-  que `render_document`** (extraite dans `invoice_pdf_service.rs`, appelée par les deux : une seule source, aucune réponse du rendu
-  ne change ; V1-1), et refuse **sans rien écrire** (statut, numéro, écriture, version,
+  `kesh-db/src/repositories/invoices.rs:2297-2301`), applique **d'abord le contrôle géométrique**, **puis le pré-filtre
+  `MAX_LINES_PER_PDF` du rendu par la même fonction que `render_document`** (extraite dans `invoice_pdf_service.rs`, appelée par
+  les deux : une seule source, aucune réponse du rendu ne change ; V1-1) — dans cet ordre, le refus du pré-filtre ne se lit que
+  pour une pièce que le contrôle accepte (commentaires sans rien d'imprimable), où sa place de 9 est juste ; une pièce de douze
+  lignes chiffrées dit « 12 » et « 8 », non « 9 » (V2-1) —, et refuse **sans rien écrire** (statut, numéro, écriture, version,
   compteur de numérotation inchangés). Le contrôle ne lit ni contact, ni compte bancaire, ni société : la validation n'acquiert
   aucun prérequis neuf. Une facture **dévalidée** qui se revalide y passe de même.
   **Course assumée** (V1-8) : le contrôle précède la transaction de validation ; un `PUT` concurrent du brouillon entre les deux
@@ -194,8 +196,9 @@ sort pas sans la 49-4a ») : sans elle, un commentaire long rendrait une facture
   avant la 49-1c) ; (b) de **huit lignes chiffrées à deux taux de TVA** (récapitulatif de trois lignes, place 5) ; (c) de **sept
   lignes chiffrées sans TVA, arrondi aux 5 centimes activé et non nul** (récapitulatif « sous-total, arrondi », place 6) — la même
   pièce **passe** arrondi désactivé ; (d) de **neuf lignes chiffrées courtes** ; (e) de **huit lignes chiffrées sans récapitulatif et deux commentaires « Ω »** (sans
-  glyphe, zéro ligne imprimée, créés par le dépôt ; pré-filtre, V1-1) — rend `400 INVOICE_LINES_DO_NOT_FIT_PDF`, message
-  aux deux nombres justes ((e) : 10 et 9). La pièce (e), validée par le dépôt, rend au `GET /pdf` `400
+  glyphe, zéro ligne imprimée, créés par le dépôt ; pré-filtre, V1-1) ; (f) de **douze lignes chiffrées sans récapitulatif**
+  (contrôle géométrique avant le pré-filtre, V2-1) — rend `400 INVOICE_LINES_DO_NOT_FIT_PDF`, message
+  aux deux nombres justes ((e) : 10 et 9 ; (f) : 12 et 8). La pièce (e), validée par le dépôt, rend au `GET /pdf` `400
   INVOICE_TOO_MANY_LINES_FOR_PDF` : c'est bien le refus que la validation devance. Après le refus : `status = 'draft'`, `invoice_number` et `journal_entry_id` nuls, `version` inchangée,
   aucune ligne neuve de `journal_entries`, compteur de numérotation inchangé (la validation suivante d'une facture qui tient reçoit
   le numéro attendu).
@@ -261,7 +264,7 @@ reconstruction (cargo garde sinon le binaire muté).
 
 | # | Test | Ce qu'il prouve | Preuve du rouge |
 |---|---|---|---|
-| T1 | `kesh-api/tests/invoice_validation_pdf_e2e.rs::la_validation_refuse_une_facture_qui_ne_tient_pas` (AC1, AC2) | refus 400 sur (a) à (d), rien d'écrit (statut, numéro, écriture, version, compteur), seuils (a) à (c) acceptés et PDF `200`, l'arrondi compté, la revalidation contrôlée | mutations : (1) le handler n'appelle pas le contrôle → **ROUGE** ; (2) le contrôle ignore l'arrondi → **ROUGE** sur (c) ; (3) le contrôle compte une ligne par ligne de la pièce (sans les lignes du commentaire) → **ROUGE** sur (a) ; (4) le contrôle compare `ty <= plancher` → **ROUGE** sur AC2 (b) ; (5) le handler n'applique pas le pré-filtre → **ROUGE** sur AC1 (e) (`rouge-T1-1..5.log`) |
+| T1 | `kesh-api/tests/invoice_validation_pdf_e2e.rs::la_validation_refuse_une_facture_qui_ne_tient_pas` (AC1, AC2) | refus 400 sur (a) à (f), le refus au rendu (`GET /pdf`) de la pièce (e) validée par le dépôt, rien d'écrit (statut, numéro, écriture, version, compteur), seuils (a) à (c) acceptés et PDF `200`, l'arrondi compté, la revalidation contrôlée | mutations : (1) le handler n'appelle pas le contrôle → **ROUGE** ; (2) le contrôle ignore l'arrondi → **ROUGE** sur (c) ; (3) le contrôle compte une ligne par ligne de la pièce (sans les lignes du commentaire) → **ROUGE** sur (a) ; (4) le contrôle compare `ty <= plancher` → **ROUGE** sur AC2 (b) ; (5) le handler n'applique pas le pré-filtre → **ROUGE** sur AC1 (e) (`rouge-T1-1..5.log`) |
 | T2 | `pdf.rs::tests::le_controle_et_le_rendu_s_accordent` (AC3) | équivalence `controler_les_lignes` ⇔ `generate_qr_bill_pdf_with_date` `Ok`, sur la famille engendrée ; oracle = la garde du **dessin**, non le plan | mutations : (1) la garde du dessin passe à `ty < plancher - 0.5` (le dessin admet une ligne de plus) → **ROUGE** ; (2) le contrôle part d'une ordonnée de 160 au lieu de la géométrie partagée (copie divergente simulée) → **ROUGE** ; (3) le contrôle seul compare `ty <= plancher` → **ROUGE** aux seuils à l'égalité (`rouge-T2-1..3.log`) |
 | T3 | tests de la 49-1b, `rendu_avant_apres.rs` et `pdf_avant_apres_e2e.rs`, **non modifiés** (AC4) | S1 à S9 (S7 compris), a à d identiques : le dessin n'a pas bougé | mutation : l'ordonnée de la première ligne, dans la géométrie partagée, passe de 159 à 158.5 mm → **ROUGE** sur S1 (ordonnées décalées) ; mutation 2 : la ligne chiffrée dessinée par `truncate_display(…, 44)` → **ROUGE** sur S7 (`rouge-T3-1..2.log`) |
 | T4 | `textes_coherents.rs` (AC8), entrée neuve pour `error-invoice-lines-do-not-fit-pdf` | la clé existe dans les quatre catalogues, avec `$besoin` et `$place` | mutation : la clé retirée du catalogue `it-CH` → **ROUGE** (`rouge-T4.log`) |
@@ -281,7 +284,10 @@ reconstruction (cargo garde sinon le binaire muté).
   `draw_invoice_section` lit la géométrie partagée et `lignes_imprimees` **sans changer un octet de sa sortie** ; doc-comments
   (`draw_invoice_section`, `controler_les_lignes`) ; ré-export dans `lib.rs`. **Ne pas** toucher `largeurs.rs`, `texte.rs`,
   `truncate_display`, `lignes_de_commentaire`.
-- [ ] **`kesh-api`** : dans `validate_invoice_handler`, avant `invoices::validate_invoice` : lecture du brouillon, pré-filtre extrait de `render_document` et appelé par les deux, contrôle (D1) ;
+- [ ] **`kesh-api`** : dans `validate_invoice_handler`, avant `invoices::validate_invoice` : lecture du brouillon, contrôle (D1),
+  puis pré-filtre extrait de `render_document` et appelé par les deux ; le doc-comment de `MAX_LINES_PER_PDF`
+  (`invoice_pdf_service.rs:85-95`, qui dit la garde « renvoie `QrBillError::PdfGeneration` » et décrit un seuil « `0` sans TVA »)
+  se réécrit sur la fonction extraite : la garde rend `TooManyLines` et réserve aussi pour l'arrondi (V2-4) ;
   une variante d'`AppError` (`InvoiceLinesDoNotFitPdf { besoin, place }`, à côté de `InvoiceTooManyLinesForPdf`, `errors.rs:489`) et
   sa réponse, phrase par `t_args` ; rien d'autre dans `routes/invoices.rs` (la 49-1c y touche `validate_line` et la garde : hunks
   distincts).
@@ -346,6 +352,8 @@ reconstruction (cargo garde sinon le binaire muté).
   - `crates/kesh-api/src/routes/invoices.rs` : la **49-1c** (`validate_line`, `verify_vat_rates_against_db`), la **49-3**
     (garde `heading`), la **49-4b** (contrôle des caractères, dans le même handler) ; la 49-4a n'y touche que
     `validate_invoice_handler`.
+  - `crates/kesh-api/src/routes/invoice_pdf_service.rs` : la **49-4a** (extraction du pré-filtre `MAX_LINES_PER_PDF`, doc-comment
+    réécrit) puis la **49-4b** (`CaractereRefuse`, `:646-650`) ; la 49-4b part de la 49-4a (V2-4).
   - `crates/kesh-api/src/errors.rs` : la **48-1** et la **48-2** (`epic-48 :201-202`), la **49-4b** ; variantes et fonctions
     ajoutées, le second arrivé fait l'union.
   - `docs/api-external.md` : 48-1, 49-1c (`:512`), 49-3, 49-4b ; la 49-4a touche `:520` et la table des codes (`:1281`).
@@ -360,7 +368,8 @@ reconstruction (cargo garde sinon le binaire muté).
 - **Charge** (estimation) : étape 0 un quart de journée ; `kesh-qrbill` une demi-journée ; `kesh-api` et i18n une demi-journée ;
   tests et mutations une demi-journée à un jour ; documents, E2E, captures une demi-journée ; gates une demi-journée — **deux et
   demi à trois jours** (le pré-filtre de V1-1 et la phrase réécrite de D7 n'y ajoutent qu'une heure ou deux), plus la validation et la boucle de revue. Tenable pour une clôture le jeudi 2026-11-26 au soir si la
-  validation se lance le 2026-11-20.
+  validation se lance le 2026-11-20. **En cas de manque de temps, la règle est la réduction de l'epic (`CLAUDE.md` § *Cadence*),
+  jamais le rognage des gates** (V2-5).
 - **Ce qui doit rester vrai** : (1) aucun PDF ne change ; (2) aucune pièce d'avant ne devient impossible à imprimer (le contrôle
   ne vaut qu'à la validation) ; (3) la validation n'exige rien de plus qu'aujourd'hui pour une facture qui tient et s'imprime ;
   (4) aucune ligne de `kesh-db`.
@@ -379,9 +388,16 @@ reconstruction (cargo garde sinon le binaire muté).
 
 ## Dev Agent Record
 
+### Base du diff (D5, V1-2)
+
+- 2026-11-20, étape 0 : `git fetch origin` ; `git log --oneline HEAD..origin/epic/49-types-de-lignes-facture` vide (la branche
+  d'épique n'a pas bougé depuis la fusion de la 49-1b) ; **`$BASE` = `git merge-base HEAD origin/epic/49-types-de-lignes-facture`
+  = `f57f6ac80`** (« Merge story/49-1b-types-de-lignes-pdf dans epic/49-types-de-lignes-facture »). Aucune reprise.
+
 ## Change Log
 
 | Date | Entrée |
 |---|---|
 | 2026-11-20 | **Création par découpage de la 49-4** (Opus 5.5 ; décision de Guy du 2026-11-20, sur la recommandation de l'orchestrateur du 2026-11-19 et le finding V1-6 de la validation P1). Reprend D4, D5, D7, D10 de la 49-4 sur le **dessin actuel** (aucun PDF ne change). Findings P1 remédiés ici, prémisse relue au code à `a1877ef9f` : V1-3 (le dessin garde sa garde, géométrie et compte des lignes à source unique, T2 interroge le rendu réel), V1-6 (le découpage), V1-8 (argument reformulé, course tracée par issue), V1-11 (fichiers communs avec la 48), V1-12 (renvois d'AC8 et AC6), V1-13 (capture au seuil avec conditions de paiement) ; V1-5 déclaré en D2, arbitrage à Guy par la question Q1 de la 49-4b. Phrase du refus sans « raccourcissez des désignations » (vraie seulement avec la 49-4b). Onze AC, six tests et une épreuve. Quatre modules. Aucune migration. Statut `backlog` : sa propre passe de validation est à venir. |
 | 2026-11-20 | **Validation P1 remédiée** (Opus 5.5, prémisses relues au code ; rapport `kesh-gate-logs/e494/validation-49-4a-p1.md`). Tendance : P1 **0/0/3/9** ; addendum (D2 « réserver ») **0/0/3/1**, **tombé** par la décision de Guy du 2026-11-20 (D2 : aucune réserve, limite au manuel avec sortie par avoir, #1374 en v0.21.0) — A1, A2, A4 sans objet, A3 joint à V1-3. **MEDIUM** : V1-1 corrigé (pré-filtre `MAX_LINES_PER_PDF` extrait et appliqué à la validation, une seule source ; AC1 (e) « 8 chiffrées + 2 commentaires « Ω » » par la route et `GET /pdf`, mutation T1-5 ; prémisse : `invoice_pdf_service.rs:235`, `validate_line` de la 49-1c `:508-509` accepte « Ω ») ; V1-2 corrigé (`$BASE` = `merge-base` avec la branche d'épique, recalculée à chaque reprise, au Dev Agent Record : D5, AC4, T5, étape 0) ; V1-3 + A3 corrigés (phrase **réécrite** « moins avec un récapitulatif — TVA ou arrondi » + limite du rappel et sa sortie, au manuel et au guide de l'API ; AC9 grepe ces mots). **LOW** : V1-4 (justification de la simulation, mutation T2-3), V1-5 (AC8 aligné sur D3), V1-6 (`invoice_total_ttc`, `None`), V1-7 (seuil 4), V1-9 (lieu sans la 49-1c), V1-10 (changement de contrat), V1-11 (citations), V1-12 (montage d'AC2 (c)) corrigés d'une phrase ; V1-8 **tombé par décision**. Reclassements : aucun. D2 propagée (inventaire, D1, D3, D7, AC8, AC9, Dev Notes, issue (1) sans objet, Note de version). Phrase du refus : « lignes » sans « imprimées » (le pré-filtre compte les lignes de la pièce). Charge inchangée, deux et demi à trois jours. |
+| 2026-11-20 | **Validation terminée** (passe P2 Sonnet, contexte frais, rapport `kesh-gate-logs/e494/validation-49-4a-p2.md` : **0/0/0/5**, aucun finding au-dessus de LOW). Tendance : P1 Opus **0/0/3/9** (addendum 0/0/3/1, **tombé par décision de Guy du 2026-11-20** : D2, aucune réserve du bloc de rappel) → P2 Sonnet **0/0/0/5**. Modèles : Opus → Sonnet. Reclassements : aucun. LOW de la P2 traités à l'étape 0 du développement (Opus 5.5) : **V2-1** (D1 : le contrôle géométrique **avant** le pré-filtre ; AC1 (f), douze lignes chiffrées, « 12 et 8 » ; ligne lue : `invoice_pdf_service.rs:235` `    if lines.len() > MAX_LINES_PER_PDF {`) ; **V2-2** (T1 « (a) à (f) » et le refus au rendu de la pièce (e) ; `grep "(a) à (d)"` vide après correction) ; **V2-3** (fiche 49-4b : volet Q1 (c) retiré des « Questions ouvertes », tranché à son § *Réponses de Guy*) ; **V2-4** (`invoice_pdf_service.rs` aux fichiers communs ; doc-comment de `MAX_LINES_PER_PDF` à réécrire dans la tâche `kesh-api` ; ligne lue : `invoice_pdf_service.rs:95` `pub const MAX_LINES_PER_PDF: usize = 9;`, et `:91-92` « la garde renvoie `QrBillError::PdfGeneration` ») ; **V2-5** (Dev Notes, *Charge* : réduction de l'epic, jamais rognage des gates). Statut `ready-for-dev`, puis `in-progress`. |
