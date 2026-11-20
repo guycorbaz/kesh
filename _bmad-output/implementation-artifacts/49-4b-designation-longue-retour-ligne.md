@@ -159,6 +159,15 @@ encore intégrés.)*
   (Ex-D7, D10.) Le dialogue de validation affiche le message du serveur (`+page.svelte:448`) ; aucun fichier de `frontend/src` ne
   change.
 
+## Réponses de Guy du 2026-11-20
+
+- **Q1 (a) et (b)** : « on imprime le rappel avec le nouveau rendu ». La dérogation s'étend au rappel ; **pas de repli « comme en
+  0.19.0 »** (désignations abrégées) sur un rappel. Conséquence à écrire en D2 et au manuel : un rappel qui ne tient pas avec le
+  nouveau rendu est refusé comme aujourd'hui (`TooManyLines`), à confirmer par Guy si la fiche y voit une autre issue.
+  **Q1 (c)** (réserver le bloc de rappel à la validation des pièces à commentaires) : **non tranchée**, reposée à Guy le 2026-11-20.
+- **Q2** : oui — la validation est refusée en nommant la ligne et le caractère (proposition de D4).
+- **Q3** : oui — la dérogation s'étend à l'avoir.
+
 ## Questions ouvertes à Guy (non tranchées)
 
 - **Q1 — Le rappel.** (V1-2, V1-5.) Trois volets, liés : (a) **la dérogation s'étend-elle au rappel ?** Un rappel n'est jamais
