@@ -4,7 +4,7 @@ Status: done
 
 *Fiche rédigée le 2026-11-14 (Opus 5.5), branche `epic/37-multi-devises`, numéros de ligne de `67efc51f`. Epic 37
 (`_bmad-output/planning-artifacts/epic-37-multi-devises.md`), registre C-37-1 à C-37-8. **Migration non breaking**.
-Révisée le 2026-11-14 pour la revue de Beat (CR-2 : R1, R3, R6 — colonnes seulement —, R7, R10), qui prime sur le
+Révisée le 2026-11-14 pour la revue du responsable de l'epic (CR-2 : R1, R3, R6 — colonnes seulement —, R7, R10), qui prime sur le
 registre antérieur ; puis pour sa revue CR-3 (S2 : comptes de différence de change propres à un compte en devise ;
 S3 : liste des comptes que l'avertissement d'archivage archiverait ; S4 : R10 et l'arbitrage A1 retirés), qui prime
 sur CR-2 ; puis pour sa revue 2 (CR-4 : **T1** — l'assistant de démarrage demande les dates du premier exercice,
@@ -69,21 +69,21 @@ passer ensuite des écritures en devise (37-3), sans rien changer pour qui reste
 ## Décisions qui s'appliquent
 
 D1, D2 (fichier d'epic) ; C-37-2 (réglage sur `companies`, sans FK, quatre gardes), C-37-5 (verrous), C-37-9 (409 partout,
-verrou des deux côtés, réglage réservé à l'Administrateur). **CR-2 (revue de Beat, prime)** : R1 (une sauvegarde
+verrou des deux côtés, réglage réservé à l'Administrateur). **CR-2 (revue du responsable de l'epic, prime)** : R1 (une sauvegarde
 antérieure à l'Epic 37 se réimporte : liste close des tables et colonnes de l'epic, AC-6) ; R3 (mode mono-devise ou
 multi-devises **par exercice**, posé à la création et à l'activation, jamais changé ensuite depuis CR-7, AC-3 bis) ; R6 (colonnes
 `opening_rate_kind`/`closing_rate_kind` seulement, AC-1 ; route et écran en 37-2) ; R7 (compte de conversion en
-CHF désigné à l'activation, AC-3). **CR-3 (revue de Beat, prime sur CR-2)** : S2 (comptes de différence de
+CHF désigné à l'activation, AC-3). **CR-3 (revue du responsable de l'epic, prime sur CR-2)** : S2 (comptes de différence de
 change **propres** à un compte en devise, le réglage de la société restant le défaut : AC-1, AC-4 bis, AC-6, AC-7) ;
 S3 (liste des comptes de l'avertissement d'archivage — *retiré par CR-7*) ; S4 (R10 et l'arbitrage A1 **retirés** :
-pas de constante). **CR-4 (revue 2 de Beat, prime sur tout)** : T1 (l'assistant demande les dates du premier
+pas de constante). **CR-4 (revue 2 du responsable de l'epic, prime sur tout)** : T1 (l'assistant demande les dates du premier
 exercice, AC-11) ; T3 (la ligne d'écriture ne stocke pas de devise : le verrou de la devise d'un compte, AC-4, porte
 celle de ses lignes) ; T4 (genre d'ouverture = clôture de l'exercice précédent, défaut repris à la création, AC-1,
-AC-3 bis). **CR-5 (revue 3 de Beat, prime sur tout)** : U1 (copie des cours récupérés dans `exchange_rates` de 37-2 à
+AC-3 bis). **CR-5 (revue 3 du responsable de l'epic, prime sur tout)** : U1 (copie des cours récupérés dans `exchange_rates` de 37-2 à
 la création d'un exercice multi-devises et quand un compte reçoit une devise (la bascule vers multi-devises est
 retirée, CR-7) — pas à
 l'activation, vide par construction : appels ajoutés par 37-2 AC-3 bis, AC-3 bis et AC-4 ci-dessous, l'AC-3 disant qu'il n'y en a aucun ; liste close de l'AC-6 sous le nom neuf) ; U4 (remplace A22 : AC-3 bis, la
-route vit en 37-2 AC-5). **U5 — arbitrages approuvés par Beat (CR-5), écrits comme AC de cette fiche** : A4 (*retiré par CR-7* : la ligne en devise
+route vit en 37-2 AC-5). **U5 — arbitrages approuvés par le responsable de l'epic (CR-5), écrits comme AC de cette fiche** : A4 (*retiré par CR-7* : la ligne en devise
 datée avant un exercice mono-devise n'a plus d'objet ; reste le refus sur un exercice mono-devise, AC-3 bis, puce « dans
 un exercice mono-devise », 37-3a AC-4 rang 2) ; A5 (*réduit par CR-7* à « l'activation passe tous les exercices
 ouverts en multi-devises » : AC-3, AC-3 bis ; `force` et la bascule sont retirés) ; A6 (compte de conversion
@@ -775,7 +775,7 @@ bascule par exercice, de S3 l'avertissement, d'A4/A5 la bascule et `force`, A27)
     mutable. Les dates et le statut ne peuvent pas être modifiés ») et aucune route ne supprime un exercice ; un
     exercice voulu ailleurs chevaucherait l'exercice créé (`error-fiscal-year-overlap`). La revue T1 disait « fin
     modifiable dans *Exercices* » : **prémisse fausse au code**, d'où le choix de la fiche — la fin se modifie **dans
-    l'assistant**, avant la création (question posée à Beat, Change Log).
+    l'assistant**, avant la création (question posée au responsable de l'epic, Change Log).
     - **Corps** : `finalize` prend `body: Option<Json<FinalizeRequest>>` (précédent : `logout`,
       `routes/auth.rs:357`), `FinalizeRequest { fiscal_year_start_date: Option<NaiveDate>, fiscal_year_end_date:
       Option<NaiveDate> }` (`camelCase`). Corps absent ou champs absents : début = 1er janvier de l'année courante (comme
@@ -1198,7 +1198,7 @@ défaut ; fin = début, boutons désactivés). Les champs `type=date` y paraisse
 - 2026-11-14 — révision CR-1 (D9, D10, terminologie ; Opus) : AC-6 annotée — la réimportation d'une sauvegarde 0.17.6
   ne vaut que jusqu'à 37-2, dont la table applicative `exchange_rate_overrides` referme la fenêtre d'import et qui
   inverse ce test en refus. Aucun autre AC touché.
-- 2026-11-14 — révision CR-2 (revue de Beat R1–R10 ; Opus) : **R1** — une sauvegarde antérieure à l'Epic 37 se
+- 2026-11-14 — révision CR-2 (revue du responsable de l'epic R1–R10 ; Opus) : **R1** — une sauvegarde antérieure à l'Epic 37 se
   réimporte (mono-devise) : liste close des tables et colonnes de l'epic dans `kesh-db::backup`, sautée par la boucle de
   couverture de `parse_and_verify_avec_inventaire` et ignorée par `creates_application_table` (la fenêtre d'import ne se
   referme pas, le registre de rejeu reste tel quel), colonnes gardées non `is_required()` par un test, test d'import
@@ -1240,7 +1240,7 @@ défaut ; fin = début, boutons désactivés). Les champs `type=date` y paraisse
   `admin_pat_denied_e2e.rs:85` ; `onboarding.rs:1043-1053`, `:1273-1287` ; `scripts/recette-montee.sh:414-453`,
   `:651` ; plans livrés (aucun 109x). Axes non exercés : source journalière (aucun GET, la 37-1 n'y touche pas),
   manuels (PDF non lu), i18n au code.
-- 2026-11-14 — révision CR-3 (revue de Beat S1–S6 ; Opus) : **S2** — comptes de différence de change propres à un
+- 2026-11-14 — révision CR-3 (revue du responsable de l'epic S1–S6 ; Opus) : **S2** — comptes de différence de change propres à un
   compte en devise (AC-4 bis, neuf) : `accounts.fx_gain_account_id` / `fx_loss_account_id` `NULL` (= réglage de la
   société, suivi à l'usage), sans clé étrangère (même raison que C-37-2), dans la migration de l'AC-1 avec deux
   `CHECK` (les deux ou aucun ; posables seulement sur un compte en devise) ; mêmes gardes que les comptes de la société,
@@ -1335,14 +1335,14 @@ défaut ; fin = début, boutons désactivés). Les champs `type=date` y paraisse
   grep `UPDATE accounts` / `INSERT INTO accounts` (inventaire de l'AC-4 exact). Axes exercés : T1, T3 (aucun reste de
   `journal_entry_lines.currency` dans cette fiche), T4, AC-6 (listes closes), manuel (`.tex` seulement), contacts 37-2/37-3b.
   Non exercés : source journalière (aucun GET, hors sujet), PDF des manuels, i18n au code, MCP au code.
-- 2026-11-14 — révision CR-4 (revue 2 de Beat T1–T6 ; Opus) : **T1** — AC-11 rétablie : l'assistant demande les
+- 2026-11-14 — révision CR-4 (revue 2 du responsable de l'epic T1–T6 ; Opus) : **T1** — AC-11 rétablie : l'assistant demande les
   dates du premier exercice (début, défaut 1er janvier de l'année courante ; fin, défaut veille du même jour un an
   plus tard), corps facultatif de `finalize` (absent = comportement actuel), nom « Exercice AAAA » ou « AAAA/AAAA »,
   refus 400 avant la transaction, écran de la dernière étape (deux boutons), inventaire clos des sites (route, DTO,
   écran, client, tests d'API et E2E, manuel) ; le multi-devises reste réglé plus tard dans les paramètres.
   ⚠️ **Prémisse de T1 fausse au code** : la fin n'est **pas** « modifiable dans *Exercices* » — le `PUT` d'un
   exercice ne change que le nom (`routes/fiscal_years.rs:86-90`) et aucune route ne supprime un exercice ; la fiche
-  rend donc la fin modifiable **dans l'assistant** (question à Beat). **T3** — AC-4 : le verrou de la devise d'un
+  rend donc la fin modifiable **dans l'assistant** (question au responsable de l'epic). **T3** — AC-4 : le verrou de la devise d'un
   compte porte désormais celle de ses lignes (aucune colonne de devise sur la ligne, 37-3a) ; AC-6 : liste close à
   trois colonnes de `journal_entry_lines`. **T4** — AC-1 : sens des genres (ouverture `month` = dernier mois de
   l'exercice précédent) ; AC-3 bis : un exercice qui suit un exercice Kesh (fin = veille du début) reprend son genre
@@ -1354,7 +1354,7 @@ défaut ; fin = début, boutons désactivés). Les champs `type=date` y paraisse
   `repositories/fiscal_years.rs:456-500`, `dates_recues.rs:55`, `user-manual.tex:217`, `:1004`, `:2465` ; décomptes
   de `finalize` par fichier de `crates/kesh-api/tests` (`grep -c`). AC touchés : en-tête, Décisions, AC-1, AC-3 bis,
   AC-4, AC-6, AC-10, AC-11, Tâches. Fiche à revalider (cycle CR-4).
-- 2026-11-14 — révision CR-5 (revue 3 de Beat U1–U6 ; Opus) : **U1** — copie des cours déjà récupérés dans
+- 2026-11-14 — révision CR-5 (revue 3 du responsable de l'epic U1–U6 ; Opus) : **U1** — copie des cours déjà récupérés dans
   `exchange_rates` à l'activation (AC-3), à la création d'un exercice multi-devises et à la bascule vers
   multi-devises (AC-3 bis) : règles et appels portés par 37-2 AC-3 bis (la table n'existe qu'à 37-2) ; la
   désactivation ne vide pas `exchange_rates` ; liste close des absences admises sous le nom neuf `exchange_rates` (AC-6).

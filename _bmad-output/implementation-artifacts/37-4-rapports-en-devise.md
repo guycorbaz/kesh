@@ -327,7 +327,7 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
   `Code<E>` (`:302`) disponibles pour montants, cours et devise ; « présents à `null` », macro non étendue : accord
   avec l'AC-6 de la fiche, 37-3a AC-8 et C-37-9. LOW P6-1 : l'entrée P5 porte un gabarit non rempli
   (« sauf <aucun inter-fiches> ») — à lire « aucun inter-fiches » ; relevé daté laissé tel quel.
-- 2026-11-14 — révision CR-4 (revue 2 de Beat T1–T6 ; Opus) : **T3** — la ligne ne stocke plus de devise (37-3a
+- 2026-11-14 — révision CR-4 (revue 2 du responsable de l'epic T1–T6 ; Opus) : **T3** — la ligne ne stocke plus de devise (37-3a
   AC-1) : les rapports lisent la devise sur le compte (`a.currency`) ; la paire en devise se somme **sans** condition
   `jel.currency = a.currency` (retirée de l'AC-1) ; le fragment partagé n'est plus paramétré que par l'alias de la
   ligne ; `x` de la balance projette `jel.amount_currency` seul ; les requêtes du grand livre (`fetch_lines`,
@@ -371,7 +371,7 @@ exports, afin de rapprocher mes comptes PayPal ou Wise de leurs relevés et de c
 - 2026-11-15 — validation ciblée P2 des exigences (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 2 LOW, remédiés dans la section Exigences, sans exigence ajoutée (7 FR, 7 NFR). LOW 37-4-B26-P2-1 : FR-37-4-5 sans la disposition du PDF de l'AC-5 (seconde ligne en petit du grand livre et de la balance, report en devise, devise entre nom et solde au bilan et au compte de résultat, aucune ligne de total) — ajoutée. LOW -B26-P2-2 : NFR-37-4-6 sans `balances_as_of` dans une transaction ni contrôle `grep` de T3 (AC-8) — ajoutés. Les 14 exigences relues contre l'AC entier cité : justes, aucune ne contredit un AC ni n'invente. Axes exercés : vérité de chaque exigence (AC-1 à AC-9 lus en entier), points majeurs sans exigence (contrat d'API, gardes, MCP, bornes), non-reprise de l'erreur MEDIUM de P1 (journal PDF/CSV inchangés, totaux de section), récapitulatif de l'epic. Non exercés : les AC eux-mêmes, le code.
 - 2026-11-16 — validation CR-7 P1 (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 0 LOW ; fiche non modifiée. Grep des résidus du mode par exercice (`currency-mode`, `force`, `MULTI_CURRENCY_IN_USE`, `FISCAL_YEAR_HAS_FOREIGN_BALANCES`, `FISCAL_YEAR_FOREIGN_ACCOUNTS_ACTIVE`, `laterFiscalYear`, `monoCurrencyFiscalYear`, désactivation, archivage forcé) : aucun. Les « mono-devise » de la fiche (NFR-2, AC-5, AC-6, non-régression) visent une société sans compte en devise, juste sous CR-7 ; la devise gouvernée par `a.currency` et le verrou de 37-1 AC-4 restent exacts ; aucun verrou de `companies` n'y est invoqué (D-CR7-1 sans effet). Axes exercés : résidus, contradiction avec 37-1 (A34, `multiCurrency` des exercices), 37-3a et 37-5, tests. Non exercés : code.
 - 2026-11-16 — alignement sur les règles de travail à plusieurs (Sonnet) : PDF du manuel non commité, `.tex` seulement (2 remplacements) ; CHANGELOG remplacé par la section *Note de version* (1 remplacement, section ajoutée) ; compteurs « recomptés depuis la source après chaque reprise de `main` » (1 ajout, plus la Note de version). Fond des AC inchangé.
-- 2026-11-16 — **étape 0 du développement** (orchestrateur, relevé `/home/beat/claude/kesh-gate-logs/etape0/37-4.md`,
+- 2026-11-16 — **étape 0 du développement** (orchestrateur, relevé `<station>/kesh-gate-logs/etape0/37-4.md`,
   contre `6e0638e6`, 37-1 + 37-2) reportée ici : ≈ 95 prémisses relues, les lignes de `kesh-report` citées par la fiche
   presque toutes exactes. Écarts qui changeaient le travail : colonnes de ligne en devise absentes à 37-2 (« attend
   37-3a ») ; `accounts.currency` lu par aucune requête à étendre (`RawAccount` `general_ledger.rs:250`, `select_accounts`
@@ -487,7 +487,7 @@ Opus 5.5 (agent de développement), 2026-11-16.
   (neuf), `JournalReportView` 3 (neuf). Total 14.
 - E2E : `reports-currency.spec.ts`, 1 (neuf).
 
-### Gates réellement exécutés (journaux `/home/beat/claude/kesh-gate-logs/s37-4/`)
+### Gates réellement exécutés (journaux `<station>/kesh-gate-logs/s37-4/`)
 
 - Au dernier commit de code `5680f714` : `scripts/test-fast.sh --ci` (fmt, clippy `-D warnings`, nextest profil `ci`
   sur `kesh_s37_4`) — **5752 passés, 13 ignorés** (`gate-backend-1.log`) ; frontend `npm run check` 0 erreur (29

@@ -1,7 +1,7 @@
 # Prompt de validation CR-1 P2 — fiches révisées de l'Epic 37
 
 Tu fais la **deuxième passe complète** du cycle de validation, ouvert par un changement de périmètre (CR-1),
-sur une fiche du dépôt `/home/beat/limu/compta/kesh` (Kesh, logiciel comptable suisse en production : Rust/Axum,
+sur une fiche du dépôt `<dépôt>` (Kesh, logiciel comptable suisse en production : Rust/Axum,
 SvelteKit, MariaDB). À lire d'abord :
 
 - le fichier d'epic `_bmad-output/planning-artifacts/epic-37-multi-devises.md` : décisions **D1–D10** (D9 : table des

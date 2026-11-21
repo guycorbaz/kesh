@@ -2,9 +2,9 @@
 
 Tu développes la story **37-5** (`_bmad-output/implementation-artifacts/37-5-reevaluation-fin-exercice.md`) selon le
 skill `bmad-dev-story` (lis `.claude/skills/bmad-dev-story/SKILL.md` et suis-le), dans le worktree
-`/home/beat/claude/kesh/.claude/worktrees/kesh-s37-5` (branche `story/37-5-reevaluation-fin-exercice`, partie de
+`<dépôt>/.claude/worktrees/kesh-s37-5` (branche `story/37-5-reevaluation-fin-exercice`, partie de
 `epic/37-multi-devises`). **N'écris jamais hors de ce worktree**, sauf les journaux dans
-`/home/beat/claude/kesh-gate-logs/s37-5/`. Chemins absolus.
+`<station>/kesh-gate-logs/s37-5/`. Chemins absolus.
 
 ## À lire d'abord
 
@@ -43,21 +43,21 @@ questions.
 - **Base de départ** : cette branche part de `story/37-4-rapports-en-devise` (revue close, clôture en cours), qui
   contient 37-1, 37-2 et 37-3a terminées et 37-4 complète (`balances_as_of` dans `kesh-db`). La 37-4 finit sa clôture
   et la 37-3b est en revue de code, en parallèle : **ne modifie pas leur code** ; un défaut trouvé là va à
-  `/home/beat/claude/kesh-gate-logs/issues-a-ouvrir-epic-37.md` sous « pour la revue de 37-3b/37-4 ». L'orchestrateur
+  `<station>/kesh-gate-logs/issues-a-ouvrir-epic-37.md` sous « pour la revue de 37-3b/37-4 ». L'orchestrateur
   te dira de fusionner leurs correctifs ; ne fais pas de `git merge` toi-même.
 - **Écrans de la 37-3b non présents** dans ta base (formulaire en devise, motif `ENTRY_IS_FX_REVALUATION` dans
   `blocker-messages.ts`) : si l'écran des exercices en a besoin, dis-le, et ne le recrée pas.
-- **Étape 0 déjà faite** contre 37-2 : `/home/beat/claude/kesh-gate-logs/etape0/37-5.md` (table de correspondance des
+- **Étape 0 déjà faite** contre 37-2 : `<station>/kesh-gate-logs/etape0/37-5.md` (table de correspondance des
   lignes de `fiscal_years.rs`, `errors.rs`, `journal_entries.rs`, `lib.rs`, `audit_route_registry.rs`) ; revérifie
   contre ta base et reporte au Change Log.
 - `balances_as_of(None)` rend aussi les comptes de résultat en devise, cumulés sur tous les exercices, et les comptes
   archivés (relevé de la revue de la 37-4) : la réévaluation ne vise que le bilan, filtre en conséquence.
 - Contrôle de clôture **K9** `FOREIGN_ACCOUNTS_NOT_REVALUED` bloquant (CR-8), aperçu de la réévaluation avant le bouton,
-  « huit contrôles » → neuf partout (documents cités par l'étape 0). Cours 2024 de Beat : journaliers AFC du 31.12.2024.
+  « huit contrôles » → neuf partout (documents cités par l'étape 0). Cours 2024 du responsable de l'epic : journaliers AFC du 31.12.2024.
 - **Base de données : troisième MariaDB, conteneur `kesh-mariadb-dev3`, port 3308**, réservé à cette story (mêmes
   identifiants ; base `kesh` migrée et seedée). Bases `kesh_s37_5` / `kesh_e2e_s37_5` dessus, port d'application
   **3376**. Toute opération de base s'y fait, jamais sur `kesh-mariadb-dev` ni `kesh-mariadb-dev2`.
-- Exécutions lourdes **uniquement** par `/home/beat/claude/kesh-gate-logs/heavy.sh scripts/mem-guard.sh <commande>` ;
-  backend lancé avec `7>&- 8>&- 9>&-`. Captures (thème clair) dans `/home/beat/claude/kesh-gate-logs/s37-5/captures/`.
+- Exécutions lourdes **uniquement** par `<station>/kesh-gate-logs/heavy.sh scripts/mem-guard.sh <commande>` ;
+  backend lancé avec `7>&- 8>&- 9>&-`. Captures (thème clair) dans `<station>/kesh-gate-logs/s37-5/captures/`.
 - **Aucune mention d'IA dans les commits** (pas de `Co-Authored-By: Claude`), aucun `GRANT` à la main.
-- Les défauts hors périmètre vont à `/home/beat/claude/kesh-gate-logs/issues-a-ouvrir-epic-37.md`, jamais en issue.
+- Les défauts hors périmètre vont à `<station>/kesh-gate-logs/issues-a-ouvrir-epic-37.md`, jamais en issue.

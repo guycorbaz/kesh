@@ -5,7 +5,7 @@ Status: review
 *Fiche rédigée le 2026-11-18, branche `fix/api-parent-compte`, partie de `main` à `70be12a6` (squash de l'Epic 37,
 PR #1247). Correctif hors epic, **non urgent** : il ne passe pas par `hotfix/` et va à la prochaine release planifiée.
 **Aucune migration** : la colonne `accounts.parent_id` et sa clé étrangère existent depuis l'origine ; seul le chemin
-d'écriture manquait. Constaté par Beat à la recette d'un exercice réel 2024
+d'écriture manquait. Constaté par le responsable de l'epic à la recette d'un exercice réel 2024
 (`data-not-committed/2024-qesh/controle/defauts-kesh.md`, § 7, « Le parent d'un compte ne se change pas — P4 »).*
 
 ## Intention
@@ -30,7 +30,7 @@ sans parent ; l'`UPDATE` de `accounts::update` n'écrit pas `parent_id` ; commen
    même fonction) ; compte de différence de change (de la société ou propre) → `409 ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT` ;
    compte de bilan en devise qui porte des écritures → `409 ACCOUNT_FOREIGN_PARENT_HAS_ENTRIES` ; l'un des comptes
    propres résultants du compte → `400 FX_ACCOUNT_INVALID` `notPostable`. **Plus strict que la création** (revue
-   P1-2, décision de Beat) : tout autre parent qui porte des écritures → `409 ACCOUNT_PARENT_HAS_ENTRIES`. La création n'exige aucune compatibilité de
+   P1-2, décision du responsable de l'epic) : tout autre parent qui porte des écritures → `409 ACCOUNT_PARENT_HAS_ENTRIES`. La création n'exige aucune compatibilité de
    type entre parent et enfant : la modification non plus.
 3. **AC-3 — Cycle.** Le compte lui-même, ou l'un de ses sous-comptes à tout niveau → `409 ACCOUNT_PARENT_CYCLE`
    (message traduit dans les quatre locales, qui nomme le parent demandé). Rien n'est écrit.
@@ -123,7 +123,7 @@ sans parent ; l'`UPDATE` de `accounts::update` n'écrit pas `parent_id` ; commen
 - Trend : **P1 : 0 CRITICAL, 0 HIGH, 3 MEDIUM, 5 LOW.** Chaque prémisse vérifiée au code avant remédiation.
 - **P1-1** (MEDIUM, vérifié : `grep` — la doc d'`update` coiffait `guard_parent_change_in_tx`, `update` sans doc) :
   le garde déplacé avant la doc d'`update`.
-- **P1-2** (MEDIUM, décision de Beat) : refus `409 ACCOUNT_PARENT_HAS_ENTRIES` d'un parent qui porte des écritures
+- **P1-2** (MEDIUM, décision du responsable de l'epic) : refus `409 ACCOUNT_PARENT_HAS_ENTRIES` d'un parent qui porte des écritures
   (`DbError::AccountParentHasEntries`, `has_journal_line_locked` sous le `FOR UPDATE` du parent, après le refus propre
   à la devise) ; clé `error-account-parent-has-entries` (quatre locales) ; `api-external.md`, manuel ; écran :
   `parentCandidates` écarte en modification les comptes `currencyLocked` (vérifié au code : `currency_locked_account_ids`
@@ -185,8 +185,8 @@ Opus 5.5.
 **Gate complet groupé (2026-11-18)** : vert au commit `5fc6fb1b` de `integ/fixes-0.19.0` — chiffres au Change Log,
 journaux dans `kesh-gate-logs/integ-fixes-0.19.0/`.
 
-Journaux dans `kesh-gate-logs/fix-api-parent-compte/`. **Gate ciblé vert ; gate complet groupé à venir** (décision de
-Beat du 2026-11-18 : `scripts/test-fast.sh --ci`, l'E2E complet et `scripts/gate-ci.sh` se joueront une seule fois, sur
+Journaux dans `kesh-gate-logs/fix-api-parent-compte/`. **Gate ciblé vert ; gate complet groupé à venir** (décision du
+responsable de l'epic du 2026-11-18 : `scripts/test-fast.sh --ci`, l'E2E complet et `scripts/gate-ci.sh` se joueront une seule fois, sur
 une branche d'intégration réunissant plusieurs correctifs). Au dernier commit de code `f01e853d` :
 
 - `cargo fmt --check` et `cargo clippy --workspace --all-targets -D warnings` : verts (`gate-cible.console.log`,

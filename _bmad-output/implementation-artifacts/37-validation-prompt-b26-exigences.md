@@ -1,6 +1,6 @@
 # Prompt de validation ciblée — exigences FR/NFR de l'Epic 37 (B26)
 
-Passe **ciblée** (`CLAUDE.md` § *La passe ciblée*), contexte frais. Worktree `/home/beat/limu/compta/kesh-wt37`
+Passe **ciblée** (`CLAUDE.md` § *La passe ciblée*), contexte frais. Worktree `<dépôt>-wt37`
 (branche `epic/37-multi-devises`) : n'écris nulle part ailleurs. Fiche indiquée dans ta mission.
 
 ## Périmètre

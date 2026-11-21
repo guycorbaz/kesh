@@ -4,7 +4,7 @@ Status: review
 
 *Fiche rédigée le 2026-11-18, branche `fix/cours-afc-bgn`, partie de `main` à `70be12a6` (squash de l'Epic 37,
 PR #1247). Correctif hors epic, **non urgent** : il ne passe pas par `hotfix/` et va à la prochaine release planifiée.
-**Aucune migration.** Relevé par Beat à la recette d'un exercice réel 2024
+**Aucune migration.** Relevé par le responsable de l'epic à la recette d'un exercice réel 2024
 (`data-not-committed/2024-qesh/controle/defauts-kesh.md`, point 4, « BGN », P4).*
 
 ## Intention
@@ -137,13 +137,13 @@ Les flux de 2026 après mars (mensuels 2026-10, 2026-12 ; journalier du 13.11.20
   sans écriture, en multi-devises : `400 CURRENCY_UNKNOWN`, `details.value` tel que reçu, devise et version inchangées
   en base ; sonde positive vers EUR (200). Mutation **M4** (`normalize_foreign_currency` sur `parse_rate_currency`) →
   rouges `monnaie_retiree_refusee_a_la_modification_d_un_compte` et
-  `chf_est_normalise_et_une_devise_refusee_en_mono_devise` (`p2-cible.log`). **Gate ciblé seulement**, par décision de
-  Beat (`heavy.sh`, sans `KESH_NO_MEMGUARD`) : `cargo fmt --check` et `clippy --workspace --all-targets -D warnings`
+  `chf_est_normalise_et_une_devise_refusee_en_mono_devise` (`p2-cible.log`). **Gate ciblé seulement**, par décision du
+  responsable de l'epic (`heavy.sh`, sans `KESH_NO_MEMGUARD`) : `cargo fmt --check` et `clippy --workspace --all-targets -D warnings`
   verts ; nextest de kesh-core, `account_currency_e2e`, `exchange_rates_fetch_e2e`, `exchange_rates_api_e2e` (base
   remise à zéro) **479/479** (`p2-nextest.log`). Le gate complet et l'E2E complet de ce commit se feront **groupés, sur
   une branche d'intégration** ; ceux de `102758bf` (ci-dessus) ne couvrent pas `49e75a7e`. Passe ciblée P2 à lancer
   (`kesh-gate-logs/fix-cours-afc-bgn/revue-p2-ciblee-prompt.md`).
-- 2026-11-18 — passe P2 ciblée (Haiku, lecture seule) sur `49e75a7e` : 0 CRITICAL/HIGH, 1 MEDIUM, 1 LOW. **P2-1 (MEDIUM, procédure)** : `CLAUDE.md` exige le gate complet et l'E2E complet au dernier commit de code ; seul le gate ciblé a tourné à `49e75a7e`. Décision de Beat (2026-11-18) : pour les correctifs courts, gate ciblé par correctif, puis **gate complet groupé** (test-fast `--ci`, E2E complet, `gate-ci.sh`) sur une branche d'intégration réunissant plusieurs correctifs, **avant tout push** ; la boucle de ce correctif se clôt sur ce gate groupé, rapporté ici. **P2-2 (LOW)** : le gate ciblé (`p2-cible.log`) a tourné sur l'arbre de travail de `2ae7749e` augmenté du test, avant le commit `49e75a7e` ; contenu identique au commit (arbre propre à HEAD, 9 tests dans le binaire).
+- 2026-11-18 — passe P2 ciblée (Haiku, lecture seule) sur `49e75a7e` : 0 CRITICAL/HIGH, 1 MEDIUM, 1 LOW. **P2-1 (MEDIUM, procédure)** : `CLAUDE.md` exige le gate complet et l'E2E complet au dernier commit de code ; seul le gate ciblé a tourné à `49e75a7e`. Décision du responsable de l'epic (2026-11-18) : pour les correctifs courts, gate ciblé par correctif, puis **gate complet groupé** (test-fast `--ci`, E2E complet, `gate-ci.sh`) sur une branche d'intégration réunissant plusieurs correctifs, **avant tout push** ; la boucle de ce correctif se clôt sur ce gate groupé, rapporté ici. **P2-2 (LOW)** : le gate ciblé (`p2-cible.log`) a tourné sur l'arbre de travail de `2ae7749e` augmenté du test, avant le commit `49e75a7e` ; contenu identique au commit (arbre propre à HEAD, 9 tests dans le binaire).
 - 2026-11-18 — **Reprise de `main` après la v0.19.0, puis gate complet groupé.** `origin/main` (`773df80d`, tag
   `v0.19.0`) repris par fusion (`594b8f17`), sans rebase ; conflits résolus en gardant les deux intentions (`sprint-status.yaml` : les deux blocs ; `docs/api-external.md` : la mention « Depuis la v0.19.0 » de `main` gardée, la ligne `CURRENCY_UNKNOWN` du correctif récrite dessus).
   Gate ciblé après la reprise : `fmt`, `clippy` du workspace, nextest de `kesh-core`, de `account_currency_e2e`, `exchange_rates_fetch_e2e` et de la bibliothèque `kesh-api` **1184 passés, 5 ignorés**, Vitest `src/lib/shared/utils` **217 tests (20 fichiers)**, garde i18n verte (`kesh-gate-logs/fix-cours-afc-bgn/reprise-v0190-*.log`). Puis `origin/main` `37c2f875` (documentation seule : `CLAUDE.md`, bilan de la

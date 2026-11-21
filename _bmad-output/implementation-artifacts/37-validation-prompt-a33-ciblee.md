@@ -1,6 +1,6 @@
 # Prompt de validation ciblée — A33 (frais de conversion), fiche 37-3b
 
-Passe **ciblée** (`CLAUDE.md` § *La passe ciblée*), contexte frais. Worktree `/home/beat/limu/compta/kesh-wt37`
+Passe **ciblée** (`CLAUDE.md` § *La passe ciblée*), contexte frais. Worktree `<dépôt>-wt37`
 (branche `epic/37-multi-devises`) : n'écris nulle part ailleurs.
 
 ## Périmètre

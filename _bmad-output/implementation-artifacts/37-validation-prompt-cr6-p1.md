@@ -1,7 +1,7 @@
 # Prompt de validation CR-6 P1 — fiches révisées de l'Epic 37 (couverture API et MCP)
 
 Tu fais la **première passe complète** d'un nouveau cycle de validation, ouvert par l'audit de couverture API et MCP
-(CR-6), sur une fiche du dépôt `/home/beat/limu/compta/kesh` (Kesh, logiciel comptable suisse en production :
+(CR-6), sur une fiche du dépôt `<dépôt>` (Kesh, logiciel comptable suisse en production :
 Rust/Axum, SvelteKit, MariaDB). À lire d'abord :
 
 - `_bmad-output/implementation-artifacts/37-couverture-api-mcp.md` : l'audit, les trous T1–T13 et les correctifs

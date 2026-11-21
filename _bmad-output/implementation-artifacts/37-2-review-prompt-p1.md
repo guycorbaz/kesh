@@ -2,8 +2,8 @@
 
 Première passe complète de `bmad-code-review` (lis `.claude/skills/bmad-code-review/SKILL.md` et suis-le : couches
 Blind Hunter, Edge Case Hunter, Acceptance Auditor, triage), contexte frais, sur la story 37-2, worktree
-`/home/beat/claude/kesh/.claude/worktrees/kesh-s37-2` (branche `story/37-2-cours-mensuels-afc`). N'écris
-nulle part ailleurs, sauf journaux dans `/home/beat/claude/kesh-gate-logs/s37-2/review-p1/`.
+`<dépôt>/.claude/worktrees/kesh-s37-2` (branche `story/37-2-cours-mensuels-afc`). N'écris
+nulle part ailleurs, sauf journaux dans `<station>/kesh-gate-logs/s37-2/review-p1/`.
 
 ## Périmètre
 
@@ -26,7 +26,7 @@ clé d'API) ; audit ; MCP (tailles) ; i18n 4 locales ; **manuels** (`.tex` contr
 
 Applique les patches des findings (CRITICAL à LOW selon le skill), avec leurs tests ; gate ciblé (fmt, clippy workspace,
 nextest des binaires touchés — **gate complet si un patch touche `kesh-db`** : migrations, repository, `post_restore`),
-sous ``/home/beat/claude/kesh-gate-logs/heavy.sh scripts/mem-guard.sh <commande>` (au plus deux exécutions lourdes sur la station ; backend lancé avec `7>&- 8>&- 9>&-`), base `kesh_s37_2` (cf. `docs/agents-orchestration.md`) ; commit local
+sous ``<station>/kesh-gate-logs/heavy.sh scripts/mem-guard.sh <commande>` (au plus deux exécutions lourdes sur la station ; backend lancé avec `7>&- 8>&- 9>&-`), base `kesh_s37_2` (cf. `docs/agents-orchestration.md`) ; commit local
 « fix(37-2) : revue de code P1 — … » (aucun mot-clé de fermeture, aucune mention d'IA). Change Log de la fiche :
 « 2026-11-16 — revue de code P1 (<modèle>) : <décompte> ». N'affirme que ce qui a tourné.
 
@@ -46,7 +46,7 @@ exécutés (chiffres) ; décompte.
    `backup-restore-new-install` sur 37-1 et 37-2, **jamais sur `19bf12fb` (avant l'Epic 37)**. Il vient donc
    probablement de l'Epic 37 : verrous ajoutés par 37-1 (`companies` en partage, comptes, réglages), copie des cours de
    37-2, tâche automatique ou déclenchement à la connexion qui tournerait pendant l'import. Diagnostique-le (journaux
-   `/home/beat/claude/kesh-gate-logs/s37-2/final/e2e-backend.log` et `s37-1/final3/`) ; si la cause est dans le code de
+   `<station>/kesh-gate-logs/s37-2/final/e2e-backend.log` et `s37-1/final3/`) ; si la cause est dans le code de
    l'epic, c'est au moins un MEDIUM : corrige-le, avec un test.
 2. **C-37-8, option « toutes les sociétés » du ↑**, spécifiée et non livrée (issue n° 8) : juge si la fiche l'exige
    (AC manquant = finding) ou si c'est hors périmètre.
@@ -54,5 +54,5 @@ exécutés (chiffres) ; décompte.
    XML (entités, profondeur, taille), aucune redirection, délai. Route `_test/…` inaccessible hors mode test.
 4. **Tâche automatique** : concurrence avec un import ou une remise à zéro, rejeu, plusieurs sociétés, horloge de
    Zurich.
-5. La définition « moyenne du 25 au 24, publiée le 25 » (R4) attend la confirmation de Beat : ne la tranche pas, note
+5. La définition « moyenne du 25 au 24, publiée le 25 » (R4) attend la confirmation du responsable de l'epic : ne la tranche pas, note
    seulement si le code en dépend.

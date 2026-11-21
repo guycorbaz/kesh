@@ -307,7 +307,7 @@ documentation, hors décompte). Ni les modules ni la nature des défauts ne se r
   résout en gardant les deux côtés, les compteurs se recomptent après la fusion.
 - `montants-ambigus.spec.ts` : créé par la 36-18a (`done`), seul à y écrire.
 - `CHANGELOG.md` : non écrit par la branche ; PDF des manuels non commités.
-- **Coordination** : aucun des fichiers de Beat (PDF des rapports, `largeurs.rs`) n'est touché.
+- **Coordination** : aucun des fichiers du responsable de l'epic (PDF des rapports, `largeurs.rs`) n'est touché.
 
 ### Ce qui doit rester vrai
 
@@ -423,7 +423,7 @@ manquait de rien, c'est un geste d'habitude. Les mutations passent par un script
 `e076b9913`), puis le commit de la fiche (statut `review`). Diff de la revue : `git diff 3cba47602 e4bf86564`.
 
 **Fichiers communs.** `i18n-keys.test.ts` (`sitesTotal` 3495 → 3496, relevé par la garde) et les quatre `messages.ftl` : à
-recompter et à unir à la fusion avec les autres stories de l'Epic 48. Aucun fichier de Beat touché.
+recompter et à unir à la fusion avec les autres stories de l'Epic 48. Aucun fichier du responsable de l'epic touché.
 
 **Statut à poser au `sprint-status.yaml`** (par l'orchestrateur) : `48-10-montants-ambigus-reglages-filtres: review`.
 

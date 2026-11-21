@@ -3,16 +3,16 @@
 Status: done
 
 *Fiche rédigée le 2026-11-14 (Opus 5.5), branche `epic/37-multi-devises`. Epic 37, C-37-4, C-37-5. Suit **37-3a**
-(découpe de l'ancienne 37-3 à la rédaction). **Aucune migration.** Révisée le 2026-11-14 pour la revue de Beat
+(découpe de l'ancienne 37-3 à la rédaction). **Aucune migration.** Révisée le 2026-11-14 pour la revue du responsable de l'epic
 (CR-2 : R3, R6, R7, R8), qui prime sur le registre antérieur ; elle ajoute une route serveur (assistant *Conversion*,
-AC-2 bis). Révisée de nouveau pour la revue CR-3 de Beat, qui prime sur CR-2 : **S2** — la ligne d'écart et l'assistant
+AC-2 bis). Révisée de nouveau pour la revue CR-3 du responsable de l'epic, qui prime sur CR-2 : **S2** — la ligne d'écart et l'assistant
 *Conversion* prennent les comptes de différence **propres** du compte en devise concerné (37-1 AC-4 bis) ; **S5** —
 l'assistant TVA achat calcule la TVA sur le montant en devise et passe la ligne de TVA en CHF au même cours (AC-2) ;
-**S6** — l'écran de saisie n'affiche pas les cours AFC republiés (c'est 37-2). Révisée enfin pour la revue 2 de Beat
+**S6** — l'écran de saisie n'affiche pas les cours AFC republiés (c'est 37-2). Révisée enfin pour la revue 2 du responsable de l'epic
 (CR-4), qui prime sur tout ce qui précède : **T3** — la ligne ne stocke pas de devise (37-3a AC-1) : `currency` se lit
 sur le compte, facultatif à l'envoi (AC-1, AC-2, AC-3) ; **T4** — cours d'ouverture proposé = cours de **clôture**
 de l'exercice précédent : veille de l'ouverture (genre `day`) ou cours mensuel du **dernier mois de l'exercice
-précédent** (genre `month`) (AC-1). Révisée en dernier pour la revue 3 de Beat (CR-5), qui prime sur tout : **U1** — le
+précédent** (genre `month`) (AC-1). Révisée en dernier pour la revue 3 du responsable de l'epic (CR-5), qui prime sur tout : **U1** — le
 cours proposé est le **cours retenu par la société** (`exchange_rates` de 37-2 : `effectiveRate` et `source` de
 `lookup` ; ses champs `afcRate` et `overridden` n'existent plus, `afcRate` devient une valeur dérivée du formulaire,
 AC-2), et les indicateurs se lisent sur `source` (AC-1,
@@ -306,7 +306,7 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
      **postérieur au mois suivant le mois courant** (Europe/Zurich ; 37-2 AC-5 : le mois suivant est admis à toute
      date, non publié → `404 RATE_NOT_PUBLISHED` ; R4 amendé, alignement de l'orchestrateur),
      **aucun** `POST /fetch` (il rendrait 400, 37-2 AC-5) : saisie manuelle directement ; un 400 du `POST /fetch` se
-     traite comme `RATE_NOT_PUBLISHED`. Le cours du mois M est publié le 25 de M−1 ou le jour ouvrable suivant selon l'ESTV, mais parfois avant (relevé du 14.11.2026, à confirmer par Beat ; R4 amendé ; 37-2 *Source*), et la tâche
+     traite comme `RATE_NOT_PUBLISHED`. Le cours du mois M est publié le 25 de M−1 ou le jour ouvrable suivant selon l'ESTV, mais parfois avant (relevé du 14.11.2026, à confirmer par le responsable de l'epic ; R4 amendé ; 37-2 *Source*), et la tâche
      automatique de 37-2 (une vérification par jour jusqu'à son arrivée, puis pause, S1) le récupère pour les exercices multi-devises ; le cas « cours indisponible » vise surtout un
      mois futur, une devise non publiée ou une source injoignable. *(Annotation de l'orchestrateur, 2026-11-14 : la
      remédiation P1 avait écrit l'inverse ; précisée par R4, CR-2.)* La
@@ -373,7 +373,7 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
      ventes USD) : le premier compte en devise **de bilan** (`Asset`/`Liability`) dans l'ordre des lignes, sinon le
      premier compte en devise ; si les comptes en devise de l'écriture ne résolvent pas tous la même paire, la ligne
      est posée sur celle du compte retenu et un avis nomme ce compte (le compte de la ligne reste modifiable) —
-     arbitrage A12, approuvé par Beat (CR-5) ; au-delà de n × 0.005 CHF (n = nombre de lignes en
+     arbitrage A12, approuvé par le responsable de l'epic (CR-5) ; au-delà de n × 0.005 CHF (n = nombre de lignes en
      devise, calculé en `Big`), le texte précise qu'il ne s'agit pas d'un arrondi ; rien n'est ajouté sans clic
      (C-37-4). Libellé accessible et aide du bouton : « Ajouter une ligne de différence de change ». Vitest : un clic
      ajoute exactement une ligne et aucun appel réseau.
@@ -811,7 +811,7 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
       mois par `POST /exchange-rates/fetch` en préalable (`lookup` ne lit que les cours de la société) ;
       captures d'écran des états (thème clair) ; liste des échecs attendus de `docs/testing.md` recontrôlée.
 6. **AC-6 — Manuel utilisateur** : saisir une écriture en devise, cours proposé (cours mensuel AFC — **fixé d'avance** pour le mois et publié par l'AFC, Terminologie ; jamais « cours moyen »
-   ni « moyenne » ; la méthode de calcul n'est décrite qu'après confirmation de Beat, R4 amendé — ou cours saisi par la société, et la
+   ni « moyenne » ; la méthode de calcul n'est décrite qu'après confirmation du responsable de l'epic, R4 amendé — ou cours saisi par la société, et la
    provenance enregistrée qui en découle ; « AFC : <cours> » ou « Cours saisi : <cours> » sous le champ et le bouton
    ↑, qui remet la ligne au cours de la société sans toucher à la table des cours) et manuel (cours ou CHF), changer
    le compte d'une ligne (la devise suit le compte : montant et cours repartent à vide, U2), une seule devise par
@@ -962,7 +962,7 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
 - 2026-11-14 — validation CR-1 P3 ciblée (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW ; remédié dans la fiche, aucun
   inter-fiches (CR1-P3-1 : le rappel « la provenance d'origine n'est pas stockée » contredisait `loadedRateSource` ; `rateProposed`
   et l'indicateur de retouche distingués).
-- 2026-11-14 — révision CR-2 (revue de Beat R1–R10 ; Opus) : **R7** — assistant *Conversion* (AC-2 bis, neuf) : deux
+- 2026-11-14 — révision CR-2 (revue du responsable de l'epic R1–R10 ; Opus) : **R7** — assistant *Conversion* (AC-2 bis, neuf) : deux
   écritures par le compte de conversion de 37-1, la différence de change dans la seconde pour que le compte revienne à
   0, lignes de frais possibles, maquette ; route serveur `POST /journal-entries/conversions` (deux écritures en une
   transaction, `FX_CONVERSION_TRANSIT_UNBALANCED`, `details.entry`, registre +1 route `Rejouee`) ; au formulaire, une
@@ -1042,7 +1042,7 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
   des pages (lignes citées en CR-2 P2 non relues), i18n, E2E, PDF.
 - 2026-11-14 — validation CR-2 P4 ciblée (Opus) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 2 LOW ; remédiés dans la fiche. LOW :
   37-3b-CR2-P4-1 l'AC-2 disait le cours « publié au plus tard le 25 de M−1 », ce que ni R4 (« le 25 de M−1, ou le jour
-  ouvrable suivant ») ni R4 amendé (calendrier « à confirmer par Beat ») ni 37-2 *Source* n'affirment : phrase réalignée,
+  ouvrable suivant ») ni R4 amendé (calendrier « à confirmer par le responsable de l'epic ») ni 37-2 *Source* n'affirment : phrase réalignée,
   sans effet sur le comportement (Kesh n'en dépend pas) ; 37-3b-CR2-P4-2 le test « refus de la seconde écriture → rien
   de créé » de l'AC-2 bis restait ambigu depuis l'exécution chronologique (CR-2 P3-3) : précisé (seconde **exécutée**,
   placée en tête du corps, `details.entry` = rang dans le corps). Aucun finding inter-fiche. Axes exercés : diff
@@ -1051,7 +1051,7 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
   mot pour mot), cohérence interne de l'AC-2 bis (`details.entry` 1/2 = colonnes, ordre d'exécution, réponse dans
   l'ordre du corps). Non exercés : code des pages et du serveur (aucune ligne de code citée par les hunks), i18n, E2E,
   Vitest, PDF.
-- 2026-11-14 — révision CR-3 (revue de Beat S1–S6 ; Opus) : **S2** — ligne d'écart (AC-2, R8) sur les comptes de
+- 2026-11-14 — révision CR-3 (revue du responsable de l'epic S1–S6 ; Opus) : **S2** — ligne d'écart (AC-2, R8) sur les comptes de
   différence du **compte en devise concerné** par `fxAccountsFor` (37-1 AC-4 bis) : premier compte de bilan en devise
   de l'écriture, sinon premier compte en devise, avis si les paires diffèrent (règle de l'orchestrateur, à confirmer) ;
   props du formulaire : défaut de la société, comptes propres lus sur `AccountResponse` ; assistant *Conversion*
@@ -1115,7 +1115,7 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
   le cours attendu » (cours changé, ligne recontrôlée au cours attendu) et « Garder mon cours » (provenance `manual`,
   hors contrôle), l. 230-238 ; Vitest de l'édition du seul libellé ; AC-1 l. 74-78. Non exercés : sauvegarde, MCP,
   audit, i18n, E2E, PDF, code.
-- 2026-11-14 — révision CR-4 (revue 2 de Beat T1–T6 ; Opus) : **T3** — la ligne ne stocke pas de devise (37-3a AC-1) :
+- 2026-11-14 — révision CR-4 (revue 2 du responsable de l'epic T1–T6 ; Opus) : **T3** — la ligne ne stocke pas de devise (37-3a AC-1) :
   types TS — réponse `foreign.currency: string` lue sur le compte, requête `currency?: string` facultative ; le
   formulaire, les deux grilles d'ouverture, l'assistant TVA et l'assistant *Conversion* l'envoient toujours (garde
   contre un compte dont la devise a changé depuis le chargement) ; `LineDraft.foreign.currency` = devise du compte,
@@ -1165,7 +1165,7 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
   pas exigé ici, sans contradiction) ; renvoi 37-1 AC-11 (T1) ; enchaînement `day` puis `month` de l'E2E contre AC-1
   (complément au cours du mois de sa date) ; source factice au mois demandé (37-2 AC-3). Non exercés : code
   applicatif hors seed, 37-4/37-5, manuel, PDF.
-- 2026-11-14 — révision CR-5 (revue 3 de Beat U1–U6 ; Opus) : **U1** — cours proposé = cours retenu par la société
+- 2026-11-14 — révision CR-5 (revue 3 du responsable de l'epic U1–U6 ; Opus) : **U1** — cours proposé = cours retenu par la société
   (`exchange_rates` de 37-2) : `lookup` rend `effectiveRate` et `source` (et `publishedRate`, non affiché ici) ; ses
   `afcRate` et `overridden` disparaissent ; `afcRate` du formulaire devient une valeur dérivée (`effectiveRate` d'un
   `lookup` `source: "afc"`), si bien que la règle de provenance (`afc` si égal, au mois de la date) et le contrôle
@@ -1182,7 +1182,7 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
   37-3b-CR5-P1-6 (37-2, inter-fiche). MEDIUM : CR5-P1-1 `FX_RATE_NOT_AFC` à `expectedRate` `null` (cours de la société
   devenu `manual` après l'écriture, 37-3a AC-4, 4) : « Reprendre le cours attendu » ne pouvait pas s'appliquer — seule
   « Garder mon cours » est offerte, Vitest et E2E ; CR5-P1-2 le manuel (AC-6) disait « moyenne du 25 au 24 », contre la
-  Terminologie de Beat (« pas des moyennes ») et R4 amendé (méthode non confirmée) : réécrit. LOW : P1-3 E2E du cours
+  Terminologie du responsable de l'epic (« pas des moyennes ») et R4 amendé (méthode non confirmée) : réécrit. LOW : P1-3 E2E du cours
   saisi et du ↑ irréalisables tels quels (`version` d'une ligne `afc` copiée, valeur publiée requise par `reset`, sinon
   suppression d'une ligne `manual`) ; P1-4 AC-2 « le ↑ et son dialogue » contre A23 (↑ direct) ; P1-5 `PUT /rate-kinds`
   exige les deux genres ; P1-6 (inter-fiche) 37-2 AC-3 bis. **Inter-fiche non appliqué — texte proposé.** *37-2 AC-3 bis,
@@ -1248,7 +1248,7 @@ devise au cours d'ouverture choisi pour l'exercice (R6), afin de tenir mes livre
 - 2026-11-15 — validation ciblée P2 des exigences (Sonnet) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 5 LOW ; remédiés (10 FR, 6 NFR). MEDIUM : 37-3b-B26-P2-1 affichage des refus FX du serveur sur la ligne fautive (rang 1-based dans le corps sans lignes vides, messages `FX_CURRENCY_MISMATCH`, `FX_ACCOUNT_IN_CHF`, `monoCurrencyFiscalYear`, `laterFiscalYear`, classement `stay`/`stale`, « Récupérer le mois ») sans exigence (AC-1, AC-2, AC-2 bis → FR-10 neuve). LOW : -P2-2 FR-1 « envoyés `manual` » vrai de l'écran seulement (l'API admet `afc` et l'absence, AC-1) ; -P2-3 FR-2 sans « cours OU CHF », avec changement de compte vers la même devise (montant gardé) et sélecteur R7 sans l'exception des écritures relues multi-devises ni le masquage en exercice mono-devise ; -P2-4 FR-5 sans l'exception de l'assistant TVA achat (AC-4, S5) ; -P2-5 FR-6 sans le complément `TODAY` ni le cas `expectedRate` `null` (seule « Garder mon cours ») ; -P2-6 FR-8 sans la forme exigée de l'écriture complétée. Récapitulatif de l'epic aligné (-10 ajouté). Une passe de plus est due (MEDIUM, `CLAUDE.md`).
 - 2026-11-15 — validation ciblée P3 des exigences (Opus) : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 7 LOW ; remédiés (10 FR, 6 NFR, décompte inchangé). MEDIUM : 37-3b-B26-P3-1 FR-2 « CHF saisi → cours déduit par `rateFromChf` » faux dans le cas A32 de l'AC-2 (*Champs*, « CHF saisi à la main ») : si `afcRate` du mois redonne le CHF, le cours devient `afcRate` et la ligne part `afc` — FR-2 corrigée ; -P3-2 verrous et ordre des refus sans exigence : AC-1 (« le serveur ne fait aucun `lookup` … ne lit `exchange_rates` avant aucun verrou », 34-2 AC-10) et AC-2 bis (*Verrous et ordre des refus* : une seule raison, `companies` → compte de conversion, créations dans l'ordre chronologique) — portés par FR-1 et FR-8 (rangées en FR pour ne pas changer le décompte de l'epic ; un NFR de concurrence serait plus juste, à arbitrer). LOW : -P3-3 FR-8 « toute autre forme reste `ENTRY_UNBALANCED` » trop large (équilibrée : rien ; ligne portée sans compte unique : 400 `Validation`) et sans les 400 `Validation` (`entries` ≠ 2, A31 avec ligne portée, trop de lignes), la paire `FX_ACCOUNT_INVALID` à l'usage, la réponse `{ entries }` ; -P3-4 FR-9 « sans `debit`/`credit` » ambigu (une colonne absente suffit), sans le complément inchangé ni `revaluation` → 400 sur les deux routes ; -P3-5 FR-10 « sur la ligne fautive » pour des refus sans `details.line` (`MULTI_CURRENCY_DISABLED`, `FX_MULTIPLE_CURRENCIES`) et règle du corps sans lignes vides appliquée à l'assistant, qui traduit par `details.entry` et sa table ; -P3-6 FR-2 exception R7 réduite à ouverture et complément (AC-2 : contre-passation, état hérité), lien vers l'assistant ; FR-6 sans le cours de la société sous le champ et ↑ (ne touche jamais la table) ; -P3-7 NFR-6 sans le jumeau TS de la date d'ouverture (fixture `fx_opening_dates.json` de 37-2) ni `lineVatAmount` ; -P3-8 FR-5 « pièces » sans le détail de l'AC-4 (factures, avoirs, règlements, factures fournisseur) ; -P3-9 FR-7 sans les deux refus de l'assistant (deux devises, ligne CHF dérivée à 0.00). Axes exercés : chaque FR/NFR contre l'AC entier cité (AC-1 à AC-6 relus) ; points majeurs (contrat d'API, refus, verrous, audit, RBAC, MCP — la fiche n'en touche aucun outil —, sauvegarde — aucune table neuve) ; récapitulatif de l'epic. Non exercés : les AC eux-mêmes, Tâches, code. Récapitulatif de l'epic aligné (-1, -8). Une passe de plus est due (MEDIUM).
 - 2026-11-15 — validation ciblée P4 des exigences (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 5 LOW ; remédiés (10 FR, 6 NFR, décompte inchangé). LOW : 37-3b-B26-P4-1 FR-8 « refus portant `details.entry` » trop large (AC-2 bis : `FX_ACCOUNT_INVALID` et `FX_CONVERSION_TRANSIT_UNBALANCED` n'en portent pas, `details: { entry1, entry2 }` pour le second) et ordre sous verrous sans le `FX_ACCOUNT_INVALID` du compte de conversion, premier ; -P4-2 FR-3 sans les gardes de « Passer les écritures » (exercice multi-devises, deux devises différentes, paire invalide, frais de l'écriture 2 sur un second compte en devise) ; -P4-3 FR-10 sans `FX_ACCOUNT_INVALID` ni `FX_CONVERSION_TRANSIT_UNBALANCED` (message neuf, quatre locales, affichés au-dessus de l'aperçu) ; -P4-4 FR-6 repli `POST /fetch` écrit sans condition (AC-2 : une fois, Comptable ou Administrateur, mois à la portée du `fetch`, sinon saisie manuelle), sans la reproposition au changement de date ni la date du complément recalculée qui ne refuse pas le `POST` (AC-1) ; -P4-5 NFR-6 « fonction pure qui lit la fixture » : c'est son Vitest qui la lit (AC-1). Axes exercés : chaque FR/NFR contre l'AC entier cité (AC-1 à AC-6 relus), diff P3, points majeurs (contrat d'API, refus, verrous, audit, RBAC, sauvegarde), récapitulatif de l'epic. Non exercés : les AC eux-mêmes, Tâches, code. Récapitulatif de l'epic aligné (-3).
-- 2026-11-15 — A33 frais de conversion (Opus) : décision de Beat du 2026-11-15 (epic, A33 ; B3/B27 de l'Epic 38).
+- 2026-11-15 — A33 frais de conversion (Opus) : décision du responsable de l'epic du 2026-11-15 (epic, A33 ; B3/B27 de l'Epic 38).
   AC-2 bis : l'écriture à compléter admet, en plus de son compte en devise au débit net, des frais **au débit** de
   comptes de charge (`Expense`, `crates/kesh-db/src/entities/account.rs:16` ; `accountType`,
   `frontend/src/lib/features/accounts/accounts.types.ts:50`) de la même devise ; hors règle « un seul compte en

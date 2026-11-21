@@ -1382,7 +1382,7 @@ async fn k9_hors_bornes(pool: MySqlPool) {
     );
 }
 
-/// Recette de Beat (CR8-P1-3) : livres importés, passation à 0.91193 ; le
+/// Recette du responsable de l'epic (CR8-P1-3) : livres importés, passation à 0.91193 ; le
 /// cours journalier du 31.12.2024 dans `exchange_rates` → K9 ok sans saisie ;
 /// sans lui (repli mensuel 0.8846) → attention.
 #[sqlx::test(migrations = "./test-schema")]

@@ -1,14 +1,14 @@
 # Epic 37 — Comptabilité multi-devises
 
-**Kickoff : 2026-11-14.** Demande de Beat (contributeur, comptabilité d'une SA tenue jusqu'ici dans un logiciel
+**Kickoff : 2026-11-14.** Demande du responsable de l'epic (contributeur, comptabilité d'une SA tenue jusqu'ici dans un logiciel
 multi-devises : comptes PayPal, Wise et débiteurs en USD et en EUR, ventes en USD, réévaluation au 31.12 sur le compte
 6840 *Différences de change*). L'epic est développé **sur une branche unique** (`epic/37-multi-devises`) et proposé à
-Guy en **une seule PR** à la fin, après une recette sur l'exercice 2024 de Beat importé par l'API — **par l'API
+Guy en **une seule PR** à la fin, après une recette sur l'exercice 2024 du responsable de l'epic importé par l'API — **par l'API
 seule** (CR-6 : sessions en `Authorization: Bearer`, activation comprise ; test de bout en bout de 37-5 AC-7, V7 ; la
 réévaluation des livres d'origine se repasse par `POST /fiscal-years/{id}/fx-revaluation` avec `rates`, USD 0.91193
 et EUR 0.94947 au 31.12.2024, non par des écritures importées, V8).
 
-**Numéro : 37** (renuméroté depuis 35 le 2026-11-14, sur indication de Beat : les numéros 35 et 36 sont déjà réservés ; 38 est réservé par Beat aux comptes PayPal, 39 aux comptes Wise). Les comptes rendus de passe, prompts et Change Logs antérieurs à cette date écrivaient « 35 » : renumérotés avec les fichiers ; la page de revue `epic-35-revue.html`, en cours de lecture par Guy, garde l'ancien numéro (35-N = 37-N).
+**Numéro : 37** (renuméroté depuis 35 le 2026-11-14, sur indication du responsable de l'epic : les numéros 35 et 36 sont déjà réservés ; 38 est réservé par le responsable de l'epic aux comptes PayPal, 39 aux comptes Wise). Les comptes rendus de passe, prompts et Change Logs antérieurs à cette date écrivaient « 35 » : renumérotés avec les fichiers ; la page de revue `epic-35-revue.html`, en cours de lecture par Guy, garde l'ancien numéro (35-N = 37-N).
 
 **Cible : la release qui suivra la v0.17.6** (numéro, CHANGELOG daté, macros des manuels et tag : à la préparation de
 la release, par Guy — hors de cette branche).
@@ -17,21 +17,21 @@ la release, par Guy — hors de cette branche).
 
 **Règles des fichiers communs** (`CLAUDE.md` § *Travailler à plusieurs développeurs*, `docs/developpement-a-plusieurs.md` § 3 et § 6) : aucune fiche n'écrit au `CHANGELOG.md` — chacune porte une section *Note de version*, assemblée à la release ; aucun PDF de manuel commité dans la branche (`.tex` seulement, régénération à la release) ; catalogues i18n et `sprint-status.yaml` : un bloc propre à l'epic ; compteurs (`sitesTotal`, totaux de l'audit des migrations, `LIB_ROUTES` et partitions du registre, `data_count`, schéma de test) recomptés depuis la source après chaque reprise de `main` ; `Cargo.lock` régénéré après la fusion.
 
-⚠️ **Pas d'issue GitHub à ce stade** : Beat n'a qu'un accès en lecture au dépôt de Guy. Le détail vit dans cet epic et
-dans les fiches ; l'issue et la PR s'ouvrent à la fin, une fois la recette faite (décision de Beat, 2026-11-14).
+⚠️ **Pas d'issue GitHub à ce stade** : le responsable de l'epic n'a qu'un accès en lecture au dépôt de Guy. Le détail vit dans cet epic et
+dans les fiches ; l'issue et la PR s'ouvrent à la fin, une fois la recette faite (décision du responsable de l'epic, 2026-11-14).
 
-## Décisions de Beat (2026-11-14)
+## Décisions du responsable de l'epic (2026-11-14)
 
 - **D1 — Réglage de la société.** La comptabilité est **mono-devise** (comportement actuel, inchangé) ou
   **multi-devises**. La **devise principale ne change pas** (CHF) ; en mode multi-devises, les autres devises sont
   **sélectionnables** dans la liste ISO 4217. En mono-devise, rien de ce qui suit n'apparaît.
-- **D2 — La devise est portée par le compte**, comme dans les livres de Beat (le compte de ventes `3132-USD-EX` est en
+- **D2 — La devise est portée par le compte**, comme dans les livres du responsable de l'epic (le compte de ventes `3132-USD-EX` est en
   USD comme le compte PayPal USD). Toute ligne d'écriture sur un compte en devise porte **le montant en devise, le cours
   et le montant en CHF** ; toute ligne a une valeur en CHF, et **l'écriture s'équilibre en CHF**.
 - **D3 — Le cours par défaut est le cours mensuel officiel de l'AFC** (fixé d'avance pour le mois, voir *Terminologie*) (ESTV, publié par l'OFDF/BAZG) du mois de la
   date de l'écriture ; il est **modifiable ligne par ligne** (saisie manuelle, p. ex. pour une conversion de devises).
 - **D4 — Les cours mensuels se récupèrent automatiquement** sur le site officiel, et **toutes les devises publiées**
-  sont stockées dans la table des cours mensuels (précision de Beat, 2026-11-14) — USD et EUR pour Beat, mais
+  sont stockées dans la table des cours mensuels (précision du responsable de l'epic, 2026-11-14) — USD et EUR pour le responsable de l'epic, mais
   l'ensemble est universel.
 - **D5 — Réévaluation de fin d'exercice** *(cours corrigé par D10)* : au **cours mensuel de décembre** (le mois de clôture de l'exercice), dans
   les deux sens (gain et perte), contre un compte de différences de change choisi par l'utilisateur. Fondement : les
@@ -44,29 +44,29 @@ dans les fiches ; l'issue et la PR s'ouvrent à la fin, une fois la recette fait
 
 - **D8 — Comptes bancaires en devise (2026-11-14).** Tant que les imports en devise n'existent pas, PayPal, Wise et
   les autres comptes en USD ou EUR sont des **comptes du plan** en devise, et non des comptes bancaires Kesh (un compte
-  lié à un compte bancaire ne peut porter de devise, C-37-9). Beat : « plain ledger accounts for PayPal/Wise is fine if
+  lié à un compte bancaire ne peut porter de devise, C-37-9). Le responsable de l'epic : « plain ledger accounts for PayPal/Wise is fine if
   I can change type later to bank accounts ». **Engagement pour l'epic des imports en devise** : permettre de lier un
   compte bancaire à un compte du plan **déjà en devise**, en gardant numéro, historique et soldes (à tracer en issue
   avec la PR).
 
-- **D9 — Table des cours modifiable (Beat, 2026-11-14, après validation des fiches : change de périmètre).** La table
+- **D9 — Table des cours modifiable (le responsable de l'epic, 2026-11-14, après validation des fiches : change de périmètre).** La table
   des cours n'est pas en lecture seule : la société peut **saisir son propre cours** pour une devise et un mois (ou un
   jour, D10). Un cours saisi **n'est jamais remplacé** par une récupération AFC. À l'écran, sous le champ, le **cours
   AFC** s'affiche avec un bouton **↑** qui reprend le cours AFC (la saisie est alors effacée). Cours effectif = cours
   saisi s'il existe, sinon cours AFC. Une ligne d'écriture prend le cours effectif ; elle est `afc` si ce cours égale
   le cours AFC, sinon `manual`.
-- **D10 — Réévaluation au cours du jour de clôture (corrige D5).** Vérifié le 2026-11-14 : les cours des livres 2024 de
-  Beat (USD 0.91193, EUR 0.94947) sont **exactement** les cours **journaliers** OFDF du 31.12.2024
+- **D10 — Réévaluation au cours du jour de clôture (corrige D5).** Vérifié le 2026-11-14 : les cours des livres 2024 du
+  responsable de l'epic (USD 0.91193, EUR 0.94947) sont **exactement** les cours **journaliers** OFDF du 31.12.2024
   (`https://www.backend-rates.bazg.admin.ch/api/xmldaily?d=20241231`, cinq décimales, validité 01–03.01.2025),
   importés par son ancien logiciel. Le cours par défaut de la réévaluation est donc le **cours journalier de la date
   de clôture**, récupéré comme les cours mensuels et modifiable (D9) ; à défaut, le cours mensuel du mois de clôture,
   signalé à l'écran. C'est aussi la pratique (cours de clôture, CO 960).
-- **Terminologie** (Beat) : les cours mensuels AFC ne sont **pas des moyennes** ; ils sont **fixés d'avance** pour le
+- **Terminologie** (le responsable de l'epic) : les cours mensuels AFC ne sont **pas des moyennes** ; ils sont **fixés d'avance** pour le
   mois (publiés en début de mois). Les textes disent « cours mensuel AFC », jamais « cours moyen ».
 
-## Revue de Beat — CR-2 (2026-11-14, première revue de la page `epic-37-revue.html`)
+## Revue du responsable de l'epic — CR-2 (2026-11-14, première revue de la page `epic-37-revue.html`)
 
-Réponses de Beat à la revue et aux quatre questions qui ont suivi ; elles **priment** sur D1–D10 et sur le registre
+Réponses du responsable de l'epic à la revue et aux quatre questions qui ont suivi ; elles **priment** sur D1–D10 et sur le registre
 là où elles divergent.
 
 - **R1 — Sauvegardes antérieures réimportables (exception).** Une sauvegarde d'une version antérieure à l'Epic 37 se
@@ -87,7 +87,7 @@ là où elles divergent.
   suivant), applicable dès le 1er de M ; l'heure n'est pas publiée. Kesh vérifie toutes les 6 h **à partir du 25**
   jusqu'à obtenir le mois suivant, puis s'arrête jusqu'au 25 suivant ; et au **démarrage** comme à la **connexion**
   s'il manque un mois utile. Pas de boucle permanente toutes les 6 h.
-- **R4 amendé (orchestrateur, 2026-11-14, à confirmer par Beat).** Relevé contraire à la page ESTV : le
+- **R4 amendé (orchestrateur, 2026-11-14, à confirmer par le responsable de l'epic).** Relevé contraire à la page ESTV : le
   14.11.2026 (en-tête `Date` du serveur), `xmlavgmonth?j=2026&m=12` rend **déjà** décembre 2026 complet (USD 0.8320,
   EUR 0.9295) ; `j=2027&m=1` est vide. Le mois suivant paraît donc **avant le 25**, et la définition « du 25 au 24 »
   n'est pas vérifiable en l'état. Calendrier retenu, sûr dans les deux lectures : **une vérification par jour**
@@ -109,7 +109,7 @@ là où elles divergent.
   la **différence de change** dans l'écriture 2 pour que le compte de conversion revienne à 0 ; des lignes de frais
   sont possibles (écritures à plusieurs lignes). Un assistant *Conversion* crée les deux écritures. Fondement :
   aucune interdiction expresse trouvée dans le CO (957a impose la tenue en CHF) ; c'est la pratique fiduciaire et
-  l'avis du réviseur de Beat ; Kesh l'impose pour la traçabilité (chaque écriture se rapproche d'un seul relevé).
+  l'avis du réviseur du responsable de l'epic ; Kesh l'impose pour la traçabilité (chaque écriture se rapproche d'un seul relevé).
 - **R8 — « Ajouter la différence de change »** ajoute une **ligne** à l'écriture en cours ; il ne crée pas d'écriture.
 - **R9 — Réévaluation : une écriture par compte réévalué** (comme les livres 2024 : « Gain de change PAYPAL ONLINE USD
   0.91193 »), passées ensemble dans une transaction ; le bouton dit « Passer les écritures ».
@@ -133,7 +133,7 @@ là où elles divergent.
   complément et contre-passation ; conversion par `POST /journal-entries/conversions` (deux écritures, une transaction).
 - **C-37-6 amendé (R2, R4, R5)**, **C-37-7 amendé (R9, R6)**, **C-37-9 amendé (R6 : cours d'ouverture selon
   `opening_rate_kind`)**, terminologie R4 : repris des fiches révisées.
-- **Arbitrages de l'orchestrateur sur les questions ouvertes de la révision CR-2** (soumis à Beat dans la page de
+- **Arbitrages de l'orchestrateur sur les questions ouvertes de la révision CR-2** (soumis au responsable de l'epic dans la page de
   revue 2) :
   - A1 — commentaire de la constante (R10) : « Ne pas modifier : l'exercice initial créé par l'assistant commence le
     1er janvier ; un exercice à d'autres dates se crée dans *Exercices* » ;
@@ -144,7 +144,7 @@ là où elles divergent.
   - A5 — `force` archive les comptes en devise sans ligne après la fin de l'exercice ; pas de bascule sans archivage ;
     l'activation passe tous les exercices ouverts en multi-devises ; *(retiré par CR-7 ; la dernière clause, seule
     gardée, est désormais portée par A34 — 37-1 AC-3)*
-  - A6 — compte de conversion : compte de bilan non archivé, à créer (aucun plan livré n'en a ; les fiches disent « p. ex. 1090 », le plan de Beat le numérote 1091) ;
+  - A6 — compte de conversion : compte de bilan non archivé, à créer (aucun plan livré n'en a ; les fiches disent « p. ex. 1090 », le plan du responsable de l'epic le numérote 1091) ;
   - A7 — la récupération automatique ignore les exercices clos ; leurs cours se récupèrent à l'écran ;
   - A8 — la conversion passe par une route serveur (deux écritures dans une transaction).
 - **Tableau des stories** : 37-2 « ne referme pas la fenêtre d'import (R1) ».
@@ -152,7 +152,7 @@ là où elles divergent.
   aussi le compte de conversion à l'usage (`FX_ACCOUNT_INVALID`), comme la réévaluation ; la ligne d'écart du
   formulaire reste une ligne CHF ordinaire.
 
-## Revue de Beat — CR-3 (2026-11-14, avant la revue 2 de la page)
+## Revue du responsable de l'epic — CR-3 (2026-11-14, avant la revue 2 de la page)
 
 Prime sur CR-2 et sur ses arbitrages là où ils divergent.
 
@@ -199,7 +199,7 @@ Prime sur CR-2 et sur ses arbitrages là où ils divergent.
   sinon ceux de la société ; mois et jour de clôture = ceux de `end_date`, toute durée d'exercice.
 - **R10 et A1 retirés (S4)** ; **S3** : liste complète `{id, number, name, currency}` ; **S5** : assistant TVA en devise.
 - Registre des routes (deltas) : epic +11 routes `LIB_ROUTES`, total du registre +12.
-- **Arbitrages de l'orchestrateur sur les questions de la révision CR-3** (soumis à Beat, page de revue 2) :
+- **Arbitrages de l'orchestrateur sur les questions de la révision CR-3** (soumis au responsable de l'epic, page de revue 2) :
   - A9 — S1 : pause jusqu'à min(obtention + 24 j, 25 du mois T), jamais avant le 1er de T (ex. décembre obtenu le
     14.11 → reprise le 08.12) ;
   - A10 — S6 : chaque tour automatique **revérifie aussi le mois courant** (un appel de plus), pour découvrir seul une
@@ -215,7 +215,7 @@ Prime sur CR-2 et sur ses arbitrages là où ils divergent.
   - A17 — S6 : au `PUT` d'une écriture, seules les lignes `afc` nouvelles ou modifiées sont contrôlées contre le cours
     AFC en vigueur ; une ligne inchangée ne l'est jamais (37-3a AC-4, 37-3b AC-2).
 
-## Revue 2 de Beat — CR-4 (2026-11-14)
+## Revue 2 du responsable de l'epic — CR-4 (2026-11-14)
 
 Prime sur tout ce qui précède là où il diverge.
 
@@ -238,7 +238,7 @@ Prime sur tout ce qui précède là où il diverge.
   qui suit un exercice Kesh reprend le genre de clôture de celui-ci. Rappel : dans Kesh, les soldes de bilan sont
   cumulés d'un exercice à l'autre (aucune écriture de report) ; le cours d'ouverture ne sert qu'aux soldes
   d'ouverture d'une société neuve et à l'affichage.
-- **T5 — Montant en devise « pour information » sur une écriture CHF : rejeté** (Beat : « feature-creep ») ; à tracer
+- **T5 — Montant en devise « pour information » sur une écriture CHF : rejeté** (le responsable de l'epic : « feature-creep ») ; à tracer
   comme idée (C-37-8), éventuellement pour la réconciliation ou la saisie automatique de factures.
 - **T6 — A6 approuvé** (compte de conversion à créer).
 
@@ -258,7 +258,7 @@ Prime sur tout ce qui précède là où il diverge.
   de `finalize` ; sans corps, 1er janvier–31 décembre comme aujourd'hui) — les dates d'un exercice ne se modifient
   pas après sa création (`PUT /fiscal-years/{id}` ne change que le nom, `routes/fiscal_years.rs:86-90`).
 - **C-37-8 (T5)** : montant en devise « pour information » sur une écriture CHF — rejeté, gardé comme idée.
-- **Arbitrages de l'orchestrateur sur les questions de la révision CR-4** (soumis à Beat) :
+- **Arbitrages de l'orchestrateur sur les questions de la révision CR-4** (soumis au responsable de l'epic) :
   - A18 — la date de fin du premier exercice se saisit dans l'assistant (défaut : veille du même jour un an plus
     tard), puisqu'elle n'est plus modifiable ensuite ;
   - A19 — nom par défaut « Exercice AAAA », ou « Exercice AAAA/AAAA » s'il chevauche deux années (renommable) ;
@@ -268,9 +268,9 @@ Prime sur tout ce qui précède là où il diverge.
   - A22 — changer plus tard le genre de clôture d'un exercice ne modifie pas le genre d'ouverture de l'exercice
     suivant déjà créé (chacun se règle dans son tableau des cours).
 
-## Revue 3 de Beat — CR-5 (2026-11-14)
+## Revue 3 du responsable de l'epic — CR-5 (2026-11-14)
 
-Prime sur tout ce qui précède là où il diverge. Beat approuve A2–A22, **sauf A11 et A22** (remplacés par U3 et U4).
+Prime sur tout ce qui précède là où il diverge. Le responsable de l'epic approuve A2–A22, **sauf A11 et A22** (remplacés par U3 et U4).
 
 - **U1 — Tables des cours renommées et réparties (remplace C-37-1 et l'S6 tel qu'écrit).**
   - **`exchange_rates`** (table **applicative**, **par société**, sauvegardée ; ex-`exchange_rate_overrides`) : une ligne
@@ -282,7 +282,7 @@ Prime sur tout ce qui précède là où il diverge. Beat approuve A2–A22, **sa
   - **`_kesh_fetched_exchange_rates`** (table **système**, non sauvegardée ; ex-`_kesh_exchange_rates`) : les cours
     **tels que publiés** par la source, une ligne par (`source`, devise, genre, date), la **dernière** valeur publiée.
     Une republication (correction de l'AFC) met à jour cette ligne ; elle ne touche **jamais** `exchange_rates`.
-  - **Une seule valeur à l'écran** (corrige la maquette, U1 de Beat) : la case montre le cours de `exchange_rates` ;
+  - **Une seule valeur à l'écran** (corrige la maquette, U1 du responsable de l'epic) : la case montre le cours de `exchange_rates` ;
     dessous, « AFC ✓ » s'il égale la valeur publiée ; sinon, si la ligne est `afc`, « AFC corrigé : x » **en rouge**
     avec ↑ ; si la ligne est `manual`, « AFC : x » avec ↑. Avertissement à la connexion tant qu'une ligne `afc` diffère
     de la valeur publiée et n'est pas acquittée (acquittement **par société**, mémorisé sur la ligne avec la valeur
@@ -320,7 +320,7 @@ Prime sur tout ce qui précède là où il diverge. Beat approuve A2–A22, **sa
 - **C-37-9 complété** : `lookup` → `{ currency, kind, rateDate, effectiveRate, source, publishedRate, publishedUnit,
   sourceDate }` ; `FX_RATE_NOT_AFC` contre la ligne `afc` de la société ; notices et acquittement par société.
 - **A11, A22 retirés** (U3, U4). Routes 37-2 en deltas : +5 routes, +5 tracées, total +6.
-- **Arbitrages de l'orchestrateur sur les questions de la révision CR-5** (soumis à Beat) :
+- **Arbitrages de l'orchestrateur sur les questions de la révision CR-5** (soumis au responsable de l'epic) :
   - A23 — tant que la seconde option de U3 est masquée, le ↑ s'applique **directement** (sans dialogue) ; le dialogue
     n'apparaît que lorsque l'option « toutes les sociétés » devient disponible ; le ↑ d'un cours `manual` n'a pas de
     dialogue ;
@@ -370,7 +370,7 @@ aux fiches :
   (source `revaluation`).
 - **V13** (37-4 AC-7) — `kesh_postes_ouverts` inscrit aux sites « CHF seulement », renvoi à 37-3a AC-9.
 
-Arbitrages de l'orchestrateur pendant la validation CR-6 — **approuvés par Beat le 2026-11-14** :
+Arbitrages de l'orchestrateur pendant la validation CR-6 — **approuvés par le responsable de l'epic le 2026-11-14** :
 
 - **A31** (37-3b AC-2 bis, V3) — la ligne de différence d'une conversion n'est **jamais** ajoutée d'office : le serveur
   la calcule seulement si le corps le demande (`completeDifference: true`). Sans ce champ, une écriture déséquilibrée
@@ -382,7 +382,7 @@ Arbitrages de l'orchestrateur pendant la validation CR-6 — **approuvés par Be
   égale son CHF : cours exact, provenance `afc`. Sinon cours de `rate_from_chf`, `manual`. Raison : CHF ÷ montant
   ne redonne presque jamais le cours AFC à la décimale près (1125.83 ÷ 1234.56 ≈ 0.9119281 pour 0.91193), si bien que
   des livres tenus au cours AFC (import 2024) partiraient `manual`. L'écran applique la même règle à un CHF saisi.
-- **A33** (37-3b AC-2 bis, V3 ; **approuvé par Beat le 2026-11-15**) — frais de conversion sur un compte de charge en
+- **A33** (37-3b AC-2 bis, V3 ; **approuvé par le responsable de l'epic le 2026-11-15**) — frais de conversion sur un compte de charge en
   devise : l'écriture à compléter (écriture 2) admet, en plus de **son** compte en devise au débit net, des lignes de
   **frais** au **débit** de comptes de charge (`account_type = Expense`, `crates/kesh-db/src/entities/account.rs:16`)
   de la **même devise** (p. ex. 6911 *Frais PayPal USD*). Ces lignes n'entrent pas dans la règle « un seul compte en
@@ -413,7 +413,7 @@ CR-6) ; 37-2 n'est pas touchée.
 - Conditions d'utilisation : les données viennent de SIX, mises à disposition par l'OFDF « sans engagement » ;
   redistribution par des tiers interdite. Kesh les **récupère chez l'utilisateur** pour son propre usage et ne les
   redistribue pas (aucun cours n'est versionné dans le dépôt ni livré dans l'image).
-- Relevé pour la recette : décembre 2024, USD 0.8846, EUR 0.9470 (cours mensuels). Les livres 2024 de Beat ont été
+- Relevé pour la recette : décembre 2024, USD 0.8846, EUR 0.9470 (cours mensuels). Les livres 2024 du responsable de l'epic ont été
   réévalués à USD 0.91193 et EUR 0.94947 : ce sont les **cours journaliers du 31.12.2024** (D10).
 - **Cours journaliers** : `xmldaily?d=AAAAMMJJ` (racine `<wechselkurse>`, `<datum>`, `<gueltigkeit>`, cours à cinq
   décimales, mêmes unités).
@@ -480,7 +480,7 @@ NFR-37-5-1 RBAC, Consultation 403 (AC-5) ; -2 pas d'outil MCP d'aperçu (AC-5) ;
   les passes complètes, passe ciblée en fin de boucle ; gate local complet avant la PR).
 - Les questions de conception sans réponse claire passent par `bmad-party-mode` (5 tours au plus, jusqu'au consensus) ;
   le résultat va au registre ci-dessous.
-- **Production** : l'instance de Beat (`kesh-api`, port 8888) tient ses livres ; elle n'est **jamais** écrite par le
+- **Production** : l'instance du responsable de l'epic (`kesh-api`, port 8888) tient ses livres ; elle n'est **jamais** écrite par le
   travail de cet epic. Les essais tournent sur des conteneurs et des bases jetables.
 - On trace toujours : un défaut voisin non traité se note au registre, pour devenir une issue à l'ouverture de la PR.
 
@@ -570,7 +570,7 @@ ferme pas la fenêtre d'import, une table applicative neuve la ferme.
     (`find_effective_rate_in_tx`, seule fonction) ; une récupération ne touche jamais aux cours saisis.
     ⚠️ **La table applicative neuve referme la fenêtre d'import** : un `.keshbackup` 0.17.6 ou antérieur ne se
     réimporte plus dans la nouvelle version (registre de rejeu vidé : `20261106000001` passe « Hors fenêtre »). À
-    écrire à la Note de version (fiche 37-2) et au manuel d'administration, et **à confirmer avec Guy** (production) ; soumis à Beat dans la
+    écrire à la Note de version (fiche 37-2) et au manuel d'administration, et **à confirmer avec Guy** (production) ; soumis au responsable de l'epic dans la
     page de revue.
   - **C-37-7 amendé (D10)** : cours par défaut de la réévaluation = cours effectif journalier de la date de fin
     d'exercice (`xmldaily`, `POST /exchange-rates/fetch { date }`), sinon cours effectif mensuel du mois de fin
@@ -590,19 +590,19 @@ ferme pas la fenêtre d'import, une table applicative neuve la ferme.
 - **C-37-8 — Tracé pour plus tard** (issues à ouvrir avec la PR) : option de neutralisation des gains de change non
   réalisés par une provision (prudence, CO 960 al. 2) ; factures, factures fournisseur et imports bancaires en devise.
 
-## CR-7 — revue de Guy (2026-11-16), approuvée par Beat
+## CR-7 — revue de Guy (2026-11-16), approuvée par le responsable de l'epic
 
 Revue 4 de Guy (page `epic-35-revue.html`, 35-N = 37-N) : tout approuvé, 37-5 sans avis. Décisions retenues :
 
-- **A34 — Multi-devises sans retour (37-1).** Proposé par Guy, approuvé par Beat : une fois activé, le multi-devises
+- **A34 — Multi-devises sans retour (37-1).** Proposé par Guy, approuvé par le responsable de l'epic : une fois activé, le multi-devises
   reste activé (confirmation à l'activation) ; tout exercice ouvert ou créé ensuite est multi-devises. **Retirés** : la
   désactivation de la société, la bascule d'un exercice vers le mono-devise, l'avertissement des comptes en devise
-  actifs et l'archivage forcé (`force`), et ce qui n'existait que pour eux. Remplace la décision de Beat d'un mode par
+  actifs et l'archivage forcé (`force`), et ce qui n'existait que pour eux. Remplace la décision du responsable de l'epic d'un mode par
   exercice (révisions CR-1/CR-2).
 - **A35 — Sous-comptes.** Beaucoup de comptes attendus (un par solde et par devise, sous-comptes de frais). Kesh gère
   déjà comptes parents et sous-comptes ; la forme du numéro (point ou non) est laissée au plan de l'utilisateur, aucun
   travail ici.
-- **A36 — KISS (Beat).** Toute révision de ce cycle retire plutôt qu'elle n'ajoute ; ce qui se simplifie par A34 se
+- **A36 — KISS (le responsable de l'epic).** Toute révision de ce cycle retire plutôt qu'elle n'ajoute ; ce qui se simplifie par A34 se
   simplifie.
 - Remarque de Guy (Bexio : devise et CHF par ligne, cours calculé) : déjà couverte par V1/A32 ; la devise reste celle
   du compte (T3).
@@ -617,7 +617,7 @@ Revue 4 de Guy (page `epic-35-revue.html`, 35-N = 37-N) : tout approuvé, 37-5 s
   37-5), masquage par exercice à l'écran (37-3b), A4, A27, A5 hormis l'activation. Registre des routes : 37-1 +1
   route (au lieu de +2), point (vi) « vingt-sept ». Exigences : 61 → 59 FR (37-3a −2), 42 NFR.
 - **Points à faire valider** (tranchés par l'orchestrateur aux validations CR-7 P1 et P2, KISS ; à confirmer par
-  Beat) : (1) **D-CR7-1** — le verrou de `companies` que 37-3a prenait quand une ligne porte `foreign` est **retiré** :
+  le responsable de l'epic) : (1) **D-CR7-1** — le verrou de `companies` que 37-3a prenait quand une ligne porte `foreign` est **retiré** :
   une société ne redevient jamais mono-devise et la devise d'un compte, lue en partage, suffit ; aucune écriture ne
   verrouille plus `companies` explicitement (seul reste le partage implicite de la clé étrangère à l'`INSERT`) ; (2) **D-CR7-2** — la création d'un exercice **avant un exercice mono-devise** est
   **refusée** dans une société multi-devises (400 `LATER_FISCAL_YEAR_MONO_CURRENCY`, garde voisine de
@@ -626,7 +626,7 @@ Revue 4 de Guy (page `epic-35-revue.html`, 35-N = 37-N) : tout approuvé, 37-5 s
   les exercices mono-devise forment toujours un préfixe ; (3) **D-CR7-3** — 37-5 ne relit plus sous verrou le mode de
   la société et de l'exercice (plus de course possible) : lecture simple avant la transaction.
 
-## CR-8 — réévaluation exigée à la clôture (décision de Beat, 2026-11-16)
+## CR-8 — réévaluation exigée à la clôture (décision du responsable de l'epic, 2026-11-16)
 
 - **A37 — Contrôle de clôture bloquant.** Comme un exercice déséquilibré en CHF ne se clôt pas, un exercice dont un
   compte de bilan en devise n'est pas réévalué au cours de clôture (résidu ≠ 0, celui de l'aperçu de 37-5) **ne se clôt
@@ -642,7 +642,7 @@ Revue 4 de Guy (page `epic-35-revue.html`, 35-N = 37-N) : tout approuvé, 37-5 s
 - **A40 — Epic 36 d'abord.** Guy fusionne l'Epic 36 avant l'Epic 37 : l'Epic 37 reprendra `main` à ce moment (migrations
   ordonnées, compteurs recomptés). L'Epic 36 construit aussi #823 (36-6, une transaction rattachée à plusieurs
   écritures) : la story 38-6c2 se revoit après sa fusion (réutiliser plutôt que doubler).
-- **A41 — Postes non monétaires (décision de Beat, 2026-11-16, option a).** Un poste non monétaire (charge payée
+- **A41 — Postes non monétaires (décision du responsable de l'epic, 2026-11-16, option a).** Un poste non monétaire (charge payée
   d'avance en devise, etc.) se tient sur un compte **en CHF** : tout compte de bilan en devise est réévalué, et un compte
   décoché à la passation garde un résidu qui bloque la clôture (A37). Aucune marque « non monétaire » sur les comptes
   (KISS). Le manuel le dit ; C-37-7 (« décochables ») est lu sous cette réserve.

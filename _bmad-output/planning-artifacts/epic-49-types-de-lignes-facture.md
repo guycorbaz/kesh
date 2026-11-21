@@ -21,7 +21,7 @@ qu'une suite de lignes chiffrées :
 - **ligne de commentaire** : du texte seul, sans montant, **hors du total et des écritures**, plaçable n'importe où ;
 - **titre de section** : accepté par Guy (« bonne idée »), sans montant ;
 - **sous-total** : accepté sur le principe, mais **repoussé à une release ultérieure** (décision de Guy du 2026-11-18) :
-  Beat, contributeur, tient une comptabilité **assujettie à la TVA** ; un sous-total doit être juste en HT et TTC et par
+  Le contributeur tient une comptabilité **assujettie à la TVA** ; un sous-total doit être juste en HT et TTC et par
   taux, ou attendre. Issue #1330 (sous-totaux de section, milestone « Plus tard ») ;
 - **réordonnancement** des lignes à la main **avant la validation** (brouillon).
 
@@ -170,7 +170,7 @@ Un titre de section est une ligne de texte **sans montant**, hors du total et de
 toute la largeur du PDF ; il se place, se déplace (49-2) et se reprend dans un avoir comme un commentaire. L'API accepte le
 type `heading` à partir de cette story (retrait de la garde) ; elle dépend des 49-1a, 49-1b et 49-1c.
 
-**Sous-totaux : hors de la 0.20.0** (décision de Guy du 2026-11-18). Beat tient une comptabilité assujettie à la TVA : un
+**Sous-totaux : hors de la 0.20.0** (décision de Guy du 2026-11-18). Le responsable de l'epic tient une comptabilité assujettie à la TVA : un
 sous-total doit être juste en HT et TTC et par taux, ou attendre. Ils feront l'objet d'une release ultérieure — issue
 #1330 (sous-totaux de section, milestone « Plus tard ») ; le sens proposé par #1242 (total de la section, hors total et
 écritures) y sera repris.
@@ -187,7 +187,7 @@ sous-total doit être juste en HT et TTC et par taux, ou attendre. Ils feront l'
 - **Avec la 48-13** : `InvoiceForm.svelte` (#1233, chargement du client). **Arbitrage de Guy du 2026-11-18 : la 48-13 se
   fusionne d'abord** ; les stories de l'Epic 49 qui touchent ce fichier (49-1c, 49-2, 49-3) partent ensuite de la branche
   à jour. La 48-15 ne touche aucun fichier de l'éditeur de lignes : elle ne bloque pas l'Epic 49.
-- **Avec la PR #1327 de Beat** : elle touche `kesh-qrbill/src/largeurs.rs` et `lib.rs` (et les catalogues) ; la 49-1b en
+- **Avec la PR #1327 du contributeur** : elle touche `kesh-qrbill/src/largeurs.rs` et `lib.rs` (et les catalogues) ; la 49-1b en
   tient compte si elle est fusionnée avant.
 
 ## Fichiers et modules touchés (déclarés au kickoff, mis à jour au découpage)
@@ -207,12 +207,12 @@ frontend (`components/invoices`, `features/invoices`, `features/credit-notes`, r
 `scripts/recette-montee.sh`, manuels FR/DE/IT/EN (`.tex` seulement), `docs/api-external.md`, `docs/testing.md`,
 `docs/migrations-idempotence-audit.md`. **`kesh-core` n'en fait plus partie.**
 
-## Fichiers communs (avec l'Epic 48 et les PR de Beat)
+## Fichiers communs (avec l'Epic 48 et les PR du contributeur)
 
 | Fichier | Qui d'autre | Règle |
 |---|---|---|
 | `lib/components/invoices/InvoiceForm.svelte` | 48-13 (#1233) | **la 48-13 se fusionne d'abord** (arbitrage de Guy du 2026-11-18) ; 49-1c, 49-2, 49-3 partent ensuite de la branche à jour |
-| `crates/kesh-qrbill/src/pdf.rs`, `types.rs` | PR #1327 de Beat (`largeurs.rs`, `lib.rs`) | le second arrivé résout |
+| `crates/kesh-qrbill/src/pdf.rs`, `types.rs` | PR #1327 du contributeur (`largeurs.rs`, `lib.rs`) | le second arrivé résout |
 | manuel d'administration (FR, seul existant) | 49-1a (« Pour les intégrations ») et 49-1d (« Passer à la 0.20.0 ») | la 49-1d complète ce que pose la 49-1a |
 | catalogues i18n (4 locales), `sprint-status.yaml`, `sitesTotal`, totaux de l'audit des migrations, schéma de test | toutes | blocs par épique ; compteurs recomptés après fusion |
 | manuels `.tex` | toutes ; le menu (v0200-menu-sous-groupes) fusionne en dernier | PDF jamais commités |

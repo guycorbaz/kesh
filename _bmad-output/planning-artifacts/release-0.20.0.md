@@ -4,7 +4,7 @@
 revue terminée, gates de clôture et E2E complet verts) ; une story non close sort vers une épique ultérieure, **la date ne
 bouge pas** (kesh:D7, kesh:D11). Kickoff tenu en autonomie par l'orchestrateur le 2026-11-18, sur les décisions de Guy du
 même jour (page « kickoff-0.20.0 » et conversation) ; révisé le même jour sur les réponses de Guy aux points ouverts du
-kickoff, puis sur les découpages de la 48-13 (→ 48-15) et de la 49-1 (→ 49-1a à 49-1d). Ce document s'adresse aussi aux contributeurs — en particulier à Beat
+kickoff, puis sur les découpages de la 48-13 (→ 48-15) et de la 49-1 (→ 49-1a à 49-1d). Ce document s'adresse aussi aux contributeurs — en particulier au responsable de l'epic
 et à son agent — pour qu'ils voient d'avance où leurs changements croiseront les nôtres.
 
 > ⚠️ **Une migration** — celle de la 49-1a (types de lignes de la facture client), la 96ᵉ. **Sauvegarde complète
@@ -23,7 +23,7 @@ et à son agent — pour qu'ils voient d'avance où leurs changements croiseront
 | Guy, 2026-11-18 | **Epic 49** — types de lignes de la facture client (#1242), trois stories au kickoff, toutes visées pour la 0.20.0 ; la 49-1 porte la migration. | 2026-11-18 |
 | Guy, 2026-11-18 | **48-13 découpée** à sa validation P2 : la **48-15-troncatures-silencieuses** (#1331 à #1334, ajoutées à la release pour diminuer les bugs, et cinq champs du PDF) en naît, avec **dérogation à la règle de splitting** (sept domaines, un même geste mécanique en deux lots) ; elle part de la 48-13 fusionnée et ne bloque pas l'Epic 49. Sites voisins hors périmètre : #1335 à #1340, sans milestone. | 2026-11-18 |
 | Orchestrateur, 2026-11-18 | **49-1 découpée** (splitting préventif, neuf modules) en 49-1a (migration, modèle, API gardée), 49-1b (PDF), 49-1c (écran), 49-1d (recette de montée) ; **la 49-1a ne sort jamais sans la 49-1d**, la 49-1c pas sans la 49-1b ; trois types stockés (`priced`, `comment`, `heading`), pas de sous-total (#1330). L'Epic 49 compte six stories. | 2026-11-18 |
-| Guy, 2026-11-18 | **Sous-totaux repoussés** à une release ultérieure : Beat tient une comptabilité assujettie à la TVA, un sous-total doit être juste en HT/TTC et par taux, ou attendre. La 49-3 ne porte plus que les **titres de section** (clé renommée `49-3-titres-de-section`). La migration de la 49-1 pose les types produit, sans produit, commentaire et titre ; le type sous-total n'y entre que si la fiche de la 49-1 établit qu'il ne préjuge pas de son sens TVA, sinon il viendra avec sa propre migration. Issue à ouvrir par l'orchestrateur, « sous-totaux de section », milestone « Plus tard ». | 2026-11-18 |
+| Guy, 2026-11-18 | **Sous-totaux repoussés** à une release ultérieure : le responsable de l'epic tient une comptabilité assujettie à la TVA, un sous-total doit être juste en HT/TTC et par taux, ou attendre. La 49-3 ne porte plus que les **titres de section** (clé renommée `49-3-titres-de-section`). La migration de la 49-1 pose les types produit, sans produit, commentaire et titre ; le type sous-total n'y entre que si la fiche de la 49-1 établit qu'il ne préjuge pas de son sens TVA, sinon il viendra avec sa propre migration. Issue à ouvrir par l'orchestrateur, « sous-totaux de section », milestone « Plus tard ». | 2026-11-18 |
 | Guy, 2026-11-18 | **#1234 retirée** de la 48-13 et de la 0.20.0, renvoyée à « Plus tard » (latente tant que Kesh ne renseigne pas `billing_information`). | 2026-11-18 |
 | Guy, 2026-11-18 | **La 48-13 se fusionne avant** les stories de l'Epic 49 qui touchent `InvoiceForm.svelte` (petite, sur le chemin de la première facture de fin novembre). | 2026-11-18 |
 | Guy, 2026-11-18 | Story de solde : **#1263, #1262, #1261, #1255** au milestone v0.20.0 ; milestone **v0.21.0** créé (vendredi 2026-12-04), #1236 y est. | 2026-11-18 |
@@ -32,7 +32,7 @@ et à son agent — pour qu'ils voient d'avance où leurs changements croiseront
 | Guy, 2026-11-18 | **v0200-menu-sous-groupes** (#1253) : l'amélioration de la release (une par release, décision de Guy du 2026-11-17), hors épique. | 2026-11-18 |
 | Guy, 2026-11-18 | **Une seule migration** en 0.20.0, celle de la 49-1 (49-1a depuis le découpage). | 2026-11-18 |
 | Guy, 2026-11-18 | **Deux épiques en parallèle** (48 et 49), sur les deux voies de la station, pour la vitesse. | 2026-11-18 |
-| Guy, 2026-11-18 | **Correctifs de Beat** : la PR #1327 et trois correctifs annoncés entrent s'ils sont fusionnés avant la coupure, après revue d'intégration et CI de la copie ; #1327 se fusionne avant le lancement de la 48-11. | 2026-11-18 |
+| Guy, 2026-11-18 | **Correctifs du contributeur** : la PR #1327 et trois correctifs annoncés entrent s'ils sont fusionnés avant la coupure, après revue d'intégration et CI de la copie ; #1327 se fusionne avant le lancement de la 48-11. | 2026-11-18 |
 | Guy, 2026-11-18 | Ordre de sortie : la story de solde (48-14) puis la 48-2 sortent les premières ; **48-11 et 48-13 sont prioritaires**. | 2026-11-18 |
 
 ## Base de départ
@@ -139,7 +139,7 @@ séparés, `mem-guard` à deux exécutions de 10G) :
 
 Chaque story a son worktree et ses bases `kesh_<clé>` ; aucun agent ne redémarre le conteneur MariaDB.
 
-## Correctifs de Beat (contributeur)
+## Correctifs du contributeur
 
 Ils entrent dans la 0.20.0 **s'ils sont fusionnés dans `main` avant la coupure**, après revue d'intégration et CI de la
 copie ; aucun ne porte de migration :
@@ -172,8 +172,8 @@ Recompté le 2026-11-18 par les commandes du `CLAUDE.md` :
 | P1 ouvertes | 14 | **14** (dont 11 `bug`/`known-failure`) | — |
 | *Le soir du 2026-11-18* | | *507 issues, 257 bugs, 14 P1* | *les fiches de la release ont ouvert #1330 à #1340* |
 
-Hors les **56 issues masquées** du compte de l'agent de Beat (#1266–#1271, #1277–#1326), non comptées ; décision de Guy :
-attendre leur rétablissement jusqu'au 2026-11-25, sinon recréation depuis le compte de Beat, et correction du décompte au
+Hors les **56 issues masquées** du compte de l'agent du contributeur (#1266–#1271, #1277–#1326), non comptées ; décision de Guy :
+attendre leur rétablissement jusqu'au 2026-11-25, sinon recréation depuis le compte du responsable de l'epic, et correction du décompte au
 tag par une annotation datée.
 
 La release vise **dix-neuf bugs** (`bug` ou `known-failure`), tous au milestone : douze dans les stories 48-10 à 48-13
@@ -206,7 +206,7 @@ la rétrospective avec leur raison (`CLAUDE.md` § *Priorités des défauts*).
 |---|---|
 | mer. 2026-11-18 | kickoff (ce document) ; fiches 48-13, 48-15, 48-11, 49-1a à écrire en premier (48-13, 48-15, 49-1a en validation, P3) |
 | jeu. 19 → mer. 25 | développement sur les deux voies ; chaque story close se fusionne dans sa branche d'épique et se pousse |
-| mer. 2026-11-25 | échéance des issues masquées de Beat (décision de Guy) |
+| mer. 2026-11-25 | échéance des issues masquées du responsable de l'epic (décision de Guy) |
 | **jeu. 2026-11-26 au soir** | **coupure** : n'entre que ce qui est clos ; sortie dans l'ordre ci-dessus |
 | **ven. 2026-11-27** | intégration (fusions, gates, recette de montée depuis l'image 0.19.0 sur une base peuplée de factures réelles simulées, revue du code d'intégration, PR, CI) ; accord de fusion de Guy vers midi ; tag et image ; NAS par Guy, **après sauvegarde complète** |
 
@@ -220,7 +220,7 @@ Les huit points ouverts du kickoff sont réglés ; il n'en reste aucun.
    49-1d ; la 48-13 a été coupée en 48-13 et 48-15, celle-ci avec dérogation (décision de Guy) ; la 48-12 reste à juger.
 3. **Migration** — orchestrateur : non breaking, colonnes `NOT NULL`, valeurs neutres pour les lignes non chiffrées,
    `CHECK` assouplis par type, `credit_note_lines` comprise ; `kesh_version_min_required` reste à 0.17.6.
-4. **Sous-totaux** — Guy : repoussés à une release ultérieure (justesse HT/TTC et par taux, Beat étant assujetti) ; la
+4. **Sous-totaux** — Guy : repoussés à une release ultérieure (justesse HT/TTC et par taux, le responsable de l'epic étant assujetti) ; la
    49-3 devient `49-3-titres-de-section` ; issue #1330 (sous-totaux de section, milestone « Plus tard »).
 5. **Issues de la story de solde** — Guy : #1263, #1262, #1261, #1255 sont au milestone v0.20.0.
 6. **Milestone v0.21.0** — créé (vendredi 2026-12-04) ; #1236 y est.

@@ -2,8 +2,8 @@
 
 Deuxième passe complète (Sonnet, modèle différent de la P1 Opus) de `bmad-code-review` (lis `.claude/skills/bmad-code-review/SKILL.md` et suis-le : couches
 Blind Hunter, Edge Case Hunter, Acceptance Auditor, triage), contexte frais, sur la story 37-3b, worktree
-`/home/beat/claude/kesh/.claude/worktrees/kesh-s37-3b` (branche `story/37-3b-ecritures-en-devise-ecrans`). N'écris
-nulle part ailleurs, sauf journaux dans `/home/beat/claude/kesh-gate-logs/s37-3b/review-p2/`.
+`<dépôt>/.claude/worktrees/kesh-s37-3b` (branche `story/37-3b-ecritures-en-devise-ecrans`). N'écris
+nulle part ailleurs, sauf journaux dans `<station>/kesh-gate-logs/s37-3b/review-p2/`.
 
 ## Périmètre
 
@@ -24,7 +24,7 @@ clé d'API) ; audit ; MCP (tailles) ; i18n 4 locales ; **manuels** (`.tex` contr
 
 Applique les patches des findings (CRITICAL à LOW selon le skill), avec leurs tests ; gate ciblé (fmt, clippy workspace,
 nextest des binaires touchés — **gate complet si un patch touche `kesh-db`** : migrations, repository, `post_restore`),
-sous ``/home/beat/claude/kesh-gate-logs/heavy.sh scripts/mem-guard.sh <commande>` (au plus deux exécutions lourdes sur la station ; backend lancé avec `7>&- 8>&- 9>&-`), base `kesh_s37_3b` (cf. `docs/agents-orchestration.md`) ; commit local
+sous ``<station>/kesh-gate-logs/heavy.sh scripts/mem-guard.sh <commande>` (au plus deux exécutions lourdes sur la station ; backend lancé avec `7>&- 8>&- 9>&-`), base `kesh_s37_3b` (cf. `docs/agents-orchestration.md`) ; commit local
 « fix(37-3b) : revue de code P2 — … » (aucun mot-clé de fermeture, aucune mention d'IA). Change Log de la fiche :
 « 2026-11-16 — revue de code P2 (<modèle>) : <décompte> ». N'affirme que ce qui a tourné.
 
@@ -48,7 +48,7 @@ exécutés (chiffres) ; décompte.
   **défauts introduits** par ces correctifs (le `flush` peut-il envoyer deux fois ou bloquer l'envoi ? `commitChfEntry`
   sur `onblur` : que se passe-t-il si on envoie sans quitter le champ, au clavier avec Entrée ? les refus indexés par
   compte avec deux lignes sur le même compte ? les tests neufs rougissent-ils sans leur correctif ?), puis le reste.
-- **Corrige aussi**, parmi les LOW non traités de la P1 (`/home/beat/claude/kesh-gate-logs/s37-3b/review-p1/issues-a-ouvrir-p1.md`) :
+- **Corrige aussi**, parmi les LOW non traités de la P1 (`<station>/kesh-gate-logs/s37-3b/review-p1/issues-a-ouvrir-p1.md`) :
   la ligne de différence au-delà de `DECIMAL(19,4)` qui rend 500 au lieu de 400 ; la conversion de même devise admise
   par le serveur (refus 400) ; le sélecteur qui offre des comptes en devise en mono-devise. Et ceux qui tiennent en
   quelques lignes. Mets à jour la liste de ce fichier (ce qui reste à ouvrir).

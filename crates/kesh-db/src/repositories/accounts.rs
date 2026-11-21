@@ -982,7 +982,7 @@ async fn guard_parent_change_in_tx(
             .await?;
     refuse_designated(hits, |_| true)?;
     refuse_foreign_parent_with_entries_in_tx(tx, new_parent_id).await?;
-    // Revue P1-2 (décision de Beat) : un parent qui porte des écritures, en
+    // Revue P1-2 (décision du responsable de l'epic) : un parent qui porte des écritures, en
     // quelque devise, est (ou passe) non imputable avec son solde, que plus
     // aucune saisie ne corrige — refusé. Après le refus propre à la devise, qui
     // garde son code. ⚠️ La création ne le refuse pas (écart tracé).

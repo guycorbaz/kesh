@@ -2,8 +2,8 @@
 
 Deuxième passe complète (Sonnet, modèle différent de la P1 Opus) de `bmad-code-review` (lis `.claude/skills/bmad-code-review/SKILL.md` et suis-le : couches
 Blind Hunter, Edge Case Hunter, Acceptance Auditor, triage), contexte frais, sur la story 37-4, worktree
-`/home/beat/claude/kesh/.claude/worktrees/kesh-s37-4` (branche `story/37-4-rapports-en-devise`). N'écris
-nulle part ailleurs, sauf journaux dans `/home/beat/claude/kesh-gate-logs/s37-4/review-p2/`.
+`<dépôt>/.claude/worktrees/kesh-s37-4` (branche `story/37-4-rapports-en-devise`). N'écris
+nulle part ailleurs, sauf journaux dans `<station>/kesh-gate-logs/s37-4/review-p2/`.
 
 ## Périmètre
 
@@ -24,7 +24,7 @@ clé d'API) ; audit ; MCP (tailles) ; i18n 4 locales ; **manuels** (`.tex` contr
 
 Applique les patches des findings (CRITICAL à LOW selon le skill), avec leurs tests ; gate ciblé (fmt, clippy workspace,
 nextest des binaires touchés — **gate complet si un patch touche `kesh-db`** : migrations, repository, `post_restore`),
-sous ``/home/beat/claude/kesh-gate-logs/heavy.sh scripts/mem-guard.sh <commande>` (au plus deux exécutions lourdes sur la station ; backend lancé avec `7>&- 8>&- 9>&-`), base `kesh_s37_4` (cf. `docs/agents-orchestration.md`) ; commit local
+sous ``<station>/kesh-gate-logs/heavy.sh scripts/mem-guard.sh <commande>` (au plus deux exécutions lourdes sur la station ; backend lancé avec `7>&- 8>&- 9>&-`), base `kesh_s37_4` (cf. `docs/agents-orchestration.md`) ; commit local
 « fix(37-4) : revue de code P2 — … » (aucun mot-clé de fermeture, aucune mention d'IA). Change Log de la fiche :
 « 2026-11-16 — revue de code P2 (<modèle>) : <décompte> ». N'affirme que ce qui a tourné.
 
@@ -49,7 +49,7 @@ exécutés (chiffres) ; décompte.
   visuel des PDF : régénère et regarde au moins le grand livre et la balance d'un compte en devise).
 - Les deux LOW non traités par la P1 (tests « CHF seulement » faibles ; « CHF » en dur au lieu de « devise
   principale ») : corrige-les s'ils tiennent en quelques lignes.
-- **Aucune mention d'IA dans les commits** (pas de `Co-Authored-By: Claude`), consigne de Beat qui prime. Aucun `GRANT`
+- **Aucune mention d'IA dans les commits** (pas de `Co-Authored-By: Claude`), consigne du responsable de l'epic qui prime. Aucun `GRANT`
   à la main.
 - Gates : gate complet si `kesh-db` est touché ; Vitest complet et `npm run build` si le frontend est touché. Pas d'E2E
   complet ici (fait à la clôture).

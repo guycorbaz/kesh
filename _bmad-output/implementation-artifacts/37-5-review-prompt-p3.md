@@ -2,9 +2,9 @@
 
 Passe braquée sur la remédiation P2 (`git show 2a370c4e`), mais **complète sur son rayon** : elle change une règle
 métier (le prédicat des comptes candidats à la réévaluation ne regarde plus `postable`), donc relis tous les sites qui
-en dépendent, pas seulement le diff. Worktree `/home/beat/claude/kesh/.claude/worktrees/kesh-s37-5` (branche
+en dépendent, pas seulement le diff. Worktree `<dépôt>/.claude/worktrees/kesh-s37-5` (branche
 `story/37-5-reevaluation-fin-exercice`). N'écris nulle part ailleurs, sauf journaux dans
-`/home/beat/claude/kesh-gate-logs/s37-5/review-p3/`.
+`<station>/kesh-gate-logs/s37-5/review-p3/`.
 
 À lire : la fiche 37-5 (AC, règle D1, entrées « revue de code P1 » et « P2 » du Change Log), l'epic (CR-8, A37, A41).
 
@@ -21,7 +21,7 @@ Cherche :
 4. Tests : rougissent-ils sans leur correctif ? Tests manquants (compte parent ci-dessus).
 Déclare les axes exercés / non exercés.
 
-Phase 2 : corrige, avec tests ; gate complet si `kesh-db` est touché (`/home/beat/claude/kesh-gate-logs/heavy.sh
+Phase 2 : corrige, avec tests ; gate complet si `kesh-db` est touché (`<station>/kesh-gate-logs/heavy.sh
 scripts/test-fast.sh --ci`, sans `mem-guard.sh` en plus), Vitest complet seul et build si le frontend est touché ; base
 `kesh_s37_5` sur `kesh-mariadb-dev3` (3308), aucun `GRANT` ; commit « fix(37-5) : revue de code P3 — … » (aucun mot-clé
 de fermeture, **aucune mention d'IA**). Change Log « 2026-11-17 — revue de code P3 (<modèle>) : <décompte> ». Aucun

@@ -2,7 +2,7 @@
 
 **Date : 2026-11-18, le soir du tag `v0.19.0`.** Bilan court, tenu **en autonomie** : rien n'a été décidé à la place de
 Guy ; ce qui demande sa décision est au § 7. Ce n'est pas une rétrospective : les Epics 42, 43 et 44 restent ouverts et
-continuent en 0.20.0 ; l'Epic 37 (multi-devises, Beat) a déjà sa rétrospective, `epic-37-retro-2026-11-17.md`, qui n'est
+continuent en 0.20.0 ; l'Epic 37 (multi-devises, responsable de l'epic) a déjà sa rétrospective, `epic-37-retro-2026-11-17.md`, qui n'est
 pas refaite ici.
 
 **Périmètre.** De `v0.18.0` (tag annoté 2026-11-16T17:45:46+01:00, squash `8b50fd195`) à `v0.19.0` (tag annoté
@@ -98,13 +98,13 @@ dans quatre boucles (43-1a, 43-7, 44-1a, v0190-correction) ; la 43-7 le déclare
   lourde à la fois (C-rel0190-6, -11).
 - **KF-063 (#1261)** rouge au premier gate-ci de clôture de la 43-6, vert au rejeu : intermittence connue, tracée,
   ouverte.
-- **La coordination avec l'agent de Beat** : courriels entre agents (autorisés le 18), un défaut d'échappement CSV signalé
+- **La coordination avec l'agent du contributeur** : courriels entre agents (autorisés le 18), un défaut d'échappement CSV signalé
   hors issue publique (avis de sécurité privé à traiter en 0.20.0, décision de Guy), une fusion de #1247 en contournant la
   protection de branche (CI du fork sans secrets, copie #1254 verte). Puis le compte `agentizedbeat` a ouvert une
   cinquantaine d'issues en une demi-heure et **GitHub l'a restreint** : ses 56 issues (#1266–#1271, #1277–#1326) sont
   masquées (404).
 - **Dates décalées en route** : coupure du jeudi soir avancée au mercredi, un rectificatif « quatre migrations, non
-  cinq » envoyé à l'agent de Beat après coup (C-rel0190-1).
+  cinq » envoyé à l'agent du contributeur après coup (C-rel0190-1).
 
 ## 4. Décompte au tag
 
@@ -160,7 +160,7 @@ probablement, aux six #1266–#1271 alors visibles.
 
 ## 7. Questions pour Guy
 
-- **Q1 — Les 56 issues masquées.** Si GitHub ne rétablit pas le compte de l'agent de Beat, faut-il les faire recréer
+- **Q1 — Les 56 issues masquées.** Si GitHub ne rétablit pas le compte de l'agent du contributeur, faut-il les faire recréer
   (par qui, sous quel compte) ou les laisser perdues ? Et une fois visibles, veux-tu que le décompte au tag soit corrigé
   ici par annotation datée ?
 - **Q2 — #1198.** La Q4 de la rétrospective de l'Epic 36 (verser #1198 au report assumé de la TVA) est-elle tranchée ?

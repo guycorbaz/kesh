@@ -1,7 +1,7 @@
 # Epic 37 — couverture API et MCP (audit du 2026-11-14)
 
 Audit en lecture seule (Opus) des six fiches 37-* contre le code : chaque fonction de l'epic a-t-elle une route HTTP,
-est-elle faisable **par l'API seule** (Beat importera son exercice 2024 par l'API, sans écran), et les outils du serveur
+est-elle faisable **par l'API seule** (le responsable de l'epic importera son exercice 2024 par l'API, sans écran), et les outils du serveur
 MCP (lecture seule, Epic 32) touchés par l'epic sont-ils étendus ? Routes et outils cités par les fiches : tous vérifiés
 au code (une trentaine de lignes) ; un écart mineur : 37-3a AC-8 cite `ecritures.rs:126` pour la struct `Ligne`, qui
 commence à `:122`.

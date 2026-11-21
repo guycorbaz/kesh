@@ -1,7 +1,7 @@
 # Prompt de fin de story — 37-2
 
-Worktree `/home/beat/claude/kesh/.claude/worktrees/kesh-s37-2` (branche `story/37-2-cours-mensuels-afc`) ;
-journaux dans `/home/beat/claude/kesh-gate-logs/s37-2/final2/`. Règles : `CLAUDE.md` (*Test Locally First*, E2E,
+Worktree `<dépôt>/.claude/worktrees/kesh-s37-2` (branche `story/37-2-cours-mensuels-afc`) ;
+journaux dans `<station>/kesh-gate-logs/s37-2/final2/`. Règles : `CLAUDE.md` (*Test Locally First*, E2E,
 *Plafonds mémoire*), `docs/agents-orchestration.md` (base `kesh_s37_2` / `kesh_e2e_s37_2`, port propre, verrou
 `flock`, `scripts/mem-guard.sh`, aucun `GRANT` à la main, aucun redémarrage du conteneur), `docs/testing.md`
 § « Les échecs attendus ».
@@ -20,7 +20,7 @@ journaux dans `/home/beat/claude/kesh-gate-logs/s37-2/final2/`. Règles : `CLAUD
 
 Rapport bref : E2E (passés, échecs, ignorés, verdict de chaque échec hors liste), commits.
 
-Exécutions lourdes uniquement par `/home/beat/claude/kesh-gate-logs/heavy.sh scripts/mem-guard.sh <commande>` (au plus
+Exécutions lourdes uniquement par `<station>/kesh-gate-logs/heavy.sh scripts/mem-guard.sh <commande>` (au plus
 deux sur la station ; backend lancé avec `7>&- 8>&- 9>&-`). Les échecs hors liste déjà établis comme préexistants à
 `19bf12fb` (`backup-restore-new-install.spec.ts:262`, `:381`, `bank-import.spec.ts:130`, `opening-balances.spec.ts:156`,
 point 7 de la liste des issues) n'ont pas à être rejoués sur la base. N'arrête que tes propres processus, par PID

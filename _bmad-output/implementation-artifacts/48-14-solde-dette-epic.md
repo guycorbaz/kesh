@@ -717,7 +717,7 @@ doublons cherchés : #1235 (« LinkSettlementModal : ni anti-rebond ni abandon�
 | `ReconciliationProposals.svelte` | aucune story de la release déclarée au kickoff | **écart au tableau des fichiers du kickoff** (qui ne nomme que `GroupSettlementModal.svelte`) : imposé par D3, même module ; dit au rapport |
 | `crates/kesh-api/tests/bank_account_closed_inventory.rs` | aucune déclarée | registre seulement (D4) |
 
-Aucun fichier de Beat (PR #1327 : `kesh-report/src/pdf.rs`, `kesh-qrbill`) n'est touché.
+Aucun fichier du responsable de l'epic (PR #1327 : `kesh-report/src/pdf.rs`, `kesh-qrbill`) n'est touché.
 
 **Ce qui doit rester vrai** :
 

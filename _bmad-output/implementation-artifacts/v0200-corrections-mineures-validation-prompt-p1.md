@@ -70,7 +70,7 @@ Rapport : **`/home/gcorbaz/devel/kesh-gate-logs/v0200cm/validation-p1.md`** (le 
     « Passer à la 0.20.0 » dit les changements de l'API ; aucun mot-clé de fermeture (`closes`, `fixes`, `resolves` et variantes)
     dans la fiche ni dans les messages de commit (`git log origin/epic/48-corrections-0-20-0..HEAD --format=%B`).
 12. **Fichiers communs et coordination.** Conflits possibles avec les autres stories de la release (48-11, 48-12a/b, 48-14, Epic 49,
-    v0200-menu-sous-groupes) et la PR #1327 de Beat ; `sprint-status.yaml` (clé ajoutée au bloc de l'Epic 48).
+    v0200-menu-sous-groupes) et la PR #1327 du contributeur ; `sprint-status.yaml` (clé ajoutée au bloc de l'Epic 48).
 
 ## Rapport
 

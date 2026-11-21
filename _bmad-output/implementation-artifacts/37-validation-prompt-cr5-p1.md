@@ -1,10 +1,10 @@
 # Prompt de validation CR-5 P1 — fiches révisées de l'Epic 37
 
-Tu fais la **première passe complète** d'un nouveau cycle de validation, ouvert par la revue 3 de Beat (CR-5),
-sur une fiche du dépôt `/home/beat/limu/compta/kesh` (Kesh, logiciel comptable suisse en production : Rust/Axum,
+Tu fais la **première passe complète** d'un nouveau cycle de validation, ouvert par la revue 3 du responsable de l'epic (CR-5),
+sur une fiche du dépôt `<dépôt>` (Kesh, logiciel comptable suisse en production : Rust/Axum,
 SvelteKit, MariaDB). À lire d'abord :
 
-- le fichier d'epic `_bmad-output/planning-artifacts/epic-37-multi-devises.md` : décisions **D1–D10** et **R1–R10** et **S1–S6** , **T1–T6** et **U1–U6** (sections CR-2 à CR-5 ; « Revue 3 de Beat — CR-5 » prime) (D9 : table des
+- le fichier d'epic `_bmad-output/planning-artifacts/epic-37-multi-devises.md` : décisions **D1–D10** et **R1–R10** et **S1–S6** , **T1–T6** et **U1–U6** (sections CR-2 à CR-5 ; « Revue 3 du responsable de l'epic — CR-5 » prime) (D9 : table des
   cours modifiable ; D10 : réévaluation au cours journalier de clôture ; *Terminologie*) et registre, en particulier
   **CR-5 — amendements du registre et arbitrages** (A23–A29) ;
 - la fiche à valider (ta mission), dont l'entrée « révision CR-5 » du Change Log ; le diff de la révision :

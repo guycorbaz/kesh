@@ -2,8 +2,8 @@
 
 Deuxième passe complète (modèle différent de P1, Opus ; la P1 Sonnet a rendu 0 au-dessus de LOW sur un diff de 134 fichiers : un « 0 » se vérifie) de `bmad-code-review` (lis `.claude/skills/bmad-code-review/SKILL.md` et suis-le : couches
 Blind Hunter, Edge Case Hunter, Acceptance Auditor, triage), contexte frais, sur la story 37-1, worktree
-`/home/beat/claude/kesh/.claude/worktrees/kesh-s37-1` (branche `story/37-1-reglage-et-devise-des-comptes`). N'écris
-nulle part ailleurs, sauf journaux dans `/home/beat/claude/kesh-gate-logs/s37-1/review-p2/`.
+`<dépôt>/.claude/worktrees/kesh-s37-1` (branche `story/37-1-reglage-et-devise-des-comptes`). N'écris
+nulle part ailleurs, sauf journaux dans `<station>/kesh-gate-logs/s37-1/review-p2/`.
 
 ## Périmètre
 

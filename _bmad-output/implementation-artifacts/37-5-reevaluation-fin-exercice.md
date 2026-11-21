@@ -5,16 +5,16 @@ Status: done
 *Fiche rédigée le 2026-11-14 (Opus 5.5), branche `epic/37-multi-devises`. Epic 37, D5 corrigé par D10, D9, C-37-7
 (amendé, CR-1). Suit 37-4.
 **Aucune migration attendue** (`rate_source = 'revaluation'` posé par 37-3a ; `closing_rate_kind` posé par 37-1).
-Révisée le 2026-11-14 pour la revue de Beat (CR-2 : R3, R6, R9), qui prime sur le registre antérieur : **une écriture
+Révisée le 2026-11-14 pour la revue du responsable de l'epic (CR-2 : R3, R6, R9), qui prime sur le registre antérieur : **une écriture
 par compte réévalué** (R9), cours de clôture selon le genre choisi pour l'exercice (R6), refus en exercice
-mono-devise (R3). Révisée de nouveau pour la revue CR-3 de Beat, qui prime sur CR-2 : **S2** — la contrepartie de
+mono-devise (R3). Révisée de nouveau pour la revue CR-3 du responsable de l'epic, qui prime sur CR-2 : **S2** — la contrepartie de
 chaque écriture prend les comptes de différence **propres** du compte réévalué s'il en a (37-1 AC-4 bis) ; **S4** —
 exercice de durée quelconque (aucune constante de douze mois : le mois et le jour de clôture sont ceux de `end_date`).
-Révisée enfin pour la revue 2 de Beat (CR-4) : **T3** — la ligne ne porte aucune colonne de devise, la devise est celle
-du compte ; **T2** — exercice au 1er janvier ajouté aux tests. Révisée en dernier pour la revue 3 de Beat (CR-5), qui
+Révisée enfin pour la revue 2 du responsable de l'epic (CR-4) : **T3** — la ligne ne porte aucune colonne de devise, la devise est celle
+du compte ; **T2** — exercice au 1er janvier ajouté aux tests. Révisée en dernier pour la revue 3 du responsable de l'epic (CR-5), qui
 prime sur tout : **U1** — le cours de clôture se lit dans `exchange_rates` de 37-2 (le **cours retenu par la
 société**, une seule valeur), et sa **source** (valeur brute : `afc`, `manual` ou autre, A30) est affichée et auditée ; une correction de l'AFC non
-reprise n'y change rien (AC-1, AC-2, AC-6, AC-7). Révisée pour CR-8 (A37–A39, précision de Beat du 2026-11-16) : un
+reprise n'y change rien (AC-1, AC-2, AC-6, AC-7). Révisée pour CR-8 (A37–A39, précision du responsable de l'epic du 2026-11-16) : un
 compte en devise non réévalué **empêche la clôture** (contrôle **K9** bloquant, AC-9) ; l'avis de K9 montre l'aperçu et
 son bouton « Réévaluer » passe les écritures montrées ; l'aperçu montre les réévaluations déjà passées, l'ancienne et la
 nouvelle valeur cumulée, avec des liens (AC-1, AC-6).*
@@ -172,14 +172,14 @@ devise n'est pas réévalué (A37).
    - **Livres tenus ailleurs, importés par l'API (V8, CR-6)** : la réévaluation des livres d'origine ne s'importe
      **pas** en écritures — sa ligne sur le compte en devise (montant en devise 0, CHF non nul) n'a de forme admise que
      `revaluation`, refusée par l'API (37-3a AC-6) ; elle se **repasse** par cette route, à la fin de l'exercice
-     importé, avec les cours de clôture des livres d'origine dans `rates` — pour la recette de Beat, `{ "USD":
+     importé, avec les cours de clôture des livres d'origine dans `rates` — pour la recette du responsable de l'epic, `{ "USD":
      "0.91193", "EUR": "0.94947" }` au 31.12.2024 (cours journaliers, fichier d'epic D10) — et `accountIds` = les
      comptes que les livres d'origine réévaluaient. Le CHF obtenu égale celui des livres d'origine dès que les autres
      écritures y ont été reprises à leur CHF (`chf` ou `debit`/`credit`, 37-3a AC-6, V1) : `round(solde en devise ×
      cours) − solde CHF`. Genre des cours reçus : la règle unique de l'AC-1 (*Genre d'un cours reçu dans `rates`*).
      Écrit au manuel (AC-8) et au guide d'API (37-3b AC-6). CR-8 : un cours de `rates` différent du cours retenu par
      la société laisse K9 en attention et la clôture refusée (AC-9) — pour clôturer l'exercice importé, d'abord
-     **récupérer le cours du jour de clôture** s'il égale celui des livres d'origine (le cas de la recette de Beat : cours
+     **récupérer le cours du jour de clôture** s'il égale celui des livres d'origine (le cas de la recette du responsable de l'epic : cours
      journaliers OFDF), sinon saisir ces cours de clôture d'origine comme cours saisis (37-2) ; la recette V7 ne clôt
      pas et n'en dépend pas.
    - **Fonction de dépôt unique** `fx_revaluation::post(pool, user_id, actor_api_key_id, company_id, fiscal_year_id,
@@ -252,7 +252,7 @@ devise n'est pas réévalué (A37).
      renvoie les cours préremplis, le genre serait sans cela toujours `request` et ne dirait rien. Ces lectures (cours
      retenus par la société, du jour et du mois de fin, avec leur source) se font **avant la transaction**, avec celles des cours (37-2 : aucune lecture de cours
      sous le verrou de l'exercice), et non à la volée sous les verrous.
-   - **Une écriture par compte réévalué (R9, CR-2 — remplace l'écriture unique)**, comme les livres 2024 de Beat
+   - **Une écriture par compte réévalué (R9, CR-2 — remplace l'écriture unique)**, comme les livres 2024 du responsable de l'epic
      (« Gain de change PAYPAL ONLINE USD 0.91193 ») : chaque compte d'écart non nul reçoit **sa** pièce journal `OD`,
      datée du dernier jour de l'exercice, de **deux lignes** — la ligne du compte réévalué et sa contrepartie CHF (au
      crédit du compte de gains si D > 0, au débit du compte de pertes si D < 0, pour |D|). Chaque écriture ne porte
@@ -569,7 +569,7 @@ devise n'est pas réévalué (A37).
      ayant repris le défaut) ; Vitest : l'aperçu ne reçoit que les cours modifiés, un `404 RATE_NOT_PUBLISHED` du
      `POST /fetch` laisse le repli affiché.
 8. **AC-8 — Manuel** : réévaluation, cours journalier OFDF de la date de clôture (D10 : la pratique du cours de
-   clôture, et les cours que portaient les livres de Beat), contrepartie sur les comptes de différence propres du
+   clôture, et les cours que portaient les livres du responsable de l'epic), contrepartie sur les comptes de différence propres du
    compte réévalué s'il en a (S2), exercice de durée quelconque (S4), repli sur le cours mensuel AFC du mois de clôture (la méthode de
    calcul du cours mensuel ne se décrit qu'après confirmation, R4 amendé), choix du genre de clôture par exercice (R6), une écriture
    par compte réévalué (R9), correction par suppression ou nouveau passage, la contre-passation ne corrigeant que dans un exercice en cours (AC-3), refus en
@@ -585,7 +585,7 @@ devise n'est pas réévalué (A37).
    l'aperçu et son bouton « Réévaluer », et le cours d'une passation à un autre cours que celui de la société, à
    récupérer (cours du jour de clôture) ou à saisir à l'écran *Cours de change* pour que K9 l'accepte (AC-9) ; i18n ; manuel en `.tex` seulement (PDF non commité,
    régénéré à la release).
-9. **AC-9 — Contrôle de clôture K9 bloquant (A37, A38 ; CR-8, précision de Beat du 2026-11-16).**
+9. **AC-9 — Contrôle de clôture K9 bloquant (A37, A38 ; CR-8, précision du responsable de l'epic du 2026-11-16).**
    - **Le mécanisme lu au code.** Le panneau des contrôles ne bloque rien par lui-même (`closing_checks.rs:24` :
      « Rien ne **bloque** : la clôture garde son unique refus existant (K1, `fiscal_years::close`) ») : K1 est `blocking`
      parce que `fiscal_years::close` refuse, à son étape (d), sur la relecture verrouillante du plus ancien antérieur
@@ -627,7 +627,7 @@ devise n'est pas réévalué (A37).
      modifié (« ce cours ne vaut que pour cette passation : la clôture vérifie au cours retenu par la société »).
      **Premier remède, avant toute saisie** (37-5-CR8-P1-3) : quand le cours passé est le cours **publié** du jour
      de clôture, *Récupérer le cours du JJ.MM.AAAA* (37-2) le copie dans `exchange_rates` (`afc`) et en fait le cours
-     par défaut, sans saisie. **Livres de Beat au 31.12.2024** (genre `day`, cours journaliers OFDF 0.91193 et
+     par défaut, sans saisie. **Livres du responsable de l'epic au 31.12.2024** (genre `day`, cours journaliers OFDF 0.91193 et
      0.94947, D10) : K9 passe `ok` **sans saisie dès que ces deux cours journaliers sont dans `exchange_rates`** —
      copiés à la récupération du jour de clôture, ou déjà récupérés quand l'exercice multi-devises s'est créé
      (37-2 AC-3 bis : la copie suit une valeur publiée déjà connue) ; sinon la résolution
@@ -636,8 +636,8 @@ devise n'est pas réévalué (A37).
    - **Un compte en devise qu'on ne veut pas réévaluer bloque la clôture (A37, 37-5-CR8-P1-2).** K9 juge **tous** les
      comptes de l'aperçu : décocher un compte (poste non monétaire — stock, immobilisation, capital en devise — que
      l'écran de l'AC-6 permet de décocher à la passation) ne le sort pas de K9, et l'exercice ne se clôt pas tant que
-     son écart n'est pas nul. Conséquence **assumée** de la décision de Beat (A37, qui ne prévoit pas
-     d'exception) ; le manuel (AC-8) dit de tenir un tel poste sur un compte **en CHF**. **Tranché par Beat (A41,
+     son écart n'est pas nul. Conséquence **assumée** de la décision du responsable de l'epic (A37, qui ne prévoit pas
+     d'exception) ; le manuel (AC-8) dit de tenir un tel poste sur un compte **en CHF**. **Tranché par le responsable de l'epic (A41,
      epic 37, section CR-8, 2026-11-16, option a)** : un poste non monétaire se tient sur un compte en CHF, aucune
      marque « non monétaire » n'est ajoutée aux comptes (KISS) — ni colonne, ni case, ni exception dans K9.
    - **Le refus à la clôture.** **Tout est dans `fiscal_years::close`** (37-5-CR8-P1-1) : sa signature **ne change pas**
@@ -668,7 +668,7 @@ devise n'est pas réévalué (A37).
      (37-5-CR8-P1-9) : `close` le rend tel quel (400 `FX_VALUE_OUT_OF_RANGE`), l'aperçu en fait un blocker du compte sélectionné (37-5-CR-P2-D2) ; au panneau, il ne doit pas
      faire perdre les huit autres contrôles — K9 est alors `attention`, le compte dans `details.accounts`, `reason`
      `NOT_REVALUED`, `delta` `null`.
-   - **L'avis à l'écran (A38, précision de Beat).** Dans le panneau *Préparer la clôture*, K9 en attention montre
+   - **L'avis à l'écran (A38, précision du responsable de l'epic).** Dans le panneau *Préparer la clôture*, K9 en attention montre
      **directement l'aperçu** (le tableau de l'AC-6, composant partagé : comptes, anciennes et nouvelles valeurs,
      écarts, liens), lu sans `accountIds` ni `rates` (cours par défaut, présélection), **avant** tout clic ; le bouton
      **« Réévaluer »** passe **les écritures montrées** (`{ rates: cours affichés des devises cochées, accountIds:
@@ -677,7 +677,7 @@ devise n'est pas réévalué (A37).
      ligne du cours de l'AC-6** (même composant, en lecture seule : cours, source, genre, et le **repli mensuel
      signalé** au genre `day`), avec « Récupérer le cours du JJ.MM.AAAA » aux mêmes conditions qu'à l'AC-6 (genre
      `day`, repli ou absence, date de fin passée), puis relecture de l'aperçu et des contrôles (37-5-CR8-P2-2 : sans
-     elle, « Réévaluer » passerait d'un clic au cours mensuel de repli sans que le repli se voie — pour Beat, 0.8846
+     elle, « Réévaluer » passerait d'un clic au cours mensuel de repli sans que le repli se voie — pour le responsable de l'epic, 0.8846
      au lieu du cours du jour 0.91193 — alors que l'AC-6 le signale et propose la récupération) ; les `blockers[]` de l'aperçu s'affichent
      sous le tableau avec le message du serveur (période verrouillée, exercice antérieur ouvert…), comme à l'écran de
      l'AC-6 — le bouton désactivé dit pourquoi (37-5-CR8-P1-5) ; un compte **archivé** à écart non nul, non
@@ -724,7 +724,7 @@ devise n'est pas réévalué (A37).
      sans compte en devise et sans aucun cours en base → `ok` ; écart non nul → `attention`, `details` ; devise sans
      cours → `RATE_UNAVAILABLE` ; passation au cours par défaut → `ok` ; passation à un cours `request` → `attention` ;
      écriture tardive → `attention` ; compte archivé à écart non nul → `attention` ; devise sans cours mais compte à
-     solde nul (devise et CHF) → `ok` ; **recette de Beat** (37-5-CR8-P1-3) : livres importés, passation à 0.91193
+     solde nul (devise et CHF) → `ok` ; **recette du responsable de l'epic** (37-5-CR8-P1-3) : livres importés, passation à 0.91193
      avec le cours journalier du 31.12.2024 présent dans `exchange_rates` → `ok` sans saisie, et sans lui (repli
      mensuel) → `attention` ; compte décoché à la passation, écart restant → `attention` (A37) ; calcul hors bornes →
      `attention` sans perdre les huit autres. Clôture : 409
@@ -826,7 +826,7 @@ correctifs par l'orchestrateur de la passe. Prompt : `37-5-review-prompt-p1.md`.
 l'AC-9 ; un compte en devise ne devient non imputable avec un solde que par la création d'un sous-compte ou un `PUT`
 `postable=false`, chemins antérieurs à la 37-5 qui ne regardent pas les mouvements. Remède à trancher (lister le
 compte non imputable à solde comme un archivé et le compter à K9, ou refuser le passage à non imputable d'un compte
-en devise mouvementé) : issue à ouvrir par l'orchestrateur, propriétaire Beat, à planifier dans l'Epic 37 avant la
+en devise mouvementé) : issue à ouvrir par l'orchestrateur, propriétaire : le responsable de l'epic, à planifier dans l'Epic 37 avant la
 release. *U1, restauration* : l'aperçu après restauration d'un `.keshbackup` sur une installation neuve (cours
 restauré, aucun appel sortant) n'a pas de test propre ; la table `exchange_rates` est couverte par la sauvegarde de
 37-2 et l'aperçu ne lit que cette table — issue à ouvrir, même propriétaire.
@@ -939,7 +939,7 @@ le multi-devises, il n'y en a pas en production.
   règle unique de genre. Vérifié aux fiches : `RateBoundsError`, `FX_RATE_INVALID` `details: { currency }`, fetch jour
   strictement antérieur / mois ≤ courant, `RATE_NOT_PUBLISHED`, `RATE_SOURCE_UNAVAILABLE` — cohérents avec 37-2 et 37-3a.
   Axes non exercés : relecture hors diff, code réel non encore écrit.)
-- 2026-11-14 — révision CR-2 (revue de Beat R1–R10 ; Opus) : **R9** — une écriture par compte réévalué (deux lignes,
+- 2026-11-14 — révision CR-2 (revue du responsable de l'epic R1–R10 ; Opus) : **R9** — une écriture par compte réévalué (deux lignes,
   une devise, libellé « Gain de change / Perte de change <compte> <DEVISE> <cours> au JJ.MM.AAAA (non réalisé) »),
   toutes passées dans une transaction, réponse `{ entryIds }`, audit `fx_revaluation.posted` qui liste les écritures,
   rejeu compte par compte, bouton « Passer les écritures » ; disparaissent la ligne de contrepartie au net, l'agrégation
@@ -979,7 +979,7 @@ le multi-devises, il n'y en a pas en production.
   Vérifié au code : ordre `create_in_tx_inner` (1-a, 1-bis, puis étape 2 des comptes), `ReversalDating::Today`
   (`journal_entries.rs:2933-2938`), `examinees` = 27 (`audit_route_registry.rs:1325`), 37-3b +1 route (conversion). Axes non
   exercés : code réel de 37-1 à 37-4 (non écrit), reste de la fiche hors diff.
-- 2026-11-14 — révision CR-3 (revue de Beat S1–S6 ; Opus) : **S2** — une écriture par compte réévalué, contrepartie
+- 2026-11-14 — révision CR-3 (revue du responsable de l'epic S1–S6 ; Opus) : **S2** — une écriture par compte réévalué, contrepartie
   sur les comptes de différence **propres** du compte s'il en a, sinon ceux de la société, par `fx_accounts_for`
   (37-1 AC-4 bis) : AC-1 (aperçu : `counterpartAccountId`, `fxAccountsOrigin`), AC-2 (étape (3) : désignations propres
   lues en partage, puis comptes employés revalidés par `validate_fx_accounts_in_tx` ; le partage de `companies` de
@@ -1034,7 +1034,7 @@ le multi-devises, il n'y en a pas en production.
   envoyés), AC-2 (cours omis = défaut), AC-4 « Bornes de la requête » (clé = devise d'un compte sélectionné, `empty`),
   ligne de test du décochage. Axes non exercés : code réel de 37-1 à 37-4 (non écrit) ; passages hors diff
   53a885f4..644d2b74.
-- 2026-11-14 — révision CR-4 (revue 2 de Beat T1–T6 ; Opus) : **T3** — la ligne `revaluation` ne porte plus de
+- 2026-11-14 — révision CR-4 (revue 2 du responsable de l'epic T1–T6 ; Opus) : **T3** — la ligne `revaluation` ne porte plus de
   colonne de devise (37-3a AC-1) : `ForeignAmount { declared_currency: None, … }`, devise lue sur le compte réévalué,
   contrôle central par la devise du compte (`FX_ACCOUNT_IN_CHF` pour un compte CHF ; `FX_CURRENCY_MISMATCH` sans
   objet), `devise_net` sur toutes les lignes du compte (AC-1) ; audit au snapshot `foreign` (devise lue sur le compte)
@@ -1052,7 +1052,7 @@ le multi-devises, il n'y en a pas en production.
   ligne dans la fiche (grep `currency`). Source journalière (un GET) : `xmldaily?d=20241231` rend la publication du
   31.12.2024 (EUR 0.94947), mardi. Axes non exercés : code réel de 37-1 à 37-4 (non écrit) ; T1, T4, T5, T6 sans point de
   contact ; registres d'audit et RBAC non touchés par la révision.
-- 2026-11-14 — révision CR-5 (revue 3 de Beat U1–U6 ; Opus) : **U1** — le cours de clôture par défaut se lit dans
+- 2026-11-14 — révision CR-5 (revue 3 du responsable de l'epic U1–U6 ; Opus) : **U1** — le cours de clôture par défaut se lit dans
   `exchange_rates` de 37-2 (cours retenu par la société, `find_company_rate_in_tx`, ex-`find_effective_rate_in_tx`),
   jamais dans la valeur publiée : une correction de l'AFC non reprise ne change pas le cours proposé (AC-1) ; l'aperçu
   rend `defaultRate` et `defaultSource` au lieu d'`afcRate` (AC-1) ; la source auditée par devise est celle de la ligne
@@ -1154,7 +1154,7 @@ le multi-devises, il n'y en a pas en production.
   (`fiscal_years.rs:1175-1190`) et le bouton désactivé (`+page.svelte:515`) ; aucun contrôle d'équilibre CHF ne bloque
   la clôture (K6 informatif) — K9 suit donc K1 : refus (d-bis) 409 `FOREIGN_ACCOUNTS_NOT_REVALUED` dans `close`, cours
   résolus par le handler avant la transaction, (a) et (b) lues avant `begin` comme `post`. Un cours `request` laisse K9
-  en attention : le saisir à *Cours de change* (V8 annoté). **A38** et **précision de Beat du 2026-11-16** (qui prime
+  en attention : le saisir à *Cours de change* (V8 annoté). **A38** et **précision du responsable de l'epic du 2026-11-16** (qui prime
   sur « le bouton ouvre l'aperçu » de la demande) : l'avis de K9 **montre l'aperçu** avant tout clic et « Réévaluer »
   passe les écritures montrées, sans écran intermédiaire ; K9 `ok` → rien n'est présenté (ni avis, ni aperçu, ni
   bouton, ni requête) ; « Clôturer » désactivé sous K9 en attention. **A39** — AC-1 et AC-6 : `accountNumber`,
@@ -1165,11 +1165,11 @@ le multi-devises, il n'y en a pas en production.
   ajoutées ; FR-1, FR-6 complétées), 6 → 7 NFR (NFR-7). AC touchés : en-tête, Story, AC-1, AC-2 (V8), AC-6, AC-7,
   AC-8, AC-9, Tâches, Note de version, Notes. Fiche à revalider (cycle CR-8).
 - 2026-11-16 — validation CR-8 P1 (Sonnet) : 0 CRITICAL, 0 HIGH, 4 MEDIUM, 5 LOW ; tous remédiés dans la fiche
-  (37-5-CR8-P1-1 à -9) ; la décision de fond de -2 (comptes non monétaires, A37) est à confirmer par Beat ; aucun
+  (37-5-CR8-P1-1 à -9) ; la décision de fond de -2 (comptes non monétaires, A37) est à confirmer par le responsable de l'epic ; aucun
   inter-fiche (38-10 passe à K10, déjà noté ; ligne de 37-5 du récapitulatif de l'epic complétée : brochure, README,
   guide d'API). Axes exercés : prémisses au code (`closing_checks.rs`, `fiscal_years::close`, handler, page des
   exercices, `ledgerHref`, tests appelants de `close`), blocage et ordre des refus, instantané et verrous, K9 sans
-  lecture coûteuse, comptabilité du résidu, cas de Beat, écran, inventaire (grep recompté), tests, KISS. Non exercés :
+  lecture coûteuse, comptabilité du résidu, cas du responsable de l'epic, écran, inventaire (grep recompté), tests, KISS. Non exercés :
   code de 37-1 à 37-4 (non écrit), E2E.
 - 2026-11-16 — validation CR-8 P2 ciblée (Opus) : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 4 LOW ; tous remédiés dans la fiche.
   MEDIUM **37-5-CR8-P2-1** : la résolution des cours par défaut était placée au handler (AC-1, Tâches `kesh-api`),
@@ -1186,21 +1186,21 @@ le multi-devises, il n'y en a pas en production.
   handler `close_fiscal_year` (:352-370), `closing_checks.rs` (:4, :5-7, :24, :123, :170, :566, `FISCAL_YEAR_SQL`
   :439, `ALL_SQL` :550, `MAX_LISTED` :435), `+page.svelte` (:335, :515, :674), `ledgerHref` (`reports.api.ts:473`),
   `user-manual.tex` (:920, :922, :925, :954), `docs/api-external.md` (:257, :266), 37-2 AC-3 bis (copie à la création
-  d'un exercice multi-devises, unités de Clôture). Cas de Beat : K9 `ok` sans saisie avec les deux cours journaliers
+  d'un exercice multi-devises, unités de Clôture). Cas du responsable de l'epic : K9 `ok` sans saisie avec les deux cours journaliers
   dans `exchange_rates`, juste. Inter-fiches signalés : epic C-37-7 (« décochables (postes non monétaires) ») ne dit
   pas qu'un compte décoché bloque la clôture (A37) ; hors périmètre de la passe, `audit_log.rs:195` a dérivé
   (`for_actor` à :238 depuis l'Epic 35, qui ajoute `NewAuditLogEntry::par`/`Acteur`, 35-8a1) — à relire à la prochaine
   passe complète. Axes non exercés : code de 37-1 à 37-4 (non écrit), E2E, reste de la fiche hors diff P1.
 - 2026-11-16 — validation CR-8 P3 ciblée (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 2 LOW ; remédiés dans la fiche.
   LOW **37-5-CR8-P3-1** : la référence `entities/audit_log.rs:195` de l'AC-2 (signalée périmée par la P2) n'avait pas
-  été corrigée — `for_actor` est à `:238`, `NewAuditLogEntry::par` à `:263` (Epic 35, relus). LOW **-2** : A41 (Beat,
-  option a) appliqué — « À confirmer par Beat » de l'AC-9 (*Un compte en devise qu'on ne veut pas réévaluer*) remplacé
+  été corrigée — `for_actor` est à `:238`, `NewAuditLogEntry::par` à `:263` (Epic 35, relus). LOW **-2** : A41 (le responsable de l'epic,
+  option a) appliqué — « À confirmer par le responsable de l'epic » de l'AC-9 (*Un compte en devise qu'on ne veut pas réévaluer*) remplacé
   par le renvoi à A41 (poste non monétaire tenu sur un compte en CHF, aucune marque « non monétaire », K9 sans
   exception) ; AC-8 (manuel) dit déjà de tenir ces postes en CHF, renvoi à A41 ajouté. Remédiation P2 relue au code,
   sans défaut : résolution des cours dans `kesh-db` (`find_company_rate_in_tx` existe, `kesh-db` ne dépend pas de
   `kesh-api`) ; `fiscal_years::close` (:1116-1222) lit aujourd'hui (a)/(b) dans la transaction, la fiche les sort
   avant `begin`, voulu, signature conservée ; (d-bis) jugé sur la ligne verrouillée, échec fermé ; 65 occurrences de
-  `fiscal_years::close(` (64 + la route), recomptées ; cas de Beat au 31.12.2024 juste ; K9 `ok` sans avis, ligne
+  `fiscal_years::close(` (64 + la route), recomptées ; cas du responsable de l'epic au 31.12.2024 juste ; K9 `ok` sans avis, ligne
   « Rien à signaler » ; inventaire P2 sans résidu ; Tâches cohérentes. Inter-fiches : aucun (epic A41 déjà écrit, C-37-7
   lu sous cette réserve). Axes exercés : diff P2 `47abae1e..5f295c8f`, blocage et ordre des refus, verrous, comptabilité
   du résidu, écran, inventaire, tests, KISS, A41. Non exercés : code de 37-1 à 37-4 (non écrit), E2E, manuels `.tex`
@@ -1246,7 +1246,7 @@ le multi-devises, il n'y en a pas en production.
   +2, `RevaluationPanel.test.ts` +3 (un test existant complété). Mutations : sans le blocker `RATE_UNAVAILABLE`, le
   test e2e rougit (`left: 0, right: 1`) ; sans les gardes de l'écran (champ, relecture, relecture de l'avis), trois
   Vitest rougissent. Gates : voir *Tests ajoutés et gates*, entrée P1. Boucle à poursuivre (MEDIUM rendus).
-- 2026-11-17 — échappement commun des cellules texte des CSV de rapports (décision de Beat, ajoutée à la phase 2
+- 2026-11-17 — échappement commun des cellules texte des CSV de rapports (décision du responsable de l'epic, ajoutée à la phase 2
   de la revue de code P1) : la fonction d'échappement des cellules CSV quitte `kesh-api` (`util`) pour
   `kesh_core::csv::csv_sanitize`, comportement identique, ses tests avec elle ; `kesh-api` la réexporte (sites
   d'appel inchangés), `kesh-report` l'applique à chaque cellule texte de ses CSV (libellés d'écriture, numéros et

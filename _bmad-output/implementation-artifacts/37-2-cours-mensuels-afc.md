@@ -4,19 +4,19 @@ Status: done
 
 *Fiche rédigée le 2026-11-14 (Opus 5.5), branche `epic/37-multi-devises`. Epic 37, C-37-1 (amendé par D9/D10, CR-1),
 C-37-6, D9, D10. Suit 37-1. **Migration non breaking** : deux tables système `_kesh_*` et **une table applicative**
-`exchange_rates` (ex-`exchange_rate_overrides`, U1). Révisée le 2026-11-14 pour la revue de Beat (CR-2 : R1, R2, R4, R5, R6), qui prime sur le
+`exchange_rates` (ex-`exchange_rate_overrides`, U1). Révisée le 2026-11-14 pour la revue du responsable de l'epic (CR-2 : R1, R2, R4, R5, R6), qui prime sur le
 registre antérieur : la table applicative **ne referme plus** la fenêtre d'import (R1, liste close de 37-1 AC-6) ; la
 récupération est ciblée sur les exercices multi-devises (R2) et suit le calendrier de publication (R4) ; les données
 reprises sont filtrées strictement (R5) ; l'écran devient un tableau annuel par exercice (R6). Révisée de nouveau pour
-la revue CR-3 de Beat, qui prime sur CR-2 et R4 amendé : **S1** — calendrier « quotidien jusqu'au premier cours du
+la revue CR-3 du responsable de l'epic, qui prime sur CR-2 et R4 amendé : **S1** — calendrier « quotidien jusqu'au premier cours du
 mois suivant, puis pause de 24 jours, au plus tard jusqu'au 25 » (AC-4) ; **S4** — une colonne par mois de l'exercice,
 quelle que soit sa durée (AC-5, AC-6) ; **S6** — un cours AFC **republié** autrement ne remplace pas le cours en
 vigueur : il est gardé à part, signalé en rouge avec ↑ pour l'adopter, et annoncé à la connexion jusqu'à son
-acquittement (AC-1, AC-3, AC-5, AC-6). Révisée enfin pour la revue 2 de Beat (CR-4), qui prime sur tout ce qui
+acquittement (AC-1, AC-3, AC-5, AC-6). Révisée enfin pour la revue 2 du responsable de l'epic (CR-4), qui prime sur tout ce qui
 précède : **T4** — le cours d'ouverture est le cours de **clôture** de l'exercice précédent : genre `month` = cours
 mensuel du **dernier mois de l'exercice précédent** (mois de la veille de l'ouverture), non plus du premier mois
 (AC-4, AC-5, AC-6) ; **T2** — tests d'exercices au 1er janvier, au 1er avril et au 1er juillet, plus six et
-dix-huit mois (AC-4, AC-6). Révisée en dernier pour la revue 3 de Beat (CR-5), qui **prime sur tout ce qui précède**,
+dix-huit mois (AC-4, AC-6). Révisée en dernier pour la revue 3 du responsable de l'epic (CR-5), qui **prime sur tout ce qui précède**,
 C-37-1, S6, A10, A11, A16 et les colonnes `republished_*` compris : **U1** — deux tables renommées et réparties :
 `exchange_rates` (**applicative**, par société, sauvegardée ; ex-`exchange_rate_overrides`) porte **le cours retenu
 par la société** et sa `source` (`afc` | `manual`), reçoit **automatiquement** une copie de chaque cours récupéré utile
@@ -49,14 +49,14 @@ cours sans saisie.
 - **l'unité est un entier positif** en tête de `<waehrung>` : relevé 2024-12, 19 devises à `1`, 42 à `100`, 7 à
   `1000` (CLP, CRC, KZT, NGN, LKR, TZS, HUF), 5 à `10000` (IDR, KHR, COP, LBP, VND) — jamais « 1 ou 100 » seulement ;
   des cours très petits existent (`1 ARS` → `0.0009`) ;
-- **calendrier de publication (R4, source ESTV *MWST Monatsmittelkurse*, lue par Beat le 2026-11-14)** : le cours du
+- **calendrier de publication (R4, source ESTV *MWST Monatsmittelkurse*, lue par le responsable de l'epic le 2026-11-14)** : le cours du
   mois M est la moyenne des cours journaliers du 25 de M−2 au 24 de M−1, **publiée le 25 de M−1** (ou le jour
   ouvrable suivant), applicable dès le 1er de M ; l'heure n'est pas publiée. Le relevé du 2026-11-14 (`xmlavgmonth`
   sans paramètre rendait `2026-11`) montre le mois courant publié ; mais **un relevé du même jour le contredit pour le
   mois suivant** (validation CR-2 P2) : `j=2026&m=12` rendait dès le **14.11.2026** (en-tête `Date` du serveur) un
   `<monat>2026-12</monat>` complet (EUR 0.9295), `j=2027&m=1` la racine vide — le mois suivant peut donc être publié
   **avant le 25**, et la définition « du 25 de M−2 au 24 de M−1 » ne peut alors être exacte (le 24.11 n'était pas
-  passé). **À confirmer par Beat (R4).** Kesh n'en dépend pas pour sa justesse (S1, CR-3, qui remplace R4 amendé) : la
+  passé). **À confirmer par le responsable de l'epic (R4).** Kesh n'en dépend pas pour sa justesse (S1, CR-3, qui remplace R4 amendé) : la
   tâche automatique vérifie **une fois par jour** tant que le mois courant ou le mois suivant manque, puis, le mois
   suivant obtenu, **se met en pause 24 jours au plus, jamais au-delà du 25** du mois qu'elle vient d'obtenir, et
   reprend chaque jour pour le mois d'après (AC-4) ; la récupération à la demande accepte le mois suivant à
@@ -79,11 +79,11 @@ cours sans saisie.
   <land_it>…</land_it><land_en>…</land_en><waehrung>1 EUR</waehrung><kurs>0.94947</kurs></devise>…` — espace de noms
   **différent** de celui des cours mensuels, élément `land_en` en plus ; **cinq décimales** ; mêmes unités (relevé du
   30.06.2024 : 74 devises, 19 à `1`, 43 à `100`, 7 à `1000`, 5 à `10000`, 17 Ko) ; `d=20241231` rend USD 0.91193 et
-  EUR 0.94947, les cours de la réévaluation des livres 2024 de Beat (D10) ;
+  EUR 0.94947, les cours de la réévaluation des livres 2024 du responsable de l'epic (D10) ;
 - **un jour sans publication rend la dernière publication antérieure** : `d=20240630` (un dimanche) rend
   `<datum>28.06.2024</datum>` (le vendredi), `<gueltigkeit>29.06.2024,30.06.2024,01.07.2024</gueltigkeit>`. Le cours
   journalier **d'une date D** est donc, par définition dans Kesh, celui que rend `xmldaily?d=D` : la publication du
-  jour D, ou la dernière qui la précède. `<gueltigkeit>` n'est pas lu (Kesh suit la convention des livres de Beat :
+  jour D, ou la dernière qui la précède. `<gueltigkeit>` n'est pas lu (Kesh suit la convention des livres du responsable de l'epic :
   la publication **datée** du 31.12, non celle « valable » le 31.12) ;
 - **pas de publication : HTTP 404, corps JSON** — relevé le 2026-11-14 pour `d=20301231` : `404`
   `{"error":"Aucune donnée disponible","message":"Aucun taux de change trouvé pour la période demandée"}` (et non une
@@ -523,7 +523,7 @@ cours sans saisie.
      19.12 ; obtenu le 02.11 → le 01.12 (borne du 1er). ⚠️ `T` n'est « mois suivant » qu'avant le 1er de `T` : il s'obtient
      donc au plus tard le dernier jour du mois qui précède, et « + 24 jours » tombe au plus tard le 24 de `T` — la
      borne du 25 ne mord jamais en pratique (un `T` obtenu le 1er de `T` ou après est le mois **courant**, et le mois
-     suivant manque : régime (b)) ; elle est gardée parce que c'est la règle de Beat (S1) et testée comme une
+     suivant manque : régime (b)) ; elle est gardée parce que c'est la règle du responsable de l'epic (S1) et testée comme une
      propriété (réveil ≤ 25 de `T`). Si le mois suivant n'est couvert par
      aucun exercice multi-devises ouvert (et le mois courant présent ou non couvert), la tâche dort jusqu'au 1er du
      mois suivant, 00:00. Un tour échoué ou `not_published` pendant (b) se retente au réveil du lendemain (le « jour
@@ -535,7 +535,7 @@ cours sans saisie.
      manuel ; test de `prochain_reveil` : un jour seul manquant ne change pas le réveil. Chaque tour traite **toutes**
      les unités utiles qui manquent (pas seulement le mois suivant : une restauration ou un exercice neuf peuvent en
      laisser plusieurs), **au plus 36 par tour** (constante, testée ; le reste au tour suivant), dans l'ordre
-     chronologique. **Revérification du mois courant (A10, approuvé par Beat, CR-5)** :
+     chronologique. **Revérification du mois courant (A10, approuvé par le responsable de l'epic, CR-5)** :
      chaque tour automatique — tâche (démarrage, réveil quotidien, fin de pause) **et** déclenchement à la connexion —
      **revérifie aussi le mois courant** (Europe/Zurich), **un appel `xmlavgmonth` de plus**, pour découvrir seul une
      correction de l'AFC (U1 : la valeur différente rendue **met à jour `_kesh_fetched_exchange_rates`**, règle d'écriture
@@ -1064,7 +1064,7 @@ cours sans saisie.
    reçoit une devise, AC-3 bis ; la réinitialisation remet aussi la société en mono-devise, 37-1 AC-5) — voulu, à dire au manuel. Aucun outil du serveur MCP ne lit la table des cours (une ligne porte son cours, 37-3a) : hors périmètre.
 8. **AC-8 — i18n, manuels.** Quatre locales (écran, codes d'erreur dont `FX_RATE_INVALID`, libellés d'audit et de
    type d'entité) ; manuel utilisateur (tableau annuel, source, cours mensuel AFC — publié d'avance pour le mois ; la
-   définition « moyenne du 25 au 24, publiée le 25 » de R4 n'est écrite qu'une fois confirmée par Beat (relevé
+   définition « moyenne du 25 au 24, publiée le 25 » de R4 n'est écrite qu'une fois confirmée par le responsable de l'epic (relevé
    contraire, *Source*) —, cours journalier, genres d'ouverture et de clôture de l'exercice (le cours d'ouverture est celui de la clôture de l'exercice
    précédent, T4 : pourquoi le genre « mois » d'ouverture prend le dernier mois de l'exercice précédent, et le
    genre d'ouverture repris par défaut à la création, et le dialogue qui propose de l'appliquer à l'exercice suivant
@@ -1221,7 +1221,7 @@ cours sans saisie.
 - Calendrier de la source (R4) : le cours du mois M est publié le 25 de M−1 (ou le jour ouvrable suivant), applicable
   dès le 1er de M ; le relevé du 2026-11-14 (sans paramètre, `2026-11`) s'y accorde pour le mois courant, mais
   `j=2026&m=12` était déjà publié le 14.11.2026 (validation CR-2 P2, *Source*) : date de publication à confirmer par
-  Beat ; la tâche vérifie chaque jour tant que le mois courant ou le mois suivant manque, puis se met en pause (S1,
+  le responsable de l'epic ; la tâche vérifie chaque jour tant que le mois courant ou le mois suivant manque, puis se met en pause (S1,
   CR-3 ; sûr dans les deux lectures), `POST /fetch` accepte le mois suivant à toute date ; chaque tour revérifie en
   plus le mois courant (A10, un appel de plus, sans réveil de plus).
 - Pas de production des cours dans le dépôt : les fixtures sont synthétiques (C-37-1, conditions SIX).
@@ -1440,7 +1440,7 @@ lecture seule (Consultation) ; carte des paramètres ; largeur 390 px.
   release, script inchangé (CR1-P1-3) ; deux créations simultanées d'un cours saisi → 409 et non 500 (CR1-P1-4). LOW :
   forme `day` de `RATE_UNAVAILABLE` sans date dans `DbError` (CR1-P1-5), `fetchedAt` `null` d'un cours saisi seul
   (CR1-P1-6), champ vidé, bouton jour désactivé, date par défaut sans exercice (CR1-P1-7), `version` du `DELETE`
-  obligatoire (CR1-P1-8). Non appliqué, à trancher par Beat : un cours saisi **égal** au cours AFC est marqué « saisi »
+  obligatoire (CR1-P1-8). Non appliqué, à trancher par le responsable de l'epic : un cours saisi **égal** au cours AFC est marqué « saisi »
   sans ↑ (AC-6) et ne peut donc plus être retiré depuis l'écran ni suivre une republication de l'AFC — D9 dit « un
   bouton ↑ qui reprend le cours AFC » ; proposition : ↑ pour tout cours saisi existant. Axes exercés : citations de code
   (backup.rs, post_restore.rs, import.rs, audit_labels.rs, audit_route_registry.rs, mail/mod.rs, lib.rs,
@@ -1471,7 +1471,7 @@ lecture seule (Consultation) ; carte des paramètres ; largeur 390 px.
   AC-3 (`RateBoundsError`, `FX_VALUE_OUT_OF_RANGE { line }`), 37-5 AC-4 (`FX_RATE_INVALID`) et AC-6 (↑ propre à 37-2),
   37-3b (↑ de la ligne, distinct), `last_error` `http_status:<n>`, tests de l'AC-3. Non exercés : compilation, gate, rendu
   de l'écran, rien hors du diff.
-- 2026-11-14 — révision CR-2 (revue de Beat R1–R10 ; Opus) : **R1** — la fermeture de la fenêtre d'import écrite par
+- 2026-11-14 — révision CR-2 (revue du responsable de l'epic R1–R10 ; Opus) : **R1** — la fermeture de la fenêtre d'import écrite par
   CR-1 est **défaite** : `exchange_rate_overrides` reste applicative et sauvegardée, mais s'inscrit à la liste close
   des absences admises de 37-1 (AC-6) — une sauvegarde 0.17.6 se réimporte, cours saisis vides ; registre de rejeu
   (`20261106000001`), compteurs de `post_restore.rs`, `admin_full_import_e2e.rs` (`full_import_report_mirrors_…`,
@@ -1509,7 +1509,7 @@ lecture seule (Consultation) ; carte des paramètres ; largeur 390 px.
   37-2-CR2-P2-IF1 (fichier d'epic R4 et 37-3b/37-5 : borne « mois suivant à toute date ») et 37-2-CR2-P2-IF2 (37-1 AC-3
   bis : rejet du corps par l'extracteur avant le 404). MEDIUM : R4 contredit par un relevé — `xmlavgmonth?j=2026&m=12`
   rend un mois complet dès le 14.11.2026, `j=2027&m=1` la racine vide : la borne du `POST /fetch` passe au mois suivant
-  à toute date, la tâche garde le 25, la définition « du 25 au 24, publiée le 25 » est à confirmer par Beat avant d'aller
+  à toute date, la tâche garde le 25, la définition « du 25 au 24, publiée le 25 » est à confirmer par le responsable de l'epic avant d'aller
   au manuel (CR2-P2-1) ; ordre des refus du `PUT /rate-kinds` posé par CR2-P1-3 (404 → 409 → 400 corps) irréalisable
   avec l'extracteur de corps (`extractors.rs:18`, rejet avant le handler) et attribué à tort à « l'ordre général » :
   corps (400) → 404 → 409 → `FISCAL_YEAR_CLOSED`, écart des routes à corps JSON écrit à l'ordre général (CR2-P2-2) ;
@@ -1598,7 +1598,7 @@ lecture seule (Consultation) ; carte des paramètres ; largeur 390 px.
   `exchange_rate_override.*` et `fetched`, republication ×2, `fiscal_year.rate_kinds_updated`) ; condition « unité
   manquante » de l'A10 (iii) contre l'AC-4 (démarrage, connexion, seul mois suivant). Non exercés : compilation, gate,
   rendu de l'écran, code au-delà des renvois, 37-1/37-4/37-5.
-- 2026-11-14 — révision CR-3 (revue de Beat S1–S6 ; Opus) : **S1** — calendrier de la tâche automatique (AC-4,
+- 2026-11-14 — révision CR-3 (revue du responsable de l'epic S1–S6 ; Opus) : **S1** — calendrier de la tâche automatique (AC-4,
   remplace R4 amendé) : quotidien tant que le mois courant ou le mois suivant manque, puis, le mois suivant `T` obtenu,
   pause jusqu'au plus tôt de « obtention + 24 jours » et du 25 de `T`, jamais avant le 1er de `T` ; `prochain_reveil`
   et ses tests réécrits (14.11 → 08.12, 25.11 → 19.12, 02.11 → 01.12, propriété « ≤ 25 de `T` », changement d'heure) ;
@@ -1619,7 +1619,7 @@ lecture seule (Consultation) ; carte des paramètres ; largeur 390 px.
   globaux à l'installation (la table est globale) ; détection d'une republication par un `POST /fetch` d'un cours
   présent seulement (bouton « Revérifier les cours publiés ») ; colonne `first_fetched_at` ajoutée pour S1. AC touchés :
   en-tête, Source, AC-1, AC-3, AC-4, AC-5, AC-6, AC-8, AC-9, Tâches, Notes. Fiche à revalider (cycle CR-3).
-- 2026-11-14 — révision CR-4 (revue 2 de Beat T1–T6 ; Opus) : **T4** — cours d'ouverture = cours de clôture de
+- 2026-11-14 — révision CR-4 (revue 2 du responsable de l'epic T1–T6 ; Opus) : **T4** — cours d'ouverture = cours de clôture de
   l'exercice précédent : en genre `month`, `openingDate` = 1er du mois de la **veille** de `startDate` (dernier mois de
   l'exercice précédent), non plus le 1er du premier mois ; fonction pure unique pour `openingDate`/`closingDate`,
   partagée avec `unites_utiles` et le cours proposé de 37-3b (AC-5) ; `unites_utiles` ajoute ce mois hors des mois de
@@ -1665,7 +1665,7 @@ lecture seule (Consultation) ; carte des paramètres ; largeur 390 px.
   mois du 15.03. Non exercés : code (la remédiation ne cite aucune ligne neuve), compilation, gate, rendu de l'écran,
   37-4/37-5.
 - 2026-11-14 — validation CR-4 P3 ciblée (Sonnet) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW ; remédié dans la fiche. LOW : 37-2-CR4-P3-1 (AC-5) la fixture porte `closingDate` mais le jumeau TS de 37-3b ne calcule que `openingDate` : « lue par le test Vitest » laissait croire à un contrôle des deux champs ; précisé. Axes exercés : diff `a8f89e04..2f792399` phrase par phrase ; « treize unités » (15.03) contre AC-5 et Tâches ; fixture `fx_opening_dates.json` contre 37-3b AC-1 (nom, cas 29.02, aucune copie) et 37-3a (`fx_rounding.json`, répertoire créé par 37-3a, sans conflit) ; condition « commence le lendemain » (genres `day` et `month`) ; Ouverture propre « exercice qui le contient » ; bouton de récupération (bornes 2000-01, Ouverture liée comptée une fois) contre AC-4/AC-5 et la ligne 711 (raison au survol) ; item CR-4 des Tâches. Non exercés : code (aucune ligne neuve citée), compilation, gate, rendu de l'écran, 37-4/37-5. Aucun finding inter-fiches ; la remédiation P2 est cohérente avec 37-3b (alignée en P2).
-- 2026-11-14 — révision CR-5 (revue 3 de Beat U1–U6 ; Opus) : **U1** — `exchange_rate_overrides` devient
+- 2026-11-14 — révision CR-5 (revue 3 du responsable de l'epic U1–U6 ; Opus) : **U1** — `exchange_rate_overrides` devient
   `exchange_rates` (applicative, par société, sauvegardée : `source` `afc|manual` extensible, `acknowledged_rate` /
   `acknowledged_at`, `updated_by` `NULL` pour une copie de Kesh, `UNIQUE (company_id, currency, kind, rate_date)`) ;
   `_kesh_exchange_rates` devient `_kesh_fetched_exchange_rates` (système, PK `(source, currency, kind, rate_date)`,
@@ -1736,7 +1736,7 @@ lecture seule (Consultation) ; carte des paramètres ; largeur 390 px.
   disait l'élargissement d'un `CHECK` d'énumération « jugé breaking par P1 et P3 » — P3 ne liste ni `DROP CONSTRAINT`
   ni `ADD CONSTRAINT`, et le format seul n'ôte pas le risque P1 (un binaire antérieur rend une erreur interne sur une
   source inconnue, `RateOrigin`) : réécrit, le jugement P1 de la release qui écrit une source neuve reste dû
-  (question à Beat : A28 promettait « pas de migration breaking »). LOW : 37-2-CR5-P2-4 le verrouillage de la copie
+  (question au responsable de l'epic : A28 promettait « pas de migration breaking »). LOW : 37-2-CR5-P2-4 le verrouillage de la copie
   décrivait le cycle par `companies` seul et nommait `retry_on_deadlock` pour les routes de comptes — le filtre A24
   lit `accounts` en partage (cycle avec une route de compte qui tient le compte `FOR UPDATE`), et ces routes passent
   par `crate::retry::retry_app_on_deadlock` (`kesh-api/src/retry.rs:40`, `routes/accounts.rs:337`) : écrit (AC-3 bis,

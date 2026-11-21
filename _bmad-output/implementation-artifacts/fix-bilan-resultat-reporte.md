@@ -4,7 +4,7 @@ Status: review
 
 *Fiche rédigée le 2026-11-18, branche `fix/bilan-resultat-reporte`, partie de `main` à `70be12a6` (squash de
 l'Epic 37, PR #1247). Correctif hors epic, **non urgent** : il ne passe pas par `hotfix/` et va à la prochaine release
-planifiée. **Aucune migration.** Relevé par Beat à la recette d'un exercice réel 2024
+planifiée. **Aucune migration.** Relevé par le responsable de l'epic à la recette d'un exercice réel 2024
 (`data-not-committed/2024-qesh/sorties-kesh/bilan-2024.pdf`).*
 
 ## Intention
@@ -12,7 +12,7 @@ planifiée. **Aucune migration.** Relevé par Beat à la recette d'un exercice r
 Le bilan d'une société qui tient son premier exercice dans Kesh affichait, dans la section *Capitaux propres*, son
 compte de report (rôle `RetainedEarnings`, ici « 2970 Bénéfice / perte reporté », -37'571.82) **et**, juste dessous,
 la ligne calculée « Résultat reporté (calculé) » à **0.00**. À zéro, cette ligne n'apporte rien et trouble le lecteur :
-deux « résultats reportés » côte à côte, dont l'un nul (l'ancien logiciel de Beat ne l'avait pas).
+deux « résultats reportés » côte à côte, dont l'un nul (l'ancien logiciel du contributeur ne l'avait pas).
 
 **Prémisse vérifiée au code** (`origin/main` `70be12a6`) :
 
@@ -21,7 +21,7 @@ deux « résultats reportés » côte à côte, dont l'un nul (l'ancien logiciel
   report est porté par le compte physique (soldes d'ouverture).
 - La ligne était dessinée **sans condition** : au PDF (`render_balance_sheet_pdf`, boucle des deux lignes calculées),
   au CSV (`render_balance_sheet_csv`, `write_fx_record` inconditionnel) et à l'écran
-  (`BalanceSheetView.svelte`, `<tr>` inconditionnelle). Le PDF de Beat le montre (`pdftotext` : « Résultat reporté
+  (`BalanceSheetView.svelte`, `<tr>` inconditionnelle). Le PDF du responsable de l'epic le montre (`pdftotext` : « Résultat reporté
   (calculé) 0.00 » sous « 2970 Bénéfice / perte reporté -37'571.82 »).
 - **Pourquoi elle était toujours affichée.** La Story 14-1 l'a créée comme report à-nouveau virtuel ; la décision D1 de
   la Story 14-3c (`14-3c-fonds-propres-par-role.md`, « Collision Résultat reporté : DISTINGUER nettement ») impose de
@@ -84,7 +84,7 @@ deux « résultats reportés » côte à côte, dont l'un nul (l'ancien logiciel
 
 ## Tâches
 
-- [x] Prémisse vérifiée (code, PDF de Beat, 14-1 et 14-3c/D1)
+- [x] Prémisse vérifiée (code, PDF du responsable de l'epic, 14-1 et 14-3c/D1)
 - [x] `BalanceSheet::shows_retained_earnings_line` + test unitaire
 - [x] PDF et CSV : ligne omise à zéro ; tests unitaires (absente à zéro, présente non nulle, positive et négative)
 - [x] Écran : `showsRetainedEarningsLine` + `{#if}` ; Vitest (composant et helper)
@@ -93,7 +93,7 @@ deux « résultats reportés » côte à côte, dont l'un nul (l'ancien logiciel
 - [x] Manuel FR (`user-manual.tex`), `docs/api-external.md`
 - [x] Gates ciblés, mutations, captures (ci-dessous)
 - [x] Gate complet (`test-fast.sh --ci`, E2E complet, `gate-ci.sh`) : **groupé**, vert au commit `5fc6fb1b` de la branche
-      d'intégration `integ/fixes-0.19.0` (décision de Beat du 2026-11-18 ; chiffres au Change Log)
+      d'intégration `integ/fixes-0.19.0` (décision du responsable de l'epic du 2026-11-18 ; chiffres au Change Log)
 - [x] Revue de code P1 (Sonnet) : 0 au-dessus de LOW, 3 LOW corrigés dans la story
 - [x] Passe ciblée P2 sur la remédiation, 0 au-dessus de LOW (prompt : `kesh-gate-logs/fix-bilan-resultat-reporte/revue-p2-ciblee-prompt.md`)
 

@@ -101,7 +101,7 @@ Inventaire au kickoff (`grep -rnE ':\.2\}' crates`, hors tests), à reprendre **
 La fonction commune a sa place naturelle dans `kesh-core` (`types/money.rs` porte déjà `round_to_centimes`,
 `MidpointAwayFromZero`), dont dépendent `kesh-report` et `kesh-api` ; la fiche tranche.
 
-**Part de `main` après la fusion de la PR #1327 de Beat**, qui récrit la mise en page de `crates/kesh-report/src/pdf.rs`
+**Part de `main` après la fusion de la PR #1327 du contributeur**, qui récrit la mise en page de `crates/kesh-report/src/pdf.rs`
 (décision de Guy du 2026-11-18). Tant que #1327 n'est pas fusionnée, la fiche peut s'écrire, non le développement.
 
 ### 48-12 — Réponses perdues : factures fournisseur et comptes bancaires (#975, #984, #985, #986, P2)
@@ -205,7 +205,7 @@ ultérieure (kesh:D11) ; l'Epic 48 se clôt avec la release.
 - **48-2 après 48-1**, ou en parallèle sur des blocs distincts (les fiches 36-16b et 36-16c le prévoient) : elles partagent
   `project_reassignment.rs`, `ProjectReassignDialog.svelte`, `projects.api.ts`, `project-reassignment.spec.ts`, les
   catalogues, `api-external.md` et les manuels. Le second arrivé fait l'union.
-- **48-11 après la PR #1327** (Beat), fusionnée dans `main`.
+- **48-11 après la PR #1327** (le responsable de l'epic), fusionnée dans `main`.
 - **48-15 après la 48-13** fusionnée dans la branche d'épique : `onboarding.rs` (`set_coordinates`) et
   `settings/+page.svelte` (blocs distincts).
 - **48-1 et 48-12** touchent toutes deux l'espace `supplier-invoices` (48-1 : `[id]/+page.svelte` et
@@ -246,7 +246,7 @@ mécanique) porte une **dérogation** décidée par Guy le 2026-11-18. Elle a jo
 2026-11-19 en 48-12a et 48-12b (cinq modules chacune), et pour la story v0200-corrections-mineures, dont la garde
 générale des clés est partie vers #1406 (signal de recyclage déclaré, décision de Guy du 2026-11-19).
 
-## Fichiers communs (avec l'Epic 49, v0200-menu-sous-groupes et les PR de Beat)
+## Fichiers communs (avec l'Epic 49, v0200-menu-sous-groupes et les PR du contributeur)
 
 | Fichier | Qui d'autre | Règle |
 |---|---|---|
@@ -264,7 +264,7 @@ générale des clés est partie vers #1406 (signal de recyclage déclaré, déci
 
 Recomptés le 2026-11-18 depuis GitHub (commandes du `CLAUDE.md`) : **496 issues ouvertes**, **247 bugs** (`bug` ou
 `known-failure`), **14 P1** ouvertes (dont 11 portant `bug` ou `known-failure`) — identiques au tag v0.19.0 ; hors les 56
-issues masquées du compte de l'agent de Beat. L'Epic 48 vise **dix-neuf** issues portant `bug` ou `known-failure`, toutes
+issues masquées du compte de l'agent du contributeur. L'Epic 48 vise **dix-neuf** issues portant `bug` ou `known-failure`, toutes
 au milestone v0.20.0 (recompté le 2026-11-18 au soir) : douze dans les stories 48-10 à 48-13 (#1245, #1173, #1175, #1176,
 #1177, #975, #984, #985, #986, #1233, #1243, #1226), quatre dans la 48-15 (#1331, #1332, #1333, #1334) et trois dans la
 story de solde (#1261, #1262, #1263) ; plus #1255 (`technical-debt`) et #1167 (CR). Le même soir, le stock est à **507

@@ -1,7 +1,7 @@
 # Prompt de validation CR-5 P6 ciblée — fiches de l'Epic 37
 
 Passe **ciblée** (`CLAUDE.md` § *La passe ciblée*) : **une seule lentille**, braquée sur **la dernière remédiation**.
-Dépôt `/home/beat/limu/compta/kesh`. Fiches visées : `37-2-cours-mensuels-afc.md`, `37-3a-ecritures-en-devise-modele.md`,
+Dépôt `<dépôt>`. Fiches visées : `37-2-cours-mensuels-afc.md`, `37-3a-ecritures-en-devise-modele.md`,
 `37-3b-ecritures-en-devise-ecrans.md`, `37-5-reevaluation-fin-exercice.md`, dans `_bmad-output/implementation-artifacts/`.
 
 ## Périmètre

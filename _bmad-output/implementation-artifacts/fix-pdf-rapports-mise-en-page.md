@@ -4,8 +4,8 @@ Status: review
 
 *Fiche rédigée le 2026-11-18, branche `fix/pdf-montants-alignes`, partie de `main` à `70be12a6` (squash de l'Epic 37,
 PR #1247). Correctif hors epic, **non urgent** : il ne passe pas par `hotfix/` (aucune publication intermédiaire) et va
-à la prochaine release planifiée. **Aucune migration.** Constaté par Beat sur les PDF de la recette 2024
-(`data-not-committed/2024-qesh/sorties-kesh/`, bilan et compte de résultat). Périmètre élargi par Beat le même jour à
+à la prochaine release planifiée. **Aucune migration.** Constaté par le responsable de l'epic sur les PDF de la recette 2024
+(`data-not-committed/2024-qesh/sorties-kesh/`, bilan et compte de résultat). Périmètre élargi par le responsable de l'epic le même jour à
 deux points de mise en page (titre des propriétés, en-têtes de devise) ; la fiche s'appelait
 `fix-pdf-montants-alignes.md`.*
 
@@ -53,7 +53,7 @@ Trois défauts de mise en page des PDF de rapports (`crates/kesh-report/src/pdf.
 - Les **factures** (`kesh-qrbill`) partagent le défaut d'alignement — montants du tableau des lignes, du récapitulatif
   TVA et du total écrits à l'abscisse de leur colonne (`crates/kesh-qrbill/src/pdf.rs`, `col_qty`, `col_unit`,
   `col_vat`, `col_tot`) — mais ne sont pas touchées : à tracer à part.
-- La ligne « Résultat reporté (calculé) » (décision de Beat : traitée ailleurs).
+- La ligne « Résultat reporté (calculé) » (décision du responsable de l'epic : traitée ailleurs).
 - Relevés en passant, non traités : flèche « → » de la période, « ↳ » des sous-projets et « ⚠ » du bandeau du grand
   livre, hors WinAnsi, qui disparaissent à l'impression ; intitulé de compte des journaux non tronqué. Tous tracés au
   § *Issues à ouvrir*. (Le commentaire de `draw_empty_message`, devenu faux, est corrigé — revue P1, P1-3.)
@@ -78,7 +78,7 @@ Trois défauts de mise en page des PDF de rapports (`crates/kesh-report/src/pdf.
   `kesh-report` dépend de `kesh-qrbill` (déjà au graphe par `kesh-db`). ⚠️ Écart à relire : la décision 12 de
   l'architecture sépare les PDF des deux crates ; seule une table de métriques est partagée, non une couche de rendu.
   L'autre voie — déplacer la table dans `kesh-core` — toucherait le script `engendrer-largeurs-helvetica.py` et les
-  tests propres à la QR-facture de `largeurs.rs` ; elle n'a pas été prise. **Décision de Beat (2026-11-18)** : la
+  tests propres à la QR-facture de `largeurs.rs` ; elle n'a pas été prise. **Décision du responsable de l'epic (2026-11-18)** : la
   dépendance est acceptée ; la ligne ajoutée aux « Dépendances croisées » de
   `_bmad-output/planning-artifacts/architecture.md` en fait foi (revue P1, P1-1).
 - **Chiffres de même chasse.** Les dix chiffres d'Helvetica valent 556 millièmes d'em en maigre comme en gras ;
@@ -106,14 +106,14 @@ Trois défauts de mise en page des PDF de rapports (`crates/kesh-report/src/pdf.
   neufs suivent la même voie ; leurs clés `reports-pdf-col-base-currency` (CHF) et `reports-pdf-col-foreign-currency`
   (Devise, Währung, Valuta, Currency) sont posées dans les quatre locales, comme `reports-pdf-header-period`, mais ne
   sont pas encore lues : un seul mot allemand dans un PDF tout en français serait pire que le français partout.
-  **Décision de Beat (2026-11-18)** : les deux clés restent **non lues** par les PDF jusqu'à la traduction complète des
+  **Décision du responsable de l'epic (2026-11-18)** : les deux clés restent **non lues** par les PDF jusqu'à la traduction complète des
   PDF — pas de mot allemand isolé dans un PDF français. Issue à ouvrir (§ *Issues à ouvrir*, I-7).
 
 ## Change Log
 
 - 2026-11-18 — Alignement à droite (`4de1b96b` code, `bd087f4a` tests), base `70be12a6`. Mutation : `write_right`
   ramené à une abscisse fixe → les six tests de bout en bout rougissent, les trois unitaires restent verts.
-- 2026-11-18 — Périmètre élargi par Beat : titre des propriétés et en-têtes de devise (`cc6aabe3`, code et tests).
+- 2026-11-18 — Périmètre élargi par le responsable de l'epic : titre des propriétés et en-têtes de devise (`cc6aabe3`, code et tests).
   Mutations : titre écrit tel quel (sans gabarit ni substitution) → `le_titre_des_proprietes_du_pdf_se_relit_juste`
   rouge ; en-tête « CHF » de la balance et du grand livre retiré → `balance_et_grand_livre_disent_chf_en_multi_devises`
   et `balance_pdf_aligne_les_quatre_colonnes_a_droite` rouges ; ligne d'en-têtes du bilan retirée →
@@ -135,7 +135,7 @@ Trois défauts de mise en page des PDF de rapports (`crates/kesh-report/src/pdf.
   URL de `validation.rs` ; `kesh-report` : `NAMED_POSTS` de `homepage_summary.rs`), aucun de cette branche. Pas de gate
   complet (aucun code exécutable touché). Trend : P1 Opus 0 > LOW (8 LOW) ; passe ciblée P2 sur le commit de
   correction à lancer (`revue-p2-ciblee-prompt.md`).
-- 2026-11-18 — **Décisions de Beat** : (1) clés `reports-pdf-col-*` non lues jusqu'à la traduction complète des PDF ;
+- 2026-11-18 — **Décisions du responsable de l'epic** : (1) clés `reports-pdf-col-*` non lues jusqu'à la traduction complète des PDF ;
   (2) dépendance `kesh-report` → `kesh-qrbill` acceptée, la ligne d'architecture fait foi.
 - 2026-11-18 — passe P2 ciblée (Haiku) sur `62ccfa4a` : 0 CRITICAL/HIGH, **1 MEDIUM**, 4 LOW. MEDIUM-1 : `crates/kesh-qrbill/README.md` disait encore le crate « standalone, zero dependency on kesh-core » (propagation manquée de P1-3) — corrigé. LOW-1 (manuel : troncature à un nombre fixe de caractères, non « trop longs pour leur colonne »), LOW-2 (`WINANSI` est `pub(crate)`), LOW-3 (message vide non centré), LOW-4 (`architecture.md` : `kesh-report` ne dépend pas de `kesh-i18n`) — corrigés dans le même commit, sans code exécutable. Passe P3 ciblée à suivre (une passe à MEDIUM appelle une passe de plus).
 - 2026-11-18 — passe P3 ciblée (Sonnet) sur `a2759eed` : **0 au-dessus de LOW**, 4 LOW (copies restées fausses de la description de `kesh-qrbill` et des dépendances de `kesh-report` dans des documents de planning et le README ; tracées en une issue de documentation, I-8). **Boucle close.** Trend : P1 Opus 0 > LOW (8 LOW) → P2 ciblée Haiku 1 MEDIUM + 4 LOW → P3 ciblée Sonnet 0 > LOW (4 LOW). Dernier commit de code `cc6aabe3`, gates complets verts à ce commit ; les commits suivants ne portent que documentation et commentaires.
@@ -172,7 +172,7 @@ par point, priorité et étiquette proposées.)*
 - **I-5 (P1-8)** — PDF de rapports : « → » (période), « ↳ » (sous-projets) et « ⚠ » (bandeau du grand livre), hors
   WinAnsi, disparaissent à l'impression. P4, `bug`.
 - **I-6 (P1-8)** — PDF des journaux : intitulé de compte non tronqué, peut recouvrir la colonne débit. P4, `bug`.
-- **I-7 (décision de Beat)** — PDF de rapports : lire les libellés dans la langue de l'utilisateur (i18n complète), y
+- **I-7 (décision du responsable de l'epic)** — PDF de rapports : lire les libellés dans la langue de l'utilisateur (i18n complète), y
   compris les deux en-têtes neufs. P4, `enhancement`.
 
 ## Notes de version

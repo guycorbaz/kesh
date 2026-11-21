@@ -1,6 +1,6 @@
 # Prompt de validation P5 — fiches de l'Epic 37 (une fiche par passe)
 
-Tu fais la passe de validation **P5** d'une fiche de story du dépôt `/home/beat/limu/compta/kesh` (Kesh, logiciel
+Tu fais la passe de validation **P5** d'une fiche de story du dépôt `<dépôt>` (Kesh, logiciel
 comptable suisse en production : Rust/Axum, SvelteKit, MariaDB). Contexte obligatoire, à lire d'abord :
 
 - le fichier d'epic `_bmad-output/planning-artifacts/epic-37-multi-devises.md` (décisions D1–D7 de l'utilisateur,

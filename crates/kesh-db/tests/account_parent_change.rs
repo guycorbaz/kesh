@@ -481,7 +481,7 @@ async fn sous_son_ancien_compte_propre_retire_dans_le_meme_put(pool: MySqlPool) 
     assert_eq!(lire(&pool, eur2).await.parent_id, None);
 }
 
-/// Revue P1-2 (décision de Beat) : un parent qui porte des écritures, même en
+/// Revue P1-2 (décision du responsable de l'epic) : un parent qui porte des écritures, même en
 /// CHF, est refusé ; le même compte, sans écriture, est accepté.
 #[sqlx::test(migrations = "./test-schema")]
 async fn parent_mouvemente_refuse(pool: MySqlPool) {

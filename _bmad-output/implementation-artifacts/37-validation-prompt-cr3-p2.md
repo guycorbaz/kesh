@@ -1,10 +1,10 @@
 # Prompt de validation CR-3 P2 — fiches révisées de l'Epic 37
 
-Tu fais la **deuxième passe complète** du cycle de validation CR-3 (revue de Beat),
-sur une fiche du dépôt `/home/beat/limu/compta/kesh` (Kesh, logiciel comptable suisse en production : Rust/Axum,
+Tu fais la **deuxième passe complète** du cycle de validation CR-3 (revue du responsable de l'epic),
+sur une fiche du dépôt `<dépôt>` (Kesh, logiciel comptable suisse en production : Rust/Axum,
 SvelteKit, MariaDB). À lire d'abord :
 
-- le fichier d'epic `_bmad-output/planning-artifacts/epic-37-multi-devises.md` : décisions **D1–D10** et **R1–R10** et **S1–S6** (sections « Revue de Beat — CR-2 » et « — CR-3 » ; CR-3 prime) (D9 : table des
+- le fichier d'epic `_bmad-output/planning-artifacts/epic-37-multi-devises.md` : décisions **D1–D10** et **R1–R10** et **S1–S6** (sections « Revue du responsable de l'epic — CR-2 » et « — CR-3 » ; CR-3 prime) (D9 : table des
   cours modifiable ; D10 : réévaluation au cours journalier de clôture ; *Terminologie*) et registre, en particulier
   **CR-3 — amendements du registre et arbitrages** (A9–A16) ;
 - la fiche à valider (ta mission), dont l'entrée « révision CR-3 » du Change Log ; le diff de la révision :

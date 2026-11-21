@@ -1,7 +1,7 @@
 # Prompt de validation CR-7 P2 — fiches de l'Epic 37
 
 Deuxième passe du cycle CR-7 (**modèle différent** de P1, Sonnet), contexte frais, sur une fiche du worktree
-`/home/beat/claude/kesh/.claude/worktrees/kesh-wt37` (branche `epic/37-multi-devises` ; n'écris nulle part ailleurs).
+`<dépôt>/.claude/worktrees/kesh-wt37` (branche `epic/37-multi-devises` ; n'écris nulle part ailleurs).
 
 ## À lire
 

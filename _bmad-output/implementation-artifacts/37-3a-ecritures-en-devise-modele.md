@@ -6,7 +6,7 @@ Status: done
 et 37-2. **Migration non breaking** (colonnes `NULL` ajoutées). **Découpée** à la rédaction (règle de splitting
 préventif : plus de cinq modules) : 37-3a = le serveur (`kesh-core`, `kesh-db`, `kesh-api`, `kesh-reconciliation`,
 `kesh-seed`) et les sélecteurs serveur ; 37-3b = soldes d'ouverture, formulaire et écrans. Révisée le 2026-11-14 pour
-la revue de Beat (CR-2 : R1, R3, R7), qui prime sur le registre antérieur ; puis pour sa revue CR-3 (S2 : comptes de
+la revue du responsable de l'epic (CR-2 : R1, R3, R7), qui prime sur le registre antérieur ; puis pour sa revue CR-3 (S2 : comptes de
 différence propres à un compte en devise, résolus par `fx_accounts_for` de 37-1 ; S6 : `FX_RATE_NOT_AFC` compare au
 cours AFC **en vigueur**), qui prime sur CR-2 ; puis pour sa revue 2 (CR-4, **T3** : la ligne **ne stocke pas** la
 devise — elle se lit sur le compte, dont la devise est verrouillée dès la première ligne, 37-1), qui primait sur tout
@@ -293,7 +293,7 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
       sur le modèle de celle du constructeur de test, Tâches) ; jamais un champ public de `NewJournalEntry` (même raison
       que la contre-passation ci-dessous) ; la contre-passation est exemptée elle aussi (reconnue par
       `reverses_entry_id.is_some()`, comme pour `FX_RATE_NOT_AFC`) : elle recopie une écriture qui a passé ce contrôle,
-      ou une ouverture. Exemption de l'ouverture : arbitrage A3, approuvé par Beat (CR-5). ⚠️ **La contre-passation n'est pas exemptée de
+      ou une ouverture. Exemption de l'ouverture : arbitrage A3, approuvé par le responsable de l'epic (CR-5). ⚠️ **La contre-passation n'est pas exemptée de
       `MULTI_CURRENCY_DISABLED`** : elle est datée du jour ou du premier jour de l'exercice suivant (`ReversalDating`,
       `reverse_in_tx_inner`) ; l'exercice suivant d'un exercice multi-devises l'est aussi (CR-7, D-CR7-2), seul un exercice du
       jour mono-devise (clos avant l'activation, rouvert) la refuse en 409 ; comportement assumé, testé (origine en
@@ -854,10 +854,10 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
   (37-2) au lieu de l'hypothèse « si la fonction le contrôle aussi » ; « sauvegarde de la version courante » précisée
   (version de l'epic). Sites lus : `balance.rs:72,150,163`, `journal_entries.rs:135,505,1243,1300,1667,2796`,
   `errors.rs:1726`, 37-2 AC-2, AC-5, AC-9 et Tâches ; aucun GET réseau.
-- 2026-11-14 — révision CR-2 (revue de Beat R1–R10 ; Opus) : **R7** — une écriture ne porte qu'une devise étrangère :
+- 2026-11-14 — révision CR-2 (revue du responsable de l'epic R1–R10 ; Opus) : **R7** — une écriture ne porte qu'une devise étrangère :
   refus 400 `FX_MULTIPLE_CURRENCIES` au contrôle central (AC-4, rang 2 bis), bras HTTP et `FailedProposal` ; exemption
   de l'ouverture et de son complément par un paramètre privé de `create_in_tx_inner` posé par une variante
-  `pub(crate)` (à confirmer par Beat), et de la contre-passation ; la conversion passe par le compte de conversion en
+  `pub(crate)` (à confirmer par le responsable de l'epic), et de la contre-passation ; la conversion passe par le compte de conversion en
   deux écritures (Story, Tâches). **R3** — `MULTI_CURRENCY_DISABLED` jugé sur l'exercice de l'écriture
   (`fiscal_years.multi_currency`, lu dans le `FOR UPDATE` de l'étape 1), plus sur la société seule ; garde de
   l'exercice antérieur à un exercice mono-devise (`reason: "laterFiscalYear"`, création, modification, suppression,
@@ -910,7 +910,7 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
   complément / écriture ordinaire), `recette-montee.sh:414`, 37-5 AC-3 (suppression ; contre-passation datée),
   37-1 AC-6, 37-3b AC-2 (alignée). Axes non exercés : le reste de la fiche, i18n, manuels, E2E ; test de
   concurrence non exécuté (fiche seule).
-- 2026-11-14 — révision CR-3 (revue de Beat S1–S6 ; Opus) : **S2** — AC-5 : `accounts.fx_gain_account_id` /
+- 2026-11-14 — révision CR-3 (revue du responsable de l'epic S1–S6 ; Opus) : **S2** — AC-5 : `accounts.fx_gain_account_id` /
   `fx_loss_account_id` (37-1 AC-4 bis) ajoutées à la liste close des colonnes qui désignent un compte ; puce neuve :
   cette story ne choisit aucun compte de différence, toute résolution serveur (37-5) passe par `fx_accounts_for` puis
   `validate_fx_accounts_in_tx` (37-1), et l'écran (37-3b) par le miroir `fxAccountsFor`, inventaire des sites lecteurs au Change Log du
@@ -925,7 +925,7 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
   réinitialisation) ; (3) lecture du cours AFC sans verrou face à une adoption concurrente (37-2 AC-5 les lit `FOR
   UPDATE`) — limite assumée écrite à l'AC-4 ; (4) **non appliqué** : le `PUT` d'une écriture `afc` est refusé pour ses
   lignes **inchangées** après une adoption (37-2 AC-5, 37-3a AC-4 4) alors que S6 dit que les lignes passées ne
-  changent jamais ; issue de secours = passer la ligne en `manual` au même cours. Proposition, si Beat veut l'éviter :
+  changent jamais ; issue de secours = passer la ligne en `manual` au même cours. Proposition, si le responsable de l'epic veut l'éviter :
   ne contrôler que les lignes `afc` nouvelles ou modifiées au `PUT` (comparaison à `before_lines`, déjà lues à l'étape
   6), en gardant `404 RATE_UNAVAILABLE` pour les seules lignes contrôlées ; touche 37-2 (AC-5, Tâches) et 37-3b.
   Sites lus : diff `294889cc..b6f88c24` ; 37-1 AC-4 bis (`fx_accounts_for`, `validate_fx_accounts_in_tx`, gardes
@@ -961,7 +961,7 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
   l'étape 1), `:1620-1636` ; 37-2 AC-5 (:552-561), 37-3b (:72-80, :205-236), fichier d'epic A17. Axes exercés : vérité
   au code des phrases ajoutées, cohérence AC-4/AC-7/Tâches, points de contact 37-2/37-3b/37-4/37-5. Non exercés :
   reste de la fiche, i18n, manuels, MCP, E2E.
-- 2026-11-14 — révision CR-4 (revue 2 de Beat T1–T6 ; Opus) : **T3** — la colonne `journal_entry_lines.currency` est
+- 2026-11-14 — révision CR-4 (revue 2 du responsable de l'epic T1–T6 ; Opus) : **T3** — la colonne `journal_entry_lines.currency` est
   **retirée** : migration à trois colonnes (`amount_currency`, `exchange_rate`, `rate_source`), `chk_jel_fx_currency`
   supprimée, `chk_jel_fx_all_or_none` sur trois colonnes, `chk_jel_fx_chf` gardée par `amount_currency IS NULL`, liste
   close R1 à trois colonnes (AC-1) ; la devise d'une ligne se lit sur le compte : `LINE_COLUMNS` qualifiée et jointure
@@ -1007,7 +1007,7 @@ chacune (R7), l'écart de change dans la seconde, afin que mes comptes en devise
   résidus de T3 sur les six fiches, prémisses de code des lectures et écritures de lignes, ordre des refus, verrous et
   isolation, CSV/audit/MCP/sauvegarde, tests des AC modifiés. Non exercés : GET de la source journalière (aucune prémisse
   ici), i18n des quatre locales (aucune clé relue au code), manuels et E2E (37-3b), test de concurrence non exécuté.
-- 2026-11-14 — révision CR-5 (revue 3 de Beat U1–U6 ; Opus) : **U1** — `FX_RATE_NOT_AFC` (AC-4, 4) compare au cours
+- 2026-11-14 — révision CR-5 (revue 3 du responsable de l'epic U1–U6 ; Opus) : **U1** — `FX_RATE_NOT_AFC` (AC-4, 4) compare au cours
   retenu par la société, la ligne `exchange_rates` `source = 'afc'` du mois, lue par `find_company_rate_in_tx` de
   37-2 ; plus aucun `find_rate_in_tx` sur la table système pour ce contrôle (la dernière valeur publiée n'y entre
   jamais) ; mois à ligne `manual` → ligne `afc` refusée, `expectedRate` `null` ; aucune ligne de la société →
@@ -1346,7 +1346,7 @@ l'API aussi ; ouverture à deux devises par `create_opening_entry` (au dépôt),
 
 ### Gates réellement exécutés
 
-Journaux : `/home/beat/claude/kesh-gate-logs/s37-3a/`.
+Journaux : `<station>/kesh-gate-logs/s37-3a/`.
 
 - **Backend complet** au dernier commit de code, la fusion `e89291e6`, bases remises à zéro (recréées, migrées,
   semées) : `scripts/test-fast.sh --ci` (fmt `--check`, clippy `--workspace --all-targets -D warnings`, nextest

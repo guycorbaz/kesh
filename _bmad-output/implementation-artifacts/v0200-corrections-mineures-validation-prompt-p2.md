@@ -105,7 +105,7 @@ Rapport : **`/home/gcorbaz/devel/kesh-gate-logs/v0200cm/validation-p2.md`** (le 
     '\b(close[sd]?|fix(e[sd])?|resolve[sd]?) #[0-9]'` doit être vide).
 11. **Fichiers communs et coordination.** `errors.rs` avec la 48-12a ; `unknown-outcome.ts` avec la 48-12b (conflit sémantique) ;
     catalogues, `textes_coherents.rs`, `i18n-keys.test.ts`, `sprint-status.yaml` (clé au bloc de l'Epic 48, statut `backlog`,
-    commentaire à jour) ; la PR #1327 de Beat ne touche-t-elle aucun fichier de la story ?
+    commentaire à jour) ; la PR #1327 du contributeur ne touche-t-elle aucun fichier de la story ?
 12. **Le Change Log de la remédiation.** Ses décomptes (14 findings = 13 confirmés + 1 déjà tracé ; 1 réfuté en partie ; modules
     cinq) se recomptent-ils depuis la source ? Chaque « confirmé » cite-t-il une ligne lue ? Le grep du symptôme déclaré a-t-il laissé
     un reste hors historique (refais-le : anciens comptes, anciennes lignes, « quatre modules », attribution de #1375 à la 48-12b,
