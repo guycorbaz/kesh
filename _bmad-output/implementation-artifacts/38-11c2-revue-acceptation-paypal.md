@@ -507,6 +507,39 @@ retiré ; refus `VALIDATION_ERROR` `counterparty_wrong_currency` possible pour u
 conversion nomme la devise du côté en cause ; `ReviewResponse` générique (forme JSON inchangée pour PayPal) ; champs
 `linkable`/`ruleable` à ajouter à tout `ProviderSpec` construit ailleurs.
 
+### Remédiation de la revue P2 et décision de Beat du 2026-11-21 (Claude Sonnet 5.5)
+
+- **P2 L1, L2, L4** (`85369670`, format `572cfa59`) : `prepare_accept` lit, sur le pool, les écritures de la société que les
+  propositions éligibles font rattacher (`provider_review::existing_entry_ids`) ; `PreparedAccept::entries_to_lock` ne porte
+  que celles-ci, et `run_batch` ne pré-verrouille qu'elles : un identifiant absent ou d'une autre société ne pose plus de
+  verrou d'intervalle (L1, L2). Une écriture créée entre le pré-vol et le verrou reste refusée fermée (`accept_link_entry`,
+  inchangé). Doc de `link_entry_in_tx` : phrase en double fusionnée (L4). Test : `rattachement_a_une_ecriture_absente_refuse_le_reste_accepte`.
+- **Décision de Beat (point d, signature des epics, 2026-11-21)** (`0ec6472a`, `49a410cf`) : la contrepartie d'une règle est en
+  CHF **ou dans la devise de la transaction** ; toute autre devise est refusée, `COUNTERPARTY_CURRENCY_MISMATCH`
+  (`details { accountId, accountCurrency, transactionCurrency }`, clé `provider-failed-counterparty-currency-mismatch`, quatre
+  locales). Elle remplace « en CHF » d'AC-10 et de la revue P1 L3. Touché : création et modification des règles
+  (`reconciliation_rules.rs`, plus de `ACCOUNT_IN_FOREIGN_CURRENCY`) ; revue (`rule_account_ids` rend la devise,
+  `matching_rule` compare) ; acceptation (`accept_one_rule` du moteur) ; filet du rapprochement bancaire CHF
+  (`reconciliation.rs` : un compte en devise est refusé par proposition, `ACCOUNT_IN_FOREIGN_CURRENCY`) ; manuel
+  utilisateur `.tex`, `docs/api-external.md`. Non touché, limite nommée : `ACCOUNT_CURRENCY_IN_USE` (site
+  `CurrencyUseSite::ReconciliationRule`) refuse encore de poser une devise sur un compte déjà désigné par une règle.
+- Tests (périmètre `55c8b154..HEAD`, attributs recomptés) : 4 `#[sqlx::test]` neufs et 1 retiré dans `paypal_reconciliation_e2e.rs`
+  (`regle_a_contrepartie_en_devise_refusee` remplacé par trois : contrepartie EUR sur EUR acceptée, USD sur USD acceptée, EUR sur
+  USD refusée ; plus celui de L1) ; test unitaire de `matching_rule` étendu ; `regles_de_reconciliation_admettent_un_compte_en_devise`
+  (kesh-db, remplace le test de refus) ; assertion de `account_currency_e2e.rs` passée à 201 ; inventaire
+  `account_columns_inventory.rs` mis à jour.
+- Gates (au dernier commit de code `49a410cf` pour gate-ci ; `0ec6472a` pour le reste, voir l'écart) :
+  ciblé `cible-3.log` (fmt, clippy, 1589 passés, 7 ignorés) ; backend complet `gate-backend.log` : **6277 passés, 1 échec, 14
+  ignorés** — l'échec, `account_columns_inventory` (le test retiré cité par l'inventaire), corrigé en `49a410cf` et rejoué :
+  `nextest-inventaire.log`, 30 passés (`account_columns_inventory` + `account_currency_repository`) ; le backend complet n'a
+  **pas** été rejoué en entier après `49a410cf` (commit de test seul). Frontend (`tour-final.log`) : check, lint-i18n, build verts, Vitest
+  **4612 tests, 278 fichiers**. E2E complet : **476 passés, 11 échecs, 18 ignorés** — dix attendus (sept KF-029, `backup-restore-new-install:262`
+  et `:381`, `opening-balances:156`) et `bank-import.spec.ts:130` (compte de lignes lu avant le chargement de la liste : pollution d'état),
+  **passé seul** au rejeu (`e2e-un.log`, `rerun.console`). gate-ci sur copie `git archive` de `49a410cf` : **6297 passés, 0 échoué, 18
+  ignorés** (`gate-ci.log`, code 0).
+- **La story reste `review`** : du code de production a changé après la P2 ; passe ciblée P3 à lancer sur son prompt,
+  `kesh-gate-logs/s38-11c2/revue-p3-prompt.md`.
+
 ## Change Log
 
 - 2026-11-20 — fiche rédigée sous la clé 38-11c (phase 1 KISS), non validée.
@@ -554,3 +587,4 @@ conversion nomme la devise du côté en cause ; `ReviewResponse` générique (fo
   du lot (choix justifié au Dev Agent Record), M1 à M4, L1, L3, L4, L7, L8 ; L2, L5, L6 en dette (issues à ouvrir
   n° 14 à 16). Mutations vérifiées ; gates complets à rejouer (arrêtés par la station, mémoire). Prompt de la passe
   P2 complète (Sonnet) : `kesh-gate-logs/s38-11c2/revue-p2-prompt.md`. Statut : `review`.
+- 2026-11-21 — revue P2 (Sonnet 5.5) : 0 au-dessus de LOW, quatre LOW ; L1, L2, L4 remédiés (`85369670`) ; décision de Beat du 2026-11-21 intégrée (`0ec6472a`, `49a410cf`) ; gates rejoués ; passe ciblée P3 à lancer.
