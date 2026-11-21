@@ -1,6 +1,6 @@
 # Story 38-12a : téléchargement des transactions par l'API PayPal (identifiants, client, conversion, tâche)
 
-Status: ready-for-dev
+Status: in-progress
 
 *Fiche rédigée le 2026-11-20, branche `epic/38-paypal` (phase 1 au commit `90428594`). Epic 38, **phase 2**
 (décisions de Beat du 2026-11-20, `kesh-gate-logs/epic-38-kiss/phase2-decisions.md`, autorisations du soir comprises).
@@ -61,7 +61,7 @@ par des appels réels en lecture seule (Notes de développement).*
 
 *Socle commun S1 à S9* (texte identique de `epic-39-wise.md` et `epic-40-stripe.md`, § « Socle commun de la phase 2 »,
 C-40-K6) : cette fiche, développée la première, **écrit le socle générique** (`provider_env`, `provider_download`,
-constructeur de client, routes et codes `PROVIDER_*`, cœur d'import `ProviderLine`, test S9) ; Wise (39-12a1, 39-12a2) et
+constructeur de client, routes et codes `PROVIDER_*`, cœur d'import `ProviderLine`, test S9) ; Wise (39-12a1, 39-12a2, 39-12a3, 39-12b) et
 Stripe (40-8a, 40-8b) l'appellent. Restent propres à PayPal : le client (jeton, pages, `RESULTSET_TOO_LARGE`), la conversion
 vers `PaypalRow`, la table des types et le passage `PaypalRow` → `ProviderLine` de 38-11b.
 
@@ -270,13 +270,13 @@ vers `PaypalRow`, la table des types et le passage `PaypalRow` → `ProviderLine
 
 ## Tâches
 
-- [ ] T0 — Reprendre `main` et les branches des Epics 39, 40 si fusionnées : socle déjà écrit ? cœur `ProviderLine` déjà factorisé ? État au Change Log.
-- [ ] T1 — `provider_env` générique, série PayPal, validation, masque `Debug` (AC-1 à AC-3) ; séries 1 à 3 aux deux fichiers `docker-compose` et à `.env.example` ; famille indexée dans `configuration_transmise.rs` (AC-1).
-- [ ] T2 — `kesh-import::paypal_api` : lecture de page, table des types, conversion, contrôles partagés avec `read_row` (AC-5).
-- [ ] T3 — `provider_download` (`windows`, reprise, tâches, sémaphore), constructeur de client extrait, client PayPal (AC-4 à AC-6).
-- [ ] T4 — Appel du cœur commun `ProviderLine` (ou son extraction hors de la route PayPal) (AC-7).
-- [ ] T5 — Routes, registre et phrase du manuel, audit, codes `PROVIDER_*` et messages aux quatre locales, test S9 (AC-8, AC-9).
-- [ ] T6 — Serveur simulé et tests (AC-10).
+- [x] T0 — Reprendre `main` et les branches des Epics 39, 40 si fusionnées : socle déjà écrit ? cœur `ProviderLine` déjà factorisé ? État au Change Log.
+- [x] T1 — `provider_env` générique, série PayPal, validation, masque `Debug` (AC-1 à AC-3) ; séries 1 à 3 aux deux fichiers `docker-compose` et à `.env.example` ; famille indexée dans `configuration_transmise.rs` (AC-1).
+- [x] T2 — `kesh-import::paypal_api` : lecture de page, table des types, conversion, contrôles partagés avec `read_row` (AC-5).
+- [x] T3 — `provider_download` (`windows`, reprise, tâches, sémaphore), constructeur de client extrait, client PayPal (AC-4 à AC-6).
+- [x] T4 — Appel du cœur commun `ProviderLine` (ou son extraction hors de la route PayPal) (AC-7).
+- [x] T5 — Routes, registre et phrase du manuel, audit, codes `PROVIDER_*` et messages aux quatre locales, test S9 (AC-8, AC-9).
+- [x] T6 — Serveur simulé et tests (AC-10).
 
 ## Stratégie de tests
 
@@ -298,7 +298,7 @@ client, client PayPal, routes, erreurs ; le `.tex` du manuel d'administration po
 prestataires), catalogues i18n (leur bloc),
 `crates/kesh-api/src/routes/paypal_imports.rs` de 38-11b et le cœur commun `ProviderLine` (38-11b, 39-11b, 40-7b),
 `crates/kesh-api/src/exchange_rates/source.rs` (constructeur de client extrait), modules du socle (appelés par 39-12a1,
-39-12a2, 40-8a, 40-8b), `crates/kesh-import/src/paypal.rs` de
+39-12a2, 39-12a3, 39-12b, 40-8a, 40-8b), `crates/kesh-import/src/paypal.rs` de
 38-11a (contrôles extraits), `audit_route_registry.rs` et `admin-manual.tex` (comptes recomptés) : à relire à la reprise
 de `main`.
 
@@ -374,3 +374,176 @@ rattrape, sans doublon.
   les deux phrases du manuel et les assertions du registre écrites en toutes lettres à l'AC-8.
 - 2026-11-20 — validation P5 ciblée sur les commits `977bf9ec` et `452606a3` (modèle : claude-haiku-5-5, contexte frais, une lentille ; rapport `kesh-gate-logs/epic-38-kiss/validation/38-12-P5-ciblee.md`) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW, remédié. LOW : l'AC-1 disait que les compose et `.env.example` « portent » `KESH_<P>_BASE_URL` et `KESH_<P>_PARALLEL` (ligne 76), mais ne les exigeait nulle part : la garde ne l'aurait pas contrôlé — exigence ajoutée à l'AC-1, par une liste dédiée distincte de l'ensemble lu. Vérifié au code de `origin/main` : `JETONS_SURVEILLES`, `EMPLACEMENTS_AUTORISES` (`Forme::Exacte`, `env :: vars ( )` sans nom lu), (V) admet `${NOM:-}`, `AppError::Internal` rend `INTERNAL_ERROR` (`errors.rs`), `is_template_placeholder` aux lignes 650 et 683 ; registre 157 / 149 / 4 / 4 / 161 et manuel « 149 des 157 », « 149 + 4 + 4 = 157 » (une fois chacune, `admin-manual.tex:3302`) ; `T1111` confirmé sur la page publique PayPal. Le test de partition porte six `assert_eq!` (et non cinq), dont la somme : l'AC-8 les couvre toutes.
 - 2026-11-20 — alignement demandé par le coordinateur : l'AC-8 écrit le décompte du test de partition (six `assert_eq!` à `origin/main`, cinq à valeur littérale et une égalité de partition). Les fiches 39-12a2 et 40-8b, citées comme modèle, n'existent pas encore à HEAD : la formulation est la même, sans renvoi à elles.
+- 2026-11-20 — développement (`bmad-dev-story`, Claude Opus 5.5), branche `story/38-12a` partie de `epic/38-paypal` à
+  `ca34a3f4` ; commits de code `d64688fc` (socle, client, routes, tests), `04436455` (montant à 17 chiffres). Détail au
+  Dev Agent Record. Renvois Wise corrigés sur demande du coordinateur (l. 64, l. 300 de cette fiche, `epic-38-paypal.md`
+  l. 190 : « 39-12a1, 39-12a2, 39-12a3, 39-12b »).
+- 2026-11-21 — reprise par un second développeur (Claude Opus 5.5, le premier ne répondant plus ; 14 fichiers non
+  commités trouvés, aucun processus resté sur ce worktree, le dernier gate ciblé `cible-6.log` vide, interrompu). Le gate
+  complet à `04436455` (`gate-backend.log`, 2026-11-21 00:58) rendait 6268 tests, 11 échecs, tous dans des gardes
+  (`audit_label_registry` 2, `date_du_jour_garde` 7, `dates_recues_garde` 2) : les corrections non commitées les
+  visaient, relues et commitées en `1b791613` ; le gate ciblé suivant a rendu deux échecs de plus dans
+  `audit_label_registry` (site indirect sans littéral, compte de l'inventaire), corrigés en `9bbf1388` à l'identique de
+  la 40-7b (`c760dc49`). Détail au Dev Agent Record, § Reprise.
+
+## Dev Agent Record
+
+### Agent Model Used
+
+Claude Opus 5.5 (`claude-opus-5-5`), worktree `kesh-wt38p2`.
+
+### T0 — état trouvé
+
+`main`, `origin/main`, `epic/39-wise`, `epic/40-stripe` relus le 2026-11-20 : **aucun** socle (`provider_env`,
+`provider_download`, `ProviderLine`, `paypal_api`) n'existe sur aucune branche. Décision : 38-12a écrit le socle et
+**extrait** le cœur d'import de la route PayPal de 38-11b (AC-7, deuxième branche).
+
+### Ce que les appels réels ont confirmé (métadonnées seules, aucune donnée personnelle conservée)
+
+33 appels sur 40 (`appel-reel.sh paypal`, journal `kesh-gate-logs/appels-reels/paypal.log`), lecture seule, deux
+comptes de Beat ; réponses brutes gardées hors dépôt (`data-not-committed/paypal-api-samples/`, mode 600) ; analyse par
+décomptes seulement.
+
+| Point « non confirmé » de la fiche | Constat |
+|---|---|
+| hôte réel | `https://api-m.paypal.com` répond pour un compte réel (OAuth et Transaction Search) |
+| OAuth | `POST /v1/oauth2/token`, Basic, `grant_type=client_credentials` : `access_token`, `token_type` `Bearer`, `expires_in` **32 400**, portée `…/services/reporting/search/read` ; même jeton rendu aux demandes répétées (échéance décroissante) |
+| fuseau des dates | ⚠️ **contredit** : avec `PayPal-Enforce-ISO8601-Format: true`, les 341 dates de 2024 sont en **`+00:00`** (UTC), non dans le fuseau du compte. Correction à la conversion (Notes de dev.) : l'instant est ramené à l'heure de Zurich (`kesh_core::horloge::heure_suisse`, fonction neuve), date et heure du CSV |
+| signe des frais | négatif sur les encaissements (`T0007`, `T0002`) et sur les paiements `T0000` qui en portent ; **absent** ailleurs ; aucun frais positif observé (aucun remboursement avec frais sur la période) — admis de tout signe |
+| `payer_info` d'un débit | la **contrepartie** : 6 adresses distinctes sur 26 débits qui en portent, de codes différents (un titulaire en donnerait une seule) ; conversions et retenues de contrôle sans adresse |
+| codes et libellés | 2024, compte 1 : 341 transactions, codes `T0000` (13), `T0002` (66), `T0003` (1), `T0006` (10), `T0007` (210), `T0201` (36), `T1107` (1), `T1110` (1), `T1111` (1), `T2105` (1), `T2106` (1) ; statuts S 339, P 1 (`T1110`), D 1 (`T1111`) — **même décompte et même ventilation des statuts** que le CSV de 2024 (`paypal-2024-comprendre.md`) ; libellés attribués par concordance du sens et des types du CSV. **Jointure par identifiant impossible** (CSV de 2024 supprimé avant la phase 2) : écrit tel au commentaire de `PAYPAL_EVENT_TYPES` (✔ concordance / doc) |
+| `paypal_reference_id_type` | `TXN`, `PAP` et **`RP`** (abonnements, 66), absent de la liste du schéma ; référence reprise telle quelle |
+| fenêtre vide | `total_pages = 0`, pas de `transaction_details` (compte 2 sur 2025) — testé |
+| limite de 31 jours | une fenêtre de 31 jours **plus une heure** est acceptée : les fenêtres de 30 jours de Zurich gardent leur marge |
+| `ending_balance` | **présent** sur les 341 lignes malgré `balance_affecting_records_only=Y` ; gardé `None` comme l'écrit l'AC-5 (le solde de clôture reste `NULL`) — piste pour plus tard |
+| montants | chaînes à deux décimales (`"value": "12.34"`), devise des frais = devise du montant |
+| `Retry-After`, limitation, `RESULTSET_TOO_LARGE` | non rencontrés (33 requêtes) : non confirmés, joués au serveur simulé |
+| nom de la fonction à cocher | non vérifiable par l'API (la portée du jeton dit « reporting/search/read ») |
+
+### Implementation Plan / décisions
+
+- **Socle** (générique, pour 39-12a1/a2/a3/b et 40-8a/b) : `src/provider_env.rs` (S1 : `ProviderSpec` — clé,
+  champs requis, **champs facultatifs** `optional_fields` demandés par le coordinateur, vides pour PayPal —, `read` pure
+  testée sans environnement, `ProvidersConfig::from_env` seule lecture, `ConfigError::InvalidProviderVar` qui nomme la
+  variable, gabarit refusé par `is_template_placeholder` rendu `pub(crate)`) ; `src/provider_download.rs` (S2/S3 :
+  `windows`, `Window::split`, `check_period`, `pause_for`, `with_retry`, `ProviderGate` — sémaphore et pause commune —,
+  `Wait` injectable, `Downloads` — tâches, purge à 1 h, `JobView` —, `spawn_job` qui conclut une panique en
+  `INTERNAL_ERROR`, `error_body` qui rend le corps d'une `AppError` avec `details.provider`) ; `src/http_client.rs`
+  (S5 : `build_client`, `read_body_bounded`, extraits de `exchange_rates/source.rs`, qui les appelle) ;
+  `routes/provider_imports.rs` (S6 : `ProviderLine`, `ProviderGroup`, `load_balances`, `import_lines`, `dedupe_groups`,
+  empreinte d'un fichier ou d'un téléchargement) ; codes `PROVIDER_*` (S4) dans `errors.rs` (502/503 pour les erreurs
+  du prestataire, rendues dans le corps d'une tâche), messages aux quatre locales sans nom de prestataire ; marqueur S9
+  `tests/common/secrets_prestataire.rs`.
+- **Cœur extrait** : la route CSV appelle `import_lines` ; ses tests unitaires et `paypal_import_e2e` passent
+  **inchangés en assertions** (le test `doublon_dans_le_fichier_et_en_base` appelle `dedupe_groups` au lieu de
+  `dedupe_rows`, retiré). L'unité des doublons devient le **groupe** (une ligne de la source) : un premier essai par
+  `group_id` contigu fusionnait deux lignes répétées à la suite — corrigé avant commit. Opération du rejeu gardée
+  (`paypal_imports::create`, témoin de `paypal_import_e2e`). Écart assumé : une ligne à brut **et** frais nuls ne
+  produit aucun groupe et n'entre plus dans l'ensemble « déjà vu » (cas dégénéré, sans transaction).
+- **PayPal** : `src/paypal_api/mod.rs` (jeton par tâche renouvelé à 60 s de l'échéance et une fois sur 401 ; pages de
+  500 ; coupe sur `RESULTSET_TOO_LARGE` jusqu'au jour ; 16 Mio ; 60 s ; parallélisme par `JoinSet`, résultats rangés par
+  fenêtre) ; `kesh-import/src/paypal_api.rs` (lecture et conversion pures ; contrôles **extraits** de `read_row` :
+  `normalize_currency`, `normalize_transaction_id`, `sign_mismatch`, `PaypalLineError::new` `pub(crate)`) ; code de ligne
+  neuf `STATUS` ; `to_paypal_row` rend **toutes** les erreurs d'une ligne (`Vec`), comme le lecteur du CSV (la fiche
+  écrivait une seule) ; `routes/paypal_downloads.rs` (POST/GET, corps lu en octets pour que le 403 de la clé précède le
+  400).
+- **Montants** (constat de la revue du client Wise, transmis par le coordinateur) : PayPal envoie ses montants en
+  **chaînes** (`PaypalApiMoney::value: Option<String>`, `kesh-import/src/paypal_api.rs`), lues par
+  `parse_dot_decimal_amount` — aucun flottant ; un montant en nombre JSON fait refuser la page. Test au corps brut à 17
+  chiffres (`un_montant_a_dix_sept_chiffres_…`). Rien à propager au socle : il ne lit aucun montant.
+- **Libellés** : test de couverture `la_table_couvre_les_libelles_de_la_phase_1` — `PAYPAL_NEUTRAL_PAIR_TYPES` et les
+  listes de `classify` de 38-11c2, **recopiées de sa fiche** (38-11c2 se développe en parallèle, ses constantes ne sont
+  pas sur cette branche) : ⚠️ **à remplacer par ses constantes à la fusion**. Quatre libellés sans code, inventaire fermé
+  avec raison (`PAYPAL_CSV_LABELS_WITHOUT_CODE`) : `Shopping Cart Payment Received`, `Payment Received`, `Withdraw Funds
+  to Bank Account`, `Reversal of Account Hold`.
+- **Garde `configuration_transmise.rs`** : familles indexées **dérivées** de `kesh_api::provider_env::ALL_PROVIDERS`
+  (aucune liste recopiée) ; connues en (T), (E), (F), hors ensemble lu ; séries 1 à 3 et variables sans numéro exigées
+  aux deux compose et à `.env.example` ; séries 4 à 9 admises absentes, raison contrôlée par le marqueur `_4_…` des trois
+  fichiers ; deux entrées (L) exactes (`env :: vars_os ( )`, `env_nonempty`) ; auto-test `s_familles_indexees`.
+- **Registre** : `paypal_downloads::create` `Traced, SansEcritureAuJournal` ; recomptés depuis la source : 158 → 159,
+  `traced` 150 → 151, exempt 4, no_matter 4, total avec les routes de test 162 → 163, `SansEcritureAuJournal` 129 → 130
+  (partition de rejeu), `tout.len()` 162 → 163 ; manuel « 151 des 159 », « 151 + 4 + 4 = 159 » (`.tex` seul, PDF à la
+  release). Le `GET` n'a pas de verbe mutant.
+- Modules touchés : `kesh-import`, `kesh-api`, `kesh-i18n` **et `kesh-core`** (`heure_suisse`, pure, testée) — quatrième
+  module, dû au constat UTC.
+
+### Reprise (2026-11-21)
+
+- **Montants** (question de l'orchestrateur) : vérifié au code, aucun montant lu comme nombre JSON —
+  `PaypalApiMoney::value: Option<String>` (`crates/kesh-import/src/paypal_api.rs:142`), lu par `parse_dot_decimal_amount`
+  (`:350`, `:362`) ; la page se lit par `serde_json::from_slice` dans une structure typée, sans `f64`, `Number` ni
+  `Value` (`:252`) ; côté `kesh-api` (`paypal_api/`, `provider_download.rs`, routes), aucun `as_f64` ni `Number` (le seul
+  `f64`, `provider_download.rs:230`, est une durée de pause). Prouvé par
+  `un_montant_a_dix_sept_chiffres_se_lit_exactement_et_un_nombre_json_est_refuse` (`:700`), au corps JSON brut :
+  `"999999999999999.99"` en chaîne lu au chiffre près (net `999999999999999.98`), le même en nombre JSON refusé
+  (`PaypalApiError::Malformed`) ; vert au gate ciblé de la reprise.
+- **`1b791613`** (corrections trouvées non commitées, relues) : `from`/`to` de `DownloadRequest` lus par
+  `dates_recues::date` (bornés à la plage des années ; `COMPTE_CHAMPS` 70 → 72) ; action `paypal_download.created` à
+  `ACTIONS` et ses libellés aux quatre locales ; site indirect `provider_imports.rs` à `SITES_INDIRECTS` ; exemption
+  `date_du_jour_garde` d'une lecture de `date_naive` à `paypal_api.rs` (la conversion n'en porte plus qu'une, la date
+  locale calculée une fois avec l'instant) ; test de `heure_suisse` sans `date_naive`.
+- **`9bbf1388`** : `AUDIT_ACTIONS` (`provider_imports.rs`) déclare en toutes lettres les deux actions que les
+  appelants passent au cœur, contrôlées par `debug_assert!` à l'écriture de la trace ; mentions « neuf » → « dix » et
+  compte de `SITES_INDIRECTS` à 10 dans `audit_label_registry.rs`. **Même texte que la 40-7b** (`c760dc49`, worktree
+  `kesh-wt40b`) au tableau près : à la fusion, la seule ligne en conflit est celle d'`AUDIT_ACTIONS`, qui prend
+  l'union des deux (`[&str; 3]`) ; le compte « dix » des deux côtés devient **onze** si la 40-7b inventorie un site
+  de plus que celui-ci — à recompter à la fusion, non à fusionner.
+- **Doublons voisins** (constat transmis par le coordinateur, relevé par la 40-7b sur sa copie `dedupe_lines`) :
+  **prémisse fausse pour cette branche**. Ici `dedupe_groups` reçoit des **groupes explicites** (`&[ProviderGroup]`, un
+  groupe par ligne de la source, `provider_imports.rs:223`) et ne regroupe rien par `group_id` contigu : deux lignes
+  identiques côte à côte sont deux groupes, la seconde est vue (`seen.insert` faux) et comptée en doublon. C'est le
+  défaut que le premier essai de la story avait eu et qui a été corrigé avant le commit `d64688fc` (§ Implementation
+  Plan, « Cœur extrait ») ; la 40-7b en a recopié une version antérieure. Le test `doublon_dans_le_fichier_et_en_base`
+  (`paypal_imports.rs:714`) porte exactement ce cas (`a`, `b = a.clone()` voisines) et passe : `gate-backend.log`
+  (00:58) et `cible-7.log` de la reprise ; la mutation M5 (« doublon de groupe non vu ») l'avait fait rougir. Aucun
+  correctif ici ; ⚠️ **à la fusion des Epics 38 et 40**, le cœur garde une seule forme : `dedupe_groups` (groupes
+  explicites), la 40-7b passant ses lignes groupées par ligne de la source — sinon deux fonctions pour un même cœur.
+- Aucun appel réel à PayPal pendant la reprise ; `data-not-committed/` non lu.
+
+### Debug Log
+
+- La cible partagée `kesh-target` a été abandonnée en cours de story (règle de l'orchestrateur) : **tous les gates
+  déclarés ci-dessous ont tourné sur `kesh-targets/kesh-wt38p2`, `CARGO_INCREMENTAL=0`** ; les essais antérieurs sur la
+  cible partagée (vérifications de compilation) ne comptent pas.
+- La base `kesh_s3812a` (dev2, 3307) a disparu deux fois (recréation de dev2) : remise à zéro avant chaque gate.
+
+### Completion Notes
+
+- Mutations (sonde négative, `kesh-gate-logs/s38-12a/mut/mutations.log`) : M1 `Retry-After` non borné, M2 clé d'API
+  admise au POST, M3 e-mail d'un débit en émetteur, M4 série partielle admise, M5 doublon de groupe non vu — **5 rouges
+  sur 5**.
+- Gates : voir « Gates » ci-dessous (complétés au dernier commit de code).
+
+### Points relevés hors périmètre (à ouvrir en issue par l'orchestrateur ; `gh` interdit ici)
+
+1. `PAYPAL_NEUTRAL_PAIR_TYPES` (38-11b) ne porte pas `Cancellation of Hold for Dispute Resolution` (`T1111`, levée de
+   `T1110`) : une paire de litige `Completed` ne serait pas neutralisée, ni au CSV ni à l'API. Sur 2024 elle est en
+   statuts P/D, donc écartée de toute façon.
+2. `ending_balance` est rendu par l'API : le solde de clôture d'un téléchargement pourrait être renseigné.
+
+### File List
+
+Ajoutés : `crates/kesh-api/src/http_client.rs`, `crates/kesh-api/src/paypal_api/mod.rs`,
+`crates/kesh-api/src/provider_download.rs`, `crates/kesh-api/src/provider_env.rs`,
+`crates/kesh-api/src/routes/paypal_downloads.rs`, `crates/kesh-api/src/routes/provider_imports.rs`,
+`crates/kesh-api/tests/common/secrets_prestataire.rs`, `crates/kesh-api/tests/paypal_download_e2e.rs`,
+`crates/kesh-import/src/paypal_api.rs`.
+Modifiés : `.env.example`, `docker-compose.yml`, `docker-compose.prod.yml`, `docs/manual/fr/admin-manual.tex`,
+`crates/kesh-api/src/{config.rs, errors.rs, lib.rs, main.rs, middleware/auth.rs, exchange_rates/source.rs,
+routes/mod.rs, routes/paypal_imports.rs, audit_labels.rs}`, `crates/kesh-api/tests/{audit_route_registry.rs,
+audit_label_registry.rs, date_du_jour_garde.rs, dates_recues_garde.rs, common/mod.rs,
+configuration_transmise.rs, invoice_frozen_pdf_e2e.rs, invoice_send_email_e2e.rs, password_recovery_e2e.rs,
+setup_admin_e2e.rs}`, `crates/kesh-core/src/horloge.rs`, `crates/kesh-i18n/locales/{de-CH,en-CH,fr-CH,it-CH}/messages.ftl`,
+`crates/kesh-import/src/{lib.rs, paypal.rs}`, `_bmad-output/implementation-artifacts/{38-12a-telechargement-api-paypal.md,
+sprint-status.yaml}`, `_bmad-output/planning-artifacts/epic-38-paypal.md`.
+
+### Gates
+
+- Frontend à `1b791613` (`front-*-2.log`) : `check`, `lint-i18n-ownership`, `test:unit` (4612 tests, 278 fichiers),
+  `build` verts ; `9bbf1388` ne touche ni le frontend ni les catalogues.
+- Backend : gate ciblé à `1b791613` (`cible-7.log`, dev4) : 1089 exécutés, 1087 passés, 2 échecs
+  (`audit_label_registry`, corrigés en `9bbf1388`). **Gate ciblé, gate complet et `gate-ci.sh` au dernier commit de code
+  `9bbf1388` : lancés (`cible-puis-complet.sh`, journaux `cible-8.log`, `gate-backend-8.log`, `gate-ci.log`), résultats
+  non encore relevés** — à reporter ici avant de passer la fiche en `review`.
+- E2E : aucun écran touché (l'écran est la 38-12b) ; non lancé.
+
