@@ -934,6 +934,11 @@ mod tests {
         assert!(w.iter().all(|w| w.start < w.end), "{w:?}");
         let w = period_windows(d(2026, 11, 1), d(2026, 11, 20), 30, minuit, 3);
         assert!(w.iter().all(|w| w.start < w.end), "{w:?}");
+        // Une dernière fenêtre qui commence à `now` (le 20, fenêtres de 19
+        // jours) : la garde `start >= now` de `windows` l'écarte.
+        let w = windows(d(2026, 11, 1), d(2026, 11, 20), 19, minuit);
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(w.iter().all(|w| w.start < w.end), "{w:?}");
         // Revue P3, P3-1 — la seconde moitié d'une coupe, à la première
         // seconde du jour du jour, est de durée nulle : `is_empty`.
         let a_minuit = minuit + chrono::TimeDelta::milliseconds(500);
