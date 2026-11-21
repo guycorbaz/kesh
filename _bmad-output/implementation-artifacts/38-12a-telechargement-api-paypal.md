@@ -1,6 +1,6 @@
 # Story 38-12a : téléchargement des transactions par l'API PayPal (identifiants, client, conversion, tâche)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-20, branche `epic/38-paypal` (phase 1 au commit `90428594`). Epic 38, **phase 2**
 (décisions de Beat du 2026-11-20, `kesh-gate-logs/epic-38-kiss/phase2-decisions.md`, autorisations du soir comprises).
@@ -670,3 +670,14 @@ Tests (périmètre `205cbf25` → `6584f643`) : 1 test de plus (`moitie_vide_a_m
 Sondes (`mut/mutations-p5.py`, copie hors dépôt `mut-src`) : N14 (`add_steps` remis avant la garde) rouge ; N15 (garde `!b.is_empty()` retirée) rouge, toutes deux par le nouvel E2E seul ; N13 rouge (deux tests). Total des sondes : 15 (N1 à N15), toutes rouges.
 
 Gates (journaux dans `kesh-gate-logs/s38-12a/`) : ciblé (`p5-cible.log`) : fmt, clippy workspace, nextest `kesh-api` lib + `paypal_download_e2e` + `paypal_import_e2e` + `http_client_transport` + `mcp_gardes_lexicales` : 814 exécutés, 814 passés, 5 ignorés. Complet `6584f643` (`gate-backend-15.log`, `test-fast.sh --ci`) : fmt, clippy, **6285 exécutés, 6285 passés**, 14 ignorés ; `gate-ci.sh` (`complet-p5-15.out`, `gate-ci.log`) : **6304 passés, 0 échoué, 18 ignorés**, code 0. E2E Playwright : aucun écran touché, non lancé.
+
+### Clôture (2026-11-21)
+
+Revue de code : P1 (Sonnet, complète) et P2 (Opus, complète), rapports `kesh-gate-logs/s38-12a/revue-p1-rapport.md` et
+`revue-p2-rapport.md` ; P3 : trois LOW, corrigés (`020de8e2`, avec `b64c00bd` et `205cbf25`) ; **P4** (Haiku, ciblée)
+0 CRITICAL · 0 HIGH · 1 MEDIUM · 3 LOW — le MEDIUM (étape comptée pour une moitié vide à minuit) venait de la remédiation
+P3 et a été corrigé par `6584f643` ; **P5** (Haiku, ciblée sur `6584f643`) : **0 finding**. Boucle close sur P5.
+Sondes P5 : référence `paypal_download_e2e` 14/14 ; coupe imbriquée à `days = 2` à minuit, jouée dans une copie : verte,
+`done == total` ; mutation `Window::is_empty → false` : rouge sur les deux tests de minuit ; N14 et N15 rouges
+(`mut/mutations-p5.log`). Gates du dernier commit de code `6584f643` : ciblé 814 passés ; backend complet 6285 passés,
+14 ignorés ; `gate-ci.sh` 6304 passés, 0 échec, 18 ignorés ; pas d'E2E (aucun écran).
