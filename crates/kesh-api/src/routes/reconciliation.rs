@@ -1341,8 +1341,8 @@ pub async fn get_proposals(
     // Pass 3.5 (Story 8-5b §rule-application) — accounts_info pour appliquer
     // rule fallback dans Pass 4 (closure sync) ; les règles actives sont lues
     // avant le Pass 2 (Story 29-6).
-    let accounts_info_rows: Vec<(i64, String, String, bool)> = sqlx::query_as(
-        "SELECT id, number, name, postable FROM accounts WHERE company_id = ? AND active = TRUE",
+    let accounts_info_rows: Vec<(i64, String, String, bool, Option<String>)> = sqlx::query_as(
+        "SELECT id, number, name, postable, currency FROM accounts WHERE company_id = ? AND active = TRUE",
     )
     .bind(current_user.company_id)
     .fetch_all(&state.pool)
@@ -1363,17 +1363,22 @@ pub async fn get_proposals(
     // plus proposée (l'acceptation la refuserait toujours, `accept_one_rule`
     // étape 4 bis) et ne masque plus une règle suivante valable. L'ensemble
     // contient donc les comptes **actifs, imputables, hors compte de la
-    // banque** ; le doc-comment de `first_matching_rule` (« non archivé »)
+    // banque**, et **sans devise** (ce rapprochement écrit en CHF : une règle
+    // vers un compte en devise y serait refusée à l'acceptation,
+    // `ACCOUNT_IN_FOREIGN_CURRENCY`, et masquerait la règle valable
+    // suivante) ; le doc-comment de `first_matching_rule` (« non archivé »)
     // reste tel quel, le site d'appel fait foi.
     let bank_ledger_account_id = ba_check.journal_account_id;
     let active_account_ids: std::collections::HashSet<i64> = accounts_info_rows
         .iter()
-        .filter(|(id, _, _, postable)| *postable && Some(*id) != bank_ledger_account_id)
-        .map(|(id, _, _, _)| *id)
+        .filter(|(id, _, _, postable, currency)| {
+            *postable && Some(*id) != bank_ledger_account_id && currency.is_none()
+        })
+        .map(|(id, _, _, _, _)| *id)
         .collect();
     let accounts_info: HashMap<i64, (String, String)> = accounts_info_rows
         .into_iter()
-        .map(|(id, number, name, _)| (id, (number, name)))
+        .map(|(id, number, name, _, _)| (id, (number, name)))
         .collect();
 
     // Pass 4 : score per-tx + rule fallback + build response.
@@ -4344,8 +4349,8 @@ async fn accept_one_rule(
     // compte a été scindé en sous-comptes est périmée ; `get_proposals` ne la
     // propose déjà plus (AC5), cette garde couvre la proposition rejouée par un
     // client. Archivé / inconnu → `ACCOUNT_NOT_FOUND`, prioritaire (KF-002).
-    let counterparty_row: Option<(bool, bool, String, String)> = match sqlx::query_as(
-        "SELECT active, postable, name, number FROM accounts WHERE id = ? AND company_id = ? LIMIT 1",
+    let counterparty_row: Option<(bool, bool, String, String, Option<String>)> = match sqlx::query_as(
+        "SELECT active, postable, name, number, currency FROM accounts WHERE id = ? AND company_id = ? LIMIT 1",
     )
     .bind(counterparty_account_id)
     .bind(company_id)
@@ -4362,8 +4367,22 @@ async fn accept_one_rule(
         }
     };
     let counterparty_name = match counterparty_row {
-        Some((true, true, name, _)) => name,
-        Some((true, false, _, number)) => {
+        // Une règle peut désigner un compte en devise (décision du responsable de l'epic du
+        // 2026-11-21, 38-11c2 : elle sert les prestataires) ; ce rapprochement
+        // bancaire écrit en CHF et le refuse, plutôt que de laisser le
+        // contrôle central de l'écriture le faire.
+        Some((true, _, _, _, Some(currency))) => {
+            return Err(FailedProposal {
+                bank_transaction_id,
+                error_code: "ACCOUNT_IN_FOREIGN_CURRENCY".to_string(),
+                details: Some(serde_json::json!({
+                    "accountId": counterparty_account_id,
+                    "currency": currency,
+                })),
+            });
+        }
+        Some((true, true, name, _, None)) => name,
+        Some((true, false, _, number, None)) => {
             return Err(non_postable_failed_proposal(
                 bank_transaction_id,
                 vec![kesh_db::errors::NonPostableAccount {

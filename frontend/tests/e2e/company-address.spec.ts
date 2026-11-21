@@ -125,6 +125,39 @@ test('un pays inconnu est refusé à l’écran, avec le code, et rien n’est �
 	}
 });
 
+// Story 48-13 (#1243, AC5) — un texte collé de 71 caractères dans la rue n'est plus coupé
+// par le navigateur (`maxlength={70}`, qui l'enregistrait coupé avec un succès) : il part
+// entier, le serveur le refuse en nommant « rue » et « 71 », la saisie reste, rien n'est
+// écrit. `fill` pose la valeur comme un collage : c'est lui que le `maxlength` tronquait.
+test('une rue collée de 71 caractères est refusée avec le champ et le nombre, non coupée (#1243)', async ({
+	page,
+}) => {
+	await login(page);
+	const ctx = await authedApiContext(page);
+	const avant = await readCompany(ctx);
+	const rue71 = `Rue ${'r'.repeat(67)}`;
+	try {
+		await page.goto('/settings');
+		await page.getByTestId('settings-company-address-edit').click();
+		const champ = page.getByTestId('settings-company-address-street-input');
+		await champ.fill(rue71);
+		await expect(champ).toHaveValue(rue71);
+		await page.getByTestId('settings-company-address-save').click();
+
+		const erreur = page.getByTestId('settings-company-address-error');
+		await expect(erreur).toContainText('rue');
+		await expect(erreur).toContainText('71');
+		await expect(champ).toHaveValue(rue71);
+
+		const apres = await readCompany(ctx);
+		expect(apres.version).toBe(avant.version);
+		expect(apres.addressStructured).toEqual(avant.addressStructured);
+	} finally {
+		await restoreAddress(ctx, avant.addressStructured);
+		await disposeContextSafe(ctx);
+	}
+});
+
 // Story 34-6 (#953, AC-1) — récrit : ce test affirmait le défaut. La ville `Nyon`, écrite
 // par l'autre, était écrasée au second clic sans avoir été montrée.
 test('écriture concurrente : la valeur enregistrée entre-temps est montrée avant d’être remplacée', async ({

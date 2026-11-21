@@ -155,6 +155,40 @@ pub struct ProviderSpec {
     /// Libellé d'une écriture passée à l'acceptation (`account` : le libellé
     /// du compte du prestataire). Tronqué par l'appelant à la borne existante.
     pub entry_label: fn(EntryKind, &str, &BankTransaction) -> String,
+    /// Genres admis **en plus** d'un encaissement ([`ProviderKind::SaleReceipt`],
+    /// toujours admis) pour la proposition [`Proposal::LinkEntry`] : l'autre
+    /// côté déjà passé d'un virement ou d'un versement (Wise : `Other` de
+    /// préfixe `TRANSFER` et versement Stripe, 39-11c AC-4). PayPal : aucun.
+    /// Voir [`admits_link`].
+    pub linkable: fn(ProviderKind) -> bool,
+    /// Genres admis **en plus** de [`ProviderKind::Other`] (toujours admis)
+    /// pour la proposition [`Proposal::Rule`] (un genre propre que le
+    /// prestataire règle, selon ses candidates, par une règle). PayPal :
+    /// aucun. Voir [`admits_rule`].
+    pub ruleable: fn(ProviderKind) -> bool,
+}
+
+/// Aucun genre en plus (paramétrage de PayPal pour [`ProviderSpec::linkable`]
+/// et [`ProviderSpec::ruleable`]).
+pub fn no_extra_kind(_: ProviderKind) -> bool {
+    false
+}
+
+/// Le genre `kind` admet-il la proposition [`Proposal::LinkEntry`] ?
+/// Encaissement, ou genre que le prestataire déclare
+/// ([`ProviderSpec::linkable`]). **Seule** règle : la revue d'un prestataire et
+/// le rejugement de l'acceptation l'appellent. Pour un genre autre que
+/// l'encaissement, seule la règle du rattachement (`link_entry_in_tx` :
+/// mouvement, devise, contre-passation, liens) juge l'écriture.
+pub fn admits_link(spec: &ProviderSpec, kind: ProviderKind) -> bool {
+    kind == ProviderKind::SaleReceipt || (spec.linkable)(kind)
+}
+
+/// Le genre `kind` admet-il la proposition [`Proposal::Rule`] ? `Other`, ou
+/// genre que le prestataire déclare ([`ProviderSpec::ruleable`]). Seule
+/// règle, comme [`admits_link`].
+pub fn admits_rule(spec: &ProviderSpec, kind: ProviderKind) -> bool {
+    kind == ProviderKind::Other || (spec.ruleable)(kind)
 }
 
 /// Un compte bancaire du compte de prestataire (solde d'une devise).
@@ -216,9 +250,10 @@ pub struct ReviewInput<'a> {
     pub sale_entries: &'a [SaleEntry],
     /// Les règles actives, dans l'ordre `priority, id`.
     pub rules: &'a [ReconciliationRule],
-    /// Les comptes admis comme contrepartie d'une règle (actifs, imputables,
-    /// en CHF).
-    pub rule_account_ids: &'a HashSet<i64>,
+    /// Les comptes admis comme contrepartie d'une règle (actifs, imputables) et
+    /// leur devise (`None` : CHF) : une règle ne s'applique à une transaction
+    /// que si sa contrepartie est en CHF ou dans la devise de la transaction.
+    pub rule_account_ids: &'a HashMap<i64, Option<String>>,
     /// Compte du plan du compte bancaire principal de la société.
     pub primary_ledger_account_id: Option<i64>,
 }
@@ -384,12 +419,20 @@ impl EntrySummary {
 }
 
 /// Une proposition de la revue, avec ce qu'elle montre.
+///
+/// **Générique** en `P`, le type de proposition (les genres communs,
+/// [`Proposal`], par défaut) : un prestataire qui a des propositions propres
+/// (Stripe : `payout`, 40-7c AC-4 d) sert les siennes dans la même revue,
+/// comme le corps de l'acceptation (`AcceptBody<P>`), en convertissant la
+/// revue commune ([`Review::map_proposals`]). Les champs d'affichage propres à
+/// sa proposition (Stripe : `payoutBankAccountId`, libellé du compte de
+/// versement) se portent dans `P`, aplati avec elle.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ReviewProposal {
+pub struct ReviewProposal<P = Proposal> {
     /// La proposition (champs aplatis, `type` compris).
     #[serde(flatten)]
-    pub proposal: Proposal,
+    pub proposal: P,
     /// La transaction (la débitée pour une conversion).
     pub transaction: TransactionSummary,
     /// L'autre moitié d'une conversion.
@@ -438,11 +481,11 @@ impl ReviewFinding {
     }
 }
 
-/// Le résultat d'une revue.
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct Review {
+/// Le résultat d'une revue, générique en `P` comme [`ReviewProposal`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct Review<P = Proposal> {
     /// Propositions.
-    pub proposals: Vec<ReviewProposal>,
+    pub proposals: Vec<ReviewProposal<P>>,
     /// Écarts.
     pub gaps: Vec<ReviewFinding>,
     /// Lignes à examiner.
@@ -452,9 +495,42 @@ pub struct Review {
     pub specific: Vec<(i64, &'static str)>,
 }
 
-impl Review {
+impl<P> Default for Review<P> {
+    fn default() -> Self {
+        Self {
+            proposals: Vec::new(),
+            gaps: Vec::new(),
+            to_review: Vec::new(),
+            specific: Vec::new(),
+        }
+    }
+}
+
+impl<P> Review<P> {
+    /// La même revue, chaque proposition convertie par `f` (un prestataire
+    /// passe la revue commune à son propre type de proposition, puis y ajoute
+    /// les siennes, [`Review::push_proposal`]). Écarts, lignes à examiner et
+    /// genres propres sont gardés tels quels.
+    pub fn map_proposals<Q>(self, f: impl Fn(P) -> Q) -> Review<Q> {
+        Review {
+            proposals: self
+                .proposals
+                .into_iter()
+                .map(|p| ReviewProposal {
+                    proposal: f(p.proposal),
+                    transaction: p.transaction,
+                    other_transaction: p.other_transaction,
+                    entry: p.entry,
+                })
+                .collect(),
+            gaps: self.gaps,
+            to_review: self.to_review,
+            specific: self.specific,
+        }
+    }
+
     /// Ajoute une proposition.
-    pub fn push_proposal(&mut self, p: ReviewProposal) {
+    pub fn push_proposal(&mut self, p: ReviewProposal<P>) {
         self.proposals.push(p);
     }
 
@@ -612,19 +688,24 @@ pub fn build_review(input: &ReviewInput<'_>, spec: &ProviderSpec) -> Review {
     review
 }
 
-/// La première règle qui correspond à `t`, de contrepartie admise et autre que
-/// le compte du plan de la transaction (`ledger`). Même ordre et même
+/// La première règle qui correspond à `t`, de contrepartie admise — en CHF ou
+/// dans la devise de `t` — et autre que le compte du plan de la transaction
+/// (`ledger`). Même ordre et même
 /// prédicat que [`crate::rules::first_matching_rule`].
 pub fn matching_rule<'a>(
     rules: &'a [ReconciliationRule],
     t: &BankTransaction,
-    rule_account_ids: &HashSet<i64>,
+    rule_account_ids: &HashMap<i64, Option<String>>,
     ledger: Option<i64>,
 ) -> Option<&'a ReconciliationRule> {
     rules
         .iter()
         .filter(|r| r.active)
-        .filter(|r| rule_account_ids.contains(&r.counterparty_account_id))
+        .filter(|r| {
+            rule_account_ids
+                .get(&r.counterparty_account_id)
+                .is_some_and(|currency| currency.as_deref().is_none_or(|c| c == t.currency))
+        })
         .filter(|r| Some(r.counterparty_account_id) != ledger)
         .find(|r| rule_matches(r, t))
 }
@@ -792,7 +873,7 @@ fn decide_conversion(
 }
 
 /// Décomptes de la revue, servis tels quels (`counts`).
-pub fn counts(review: &Review) -> BTreeMap<&'static str, usize> {
+pub fn counts<P>(review: &Review<P>) -> BTreeMap<&'static str, usize> {
     let mut c = BTreeMap::new();
     c.insert("proposals", review.proposals.len());
     c.insert("gaps", review.gaps.len());
@@ -875,6 +956,8 @@ mod tests {
         conversion_match: conv_match,
         conversion_unpaired: (REVIEW_CONVERSION_UNPAIRED, Placement::ToReview),
         entry_label: label,
+        linkable: no_extra_kind,
+        ruleable: no_extra_kind,
     };
 
     fn typed(mut t: BankTransaction, kind: &str, id: &str) -> BankTransaction {
@@ -936,7 +1019,7 @@ mod tests {
         others: Vec<BankTransaction>,
         sales: Vec<SaleEntry>,
         rules: Vec<ReconciliationRule>,
-        rule_accounts: HashSet<i64>,
+        rule_accounts: HashMap<i64, Option<String>>,
         primary: Option<i64>,
     }
 
@@ -952,7 +1035,7 @@ mod tests {
                 others: Vec::new(),
                 sales: Vec::new(),
                 rules: Vec::new(),
-                rule_accounts: [6500, 4000].into_iter().collect(),
+                rule_accounts: [(6500, None), (4000, None)].into_iter().collect(),
                 primary: Some(1010),
             }
         }
@@ -1260,11 +1343,19 @@ mod tests {
         f.rules[0].provider_type = None;
         f.rules[0].counterparty_email = None;
         assert_eq!(f.review(&SPEC).proposals.len(), 1);
+        // Contrepartie en devise : admise pour la devise de la transaction
+        // (décision du responsable de l'epic du 2026-11-21), écartée pour toute autre.
+        let devise = f.review(&SPEC).proposals.len();
+        f.rule_accounts.insert(6500, Some("EUR".into()));
+        assert!(f.review(&SPEC).proposals.is_empty());
+        f.rule_accounts.insert(6500, Some("USD".into()));
+        assert_eq!(f.review(&SPEC).proposals.len(), devise);
+        f.rule_accounts.insert(6500, None);
         // Contrepartie hors de l'ensemble admis, ou compte du plan de la
         // transaction : écartée.
         f.rules[0].counterparty_account_id = 7777;
         assert!(f.review(&SPEC).proposals.is_empty());
-        f.rule_accounts.insert(1021);
+        f.rule_accounts.insert(1021, None);
         f.rules[0].counterparty_account_id = 1021;
         assert!(f.review(&SPEC).proposals.is_empty());
     }
@@ -1326,5 +1417,106 @@ mod tests {
         assert_eq!(json["type"], "fee");
         assert_eq!(json["feeAccountId"], 2);
         assert_eq!(json["transaction"]["amount"], "-1.20");
+    }
+
+    /// M2 (revue P1) : `link_entry` et `rule` admis selon le paramétrage du
+    /// prestataire — encaissement et `Other` toujours, un genre propre ou
+    /// `Other` en rattachement seulement si le prestataire le déclare.
+    #[test]
+    fn genres_admis_au_rattachement_et_a_la_regle_selon_le_parametrage() {
+        let specific = ProviderKind::Specific("special");
+        // PayPal (aucun genre en plus).
+        assert!(admits_link(&SPEC, ProviderKind::SaleReceipt));
+        for k in [
+            ProviderKind::Other,
+            specific,
+            ProviderKind::Fee,
+            ProviderKind::Conversion,
+            ProviderKind::Withdrawal,
+        ] {
+            assert!(!admits_link(&SPEC, k), "{k:?}");
+        }
+        assert!(admits_rule(&SPEC, ProviderKind::Other));
+        for k in [
+            ProviderKind::SaleReceipt,
+            specific,
+            ProviderKind::Fee,
+            ProviderKind::Conversion,
+            ProviderKind::Withdrawal,
+        ] {
+            assert!(!admits_rule(&SPEC, k), "{k:?}");
+        }
+        // Un prestataire (Wise, 39-11c AC-4 et AC-5) qui rattache ou règle
+        // `Other` et son genre propre selon les candidates.
+        fn other_or_specific(k: ProviderKind) -> bool {
+            matches!(k, ProviderKind::Other | ProviderKind::Specific(_))
+        }
+        let wise_like = ProviderSpec {
+            linkable: other_or_specific,
+            ruleable: other_or_specific,
+            ..SPEC
+        };
+        for k in [ProviderKind::SaleReceipt, ProviderKind::Other, specific] {
+            assert!(admits_link(&wise_like, k), "{k:?}");
+        }
+        for k in [ProviderKind::Other, specific] {
+            assert!(admits_rule(&wise_like, k), "{k:?}");
+        }
+        assert!(!admits_link(&wise_like, ProviderKind::Fee));
+        assert!(!admits_rule(&wise_like, ProviderKind::SaleReceipt));
+    }
+
+    /// M3 (revue P1) : une revue porte une proposition propre au prestataire
+    /// (forme du `payout` de Stripe, 40-7c AC-4 d), servie à côté des genres
+    /// communs, triée et comptée comme eux.
+    #[test]
+    fn revue_avec_une_proposition_propre_au_prestataire() {
+        #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+        #[serde(
+            tag = "type",
+            rename_all = "snake_case",
+            rename_all_fields = "camelCase"
+        )]
+        enum Own {
+            Payout {
+                bank_transaction_id: i64,
+                payout_bank_account_id: i64,
+                payout_account_label: String,
+            },
+        }
+        #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+        #[serde(untagged)]
+        enum WithPayout {
+            Common(Proposal),
+            Own(Own),
+        }
+        let mut f = Fixture::new();
+        f.pending
+            .push(typed(tx(1, 10, "-1.20", "USD"), "fee", "IDA:FEE"));
+        let payout = tx(2, 10, "-50.00", "USD");
+        f.pending.push(typed(payout.clone(), "spec", "PO1"));
+        let common = f.review(&SPEC);
+        assert_eq!(common.specific, [(2, "special")]);
+        let mut review: Review<WithPayout> = common.map_proposals(WithPayout::Common);
+        review.push_proposal(ReviewProposal {
+            proposal: WithPayout::Own(Own::Payout {
+                bank_transaction_id: 2,
+                payout_bank_account_id: 77,
+                payout_account_label: "Banque".into(),
+            }),
+            transaction: TransactionSummary::of(&payout),
+            other_transaction: None,
+            entry: None,
+        });
+        review.sort();
+        assert_eq!(counts(&review)["proposals"], 2);
+        let json = serde_json::to_value(&review.proposals).unwrap();
+        assert_eq!(json[0]["type"], "fee");
+        assert_eq!(json[0]["feeAccountId"], 6940);
+        assert_eq!(json[1]["type"], "payout");
+        assert_eq!(json[1]["bankTransactionId"], 2);
+        assert_eq!(json[1]["payoutBankAccountId"], 77);
+        assert_eq!(json[1]["payoutAccountLabel"], "Banque");
+        assert_eq!(json[1]["transaction"]["amount"], "-50.00");
     }
 }

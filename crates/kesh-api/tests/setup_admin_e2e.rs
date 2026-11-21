@@ -101,6 +101,7 @@ async fn spawn_app_with_config(
         rate_fetch_memo: Arc::default(),
         rate_login_trigger: Arc::new(std::sync::Mutex::new(Some(std::time::Instant::now()))),
         test_rate_source: None,
+        provider_downloads: Default::default(),
     };
 
     let app = build_router(state, "nonexistent-static-dir".to_string());

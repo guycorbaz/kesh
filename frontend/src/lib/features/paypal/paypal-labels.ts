@@ -29,6 +29,7 @@ export const PAYPAL_OWN_FAILED_CODES = [
 	'NOT_FOUND',
 	'OPTIMISTIC_LOCK_CONFLICT',
 	'RECONCILIATION_ENTRY_NOT_LINKABLE',
+	'COUNTERPARTY_CURRENCY_MISMATCH',
 ] as const;
 
 /** Libellé d'un refus de `POST /paypal/accept`. */
@@ -64,6 +65,19 @@ export function paypalFailedLabel(code: string, details?: unknown): string {
 				'paypal-failed-entry-not-linkable',
 				'L’écriture de vente n’est plus rattachable à cette transaction (déjà rattachée, contre-passée ou modifiée). Rechargez la page.',
 			);
+		// 38-11c2 (L4) : la règle désigne un compte dans une devise qui n'est ni le CHF ni celle
+		// de la transaction ; la clé est celle de la 38-11c2.
+		case 'COUNTERPARTY_CURRENCY_MISMATCH': {
+			const d = details && typeof details === 'object' ? (details as Record<string, unknown>) : {};
+			return i18nMsg(
+				'provider-failed-counterparty-currency-mismatch',
+				'Cette règle désigne un compte tenu en { $accountCurrency } : elle ne s’applique qu’aux transactions en { $accountCurrency }, et celle-ci est en { $transactionCurrency }. Choisissez un compte en CHF ou dans la devise de la transaction.',
+				{
+					accountCurrency: typeof d.accountCurrency === 'string' ? d.accountCurrency : '',
+					transactionCurrency: typeof d.transactionCurrency === 'string' ? d.transactionCurrency : '',
+				},
+			);
+		}
 		default:
 			return failedProposalLabel(code, details);
 	}

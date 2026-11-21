@@ -68,6 +68,13 @@ pub enum ConfigError {
     /// l'instance démarrerait avec un recovery silencieusement cassé). `detail`
     /// liste ce qui manque — **ne loggue jamais le mot de passe SMTP**.
     IncompleteSmtpConfig { detail: String },
+    /// Story 38-12a (socle S1) — une variable d'API de prestataire
+    /// (`KESH_PAYPAL_<n>_…`, `KESH_PAYPAL_BASE_URL`, `KESH_PAYPAL_PARALLEL`) est
+    /// refusée : série partielle, libellé en double, numéro hors `1..=9`, valeur
+    /// de gabarit, URL hors de la règle, parallélisme illisible
+    /// ([`crate::provider_env::read`]). **Display nomme la variable, jamais sa
+    /// valeur.**
+    InvalidProviderVar { var: String, reason: &'static str },
 }
 
 impl std::fmt::Display for ConfigError {
@@ -153,6 +160,9 @@ impl std::fmt::Display for ConfigError {
                      'on', etc. sont refusés pour éviter les ambiguïtés.",
                     var, got
                 )
+            }
+            ConfigError::InvalidProviderVar { var, reason } => {
+                write!(f, "{var} refusée : {reason}.")
             }
             ConfigError::IncompleteSmtpConfig { detail } => {
                 write!(
@@ -346,6 +356,9 @@ pub struct Config {
     /// requise au boot (fail-fast [`ConfigError::IncompleteSmtpConfig`]). Si
     /// `false`, recovery = break-glass `KESH_ADMIN_USERNAME`/`KESH_ADMIN_PASSWORD` (#121).
     pub forgot_password_enabled: bool,
+    /// Story 38-12a (socle S1) — identifiants des API de prestataires, lus par
+    /// [`crate::provider_env`] ; secrets privés, masqués dans `Debug`.
+    pub providers: crate::provider_env::ProvidersConfig,
 }
 
 // Debug personnalisé : masquer les secrets pour éviter toute fuite via logs
@@ -382,6 +395,7 @@ impl std::fmt::Debug for Config {
             .field("smtp_tls", &self.smtp_tls)
             .field("public_base_url", &self.public_base_url)
             .field("forgot_password_enabled", &self.forgot_password_enabled)
+            .field("providers", &self.providers)
             .finish()
     }
 }
@@ -543,7 +557,16 @@ impl Config {
             smtp_tls: true,
             public_base_url: None,
             forgot_password_enabled: false,
+            providers: crate::provider_env::ProvidersConfig::default(),
         }
+    }
+
+    /// Builder **test-only** : les identifiants d'API de prestataires (Story
+    /// 38-12a, serveur simulé).
+    #[doc(hidden)]
+    pub fn with_providers(mut self, providers: crate::provider_env::ProvidersConfig) -> Self {
+        self.providers = providers;
+        self
     }
 
     /// Retourne une copie avec la locale modifiée (builder pattern pour tests).
@@ -1075,6 +1098,11 @@ impl Config {
         // Story 17-4b (DC7) — Recovery de mot de passe par email (SMTP).
         // Vars optionnelles tant que le feature est désactivé. Pattern
         // `env_nonempty` (trim + vide = absent) pour les strings.
+        // Story 38-12a (socle S1) — identifiants des API de prestataires
+        // (`KESH_PAYPAL_<n>_…`), validés sans condition : une série partielle
+        // ou une URL refusée empêche le démarrage.
+        let providers = crate::provider_env::ProvidersConfig::from_env()?;
+
         let smtp_host = env_nonempty("KESH_SMTP_HOST");
         let smtp_user = env_nonempty("KESH_SMTP_USER");
         let smtp_password = env_nonempty("KESH_SMTP_PASSWORD");
@@ -1204,6 +1232,7 @@ impl Config {
             smtp_tls,
             public_base_url,
             forgot_password_enabled,
+            providers,
         })
     }
 }
@@ -1535,7 +1564,7 @@ const TEMPLATE_PLACEHOLDERS: &[&str] = &["generate_me"];
 /// `KESH_JWT_SECRET` et de `KESH_ADMIN_PASSWORD` dans [`Config::from_env`],
 /// et à l'avertissement sur le mot de passe de `DATABASE_URL`
 /// ([`qualifier_mot_de_passe_base`], Story 15-13a).
-fn is_template_placeholder(value: &str) -> bool {
+pub(crate) fn is_template_placeholder(value: &str) -> bool {
     let lower = value.to_ascii_lowercase();
     if TEMPLATE_PLACEHOLDERS.iter().any(|p| lower.contains(p)) {
         return true;
@@ -1654,6 +1683,7 @@ pub(crate) mod test_helpers {
             smtp_tls: true,
             public_base_url: None,
             forgot_password_enabled: false,
+            providers: crate::provider_env::ProvidersConfig::default(),
         }
     }
 }

@@ -140,6 +140,17 @@ pub async fn update_company_email(
     let email = match req.email.as_deref().map(str::trim) {
         None | Some("") => None,
         Some(e) => {
+            // Story 48-15 (#1333) — bornée à sa colonne (`companies.email`
+            // `VARCHAR(320)`), en caractères, avant la forme : un refus localisé
+            // qui dit le maximum, au lieu du `DATA_LENGTH_OR_RANGE` générique de
+            // MariaDB. La borne égale la colonne : aucun e-mail déjà enregistré
+            // ne peut être refusé.
+            if e.chars().count() > crate::routes::contacts::MAX_EMAIL_LEN {
+                return Err(AppError::Validation(crate::errors::t(
+                    "error-company-email-too-long",
+                    "L'adresse e-mail de la société est trop longue (320 caractères au plus).",
+                )));
+            }
             if !crate::routes::contacts::is_valid_email_simple(e) {
                 return Err(AppError::Validation(crate::errors::t(
                     "error-company-email-invalid",

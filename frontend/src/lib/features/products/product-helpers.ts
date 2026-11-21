@@ -12,7 +12,11 @@
  */
 
 import Big from 'big.js';
-import { formatSwissAmount } from '$lib/features/journal-entries/balance';
+import {
+	amountEntryPayload,
+	formatSwissAmount,
+	readJournalAmount,
+} from '$lib/features/journal-entries/balance';
 
 /**
  * Formate un prix (string décimal backend, ex: `"1500.0000"`) avec le
@@ -46,42 +50,38 @@ export function formatVatRate(d: string | null | undefined): string {
 }
 
 /**
- * Regex de validation client du prix : 1-15 chiffres entiers (sans zéro
- * en tête superflu) + optionnellement 1 à 4 décimales. Accepte `0`,
- * rejette `007.50`, `01`, `.5`, `1.23456`.
+ * Story 48-10 (#1173, D1) — la charge à envoyer pour un prix saisi : la saisie rognée, lue
+ * comme le montant d'une écriture (`amountEntryPayload`, grammaire de `readJournalAmount`) —
+ * virgule ou point décimal, apostrophe des milliers retirée (« 1'250 » → `1250`, « 10,50 » →
+ * `10.50`), zéros de tête et de fin gardés. `null` pour le vide, l'ambigu (« 1.250 ») et
+ * l'illisible : l'appelant n'envoie qu'après `classifyPriceInput` = `ok`.
+ *
+ * Avant la story, la fonction remplaçait la virgule par un point et rien d'autre : « 1.250 »
+ * partait et le serveur le lisait un franc vingt-cinq. `PRICE_RE` et `isValidPrice`, une
+ * seconde grammaire sans appelant de production, sont retirés.
  */
-const PRICE_RE = /^(0|[1-9][0-9]{0,14})(\.[0-9]{1,4})?$/;
-
-/**
- * Retourne `true` si `raw` est un prix valide. La chaîne est d'abord trimmée
- * (tolère paste avec espaces). Empty string ⇒ `false` : un prix est requis ;
- * ce choix évite la sémantique surprenante d'une "valeur manquante = valide"
- * et supprime le double-garde `!isValidPrice() || trim() === ''` côté caller.
- */
-export function isValidPrice(raw: string): boolean {
-	const trimmed = raw.trim();
-	if (trimmed === '') return false;
-	return PRICE_RE.test(trimmed);
-}
-
-/**
- * Normalise un prix saisi par l'utilisateur : virgule → point, trim. Gère les
- * claviers mobiles suisses qui produisent `,` sur la touche décimale.
- */
-export function normalizePriceInput(raw: string): string {
-	return raw.trim().replace(',', '.');
+export function normalizePriceInput(raw: string): string | null {
+	return amountEntryPayload(raw.trim());
 }
 
 /**
  * Classifie le contenu du champ prix pour offrir un message d'erreur précis.
  * - `empty` : champ vide (avant toute saisie ou après effacement)
- * - `negative` : valeur numérique strictement négative (syntaxe `-N`)
- * - `invalid` : tout autre format non parsable ou hors grammaire
- * - `ok` : prix valide selon `isValidPrice`
+ * - `negative` : valeur numérique strictement négative (syntaxe `-N`), jugée avant la lecture
+ * - `ambiguous` : un point ou une virgule suivis de trois chiffres, qui peuvent séparer les
+ *   milliers (« 1.250 », « 12,125 ») — Story 48-10 (#1173) ; un prix de 1 à 999 francs, non
+ *   groupé, à trois décimales s'écrit avec la quatrième (« 12.1250 »)
+ * - `invalid` : hors de la grammaire d'un montant d'écriture (exposant, `.5`, `5.`, blanc
+ *   intérieur, plus de quatre décimales…)
+ * - `ok` : lecture claire (`normalizePriceInput` rend sa charge)
  */
-export function classifyPriceInput(raw: string): 'empty' | 'negative' | 'invalid' | 'ok' {
-	const normalized = normalizePriceInput(raw);
-	if (normalized === '') return 'empty';
-	if (/^-\s*\d/.test(normalized)) return 'negative';
-	return PRICE_RE.test(normalized) ? 'ok' : 'invalid';
+export function classifyPriceInput(
+	raw: string,
+): 'empty' | 'negative' | 'ambiguous' | 'invalid' | 'ok' {
+	const trimmed = raw.trim();
+	if (trimmed === '') return 'empty';
+	if (/^-\s*\d/.test(trimmed)) return 'negative';
+	const kind = readJournalAmount(trimmed).kind;
+	if (kind === 'ambiguous') return 'ambiguous';
+	return kind === 'clear' ? 'ok' : 'invalid';
 }

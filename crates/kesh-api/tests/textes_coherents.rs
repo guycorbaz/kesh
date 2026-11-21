@@ -908,6 +908,36 @@ fn les_replis_rust_suivent_le_catalogue() {
                     1,
                     &[("{ $format }", "{format}")],
                 ),
+                // #1348 (story v0200-corrections-mineures, D1 c) — les vingt et une
+                // clés que le serveur appelait sans qu'aucun catalogue les porte (il
+                // rendait la clé brute). « Entrée invalide » compte deux sites : le
+                // repli de la branche générique et l'`assert_ne!` du module de test
+                // (la garde lit le fichier entier) ; le quota porte `{ $max }`.
+                ("error-onboarding-reset-forbidden", 1, &[]),
+                ("error-invoice-already-paid", 1, &[]),
+                ("error-dunning-level-not-found", 1, &[]),
+                ("error-reminder-date-in-future", 1, &[]),
+                ("error-invoice-not-paused", 1, &[]),
+                ("error-dunning-paused", 1, &[]),
+                ("error-level-already-sent", 1, &[]),
+                ("error-reminder-sent-but-invoice-gone", 1, &[]),
+                ("error-reminder-sent-but-not-recorded", 1, &[]),
+                ("error-batch-too-large", 1, &[]),
+                (
+                    "error-batch-exceeds-send-quota",
+                    1,
+                    &[("{ $max }", "{max}")],
+                ),
+                ("reconciliation-errors-lock-release-failed", 1, &[]),
+                ("reconciliation-errors-fiscal-year-closed", 1, &[]),
+                ("reconciliation-errors-transaction-not-pending", 1, &[]),
+                ("error-inbox-import-already-running", 1, &[]),
+                ("error-import-not-pending-completion", 1, &[]),
+                ("error-source-document-not-found", 1, &[]),
+                ("error-imported-invoice-not-found", 1, &[]),
+                ("error-source-document-gone", 1, &[]),
+                ("error-data-length-or-range", 1, &[]),
+                ("error-invalid-input-generic", 2, &[]),
             ],
         ),
         (

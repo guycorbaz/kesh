@@ -263,6 +263,8 @@ accounts-retype-confirm = Changer le type quand même
 account-field-parent-optional = Compte parent (optionnel)
 accounts-parent-none = Aucun
 accounts-parent-archived = Le compte parent { $number } est archivé. Réactivez-le d'abord.
+error-account-parent-cycle = Le compte { $number } est ce compte ou l'un de ses sous-comptes : un compte ne peut pas être rangé sous lui-même.
+error-account-parent-has-entries = Le compte { $number } porte des écritures : y ranger ce compte le rendrait non imputable avec un solde qu'aucune saisie ne pourrait plus corriger. Choisissez un compte de groupe sans écriture.
 accounts-role-invalid-for-type = Le rôle { $role } ne peut pas être attribué à un compte de type { $type }.
 accounts-role-conflict-generic = Ce rôle vient d'être attribué à un autre compte. Rechargez la page.
 accounts-reactivate-without-role = Réactiver sans le rôle
@@ -408,6 +410,7 @@ error-date-outside-fiscal-year-generic = La date n'est pas dans l'exercice coura
 journal-entries-filter-description = Libellé
 journal-entries-filter-amount-min = Montant min
 journal-entries-filter-amount-max = Montant max
+journal-entries-filter-amount-not-applied = Ce filtre n'est pas appliqué tant que le montant n'est pas corrigé.
 journal-entries-filter-date-from = Date début
 journal-entries-filter-date-to = Date fin
 journal-entries-filter-journal = Journal
@@ -1802,6 +1805,7 @@ reconciliation-group-block-unreadable = Kesh n’a pas pu lire un montant ou le 
 reconciliation-group-block-gap-too-large = L’écart dépasse le plafond admis : ajoutez ou retirez une facture, ou réglez la transaction autrement.
 reconciliation-group-not-reread = Facture { $number } : son reste dû n’a pas pu être relu, l’écart affiché peut être faux. Retirez-la puis ajoutez-la de nouveau pour le relire.
 reconciliation-group-reread-retry = Les restes dus ont été relus : vérifiez l’écart, puis enregistrez de nouveau.
+reconciliation-group-reread-blocked = Rien n’a été enregistré : voyez ce qui retient encore l’enregistrement.
 reconciliation-group-account-check-retry = Kesh demande un compte pour l’écart : vérifiez le compte choisi, puis enregistrez de nouveau.
 reconciliation-group-rounding-info = Arrondi de { $amount } passé au compte d’arrondi
 reconciliation-group-rounding-not-configured = Aucun compte de différences d’arrondi n’est désigné : demandez à l’administrateur de le régler.
@@ -1877,8 +1881,19 @@ error-provider-currency-account-missing = Le fichier porte des mouvements en { $
 error-provider-account-length = Le nom du compte du prestataire est obligatoire et compte au plus 120 caractères.
 error-provider-account-hidden-char = Le nom du compte du prestataire ne peut contenir ni saut de ligne ni caractère de contrôle.
 error-paypal-csv-invalid = Ce fichier n'est pas un relevé PayPal « Balance affecting transactions » lisible. Rien n'a été importé.
+# Story 38-12a — téléchargement par l'API d'un prestataire (socle commun)
+error-provider-period-invalid = Période refusée : le début doit précéder la fin, ne pas être dans le futur, et dater de moins de trois ans.
+error-provider-api-not-configured = Le téléchargement n'est pas configuré pour ce compte : l'administrateur pose ses identifiants dans l'environnement du serveur. L'import du fichier reste possible.
+error-provider-download-running = Un téléchargement est déjà en cours pour ce compte : attendez qu'il se termine.
+error-provider-auth-failed = Le prestataire refuse les identifiants de ce compte : l'administrateur doit les vérifier. Rien n'a été importé.
+error-provider-permission-denied = L'application du prestataire n'a pas le droit de lire les transactions : l'administrateur doit lui donner cette fonction. Rien n'a été importé.
+error-provider-rate-limited = Le prestataire limite le nombre de demandes : réessayez plus tard. Rien n'a été importé.
+error-provider-unavailable = Le prestataire ne répond pas : réessayez plus tard. Rien n'a été importé.
+error-provider-response-invalid = La réponse du prestataire n'a pas pu être lue. Rien n'a été importé.
+error-provider-api-error = Le prestataire a refusé la demande. Rien n'a été importé.
 # Story 38-11c2 — revue et acceptation d’un compte de prestataire (codes servis à l’écran, 38-11d)
 provider-failed-proposal-stale = Cette proposition n'est plus valable : la transaction, l'écriture, la règle ou les réglages du compte ont changé depuis la revue. Rechargez la revue.
+provider-failed-counterparty-currency-mismatch = Cette règle désigne un compte tenu en { $accountCurrency } : elle ne s'applique qu'aux transactions en { $accountCurrency }, et celle-ci est en { $transactionCurrency }. Choisissez un compte en CHF ou dans la devise de la transaction.
 provider-gap-receipt-without-sale = Encaissement sans vente : aucune écriture de vente ne porte cet identifiant.
 provider-gap-sale-without-receipt = Vente sans encaissement : aucune transaction ne porte l'identifiant de cette écriture.
 provider-gap-amount-or-currency-mismatch = Montant ou devise différents : l'écriture de vente n'a pas le montant de l'encaissement sur le compte de cette devise, ou elle est déjà rattachée.
@@ -2299,6 +2314,9 @@ reports-filename-project-return = rendement-par-compte-analytique
 reports-filename-general-ledger = grand-livre
 reports-pdf-header-period = Période
 reports-pdf-empty-message = Aucune écriture dans la période sélectionnée.
+# Correctif fix-pdf-montants-alignes — en-têtes des colonnes de montant d'un rapport PDF qui contient un compte en devise.
+reports-pdf-col-base-currency = CHF
+reports-pdf-col-foreign-currency = Devise
 
 # Story 9-2b — Export global ZIP (souveraineté des données) — 12 clés
 nav-export-global = Export global
@@ -2787,6 +2805,7 @@ contact-salutation-madame = Madame
 # catalogue a un précédent (`onboarding-field-ide-hint = optionnel, format CHE-…`), et les
 # messages d'erreur restent sans point final comme les 78 autres du fichier.
 contact-error-address-npa-city = NPA et localité obligatoires si une adresse est saisie
+contact-error-address-country-alone = Un pays seul ne fait pas une adresse : saisissez le NPA et la localité, ou videz le pays.
 contacts-country-unknown = Le code pays « { $code } » n’est pas un code ISO connu : la QR-facture de ce contact ne pourra pas être produite. Corrigez-le (CH, FR, DE…) ; les autres champs s’enregistrent sans y toucher.
 contact-error-person-name = Prénom et nom obligatoires pour une personne
 contact-persons-add = Ajouter
@@ -3032,6 +3051,7 @@ settings-company-address-country-unknown = Le code pays « { $code } » de la so
 settings-company-address-help = Adresse de l’émetteur et du créancier sur vos factures et leurs QR-factures. NPA et localité obligatoires ; pays en code ISO à deux lettres. Un PDF déjà figé ne change pas.
 error-company-phone-too-long = Le numéro de téléphone de la société est trop long (50 caractères au plus).
 error-company-website-too-long = L'adresse du site web de la société est trop longue (255 caractères au plus).
+error-company-email-too-long = L'adresse e-mail de la société est trop longue (320 caractères au plus).
 error-invoice-pdf-header-overflow = L'en-tête du document ne tient pas sur la page. Supprimez une coordonnée — téléphone, e-mail ou site web — dans les Paramètres : les raccourcir ne libère aucune place, chaque coordonnée occupe une ligne entière. Ou réduisez le nombre de lignes de l'adresse du destinataire.
 
 # Story 23-3 (#316) — domaine supplier-invoices : 119 clés, absentes des QUATRE catalogues.
@@ -3687,6 +3707,7 @@ audit-log-action-imported-supplier-invoice-attached = Document joint à une fact
 audit-log-action-imported-supplier-invoice-detached = Document détaché de sa facture
 audit-log-action-payment-batch-generated = Lot de paiement créé
 audit-log-action-paypal-import-created = Relevé PayPal importé
+audit-log-action-paypal-download-created = Transactions PayPal téléchargées
 audit-log-action-payment-batch-confirmed = Lot de paiement confirmé
 audit-log-action-payment-batch-cancelled = Lot de paiement annulé
 audit-log-action-bank-account-created = Compte bancaire créé
@@ -4288,3 +4309,28 @@ projects-reassign-warning-locked = Écritures verrouillées jusqu'au { $date }.
 projects-reassign-warning-reports = Les rapports analytiques de cette période changeront.
 projects-reassign-confirm = Confirmer
 projects-reassign-done = Compte analytique changé.
+
+## #1348 (0.20.0) — refus du serveur dont la clé manquait au catalogue : l'utilisateur et
+## les clients de l'API lisaient la clé brute. Texte fr-CH = repli de `errors.rs`
+## (garde `les_replis_rust_suivent_le_catalogue`).
+error-onboarding-reset-forbidden = Le reset de l'onboarding n'est pas autorisé sur cette instance.
+error-invoice-already-paid = La facture est déjà payée — aucun rappel ne peut être enregistré.
+error-dunning-level-not-found = Le niveau de rappel demandé n'existe pas dans la configuration.
+error-reminder-date-in-future = La date d'un rappel ne peut pas être dans le futur.
+error-invoice-not-paused = Cette facture n'est pas suspendue.
+error-dunning-paused = Les rappels sont suspendus pour cette facture.
+error-level-already-sent = Ce niveau de rappel a déjà été traité (envoi concurrent ou saut de niveau interdit).
+error-reminder-sent-but-invoice-gone = Le rappel a été envoyé mais la facture a disparu avant l'enregistrement.
+error-reminder-sent-but-not-recorded = Le rappel a été envoyé mais n'a pas pu être enregistré. L'envoi est tracé dans le journal d'audit.
+error-batch-too-large = Trop de factures dans le lot (maximum 20).
+error-batch-exceeds-send-quota = Le lot dépasse le quota d'envoi ({ $max } e-mails par fenêtre).
+reconciliation-errors-lock-release-failed = Échec interne de libération du verrou. Réessayez.
+reconciliation-errors-fiscal-year-closed = Réconciliation impossible : l'exercice comptable n'est pas ouvert pour cette date.
+reconciliation-errors-transaction-not-pending = Transaction bancaire introuvable ou déjà réconciliée.
+error-inbox-import-already-running = Un import du répertoire est déjà en cours. Réessayez dans quelques instants.
+error-import-not-pending-completion = Cette facture importée n'est plus en attente de complétion.
+error-source-document-not-found = Cette facture n'a pas de justificatif stocké.
+error-imported-invoice-not-found = Cette facture importée est introuvable.
+error-source-document-gone = Le justificatif n'a pas été restauré (métadonnées seules).
+error-data-length-or-range = Une valeur fournie est trop longue ou hors plage.
+error-invalid-input-generic = Entrée invalide

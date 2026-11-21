@@ -437,7 +437,7 @@
 					<Button variant="ghost" onclick={() => toggleAll(false)} data-testid="paypal-select-none">
 						{i18nMsg('paypal-select-none', 'Tout décocher')}
 					</Button>
-					<Button onclick={acceptSelection} disabled={accepting || selected.size === 0} data-testid="paypal-accept">
+					<Button onclick={acceptSelection} disabled={accepting || reviewLoading || selected.size === 0} data-testid="paypal-accept">
 						{i18nMsg('paypal-accept', 'Accepter la sélection')}
 					</Button>
 					{#if batchProgress}

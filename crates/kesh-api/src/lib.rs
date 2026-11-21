@@ -25,13 +25,17 @@ pub mod exports;
 pub(crate) mod extractors;
 pub mod helpers;
 pub mod horloge;
+pub mod http_client;
 pub mod inbox_import;
 pub mod logging;
 pub mod mail;
 pub mod mcp;
 pub mod middleware;
 // Story v0174-mise-a-jour (#847) — appelé par `main.rs`, crate binaire distinct.
+pub mod paypal_api;
 pub mod pre_upgrade_backup;
+pub mod provider_download;
+pub mod provider_env;
 pub mod qr_decode;
 pub mod retry;
 pub mod routes;
@@ -133,6 +137,10 @@ pub struct AppState {
     /// par `POST /api/v1/_test/exchange-rates/source`. `None` hors
     /// `KESH_TEST_MODE`.
     pub test_rate_source: Option<exchange_rates::MockRateSource>,
+    /// Story 38-12a (socle S2) — les téléchargements par l'API des
+    /// prestataires : tâches en mémoire du processus, sémaphore et pause
+    /// commune par prestataire.
+    pub provider_downloads: Arc<provider_download::Downloads>,
 }
 
 impl AppState {
@@ -186,6 +194,7 @@ impl AppState {
             // remettent à `None`.
             rate_login_trigger: Arc::new(std::sync::Mutex::new(Some(std::time::Instant::now()))),
             test_rate_source: None,
+            provider_downloads: Arc::default(),
         }
     }
 
@@ -961,15 +970,30 @@ pub fn build_router_avec_registre(
                 (state.config.bank_import_max_mib as usize) * 1024 * 1024,
             )),
         )
-        // Story v016-2a (#816) : saisir un relevé à la main (Comptable+, clés
-        // `read-write` comme l'import). Corps JSON borné par une limite PROPRE,
-        // indépendante de `KESH_BANK_IMPORT_MAX_MB` (revue de code P1, E1) :
-        // 500 lignes pleines approchent 2,1 Mo, la limite est de 3 Mio.
+        // Story 38-12a (Epic 38, phase 2) : téléchargement des transactions
+        // d'un compte PayPal par l'API (Comptable+, sessions seules : une clé
+        // d'API est refusée dans le gestionnaire).
+        .route(
+            "/api/v1/paypal-downloads",
+            post(routes::paypal_downloads::create),
+        )
+        .route(
+            "/api/v1/paypal-downloads/{job_id}",
+            get(routes::paypal_downloads::show),
+        )
+        // Story 38-11c2 (Epic 38) : revue et acceptation PayPal, sur le moteur
+        // commun aux prestataires (Comptable+ ; revue en lecture pour toute
+        // clé, acceptation pour les clés `read-write`, rejouée sur
+        // interblocage).
         .route("/api/v1/paypal/review", get(routes::paypal::review))
         .route(
             "/api/v1/paypal/accept",
             post(routes::paypal::accept_proposals),
         )
+        // Story v016-2a (#816) : saisir un relevé à la main (Comptable+, clés
+        // `read-write` comme l'import). Corps JSON borné par une limite PROPRE,
+        // indépendante de `KESH_BANK_IMPORT_MAX_MB` (revue de code P1, E1) :
+        // 500 lignes pleines approchent 2,1 Mo, la limite est de 3 Mio.
         .route(
             "/api/v1/bank-imports/manual/preview",
             post(routes::bank_statements_manual::preview).layer(

@@ -89,6 +89,7 @@ describe('paypal-labels — refus de l’acceptation', () => {
 			'NOT_FOUND',
 			'OPTIMISTIC_LOCK_CONFLICT',
 			'RECONCILIATION_ENTRY_NOT_LINKABLE',
+			'COUNTERPARTY_CURRENCY_MISMATCH',
 		]);
 		expect(paypalFailedLabel('PROVIDER_PROPOSAL_STALE')).toMatch(/^paypal-failed-proposal-stale\|/);
 	});
@@ -105,12 +106,13 @@ describe('paypal-labels — refus de l’acceptation', () => {
  * EN DUR (jamais lus depuis le module : un test qui itérerait sur la table de production
  * serait vert par construction). Relevé : les littéraux de `crates/kesh-api/src/routes/
  * paypal.rs` et `provider_accept.rs`
- * (`grep -ohE '"[A-Z][A-Z_]{4,}"' … | sort -u`, 15 codes, après la fusion de la 38-11c2,
- * `ecd54a38`). Chacun a un libellé traduit : aucun ne retombe sur le repli « Refus non
+ * (`grep -ohE '"[A-Z][A-Z_]{4,}"' … | sort -u`, 16 codes, après la fusion de la 38-11c2,
+ * `1e91465b`). Chacun a un libellé traduit : aucun ne retombe sur le repli « Refus non
  * reconnu ».
  */
 const CODES_ROUTE_PAYPAL = [
 	'ACCOUNT_NOT_FOUND',
+	'COUNTERPARTY_CURRENCY_MISMATCH',
 	'BANK_ACCOUNT_NOT_CONFIGURED',
 	'BANK_TRANSACTION_NOT_FOUND',
 	'DATABASE_ERROR',
@@ -126,6 +128,19 @@ const CODES_ROUTE_PAYPAL = [
 	'RECONCILIATION_TRANSACTION_NOT_PENDING',
 	'VALIDATION_ERROR',
 ];
+
+describe('paypal-labels — refus de la devise de la contrepartie d’une règle', () => {
+	it('nomme les deux devises, par la clé de la 38-11c2', () => {
+		const l = paypalFailedLabel('COUNTERPARTY_CURRENCY_MISMATCH', {
+			accountId: 7,
+			accountCurrency: 'EUR',
+			transactionCurrency: 'USD',
+		});
+		expect(l).toMatch(/^provider-failed-counterparty-currency-mismatch\|/);
+		expect(l).toContain('EUR');
+		expect(l).toContain('USD');
+	});
+});
 
 describe('paypal-labels — codes de la route PayPal', () => {
 	it.each(CODES_ROUTE_PAYPAL)('%s a un libellé traduit', (code) => {

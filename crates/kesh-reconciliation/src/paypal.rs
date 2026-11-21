@@ -10,7 +10,7 @@ use kesh_db::entities::BankTransaction;
 use rust_decimal::Decimal;
 
 use crate::provider_review::{
-    EntryKind, Placement, ProviderKind, ProviderSpec, REVIEW_CONVERSION_UNPAIRED,
+    EntryKind, Placement, ProviderKind, ProviderSpec, REVIEW_CONVERSION_UNPAIRED, no_extra_kind,
 };
 
 /// Valeur de `bank_accounts.provider` d'un compte PayPal.
@@ -206,6 +206,8 @@ pub const SPEC: ProviderSpec = ProviderSpec {
     conversion_match,
     conversion_unpaired: (REVIEW_CONVERSION_UNPAIRED, Placement::ToReview),
     entry_label,
+    linkable: no_extra_kind,
+    ruleable: no_extra_kind,
 };
 
 #[cfg(test)]

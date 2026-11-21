@@ -25,11 +25,14 @@
 //! - [`csv`] : parseur CSV multi-encodage / multi-profils (Story 8-2).
 //! - [`paypal`] : lecteur du CSV PayPal « Balance affecting transactions »,
 //!   par noms de colonnes (Story 38-11a).
+//! - [`paypal_api`] : lecture d'une page de l'API PayPal « Transaction Search »
+//!   et conversion vers le modèle du CSV (Story 38-12a).
 
 pub mod camt053;
 pub mod csv;
 pub mod error;
 pub mod paypal;
+pub mod paypal_api;
 pub mod types;
 
 /// Première année qu'un relevé peut porter : celle qu'une colonne de date de la
@@ -49,7 +52,8 @@ pub use camt053::parse as parse_camt053;
 pub use csv::{
     ColumnMapping, ColumnsByName, CsvProfile, DEFAULT_CSV_CURRENCY, DebitSign, DetectedEncoding,
     HeaderByNameError, MAX_HEADER_ROW_COUNT, MAX_REPORTED_CURRENCIES, ParseCsvOutcome,
-    empty_valid_sentinel_date, parse_csv, parse_csv_collect, parse_dot_decimal_amount,
+    empty_valid_sentinel_date, parse_api_amount, parse_csv, parse_csv_collect,
+    parse_dot_decimal_amount,
 };
 pub use error::{
     CamtError, CsvError, CsvLineError, CsvLineErrorCode, ImportError,

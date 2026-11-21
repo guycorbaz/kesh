@@ -277,6 +277,38 @@ describe('page PayPal — robustesse (revue P1)', () => {
 		expect(r.queryByTestId('paypal-proposals-empty')).toBeNull();
 	});
 
+	// Revue P2 (L1) — pendant la relecture après un changement de compte, l'ancienne sélection
+	// ne s'accepte pas : le bouton est grisé jusqu'à la réponse.
+	it('changement de compte : « Accepter la sélection » grisé pendant la relecture', async () => {
+		const r = render(Page);
+		await waitFor(() => expect(r.getByTestId('paypal-proposal-1')).toBeTruthy());
+		await fireEvent.click(r.getByTestId('paypal-check-2'));
+		expect((r.getByTestId('paypal-accept') as HTMLButtonElement).disabled).toBe(false);
+		let resolveNext: (v: PaypalReview) => void = () => {};
+		reviewMock.mockImplementationOnce(() => new Promise<PaypalReview>((res) => (resolveNext = res)));
+		await fireEvent.change(r.getByTestId('paypal-account'), { target: { value: 'PayPal www' } });
+		await waitFor(() => expect((r.getByTestId('paypal-accept') as HTMLButtonElement).disabled).toBe(true));
+		resolveNext(review());
+		await waitFor(() => expect(r.getByTestId('paypal-proposal-2')).toBeTruthy());
+	});
+
+	// Revue P2 (L2) — après une acceptation, rien n'est coché d'office, même la proposition
+	// refusée qui reparaît sous la même clé.
+	it('après l’acceptation d’une proposition refusée : aucune case cochée', async () => {
+		acceptMock.mockResolvedValue({
+			accepted: [],
+			failed: [{ bankTransactionId: 2, errorCode: 'PROVIDER_PROPOSAL_STALE', details: null }],
+		});
+		const r = render(Page);
+		await waitFor(() => expect(r.getByTestId('paypal-proposal-2')).toBeTruthy());
+		await fireEvent.click(r.getByTestId('paypal-check-2'));
+		expect((r.getByTestId('paypal-check-2') as HTMLInputElement).checked).toBe(true);
+		await fireEvent.click(r.getByTestId('paypal-accept'));
+		await waitFor(() => expect(acceptMock).toHaveBeenCalledTimes(1));
+		await r.findByTestId('paypal-accept-report');
+		await waitFor(() => expect((r.getByTestId('paypal-check-2') as HTMLInputElement).checked).toBe(false));
+	});
+
 	it('erreur au paquet 2 : le paquet 1 compté, l’erreur dite, la revue relue', async () => {
 		const many = review();
 		many.proposals = Array.from({ length: 501 }, (_, i) => ({

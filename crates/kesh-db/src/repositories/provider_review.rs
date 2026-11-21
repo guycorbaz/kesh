@@ -12,7 +12,7 @@
 //! l'identifiant dans le libellé se fait en Rust par la fonction d'extraction
 //! du prestataire, **jamais** par un `LIKE`.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use chrono::NaiveDate;
 use rust_decimal::Decimal;
@@ -164,6 +164,33 @@ where
     Ok(rows.into_iter().map(|t| (t.id, t)).collect())
 }
 
+/// Ceux des identifiants `ids` qui sont une écriture de la société (lecture
+/// ordinaire, sur le pool : pré-vol de l'acceptation). Le lot ne pré-verrouille
+/// que ceux-là : un identifiant absent ou d'une autre société ne pose aucun
+/// verrou d'intervalle. Au plus
+/// [`super::reconciliation::MAX_IN_CLAUSE_IDS`] identifiants.
+pub async fn existing_entry_ids<'e, E>(
+    executor: E,
+    company_id: i64,
+    ids: &[i64],
+) -> Result<Vec<i64>, DbError>
+where
+    E: sqlx::Executor<'e, Database = MySql>,
+{
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let sql = format!(
+        "SELECT id FROM journal_entries WHERE company_id = ? AND id IN ({}) ORDER BY id",
+        placeholders(ids.len())
+    );
+    let mut q = sqlx::query_scalar::<_, i64>(&sql).bind(company_id);
+    for id in ids {
+        q = q.bind(*id);
+    }
+    q.fetch_all(executor).await.map_err(map_db_error)
+}
+
 /// Une ligne de [`sale_entries`] : une écriture et son mouvement sur **un**
 /// des comptes du plan demandés.
 #[derive(Debug, Clone, sqlx::FromRow)]
@@ -234,21 +261,26 @@ where
     q.fetch_all(executor).await.map_err(map_db_error)
 }
 
-/// Les comptes admis comme contrepartie d'une règle de prestataire : actifs,
-/// imputables, **en CHF** (phase 1 : aucune règle à compte en devise, AC-10).
-pub async fn rule_account_ids<'e, E>(executor: E, company_id: i64) -> Result<HashSet<i64>, DbError>
+/// Les comptes admis comme contrepartie d'une règle de prestataire — actifs,
+/// imputables, en CHF **ou en devise** — avec leur devise (`None` : CHF). La
+/// revue ne retient une règle que si la devise de sa contrepartie est celle de
+/// la transaction, ou le CHF (décision du responsable de l'epic du 2026-11-21).
+pub async fn rule_account_ids<'e, E>(
+    executor: E,
+    company_id: i64,
+) -> Result<HashMap<i64, Option<String>>, DbError>
 where
     E: sqlx::Executor<'e, Database = MySql>,
 {
-    let ids: Vec<i64> = sqlx::query_scalar(
-        "SELECT id FROM accounts \
-         WHERE company_id = ? AND active = TRUE AND postable = TRUE AND currency IS NULL",
+    let rows: Vec<(i64, Option<String>)> = sqlx::query_as(
+        "SELECT id, currency FROM accounts \
+         WHERE company_id = ? AND active = TRUE AND postable = TRUE",
     )
     .bind(company_id)
     .fetch_all(executor)
     .await
     .map_err(map_db_error)?;
-    Ok(ids.into_iter().collect())
+    Ok(rows.into_iter().collect())
 }
 
 /// Le compte du plan du compte bancaire **principal** de la société (non
@@ -345,29 +377,6 @@ where
     .bind(company_id)
     .bind(journal_entry_id)
     .fetch_one(executor)
-    .await
-    .map_err(DbError::Sqlx)
-}
-
-/// Les **autres** transactions qui pointent l'écriture `journal_entry_id`, en
-/// lecture **verrouillante** (`LOCK IN SHARE MODE`) : le contrôle, après un
-/// rattachement d'encaissement, qu'aucune transaction d'un autre compte n'a
-/// rattaché la même vente entre-temps (une lecture ordinaire lirait
-/// l'instantané de la transaction, ouvert avant le verrou de l'écriture).
-pub async fn other_links_locked(
-    tx: &mut sqlx::Transaction<'_, MySql>,
-    company_id: i64,
-    journal_entry_id: i64,
-    bank_transaction_id: i64,
-) -> Result<i64, DbError> {
-    sqlx::query_scalar(
-        "SELECT COUNT(*) FROM bank_transactions \
-         WHERE company_id = ? AND matched_entry_id = ? AND id <> ? LOCK IN SHARE MODE",
-    )
-    .bind(company_id)
-    .bind(journal_entry_id)
-    .bind(bank_transaction_id)
-    .fetch_one(&mut **tx)
     .await
     .map_err(DbError::Sqlx)
 }

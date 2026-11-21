@@ -1,6 +1,6 @@
 [package]
 name = "kesh-api"
-version = "0.19.0"
+version = "0.19.1"
 edition.workspace = true
 license.workspace = true
 
@@ -110,6 +110,9 @@ ipnet = "2.12"
 # s'unifient dans les builds de test ; `cookies` n'active aucun magasin sans
 # `.cookie_store(true)`.
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+# Déjà au graphe (reqwest) : `http_client` reconnaît ses erreurs de connexion
+# fermée (revue P2 de la 38-12a, G1).
+hyper = "1"
 
 [dev-dependencies]
 # `tower` (avec `util`) et `http-body-util` sont des dépendances normales depuis

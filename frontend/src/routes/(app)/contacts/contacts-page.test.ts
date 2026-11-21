@@ -31,10 +31,13 @@ vi.mock('$lib/shared/utils/notify', () => ({
 
 const listContactsMock = vi.fn();
 const createContactMock = vi.hoisted(() => vi.fn());
+// Story v0200-corrections-mineures (#1342, AC7) — la charge d'une MODIFICATION se lit
+// (un contact étranger dont on retire l'adresse part avec `country: 'CH'`).
+const updateContactMock = vi.hoisted(() => vi.fn());
 vi.mock('$lib/features/contacts/contacts.api', () => ({
 	listContacts: (q?: unknown) => listContactsMock(q),
 	createContact: (p: unknown) => createContactMock(p),
-	updateContact: vi.fn(),
+	updateContact: (id: unknown, p: unknown) => updateContactMock(id, p),
 	archiveContact: vi.fn()
 }));
 
@@ -714,10 +717,12 @@ describe('AC-b3 — l’état du bouton est celui qu’il aurait sans les sondes
 		// Le mot `formValidation` n'apparaissait pas une seule fois dans les
 		// tests ; relevé en passe 2 de revue de code.
 		//
-		// ⚠️ `formValidation` n'est PAS rendu tant qu'on n'a pas soumis : il
-		// n'alimente que le `disabled`, et `submitForm` en fait un `formError`.
-		// Il faut donc SOUMETTRE pour le lire — et c'est bien ce qu'on veut
-		// éprouver : ce que l'utilisateur se verra reprocher.
+		// ⚠️ Depuis #1349 (story v0200-corrections-mineures, D4), `formValidation`
+		// s'affiche aussi AU-DESSUS DES BOUTONS, en ligne discrète
+		// (`contact-form-blocked-reason`, `text-muted-foreground`). On SOUMET quand
+		// même, pour lire le `formError` qu'en fait `submitForm` — le paragraphe
+		// `text-destructive` ci-dessous —, ce que l'utilisateur se verrait
+		// reprocher s'il atteignait la soumission.
 		const formulaire = document.querySelector('form') as HTMLFormElement;
 		await fireEvent.submit(formulaire);
 		await settle(30);
@@ -983,5 +988,480 @@ describe('#817 — le pays d’une adresse', () => {
 		await settle(30);
 		expect(createContactMock).toHaveBeenCalled();
 		expect(document.body.textContent).toContain(refus);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Story 48-15 (#1331, #1334, AC4, AC7, AC8) — un texte trop long est refusé en
+// le disant, jamais coupé en silence par un `maxlength`
+// ---------------------------------------------------------------------------
+
+describe('48-15 — aucun champ du contact ne coupe un texte collé', () => {
+	/**
+	 * Le champ est d'abord TROUVÉ (`champ()` lève sinon : une assertion d'absence
+	 * sur un sélecteur vide passerait à vide), puis on exige qu'il ne porte aucun
+	 * `maxlength`. ⚠️ C'est l'attribut qui porte le rouge : dans jsdom, un
+	 * `maxlength` ne contraint pas une valeur posée par programme.
+	 */
+	function sansMaxlength(id: string) {
+		const el = champ(id);
+		expect(el.tagName).toBe('INPUT');
+		expect(el.hasAttribute('maxlength')).toBe(false);
+	}
+
+	async function ouvrirEn(type: 'Entreprise' | 'Personne') {
+		repondre({});
+		render(Page);
+		await settle(20);
+		await ouvrirCreation();
+		if (type === 'Personne') {
+			await fireEvent.change(champ('form-type'), { target: { value: 'Personne' } });
+			await settle(20);
+		}
+	}
+
+	async function soumettre() {
+		const form = champ('form-email').closest('form') as HTMLFormElement;
+		await fireEvent.submit(form);
+		await settle(30);
+	}
+
+	// AC4 (#1331) — l'adresse : rouge par M6 à M10, une mutation par champ.
+	for (const [id, nom] of [
+		['form-street', 'rue'],
+		['form-building', 'numéro'],
+		['form-npa', 'NPA'],
+		['form-city', 'localité'],
+		['form-country', 'pays']
+	] as const) {
+		it(`${nom} : aucun maxlength`, async () => {
+			await ouvrirEn('Entreprise');
+			sansMaxlength(id);
+		});
+	}
+
+	// AC7 — les champs du PDF : rouge par M13 (numéro de client), M14
+	// (conditions), M15 (raison sociale), M16 (délai). L'article : products-page.
+	for (const [id, nom] of [
+		['form-client-number', 'numéro de client'],
+		['form-payment-terms', 'conditions de paiement'],
+		['form-name', 'raison sociale'],
+		['form-payment-terms-days', 'délai de paiement']
+	] as const) {
+		it(`${nom} : aucun maxlength`, async () => {
+			// La raison sociale n'existe qu'en type « Entreprise » (le type par défaut).
+			await ouvrirEn('Entreprise');
+			sansMaxlength(id);
+		});
+	}
+
+	// AC8 (#1334) — le prénom et le nom : rouge par M17, M18. Ils n'existent
+	// qu'en type « Personne ».
+	for (const [id, nom] of [
+		['form-firstname', 'prénom'],
+		['form-lastname', 'nom de famille']
+	] as const) {
+		it(`${nom} : aucun maxlength`, async () => {
+			await ouvrirEn('Personne');
+			sansMaxlength(id);
+		});
+	}
+
+	// Story v0200-corrections-mineures (#1336, AC4) — l'e-mail et le téléphone, laissés par
+	// la 48-15 : rouge par M5 (e-mail), M6 (téléphone). Un `it` par champ.
+	it('e-mail : aucun maxlength', async () => {
+		await ouvrirEn('Entreprise');
+		sansMaxlength('form-email');
+	});
+
+	it('téléphone : aucun maxlength', async () => {
+		await ouvrirEn('Entreprise');
+		sansMaxlength('form-phone');
+	});
+
+	it('#1336 : un e-mail de 321 caractères part entier, le refus du serveur s’affiche, la saisie reste', async () => {
+		const courriel = 'a'.repeat(309) + '@example.com';
+		expect(courriel.length).toBe(321);
+		const refus = "L'email doit faire au plus 320 caractères";
+		createContactMock.mockRejectedValueOnce({ code: 'VALIDATION_ERROR', status: 400, message: refus });
+		await ouvrirEn('Entreprise');
+		await saisir('form-name', 'Démo SA', 20);
+		await saisir('form-email', courriel, 20);
+		await soumettre();
+		const envoye = createContactMock.mock.calls[0][0] as { email: string };
+		expect(envoye.email).toBe(courriel);
+		expect(zone('contact-form-error').textContent).toBe(refus);
+		expect((champ('form-email') as HTMLInputElement).value).toBe(courriel);
+	});
+
+	it('#1336 : un téléphone de 51 caractères part entier, le refus du serveur s’affiche, la saisie reste', async () => {
+		const numero = '0'.repeat(51);
+		const refus = 'Le téléphone doit faire au plus 50 caractères';
+		createContactMock.mockRejectedValueOnce({ code: 'VALIDATION_ERROR', status: 400, message: refus });
+		await ouvrirEn('Entreprise');
+		await saisir('form-name', 'Démo SA', 20);
+		await saisir('form-phone', numero, 20);
+		await soumettre();
+		const envoye = createContactMock.mock.calls[0][0] as { phone: string };
+		expect(envoye.phone).toBe(numero);
+		expect(zone('contact-form-error').textContent).toBe(refus);
+		expect((champ('form-phone') as HTMLInputElement).value).toBe(numero);
+	});
+
+	it('AC4 : une rue de 71 caractères part entière, son refus s’affiche, la saisie reste ; raccourcie, elle s’enregistre', async () => {
+		const refus = 'adresse : le champ rue dépasse 70 caractères (71)';
+		createContactMock.mockRejectedValueOnce({ code: 'VALIDATION_ERROR', status: 400, message: refus });
+		await ouvrirEn('Entreprise');
+		await saisir('form-name', 'Démo SA', 20);
+		await saisir('form-street', 'R'.repeat(71), 20);
+		await saisir('form-npa', '1000', 20);
+		await saisir('form-city', 'Lausanne', 20);
+		await soumettre();
+		const envoye = createContactMock.mock.calls[0][0] as {
+			addressStructured: { street: string };
+		};
+		expect(envoye.addressStructured.street).toBe('R'.repeat(71));
+		// Revue P1 (A6) : `formError` lui-même, non le `body` (le toast porte le même texte).
+		expect(zone('contact-form-error').textContent).toBe(refus);
+		expect((champ('form-street') as HTMLInputElement).value).toBe('R'.repeat(71));
+
+		createContactMock.mockResolvedValueOnce(c({ id: 40, name: 'Démo SA' }));
+		await saisir('form-street', 'R'.repeat(70), 20);
+		await soumettre();
+		expect(createContactMock).toHaveBeenCalledTimes(2);
+		const second = createContactMock.mock.calls[1][0] as { addressStructured: { street: string } };
+		expect(second.addressStructured.street).toBe('R'.repeat(70));
+		expect(document.querySelector('#form-street')).toBeNull();
+	});
+
+	it('AC8 : un prénom de 71 caractères part entier, le refus qui nomme « Prénom » s’affiche, la saisie reste', async () => {
+		const refus = 'Prénom : 70 caractères maximum';
+		createContactMock.mockRejectedValueOnce({ code: 'VALIDATION_ERROR', status: 400, message: refus });
+		await ouvrirEn('Personne');
+		await saisir('form-firstname', 'P'.repeat(71), 20);
+		await saisir('form-lastname', 'Dupont', 20);
+		await soumettre();
+		const envoye = createContactMock.mock.calls[0][0] as { firstName: string };
+		expect(envoye.firstName).toBe('P'.repeat(71));
+		expect(zone('contact-form-error').textContent).toBe(refus);
+		expect((champ('form-firstname') as HTMLInputElement).value).toBe('P'.repeat(71));
+	});
+
+	/** Le bouton de soumission du formulaire ouvert. */
+	function boutonCreer(): HTMLButtonElement {
+		const form = champ('form-email').closest('form') as HTMLFormElement;
+		const b = [...form.querySelectorAll('button')].find((x) => x.getAttribute('type') === 'submit');
+		if (!b) throw new Error('bouton de soumission introuvable');
+		return b as HTMLButtonElement;
+	}
+
+	// AC7, C-e4815-4 — l'écran juge lui-même le délai et la raison sociale : le bouton se
+	// désactive, et le MOTIF s'affiche sous le champ, sans attendre une soumission que le
+	// bouton désactivé n'atteindrait jamais (sinon, le refus serait muet).
+	it('AC7 : un délai de quatre chiffres collé est refusé en le disant (« entre 0 et 365 »), non tronqué en « 100 »', async () => {
+		await ouvrirEn('Entreprise');
+		await saisir('form-name', 'Démo SA', 20);
+		await saisir('form-payment-terms-days', '1000', 20);
+		expect(zone('contact-payment-terms-days-error').textContent).toContain('entre 0 et 365');
+		expect(boutonCreer().disabled).toBe(true);
+		expect((champ('form-payment-terms-days') as HTMLInputElement).value).toBe('1000');
+		await saisir('form-payment-terms-days', '30', 20);
+		expect(document.querySelector('[data-testid="contact-payment-terms-days-error"]')).toBeNull();
+		expect(boutonCreer().disabled).toBe(false);
+	});
+
+	it('AC7 : une raison sociale de 256 caractères collée est refusée en le disant, non coupée à 255', async () => {
+		await ouvrirEn('Entreprise');
+		await saisir('form-name', 'R'.repeat(256), 20);
+		expect(zone('contact-name-too-long').textContent).toContain('255 caractères');
+		expect(boutonCreer().disabled).toBe(true);
+		expect((champ('form-name') as HTMLInputElement).value).toBe('R'.repeat(256));
+		expect(createContactMock).not.toHaveBeenCalled();
+	});
+
+	// Revue P1 (E4) — les états du motif, un `it` chacun.
+	const motifNom = () => document.querySelector('[data-testid="contact-name-too-long"]');
+	const motifDelai = () => document.querySelector('[data-testid="contact-payment-terms-days-error"]');
+
+	it('motif de la raison sociale : ramenée à 255, il disparaît et le bouton se réactive', async () => {
+		await ouvrirEn('Entreprise');
+		await saisir('form-name', 'R'.repeat(256), 20);
+		expect(motifNom()).not.toBeNull();
+		await saisir('form-name', 'R'.repeat(255), 20);
+		expect(motifNom()).toBeNull();
+		expect(boutonCreer().disabled).toBe(false);
+	});
+
+	// Revue P1 (B1 = E1 = A1) — rouge sans le correctif (mutation M22) : le bouton restait grisé,
+	// sans motif, la raison sociale (et son motif) n'existant pas en type « Personne ».
+	it('bascule vers « Personne » après une raison sociale de 256 : aucun refus muet, la personne se crée', async () => {
+		createContactMock.mockResolvedValueOnce(c({ id: 41, name: 'Jean Dupont' }));
+		await ouvrirEn('Entreprise');
+		await saisir('form-name', 'R'.repeat(256), 20);
+		expect(boutonCreer().disabled).toBe(true);
+		await fireEvent.change(champ('form-type'), { target: { value: 'Personne' } });
+		await settle(20);
+		await saisir('form-firstname', 'Jean', 20);
+		await saisir('form-lastname', 'Dupont', 20);
+		expect(boutonCreer().disabled).toBe(false);
+		await soumettre();
+		expect(createContactMock).toHaveBeenCalledWith(
+			expect.objectContaining({ contactType: 'Personne', firstName: 'Jean', lastName: 'Dupont' })
+		);
+	});
+
+	// Revue P1 (B2, E2) — rouge sans le correctif (mutation M23) : compté en unités UTF-16, un nom
+	// de 200 caractères dont 60 hors du plan de base (260 unités) était refusé ; le serveur l'accepte.
+	it('raison sociale : compte en caractères, non en unités UTF-16 (200 caractères dont 60 hors BMP)', async () => {
+		await ouvrirEn('Entreprise');
+		const nom = 'R'.repeat(140) + '𝔸'.repeat(60);
+		expect([...nom].length).toBe(200);
+		expect(nom.length).toBe(260);
+		await saisir('form-name', nom, 20);
+		expect(motifNom()).toBeNull();
+		expect(boutonCreer().disabled).toBe(false);
+		await saisir('form-name', 'R'.repeat(196) + '𝔸'.repeat(60), 20);
+		expect(motifNom()).not.toBeNull();
+	});
+
+	// Revue P1 (B5, E5) — rouge sans le correctif (mutation M25) : `Number` lisait « 0x1E » comme 30
+	// et « 3e2 » comme 300, valeurs acceptées et envoyées sans que l'utilisateur les ait écrites.
+	for (const ecrit of ['0x1E', '3e2', 'abc', '30.0', '-1']) {
+		it(`délai « ${ecrit} » : refusé en le disant, rien ne part`, async () => {
+			await ouvrirEn('Entreprise');
+			await saisir('form-name', 'Démo SA', 20);
+			await saisir('form-payment-terms-days', ecrit, 20);
+			expect(motifDelai()?.textContent).toContain('entre 0 et 365');
+			expect(boutonCreer().disabled).toBe(true);
+		});
+	}
+
+	it('délai vidé : le motif disparaît, le bouton se réactive', async () => {
+		await ouvrirEn('Entreprise');
+		await saisir('form-name', 'Démo SA', 20);
+		await saisir('form-payment-terms-days', '1000', 20);
+		expect(motifDelai()).not.toBeNull();
+		await saisir('form-payment-terms-days', '', 20);
+		expect(motifDelai()).toBeNull();
+		expect(boutonCreer().disabled).toBe(false);
+	});
+
+	it('ouverture d’une fiche existante valide : aucun motif', async () => {
+		repondre(
+			{},
+			[c({ id: 42, name: 'Démo Existante SA', defaultPaymentTermsDays: 30 } as Partial<ContactResponse> & {
+				id: number;
+				name: string;
+			})]
+		);
+		render(Page);
+		await settle(30);
+		await ouvrirEdition();
+		expect((champ('form-payment-terms-days') as HTMLInputElement).value).toBe('30');
+		expect(motifNom()).toBeNull();
+		expect(motifDelai()).toBeNull();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Story v0200-corrections-mineures — #1342 (un pays seul est refusé, AC7) et #1349 (le motif
+// d'un bouton grisé s'affiche près du bouton, AC8). Le i18n est mocké : les textes lus sont
+// les replis de `i18nMsg`.
+// ---------------------------------------------------------------------------
+
+describe('v0200 — un bouton grisé dit pourquoi, un pays seul est refusé', () => {
+	const PAYS_SEUL =
+		'Un pays seul ne fait pas une adresse : saisissez le NPA et la localité, ou videz le pays.';
+
+	/** Le bouton de soumission du formulaire ouvert (sonde positive : il existe). */
+	function bouton(): HTMLButtonElement {
+		const b = document.querySelector<HTMLButtonElement>('[data-testid="contact-form-submit"]');
+		if (!b) throw new Error('bouton contact-form-submit introuvable');
+		return b;
+	}
+
+	/** La ligne du motif, toujours dans le DOM ; son texte rogné. */
+	function motif(): string {
+		return (zone('contact-form-blocked-reason').textContent ?? '').trim();
+	}
+
+	/** Le bouton est trouvé et GRISÉ, puis son motif est lu. */
+	function grisePour(texte: string) {
+		expect(bouton().disabled).toBe(true);
+		expect(motif()).toBe(texte);
+	}
+
+	async function ouvrirEn(type: 'Entreprise' | 'Personne') {
+		repondre({});
+		render(Page);
+		await settle(20);
+		await ouvrirCreation();
+		if (type === 'Personne') {
+			await fireEvent.change(champ('form-type'), { target: { value: 'Personne' } });
+			await settle(20);
+		}
+	}
+
+	const FRANCAIS = c({
+		id: 60,
+		name: 'Démo France SA',
+		addressStructured: {
+			street: 'Rue de la Paix',
+			building: '3',
+			postalCode: '75002',
+			city: 'Paris',
+			country: 'FR'
+		}
+	} as Partial<ContactResponse> & { id: number; name: string });
+
+	async function ouvrirFrancais() {
+		repondre({}, [FRANCAIS]);
+		render(Page);
+		await settle(30);
+		await ouvrirEdition();
+	}
+
+	// --- AC7 (#1342) ---------------------------------------------------------
+
+	it('AC7 : pays « FR » seul → bouton grisé, le motif le dit (M8, M9)', async () => {
+		await ouvrirEn('Entreprise');
+		await saisir('form-name', 'Démo SA', 20);
+		await saisir('form-country', 'FR', 20);
+		grisePour(PAYS_SEUL);
+	});
+
+	it('AC7 : pays « CH » seul, ou vidé → bouton actif (un contact sans adresse s’enregistre)', async () => {
+		await ouvrirEn('Entreprise');
+		await saisir('form-name', 'Démo SA', 20);
+		await saisir('form-country', 'ch', 20);
+		expect(bouton().disabled).toBe(false);
+		expect(motif()).toBe('');
+		await saisir('form-country', '', 20);
+		expect(bouton().disabled).toBe(false);
+		expect(motif()).toBe('');
+	});
+
+	it('AC7 : un contact existant avec une adresse en « FR » se rouvre et se réenregistre', async () => {
+		updateContactMock.mockResolvedValueOnce(FRANCAIS);
+		await ouvrirFrancais();
+		expect((champ('form-country') as HTMLInputElement).value).toBe('FR');
+		expect(bouton().disabled).toBe(false);
+		expect(motif()).toBe('');
+		const form = champ('form-email').closest('form') as HTMLFormElement;
+		await fireEvent.submit(form);
+		await settle(30);
+		expect(updateContactMock).toHaveBeenCalledTimes(1);
+	});
+
+	it('AC7 : contact étranger dont on retire l’adresse — grisé tant que le pays reste, puis pays vidé → part en « CH », sans adresse (M8, M9)', async () => {
+		updateContactMock.mockResolvedValueOnce(FRANCAIS);
+		await ouvrirFrancais();
+		for (const id of ['form-street', 'form-building', 'form-npa', 'form-city']) {
+			await saisir(id, '', 20);
+		}
+		grisePour(PAYS_SEUL);
+		// Second temps (filet) : le pays vidé, le contact part sans adresse.
+		await saisir('form-country', '', 20);
+		expect(bouton().disabled).toBe(false);
+		expect(motif()).toBe('');
+		const form = champ('form-email').closest('form') as HTMLFormElement;
+		await fireEvent.submit(form);
+		await settle(30);
+		const envoye = updateContactMock.mock.calls[0][1] as {
+			addressStructured: Record<string, string>;
+		};
+		expect(envoye.addressStructured).toEqual({
+			street: '',
+			building: '',
+			postalCode: '',
+			city: '',
+			country: 'CH'
+		});
+	});
+
+	// --- AC8 (#1349) : un `it` par branche de `formValidation` -----------------
+
+	it('AC8 : personne sans prénom → le motif s’affiche près du bouton (M9)', async () => {
+		await ouvrirEn('Personne');
+		await saisir('form-lastname', 'Dupont', 20);
+		grisePour('Prénom et nom obligatoires pour une personne');
+	});
+
+	it('AC8 : personne sans nom → le motif s’affiche près du bouton (M9)', async () => {
+		await ouvrirEn('Personne');
+		await saisir('form-firstname', 'Jean', 20);
+		grisePour('Prénom et nom obligatoires pour une personne');
+	});
+
+	it('AC8 : entreprise sans raison sociale → le motif s’affiche dès l’ouverture (M9)', async () => {
+		await ouvrirEn('Entreprise');
+		grisePour('La raison sociale est obligatoire');
+	});
+
+	it('AC8 : adresse partielle → le motif s’affiche près du bouton (M9)', async () => {
+		await ouvrirEn('Entreprise');
+		await saisir('form-name', 'Démo SA', 20);
+		await saisir('form-street', 'Rue du Lac', 20);
+		grisePour('NPA et localité obligatoires si une adresse est saisie');
+	});
+
+	it('AC8 : pays seul → le motif s’affiche près du bouton (M8, M9)', async () => {
+		await ouvrirEn('Personne');
+		await saisir('form-firstname', 'Jean', 20);
+		await saisir('form-lastname', 'Dupont', 20);
+		await saisir('form-country', 'DE', 20);
+		grisePour(PAYS_SEUL);
+	});
+
+	it('AC8 : IDE de forme invalide → le motif s’affiche près du bouton (M9)', async () => {
+		await ouvrirEn('Entreprise');
+		await saisir('form-name', 'Démo SA', 20);
+		await saisir('form-ide', 'CHE-12', 20);
+		grisePour('Numéro IDE suisse invalide');
+	});
+
+	it('AC8 : raison sociale de 256 → motif sous le champ seulement, jamais deux fois (M10)', async () => {
+		await ouvrirEn('Entreprise');
+		await saisir('form-name', 'R'.repeat(256), 20);
+		expect(bouton().disabled).toBe(true);
+		expect(zone('contact-name-too-long').textContent).toContain('255 caractères');
+		expect(motif()).toBe('');
+	});
+
+	it('AC8 : délai « 400 » → motif sous le champ seulement, jamais deux fois (M10)', async () => {
+		await ouvrirEn('Entreprise');
+		await saisir('form-name', 'Démo SA', 20);
+		await saisir('form-payment-terms-days', '400', 20);
+		expect(bouton().disabled).toBe(true);
+		expect(zone('contact-payment-terms-days-error').textContent).toContain('entre 0 et 365');
+		expect(motif()).toBe('');
+	});
+
+	// Revue P1 (B3) — un refus du serveur ne vaut que pour la saisie soumise : modifiée, il
+	// s'efface, et la ligne du bouton grisé dit seule ce qui bloque encore. Rouge : M22
+	// (`formErrorShown` ramené à `formError`).
+	it('B3 : le refus du serveur s’efface dès que la saisie change ; le motif du bouton prend le relais (M22)', async () => {
+		const refus =
+			"Prénom : aucun caractère visible (un trait d'union conditionnel seul, par exemple) — effacez le champ et saisissez-le de nouveau";
+		createContactMock.mockRejectedValueOnce({ code: 'VALIDATION_ERROR', status: 400, message: refus });
+		await ouvrirEn('Personne');
+		await saisir('form-firstname', '­', 20);
+		await saisir('form-lastname', 'Dupont', 20);
+		const form = champ('form-email').closest('form') as HTMLFormElement;
+		await fireEvent.submit(form);
+		await settle(30);
+		expect(zone('contact-form-error').textContent).toBe(refus);
+		// Le geste du message : effacer le champ. Le refus périmé disparaît.
+		await saisir('form-firstname', '', 20);
+		expect(document.querySelector('[data-testid="contact-form-error"]')).toBeNull();
+		grisePour('Prénom et nom obligatoires pour une personne');
+	});
+
+	it('AC8 : formulaire valide → ligne vide, bouton actif', async () => {
+		await ouvrirEn('Entreprise');
+		await saisir('form-name', 'Démo SA', 20);
+		expect(zone('contact-form-blocked-reason')).not.toBeNull();
+		expect(motif()).toBe('');
+		expect(bouton().disabled).toBe(false);
 	});
 });

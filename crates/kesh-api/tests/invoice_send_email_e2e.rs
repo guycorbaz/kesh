@@ -124,6 +124,7 @@ async fn spawn_app(
         rate_fetch_memo: Arc::default(),
         rate_login_trigger: Arc::new(std::sync::Mutex::new(Some(std::time::Instant::now()))),
         test_rate_source: None,
+        provider_downloads: Default::default(),
     };
 
     let app = build_router(state, "nonexistent-static-dir".to_string());
@@ -1073,6 +1074,7 @@ async fn test_sent_emails_endpoint_captures_and_guards(pool: MySqlPool) {
         rate_fetch_memo: Arc::default(),
         rate_login_trigger: Arc::new(std::sync::Mutex::new(Some(std::time::Instant::now()))),
         test_rate_source: None,
+        provider_downloads: Default::default(),
     };
     let app = build_router(state, "nonexistent-static-dir".to_string());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -1194,6 +1196,7 @@ async fn test_sent_emails_endpoint_400_without_capture(pool: MySqlPool) {
         rate_fetch_memo: Arc::default(),
         rate_login_trigger: Arc::new(std::sync::Mutex::new(Some(std::time::Instant::now()))),
         test_rate_source: None,
+        provider_downloads: Default::default(),
     };
     let app = build_router(state, "nonexistent-static-dir".to_string());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -1917,10 +1920,44 @@ async fn send_reminder_batch_over_send_quota_returns_422(pool: MySqlPool) {
         422,
         "lot > quota → 422, pas un 429 perpétuel"
     );
-    assert_eq!(
-        resp.json::<serde_json::Value>().await.unwrap()["error"]["code"],
-        "BATCH_EXCEEDS_SEND_QUOTA"
+    let corps = resp.json::<serde_json::Value>().await.unwrap();
+    assert_eq!(corps["error"]["code"], "BATCH_EXCEEDS_SEND_QUOTA");
+    // #1348 (story v0200-corrections-mineures, AC2) — le message dit le quota : ni la
+    // clé brute (clé absente du catalogue, avant le correctif), ni `{$max}` (clé
+    // présente mais appelée par `t`, sans arguments : M18). Il égale le texte fr-CH
+    // (`config.locale`) rendu avec 2, marques d'isolation retirées comme le fait
+    // `t_args`.
+    let message = corps["error"]["message"].as_str().unwrap_or_default();
+    assert!(
+        message.contains('2'),
+        "le quota manque au message : « {message} »"
     );
+    assert!(
+        !message.contains("$max"),
+        "variable non rendue : « {message} »"
+    );
+    assert_ne!(
+        message, "error-batch-exceeds-send-quota",
+        "clé brute rendue"
+    );
+    let bundle = kesh_i18n::I18nBundle::load(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .join("kesh-i18n/locales")
+            .as_path(),
+    )
+    .unwrap();
+    let mut args = kesh_i18n::FluentArgs::new();
+    args.set("max", 2);
+    let attendu = bundle
+        .format(
+            &kesh_i18n::Locale::FrCh,
+            "error-batch-exceeds-send-quota",
+            Some(&args),
+        )
+        .replace(['\u{2068}', '\u{2069}'], "");
+    assert_eq!(message, attendu);
     assert_eq!(mock.sent_emails().len(), 0, "aucun e-mail parti");
 }
 

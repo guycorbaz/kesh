@@ -1520,6 +1520,24 @@ async fn balance_sheet_next_year_reflects_prior_closing_balances(pool: MySqlPool
     assert_eq!(retained, dec!(4000), "résultat reporté de FY2025");
     assert_eq!(equity_result, Decimal::ZERO, "aucune activité 2026");
     assert_eq!(body["equationHolds"], true, "14000 == 10000 + 4000 + 0");
+
+    // Correctif fix-bilan-resultat-reporte : report calculé NON nul → la ligne calculée
+    // reste dans l'export CSV (elle signale un report à passer).
+    let resp = app
+        .client
+        .get(app.url(&format!(
+            "/api/v1/reports/balance-sheet/export?format=csv&fiscalYearId={fy2026}"
+        )))
+        .bearer_auth(&jwt)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let csv = resp.text().await.unwrap();
+    assert!(
+        csv.contains("CapitauxPropres;;Résultat reporté (calculé);4000.00"),
+        "{csv}"
+    );
 }
 
 // ============================================================

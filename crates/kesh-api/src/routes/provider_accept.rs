@@ -25,7 +25,14 @@
 //!    déclare le prestataire.
 //! 2. **Une tentative** ([`accept_once`]) : une transaction de base,
 //!    `with_account_locks` **sur cette transaction** (identifiants croissants),
-//!    relecture des réglages du prestataire sous les verrous, puis un **point de
+//!    puis, **avant toute lecture ordinaire**, les écritures que désignent les
+//!    rattachements du lot prises `FOR UPDATE`
+//!    (`reconciliation_link::lock_entries_for_update`, voir
+//!    [`EngineProposal::entries_to_lock`]) : la vue de la transaction naît
+//!    après l'attente d'une contre-passation, d'une modification ou d'un
+//!    rattachement concurrent de ces écritures, que l'étape 4.4 de
+//!    `link_entry_in_tx` voit donc (revue P1 de la 38-11c2, H1) ; relecture des
+//!    réglages du prestataire sous les verrous, puis un **point de
 //!    sauvegarde par proposition** ; chaque proposition **rejuge** son
 //!    classement sous les verrous (sinon `failed[]`
 //!    [`PROVIDER_PROPOSAL_STALE`]) et écrit. Commit, verrous rendus.
@@ -81,7 +88,9 @@ use kesh_db::repositories::exchange_rates::find_company_rate_in_tx;
 use kesh_db::repositories::journal_entry_conversions::{
     ConversionErrorKind, create_provider_conversion_in_tx,
 };
-use kesh_db::repositories::reconciliation_link::{LinkEntryRequest, LinkRefusal, link_entry_in_tx};
+use kesh_db::repositories::reconciliation_link::{
+    LinkEntryRequest, LinkRefusal, link_entry_in_tx, lock_entries_for_update,
+};
 use kesh_db::repositories::{
     audit_log, fiscal_years, journal_entries, projects, provider_review as reads,
     reconciliation as reconciliation_repo, reconciliation_rules,
@@ -90,8 +99,8 @@ use kesh_db::retry::is_deadlock_error;
 use kesh_reconciliation::conversion::{ConversionSide, PlanError, SourceRate, plan_conversion};
 use kesh_reconciliation::provider_review::{
     EntryKind, Proposal, ProviderAccount, ProviderKind, ProviderSpec, Review, ReviewFinding,
-    ReviewInput, ReviewProposal, SaleEntry, SaleMovement, build_review, conversion_halves, counts,
-    payment_date,
+    ReviewInput, ReviewProposal, SaleEntry, SaleMovement, admits_link, admits_rule, build_review,
+    conversion_halves, counts, payment_date,
 };
 use kesh_reconciliation::{ReconciliationError, rule_matches, with_account_locks};
 use rust_decimal::Decimal;
@@ -134,16 +143,18 @@ pub struct ReviewQuery {
     pub fiscal_year_id: i64,
 }
 
-/// Réponse de la revue — la forme que reprennent Wise et Stripe.
+/// Réponse de la revue — la forme que reprennent Wise et Stripe. Générique
+/// en `P`, le type de proposition (voir [`ReviewProposal`]) : Stripe y sert
+/// sa proposition `payout` (40-7c AC-4 d).
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ReviewResponse {
+pub struct ReviewResponse<P = Proposal> {
     /// Libellé du compte, tel que demandé.
     pub account: String,
     /// Exercice revu.
     pub fiscal_year_id: i64,
     /// Propositions.
-    pub proposals: Vec<ReviewProposal>,
+    pub proposals: Vec<ReviewProposal<P>>,
     /// Écarts.
     pub gaps: Vec<ReviewFinding>,
     /// Lignes à examiner.
@@ -152,9 +163,9 @@ pub struct ReviewResponse {
     pub counts: BTreeMap<&'static str, usize>,
 }
 
-impl ReviewResponse {
+impl<P> ReviewResponse<P> {
     /// La réponse d'une revue (triée par l'appelant, [`Review::sort`]).
-    pub fn of(account: String, fiscal_year_id: i64, review: Review) -> Self {
+    pub fn of(account: String, fiscal_year_id: i64, review: Review<P>) -> Self {
         let counts = counts(&review);
         Self {
             account,
@@ -465,11 +476,25 @@ fn failed(bank_transaction_id: i64, code: &str, details: serde_json::Value) -> R
 /// communs) l'implémente ; un prestataire qui a des propositions propres
 /// (Stripe : `payout`) définit son type, délègue les genres communs à
 /// [`accept_common`] et décide les siens avec les briques de ce module.
+///
+/// ⚠️ **Un refus nomme toujours [`EngineProposal::primary_transaction_id`]** :
+/// [`PreparedAccept::finish`] range `failed[]` par cet identifiant, dans
+/// l'ordre du corps ; un refus d'une proposition propre qui nommerait une
+/// autre de ses transactions **disparaîtrait de la réponse**. Les genres
+/// communs y ramènent le refus de leur seconde transaction (la créditée d'une
+/// conversion, [`accept_conversion`]) ; une proposition propre fait de même.
 pub trait EngineProposal: Clone + Send + Sync {
     /// Toutes les transactions de la proposition.
     fn transaction_ids(&self) -> Vec<i64>;
-    /// Celle que nomme un refus.
+    /// Celle que nomme un refus (voir l'en-tête du trait).
     fn primary_transaction_id(&self) -> i64;
+    /// Les écritures **existantes** que la proposition rattache (celle d'un
+    /// `link_entry`), prises `FOR UPDATE` au début du lot, avant toute lecture
+    /// ordinaire (voir l'en-tête du module). ⛔ Une proposition propre qui
+    /// délègue un rattachement à [`accept_common`] doit les rendre aussi :
+    /// sinon [`accept_link_entry`] refuse le rattachement (`DATABASE_ERROR`,
+    /// invariant), plutôt que de le poser sur une vue née trop tôt.
+    fn entries_to_lock(&self) -> Vec<i64>;
     /// Contrôle de forme du pré-vol (`Err` : message du `400` global).
     fn check_shape(&self) -> Result<(), String>;
     /// Acceptation sous les verrous, dans le point de sauvegarde du lot.
@@ -489,6 +514,15 @@ impl EngineProposal for Proposal {
 
     fn primary_transaction_id(&self) -> i64 {
         Proposal::primary_transaction_id(self)
+    }
+
+    fn entries_to_lock(&self) -> Vec<i64> {
+        match self {
+            Proposal::LinkEntry {
+                journal_entry_id, ..
+            } => vec![*journal_entry_id],
+            _ => Vec::new(),
+        }
     }
 
     fn check_shape(&self) -> Result<(), String> {
@@ -554,6 +588,11 @@ pub struct PreparedAccept<P = Proposal> {
     pub eligible: Vec<P>,
     /// Comptes bancaires à verrouiller.
     pub lock_ids: Vec<i64>,
+    /// Écritures de la société que les propositions éligibles font rattacher,
+    /// **présentes au pré-vol** : seules celles-ci se pré-verrouillent
+    /// (`FOR UPDATE`, [`run_batch`]). Une absente, ou d'une autre société, ne
+    /// pose aucun verrou d'intervalle : `link_entry_in_tx` la refuse `NOT_FOUND`.
+    entries_to_lock: Vec<i64>,
     /// Ordre du corps (transaction nommée par chaque proposition).
     order: Vec<i64>,
     /// Refus du pré-vol.
@@ -674,6 +713,13 @@ pub async fn prepare_accept<P: EngineProposal>(
     }
     lock_ids.sort_unstable();
     lock_ids.dedup();
+    let wanted: Vec<i64> = eligible
+        .iter()
+        .flat_map(EngineProposal::entries_to_lock)
+        .collect::<HashSet<i64>>()
+        .into_iter()
+        .collect();
+    let entries_to_lock = reads::existing_entry_ids(pool, company_id, &wanted).await?;
     Ok(PreparedAccept {
         company_id,
         acteur: Acteur {
@@ -683,6 +729,7 @@ pub async fn prepare_accept<P: EngineProposal>(
         account: body.account,
         eligible,
         lock_ids,
+        entries_to_lock,
         order,
         preflight_failed,
     })
@@ -705,6 +752,10 @@ pub struct AcceptContext<'a> {
     /// Les comptes bancaires du compte de prestataire, **relus sous les
     /// verrous**, par identifiant.
     pub balances: HashMap<i64, ProviderBalance>,
+    /// Les écritures prises `FOR UPDATE` au début du lot, avant toute lecture
+    /// ordinaire ([`EngineProposal::entries_to_lock`]) : seules celles-ci se
+    /// rattachent ([`accept_link_entry`]).
+    pub locked_entries: HashSet<i64>,
 }
 
 /// **Une tentative** de l'acceptation (voir l'en-tête du module), rejouée sur
@@ -765,14 +816,27 @@ fn lock_error(e: ReconciliationError) -> AppError {
     }
 }
 
-/// Le lot, sous les verrous : relecture des réglages, puis un point de
-/// sauvegarde par proposition. Un [`Refusal::Abort`] remonte aussitôt, sans
-/// `ROLLBACK TO SAVEPOINT` (voir l'en-tête du module).
+/// Le lot, sous les verrous : les écritures à rattacher prises `FOR UPDATE`
+/// **en premier acte** (avant toute lecture ordinaire, H1), relecture des
+/// réglages, puis un point de sauvegarde par proposition. Un
+/// [`Refusal::Abort`] remonte aussitôt, sans `ROLLBACK TO SAVEPOINT` (voir
+/// l'en-tête du module).
 async fn run_batch<P: EngineProposal>(
     tx: &mut sqlx::Transaction<'_, MySql>,
     spec: &ProviderSpec,
     prepared: &PreparedAccept<P>,
 ) -> Result<BatchOutcome, ReconciliationError> {
+    // ⛔ Premier acte de la transaction, avant toute lecture ordinaire : la
+    // vue naît après l'attente de ces verrous (corollaire de
+    // `link_entry_in_tx`). Une lecture ordinaire placée avant rouvre le
+    // rattachement d'une vente contre-passée, modifiée ou déjà rattachée
+    // entre-temps (test `rattachement_d_une_vente_contre_passee_pendant_l_attente`).
+    let locked_entries: HashSet<i64> =
+        lock_entries_for_update(tx, prepared.company_id, &prepared.entries_to_lock)
+            .await
+            .map_err(ReconciliationError::Db)?
+            .into_iter()
+            .collect();
     let balances = bank_accounts::list_provider_balances(
         &mut **tx,
         prepared.company_id,
@@ -787,6 +851,7 @@ async fn run_batch<P: EngineProposal>(
         acteur: prepared.acteur,
         account: &prepared.account,
         balances: balances.into_iter().map(|b| (b.account.id, b)).collect(),
+        locked_entries,
     };
     let mut outcome = BatchOutcome::default();
     for p in &prepared.eligible {
@@ -968,7 +1033,11 @@ pub async fn rejudge<'a>(
 pub enum CounterpartyRule {
     /// Frais : compte de charge (38-11b AC-2).
     Expense,
-    /// Règle : le contrôle d'`accept_one_rule` (actif, imputable).
+    /// Règle : le contrôle d'`accept_one_rule` (actif, imputable). La devise
+    /// de la contrepartie — CHF ou celle de la transaction, décision du responsable de l'epic du
+    /// 2026-11-21 — se contrôle à l'acceptation (`COUNTERPARTY_CURRENCY_MISMATCH`),
+    /// où la devise de la transaction est connue ; la revue ne propose pas
+    /// d'autre règle.
     Rule,
     /// Retrait : compte d'actif en CHF.
     AssetChf,
@@ -980,7 +1049,7 @@ pub enum CounterpartyRule {
 /// le compte du plan du compte de prestataire (`VALIDATION_ERROR`,
 /// `counterparty_equals_bank_ledger`), active (`ACCOUNT_NOT_FOUND`),
 /// imputable (`ACCOUNT_NOT_POSTABLE`), du type et de la devise attendus
-/// (`VALIDATION_ERROR`, `counterparty_wrong_type`, `counterparty_wrong_currency`).
+/// (`VALIDATION_ERROR`, `counterparty_wrong_type`, `counterparty_wrong_currency`) ; pour une règle, la devise se contrôle à l'acceptation.
 /// Rend sa devise (`None` : CHF).
 pub async fn check_counterparty(
     tx: &mut sqlx::Transaction<'_, MySql>,
@@ -1162,6 +1231,14 @@ pub struct ProviderEntry<'a> {
     pub kind: EntryKind,
     /// Projet analytique (règle).
     pub project_id: Option<i64>,
+    /// Le **CHF connu** de la transaction, quand le prestataire le donne
+    /// (Wise : carte payée en devise depuis un solde, montant CHF du marchand,
+    /// 39-11c) : la ligne du compte de prestataire en devise porte alors ce
+    /// CHF, au cours `rate_from_chf(|montant|, CHF)` de provenance `manual` —
+    /// le CHF réel fait foi, aucun cours de Kesh, comme la conversion à une
+    /// écriture. `None` : cours mensuel retenu (PayPal). Sans effet pour un
+    /// compte du plan en CHF (le montant est déjà en CHF).
+    pub known_chf: Option<Decimal>,
 }
 
 /// **La** fonction d'écriture du moteur (AC-8) — voir l'en-tête du module.
@@ -1184,6 +1261,27 @@ pub async fn write_provider_entry(
     let amount = t.amount.abs();
     let (chf, foreign) = if entry.ledger_currency == BASE_CURRENCY {
         (amount, None)
+    } else if let Some(known) = entry.known_chf {
+        // Point d'entrée d'un CHF connu (revue P1, L7) : le CHF fait foi, le
+        // cours s'en déduit.
+        let chf = known.abs();
+        let rate = kesh_core::accounting::fx::rate_from_chf(&amount, &chf).map_err(|e| {
+            failed(
+                id,
+                "FX_RATE_INVALID",
+                serde_json::json!({ "currency": entry.ledger_currency, "message": format!("{e:?}") }),
+            )
+        })?;
+        (
+            chf,
+            Some(ForeignAmount {
+                declared_currency: None,
+                amount,
+                rate,
+                source: Some(RateProvenance::Manual),
+                rate_derived: false,
+            }),
+        )
     } else {
         let rate = month_rate(tx, ctx.company_id, id, entry.ledger_currency, date).await?;
         let chf = kesh_core::accounting::fx::fx_chf(&amount, &rate.rate).map_err(|e| {
@@ -1287,24 +1385,43 @@ pub async fn mark_reconciled(
 // ---------------------------------------------------------------------------
 
 /// `link_entry` : rattachement à une écriture déjà passée, par
-/// `link_entry_in_tx` (aucune écriture). Rejugement : transaction pending,
-/// d'encaissement (l'identifiant figure toujours au libellé de l'écriture) ou
-/// d'un genre propre au prestataire ; une vente déjà rattachée rend la
-/// proposition périmée. Après le lien d'un encaissement, une
-/// lecture **verrouillante** vérifie qu'aucune autre transaction ne pointe la
-/// vente (rattachée entre-temps depuis un autre compte : l'instantané de la
-/// transaction, ouvert avant le verrou de l'écriture, ne le montrerait pas à
-/// `link_entry_in_tx`).
+/// `link_entry_in_tx` (aucune écriture). Rejugement : transaction pending, de
+/// genre admis au rattachement ([`admits_link`] : encaissement, ou genre que
+/// le prestataire déclare — Wise : `Other` de préfixe `TRANSFER`, versement
+/// Stripe) ; pour un **encaissement**, l'identifiant figure toujours au
+/// libellé de l'écriture et la vente n'est pas déjà rattachée (sinon
+/// périmée). Pour tout genre, l'écriture a été prise `FOR UPDATE` au début
+/// du lot, avant toute lecture ordinaire ([`run_batch`]) : les lectures de ce
+/// rejugement et l'étape 4.4 de `link_entry_in_tx` (mouvement, devise,
+/// contre-passation, liens) voient donc tout ce qui a été commité sur elle
+/// avant, et rien ne peut la changer jusqu'au commit du lot (H1).
 pub async fn accept_link_entry(
     tx: &mut sqlx::Transaction<'_, MySql>,
     ctx: &AcceptContext<'_>,
     bank_transaction_id: i64,
     journal_entry_id: i64,
 ) -> Result<ProviderAccepted, Refusal> {
-    let r = rejudge(tx, ctx, bank_transaction_id, |k| {
-        matches!(k, ProviderKind::SaleReceipt | ProviderKind::Specific(_))
-    })
-    .await?;
+    if !ctx.locked_entries.contains(&journal_entry_id) {
+        // Écriture absente (ou d'une autre société) : `link_entry_in_tx` la
+        // refuse `NOT_FOUND` à l'étape 4.2. Sinon, une proposition propre qui
+        // n'a pas déclaré l'écriture (`entries_to_lock`) : refusée plutôt que
+        // rattachée sur une vue née trop tôt.
+        let exists = reads::entry_description(&mut **tx, ctx.company_id, journal_entry_id)
+            .await
+            .map_err(|e| db_refusal(bank_transaction_id, e))?
+            .is_some();
+        if exists {
+            return Err(db_refusal(
+                bank_transaction_id,
+                DbError::Invariant(
+                    "rattachement d'un prestataire : écriture non verrouillée au début du lot \
+                     (EngineProposal::entries_to_lock)"
+                        .into(),
+                ),
+            ));
+        }
+    }
+    let r = rejudge(tx, ctx, bank_transaction_id, |k| admits_link(ctx.spec, k)).await?;
     let sale = (ctx.spec.classify)(&r.transaction) == ProviderKind::SaleReceipt;
     if sale {
         let key = (ctx.spec.match_key)(&r.transaction).map(str::to_string);
@@ -1351,19 +1468,6 @@ pub async fn accept_link_entry(
         }
         Err(e) => return Err(entry_refusal(bank_transaction_id, e)),
     };
-    if sale {
-        let others = reads::other_links_locked(
-            tx,
-            ctx.company_id,
-            linked.journal_entry_id,
-            bank_transaction_id,
-        )
-        .await
-        .map_err(|e| db_refusal(bank_transaction_id, e))?;
-        if others > 0 {
-            return Err(stale(bank_transaction_id, "entry_linked_elsewhere"));
-        }
-    }
     Ok(ProviderAccepted {
         kind: "link_entry",
         bank_transaction_ids: vec![bank_transaction_id],
@@ -1405,6 +1509,7 @@ pub async fn accept_fee(
             counterparty_currency: currency.as_deref(),
             kind: EntryKind::Fee,
             project_id: None,
+            known_chf: None,
         },
     )
     .await?;
@@ -1417,8 +1522,10 @@ pub async fn accept_fee(
     })
 }
 
-/// `rule` : la règle (active, qui correspond toujours, même contrepartie ;
-/// sinon périmée), contrepartie contrôlée comme `accept_one_rule`, projet par
+/// `rule` : transaction de genre admis à la règle ([`admits_rule`] : `Other`,
+/// ou genre que le prestataire déclare) ; la règle (active, qui correspond
+/// toujours, même contrepartie ; sinon périmée), contrepartie contrôlée comme
+/// `accept_one_rule` ; en CHF, ou dans la devise de la transaction ; projet par
 /// défaut revalidé ; écriture, compteur d'application et trace
 /// `reconciliation_rule.applied`, comme `accept_one_rule`.
 pub async fn accept_rule(
@@ -1428,7 +1535,7 @@ pub async fn accept_rule(
     rule_id: i64,
     counterparty_account_id: i64,
 ) -> Result<ProviderAccepted, Refusal> {
-    let r = rejudge(tx, ctx, bank_transaction_id, |k| k == ProviderKind::Other).await?;
+    let r = rejudge(tx, ctx, bank_transaction_id, |k| admits_rule(ctx.spec, k)).await?;
     let rule = reconciliation_rules::find_by_id_for_company(&mut **tx, ctx.company_id, rule_id)
         .await
         .map_err(|e| db_refusal(bank_transaction_id, e))?;
@@ -1448,6 +1555,21 @@ pub async fn accept_rule(
         CounterpartyRule::Rule,
     )
     .await?;
+    // Une contrepartie en devise ne sert qu'une transaction dans cette devise
+    // (même source que la revue, `matching_rule` : la devise de la transaction).
+    if let Some(c) = currency.as_deref()
+        && c != r.transaction.currency
+    {
+        return Err(failed(
+            bank_transaction_id,
+            "COUNTERPARTY_CURRENCY_MISMATCH",
+            serde_json::json!({
+                "accountId": counterparty_account_id,
+                "accountCurrency": c,
+                "transactionCurrency": r.transaction.currency,
+            }),
+        ));
+    }
     if let Some(pid) = rule.default_project_id
         && let Err(e) = projects::validate_taggable_in_tx(tx, ctx.company_id, &[pid]).await
     {
@@ -1471,6 +1593,7 @@ pub async fn accept_rule(
             counterparty_currency: currency.as_deref(),
             kind: EntryKind::Rule,
             project_id: rule.default_project_id,
+            known_chf: None,
         },
     )
     .await?;
@@ -1550,6 +1673,7 @@ pub async fn accept_withdrawal(
             counterparty_currency: currency.as_deref(),
             kind: EntryKind::Withdrawal,
             project_id: None,
+            known_chf: None,
         },
     )
     .await?;
@@ -1611,12 +1735,17 @@ pub async fn accept_conversion(
         None
     };
     let plan = plan_conversion(&source, &target, source_rate).map_err(|e| match e {
-        PlanError::RateInvalid(message) => failed(
+        // La devise du côté dont le cours est en cause (revue P1, L4).
+        PlanError::RateInvalid { currency, message } => failed(
             id,
             "FX_RATE_INVALID",
-            serde_json::json!({ "currency": target.currency, "message": message }),
+            serde_json::json!({ "currency": currency, "message": message }),
         ),
-        other => stale(id, &format!("{other:?}")),
+        // Montant nul, même devise, cours source absent : la paire jugée
+        // ci-dessus ne le permet pas (défense en profondeur, motif constant).
+        PlanError::ZeroAmount | PlanError::SameCurrency | PlanError::MissingRate => {
+            stale(id, "conversion_pair_changed")
+        }
     })?;
     let description: String =
         (ctx.spec.entry_label)(EntryKind::Conversion, ctx.account, &debit.transaction)

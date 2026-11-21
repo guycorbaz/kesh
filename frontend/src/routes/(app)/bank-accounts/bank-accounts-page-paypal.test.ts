@@ -247,6 +247,21 @@ describe('page des comptes bancaires — le compte PayPal (Story 38-11d, AC-1)',
 		expect(payload.isPrimary).toBe(false);
 	});
 
+	// Revue P2 (L3) — un compte de frais archivé ou non imputable n'est pas vidé en silence à
+	// l'ouverture de la modification : le serveur le juge, le champ ne change pas.
+	it('modification : un compte de frais archivé reste envoyé, non vidé', async () => {
+		fetchAccountsMock.mockResolvedValue([
+			BANQUE, PAYPAL_CHF, PAYPAL_EUR, FRAIS_CHF, { ...FRAIS_EUR, active: false }, FRAIS_USD, PRODUIT,
+		]);
+		const r = render(Page);
+		await fireEvent.click(await r.findByTestId('edit-button-2'));
+		await r.findByTestId('edit-is-paypal');
+		await fireEvent.click(await r.findByTestId('edit-form-submit'));
+		await waitFor(() => expect(updateBankAccountMock).toHaveBeenCalledTimes(1));
+		const payload = updateBankAccountMock.mock.calls[0][1] as Record<string, unknown>;
+		expect(payload.paypal).toEqual({ account: 'PayPal www', feeAccountId: 61 });
+	});
+
 	it('modification : décochée sur un compte PayPal → `paypal: null`', async () => {
 		listBankAccountsMock.mockResolvedValue([
 			bank({ ...paypalEur, journalAccountId: PAYPAL_CHF.id, iban: 'CH9300762011623852957' }),

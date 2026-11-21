@@ -399,3 +399,22 @@ fn one_faulty_line_refuses_the_whole_file() {
     );
     assert_eq!(errors[0].field, Some("Net"));
 }
+
+/// Valeur extrême de `Decimal` : refusée en erreur de ligne, sans panique
+/// (correctif post-revue : débordement des montants).
+#[test]
+fn extreme_amount_is_refused_without_panicking() {
+    let extreme = "79228162514264337593543950335".to_string();
+    let bytes = rewrite(|mut cells| {
+        if cells[12] == "0TEST00000000003C" {
+            cells[7] = extreme.clone(); // Gross
+            cells[8] = extreme.clone(); // Fee
+        }
+        cells
+    });
+    let PaypalCsvError::Lines(errors) = parse_paypal_csv(&bytes).unwrap_err() else {
+        panic!("Lines attendu");
+    };
+    assert!(errors.iter().all(|e| e.line == 4));
+    assert_eq!(errors[0].code, PaypalLineErrorCode::Amount);
+}

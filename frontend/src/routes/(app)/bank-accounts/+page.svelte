@@ -149,19 +149,19 @@
 	});
 	let feeCandidates = $derived(feeAccountCandidates(accounts, formLedgerCurrency));
 	let paypalLabels = $derived(paypalAccountLabels(bankAccounts));
-	// Le compte de frais se vide seulement s'il n'est plus admis par la devise du compte du plan
-	// choisi (revue P1, L7 : le vider à tout changement effaçait en silence un compte de frais
-	// choisi avant le compte du plan). Il reste affiché tant que les comptes ne sont pas chargés.
+	// Le compte de frais se vide seulement si sa devise n'est plus admise par celle du compte du
+	// plan choisi (revue P1, L7 : le vider à tout changement effaçait en silence un compte choisi
+	// avant le compte du plan ; revue P2, L3 : ni un compte archivé ou non imputable, que le
+	// serveur juge et refuse sous son code). Il reste affiché tant que les comptes ne sont pas
+	// chargés.
 	$effect(() => {
-		const candidates = feeCandidates;
+		const ledger = formLedgerCurrency;
 		untrack(() => {
-			if (
-				accounts.length > 0 &&
-				formFeeAccountId !== null &&
-				!candidates.some((a) => a.id === formFeeAccountId)
-			) {
-				formFeeAccountId = null;
-			}
+			if (accounts.length === 0 || formFeeAccountId === null) return;
+			const fee = accounts.find((a) => a.id === formFeeAccountId);
+			if (!fee) return;
+			const c = accountCurrency(fee);
+			if (c !== null && c !== ledger) formFeeAccountId = null;
 		});
 	});
 	// Un compte du plan en devise n'admet pas de solde d'ouverture par cet écran.

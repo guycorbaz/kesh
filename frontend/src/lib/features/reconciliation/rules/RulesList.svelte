@@ -8,7 +8,7 @@
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 	// fx-filtre-comptes : exempté — liste des règles : les comptes n'y servent qu'aux
-	// libellés (le choix se fait dans `RuleFormModal`, filtré).
+	// libellés (le choix se fait dans `RuleFormModal`, qui ne filtre pas les comptes en devise).
 	import { deleteRule, updateRule } from './rules.api';
 	import type { ReconciliationRule } from './rules.types';
 
