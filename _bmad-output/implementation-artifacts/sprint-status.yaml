@@ -1185,11 +1185,24 @@ development_status:
   # Les stories gardent leur clé d'origine (fiches, branches, worktrees) ; elles se lisent ci-dessus, dans le bloc de l'Epic 48.
   epic-50: in-progress  # « Corrections » — vendredi 2026-11-27 ; 48-11 (arrondi au centime, #1245, #1430), 48-12a et 48-12b (doublons de fournisseurs, #975, #985), une story de solde ; fichier epic-50-corrections.md
   epic-50-retrospective: optional
-  epic-51: backlog  # « Réimputation » (#1167, #1449) — vendredi 2026-11-27 s'il tient, sinon la semaine suivante ; 48-1 (facture fournisseur), 48-2a et 48-2b (écriture manuelle), une story de solde ; fichier epic-51-reimputation.md
+  epic-51: backlog  # « Réimputation » (#1167, #1449) — après l'Epic 53 (triage P1 du 2026-11-21) ; 48-1 (facture fournisseur), 48-2a et 48-2b (écriture manuelle), une story de solde ; fichier epic-51-reimputation.md
   epic-51-retrospective: optional
   # Epic 52 : découpé de l'Epic 49 (2026-11-21) ; ses stories gardent leur clé 49-x, lues dans le bloc de l'Epic 49 (branche epic/49).
   epic-52: backlog  # « Lignes de facture, suite » — après l'Epic 49 ; 49-2 (réordonnancement), 49-3 (titres de section), 49-4b (retour à la ligne, caractères) ; fichier epic-52-lignes-de-facture-suite.md
   epic-52-retrospective: optional
+  # 2026-11-21 — Triage P1 (décision du Project Lead) : tout P1 passe en priorité dans la release suivante ; les epics avancés (49, 50) continuent ;
+  # l'Epic 49 reste la fonctionnalité nouvelle du vendredi 2026-11-27 ; l'Epic 53 passe avant l'Epic 51.
+  epic-53: backlog  # « Écritures justes » — lancé le 2026-11-24 ; vendredi 27 s'il est clos, sinon release de milieu de semaine ; fichier epic-53-ecritures-justes.md
+  53-1-ecriture-pas-deux-fois: backlog  # #1355, #1365 (P1) ; même philosophie que la 48-12a (refus serveur, issue inconnue figée à l'écran)
+  53-2-tva-sur-compte-de-la-vente: backlog  # #525, #1198 (P1) ; migration probable (b monte, de préférence un vendredi)
+  53-3-ouverture-sous-verrou: backlog  # #513 (P1)
+  53-4-assistant-compte-bancaire: backlog  # #1004 (P1)
+  53-5-solde-dette-epic: backlog  # story de solde ; plafond fixé au lancement
+  epic-53-retrospective: optional
+  epic-54: backlog  # « Totaux du décompte de TVA » — après l'Epic 53 ; fichier epic-54-totaux-tva.md
+  54-1-avoirs-dans-le-decompte-tva: backlog  # #390, #391, #392 (P1)
+  54-2-solde-dette-epic: backlog  # story de solde ; plafond fixé au lancement
+  epic-54-retrospective: optional
 
   # 2026-11-18 — Epic 49 « Types de lignes de la facture client » (#1242, P2, demande de Guy, échéance fin novembre), release 0.20.0 ;
   # fichier epic-49-types-de-lignes-facture.md ; porte la SEULE migration de la 0.20.0 (49-1). Menée en parallèle de l'Epic 48,
