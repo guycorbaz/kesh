@@ -337,7 +337,7 @@ Les anciennes rétrospectives classent la dette en **A** (vraie dette), **B** (l
 
 ## Travailler à plusieurs développeurs
 
-Kesh a plusieurs développeurs depuis le 2026-11-15 : le Project Lead, l'orchestrateur qui travaille sur son mandat, et des contributeurs à qui des epics sont réservés (37 à 40, 46, 47) ; les epics internes ouverts sont le 41 (pièces justificatives), le 45 (note interne) et le 48 (réservoir des stories non faites des Epics 36 et 42 à 44), et le prochain epic interne neuf est le 53. Décisions du Project Lead des 2026-11-15, 2026-11-16, 2026-11-18 et 2026-11-21 ; `docs/guide-developpeur.md` les explique à un contributeur, mais **elles font foi ici**.
+Kesh a plusieurs développeurs depuis le 2026-11-15 : le Project Lead, l'orchestrateur qui travaille sur son mandat, et des contributeurs à qui des epics sont réservés (37 à 40, 46, 47) ; les epics internes ouverts sont le 41 (pièces justificatives), le 45 (note interne), le 49 (types de lignes de la facture), le 50 (corrections), le 51 (réimputation) et le 52 (lignes de facture, suite) ; les stories 48-3 à 48-9 forment une liste d'attente, hors epic ; le prochain epic interne neuf est le 53. Décisions du Project Lead des 2026-11-15, 2026-11-16, 2026-11-18 et 2026-11-21 ; `docs/guide-developpeur.md` les explique à un contributeur, mais **elles font foi ici**.
 
 ### Planification — GitHub Projects
 
