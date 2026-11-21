@@ -1914,6 +1914,9 @@ fn full_update_audit_state(b: &BankAccount) -> serde_json::Value {
 /// `UPDATE` du compte (`update_for_company`), traces — conclusion par
 /// [`conclure`] (`rollback` explicite sur refus). Chaque tentative clone ce
 /// qu'elle consomme de `input`.
+// Huit paramètres : `payout_unchanged` (revue P1, L2) s'ajoute aux sept d'une tentative
+// du `PUT`, qui se passent tels quels à chaque nouvel essai du `retry`.
+#[allow(clippy::too_many_arguments)]
 async fn update_once(
     pool: &sqlx::MySqlPool,
     current_user: &CurrentUser,
