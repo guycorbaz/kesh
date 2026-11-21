@@ -908,7 +908,9 @@ async fn vente_rattachee_entre_la_revue_et_l_acceptation(pool: MySqlPool) {
 
 /// L1 (revue P2) — un rattachement à une écriture **absente** (ou d'une autre
 /// société) n'est pas pré-verrouillé (aucun verrou d'intervalle) : il est
-/// refusé par proposition, `NOT_FOUND`, et le reste du lot est accepté.
+/// refusé par proposition (`PROVIDER_PROPOSAL_STALE`, raison `entry_changed` :
+/// l'écriture n'existe plus, la relecture ne retrouve pas la clé), et le reste
+/// du lot est accepté.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn rattachement_a_une_ecriture_absente_refuse_le_reste_accepte(pool: MySqlPool) {
     let ctx = monter(&pool).await;
@@ -922,7 +924,11 @@ async fn rattachement_a_une_ecriture_absente_refuse_le_reste_accepte(pool: MySql
     assert_eq!(s, 200, "{b}");
     assert_eq!(b["accepted"].as_array().unwrap().len(), 1, "{b}");
     assert_eq!(b["failed"][0]["bankTransactionId"], tx_1a, "{b}");
-    assert_eq!(b["failed"][0]["errorCode"], "NOT_FOUND", "{b}");
+    assert_eq!(
+        b["failed"][0]["errorCode"], "PROVIDER_PROPOSAL_STALE",
+        "{b}"
+    );
+    assert_eq!(b["failed"][0]["details"]["reason"], "entry_changed", "{b}");
     assert_eq!(ctx.etat(tx_1a).await, ("pending".into(), None));
 }
 
@@ -1813,11 +1819,11 @@ async fn regle_contrepartie_usd_sur_transaction_usd_acceptee(pool: MySqlPool) {
     .await
     .unwrap();
     assert_eq!(lignes.len(), 2, "{lignes:?}");
-    let (contrepartie, prestataire) = (&lignes[0], &lignes[1]);
-    assert_eq!(
-        (contrepartie.0, prestataire.0),
-        (usd, ctx.usd),
-        "{lignes:?}"
+    // L'ordre des lignes n'est pas contractuel : on les prend par compte.
+    let par_compte = |c: i64| lignes.iter().find(|l| l.0 == c);
+    let (contrepartie, prestataire) = (
+        par_compte(usd).expect("ligne de la contrepartie"),
+        par_compte(ctx.usd).expect("ligne du prestataire"),
     );
     assert!(
         contrepartie.1 > dec!(0) && contrepartie.2 == dec!(0),

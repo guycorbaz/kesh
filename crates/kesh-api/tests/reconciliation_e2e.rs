@@ -12086,7 +12086,7 @@ async fn the_acceptance_window_reads_the_exigibility(pool: MySqlPool) {
 async fn usd_expense_account_38c2(pool: &MySqlPool, c: &Ctx301b) -> i64 {
     sqlx::query(
         "INSERT INTO accounts (company_id, number, name, account_type, currency) \
-         VALUES (?, '4100', 'Charges en USD', 'expense', 'USD')",
+         VALUES (?, '4100', 'Charges en USD', 'Expense', 'USD')",
     )
     .bind(c.seeded.company_id)
     .execute(pool)
@@ -12117,7 +12117,7 @@ async fn a_foreign_currency_rule_is_not_proposed_and_does_not_mask_the_next_rule
         &c.jwt,
         serde_json::json!({
             "label": "Abonnement CHF", "matchType": "counterparty_contains",
-            "matchValue": "Abonnement", "counterpartyAccountId": c.seeded.accounts["4000"],
+            "matchValue": "mensuel", "counterpartyAccountId": c.seeded.accounts["4000"],
             "priority": 20,
         }),
     )
