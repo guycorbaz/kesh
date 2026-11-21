@@ -3,7 +3,7 @@
 Status: review
 
 *Fiche rédigée le 2026-11-20, branche `epic/38-paypal`, après la fusion de `origin/main` (commit `43ceb541`). Epic
-38, **phase 1 KISS** (décision de Beat du 2026-11-20). **Dépend de** : 38-11b, 38-11c1 (rattachement en devise, filtres), 38-11c2 (routes de revue et d'acceptation). Reprend, réduits,
+38, **phase 1 KISS** (décision du responsable de l'epic du 2026-11-20). **Dépend de** : 38-11b, 38-11c1 (rattachement en devise, filtres), 38-11c2 (routes de revue et d'acceptation). Reprend, réduits,
 l'ancienne 38-9a (réglages d'un compte prestataire) et 38-9b (règles étendues, propositions, « à examiner »).*
 
 ## Story
@@ -24,7 +24,7 @@ tant qu'**auteur d'un script**, je veux la même chose par l'API, documentée.
 
 ## Critères d'acceptation
 
-**Décision d'epic reflétée ici** (Beat, 2026-11-20) : **aucun type de critère neuf** dans l'`ENUM` des règles ;
+**Décision d'epic reflétée ici** (responsable de l'epic, 2026-11-20) : **aucun type de critère neuf** dans l'`ENUM` des règles ;
 deux **filtres facultatifs**, `provider_type` et `counterparty_email`, s'ajoutent à toute règle, avec le sens — noms
 de champs de 38-11c1 AC-3 (`providerType`, `counterpartyEmail`, `direction`, nullables ; `matchValue` obligatoire).
 
