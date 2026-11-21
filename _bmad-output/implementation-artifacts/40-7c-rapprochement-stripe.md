@@ -416,9 +416,11 @@ contrôlé) : `date-valeur` (`payment_date` rendu à `value_date`), `frais-seul`
 - Frontend (`front-*.log`) : `npm run check` 0 erreur (29 avertissements, préexistants), `lint-i18n-ownership` vert,
   Vitest **4829** (280 fichiers), `npm run build` vert. Aucun fichier frontend modifié.
 - `scripts/gate-ci.sh` (copie `git archive` de `4d08eb00`, `gate-ci.log`) : lancé avant la nouvelle règle des gates
-  du 22.11 ; **en cours à la remise** — au moins 97 binaires `test result: ok`, aucun `FAILED` relevé à cet instant ;
-  non déclaré vert. Selon la nouvelle règle, gate-ci et E2E complet se jouent à la fin de l'epic.
-- **E2E partiel (1 spec)** (`e2e.log`) : `smoke.spec.ts`, 2 passés. Retenue : (c) le smoke ; (a) aucune spec ajoutée ou
+  du 22.11 ; **interrompu** le 22.11 sur décision du responsable de l'epic (pas de gate-ci par story) après 98
+  binaires `test result: ok`, aucun `FAILED` — non déclaré vert ; cible supprimée. gate-ci et E2E complet à la fin de
+  l'epic.
+- **E2E** : la story n'ajoute aucune spec (décision du 22.11 : seules les specs ajoutées se jouent) ; le smoke,
+  joué avant cette décision, `smoke.spec.ts` 2 passés (`e2e.log`). Choix d'alors : (c) le smoke ; (a) aucune spec ajoutée ou
   modifiée ; (b) aucune spec ne touche les routes de la story (`grep -rli "stripe|paypal/review|paypal/accept"
   frontend/tests/e2e/` vide) ni aucun écran (aucun fichier frontend modifié). E2E complet et gate-ci à la fin de
   l'epic.
