@@ -1134,7 +1134,7 @@ En multi-devises, \emph{Administration} → \emph{Plan comptable} affiche la dev
     \item la contrepartie d'une \textbf{règle d'affectation} (\S\ref{sec:regles-affectation}), même supprimée~;
 \end{itemize}
 Un compte de différences de change ou de conversion désigné (ci-dessus) ne reçoit pas de devise non plus, refusé sous son propre code (\texttt{409 ACCOUNT\_\allowbreak IS\_\allowbreak FX\_\allowbreak DIFFERENCE\_\allowbreak ACCOUNT}).
-\textbf{Inversement}, un compte \textbf{en devise} ne peut pas être lié à un compte bancaire, désigné dans \emph{Facturation}, choisi comme compte d'un article ou d'une règle d'affectation, ni recevoir un rôle (\texttt{400 ACCOUNT\_\allowbreak IN\_\allowbreak FOREIGN\_\allowbreak CURRENCY}). Retirer un rôle et poser une devise dans la même modification est admis, si rien d'autre ne retient le compte.
+\textbf{Inversement}, un compte \textbf{en devise} ne peut pas être lié à un compte bancaire, désigné dans \emph{Facturation}, choisi comme compte d'un article, ni recevoir un rôle (\texttt{400 ACCOUNT\_\allowbreak IN\_\allowbreak FOREIGN\_\allowbreak CURRENCY}). Retirer un rôle et poser une devise dans la même modification est admis, si rien d'autre ne retient le compte.
 
 \subsection{Les comptes de différence propres}
 
@@ -3601,6 +3601,8 @@ Kesh passe \textbf{une seule} écriture à plusieurs lignes~: la banque d'un cô
 \keshscreenshot{reconciliation-regles.png}{Liste des règles d'affectation~: libellé, type de correspondance, valeur, compte de contrepartie, priorité et état.}  % TODO capture: ecran regles d'affectation
 
 \emph{Administration} → \emph{Règles d'affectation}. Une règle reconnaît une transaction récurrente --- loyer, abonnement, frais bancaires --- et \textbf{propose} de l'imputer à un compte de charge ou de produit. Elle ne crée \textbf{aucune} écriture d'elle-même~: rien ne se passe à l'import, la proposition apparaît dans la réconciliation et c'est vous qui l'acceptez.
+
+\textbf{Compte en devise.} Le compte de contrepartie d'une règle peut être tenu en CHF ou dans une autre devise. Une règle ne s'applique toutefois qu'à une transaction \textbf{en CHF ou dans la devise de ce compte}~: une règle vers un compte en USD ne se propose pas pour une transaction en EUR, et, acceptée malgré tout, elle est refusée avec un message qui nomme les deux devises. Le rapprochement d'un compte bancaire ordinaire, qui écrit en francs suisses, refuse de même une règle vers un compte en devise.
 
 Exemple : le loyer est prélevé chaque mois par la régie. Une règle «~Loyer~», de type \emph{Contrepartie contient} et de valeur «~Régie~», vers le compte de charge du loyer, propose chaque mois d'imputer la transaction à ce compte.
 

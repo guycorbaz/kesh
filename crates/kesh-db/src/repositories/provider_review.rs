@@ -12,7 +12,7 @@
 //! l'identifiant dans le libellé se fait en Rust par la fonction d'extraction
 //! du prestataire, **jamais** par un `LIKE`.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use chrono::NaiveDate;
 use rust_decimal::Decimal;
@@ -261,21 +261,26 @@ where
     q.fetch_all(executor).await.map_err(map_db_error)
 }
 
-/// Les comptes admis comme contrepartie d'une règle de prestataire : actifs,
-/// imputables, **en CHF** (phase 1 : aucune règle à compte en devise, AC-10).
-pub async fn rule_account_ids<'e, E>(executor: E, company_id: i64) -> Result<HashSet<i64>, DbError>
+/// Les comptes admis comme contrepartie d'une règle de prestataire — actifs,
+/// imputables, en CHF **ou en devise** — avec leur devise (`None` : CHF). La
+/// revue ne retient une règle que si la devise de sa contrepartie est celle de
+/// la transaction, ou le CHF (décision de Beat du 2026-11-21).
+pub async fn rule_account_ids<'e, E>(
+    executor: E,
+    company_id: i64,
+) -> Result<HashMap<i64, Option<String>>, DbError>
 where
     E: sqlx::Executor<'e, Database = MySql>,
 {
-    let ids: Vec<i64> = sqlx::query_scalar(
-        "SELECT id FROM accounts \
-         WHERE company_id = ? AND active = TRUE AND postable = TRUE AND currency IS NULL",
+    let rows: Vec<(i64, Option<String>)> = sqlx::query_as(
+        "SELECT id, currency FROM accounts \
+         WHERE company_id = ? AND active = TRUE AND postable = TRUE",
     )
     .bind(company_id)
     .fetch_all(executor)
     .await
     .map_err(map_db_error)?;
-    Ok(ids.into_iter().collect())
+    Ok(rows.into_iter().collect())
 }
 
 /// Le compte du plan du compte bancaire **principal** de la société (non

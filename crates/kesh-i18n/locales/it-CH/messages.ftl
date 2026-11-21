@@ -1794,6 +1794,7 @@ error-provider-account-hidden-char = Il nome del conto del prestatore non può c
 error-paypal-csv-invalid = Questo file non è un estratto PayPal « Balance affecting transactions » leggibile. Nulla è stato importato.
 # Story 38-11c2 — revue et acceptation d’un compte de prestataire (codes servis à l’écran, 38-11d)
 provider-failed-proposal-stale = Questa proposta non è più valida: la transazione, la registrazione, la regola o le impostazioni del conto sono cambiate dalla revisione. Ricaricate la revisione.
+provider-failed-counterparty-currency-mismatch = Questa regola indica un conto tenuto in { $accountCurrency }: si applica solo a una transazione in CHF o in { $accountCurrency }, e questa è in { $transactionCurrency }. Scegliete un conto in CHF o in { $transactionCurrency }.
 provider-gap-receipt-without-sale = Incasso senza vendita: nessuna registrazione di vendita porta questo identificativo.
 provider-gap-sale-without-receipt = Vendita senza incasso: nessuna transazione porta l'identificativo di questa registrazione.
 provider-gap-amount-or-currency-mismatch = Importo o valuta diversi: la registrazione di vendita non ha l'importo dell'incasso sul conto di questa valuta, oppure è già collegata.

@@ -250,9 +250,10 @@ pub struct ReviewInput<'a> {
     pub sale_entries: &'a [SaleEntry],
     /// Les règles actives, dans l'ordre `priority, id`.
     pub rules: &'a [ReconciliationRule],
-    /// Les comptes admis comme contrepartie d'une règle (actifs, imputables,
-    /// en CHF).
-    pub rule_account_ids: &'a HashSet<i64>,
+    /// Les comptes admis comme contrepartie d'une règle (actifs, imputables) et
+    /// leur devise (`None` : CHF) : une règle ne s'applique à une transaction
+    /// que si sa contrepartie est en CHF ou dans la devise de la transaction.
+    pub rule_account_ids: &'a HashMap<i64, Option<String>>,
     /// Compte du plan du compte bancaire principal de la société.
     pub primary_ledger_account_id: Option<i64>,
 }
@@ -682,19 +683,24 @@ pub fn build_review(input: &ReviewInput<'_>, spec: &ProviderSpec) -> Review {
     review
 }
 
-/// La première règle qui correspond à `t`, de contrepartie admise et autre que
-/// le compte du plan de la transaction (`ledger`). Même ordre et même
+/// La première règle qui correspond à `t`, de contrepartie admise — en CHF ou
+/// dans la devise de `t` — et autre que le compte du plan de la transaction
+/// (`ledger`). Même ordre et même
 /// prédicat que [`crate::rules::first_matching_rule`].
 pub fn matching_rule<'a>(
     rules: &'a [ReconciliationRule],
     t: &BankTransaction,
-    rule_account_ids: &HashSet<i64>,
+    rule_account_ids: &HashMap<i64, Option<String>>,
     ledger: Option<i64>,
 ) -> Option<&'a ReconciliationRule> {
     rules
         .iter()
         .filter(|r| r.active)
-        .filter(|r| rule_account_ids.contains(&r.counterparty_account_id))
+        .filter(|r| {
+            rule_account_ids
+                .get(&r.counterparty_account_id)
+                .is_some_and(|currency| currency.as_deref().is_none_or(|c| c == t.currency))
+        })
         .filter(|r| Some(r.counterparty_account_id) != ledger)
         .find(|r| rule_matches(r, t))
 }
@@ -1008,7 +1014,7 @@ mod tests {
         others: Vec<BankTransaction>,
         sales: Vec<SaleEntry>,
         rules: Vec<ReconciliationRule>,
-        rule_accounts: HashSet<i64>,
+        rule_accounts: HashMap<i64, Option<String>>,
         primary: Option<i64>,
     }
 
@@ -1024,7 +1030,7 @@ mod tests {
                 others: Vec::new(),
                 sales: Vec::new(),
                 rules: Vec::new(),
-                rule_accounts: [6500, 4000].into_iter().collect(),
+                rule_accounts: [(6500, None), (4000, None)].into_iter().collect(),
                 primary: Some(1010),
             }
         }
@@ -1332,11 +1338,19 @@ mod tests {
         f.rules[0].provider_type = None;
         f.rules[0].counterparty_email = None;
         assert_eq!(f.review(&SPEC).proposals.len(), 1);
+        // Contrepartie en devise : admise pour la devise de la transaction
+        // (décision de Beat du 2026-11-21), écartée pour toute autre.
+        let devise = f.review(&SPEC).proposals.len();
+        f.rule_accounts.insert(6500, Some("EUR".into()));
+        assert!(f.review(&SPEC).proposals.is_empty());
+        f.rule_accounts.insert(6500, Some("USD".into()));
+        assert_eq!(f.review(&SPEC).proposals.len(), devise);
+        f.rule_accounts.insert(6500, None);
         // Contrepartie hors de l'ensemble admis, ou compte du plan de la
         // transaction : écartée.
         f.rules[0].counterparty_account_id = 7777;
         assert!(f.review(&SPEC).proposals.is_empty());
-        f.rule_accounts.insert(1021);
+        f.rule_accounts.insert(1021, None);
         f.rules[0].counterparty_account_id = 1021;
         assert!(f.review(&SPEC).proposals.is_empty());
     }

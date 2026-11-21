@@ -179,7 +179,7 @@ sans saisie, et de trouver les erreurs des boutiques.
    (`repositories/journal_entries.rs:381`, `enforce_postable = false` comme les autres flux de rapprochement) :
    **deux lignes**, compte du plan du compte prestataire et contrepartie, sens selon le **signe** de la transaction,
    contrôle de la contrepartie **paramétré par le genre** et fait avant (frais : actif, imputable, de type charge,
-   38-11b AC-2 ; règle : celui d'`accept_one_rule`, et en CHF — AC-10, recontrôlé à l'acceptation, revue P1 L3 ; retrait : actif, imputable, de type actif, CHF ; versement Stripe :
+   38-11b AC-2 ; règle : celui d'`accept_one_rule`, et en CHF **ou dans la devise de la transaction** (décision de Beat du 2026-11-21, qui remplace « en CHF » d'AC-10 et de la revue P1 L3 ; `COUNTERPARTY_CURRENCY_MISMATCH` sinon) ; retrait : actif, imputable, de type actif, CHF ; versement Stripe :
    40-7c AC-4 d) ; libellé fourni par le prestataire, tronqué UTF-8 à la borne existante — PayPal : « PayPal
    <compte> · <type> · TXN <id> », « Frais PayPal <devise> · TXN <id> ». Ligne du compte prestataire **en devise** si
    son compte du plan en a une : `foreign = { amount = |montant| }` au **cours mensuel retenu** par la société pour la
@@ -255,7 +255,7 @@ sans saisie, et de trouver les erreurs des boutiques.
    `crates/kesh-api/src/errors.rs` (revue de code P1, L8 b : la fiche nommait `errors.rs`).
 10. **AC-10 — Ce que la story ne fait pas** (phase 2, au fichier d'epic) : aucune écriture de vente, de
     remboursement ni de litige ; aucun rattachement automatique (tout passe par l'acceptation) ; aucun groupe
-    d'écritures ; aucun code TVA ; aucune règle à compte en devise ; aucune boutique par préfixe ni code
+    d'écritures ; aucun code TVA ; (la règle à compte en devise, exclue ici, a été admise le 2026-11-21 : contrepartie en CHF ou dans la devise de la transaction) ; aucune boutique par préfixe ni code
     d'événement ; aucun retrait depuis un solde en devise. Une facture fournisseur ne se paie pas depuis un compte
     PayPal (limite de la phase 1, 38-11b AC-3 : les achats passent par les règles ; remède : compte interne ou
     écriture à la main, puis rattachement, 38-11c1 AC-1). Un remboursement ou une retenue isolée va « à examiner » :

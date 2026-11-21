@@ -1753,28 +1753,70 @@ async fn conversion_a_deux_ecritures_sur_comptes_non_imputables(pool: MySqlPool)
     assert_eq!(ctx.etat(credit).await.0, "reconciled");
 }
 
-/// L3 — une règle dont la contrepartie est un compte **en devise** (même
-/// devise que le solde PayPal) : refusée à l'acceptation
-/// (`counterparty_wrong_currency`), comme la revue ne la propose pas.
-#[sqlx::test(migrations = "../kesh-db/test-schema")]
-async fn regle_a_contrepartie_en_devise_refusee(pool: MySqlPool) {
-    let ctx = monter(&pool).await;
-    let achat = ctx.tx("0TEST00000000003C").await;
+/// Décision de Beat (2026-11-21) — la contrepartie d'une règle est en CHF **ou
+/// dans la devise de la transaction** : tout autre compte en devise est refusé
+/// à l'acceptation, `COUNTERPARTY_CURRENCY_MISMATCH` (`accountCurrency`,
+/// `transactionCurrency`). La règle de la revue : `rule_account_ids`.
+async fn accepter_la_regle(ctx: &Ctx, achat: i64, contrepartie: i64) -> (u16, Value) {
     sqlx::query("UPDATE reconciliation_rules SET counterparty_account_id = ?")
-        .bind(ctx.frais_eur)
-        .execute(&pool)
+        .bind(contrepartie)
+        .execute(&ctx.pool)
         .await
         .unwrap();
     let rule_id = ctx.count("SELECT id FROM reconciliation_rules").await;
-    let (s, b) = ctx
-        .accepter(vec![json!({ "type": "rule", "bankTransactionId": achat, "ruleId": rule_id, "counterpartyAccountId": ctx.frais_eur })])
-        .await;
+    ctx.accepter(vec![json!({ "type": "rule", "bankTransactionId": achat, "ruleId": rule_id, "counterpartyAccountId": contrepartie })])
+        .await
+}
+
+/// Fait passer la transaction `achat` (EUR) au solde USD du prestataire.
+async fn passer_en_usd(ctx: &Ctx, achat: i64) {
+    sqlx::query("UPDATE bank_transactions SET bank_account_id = ?, currency = 'USD' WHERE id = ?")
+        .bind(ctx.ba_usd)
+        .bind(achat)
+        .execute(&ctx.pool)
+        .await
+        .unwrap();
+}
+
+/// Contrepartie EUR sur une transaction EUR : acceptée, rapprochée.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn regle_contrepartie_dans_la_devise_de_la_transaction_acceptee(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let achat = ctx.tx("0TEST00000000003C").await;
+    let (s, b) = accepter_la_regle(&ctx, achat, ctx.frais_eur).await;
     assert_eq!(s, 200, "{b}");
-    assert_eq!(b["failed"][0]["errorCode"], "VALIDATION_ERROR", "{b}");
+    assert_eq!(b["accepted"].as_array().unwrap().len(), 1, "{b}");
+    assert_eq!(ctx.etat(achat).await.0, "reconciled");
+}
+
+/// Contrepartie USD sur une transaction USD : acceptée, rapprochée.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn regle_contrepartie_usd_sur_transaction_usd_acceptee(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let achat = ctx.tx("0TEST00000000003C").await;
+    passer_en_usd(&ctx, achat).await;
+    let usd = compte(&pool, ctx.seeded.company_id, "6942", "Expense", Some("USD")).await;
+    let (s, b) = accepter_la_regle(&ctx, achat, usd).await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(b["accepted"].as_array().unwrap().len(), 1, "{b}");
+    assert_eq!(ctx.etat(achat).await.0, "reconciled");
+}
+
+/// Contrepartie EUR sur une transaction USD : refusée, rien n'est écrit.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn regle_contrepartie_dans_une_autre_devise_refusee(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let achat = ctx.tx("0TEST00000000003C").await;
+    passer_en_usd(&ctx, achat).await;
+    let (s, b) = accepter_la_regle(&ctx, achat, ctx.frais_eur).await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(b["accepted"].as_array().unwrap().len(), 0, "{b}");
     assert_eq!(
-        b["failed"][0]["details"]["reason"],
-        "counterparty_wrong_currency"
+        b["failed"][0]["errorCode"], "COUNTERPARTY_CURRENCY_MISMATCH",
+        "{b}"
     );
+    assert_eq!(b["failed"][0]["details"]["accountCurrency"], "EUR");
+    assert_eq!(b["failed"][0]["details"]["transactionCurrency"], "USD");
     assert_eq!(ctx.etat(achat).await.0, "pending");
 }
 

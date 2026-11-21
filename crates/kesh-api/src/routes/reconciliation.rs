@@ -4344,8 +4344,8 @@ async fn accept_one_rule(
     // compte a été scindé en sous-comptes est périmée ; `get_proposals` ne la
     // propose déjà plus (AC5), cette garde couvre la proposition rejouée par un
     // client. Archivé / inconnu → `ACCOUNT_NOT_FOUND`, prioritaire (KF-002).
-    let counterparty_row: Option<(bool, bool, String, String)> = match sqlx::query_as(
-        "SELECT active, postable, name, number FROM accounts WHERE id = ? AND company_id = ? LIMIT 1",
+    let counterparty_row: Option<(bool, bool, String, String, Option<String>)> = match sqlx::query_as(
+        "SELECT active, postable, name, number, currency FROM accounts WHERE id = ? AND company_id = ? LIMIT 1",
     )
     .bind(counterparty_account_id)
     .bind(company_id)
@@ -4362,8 +4362,22 @@ async fn accept_one_rule(
         }
     };
     let counterparty_name = match counterparty_row {
-        Some((true, true, name, _)) => name,
-        Some((true, false, _, number)) => {
+        // Une règle peut désigner un compte en devise (décision de Beat du
+        // 2026-11-21, 38-11c2 : elle sert les prestataires) ; ce rapprochement
+        // bancaire écrit en CHF et le refuse, plutôt que de laisser le
+        // contrôle central de l'écriture le faire.
+        Some((true, _, _, _, Some(currency))) => {
+            return Err(FailedProposal {
+                bank_transaction_id,
+                error_code: "ACCOUNT_IN_FOREIGN_CURRENCY".to_string(),
+                details: Some(serde_json::json!({
+                    "accountId": counterparty_account_id,
+                    "currency": currency,
+                })),
+            });
+        }
+        Some((true, true, name, _, None)) => name,
+        Some((true, false, _, number, None)) => {
             return Err(non_postable_failed_proposal(
                 bank_transaction_id,
                 vec![kesh_db::errors::NonPostableAccount {

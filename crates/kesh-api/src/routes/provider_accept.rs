@@ -1033,10 +1033,11 @@ pub async fn rejudge<'a>(
 pub enum CounterpartyRule {
     /// Frais : compte de charge (38-11b AC-2).
     Expense,
-    /// Règle : le contrôle d'`accept_one_rule` (actif, imputable), et une
-    /// contrepartie en **CHF** (AC-10 : aucune règle à compte en devise ; la
-    /// revue n'en propose pas d'autre, l'acceptation le recontrôle — revue P1,
-    /// L3).
+    /// Règle : le contrôle d'`accept_one_rule` (actif, imputable). La devise
+    /// de la contrepartie — CHF ou celle de la transaction, décision de Beat du
+    /// 2026-11-21 — se contrôle à l'acceptation (`COUNTERPARTY_CURRENCY_MISMATCH`),
+    /// où la devise de la transaction est connue ; la revue ne propose pas
+    /// d'autre règle.
     Rule,
     /// Retrait : compte d'actif en CHF.
     AssetChf,
@@ -1048,7 +1049,7 @@ pub enum CounterpartyRule {
 /// le compte du plan du compte de prestataire (`VALIDATION_ERROR`,
 /// `counterparty_equals_bank_ledger`), active (`ACCOUNT_NOT_FOUND`),
 /// imputable (`ACCOUNT_NOT_POSTABLE`), du type et de la devise attendus
-/// (`VALIDATION_ERROR`, `counterparty_wrong_type`, `counterparty_wrong_currency`).
+/// (`VALIDATION_ERROR`, `counterparty_wrong_type`, `counterparty_wrong_currency`) ; pour une règle, la devise se contrôle à l'acceptation.
 /// Rend sa devise (`None` : CHF).
 pub async fn check_counterparty(
     tx: &mut sqlx::Transaction<'_, MySql>,
@@ -1084,7 +1085,7 @@ pub async fn check_counterparty(
     }
     let (expected_type, expected_currency): (Option<&str>, Option<Option<&str>>) = match &rule {
         CounterpartyRule::Expense => (Some("Expense"), None),
-        CounterpartyRule::Rule => (None, Some(None)),
+        CounterpartyRule::Rule => (None, None),
         CounterpartyRule::AssetChf => (Some("Asset"), Some(None)),
         CounterpartyRule::AssetInCurrency(c) => (
             Some("Asset"),
@@ -1554,6 +1555,20 @@ pub async fn accept_rule(
         CounterpartyRule::Rule,
     )
     .await?;
+    // Une contrepartie en devise ne sert qu'une transaction dans cette devise.
+    if let Some(c) = currency.as_deref()
+        && c != r.balance.currency()
+    {
+        return Err(failed(
+            bank_transaction_id,
+            "COUNTERPARTY_CURRENCY_MISMATCH",
+            serde_json::json!({
+                "accountId": counterparty_account_id,
+                "accountCurrency": c,
+                "transactionCurrency": r.balance.currency(),
+            }),
+        ));
+    }
     if let Some(pid) = rule.default_project_id
         && let Err(e) = projects::validate_taggable_in_tx(tx, ctx.company_id, &[pid]).await
     {
