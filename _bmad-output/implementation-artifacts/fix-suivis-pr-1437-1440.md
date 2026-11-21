@@ -1,6 +1,6 @@
 # Correctif : les quatre suites de la PR #1351 (changement du parent d'un compte)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-20, branche `fix/suivis-pr-1437-1440`, partie de `origin/main` (`d29aa557`). Correctif hors
 epic, **non urgent** : il ne passe pas par `hotfix/` et va à la prochaine release planifiée. **Aucune migration.**
@@ -106,6 +106,14 @@ Quatre points tracés en issues à la revue du correctif `fix-api-parent-compte`
 - `_bmad-output/implementation-artifacts/fix-suivis-pr-1437-1440.md`
 
 ## Gates
+
+**Au dernier commit de code `dde0b579` (remédiation des LOW de la P2), cible propre, file `heavy.sh`** : `test-fast --ci`
+6167 passés, 14 ignorés (4 instables rejoués verts) ; frontend `check`, `lint-i18n-ownership`, `build` verts, Vitest 4632
+(278 fichiers) ; `gate-ci.sh` 6186 passés, 0 échec, 18 ignorés ; E2E complet 478 passés, 10 échecs — les attendus de
+`docs/testing.md` (sept KF-029 #97, `backup-restore-new-install.spec.ts:262` et `:381` KF-065 #1282, `opening-balances.spec.ts:156`
+KF-067 #1284) —, 18 ignorés ; `accounts.spec.ts` vert. Journaux `kesh-gate-logs/fix-suivis/chaine6.console.log`,
+`gate-backend.log`, `front-*.log`, `gate-ci.log`, `e2e-r.log`. Revue : P1 Opus (3 MEDIUM) → P2 Sonnet (1 MEDIUM, texte de PR)
+→ P3 ciblée Haiku (0 au-dessus de LOW).
 
 **Après la remédiation de la revue P1 (dernier commit de code `621dfbb6`)** : gate ciblé vert (`cible2-*.log` :
 fmt, clippy workspace, nextest 1344 passés, 5 ignorés, dont les deux tests neufs `put_parent_mouvemente_deja_non_imputable_message_exact`
