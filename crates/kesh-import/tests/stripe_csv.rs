@@ -369,7 +369,9 @@ fn error_collection_is_capped() {
 
 #[test]
 fn extreme_amounts_never_panic_on_the_net_check() {
-    // `Decimal::MAX - (-1)` déborde : erreur de ligne, jamais une panique.
+    // `Decimal::MAX - (-1)` déborderait : le lecteur de montants partagé refuse
+    // désormais plus de 15 chiffres (38-12a), donc la ligne est refusée dès le
+    // montant brut — erreur de ligne, jamais une panique.
     let max = "79228162514264337593543950335";
     let row = line_with(6, max)
         .replace("3.20", "-1")
@@ -377,7 +379,7 @@ fn extreme_amounts_never_panic_on_the_net_check() {
     let l = lines_err(&format!("{HEADER}\n{row}\n"));
     assert_eq!(
         (l[0].line, l[0].field, l[0].code),
-        (2, Some("net"), StripeLineErrorCode::NetMismatch)
+        (2, Some("gross"), StripeLineErrorCode::Amount)
     );
 }
 
