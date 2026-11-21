@@ -633,3 +633,10 @@ Hors dépôt : `kesh-gate-logs/s38-11b/` (T0, gates, mutations, prompt de revue)
   ordinaire mouvementé passé PayPal par PUT (lot pain.001 antérieur), P2-L5 deux sens de la garde 3 bis sans test.
   P2-L2 et P2-L3 (rédaction 38-11d, `api-external.md:1001`, angle mort complet) : à reprendre au développement de 38-11d.
   Rapport : `kesh-gate-logs/s38-11b/revue-p2-rapport.md`.
+- 2026-11-20 — P2-L1 corrigé dans la 38-11c1 (commit `8d241e52`) : l'import (`routes/paypal_imports.rs`) prend ses
+  verrous et écrit dans **une** tentative (`import_under_locks`), rejouée par `retry_app_on_deadlock` (opération
+  `paypal_imports::create`) ; doc de `recheck_targets_locked` corrigée (l'interblocage dans la fenêtre est nommé) ;
+  registre `audit_route_registry.rs` point (vi) complété (statut `SansEcritureAuJournal` inchangé, la colonne ne dit
+  pas l'enveloppe). Test `import_rejoue_un_interblocage_avec_un_geste_de_compte` (`paypal_import_e2e.rs`, cycle
+  forcé sentinelle `companies` ↔ ligne du solde EUR, rejeu exigé par `CaptureRejeu`) ; mutation « sans enveloppe »
+  rouge (`kesh-gate-logs/s38-11c1/mutations.log`, M10). P2-L1 n'est donc plus à ouvrir en issue.

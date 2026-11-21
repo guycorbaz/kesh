@@ -184,6 +184,9 @@ pub const ACTIONS: &[&str] = &[
     "payment_batch.cancelled",
     "payment_batch.confirmed",
     "payment_batch.generated",
+    // Story 38-12a — le téléchargement par l'API PayPal (une entrée par
+    // téléchargement, en plus de `bank_import.created` par devise).
+    "paypal_download.created",
     // Story 38-11b — l'import du CSV PayPal d'un compte PayPal (une entrée par
     // import, en plus de `bank_import.created` par devise).
     "paypal_import.created",
@@ -194,6 +197,9 @@ pub const ACTIONS: &[&str] = &[
     "project.created",
     "project.unarchived",
     "project.updated",
+    // Story 38-11c2 — une proposition de la revue d'un compte de prestataire
+    // acceptée (PayPal ; Wise et Stripe l'émettent telle quelle).
+    "provider.proposal_accepted",
     "reconciliation.accepted",
     "reconciliation.cancelled",
     "reconciliation.entry_linked",

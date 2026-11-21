@@ -187,7 +187,7 @@ Source : `kesh-gate-logs/epic-38-kiss/phase2-decisions.md`. Deux stories, après
   pause commune), routes `<prestataire>-downloads` aux sessions seules et état `{ state, steps, pausedUntilSeconds,
   result, error }`, codes `PROVIDER_*`, constructeur de client extrait de `exchange_rates/source.rs`, cœur d'import
   `ProviderLine`, test S9 ; 38-12b écrit le dialogue générique, `providerApi` et le serveur simulé commun
-  (`KESH_E2E_PROVIDER_MOCK_PORT`). Wise (39-12a1, 39-12a2, 39-12b) et Stripe (40-8a, 40-8b) les appellent. PayPal
+  (`KESH_E2E_PROVIDER_MOCK_PORT`). Wise (39-12a1, 39-12a2, 39-12a3, 39-12b) et Stripe (40-8a, 40-8b) les appellent. PayPal
   appelle `windows` à 30 jours (une fenêtre de 31 jours de Zurich dépasse la limite de PayPal au passage à l'heure
   d'hiver).
 - **Validation P2 (2026-11-20)** : valeur vide = absente (les fichiers `docker-compose` transmettent `${NOM:-}`), série partielle seule refusée, séries 1 à 3 transmises par `docker-compose.yml`, `docker-compose.prod.yml` et `.env.example` ; le cœur `ProviderLine` n'est pas dans 38-11b : extrait par 38-12a ; `error.details`.

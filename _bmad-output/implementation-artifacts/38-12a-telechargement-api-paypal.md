@@ -1,6 +1,6 @@
 # Story 38-12a : téléchargement des transactions par l'API PayPal (identifiants, client, conversion, tâche)
 
-Status: ready-for-dev
+Status: done
 
 *Fiche rédigée le 2026-11-20, branche `epic/38-paypal` (phase 1 au commit `90428594`). Epic 38, **phase 2**
 (décisions de Beat du 2026-11-20, `kesh-gate-logs/epic-38-kiss/phase2-decisions.md`, autorisations du soir comprises).
@@ -61,7 +61,7 @@ par des appels réels en lecture seule (Notes de développement).*
 
 *Socle commun S1 à S9* (texte identique de `epic-39-wise.md` et `epic-40-stripe.md`, § « Socle commun de la phase 2 »,
 C-40-K6) : cette fiche, développée la première, **écrit le socle générique** (`provider_env`, `provider_download`,
-constructeur de client, routes et codes `PROVIDER_*`, cœur d'import `ProviderLine`, test S9) ; Wise (39-12a1, 39-12a2) et
+constructeur de client, routes et codes `PROVIDER_*`, cœur d'import `ProviderLine`, test S9) ; Wise (39-12a1, 39-12a2, 39-12a3, 39-12b) et
 Stripe (40-8a, 40-8b) l'appellent. Restent propres à PayPal : le client (jeton, pages, `RESULTSET_TOO_LARGE`), la conversion
 vers `PaypalRow`, la table des types et le passage `PaypalRow` → `ProviderLine` de 38-11b.
 
@@ -119,6 +119,13 @@ vers `PaypalRow`, la table des types et le passage `PaypalRow` → `ProviderLine
    Propre à PayPal : pages de **500**, `page` de 1 à `total_pages`, `fields=all`, `balance_affecting_records_only=Y` ;
    sur 400 `RESULTSET_TOO_LARGE`, la fenêtre se coupe en deux et chaque moitié est reprise (récursif, plancher d'un
    jour : au-delà, échec `PROVIDER_API_ERROR` nommant la fenêtre ; `steps.total` grandit alors des moitiés).
+   *(Amendé le 2026-11-21, remédiation de la revue de code P1 : (F3) la fin d'une fenêtre est désormais le **début de
+   la suivante** (`00:00:00` de Zurich), recouvrement d'une seconde, l'inclusivité d'`end_date` n'étant pas établie —
+   la transaction de cette seconde, lue deux fois, est une répétition identique écartée ; (F1) une `to` future est
+   ramenée au jour du jour **avant** le découpage (`effective_to`, `period_windows`), et `windows` n'émet aucune
+   fenêtre qui commence après `now` ; le nom de l'import et la trace disent la période **lue** ; (F11) `too_old` se
+   juge au jour de Zurich du **plancher** `now − 3 ans + 1 h` (`history_floor`), jour admis, la première fenêtre
+   commençant au plancher lui-même.)*
 5. **AC-5 — Client et conversion.** Constructeur de client HTTP **commun** (S5), **extrait** de
    `exchange_rates/source.rs:116-130` (rustls, aucune redirection suivie — le jeton ne part jamais ailleurs —, délais
    de connexion et total, HTTPS seul hors bouclage, `User-Agent` sans donnée personnelle), que la source des cours
@@ -270,13 +277,13 @@ vers `PaypalRow`, la table des types et le passage `PaypalRow` → `ProviderLine
 
 ## Tâches
 
-- [ ] T0 — Reprendre `main` et les branches des Epics 39, 40 si fusionnées : socle déjà écrit ? cœur `ProviderLine` déjà factorisé ? État au Change Log.
-- [ ] T1 — `provider_env` générique, série PayPal, validation, masque `Debug` (AC-1 à AC-3) ; séries 1 à 3 aux deux fichiers `docker-compose` et à `.env.example` ; famille indexée dans `configuration_transmise.rs` (AC-1).
-- [ ] T2 — `kesh-import::paypal_api` : lecture de page, table des types, conversion, contrôles partagés avec `read_row` (AC-5).
-- [ ] T3 — `provider_download` (`windows`, reprise, tâches, sémaphore), constructeur de client extrait, client PayPal (AC-4 à AC-6).
-- [ ] T4 — Appel du cœur commun `ProviderLine` (ou son extraction hors de la route PayPal) (AC-7).
-- [ ] T5 — Routes, registre et phrase du manuel, audit, codes `PROVIDER_*` et messages aux quatre locales, test S9 (AC-8, AC-9).
-- [ ] T6 — Serveur simulé et tests (AC-10).
+- [x] T0 — Reprendre `main` et les branches des Epics 39, 40 si fusionnées : socle déjà écrit ? cœur `ProviderLine` déjà factorisé ? État au Change Log.
+- [x] T1 — `provider_env` générique, série PayPal, validation, masque `Debug` (AC-1 à AC-3) ; séries 1 à 3 aux deux fichiers `docker-compose` et à `.env.example` ; famille indexée dans `configuration_transmise.rs` (AC-1).
+- [x] T2 — `kesh-import::paypal_api` : lecture de page, table des types, conversion, contrôles partagés avec `read_row` (AC-5).
+- [x] T3 — `provider_download` (`windows`, reprise, tâches, sémaphore), constructeur de client extrait, client PayPal (AC-4 à AC-6).
+- [x] T4 — Appel du cœur commun `ProviderLine` (ou son extraction hors de la route PayPal) (AC-7).
+- [x] T5 — Routes, registre et phrase du manuel, audit, codes `PROVIDER_*` et messages aux quatre locales, test S9 (AC-8, AC-9).
+- [x] T6 — Serveur simulé et tests (AC-10).
 
 ## Stratégie de tests
 
@@ -298,7 +305,7 @@ client, client PayPal, routes, erreurs ; le `.tex` du manuel d'administration po
 prestataires), catalogues i18n (leur bloc),
 `crates/kesh-api/src/routes/paypal_imports.rs` de 38-11b et le cœur commun `ProviderLine` (38-11b, 39-11b, 40-7b),
 `crates/kesh-api/src/exchange_rates/source.rs` (constructeur de client extrait), modules du socle (appelés par 39-12a1,
-39-12a2, 40-8a, 40-8b), `crates/kesh-import/src/paypal.rs` de
+39-12a2, 39-12a3, 39-12b, 40-8a, 40-8b), `crates/kesh-import/src/paypal.rs` de
 38-11a (contrôles extraits), `audit_route_registry.rs` et `admin-manual.tex` (comptes recomptés) : à relire à la reprise
 de `main`.
 
@@ -374,3 +381,303 @@ rattrape, sans doublon.
   les deux phrases du manuel et les assertions du registre écrites en toutes lettres à l'AC-8.
 - 2026-11-20 — validation P5 ciblée sur les commits `977bf9ec` et `452606a3` (modèle : claude-haiku-5-5, contexte frais, une lentille ; rapport `kesh-gate-logs/epic-38-kiss/validation/38-12-P5-ciblee.md`) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW, remédié. LOW : l'AC-1 disait que les compose et `.env.example` « portent » `KESH_<P>_BASE_URL` et `KESH_<P>_PARALLEL` (ligne 76), mais ne les exigeait nulle part : la garde ne l'aurait pas contrôlé — exigence ajoutée à l'AC-1, par une liste dédiée distincte de l'ensemble lu. Vérifié au code de `origin/main` : `JETONS_SURVEILLES`, `EMPLACEMENTS_AUTORISES` (`Forme::Exacte`, `env :: vars ( )` sans nom lu), (V) admet `${NOM:-}`, `AppError::Internal` rend `INTERNAL_ERROR` (`errors.rs`), `is_template_placeholder` aux lignes 650 et 683 ; registre 157 / 149 / 4 / 4 / 161 et manuel « 149 des 157 », « 149 + 4 + 4 = 157 » (une fois chacune, `admin-manual.tex:3302`) ; `T1111` confirmé sur la page publique PayPal. Le test de partition porte six `assert_eq!` (et non cinq), dont la somme : l'AC-8 les couvre toutes.
 - 2026-11-20 — alignement demandé par le coordinateur : l'AC-8 écrit le décompte du test de partition (six `assert_eq!` à `origin/main`, cinq à valeur littérale et une égalité de partition). Les fiches 39-12a2 et 40-8b, citées comme modèle, n'existent pas encore à HEAD : la formulation est la même, sans renvoi à elles.
+- 2026-11-20 — développement (`bmad-dev-story`, Claude Opus 5.5), branche `story/38-12a` partie de `epic/38-paypal` à
+  `ca34a3f4` ; commits de code `d64688fc` (socle, client, routes, tests), `04436455` (montant à 17 chiffres). Détail au
+  Dev Agent Record. Renvois Wise corrigés sur demande du coordinateur (l. 64, l. 300 de cette fiche, `epic-38-paypal.md`
+  l. 190 : « 39-12a1, 39-12a2, 39-12a3, 39-12b »).
+- 2026-11-21 — reprise par un second développeur (Claude Opus 5.5, le premier ne répondant plus ; 14 fichiers non
+  commités trouvés, aucun processus resté sur ce worktree, le dernier gate ciblé `cible-6.log` vide, interrompu). Le gate
+  complet à `04436455` (`gate-backend.log`, 2026-11-21 00:58) rendait 6268 tests, 11 échecs, tous dans des gardes
+  (`audit_label_registry` 2, `date_du_jour_garde` 7, `dates_recues_garde` 2) : les corrections non commitées les
+  visaient, relues et commitées en `1b791613` ; le gate ciblé suivant a rendu deux échecs de plus dans
+  `audit_label_registry` (site indirect sans littéral, compte de l'inventaire), corrigés en `9bbf1388` à l'identique de
+  la 40-7b (`c760dc49`). Détail au Dev Agent Record, § Reprise.
+- 2026-11-21 — revue de code P1 (Claude Sonnet 5.5, passe complète, une lentille ; rapport
+  `kesh-gate-logs/s38-12a/revue-p1-rapport.md`) : 0 CRITICAL, 1 HIGH, 0 MEDIUM, 12 LOW. Remédiation (Claude Opus 5.5)
+  au commit `3e22ea0e` : F1 (HIGH), F2, F3, F4, F5, F6, F9, F10, F11, F13 corrigés dans la story (le socle sert Wise et
+  Stripe) ; F7, F8, F12 en dette, issues 17 à 19 de `kesh-gate-logs/epic-38-kiss/issues-a-ouvrir.md`. AC-4 amendé
+  (recouvrement d'une seconde, fin future ramenée au jour du jour, plancher de l'historique). **12 tests ajoutés**
+  (recomptés de `9bbf1388` à `3e22ea0e` par `#[test]`/`#[tokio::test]`/`#[sqlx::test]` : `provider_download.rs` 11 → 15,
+  `http_client.rs` 0 → 2, `provider_env.rs` 7 → 8, `routes/provider_imports.rs` 2 → 3, `paypal_download_e2e.rs` 9 → 11,
+  `kesh-import` `csv/amount.rs` 2 → 3, `paypal_api.rs` 11 → 12) ; deux tests existants étendus (`suite_des_pauses_et_borne`,
+  `nom_d_erreur_de_paypal`) et les bornes de fin attendues décalées d'une seconde (F3). Onze sondes négatives, **11
+  rouges sur 11** (`mut/mutations-p1.log`). Détail au Dev Agent Record, § Remédiation de la revue de code P1. Passe P2
+  complète (Opus) à lancer : `kesh-gate-logs/s38-12a/revue-p2-prompt.md`.
+
+## Dev Agent Record
+
+### Agent Model Used
+
+Claude Opus 5.5 (`claude-opus-5-5`), worktree `kesh-wt38p2`.
+
+### T0 — état trouvé
+
+`main`, `origin/main`, `epic/39-wise`, `epic/40-stripe` relus le 2026-11-20 : **aucun** socle (`provider_env`,
+`provider_download`, `ProviderLine`, `paypal_api`) n'existe sur aucune branche. Décision : 38-12a écrit le socle et
+**extrait** le cœur d'import de la route PayPal de 38-11b (AC-7, deuxième branche).
+
+### Ce que les appels réels ont confirmé (métadonnées seules, aucune donnée personnelle conservée)
+
+33 appels sur 40 (`appel-reel.sh paypal`, journal `kesh-gate-logs/appels-reels/paypal.log`), lecture seule, deux
+comptes de Beat ; réponses brutes gardées hors dépôt (`data-not-committed/paypal-api-samples/`, mode 600) ; analyse par
+décomptes seulement.
+
+| Point « non confirmé » de la fiche | Constat |
+|---|---|
+| hôte réel | `https://api-m.paypal.com` répond pour un compte réel (OAuth et Transaction Search) |
+| OAuth | `POST /v1/oauth2/token`, Basic, `grant_type=client_credentials` : `access_token`, `token_type` `Bearer`, `expires_in` **32 400**, portée `…/services/reporting/search/read` ; même jeton rendu aux demandes répétées (échéance décroissante) |
+| fuseau des dates | ⚠️ **contredit** : avec `PayPal-Enforce-ISO8601-Format: true`, les 341 dates de 2024 sont en **`+00:00`** (UTC), non dans le fuseau du compte. Correction à la conversion (Notes de dev.) : l'instant est ramené à l'heure de Zurich (`kesh_core::horloge::heure_suisse`, fonction neuve), date et heure du CSV |
+| signe des frais | négatif sur les encaissements (`T0007`, `T0002`) et sur les paiements `T0000` qui en portent ; **absent** ailleurs ; aucun frais positif observé (aucun remboursement avec frais sur la période) — admis de tout signe |
+| `payer_info` d'un débit | la **contrepartie** : 6 adresses distinctes sur 26 débits qui en portent, de codes différents (un titulaire en donnerait une seule) ; conversions et retenues de contrôle sans adresse |
+| codes et libellés | 2024, compte 1 : 341 transactions, codes `T0000` (13), `T0002` (66), `T0003` (1), `T0006` (10), `T0007` (210), `T0201` (36), `T1107` (1), `T1110` (1), `T1111` (1), `T2105` (1), `T2106` (1) ; statuts S 339, P 1 (`T1110`), D 1 (`T1111`) — **même décompte et même ventilation des statuts** que le CSV de 2024 (`paypal-2024-comprendre.md`) ; libellés attribués par concordance du sens et des types du CSV. **Jointure par identifiant impossible** (CSV de 2024 supprimé avant la phase 2) : écrit tel au commentaire de `PAYPAL_EVENT_TYPES` (✔ concordance / doc) |
+| `paypal_reference_id_type` | `TXN`, `PAP` et **`RP`** (abonnements, 66), absent de la liste du schéma ; référence reprise telle quelle |
+| fenêtre vide | `total_pages = 0`, pas de `transaction_details` (compte 2 sur 2025) — testé |
+| limite de 31 jours | une fenêtre de 31 jours **plus une heure** est acceptée : les fenêtres de 30 jours de Zurich gardent leur marge |
+| `ending_balance` | **présent** sur les 341 lignes malgré `balance_affecting_records_only=Y` ; gardé `None` comme l'écrit l'AC-5 (le solde de clôture reste `NULL`) — piste pour plus tard |
+| montants | chaînes à deux décimales (`"value": "12.34"`), devise des frais = devise du montant |
+| `Retry-After`, limitation, `RESULTSET_TOO_LARGE` | non rencontrés (33 requêtes) : non confirmés, joués au serveur simulé |
+| nom de la fonction à cocher | non vérifiable par l'API (la portée du jeton dit « reporting/search/read ») |
+
+### Implementation Plan / décisions
+
+- **Socle** (générique, pour 39-12a1/a2/a3/b et 40-8a/b) : `src/provider_env.rs` (S1 : `ProviderSpec` — clé,
+  champs requis, **champs facultatifs** `optional_fields` demandés par le coordinateur, vides pour PayPal —, `read` pure
+  testée sans environnement, `ProvidersConfig::from_env` seule lecture, `ConfigError::InvalidProviderVar` qui nomme la
+  variable, gabarit refusé par `is_template_placeholder` rendu `pub(crate)`) ; `src/provider_download.rs` (S2/S3 :
+  `windows`, `Window::split`, `check_period`, `pause_for`, `with_retry`, `ProviderGate` — sémaphore et pause commune —,
+  `Wait` injectable, `Downloads` — tâches, purge à 1 h, `JobView` —, `spawn_job` qui conclut une panique en
+  `INTERNAL_ERROR`, `error_body` qui rend le corps d'une `AppError` avec `details.provider`) ; `src/http_client.rs`
+  (S5 : `build_client`, `read_body_bounded`, extraits de `exchange_rates/source.rs`, qui les appelle) ;
+  `routes/provider_imports.rs` (S6 : `ProviderLine`, `ProviderGroup`, `load_balances`, `import_lines`, `dedupe_groups`,
+  empreinte d'un fichier ou d'un téléchargement) ; codes `PROVIDER_*` (S4) dans `errors.rs` (502/503 pour les erreurs
+  du prestataire, rendues dans le corps d'une tâche), messages aux quatre locales sans nom de prestataire ; marqueur S9
+  `tests/common/secrets_prestataire.rs`.
+- **Cœur extrait** : la route CSV appelle `import_lines` ; ses tests unitaires et `paypal_import_e2e` passent
+  **inchangés en assertions** (le test `doublon_dans_le_fichier_et_en_base` appelle `dedupe_groups` au lieu de
+  `dedupe_rows`, retiré). L'unité des doublons devient le **groupe** (une ligne de la source) : un premier essai par
+  `group_id` contigu fusionnait deux lignes répétées à la suite — corrigé avant commit. Opération du rejeu gardée
+  (`paypal_imports::create`, témoin de `paypal_import_e2e`). Écart assumé : une ligne à brut **et** frais nuls ne
+  produit aucun groupe et n'entre plus dans l'ensemble « déjà vu » (cas dégénéré, sans transaction).
+- **PayPal** : `src/paypal_api/mod.rs` (jeton par tâche renouvelé à 60 s de l'échéance et une fois sur 401 ; pages de
+  500 ; coupe sur `RESULTSET_TOO_LARGE` jusqu'au jour ; 16 Mio ; 60 s ; parallélisme par `JoinSet`, résultats rangés par
+  fenêtre) ; `kesh-import/src/paypal_api.rs` (lecture et conversion pures ; contrôles **extraits** de `read_row` :
+  `normalize_currency`, `normalize_transaction_id`, `sign_mismatch`, `PaypalLineError::new` `pub(crate)`) ; code de ligne
+  neuf `STATUS` ; `to_paypal_row` rend **toutes** les erreurs d'une ligne (`Vec`), comme le lecteur du CSV (la fiche
+  écrivait une seule) ; `routes/paypal_downloads.rs` (POST/GET, corps lu en octets pour que le 403 de la clé précède le
+  400).
+- **Montants** (constat de la revue du client Wise, transmis par le coordinateur) : PayPal envoie ses montants en
+  **chaînes** (`PaypalApiMoney::value: Option<String>`, `kesh-import/src/paypal_api.rs`), lues par
+  `parse_dot_decimal_amount` — aucun flottant ; un montant en nombre JSON fait refuser la page. Test au corps brut à 17
+  chiffres (`un_montant_a_dix_sept_chiffres_…`). Rien à propager au socle : il ne lit aucun montant.
+- **Libellés** : test de couverture `la_table_couvre_les_libelles_de_la_phase_1` — `PAYPAL_NEUTRAL_PAIR_TYPES` et les
+  listes de `classify` de 38-11c2, **recopiées de sa fiche** (38-11c2 se développe en parallèle, ses constantes ne sont
+  pas sur cette branche) : ⚠️ **à remplacer par ses constantes à la fusion**. Quatre libellés sans code, inventaire fermé
+  avec raison (`PAYPAL_CSV_LABELS_WITHOUT_CODE`) : `Shopping Cart Payment Received`, `Payment Received`, `Withdraw Funds
+  to Bank Account`, `Reversal of Account Hold`.
+- **Garde `configuration_transmise.rs`** : familles indexées **dérivées** de `kesh_api::provider_env::ALL_PROVIDERS`
+  (aucune liste recopiée) ; connues en (T), (E), (F), hors ensemble lu ; séries 1 à 3 et variables sans numéro exigées
+  aux deux compose et à `.env.example` ; séries 4 à 9 admises absentes, raison contrôlée par le marqueur `_4_…` des trois
+  fichiers ; deux entrées (L) exactes (`env :: vars_os ( )`, `env_nonempty`) ; auto-test `s_familles_indexees`.
+- **Registre** : `paypal_downloads::create` `Traced, SansEcritureAuJournal` ; recomptés depuis la source : 158 → 159,
+  `traced` 150 → 151, exempt 4, no_matter 4, total avec les routes de test 162 → 163, `SansEcritureAuJournal` 129 → 130
+  (partition de rejeu), `tout.len()` 162 → 163 ; manuel « 151 des 159 », « 151 + 4 + 4 = 159 » (`.tex` seul, PDF à la
+  release). Le `GET` n'a pas de verbe mutant.
+- Modules touchés : `kesh-import`, `kesh-api`, `kesh-i18n` **et `kesh-core`** (`heure_suisse`, pure, testée) — quatrième
+  module, dû au constat UTC.
+
+### Reprise (2026-11-21)
+
+- **Montants** (question de l'orchestrateur) : vérifié au code, aucun montant lu comme nombre JSON —
+  `PaypalApiMoney::value: Option<String>` (`crates/kesh-import/src/paypal_api.rs:142`), lu par `parse_dot_decimal_amount`
+  (`:350`, `:362`) ; la page se lit par `serde_json::from_slice` dans une structure typée, sans `f64`, `Number` ni
+  `Value` (`:252`) ; côté `kesh-api` (`paypal_api/`, `provider_download.rs`, routes), aucun `as_f64` ni `Number` (le seul
+  `f64`, `provider_download.rs:230`, est une durée de pause). Prouvé par
+  `un_montant_a_dix_sept_chiffres_se_lit_exactement_et_un_nombre_json_est_refuse` (`:700`), au corps JSON brut :
+  `"999999999999999.99"` en chaîne lu au chiffre près (net `999999999999999.98`), le même en nombre JSON refusé
+  (`PaypalApiError::Malformed`) ; vert au gate ciblé de la reprise.
+- **`1b791613`** (corrections trouvées non commitées, relues) : `from`/`to` de `DownloadRequest` lus par
+  `dates_recues::date` (bornés à la plage des années ; `COMPTE_CHAMPS` 70 → 72) ; action `paypal_download.created` à
+  `ACTIONS` et ses libellés aux quatre locales ; site indirect `provider_imports.rs` à `SITES_INDIRECTS` ; exemption
+  `date_du_jour_garde` d'une lecture de `date_naive` à `paypal_api.rs` (la conversion n'en porte plus qu'une, la date
+  locale calculée une fois avec l'instant) ; test de `heure_suisse` sans `date_naive`.
+- **`9bbf1388`** : `AUDIT_ACTIONS` (`provider_imports.rs`) déclare en toutes lettres les deux actions que les
+  appelants passent au cœur, contrôlées par `debug_assert!` à l'écriture de la trace ; mentions « neuf » → « dix » et
+  compte de `SITES_INDIRECTS` à 10 dans `audit_label_registry.rs`. **Même texte que la 40-7b** (`c760dc49`, worktree
+  `kesh-wt40b`) au tableau près : à la fusion, la seule ligne en conflit est celle d'`AUDIT_ACTIONS`, qui prend
+  l'union des deux (`[&str; 3]`) ; le compte « dix » des deux côtés devient **onze** si la 40-7b inventorie un site
+  de plus que celui-ci — à recompter à la fusion, non à fusionner.
+- **Doublons voisins** (constat transmis par le coordinateur, relevé par la 40-7b sur sa copie `dedupe_lines`) :
+  **prémisse fausse pour cette branche**. Ici `dedupe_groups` reçoit des **groupes explicites** (`&[ProviderGroup]`, un
+  groupe par ligne de la source, `provider_imports.rs:223`) et ne regroupe rien par `group_id` contigu : deux lignes
+  identiques côte à côte sont deux groupes, la seconde est vue (`seen.insert` faux) et comptée en doublon. C'est le
+  défaut que le premier essai de la story avait eu et qui a été corrigé avant le commit `d64688fc` (§ Implementation
+  Plan, « Cœur extrait ») ; la 40-7b en a recopié une version antérieure. Le test `doublon_dans_le_fichier_et_en_base`
+  (`paypal_imports.rs:714`) porte exactement ce cas (`a`, `b = a.clone()` voisines) et passe : `gate-backend.log`
+  (00:58) et `cible-7.log` de la reprise ; la mutation M5 (« doublon de groupe non vu ») l'avait fait rougir. Aucun
+  correctif ici ; ⚠️ **à la fusion des Epics 38 et 40**, le cœur garde une seule forme : `dedupe_groups` (groupes
+  explicites), la 40-7b passant ses lignes groupées par ligne de la source — sinon deux fonctions pour un même cœur.
+- Aucun appel réel à PayPal pendant la reprise ; `data-not-committed/` non lu.
+
+### Remédiation de la revue de code P1 (2026-11-21)
+
+Rapport : `kesh-gate-logs/s38-12a/revue-p1-rapport.md` (Sonnet 5.5, passe complète) — 0 CRITICAL, 1 HIGH, 0 MEDIUM,
+12 LOW. Prémisse de F1 vérifiée au code avant correction : `windows` découpait jusqu'à `to` sans la ramener au jour du
+jour, `Window::new` ne ramenait que la fin à `now`, et le test existant `fin_d_annee_et_fin_ramenee_a_l_instant`
+portait **lui-même** une fenêtre inversée (2025-01-31, début après `now` = fin) sans la voir ; `download` lançait une
+tâche par fenêtre en parallélisme > 1. La chaîne de gates sur `9bbf1388` (`cible-puis-complet.sh`), encore en file
+d'attente, a été arrêtée avant de tourner.
+
+| Finding | Traitement | Où |
+|---|---|---|
+| F1 HIGH — `to` future : fenêtres inversées, nombre non borné | **corrigé** : `to` ramenée au jour de Zurich avant le découpage (`effective_to`, `period_windows`), `windows` s'arrête à la fenêtre qui contient `now` (défense en profondeur), `run_bounded` borne les tâches en vol par le parallélisme ; nom de l'import et trace d'audit = période **lue** (choix écrit au module des routes) | `provider_download.rs`, `paypal_api/mod.rs` (`download`), `routes/paypal_downloads.rs` |
+| F2 — transport tout passager | **corrigé** : passager = délai, ou erreur d'entrée-sortie de connexion (refusée, coupée, injoignable…) dans la chaîne des causes ; certificat, hôte inconnu, schéma → `PROVIDER_API_ERROR` sans reprise. Limite écrite : une panne passagère du résolveur se lit comme un hôte inconnu | `http_client.rs` (`is_transient_transport`), `provider_download.rs` (`classify_transport`) |
+| F3 — inclusivité d'`end_date` | **corrigé** par recouvrement d'une seconde : la fin d'une fenêtre est le début de la suivante (AC-4 amendé) | `Window::new` |
+| F4 — `AUDIT_ACTIONS` `[&str; 2]`, `debug_assert!` | **corrigé** : tranche `&[&str]`, contrôle `check_audit_action` en tête d'`import_lines`, `AppError::Internal` en version publiée | `provider_imports.rs` |
+| F5 — colle PayPal non partagée | **corrigé** : `retry_after` (`http_client`), `classify_status`/`StatusClass`, `classify_transport` (`provider_download`), appelés par PayPal | |
+| F6 — champs lus par chaîne, erreur dans la tâche | **corrigé** : constantes `PAYPAL_CLIENT_ID`, `PAYPAL_SECRET` (spécification et client), `ProviderSpec::require_field` (nom non déclaré → `Internal`), client construit **avant** la tâche (refus synchrone) | `provider_env.rs`, `paypal_downloads.rs` |
+| F7 — identifiant répété à montants différents bloque la période | **dette** (issue 17 de `epic-38-kiss/issues-a-ouvrir.md`) | |
+| F8 — séries globales, libellés par société | **dette** (issue 18) | |
+| F9 — `Retry-After: 0` | **corrigé** : pause entre 1 et 120 s (`RETRY_AFTER_FLOOR`) | `pause_for` |
+| F10 — nom d'erreur non borné au journal | **corrigé** : 64 caractères (`ERROR_NAME_MAX_CHARS`) | `paypal_api/mod.rs` |
+| F11 — borne des trois ans | **corrigé sans perdre de jour** : plancher `history_floor` = `now − 3 ans + 1 h` ; `too_old` au jour de Zurich du plancher (jour admis) ; la première fenêtre commence au plancher, la première moitié d'une fenêtre coupée garde ce début | `provider_download.rs` |
+| F12 — lignes sans transaction hors « déjà vu » | **dette** (issue 19) : le correctif change la forme de `ProviderGroup`, partagée avec la 40-7b | |
+| F13 — virgule des milliers sur une valeur d'API | **corrigé** : `parse_api_amount` (forme fermée sans virgule), commun pour Wise et Stripe | `kesh-import/src/csv/amount.rs`, `paypal_api.rs` |
+
+Tests ajoutés : 12, décompte au Change Log. Sondes négatives de la remédiation (`kesh-gate-logs/s38-12a/mut/mutations-p1.log`,
+script `mutations-p1.py`) : N1 `windows` sans arrêt à `now`, N2 route sans fin ramenée au jour, N3 parallélisme non borné,
+N4 transport toujours passager, N5 sans recouvrement, N6 action de trace non contrôlée, N7 champ non déclaré admis,
+N8 `Retry-After: 0` sans pause, N9 nom d'erreur non borné, N10 plancher ignoré, N11 virgule des milliers admise —
+**11 rouges sur 11**, fichiers restaurés (vérifié par `git status`).
+
+⚠️ **Raccords** : la 40-7b (Stripe, worktree `kesh-wt40b`) et la 39-12a1 (Wise) devront **reprendre la nouvelle tête**
+de `story/38-12a` : la signature de `check_period` change (`now` au lieu du jour du jour), les routes appellent
+`period_windows` et non `windows`, `download` passe par `run_bounded`, les clients classent par `classify_status` /
+`classify_transport` et lisent `retry_after` dans `http_client`, les champs de série par `require_field` ;
+`AUDIT_ACTIONS` est une tranche (l'union avec `stripe_import.created` à la fusion n'est plus qu'une ligne ajoutée) ; les
+montants d'une API se lisent par `parse_api_amount`.
+
+### Debug Log
+
+- La cible partagée `kesh-target` a été abandonnée en cours de story (règle de l'orchestrateur) : **tous les gates
+  déclarés ci-dessous ont tourné sur `kesh-targets/kesh-wt38p2`, `CARGO_INCREMENTAL=0`** ; les essais antérieurs sur la
+  cible partagée (vérifications de compilation) ne comptent pas.
+- La base `kesh_s3812a` (dev2, 3307) a disparu deux fois (recréation de dev2) : remise à zéro avant chaque gate.
+
+### Completion Notes
+
+- Mutations (sonde négative, `kesh-gate-logs/s38-12a/mut/mutations.log`) : M1 `Retry-After` non borné, M2 clé d'API
+  admise au POST, M3 e-mail d'un débit en émetteur, M4 série partielle admise, M5 doublon de groupe non vu — **5 rouges
+  sur 5**.
+- Gates : voir « Gates » ci-dessous (complétés au dernier commit de code).
+
+### Points relevés hors périmètre (à ouvrir en issue par l'orchestrateur ; `gh` interdit ici)
+
+1. `PAYPAL_NEUTRAL_PAIR_TYPES` (38-11b) ne porte pas `Cancellation of Hold for Dispute Resolution` (`T1111`, levée de
+   `T1110`) : une paire de litige `Completed` ne serait pas neutralisée, ni au CSV ni à l'API. Sur 2024 elle est en
+   statuts P/D, donc écartée de toute façon.
+2. `ending_balance` est rendu par l'API : le solde de clôture d'un téléchargement pourrait être renseigné.
+
+### File List
+
+Ajoutés : `crates/kesh-api/src/http_client.rs`, `crates/kesh-api/src/paypal_api/mod.rs`,
+`crates/kesh-api/src/provider_download.rs`, `crates/kesh-api/src/provider_env.rs`,
+`crates/kesh-api/src/routes/paypal_downloads.rs`, `crates/kesh-api/src/routes/provider_imports.rs`,
+`crates/kesh-api/tests/common/secrets_prestataire.rs`, `crates/kesh-api/tests/paypal_download_e2e.rs`,
+`crates/kesh-import/src/paypal_api.rs`.
+Modifiés : `.env.example`, `docker-compose.yml`, `docker-compose.prod.yml`, `docs/manual/fr/admin-manual.tex`,
+`crates/kesh-api/src/{config.rs, errors.rs, lib.rs, main.rs, middleware/auth.rs, exchange_rates/source.rs,
+routes/mod.rs, routes/paypal_imports.rs, audit_labels.rs}`, `crates/kesh-api/tests/{audit_route_registry.rs,
+audit_label_registry.rs, date_du_jour_garde.rs, dates_recues_garde.rs, common/mod.rs,
+configuration_transmise.rs, invoice_frozen_pdf_e2e.rs, invoice_send_email_e2e.rs, password_recovery_e2e.rs,
+setup_admin_e2e.rs}`, `crates/kesh-core/src/horloge.rs`, `crates/kesh-i18n/locales/{de-CH,en-CH,fr-CH,it-CH}/messages.ftl`,
+`crates/kesh-import/src/{lib.rs, paypal.rs}`, `_bmad-output/implementation-artifacts/{38-12a-telechargement-api-paypal.md,
+sprint-status.yaml}`, `_bmad-output/planning-artifacts/epic-38-paypal.md`.
+
+### Gates
+
+- Frontend à `1b791613` (`front-*-2.log`) : `check`, `lint-i18n-ownership`, `test:unit` (4612 tests, 278 fichiers),
+  `build` verts ; `9bbf1388` ne touche ni le frontend ni les catalogues.
+- Backend : gate ciblé à `1b791613` (`cible-7.log`, dev4) : 1089 exécutés, 1087 passés, 2 échecs
+  (`audit_label_registry`, corrigés en `9bbf1388`). **Gate ciblé, gate complet et `gate-ci.sh` au dernier commit de code
+  `9bbf1388` : lancés (`cible-puis-complet.sh`, journaux `cible-8.log`, `gate-backend-8.log`, `gate-ci.log`), résultats
+  non encore relevés** — à reporter ici avant de passer la fiche en `review`.
+- E2E : aucun écran touché (l'écran est la 38-12b) ; non lancé.
+- *(Annoté le 2026-11-21.)* La chaîne `cible-puis-complet.sh` sur `9bbf1388` a été **arrêtée en file d'attente** avant
+  de tourner (remédiation de la P1) : `cible-8.log`, `gate-backend-8.log` n'existent pas, aucun résultat à reporter.
+- **Remédiation de la P1** (code au commit `3e22ea0e`) :
+  - gate ciblé sur l'arbre de la remédiation avant commit (`cible-9.log`, dev4) : fmt, clippy workspace verts ;
+    nextest 1101 exécutés, 1100 passés, 1 échec (`une_fin_future_est_ramenee_au_jour_du_jour` : la période d'avril
+    choisie n'écrivait aucun import, test corrigé sur mars) ;
+  - puis `paypal_download_e2e` seul (`cible-10.log`, dev5) : **11 sur 11**, fmt vert ; sondes : 11 rouges sur 11 ;
+  - **gate backend complet et `gate-ci.sh` au commit `3e22ea0e` : NON EXÉCUTÉS** — lancés (`complet-p1.sh`), arrêtés en
+    file d'attente par la station (mémoire basse) avant de tourner ; à relancer avant la passe P2 ou avec elle
+    (`heavy.sh kesh-gate-logs/s38-12a/complet-p1.sh`). Frontend non touché par la remédiation.
+
+
+### Remédiation de la revue de code P2 (2026-11-21)
+
+Rapport : `kesh-gate-logs/s38-12a/revue-p2-rapport.md` (Opus 5.5, passe complète) — 0 CRITICAL, 0 HIGH, 1 MEDIUM, 6 LOW.
+
+| Finding | Traitement | Où |
+|---|---|---|
+| G1 MEDIUM — connexion fermée après l'envoi de la requête classée définitive | **prémisse vérifiée par exécution** : un serveur du bouclage qui lit la requête puis ferme sans répondre fait rougir, sur le code d'avant, le test du client (`http_client::tests::connexion_fermee_apres_la_requete_est_passagere`) et l'E2E (`connexion_fermee_apres_la_requete_est_reprise`) — `p2-rouge.log`, 2 rouges sur 3, le test de contrôle `erreurs_reelles_de_reqwest_classees` passant. **Corrigé** : la chaîne des causes est aussi lue pour une `hyper::Error` (`is_incomplete_message`, `is_closed`, `is_canceled`) ; `hyper = "1"` en dépendance directe de `kesh-api`, version déjà au graphe (1.12.0) | `http_client.rs`, `Cargo.toml` |
+| G2 — fenêtre `start == end` | **corrigé** : `windows` s'arrête à `start >= now`, `period_windows` écarte `start >= end` | `provider_download.rs` |
+| G3 — `Window::split` inversée hors des routes | **corrigé** : `windows` ramène `to` au jour du jour (`effective_to`) | `provider_download.rs` |
+| G4 — marge du plancher | **doc** : la première heure du jour du plancher n'est pas lue, le nom et la trace disent le jour demandé (`check_period`) ; à reprendre au manuel de la 38-12b | `provider_download.rs` |
+| G5 — `AUDIT_ACTIONS` lié à la main | **corrigé** : test `les_actions_du_coeur_d_import_sont_inventoriees_et_libellees` (égalité avec l'entrée de `SITES_INDIRECTS`, libellé présent) | `tests/audit_label_registry.rs` |
+| G6 — 408 définitif | **corrigé** : 408 passager (`classify_status`) | `provider_download.rs` |
+| G7 — clippy non rejoué après le dernier test, gate complet non lancé | **constat exact, aucun correctif de code** : gate ciblé de cette remédiation (fmt, clippy workspace, nextest `kesh-api` lib, `paypal_download_e2e`, `audit_label_registry`, `textes_coherents`) ; le gate complet, `gate-ci.sh` et l'E2E complet restent à lancer par l'orchestrateur avant `done` | |
+
+Tests ajoutés : 3 de plus (client, E2E, `audit_label_registry`) et des assertions aux tests `une_fin_future_s_arrete_a_l_instant` et `statuts_classes`. Gate backend complet, `gate-ci.sh` et E2E complet : **non exécutés** par cette remédiation.
+
+### Remédiation de la revue de code P3 (2026-11-21)
+
+Rapport : `kesh-gate-logs/s38-12a/revue-p3-rapport.md` (passe ciblée, une lentille) — 0 CRITICAL, 0 HIGH, 0 MEDIUM, 3 LOW.
+
+| Finding | Traitement | Où |
+|---|---|---|
+| P3-1 — seconde moitié de `Window::split` de durée nulle | **corrigé** : `Window::is_empty` (`start >= end`), la moitié vide n'est pas envoyée à PayPal par `fetch_window` ; test `une_fin_future_s_arrete_a_l_instant` étendu (`now` à minuit + 0,5 s, `split` d'une fenêtre 19–20 novembre) | `provider_download.rs`, `paypal_api/mod.rs` |
+| P3-2 — idempotence de la reprise non écrite | **doc** : `is_transient_io_chain` et `is_transient_transport` disent que la reprise suppose une requête idempotente (`is_incomplete_message`/`is_closed` : requête possiblement reçue) ; `token_once` déclare le `POST` du jeton rejouable sans danger ; à trancher (clé d'idempotence) avant tout `POST` créateur de Wise ou de Stripe | `http_client.rs`, `paypal_api/mod.rs` |
+| P3-3 — couverture de la reprise limitée au jeton | **corrigé** : E2E `get_coupe_apres_la_requete_est_repris` (le `POST` du jeton est servi en 200, seul le `GET` est coupé après la requête : six `GET`, `PROVIDER_UNAVAILABLE`, rien d'écrit) ; le cas « connexion du pool réutilisée » reste non joué (hyper ne rejoue pas, `retry_canceled_requests`, lu non exécuté) | `tests/paypal_download_e2e.rs` |
+
+**Défaut trouvé au gate complet, hérité des remédiations P1/P2 (non vu des gates ciblés)** : la garde `mcp_gardes_lexicales::un_seul_ecouteur` rougissait (un `TcpListener` par test de `http_client.rs`, F2 de la P1 et G1 de la P2, dans `src/`). Correctif : les deux tests asynchrones liant un écouteur (`erreurs_reelles_de_reqwest_classees`, `connexion_fermee_apres_la_requete_est_passagere`) sont déplacés dans `tests/http_client_transport.rs`, hors du périmètre de la garde (commit `b64c00bd`). Premier gate complet (`gate-backend-12.log`, commit `020de8e2`) : 6284 exécutés, 6283 passés, 1 échec = cette garde.
+
+Dernier commit de code `205cbf25` : une assertion de plus au test `une_fin_future_s_arrete_a_l_instant` (une dernière fenêtre qui commence à `now`, `windows` en fenêtres de 19 jours), parce que la sonde N1 (suppression de la garde `start >= now`) était **muette** depuis la P2 ; rouge après l'assertion. Test seul, aucune ligne de production.
+
+Tests (périmètre `74979d0f` → `205cbf25`) : 1 test de plus (`get_coupe_apres_la_requete_est_repris`) ; 2 déplacés de `http_client.rs` vers `http_client_transport.rs` ; 1 test existant étendu (`une_fin_future_s_arrete_a_l_instant`). *(Annoté le 2026-11-21, revue P4, P4-4 : cette ligne disait « 2 tests existants étendus » ; le diff n'en étend qu'un.)*
+
+Gates (journaux dans `kesh-gate-logs/s38-12a/`) :
+- ciblé `020de8e2` (`cible-12.log`, dev5) : fmt, clippy workspace, nextest 1105 exécutés, 1105 passés ;
+- complet `b64c00bd` (`gate-backend-13.log`, `test-fast.sh --ci`, dev6) : fmt, clippy, **6284 exécutés, 6284 passés**, 14 ignorés ;
+- `gate-ci.sh` : **au dernier commit de code `205cbf25`** (`gate-ci.log`, `gate-ci-14.out`) : **6303 passés, 0 échoué, 18 ignorés**, code 0 ;
+- ciblé `205cbf25` (`p4-cible.log`) : fmt, clippy workspace, nextest `kesh-api` lib + `http_client_transport` + `mcp_gardes_lexicales` : 789 exécutés, 789 passés, 5 ignorés ;
+- sondes (`mut/mutations-p3.log` et `mut/mutations-n1.sh`, copie hors dépôt) : 13 mutations, N1 à N13 (dont N12 `is_empty` toujours faux, N13 branche hyper retirée) : **13 rouges sur 13** (N1 rejouée après l'assertion, N1 muette avant) ;
+- E2E (Playwright) : aucun écran, non lancé. Le gate-ci du premier passage (`gate-ci-13-interrompu.log`), à `b64c00bd`, a été tué par le délai de l'enveloppe à 5415 tests passés, sans échec : il est rejoué en entier à `205cbf25`. Le gate backend complet (`b64c00bd`) précède le dernier commit, qui ne touche qu'un test unitaire : couvert par le ciblé `p4-cible.log`.
+
+### Remédiation de la revue de code P4 (2026-11-21)
+
+Rapport : `kesh-gate-logs/s38-12a/revue-p4-rapport.md` (passe ciblée, une lentille) — 0 CRITICAL, 0 HIGH, 1 MEDIUM, 3 LOW. Dernier commit de code : `6584f643`.
+
+| Finding | Traitement | Où |
+|---|---|---|
+| P4-1 (MEDIUM) — `add_steps(1)` avant de savoir si la moitié `b` part : `b` vide (première seconde du jour), feuille jamais comptée, travail fini `{done: N, total: N+1}` | **corrigé** : `add_steps(1)` n'est appelé que si `!b.is_empty()`, avant la lecture de `a` | `paypal_api/mod.rs` (`fetch_window`) |
+| P4-2 (LOW) — garde `!b.is_empty()` sans test | **corrigé** : E2E `moitie_vide_a_minuit_non_demandee_et_non_comptee` (horloge à 2020-06-30 00:00:00,5 à Zurich, fenêtre 29–30 juin coupée par `RESULTSET_TOO_LARGE` : `done == total`, deux demandes exactement, aucune de durée nulle) ; aides `spawn_app_a`/`monter_a` (instant au choix, `spawn_app`/`monter` inchangés) | `tests/paypal_download_e2e.rs` |
+| P4-3 (LOW) — N13 sans nom de test rouge | **consigné** : N13 rejouée avec la sortie complète (`mut/mutations-p5.log`) : rouges `http_client_transport::connexion_fermee_apres_la_requete_est_passagere` et `paypal_download_e2e::get_coupe_apres_la_requete_est_repris` | journal |
+| P4-4 (LOW) — « 2 tests existants étendus » | **corrigé** : « 1 test existant étendu » (annotation datée à la remédiation P3) | ce fichier |
+
+Tests (périmètre `205cbf25` → `6584f643`) : 1 test de plus (`moitie_vide_a_minuit_non_demandee_et_non_comptee`), aucun étendu.
+
+Sondes (`mut/mutations-p5.py`, copie hors dépôt `mut-src`) : N14 (`add_steps` remis avant la garde) rouge ; N15 (garde `!b.is_empty()` retirée) rouge, toutes deux par le nouvel E2E seul ; N13 rouge (deux tests). Total des sondes : 15 (N1 à N15), toutes rouges.
+
+Gates (journaux dans `kesh-gate-logs/s38-12a/`) : ciblé (`p5-cible.log`) : fmt, clippy workspace, nextest `kesh-api` lib + `paypal_download_e2e` + `paypal_import_e2e` + `http_client_transport` + `mcp_gardes_lexicales` : 814 exécutés, 814 passés, 5 ignorés. Complet `6584f643` (`gate-backend-15.log`, `test-fast.sh --ci`) : fmt, clippy, **6285 exécutés, 6285 passés**, 14 ignorés ; `gate-ci.sh` (`complet-p5-15.out`, `gate-ci.log`) : **6304 passés, 0 échoué, 18 ignorés**, code 0. E2E Playwright : aucun écran touché, non lancé.
+
+### Clôture (2026-11-21)
+
+Revue de code : P1 (Sonnet, complète) et P2 (Opus, complète), rapports `kesh-gate-logs/s38-12a/revue-p1-rapport.md` et
+`revue-p2-rapport.md` ; P3 : trois LOW, corrigés (`020de8e2`, avec `b64c00bd` et `205cbf25`) ; **P4** (Haiku, ciblée)
+0 CRITICAL · 0 HIGH · 1 MEDIUM · 3 LOW — le MEDIUM (étape comptée pour une moitié vide à minuit) venait de la remédiation
+P3 et a été corrigé par `6584f643` ; **P5** (Haiku, ciblée sur `6584f643`) : **0 finding**. Boucle close sur P5.
+Sondes P5 : référence `paypal_download_e2e` 14/14 ; coupe imbriquée à `days = 2` à minuit, jouée dans une copie : verte,
+`done == total` ; mutation `Window::is_empty → false` : rouge sur les deux tests de minuit ; N14 et N15 rouges
+(`mut/mutations-p5.log`). Gates du dernier commit de code `6584f643` : ciblé 814 passés ; backend complet 6285 passés,
+14 ignorés ; `gate-ci.sh` 6304 passés, 0 échec, 18 ignorés ; pas d'E2E (aucun écran).

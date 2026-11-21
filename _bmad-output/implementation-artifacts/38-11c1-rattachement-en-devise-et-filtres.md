@@ -1,6 +1,6 @@
 # Story 38-11c1 : rattachement en devise, autre côté à deux branches, filtres et sens des règles
 
-Status: ready-for-dev
+Status: done
 
 *Fiche née le 2026-11-20 du découpage de l'ancienne 38-11c (validation P3, décision de l'orchestrateur, proposée à la
 validation P1), branche `epic/38-paypal`, numéros de ligne relevés sur `origin/main` `fd04099f`. Epic 38, **phase 1
@@ -142,11 +142,11 @@ ait de quoi travailler.
 
 ## Tâches
 
-- [ ] T1 — Condition 1, devise au pré-vol (quatre appelants de `link_preflight`), mouvement en devise (liste, geste,
+- [x] T1 — Condition 1, devise au pré-vol (quatre appelants de `link_preflight`), mouvement en devise (liste, geste,
   page), docs Rust (AC-1).
-- [ ] T2 — Prédicat de l'autre côté à deux branches, liaisons, doc du plafond, tests (a) à (f) (AC-1b).
-- [ ] T3 — Filtres et sens : `rule_matches`, dépôt et routes des règles (AC-2, AC-3).
-- [ ] T4 — Non-régression (AC-3b) ; gate complet.
+- [x] T2 — Prédicat de l'autre côté à deux branches, liaisons, doc du plafond, tests (a) à (f) (AC-1b).
+- [x] T3 — Filtres et sens : `rule_matches`, dépôt et routes des règles (AC-2, AC-3).
+- [x] T4 — Non-régression (AC-3b) ; gate complet.
 
 ## Stratégie de tests
 
@@ -176,6 +176,96 @@ règles d'affectation acceptent deux filtres facultatifs, « type PayPal » et �
 - Si l'Epic 39 ou 40 arrive le premier dans `main` avec ce prédicat déjà écrit (leur repli), l'epic qui arrive le
   second reprend `main`, relit le texte et garde les tests de l'autre.
 
+## Dev Agent Record
+
+### Agent Model Used
+
+Claude Opus 5.5 (worktree `kesh-wt38`, branche `epic/38-paypal`), 2026-11-20.
+
+### Implementation Plan
+
+- **AC-1** — `transaction_can_be_linked_to_entry(t, ledger_currency)` ; `bank_ledger_currency` (lecture sur le pool,
+  `NotFound` si le compte manque) ; `link_preflight` rend `(compte, devise)` — quatre appelants de
+  `routes/reconciliation.rs` (les deux routes 29-8 ignorent la devise), le cinquième (`reconciliation_group.rs:854`)
+  jette le résultat, inchangé ; `LinkEntryRequest<'a>` gagne `bank_ledger_currency: &'a str` (reste `Copy`) ;
+  `get_proposals` lit la devise à côté de `ba_check`. `ENTRY_MOVEMENTS` devient `entry_movements(MovementKind)`
+  (`CHF_MOVEMENT_SUM`, texte d'avant ; `FOREIGN_MOVEMENT_SUM`, celui de la fiche), appelé par `entry_sql` et
+  `count_already_booked_for_page`. Règlements groupés (`grouped_settlements.rs`, deux sites) : `BASE_CURRENCY`.
+  Docs « hors CHF » des routes du rattachement à une écriture suivies (`:121`, doc de `get_entry_candidates`) ; celle
+  de `get_link_candidates` (29-8) reste juste et est gardée.
+- **AC-1b** — `other_side_predicate` au texte de la fiche ; liaisons nommées (`query_entry_sql` : compte, devise,
+  devise ; page : idem ; `transfer_other_side` : compte, devise, montant, devise, montant) ; doc du plafond récrite
+  (démonstration par les signes).
+- **AC-2, AC-3** — `rule_matches` = `criterion_matches` ∧ `filters_match` (fonction publique pure) ;
+  `normalize_email`, `DIRECTION_CREDIT/DEBIT` publics dans `kesh_reconciliation::rules`, réutilisés par la route
+  (DRY) ; route : trois champs au corps (`Option`, double option au `PATCH`) et à la réponse, validation
+  (`validate_provider_type` 1–64 rogné, `validate_counterparty_email` normalisé, un seul `@`, ≤ 254,
+  `validate_direction` exact) ; trace d'audit des créations et modifications : les trois champs (avant/après).
+- **Correction 38-11b P2-L1** — `paypal_imports::create` : `import_under_locks` (une tentative : verrous nommés +
+  écriture) enveloppée par `retry_app_on_deadlock("paypal_imports::create")` ; registre point (vi) complété.
+
+### Debug Log
+
+- Premier passage des tests HTTP de l'AC-1b : `409 MULTI_CURRENCY_DISABLED` à la saisie de l'écriture — l'exercice
+  du seed doit être `multi_currency = TRUE` (montage corrigé, comme `journal_entries_foreign_currency_e2e.rs:125`).
+- Aucune migration, aucun code d'erreur neuf, aucune clé i18n.
+
+### Completion Notes
+
+- **Tests ajoutés : 17** (recomptés par `grep -cE '#\[(sqlx::)?test'` de `d8076fd9` au commit `ca34a3f4`) —
+  `reconciliation_link.rs` 7 → 10 (condition 1 en devise, mouvement par genre, deux branches), `rules.rs` 8 → 12
+  (type, e-mail, sens, tous filtres et règle non filtrée), `reconciliation_link_entry_e2e.rs` 59 → 63
+  (`s38_11c1_rattachement_en_devise`, `s38_11c1_conversion_a_une_ecriture` = tests (a) à (f),
+  `s38_11c1_le_signe_de_la_seconde_branche` = (g), `s38_11c1_la_lecture_par_page_eur_egale_les_fonctions_du_dialogue`),
+  `reconciliation_rules_e2e.rs` 47 → 52 (création, refus, `PATCH` absent/`null`/valeur, doublon à filtres différents,
+  sens et type au rapprochement), `paypal_import_e2e.rs` 10 → 11 (rejeu de l'import).
+- **Non-régression (AC-3b)** — tests existants modifiés : littéraux et signatures seulement (quatre appels de
+  `reconciliation_link_entry_e2e.rs` passent `CHF`, `transaction_can_be_linked_to_entry_is_a_non_zero_chf_amount`
+  passe la devise) ; `the_restricted_entry_query_…` et `the_matched_elsewhere_query_…` bouclent sur les deux genres,
+  assertions gardées. ⚠️ **Une assertion changée** : `the_linkable_side_and_the_cancel_side_share_one_predicate`
+  vérifiait le texte même du prédicat (`starts_with("… AND bt.amount = -(?)")`, deux `?`) ; le texte change par
+  l'AC-1b : `starts_with("(bt.bank_account_id <> ? ")` et cinq `?`. `the_settlement_exclusion_matches_the_classification`
+  inchangé et vert. Aucun autre test existant touché.
+- **Mutations** (`kesh-gate-logs/s38-11c1/mutations.py`, journal `mutations.log`) : 10 jouées, 9 rouges — M1 seconde
+  branche sans `SIGN` (rougit **seul** le test (g)), M2 seconde branche retirée, M4 mouvement CHF pour un compte en
+  devise, M5 condition 1 en CHF, M6 page en mouvement CHF, M7/M8/M9 sens/type/e-mail ignorés, M10 import PayPal sans
+  enveloppe. **M3 survivante, équivalente** : retirer `bt.currency = ?` de la première branche ne change rien, car
+  `bt.amount = −M` (M ≠ 0) implique le signe opposé — une transaction d'une autre devise qui satisfait la première
+  branche mutée satisfait déjà la seconde. Le test unitaire `the_other_side_has_two_branches` garde le texte.
+- **Gates au commit de code `ca34a3f4`** — gate ciblé (cible-1, avant le correctif du montage) puis
+  `s38_11c1` 4/4 ; **gate backend complet** (base `kesh_s3811c1` remise à zéro : DROP/CREATE, migrations, seed),
+  `scripts/test-fast.sh --ci` : fmt, clippy `-D warnings`, nextest **6220 exécutés, 6220 passés, 14 ignorés**
+  (`kesh-gate-logs/s38-11c1/gate-backend.log`) ; **`scripts/gate-ci.sh`** sur une copie `git archive` de `ca34a3f4` :
+  **6239 passés, 0 échoué, 18 ignorés** (`gate-ci.log`, cible supprimée après) ; **E2E complet** (frontend rebâti,
+  base neuve `kesh_e2e_s3811c1`, `LANG=fr_CH.UTF-8`) : **477 passés, 10 échecs, 18 ignorés** (46 min, `e2e.log`) —
+  les dix jugés un à un, tous attendus : les sept de la KF-029 (#97 : `mode-expert:26`, `:41`,
+  `onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`, `:150`) et `backup-restore-new-install:262`, `:381`,
+  `opening-balances:156`. Frontend non modifié : `npm run check`, `lint-i18n-ownership`, `test:unit` non rejoués
+  (seul `npm run build` l'a été, pour l'E2E).
+- **Hors périmètre, laissé à 38-11d** (fiche) : `docs/api-external.md` (`:926`, `:944`, `:1293`), miroir `canLink`
+  de l'écran ; les champs des règles ne sont pas décrits dans `api-external.md` (seul le code `ACCOUNT_NOT_POSTABLE`
+  y nomme la route) — à écrire avec les écrans. Aucun frontend touché.
+- Registre des routes : point (vi) à « trente-trois » **par ajout**, non recompté en entier (un balayage heuristique
+  des handlers ne retrouve pas les 32 d'avant à l'identique : écart non élucidé ici, noté pour la revue).
+
+### File List
+
+- `crates/kesh-db/src/repositories/reconciliation_link.rs`
+- `crates/kesh-db/src/repositories/grouped_settlements.rs`
+- `crates/kesh-db/src/repositories/reconciliation_rules.rs`
+- `crates/kesh-db/src/entities/reconciliation_rule.rs`
+- `crates/kesh-reconciliation/src/rules.rs`
+- `crates/kesh-api/src/routes/reconciliation.rs`
+- `crates/kesh-api/src/routes/reconciliation_rules.rs`
+- `crates/kesh-api/src/routes/paypal_imports.rs`
+- `crates/kesh-api/tests/reconciliation_link_entry_e2e.rs`
+- `crates/kesh-api/tests/reconciliation_rules_e2e.rs`
+- `crates/kesh-api/tests/paypal_import_e2e.rs`
+- `crates/kesh-api/tests/audit_route_registry.rs`
+- `_bmad-output/implementation-artifacts/38-11c1-rattachement-en-devise-et-filtres.md`
+- `_bmad-output/implementation-artifacts/38-11b-compte-paypal-et-import.md` (Change Log)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+
 ## Change Log
 
 - 2026-11-20 — fiche née du découpage de l'ancienne 38-11c (AC-1 à AC-3, validées P1 et P2 dans celle-ci : voir le
@@ -184,3 +274,15 @@ règles d'affectation acceptent deux filtres facultatifs, « type PayPal » et �
 - 2026-11-20 — validation P4, ciblée sur l'AC-1b (Claude Sonnet 5.5, contexte frais) : 0 CRITICAL, 0 HIGH, 1 MEDIUM,
   2 LOW, remédiés (rapport `kesh-gate-logs/epic-38-kiss/validation/38-11-P4-ciblee.md`). Test (g) du signe de la
   seconde branche, ordre entrelacé des liaisons écrit, origine de la devise de `get_proposals`.
+- 2026-11-20 — développée (Claude Opus 5.5) : AC-1, AC-1b, AC-2, AC-3, AC-3b ; commits `8d241e52` (code), `ca34a3f4`
+  (tests). Plus, hors fiche, la correction P2-L1 de la revue P2 de la 38-11b : import PayPal rejoué sur interblocage
+  (`retry_app_on_deadlock`, opération `paypal_imports::create`), testé, noté au Change Log de la 38-11b. Grep du
+  symptôme « hors CHF » : `routes/reconciliation.rs` (deux docs du rattachement à une écriture récrites, celle de la
+  29-8 gardée), `reconciliation_link.rs` (aucune). Statut `review`.
+
+
+- 2026-11-20 — revue de code P1 (Claude Sonnet 5.5, contexte frais) : 0 CRITICAL / 0 HIGH / 0 MEDIUM / 6 LOW ; boucle close.
+  LOW versés à la dette : docs « montant opposé » de `reconciliation_cancel.rs:336-338, :777-778` ; lectures inutiles
+  (`link_preflight` pour 29-8 et groupes, `LINKABLE_SETTLEMENTS` sur une page en devise, décompte non utilisé dans
+  `get_proposals`) ; décompte « trente-trois » du registre non recompté ; test de rejeu dépendant du choix de victime
+  InnoDB. Rapport : `kesh-gate-logs/s38-11c1/revue-p1-rapport.md`.

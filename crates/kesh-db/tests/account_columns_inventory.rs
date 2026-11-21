@@ -229,10 +229,10 @@ const INVENTAIRE: &[Colonne] = &[
     Colonne {
         colonne: "reconciliation_rules.counterparty_account_id",
         preuve: Preuve::Tests(&[
-            "kesh-db/tests/account_currency_repository.rs::regles_de_reconciliation_refusent_un_compte_en_devise",
-            "kesh-api/tests/account_currency_e2e.rs::un_compte_en_devise_n_est_designable_nulle_part",
+            "kesh-db/tests/account_currency_repository.rs::regles_de_reconciliation_admettent_un_compte_en_devise",
+            "kesh-api/tests/paypal_reconciliation_e2e.rs::regle_contrepartie_dans_une_autre_devise_refusee",
         ]),
-        note: "400 ACCOUNT_IN_FOREIGN_CURRENCY (37-1).",
+        note: "Un compte en devise est admis (2026-11-21, 38-11c2) ; la devise se contrôle à l'application (COUNTERPARTY_CURRENCY_MISMATCH).",
     },
     // --- Colonnes de pièce (37-3a, AC-5) ---------------------------------
     Colonne {

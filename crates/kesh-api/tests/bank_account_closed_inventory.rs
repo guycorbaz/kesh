@@ -115,6 +115,15 @@ impl Statut {
 
 /// Le registre des écrivains : `(fichier relatif à crates/, fonction, statut)`.
 const REGISTRE: &[(&str, &str, Statut)] = &[
+    // --- kesh-db : rapprochement d'une transaction (Story 38-11c2) --------
+    (
+        "kesh-db/src/repositories/reconciliation.rs",
+        "mark_reconciled_in_tx",
+        Statut::Invariant(
+            "I1",
+            "transaction pending relue sous le verrou nommé de son compte (UPDATE gardé par status = 'pending' et la version) ; appelants : accept_one_rule (pré-vol R1) et le moteur des prestataires (provider_accept::rejudge refuse un compte clos relu sous les verrous)",
+        ),
+    ),
     // --- kesh-api : réconciliation ---------------------------------------
     (
         "kesh-api/src/routes/reconciliation.rs",
@@ -129,11 +138,10 @@ const REGISTRE: &[(&str, &str, Statut)] = &[
         "accept_one_split",
         Statut::Invariant("I1", "transaction pending ; pré-vol R1"),
     ),
-    (
-        "kesh-api/src/routes/reconciliation.rs",
-        "accept_one_rule",
-        Statut::Invariant("I1", "transaction pending ; pré-vol R1"),
-    ),
+    // Story 38-11c2 (AC-8) — l'`UPDATE bank_transactions` d'`accept_one_rule`
+    // est extrait dans le dépôt (`reconciliation::mark_reconciled_in_tx`, ligne
+    // « kesh-db » plus bas), qu'il appelle désormais : son entrée sort du
+    // registre avec son littéral.
     // Story 30-1b (#686, AC-b14) — l'acceptation d'une facture fournisseur.
     (
         "kesh-api/src/routes/reconciliation.rs",
