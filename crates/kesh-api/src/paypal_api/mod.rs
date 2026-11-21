@@ -452,10 +452,13 @@ fn fetch_window(
                         page: Some(1),
                     });
                 };
-                job.add_steps(1);
-                fetched.absorb(fetch_window(client.clone(), a, now, job.clone()).await?);
                 // Une moitié de durée nulle (première seconde du jour) ne part
-                // pas chez PayPal (revue P3, P3-1).
+                // pas chez PayPal (revue P3, P3-1) et n'ajoute pas d'étape :
+                // une feuille jamais lue ne se compterait pas (revue P4, P4-1).
+                if !b.is_empty() {
+                    job.add_steps(1);
+                }
+                fetched.absorb(fetch_window(client.clone(), a, now, job.clone()).await?);
                 if !b.is_empty() {
                     fetched.absorb(fetch_window(client, b, now, job).await?);
                 }

@@ -380,6 +380,16 @@ fn maintenant() -> DateTime<Utc> {
 }
 
 async fn spawn_app(pool: MySqlPool, sim_url: &str, parallel: usize) -> TestApp {
+    spawn_app_a(pool, sim_url, parallel, maintenant()).await
+}
+
+/// Comme [`spawn_app`], l'horloge arrêtée sur `instant`.
+async fn spawn_app_a(
+    pool: MySqlPool,
+    sim_url: &str,
+    parallel: usize,
+    instant: DateTime<Utc>,
+) -> TestApp {
     let config = config(sim_url, parallel);
     let rate_limiter = kesh_api::middleware::rate_limit::RateLimiter::new(&config);
     let i18n = Arc::new(
@@ -394,7 +404,7 @@ async fn spawn_app(pool: MySqlPool, sim_url: &str, parallel: usize) -> TestApp {
     );
     let attente = Arc::new(Notee::default());
     let mut state = AppState::new_for_tests(pool, Arc::new(config), Arc::new(rate_limiter), i18n);
-    state = common::horloge::avec_horloge(state, maintenant());
+    state = common::horloge::avec_horloge(state, instant);
     state.provider_downloads = Arc::new(Downloads::new(
         attente.clone(),
         Some((Duration::from_millis(500), Duration::from_millis(1500))),
@@ -460,6 +470,17 @@ async fn compte(pool: &MySqlPool, c: i64, numero: &str, devise: Option<&str>, ty
 /// Une société multi-devises et ses soldes PayPal : EUR, USD et, si
 /// `avec_chf`, CHF ; un compte « sans API » en EUR.
 async fn monter(pool: &MySqlPool, sim_url: &str, parallel: usize, avec_chf: bool) -> Ctx {
+    monter_a(pool, sim_url, parallel, avec_chf, maintenant()).await
+}
+
+/// Comme [`monter`], l'horloge arrêtée sur `instant`.
+async fn monter_a(
+    pool: &MySqlPool,
+    sim_url: &str,
+    parallel: usize,
+    avec_chf: bool,
+    instant: DateTime<Utc>,
+) -> Ctx {
     let seeded = seed_accounting_company(pool).await.expect("seed");
     mark_onboarding_complete(pool).await.expect("onboarding");
     disable_rounding_to_5_centimes(pool, seeded.company_id)
@@ -473,7 +494,7 @@ async fn monter(pool: &MySqlPool, sim_url: &str, parallel: usize, avec_chf: bool
         .unwrap();
     let ctx = Ctx {
         pool: pool.clone(),
-        app: spawn_app(pool.clone(), sim_url, parallel).await,
+        app: spawn_app_a(pool.clone(), sim_url, parallel, instant).await,
         jwt: forge_jwt(seeded.admin_user_id, "Admin", c),
         seeded,
     };
@@ -963,6 +984,38 @@ async fn fenetre_coupee_et_refus_du_prestataire(pool: MySqlPool) {
         ctx.count("SELECT COUNT(*) FROM audit_log WHERE action = 'paypal_download.created'")
             .await,
         1
+    );
+}
+
+/// Revue P4, P4-1 et P4-2 — à la première seconde du jour de Zurich, la coupe
+/// d'une fenêtre qui finit aujourd'hui laisse une seconde moitié de durée
+/// nulle : elle n'est pas demandée, et sa feuille n'est pas comptée (le
+/// travail finit `done == total`).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn moitie_vide_a_minuit_non_demandee_et_non_comptee(pool: MySqlPool) {
+    let (url, sim) = simuler(transactions_de_la_fixture(), 500).await;
+    // 2020-06-30 00:00:00,5 à Zurich (UTC+2) : le jour du jour vient de naître.
+    let minuit = Utc.with_ymd_and_hms(2020, 6, 29, 22, 0, 0).unwrap();
+    let instant = minuit + chrono::TimeDelta::milliseconds(500);
+    let ctx = monter_a(&pool, &url, 1, true, instant).await;
+    // La première demande (29 et 30 juin) est trop chargée ; sa première moitié
+    // (le 29) passe ; la seconde (le 30, de durée nulle) ne doit pas partir.
+    sim.file_pages.lock().unwrap().push_back(Forcee::Statut(
+        400,
+        None,
+        r#"{"name":"RESULTSET_TOO_LARGE","message":"x"}"#.into(),
+    ));
+    let v = ctx.telecharger("2020-06-29", "2020-06-30").await;
+    assert_eq!(v["state"], "done", "{v}");
+    assert_eq!(
+        v["steps"]["done"], v["steps"]["total"],
+        "progression finie : {v}"
+    );
+    let demandes = sim.demandes.lock().unwrap().clone();
+    assert_eq!(demandes.len(), 2, "{demandes:?}");
+    assert!(
+        demandes.iter().all(|d| d.start != d.end),
+        "aucune fenêtre de durée nulle : {demandes:?}"
     );
 }
 
