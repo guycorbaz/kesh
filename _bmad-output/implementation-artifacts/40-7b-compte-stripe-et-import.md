@@ -259,18 +259,14 @@ s'importe d'un geste, ventilé par devise ; les doublons sont ignorés.
   colonne aux `SELECT`/`UPDATE`), routes des comptes bancaires : corps `stripe` à côté de `paypal` (C-40-7b-1), **mêmes**
   fonctions de garde (`ProviderSettings`), garde du compte de versement `check_payout_destination_in_tx`, garde 5 étendue au
   changement de prestataire, audit.
-- **T3** : cœur d'import commun. **Aligné sur la forme de la 38-12a** (consigne du coordinateur) : `routes/provider_imports.rs`
-  et `routes/paypal_imports.rs` **recopiés** depuis `kesh-wt38p2` (état non commité lu le 2026-11-21), noms `ProviderLine`,
-  `ImportRequest`, `ImportSource`, `load_balances`, `import_lines`, `dedupe_lines`, `CurrencyReport`. **Ce qui devra être fusionné** (écarts
-  à la copie de la 38-12a) : (1) `ProviderLine.value_date: Option<NaiveDate>` (Stripe : `available_on`), pris par
-  `into_new_bank_transaction` ; une ligne `value_date: None` dans `paypal_imports.rs::provider_lines_of_row` et dans le
-  helper de test de `provider_imports.rs` ; (2) `provider_imports.rs` : section d'aides ajoutée avant `mod tests`
-  (`DETAILS_MAX_CHARS`, `NAME_MAX_CHARS`, `PROVIDER_TYPE_MAX_CHARS`, `FILENAME_MAX_BYTES`, `TXID_COLUMN_MAX_CHARS`, `FEE_SUFFIX`,
-  `truncate_chars`, `truncate_bytes`, `bounded`, `ProviderImportForm`, `parse_form`) — `paypal_imports.rs` garde ses copies privées
-  (à replier sur ces aides à l'intégration) ; (3) deux retouches de tests de `paypal_imports.rs` pour le compilateur et clippy
-  (`let lignes = provider_lines_of_row(&rows[2])` : temporaire emprunté ; tableau au lieu de `vec!`). Le paramètre futur
-  `rules: Option<&dyn DuplicateRules>` (Wise) s'ajoutera à `ImportRequest` sans toucher Stripe (`None`). Première version écrite
-  (`run` / `ProviderImport` / `ProviderEntry`) abandonnée au profit de cette forme.
+- **T3** : cœur d'import commun. *(Première version : copies de `kesh-wt38p2`, état non commité du 2026-11-21 ; **reprise à la
+  revue P1 (M1)** : voir « Fusion de la 38-12a ».)* Noms `ProviderLine`, `ImportRequest`, `ImportSource`, `load_balances`,
+  `import_lines`, `CurrencyReport` ; ajouts de la 40-7b au socle : `ProviderLine.value_date: Option<NaiveDate>` (Stripe :
+  `available_on`, pris par `into_new_bank_transaction`), `AUDIT_ACTIONS` + `debug_assert!`, section d'aides communes avant
+  `mod tests` (`DETAILS_MAX_CHARS`, `NAME_MAX_CHARS`, `PROVIDER_TYPE_MAX_CHARS`, `FILENAME_MAX_BYTES`, `TXID_COLUMN_MAX_CHARS`,
+  `FEE_SUFFIX`, `truncate_chars`, `truncate_bytes`, `bounded`, `ProviderImportForm`, `parse_form`) — `paypal_imports.rs` garde ses
+  copies privées (à replier sur ces aides, dette de l'intégration de l'epic). Le paramètre futur `rules: Option<&dyn
+  DuplicateRules>` (Wise) s'ajoutera à `ImportRequest` sans toucher Stripe (`None`).
 - **T4** : `routes/stripe_imports.rs` (route `POST /api/v1/stripe-imports`, `lib.rs`), `lines_of_currency` (brut, frais `−fee`,
   versement `−Σ net`, Σ nul non créé), `check_id_lengths`, `csv_error` (hint `source_id|charge_id`), erreurs
   `STRIPE_CSV_INVALID` et `STRIPE_PAYOUT_ACCOUNT_INVALID`.
@@ -290,12 +286,30 @@ devise / compte clos, refus de tête et clés, création et refus du compte de v
 (159 routes, 151 tracées, 163 avec les routes de test ; `SITES_INDIRECTS` à dix ; `ACTIONS` + `stripe_import.created`),
 `bank_account_opening_balance_e2e` (clé `stripe`), `migrations_upgrade_path` (97 / 63).
 
-### Défaut trouvé dans le cœur de la 38-12a (copie)
+### Défaut trouvé dans la copie du cœur de la 38-12a — sans objet depuis la fusion (M1, L6)
 
-`dedupe_lines` de la 38-12a groupe par **suites consécutives** de même `group_id` : deux lignes identiques côte à côte formaient
-UN groupe, la seconde n'était pas vue comme doublon (le test `doublon_dans_le_fichier_et_en_base` de `paypal_imports.rs` rougit
-sur la copie). Corrigé dans ma copie : un groupe se coupe aussi quand un identifiant de transaction se répète
-(`provider_imports.rs`). **À reporter dans la 38-12a** (même correctif, même test) — signalé à l'orchestrateur.
+La copie non commitée de la 38-12a groupait par **suites consécutives** de même `group_id` (`dedupe_lines`) : deux lignes
+identiques côte à côte formaient un groupe ; la 40-7b l'avait corrigé dans sa copie. La 38-12a commitée a **changé de forme**
+(`ProviderGroup`, `dedupe_groups` : un groupe = une ligne de la source) : le défaut n'y existe pas, le correctif disparaît avec la
+copie, et le comportement PayPal d'avant (L6, deux lignes de même identifiant voisines, brut nul et frais seuls) est retrouvé.
+
+### Fusion de la 38-12a (revue P1, M1)
+
+`story/38-12a` fusionnée dans `story/40-7b` (commit de fusion ; **tête de 38-12a fusionnée : `1b791613`** — elle bougera
+encore : **une reprise de la 38-12a sera à refaire avant la fusion de l'epic**). On adopte **sa** forme : `ProviderGroup`,
+`dedupe_groups`, `by_currency: BTreeMap<String, Vec<ProviderGroup>>`, `provider_lines` de `paypal_imports.rs` rend des groupes ;
+`stripe_imports.rs::lines_of_currency` produit un groupe par ligne du rapport (brut + frais) et un groupe d'une ligne
+`payout:<id>` par versement non nul. Conflits résolus en gardant les deux intentions : `provider_imports.rs` (add/add : la
+forme de la 38-12a + `value_date`, `AUDIT_ACTIONS`, `debug_assert!`, aides), `paypal_imports.rs` (la 38-12a + `value_date:
+None`), `lib.rs` (routes Stripe et `paypal-downloads`), `errors.rs`, registres d'audit, quatre `messages.ftl`,
+`kesh-import/src/lib.rs` (`paypal_api`, `stripe`). ⚠️ **Piège sans conflit de texte** : `AUDIT_ACTIONS` ne portait que
+`paypal_import.created` et `stripe_import.created` alors que la 38-12a écrit `paypal_download.created` par le même cœur : un
+test debug du téléchargement aurait paniqué au `debug_assert!` ; les trois actions sont unies (`AUDIT_ACTIONS`, site indirect
+de `audit_label_registry`, `ACTIONS`). **Compteurs recomptés** : le registre des routes porte `LIB_ROUTES` 160 (159 + le
+téléchargement), 152 tracées, 164 avec les routes de test, partition « sans écriture » 131 — ⚠️ git avait fusionné « 130 » sans
+conflit, valeur que **les deux** branches avaient portée depuis 129 : la somme est 131 ; les deux phrases du `.tex`
+d'administration : `152 des 160` et `152 + 4 + 4 = 160` ; migrations : 97 (la 38-12a n'en ajoute pas ; la migration Stripe garde
+son horodatage `20261120000003`, `total == 97`, P6 inchangé) ; `sitesTotal` : frontend non touché.
 
 ### Mutations (sondes négatives, journal `kesh-gate-logs/s40-7b/mutations.log`, fichier restauré par `git checkout` après chacune)
 
