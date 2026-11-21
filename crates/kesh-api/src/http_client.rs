@@ -98,7 +98,8 @@ pub fn is_transient_transport(e: &reqwest::Error) -> bool {
 
 /// Cherche dans la chaîne des causes de `e` une erreur d'entrée-sortie d'un
 /// genre passager (connexion refusée, coupée, interrompue, délai, réseau ou
-/// hôte injoignable, fin de flux inattendue).
+/// hôte injoignable, fin de flux inattendue), ou une erreur `hyper` de connexion
+/// fermée avant la fin du message.
 pub fn is_transient_io_chain(e: &(dyn std::error::Error + 'static)) -> bool {
     let mut cause: Option<&(dyn std::error::Error + 'static)> = Some(e);
     while let Some(err) = cause {
@@ -116,6 +117,14 @@ pub fn is_transient_io_chain(e: &(dyn std::error::Error + 'static)) -> bool {
                     | ErrorKind::HostUnreachable
                     | ErrorKind::NetworkDown
             )
+        {
+            return true;
+        }
+        // Connexion fermée par le serveur après l'envoi de la requête (course
+        // du keep-alive) : hyper rend un message incomplet **sans** cause
+        // d'entrée-sortie (revue P2, G1).
+        if let Some(h) = err.downcast_ref::<hyper::Error>()
+            && (h.is_incomplete_message() || h.is_closed() || h.is_canceled())
         {
             return true;
         }
@@ -201,5 +210,32 @@ mod tests {
             .await
             .unwrap_err();
         assert!(!is_transient_transport(&e), "TLS refusé : {e:?}");
+    }
+
+    /// Revue P2, G1 — un serveur qui lit la requête puis ferme sans répondre
+    /// (la course classique du keep-alive) rend à hyper une erreur de message
+    /// incomplet, **sans** cause d'entrée-sortie : elle est passagère.
+    #[tokio::test]
+    async fn connexion_fermee_apres_la_requete_est_passagere() {
+        let client = build_client(false, Duration::from_secs(2), Duration::from_secs(4)).unwrap();
+        let ecoute = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let adresse = ecoute.local_addr().unwrap();
+        tokio::spawn(async move {
+            use tokio::io::AsyncReadExt;
+            while let Ok((mut flux, _)) = ecoute.accept().await {
+                let mut tampon = [0u8; 4096];
+                let _ = flux.read(&mut tampon).await;
+                drop(flux);
+            }
+        });
+        let e = client
+            .get(format!("http://{adresse}/"))
+            .send()
+            .await
+            .unwrap_err();
+        assert!(
+            is_transient_transport(&e),
+            "fermée après la requête : {e:?}"
+        );
     }
 }

@@ -118,6 +118,9 @@ impl Window {
 /// d'hiver dure 31 × 24 h + 1 h).
 pub fn windows(from: NaiveDate, to: NaiveDate, max_days: u32, now: DateTime<Utc>) -> Vec<Window> {
     let mut out = Vec::new();
+    // `to` est ramenée au jour du jour : aucune fenêtre (ni moitié d'une
+    // coupe, [`Window::split`]) ne commence après `now` (revue P2, G3).
+    let to = effective_to(to, now);
     if max_days == 0 || from > to {
         return out;
     }
@@ -127,7 +130,9 @@ pub fn windows(from: NaiveDate, to: NaiveDate, max_days: u32, now: DateTime<Utc>
             .checked_add_days(Days::new(u64::from(max_days) - 1))
             .map_or(to, |e| e.min(to));
         let window = Window::new(start, end, now);
-        if window.start > now {
+        // `>=` : une fenêtre qui commence à `now` (la première seconde du
+        // jour) serait de durée nulle, `start == end` (revue P2, G2).
+        if window.start >= now {
             break;
         }
         out.push(window);
@@ -164,9 +169,12 @@ pub type PeriodRefusal = &'static str;
 /// n'est pas refusée, elle est ramenée au jour du jour par
 /// [`period_windows`]), `too_old` (`from` avant le jour du plancher de
 /// l'historique, [`history_floor`]). Le jour du plancher est **admis** : sa
-/// fenêtre commence au plancher lui-même, si bien qu'aucun jour lisible n'est
-/// perdu et qu'aucune requête ne remonte au-delà de l'historique (revue P1,
-/// F11).
+/// fenêtre commence au plancher lui-même (une heure après « maintenant moins
+/// `years` ans », [`HISTORY_MARGIN`]), si bien qu'aucune requête ne remonte
+/// au-delà de l'historique (revue P1, F11). **Marge assumée** (revue P2, G4) :
+/// pour une demande qui commence au jour exact du plancher, la première heure
+/// de ce jour n'est pas lue — le nom de l'import et la trace disent le jour
+/// entier demandé, non l'heure réelle de début.
 pub fn check_period(
     from: NaiveDate,
     to: NaiveDate,
@@ -195,7 +203,7 @@ pub fn effective_to(to: NaiveDate, now: DateTime<Utc>) -> NaiveDate {
 /// appellent (revue P1, F1, F11) : `to` ramenée au jour du jour
 /// ([`effective_to`]), découpage par [`windows`], puis le début de la première
 /// fenêtre relevé au plancher de l'historique ([`history_floor`]) ; une
-/// fenêtre qui finirait avant de commencer est écartée.
+/// fenêtre qui finirait avant de commencer, ou en même temps, est écartée.
 pub fn period_windows(
     from: NaiveDate,
     to: NaiveDate,
@@ -210,7 +218,7 @@ pub fn period_windows(
             w.start = floor;
         }
     }
-    out.retain(|w| w.start <= w.end);
+    out.retain(|w| w.start < w.end);
     out
 }
 
@@ -269,7 +277,8 @@ pub fn classify_status(status: u16) -> StatusClass {
         401 => StatusClass::Unauthorized,
         403 => StatusClass::Forbidden,
         429 => StatusClass::Transient(Transient::RateLimited),
-        500..=599 => StatusClass::Transient(Transient::Unavailable),
+        // 408 : délai dépassé côté serveur, passager comme celui du client.
+        408 | 500..=599 => StatusClass::Transient(Transient::Unavailable),
         _ => StatusClass::Other,
     }
 }
@@ -892,7 +901,7 @@ mod tests {
         let now = Utc.with_ymd_and_hms(2026, 11, 20, 10, 0, 0).unwrap();
         let w = windows(d(2026, 11, 1), d(9999, 12, 31), 30, now);
         assert_eq!(w.len(), 1, "{w:?}");
-        assert_eq!((w[0].from, w[0].to), (d(2026, 11, 1), d(2026, 11, 30)));
+        assert_eq!((w[0].from, w[0].to), (d(2026, 11, 1), d(2026, 11, 20)));
         assert_eq!(w[0].end, now);
         // Sur trois ans : autant de fenêtres que de tranches de 30 jours
         // jusqu'au jour du jour, aucune inversée, aucune après `now`.
@@ -904,6 +913,20 @@ mod tests {
             w.iter().all(|w| w.start <= w.end && w.start <= now),
             "{w:?}"
         );
+        // Revue P2, G3 — `to` ramenée au jour du jour : même `windows` seul ne
+        // rend ni fenêtre inversée ni moitié inversée d'une coupe.
+        let now5 = Utc.with_ymd_and_hms(2026, 11, 5, 10, 0, 0).unwrap();
+        let w = windows(d(2026, 11, 1), d(2026, 11, 30), 30, now5);
+        assert_eq!(w[0].to, d(2026, 11, 5), "{w:?}");
+        let (a, b) = w[0].split(now5).unwrap();
+        assert!(a.start <= a.end && b.start <= b.end, "{a:?} {b:?}");
+        // Revue P2, G2 — `now` à minuit pile de Zurich : aucune fenêtre de
+        // durée nulle.
+        let minuit = debut_du_jour_suisse(d(2026, 11, 20));
+        let w = windows(d(2026, 11, 1), d(2026, 11, 20), 30, minuit);
+        assert!(w.iter().all(|w| w.start < w.end), "{w:?}");
+        let w = period_windows(d(2026, 11, 1), d(2026, 11, 20), 30, minuit, 3);
+        assert!(w.iter().all(|w| w.start < w.end), "{w:?}");
         // Une période entièrement future : aucune fenêtre.
         assert!(windows(d(2027, 1, 1), d(2027, 3, 1), 30, now).is_empty());
     }
@@ -948,13 +971,13 @@ mod tests {
             classify_status(429),
             StatusClass::Transient(Transient::RateLimited)
         );
-        for s in [500, 502, 503, 599] {
+        for s in [408, 500, 502, 503, 599] {
             assert_eq!(
                 classify_status(s),
                 StatusClass::Transient(Transient::Unavailable)
             );
         }
-        for s in [400, 404, 409, 422, 600] {
+        for s in [400, 404, 407, 409, 422, 600] {
             assert_eq!(classify_status(s), StatusClass::Other);
         }
     }

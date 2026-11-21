@@ -1063,6 +1063,32 @@ async fn une_erreur_de_transport_definitive_n_est_pas_reprise(pool: MySqlPool) {
     assert_eq!(ctx.ecrit().await, (0, 0, 0));
 }
 
+/// Revue P2, G1 — un serveur qui lit la requête puis ferme sans répondre est
+/// une panne passagère : six essais, cinq pauses, `PROVIDER_UNAVAILABLE`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn connexion_fermee_apres_la_requete_est_reprise(pool: MySqlPool) {
+    let ecoute = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let adresse = ecoute.local_addr().unwrap();
+    let connexions = Arc::new(AtomicUsize::new(0));
+    let compte = connexions.clone();
+    tokio::spawn(async move {
+        while let Ok((mut flux, _)) = ecoute.accept().await {
+            compte.fetch_add(1, Ordering::SeqCst);
+            use tokio::io::AsyncReadExt;
+            let mut tampon = [0u8; 4096];
+            let _ = flux.read(&mut tampon).await;
+            drop(flux);
+        }
+    });
+    let ctx = monter(&pool, &format!("http://{adresse}"), 1, true).await;
+    let v = ctx.telecharger("2020-01-01", "2020-01-30").await;
+    assert_eq!(v["state"], "failed", "{v}");
+    assert_eq!(v["error"]["code"], "PROVIDER_UNAVAILABLE", "{v}");
+    assert_eq!(ctx.app.attente.0.lock().unwrap().len(), 5, "cinq pauses");
+    assert_eq!(connexions.load(Ordering::SeqCst), 6, "six essais");
+    assert_eq!(ctx.ecrit().await, (0, 0, 0));
+}
+
 /// AC-7, AC-8 — une devise sans compte bancaire : `failed`
 /// `PROVIDER_CURRENCY_ACCOUNT_MISSING`, rien d'écrit.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]

@@ -846,3 +846,31 @@ fn chaque_code_a_son_libelle_dans_les_quatre_catalogues() {
         );
     }
 }
+
+/// Revue P2, G5 — les actions que le cœur d'import de prestataire accepte
+/// (`AUDIT_ACTIONS`) sont exactement les codes de son entrée de l'inventaire
+/// des sites indirects (écrits à la main), et chacune a son libellé : une
+/// action ajoutée à l'une des listes seulement rougit ici.
+#[test]
+fn les_actions_du_coeur_d_import_sont_inventoriees_et_libellees() {
+    let fichier = "crates/kesh-api/src/routes/provider_imports.rs";
+    let inventaire: BTreeSet<&str> = SITES_INDIRECTS
+        .iter()
+        .find(|(f, _, _)| *f == fichier)
+        .unwrap_or_else(|| panic!("{fichier} absent de SITES_INDIRECTS"))
+        .2
+        .iter()
+        .copied()
+        .collect();
+    let acceptees: BTreeSet<&str> = kesh_api::routes::provider_imports::AUDIT_ACTIONS
+        .iter()
+        .copied()
+        .collect();
+    assert_eq!(acceptees, inventaire, "AUDIT_ACTIONS et SITES_INDIRECTS");
+    for a in &acceptees {
+        assert!(
+            kesh_api::audit_labels::ACTIONS.contains(a),
+            "{a} sans libellé dans audit_labels::ACTIONS"
+        );
+    }
+}

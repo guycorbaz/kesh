@@ -1965,6 +1965,7 @@ dependencies = [
  "csv",
  "dotenvy",
  "http-body-util",
+ "hyper",
  "image",
  "ipnet",
  "jsonwebtoken",
