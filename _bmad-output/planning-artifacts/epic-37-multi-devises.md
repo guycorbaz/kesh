@@ -15,7 +15,7 @@ la release, par Guy — hors de cette branche).
 
 **Release** : un epic = une release (Epic 37 → une release mineure, numéro au tag par le Project Lead) ; 6 stories (37-1, 37-2, 37-3a, 37-3b, 37-4, 37-5), dans la borne (`CLAUDE.md` § *Travailler à plusieurs développeurs*).
 
-**Règles des fichiers communs** (`CLAUDE.md` § *Travailler à plusieurs développeurs*, `docs/developpement-a-plusieurs.md` § 3 et § 6) : aucune fiche n'écrit au `CHANGELOG.md` — chacune porte une section *Note de version*, assemblée à la release ; aucun PDF de manuel commité dans la branche (`.tex` seulement, régénération à la release) ; catalogues i18n et `sprint-status.yaml` : un bloc propre à l'epic ; compteurs (`sitesTotal`, totaux de l'audit des migrations, `LIB_ROUTES` et partitions du registre, `data_count`, schéma de test) recomptés depuis la source après chaque reprise de `main` ; `Cargo.lock` régénéré après la fusion.
+**Règles des fichiers communs** (`CLAUDE.md` § *Travailler à plusieurs développeurs*, `docs/guide-developpeur.md` § 8 et § 9) : aucune fiche n'écrit au `CHANGELOG.md` — chacune porte une section *Note de version*, assemblée à la release ; aucun PDF de manuel commité dans la branche (`.tex` seulement, régénération à la release) ; catalogues i18n et `sprint-status.yaml` : un bloc propre à l'epic ; compteurs (`sitesTotal`, totaux de l'audit des migrations, `LIB_ROUTES` et partitions du registre, `data_count`, schéma de test) recomptés depuis la source après chaque reprise de `main` ; `Cargo.lock` régénéré après la fusion.
 
 ⚠️ **Pas d'issue GitHub à ce stade** : Beat n'a qu'un accès en lecture au dépôt de Guy. Le détail vit dans cet epic et
 dans les fiches ; l'issue et la PR s'ouvrent à la fin, une fois la recette faite (décision de Beat, 2026-11-14).
