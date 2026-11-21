@@ -644,7 +644,7 @@ Rapport : `kesh-gate-logs/s38-12a/revue-p3-rapport.md` (passe ciblée, une lenti
 
 Dernier commit de code `205cbf25` : une assertion de plus au test `une_fin_future_s_arrete_a_l_instant` (une dernière fenêtre qui commence à `now`, `windows` en fenêtres de 19 jours), parce que la sonde N1 (suppression de la garde `start >= now`) était **muette** depuis la P2 ; rouge après l'assertion. Test seul, aucune ligne de production.
 
-Tests (périmètre `74979d0f` → `205cbf25`) : 1 test de plus (`get_coupe_apres_la_requete_est_repris`) ; 2 déplacés de `http_client.rs` vers `http_client_transport.rs` ; 2 tests existants étendus.
+Tests (périmètre `74979d0f` → `205cbf25`) : 1 test de plus (`get_coupe_apres_la_requete_est_repris`) ; 2 déplacés de `http_client.rs` vers `http_client_transport.rs` ; 1 test existant étendu (`une_fin_future_s_arrete_a_l_instant`). *(Annoté le 2026-11-21, revue P4, P4-4 : cette ligne disait « 2 tests existants étendus » ; le diff n'en étend qu'un.)*
 
 Gates (journaux dans `kesh-gate-logs/s38-12a/`) :
 - ciblé `020de8e2` (`cible-12.log`, dev5) : fmt, clippy workspace, nextest 1105 exécutés, 1105 passés ;
@@ -653,3 +653,20 @@ Gates (journaux dans `kesh-gate-logs/s38-12a/`) :
 - ciblé `205cbf25` (`p4-cible.log`) : fmt, clippy workspace, nextest `kesh-api` lib + `http_client_transport` + `mcp_gardes_lexicales` : 789 exécutés, 789 passés, 5 ignorés ;
 - sondes (`mut/mutations-p3.log` et `mut/mutations-n1.sh`, copie hors dépôt) : 13 mutations, N1 à N13 (dont N12 `is_empty` toujours faux, N13 branche hyper retirée) : **13 rouges sur 13** (N1 rejouée après l'assertion, N1 muette avant) ;
 - E2E (Playwright) : aucun écran, non lancé. Le gate-ci du premier passage (`gate-ci-13-interrompu.log`), à `b64c00bd`, a été tué par le délai de l'enveloppe à 5415 tests passés, sans échec : il est rejoué en entier à `205cbf25`. Le gate backend complet (`b64c00bd`) précède le dernier commit, qui ne touche qu'un test unitaire : couvert par le ciblé `p4-cible.log`.
+
+### Remédiation de la revue de code P4 (2026-11-21)
+
+Rapport : `kesh-gate-logs/s38-12a/revue-p4-rapport.md` (passe ciblée, une lentille) — 0 CRITICAL, 0 HIGH, 1 MEDIUM, 3 LOW. Dernier commit de code : `6584f643`.
+
+| Finding | Traitement | Où |
+|---|---|---|
+| P4-1 (MEDIUM) — `add_steps(1)` avant de savoir si la moitié `b` part : `b` vide (première seconde du jour), feuille jamais comptée, travail fini `{done: N, total: N+1}` | **corrigé** : `add_steps(1)` n'est appelé que si `!b.is_empty()`, avant la lecture de `a` | `paypal_api/mod.rs` (`fetch_window`) |
+| P4-2 (LOW) — garde `!b.is_empty()` sans test | **corrigé** : E2E `moitie_vide_a_minuit_non_demandee_et_non_comptee` (horloge à 2020-06-30 00:00:00,5 à Zurich, fenêtre 29–30 juin coupée par `RESULTSET_TOO_LARGE` : `done == total`, deux demandes exactement, aucune de durée nulle) ; aides `spawn_app_a`/`monter_a` (instant au choix, `spawn_app`/`monter` inchangés) | `tests/paypal_download_e2e.rs` |
+| P4-3 (LOW) — N13 sans nom de test rouge | **consigné** : N13 rejouée avec la sortie complète (`mut/mutations-p5.log`) : rouges `http_client_transport::connexion_fermee_apres_la_requete_est_passagere` et `paypal_download_e2e::get_coupe_apres_la_requete_est_repris` | journal |
+| P4-4 (LOW) — « 2 tests existants étendus » | **corrigé** : « 1 test existant étendu » (annotation datée à la remédiation P3) | ce fichier |
+
+Tests (périmètre `205cbf25` → `6584f643`) : 1 test de plus (`moitie_vide_a_minuit_non_demandee_et_non_comptee`), aucun étendu.
+
+Sondes (`mut/mutations-p5.py`, copie hors dépôt `mut-src`) : N14 (`add_steps` remis avant la garde) rouge ; N15 (garde `!b.is_empty()` retirée) rouge, toutes deux par le nouvel E2E seul ; N13 rouge (deux tests). Total des sondes : 15 (N1 à N15), toutes rouges.
+
+Gates (journaux dans `kesh-gate-logs/s38-12a/`) : ciblé (`p5-cible.log`) : fmt, clippy workspace, nextest `kesh-api` lib + `paypal_download_e2e` + `paypal_import_e2e` + `http_client_transport` + `mcp_gardes_lexicales` : 814 exécutés, 814 passés, 5 ignorés. Complet `6584f643` (`gate-backend-15.log`, `test-fast.sh --ci`) : fmt, clippy, **6285 exécutés, 6285 passés**, 14 ignorés ; `gate-ci.sh` (`complet-p5-15.out`, `gate-ci.log`) : **6304 passés, 0 échoué, 18 ignorés**, code 0. E2E Playwright : aucun écran touché, non lancé.
