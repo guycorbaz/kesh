@@ -2753,14 +2753,21 @@ impl IntoResponse for AppError {
                     "Trop de factures dans le lot (maximum 20).",
                 ),
             ),
-            AppError::BatchExceedsSendQuota { max } => build_response(
-                StatusCode::UNPROCESSABLE_ENTITY,
-                "BATCH_EXCEEDS_SEND_QUOTA",
-                &t(
-                    "error-batch-exceeds-send-quota",
-                    &format!("Le lot dépasse le quota d'envoi ({max} e-mails par fenêtre)."),
-                ),
-            ),
+            AppError::BatchExceedsSendQuota { max } => {
+                // #1348 (0.20.0) — `t_args`, non `t` : la valeur du catalogue porte
+                // `{ $max }`, qu'un appel sans arguments rendrait sans son nombre.
+                let mut args = FluentArgs::new();
+                args.set("max", max);
+                build_response(
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    "BATCH_EXCEEDS_SEND_QUOTA",
+                    &t_args(
+                        "error-batch-exceeds-send-quota",
+                        &format!("Le lot dépasse le quota d'envoi ({max} e-mails par fenêtre)."),
+                        &args,
+                    ),
+                )
+            }
             AppError::InvoiceEmailEmptyContent => build_response(
                 StatusCode::UNPROCESSABLE_ENTITY,
                 "INVOICE_EMAIL_EMPTY_CONTENT",

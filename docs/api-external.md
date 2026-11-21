@@ -1,7 +1,7 @@
 # API externe de Kesh — clés d'accès PAT
 
 > Public : développeurs et intégrateurs (scripts, agents IA, ETL, dashboards BI, ERP) qui consomment l'API de Kesh au nom d'une entreprise (*company*).
-> API externe ouverte depuis la v0.2 (issue [#100](https://github.com/guycorbaz/kesh/issues/100)) ; ce guide décrit la v0.19.0.
+> API externe ouverte depuis la v0.2 (issue [#100](https://github.com/guycorbaz/kesh/issues/100)) ; ce guide décrit la v0.19.1.
 
 Kesh expose son API HTTP REST aux intégrations externes via des **clés d'accès personnelles** (PAT — *Personal Access Token*). Une clé permet à une IA externe (Claude API, ChatGPT, agent custom) ou à un logiciel tiers de lire (et, si autorisé, modifier) les données comptables d'une company **sans partager d'identifiants utilisateur**.
 
@@ -1170,8 +1170,8 @@ sous-comptes actifs, désignation, version. `PUT /company/invoice-settings` ne
 refuse plus un compte archivé reconduit à l'identique ; choisir un compte archivé
 reste refusé.
 
-**Ranger un compte sous un autre après sa création** *(depuis la release qui suit
-la v0.19.0 ; changement additif)*. `PUT /accounts/{id}` accepte `parentId`, à
+**Ranger un compte sous un autre après sa création** *(depuis la
+v0.19.1 ; changement additif)*. `PUT /accounts/{id}` accepte `parentId`, à
 **trois états** comme `currency` : **absent = parent inchangé** (un client qui ne
 connaît pas le champ ne détache rien), `null` = le compte devient racine, un
 identifiant = le nouveau parent. Le parent passe les contrôles de `POST

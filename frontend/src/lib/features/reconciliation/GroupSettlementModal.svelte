@@ -86,6 +86,12 @@
 		onSuccess: () => void;
 		/** La transaction n'est plus réglable ici : la modale s'est fermée, le parent relit sa liste. */
 		onStale: () => void;
+		/**
+		 * Story 48-14 (#1262, D3) — le règlement a abouti alors que la modale avait été fermée
+		 * pendant l'envoi : le parent relit sa liste dès qu'aucune modale n'est ouverte. La modale
+		 * ne regarde pas elle-même si elle a été rouverte, ni si une autre l'est.
+		 */
+		onSettledInBackground: () => void;
 	};
 
 	let {
@@ -97,6 +103,7 @@
 		bankLedgerAccountId,
 		onSuccess,
 		onStale,
+		onSettledInBackground,
 	}: Props = $props();
 
 	/** Le délai anti-rebond de la recherche (D4). */
@@ -564,6 +571,18 @@
 				];
 				return;
 			}
+			// Story 48-14 (#1263, D1) : le sélecteur n'est pas affiché et l'enregistrement reste
+			// retenu (arrondi sans compte, écart au-delà du plafond, montant illisible) — choisir un
+			// compte ne débloquerait rien, « Choisissez le compte de l'écart » serait faux. La cause
+			// est dite par l'avis d'arrondi ou la phrase du pied ; ici, que rien n'a été enregistré.
+			refusals = [
+				...refusals,
+				i18nMsg(
+					'reconciliation-group-reread-blocked',
+					'Rien n’a été enregistré : voyez ce qui retient encore l’enregistrement.',
+				),
+			];
+			return;
 		}
 		// Sous le sélecteur seulement s'il est affiché après la relecture ; sinon avec les autres
 		// refus : jamais un refus muet (revue P1, B-M3, E-M2).
@@ -649,10 +668,11 @@
 				);
 				if (!session.isCurrent(mySession)) {
 					// Fermée pendant l'envoi : le règlement a eu lieu, et le toast le dit (revue P1,
-					// E-L7) ; le parent relit sa liste si aucune modale n'est ouverte, une modale
+					// E-L7). Story 48-14 (#1262, D3) : le parent relit sa liste quand aucune modale
+					// n'est ouverte — aussitôt, ou à la fermeture de celle qui l'est ; une modale
 					// rouverte n'est pas touchée.
 					toast.success(successText);
-					if (!open) onSuccess();
+					onSettledInBackground();
 					return;
 				}
 				checkCoherence(accepted);

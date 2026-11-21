@@ -415,6 +415,7 @@ error-date-outside-fiscal-year-generic = The date is not within the current fisc
 journal-entries-filter-description = Description
 journal-entries-filter-amount-min = Amount min
 journal-entries-filter-amount-max = Amount max
+journal-entries-filter-amount-not-applied = This filter is not applied until the amount is corrected.
 journal-entries-filter-date-from = From date
 journal-entries-filter-date-to = To date
 journal-entries-filter-journal = Journal
@@ -1718,6 +1719,7 @@ reconciliation-group-block-unreadable = Kesh could not read an amount or the dif
 reconciliation-group-block-gap-too-large = The difference exceeds the allowed limit: add or remove an invoice, or reconcile the transaction another way.
 reconciliation-group-not-reread = Invoice { $number }: its amount due could not be read again, so the difference shown may be wrong. Remove it and add it again to read it again.
 reconciliation-group-reread-retry = The amounts due have been read again: check the difference, then save again.
+reconciliation-group-reread-blocked = Nothing was saved: see what still prevents saving.
 reconciliation-group-account-check-retry = Kesh requires an account for the difference: check the chosen account, then save again.
 reconciliation-group-rounding-info = Rounding of { $amount } posted to the rounding account
 reconciliation-group-rounding-not-configured = No rounding-difference account is designated: ask the administrator to set one.
@@ -2533,6 +2535,7 @@ contact-salutation-madame = Ms
 # choisi contre le cognat étroit `Stadt`/`Ville`/`Città` parce que beaucoup de communes
 # suisses ne sont pas des villes. « City » est précisément ce cognat étroit.
 contact-error-address-npa-city = Postal code and city are required when an address is entered
+contact-error-address-country-alone = A country alone is not an address: enter the postal code and city, or clear the country.
 contacts-country-unknown = The country code "{ $code }" is not a known ISO code: the QR-bill of this contact cannot be produced. Correct it (CH, FR, DE…); the other fields are saved without changing it.
 contact-error-person-name = First name and last name are required for a contact person
 contact-persons-add = Add
@@ -2768,6 +2771,7 @@ settings-company-address-country-unknown = The company's country code "{ $code }
 settings-company-address-help = Issuer and creditor address on your invoices and QR-bills. Postal code and town are required; country as a two-letter ISO code. A PDF already frozen does not change.
 error-company-phone-too-long = The company phone number is too long (50 characters maximum).
 error-company-website-too-long = The company website address is too long (255 characters maximum).
+error-company-email-too-long = The company email address is too long (320 characters maximum).
 error-invoice-pdf-header-overflow = The document header does not fit on the page. Remove one contact detail — phone, email or website — in the settings: shortening it frees no space, each detail takes a whole line. Or reduce the number of lines in the recipient address.
 
 # Story 23-2 (#283) — en-CH parity: the 57 keys that existed only in fr-CH.
@@ -4084,3 +4088,26 @@ projects-reassign-warning-locked = Entries locked through { $date }.
 projects-reassign-warning-reports = The analytical reports for this period will change.
 projects-reassign-confirm = Confirm
 projects-reassign-done = Analytical account changed.
+
+## #1348 (0.20.0) — server refusals whose key was missing from the catalogue.
+error-onboarding-reset-forbidden = Resetting the onboarding is not allowed on this instance.
+error-invoice-already-paid = The invoice is already paid — no reminder can be recorded.
+error-dunning-level-not-found = The requested reminder level does not exist in the configuration.
+error-reminder-date-in-future = The date of a reminder cannot be in the future.
+error-invoice-not-paused = This invoice is not paused.
+error-dunning-paused = Reminders are paused for this invoice.
+error-level-already-sent = This reminder level has already been processed (concurrent sending, or a level may not be skipped).
+error-reminder-sent-but-invoice-gone = The reminder was sent, but the invoice vanished before it could be recorded.
+error-reminder-sent-but-not-recorded = The reminder was sent but could not be recorded. The sending is traced in the audit log.
+error-batch-too-large = Too many invoices in the batch (maximum 20).
+error-batch-exceeds-send-quota = The batch exceeds the sending quota ({ $max } e-mails per window).
+reconciliation-errors-lock-release-failed = Internal failure while releasing the lock. Try again.
+reconciliation-errors-fiscal-year-closed = Reconciliation impossible: the fiscal year is not open for this date.
+reconciliation-errors-transaction-not-pending = Bank transaction not found or already reconciled.
+error-inbox-import-already-running = An import of the folder is already running. Try again shortly.
+error-import-not-pending-completion = This imported invoice is no longer awaiting completion.
+error-source-document-not-found = This invoice has no stored supporting document.
+error-imported-invoice-not-found = This imported invoice cannot be found.
+error-source-document-gone = The supporting document was not restored (metadata only).
+error-data-length-or-range = A value provided is too long or out of range.
+error-invalid-input-generic = Invalid input

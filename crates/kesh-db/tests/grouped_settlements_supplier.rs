@@ -8,6 +8,13 @@
 //! `test_schema_guard.rs` prouve égal au schéma de `MIGRATOR`. Décor
 //! synthétique.
 
+/// Story 48-14 (#1255, AC9) — le relevé de l'état d'un dé-rapprochement.
+#[allow(dead_code)]
+#[path = "support/caracterisation.rs"]
+mod caracterisation;
+
+use serde_json::{Value, json};
+
 use chrono::NaiveDate;
 use kesh_db::entities::audit_log::Acteur;
 use kesh_db::entities::{NewSupplierInvoice, NewSupplierInvoiceLine, SettlementChoice};
@@ -1996,5 +2003,268 @@ async fn debt_lines_out_of_their_positions_make_the_view_an_invariant(pool: MySq
     assert!(
         matches!(&res, Err(DbError::Invariant(msg)) if msg.contains("positions 1 à n")),
         "{res:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Story 48-14 (#1255, AC9) — caractérisation du dé-rapprochement fournisseur
+// ---------------------------------------------------------------------------
+
+/// Une facture fournisseur : statut, colonnes de règlement, `paid_at` (posé ou
+/// non), version, et son écriture d'achat (lettrage compris).
+async fn etat_fournisseur(pool: &MySqlPool, id: i64) -> Value {
+    let e = etat(pool, id).await;
+    let purchase: i64 =
+        sqlx::query_scalar("SELECT purchase_journal_entry_id FROM supplier_invoices WHERE id = ?")
+            .bind(id)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    json!({
+        "status": e.0,
+        "settlement_journal_entry_id": e.1,
+        "settlement_journal_entry_line_id": e.2,
+        "settlement_bank_account_id": e.3,
+        "settlement_type": e.4,
+        "paid": e.5.is_some(),
+        "version": e.6,
+        "purchase": caracterisation::ecriture(pool, purchase).await,
+    })
+}
+
+/// L'empreinte d'un groupe fournisseur : son écriture, sa transaction, chaque
+/// facture.
+async fn empreinte_du_groupe(pool: &MySqlPool, entry_id: i64, bt: i64, ids: &[i64]) -> Value {
+    let mut factures = Vec::new();
+    for id in ids {
+        factures.push(etat_fournisseur(pool, *id).await);
+    }
+    json!({
+        "entry": caracterisation::ecriture(pool, entry_id).await,
+        "transaction": caracterisation::transaction_bancaire(pool, bt).await,
+        "invoices": factures,
+    })
+}
+
+/// AC9 (Story 48-14, #1255) — le dé-rapprochement d'un groupe fournisseur
+/// laisse **exactement** l'état qu'il laissait avant la réécriture du lien
+/// défait et de l'audit en aides communes : la transaction, l'écriture inverse
+/// (en-tête et lignes), chaque facture et son lettrage, et **toutes** les
+/// lignes d'audit écrites par le geste, entières hors horodatage, dans l'ordre.
+/// Le geste est joué par une clé d'API ; la transaction n'avait jamais été
+/// refusée (`wasPreviouslyRejected` faux — le cas vrai est joué côté client).
+/// Un second groupe, de même statut et même version, n'est pas touché. Les
+/// valeurs attendues sont écrites en dur : relevées sur l'ancien code, elles
+/// doivent valoir après la réécriture.
+#[sqlx::test(migrations = "./test-schema")]
+async fn unreconciling_a_supplier_group_leaves_the_characterised_state(pool: MySqlPool) {
+    let m = monter(&pool).await;
+    let a = facture(&pool, &m, "K-1", dec!(100.00), jour(6, 1), None).await;
+    let b = facture(&pool, &m, "K-2", dec!(50.00), jour(6, 1), None).await;
+    let bt = transaction(&pool, &m, dec!(-150.30), jour(6, 15)).await;
+    let done = payer(&pool, &m, bt, &[a, b], Some(m.ecart))
+        .await
+        .expect("payé");
+    // Le second groupe, intact.
+    let c = facture(&pool, &m, "K-3", dec!(30.00), jour(6, 1), None).await;
+    let d = facture(&pool, &m, "K-4", dec!(40.00), jour(6, 1), None).await;
+    let bt2 = transaction(&pool, &m, dec!(-70.00), jour(6, 15)).await;
+    let done2 = payer(&pool, &m, bt2, &[c, d], None)
+        .await
+        .expect("second groupe payé");
+    // Prémisse de M7 : même statut, même version pour les deux transactions.
+    let t1 = caracterisation::transaction_bancaire(&pool, bt).await;
+    let t2 = caracterisation::transaction_bancaire(&pool, bt2).await;
+    assert_eq!(
+        (&t1["status"], &t1["version"]),
+        (&t2["status"], &t2["version"])
+    );
+
+    let key = caracterisation::cle_api(&pool, m.s.company_id, m.s.admin_user_id).await;
+    let cle = Acteur {
+        user_id: m.s.admin_user_id,
+        api_key_id: Some(key),
+    };
+    let intact = empreinte_du_groupe(&pool, done2.journal_entry_id, bt2, &[c, d]).await;
+    let avant = caracterisation::dernier_audit(&pool).await;
+
+    let undone = reconciliation_cancel::cancel(&pool, m.s.company_id, bt, cle, aujourd_hui())
+        .await
+        .expect("dé-rapproché");
+    let reversal = undone.reversal_journal_entry_id.expect("contre-passée");
+
+    let etat = json!({
+        "transaction": caracterisation::transaction_bancaire(&pool, bt).await,
+        "entry": caracterisation::ecriture(&pool, done.journal_entry_id).await,
+        "reversal": caracterisation::ecriture(&pool, reversal).await,
+        "invoices": [etat_fournisseur(&pool, a).await, etat_fournisseur(&pool, b).await],
+        "audits": caracterisation::audits_depuis(&pool, avant).await,
+    });
+    // Les identifiants que rend le règlement (ou que le montage a posés) ; les
+    // valeurs, elles, sont écrites en dur, relevées sur l'ancien code
+    // (`kesh-gate-logs/e4814/carac-releve-ancien-code.log`).
+    let entry = done.journal_entry_id;
+    let (fy, user, company) = (m.s.fiscal_year_id, m.s.admin_user_id, m.s.company_id);
+    let (g2, g3) = (done.invoices[0].line_id, done.invoices[1].line_id);
+    let (r2, r3) = (
+        caracterisation::ligne(&pool, reversal, 2).await,
+        caracterisation::ligne(&pool, reversal, 3).await,
+    );
+    let mut achats = Vec::new();
+    for id in [a, b] {
+        let purchase: i64 = sqlx::query_scalar(
+            "SELECT purchase_journal_entry_id FROM supplier_invoices WHERE id = ?",
+        )
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        achats.push((purchase, caracterisation::ligne(&pool, purchase, 2).await));
+    }
+    let ((purchase_a, pa2), (purchase_b, pb2)) = (achats[0], achats[1]);
+    let ligne = |order: i32, account: &str, debit: &str, credit: &str, key: Option<i64>| {
+        json!({
+            "line_order": order, "account": account, "debit": debit, "credit": credit,
+            "project_id": null, "lettering_key": key,
+            "lettering_origin": key.map(|_| "reversal"),
+        })
+    };
+    let achat = |number: i64, interne: &str, tiers: &str, montant: &str| {
+        json!({
+            "entry_number": number, "entry_date": "2026-06-01", "fiscal_year_id": fy,
+            "journal": "Achats",
+            "description": format!("Facture fournisseur {interne} ({tiers}) - Fournisseur {tiers}"),
+            "reverses_entry_id": null, "version": 1,
+            "lines": [
+                ligne(1, "4000", montant, "0.0000", None),
+                ligne(2, "2010", "0.0000", montant, None),
+            ],
+        })
+    };
+    let rouverte = |purchase: Value| {
+        json!({
+            "status": "open", "settlement_journal_entry_id": null,
+            "settlement_journal_entry_line_id": null, "settlement_bank_account_id": null,
+            "settlement_type": null, "paid": false, "version": 4, "purchase": purchase,
+        })
+    };
+    let acte = |action: &str, entity_type: &str, entity_id: i64, details: Value| {
+        json!({
+            "action": action, "entity_type": entity_type, "entity_id": entity_id,
+            "user_id": user, "actor_type": "api_key", "actor_api_key_id": key,
+            "actor_label": "admin", "company_id": company, "details_json": details,
+        })
+    };
+    let ligne_lettree = |id: i64, entry_id: i64, number: i64, debit: &str, credit: &str| {
+        json!({
+            "id": id, "entryId": entry_id, "entryNumber": number, "fiscalYearId": fy,
+            "fiscalYearName": "Exercice CI 2020-2030", "debit": debit, "credit": credit,
+        })
+    };
+    let attendu = json!({
+        "transaction": {
+            "status": "pending", "matched_entry_id": null, "auto_match_rejected_at": null,
+            "version": 3,
+        },
+        "entry": {
+            "entry_number": 3, "entry_date": "2026-06-15", "fiscal_year_id": fy,
+            "journal": "Banque",
+            "description": "Paiement groupé de 2 factures fournisseur : FF-2020-001, FF-2020-002",
+            "reverses_entry_id": null, "version": 1,
+            "lines": [
+                ligne(1, "1020", "0.0000", "150.3000", None),
+                ligne(2, "2010", "100.0000", "0.0000", Some(g2)),
+                ligne(3, "2010", "50.0000", "0.0000", Some(g3)),
+                ligne(4, "6950", "0.3000", "0.0000", None),
+            ],
+        },
+        "reversal": {
+            "entry_number": 7, "entry_date": "2026-11-17", "fiscal_year_id": fy,
+            "journal": "OD", "description": "Contre-passation écriture n° 3",
+            "reverses_entry_id": entry, "version": 1,
+            "lines": [
+                ligne(1, "1020", "150.3000", "0.0000", None),
+                ligne(2, "2010", "0.0000", "100.0000", Some(g2)),
+                ligne(3, "2010", "0.0000", "50.0000", Some(g3)),
+                ligne(4, "6950", "0.0000", "0.3000", None),
+            ],
+        },
+        "invoices": [
+            rouverte(achat(1, "FF-2020-001", "K-1", "100.0000")),
+            rouverte(achat(2, "FF-2020-002", "K-2", "50.0000")),
+        ],
+        "audits": [
+            acte("lettering.removed", "lettering", pa2, json!({
+                "accountId": m.payable, "accountNumber": "2010", "code": "B",
+                "documentId": a, "documentNumber": "FF-2020-001 (K-1)",
+                "documentType": "supplierInvoice", "origin": "document",
+                "lines": [
+                    ligne_lettree(pa2, purchase_a, 1, "0.0000", "100.0000"),
+                    ligne_lettree(g2, entry, 3, "100.0000", "0.0000"),
+                ],
+            })),
+            acte("lettering.removed", "lettering", pb2, json!({
+                "accountId": m.payable, "accountNumber": "2010", "code": "D",
+                "documentId": b, "documentNumber": "FF-2020-002 (K-2)",
+                "documentType": "supplierInvoice", "origin": "document",
+                "lines": [
+                    ligne_lettree(pb2, purchase_b, 2, "0.0000", "50.0000"),
+                    ligne_lettree(g3, entry, 3, "50.0000", "0.0000"),
+                ],
+            })),
+            acte("journal_entry.created", "journal_entry", reversal, json!({
+                "id": reversal, "entryNumber": 7, "entryDate": "2026-11-17", "journal": "OD",
+                "description": "Contre-passation écriture n° 3", "version": 1,
+                "lines": [
+                    { "lineOrder": 1, "accountId": m.bank_ledger, "debit": "150.3000", "credit": "0.0000", "projectId": null },
+                    { "lineOrder": 2, "accountId": m.payable, "debit": "0.0000", "credit": "100.0000", "projectId": null },
+                    { "lineOrder": 3, "accountId": m.payable, "debit": "0.0000", "credit": "50.0000", "projectId": null },
+                    { "lineOrder": 4, "accountId": m.ecart, "debit": "0.0000", "credit": "0.3000", "projectId": null },
+                ],
+            })),
+            acte("journal_entry.reversed", "journal_entry", entry, json!({
+                "reversalJournalEntryId": reversal,
+            })),
+            acte("lettering.created", "lettering", g2, json!({
+                "accountId": m.payable, "accountNumber": "2010", "code": "F", "origin": "reversal",
+                "lines": [
+                    ligne_lettree(g2, entry, 3, "100.0000", "0.0000"),
+                    ligne_lettree(r2, reversal, 7, "0.0000", "100.0000"),
+                ],
+            })),
+            acte("lettering.created", "lettering", g3, json!({
+                "accountId": m.payable, "accountNumber": "2010", "code": "G", "origin": "reversal",
+                "lines": [
+                    ligne_lettree(g3, entry, 3, "50.0000", "0.0000"),
+                    ligne_lettree(r3, reversal, 7, "0.0000", "50.0000"),
+                ],
+            })),
+            acte("supplier_invoice.settlement_cancelled", "supplier_invoice", a, json!({
+                "settlementType": "bank_transfer", "settlementJournalEntryId": entry,
+                "settlementJournalEntryLineId": g2, "reversalJournalEntryId": reversal,
+                "paidAt": "2026-06-15T00:00:00", "grouped": true,
+            })),
+            acte("supplier_invoice.settlement_cancelled", "supplier_invoice", b, json!({
+                "settlementType": "bank_transfer", "settlementJournalEntryId": entry,
+                "settlementJournalEntryLineId": g3, "reversalJournalEntryId": reversal,
+                "paidAt": "2026-06-15T00:00:00", "grouped": true,
+            })),
+            acte("reconciliation.cancelled", "bank_transaction", bt, json!({
+                "kind": "grouped_settlement", "matchedEntryId": entry,
+                "reversalJournalEntryId": reversal, "unlinkOnly": false, "invoiceId": null,
+                "settlementId": null, "supplierInvoiceId": null,
+                "supplier_invoices": [
+                    { "supplier_invoice_id": a, "number": "FF-2020-001" },
+                    { "supplier_invoice_id": b, "number": "FF-2020-002" },
+                ],
+                "amount": "-150.30", "wasPreviouslyRejected": false,
+            })),
+        ],
+    });
+    assert_eq!(etat, attendu, "l'état laissé par le dé-rapprochement");
+    assert_eq!(
+        empreinte_du_groupe(&pool, done2.journal_entry_id, bt2, &[c, d]).await,
+        intact,
+        "le second groupe n'est pas touché"
     );
 }

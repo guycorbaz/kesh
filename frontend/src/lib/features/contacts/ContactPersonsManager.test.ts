@@ -6,11 +6,16 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
 import type { ContactPerson } from './contact-persons.api';
 
-const { listMock, deleteMock } = vi.hoisted(() => ({ listMock: vi.fn(), deleteMock: vi.fn() }));
+const { listMock, deleteMock, createMock } = vi.hoisted(() => ({
+	listMock: vi.fn(),
+	deleteMock: vi.fn(),
+	// Story v0200-corrections-mineures (#1343, D5 d) — le refus de l'ajout se lit.
+	createMock: vi.fn(),
+}));
 
 vi.mock('./contact-persons.api', () => ({
 	listContactPersons: (contactId: number) => listMock(contactId),
-	createContactPerson: vi.fn(),
+	createContactPerson: (contactId: number, body: unknown) => createMock(contactId, body),
 	deleteContactPerson: (id: number) => deleteMock(id),
 }));
 
@@ -67,5 +72,42 @@ describe('ContactPersonsManager — confirmation de la suppression (Story 29-9, 
 		await vi.waitFor(() => expect(deleteMock).toHaveBeenCalledWith(31));
 		await vi.waitFor(() => expect(listMock).toHaveBeenCalledTimes(2));
 		expect(await findByTestId('contact-persons-empty')).toBeTruthy();
+	});
+});
+
+// Story v0200-corrections-mineures (#1343, D5 d, AC11) — un ajout refusé par le serveur
+// affiche SON motif (patron de `SupplierCreatePanel.svelte`), et non le seul repli
+// « Impossible d'ajouter la personne ». Rouge : M17 (`catch {` rétabli).
+describe('ContactPersonsManager — le refus de l’ajout dit son motif (#1343)', () => {
+	const REFUS =
+		"Prénom : aucun caractère visible (un trait d'union conditionnel seul, par exemple) — effacez le champ et saisissez-le de nouveau";
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		listMock.mockResolvedValue([]);
+	});
+
+	async function ajouter(prenom: string, nom: string) {
+		const vue = render(ContactPersonsManager, { contactId: 7 });
+		await vue.findByTestId('contact-persons-empty');
+		await fireEvent.input(vue.getByPlaceholderText('Prénom'), { target: { value: prenom } });
+		await fireEvent.input(vue.getByPlaceholderText('Nom'), { target: { value: nom } });
+		await fireEvent.click(vue.getByTestId('contact-person-add'));
+		return vue;
+	}
+
+	it('une ApiError du serveur → l’alerte affiche son message (M17)', async () => {
+		createMock.mockRejectedValueOnce({ code: 'VALIDATION_ERROR', status: 400, message: REFUS });
+		const vue = await ajouter('­', 'Dupont');
+		const alerte = await vue.findByRole('alert');
+		expect(createMock).toHaveBeenCalledTimes(1);
+		expect(alerte.textContent).toBe(REFUS);
+	});
+
+	it('une erreur qui n’est pas une ApiError → le repli « Impossible d’ajouter la personne » (filet)', async () => {
+		createMock.mockRejectedValueOnce(new Error('réseau'));
+		const vue = await ajouter('Anna', 'Muster');
+		const alerte = await vue.findByRole('alert');
+		expect(alerte.textContent).toBe("Impossible d'ajouter la personne");
 	});
 });
