@@ -805,7 +805,9 @@ fn resulting_provider(
 ///    dans la devise du compte lié (une écriture ne porte qu'une devise
 ///    étrangère) → sinon `400 PROVIDER_FEE_ACCOUNT_INVALID` ;
 ///    Pour Stripe (Story 40-7b), le compte de versement est aussi jugé ici :
-///    voir [`check_payout_destination_in_tx`] → `400 STRIPE_PAYOUT_ACCOUNT_INVALID`.
+///    voir [`check_payout_destination_in_tx`] → `400 STRIPE_PAYOUT_ACCOUNT_INVALID` —
+///    sauf si `payout_unchanged` (le `PUT` ne change ni la destination, ni le
+///    compte du plan, ni le prestataire : voir [`payout_is_unchanged`]).
 ///
 /// La garde 5 (compte qui porte déjà une transaction) se juge après le verrou
 /// de la ligne : [`refuse_provider_change_in_use`].
@@ -816,6 +818,7 @@ async fn check_provider_guards_in_tx(
     provider: Option<&ProviderSettings>,
     journal_account_id: Option<i64>,
     ledger_currency: Option<&str>,
+    payout_unchanged: bool,
 ) -> Result<(), AppError> {
     let Some(provider) = provider else {
         return Ok(());
@@ -862,7 +865,11 @@ async fn check_provider_guards_in_tx(
             });
         }
     }
-    if let Some(payout_id) = provider.payout_bank_account_id {
+    // Un `PUT` qui laisse la destination comme elle est (un renommage) ne la
+    // rejuge pas : une destination archivée ou close depuis ne doit pas
+    // verrouiller le compte Stripe (revue P1, L2) ; elle se relit à l'usage
+    // (40-7c). Seule une destination posée ou changée est contrôlée.
+    if !payout_unchanged && let Some(payout_id) = provider.payout_bank_account_id {
         check_payout_destination_in_tx(tx, company_id, self_id, payout_id, currency).await?;
     }
     Ok(())
@@ -909,6 +916,24 @@ async fn check_payout_destination_in_tx(
         }),
         None => Ok(()),
     }
+}
+
+/// Vrai quand un `PUT` laisse **inchangée** la destination d'un compte Stripe :
+/// le compte portait déjà ce compte de versement, chez Stripe, avec le même
+/// compte du plan (donc la même devise). La garde 4-bis ne rejuge alors rien —
+/// un renommage ne doit pas être refusé parce que la destination a été archivée
+/// ou close depuis (revue P1, L2) ; la destination se relit à l'usage (40-7c).
+fn payout_is_unchanged(
+    current: &BankAccount,
+    next: Option<&ProviderSettings>,
+    journal_account_id: Option<i64>,
+) -> bool {
+    let before = &current.provider_settings;
+    matches!(next, Some(n) if n.provider == PROVIDER_STRIPE
+        && before.is_stripe()
+        && n.payout_bank_account_id.is_some()
+        && n.payout_bank_account_id == before.payout_bank_account_id
+        && journal_account_id == current.journal_account_id)
 }
 
 /// Garde 5 des réglages de prestataire — Story 38-11b (AC-2), 40-7b : retirer
@@ -1467,6 +1492,7 @@ async fn create_once(
             input.provider.as_ref(),
             journal_account_id,
             ledger_currency.as_deref(),
+            false,
         )
         .await?;
 
@@ -1838,6 +1864,8 @@ pub async fn update_bank_account(
 
     let (is_primary, journal_account_id, version) =
         (body.is_primary, body.journal_account_id, body.version);
+    let payout_unchanged =
+        payout_is_unchanged(&current, input.provider.as_ref(), journal_account_id);
     let updated = crate::retry::retry_app_on_deadlock("bank_accounts::update", || {
         update_once(
             &state.pool,
@@ -1847,6 +1875,7 @@ pub async fn update_bank_account(
             is_primary,
             journal_account_id,
             version,
+            payout_unchanged,
         )
     })
     .await?;
@@ -1893,6 +1922,7 @@ async fn update_once(
     is_primary: bool,
     journal_account_id: Option<i64>,
     version: i32,
+    payout_unchanged: bool,
 ) -> Result<BankAccount, AppError> {
     let mut tx = pool
         .begin()
@@ -1924,6 +1954,7 @@ async fn update_once(
             input.provider.as_ref(),
             journal_account_id,
             ledger_currency.as_deref(),
+            payout_unchanged,
         )
         .await?;
 

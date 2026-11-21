@@ -1001,6 +1001,90 @@ async fn modifier_un_solde_stripe(pool: MySqlPool) {
     assert_eq!(trace["before"]["payout_bank_account_id"], banque);
 }
 
+/// Revue P1 (L2) — une destination archivée ou close depuis ne verrouille pas
+/// le compte Stripe : un renommage (objet `stripe` absent, ou renvoyé tel quel)
+/// passe ; poser ou changer la destination vers un compte archivé reste refusé.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn renommer_un_compte_stripe_dont_la_destination_est_archivee(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let c = ctx.seeded.company_id;
+    let chf_banque = compte(&pool, c, "1034", "Asset", None, true).await;
+    let banque = ctx.destination(chf_banque, None).await;
+    let b = ctx.solde_avec(ctx.chf, None, Some(banque)).await;
+    let id = b["id"].as_i64().unwrap();
+    let chemin = format!("/api/v1/bank-accounts/{id}");
+    sqlx::query("UPDATE bank_accounts SET archived = TRUE WHERE id = ?")
+        .bind(banque)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    // Renommage, `stripe` absent : admis, la destination reste.
+    let (s, b) = ctx
+        .put(
+            &chemin,
+            json!({ "bankName": "Stripe renommé", "journalAccountId": ctx.chf,
+                "version": b["version"].as_i64().unwrap() }),
+        )
+        .await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(b["stripe"]["payoutBankAccountId"], banque);
+    // Renommage, `stripe` renvoyé tel quel : admis aussi.
+    let (s, b) = ctx
+        .put(
+            &chemin,
+            json!({ "bankName": "Stripe renommé 2", "journalAccountId": ctx.chf,
+                "stripe": { "account": STRIPE, "payoutBankAccountId": banque },
+                "version": b["version"].as_i64().unwrap() }),
+        )
+        .await;
+    assert_eq!(s, 200, "{b}");
+    // Un autre compte du plan (autre devise) rejuge la destination : refusée
+    // (archivée), la sonde négative de la dispense.
+    let (s, r) = ctx
+        .put(
+            &chemin,
+            json!({ "bankName": "Stripe renommé 2", "journalAccountId": ctx.eur,
+                "stripe": { "account": STRIPE, "payoutBankAccountId": banque },
+                "version": b["version"].as_i64().unwrap() }),
+        )
+        .await;
+    assert_eq!((s, code(&r)), (400, "STRIPE_PAYOUT_ACCOUNT_INVALID"), "{r}");
+    assert_eq!(r["error"]["details"]["reason"], "archived");
+}
+
+/// Revue P1 (L3) — `stripe: null` retire les réglages d'un compte Stripe qui
+/// ne porte **aucune** transaction (et lui ôte sa destination) ; le compte
+/// redevient ordinaire.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn retirer_stripe_d_un_compte_sans_transaction(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let c = ctx.seeded.company_id;
+    let chf_banque = compte(&pool, c, "1034", "Asset", None, true).await;
+    let banque = ctx.destination(chf_banque, None).await;
+    let b = ctx.solde_avec(ctx.chf, None, Some(banque)).await;
+    let id = b["id"].as_i64().unwrap();
+    let (s, b) = ctx
+        .put(
+            &format!("/api/v1/bank-accounts/{id}"),
+            json!({ "bankName": "Ancien Stripe", "journalAccountId": ctx.chf, "stripe": null,
+                // Redevenu ordinaire, le compte exige son IBAN.
+                "iban": "CH9300762011623852957",
+                "version": b["version"].as_i64().unwrap() }),
+        )
+        .await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(b["provider"], Value::Null);
+    assert_eq!(b["stripe"], Value::Null);
+    let destination: Option<i64> =
+        sqlx::query_scalar("SELECT payout_bank_account_id FROM bank_accounts WHERE id = ?")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(destination, None, "la destination part avec les réglages");
+}
+
 // ============================================================
 // AC-3 — les autres chemins refusent un compte Stripe
 // ============================================================

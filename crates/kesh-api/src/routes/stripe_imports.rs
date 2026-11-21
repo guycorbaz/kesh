@@ -58,8 +58,8 @@ use crate::errors::AppError;
 use crate::middleware::auth::CurrentUser;
 use crate::routes::provider_imports::{
     self, CurrencyReport, DETAILS_MAX_CHARS, FEE_SUFFIX, ImportRequest, ImportSource,
-    NAME_MAX_CHARS, PROVIDER_TYPE_MAX_CHARS, ProviderGroup, ProviderLine, TXID_COLUMN_MAX_CHARS, import_lines,
-    load_balances, truncate_chars,
+    NAME_MAX_CHARS, PROVIDER_TYPE_MAX_CHARS, ProviderGroup, ProviderLine, TXID_COLUMN_MAX_CHARS,
+    import_lines, load_balances, truncate_chars,
 };
 
 /// Longueur maximale d'un identifiant (transaction de solde, versement) admis
@@ -186,10 +186,10 @@ pub fn row_label(row: &StripePayoutRow) -> String {
 fn label(row: &StripePayoutRow, prefix_chars: usize) -> String {
     let compose = |description: &str| {
         let kind = if row.category == CHARGE_CATEGORY {
-        "Encaissement"
-    } else {
-        row.category.as_str()
-    };
+            "Encaissement"
+        } else {
+            row.category.as_str()
+        };
         format!(
             "{kind} Stripe de {gross} {cur} -{fee}={net} {cur} BRUT - {txn} ({created}- {description}) - {payout}",
             gross = row.gross,

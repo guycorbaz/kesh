@@ -6874,6 +6874,75 @@ async fn full_import_round_trip_keeps_a_stripe_payout_account(pool: MySqlPool) {
     assert_eq!(stripe_colonnes(&pool).await, avant, "relu à l'identique");
 }
 
+/// Revue P1 (L3) — aller-retour d'un compte Stripe d'identifiant **inférieur**
+/// à celui de sa destination (cas ordinaire : le compte Stripe créé d'abord, la
+/// destination ensuite, puis un `PUT`) : la clé étrangère sur la même table
+/// vise une ligne restaurée plus tard, ce qui ne doit pas empêcher la
+/// restauration (`FOREIGN_KEY_CHECKS = 0`).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_round_trip_with_a_destination_of_higher_id(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let admin = seed_admin(&pool, "Stripe inverse").await;
+    let c = admin.company_id;
+    let mut plan = Vec::new();
+    for numero in ["1040", "1041"] {
+        plan.push(
+            sqlx::query(
+                "INSERT INTO accounts (company_id, number, name, account_type, active, postable) \
+                 VALUES (?, ?, ?, 'Asset', 1, 1)",
+            )
+            .bind(c)
+            .bind(numero)
+            .bind(format!("Compte {numero}"))
+            .execute(&pool)
+            .await
+            .unwrap()
+            .last_insert_id() as i64,
+        );
+    }
+    let stripe = sqlx::query(
+        "INSERT INTO bank_accounts (company_id, bank_name, iban, is_primary, journal_account_id, \
+         provider, provider_account) VALUES (?, 'Stripe', NULL, FALSE, ?, 'stripe', 'Stripe boutique')",
+    )
+    .bind(c)
+    .bind(plan[0])
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    let destination = sqlx::query(
+        "INSERT INTO bank_accounts (company_id, bank_name, iban, is_primary, journal_account_id, \
+         provider, provider_account) VALUES (?, 'Wise', NULL, FALSE, ?, 'wise', 'Wise boutique')",
+    )
+    .bind(c)
+    .bind(plan[1])
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    sqlx::query("UPDATE bank_accounts SET payout_bank_account_id = ? WHERE id = ?")
+        .bind(destination)
+        .bind(stripe)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(destination > stripe);
+    let avant = stripe_colonnes(&pool).await;
+    assert!(
+        avant.contains(&(stripe, Some("stripe".into()), Some(destination))),
+        "{avant:?}"
+    );
+
+    let backup = export_backup(&app, &admin.jwt).await;
+    sqlx::query("UPDATE bank_accounts SET payout_bank_account_id = NULL")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let resp = post_import(&app, &admin.jwt, backup).await;
+    assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
+    assert_eq!(stripe_colonnes(&pool).await, avant, "relu à l'identique");
+}
+
 /// AC-8 — une sauvegarde de la version précédente, sans la colonne
 /// `payout_bank_account_id`, s'importe : elle vaut `NULL` (la règle
 /// `missing_required_columns` ne refuse qu'une colonne obligatoire ; la liste
