@@ -6,7 +6,7 @@ Status: review
 de `origin/main` `43ceb541`, revérifiés sur `origin/main` `fd04099f`), **découpée à la validation P3** (décision de
 l'orchestrateur, proposée à la P1) : les AC-1 à AC-3 sont partis en **38-11c1** ; cette fiche garde les **AC-4 à
 AC-11, sans changement de numéro** — une mention « 38-11c AC-4 » à « AC-11 » dans une autre fiche (38-11d, 38-12a,
-Epics 39 et 40) la désigne. Epic 38, **phase 1 KISS** (décision de Beat du 2026-11-20). **Dépend de** : 38-11b
+Epics 39 et 40) la désigne. Epic 38, **phase 1 KISS** (décision du responsable de l'epic du 2026-11-20). **Dépend de** : 38-11b
 (comptes PayPal, transactions importées, `with_account_locks`), **38-11c1** (rattachement en devise, autre côté à deux
 branches, filtres de règle). **Suivie par** : 38-11d (écrans) ; **réutilisée** par 39-11c (Wise) et 40-7c (Stripe),
 gestionnaires minces sur le moteur de cette story. Reprend, réduits au strict besoin, l'ancienne 38-6a (ventes, achats,
@@ -28,7 +28,7 @@ sans saisie, et de trouver les erreurs des boutiques.
 | `FR-38-11c2-1` | Revue d'un compte PayPal sur un exercice : propositions (rattachement à une écriture, frais, règle, conversion, retrait), écarts (trois genres), « à examiner ». Kesh propose, rien n'est écrit à la lecture ; **tout rattachement est une proposition acceptée** par l'utilisateur. | AC-4 à AC-6 |
 | `FR-38-11c2-2` | Acceptation en lot des propositions choisies ; un refus par proposition (*Pattern batch*). | AC-7 à AC-9 |
 | `FR-38-11c2-3` | Conversion, règle commune aux prestataires : un côté en CHF → **une** écriture (le CHF réel) ; deux devises étrangères → **deux** écritures au **même CHF** par le compte de conversion. Retrait : virement vers le compte choisi, depuis un solde CHF. | AC-8 |
-| `NFR-38-11c2-1` | Aucun code TVA (Q4 de Beat) ; aucune écriture de vente (le produit vient des boutiques). | AC-6, AC-8 |
+| `NFR-38-11c2-1` | Aucun code TVA (Q4 du responsable de l'epic) ; aucune écriture de vente (le produit vient des boutiques). | AC-6, AC-8 |
 | `NFR-38-11c2-2` | Classement, décisions de la revue et plan de conversion en fonctions **pures**, testées sans base. | AC-4, AC-5, AC-8 |
 | `NFR-38-11c2-3` | **Un seul moteur** de revue et d'acceptation, **paramétré par le prestataire** et par la **clé de rattachement** : Wise (39-11c) et Stripe (40-7c) y branchent des gestionnaires minces, sans seconde logique de lot, de verrou, de rejugement ni d'écriture. Aucun nom de prestataire dans le code commun ; codes d'erreur `PROVIDER_*`. | AC-5, AC-7, AC-8 |
 
@@ -216,7 +216,7 @@ sans saisie, et de trouver les erreurs des boutiques.
        société (`companies.fx_transit_account_id`, `entities/company.rs:205`, 37-1) : écriture 1, débit conversion /
        crédit compte source (montant source au cours mensuel retenu, CHF `X`) ; écriture 2, débit compte cible
        (montant cible, cours `rate_from_chf(montant cible, X)`, provenance `manual`) / crédit conversion `X` — **même
-       CHF des deux côtés** (Q3 de Beat ; une écriture ne porte qu'une devise étrangère, `FX_MULTIPLE_CURRENCIES`),
+       CHF des deux côtés** (Q3 du responsable de l'epic ; une écriture ne porte qu'une devise étrangère, `FX_MULTIPLE_CURRENCIES`),
        par `create_conversion_in_tx` (`:261`, privée : appelée par la fonction neuve du même module ; elle prend
        désormais `enforce_postable`, `true` pour la saisie 37-3b, **`false`** ici comme pour la forme à une écriture —
        revue de code P1, M4 : la fiche disait « signature inchangée », d'où une garde de postabilité active et un
