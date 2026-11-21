@@ -1820,6 +1820,14 @@ provider-review-fee-account-missing = Fee without a fee account: set the fee acc
 provider-review-conversion-unpaired = Conversion without its pair: the other half is missing or not unique.
 provider-review-withdrawal-foreign-currency = Withdrawal from a foreign-currency balance: post the entry by hand at the CHF received by the bank, then link the transaction.
 provider-review-no-rule = No rule matches: post the entry by hand, or create a rule.
+# Story 40-7c — Stripe review: Stripe's own reasons and gaps (served to the screen, 40-7d)
+stripe-review-refund = Refund: post the entry by hand (in the foreign currency), then link the transaction.
+stripe-review-other-category = Stripe category to review ({ $category }): post the entry by hand, then link the transaction.
+stripe-review-payout-reversal = Payout carrying a payout reversal: post the entry by hand, then link the transaction.
+stripe-review-payout-not-negative = Payout with a positive or zero amount: post the entry by hand, then link the transaction.
+stripe-review-payout-account-missing = Payout without a usable payout account: set the Stripe account's payout account (neither archived nor closed, linked to a ledger account).
+stripe-gap-payout-total-mismatch = Incomplete payout: its imported lines add up to { $found }, for a payout of { $expected }. Import the payout's full report.
+stripe-gap-payout-without-receipt = Payout without receipt: no bank or Wise transaction is linked to its entry. Import the receiving statement, then link it.
 error-bank-account-is-provider = This account is a payment provider's balance: it receives neither bank statements nor invoice payments. Import its statement through its own route, and settle the invoice through an internal account or an entry, then link the transaction.
 bank-accounts-labels-kind = Account type
 bank-accounts-kind-bank = Bank account

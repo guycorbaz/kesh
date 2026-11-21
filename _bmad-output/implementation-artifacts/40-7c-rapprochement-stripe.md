@@ -1,6 +1,6 @@
 # Story 40-7c : rapprochement Stripe — revue et acceptation : charges rattachées aux ventes des boutiques, frais et versements écrits, écarts listés
 
-Status: ready-for-dev
+Status: in-progress
 
 *Fiche rédigée le 2026-11-20, branche `epic/40-stripe`, numéros de ligne relevés sur `origin/main` au commit `fd04099f`.
 Epic 40, **phase 1 KISS** (décision de Beat du 2026-11-20). **Dépend de** : 40-7b (transactions Stripe importées,
@@ -165,6 +165,50 @@ ressaisie et de voir mes erreurs.
    proposable en `payout` : l'utilisateur la rattache de nouveau à l'écriture du versement (`link-entry`) au lieu
    d'accepter la proposition, qui écrirait un second versement (limite écrite au manuel, 40-7d ; comportement à
    confirmer à T0).
+
+## Amendement du 21.11
+
+Écrit avant le développement, sur les décisions du responsable de l'epic du 21.11 (c, d, f), la demande de libellé
+des notes de l'epic, et ce que T0 a relevé au code. Là où il contredit un AC plus haut, il prévaut.
+
+1. **Date (décision f ; AC-3 et AC-4 disaient déjà `booking_date`).** Le moteur commun datait la revue (période,
+   tri, résumé) et les écritures par `value_date`, à défaut `booking_date` (`payment_date`,
+   `provider_review.rs`, et `pending_in_period`). Pour Stripe, `value_date` est `available_on` (40-7b) : les frais
+   d'une vente du 30 décembre tombaient en janvier, dans l'exercice suivant. Le moteur date désormais **toute**
+   transaction de prestataire par `booking_date` — le jour de la transaction dans le rapport, dans le fuseau de
+   l'export (le rapport du tableau de bord est en heure de Zurich) ; sans effet pour PayPal et Wise, dont les imports
+   laissent `value_date` vide (`paypal_imports.rs:309` ; `wise_imports.rs:219` sur `epic/39-wise`). Hors périmètre :
+   un rapport exporté avec les colonnes `*_utc` porte des jours UTC (40-7b ne convertit pas).
+2. **Libellé des écritures (notes de l'epic, format du tableur comptable).** Les écritures de frais et de versement
+   prennent le **libellé de la transaction** écrit par l'import (40-7b : « Frais Stripe · <Encaissement|catégorie>
+   Stripe de <brut> <DEV> -<frais>=<net> <DEV> BRUT - <txn_…> (<created>- <description>) - <po_…> », « Versement
+   Stripe <po_…> <net> <DEV> »), borné aux 200 caractères du moteur en gardant la fin `) - <po_…>` (seule la
+   description cède) ; libellé vide → « Stripe <compte> · <identifiant> ». Remplace les libellés de l'AC-3 et de
+   l'AC-4 (celui du versement en est le début). Une charge n'a pas d'écriture (rattachement).
+3. **Une proposition qu'on n'accepte pas n'est pas perdue (décision c).** Sa transaction reste `pending`, la revue
+   suivante la propose encore ; toute ligne (proposée ou à examiner) se traite à la main par l'API : écriture (en
+   devise, 37-3b) par `POST /journal-entries`, puis `POST /reconciliation/transactions/{id}/link-entry` (rattachement
+   en devise de la 38-11c1) — testé (remboursement CHF, retour de versement USD).
+4. **Contrepartie d'une règle en CHF ou dans la devise de la transaction (décision d)** : portée par le moteur
+   (38-11c2) ; sans objet pour Stripe, qui ne propose aucune règle (AC-5 : toute autre catégorie à examiner).
+5. **Proposition `payout` au corps de l'acceptation** : `payoutBankAccountId` y est **facultatif** ; s'il est donné
+   (la proposition de la revue renvoyée telle quelle) et n'est plus le compte de versement réglé relu sous les
+   verrous → `PROVIDER_PROPOSAL_STALE` (`provider_settings_changed`), comme `feeAccountId` pour un frais. Le client ne
+   désigne toujours pas la destination : c'est un contrôle, non un choix.
+6. **Compte de versement clos ou archivé** : relu sous son verrou nommé (`bank_accounts::find_by_id_in_tx`) ; archivé
+   → périmé (`payout_account_archived`), clos → `BANK_ACCOUNT_CLOSED` en `failed[]`. Non par `ensure_open_in_tx` :
+   aucune ligne n'est rattachée au compte de versement (seule l'écriture touche son compte du plan) ; l'inventaire de
+   la fenêtre de clôture (`bank_account_closed_inventory.rs`) ne le concerne pas. À la revue, un compte de versement
+   archivé, clos ou sans compte du plan vaut « aucun » (`payout_account_missing`) ; son type et sa devise se
+   contrôlent à l'acceptation (`CounterpartyRule::AssetInCurrency`).
+7. **Moteur commun (T0)** : il était déjà paramétré par le prestataire (38-11c2 : `ProviderKind::Specific`,
+   `Review<P>`, `AcceptBody<P>`, `EngineProposal`, `extra_lock_accounts`, `CounterpartyRule::AssetInCurrency`) ; il
+   gagne `AcceptContext::locked_accounts` (les comptes verrouillés du lot, que la proposition `payout` exige du compte
+   de versement) et la borne commune `ENTRY_DESCRIPTION_MAX_CHARS`. `other_side_predicate` est le texte à deux
+   branches de la 38-11c1, inchangé.
+8. **La 40-7b n'était pas dans `epic/40-stripe`** à la reprise (close sur `story/40-7b`, `a53f6a24`) : fusionnée dans
+   la branche de cette story, raccords avec la 38-11c2 (liste des actions de trace d'import, registre des routes,
+   phrase du manuel d'administration).
 
 ## Tâches
 

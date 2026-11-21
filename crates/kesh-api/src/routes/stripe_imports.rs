@@ -69,15 +69,17 @@ use crate::routes::provider_imports::{
 /// (500) ; un identifiant Stripe réel compte moins de 40 caractères.
 pub const STRIPE_ID_MAX_CHARS: usize = TXID_COLUMN_MAX_CHARS - FEE_SUFFIX.len();
 
-/// Catégorie de la transaction d'un versement (`bank_transactions.provider_type`).
-pub const PAYOUT_PROVIDER_TYPE: &str = "payout";
+/// Catégorie de la transaction d'un versement (`bank_transactions.provider_type`),
+/// celle que la revue Stripe classe en versement (Story 40-7c).
+pub const PAYOUT_PROVIDER_TYPE: &str = kesh_reconciliation::stripe::PAYOUT_CATEGORY;
 
 /// Début du libellé d'une transaction de frais.
 const FEE_DETAILS_PREFIX: &str = "Frais Stripe · ";
 /// Début du libellé d'une transaction de versement.
 const PAYOUT_DETAILS_PREFIX: &str = "Versement Stripe";
-/// Catégorie dont le libellé dit « Encaissement » (les autres disent leur catégorie).
-const CHARGE_CATEGORY: &str = "charge";
+/// Catégorie dont le libellé dit « Encaissement » (les autres disent leur
+/// catégorie) : celle que la revue Stripe classe en encaissement (40-7c).
+const CHARGE_CATEGORY: &str = kesh_reconciliation::stripe::CHARGE_CATEGORY;
 
 // ---------------------------------------------------------------------------
 // DTO

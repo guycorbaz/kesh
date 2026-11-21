@@ -1820,6 +1820,14 @@ provider-review-fee-account-missing = Commissione senza conto delle commissioni:
 provider-review-conversion-unpaired = Conversione senza la sua coppia: l'altra metà manca o non è unica.
 provider-review-withdrawal-foreign-currency = Prelievo da un saldo in valuta: registrate a mano al CHF ricevuto dalla banca, poi collegate la transazione.
 provider-review-no-rule = Nessuna regola corrisponde: registrate a mano o create una regola.
+# Story 40-7c — revisione Stripe: motivi e scarti propri di Stripe (serviti allo schermo, 40-7d)
+stripe-review-refund = Rimborso: registrate a mano (in valuta), poi collegate la transazione.
+stripe-review-other-category = Categoria Stripe da esaminare ({ $category }): registrate a mano, poi collegate la transazione.
+stripe-review-payout-reversal = Versamento che porta uno storno di versamento: registrate a mano, poi collegate la transazione.
+stripe-review-payout-not-negative = Versamento di importo positivo o nullo: registrate a mano, poi collegate la transazione.
+stripe-review-payout-account-missing = Versamento senza conto di versamento utilizzabile: impostate il conto di versamento del conto Stripe (né archiviato né chiuso, collegato a un conto del piano).
+stripe-gap-payout-total-mismatch = Versamento incompleto: le sue righe importate ammontano a { $found }, per un versamento di { $expected }. Importate il rapporto completo del versamento.
+stripe-gap-payout-without-receipt = Versamento senza ricezione: nessuna transazione della banca o di Wise è collegata alla sua registrazione. Importate l'estratto della ricezione, poi collegatela.
 error-bank-account-is-provider = Questo conto è il saldo di un prestatore di pagamento: non riceve né estratti bancari né pagamenti di fatture. Importi il suo estratto con la sua rotta e regoli la fattura con un conto interno o una registrazione, poi colleghi la transazione.
 bank-accounts-labels-kind = Tipo di conto
 bank-accounts-kind-bank = Conto bancario

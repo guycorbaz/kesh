@@ -999,6 +999,13 @@ pub fn build_router_avec_registre(
             "/api/v1/paypal/accept",
             post(routes::paypal::accept_proposals),
         )
+        // Story 40-7c (Epic 40) : revue et acceptation Stripe, sur le même
+        // moteur (mêmes droits ; propositions `link_entry`, `fee`, `payout`).
+        .route("/api/v1/stripe/review", get(routes::stripe::review))
+        .route(
+            "/api/v1/stripe/accept",
+            post(routes::stripe::accept_proposals),
+        )
         // Story v016-2a (#816) : saisir un relevé à la main (Comptable+, clés
         // `read-write` comme l'import). Corps JSON borné par une limite PROPRE,
         // indépendante de `KESH_BANK_IMPORT_MAX_MB` (revue de code P1, E1) :

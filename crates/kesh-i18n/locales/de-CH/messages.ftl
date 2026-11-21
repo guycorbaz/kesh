@@ -1820,6 +1820,14 @@ provider-review-fee-account-missing = Gebühr ohne Gebührenkonto: Legen Sie das
 provider-review-conversion-unpaired = Umrechnung ohne Gegenstück: Die andere Hälfte fehlt oder ist nicht eindeutig.
 provider-review-withdrawal-foreign-currency = Abhebung von einem Fremdwährungssaldo: Erfassen Sie die Buchung von Hand zum von der Bank erhaltenen CHF-Betrag und ordnen Sie dann die Transaktion zu.
 provider-review-no-rule = Keine Regel passt: Erfassen Sie die Buchung von Hand oder legen Sie eine Regel an.
+# Story 40-7c — Stripe-Prüfung: Stripe-eigene Gründe und Abweichungen (für den Bildschirm, 40-7d)
+stripe-review-refund = Rückerstattung: Erfassen Sie die Buchung von Hand (in Fremdwährung) und verknüpfen Sie dann die Transaktion.
+stripe-review-other-category = Zu prüfende Stripe-Kategorie ({ $category }): Erfassen Sie die Buchung von Hand und verknüpfen Sie dann die Transaktion.
+stripe-review-payout-reversal = Auszahlung mit einer Auszahlungsrückbuchung: Erfassen Sie die Buchung von Hand und verknüpfen Sie dann die Transaktion.
+stripe-review-payout-not-negative = Auszahlung mit positivem oder Nullbetrag: Erfassen Sie die Buchung von Hand und verknüpfen Sie dann die Transaktion.
+stripe-review-payout-account-missing = Auszahlung ohne verwendbares Auszahlungskonto: Legen Sie das Auszahlungskonto des Stripe-Kontos fest (weder archiviert noch aufgelöst, mit einem Konto des Kontenplans verknüpft).
+stripe-gap-payout-total-mismatch = Unvollständige Auszahlung: Ihre importierten Zeilen ergeben { $found } für eine Auszahlung von { $expected }. Importieren Sie den vollständigen Bericht der Auszahlung.
+stripe-gap-payout-without-receipt = Auszahlung ohne Eingang: Keine Transaktion der Bank oder von Wise ist mit ihrer Buchung verknüpft. Importieren Sie den Kontoauszug des Eingangs und verknüpfen Sie ihn dann.
 error-bank-account-is-provider = Dieses Konto ist der Saldo eines Zahlungsdienstleisters: Es erhält weder Bankauszug noch Rechnungszahlung. Importieren Sie seinen Auszug über seine Route und begleichen Sie die Rechnung über ein internes Konto oder eine Buchung; verknüpfen Sie danach die Transaktion.
 bank-accounts-labels-kind = Kontotyp
 bank-accounts-kind-bank = Bankkonto

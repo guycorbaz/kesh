@@ -1903,6 +1903,14 @@ provider-review-fee-account-missing = Frais sans compte de frais : réglez le co
 provider-review-conversion-unpaired = Conversion sans sa paire : l'autre moitié manque ou n'est pas unique.
 provider-review-withdrawal-foreign-currency = Retrait d'un solde en devise : passez l'écriture à la main, au CHF reçu par la banque, puis rattachez la transaction.
 provider-review-no-rule = Aucune règle ne correspond : passez l'écriture à la main, ou créez une règle.
+# Story 40-7c — revue Stripe : motifs et écarts propres à Stripe (servis à l’écran, 40-7d)
+stripe-review-refund = Remboursement : passez l'écriture à la main (en devise), puis rattachez la transaction.
+stripe-review-other-category = Catégorie Stripe à examiner ({ $category }) : passez l'écriture à la main, puis rattachez la transaction.
+stripe-review-payout-reversal = Versement qui porte un retour de versement : passez l'écriture à la main, puis rattachez la transaction.
+stripe-review-payout-not-negative = Versement de montant positif ou nul : passez l'écriture à la main, puis rattachez la transaction.
+stripe-review-payout-account-missing = Versement sans compte de versement utilisable : réglez le compte de versement du compte Stripe (ni archivé, ni clos, lié à un compte du plan).
+stripe-gap-payout-total-mismatch = Versement incomplet : ses lignes importées font { $found }, pour un versement de { $expected }. Importez le rapport complet du versement.
+stripe-gap-payout-without-receipt = Versement sans réception : aucune transaction de la banque ou de Wise n'est rattachée à son écriture. Importez le relevé de réception, puis rattachez-la.
 error-bank-account-is-provider = Ce compte est le solde d'un prestataire de paiement : il ne reçoit ni relevé bancaire ni règlement de facture. Importez son relevé par sa route, et réglez la facture par un compte interne ou une écriture, puis rattachez la transaction.
 bank-accounts-labels-kind = Type de compte
 bank-accounts-kind-bank = Compte bancaire

@@ -1660,6 +1660,33 @@ where
     .map_err(map_db_error)
 }
 
+/// Les comptes bancaires `ids` de la société (archivés et clos compris), par
+/// identifiant — Story 40-7c (AC-4) : la revue Stripe y lit les comptes de
+/// versement réglés, dans sa transaction de lecture. Lecture ordinaire ; un
+/// identifiant absent ou d'une autre société n'est pas rendu.
+pub async fn find_by_ids<'e, E>(
+    executor: E,
+    company_id: i64,
+    ids: &[i64],
+) -> Result<Vec<BankAccount>, DbError>
+where
+    E: sqlx::Executor<'e, Database = MySql>,
+{
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let sql = format!(
+        "SELECT {} FROM bank_accounts WHERE company_id = ? AND id IN ({}) ORDER BY id",
+        columns!(),
+        vec!["?"; ids.len()].join(", ")
+    );
+    let mut q = sqlx::query_as::<_, BankAccount>(&sql).bind(company_id);
+    for id in ids {
+        q = q.bind(*id);
+    }
+    q.fetch_all(executor).await.map_err(map_db_error)
+}
+
 /// [`list_provider_balances`] en **lectures verrouillantes** (`LOCK IN SHARE
 /// MODE`), dans la transaction de l'appelant — Story 38-11b, revue P1 (M1,
 /// L1).
