@@ -652,6 +652,14 @@ const LIB_ROUTES: &[(&str, &str, Status, Rejeu)] = &[
     // `paypal_download.created`, dans la transaction de l'import ; aucune
     // écriture au journal.
     ("post", "paypal_downloads::create", Traced, SansEcritureAuJournal),
+    // Story 38-11c2 (Epic 38) — l'acceptation des propositions de la revue
+    // PayPal, par le moteur commun des prestataires (`provider_accept`) :
+    // écritures au journal (`journal_entry.created`), rattachements
+    // (`reconciliation.entry_linked`), `reconciliation_rule.applied` et
+    // `provider.proposal_accepted` par proposition. Rejouée par l'enveloppe
+    // `retry_app_on_deadlock` (opération `paypal::accept`), jamais
+    // `retry_with` : le handler ne s'appelle pas `post_accept`.
+    ("post", "paypal::accept_proposals", Traced, Rejouee),
     ("post", "bank_profiles::create", Traced, SansEcritureAuJournal),
     ("put", "bank_profiles::update", Traced, SansEcritureAuJournal),
     ("delete", "bank_profiles::delete", Traced, SansEcritureAuJournal),
@@ -1119,8 +1127,8 @@ fn the_registry_partition_is_what_the_story_declares() {
 
     assert_eq!(
         LIB_ROUTES.len(),
-        159,
-        "l'inventaire porte sur 159 routes (+ 1 : le téléchargement par l'API PayPal, 38-12a ; + 1 : l'import du CSV PayPal, 38-11b ; + 1 : le changement de compte analytique d'une facture, 36-16a ; + 1 : le nom de la société, v0190-nom-societe ; + 2 : l'aperçu et la passation de la réévaluation de fin d'exercice, 37-5 ; + 1 : la conversion entre devises, 37-3b ; + 5 : la récupération des cours de change, la saisie et le ↑ d'un cours retenu, l'acquittement des corrections et les genres d'un exercice, 37-2 ; + 1 : le réglage multi-devises de la société, 37-1 ; + 1 : le solde d'ouverture d'un compte bancaire existant, 34-2 ; + 1 : l'adresse de la société, 33-5 ; + 1 : `/mcp`, 32-6a ; + 1 : la décision d'un \
+        160,
+        "l'inventaire porte sur 160 routes (+ 1 : l'acceptation de la revue PayPal, 38-11c2 ; + 1 : le téléchargement par l'API PayPal, 38-12a ; + 1 : l'import du CSV PayPal, 38-11b ; + 1 : le changement de compte analytique d'une facture, 36-16a ; + 1 : le nom de la société, v0190-nom-societe ; + 2 : l'aperçu et la passation de la réévaluation de fin d'exercice, 37-5 ; + 1 : la conversion entre devises, 37-3b ; + 5 : la récupération des cours de change, la saisie et le ↑ d'un cours retenu, l'acquittement des corrections et les genres d'un exercice, 37-2 ; + 1 : le réglage multi-devises de la société, 37-1 ; + 1 : le solde d'ouverture d'un compte bancaire existant, 34-2 ; + 1 : l'adresse de la société, 33-5 ; + 1 : `/mcp`, 32-6a ; + 1 : la décision d'un \
          envoi MCP, 32-8b ; + 5 : les routes mutantes des prompts du serveur MCP, 32-10a-iii ; \
          + 1 : le rattachement d'une transaction à une écriture, v017-3a ; + 2 : l'aperçu et \
          la création d'un relevé saisi à la main, v016-2a ; + 4 : le `PUT`, le `DELETE`, la \
@@ -1158,8 +1166,10 @@ fn the_registry_partition_is_what_the_story_declares() {
     // `bank_import.created` et `paypal_import.created`).
     // Story 38-12a (Epic 38, phase 2) : 150 → 151 (le téléchargement par l'API
     // PayPal, tracé par `bank_import.created` et `paypal_download.created`).
+    // Story 38-11c2 (Epic 38) : 151 → 152 (l'acceptation de la revue PayPal,
+    // tracée par `provider.proposal_accepted` et les traces des écritures).
     assert_eq!(
-        traced, 151,
+        traced, 152,
         "73 tracées avant la 25-1b, plus ses 14, plus la dévalidation (25-2-b-1, #440), \
          plus l'annulation d'un règlement client (25-3-a-1) et fournisseur (25-3-a-2, #414), \
          plus l'annulation d'un rapprochement (25-3-b, #418), plus le solde du reste \
@@ -1192,7 +1202,8 @@ fn the_registry_partition_is_what_the_story_declares() {
          réévaluation de fin d'exercice (37-5), plus la correction du nom de la société \
          (v0190-nom-societe, refs #1097), plus le changement de compte analytique d'une \
          facture (36-16a, refs #1167), plus l'import du CSV PayPal (38-11b), plus le \
-         téléchargement par l'API PayPal (38-12a)"
+         téléchargement par l'API PayPal (38-12a) et l'acceptation de la revue PayPal \
+         (38-11c2)"
     );
     assert_eq!(
         exempt, 4,
@@ -1461,10 +1472,11 @@ fn every_replayed_route_calls_an_envelope() {
         }
     }
     assert_eq!(
-        examinees, 30,
-        "les trente routes Rejouee ont été examinées (vingt-sept avant la conversion \
+        examinees, 31,
+        "les trente et une routes Rejouee ont été examinées (vingt-sept avant la conversion \
          entre devises, 37-3b, et la passation de la réévaluation de fin d'exercice, 37-5 ; \
-         36-16a : + le changement de compte analytique d'une facture)"
+         36-16a : + le changement de compte analytique d'une facture ; 38-11c2 : + \
+         l'acceptation de la revue PayPal)"
     );
 }
 
@@ -1601,8 +1613,8 @@ fn the_replay_partition_is_what_the_story_declares() {
         .count();
 
     assert_eq!(
-        rejouees, 30,
-        "36-16a : + le changement de compte analytique d'une facture — 30 ; 37-5 : + la passation de la réévaluation — 29 ; 37-3b : + la conversion entre devises — 28 ; 5 rejouées avant la 15-5e1 (write_off, accept, cancel du rapprochement, \
+        rejouees, 31,
+        "38-11c2 : + l'acceptation de la revue PayPal — 31 ; 36-16a : + le changement de compte analytique d'une facture — 30 ; 37-5 : + la passation de la réévaluation — 29 ; 37-3b : + la conversion entre devises — 28 ; 5 rejouées avant la 15-5e1 (write_off, accept, cancel du rapprochement, \
          complément des soldes de départ, modification d'une écriture — 15-8a) + 4 par \
          elle (validation, règlement, annulation de règlement, saisie fournisseur) + la \
          suppression d'une écriture (15-8b) + 12 par la 15-5e2 (dévalidation, avoir, \
@@ -1616,7 +1628,8 @@ fn the_replay_partition_is_what_the_story_declares() {
          (reclassée, elle porte un solde d'ouverture) + la saisie du solde d'ouverture d'un \
          compte existant — 27 ; 37-3b : + la conversion entre devises — 28 ; 37-5 : + la \
          passation de la réévaluation de fin d'exercice — 29 ; 36-16a : + le changement de \
-         compte analytique d'une facture — 30"
+         compte analytique d'une facture — 30 ; 38-11c2 : + l'acceptation de la revue \
+         PayPal — 31"
     );
     assert_eq!(exemptees, 3, "full_import, /seed, /reset");
     assert_eq!(
@@ -1655,7 +1668,8 @@ fn the_replay_partition_is_what_the_story_declares() {
     // Story 38-11b (Epic 38) : 161 → 162 (l'import du CSV PayPal).
     // Story 38-12a (Epic 38, phase 2) : 162 → 163 (le téléchargement par l'API
     // PayPal).
-    assert_eq!(tout.len(), 163);
+    // Story 38-11c2 (Epic 38) : 163 → 164 (l'acceptation de la revue PayPal).
+    assert_eq!(tout.len(), 164);
 }
 
 /// Visiteur `syn` d'un fichier de routes : relève chaque appel à la primitive

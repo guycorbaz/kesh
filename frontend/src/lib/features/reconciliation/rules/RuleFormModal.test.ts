@@ -171,3 +171,37 @@ describe('RuleFormModal — compte de la banque absent en création (Story 15-6d
 		expect(values).not.toContain('1020 — Banque');
 	});
 });
+
+describe('RuleFormModal — comptes en devise (38-11c2, revue P3, M3)', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it("propose les comptes de charges et de produits en devise, comme le permettent l'API et le manuel", async () => {
+		listProjectsMock.mockResolvedValueOnce([]);
+		const accounts = [
+			...makeAccounts(),
+			{
+				id: 11,
+				companyId: 1,
+				number: '6520',
+				name: 'Charges en USD',
+				accountType: 'Expense',
+				active: true,
+				role: null,
+				postable: true,
+				currency: 'USD',
+			} as AccountResponse,
+		];
+		const { findByTestId } = render(RuleFormModal, {
+			rule: null,
+			accounts,
+			onSuccess: () => {},
+			onCancel: () => {},
+		});
+		const select = (await findByTestId('rule-form-counterparty')) as HTMLSelectElement;
+		const values = Array.from(select.options).map((o) => o.value);
+		expect(values).toContain('10');
+		expect(values).toContain('11');
+	});
+});

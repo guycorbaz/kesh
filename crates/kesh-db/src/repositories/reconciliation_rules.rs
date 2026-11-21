@@ -195,16 +195,9 @@ pub async fn create_in_tx(
         super::projects::validate_taggable_in_tx(tx, company_id, &[pid]).await?;
     }
 
-    // Story 37-1 (AC-4) — le compte de contrepartie lu `LOCK IN SHARE MODE`,
-    // avant l'`INSERT` : un compte en devise n'est pas une contrepartie
-    // (`ACCOUNT_IN_FOREIGN_CURRENCY`). Après la sentinelle `companies` du
-    // projet (ordre global `companies` → `accounts`).
-    super::accounts::refuse_foreign_currency_in_tx(
-        tx,
-        company_id,
-        new_rule.counterparty_account_id,
-    )
-    .await?;
+    // Un compte de contrepartie en devise est admis (décision du responsable de l'epic du
+    // 2026-11-21, 38-11c2) : la règle ne s'applique qu'à une transaction en CHF
+    // ou dans la devise de ce compte (revue et acceptation d'un prestataire).
 
     // Story 15-5b (AC7, choix C30) — le compte de contrepartie doit être
     // imputable : une règle n'existe que pour produire des écritures sur lui.
@@ -328,14 +321,6 @@ pub async fn update_in_tx(
         .counterparty_account_id
         .is_some_and(|id| id != before.counterparty_account_id);
     let reactivates = patch.active == Some(true) && !before.active;
-    // Story 37-1 (AC-4) — un compte de contrepartie qui CHANGE vers un compte
-    // en devise est refusé (`ACCOUNT_IN_FOREIGN_CURRENCY`), lecture
-    // verrouillante avant l'`UPDATE` de la règle et après la sentinelle du
-    // projet. La réactivation n'a pas de garde de devise : un lien compte quel
-    // que soit l'état de la règle, le compte n'a donc pas pu recevoir de devise.
-    if account_changes {
-        super::accounts::refuse_foreign_currency_in_tx(tx, company_id, target_account_id).await?;
-    }
     if account_changes || reactivates {
         super::accounts::ensure_postable_if_active_in_tx(tx, company_id, target_account_id).await?;
     }

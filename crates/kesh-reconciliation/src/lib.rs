@@ -20,11 +20,21 @@
 //!   `validate_split_balance` (Decimal exact `==`) pour le flow
 //!   `POST /api/v1/reconciliation/split`.
 //! - [`errors`] : enum [`ReconciliationError`] commun aux modules.
+//! - [`provider_review`] : (Story 38-11c2) revue **commune** d'un compte de
+//!   prestataire de paiement (`build_review`, paramétrage `ProviderSpec`),
+//!   servie à PayPal, Wise et Stripe.
+//! - [`paypal`] : (Story 38-11c2) le paramétrage PayPal (classement,
+//!   identifiants `TXN`, libellés).
+//! - [`conversion`] : (Story 38-11c2) le plan pur d'une conversion de
+//!   prestataire (une écriture si un côté est en CHF, deux sinon).
 
+pub mod conversion;
 pub mod errors;
 pub mod manual;
 pub mod matching;
 pub mod mutex;
+pub mod paypal;
+pub mod provider_review;
 pub mod rules;
 pub mod split;
 

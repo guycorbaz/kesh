@@ -981,6 +981,15 @@ pub fn build_router_avec_registre(
             "/api/v1/paypal-downloads/{job_id}",
             get(routes::paypal_downloads::show),
         )
+        // Story 38-11c2 (Epic 38) : revue et acceptation PayPal, sur le moteur
+        // commun aux prestataires (Comptable+ ; revue en lecture pour toute
+        // clé, acceptation pour les clés `read-write`, rejouée sur
+        // interblocage).
+        .route("/api/v1/paypal/review", get(routes::paypal::review))
+        .route(
+            "/api/v1/paypal/accept",
+            post(routes::paypal::accept_proposals),
+        )
         // Story v016-2a (#816) : saisir un relevé à la main (Comptable+, clés
         // `read-write` comme l'import). Corps JSON borné par une limite PROPRE,
         // indépendante de `KESH_BANK_IMPORT_MAX_MB` (revue de code P1, E1) :

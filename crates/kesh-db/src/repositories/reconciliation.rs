@@ -1304,6 +1304,49 @@ where
     .map_err(map_db_error)
 }
 
+/// Passe la transaction `bank_transaction_id` à `reconciled`, pointée sur
+/// l'écriture `journal_entry_id`, **sous contrôle de version** — Story 38-11c2
+/// (AC-8), extraite de l'étape 13 d'`accept_one_rule` (`kesh-api`), qui
+/// l'appelle désormais, avec le moteur d'acceptation des prestataires
+/// (`routes::provider_accept`).
+///
+/// L'`UPDATE` ne touche la ligne que si elle est encore `pending` et à la
+/// version `expected_version` lue par l'appelant ; `auto_match_rejected_at`
+/// est effacé, la version incrémentée. Rend `Ok(true)` si **une** ligne a été
+/// mise à jour, `Ok(false)` sinon (rapprochée entre-temps : l'appelant le rend
+/// `RECONCILIATION_ALREADY_RECONCILED`).
+///
+/// Appelée sous le **verrou nommé du compte** de la transaction, que tient
+/// l'appelant, sur une transaction `pending` relue sous ce verrou
+/// (`bank_account_closed_inventory`, invariant I1). L'erreur de base est
+/// rendue **telle quelle** (`DbError::Sqlx`, jamais reclassée par
+/// `map_db_error`) : un interblocage (1213) y reste reconnaissable par
+/// `kesh_db::retry::is_deadlock_error`.
+pub async fn mark_reconciled_in_tx(
+    tx: &mut sqlx::Transaction<'_, MySql>,
+    company_id: i64,
+    bank_transaction_id: i64,
+    journal_entry_id: i64,
+    expected_version: i32,
+) -> Result<bool, DbError> {
+    let result = sqlx::query(
+        "UPDATE bank_transactions \
+         SET matched_entry_id = ?, status = 'reconciled', \
+             auto_match_rejected_at = NULL, updated_at = NOW(3), \
+             version = version + 1 \
+         WHERE id = ? AND company_id = ? AND status = 'pending' \
+           AND version = ?",
+    )
+    .bind(journal_entry_id)
+    .bind(bank_transaction_id)
+    .bind(company_id)
+    .bind(expected_version)
+    .execute(&mut **tx)
+    .await
+    .map_err(DbError::Sqlx)?;
+    Ok(result.rows_affected() == 1)
+}
+
 #[cfg(test)]
 mod tests {
     //! Tests purs de la fenêtre de dates (Story 28-7, AC6) — aucune base.

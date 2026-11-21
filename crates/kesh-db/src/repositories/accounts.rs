@@ -2633,26 +2633,6 @@ pub async fn currency_in_share_mode(
     .map_err(map_db_error)
 }
 
-/// Refuse un compte **en devise** choisi à un site de configuration qui débite
-/// en CHF (Story 37-1, AC-4) → `ACCOUNT_IN_FOREIGN_CURRENCY`. Lecture
-/// verrouillante ([`currency_in_share_mode`]), dans la transaction d'écriture
-/// de l'appelant, **avant** tout verrou ou écriture de la ligne qui désigne.
-/// Un compte absent ou d'une autre société n'est pas refusé ici (le pré-vol de
-/// la route l'a rendu en 404 ou en 400).
-pub async fn refuse_foreign_currency_in_tx(
-    conn: &mut sqlx::MySqlConnection,
-    company_id: i64,
-    account_id: i64,
-) -> Result<(), DbError> {
-    match currency_in_share_mode(conn, company_id, account_id).await? {
-        Some(Some(currency)) => Err(DbError::AccountInForeignCurrency {
-            account_id: Some(account_id),
-            currency,
-        }),
-        _ => Ok(()),
-    }
-}
-
 /// Refuse, parmi les comptes d'une **pièce** (lignes de facture, d'avoir, de
 /// facture fournisseur ; compte de règlement), le premier compte **en devise**,
 /// par identifiant croissant (Story 37-3a, AC-5) → 400

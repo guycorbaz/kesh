@@ -1265,8 +1265,11 @@ async fn articles_gardes_inverses(pool: MySqlPool) {
     .unwrap();
 }
 
+/// Décision du responsable de l'epic (2026-11-21, 38-11c2) : une règle de rapprochement peut
+/// désigner un compte en devise, à la création comme au changement de compte ;
+/// la devise se contrôle à l'application (revue et acceptation d'un prestataire).
 #[sqlx::test(migrations = "./test-schema")]
-async fn regles_de_reconciliation_refusent_un_compte_en_devise(pool: MySqlPool) {
+async fn regles_de_reconciliation_admettent_un_compte_en_devise(pool: MySqlPool) {
     let s = seed_accounting_company(&pool).await.unwrap();
     multi(&pool, &s).await;
     let c = s.company_id;
@@ -1283,14 +1286,11 @@ async fn regles_de_reconciliation_refusent_un_compte_en_devise(pool: MySqlPool) 
         provider_type: None,
     };
     let mut tx = pool.begin().await.unwrap();
-    let err = reconciliation_rules::create_in_tx(&mut tx, c, s.admin_user_id, &regle(usd, "a"))
+    let r = reconciliation_rules::create_in_tx(&mut tx, c, s.admin_user_id, &regle(usd, "a"))
         .await
-        .unwrap_err();
-    assert!(
-        matches!(err, DbError::AccountInForeignCurrency { .. }),
-        "{err:?}"
-    );
-    tx.rollback().await.unwrap();
+        .unwrap();
+    assert_eq!(r.counterparty_account_id, usd);
+    tx.commit().await.unwrap();
 
     let mut tx = pool.begin().await.unwrap();
     let r = reconciliation_rules::create_in_tx(
@@ -1303,7 +1303,7 @@ async fn regles_de_reconciliation_refusent_un_compte_en_devise(pool: MySqlPool) 
     .unwrap();
     tx.commit().await.unwrap();
     let mut tx = pool.begin().await.unwrap();
-    let err = reconciliation_rules::update_in_tx(
+    let r = reconciliation_rules::update_in_tx(
         &mut tx,
         c,
         s.admin_user_id,
@@ -1315,11 +1315,9 @@ async fn regles_de_reconciliation_refusent_un_compte_en_devise(pool: MySqlPool) 
         },
     )
     .await
-    .unwrap_err();
-    assert!(
-        matches!(err, DbError::AccountInForeignCurrency { .. }),
-        "{err:?}"
-    );
+    .unwrap();
+    assert_eq!(r.counterparty_account_id, usd);
+    tx.commit().await.unwrap();
 }
 
 // ---------------------------------------------------------------------------
