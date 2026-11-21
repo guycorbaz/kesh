@@ -833,10 +833,10 @@ async fn run_batch<P: EngineProposal>(
     // entre-temps (test `rattachement_d_une_vente_contre_passee_pendant_l_attente`).
     let locked_entries: HashSet<i64> =
         lock_entries_for_update(tx, prepared.company_id, &prepared.entries_to_lock)
-        .await
-        .map_err(ReconciliationError::Db)?
-        .into_iter()
-        .collect();
+            .await
+            .map_err(ReconciliationError::Db)?
+            .into_iter()
+            .collect();
     let balances = bank_accounts::list_provider_balances(
         &mut **tx,
         prepared.company_id,
