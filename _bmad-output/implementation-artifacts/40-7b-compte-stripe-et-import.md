@@ -3,7 +3,7 @@
 Status: done
 
 *Fiche rédigée le 2026-11-20, branche `epic/40-stripe`, numéros de ligne relevés sur `origin/main` au commit `fd04099f`.
-Epic 40, **phase 1 KISS** (décision de Beat du 2026-11-20). **Dépend de** : 40-7a (lecteur) ; la **phase 1 de l'Epic 38
+Epic 40, **phase 1 KISS** (décision du responsable de l'epic du 2026-11-20). **Dépend de** : 40-7a (lecteur) ; la **phase 1 de l'Epic 38
 fusionnée** — 38-11b (colonnes `bank_accounts.provider`, `provider_account`, `fee_account_id`, contrainte
 `chk_bank_accounts_provider` qui admet **déjà** `'paypal'`, `'wise'` et `'stripe'`, `bank_transactions.provider_type`,
 `counterparty_email`, index de doublon, levée de C-37-9 pour un compte prestataire, `with_account_locks`, refus
@@ -201,15 +201,15 @@ s'importe d'un geste, ventilé par devise ; les doublons sont ignorés.
 
 - Remplace l'ancienne 40-1 pour les réglages (`superseded` : coffre et connexion de 38-1/38-2, tous deux `deferred`).
 - ⚠️ Risque d'horodatage : 38-11b prend `20261120000001` ; si l'Epic 38 renumérote, suivre. Taille : la fiche
-  reste dans la nuit tant que le cœur commun existe déjà ; sinon la factorisation (AC-7) est le morceau à détacher. La base de Beat ne reçoit la
+  reste dans la nuit tant que le cœur commun existe déjà ; sinon la factorisation (AC-7) est le morceau à détacher. La base réelle du responsable de l'epic ne reçoit la
   migration qu'à une version publiée, ou en connaissance de cause (P8).
 - Le compte de versement est un **compte bancaire** (et non un compte du plan) pour que 40-7c trouve la réception du
   versement (« Argent reçu de Stripe » côté Wise, Epic 39 ; ligne du relevé CAMT côté banque) sur le bon compte.
 
 ## Change Log
 
-- 2026-11-20 — **amendement d'AC (demande de Beat, Project Lead de l'epic, relayée par l'orchestrateur)** : le libellé (`details`) des
-  transactions importées suit le format de son tableur Crésus — `<Encaissement si category = charge, sinon category> Stripe de
+- 2026-11-20 — **amendement d'AC (demande du responsable de l'epic, relayée par l'orchestrateur)** : le libellé (`details`) des
+  transactions importées suit le format qu'il a demandé — `<Encaissement si category = charge, sinon category> Stripe de
   <gross> <DEVISE> -<fee>=<net> <DEVISE> BRUT - <balance_transaction_id> (<created>- <description>) - <payout_id>` ; frais :
   même format préfixé « Frais Stripe · » ; versement : « Versement Stripe <payout_id> <Σ net> <DEVISE> » (AC-5, amendé ; la 40-7c
   reprendra ce texte pour ses écritures). Réalisation : champ `created` (cellule telle qu'écrite) ajouté à `StripePayoutRow`
@@ -359,7 +359,7 @@ Incidents d'infrastructure, sans rapport avec la story : un watcher de fond tué
 *Ajouté* — Un compte bancaire peut être le solde, dans une devise, d'un compte Stripe : sans IBAN, lié au compte de transit de
 la devise, avec son compte de frais et son compte de versement. Le rapport « Itemized payout reconciliation » s'importe d'un
 geste (`POST /api/v1/stripe-imports`), ventilé par devise ; les doublons sont ignorés. Le libellé de chaque transaction suit le
-format du tableur de Crésus de l'utilisateur (identifiants `txn_…` et `po_…` cherchables).
+format demandé par le responsable de l'epic (identifiants `txn_…` et `po_…` cherchables).
 *Migration* — `20261120000003_stripe_import`, non breaking : la sauvegarde d'avant la mise à jour reste exigée (base,
 `.keshbackup`, dossier des documents) ; le retour à la version précédente passe par elle.
 

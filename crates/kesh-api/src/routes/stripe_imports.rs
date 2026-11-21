@@ -162,7 +162,7 @@ pub fn check_id_lengths(rows: &[StripePayoutRow]) -> Result<(), StripeCsvError> 
 }
 
 /// Le **libellé** d'une ligne du rapport — amendement de la 40-7b du 2026-11-20
-/// (demande du Project Lead, format de son tableur Crésus) :
+/// (demande du responsable de l'epic : un libellé cherchable et rapprochable) :
 ///
 /// `<Encaissement si catégorie = charge, sinon la catégorie> Stripe de <brut>
 /// <DEVISE> -<frais>=<net> <DEVISE> BRUT - <balance_transaction_id> (<created>-
@@ -634,8 +634,8 @@ mod tests {
         assert!(row_label(&r).contains("(2020-01-30 14:02:41- courte) - po_L"));
     }
 
-    /// Amendement du 2026-11-20 — le libellé suit le format du tableur Crésus du
-    /// Project Lead, au caractère près, pour le brut, les frais et le versement
+    /// Amendement du 2026-11-20 — le libellé suit le format demandé par le
+    /// responsable de l'epic, au caractère près, pour le brut, les frais et le versement
     /// (fixture fictive de 40-7a).
     #[test]
     fn les_libelles_suivent_le_format_du_tableur() {
