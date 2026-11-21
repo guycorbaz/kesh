@@ -161,6 +161,7 @@ Toute story qui ajoute ou modifie un **contrôle visible** (bouton, avis, dialog
 ### Worktrees et agents
 
 - **Un agent n'écrit jamais hors de son worktree** (et de `kesh-gate-logs/`), toujours en chemin absolu ; le dépôt principal est en lecture seule pour lui. Consignes communes : `docs/agents-orchestration.md`.
+- **Un agent commite à chaque étape franchie** (test rouge, correctif vert, remédiation, et non au seul « pause ») **et pousse sa seule branche `story/…`** à chaque étape, pour que le travail survive à un crash de la machine : jamais une branche d'epic, `main` ni un tag. Quand un agent rend la main avec un travail de fond en cours, l'orchestrateur arme lui-même une attente sur sa fin. Procédure de reprise après un crash : `docs/agents-orchestration.md` § *Reprise après un crash* (décision du Project Lead du 2026-11-21).
 - **Un worktree se retire à la clôture de sa story** (`git worktree remove`, après un `git status --porcelain` vide) ; sa branche reste (décision de Guy du 2026-11-14). Chacun garde 20 à 50 Go de cible cargo.
 
 ## Review Iteration Rule
@@ -175,7 +176,7 @@ S'applique à `bmad-create-story validate`, à `bmad-code-review` et à toute re
 ### La passe ciblée
 
 - Quand une boucle converge, la passe suivante peut être une **passe ciblée** : une seule lentille, en contexte frais, sur **le seul commit de la dernière remédiation**. *Motif : la sévérité se déplace vers ce qu'on vient d'écrire.*
-- **À employer** quand la sévérité est retombée, ou ne vient plus que du patch précédent, et que la remédiation touche du code. **Ne suffit pas** si le patch touche plusieurs modules ou change une règle métier : reprendre le protocole complet.
+- **À employer** quand la sévérité est retombée, ou ne vient plus que du patch précédent, et que la remédiation touche du code. **Ne suffit pas** si le patch touche plusieurs modules ou change une règle métier : reprendre le protocole complet. Un **module** est un crate ou un domaine du frontend (`frontend/src/lib/features/<domaine>`) dont le **code de production** change ; un fichier de test qui ne teste que le correctif, la fiche et le manuel ne comptent pas (décision du Project Lead du 2026-11-21).
 - **Une boucle ne se clôt pas tant que la dernière remédiation touche du code de production** ; et elle ne se clôt que sur une passe sans finding au-dessus de LOW.
 - **Le prompt de la lentille se versionne** à côté du story file.
 - **Les remédiations de l'orchestrateur suivent la même boucle** que celles d'un agent : il lit au code la prémisse du finding (source d'une dépendance comprise, même pour un LOW), puis sa remédiation passe sous une passe ciblée.
@@ -233,12 +234,12 @@ Pour tout endpoint qui traite N propositions et rend `{ accepted, failed }` :
 
 ## Priorités des défauts
 
-Chaque défaut ouvert porte sa priorité dès sa création, et c'est elle qui ordonne le travail.
+Chaque défaut ouvert porte sa priorité dès sa création, et c'est elle qui ordonne le travail. La conformité légale relève du comptable ou de l'utilisateur, non du logiciel seul : elle est P2, sauf si le défaut produit une erreur dans les livres (décision du Project Lead du 2026-11-21). **Tout P1 passe en priorité dans la release suivante**, quitte à une release dédiée.
 
 | Label | Niveau | Critère |
 |---|---|---|
-| `P1` | critique | erreur comptable (écriture, solde ou compte faux), perte ou corruption de données, conformité légale, sécurité |
-| `P2` | haute | comportement faux sans effet sur les comptes — erreur 500, opération enregistrée mais annoncée en échec, piste de contrôle incomplète |
+| `P1` | critique | ce qui fausse la comptabilité (écriture, solde, compte ou total faux, fausse écriture), perte ou corruption de données, sécurité |
+| `P2` | haute | comportement faux sans effet sur les comptes — erreur 500, opération enregistrée mais annoncée en échec, piste de contrôle incomplète, conformité légale sans erreur dans les livres |
 | `P3` | moyenne | manuel qui décrit autre chose que le code, test défaillant, dette de code |
 | `P4` | basse | orthographe, traduction, cosmétique |
 
@@ -249,17 +250,16 @@ Chaque défaut ouvert porte sa priorité dès sa création, et c'est elle qui or
    gh issue list --state open --limit 600 --json labels \
      --jq '[.[]|select([.labels[].name]|any(.=="bug" or .=="known-failure"))]|length'
    ```
-2. **Aucun P1 ne passe d'un epic à l'autre**, autant que possible ; celui qui reste est nommé à la rétrospective, avec sa raison.
+2. **Tout P1 ouvert est traité en priorité dans la release suivante**, quitte à une release dédiée ; celui qui reste est nommé à la rétrospective, avec sa raison.
 3. **L'epic livre une fonctionnalité nouvelle si c'est possible**, la baisse des défauts restant prioritaire.
 
 Et :
 
-- **Report assumé des onze P1 de la TVA** (jalon « Vague 2 » : #390 à #397, #401, #525, #1198) : Guy, seul utilisateur réel, n'est pas assujetti. Ils sont nommés à chaque rétrospective ; le report tombe dès que Kesh tient, ou est proposé pour tenir, les livres d'un assujetti (décisions de Guy des 2026-10-08 et 2026-11-18).
 - **Moins d'issues ouvertes au tag qu'au tag précédent est un objectif, pas une barrière** : le dépasser n'empêche pas de publier. Le décompte (toutes les issues) s'écrit : celui du tag précédent et l'objectif au fichier d'epic dès le kickoff, celui du tag à la PR de release et à la rétrospective, avec l'écart et sa cause (décision de Guy du 2026-10-24).
 - **On trace toujours** : un point qu'on décide de ne pas traiter s'ouvre en issue, même s'il fait remonter le compte ; on ne ferme jamais un défaut réel pour tenir le chiffre ; **une issue par problème**, sans regroupement (décisions de Guy des 2026-10-23 et 2026-11-10).
 - **Un LOW de revue qui touche la production peut se corriger dans la story**, suivi d'une passe ciblée de ce seul correctif ; l'issue reste le choix par défaut quand le correctif sort du périmètre (décision de Guy du 2026-11-14).
 - **Une story de solde à la fin de chaque epic**, avant le tag : seulement la dette des stories de l'epic, plafonnée par un nombre d'issues fixé au kickoff (décision de Guy du 2026-11-14).
-- **L'étiquette `bug` décrit un comportement faux visible** : un test manquant, un commentaire, une phrase de fiche prennent `technical-debt` ou `documentation`. Les anciennes issues ne se réétiquettent que sur demande de Guy, et un tel réétiquetage s'écrit à côté du décompte des bugs (décision de Guy du 2026-11-14).
+- **L'étiquette `bug` décrit un comportement faux visible** : un test manquant, un commentaire, une phrase de fiche prennent `technical-debt` ou `documentation`. Les anciennes issues ne se réétiquettent que sur demande de Guy, et un tel réétiquetage s'écrit à côté du décompte des bugs (décision de Guy du 2026-11-14). Le 2026-11-21, les onze issues de la TVA qui étaient P1 (#390 à #397, #401, #525, #1198) et les issues #404, #235 et #98 ont été reclassées P2, la conformité légale ne relevant plus du P1 (décision du Project Lead du 2026-11-21).
 
 Les anciennes rétrospectives classent la dette en **A** (vraie dette), **B** (limitation documentée, remédiation planifiée) et **C** (choix de conception, pas une dette).
 
@@ -332,44 +332,66 @@ Les anciennes rétrospectives classent la dette en **A** (vraie dette), **B** (l
   4. **(4-bis) macros de version, à toute release, sans condition** : `\keshVersion{X.Y.Z}` (= version Cargo et `/health`), `\keshReleaseDate{AAAA-MM-JJ}`, `\keshTargetRelease{vX.Y}` dans `docs/manual/shared/kesh-style.sty`, puis les PDF régénérés (`make fr` dans `docs/manual/`). Un tag dont la version diffère de `\keshVersion` est un défaut de release. Les URL `raw.githubusercontent.com/guycorbaz/kesh/<réf>/…` des manuels, du README et de `website/` portent le même tag `vX.Y.Z`, jamais `main` (garde G19 de `crates/kesh-api/tests/textes_coherents.rs`) ;
   5. `CHANGELOG.md` — entrée de la release, au format Keep a Changelog, assemblée depuis les *Notes de version* des fiches ;
   6. **`scripts/prepare-release.sh`, à lancer** : bump Cargo, datation du CHANGELOG, rappels sans autre filet ; il refuse la release quand une exemption datée de `EXEMPT_MIGRATIONS` est démentie par un tag publié. Poser un tag à la main contourne ce contrôle ;
-  7. `scripts/recette-montee.sh` — montée et retour depuis la dernière image publiée (`docs/testing.md`).
+  7. `scripts/recette-montee.sh` — montée et retour depuis la dernière image publiée (`docs/testing.md`) ;
+  8. **le projet GitHub « Kesh »** : tous les éléments du milestone de la release sont en Done.
 
 ## Travailler à plusieurs développeurs
 
-Kesh a plusieurs développeurs depuis le 2026-11-15 : le Project Lead, l'orchestrateur qui travaille sur son mandat, et des contributeurs à qui des epics sont réservés (37 à 40, 46, 47) ; les epics internes ouverts sont le 41 (pièces justificatives), le 45 (note interne) et le 48 (réservoir des stories non faites des Epics 36 et 42 à 44), et le prochain epic interne neuf est le 49. Décisions de Guy des 2026-11-15, 2026-11-16 et 2026-11-18 ; `docs/developpement-a-plusieurs.md` les commente pour un contributeur, mais **elles font foi ici**.
+Kesh a plusieurs développeurs depuis le 2026-11-15 : le Project Lead, l'orchestrateur qui travaille sur son mandat, et des contributeurs à qui des epics sont réservés (37 à 40, 46, 47) ; les epics internes ouverts sont le 41 (pièces justificatives), le 45 (note interne) et le 48 (réservoir des stories non faites des Epics 36 et 42 à 44), et le prochain epic interne neuf est le 53. Décisions du Project Lead des 2026-11-15, 2026-11-16, 2026-11-18 et 2026-11-21 ; `docs/guide-developpeur.md` les explique à un contributeur, mais **elles font foi ici**.
 
 ### Planification — GitHub Projects
 
 - Le projet GitHub « Kesh » porte la planification au niveau des **issues** : **release = milestone** (une issue n'appartient qu'à une release), **epic = champ du projet**, **qui = l'assigné**.
 - **Les stories BMAD restent dans `sprint-status.yaml`** ; le projet ne les recopie pas.
-- Seules les deux ou trois prochaines releases sont datées ; le reste va au milestone « Plus tard ». N'entrent au projet que les issues qu'un epic ou une release retient.
+- **Les milestones se nomment par date** (« Vendredi AAAA-MM-JJ »), sauf « Plus tard » ; seules les deux ou trois prochaines releases sont datées. Le numéro de version est attribué au tag (§ *Numérotation des versions*). N'entrent au projet que les issues qu'un epic ou une release retient.
 - Réserver un epic, c'est renseigner le champ *Epic* avec responsable et objet. **Rattacher une issue à une release est une décision du Project Lead** ; les contributeurs proposent.
-- On parle d'epics, non de numéros de release : le numéro n'est acquis qu'au tag.
+- On parle d'epics et de dates de release, non de numéros de version : le numéro n'est acquis qu'au tag.
 
 ### Numérotation des versions
 
-- **Une release planifiée monte le chiffre mineur** (0.19.0, 0.20.0) et reçoit son milestone d'avance.
-- **Un correctif urgent monte le chiffre de correction** de la dernière release publiée (0.18.1) : branche `hotfix/X.Y.Z` partie du tag, **aucune migration** (sinon il va à la prochaine release planifiée), reporté dans `main` après publication.
-- **Un epic = une release**, jamais plus : un chantier trop grand se découpe en plusieurs epics au kickoff ; un epic qui n'aboutit pas se réduit (§ *Cadence*). Une release peut porter plusieurs epics.
-- **Un epic reste petit** : un epic de correction ou d'amélioration compte **au plus six stories**, story de solde comprise ; un epic de fonctionnalité nouvelle peut dépasser, si le kickoff le dit. La taille des stories compte d'abord : le splitting préventif s'applique dès la fiche.
+Les versions s'écrivent `a.b.c` (décision du Project Lead du 2026-11-21).
+
+- **`a`** vaut 0 tant que Kesh ne tient pas complètement les comptes d'un utilisateur ordinaire (le 0 parle des fonctions, non de l'usage : des livres réels sont déjà tenus dans Kesh) ; il passe à 1 le jour où Kesh les tient. Le critère de la 1.0 reste à écrire ; candidat : le jalon « Première clôture d'exercice tenue dans Kesh », complété d'une liste de fonctions du PRD. Le sens de `a` = 2 reste à définir.
+- **`b` monte quand la release porte une migration ou une rupture du contrat de l'API, et seulement alors.**
+- **`c` monte pour toute autre release**, celle du vendredi comprise. Une release `c` ne porte jamais de migration.
+- Les migrations sortent de préférence le vendredi, sans s'interdire le milieu de semaine.
+- **Le numéro ne suit plus le calendrier** : les milestones se nomment par date, le numéro s'attribue au tag, et l'on parle de dates avec les contributeurs.
+- **Ce que l'administrateur lit** : `c` monte, il remplace l'image (retour en remettant la précédente) ; `b` monte, il lit les notes de version, et s'il y a une migration, la sauvegarde complète est obligatoire (§ *Ce qu'impose la production* ; manuel d'administration).
+- **Un epic tient dans une release** : au plus **six stories**, story de solde comprise, fonctionnalité nouvelle comprise ; un epic qu'on ne voit pas finir dans la semaine se découpe au kickoff en deux ou trois epics. Il entre dans `main` **une seule fois, terminé**. Une release peut porter plusieurs epics. La taille des stories compte d'abord : le splitting préventif s'applique dès la fiche.
+- **Grand epic par dérogation** : sur décision du Project Lead, au kickoff, avec une section « Dérogation » du fichier d'epic (raison, nombre de releases estimé). Il reste dans sa branche jusqu'à sa fin, et les releases partent sans lui ; il reprend `main` après chaque release et rejoue ses gates ; ses issues restent au milestone « Plus tard » jusqu'à la release qui l'accueille ; revue du code d'intégration à l'entrée. Sa migration se redate à l'intégration, après la dernière publiée (à vérifier au code avant d'appliquer).
+- **Dépendances** : un epic qui dépend d'un autre, ou qui en bloque un, le déclare au kickoff (« dépend de », « bloque », et les relations d'issues GitHub) ; l'ordre d'intégration les suit.
+
+### Versions de l'API
+
+Règle décidée par le Project Lead le 2026-11-21 ; sa mise en œuvre fait l'objet d'une demande de changement (CR) à part.
+
+- **Seul le majeur figure dans l'URL** : `/api/v1/`, `/api/v2/`. La version fine se lit dans `/health`, la description OpenAPI et `docs/api-external.md`.
+- **Un ajout** (route, champ facultatif, code d'erreur neuf) ne change rien pour le client : `c`.
+- **Une rupture** (renommage, suppression, type changé, champ devenu obligatoire) : nouvelle version de l'API, et `b`.
+- **La correction d'un comportement contraire au contrat documenté** : annoncée ⚠️ en tête des notes de version, `b`, sans nouvelle version de l'API.
+- **Deux versions sont servies**, l'actuelle et la précédente ; le retrait de la précédente est annoncé d'avance (en-têtes `Deprecation` et `Sunset`).
+- **Une route inchangée** garde le même handler sous les deux préfixes. **Une route modifiée** vit en `v2` ; la `v1` devient un adaptateur, testé sur son seul contrat.
+- **Une garde statique** vérifie que chaque route `v1` est présente, adaptée ou déclarée retirée.
 
 ### Ordre des releases
 
-- **La première release terminée sort la première** ; si besoin, on échange les numéros et les milestones.
+- **La première release terminée sort la première** ; si besoin, on échange les dates et les milestones (le numéro de version ne s'attribue qu'au tag).
 - **Le second arrivé reprend `main`** dans sa branche, résout, puis rejoue tous les gates et l'E2E complet ; si les deux releases portent des migrations, leur ordre se contrôle sur une base peuplée par la release du premier. La recette de montée part toujours de la dernière image publiée.
-- Un correctif dont la base a été dépassée par une release planifiée se publie depuis celle-ci, sauf décision du Project Lead.
+- Toute release part de `main` (§ *Cadence*) : un correctif dont la base a été dépassée par une release se publie depuis `main`, sauf décision du Project Lead.
 - **Seul le Project Lead pose un tag et publie une image**, ou l'orchestrateur sur son mandat explicite.
 
-### Cadence — au moins une release par semaine
+### Cadence — une release chaque vendredi
 
-- **Au moins une release par semaine de présence du Project Lead** : la date tient, le périmètre s'ajuste.
+- **Une release planifiée chaque vendredi**, pendant les semaines de présence du Project Lead : la date tient, le périmètre s'ajuste.
+- **Des releases en cours de semaine** quand elles apportent quelque chose qui compte aux utilisateurs : un P1, un bug d'usage, un epic terminé. Elles ne partent pas d'office : chacune coûte les gates complets, la recette de montée et l'audit de la documentation.
+- **Toutes les releases partent de `main`**, qui ne porte que du fini. Une branche `hotfix/X.Y.Z` partie du tag ne sert que si `main` porte ce qu'on ne veut pas livrer (une migration qui attend le vendredi). Des exceptions restent possibles, sur décision du Project Lead.
 - **La semaine type** : coupure le **jeudi soir** (n'entrent que les stories closes — boucle de revue terminée, gates de clôture et E2E complet verts) ; intégration le **vendredi matin** (dernières fusions, gates, recette de montée, revue du code d'intégration, PR, CI) ; **accord de fusion du Project Lead vers midi**, puis tag et image ; mise à jour du NAS par le Project Lead.
 - **Chaque story se fusionne dans la branche de son epic dès sa clôture**, puis on pousse (§ *Commits, branches et push*) ; les branches `story/…` poussées se suppriment sur GitHub après la fusion de la release.
 - **Une branche d'epic n'est pas une base** : un contributeur part de `main` ; bâtir sur une branche d'epic non publiée demande l'accord du Project Lead.
-- **Un epic qui n'aboutit pas se réduit** : on ne retarde pas une release, on réduit son étendue. À la coupure, l'orchestrateur sort les stories non closes vers une épique ultérieure et le dit au compte rendu de la PR ; l'épique se clôt avec la release (décision de Guy du 2026-11-18) ; le Project Lead garde le dernier mot. Il ne touche jamais à l'epic d'un contributeur.
+- **Un epic qui n'aboutit pas à la coupure se réduit** : on ne retarde pas une release, on réduit son étendue. L'orchestrateur sort les stories non closes vers un epic ultérieur (de six stories au plus, § *Numérotation des versions*) et le dit au compte rendu de la PR ; l'epic réduit se clôt avec la release, sans entrer en deux fois dans `main` (décisions du Project Lead des 2026-11-18 et 2026-11-21) ; le Project Lead garde le dernier mot. Il ne touche jamais à l'epic d'un contributeur.
 - **Une story sortie emporte sa migration.** Une migration est annoncée d'avance au projet GitHub et dite en tête des notes ; les migrations voisines se regroupent quand c'est possible.
 - **Chaque release planifiée corrige au moins un ou deux bugs**, dans une story de correction en plus de ses epics, comptée dans la borne de six : un P1 d'abord, sinon ce qui touche l'usage réel du Project Lead, sinon le plus ancien. Elle est petite et part en premier. Le dosage s'adapte au stock de bugs. Elle s'ajoute à la story de solde et à la correction des LOW, sans les remplacer.
-- **Une release urgente** (`hotfix/X.Y.Z`) reste possible pour un bug majeur — P1 qui touche les livres ou la conformité, ou défaut qui bloque le Project Lead —, sur sa décision ; elle ne compte pas comme la release de la semaine.
+- **Une release dédiée à un P1** part sans attendre le vendredi (§ *Priorités des défauts*) ; elle ne compte pas comme la release de la semaine.
 - **Absence du Project Lead** : pas de release cette semaine-là ; il annonce ses dates d'avance, les stories continuent.
 
 ### Branches
@@ -382,7 +404,7 @@ Kesh a plusieurs développeurs depuis le 2026-11-15 : le Project Lead, l'orchest
 | `hotfix/X.Y.Z` | correctif urgent parti du tag, reporté ensuite dans `main` |
 
 - Pas de branche `develop`.
-- **Une branche par epic, fusionnée une fois** (le squash rend toute suite après fusion source de faux conflits).
+- **Une branche par epic, fusionnée une fois** (le squash rend toute suite après fusion source de faux conflits). La protection de `main` impose un historique linéaire : toute PR entre par squash, et une branche d'epic qui continuerait après une entrée dans `main` (exception) reprend `main` aussitôt.
 - **Reprendre `main` dans sa branche au moins après chaque release publiée** par un autre.
 - **On ne touche ni aux branches ni aux bases de test d'un autre.**
 
@@ -406,4 +428,4 @@ Kesh a plusieurs développeurs depuis le 2026-11-15 : le Project Lead, l'orchest
 
 - `ci.yml` tourne aussi sur les PR vers `epic/**`.
 - **Le cache Rust ne s'écrit que depuis `main`** (`save-if`, `shared-key`) ; les PR le lisent. Le cache Docker (`type=gha`) n'est pas restreint.
-- Une CI allégée sur les PR vers `epic/**` reste à décider avec les contributeurs.
+- **Pas d'allègement de la CI sur les PR vers `epic/**` pour l'instant** (décision du Project Lead du 2026-11-21) ; à revoir si les files d'attente de la CI gênent.
