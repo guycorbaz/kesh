@@ -147,7 +147,7 @@ et fixe l'ordre des releases.
 
 **Les numéros d'epic se réservent.** Chaque développeur travaille dans des epics à son numéro, réservés d'avance pour
 éviter les collisions. Réserver un epic, c'est ajouter sa valeur au champ *Epic* du projet, avec son responsable et son
-objet ; son fichier et ses stories naissent à son kickoff. Le prochain numéro d'epic interne neuf est le **53**. Le
+objet ; son fichier et ses stories naissent à son kickoff. Le prochain numéro d'epic interne neuf est le **55**. Le
 contenu de vos epics se décide avec le Project Lead.
 
 **Dans les échanges, on désigne le travail par son epic et par la date de sa release, jamais par un numéro de version** :
