@@ -187,6 +187,158 @@ test.describe('Page contacts — CRUD', () => {
 		await page.getByRole('dialog').getByRole('button', { name: 'Archiver' }).click();
 		await expect(page.getByText(uniqueName)).toHaveCount(0, { timeout: 5000 });
 	});
+
+	// Story 48-15 (#1331, AC5) — une rue trop longue n'est plus coupée en silence par
+	// le navigateur : elle part entière, le serveur la refuse en le disant, la saisie
+	// reste, et le contact n'est pas modifié. NPA et localité renseignés : sans eux,
+	// l'écran refuse d'abord (« NPA et localité obligatoires ») et le message du
+	// serveur n'apparaît jamais. Rouge si `maxlength={70}` revient sur `#form-street`
+	// (M6 rejouée en E2E) : `fill` respecte l'attribut comme un collage.
+	test('une rue de 71 caractères collée est refusée en le disant, non coupée', async ({ page }) => {
+		await goToContacts(page);
+
+		const uniqueName = `TestContact Rue ${Date.now()}`;
+		await page.getByRole('button', { name: /Nouveau contact/ }).click();
+		await page.fill('#form-name', uniqueName);
+		await page.fill('#form-street', 'Rue des Essais');
+		await page.fill('#form-npa', '1000');
+		await page.fill('#form-city', 'Lausanne');
+		await page.getByTestId('contact-form-submit').click();
+		await expect(page.getByText(uniqueName)).toBeVisible({ timeout: 5000 });
+
+		/** Le contact, relu par l'API (non par l'écran). */
+		const relire = async () => {
+			const resp = await page.request.get(
+				`/api/v1/contacts?search=${encodeURIComponent(uniqueName)}`
+			);
+			expect(resp.ok()).toBe(true);
+			const { items } = (await resp.json()) as {
+				items: {
+					id: number;
+					version: number;
+					name: string;
+					addressStructured: { street: string } | null;
+				}[];
+			};
+			return items.find((c) => c.name === uniqueName);
+		};
+
+		// Revue P1 (B3, E6) : le contact s'archive dans un `finally`, par l'API, même si une
+		// assertion échoue en route — la base de la suite est rendue telle qu'elle a été trouvée.
+		try {
+			const row = page.locator('tr', { hasText: uniqueName }).first();
+			await row.getByRole('button', { name: /Modifier/ }).click();
+			const rue71 = 'R'.repeat(71);
+			await page.fill('#form-street', rue71);
+			await expect(page.locator('#form-street')).toHaveValue(rue71);
+			await page.getByTestId('contact-form-submit').click();
+
+			// Le message est celui du serveur (`address_input.rs`, `check_lengths`), non traduit.
+			await expect(page.getByTestId('contact-form-error')).toHaveText(
+				'adresse : le champ rue dépasse 70 caractères (71)',
+				{ timeout: 5000 }
+			);
+			await expect(page.locator('#form-street')).toHaveValue(rue71);
+
+			// Le contact n'a pas changé.
+			expect((await relire())?.addressStructured?.street).toBe('Rue des Essais');
+		} finally {
+			const contact = await relire();
+			if (contact) {
+				const archive = await page.request.put(`/api/v1/contacts/${contact.id}/archive`, {
+					data: { version: contact.version }
+				});
+				expect(archive.ok()).toBe(true);
+			}
+		}
+	});
+
+	// Story v0200-corrections-mineures (#1336, AC5) — un e-mail de 321 caractères collé
+	// n'est plus coupé à 320 : il part entier, le serveur le refuse en le disant, la saisie
+	// reste, aucun contact n'est créé. Rouge si `maxlength={320}` revient sur `#form-email`
+	// (M5 rejouée en E2E) : `fill` respecte l'attribut comme un collage.
+	test('un e-mail de 321 caractères collé est refusé en le disant, non coupé', async ({ page }) => {
+		await goToContacts(page);
+		const uniqueName = `TestContact Mail ${Date.now()}`;
+		const courriel = 'a'.repeat(309) + '@example.com';
+		expect(courriel).toHaveLength(321);
+
+		const relire = async () => {
+			const resp = await page.request.get(
+				`/api/v1/contacts?search=${encodeURIComponent(uniqueName)}`
+			);
+			expect(resp.ok()).toBe(true);
+			const { items } = (await resp.json()) as {
+				items: { id: number; version: number; name: string }[];
+			};
+			return items.find((c) => c.name === uniqueName);
+		};
+
+		try {
+			await page.getByRole('button', { name: /Nouveau contact/ }).click();
+			await page.fill('#form-name', uniqueName);
+			await page.fill('#form-email', courriel);
+			await expect(page.locator('#form-email')).toHaveValue(courriel);
+			await page.getByTestId('contact-form-submit').click();
+
+			// Message du serveur (`contacts.rs`, `MAX_EMAIL_LEN`), non traduit.
+			await expect(page.getByTestId('contact-form-error')).toContainText('320', {
+				timeout: 5000
+			});
+			await expect(page.locator('#form-email')).toHaveValue(courriel);
+			expect(await relire()).toBeUndefined();
+		} finally {
+			const contact = await relire();
+			if (contact) {
+				await page.request.put(`/api/v1/contacts/${contact.id}/archive`, {
+					data: { version: contact.version }
+				});
+			}
+		}
+	});
+
+	// Story v0200-corrections-mineures (#1342, #1349, AC9) — le motif d'un bouton grisé
+	// s'affiche au-dessus des boutons. Les assertions portent sur un motif NON VIDE, non sur
+	// un texte : le catalogue chargé diffère des replis. Rien n'est enregistré. Rouge si
+	// `blockedReason` reste vide (M9 rejouée en E2E).
+	test('un bouton grisé dit pourquoi : pays seul, adresse partielle, IDE mal formé', async ({
+		page
+	}) => {
+		await goToContacts(page);
+		await page.getByRole('button', { name: /Nouveau contact/ }).click();
+		const bouton = page.getByTestId('contact-form-submit');
+		const motif = page.getByTestId('contact-form-blocked-reason');
+
+		// (a) Raison sociale d'abord : le motif du nom est levé.
+		await page.fill('#form-name', `TestContact Motif ${Date.now()}`);
+		await expect(motif).toHaveText('');
+		await expect(bouton).toBeEnabled();
+		// Pays « FR » seul : seul motif possible.
+		await page.fill('#form-country', 'FR');
+		await expect(bouton).toBeDisabled();
+		await expect(motif).toBeVisible();
+		await expect(motif).not.toHaveText('');
+		// NPA et localité : l'adresse est complète.
+		await page.fill('#form-npa', '75002');
+		await page.fill('#form-city', 'Paris');
+		await expect(bouton).toBeEnabled();
+		await expect(motif).toHaveText('');
+
+		// (b) Adresse partielle : rue seule.
+		await page.fill('#form-npa', '');
+		await page.fill('#form-city', '');
+		await page.fill('#form-country', 'CH');
+		await page.fill('#form-street', 'Rue des Essais');
+		await expect(bouton).toBeDisabled();
+		await expect(motif).not.toHaveText('');
+		await page.fill('#form-street', '');
+		await expect(bouton).toBeEnabled();
+
+		// (c) IDE mal formé.
+		await page.fill('#form-ide', 'CHE-12');
+		await expect(bouton).toBeDisabled();
+		await expect(motif).not.toHaveText('');
+	});
 });
 
 test.describe('Page contacts — accessibilité', () => {

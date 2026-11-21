@@ -7,7 +7,10 @@
 kesh:D14. Révisé le même jour sur les réponses de Guy aux points ouverts du kickoff (#1234 retirée, ordre de fusion de
 la 48-13, issues de la solde au milestone) et les règlements de l'orchestrateur ; puis sur le complément de Guy du même
 jour : des factures réelles existent déjà en production ; puis, le même jour encore, sur la découpe de la 48-13 à sa
-validation P2 : la **48-15** en est née, et l'épique passe à **huit** stories (décisions de Guy du 2026-11-18).*
+validation P2 : la **48-15** en est née, et l'épique passe à **huit** stories (décisions de Guy du 2026-11-18). Révisé le
+2026-11-19 : la 48-12 se découpe en **48-12a** (serveur) et **48-12b** (écran), qui sortent ensemble ; #984 et #986 passent à
+la 0.21.0 ; la story **v0200-corrections-mineures** entre dans l'épique, qui passe à **neuf** stories (décisions de Guy du
+2026-11-19).*
 
 > **Factures réelles.** Guy a déjà émis de vraies factures client depuis Kesh (production, remises sur papier à un
 > locataire). Les gestes de la **48-1**, de la **48-2** (réimputation) et de la **48-13** s'appliquent à des factures et
@@ -18,8 +21,9 @@ validation P2 : la **48-15** en est née, et l'épique passe à **huit** stories
 
 L'Epic 48 était le **réservoir** des stories non faites des Epics 36 et 42 à 44 (kesh:D11). Au kickoff de la 0.20.0, elle
 devient **l'épique corrective de la release** : la 0.20.0 « s'attaque principalement aux bugs, avec une ou deux
-fonctionnalités en plus » (kesh:D14). Elle porte huit stories : la fin de la réimputation analytique (#1167), cinq
-stories de défauts groupés par chemin, et la story de solde.
+fonctionnalités en plus » (kesh:D14). Elle porte neuf stories : la fin de la réimputation analytique (#1167), cinq
+stories de défauts groupés par chemin, la story des corrections mineures et la story de solde. La 48-12, découpée en
+48-12a et 48-12b qui sortent ensemble, compte pour une.
 
 Elle ne porte **aucune migration** : la seule migration de la 0.20.0 est celle de l'Epic 49 (49-1).
 
@@ -29,8 +33,9 @@ Le `CLAUDE.md` (§ *Numérotation des versions*) borne une épique de correction
 L'Epic 48 en compte **huit**. **Décisions de Guy du 2026-11-18** : sept au kickoff, au motif que la 0.20.0 dispose de
 près de dix jours de travail, deux de plus qu'une semaine ordinaire (« il y a deux jours de plus ») ; **huit** le même
 jour, par le même motif et par l'élargissement que Guy a voulu pour faire baisser les bugs — les troncatures silencieuses
-#1331 à #1334, ajoutées à la release, qui ont fait découper la 48-13 en 48-13 et 48-15. La dérogation vaut pour cette
-épique seulement ; elle ne modifie pas la règle.
+#1331 à #1334, ajoutées à la release, qui ont fait découper la 48-13 en 48-13 et 48-15. **Neuf** le 2026-11-19 (décision de
+Guy du 2026-11-19) : Guy a ajouté à la release six issues mineures (#1336, #1342, #1343, #1348, #1349, #1375), portées par
+la story v0200-corrections-mineures. La dérogation vaut pour cette épique seulement ; elle ne modifie pas la règle.
 
 La règle de cadence en reste la garde : la date ne bouge pas (kesh:D7, kesh:D11). Une story non close à la coupure sort
 vers une épique ultérieure, dans l'**ordre de sortie** ci-dessous.
@@ -43,7 +48,9 @@ vers une épique ultérieure, dans l'**ordre de sortie** ci-dessous.
 | 48-2-reimputation-ecriture-manuelle | Idem, écriture manuelle ; **#1167 se ferme avec elle** | #1167 | P3 (CR) | non | fiche `36-16c-reimputation-ecriture-manuelle.md` |
 | 48-10-montants-ambigus-reglages-filtres | « 1.250 » refusé au prix d'article, aux frais de rappel, au montant minimal, aux filtres des écritures | #1173, #1175, #1176, #1177 | P3, P4 | non | fiche `36-18b-montants-ambigus-reglages-filtres.md` (`backlog`, à valider) |
 | 48-11-arrondi-au-centime | Les montants à deux décimales sont arrondis, non tronqués | #1245 | **P2** | non | à écrire |
-| 48-12-reponses-perdues-fournisseurs | Plus de doublon ni d'écrasement après une réponse perdue ou un 409 | #975, #984, #985, #986 | **P2** | non | à écrire |
+| 48-12a-doublons-fournisseurs-serveur | Le serveur refuse une facture fournisseur en double (création, modification, complétion, dévalidation, API) | #975, #985 | **P2** | non | découpée de la 48-12 le 2026-11-19 ; validation terminée (P5) |
+| 48-12b-doublons-fournisseurs-ecran | L'écran montre le refus, le doublon probable et l'issue inconnue sans renvoi muet | #975, #985 | **P2** | non | découpée de la 48-12 le 2026-11-19 ; en validation ; sort avec la 48-12a |
+| v0200-corrections-mineures | Clés d'erreur absentes des catalogues ; contacts (e-mail et téléphone coupés, pays seul jeté, bouton grisé sans motif, noms invisibles) ; doc-comment de `unknown-outcome.ts` | #1336, #1342, #1343, #1348, #1349, #1375 | P3, P4 | non | ajoutée le 2026-11-19 ; validation terminée (P4), en développement ; garde générale découpée vers #1406 (v0.21.0) |
 | 48-13-avant-la-vraie-facture | Le chemin de la première facture client QR | #1233, #1243, #1226 | P2, P3 | non | fiche `48-13-avant-la-vraie-facture.md`, en validation (P3) |
 | 48-15-troncatures-silencieuses | Un texte trop long est refusé en le disant, non coupé en silence (adresse du client, pays du fournisseur, e-mail de la société, prénom et nom ; nom d'article, numéro de client, conditions de paiement) | #1331, #1332, #1333, #1334 | P3, P4 | non | fiche `48-15-troncatures-silencieuses.md` (découpée de la 48-13), en validation (P3) |
 | 48-14-solde-dette-epic | Story de solde : dette des revues de la 0.19.0 (règlement groupé) | #1263, #1262, #1261, #1255 (**plafond : quatre**) | P3, P4 | non | à écrire |
@@ -112,6 +119,24 @@ Le motif attendu : relire et montrer ce qui a été écrit avant de proposer de 
 pour la société. Pour #975, la fiche choisit entre relecture et clé d'idempotence côté serveur (celle-ci toucherait
 `kesh-api/src/routes/supplier_invoices.rs` et `kesh-db/src/repositories/supplier_invoices.rs`).
 
+**Révision du 2026-11-19 (décisions de Guy).** « Il ne devrait simplement pas être possible de créer une facture
+fournisseur en double » : le serveur refuse le doublon. Même fournisseur et même numéro dans la même année civile → refus
+absolu ; même fournisseur, même date et même total TTC → refus par défaut, levé par `confirmNotDuplicate`, audité ;
+annulées exclues ; numéro facultatif ; dévalidation d'une annulée contrôlée, confirmable. **#984 et #986 passent à la
+0.21.0.** La story se découpe (règle de splitting) en **48-12a** (serveur : `kesh-db`, `kesh-api`, rejeu de `POST` et
+`PUT /invoices` après interblocage) et **48-12b** (écran : table d'états, issue inconnue figée, sortie « J'ai vérifié, elle
+n'existe pas — reprendre la saisie ») ; elles sortent dans la même release, ou toutes deux à la suivante. La fiche
+`48-12-reponses-perdues-fournisseurs.md` n'est plus qu'un renvoi.
+
+### v0200-corrections-mineures (#1336, #1342, #1343, #1348, #1349, #1375)
+
+Ajoutée par Guy le 2026-11-19. Les 21 clés d'erreur appelées par le serveur et absentes des quatre catalogues (#1348, sa
+part « clés ») ; e-mail et téléphone d'un contact coupés par `maxlength` (#1336) ; pays saisi seul jeté (#1342) ; bouton
+d'enregistrement grisé sans motif visible (#1349) ; prénom ou nom fait de caractères invisibles accepté (#1343, élargi aux
+contacts et interlocuteurs) ; doc-comment de `unknown-outcome.ts` (#1375). Cinq modules. La garde générale des clés
+demandée par #1348 est **découpée vers #1406 (v0.21.0)** après trois passes de validation qui ont chacune rouvert
+l'inventaire (décision de Guy du 2026-11-19).
+
 ### 48-13 — Avant la vraie facture (#1233, #1243, #1226)
 
 Les défauts restés sur le chemin d'une première facture client QR, que Guy émettra avant la fin novembre :
@@ -170,8 +195,8 @@ Les autres (#1256 à #1260, #1264, #1265 ; P4) restent ouvertes, hors de la rele
 **Lancement** (voie B, plan § *Voies*) : 48-13 et 48-11 d'abord (prioritaires ; 48-11 dès la fusion de #1327), la 48-15
 dès la 48-13 fusionnée, puis 48-12, 48-10, 48-1, 48-2, et la 48-14 en dernier.
 
-**Sortie à la coupure, si le temps manque** (décisions de Guy du 2026-11-18) : la **48-14** sort la première, puis la
-**48-2**, puis selon l'avancement 48-1, 48-10, 48-12 ; la **48-15 sort avant la 48-11 et la 48-13**, prioritaires, qui
+**Sortie à la coupure, si le temps manque** (décisions de Guy des 2026-11-18 et 2026-11-19) : la **48-14** sort la
+première, puis **v0200-corrections-mineures** (décision de Guy du 2026-11-19), puis la **48-2**, puis selon l'avancement 48-1, 48-10, 48-12 ; la **48-15 sort avant la 48-11 et la 48-13**, prioritaires, qui
 sont les dernières à sortir. Une story sortie retourne à une épique
 ultérieure (kesh:D11) ; l'Epic 48 se clôt avec la release.
 
@@ -202,7 +227,9 @@ Lu au code à `773df80da`. « Probable » : la fiche confirme.
 | 48-2 | `kesh-db/src/repositories/project_reassignment.rs` ; `kesh-api/src/routes/journal_entries.rs`, `errors.rs` | `features/projects/`, `routes/(app)/journal-entries/[id]/` | idem 48-1 |
 | 48-10 | — | `features/products/product-helpers.ts`, `routes/(app)/products/`, `routes/(app)/settings/dunning/+page.svelte`, `settings/invoicing/+page.svelte`, `routes/(app)/journal-entries/+page.svelte` | `kesh-i18n`, manuels, `montants-ambigus.spec.ts`, `i18n-keys.test.ts`, `dunning-page.test.ts` (neuf) |
 | 48-11 | `kesh-core/src/types/money.rs` (fonction commune, probable), `kesh-report/src/pdf.rs`, `kesh-report/src/csv.rs`, `kesh-api/src/exports/csv_tables.rs`, `kesh-api/src/routes/bank_statements_manual.rs` | — | tests par site, garde ; manuel si un format visible change |
-| 48-12 | `kesh-api/src/routes/supplier_invoices.rs` et `kesh-db/src/repositories/supplier_invoices.rs` (si clé d'idempotence), `imported_supplier_invoices` (lecture du document) | `routes/(app)/supplier-invoices/new/`, `supplier-invoices/[id]/edit/`, `routes/(app)/bank-accounts/+page.svelte`, `features/supplier-invoices/`, `features/bank-accounts/` | `kesh-i18n`, manuel utilisateur, Vitest et E2E des écrans |
+| 48-12a | `kesh-db/src/repositories/supplier_invoices.rs`, `imported_supplier_invoices.rs` ; `kesh-api/src/routes/supplier_invoices.rs`, `imported_supplier_invoices.rs`, `invoices.rs` (rejeu), `errors.rs` | — | `kesh-i18n` (trois clés `error-supplier-invoice-*`), manuels utilisateur et d'administration, `docs/api-external.md`, `audit_route_registry.rs` (fiche : cinq modules) |
+| 48-12b | — | `routes/(app)/supplier-invoices/new/`, `[id]/`, `[id]/edit/`, `features/supplier-invoices/` | `kesh-i18n`, manuel utilisateur, Vitest et E2E (fiche : cinq modules) |
+| v0200-corrections-mineures | `kesh-api/src/errors.rs` (un site), `routes/contacts.rs`, `contact_persons.rs`, `onboarding.rs`, `helpers.rs`, `address_input.rs` ; `kesh-i18n` (21 clés + 1, test des 21 clés) | `routes/(app)/contacts/`, `features/contacts/`, `shared/utils/unknown-outcome.ts` (doc-comment) | manuel utilisateur, Vitest, E2E `contacts.spec.ts` (fiche : cinq modules) |
 | 48-13 | `kesh-api/src/routes/onboarding.rs` (et le contrôle partagé du nom de `companies.rs`) | `lib/components/invoices/InvoiceForm.svelte`, `routes/(app)/settings/+page.svelte` | `kesh-i18n`, manuels |
 | 48-15 | lot A : `kesh-api/src/routes/contacts.rs`, `companies.rs`, `onboarding.rs` (`set_coordinates`), `helpers.rs` (borne partagée) | lot B : `routes/(app)/contacts/+page.svelte`, `routes/(app)/settings/+page.svelte`, `routes/(app)/products/+page.svelte`, `features/supplier-invoices/SupplierCreatePanel.svelte` | `kesh-i18n` (une clé), manuels, Vitest, E2E |
 | 48-14 | `kesh-db/src/repositories/grouped_settlements.rs` (#1255) ; `kesh-api/tests/admin_auto_backup_e2e.rs` (#1261) | `features/reconciliation/GroupSettlementModal.svelte` (#1262, #1263) | `kesh-i18n` si un libellé change |
@@ -215,8 +242,9 @@ manuels FR/DE/IT/EN (`.tex` seulement).
 
 **Splitting préventif** (règlement de l'orchestrateur du 2026-11-18) : la règle s'applique à chaque fiche. Elle a
 joué pour la 48-13, coupée à sa validation P2 (neuf modules) en 48-13 et 48-15 ; la 48-15 (sept modules, un seul geste
-mécanique) porte une **dérogation** décidée par Guy le 2026-11-18. La 48-12 se découpe si elle dépasse cinq modules, ou
-écrit sa dérogation.
+mécanique) porte une **dérogation** décidée par Guy le 2026-11-18. Elle a joué aussi pour la 48-12, découpée le
+2026-11-19 en 48-12a et 48-12b (cinq modules chacune), et pour la story v0200-corrections-mineures, dont la garde
+générale des clés est partie vers #1406 (signal de recyclage déclaré, décision de Guy du 2026-11-19).
 
 ## Fichiers communs (avec l'Epic 49, v0200-menu-sous-groupes et les PR de Beat)
 

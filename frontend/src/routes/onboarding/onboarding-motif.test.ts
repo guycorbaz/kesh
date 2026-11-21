@@ -335,3 +335,32 @@ describe('assistant — le champ Pays indique la forme attendue (#809, AC-6)', (
 		unmount();
 	});
 });
+
+// Story 48-13 (#1226, AC8 a, D6) — l'écran de l'assistant ne change pas : il ne copie
+// aucune borne de la QR-facture. Le nom part entier ; le refus du serveur (70 caractères
+// au plus) s'affiche en toast, l'écran reste aux coordonnées et la saisie reste.
+// Filet : le comportement existait (#809) ; la preuve du rouge est côté serveur (M6).
+describe('assistant — un nom trop long est refusé par le serveur, non coupé (Story 48-13, #1226)', () => {
+	it('nom de 71 caractères : part entier, le motif du serveur s’affiche, la saisie reste', async () => {
+		const nom71 = `Démo ${'n'.repeat(66)}`;
+		const motif =
+			"Le nom de la société dépasse 70 caractères (71) : la QR-facture n'en admet pas davantage.";
+		await atStep(5);
+		vi.mocked(api.setCoordinates).mockRejectedValueOnce({
+			code: 'VALIDATION_ERROR',
+			message: motif,
+			status: 400,
+		});
+		const { unmount } = render(Page);
+		expect(document.getElementById('coord-name')?.hasAttribute('maxlength')).toBe(false);
+		await remplir('coord-name', nom71);
+		await remplir('coord-npa', '1000');
+		await remplir('coord-city', 'Lausanne');
+		await soumettre();
+		await vi.waitFor(() => expect(toastError).toHaveBeenCalledWith(motif));
+		expect(vi.mocked(api.setCoordinates).mock.calls.at(-1)?.[0]).toBe(nom71);
+		expect((document.getElementById('coord-name') as HTMLInputElement).value).toBe(nom71);
+		expect(document.getElementById('coord-country')).not.toBeNull();
+		unmount();
+	});
+});

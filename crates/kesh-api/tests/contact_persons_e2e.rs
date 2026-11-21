@@ -327,3 +327,43 @@ async fn version_conflict_writes_no_audit(pool: MySqlPool) {
         "le refus n'écrit aucune trace — le rollback s'en charge, pas un `if`"
     );
 }
+
+/// Story v0200-corrections-mineures (#1343, AC11) — un interlocuteur au prénom (ou
+/// au nom) fait du seul trait d'union conditionnel est refusé en `400`, le
+/// message nomme le champ et dit le geste ; rien n'est écrit. Un prénom qui MÊLE
+/// invisible et visible passe (filet). Rouges : M15, M16.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn invisible_person_names_are_refused_and_named_1343(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let ctx = setup(&pool, &app).await;
+    for (first, last, prefixe) in [
+        ("\u{AD}", "Dubarde", "Prénom : aucun caractère visible"),
+        ("Anne", "\u{AD}", "Nom : aucun caractère visible"),
+    ] {
+        let resp = app
+            .client
+            .post(app.url(&format!("/api/v1/contacts/{}/persons", ctx.contact_id)))
+            .bearer_auth(&ctx.jwt)
+            .json(&json!({"firstName": first, "lastName": last}))
+            .send()
+            .await
+            .expect("POST persons");
+        assert_eq!(resp.status(), 400);
+        let body: Value = resp.json().await.expect("json");
+        assert_eq!(body["error"]["code"], "VALIDATION_ERROR", "{body}");
+        let message = body["error"]["message"].as_str().unwrap_or_default();
+        assert!(message.starts_with(prefixe), "{message}");
+        assert!(
+            message.contains("effacez le champ et saisissez-le de nouveau"),
+            "{message}"
+        );
+    }
+    let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM contact_persons")
+        .fetch_one(&pool)
+        .await
+        .expect("count");
+    assert_eq!(n, 0, "rien d'écrit");
+
+    let person = create_person(&app, &ctx, "Anne\u{AD}Marie", "Dubarde").await;
+    assert_eq!(person["firstName"], "Anne\u{AD}Marie");
+}
