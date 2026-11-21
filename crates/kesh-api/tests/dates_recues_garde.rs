@@ -547,8 +547,10 @@ fn l_inventaire_n_est_pas_vide() {
     assert_eq!(bornes + EXCEPTIONS.len(), champs.len());
 }
 
-/// 70 depuis la Story 37-1 (AC-11 : `FinalizeRequest`, deux dates ; 68 avant).
-const COMPTE_CHAMPS: usize = 70;
+/// 70 depuis la Story 37-1 (AC-11 : `FinalizeRequest`, deux dates ; 68 avant) ;
+/// 72 depuis la Story 38-12a (`DownloadRequest` du téléchargement PayPal, `from`
+/// et `to`, bornés par `dates_recues::date`).
+const COMPTE_CHAMPS: usize = 72;
 
 // ---------------------------------------------------------------------------
 // Les sondes : un contrôle vide se prouve par une sonde

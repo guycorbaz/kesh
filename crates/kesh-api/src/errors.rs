@@ -996,6 +996,67 @@ pub enum AppError {
         details: serde_json::Value,
     },
 
+    // ----- Story 38-12a (socle S4) — téléchargement par l'API d'un prestataire -----
+    /// Période d'un téléchargement refusée → `400 PROVIDER_PERIOD_INVALID`,
+    /// `details: { provider, reason }`, `reason` ∈ `from_after_to`, `future`,
+    /// `too_old`.
+    #[error("Période refusée ({reason})")]
+    ProviderPeriodInvalid {
+        provider: &'static str,
+        reason: &'static str,
+    },
+    /// Aucune série d'identifiants pour ce libellé → `422
+    /// PROVIDER_API_NOT_CONFIGURED`, `details: { provider, account }`.
+    #[error("API non configurée pour le compte {account}")]
+    ProviderApiNotConfigured {
+        provider: &'static str,
+        account: String,
+    },
+    /// Un téléchargement tourne déjà pour ce compte → `409
+    /// PROVIDER_DOWNLOAD_RUNNING`, `details: { provider, jobId }`.
+    #[error("Téléchargement déjà en cours ({job_id})")]
+    ProviderDownloadRunning { provider: &'static str, job_id: u64 },
+    /// Identifiants refusés par le prestataire (jeton refusé, ou 401 après
+    /// renouvellement) → `PROVIDER_AUTH_FAILED` (502 ; issue d'une tâche).
+    #[error("Identifiants refusés par le prestataire")]
+    ProviderAuthFailed { provider: &'static str },
+    /// L'application du prestataire n'a pas le droit demandé (403) →
+    /// `PROVIDER_PERMISSION_DENIED` (502).
+    #[error("Droits insuffisants chez le prestataire")]
+    ProviderPermissionDenied { provider: &'static str },
+    /// Six essais limités en débit (429) → `PROVIDER_RATE_LIMITED` (503),
+    /// `details: { provider, window?, page? }`.
+    #[error("Débit limité par le prestataire")]
+    ProviderRateLimited {
+        provider: &'static str,
+        window: Option<String>,
+        page: Option<u32>,
+    },
+    /// Six essais en 5xx ou délai dépassé → `PROVIDER_UNAVAILABLE` (503),
+    /// `details: { provider, window?, page? }`.
+    #[error("Prestataire indisponible")]
+    ProviderUnavailable {
+        provider: &'static str,
+        window: Option<String>,
+        page: Option<u32>,
+    },
+    /// Réponse du prestataire illisible, trop grande, ou dont les transactions
+    /// sont refusées → `PROVIDER_RESPONSE_INVALID` (502), `details: { provider,
+    /// … }` (`lines`, `transactionId`, `reason`).
+    #[error("Réponse du prestataire refusée")]
+    ProviderResponseInvalid {
+        provider: &'static str,
+        details: serde_json::Value,
+    },
+    /// Tout autre refus du prestataire → `PROVIDER_API_ERROR` (502),
+    /// `details: { provider, window?, page? }`. Jamais le texte du prestataire.
+    #[error("Refus du prestataire")]
+    ProviderApiError {
+        provider: &'static str,
+        window: Option<String>,
+        page: Option<u32>,
+    },
+
     // ----- Story 34-11a2 (#972) — la carte de crédit -----
     /// Le nom ou la description d'un compte bancaire porte un **numéro de carte
     /// complet** (`kesh_core::card_number`, C-e341-15) → `400
@@ -3698,6 +3759,109 @@ impl IntoResponse for AppError {
                 });
                 (StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response()
             }
+
+            // ----- Story 38-12a (socle S4) — téléchargement par l'API -----
+            AppError::ProviderPeriodInvalid { provider, reason } => coded_response(
+                StatusCode::BAD_REQUEST,
+                "PROVIDER_PERIOD_INVALID",
+                t(
+                    "error-provider-period-invalid",
+                    "Période refusée : le début doit précéder la fin, ne pas être dans le futur, et dater de moins de trois ans.",
+                ),
+                serde_json::json!({ "provider": provider, "reason": reason }),
+            ),
+            AppError::ProviderApiNotConfigured { provider, account } => coded_response(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "PROVIDER_API_NOT_CONFIGURED",
+                t(
+                    "error-provider-api-not-configured",
+                    "Le téléchargement n'est pas configuré pour ce compte : l'administrateur pose ses identifiants dans l'environnement du serveur. L'import du fichier reste possible.",
+                ),
+                serde_json::json!({ "provider": provider, "account": account }),
+            ),
+            AppError::ProviderDownloadRunning { provider, job_id } => coded_response(
+                StatusCode::CONFLICT,
+                "PROVIDER_DOWNLOAD_RUNNING",
+                t(
+                    "error-provider-download-running",
+                    "Un téléchargement est déjà en cours pour ce compte : attendez qu'il se termine.",
+                ),
+                serde_json::json!({ "provider": provider, "jobId": job_id }),
+            ),
+            AppError::ProviderAuthFailed { provider } => coded_response(
+                StatusCode::BAD_GATEWAY,
+                "PROVIDER_AUTH_FAILED",
+                t(
+                    "error-provider-auth-failed",
+                    "Le prestataire refuse les identifiants de ce compte : l'administrateur doit les vérifier. Rien n'a été importé.",
+                ),
+                serde_json::json!({ "provider": provider }),
+            ),
+            AppError::ProviderPermissionDenied { provider } => coded_response(
+                StatusCode::BAD_GATEWAY,
+                "PROVIDER_PERMISSION_DENIED",
+                t(
+                    "error-provider-permission-denied",
+                    "L'application du prestataire n'a pas le droit de lire les transactions : l'administrateur doit lui donner cette fonction. Rien n'a été importé.",
+                ),
+                serde_json::json!({ "provider": provider }),
+            ),
+            AppError::ProviderRateLimited {
+                provider,
+                window,
+                page,
+            } => coded_response(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "PROVIDER_RATE_LIMITED",
+                t(
+                    "error-provider-rate-limited",
+                    "Le prestataire limite le nombre de demandes : réessayez plus tard. Rien n'a été importé.",
+                ),
+                serde_json::json!({ "provider": provider, "window": window, "page": page }),
+            ),
+            AppError::ProviderUnavailable {
+                provider,
+                window,
+                page,
+            } => coded_response(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "PROVIDER_UNAVAILABLE",
+                t(
+                    "error-provider-unavailable",
+                    "Le prestataire ne répond pas : réessayez plus tard. Rien n'a été importé.",
+                ),
+                serde_json::json!({ "provider": provider, "window": window, "page": page }),
+            ),
+            AppError::ProviderResponseInvalid { provider, details } => {
+                let mut details = details;
+                if let serde_json::Value::Object(map) = &mut details {
+                    map.insert("provider".into(), serde_json::json!(provider));
+                } else {
+                    details = serde_json::json!({ "provider": provider });
+                }
+                coded_response(
+                    StatusCode::BAD_GATEWAY,
+                    "PROVIDER_RESPONSE_INVALID",
+                    t(
+                        "error-provider-response-invalid",
+                        "La réponse du prestataire n'a pas pu être lue. Rien n'a été importé.",
+                    ),
+                    details,
+                )
+            }
+            AppError::ProviderApiError {
+                provider,
+                window,
+                page,
+            } => coded_response(
+                StatusCode::BAD_GATEWAY,
+                "PROVIDER_API_ERROR",
+                t(
+                    "error-provider-api-error",
+                    "Le prestataire a refusé la demande. Rien n'a été importé.",
+                ),
+                serde_json::json!({ "provider": provider, "window": window, "page": page }),
+            ),
 
             // ----- Story 8-2 — bank profiles + CSV import -----
             AppError::BankCsvProfileNotFound { available_profiles } => {

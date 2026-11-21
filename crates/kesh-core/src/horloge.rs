@@ -13,14 +13,15 @@
 //!
 //! Le sens inverse — les instants qui **bornent** un jour de Zurich — est
 //! [`debut_du_jour_suisse`] et [`fin_du_jour_suisse`] (Story 36-10, #1147, #1053) : définis par
-//! [`jour_suisse`] et testés par elle, ce sont les seules autres fonctions du fuseau. `kesh-db` les
+//! [`jour_suisse`] et testés par elle, ce sont, avec [`heure_suisse`] (Story 38-12a), les seules
+//! autres fonctions du fuseau. `kesh-db` les
 //! appelle pour filtrer le journal d'audit et borner la fenêtre de la réconciliation ; il ne
 //! recalcule aucun décalage.
 //!
 //! Le module est pur (aucune I/O) : la lecture de la variable d'environnement de test se fait chez
 //! l'appelant, qui passe sa valeur à [`instant_de_test`].
 
-use chrono::{DateTime, Duration, LocalResult, NaiveDate, NaiveTime, TimeZone, Utc};
+use chrono::{DateTime, Duration, FixedOffset, LocalResult, NaiveDate, NaiveTime, TimeZone, Utc};
 
 /// Nom de la variable d'environnement qui fixe l'instant des **tests** (RFC 3339).
 ///
@@ -65,6 +66,16 @@ pub fn jour_suisse(instant: DateTime<Utc>) -> NaiveDate {
     instant
         .with_timezone(&chrono_tz::Europe::Zurich)
         .date_naive()
+}
+
+/// L'heure de Zurich d'un instant, avec son décalage (`+01:00` ou `+02:00`) — Story 38-12a :
+/// l'API PayPal rend ses dates en UTC, le CSV les écrit à l'heure du compte ; la conversion les
+/// ramène à cette heure. Même règle que [`jour_suisse`], dont elle donne la date :
+/// `heure_suisse(t).date_naive() == jour_suisse(t)`.
+pub fn heure_suisse(instant: DateTime<Utc>) -> DateTime<FixedOffset> {
+    instant
+        .with_timezone(&chrono_tz::Europe::Zurich)
+        .fixed_offset()
 }
 
 /// Le **premier** instant, à la milliseconde, dont le [`jour_suisse`] vaut `jour` (Story 36-10,
@@ -162,6 +173,23 @@ pub fn instant_de_test(valeur: Option<&str>) -> Option<DateTime<Utc>> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn heure_suisse_porte_le_decalage_et_la_date_du_jour_suisse() {
+        use chrono::TimeZone as _;
+        let hiver = super::Utc.with_ymd_and_hms(2024, 1, 31, 23, 30, 0).unwrap();
+        let h = super::heure_suisse(hiver);
+        assert_eq!(h.to_rfc3339(), "2024-02-01T00:30:00+01:00");
+        assert_eq!(
+            h.format("%Y-%m-%d").to_string(),
+            super::jour_suisse(hiver).to_string()
+        );
+        let ete = super::Utc.with_ymd_and_hms(2024, 7, 1, 21, 59, 59).unwrap();
+        assert_eq!(
+            super::heure_suisse(ete).to_rfc3339(),
+            "2024-07-01T23:59:59+02:00"
+        );
+    }
+
     use super::*;
 
     fn instant(s: &str) -> DateTime<Utc> {

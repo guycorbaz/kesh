@@ -306,6 +306,7 @@ mod tests {
             rate_fetch_memo: std::sync::Arc::default(),
             rate_login_trigger: std::sync::Arc::new(std::sync::Mutex::new(None)),
             test_rate_source: None,
+            provider_downloads: Default::default(),
         }
     }
 

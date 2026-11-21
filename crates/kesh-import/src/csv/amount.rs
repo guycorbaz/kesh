@@ -43,6 +43,18 @@ pub fn parse_dot_decimal_amount(raw: &str) -> Option<Decimal> {
     Decimal::from_str_exact(&raw.replace(',', "")).ok()
 }
 
+/// Lit un montant **d'une API** de prestataire (PayPal, puis Wise et Stripe
+/// s'ils écrivent leurs montants en chaînes) : la forme de
+/// [`parse_dot_decimal_amount`], **sans virgule des milliers** — une API
+/// n'en écrit jamais ; une valeur qui en porte serait un défaut du prestataire,
+/// refusé plutôt que lu sans alerte (revue P1 de la 38-12a, F13).
+pub fn parse_api_amount(raw: &str) -> Option<Decimal> {
+    if raw.contains(',') {
+        return None;
+    }
+    parse_dot_decimal_amount(raw)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -110,5 +122,17 @@ mod tests {
                 "{raw:?} doit être refusé"
             );
         }
+    }
+
+    #[test]
+    fn api_amount_refuses_the_thousands_comma() {
+        assert_eq!(parse_api_amount("1234.56"), Some(dec!(1234.56)));
+        assert_eq!(parse_api_amount("-0.50"), Some(dec!(-0.50)));
+        assert_eq!(parse_api_amount("1,234"), None);
+        assert_eq!(parse_api_amount("1,234.56"), None);
+        assert_eq!(parse_api_amount("1.234,5"), None);
+        // Le reste de la forme fermée tient toujours.
+        assert_eq!(parse_api_amount("1.234"), None);
+        assert_eq!(parse_api_amount("+1.00"), None);
     }
 }

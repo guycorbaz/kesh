@@ -489,6 +489,8 @@ async fn main() {
         rate_fetch_memo: Arc::default(),
         rate_login_trigger: Arc::new(std::sync::Mutex::new(None)),
         test_rate_source,
+        // Story 38-12a — téléchargements par l'API des prestataires.
+        provider_downloads: Default::default(),
     };
 
     // Story 31-1c (#503, AC26) — la sauvegarde automatique faite par Kesh :
