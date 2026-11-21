@@ -1,6 +1,6 @@
 # Story 38-12a : téléchargement des transactions par l'API PayPal (identifiants, client, conversion, tâche)
 
-Status: in-progress
+Status: review
 
 *Fiche rédigée le 2026-11-20, branche `epic/38-paypal` (phase 1 au commit `90428594`). Epic 38, **phase 2**
 (décisions de Beat du 2026-11-20, `kesh-gate-logs/epic-38-kiss/phase2-decisions.md`, autorisations du soir comprises).
@@ -629,3 +629,27 @@ Rapport : `kesh-gate-logs/s38-12a/revue-p2-rapport.md` (Opus 5.5, passe complèt
 | G7 — clippy non rejoué après le dernier test, gate complet non lancé | **constat exact, aucun correctif de code** : gate ciblé de cette remédiation (fmt, clippy workspace, nextest `kesh-api` lib, `paypal_download_e2e`, `audit_label_registry`, `textes_coherents`) ; le gate complet, `gate-ci.sh` et l'E2E complet restent à lancer par l'orchestrateur avant `done` | |
 
 Tests ajoutés : 3 de plus (client, E2E, `audit_label_registry`) et des assertions aux tests `une_fin_future_s_arrete_a_l_instant` et `statuts_classes`. Gate backend complet, `gate-ci.sh` et E2E complet : **non exécutés** par cette remédiation.
+
+### Remédiation de la revue de code P3 (2026-11-21)
+
+Rapport : `kesh-gate-logs/s38-12a/revue-p3-rapport.md` (passe ciblée, une lentille) — 0 CRITICAL, 0 HIGH, 0 MEDIUM, 3 LOW.
+
+| Finding | Traitement | Où |
+|---|---|---|
+| P3-1 — seconde moitié de `Window::split` de durée nulle | **corrigé** : `Window::is_empty` (`start >= end`), la moitié vide n'est pas envoyée à PayPal par `fetch_window` ; test `une_fin_future_s_arrete_a_l_instant` étendu (`now` à minuit + 0,5 s, `split` d'une fenêtre 19–20 novembre) | `provider_download.rs`, `paypal_api/mod.rs` |
+| P3-2 — idempotence de la reprise non écrite | **doc** : `is_transient_io_chain` et `is_transient_transport` disent que la reprise suppose une requête idempotente (`is_incomplete_message`/`is_closed` : requête possiblement reçue) ; `token_once` déclare le `POST` du jeton rejouable sans danger ; à trancher (clé d'idempotence) avant tout `POST` créateur de Wise ou de Stripe | `http_client.rs`, `paypal_api/mod.rs` |
+| P3-3 — couverture de la reprise limitée au jeton | **corrigé** : E2E `get_coupe_apres_la_requete_est_repris` (le `POST` du jeton est servi en 200, seul le `GET` est coupé après la requête : six `GET`, `PROVIDER_UNAVAILABLE`, rien d'écrit) ; le cas « connexion du pool réutilisée » reste non joué (hyper ne rejoue pas, `retry_canceled_requests`, lu non exécuté) | `tests/paypal_download_e2e.rs` |
+
+**Défaut trouvé au gate complet, hérité des remédiations P1/P2 (non vu des gates ciblés)** : la garde `mcp_gardes_lexicales::un_seul_ecouteur` rougissait (un `TcpListener` par test de `http_client.rs`, F2 de la P1 et G1 de la P2, dans `src/`). Correctif : les deux tests asynchrones liant un écouteur (`erreurs_reelles_de_reqwest_classees`, `connexion_fermee_apres_la_requete_est_passagere`) sont déplacés dans `tests/http_client_transport.rs`, hors du périmètre de la garde (commit `b64c00bd`). Premier gate complet (`gate-backend-12.log`, commit `020de8e2`) : 6284 exécutés, 6283 passés, 1 échec = cette garde.
+
+Dernier commit de code `205cbf25` : une assertion de plus au test `une_fin_future_s_arrete_a_l_instant` (une dernière fenêtre qui commence à `now`, `windows` en fenêtres de 19 jours), parce que la sonde N1 (suppression de la garde `start >= now`) était **muette** depuis la P2 ; rouge après l'assertion. Test seul, aucune ligne de production.
+
+Tests (périmètre `74979d0f` → `205cbf25`) : 1 test de plus (`get_coupe_apres_la_requete_est_repris`) ; 2 déplacés de `http_client.rs` vers `http_client_transport.rs` ; 2 tests existants étendus.
+
+Gates (journaux dans `kesh-gate-logs/s38-12a/`) :
+- ciblé `020de8e2` (`cible-12.log`, dev5) : fmt, clippy workspace, nextest 1105 exécutés, 1105 passés ;
+- complet `b64c00bd` (`gate-backend-13.log`, `test-fast.sh --ci`, dev6) : fmt, clippy, **6284 exécutés, 6284 passés**, 14 ignorés ;
+- `gate-ci.sh` : **au dernier commit de code `205cbf25`** (`gate-ci.log`, `gate-ci-14.out`) : **6303 passés, 0 échoué, 18 ignorés**, code 0 ;
+- ciblé `205cbf25` (`p4-cible.log`) : fmt, clippy workspace, nextest `kesh-api` lib + `http_client_transport` + `mcp_gardes_lexicales` : 789 exécutés, 789 passés, 5 ignorés ;
+- sondes (`mut/mutations-p3.log` et `mut/mutations-n1.sh`, copie hors dépôt) : 13 mutations, N1 à N13 (dont N12 `is_empty` toujours faux, N13 branche hyper retirée) : **13 rouges sur 13** (N1 rejouée après l'assertion, N1 muette avant) ;
+- E2E (Playwright) : aucun écran, non lancé. Le gate-ci du premier passage (`gate-ci-13-interrompu.log`), à `b64c00bd`, a été tué par le délai de l'enveloppe à 5415 tests passés, sans échec : il est rejoué en entier à `205cbf25`. Le gate backend complet (`b64c00bd`) précède le dernier commit, qui ne touche qu'un test unitaire : couvert par le ciblé `p4-cible.log`.
