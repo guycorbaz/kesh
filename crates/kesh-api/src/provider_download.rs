@@ -94,6 +94,13 @@ impl Window {
         Some((first, Window::new(next, self.to, now)))
     }
 
+    /// La fenêtre est-elle de durée nulle (`start >= end`) ? Possible pour la
+    /// seconde moitié d'une coupe dont le jour de début est celui du jour, à
+    /// la première seconde de ce jour (revue P3, P3-1) : on ne l'envoie pas.
+    pub fn is_empty(&self) -> bool {
+        self.start >= self.end
+    }
+
     /// Libellé de la fenêtre pour un message (`2024-01-01…2024-01-30`).
     pub fn label(&self) -> String {
         format!("{}…{}", self.from, self.to)
@@ -927,6 +934,13 @@ mod tests {
         assert!(w.iter().all(|w| w.start < w.end), "{w:?}");
         let w = period_windows(d(2026, 11, 1), d(2026, 11, 20), 30, minuit, 3);
         assert!(w.iter().all(|w| w.start < w.end), "{w:?}");
+        // Revue P3, P3-1 — la seconde moitié d'une coupe, à la première
+        // seconde du jour du jour, est de durée nulle : `is_empty`.
+        let a_minuit = minuit + chrono::TimeDelta::milliseconds(500);
+        let veille = Window::new(d(2026, 11, 19), d(2026, 11, 20), a_minuit);
+        let (a, b) = veille.split(a_minuit).unwrap();
+        assert!(!a.is_empty(), "{a:?}");
+        assert!(b.is_empty(), "{b:?}");
         // Une période entièrement future : aucune fenêtre.
         assert!(windows(d(2027, 1, 1), d(2027, 3, 1), 30, now).is_empty());
     }

@@ -1089,6 +1089,47 @@ async fn connexion_fermee_apres_la_requete_est_reprise(pool: MySqlPool) {
     assert_eq!(ctx.ecrit().await, (0, 0, 0));
 }
 
+/// Revue P3, P3-3 — le jeton est servi, seul le `GET` de téléchargement est
+/// coupé après la requête : six essais du `GET`, cinq pauses.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn get_coupe_apres_la_requete_est_repris(pool: MySqlPool) {
+    let ecoute = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let adresse = ecoute.local_addr().unwrap();
+    let gets = Arc::new(AtomicUsize::new(0));
+    let compte = gets.clone();
+    tokio::spawn(async move {
+        while let Ok((mut flux, _)) = ecoute.accept().await {
+            let compte = compte.clone();
+            tokio::spawn(async move {
+                use tokio::io::{AsyncReadExt, AsyncWriteExt};
+                let mut tampon = [0u8; 4096];
+                let n = flux.read(&mut tampon).await.unwrap_or(0);
+                if tampon[..n].starts_with(b"POST") {
+                    let corps = r#"{"access_token":"t","expires_in":3600}"#;
+                    let _ = flux
+                        .write_all(
+                            format!(
+                                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{corps}",
+                                corps.len()
+                            )
+                            .as_bytes(),
+                        )
+                        .await;
+                } else {
+                    compte.fetch_add(1, Ordering::SeqCst);
+                }
+                drop(flux);
+            });
+        }
+    });
+    let ctx = monter(&pool, &format!("http://{adresse}"), 1, true).await;
+    let v = ctx.telecharger("2020-01-01", "2020-01-30").await;
+    assert_eq!(v["state"], "failed", "{v}");
+    assert_eq!(v["error"]["code"], "PROVIDER_UNAVAILABLE", "{v}");
+    assert_eq!(gets.load(Ordering::SeqCst), 6, "six essais du GET");
+    assert_eq!(ctx.ecrit().await, (0, 0, 0));
+}
+
 /// AC-7, AC-8 — une devise sans compte bancaire : `failed`
 /// `PROVIDER_CURRENCY_ACCOUNT_MISSING`, rien d'écrit.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]

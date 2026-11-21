@@ -89,6 +89,9 @@ pub fn retry_after(response: &reqwest::Response) -> Option<String> {
 /// ferait qu'attendre deux minutes pour dire « réessayez plus tard » d'une
 /// faute de configuration (revue P1 de la 38-12a, F2).
 ///
+/// Reprise **sûre pour une requête idempotente seulement** (voir
+/// [`is_transient_io_chain`]).
+///
 /// Limite assumée : une panne **passagère** de la résolution de noms se lit
 /// comme un hôte inconnu, donc définitive (l'erreur du résolveur ne distingue
 /// pas les deux de façon portable) ; relancer le téléchargement suffit.
@@ -100,6 +103,12 @@ pub fn is_transient_transport(e: &reqwest::Error) -> bool {
 /// genre passager (connexion refusée, coupée, interrompue, délai, réseau ou
 /// hôte injoignable, fin de flux inattendue), ou une erreur `hyper` de connexion
 /// fermée avant la fin du message.
+///
+/// ⚠️ **La reprise suppose une requête idempotente** (revue P3, P3-2) : les cas
+/// `is_incomplete_message` et `is_closed` signifient que la requête a pu être
+/// **reçue** avant la coupure. Sûr pour un `GET` et pour le jeton OAuth ; un
+/// `POST` qui crée une ressource ne doit pas passer par cette reprise sans une
+/// clé d'idempotence (à trancher avant Wise et Stripe).
 pub fn is_transient_io_chain(e: &(dyn std::error::Error + 'static)) -> bool {
     let mut cause: Option<&(dyn std::error::Error + 'static)> = Some(e);
     while let Some(err) = cause {

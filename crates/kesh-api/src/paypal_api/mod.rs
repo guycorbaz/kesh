@@ -222,7 +222,10 @@ impl PaypalClient {
             })
     }
 
-    /// Un essai de la demande de jeton.
+    /// Un essai de la demande de jeton. Ce `POST` est **rejouable sans
+    /// danger** : il ne crée aucune ressource durable (un jeton de plus), ce
+    /// qui autorise la reprise commune des coupures après envoi
+    /// ([`crate::http_client::is_transient_io_chain`]).
     async fn token_once(&self) -> Attempt<Token, Fatal> {
         let sent = self
             .http
@@ -451,7 +454,11 @@ fn fetch_window(
                 };
                 job.add_steps(1);
                 fetched.absorb(fetch_window(client.clone(), a, now, job.clone()).await?);
-                fetched.absorb(fetch_window(client, b, now, job).await?);
+                // Une moitié de durée nulle (première seconde du jour) ne part
+                // pas chez PayPal (revue P3, P3-1).
+                if !b.is_empty() {
+                    fetched.absorb(fetch_window(client, b, now, job).await?);
+                }
                 return Ok(fetched);
             }
         };
