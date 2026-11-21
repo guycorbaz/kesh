@@ -1218,7 +1218,7 @@ fn the_registry_partition_is_what_the_story_declares() {
     );
     assert_eq!(
         LIB_ROUTES.len() + TEST_ENDPOINT_ROUTES.len(),
-        163,
+        164,
         "le registre est plus large que l'inventaire, et c'est voulu"
     );
 }
