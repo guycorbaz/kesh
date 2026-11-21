@@ -247,6 +247,28 @@ lignes à examiner ; paramètres PayPal au formulaire du compte bancaire ; filtr
   `40516c88` (page alignée sur les formes de la revue), fusion de `story/38-11c2` (`ecd54a38`, sans conflit), `5d04b925`
   (libellés des refus de la route, spec E2E). Statut `review`. Détail au Dev Agent Record.
 
+- 2026-11-21 — fusion du correctif de la 38-11c2 (`59acd9fd`, fusion `1943e067`, sans conflit) ; **revue de code P1**
+  (Sonnet 5.5, `kesh-gate-logs/s38-11d/revue-p1-rapport.md`) : 0 CRITICAL, 0 HIGH, 5 MEDIUM, 9 LOW, remédiés aux commits
+  `81916faf` et `10277d0e` (clippy). M1 : K2 (préparation de clôture) dit le prestataire de chaque compte en attente
+  (`PendingByAccount.provider`, `kesh-db`) et lie la page PayPal pour un compte PayPal, le lien générique seulement s'il
+  reste un compte ordinaire ; phrase au manuel. M2 : un test par site sans test (règlement client, paiement
+  fournisseur, réconciliation — page neuve testée avec un remplaçant de `ReconciliationProposals`), mutations rouges ;
+  le serveur **ne refuse pas** la réconciliation générique d'un compte PayPal (angle mort de 38-11b AC-3 b, écrit au
+  manuel et à `api-external.md`), versé à `kesh-gate-logs/epic-38-kiss/issues-a-ouvrir.md` (P2). M3 : l'écart d'une
+  vente déjà rattachée a son libellé (« Vente déjà rattachée à une autre transaction ») ; « aucun débit trouvé » au lieu
+  de « trouvé » suivi de rien ; manuel. M4 : `api-external.md` cite les codes réels (`RECONCILIATION_FISCAL_YEAR_CLOSED`
+  `{ entryDate }`, `LATER_FISCAL_YEAR_CLOSED` `{ fiscalYearId, fiscalYearName }`, et la liste des codes de `failed[]`
+  relevée au code). M5 (décision de l'orchestrateur) : `TransactionSummary.counterparty_email` (module de la 38-11c2)
+  servi par la revue, assertion HTTP dans `paypal_reconciliation_e2e`, colonne « E-mail » de « À examiner » remplie,
+  documentée. LOW : sélecteurs et import désactivés pendant l'acceptation, compte figé avant la boucle (L1) ; tests de
+  robustesse de la page (L2) ; codes convertis des refus d'écriture listés en dur (L3) ; textes du manuel et de
+  `api-external.md` (L4 à L6 : retrait en devise, angle mort complet, place du choix de l'exercice, compte rendu effacé
+  au changement de compte, retrait prérempli) ; compte de frais vidé **seulement** quand la devise du compte du plan ne
+  l'admet plus (L7 — écart assumé à la lettre de l'AC-1 « se vide quand ce compte change », qui effaçait en silence un
+  choix fait avant le compte du plan) ; captures 07 et 08 par élément et états ajoutés (L8) ; libellés de toutes les
+  règles, page par page (L9). Mutations survivantes de la P1 tuées (`mutations-front-2.log`, 12 rouges sur 13 ; la
+  treizième — compte relu à chaque paquet — équivalente depuis que le sélecteur est désactivé pendant l'acceptation).
+
 ## Dev Agent Record
 
 ### Agent Model Used
@@ -328,6 +350,33 @@ Tous au commit `5d04b925` (dernier commit de code), `gates-all.sh` :
   règle avec filtres, liste des règles, compte rendu d'import, propositions, écarts, à examiner, compte rendu
   d'acceptation, modale, après rattachement).
 
+### Gates après la revue P1 (dernier commit de code `10277d0e`, même cible et base)
+
+- **Gate backend** `scripts/test-fast.sh --ci` : **vert**, 6266 exécutés, **6266 passés**, 14 ignorés
+  (`gate-backend-3.log`) — les sept échecs de la 38-11c2 relevés plus haut sont levés par son correctif.
+- **Frontend** : `check` 0 erreur ; `lint-i18n-ownership` vert ; `test:unit` **4719/4719** ; `build` vert
+  (`front-3-*.log`).
+- **E2E complet** : **484 passés, 10 échecs, 18 ignorés** (`e2e-3.log`) — les dix attendus, jugés un à un (sept
+  KF-029, `backup-restore-new-install:262`, `:381`, `opening-balances:156`) ; `paypal-import.spec.ts` 7/7.
+- **gate-ci** (`gate-ci-3.log`) : rc 101, un seul échec, `admin_auto_backup_e2e::disque_sature_pendant_l_ecriture`
+  (panique du crate `zip`), test d'un module que la story ne touche pas, vert aux deux gate-ci précédents et sous nextest
+  au même commit : intermittent, versé à `issues-a-ouvrir.md` (KF). Rejoué : voir la ligne suivante.
+- **gate-ci rejoué** (`gate-ci-4.log`, même commit `10277d0e`) : **vert**, rc 0, 6285 passés, 0 échec, 18 ignorés (260 résultats de binaire) ; `disque_sature_pendant_l_ecriture` vert.
+- **Gate ciblé** de la remédiation (`cible-p1-nextest.log`) : 156/156 (K2, revue PayPal avec e-mail, comptes,
+  `textes_coherents`, registres d'audit, `kesh-reconciliation`), clippy vert.
+- Entre les deux : le gate backend au commit de fusion `1943e067` n'a pas tourné (`test-fast.sh` exige un dépôt git, la
+  copie `git archive` n'en est pas un) ; le gate-ci de `1943e067` (`gate-ci-2.log`) a rougi sur deux tests
+  d'`auth_e2e` par une base de test disparue en cours de route (`Unknown database _sqlx_test_…`), sans rapport.
+- **Captures** refaites par la suite complète : `kesh-gate-logs/s38-11d/captures/00` à `13` (dont `05a` refus de
+  l'import, `06a` retrait à choisir, `12` acceptation avec refus, `13` case désactivée sur le principal, `07` et `08`
+  par élément) ; celles des autres specs rangées à part (`captures/autres-specs/`).
+- Tests ajoutés par la remédiation (de `1943e067` à `10277d0e`) : 2 tests d'intégration Rust
+  (`k2_dit_le_prestataire_du_compte_en_attente`, assertion e-mail dans `revue_puis_acceptation_du_tout`), Vitest : 3 sites
+  (`SettleInvoiceDialog`, `supplier-settlement-page`, `reconciliation-page.test.ts` 2), K2 1, écarts 5, page 6,
+  compte de frais 1, sens 1, codes convertis 1 `it.each` de 10 ; E2E : étapes 6 et 7.
+- Compteurs : `sitesTotal` **3618**, `CANDIDATES_ATTENDUES` **138** (conformes 117), relevés par les gardes.
+- Prompt de la revue P2 (Opus, passe complète) : `kesh-gate-logs/s38-11d/revue-p2-prompt.md`.
+
 ### Completion Notes
 
 - Tests ajoutés (de `a02f3372` à `5d04b925`, déclarations `it`/`test` recomptées par fichier) : **60 Vitest**
@@ -395,3 +444,14 @@ Tous au commit `5d04b925` (dernier commit de code), `gates-all.sh` :
 - `frontend/src/routes/(app)/supplier-invoices/[id]/+page.svelte`
 - `frontend/tests/e2e/paypal-import.spec.ts`
 - `_bmad-output/implementation-artifacts/38-11d-ecrans-manuel-e2e-paypal.md`, `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- `frontend/src/routes/(app)/reconciliation/ReconciliationProposalsStub.test.svelte`
+- `frontend/src/routes/(app)/reconciliation/reconciliation-page.test.ts`
+- `crates/kesh-api/tests/closing_checks_e2e.rs`
+- `crates/kesh-api/tests/paypal_reconciliation_e2e.rs`
+- `crates/kesh-db/src/repositories/closing_checks.rs`
+- `crates/kesh-reconciliation/src/provider_review.rs`
+- `frontend/src/lib/features/fiscal-years/FiscalYearChecks.svelte`
+- `frontend/src/lib/features/fiscal-years/FiscalYearChecks.test.ts`
+- `frontend/src/lib/features/fiscal-years/fiscal-years.types.ts`
+- `frontend/src/lib/features/invoices/SettleInvoiceDialog.test.ts`
+- `frontend/src/routes/(app)/supplier-invoices/[id]/supplier-settlement-page.test.ts`
