@@ -107,6 +107,15 @@ Quatre points tracés en issues à la revue du correctif `fix-api-parent-compte`
 
 ## Gates
 
+**Après la fusion de `main` (0.19.1) — commit de fusion `c9802630`, dernier commit de code `dde0b579`, cible propre, file `heavy.sh`** :
+`test-fast --ci` 6212 passés, 15 ignorés ; frontend `check`, `lint-i18n-ownership`, `build` verts, Vitest 4833 (280 fichiers) ;
+`gate-ci.sh` 6231 passés, 0 échec, 19 ignorés ; E2E complet 492 passés, 9 échecs — sept KF-029 (#97) (`mode-expert` ×2,
+`onboarding-path-b` ×2, `onboarding` ×3) et `backup-restore-new-install.spec.ts:262` et `:381` (KF-065 #1282) —, 18 ignorés ;
+`opening-balances.spec.ts:156` (KF-067) passe. Aucun compteur touché par la fusion (aucun conflit). Journaux
+`kesh-gate-logs/fix-suivis/chaine7.console.log`, `gate-backend.log`, `front-*.log`, `gate-ci.log`, `e2e-r.log` ; ceux d'avant la
+fusion dans `avant-fusion/`.
+
+**Historique (avant la fusion) :**
 **Au dernier commit de code `dde0b579` (remédiation des LOW de la P2), cible propre, file `heavy.sh`** : `test-fast --ci`
 6167 passés, 14 ignorés (4 instables rejoués verts) ; frontend `check`, `lint-i18n-ownership`, `build` verts, Vitest 4632
 (278 fichiers) ; `gate-ci.sh` 6186 passés, 0 échec, 18 ignorés ; E2E complet 478 passés, 10 échecs — les attendus de
