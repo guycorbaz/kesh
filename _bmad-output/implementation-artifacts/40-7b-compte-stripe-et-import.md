@@ -272,17 +272,17 @@ s'importe d'un geste, ventilé par devise ; les doublons sont ignorés.
   `STRIPE_CSV_INVALID` et `STRIPE_PAYOUT_ACCOUNT_INVALID`.
 - **T5** : export CSV (`payout_bank_account_id`), sauvegarde (aller-retour et sauvegarde de la version précédente,
   `admin_full_import_e2e.rs` ; `ABSENCES_ADMISES_EPIC_37` non touchée), i18n quatre locales (3 clés), registre d'audit
-  (159 routes, 151 tracées, 163 avec les routes de test), phrase du manuel d'administration (`.tex`, 151 des 159 ; 151 + 4 + 4
+  (160 routes, 152 tracées, 164 avec les routes de test), phrase du manuel d'administration (`.tex`, 151 des 159 ; 151 + 4 + 4
   = 159), `docs/api-external.md`.
 
 ### Tests ajoutés (recomptés depuis la source ; périmètre `git diff 046f39e9..HEAD`, 046f39e9 = 40-7a)
 
-19 tests nouveaux : `kesh-db/tests/stripe_import_schema.rs` 2 (CHECK jamais NULL, octet, FK `RESTRICT`) ;
-`kesh-api/tests/stripe_import_e2e.rs` 8 (ventilation et versements, rapport par devise puis tous, devise manquante / doublon de
+25 tests nouveaux (recomptés à la source après la reprise de la revue P1 : attributs de test de chaque fichier, 046f39e9 contre HEAD) : `kesh-db/tests/stripe_import_schema.rs` 2 (CHECK jamais NULL, octet, FK `RESTRICT`) ;
+`kesh-api/tests/stripe_import_e2e.rs` 10 (dont, à la revue P1, `renommer_un_compte_stripe_dont_la_destination_est_archivee` (L2) et `retirer_stripe_d_un_compte_sans_transaction` (L3) ; ventilation et versements, rapport par devise puis tous, devise manquante / doublon de
 devise / compte clos, refus de tête et clés, création et refus du compte de versement, modification, six refus
-`BANK_ACCOUNT_IS_PROVIDER` + lot pain.001 + solde d'ouverture, cohabitation PayPal) ; `routes/stripe_imports.rs` 6 unitaires ;
-`admin_full_import_e2e.rs` 2 (aller-retour du compte de versement, sauvegarde sans la colonne) ; `routes/provider_imports.rs` 1
-(`deux_lignes_identiques_voisines_sont_deux_groupes`). Étendus : tests d'entité (JSON `stripe`), export CSV, registres d'audit
+`BANK_ACCOUNT_IS_PROVIDER` + lot pain.001 + solde d'ouverture, cohabitation PayPal) ; `routes/stripe_imports.rs` 9 unitaires ;
+`admin_full_import_e2e.rs` 3 (aller-retour du compte de versement, sauvegarde sans la colonne, destination d'identifiant supérieur) ; `routes/provider_imports.rs` 1
+(`deux_lignes_identiques_voisines_sont_deux_groupes`). (`provider_imports.rs` porte 2 tests : le second, `doublon_dans_le_fichier_et_en_base`, vient de la 38-12a.) Étendus : tests d'entité (JSON `stripe`), export CSV, registres d'audit
 (159 routes, 151 tracées, 163 avec les routes de test ; `SITES_INDIRECTS` à dix ; `ACTIONS` + `stripe_import.created`),
 `bank_account_opening_balance_e2e` (clé `stripe`), `migrations_upgrade_path` (97 / 63).
 
@@ -295,8 +295,7 @@ copie, et le comportement PayPal d'avant (L6, deux lignes de même identifiant v
 
 ### Fusion de la 38-12a (revue P1, M1)
 
-`story/38-12a` fusionnée dans `story/40-7b` (commit de fusion ; **tête de 38-12a fusionnée : `1b791613`** — elle bougera
-encore : **une reprise de la 38-12a sera à refaire avant la fusion de l'epic**). On adopte **sa** forme : `ProviderGroup`,
+`story/38-12a` fusionnée dans `story/40-7b` (commit de fusion ; **têtes de 38-12a fusionnées : `1b791613`, puis `1022e4cf`** (reprise faite à la remédiation P1 : `9bbf1388` ramène `AUDIT_ACTIONS` à deux actions chez elle, résolu à l'union des trois ; `dedupe_groups` seule, sans le défaut des doublons voisins) ; **une reprise de la 38-12a reste à refaire avant la fusion de l'epic si elle avance encore**). On adopte **sa** forme : `ProviderGroup`,
 `dedupe_groups`, `by_currency: BTreeMap<String, Vec<ProviderGroup>>`, `provider_lines` de `paypal_imports.rs` rend des groupes ;
 `stripe_imports.rs::lines_of_currency` produit un groupe par ligne du rapport (brut + frais) et un groupe d'une ligne
 `payout:<id>` par versement non nul. Conflits résolus en gardant les deux intentions : `provider_imports.rs` (add/add : la
@@ -311,48 +310,40 @@ conflit, valeur que **les deux** branches avaient portée depuis 129 : la somme 
 d'administration : `152 des 160` et `152 + 4 + 4 = 160` ; migrations : 97 (la 38-12a n'en ajoute pas ; la migration Stripe garde
 son horodatage `20261120000003`, `total == 97`, P6 inchangé) ; `sitesTotal` : frontend non touché.
 
-### Mutations (sondes négatives, journal `kesh-gate-logs/s40-7b/mutations.log`, fichier restauré par `git checkout` après chacune)
+### Mutations (sondes négatives rejouées après la reprise de la revue P1, `kesh-gate-logs/s40-7b/mut2.log`, fichier restauré après chacune)
 
-Garde de devise du compte de versement désactivée → `creer_un_solde_stripe_et_ses_refus` rouge ; correctif de `dedupe_lines`
-retiré → `deux_lignes_identiques_voisines_sont_deux_groupes` rouge ; signe des frais inversé → `brut_et_frais_chacun_de_son_signe`
-rouge ; signe du versement inversé → `le_versement_reprend_la_somme_des_nets` rouge (quatre sur quatre, panics de test, non erreurs
-de compilation). Non mutée : la CHECK `provider IS NOT NULL` (une mutation s'applique au squash, régénéré) — elle est éprouvée par
-`stripe_import_schema.rs` sur le schéma réel.
+Sept sur sept rouges, par panic de test et non erreur de compilation : garde de devise du compte de versement désactivée →
+`creer_un_solde_stripe...` ; `in_source` des doublons voisins forcé à faux (`dedupe_groups`) →
+`deux_lignes_identiques_voisines_sont_deux_groupes` ; signe des frais inversé → `brut_et_frais_chacun_de_son_signe` ; signe du
+versement inversé → `le_versement_reprend_la_somme_des_nets` ; borne du libellé retirée → `une_longue_description_ne_coupe_pas_la_fin_du_libelle` ;
+dispense `payout_unchanged` retirée → `renommer_un_compte_stripe_dont_la_destination_est_archivee` ; retrait de Stripe désactivé →
+`retirer_stripe_d_un_compte_sans_transaction`. Non mutée : la CHECK `provider IS NOT NULL` (éprouvée par `stripe_import_schema.rs`).
 
-### Gates — dernier commit de code `f30e65d0` (HEAD au gate : `1d430379`, docs seuls en plus), cible propre `/home/beat/claude/kesh-targets/kesh-wt40b`, `CARGO_INCREMENTAL=0`
+### Gates — dernier commit de code `c5326214` (reprise de la revue P1), cible propre `kesh-targets/kesh-wt40b`, `CARGO_INCREMENTAL=0`
 
-L'amendement du libellé (2026-11-20) est le dernier commit de code : **tous les gates ont été rejoués après lui**, sauf le frontend
-(aucun fichier de `frontend/` modifié depuis son passage vert). Les gates joués avant, sur la cible partagée puis sur la cible propre,
-sont conservés sous `kesh-gate-logs/s40-7b/run1/` et `run2/` à titre de relevé, **sans valeur de clôture**.
+Journaux sous `kesh-gate-logs/s40-7b/`. Les gates de la passe précédente (`f30e65d0`) sont sans valeur de clôture.
 
-- `scripts/test-fast.sh --ci` (fmt, clippy `-D warnings`, nextest ; base `kesh_s407b` remise à zéro, `drop-stale.sh` avant) :
-  **6263 tests exécutés, 6263 réussis, 14 ignorés** (`gate-backend.log`) ; `cargo publish --dry-run -p kesh-import` vert.
-- E2E complet (`LANG=fr_CH.UTF-8`, port 3417, base `kesh_e2e_s407b`) : **477 réussis, 10 échecs, 18 ignorés** (`e2e.log`) ; les dix
-  échecs sont les attendus (sept de la KF-029 : `mode-expert` ×2, `onboarding-path-b` ×2, `onboarding.spec.ts:57`, `:77`, `:150` ;
-  `backup-restore-new-install.spec.ts:262` et `:381` ; `opening-balances.spec.ts:156`).
-- Frontend (passage antérieur, inchangé depuis, HEAD `f8009192`..`c760dc49`) : `npm run check` 0 erreur, `lint-i18n-ownership`
-  vert, `test:unit` **278 fichiers, 4612 tests réussis**, `npm run build` vert. (`node_modules` copié de la worktree de la 38 : un lien
-  symbolique faisait échouer 265 fichiers de test, relevé et rejoué.)
-- `scripts/gate-ci.sh` (copie `git archive` de `1d430379`, `KESH_NO_MEMGUARD=1` faute de bus utilisateur systemd, conteneur dev2) : **vert, rc=0, aucun échec** (`gate-ci.log`) ; deux passages précédents perdus (137 par OOM de la station, puis bus systemd absent), cible de compilation supprimée.
+- Gate ciblé (`r2-cible.sh`, fmt + sept binaires d'intégration et registres) : vert. Un premier passage a rougi
+  `retirer_stripe_d_un_compte_sans_transaction` (mon test : un compte qui perd Stripe redevient bancaire et exige son IBAN) : test corrigé.
+- `scripts/test-fast.sh --ci` (fmt, clippy `-D warnings`, nextest ; base remise à zéro) : **6313 exécutés, 6313 réussis, 14 ignorés** ;
+  `cargo publish --dry-run -p kesh-import` vert. Un premier passage a rougi clippy (`too_many_arguments`, `update_once` à huit
+  paramètres) : `#[allow]` motivé, passage rejoué.
+- `scripts/gate-ci.sh` (copie `git archive` de `c5326214`) : **6332 passés, 0 échoué, 18 ignorés**, rc 0.
+- E2E complet (`LANG=fr_CH.UTF-8`, port 3417) : **477 réussis, 10 échecs, 18 ignorés** (`e2e-complet-final.log`) : les sept de la
+  KF-029 et, comme à la passe précédente de la story, `backup-restore-new-install.spec.ts:262` et `:381` (bouton d'import
+  désactivé) et `opening-balances.spec.ts:156` (un toast recouvre le bouton). Rejoués seuls sur une base neuve : les trois
+  rougissent encore. ⚠️ **Leur cause n'est pas établie** : ils étaient déjà rouges avant la reprise, aucun fichier du frontend ni de
+  ces routes n'est touché par la story, mais le rejeu sur `main` n'a pas été fait ; à confirmer (issue à ouvrir si le rouge vient de la branche).
+- Frontend : aucun fichier de `frontend/` modifié depuis le passage vert antérieur (`npm run check`, `lint-i18n-ownership`,
+  `test:unit` 4612 tests, `build`).
 
-Incidents d'infrastructure, **sans rapport avec la story**, rejoués : un gate tué à 137 en compilation (mémoire) ; un gate à 542
-échecs « database exists » (bases `_sqlx_test_*` laissées par un gate tué, registre sqlx effacé par la remise à zéro de la base :
-`drop-stale.sh` ajouté avant la remise à zéro) ; trois gates perdus au disque plein de `kesh-mariadb-dev2` (tmpfs 8 Go, journal
-d'annulation) et à sa recréation par l'orchestrateur (« table is full », base disparue) ; la cible cargo partagée, abandonnée en cours de
-route (consigne du 2026-11-20 : gates faux, tous rejoués sur cible propre, comme dit ci-dessus).
-Défauts réels trouvés par ces gates et corrigés : cinq tests de registres (`audit_label_registry` ×3 : action non littérale au cœur
-d'import → `AUDIT_ACTIONS` en toutes lettres, `SITES_INDIRECTS` à dix ; `audit_route_registry` partition 129 → 130 et 162 → 163 ;
-`bank_account_opening_balance_e2e` : clé `stripe`) et mes propres comptes rendus d'audit de test.
-E2E, première passe (HEAD `a25a217c`, cible partagée) : 10 échecs attendus ; deuxième (HEAD `c760dc49`) : 11, dont
-`bank-import.spec.ts:130`, **course du test lui-même** (`rowsBefore` compté avant le chargement de la liste ; rejoué seul, il échoue,
-dans la passe finale il réussit) : aucun fichier frontend ni la route CAMT touchés. Une issue est à ouvrir (« E2E bank-import :
-`rowsBefore` lu avant le chargement de la liste »), demandée à l'orchestrateur.
+Incidents d'infrastructure, sans rapport avec la story : un watcher de fond tué par la pression mémoire de la station (sans effet sur la chaîne).
 
 ### Limites et points hors périmètre relevés
 
 - Cible cargo `kesh-targets/kesh-wt40b` supprimée à la clôture.
 - Archiver (non supprimer) un compte désigné comme destination de versement n'est pas refusé : la garde `archived` ne vaut qu'à
-  la pose ; à tracer en issue.
+  la pose, et un renommage ne la rejuge plus (revue P1, L2) ; la destination se relit à l'usage (40-7c) ; à tracer en issue.
 - Aucun contrôle ne voit un rapport filtré par catégorie (écrit à la fiche et à l'API ; le manuel utilisateur relève de la 40-7d).
 - Manuel utilisateur (`.tex`) : non touché (écrans et manuel : 40-7d) ; manuel d'administration : une phrase (compte du registre).
 
@@ -360,6 +351,8 @@ dans la passe finale il réussit) : aucun fichier frontend ni la route CAMT touc
 
 - 2026-11-21 — développement de la story (Claude Sonnet 5.5) : migration, réglages Stripe, cœur d'import commun aligné sur la
   38-12a, route d'import Stripe, sauvegarde, API, registre, i18n ; statut `review`.
+
+- 2026-11-21 — remédiation de la revue P1 (Claude Sonnet 5.5) : reprise de la 38-12a (`1b791613`, puis `1022e4cf`), M1, L1 à L6 ; gates rejoués au dernier commit de code `c5326214`.
 
 ## Notes de version
 
