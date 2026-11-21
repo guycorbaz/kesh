@@ -704,6 +704,8 @@ pub fn serialize_bank_accounts_csv<W: Write>(
         "provider",
         "provider_account",
         "fee_account_id",
+        // Story 40-7b — compte bancaire de versement d'un compte Stripe.
+        "payout_bank_account_id",
     ])
     .map_err(|e| map_csv_err("bank_accounts", e))?;
     for b in rows {
@@ -726,6 +728,7 @@ pub fn serialize_bank_accounts_csv<W: Write>(
             fmt_opt_str(&b.provider_settings.provider),
             fmt_opt_str(&b.provider_settings.provider_account),
             fmt_opt_i64(b.provider_settings.fee_account_id),
+            fmt_opt_i64(b.provider_settings.payout_bank_account_id),
         ])
         .map_err(|e| map_csv_err("bank_accounts", e))?;
     }
@@ -2063,11 +2066,26 @@ mod tests {
                 provider: Some("paypal".into()),
                 provider_account: Some("PayPal www".into()),
                 fee_account_id: Some(42),
+                payout_bank_account_id: None,
+            },
+            ..base.clone()
+        };
+        // Story 40-7b — le solde USD d'un compte Stripe, avec son compte de versement.
+        let stripe = BankAccount {
+            id: 12,
+            bank_name: "Stripe".into(),
+            description: None,
+            iban: None,
+            provider_settings: kesh_db::entities::BankAccountProvider {
+                provider: Some("stripe".into()),
+                provider_account: Some("Stripe boutique".into()),
+                fee_account_id: Some(42),
+                payout_bank_account_id: Some(7),
             },
             ..base.clone()
         };
         let mut buf = Vec::new();
-        serialize_bank_accounts_csv(&[base, sans, formule, carte, paypal], &mut buf)
+        serialize_bank_accounts_csv(&[base, sans, formule, carte, paypal, stripe], &mut buf)
             .expect("serialize ok");
         let text = String::from_utf8(buf[3..].to_vec()).expect("utf8");
         let mut lines = text.lines();
@@ -2075,7 +2093,7 @@ mod tests {
             lines.next().unwrap(),
             "id;company_id;bank_name;description;iban;qr_iban;is_primary;\
              journal_account_id;archived;closed_on;version;created_at;updated_at;\
-             account_kind;card_last4;provider;provider_account;fee_account_id",
+             account_kind;card_last4;provider;provider_account;fee_account_id;payout_bank_account_id",
             "en-tête complet"
         );
         // T-a10 (Story 28-4a) — `closed_on` vide pour un compte ouvert,
@@ -2084,7 +2102,7 @@ mod tests {
         assert!(ouvert.starts_with("7;1;UBS;Épargne;CH9300762011623852957;"));
         assert!(ouvert.contains(";false;;1;"), "closed_on vide : {ouvert}");
         assert!(
-            ouvert.ends_with(";bank;;;;"),
+            ouvert.ends_with(";bank;;;;;"),
             "type, puis les réglages de prestataire vides : {ouvert}"
         );
         let clos = lines.next().unwrap();
@@ -2105,13 +2123,18 @@ mod tests {
             "IBAN vide pour une carte : {ligne_carte}"
         );
         assert!(
-            ligne_carte.ends_with(";credit_card;1234;;;"),
+            ligne_carte.ends_with(";credit_card;1234;;;;"),
             "type et quatre chiffres, puis les réglages vides : {ligne_carte}"
         );
         let ligne_paypal = lines.next().unwrap();
         assert!(
-            ligne_paypal.ends_with(";bank;;paypal;PayPal www;42"),
+            ligne_paypal.ends_with(";bank;;paypal;PayPal www;42;"),
             "réglages de prestataire en fin de ligne : {ligne_paypal}"
+        );
+        let ligne_stripe = lines.next().unwrap();
+        assert!(
+            ligne_stripe.ends_with(";bank;;stripe;Stripe boutique;42;7"),
+            "compte de versement en dernière colonne : {ligne_stripe}"
         );
     }
 

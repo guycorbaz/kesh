@@ -1796,6 +1796,9 @@ error-provider-currency-account-missing = Il file contiene movimenti in { $curre
 error-provider-account-length = Il nome del conto del prestatore è obbligatorio e conta al massimo 120 caratteri.
 error-provider-account-hidden-char = Il nome del conto del prestatore non può contenere né a capo né caratteri di controllo.
 error-paypal-csv-invalid = Questo file non è un estratto PayPal « Balance affecting transactions » leggibile. Nulla è stato importato.
+error-stripe-csv-invalid = Questo file non è un rapporto Stripe « Itemized payout reconciliation » leggibile. Nulla è stato importato.
+error-stripe-csv-linked-object-hint = In Stripe, Report → Riconciliazione dei versamenti → Dettagliato, aggiunga la colonna source_id (o charge_id), poi esporti di nuovo.
+error-stripe-payout-account-invalid = Il conto di versamento deve essere un conto bancario della società, aperto, senza prestatore Stripe né PayPal, nella stessa valuta del saldo Stripe.
 # Story 38-12a — scaricamento tramite l'API di un prestatore (base comune)
 error-provider-period-invalid = Periodo rifiutato: l'inizio deve precedere la fine, non essere nel futuro e risalire a meno di tre anni fa.
 error-provider-api-not-configured = Lo scaricamento non è configurato per questo conto: l'amministratore inserisce le credenziali nell'ambiente del server. L'importazione del file resta possibile.
@@ -3520,6 +3523,7 @@ audit-log-action-imported-supplier-invoice-detached = Documento staccato dalla s
 audit-log-action-payment-batch-generated = Lotto di pagamento creato
 audit-log-action-paypal-import-created = Estratto PayPal importato
 audit-log-action-paypal-download-created = Transazioni PayPal scaricate
+audit-log-action-stripe-import-created = Rapporto Stripe importato
 audit-log-action-payment-batch-confirmed = Lotto di pagamento confermato
 audit-log-action-payment-batch-cancelled = Lotto di pagamento annullato
 audit-log-action-bank-account-created = Conto bancario creato

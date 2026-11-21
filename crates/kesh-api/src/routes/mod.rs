@@ -55,6 +55,7 @@ pub mod reconciliation_rules;
 pub mod reports;
 pub mod session_settings;
 pub mod setup;
+pub mod stripe_imports;
 pub mod supplier_invoices;
 pub mod test_endpoints;
 pub mod users;

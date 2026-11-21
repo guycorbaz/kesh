@@ -1796,6 +1796,9 @@ error-provider-currency-account-missing = The file has movements in { $currencie
 error-provider-account-length = The provider account name is required and has at most 120 characters.
 error-provider-account-hidden-char = The provider account name cannot contain a line break or a control character.
 error-paypal-csv-invalid = This file is not a readable PayPal « Balance affecting transactions » statement. Nothing was imported.
+error-stripe-csv-invalid = This file is not a readable Stripe « Itemized payout reconciliation » report. Nothing was imported.
+error-stripe-csv-linked-object-hint = In Stripe, Reports → Payout reconciliation → Itemized, add the source_id (or charge_id) column, then export again.
+error-stripe-payout-account-invalid = The payout account must be an open bank account of the company, without a Stripe or PayPal provider, in the same currency as the Stripe balance.
 # Story 38-12a — download through a provider's API (common base)
 error-provider-period-invalid = Period refused: the start must precede the end, not be in the future, and be less than three years old.
 error-provider-api-not-configured = Download is not configured for this account: the administrator sets its credentials in the server's environment. Importing the file remains possible.
@@ -3525,6 +3528,7 @@ audit-log-action-imported-supplier-invoice-detached = Document detached from its
 audit-log-action-payment-batch-generated = Payment batch created
 audit-log-action-paypal-import-created = PayPal statement imported
 audit-log-action-paypal-download-created = PayPal transactions downloaded
+audit-log-action-stripe-import-created = Stripe report imported
 audit-log-action-payment-batch-confirmed = Payment batch confirmed
 audit-log-action-payment-batch-cancelled = Payment batch cancelled
 audit-log-action-bank-account-created = Bank account created

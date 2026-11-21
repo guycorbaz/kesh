@@ -1796,6 +1796,9 @@ error-provider-currency-account-missing = Die Datei enthält Bewegungen in { $cu
 error-provider-account-length = Der Name des Dienstleisterkontos ist obligatorisch und umfasst höchstens 120 Zeichen.
 error-provider-account-hidden-char = Der Name des Dienstleisterkontos darf weder Zeilenumbruch noch Steuerzeichen enthalten.
 error-paypal-csv-invalid = Diese Datei ist kein lesbarer PayPal-Auszug « Balance affecting transactions ». Nichts wurde importiert.
+error-stripe-csv-invalid = Diese Datei ist kein lesbarer Stripe-Bericht « Itemized payout reconciliation ». Nichts wurde importiert.
+error-stripe-csv-linked-object-hint = Fügen Sie in Stripe unter Berichte → Auszahlungsabstimmung → Detailliert die Spalte source_id (oder charge_id) hinzu und exportieren Sie erneut.
+error-stripe-payout-account-invalid = Das Auszahlungskonto muss ein offenes Bankkonto der Gesellschaft sein, ohne Stripe- oder PayPal-Dienstleister, in derselben Währung wie der Stripe-Saldo.
 # Story 38-12a — Download über die API eines Zahlungsdienstleisters (gemeinsamer Sockel)
 error-provider-period-invalid = Zeitraum abgelehnt: Der Beginn muss vor dem Ende liegen, darf nicht in der Zukunft liegen und muss weniger als drei Jahre zurückliegen.
 error-provider-api-not-configured = Der Download ist für dieses Konto nicht eingerichtet: Die Administratorin oder der Administrator hinterlegt die Zugangsdaten in der Umgebung des Servers. Der Import der Datei bleibt möglich.
@@ -3519,6 +3522,7 @@ audit-log-action-imported-supplier-invoice-detached = Dokument von seiner Rechnu
 audit-log-action-payment-batch-generated = Zahlungsstapel erstellt
 audit-log-action-paypal-import-created = PayPal-Auszug importiert
 audit-log-action-paypal-download-created = PayPal-Transaktionen heruntergeladen
+audit-log-action-stripe-import-created = Stripe-Bericht importiert
 audit-log-action-payment-batch-confirmed = Zahlungsstapel bestätigt
 audit-log-action-payment-batch-cancelled = Zahlungsstapel storniert
 audit-log-action-bank-account-created = Bankkonto erstellt

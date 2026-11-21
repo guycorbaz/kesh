@@ -1879,6 +1879,9 @@ error-provider-currency-account-missing = Le fichier porte des mouvements en { $
 error-provider-account-length = Le nom du compte du prestataire est obligatoire et compte au plus 120 caractères.
 error-provider-account-hidden-char = Le nom du compte du prestataire ne peut contenir ni saut de ligne ni caractère de contrôle.
 error-paypal-csv-invalid = Ce fichier n'est pas un relevé PayPal « Balance affecting transactions » lisible. Rien n'a été importé.
+error-stripe-csv-invalid = Ce fichier n'est pas un rapport Stripe « Itemized payout reconciliation » lisible. Rien n'a été importé.
+error-stripe-csv-linked-object-hint = Dans Stripe, Rapports → Rapprochement des versements → Détaillé, ajoutez la colonne source_id (ou charge_id), puis exportez de nouveau.
+error-stripe-payout-account-invalid = Le compte de versement doit être un compte bancaire de la société, ouvert, sans prestataire Stripe ni PayPal, dans la même devise que le solde Stripe.
 # Story 38-12a — téléchargement par l'API d'un prestataire (socle commun)
 error-provider-period-invalid = Période refusée : le début doit précéder la fin, ne pas être dans le futur, et dater de moins de trois ans.
 error-provider-api-not-configured = Le téléchargement n'est pas configuré pour ce compte : l'administrateur pose ses identifiants dans l'environnement du serveur. L'import du fichier reste possible.
@@ -3598,6 +3601,7 @@ audit-log-action-imported-supplier-invoice-detached = Document détaché de sa f
 audit-log-action-payment-batch-generated = Lot de paiement créé
 audit-log-action-paypal-import-created = Relevé PayPal importé
 audit-log-action-paypal-download-created = Transactions PayPal téléchargées
+audit-log-action-stripe-import-created = Rapport Stripe importé
 audit-log-action-payment-batch-confirmed = Lot de paiement confirmé
 audit-log-action-payment-batch-cancelled = Lot de paiement annulé
 audit-log-action-bank-account-created = Compte bancaire créé
