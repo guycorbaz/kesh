@@ -598,6 +598,25 @@ textes et le manuel, `f6ef42b6` le code de la remédiation.
 4. règle du test de masquage : valeur de règle `Abonnement` identique à celle d'une autre règle du jeu, remplacée par `mensuel`
    pour que les deux règles restent distinctes.
 
+### Remédiation de la revue P4 (Claude Sonnet 5.5)
+
+Rapport : `kesh-gate-logs/s38-11c2/revue-p4-rapport.md` (0 CRITICAL, 0 HIGH, 1 MEDIUM, 5 LOW). Tous remédiés.
+
+- **M1** : le manuel (§ « Application des règles ») dit « Au rapprochement d'un compte bancaire, une règle ne s'applique qu'aux
+  transactions en CHF… », sans contradiction avec « Compte en devise » ; PDF compilé en copie hors dépôt (`make user`), phrases relues
+  dans le texte aplati ; PDF non commité.
+- **L1** : mentions nominatives retirées de la fiche (lignes 9, 31, 219) ; greppé, plus aucune dans la fiche.
+- **L2** : les deux commentaires d'exemption `fx-filtre-comptes` corrigés (`+page.svelte`, `RulesList.svelte`).
+- **L3** : `provider-failed-counterparty-currency-mismatch` (quatre locales) finit par « un compte en CHF ou dans la devise de la
+  transaction » : plus de redoublement quand la transaction est en CHF. Aucun test n'affirmait le texte (greppé Rust et Vitest).
+- **L4** : « décision du responsable de l'epic » (`account_currency_e2e.rs`).
+- **L5** : `docs/api-external.md` dit que `GET /reconciliation/proposals` ne propose pas une règle vers un compte en devise ;
+  l'affichage de la devise dans le sélecteur est une entrée de `issues-a-ouvrir.md`.
+- Gates : fmt, clippy workspace, nextest `textes_coherents` + `kesh-i18n` + `account_columns_inventory` (74/74), `npm run check`
+  (0 erreur), `lint-i18n-ownership`, Vitest `reconciliation` + `shared/i18n` (662/662). Gate complet et E2E non rejoués : seuls des
+  textes et des commentaires ont changé.
+- La story reste `review` ; passe ciblée P5 : `kesh-gate-logs/s38-11c2/revue-p5-prompt.md`.
+
 ## Change Log
 
 - 2026-11-20 — fiche rédigée sous la clé 38-11c (phase 1 KISS), non validée.
@@ -647,3 +666,4 @@ textes et le manuel, `f6ef42b6` le code de la remédiation.
   P2 complète (Sonnet) : `kesh-gate-logs/s38-11c2/revue-p2-prompt.md`. Statut : `review`.
 - 2026-11-21 — revue P2 (Sonnet 5.5) : 0 au-dessus de LOW, quatre LOW ; L1, L2, L4 remédiés (`85369670`) ; décision du responsable de l'epic du 2026-11-21 intégrée (`0ec6472a`, `49a410cf`) ; gates rejoués ; passe ciblée P3 à lancer.
 - 2026-11-21 — remédiation de la revue P3 (Claude Sonnet 5.5) : 0 CRITICAL, 0 HIGH, 3 MEDIUM, 9 LOW remédiés (`f6ef42b6`, `328a87a1`, `4bcc68ae`) ; quatre tests faux corrigés (`b5aad3fc`) ; gates rejoués au dernier commit de code (ci-dessus) ; passe P4 complète à lancer ; statut `review`.
+- 2026-11-21 — remédiation de la revue P4 (Claude Sonnet 5.5) : 1 MEDIUM, 5 LOW remédiés (manuel, message de devise, commentaires, API externe, fiche) ; passe ciblée P5 à lancer.
