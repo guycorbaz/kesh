@@ -447,7 +447,7 @@ async fn put_parent_en_devise_mouvemente_deja_non_imputable_message_exact(pool: 
         e["error"]["message"],
         "Le compte 1020 est tenu en USD et porte des écritures : il ne reçoit pas de \
          sous-compte, car un compte qui a des sous-comptes n'est pas imputable et la \
-         réévaluation de fin d’exercice ne corrige plus son solde. Créez plutôt un compte voisin.",
+         réévaluation de fin d'exercice ne corrige plus son solde. Créez plutôt un compte voisin.",
         "{e}"
     );
 }

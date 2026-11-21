@@ -2664,7 +2664,8 @@ pub async fn refuse_foreign_currency_accounts_in_tx(
 /// Refuse un sous-compte sous un compte **candidat à la réévaluation**
 /// ([`super::fx_revaluation::CANDIDATE_PREDICATE`] : de bilan, en devise) qui
 /// porte au moins une ligne d'écriture — `AccountForeignParentHasEntries`
-/// (37-5-CR-P3-1). Le parent passerait non imputable avec son solde : la
+/// (37-5-CR-P3-1). À la création, le parent passerait non imputable avec son
+/// solde ; au `PUT`, il l'est déjà et le reste : dans les deux cas la
 /// réévaluation ne l'atteindrait plus, K9 et la clôture le compteraient, et il
 /// ne redeviendrait pas imputable tant qu'il a des sous-comptes actifs
 /// ([`effective_postable`]) — une clôture sans recours. Le parent est déjà

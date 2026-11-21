@@ -5036,7 +5036,7 @@ impl IntoResponse for AppError {
                         t_args(
                             "error-account-foreign-parent-has-entries",
                             &format!(
-                                "Le compte {parent_number} est tenu en {currency} et porte des écritures : il ne reçoit pas de sous-compte, car un compte qui a des sous-comptes n'est pas imputable et la réévaluation de fin d’exercice ne corrige plus son solde. Créez plutôt un compte voisin."
+                                "Le compte {parent_number} est tenu en {currency} et porte des écritures : il ne reçoit pas de sous-compte, car un compte qui a des sous-comptes n'est pas imputable et la réévaluation de fin d'exercice ne corrige plus son solde. Créez plutôt un compte voisin."
                             ),
                             &args,
                         ),

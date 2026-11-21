@@ -328,59 +328,59 @@ test.describe('Plan comptable — changer le parent d’un compte', () => {
 			} finally {
 				await disposeContextSafe(ctx);
 			}
-				await page.reload();
+			await page.reload();
 
-				await page.locator(`[data-testid="account-row-${membre}-edit-button"]`).click();
-				const parentField = page.locator('[data-testid="account-edit-dialog-parent"]');
-				await parentField.click();
-				await page.getByRole('option', { name: new RegExp(`^${groupe} `) }).click();
-				await page.locator('[data-testid="account-edit-dialog-submit"]').click();
-				await expect(page.getByRole('dialog')).toBeHidden();
+			await page.locator(`[data-testid="account-row-${membre}-edit-button"]`).click();
+			const parentField = page.locator('[data-testid="account-edit-dialog-parent"]');
+			await parentField.click();
+			await page.getByRole('option', { name: new RegExp(`^${groupe} `) }).click();
+			await page.locator('[data-testid="account-edit-dialog-submit"]').click();
+			await expect(page.getByRole('dialog')).toBeHidden();
 
-				// Le groupe est devenu un compte de regroupement.
-				await expect(
-					page.locator(`[data-testid="account-row-${groupe}-postable-badge"]`),
-				).toContainText('Non postable');
+			// Le groupe est devenu un compte de regroupement.
+			await expect(
+				page.locator(`[data-testid="account-row-${groupe}-postable-badge"]`),
+			).toContainText('Non postable');
 
-				// Relu par l'API : le parent est posé en base.
-				const ctx2 = await authedApiContext(page);
-				try {
-					const comptes = (await (await ctx2.get('/api/v1/accounts')).json()) as {
-						id: number;
-						number: string;
-						parentId: number | null;
-					}[];
-					const g = comptes.find((a) => a.number === groupe)!;
-					expect(comptes.find((a) => a.number === membre)!.parentId).toBe(g.id);
-				} finally {
-					await disposeContextSafe(ctx2);
-				}
+			// Relu par l'API : le parent est posé en base.
+			const ctx2 = await authedApiContext(page);
+			try {
+				const comptes = (await (await ctx2.get('/api/v1/accounts')).json()) as {
+					id: number;
+					number: string;
+					parentId: number | null;
+				}[];
+				const g = comptes.find((a) => a.number === groupe)!;
+				expect(comptes.find((a) => a.number === membre)!.parentId).toBe(g.id);
+			} finally {
+				await disposeContextSafe(ctx2);
+			}
 
-				// Le groupe ne se propose ni lui-même ni son sous-compte comme parent.
-				await page.locator(`[data-testid="account-row-${groupe}-edit-button"]`).click();
-				await page.locator('[data-testid="account-edit-dialog-parent"]').click();
-				await expect(page.locator('[data-testid="account-edit-dialog-parent-none"]')).toBeVisible();
-				await expect(page.getByRole('option', { name: new RegExp(`^${membre} `) })).toHaveCount(0);
-				await expect(page.getByRole('option', { name: new RegExp(`^${groupe} `) })).toHaveCount(0);
-				await page.keyboard.press('Escape');
-				await page.locator('[data-testid="account-edit-dialog-cancel"]').click();
+			// Le groupe ne se propose ni lui-même ni son sous-compte comme parent.
+			await page.locator(`[data-testid="account-row-${groupe}-edit-button"]`).click();
+			await page.locator('[data-testid="account-edit-dialog-parent"]').click();
+			await expect(page.locator('[data-testid="account-edit-dialog-parent-none"]')).toBeVisible();
+			await expect(page.getByRole('option', { name: new RegExp(`^${membre} `) })).toHaveCount(0);
+			await expect(page.getByRole('option', { name: new RegExp(`^${groupe} `) })).toHaveCount(0);
+			await page.keyboard.press('Escape');
+			await page.locator('[data-testid="account-edit-dialog-cancel"]').click();
 
-				// « Aucun » remet le membre à la racine.
-				await page.locator(`[data-testid="account-row-${membre}-edit-button"]`).click();
-				await page.locator('[data-testid="account-edit-dialog-parent"]').click();
-				await page.locator('[data-testid="account-edit-dialog-parent-none"]').click();
-				await page.locator('[data-testid="account-edit-dialog-submit"]').click();
-				await expect(page.getByRole('dialog')).toBeHidden();
-				const ctx3 = await authedApiContext(page);
-				try {
-					const comptes = (await (await ctx3.get('/api/v1/accounts')).json()) as {
-						number: string;
-						parentId: number | null;
-					}[];
-					expect(comptes.find((a) => a.number === membre)!.parentId).toBeNull();
-				} finally {
-					await disposeContextSafe(ctx3);
-				}
+			// « Aucun » remet le membre à la racine.
+			await page.locator(`[data-testid="account-row-${membre}-edit-button"]`).click();
+			await page.locator('[data-testid="account-edit-dialog-parent"]').click();
+			await page.locator('[data-testid="account-edit-dialog-parent-none"]').click();
+			await page.locator('[data-testid="account-edit-dialog-submit"]').click();
+			await expect(page.getByRole('dialog')).toBeHidden();
+			const ctx3 = await authedApiContext(page);
+			try {
+				const comptes = (await (await ctx3.get('/api/v1/accounts')).json()) as {
+					number: string;
+					parentId: number | null;
+				}[];
+				expect(comptes.find((a) => a.number === membre)!.parentId).toBeNull();
+			} finally {
+				await disposeContextSafe(ctx3);
+			}
 		} finally {
 			// Nettoyage : le membre d'abord (un groupe qui a un sous-compte actif
 			// ne s'archive pas), puis le groupe.
