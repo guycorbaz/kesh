@@ -305,38 +305,38 @@ rouge ; signe du versement inversé → `le_versement_reprend_la_somme_des_nets`
 de compilation). Non mutée : la CHECK `provider IS NOT NULL` (une mutation s'applique au squash, régénéré) — elle est éprouvée par
 `stripe_import_schema.rs` sur le schéma réel.
 
-### Gates (HEAD du dernier commit de code : `c760dc49`), cible propre `/home/beat/claude/kesh-targets/kesh-wt40b`, `CARGO_INCREMENTAL=0`
+### Gates — dernier commit de code `f30e65d0` (HEAD au gate : `1d430379`, docs seuls en plus), cible propre `/home/beat/claude/kesh-targets/kesh-wt40b`, `CARGO_INCREMENTAL=0`
 
-- **Rejoués sur cible propre** (règle de l'orchestrateur du 2026-11-20) : tout gate joué avant sur la cible partagée
-  (`kesh-target`), dont le premier gate backend et le premier E2E (HEAD `a25a217c`, 10 échecs attendus), est **invalidé** et refait ;
-  les journaux sont sous `kesh-gate-logs/s40-7b/run1/`.
-- `scripts/test-fast.sh --ci` (fmt, clippy `-D warnings`, nextest) : **6262 tests exécutés, 6262 réussis, 14 ignorés** (journal
-  `gate-backend.log`, base `kesh_s407b` remise à zéro) ; `cargo publish --dry-run -p kesh-import` vert.
-  Incidents d'infrastructure, **sans rapport avec la story**, rejoués : un gate tué à 137 en compilation (mémoire) ; un gate à
-  542 échecs « database exists » (bases `_sqlx_test_*` laissées par un gate tué, registre sqlx effacé par la remise à zéro de la
-  base : `drop-stale.sh` ajouté avant la remise à zéro) ; trois gates perdus au disque plein de `kesh-mariadb-dev2` (tmpfs 8 Go,
-  journal d'annulation) et à sa recréation par l'orchestrateur (« table is full », base disparue).
-  Défauts réels trouvés par ces gates et corrigés : cinq tests de registres (`audit_label_registry` ×3 : action non littérale au
-  cœur d'import → `AUDIT_ACTIONS` en toutes lettres, `SITES_INDIRECTS` à dix ; `audit_route_registry` partition 129 → 130 et 162 →
-  163 ; `bank_account_opening_balance_e2e` : clé `stripe` ; comptes rendus d'audit de mon propre test).
-- Frontend (aucun fichier modifié) : `npm run check` 0 erreur, `lint-i18n-ownership` vert, `test:unit` **278 fichiers, 4612 tests
-  réussis**, `npm run build` vert (`node_modules` copié de la worktree de la 38 : un lien symbolique faisait échouer 265 fichiers
-  de test, relevé et rejoué).
-- E2E complet (`LANG=fr_CH.UTF-8`, port 3417, base `kesh_e2e_s407b`) : **476 réussis, 11 échecs, 18 ignorés** — dix attendus (les
-  sept de la KF-029, `backup-restore-new-install.spec.ts:262` et `:381`, `opening-balances.spec.ts:156`) et un onzième,
-  `bank-import.spec.ts:130` (le compte des lignes d'import avant/après un refus CAMT), absent du premier passage (477 réussis, 10
-  échecs) : pollution d'état entre specs (la liste des échecs qui changent d'identité d'un passage à l'autre, `docs/testing.md`) ;
-  rejoué seul (`e2e-un.sh tests/e2e/bank-import.spec.ts`, base neuve) : **6 réussis, 1 échec, le même** (`Expected 0, Received 1`).
-  Lecture du code du test (`bank-import.spec.ts:130-160`) : `rowsBefore` est compté juste après l'apparition du titre, **avant que
-  la liste n'ait fini de se charger** ; selon la durée du chargement il vaut 0 ou 1 (l'import créé par le test précédent du même
-  fichier). Le test est donc sujet à une course de sa propre écriture, **indépendante de cette story** (aucun fichier frontend ni la
-  route CAMT touchés) ; il a passé au premier E2E complet. ⚠️ Non reproduit sur la base de la branche d'epic (non rejoué faute de
-  temps de station) : à confirmer par la revue ; une issue est à ouvrir (« E2E bank-import : `rowsBefore` lu avant le chargement de
-  la liste »), demandée à l'orchestrateur.
-- `scripts/gate-ci.sh` : non rejoué (voir « Limites »).
+L'amendement du libellé (2026-11-20) est le dernier commit de code : **tous les gates ont été rejoués après lui**, sauf le frontend
+(aucun fichier de `frontend/` modifié depuis son passage vert). Les gates joués avant, sur la cible partagée puis sur la cible propre,
+sont conservés sous `kesh-gate-logs/s40-7b/run1/` et `run2/` à titre de relevé, **sans valeur de clôture**.
+
+- `scripts/test-fast.sh --ci` (fmt, clippy `-D warnings`, nextest ; base `kesh_s407b` remise à zéro, `drop-stale.sh` avant) :
+  **6263 tests exécutés, 6263 réussis, 14 ignorés** (`gate-backend.log`) ; `cargo publish --dry-run -p kesh-import` vert.
+- E2E complet (`LANG=fr_CH.UTF-8`, port 3417, base `kesh_e2e_s407b`) : **477 réussis, 10 échecs, 18 ignorés** (`e2e.log`) ; les dix
+  échecs sont les attendus (sept de la KF-029 : `mode-expert` ×2, `onboarding-path-b` ×2, `onboarding.spec.ts:57`, `:77`, `:150` ;
+  `backup-restore-new-install.spec.ts:262` et `:381` ; `opening-balances.spec.ts:156`).
+- Frontend (passage antérieur, inchangé depuis, HEAD `f8009192`..`c760dc49`) : `npm run check` 0 erreur, `lint-i18n-ownership`
+  vert, `test:unit` **278 fichiers, 4612 tests réussis**, `npm run build` vert. (`node_modules` copié de la worktree de la 38 : un lien
+  symbolique faisait échouer 265 fichiers de test, relevé et rejoué.)
+- `scripts/gate-ci.sh` (copie `git archive` de `1d430379`, `KESH_NO_MEMGUARD=1` faute de bus utilisateur systemd, conteneur dev2) : **vert, rc=0, aucun échec** (`gate-ci.log`) ; deux passages précédents perdus (137 par OOM de la station, puis bus systemd absent), cible de compilation supprimée.
+
+Incidents d'infrastructure, **sans rapport avec la story**, rejoués : un gate tué à 137 en compilation (mémoire) ; un gate à 542
+échecs « database exists » (bases `_sqlx_test_*` laissées par un gate tué, registre sqlx effacé par la remise à zéro de la base :
+`drop-stale.sh` ajouté avant la remise à zéro) ; trois gates perdus au disque plein de `kesh-mariadb-dev2` (tmpfs 8 Go, journal
+d'annulation) et à sa recréation par l'orchestrateur (« table is full », base disparue) ; la cible cargo partagée, abandonnée en cours de
+route (consigne du 2026-11-20 : gates faux, tous rejoués sur cible propre, comme dit ci-dessus).
+Défauts réels trouvés par ces gates et corrigés : cinq tests de registres (`audit_label_registry` ×3 : action non littérale au cœur
+d'import → `AUDIT_ACTIONS` en toutes lettres, `SITES_INDIRECTS` à dix ; `audit_route_registry` partition 129 → 130 et 162 → 163 ;
+`bank_account_opening_balance_e2e` : clé `stripe`) et mes propres comptes rendus d'audit de test.
+E2E, première passe (HEAD `a25a217c`, cible partagée) : 10 échecs attendus ; deuxième (HEAD `c760dc49`) : 11, dont
+`bank-import.spec.ts:130`, **course du test lui-même** (`rowsBefore` compté avant le chargement de la liste ; rejoué seul, il échoue,
+dans la passe finale il réussit) : aucun fichier frontend ni la route CAMT touchés. Une issue est à ouvrir (« E2E bank-import :
+`rowsBefore` lu avant le chargement de la liste »), demandée à l'orchestrateur.
 
 ### Limites et points hors périmètre relevés
 
+- Cible cargo `kesh-targets/kesh-wt40b` supprimée à la clôture.
 - Archiver (non supprimer) un compte désigné comme destination de versement n'est pas refusé : la garde `archived` ne vaut qu'à
   la pose ; à tracer en issue.
 - Aucun contrôle ne voit un rapport filtré par catégorie (écrit à la fiche et à l'API ; le manuel utilisateur relève de la 40-7d).
