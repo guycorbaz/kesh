@@ -1,7 +1,7 @@
 # Epic 51 — Réimputation
 
-*Kickoff du 2026-11-21, par découpage de l'Epic 48 (décision du Project Lead du 2026-11-21).* Release visée : **vendredi
-2026-11-27 s'il tient, sinon la semaine suivante** — l'epic n'entre dans `main` que terminé. Branche
+*Kickoff du 2026-11-21, par découpage de l'Epic 48 (décision du Project Lead du 2026-11-21).* Release visée : **après l'Epic 53**
+(triage P1 du 2026-11-21 : les P1 passent devant) — l'epic n'entre dans `main` que terminé. Branche
 `epic/51-reimputation`, partie de `main`, créée au lancement de sa première story. Migration : à établir par les fiches (aucune
 annoncée).
 
