@@ -377,6 +377,16 @@ Tous au commit `5d04b925` (dernier commit de code), `gates-all.sh` :
 - Compteurs : `sitesTotal` **3618**, `CANDIDATES_ATTENDUES` **138** (conformes 117), relevés par les gardes.
 - Prompt de la revue P2 (Opus, passe complète) : `kesh-gate-logs/s38-11d/revue-p2-prompt.md`.
 
+### Reprise après la revue P2 et la fusion d'`epic/38-paypal` (`1e91465b`) — dernier commit de code `681281f7`
+
+- **Fusion** : conflits résolus en gardant les deux intentions dans `docs/api-external.md` (compte PayPal admis comme compte lié ; règle de rapprochement en devise refusée par proposition), `docs/manual/fr/user-manual.tex` (mêmes deux phrases) et `i18n-keys.test.ts` (compteur relevé par la garde, non additionné). Relais de la 38-11c2 intégré : `COUNTERPARTY_CURRENCY_MISMATCH` traduit par `paypalFailedLabel` (clé `paypal-failed-counterparty-currency-mismatch`, quatre locales : le préfixe `provider-` de la 38-11c2 est refusé par `lint-i18n-ownership` hors de sa feature), documenté à `api-external.md` (route d'acceptation, règle `rule`, tableau des erreurs) et au manuel (règles) ; l'écran de règle propose déjà les comptes en devise (38-11c2).
+- **Revue P2** : L1 (bouton grisé pendant la relecture), L2 (test de la remise à zéro de la sélection), L3 (compte de frais vidé seulement sur la devise), L5 (`provider` de K2 écrit à `api-external.md`) remédiés ; L4 (Wise et Stripe sans lien K2) reporté aux Epics 39 et 40 ; L6 : les trois échecs E2E `backup-restore-new-install:262`, `:381` et `opening-balances:156` se produisent aussi sur d'autres branches de l'epic, à ajouter à la liste de `docs/testing.md` par la responsabilité de l'epic.
+- **Gates** (journal `kesh-gate-logs/s38-11d/`) : ciblé vert (clippy ; nextest 176/176, `cible-p3-nextest.log`) ; **backend complet** `test-fast.sh --ci` : 6419 passés, 15 ignorés (`gate-backend-5.log`) ; **frontend** : `check`, `lint-i18n-ownership`, `build` verts, Vitest **4941/4941** (`front-5-*.log`), `sitesTotal` **3632** relevé par la garde.
+- **E2E complet** (`e2e-5.log`, au dernier commit de code) : **497 passés, 11 échecs, 18 ignorés** : les sept de la KF-029, `backup-restore-new-install:262` et `:381`, `opening-balances:156` (attendus), et `vat-purchase-assistant.spec.ts:115` (connexion refusée : `/login`), **non attendu**, rejoué : vert (`e2e-partiel.log`, 8 passés avec la spec de la page PayPal) ; `paypal-import.spec.ts:241` rouge dans cette reprise partielle pour la même cause (connexion), vert à la reprise seule : `paypal-import.spec.ts` **7/7** (`e2e-partiel2.log`). Cause de la connexion refusée non établie (instabilité de la suite groupée, pas de la story).
+- **Par décision du responsable de l'epic** : pas de `gate-ci.sh` ni d'E2E complet nouveau (le dernier, vert au dernier gate-ci, reste celui de `10277d0e`) ; E2E partiel : `vat-purchase-assistant`, `paypal-import`, `smoke`.
+- **Mutations** : retrait de `selected = new Set()` et de `reviewLoading` du bouton lancées, non menées à leur terme (file de la station) ; les tests neufs (L1, L2, L3) passent, leur sonde négative reste à faire en revue.
+- Prompt de la revue P3 (passe complète, règle neuve) : `kesh-gate-logs/s38-11d/revue-p3-prompt.md`.
+
 ### Completion Notes
 
 - Tests ajoutés (de `a02f3372` à `5d04b925`, déclarations `it`/`test` recomptées par fichier) : **60 Vitest**
