@@ -1264,7 +1264,7 @@ async fn articles_gardes_inverses(pool: MySqlPool) {
     .unwrap();
 }
 
-/// Décision de Beat (2026-11-21, 38-11c2) : une règle de rapprochement peut
+/// Décision du responsable de l'epic (2026-11-21, 38-11c2) : une règle de rapprochement peut
 /// désigner un compte en devise, à la création comme au changement de compte ;
 /// la devise se contrôle à l'application (revue et acceptation d'un prestataire).
 #[sqlx::test(migrations = "./test-schema")]

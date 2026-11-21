@@ -4,10 +4,7 @@
 <script lang="ts">
 	import { errorMessageOf } from '$lib/shared/utils/error-message';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
-	import {
-		withoutForeignCurrency,
-		type AccountResponse,
-	} from '$lib/features/accounts/accounts.types';
+	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 	import { withCurrentAccount } from '$lib/features/accounts/account-options';
 	import { listProjects } from '$lib/features/projects/projects.api';
 	import type { ProjectResponse } from '$lib/features/projects/projects.types';
@@ -44,9 +41,12 @@
 	let submitting = $state(false);
 	let errorMsg = $state<string | null>(null);
 
-	// Story 37-3b (AC-4) : ni compte en devise, filtré ici, à l'entrée du composant.
+	// fx-filtre-comptes : exempté — la contrepartie d'une règle peut être un compte en devise
+	// (38-11c2, décision du responsable de l'epic du 2026-11-21) : une règle vers un compte en
+	// USD ne s'applique qu'aux transactions en USD, une règle vers un compte en CHF à toute
+	// transaction ; le serveur contrôle la devise à la revue et à l'acceptation.
 	const eligibleAccounts = $derived(
-		withoutForeignCurrency(accounts).filter(
+		accounts.filter(
 			(a) =>
 				a.active &&
 				a.postable && // 14-3b : le compte de la règle sera effectivement posté

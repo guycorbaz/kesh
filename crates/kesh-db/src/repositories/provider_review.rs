@@ -264,7 +264,7 @@ where
 /// Les comptes admis comme contrepartie d'une règle de prestataire — actifs,
 /// imputables, en CHF **ou en devise** — avec leur devise (`None` : CHF). La
 /// revue ne retient une règle que si la devise de sa contrepartie est celle de
-/// la transaction, ou le CHF (décision de Beat du 2026-11-21).
+/// la transaction, ou le CHF (décision du responsable de l'epic du 2026-11-21).
 pub async fn rule_account_ids<'e, E>(
     executor: E,
     company_id: i64,

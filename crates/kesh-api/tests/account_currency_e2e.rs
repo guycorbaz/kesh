@@ -611,7 +611,7 @@ async fn un_compte_en_devise_n_est_designable_nulle_part(pool: MySqlPool) {
     assert_eq!((st, code(&e)), (400, "ACCOUNT_IN_FOREIGN_CURRENCY"), "{e}");
 
     // Règle de réconciliation : un compte en devise y est admis (décision de
-    // Beat du 2026-11-21) ; la devise se contrôle à l'application de la règle.
+    // responsable de l'epic du 2026-11-21) ; la devise se contrôle à l'application de la règle.
     let (st, e) = envoyer(
         &ctx,
         reqwest::Method::POST,

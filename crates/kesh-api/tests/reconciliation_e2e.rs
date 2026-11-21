@@ -12081,3 +12081,89 @@ async fn the_acceptance_window_reads_the_exigibility(pool: MySqlPool) {
     assert_eq!(body["failed"], serde_json::json!([]), "{body}");
     assert_eq!(body["accepted"].as_array().unwrap().len(), 2);
 }
+
+/// Un compte de charges « 4100 » de la société du décor, tenu en USD.
+async fn usd_expense_account_38c2(pool: &MySqlPool, c: &Ctx301b) -> i64 {
+    sqlx::query(
+        "INSERT INTO accounts (company_id, number, name, account_type, currency) \
+         VALUES (?, '4100', 'Charges en USD', 'expense', 'USD')",
+    )
+    .bind(c.seeded.company_id)
+    .execute(pool)
+    .await
+    .expect("compte en USD")
+    .last_insert_id() as i64
+}
+
+/// 38-11c2 (revue P3, M2) — **une règle vers un compte en devise n'est pas
+/// proposée au rapprochement d'un compte bancaire en CHF et ne masque pas la
+/// règle suivante** : la règle USD, prioritaire, est écartée ; la règle CHF qui
+/// correspond aussi est proposée à sa place.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn a_foreign_currency_rule_is_not_proposed_and_does_not_mask_the_next_rule(pool: MySqlPool) {
+    let c = setup_301b(&pool).await;
+    let usd = usd_expense_account_38c2(&pool, &c).await;
+    let usd_rule = create_rule_ok(
+        &c.app,
+        &c.jwt,
+        serde_json::json!({
+            "label": "Abonnement USD", "matchType": "counterparty_contains",
+            "matchValue": "Abonnement", "counterpartyAccountId": usd, "priority": 10,
+        }),
+    )
+    .await;
+    let chf_rule = create_rule_ok(
+        &c.app,
+        &c.jwt,
+        serde_json::json!({
+            "label": "Abonnement CHF", "matchType": "counterparty_contains",
+            "matchValue": "Abonnement", "counterpartyAccountId": c.seeded.accounts["4000"],
+            "priority": 20,
+        }),
+    )
+    .await;
+    let tx = tx_301b(&pool, &c, dec!(-12.00), None, Some("Abonnement mensuel")).await;
+    let candidates = proposals_301b(&c, c.f.bank_account_id).await[&tx]["candidates"].clone();
+    assert_eq!(candidates.as_array().unwrap().len(), 1, "{candidates}");
+    assert_eq!(candidates[0]["candidateType"], "rule", "{candidates}");
+    assert_eq!(candidates[0]["ruleId"], chf_rule["id"], "{candidates}");
+    assert_ne!(candidates[0]["ruleId"], usd_rule["id"], "{candidates}");
+}
+
+/// 38-11c2 (revue P3, M3) — le **filet de l'acceptation** : une proposition
+/// `rule` rejouée par un client vers un compte en devise est refusée dans
+/// `failed[]` (`ACCOUNT_IN_FOREIGN_CURRENCY`, `details` : le compte et sa
+/// devise), rien n'est écrit (`docs/api-external.md`).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn accepting_a_rule_to_a_foreign_currency_account_is_refused_in_failed(pool: MySqlPool) {
+    let c = setup_301b(&pool).await;
+    let usd = usd_expense_account_38c2(&pool, &c).await;
+    let rule = create_rule_ok(
+        &c.app,
+        &c.jwt,
+        serde_json::json!({
+            "label": "Abonnement USD", "matchType": "counterparty_contains",
+            "matchValue": "Abonnement", "counterpartyAccountId": usd,
+        }),
+    )
+    .await;
+    let tx = tx_301b(&pool, &c, dec!(-12.00), None, Some("Abonnement mensuel")).await;
+    let body = accept_301b(
+        &c,
+        &c.jwt,
+        c.f.bank_account_id,
+        serde_json::json!([{
+            "type": "rule", "bankTransactionId": tx, "ruleId": rule["id"],
+            "counterpartyAccountId": usd,
+        }]),
+    )
+    .await;
+    assert_eq!(body["accepted"], serde_json::json!([]), "{body}");
+    let failed = body["failed"].as_array().unwrap();
+    assert_eq!(failed.len(), 1, "{body}");
+    assert_eq!(failed[0]["bankTransactionId"], tx);
+    assert_eq!(failed[0]["errorCode"], "ACCOUNT_IN_FOREIGN_CURRENCY");
+    assert_eq!(failed[0]["details"]["accountId"], usd);
+    assert_eq!(failed[0]["details"]["currency"], "USD");
+    assert_eq!(tx_status(&pool, tx).await, "pending", "rien d'écrit");
+}

@@ -1034,7 +1034,7 @@ pub enum CounterpartyRule {
     /// Frais : compte de charge (38-11b AC-2).
     Expense,
     /// Règle : le contrôle d'`accept_one_rule` (actif, imputable). La devise
-    /// de la contrepartie — CHF ou celle de la transaction, décision de Beat du
+    /// de la contrepartie — CHF ou celle de la transaction, décision du responsable de l'epic du
     /// 2026-11-21 — se contrôle à l'acceptation (`COUNTERPARTY_CURRENCY_MISMATCH`),
     /// où la devise de la transaction est connue ; la revue ne propose pas
     /// d'autre règle.
@@ -1525,7 +1525,7 @@ pub async fn accept_fee(
 /// `rule` : transaction de genre admis à la règle ([`admits_rule`] : `Other`,
 /// ou genre que le prestataire déclare) ; la règle (active, qui correspond
 /// toujours, même contrepartie ; sinon périmée), contrepartie contrôlée comme
-/// `accept_one_rule` et en CHF, projet par
+/// `accept_one_rule` ; en CHF, ou dans la devise de la transaction ; projet par
 /// défaut revalidé ; écriture, compteur d'application et trace
 /// `reconciliation_rule.applied`, comme `accept_one_rule`.
 pub async fn accept_rule(
@@ -1555,9 +1555,10 @@ pub async fn accept_rule(
         CounterpartyRule::Rule,
     )
     .await?;
-    // Une contrepartie en devise ne sert qu'une transaction dans cette devise.
+    // Une contrepartie en devise ne sert qu'une transaction dans cette devise
+    // (même source que la revue, `matching_rule` : la devise de la transaction).
     if let Some(c) = currency.as_deref()
-        && c != r.balance.currency()
+        && c != r.transaction.currency
     {
         return Err(failed(
             bank_transaction_id,
@@ -1565,7 +1566,7 @@ pub async fn accept_rule(
             serde_json::json!({
                 "accountId": counterparty_account_id,
                 "accountCurrency": c,
-                "transactionCurrency": r.balance.currency(),
+                "transactionCurrency": r.transaction.currency,
             }),
         ));
     }

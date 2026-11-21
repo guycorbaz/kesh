@@ -195,7 +195,7 @@ pub async fn create_in_tx(
         super::projects::validate_taggable_in_tx(tx, company_id, &[pid]).await?;
     }
 
-    // Un compte de contrepartie en devise est admis (décision de Beat du
+    // Un compte de contrepartie en devise est admis (décision du responsable de l'epic du
     // 2026-11-21, 38-11c2) : la règle ne s'applique qu'à une transaction en CHF
     // ou dans la devise de ce compte (revue et acceptation d'un prestataire).
 

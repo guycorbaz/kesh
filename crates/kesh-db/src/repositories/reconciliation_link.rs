@@ -1249,8 +1249,8 @@ pub struct EntryLinked {
 /// identifiants trouvés. Le filtre `company_id` ne limite pas le verrou : la
 /// ligne d'une autre société est verrouillée par sa clé primaire avant d'être
 /// écartée (attente d'un commit, aucune fuite) ; l'appelant du lot ne passe que
-/// des identifiants déjà reconnus de la société ([`existing_entry_ids`]
-/// dans `provider_review`), un absent ne posant ainsi aucun verrou d'intervalle.
+/// des identifiants déjà reconnus de la société ([`super::provider_review::existing_entry_ids`]),
+/// un absent ne posant ainsi aucun verrou d'intervalle.
 ///
 /// ⛔ **À appeler avant la première lecture ordinaire de la transaction**
 /// (voir le corollaire de [`link_entry_in_tx`]) : c'est ce qui fait naître la

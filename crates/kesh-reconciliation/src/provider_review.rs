@@ -1339,7 +1339,7 @@ mod tests {
         f.rules[0].counterparty_email = None;
         assert_eq!(f.review(&SPEC).proposals.len(), 1);
         // Contrepartie en devise : admise pour la devise de la transaction
-        // (décision de Beat du 2026-11-21), écartée pour toute autre.
+        // (décision du responsable de l'epic du 2026-11-21), écartée pour toute autre.
         let devise = f.review(&SPEC).proposals.len();
         f.rule_accounts.insert(6500, Some("EUR".into()));
         assert!(f.review(&SPEC).proposals.is_empty());

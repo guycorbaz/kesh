@@ -922,6 +922,7 @@ async fn rattachement_a_une_ecriture_absente_refuse_le_reste_accepte(pool: MySql
     assert_eq!(s, 200, "{b}");
     assert_eq!(b["accepted"].as_array().unwrap().len(), 1, "{b}");
     assert_eq!(b["failed"][0]["bankTransactionId"], tx_1a, "{b}");
+    assert_eq!(b["failed"][0]["errorCode"], "NOT_FOUND", "{b}");
     assert_eq!(ctx.etat(tx_1a).await, ("pending".into(), None));
 }
 
@@ -1753,7 +1754,7 @@ async fn conversion_a_deux_ecritures_sur_comptes_non_imputables(pool: MySqlPool)
     assert_eq!(ctx.etat(credit).await.0, "reconciled");
 }
 
-/// Décision de Beat (2026-11-21) — la contrepartie d'une règle est en CHF **ou
+/// Décision du responsable de l'epic (2026-11-21) — la contrepartie d'une règle est en CHF **ou
 /// dans la devise de la transaction** : tout autre compte en devise est refusé
 /// à l'acceptation, `COUNTERPARTY_CURRENCY_MISMATCH` (`accountCurrency`,
 /// `transactionCurrency`). La règle de la revue : `rule_account_ids`.
@@ -1799,7 +1800,41 @@ async fn regle_contrepartie_usd_sur_transaction_usd_acceptee(pool: MySqlPool) {
     let (s, b) = accepter_la_regle(&ctx, achat, usd).await;
     assert_eq!(s, 200, "{b}");
     assert_eq!(b["accepted"].as_array().unwrap().len(), 1, "{b}");
-    assert_eq!(ctx.etat(achat).await.0, "reconciled");
+    let (etat, ecriture) = ctx.etat(achat).await;
+    assert_eq!(etat, "reconciled");
+    // Les deux lignes portent le même montant en devise, le même cours et le
+    // même CHF ; une sortie débite la contrepartie et crédite le prestataire.
+    let lignes: Vec<LigneTaux> = sqlx::query_as(
+        "SELECT account_id, debit, credit, amount_currency, exchange_rate, rate_source \
+         FROM journal_entry_lines WHERE entry_id = ? ORDER BY line_order",
+    )
+    .bind(ecriture.unwrap())
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(lignes.len(), 2, "{lignes:?}");
+    let (contrepartie, prestataire) = (&lignes[0], &lignes[1]);
+    assert_eq!(
+        (contrepartie.0, prestataire.0),
+        (usd, ctx.usd),
+        "{lignes:?}"
+    );
+    assert!(
+        contrepartie.1 > dec!(0) && contrepartie.2 == dec!(0),
+        "{lignes:?}"
+    );
+    assert!(
+        prestataire.2 > dec!(0) && prestataire.1 == dec!(0),
+        "{lignes:?}"
+    );
+    assert_eq!(contrepartie.1, prestataire.2, "même CHF des deux côtés");
+    assert!(
+        contrepartie.3.is_some() && contrepartie.4.is_some(),
+        "{lignes:?}"
+    );
+    assert_eq!(contrepartie.3, prestataire.3, "même montant en devise");
+    assert_eq!(contrepartie.4, prestataire.4, "même cours");
+    assert_eq!(contrepartie.5, prestataire.5, "même provenance");
 }
 
 /// Contrepartie EUR sur une transaction USD : refusée, rien n'est écrit.
