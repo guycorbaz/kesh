@@ -61,7 +61,10 @@ use crate::routes::provider_imports::{ImportRequest, ImportSource, import_lines,
 #[serde(deny_unknown_fields)]
 struct DownloadRequest {
     account: String,
+    /// Bornée à la plage des années de la base (`dates_recues`, Story 33-4).
+    #[serde(deserialize_with = "crate::dates_recues::date")]
     from: NaiveDate,
+    #[serde(deserialize_with = "crate::dates_recues::date")]
     to: NaiveDate,
 }
 

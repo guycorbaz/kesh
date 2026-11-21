@@ -3499,6 +3499,7 @@ audit-log-action-imported-supplier-invoice-attached = Documento allegato a una f
 audit-log-action-imported-supplier-invoice-detached = Documento staccato dalla sua fattura
 audit-log-action-payment-batch-generated = Lotto di pagamento creato
 audit-log-action-paypal-import-created = Estratto PayPal importato
+audit-log-action-paypal-download-created = Transazioni PayPal scaricate
 audit-log-action-payment-batch-confirmed = Lotto di pagamento confermato
 audit-log-action-payment-batch-cancelled = Lotto di pagamento annullato
 audit-log-action-bank-account-created = Conto bancario creato

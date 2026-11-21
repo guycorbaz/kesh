@@ -179,7 +179,10 @@ mod tests {
         let hiver = super::Utc.with_ymd_and_hms(2024, 1, 31, 23, 30, 0).unwrap();
         let h = super::heure_suisse(hiver);
         assert_eq!(h.to_rfc3339(), "2024-02-01T00:30:00+01:00");
-        assert_eq!(h.date_naive(), super::jour_suisse(hiver));
+        assert_eq!(
+            h.format("%Y-%m-%d").to_string(),
+            super::jour_suisse(hiver).to_string()
+        );
         let ete = super::Utc.with_ymd_and_hms(2024, 7, 1, 21, 59, 59).unwrap();
         assert_eq!(
             super::heure_suisse(ete).to_rfc3339(),

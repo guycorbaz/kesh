@@ -312,10 +312,13 @@ pub fn to_paypal_row(
     }
 
     let raw_date = info.transaction_initiation_date.as_deref();
+    // L'instant ramené à l'heure locale, et sa date (celle du CSV), dans la
+    // plage des années de la base.
     let instant = raw_date
         .and_then(|d| DateTime::parse_from_rfc3339(d.trim()).ok())
         .map(local)
-        .filter(|t| crate::annee_recevable(t.date_naive()));
+        .map(|t| (t, t.date_naive()))
+        .filter(|(_, date)| crate::annee_recevable(*date));
     if instant.is_none() {
         push(FIELD_DATE, PaypalLineErrorCode::Date, raw_date);
     }
@@ -381,8 +384,13 @@ pub fn to_paypal_row(
         return Err(errors);
     }
     // Tous présents : chaque `None` a poussé son erreur ci-dessus.
-    let (Some(transaction_id), Some(instant), Some(kind), Some(status), Some(currency)) =
-        (transaction_id, instant, kind, status, currency)
+    let (
+        Some(transaction_id),
+        Some((instant, local_date)),
+        Some(kind),
+        Some(status),
+        Some(currency),
+    ) = (transaction_id, instant, kind, status, currency)
     else {
         return Err(errors);
     };
@@ -424,7 +432,7 @@ pub fn to_paypal_row(
 
     Ok(PaypalRow {
         line,
-        date: instant.date_naive(),
+        date: local_date,
         time: Some(instant.format("%H:%M:%S").to_string()),
         time_zone: Some(instant.offset().to_string()),
         name: payer_name(tx),

@@ -3504,6 +3504,7 @@ audit-log-action-imported-supplier-invoice-attached = Document attached to an in
 audit-log-action-imported-supplier-invoice-detached = Document detached from its invoice
 audit-log-action-payment-batch-generated = Payment batch created
 audit-log-action-paypal-import-created = PayPal statement imported
+audit-log-action-paypal-download-created = PayPal transactions downloaded
 audit-log-action-payment-batch-confirmed = Payment batch confirmed
 audit-log-action-payment-batch-cancelled = Payment batch cancelled
 audit-log-action-bank-account-created = Bank account created

@@ -3498,6 +3498,7 @@ audit-log-action-imported-supplier-invoice-attached = Dokument an eine Rechnung 
 audit-log-action-imported-supplier-invoice-detached = Dokument von seiner Rechnung gelöst
 audit-log-action-payment-batch-generated = Zahlungsstapel erstellt
 audit-log-action-paypal-import-created = PayPal-Auszug importiert
+audit-log-action-paypal-download-created = PayPal-Transaktionen heruntergeladen
 audit-log-action-payment-batch-confirmed = Zahlungsstapel bestätigt
 audit-log-action-payment-batch-cancelled = Zahlungsstapel storniert
 audit-log-action-bank-account-created = Bankkonto erstellt
