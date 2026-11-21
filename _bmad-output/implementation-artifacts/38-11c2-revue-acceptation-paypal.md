@@ -1,6 +1,6 @@
 # Story 38-11c2 : revue et acceptation PayPal — moteur commun aux prestataires, ventes rattachées, frais, règles, conversions, retraits, écarts
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-20 sous la clé 38-11c (branche `epic/38-paypal`, numéros de ligne relevés après la fusion
 de `origin/main` `43ceb541`, revérifiés sur `origin/main` `fd04099f`), **découpée à la validation P3** (décision de
@@ -608,7 +608,8 @@ Rapport : `kesh-gate-logs/s38-11c2/revue-p4-rapport.md` (0 CRITICAL, 0 HIGH, 1 M
 - **L1** : mentions nominatives retirées de la fiche (lignes 9, 31, 219) ; greppé, plus aucune dans la fiche.
 - **L2** : les deux commentaires d'exemption `fx-filtre-comptes` corrigés (`+page.svelte`, `RulesList.svelte`).
 - **L3** : `provider-failed-counterparty-currency-mismatch` (quatre locales) finit par « un compte en CHF ou dans la devise de la
-  transaction » : plus de redoublement quand la transaction est en CHF. Aucun test n'affirmait le texte (greppé Rust et Vitest).
+  transaction » : la graphie ne répète plus « en CHF ou en CHF » ; pour une transaction en CHF, la phrase désigne
+  toutefois deux fois la même devise (LOW de la P5, laissé tel quel : le sens reste juste). Aucun test n'affirmait le texte (greppé Rust et Vitest).
 - **L4** : « décision du responsable de l'epic » (`account_currency_e2e.rs`).
 - **L5** : `docs/api-external.md` dit que `GET /reconciliation/proposals` ne propose pas une règle vers un compte en devise ;
   l'affichage de la devise dans le sélecteur est une entrée de `issues-a-ouvrir.md`.
@@ -667,3 +668,13 @@ Rapport : `kesh-gate-logs/s38-11c2/revue-p4-rapport.md` (0 CRITICAL, 0 HIGH, 1 M
 - 2026-11-21 — revue P2 (Sonnet 5.5) : 0 au-dessus de LOW, quatre LOW ; L1, L2, L4 remédiés (`85369670`) ; décision du responsable de l'epic du 2026-11-21 intégrée (`0ec6472a`, `49a410cf`) ; gates rejoués ; passe ciblée P3 à lancer.
 - 2026-11-21 — remédiation de la revue P3 (Claude Sonnet 5.5) : 0 CRITICAL, 0 HIGH, 3 MEDIUM, 9 LOW remédiés (`f6ef42b6`, `328a87a1`, `4bcc68ae`) ; quatre tests faux corrigés (`b5aad3fc`) ; gates rejoués au dernier commit de code (ci-dessus) ; passe P4 complète à lancer ; statut `review`.
 - 2026-11-21 — remédiation de la revue P4 (Claude Sonnet 5.5) : 1 MEDIUM, 5 LOW remédiés (manuel, message de devise, commentaires, API externe, fiche) ; passe ciblée P5 à lancer.
+
+### Clôture (2026-11-21)
+
+Revue de code : P1 (Opus) et P2 (Sonnet) closes sur leurs remédiations ; décision du responsable de l'epic du 21.11 sur
+la devise des contreparties intégrée ; **P3** (Opus, complète) 0 · 0 · 3 MEDIUM · 9 LOW → remédiation ; **P4** (Sonnet,
+complète) 0 · 0 · 1 MEDIUM (manuel) · 5 LOW → remédiation de textes ; **P5** (Haiku, ciblée sur cette remédiation) 0 · 0 · 0
+· 1 LOW (message qui désigne deux fois le CHF pour une transaction en CHF, sens juste ; laissé). Boucle close sur P5.
+Gates du dernier commit de code `b5aad3fc` : backend complet 6280/6280, 14 ignorés ; Vitest 4613 ; E2E 478 passés, les
+9 échecs attendus ; `gate-ci.sh` 6299 passés, 0 échec, 18 ignorés. Remédiation P4 (textes et commentaires) : fmt, clippy,
+`textes_coherents` et `kesh-i18n` 74/74, `npm run check`, `lint-i18n-ownership`, Vitest ciblé 662/662.
