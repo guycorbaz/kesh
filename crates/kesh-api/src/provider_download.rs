@@ -1,8 +1,15 @@
 //! Téléchargement des mouvements d'un prestataire — socle S2 et S3 (Story
 //! 38-12a, AC-4, AC-6, AC-8), commun à PayPal, Wise et Stripe.
 //!
-//! - [`windows`] découpe une période en **fenêtres** de jours de Zurich ;
+//! - [`windows`] découpe une période en **fenêtres** de jours de Zurich, jamais
+//!   au-delà de l'instant ; [`period_windows`] y ajoute la fin ramenée au jour du
+//!   jour et le plancher de l'historique du prestataire (revue P1, F1, F11) ;
 //! - [`check_period`] refuse une période impossible (`PROVIDER_PERIOD_INVALID`) ;
+//! - [`classify_status`] et [`classify_transport`] classent l'échec d'une
+//!   requête (passager, refus d'authentification, de droits, autre), pour tous
+//!   les clients de prestataire (revue P1, F2, F5) ;
+//! - [`run_bounded`] lance des travaux en parallèle, **jamais plus** que le
+//!   parallélisme réglé (revue P1, F1) ;
 //! - [`with_retry`] applique la **politique unique de reprise** : sur 429 et
 //!   5xx (délai compris), pause **commune** à tous les fils du prestataire,
 //!   `Retry-After` borné à 120 s sinon 5, 10, 20, 40 puis 60 secondes, la même
@@ -22,7 +29,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Days, Months, NaiveDate, SubsecRound, Utc};
-use kesh_core::horloge::{debut_du_jour_suisse, fin_du_jour_suisse};
+use kesh_core::horloge::{debut_du_jour_suisse, fin_du_jour_suisse, jour_suisse};
 use serde::Serialize;
 use tokio::sync::Semaphore;
 
@@ -34,6 +41,13 @@ use crate::errors::AppError;
 
 /// Une fenêtre : des jours de Zurich `from..=to`, et ses bornes envoyées au
 /// prestataire, en UTC, tronquées à la seconde.
+///
+/// **Recouvrement d'une seconde** (revue P1, F3) : la fin d'une fenêtre est le
+/// premier instant du jour qui suit `to` (`00:00:00` de Zurich), c'est-à-dire
+/// le début de la fenêtre suivante. Que le prestataire tienne sa borne de fin
+/// pour incluse ou exclue, aucune seconde n'échappe ; une transaction de cette
+/// seconde-là, lue deux fois, est une répétition identique, que les appelants
+/// écartent déjà (`rows_of` pour PayPal).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Window {
     /// Premier jour.
@@ -42,7 +56,8 @@ pub struct Window {
     pub to: NaiveDate,
     /// Début : le premier instant de `from` à Zurich.
     pub start: DateTime<Utc>,
-    /// Fin : la dernière seconde de `to` à Zurich, ramenée à `now` si elle est
+    /// Fin : le premier instant du jour qui suit `to` à Zurich (recouvrement
+    /// d'une seconde avec la fenêtre suivante), ramenée à `now` si elle est
     /// plus tard.
     pub end: DateTime<Utc>,
 }
@@ -50,7 +65,12 @@ pub struct Window {
 impl Window {
     /// La fenêtre `from..=to`, fin ramenée à `now`.
     pub fn new(from: NaiveDate, to: NaiveDate, now: DateTime<Utc>) -> Self {
-        let end = fin_du_jour_suisse(to).min(now).trunc_subsecs(0);
+        let last_second = fin_du_jour_suisse(to).trunc_subsecs(0);
+        let end = last_second
+            .checked_add_signed(chrono::TimeDelta::seconds(1))
+            .unwrap_or(last_second)
+            .min(now)
+            .trunc_subsecs(0);
         Self {
             from,
             to,
@@ -60,7 +80,8 @@ impl Window {
     }
 
     /// Les deux moitiés de la fenêtre (en jours), `None` pour une fenêtre d'un
-    /// jour (le plancher).
+    /// jour (le plancher). La première moitié garde le début de la fenêtre,
+    /// relevé au plancher de l'historique s'il l'a été ([`period_windows`]).
     pub fn split(&self, now: DateTime<Utc>) -> Option<(Window, Window)> {
         let days = (self.to - self.from).num_days();
         if days < 1 {
@@ -68,10 +89,9 @@ impl Window {
         }
         let mid = self.from.checked_add_days(Days::new((days / 2) as u64))?;
         let next = mid.succ_opt()?;
-        Some((
-            Window::new(self.from, mid, now),
-            Window::new(next, self.to, now),
-        ))
+        let mut first = Window::new(self.from, mid, now);
+        first.start = self.start;
+        Some((first, Window::new(next, self.to, now)))
     }
 
     /// Libellé de la fenêtre pour un message (`2024-01-01…2024-01-30`).
@@ -83,8 +103,14 @@ impl Window {
 /// Découpe `from..=to` en fenêtres contiguës de `max_days` jours de Zurich au
 /// plus — Story 38-12a (AC-4). Bornes par `debut_du_jour_suisse` et
 /// `fin_du_jour_suisse` (aucun décalage recalculé) ; la fin d'une fenêtre est
-/// la seconde qui précède le début de la suivante ; la fin de la dernière est
-/// ramenée à `now` si elle est plus tard.
+/// le début de la suivante (recouvrement d'une seconde, [`Window`]) ; la fin de
+/// la dernière est ramenée à `now` si elle est plus tard.
+///
+/// **Aucune fenêtre ne commence après `now`** (revue P1, F1) : une `to` future
+/// ne produit ni fenêtre inversée (début après la fin ramenée à `now`) ni
+/// fenêtres sans nombre — le découpage s'arrête à la fenêtre qui contient
+/// `now`. Défense en profondeur : les routes ramènent déjà `to` au jour du jour
+/// ([`period_windows`]).
 ///
 /// Règle de `max_days` du socle : la limite du prestataire, moins un jour quand
 /// elle ne se dit pas en jours entiers de Zurich (PayPal : 31 jours, unité non
@@ -100,7 +126,11 @@ pub fn windows(from: NaiveDate, to: NaiveDate, max_days: u32, now: DateTime<Utc>
         let end = start
             .checked_add_days(Days::new(u64::from(max_days) - 1))
             .map_or(to, |e| e.min(to));
-        out.push(Window::new(start, end, now));
+        let window = Window::new(start, end, now);
+        if window.start > now {
+            break;
+        }
+        out.push(window);
         match end.succ_opt() {
             Some(next) if next <= to => start = next,
             _ => break,
@@ -109,31 +139,79 @@ pub fn windows(from: NaiveDate, to: NaiveDate, max_days: u32, now: DateTime<Utc>
     out
 }
 
+/// Marge du plancher de l'historique : la première fenêtre commence une heure
+/// après « maintenant moins `years` ans », pour que la requête, envoyée plus
+/// tard que l'instant de la demande (file, pauses), reste dans l'historique du
+/// prestataire (revue P1, F11).
+pub const HISTORY_MARGIN: Duration = Duration::from_secs(3600);
+
+/// Le plancher de l'historique d'un prestataire : `now` moins `years` ans (même
+/// jour et même heure ; un 29 février retombe sur le 28), plus
+/// [`HISTORY_MARGIN`]. Aucune requête ne part avant lui.
+pub fn history_floor(now: DateTime<Utc>, years: u32) -> DateTime<Utc> {
+    now.checked_sub_months(Months::new(12 * years))
+        .and_then(|t| {
+            t.checked_add_signed(chrono::TimeDelta::seconds(HISTORY_MARGIN.as_secs() as i64))
+        })
+        .unwrap_or(DateTime::<Utc>::MIN_UTC)
+}
+
 /// Motif d'un refus `PROVIDER_PERIOD_INVALID` (`details.reason`).
 pub type PeriodRefusal = &'static str;
 
-/// Contrôle une période demandée (AC-4) : `from_after_to`, `future` (`from`
-/// après le jour du jour — une `to` future n'est pas refusée, elle sera ramenée
-/// à l'instant), `too_old` (`from` avant le même jour `years` ans plus tôt).
+/// Contrôle une période demandée (AC-4), au jour de Zurich de `now` :
+/// `from_after_to`, `future` (`from` après le jour du jour — une `to` future
+/// n'est pas refusée, elle est ramenée au jour du jour par
+/// [`period_windows`]), `too_old` (`from` avant le jour du plancher de
+/// l'historique, [`history_floor`]). Le jour du plancher est **admis** : sa
+/// fenêtre commence au plancher lui-même, si bien qu'aucun jour lisible n'est
+/// perdu et qu'aucune requête ne remonte au-delà de l'historique (revue P1,
+/// F11).
 pub fn check_period(
     from: NaiveDate,
     to: NaiveDate,
-    today: NaiveDate,
+    now: DateTime<Utc>,
     years: u32,
 ) -> Result<(), PeriodRefusal> {
     if from > to {
         return Err("from_after_to");
     }
-    if from > today {
+    if from > jour_suisse(now) {
         return Err("future");
     }
-    let oldest = today
-        .checked_sub_months(Months::new(12 * years))
-        .unwrap_or(NaiveDate::MIN);
-    if from < oldest {
+    if from < jour_suisse(history_floor(now, years)) {
         return Err("too_old");
     }
     Ok(())
+}
+
+/// Le dernier jour lu d'une période : `to`, ramenée au jour de Zurich de `now`
+/// si elle est plus tard (une `to` future n'est pas refusée, AC-4).
+pub fn effective_to(to: NaiveDate, now: DateTime<Utc>) -> NaiveDate {
+    to.min(jour_suisse(now))
+}
+
+/// Les fenêtres d'une période contrôlée par [`check_period`] — ce que les routes
+/// appellent (revue P1, F1, F11) : `to` ramenée au jour du jour
+/// ([`effective_to`]), découpage par [`windows`], puis le début de la première
+/// fenêtre relevé au plancher de l'historique ([`history_floor`]) ; une
+/// fenêtre qui finirait avant de commencer est écartée.
+pub fn period_windows(
+    from: NaiveDate,
+    to: NaiveDate,
+    max_days: u32,
+    now: DateTime<Utc>,
+    years: u32,
+) -> Vec<Window> {
+    let floor = history_floor(now, years).trunc_subsecs(0);
+    let mut out = windows(from, effective_to(to, now), max_days, now);
+    for w in &mut out {
+        if w.start < floor {
+            w.start = floor;
+        }
+    }
+    out.retain(|w| w.start <= w.end);
+    out
 }
 
 // ---------------------------------------------------------------------------
@@ -144,15 +222,18 @@ pub fn check_period(
 pub const MAX_ATTEMPTS: u32 = 6;
 /// Borne d'un `Retry-After`.
 pub const RETRY_AFTER_CAP: Duration = Duration::from_secs(120);
+/// Plancher d'un `Retry-After` : `Retry-After: 0` ne fait pas reprendre sans
+/// pause (revue P1, F9).
+pub const RETRY_AFTER_FLOOR: Duration = Duration::from_secs(1);
 /// Pauses successives sans `Retry-After`, en secondes.
 pub const BACKOFF_SECS: [u64; 5] = [5, 10, 20, 40, 60];
 
 /// La pause après l'échec passager numéro `failed` (1 pour le premier) :
-/// `Retry-After` en secondes s'il est présent et entier, borné à 120 s, sinon
-/// la suite 5, 10, 20, 40, 60.
+/// `Retry-After` en secondes s'il est présent et entier, entre 1 et 120 s,
+/// sinon la suite 5, 10, 20, 40, 60.
 pub fn pause_for(failed: u32, retry_after: Option<&str>) -> Duration {
     if let Some(secs) = retry_after.and_then(|v| v.trim().parse::<u64>().ok()) {
-        return Duration::from_secs(secs).min(RETRY_AFTER_CAP);
+        return Duration::from_secs(secs).clamp(RETRY_AFTER_FLOOR, RETRY_AFTER_CAP);
     }
     let i = (failed.max(1) as usize - 1).min(BACKOFF_SECS.len() - 1);
     Duration::from_secs(BACKOFF_SECS[i])
@@ -165,6 +246,41 @@ pub enum Transient {
     RateLimited,
     /// 5xx ou délai dépassé.
     Unavailable,
+}
+
+/// Classe d'un statut HTTP non 2xx, commune aux clients des prestataires
+/// (revue P1, F5) ; chaque client traduit ensuite les classes en ses erreurs
+/// (renouvellement du jeton sur 401, cas propres comme `RESULTSET_TOO_LARGE`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StatusClass {
+    /// 401 : identifiants ou jeton refusés.
+    Unauthorized,
+    /// 403 : droits insuffisants (`PROVIDER_PERMISSION_DENIED`).
+    Forbidden,
+    /// 429 et 5xx : à reprendre.
+    Transient(Transient),
+    /// Tout autre statut (`PROVIDER_API_ERROR`, sauf cas propre au client).
+    Other,
+}
+
+/// Classe un statut HTTP non 2xx (AC-6) : 401, 403, 429, 5xx, le reste.
+pub fn classify_status(status: u16) -> StatusClass {
+    match status {
+        401 => StatusClass::Unauthorized,
+        403 => StatusClass::Forbidden,
+        429 => StatusClass::Transient(Transient::RateLimited),
+        500..=599 => StatusClass::Transient(Transient::Unavailable),
+        _ => StatusClass::Other,
+    }
+}
+
+/// Classe une erreur de transport : `Some(Unavailable)` pour un délai dépassé
+/// ou une connexion refusée, coupée ou injoignable, à reprendre ; `None` pour
+/// une erreur **définitive** — certificat refusé, hôte inconnu, schéma refusé
+/// — que la reprise ne changerait pas (revue P1, F2 :
+/// [`crate::http_client::is_transient_transport`]).
+pub fn classify_transport(e: &reqwest::Error) -> Option<Transient> {
+    crate::http_client::is_transient_transport(e).then_some(Transient::Unavailable)
 }
 
 /// L'issue d'un essai.
@@ -291,6 +407,56 @@ where
             }
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Parallélisme borné
+// ---------------------------------------------------------------------------
+
+/// Exécute les travaux `works`, **au plus `parallel` à la fois** (1 au moins),
+/// et rend leurs résultats **dans l'ordre des travaux** — revue P1, F1 : le
+/// nombre de tâches lancées est borné par le parallélisme réglé, jamais par le
+/// nombre de fenêtres. Les travaux sont tirés de l'itérateur au fur et à mesure
+/// (aucun n'est créé d'avance). Le premier échec arrête tout (les autres sont
+/// annulés) ; une panique se propage (la tâche de fond la conclut en
+/// `INTERNAL_ERROR`, [`spawn_job`]).
+pub async fn run_bounded<T, F, I>(works: I, parallel: usize) -> Result<Vec<T>, AppError>
+where
+    I: IntoIterator<Item = F>,
+    F: Future<Output = Result<T, AppError>> + Send + 'static,
+    T: Send + 'static,
+{
+    let parallel = parallel.max(1);
+    let mut pending = works.into_iter().enumerate();
+    let mut set = tokio::task::JoinSet::new();
+    let mut parts: Vec<(usize, T)> = Vec::new();
+    loop {
+        while set.len() < parallel {
+            let Some((i, work)) = pending.next() else {
+                break;
+            };
+            set.spawn(async move { (i, work.await) });
+        }
+        let Some(joined) = set.join_next().await else {
+            break;
+        };
+        match joined {
+            Ok((i, Ok(v))) => parts.push((i, v)),
+            Ok((_, Err(e))) => {
+                set.abort_all();
+                return Err(e);
+            }
+            Err(join) => {
+                set.abort_all();
+                if join.is_panic() {
+                    std::panic::resume_unwind(join.into_panic());
+                }
+                return Err(AppError::Internal("travail interrompu".into()));
+            }
+        }
+    }
+    parts.sort_by_key(|(i, _)| *i);
+    Ok(parts.into_iter().map(|(_, v)| v).collect())
 }
 
 // ---------------------------------------------------------------------------
@@ -607,9 +773,10 @@ mod tests {
                 (d(2024, 4, 30), d(2024, 4, 30)),
             ]
         );
-        // Contiguës : la fin d'une fenêtre est la seconde qui précède la suivante.
+        // Recouvrement d'une seconde : la fin d'une fenêtre est le début de la
+        // suivante (revue P1, F3).
         for pair in w.windows(2) {
-            assert_eq!(pair[0].end + chrono::Duration::seconds(1), pair[1].start);
+            assert_eq!(pair[0].end, pair[1].start);
         }
         // Bornes de Zurich, à la seconde : hiver (+01:00).
         assert_eq!(
@@ -618,12 +785,12 @@ mod tests {
         );
         assert_eq!(
             w[0].end,
-            Utc.with_ymd_and_hms(2024, 1, 30, 22, 59, 59).unwrap()
+            Utc.with_ymd_and_hms(2024, 1, 30, 23, 0, 0).unwrap()
         );
         // Été (+02:00).
         assert_eq!(
             w[3].end,
-            Utc.with_ymd_and_hms(2024, 4, 29, 21, 59, 59).unwrap()
+            Utc.with_ymd_and_hms(2024, 4, 29, 22, 0, 0).unwrap()
         );
     }
 
@@ -648,10 +815,7 @@ mod tests {
         let w = windows(d(2024, 10, 1), d(2024, 10, 31), 31, far());
         assert_eq!(w.len(), 1);
         assert!(w[0].end - w[0].start >= limite);
-        assert_eq!(
-            w[0].end - w[0].start,
-            chrono::Duration::hours(31 * 24 + 1) - chrono::Duration::seconds(1)
-        );
+        assert_eq!(w[0].end - w[0].start, chrono::Duration::hours(31 * 24 + 1));
     }
 
     #[test]
@@ -696,24 +860,137 @@ mod tests {
 
     #[test]
     fn periodes_refusees() {
+        let now = Utc.with_ymd_and_hms(2026, 11, 20, 10, 0, 0).unwrap();
         let today = d(2026, 11, 20);
         assert_eq!(
-            check_period(d(2026, 2, 1), d(2026, 1, 1), today, 3),
+            check_period(d(2026, 2, 1), d(2026, 1, 1), now, 3),
             Err("from_after_to")
         );
         assert_eq!(
-            check_period(d(2026, 11, 21), d(2026, 11, 30), today, 3),
+            check_period(d(2026, 11, 21), d(2026, 11, 30), now, 3),
             Err("future")
         );
         assert_eq!(
-            check_period(d(2023, 11, 19), d(2024, 1, 1), today, 3),
+            check_period(d(2023, 11, 19), d(2024, 1, 1), now, 3),
             Err("too_old")
         );
+        assert_eq!(check_period(d(2023, 11, 20), d(2027, 1, 1), now, 3), Ok(()));
+        assert_eq!(check_period(today, today, now, 3), Ok(()));
+        // Le jour du jour à Zurich, non en UTC : à 23:30 UTC le 20, c'est le 21.
+        let tard = Utc.with_ymd_and_hms(2026, 11, 20, 23, 30, 0).unwrap();
         assert_eq!(
-            check_period(d(2023, 11, 20), d(2027, 1, 1), today, 3),
+            check_period(d(2026, 11, 21), d(2026, 11, 21), tard, 3),
             Ok(())
         );
-        assert_eq!(check_period(today, today, today, 3), Ok(()));
+    }
+
+    /// Revue P1, F1 — une `to` lointaine ne produit ni fenêtre inversée ni
+    /// fenêtres sans nombre : le découpage s'arrête à la fenêtre qui contient
+    /// `now`.
+    #[test]
+    fn une_fin_future_s_arrete_a_l_instant() {
+        let now = Utc.with_ymd_and_hms(2026, 11, 20, 10, 0, 0).unwrap();
+        let w = windows(d(2026, 11, 1), d(9999, 12, 31), 30, now);
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert_eq!((w[0].from, w[0].to), (d(2026, 11, 1), d(2026, 11, 30)));
+        assert_eq!(w[0].end, now);
+        // Sur trois ans : autant de fenêtres que de tranches de 30 jours
+        // jusqu'au jour du jour, aucune inversée, aucune après `now`.
+        let from = d(2023, 11, 21);
+        let w = windows(from, d(9999, 12, 31), 30, now);
+        let jours = (d(2026, 11, 20) - from).num_days() + 1;
+        assert_eq!(w.len() as i64, (jours + 29) / 30);
+        assert!(
+            w.iter().all(|w| w.start <= w.end && w.start <= now),
+            "{w:?}"
+        );
+        // Une période entièrement future : aucune fenêtre.
+        assert!(windows(d(2027, 1, 1), d(2027, 3, 1), 30, now).is_empty());
+    }
+
+    /// Revue P1, F1, F11 — `period_windows` ramène `to` au jour du jour et
+    /// relève le début de la première fenêtre au plancher de l'historique ;
+    /// la première moitié d'une fenêtre coupée garde ce début.
+    #[test]
+    fn periode_ramenee_au_jour_et_au_plancher() {
+        let now = Utc.with_ymd_and_hms(2026, 11, 20, 10, 0, 0).unwrap();
+        let w = period_windows(d(2026, 11, 1), d(9999, 12, 31), 30, now, 3);
+        assert_eq!(w.len(), 1);
+        assert_eq!(
+            (w[0].from, w[0].to, w[0].end),
+            (d(2026, 11, 1), d(2026, 11, 20), now)
+        );
+        assert_eq!(effective_to(d(9999, 12, 31), now), d(2026, 11, 20));
+        assert_eq!(effective_to(d(2026, 1, 31), now), d(2026, 1, 31));
+
+        let floor = history_floor(now, 3);
+        assert_eq!(floor, Utc.with_ymd_and_hms(2023, 11, 20, 11, 0, 0).unwrap());
+        let w = period_windows(d(2023, 11, 20), d(2023, 12, 31), 30, now, 3);
+        assert_eq!(w[0].from, d(2023, 11, 20));
+        assert_eq!(w[0].start, floor, "aucune requête avant le plancher");
+        assert!(w.iter().all(|w| w.start <= w.end));
+        let (a, b) = w[0].split(now).unwrap();
+        assert_eq!(a.start, floor);
+        assert_eq!(a.end, b.start);
+        // Plancher d'un 29 février : le 28, même heure, plus la marge.
+        let bissextile = Utc.with_ymd_and_hms(2028, 2, 29, 10, 0, 0).unwrap();
+        assert_eq!(
+            history_floor(bissextile, 3),
+            Utc.with_ymd_and_hms(2025, 2, 28, 11, 0, 0).unwrap()
+        );
+    }
+
+    #[test]
+    fn statuts_classes() {
+        assert_eq!(classify_status(401), StatusClass::Unauthorized);
+        assert_eq!(classify_status(403), StatusClass::Forbidden);
+        assert_eq!(
+            classify_status(429),
+            StatusClass::Transient(Transient::RateLimited)
+        );
+        for s in [500, 502, 503, 599] {
+            assert_eq!(
+                classify_status(s),
+                StatusClass::Transient(Transient::Unavailable)
+            );
+        }
+        for s in [400, 404, 409, 422, 600] {
+            assert_eq!(classify_status(s), StatusClass::Other);
+        }
+    }
+
+    /// Revue P1, F1 — jamais plus de `parallel` travaux en vol, résultats dans
+    /// l'ordre, premier échec rendu.
+    #[tokio::test]
+    async fn parallelisme_borne_et_ordre_garde() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let en_vol = Arc::new(AtomicUsize::new(0));
+        let maxi = Arc::new(AtomicUsize::new(0));
+        let lances = Arc::new(AtomicUsize::new(0));
+        let works = (0..40u32).map(|i| {
+            let (en_vol, maxi, lances) = (en_vol.clone(), maxi.clone(), lances.clone());
+            async move {
+                lances.fetch_add(1, Ordering::SeqCst);
+                let n = en_vol.fetch_add(1, Ordering::SeqCst) + 1;
+                maxi.fetch_max(n, Ordering::SeqCst);
+                tokio::time::sleep(Duration::from_millis(u64::from(40 - i) % 7)).await;
+                en_vol.fetch_sub(1, Ordering::SeqCst);
+                Ok::<u32, AppError>(i)
+            }
+        });
+        let r = run_bounded(works, 3).await.unwrap();
+        assert_eq!(r, (0..40).collect::<Vec<_>>());
+        assert!(maxi.load(Ordering::SeqCst) <= 3, "{maxi:?}");
+        assert_eq!(lances.load(Ordering::SeqCst), 40);
+
+        let works = (0..10u32).map(|i| async move {
+            if i == 4 {
+                Err(AppError::Internal("x".into()))
+            } else {
+                Ok(i)
+            }
+        });
+        assert!(run_bounded(works, 1).await.is_err());
     }
 
     #[test]
@@ -727,6 +1004,8 @@ mod tests {
             Duration::from_secs(10)
         );
         assert_eq!(pause_for(1, Some("-3")), Duration::from_secs(5));
+        // Revue P1, F9 : `Retry-After: 0` → la pause minimale, non zéro.
+        assert_eq!(pause_for(1, Some("0")), RETRY_AFTER_FLOOR);
     }
 
     /// Attente qui ne dort pas et note ce qu'on lui demande.

@@ -52,7 +52,8 @@ pub use camt053::parse as parse_camt053;
 pub use csv::{
     ColumnMapping, ColumnsByName, CsvProfile, DEFAULT_CSV_CURRENCY, DebitSign, DetectedEncoding,
     HeaderByNameError, MAX_HEADER_ROW_COUNT, MAX_REPORTED_CURRENCIES, ParseCsvOutcome,
-    empty_valid_sentinel_date, parse_csv, parse_csv_collect, parse_dot_decimal_amount,
+    empty_valid_sentinel_date, parse_api_amount, parse_csv, parse_csv_collect,
+    parse_dot_decimal_amount,
 };
 pub use error::{
     CamtError, CsvError, CsvLineError, CsvLineErrorCode, ImportError,

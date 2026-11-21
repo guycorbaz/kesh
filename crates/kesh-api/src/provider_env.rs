@@ -64,12 +64,19 @@ pub struct ProviderSpec {
     pub default_base_url: &'static str,
 }
 
+/// Champ PayPal : l'identifiant de l'application (`KESH_PAYPAL_<n>_CLIENT_ID`).
+/// Le client le lit par ce nom, la spécification le déclare par ce nom : une
+/// seule écriture (revue P1, F6).
+pub const PAYPAL_CLIENT_ID: &str = "CLIENT_ID";
+/// Champ PayPal : le secret de l'application (`KESH_PAYPAL_<n>_SECRET`).
+pub const PAYPAL_SECRET: &str = "SECRET";
+
 /// PayPal (Story 38-12a) : une application REST par compte PayPal, avec la
 /// seule fonction « Transaction Search ».
 pub const PAYPAL: ProviderSpec = ProviderSpec {
     key: "PAYPAL",
     provider: "paypal",
-    fields: &["CLIENT_ID", "SECRET"],
+    fields: &[PAYPAL_CLIENT_ID, PAYPAL_SECRET],
     optional_fields: &[],
     default_base_url: "https://api-m.paypal.com",
 };
@@ -102,6 +109,36 @@ impl ProviderSpec {
     pub fn all_fields(&self) -> impl Iterator<Item = &'static str> + '_ {
         self.required_fields()
             .chain(self.optional_fields.iter().copied())
+    }
+
+    /// Lit le champ **requis** `name` d'une série, pour un client de
+    /// prestataire — le point de lecture commun (revue P1, F6). Un nom que la
+    /// spécification ne déclare pas parmi ses champs requis est une faute de
+    /// Kesh, non de configuration : `AppError::Internal`, journalisée (jamais
+    /// la valeur) ; un champ déclaré mais absent de la série rend
+    /// `PROVIDER_API_NOT_CONFIGURED` (impossible après la validation du
+    /// démarrage, gardé par défense).
+    pub fn require_field(
+        &self,
+        series: &ProviderSeries,
+        name: &str,
+    ) -> Result<String, crate::errors::AppError> {
+        if !self.fields.contains(&name) {
+            tracing::error!(
+                provider = self.provider,
+                champ = name,
+                "champ de série non déclaré par le prestataire"
+            );
+            return Err(crate::errors::AppError::Internal(
+                "champ de série non déclaré".into(),
+            ));
+        }
+        series.field(name).map(str::to_string).ok_or_else(|| {
+            crate::errors::AppError::ProviderApiNotConfigured {
+                provider: self.provider,
+                account: series.account.clone(),
+            }
+        })
     }
 }
 
@@ -592,5 +629,31 @@ mod tests {
         let msg = lire(&pairs).unwrap_err().to_string();
         assert!(msg.contains("KESH_PAYPAL_1_SECRET"));
         assert!(!msg.contains("mon-secret"), "{msg}");
+    }
+
+    /// Revue P1, F6 — le client lit ses champs par le point commun : un champ
+    /// déclaré se lit, un nom non déclaré est une faute de Kesh (`Internal`),
+    /// jamais un « non configuré » trompeur.
+    #[test]
+    fn un_champ_se_lit_s_il_est_declare() {
+        let s = ProviderSeries::for_tests(
+            1,
+            "Boutique",
+            &[(PAYPAL_CLIENT_ID, "id-un"), (PAYPAL_SECRET, "secret-un")],
+        );
+        assert_eq!(PAYPAL.require_field(&s, PAYPAL_CLIENT_ID).unwrap(), "id-un");
+        assert_eq!(
+            PAYPAL.require_field(&s, PAYPAL_SECRET).unwrap(),
+            "secret-un"
+        );
+        assert!(matches!(
+            PAYPAL.require_field(&s, "CLIENT_SECRET"),
+            Err(crate::errors::AppError::Internal(_))
+        ));
+        let partielle = ProviderSeries::for_tests(1, "Boutique", &[(PAYPAL_CLIENT_ID, "id-un")]);
+        assert!(matches!(
+            PAYPAL.require_field(&partielle, PAYPAL_SECRET),
+            Err(crate::errors::AppError::ProviderApiNotConfigured { .. })
+        ));
     }
 }

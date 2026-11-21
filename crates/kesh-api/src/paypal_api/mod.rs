@@ -14,11 +14,15 @@
 //!   moitié est reprise (plancher d'un jour, puis `PROVIDER_API_ERROR`) ;
 //! - corps borné à 16 Mio, délai total de 60 s par requête.
 //!
-//! Statuts : 401 (renouvelé une fois), 403 `PROVIDER_PERMISSION_DENIED`, 429 et
-//! 5xx (délai et connexion compris) repris par [`with_retry`], corps illisible
-//! ou trop grand `PROVIDER_RESPONSE_INVALID`, le reste `PROVIDER_API_ERROR`.
-//! Ni le texte de PayPal ni l'URL ne sortent : le **nom** d'erreur de PayPal
-//! (`NOT_AUTHORIZED`…) va au journal du serveur, sans secret.
+//! Statuts, classés par le socle ([`classify_status`], [`classify_transport`]) :
+//! 401 (renouvelé une fois), 403 `PROVIDER_PERMISSION_DENIED`, 429 et 5xx
+//! (délai et connexion refusée ou coupée compris) repris par [`with_retry`],
+//! erreur de transport définitive (certificat, hôte inconnu)
+//! `PROVIDER_API_ERROR` sans reprise, corps illisible ou trop grand
+//! `PROVIDER_RESPONSE_INVALID`, le reste `PROVIDER_API_ERROR`. Ni le texte de
+//! PayPal ni l'URL ne sortent : le **nom** d'erreur de PayPal
+//! (`NOT_AUTHORIZED`…), borné à [`ERROR_NAME_MAX_CHARS`] caractères, va au
+//! journal du serveur, sans secret.
 //!
 //! Relevés du 2026-11-20 sur un compte réel (lecture seule) : l'hôte
 //! `api-m.paypal.com` répond pour un compte réel ; le jeton porte la portée
@@ -37,11 +41,12 @@ use kesh_import::paypal_api::{PaypalApiPage, PaypalApiTx, parse_transactions_pag
 use serde::Deserialize;
 
 use crate::errors::AppError;
-use crate::http_client::{BodyError, build_client, read_body_bounded};
+use crate::http_client::{BodyError, build_client, read_body_bounded, retry_after};
 use crate::provider_download::{
-    Attempt, JobHandle, ProviderGate, RetryError, Transient, Wait, Window, with_retry,
+    Attempt, JobHandle, ProviderGate, RetryError, StatusClass, Transient, Wait, Window,
+    classify_status, classify_transport, run_bounded, with_retry,
 };
-use crate::provider_env::{ProviderApiConfig, ProviderSeries};
+use crate::provider_env::{PAYPAL_CLIENT_ID, PAYPAL_SECRET, ProviderApiConfig, ProviderSeries};
 
 /// Le prestataire.
 pub const PROVIDER: &str = "paypal";
@@ -61,6 +66,9 @@ pub const TOTAL_TIMEOUT: Duration = Duration::from_secs(60);
 const TOKEN_MARGIN: Duration = Duration::from_secs(60);
 /// Nom d'erreur de PayPal d'une fenêtre trop chargée.
 const RESULTSET_TOO_LARGE: &str = "RESULTSET_TOO_LARGE";
+/// Borne du nom d'erreur de PayPal écrit au journal : il vient de la réponse,
+/// qui peut peser 16 Mio (revue P1, F10).
+pub const ERROR_NAME_MAX_CHARS: usize = 64;
 
 /// Échec définitif d'un essai.
 #[derive(Debug)]
@@ -101,9 +109,11 @@ struct ErrorName {
     name: Option<String>,
 }
 
-/// Le nom d'erreur de PayPal d'un corps, s'il s'y lit.
+/// Le nom d'erreur de PayPal d'un corps, s'il s'y lit, borné à
+/// [`ERROR_NAME_MAX_CHARS`] caractères.
 fn error_name(body: &[u8]) -> Option<String> {
-    serde_json::from_slice::<ErrorName>(body).ok()?.name
+    let name = serde_json::from_slice::<ErrorName>(body).ok()?.name?;
+    Some(name.chars().take(ERROR_NAME_MAX_CHARS).collect())
 }
 
 /// Bornes d'une fenêtre au format de l'API (UTC, à la seconde).
@@ -125,59 +135,68 @@ impl PaypalClient {
         let http = build_client(https_only, connect, total).map_err(|_| {
             AppError::Internal("client HTTP de l'API du prestataire impossible à construire".into())
         })?;
-        let field = |name: &str| {
-            series.field(name).map(str::to_string).ok_or_else(|| {
-                AppError::ProviderApiNotConfigured {
-                    provider: PROVIDER,
-                    account: series.account.clone(),
-                }
-            })
-        };
         Ok(Self {
             http,
             base_url: config.base_url.clone(),
-            client_id: field("CLIENT_ID")?,
-            secret: field("SECRET")?,
+            client_id: config.spec.require_field(series, PAYPAL_CLIENT_ID)?,
+            secret: config.spec.require_field(series, PAYPAL_SECRET)?,
             gate,
             wait,
             token: tokio::sync::Mutex::new(None),
         })
     }
 
-    /// Classe une erreur de transport : délai et connexion sont passagers.
-    fn transport<T>(_e: reqwest::Error) -> Attempt<T, Fatal> {
-        Attempt::Transient {
-            kind: Transient::Unavailable,
-            retry_after: None,
+    /// Classe une erreur de transport par le socle ([`classify_transport`]) :
+    /// délai, connexion refusée ou coupée sont passagers ; le reste —
+    /// certificat refusé, hôte inconnu — est définitif, `PROVIDER_API_ERROR`
+    /// sans reprise. Le texte de l'erreur (qui porte l'URL) n'est jamais
+    /// journalisé.
+    fn transport<T>(e: reqwest::Error) -> Attempt<T, Fatal> {
+        match classify_transport(&e) {
+            Some(kind) => Attempt::Transient {
+                kind,
+                retry_after: None,
+            },
+            None => {
+                tracing::warn!(
+                    provider = PROVIDER,
+                    connexion = e.is_connect(),
+                    requete = e.is_request(),
+                    "API : erreur de transport définitive (certificat, hôte ou schéma)"
+                );
+                Attempt::Fatal(Fatal::App(AppError::ProviderApiError {
+                    provider: PROVIDER,
+                    window: None,
+                    page: None,
+                }))
+            }
         }
     }
 
-    /// Classe un statut non 2xx commun aux deux requêtes.
+    /// Classe un statut non 2xx commun aux deux requêtes, par le socle
+    /// ([`classify_status`]) ; `400 RESULTSET_TOO_LARGE` est propre à PayPal.
     fn status<T>(
         status: reqwest::StatusCode,
         retry_after: Option<String>,
         body: &[u8],
     ) -> Attempt<T, Fatal> {
         let name = error_name(body);
-        match status.as_u16() {
-            401 => Attempt::Fatal(Fatal::Unauthorized),
-            403 => {
+        match classify_status(status.as_u16()) {
+            StatusClass::Unauthorized => Attempt::Fatal(Fatal::Unauthorized),
+            StatusClass::Forbidden => {
                 tracing::warn!(provider = PROVIDER, erreur = ?name, "API : droits insuffisants");
                 Attempt::Fatal(Fatal::App(AppError::ProviderPermissionDenied {
                     provider: PROVIDER,
                 }))
             }
-            429 => Attempt::Transient {
-                kind: Transient::RateLimited,
-                retry_after,
-            },
-            500..=599 => Attempt::Transient {
-                kind: Transient::Unavailable,
-                retry_after,
-            },
-            400 if name.as_deref() == Some(RESULTSET_TOO_LARGE) => Attempt::Fatal(Fatal::TooLarge),
-            code => {
-                tracing::warn!(provider = PROVIDER, statut = code, erreur = ?name, "API : refus");
+            StatusClass::Transient(kind) => Attempt::Transient { kind, retry_after },
+            StatusClass::Other
+                if status.as_u16() == 400 && name.as_deref() == Some(RESULTSET_TOO_LARGE) =>
+            {
+                Attempt::Fatal(Fatal::TooLarge)
+            }
+            StatusClass::Other => {
+                tracing::warn!(provider = PROVIDER, statut = status.as_u16(), erreur = ?name, "API : refus");
                 Attempt::Fatal(Fatal::App(AppError::ProviderApiError {
                     provider: PROVIDER,
                     window: None,
@@ -342,15 +361,6 @@ impl PaypalClient {
     }
 }
 
-/// L'en-tête `Retry-After`, tel que reçu.
-fn retry_after(response: &reqwest::Response) -> Option<String> {
-    response
-        .headers()
-        .get(reqwest::header::RETRY_AFTER)
-        .and_then(|v| v.to_str().ok())
-        .map(str::to_string)
-}
-
 /// L'échec après six essais passagers, nommant la fenêtre et la page.
 fn exhausted(kind: Transient, w: Option<&Window>, page: Option<u32>) -> AppError {
     let window = w.map(Window::label);
@@ -468,9 +478,11 @@ fn fetch_window(
     })
 }
 
-/// Télécharge les fenêtres — un seul fil si `parallel` vaut 1, sinon toutes
-/// lancées (le sémaphore du prestataire borne les requêtes en vol) ; résultats
-/// rangés par fenêtre puis par page. Le premier échec arrête tout.
+/// Télécharge les fenêtres — **au plus `parallel` à la fois**
+/// ([`run_bounded`] : un seul fil si `parallel` vaut 1, jamais une tâche par
+/// fenêtre ; le sémaphore du prestataire borne en plus les requêtes en vol de
+/// tous ses téléchargements) ; résultats rangés par fenêtre puis par page. Le
+/// premier échec arrête tout.
 pub async fn download(
     client: Arc<PaypalClient>,
     windows: Vec<Window>,
@@ -479,38 +491,12 @@ pub async fn download(
     job: JobHandle,
 ) -> Result<Fetched, AppError> {
     client.authenticate().await?;
+    let works = windows
+        .into_iter()
+        .map(|w| fetch_window(client.clone(), w, now, job.clone()));
     let mut all = Fetched::default();
-    if parallel <= 1 {
-        for w in windows {
-            all.absorb(fetch_window(client.clone(), w, now, job.clone()).await?);
-        }
-        return Ok(all);
-    }
-    let mut set = tokio::task::JoinSet::new();
-    for (i, w) in windows.into_iter().enumerate() {
-        let fut = fetch_window(client.clone(), w, now, job.clone());
-        set.spawn(async move { (i, fut.await) });
-    }
-    let mut parts: Vec<(usize, Fetched)> = Vec::new();
-    while let Some(joined) = set.join_next().await {
-        match joined {
-            Ok((i, Ok(f))) => parts.push((i, f)),
-            Ok((_, Err(e))) => {
-                set.abort_all();
-                return Err(e);
-            }
-            Err(join) => {
-                set.abort_all();
-                if join.is_panic() {
-                    std::panic::resume_unwind(join.into_panic());
-                }
-                return Err(AppError::Internal("fenêtre interrompue".into()));
-            }
-        }
-    }
-    parts.sort_by_key(|(i, _)| *i);
-    for (_, f) in parts {
-        all.absorb(f);
+    for part in run_bounded(works, parallel).await? {
+        all.absorb(part);
     }
     Ok(all)
 }
@@ -543,5 +529,11 @@ mod tests {
             Some(RESULTSET_TOO_LARGE)
         );
         assert_eq!(error_name(b"<html>"), None);
+        // Revue P1, F10 : un nom démesuré est borné avant le journal.
+        let long = format!(r#"{{"name":"{}"}}"#, "É".repeat(10_000));
+        assert_eq!(
+            error_name(long.as_bytes()).unwrap().chars().count(),
+            ERROR_NAME_MAX_CHARS
+        );
     }
 }

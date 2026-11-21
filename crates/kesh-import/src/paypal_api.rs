@@ -34,7 +34,7 @@ use chrono::{DateTime, FixedOffset};
 use rust_decimal::Decimal;
 use serde::Deserialize;
 
-use crate::csv::parse_dot_decimal_amount;
+use crate::csv::parse_api_amount;
 use crate::paypal::{
     BalanceImpact, PaypalLineError, PaypalLineErrorCode, PaypalRow, normalize_currency,
     normalize_transaction_id,
@@ -347,7 +347,7 @@ pub fn to_paypal_row(
         push(FIELD_CURRENCY, PaypalLineErrorCode::Currency, raw_currency);
     }
     let raw_gross = amount.value.as_deref();
-    let gross = raw_gross.and_then(parse_dot_decimal_amount);
+    let gross = raw_gross.and_then(parse_api_amount);
     if gross.is_none() {
         push(FIELD_GROSS, PaypalLineErrorCode::Amount, raw_gross);
     }
@@ -359,7 +359,7 @@ pub fn to_paypal_row(
         None => Some(Decimal::ZERO),
         Some(fee) => {
             let raw_fee = fee.value.as_deref();
-            let value = raw_fee.and_then(parse_dot_decimal_amount);
+            let value = raw_fee.and_then(parse_api_amount);
             if value.is_none() {
                 push(FIELD_FEE, PaypalLineErrorCode::Amount, raw_fee);
             }
@@ -630,6 +630,32 @@ mod tests {
         let e = to_paypal_row(&t, 1, &plus_one).unwrap_err();
         assert_eq!(e[0].field, Some(FIELD_FEE));
         assert_eq!(e[0].code, PaypalLineErrorCode::Amount);
+    }
+
+    /// Revue P1, F13 — l'API n'écrit pas de virgule des milliers : un montant
+    /// qui en porte est refusé (le CSV, lui, l'admet), brut comme frais.
+    #[test]
+    fn une_virgule_des_milliers_est_refusee_a_l_api() {
+        let mut t = tx(SALE);
+        t.transaction_info.transaction_amount = Some(PaypalApiMoney {
+            currency_code: Some("EUR".into()),
+            value: Some("1,234.00".into()),
+        });
+        let e = to_paypal_row(&t, 1, &plus_one).unwrap_err();
+        assert_eq!(
+            (e[0].field, e[0].code),
+            (Some(FIELD_GROSS), PaypalLineErrorCode::Amount)
+        );
+        let mut t = tx(SALE);
+        t.transaction_info.fee_amount = Some(PaypalApiMoney {
+            currency_code: Some("EUR".into()),
+            value: Some("-1,000".into()),
+        });
+        let e = to_paypal_row(&t, 1, &plus_one).unwrap_err();
+        assert_eq!(
+            (e[0].field, e[0].code),
+            (Some(FIELD_FEE), PaypalLineErrorCode::Amount)
+        );
     }
 
     #[test]

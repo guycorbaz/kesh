@@ -57,9 +57,30 @@ use crate::routes::bank_statements_manual::MANUAL_STATEMENT_LOCK_TIMEOUT_SECS;
 /// Les actions de trace que les appelants passent à [`import_lines`]
 /// (`ImportRequest::audit_action`) : écrites en toutes lettres ici pour que
 /// l'inventaire des sites d'audit indirects (`audit_label_registry`) les relise,
-/// et contrôlées à l'écriture. *(Même texte que la 40-7b, qui y ajoute
-/// `stripe_import.created` ; ajout de la 38-12a.)*
-pub const AUDIT_ACTIONS: [&str; 2] = ["paypal_download.created", "paypal_import.created"];
+/// et contrôlées en tête d'[`import_lines`], avant toute écriture
+/// ([`check_audit_action`]), y compris dans la version publiée. Une tranche et
+/// non un tableau de taille fixe (revue P1, F4) : chaque prestataire y ajoute
+/// sa ligne sans toucher aux autres — à la fusion avec la 40-7b
+/// (`stripe_import.created`), l'union des deux listes. Un prestataire qui
+/// ajoute une action l'écrit ici, à `audit_labels::ACTIONS`, aux quatre `.ftl`
+/// et à l'inventaire `SITES_INDIRECTS` d'`audit_label_registry`.
+pub const AUDIT_ACTIONS: &[&str] = &["paypal_download.created", "paypal_import.created"];
+
+/// Refuse une action de trace absente d'[`AUDIT_ACTIONS`] : faute de Kesh (un
+/// appelant neuf non inscrit, dont la trace n'aurait pas de libellé), non de
+/// l'utilisateur — `AppError::Internal`, journalisée, rien d'écrit.
+pub fn check_audit_action(action: &str) -> Result<(), AppError> {
+    if AUDIT_ACTIONS.contains(&action) {
+        return Ok(());
+    }
+    tracing::error!(
+        action,
+        "import de prestataire : action de trace non inscrite"
+    );
+    Err(AppError::Internal(
+        "action de trace d'import non inscrite".into(),
+    ))
+}
 
 /// Une transaction à importer, indépendante du format d'origine.
 #[derive(Debug, Clone, PartialEq)]
@@ -249,6 +270,7 @@ pub async fn import_lines(
     balances: &[ProviderBalance],
     request: &ImportRequest<'_>,
 ) -> Result<Vec<CurrencyReport>, AppError> {
+    check_audit_action(request.audit_action)?;
     let missing: Vec<String> = request
         .by_currency
         .keys()
@@ -569,11 +591,6 @@ async fn write_under_locks(
         });
     }
 
-    debug_assert!(
-        AUDIT_ACTIONS.contains(&request.audit_action),
-        "action de trace inconnue : {}",
-        request.audit_action
-    );
     let mut details = request.audit_details.clone();
     details.insert("currencies".into(), serde_json::json!(reports));
     audit_log::insert_in_tx(
@@ -598,6 +615,18 @@ async fn write_under_locks(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Revue P1, F4 — une action non inscrite se refuse aussi en version
+    /// publiée (plus de `debug_assert!`), les actions des appelants passent.
+    #[test]
+    fn action_de_trace_inscrite_ou_refusee() {
+        assert!(check_audit_action("paypal_import.created").is_ok());
+        assert!(check_audit_action("paypal_download.created").is_ok());
+        assert!(matches!(
+            check_audit_action("inconnue"),
+            Err(AppError::Internal(_))
+        ));
+    }
 
     fn line(group: &str, id: &str, amount: &str) -> ProviderLine {
         ProviderLine {

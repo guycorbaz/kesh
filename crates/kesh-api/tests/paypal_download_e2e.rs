@@ -660,11 +660,13 @@ async fn quatre_mois_ventiles_par_devise(pool: MySqlPool) {
     assert_eq!(
         premieres,
         [
-            ("2019-12-31T23:00:00Z", "2020-01-30T22:59:59Z"),
-            ("2020-01-30T23:00:00Z", "2020-02-29T22:59:59Z"),
-            ("2020-02-29T23:00:00Z", "2020-03-30T21:59:59Z"),
-            ("2020-03-30T22:00:00Z", "2020-04-29T21:59:59Z"),
-            ("2020-04-29T22:00:00Z", "2020-04-30T21:59:59Z"),
+            // Recouvrement d'une seconde : la fin d'une fenêtre est le début
+            // de la suivante (revue P1, F3).
+            ("2019-12-31T23:00:00Z", "2020-01-30T23:00:00Z"),
+            ("2020-01-30T23:00:00Z", "2020-02-29T23:00:00Z"),
+            ("2020-02-29T23:00:00Z", "2020-03-30T22:00:00Z"),
+            ("2020-03-30T22:00:00Z", "2020-04-29T22:00:00Z"),
+            ("2020-04-29T22:00:00Z", "2020-04-30T22:00:00Z"),
         ]
         .map(|(a, b)| (a.to_string(), b.to_string()))
     );
@@ -887,7 +889,7 @@ async fn fenetre_coupee_et_refus_du_prestataire(pool: MySqlPool) {
     };
     // La première fenêtre entière est trop chargée ; ses moitiés passent.
     *sim.regle.lock().unwrap() = Some(Arc::new(move |d: &Demande| {
-        (d.start == "2019-12-31T23:00:00Z" && d.end == "2020-01-30T22:59:59Z").then(trop)
+        (d.start == "2019-12-31T23:00:00Z" && d.end == "2020-01-30T23:00:00Z").then(trop)
     }));
     let ctx = monter(&pool, &url, 1, true).await;
     let v = ctx.telecharger("2020-01-01", "2020-02-15").await;
@@ -962,6 +964,103 @@ async fn fenetre_coupee_et_refus_du_prestataire(pool: MySqlPool) {
             .await,
         1
     );
+}
+
+/// Revue P1, F1 — une `to` future est acceptée et ramenée au jour du jour :
+/// aucune fenêtre inversée n'est envoyée, aucune ne commence après l'instant,
+/// leur nombre s'arrête à aujourd'hui ; le nom de l'import et la trace disent
+/// la période lue. Au parallélisme 1 puis 3.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn une_fin_future_est_ramenee_au_jour_du_jour(pool: MySqlPool) {
+    let (url, sim) = simuler(transactions_de_la_fixture(), 500).await;
+    let ctx = monter(&pool, &url, 1, true).await;
+    let v = ctx.telecharger("2020-03-01", "9999-12-31").await;
+    assert_eq!(v["state"], "done", "{v}");
+    // 2020-03-01 → 2020-06-30 : cinq fenêtres de 30 jours au plus, la
+    // dernière de deux jours, finie à l'instant (les ventes de mars s'écrivent).
+    assert_eq!(v["steps"], json!({ "done": 5, "total": 5 }));
+    let demandes = sim.demandes.lock().unwrap().clone();
+    assert_eq!(demandes.len(), 5, "{demandes:?}");
+    for d in &demandes {
+        let (debut, fin) = (
+            DateTime::parse_from_rfc3339(&d.start).unwrap(),
+            DateTime::parse_from_rfc3339(&d.end).unwrap(),
+        );
+        assert!(debut <= fin, "fenêtre inversée : {d:?}");
+        assert!(
+            fin.with_timezone(&Utc) <= maintenant(),
+            "après l'instant : {d:?}"
+        );
+    }
+    assert_eq!(demandes.last().unwrap().end, "2020-06-30T12:00:00Z");
+    let noms: Vec<String> = sqlx::query_scalar("SELECT DISTINCT filename FROM bank_imports")
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+    assert_eq!(noms, ["PayPal API 2020-03-01…2020-06-30"]);
+    let (details,): (Value,) = sqlx::query_as(
+        "SELECT details_json FROM audit_log WHERE action = 'paypal_download.created'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        details["period"],
+        json!({ "from": "2020-03-01", "to": "2020-06-30" })
+    );
+
+    // Parallélisme 3, une période de trois ans jusqu'en 9999 : autant de
+    // fenêtres que de tranches de 30 jours jusqu'au jour du jour, aucune
+    // inversée.
+    sim.demandes.lock().unwrap().clear();
+    let app3 = spawn_app(pool.clone(), &url, 3).await;
+    let ctx3 = Ctx {
+        pool: pool.clone(),
+        app: app3,
+        jwt: ctx.jwt.clone(),
+        seeded: ctx.seeded.clone(),
+    };
+    let v = ctx3.telecharger("2017-07-01", "9999-12-31").await;
+    assert_eq!(v["state"], "done", "{v}");
+    let jours = (chrono::NaiveDate::from_ymd_opt(2020, 6, 30).unwrap()
+        - chrono::NaiveDate::from_ymd_opt(2017, 7, 1).unwrap())
+    .num_days()
+        + 1;
+    assert_eq!(v["steps"]["total"], (jours + 29) / 30);
+    let demandes = sim.demandes.lock().unwrap().clone();
+    assert_eq!(demandes.len() as i64, (jours + 29) / 30);
+    assert!(demandes.iter().all(|d| {
+        DateTime::parse_from_rfc3339(&d.start).unwrap()
+            <= DateTime::parse_from_rfc3339(&d.end).unwrap()
+    }));
+}
+
+/// Revue P1, F2 — une erreur de transport définitive (ici, TLS parlé à un
+/// serveur en clair, comme un certificat refusé) n'est pas reprise : échec
+/// `PROVIDER_API_ERROR` au premier essai, sans pause.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn une_erreur_de_transport_definitive_n_est_pas_reprise(pool: MySqlPool) {
+    // Un serveur qui répond en clair à toute connexion, compte les connexions.
+    let clair = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let adresse = clair.local_addr().unwrap();
+    let connexions = Arc::new(AtomicUsize::new(0));
+    let compte = connexions.clone();
+    tokio::spawn(async move {
+        while let Ok((mut flux, _)) = clair.accept().await {
+            compte.fetch_add(1, Ordering::SeqCst);
+            use tokio::io::AsyncWriteExt;
+            let _ = flux
+                .write_all(b"HTTP/1.1 400 Bad Request\r\ncontent-length: 0\r\n\r\n")
+                .await;
+        }
+    });
+    let ctx = monter(&pool, &format!("https://{adresse}"), 1, true).await;
+    let v = ctx.telecharger("2020-01-01", "2020-01-30").await;
+    assert_eq!(v["state"], "failed", "{v}");
+    assert_eq!(v["error"]["code"], "PROVIDER_API_ERROR", "{v}");
+    assert!(ctx.app.attente.0.lock().unwrap().is_empty(), "aucune pause");
+    assert_eq!(connexions.load(Ordering::SeqCst), 1, "un seul essai");
+    assert_eq!(ctx.ecrit().await, (0, 0, 0));
 }
 
 /// AC-7, AC-8 — une devise sans compte bancaire : `failed`

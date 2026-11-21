@@ -22,7 +22,8 @@
 //! commun ([`crate::routes::provider_imports`]) : mêmes doublons qu'à l'import
 //! du CSV (par identifiant de transaction, brut ou `:FEE`), une transaction de
 //! base, tout ou rien. Ce qui diffère d'un import de fichier : le nom (« PayPal
-//! API <du>…<au> »), l'empreinte (les identifiants), aucun refus de fichier
+//! API <du>…<au> », `<au>` étant la fin **lue** : une `to` future est ramenée
+//! au jour du jour, et la trace dit la même période), l'empreinte (les identifiants), aucun refus de fichier
 //! déjà importé, la trace `paypal_download.created`. Un identifiant présent deux
 //! fois dans le téléchargement (pages décalées pendant la lecture) est gardé une
 //! fois s'il porte les mêmes devise, brut et frais ; sinon la tâche échoue en
@@ -49,7 +50,9 @@ use crate::AppState;
 use crate::errors::AppError;
 use crate::middleware::auth::CurrentUser;
 use crate::paypal_api::{self, HISTORY_YEARS, MAX_DAYS, PaypalClient};
-use crate::provider_download::{JobHandle, JobView, Window, check_period, spawn_job, windows};
+use crate::provider_download::{
+    JobHandle, JobView, Window, check_period, effective_to, period_windows, spawn_job,
+};
 use crate::provider_env::PAYPAL;
 use crate::routes::paypal_imports::{
     PaypalImportResponse, check_transaction_id_lengths, provider_lines, ventilate,
@@ -100,16 +103,29 @@ pub async fn create(
         });
     };
     let now = state.horloge.maintenant();
-    let today = state.horloge.aujourd_hui();
-    check_period(request.from, request.to, today, HISTORY_YEARS).map_err(|reason| {
+    check_period(request.from, request.to, now, HISTORY_YEARS).map_err(|reason| {
         AppError::ProviderPeriodInvalid {
             provider: PROVIDER_PAYPAL,
             reason,
         }
     })?;
-    let wins = windows(request.from, request.to, MAX_DAYS, now);
+    // Une `to` future n'est pas refusée : la période lue s'arrête au jour du
+    // jour, et c'est elle que disent le nom de l'import et la trace (revue P1,
+    // F1) ; la première fenêtre commence au plancher de l'historique (F11).
+    let to = effective_to(request.to, now);
+    let wins = period_windows(request.from, to, MAX_DAYS, now, HISTORY_YEARS);
 
     let downloads = state.provider_downloads.clone();
+    // Le client se construit avant la tâche : un champ manquant ou un client
+    // impossible se refuse ici, rien lancé (revue P1, F6).
+    let gate = downloads.gate(PROVIDER_PAYPAL, config.parallel);
+    let client = PaypalClient::new(
+        &config,
+        &series,
+        gate,
+        downloads.wait(),
+        downloads.timeouts(),
+    )?;
     let job = downloads
         .start(
             PROVIDER_PAYPAL,
@@ -122,20 +138,12 @@ pub async fn create(
             job_id,
         })?;
     let job_id = job.id;
-    let gate = downloads.gate(PROVIDER_PAYPAL, config.parallel);
-    let client = PaypalClient::new(
-        &config,
-        &series,
-        gate,
-        downloads.wait(),
-        downloads.timeouts(),
-    );
     let run = Run {
         pool: state.pool.clone(),
         current_user,
         account,
         from: request.from,
-        to: request.to,
+        to,
         windows: wins,
         parallel: config.parallel,
         now,
@@ -144,7 +152,7 @@ pub async fn create(
     spawn_job(
         job,
         PROVIDER_PAYPAL,
-        async move { run.execute(client?).await },
+        async move { run.execute(client).await },
     );
 
     Ok((
