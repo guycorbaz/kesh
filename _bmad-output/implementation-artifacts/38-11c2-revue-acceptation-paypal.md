@@ -570,6 +570,34 @@ transaction (un compte USD ne sert que les transactions en USD) ; toute autre de
   dernier commit de code de cette passe-là (constat de la revue P3).
 - Gates : voir ci-dessous.
 
+### Gates de la remédiation P3 (dernier commit de code `b5aad3fc`)
+
+Journal : `kesh-gate-logs/s38-11c2/` (`tour-p3.log`, `gate-backend.log`, `front-unit.log`, `e2e.log`, `gate-ci.log`).
+Périmètre : le dernier commit de code, `b5aad3fc` ; les commits `4bcc68ae` et `328a87a1` ne portent que la fiche, les
+textes et le manuel, `f6ef42b6` le code de la remédiation.
+
+- **Ciblé** : 1591/1591 verts (avant le tour).
+- **Backend complet, `scripts/test-fast.sh --ci` (nextest)** : 6280 exécutés, **6280 passés** (3 lents), 14 ignorés ; fmt et
+  clippy compris dans le script.
+- **`gate-ci.sh`** (copie `git archive` de `b5aad3fc`, `cargo test` par binaire) : **6299 passés, 0 échec, 18 ignorés**, jusqu'au
+  bout, sans échec instable ; sa cible supprimée ensuite.
+- **Frontend** : `npm ci`, `npm run check`, `lint-i18n-ownership`, `npm run test:unit` **4613 passés (278 fichiers)**, `npm run
+  build` : verts.
+- **E2E complet (Playwright)** : **478 passés, 9 échecs, 18 ignorés** (59,4 min). Les neuf sont les attendus : les sept de la
+  KF-029 (#97 : `mode-expert.spec.ts:26` et `:41`, `onboarding-path-b.spec.ts:65` et `:92`, `onboarding.spec.ts:57`, `:77`,
+  `:150`) et `backup-restore-new-install.spec.ts:262` et `:381`. `opening-balances.spec.ts:156` a passé. Aucun autre échec.
+- **Manuel** : `make user` dans une copie hors dépôt ; le PDF aplati porte la phrase M1 (« Une règle vers un compte en CHF
+  s'applique à toute transaction ; une règle vers un compte en USD ne s'applique qu'aux transactions en USD »). Aucun PDF commité.
+
+**Les quatre tests corrigés au dernier commit étaient faux, non le code** (`paypal_reconciliation_e2e.rs`, `reconciliation_e2e.rs`) :
+1. écriture absente au lot : le test attendait `NOT_FOUND`, or la relecture ne retrouve pas la clé et le refus est
+   `PROVIDER_PROPOSAL_STALE`, raison `entry_changed` (assertion et doc du test corrigées) ;
+2. écriture USD sur USD : le test lisait les lignes par position ; l'ordre n'est pas contractuel, elles se prennent
+   désormais par compte ;
+3. compte de charges USD du test : type écrit `'expense'` pour `'Expense'` (type d'énumération), la ligne d'insertion était fausse ;
+4. règle du test de masquage : valeur de règle `Abonnement` identique à celle d'une autre règle du jeu, remplacée par `mensuel`
+   pour que les deux règles restent distinctes.
+
 ## Change Log
 
 - 2026-11-20 — fiche rédigée sous la clé 38-11c (phase 1 KISS), non validée.
@@ -618,3 +646,4 @@ transaction (un compte USD ne sert que les transactions en USD) ; toute autre de
   n° 14 à 16). Mutations vérifiées ; gates complets à rejouer (arrêtés par la station, mémoire). Prompt de la passe
   P2 complète (Sonnet) : `kesh-gate-logs/s38-11c2/revue-p2-prompt.md`. Statut : `review`.
 - 2026-11-21 — revue P2 (Sonnet 5.5) : 0 au-dessus de LOW, quatre LOW ; L1, L2, L4 remédiés (`85369670`) ; décision du responsable de l'epic du 2026-11-21 intégrée (`0ec6472a`, `49a410cf`) ; gates rejoués ; passe ciblée P3 à lancer.
+- 2026-11-21 — remédiation de la revue P3 (Claude Sonnet 5.5) : 0 CRITICAL, 0 HIGH, 3 MEDIUM, 9 LOW remédiés (`f6ef42b6`, `328a87a1`, `4bcc68ae`) ; quatre tests faux corrigés (`b5aad3fc`) ; gates rejoués au dernier commit de code (ci-dessus) ; passe P4 complète à lancer ; statut `review`.
