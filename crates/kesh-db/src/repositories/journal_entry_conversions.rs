@@ -235,6 +235,7 @@ pub async fn create_conversion(
         .begin()
         .await
         .map_err(|e| ConversionError::conversion(map_db_error(e).into()))?;
+    // Saisie d'une conversion (37-3b) : garde de postabilité active.
     let result = create_conversion_in_tx(
         &mut tx,
         company_id,
@@ -242,6 +243,7 @@ pub async fn create_conversion(
         entries,
         complete_difference,
         max_lines,
+        true,
     )
     .await;
     match result {
@@ -258,6 +260,14 @@ pub async fn create_conversion(
     }
 }
 
+/// Le corps de [`create_conversion`], dans la transaction de l'appelant.
+///
+/// `enforce_postable` est passé tel quel à [`journal_entries::create_in_tx`] :
+/// `true` pour la saisie d'une conversion (37-3b), `false` pour une conversion
+/// de prestataire ([`create_provider_conversion_in_tx`], Story 38-11c2 AC-8,
+/// revue P1 M4) — flux de rapprochement, dont le compte bancaire et le compte
+/// de conversion sont des comptes de configuration tolérés non imputables
+/// (D-A0), comme la forme à une écriture.
 async fn create_conversion_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,
@@ -265,6 +275,7 @@ async fn create_conversion_in_tx(
     mut entries: [NewJournalEntry; 2],
     complete_difference: bool,
     max_lines: usize,
+    enforce_postable: bool,
 ) -> Result<[JournalEntryWithLines; 2], ConversionError> {
     let conv = |e: DbError| ConversionError::conversion(e.into());
 
@@ -418,7 +429,7 @@ async fn create_conversion_in_tx(
             Some(fy) => fy,
         };
         let new = entries[idx].clone();
-        let result = journal_entries::create_in_tx(tx, fy.id, acteur, new, true)
+        let result = journal_entries::create_in_tx(tx, fy.id, acteur, new, enforce_postable)
             .await
             .map_err(|e| {
                 let kind = match e {
@@ -487,7 +498,8 @@ pub enum ConversionPlan {
 /// - [`ConversionPlan::Double`] : écriture 1 (débit conversion / crédit source,
 ///   datée `source_date`) et écriture 2 (débit cible / crédit conversion,
 ///   datée `target_date`), par [`create_conversion_in_tx`]
-///   (`complete_difference = false`), qui contrôle le compte de conversion
+///   (`complete_difference = false`, garde de postabilité désactivée comme
+///   pour [`ConversionPlan::Single`]), qui contrôle le compte de conversion
 ///   (`FX_ACCOUNT_INVALID`) et le mode multi-devises. Le compte de conversion
 ///   est lu ici d'abord, sous le même verrou partagé de `companies`, pour
 ///   construire les lignes.
@@ -576,6 +588,8 @@ pub async fn create_provider_conversion_in_tx(
                 target_date,
                 vec![line(&target, true), line(&transit_leg(target.chf), false)],
             );
+            // Garde de postabilité désactivée, comme la forme à une écriture
+            // (revue P1 M4).
             let [a, b] = create_conversion_in_tx(
                 tx,
                 company_id,
@@ -583,6 +597,7 @@ pub async fn create_provider_conversion_in_tx(
                 [first, second],
                 false,
                 PROVIDER_CONVERSION_MAX_LINES,
+                false,
             )
             .await?;
             Ok(vec![a.entry.id, b.entry.id])

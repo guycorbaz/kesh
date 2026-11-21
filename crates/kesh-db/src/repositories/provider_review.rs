@@ -348,26 +348,3 @@ where
     .await
     .map_err(DbError::Sqlx)
 }
-
-/// Les **autres** transactions qui pointent l'écriture `journal_entry_id`, en
-/// lecture **verrouillante** (`LOCK IN SHARE MODE`) : le contrôle, après un
-/// rattachement d'encaissement, qu'aucune transaction d'un autre compte n'a
-/// rattaché la même vente entre-temps (une lecture ordinaire lirait
-/// l'instantané de la transaction, ouvert avant le verrou de l'écriture).
-pub async fn other_links_locked(
-    tx: &mut sqlx::Transaction<'_, MySql>,
-    company_id: i64,
-    journal_entry_id: i64,
-    bank_transaction_id: i64,
-) -> Result<i64, DbError> {
-    sqlx::query_scalar(
-        "SELECT COUNT(*) FROM bank_transactions \
-         WHERE company_id = ? AND matched_entry_id = ? AND id <> ? LOCK IN SHARE MODE",
-    )
-    .bind(company_id)
-    .bind(journal_entry_id)
-    .bind(bank_transaction_id)
-    .fetch_one(&mut **tx)
-    .await
-    .map_err(DbError::Sqlx)
-}

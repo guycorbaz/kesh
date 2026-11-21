@@ -1241,6 +1241,45 @@ pub struct EntryLinked {
     pub journal_entry_id: i64,
 }
 
+/// Verrouille (`FOR UPDATE`) les écritures `journal_entry_ids` de la société,
+/// **une à une par identifiant croissant**, par clé primaire — la requête de
+/// l'étape 4.2 de [`link_entry_in_tx`], rien d'autre : aucun verrou
+/// d'intervalle sur un index secondaire (une écriture absente pose, comme à
+/// l'étape 4.2, le seul verrou d'intervalle de la clé primaire). Rend les
+/// identifiants trouvés.
+///
+/// ⛔ **À appeler avant la première lecture ordinaire de la transaction**
+/// (voir le corollaire de [`link_entry_in_tx`]) : c'est ce qui fait naître la
+/// vue **après** l'attente des contre-passations, modifications, suppressions
+/// et rattachements concurrents de ces écritures, qui prennent tous `je`
+/// `FOR UPDATE` en premier acte. Ordre des verrous : `je` (ici, croissants)
+/// **puis** `t` (étape 4.1, sous le verrou nommé du compte de `t`, que
+/// l'appelant tient déjà) : l'inverse de l'ordre du geste seul, sans cycle —
+/// un geste qui tiendrait `t` en attendant `je` devrait tenir le verrou nommé
+/// de son compte, que l'appelant tient (absence de cycle, ci-dessous).
+pub async fn lock_entries_for_update(
+    tx: &mut Transaction<'_, MySql>,
+    company_id: i64,
+    journal_entry_ids: &[i64],
+) -> Result<Vec<i64>, DbError> {
+    let mut ids = journal_entry_ids.to_vec();
+    ids.sort_unstable();
+    ids.dedup();
+    let mut found = Vec::with_capacity(ids.len());
+    for id in ids {
+        let je: Option<i64> = sqlx::query_scalar(
+            "SELECT id FROM journal_entries WHERE id = ? AND company_id = ? FOR UPDATE",
+        )
+        .bind(id)
+        .bind(company_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(map_db_error)?;
+        found.extend(je);
+    }
+    Ok(found)
+}
+
 /// Rattache la transaction à l'écriture désignée, **dans une transaction
 /// fournie**, sous le verrou nommé du compte que tient l'appelant
 /// (`with_account_lock`). Sans `BEGIN` ni `COMMIT`.
@@ -1287,7 +1326,17 @@ pub struct EntryLinked {
 ///   d'InnoDB** ; l'entrelacement est forcé par le test T-race-3
 ///   (`reconciliation_link_entry_e2e.rs`) ;
 /// - corollaire : **toute** lecture ordinaire déplacée avant l'étape 4.2
-///   rouvre le double rattachement (mutation M10).
+///   rouvre le double rattachement (mutation M10) — et, plus largement, toute
+///   écriture contre-passée, modifiée ou rattachée par une transaction commitée
+///   entre cette lecture et le verrou de `je` resterait invisible à
+///   l'étape 4.4. Un appelant qui fait des lectures ordinaires **avant** ce
+///   geste dans la même transaction (le lot de l'acceptation d'un prestataire,
+///   Story 38-11c2, `routes::provider_accept`) prend donc `je` `FOR UPDATE`
+///   **avant sa première lecture ordinaire** ([`lock_entries_for_update`]) :
+///   la vue naît après l'attente, et l'étape 4.2 reprend un verrou déjà tenu
+///   (revue P1 de la 38-11c2, H1 ; test d'entrelacement
+///   `rattachement_d_une_vente_contre_passee_pendant_l_attente`,
+///   `paypal_reconciliation_e2e.rs`).
 ///
 /// # L'absence de cycle `t → je` (fiche v017-3a, AC-3 (b))
 ///
@@ -1302,7 +1351,13 @@ pub struct EntryLinked {
 /// qui écrit des transactions de **plusieurs** comptes bancaires (les deux
 /// moitiés d'une conversion) : elle tient alors le verrou nommé de **chacun**
 /// (`with_account_locks`, pris avant toute écriture), si bien qu'elle s'exclut
-/// avec ce geste sur chacun des comptes qu'elle écrit. Les
+/// avec ce geste sur chacun des comptes qu'elle écrit. Elle prend aussi `je`
+/// **avant** `t` ([`lock_entries_for_update`], au début de son lot) : sans
+/// cycle pour la même raison — tout geste de rapprochement qui tient une
+/// transaction `t` d'un de ses comptes tient le verrou nommé de ce compte,
+/// qu'elle tient ; et les gestes sans verrou nommé ne tiennent jamais `t` en
+/// attendant `je` (les routes du journal ne verrouillent pas `t`, la
+/// suppression d'un import ne lit pas `journal_entries`). Les
 /// gestes sans verrou nommé (routes du journal, suppression d'un import) ne
 /// prennent jamais `t` après `je`. La suppression d'une écriture fait poser à
 /// InnoDB, au titre de la clé étrangère `ON DELETE SET NULL` de

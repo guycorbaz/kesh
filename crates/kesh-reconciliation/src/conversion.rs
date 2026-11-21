@@ -53,8 +53,15 @@ pub enum PlanError {
     /// Deux devises étrangères sans cours mensuel du côté source.
     MissingRate,
     /// Le cours déduit du CHF (ou le CHF au cours) n'a pu se calculer
-    /// (`FX_RATE_INVALID`).
-    RateInvalid(String),
+    /// (`FX_RATE_INVALID`) : `currency` est la devise du côté dont le cours
+    /// est en cause (le côté en devise d'une conversion avec le CHF, la source
+    /// ou la cible d'une conversion entre deux devises étrangères).
+    RateInvalid {
+        /// La devise du côté en cause.
+        currency: String,
+        /// Le refus du calcul.
+        message: String,
+    },
 }
 
 /// Le plan — voir l'en-tête du module.
@@ -70,8 +77,10 @@ pub fn plan_conversion(
         return Err(PlanError::SameCurrency);
     }
     let derived = |side: &ConversionSide, chf: Decimal| -> Result<ConversionLeg, PlanError> {
-        let rate = rate_from_chf(&side.amount, &chf)
-            .map_err(|e| PlanError::RateInvalid(format!("{e:?}")))?;
+        let rate = rate_from_chf(&side.amount, &chf).map_err(|e| PlanError::RateInvalid {
+            currency: side.currency.clone(),
+            message: format!("{e:?}"),
+        })?;
         Ok(ConversionLeg {
             ledger_account_id: side.ledger_account_id,
             chf,
@@ -99,8 +108,10 @@ pub fn plan_conversion(
         rate,
         source: provenance,
     } = source_rate.ok_or(PlanError::MissingRate)?;
-    let chf =
-        fx_chf(&source.amount, &rate).map_err(|e| PlanError::RateInvalid(format!("{e:?}")))?;
+    let chf = fx_chf(&source.amount, &rate).map_err(|e| PlanError::RateInvalid {
+        currency: source.currency.clone(),
+        message: format!("{e:?}"),
+    })?;
     Ok(ConversionPlan::Double {
         source: ConversionLeg {
             ledger_account_id: source.ledger_account_id,
@@ -217,7 +228,9 @@ mod tests {
             plan_conversion(&side(1, "EUR", dec!(10)), &side(2, "USD", dec!(11)), None),
             Err(PlanError::MissingRate)
         );
-        // CHF au cours qui s'arrondit à zéro : refusé, jamais une écriture nulle.
+        // CHF au cours qui s'arrondit à zéro : refusé, jamais une écriture nulle
+        // — au cours de la cible, déduit d'un CHF nul (la devise nommée est
+        // celle de la cible).
         let tiny = SourceRate {
             rate: dec!(0.0001),
             source: RateProvenance::Manual,
@@ -228,7 +241,25 @@ mod tests {
                 &side(2, "USD", dec!(1)),
                 Some(tiny)
             ),
-            Err(PlanError::RateInvalid(_))
+            Err(PlanError::RateInvalid { currency, .. }) if currency == "USD"
+        ));
+        // L4 (revue P1) : le refus nomme la devise du côté dont le cours est
+        // déduit — la source EUR d'une conversion EUR→CHF, jamais le CHF.
+        assert!(matches!(
+            plan_conversion(
+                &side(1, "EUR", dec!(999999999)),
+                &side(2, "CHF", dec!(0.01)),
+                None
+            ),
+            Err(PlanError::RateInvalid { currency, .. }) if currency == "EUR"
+        ));
+        assert!(matches!(
+            plan_conversion(
+                &side(1, "CHF", dec!(0.01)),
+                &side(2, "USD", dec!(999999999)),
+                None
+            ),
+            Err(PlanError::RateInvalid { currency, .. }) if currency == "USD"
         ));
     }
 }
