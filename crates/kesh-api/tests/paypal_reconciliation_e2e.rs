@@ -906,6 +906,25 @@ async fn vente_rattachee_entre_la_revue_et_l_acceptation(pool: MySqlPool) {
     assert_eq!(ctx.etat(tx_1a).await, ("pending".into(), None));
 }
 
+/// L1 (revue P2) — un rattachement à une écriture **absente** (ou d'une autre
+/// société) n'est pas pré-verrouillé (aucun verrou d'intervalle) : il est
+/// refusé par proposition, `NOT_FOUND`, et le reste du lot est accepté.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn rattachement_a_une_ecriture_absente_refuse_le_reste_accepte(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let revue = ctx.revue().await;
+    let tx_1a = ctx.tx("0TEST00000000001A").await;
+    let frais = proposition(&revue, ctx.tx("0TEST00000000001A:FEE").await);
+    let absente = json!({
+        "type": "link_entry", "bankTransactionId": tx_1a, "journalEntryId": 99_999_999
+    });
+    let (s, b) = ctx.accepter(vec![absente, frais]).await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(b["accepted"].as_array().unwrap().len(), 1, "{b}");
+    assert_eq!(b["failed"][0]["bankTransactionId"], tx_1a, "{b}");
+    assert_eq!(ctx.etat(tx_1a).await, ("pending".into(), None));
+}
+
 /// H1 (revue P1) — **entrelacement forcé**, patron T-race-3
 /// (`reconciliation_link_entry_e2e.rs`) : une connexion `tenue` prend
 /// l'écriture de vente `FOR UPDATE` ; le lot qui la rattache est **vu en

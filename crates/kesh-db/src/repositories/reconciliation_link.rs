@@ -1246,7 +1246,11 @@ pub struct EntryLinked {
 /// l'étape 4.2 de [`link_entry_in_tx`], rien d'autre : aucun verrou
 /// d'intervalle sur un index secondaire (une écriture absente pose, comme à
 /// l'étape 4.2, le seul verrou d'intervalle de la clé primaire). Rend les
-/// identifiants trouvés.
+/// identifiants trouvés. Le filtre `company_id` ne limite pas le verrou : la
+/// ligne d'une autre société est verrouillée par sa clé primaire avant d'être
+/// écartée (attente d'un commit, aucune fuite) ; l'appelant du lot ne passe que
+/// des identifiants déjà reconnus de la société ([`existing_entry_ids`]
+/// dans `provider_review`), un absent ne posant ainsi aucun verrou d'intervalle.
 ///
 /// ⛔ **À appeler avant la première lecture ordinaire de la transaction**
 /// (voir le corollaire de [`link_entry_in_tx`]) : c'est ce qui fait naître la
@@ -1355,11 +1359,10 @@ pub async fn lock_entries_for_update(
 /// **avant** `t` ([`lock_entries_for_update`], au début de son lot) : sans
 /// cycle pour la même raison — tout geste de rapprochement qui tient une
 /// transaction `t` d'un de ses comptes tient le verrou nommé de ce compte,
-/// qu'elle tient ; et les gestes sans verrou nommé ne tiennent jamais `t` en
-/// attendant `je` (les routes du journal ne verrouillent pas `t`, la
-/// suppression d'un import ne lit pas `journal_entries`). Les
-/// gestes sans verrou nommé (routes du journal, suppression d'un import) ne
-/// prennent jamais `t` après `je`. La suppression d'une écriture fait poser à
+/// qu'elle tient ; et les gestes sans verrou nommé (routes du journal,
+/// suppression d'un import) ne tiennent jamais `t` en attendant `je` ni ne le
+/// prennent après `je` (les routes du journal ne verrouillent pas `t`, la
+/// suppression d'un import ne lit pas `journal_entries`). La suppression d'une écriture fait poser à
 /// InnoDB, au titre de la clé étrangère `ON DELETE SET NULL` de
 /// `matched_entry_id`, un verrou d'**intervalle** sur l'index qu'elle parcourt
 /// (sans ligne trouvée : sa garde a refusé une écriture rapprochée) ; il

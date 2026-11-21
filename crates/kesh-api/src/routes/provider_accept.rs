@@ -588,6 +588,11 @@ pub struct PreparedAccept<P = Proposal> {
     pub eligible: Vec<P>,
     /// Comptes bancaires à verrouiller.
     pub lock_ids: Vec<i64>,
+    /// Écritures de la société que les propositions éligibles font rattacher,
+    /// **présentes au pré-vol** : seules celles-ci se pré-verrouillent
+    /// (`FOR UPDATE`, [`run_batch`]). Une absente, ou d'une autre société, ne
+    /// pose aucun verrou d'intervalle : `link_entry_in_tx` la refuse `NOT_FOUND`.
+    entries_to_lock: Vec<i64>,
     /// Ordre du corps (transaction nommée par chaque proposition).
     order: Vec<i64>,
     /// Refus du pré-vol.
@@ -708,6 +713,13 @@ pub async fn prepare_accept<P: EngineProposal>(
     }
     lock_ids.sort_unstable();
     lock_ids.dedup();
+    let wanted: Vec<i64> = eligible
+        .iter()
+        .flat_map(EngineProposal::entries_to_lock)
+        .collect::<HashSet<i64>>()
+        .into_iter()
+        .collect();
+    let entries_to_lock = reads::existing_entry_ids(pool, company_id, &wanted).await?;
     Ok(PreparedAccept {
         company_id,
         acteur: Acteur {
@@ -717,6 +729,7 @@ pub async fn prepare_accept<P: EngineProposal>(
         account: body.account,
         eligible,
         lock_ids,
+        entries_to_lock,
         order,
         preflight_failed,
     })
@@ -818,12 +831,8 @@ async fn run_batch<P: EngineProposal>(
     // `link_entry_in_tx`). Une lecture ordinaire placée avant rouvre le
     // rattachement d'une vente contre-passée, modifiée ou déjà rattachée
     // entre-temps (test `rattachement_d_une_vente_contre_passee_pendant_l_attente`).
-    let to_lock: Vec<i64> = prepared
-        .eligible
-        .iter()
-        .flat_map(EngineProposal::entries_to_lock)
-        .collect();
-    let locked_entries: HashSet<i64> = lock_entries_for_update(tx, prepared.company_id, &to_lock)
+    let locked_entries: HashSet<i64> =
+        lock_entries_for_update(tx, prepared.company_id, &prepared.entries_to_lock)
         .await
         .map_err(ReconciliationError::Db)?
         .into_iter()

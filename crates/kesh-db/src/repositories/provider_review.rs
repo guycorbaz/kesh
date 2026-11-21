@@ -164,6 +164,33 @@ where
     Ok(rows.into_iter().map(|t| (t.id, t)).collect())
 }
 
+/// Ceux des identifiants `ids` qui sont une écriture de la société (lecture
+/// ordinaire, sur le pool : pré-vol de l'acceptation). Le lot ne pré-verrouille
+/// que ceux-là : un identifiant absent ou d'une autre société ne pose aucun
+/// verrou d'intervalle. Au plus
+/// [`super::reconciliation::MAX_IN_CLAUSE_IDS`] identifiants.
+pub async fn existing_entry_ids<'e, E>(
+    executor: E,
+    company_id: i64,
+    ids: &[i64],
+) -> Result<Vec<i64>, DbError>
+where
+    E: sqlx::Executor<'e, Database = MySql>,
+{
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let sql = format!(
+        "SELECT id FROM journal_entries WHERE company_id = ? AND id IN ({}) ORDER BY id",
+        placeholders(ids.len())
+    );
+    let mut q = sqlx::query_scalar::<_, i64>(&sql).bind(company_id);
+    for id in ids {
+        q = q.bind(*id);
+    }
+    q.fetch_all(executor).await.map_err(map_db_error)
+}
+
 /// Une ligne de [`sale_entries`] : une écriture et son mouvement sur **un**
 /// des comptes du plan demandés.
 #[derive(Debug, Clone, sqlx::FromRow)]
