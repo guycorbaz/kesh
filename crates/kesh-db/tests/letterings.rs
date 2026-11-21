@@ -2545,6 +2545,7 @@ async fn group_detail_of_an_account_no_longer_letterable(pool: MySqlPool) {
             postable: compte.postable,
             currency: Default::default(),
             own_fx_accounts: Default::default(),
+            parent: Default::default(),
         },
         true,
     )

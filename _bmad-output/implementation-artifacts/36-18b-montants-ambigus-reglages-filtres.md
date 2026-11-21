@@ -1,5 +1,7 @@
 # Story 36-18b : les montants « 1.250 » des réglages, du catalogue et des filtres — prix d'article, frais de rappel, montant minimal, filtres des écritures (#1173, #1175, #1176, #1177)
 
+> **Reprise par la 48-10 (fiche `48-10-montants-ambigus-reglages-filtres.md`).** Cette fiche est conservée telle quelle, à titre d'historique ; elle est `superseded`.
+
 Status: backlog
 
 *Fiche issue du découpage de la 36-18 (`36-18-montants-ambigus-autres-ecrans.md`, `Status: split`), approuvé par

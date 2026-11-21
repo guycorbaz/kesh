@@ -317,6 +317,35 @@ impl OwnFxAccountsChange {
     }
 }
 
+/// Changement du compte parent d'un compte à la mise à jour (correctif
+/// `fix-api-parent-compte`) — trois états, comme [`CurrencyChange`], résolus
+/// **dans le dépôt**, sous le `FOR UPDATE` du compte.
+///
+/// Côté API, `parentId` **absent** = inchangé (un client qui ne connaît pas le
+/// champ ne détache rien), `null` = racine, un identifiant = le nouveau parent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ParentChange {
+    /// Champ absent de la requête : le parent ne change pas.
+    #[default]
+    Unchanged,
+    /// Le compte devient racine (`parent_id` à `NULL`).
+    Root,
+    /// Le compte se range sous ce compte.
+    Under(i64),
+}
+
+impl ParentChange {
+    /// Le parent du compte après le changement, depuis le parent actuel.
+    pub fn resolve(&self, current: Option<i64>) -> Option<i64> {
+        match self {
+            Self::Unchanged => current,
+            Self::Root => None,
+            Self::Under(id) => Some(*id),
+        }
+    }
+}
+
 /// D'où viennent les comptes de différence de change résolus pour un compte en
 /// devise (Story 37-1, AC-4 bis).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -414,7 +443,8 @@ impl NewAccount {
 }
 
 /// Données de modification d'un compte.
-/// Le numéro n'est PAS modifiable après création.
+/// Le numéro n'est PAS modifiable après création ; le parent l'est depuis le
+/// correctif `fix-api-parent-compte` ([`ParentChange`]).
 ///
 /// Sémantique **full-replace** : tous les champs sont obligatoires côté API, y
 /// compris `role` et `postable`. Un `Option` laxiste aurait permis à un client
@@ -433,4 +463,8 @@ pub struct AccountUpdate {
     pub currency: CurrencyChange,
     /// Comptes de différence propres (Story 37-1, AC-4 bis), trois états.
     pub own_fx_accounts: OwnFxAccountsChange,
+    /// Compte parent (correctif `fix-api-parent-compte`), trois états —
+    /// absent côté API = inchangé. Mêmes contrôles qu'à la création, plus le
+    /// refus d'un cycle (cf. `repositories::accounts::update`).
+    pub parent: ParentChange,
 }

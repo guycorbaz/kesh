@@ -1515,3 +1515,197 @@ describe('page Paramètres — nom de la société (Story v0190-nom-societe)', (
 		release(societe({ version: 2 }).company);
 	});
 });
+
+// Story 48-13 (#1243, D4) — l'adresse, le téléphone et le site web de la société ne
+// tronquent plus un texte trop long : sans `maxlength`, le texte part entier, le serveur
+// le refuse (il nomme le champ et le nombre pour l'adresse, le maximum pour le téléphone
+// et le site), l'écran affiche son message et garde la saisie. L'e-mail a perdu le sien
+// à la 48-15 (#1333), qui l'a borné côté serveur : son bloc de test suit celui-ci.
+//
+// ⚠️ Dans jsdom, un `maxlength` ne contraint pas une valeur posée par programme : les cas
+// « part entier » passent AVEC l'attribut (filets, sans preuve du rouge). Le rouge est
+// porté par l'assertion d'absence de l'attribut (mutation M4).
+describe('page Paramètres — un texte trop long n’est plus coupé (Story 48-13, #1243)', () => {
+	const ADRESSE = { street: 'Rue Test', building: '1', postalCode: '1000', city: 'Lausanne', country: 'CH' };
+	const RUE_71 = `Rue ${'r'.repeat(67)}`;
+
+	function societe(): CompanyCurrentResponse {
+		const base = reponse(null);
+		return {
+			...base,
+			company: {
+				...base.company,
+				addressStructured: ADRESSE,
+				addressCountryKnown: true,
+				email: 'info@test.ch',
+				phone: '+41 21 000 00 00',
+				website: 'https://test.ch',
+			} as CompanyCurrentResponse['company'],
+		};
+	}
+
+	async function saisir(getByTestId: (id: string) => HTMLElement, id: string, value: string) {
+		await fireEvent.input(getByTestId(id), { target: { value } });
+	}
+
+	beforeEach(() => {
+		vi.resetAllMocks();
+		fetchSessionSettingsMock.mockResolvedValue({ sessionIdleMinutes: 60, version: 0, min: 1, max: 1440 });
+		authState.login({ userId: '1', username: 'u', role: 'Admin', expiresIn: 900 }, { broadcast: false });
+		fetchCompanyCurrentMock.mockResolvedValue(societe());
+	});
+
+	afterEach(() => {
+		authState.clearSession({ broadcast: false });
+	});
+
+	// Story 48-15 (#1333) : l'e-mail a perdu son `maxlength` à son tour ; son assertion
+	// (présence, ici à la 48-13) est devenue une assertion d'absence, au bloc de la 48-15.
+	it('AC4 — aucun des cinq champs de l’adresse, ni le téléphone ni le site web n’a de `maxlength` (M4)', async () => {
+		const { findByTestId, getByTestId } = render(Page);
+		await fireEvent.click(await findByTestId('settings-company-address-edit'));
+		for (const champ of ['street', 'building', 'postal-code', 'city', 'country']) {
+			const el = getByTestId(`settings-company-address-${champ}-input`);
+			expect(el.hasAttribute('maxlength'), champ).toBe(false);
+		}
+		await fireEvent.click(getByTestId('settings-company-contact-edit'));
+		for (const champ of ['phone', 'website']) {
+			expect(getByTestId(`settings-company-${champ}-input`).hasAttribute('maxlength'), champ).toBe(false);
+		}
+	});
+
+	it('AC4 — une rue de 71 caractères part entière ; le refus du serveur s’affiche, la saisie reste ; raccourcie, elle s’enregistre', async () => {
+		updateCompanyAddressMock.mockRejectedValueOnce({
+			code: 'VALIDATION_ERROR',
+			message: 'adresse : le champ rue dépasse 70 caractères (71)',
+			status: 400,
+		});
+		updateCompanyAddressMock.mockResolvedValueOnce({ ...societe().company, version: 2 });
+		const { findByTestId, getByTestId, queryByTestId } = render(Page);
+		await fireEvent.click(await findByTestId('settings-company-address-edit'));
+		await saisir(getByTestId, 'settings-company-address-street-input', RUE_71);
+		await fireEvent.click(getByTestId('settings-company-address-save'));
+
+		const erreur = await findByTestId('settings-company-address-error');
+		expect(erreur.textContent).toContain('rue dépasse 70 caractères (71)');
+		expect(updateCompanyAddressMock).toHaveBeenCalledWith({
+			address: { ...ADRESSE, street: RUE_71 },
+			version: 1,
+		});
+		expect((getByTestId('settings-company-address-street-input') as HTMLInputElement).value).toBe(RUE_71);
+		expect(notifySuccessMock).not.toHaveBeenCalled();
+
+		await saisir(getByTestId, 'settings-company-address-street-input', RUE_71.slice(0, 70));
+		await fireEvent.click(getByTestId('settings-company-address-save'));
+		await vi.waitFor(() => expect(queryByTestId('settings-company-address-street-input')).toBeNull());
+		expect(updateCompanyAddressMock).toHaveBeenLastCalledWith({
+			address: { ...ADRESSE, street: RUE_71.slice(0, 70) },
+			version: 1,
+		});
+	});
+
+	it('AC4 — un pays « Suisse » part entier et revient refusé, la saisie reste', async () => {
+		updateCompanyAddressMock.mockRejectedValueOnce({
+			code: 'VALIDATION_ERROR',
+			message: 'adresse : le pays doit être un code ISO à 2 lettres (ex. CH)',
+			status: 400,
+		});
+		const { findByTestId, getByTestId } = render(Page);
+		await fireEvent.click(await findByTestId('settings-company-address-edit'));
+		await saisir(getByTestId, 'settings-company-address-country-input', 'Suisse');
+		await fireEvent.click(getByTestId('settings-company-address-save'));
+
+		expect((await findByTestId('settings-company-address-error')).textContent).toContain('code ISO');
+		expect(updateCompanyAddressMock).toHaveBeenCalledWith({
+			address: { ...ADRESSE, country: 'Suisse' },
+			version: 1,
+		});
+		expect((getByTestId('settings-company-address-country-input') as HTMLInputElement).value).toBe('Suisse');
+	});
+
+	// Revue P1 (A3, B3) : les messages simulés sont ceux que le serveur rend
+	// (`error-company-phone-too-long`, `error-company-website-too-long`,
+	// `crates/kesh-i18n/locales/fr-CH/messages.ftl`) : ils disent le maximum.
+	const CAS_CONTACT = [
+		{
+			champ: 'phone',
+			valeur: `+41 ${'1'.repeat(60)}`,
+			message: 'Le numéro de téléphone de la société est trop long (50 caractères au plus).',
+		},
+		{
+			champ: 'website',
+			valeur: `https://${'w'.repeat(250)}.ch`,
+			message: "L'adresse du site web de la société est trop longue (255 caractères au plus).",
+		},
+	] as const;
+
+	for (const { champ, valeur, message } of CAS_CONTACT) {
+		it(`AC4 — ${champ} trop long : part entier ; le refus du serveur (avec le maximum) s’affiche, la saisie reste`, async () => {
+			updateCompanyContactDetailsMock.mockRejectedValueOnce({
+				code: 'VALIDATION_ERROR',
+				message,
+				status: 400,
+			});
+			const { findByTestId, getByTestId } = render(Page);
+			await fireEvent.click(await findByTestId('settings-company-contact-edit'));
+			await saisir(getByTestId, `settings-company-${champ}-input`, valeur);
+			await fireEvent.click(getByTestId('settings-company-contact-save'));
+
+			expect((await findByTestId('settings-company-contact-error')).textContent?.trim()).toBe(message);
+			expect(updateCompanyContactDetailsMock).toHaveBeenCalledWith(
+				expect.objectContaining({ [champ]: valeur }),
+			);
+			expect((getByTestId(`settings-company-${champ}-input`) as HTMLInputElement).value).toBe(valeur);
+		});
+	}
+});
+
+// Story 48-15 (#1333, AC8) — l'e-mail de la société n'est plus coupé à 320 par un
+// `maxlength` : il part entier, le serveur le refuse en le disant
+// (`error-company-email-too-long`), la saisie reste.
+describe('page Paramètres — l’e-mail de la société ne coupe pas un texte collé (Story 48-15, #1333)', () => {
+	// Le message que rend le serveur (`error-company-email-too-long`, fr-CH).
+	const REFUS = "L'adresse e-mail de la société est trop longue (320 caractères au plus).";
+
+	function societe(): CompanyCurrentResponse {
+		const base = reponse(null);
+		return {
+			...base,
+			company: { ...base.company, email: 'info@test.ch' } as CompanyCurrentResponse['company'],
+		};
+	}
+
+	beforeEach(() => {
+		vi.resetAllMocks();
+		fetchSessionSettingsMock.mockResolvedValue({ sessionIdleMinutes: 60, version: 0, min: 1, max: 1440 });
+		authState.login({ userId: '1', username: 'u', role: 'Admin', expiresIn: 900 }, { broadcast: false });
+		fetchCompanyCurrentMock.mockResolvedValue(societe());
+	});
+
+	afterEach(() => {
+		authState.clearSession({ broadcast: false });
+	});
+
+	// Rouge par M19 (`maxlength={320}` remis). Sonde positive : le champ est trouvé
+	// (`getByTestId` lève sinon) avant l'assertion d'absence.
+	it('e-mail de la société : aucun maxlength', async () => {
+		const { findByTestId, getByTestId } = render(Page);
+		await fireEvent.click(await findByTestId('settings-company-email-edit'));
+		const champ = getByTestId('settings-company-email-input');
+		expect(champ.tagName).toBe('INPUT');
+		expect(champ.hasAttribute('maxlength')).toBe(false);
+	});
+
+	it('321 caractères : part entier ; le refus du serveur s’affiche, la saisie reste', async () => {
+		const valeur = `${'a'.repeat(310)}@example.ch`;
+		updateCompanyEmailMock.mockRejectedValueOnce({ code: 'VALIDATION_ERROR', message: REFUS, status: 400 });
+		const { findByTestId, getByTestId } = render(Page);
+		await fireEvent.click(await findByTestId('settings-company-email-edit'));
+		await fireEvent.input(getByTestId('settings-company-email-input'), { target: { value: valeur } });
+		await fireEvent.click(getByTestId('settings-company-email-save'));
+
+		expect((await findByTestId('settings-company-email-error')).textContent?.trim()).toBe(REFUS);
+		expect(updateCompanyEmailMock).toHaveBeenCalledWith({ email: valeur, version: 1 });
+		expect((getByTestId('settings-company-email-input') as HTMLInputElement).value).toBe(valeur);
+	});
+});

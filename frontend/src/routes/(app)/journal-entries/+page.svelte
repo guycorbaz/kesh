@@ -29,7 +29,12 @@
 	import { fetchCompanyCurrent } from '$lib/features/settings/settings.api';
 	import type { CompanyJson } from '$lib/features/settings/settings.types';
 	import { authState } from '$lib/app/stores/auth.svelte';
-	import { formatSwissAmount } from '$lib/features/journal-entries/balance';
+	import {
+		amountEntryPayload,
+		amountEntryProblem,
+		formatSwissAmount
+	} from '$lib/features/journal-entries/balance';
+	import { amountEntryMessage } from '$lib/features/journal-entries/amount-entry-message';
 	import { entryForeignLabels } from '$lib/features/journal-entries/fx-display';
 	// v0172-correctifs (#880) : dates en forme suisse (liste, bandeau du verrou).
 	import { formatSwissDate } from '$lib/features/reports/reports.api';
@@ -90,11 +95,31 @@
 	const JOURNALS: Journal[] = ['Achats', 'Ventes', 'Banque', 'Caisse', 'OD'];
 	const PAGE_SIZES = [25, 50, 100];
 
+	// Story 48-10 (#1177, D4) — une borne de montant se lit comme le montant d'une écriture
+	// (saisie rognée) : « 1'250 » part `1250`, « 1,25 » part `1.25`. Une borne ambiguë
+	// (« 1.250 », que le serveur lisait 1,25 : la liste était fausse sans le dire) ou illisible
+	// (« 1e3 », « -5 », refusées en 400 et tues) n'est PAS envoyée, ni dans la requête ni dans
+	// l'URL, et le champ le dit ; il garde sa saisie, que rien ne réécrit.
+	function amountBound(raw: string): string | undefined {
+		return amountEntryPayload(raw.trim()) ?? undefined;
+	}
+	/** Le refus sous la borne : le message commun, puis « pas appliqué » ; `''` sinon. */
+	function amountBoundMessage(raw: string): string {
+		const problem = amountEntryProblem(raw.trim());
+		if (problem === null) return '';
+		return `${amountEntryMessage(problem, 4)} ${i18nMsg(
+			'journal-entries-filter-amount-not-applied',
+			"Ce filtre n'est pas appliqué tant que le montant n'est pas corrigé."
+		)}`;
+	}
+	const amountMinMessage = $derived(amountBoundMessage(amountMin));
+	const amountMaxMessage = $derived(amountBoundMessage(amountMax));
+
 	function buildQuery(): JournalEntryListQuery {
 		return {
 			description: description || undefined,
-			amountMin: amountMin || undefined,
-			amountMax: amountMax || undefined,
+			amountMin: amountBound(amountMin),
+			amountMax: amountBound(amountMax),
 			dateFrom: dateFrom || undefined,
 			dateTo: dateTo || undefined,
 			journal: journalFilter || undefined,
@@ -434,7 +459,20 @@
 					bind:value={amountMin}
 					oninput={onAmountMinInput}
 					placeholder="0.00"
+					class={amountMinMessage ? 'border-destructive' : undefined}
+					aria-invalid={!!amountMinMessage}
+					aria-describedby={amountMinMessage ? 'filter-amount-min-problem' : undefined}
 				/>
+				{#if amountMinMessage}
+					<p
+						id="filter-amount-min-problem"
+						class="mt-1 text-xs text-destructive"
+						role="alert"
+						data-testid="journal-entries-filter-amount-min-problem"
+					>
+						{amountMinMessage}
+					</p>
+				{/if}
 			</div>
 			<div>
 				<label for="filter-amount-max" class="block text-xs font-medium mb-1">
@@ -447,7 +485,20 @@
 					bind:value={amountMax}
 					oninput={onAmountMaxInput}
 					placeholder="0.00"
+					class={amountMaxMessage ? 'border-destructive' : undefined}
+					aria-invalid={!!amountMaxMessage}
+					aria-describedby={amountMaxMessage ? 'filter-amount-max-problem' : undefined}
 				/>
+				{#if amountMaxMessage}
+					<p
+						id="filter-amount-max-problem"
+						class="mt-1 text-xs text-destructive"
+						role="alert"
+						data-testid="journal-entries-filter-amount-max-problem"
+					>
+						{amountMaxMessage}
+					</p>
+				{/if}
 			</div>
 			<div>
 				<label for="filter-date-from" class="block text-xs font-medium mb-1">
