@@ -4629,7 +4629,7 @@ impl IntoResponse for AppError {
                         t_args(
                             "error-account-parent-has-entries",
                             &format!(
-                                "Le compte {parent_number} porte des écritures : y ranger ce compte le rendrait non imputable avec un solde qu'aucune saisie ne pourrait plus corriger. Choisissez un compte de groupe sans écriture."
+                                "Le compte {parent_number} porte des écritures : on n'y range pas d'autre compte, car un compte qui a des sous-comptes n'est pas imputable et son solde ne se corrige plus par une saisie. Choisissez un compte de groupe sans écriture."
                             ),
                             &args,
                         ),
@@ -5036,7 +5036,7 @@ impl IntoResponse for AppError {
                         t_args(
                             "error-account-foreign-parent-has-entries",
                             &format!(
-                                "Le compte {parent_number} est tenu en {currency} et porte des écritures : il ne reçoit pas de sous-compte, sans quoi il deviendrait non imputable avec un solde que la réévaluation de fin d’exercice ne pourrait plus corriger. Créez plutôt un compte voisin."
+                                "Le compte {parent_number} est tenu en {currency} et porte des écritures : il ne reçoit pas de sous-compte, car un compte qui a des sous-comptes n'est pas imputable et la réévaluation de fin d'exercice ne corrige plus son solde. Créez plutôt un compte voisin."
                             ),
                             &args,
                         ),

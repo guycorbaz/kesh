@@ -26,7 +26,7 @@
 		type RetypeImpact,
 	} from '$lib/features/accounts/accounts.types';
 	import AccountCurrencyFields from '$lib/features/accounts/AccountCurrencyFields.svelte';
-	import { parentCandidates, parentFieldForUpdate } from '$lib/features/accounts/account-options';
+	import { buildAccountTree, parentCandidates, parentFieldForUpdate } from '$lib/features/accounts/account-options';
 	import {
 		currencyFieldsForCreate,
 		currencyFieldsForUpdate,
@@ -171,37 +171,8 @@
 		);
 	}
 
-	// --- Computed: tree structure ---
-	interface TreeAccount extends AccountResponse {
-		level: number;
-	}
-
-	let treeAccounts = $derived.by(() => {
-		const idMap = new Map<number, AccountResponse>();
-		for (const a of accounts) {
-			idMap.set(a.id, a);
-		}
-
-		// Compute level for each account
-		function getLevel(a: AccountResponse): number {
-			let level = 0;
-			let current = a;
-			const visited = new Set<number>();
-			while (current.parentId && idMap.has(current.parentId)) {
-				if (visited.has(current.id)) break;
-				visited.add(current.id);
-				level++;
-				current = idMap.get(current.parentId)!;
-			}
-			return level;
-		}
-
-		// Accounts are already sorted by number from the API
-		return accounts.map((a): TreeAccount => ({
-			...a,
-			level: getLevel(a),
-		}));
-	});
+	// --- Computed: tree structure (ordre d'arbre, issue #1439) ---
+	let treeAccounts = $derived(buildAccountTree(accounts));
 
 	// Options de parent : à la création, les comptes actifs ; à la modification
 	// (correctif `fix-api-parent-compte`), sans le compte, ses sous-comptes ni

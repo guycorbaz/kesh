@@ -8,6 +8,7 @@ import { describe, it, expect } from 'vitest';
 import type { AccountResponse } from './accounts.types';
 import {
 	accountIdsWithRole,
+	buildAccountTree,
 	bankAccountsNotLinkedTo,
 	parentCandidates,
 	parentFieldForUpdate,
@@ -198,5 +199,52 @@ describe('parentFieldForUpdate', () => {
 	it('l’identifiant choisi, ou null pour « Aucun »', () => {
 		expect(parentFieldForUpdate({ parentId: null }, '4')).toEqual({ parentId: 4 });
 		expect(parentFieldForUpdate({ parentId: 1 }, '')).toEqual({ parentId: null });
+	});
+});
+
+// Issue #1439 — l'écran indentait selon la profondeur mais gardait l'ordre des
+// numéros : 1100 rangé sous un groupe 29 paraissait rangé sous 1020.
+describe('buildAccountTree', () => {
+	const G29 = acc({ id: 29, number: '29', name: 'Groupe', postable: false });
+	const C1100 = acc({ id: 1100, number: '1100', name: 'Créances', parentId: 29 });
+	const C1101 = acc({ id: 1101, number: '1101', name: 'Autres', parentId: 1100 });
+	const C1090 = acc({ id: 1090, number: '1090', name: 'Frère', parentId: 29 });
+
+	it('range un compte sous son vrai parent, même si les numéros ne l’encadrent pas', () => {
+		const arbre = buildAccountTree([CAISSE, BANQUE, C1100, G29]);
+		expect(arbre.map((n) => [n.number, n.level])).toEqual([
+			['1000', 0],
+			['1020', 0],
+			['29', 0],
+			['1100', 1],
+		]);
+	});
+
+	it('parcourt en profondeur, frères dans l’ordre reçu de l’API (par numéro)', () => {
+		const arbre = buildAccountTree([BANQUE, C1090, C1100, C1101, G29]);
+		expect(arbre.map((n) => [n.number, n.level])).toEqual([
+			['1020', 0],
+			['29', 0],
+			['1090', 1],
+			['1100', 1],
+			['1101', 2],
+		]);
+	});
+
+	it('ne retrie pas les frères : l’ordre reçu est gardé', () => {
+		const arbre = buildAccountTree([C1100, C1090, G29]);
+		expect(arbre.map((n) => n.number)).toEqual(['29', '1100', '1090']);
+	});
+
+	it('traite un parent absent de la liste comme une racine', () => {
+		const arbre = buildAccountTree([C1100]);
+		expect(arbre.map((n) => [n.number, n.level])).toEqual([['1100', 0]]);
+	});
+
+	it('n’en perd aucun dans un cycle', () => {
+		const a = acc({ id: 1, number: '1', name: 'A', parentId: 2 });
+		const b = acc({ id: 2, number: '2', name: 'B', parentId: 1 });
+		const arbre = buildAccountTree([a, b]);
+		expect(arbre.map((n) => n.id).sort()).toEqual([1, 2]);
 	});
 });

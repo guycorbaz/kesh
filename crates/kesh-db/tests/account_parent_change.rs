@@ -442,8 +442,9 @@ async fn sous_son_ancien_compte_propre_retire_dans_le_meme_put(pool: MySqlPool) 
         .unwrap();
         en_devise.push(id);
     }
-    let (eur, usd, eur2) = (en_devise[0], en_devise[1], en_devise[2]);
-    let _ = usd;
+    // `en_devise[1]` (compte 1023, en EUR) n'est pas nommé : il ne sert qu'à
+    // désigner `g2`, comme `eur` après le `PUT` ci-dessous.
+    let (eur, eur2) = (en_devise[0], en_devise[2]);
 
     // Seul `eur` désigne `g`, et ce `PUT` le lui retire : accepté.
     let apres = poser(
@@ -461,7 +462,8 @@ async fn sous_son_ancien_compte_propre_retire_dans_le_meme_put(pool: MySqlPool) 
     assert_eq!(apres.fx_gain_account_id, Some(g2));
     assert!(!lire(&pool, g).await.postable);
 
-    // `g2` est désigné par `usd` et `eur` : `eur2` ne se range pas dessous.
+    // `g2` est désigné par le compte 1023, par `eur` (après le `PUT` ci-dessus) et
+    // par `eur2` lui-même : `eur2` ne se range pas dessous.
     match poser(
         &pool,
         &s,
