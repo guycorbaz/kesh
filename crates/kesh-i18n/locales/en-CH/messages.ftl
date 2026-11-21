@@ -1810,7 +1810,7 @@ error-provider-response-invalid = The provider's response could not be read. Not
 error-provider-api-error = The provider refused the request. Nothing was imported.
 # Story 38-11c2 — revue et acceptation d’un compte de prestataire (codes servis à l’écran, 38-11d)
 provider-failed-proposal-stale = This proposal is no longer valid: the transaction, the entry, the rule or the account settings changed since the review. Reload the review.
-provider-failed-counterparty-currency-mismatch = This rule names an account kept in { $accountCurrency }: it only applies to transactions in { $accountCurrency }, and this one is in { $transactionCurrency }. Choose an account in CHF or in the transaction's currency.
+paypal-failed-counterparty-currency-mismatch = This rule names an account kept in { $accountCurrency }: it only applies to transactions in { $accountCurrency }, and this one is in { $transactionCurrency }. Choose an account in CHF or in the transaction's currency.
 provider-gap-receipt-without-sale = Receipt without sale: no sales entry carries this identifier.
 provider-gap-sale-without-receipt = Sale without receipt: no transaction carries the identifier of this entry.
 provider-gap-amount-or-currency-mismatch = Amount or currency differs: the sales entry does not carry the receipt's amount on the account of this currency, or it is already linked.

@@ -70,7 +70,7 @@ export function paypalFailedLabel(code: string, details?: unknown): string {
 		case 'COUNTERPARTY_CURRENCY_MISMATCH': {
 			const d = details && typeof details === 'object' ? (details as Record<string, unknown>) : {};
 			return i18nMsg(
-				'provider-failed-counterparty-currency-mismatch',
+				'paypal-failed-counterparty-currency-mismatch',
 				'Cette règle désigne un compte tenu en { $accountCurrency } : elle ne s’applique qu’aux transactions en { $accountCurrency }, et celle-ci est en { $transactionCurrency }. Choisissez un compte en CHF ou dans la devise de la transaction.',
 				{
 					accountCurrency: typeof d.accountCurrency === 'string' ? d.accountCurrency : '',

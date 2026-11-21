@@ -1810,7 +1810,7 @@ error-provider-response-invalid = Die Antwort des Zahlungsdienstleisters konnte 
 error-provider-api-error = Der Zahlungsdienstleister hat die Anfrage abgelehnt. Nichts wurde importiert.
 # Story 38-11c2 — revue et acceptation d’un compte de prestataire (codes servis à l’écran, 38-11d)
 provider-failed-proposal-stale = Dieser Vorschlag gilt nicht mehr: Transaktion, Buchung, Regel oder Kontoeinstellungen haben sich seit der Durchsicht geändert. Laden Sie die Durchsicht neu.
-provider-failed-counterparty-currency-mismatch = Diese Regel bezeichnet ein Konto in { $accountCurrency }: Sie gilt nur für Transaktionen in { $accountCurrency }, diese ist aber in { $transactionCurrency }. Wählen Sie ein Konto in CHF oder in der Währung der Transaktion.
+paypal-failed-counterparty-currency-mismatch = Diese Regel bezeichnet ein Konto in { $accountCurrency }: Sie gilt nur für Transaktionen in { $accountCurrency }, diese ist aber in { $transactionCurrency }. Wählen Sie ein Konto in CHF oder in der Währung der Transaktion.
 provider-gap-receipt-without-sale = Zahlungseingang ohne Verkauf: Keine Verkaufsbuchung trägt diese Kennung.
 provider-gap-sale-without-receipt = Verkauf ohne Zahlungseingang: Keine Transaktion trägt die Kennung dieser Buchung.
 provider-gap-amount-or-currency-mismatch = Betrag oder Währung abweichend: Die Verkaufsbuchung hat auf dem Konto dieser Währung nicht den Betrag des Zahlungseingangs, oder sie ist bereits zugeordnet.

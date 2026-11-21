@@ -136,7 +136,7 @@ describe('paypal-labels — refus de la devise de la contrepartie d’une règle
 			accountCurrency: 'EUR',
 			transactionCurrency: 'USD',
 		});
-		expect(l).toMatch(/^provider-failed-counterparty-currency-mismatch\|/);
+		expect(l).toMatch(/^paypal-failed-counterparty-currency-mismatch\|/);
 		expect(l).toContain('EUR');
 		expect(l).toContain('USD');
 	});
