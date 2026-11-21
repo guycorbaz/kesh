@@ -14,15 +14,20 @@
   Story 34-4, revue P1 (E1-3, A1-2) : `modal` nomme la modale que la doublure remplace
   (`data-modal`), posée par les trois enveloppes `ModalSuccessStub{Manual,Split,Link}.test.svelte` —
   un test peut ainsi asserter que *Continuer quand même* rouvre **le** geste demandé.
+
+  Story 48-14 (#1262, T5) : `onOpenChange`, que le parent passe aux quatre modales, est transmis ;
+  le bouton « fermer » (`stub-modal-close`) l'appelle avec `false`, comme *Annuler* ou Échap
+  d'une vraie modale — sans relecture de la modale elle-même.
 -->
 <script lang="ts">
 	type Props = {
 		open: boolean;
 		onSuccess: () => void;
+		onOpenChange?: (v: boolean) => void;
 		bankLedgerAccountId?: number | null;
 		modal?: string;
 	};
-	let { open, onSuccess, bankLedgerAccountId, modal }: Props = $props();
+	let { open, onSuccess, onOpenChange, bankLedgerAccountId, modal }: Props = $props();
 </script>
 
 {#if open}
@@ -32,5 +37,11 @@
 		data-modal={modal}
 		data-bank-ledger-account-id={String(bankLedgerAccountId)}
 		onclick={() => onSuccess()}>ok</button
+	>
+	<button
+		type="button"
+		data-testid="stub-modal-close"
+		data-modal={modal}
+		onclick={() => onOpenChange?.(false)}>fermer</button
 	>
 {/if}

@@ -741,6 +741,82 @@ mod tests {
         assert_eq!(msg, "nonexistent-key");
     }
 
+    /// **#1348 (story v0200-corrections-mineures, D1 d)** — les vingt et une clés que le
+    /// serveur appelait (`crates/kesh-api/src/errors.rs`) sans qu'aucun catalogue les
+    /// porte : `format` rendait alors la **clé brute** (test voisin ci-dessus), que
+    /// l'utilisateur lisait à l'écran et que tout client de l'API recevait.
+    ///
+    /// La liste est **écrite en dur**, recopiée du tableau de la fiche — ni produite par
+    /// un extracteur, ni lue dans le code de `kesh-api` — et le test lit les **vrais**
+    /// catalogues : ses deux côtés ont des sources distinctes. Chaque clé doit figurer
+    /// dans `keys` **de chaque locale** (`format` seul retombe sur fr-CH et ne prouverait
+    /// pas la traduction), et son texte rendu ne doit être ni vide ni la clé. Le texte
+    /// fr-CH, lui, est relié au repli du code par `les_replis_rust_suivent_le_catalogue`
+    /// (`crates/kesh-api/tests/textes_coherents.rs`).
+    ///
+    /// Les manques s'accumulent ; le test n'échoue qu'une fois, avec leur décompte. La
+    /// garde générale (toute clé appelée par le code existe au catalogue) est #1406.
+    #[test]
+    fn cles_de_1348_traduites_dans_les_quatre_locales() {
+        const CLES_1348: [&str; 21] = [
+            "error-onboarding-reset-forbidden",
+            "error-invoice-already-paid",
+            "error-dunning-level-not-found",
+            "error-reminder-date-in-future",
+            "error-invoice-not-paused",
+            "error-dunning-paused",
+            "error-level-already-sent",
+            "error-reminder-sent-but-invoice-gone",
+            "error-reminder-sent-but-not-recorded",
+            "error-batch-too-large",
+            "error-batch-exceeds-send-quota",
+            "reconciliation-errors-lock-release-failed",
+            "reconciliation-errors-fiscal-year-closed",
+            "reconciliation-errors-transaction-not-pending",
+            "error-inbox-import-already-running",
+            "error-import-not-pending-completion",
+            "error-source-document-not-found",
+            "error-imported-invoice-not-found",
+            "error-source-document-gone",
+            "error-data-length-or-range",
+            "error-invalid-input-generic",
+        ];
+        const QUOTA: &str = "error-batch-exceeds-send-quota";
+
+        // Assertion de montage : vingt et une clés, toutes distinctes.
+        let distinctes: std::collections::BTreeSet<&str> = CLES_1348.iter().copied().collect();
+        assert_eq!(distinctes.len(), 21, "liste des clés de #1348 : doublon");
+
+        let bundle = I18nBundle::load(&locales_dir()).unwrap();
+        let mut manques: Vec<String> = Vec::new();
+        for locale in Locale::ALL {
+            let cles = bundle.keys.get(&locale).unwrap();
+            for cle in CLES_1348 {
+                if !cles.iter().any(|k| k == cle) {
+                    manques.push(format!("{locale:?} / {cle} / absente du catalogue"));
+                }
+                let mut args = FluentArgs::new();
+                args.set("max", 7);
+                let rendu = bundle.format(&locale, cle, (cle == QUOTA).then_some(&args));
+                if rendu.trim().is_empty() {
+                    manques.push(format!("{locale:?} / {cle} / texte vide"));
+                } else if rendu == cle {
+                    manques.push(format!("{locale:?} / {cle} / clé brute rendue"));
+                } else if cle == QUOTA && (!rendu.contains('7') || rendu.contains("$max")) {
+                    manques.push(format!(
+                        "{locale:?} / {cle} / quota non interpolé : « {rendu} »"
+                    ));
+                }
+            }
+        }
+        assert!(
+            manques.is_empty(),
+            "{} manques : {:?}",
+            manques.len(),
+            manques
+        );
+    }
+
     #[test]
     fn all_messages_returns_all_keys() {
         let bundle = I18nBundle::load(&locales_dir()).unwrap();

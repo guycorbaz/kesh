@@ -9,13 +9,17 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
+import Big from 'big.js';
 import { authState } from '$lib/app/stores/auth.svelte';
 import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 import type { InvoiceSettingsResponse } from '$lib/features/invoices/invoices.types';
 
 vi.mock('$app/environment', () => ({ browser: true }));
+// Story 48-10 (M10b) : le mock interpole `{ $max }`, comme celui de
+// `journal-entries-list-page.test.ts` — sans quoi un nombre de décimales faux resterait invisible.
 vi.mock('$lib/shared/utils/i18n.svelte', () => ({
-	i18nMsg: (_key: string, fallback: string) => fallback,
+	i18nMsg: (_key: string, fallback: string, args?: Record<string, string | number>) =>
+		args ? fallback.replace(/\{\s*\$(\w+)\s*\}/g, (_, n) => String(args[n] ?? '')) : fallback,
 }));
 vi.mock('$lib/shared/utils/notify', () => ({
 	notifySuccess: vi.fn(),
@@ -649,5 +653,144 @@ describe('Administration → Facturation — écart admis d’un règlement grou
 		await fireEvent.submit(container.querySelector('form')!);
 		await waitFor(() => expect(getInvoiceSettingsMock).toHaveBeenCalledTimes(2));
 		await waitFor(() => expect(input.value).toBe('9.00'));
+	});
+});
+
+// Story 48-10 (#1176 ; AC3, AC5, AC7, AC12) — le montant minimum se lit comme le montant d'une
+// écriture. Avant la story, la saisie partait rognée mais brute : « 1.250 » était accepté par le
+// serveur et lu un franc vingt-cinq.
+describe('Administration → Facturation — montant minimum ambigu (Story 48-10)', () => {
+	const AMBIGU = 'Montant ambigu';
+
+	beforeEach(() => {
+		getInvoiceSettingsMock.mockResolvedValue(settings());
+		updateInvoiceSettingsMock.mockResolvedValue(settings({ version: 4 }));
+	});
+
+	async function ouvrir(minimum: string | null = null) {
+		getInvoiceSettingsMock.mockResolvedValue(settings({ minimumInvoiceAmount: minimum }));
+		const r = render(Page);
+		const input = (await r.findByTestId('settings-minimum-invoice-amount')) as HTMLInputElement;
+		await waitFor(() => expect(input.value).toBe(minimum ?? ''));
+		return { ...r, input };
+	}
+	const enregistrer = (container: HTMLElement) => fireEvent.submit(container.querySelector('form')!);
+
+	// AC3 — rouge avant le correctif : `minimumInvoiceAmount: '1.250'` partait (M6).
+	it('« 1.250 » → message sous le champ, bouton désactivé, aucun appel par Entrée (M6, M17, M18)', async () => {
+		const { input, findByTestId, container } = await ouvrir();
+		await fireEvent.input(input, { target: { value: '1.250' } });
+		const error = await findByTestId('settings-minimum-invoice-amount-error');
+		expect(error.textContent).toContain(AMBIGU);
+		expect((await findByTestId('settings-invoicing-save')).hasAttribute('disabled')).toBe(true);
+		await enregistrer(container);
+		await new Promise((r) => setTimeout(r, 0));
+		expect(updateInvoiceSettingsMock).not.toHaveBeenCalled();
+		expect(input.value).toBe('1.250');
+		const { notifyError } = await import('$lib/shared/utils/notify');
+		expect(notifyError).toHaveBeenCalledWith(error.textContent?.trim());
+	});
+
+	// AC3 — M10b : « 2 décimales au plus ».
+	it("« 12'34 » → message illisible, « 2 décimales au plus », aucun appel (M10b)", async () => {
+		const { input, findByTestId, container } = await ouvrir();
+		await fireEvent.input(input, { target: { value: "12'34" } });
+		const error = await findByTestId('settings-minimum-invoice-amount-error');
+		expect(error.textContent).toContain('Montant illisible');
+		expect(error.textContent).toContain('2 décimales au plus');
+		// Revue P1 : le bouton se désactive aussi pour l'illisible (M17 sur `unreadable`).
+		expect((await findByTestId('settings-invoicing-save')).hasAttribute('disabled')).toBe(true);
+		await enregistrer(container);
+		expect(updateInvoiceSettingsMock).not.toHaveBeenCalled();
+	});
+
+	// Revue P1 (B4) — la lecture coïncide avec le message : plus de deux décimales significatives
+	// sont illisibles ici (le serveur les refusait, `scale_within(min.normalize(), 2)`).
+	it.each(['0.125', '10.1250', '1.2345'])(
+		'« %s » → illisible, « 2 décimales au plus », bouton désactivé, aucun appel (M21)',
+		async (saisie) => {
+			const { input, findByTestId, container } = await ouvrir();
+			await fireEvent.input(input, { target: { value: saisie } });
+			const error = await findByTestId('settings-minimum-invoice-amount-error');
+			expect(error.textContent).toContain('2 décimales au plus');
+			expect((await findByTestId('settings-invoicing-save')).hasAttribute('disabled')).toBe(true);
+			await enregistrer(container);
+			expect(updateInvoiceSettingsMock).not.toHaveBeenCalled();
+		},
+	);
+
+	// AC3 — rouge avant le correctif : « 1'250 » partait tel quel.
+	it("« 1'250 » part `1250`", async () => {
+		const { input, container } = await ouvrir();
+		await fireEvent.input(input, { target: { value: "1'250" } });
+		await enregistrer(container);
+		await waitFor(() => expect(updateInvoiceSettingsMock).toHaveBeenCalledTimes(1));
+		expect(updateInvoiceSettingsMock.mock.calls[0][0]).toMatchObject({ minimumInvoiceAmount: '1250' });
+	});
+
+	it('vide : bouton actif, aucun message, part `null`', async () => {
+		const { input, queryByTestId, findByTestId, container } = await ouvrir('5.0000');
+		await fireEvent.input(input, { target: { value: '' } });
+		expect(queryByTestId('settings-minimum-invoice-amount-error')).toBeNull();
+		expect((await findByTestId('settings-invoicing-save')).hasAttribute('disabled')).toBe(false);
+		await enregistrer(container);
+		await waitFor(() => expect(updateInvoiceSettingsMock).toHaveBeenCalledTimes(1));
+		expect(updateInvoiceSettingsMock.mock.calls[0][0]).toMatchObject({ minimumInvoiceAmount: null });
+	});
+
+	// AC5 — rien de juste n'est refusé ; la charge part normalisée (M9 : « 1250 » bordé de blancs).
+	it.each([
+		['1.25', '1.25'],
+		['1250', '1250'],
+		["1'250.50", '1250.50'],
+		['1’250', '1250'],
+		['1,25', '1.25'],
+		['0.50', '0.50'],
+		[' 1250 ', '1250'],
+		// Revue P1 (B4) : les zéros de fin au-delà du centime ne comptent pas ; la charge est
+		// ramenée au centime, même valeur.
+		['1250.0000', '1250.00'],
+		['10.0100', '10.01'],
+	])('« %s » accepté sans message, part « %s » (M9)', async (saisie, charge) => {
+		const { input, queryByTestId, container } = await ouvrir();
+		await fireEvent.input(input, { target: { value: saisie } });
+		expect(queryByTestId('settings-minimum-invoice-amount-error')).toBeNull();
+		await enregistrer(container);
+		await waitFor(() => expect(updateInvoiceSettingsMock).toHaveBeenCalledTimes(1));
+		expect(updateInvoiceSettingsMock.mock.calls[0][0]).toMatchObject({ minimumInvoiceAmount: charge });
+	});
+
+	// AC3, AC7 — FILETS (M13 les tue) : rouvert à `5.00` et à la forme réelle rendue par le
+	// serveur (`5.0000`, `1.2500`, relevées à l'étape 0, `kesh-gate-logs/e4810/etape0-minimum.log`),
+	// aucun message, et la valeur repart égale — comparée EN VALEUR : depuis la revue P1 (B4), la
+	// charge est ramenée au centime (`5.0000` part `5.00`), sans changer la valeur.
+	it.each([
+		['5.00', '5.00'],
+		['5.0000', '5.00'],
+		['1.2500', '1.25'],
+		['1250.5000', '1250.50'],
+	])('rouvert à %s : aucun message, renvoyé à la même valeur, « %s » (M13)', async (stored, charge) => {
+		const { queryByTestId, container } = await ouvrir(stored);
+		expect(queryByTestId('settings-minimum-invoice-amount-error')).toBeNull();
+		await enregistrer(container);
+		await waitFor(() => expect(updateInvoiceSettingsMock).toHaveBeenCalledTimes(1));
+		const envoye = (updateInvoiceSettingsMock.mock.calls[0][0] as { minimumInvoiceAmount: string })
+			.minimumInvoiceAmount;
+		expect(envoye).toBe(charge);
+		expect(new Big(envoye).eq(new Big(stored))).toBe(true);
+	});
+
+	// AC12 — accessibilité du refus (M16).
+	it('« 1.250 » : aria-invalid et aria-describedby nomment le message ; corrigé, ils le quittent', async () => {
+		const { input, findByTestId } = await ouvrir();
+		await fireEvent.input(input, { target: { value: '1.250' } });
+		const error = await findByTestId('settings-minimum-invoice-amount-error');
+		expect(error.id).not.toBe('');
+		expect(input.getAttribute('aria-invalid')).toBe('true');
+		expect((input.getAttribute('aria-describedby') ?? '').split(' ')).toContain(error.id);
+		const id = error.id;
+		await fireEvent.input(input, { target: { value: "1'250" } });
+		expect(['false', null]).toContain(input.getAttribute('aria-invalid'));
+		expect((input.getAttribute('aria-describedby') ?? '').split(' ')).not.toContain(id);
 	});
 });
