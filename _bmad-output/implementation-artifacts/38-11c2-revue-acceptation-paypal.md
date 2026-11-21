@@ -179,7 +179,7 @@ sans saisie, et de trouver les erreurs des boutiques.
    (`repositories/journal_entries.rs:381`, `enforce_postable = false` comme les autres flux de rapprochement) :
    **deux lignes**, compte du plan du compte prestataire et contrepartie, sens selon le **signe** de la transaction,
    contrôle de la contrepartie **paramétré par le genre** et fait avant (frais : actif, imputable, de type charge,
-   38-11b AC-2 ; règle : celui d'`accept_one_rule`, et en CHF **ou dans la devise de la transaction** (décision de Beat du 2026-11-21, qui remplace « en CHF » d'AC-10 et de la revue P1 L3 ; `COUNTERPARTY_CURRENCY_MISMATCH` sinon) ; retrait : actif, imputable, de type actif, CHF ; versement Stripe :
+   38-11b AC-2 ; règle : celui d'`accept_one_rule`, et en CHF **ou dans la devise de la transaction** (décision du responsable de l'epic du 2026-11-21, qui remplace « en CHF » d'AC-10 et de la revue P1 L3 ; `COUNTERPARTY_CURRENCY_MISMATCH` sinon) ; retrait : actif, imputable, de type actif, CHF ; versement Stripe :
    40-7c AC-4 d) ; libellé fourni par le prestataire, tronqué UTF-8 à la borne existante — PayPal : « PayPal
    <compte> · <type> · TXN <id> », « Frais PayPal <devise> · TXN <id> ». Ligne du compte prestataire **en devise** si
    son compte du plan en a une : `foreign = { amount = |montant| }` au **cours mensuel retenu** par la société pour la
@@ -507,14 +507,14 @@ retiré ; refus `VALIDATION_ERROR` `counterparty_wrong_currency` possible pour u
 conversion nomme la devise du côté en cause ; `ReviewResponse` générique (forme JSON inchangée pour PayPal) ; champs
 `linkable`/`ruleable` à ajouter à tout `ProviderSpec` construit ailleurs.
 
-### Remédiation de la revue P2 et décision de Beat du 2026-11-21 (Claude Sonnet 5.5)
+### Remédiation de la revue P2 et décision du responsable de l'epic du 2026-11-21 (Claude Sonnet 5.5)
 
 - **P2 L1, L2, L4** (`85369670`, format `572cfa59`) : `prepare_accept` lit, sur le pool, les écritures de la société que les
   propositions éligibles font rattacher (`provider_review::existing_entry_ids`) ; `PreparedAccept::entries_to_lock` ne porte
   que celles-ci, et `run_batch` ne pré-verrouille qu'elles : un identifiant absent ou d'une autre société ne pose plus de
   verrou d'intervalle (L1, L2). Une écriture créée entre le pré-vol et le verrou reste refusée fermée (`accept_link_entry`,
   inchangé). Doc de `link_entry_in_tx` : phrase en double fusionnée (L4). Test : `rattachement_a_une_ecriture_absente_refuse_le_reste_accepte`.
-- **Décision de Beat (point d, signature des epics, 2026-11-21)** (`0ec6472a`, `49a410cf`) : la contrepartie d'une règle est en
+- **Décision du responsable de l'epic (point d, signature des epics, 2026-11-21)** (`0ec6472a`, `49a410cf`) : la contrepartie d'une règle est en
   CHF **ou dans la devise de la transaction** ; toute autre devise est refusée, `COUNTERPARTY_CURRENCY_MISMATCH`
   (`details { accountId, accountCurrency, transactionCurrency }`, clé `provider-failed-counterparty-currency-mismatch`, quatre
   locales). Elle remplace « en CHF » d'AC-10 et de la revue P1 L3. Touché : création et modification des règles
@@ -539,6 +539,36 @@ conversion nomme la devise du côté en cause ; `ReviewResponse` générique (fo
   ignorés** (`gate-ci.log`, code 0).
 - **La story reste `review`** : du code de production a changé après la P2 ; passe ciblée P3 à lancer sur son prompt,
   `kesh-gate-logs/s38-11c2/revue-p3-prompt.md`.
+
+### Remédiation de la revue P3 (Claude Sonnet 5.5)
+
+Rapport : `kesh-gate-logs/s38-11c2/revue-p3-rapport.md` (0 CRITICAL, 0 HIGH, 3 MEDIUM, 9 LOW). Règle (décision du responsable
+de l'epic du 2026-11-21) : la contrepartie d'une règle est un compte en CHF (toute transaction) ou dans la devise de la
+transaction (un compte USD ne sert que les transactions en USD) ; toute autre devise est refusée.
+
+- **M1** : message `provider-failed-counterparty-currency-mismatch` (quatre locales) et manuel FR (`user-manual.tex`,
+  « Compte en devise ») réécrits selon la règle, sans contradiction avec la phrase voisine du rapprochement bancaire.
+  PDF compilé dans une copie hors dépôt pour contrôle ; non commité (règle des branches `story/…`).
+- **M2** : `get_proposals` (rapprochement bancaire CHF) lit `accounts.currency` et exclut les comptes en devise de
+  l'ensemble passé à `first_matching_rule` : la règle USD n'est plus proposée et ne masque plus la règle CHF suivante.
+  Test : `a_foreign_currency_rule_is_not_proposed_and_does_not_mask_the_next_rule` (`reconciliation_e2e.rs`).
+- **M3** : filtre `withoutForeignCurrency` retiré de `RuleFormModal.svelte` (exemption `fx-filtre-comptes` justifiée) ; test
+  Vitest. Filet `ACCOUNT_IN_FOREIGN_CURRENCY` de `accept_one_rule` testé :
+  `accepting_a_rule_to_a_foreign_currency_account_is_refused_in_failed` (`failed[]`, `details`, rien d'écrit).
+- **L1** : entrée ajoutée à `kesh-gate-logs/epic-38-kiss/issues-a-ouvrir.md` (`ACCOUNT_CURRENCY_IN_USE`, manuel 1127-1134).
+- **L2** : doc d'`accept_rule` corrigé. **L3** : `refuse_foreign_currency_in_tx` supprimée (aucun appelant). **L5** :
+  `accept_rule` compare à `r.transaction.currency`, comme `matching_rule`. **L6** : le test USD sur USD asserte les lignes
+  (compte, sens, même CHF, même montant en devise, même cours, même provenance) ; le test de l'écriture absente asserte
+  `NOT_FOUND`. **L7** : lien intra-doc de `reconciliation_link.rs` qualifié. **L9** : la mention nominative du
+  responsable de l'epic retirée du code, des tests et de cette fiche (l'historique des commits n'est pas réécrit).
+- **L4 — relais pour 38-11d** : le refus d'une règle en mauvaise devise est `COUNTERPARTY_CURRENCY_MISMATCH` (`details`
+  `{ accountId, accountCurrency, transactionCurrency }`), non plus `VALIDATION_ERROR` `counterparty_wrong_currency` (relevé
+  daté plus haut, laissé tel quel) ; la clé `provider-failed-counterparty-currency-mismatch` attend son écran de revue. Le
+  sélecteur des règles (`RuleFormModal`) propose désormais les comptes en devise.
+- **L8** : le record P2 sous-déclarait le gate backend : `gate-ci.log` est une copie `git archive` de `49a410cf`, identique
+  à HEAD pour `crates/`, **6297 passés, 0 échec, 18 ignorés**, `account_columns_inventory` compris : suite complète au
+  dernier commit de code de cette passe-là (constat de la revue P3).
+- Gates : voir ci-dessous.
 
 ## Change Log
 
@@ -587,4 +617,4 @@ conversion nomme la devise du côté en cause ; `ReviewResponse` générique (fo
   du lot (choix justifié au Dev Agent Record), M1 à M4, L1, L3, L4, L7, L8 ; L2, L5, L6 en dette (issues à ouvrir
   n° 14 à 16). Mutations vérifiées ; gates complets à rejouer (arrêtés par la station, mémoire). Prompt de la passe
   P2 complète (Sonnet) : `kesh-gate-logs/s38-11c2/revue-p2-prompt.md`. Statut : `review`.
-- 2026-11-21 — revue P2 (Sonnet 5.5) : 0 au-dessus de LOW, quatre LOW ; L1, L2, L4 remédiés (`85369670`) ; décision de Beat du 2026-11-21 intégrée (`0ec6472a`, `49a410cf`) ; gates rejoués ; passe ciblée P3 à lancer.
+- 2026-11-21 — revue P2 (Sonnet 5.5) : 0 au-dessus de LOW, quatre LOW ; L1, L2, L4 remédiés (`85369670`) ; décision du responsable de l'epic du 2026-11-21 intégrée (`0ec6472a`, `49a410cf`) ; gates rejoués ; passe ciblée P3 à lancer.
