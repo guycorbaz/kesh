@@ -58,7 +58,7 @@ use crate::errors::AppError;
 use crate::middleware::auth::CurrentUser;
 use crate::routes::provider_imports::{
     self, CurrencyReport, DETAILS_MAX_CHARS, FEE_SUFFIX, ImportRequest, ImportSource,
-    NAME_MAX_CHARS, PROVIDER_TYPE_MAX_CHARS, ProviderLine, TXID_COLUMN_MAX_CHARS, import_lines,
+    NAME_MAX_CHARS, PROVIDER_TYPE_MAX_CHARS, ProviderGroup, ProviderLine, TXID_COLUMN_MAX_CHARS, import_lines,
     load_balances, truncate_chars,
 };
 
@@ -173,22 +173,37 @@ pub fn check_id_lengths(rows: &[StripePayoutRow]) -> Result<(), StripeCsvError> 
 /// restent cherchables dans le texte (rapprochement, dépannage ; repris par le
 /// libellé des écritures, Story 40-7c).
 pub fn row_label(row: &StripePayoutRow) -> String {
-    let kind = if row.category == CHARGE_CATEGORY {
+    label(row, 0)
+}
+
+/// Le libellé de [`row_label`], la **description bornée** pour que le libellé
+/// entier — précédé de `prefix_chars` caractères (le préfixe des frais) — tienne
+/// dans [`DETAILS_MAX_CHARS`] : la fin `) - <versement>`, que le rapprochement
+/// et le dépannage cherchent, n'est jamais coupée (relevé L1 de la revue P1 de
+/// la 40-7b). Seule la description cède ; des identifiants de 251 caractères
+/// chacun (la borne de `check_id_lengths`) pourraient encore dépasser, ce qui
+/// n'arrive pas avec des identifiants Stripe réels (moins de 40).
+fn label(row: &StripePayoutRow, prefix_chars: usize) -> String {
+    let compose = |description: &str| {
+        let kind = if row.category == CHARGE_CATEGORY {
         "Encaissement"
     } else {
         row.category.as_str()
     };
-    format!(
-        "{kind} Stripe de {gross} {cur} -{fee}={net} {cur} BRUT - {txn} ({created}- {description}) - {payout}",
-        gross = row.gross,
-        fee = row.fee,
-        net = row.net,
-        cur = row.currency,
-        txn = row.balance_transaction_id,
-        created = row.created,
-        description = row.description.as_deref().map(str::trim).unwrap_or(""),
-        payout = row.payout_id,
-    )
+        format!(
+            "{kind} Stripe de {gross} {cur} -{fee}={net} {cur} BRUT - {txn} ({created}- {description}) - {payout}",
+            gross = row.gross,
+            fee = row.fee,
+            net = row.net,
+            cur = row.currency,
+            txn = row.balance_transaction_id,
+            created = row.created,
+            payout = row.payout_id,
+        )
+    };
+    let budget = DETAILS_MAX_CHARS.saturating_sub(prefix_chars + compose("").chars().count());
+    let description = row.description.as_deref().map(str::trim).unwrap_or("");
+    compose(&truncate_chars(description, budget))
 }
 
 /// Les lignes neutres d'une ligne du rapport — Story 40-7b (AC-5) : le **brut**
@@ -232,7 +247,10 @@ pub fn provider_lines_of_row(row: &StripePayoutRow) -> Vec<ProviderLine> {
         out.push(base(
             -row.fee,
             format!("{}{FEE_SUFFIX}", row.balance_transaction_id),
-            format!("{FEE_DETAILS_PREFIX}{}", row_label(row)),
+            format!(
+                "{FEE_DETAILS_PREFIX}{}",
+                label(row, FEE_DETAILS_PREFIX.chars().count())
+            ),
         ));
     }
     out
@@ -267,8 +285,14 @@ fn payout_line(payout_id: &str, first: &StripePayoutRow, net: Decimal) -> Provid
 /// (AC-5) : les lignes de chaque ligne du rapport, puis une par versement dont
 /// la somme des nets n'est pas nulle (un versement de somme nulle ne déplace
 /// rien : pas de transaction, mais il reste au compte rendu).
-pub fn lines_of_currency(rows: &[&StripePayoutRow]) -> (Vec<ProviderLine>, Vec<PayoutReport>) {
-    let mut lines: Vec<ProviderLine> = rows.iter().flat_map(|r| provider_lines_of_row(r)).collect();
+pub fn lines_of_currency(rows: &[&StripePayoutRow]) -> (Vec<ProviderGroup>, Vec<PayoutReport>) {
+    // Un groupe par ligne du rapport (brut + frais) : l'unité des doublons,
+    // connue de la source (forme du socle de la 38-12a).
+    let mut groups: Vec<ProviderGroup> = rows
+        .iter()
+        .map(|r| provider_lines_of_row(r))
+        .filter(|g| !g.is_empty())
+        .collect();
 
     // Versements, dans l'ordre de première apparition au fichier.
     let mut order: Vec<&str> = Vec::new();
@@ -291,10 +315,10 @@ pub fn lines_of_currency(rows: &[&StripePayoutRow]) -> (Vec<ProviderLine>, Vec<P
             net,
         });
         if !net.is_zero() {
-            lines.push(payout_line(payout_id, first, net));
+            groups.push(vec![payout_line(payout_id, first, net)]);
         }
     }
-    (lines, payouts)
+    (groups, payouts)
 }
 
 // ---------------------------------------------------------------------------
@@ -350,8 +374,8 @@ pub async fn create(
     let mut by_currency = BTreeMap::new();
     let mut payouts = Vec::new();
     for (currency, rows) in ventilate(&csv.rows) {
-        let (lines, mut currency_payouts) = lines_of_currency(&rows);
-        by_currency.insert(currency, lines);
+        let (groups, mut currency_payouts) = lines_of_currency(&rows);
+        by_currency.insert(currency, groups);
         payouts.append(&mut currency_payouts);
     }
     let mut audit_details = serde_json::Map::new();
@@ -428,7 +452,12 @@ mod tests {
         currency: &str,
     ) -> (Vec<ProviderLine>, Vec<PayoutReport>) {
         let par_devise = ventilate(rows);
-        lines_of_currency(&par_devise[currency])
+        let (groups, payouts) = lines_of_currency(&par_devise[currency]);
+        (groups.into_iter().flatten().collect(), payouts)
+    }
+
+    fn groups_of(rows: &[StripePayoutRow], currency: &str) -> Vec<ProviderGroup> {
+        lines_of_currency(&ventilate(rows)[currency]).0
     }
 
     fn montants(lines: &[ProviderLine]) -> Vec<Decimal> {
@@ -552,10 +581,10 @@ mod tests {
             row("txn_A", "po_1", "100.00", "3.20"),
             row("txn_B", "po_1", "50.00", "0"),
         ];
-        let (lines, _) = lines_of(&rows, "CHF");
+        let groups = groups_of(&rows, "CHF");
         let mut existing = HashSet::new();
         existing.insert("po_1".to_string());
-        let (kept, duplicates) = provider_imports::dedupe_lines(&lines, &existing);
+        let (kept, duplicates) = provider_imports::dedupe_groups(&groups, &existing);
         // txn_A (2 lignes) en double dans le fichier, et le versement déjà connu.
         assert_eq!(
             kept.iter()
@@ -564,6 +593,43 @@ mod tests {
             ["txn_A", "txn_A:FEE", "txn_B"]
         );
         assert_eq!(duplicates, 2 + 1);
+    }
+
+    /// Deux lignes identiques **côte à côte** dans le rapport sont deux groupes :
+    /// la seconde est un doublon (les groupes sont ceux de la source, forme du
+    /// socle de la 38-12a — le correctif de l'adjacence n'a plus d'objet).
+    #[test]
+    fn deux_lignes_identiques_voisines_sont_deux_groupes() {
+        let rows = vec![
+            row("txn_A", "po_1", "10.00", "1.00"),
+            row("txn_A", "po_1", "10.00", "1.00"),
+        ];
+        let groups = groups_of(&rows, "CHF");
+        // Deux lignes du rapport, plus le versement : trois groupes.
+        assert_eq!(groups.len(), 3);
+        let (kept, duplicates) = provider_imports::dedupe_groups(&groups, &HashSet::new());
+        assert_eq!(kept.len(), 3, "brut, frais, versement");
+        assert_eq!(duplicates, 2, "la seconde ligne : brut et frais");
+    }
+
+    /// L1 (revue P1) — une description très longue ne coupe ni la fin du
+    /// libellé (`) - po_…`), ni celle du libellé des frais : seule la
+    /// description cède, et le libellé tient dans la borne.
+    #[test]
+    fn une_longue_description_ne_coupe_pas_la_fin_du_libelle() {
+        let mut r = row("txn_L", "po_L", "100.00", "3.20");
+        r.description = Some("x".repeat(900));
+        let lignes = provider_lines_of_row(&r);
+        assert_eq!(lignes.len(), 2);
+        for l in &lignes {
+            assert!(l.details.ends_with(") - po_L"), "{}", l.details);
+            assert!(l.details.chars().count() <= DETAILS_MAX_CHARS);
+        }
+        // Les identifiants restent cherchables dans le texte.
+        assert!(lignes[0].details.contains("txn_L"));
+        // Une description courte reste entière.
+        r.description = Some("courte".into());
+        assert!(row_label(&r).contains("(2020-01-30 14:02:41- courte) - po_L"));
     }
 
     /// Amendement du 2026-11-20 — le libellé suit le format du tableur Crésus du

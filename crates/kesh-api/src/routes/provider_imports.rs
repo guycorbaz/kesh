@@ -58,7 +58,11 @@ use crate::routes::bank_statements_manual::MANUAL_STATEMENT_LOCK_TIMEOUT_SECS;
 /// (`ImportRequest::audit_action`) : écrites en toutes lettres ici pour que
 /// l'inventaire des sites d'audit indirects (`audit_label_registry`) les relise,
 /// et contrôlées à l'écriture. *(Ajout de la 40-7b.)*
-pub const AUDIT_ACTIONS: [&str; 2] = ["paypal_import.created", "stripe_import.created"];
+pub const AUDIT_ACTIONS: [&str; 3] = [
+    "paypal_download.created",
+    "paypal_import.created",
+    "stripe_import.created",
+];
 
 /// Une transaction à importer, indépendante du format d'origine.
 #[derive(Debug, Clone, PartialEq)]
@@ -71,9 +75,6 @@ pub struct ProviderLine {
     pub transaction_id: String,
     /// Date de comptabilisation.
     pub booking_date: NaiveDate,
-    /// Date de valeur (Stripe : disponibilité des fonds) ; `None` pour PayPal.
-    /// *Ajout de la 40-7b à la forme de la 38-12a.*
-    pub value_date: Option<NaiveDate>,
     /// Montant signé.
     pub amount: Decimal,
     /// Devise (celle du compte bancaire visé).
@@ -94,6 +95,9 @@ pub struct ProviderLine {
     pub rank: usize,
     /// Solde du compte du prestataire après la ligne, s'il est connu.
     pub balance_after: Option<Decimal>,
+    /// Date de valeur (Stripe : disponibilité des fonds) ; `None` pour PayPal.
+    /// *Ajout de la 40-7b à la forme de la 38-12a.*
+    pub value_date: Option<NaiveDate>,
 }
 
 impl ProviderLine {
@@ -121,6 +125,10 @@ impl ProviderLine {
         }
     }
 }
+
+/// Les transactions d'**une** ligne de la source (le brut et ses frais) :
+/// l'unité des doublons. Jamais vide.
+pub type ProviderGroup = Vec<ProviderLine>;
 
 /// Compte rendu d'une devise : son compte bancaire, l'entrée `bank_imports`
 /// créée (`null` si toutes ses lignes étaient des doublons), et les nombres de
@@ -163,8 +171,9 @@ pub struct ImportRequest<'a> {
     pub audit_action: &'static str,
     /// `details` de cette trace, sans `currencies` (que le cœur ajoute).
     pub audit_details: serde_json::Map<String, serde_json::Value>,
-    /// Les lignes, ventilées par devise (ordre de la source).
-    pub by_currency: BTreeMap<String, Vec<ProviderLine>>,
+    /// Les groupes (une ligne de la source chacun), ventilés par devise,
+    /// dans l'ordre de la source.
+    pub by_currency: BTreeMap<String, Vec<ProviderGroup>>,
 }
 
 /// Les soldes non archivés d'un compte du prestataire ; `404
@@ -189,16 +198,20 @@ pub async fn load_balances(
 struct Target<'a> {
     currency: String,
     balance: &'a ProviderBalance,
-    lines: Vec<ProviderLine>,
+    groups: Vec<ProviderGroup>,
     file_hash: String,
 }
 
 /// L'empreinte d'une devise ([`ImportSource`]).
-fn file_hash(source: ImportSource<'_>, currency: &str, lines: &[ProviderLine]) -> String {
+fn file_hash(source: ImportSource<'_>, currency: &str, groups: &[ProviderGroup]) -> String {
     let mut hashed = match source {
         ImportSource::File(bytes) => bytes.to_vec(),
         ImportSource::Download => {
-            let mut ids: Vec<&str> = lines.iter().map(|l| l.transaction_id.as_str()).collect();
+            let mut ids: Vec<&str> = groups
+                .iter()
+                .flatten()
+                .map(|l| l.transaction_id.as_str())
+                .collect();
             ids.sort_unstable();
             ids.join("\n").into_bytes()
         }
@@ -208,40 +221,28 @@ fn file_hash(source: ImportSource<'_>, currency: &str, lines: &[ProviderLine]) -
     compute_sha256_hex(&hashed)
 }
 
-/// Écarte les **doublons** — par groupe ([`ProviderLine::group_id`]) : un
-/// groupe dont l'identifiant a déjà paru plus haut, ou dont une transaction
-/// existe déjà sur le compte (`existing`), est ignoré entier. Rend les lignes
-/// gardées et le nombre de **transactions** ignorées.
-pub fn dedupe_lines<'a>(
-    lines: &'a [ProviderLine],
+/// Écarte les **doublons** — par groupe ([`ProviderGroup`], une ligne de la
+/// source) : un groupe dont l'identifiant ([`ProviderLine::group_id`]) a déjà
+/// paru plus haut, ou dont une transaction existe déjà sur le compte
+/// (`existing`), est ignoré entier. Rend les lignes gardées et le nombre de
+/// **transactions** ignorées.
+pub fn dedupe_groups<'a>(
+    groups: &'a [ProviderGroup],
     existing: &HashSet<String>,
 ) -> (Vec<&'a ProviderLine>, usize) {
     let mut seen: HashSet<&str> = HashSet::new();
     let mut kept = Vec::new();
     let mut duplicates = 0;
-    let mut i = 0;
-    while i < lines.len() {
-        let group = lines[i].group_id.as_str();
-        // Un groupe est la suite de lignes de même `group_id` **sans identifiant
-        // de transaction répété** : deux lignes identiques de la source, côte à
-        // côte, sont deux groupes (correctif de la 40-7b : sans cela, la seconde
-        // d'un doublon voisin était gardée avec la première).
-        let mut ids: HashSet<&str> = HashSet::new();
-        let mut end = i;
-        while end < lines.len()
-            && lines[end].group_id == group
-            && ids.insert(lines[end].transaction_id.as_str())
-        {
-            end += 1;
-        }
-        let members = &lines[i..end];
-        let in_source = !seen.insert(group);
-        if in_source || members.iter().any(|l| existing.contains(&l.transaction_id)) {
-            duplicates += members.len();
+    for group in groups {
+        let Some(first) = group.first() else {
+            continue;
+        };
+        let in_source = !seen.insert(first.group_id.as_str());
+        if in_source || group.iter().any(|l| existing.contains(&l.transaction_id)) {
+            duplicates += group.len();
         } else {
-            kept.extend(members);
+            kept.extend(group.iter());
         }
-        i = end;
     }
     (kept, duplicates)
 }
@@ -267,7 +268,7 @@ pub async fn import_lines(
     }
 
     let mut targets: Vec<Target<'_>> = Vec::new();
-    for (currency, lines) in &request.by_currency {
+    for (currency, groups) in &request.by_currency {
         let mut matching = balances
             .iter()
             .filter(|b| b.currency() == currency.as_str());
@@ -284,8 +285,8 @@ pub async fn import_lines(
         targets.push(Target {
             currency: currency.clone(),
             balance: first,
-            lines: lines.clone(),
-            file_hash: file_hash(request.source, currency, lines),
+            groups: groups.clone(),
+            file_hash: file_hash(request.source, currency, groups),
         });
     }
     if let Some(closed) = targets.iter().find(|t| t.balance.account.is_closed()) {
@@ -471,8 +472,9 @@ async fn write_under_locks(
     for target in targets {
         let bank_account_id = target.balance.account.id;
         let candidate_ids: Vec<String> = target
-            .lines
+            .groups
             .iter()
+            .flatten()
             .map(|l| l.transaction_id.clone())
             .collect();
         let existing = bank_transactions::existing_transaction_ids(
@@ -482,7 +484,7 @@ async fn write_under_locks(
             &candidate_ids,
         )
         .await?;
-        let (kept, duplicates) = dedupe_lines(&target.lines, &existing);
+        let (kept, duplicates) = dedupe_groups(&target.groups, &existing);
         if kept.is_empty() {
             reports.push(CurrencyReport {
                 currency: target.currency.clone(),
@@ -715,7 +717,6 @@ mod tests {
             group_id: group.into(),
             transaction_id: id.into(),
             booking_date: NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
-            value_date: None,
             amount: amount.parse().unwrap(),
             currency: "EUR".into(),
             reference: None,
@@ -726,13 +727,14 @@ mod tests {
             provider_type: None,
             rank: 1,
             balance_after: None,
+            value_date: None,
         }
     }
 
     #[test]
     fn l_empreinte_d_un_telechargement_ne_depend_pas_de_l_ordre() {
-        let a = [line("A", "A", "1"), line("B", "B", "2")];
-        let b = [line("B", "B", "2"), line("A", "A", "1")];
+        let a = [vec![line("A", "A", "1")], vec![line("B", "B", "2")]];
+        let b = [vec![line("B", "B", "2")], vec![line("A", "A", "1")]];
         assert_eq!(
             file_hash(ImportSource::Download, "EUR", &a),
             file_hash(ImportSource::Download, "EUR", &b)
@@ -749,32 +751,18 @@ mod tests {
 
     #[test]
     fn un_groupe_se_garde_ou_s_ecarte_entier() {
-        let lines = [
-            line("A", "A", "10"),
-            line("A", "A:FEE", "-1"),
-            line("B", "B", "5"),
-            line("B", "B:FEE", "-0.5"),
-            line("A", "A", "10"),
+        // Deux lignes de la source au même identifiant, à la suite : deux
+        // groupes, le second doublon.
+        let groups = [
+            vec![line("A", "A", "10"), line("A", "A:FEE", "-1")],
+            vec![line("A", "A", "10"), line("A", "A:FEE", "-1")],
+            vec![line("B", "B", "5"), line("B", "B:FEE", "-0.5")],
+            vec![line("C", "C", "7")],
         ];
         let existing: HashSet<String> = ["B:FEE".to_string()].into_iter().collect();
-        let (kept, duplicates) = dedupe_lines(&lines, &existing);
+        let (kept, duplicates) = dedupe_groups(&groups, &existing);
         let ids: Vec<&str> = kept.iter().map(|l| l.transaction_id.as_str()).collect();
-        assert_eq!(ids, ["A", "A:FEE"]);
-        assert_eq!(duplicates, 3, "B (deux) et la seconde A (une)");
-    }
-
-    /// Deux lignes identiques **côte à côte** dans la source sont deux groupes :
-    /// la seconde est un doublon (correctif de la 40-7b).
-    #[test]
-    fn deux_lignes_identiques_voisines_sont_deux_groupes() {
-        let lines = [
-            line("A", "A", "10"),
-            line("A", "A:FEE", "-1"),
-            line("A", "A", "10"),
-            line("A", "A:FEE", "-1"),
-        ];
-        let (kept, duplicates) = dedupe_lines(&lines, &HashSet::new());
-        assert_eq!(kept.len(), 2);
-        assert_eq!(duplicates, 2);
+        assert_eq!(ids, ["A", "A:FEE", "C"]);
+        assert_eq!(duplicates, 4, "la seconde A (deux) et B (deux)");
     }
 }

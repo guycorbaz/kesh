@@ -113,21 +113,15 @@ pub struct HttpRateSource {
     https_only: bool,
 }
 
-/// Construit le client : rustls, aucune redirection, délais, `User-Agent`
-/// sans donnée personnelle, aucun magasin de cookies (aucun n'est activé).
+/// Le client commun (socle S5, [`crate::http_client::build_client`]) :
+/// rustls, aucune redirection, délais, `User-Agent` sans donnée personnelle,
+/// aucun magasin de cookies.
 fn client(
     https_only: bool,
     connect: Duration,
     total: Duration,
 ) -> Result<reqwest::Client, reqwest::Error> {
-    reqwest::Client::builder()
-        .use_rustls_tls()
-        .redirect(reqwest::redirect::Policy::none())
-        .https_only(https_only)
-        .connect_timeout(connect)
-        .timeout(total)
-        .user_agent(concat!("Kesh/", env!("CARGO_PKG_VERSION")))
-        .build()
+    crate::http_client::build_client(https_only, connect, total)
 }
 
 impl HttpRateSource {
@@ -161,7 +155,7 @@ impl HttpRateSource {
 
     /// Une requête `GET` : statut contrôlé, corps borné, UTF-8.
     async fn get(&self, url: String, kind: RateKind) -> Result<String, SourceError> {
-        let mut reponse = self.client.get(&url).send().await.map_err(classer)?;
+        let reponse = self.client.get(&url).send().await.map_err(classer)?;
         let statut = reponse.status();
         if !statut.is_success() {
             // Seul `xmldaily` rend 404 pour « pas de publication » (relevé du
@@ -171,19 +165,12 @@ impl HttpRateSource {
             }
             return Err(SourceError::HttpStatus(statut.as_u16()));
         }
-        if reponse
-            .content_length()
-            .is_some_and(|n| n > MAX_BODY_BYTES as u64)
-        {
-            return Err(SourceError::TooLarge);
-        }
-        let mut corps: Vec<u8> = Vec::new();
-        while let Some(morceau) = reponse.chunk().await.map_err(classer)? {
-            if corps.len() + morceau.len() > MAX_BODY_BYTES {
-                return Err(SourceError::TooLarge);
-            }
-            corps.extend_from_slice(&morceau);
-        }
+        let corps = crate::http_client::read_body_bounded(reponse, MAX_BODY_BYTES)
+            .await
+            .map_err(|e| match e {
+                crate::http_client::BodyError::TooLarge => SourceError::TooLarge,
+                crate::http_client::BodyError::Transport(e) => classer(e),
+            })?;
         String::from_utf8(corps).map_err(|_| SourceError::Malformed)
     }
 }

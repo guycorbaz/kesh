@@ -41,6 +41,7 @@ pub mod mcp_server_settings;
 pub mod onboarding;
 pub mod opening_balances;
 pub mod payment_batches;
+pub mod paypal_downloads;
 pub mod paypal_imports;
 pub mod products;
 pub mod profile;

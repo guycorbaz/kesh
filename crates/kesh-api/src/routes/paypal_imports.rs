@@ -54,7 +54,7 @@ use crate::errors::AppError;
 use crate::middleware::auth::CurrentUser;
 pub use crate::routes::provider_imports::CurrencyReport;
 use crate::routes::provider_imports::{
-    ImportRequest, ImportSource, ProviderLine, import_lines, load_balances,
+    ImportRequest, ImportSource, ProviderGroup, ProviderLine, import_lines, load_balances,
 };
 
 /// Suffixe de l'identifiant de la transaction des **frais** d'une ligne
@@ -296,7 +296,6 @@ pub fn provider_lines_of_row(row: &PaypalRow) -> Vec<ProviderLine> {
         group_id: row.transaction_id.clone(),
         transaction_id,
         booking_date: row.date,
-        value_date: None,
         amount,
         currency: row.currency.clone(),
         reference: Some(format!("{REFERENCE_PREFIX}{}", row.transaction_id)),
@@ -307,6 +306,7 @@ pub fn provider_lines_of_row(row: &PaypalRow) -> Vec<ProviderLine> {
         provider_type: Some(truncate_chars(&kind, PROVIDER_TYPE_MAX_CHARS)),
         rank: row.line,
         balance_after: row.balance,
+        value_date: None,
     };
 
     let mut out = Vec::with_capacity(2);
@@ -347,16 +347,20 @@ pub fn transactions_of_row(
         .collect()
 }
 
-/// Les lignes neutres d'une ventilation, par devise (ordre du fichier) :
-/// l'entrée du cœur commun (Story 38-12a). Fonction pure.
-pub fn provider_lines(ventilation: &Ventilation) -> BTreeMap<String, Vec<ProviderLine>> {
+/// Les groupes neutres d'une ventilation (un par ligne du fichier qui produit
+/// une transaction), par devise, dans l'ordre du fichier : l'entrée du cœur
+/// commun (Story 38-12a). Fonction pure.
+pub fn provider_lines(ventilation: &Ventilation) -> BTreeMap<String, Vec<ProviderGroup>> {
     ventilation
         .by_currency
         .iter()
         .map(|(currency, rows)| {
             (
                 currency.clone(),
-                rows.iter().flat_map(provider_lines_of_row).collect(),
+                rows.iter()
+                    .map(provider_lines_of_row)
+                    .filter(|g| !g.is_empty())
+                    .collect(),
             )
         })
         .collect()
@@ -491,7 +495,7 @@ pub async fn create(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::routes::provider_imports::dedupe_lines;
+    use crate::routes::provider_imports::dedupe_groups;
     use rust_decimal::Decimal;
     use std::str::FromStr;
 
@@ -716,9 +720,9 @@ mod tests {
         let rows = [a, b, c, d];
         // Story 38-12a : les doublons se jugent au cœur commun, sur les lignes
         // neutres groupées par ligne du fichier ; assertions inchangées.
-        let lines: Vec<ProviderLine> = rows.iter().flat_map(provider_lines_of_row).collect();
+        let groups: Vec<ProviderGroup> = rows.iter().map(provider_lines_of_row).collect();
         let existing: HashSet<String> = ["0TESTOLD".to_string()].into_iter().collect();
-        let (kept, duplicates) = dedupe_lines(&lines, &existing);
+        let (kept, duplicates) = dedupe_groups(&groups, &existing);
         let mut ids: Vec<&str> = kept.iter().map(|l| l.group_id.as_str()).collect();
         ids.dedup();
         assert_eq!(ids, ["0TESTDUP", "0TESTNEW"]);
@@ -726,8 +730,8 @@ mod tests {
         assert_eq!(duplicates, 3);
         // Les frais seuls déjà en base suffisent à écarter la ligne.
         let existing: HashSet<String> = ["0TESTNEW:FEE".to_string()].into_iter().collect();
-        let lignes = provider_lines_of_row(&rows[2]);
-        let (kept, duplicates) = dedupe_lines(&lignes, &existing);
+        let new_group = [provider_lines_of_row(&rows[2])];
+        let (kept, duplicates) = dedupe_groups(&new_group, &existing);
         assert!(kept.is_empty());
         assert_eq!(duplicates, 2);
     }

@@ -25,11 +25,14 @@
 //! - [`csv`] : parseur CSV multi-encodage / multi-profils (Story 8-2).
 //! - [`paypal`] : lecteur du CSV PayPal « Balance affecting transactions »,
 //!   par noms de colonnes (Story 38-11a).
+//! - [`paypal_api`] : lecture d'une page de l'API PayPal « Transaction Search »
+//!   et conversion vers le modèle du CSV (Story 38-12a).
 
 pub mod camt053;
 pub mod csv;
 pub mod error;
 pub mod paypal;
+pub mod paypal_api;
 pub mod stripe;
 pub mod types;
 
