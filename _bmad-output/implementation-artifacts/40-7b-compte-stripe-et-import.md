@@ -1,6 +1,6 @@
 # Story 40-7b : réglages du compte Stripe et import du rapport, ventilé par devise (migration de l'epic)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-20, branche `epic/40-stripe`, numéros de ligne relevés sur `origin/main` au commit `fd04099f`.
 Epic 40, **phase 1 KISS** (décision de Beat du 2026-11-20). **Dépend de** : 40-7a (lecteur) ; la **phase 1 de l'Epic 38
@@ -362,3 +362,18 @@ geste (`POST /api/v1/stripe-imports`), ventilé par devise ; les doublons sont i
 format du tableur de Crésus de l'utilisateur (identifiants `txn_…` et `po_…` cherchables).
 *Migration* — `20261120000003_stripe_import`, non breaking : la sauvegarde d'avant la mise à jour reste exigée (base,
 `.keshbackup`, dossier des documents) ; le retour à la version précédente passe par elle.
+
+
+### Clôture (2026-11-21, orchestrateur)
+
+Boucle de revue : P1 Sonnet (0/0/1 MEDIUM/7 LOW) → remédiation (fusions de `story/38-12a`, L1–L6) → P2 Opus (0/0/0/8 LOW,
+`kesh-gate-logs/s40-7b/revue-p2-rapport.md`). Gates au dernier commit de code `c5326214` : `test-fast --ci` 6313 / 14
+ignorés ; `gate-ci.sh` 6332 / 0 / 18 ; mutations 7/7 rouges ; Vitest sur l'état fusionné 4612 (278 fichiers, passe P2) ;
+E2E 477 / 10 / 18 — les 10 sont les attendus (sept KF-029 #97, `backup-restore-new-install.spec.ts:262` et `:381`
+KF-065 #1282, `opening-balances.spec.ts:156` KF-067 #1284 ; correction de la mention « cause non établie » ci-dessus).
+Décomptes corrigés par la P2 : 24 tests neufs (non 25) ; compteurs du registre 160 / 152 / 164. LOW de la P2 en dette pour
+la story de solde 40-9 : borne de la catégorie dans le libellé (1), reprise de la nouvelle tête de `story/38-12a` (2 :
+`AUDIT_ACTIONS` en tranche, `check_audit_action`, `period_windows`, `run_bounded`, `classify_*`, `parse_api_amount`,
+`hyper`), angle mort de la destination élargi au changement de son compte du plan (3), deux lignes « PayPal » de
+`api-external.md` (4), copies privées des aides dans `paypal_imports.rs` et `bounded` sans appelant (5). Issues à ouvrir :
+`kesh-gate-logs/epic-38-kiss/issues-a-ouvrir.md`.
