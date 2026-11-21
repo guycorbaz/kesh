@@ -613,3 +613,19 @@ sprint-status.yaml}`, `_bmad-output/planning-artifacts/epic-38-paypal.md`.
     file d'attente par la station (mémoire basse) avant de tourner ; à relancer avant la passe P2 ou avec elle
     (`heavy.sh kesh-gate-logs/s38-12a/complet-p1.sh`). Frontend non touché par la remédiation.
 
+
+### Remédiation de la revue de code P2 (2026-11-21)
+
+Rapport : `kesh-gate-logs/s38-12a/revue-p2-rapport.md` (Opus 5.5, passe complète) — 0 CRITICAL, 0 HIGH, 1 MEDIUM, 6 LOW.
+
+| Finding | Traitement | Où |
+|---|---|---|
+| G1 MEDIUM — connexion fermée après l'envoi de la requête classée définitive | **prémisse vérifiée par exécution** : un serveur du bouclage qui lit la requête puis ferme sans répondre fait rougir, sur le code d'avant, le test du client (`http_client::tests::connexion_fermee_apres_la_requete_est_passagere`) et l'E2E (`connexion_fermee_apres_la_requete_est_reprise`) — `p2-rouge.log`, 2 rouges sur 3, le test de contrôle `erreurs_reelles_de_reqwest_classees` passant. **Corrigé** : la chaîne des causes est aussi lue pour une `hyper::Error` (`is_incomplete_message`, `is_closed`, `is_canceled`) ; `hyper = "1"` en dépendance directe de `kesh-api`, version déjà au graphe (1.12.0) | `http_client.rs`, `Cargo.toml` |
+| G2 — fenêtre `start == end` | **corrigé** : `windows` s'arrête à `start >= now`, `period_windows` écarte `start >= end` | `provider_download.rs` |
+| G3 — `Window::split` inversée hors des routes | **corrigé** : `windows` ramène `to` au jour du jour (`effective_to`) | `provider_download.rs` |
+| G4 — marge du plancher | **doc** : la première heure du jour du plancher n'est pas lue, le nom et la trace disent le jour demandé (`check_period`) ; à reprendre au manuel de la 38-12b | `provider_download.rs` |
+| G5 — `AUDIT_ACTIONS` lié à la main | **corrigé** : test `les_actions_du_coeur_d_import_sont_inventoriees_et_libellees` (égalité avec l'entrée de `SITES_INDIRECTS`, libellé présent) | `tests/audit_label_registry.rs` |
+| G6 — 408 définitif | **corrigé** : 408 passager (`classify_status`) | `provider_download.rs` |
+| G7 — clippy non rejoué après le dernier test, gate complet non lancé | **constat exact, aucun correctif de code** : gate ciblé de cette remédiation (fmt, clippy workspace, nextest `kesh-api` lib, `paypal_download_e2e`, `audit_label_registry`, `textes_coherents`) ; le gate complet, `gate-ci.sh` et l'E2E complet restent à lancer par l'orchestrateur avant `done` | |
+
+Tests ajoutés : 3 de plus (client, E2E, `audit_label_registry`) et des assertions aux tests `une_fin_future_s_arrete_a_l_instant` et `statuts_classes`. Gate backend complet, `gate-ci.sh` et E2E complet : **non exécutés** par cette remédiation.
