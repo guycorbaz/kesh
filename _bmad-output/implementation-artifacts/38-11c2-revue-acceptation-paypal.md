@@ -75,10 +75,15 @@ sans saisie, et de trouver les erreurs des boutiques.
    - **Frais** : compte de frais réglé → proposition `fee { bankTransactionId, feeAccountId }` ; sinon « à examiner »
      `fee_account_missing`.
    - **Conversion** (appariement propre à PayPal, dans `paypal.rs`) : appariée à l'unique autre transaction
-     `Conversion` pending du **même compte PayPal**, de signe opposé, d'une **autre devise**, de même `end_to_end_id`
-     (le `Reference Txn ID`) non vide → proposition `conversion { debitTransactionId, creditTransactionId }` (une seule
+     `Conversion` pending du **même compte PayPal**, de signe opposé, d'une **autre devise**, que le **prédicat
+     d'appariement du prestataire** (`ProviderSpec::conversion_match`) reconnaît — PayPal : même `end_to_end_id` (le
+     `Reference Txn ID`) non vide (forme des relevés de 2024), **ou** références croisées, chacune pointant
+     l'identifiant de l'autre (forme du fichier fictif de 38-11a) ; Wise : même `transaction_id` —, elle-même l'unique
+     partenaire de l'autre → proposition `conversion { debitTransactionId, creditTransactionId }` (une seule
      par paire) ; sinon « à examiner » `conversion_unpaired` (pas d'appariement par la date : les paires de 2024
-     portent toutes leur référence).
+     portent toutes leur référence ; une moitié ambiguë part « à examiner », jamais en faux appariement). *(Amendé à la
+     revue de code P1, L1 : la fiche disait « de même `end_to_end_id` » seulement ; écart n° 1 du développement,
+     admis.)*
    - **Retrait** (propre à PayPal) : contrepartie préremplie = compte du plan du compte bancaire **principal** de la
      société (s'il en a un ; sinon `null`, à choisir à l'écran, la proposition étant incomplète tant qu'il manque) →
      proposition `withdrawal { bankTransactionId, counterpartyAccountId }` **si le compte PayPal est en CHF** ; retrait
@@ -101,7 +106,10 @@ sans saisie, et de trouver les erreurs des boutiques.
    paramétrage PayPal. Refus : 404 `PROVIDER_ACCOUNT_NOT_FOUND` (38-11b), 404 `FISCAL_YEAR_NOT_FOUND`. Réponse
    `{ account, fiscalYearId, proposals: [...], gaps: [...], toReview: [...], counts: {…} }`, champs en camelCase,
    montants en chaînes décimales (convention de l'API) — la forme que reprennent `GET /api/v1/wise/review` et
-   `GET /api/v1/stripe/review`. **Aucun code TVA** sur aucune proposition (Q4).
+   `GET /api/v1/stripe/review`. **Aucun code TVA** sur aucune proposition (Q4). La revue est **générique en son type
+   de proposition** (`Review<P>`, `ReviewProposal<P>`, `ReviewResponse<P>`, `Proposal` par défaut ;
+   `Review::map_proposals`) : Stripe y sert sa proposition `payout` et ses champs d'affichage (40-7c AC-4 d) dans la
+   même réponse (revue de code P1, M3).
 7. **AC-7 — Moteur d'acceptation commun et route PayPal** `POST /api/v1/paypal/accept` (Comptable et plus, clés
    d'API `read-write` admises), corps `{ account, proposals: [ {type, …} ] }` (formes de l'AC-5 ; `withdrawal` exige
    `counterpartyAccountId`). Le moteur vit dans un module **commun** `crates/kesh-api/src/routes/provider_accept.rs`
@@ -141,6 +149,16 @@ sans saisie, et de trouver les erreurs des boutiques.
      le verrou nommé de **chacun** ; la doc de `link_entry_in_tx` (« l'absence de cycle », qui dit que les gestes qui
      créent une écriture puis écrivent une transaction « n'écrivent aucune transaction d'un autre compte ») est
      complétée en ce sens.
+   - **Écritures rattachées, verrouillées en premier acte** (revue de code P1, H1) : avant toute lecture ordinaire
+     de la transaction du lot, les écritures que désignent ses rattachements (`EngineProposal::entries_to_lock`) se
+     prennent `FOR UPDATE` (`reconciliation_link::lock_entries_for_update`, par clé primaire, identifiants
+     croissants) : la vue du lot naît après l'attente d'une contre-passation, d'une modification ou d'un
+     rattachement concurrent, que l'étape 4.4 de `link_entry_in_tx` voit donc, **pour tous les genres** ; une
+     proposition propre qui ne déclare pas son écriture voit son rattachement refusé (`DATABASE_ERROR`, invariant).
+   - **Genres admis** (revue de code P1, M2) : `link_entry` pour l'encaissement et les genres que le prestataire
+     déclare (`ProviderSpec::linkable` — Wise : `Other` de préfixe `TRANSFER`, versement Stripe, 39-11c AC-4) ;
+     `rule` pour `Other` et les genres qu'il déclare (`ProviderSpec::ruleable`) ; PayPal n'en déclare aucun
+     (`no_extra_kind`). Une seule règle, `admits_link` / `admits_rule`, pour la revue et le rejugement.
    - **Rejugement** : chaque proposition rejuge son classement sous verrou (transaction encore pending, même genre,
      même écriture, même paire, règle qui correspond toujours, paramètres du prestataire inchangés) ; sinon `failed[]`
      **`PROVIDER_PROPOSAL_STALE`** (code générique, Q-39-10 de l'Epic 39 ; servi tel quel à Wise et Stripe). Un
@@ -161,13 +179,17 @@ sans saisie, et de trouver les erreurs des boutiques.
    (`repositories/journal_entries.rs:381`, `enforce_postable = false` comme les autres flux de rapprochement) :
    **deux lignes**, compte du plan du compte prestataire et contrepartie, sens selon le **signe** de la transaction,
    contrôle de la contrepartie **paramétré par le genre** et fait avant (frais : actif, imputable, de type charge,
-   38-11b AC-2 ; règle : celui d'`accept_one_rule` ; retrait : actif, imputable, de type actif, CHF ; versement Stripe :
+   38-11b AC-2 ; règle : celui d'`accept_one_rule`, et en CHF — AC-10, recontrôlé à l'acceptation, revue P1 L3 ; retrait : actif, imputable, de type actif, CHF ; versement Stripe :
    40-7c AC-4 d) ; libellé fourni par le prestataire, tronqué UTF-8 à la borne existante — PayPal : « PayPal
    <compte> · <type> · TXN <id> », « Frais PayPal <devise> · TXN <id> ». Ligne du compte prestataire **en devise** si
    son compte du plan en a une : `foreign = { amount = |montant| }` au **cours mensuel retenu** par la société pour la
    devise et le mois de la date (le contrôle central des lignes en devise le lit, `journal_entry_fx.rs:174`,
    `find_company_rate_in_tx`, `repositories/exchange_rates.rs:365`, `RateKind::Month`), CHF = `round(amount × rate,
-   2)` ; cours absent → `failed[]` `RATE_UNAVAILABLE` (code de 37-2, `details: { currency, month }`). La contrepartie
+   2)` ; cours absent → `failed[]` `RATE_UNAVAILABLE` (code de 37-2, `details: { currency, month }`). **Point
+   d'entrée d'un CHF connu** (revue de code P1, L7) : `ProviderEntry::known_chf` — quand le prestataire donne le CHF
+   (Wise : carte payée en devise depuis un solde, montant CHF du marchand, 39-11c), la ligne en devise porte ce CHF au
+   cours `rate_from_chf(|montant|, CHF)`, provenance `manual` ; PayPal passe `None`. Aucune logique Wise ici (reste
+   à 39-11c : `kesh-gate-logs/epic-39-40-kiss/wise-conversion-carte-ecarts.md`). La contrepartie
    porte le même CHF (et, si elle est de la même devise — compte de frais en EUR, compte de versement de 40-7c —, le
    même montant en devise et le même cours). Les refus du contrôle central des lignes en devise deviennent `failed[]`
    par `fx_failed_proposal` (`routes/reconciliation.rs:763`).
@@ -195,12 +217,15 @@ sans saisie, et de trouver les erreurs des boutiques.
        crédit compte source (montant source au cours mensuel retenu, CHF `X`) ; écriture 2, débit compte cible
        (montant cible, cours `rate_from_chf(montant cible, X)`, provenance `manual`) / crédit conversion `X` — **même
        CHF des deux côtés** (Q3 de Beat ; une écriture ne porte qu'une devise étrangère, `FX_MULTIPLE_CURRENCIES`),
-       par `create_conversion_in_tx` (`:261`, privée : appelée par la fonction neuve du même module, signature
-       inchangée), `complete_difference = false` ; chaque transaction pointe l'écriture de **son** compte (débitée →
+       par `create_conversion_in_tx` (`:261`, privée : appelée par la fonction neuve du même module ; elle prend
+       désormais `enforce_postable`, `true` pour la saisie 37-3b, **`false`** ici comme pour la forme à une écriture —
+       revue de code P1, M4 : la fiche disait « signature inchangée », d'où une garde de postabilité active et un
+       refus `DATABASE_ERROR` sur un compte de configuration devenu non imputable), `complete_difference = false` ; chaque transaction pointe l'écriture de **son** compte (débitée →
        écriture 1, créditée → écriture 2) ; compte de conversion absent → `failed[]` `FX_ACCOUNT_INVALID` (code de
        37-3b) ; cours source absent → `RATE_UNAVAILABLE`. Une telle conversion se défait en annulant **chacune** de ses
        deux transactions ; entre les deux, le compte de conversion n'est pas soldé (limite écrite au manuel, 38-11d).
-     - Dans les deux formes, `rate_from_chf` en erreur → `failed[]` `FX_RATE_INVALID` (code existant, `errors.rs:591`).
+     - Dans les deux formes, `rate_from_chf` en erreur → `failed[]` `FX_RATE_INVALID` (code existant, `errors.rs:591`),
+       `details.currency` = la devise du côté dont le cours est en cause (revue P1, L4).
      Tests purs du plan (CHF→EUR, EUR→CHF, EUR→USD, montant cible nul refusé) et HTTP des deux formes.
      `plan_conversion` et `create_provider_conversion_in_tx` ne nomment aucun prestataire : 39-11c AC-3 les appelle
      tels quels.
@@ -225,7 +250,9 @@ sans saisie, et de trouver les erreurs des boutiques.
 9. **AC-9 — Réponse et i18n.** `{ accepted: [{ type, bankTransactionIds, journalEntryIds }], failed: [...] }`. Code
    neuf : `PROVIDER_PROPOSAL_STALE` (`FX_RATE_INVALID`, `RATE_UNAVAILABLE`, `FX_ACCOUNT_INVALID` existent) ;
    libellés des genres d'écart et d'« à examiner » (`withdrawal_foreign_currency` compris, servis par l'écran,
-   38-11d) ; messages aux quatre locales ; `crates/kesh-api/src/errors.rs`.
+   38-11d) ; messages aux quatre locales. `PROVIDER_PROPOSAL_STALE` est une **constante du moteur**
+   (`routes/provider_accept.rs`), comme les autres codes de `failed[]` : aucune variante d'`AppError` dans
+   `crates/kesh-api/src/errors.rs` (revue de code P1, L8 b : la fiche nommait `errors.rs`).
 10. **AC-10 — Ce que la story ne fait pas** (phase 2, au fichier d'epic) : aucune écriture de vente, de
     remboursement ni de litige ; aucun rattachement automatique (tout passe par l'acceptation) ; aucun groupe
     d'écritures ; aucun code TVA ; aucune règle à compte en devise ; aucune boutique par préfixe ni code
@@ -349,6 +376,11 @@ proposition ; liste des écarts et des lignes à examiner.
    refuse une vente rattachée entre-temps depuis un autre compte (les lectures du lot ouvrent l'instantané avant
    le verrou de l'écriture : le « corollaire » du doc-comment de `link_entry_in_tx`). Limite écrite : pour un genre
    propre au prestataire (Wise, autre côté légitime), seule la garde de `link_entry_in_tx` s'applique.
+   *(Remplacé à la remédiation de la revue de code P1, H1 et M1 : l'écart ne fermait que le double lien d'un
+   encaissement, laissait ouverts la contre-passation et la modification concurrentes pour tous les genres, et
+   posait les verrous d'intervalle que la doc du geste interdit. Les écritures à rattacher se prennent désormais
+   `FOR UPDATE` avant toute lecture ordinaire du lot ; `other_links_locked` et le motif `entry_linked_elsewhere` sont
+   retirés. Voir « Remédiation de la revue de code P1 ».)*
 3. **Rejugement d'un rattachement** : l'unicité de la vente (« exactement une ») n'est pas recalculée sous verrou ;
    l'identifiant au libellé, la vente non rattachée et la règle de `link_entry_in_tx` (mouvement, devise,
    contre-passation) le sont.
@@ -399,6 +431,82 @@ place du motif d'une conversion sans paire, clé de rattachement, libellés au p
 propre par `EngineProposal` ; comptes supplémentaires à verrouiller par `prepare_accept`. Écran, manuel utilisateur
 et `docs/api-external.md` : 38-11d.
 
+### Remédiation de la revue de code P1 (2026-11-21, Claude Opus 5.5)
+
+Rapport : `kesh-gate-logs/s38-11c2/revue-p1-rapport.md` (0 CRITICAL, 1 HIGH, 4 MEDIUM, 8 LOW). Prémisses relues au
+code avant chaque correctif ; toutes justes.
+
+- **H1 — choix du remède.** Retenu : **les écritures des rattachements prises `FOR UPDATE` en premier acte du lot**
+  (`reconciliation_link::lock_entries_for_update`, par clé primaire, identifiants croissants, appelée par `run_batch`
+  avant `list_provider_balances`), c'est-à-dire la forme « relecture sous verrou de toutes les conditions de
+  l'étape 4.4 » poussée à la source : la vue de la transaction naît **après** l'attente, si bien que les lectures
+  ordinaires du rejugement et l'étape 4.4 de `link_entry_in_tx` (mouvement, devise, contre-passation, liens) lisent
+  tout ce qui a été commité sur l'écriture, et rien ne peut plus la changer jusqu'au commit (contre-passation,
+  modification, suppression et rattachement prennent `je` `FOR UPDATE` en premier acte). C'est le raisonnement que la
+  doc de `link_entry_in_tx` tenait déjà pour le geste seul (« la vue naît après l'attente »), étendu au lot.
+  - **`READ COMMITTED` écarté** : il changerait la sémantique de verrouillage de tout le chemin d'écriture du lot
+    (`journal_entries::create_in_tx`, contrôle central des lignes en devise, lectures `LOCK IN SHARE MODE` des comptes,
+    garde de lettrage écrite « sous `FOR UPDATE` en REPEATABLE READ », `journal_entries.rs:1406`), dont chaque étape a
+    été raisonnée et testée en REPEATABLE READ ; les verrous d'intervalle y disparaîtraient sans qu'aucun test ne le
+    dise.
+  - **Relecture verrouillante après `link_entry_in_tx` écartée** : les conditions 4 et 5 se lisent sur des index
+    secondaires (`bank_transactions.matched_entry_id`, `journal_entries.reverses_entry_id`) ; une lecture
+    verrouillante y pose des verrous d'intervalle, ce que la doc du geste interdit (M1) ; et une lecture
+    verrouillante ne verrouille pas les tables de ses sous-requêtes, qui restent lues dans la vue périmée.
+  - Coût : un verrou de ligne de plus par rattachement, tenu jusqu'au commit du lot (comme l'étape 4.2) ; ordre `je`
+    → `t` sans cycle, écrit dans la doc de `link_entry_in_tx` (« L'absence de cycle »). Garde :
+    `EngineProposal::entries_to_lock` (méthode obligatoire) et `AcceptContext::locked_entries` — une écriture non
+    verrouillée au début du lot n'est jamais rattachée (`DATABASE_ERROR`, invariant ;
+    `rattachement_sans_ecriture_declaree_refuse`).
+  - Tests d'entrelacement sur le modèle de T-race-3 (connexion qui tient l'écriture, lot vu en attente par la sonde
+    `PROCESSLIST`, changement commité) : `rattachement_d_une_vente_contre_passee_pendant_l_attente`
+    (`RECONCILIATION_ENTRY_NOT_LINKABLE`), `…_modifiee_…` (`entry_changed`), `…_rattachee_…` (`entry_linked`, un seul
+    lien). Mutation (une lecture ordinaire avant le pré-verrou) : voir les gates ci-dessous.
+  - Conséquence : `interblocage_rejoue_rattachement` est **retourné** (le lot tient l'écriture et attend la
+    transaction à l'étape 4.1 ; avant, il tenait la transaction et attendait l'écriture), seul test existant dont
+    l'entrelacement change.
+- **M1** : `other_links_locked` (lecture `LOCK IN SHARE MODE` sur `matched_entry_id`) et le motif
+  `entry_linked_elsewhere` retirés, devenus inutiles : la vue née après le verrou voit le lien commité
+  (`entry_linked`, ou l'étape 4.4 pour un genre propre).
+- **M2** : `ProviderSpec::linkable` / `ruleable` (PayPal : `no_extra_kind`), règle unique `admits_link` /
+  `admits_rule` ; tests purs et deux tests du moteur au paramétrage d'essai (`moteur_rattache_un_autre_genre_…`,
+  `moteur_regle_ou_rattache_un_genre_propre_…`).
+- **M3** : `Review<P>`, `ReviewProposal<P>`, `ReviewResponse<P>` génériques, `Review::map_proposals` ; test pur d'une
+  proposition `payout` servie avec les genres communs.
+- **M4** : `create_conversion_in_tx(…, enforce_postable)`, `true` pour la saisie 37-3b, `false` pour le prestataire
+  (AC-8 amendée) ; test `conversion_a_deux_ecritures_sur_comptes_non_imputables`.
+- **LOW faits** : L1 (AC-5 amendée), L3 (`CounterpartyRule::Rule` exige le CHF ; test
+  `regle_a_contrepartie_en_devise_refusee`), L4 (`PlanError::RateInvalid { currency }`, motif constant
+  `conversion_pair_changed` pour les autres refus du plan), L7 (`ProviderEntry::known_chf`, test
+  `ecriture_au_chf_connu` ; reste pour 39-11c dans `kesh-gate-logs/epic-39-40-kiss/wise-conversion-carte-ecarts.md`),
+  L8 (routes PayPal déplacées avec leur commentaire dans `lib.rs` ; AC-9 alignée ; doc d'`EngineProposal` sur le refus
+  qui nomme la transaction principale).
+- **Dette (LOW gardés)** : L2 (unicité non rejugée sous verrou), L5 (un seul site d'interblocage exercé pour les
+  écritures), L6 (raisons de péremption sans test : `conversion_pair_changed`, `provider_settings_changed`,
+  `withdrawal_foreign_currency`) — issues à ouvrir n° 14 à 16 de `kesh-gate-logs/epic-38-kiss/issues-a-ouvrir.md`.
+
+**Gates de la remédiation** (cible propre `kesh-targets/kesh-wt38c2`, par `heavy.sh`) :
+
+- Gate ciblé (base remise à zéro, fmt, clippy workspace, nextest des binaires touchés) avant les commits
+  `d2b532c8`/`77f0254b` : 1045 exécutés, 1044 passés, **1 échec** — `conversion::tests::refus_du_plan`, assertion
+  neuve de L4 fausse (le cours en cause d'un CHF arrondi à zéro est celui de la **cible**, USD, non de la source),
+  corrigée dans le commit `d2b532c8` ; les treize tests neufs ou changés passés (`cible-2.log`, `nextest-full.log`).
+  ⚠️ Le test corrigé n'a pas été rejoué depuis : il le sera au gate complet.
+- Mutations (`mutation.sh`, `mutation.log`) au commit `77f0254b`, quatre appliquées ensemble puis restaurées :
+  H1 (une lecture ordinaire avant le pré-verrou), M2 (`linkable`/`ruleable` ignorés), M4 (`enforce_postable` forcé à
+  `true`), L3 (contrôle de devise de la règle retiré) → **les 7 tests visés rouges, chacun pour sa raison** : les
+  trois entrelacements rendent `accepted` (« rattachement posé sur une vue périmée »), les deux tests du moteur
+  `kind_changed`, la conversion `DATABASE_ERROR` « comptes non imputables », la règle en devise acceptée.
+- Gate backend complet, frontend, E2E complet et `gate-ci` : **non joués**. Le passage lancé après les mutations
+  a été **arrêté par la station** (mémoire critique, le 2026-11-21) pendant le gate backend ; à relancer
+  (`kesh-gate-logs/s38-11c2/tour-p1.sh` sans la mutation, puis `gate-ci.sh`) sur décision de l'orchestrateur.
+
+⚠️ **Pour 38-11d** (worktree `kesh-wt38d`) : elle a fusionné l'ancien `59acd9fd` ; elle doit **reprendre la tête de
+`story/38-11c2`** (commits de remédiation ci-dessus). Changements qui la touchent : motif `entry_linked_elsewhere`
+retiré ; refus `VALIDATION_ERROR` `counterparty_wrong_currency` possible pour une règle ; `FX_RATE_INVALID` d'une
+conversion nomme la devise du côté en cause ; `ReviewResponse` générique (forme JSON inchangée pour PayPal) ; champs
+`linkable`/`ruleable` à ajouter à tout `ProviderSpec` construit ailleurs.
+
 ## Change Log
 
 - 2026-11-20 — fiche rédigée sous la clé 38-11c (phase 1 KISS), non validée.
@@ -441,3 +549,8 @@ et `docs/api-external.md` : 38-11d.
   Agent Record) ; les essais faits sur l'ancienne cible partagée ne comptent pas. Écarts à la fiche : appariement
   des conversions par prédicat (références communes ou croisées), contrôle verrouillant après le rattachement d'un
   encaissement. En revue.
+- 2026-11-21 — revue de code P1 (Claude Opus 5.5, contexte frais) : 0 CRITICAL, 1 HIGH, 4 MEDIUM, 8 LOW ; remédiée
+  (Claude Opus 5.5) : commits `d2b532c8` (code) et `77f0254b` (tests) — H1 par pré-verrou des écritures avant la vue
+  du lot (choix justifié au Dev Agent Record), M1 à M4, L1, L3, L4, L7, L8 ; L2, L5, L6 en dette (issues à ouvrir
+  n° 14 à 16). Mutations vérifiées ; gates complets à rejouer (arrêtés par la station, mémoire). Prompt de la passe
+  P2 complète (Sonnet) : `kesh-gate-logs/s38-11c2/revue-p2-prompt.md`. Statut : `review`.
