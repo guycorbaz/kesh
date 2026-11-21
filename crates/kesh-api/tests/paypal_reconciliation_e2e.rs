@@ -22,11 +22,14 @@ use common::capture_rejeu::CaptureRejeu;
 use jsonwebtoken::{Algorithm, EncodingKey, Header};
 use kesh_api::auth::jwt::Claims;
 use kesh_api::config::Config;
+use kesh_api::routes::provider_accept::{self, EngineProposal};
 use kesh_api::{AppState, build_router};
 use kesh_db::test_fixtures::{
     SeededCompany, attendre_une_requete_en_cours, disable_rounding_to_5_centimes,
     mark_onboarding_complete, seed_accounting_company,
 };
+use kesh_reconciliation::paypal;
+use kesh_reconciliation::provider_review::{EntryKind, Proposal, ProviderKind, ProviderSpec};
 use reqwest::multipart;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -903,6 +906,182 @@ async fn vente_rattachee_entre_la_revue_et_l_acceptation(pool: MySqlPool) {
     assert_eq!(ctx.etat(tx_1a).await, ("pending".into(), None));
 }
 
+/// H1 (revue P1) — **entrelacement forcé**, patron T-race-3
+/// (`reconciliation_link_entry_e2e.rs`) : une connexion `tenue` prend
+/// l'écriture de vente `FOR UPDATE` ; le lot qui la rattache est **vu en
+/// attente** sur ce verrou (sonde `PROCESSLIST`) ; `tenue` change l'écriture
+/// (`changer`) et **commite**. Le lot doit voir le changement : sa vue naît
+/// après l'attente (pré-verrou de l'écriture avant toute lecture ordinaire).
+/// Rend le corps de la réponse ; la transaction reste pending, sans lien.
+///
+/// Sans le pré-verrou, la vue du lot naît à sa première lecture ordinaire
+/// (réglages du prestataire), **avant** l'attente : le changement commité
+/// est invisible, le rattachement se pose (`accepted`), et le test rougit.
+async fn rattacher_pendant_que_l_ecriture_change(
+    ctx: &Ctx,
+    transaction: i64,
+    ecriture: i64,
+    changer: &[(&str, &[i64])],
+) -> Value {
+    let mut tenue = ctx.pool.begin().await.unwrap();
+    let pris: Option<i64> =
+        sqlx::query_scalar("SELECT id FROM journal_entries WHERE id = ? FOR UPDATE")
+            .bind(ecriture)
+            .fetch_optional(&mut *tenue)
+            .await
+            .unwrap();
+    assert_eq!(pris, Some(ecriture));
+    let app = ctx.app.clone();
+    let jwt = ctx.jwt.clone();
+    let corps = json!({ "account": PAYPAL, "proposals": [
+        { "type": "link_entry", "bankTransactionId": transaction, "journalEntryId": ecriture }
+    ] });
+    let route = tokio::spawn(async move {
+        let resp = app
+            .client
+            .post(format!("{}/api/v1/paypal/accept", app.base_url))
+            .bearer_auth(jwt)
+            .json(&corps)
+            .send()
+            .await
+            .unwrap();
+        let status = resp.status().as_u16();
+        (status, resp.json::<Value>().await.unwrap_or(Value::Null))
+    });
+    let vu = attendre_une_requete_en_cours(&ctx.pool, &["journal_entries", "FOR UPDATE"], || {
+        route.is_finished()
+    })
+    .await;
+    if !vu {
+        let (st, b) = route.await.unwrap();
+        panic!("le lot n'a jamais attendu le verrou de l'écriture : rendu {st} {b}");
+    }
+    for (sql, ids) in changer {
+        let mut q = sqlx::query(sql);
+        for id in *ids {
+            q = q.bind(id);
+        }
+        q.execute(&mut *tenue).await.unwrap();
+    }
+    tenue.commit().await.unwrap();
+    let (status, corps) = route.await.unwrap();
+    assert_eq!(status, 200, "{corps}");
+    assert_eq!(
+        corps["accepted"],
+        json!([]),
+        "⛔ rattachement posé sur une vue périmée : {corps}"
+    );
+    assert_eq!(
+        corps["failed"][0]["bankTransactionId"], transaction,
+        "{corps}"
+    );
+    corps
+}
+
+/// H1 — la vente est **contre-passée** pendant que le lot attend : refus
+/// `RECONCILIATION_ENTRY_NOT_LINKABLE` (étape 4.4 : condition 5), aucun lien.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn rattachement_d_une_vente_contre_passee_pendant_l_attente(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let ventes = ctx.ventes().await;
+    let tx_1a = ctx.tx("0TEST00000000001A").await;
+    let corps = rattacher_pendant_que_l_ecriture_change(
+        &ctx,
+        tx_1a,
+        ventes["1A"],
+        &[(
+            "INSERT INTO journal_entries \
+             (company_id, fiscal_year_id, entry_number, entry_date, journal, description, \
+              reverses_entry_id) \
+             SELECT company_id, fiscal_year_id, 999999, entry_date, journal, \
+                    'Contre-passation', id FROM journal_entries WHERE id = ?",
+            &[ventes["1A"]],
+        )],
+    )
+    .await;
+    assert_eq!(
+        corps["failed"][0]["errorCode"], "RECONCILIATION_ENTRY_NOT_LINKABLE",
+        "{corps}"
+    );
+    assert_eq!(ctx.etat(tx_1a).await, ("pending".into(), None));
+    assert_eq!(
+        ctx.count(&format!(
+            "SELECT COUNT(*) FROM bank_transactions WHERE matched_entry_id = {}",
+            ventes["1A"]
+        ))
+        .await,
+        0
+    );
+}
+
+/// H1 — la vente est **modifiée** pendant que le lot attend (l'identifiant
+/// quitte son libellé) : périmée `entry_changed`, aucun lien.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn rattachement_d_une_vente_modifiee_pendant_l_attente(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let ventes = ctx.ventes().await;
+    let tx_1a = ctx.tx("0TEST00000000001A").await;
+    let corps = rattacher_pendant_que_l_ecriture_change(
+        &ctx,
+        tx_1a,
+        ventes["1A"],
+        &[(
+            "UPDATE journal_entries SET description = 'Commande WWW-1001', \
+             version = version + 1 WHERE id = ?",
+            &[ventes["1A"]],
+        )],
+    )
+    .await;
+    assert_eq!(corps["failed"][0]["errorCode"], "PROVIDER_PROPOSAL_STALE");
+    assert_eq!(
+        corps["failed"][0]["details"]["reason"], "entry_changed",
+        "{corps}"
+    );
+    assert_eq!(ctx.etat(tx_1a).await, ("pending".into(), None));
+}
+
+/// H1 et M1 — la vente est **rattachée** depuis une autre transaction pendant
+/// que le lot attend : périmée `entry_linked` (lecture ordinaire, vue née
+/// après l'attente), un seul lien. Remplace la lecture verrouillante
+/// `other_links_locked` et son motif `entry_linked_elsewhere`, retirés.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn rattachement_d_une_vente_rattachee_pendant_l_attente(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let ventes = ctx.ventes().await;
+    let tx_1a = ctx.tx("0TEST00000000001A").await;
+    let autre = ctx.tx("0TEST00000000007G").await;
+    let corps = rattacher_pendant_que_l_ecriture_change(
+        &ctx,
+        tx_1a,
+        ventes["1A"],
+        &[(
+            "UPDATE bank_transactions SET status = 'reconciled', matched_entry_id = ? \
+             WHERE id = ?",
+            &[ventes["1A"], autre],
+        )],
+    )
+    .await;
+    assert_eq!(corps["failed"][0]["errorCode"], "PROVIDER_PROPOSAL_STALE");
+    assert_eq!(
+        corps["failed"][0]["details"]["reason"], "entry_linked",
+        "{corps}"
+    );
+    assert_eq!(ctx.etat(tx_1a).await, ("pending".into(), None));
+    assert_eq!(
+        ctx.etat(autre).await,
+        ("reconciled".into(), Some(ventes["1A"]))
+    );
+    assert_eq!(
+        ctx.count(&format!(
+            "SELECT COUNT(*) FROM bank_transactions WHERE matched_entry_id = {}",
+            ventes["1A"]
+        ))
+        .await,
+        1,
+        "un seul lien"
+    );
+}
+
 /// Cours absent pour le mois : `RATE_UNAVAILABLE` dans `failed[]`, le reste
 /// accepté.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
@@ -1301,8 +1480,11 @@ async fn interblocage_rejoue_conversion_a_une_ecriture(pool: MySqlPool) {
     assert_eq!(ctx.ecritures().await, avant + 1, "une écriture, une fois");
 }
 
-/// Le rattachement : `link_entry_in_tx` tient la transaction (`FOR UPDATE`) et
-/// attend l'écriture de vente que tient le test.
+/// Le rattachement : le lot tient l'écriture de vente (`FOR UPDATE`, prise en
+/// premier acte, H1) et attend, à l'étape 4.1 de `link_entry_in_tx`, la
+/// transaction que tient le test. *(Revue P1, H1 : avant le pré-verrou de
+/// l'écriture, le cycle se formait dans l'autre sens — le lot tenait la
+/// transaction et attendait l'écriture.)*
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn interblocage_rejoue_rattachement(pool: MySqlPool) {
     let ctx = monter(&pool).await;
@@ -1312,19 +1494,343 @@ async fn interblocage_rejoue_rattachement(pool: MySqlPool) {
         &ctx,
         json!({ "type": "link_entry", "bankTransactionId": id, "journalEntryId": ventes["1A"] }),
         (
-            "SELECT id FROM journal_entries WHERE id = ? FOR UPDATE",
-            ventes["1A"],
-        ),
-        &["journal_entries", "FOR UPDATE"],
-        (
             "SELECT id FROM bank_transactions WHERE id = ? FOR UPDATE",
             id,
+        ),
+        &["bank_transactions", "FOR UPDATE"],
+        (
+            "SELECT id FROM journal_entries WHERE id = ? FOR UPDATE",
+            ventes["1A"],
         ),
     )
     .await;
     assert_eq!(
         ctx.etat(id).await,
         ("reconciled".into(), Some(ventes["1A"]))
+    );
+}
+
+// ============================================================
+// Revue P1 — M2, M4, L3, L7 : le moteur au paramétrage d'un autre prestataire
+// ============================================================
+
+/// L'utilisateur du lot, pour appeler le moteur sans route (paramétrage
+/// d'essai d'un autre prestataire).
+fn utilisateur(ctx: &Ctx) -> kesh_api::middleware::auth::CurrentUser {
+    kesh_api::middleware::auth::CurrentUser {
+        user_id: ctx.seeded.admin_user_id,
+        role: kesh_db::entities::Role::Admin,
+        company_id: ctx.seeded.company_id,
+        exp: i64::MAX,
+        api_key_id: None,
+        idle_exp: None,
+    }
+}
+
+/// Le lot `propositions`, accepté par le moteur commun sous le paramétrage
+/// `spec` (pré-vol, une tentative, réponse).
+async fn accepter_par_le_moteur(
+    ctx: &Ctx,
+    spec: &ProviderSpec,
+    propositions: Vec<Proposal>,
+) -> Value {
+    let prepared = provider_accept::prepare_accept(
+        &ctx.pool,
+        &utilisateur(ctx),
+        spec,
+        provider_accept::AcceptBody {
+            account: PAYPAL.to_string(),
+            proposals: propositions,
+        },
+        &[],
+    )
+    .await
+    .expect("pré-vol");
+    let outcome = provider_accept::accept_once(&ctx.pool, spec, &prepared)
+        .await
+        .expect("tentative");
+    serde_json::to_value(prepared.finish(outcome)).unwrap()
+}
+
+fn tout_autre(_: &kesh_db::entities::BankTransaction) -> ProviderKind {
+    ProviderKind::Other
+}
+fn tout_propre(_: &kesh_db::entities::BankTransaction) -> ProviderKind {
+    ProviderKind::Specific("propre")
+}
+fn autre_ou_propre(k: ProviderKind) -> bool {
+    matches!(k, ProviderKind::Other | ProviderKind::Specific(_))
+}
+
+/// M2 — un genre `Other` (Wise : `TRANSFER`, 39-11c AC-4) se rattache à une
+/// écriture quand le prestataire le déclare (`linkable`) ; sous le
+/// paramétrage de PayPal, la même proposition est périmée (`kind_changed`).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn moteur_rattache_un_autre_genre_si_le_prestataire_le_declare(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let ventes = ctx.ventes().await;
+    let id = ctx.tx("0TEST00000000001A").await;
+    let lien = Proposal::LinkEntry {
+        bank_transaction_id: id,
+        journal_entry_id: ventes["1A"],
+    };
+    let sans = ProviderSpec {
+        classify: tout_autre,
+        ..paypal::SPEC
+    };
+    let b = accepter_par_le_moteur(&ctx, &sans, vec![lien.clone()]).await;
+    assert_eq!(b["failed"][0]["details"]["reason"], "kind_changed", "{b}");
+    assert_eq!(ctx.etat(id).await, ("pending".into(), None));
+    let avec = ProviderSpec {
+        linkable: autre_ou_propre,
+        ..sans
+    };
+    let b = accepter_par_le_moteur(&ctx, &avec, vec![lien]).await;
+    assert_eq!(b["failed"], json!([]), "{b}");
+    assert_eq!(b["accepted"][0]["type"], "link_entry");
+    assert_eq!(
+        ctx.etat(id).await,
+        ("reconciled".into(), Some(ventes["1A"]))
+    );
+}
+
+/// M2 — un genre propre au prestataire se règle par une règle quand il le
+/// déclare (`ruleable`), et se rattache (`linkable`) ; sinon périmé.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn moteur_regle_ou_rattache_un_genre_propre_si_le_prestataire_le_declare(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let ventes = ctx.ventes().await;
+    let achat = ctx.tx("0TEST00000000003C").await;
+    let rule_id = ctx.count("SELECT id FROM reconciliation_rules").await;
+    let regle = Proposal::Rule {
+        bank_transaction_id: achat,
+        rule_id,
+        counterparty_account_id: ctx.charge,
+    };
+    let encaissement = ctx.tx("0TEST00000000001A").await;
+    let lien = Proposal::LinkEntry {
+        bank_transaction_id: encaissement,
+        journal_entry_id: ventes["1A"],
+    };
+    let sans = ProviderSpec {
+        classify: tout_propre,
+        ..paypal::SPEC
+    };
+    let b = accepter_par_le_moteur(&ctx, &sans, vec![regle.clone(), lien.clone()]).await;
+    assert_eq!(b["accepted"], json!([]), "{b}");
+    assert_eq!(b["failed"][0]["details"]["reason"], "kind_changed", "{b}");
+    assert_eq!(b["failed"][1]["details"]["reason"], "kind_changed", "{b}");
+    let avec = ProviderSpec {
+        linkable: autre_ou_propre,
+        ruleable: autre_ou_propre,
+        ..sans
+    };
+    let b = accepter_par_le_moteur(&ctx, &avec, vec![regle, lien]).await;
+    assert_eq!(b["failed"], json!([]), "{b}");
+    assert_eq!(b["accepted"][0]["type"], "rule");
+    assert_eq!(b["accepted"][1]["type"], "link_entry");
+    assert_eq!(ctx.etat(achat).await.0, "reconciled");
+    assert_eq!(
+        ctx.etat(encaissement).await,
+        ("reconciled".into(), Some(ventes["1A"]))
+    );
+}
+
+/// M2 — une proposition propre qui délègue un rattachement sans déclarer son
+/// écriture (`entries_to_lock`) est refusée, jamais posée sur une vue née
+/// trop tôt (garde du moteur).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn rattachement_sans_ecriture_declaree_refuse(pool: MySqlPool) {
+    #[derive(Debug, Clone)]
+    struct Oublieuse(Proposal);
+    impl EngineProposal for Oublieuse {
+        fn transaction_ids(&self) -> Vec<i64> {
+            self.0.transaction_ids()
+        }
+        fn primary_transaction_id(&self) -> i64 {
+            self.0.primary_transaction_id()
+        }
+        fn entries_to_lock(&self) -> Vec<i64> {
+            Vec::new()
+        }
+        fn check_shape(&self) -> Result<(), String> {
+            EngineProposal::check_shape(&self.0)
+        }
+        fn accept<'a, 't>(
+            &'a self,
+            tx: &'a mut Transaction<'t, MySql>,
+            ctx: &'a provider_accept::AcceptContext<'a>,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<
+                        Output = Result<
+                            provider_accept::ProviderAccepted,
+                            provider_accept::Refusal,
+                        >,
+                    > + Send
+                    + 'a,
+            >,
+        >
+        where
+            't: 'a,
+        {
+            Box::pin(provider_accept::accept_common(tx, ctx, &self.0))
+        }
+    }
+    let ctx = monter(&pool).await;
+    let ventes = ctx.ventes().await;
+    let id = ctx.tx("0TEST00000000001A").await;
+    let prepared = provider_accept::prepare_accept(
+        &ctx.pool,
+        &utilisateur(&ctx),
+        &paypal::SPEC,
+        provider_accept::AcceptBody {
+            account: PAYPAL.to_string(),
+            proposals: vec![Oublieuse(Proposal::LinkEntry {
+                bank_transaction_id: id,
+                journal_entry_id: ventes["1A"],
+            })],
+        },
+        &[],
+    )
+    .await
+    .unwrap();
+    let outcome = provider_accept::accept_once(&ctx.pool, &paypal::SPEC, &prepared)
+        .await
+        .unwrap();
+    let b = serde_json::to_value(prepared.finish(outcome)).unwrap();
+    assert_eq!(b["failed"][0]["errorCode"], "DATABASE_ERROR", "{b}");
+    assert_eq!(ctx.etat(id).await, ("pending".into(), None));
+}
+
+/// M4 — la conversion à **deux** écritures passe, comme celle à une écriture,
+/// la garde de postabilité désactivée (flux de rapprochement, D-A0) : des
+/// comptes PayPal en devise devenus non imputables ne la refusent pas.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn conversion_a_deux_ecritures_sur_comptes_non_imputables(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let debit = ctx.tx("0TEST00000000004D").await;
+    let credit = ctx.tx("0TEST00000000005E").await;
+    sqlx::query("UPDATE accounts SET postable = FALSE WHERE id IN (?, ?)")
+        .bind(ctx.eur)
+        .bind(ctx.usd)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (s, b) = ctx
+        .accepter(vec![json!({ "type": "conversion", "debitTransactionId": debit, "creditTransactionId": credit })])
+        .await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(b["failed"], json!([]), "{b}");
+    assert_eq!(
+        b["accepted"][0]["journalEntryIds"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2,
+        "{b}"
+    );
+    assert_eq!(ctx.etat(debit).await.0, "reconciled");
+    assert_eq!(ctx.etat(credit).await.0, "reconciled");
+}
+
+/// L3 — une règle dont la contrepartie est un compte **en devise** (même
+/// devise que le solde PayPal) : refusée à l'acceptation
+/// (`counterparty_wrong_currency`), comme la revue ne la propose pas.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn regle_a_contrepartie_en_devise_refusee(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let achat = ctx.tx("0TEST00000000003C").await;
+    sqlx::query("UPDATE reconciliation_rules SET counterparty_account_id = ?")
+        .bind(ctx.frais_eur)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let rule_id = ctx.count("SELECT id FROM reconciliation_rules").await;
+    let (s, b) = ctx
+        .accepter(vec![json!({ "type": "rule", "bankTransactionId": achat, "ruleId": rule_id, "counterpartyAccountId": ctx.frais_eur })])
+        .await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(b["failed"][0]["errorCode"], "VALIDATION_ERROR", "{b}");
+    assert_eq!(
+        b["failed"][0]["details"]["reason"],
+        "counterparty_wrong_currency"
+    );
+    assert_eq!(ctx.etat(achat).await.0, "pending");
+}
+
+/// L7 — le point d'entrée d'un **CHF connu** de `write_provider_entry` (Wise :
+/// carte payée en devise, montant CHF du marchand, 39-11c) : la ligne du
+/// solde EUR porte ce CHF, au cours déduit `rate_from_chf`, provenance
+/// `manual` ; la contrepartie CHF porte le même CHF.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ecriture_au_chf_connu(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let achat = ctx.tx("0TEST00000000003C").await;
+    let c = ctx.seeded.company_id;
+    let mut tx = pool.begin().await.unwrap();
+    let t = kesh_db::repositories::provider_review::transactions_by_ids(&mut *tx, c, &[achat])
+        .await
+        .unwrap()
+        .remove(&achat)
+        .unwrap();
+    let balances = kesh_db::repositories::bank_accounts::list_provider_balances(
+        &mut *tx,
+        c,
+        paypal::SPEC.provider,
+        PAYPAL,
+    )
+    .await
+    .unwrap();
+    let contexte = provider_accept::AcceptContext {
+        spec: &paypal::SPEC,
+        company_id: c,
+        acteur: kesh_db::entities::audit_log::Acteur {
+            user_id: ctx.seeded.admin_user_id,
+            api_key_id: None,
+        },
+        account: PAYPAL,
+        balances: balances.into_iter().map(|b| (b.account.id, b)).collect(),
+        locked_entries: Default::default(),
+    };
+    let entry = provider_accept::write_provider_entry(
+        &mut tx,
+        &contexte,
+        provider_accept::ProviderEntry {
+            transaction: &t,
+            ledger_account_id: ctx.eur,
+            ledger_currency: "EUR",
+            counterparty_account_id: ctx.charge,
+            counterparty_currency: None,
+            kind: EntryKind::Rule,
+            project_id: None,
+            known_chf: Some(dec!(47.00)),
+        },
+    )
+    .await
+    .expect("écriture");
+    let lignes: Vec<LigneTaux> = sqlx::query_as(
+        "SELECT account_id, debit, credit, amount_currency, exchange_rate, rate_source \
+         FROM journal_entry_lines WHERE entry_id = ? ORDER BY line_order",
+    )
+    .bind(entry)
+    .fetch_all(&mut *tx)
+    .await
+    .unwrap();
+    tx.rollback().await.unwrap();
+    assert_eq!(
+        lignes,
+        vec![
+            (
+                ctx.eur,
+                dec!(0.00),
+                dec!(47.00),
+                Some(dec!(50.00)),
+                Some(dec!(0.94)),
+                Some("manual".to_string())
+            ),
+            (ctx.charge, dec!(47.00), dec!(0.00), None, None, None),
+        ]
     );
 }
 
