@@ -1,6 +1,6 @@
 # Story 38-12b : bouton « Télécharger depuis PayPal », manuels, E2E
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-20, branche `epic/38-paypal`. Epic 38, **phase 2**. **Dépend de** : 38-12a (routes), 38-11d
 (la page PayPal `frontend/src/routes/(app)/reconciliation/paypal/+page.svelte`, son import CSV et son compte rendu,
@@ -226,6 +226,17 @@ tâche en cours (`details.from`, `details.to`), que le dialogue annonce quand el
   qui garde L3. **LOW-1** (corrigé, test seulement) : la retenue du serveur simulé (`MockReply.hold`) appartient au
   serveur lancé, `ProviderMock.release()` la libère, `close()` aussi (plus de promesse de module dans la spec). Une passe
   **P4 ciblée** sur `369963704` suit (`kesh-gate-logs/s38-12b/revue-p4-prompt.md`).
+- 2026-11-22 — revue de code P4 ciblée sur `369963704` (une lentille ; rapport `kesh-gate-logs/s38-12b/revue-p4-rapport.md`) :
+  **0 CRITICAL, 0 HIGH, 0 MEDIUM, 0 LOW** — la boucle se clôt. Son observation hors finding (antérieure au commit :
+  `server.close()` du serveur simulé attend la fin d'une connexion gardée ouverte, quelques secondes) est appliquée,
+  code de test seul : `server.closeAllConnections()` après `server.close()` (`provider-mock.ts`) ;
+  `paypal-download.spec.ts` rejouée : **3 passés** (27,6 s, `p4-e2e.console`, `e2e-p4.log`, arbre de travail sur
+  `fe396bd3e` + ce seul changement, commité ensuite sans autre modification).
+- 2026-11-22 — **synthèse de la revue de code** : P1 (complète, Opus 5.5) 1 MEDIUM, 6 LOW → P2 (complète, Sonnet 5.5)
+  0 au-dessus de LOW, 7 LOW, cinq corrigés en production → P3 (ciblée, Sonnet 5.5) 1 HIGH, 1 LOW, nés de la remédiation
+  P2 → P4 (ciblée sur la remédiation P3 ; modèle non consigné au rapport) 0 finding. Tendance au-dessus de LOW :
+  1 → 0 → 1 → 0 ; la P3 illustre le motif « la sévérité se déplace vers ce qu'on vient d'écrire ». Aucun reclassement
+  en dette ; les LOW non corrigés (P1 L5, L6 ; P2 L5, L7) sont au Dev Agent Record, à ouvrir en issue. Story `done`.
 
 ## Dev Agent Record
 
