@@ -145,6 +145,8 @@ interface BankAccountSummaryRaw {
 	statementDate?: string | null;
 	ledgerBalanceAtStatement?: string | null;
 	statementGap?: string | null;
+	// Story 38-12b — liste seulement ; absent d'un serveur antérieur et des réponses d'un compte.
+	providerApi?: ProviderApiStatus | null;
 }
 
 function parseBankAccount(raw: BankAccountSummaryRaw): BankAccountSummary {
@@ -171,6 +173,7 @@ function parseBankAccount(raw: BankAccountSummaryRaw): BankAccountSummary {
 		statementDate: raw.statementDate ?? null,
 		ledgerBalanceAtStatement: raw.ledgerBalanceAtStatement ?? null,
 		statementGap: raw.statementGap ?? null,
+		providerApi: raw.providerApi ?? null,
 	};
 }
 
