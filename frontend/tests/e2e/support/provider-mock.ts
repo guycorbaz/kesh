@@ -115,7 +115,11 @@ export async function startProviderMock(port: number, routes: ProviderMockRoute[
 		release: () => release(),
 		close: () => {
 			release();
-			return new Promise<void>((resolve) => server.close(() => resolve()));
+			// `server.close()` attend la fin des connexions gardées ouvertes (keep-alive,
+			// ~5 s) : on les ferme aussitôt (revue P4, observation).
+			const closed = new Promise<void>((resolve) => server.close(() => resolve()));
+			server.closeAllConnections();
+			return closed;
 		},
 	};
 }
