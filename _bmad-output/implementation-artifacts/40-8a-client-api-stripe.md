@@ -1,6 +1,6 @@
 # Story 40-8a : client de l'API Stripe — clé restreinte en variable d'environnement, versements et transactions de solde
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-20, branche `epic/40-stripe`, numéros de ligne relevés sur `origin/main` au commit `fd04099f`.
 Epic 40, **phase 2** (décision de Beat du 2026-11-20, § *Phase 2* du fichier d'epic). **Dépend de** : la phase 1 (40-7a à
@@ -200,6 +200,17 @@ en variable d'environnement (`KESH_STRIPE_<n>_ACCOUNT`, `KESH_STRIPE_<n>_KEY`).
  : valeur vide = absente, séries 1 à 3 aux deux compose et à
   `.env.example` (corrections du socle relevées par la P2 de la 38-12).
 - 2026-11-22 — amendement du 22.11 (développement), puis développement : statut `review`. Voir le Dev Agent Record.
+- 2026-11-22 — revue de code P1 (complète, une lentille ; Claude Sonnet 5.5, contexte frais ; rapport
+  `kesh-gate-logs/s40-8a/revue-p1-rapport.md`) : **0 CRITICAL, 0 HIGH, 0 MEDIUM, 6 LOW** — la boucle se clôt sur cette
+  passe (aucun finding au-dessus de LOW). Trend : P1 0 > LOW. LOW traités **par des tests seuls, sans ligne de
+  production** : L1 (branchement de `parallel` : pic des requêtes `balance_transactions` en vol égal à `parallel`, 1 puis
+  2, `parallel_borne_les_transactions_en_vol`), L2 (fin de fenêtre ramenée à maintenant, `arrival_date[lt]` = maintenant,
+  `periode_jusqu_a_aujourd_hui_finit_maintenant`), L3 (les quatre branches d'erreur : `trop_de_pages`,
+  `corps_trop_grand`, `transport_definitif_sans_reprise`, `delai_serveur_408_repris_puis_indisponible`), L4 (cycle de
+  curseur de longueur 2 borné par `MAX_PAGES`, `cycle_de_curseur_borne_par_max_pages` ; non détecté comme curseur
+  immobile, limite assumée, sans correction). L5 (`check_id_lengths` non appliqué par le client) et L6 (textes de
+  configuration au présent avant la fonction) reportés à la fiche de la 40-8b (amendement du 22.11 de la 40-8b). Le
+  correctif ne touchant aucune ligne de production, aucune passe ciblée de plus. Statut `done`.
 
 ## Dev Agent Record
 
@@ -249,6 +260,9 @@ pour les 104. Les identifiants et les montants des fixtures sont inventés.
 
 26 : `stripe/rows.rs` 10, `stripe/mod.rs` 3, `tests/stripe_client.rs` 13 ; `provider_env.rs` inchangé (8).
 
+Après la revue P1 (de `dff8e379` à `HEAD`, recompté par la même commande) : **+7** dans `tests/stripe_client.rs`
+(13 → 20), soit **33** pour la story. Aucun test de `src/` ajouté.
+
 ### Mutations (copie `git archive` hors dépôt, cible cargo propre, supprimées ensuite ; journal `kesh-gate-logs/s40-8a/mutations.log`)
 
 Copie non mutée verte d'abord (30 tests du filtre `binary(stripe_client) | test(stripe::)`). Onze mutations, **onze
@@ -269,6 +283,16 @@ mutation du 401 ne compilait pas (`match` non exhaustif) : non comptée, remplac
   (`kesh-gate-logs/s40-8a/gate-backend.log`) ; `cargo publish --dry-run -p kesh-import` vert (`valid_id` public).
 - Frontend : non touché, aucun gate frontend. E2E : aucune spec ajoutée, aucun E2E (règle de la nuit du 22.11).
   `gate-ci.sh` et E2E complet à la branche d'intégration, en fin de nuit.
+
+### Gates de clôture (tests de la revue P1, au dernier commit)
+
+- Gate ciblé sur la cible `kesh-targets/kesh-wt40e` (`kesh-gate-logs/s40-8a/cloture-cible.log`, voie sans base de
+  `heavy.sh`) : `cargo fmt --all -- --check` vert, `cargo clippy --workspace --all-targets -- -D warnings` vert, nextest
+  `binary(stripe_client) | (kind(lib) & test(stripe::))` : **37 exécutés, 37 passés** (20 de `stripe_client`, 17 de la
+  bibliothèque). Aucune ligne de production touchée : le nextest complet de `f203c135` (6526) reste celui de la story.
+- Mutation de contrôle des nouveaux tests : non jouée (aucune ligne de production ; le test L1 exige un pic **égal** à
+  `parallel` pour 1 et pour 2, si bien qu'un `fetch_rows` qui ignorerait `parallel` rougirait sur l'un des deux — par
+  lecture, non par exécution).
 
 ### Hors périmètre, relevé
 
