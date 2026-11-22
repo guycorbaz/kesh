@@ -1,6 +1,6 @@
 # Story 40-9 : solde de la dette de l'Epic 40 (Stripe)
 
-Status: ready-for-dev
+Status: in-progress
 
 *Fiche rédigée le 2026-11-22, branche `story/40-9`, partie d'`epic/40-stripe` à `b321f24ad` (fusion de la 40-8b).
 Story de solde de l'Epic 40 (`CLAUDE.md`, § *Priorités des défauts* : « une story de solde à la fin de chaque epic ») ;
@@ -65,12 +65,12 @@ story de solde 40-9 »). Chaque prémisse a été relue au code de `b321f24ad` :
   `list_provider_balances` avec `ledger_currency = None` ; il rougit sans la garde (mutation).
 - **AC-2 (C2)** : la catégorie, dans le libellé, est bornée à `PROVIDER_TYPE_MAX_CHARS` (comme `provider_type`) ; le
   doc-comment de `label` dit la borne. Test unitaire : catégorie de 1000 caractères, avec une **assertion de montage**
-  (le libellé composé avec la catégorie non bornée et une description vide dépasse `DETAILS_MAX_CHARS`, sans quoi la
-  sonde ne prouve rien) → le libellé de la transaction et celui des frais (`provider_lines_of_row`, champ `details`)
+  posée sur la donnée (`row.category.chars().count() > DETAILS_MAX_CHARS` : sans correctif, le budget de la
+  description est nul et la fin serait coupée ; sans cette garde, la sonde ne prouverait rien) → le libellé de la transaction et celui des frais (`provider_lines_of_row`, champ `details`)
   finissent par `) - <versement>` et tiennent dans `DETAILS_MAX_CHARS` ; rougit sans le correctif.
 - **AC-3 (C3)** : l'exercice par défaut de la page des prestataires se choisit au jour de Zurich (`todayInZurich()`),
   comme la période proposée au téléchargement. Test Vitest d'une page qui monte `ProviderReviewPage` (fichier neuf à côté
-  de `reconciliation/stripe/stripe-page.test.ts`, avec ses propres simulations : deux exercices calendaires 2025 et
+  de `frontend/src/routes/(app)/reconciliation/stripe/stripe-page.test.ts`, avec ses propres simulations : deux exercices calendaires 2025 et
   2026) : fuseau du processus posé explicitement à `UTC` (`process.env.TZ`, rendu après le test, comme
   `settings/api-keys/api-keys-page.test.ts:115-128`), `vi.useFakeTimers({ toFake: ['Date'] })` à
   `2025-12-31T23:30:00Z` (jour local 31.12.2025, jour de Zurich 01.01.2026) → la revue est demandée pour l'exercice 2026.
@@ -106,7 +106,7 @@ story de solde 40-9 »). Chaque prémisse a été relue au code de `b321f24ad` :
 
 1. Étape 0 : relire D5 au code (`is_provider()` du `PATCH`/`PUT`, `provider IS NOT NULL` d'`accounts.rs`).
 2. C1 (kesh-db) + test ; C2 (kesh-api) + test.
-3. C3, C4, C5 (frontend) + tests ; i18n (C5) aux quatre locales ; garde `sitesTotal`.
+3. C3 (import de `todayLocal` retiré de `ProviderReviewPage.svelte`), C4, C5 (frontend) + tests ; i18n (C5) aux quatre locales ; garde `sitesTotal`.
 4. D1 à D6.
 5. Mutations hors dépôt, une à la fois, tuées sur assertion nommée.
 6. Gates : fmt, clippy workspace, nextest complet, frontend complet (`check`, `lint-i18n-ownership`, Vitest, `build`) ;
@@ -147,5 +147,10 @@ story de solde 40-9 »). Chaque prémisse a été relue au code de `b321f24ad` :
   caractères et assertion de montage), L1 (`PROVIDER_LEDGER_REQUIRED` retiré de la liste : refus du réglage, non de
   l'import), L2 (test de C5 qui tue la mutation du repli ; limite du filtre tracée), L3 (`api-external.md:1066` : motifs
   d'acceptation exacts), L4 (40-7c P1 L4 nommée), L5 (registre `in-progress`, D5 marqué traité). Passe P3 à lancer.
+- 2026-11-22 — validation P3 (complète, une lentille, Claude Sonnet, contexte frais ; rapport
+  `kesh-gate-logs/s40-9/validation-p3-rapport.md`) : **0 C, 0 H, 0 M, 3 L** — boucle close. LOW remédiés dans la fiche :
+  L1 (registre et fichier d'epic mis à l'état réel au début du développement), L2 (assertion de montage posée sur la
+  donnée, `compose` étant privée), L3 (chemin du test d'AC-3, retrait de l'import de `todayLocal`). Trend : P1 0/0/2/5 →
+  P2 0/0/1/5 → P3 0/0/0/3. Statut `in-progress` (développement).
 
 ## Dev Agent Record
