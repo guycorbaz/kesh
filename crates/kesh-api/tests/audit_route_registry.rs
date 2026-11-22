@@ -1658,8 +1658,8 @@ fn the_replay_partition_is_what_the_story_declares() {
     );
     assert_eq!(exemptees, 3, "full_import, /seed, /reset");
     assert_eq!(
-        sans_ecriture, 131,
-        "129 routes de lib.rs (40-7b : + 1 — l'import du rapport Stripe) — 128 avant (38-12a : + 1 — le téléchargement par l'API PayPal) — 127 avant (38-11b : + 1 — l'import du CSV PayPal) — 126 avant (v0190-nom-societe : + 1 — le nom de la société, unie à l'Epic 37 par l'intégration de la 0.19.0) — 125 avant (37-5 : + 1 — l'aperçu de la réévaluation de fin d'exercice) — 124 avant (37-2 : + 5 — la récupération des cours de change, la saisie et le ↑ d'un cours retenu, l'acquittement des corrections, les genres d'un exercice) — 119 avant (37-1 : + 1 — le réglage multi-devises de la société) — 118 avant (34-2 : − 1 — la création d'un compte bancaire, reclassée \
+        sans_ecriture, 132,
+        "130 routes de lib.rs (40-8b : + 1 — le téléchargement par l'API Stripe) — 129 avant (40-7b : + 1 — l'import du rapport Stripe) — 128 avant (38-12a : + 1 — le téléchargement par l'API PayPal) — 127 avant (38-11b : + 1 — l'import du CSV PayPal) — 126 avant (v0190-nom-societe : + 1 — le nom de la société, unie à l'Epic 37 par l'intégration de la 0.19.0) — 125 avant (37-5 : + 1 — l'aperçu de la réévaluation de fin d'exercice) — 124 avant (37-2 : + 5 — la récupération des cours de change, la saisie et le ↑ d'un cours retenu, l'acquittement des corrections, les genres d'un exercice) — 119 avant (37-1 : + 1 — le réglage multi-devises de la société) — 118 avant (34-2 : − 1 — la création d'un compte bancaire, reclassée \
          `Rejouee`) — 119 avant (33-5 : + 1 — l'adresse de la société ; v0172-session : + 2 — le réglage de la durée d'inactivité \
          et le battement d'activité ; v017-4a : + 4 — la saisie fournisseur et la complétion \
          d'import reclassées, le `PUT` et le `DELETE` d'un brouillon) — 112 avant \
@@ -1697,7 +1697,9 @@ fn the_replay_partition_is_what_the_story_declares() {
     // Story 40-7b (Epic 40), unie à la 38-11c2 par la 40-7c : 164 → 165 (l'import du
     // rapport Stripe).
     // Story 40-7c (Epic 40) : 165 → 166 (l'acceptation de la revue Stripe).
-    assert_eq!(tout.len(), 166);
+    // Story 40-8b (Epic 40, phase 2) : 166 → 167 (le téléchargement par l'API
+    // Stripe).
+    assert_eq!(tout.len(), 167);
 }
 
 /// Visiteur `syn` d'un fichier de routes : relève chaque appel à la primitive

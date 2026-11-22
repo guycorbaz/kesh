@@ -3484,6 +3484,17 @@ La liste des comptes bancaires montre sous le nom «~Stripe · <compte> · <devi
 
 \paragraph{Importer.} Sur la page Stripe, choisissez le compte Stripe, puis \emph{Importer un rapport Stripe}. Kesh répartit le rapport par devise, chacune vers le compte bancaire de sa devise~; une devise sans compte bancaire fait refuser tout le fichier, qui nomme les devises à créer. Chaque ligne donne une transaction pour son \textbf{brut} et une pour ses \textbf{frais}, et chaque versement une transaction de son montant net~; une transaction déjà importée est ignorée et comptée, si bien qu'un rapport qui chevauche le précédent s'importe sans doublon. Le compte rendu, affiché jusqu'au prochain import, donne par devise les transactions insérées et les doublons, puis les versements lus (lignes et net). Les ventes, elles, viennent de vos boutiques~: \textbf{importez-les avant le rapport Stripe}, pour que chaque charge trouve sa vente.
 
+\paragraph{Télécharger depuis Stripe.}\label{sec:stripe-telecharger} Quand l'administrateur a posé une clé restreinte en lecture pour ce compte Stripe (manuel d'administration, \emph{Télécharger les versements Stripe par l'API}), le bouton \emph{Télécharger depuis Stripe} paraît à côté de \emph{Importer un rapport Stripe}, pour les comptables et les administrateurs~; la mention «~bac à sable~» signale une clé de test, dont les versements ne sont pas réels. Sans clé, le bouton n'apparaît pas et l'import du rapport reste seul (l'administrateur lit «~Téléchargement depuis Stripe non configuré pour ce compte~»). Le bouton ouvre la même fenêtre que celle de PayPal (\S\ref{sec:paypal-telecharger})~:
+\begin{itemize}
+    \item \textbf{La période}~: \emph{Du} et \emph{Au}, proposés sur l'exercice choisi, la fin ramenée à aujourd'hui~; elle désigne les versements \textbf{payés} dont l'\textbf{arrivée} sur le compte de versement tombe dans la période, en \textbf{dates de Zurich} --- le même découpage que le rapport des versements. Aucune limite de durée (une période de plus de trente ans est refusée)~; une fin future est ramenée à aujourd'hui.
+    \item \textbf{Les délais}~: un versement récent peut tarder à paraître chez Stripe~; relancez la période plus tard, il arrive sans doublon.
+    \item \textbf{La progression}~: Kesh lit d'abord la liste des versements, puis les transactions de chaque versement --- «~versement 2/12~», avec une barre. Quand Stripe limite le nombre de demandes, la fenêtre l'annonce et Kesh reprend seul.
+    \item \textbf{Le compte rendu} est celui de l'import du rapport (par devise, insérées et doublons, puis les versements lus), suivi des \textbf{versements manuels} de la période, que le téléchargement ne lit pas~: à examiner, comme dans Stripe~; la revue de la page se recharge.
+    \item \textbf{Un échec} dit pourquoi --- clé refusée, droits insuffisants, Stripe indisponible ou limitant les demandes même après six essais, devise sans compte bancaire, réponse illisible (dont un versement dont les transactions ne font pas le montant)~: \textbf{rien n'a été enregistré}, relancez.
+    \item \textbf{Fermer la fenêtre n'arrête pas le téléchargement}, et un seul tourne à la fois par compte, comme pour PayPal.
+\end{itemize}
+\textbf{Mélanger le rapport et le téléchargement} est sans risque~: les doublons se reconnaissent à l'identifiant de la transaction Stripe (\texttt{txn\_\dots}) et du versement (\texttt{po\_\dots}), quelle que soit la source. Relancer une période déjà téléchargée rend «~0 transaction insérée~».
+
 \paragraph{Le schéma comptable.} La boutique passe la \textbf{vente} au débit du compte de transit, dans la devise de la vente, l'identifiant de la charge (\texttt{ch\_\dots}) au libellé. Le rapport de Stripe porte ensuite la \textbf{charge} (le brut encaissé), ses \textbf{frais}, et le \textbf{versement} du net vers votre compte de versement. Kesh rattache la charge à la vente, sans nouvelle écriture~; il écrit les frais (compte de frais contre le compte de transit) et le versement (compte du plan du compte de versement au débit, compte de transit au crédit), en devise, au cours mensuel de la société, datés de la transaction et au libellé de la transaction, sans code TVA.
 
 \paragraph{Les propositions.} En tête de page, à côté du compte Stripe, choisissez l'\textbf{exercice}~: la page liste les propositions, les écarts et les lignes «~à examiner~» des transactions en attente du compte Stripe datées dans l'exercice. Rien n'est coché d'office~:
@@ -3513,7 +3524,7 @@ Cochez les propositions (ou \emph{Tout cocher}), puis \emph{Accepter la sélecti
     \item Aucun code TVA n'est posé~; aucune écriture de vente n'est créée (elles viennent des boutiques).
     \item Aucune conversion entre devises~: le compte de versement est de la devise du solde. Les monnaies à trois décimales ne sont pas servies.
     \item Un petit écart de change peut rester au compte de transit (vente et versement à des cours différents)~: la réévaluation de fin d'exercice le traite (\S\ref{sec:reevaluation-devises}).
-    \item Pas de téléchargement automatique depuis Stripe~: le rapport s'exporte et s'importe à la main.
+    \item Le téléchargement se lance à la main, depuis la page (aucun téléchargement périodique)~; les versements manuels ne se téléchargent pas.
 \end{itemize}
 
 %%─────────────────────────────────────────────────────────────────────────────

@@ -191,6 +191,8 @@ Chaque passage automatique qui a un cours à récupérer revérifie aussi le moi
 
 \begin{sloppypar}
 \paragraph{Accès sortant : le téléchargement depuis PayPal.}\label{sec:acces-sortant-paypal} Quand un compte PayPal a ses identifiants dans l'environnement (\S\ref{sec:paypal-api}), Kesh demande ses transactions en \textbf{HTTPS} (port 443) à l'hôte de PayPal --- \texttt{api-m.paypal.com} par défaut, \texttt{api-m.sandbox.paypal.com} pour un essai (\texttt{KESH\_PAYPAL\_BASE\_URL}) ---, sans suivre de redirection. Cet accès n'a lieu \textbf{que} lorsqu'un utilisateur lance un téléchargement depuis la page PayPal~: jamais au démarrage, jamais de lui-même. Le mandataire sortant éventuel se règle comme pour les cours de change (\texttt{HTTPS\_PROXY}, ci-dessus).
+
+\paragraph{Accès sortant : le téléchargement depuis Stripe.}\label{sec:acces-sortant-stripe} De même, quand un compte Stripe a sa clé dans l'environnement (\S\ref{sec:stripe-api}), Kesh lit ses versements en \textbf{HTTPS} (port 443) à \texttt{api.stripe.com} (\texttt{KESH\_STRIPE\_BASE\_URL}), sans suivre de redirection, et \textbf{seulement} quand un utilisateur lance un téléchargement depuis la page Stripe.
 \end{sloppypar}
 
 \subsubsection{Changer le port d'écoute (conflit port 80, ex. Synology DSM Web Station)}
@@ -881,6 +883,21 @@ série entièrement vide est absente, une série incomplète refuse le démarrag
     \bottomrule
 \end{tabularx}
 
+\paragraph{Téléchargement des versements Stripe par l'API.}\mbox{}\\
+Une série de deux variables par compte Stripe, \texttt{n} de 1 à 9~; une
+série entièrement vide est absente, une série incomplète ou une clé qui n'est
+pas restreinte refuse le démarrage (détail~: \S\ref{sec:stripe-api}).\par\noindent
+\begin{tabularx}{\linewidth}{>{\bfseries\ttfamily}lXl}
+    \toprule
+    \keshtableheader{Variable} & \keshtableheader{Description} & \keshtableheader{Défaut} \\
+    \midrule
+    KESH\_STRIPE\_<n>\_ACCOUNT & Libellé du compte Stripe, identique à celui des comptes bancaires de Kesh. & \emph{vide} \\
+    KESH\_STRIPE\_<n>\_KEY & Clé restreinte en lecture, \texttt{rk\_live\_…} ou \texttt{rk\_test\_…} (\textbf{secret} --- jamais journalisé). & \emph{vide} \\
+    KESH\_STRIPE\_BASE\_URL & Hôte de l'API (\texttt{https}). & \texttt{https://api.stripe.com} \\
+    KESH\_STRIPE\_PARALLEL & Versements lus en même temps (et requêtes simultanées), de 1 à 6. & \texttt{1} \\
+    \bottomrule
+\end{tabularx}
+
 \paragraph{Développement / test (jamais en production).}\mbox{}\\
 \begin{tabularx}{\linewidth}{>{\bfseries\ttfamily}lXl}
     \toprule
@@ -1189,6 +1206,70 @@ La configuration est contrôlée \textbf{à chaque démarrage}, que le télécha
 \end{itemize}
 
 L'accès réseau sortant que demande le téléchargement est décrit au \S\ref{sec:acces-sortant-paypal}.
+
+\subsection{Télécharger les versements Stripe par l'API}\label{sec:stripe-api}
+
+Le rapport des versements d'un compte Stripe s'importe en CSV depuis la page Stripe (manuel utilisateur, \emph{Comptes Stripe}). Kesh peut aussi lire ces versements \textbf{par l'API de Stripe}, pour une période que choisit le comptable~: les mêmes lignes que le rapport CSV, les mêmes doublons, le même rapprochement~; un CSV et un téléchargement de la même période se mélangent sans rien doubler. Il faut pour cela une \textbf{clé restreinte en lecture} par compte Stripe, que l'administrateur pose dans l'environnement du serveur. Sans elle, le bouton \emph{Télécharger depuis Stripe} n'apparaît pas, l'import du CSV reste seul, et l'administrateur voit sur la page Stripe la ligne «~Téléchargement depuis Stripe non configuré pour ce compte~».
+
+\subsubsection{Créer la clé restreinte chez Stripe}
+
+\begin{enumerate}
+    \item Au tableau de bord de Stripe, connecté au compte à télécharger, ouvrez \emph{Développeurs} → \emph{Clés API} et créez une \textbf{clé restreinte} (et non une clé secrète).
+    \item Donnez-lui le droit \textbf{Lecture} (\emph{Read}) sur les \textbf{versements} (\emph{Payouts}) et sur les \textbf{transactions de solde} (\emph{Balance}, \emph{Balance transactions}), et \textbf{Aucun} (\emph{None}) sur tout le reste. La clé ne peut alors que lire.
+    \item Recopiez la clé, qui commence par \texttt{rk\_live\_} (données réelles) ou \texttt{rk\_test\_} (environnement de test), dans l'environnement du serveur (ci-dessous). Une clé secrète \texttt{sk\_…} \textbf{refuse le démarrage}~: elle donnerait tous les droits.
+\end{enumerate}
+
+\begin{keshwarning}
+\textbf{À vérifier au tableau de bord de Stripe} --- non confirmé par Kesh~: les noms exacts des droits à donner (ils peuvent varier d'une version du tableau de bord à l'autre) et le statut que Stripe rend quand un droit manque. Un droit manquant se lit en \texttt{PROVIDER\_PERMISSION\_DENIED} ou en \texttt{PROVIDER\_API\_ERROR}~: devant l'un ou l'autre, \textbf{vérifiez d'abord les droits de la clé}. Une clé refusée (révoquée, mal recopiée) se lit en \texttt{PROVIDER\_AUTH\_FAILED}. Rien n'est écrit.
+\end{keshwarning}
+
+\textbf{Ce que la clé ne fait jamais}~: écrire chez Stripe. Kesh n'envoie que des requêtes \texttt{GET} --- la liste des versements payés de la période, puis les transactions de solde de chaque versement automatique~; il ne paie, ne rembourse et ne modifie rien.
+
+\subsubsection{Poser la clé}
+
+Une \textbf{série} par compte Stripe, \texttt{n} de 1 à 9~:
+\begin{itemize}
+    \item \texttt{KESH\_STRIPE\_<n>\_ACCOUNT}~: le libellé du compte Stripe, \textbf{identique} à celui des comptes bancaires de ce compte dans Kesh (la casse ne compte pas). Ce libellé est \textbf{propre à l'installation}~: deux sociétés de la même installation qui donnent le même libellé à leur compte Stripe atteignent le même compte chez Stripe~;
+    \item \texttt{KESH\_STRIPE\_<n>\_KEY}~: la clé restreinte.
+\end{itemize}
+Et, pour toutes les séries~:
+\begin{itemize}
+    \item \texttt{KESH\_STRIPE\_BASE\_URL}~: l'hôte de l'API, \texttt{https://api.stripe.com} par défaut~; ne pas le définir en production. Seul \texttt{https} est admis (\texttt{http} vers \texttt{127.0.0.1} ou \texttt{localhost} seulement, pour les tests). Le mode se lit à la clé, non à l'hôte~: une clé \texttt{rk\_test\_} fait montrer «~bac à sable~» à la page Stripe~;
+    \item \texttt{KESH\_STRIPE\_PARALLEL}~: le nombre de versements lus en même temps (et de requêtes simultanées), \textbf{1} par défaut, 6 au plus. Une requête à la fois suffit d'ordinaire~; au-delà, Stripe peut limiter le débit~: Kesh fait alors une pause et reprend la même requête (six essais au plus, attente de \texttt{Retry-After} bornée à 120~s, sinon 5, 10, 20, 40 puis 60~s).
+\end{itemize}
+
+\textbf{Où les poser.} Comme pour PayPal~: au \keshpath{.env}, que \keshpath{docker-compose.yml} et \keshpath{docker-compose.prod.yml} transmettent pour les séries \textbf{1 à 3}, \texttt{KESH\_STRIPE\_BASE\_URL} et \texttt{KESH\_STRIPE\_PARALLEL} (lignes commentées de \keshpath{.env.example}). \textbf{Au-delà de trois comptes}, ajoutez \texttt{KESH\_STRIPE\_4\_ACCOUNT} et \texttt{KESH\_STRIPE\_4\_KEY} (et suivantes) \textbf{aussi} sous \texttt{environment:} du fichier de composition. Tout est lu \textbf{une fois}, au démarrage~: redémarrez le conteneur après un changement.
+
+\begin{center}
+\begin{tabularx}{\linewidth}{>{\bfseries\ttfamily}lXl}
+    \toprule
+    \keshtableheader{Variable} & \keshtableheader{Description} & \keshtableheader{Défaut} \\
+    \midrule
+    KESH\_STRIPE\_<n>\_ACCOUNT & Libellé du compte Stripe de Kesh. & --- \\
+    KESH\_STRIPE\_<n>\_KEY & Clé restreinte en lecture (\textbf{secret} --- jamais journalisé). & --- \\
+    KESH\_STRIPE\_BASE\_URL & Hôte de l'API. & \texttt{https://api.stripe.com} \\
+    KESH\_STRIPE\_PARALLEL & Versements lus en même temps (1 à 6). & \texttt{1} \\
+    \bottomrule
+\end{tabularx}
+\end{center}
+
+\subsubsection{La clé reste à l'installation}
+
+La clé n'est \textbf{ni en base ni dans la sauvegarde} (\texttt{.keshbackup}), ni dans aucun journal, réponse de l'API ou trace d'audit. Après une \textbf{restauration sur un autre serveur}, reposez-la dans son environnement~; sans elle, l'import du CSV continue. Les routes du téléchargement (\texttt{/api/v1/stripe-downloads}) sont \textbf{réservées aux sessions}~: une clé d'API de Kesh est refusée (\texttt{403 API\_KEY\_OPERATION\_FORBIDDEN}).
+
+\textbf{Révocation et rotation}~: révoquez la clé au tableau de bord de Stripe (elle cesse aussitôt de servir), créez-en une autre avec les mêmes droits, posez-la dans \texttt{KESH\_STRIPE\_<n>\_KEY} et redémarrez Kesh. Un téléchargement lancé entre les deux échoue en \texttt{PROVIDER\_AUTH\_FAILED}, sans rien écrire~: relancez-le après le redémarrage.
+
+\textbf{Les tâches vivent en mémoire}~: le suivi d'un téléchargement se perd au redémarrage du serveur (le téléchargement interrompu n'a rien écrit, tout s'écrit d'un coup à la fin)~; relancer la même période est sans risque.
+
+\subsubsection{Refus de démarrage}
+
+Contrôlée \textbf{à chaque démarrage}, la configuration refuse le démarrage d'un message qui nomme la variable, jamais sa valeur, pour les mêmes motifs que celle de PayPal (\S\ref{sec:paypal-api}~: série incomplète, libellé en double, numéro hors de 1 à 9, champ inconnu --- ni \texttt{ACCOUNT} ni \texttt{KEY} ---, valeur de gabarit, URL refusée, parallélisme illisible), et pour deux motifs propres à la clé~:
+\begin{itemize}
+    \item «~clé secrète refusée~: utilisez une clé restreinte en lecture (rk\_live\_… ou rk\_test\_…)~» --- une clé \texttt{sk\_…}~;
+    \item «~clé restreinte attendue~: préfixe rk\_live\_ ou rk\_test\_, suivi de lettres, chiffres ou \_~» --- toute autre forme.
+\end{itemize}
+
+L'accès réseau sortant que demande le téléchargement est décrit au \S\ref{sec:acces-sortant-stripe}.
 
 %%─────────────────────────────────────────────────────────────────────────────
 \section{Premier démarrage}
