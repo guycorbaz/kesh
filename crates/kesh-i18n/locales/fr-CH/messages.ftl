@@ -1894,14 +1894,8 @@ error-provider-api-error = Le prestataire a refusé la demande. Rien n'a été i
 # Story 38-11c2 — revue et acceptation d’un compte de prestataire (codes servis à l’écran, 38-11d)
 provider-failed-proposal-stale = Cette proposition n'est plus valable : la transaction, l'écriture, la règle ou les réglages du compte ont changé depuis la revue. Rechargez la revue.
 paypal-failed-counterparty-currency-mismatch = Cette règle désigne un compte tenu en { $accountCurrency } : elle ne s'applique qu'aux transactions en { $accountCurrency }, et celle-ci est en { $transactionCurrency }. Choisissez un compte en CHF ou dans la devise de la transaction.
-provider-gap-receipt-without-sale = Encaissement sans vente : aucune écriture de vente ne porte cet identifiant.
-provider-gap-sale-without-receipt = Vente sans encaissement : aucune transaction ne porte l'identifiant de cette écriture.
-provider-gap-amount-or-currency-mismatch = Montant ou devise différents : l'écriture de vente n'a pas le montant de l'encaissement sur le compte de cette devise, ou elle est déjà rattachée.
 provider-review-ambiguous-sale = Plusieurs écritures de vente portent cet identifiant : choisissez celle à rattacher.
 provider-review-fee-account-missing = Frais sans compte de frais : réglez le compte de frais du compte bancaire.
-provider-review-conversion-unpaired = Conversion sans sa paire : l'autre moitié manque ou n'est pas unique.
-provider-review-withdrawal-foreign-currency = Retrait d'un solde en devise : passez l'écriture à la main, au CHF reçu par la banque, puis rattachez la transaction.
-provider-review-no-rule = Aucune règle ne correspond : passez l'écriture à la main, ou créez une règle.
 error-bank-account-is-provider = Ce compte est le solde d'un prestataire de paiement : il ne reçoit ni relevé bancaire ni règlement de facture. Importez son relevé par sa route, et réglez la facture par un compte interne ou une écriture, puis rattachez la transaction.
 bank-accounts-labels-kind = Type de compte
 bank-accounts-kind-bank = Compte bancaire

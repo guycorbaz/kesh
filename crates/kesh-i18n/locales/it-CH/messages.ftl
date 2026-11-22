@@ -1811,14 +1811,8 @@ error-provider-api-error = Il prestatore ha rifiutato la richiesta. Nulla è sta
 # Story 38-11c2 — revue et acceptation d’un compte de prestataire (codes servis à l’écran, 38-11d)
 provider-failed-proposal-stale = Questa proposta non è più valida: la transazione, la registrazione, la regola o le impostazioni del conto sono cambiate dalla revisione. Ricaricate la revisione.
 paypal-failed-counterparty-currency-mismatch = Questa regola indica un conto tenuto in { $accountCurrency }: si applica solo alle transazioni in { $accountCurrency }, e questa è in { $transactionCurrency }. Scegliete un conto in CHF o nella valuta della transazione.
-provider-gap-receipt-without-sale = Incasso senza vendita: nessuna registrazione di vendita porta questo identificativo.
-provider-gap-sale-without-receipt = Vendita senza incasso: nessuna transazione porta l'identificativo di questa registrazione.
-provider-gap-amount-or-currency-mismatch = Importo o valuta diversi: la registrazione di vendita non ha l'importo dell'incasso sul conto di questa valuta, oppure è già collegata.
 provider-review-ambiguous-sale = Più registrazioni di vendita portano questo identificativo: scegliete quella da collegare.
 provider-review-fee-account-missing = Commissione senza conto delle commissioni: impostate il conto delle commissioni del conto bancario.
-provider-review-conversion-unpaired = Conversione senza la sua coppia: l'altra metà manca o non è unica.
-provider-review-withdrawal-foreign-currency = Prelievo da un saldo in valuta: registrate a mano al CHF ricevuto dalla banca, poi collegate la transazione.
-provider-review-no-rule = Nessuna regola corrisponde: registrate a mano o create una regola.
 error-bank-account-is-provider = Questo conto è il saldo di un prestatore di pagamento: non riceve né estratti bancari né pagamenti di fatture. Importi il suo estratto con la sua rotta e regoli la fattura con un conto interno o una registrazione, poi colleghi la transazione.
 bank-accounts-labels-kind = Tipo di conto
 bank-accounts-kind-bank = Conto bancario
