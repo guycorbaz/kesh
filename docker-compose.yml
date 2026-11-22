@@ -145,6 +145,16 @@ services:
       KESH_PAYPAL_3_SECRET: ${KESH_PAYPAL_3_SECRET:-}
       KESH_PAYPAL_BASE_URL: ${KESH_PAYPAL_BASE_URL:-}
       KESH_PAYPAL_PARALLEL: ${KESH_PAYPAL_PARALLEL:-}
+      # Lecture Stripe par l'API (Story 40-8a) : une clé restreinte en lecture
+      # par compte Stripe ; au-delà de trois comptes, ajouter les lignes KESH_STRIPE_4_…
+      KESH_STRIPE_1_ACCOUNT: ${KESH_STRIPE_1_ACCOUNT:-}
+      KESH_STRIPE_1_KEY: ${KESH_STRIPE_1_KEY:-}
+      KESH_STRIPE_2_ACCOUNT: ${KESH_STRIPE_2_ACCOUNT:-}
+      KESH_STRIPE_2_KEY: ${KESH_STRIPE_2_KEY:-}
+      KESH_STRIPE_3_ACCOUNT: ${KESH_STRIPE_3_ACCOUNT:-}
+      KESH_STRIPE_3_KEY: ${KESH_STRIPE_3_KEY:-}
+      KESH_STRIPE_BASE_URL: ${KESH_STRIPE_BASE_URL:-}
+      KESH_STRIPE_PARALLEL: ${KESH_STRIPE_PARALLEL:-}
     ports:
       - "80:80"
     volumes:

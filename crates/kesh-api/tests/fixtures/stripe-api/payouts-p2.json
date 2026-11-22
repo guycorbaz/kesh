@@ -1,0 +1,23 @@
+{
+ "object": "list",
+ "data": [
+  {
+   "id": "po_TEST0001",
+   "object": "payout",
+   "amount": 12515,
+   "arrival_date": 1580684400,
+   "automatic": true,
+   "currency": "chf",
+   "created": 1580425200,
+   "status": "paid",
+   "type": "bank_account",
+   "method": "standard",
+   "livemode": false,
+   "balance_transaction": "txn_TESTPO0001",
+   "description": "STRIPE PAYOUT",
+   "statement_descriptor": null
+  }
+ ],
+ "has_more": false,
+ "url": "/v1/payouts"
+}

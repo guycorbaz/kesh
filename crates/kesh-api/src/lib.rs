@@ -40,6 +40,7 @@ pub mod qr_decode;
 pub mod retry;
 pub mod routes;
 pub mod services;
+pub mod stripe;
 pub(crate) mod util;
 
 use std::sync::Arc;

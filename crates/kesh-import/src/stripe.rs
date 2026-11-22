@@ -312,8 +312,10 @@ fn parse_date(raw: &str) -> Option<NaiveDate> {
 }
 
 /// Identifiant Stripe : non vide, `[A-Za-z0-9_]` seulement (pas de `:`, que
-/// l'import accole à la clé de doublon).
-fn valid_id(raw: &str) -> bool {
+/// l'import accole à la clé de doublon). Public pour que le client de l'API
+/// (Story 40-8a, `kesh-api`) refuse exactement les mêmes identifiants que le
+/// lecteur du CSV.
+pub fn valid_id(raw: &str) -> bool {
     !raw.is_empty() && raw.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
 }
 

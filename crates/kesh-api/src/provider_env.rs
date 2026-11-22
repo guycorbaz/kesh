@@ -45,8 +45,16 @@ pub const BASE_URL_SUFFIX: &str = "BASE_URL";
 /// Suffixe de la variable du parallélisme.
 pub const PARALLEL_SUFFIX: &str = "PARALLEL";
 
+/// Contrôle propre à un prestataire d'un champ présent : `(champ, valeur)` →
+/// `Err(raison)`, raison fixe qui ne cite pas la valeur (Story 40-8a).
+pub type FieldCheck = fn(&str, &str) -> Result<(), &'static str>;
+
 /// Ce qui distingue un prestataire dans l'environnement.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// L'égalité compare le segment [`ProviderSpec::key`], qui identifie le
+/// prestataire (les pointeurs de fonction de [`ProviderSpec::check`] ne se
+/// comparent pas de façon fiable).
+#[derive(Debug, Clone, Copy)]
 pub struct ProviderSpec {
     /// Segment des variables (`PAYPAL` → `KESH_PAYPAL_…`).
     pub key: &'static str,
@@ -62,7 +70,21 @@ pub struct ProviderSpec {
     pub optional_fields: &'static [&'static str],
     /// Hôte par défaut de l'API.
     pub default_base_url: &'static str,
+    /// Contrôle **propre au prestataire** d'un champ présent (Story 40-8a :
+    /// la clé Stripe doit être restreinte), appelé par [`read`] après le
+    /// contrôle du gabarit : `(champ, valeur)` → `Err(raison)` refuse le
+    /// démarrage d'un message qui nomme la variable, jamais la valeur. La
+    /// raison est un texte fixe. `None` : aucun contrôle de plus (PayPal).
+    pub check: Option<FieldCheck>,
 }
+
+impl PartialEq for ProviderSpec {
+    fn eq(&self, other: &Self) -> bool {
+        self.key == other.key
+    }
+}
+
+impl Eq for ProviderSpec {}
 
 /// Champ PayPal : l'identifiant de l'application (`KESH_PAYPAL_<n>_CLIENT_ID`).
 /// Le client le lit par ce nom, la spécification le déclare par ce nom : une
@@ -79,10 +101,11 @@ pub const PAYPAL: ProviderSpec = ProviderSpec {
     fields: &[PAYPAL_CLIENT_ID, PAYPAL_SECRET],
     optional_fields: &[],
     default_base_url: "https://api-m.paypal.com",
+    check: None,
 };
 
-/// Les prestataires lus au démarrage (Wise et Stripe s'y ajoutent).
-pub const ALL_PROVIDERS: &[ProviderSpec] = &[PAYPAL];
+/// Les prestataires lus au démarrage (Wise s'y ajoutera).
+pub const ALL_PROVIDERS: &[ProviderSpec] = &[PAYPAL, crate::stripe::STRIPE];
 
 impl ProviderSpec {
     /// `KESH_<P>_<n>_<champ>`.
@@ -370,6 +393,11 @@ pub fn read(
             {
                 return Err(invalid(spec.series_var(n, field), "valeur de gabarit <…>"));
             }
+            if let (Some(check), Some(value)) = (spec.check, value.as_deref())
+                && let Err(reason) = check(field, value)
+            {
+                return Err(invalid(spec.series_var(n, field), reason));
+            }
         }
         let mut fields = BTreeMap::new();
         let mut account = String::new();
@@ -589,6 +617,7 @@ mod tests {
             fields: &["TOKEN"],
             optional_fields: &["PROFILE_ID"],
             default_base_url: "https://api.example.invalid",
+            check: None,
         };
         let lire_w = |pairs: &[(&str, &str)]| {
             let (map, names) = env(pairs);

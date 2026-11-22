@@ -1,0 +1,41 @@
+{
+ "object": "list",
+ "data": [
+  {
+   "id": "txn_TESTPO0003",
+   "object": "balance_transaction",
+   "amount": -3854,
+   "fee": 0,
+   "net": -3854,
+   "currency": "usd",
+   "created": 1581634800,
+   "available_on": 1581634800,
+   "reporting_category": "payout",
+   "type": "payout",
+   "status": "available",
+   "description": "STRIPE PAYOUT",
+   "source": "po_TEST0003",
+   "exchange_rate": null,
+   "fee_details": []
+  },
+  {
+   "id": "txn_TEST0008",
+   "object": "balance_transaction",
+   "amount": 4000,
+   "fee": 146,
+   "net": 3854,
+   "currency": "usd",
+   "created": 1581491155,
+   "available_on": 1581894000,
+   "reporting_category": "charge",
+   "type": "charge",
+   "status": "available",
+   "description": "Vente fictive E",
+   "source": "ch_TEST0004",
+   "exchange_rate": null,
+   "fee_details": []
+  }
+ ],
+ "has_more": false,
+ "url": "/v1/balance_transactions"
+}
