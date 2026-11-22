@@ -425,6 +425,40 @@ contrôlé) : `date-valeur` (`payment_date` rendu à `value_date`), `frais-seul`
   frontend/tests/e2e/` vide) ni aucun écran (aucun fichier frontend modifié). E2E complet et gate-ci à la fin de
   l'epic.
 
+### Revue P1 — remédiation (22.11, commit `539822a7`)
+
+Rapport : `kesh-gate-logs/s40-7c/revue-p1-rapport.md` (0 CRITICAL, 0 HIGH, 1 MEDIUM, 8 LOW).
+
+- **M1** : `versement_a_retour_ou_positif_refuse_a_l_acceptation` (e2e) : un `payout` forcé sur `po_TEST0004` (retour) et
+  sur un versement positif (`po_POS`, importé : un frais seul) donne `PROVIDER_PROPOSAL_STALE` sous `payout_reversal` et
+  `payout_not_negative`, rien d'écrit. Le solde USD n'avait pas de compte de versement : le test lui en règle un (SQL
+  direct), sinon le refus viendrait du réglage (`provider_settings_changed`) avant le jugement du versement.
+- **L1** : `destination_non_verrouillee_perime_le_versement` : `accept_payout` appelé avec un `AcceptContext` fait à la
+  main, destination non verrouillée → périmé ; verrouillée → écrit (puis `rollback`).
+- **L2** : commentaire d'`accept_payout` et ligne 6 de l'amendement corrigés : la relecture du compte de versement est
+  cohérente et non verrouillante ; clôture, archivage et réglage ne prennent pas le verrou nommé.
+- **L3** : `destination_de_versement_sans_plan_de_mauvais_type_ou_de_mauvaise_devise` : `BANK_ACCOUNT_NOT_CONFIGURED`,
+  `counterparty_wrong_type` (compte de charge), `counterparty_wrong_currency` (compte EUR pour un solde CHF).
+- **L5** : `take(200)` de `accept_one_rule` remplacé par `ENTRY_DESCRIPTION_MAX_CHARS`.
+- **L6** : `classify` d'une charge de montant nul ; `libelle_borne_frontiere_de_la_fin` (fin de 150 caractères gardée,
+  fin de `max` caractères coupée net).
+- **L7** (corrigé, simple) : `payout_destinations` : les comptes de versement ne s'ajoutent aux verrous que si le lot
+  contient un `payout` ; test unitaire `destinations_verrouillees_seulement_pour_un_lot_avec_versement`.
+- **L8** : doc d'`accept_link_entry` : un versement Stripe ne se rattache pas (`linkable: no_extra_kind`).
+- **L4** : non corrigé (décision d'interface, garde préexistante) : entrée dans `issues-a-ouvrir.md`.
+- Tests ajoutés par la remédiation (`git diff 68cb24da..539822a7`, `grep -c`) : 5 (3 `#[sqlx::test]`, 1 `#[test]` dans
+  `routes/stripe.rs`, 1 dans `kesh-reconciliation/src/stripe.rs`) + 1 assertion de `classify` ; total de la story : 33.
+- **Sondes par mutation** (copie hors dépôt, `git archive` de `539822a7`, `mut3.sh`, journaux `mut3-*.log`) : sept
+  mutations, toutes rouges par `test result: FAILED` (aucune erreur de compilation) : `branche-retiree`
+  (`ToReview(_) => {}`), `filtre-verrous` (`locked_accounts.contains` retiré), `refus-plan-absent`, `regle-devise`
+  (devise attendue non contrôlée), `charge-nulle` (`>=`), `frontiere-fin` (`< max / 2`), `destinations-toujours`.
+- **Gates** (commit de code `539822a7`, journal `kesh-gate-logs/s40-7c/`) : fmt et clippy workspace verts, ciblé
+  (`cible-r1-3.log`) vert, nextest complet `gate-backend.log` : **6498 exécutés, 6498 passés, 15 ignorés** (un test
+  `kesh-db::pool_lecture_seule g_une_instruction_trop_longue_est_interrompue_par_le_serveur` passé à la seconde
+  tentative, étranger à la story, non investigué) ; `cargo publish --dry-run -p kesh-import` vert. Frontend non touché ;
+  aucune spec E2E ajoutée ; pas de `gate-ci.sh`.
+- Prompt de la passe P2 (ciblée) : `kesh-gate-logs/s40-7c/revue-p2-prompt.md`.
+
 ### File List
 
 - `crates/kesh-reconciliation/src/stripe.rs` (neuf), `lib.rs`, `provider_review.rs`
