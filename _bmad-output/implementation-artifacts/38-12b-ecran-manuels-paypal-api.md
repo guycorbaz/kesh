@@ -331,6 +331,27 @@ manuel utilisateur ; gates de la nuit du 22.11.
   (le texte dit alors la période réellement lue, ce qui reste exact) ; la page PayPal ne propose pas de fin future.
   **À l'intégration avec les Epics 39 et 40** : tout appel de `Downloads::start` d'une autre branche (Wise, Stripe)
   doit passer la période lue.
+- **L1, L2, L3, L4** : voir le Change Log. L3 : l'E2E prend les 60 jours qui précèdent le jour (trois fenêtres, pause
+  sur la deuxième), sans borne au 1er janvier, et retient un exercice couvrant toute la période ; il joue aussi la
+  reprise d'une autre période (fermer, rouvrir, lancer `FROM + 1 jour` → avis, capture 18) et vérifie l'absence d'avis
+  à la relance de la même période.
+- **Tests ajoutés par la remédiation** (périmètre `bc7b7520` → `8b941584`, recomptés) : Vitest **9**
+  (`provider-download.test.ts` +3 : `resumedNotice` ×2, `startRefusal` période ; `ProviderDownloadDialog.test.ts` +6 :
+  409 autre période, 409 même période, fermeture pendant le `POST` ×2, `done` sans `result`, `onDone` qui lève) ;
+  Rust **0** test neuf, assertions ajoutées à `une_tache_par_compte_tant_qu_elle_tourne` et
+  `refus_tache_unique_et_cles_d_api` ; Playwright **0** neuf, test (b) étendu. `sitesTotal` 3671 → **3672** (relevé
+  par la garde, `front-4-test-unit.log` ; au diff : 1 site ajouté).
+- **Sondes négatives** : frontend 7 mutations (R1 à R7, copie hors dépôt à `node_modules` réel, non mutée verte,
+  34 tests) **7 tuées sur 7** par test nommé en échec d'assertion (`kesh-gate-logs/s38-12b/mutations-front-p1.log`) ;
+  serveur 3 mutations (B1 à B3, copie `git archive`, cible à part supprimée), non mutée verte, **3 tuées sur 3** par
+  panique d'assertion nommée (`mutations-back-p1.log`).
+- **Gates au dernier commit de code `8b941584`** : backend `scripts/test-fast.sh --ci` (base remise à zéro,
+  `gate-backend-2.log`) : fmt, clippy workspace verts, nextest **6421 exécutés, 6421 passés, 15 ignorés** (le premier
+  passage avait rougi sur `cargo fmt --check`, corrigé par `rustfmt` avant le commit ; lancé sous
+  `env -u XDG_RUNTIME_DIR` : le bus systemd utilisateur refusait la connexion, `mem-guard` sans plafond, `heavy.sh`
+  bornant la station) ; frontend (`front-5-*.log`) : `check` 0 erreur, `lint-i18n-ownership` vert, Vitest **4989
+  passés (290 fichiers)**, `build` vert ; **E2E partiel (1 spec)** `paypal-download.spec.ts` (`e2e-4.log`) : **3
+  passés**. E2E complet et `gate-ci.sh` : à la fin de l'epic.
 - **L5** (non corrigé, hors périmètre) : le serveur simulé commun apparie la route par chemin exact
   (`r.path === recorded.path`) ; réutilisable tel quel pour Stripe, non pour Wise (identifiants dans le chemin) :
   prévoir un `match(path)` dans `ProviderMockRoute` à la 39-12b. Noté aux consignes des correctifs.
@@ -345,6 +366,7 @@ ProviderDownloadDialog.svelte, provider-download.test.ts, ProviderDownloadDialog
 `frontend/src/lib/features/paypal/PaypalImportReport.svelte`, `frontend/src/lib/features/bank-accounts/provider-api.test.ts`,
 `frontend/tests/e2e/paypal-download.spec.ts`, `frontend/tests/e2e/support/provider-mock.ts`.
 Modifiés : `crates/kesh-api/src/provider_env.rs`, `crates/kesh-api/src/routes/bank_accounts.rs`,
+`crates/kesh-api/src/{provider_download.rs, errors.rs, routes/paypal_downloads.rs}` (revue P1),
 `crates/kesh-api/tests/paypal_download_e2e.rs`, `crates/kesh-i18n/locales/{de-CH,en-CH,fr-CH,it-CH}/messages.ftl`,
 `frontend/src/routes/(app)/reconciliation/paypal/{+page.svelte, paypal-page.test.ts}`,
 `frontend/src/lib/features/paypal/{paypal.types.ts, paypal-labels.ts}`,
