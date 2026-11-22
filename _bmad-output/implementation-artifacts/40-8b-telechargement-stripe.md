@@ -45,6 +45,54 @@ suit l'emporte sur le texte de la fiche là où ils diffèrent.*
    (par versement), sans changer le classement des erreurs. Les versements manuels (`manual_payouts`) vont au compte rendu
    (« versement manuel à examiner »), non à l'import. Le mode de la clé est `StripeClient::mode()` (`live`/`test`).
 
+## Second amendement du 22.11 (étape 0 du développement, après la fusion d'`epic/40-stripe` à `15e9f8b13`)
+
+*Relevé le 2026-11-22 sur `story/40-8b`, après la fusion non squash d'`epic/40-stripe` (commit `d9771239`), qui
+porte la 40-7d, la 40-8a et l'Epic 38 avec la 38-12b. Ce qui suit l'emporte sur la fiche et sur le premier
+amendement là où ils diffèrent ; chaque point a été relu au code.*
+
+1. **Le point 1 du premier amendement est levé** : `frontend/src/lib/features/provider-download/`
+   (`ProviderDownloadDialog.svelte`, `provider-download.ts`, `provider-download.api.ts`),
+   `frontend/tests/e2e/support/provider-mock.ts` (avec `hold` et `release()`) et le champ `providerApi` de la liste
+   des comptes bancaires (`routes/bank_accounts.rs`, `provider_api_status`) sont sur la branche. Ils se réutilisent
+   **tels quels** ; le serveur simulé reçoit des routes Stripe (`stripeMockRoutes`), sans toucher au serveur.
+2. **Signature de `Downloads::start`** (point 2) confirmée : `start(provider, company_id, account, (from, to),
+   steps_total) -> Result<JobHandle, RunningJob>`, `RunningJob { id, from, to }` ; le `409` porte
+   `details: { provider, jobId, from, to }`, comme PayPal.
+3. **Comptes du registre** (point 3) recomptés après la fusion : la 38-12b n'ajoute aucune route — `LIB_ROUTES.len()`
+   **162**, `traced` **154**, `LIB_ROUTES.len() + TEST_ENDPOINT_ROUTES.len()` **166** ; la 40-8b les porte à **163**,
+   **155**, **167**, et la phrase du manuel à « 155 des 163 » et « 155 + 4 + 4 = 163 ».
+4. **L5** (point 4) confirmé : `check_id_lengths` (`routes/stripe_imports.rs:129`) se joue sur les lignes de
+   `fetch_rows` avant la ventilation ; un refus rend `PROVIDER_RESPONSE_INVALID` `details.lines`, rien d'écrit.
+5. **L6** (point 5) : les trois fichiers disaient « Lecture Stripe par l'API (Story 40-8a) » ; ils disent désormais
+   « Téléchargement Stripe par l'API (Stories 40-8a, 40-8b) » et renvoient au manuel d'administration.
+6. **Crochet de progression** (point 6) : `fetch_rows` reste tel quel (ses tests de la 40-8a aussi) et délègue à
+   `fetch_rows_tracked(client, w, parallel, job: Option<JobHandle>)`. Le socle reçoit `JobHandle::set_total(n)`
+   (`add_steps` ne crée pas un total inconnu). **Étapes** : `total` nul pendant la lecture de la liste, puis le
+   **nombre de versements automatiques**, une étape par versement lu — « versement 5/12 » pour douze versements
+   (et non `1 + n`, qui ferait lire « versement 1/13 » avant le premier). Le classement des erreurs ne change pas.
+7. **Mode** (AC-4) : `ProviderApiMode` n'a que `live` et `sandbox` (38-12b), et le mode se lisait à l'hôte. Pour
+   Stripe, il se lit au **préfixe de la clé** (`stripe::series_mode`, appelé par `ProviderApiConfig::status_for`) :
+   `rk_live_` → `live`, `rk_test_` → **`sandbox`** (l'environnement d'essai de Stripe), que le dialogue commun montre
+   « bac à sable » sans changement. L'AC-4 écrivait `test` : remplacé par `sandbox`, qui évite un troisième mode au
+   socle et un libellé propre au dialogue.
+8. **Période** (AC-1) : la règle **commune** (`check_period`, `effective_to`) s'applique telle quelle, comme PayPal
+   depuis la 38-12a — une fin future est **ramenée au jour de Zurich**, non refusée (l'AC-1 la refusait) ; `future`
+   ne vise que le début. Stripe ne borne pas l'historique : `too_old` vaut au-delà de **30 ans**
+   (`stripe::HISTORY_YEARS`), borne de garde contre une date absurde que la plage de la base admet (an 1000).
+   **Une seule fenêtre**, toute la période (`period_windows` sans plafond de jours).
+9. **Nom et empreinte** (AC-3) : le cœur commun prend **un** nom par import ; il vaut « Stripe API <du>…<au> »
+   (période lue), comme « PayPal API <du>…<au> » — la devise est celle du compte de chaque entrée `bank_imports`.
+   L'empreinte est celle du cœur pour un téléchargement (`ImportSource::Download` : SHA-256 des identifiants triés de
+   la devise ‖ `:` ‖ devise), sans préfixe propre à Stripe ; aucun refus `BANK_IMPORT_DUPLICATE_FILE`.
+10. **Compte rendu et rapprochement** (AC-1, AC-3) : `result` = la réponse `201` de `POST /stripe-imports`
+    (`account`, `currencies`, `payouts`) plus `manualPayouts` (versements manuels non lus, « à examiner »). Le
+    rapprochement de la 40-7c est la **revue** de la page Stripe, que l'import du CSV ne lance pas non plus : la
+    page la relit à la fin du téléchargement. Trace `stripe_download.created` (libellés aux quatre locales).
+11. **Écran** (AC-4) : le bouton va sur la **page Stripe** (`/reconciliation/stripe`, page commune
+    `ProviderReviewPage`, fragments `importActions` et `importNotes`), comme PayPal, et non sur *Import bancaire* ; le
+    compte rendu de l'import est extrait en `StripeImportReport.svelte` et sert à la page et au dialogue.
+
 ## Story
 
 En tant que **Comptable**, je veux télécharger d'un bouton (ou par une route d'API) les versements Stripe d'une période
