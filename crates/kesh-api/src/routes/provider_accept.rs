@@ -1393,8 +1393,9 @@ pub async fn mark_reconciled(
 /// `link_entry` : rattachement à une écriture déjà passée, par
 /// `link_entry_in_tx` (aucune écriture). Rejugement : transaction pending, de
 /// genre admis au rattachement ([`admits_link`] : encaissement, ou genre que
-/// le prestataire déclare — Wise : `Other` de préfixe `TRANSFER`, versement
-/// Stripe) ; pour un **encaissement**, l'identifiant figure toujours au
+/// le prestataire déclare par `ProviderSpec::linkable` — Wise : `Other` de
+/// préfixe `TRANSFER` ; PayPal et Stripe n'en déclarent aucun : un versement
+/// Stripe ne se rattache pas, il se propose en `payout`) ; pour un **encaissement**, l'identifiant figure toujours au
 /// libellé de l'écriture et la vente n'est pas déjà rattachée (sinon
 /// périmée). Pour tout genre, l'écriture a été prise `FOR UPDATE` au début
 /// du lot, avant toute lecture ordinaire ([`run_batch`]) : les lectures de ce

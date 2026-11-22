@@ -557,6 +557,11 @@ mod tests {
             classify(&tx(1, "-5", "charge", "txn_9")),
             ProviderKind::Specific(KIND_OTHER)
         );
+        assert_eq!(
+            classify(&tx(1, "0", "charge", "txn_9")),
+            ProviderKind::Specific(KIND_OTHER),
+            "une charge de montant nul n'est pas un encaissement"
+        );
         // Catégorie absente : une autre catégorie, jamais d'erreur.
         let mut t = tx(1, "5", "", "txn_9");
         t.provider_type = None;
@@ -655,6 +660,25 @@ mod tests {
         let b = bounded_label(&accents, 200);
         assert_eq!(b.chars().count(), 200);
         assert!(b.ends_with(") - po_é"));
+    }
+
+    /// Frontière de la fin gardée : une fin qui tient (150 < 200) est gardée
+    /// entière, seul le milieu cède ; une fin d'exactement `max` caractères
+    /// ne laisse aucune place au milieu et se coupe net, sans `…`.
+    #[test]
+    fn libelle_borne_frontiere_de_la_fin() {
+        let fin_longue = format!(") - {}", "t".repeat(146));
+        assert_eq!(fin_longue.chars().count(), 150);
+        let b = bounded_label(&format!("{}{fin_longue}", "d".repeat(300)), 200);
+        assert_eq!(b.chars().count(), 200);
+        assert!(b.ends_with(&fin_longue), "{b}");
+        assert!(b.contains('…'), "{b}");
+        let fin_pleine = format!(") - {}", "t".repeat(196));
+        assert_eq!(fin_pleine.chars().count(), 200);
+        let label = format!("{}{fin_pleine}", "h".repeat(50));
+        let b = bounded_label(&label, 200);
+        assert_eq!(b, label.chars().take(200).collect::<String>());
+        assert!(!b.contains('…'), "{b}");
     }
 
     // --- Versements ---

@@ -195,7 +195,7 @@ des notes de l'epic, et ce que T0 a relevé au code. Là où il contredit un AC 
    (la proposition de la revue renvoyée telle quelle) et n'est plus le compte de versement réglé relu sous les
    verrous → `PROVIDER_PROPOSAL_STALE` (`provider_settings_changed`), comme `feeAccountId` pour un frais. Le client ne
    désigne toujours pas la destination : c'est un contrôle, non un choix.
-6. **Compte de versement clos ou archivé** : relu sous son verrou nommé (`bank_accounts::find_by_id_in_tx`) ; archivé
+6. **Compte de versement clos ou archivé** : relu par `bank_accounts::find_by_id_in_tx` (lecture cohérente non verrouillante : le lot tient le verrou nommé du compte, qui exclut import, acceptation et rattachement, mais ni la clôture, ni l'archivage, ni le réglage ne le prennent — revue P1 L2) ; archivé
    → périmé (`payout_account_archived`), clos → `BANK_ACCOUNT_CLOSED` en `failed[]`. Non par `ensure_open_in_tx` :
    aucune ligne n'est rattachée au compte de versement (seule l'écriture touche son compte du plan) ; l'inventaire de
    la fenêtre de clôture (`bank_account_closed_inventory.rs`) ne le concerne pas. À la revue, un compte de versement

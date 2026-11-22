@@ -322,8 +322,14 @@ impl EngineProposal for StripeProposal {
 /// au même cours), puis rapprochement du versement.
 ///
 /// Le compte de versement n'est pas gardé par `ensure_open_in_tx` : aucune
-/// ligne ne lui est rattachée (seule l'écriture touche son compte du plan) ;
-/// il est relu sous son verrou nommé, que le lot tient.
+/// ligne ne lui est rattachée (seule l'écriture touche son compte du plan).
+/// Le lot en tient le verrou nommé (`with_account_locks` : il exclut un
+/// import, une acceptation ou un rattachement concurrents sur ce compte), mais
+/// la relecture (`find_by_id_in_tx`) est cohérente et **non verrouillante** :
+/// les routes de clôture, d'archivage et de réglage du compte ne prennent pas
+/// ce verrou, et l'une d'elles peut passer entre la lecture et la validation.
+/// L'écriture ne touche que le compte du plan : l'inventaire des comptes
+/// clos reste juste.
 async fn accept_payout(
     tx: &mut sqlx::Transaction<'_, MySql>,
     ctx: &AcceptContext<'_>,
@@ -411,6 +417,26 @@ async fn accept_payout(
     })
 }
 
+/// Les comptes de versement à verrouiller en plus pour le lot : ceux des
+/// réglages (`configured`) **si et seulement si** le lot contient un
+/// `payout`. Un lot de frais ou de rattachements ne les touche pas : les
+/// verrouiller ferait attendre (et échouer en `409
+/// RECONCILIATION_ACCOUNT_LOCKED`) un lot sans rapport avec un import qui
+/// tient le compte de destination.
+fn payout_destinations(
+    configured: impl Iterator<Item = i64>,
+    proposals: &[StripeProposal],
+) -> Vec<i64> {
+    if proposals
+        .iter()
+        .any(|p| matches!(p, StripeProposal::Own(_)))
+    {
+        configured.collect()
+    } else {
+        Vec::new()
+    }
+}
+
 /// `POST /api/v1/stripe/accept` — voir l'en-tête du module.
 pub async fn accept_proposals(
     State(state): State<AppState>,
@@ -426,10 +452,12 @@ pub async fn accept_proposals(
         &body.account,
     )
     .await?;
-    let destinations: Vec<i64> = balances
-        .iter()
-        .filter_map(|b| b.account.provider_settings.payout_bank_account_id)
-        .collect();
+    let destinations = payout_destinations(
+        balances
+            .iter()
+            .filter_map(|b| b.account.provider_settings.payout_bank_account_id),
+        &body.proposals,
+    );
     let prepared =
         provider_accept::prepare_accept(&state.pool, &current_user, &SPEC, body, &destinations)
             .await?;
@@ -462,6 +490,29 @@ mod tests {
         assert_eq!(
             super::super::stripe_imports::PAYOUT_PROVIDER_TYPE,
             PAYOUT_CATEGORY
+        );
+    }
+
+    /// Les comptes de versement ne se verrouillent que pour un lot qui porte un
+    /// `payout` (revue P1 L7).
+    #[test]
+    fn destinations_verrouillees_seulement_pour_un_lot_avec_versement() {
+        let versement = StripeProposal::Own(OwnProposal::Payout {
+            bank_transaction_id: 1,
+            payout_bank_account_id: None,
+        });
+        let frais: StripeProposal = serde_json::from_value(serde_json::json!({
+            "type": "fee", "bankTransactionId": 2, "feeAccountId": 3
+        }))
+        .unwrap();
+        assert!(matches!(frais, StripeProposal::Common(_)));
+        assert_eq!(
+            payout_destinations([7, 8].into_iter(), std::slice::from_ref(&frais)),
+            Vec::<i64>::new()
+        );
+        assert_eq!(
+            payout_destinations([7, 8].into_iter(), &[frais, versement]),
+            vec![7, 8]
         );
     }
 

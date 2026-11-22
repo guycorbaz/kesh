@@ -1033,6 +1033,176 @@ async fn versement_accepte_deux_fois_le_second_perime(pool: MySqlPool) {
     assert_eq!(ctx.ecritures().await, avant, "rien d'écrit");
 }
 
+/// Règle le compte de versement du solde Stripe qui porte le compte du plan
+/// `ledger` (SQL direct : le garde de l'API refuserait certains réglages que
+/// les tests de refus veulent pourtant atteindre).
+async fn regler_versement(ctx: &Ctx, ledger: i64, destination: i64) {
+    sqlx::query("UPDATE bank_accounts SET payout_bank_account_id = ? WHERE journal_account_id = ?")
+        .bind(destination)
+        .bind(ledger)
+        .execute(&ctx.pool)
+        .await
+        .unwrap();
+}
+
+/// Un compte bancaire ordinaire de plus, au compte du plan donné (ou sans).
+async fn banque_de_plus(ctx: &Ctx, nom: &str, iban: &str, ledger: Option<i64>) -> i64 {
+    sqlx::query(
+        "INSERT INTO bank_accounts (company_id, bank_name, iban, is_primary, journal_account_id) \
+         VALUES (?, ?, ?, FALSE, ?)",
+    )
+    .bind(ctx.seeded.company_id)
+    .bind(nom)
+    .bind(iban)
+    .bind(ledger)
+    .execute(&ctx.pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64
+}
+
+/// Un `payout` forcé par un client d'API est rejugé à l'acceptation (revue P1
+/// M1) : un retour de versement et un versement de montant positif sont
+/// périmés sous leur motif, sans écriture — le sens de l'écriture serait sinon
+/// inversé.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn versement_a_retour_ou_positif_refuse_a_l_acceptation(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    // Le solde USD n'a pas de compte de versement : on lui en règle un, pour
+    // que le rejugement atteigne le jugement du versement.
+    regler_versement(&ctx, ctx.usd, ctx.ba_banque).await;
+    // Un versement positif (frais seuls : − Σ net > 0) en CHF.
+    let entete = std::str::from_utf8(FIXTURE)
+        .unwrap()
+        .lines()
+        .next()
+        .unwrap()
+        .to_string();
+    let positif = format!(
+        "{entete}\npo_POS,2020-02-20 00:00:00,txn_POS1,2020-02-18 10:00:00,2020-02-20 00:00:00,chf,-5.00,0.00,-5.00,fee,Frais fictifs seuls,,\n"
+    );
+    let (s, b) = ctx.importer(positif.as_bytes()).await;
+    assert_eq!(s, 201, "{b}");
+    let avant = ctx.ecritures().await;
+    for (versement, motif) in [
+        ("po_TEST0004", "payout_reversal"),
+        ("po_POS", "payout_not_negative"),
+    ] {
+        let id = ctx.tx(versement).await;
+        let (s, b) = ctx
+            .accepter(vec![json!({ "type": "payout", "bankTransactionId": id })])
+            .await;
+        assert_eq!(s, 200, "{versement} : {b}");
+        assert_eq!(b["accepted"], json!([]), "{versement} : {b}");
+        assert_eq!(
+            b["failed"][0]["errorCode"], "PROVIDER_PROPOSAL_STALE",
+            "{versement} : {b}"
+        );
+        assert_eq!(b["failed"][0]["details"]["reason"], motif, "{b}");
+        assert_eq!(ctx.etat(id).await, ("pending".into(), None), "{versement}");
+    }
+    assert_eq!(ctx.ecritures().await, avant, "rien d'écrit");
+}
+
+/// Les refus propres à la destination d'un versement (revue P1 L3) : compte
+/// sans compte du plan (`BANK_ACCOUNT_NOT_CONFIGURED`), compte du plan d'un
+/// autre type ou d'une autre devise que le solde (`VALIDATION_ERROR`) ; rien
+/// d'écrit, le versement reste à traiter.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn destination_de_versement_sans_plan_de_mauvais_type_ou_de_mauvaise_devise(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let po = ctx.tx("po_TEST0001").await; // CHF
+    let avant = ctx.ecritures().await;
+
+    let sans_plan = banque_de_plus(&ctx, "Sans plan", "CH5604835012345678009", None).await;
+    regler_versement(&ctx, ctx.chf, sans_plan).await;
+    let (s, b) = ctx
+        .accepter(vec![json!({ "type": "payout", "bankTransactionId": po })])
+        .await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(
+        b["failed"][0]["errorCode"], "BANK_ACCOUNT_NOT_CONFIGURED",
+        "{b}"
+    );
+    assert_eq!(b["failed"][0]["details"]["bankAccountId"], sans_plan);
+
+    let mauvais_type =
+        banque_de_plus(&ctx, "Charge", "CH4431999123000889012", Some(ctx.frais_chf)).await;
+    regler_versement(&ctx, ctx.chf, mauvais_type).await;
+    let (s, b) = ctx
+        .accepter(vec![json!({ "type": "payout", "bankTransactionId": po })])
+        .await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(b["failed"][0]["errorCode"], "VALIDATION_ERROR", "{b}");
+    assert_eq!(
+        b["failed"][0]["details"]["reason"], "counterparty_wrong_type",
+        "{b}"
+    );
+
+    // Un solde CHF versé sur un compte du plan en EUR.
+    regler_versement(&ctx, ctx.chf, ctx.ba_wise).await;
+    let (s, b) = ctx
+        .accepter(vec![json!({ "type": "payout", "bankTransactionId": po })])
+        .await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(b["failed"][0]["errorCode"], "VALIDATION_ERROR", "{b}");
+    assert_eq!(
+        b["failed"][0]["details"]["reason"], "counterparty_wrong_currency",
+        "{b}"
+    );
+    assert_eq!(ctx.ecritures().await, avant, "rien d'écrit");
+    assert_eq!(ctx.etat(po).await, ("pending".into(), None));
+}
+
+/// La garde `locked_accounts` d'`accept_payout` (revue P1 L1) : une destination
+/// que le lot n'a pas verrouillée périme la proposition
+/// (`provider_settings_changed`) ; verrouillée, le versement s'écrit.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn destination_non_verrouillee_perime_le_versement(pool: MySqlPool) {
+    use kesh_api::routes::provider_accept::{AcceptContext, EngineProposal, Refusal};
+    use kesh_api::routes::stripe::{OwnProposal, StripeProposal};
+    let ctx = monter(&pool).await;
+    let c = ctx.seeded.company_id;
+    let po = ctx.tx("po_TEST0002").await;
+    let proposition = StripeProposal::Own(OwnProposal::Payout {
+        bank_transaction_id: po,
+        payout_bank_account_id: None,
+    });
+    for (verrouilles, attendu_perime) in [(vec![], true), (vec![ctx.ba_wise], false)] {
+        let mut tx = pool.begin().await.unwrap();
+        let balances = kesh_db::repositories::bank_accounts::list_provider_balances(
+            &mut *tx,
+            c,
+            kesh_reconciliation::stripe::SPEC.provider,
+            STRIPE,
+        )
+        .await
+        .unwrap();
+        let contexte = AcceptContext {
+            spec: &kesh_reconciliation::stripe::SPEC,
+            company_id: c,
+            acteur: kesh_db::entities::audit_log::Acteur {
+                user_id: ctx.seeded.admin_user_id,
+                api_key_id: None,
+            },
+            account: STRIPE,
+            balances: balances.into_iter().map(|b| (b.account.id, b)).collect(),
+            locked_entries: Default::default(),
+            locked_accounts: &verrouilles,
+        };
+        let r = proposition.accept(&mut tx, &contexte).await;
+        tx.rollback().await.unwrap();
+        match (r, attendu_perime) {
+            (Err(Refusal::Failed(f)), true) => {
+                assert_eq!(f.error_code, "PROVIDER_PROPOSAL_STALE");
+                assert_eq!(f.details.unwrap()["reason"], "provider_settings_changed");
+            }
+            (Ok(a), false) => assert_eq!(a.kind, "payout"),
+            (r, _) => panic!("verrouillés {verrouilles:?} : {r:?}"),
+        }
+    }
+}
+
 /// La vente rattachée entre la revue et l'acceptation : le rattachement de la
 /// charge est périmé ; le reste du lot est accepté.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
