@@ -281,6 +281,22 @@ describe('page Stripe (Story 40-7d)', () => {
 		const input = (await r.findByTestId('stripe-file-input')) as HTMLInputElement;
 		await fireEvent.change(input, { target: { files: [new File(['x'], 'a.csv')] } });
 		expect((await r.findByTestId('stripe-import-error')).textContent).toContain('ajoutez la colonne source_id');
+		// Story 40-9 — un refus de format ne propose pas le lien « Comptes bancaires ».
+		expect(r.queryByTestId('stripe-import-error-accounts-link')).toBeNull();
+	});
+
+	it('refus du compte (aucun compte pour une devise) : le lien « Comptes bancaires » (Story 40-9)', async () => {
+		importMock.mockRejectedValue({
+			code: 'PROVIDER_CURRENCY_ACCOUNT_MISSING',
+			status: 422,
+			message: 'Aucun compte bancaire pour la devise EUR.',
+			details: { account: 'Stripe boutique', currencies: ['EUR'] },
+		});
+		const r = render(Page);
+		const input = (await r.findByTestId('stripe-file-input')) as HTMLInputElement;
+		await fireEvent.change(input, { target: { files: [new File(['x'], 'a.csv')] } });
+		await r.findByTestId('stripe-import-error');
+		expect(r.getByTestId('stripe-import-error-accounts-link').getAttribute('href')).toBe('/bank-accounts');
 	});
 
 	it('états vides : aucune proposition, aucun écart, rien à examiner', async () => {

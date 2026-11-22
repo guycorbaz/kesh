@@ -1628,7 +1628,8 @@ pub const BASE_CURRENCY: &str = "CHF";
 
 /// Les comptes bancaires **non archivés** (ouverts ou clos) qui sont le solde
 /// du compte `provider_account` du prestataire `provider`, par `id`, avec la
-/// devise de leur compte du plan — Story 38-11b (AC-2, AC-4).
+/// devise de leur compte du plan — Story 38-11b (AC-2, AC-4) ; la devise ne se
+/// lit que sur un compte du plan de la même société (Story 40-9).
 ///
 /// La comparaison du libellé est celle de la **collation** de la colonne (sans
 /// casse, espaces finales ignorées) : « PayPal www » et « paypal WWW » sont le
@@ -1649,7 +1650,8 @@ where
     sqlx::query_as::<_, ProviderBalance>(concat!(
         "SELECT ",
         columns!(),
-        ", (SELECT a.currency FROM accounts a WHERE a.id = bank_accounts.journal_account_id) AS ledger_currency \
+        ", (SELECT a.currency FROM accounts a WHERE a.id = bank_accounts.journal_account_id \
+         AND a.company_id = bank_accounts.company_id) AS ledger_currency \
          FROM bank_accounts \
          WHERE company_id = ? AND archived = FALSE AND provider = ? AND provider_account = ? \
          ORDER BY id",
@@ -1668,7 +1670,10 @@ where
 /// (AC-4) : la revue Stripe y lit les comptes de versement réglés, dans sa
 /// transaction de lecture, pour les juger par [`PayoutDestination::refusal`].
 /// Lecture ordinaire ; un identifiant absent ou d'une autre société n'est pas
-/// rendu.
+/// rendu. La devise ne se lit que sur un compte du plan **de la même société**
+/// (Story 40-9) : un lien incohérent vers le compte d'une autre société se lit
+/// `None` (CHF), comme à l'acceptation (`counterparty_account`, filtrée par
+/// société) et au réglage ([`payout_destination_locked`]).
 pub async fn find_payout_destinations<'e, E>(
     executor: E,
     company_id: i64,
@@ -1683,7 +1688,8 @@ where
     // Même ligne qu'un solde de prestataire : le compte et la devise de son
     // compte du plan.
     let sql = format!(
-        "SELECT {}, (SELECT a.currency FROM accounts a WHERE a.id = bank_accounts.journal_account_id) \
+        "SELECT {}, (SELECT a.currency FROM accounts a WHERE a.id = bank_accounts.journal_account_id \
+         AND a.company_id = bank_accounts.company_id) \
          AS ledger_currency FROM bank_accounts WHERE company_id = ? AND id IN ({}) ORDER BY id",
         columns!(),
         vec!["?"; ids.len()].join(", ")

@@ -7,6 +7,31 @@
 import type { FiscalYearResponse } from '$lib/features/fiscal-years/fiscal-years.types';
 import { formatSwissDate } from '$lib/features/reports/reports.api';
 import type { ProviderFinding, ProviderProposalBase } from './provider-review.types';
+import { isApiError } from '$lib/shared/utils/api-error';
+
+/**
+ * Story 40-9 (revue P1 de la 40-7d, L7) — les refus de l'import qui se règlent à
+ * l'écran *Comptes bancaires* (refus du cœur d'import commun : aucun compte du
+ * prestataire, aucun compte pour une devise du fichier, deux comptes pour une
+ * devise, compte clos). Liste blanche : un refus de format, de doublon, une
+ * erreur réseau ou inconnue ne propose pas le lien.
+ */
+export const IMPORT_ERRORS_CONCERNING_ACCOUNTS: readonly string[] = [
+	'PROVIDER_ACCOUNT_NOT_FOUND',
+	'PROVIDER_CURRENCY_ACCOUNT_MISSING',
+	'PROVIDER_CURRENCY_DUPLICATE',
+	'BANK_ACCOUNT_CLOSED',
+];
+
+/** Story 40-9 — le code d'un refus de l'API, `null` pour une autre erreur. */
+export function importErrorCode(err: unknown): string | null {
+	return isApiError(err) ? err.code : null;
+}
+
+/** Story 40-9 — le refus d'import de code `code` appelle-t-il le lien « Comptes bancaires » ? */
+export function importErrorConcernsAccounts(code: string | null): boolean {
+	return code !== null && IMPORT_ERRORS_CONCERNING_ACCOUNTS.includes(code);
+}
 
 /**
  * L'exercice proposé par défaut : celui qui contient `today` (`AAAA-MM-JJ`),

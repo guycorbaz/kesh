@@ -182,15 +182,18 @@ pub fn row_label(row: &StripePayoutRow) -> String {
 /// entier — précédé de `prefix_chars` caractères (le préfixe des frais) — tienne
 /// dans [`DETAILS_MAX_CHARS`] : la fin `) - <versement>`, que le rapprochement
 /// et le dépannage cherchent, n'est jamais coupée (relevé L1 de la revue P1 de
-/// la 40-7b). Seule la description cède ; des identifiants de 251 caractères
-/// chacun (la borne de `check_id_lengths`) pourraient encore dépasser, ce qui
-/// n'arrive pas avec des identifiants Stripe réels (moins de 40).
+/// la 40-7b). Seule la description cède ; la catégorie, que le lecteur ne
+/// borne pas, l'est ici à [`PROVIDER_TYPE_MAX_CHARS`], comme `provider_type`
+/// (Story 40-9 ; revue P2 de la 40-7b, L1 : une catégorie longue coupait la
+/// fin). Des identifiants de 251 caractères chacun (la borne de
+/// `check_id_lengths`) pourraient encore dépasser, ce qui n'arrive pas avec des
+/// identifiants Stripe réels (moins de 40).
 fn label(row: &StripePayoutRow, prefix_chars: usize) -> String {
     let compose = |description: &str| {
         let kind = if row.category == CHARGE_CATEGORY {
-            "Encaissement"
+            "Encaissement".to_string()
         } else {
-            row.category.as_str()
+            truncate_chars(&row.category, PROVIDER_TYPE_MAX_CHARS)
         };
         format!(
             "{kind} Stripe de {gross} {cur} -{fee}={net} {cur} BRUT - {txn} ({created}- {description}) - {payout}",
@@ -706,5 +709,27 @@ mod tests {
             }
             autre => panic!("attendu une erreur de ligne, reçu {autre:?}"),
         }
+    }
+
+    /// Story 40-9 (revue P2 de la 40-7b, L1) — une catégorie de 1000
+    /// caractères est bornée dans le libellé : la fin `) - <versement>` reste,
+    /// pour la transaction comme pour ses frais, et le libellé tient dans
+    /// `DETAILS_MAX_CHARS`.
+    #[test]
+    fn categorie_longue_bornee_dans_le_libelle() {
+        let mut r = row("txn_LONG0001", "po_LONG0001", "100.00", "3.20");
+        r.category = "x".repeat(1000);
+        // Montage : non bornée, la catégorie seule épuiserait le libellé.
+        assert!(r.category.chars().count() > DETAILS_MAX_CHARS);
+        let lines = provider_lines_of_row(&r);
+        assert_eq!(lines.len(), 2);
+        for l in &lines {
+            assert!(l.details.ends_with(") - po_LONG0001"), "{}", l.details);
+            assert!(l.details.chars().count() <= DETAILS_MAX_CHARS);
+        }
+        assert!(row_label(&r).starts_with(&format!(
+            "{} Stripe de",
+            "x".repeat(PROVIDER_TYPE_MAX_CHARS)
+        )));
     }
 }

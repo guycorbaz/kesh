@@ -372,6 +372,29 @@ describe('page des comptes bancaires — le compte Stripe (Story 40-7d, AC-1)', 
 		expect(payload.stripe.payoutBankAccountId).toBe(4);
 	});
 
+	it('lecture des destinations en échec : la destination absente se nomme « introuvable », les candidates de l’écran restent (Story 40-9)', async () => {
+		const wiseBis = bank({ id: 6, bankName: 'Wise bis', iban: null, provider: 'wise', journalAccountId: WISE_EUR.id });
+		listBankAccountsMock.mockImplementation(async (includeArchived, includeClosed) => {
+			if (includeArchived && includeClosed) throw new Error('boom');
+			return [principal, stripeEur, ordinaire, wiseBis];
+		});
+		const r = render(Page);
+		await fireEvent.click(await r.findByTestId('edit-button-2'));
+		const payout = (await r.findByTestId('edit-payout-account')) as HTMLSelectElement;
+		await waitFor(() => expect(payout.value).toBe('4'));
+		expect(r.getByTestId('edit-payout-missing').textContent).toContain('Destination actuelle (introuvable)');
+		expect((r.getByTestId('edit-payout-missing') as HTMLOptionElement).selected).toBe(true);
+		// Le repli sur la liste de l'écran offre encore ses candidates (un repli vide ne les offrirait pas).
+		expect(options(payout)).toContain('6');
+	});
+
+	it('destination lue : pas d’option « introuvable » (Story 40-9)', async () => {
+		const r = render(Page);
+		await fireEvent.click(await r.findByTestId('edit-button-2'));
+		await waitFor(() => expect(((r.getByTestId('edit-payout-account')) as HTMLSelectElement).value).toBe('4'));
+		expect(r.queryByTestId('edit-payout-missing')).toBeNull();
+	});
+
 	it('liste : « Stripe · <compte> · <devise> », pas de « Lier » sur un compte Stripe', async () => {
 		const r = render(Page);
 		expect((await r.findByTestId('bank-account-stripe-2')).textContent).toBe('Stripe · Stripe boutique · EUR');
