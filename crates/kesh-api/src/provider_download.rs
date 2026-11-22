@@ -601,7 +601,8 @@ impl Downloads {
 
     /// Ouvre une tâche sur la période `period` (début, fin lue), ou rend
     /// celle qui tourne déjà pour ce prestataire, cette société et ce libellé
-    /// (sans casse), **quelle que soit sa période** : son identifiant et sa
+    /// (sans casse ni accents, [`crate::provider_env::account_label_key`]),
+    /// **quelle que soit sa période** : son identifiant et sa
     /// période, que le refus `409` transmet (revue P1 de la 38-12b, M1).
     pub fn start(
         self: &Arc<Self>,
@@ -611,7 +612,7 @@ impl Downloads {
         period: (NaiveDate, NaiveDate),
         steps_total: Option<u32>,
     ) -> Result<JobHandle, RunningJob> {
-        let account_key = account.trim().to_lowercase();
+        let account_key = crate::provider_env::account_label_key(account);
         let mut guard = self.jobs.lock().expect("jobs");
         let (next, jobs) = &mut *guard;
         Self::purge(jobs);
@@ -1190,6 +1191,18 @@ mod tests {
                 to: p.1
             })
         );
+        // Le même libellé sans ses accents est le même compte (Story 38-13).
+        let accents = downloads
+            .start(
+                "paypal",
+                1,
+                "BÕUTIQUE",
+                (d("2020-03-01"), d("2020-03-02")),
+                None,
+            )
+            .err()
+            .map(|r| r.id);
+        assert_eq!(accents, Some(h.id));
         // Autre société, autre libellé, autre prestataire : libres.
         assert!(downloads.start("paypal", 2, "Boutique", p, None).is_ok());
         assert!(downloads.start("paypal", 1, "Autre", p, None).is_ok());

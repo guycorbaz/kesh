@@ -25,7 +25,46 @@
 
 use std::collections::BTreeMap;
 
+use unicode_normalization::UnicodeNormalization;
+use unicode_normalization::char::is_combining_mark;
+
 use crate::config::ConfigError;
+
+/// Forme de comparaison d'un libellé de compte de prestataire
+/// (`provider_account`) — Story 38-13.
+///
+/// La base compare ce libellé sous la collation `utf8mb4_unicode_ci`, donc
+/// **sans casse ni accents** (« PayPal Zürich » = « paypal zurich ») ; les
+/// comparaisons faites en Rust doivent suivre la même règle, sans quoi un compte
+/// trouvé par la base ne retrouverait pas sa série d'identifiants. Quatre étapes,
+/// **dans cet ordre** : rognage des blancs de bord, décomposition NFD, retrait
+/// des marques combinantes (catégorie Unicode `Mark`), minuscules. Le frontend
+/// (`accountLabelKey`, `frontend/src/lib/features/bank-accounts/provider.ts`)
+/// fait les trois dernières étapes dans le même ordre mais **ne rogne pas** :
+/// sans effet, les libellés servis sont rognés à l'écriture.
+///
+/// Sites : [`ProviderApiConfig::series_for`], la garde de libellé en double de
+/// [`read`] et la clé de tâche de `Downloads::start`
+/// (`crate::provider_download`).
+///
+/// **Limites**, mesurées contre `utf8mb4_unicode_ci` (MariaDB 10.11) : la
+/// collation égale `ß`/`ss`, `œ`/`oe`, les ligatures (`ﬁ`/`fi`, `ĳ`/`ij`), la
+/// pleine chasse (`Ａ`/`A`), l'ordinal `ª`/`a` et l'espace sans chasse U+200B,
+/// que cette forme ne replie pas ; **dans l'autre sens**, retirer toute la
+/// catégorie `Mark` égale des lettres que la base distingue, là où un signe
+/// porte un poids primaire (devanagari : `क`/`कि`). Ce sens inverse n'est pas
+/// atteignable avec des libellés en français, allemand, italien ou anglais ; les
+/// formes directes (`œ`/`oe`, `ß`/`ss`, `ª`/`a`) le sont, et deux séries qui ne
+/// se distinguent que par elles sont refusées par la base en 422
+/// `PROVIDER_API_NOT_CONFIGURED`.
+pub(crate) fn account_label_key(label: &str) -> String {
+    label
+        .trim()
+        .nfd()
+        .filter(|c| !is_combining_mark(*c))
+        .collect::<String>()
+        .to_lowercase()
+}
 
 /// Premier numéro de série.
 pub const MIN_SERIES: u8 = 1;
@@ -194,13 +233,14 @@ pub struct ProviderApiConfig {
 }
 
 impl ProviderApiConfig {
-    /// La série d'un libellé (sans casse), `None` s'il n'en a pas : le compte
-    /// reste sans téléchargement, le CSV continue.
+    /// La série d'un libellé (sans casse ni accents, [`account_label_key`]),
+    /// `None` s'il n'en a pas : le compte reste sans téléchargement, le CSV
+    /// continue.
     pub fn series_for(&self, account: &str) -> Option<&ProviderSeries> {
-        let wanted = account.trim().to_lowercase();
+        let wanted = account_label_key(account);
         self.series
             .iter()
-            .find(|s| s.account.to_lowercase() == wanted)
+            .find(|s| account_label_key(&s.account) == wanted)
     }
 
     /// Nombre de séries configurées.
@@ -456,10 +496,8 @@ pub fn read(
                 fields.insert(field, value);
             }
         }
-        if series
-            .iter()
-            .any(|s| s.account.to_lowercase() == account.to_lowercase())
-        {
+        let key = account_label_key(&account);
+        if series.iter().any(|s| account_label_key(&s.account) == key) {
             return Err(invalid(
                 spec.series_var(n, ACCOUNT_FIELD),
                 "libellé déjà porté par une autre série",
@@ -573,6 +611,41 @@ mod tests {
         assert_eq!((s.n, s.field("CLIENT_ID")), (1, Some("id-un")));
         assert_eq!(c.series_for("HÉBERGEMENT").unwrap().n, 3);
         assert!(c.series_for("Autre").is_none());
+    }
+
+    /// Story 38-13 — le libellé s'apparie sans accents, comme la base
+    /// (`utf8mb4_unicode_ci`) : dans les deux sens, et en forme décomposée.
+    #[test]
+    fn le_libelle_s_apparie_sans_accents() {
+        let pairs = [
+            ("KESH_PAYPAL_1_ACCOUNT", "PayPal Zürich"),
+            ("KESH_PAYPAL_1_CLIENT_ID", "id-un"),
+            ("KESH_PAYPAL_1_SECRET", "secret-un"),
+            ("KESH_PAYPAL_2_ACCOUNT", "Genf"),
+            ("KESH_PAYPAL_2_CLIENT_ID", "id-deux"),
+            ("KESH_PAYPAL_2_SECRET", "secret-deux"),
+        ];
+        let c = lire(&pairs).unwrap();
+        assert_eq!(c.series_for("paypal zurich").map(|s| s.n), Some(1));
+        // Forme décomposée : `u` + U+0308.
+        assert_eq!(c.series_for("PAYPAL ZU\u{0308}RICH").map(|s| s.n), Some(1));
+        // Dans l'autre sens : l'accent au compte, pas à la série.
+        assert_eq!(c.series_for(" Gênf ").map(|s| s.n), Some(2));
+        assert!(c.series_for("PayPal Zurichs").is_none());
+        assert_eq!(account_label_key(" Ève ÉLÉ\u{0301} "), "eve ele");
+    }
+
+    /// Story 38-13 — deux séries dont les libellés ne diffèrent que par les
+    /// accents désigneraient le même compte de la base : refusées.
+    #[test]
+    fn libelles_egaux_aux_accents_pres_refuses() {
+        let mut pairs = SERIE_1.to_vec();
+        pairs.extend([
+            ("KESH_PAYPAL_2_ACCOUNT", "Bôutique"),
+            ("KESH_PAYPAL_2_CLIENT_ID", "x"),
+            ("KESH_PAYPAL_2_SECRET", "y"),
+        ]);
+        assert_eq!(var_refusee(&pairs), "KESH_PAYPAL_2_ACCOUNT");
     }
 
     #[test]
@@ -732,7 +805,7 @@ mod tests {
     }
 
     /// Story 38-12b (AC-1) — l'état que la liste des comptes bancaires rend :
-    /// configuré selon le libellé (sans casse), mode selon l'hôte, rien pour un
+    /// configuré selon le libellé (sans casse ni accents), mode selon l'hôte, rien pour un
     /// prestataire non téléchargé ; jamais un secret ni l'hôte dans la forme.
     #[test]
     fn etat_du_telechargement_d_un_compte() {

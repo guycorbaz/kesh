@@ -1811,14 +1811,8 @@ error-provider-api-error = The provider refused the request. Nothing was importe
 # Story 38-11c2 — revue et acceptation d’un compte de prestataire (codes servis à l’écran, 38-11d)
 provider-failed-proposal-stale = This proposal is no longer valid: the transaction, the entry, the rule or the account settings changed since the review. Reload the review.
 paypal-failed-counterparty-currency-mismatch = This rule names an account kept in { $accountCurrency }: it only applies to transactions in { $accountCurrency }, and this one is in { $transactionCurrency }. Choose an account in CHF or in the transaction's currency.
-provider-gap-receipt-without-sale = Receipt without sale: no sales entry carries this identifier.
-provider-gap-sale-without-receipt = Sale without receipt: no transaction carries the identifier of this entry.
-provider-gap-amount-or-currency-mismatch = Amount or currency differs: the sales entry does not carry the receipt's amount on the account of this currency, or it is already linked.
 provider-review-ambiguous-sale = Several sales entries carry this identifier: choose the one to link.
 provider-review-fee-account-missing = Fee without a fee account: set the fee account of the bank account.
-provider-review-conversion-unpaired = Conversion without its pair: the other half is missing or not unique.
-provider-review-withdrawal-foreign-currency = Withdrawal from a foreign-currency balance: post the entry by hand at the CHF received by the bank, then link the transaction.
-provider-review-no-rule = No rule matches: post the entry by hand, or create a rule.
 error-bank-account-is-provider = This account is a payment provider's balance: it receives neither bank statements nor invoice payments. Import its statement through its own route, and settle the invoice through an internal account or an entry, then link the transaction.
 bank-accounts-labels-kind = Account type
 bank-accounts-kind-bank = Bank account
