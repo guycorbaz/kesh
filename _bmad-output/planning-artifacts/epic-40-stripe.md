@@ -90,7 +90,7 @@ elle sert aux quatre fiches et à la phase 2.
 |---|---|---|---|---|
 | **40-8a** | client de l'API : clé restreinte `rk_…` en variables `KESH_STRIPE_<n>_ACCOUNT` / `KESH_STRIPE_<n>_KEY` (lecteur du socle S1), versements payés **par `arrival_date`** et leurs transactions de solde (`?payout=`), pagination par curseur, traduction en lignes du rapport **aux dates de Zurich** ; aucune fenêtre (curseurs) ; Σ net ≠ montant du versement → échec, rien d'écrit | `kesh-api`, `kesh-import` (lecture) | phase 1 | — |
 | **40-8b** | téléchargement par période : route sur le socle (tâche, état, reprise commune), `KESH_STRIPE_PARALLEL` (1 à 6), même chemin que le CSV ; dialogue générique de 38-12b ; manuels, E2E | `kesh-api`, `frontend`, `kesh-i18n`, `docs/manual` | 40-8a, socle S1 à S9 | — |
-| **40-9** | story de solde de l'epic : la dette des stories de l'epic (plafond 5 issues), dont l'extraction commune de la boucle de lecture CSV des trois lecteurs | `kesh-import` (et selon la dette retenue) | 40-7a à 40-8b | — |
+| **40-9** | story de solde de l'epic : la dette des stories de l'epic (plafond 5 issues) ; l'extraction commune de la boucle de lecture CSV des trois lecteurs est reportée à l'intégration des Epics 38 à 40 (le lecteur Wise n'est pas sur `epic/40-stripe`, fiche 40-9) | `kesh-import` (et selon la dette retenue) | 40-7a à 40-8b | — |
 
 Plus tard encore : le téléchargement périodique (automatisme), story à part ; le contrôle de solde et la créance à la
 clôture (ancienne 40-4, `deferred`) ; les rapports joints (ancienne 40-5, `deferred`, avec 38-10).
@@ -218,7 +218,7 @@ en propre : sa conversion, son jeu d'étapes, ses codes `<PRESTATAIRE>_*` propre
 | 40-7d-ecrans-manuel-stripe | ready-for-dev (au 2026-11-20 ; le registre fait foi : `sprint-status.yaml`) | phase 1 |
 | 40-8a-client-api-stripe | ready-for-dev (au 2026-11-20 ; le registre fait foi : `sprint-status.yaml`) | phase 2 |
 | 40-8b-telechargement-stripe | ready-for-dev (au 2026-11-20 ; le registre fait foi : `sprint-status.yaml`) | phase 2 |
-| 40-9-solde-dette | backlog | story de solde de l'epic (ajoutée le 2026-11-20, revue P2 de la 40-7a) : la dette des stories de l'epic, plafonnée à **5 issues** ; dettes inscrites : la boucle de lecture, la collecte plafonnée des erreurs et la troncature des valeurs, communes aux trois lecteurs CSV (M2 de la P1 de la 40-7a) |
+| 40-9-solde-dette | backlog | story de solde de l'epic (ajoutée le 2026-11-20, revue P2 de la 40-7a) : la dette des stories de l'epic, plafonnée à **5 issues** ; dettes inscrites : la boucle de lecture, la collecte plafonnée des erreurs et la troncature des valeurs, communes aux trois lecteurs CSV (M2 de la P1 de la 40-7a) — *annoté le 2026-11-22 (fiche 40-9) : extraction reportée à l'intégration des Epics 38 à 40, faute du lecteur Wise sur la branche ; la 40-9 prend cinq défauts de code plus faciles et la documentation* |
 | 40-1-client-stripe | superseded | remplacée par 40-8a et 40-8b (clé en variable d'environnement, sans coffre ni connexion) |
 | 40-2-classement-des-types-stripe | superseded | remplacée par 40-7c (catégories du rapport) |
 | 40-3-versements-et-rattachement | superseded | remplacée par 40-7b (transaction de versement) et 40-7c |

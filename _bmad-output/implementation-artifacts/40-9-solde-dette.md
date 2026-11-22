@@ -28,7 +28,7 @@ story de solde 40-9 »). Chaque prémisse a été relue au code de `b321f24ad` :
 | D2 | `stripe_reconciliation_e2e.rs:1797-1799` : « la route Wise n'est pas sur cette branche » — deviendra faux à la reprise d'`epic/40` par l'Epic 39 | commentaire | oui | **traité** : phrase rendue indépendante de la branche (hors plafond) |
 | D3 | `docs/api-external.md:1074` : l'écran Stripe envoie des « propositions renvoyées telles que la revue les montre » — faux : `stripeAcceptBody` (`stripe-review.ts:20`) n'envoie que les champs du corps | doc | oui | **traité** (hors plafond) |
 | D4 | `docs/api-external.md:1066` : « Angle mort connu : la destination n'est pas protégée… la relecture à l'usage viendra avec les écritures de versement » — périmé : `fix-40` rejuge la destination à la revue et à l'acceptation | doc | oui | **traité** (hors plafond) |
-| D5 | `docs/api-external.md:1399` (`BANK_ACCOUNT_FIELD_NOT_ALLOWED`) et `:1476` (`ACCOUNT_CURRENCY_PROVIDER_LINKED`) disent « compte PayPal » ; le code juge tout prestataire (40-7b P2 L4) | doc | à relire au code (étape 0) | **traité** si le code juge `is_provider()` / `provider IS NOT NULL` (hors plafond) |
+| D5 | `docs/api-external.md:1399` (`BANK_ACCOUNT_FIELD_NOT_ALLOWED`) et `:1476` (`ACCOUNT_CURRENCY_PROVIDER_LINKED`) disent « compte PayPal » ; le code juge tout prestataire (40-7b P2 L4) | doc | oui (`bank_accounts.rs:2539`, `:2613` : `is_provider()` ; `accounts.rs:2743` : `provider IS NOT NULL`) | **traité** (`c0990f8e7`, hors plafond) |
 | D6 | Fiche `fix-40-destination-rejugee.md` en `review`, sans Change Log de sa revue P1 (0/0/0/4), sans clé au registre | fiche | oui | **traité** (hors plafond) |
 | C1 | `find_payout_destinations` et `list_provider_balances` (`kesh-db/src/repositories/bank_accounts.rs:1652`, `:1686`) lisent la devise du compte du plan sans `a.company_id = bank_accounts.company_id` (fix-40 P1 LOW-3) | code, défense | oui | **plafond 1/5** |
 | C2 | Libellé d'une transaction Stripe : la catégorie n'est pas bornée, une catégorie longue coupe la fin `) - <versement>` (`stripe_imports.rs:188-209`, 40-7b P2 L1) | code | oui | **plafond 2/5** |
@@ -49,6 +49,8 @@ story de solde 40-9 »). Chaque prémisse a été relue au code de `b321f24ad` :
   libellé passé d'un prestataire à l'autre (40-7d P1 L1), textes du remboursement en CHF (40-7d P1 L8), compte rendu CSV
   resté affiché après un téléchargement, six clés `provider-*` sans site, retour au compte du plan d'origine (40-7d P4
   L3), E2E de versements en devise (40-7d P1 L3), `bank-import.spec.ts:130` : restent en issues.
+- Un compte ordinaire déjà importé en CAMT peut recevoir des réglages de prestataire (40-7c P1 L4, `bug` P3) : demande
+  une décision (refuser le réglage, ou dater par `value_date`), non un correctif mécanique ; reste en issue.
 - Côté Wise du L3 (chaîne versement Stripe → compte Wise → `POST /wise/accept`) : de l'Epic 39 ; entrée ajoutée à
   `issues-a-ouvrir.md` si absente (l'entrée « (intégration 39/40) » existe déjà).
 - Les entrées « (40-7b) Archiver un compte désigné… », « (40-7b, revue P1 L2) dérives ultérieures » et « (40-7b, revue
@@ -62,8 +64,10 @@ story de solde 40-9 »). Chaque prémisse a été relue au code de `b321f24ad` :
   compte en EUR **d'une autre société** (donnée incohérente posée en SQL) est rendu par `find_payout_destinations` et
   `list_provider_balances` avec `ledger_currency = None` ; il rougit sans la garde (mutation).
 - **AC-2 (C2)** : la catégorie, dans le libellé, est bornée à `PROVIDER_TYPE_MAX_CHARS` (comme `provider_type`) ; le
-  doc-comment de `label` dit la borne. Test unitaire : catégorie de 300 caractères → le libellé (et celui des frais)
-  finit par `) - <versement>` et tient dans `DETAILS_MAX_CHARS` ; rougit sans le correctif.
+  doc-comment de `label` dit la borne. Test unitaire : catégorie de 1000 caractères, avec une **assertion de montage**
+  (le libellé composé avec la catégorie non bornée et une description vide dépasse `DETAILS_MAX_CHARS`, sans quoi la
+  sonde ne prouve rien) → le libellé de la transaction et celui des frais (`provider_lines_of_row`, champ `details`)
+  finissent par `) - <versement>` et tiennent dans `DETAILS_MAX_CHARS` ; rougit sans le correctif.
 - **AC-3 (C3)** : l'exercice par défaut de la page des prestataires se choisit au jour de Zurich (`todayInZurich()`),
   comme la période proposée au téléchargement. Test Vitest d'une page qui monte `ProviderReviewPage` (fichier neuf à côté
   de `reconciliation/stripe/stripe-page.test.ts`, avec ses propres simulations : deux exercices calendaires 2025 et
@@ -74,8 +78,8 @@ story de solde 40-9 »). Chaque prémisse a été relue au code de `b321f24ad` :
   `defaultFiscalYearId`, pure, ne suffit pas : le défaut est dans l'appel de `onMount`.
 - **AC-4 (C4)** : le lien « Comptes bancaires » du panneau d'erreur d'import ne s'affiche que pour les refus qui se
   règlent à l'écran *Comptes bancaires* : `PROVIDER_ACCOUNT_NOT_FOUND`, `PROVIDER_CURRENCY_ACCOUNT_MISSING`,
-  `PROVIDER_CURRENCY_DUPLICATE`, `BANK_ACCOUNT_CLOSED` (refus du cœur d'import, `provider_imports.rs:7-10`) et
-  `PROVIDER_LEDGER_REQUIRED` (liste blanche : une erreur réseau ou inconnue n'a pas de lien). La page garde le **code**
+  `PROVIDER_CURRENCY_DUPLICATE` et `BANK_ACCOUNT_CLOSED` (refus du cœur d'import, `provider_imports.rs:7-10` ; un
+  compte clos se rouvre à cet écran). Liste blanche : une erreur réseau ou inconnue n'a pas de lien. La page garde le **code**
   du refus (état neuf, remis à zéro avec `importErrors` au changement de compte ou d'exercice et à chaque import) :
   `importErrorLines` ne rend que des phrases. Règle hors composant (`importErrorConcernsAccounts(code)`,
   `provider-review.ts`), testée seule code par code ; et, sur la page Stripe, le panneau avec le lien pour
@@ -84,8 +88,11 @@ story de solde 40-9 »). Chaque prémisse a été relue au code de `b321f24ad` :
   clos en échec) — c'est-à-dire absente de `payoutSource`, non seulement des candidates filtrées par devise —, le
   sélecteur montre une option « Destination actuelle (introuvable) » portant l'identifiant, choisie ;
   la valeur envoyée reste inchangée. Texte aux quatre locales ; `sitesTotal` recompté par la garde. Test Vitest du cas
-  dégradé (lecture `listBankAccounts(true, true)` en échec), qui tue aussi la mutation du repli `payoutPool` (`… : null`
-  → `… : []`).
+  dégradé (lecture `listBankAccounts(true, true)` en échec) : destination absente de la liste de l'écran → « Destination
+  actuelle (introuvable) » choisie ; **et**, dans le même cas dégradé, une candidate active de la liste de l'écran reste
+  offerte, nommée (c'est ce qui tue la mutation du repli `payoutPool`, `… : null` → `… : []`, qui afficherait aussi
+  « introuvable »). Limite, tracée en issue : une destination présente dans la liste mais écartée par le filtre (devenue
+  Stripe ou PayPal, autre devise) reste affichée en blanc.
 - **AC-6 (docs)** : D1 à D6 faits ; D4 réécrit, non retiré : le `PUT` ne protège toujours pas la destination
   (décision 5 de `fix-40`), seule la fin « la relecture à l'usage viendra » est périmée. Grep des symptômes sur le
   dépôt (code, quatre locales, manuels `.tex`, docs, fiches) ; la formule de `POST /stripe/accept`
@@ -135,5 +142,10 @@ story de solde 40-9 »). Chaque prémisse a été relue au code de `b321f24ad` :
   du cœur d'import qui se règlent aux comptes bancaires ; code du refus gardé par la page), M2 (fuseau du test posé, page
   montée nommée), L1 (Dev Note de C1), L2 (D4 réécrit, non retiré), L3 (formule de `POST /stripe/accept` gardée, dite),
   L4 (option « introuvable » jugée contre `payoutSource`), L5 (registre et fichier d'epic). Passe P2 à lancer.
+- 2026-11-22 — validation P2 (complète, une lentille, Claude Opus, contexte frais ; rapport
+  `kesh-gate-logs/s40-9/validation-p2-rapport.md`) : 0 C, 0 H, 1 M, 5 L, remédiés : M1 (sonde de C2 : catégorie de 1000
+  caractères et assertion de montage), L1 (`PROVIDER_LEDGER_REQUIRED` retiré de la liste : refus du réglage, non de
+  l'import), L2 (test de C5 qui tue la mutation du repli ; limite du filtre tracée), L3 (`api-external.md:1066` : motifs
+  d'acceptation exacts), L4 (40-7c P1 L4 nommée), L5 (registre `in-progress`, D5 marqué traité). Passe P3 à lancer.
 
 ## Dev Agent Record
