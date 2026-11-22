@@ -1,0 +1,7 @@
+{
+ "error": {
+  "type": "invalid_request_error",
+  "code": "api_key_expired",
+  "message": "Invalid API Key provided: rk_test_********************FUITE"
+ }
+}
