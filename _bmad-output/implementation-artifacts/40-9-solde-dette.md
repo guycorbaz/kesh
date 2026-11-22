@@ -1,6 +1,6 @@
 # Story 40-9 : solde de la dette de l'Epic 40 (Stripe)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-22, branche `story/40-9`, partie d'`epic/40-stripe` à `b321f24ad` (fusion de la 40-8b).
 Story de solde de l'Epic 40 (`CLAUDE.md`, § *Priorités des défauts* : « une story de solde à la fin de chaque epic ») ;
@@ -159,6 +159,14 @@ story de solde 40-9 »). Chaque prémisse a été relue au code de `b321f24ad` :
 - 2026-11-22 — développement (`d9e642777`) ; gates verts ; statut `review`, revue de code P1 à lancer (prompt
   `kesh-gate-logs/s40-9/revue-p1-prompt.md`).
 
+- 2026-11-22 — revue de code P1 (Claude Opus, contexte frais, rapport `kesh-gate-logs/s40-9/revue-p1-rapport.md`) :
+  **0 C, 0 H, 0 M, 5 L** — boucle close sans code de production. L1 : test du lien pour `PROVIDER_ACCOUNT_NOT_FOUND`
+  ajouté sur la page Stripe (AC-4) ; L2 : limite du témoin des mutations dite au Dev Agent Record ; L3 : commentaire de
+  `bank-accounts/+page.svelte` aux deux causes ; L4 : conflits de fusion vers `epic/39-wise` notés pour l'intégration
+  (`provider-review.test.ts` add/add, `api-external.md` « PayPal, Stripe, Wise ») ; L5 : ergonomie de l'option
+  « introuvable », hors AC, notée par l'orchestrateur. Trend validation P1 0/0/2/5 → P2 0/0/1/5 → P3 0/0/0/3 ; revue
+  de code P1 0/0/0/5. Statut `done`.
+
 ## Dev Agent Record
 
 Journaux : `kesh-gate-logs/s40-9/`. Dernier commit de code : `d9e642777`.
@@ -215,6 +223,10 @@ Journaux : `kesh-gate-logs/s40-9/`. Dernier commit de code : `d9e642777`.
 - Vitest (`mut-front-all.console`) : témoin vert ; `todayInZurich` → jour local → tuée (« expected 25 to be 26 ») ;
   `importErrorConcernsAccounts` → toujours vrai → tuée (lien présent sur un refus de format) ; `payoutMissing` neutralisé
   → tuée (« expected '' to be '4' ») ; repli `payoutPool` `null` → `[]` → tuée (« expected [ '', '4' ] to include '6' »).
+
+- **Limite (revue P1, L2)** : le témoin non muté des mutations Vitest n'a tourné que sur `stripe-page-exercice.test.ts`
+  (`mut-f-temoin.log`, 1 passé) ; `stripe-page.test.ts` et `bank-accounts-page-stripe.test.ts` n'ont pas eu de témoin
+  dans la copie. Chaque mutation est tuée par une assertion nommée, et les fichiers passent à HEAD (revue P1 : 86/86).
 
 ### Captures (thème clair, après correctif ; `kesh-gate-logs/s40-9/captures/`)
 
