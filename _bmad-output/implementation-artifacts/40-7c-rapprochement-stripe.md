@@ -1,6 +1,6 @@
 # Story 40-7c : rapprochement Stripe — revue et acceptation : charges rattachées aux ventes des boutiques, frais et versements écrits, écarts listés
 
-Status: ready-for-dev
+Status: done
 
 *Fiche rédigée le 2026-11-20, branche `epic/40-stripe`, numéros de ligne relevés sur `origin/main` au commit `fd04099f`.
 Epic 40, **phase 1 KISS** (décision de Beat du 2026-11-20). **Dépend de** : 40-7b (transactions Stripe importées,
@@ -166,16 +166,60 @@ ressaisie et de voir mes erreurs.
    d'accepter la proposition, qui écrirait un second versement (limite écrite au manuel, 40-7d ; comportement à
    confirmer à T0).
 
+## Amendement du 21.11
+
+Écrit avant le développement, sur les décisions du responsable de l'epic du 21.11 (c, d, f), la demande de libellé
+des notes de l'epic, et ce que T0 a relevé au code. Là où il contredit un AC plus haut, il prévaut.
+
+1. **Date (décision f ; AC-3 et AC-4 disaient déjà `booking_date`).** Le moteur commun datait la revue (période,
+   tri, résumé) et les écritures par `value_date`, à défaut `booking_date` (`payment_date`,
+   `provider_review.rs`, et `pending_in_period`). Pour Stripe, `value_date` est `available_on` (40-7b) : les frais
+   d'une vente du 30 décembre tombaient en janvier, dans l'exercice suivant. Le moteur date désormais **toute**
+   transaction de prestataire par `booking_date` — le jour de la transaction dans le rapport, dans le fuseau de
+   l'export (le rapport du tableau de bord est en heure de Zurich) ; sans effet pour PayPal et Wise, dont les imports
+   laissent `value_date` vide (`paypal_imports.rs:309` ; `wise_imports.rs:219` sur `epic/39-wise`). Hors périmètre :
+   un rapport exporté avec les colonnes `*_utc` porte des jours UTC (40-7b ne convertit pas).
+2. **Libellé des écritures (notes de l'epic, format du tableur comptable).** Les écritures de frais et de versement
+   prennent le **libellé de la transaction** écrit par l'import (40-7b : « Frais Stripe · <Encaissement|catégorie>
+   Stripe de <brut> <DEV> -<frais>=<net> <DEV> BRUT - <txn_…> (<created>- <description>) - <po_…> », « Versement
+   Stripe <po_…> <net> <DEV> »), borné aux 200 caractères du moteur en gardant la fin `) - <po_…>` (seule la
+   description cède) ; libellé vide → « Stripe <compte> · <identifiant> ». Remplace les libellés de l'AC-3 et de
+   l'AC-4 (celui du versement en est le début). Une charge n'a pas d'écriture (rattachement).
+3. **Une proposition qu'on n'accepte pas n'est pas perdue (décision c).** Sa transaction reste `pending`, la revue
+   suivante la propose encore ; toute ligne (proposée ou à examiner) se traite à la main par l'API : écriture (en
+   devise, 37-3b) par `POST /journal-entries`, puis `POST /reconciliation/transactions/{id}/link-entry` (rattachement
+   en devise de la 38-11c1) — testé (remboursement CHF, retour de versement USD).
+4. **Contrepartie d'une règle en CHF ou dans la devise de la transaction (décision d)** : portée par le moteur
+   (38-11c2) ; sans objet pour Stripe, qui ne propose aucune règle (AC-5 : toute autre catégorie à examiner).
+5. **Proposition `payout` au corps de l'acceptation** : `payoutBankAccountId` y est **facultatif** ; s'il est donné
+   (la proposition de la revue renvoyée telle quelle) et n'est plus le compte de versement réglé relu sous les
+   verrous → `PROVIDER_PROPOSAL_STALE` (`provider_settings_changed`), comme `feeAccountId` pour un frais. Le client ne
+   désigne toujours pas la destination : c'est un contrôle, non un choix.
+6. **Compte de versement clos ou archivé** : relu par `bank_accounts::find_by_id_in_tx` (lecture cohérente non verrouillante : le lot tient le verrou nommé du compte, qui exclut import, acceptation et rattachement, mais ni la clôture, ni l'archivage, ni le réglage ne le prennent — revue P1 L2) ; archivé
+   → périmé (`payout_account_archived`), clos → `BANK_ACCOUNT_CLOSED` en `failed[]`. Non par `ensure_open_in_tx` :
+   aucune ligne n'est rattachée au compte de versement (seule l'écriture touche son compte du plan) ; l'inventaire de
+   la fenêtre de clôture (`bank_account_closed_inventory.rs`) ne le concerne pas. À la revue, un compte de versement
+   archivé, clos ou sans compte du plan vaut « aucun » (`payout_account_missing`) ; son type et sa devise se
+   contrôlent à l'acceptation (`CounterpartyRule::AssetInCurrency`).
+7. **Moteur commun (T0)** : il était déjà paramétré par le prestataire (38-11c2 : `ProviderKind::Specific`,
+   `Review<P>`, `AcceptBody<P>`, `EngineProposal`, `extra_lock_accounts`, `CounterpartyRule::AssetInCurrency`) ; il
+   gagne `AcceptContext::locked_accounts` (les comptes verrouillés du lot, que la proposition `payout` exige du compte
+   de versement) et la borne commune `ENTRY_DESCRIPTION_MAX_CHARS`. `other_side_predicate` est le texte à deux
+   branches de la 38-11c1, inchangé.
+8. **La 40-7b n'était pas dans `epic/40-stripe`** à la reprise (close sur `story/40-7b`, `a53f6a24`) : fusionnée dans
+   la branche de cette story, raccords avec la 38-11c2 (liste des actions de trace d'import, registre des routes,
+   phrase du manuel d'administration).
+
 ## Tâches
 
-- [ ] T0 — Relire 38-11c et 39-11c au code fusionné : moteur paramétré par le prestataire, lecture des écritures de
+- [x] T0 — Relire 38-11c et 39-11c au code fusionné : moteur paramétré par le prestataire, lecture des écritures de
   vente, écriture `fee`, `mark_reconciled_in_tx`, code périmé, `other_side_predicate` (deux branches de 39-11c ?) ;
   relever ce qui manque et le dire au Change Log ; contrôles de contrepartie de `fee` (AC-4 d) et inventaire
   `bank_account_closed_inventory` de la fonction d'écriture du versement.
-- [ ] T1 — `stripe.rs` : `classify`, `stripe_ids_in`, contrôles du versement (AC-2, AC-4, AC-5) ; tests purs.
-- [ ] T2 — Revue : lectures (écritures de vente paramétrées, lignes d'un versement, versements sans réception), route
+- [x] T1 — `stripe.rs` : `classify`, `stripe_ids_in`, contrôles du versement (AC-2, AC-4, AC-5) ; tests purs.
+- [x] T2 — Revue : lectures (écritures de vente paramétrées, lignes d'un versement, versements sans réception), route
   `GET` (AC-1 à AC-5).
-- [ ] T3 — Acceptation : proposition `payout` au moteur, route `POST`, registre, phrase du manuel d'administration (AC-6) ;
+- [x] T3 — Acceptation : proposition `payout` au moteur, route `POST`, registre, phrase du manuel d'administration (AC-6) ;
   i18n des motifs et écarts propres à Stripe.
 
 ## Stratégie de tests
@@ -286,3 +330,161 @@ rattachée.
   versement (actif, non de charge).
 - 2026-11-20 — validation P4 ciblée (Claude Haiku 5.5, contexte frais ; une lentille : le seul commit `bb40b420`, contre `origin/main` et les fiches sœurs) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 0 LOW, remédiés (rapport `kesh-gate-logs/epic-39-40-kiss/validation/40-7-P4-ciblee.md`). MEDIUM : l'exemption `RETRY_WITH_AUTORISE` désigne le handler par son seul nom (angle mort (d) de `audit_route_registry.rs:376-378`) ; le handler `stripe::post_accept` est renommé `stripe::accept_proposals` dans le registre (AC-6), avec la consigne de ne jamais nommer un handler de cette fiche `post_accept`. Les autres points de la P3 ciblée sont relus sans écart.
 - 2026-11-20 — alignement sur la phase 1 de l'Epic 38 (Claude Sonnet 5.5, contexte frais ; fiches 38-11c1, 38-11c2, 38-11d et rapport de validation P3 de `28623871` lus) : `link_sale` → `link_entry` (AC-2, AC-6 et renvois) ; AC-1 : le prédicat de l'autre côté est porté par 38-11c1 AC-1b au même texte, la mention « 38-11c ne le reprend pas » est retirée, repli conservé seulement si l'Epic 38 arrive après ; rattachement en devise = 38-11c1 AC-1 ; code périmé `PROVIDER_PROPOSAL_STALE`, trace `provider.proposal_accepted` ; moteur de 38-11c2 générique. Rapport `kesh-gate-logs/epic-39-40-kiss/validation/alignement-38-P3.md`.
+- 2026-11-21 — amendement du 21.11 (section ci-dessus), écrit avant le développement : date `booking_date` (décision
+  f), libellé repris de la transaction, décision (c), `payoutBankAccountId` facultatif au corps, compte de versement
+  clos ou archivé, moteur commun (`locked_accounts`, borne commune du libellé), fusion de la 40-7b.
+- 2026-11-21 — développement (`bmad-dev-story`), statut `review` ; voir le Dev Agent Record.
+
+## Dev Agent Record
+
+### Agent Model Used
+
+Claude Opus 5.5 (contexte unique, worktree `kesh-wt40c`, branche `story/40-7c` partie de `epic/40-stripe` `d897c4c8`).
+
+### T0 — relevé au code (ligne lue citée)
+
+- **La 40-7b n'était pas dans `epic/40-stripe`** (`git merge-base --is-ancestor a53f6a24 d897c4c8` → faux), contrairement
+  à la prémisse de la reprise : fusionnée dans la branche de la story (`c9409181`). Conflits résolus : `sprint-status.yaml`
+  (les deux statuts `done`), `provider_imports.rs` (`AUDIT_ACTIONS` en tranche, la 38-11c2, plus `stripe_import.created`,
+  la 40-7b), `audit_route_registry.rs` (160 → 161 routes, 152 → 153 tracées, 164 → 165 au rejeu, registre + routes de
+  test 164 → 165), manuel d'administration (« 153 des 161 », « 153 + 4 + 4 = 161 »). `migrations.sha384`, audit
+  d'idempotence (97 migrations, `yes` 13) et squash fusionnés sans conflit. fmt + clippy du tout verts après la fusion
+  (`clippy-merge.log`).
+- **Moteur de la 38-11c2 déjà paramétré par le prestataire** (`provider_review.rs:91-169` : `ProviderKind::Specific`,
+  `ProviderSpec::linkable/ruleable` ; `:427` `ReviewProposal<P>` ; `provider_accept.rs:486` `EngineProposal`, `:639`
+  `prepare_accept(…, extra_lock_accounts)`, `:1044` `CounterpartyRule::AssetInCurrency` écrit « versement Stripe,
+  40-7c AC-4 d ») : aucune fiche `40-7c0`, aucun test PayPal modifié en assertion (une ligne ajoutée à la
+  construction d'`AcceptContext`, `paypal_reconciliation_e2e.rs:1897`, `locked_accounts: &[]`).
+- `payment_date` (`provider_review.rs:554` avant la story) et `pending_in_period` (`repositories/provider_review.rs:99`) dataient par
+  `COALESCE(value_date, booking_date)` ; l'import Stripe pose `value_date = available_on`
+  (`stripe_imports.rs:227`, `value_date: row.available_on`) → amendement 1. PayPal et Wise : `value_date: None`
+  (`paypal_imports.rs:309`, `epic/39-wise:crates/kesh-api/src/routes/wise_imports.rs:219`).
+- `other_side_predicate` (`reconciliation_link.rs:766-779`) est le texte à deux branches de la 38-11c1 : non touché,
+  testé (réception EUR rattachée, CHF du même nombre refusée).
+- `bank_account_closed_inventory.rs` : la proposition `payout` n'écrit aucune ligne des sept tables hors
+  `mark_reconciled_in_tx` (déjà au registre) et n'appelle pas `ensure_open_in_tx` (amendement 6) : inventaire inchangé,
+  vert.
+
+### Completion Notes
+
+- `kesh-reconciliation/src/stripe.rs` (neuf) : `classify`, `stripe_ids_in`, `match_key` (`reference`), `entry_label` +
+  `bounded_label`, `SPEC`, `payout_lines`, `judge_payout` (seule définition, revue et rejugement), `complete_review`
+  (genres propres : versement, remboursement, autre catégorie ; versements sans réception), types
+  `StripeReviewProposal` / `PayoutProposal` / `PayoutDestination`.
+- `kesh-api/src/routes/stripe.rs` (neuf) : `review` (une transaction de lecture : revue commune puis lignes des
+  versements, comptes de versement, versements sans réception), `accept_proposals` (comptes de versement lus avant les
+  verrous et passés en `extra_lock_accounts`, `retry_app_on_deadlock("stripe::accept")`), `StripeProposal` (non
+  étiqueté : `link_entry`, `fee`, `payout` ; autres genres → 400), `accept_payout`. Routes dans `lib.rs` ; registre
+  `("post", "stripe::accept_proposals", Traced, Rejouee)`.
+- `kesh-db` : `provider_review::transactions_of_groups`, `provider_review::reconciled_without_other_side`,
+  `bank_accounts::find_by_ids` (lectures seules) ; `pending_in_period` sur `booking_date`.
+- Moteur commun : `payment_date` = `booking_date` ; `ENTRY_DESCRIPTION_MAX_CHARS` ; `AcceptContext::locked_accounts`.
+- Constantes partagées avec l'import : `stripe_imports::PAYOUT_PROVIDER_TYPE` et `CHARGE_CATEGORY` repris de
+  `kesh_reconciliation::stripe` ; test d'égalité de `PROVIDER` et `FEE_SUFFIX`.
+- i18n : sept clés `stripe-review-*` / `stripe-gap-*` dans les quatre locales (servies à l'écran par la 40-7d) ; de-CH
+  « aufgelöst » (la garde `la_cloture_d_exercice_ne_parle_pas_comme_un_panneau` réserve « geschlossen »).
+- Documentation : `docs/api-external.md` (paragraphe « Revue et acceptation Stripe ») ; manuel d'administration :
+  « 154 des 162 routes », « 154 + 4 + 4 = 162 ». Le manuel utilisateur et les limites restent à la 40-7d (fiche). Aucun
+  PDF régénéré (règle des branches d'epic).
+- Comportement à confirmer (AC-6) : **confirmé** — l'annulation du côté Stripe d'un versement non encore reçu
+  contre-passe son écriture et le rend de nouveau proposable (`annulation_d_un_versement_avant_reception`). Le cas
+  « réception déjà rattachée » n'est pas testé ici (comportement de la 34-11b, inchangé).
+
+### Tests ajoutés (recomptés, périmètre `c9409181..HEAD`)
+
+28 : 13 `#[test]` dans `kesh-reconciliation/src/stripe.rs`, 3 dans `kesh-api/src/routes/stripe.rs`, 12
+`#[sqlx::test]` dans `kesh-api/tests/stripe_reconciliation_e2e.rs` (`grep -c`). Le test de volume : revue de 600
+transactions et 600 écritures de vente en **127 ms** (`volume.log`, `--nocapture`).
+
+### Sondes par mutation (`mut.sh`, `mut2.sh` ; journaux `mut-*.log`)
+
+Douze mutations, chacune **rouge par un échec de test** (aucune erreur de compilation, `test result: FAILED`
+contrôlé) : `date-valeur` (`payment_date` rendu à `value_date`), `frais-seul`, `prefixe-seul`, `total-ignore`,
+`retour-ignore`, `libelle-fixe`, `fin-perdue`, `destination-revue-ignoree`, `archive-ignore`,
+`destination-non-verrouillee` (comptes de versement non passés au pré-vol), `reception-ignoree` (`NOT EXISTS` de
+`reconciled_without_other_side` neutralisé), `type-regle-admis`. **Angle mort déclaré** : la période de la revue
+(`pending_in_period` sur `booking_date`) n'a pas de sonde propre (l'exercice de test couvre 2020-2030).
+
+### Gates (au dernier commit de code `4d08eb00`)
+
+- Gate ciblé avec base (`cible-base-2.log`) : fmt, clippy workspace, `kesh-reconciliation` 87, `kesh-api --lib` 780
+  (5 ignorés), `audit_label_registry` 12, `audit_route_registry` 14, `bank_account_closed_inventory` 11,
+  `paypal_reconciliation_e2e` 28, `stripe_import_e2e` 10, `stripe_reconciliation_e2e` 12, `textes_coherents` 30,
+  `kesh-i18n` 42 — verts.
+- Backend complet `scripts/test-fast.sh --ci` (`gate-backend.log`) : **6493 exécutés, 6493 passés, 15 ignorés** ;
+  `cargo publish --dry-run -p kesh-import` vert.
+- Frontend (`front-*.log`) : `npm run check` 0 erreur (29 avertissements, préexistants), `lint-i18n-ownership` vert,
+  Vitest **4829** (280 fichiers), `npm run build` vert. Aucun fichier frontend modifié.
+- `scripts/gate-ci.sh` (copie `git archive` de `4d08eb00`, `gate-ci.log`) : lancé avant la nouvelle règle des gates
+  du 22.11 ; **interrompu** le 22.11 sur décision du responsable de l'epic (pas de gate-ci par story) après 98
+  binaires `test result: ok`, aucun `FAILED` — non déclaré vert ; cible supprimée. gate-ci et E2E complet à la fin de
+  l'epic.
+- **E2E** : la story n'ajoute aucune spec (décision du 22.11 : seules les specs ajoutées se jouent) ; le smoke,
+  joué avant cette décision, `smoke.spec.ts` 2 passés (`e2e.log`). Choix d'alors : (c) le smoke ; (a) aucune spec ajoutée ou
+  modifiée ; (b) aucune spec ne touche les routes de la story (`grep -rli "stripe|paypal/review|paypal/accept"
+  frontend/tests/e2e/` vide) ni aucun écran (aucun fichier frontend modifié). E2E complet et gate-ci à la fin de
+  l'epic.
+
+### Revue P1 — remédiation (22.11, commit `539822a7`)
+
+Rapport : `kesh-gate-logs/s40-7c/revue-p1-rapport.md` (0 CRITICAL, 0 HIGH, 1 MEDIUM, 8 LOW).
+
+- **M1** : `versement_a_retour_ou_positif_refuse_a_l_acceptation` (e2e) : un `payout` forcé sur `po_TEST0004` (retour) et
+  sur un versement positif (`po_POS`, importé : un frais seul) donne `PROVIDER_PROPOSAL_STALE` sous `payout_reversal` et
+  `payout_not_negative`, rien d'écrit. Le solde USD n'avait pas de compte de versement : le test lui en règle un (SQL
+  direct), sinon le refus viendrait du réglage (`provider_settings_changed`) avant le jugement du versement.
+- **L1** : `destination_non_verrouillee_perime_le_versement` : `accept_payout` appelé avec un `AcceptContext` fait à la
+  main, destination non verrouillée → périmé ; verrouillée → écrit (puis `rollback`).
+- **L2** : commentaire d'`accept_payout` et ligne 6 de l'amendement corrigés : la relecture du compte de versement est
+  cohérente et non verrouillante ; clôture, archivage et réglage ne prennent pas le verrou nommé.
+- **L3** : `destination_de_versement_sans_plan_de_mauvais_type_ou_de_mauvaise_devise` : `BANK_ACCOUNT_NOT_CONFIGURED`,
+  `counterparty_wrong_type` (compte de charge), `counterparty_wrong_currency` (compte EUR pour un solde CHF).
+- **L5** : `take(200)` de `accept_one_rule` remplacé par `ENTRY_DESCRIPTION_MAX_CHARS`.
+- **L6** : `classify` d'une charge de montant nul ; `libelle_borne_frontiere_de_la_fin` (fin de 150 caractères gardée,
+  fin de `max` caractères coupée net).
+- **L7** (corrigé, simple) : `payout_destinations` : les comptes de versement ne s'ajoutent aux verrous que si le lot
+  contient un `payout` ; test unitaire `destinations_verrouillees_seulement_pour_un_lot_avec_versement`.
+- **L8** : doc d'`accept_link_entry` : un versement Stripe ne se rattache pas (`linkable: no_extra_kind`).
+- **L4** : non corrigé (décision d'interface, garde préexistante) : entrée dans `issues-a-ouvrir.md`.
+- Tests ajoutés par la remédiation (`git diff 68cb24da..539822a7`, `grep -c`) : 5 (3 `#[sqlx::test]`, 1 `#[test]` dans
+  `routes/stripe.rs`, 1 dans `kesh-reconciliation/src/stripe.rs`) + 1 assertion de `classify` ; total de la story : 33 (périmètre : `#[test]` et `#[sqlx::test]` des trois fichiers touchés au HEAD de `539822a7`, e2e 15 + `routes/stripe.rs` 4 + `kesh-reconciliation/src/stripe.rs` 14).
+- **Sondes par mutation** (copie hors dépôt, `git archive` de `539822a7`, `mut3.sh`, journaux `mut3-*.log`) : sept
+  mutations, toutes rouges par `test result: FAILED` (aucune erreur de compilation) : `branche-retiree`
+  (`ToReview(_) => {}`), `filtre-verrous` (`locked_accounts.contains` retiré), `refus-plan-absent`, `regle-devise`
+  (devise attendue non contrôlée), `charge-nulle` (`>=`), `frontiere-fin` (`< max / 2`), `destinations-toujours`.
+- **Gates** (commit de code `539822a7`, journal `kesh-gate-logs/s40-7c/`) : fmt et clippy workspace verts, ciblé
+  (`cible-r1-3.log`) vert, nextest complet `gate-backend.log` : **6498 exécutés, 6498 passés, 15 ignorés** (un test
+  `kesh-db::pool_lecture_seule g_une_instruction_trop_longue_est_interrompue_par_le_serveur` passé à la seconde
+  tentative, étranger à la story, non investigué) ; `cargo publish --dry-run -p kesh-import` vert. Frontend non touché ;
+  aucune spec E2E ajoutée ; pas de `gate-ci.sh`.
+- La sonde `regle-devise` rougit, dans la copie mutée, par la garde voisine `ACCOUNT_REQUIRES_CURRENCY` (écriture d'une
+  ligne en devise) et non par `counterparty_wrong_currency` : défense en profondeur réelle, non un défaut ; la sonde reste
+  rouge, mais elle ne mesure pas à elle seule la garde de `check_counterparty` (P2, LOW-2).
+- Prompt de la passe P2 (ciblée) : `kesh-gate-logs/s40-7c/revue-p2-prompt.md`.
+
+### File List
+
+- `crates/kesh-reconciliation/src/stripe.rs` (neuf), `lib.rs`, `provider_review.rs`
+- `crates/kesh-api/src/routes/stripe.rs` (neuf), `routes/mod.rs`, `lib.rs`, `routes/provider_accept.rs`,
+  `routes/stripe_imports.rs`
+- `crates/kesh-api/tests/stripe_reconciliation_e2e.rs` (neuf), `tests/audit_route_registry.rs`,
+  `tests/paypal_reconciliation_e2e.rs`
+- `crates/kesh-db/src/repositories/provider_review.rs`, `repositories/bank_accounts.rs`
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,en-CH,it-CH}/messages.ftl`
+- `docs/api-external.md`, `docs/manual/fr/admin-manual.tex`
+- `_bmad-output/implementation-artifacts/40-7c-rapprochement-stripe.md`, `sprint-status.yaml`
+- (fusion de la 40-7b, `c9409181` : ses fichiers, voir sa fiche)
+- 2026-11-22 — revue de code P1 (Claude Sonnet 5.5, contexte frais) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 8 LOW, remédiés
+  (`539822a7`). Passe P2 ciblée (Claude Haiku 5.5, une lentille, la seule remédiation `539822a7`) : 0 CRITICAL, 0 HIGH,
+  0 MEDIUM, 5 LOW (rapport `kesh-gate-logs/s40-7c/revue-p2-rapport.md`). Tendance : P1 0/0/1/8 -> P2 0/0/0/5. Les cinq LOW,
+  sans toucher au code de production : LOW-1 le test de M1 règle une destination USD pour le solde USD ; la sonde
+  `ToReview(_) => {}` rejouée dans une copie hors dépôt rougit désormais sur l'assertion `accepted == []` (ligne 1105 du
+  test), non plus par `counterparty_wrong_currency` ; LOW-2 noté au Dev Agent Record ; LOW-3 chemin de l'entrée L4 de
+  `issues-a-ouvrir.md` corrigé (`crates/kesh-api/src/routes/bank_accounts.rs:947`) ; LOW-4 les commentaires de
+  `provider_accept.rs` et `provider_review.rs` disent tous deux ce que `wise::linkable` admet (`Other` de préfixe `TRANSFER`
+  et versement Stripe, `story/39-11c`), PayPal et Stripe n'en déclarant aucun, sans code ; LOW-5 lignes coupées, périmètre du
+  total 33 écrit. Boucle close : la dernière remédiation ne touche que des tests, des commentaires et de la documentation.
+  Gates : `539822a7` nextest complet 6498 passés, 15 ignorés ; au commit de clôture : fmt et clippy workspace verts,
+  `stripe_reconciliation_e2e` 15/15 (`e2e-final.log`) ; le gate complet n'a pas été rejoué (aucune ligne de production
+  changée).
+- 2026-11-22 — statut `done`.

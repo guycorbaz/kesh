@@ -970,6 +970,15 @@ pub fn build_router_avec_registre(
                 (state.config.bank_import_max_mib as usize) * 1024 * 1024,
             )),
         )
+        // Story 40-7b (Epic 40) : import du rapport Stripe « Itemized payout
+        // reconciliation » d'un compte Stripe, ventilé par devise (mêmes
+        // droits et même limite que l'import PayPal).
+        .route(
+            "/api/v1/stripe-imports",
+            post(routes::stripe_imports::create).layer(axum::extract::DefaultBodyLimit::max(
+                (state.config.bank_import_max_mib as usize) * 1024 * 1024,
+            )),
+        )
         // Story 38-12a (Epic 38, phase 2) : téléchargement des transactions
         // d'un compte PayPal par l'API (Comptable+, sessions seules : une clé
         // d'API est refusée dans le gestionnaire).
@@ -989,6 +998,13 @@ pub fn build_router_avec_registre(
         .route(
             "/api/v1/paypal/accept",
             post(routes::paypal::accept_proposals),
+        )
+        // Story 40-7c (Epic 40) : revue et acceptation Stripe, sur le même
+        // moteur (mêmes droits ; propositions `link_entry`, `fee`, `payout`).
+        .route("/api/v1/stripe/review", get(routes::stripe::review))
+        .route(
+            "/api/v1/stripe/accept",
+            post(routes::stripe::accept_proposals),
         )
         // Story v016-2a (#816) : saisir un relevé à la main (Comptable+, clés
         // `read-write` comme l'import). Corps JSON borné par une limite PROPRE,

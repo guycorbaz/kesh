@@ -78,8 +78,9 @@ where
 }
 
 /// Les transactions **pending** des comptes bancaires `bank_account_ids`, dont
-/// la date (`value_date`, à défaut `booking_date`) tombe dans `[from, to]`,
-/// triées par date puis identifiant.
+/// la date (`booking_date`, jamais `value_date` : amendement du 21.11 de la
+/// Story 40-7c, voir `kesh_reconciliation::provider_review::payment_date`)
+/// tombe dans `[from, to]`, triées par date puis identifiant.
 pub async fn pending_in_period<'e, E>(
     executor: E,
     company_id: i64,
@@ -96,8 +97,8 @@ where
     let sql = format!(
         "SELECT {BANK_TX_COLUMNS} FROM bank_transactions \
          WHERE company_id = ? AND status = 'pending' AND bank_account_id IN ({}) \
-           AND COALESCE(value_date, booking_date) BETWEEN ? AND ? \
-         ORDER BY COALESCE(value_date, booking_date), id",
+           AND booking_date BETWEEN ? AND ? \
+         ORDER BY booking_date, id",
         placeholders(bank_account_ids.len())
     );
     let mut q = sqlx::query_as::<_, BankTransaction>(&sql).bind(company_id);
@@ -131,6 +132,85 @@ where
         placeholders(bank_account_ids.len())
     );
     let mut q = sqlx::query_as::<_, BankTransaction>(&sql).bind(company_id);
+    for id in bank_account_ids {
+        q = q.bind(*id);
+    }
+    q.fetch_all(executor).await.map_err(map_db_error)
+}
+
+/// Les transactions des comptes bancaires `bank_account_ids` qui portent l'un
+/// des identifiants de regroupement `group_ids` (`end_to_end_id`), **tous
+/// états et toutes dates**, par identifiant — Story 40-7c (AC-4) : les lignes
+/// des versements Stripe, une requête pour tous les comptes. Au plus
+/// [`super::reconciliation::MAX_IN_CLAUSE_IDS`] identifiants par appel : au-delà,
+/// la lecture se fait par tranches.
+pub async fn transactions_of_groups(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    bank_account_ids: &[i64],
+    group_ids: &[String],
+) -> Result<Vec<BankTransaction>, DbError> {
+    let mut out = Vec::new();
+    if bank_account_ids.is_empty() {
+        return Ok(out);
+    }
+    for chunk in group_ids.chunks(super::reconciliation::MAX_IN_CLAUSE_IDS) {
+        let sql = format!(
+            "SELECT {BANK_TX_COLUMNS} FROM bank_transactions \
+             WHERE company_id = ? AND bank_account_id IN ({}) AND end_to_end_id IN ({}) \
+             ORDER BY id",
+            placeholders(bank_account_ids.len()),
+            placeholders(chunk.len())
+        );
+        let mut q = sqlx::query_as::<_, BankTransaction>(&sql).bind(company_id);
+        for id in bank_account_ids {
+            q = q.bind(*id);
+        }
+        for g in chunk {
+            q = q.bind(g);
+        }
+        out.extend(q.fetch_all(&mut *conn).await.map_err(map_db_error)?);
+    }
+    Ok(out)
+}
+
+/// Les transactions **rapprochées** des comptes bancaires `bank_account_ids`,
+/// de type `provider_type`, datées (`booking_date`) dans `[from, to]`, dont
+/// l'écriture n'est pointée (`matched_entry_id`) par **aucune** transaction
+/// d'un autre compte bancaire que ceux-là — Story 40-7c (AC-5) : les
+/// versements Stripe dont la réception n'est pas rattachée. Triées par date
+/// puis identifiant.
+pub async fn reconciled_without_other_side<'e, E>(
+    executor: E,
+    company_id: i64,
+    bank_account_ids: &[i64],
+    provider_type: &str,
+    from: NaiveDate,
+    to: NaiveDate,
+) -> Result<Vec<BankTransaction>, DbError>
+where
+    E: sqlx::Executor<'e, Database = MySql>,
+{
+    if bank_account_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let ids = placeholders(bank_account_ids.len());
+    let sql = format!(
+        "SELECT {BANK_TX_COLUMNS} FROM bank_transactions bt \
+         WHERE bt.company_id = ? AND bt.status = 'reconciled' \
+           AND bt.bank_account_id IN ({ids}) AND bt.provider_type = ? \
+           AND bt.matched_entry_id IS NOT NULL AND bt.booking_date BETWEEN ? AND ? \
+           AND NOT EXISTS (SELECT 1 FROM bank_transactions o \
+                            WHERE o.company_id = bt.company_id \
+                              AND o.matched_entry_id = bt.matched_entry_id \
+                              AND o.bank_account_id NOT IN ({ids})) \
+         ORDER BY bt.booking_date, bt.id"
+    );
+    let mut q = sqlx::query_as::<_, BankTransaction>(&sql).bind(company_id);
+    for id in bank_account_ids {
+        q = q.bind(*id);
+    }
+    q = q.bind(provider_type).bind(from).bind(to);
     for id in bank_account_ids {
         q = q.bind(*id);
     }
