@@ -33,19 +33,20 @@ export interface RecordedRequest {
 }
 
 /**
- * La réponse d'une route ; `delayMs` la retarde (progression visible) ; `until`
- * la retient jusqu'à ce que la spec la libère (au plus [`HOLD_CAP_MS`]).
+ * La réponse d'une route ; `delayMs` la retarde (progression visible) ; `hold`
+ * la retient jusqu'à ce que la spec la libère par `ProviderMock.release()` (au
+ * plus [`HOLD_CAP_MS`]).
  */
 export interface MockReply {
 	status: number;
 	json?: unknown;
 	headers?: Record<string, string>;
 	delayMs?: number;
-	until?: Promise<void>;
+	hold?: boolean;
 }
 
 /**
- * Durée maximale d'une réponse retenue (`MockReply.until`) : sous le délai total
+ * Durée maximale d'une réponse retenue (`MockReply.hold`) : sous le délai total
  * d'une requête du backend (60 s), pour qu'une spec qui ne libère pas échoue sur
  * ses propres assertions plutôt que sur un délai dépassé du backend.
  */
@@ -61,6 +62,9 @@ export interface ProviderMockRoute {
 /** Le serveur lancé. */
 export interface ProviderMock {
 	requests: RecordedRequest[];
+	/** Libère les réponses retenues (`MockReply.hold`), présentes et à venir. */
+	release: () => void;
+	/** Libère les réponses retenues, puis arrête le serveur. */
 	close: () => Promise<void>;
 }
 
@@ -76,6 +80,11 @@ function readBody(req: IncomingMessage): Promise<string> {
 /** Lance le serveur simulé sur `127.0.0.1:<port>` avec `routes` ; `404` pour toute autre requête. */
 export async function startProviderMock(port: number, routes: ProviderMockRoute[]): Promise<ProviderMock> {
 	const requests: RecordedRequest[] = [];
+	// La retenue appartient à CE serveur, non au module : un serveur neuf (une
+	// relance de la spec) retient de nouveau, et `close()` la libère, sans
+	// attendre `HOLD_CAP_MS` si la spec a échoué avant de libérer (revue P3, LOW-1).
+	let release: () => void = () => {};
+	const held = new Promise<void>((resolve) => (release = resolve));
 	const server: Server = createServer(async (req, res) => {
 		const url = new URL(req.url ?? '/', 'http://127.0.0.1');
 		const recorded: RecordedRequest = {
@@ -88,7 +97,11 @@ export async function startProviderMock(port: number, routes: ProviderMockRoute[
 		requests.push(recorded);
 		const route = routes.find((r) => r.method === recorded.method && r.path === recorded.path);
 		const reply: MockReply = route ? route.handle(recorded) : { status: 404, json: { name: 'NOT_FOUND' } };
-		if (reply.until) await Promise.race([reply.until, new Promise((r) => setTimeout(r, HOLD_CAP_MS))]);
+		if (reply.hold) {
+			let cap: ReturnType<typeof setTimeout> | undefined;
+			await Promise.race([held, new Promise((r) => (cap = setTimeout(r, HOLD_CAP_MS)))]);
+			clearTimeout(cap);
+		}
 		if (reply.delayMs) await new Promise((r) => setTimeout(r, reply.delayMs));
 		res.writeHead(reply.status, { 'content-type': 'application/json', ...reply.headers });
 		res.end(reply.json === undefined ? '' : JSON.stringify(reply.json));
@@ -99,7 +112,11 @@ export async function startProviderMock(port: number, routes: ProviderMockRoute[
 	});
 	return {
 		requests,
-		close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+		release: () => release(),
+		close: () => {
+			release();
+			return new Promise<void>((resolve) => server.close(() => resolve()));
+		},
 	};
 }
 
@@ -132,11 +149,12 @@ export interface PaypalMockOptions {
 	rateLimitOnce?: { window: number; retryAfterSeconds: number };
 	/**
 	 * Retenir les réponses des fenêtres de rang `window` et suivants (à partir de
-	 * 1) jusqu'à `until` : la tâche reste en cours tant que la spec n'a pas joué ce
-	 * qui doit se passer pendant qu'elle tourne (le `409` d'une relance), sans
-	 * dépendre du temps qu'il lui reste (revue P2 de la 38-12b, L4).
+	 * 1) jusqu'à `ProviderMock.release()` : la tâche reste en cours tant que la
+	 * spec n'a pas joué ce qui doit se passer pendant qu'elle tourne (le `409`
+	 * d'une relance), sans dépendre du temps qu'il lui reste (revue P2 de la
+	 * 38-12b, L4).
 	 */
-	holdFromWindow?: { window: number; until: Promise<void> };
+	holdFromWindow?: { window: number };
 	/** `last_refreshed_datetime` des pages. */
 	lastRefreshed: string;
 }
@@ -182,15 +200,14 @@ export function paypalMockRoutes(options: PaypalMockOptions): ProviderMockRoute[
 				const end = req.query.get('end_date') ?? '';
 				if (!windows.includes(start)) windows.push(start);
 				const rank = windows.indexOf(start) + 1;
-				const until =
-					options.holdFromWindow && rank >= options.holdFromWindow.window ? options.holdFromWindow.until : undefined;
+				const hold = options.holdFromWindow !== undefined && rank >= options.holdFromWindow.window;
 				if (options.rateLimitOnce && !limited && rank === options.rateLimitOnce.window) {
 					limited = true;
 					return {
 						status: 429,
 						headers: { 'retry-after': String(options.rateLimitOnce.retryAfterSeconds) },
 						json: { name: 'RATE_LIMIT_REACHED' },
-						until,
+						hold,
 					};
 				}
 				const from = Date.parse(start);
@@ -207,7 +224,7 @@ export function paypalMockRoutes(options: PaypalMockOptions): ProviderMockRoute[
 					last_refreshed_datetime: options.lastRefreshed,
 				};
 				if (inside.length > 0) body.transaction_details = inside.map(paypalTx);
-				return { status: 200, json: body, delayMs: options.pageDelayMs, until };
+				return { status: 200, json: body, delayMs: options.pageDelayMs, hold };
 			},
 		},
 	];

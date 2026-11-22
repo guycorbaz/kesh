@@ -111,6 +111,15 @@
 	// Garde de génération : toute interrogation d'une génération passée s'arrête
 	// (fermeture, démontage, nouveau lancement).
 	let generation = 0;
+	/**
+	 * Compteur des lancements (`start`), distinct de `generation` : `track()`
+	 * incrémente `generation` dès le suivi lancé, si bien qu'un `finally` lié à
+	 * `generation` ne remettrait jamais `starting` à faux sur le chemin nominal
+	 * (revue P3, HIGH-1). Seul le dernier lancement remet le bouton actif : un
+	 * ancien `POST` qui répond après une réouverture et un nouveau lancement ne le
+	 * réactive pas (revue P2, L3).
+	 */
+	let launches = 0;
 	let timer: ReturnType<typeof setTimeout> | null = null;
 	let wasOpen = false;
 
@@ -148,6 +157,7 @@
 		// Une fermeture (ou un démontage) pendant le `POST` change la génération :
 		// sa réponse ne lance alors aucun suivi (revue P1, L1).
 		const myGen = generation;
+		const myLaunch = ++launches;
 		try {
 			const { jobId } = await startProviderDownload(provider, { account, ...requested });
 			if (myGen !== generation) return;
@@ -160,10 +170,12 @@
 				track(outcome.resumeJobId);
 			} else refusal = outcome.message;
 		} finally {
-			// Un `POST` d'une génération passée (fermé puis rouvert) ne réactive pas
-			// le bouton pendant le `POST` suivant ; la réouverture remet déjà
-			// `starting` à faux (revue P2, L3).
-			if (myGen === generation) starting = false;
+			// Seul le dernier lancement remet le bouton actif : un `POST` antérieur
+			// (fermé puis rouvert, puis relancé) ne le réactive pas pendant le `POST`
+			// suivant (revue P2, L3) ; la réouverture remet déjà `starting` à faux.
+			// Le compteur n'est pas `generation`, que `track()` vient d'incrémenter
+			// (revue P3, HIGH-1).
+			if (myLaunch === launches) starting = false;
 		}
 	}
 

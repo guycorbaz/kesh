@@ -268,6 +268,41 @@ describe('ProviderDownloadDialog', () => {
 		expect(getMock).not.toHaveBeenCalledWith('paypal', 60);
 	});
 
+	it('lancement réussi puis « Nouvelle période » : le bouton redevient actif (revue P3, HIGH-1)', async () => {
+		startMock.mockResolvedValue({ jobId: 70 });
+		getMock.mockResolvedValue({ ...running(1, 1), state: 'done', result: { inserted: 2, lastRefreshed: null } });
+		monter();
+		await waitFor(() => expect(q('provider-download-start')).not.toBeNull());
+		await fireEvent.click(q('provider-download-start') as HTMLElement);
+		await waitFor(() => expect(q('test-report')).not.toBeNull());
+		await fireEvent.click(q('provider-download-again') as HTMLElement);
+		await waitFor(() => expect(q('provider-download-start')).not.toBeNull());
+		const bouton = q('provider-download-start') as HTMLButtonElement;
+		expect(bouton.disabled, 'bouton actif après un lancement réussi').toBe(false);
+		expect(bouton.textContent).toContain('Télécharger');
+		await fireEvent.click(bouton);
+		await waitFor(() => expect(startMock).toHaveBeenCalledTimes(2));
+	});
+
+	it('409 repris puis « Nouvelle période » : le bouton redevient actif (revue P3, HIGH-1)', async () => {
+		startMock.mockRejectedValue({
+			code: 'PROVIDER_DOWNLOAD_RUNNING',
+			message: 'déjà en cours',
+			status: 409,
+			details: { provider: 'paypal', jobId: 71, from: '2026-03-01', to: '2026-03-30' },
+		});
+		getMock.mockResolvedValue({ ...running(1, 1), state: 'done', result: { inserted: 1, lastRefreshed: null } });
+		monter();
+		await waitFor(() => expect(q('provider-download-start')).not.toBeNull());
+		await fireEvent.click(q('provider-download-start') as HTMLElement);
+		await waitFor(() => expect(q('test-report')).not.toBeNull());
+		await fireEvent.click(q('provider-download-again') as HTMLElement);
+		await waitFor(() => expect(q('provider-download-start')).not.toBeNull());
+		expect((q('provider-download-start') as HTMLButtonElement).disabled, 'bouton actif après un 409 repris').toBe(
+			false,
+		);
+	});
+
 	it('fermeture pendant le POST : sa réponse ne lance aucun suivi (revue P1, L1)', async () => {
 		let resolveStart: (v: { jobId: number }) => void = () => {};
 		startMock.mockImplementation(() => new Promise((r) => (resolveStart = r)));
