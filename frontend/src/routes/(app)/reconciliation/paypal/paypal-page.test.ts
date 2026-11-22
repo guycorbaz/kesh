@@ -345,6 +345,8 @@ describe('page PayPal — robustesse (revue P1)', () => {
 		await waitFor(() => expect((r.getByTestId('paypal-account') as HTMLSelectElement).disabled).toBe(true));
 		expect((r.getByTestId('paypal-fiscal-year') as HTMLSelectElement).disabled).toBe(true);
 		expect((r.getByTestId('paypal-import-button') as HTMLButtonElement).disabled).toBe(true);
+		// Revue P4, P4-3 : les cases par ligne sont grisées aussi.
+		expect((r.getByTestId('paypal-check-1') as HTMLInputElement).disabled).toBe(true);
 		release();
 		await waitFor(() => expect((r.getByTestId('paypal-account') as HTMLSelectElement).disabled).toBe(false));
 		expect(acceptMock.mock.calls[0][0]).toBe('PayPal boutique');

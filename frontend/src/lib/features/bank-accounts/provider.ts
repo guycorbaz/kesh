@@ -38,17 +38,25 @@ export function withoutProviders<T extends ProviderSource>(accounts: readonly T[
 }
 
 /**
+ * Forme de comparaison d'un libellé de compte, comme la collation `utf8mb4_unicode_ci`
+ * du serveur : sans casse et sans accents (« Zürich » = « Zurich »).
+ */
+export function accountLabelKey(label: string): string {
+	return label.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+}
+
+/**
  * Les libellés de compte PayPal **distincts** portés par les comptes chargés,
  * triés — `<datalist>` du formulaire, sélecteur de la page PayPal.
  */
 export function paypalAccountLabels(
 	accounts: readonly { provider?: string | null; paypal?: PaypalSettings | null }[],
 ): string[] {
-	// Sans tenir compte de la casse, comme le serveur (collation `_ci`) : le premier libellé rencontré est gardé.
+	// Sans casse ni accents, comme le serveur (collation `_ci`) : le premier libellé rencontré est gardé.
 	const labels = new Map<string, string>();
 	for (const a of accounts) {
 		if (isPaypal(a) && a.paypal) {
-			const key = a.paypal.account.toLowerCase();
+			const key = accountLabelKey(a.paypal.account);
 			if (!labels.has(key)) labels.set(key, a.paypal.account);
 		}
 	}

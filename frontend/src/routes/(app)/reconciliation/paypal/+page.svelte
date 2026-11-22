@@ -19,7 +19,7 @@
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
 	import { withoutForeignCurrency, type AccountResponse } from '$lib/features/accounts/accounts.types';
 	import { listBankAccounts, type BankAccountSummary } from '$lib/features/bank-accounts/bank-accounts.api';
-	import { paypalAccountLabels } from '$lib/features/bank-accounts/provider';
+	import { accountLabelKey, paypalAccountLabels } from '$lib/features/bank-accounts/provider';
 	import { listFiscalYears } from '$lib/features/fiscal-years/fiscal-years.api';
 	import type { FiscalYearResponse } from '$lib/features/fiscal-years/fiscal-years.types';
 	import LinkSettlementModal from '$lib/features/reconciliation/LinkSettlementModal.svelte';
@@ -100,7 +100,7 @@
 					b.provider === 'paypal' &&
 					b.paypal !== null &&
 					selectedAccount !== null &&
-					b.paypal.account.toLowerCase() === selectedAccount.toLowerCase() &&
+					accountLabelKey(b.paypal.account) === accountLabelKey(selectedAccount) &&
 					b.journalAccountId !== null,
 			)
 			.map((b) => b.journalAccountId as number),
@@ -486,7 +486,7 @@
 									<input
 										type="checkbox"
 										checked={selected.has(key)}
-										disabled={!selectable(key, needsAccount)}
+										disabled={accepting || !selectable(key, needsAccount)}
 										onchange={(e) => toggle(key, (e.currentTarget as HTMLInputElement).checked)}
 										aria-label={i18nMsg('paypal-select-one', 'Choisir cette proposition')}
 										data-testid="paypal-check-{proposalTransactionId(p)}"

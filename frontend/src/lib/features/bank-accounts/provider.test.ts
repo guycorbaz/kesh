@@ -67,6 +67,15 @@ describe('provider — prédicats et filtre', () => {
 		).toEqual(['PayPal www']);
 	});
 
+	it('paypalAccountLabels : sans tenir compte des accents (Zürich = Zurich), comme la collation du serveur', () => {
+		expect(
+			paypalAccountLabels([
+				{ provider: 'paypal', paypal: { account: 'PayPal Zürich', feeAccountId: null } },
+				{ provider: 'paypal', paypal: { account: 'paypal zurich', feeAccountId: null } },
+			]),
+		).toEqual(['PayPal Zürich']);
+	});
+
 	it('feeAccountCandidates : charges actives et imputables, CHF ou devise du compte du plan', () => {
 		const accounts = [
 			account({ id: 1, number: '6941', currency: 'EUR' }),
