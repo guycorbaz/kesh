@@ -54,6 +54,8 @@ function makeBankAccount(journalAccountId: number | null): BankAccountSummary {
 		qrIban: null,
 		accountKind: 'bank',
 		cardLast4: null,
+		provider: null,
+		paypal: null,
 		isPrimary: true,
 		journalAccountId,
 		version: 3,

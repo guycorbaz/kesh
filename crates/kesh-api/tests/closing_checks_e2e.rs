@@ -286,3 +286,83 @@ async fn closing_checks_are_scoped_and_authenticated(pool: MySqlPool) {
     let resp = get(&app, None, their_fy).await;
     assert_eq!(resp.status(), 401);
 }
+
+/// Story 38-11d (revue P1, M1) — K2 dit le **prestataire** de chaque compte en
+/// attente (`provider` : `"paypal"`, `null` pour un compte ordinaire) : l'écran
+/// lie la page PayPal pour un compte PayPal, que la réconciliation générique
+/// n'offre pas.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn k2_dit_le_prestataire_du_compte_en_attente(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let company = create_company(&pool, "Acme").await;
+    let fy = fiscal_year_2026(&pool, company).await;
+    let uid = create_user(&pool, "comptable_k2", Role::Comptable, company).await;
+    let token = forge_jwt(uid, Role::Comptable.as_str(), company);
+    let mut ids = Vec::new();
+    for (number, name, provider, account) in [
+        ("1020", "UBS", None, None),
+        ("1031", "PayPal", Some("paypal"), Some("PayPal www")),
+    ] {
+        let ledger = sqlx::query(
+            "INSERT INTO accounts (company_id, number, name, account_type) VALUES (?, ?, ?, 'Asset')",
+        )
+        .bind(company)
+        .bind(number)
+        .bind(name)
+        .execute(&pool)
+        .await
+        .unwrap()
+        .last_insert_id() as i64;
+        let ba = sqlx::query(
+            "INSERT INTO bank_accounts (company_id, bank_name, iban, journal_account_id, provider, provider_account) \
+             VALUES (?, ?, ?, ?, ?, ?)",
+        )
+        .bind(company)
+        .bind(name)
+        .bind(provider.map_or(Some("CH4431999123000889012"), |_| None))
+        .bind(ledger)
+        .bind(provider)
+        .bind(account)
+        .execute(&pool)
+        .await
+        .unwrap()
+        .last_insert_id() as i64;
+        let import = sqlx::query(
+            "INSERT INTO bank_imports \
+             (company_id, bank_account_id, filename, file_hash, source_format, period_from, period_to, \
+              transaction_count, imported_by_user_id) \
+             VALUES (?, ?, 'r.csv', REPEAT(?, 64), 'CSV', '2026-03-01', '2026-03-31', 1, ?)",
+        )
+        .bind(company)
+        .bind(ba)
+        .bind(if provider.is_some() { "b" } else { "a" })
+        .bind(uid)
+        .execute(&pool)
+        .await
+        .unwrap()
+        .last_insert_id() as i64;
+        sqlx::query(
+            "INSERT INTO bank_transactions (company_id, import_id, bank_account_id, booking_date, \
+             amount, currency, details, status) VALUES (?, ?, ?, '2026-03-10', 10.00, 'CHF', 'Test', 'pending')",
+        )
+        .bind(company)
+        .bind(import)
+        .bind(ba)
+        .execute(&pool)
+        .await
+        .unwrap();
+        ids.push(ba);
+    }
+
+    let resp = get(&app, Some(&token), fy).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    let k2 = &body["checks"][1];
+    assert_eq!(k2["code"], "PENDING_BANK_TRANSACTIONS");
+    let accounts = k2["details"]["accounts"].as_array().unwrap();
+    assert_eq!(accounts.len(), 2, "{k2}");
+    let by_id = |id: i64| accounts.iter().find(|a| a["bankAccountId"] == id).unwrap();
+    assert!(by_id(ids[0]).as_object().unwrap().contains_key("provider"));
+    assert_eq!(by_id(ids[0])["provider"], Value::Null);
+    assert_eq!(by_id(ids[1])["provider"], "paypal");
+}

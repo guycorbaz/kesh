@@ -60,12 +60,16 @@
 		type ManualStatementInput,
 	} from './manual-statement';
 	import { manualStatementReasonLabel } from './manual-statement-reason-label';
+	import { withoutProviders, type ProviderSource } from '$lib/features/bank-accounts/provider';
 
 	type Props = {
-		bankAccounts: Array<BankAccountOptionSource & { id: number }>;
+		bankAccounts: Array<BankAccountOptionSource & ProviderSource & { id: number }>;
 		onSaved?: (imported: BankImportResponse) => void;
 	};
-	let { bankAccounts, onSaved }: Props = $props();
+	let { bankAccounts: allBankAccounts, onSaved }: Props = $props();
+	// Story 38-11d (AC-1) — pas de relevé bancaire saisi sur un compte de prestataire
+	// (PayPal) : son relevé s'importe par la page du prestataire.
+	const bankAccounts = $derived(withoutProviders(allBankAccounts));
 
 	/** Un aperçu réussi, lié à l'instantané du corps qu'il a vu. */
 	type PreviewSnapshot = {

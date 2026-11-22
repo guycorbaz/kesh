@@ -615,6 +615,24 @@ async fn revue_puis_acceptation_du_tout(pool: MySqlPool) {
             ("no_rule".to_string(), Some("0TEST0000000000BL".to_string())),
         ]
     );
+    // Story 38-11d (revue P1, M5) — la transaction d'une ligne « à examiner » porte
+    // l'e-mail de la contrepartie (colonne importée), pour écrire une règle à filtre.
+    let sans_regle = revue["toReview"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["code"] == "no_rule")
+        .unwrap();
+    assert_eq!(
+        sans_regle["transaction"]["counterpartyEmail"], "daniel@example.invalid",
+        "{sans_regle}"
+    );
+    assert!(
+        revue["toReview"][0]["transaction"]
+            .as_object()
+            .unwrap()
+            .contains_key("counterpartyEmail")
+    );
 
     // Tout accepter.
     let propositions: Vec<Value> = revue["proposals"].as_array().unwrap().clone();
