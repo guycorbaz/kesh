@@ -76,7 +76,7 @@ const PRODUIT = account({ id: 70, number: '3200', name: 'Ventes', accountType: '
 function bank(overrides: Partial<BankAccountSummary>): BankAccountSummary {
 	return {
 		id: 0,
-		bankName: 'UBS',
+		bankName: 'Banque Zeta',
 		description: null,
 		iban: 'CH9300762011623852957',
 		qrIban: null,
@@ -100,7 +100,7 @@ function bank(overrides: Partial<BankAccountSummary>): BankAccountSummary {
 	};
 }
 
-const principal = bank({ id: 1, isPrimary: true, bankName: 'UBS' });
+const principal = bank({ id: 1, isPrimary: true, bankName: 'Banque Zeta' });
 const stripeEur = bank({
 	id: 2,
 	bankName: 'Stripe',
@@ -110,7 +110,7 @@ const stripeEur = bank({
 	journalAccountId: STRIPE_EUR.id,
 	version: 4,
 });
-const ordinaire = bank({ id: 3, bankName: 'Raiffeisen', journalAccountId: BANQUE.id });
+const ordinaire = bank({ id: 3, bankName: 'Banque Alpha', journalAccountId: BANQUE.id });
 const wiseEur = bank({ id: 4, bankName: 'Wise', iban: null, provider: 'wise', journalAccountId: WISE_EUR.id });
 const paypalChf = bank({
 	id: 5,
@@ -179,7 +179,7 @@ describe('page des comptes bancaires — le compte Stripe (Story 40-7d, AC-1)', 
 		await fireEvent.change(payout, { target: { value: '4' } });
 		expect((payout as HTMLSelectElement).value).toBe('4');
 		await fireEvent.change(r.getByTestId('form-journal-account'), { target: { value: '21' } });
-		// CHF : les banques CHF (UBS, Raiffeisen), jamais le compte PayPal CHF ; le Wise EUR se vide.
+		// CHF : les banques CHF (Banque Alpha, Banque Zeta), jamais le compte PayPal CHF ; le Wise EUR se vide.
 		await waitFor(() => expect(options(r.getByTestId('form-payout-account')).slice(1)).toEqual(['3', '1']));
 		expect((r.getByTestId('form-payout-account') as HTMLSelectElement).selectedIndex).toBe(0);
 	});
@@ -242,6 +242,32 @@ describe('page des comptes bancaires — le compte Stripe (Story 40-7d, AC-1)', 
 		expect('stripe' in payload).toBe(true);
 		expect(payload.stripe).toBeNull();
 		expect('paypal' in payload).toBe(false);
+	});
+
+	it.each([
+		['archivée', { archived: true }],
+		['close', { closedOn: '2026-01-31' }],
+	])('modification : une destination %s depuis reste choisie, marquée, et renvoyée au serveur', async (_nom, etat) => {
+		listBankAccountsMock.mockResolvedValue([principal, stripeEur, ordinaire, { ...wiseEur, ...etat }]);
+		const r = render(Page);
+		await fireEvent.click(await r.findByTestId('edit-button-2'));
+		const payout = (await r.findByTestId('edit-payout-account')) as HTMLSelectElement;
+		await waitFor(() => expect(payout.value).toBe('4'));
+		expect(payout.options[payout.selectedIndex].textContent).toMatch(/Wise.*\((Archivé|Clos le)/);
+		await fireEvent.click(await r.findByTestId('edit-form-submit'));
+		await waitFor(() => expect(updateBankAccountMock).toHaveBeenCalledTimes(1));
+		const payload = updateBankAccountMock.mock.calls[0][1] as { stripe: { payoutBankAccountId: number | null } };
+		expect(payload.stripe.payoutBankAccountId).toBe(4);
+	});
+
+	it('modification : le changement de devise du compte du plan efface même une destination archivée', async () => {
+		listBankAccountsMock.mockResolvedValue([principal, stripeEur, ordinaire, { ...wiseEur, archived: true }]);
+		const r = render(Page);
+		await fireEvent.click(await r.findByTestId('edit-button-2'));
+		const payout = (await r.findByTestId('edit-payout-account')) as HTMLSelectElement;
+		await waitFor(() => expect(payout.value).toBe('4'));
+		await fireEvent.change(r.getByTestId('edit-journal-account'), { target: { value: '21' } });
+		await waitFor(() => expect((r.getByTestId('edit-payout-account') as HTMLSelectElement).selectedIndex).toBe(0));
 	});
 
 	it('liste : « Stripe · <compte> · <devise> », pas de « Lier » sur un compte Stripe', async () => {

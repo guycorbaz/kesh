@@ -106,4 +106,11 @@ describe('provider — comptes de versement d’un compte Stripe', () => {
 		expect(payoutAccountCandidates(comptes, accounts, 'EUR', null).map((b) => b.id)).toEqual([2]);
 		expect(payoutAccountCandidates(comptes, accounts, null, 1).map((b) => b.id)).toEqual([3]);
 	});
+
+	it('la destination déjà choisie reste offerte archivée ou close, mais non hors devise ni Stripe', () => {
+		expect(payoutAccountCandidates(comptes, accounts, null, null, 6).map((b) => b.id).sort()).toEqual([1, 3, 6]);
+		expect(payoutAccountCandidates(comptes, accounts, null, null, 7).map((b) => b.id).sort()).toEqual([1, 3, 7]);
+		expect(payoutAccountCandidates(comptes, accounts, 'EUR', null, 6).map((b) => b.id)).toEqual([2]);
+		expect(payoutAccountCandidates(comptes, accounts, null, null, 4).map((b) => b.id)).toEqual([1, 3]);
+	});
 });

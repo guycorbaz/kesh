@@ -13,15 +13,56 @@ import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 import { failedProposalLabel } from '$lib/features/reconciliation/failed-proposal-label';
 import type { ProviderFinding } from './provider-review.types';
 
+/**
+ * Codes du moteur d'acceptation commun (`crates/kesh-api/src/routes/provider_accept.rs`) que cette
+ * page traduit elle-même (`provider-failed-*`) ; tout autre code passe par `failedProposalLabel`.
+ * Exportée pour le test, qui la compare à la source Rust.
+ */
+export const PROVIDER_COMMON_FAILED_CODES = [
+	'PROVIDER_PROPOSAL_STALE',
+	'FX_ACCOUNT_INVALID',
+	'FX_RATE_INVALID',
+	'NOT_FOUND',
+	'OPTIMISTIC_LOCK_CONFLICT',
+	'RECONCILIATION_ENTRY_NOT_LINKABLE',
+] as const;
+
 /** Libellé d'un refus de `POST /<prestataire>/accept` (hors codes propres au prestataire). */
 export function providerFailedLabel(code: string, details?: unknown): string {
-	if (code === 'PROVIDER_PROPOSAL_STALE') {
-		return i18nMsg(
-			'provider-failed-proposal-stale',
-			"Cette proposition n'est plus valable : la transaction, l'écriture, la règle ou les réglages du compte ont changé depuis la revue. Rechargez la revue.",
-		);
+	switch (code) {
+		case 'PROVIDER_PROPOSAL_STALE':
+			return i18nMsg(
+				'provider-failed-proposal-stale',
+				"Cette proposition n'est plus valable : la transaction, l'écriture, la règle ou les réglages du compte ont changé depuis la revue. Rechargez la revue.",
+			);
+		case 'FX_ACCOUNT_INVALID':
+			return i18nMsg(
+				'provider-failed-fx-account-invalid',
+				'Aucun compte de conversion utilisable n’est désigné : un administrateur doit en choisir un dans les paramètres du multi-devises.',
+			);
+		case 'FX_RATE_INVALID':
+			return i18nMsg(
+				'provider-failed-fx-rate-invalid',
+				'Le cours de la conversion ne se calcule pas à partir des deux montants : passez l’écriture à la main.',
+			);
+		case 'NOT_FOUND':
+			return i18nMsg(
+				'provider-failed-not-found',
+				'La transaction ou l’écriture visée est introuvable : elle a été supprimée entre-temps. Rechargez la page.',
+			);
+		case 'OPTIMISTIC_LOCK_CONFLICT':
+			return i18nMsg(
+				'provider-failed-optimistic-lock',
+				'La transaction a été modifiée entre-temps. Rechargez la page.',
+			);
+		case 'RECONCILIATION_ENTRY_NOT_LINKABLE':
+			return i18nMsg(
+				'provider-failed-entry-not-linkable',
+				'L’écriture de vente n’est plus rattachable à cette transaction (déjà rattachée, contre-passée ou modifiée). Rechargez la page.',
+			);
+		default:
+			return failedProposalLabel(code, details);
 	}
-	return failedProposalLabel(code, details);
 }
 
 /** Libellé d'un motif « à examiner » commun à tous les prestataires ; `null` pour un autre motif. */

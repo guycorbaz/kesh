@@ -164,6 +164,7 @@
 			accounts,
 			formLedgerCurrency,
 			mode.kind === 'edit-full' ? mode.id : null,
+			formPayoutBankAccountId,
 		),
 	);
 	// Le compte de frais se vide seulement si sa devise n'est plus admise par celle du compte du
@@ -183,12 +184,21 @@
 	});
 	// Story 40-7d (AC-1) — le compte de versement se vide quand le compte du plan choisi change
 	// de devise : il n'est alors plus admis (même devise que le solde). Il reste tant que les
-	// comptes ne sont pas chargés.
+	// comptes ne sont pas chargés, et il reste aussi quand la destination a été archivée ou close
+	// depuis (revue P1, M1) : `payoutCandidates` la garde alors, marquée, et seul le changement de
+	// devise la retire.
 	$effect(() => {
-		const candidates = payoutCandidates;
+		const ledger = formLedgerCurrency;
 		untrack(() => {
 			if (accounts.length === 0 || bankAccounts.length === 0 || formPayoutBankAccountId === null) return;
-			if (!candidates.some((b) => b.id === formPayoutBankAccountId)) formPayoutBankAccountId = null;
+			const kept = payoutAccountCandidates(
+				bankAccounts,
+				accounts,
+				ledger,
+				mode.kind === 'edit-full' ? mode.id : null,
+				formPayoutBankAccountId,
+			);
+			if (!kept.some((b) => b.id === formPayoutBankAccountId)) formPayoutBankAccountId = null;
 		});
 	});
 	// Un compte du plan en devise n'admet pas de solde d'ouverture par cet écran.
@@ -1094,7 +1104,13 @@
 				>
 					<option value={null}>{i18nMsg('bank-accounts-labels-not-configured', 'Non configuré')}</option>
 					{#each payoutCandidates as b (b.id)}
-						<option value={b.id}>{bankAccountName(b)}</option>
+						<option value={b.id}
+							>{bankAccountName(b)}{#if b.archived}
+								({i18nMsg('bank-accounts-labels-archived-badge', 'Archivé')}){:else if b.closedOn !== null}
+								({i18nMsg('bank-accounts-labels-closed-badge', 'Clos le { $date }', {
+									date: formatSwissDate(b.closedOn),
+								})}){/if}</option
+						>
 					{/each}
 				</select>
 				<p class="mt-1 text-xs text-text-muted">

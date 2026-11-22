@@ -14,8 +14,7 @@
 import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 import { isApiError } from '$lib/shared/utils/api-error';
 import { errorMessageOf } from '$lib/shared/utils/error-message';
-import { failedProposalLabel } from '$lib/features/reconciliation/failed-proposal-label';
-import { isAlreadyLinked, providerMismatchDetails } from '$lib/features/provider/provider-labels';
+import { isAlreadyLinked, providerFailedLabel, providerMismatchDetails } from '$lib/features/provider/provider-labels';
 import type { PaypalFinding, PaypalLineError, PaypalProposal } from './paypal.types';
 
 /**
@@ -23,15 +22,7 @@ import type { PaypalFinding, PaypalLineError, PaypalProposal } from './paypal.ty
  * code passe par `failedProposalLabel`. Exportée pour le test, qui la compare à
  * une liste écrite en dur.
  */
-export const PAYPAL_OWN_FAILED_CODES = [
-	'PROVIDER_PROPOSAL_STALE',
-	'FX_ACCOUNT_INVALID',
-	'FX_RATE_INVALID',
-	'NOT_FOUND',
-	'OPTIMISTIC_LOCK_CONFLICT',
-	'RECONCILIATION_ENTRY_NOT_LINKABLE',
-	'COUNTERPARTY_CURRENCY_MISMATCH',
-] as const;
+export const PAYPAL_OWN_FAILED_CODES = ['PROVIDER_PROPOSAL_STALE', 'COUNTERPARTY_CURRENCY_MISMATCH'] as const;
 
 /** Libellé d'un refus de `POST /paypal/accept`. */
 export function paypalFailedLabel(code: string, details?: unknown): string {
@@ -40,31 +31,6 @@ export function paypalFailedLabel(code: string, details?: unknown): string {
 			return i18nMsg(
 				'paypal-failed-proposal-stale',
 				'La proposition ne vaut plus : la transaction, l’écriture, la règle ou les paramètres du compte ont changé depuis la revue. Rechargez la page.',
-			);
-		case 'FX_ACCOUNT_INVALID':
-			return i18nMsg(
-				'paypal-failed-fx-account-invalid',
-				'Aucun compte de conversion utilisable n’est désigné : un administrateur doit en choisir un dans les paramètres du multi-devises.',
-			);
-		case 'FX_RATE_INVALID':
-			return i18nMsg(
-				'paypal-failed-fx-rate-invalid',
-				'Le cours de la conversion ne se calcule pas à partir des deux montants : passez l’écriture à la main.',
-			);
-		case 'NOT_FOUND':
-			return i18nMsg(
-				'paypal-failed-not-found',
-				'La transaction ou l’écriture visée est introuvable : elle a été supprimée entre-temps. Rechargez la page.',
-			);
-		case 'OPTIMISTIC_LOCK_CONFLICT':
-			return i18nMsg(
-				'paypal-failed-optimistic-lock',
-				'La transaction a été modifiée entre-temps. Rechargez la page.',
-			);
-		case 'RECONCILIATION_ENTRY_NOT_LINKABLE':
-			return i18nMsg(
-				'paypal-failed-entry-not-linkable',
-				'L’écriture de vente n’est plus rattachable à cette transaction (déjà rattachée, contre-passée ou modifiée). Rechargez la page.',
 			);
 		// 38-11c2 (L4) : la règle désigne un compte dans une devise qui n'est ni le CHF ni celle
 		// de la transaction ; la clé est celle de la 38-11c2.
@@ -79,8 +45,11 @@ export function paypalFailedLabel(code: string, details?: unknown): string {
 				},
 			);
 		}
+		// Revue P1 de 40-7d (M2) : les refus du moteur d'acceptation commun (`FX_*`, `NOT_FOUND`,
+		// `OPTIMISTIC_LOCK_CONFLICT`, `RECONCILIATION_ENTRY_NOT_LINKABLE`) sont traduits pour tous les
+		// prestataires par `providerFailedLabel`.
 		default:
-			return failedProposalLabel(code, details);
+			return providerFailedLabel(code, details);
 	}
 }
 

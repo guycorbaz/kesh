@@ -84,13 +84,10 @@ describe('paypal-labels — refus de l’acceptation', () => {
 	it('codes propres : écrits en dur, traduits par paypal-failed-*', () => {
 		expect([...PAYPAL_OWN_FAILED_CODES]).toEqual([
 			'PROVIDER_PROPOSAL_STALE',
-			'FX_ACCOUNT_INVALID',
-			'FX_RATE_INVALID',
-			'NOT_FOUND',
-			'OPTIMISTIC_LOCK_CONFLICT',
-			'RECONCILIATION_ENTRY_NOT_LINKABLE',
 			'COUNTERPARTY_CURRENCY_MISMATCH',
 		]);
+		// Les cinq refus du moteur commun passent par les clés `provider-failed-*` (revue P1 40-7d, M2).
+		expect(paypalFailedLabel('NOT_FOUND')).toMatch(/^provider-failed-not-found\|/);
 		expect(paypalFailedLabel('PROVIDER_PROPOSAL_STALE')).toMatch(/^paypal-failed-proposal-stale\|/);
 	});
 

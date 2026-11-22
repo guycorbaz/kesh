@@ -1813,6 +1813,11 @@ error-provider-response-invalid = The provider's response could not be read. Not
 error-provider-api-error = The provider refused the request. Nothing was imported.
 # Story 38-11c2 — revue et acceptation d’un compte de prestataire (codes servis à l’écran, 38-11d)
 provider-failed-proposal-stale = This proposal is no longer valid: the transaction, the entry, the rule or the account settings changed since the review. Reload the review.
+provider-failed-fx-account-invalid = No usable conversion account is designated: an administrator must choose one in the multi-currency settings.
+provider-failed-fx-rate-invalid = The conversion rate cannot be computed from the two amounts: post the entry by hand.
+provider-failed-not-found = The transaction or entry cannot be found: it was deleted in the meantime. Reload the page.
+provider-failed-optimistic-lock = The transaction was changed in the meantime. Reload the page.
+provider-failed-entry-not-linkable = The sale entry can no longer be linked to this transaction (already linked, reversed or changed). Reload the page.
 paypal-failed-counterparty-currency-mismatch = This rule names an account kept in { $accountCurrency }: it only applies to transactions in { $accountCurrency }, and this one is in { $transactionCurrency }. Choose an account in CHF or in the transaction's currency.
 provider-gap-receipt-without-sale = Receipt without sale: no sales entry carries this identifier.
 provider-gap-sale-without-receipt = Sale without receipt: no transaction carries the identifier of this entry.
@@ -1997,11 +2002,6 @@ reconciliation-rules-direction-debit = Outgoing
 reconciliation-rules-filter-provider-type = PayPal type = { $value }
 reconciliation-rules-filter-email = E-mail = { $value }
 paypal-failed-proposal-stale = The proposal no longer holds: the transaction, the entry, the rule or the account settings have changed since the review. Reload the page.
-paypal-failed-fx-account-invalid = No usable conversion account is designated: an administrator must choose one in the multi-currency settings.
-paypal-failed-fx-rate-invalid = The conversion rate cannot be computed from the two amounts: post the entry by hand.
-paypal-failed-not-found = The transaction or entry cannot be found: it was deleted in the meantime. Reload the page.
-paypal-failed-optimistic-lock = The transaction was changed in the meantime. Reload the page.
-paypal-failed-entry-not-linkable = The sale entry can no longer be linked to this transaction (already linked, reversed or changed). Reload the page.
 paypal-csv-line-field-count = number of cells differs from the header
 paypal-csv-line-date = date unreadable or in another format than the file
 paypal-csv-line-amount = amount unreadable
@@ -4322,3 +4322,4 @@ stripe-gap-amount-or-currency-mismatch = Different amount or currency
 stripe-gap-already-linked = Sale already linked to another charge
 stripe-gap-payout-entry = Payout entry
 stripe-gap-receipt-link = Link the receipt in the reconciliation
+stripe-gap-receipt-import = Import the statement of the destination account (Wise): the receipt is linked there.

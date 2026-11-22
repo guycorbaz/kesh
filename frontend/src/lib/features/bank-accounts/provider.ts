@@ -182,19 +182,22 @@ export function paypalSummaryLine(
  * archivés ni clos, liés à un compte du plan **de la devise du solde**
  * (`ledgerCurrency`, `null` = CHF), sans prestataire ou Wise — jamais un compte
  * Stripe ni PayPal, ni le compte lui-même (`selfId`). Triés par nom affiché (`bankAccountName`).
+ * Revue P1 de 40-7d (M1) : la destination déjà choisie (`keepId`) reste offerte même archivée ou
+ * close depuis — un renommage ne l'efface pas (le serveur la garde, `payout_is_unchanged`) ; elle
+ * reste soumise aux autres critères (devise, type, prestataire).
  */
 export function payoutAccountCandidates(
 	bankAccounts: readonly BankAccountSummary[],
 	accounts: readonly AccountResponse[],
 	ledgerCurrency: string | null,
 	selfId: number | null,
+	keepId: number | null = null,
 ): BankAccountSummary[] {
 	return bankAccounts
 		.filter(
 			(b) =>
 				b.id !== selfId &&
-				!b.archived &&
-				b.closedOn === null &&
+				(b.id === keepId || (!b.archived && b.closedOn === null)) &&
 				b.accountKind === 'bank' &&
 				(b.provider === null || b.provider === 'wise') &&
 				b.journalAccountId !== null &&

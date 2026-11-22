@@ -1813,6 +1813,11 @@ error-provider-response-invalid = Non è stato possibile leggere la risposta del
 error-provider-api-error = Il prestatore ha rifiutato la richiesta. Nulla è stato importato.
 # Story 38-11c2 — revue et acceptation d’un compte de prestataire (codes servis à l’écran, 38-11d)
 provider-failed-proposal-stale = Questa proposta non è più valida: la transazione, la registrazione, la regola o le impostazioni del conto sono cambiate dalla revisione. Ricaricate la revisione.
+provider-failed-fx-account-invalid = Nessun conto di conversione utilizzabile è designato: un amministratore deve sceglierne uno nei parametri della multivaluta.
+provider-failed-fx-rate-invalid = Il cambio della conversione non si calcola dai due importi: registri a mano.
+provider-failed-not-found = La transazione o la registrazione non si trova: è stata eliminata nel frattempo. Ricarichi la pagina.
+provider-failed-optimistic-lock = La transazione è stata modificata nel frattempo. Ricarichi la pagina.
+provider-failed-entry-not-linkable = La registrazione di vendita non è più collegabile a questa transazione (già collegata, stornata o modificata). Ricarichi la pagina.
 paypal-failed-counterparty-currency-mismatch = Questa regola indica un conto tenuto in { $accountCurrency }: si applica solo alle transazioni in { $accountCurrency }, e questa è in { $transactionCurrency }. Scegliete un conto in CHF o nella valuta della transazione.
 provider-gap-receipt-without-sale = Incasso senza vendita: nessuna registrazione di vendita porta questo identificativo.
 provider-gap-sale-without-receipt = Vendita senza incasso: nessuna transazione porta l'identificativo di questa registrazione.
@@ -1997,11 +2002,6 @@ reconciliation-rules-direction-debit = Uscite
 reconciliation-rules-filter-provider-type = Tipo PayPal = { $value }
 reconciliation-rules-filter-email = E-mail = { $value }
 paypal-failed-proposal-stale = La proposta non vale più: la transazione, la registrazione, la regola o i parametri del conto sono cambiati dalla revisione. Ricarichi la pagina.
-paypal-failed-fx-account-invalid = Nessun conto di conversione utilizzabile è designato: un amministratore deve sceglierne uno nei parametri della multivaluta.
-paypal-failed-fx-rate-invalid = Il cambio della conversione non si calcola dai due importi: registri a mano.
-paypal-failed-not-found = La transazione o la registrazione non si trova: è stata eliminata nel frattempo. Ricarichi la pagina.
-paypal-failed-optimistic-lock = La transazione è stata modificata nel frattempo. Ricarichi la pagina.
-paypal-failed-entry-not-linkable = La registrazione di vendita non è più collegabile a questa transazione (già collegata, stornata o modificata). Ricarichi la pagina.
 paypal-csv-line-field-count = numero di celle diverso dall’intestazione
 paypal-csv-line-date = data illeggibile o in un formato diverso dal file
 paypal-csv-line-amount = importo illeggibile
@@ -4317,3 +4317,4 @@ stripe-gap-amount-or-currency-mismatch = Importo o valuta diversi
 stripe-gap-already-linked = Vendita già collegata a un altro addebito
 stripe-gap-payout-entry = Registrazione del versamento
 stripe-gap-receipt-link = Collegare la ricezione nella riconciliazione
+stripe-gap-receipt-import = Importate l’estratto del conto di destinazione (Wise): la ricezione vi si collega.

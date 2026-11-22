@@ -9,12 +9,14 @@
   Ce qui reste ici est propre à Stripe : ses textes, son client d'API, ses
   libellés, le rappel des ventes des boutiques, les versements du compte rendu,
   et, pour un versement sans réception, les liens vers son écriture et vers la
-  réconciliation, où sa réception se rattache.
+  réconciliation, où sa réception se rattache (compte de destination ordinaire ;
+  vers un compte Wise : le texte qui dit d'importer son relevé).
 -->
 <script lang="ts">
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
+	import type { BankAccountSummary } from '$lib/features/bank-accounts/bank-accounts.api';
 	import { stripeAccountLabels } from '$lib/features/bank-accounts/provider';
 	import ProviderReviewPage from '$lib/features/provider/ProviderReviewPage.svelte';
 	import type { ProviderFinding } from '$lib/features/provider/provider-review.types';
@@ -39,6 +41,8 @@
 	// fx-filtre-comptes : exempté — aucun sélecteur de compte : la liste ne sert qu'à nommer le
 	// compte de frais que la revue a choisi (en CHF ou dans la devise du solde).
 	let accounts = $state<AccountResponse[]>([]);
+	// Comptes bancaires lus par la page commune : de quoi savoir où un versement arrive.
+	let bankAccounts = $state<BankAccountSummary[]>([]);
 
 	async function loadStripe() {
 		try {
@@ -52,6 +56,18 @@
 	function payoutEntryId(g: ProviderFinding): number | null {
 		const id = g.details?.journalEntryId;
 		return g.code === 'payout_without_receipt' && typeof id === 'number' ? id : null;
+	}
+
+	/**
+	 * Revue P1 de 40-7d (M3) — le compte de destination d'un versement sans réception est-il un
+	 * compte de prestataire (Wise) ? La réconciliation bancaire n'offre pas ces comptes : sa
+	 * réception se rattache à l'import du relevé du prestataire. Compte introuvable (archivé,
+	 * clos) : le renvoi ordinaire. La page Wise viendra avec l'Epic 39 (lien à poser alors).
+	 */
+	function payoutGoesToProvider(g: ProviderFinding): boolean {
+		const id = g.details?.payoutBankAccountId;
+		const dest = typeof id === 'number' ? bankAccounts.find((b) => b.id === id) : undefined;
+		return dest?.provider === 'wise';
 	}
 </script>
 
@@ -85,9 +101,18 @@
 				{i18nMsg('stripe-gap-payout-entry', 'Écriture du versement')}
 			</a>
 			·
-			<a class="text-primary underline" href="/reconciliation">
-				{i18nMsg('stripe-gap-receipt-link', 'Rattacher la réception à la réconciliation')}
-			</a>
+			{#if payoutGoesToProvider(g)}
+				<span data-testid="stripe-gap-receipt-import">
+					{i18nMsg(
+						'stripe-gap-receipt-import',
+						'Importez le relevé du compte de destination (Wise) : la réception s’y rattache.',
+					)}
+				</span>
+			{:else}
+				<a class="text-primary underline" href="/reconciliation">
+					{i18nMsg('stripe-gap-receipt-link', 'Rattacher la réception à la réconciliation')}
+				</a>
+			{/if}
 		</span>
 	{/if}
 {/snippet}
@@ -134,6 +159,7 @@
 	gapDetails={stripeGapDetails}
 	toReviewLabel={stripeToReviewLabel}
 	onLoad={loadStripe}
+	bind:bankAccounts
 	{importReportExtra}
 	{proposalAction}
 	{gapExtra}

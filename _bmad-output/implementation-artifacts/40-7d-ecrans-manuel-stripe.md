@@ -171,13 +171,17 @@ Stripe » du manuel utilisateur et de `docs/api-external.md`.
 - 2026-11-20 — alignement sur la phase 1 de l'Epic 38 (Claude Sonnet 5.5, contexte frais ; fiches 38-11c1, 38-11c2, 38-11d et rapport de validation P3 de `28623871` lus) : `link_sale` → `link_entry` ; `provider.ts` / `withoutProviders` déjà livrés par 38-11d sur cinq sites : réutilisés, non regénéralisés (plus de `withoutPaypal`, plus de « quatre sélecteurs »). Rapport `kesh-gate-logs/epic-39-40-kiss/validation/alignement-38-P3.md`.
 - 2026-11-22 — développée (Claude Opus 5.5) : écrans, manuel, `api-external.md`, E2E ; détail au Dev Agent Record ;
   revue P1 à lancer (prompt `kesh-gate-logs/s40-7d/revue-p1-prompt.md`).
+- 2026-11-22 — revue de code P1 (rapport `kesh-gate-logs/s40-7d/revue-p1-rapport.md`) : 0 CRITICAL, 0 HIGH, 3 MEDIUM, 9 LOW ;
+  remédiée (voir « Remédiation de la revue P1 » au Dev Agent Record) ; passe P2 à lancer (prompt
+  `kesh-gate-logs/s40-7d/revue-p2-prompt.md`).
 
 ## Dev Agent Record
 
 ### Base et fusion préalable
 
 - Branche `story/40-7d`, partie de `epic/40-stripe` à `e1dd8def` (fusion de la 40-7c, qui porte la 40-7b).
-- **Fusion de `story/38-11d` (`6f8bba02`, écrans PayPal, encore en revue dans l'Epic 38) dans la 40-7d**,
+- **Fusion de `story/38-11d` (`f988056c`, parent de la fusion `c94d1ef7` ; `6f8bba02` en est un ancêtre ;
+  écrans PayPal, encore en revue dans l'Epic 38) dans la 40-7d**,
   commit `c94d1ef7` : la fiche demande de réutiliser les écrans PayPal sans les recopier, et ils
   n'étaient ni dans `epic/40-stripe` ni dans `epic/38-paypal`. Trois conflits, les deux côtés gardés :
   `sprint-status.yaml` (ligne 38-11d de la 38-11d), `audit_route_registry.rs` (166, celui de
@@ -241,7 +245,9 @@ Stripe » du manuel utilisateur et de `docs/api-external.md`.
    saisie par un relevé à la main sur une banque CHF, par `POST …/link-entry` ; même geste, même écart
    levé. Le versement EUR reste « à examiner » (compte EUR sans compte de versement).
 2. **Lien vers la page Wise** d'un versement sans réception : non posé (pas de page Wise dans la
-   branche) ; la ligne mène à l'écriture du versement et à la réconciliation.
+   branche). Revue P1 (M3) : le renvoi vers `/reconciliation` n'est plus posé pour un compte de destination
+   Wise (que la réconciliation n'offre pas) : un texte dit d'importer le relevé du compte de destination ;
+   le lien Wise viendra à l'intégration avec l'Epic 39 (note au fichier d'epic).
 3. **Compte de versement vidé** quand la devise du compte du plan change (il n'est alors plus admis),
    non à tout changement du compte lié : un compte lié changé pour un autre de même devise garde un
    compte de versement encore valide.
@@ -284,6 +290,38 @@ des contrôles de clôture retiré (`kesh-gate-logs/s40-7d/mutations.log`).
 - Captures (thème clair) : `kesh-gate-logs/s40-7d/captures/` 00 à 10 (aucun compte, formulaire,
   liste, refus `source_id`, compte rendu, propositions, écarts, à examiner, acceptation, versement
   sans réception, après réception).
+
+### Remédiation de la revue P1 (2026-11-22)
+
+- **M1** : le compte de versement ne se vide plus qu'au **changement de devise** du compte du plan
+  (`$effect` de `bank-accounts/+page.svelte`, qui relit `payoutAccountCandidates` avec la destination
+  déjà choisie) ; `payoutAccountCandidates` prend un `keepId` facultatif et garde cette destination dans
+  la liste, archivée ou close, **marquée** (badge « Archivé » / « Clos le … », clés existantes), toujours
+  soumise aux critères de devise, de type et de prestataire. Un renommage renvoie donc
+  `payoutBankAccountId` inchangé. Tests : `bank-accounts-page-stripe.test.ts` (archivée, close : valeur
+  gardée, marquée, renvoyée ; changement de devise : effacée même archivée), `provider-stripe.test.ts`.
+- **M2** : `provider-labels.ts` traduit `FX_ACCOUNT_INVALID`, `FX_RATE_INVALID`, `NOT_FOUND`,
+  `OPTIMISTIC_LOCK_CONFLICT`, `RECONCILIATION_ENTRY_NOT_LINKABLE` (clés `provider-failed-*`, quatre
+  locales, textes repris de PayPal) ; PayPal délègue (les cinq clés `paypal-failed-*` correspondantes sont
+  renommées, `PAYPAL_OWN_FAILED_CODES` ramenée à deux codes). Nouveau `provider-labels.test.ts` : la liste
+  écrite en dur des 15 codes est comparée aux littéraux de `crates/kesh-api/src/routes/provider_accept.rs`
+  (le fichier cité par la revue, `kesh-reconciliation/src/provider_accept.rs`, n'existe pas ; il est
+  dans `kesh-api`), et chaque code a un libellé.
+- **M3** : `payoutGoesToProvider` (page Stripe, comptes lus par la page commune via `bind:bankAccounts`) :
+  pour un versement sans réception dont `details.payoutBankAccountId` est un compte Wise, le lien vers
+  `/reconciliation` est remplacé par le texte `stripe-gap-receipt-import` (importer le relevé du compte de
+  destination) ; banque ordinaire ou compte introuvable : lien inchangé. Manuel (`user-manual.tex`,
+  « Versement sans réception ») corrigé ; le lien Wise final est noté au fichier d'epic. Test :
+  `stripe-page.test.ts`.
+- **Mutants survivants** : deux tests de `paypal-page.test.ts` (relecture : compte du retrait remis à zéro ;
+  changement de compte : comptes rendus d'import et d'acceptation effacés). Le changement d'exercice n'est pas
+  assertionné (la page de test n'offre qu'un exercice).
+- **LOW** : L4 (parent `f988056c`, ci-dessus), L5 (règle de casse et d'accents au manuel, ligne Stripe), L6 (banques
+  réelles des fixtures remplacées par « Banque Alpha » / « Banque Zeta » dans le test de Stripe ; les mêmes
+  fixtures de `bank-accounts-page-paypal.test.ts` sont de la 38-11d, laissées), L9 (`api-external.md` : « ligne en
+  devise » dit `foreign { amount, … }`, pour Stripe et PayPal). L1, L3, L7, L8 : entrées de
+  `kesh-gate-logs/epic-38-kiss/issues-a-ouvrir.md`.
+- Compteur : `sitesTotal` 3689 → 3692 (deux badges, un texte), relevé par la garde.
 
 ### File List
 

@@ -175,6 +175,32 @@ describe('page Stripe (Story 40-7d)', () => {
 		expect(document.body.textContent).not.toMatch(/automatiquement/i);
 	});
 
+	// Revue P1 de 40-7d (M3) — un versement vers un compte Wise : la réconciliation bancaire
+	// n'offre pas ce compte, le renvoi dit d'importer son relevé ; vers une banque ordinaire,
+	// le lien vers la réconciliation reste.
+	it('versement sans réception : lien vers la réconciliation pour une banque, texte pour un compte Wise', async () => {
+		const destination = (provider: 'wise' | null) => ({
+			...stripeAccount(9, 'x'),
+			bankName: provider === 'wise' ? 'Wise' : 'Banque',
+			provider,
+			stripe: null,
+			iban: provider === 'wise' ? null : 'CH9300762011623852957',
+		});
+		listBankAccountsMock.mockResolvedValue([stripeAccount(1, 'Stripe boutique'), destination('wise')]);
+		const wise = render(Page);
+		await waitFor(() => expect(wise.getByTestId('stripe-gap-payout_without_receipt')).toBeTruthy());
+		const bloc = wise.getByTestId('stripe-gap-payout_without_receipt');
+		expect(bloc.querySelector('[data-testid="stripe-gap-receipt-import"]')?.textContent).toContain('Importez le relevé');
+		expect(Array.from(bloc.querySelectorAll('a')).map((a) => a.getAttribute('href'))).toEqual(['/journal-entries/77']);
+		wise.unmount();
+		listBankAccountsMock.mockResolvedValue([stripeAccount(1, 'Stripe boutique'), destination(null)]);
+		const banque = render(Page);
+		await waitFor(() => expect(banque.getByTestId('stripe-gap-payout_without_receipt')).toBeTruthy());
+		const bloc2 = banque.getByTestId('stripe-gap-payout_without_receipt');
+		expect(bloc2.querySelector('[data-testid="stripe-gap-receipt-import"]')).toBeNull();
+		expect(Array.from(bloc2.querySelectorAll('a')).map((a) => a.getAttribute('href'))).toEqual(['/journal-entries/77', '/reconciliation']);
+	});
+
 	it('accepter la sélection : corps par genre, versement avec son compte de versement, ordre des dates', async () => {
 		const r = render(Page);
 		await fireEvent.click(await r.findByTestId('stripe-select-all'));
