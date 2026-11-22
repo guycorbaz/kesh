@@ -360,6 +360,18 @@ describe('page PayPal — robustesse (revue P1)', () => {
 		expect(values).not.toContain('31');
 	});
 
+	it('retrait : un libellé de compte qui ne diffère que par la casse et les accents est le même compte (revue P5, M1)', async () => {
+		listBankAccountsMock.mockResolvedValue([
+			paypalAccount(1, 'PayPal Zürich'),
+			{ ...paypalAccount(2, 'paypal zurich'), journalAccountId: 20 },
+		]);
+		const r = render(Page);
+		const select = (await r.findByTestId('paypal-withdrawal-3')) as HTMLSelectElement;
+		const values = [...select.options].map((o) => o.value);
+		expect(values).not.toContain('31');
+		expect(values).not.toContain('20');
+	});
+
 	it('pendant l’import : « Accepter la sélection » grisé ; pendant l’acceptation : « Tout cocher » grisé (revue P3, L2)', async () => {
 		let releaseImport: () => void = () => {};
 		importMock.mockImplementationOnce(
