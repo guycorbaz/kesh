@@ -266,7 +266,7 @@ est développé avant. Kickoff (décomptes, validation de ce fichier, **recette 
 et `mime_type` (38-10). `kesh_version_min_required` inchangé ; P5–P8 sans objet. Une fiche qui découvre un besoin de
 DDL s'arrête et le dit (C-40-0).
 
-**Numéro : 40, confirmé** (attribué au responsable de l'epic, `docs/developpement-a-plusieurs.md` § 2 ; Q-40-1 close). Une branche par story,
+**Numéro : 40, confirmé** (attribué au responsable de l'epic, `CLAUDE.md` § *Travailler à plusieurs développeurs* ; Q-40-1 close). Une branche par story,
 fusionnée localement dans `epic/40-stripe`, puis **une PR** vers le dépôt de Guy, ouverte depuis le dépôt du contributeur, **après celles des
 Epics 37, 38 et 39**. Pas d'issue GitHub à ce stade ; issues et PR à la fin.
 
@@ -857,7 +857,7 @@ Alignements inter-fiches issus de la validation P2 des fiches 40-1 à 40-6, repo
 
 ## Questions ouvertes — remplacé (2026-11-20)
 
-- **Q-40-1 — Numéro** : **close** — 40 est attribué au responsable de l'epic (`docs/developpement-a-plusieurs.md` § 2).
+- **Q-40-1 — Numéro** : **close** — 40 est attribué au responsable de l'epic (`CLAUDE.md` § *Travailler à plusieurs développeurs*).
 - **Q-40-2 — Boutique (responsable, recette)** : où WHMCS et CB Paid Subscriptions posent-ils le numéro de facture dans
   Stripe — `description` (« Invoice #… »), une clé de `metadata`, autre ? Défaut proposé : `metadata:invoice`, la forme
   des paiements de test (G14).
