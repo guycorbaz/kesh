@@ -1019,12 +1019,15 @@ pub enum AppError {
 
     // ----- Story 38-12a (socle S4) — téléchargement par l'API d'un prestataire -----
     /// Période d'un téléchargement refusée → `400 PROVIDER_PERIOD_INVALID`,
-    /// `details: { provider, reason }`, `reason` ∈ `from_after_to`, `future`,
-    /// `too_old`.
+    /// `details: { provider, reason, historyYears }`, `reason` ∈
+    /// `from_after_to`, `future`, `too_old` ; `historyYears` est la profondeur
+    /// d'historique du prestataire (3 pour PayPal, 30 pour Stripe), que le texte
+    /// du refus `too_old` dit à l'écran.
     #[error("Période refusée ({reason})")]
     ProviderPeriodInvalid {
         provider: &'static str,
         reason: &'static str,
+        history_years: u32,
     },
     /// Aucune série d'identifiants pour ce libellé → `422
     /// PROVIDER_API_NOT_CONFIGURED`, `details: { provider, account }`.
@@ -3822,14 +3825,22 @@ impl IntoResponse for AppError {
                 (StatusCode::BAD_REQUEST, Json(body)).into_response()
             }
             // ----- Story 38-12a (socle S4) — téléchargement par l'API -----
-            AppError::ProviderPeriodInvalid { provider, reason } => coded_response(
+            AppError::ProviderPeriodInvalid {
+                provider,
+                reason,
+                history_years,
+            } => coded_response(
                 StatusCode::BAD_REQUEST,
                 "PROVIDER_PERIOD_INVALID",
                 t(
                     "error-provider-period-invalid",
-                    "Période refusée : le début doit précéder la fin, ne pas être dans le futur, et dater de moins de trois ans.",
+                    "Période refusée : le début doit précéder la fin, ne pas être dans le futur, et ne pas remonter plus loin que l'historique du prestataire.",
                 ),
-                serde_json::json!({ "provider": provider, "reason": reason }),
+                serde_json::json!({
+                    "provider": provider,
+                    "reason": reason,
+                    "historyYears": history_years
+                }),
             ),
             AppError::ProviderApiNotConfigured { provider, account } => coded_response(
                 StatusCode::UNPROCESSABLE_ENTITY,

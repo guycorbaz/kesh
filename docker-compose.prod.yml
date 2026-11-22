@@ -167,7 +167,7 @@ services:
       KESH_PAYPAL_3_SECRET: ${KESH_PAYPAL_3_SECRET:-}
       KESH_PAYPAL_BASE_URL: ${KESH_PAYPAL_BASE_URL:-}
       KESH_PAYPAL_PARALLEL: ${KESH_PAYPAL_PARALLEL:-}
-      # Lecture Stripe par l'API (Story 40-8a) : une clé restreinte en lecture
+      # Téléchargement Stripe par l'API (Stories 40-8a, 40-8b ; manuel d'administration) : une clé restreinte en lecture
       # par compte Stripe ; au-delà de trois comptes, ajouter les lignes KESH_STRIPE_4_…
       KESH_STRIPE_1_ACCOUNT: ${KESH_STRIPE_1_ACCOUNT:-}
       KESH_STRIPE_1_KEY: ${KESH_STRIPE_1_KEY:-}

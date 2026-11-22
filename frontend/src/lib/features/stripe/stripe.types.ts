@@ -24,6 +24,21 @@ export interface StripeImportResponse extends ProviderImportResponseBase {
 	payouts: StripePayoutReport[];
 }
 
+/**
+ * Story 40-8b — le compte rendu d'un téléchargement par l'API
+ * (`result` de `GET /api/v1/stripe-downloads/{jobId}`) : celui de l'import du
+ * rapport, plus les versements **manuels** de la période, que le téléchargement
+ * ne lit pas (« à examiner »).
+ */
+export interface StripeDownloadResult extends StripeImportResponse {
+	manualPayouts: string[];
+	/**
+	 * Jamais rendu pour Stripe (l'API ne dit pas jusqu'où ses données sont à
+	 * jour) : déclaré pour la forme que le dialogue générique attend.
+	 */
+	lastRefreshed?: string | null;
+}
+
 /** Les champs d'une proposition Stripe, selon `type` (`StripeReviewProposal`, sérialisée à plat). */
 export type StripeProposalFields =
 	| { type: 'link_entry'; bankTransactionId: number; journalEntryId: number }

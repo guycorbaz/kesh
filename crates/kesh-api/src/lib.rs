@@ -991,6 +991,17 @@ pub fn build_router_avec_registre(
             "/api/v1/paypal-downloads/{job_id}",
             get(routes::paypal_downloads::show),
         )
+        // Story 40-8b (Epic 40, phase 2) : téléchargement des versements d'un
+        // compte Stripe par l'API (mêmes droits que PayPal : Comptable+,
+        // sessions seules, la clé d'API refusée dans le gestionnaire).
+        .route(
+            "/api/v1/stripe-downloads",
+            post(routes::stripe_downloads::create),
+        )
+        .route(
+            "/api/v1/stripe-downloads/{job_id}",
+            get(routes::stripe_downloads::show),
+        )
         // Story 38-11c2 (Epic 38) : revue et acceptation PayPal, sur le moteur
         // commun aux prestataires (Comptable+ ; revue en lecture pour toute
         // clé, acceptation pour les clés `read-write`, rejouée sur
