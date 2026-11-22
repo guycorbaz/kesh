@@ -3,7 +3,7 @@
 Status: ready-for-dev
 
 *Fiche rédigée le 2026-11-20, branche `epic/40-stripe`, chemins relevés sur `origin/main` au commit `fd04099f`. Epic 40,
-**phase 2** (décision de Beat du 2026-11-20). **Dépend de** : 40-8a (client), 40-7b (import CSV), du **cœur commun `ProviderLine`** (`provider_imports.rs`) extrait par 38-12a — ou par 40-7b s'il passe
+**phase 2** (décision du responsable de l'epic du 2026-11-20). **Dépend de** : 40-8a (client), 40-7b (import CSV), du **cœur commun `ProviderLine`** (`provider_imports.rs`) extrait par 38-12a — ou par 40-7b s'il passe
 avant (socle S6) ; 40-8b l'appelle sans l'extraire, 40-7c
 (rapprochement) et du **socle S1 à S9** (fichier d'epic), écrit par 38-12a ou par la première fiche de phase 2 développée
 (C-40-K6) ; le dialogue d'écran est celui de 38-12b (S7). L'automatisme (téléchargement périodique) vient plus tard encore,
@@ -130,7 +130,7 @@ frais, versements, écarts —, sans doublon si j'ai déjà importé le CSV.
    `API_KEY_OPERATION_FORBIDDEN` → 400 `VALIDATION_ERROR` → 404 `PROVIDER_ACCOUNT_NOT_FOUND` (40-7b ;
    plus de `STRIPE_ACCOUNT_NOT_FOUND`) → 422 `PROVIDER_API_NOT_CONFIGURED` (aucune paire d'environnement ne porte ce libellé,
    40-8a AC-1 ; plus de `STRIPE_KEY_NOT_CONFIGURED`) → 400 `PROVIDER_PERIOD_INVALID` (`from` > `to`, `to` dans le futur à Zurich ;
-   **plus de plafond de 366 jours** : la pagination par curseur borne chaque appel, la période est celle que Beat choisit) → 409
+   **plus de plafond de 366 jours** : la pagination par curseur borne chaque appel, la période est celle que choisit le comptable) → 409
    `PROVIDER_DOWNLOAD_RUNNING` (une tâche du même compte tourne ; `details: { provider: "stripe", jobId }`, pour que l'écran
    reprenne le suivi). Réponse `202 { jobId }` ; `GET /api/v1/stripe-downloads/{jobId}`
    (société de l'appelant seulement, sinon 404) → `{ state, steps: { done, total }, pausedUntilSeconds, result, error: { code, message, details? } }` — la
@@ -207,7 +207,7 @@ limite de débit, parallélisme réglable (`KESH_STRIPE_PARALLEL`, 1 à 6) ; mê
   par point d'accès sauf mention ; 429 avec `Stripe-Rate-Limited-Reason` (`global-rate`, `endpoint-rate`,
   `global-concurrency`, `endpoint-concurrency`, `resource-specific`) ; 50 requêtes simultanées au plus par défaut ;
   conseil : attente exponentielle avec gigue ; allocation de lecture : 500 lectures par transaction sur 30 jours,
-  au moins 10 000 par mois — un exercice de Beat (≈ 100 versements, ≈ 340 transactions de solde) en demande quelques
+  au moins 10 000 par mois — un exercice du responsable de l'epic (≈ 100 versements, ≈ 340 transactions de solde) en demande quelques
   centaines.
 - **Non confirmé** : délai entre un versement payé et sa présence dans la liste (PayPal a ~3 h ; Stripe : inconnu,
   écrit « peut tarder » au manuel).
