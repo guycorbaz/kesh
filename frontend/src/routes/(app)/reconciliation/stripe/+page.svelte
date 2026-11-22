@@ -36,6 +36,8 @@
 	import type { StripeImportResponse, StripeProposal } from '$lib/features/stripe/stripe.types';
 
 	// Comptes du plan : libellé du compte de frais d'une proposition (best-effort).
+	// fx-filtre-comptes : exempté — aucun sélecteur de compte : la liste ne sert qu'à nommer le
+	// compte de frais que la revue a choisi (en CHF ou dans la devise du solde).
 	let accounts = $state<AccountResponse[]>([]);
 
 	async function loadStripe() {
