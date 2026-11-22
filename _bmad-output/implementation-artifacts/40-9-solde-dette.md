@@ -65,17 +65,33 @@ story de solde 40-9 »). Chaque prémisse a été relue au code de `b321f24ad` :
   doc-comment de `label` dit la borne. Test unitaire : catégorie de 300 caractères → le libellé (et celui des frais)
   finit par `) - <versement>` et tient dans `DETAILS_MAX_CHARS` ; rougit sans le correctif.
 - **AC-3 (C3)** : l'exercice par défaut de la page des prestataires se choisit au jour de Zurich (`todayInZurich()`),
-  comme la période proposée au téléchargement. Test Vitest qui rougit sans le correctif (horloge figée à une heure où les
-  deux jours diffèrent, p. ex. 31 décembre 23 h 30 UTC, exercices calendaires).
-- **AC-4 (C4)** : le lien « Comptes bancaires » du panneau d'erreur d'import ne s'affiche que pour les refus
-  `PROVIDER_ACCOUNT_NOT_FOUND` et `PROVIDER_CURRENCY_ACCOUNT_MISSING`. Règle hors composant (`provider-review.ts`),
-  testée seule ; et le panneau sans lien pour un refus de format (test du composant ou d'une page).
+  comme la période proposée au téléchargement. Test Vitest d'une page qui monte `ProviderReviewPage` (fichier neuf à côté
+  de `reconciliation/stripe/stripe-page.test.ts`, avec ses propres simulations : deux exercices calendaires 2025 et
+  2026) : fuseau du processus posé explicitement à `UTC` (`process.env.TZ`, rendu après le test, comme
+  `settings/api-keys/api-keys-page.test.ts:115-128`), `vi.useFakeTimers({ toFake: ['Date'] })` à
+  `2025-12-31T23:30:00Z` (jour local 31.12.2025, jour de Zurich 01.01.2026) → la revue est demandée pour l'exercice 2026.
+  Rougit sans le correctif quel que soit le fuseau du poste (le fuseau est posé par le test). Le test de
+  `defaultFiscalYearId`, pure, ne suffit pas : le défaut est dans l'appel de `onMount`.
+- **AC-4 (C4)** : le lien « Comptes bancaires » du panneau d'erreur d'import ne s'affiche que pour les refus qui se
+  règlent à l'écran *Comptes bancaires* : `PROVIDER_ACCOUNT_NOT_FOUND`, `PROVIDER_CURRENCY_ACCOUNT_MISSING`,
+  `PROVIDER_CURRENCY_DUPLICATE`, `BANK_ACCOUNT_CLOSED` (refus du cœur d'import, `provider_imports.rs:7-10`) et
+  `PROVIDER_LEDGER_REQUIRED` (liste blanche : une erreur réseau ou inconnue n'a pas de lien). La page garde le **code**
+  du refus (état neuf, remis à zéro avec `importErrors` au changement de compte ou d'exercice et à chaque import) :
+  `importErrorLines` ne rend que des phrases. Règle hors composant (`importErrorConcernsAccounts(code)`,
+  `provider-review.ts`), testée seule code par code ; et, sur la page Stripe, le panneau avec le lien pour
+  `PROVIDER_ACCOUNT_NOT_FOUND` et sans lien pour `STRIPE_CSV_INVALID`.
 - **AC-5 (C5)** : quand la destination réglée n'est pas parmi les candidates affichées (lecture des comptes archivés et
-  clos en échec), le sélecteur montre une option « Destination actuelle (introuvable) » portant l'identifiant, choisie ;
+  clos en échec) — c'est-à-dire absente de `payoutSource`, non seulement des candidates filtrées par devise —, le
+  sélecteur montre une option « Destination actuelle (introuvable) » portant l'identifiant, choisie ;
   la valeur envoyée reste inchangée. Texte aux quatre locales ; `sitesTotal` recompté par la garde. Test Vitest du cas
   dégradé (lecture `listBankAccounts(true, true)` en échec), qui tue aussi la mutation du repli `payoutPool` (`… : null`
   → `… : []`).
-- **AC-6 (docs)** : D1 à D6 faits ; grep des symptômes sur le dépôt (code, quatre locales, manuels `.tex`, docs, fiches).
+- **AC-6 (docs)** : D1 à D6 faits ; D4 réécrit, non retiré : le `PUT` ne protège toujours pas la destination
+  (décision 5 de `fix-40`), seule la fin « la relecture à l'usage viendra » est périmée. Grep des symptômes sur le
+  dépôt (code, quatre locales, manuels `.tex`, docs, fiches) ; la formule de `POST /stripe/accept`
+  (`api-external.md:1072`, « les propositions de la revue, renvoyées telles quelles ») décrit le contrat de la route,
+  qui tolère les champs en trop : gardée, et dite au Change Log. Manuels : aucun changement attendu (lus :
+  `user-manual.tex:3466-3510`), à confirmer au grep.
 - **AC-7** : entrées corrigées barrées dans `kesh-gate-logs/epic-38-kiss/issues-a-ouvrir.md` avec le commit ; entrées
   non retenues annotées de la raison.
 
@@ -88,13 +104,16 @@ story de solde 40-9 »). Chaque prémisse a été relue au code de `b321f24ad` :
 5. Mutations hors dépôt, une à la fois, tuées sur assertion nommée.
 6. Gates : fmt, clippy workspace, nextest complet, frontend complet (`check`, `lint-i18n-ownership`, Vitest, `build`) ;
    E2E : aucune spec ajoutée par la story — aucun E2E (règle de la nuit du 22.11).
-7. `issues-a-ouvrir.md` ; statut `review` ; prompt de revue P1.
+7. `issues-a-ouvrir.md` ; ligne `40-9-solde-dette` de `sprint-status.yaml` et lignes 40-9 de `epic-40-stripe.md`
+   (`:93`, `:221`) : contenu réel de la story et report de l'extraction des lecteurs, avec sa raison ; statut `review` ;
+   prompt de revue P1.
 
 ## Dev Notes
 
 - `PayoutDestination::of(account, ledger_currency)` lit `None` comme CHF : avec la garde, une donnée incohérente (compte
-  du plan d'une autre société) se lit comme à l'acceptation (`counterparty_account`, filtrée par société), qui rend
-  alors `ACCOUNT_NOT_FOUND` ; la revue et l'acceptation ne divergent plus sur la devise lue.
+  du plan d'une autre société) se lit comme à l'acceptation (`counterparty_account`, filtrée par société, rend
+  `Ok(None)`, donc une devise `None`, CHF ; `payout_destination_locked`, déjà gardée, de même) : la revue et
+  l'acceptation ne divergent plus sur la devise lue.
 - C2 : aucune catégorie Stripe réelle ne dépasse 64 caractères (liste fermée) ; le libellé d'une ligne réelle ne
   change pas.
 - C3 : `defaultFiscalYearId(fiscalYears, today)` (`provider-review.ts`) reste pure ; seul le jour passé change.
@@ -111,5 +130,10 @@ story de solde 40-9 »). Chaque prémisse a été relue au code de `b321f24ad` :
 ## Change Log
 
 - 2026-11-22 — fiche rédigée (`story/40-9`, depuis `b321f24ad`).
+- 2026-11-22 — validation P1 (complète, une lentille, Claude Sonnet, contexte frais ; rapport
+  `kesh-gate-logs/s40-9/validation-p1-rapport.md`) : 0 C, 0 H, 2 M, 5 L, remédiés : M1 (liste du lien élargie aux refus
+  du cœur d'import qui se règlent aux comptes bancaires ; code du refus gardé par la page), M2 (fuseau du test posé, page
+  montée nommée), L1 (Dev Note de C1), L2 (D4 réécrit, non retiré), L3 (formule de `POST /stripe/accept` gardée, dite),
+  L4 (option « introuvable » jugée contre `payoutSource`), L5 (registre et fichier d'epic). Passe P2 à lancer.
 
 ## Dev Agent Record
