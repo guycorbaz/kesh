@@ -18,6 +18,7 @@ mod common;
 use std::collections::{HashMap, VecDeque};
 use std::net::SocketAddr;
 use std::pin::Pin;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -31,8 +32,8 @@ use kesh_api::errors::AppError;
 use kesh_api::provider_download::{ProviderGate, Wait, Window, error_body};
 use kesh_api::provider_env::{ProviderApiConfig, ProviderSeries, read};
 use kesh_api::stripe::{
-    KeyMode, RESTRICTED_KEY_EXPECTED, SECRET_KEY_REFUSED, STRIPE, STRIPE_KEY, STRIPE_VERSION,
-    StripeClient, StripeFetched, fetch_rows,
+    KeyMode, MAX_BODY_BYTES, MAX_PAGES, RESTRICTED_KEY_EXPECTED, SECRET_KEY_REFUSED, STRIPE,
+    STRIPE_KEY, STRIPE_VERSION, StripeClient, StripeFetched, fetch_rows,
 };
 use kesh_core::horloge::debut_du_jour_suisse;
 use kesh_import::parse_stripe_payout_csv;
@@ -101,6 +102,12 @@ struct Sim {
     forcees: Arc<Mutex<VecDeque<Rep>>>,
     repondeur: Arc<Mutex<Repondeur>>,
     requetes: Arc<Mutex<Vec<Req>>>,
+    /// Attente réelle avant chaque réponse à `/v1/balance_transactions`
+    /// (mesure du parallélisme, revue P1 L1).
+    delai_transactions: Arc<Mutex<Option<Duration>>>,
+    /// Requêtes `/v1/balance_transactions` en cours, et leur pic.
+    en_vol: Arc<AtomicUsize>,
+    pic: Arc<AtomicUsize>,
 }
 
 impl Sim {
@@ -158,6 +165,13 @@ async fn gerer(
         version: entete("stripe-version"),
     };
     sim.requetes.lock().unwrap().push(req.clone());
+    let delai = *sim.delai_transactions.lock().unwrap();
+    if let (Some(d), "/v1/balance_transactions") = (delai, req.path.as_str()) {
+        let n = sim.en_vol.fetch_add(1, Ordering::SeqCst) + 1;
+        sim.pic.fetch_max(n, Ordering::SeqCst);
+        tokio::time::sleep(d).await;
+        sim.en_vol.fetch_sub(1, Ordering::SeqCst);
+    }
     let forcee = sim.forcees.lock().unwrap().pop_front();
     let rep = match forcee {
         Some(r) => r,
@@ -187,6 +201,9 @@ async fn simuler() -> (String, Sim) {
         forcees: Arc::default(),
         repondeur: Arc::new(Mutex::new(Arc::new(cours_normal))),
         requetes: Arc::default(),
+        delai_transactions: Arc::default(),
+        en_vol: Arc::default(),
+        pic: Arc::default(),
     };
     let app = Router::new().fallback(gerer).with_state(sim.clone());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -233,9 +250,15 @@ fn cle_de_test() -> String {
 
 async fn banc() -> Banc {
     let (url, sim) = simuler().await;
+    banc_sur(&url, sim)
+}
+
+/// Le banc d'un client dirigé vers `url` (le serveur simulé `sim` ne reçoit
+/// alors rien si `url` vise un autre serveur).
+fn banc_sur(url: &str, sim: Sim) -> Banc {
     let cle = cle_de_test();
     let serie = ProviderSeries::for_tests(1, "Boutique", &[(STRIPE_KEY, cle.as_str())]);
-    let config = ProviderApiConfig::for_tests(STRIPE, &url, 2, vec![serie.clone()]);
+    let config = ProviderApiConfig::for_tests(STRIPE, url, 2, vec![serie.clone()]);
     let attente = Arc::new(Notee::default());
     let client = StripeClient::new(
         &config,
@@ -373,6 +396,53 @@ async fn un_seul_fil_rend_les_memes_lignes() {
     let un = fetch_rows(b.client.clone(), fevrier(), 1).await.unwrap();
     let deux = b.lire().await.unwrap();
     assert_eq!(un, deux);
+}
+
+/// Revue P1, L1 — `fetch_rows` branche bien `parallel` sur la lecture des
+/// transactions : avec trois versements automatiques et une réponse retardée
+/// de 100 ms, le pic des requêtes `balance_transactions` en vol vaut
+/// exactement `parallel` (ni tout en série, ni tout à la fois ; le sémaphore
+/// du prestataire, à 2, ne borne pas en dessous).
+#[tokio::test]
+async fn parallel_borne_les_transactions_en_vol() {
+    for parallel in [1, 2] {
+        let b = banc().await;
+        *b.sim.delai_transactions.lock().unwrap() = Some(Duration::from_millis(100));
+        let lu = fetch_rows(b.client.clone(), fevrier(), parallel)
+            .await
+            .unwrap();
+        assert_eq!(lu.rows.len(), 8);
+        assert_eq!(
+            b.sim.pic.load(Ordering::SeqCst),
+            parallel,
+            "pic des requêtes en vol, parallel = {parallel}"
+        );
+    }
+}
+
+/// Revue P1, L2 — une période qui finit après « maintenant » : la fin de la
+/// fenêtre est ramenée à maintenant ([`Window::new`]) et c'est elle que porte
+/// `arrival_date[lt]`, le début restant le premier jour à minuit à Zurich.
+#[tokio::test]
+async fn periode_jusqu_a_aujourd_hui_finit_maintenant() {
+    let b = banc().await;
+    let w = Window::new(jour(2026, 11, 1), jour(2026, 11, 30), maintenant());
+    b.client.payouts(&w).await.unwrap();
+    let pages: Vec<Req> = b
+        .sim
+        .requetes()
+        .into_iter()
+        .filter(|r| r.path == "/v1/payouts")
+        .collect();
+    assert!(!pages.is_empty());
+    let gte = debut_du_jour_suisse(jour(2026, 11, 1))
+        .timestamp()
+        .to_string();
+    let lt = maintenant().timestamp().to_string();
+    for p in &pages {
+        assert_eq!(p.query.get("arrival_date[gte]"), Some(&gte));
+        assert_eq!(p.query.get("arrival_date[lt]"), Some(&lt));
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -582,6 +652,140 @@ async fn curseur_immobile() {
         other => panic!("refus attendu : {other:?}"),
     }
     assert_eq!(b.sim.compte("/v1/payouts"), 2);
+}
+
+/// Une page d'un seul versement automatique d'identifiant `id`, `has_more`.
+fn page_pleine(id: &str) -> Value {
+    let mut v = fixture("payouts-p1.json");
+    let mut po = v["data"][0].clone();
+    po["id"] = json!(id);
+    v["data"] = json!([po]);
+    v["has_more"] = json!(true);
+    v
+}
+
+/// Revue P1, L3 — une liste qui ne finit jamais (curseur neuf à chaque page) :
+/// `PROVIDER_RESPONSE_INVALID`, `too_many_pages`, après exactement
+/// [`MAX_PAGES`] pages.
+#[tokio::test]
+async fn trop_de_pages() {
+    let b = banc().await;
+    b.sim.repondre(|req| {
+        let n: u32 = match req.query.get("starting_after") {
+            None => 0,
+            Some(c) => c.trim_start_matches("po_GEN").parse::<u32>().unwrap() + 1,
+        };
+        Rep::Json(page_pleine(&format!("po_GEN{n}")))
+    });
+    match b.lire().await.unwrap_err() {
+        AppError::ProviderResponseInvalid { details, .. } => {
+            assert_eq!(details["reason"], "too_many_pages");
+            assert_eq!(details["resource"], "payouts");
+        }
+        other => panic!("refus attendu : {other:?}"),
+    }
+    assert_eq!(b.sim.compte("/v1/payouts"), MAX_PAGES as usize);
+}
+
+/// Revue P1, L4 — un cycle de curseur de longueur 2 (A, B, A, B…) n'est pas
+/// reconnu comme un curseur immobile, mais il est **borné** : la lecture
+/// s'arrête sur `too_many_pages` après [`MAX_PAGES`] pages, sans boucle sans
+/// fin.
+#[tokio::test]
+async fn cycle_de_curseur_borne_par_max_pages() {
+    let b = banc().await;
+    b.sim.repondre(|req| {
+        let id = match req.query.get("starting_after").map(String::as_str) {
+            None | Some("po_CYCB") => "po_CYCA",
+            Some("po_CYCA") => "po_CYCB",
+            Some(other) => panic!("curseur inattendu : {other}"),
+        };
+        Rep::Json(page_pleine(id))
+    });
+    match b.lire().await.unwrap_err() {
+        AppError::ProviderResponseInvalid { details, .. } => {
+            assert_eq!(details["reason"], "too_many_pages");
+        }
+        other => panic!("refus attendu : {other:?}"),
+    }
+    assert_eq!(b.sim.compte("/v1/payouts"), MAX_PAGES as usize);
+}
+
+/// Revue P1, L3 — un corps plus grand que [`MAX_BODY_BYTES`] :
+/// `PROVIDER_RESPONSE_INVALID`, `too_large`, sans reprise et sans la réponse.
+#[tokio::test]
+async fn corps_trop_grand() {
+    let b = banc().await;
+    b.sim
+        .forcer(Rep::Statut(200, None, None, "x".repeat(MAX_BODY_BYTES + 1)));
+    let e = b.lire().await.unwrap_err();
+    match &e {
+        AppError::ProviderResponseInvalid { details, .. } => {
+            assert_eq!(details["reason"], "too_large");
+            assert_eq!(details["resource"], "payouts");
+        }
+        other => panic!("refus attendu : {other:?}"),
+    }
+    assert_eq!(b.sim.compte("/v1/payouts"), 1, "aucune reprise");
+    corps_sans_fuite(e).await;
+}
+
+/// Revue P1, L3 — une erreur de transport définitive (TLS parlé à un serveur
+/// en clair, comme un certificat refusé) : `PROVIDER_API_ERROR` nommant la
+/// période et la page, au premier essai, sans pause.
+#[tokio::test]
+async fn transport_definitif_sans_reprise() {
+    let capture = CaptureTrace::installer();
+    let clair = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let adresse = clair.local_addr().unwrap();
+    let connexions = Arc::new(AtomicUsize::new(0));
+    let compte = connexions.clone();
+    tokio::spawn(async move {
+        while let Ok((mut flux, _)) = clair.accept().await {
+            compte.fetch_add(1, Ordering::SeqCst);
+            use tokio::io::AsyncWriteExt;
+            let _ = flux
+                .write_all(b"HTTP/1.1 400 Bad Request\r\ncontent-length: 0\r\n\r\n")
+                .await;
+        }
+    });
+    let (_, sim) = simuler().await;
+    let b = banc_sur(&format!("https://{adresse}"), sim);
+    let e = b.lire().await.unwrap_err();
+    match &e {
+        AppError::ProviderApiError {
+            provider: "stripe",
+            window,
+            page,
+        } => {
+            assert_eq!(window.as_deref(), Some("2020-02-01…2020-02-29"));
+            assert_eq!(*page, Some(1));
+        }
+        other => panic!("PROVIDER_API_ERROR attendu : {other:?}"),
+    }
+    assert!(b.attente.secondes().is_empty(), "aucune pause");
+    assert_eq!(connexions.load(Ordering::SeqCst), 1, "un seul essai");
+    corps_sans_fuite(e).await;
+    capture.exiger_ensemble(&["erreur de transport définitive"]);
+    journal_sans_fuite(&capture);
+}
+
+/// Revue P1, L3 — 408 (délai dépassé côté serveur) est passager comme un
+/// 5xx : six essais, cinq pauses, puis `PROVIDER_UNAVAILABLE`.
+#[tokio::test]
+async fn delai_serveur_408_repris_puis_indisponible() {
+    let b = banc().await;
+    for _ in 0..6 {
+        b.sim.forcer(Rep::Statut(408, None, None, "FUITE".into()));
+    }
+    let e = b.lire().await.unwrap_err();
+    assert!(
+        matches!(&e, AppError::ProviderUnavailable { page: Some(1), .. }),
+        "{e:?}"
+    );
+    assert_eq!(b.sim.compte("/v1/payouts"), 6);
+    assert_eq!(b.attente.secondes().len(), 5);
+    corps_sans_fuite(e).await;
 }
 
 /// AC-3 — une transaction manquante : Σ net ≠ montant du versement,
