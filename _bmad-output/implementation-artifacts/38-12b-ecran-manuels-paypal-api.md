@@ -6,6 +6,10 @@ Status: ready-for-dev
 (la page PayPal `frontend/src/routes/(app)/reconciliation/paypal/+page.svelte`, son import CSV et son compte rendu,
 38-11d AC-3). Scindée de 38-12a (voir sa fiche).*
 
+## À reprendre (revue P3 de la 38-11d)
+
+- **Manuel et `docs/api-external.md`** : le manuel utilisateur (`user-manual.tex`, chapitre PayPal) écrit « Pas de téléchargement automatique depuis PayPal : le fichier s'exporte et s'importe à la main », juste à l'écran avant cette story, faux pour un script depuis la 38-12a (`POST /api/v1/paypal-downloads`, `GET /api/v1/paypal-downloads/{job_id}`, identifiants `KESH_PAYPAL_<n>_*`). La 38-12b réécrit cette phrase (et le PDF) et documente ces routes à `docs/api-external.md`, qui n'en dit rien aujourd'hui.
+
 ## Story
 
 En tant que **Comptable**, je veux, depuis la page PayPal où j'importe déjà le CSV, choisir une période et lancer le
