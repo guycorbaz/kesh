@@ -1279,11 +1279,24 @@ async fn refus_tache_unique_et_cles_d_api(pool: MySqlPool) {
 
     // Le serveur retient les pages : la tâche reste en cours.
     let place = sim.verrou.acquire_many(1000).await.unwrap();
-    let (s, premier) = ctx.lancer(COMPTE, "2020-01-01", "2020-01-30").await;
+    // Fin future (2020-07-15, l'horloge du test est au 2020-06-30) : la tâche
+    // garde la fin LUE, ramenée au jour (revue P2 de la 38-12b, L2).
+    let (s, premier) = ctx.lancer(COMPTE, "2020-06-01", "2020-07-15").await;
     assert_eq!(s, 202);
     let (s, b) = ctx.lancer("paypal WWW", "2020-02-01", "2020-02-02").await;
     assert_eq!((s, code(&b)), (409, "PROVIDER_DOWNLOAD_RUNNING".into()));
     assert_eq!(b["error"]["details"]["jobId"], premier["jobId"]);
+    // La période de la tâche suivie, non celle demandée (revue P1 de la
+    // 38-12b, M1) : l'écran dit qu'il suit un autre téléchargement ; sa fin
+    // est celle lue, le jour de l'horloge, non la fin future demandée.
+    assert_eq!(
+        (
+            b["error"]["details"]["from"].as_str(),
+            b["error"]["details"]["to"].as_str()
+        ),
+        (Some("2020-06-01"), Some("2020-06-30")),
+        "409 : période de la tâche suivie, fin lue"
+    );
     let (s, v) = ctx
         .req_avec(
             &ctx.jwt,
@@ -1363,4 +1376,58 @@ async fn aucun_secret_dans_les_reponses_ni_les_journaux(pool: MySqlPool) {
     aucun_secret(evenements.iter().map(String::as_str));
     // L'hôte de l'API n'est jamais renvoyé.
     assert!(corps.iter().all(|c| !c.contains(&url)), "{corps:?}");
+}
+
+/// Story 38-12b (AC-1) — la liste des comptes bancaires dit, pour chaque compte
+/// de prestataire, si son libellé a une série d'identifiants (`providerApi`) ;
+/// `null` pour un compte ordinaire ; ni secret, ni hôte, ni mode pour le
+/// serveur simulé du bouclage.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn la_liste_des_comptes_dit_le_telechargement_configure(pool: MySqlPool) {
+    let (url, _sim) = simuler(Vec::new(), 500).await;
+    let ctx = monter(&pool, &url, 1, true).await;
+    sqlx::query(
+        "INSERT INTO bank_accounts (company_id, bank_name, iban, is_primary) \
+         VALUES (?, 'Banque', 'CH9300762011623852957', FALSE)",
+    )
+    .bind(ctx.seeded.company_id)
+    .execute(&ctx.pool)
+    .await
+    .unwrap();
+    let (s, liste) = ctx
+        .req_avec(
+            &ctx.jwt,
+            reqwest::Method::GET,
+            "/api/v1/bank-accounts",
+            None,
+        )
+        .await;
+    assert_eq!(s, 200, "{liste}");
+    let comptes = liste.as_array().unwrap();
+    let mut configures = 0;
+    let mut sans_api = 0;
+    let mut ordinaires = 0;
+    for c in comptes {
+        match c["paypal"]["account"].as_str() {
+            Some(COMPTE) => {
+                assert_eq!(c["providerApi"], json!({ "configured": true }), "{c}");
+                configures += 1;
+            }
+            Some(COMPTE_SANS_API) => {
+                assert_eq!(c["providerApi"], json!({ "configured": false }), "{c}");
+                sans_api += 1;
+            }
+            Some(autre) => panic!("libellé inattendu {autre}"),
+            None => {
+                assert!(c["providerApi"].is_null(), "{c}");
+                ordinaires += 1;
+            }
+        }
+    }
+    // EUR, USD et CHF configurés ; le compte EUR « sans API » ; le compte
+    // ordinaire ajouté ci-dessus.
+    assert_eq!((configures, sans_api, ordinaires), (3, 1, 1), "{liste}");
+    let texte = liste.to_string();
+    assert!(!texte.contains(&secret("secret")) && !texte.contains(&secret("client")));
+    assert!(!texte.contains("127.0.0.1"), "l'hôte ne sort pas : {texte}");
 }

@@ -83,7 +83,10 @@ export function paypalFailedLabel(code: string, details?: unknown): string {
 	}
 }
 
-/** Libellé d'une erreur de ligne du lecteur PayPal (38-11a) ; code brut si inconnu. */
+/**
+ * Libellé d'une erreur de ligne du lecteur PayPal (38-11a) ou d'une transaction
+ * téléchargée (38-12a, même forme ; `STATUS` en propre) ; code brut si inconnu.
+ */
 export function paypalLineErrorLabel(code: string): string {
 	switch (code) {
 		case 'FIELD_COUNT':
@@ -104,6 +107,9 @@ export function paypalLineErrorLabel(code: string): string {
 			return i18nMsg('paypal-csv-line-balance-impact', 'Balance Impact autre que Credit, Debit ou Memo');
 		case 'REQUIRED':
 			return i18nMsg('paypal-csv-line-required', 'cellule obligatoire vide');
+		case 'STATUS':
+			// Story 38-12b — code des seules transactions téléchargées (38-12a, AC-5).
+			return i18nMsg('paypal-line-status', 'statut de transaction inconnu');
 		default:
 			return code;
 	}

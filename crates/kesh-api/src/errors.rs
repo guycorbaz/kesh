@@ -1012,10 +1012,17 @@ pub enum AppError {
         provider: &'static str,
         account: String,
     },
-    /// Un téléchargement tourne déjà pour ce compte → `409
-    /// PROVIDER_DOWNLOAD_RUNNING`, `details: { provider, jobId }`.
+    /// Un téléchargement tourne déjà pour ce compte, quelle que soit sa
+    /// période → `409 PROVIDER_DOWNLOAD_RUNNING`, `details: { provider, jobId,
+    /// from, to }` (`from`/`to` : la période de la tâche en cours, `AAAA-MM-JJ`,
+    /// sa fin étant la fin lue).
     #[error("Téléchargement déjà en cours ({job_id})")]
-    ProviderDownloadRunning { provider: &'static str, job_id: u64 },
+    ProviderDownloadRunning {
+        provider: &'static str,
+        job_id: u64,
+        from: chrono::NaiveDate,
+        to: chrono::NaiveDate,
+    },
     /// Identifiants refusés par le prestataire (jeton refusé, ou 401 après
     /// renouvellement) → `PROVIDER_AUTH_FAILED` (502 ; issue d'une tâche).
     #[error("Identifiants refusés par le prestataire")]
@@ -3779,14 +3786,24 @@ impl IntoResponse for AppError {
                 ),
                 serde_json::json!({ "provider": provider, "account": account }),
             ),
-            AppError::ProviderDownloadRunning { provider, job_id } => coded_response(
+            AppError::ProviderDownloadRunning {
+                provider,
+                job_id,
+                from,
+                to,
+            } => coded_response(
                 StatusCode::CONFLICT,
                 "PROVIDER_DOWNLOAD_RUNNING",
                 t(
                     "error-provider-download-running",
                     "Un téléchargement est déjà en cours pour ce compte : attendez qu'il se termine.",
                 ),
-                serde_json::json!({ "provider": provider, "jobId": job_id }),
+                serde_json::json!({
+                    "provider": provider,
+                    "jobId": job_id,
+                    "from": from.format("%Y-%m-%d").to_string(),
+                    "to": to.format("%Y-%m-%d").to_string(),
+                }),
             ),
             AppError::ProviderAuthFailed { provider } => coded_response(
                 StatusCode::BAD_GATEWAY,
