@@ -71,7 +71,7 @@ solde sans que la clé soit jamais en base ni dans une sauvegarde.
    facultatives `KESH_STRIPE_BASE_URL` (défaut `https://api.stripe.com` ; `http` admis vers le seul bouclage, pour les tests,
    S5) et `KESH_STRIPE_PARALLEL` (S1 : 1 à 6, défaut 1 ; employée par 40-8b). **Contrôle propre à Stripe**, branché sur le
    lecteur : préfixe `rk_live_` ou `rk_test_` exigé, `sk_` refusé (« utilisez une clé restreinte en lecture »), valeur de gabarit
-   `<…>` refusée comme ailleurs. Le mode (`live`/`test`) se lit au préfixe et se montre à l'écran par `providerApi.mode`
+   `<…>` refusée comme ailleurs. Le mode (`live`/`test`) se lit au préfixe et se montre à l'écran par `providerApi.mode` *(annoté le 22.11 par la 40-8b, revue d'intégration de l'Epic 40, M1 : `providerApi.mode` garde le contrat publié `live | sandbox` — `rk_test_` → `sandbox` ; `stripe::series_mode`)*
    (40-8b). Jamais écrite en base, dans l'audit, dans un `.keshbackup`, ni dans un message d'erreur. **Transmission au conteneur** (S1) : `KESH_STRIPE_1_*` à
    `KESH_STRIPE_3_*`, `KESH_STRIPE_BASE_URL`, `KESH_STRIPE_PARALLEL` ajoutées à `docker-compose.yml` et
    `docker-compose.prod.yml` en `${NOM:-}` (patron `KESH_SMTP_*`, `docker-compose.yml:117-122`) et à `.env.example`

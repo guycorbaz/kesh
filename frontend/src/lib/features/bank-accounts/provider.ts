@@ -232,20 +232,43 @@ export function providerPayload(
 	return provider === 'paypal' ? { paypal: base } : { stripe: { ...base, payoutBankAccountId } };
 }
 
+/** Ce qu'il faut d'un compte bancaire pour lire l'état de son téléchargement par l'API. */
+export interface ProviderApiSource extends ProviderSettingsSource {
+	providerApi?: ProviderApiStatus | null;
+}
+
 /**
- * Story 38-12b (AC-1) — l'état du téléchargement par l'API du compte PayPal
- * `label` (sans casse ni accents, comme le serveur), lu sur ses comptes
- * bancaires (`providerApi` de la liste) : configuré si l'un d'eux l'est, le mode
- * du premier configuré ; `null` si aucun compte ne porte ce libellé. Tous les
- * soldes d'un même libellé partagent la même série : ils disent la même chose.
+ * Story 38-12b (AC-1), généralisé par la 40-8b — l'état du téléchargement par
+ * l'API du compte du prestataire `provider` au libellé `label`, lu sur ses
+ * comptes bancaires (`providerApi` de la liste). Les libellés se comparent ici
+ * sans casse **ni accents** (`accountLabelKey`, la règle des comptes de la
+ * 38-11d) ; le serveur, lui, rattache une série d'identifiants au libellé sans
+ * casse seulement (`series_for`) — écart connu, relevé à la revue d'intégration
+ * de l'Epic 40 (L1) : configuré si l'un d'eux l'est, le mode du premier configuré ; `null`
+ * si aucun compte ne porte ce libellé. Tous les soldes d'un même libellé
+ * partagent la même série : ils disent la même chose.
  */
-export function paypalApiStatus(
-	accounts: readonly { provider?: string | null; paypal?: PaypalSettings | null; providerApi?: ProviderApiStatus | null }[],
+export function providerApiStatus(
+	accounts: readonly ProviderApiSource[],
+	provider: ConfigurableProvider,
 	label: string,
 ): ProviderApiStatus | null {
 	const key = accountLabelKey(label);
-	const mine = accounts.filter((a) => isPaypal(a) && a.paypal && accountLabelKey(a.paypal.account) === key);
+	const mine = accounts.filter((a) => {
+		const settings = providerSettingsOf(a, provider);
+		return settings !== null && accountLabelKey(settings.account) === key;
+	});
 	if (mine.length === 0) return null;
 	const configured = mine.find((a) => a.providerApi?.configured);
 	return configured?.providerApi ?? { configured: false };
+}
+
+/** L'état du téléchargement d'un compte PayPal (voir {@link providerApiStatus}). */
+export function paypalApiStatus(accounts: readonly ProviderApiSource[], label: string): ProviderApiStatus | null {
+	return providerApiStatus(accounts, 'paypal', label);
+}
+
+/** Story 40-8b — l'état du téléchargement d'un compte Stripe (voir {@link providerApiStatus}). */
+export function stripeApiStatus(accounts: readonly ProviderApiSource[], label: string): ProviderApiStatus | null {
+	return providerApiStatus(accounts, 'stripe', label);
 }

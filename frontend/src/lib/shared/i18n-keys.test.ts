@@ -1200,7 +1200,11 @@ const ATTENDU = {
 	// la garde ; au diff : 2 sites ajoutés, 0 retiré.
 	// Fusion d'epic/38-paypal (38-12b) dans epic/40-stripe : **3733** (« expected 3733 to be 0 »),
 	// relevé par la garde = 3691 + 42 (les sites de la 38-12b, 3674 − 3632).
-	sitesTotal: 3733,
+	// Story 40-8b (bouton, aide, dialogue et compte rendu du téléchargement Stripe) : **3740**
+	// (« expected 3740 to be 3733 »), relevé par la garde ; au diff hors tests : 9 sites
+	// `i18nMsg(` ajoutés (6 sur la page Stripe, 3 dans `StripeImportReport.svelte`, dont les
+	// deux du compte rendu des versements déplacés de la page), 2 retirés, net +7.
+	sitesTotal: 3740,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

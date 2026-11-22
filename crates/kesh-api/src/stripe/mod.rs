@@ -123,7 +123,8 @@ pub enum KeyMode {
 }
 
 impl KeyMode {
-    /// `live` ou `test` (montré à l'écran par 40-8b).
+    /// `live` ou `test` (journal). L'écran ne lit pas ce texte : il lit
+    /// `providerApi.mode`, où une clé de test se dit `sandbox` ([`series_mode`]).
     pub fn as_str(self) -> &'static str {
         match self {
             KeyMode::Live => "live",
@@ -270,7 +271,7 @@ impl StripeClient {
         })
     }
 
-    /// Le mode de la clé (`live`/`test`), `None` si elle n'est pas restreinte
+    /// Le mode de la clé ([`KeyMode`]), `None` si elle n'est pas restreinte
     /// (impossible après la validation du démarrage).
     pub fn mode(&self) -> Option<KeyMode> {
         key_mode(&self.key)

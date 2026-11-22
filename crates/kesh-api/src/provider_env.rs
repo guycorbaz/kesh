@@ -823,12 +823,46 @@ mod tests {
         // Prestataire sans série pour ce libellé, et prestataire inconnu.
         assert!(!simule.status_for("stripe", "Boutique").configured);
         assert!(!simule.status_for("inconnu", "Boutique").configured);
+        // Branche de repli : un prestataire hors de `ALL_PROVIDERS` (Wise, pas
+        // encore téléchargé) rend « non configuré », sans mode, même si une
+        // configuration portait son libellé (revue d'intégration de l'Epic 40,
+        // M1).
+        assert_eq!(
+            simule.status_for("wise", "Boutique"),
+            ProviderApiStatus {
+                configured: false,
+                mode: None
+            }
+        );
         // Forme JSON : `mode` absent quand il n'y en a pas, aucun secret.
         let json = serde_json::to_string(&simule.status_for("paypal", "Boutique")).unwrap();
         assert_eq!(json, r#"{"configured":true}"#);
         let json = serde_json::to_string(&reel.status_for("paypal", "Boutique")).unwrap();
         assert_eq!(json, r#"{"configured":true,"mode":"live"}"#);
         assert!(!json.contains("secret") && !json.contains("paypal.com"));
+    }
+
+    /// Revue d'intégration de l'Epic 40 (M1) — `configured: true` n'est rendu
+    /// que pour un prestataire de [`ALL_PROVIDERS`] ; chacun doit donc avoir sa
+    /// route de téléchargement (`POST /api/v1/<prestataire>-downloads`) dans le
+    /// routeur, sans quoi l'écran montrerait un bouton qui mène à un `404`.
+    #[test]
+    fn chaque_prestataire_lu_a_sa_route_de_telechargement() {
+        let lib = include_str!("lib.rs");
+        for spec in ALL_PROVIDERS {
+            let route = format!("\"/api/v1/{}-downloads\"", spec.provider);
+            assert!(
+                lib.contains(&route),
+                "{} : route {route} absente de lib.rs",
+                spec.provider
+            );
+            let suivi = format!("\"/api/v1/{}-downloads/{{job_id}}\"", spec.provider);
+            assert!(
+                lib.contains(&suivi),
+                "{} : route {suivi} absente de lib.rs",
+                spec.provider
+            );
+        }
     }
 
     /// Story 40-8b (AC-4) — le mode d'un compte Stripe se lit au préfixe de sa

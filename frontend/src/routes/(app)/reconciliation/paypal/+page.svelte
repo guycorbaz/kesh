@@ -27,7 +27,12 @@
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
 	import { withoutForeignCurrency, type AccountResponse } from '$lib/features/accounts/accounts.types';
 	import type { BankAccountSummary } from '$lib/features/bank-accounts/bank-accounts.api';
-	import { accountLabelKey, paypalAccountLabels, paypalApiStatus } from '$lib/features/bank-accounts/provider';
+	import {
+		accountLabelKey,
+		paypalAccountLabels,
+		paypalApiStatus,
+		providerSettingsOf,
+	} from '$lib/features/bank-accounts/provider';
 	import type { FiscalYearResponse } from '$lib/features/fiscal-years/fiscal-years.types';
 	import ProviderReviewPage from '$lib/features/provider/ProviderReviewPage.svelte';
 	import ProviderDownloadDialog from '$lib/features/provider-download/ProviderDownloadDialog.svelte';
@@ -90,14 +95,15 @@
 	// Le compte du plan du compte PayPal choisi est refusé par le serveur comme destination.
 	let ownLedgerIds = $derived(
 		bankAccounts
-			.filter(
-				(b) =>
-					b.provider === 'paypal' &&
-					b.paypal !== null &&
+			.filter((b) => {
+				const settings = providerSettingsOf(b, 'paypal');
+				return (
+					settings !== null &&
 					selectedAccount !== null &&
-					accountLabelKey(b.paypal.account) === accountLabelKey(selectedAccount) &&
-					b.journalAccountId !== null,
-			)
+					accountLabelKey(settings.account) === accountLabelKey(selectedAccount) &&
+					b.journalAccountId !== null
+				);
+			})
 			.map((b) => b.journalAccountId as number),
 	);
 	let withdrawalChoices = $derived(

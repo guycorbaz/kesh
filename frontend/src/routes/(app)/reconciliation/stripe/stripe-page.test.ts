@@ -2,7 +2,7 @@
 // aucun compte, rappel des ventes, import et compte rendu (devises, versements), refus du
 // fichier sans source_id, propositions (genres, action), acceptation (corps du versement),
 // écarts (charge sans vente, vente sans charge, versement sans réception et ses liens),
-// à examiner, états vides.
+// à examiner, états vides. Story 40-8b : le bouton « Télécharger depuis Stripe » et son dialogue.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
@@ -47,6 +47,16 @@ vi.mock('$lib/features/stripe/stripe.api', () => ({
 	acceptStripeProposals: (...a: unknown[]) => acceptMock(...a),
 }));
 
+// Story 40-8b — le dialogue de téléchargement : seules ses routes sont simulées.
+const startDownloadMock = vi.fn();
+const getDownloadMock = vi.fn();
+vi.mock('$lib/features/provider-download/provider-download.api', async (importOriginal) => ({
+	...(await importOriginal<typeof import('$lib/features/provider-download/provider-download.api')>()),
+	startProviderDownload: (...a: unknown[]) => startDownloadMock(...a),
+	getProviderDownload: (...a: unknown[]) => getDownloadMock(...a),
+}));
+
+import { authState } from '$lib/app/stores/auth.svelte';
 import Page from './+page.svelte';
 
 function stripeAccount(id: number, account: string): BankAccountSummary {
@@ -279,5 +289,101 @@ describe('page Stripe (Story 40-7d)', () => {
 		expect((await r.findByTestId('stripe-proposals-empty')).textContent).toContain('Aucune proposition');
 		expect(r.getByTestId('stripe-gaps-empty').textContent).toContain('Aucun écart');
 		expect(r.getByTestId('stripe-to-review-empty').textContent).toContain('Rien à examiner');
+	});
+});
+
+describe('page Stripe — téléchargement par l’API (Story 40-8b, AC-4)', () => {
+	const configured = (mode?: 'live' | 'sandbox') => ({
+		...stripeAccount(1, 'Stripe boutique'),
+		providerApi: mode ? { configured: true, mode } : { configured: true },
+	});
+	const notConfigured = () => ({ ...stripeAccount(1, 'Stripe boutique'), providerApi: { configured: false } });
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		reviewMock.mockResolvedValue(emptyReview());
+	});
+
+	async function as(role: string) {
+		await authState.logout();
+		authState.login({ userId: '1', username: 'u', role, expiresIn: 3600 });
+	}
+
+	it('compte configuré, Comptable : le bouton, le dialogue par versement, le compte rendu et les versements manuels, puis la revue relue', async () => {
+		await as('Comptable');
+		listBankAccountsMock.mockResolvedValue([configured('live')]);
+		startDownloadMock.mockResolvedValue({ jobId: 3 });
+		getDownloadMock
+			.mockResolvedValueOnce({ state: 'running', steps: { done: 1, total: 3 }, pausedUntilSeconds: null, result: null, error: null })
+			.mockResolvedValue({
+				state: 'done',
+				steps: { done: 3, total: 3 },
+				pausedUntilSeconds: null,
+				result: {
+					account: 'Stripe boutique',
+					currencies: [{ currency: 'CHF', bankAccountId: 1, importId: 4, inserted: 6, duplicates: 0 }],
+					payouts: [{ payoutId: 'po_TEST0001', currency: 'CHF', lines: 4, net: '125.15' }],
+					manualPayouts: ['po_TEST0005'],
+				},
+				error: null,
+			});
+		const r = render(Page);
+		const button = await r.findByTestId('stripe-download-button');
+		expect(button.textContent).toContain('Télécharger depuis Stripe');
+		expect(r.queryByTestId('stripe-download-sandbox')).toBeNull();
+		expect(r.queryByTestId('stripe-download-not-configured')).toBeNull();
+		await waitFor(() => expect(reviewMock).toHaveBeenCalledTimes(1));
+		await fireEvent.click(button);
+		const from = (await r.findByTestId('provider-download-from')) as HTMLInputElement;
+		expect(from.value).toBe('2020-01-01');
+		expect((r.getByTestId('provider-download-to') as HTMLInputElement).value).toBe('2020-12-31');
+		expect(r.getByTestId('provider-download-notice').textContent).toContain('Les versements manuels ne se téléchargent pas');
+		await fireEvent.click(r.getByTestId('provider-download-start'));
+		await waitFor(() =>
+			expect(startDownloadMock).toHaveBeenCalledWith('stripe', { account: 'Stripe boutique', from: '2020-01-01', to: '2020-12-31' }),
+		);
+		expect((await r.findByTestId('provider-download-progress')).textContent).toContain('versement 1/3');
+		expect((await r.findByTestId('stripe-download-report-CHF', {}, { timeout: 3000 })).textContent).toContain(
+			'6 transaction(s) insérée(s)',
+		);
+		expect(r.getByTestId('stripe-download-report-payout-po_TEST0001').textContent).toContain('4 ligne(s), net 125.15 CHF');
+		expect(r.getByTestId('stripe-download-report-manual').textContent).toContain('po_TEST0005');
+		expect(getDownloadMock).toHaveBeenCalledWith('stripe', 3);
+		await waitFor(() => expect(reviewMock).toHaveBeenCalledTimes(2));
+	});
+
+	it('clé de test (bac à sable) : la mention, sur la page et dans le dialogue', async () => {
+		await as('Comptable');
+		listBankAccountsMock.mockResolvedValue([configured('sandbox')]);
+		const r = render(Page);
+		expect((await r.findByTestId('stripe-download-sandbox')).textContent).toContain('bac à sable');
+		await fireEvent.click(r.getByTestId('stripe-download-button'));
+		expect((await r.findByTestId('provider-download-sandbox')).textContent).toContain('bac à sable');
+	});
+
+	it('non configuré : pas de bouton ; la ligne d’aide pour l’Administrateur seulement', async () => {
+		await as('Admin');
+		listBankAccountsMock.mockResolvedValue([notConfigured()]);
+		const r = render(Page);
+		expect((await r.findByTestId('stripe-download-not-configured')).textContent).toContain('manuel d’administration');
+		expect(r.queryByTestId('stripe-download-button')).toBeNull();
+		expect(r.getByTestId('stripe-import-button')).toBeTruthy();
+		r.unmount();
+
+		await as('Comptable');
+		const r2 = render(Page);
+		await r2.findByTestId('stripe-import-button');
+		await waitFor(() => expect(reviewMock).toHaveBeenCalled());
+		expect(r2.queryByTestId('stripe-download-not-configured')).toBeNull();
+		expect(r2.queryByTestId('stripe-download-button')).toBeNull();
+	});
+
+	it('Consultation : jamais le bouton, même configuré', async () => {
+		await as('Consultation');
+		listBankAccountsMock.mockResolvedValue([configured('live')]);
+		const r = render(Page);
+		await r.findByTestId('stripe-import-button');
+		expect(r.queryByTestId('stripe-download-button')).toBeNull();
+		await authState.logout();
 	});
 });

@@ -43,7 +43,7 @@ suit l'emporte sur le texte de la fiche là où ils diffèrent.*
    (`crates/kesh-api/src/stripe/mod.rs`) lit une seule fenêtre (Stripe sans `max_days`) et ne rend pas de progression ;
    l'étape « versement k/n » de l'AC-1 demande à la 40-8b un crochet de progression autour de la lecture des transactions
    (par versement), sans changer le classement des erreurs. Les versements manuels (`manual_payouts`) vont au compte rendu
-   (« versement manuel à examiner »), non à l'import. Le mode de la clé est `StripeClient::mode()` (`live`/`test`).
+   (« versement manuel à examiner »), non à l'import. Le mode de la clé est `StripeClient::mode()` (`live`/`test`) *(annoté le 22.11 : l'écran le lit en `live`/`sandbox`, second amendement, point 7)*.
 
 ## Second amendement du 22.11 (étape 0 du développement, après la fusion d'`epic/40-stripe` à `15e9f8b13`)
 
@@ -89,7 +89,14 @@ amendement là où ils diffèrent ; chaque point a été relu au code.*
     (`account`, `currencies`, `payouts`) plus `manualPayouts` (versements manuels non lus, « à examiner »). Le
     rapprochement de la 40-7c est la **revue** de la page Stripe, que l'import du CSV ne lance pas non plus : la
     page la relit à la fin du téléchargement. Trace `stripe_download.created` (libellés aux quatre locales).
-11. **Écran** (AC-4) : le bouton va sur la **page Stripe** (`/reconciliation/stripe`, page commune
+11. *(Ajouté le 22.11, revue d'intégration de l'Epic 40 : M1, L1, L2.)* **M1** — avant la 40-8b, `providerApi`
+    d'un compte Stripe à série rendait `configured: true` sans route et `mode: live` pour une clé d'essai (mode lu
+    à l'hôte). Désormais la route existe, un test (`chaque_prestataire_lu_a_sa_route_de_telechargement`) exige
+    les deux routes de chaque prestataire de `ALL_PROVIDERS` dans `lib.rs`, la branche de repli est de nouveau
+    exercée (`wise`), et le mode suit le point 7 ; la fiche 40-8a est annotée. **L1** — le commentaire du filtre
+    de l'écran dit l'écart (sans accents côté écran, sans casse seulement côté serveur). **L2** — `paypalApiStatus`
+    et `ownLedgerIds` de la page PayPal passent par `providerSettingsOf` (`providerApiStatus` générique).
+12. **Écran** (AC-4) : le bouton va sur la **page Stripe** (`/reconciliation/stripe`, page commune
     `ProviderReviewPage`, fragments `importActions` et `importNotes`), comme PayPal, et non sur *Import bancaire* ; le
     compte rendu de l'import est extrait en `StripeImportReport.svelte` et sert à la page et au dialogue.
 
@@ -150,7 +157,7 @@ frais, versements, écarts —, sans doublon si j'ai déjà importé le CSV.
    téléchargement simulé des mêmes versements → zéro insérée ; l'inverse aussi ; deux téléchargements de suite → zéro insérée.
 4. **AC-4 — Écran et manuels.** *Écran* : le **dialogue générique de 38-12b** (S7), sur la page *Import bancaire*, paramétré
    par Stripe (route `stripe-downloads`, libellés « versement ») ; le bouton *Télécharger depuis Stripe* se montre quand
-   **`providerApi.configured`** (champ générique du compte bancaire ; `providerApi.mode` : `live` ou `test`, **montré** dans le
+   **`providerApi.configured`** (champ générique du compte bancaire ; `providerApi.mode` : `live` ou `sandbox` — *corrigé le 22.11 (second amendement, point 7 ; revue d'intégration de l'Epic 40, M1) : la fiche disait `live` ou `test`* —, **montré** dans le
    dialogue ; jamais la clé). *Manuel d'administration* (`docs/manual/fr/admin-manual.tex`) : créer une **clé restreinte** au
    tableau de bord Stripe, droits *Read* seuls sur les versements et le solde (noms exacts **à relever**, 40-8a), variables
    `KESH_STRIPE_<n>_ACCOUNT` (libellé **propre à l'installation** : deux sociétés au même libellé atteignent le même compte
