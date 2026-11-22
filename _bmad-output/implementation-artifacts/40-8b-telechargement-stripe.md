@@ -204,7 +204,8 @@ Stripe (Comptable et Administrateur, sessions seules ; `POST /api/v1/stripe-down
 `KESH_STRIPE_<n>_KEY`), progression par versement, reprise commune sur limite de débit, parallélisme réglable
 (`KESH_STRIPE_PARALLEL`, 1 à 6) ; même résultat et mêmes doublons que l'import du rapport CSV, versements manuels signalés
 « à examiner ». La liste des comptes bancaires dit le mode d'un compte Stripe par sa clé (`providerApi.mode` : `live`
-ou `sandbox`).
+ou `sandbox`). Le refus `400 PROVIDER_PERIOD_INVALID` (aussi celui du téléchargement PayPal) porte en plus
+`details.historyYears` (3 pour PayPal, 30 pour Stripe) : ajout additif, aucun champ retiré.
 
 ## Notes de développement
 

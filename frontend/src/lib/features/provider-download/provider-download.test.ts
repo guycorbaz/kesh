@@ -118,6 +118,17 @@ describe('startRefusal', () => {
 		expect(sans).toContain('Période refusée');
 		expect(sans).not.toMatch(/\d/);
 	});
+	it('refus too_old : une profondeur illisible (non entière, négative, nulle, chaîne) dit le texte général', () => {
+		for (const historyYears of [2.5, -1, 0, '30', null, Number.NaN]) {
+			const msg = (
+				startRefusal(
+					apiError('PROVIDER_PERIOD_INVALID', 400, { provider: 'stripe', reason: 'too_old', historyYears }),
+				) as { message: string }
+			).message;
+			expect(msg, `historyYears=${String(historyYears)}`).toContain('Période refusée');
+			expect(msg, `historyYears=${String(historyYears)}`).not.toMatch(/\d/);
+		}
+	});
 	it('non configuré : renvoi au manuel ; autre refus : le message du serveur', () => {
 		expect((startRefusal(apiError('PROVIDER_API_NOT_CONFIGURED', 422)) as { message: string }).message).toContain(
 			'manuel d’administration',
