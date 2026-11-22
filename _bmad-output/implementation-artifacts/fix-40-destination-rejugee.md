@@ -76,8 +76,32 @@ routes/stripe.rs` ne rendait aucun contrôle du prestataire de la destination.
 
 ## Change Log
 
-- 2026-11-22 — Développement (voir le Dev Agent Record).
+- 2026-11-22 — Développement (`0638cb1c0`) ; `sitesTotal` de la garde i18n relevé à 3734 (`2816086ae`) ; fusion
+  non squash dans `epic/40-stripe` (`020120656`, arbre identique à `2816086ae` : la branche d'epic n'avait pas bougé).
+  Revue P1 (code et fusion) à lancer : prompt `kesh-gate-logs/fix-40-destination/revue-p1-prompt.md`.
 
 ## Dev Agent Record
 
-*(Complété aux gates.)*
+Gates (journaux `kesh-gate-logs/fix-40-destination/`), au dernier commit de code :
+
+- **Branche** (`0638cb1c0`, puis `2816086ae` pour Vitest et l'E2E) : fmt, clippy workspace `-D warnings` verts ;
+  nextest **complet** 6537 exécutés, 6537 passés, 15 ignorés (`nextest-branche.log`) ; `npm run check`,
+  `lint-i18n-ownership`, `build` verts ; Vitest 5066/5066, 296 fichiers (`front-test-unit-branche-2.log` ; le premier
+  passage rendait le seul `sitesTotal`, « expected 3734 to be 3733 », relevé ensuite) ; E2E `stripe-import.spec.ts`
+  4 passés (`e2e-branche.log`).
+- **Après la fusion** (`020120656`, worktree d'epic) : fmt, clippy verts ; nextest complet 6537/6537, 15 ignorés
+  (`nextest-fusion.log`, fini à 15:09) ; `check`, `lint-i18n-ownership` verts ; le gate a été interrompu à 15:12 par
+  l'arrêt du serveur de test (mémoire du noyau, hors du code) pendant Vitest ; Vitest 5066/5066 et `build` rejoués
+  (`front-*-fusion-2.log`), E2E `stripe-import.spec.ts` 4 passés (`e2e-fusion-2.log`).
+- **Mutations** (copie `git archive`, cible propre à chaque mutation, copie non mutée verte d'abord) : (1) rejugement
+  de l'acceptation neutralisé pour `stripe`, `paypal`, `currency` → tuée, `destination_devenue_…` panique
+  `stripe_reconciliation_e2e.rs:1766` (« paypal : … "accepted":[…"payout"] ») ; (2) rejugement de la revue neutralisé →
+  tuée, même test, `:1743` (la proposition reste). Un premier passage de (2) sur une cible partagée avec (1) a repris
+  l'artefact de (1) (copie « non mutée » rouge) : écarté, rejoué sur sa propre cible
+  (`mutations/revue-*-cible-partagee.log` gardés).
+- Tests ajoutés (de `15e9f8b13` à `2816086ae`) : 2 tests d'intégration neufs ; 1 modifié (devise) ; unitaires étendus :
+  `libelle_et_usage_d_un_compte_de_versement`, `versements_proposes_examines_ou_en_ecart` ; 1 assertion Vitest.
+- Hors périmètre, relevé : la relecture de la destination à l'acceptation reste **non verrouillante** (choix de la
+  40-7c) — un `PUT` qui passerait la destination à PayPal entre la relecture et le commit reste possible, fenêtre de
+  quelques millisecondes ; L3 côté Wise par la route Wise (`POST /wise/accept`) reste à la 39-11d2 ou au solde de
+  l'Epic 39 (la route n'est pas sur `epic/40`).
