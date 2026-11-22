@@ -88,11 +88,24 @@ export function selectedBodies(
 
 /**
  * Les comptes offerts comme destination d'un retrait : actifs, imputables, de
- * type actif, en CHF (le retrait part d'un solde CHF, 38-11c2 AC-5).
+ * type actif, en CHF (le retrait part d'un solde CHF, 38-11c2 AC-5), **hors** les
+ * comptes de `excludedIds` : les comptes du plan du compte PayPal lui-même, que
+ * le serveur refuse comme contrepartie (revue P3, L1). Le compte de conversion
+ * n'est pas refusé par le serveur : il reste offert.
  */
-export function withdrawalAccountCandidates(accounts: readonly AccountResponse[]): AccountResponse[] {
+export function withdrawalAccountCandidates(
+	accounts: readonly AccountResponse[],
+	excludedIds: readonly number[] = [],
+): AccountResponse[] {
 	return accounts
-		.filter((a) => a.active && a.postable && a.accountType === 'Asset' && !a.currency)
+		.filter(
+			(a) =>
+				a.active &&
+				a.postable &&
+				a.accountType === 'Asset' &&
+				!a.currency &&
+				!excludedIds.includes(a.id),
+		)
 		.sort((a, b) => a.number.localeCompare(b.number));
 }
 

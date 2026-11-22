@@ -44,11 +44,15 @@ export function withoutProviders<T extends ProviderSource>(accounts: readonly T[
 export function paypalAccountLabels(
 	accounts: readonly { provider?: string | null; paypal?: PaypalSettings | null }[],
 ): string[] {
-	const labels = new Set<string>();
+	// Sans tenir compte de la casse, comme le serveur (collation `_ci`) : le premier libellé rencontré est gardé.
+	const labels = new Map<string, string>();
 	for (const a of accounts) {
-		if (isPaypal(a) && a.paypal) labels.add(a.paypal.account);
+		if (isPaypal(a) && a.paypal) {
+			const key = a.paypal.account.toLowerCase();
+			if (!labels.has(key)) labels.set(key, a.paypal.account);
+		}
 	}
-	return [...labels].sort((x, y) => x.localeCompare(y));
+	return [...labels.values()].sort((x, y) => x.localeCompare(y));
 }
 
 /**

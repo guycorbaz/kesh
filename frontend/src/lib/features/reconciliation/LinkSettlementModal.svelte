@@ -6,7 +6,7 @@
   « Rattacher à une écriture existante ». Le dialogue montre deux sections : « Règlements de
   factures clients » (crédits seulement ; la liste, les colonnes et l'écart de la 29-8
   inchangés) et « Écritures passées sur le compte de la banque » (`GET …/entry-candidates`),
-  toute transaction en CHF de montant non nul. UN SEUL choix parmi les deux sections, rien de
+  toute transaction de montant non nul (en CHF, ou en devise d'un compte PayPal). UN SEUL choix parmi les deux sections, rien de
   présélectionné ; « Rattacher » appelle `…/link` pour un règlement, `…/link-entry` pour une
   écriture.
 

@@ -26,6 +26,7 @@ vi.mock('$lib/features/fiscal-years/fiscal-years.api', () => ({
 vi.mock('$lib/features/accounts/accounts.api', () => ({
 	fetchAccounts: async () => [
 		{ id: 20, number: '1020', name: 'Banque', accountType: 'Asset', active: true, postable: true },
+		{ id: 31, number: '1053', name: 'Solde PayPal', accountType: 'Asset', active: true, postable: true },
 		{ id: 60, number: '6940', name: 'Frais PayPal', accountType: 'Expense', active: true, postable: true },
 	],
 }));
@@ -347,6 +348,45 @@ describe('page PayPal — robustesse (revue P1)', () => {
 		release();
 		await waitFor(() => expect((r.getByTestId('paypal-account') as HTMLSelectElement).disabled).toBe(false));
 		expect(acceptMock.mock.calls[0][0]).toBe('PayPal boutique');
+	});
+
+	it('retrait : le compte du plan du compte PayPal n’est pas offert (revue P3, L1)', async () => {
+		const r = render(Page);
+		const select = (await r.findByTestId('paypal-withdrawal-3')) as HTMLSelectElement;
+		const values = [...select.options].map((o) => o.value);
+		expect(values).toContain('20');
+		expect(values).not.toContain('31');
+	});
+
+	it('pendant l’import : « Accepter la sélection » grisé ; pendant l’acceptation : « Tout cocher » grisé (revue P3, L2)', async () => {
+		let releaseImport: () => void = () => {};
+		importMock.mockImplementationOnce(
+			() =>
+				new Promise((res) => {
+					releaseImport = () => res({ account: 'PayPal www', currencies: [], skipped: { notCompleted: [], memo: 0, neutralPairs: 0 } });
+				}),
+		);
+		let releaseAccept: () => void = () => {};
+		acceptMock.mockImplementationOnce(
+			() => new Promise((res) => (releaseAccept = () => res({ accepted: [], failed: [] }))),
+		);
+		const r = render(Page);
+		await fireEvent.click(await r.findByTestId('paypal-check-1'));
+		expect((r.getByTestId('paypal-accept') as HTMLButtonElement).disabled).toBe(false);
+		const input = (await r.findByTestId('paypal-file-input')) as HTMLInputElement;
+		await fireEvent.change(input, { target: { files: [new File(['x'], 'p.csv', { type: 'text/csv' })] } });
+		await waitFor(() => expect((r.getByTestId('paypal-accept') as HTMLButtonElement).disabled).toBe(true));
+		releaseImport();
+		await waitFor(() => expect(reviewMock).toHaveBeenCalledTimes(2));
+		await waitFor(() => expect((r.getByTestId('paypal-import-button') as HTMLButtonElement).disabled).toBe(false));
+		const check = (await r.findByTestId('paypal-check-1')) as HTMLInputElement;
+		if (!check.checked) await fireEvent.click(check);
+		await waitFor(() => expect((r.getByTestId('paypal-accept') as HTMLButtonElement).disabled).toBe(false));
+		await fireEvent.click(r.getByTestId('paypal-accept'));
+		await waitFor(() => expect((r.getByTestId('paypal-select-all') as HTMLButtonElement).disabled).toBe(true));
+		expect((r.getByTestId('paypal-select-none') as HTMLButtonElement).disabled).toBe(true);
+		releaseAccept();
+		await waitFor(() => expect((r.getByTestId('paypal-select-all') as HTMLButtonElement).disabled).toBe(false));
 	});
 
 	it('retrait : effacer le compte choisi décoche la proposition', async () => {

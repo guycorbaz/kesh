@@ -58,6 +58,15 @@ describe('provider — prédicats et filtre', () => {
 		).toEqual(['PayPal boutique', 'PayPal www']);
 	});
 
+	it('paypalAccountLabels : sans tenir compte de la casse, le premier libellé est gardé', () => {
+		expect(
+			paypalAccountLabels([
+				{ provider: 'paypal', paypal: { account: 'PayPal www', feeAccountId: null } },
+				{ provider: 'paypal', paypal: { account: 'paypal WWW', feeAccountId: null } },
+			]),
+		).toEqual(['PayPal www']);
+	});
+
 	it('feeAccountCandidates : charges actives et imputables, CHF ou devise du compte du plan', () => {
 		const accounts = [
 			account({ id: 1, number: '6941', currency: 'EUR' }),

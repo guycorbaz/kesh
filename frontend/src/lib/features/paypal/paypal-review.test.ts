@@ -96,6 +96,12 @@ describe('paypal-review', () => {
 		expect(withdrawalAccountCandidates(list).map((x) => x.id)).toEqual([1, 2]);
 	});
 
+	it('comptes de retrait : les comptes exclus (plan du compte PayPal) ne sont pas offerts', () => {
+		const a = (o: Partial<AccountResponse>) => ({ active: true, postable: true, accountType: 'Asset', ...o }) as AccountResponse;
+		const list = [a({ id: 1, number: '1010' }), a({ id: 2, number: '1053' })];
+		expect(withdrawalAccountCandidates(list, [2]).map((x) => x.id)).toEqual([1]);
+	});
+
 	it('paquets de 500 au plus, dans l’ordre', () => {
 		const items = Array.from({ length: 1201 }, (_, i) => i);
 		const chunks = chunkProposals(items);

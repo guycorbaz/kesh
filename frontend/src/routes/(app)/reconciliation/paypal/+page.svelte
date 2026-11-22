@@ -92,7 +92,22 @@
 	let paypalAccounts = $derived(paypalAccountLabels(bankAccounts));
 	// fx-filtre-comptes : la liste des retraits est filtrée en CHF (`withdrawalAccountCandidates`,
 	// après `withoutForeignCurrency`) ; les autres comptes ne servent qu'aux libellés.
-	let withdrawalChoices = $derived(withdrawalAccountCandidates(withoutForeignCurrency(accounts)));
+	// Le compte du plan du compte PayPal choisi est refusé par le serveur comme destination.
+	let ownLedgerIds = $derived(
+		bankAccounts
+			.filter(
+				(b) =>
+					b.provider === 'paypal' &&
+					b.paypal !== null &&
+					selectedAccount !== null &&
+					b.paypal.account.toLowerCase() === selectedAccount.toLowerCase() &&
+					b.journalAccountId !== null,
+			)
+			.map((b) => b.journalAccountId as number),
+	);
+	let withdrawalChoices = $derived(
+		withdrawalAccountCandidates(withoutForeignCurrency(accounts), ownLedgerIds),
+	);
 
 	onMount(async () => {
 		const [ba, fy, acc, rules] = await Promise.allSettled([
@@ -136,6 +151,7 @@
 		const myGen = ++reviewGen;
 		if (account === null || yearId === null) {
 			review = null;
+			reviewLoading = false;
 			return;
 		}
 		reviewLoading = true;
@@ -431,13 +447,13 @@
 				</p>
 			{:else}
 				<div class="mt-2 flex items-center gap-3">
-					<Button variant="outline" onclick={() => toggleAll(true)} data-testid="paypal-select-all">
+					<Button variant="outline" onclick={() => toggleAll(true)} disabled={accepting} data-testid="paypal-select-all">
 						{i18nMsg('paypal-select-all', 'Tout cocher')}
 					</Button>
-					<Button variant="ghost" onclick={() => toggleAll(false)} data-testid="paypal-select-none">
+					<Button variant="ghost" onclick={() => toggleAll(false)} disabled={accepting} data-testid="paypal-select-none">
 						{i18nMsg('paypal-select-none', 'Tout décocher')}
 					</Button>
-					<Button onclick={acceptSelection} disabled={accepting || reviewLoading || selected.size === 0} data-testid="paypal-accept">
+					<Button onclick={acceptSelection} disabled={accepting || importing || reviewLoading || selected.size === 0} data-testid="paypal-accept">
 						{i18nMsg('paypal-accept', 'Accepter la sélection')}
 					</Button>
 					{#if batchProgress}
