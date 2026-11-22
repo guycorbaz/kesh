@@ -1,6 +1,6 @@
 # Story 40-7d : écrans, manuel et E2E du compte Stripe (phase 1)
 
-Status: ready-for-dev
+Status: review
 
 *Fiche rédigée le 2026-11-20, branche `epic/40-stripe`, chemins relevés sur `origin/main` au commit `fd04099f`. Epic 40,
 **phase 1 KISS** (décision de Beat du 2026-11-20). **Dépend de** : 40-7b, 40-7c ; les écrans PayPal de la phase 1 de
@@ -118,11 +118,11 @@ manuel me dise comment exporter le bon rapport de Stripe et ce que Kesh en fait.
 
 ## Tâches
 
-- [ ] T1 — Bloc de paramètres prestataire généralisé, champs Stripe, `withoutProviders` (déjà livré par 38-11d) testé aux cinq sélecteurs (AC-1).
-- [ ] T2 — Page Stripe sur le composant généralisé : import, compte rendu, revue (AC-2).
-- [ ] T3 — Propositions, acceptation, écarts, à examiner, libellés (AC-3).
-- [ ] T4 — Manuel et `api-external.md` (AC-4).
-- [ ] T5 — E2E, Vitest, captures (AC-5).
+- [x] T1 — Bloc de paramètres prestataire généralisé, champs Stripe, `withoutProviders` (déjà livré par 38-11d) testé aux cinq sélecteurs (AC-1).
+- [x] T2 — Page Stripe sur le composant généralisé : import, compte rendu, revue (AC-2).
+- [x] T3 — Propositions, acceptation, écarts, à examiner, libellés (AC-3).
+- [x] T4 — Manuel et `api-external.md` (AC-4).
+- [x] T5 — E2E, Vitest, captures (AC-5).
 
 ## Stratégie de tests
 
@@ -169,3 +169,140 @@ Stripe » du manuel utilisateur et de `docs/api-external.md`.
   « Versement vers <compte> » exige que la proposition de la revue porte le compte de versement (40-7c AC-4 d) ; deux
   limites ajoutées au manuel (réception sur un autre exercice, annulation du côté Stripe).
 - 2026-11-20 — alignement sur la phase 1 de l'Epic 38 (Claude Sonnet 5.5, contexte frais ; fiches 38-11c1, 38-11c2, 38-11d et rapport de validation P3 de `28623871` lus) : `link_sale` → `link_entry` ; `provider.ts` / `withoutProviders` déjà livrés par 38-11d sur cinq sites : réutilisés, non regénéralisés (plus de `withoutPaypal`, plus de « quatre sélecteurs »). Rapport `kesh-gate-logs/epic-39-40-kiss/validation/alignement-38-P3.md`.
+- 2026-11-22 — développée (Claude Opus 5.5) : écrans, manuel, `api-external.md`, E2E ; détail au Dev Agent Record ;
+  revue P1 à lancer (prompt `kesh-gate-logs/s40-7d/revue-p1-prompt.md`).
+
+## Dev Agent Record
+
+### Base et fusion préalable
+
+- Branche `story/40-7d`, partie de `epic/40-stripe` à `e1dd8def` (fusion de la 40-7c, qui porte la 40-7b).
+- **Fusion de `story/38-11d` (`6f8bba02`, écrans PayPal, encore en revue dans l'Epic 38) dans la 40-7d**,
+  commit `c94d1ef7` : la fiche demande de réutiliser les écrans PayPal sans les recopier, et ils
+  n'étaient ni dans `epic/40-stripe` ni dans `epic/38-paypal`. Trois conflits, les deux côtés gardés :
+  `sprint-status.yaml` (ligne 38-11d de la 38-11d), `audit_route_registry.rs` (166, celui de
+  l'Epic 40 ; garde verte), `docs/api-external.md` (paragraphe PayPal de l'Epic 40 + la phrase de
+  `GET /companies/current` de la 38-11d ; table des erreurs : lignes généralisées de l'Epic 40 + les
+  lignes `COUNTERPARTY_CURRENCY_MISMATCH` et `PROVIDER_PROPOSAL_STALE` de la 38-11d,
+  `PROVIDER_ACCOUNT_NOT_FOUND` avec les routes de revue et d'acceptation des deux prestataires).
+  ⚠️ Les remédiations à venir de la 38-11d (revue P3) arriveront par `epic/38-paypal` ; les fichiers
+  PayPal que cette story généralise (`reconciliation/paypal/+page.svelte`, `paypal.types.ts`,
+  `paypal.api.ts`, `paypal-labels.ts`, `paypal-review.ts`, `bank-accounts/+page.svelte`,
+  `provider.ts`) se recroiseront à cette fusion.
+- La 39-11d (page généralisée par Wise) et la 39-11b (route Wise) ne sont pas dans `epic/40-stripe` :
+  la page commune est généralisée ici.
+
+### Ce qui est livré
+
+- **Page commune des prestataires** `frontend/src/lib/features/provider/ProviderReviewPage.svelte`
+  (générique en `P`, `B`, `R`), tirée de la page PayPal de la 38-11d : sélecteurs, import, compte rendu
+  par devise, revue avec garde de génération, propositions par paquets de 500, écarts, « à examiner »
+  avec la modale de rattachement et l'écriture manuelle ; ce qui est propre au prestataire passe par
+  propriétés et fragments ; identifiants de test préfixés (`paypal-…`, `stripe-…`, inchangés pour
+  PayPal). Types, client et règles communs : `provider-review.types.ts`, `provider-review.api.ts`,
+  `provider-review.ts`, `provider-labels.ts` ; les modules PayPal en sont des alias ou des
+  enveloppes. La page PayPal n'est plus que sa configuration.
+- **Clés i18n** (recomptées sur le catalogue fr, `git diff c94d1ef7..HEAD`, 31 lignes retirées, 80
+  ajoutées) : 30 clés `paypal-*` de la page devenues `provider-*` (même texte, quatre catalogues),
+  `bank-accounts-help-paypal-primary` devenue `bank-accounts-help-provider-primary` (texte « PayPal ni
+  Stripe »), `provider-col-name` copiée de `paypal-col-name` (toujours servie) ; 48 clés neuves aux
+  quatre catalogues (`stripe-*`, `bank-accounts-*` Stripe, `nav-stripe`,
+  `fiscal-years-checks-k2-link-stripe`). Les clés `stripe-review-*`,
+  `stripe-gap-payout-*`, `provider-review-*`, `provider-failed-proposal-stale` posées par la
+  40-7c et la 38-11c2 sont servies à l'écran.
+- **AC-1** : cases « Compte PayPal » et « Compte Stripe » exclusives (`formProvider`), libellé,
+  compte de frais, **compte bancaire de versement** (`payoutAccountCandidates`, miroir de
+  `STRIPE_PAYOUT_ACCOUNT_INVALID`), charges `{ paypal }` / `{ stripe }` (`providerPayload`),
+  décochée → `paypal: null` ou `stripe: null`, ligne « Stripe · <compte> · <devise> », pas de
+  « Lier » ; `withoutProviders` (38-11d) non regénéralisé, testé aux cinq sites et aux lots de
+  paiement avec Stripe et Wise. Lien « Ouvrir la page Stripe » aux contrôles de clôture.
+- **AC-2 / AC-3** : `routes/(app)/reconciliation/stripe/+page.svelte`, `features/stripe/`
+  (`stripe.types.ts`, `stripe.api.ts`, `stripe-review.ts`, `stripe-labels.ts`) ; menu *Mensuel* →
+  *Stripe* (`comptableOnly`) ; rappel des ventes des boutiques ; refus de l'import par cause
+  (colonne `source_id|charge_id` → marche à suivre, versement sans identifiant → rapport des
+  versements automatiques) ; versements lus au compte rendu ; genres « Rattachement à la vente
+  n° … », « Frais », « Versement vers <compte> » ; écarts « Charge sans vente », « Vente sans
+  charge », « Montant ou devise différents », versement incomplet, versement sans réception (liens
+  vers l'écriture du versement et vers la réconciliation) ; motifs ; test des codes d'écart et de
+  motif contre les constantes `GAP_*` / `REVIEW_*` des sources Rust.
+- **AC-4** : manuel utilisateur, section « Compte Stripe » (`sec:compte-stripe`) après « Comptes
+  PayPal », renvois aux contrôles de clôture et à la saisie d'un relevé ; `.tex` seulement, PDF
+  régénéré dans une copie (`kesh-gate-logs/s40-7d/user-manual.txt`, aplati : section présente,
+  aucun renvoi `??`). Autres langues : à traduire. `docs/api-external.md` : écran et script des
+  boutiques Stripe, exemple `curl` (identifiants à deux ou trois chiffres), objet `stripe`,
+  `PROVIDER_PROPOSAL_STALE` étendu à `POST /stripe/accept` (les autres codes de 40-7b et 40-7c y
+  étaient déjà).
+
+### Écarts à la fiche, déclarés
+
+1. **E2E, réception du versement** : la fiche veut une réception Wise EUR importée par la route Wise
+   (39-11b), absente de la branche de l'Epic 40 ; un relevé en devise ne se saisit pas hors
+   prestataire. La spec rattache donc la réception du **versement CHF** (`po_TEST0001`, 125.15),
+   saisie par un relevé à la main sur une banque CHF, par `POST …/link-entry` ; même geste, même écart
+   levé. Le versement EUR reste « à examiner » (compte EUR sans compte de versement).
+2. **Lien vers la page Wise** d'un versement sans réception : non posé (pas de page Wise dans la
+   branche) ; la ligne mène à l'écriture du versement et à la réconciliation.
+3. **Compte de versement vidé** quand la devise du compte du plan change (il n'est alors plus admis),
+   non à tout changement du compte lié : un compte lié changé pour un autre de même devise garde un
+   compte de versement encore valide.
+4. Lignes « à examiner » : bouton *Rattacher à une écriture* (modale de la 38-11d) et lien
+   *Écriture manuelle*, comme PayPal, plutôt qu'un lien vers `/bank-import/[id]` (la revue ne sert
+   pas l'import d'une transaction).
+
+### Tests (recomptés : `git diff c94d1ef7..HEAD -- frontend/src | grep -cE '^\+\s*it(\.each)?\('`)
+
+47 sites `it` neufs (cinq `it.each` à deux cas) : `stripe-labels.test.ts` 16, `stripe-review.test.ts` 3,
+`provider-stripe.test.ts` 6, `bank-accounts-page-stripe.test.ts` 8, `stripe-page.test.ts` 7, et 7 dans
+des fichiers existants (Stripe et Wise aux sites de `withoutProviders`, lots de paiement, contrôles de
+clôture). Gardes recomptées par elles-mêmes : `sitesTotal` 3632 → 3689, `i18n-libelle-en-dur` 138 → 145
+(conformes 117 → 124). Tests Vitest de la 38-11d : assertions inchangées (seul `stripe: null` ajouté
+aux fixtures de `BankAccountSummary`).
+
+**Mutations** (copie hors dépôt, `node_modules` réel, copie non mutée verte d'abord ; « tuée » sur
+une assertion d'un test nommé) : **10/10 tuées** — compte de versement Stripe/PayPal admis, versement
+sans `payoutBankAccountId`, marche à suivre `source_id` retirée, décochée sans `stripe: null`,
+compte de versement jamais vidé, « Tout cocher » sans `selectable` (page PayPal), liens de réception
+sur tout écart, libellé du compte de versement ignoré, Stripe offert à l'import bancaire, lien Stripe
+des contrôles de clôture retiré (`kesh-gate-logs/s40-7d/mutations.log`).
+
+### Gates (dernier commit de code `7da520c4`)
+
+- Fusion de la 40-7c dans `epic/40-stripe` (`e1dd8def`) : fmt, clippy workspace verts ; `cargo nextest`
+  de `stripe_*`, `paypal_*`, `reconciliation_e2e`, `textes_coherents`, `configuration_transmise`,
+  `audit_route_registry`, `test_schema_guard` : 333 passés, 1 ignoré ; `npm run check` vert, Vitest
+  `i18n-keys` 11/11 (`fusion-*.log`).
+- Backend : `scripts/test-fast.sh --ci` (fmt, clippy workspace `-D warnings`, nextest complet, base remise à zéro)
+  à `2088d02d` : **6500 passés, 15 ignorés** (`gate-backend.log`) ; le seul commit de code suivant, `7da520c4`, n'ajoute
+  qu'un commentaire d'exemption dans `reconciliation/stripe/+page.svelte` (aucun fichier Rust ni catalogue).
+- Frontend à `7da520c4` : `npm run check`, `lint-i18n-ownership`, `test:unit` (**4998 passés, 292 fichiers**), `build`,
+  tous verts (`gate-front.rc`, `front-*.log`). Le premier passage, à `2088d02d`, rendait 1 échec
+  (`fx-account-filter-inventory.test.ts` : la page Stripe importe `fetchAccounts` sans marque ni exemption), corrigé
+  par `7da520c4` (`front-test-unit-1.log`).
+- **E2E partiel (1 spec)** : `frontend/tests/e2e/stripe-import.spec.ts`, la seule spec ajoutée par la
+  story (règle de la nuit du 22.11) : 4/4 (`e2e-1.log`) ; E2E complet et `gate-ci.sh` à la branche
+  d'intégration de fin.
+- Captures (thème clair) : `kesh-gate-logs/s40-7d/captures/` 00 à 10 (aucun compte, formulaire,
+  liste, refus `source_id`, compte rendu, propositions, écarts, à examiner, acceptation, versement
+  sans réception, après réception).
+
+### File List
+
+`frontend/src/lib/features/provider/` (neuf : `ProviderReviewPage.svelte`, `provider-review.types.ts`,
+`provider-review.api.ts`, `provider-review.ts`, `provider-labels.ts`), `frontend/src/lib/features/stripe/`
+(neuf : `stripe.types.ts`, `stripe.api.ts`, `stripe-review.ts`, `stripe-labels.ts` et leurs tests),
+`frontend/src/routes/(app)/reconciliation/stripe/` (neuf), `frontend/src/routes/(app)/reconciliation/paypal/+page.svelte`,
+`frontend/src/routes/(app)/bank-accounts/+page.svelte`, `frontend/src/routes/(app)/+layout.svelte`,
+`frontend/src/lib/features/bank-accounts/{bank-accounts.api.ts,provider.ts}`,
+`frontend/src/lib/features/paypal/{paypal.types.ts,paypal.api.ts,paypal-review.ts,paypal-labels.ts}`,
+`frontend/src/lib/features/fiscal-years/FiscalYearChecks.svelte`, tests (fixtures `stripe: null`,
+cas Stripe et Wise), `frontend/tests/e2e/stripe-import.spec.ts`, quatre catalogues
+`crates/kesh-i18n/locales/*/messages.ftl`, `docs/manual/fr/user-manual.tex`, `docs/api-external.md`.
+
+## Notes de version
+
+*Ajouté* — Écrans du compte Stripe : case « Compte Stripe » et compte bancaire de versement dans les
+comptes bancaires, page *Mensuel* → *Stripe* (import du rapport, propositions à accepter en lot,
+écarts, lignes à examiner) ; section « Compte Stripe » du manuel utilisateur et de
+`docs/api-external.md`. *Modifié* — la page PayPal repose sur la page commune des prestataires
+(sans changement visible).
+
