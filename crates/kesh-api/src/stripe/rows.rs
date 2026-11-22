@@ -147,6 +147,12 @@ pub fn exponent(currency: &str) -> Option<u32> {
     }
 }
 
+/// La transaction de solde du versement lui-même (`type = payout` **et**
+/// `source` = le versement), que `?payout=` rend et qui n'est pas une ligne.
+pub fn is_own_payout_transaction(t: &ApiBalanceTransaction, payout: &ApiPayout) -> bool {
+    t.kind == PAYOUT_TRANSACTION_TYPE && t.source.as_deref() == Some(payout.id.as_str())
+}
+
 /// Un montant en plus petites unités, en unités de la devise.
 fn units(minor: i64, exp: u32) -> Decimal {
     Decimal::new(minor, exp)
@@ -265,9 +271,7 @@ pub fn payout_rows(
 
     let mut kept: Vec<&ApiBalanceTransaction> = transactions
         .iter()
-        .filter(|t| {
-            !(t.kind == PAYOUT_TRANSACTION_TYPE && t.source.as_deref() == Some(payout.id.as_str()))
-        })
+        .filter(|t| !is_own_payout_transaction(t, payout))
         .collect();
     kept.sort_by(|a, b| (a.created, &a.id).cmp(&(b.created, &b.id)));
 
@@ -404,10 +408,7 @@ pub fn rows_of(
     for (payout, txs) in ordered {
         let count = txs
             .iter()
-            .filter(|t| {
-                !(t.kind == PAYOUT_TRANSACTION_TYPE
-                    && t.source.as_deref() == Some(payout.id.as_str()))
-            })
+            .filter(|t| !is_own_payout_transaction(t, payout))
             .count()
             .max(1);
         match payout_rows(payout, txs, next) {
@@ -536,6 +537,20 @@ mod tests {
         // Arrivée le 4 mars à 23:00 UTC : le 5 mars à Zurich.
         assert_eq!(r.payout_date, NaiveDate::from_ymd_opt(2024, 3, 5).unwrap());
         assert_eq!(r.created, "2024-03-01 10:00:00");
+    }
+
+    /// La transaction d'un **autre** versement, même de type `payout`, n'est
+    /// pas écartée : elle reste une ligne (et fausse la somme, refusée).
+    #[test]
+    fn seule_la_transaction_du_versement_lui_meme_est_ecartee() {
+        let p = payout(10061, "usd");
+        assert!(is_own_payout_transaction(&the_payout_tx(10061), &p));
+        let mut autre = the_payout_tx(10061);
+        autre.source = Some("po_TEST0009".into());
+        assert!(!is_own_payout_transaction(&autre, &p));
+        let mut charge = the_payout_tx(10061);
+        charge.kind = "charge".into();
+        assert!(!is_own_payout_transaction(&charge, &p));
     }
 
     #[test]
