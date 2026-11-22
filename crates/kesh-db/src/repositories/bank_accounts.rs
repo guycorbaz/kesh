@@ -1626,8 +1626,9 @@ pub const BASE_CURRENCY: &str = "CHF";
 /// devise de leur compte du plan — Story 38-11b (AC-2, AC-4).
 ///
 /// La comparaison du libellé est celle de la **collation** de la colonne (sans
-/// casse, espaces finales ignorées) : « PayPal www » et « paypal WWW » sont le
-/// même compte PayPal. Lecture ordinaire, sur le pool : l'import la fait avant
+/// casse ni accents, espaces finales ignorées) : « PayPal www » et « paypal
+/// WWW », comme « PayPal Zürich » et « paypal zurich », sont le même compte
+/// PayPal. Lecture ordinaire, sur le pool : l'import la fait avant
 /// de prendre les verrous des comptes, puis contrôle l'ambiguïté (deux comptes
 /// pour une devise) et relit sous les verrous par
 /// [`list_provider_balances_locked`], que la garde d'unicité par devise des
