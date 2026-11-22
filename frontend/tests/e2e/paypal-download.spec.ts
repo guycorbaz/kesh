@@ -93,6 +93,8 @@ function transactions(): PaypalMockTransaction[] {
 
 let mock: ProviderMock | null = null;
 let fiscalYearId: number;
+/** Début de l'exercice qui couvre le jour (`with-company` : 2020-2030) : début de la période proposée. */
+let fiscalYearStart: string;
 
 test.beforeAll(async () => {
 	await seedTestState('with-company');
@@ -118,7 +120,7 @@ test.beforeEach(async ({ page }) => {
 	await clearAuthStorage(page);
 });
 
-test('1 — préparation : deux comptes PayPal en CHF et l’exercice de l’année', async ({ page }) => {
+test('1 — préparation : deux comptes PayPal en CHF, l’exercice qui couvre le jour', async ({ page }) => {
 	await login(page);
 	const ctx = await authedApiContext(page);
 	try {
@@ -136,6 +138,7 @@ test('1 — préparation : deux comptes PayPal en CHF et l’exercice de l’ann
 		}
 		const years = await api<Array<{ id: number; startDate: string; endDate: string }>>(ctx, 'get', '/api/v1/fiscal-years');
 		const current = years.find((y) => y.startDate <= TODAY && TODAY <= y.endDate);
+		fiscalYearStart = current?.startDate ?? JAN_1;
 		fiscalYearId =
 			current?.id ??
 			(
@@ -191,7 +194,7 @@ test('3 — (b) téléchargement de deux mois : progression, pause, compte rendu
 	const dialog = page.getByTestId('provider-download-dialog');
 	await expect(dialog).toBeVisible();
 	await expect(page.getByTestId('provider-download-notice')).toContainText('trois heures');
-	await expect(page.getByTestId('provider-download-from')).toHaveValue(JAN_1);
+	await expect(page.getByTestId('provider-download-from')).toHaveValue(fiscalYearStart);
 	await expect(page.getByTestId('provider-download-to')).toHaveValue(TODAY);
 	await page.getByTestId('provider-download-from').fill(FROM);
 	await captureOf(page, 'provider-download-dialog', '12-dialogue-periode');
