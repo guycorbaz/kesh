@@ -106,8 +106,17 @@ describe('startRefusal', () => {
 			(startRefusal(apiError('PROVIDER_PERIOD_INVALID', 400, { reason })) as { message: string }).message;
 		expect(m('from_after_to')).toContain('précéder la date de fin');
 		expect(m('future')).toContain('dans le futur');
-		expect(m('too_old')).toContain('trois ans');
 		expect(m('autre')).toContain('Période refusée');
+	});
+	it('refus too_old : la profondeur d\'historique du prestataire, jamais un nombre faux', () => {
+		const m = (details: Record<string, unknown>) =>
+			(startRefusal(apiError('PROVIDER_PERIOD_INVALID', 400, details)) as { message: string }).message;
+		expect(m({ provider: 'paypal', reason: 'too_old', historyYears: 3 })).toContain('plus de 3 ans');
+		expect(m({ provider: 'stripe', reason: 'too_old', historyYears: 30 })).toContain('plus de 30 ans');
+		// Sans profondeur lisible : le texte général, sans nombre.
+		const sans = m({ provider: 'stripe', reason: 'too_old' });
+		expect(sans).toContain('Période refusée');
+		expect(sans).not.toMatch(/\d/);
 	});
 	it('non configuré : renvoi au manuel ; autre refus : le message du serveur', () => {
 		expect((startRefusal(apiError('PROVIDER_API_NOT_CONFIGURED', 422)) as { message: string }).message).toContain(

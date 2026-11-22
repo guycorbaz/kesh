@@ -128,6 +128,7 @@ pub async fn create(
         AppError::ProviderPeriodInvalid {
             provider: PROVIDER_STRIPE,
             reason,
+            history_years: HISTORY_YEARS,
         }
     })?;
     let to = effective_to(request.to, now);

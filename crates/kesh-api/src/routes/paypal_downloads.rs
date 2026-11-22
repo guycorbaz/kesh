@@ -109,6 +109,7 @@ pub async fn create(
         AppError::ProviderPeriodInvalid {
             provider: PROVIDER_PAYPAL,
             reason,
+            history_years: HISTORY_YEARS,
         }
     })?;
     // Une `to` future n'est pas refusée : la période lue s'arrête au jour du

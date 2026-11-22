@@ -693,11 +693,13 @@ async fn trois_versements_a_la_fois_rendent_les_memes_lignes(pool: MySqlPool) {
     assert_eq!(trois.transactions().await, un);
 }
 
-/// AC-2 / FR-40-8b-3 — `KESH_STRIPE_PARALLEL` borne les versements lus en même
-/// temps : le serveur retient les transactions, et le nombre de requêtes en vol
-/// atteint la valeur réglée sans la dépasser (trois versements à lire).
+/// AC-2 / FR-40-8b-3 — `KESH_STRIPE_PARALLEL` borne les requêtes HTTP de
+/// transactions en vol : le serveur les retient, et leur nombre atteint la
+/// valeur réglée sans la dépasser (trois versements à lire). La borne est tenue
+/// par le `ProviderGate` ; le test ne voit pas le nombre de tâches de lecture
+/// (`Run.parallel`), qui n'ajoute aucune requête en vol de plus (revue P2, N1).
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
-async fn versements_lus_en_meme_temps_egal_le_reglage(pool: MySqlPool) {
+async fn requetes_http_en_vol_egal_le_reglage(pool: MySqlPool) {
     use std::sync::atomic::Ordering::SeqCst;
     let (url, sim) = simuler().await;
     let ctx = monter(&pool, &url, 2).await;
@@ -715,7 +717,7 @@ async fn versements_lus_en_meme_temps_egal_le_reglage(pool: MySqlPool) {
     assert_eq!(
         sim.en_vol.load(SeqCst),
         2,
-        "KESH_STRIPE_PARALLEL=2 : deux versements en vol, ni un ni trois"
+        "KESH_STRIPE_PARALLEL=2 : deux requêtes en vol, ni une ni trois"
     );
     drop(retenue);
     let v = ctx.suivre(&job).await;
@@ -948,6 +950,8 @@ async fn refus_tache_unique_et_cles_d_api(pool: MySqlPool) {
         );
         assert_eq!(b["error"]["details"]["reason"], motif);
         assert_eq!(b["error"]["details"]["provider"], "stripe");
+        // La profondeur d'historique que dit le texte du refus `too_old`.
+        assert_eq!(b["error"]["details"]["historyYears"], 30);
     }
     // Aucune requête n'est partie vers Stripe.
     assert!(sim.requetes.lock().unwrap().is_empty(), "rien lancé");

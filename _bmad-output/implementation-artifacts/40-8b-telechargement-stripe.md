@@ -323,3 +323,13 @@ retiré → tuée par `identifiant_trop_long_refuse_avant_l_ecriture` ; `set_tot
   `provider_env` ignore les lignes commentées de `lib.rs`), L3 (GET d'une tâche d'une autre société : 404, dans
   `refus_tache_unique_et_cles_d_api`). Un test neuf ; gates : fmt, clippy workspace, nextest ciblé 43/43 verts (journaux
   `p2-*.log`). Sondes : voir la P2.
+- 2026-11-22 — remédiation du M1 de la revue P2 (`kesh-gate-logs/s40-8b/revue-p2-rapport.md` ; l'écran Stripe passe bien par
+  `ProviderDownloadDialog` → `startRefusal` → `periodRefusalLabel`, vérifié) : les textes `too_old` disaient « trois ans » pour
+  Stripe, dont la borne est de trente. Le refus `400 PROVIDER_PERIOD_INVALID` porte désormais `details.historyYears` (3
+  PayPal, 30 Stripe) ; le texte `provider-download-period-too-old` (quatre locales) l'interpole (`{ $years }`), sans
+  profondeur lisible l'écran retombe sur le texte général, qui ne cite plus aucun nombre (idem `provider-download-period-invalid`
+  et `error-provider-period-invalid`, texte de l'API). N1 de la P2 : le test de parallélisme est renommé
+  `requetes_http_en_vol_egal_le_reglage` (il prouve la borne HTTP, tenue par le `ProviderGate`). Tests : assertions
+  `historyYears` (3 / 30) dans les deux E2E d'API, Vitest PayPal 3 ans / Stripe 30 ans / sans profondeur. Manuel
+  utilisateur et `docs/api-external.md` à jour. Passe P3 ciblée : `kesh-gate-logs/s40-8b/revue-p3-prompt.md`.
+  Gates : fmt, clippy workspace, nextest ciblé 38/38 verts (`binary(stripe_download_e2e) | binary(paypal_download_e2e) | test(provider_env)`, journal `cible-6.log`) ; frontend : check, lint-i18n-ownership, Vitest 5073 (296 fichiers), build verts, `sitesTotal` inchangé (aucun site neuf) ; E2E `stripe-download` et `paypal-download` verts (`e2e-6.log`).
