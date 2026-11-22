@@ -37,17 +37,23 @@ use crate::config::ConfigError;
 /// **sans casse ni accents** (« PayPal Zürich » = « paypal zurich ») ; les
 /// comparaisons faites en Rust doivent suivre la même règle, sans quoi un compte
 /// trouvé par la base ne retrouverait pas sa série d'identifiants. Quatre étapes,
-/// **dans cet ordre** (celui d'`accountLabelKey` au frontend,
-/// `frontend/src/lib/features/bank-accounts/provider.ts`) : rognage des blancs
-/// de bord, décomposition NFD, retrait des marques combinantes (catégorie
-/// Unicode `Mark`), minuscules.
+/// **dans cet ordre** : rognage des blancs de bord, décomposition NFD, retrait
+/// des marques combinantes (catégorie Unicode `Mark`), minuscules. Le frontend
+/// (`accountLabelKey`, `frontend/src/lib/features/bank-accounts/provider.ts`)
+/// fait les trois dernières étapes dans le même ordre mais **ne rogne pas** :
+/// sans effet, les libellés servis sont rognés à l'écriture.
 ///
 /// Sites : [`ProviderApiConfig::series_for`], la garde de libellé en double de
 /// [`read`] et la clé de tâche de `Downloads::start`
 /// (`crate::provider_download`).
 ///
-/// **Limite** : la collation égale aussi `ß` et `ss`, et quelques ligatures,
-/// que cette forme ne replie pas.
+/// **Limites**, mesurées contre `utf8mb4_unicode_ci` (MariaDB 10.11) : la
+/// collation égale `ß`/`ss`, `œ`/`oe`, les ligatures (`ﬁ`/`fi`, `ĳ`/`ij`), la
+/// pleine chasse (`Ａ`/`A`), l'ordinal `ª`/`a` et l'espace sans chasse U+200B,
+/// que cette forme ne replie pas ; **dans l'autre sens**, retirer toute la
+/// catégorie `Mark` égale des lettres que la base distingue, là où un signe
+/// porte un poids primaire (devanagari : `क`/`कि`). Ni l'un ni l'autre n'est
+/// atteignable avec des libellés en français, allemand, italien ou anglais.
 pub(crate) fn account_label_key(label: &str) -> String {
     label
         .trim()

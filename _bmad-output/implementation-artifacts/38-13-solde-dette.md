@@ -152,14 +152,25 @@ Opus (développement) ; validation P1 Sonnet, P2 Opus, P3 ciblée Sonnet.
 
 ### Completion Notes List
 
+- **Revue P1 — LOW notés, sans correctif** : L2 : avec deux séries « … Straße » et « … Strasse », la garde de doublon
+  de `read` les accepte (clés distinctes) alors que la base les tient pour un même compte ; deux tâches pourraient
+  s'ouvrir sur les mêmes comptes ; configuration d'administrateur seule, invraisemblable en Suisse, même cause que L1.
+  L4 : la consigne de fusion n'avait pas été jouée à la validation (méthode), couvert par M1 (commande jouée).
 - **Plafond** : 2, faute de plafond fixé au kickoff (fichier d'epic, l. 110). Deux points corrigés, aucun autre.
 - **B** (`3c97735cc`) : les six clés retirées des quatre catalogues (24 lignes) ; `git grep` de chacune ne rend plus
   que cette fiche. `provider-review-ambiguous-sale` et `provider-review-fee-account-missing` gardées (lues sur
   `epic/39-wise` et `epic/40-stripe`).
 - **⚠️ Consigne de fusion (AC-B3)** : à la reprise d'`epic/38-paypal` par `epic/40-stripe` puis `epic/39-wise`, le
   conflit des quatre `.ftl` se résout en gardant les lignes des deux côtés **sauf les six clés, qui restent retirées** ;
-  contrôle : `git grep -c -E 'provider-gap-|provider-review-(conversion-unpaired|withdrawal-foreign-currency|no-rule)' -- crates/kesh-i18n/locales`
-  ne rend rien.
+  contrôle (clés exactes, revue P1 M1 : le préfixe `provider-gap-` attrapait aussi `provider-gap-mismatch-details[-none]`,
+  encore lues) : `git grep -n -E '^(provider-gap-(receipt-without-sale|sale-without-receipt|amount-or-currency-mismatch)|provider-review-(conversion-unpaired|withdrawal-foreign-currency|no-rule)) =' -- crates/kesh-i18n/locales`
+  ne rend rien sur la branche fusionnée (jouée : vide sur `story/38-13` ; sur `epic/40-stripe` et `epic/39-wise`
+  avant fusion, elle trouve les six clés dans les quatre catalogues et jamais `provider-gap-mismatch-details[-none]`).
+- **⚠️ Textes Stripe du libellé de compte (revue P1 M2)** : à la même fusion, les textes propres à Stripe écrits sur
+  `epic/40-stripe` passent à « sans casse ni accents » : `docs/manual/fr/admin-manual.tex` (~1232,
+  `KESH\_STRIPE\_<n>\_ACCOUNT … la casse ne compte pas`) et `docs/api-external.md` (~1416, « libellé sans casse »),
+  ainsi que les doc-comments Stripe qui parlent du libellé. Contrôle :
+  `git grep -nE 'casse ne compte|sans casse\)' -- docs/manual docs/api-external.md crates/kesh-api/src`.
 - **A** (`0d6218c26`, mise en forme `98f1fb40d`) : `provider_env::account_label_key` (`pub(crate)`, rognage, NFD,
   retrait des marques combinantes, minuscules), employée par `series_for`, la garde de libellé en double de `read`
   et la clé de tâche de `Downloads::start`. Doc-comments, manuel d'administration FR (`.tex`, deux sites),
@@ -214,3 +225,8 @@ Opus (développement) ; validation P1 Sonnet, P2 Opus, P3 ciblée Sonnet.
 - 2026-11-22, développement : B `3c97735cc`, A `0d6218c26` + `98f1fb40d` ; gates verts à `98f1fb40d` (backend 6423,
   frontend 4995), quatre mutations tuées ; story en `review`, prompt de revue P1
   `kesh-gate-logs/s38-13/revue-p1-prompt.md`.
+- 2026-11-22, revue de code P1 (Sonnet ; `kesh-gate-logs/s38-13/revue-p1-rapport.md`) : 0 C, 0 H, 2 M, 4 L. M1
+  (contrôle de fusion qui ne pouvait pas rendre vide) → commande à clés exactes, jouée ; M2 (textes Stripe du libellé)
+  → consigne de fusion ; L1, L3 → doc-comments ; L2 (deux séries « Straße » / « Strasse » : la garde de doublon les
+  accepte, la base les confond ; réservé à l'administrateur, invraisemblable en Suisse) et L4 (méthode, couvert par M1)
+  notés au Dev Agent Record, sans correctif. Passe P2 ciblée à lancer (`revue-p2-prompt.md`).
