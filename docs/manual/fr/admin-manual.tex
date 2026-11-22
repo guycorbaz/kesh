@@ -1159,7 +1159,7 @@ Le relevé d'un compte PayPal s'importe en CSV depuis la page PayPal (manuel uti
 
 Une \textbf{série} par compte PayPal, \texttt{n} de 1 à 9~:
 \begin{itemize}
-    \item \texttt{KESH\_PAYPAL\_<n>\_ACCOUNT}~: le libellé du compte PayPal, \textbf{identique} à celui des comptes bancaires de ce compte dans Kesh (la casse ne compte pas)~;
+    \item \texttt{KESH\_PAYPAL\_<n>\_ACCOUNT}~: le libellé du compte PayPal, \textbf{identique} à celui des comptes bancaires de ce compte dans Kesh (ni la casse ni les accents ne comptent)~;
     \item \texttt{KESH\_PAYPAL\_<n>\_CLIENT\_ID} et \texttt{KESH\_PAYPAL\_<n>\_SECRET}~: l'identifiant client et le secret de l'application.
 \end{itemize}
 Et, pour toutes les séries~:
@@ -1197,7 +1197,7 @@ Les identifiants ne sont \textbf{ni en base ni dans la sauvegarde} (\texttt{.kes
 La configuration est contrôlée \textbf{à chaque démarrage}, que le téléchargement serve ou non~; un défaut \textbf{refuse le démarrage} d'un message qui nomme la variable, jamais sa valeur (\texttt{<variable> refusée~: <motif>.})~:
 \begin{itemize}
     \item «~série incomplète~: variable absente ou vide~» --- une série dont une variable est posée et une autre manque~;
-    \item «~libellé déjà porté par une autre série~» --- deux séries au même libellé (sans casse)~;
+    \item «~libellé déjà porté par une autre série~» --- deux séries au même libellé (sans casse ni accents)~;
     \item «~numéro de série hors de 1 à 9~» --- une série numérotée 0, 10 ou au-delà~;
     \item «~champ inconnu~» --- une variable \texttt{KESH\_PAYPAL\_<n>\_…} qui n'est ni \texttt{ACCOUNT}, ni \texttt{CLIENT\_ID}, ni \texttt{SECRET}~;
     \item «~valeur de gabarit <…>~» --- une valeur recopiée telle quelle de la documentation~;
@@ -1229,7 +1229,7 @@ Le rapport des versements d'un compte Stripe s'importe en CSV depuis la page Str
 
 Une \textbf{série} par compte Stripe, \texttt{n} de 1 à 9~:
 \begin{itemize}
-    \item \texttt{KESH\_STRIPE\_<n>\_ACCOUNT}~: le libellé du compte Stripe, \textbf{identique} à celui des comptes bancaires de ce compte dans Kesh (la casse ne compte pas). Ce libellé est \textbf{propre à l'installation}~: deux sociétés de la même installation qui donnent le même libellé à leur compte Stripe atteignent le même compte chez Stripe~;
+    \item \texttt{KESH\_STRIPE\_<n>\_ACCOUNT}~: le libellé du compte Stripe, \textbf{identique} à celui des comptes bancaires de ce compte dans Kesh (ni la casse ni les accents ne comptent). Ce libellé est \textbf{propre à l'installation}~: deux sociétés de la même installation qui donnent le même libellé à leur compte Stripe atteignent le même compte chez Stripe~;
     \item \texttt{KESH\_STRIPE\_<n>\_KEY}~: la clé restreinte.
 \end{itemize}
 Et, pour toutes les séries~:

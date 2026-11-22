@@ -1819,14 +1819,8 @@ provider-failed-not-found = The transaction or entry cannot be found: it was del
 provider-failed-optimistic-lock = The transaction was changed in the meantime. Reload the page.
 provider-failed-entry-not-linkable = The sale entry can no longer be linked to this transaction (already linked, reversed or changed). Reload the page.
 provider-failed-counterparty-currency-mismatch = This rule names an account kept in { $accountCurrency }: it only applies to transactions in { $accountCurrency }, and this one is in { $transactionCurrency }. Choose an account in CHF or in the transaction's currency.
-provider-gap-receipt-without-sale = Receipt without sale: no sales entry carries this identifier.
-provider-gap-sale-without-receipt = Sale without receipt: no transaction carries the identifier of this entry.
-provider-gap-amount-or-currency-mismatch = Amount or currency differs: the sales entry does not carry the receipt's amount on the account of this currency, or it is already linked.
 provider-review-ambiguous-sale = Several sales entries carry this identifier: choose the one to link.
 provider-review-fee-account-missing = Fee without a fee account: set the fee account of the bank account.
-provider-review-conversion-unpaired = Conversion without its pair: the other half is missing or not unique.
-provider-review-withdrawal-foreign-currency = Withdrawal from a foreign-currency balance: post the entry by hand at the CHF received by the bank, then link the transaction.
-provider-review-no-rule = No rule matches: post the entry by hand, or create a rule.
 # Story 40-7c — Stripe review: Stripe's own reasons and gaps (served to the screen, 40-7d)
 stripe-review-refund = Refund: post the entry by hand (in the foreign currency), then link the transaction.
 stripe-review-other-category = Stripe category to review ({ $category }): post the entry by hand, then link the transaction.

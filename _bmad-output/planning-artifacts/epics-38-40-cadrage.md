@@ -3,7 +3,7 @@
 **Demande du responsable de l'epic (contributeur), 2026-11-14/15.** Trois epics d'import automatique des comptes de prestataires de
 paiement, après l'Epic 37 (multi-devises), dont ils dépendent. Numéros : 35 et 36 réservés ailleurs ; **38 PayPal**,
 **39 Wise**, **40 Stripe (numéro à confirmer par Guy)**. Une branche par story, fusionnée localement dans la branche de
-son epic, puis **une PR par epic** vers le dépôt de Guy (remote du contributeur), après celle de l'Epic 37. Le développement
+son epic, puis **une PR par epic** vers le dépôt de Guy, ouverte depuis le dépôt du contributeur, après celle de l'Epic 37. Le développement
 attend celui de l'Epic 37, lui-même en attente du retour de Guy sur la page de revue.
 
 ## Demande

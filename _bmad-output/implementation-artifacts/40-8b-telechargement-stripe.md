@@ -94,7 +94,9 @@ amendement là où ils diffèrent ; chaque point a été relu au code.*
     à l'hôte). Désormais la route existe, un test (`chaque_prestataire_lu_a_sa_route_de_telechargement`) exige
     les deux routes de chaque prestataire de `ALL_PROVIDERS` dans `lib.rs`, la branche de repli est de nouveau
     exercée (`wise`), et le mode suit le point 7 ; la fiche 40-8a est annotée. **L1** — le commentaire du filtre
-    de l'écran dit l'écart (sans accents côté écran, sans casse seulement côté serveur). **L2** — `paypalApiStatus`
+    de l'écran dit l'écart (sans accents côté écran, sans casse seulement côté serveur) *(annoté le 22.11, à la
+    fusion d'`epic/38-paypal` avec la 38-13 : écart fermé, `series_for` replie aussi les accents
+    (`account_label_key`) ; le commentaire de `providerApiStatus` le dit)*. **L2** — `paypalApiStatus`
     et `ownLedgerIds` de la page PayPal passent par `providerSettingsOf` (`providerApiStatus` générique).
 12. **Écran** (AC-4) : le bouton va sur la **page Stripe** (`/reconciliation/stripe`, page commune
     `ProviderReviewPage`, fragments `importActions` et `importNotes`), comme PayPal, et non sur *Import bancaire* ; le

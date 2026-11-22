@@ -1819,14 +1819,8 @@ provider-failed-not-found = Die Transaktion oder Buchung wurde nicht gefunden: S
 provider-failed-optimistic-lock = Die Transaktion wurde inzwischen geändert. Laden Sie die Seite neu.
 provider-failed-entry-not-linkable = Die Verkaufsbuchung lässt sich dieser Transaktion nicht mehr zuordnen (bereits zugeordnet, storniert oder geändert). Laden Sie die Seite neu.
 provider-failed-counterparty-currency-mismatch = Diese Regel bezeichnet ein Konto in { $accountCurrency }: Sie gilt nur für Transaktionen in { $accountCurrency }, diese ist aber in { $transactionCurrency }. Wählen Sie ein Konto in CHF oder in der Währung der Transaktion.
-provider-gap-receipt-without-sale = Zahlungseingang ohne Verkauf: Keine Verkaufsbuchung trägt diese Kennung.
-provider-gap-sale-without-receipt = Verkauf ohne Zahlungseingang: Keine Transaktion trägt die Kennung dieser Buchung.
-provider-gap-amount-or-currency-mismatch = Betrag oder Währung abweichend: Die Verkaufsbuchung hat auf dem Konto dieser Währung nicht den Betrag des Zahlungseingangs, oder sie ist bereits zugeordnet.
 provider-review-ambiguous-sale = Mehrere Verkaufsbuchungen tragen diese Kennung: Wählen Sie die zuzuordnende.
 provider-review-fee-account-missing = Gebühr ohne Gebührenkonto: Legen Sie das Gebührenkonto des Bankkontos fest.
-provider-review-conversion-unpaired = Umrechnung ohne Gegenstück: Die andere Hälfte fehlt oder ist nicht eindeutig.
-provider-review-withdrawal-foreign-currency = Abhebung von einem Fremdwährungssaldo: Erfassen Sie die Buchung von Hand zum von der Bank erhaltenen CHF-Betrag und ordnen Sie dann die Transaktion zu.
-provider-review-no-rule = Keine Regel passt: Erfassen Sie die Buchung von Hand oder legen Sie eine Regel an.
 # Story 40-7c — Stripe-Prüfung: Stripe-eigene Gründe und Abweichungen (für den Bildschirm, 40-7d)
 stripe-review-refund = Rückerstattung: Erfassen Sie die Buchung von Hand (in Fremdwährung) und verknüpfen Sie dann die Transaktion.
 stripe-review-other-category = Zu prüfende Stripe-Kategorie ({ $category }): Erfassen Sie die Buchung von Hand und verknüpfen Sie dann die Transaktion.

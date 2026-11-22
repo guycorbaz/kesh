@@ -1819,14 +1819,8 @@ provider-failed-not-found = La transazione o la registrazione non si trova: è s
 provider-failed-optimistic-lock = La transazione è stata modificata nel frattempo. Ricarichi la pagina.
 provider-failed-entry-not-linkable = La registrazione di vendita non è più collegabile a questa transazione (già collegata, stornata o modificata). Ricarichi la pagina.
 provider-failed-counterparty-currency-mismatch = Questa regola indica un conto tenuto in { $accountCurrency }: si applica solo alle transazioni in { $accountCurrency }, e questa è in { $transactionCurrency }. Scegliete un conto in CHF o nella valuta della transazione.
-provider-gap-receipt-without-sale = Incasso senza vendita: nessuna registrazione di vendita porta questo identificativo.
-provider-gap-sale-without-receipt = Vendita senza incasso: nessuna transazione porta l'identificativo di questa registrazione.
-provider-gap-amount-or-currency-mismatch = Importo o valuta diversi: la registrazione di vendita non ha l'importo dell'incasso sul conto di questa valuta, oppure è già collegata.
 provider-review-ambiguous-sale = Più registrazioni di vendita portano questo identificativo: scegliete quella da collegare.
 provider-review-fee-account-missing = Commissione senza conto delle commissioni: impostate il conto delle commissioni del conto bancario.
-provider-review-conversion-unpaired = Conversione senza la sua coppia: l'altra metà manca o non è unica.
-provider-review-withdrawal-foreign-currency = Prelievo da un saldo in valuta: registrate a mano al CHF ricevuto dalla banca, poi collegate la transazione.
-provider-review-no-rule = Nessuna regola corrisponde: registrate a mano o create una regola.
 # Story 40-7c — revisione Stripe: motivi e scarti propri di Stripe (serviti allo schermo, 40-7d)
 stripe-review-refund = Rimborso: registrate a mano (in valuta), poi collegate la transazione.
 stripe-review-other-category = Categoria Stripe da esaminare ({ $category }): registrate a mano, poi collegate la transazione.

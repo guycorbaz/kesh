@@ -242,9 +242,9 @@ export interface ProviderApiSource extends ProviderSettingsSource {
  * l'API du compte du prestataire `provider` au libellé `label`, lu sur ses
  * comptes bancaires (`providerApi` de la liste). Les libellés se comparent ici
  * sans casse **ni accents** (`accountLabelKey`, la règle des comptes de la
- * 38-11d) ; le serveur, lui, rattache une série d'identifiants au libellé sans
- * casse seulement (`series_for`) — écart connu, relevé à la revue d'intégration
- * de l'Epic 40 (L1) : configuré si l'un d'eux l'est, le mode du premier configuré ; `null`
+ * 38-11d), comme le serveur rattache une série d'identifiants au libellé
+ * (`series_for`, `account_label_key`, depuis la 38-13) : configuré si l'un
+ * d'eux l'est, le mode du premier configuré ; `null`
  * si aucun compte ne porte ce libellé. Tous les soldes d'un même libellé
  * partagent la même série : ils disent la même chose.
  */

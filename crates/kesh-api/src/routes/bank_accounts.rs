@@ -801,7 +801,7 @@ fn resulting_provider(
 /// 2. compte du plan lié obligatoire (`400 PROVIDER_LEDGER_REQUIRED`) ;
 /// 3. un compte bancaire par devise et par compte du prestataire : un autre
 ///    compte non archivé du même prestataire et du même libellé (collation,
-///    sans casse) lié à un compte de même devise → `409
+///    sans casse ni accents) lié à un compte de même devise → `409
 ///    PROVIDER_CURRENCY_DUPLICATE`. Lecture **verrouillante**
 ///    (`list_provider_balances_locked`, revue P1, M1), sous la sentinelle qui
 ///    sérialise le `POST` et le `PUT` : au `POST`, elle précède l'écriture

@@ -101,7 +101,7 @@ Reprises de la fiche d'epic (§ *38-1*), complétées là où un AC en ajoute (m
      `20261025000001_mcp_keys_and_server_settings.sql:81-83`, E24), `created_by_user_id BIGINT NOT NULL` (FK `users`,
      `RESTRICT` — auteur du passage quotidien en 38-3b, E5), `version INT NOT NULL DEFAULT 1`, `created_at`,
      `updated_at` `DATETIME(3) NOT NULL` ; `UNIQUE uq_ppc_company_label (company_id, label)` (deux connexions
-     « PayPal principal » seraient indiscernables à l'écran et au passage).
+     « PayPal boutique » seraient indiscernables à l'écran et au passage).
      ⚠️ `JSON` est un `LONGTEXT` validé sous MariaDB (E24) : la colonne se lit en `String` (`settings_json`), jamais
      filtrée en SQL.
    - **`_kesh_provider_secrets`** (table **système**, E2, préfixe `_` obligatoire,

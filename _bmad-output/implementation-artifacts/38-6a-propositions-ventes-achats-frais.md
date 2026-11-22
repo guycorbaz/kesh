@@ -142,8 +142,8 @@ afin que **mes comptes PayPal se tiennent sans saisie, sans qu'aucune écriture 
   (champs non optionnels, prémisse ci-dessus).
 - **C-38-6a-5 — Montants du prestataire.** Le constructeur exige `amount = gross_amount + fee_amount` (montants signés ;
   38-8 AC-4 : `amount = gross_amount + fee_amount`, net du même signe que le brut ou nul, `|frais| ≤ |brut|` ; pour un
-  genre `fee`, `fee_amount = 0` et `amount = gross_amount` ; le signe de `fee_amount` se constate sur les réponses de
-  le responsable de l'epic, 38-8) ; sinon aucun
+  genre `fee`, `fee_amount = 0` et `amount = gross_amount` ; le signe de `fee_amount` se constate sur les réponses du
+  responsable de l'epic, 38-8) ; sinon aucun
   candidat, `blockedBy` `PROVIDER_AMOUNTS_INCONSISTENT` (`details: { amount, grossAmount, feeAmount }`). Un `gross_amount`
   ou `fee_amount` `NULL` sur une transaction de prestataire est le même refus.
 - **C-38-6a-6 — Ligne d'arrondi (NFR-38-6a-4).** Chaque ligne en devise vaut `round(montant × cours, 2)`
