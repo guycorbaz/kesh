@@ -1,11 +1,49 @@
 # Story 40-8a : client de l'API Stripe — clé restreinte en variable d'environnement, versements et transactions de solde
 
-Status: ready-for-dev
+Status: in-progress
 
 *Fiche rédigée le 2026-11-20, branche `epic/40-stripe`, numéros de ligne relevés sur `origin/main` au commit `fd04099f`.
 Epic 40, **phase 2** (décision de Beat du 2026-11-20, § *Phase 2* du fichier d'epic). **Dépend de** : la phase 1 (40-7a à
 40-7d) et du **socle commun S1 à S9** de la phase 2 (fichier d'epic), écrit par 38-12a ou, à défaut, par la première fiche de
 phase 2 développée (C-40-K6). **Suivie par** : 40-8b (téléchargement).*
+
+## Amendement du 22.11 (développement, avant la première ligne de code)
+
+Relu contre le socle de la 38-12a (`provider_env`, `provider_download`, `http_client`) et contre les réponses réelles de
+2024 (lecture seule, relevées le 2026-11-21, jamais versées au dépôt). Ce qui change, et pourquoi :
+
+1. **AC-4, `details.resource` et `error.code`/`error.param`** : les erreurs du socle (`AppError::ProviderPermissionDenied {
+   provider }`, `ProviderApiError { provider, window, page }`) ne portent ni la ressource ni le code du prestataire, et le
+   client PayPal écrit le **nom** d'erreur de PayPal au **journal du serveur** seulement. Pour ne pas élargir le socle
+   (PayPal, Wise), Stripe fait de même : la ressource (`payouts`, `balance_transactions`), `error.code` et `error.param`
+   (bornés à 64 caractères chacun), et l'en-tête `Stripe-Rate-Limited-Reason` vont au journal, **jamais** `error.message`
+   ni la clé ; la réponse porte `details: { provider, window, page }`, `window` = la période demandée, `page` = le rang de
+   la page dans la liste (1 pour la première).
+2. **AC-3, transaction du versement** : constaté sur les données réelles de 2024, `?payout=` **rend** la transaction du
+   versement lui-même (`type = payout`, 104 versements payés sur 104) ; elle est écartée (type `payout` **et** `source` =
+   l'identifiant du versement). Σ net des autres = `amount` du versement pour les 104 (aucun écart) : le contrôle
+   bloquant d'AC-3 tient tel qu'écrit.
+3. **AC-2, `Stripe-Version`** : `2026-11-18.endive`, relue le 2026-11-22 sur la page « Versioning » de la documentation
+   (« The current version is 2026-11-18.endive »).
+4. **AC-3, exposants** : la page des devises, relue le 2026-11-22, ne rend pas sa liste des devises à zéro décimale
+   (liens) ; la constante reprend la liste publiée par Stripe (seize codes : BIF, CLP, DJF, GNF, JPY, KMF, KRW, MGA, PYG,
+   RWF, VND, VUV, XAF, XOF, XPF, et non UGX), datée. **ISK et UGX** sont lus à **deux** décimales : la page dit que, pour
+   la compatibilité, leurs montants s'écrivent en centièmes « dont la partie décimale vaut toujours 00 » ; HUF et TWD
+   aussi (deux décimales hors versements manuels). Trois décimales (BHD, JOD, KWD, OMR, TND) : erreur de ligne `AMOUNT`.
+5. **AC-1, contrôle propre à Stripe** : le lecteur du socle reçoit un crochet `ProviderSpec::check` (fonction pure champ,
+   valeur → raison), appelé pour chaque champ présent après le contrôle du gabarit ; `None` pour PayPal. Aucun site de
+   lecture de l'environnement n'est ajouté : `KESH_STRIPE_*` est lu par le parcours du socle, déjà inscrit à
+   `EMPLACEMENTS_AUTORISES` ; la garde `configuration_transmise.rs` connaît la famille par `ALL_PROVIDERS` (noms
+   dérivés), sans retouche de ses listes.
+6. **Modules** : `kesh-import` n'est plus seulement lu : `stripe::valid_id` (contrôle d'identifiant du lecteur CSV)
+   devient public, pour que l'API et le CSV refusent les mêmes identifiants (DRY). Les années hors plage se contrôlent par
+   `kesh_core::dates::annee_stockable` (même plage, égalité déjà testée).
+7. **AC-3, forme des lignes** : versements rangés par (`arrival_date`, `id`), transactions par (`created`, `id`) ; `line`
+   = rang à partir de 2 (comme une ligne de fichier sous son en-tête) ; `created` = l'heure de Zurich
+   `AAAA-MM-JJ HH:MM:SS` (la forme du rapport du tableau de bord, constatée identique sur 336 transactions de 2024).
+8. **Orchestration** : le client rend les lignes d'une période (`fetch_rows` : liste des versements, puis leurs
+   transactions, au plus `parallel` versements à la fois par `run_bounded`) ; la tâche, sa progression et l'import sont
+   ceux de 40-8b.
 
 ## Story
 
