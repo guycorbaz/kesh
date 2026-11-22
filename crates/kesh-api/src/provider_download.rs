@@ -1193,7 +1193,13 @@ mod tests {
         );
         // Le même libellé sans ses accents est le même compte (Story 38-13).
         let accents = downloads
-            .start("paypal", 1, "BÕUTIQUE", (d("2020-03-01"), d("2020-03-02")), None)
+            .start(
+                "paypal",
+                1,
+                "BÕUTIQUE",
+                (d("2020-03-01"), d("2020-03-02")),
+                None,
+            )
             .err()
             .map(|r| r.id);
         assert_eq!(accents, Some(h.id));
