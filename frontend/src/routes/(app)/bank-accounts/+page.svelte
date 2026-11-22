@@ -94,6 +94,14 @@
 	let includeArchived = $state(false);
 	// Story 28-4b (#642, C-28-4-13) — les comptes clos sont masqués par défaut.
 	let includeClosed = $state(false);
+	/**
+	 * Revue P3 de 40-7d (P3-1) — tous les comptes bancaires, archivés et clos compris, lus à part
+	 * pour le compte de versement d'un compte Stripe : sa destination, archivée ou close depuis,
+	 * s'affiche alors même quand la liste de l'écran les masque. `null` si la lecture a échoué :
+	 * on retombe sur la liste de l'écran, et une destination absente n'est jamais vidée.
+	 */
+	let payoutPool = $state<BankAccountSummary[] | null>(null);
+	let payoutSource = $derived(payoutPool ?? bankAccounts);
 
 	// UI state — modes d'édition. Un seul mode actif à la fois.
 	type Mode =
@@ -160,7 +168,7 @@
 	// plan choisi, sans prestataire ou Wise, jamais le compte édité.
 	let payoutCandidates = $derived(
 		payoutAccountCandidates(
-			bankAccounts,
+			payoutSource,
 			accounts,
 			formLedgerCurrency,
 			mode.kind === 'edit-full' ? mode.id : null,
@@ -173,10 +181,15 @@
 	 * et la refuse (`STRIPE_PAYOUT_ACCOUNT_INVALID`) dès que le compte du plan change.
 	 */
 	function payoutKeepId(): number | null {
-		if (mode.kind !== 'edit-full') return null;
+		return ledgerUnchanged() ? formPayoutBankAccountId : null;
+	}
+
+	/** Revue P3 de 40-7d (P3-1) — en modification, le compte du plan est-il encore celui de l'ouverture ? */
+	function ledgerUnchanged(): boolean {
+		if (mode.kind !== 'edit-full') return false;
 		const id = mode.id;
 		const original = bankAccounts.find((b) => b.id === id);
-		return original && original.journalAccountId === formJournalAccountId ? formPayoutBankAccountId : null;
+		return original !== undefined && original.journalAccountId === formJournalAccountId;
 	}
 	// Le compte de frais se vide seulement si sa devise n'est plus admise par celle du compte du
 	// plan choisi (revue P1, L7 : le vider à tout changement effaçait en silence un compte choisi
@@ -193,26 +206,32 @@
 			if (c !== null && c !== ledger) formFeeAccountId = null;
 		});
 	});
-	// Story 40-7d (AC-1) — le compte de versement se vide quand le compte du plan choisi change
-	// de devise : il n'est alors plus admis (même devise que le solde). Il reste tant que les
-	// comptes ne sont pas chargés, et il reste aussi quand la destination a été archivée ou close
-	// depuis (revue P1, M1) : `payoutCandidates` la garde alors, marquée, et seul le changement de
-	// devise la retire.
+	// Story 40-7d (AC-1) — le compte de versement se vide seulement quand l'utilisateur change le
+	// compte du plan, et seulement si la destination, connue, n'est plus admise : autre devise
+	// (même devise que le solde), ou destination archivée ou close (le serveur la rejuge alors,
+	// revue P2, P2-1). Tant que le compte du plan est celui de l'ouverture, rien ne se vide : la
+	// destination archivée ou close reste choisie, marquée (revue P1, M1), et un simple renommage
+	// la renvoie telle quelle (revue P3, P3-1). Une destination absente de la liste lue (lecture
+	// en échec) n'est jamais vidée : on ne retire pas ce qu'on ne voit pas. Rien ne se vide non
+	// plus tant que les comptes du plan ne sont pas chargés.
 	$effect(() => {
 		const ledger = formLedgerCurrency;
 		// Le compte du plan lui-même est suivi : un changement à même devise retire une destination
 		// archivée ou close (revue P2, P2-1).
 		void formJournalAccountId;
 		untrack(() => {
-			if (accounts.length === 0 || bankAccounts.length === 0 || formPayoutBankAccountId === null) return;
+			if (accounts.length === 0 || formPayoutBankAccountId === null || ledgerUnchanged()) return;
+			const id = formPayoutBankAccountId;
+			if (!payoutSource.some((b) => b.id === id)) return;
 			const kept = payoutAccountCandidates(
-				bankAccounts,
+				payoutSource,
 				accounts,
 				ledger,
 				mode.kind === 'edit-full' ? mode.id : null,
-				payoutKeepId(),
+				// Le compte du plan a changé : aucune destination archivée ou close n'est gardée.
+				null,
 			);
-			if (!kept.some((b) => b.id === formPayoutBankAccountId)) formPayoutBankAccountId = null;
+			if (!kept.some((b) => b.id === id)) formPayoutBankAccountId = null;
 		});
 	});
 	// Un compte du plan en devise n'admet pas de solde d'ouverture par cet écran.
@@ -257,11 +276,17 @@
 	}
 
 	async function reload() {
-		const [baResult, accResult, settingsResult] = await Promise.allSettled([
-			listBankAccounts(includeArchived, includeClosed),
+		// Revue P3 de 40-7d (P3-1) — les destinations de versement, archivées et closes comprises,
+		// lues avant la liste de l'écran ; la même lecture quand l'écran montre déjà tout.
+		const pool = includeArchived && includeClosed ? null : listBankAccounts(true, true);
+		const shown = listBankAccounts(includeArchived, includeClosed);
+		const [baResult, poolResult, accResult, settingsResult] = await Promise.allSettled([
+			shown,
+			pool ?? shown,
 			fetchAccounts(false),
 			getInvoiceSettings(),
 		]);
+		payoutPool = poolResult.status === 'fulfilled' ? poolResult.value : null;
 		if (baResult.status === 'fulfilled') {
 			bankAccounts = baResult.value;
 			loadError = null;

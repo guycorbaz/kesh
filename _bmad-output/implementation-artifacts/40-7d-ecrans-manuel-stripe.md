@@ -381,6 +381,7 @@ cas Stripe et Wise), `frontend/tests/e2e/stripe-import.spec.ts`, quatre catalogu
 *Ajouté* — Écrans du compte Stripe : case « Compte Stripe » et compte bancaire de versement dans les
 comptes bancaires, page *Mensuel* → *Stripe* (import du rapport, propositions à accepter en lot,
 écarts, lignes à examiner) ; section « Compte Stripe » du manuel utilisateur et de
-`docs/api-external.md`. *Modifié* — la page PayPal repose sur la page commune des prestataires
-(sans changement visible).
+`docs/api-external.md`. *Modifié* — la page PayPal repose sur la page commune des prestataires ;
+seul change le texte du refus d'une proposition périmée, désormais commun aux prestataires
+(« Cette proposition n'est plus valable… Rechargez la revue. »).
 

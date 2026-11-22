@@ -1,8 +1,9 @@
 // Story 40-7d (AC-1) — le compte Stripe à l'écran des comptes bancaires : case « Compte
 // Stripe » à côté de « Compte PayPal » (l'une exclut l'autre), libellé, compte de frais,
-// compte bancaire de versement (même devise, ni Stripe ni PayPal, vidé quand la devise du
-// compte du plan change), charges `stripe` (création, modification, décochée), ligne de la
-// liste, pas de « Lier ».
+// compte bancaire de versement (même devise, ni Stripe ni PayPal, vidé seulement quand
+// l'utilisateur change le compte du plan et que la destination n'y est plus admise ; archivée ou
+// close, gardée et montrée tant que le compte du plan ne change pas), charges `stripe` (création,
+// modification, décochée), ligne de la liste, pas de « Lier ».
 //
 // Patron et mocks de `bank-accounts-page-paypal.test.ts` (38-11d).
 
@@ -27,11 +28,12 @@ vi.mock('$lib/features/accounts/accounts.api', () => ({
 	fetchAccounts: () => fetchAccountsMock(),
 }));
 
-const listBankAccountsMock = vi.fn<() => Promise<BankAccountSummary[]>>();
+const listBankAccountsMock = vi.fn<(includeArchived?: boolean, includeClosed?: boolean) => Promise<BankAccountSummary[]>>();
 const createBankAccountMock = vi.fn<(payload: unknown) => Promise<unknown>>();
 const updateBankAccountMock = vi.fn<(id: number, payload: unknown) => Promise<unknown>>();
 vi.mock('$lib/features/bank-accounts/bank-accounts.api', () => ({
-	listBankAccounts: () => listBankAccountsMock(),
+	listBankAccounts: (includeArchived?: boolean, includeClosed?: boolean) =>
+		listBankAccountsMock(includeArchived, includeClosed),
 	createBankAccount: (payload: unknown) => createBankAccountMock(payload),
 	updateBankAccount: (id: number, payload: unknown) => updateBankAccountMock(id, payload),
 	archiveBankAccount: vi.fn(),
@@ -128,11 +130,22 @@ async function fill(el: HTMLElement, value: string) {
 	await fireEvent.input(el, { target: { value } });
 }
 
+/**
+ * Revue P3 de 40-7d (P3-1) — le serveur des comptes bancaires, qui respecte ses arguments comme
+ * `GET /bank-accounts` : sans `includeArchived`, pas de compte archivé ; sans `includeClosed`, pas de
+ * compte clos. Le mock d'avant rendait tout, comme si les deux cases de l'écran étaient cochées.
+ */
+function serve(all: BankAccountSummary[]) {
+	listBankAccountsMock.mockImplementation(async (includeArchived, includeClosed) =>
+		all.filter((b) => (includeArchived || !b.archived) && (includeClosed || b.closedOn === null)),
+	);
+}
+
 describe('page des comptes bancaires — le compte Stripe (Story 40-7d, AC-1)', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		fetchAccountsMock.mockResolvedValue([BANQUE, STRIPE_CHF, STRIPE_EUR, WISE_EUR, FRAIS_CHF, FRAIS_EUR, PRODUIT]);
-		listBankAccountsMock.mockResolvedValue([principal, stripeEur, ordinaire, wiseEur, paypalChf]);
+		serve([principal, stripeEur, ordinaire, wiseEur, paypalChf]);
 		createBankAccountMock.mockResolvedValue({});
 		updateBankAccountMock.mockResolvedValue({});
 	});
@@ -230,7 +243,7 @@ describe('page des comptes bancaires — le compte Stripe (Story 40-7d, AC-1)', 
 	});
 
 	it('modification : décochée sur un compte Stripe → `stripe: null`, `paypal` absent', async () => {
-		listBankAccountsMock.mockResolvedValue([
+		serve([
 			bank({ ...stripeEur, journalAccountId: STRIPE_CHF.id, iban: 'CH9300762011623852957' }),
 		]);
 		const r = render(Page);
@@ -248,7 +261,7 @@ describe('page des comptes bancaires — le compte Stripe (Story 40-7d, AC-1)', 
 		['archivée', { archived: true }],
 		['close', { closedOn: '2026-01-31' }],
 	])('modification : une destination %s depuis reste choisie, marquée, et renvoyée au serveur', async (_nom, etat) => {
-		listBankAccountsMock.mockResolvedValue([principal, stripeEur, ordinaire, { ...wiseEur, ...etat }]);
+		serve([principal, stripeEur, ordinaire, { ...wiseEur, ...etat }]);
 		const r = render(Page);
 		await fireEvent.click(await r.findByTestId('edit-button-2'));
 		const payout = (await r.findByTestId('edit-payout-account')) as HTMLSelectElement;
@@ -261,7 +274,7 @@ describe('page des comptes bancaires — le compte Stripe (Story 40-7d, AC-1)', 
 	});
 
 	it('modification : le changement de devise du compte du plan efface même une destination archivée', async () => {
-		listBankAccountsMock.mockResolvedValue([principal, stripeEur, ordinaire, { ...wiseEur, archived: true }]);
+		serve([principal, stripeEur, ordinaire, { ...wiseEur, archived: true }]);
 		const r = render(Page);
 		await fireEvent.click(await r.findByTestId('edit-button-2'));
 		const payout = (await r.findByTestId('edit-payout-account')) as HTMLSelectElement;
@@ -273,18 +286,90 @@ describe('page des comptes bancaires — le compte Stripe (Story 40-7d, AC-1)', 
 	// Revue P2 de 40-7d (P2-1) — le serveur rejuge la destination dès que le compte du plan change
 	// (`payout_is_unchanged`) : archivée ou close, elle n'est plus offerte ; active, elle reste.
 	it.each([
-		['archivée', { archived: true }, ''],
-		['active', {}, '4'],
-	])('modification : compte du plan changé à même devise, destination %s → valeur « %s »', async (_nom, etat, attendu) => {
+		// Colonnes dans l'ordre du titre (revue P3, P3-5) : nom, valeur attendue, puis l'état.
+		['archivée', '', { archived: true }],
+		['active', '4', {}],
+	])('modification : compte du plan changé à même devise, destination %s → valeur « %s »', async (_nom, attendu, etat) => {
 		const AUTRE_EUR = account({ id: 24, number: '1032', name: 'Stripe EUR bis', currency: 'EUR' });
 		fetchAccountsMock.mockResolvedValue([BANQUE, STRIPE_CHF, STRIPE_EUR, WISE_EUR, AUTRE_EUR, FRAIS_CHF, FRAIS_EUR, PRODUIT]);
-		listBankAccountsMock.mockResolvedValue([principal, stripeEur, ordinaire, { ...wiseEur, ...etat }]);
+		serve([principal, stripeEur, ordinaire, { ...wiseEur, ...etat }]);
 		const r = render(Page);
 		await fireEvent.click(await r.findByTestId('edit-button-2'));
 		const payout = (await r.findByTestId('edit-payout-account')) as HTMLSelectElement;
 		await waitFor(() => expect(payout.value).toBe('4'));
 		await fireEvent.change(r.getByTestId('edit-journal-account'), { target: { value: '24' } });
 		await waitFor(() => expect((r.getByTestId('edit-payout-account') as HTMLSelectElement).value).toBe(attendu));
+	});
+
+	// Revue P3 de 40-7d (P3-1) — vue par défaut (ni archivés ni clos) : la destination archivée ou
+	// close n'est pas dans la liste de l'écran. Un simple renommage la renvoie telle quelle, en CHF
+	// (l'ouverture ne change pas la devise) comme en EUR (elle la fait passer de CHF à EUR), et le
+	// sélecteur la montre, marquée, au lieu de « Non configuré ».
+	const stripeChf = bank({
+		id: 6,
+		bankName: 'Stripe',
+		iban: null,
+		provider: 'stripe',
+		stripe: { account: 'Stripe CH', feeAccountId: FRAIS_CHF.id, payoutBankAccountId: 3 },
+		journalAccountId: STRIPE_CHF.id,
+		version: 2,
+	});
+	it.each([
+		['CHF', 'archivée', 6, 3, [principal, stripeChf, { ...ordinaire, archived: true }], /Banque Alpha.*\(Archivé/],
+		['CHF', 'close', 6, 3, [principal, stripeChf, { ...ordinaire, closedOn: '2026-01-31' }], /Banque Alpha.*\(Clos le/],
+		['EUR', 'archivée', 2, 4, [principal, stripeEur, ordinaire, { ...wiseEur, archived: true }], /Wise.*\(Archivé/],
+		['EUR', 'close', 2, 4, [principal, stripeEur, ordinaire, { ...wiseEur, closedOn: '2026-01-31' }], /Wise.*\(Clos le/],
+	])(
+		'renommage d’un compte Stripe %s, destination %s absente de la vue par défaut : gardée et montrée',
+		async (_devise, _etat, id, destination, comptes, libelle) => {
+			serve(comptes);
+			const r = render(Page);
+			await fireEvent.click(await r.findByTestId(`edit-button-${id}`));
+			const payout = (await r.findByTestId('edit-payout-account')) as HTMLSelectElement;
+			await waitFor(() => expect(payout.value).toBe(String(destination)));
+			expect(payout.options[payout.selectedIndex].textContent).toMatch(libelle);
+			await fill(r.getByTestId('edit-stripe-account'), 'Stripe renommé');
+			await fireEvent.click(r.getByTestId('edit-form-submit'));
+			await waitFor(() => expect(updateBankAccountMock).toHaveBeenCalledTimes(1));
+			const payload = updateBankAccountMock.mock.calls[0][1] as {
+				stripe: { account: string; payoutBankAccountId: number | null };
+			};
+			expect(payload.stripe.account).toBe('Stripe renommé');
+			expect(payload.stripe.payoutBankAccountId).toBe(destination);
+		},
+	);
+
+	it('lecture des destinations en échec : la destination absente n’est pas vidée au renommage', async () => {
+		listBankAccountsMock.mockImplementation(async (includeArchived, includeClosed) => {
+			if (includeArchived && includeClosed) throw new Error('boom');
+			return [principal, stripeEur, ordinaire];
+		});
+		const r = render(Page);
+		await fireEvent.click(await r.findByTestId('edit-button-2'));
+		await r.findByTestId('edit-payout-account');
+		await fireEvent.click(r.getByTestId('edit-form-submit'));
+		await waitFor(() => expect(updateBankAccountMock).toHaveBeenCalledTimes(1));
+		const payload = updateBankAccountMock.mock.calls[0][1] as { stripe: { payoutBankAccountId: number | null } };
+		expect(payload.stripe.payoutBankAccountId).toBe(4);
+	});
+
+	it('lecture des destinations en échec : changer le compte du plan ne vide pas une destination inconnue', async () => {
+		listBankAccountsMock.mockImplementation(async (includeArchived, includeClosed) => {
+			if (includeArchived && includeClosed) throw new Error('boom');
+			return [principal, stripeEur, ordinaire];
+		});
+		const AUTRE_EUR = account({ id: 24, number: '1032', name: 'Stripe EUR bis', currency: 'EUR' });
+		fetchAccountsMock.mockResolvedValue([BANQUE, STRIPE_CHF, STRIPE_EUR, WISE_EUR, AUTRE_EUR, FRAIS_CHF, FRAIS_EUR, PRODUIT]);
+		const r = render(Page);
+		await fireEvent.click(await r.findByTestId('edit-button-2'));
+		await r.findByTestId('edit-payout-account');
+		await fireEvent.change(r.getByTestId('edit-journal-account'), { target: { value: '24' } });
+		await fireEvent.click(r.getByTestId('edit-form-submit'));
+		await waitFor(() => expect(updateBankAccountMock).toHaveBeenCalledTimes(1));
+		const payload = updateBankAccountMock.mock.calls[0][1] as { stripe: { payoutBankAccountId: number | null } };
+		// Le serveur rejuge la destination (compte du plan changé) et refuse s'il le faut : le client ne
+		// retire pas ce qu'il ne voit pas.
+		expect(payload.stripe.payoutBankAccountId).toBe(4);
 	});
 
 	it('liste : « Stripe · <compte> · <devise> », pas de « Lier » sur un compte Stripe', async () => {

@@ -701,7 +701,11 @@ describe('page des comptes bancaires — clôture (Story 28-4b, AC11)', () => {
 		listBankAccountsMock.mockResolvedValue([PRINCIPAL, { ...OUVERT, version: 9 }, CLOS]);
 		await fireEvent.click(await r.findByTestId('close-confirm-button'));
 		expect((await r.findByTestId('close-error')).textContent).toContain('Conflit de version');
-		await waitFor(() => expect(listBankAccountsMock).toHaveBeenCalledTimes(2));
+		// Deux lectures de la liste de l'écran ; la lecture des destinations de versement
+		// (`(true, true)`, revue P3 de 40-7d) n'est pas comptée.
+		await waitFor(() =>
+			expect(listBankAccountsMock.mock.calls.filter(([a, c]) => !(a && c))).toHaveLength(2),
+		);
 		await fireEvent.click(r.getByTestId('close-confirm-button'));
 		await waitFor(() => expect(closeBankAccountMock).toHaveBeenLastCalledWith(6, 9, expect.any(String)));
 	});

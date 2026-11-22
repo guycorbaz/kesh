@@ -68,8 +68,9 @@
 	/**
 	 * Revue P1 de 40-7d (M3) — le compte de destination d'un versement sans réception est-il un
 	 * compte de prestataire (Wise) ? La réconciliation bancaire n'offre pas ces comptes : sa
-	 * réception se rattache à l'import du relevé du prestataire. Compte introuvable (archivé,
-	 * clos) : le renvoi ordinaire. La page Wise viendra avec l'Epic 39 (lien à poser alors).
+	 * réception se rattache à l'import du relevé du prestataire. Les comptes archivés et clos sont
+	 * relus (revue P2, P2-3) : seul un compte supprimé, ou une lecture des comptes en échec, donne le
+	 * renvoi ordinaire. La page Wise viendra avec l'Epic 39 (lien à poser alors).
 	 */
 	function payoutGoesToProvider(g: ProviderFinding): boolean {
 		const id = g.details?.payoutBankAccountId;
