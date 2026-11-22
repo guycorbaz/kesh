@@ -391,9 +391,24 @@ Tous au commit `5d04b925` (dernier commit de code), `gates-all.sh` :
 
 - **Remédiés** : L1 (`withdrawalAccountCandidates(accounts, excludedIds)` : la page écarte le compte du plan du compte PayPal choisi, que le serveur refuse, `check_counterparty` ; le compte de conversion n'est pas refusé par le serveur, il reste offert), L2 (« Accepter la sélection » grisé pendant l'import ; « Tout cocher » et « Tout décocher » grisés pendant l'acceptation ; `reviewLoading` remis à faux à la sortie anticipée de `loadReview`, cas latent sans test), L4 (`paypalAccountLabels` sans casse, premier libellé gardé), L5 (commentaire de `LinkSettlementModal.svelte`), L6 (la phrase de la reprise P2 sur l'E2E).
 - **Reportés ou sans suite** : L3 (manuel « pas de téléchargement automatique » contre les routes de la 38-12a) écrit en tête de la fiche 38-12b, section « À reprendre » ; L7 et L8 : rien.
-- **Tests neufs** : `paypal-review.test.ts` (exclusion), `provider.test.ts` (casse), `paypal-page.test.ts` (destinations sans le compte du plan ; boutons pendant l'import et l'acceptation). **Sondes par mutation** (copie hors dépôt `kesh-gate-logs/s38-11d/revue-p3-fix-mut/`) : six mutations, six tuées ; la remise à faux de `reviewLoading` n'a pas de sonde (cas inatteignable à l'écran).
+- **Tests neufs** : `paypal-review.test.ts` (exclusion), `provider.test.ts` (casse), `paypal-page.test.ts` (destinations sans le compte du plan ; boutons pendant l'import et l'acceptation). **Sondes par mutation** : les six « tuées » du compte rendu P3 (`revue-p3-fix-mut/`) étaient des échecs de chargement (« Cannot find module », « no tests »), sans valeur de preuve (revue P4, P4-1) ; elles sont **rejouées** à la remédiation P4 (voir ci-dessous). La remise à faux de `reviewLoading` n'a pas de sonde (cas inatteignable à l'écran).
 - **Gates** (`kesh-gate-logs/s38-11d/front-6-*.log`) : `check`, `lint-i18n-ownership`, `build` verts ; Vitest **4945/4945** (287 fichiers). Aucun Rust modifié : ni fmt, ni clippy, ni nextest rejoués. Aucune spec E2E ajoutée : aucun E2E rejoué.
 - Prompt de la passe ciblée P4 : `kesh-gate-logs/s38-11d/revue-p4-prompt.md`.
+
+### Remédiation de la revue P4 (HIGH P4-1, LOW P4-2, LOW P4-3) — dernier commit de code `6f8bba02`
+
+- **P4-1** : mutations rejouées dans une copie de `frontend/` du commit de code (`git archive`, `node_modules` copié, non lié), copie non mutée verte (3 fichiers, 40 tests) ; « tuée » = un test nommé en échec sur une assertion (`kesh-gate-logs/s38-11d/revue-p4-mut/`, `run.sh`, `mut.log`, `out-*.log`). Huit mutations, huit tuées :
+  - L1-filtre (`paypal-review.ts`, filtre d'exclusion → `true`) : « comptes de retrait : les comptes exclus … ne sont pas offerts », `expected [ 1, 2 ] to deeply equal [ 1 ]` ;
+  - L1-page (page sans `ownLedgerIds`) : « retrait : le compte du plan du compte PayPal n'est pas offert », `expected [ '', '20', '31' ] to not include '31'` ;
+  - L2-import (sans `importing` sur « Accepter ») ; L2-tout et L2-aucun (sans `disabled={accepting}` sur « Tout cocher » / « Tout décocher ») : « pendant l'import : … grisé ; pendant l'acceptation : … », `expected false to be true` ;
+  - L4-casse (clé sans normalisation) : « paypalAccountLabels : sans tenir compte de la casse », `expected [ 'paypal WWW', 'PayPal www' ] to deeply equal [ 'PayPal www' ]` ;
+  - P4-2-accents (retrait des diacritiques neutralisé) : « … sans tenir compte des accents (Zürich = Zurich) », `expected [ 'paypal zurich', 'PayPal Zürich' ] to deeply equal [ 'PayPal Zürich' ]` ;
+  - P4-3-cases (cases sans `accepting`) : « pendant l'acceptation : sélecteurs et import désactivés … », `expected false to be true`.
+- **P4-2** : `accountLabelKey` (`normalize('NFD')`, retrait des marques, minuscules) dans `provider.ts`, utilisée par `paypalAccountLabels` et par `ownLedgerIds` de la page ; commentaire corrigé ; test « Zürich » / « Zurich ».
+- **P4-3** : cases par ligne grisées pendant `accepting`, assertion ajoutée au test existant de l'acceptation.
+- **Gates** (`kesh-gate-logs/s38-11d/front-7-*.log`) : `check`, `lint-i18n-ownership`, `build` verts ; Vitest **4946/4946** (287 fichiers). Aucun Rust modifié, aucune spec E2E ajoutée.
+- Prompt de la passe ciblée P5 : `kesh-gate-logs/s38-11d/revue-p5-prompt.md`.
+
 
 ### Completion Notes
 
