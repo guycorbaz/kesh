@@ -176,6 +176,8 @@ Stripe » du manuel utilisateur et de `docs/api-external.md`.
   `kesh-gate-logs/s40-7d/revue-p2-prompt.md`).
 - 2026-11-22 — revue de code P2 ciblée (rapport `kesh-gate-logs/s40-7d/revue-p2-rapport.md`) : 0 CRITICAL, 0 HIGH, 3 MEDIUM, 4 LOW ;
   remédiée (§ « Remédiation de la revue P2 ») ; passe P3 ciblée à lancer (prompt `kesh-gate-logs/s40-7d/revue-p3-prompt.md`).
+- 2026-11-22 — revue de code P3 ciblée (rapport `kesh-gate-logs/s40-7d/revue-p3-rapport.md`) : 0 CRITICAL, 1 HIGH, 1 MEDIUM, 4 LOW ;
+  remédiée (§ « Remédiation de la revue P3 ») ; passe P4 ciblée à lancer (prompt `kesh-gate-logs/s40-7d/revue-p4-prompt.md`).
 
 ## Dev Agent Record
 
@@ -362,6 +364,48 @@ Rapport `kesh-gate-logs/s40-7d/revue-p2-rapport.md` : 0 CRITICAL, 0 HIGH, 3 MEDI
   `lint-i18n-ownership`, Vitest **5011 passés, 293 fichiers**, `npm run build` ; `cargo nextest -p kesh-i18n` 42/42 et
   `-p kesh-api --test textes_coherents` 30/30 (`gate-rust-p2.log`) ; E2E partiel de la spec de la story 4/4 (`e2e-3.log`).
   `sitesTotal` 3692 → 3691 (relevé par la garde).
+
+### Remédiation de la revue P3 (2026-11-22)
+
+Rapport `kesh-gate-logs/s40-7d/revue-p3-rapport.md` : 0 CRITICAL, 1 HIGH, 1 MEDIUM, 4 LOW. Commit de code `7bec552a`.
+
+- **P3-1 (HIGH)** — prémisse vérifiée (sonde de la P3 rejouée : la page de `e50c11a9` vidait la destination archivée ou
+  close à l'ouverture, en CHF comme en EUR, dans la vue par défaut). `bank-accounts/+page.svelte` :
+  - `payoutPool` : `reload` lit aussi `listBankAccounts(true, true)` (la même lecture si l'écran montre déjà tout, `null`
+    en échec ; lue **avant** la liste de l'écran, qui reste le dernier appel) ; `payoutSource` = cette liste, à défaut celle
+    de l'écran ; les candidats de versement s'y résolvent : la destination archivée ou close s'affiche, marquée, au lieu de
+    « Non configuré » ;
+  - l'effet ne vide plus rien tant que le compte du plan est celui de l'ouverture (`ledgerUnchanged`), ni une destination
+    absente de `payoutSource` ; il ne vide qu'une destination connue, après un changement du compte du plan, qui n'y est
+    plus admise (autre devise, ou archivée ou close).
+  - Tests (`bank-accounts-page-stripe.test.ts`) : mock `serve` qui respecte `includeArchived` / `includeClosed` (l'ancien
+    rendait tout, d'où le défaut invisible) ; renommage d'un compte Stripe CHF et EUR, destination archivée ou close
+    absente de la vue par défaut → gardée, montrée, renvoyée (4 cas) ; lecture des destinations en échec → non vidée, au
+    renommage et au changement de compte du plan (2 cas). `bank-accounts-page.test.ts` (« un conflit de version recharge la
+    liste ») : le décompte des lectures exclut désormais celle des destinations.
+  - Sonde négative et mutations (`mutations-p3.log`, copie hors dépôt, vrai `node_modules`, témoin vert 19/19) : page de
+    `e50c11a9` → 10 échecs ; garde « destination inconnue » retirée → 1 ; garde « compte du plan inchangé » retirée → 8 ;
+    `payoutPool` retiré → 8 ; chacune sur une `AssertionError` nommée.
+- **P3-2 (MEDIUM)** — `user-manual.tex` (§ *Compte Stripe*) et le commentaire de l'effet disent le comportement final : le
+  choix ne se vide que si l'on change le compte du plan lié (autre devise, ou destination archivée ou close) ; sinon la
+  destination archivée ou close reste choisie et affichée, même quand la liste masque ces comptes. **PDF non régénéré** :
+  5 Go de mémoire disponible sur la station au moment de la remédiation.
+- **P3-3** — commentaire de `reconciliation/stripe/+page.svelte` aligné sur P2-3 (seul un compte supprimé, ou une lecture
+  en échec, donne le renvoi ordinaire).
+- **P3-4** — la garde de `provider-labels.test.ts` relit la liste des fonctions importées de `reconciliation.rs` (sept, une
+  huitième la fait rougir), leurs corps, celui de `fx_db_refusal` (`errors.rs`) et trois codes de `DbError::error_code()`
+  (`ACCOUNT_NOT_POSTABLE`, `MULTI_CURRENCY_DISABLED`, `RATE_UNAVAILABLE`), cherchés dans `crates/kesh-db/src/errors.rs` :
+  `CODES_MOTEUR` passe de 16 à 29 codes, tous traduits (aucun « Refus non reconnu »).
+- **P3-5** — titre de l'`it.each` « même devise » : colonnes dans l'ordre du titre.
+- **P3-6** — Notes de version : le texte PayPal du refus d'une proposition périmée change.
+- Grep du symptôme (`change de devise`, `vidé quand`, `se vide quand`, `payoutBankAccountId`) : code, quatre catalogues
+  (texte d'aide inchangé, juste), manuels, `docs/api-external.md` (§ Stripe juste : le serveur ne rejuge pas une
+  destination inchangée), fiche (l'AC-1 historique n'est pas réécrite).
+- **Gates** (au commit `7bec552a`, aucun Rust ni `.ftl` touché) : `npm run check` 0 erreur, `lint-i18n-ownership`, Vitest
+  **5017 passés, 293 fichiers** (garde i18n comprise, `sitesTotal` 3691 inchangé), `npm run build` (`gate-front-p3.rc`) ;
+  E2E partiel de la seule spec de la story (`stripe-import.spec.ts`) : 4/4 (`e2e-p3.log`, base `kesh_e2e_s407d` sur dev2).
+- Non fait : captures d'écran du sélecteur montrant une destination archivée (la spec E2E de la story n'archive pas de
+  destination ; état couvert par Vitest seulement).
 
 ### File List
 
