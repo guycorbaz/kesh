@@ -49,11 +49,19 @@ série, et l'inverse ; formes composée et décomposée d'une même lettre), com
 casse ou les accents sont refusées (« libellé déjà porté par une autre série », la variable `KESH_<P>_<n>_ACCOUNT` de
 la seconde nommée), comme aujourd'hui pour la casse seule : sinon un compte de Kesh s'apparierait à deux séries.
 
-**AC-A3 — une seule règle.** Les deux comparaisons passent par une seule fonction documentée (DRY) ; `provider_api_status`
-(qui lit `series_for`) suit sans changement.
+**AC-A3 — une seule règle, trois sites.** Les **trois** comparaisons de ce libellé côté serveur passent par une seule
+fonction documentée (DRY), `pub(crate)` dans `provider_env.rs` : `series_for`, la garde de doublon de la lecture
+(`:459-467`), et la **clé de tâche** de `DownloadJobs::start` (`crates/kesh-api/src/provider_download.rs:614`, comparée
+`:622`), qui refuse un second téléchargement du même compte (`409 PROVIDER_DOWNLOAD_RUNNING`) : sans elle, « PayPal
+Zürich » et « paypal zurich » s'apparieraient à la même série avec deux clés de tâche, et deux téléchargements du même
+compte tourneraient ensemble (validation P1, M1). Un test de `start` à accents près. `provider_api_status` (qui lit
+`series_for`) suit sans changement. La règle est celle du frontend, `accountLabelKey`
+(`frontend/src/lib/features/bank-accounts/provider.ts:44-47`, NFD, `\p{M}`, minuscules), plus le rognage.
 
-**AC-A4 — documentation.** Le manuel d'administration FR (`docs/manual/fr/admin-manual.tex`, `KESH_PAYPAL_<n>_ACCOUNT`,
-et la liste des refus « libellé déjà porté par une autre série ») dit « ni la casse ni les accents ». Pas de PDF.
+**AC-A4 — documentation.** Disent « sans casse ni accents » pour ce libellé : le manuel d'administration FR
+(`docs/manual/fr/admin-manual.tex:1145`, `:1183`), `docs/api-external.md:746`, `:1044`, `:1369`, et les doc-comments
+`provider_env.rs:197`, `:735`, `provider_download.rs:601-604`. Le manuel utilisateur (`user-manual.tex:3407`) le dit
+déjà ; `.env.example` n'a rien à changer ; pas de manuel DE, IT, EN à suivre. Pas de PDF.
 
 **AC-B1 — clés orphelines retirées.** Les six clés `provider-gap-receipt-without-sale`,
 `provider-gap-sale-without-receipt`, `provider-gap-amount-or-currency-mismatch`, `provider-review-conversion-unpaired`,
@@ -66,6 +74,11 @@ et la liste des refus « libellé déjà porté par une autre série ») dit « 
 manuels, tests) sur `epic/38-paypal`, `epic/39-wise` et `epic/40-stripe` ne rend rien ; les gardes de parité des
 catalogues restent vertes.
 
+**AC-B3 — consigne de fusion.** `epic/39-wise` et `epic/40-stripe` contiennent déjà `epic/38-paypal` et ajoutent des
+clés jointives du bloc retiré : la reprise de cette story y donnera un conflit sur les quatre catalogues. Consigne,
+écrite au Dev Agent Record et au texte de PR : **les six clés restent retirées** (les autres lignes des deux côtés
+gardées), contrôle `git grep -c '<clé>'` = 0 sur la branche fusionnée (validation P1, M2).
+
 **AC-C — trace.** Les deux entrées de `kesh-gate-logs/epic-38-kiss/issues-a-ouvrir.md` sont barrées, avec le commit et
 la mention « corrigé par la 38-13, ne pas ouvrir » ; rien d'autre n'y est retiré.
 
@@ -76,16 +89,18 @@ la mention « corrigé par la 38-13, ne pas ouvrir » ; rien d'autre n'y est ret
         marques combinantes, minuscules), employée par `series_for` et par la garde de doublon de la lecture
   - [ ] tests unitaires : apparié dans les deux sens, forme décomposée, doublon refusé à accents près ; libellé
         réellement différent toujours non apparié
-  - [ ] mutation hors dépôt (retour à `to_lowercase` seul) tuée par une assertion nommée
+  - [ ] mutation hors dépôt (retour à `to_lowercase` seul), copie `git archive` à sa propre cible
+        (`kesh-targets/38-13-mut`), copie non mutée jouée verte d'abord, une mutation par appel de `heavy.sh`,
+        « tuée » seulement par `panicked at` et le nom du test
   - [ ] manuel FR (`.tex`) ; grep du symptôme (« sans casse » sur ce libellé) dans le dépôt
 - [ ] B (AC-B1, AC-B2)
-  - [ ] grep de chaque clé sur les trois branches ; retrait des six clés des quatre catalogues
+  - [ ] grep de chaque clé sur les trois branches ; retrait des six clés des quatre catalogues ; consigne AC-B3
 - [ ] C : barrer les deux entrées ; gates ; prompt de revue P1
 
 ## Dev Notes
 
-- **Prémisse A, relue au code** : `series_for` (`provider_env.rs:199-204`) et la garde de doublon (`:459-466`)
-  comparent par `to_lowercase()` ; `bank_accounts` est en `utf8mb4_unicode_ci` (migration de création, l. 17), et les
+- **Prémisse A, relue au code** : `series_for` (`provider_env.rs:199-204`), la garde de doublon (`:459-467`) et la clé
+  de tâche (`provider_download.rs:614`) comparent par `to_lowercase()` ; `bank_accounts` est en `utf8mb4_unicode_ci` (migration de création, l. 17), et les
   recherches par libellé (`bank_accounts.rs:1649`, `:1694`) comparent `provider_account = ?` sous cette collation, donc
   sans casse ni accents. Conséquence : un compte « PayPal Zürich » et une série « PayPal Zurich » ne s'apparient pas à
   l'écran (`providerApi.configured` faux) ni à la route `POST /paypal-downloads` (`paypal_downloads.rs:101`).
@@ -113,7 +128,10 @@ la mention « corrigé par la 38-13, ne pas ouvrir » ; rien d'autre n'y est ret
 
 - **Fixed** — Téléchargement PayPal : le libellé d'un compte s'apparie à sa série d'identifiants de l'environnement
   sans tenir compte des accents, comme le reste de Kesh (« PayPal Zürich » et « PayPal Zurich ») ; deux séries dont
-  les libellés ne diffèrent que par les accents sont refusées au démarrage.
+  les libellés ne diffèrent que par les accents sont refusées au démarrage ; un téléchargement déjà en cours pour un
+  compte est reconnu sous ce libellé écrit sans ses accents.
+- **Changed** — Démarrage : deux séries `KESH_PAYPAL_<n>_ACCOUNT` dont les libellés ne diffèrent que par les accents
+  sont désormais refusées (« libellé déjà porté par une autre série »).
 
 ## Dev Agent Record
 
@@ -126,3 +144,7 @@ la mention « corrigé par la 38-13, ne pas ouvrir » ; rien d'autre n'y est ret
 ## Change Log
 
 - 2026-11-22 : fiche rédigée (plafond 2, faute de plafond au kickoff).
+- 2026-11-22, validation P1 (Sonnet, contexte séparé ; prompt et rapport `kesh-gate-logs/s38-13/validation-p1-*.md`) :
+  0 C, 0 H, 2 M, 5 L. M1 (troisième site, la clé de tâche, `provider_download.rs:614`, relu) → AC-A3 ; M2 (conflit de
+  fusion qui ressusciterait les clés) → AC-B3 ; L1 → AC-A4 ; L2 → AC-A3 ; L3 (ligne 467) ; L4 → tâche de mutation ;
+  L5 → ligne « Changed ». Passe P2 à lancer.
