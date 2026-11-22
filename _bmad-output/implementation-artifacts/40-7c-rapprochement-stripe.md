@@ -1,6 +1,6 @@
 # Story 40-7c : rapprochement Stripe — revue et acceptation : charges rattachées aux ventes des boutiques, frais et versements écrits, écarts listés
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-20, branche `epic/40-stripe`, numéros de ligne relevés sur `origin/main` au commit `fd04099f`.
 Epic 40, **phase 1 KISS** (décision de Beat du 2026-11-20). **Dépend de** : 40-7b (transactions Stripe importées,
@@ -447,7 +447,7 @@ Rapport : `kesh-gate-logs/s40-7c/revue-p1-rapport.md` (0 CRITICAL, 0 HIGH, 1 MED
 - **L8** : doc d'`accept_link_entry` : un versement Stripe ne se rattache pas (`linkable: no_extra_kind`).
 - **L4** : non corrigé (décision d'interface, garde préexistante) : entrée dans `issues-a-ouvrir.md`.
 - Tests ajoutés par la remédiation (`git diff 68cb24da..539822a7`, `grep -c`) : 5 (3 `#[sqlx::test]`, 1 `#[test]` dans
-  `routes/stripe.rs`, 1 dans `kesh-reconciliation/src/stripe.rs`) + 1 assertion de `classify` ; total de la story : 33.
+  `routes/stripe.rs`, 1 dans `kesh-reconciliation/src/stripe.rs`) + 1 assertion de `classify` ; total de la story : 33 (périmètre : `#[test]` et `#[sqlx::test]` des trois fichiers touchés au HEAD de `539822a7`, e2e 15 + `routes/stripe.rs` 4 + `kesh-reconciliation/src/stripe.rs` 14).
 - **Sondes par mutation** (copie hors dépôt, `git archive` de `539822a7`, `mut3.sh`, journaux `mut3-*.log`) : sept
   mutations, toutes rouges par `test result: FAILED` (aucune erreur de compilation) : `branche-retiree`
   (`ToReview(_) => {}`), `filtre-verrous` (`locked_accounts.contains` retiré), `refus-plan-absent`, `regle-devise`
@@ -457,6 +457,9 @@ Rapport : `kesh-gate-logs/s40-7c/revue-p1-rapport.md` (0 CRITICAL, 0 HIGH, 1 MED
   `kesh-db::pool_lecture_seule g_une_instruction_trop_longue_est_interrompue_par_le_serveur` passé à la seconde
   tentative, étranger à la story, non investigué) ; `cargo publish --dry-run -p kesh-import` vert. Frontend non touché ;
   aucune spec E2E ajoutée ; pas de `gate-ci.sh`.
+- La sonde `regle-devise` rougit, dans la copie mutée, par la garde voisine `ACCOUNT_REQUIRES_CURRENCY` (écriture d'une
+  ligne en devise) et non par `counterparty_wrong_currency` : défense en profondeur réelle, non un défaut ; la sonde reste
+  rouge, mais elle ne mesure pas à elle seule la garde de `check_counterparty` (P2, LOW-2).
 - Prompt de la passe P2 (ciblée) : `kesh-gate-logs/s40-7c/revue-p2-prompt.md`.
 
 ### File List
@@ -471,3 +474,17 @@ Rapport : `kesh-gate-logs/s40-7c/revue-p1-rapport.md` (0 CRITICAL, 0 HIGH, 1 MED
 - `docs/api-external.md`, `docs/manual/fr/admin-manual.tex`
 - `_bmad-output/implementation-artifacts/40-7c-rapprochement-stripe.md`, `sprint-status.yaml`
 - (fusion de la 40-7b, `c9409181` : ses fichiers, voir sa fiche)
+- 2026-11-22 — revue de code P1 (Claude Sonnet 5.5, contexte frais) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 8 LOW, remédiés
+  (`539822a7`). Passe P2 ciblée (Claude Haiku 5.5, une lentille, la seule remédiation `539822a7`) : 0 CRITICAL, 0 HIGH,
+  0 MEDIUM, 5 LOW (rapport `kesh-gate-logs/s40-7c/revue-p2-rapport.md`). Tendance : P1 0/0/1/8 -> P2 0/0/0/5. Les cinq LOW,
+  sans toucher au code de production : LOW-1 le test de M1 règle une destination USD pour le solde USD ; la sonde
+  `ToReview(_) => {}` rejouée dans une copie hors dépôt rougit désormais sur l'assertion `accepted == []` (ligne 1105 du
+  test), non plus par `counterparty_wrong_currency` ; LOW-2 noté au Dev Agent Record ; LOW-3 chemin de l'entrée L4 de
+  `issues-a-ouvrir.md` corrigé (`crates/kesh-api/src/routes/bank_accounts.rs:947`) ; LOW-4 les commentaires de
+  `provider_accept.rs` et `provider_review.rs` disent tous deux ce que `wise::linkable` admet (`Other` de préfixe `TRANSFER`
+  et versement Stripe, `story/39-11c`), PayPal et Stripe n'en déclarant aucun, sans code ; LOW-5 lignes coupées, périmètre du
+  total 33 écrit. Boucle close : la dernière remédiation ne touche que des tests, des commentaires et de la documentation.
+  Gates : `539822a7` nextest complet 6498 passés, 15 ignorés ; au commit de clôture : fmt et clippy workspace verts,
+  `stripe_reconciliation_e2e` 15/15 (`e2e-final.log`) ; le gate complet n'a pas été rejoué (aucune ligne de production
+  changée).
+- 2026-11-22 — statut `done`.

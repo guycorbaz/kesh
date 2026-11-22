@@ -165,7 +165,7 @@ pub struct ProviderSpec {
     /// Genres admis **en plus** d'un encaissement ([`ProviderKind::SaleReceipt`],
     /// toujours admis) pour la proposition [`Proposal::LinkEntry`] : l'autre
     /// côté déjà passé d'un virement ou d'un versement (Wise : `Other` de
-    /// préfixe `TRANSFER` et versement Stripe, 39-11c AC-4). PayPal : aucun.
+    /// préfixe `TRANSFER` et versement Stripe, 39-11c AC-4). PayPal et Stripe : aucun.
     /// Voir [`admits_link`].
     pub linkable: fn(ProviderKind) -> bool,
     /// Genres admis **en plus** de [`ProviderKind::Other`] (toujours admis)

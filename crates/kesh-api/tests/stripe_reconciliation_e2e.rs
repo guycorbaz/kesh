@@ -1068,9 +1068,18 @@ async fn banque_de_plus(ctx: &Ctx, nom: &str, iban: &str, ledger: Option<i64>) -
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn versement_a_retour_ou_positif_refuse_a_l_acceptation(pool: MySqlPool) {
     let ctx = monter(&pool).await;
-    // Le solde USD n'a pas de compte de versement : on lui en règle un, pour
-    // que le rejugement atteigne le jugement du versement.
-    regler_versement(&ctx, ctx.usd, ctx.ba_banque).await;
+    // Le solde USD n'a pas de compte de versement : on lui en règle un, en
+    // USD aussi, pour que seul le rejugement du versement puisse refuser (une
+    // destination CHF ferait refuser par `counterparty_wrong_currency`).
+    let usd_destination = compte(&pool, ctx.seeded.company_id, "1033", "Asset", Some("USD")).await;
+    let ba_usd = banque_de_plus(
+        &ctx,
+        "Banque USD",
+        "CH4431999123000889012",
+        Some(usd_destination),
+    )
+    .await;
+    regler_versement(&ctx, ctx.usd, ba_usd).await;
     // Un versement positif (frais seuls : − Σ net > 0) en CHF.
     let entete = std::str::from_utf8(FIXTURE)
         .unwrap()

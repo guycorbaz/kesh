@@ -4508,7 +4508,8 @@ async fn accept_one_rule(
         }
     };
 
-    // Step 11 — description handler-side (Pass 2 Q9), UTF-8-safe truncate (`ENTRY_DESCRIPTION_MAX_CHARS`, 200).
+    // Step 11 — description handler-side (Pass 2 Q9), UTF-8-safe truncate
+    // (`ENTRY_DESCRIPTION_MAX_CHARS`, 200).
     let raw_description = format!("Règle '{}' — {}", rule.label, counterparty_name);
     let description: String = raw_description
         .chars()
