@@ -85,6 +85,46 @@ describe('FiscalYearChecks — contenus et liens', () => {
 		);
 	});
 
+	// Story 38-11d (revue P1, M1) — un compte PayPal en attente mène à la page PayPal ; le lien
+	// générique ne paraît que s'il reste un compte ordinaire.
+	it('K2 : un compte PayPal lie la page PayPal ; le lien générique seulement pour un compte ordinaire', () => {
+		const { unmount } = render(FiscalYearChecks, {
+			loadState: 'ready',
+			checks: closingChecks({
+				PENDING_BANK_TRANSACTIONS: {
+					status: 'attention',
+					count: 4,
+					details: {
+						accounts: [
+							{ bankAccountId: 5, name: 'UBS', count: 1, rejectedCount: 0, provider: null },
+							{ bankAccountId: 6, name: 'PayPal', count: 3, rejectedCount: 0, provider: 'paypal' }
+						]
+					}
+				}
+			})
+		});
+		expect(screen.getByTestId('fiscal-year-checks-k2-paypal-6').getAttribute('href')).toBe('/reconciliation/paypal');
+		expect(screen.queryByTestId('fiscal-year-checks-k2-paypal-5')).toBeNull();
+		expect(screen.getByTestId('fiscal-year-checks-link-PENDING_BANK_TRANSACTIONS').getAttribute('href')).toBe(
+			'/reconciliation'
+		);
+		unmount();
+		render(FiscalYearChecks, {
+			loadState: 'ready',
+			checks: closingChecks({
+				PENDING_BANK_TRANSACTIONS: {
+					status: 'attention',
+					count: 3,
+					details: {
+						accounts: [{ bankAccountId: 6, name: 'PayPal', count: 3, rejectedCount: 0, provider: 'paypal' }]
+					}
+				}
+			})
+		});
+		expect(screen.queryByTestId('fiscal-year-checks-link-PENDING_BANK_TRANSACTIONS')).toBeNull();
+		expect(screen.getByTestId('fiscal-year-checks-k2-paypal-6')).toBeTruthy();
+	});
+
 	it('K3 : l’écart rendu par le serveur, au format suisse ; les non vérifiables à part', () => {
 		render(FiscalYearChecks, {
 			loadState: 'ready',

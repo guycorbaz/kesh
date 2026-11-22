@@ -48,6 +48,7 @@
 	import SupplierInvoiceTotal from '$lib/features/supplier-invoices/SupplierInvoiceTotal.svelte';
 	import type { SupplierInvoiceResponse } from '$lib/features/supplier-invoices/supplier-invoices.types';
 	import { listBankAccounts } from '$lib/features/bank-accounts/bank-accounts.api';
+	import { withoutProviders } from '$lib/features/bank-accounts/provider';
 	import type { BankAccountSummary } from '$lib/features/bank-accounts/bank-accounts.api';
 	import { bankAccountOptionLabel } from '$lib/features/bank-accounts/format';
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
@@ -232,7 +233,9 @@
 			// avant le filtre `active && postable` ; la garde serveur reste
 			// l'autorité.
 			const payableIds = accountIdsWithRole(accts, 'Payable');
-			const linked = banks.filter((b) => b.journalAccountId !== null);
+			// Story 38-11d (AC-1) — ni un compte de prestataire (PayPal) : le serveur refuse ce
+			// paiement (409 BANK_ACCOUNT_IS_PROVIDER, 38-11b AC-3 a).
+			const linked = withoutProviders(banks).filter((b) => b.journalAccountId !== null);
 			bankAccounts = bankAccountsNotLinkedTo(linked, payableIds);
 			// Le message ne vaut que si le filtre a ÉCARTÉ un compte : une société
 			// sans compte bancaire lié garde son comportement.

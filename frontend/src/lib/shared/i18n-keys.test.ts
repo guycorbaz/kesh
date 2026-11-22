@@ -1179,7 +1179,13 @@ const ATTENDU = {
 	// demande de compte après relecture sans sélecteur).
 	// Fusion de la 48-14 dans epic/48 (2026-11-20) : les deux côtés gardés, total relevé par la garde,
 	// non additionné : **3508** (« expected 3508 to be +0 », `kesh-gate-logs/e4814/fusion-epic-i18n.log`).
-	sitesTotal: 3508,
+	// Story 38-11d : T1 et T2 (paramètres PayPal du compte bancaire, filtres des règles) +21, page
+	// PayPal (T3), libellés des refus de la route, remédiation de la revue P1 : +123 sur la base de
+	// la 0.19.0 ; relevés par la garde (3521, 3610, 3615, 3618 avant la reprise d'epic/38-paypal).
+	// Fusion de la 38-11c2 (epic/38-paypal) dans la 38-11d : total relevé par la garde.
+	// Revue P2 de la 38-11d (libellé du refus `COUNTERPARTY_CURRENCY_MISMATCH`, relais de la
+	// 38-11c2) : **3632** (« expected 3632 to be 3508 »), relevé par la garde = 3508 + 123 + 1.
+	sitesTotal: 3632,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

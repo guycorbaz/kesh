@@ -365,6 +365,10 @@ pub struct TransactionSummary {
     pub name: Option<String>,
     /// Identifiant chez le prestataire.
     pub transaction_id: Option<String>,
+    /// E-mail de la contrepartie (colonne importée par 38-11b) — Story 38-11d
+    /// (revue P1, M5) : l'écran le montre aux lignes « à examiner », pour écrire
+    /// une règle à filtre « E-mail exact ».
+    pub counterparty_email: Option<String>,
 }
 
 impl TransactionSummary {
@@ -381,6 +385,7 @@ impl TransactionSummary {
             provider_type: t.provider_type.clone(),
             name: t.counterparty_name.clone(),
             transaction_id: t.transaction_id.clone(),
+            counterparty_email: t.counterparty_email.clone(),
         }
     }
 }
