@@ -28,8 +28,10 @@ vi.mock('./provider-download.api', async (importOriginal) => ({
 
 import ProviderDownloadDialog from './ProviderDownloadDialog.svelte';
 
+// `inserted` facultatif : le composant est générique (`R extends { lastRefreshed? }`), et le
+// snippet doit accepter la forme de base au contrôle de types.
 interface Result {
-	inserted: number;
+	inserted?: number;
 	lastRefreshed?: string | null;
 }
 

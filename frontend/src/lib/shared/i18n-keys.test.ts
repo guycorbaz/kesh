@@ -1185,7 +1185,10 @@ const ATTENDU = {
 	// Fusion de la 38-11c2 (epic/38-paypal) dans la 38-11d : total relevé par la garde.
 	// Revue P2 de la 38-11d (libellé du refus `COUNTERPARTY_CURRENCY_MISMATCH`, relais de la
 	// 38-11c2) : **3632** (« expected 3632 to be 3508 »), relevé par la garde = 3508 + 123 + 1.
-	sitesTotal: 3632,
+	// Story 38-12b (dialogue générique de téléchargement, bouton et aide de la page PayPal, code
+	// de ligne `STATUS`) : **3671** (« expected 3671 to be 3632 »), relevé par la garde ; recompté
+	// au diff hors tests : 42 sites `i18nMsg(` ajoutés, 3 retirés (compte rendu extrait), net +39.
+	sitesTotal: 3671,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/
