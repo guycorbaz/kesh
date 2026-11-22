@@ -218,6 +218,14 @@ tâche en cours (`details.from`, `details.to`), que le dialogue annonce quand el
   après une reprise, `provider-download-lost-resumed` ; quatre locales, manuel utilisateur). **L5** et **L7** :
   notés au Dev Agent Record. Une passe **P3 ciblée** sur `9ca7fe48` suit
   (`kesh-gate-logs/s38-12b/revue-p3-prompt.md`).
+- 2026-11-22 — revue de code P3 ciblée sur `9ca7fe48` (une lentille ; rapport `kesh-gate-logs/s38-12b/revue-p3-rapport.md`) :
+  0 CRITICAL, **1 HIGH**, 0 MEDIUM, 1 LOW — tous deux nés de la remédiation P2. **HIGH-1** : le `finally` de `start()`
+  comparait `generation`, que `track()` incrémente aussitôt (`stopPolling()`) : « Télécharger » restait désactivé après
+  tout lancement réussi ou 409 repris (« Nouvelle période »). Corrigé (commit `369963704`) par un compteur de
+  lancements `launches`, distinct de la génération du suivi : seul le dernier lancement remet `starting` à faux, ce
+  qui garde L3. **LOW-1** (corrigé, test seulement) : la retenue du serveur simulé (`MockReply.hold`) appartient au
+  serveur lancé, `ProviderMock.release()` la libère, `close()` aussi (plus de promesse de module dans la spec). Une passe
+  **P4 ciblée** sur `369963704` suit (`kesh-gate-logs/s38-12b/revue-p4-prompt.md`).
 
 ## Dev Agent Record
 
@@ -414,6 +422,29 @@ manuel utilisateur ; gates de la nuit du 22.11.
   passés (290 fichiers)** (= 4989 + 4), `build` vert ; **E2E partiel (1 spec)** `paypal-download.spec.ts`
   (`p2-e2e.console`, `e2e-p2.log`) : **3 passés**. Captures 10 à 18 reprises (la 15 montre l'avis au passé sous le
   compte rendu). E2E complet et `gate-ci.sh` : à la fin, sur la branche d'intégration.
+
+### Remédiation de la revue P3
+
+- **Prémisse relue au code** : `start()` prend `myGen = generation`, puis `track()` commence par `stopPolling()`
+  (`generation += 1`) : au `finally`, `myGen !== generation` sur les deux chemins qui suivent une tâche — vérifiée par
+  les deux tests neufs, rouges sur la garde de la P2 (mutation R9 ci-dessous).
+- **Correctif** (`369963704`) : `let launches = 0`, `const myLaunch = ++launches` dans `start()`,
+  `finally { if (myLaunch === launches) starting = false; }` ; `myGen`/`generation` gardent seuls le suivi (aucun
+  `track()` d'une génération passée). Serveur simulé : `MockReply.hold` (au lieu de `until`), retenue propre à chaque
+  serveur, `ProviderMock.release()`, `close()` qui libère avant `server.close()`, minuteur du plafond annulé ; spec :
+  `holdFromWindow: { window: 2 }`, `mock?.release()` là où était `releaseHold()`.
+- **Tests ajoutés** (périmètre `d4b4512c` → `369963704`, recomptés) : Vitest **2** (`ProviderDownloadDialog.test.ts` :
+  lancement réussi puis « Nouvelle période », 409 repris puis « Nouvelle période » — bouton actif) ; Rust 0 ;
+  Playwright 0 (spec adaptée au serveur simulé). `sitesTotal` inchangé (aucun texte touché).
+- **Sondes négatives** (copie `git archive 369963704 frontend` hors dépôt, `node_modules` réel par `npm ci`, supprimée ;
+  `kesh-gate-logs/s38-12b/mutations-front-p3.log`) : non mutée verte (40) ; **R7** condition du `finally` retirée →
+  tuée par « ancien POST qui répond après une réouverture … (revue P2, L3) » (`AssertionError: expected false to be
+  true`) ; **R8** remise à faux retirée → tuée par les deux tests neufs (`AssertionError: bouton actif après …`) ;
+  **R9** garde de la P2 rétablie (`myGen === generation`) → tuée par les deux tests neufs. Trois sur trois.
+- **Gates au commit `369963704`** (HEAD lu dans chaque console ; aucun `.rs` touché, pas de gate Rust) : frontend
+  (`p3-front.console`, `front-p3-*.log`) : `check` 0 erreur, `lint-i18n-ownership` vert, Vitest **4995 passés (290
+  fichiers)** (= 4993 + 2), `build` vert ; **E2E partiel (1 spec)** `paypal-download.spec.ts` (`p3-e2e.console`,
+  `e2e-p3.log`) : **3 passés** (29,2 s). E2E complet et `gate-ci.sh` : à la fin, sur la branche d'intégration.
 
 ### File List
 
