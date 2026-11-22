@@ -2,10 +2,10 @@
 
 Status: deferred
 
-*(2026-11-20 — reportée en phase 2 par la décision de Beat (phase 1 KISS, § « Phase 1 KISS » du fichier d'epic) ; validée le 2026-11-15, gardée telle quelle comme base de la phase 2. Ce qu'en reprend la phase 1 est dit dans les fiches 38-11a à 38-11d.)*
+*(2026-11-20 — reportée en phase 2 par la décision du responsable de l'epic (phase 1 KISS, § « Phase 1 KISS » du fichier d'epic) ; validée le 2026-11-15, gardée telle quelle comme base de la phase 2. Ce qu'en reprend la phase 1 est dit dans les fiches 38-11a à 38-11d.)*
 
 *Fiche rédigée le 2026-11-15 (Opus), branche `epic/38-paypal`, numéros de ligne relevés sur `8b3d548d`. Epic 38
-(`_bmad-output/planning-artifacts/epic-38-paypal.md`) : E4, E14, E18, E19, C-38-0, C-38-6, C-38-12 ; décisions de Beat
+(`_bmad-output/planning-artifacts/epic-38-paypal.md`) : E4, E14, E18, E19, C-38-0, C-38-6, C-38-12 ; décisions du responsable de l'epic
 B5, B19, B22, B24 (`epics-38-40-cadrage.md`) ; arbitrages O1, O2, O3, O4 de l'epic. **Dépend de 38-2** (O1 : **la**
 migration breaking de l'epic, qui passe `reconciliation_rules.match_type` en `VARCHAR(40)` `ascii_bin` avec `CHECK` de
 format et relève `kesh_version_min_required`) **et de 38-3a** (C-38-4 : colonnes `counterparty_email`, `invoice_ref`,

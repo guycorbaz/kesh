@@ -1,7 +1,7 @@
 # Prompt de validation P5 ciblée — fiches de l'Epic 40
 
 Passe **ciblée** (`CLAUDE.md` § *La passe ciblée*), contexte frais, braquée sur **la dernière remédiation**.
-Worktree `/home/beat/limu/compta/kesh-wt40` (branche `epic/40-stripe`) : n'écris nulle part ailleurs. Fiche(s) dans ta
+Worktree `<dépôt>-wt40` (branche `epic/40-stripe`) : n'écris nulle part ailleurs. Fiche(s) dans ta
 mission.
 
 ## Périmètre

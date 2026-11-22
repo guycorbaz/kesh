@@ -1,15 +1,15 @@
 # Prompt de validation P1 — fiches de l'Epic 38 (PayPal et socle des prestataires)
 
 **Première passe complète** (`bmad-create-story validate`, `CLAUDE.md` § *Review Iteration Rule*), contexte frais, sur une
-fiche du worktree `/home/beat/limu/compta/kesh-wt40` (branche `epic/40-stripe` ; n'écris nulle part ailleurs). À lire
+fiche du worktree `<dépôt>-wt40` (branche `epic/40-stripe` ; n'écris nulle part ailleurs). À lire
 d'abord :
 
-- `_bmad-output/planning-artifacts/epics-38-40-cadrage.md` (décisions de Beat **B1–B28**, qui priment) ;
+- `_bmad-output/planning-artifacts/epics-38-40-cadrage.md` (décisions du responsable de l'epic **B1–B28**, qui priment) ;
 - `_bmad-output/planning-artifacts/epic-40-stripe.md` (G*, C-40-*, fiches de stories) et la décision **P40-1** de
   `_bmad-output/implementation-artifacts/40-redaction-prompt.md` (clés `rk_test_`/`rk_live_` admises, `sk_` refusée) ;
 - `_bmad-output/planning-artifacts/epic-38-paypal.md` (socle validé) et les fiches 38-* qu'étend la fiche visée ;
 - la fiche visée et ses sœurs `40-*.md` ; les réponses réelles du compte de test
-  `/home/beat/limu/compta/kesh/data-not-committed/stripe-test-samples/` (lecture seule) ;
+  `<dépôt>/data-not-committed/stripe-test-samples/` (lecture seule) ;
 - `CLAUDE.md` : *Migration breaking policy*, *Pattern batch*, *Un appariement automatique propose, il ne crée jamais*,
   *Règle de splitting préventif*, *Recette visuelle*, manuels.
 

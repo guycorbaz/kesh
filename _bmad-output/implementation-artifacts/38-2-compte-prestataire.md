@@ -2,17 +2,17 @@
 
 Status: deferred
 
-*(2026-11-20 — reportée en phase 2 par la décision de Beat (phase 1 KISS, § « Phase 1 KISS » du fichier d'epic) ; validée le 2026-11-15, gardée telle quelle comme base de la phase 2. Ce qu'en reprend la phase 1 est dit dans les fiches 38-11a à 38-11d.)*
+*(2026-11-20 — reportée en phase 2 par la décision du responsable de l'epic (phase 1 KISS, § « Phase 1 KISS » du fichier d'epic) ; validée le 2026-11-15, gardée telle quelle comme base de la phase 2. Ce qu'en reprend la phase 1 est dit dans les fiches 38-11a à 38-11d.)*
 
 *Fiche rédigée le 2026-11-15 (Opus), branche `epic/38-paypal`, numéros de ligne relevés au commit `8b3d548d`. Epic 38 :
 décisions E1, E11, E18, E19, E24 ; contrats **C-38-3** (et C-38-2 pour le refus de suppression d'une connexion,
-FR-38-1-4), C-38-0, C-38-12 ; décisions de Beat B1, B3, B16 (maintenu par B22), B23 ; engagement **D8** de l'Epic 37
+FR-38-1-4), C-38-0, C-38-12 ; décisions du responsable de l'epic B1, B3, B16 (maintenu par B22), B23 ; engagement **D8** de l'Epic 37
 (levée de C-37-9). **Dépend de** : 38-1 (connexions), l'Epic 37 (devise d'un compte et ses refus, 37-1 AC-4 ; liste
 close des absences admises, 37-1 AC-6). **Suivie par** : 38-3a (colonnes des transactions et soldes rapportés d'un
 compte prestataire, qui étendent le refus `PROVIDER_ACCOUNT_IN_USE`), 38-3b (téléchargement), 38-6a (compte de frais), 38-9a (écrans).*
 
 ⛔ **Arbitrage O1 (2026-11-15), qui prime sur le reste de cette fiche : la migration de cette story est l'UNIQUE
-migration breaking de l'epic** (la fiche d'origine la disait non breaking et laissait la décision à Beat, Q-38-2-a :
+migration breaking de l'epic** (la fiche d'origine la disait non breaking et laissait la décision au responsable de l'epic, Q-38-2-a :
 close). Elle porte, dans **un seul fichier** : la table `payment_provider_accounts`, le remplacement de la contrainte
 d'IBAN, `reconciliation_rules.match_type` en `VARCHAR(40)` (O2), et `kesh_version_min_required` relevé en dernière
 instruction (P2, P2-bis : **dix** crates, `kesh-providers` naissant en 38-3b ; numéro de release à Guy, Q1 de l'epic —
@@ -423,7 +423,7 @@ grep P6, `data_count`, registres) : recomptés depuis la source après chaque re
   (complétude) et 38-10 (relevé).
 - **Archivage d'un compte prestataire** : la ligne de réglages reste et garde sa devise prise ; recréer un compte de
   même devise pour la même connexion demande le retrait des réglages, refusé s'il a des transactions ou un solde vu
-  (`no_iban` ne vaut pas pour un compte archivé, AC-5). Limite écrite (38-9a) ; une issue si Beat la juge gênante.
+  (`no_iban` ne vaut pas pour un compte archivé, AC-5). Limite écrite (38-9a) ; une issue si le responsable de l'epic la juge gênante.
 - **Références** : epic E11, C-38-3, D8 (§ *Dépendance à l'Epic 37*) ; 37-1 AC-4 (refus `ACCOUNT_IN_FOREIGN_CURRENCY`,
   `ACCOUNT_CURRENCY_IN_USE`, liste close des sites) et AC-6 ; `migrations/20261110000001_bank_accounts_without_iban.sql:39-55`
   ; `entities/bank_account.rs:21-69, 126-143` ; `routes/bank_accounts.rs:205, 480-526, 539-637, 641-685, 700-715, 883, 964-1000,

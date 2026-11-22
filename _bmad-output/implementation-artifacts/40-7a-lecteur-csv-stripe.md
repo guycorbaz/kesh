@@ -3,7 +3,7 @@
 Status: done
 
 *Fiche rédigée le 2026-11-20, branche `epic/40-stripe`, numéros de ligne relevés sur `origin/main` au commit `fd04099f`
-(repris dans la branche par la fusion `7dcb54ab`). Epic 40, **phase 1 KISS** (décision de Beat du 2026-11-20, § *Phase 1
+(repris dans la branche par la fusion `7dcb54ab`). Epic 40, **phase 1 KISS** (décision du responsable de l'epic du 2026-11-20, § *Phase 1
 KISS* du fichier d'epic). **Dépend de** : 38-11a (lecteur du CSV PayPal, même crate : forme fermée des montants, patron des erreurs de
 ligne, décodage et numéros de ligne) ; 39-11a partage la même aide d'en-tête (module `csv/by_name.rs`). **Suivie par** : 40-7b (import), 40-7c (rapprochement), 40-8a (le client de l'API rend les
 mêmes lignes).*
@@ -49,7 +49,7 @@ lié —, afin que l'import (40-7b) n'ait plus qu'à ranger ces lignes dans le c
    non contrôlées ; **non gardées** : `StripePayoutRow` suit l'AC-3, qui ne les porte pas — écart L2 de la P1). Toute autre colonne est ignorée. Manquantes → `StripeCsvError::MissingColumns(Vec<String>)`,
    toutes listées dans l'ordre ci-dessus ; l'absence des deux colonnes d'objet lié s'y nomme `source_id|charge_id` (le message de 40-7b dit :
    « dans Stripe, Rapports → Rapprochement des versements → Détaillé, ajoutez la colonne *source_id* »). Deux colonnes de
-   même nom, ou `created` et `created_utc` ensemble → `DuplicateColumn(nom)`. *(Le rapport de 2024 de Beat, exporté du
+   même nom, ou `created` et `created_utc` ensemble → `DuplicateColumn(nom)`. *(Le rapport de 2024 du responsable de l'epic, exporté du
    tableau de bord avec ses colonnes par défaut d'alors, n'a ni `source_id` ni `charge_id` : il serait refusé ; la doc
    publique de Stripe met les deux parmi les colonnes par défaut de `payout_reconciliation.itemized.1`.)*
 3. **AC-3 — Ligne rendue.** `StripePayoutRow { line: usize, payout_id: String, payout_date: NaiveDate,
@@ -89,7 +89,7 @@ lié —, afin que l'import (40-7b) n'ait plus qu'à ranger ces lignes dans le c
    catalogue de `crates/kesh-import/tests/fixtures/README.md`, qui dit tous ses fichiers synthétiques) : les onze
    colonnes du rapport de 2024 (`automatic_payout_id`, `automatic_payout_effective_at`, `balance_transaction_id`,
    `created`, `available_on`, `currency`, `gross`, `fee`, `net`, `reporting_category`, `description`) **plus** `source_id`
-   et `charge_id` (celles que doit ajouter Beat à l'export ; la doc publique de `payout_reconciliation.itemized.1` les met
+   et `charge_id` (celles que doit ajouter le responsable de l'epic à l'export ; la doc publique de `payout_reconciliation.itemized.1` les met
    parmi les colonnes par défaut), sans BOM, devises en minuscules, deux décimales, `net = gross − fee` partout.
    **Aucune donnée réelle** : identifiants `txn_TEST…`, `po_TEST…`, `ch_TEST…`, `re_TEST…` inventés, descriptions
    inventées. **Toutes les dates en 2020** (`AAAA-MM-JJ HH:MM:SS`) : c'est l'exercice du seed `with-company` des E2E
@@ -131,7 +131,7 @@ lié (`source_id` ou `charge_id`) est refusé avec la marche à suivre pour l'aj
 
 ## Notes de développement
 
-- Format relevé sur les rapports 2024 de Beat (notes sans donnée personnelle,
+- Format relevé sur les rapports 2024 du responsable de l'epic (notes sans donnée personnelle,
   `kesh-gate-logs/epic-39-40-kiss/wise-stripe-2024-comprendre.md`, et relevé de forme du 2026-11-20 : 11 colonnes, sans
   BOM, devises en minuscules, deux décimales, `net = gross − fee` sur toutes les lignes, catégories `charge`, `fee`,
   `refund`, `payout_reversal`). Aucune valeur réelle n'est reprise ici.
@@ -209,7 +209,7 @@ repris tiennent déjà ce total. Le test-schéma et les gates complets de `kesh-
   `po_TEST0002` est écrit ici (**270.30**, tenu par un test) et 39-11a s'y alignera.
 - **Mutation vérifiée** : en neutralisant le refus de la virgule dans `parse_amount`, `decimal_comma_is_refused_never_read_as_hundred_times` rougit, **mais seul le sous-cas des milliers `1,234.50`** : `12,50` reste refusé par l'expression régulière commune (`csv/amount.rs`, milliers en groupes de trois), de sorte que le refus propre à `stripe.rs` ne tient que les milliers (journal `kesh-gate-logs/s40-7a/mutation-et-reel.log`) ; code restauré.
 
-### Rapport réel de Beat, lecture locale
+### Rapport réel du responsable de l'epic, lecture locale
 
 Lecture seule, par un test jetable (supprimé, non commité) ; aucune valeur copiée ni citée. Les quatre CSV (toutes devises,
 CHF, EUR, USD) sont **refusés tels quels** par `MissingColumns(["source_id|charge_id"])` — le refus ne nomme que cette
@@ -232,17 +232,17 @@ M1 : `gross - fee` passé en `checked_sub` (un débordement est une erreur de li
 
 ### Remédiation de la revue P2 ciblée (2026-11-20, orchestrateur, fiche seulement)
 
-P2 ciblée (Haiku) sur `3bcaf532` : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 2 LOW (`kesh-gate-logs/s40-7a/revue-p2-rapport.md`). F1 (dette sans propriétaire nommé ni story planifiée) : propriétaire Beat, story `40-9-solde-dette` ajoutée au registre, issue à ouvrir. F2 (AC-1 contredite par le test de la ligne vide) : AC-1 amendée pour renvoyer à la limite, issue à ouvrir. F3 : plafond puis tri écrits. F4 : mutation annotée (rejouée par la P2). Aucune ligne de code touchée ; une passe ciblée P3 suit (règle de clôture). P3 ciblée (Sonnet) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 2 LOW — M1 (40-9 absente du fichier d'epic, plafond d'issues et dépassement de la borne de six non déclarés) remédié dans `epic-40-stripe.md` ; L1 (« ordre de collecte ») et L2 (`flexible`) corrigés ; P4 ciblée (Haiku) : 0/0/1 MEDIUM/4 LOW — M1 (condition « dire au kickoff ») levée par décision de Beat du 2026-11-20, écrite au fichier d'epic comme décision de kickoff ; L1 à L4 et l'état du registre de l'epic corrigés ; P5 ciblée à suivre.
+P2 ciblée (Haiku) sur `3bcaf532` : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 2 LOW (`kesh-gate-logs/s40-7a/revue-p2-rapport.md`). F1 (dette sans propriétaire nommé ni story planifiée) : propriétaire : le responsable de l'epic, story `40-9-solde-dette` ajoutée au registre, issue à ouvrir. F2 (AC-1 contredite par le test de la ligne vide) : AC-1 amendée pour renvoyer à la limite, issue à ouvrir. F3 : plafond puis tri écrits. F4 : mutation annotée (rejouée par la P2). Aucune ligne de code touchée ; une passe ciblée P3 suit (règle de clôture). P3 ciblée (Sonnet) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 2 LOW — M1 (40-9 absente du fichier d'epic, plafond d'issues et dépassement de la borne de six non déclarés) remédié dans `epic-40-stripe.md` ; L1 (« ordre de collecte ») et L2 (`flexible`) corrigés ; P4 ciblée (Haiku) : 0/0/1 MEDIUM/4 LOW — M1 (condition « dire au kickoff ») levée par décision du responsable de l'epic du 2026-11-20, écrite au fichier d'epic comme décision de kickoff ; L1 à L4 et l'état du registre de l'epic corrigés ; P5 ciblée à suivre.
 
 ## Limite connue : numéro de ligne après une ligne vide
 
-Le crate `csv` donne à un enregistrement qui suit une ligne vide au milieu du fichier le numéro de cette ligne vide : l'erreur est rapportée une ligne trop tôt par ligne vide précédente. Limite partagée avec PayPal et Wise (documentée dans `read_records`, `csv/by_name.rs`, branche `epic/39-wise`) ; le lecteur ne la contourne pas, sur décision du coordinateur. Tenue par le test ci-dessus ; les lignes vides de fin de fichier ne comptent pas. Issue à ouvrir avec l'accord de Beat (même liste que la dette ci-dessous), commune aux trois lecteurs ; le test `line_after_a_blank_line_takes_the_blank_line_number` fige ce comportement pour qu'une correction future se voie.
+Le crate `csv` donne à un enregistrement qui suit une ligne vide au milieu du fichier le numéro de cette ligne vide : l'erreur est rapportée une ligne trop tôt par ligne vide précédente. Limite partagée avec PayPal et Wise (documentée dans `read_records`, `csv/by_name.rs`, branche `epic/39-wise`) ; le lecteur ne la contourne pas, sur décision du coordinateur. Tenue par le test ci-dessus ; les lignes vides de fin de fichier ne comptent pas. Issue à ouvrir avec l'accord du responsable de l'epic (même liste que la dette ci-dessous), commune aux trois lecteurs ; le test `line_after_a_blank_line_takes_the_blank_line_number` fige ce comportement pour qu'une correction future se voie.
 
 Plafond des erreurs de ligne : la collecte garde les cent premières erreurs **dans l'ordre de collecte** — d'abord toutes les erreurs `FIELD_COUNT` du fichier, puis les erreurs de cellule ligne par ligne —, puis les trie par ligne (`stripe.rs`, `struct Errors`) : au-delà de cent, les erreurs rendues ne sont pas forcément les premières du fichier.
 
 ## Dette technique
 
-- **Boucle de lecture, collecte plafonnée des erreurs de ligne et troncature des valeurs, recopiées de `paypal.rs`** (`stripe.rs` : troncature de `StripeLineError::new`, `struct Errors`, décodage et lecture des enregistrements ; trois copies avec le lecteur Wise de la 39-11a). Propriétaire : Beat (contributeur des Epics 38 à 40). Remédiation planifiée : story `40-9-solde-dette` (`backlog`, `sprint-status.yaml`), extraction dans `kesh-import/src/csv/` une fois les trois lecteurs (PayPal, Wise 39-11a, Stripe) en place ; issue à ouvrir avec l'accord de Beat (`kesh-gate-logs/epic-38-kiss/issues-a-ouvrir.md`).
+- **Boucle de lecture, collecte plafonnée des erreurs de ligne et troncature des valeurs, recopiées de `paypal.rs`** (`stripe.rs` : troncature de `StripeLineError::new`, `struct Errors`, décodage et lecture des enregistrements ; trois copies avec le lecteur Wise de la 39-11a). Propriétaire : le responsable de l'epic (contributeur des Epics 38 à 40). Remédiation planifiée : story `40-9-solde-dette` (`backlog`, `sprint-status.yaml`), extraction dans `kesh-import/src/csv/` une fois les trois lecteurs (PayPal, Wise 39-11a, Stripe) en place ; issue à ouvrir avec l'accord du responsable de l'epic (`kesh-gate-logs/epic-38-kiss/issues-a-ouvrir.md`).
 
 
 
@@ -253,6 +253,6 @@ Gate backend complet au dernier commit de code (`3bcaf532` ; HEAD `548f2f39`, fi
 (place 4 de `heavy.sh`) ; un test instable rejoué vert au second essai, sans rapport avec la story
 (`admin_auto_backup_e2e::disque_sature_pendant_l_ecriture`, déjà vu instable au gate de la 39-11a) ; journal
 `kesh-gate-logs/s40-7a/gate-final.log`. Boucle de revue : P1 Opus (0/0/2 MEDIUM/6 LOW) → P2 ciblée Haiku (0/0/2/2)
-→ P3 ciblée Sonnet (0/0/1/2) → P4 ciblée Haiku (0/0/1/4 ; le MEDIUM levé par décision de Beat sur la taille de l'epic)
+→ P3 ciblée Sonnet (0/0/1/2) → P4 ciblée Haiku (0/0/1/4 ; le MEDIUM levé par décision du responsable de l'epic sur la taille de l'epic)
 → P5 ciblée Sonnet (0/0/0/0). Reste en issue à ouvrir : la limite du numéro de ligne après une ligne vide (commune
 aux trois lecteurs) et la dette 40-9.

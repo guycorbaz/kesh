@@ -3,7 +3,7 @@
 Status: deferred — reportée le 2026-11-20 après la phase 2 de l'Epic 40 (voir le registre du fichier d'epic)
 
 - **Epic** : 40 (`_bmad-output/planning-artifacts/epic-40-stripe.md`, § *40-4*, G1, G5, G10, G12, C-40-0, C-40-2 (c),
-  C-40-6) ; décisions de Beat **B13** (créance « Débiteurs Stripe ») et **B20** (le relevé est la somme de contrôle),
+  C-40-6) ; décisions du responsable de l'epic **B13** (créance « Débiteurs Stripe ») et **B20** (le relevé est la somme de contrôle),
   `epics-38-40-cadrage.md`, qui priment ; décision de l'orchestrateur **P40-1** (clés `rk_test_` admises, mode montré).
 - **Dépend de** : **40-3** (versements : `movement_kind = 'withdrawal'`, écriture datée de `value_date`, rattachement à
   la ligne UBS), **40-1** (`StripeConnector::balances`, « Tester »), **38-9a** (route et module du contrôle (b) :
@@ -19,7 +19,7 @@ Status: deferred — reportée le 2026-11-20 après la phase 2 de l'Epic 40 (voi
 
 ## Story
 
-En tant que **Comptable** de la société de Beat,
+En tant que **Comptable** de la société du responsable de l'epic,
 je veux que le contrôle de solde d'un compte Stripe compare le solde que rapporte Stripe (`available + pending`) au
 compte « Débiteurs Stripe » de la devise, et que l'écart se ventile en transactions non rapprochées, **versements en
 route** et reste inexpliqué — et que la créance sur Stripe ne soit pas additionnée à mes liquidités sans le dire,
@@ -298,7 +298,7 @@ je lise le solde de 1101–1103 pour ce qu'il est : une créance (B13).
 
 ## Questions ouvertes
 
-- **Q-40-4-1 (Beat, Guy)** — K10 doit-il **corriger** le solde comptable des décalages de date, comme K3 le fait pour les
+- **Q-40-4-1 (responsable de l'epic, Guy)** — K10 doit-il **corriger** le solde comptable des décalages de date, comme K3 le fait pour les
   relevés importés (le manuel le promet pour l'écart du relevé, `user-manual.tex:337`) ? Alors un versement en route
   ne mettrait plus K10 en attention. Proposé ici : statut inchangé, détail ajouté (AC-4) ; la correction serait un
   amendement de 38-10 (C-38-10-4).

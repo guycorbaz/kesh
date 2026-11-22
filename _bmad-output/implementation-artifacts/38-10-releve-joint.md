@@ -2,10 +2,10 @@
 
 Status: deferred
 
-*(2026-11-20 — reportée en phase 2 par la décision de Beat (phase 1 KISS, § « Phase 1 KISS » du fichier d'epic) ; validée le 2026-11-15, gardée telle quelle comme base de la phase 2. Ce qu'en reprend la phase 1 est dit dans les fiches 38-11a à 38-11d.)*
+*(2026-11-20 — reportée en phase 2 par la décision du responsable de l'epic (phase 1 KISS, § « Phase 1 KISS » du fichier d'epic) ; validée le 2026-11-15, gardée telle quelle comme base de la phase 2. Ce qu'en reprend la phase 1 est dit dans les fiches 38-11a à 38-11d.)*
 
 - **Epic** : 38 (`_bmad-output/planning-artifacts/epic-38-paypal.md`, § *38-10*, E17, E18, E20 (b), C-38-10) ; décisions de
-  Beat B10 et B20 (`epics-38-40-cadrage.md`), qui priment.
+  le responsable de l'epic B10 et B20 (`epics-38-40-cadrage.md`), qui priment.
 - **Dépend de** : **38-2** et **38-3a** (ordre de l'epic : 38-10 « dès 38-3a » — rien de 38-3b n'est lu ; la story elle-même vaut pour **tout** compte
   bancaire, prestataire ou non — C-38-10-1) ; Epic 37 : devise d'un compte (37-1), solde en devise (37-4 AC-1, fragment
   de `repositories/account_balances.rs`), liste close des absences admises à l'import (37-1 AC-6, R1).

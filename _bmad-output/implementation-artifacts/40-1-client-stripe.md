@@ -5,11 +5,11 @@ Status: superseded — remplacée le 2026-11-20 par la refonte KISS de l'Epic 40
 *Fiche rédigée le 2026-11-15 (Opus), branche `epic/40-stripe`, numéros de ligne relevés au commit `a2b1da9c`. Epic 40
 (`planning-artifacts/epic-40-stripe.md`) : G3, G4, G5, G7 (contrôles de forme), G15, G16, G17 ; contrats **C-40-0**,
 **C-40-1**, **C-40-2** (a, e, f), **C-40-3**, C-40-4 (lecture), C-40-6 ; décision **P40-1** de l'orchestrateur (clés
-`rk_live_` **et** `rk_test_` admises, `sk_` refusée, mode montré et contrôlé). Décisions de Beat B10, B11, B12, B13, B14.
+`rk_live_` **et** `rk_test_` admises, `sk_` refusée, mode montré et contrôlé). Décisions du responsable de l'epic B10, B11, B12, B13, B14.
 **Dépend de** l'Epic 38 développé et fusionné — 38-1 (coffre, connexions, `settings` typé, `PUT …/secrets`, `POST
 …/test`), 38-3b (`kesh-providers`, `Connector`, `Transport`, `HttpTransport`, `ConnectorFactory`, `ConnectorContext`,
 `validate_page`, passage, route `_test/provider-connector`), 38-7 (patron du connecteur : `with_base_url`, découpage
-O10, table d'erreurs AC-7, route `POST …/test`, jeu `"default"`) — et de **40-0** (recette en mode réel de Beat,
+O10, table d'erreurs AC-7, route `POST …/test`, jeu `"default"`) — et de **40-0** (recette en mode réel du responsable de l'epic,
 constats écrits au fichier d'epic). **Suivie de** 40-2 (classement), 40-3 (versements). **Aucune migration**.*
 
 *Modules : `kesh-providers` (module `stripe`), `kesh-core` (`providers::settings`), `kesh-api` (secrets, fabrique,
@@ -490,13 +490,13 @@ d'aujourd'hui** — l'Epic 38 n'étant pas développé) ; aucun outil
 
 ## Questions ouvertes
 
-- **Q-40-1-1** (Beat, recette) : combien de transactions de solde par an ? Au-delà de ~5 000 entre `fetch_from` et le jour
+- **Q-40-1-1** (responsable, recette) : combien de transactions de solde par an ? Au-delà de ~5 000 entre `fetch_from` et le jour
   du premier passage, l'`opening` (et donc le contrôle de complétude) reste non disponible ; relever la borne (100
   requêtes ?) est à décider sur ce chiffre.
-- **Q-40-1-2** (40-0) : version d'API servie par défaut au compte de Beat, et celle des fixtures ; `API_VERSION` en dépend.
+- **Q-40-1-2** (40-0) : version d'API servie par défaut au compte du responsable de l'epic, et celle des fixtures ; `API_VERSION` en dépend.
 - **Q-40-8** (epic) : droits *Read* minimaux ; ceux qu'exigent `GET /v1/account` et l'expansion des sources. ⚠️ Depuis
   D40-P3-1, le droit de lire le compte est **exigé** : si la recette (40-0) montre qu'une clé restreinte ne peut pas le
-  recevoir en lecture seule, la décision est à reprendre avec Beat avant le développement.
+  recevoir en lecture seule, la décision est à reprendre avec le responsable de l'epic avant le développement.
 
 ## Dev Agent Record
 

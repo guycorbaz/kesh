@@ -2,7 +2,7 @@
 
 Status: deferred
 
-*(2026-11-20 — reportée en phase 2 par la décision de Beat (phase 1 KISS, § « Phase 1 KISS » du fichier d'epic) ; validée le 2026-11-15, gardée telle quelle comme base de la phase 2. Ce qu'en reprend la phase 1 est dit dans les fiches 38-11a à 38-11d.)*
+*(2026-11-20 — reportée en phase 2 par la décision du responsable de l'epic (phase 1 KISS, § « Phase 1 KISS » du fichier d'epic) ; validée le 2026-11-15, gardée telle quelle comme base de la phase 2. Ce qu'en reprend la phase 1 est dit dans les fiches 38-11a à 38-11d.)*
 
 *Fiche rédigée le 2026-11-15 (Opus), branche `epic/38-paypal`. Epic 38 (`planning-artifacts/epic-38-paypal.md`),
 E14, E15, E16, E21, E22 ; contrats C-38-6, C-38-8, C-38-9, C-38-14. Décisions B3, B4, B5, B7, B17, B19, B21, B24.
@@ -413,7 +413,7 @@ doublon et sans qu'aucune écriture ne passe sans que je l'aie vue.
     exercice clos) ; sous-titre de la page.
 13. **AC-13 — Ce que la story ne touche pas.** Aucune migration ni route ; aucun audit neuf (les routes appelées
     auditent) ; **aucun outil MCP** (E23 : propositions, file et suggestions ne sont pas exposées ; les écritures
-    passées se lisent par `kesh_ecritures`) ; aucune donnée réelle de Beat dans les tests ni les captures.
+    passées se lisent par `kesh_ecritures`) ; aucune donnée réelle du responsable de l'epic dans les tests ni les captures.
 
 ## Écart à l'epic
 

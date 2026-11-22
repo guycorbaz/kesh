@@ -5,7 +5,7 @@
 **Cadrage : 2026-11-15** (branche `epic/38-paypal`), **révisé le même jour sur B16–B21** (§ *Révision B16–B21*)
 **puis sur B22–B26** (§ *Révision B22–B26*), arbitré O1–O12 après la rédaction des fiches et aligné sur la validation
 P1 (§ *Validation P1*, découpage de 38-3 en 38-3a et 38-3b), puis révisé sur B27–B28 (§ *Révision B27–B28*). Demande
-de Beat (contributeur), décisions B1–B28 de
+du responsable de l'epic (contributeur), décisions B1–B28 de
 `epics-38-40-cadrage.md`, qui **priment** sur ce fichier là où il diverge (B22 remplace B16 sur les domaines fermés).
 Kickoff (décomptes d'issues et de bugs, validation de ce fichier) **à tenir** : `38-0-kickoff` reste au backlog tant
 que l'Epic 37 n'est pas développé.
@@ -19,15 +19,15 @@ ajoutent des colonnes `NULL`. `account_kind` ne reçoit toujours aucune valeur n
 *(Reportée en phase 2 (2026-11-20) — voir § *Phase 1 KISS*.)*
 
 **Numéro : 38** (35 et 36 réservés ailleurs ; 39 Wise, **40 Stripe**, provisoire en attendant Guy, B25). Une branche par
-story, fusionnée localement dans `epic/38-paypal`, puis **une PR** vers le dépôt de Guy (remote `beat`), **après celle
-de l'Epic 37**. Pas d'issue GitHub à ce stade (Beat n'a qu'un accès en lecture) : le détail vit ici et dans les fiches ;
+story, fusionnée localement dans `epic/38-paypal`, puis **une PR** vers le dépôt de Guy (remote du contributeur), **après celle
+de l'Epic 37**. Pas d'issue GitHub à ce stade (le responsable de l'epic n'a qu'un accès en lecture) : le détail vit ici et dans les fiches ;
 issues et PR s'ouvrent à la fin.
 
 **Cible** : la release qui suivra celle de l'Epic 37 (numéro, CHANGELOG daté, macros des manuels, tag : par Guy).
 
 **Release** : un epic = une release ; **16 stories**. Cet epic **dépasse la borne** de six stories des epics de
 correction ou d'amélioration (c'est une fonctionnalité nouvelle, ce que le kickoff déclare) ; **son découpage en
-plusieurs epics est à décider avec le Project Lead à la soumission** (décision de Beat, 2026-11-16).
+plusieurs epics est à décider avec le Project Lead à la soumission** (décision du responsable de l'epic, 2026-11-16).
 *(Reportée en phase 2 (2026-11-20) — voir § *Phase 1 KISS*.)*
 
 **Règles de travail à plusieurs** (alignement du 2026-11-16, `CLAUDE.md` § *Travailler à plusieurs développeurs*) :
@@ -37,15 +37,15 @@ régénèrent à la release) ; les compteurs (`LIB_ROUTES`, audit des migrations
 `EMPTY_BEFORE_RESET`, `Cargo.lock`, nombre de crates, nombre de contrôles de clôture) se recomptent depuis la source
 après chaque reprise de `main`.
 
-## Phase 1 KISS (décision de Beat du 2026-11-20)
+## Phase 1 KISS (décision du responsable de l'epic du 2026-11-20)
 
 ⛔ **Cette section prime sur tout le reste du fichier.** Ce qui suit à partir de « Modules touchés » est
 l'**historique** de la phase de cadrage du 2026-11-15 au 2026-11-17 ; les décisions qui ne valent plus y sont marquées
-« reportée en phase 2 (2026-11-20) ». Source : la page approuvée par Beat (`data-not-committed/epic-38-kiss.html`,
+« reportée en phase 2 (2026-11-20) ». Source : la page approuvée par le responsable de l'epic (`data-not-committed/epic-38-kiss.html`,
 version 2 du 2026-11-20, hors dépôt) et les notes sans donnée personnelle
 `kesh-gate-logs/epic-38-kiss/paypal-2024-comprendre.md`.
 
-**Pourquoi.** Beat doit rendre sa comptabilité 2025 le **dimanche 2026-11-23**. L'epic de seize stories (coffre des
+**Pourquoi.** le responsable de l'epic doit rendre sa comptabilité 2025 le **dimanche 2026-11-23**. L'epic de seize stories (coffre des
 secrets, client de l'API PayPal, téléchargement planifié, TVA par défaut, groupes d'écritures, relevé joint) ne tient
 pas dans ce délai. La phase 1 garde le chemin le plus court : **un import CSV à la demande, un rapprochement par
 identifiant de transaction, la liste des écarts**, développable en une nuit.
@@ -157,7 +157,7 @@ envisagée au cadrage est abandonnée, validation P1 de 38-11b). DDL seul (P7 sa
 - **Epic 37** (dans `main` depuis la 0.19.0, `70be12a6`) : devise d'un compte, cours retenus
   (`find_company_rate_in_tx`, `exchange_rates.rs:365`), lignes en devise, `create_conversion` (37-3b).
 - **Base** : la branche reprend `main` (fusion du 2026-11-20, `43ceb541`) ; l'Epic 37 y est.
-- **Release** : à convenir avec le Project Lead (un epic = une release). Pour ses livres 2025, Beat ne fait tourner un
+- **Release** : à convenir avec le Project Lead (un epic = une release). Pour ses livres 2025, le responsable de l'epic ne fait tourner un
   build de la branche sur ses données réelles qu'en connaissance de cause : la migration y devient figée (P8), et son
   horodatage doit rester après toute migration de `main` publiée ensuite.
 
@@ -171,7 +171,7 @@ de remboursement et de litige proposées (le reste de 38-6a et 38-6b) ; rattache
 dans Kesh ; Stripe (Epic 40). La migration breaking de l'ancienne 38-2 (O1) et la question Q1 qui en dépendait
 tombent avec elle.
 
-## Phase 2 — téléchargement par l'API PayPal (décisions de Beat du 2026-11-20)
+## Phase 2 — téléchargement par l'API PayPal (décisions du responsable de l'epic du 2026-11-20)
 
 Source : `kesh-gate-logs/epic-38-kiss/phase2-decisions.md`. Deux stories, après la phase 1 (38-11a à 38-11d) :
 
@@ -206,7 +206,7 @@ Source : `kesh-gate-logs/epic-38-kiss/phase2-decisions.md`. Deux stories, après
   jours, 500 par page, trois heures de délai, trois ans d'historique, flux OAuth, 429 `RATE_LIMIT_REACHED`, fuseau du
   compte pour les dates **confirmés** ; `Retry-After`, hôte réel, nom de la fonction de l'application, signe des frais,
   `payer_info` d'un débit, libellés de type du CSV pour chaque code `T…` **non confirmés** — vérifiés au développement
-  par quelques appels réels en lecture seule (`kesh-gate-logs/appel-reel.sh`, autorisation de Beat du 2026-11-20), jamais
+  par quelques appels réels en lecture seule (`kesh-gate-logs/appel-reel.sh`, autorisation du responsable de l'epic du 2026-11-20), jamais
   en test ni en CI. Les libellés des types sont tenus par ceux que lit la phase 1 (`classify` de 38-11c2,
   `PAYPAL_NEUTRAL_PAIR_TYPES` de 38-11b), test de couverture à l'appui.
 - **Plus tard encore** : téléchargement périodique (automatisme), story à part. Fichiers communs : ceux de 38-11b à
@@ -283,7 +283,7 @@ sur un lien bancaire) que 38-2 lève, **pour le seul compte bancaire qui porte d
 ligne `payment_provider_accounts`, posée dans la même transaction que le lien) ; le compte reste `account_kind =
 'bank'`. L'issue promise par D8 s'ouvre avec la PR de l'Epic 37 ; celle de l'Epic 38 la ferme.
 
-## Décisions de Beat reprises (B1–B15, résumé)
+## Décisions du responsable de l'epic reprises (B1–B15, résumé)
 
 B1 un compte Kesh par solde et par devise (comptes en devise de l'Epic 37) · B2 nouveau solde listé et proposé, jamais
 créé d'office · B3 frais à un sous-compte par prestataire et par devise, regroupés sous un compte parent ; transaction
@@ -361,7 +361,7 @@ boutique PayPal = **préfixe du numéro de facture** (`invoice_id`) · B25 Q3 re
 *(Reportée en phase 2 (2026-11-20) — voir § *Phase 1 KISS*.)*
 
 - **E1 — Une connexion, plusieurs comptes.** Table applicative `payment_provider_connections` (société, `provider`
-  `paypal`|…, libellé « PayPal Lightning », `fetch_from` (B8), `schedule` `daily`|`manual` (B9), état du dernier
+  `paypal`|…, libellé « PayPal principal », `fetch_from` (B8), `schedule` `daily`|`manual` (B9), état du dernier
   passage, `created_by_user_id`, **`settings JSON`** — E24). Chaque solde de devise est un **compte bancaire** Kesh ordinaire (`account_kind =
   'bank'`, sans IBAN) qui porte une ligne de **réglages de prestataire** (E11) le rattachant à la connexion, et lié à un
   compte du plan **de la devise du solde** (B1). *Raison* : un jeu de secrets et un téléchargement servent trois
@@ -601,7 +601,7 @@ boutique PayPal = **préfixe du numéro de facture** (`invoice_id`) · B25 Q3 re
   la main ; il est comparé au solde comptable à sa date, et un écart s'ajoute aux contrôles préalables à la clôture
   de l'exercice (`GET /fiscal-years/{id}/closing-checks`, avertissement non bloquant) — **K10** (K9 est celui de
   l'Epic 37, décision du 2026-11-16).
-- **E21 — Rattachement en lot aux écritures existantes (B17).** Les livres 2024 de Beat sont déjà passés par l'API
+- **E21 — Rattachement en lot aux écritures existantes (B17).** Les livres 2024 du responsable de l'epic sont déjà passés par l'API
   (recette de l'Epic 37) ; les transactions téléchargées de 2024 se **rattachent** à ces écritures, sans en créer.
   Socle : le rattachement à une écriture déjà passée (v017-3a, `get_entry_candidates` `reconciliation.rs:6548`,
   `post_link_entry` `:6656`) et le signal « déjà comptabilisée » (34-4, `count_already_booked_for_page`
@@ -656,7 +656,7 @@ boutique PayPal = **préfixe du numéro de facture** (`invoice_id`) · B25 Q3 re
     - **PayPal** : `clientId` (identifiant de l'application REST : non secret chez PayPal, affiché pour reconnaître
       l'application ; le *client secret* va au coffre, E2) ; `payerId` du compte *business*, **seul champ posé par le
       serveur** (« Tester la connexion », 38-7), affiché, et servant à reconnaître un virement entre les deux comptes
-      PayPal de Beat ; `eventKindOverrides` facultatif (code `T…` → genre de mouvement, pour un code que la table de
+      PayPal du responsable de l'epic ; `eventKindOverrides` facultatif (code `T…` → genre de mouvement, pour un code que la table de
       38-8 classe `other` ; 38-8 AC-7) ; `overlapDays` facultatif (recouvrement de relecture, 1 à 30, **défaut 3**,
       O11). Ces deux derniers sont modifiables par le client (`PATCH`). **`accountEmail` retiré** (O10 : aucune API ne
       le rend).
@@ -1116,7 +1116,7 @@ fiches les renumérotent : `FR-38-6c-1..7` → `FR-38-6c1-1..7`, `NFR-38-6c-1..4
 - *Périmètre* : table de correspondance par famille de codes `T00xx` (paiements : vente ou achat selon le signe),
   `T01xx` (frais), `T02xx` (conversion), `T03xx`/`T04xx` (dépôt, retrait banque), `T11xx` (inversions,
   remboursements), `T12xx` (ajustements, rétrofacturations → litige), `T15xx`/`T21xx` (blocages, réserves : ignorés
-  s'ils ne changent pas le solde), le reste → `other` (file). **À valider sur les réponses enregistrées de Beat** :
+  s'ils ne changent pas le solde), le reste → `other` (file). **À valider sur les réponses enregistrées du responsable de l'epic** :
   chaque code relevé reçoit un test. **Boutique (B24)** : `transaction_info.invoice_id` → `invoice_ref` (et
   `reference`), sans transformation ; la règle `invoice_prefix` en lit le début (38-4). Surcharges facultatives
   `eventKindOverrides` aux réglages (E24), à trancher à la fiche.
@@ -1129,7 +1129,7 @@ fiches les renumérotent : `FR-38-6c-1..7` → `FR-38-6c1-1..7`, `NFR-38-6c-1..4
   3. `FR-38-8-3` — `invoice_id` se pose dans `invoice_ref` et `reference` (critère boutique, B24).
   4. `FR-38-8-4` — Un réglage de connexion peut classer un code non couvert (si retenu à la fiche).
 - **NFR**
-  1. `NFR-38-8-1` — Chaque code relevé sur les réponses de Beat a son test ; aucun code inconnu ne devient une vente.
+  1. `NFR-38-8-1` — Chaque code relevé sur les réponses du responsable de l'epic a son test ; aucun code inconnu ne devient une vente.
   2. `NFR-38-8-2` — Classement pur, sans base ni réseau.
 
 ### 38-9a et 38-9b — Écrans
@@ -1258,7 +1258,7 @@ versement rattaché au relevé bancaire comme un virement entre ses comptes (34-
 
 *(Reportée en phase 2 (2026-11-20) — voir § *Phase 1 KISS*.)*
 
-Beat **est assujetti** à la TVA ; sa société sépare la TVA de ses ventes PayPal et Stripe et paie l'impôt sur les
+le responsable de l'epic **est assujetti** à la TVA ; sa société sépare la TVA de ses ventes PayPal et Stripe et paie l'impôt sur les
 acquisitions de ses achats de services à l'étranger. Le report des **dix P1 du jalon « Vague 2 »** reposait sur ceci
 (`CLAUDE.md`, *Priorités des défauts*) : « le seul utilisateur réel de Kesh n'est pas assujetti […] ce report tombe dès
 que Kesh tient, ou est proposé pour tenir, les livres d'un assujetti ». **Cet epic le propose.** Deux constats au code
@@ -1271,13 +1271,13 @@ s'y ajoutent :
 L'impôt sur les acquisitions va à un **compte distinct** (B18, 38-5 : `default_vat_acquisition_account_id`, p. ex.
 2201), ce qui le rend lisible au grand livre en attendant un rapport TVA qui le reprenne (C-38-13).
 
-Beat ne dépose pas de décompte par Kesh cette année et passe la TVA par l'API et ces imports seulement (B6, B15) :
+le responsable de l'epic ne dépose pas de décompte par Kesh cette année et passe la TVA par l'API et ces imports seulement (B6, B15) :
 l'epic **sépare** la TVA dans les écritures, il **ne la déclare pas**. La décision de lever ou de maintenir le report
 des P1 TVA revient à Guy.
 
 ## Révision B16–B21 (2026-11-15)
 
-Sur les décisions de Beat B16–B21 et celles de l'orchestrateur (ex-Q4, Q5, Q7, Q8) :
+Sur les décisions du responsable de l'epic B16–B21 et celles de l'orchestrateur (ex-Q4, Q5, Q7, Q8) :
 
 *(Historique : les points « aucune migration breaking », en-tête `MANUAL`, table enfant à clé inerte et `shop_ref`
 sont remplacés par la révision B22–B26 ci-dessous.)*
@@ -1309,7 +1309,7 @@ sont remplacés par la révision B22–B26 ci-dessous.)*
 
 ## Révision B22–B26 (2026-11-15)
 
-Sur les décisions de Beat B22–B26 (`epics-38-40-cadrage.md`, *Décisions de Beat — suite, après la révision
+Sur les décisions du responsable de l'epic B22–B26 (`epics-38-40-cadrage.md`, *Décisions du responsable de l'epic — suite, après la révision
 B16–B21*) :
 
 - **Une migration breaking, dans 38-3** (B22, E19, C-38-0) : `source_format = 'PROVIDER_API'` (sans DDL) et
@@ -1361,14 +1361,14 @@ d'`invoice_id`, B24), **Q11** (`PROVIDER_API` retenu, B22).
 - Méthode du dépôt (`CLAUDE.md`) : fiche → validation en boucle → développement → revue en boucle (Sonnet ↔ Opus pour
   les passes complètes, passe ciblée en fin de boucle), gate local complet avant la PR ; splitting préventif (≤ 5
   modules par story).
-- **Production** : l'instance de Beat n'est jamais écrite par le travail de cet epic. Recette sur ses comptes PayPal
+- **Production** : l'instance du responsable de l'epic n'est jamais écrite par le travail de cet epic. Recette sur ses comptes PayPal
   réels, avec une application REST en lecture seule (*Transaction Search*), sur une **instance jetable** (B12).
 - Aucun appel réseau en CI ; aucune réponse réelle non anonymisée dans le dépôt.
 - On trace toujours : un défaut voisin non traité se note au registre (C-38-13), pour devenir une issue avec la PR.
 
 ## Arbitrages de l'orchestrateur après la rédaction des fiches (2026-11-15)
 
-Questions des fiches tranchées par l'orchestrateur (Beat peut les contester ; Q-6b-1 et Q-38-6c-1 lui sont posées —
+Questions des fiches tranchées par l'orchestrateur (le responsable de l'epic peut les contester ; Q-6b-1 et Q-38-6c-1 lui sont posées —
 *annoté le 2026-11-15 : closes par B27 et B28, § Révision B27–B28*) :
 
 - **O1 — Migration breaking déplacée en 38-2.** Un compte `bank` exige un IBAN (`chk_bank_accounts_bank_has_iban`,
@@ -1398,7 +1398,7 @@ Questions des fiches tranchées par l'orchestrateur (Beat peut les contester ; Q
   connecteur** ; la pagination PayPal commence à 1 (`page` par défaut 1 dans la doc Transaction Search) — à constater
   sur les réponses enregistrées.
 - **O11** — 38-8 : les deux moitiés d'une conversion se relient par `paypal_reference_id` (à constater sur les réponses
-  de Beat) ; un paiement en attente au-delà du recouvrement de trois jours est relu par un recouvrement réglable ;
+  du responsable de l'epic) ; un paiement en attente au-delà du recouvrement de trois jours est relu par un recouvrement réglable ;
   surcharge `ignore` gardée ; `refund_origin_missing` est **calculé** (38-6b), jamais écrit (38-8 à aligner).
 - **O12** — 38-9a : routes des soldes vus et de l'historique des passages arrêtées par 38-3 (désormais 38-3b) ; 38-9b :
   période par défaut du rattachement en lot = l'exercice ouvert le plus ancien.
@@ -1426,7 +1426,7 @@ Liste : `implementation-artifacts/38-p1-inter-fiches.md`.
 
 ## Révision B27–B28 (2026-11-15)
 
-Sur les décisions de Beat B27 et B28 (`epics-38-40-cadrage.md`, *questions de la rédaction*) ; ferme Q-6b-1 et
+Sur les décisions du responsable de l'epic B27 et B28 (`epics-38-40-cadrage.md`, *questions de la rédaction*) ; ferme Q-6b-1 et
 Q-38-6c-1.
 
 | Décision | Effet | Fiches et sections touchées |
@@ -1474,7 +1474,7 @@ clôture du relevé joint passé de K9 à K10 (l'Epic 37 prend K9) ; PDF des man
 
 ## Point du 2026-11-16 — Epic 36 et règles de Guy
 
-- **Nombre de stories** : Guy accepte que l'Epic 38 garde plus de stories que la borne de six (accord transmis par Beat
+- **Nombre de stories** : Guy accepte que l'Epic 38 garde plus de stories que la borne de six (accord transmis par le responsable de l'epic
   le 2026-11-16). Le découpage reste celui des fiches, et l'epic sort en **une seule release** (« un epic = une
   release »).
 - **38-6c2 et #823 (36-6)** : Guy annonce que la base de données et l'API de « une transaction, plusieurs écritures »
@@ -1495,7 +1495,7 @@ clôture du relevé joint passé de K9 à K10 (l'Epic 37 prend K9) ; PDF des man
 
 ## Point du 2026-11-17 — release 0.19.0 de Guy, règles de `main`, Epic 37 terminé
 
-- **Epic 37 terminé** (six stories, gates et E2E verts), proposé par Beat pour la **0.19.0** (vendredi 2026-11-20),
+- **Epic 37 terminé** (six stories, gates et E2E verts), proposé par le responsable de l'epic pour la **0.19.0** (vendredi 2026-11-20),
   en second arrivé derrière l'Epic 43 de Guy ; intégration de `main` (v0.18.0) en cours dans `epic/37-multi-devises`.
 - **#823 = Epic 43 de Guy**, priorité de la 0.19.0 : une transaction bancaire règle plusieurs factures, fournisseurs
   et clients. Intention (plan `release-0.19.0.md`, à confirmer à sa fiche) : lever ou remplacer
@@ -1513,5 +1513,5 @@ clôture du relevé joint passé de K9 à K10 (l'Epic 37 prend K9) ; PDF des man
 - **Montants** : la règle du montant ambigu (« 1.250 » refusé, apostrophe des milliers admise, 36-3 / 36-18a)
   s'applique aux champs de montant des écrans 38-9a et 38-9b (soldes de contrôle, relevés joints) : réemployer
   l'utilitaire commun.
-- **Coordination** : un canal de courriel signé entre l'agent de Beat et celui de Guy est à l'essai depuis le
-  2026-11-17 (`agent-kesh@lightning-multicom.com`) ; rien ne part sans l'accord de Beat.
+- **Coordination** : un canal de courriel signé entre l'agent du responsable de l'epic et celui de Guy est à l'essai depuis le
+  2026-11-17 (adresse de l'agent) ; rien ne part sans l'accord du responsable de l'epic.

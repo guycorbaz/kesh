@@ -3,7 +3,7 @@
 Status: deferred — reportée le 2026-11-20 après la phase 2 de l'Epic 40 (voir le registre du fichier d'epic)
 
 - **Epic** : 40 (`_bmad-output/planning-artifacts/epic-40-stripe.md`, § *40-5*, G13, C-40-0, C-40-2 (d), C-40-6) ;
-  décisions de Beat **B10** (Stripe : pas de PDF, rapports joints à la main) et **B20** (le relevé est la somme de
+  décisions du responsable de l'epic **B10** (Stripe : pas de PDF, rapports joints à la main) et **B20** (le relevé est la somme de
   contrôle), `epics-38-40-cadrage.md`, qui priment.
 - **Dépend de** : **38-10** seulement (table `bank_account_documents`, routes `…/documents`, K10, dialogue
   `BankAccountDocumentsDialog.svelte`) — ordre de l'epic : « 40-5 dès 38-10, en parallèle ». Rien de 40-1 à 40-4 n'est

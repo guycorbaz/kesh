@@ -1,22 +1,22 @@
 # Epic 40 — Compte Stripe : import du rapport, rapprochement avec les ventes des boutiques, versements
 
-**Refonte du 2026-11-20 (décision de Beat) : phase 1 KISS, puis phase 2.** Ce qui suit, jusqu'à la section
+**Refonte du 2026-11-20 (décision du responsable de l'epic) : phase 1 KISS, puis phase 2.** Ce qui suit, jusqu'à la section
 *Historique*, fait foi ; le cadrage du 2026-11-15 est conservé plus bas, marqué « remplacé (2026-11-20) ». Branche
 `epic/40-stripe` (fusion de `origin/main` du 2026-11-20 : `7dcb54ab`, arbre de `main` repris, fiches et blocs des Epics
-38 à 40 gardés). Modèle : la refonte KISS de l'Epic 38 (PayPal), page approuvée par Beat le 2026-11-20 et décisions de sa
+38 à 40 gardés). Modèle : la refonte KISS de l'Epic 38 (PayPal), page approuvée par le responsable de l'epic le 2026-11-20 et décisions de sa
 phase 2 (hors dépôt). Notes sans donnée personnelle sur la chaîne Stripe de 2024 :
-`kesh-gate-logs/epic-39-40-kiss/wise-stripe-2024-comprendre.md` (hors dépôt) ; les données réelles 2024 de Beat ne sont
+`kesh-gate-logs/epic-39-40-kiss/wise-stripe-2024-comprendre.md` (hors dépôt) ; les données réelles 2024 du responsable de l'epic ne sont
 ni copiées ni citées ici.
 
-**Numéro : 40** (attribué à Beat). **Un epic = une release**, phase 1 puis phase 2 dans la même branche ; si la phase 1
+**Numéro : 40** (attribué au responsable de l'epic). **Un epic = une release**, phase 1 puis phase 2 dans la même branche ; si la phase 1
 doit sortir seule, elle se découpe en epic au kickoff (règle « un epic = une release », à Guy). Une PR vers le dépôt de
 Guy, après celles des Epics 37 (fait, v0.19.0), 38 et 39.
 
-## Décisions de Beat (2026-11-19/20) — règles communes aux Epics 38 à 40
+## Décisions du responsable de l'epic (2026-11-19/20) — règles communes aux Epics 38 à 40
 
 - **Les ventes viennent des boutiques** : la boutique (www) passe la vente — débit du **compte de transit Stripe** de la
   devise (p. ex. 1120/1121/1122, réglages), crédit des ventes — avec l'**identifiant Stripe de la charge** (`ch_…`) dans le
-  libellé. Elles entrent dans Kesh par la voie que Beat a choisie pour les boutiques (script sur l'API existante, comme
+  libellé. Elles entrent dans Kesh par la voie que le responsable de l'epic a choisie pour les boutiques (script sur l'API existante, comme
   pour PayPal, R1 de la page de l'Epic 38) ; Kesh ne les crée pas depuis Stripe.
 - **L'import Stripe rattache chaque charge à la vente de la boutique** par identifiant + brut + devise ; il **écrit les
   frais** (compte de frais de la devise) et le **versement** (net du payout, vers le compte bancaire réglé : Wise EUR/USD
@@ -194,11 +194,11 @@ en propre : sa conversion, son jeu d'étapes, ses codes `<PRESTATAIRE>_*` propre
 
 ## Questions et points douteux (2026-11-20)
 
-- **Q-40-K1 — Colonne `source_id`** (Beat) : le rapport de 2024 n'a pas la colonne de l'objet lié ; pour 2025, il faut
+- **Q-40-K1 — Colonne `source_id`** (responsable) : le rapport de 2024 n'a pas la colonne de l'objet lié ; pour 2025, il faut
   l'exporter avec `source_id` (ou `charge_id`). Sans elle, aucun rattachement n'est possible : la phase 1 refuse le
   fichier en disant comment l'ajouter. À vérifier sur un export réel.
 - **Q-40-K2 — « Sans conversion automatique »** — **décidée par l'orchestrateur (2026-11-20)** : montants en devise d'origine,
-  CHF au cours mensuel retenu par la société (Epic 37), comme toute écriture en devise. Si Beat voulait dire autre chose
+  CHF au cours mensuel retenu par la société (Epic 37), comme toute écriture en devise. Si le responsable de l'epic voulait dire autre chose
   (p. ex. aucune valeur CHF), le modèle de l'Epic 37 ne le permet pas.
 - **Q-40-K3 — Compte de frais en devise ou en CHF** : 38-11b admet les deux (une écriture ne porte qu'une devise
   étrangère) ; 2024 avait un compte de frais par devise.
@@ -226,12 +226,12 @@ en propre : sa conversion, son jeu d'étapes, ses codes `<PRESTATAIRE>_*` propre
 | 40-5-rapports-joints | deferred | suit 38-10, elle-même reportée |
 | 40-6-ecrans-et-manuels | superseded | remplacée par 40-7d et 40-8b |
 
-## Taille de l'epic — décision de kickoff (Beat, 2026-11-20)
+## Taille de l'epic — décision de kickoff (responsable, 2026-11-20)
 
 Le cadrage KISS du 2026-11-20 **est le kickoff** de l'Epic 40 tel qu'il se livre ; il remplace celui du 2026-11-15
 (six stories, conservé en historique). Sept stories, story de solde comprise (40-7a à 40-7d, 40-8a, 40-8b, 40-9) :
 au-delà de la borne de six de `CLAUDE.md` (§ *Numérotation des versions*), admis pour une **fonctionnalité nouvelle**
-(l'import Stripe, une seule fonctionnalité livrée en un epic). Décision de Beat du 2026-11-20 : « même avec 7 ou 8
+(l'import Stripe, une seule fonctionnalité livrée en un epic). Décision du responsable de l'epic du 2026-11-20 : « même avec 7 ou 8
 stories, c'est d'accord ». Story de solde : **40-9**, plafond de **5 issues** de la dette des stories de l'epic.
 
 ## Règles de cet epic (inchangées)
@@ -239,7 +239,7 @@ stories, c'est d'accord ». Story de solde : **40-9**, plafond de **5 issues** d
 Méthode du dépôt (`CLAUDE.md`) : fiche → validation en boucle → développement → revue en boucle ; au plus cinq modules
 par story ; aucune ligne au `CHANGELOG.md` dans la branche (chaque fiche porte sa **Note de version**) ; manuels en
 `.tex` seulement ; compteurs recomptés après chaque reprise de `main` ; aucune donnée réelle, aucune clé, aucun appel
-réseau en CI ni par un agent ; l'instance de Beat n'est jamais écrite par ce travail ; un appariement automatique
+réseau en CI ni par un agent ; l'instance du responsable de l'epic n'est jamais écrite par ce travail ; un appariement automatique
 **propose** (la réception d'un versement se confirme par l'utilisateur) ; on trace toujours.
 
 ---
@@ -252,12 +252,12 @@ sont `superseded` ou `deferred` (registre ci-dessus).*
 
 ## Cadrage du 2026-11-15, « Epic 40 — Compte Stripe : téléchargement, imputation et versements » — remplacé (2026-11-20)
 
-**Cadrage : 2026-11-15** (branche `epic/40-stripe`, issue de `epic/39-wise`). Demande de Beat (contributeur),
+**Cadrage : 2026-11-15** (branche `epic/40-stripe`, issue de `epic/39-wise`). Demande du responsable de l'epic (contributeur),
 décisions B1–B28 de `epics-38-40-cadrage.md`, qui **priment** sur ce fichier ; pour Stripe : B3, B4, B6, **B13**
 (compte intermédiaire « Débiteurs Stripe » par devise), B10 (rapports joints à la main), B12, B14. Socle : l'**Epic 38**
 (`epic-38-paypal.md`, validé, seize fiches `ready-for-dev`), dont les décisions E*, O*, D-P1-*, D-P2-* valent ici sans
 être répétées ; l'**Epic 39** (`epic-39-wise.md`, projet) pour ses amendements additifs du socle (C-39-2), repris s'il
-est développé avant. Kickoff (décomptes, validation de ce fichier, **recette sur le compte Stripe de Beat**) :
+est développé avant. Kickoff (décomptes, validation de ce fichier, **recette sur le compte Stripe du responsable de l'epic**) :
 `40-0-kickoff`.
 
 **Aucune migration** : comme pour Wise (F15), tout entre dans des colonnes existantes à domaine ouvert (E4) —
@@ -266,15 +266,15 @@ est développé avant. Kickoff (décomptes, validation de ce fichier, **recette 
 et `mime_type` (38-10). `kesh_version_min_required` inchangé ; P5–P8 sans objet. Une fiche qui découvre un besoin de
 DDL s'arrête et le dit (C-40-0).
 
-**Numéro : 40, confirmé** (attribué à Beat, `docs/developpement-a-plusieurs.md` § 2 ; Q-40-1 close). Une branche par story,
-fusionnée localement dans `epic/40-stripe`, puis **une PR** vers le dépôt de Guy (remote `beat`), **après celles des
+**Numéro : 40, confirmé** (attribué au responsable de l'epic, `docs/developpement-a-plusieurs.md` § 2 ; Q-40-1 close). Une branche par story,
+fusionnée localement dans `epic/40-stripe`, puis **une PR** vers le dépôt de Guy (remote du contributeur), **après celles des
 Epics 37, 38 et 39**. Pas d'issue GitHub à ce stade ; issues et PR à la fin.
 
 **Cible** : la release de l'Epic 38 ou une suivante (aucune migration, aucun relèvement) — à Guy (Q-40-release).
 
 ## Intention — remplacé (2026-11-20)
 
-La société de Beat encaisse par Stripe en **CHF, EUR et USD** (règlement multi-devises : un solde Stripe par devise).
+La société du responsable de l'epic encaisse par Stripe en **CHF, EUR et USD** (règlement multi-devises : un solde Stripe par devise).
 Kesh télécharge chaque jour (ou à la demande, B9) les **transactions de solde** de chaque devise — paiements,
 remboursements, litiges, frais Stripe, versements —, les classe et les **propose** : une vente se passe **à la date de la
 charge** au **compte intermédiaire « Débiteurs Stripe »** de la devise (1101 CHF, 1102 EUR, 1103 USD), produit hors TVA
@@ -347,7 +347,7 @@ compte intermédiaire est une **créance** sur Stripe, contrôlée contre le sol
 - **Non lus** : droits exacts d'une clé restreinte par ressource (noms à constater, Q-40-8) ; règles de version de l'API
   (`Stripe-Version`) au-delà de l'en-tête de l'exemple (`2026-10-28.endive`) ; table des devises à zéro décimale.
 
-## Réponses réelles observées (compte de test de Beat, 2026-11-15) — relevé du 2026-11-15, toujours utile à la phase 2
+## Réponses réelles observées (compte de test du responsable de l'epic, 2026-11-15) — relevé du 2026-11-15, toujours utile à la phase 2
 
 Relevées par l'orchestrateur en **mode test** (aucun argent réel ; `livemode: false`), hors dépôt :
 `data-not-committed/stripe-test-samples/` (`balance.json`, `balance_transactions.json` avec `expand data.source`,
@@ -443,7 +443,7 @@ l'API).
   transaction de solde est la seule source qui dit le mouvement **net** du solde, ses frais et sa date ; les objets
   charge, remboursement ou versement ne servent qu'à l'enrichir (expansion).
 - **G4 — Clé restreinte en lecture seule, et rien d'autre.** Le secret est une clé restreinte : `rk_live_…` **et**
-  `rk_test_…` sont admises (décision P40-1 : le compte de test de Beat sert à la recette) ; `PROVIDER_SECRET_NOT_RESTRICTED`
+  `rk_test_…` sont admises (décision P40-1 : le compte de test du responsable de l'epic sert à la recette) ; `PROVIDER_SECRET_NOT_RESTRICTED`
   (400) ne vise que `sk_…` (elle peut tout faire sur le compte), `pk_…` et les préfixes inconnus. Le **mode**
   (`livemode`) est lu de la clé, montré à l'écran, posé aux réglages par le premier « Tester » réussi ou le premier
   passage, puis **gardé** : une clé de l'autre mode est refusée tant que la connexion a des transactions téléchargées
@@ -495,7 +495,7 @@ l'API).
   **Aucun type inconnu ne devient une vente** (patron NFR-38-8-1). Une transaction de solde dont `balance_type` n'est
   pas `payments` (ni absent) n'est **pas un mouvement du compte** : comptée `skipped.non_balance`, non écrite (elle ne
   change pas `available + pending`, G5). Surcharges `eventKindOverrides` (patron 38-8 AC-7), clés = codes courts, sur les
-  seuls codes classés `other`. La table se confirme type par type sur les réponses de Beat (40-0).
+  seuls codes classés `other`. La table se confirme type par type sur les réponses du responsable de l'epic (40-0).
 - **G10 — Le versement : un virement vers la banque, daté de son arrivée.** Un `payout` est un `withdrawal` de 38-6b
   (C-38-6b-3), **inchangé dans ses deux voies** — rattacher l'écriture passée côté banque (voie a), ou créer
   `D 1020 / C 1101` et laisser la ligne UBS s'y rattacher (voie b, 34-11b) —, **à une différence** : le mouvement porte
@@ -509,7 +509,7 @@ l'API).
   *Raison* : la créance sur Stripe (B13) s'éteint quand l'argent est en banque ; dater l'écriture de la sortie Stripe
   gonflerait UBS au 31 décembre d'un montant que son relevé n'a pas (contrôle K3 faux), la dater de l'arrivée laisse le
   montant en route dans « Débiteurs Stripe », ce que B13 appelle créance. Deux écritures par un compte de transit (1090)
-  sont écartées, comme en 34-11b (C-e341-22) : double saisie sans gain. *Contestable par Beat* (Q-40-4).
+  sont écartées, comme en 34-11b (C-e341-22) : double saisie sans gain. *Contestable par le responsable de l'epic* (Q-40-4).
 - **G11 — Versement échoué ou annulé : à examiner.** `payout_failure` / `payout_cancel` rend l'argent au solde Stripe ;
   si le versement avait déjà son écriture, la défaire est un geste humain (annulation du rapprochement, 34-11b) : genre
   `other`, motif `unknown_event`, `related_provider_tx_id` = le versement d'origine (G6). Un versement dit `paid` qui
@@ -552,7 +552,7 @@ l'API).
   nul partout ; reste à constater en mode réel, Q-40-3) ; un paiement présenté dans une
   autre devise est converti par Stripe **à la charge** : Kesh passe le montant de la devise de règlement, la TVA tirée de
   ce brut (B20 : tels que rapportés ; l'écart d'arrondi avec la TVA calculée par la boutique dans la devise présentée est
-  assumé et dit au manuel). Aucune paire de conversion ; une conversion entre soldes Stripe (si Beat en fait) arrive en
+  assumé et dit au manuel). Aucune paire de conversion ; une conversion entre soldes Stripe (si le responsable de l'epic en fait) arrive en
   `other` (Q-40-11).
 
 ## Registre des contrats — remplacé (2026-11-20)
@@ -602,7 +602,7 @@ l'API).
 
 | Story | Objet | Modules (≤ 5) | Dépend de | Migration |
 |---|---|---|---|---|
-| 40-0 | kickoff : décomptes, validation de ce fichier, **recette sur le compte Stripe de Beat** (clé restreinte, droits, réponses anonymisées) | — | — | — |
+| 40-0 | kickoff : décomptes, validation de ce fichier, **recette sur le compte Stripe du responsable de l'epic** (clé restreinte, droits, réponses anonymisées) | — | — | — |
 | 40-1 | client Stripe : réglages, clé restreinte, version épinglée, « Tester », transactions de solde par curseur, soldes et devises du compte | `kesh-providers` (stripe), `kesh-core` (réglages), `kesh-api` (secrets, fabrique, `_test`), `kesh-i18n` | Epic 38, 40-0 | aucune |
 | 40-2 | classement des types en mouvements : genres, codes courts, montants, liens, boutique, surcharges | `kesh-providers` (stripe::classify), `kesh-core` (surcharges) | 40-1 | aucune |
 | 40-3 | versements : `value_date`, écriture datée de l'arrivée, rattachement à la ligne UBS, échecs | `kesh-providers` (type), `kesh-api` (passage, reconciliation), `kesh-reconciliation`, `kesh-db` | 40-2, 38-6b, 38-6c1 | aucune |
@@ -635,7 +635,7 @@ réseau en CI, recette visuelle) ne s'y répètent que là où la story les port
   confirment G3 à G14.
 - *Périmètre* : décomptes (§ *Priorités des défauts*) ; validation en boucle ; **recette en mode test déjà faite**
   (§ *Réponses réelles observées*) — ses réponses servent de base aux fixtures, identifiants remplacés (G16) ;
-  **recette en mode réel par Beat, hors de Kesh et hors du dépôt**, avec une clé `rk_live_` en lecture seule, pour ce
+  **recette en mode réel par le responsable de l'epic, hors de Kesh et hors du dépôt**, avec une clé `rk_live_` en lecture seule, pour ce
   que le mode test n'a pas montré : droits minimaux d'une clé restreinte (Q-40-8), `GET /v1/balance_transactions` d'un
   mois réel (expansion `data.source`), versements **automatiques** et leurs devises et destinations (Q-40-3), champ de
   la boutique dans les paiements de WHMCS et CB Paid Subscriptions (Q-40-2), historique servi (Q-40-7), conversion au
@@ -645,7 +645,7 @@ réseau en CI, recette visuelle) ne s'y répètent que là où la story les port
 - **FR**
   1. `FR-40-0-1` — Compter issues et bugs, écrire au fichier le compte du tag précédent et l'objectif du tag.
   2. `FR-40-0-2` — Valider ce fichier en boucle jusqu'à une passe sans finding au-dessus de LOW.
-  3. `FR-40-0-3` — Consigner la recette de Beat (droits de la clé, transactions de solde, soldes, versement, boutique) et
+  3. `FR-40-0-3` — Consigner la recette du responsable de l'epic (droits de la clé, transactions de solde, soldes, versement, boutique) et
      ses constats ; aucune fiche ne se développe sans elle.
 - **NFR**
   1. `NFR-40-0-1` — Décomptes recomptés à la source, commande et périmètre écrits avec le nombre.
@@ -702,7 +702,7 @@ réseau en CI, recette visuelle) ne s'y répètent que là où la story les port
   6. `FR-40-2-6` — Un réglage de connexion peut classer un code que la table met en `other`.
 - **NFR**
   1. `NFR-40-2-1` — Classement pur, sans base, réseau ni horloge.
-  2. `NFR-40-2-2` — Un test par type relevé sur les réponses de Beat ; aucun type inconnu ne devient une vente.
+  2. `NFR-40-2-2` — Un test par type relevé sur les réponses du responsable de l'epic ; aucun type inconnu ne devient une vente.
   3. `NFR-40-2-3` — Somme des nets d'une fenêtre = variation du solde `available + pending` (test sur fixtures).
 
 ### 40-3 — Versements et rattachement à la ligne UBS
@@ -857,21 +857,21 @@ Alignements inter-fiches issus de la validation P2 des fiches 40-1 à 40-6, repo
 
 ## Questions ouvertes — remplacé (2026-11-20)
 
-- **Q-40-1 — Numéro** : **close** — 40 est attribué à Beat (`docs/developpement-a-plusieurs.md` § 2).
-- **Q-40-2 — Boutique (Beat, recette)** : où WHMCS et CB Paid Subscriptions posent-ils le numéro de facture dans
+- **Q-40-1 — Numéro** : **close** — 40 est attribué au responsable de l'epic (`docs/developpement-a-plusieurs.md` § 2).
+- **Q-40-2 — Boutique (responsable, recette)** : où WHMCS et CB Paid Subscriptions posent-ils le numéro de facture dans
   Stripe — `description` (« Invoice #… »), une clé de `metadata`, autre ? Défaut proposé : `metadata:invoice`, la forme
   des paiements de test (G14).
-- **Q-40-3 — Versements EUR et USD (Beat)** : vers quel compte — UBS en devise, Wise EUR/USD (1035, 1036 : virement entre
+- **Q-40-3 — Versements EUR et USD (responsable)** : vers quel compte — UBS en devise, Wise EUR/USD (1035, 1036 : virement entre
   deux comptes prestataires), ou pas de versement (solde qui s'accumule) ? Le règlement multi-devises est-il activé, ou
   Stripe convertit-il tout en CHF ?
-- **Q-40-4 — Date de l'écriture du versement (Beat)** : G10 la date de l'arrivée en banque (créance jusque-là) ; la
+- **Q-40-4 — Date de l'écriture du versement (responsable)** : G10 la date de l'arrivée en banque (créance jusque-là) ; la
   sortie du solde Stripe est l'autre choix. Comment les livres 2024 l'ont-ils daté ? (Le rattachement en lot n'a pas de
   fenêtre de date : il marche dans les deux cas.)
-- **Q-40-5 — TVA sur les frais (Beat, Guy)** : les frais Stripe (Stripe Payments Europe, Irlande) et PayPal
+- **Q-40-5 — TVA sur les frais (responsable de l'epic, Guy)** : les frais Stripe (Stripe Payments Europe, Irlande) et PayPal
   (Luxembourg) sont des services de l'étranger : impôt sur les acquisitions (B6, B18) ? Le socle passe les frais **sans
   TVA** (38-6a) ; un `fee_details` de type `tax` dit-il une TVA prélevée par Stripe ? Tracé (C-40-7) en attendant.
-- **Q-40-6 — Réserves, solde minimum, litiges (Beat)** : en a-t-il ? Classés `other` (G9) ; à reprendre si fréquents.
-- **Q-40-7 — Historique et 2024 (recette, Beat)** : jusqu'où remonte la liste ; les frais Stripe de 2024 sont-ils, comme
+- **Q-40-6 — Réserves, solde minimum, litiges (responsable)** : en a-t-il ? Classés `other` (G9) ; à reprendre si fréquents.
+- **Q-40-7 — Historique et 2024 (recette, le responsable de l'epic)** : jusqu'où remonte la liste ; les frais Stripe de 2024 sont-ils, comme
   ceux de PayPal, des écritures à part (B28 : groupe d'écritures de 38-6c2) ?
 - **Q-40-8 — Droits de la clé (recette)** : droits *Read* minimaux pour `balance`, `balance_transactions`, l'expansion
   des sources (charges, paiements, remboursements, versements, litiges) et `GET /v1/account` ; noms exacts au tableau de
@@ -879,13 +879,13 @@ Alignements inter-fiches issus de la validation P2 des fiches 40-1 à 40-6, repo
 - **Q-40-release — Release (Guy)** : sans migration, avec la release de l'Epic 38 ou après.
 - **Q-40-10 — Liquidité (Guy)** : un compte bancaire Kesh lié à une créance (1101–1103) doit-il apparaître dans les
   totaux de trésorerie de l'accueil, ou en être écarté ? (40-4 recense, Guy tranche.)
-- **Q-40-11 — Conversions entre soldes Stripe (Beat)** : en fait-il ? Sinon G19 suffit.
+- **Q-40-11 — Conversions entre soldes Stripe (responsable)** : en fait-il ? Sinon G19 suffit.
 
 ## Règles de cet epic — remplacé (2026-11-20)
 
 - Méthode du dépôt (`CLAUDE.md`) : fiche → validation en boucle → développement → revue en boucle, gate local complet
   avant la PR ; splitting préventif (≤ 5 modules par story).
-- **Production** : l'instance de Beat n'est jamais écrite par le travail de cet epic ; la recette sur son compte Stripe
+- **Production** : l'instance du responsable de l'epic n'est jamais écrite par le travail de cet epic ; la recette sur son compte Stripe
   réel se fait hors de Kesh ou sur une **instance jetable**, avec une clé restreinte en lecture qu'il peut révoquer.
 - Aucun appel réseau en CI ni par un agent ; aucune réponse réelle non anonymisée ni aucune clé dans le dépôt.
 - Un appariement automatique **propose**, il ne crée jamais : le versement ne se rattache à la ligne UBS que par le geste

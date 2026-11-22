@@ -2,13 +2,13 @@
 
 Status: deferred
 
-*(2026-11-20 — reportée en phase 2 par la décision de Beat (phase 1 KISS, § « Phase 1 KISS » du fichier d'epic) ; validée le 2026-11-15, gardée telle quelle comme base de la phase 2. Ce qu'en reprend la phase 1 est dit dans les fiches 38-11a à 38-11d.)*
+*(2026-11-20 — reportée en phase 2 par la décision du responsable de l'epic (phase 1 KISS, § « Phase 1 KISS » du fichier d'epic) ; validée le 2026-11-15, gardée telle quelle comme base de la phase 2. Ce qu'en reprend la phase 1 est dit dans les fiches 38-11a à 38-11d.)*
 
 *Fiche née le 2026-11-15 du découpage de 38-6c (D-P2-3, `38-p2-inter-fiches.md`) : elle en porte les AC-1 à AC-11,
 dans leur ordre et sous leur numéro ; le groupe d'écritures (B28 : table, paires, annulation) va en **38-6c2**.
 Historique, rédaction, validations P1 et P2 : `38-6c-rattachement-en-lot-et-api.md` (`split`). Branche
 `epic/38-paypal`, numéros de ligne relevés sur `8b3d548d`. Epic 38 (`_bmad-output/planning-artifacts/epic-38-paypal.md`) :
-E3, E11, E15, E21, E22, E23, C-38-12, C-38-14 ; décisions de Beat B17, B21. **Dépend de 38-3a** (colonnes
+E3, E11, E15, E21, E22, E23, C-38-12, C-38-14 ; décisions du responsable de l'epic B17, B21. **Dépend de 38-3a** (colonnes
 `provider_tx_id`, `invoice_ref` de `bank_transactions`, C-38-4 ; comptes prestataires porteurs de transactions) et, à
 travers elle, de **38-2** (compte bancaire lié à un compte du plan **en devise**, levée de C-37-9, E11) et de
 l'**Epic 37** (37-1 : `accounts.currency` ; 37-3a : `journal_entry_lines.amount_currency` toujours positif, sens porté
@@ -103,7 +103,7 @@ Reprises de la fiche d'epic (§ 38-6c), complétées là où un AC l'exige ; ren
 ## Questions ouvertes
 
 - *Close* — **Q-38-6c-1** (frais PayPal de 2024 : ligne de l'écriture de vente, ou écriture à part ?) : **écritures à
-  part**, B28 (Beat, 2026-11-15) ; traité en 38-6c2.
+  part**, B28 (responsable, 2026-11-15) ; traité en 38-6c2.
 
 ## Critères d'acceptation
 

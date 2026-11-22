@@ -2,9 +2,9 @@
 
 Status: deferred
 
-*(2026-11-20 — reportée en phase 2 par la décision de Beat (phase 1 KISS, § « Phase 1 KISS » du fichier d'epic) ; validée le 2026-11-15, gardée telle quelle comme base de la phase 2. Ce qu'en reprend la phase 1 est dit dans les fiches 38-11a à 38-11d.)*
+*(2026-11-20 — reportée en phase 2 par la décision du responsable de l'epic (phase 1 KISS, § « Phase 1 KISS » du fichier d'epic) ; validée le 2026-11-15, gardée telle quelle comme base de la phase 2. Ce qu'en reprend la phase 1 est dit dans les fiches 38-11a à 38-11d.)*
 
-- **Epic** : 38 (`_bmad-output/planning-artifacts/epic-38-paypal.md`, § *38-6b*, E7, E16, C-38-8, C-38-9) ; décisions de Beat
+- **Epic** : 38 (`_bmad-output/planning-artifacts/epic-38-paypal.md`, § *38-6b*, E7, E16, C-38-8, C-38-9) ; décisions du responsable de l'epic
   B4, B7, B20 (`epics-38-40-cadrage.md`), qui priment.
 - **Dépend de** : **38-6a** (chemin prestataire de `get_proposals`, variante `provider`, constructeur `build_provider_entry`,
   codes de C-38-8), **38-6c1** (rattachement en devise, `link_entry_in_tx` en devise, diagnostic du lot, C-38-14),
@@ -432,7 +432,7 @@ afin que **tout mouvement qui change un solde finisse comptabilisé, sans qu'auc
 
 ## Questions ouvertes
 
-- *Close* — **Q-6b-1** (frais donnés à part sur la moitié créditée d'une conversion) : tranchée par **B27** (Beat,
+- *Close* — **Q-6b-1** (frais donnés à part sur la moitié créditée d'une conversion) : tranchée par **B27** (le responsable de l'epic,
   2026-11-15) — au compte de frais de la devise, jamais dans la différence —, rendue possible par **A33** (37-3b). Voir
   Écart 2.
 

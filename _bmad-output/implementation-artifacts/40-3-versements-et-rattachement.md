@@ -4,7 +4,7 @@ Status: superseded — remplacée le 2026-11-20 par la refonte KISS de l'Epic 40
 
 *Fiche rédigée le 2026-11-15 (Opus), branche `epic/40-stripe`, numéros de ligne relevés au commit `a2b1da9c`. Epic 40
 (`planning-artifacts/epic-40-stripe.md`) : G1, G10, G11, G12 (créance au 31 décembre), G15, G18 ; contrats C-40-0,
-**C-40-2 (a, b)**, **C-40-5**, C-40-6 ; décisions de Beat B13, B17, B20. **Dépend de** 40-2 (genre `withdrawal`,
+**C-40-2 (a, b)**, **C-40-5**, C-40-6 ; décisions du responsable de l'epic B13, B17, B20. **Dépend de** 40-2 (genre `withdrawal`,
 `value_date` = date d'arrivée, lien d'un échec de versement), 40-1 (`ProviderMovement.value_date`, sa validation), et du
 socle : 38-3b (passage, correspondance des colonnes), 38-6a (C-38-6a-10 : date de l'écriture), **38-6b** (C-38-6b-3 :
 retrait, voies a et b ; file, AC-6), **38-6c1** (rattachement en devise et en lot), 34-11b (virement entre ses comptes,
@@ -146,7 +146,7 @@ soit juste et que rien ne soit compté deux fois ni écrit sans moi.
    rattache par **sa** voie (a) (38-6b, `deposit`) — test avec un `FakeConnector` qui rend un `deposit` +X EUR sur le second
    compte prestataire, daté dans la fenêtre `[d − 5, d]` du dépôt.
 6. **AC-6 — Versements de 2024 rattachés en lot (FR-40-3-5, B17, 38-6c1).** Les versements Stripe de 2024 passés par
-   l'API (écritures `D 1020 / C 1101` existantes, datées par Beat — date de sortie ou d'arrivée, Q-40-4) : la proposition
+   l'API (écritures `D 1020 / C 1101` existantes, datées par le responsable de l'epic — date de sortie ou d'arrivée, Q-40-4) : la proposition
    d'un versement téléchargé porte `alreadyBooked` (34-4, `entryCount ≥ 1`) ; **ce n'est pas la voie (a)** de C-38-6b-3 : celle-ci
    exige `matchedElsewhereCount = entryCount = 1` (côté banque déjà rapproché), ce que des écritures de 2024 passées par
    l'API, non rapprochées, ne remplissent pas — la proposition n'y porte donc pas `linkJournalEntryId`. Le rattachement
@@ -249,8 +249,8 @@ soit juste et que rien ne soit compté deux fois ni écrit sans moi.
 
 ## Questions ouvertes
 
-- **Q-40-3** (Beat) : vers quels comptes partent les versements EUR et USD (UBS en devise, Wise) ? L'AC-5 couvre les deux.
-- **Q-40-4** (Beat) : date des écritures de versement 2024 — sans effet sur le rattachement (AC-6), mais deux conventions
+- **Q-40-3** (responsable) : vers quels comptes partent les versements EUR et USD (UBS en devise, Wise) ? L'AC-5 couvre les deux.
+- **Q-40-4** (responsable) : date des écritures de versement 2024 — sans effet sur le rattachement (AC-6), mais deux conventions
   dans les mêmes livres (2024 à la sortie, 2025 à l'arrivée) seraient à dire au manuel.
 
 ## Dev Agent Record

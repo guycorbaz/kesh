@@ -2,7 +2,7 @@
 
 Status: deferred
 
-*(2026-11-20 — reportée en phase 2 par la décision de Beat (phase 1 KISS, § « Phase 1 KISS » du fichier d'epic) ; validée le 2026-11-15, gardée telle quelle comme base de la phase 2. Ce qu'en reprend la phase 1 est dit dans les fiches 38-11a à 38-11d.)*
+*(2026-11-20 — reportée en phase 2 par la décision du responsable de l'epic (phase 1 KISS, § « Phase 1 KISS » du fichier d'epic) ; validée le 2026-11-15, gardée telle quelle comme base de la phase 2. Ce qu'en reprend la phase 1 est dit dans les fiches 38-11a à 38-11d.)*
 
 > **À revoir après la fusion de l'Epic 36** : Guy construit #823 (36-6, une transaction rattachée à plusieurs
 > écritures) ; réutiliser son mécanisme plutôt que doubler la table `bank_transaction_extra_entries`.
@@ -12,7 +12,7 @@ renumérotés **AC-1 à AC-4** (AC-12 → AC-1, AC-13 → AC-2, AC-14 → AC-3, 
 AC-9 (dans l'AC-1). Historique, rédaction, validations P1 et P2 : `38-6c-rattachement-en-lot-et-api.md` (`split`).
 Branche `epic/38-paypal`, numéros de ligne relevés sur `8b3d548d` et, pour l'inventaire de l'AC-1, sur `57b26a5f`.
 Epic 38 (`_bmad-output/planning-artifacts/epic-38-paypal.md`) : E15, E21, C-38-0, C-38-12, C-38-13, C-38-14 ;
-décision de Beat **B28** (`epics-38-40-cadrage.md`). **Dépend de 38-6c1** (base de mouvement `MovementBasis`,
+décision du responsable de l'epic **B28** (`epics-38-40-cadrage.md`). **Dépend de 38-6c1** (base de mouvement `MovementBasis`,
 `entry_movements(basis)`, `entry_sql(mode, basis)`, `entry_matches_for_page`, `link-suggestions`, lot
 `link-entries`, `diagnose_entry_link`, `expected_version` — étendus ici, jamais recopiés) et, à travers elle, de 38-3a,
 38-2 et de l'Epic 37. **Se développe avant 38-6a** (D-P2-3 : 38-6a lit `pairCount` pour « déjà comptabilisée »,
@@ -53,7 +53,7 @@ Reprises de 38-6c (B28), renumérotées au découpage (`FR-38-6c-8..10` → `FR-
 
 ## Écarts à l'epic
 
-1. **Écritures 2024 « au brut, frais à part » — tranché par B28 : elles se rattachent.** Dans les livres 2024 de Beat,
+1. **Écritures 2024 « au brut, frais à part » — tranché par B28 : elles se rattachent.** Dans les livres 2024 du responsable de l'epic,
    les frais PayPal sont des **écritures à part** (B28) : une vente passée au brut (débit PayPal 100) et ses frais par
    une autre écriture (crédit PayPal 3.20) ; aucune écriture seule ne vaut 96.80. L'epic (E21) ne prévoyait que « une
    transaction ↔ une écriture » ; or le modèle actuel ne peut pas dire plus : **une** colonne,

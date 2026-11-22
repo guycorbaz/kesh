@@ -1,18 +1,18 @@
 # Prompt de rédaction des fiches de l’Epic 40 (Stripe)
 
-Worktree `/home/beat/limu/compta/kesh-wt40`, branche `epic/40-stripe` (n'écris nulle part ailleurs). Kesh :
+Worktree `<dépôt>-wt40`, branche `epic/40-stripe` (n'écris nulle part ailleurs). Kesh :
 comptabilité suisse en production (Rust/Axum `crates/`, SvelteKit `frontend/`, MariaDB). Artefacts en **français**,
 concis et factuels.
 
 ## À lire d'abord
 
-- `_bmad-output/planning-artifacts/epics-38-40-cadrage.md` (décisions de Beat **B1–B28**, qui priment) ;
+- `_bmad-output/planning-artifacts/epics-38-40-cadrage.md` (décisions du responsable de l'epic **B1–B28**, qui priment) ;
 - `_bmad-output/planning-artifacts/epic-40-stripe.md` : décisions G*, contrats C-40-*, fiche de chaque story (périmètre,
   modules, FR/NFR) ; **décision de l'orchestrateur P40-1** : G4 admet les clés restreintes `rk_live_` **et** `rk_test_`
-  (compte de test de Beat), refuse toute clé `sk_` ; le mode (`livemode`) est montré à l'écran et contrôlé à chaque réponse ;
+  (compte de test du responsable de l'epic), refuse toute clé `sk_` ; le mode (`livemode`) est montré à l'écran et contrôlé à chaque réponse ;
 - `_bmad-output/planning-artifacts/epic-38-paypal.md` (socle validé) et les fiches 38-* qu'une story 40 étend (38-2,
   38-3b, 38-6a, 38-6b, 38-7, 38-8, 38-9a, 38-10 surtout) : reprends exactement leurs noms ;
-- réponses réelles du compte de test : `/home/beat/limu/compta/kesh/data-not-committed/stripe-test-samples/` (lecture
+- réponses réelles du compte de test : `<dépôt>/data-not-committed/stripe-test-samples/` (lecture
   seule ; README d'abord) ; documentation `docs.stripe.com` par WebFetch si besoin (cite les URL) ;
 - `.claude/skills/bmad-create-story/template.md` et `checklist.md` ; une fiche 38-* comme modèle (p. ex. 38-7) ;
 - `CLAUDE.md` : *Migration breaking policy*, *Pattern batch*, *Un appariement automatique propose, il ne crée jamais*,

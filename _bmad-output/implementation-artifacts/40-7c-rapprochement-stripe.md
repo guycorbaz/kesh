@@ -3,7 +3,7 @@
 Status: done
 
 *Fiche rédigée le 2026-11-20, branche `epic/40-stripe`, numéros de ligne relevés sur `origin/main` au commit `fd04099f`.
-Epic 40, **phase 1 KISS** (décision de Beat du 2026-11-20). **Dépend de** : 40-7b (transactions Stripe importées,
+Epic 40, **phase 1 KISS** (décision du responsable de l'epic du 2026-11-20). **Dépend de** : 40-7b (transactions Stripe importées,
 paramètres, compte de versement) ; **38-11c** (revue et acceptation PayPal : rattachement en devise — conditions 1 et 3
 de la règle —, `build_review`, moteur d'acceptation, proposition générique `link_entry` exécutée par `link_entry_in_tx`, écriture de
 la proposition `fee`, `mark_reconciled_in_tx`, `with_account_locks` de 38-11b, enveloppe de rejeu) ; **39-11c** (le
@@ -261,7 +261,7 @@ rattachée.
 - Schéma comptable (2024, notes sans donnée personnelle) : vente boutique D transit / C ventes au brut ; frais D frais /
   C transit ; versement D banque de versement / C transit au net. Le transit d'un versement se solde : brut − frais −
   net = 0. Les livres 2024 passaient deux écritures par charge (frais puis net) ; la phase 1 passe une écriture de frais
-  par transaction et **une** de versement par versement (décision de Beat du 2026-11-19/20 : « le versement, net du
+  par transaction et **une** de versement par versement (décision du responsable de l'epic du 2026-11-19/20 : « le versement, net du
   payout »).
 - « Sans conversion automatique » (**décidé, 2026-11-20**) : aucune conversion d'une devise vers une autre ; les montants
   restent en devise d'origine et la valeur CHF d'une ligne suit le cours mensuel retenu par la société, comme toute
@@ -290,7 +290,7 @@ rattachée.
   `tx.amount` posé en CHF) → fonction d'écriture de la proposition `fee` de 38-11c ; lecture des écritures de vente et
   extraction des jetons dédoublonnées avec 38-11c ; fenêtre de réception alignée sur 39-11c (± 5 jours, non −2/+10) et
   double proposition (Wise et Stripe) dite sans double compte ; `match=true` de l'import retiré (deux routes) ;
-  rattachement d'office des charges, à la différence de 38-11c, justifié et signalé à Beat ; verrous des comptes de
+  rattachement d'office des charges, à la différence de 38-11c, justifié et signalé au responsable de l'epic ; verrous des comptes de
   versement et `with_account_locks`. LOW : casse des identifiants Stripe ; point de coupure `40-7c2` écrit.
 - 2026-11-20 — validation P2 (Claude Opus 5.5, contexte frais) : 0 CRITICAL, 1 HIGH, 4 MEDIUM, 1 LOW, remédiés, et la
   **décision de l'orchestrateur** appliquée (rapport `kesh-gate-logs/epic-39-40-kiss/validation/40-7c-rapprochement-stripe-P2.md`).

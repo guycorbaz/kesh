@@ -2,11 +2,11 @@
 
 Status: deferred
 
-*(2026-11-20 — reportée en phase 2 par la décision de Beat (phase 1 KISS, § « Phase 1 KISS » du fichier d'epic) ; validée le 2026-11-15, gardée telle quelle comme base de la phase 2. Ce qu'en reprend la phase 1 est dit dans les fiches 38-11a à 38-11d.)*
+*(2026-11-20 — reportée en phase 2 par la décision du responsable de l'epic (phase 1 KISS, § « Phase 1 KISS » du fichier d'epic) ; validée le 2026-11-15, gardée telle quelle comme base de la phase 2. Ce qu'en reprend la phase 1 est dit dans les fiches 38-11a à 38-11d.)*
 
 *Fiche rédigée le 2026-11-15 (Opus), branche `epic/38-paypal`, numéros de ligne relevés sur `8b3d548d`. Epic 38
 (`_bmad-output/planning-artifacts/epic-38-paypal.md`) : E4, E13, E18, E23, C-38-0, C-38-7, C-38-8 (consommateur),
-C-38-13 ; décisions de Beat B6, B18 (`epics-38-40-cadrage.md`) ; *Point TVA pour Guy*. **Dépend de l'Epic 37** (37-1 :
+C-38-13 ; décisions du responsable de l'epic B6, B18 (`epics-38-40-cadrage.md`) ; *Point TVA pour Guy*. **Dépend de l'Epic 37** (37-1 :
 `accounts.currency`, verrou des deux côtés C-37-9 par `DESIGNATED_ACCOUNT_COLUMNS`, liste close des absences admises
 de 37-1 AC-6 ; 37-3a : produit CHF = round(montant × cours, 2), AC-3 ; 37-3b : patron de la fixture partagée Rust/TS).
 **Ne dépend d'aucune autre story de l'Epic 38** : se développe en parallèle de 38-1 à 38-4. **Migration non breaking**
@@ -326,7 +326,7 @@ clés i18n, `Cargo.lock`) : recomptés depuis la source après chaque reprise de
 - **Ce que la story ne fait pas** : aucune écriture n'est ventilée ici. 38-6a applique `default_vat_at` et
   `split_default_vat` aux propositions ; la saisie manuelle et l'assistant d'achat (`VatPurchaseAssistant.svelte`,
   `vat-purchase.ts:73`) ne lisent pas la TVA par défaut (« pourra reprendre », epic) — suite possible, hors périmètre,
-  à tracer si Beat la veut.
+  à tracer si le responsable de l'epic la veut.
 - **Pourquoi pas une colonne `category`** au lieu d'un identifiant de taux : C-38-7 nomme `defaultVatRateId`, et
   l'identifiant garde le lien à une ligne réelle (FK `RESTRICT`, libellé affiché) ; la catégorie s'en lit. Si la
   validation préfère une catégorie, c'est une décision d'epic (C-38-7) à remonter, non à trancher ici.

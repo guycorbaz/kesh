@@ -4,7 +4,7 @@ Status: done
 
 *Fiche rédigée le 2026-11-20, branche `epic/38-paypal`, numéros de ligne relevés après la fusion de `origin/main`
 (commit de fusion `43ceb541`), revérifiés à la validation P1 sur `origin/main` `fd04099f` (arbre `crates/` identique).
-Epic 38, **phase 1 KISS** (décision de Beat du 2026-11-20). **Dépend de** : 38-11a (lecteur), l'Epic 37 publié en
+Epic 38, **phase 1 KISS** (décision du responsable de l'epic du 2026-11-20). **Dépend de** : 38-11a (lecteur), l'Epic 37 publié en
 0.19.0 (devise d'un compte, cours, lignes en devise). **Suivie par** : 38-11c1 (rattachement en devise, filtres de règle), 38-11c2 (revue et acceptation), 38-11d (écrans).
 Reprend, réduits, l'AC de l'ancienne 38-2 (compte prestataire, levée de C-37-9 promise par D8) et l'idée de doublon
 par identifiant de l'ancienne 38-3b.*
@@ -320,7 +320,7 @@ change plus.
   migration ; leur epic ouvrira l'API (objets `wise`, `stripe` du corps, ou un `provider` générique).
 - Choix KISS : les filtres de règle sont des colonnes `NULL`, non des valeurs neuves de l'`ENUM` `match_type` (P3) ;
   le prix est un critère principal obligatoire et l'index unique inchangé.
-- ⚠️ La base de Beat ne reçoit cette migration qu'à une version publiée, ou en connaissance de cause : une migration
+- ⚠️ La base du responsable de l'epic ne reçoit cette migration qu'à une version publiée, ou en connaissance de cause : une migration
   appliquée ne se modifie plus (P8), et son horodatage doit rester après celles de `main` (risque écrit au fichier
   d'epic).
 

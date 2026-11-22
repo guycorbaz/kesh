@@ -3,7 +3,7 @@
 Status: done
 
 *Fiche rédigée le 2026-11-20, branche `epic/40-stripe`, numéros de ligne relevés sur `origin/main` au commit `fd04099f`.
-Epic 40, **phase 2** (décision de Beat du 2026-11-20, § *Phase 2* du fichier d'epic). **Dépend de** : la phase 1 (40-7a à
+Epic 40, **phase 2** (décision du responsable de l'epic du 2026-11-20, § *Phase 2* du fichier d'epic). **Dépend de** : la phase 1 (40-7a à
 40-7d) et du **socle commun S1 à S9** de la phase 2 (fichier d'epic), écrit par 38-12a ou, à défaut, par la première fiche de
 phase 2 développée (C-40-K6). **Suivie par** : 40-8b (téléchargement).*
 
@@ -119,7 +119,7 @@ solde sans que la clé soit jamais en base ni dans une sauvegarde.
    `PROVIDER_PERMISSION_DENIED` (`details.resource` : la ressource demandée, `payouts` ou `balance_transactions`) ; **400** →
    `PROVIDER_API_ERROR` avec le seul `error.code` et `error.param` de Stripe, jamais `error.message` — la doc de Stripe dit
    qu'un droit manquant rend « une erreur de requête invalide » **sans dire le statut** (le journal des requêtes de Stripe
-   parle de « 403 ») : **le statut réel d'un droit manquant n'est pas confirmé** et se constate à la recette de Beat sur une
+   parle de « 403 ») : **le statut réel d'un droit manquant n'est pas confirmé** et se constate à la recette du responsable de l'epic sur une
    instance jetable (le manuel d'administration, 40-8b, dit de vérifier d'abord les droits de la clé sur un
    `PROVIDER_API_ERROR`) ; 429 et 5xx → la reprise du socle S2 (`Stripe-Rate-Limited-Reason` est relevée au journal, sans
    effet sur la politique), puis `PROVIDER_RATE_LIMITED` ou `PROVIDER_UNAVAILABLE` ; délai dépassé →

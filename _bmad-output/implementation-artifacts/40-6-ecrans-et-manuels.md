@@ -3,7 +3,7 @@
 Status: superseded — remplacée le 2026-11-20 par la refonte KISS de l'Epic 40 (voir le registre du fichier d'epic) ; fiche gardée comme historique
 
 - **Epic** : 40 (`_bmad-output/planning-artifacts/epic-40-stripe.md`, § *40-6*, G4, G8, G10, G12, G13, G14, G17, G19,
-  C-40-1 à C-40-6) ; décisions de Beat B3, B6, B10, B13, B17, B20, B21 (`epics-38-40-cadrage.md`), qui priment ;
+  C-40-1 à C-40-6) ; décisions du responsable de l'epic B3, B6, B10, B13, B17, B20, B21 (`epics-38-40-cadrage.md`), qui priment ;
   décision de l'orchestrateur **P40-1** (clés `rk_live_` et `rk_test_` admises, `sk_` refusée, mode montré).
 - **Dépend de** : **40-1** (réglages `StripeSettings`, secret `restrictedKey`, refus `PROVIDER_SECRET_NOT_RESTRICTED`
   et ses motifs, mode et `PROVIDER_MODE_CHANGED`, compte gardé et `PROVIDER_ACCOUNT_CHANGED`,
@@ -219,7 +219,7 @@ afin de tenir les comptes Stripe sans saisie, en sachant ce qui est une créance
    lit (`la_forme_libre_nnnn_nom_est_juste_partout`, `textes_coherents.rs:565-600` : `admin-manual.tex`, brochure,
    README, `api-external.md`, `frontend/src`) : un nombre suivi d'une espace et d'un mot qui ouvre un nom de compte d'un
    plan livré y est contrôlé, et « 1101 Débiteurs Stripe » **rougit** (1101 absent des trois plans, « Débiteurs » ouvre
-   le nom de 1100). Au manuel d'administration, un numéro de la société de Beat ne précède donc jamais un nom : « le
+   le nom de 1100). Au manuel d'administration, un numéro de la société du responsable de l'epic ne précède donc jamais un nom : « le
    compte « Débiteurs Stripe CHF » (p. ex. 1101) », « 1101–1103 » ; jamais `NNNN Débiteurs…`. `cargo test -p kesh-api
    --test textes_coherents` vert (G4-bis et G4-ter), cité au Change Log.
 8. **AC-8 — Manuels (NFR-40-6-2, FR-40-6-5).**
@@ -229,7 +229,7 @@ afin de tenir les comptes Stripe sans saisie, en sachant ce qui est une créance
      *Aucun* sur toutes les autres ; jamais une clé `sk_`) ; la valeur ne se relit pas chez Stripe et ne se réaffiche
      pas dans Kesh ; mode test et réel, connexion neuve pour changer de mode ; « Tester » et chaque contrôle avec son
      remède, dont `account_readable` : le droit de **lire le compte** est exigé — sans lui, « Tester » **et chaque
-     passage** refusent la clé (`PROVIDER_ACCOUNT_UNREADABLE`, D40-P3-1, 40-1 AC-9) ; compte « Débiteurs Stripe » par devise (1101–1103, numéros de la société de Beat : à écrire comme exemple) lié au compte
+     passage** refusent la clé (`PROVIDER_ACCOUNT_UNREADABLE`, D40-P3-1, 40-1 AC-9) ; compte « Débiteurs Stripe » par devise (1101–1103, numéros de la société du responsable de l'epic : à écrire comme exemple) lié au compte
      bancaire Kesh de la devise, frais au sous-compte de la devise (6912–6914, B3) ; boutique (`invoiceRefSource`) ; surcharges de codes ; **la clé est effacée
      à toute restauration et se ressaisit** (E2) ; révocation dans Stripe ; recette sur une instance jetable (B12).
    - **Utilisateur** (`user-manual.tex`, sous la sous-section des prestataires de 38-9b AC-10, sous-section « Stripe ») :
@@ -294,7 +294,7 @@ afin de tenir les comptes Stripe sans saisie, en sachant ce qui est une créance
 11. **AC-11 — Ce que la story ne touche pas.** Aucune migration ; aucune route ni action d'audit (C-40-6) ; **aucun outil
     MCP** (G17, E23 : connexions, contrôles et transactions de prestataire ne sont pas exposés ; `kesh_ecritures` lit les
     écritures acceptées) ; écrans et textes PayPal inchangés (leurs Vitest et E2E de 38-9a/38-9b verts sans retouche,
-    G18) ; aucune donnée réelle de Beat dans les captures ni les tests.
+    G18) ; aucune donnée réelle du responsable de l'epic dans les captures ni les tests.
 
 ## Tâches
 

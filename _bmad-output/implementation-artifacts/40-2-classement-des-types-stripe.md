@@ -4,7 +4,7 @@ Status: superseded — remplacée le 2026-11-20 par la refonte KISS de l'Epic 40
 
 *Fiche rédigée le 2026-11-15 (Opus), branche `epic/40-stripe`, numéros de ligne relevés au commit `a2b1da9c`. Epic 40
 (`planning-artifacts/epic-40-stripe.md`) : G6, G7, G8, G9, G11, G14, G19 ; contrats C-40-0, **C-40-4** ; décisions de
-Beat B3, B7, B13, B20, B24. **Dépend de** 40-1 (`StripeRecord`, `StripeSource`, `StripePayoutFields`,
+le responsable de l'epic B3, B7, B13, B20, B24. **Dépend de** 40-1 (`StripeRecord`, `StripeSource`, `StripePayoutFields`,
 `stripe::amounts::minor_to_decimal`, `StripeSettings`, `classify_window` provisoire qu'elle remplace) et, par elle, de
 38-3b (`ProviderMovement`, `MovementKind`, `ReviewReason`, `MovementPage`, `SkippedCounts`), 38-3a (colonnes de C-38-4)
 et 38-8 (patron : `classify_window`, `Classified`, surcharges). **Lue par** 40-3 (genre `withdrawal`, `value_date`,
@@ -56,7 +56,7 @@ plutôt qu'en vente, afin que les règles et les propositions travaillent sur de
 - `FR-40-2-7` *(ajoutée)* — Un versement porte sa date d'arrivée (`value_date`), lue du versement → AC-2.
 - `NFR-40-2-1` — Classement pur, sans base, réseau ni horloge ; la seule lecture réseau (origine hors fenêtre) est hors
   du classement, bornée → AC-1, AC-5.
-- `NFR-40-2-2` — Un test par type relevé sur les réponses de Beat ; aucun type inconnu ne devient une vente → AC-7.
+- `NFR-40-2-2` — Un test par type relevé sur les réponses du responsable de l'epic ; aucun type inconnu ne devient une vente → AC-7.
 - `NFR-40-2-3` — Somme des nets d'une fenêtre = variation du solde `available + pending` (test sur fixtures) → AC-7.
 
 ## Écarts à l'epic
@@ -208,7 +208,7 @@ plutôt qu'en vente, afin que les règles et les propositions travaillent sur de
      rend `sale` hors `charge`/`payment` ; `charge_x` et `foo` → `OTHER` ; `adjustment` sans catégorie → `ADJUSTMENT` ;
      `climate_order_purchase` à source `climorder_…` → `OTHER` dans une page **acceptée** (règle `source.id` de 40-1
      AC-6).
-   - **Réponses de Beat** (fixtures anonymisées de 40-1 et de 40-0) : chaque type relevé a un test qui fige son genre ; le
+   - **Réponses du responsable de l'epic** (fixtures anonymisées de 40-1 et de 40-0) : chaque type relevé a un test qui fige son genre ; le
      test échoue en nommant le type si une fixture en contient un sans test (liste construite depuis les fixtures).
    - **Somme** (NFR-40-2-3) : sur la fixture de test, Σ `net` des mouvements (aucun écarté dans cette fixture,
      toutes `balance_type: payments`) = `available + pending` du `balance.json` par devise (USD 398.61, EUR 77.15, CHF 48.07 — le compte de
@@ -274,7 +274,7 @@ plutôt qu'en vente, afin que les règles et les propositions travaillent sur de
 
 ## Questions ouvertes
 
-- **Q-40-2-1** (Beat, recette) : un débit du compte bancaire par Stripe (solde négatif) arrive-t-il en `payout` positif, en
+- **Q-40-2-1** (responsable, recette) : un débit du compte bancaire par Stripe (solde négatif) arrive-t-il en `payout` positif, en
   `topup`, ou autrement ? Aujourd'hui : file (AC-2).
 - **Q-40-2** (epic) : où WHMCS et CB Paid Subscriptions posent-ils le numéro de facture — `metadata` de la **charge**, de
   l'intention de paiement (`payment_intent`, non développée ici), ou `description` ? Si c'est l'intention de paiement, une
