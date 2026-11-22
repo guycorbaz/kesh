@@ -1185,7 +1185,13 @@ const ATTENDU = {
 	// Fusion de la 38-11c2 (epic/38-paypal) dans la 38-11d : total relevé par la garde.
 	// Revue P2 de la 38-11d (libellé du refus `COUNTERPARTY_CURRENCY_MISMATCH`, relais de la
 	// 38-11c2) : **3632** (« expected 3632 to be 3508 »), relevé par la garde = 3508 + 123 + 1.
-	sitesTotal: 3632,
+	// Story 40-7d (fusion de la 38-11d, page commune des prestataires, écrans Stripe) : **3689**
+	// (« expected 3689 to be 3632 »), relevé par la garde, non additionné.
+	// Revue P1 de la 40-7d (M1, M3 : badges de la destination archivée ou close, texte du versement
+	// vers Wise) : **3692** (« expected 3692 to be 3689 »), relevé par la garde.
+	// Revue P2 de la 40-7d (délégation complète de PayPal au module commun, texte du versement Wise
+	// raccourci) : **3691** (« expected 3691 to be 3692 »), relevé par la garde.
+	sitesTotal: 3691,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

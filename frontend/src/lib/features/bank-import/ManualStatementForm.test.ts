@@ -412,4 +412,13 @@ describe('ManualStatementForm — compte de prestataire', () => {
 		expect(values).toContain('3');
 		expect(values).not.toContain('9');
 	});
+
+	// Story 40-7d (AC-1) — de même un compte Stripe ou Wise.
+	it.each(['stripe', 'wise'])('un compte %s n’est pas proposé', async (provider) => {
+		const comptes = [...ACCOUNTS, { id: 9, bankName: provider, description: null, iban: null, provider }];
+		const { container: c } = render(ManualStatementForm, { props: { bankAccounts: comptes } });
+		const values = Array.from(c.querySelectorAll('select option')).map((o) => o.getAttribute('value'));
+		expect(values).toContain('3');
+		expect(values).not.toContain('9');
+	});
 });

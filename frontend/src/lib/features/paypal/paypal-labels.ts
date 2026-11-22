@@ -14,73 +14,16 @@
 import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 import { isApiError } from '$lib/shared/utils/api-error';
 import { errorMessageOf } from '$lib/shared/utils/error-message';
-import { failedProposalLabel } from '$lib/features/reconciliation/failed-proposal-label';
+import { isAlreadyLinked, providerFailedLabel, providerMismatchDetails } from '$lib/features/provider/provider-labels';
 import type { PaypalFinding, PaypalLineError, PaypalProposal } from './paypal.types';
 
 /**
- * Codes des refus que l'écran traduit lui-même (`paypal-failed-*`) ; tout autre
- * code passe par `failedProposalLabel`. Exportée pour le test, qui la compare à
- * une liste écrite en dur.
+ * Libellé d'un refus de `POST /paypal/accept` : ceux du moteur d'acceptation commun sont traduits
+ * pour tous les prestataires par `providerFailedLabel` (revue P1 et P2 de la 40-7d) ; PayPal n'en
+ * a plus de propres.
  */
-export const PAYPAL_OWN_FAILED_CODES = [
-	'PROVIDER_PROPOSAL_STALE',
-	'FX_ACCOUNT_INVALID',
-	'FX_RATE_INVALID',
-	'NOT_FOUND',
-	'OPTIMISTIC_LOCK_CONFLICT',
-	'RECONCILIATION_ENTRY_NOT_LINKABLE',
-	'COUNTERPARTY_CURRENCY_MISMATCH',
-] as const;
-
-/** Libellé d'un refus de `POST /paypal/accept`. */
 export function paypalFailedLabel(code: string, details?: unknown): string {
-	switch (code) {
-		case 'PROVIDER_PROPOSAL_STALE':
-			return i18nMsg(
-				'paypal-failed-proposal-stale',
-				'La proposition ne vaut plus : la transaction, l’écriture, la règle ou les paramètres du compte ont changé depuis la revue. Rechargez la page.',
-			);
-		case 'FX_ACCOUNT_INVALID':
-			return i18nMsg(
-				'paypal-failed-fx-account-invalid',
-				'Aucun compte de conversion utilisable n’est désigné : un administrateur doit en choisir un dans les paramètres du multi-devises.',
-			);
-		case 'FX_RATE_INVALID':
-			return i18nMsg(
-				'paypal-failed-fx-rate-invalid',
-				'Le cours de la conversion ne se calcule pas à partir des deux montants : passez l’écriture à la main.',
-			);
-		case 'NOT_FOUND':
-			return i18nMsg(
-				'paypal-failed-not-found',
-				'La transaction ou l’écriture visée est introuvable : elle a été supprimée entre-temps. Rechargez la page.',
-			);
-		case 'OPTIMISTIC_LOCK_CONFLICT':
-			return i18nMsg(
-				'paypal-failed-optimistic-lock',
-				'La transaction a été modifiée entre-temps. Rechargez la page.',
-			);
-		case 'RECONCILIATION_ENTRY_NOT_LINKABLE':
-			return i18nMsg(
-				'paypal-failed-entry-not-linkable',
-				'L’écriture de vente n’est plus rattachable à cette transaction (déjà rattachée, contre-passée ou modifiée). Rechargez la page.',
-			);
-		// 38-11c2 (L4) : la règle désigne un compte dans une devise qui n'est ni le CHF ni celle
-		// de la transaction ; la clé est celle de la 38-11c2.
-		case 'COUNTERPARTY_CURRENCY_MISMATCH': {
-			const d = details && typeof details === 'object' ? (details as Record<string, unknown>) : {};
-			return i18nMsg(
-				'paypal-failed-counterparty-currency-mismatch',
-				'Cette règle désigne un compte tenu en { $accountCurrency } : elle ne s’applique qu’aux transactions en { $accountCurrency }, et celle-ci est en { $transactionCurrency }. Choisissez un compte en CHF ou dans la devise de la transaction.',
-				{
-					accountCurrency: typeof d.accountCurrency === 'string' ? d.accountCurrency : '',
-					transactionCurrency: typeof d.transactionCurrency === 'string' ? d.transactionCurrency : '',
-				},
-			);
-		}
-		default:
-			return failedProposalLabel(code, details);
-	}
+	return providerFailedLabel(code, details);
 }
 
 /** Libellé d'une erreur de ligne du lecteur PayPal (38-11a) ; code brut si inconnu. */
@@ -212,15 +155,6 @@ export function gapKindLabel(kind: string): string {
 	}
 }
 
-/**
- * Story 38-11d (revue P1, M3) — l'écriture d'un écart « montant ou devise différents » est-elle
- * déjà rattachée à une autre transaction (`details.alreadyLinked`) ? Le serveur range ce cas
- * sous le même code ; l'écran lui donne son propre libellé.
- */
-function isAlreadyLinked(f: PaypalFinding): boolean {
-	return f.code === 'amount_or_currency_mismatch' && f.details?.alreadyLinked === true;
-}
-
 /** Libellé d'un écart : son genre, ou « vente déjà rattachée » pour une écriture déjà rattachée. */
 export function findingGapLabel(f: PaypalFinding): string {
 	if (isAlreadyLinked(f)) {
@@ -230,23 +164,11 @@ export function findingGapLabel(f: PaypalFinding): string {
 }
 
 /**
- * Ce qu'un écart « montant ou devise différents » attend et trouve ; `null` pour un autre écart,
- * des détails absents, ou une écriture déjà rattachée de même montant et devise (le libellé dit
- * tout). Écriture sans débit au compte : « aucun débit trouvé », jamais « trouvé » suivi de rien.
+ * Ce qu'un écart « montant ou devise différents » attend et trouve (règle commune aux
+ * prestataires, 40-7d : `providerMismatchDetails`).
  */
 export function findingGapDetails(f: PaypalFinding): string | null {
-	const d = f.details;
-	if (!d || f.code !== 'amount_or_currency_mismatch') return null;
-	const s = (k: string) => (d[k] === null || d[k] === undefined ? '' : String(d[k]));
-	const expected = `${s('expectedAmount')} ${s('expectedCurrency')}`.trim();
-	if (s('foundAmount') === '') {
-		return i18nMsg('paypal-gap-mismatch-details-none', 'Attendu { $expected }, aucun débit trouvé dans l’écriture', {
-			expected,
-		});
-	}
-	const found = `${s('foundAmount')} ${s('foundCurrency')}`.trim();
-	if (isAlreadyLinked(f) && found === expected) return null;
-	return i18nMsg('paypal-gap-mismatch-details', 'Attendu { $expected }, trouvé { $found }', { expected, found });
+	return providerMismatchDetails(f);
 }
 
 /** Libellé d'un motif « à examiner ». */
