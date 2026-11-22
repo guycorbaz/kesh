@@ -1,6 +1,6 @@
 # Story 40-8b : téléchargement Stripe par période — route, tâche, écran, manuels
 
-Status: ready-for-dev
+Status: review
 
 *Fiche rédigée le 2026-11-20, branche `epic/40-stripe`, chemins relevés sur `origin/main` au commit `fd04099f`. Epic 40,
 **phase 2** (décision du responsable de l'epic du 2026-11-20). **Dépend de** : 40-8a (client), 40-7b (import CSV), du **cœur commun `ProviderLine`** (`provider_imports.rs`) extrait par 38-12a — ou par 40-7b s'il passe
@@ -173,10 +173,10 @@ frais, versements, écarts —, sans doublon si j'ai déjà importé le CSV.
 
 ## Tâches
 
-- [ ] T1 — Route, état, tâche sur le socle S2/S3 (AC-1).
-- [ ] T2 — Boucle d'étapes par versement, parallélisme (AC-2).
-- [ ] T3 — Raccord au chemin d'import et au rapprochement, empreinte (AC-3).
-- [ ] T4 — Paramétrage du dialogue, manuels, E2E, captures (AC-4).
+- [x] T1 — Route, état, tâche sur le socle S2/S3 (AC-1).
+- [x] T2 — Boucle d'étapes par versement, parallélisme (AC-2).
+- [x] T3 — Raccord au chemin d'import et au rapprochement, empreinte (AC-3).
+- [x] T4 — Paramétrage du dialogue, manuels, E2E, captures (AC-4).
 
 ## Stratégie de tests
 
@@ -198,8 +198,13 @@ manuels `.tex`, `docs/api-external.md`, `docs/testing.md` : à relire à la repr
 
 ## Note de version
 
-*Ajouté* — Téléchargement des versements Stripe d'une période par l'API (bouton ou route), séquentiel avec reprise sur
-limite de débit, parallélisme réglable (`KESH_STRIPE_PARALLEL`, 1 à 6) ; même résultat que l'import du rapport CSV.
+*Ajouté* — Téléchargement des versements Stripe d'une période par l'API : bouton *Télécharger depuis Stripe* de la page
+Stripe (Comptable et Administrateur, sessions seules ; `POST /api/v1/stripe-downloads`, `GET
+/api/v1/stripe-downloads/{jobId}`), une clé restreinte en lecture par compte Stripe (`KESH_STRIPE_<n>_ACCOUNT`,
+`KESH_STRIPE_<n>_KEY`), progression par versement, reprise commune sur limite de débit, parallélisme réglable
+(`KESH_STRIPE_PARALLEL`, 1 à 6) ; même résultat et mêmes doublons que l'import du rapport CSV, versements manuels signalés
+« à examiner ». La liste des comptes bancaires dit le mode d'un compte Stripe par sa clé (`providerApi.mode` : `live`
+ou `sandbox`).
 
 ## Notes de développement
 
@@ -211,6 +216,81 @@ limite de débit, parallélisme réglable (`KESH_STRIPE_PARALLEL`, 1 à 6) ; mê
   centaines.
 - **Non confirmé** : délai entre un versement payé et sa présence dans la liste (PayPal a ~3 h ; Stripe : inconnu,
   écrit « peut tarder » au manuel).
+
+## Dev Agent Record
+
+*Rédigé le 2026-11-22 au dernier commit de code `ca8590a50` (branche `story/40-8b`). Périmètre des décomptes :
+`d97712397..ca8590a50` (après la fusion d'`epic/40-stripe`), recomptés à la source.*
+
+### Étape 0
+
+Fusion **non squash** d'`epic/40-stripe` (`15e9f8b13`) dans `story/40-8b` : `d97712397`, sans conflit. Recontrôle de la
+fiche contre le code : second amendement du 22.11 (`d2769651a`), points 1 à 11 ; le point 11 ajouté en cours de
+développement sur demande de l'orchestrateur (revue d'intégration de l'Epic 40, M1, L1, L2).
+
+### Ce qui est fait
+
+- **Serveur** : `routes/stripe_downloads.rs` (neuf : `create`, `show`, tâche `Run::execute`) sur le socle commun ;
+  `stripe::fetch_rows_tracked` (crochet de progression, `fetch_rows` inchangé), `stripe::HISTORY_YEARS` (30),
+  `stripe::series_mode` ; `JobHandle::set_total` au socle ; `ProviderApiConfig::status_for` lit le mode de Stripe à la
+  clé ; `stripe_imports::groups_by_currency` (ventilation partagée par le CSV et le téléchargement) ; routes dans
+  `lib.rs` ; action `stripe_download.created` (cœur commun, `audit_labels`, inventaire des sites indirects, quatre
+  locales).
+- **Écran** : bouton, mention « bac à sable », ligne d'aide de l'Administrateur et dialogue générique de la 38-12b sur la
+  page Stripe ; compte rendu extrait en `StripeImportReport.svelte` (page et dialogue, versements manuels) ;
+  `providerApiStatus` générique sur `providerSettingsOf` (`paypalApiStatus`, `stripeApiStatus`), `ownLedgerIds` de la page
+  PayPal de même (L2) ; commentaire de l'écart des libellés corrigé (L1) ; sept clés `stripe-download-*` aux quatre
+  locales.
+- **Documentation** : manuel d'administration (§ `sec:stripe-api` neuf, tableau du § `sec:env-vars`, accès sortant,
+  compte du registre 155/163), manuel utilisateur (§ `sec:stripe-telecharger`, limites), `docs/api-external.md` (section,
+  §4, tableaux §10), `docs/testing.md` (montage Stripe du serveur simulé), `.env.example` et les deux compose (L6).
+  `.tex` seulement ; PDF compilés dans une copie et contrôlés (aplatis).
+
+### Tests ajoutés (recomptés sur `d97712397..ca8590a50`)
+
+- `crates/kesh-api/tests/stripe_download_e2e.rs` : **11** `#[sqlx::test]` contre un serveur Stripe simulé (fixtures de
+  la 40-8a, filtre `arrival_date`, pages de deux) : ventilation et relance sans doublon, CSV puis téléchargement et
+  l'inverse, `k = 3` égal à `k = 1`, progression, 429 repris puis épuisé (rien d'écrit), 401/403, total de versement faux,
+  identifiant de 300 caractères (L5), refus dans l'ordre et 409, liste des comptes (mode `sandbox`).
+- `provider_env.rs` : **2** `#[test]` neufs (`mode_d_un_compte_stripe_par_sa_cle`,
+  `chaque_prestataire_lu_a_sa_route_de_telechargement`) et la branche de repli de `status_for` de nouveau exercée
+  (`wise`, `inconnu`) ; `provider_download.rs` : `set_total` ajouté au test existant.
+- Vitest : **6** `it(` neufs (2 dans `provider-api.test.ts`, 4 dans `stripe-page.test.ts`).
+- E2E : `frontend/tests/e2e/stripe-download.spec.ts`, **3** tests ; routes `stripeMockRoutes` au serveur simulé commun.
+- Compteurs relevés : registre des routes 163 / 155 / 167, partition `SansEcritureAuJournal` 132, inventaire
+  `tout.len()` 167 ; `COMPTE_CHAMPS` des dates reçues 74 ; `sitesTotal` 3740.
+
+### Mutations (hors dépôt, une par invocation de `heavy.sh`, cible propre, « tuée » sur assertion nommée)
+
+Rust (copie `git archive`, cible `kesh-targets/s40-8b-mut`, supprimée) : témoin non muté **vert** ; `check_id_lengths`
+retiré → tuée par `identifiant_trop_long_refuse_avant_l_ecriture` ; `set_total` retiré → tuée par
+`progression_par_versement` ; `rk_test_` → `Live` → tuée par `mode_d_un_compte_stripe_par_sa_cle`. Journaux
+`kesh-gate-logs/s40-8b/mut-*.log`. Vitest (copie de `frontend/` avec son propre `node_modules`, `npm ci`, supprimée) : témoin **vert** ; bouton ouvert à tout rôle → tuée par « Consultation : jamais le bouton, même configuré » ; `stripeApiStatus` sur `paypal` → tuée par « lit les soldes Stripe du libellé… » ; versements manuels masqués → tuée par « compte configuré, Comptable… » (`mut-front-all.console`, `mut-f*.log`).
+
+### Gates (règle de la nuit du 22.11 : pas de `gate-ci.sh` ni d'E2E complet par story)
+
+- `cargo fmt --check`, `cargo clippy --workspace --all-targets -D warnings` : verts à `ca8590a50`
+  (`cible-5.console`).
+- `scripts/test-fast.sh --ci` (nextest complet, base remise à zéro) à `ce915c575` : **6548 exécutés, 6547 passés,
+  1 échec, 15 ignorés** — l'échec, `dates_recues_garde::l_inventaire_n_est_pas_vide` (72 → 74, le `DownloadRequest` de
+  la story), corrigé au commit de test seul `ca8590a50`, puis `binary(dates_recues_garde)` rejoué vert (10/10)
+  (`gate-backend-1.log`, `cible-5.log`).
+- Frontend à `ce915c575` : `npm run check` 0 erreur, `lint-i18n-ownership` vert, Vitest **5072 / 5072** (296
+  fichiers), `npm run build` vert (`front-3-*.log`).
+- **E2E partiel** (la seule spec ajoutée par la story) : `stripe-download.spec.ts` **3 / 3** à `ce915c575`, backend
+  avec `KESH_STRIPE_1_*` vers le serveur simulé (`e2e-2.log`). E2E complet et `gate-ci.sh` : à l'intégration de fin.
+- Captures (thème clair) : `kesh-gate-logs/s40-8b/captures/` (10 à 16).
+
+### Écarts et points relevés
+
+- Écarts à la fiche : ceux du second amendement (période commune avec fin ramenée, `sandbox` au lieu de `test`, nom
+  d'import unique, une fenêtre, `n` étapes, écran sur la page Stripe).
+- Station : la place 5 de `heavy.sh` (serveur `kesh-mariadb-dev7`, arrêté) n'était plus tenue par son `flock` ; deux
+  lancements y sont tombés et ont échoué sur un conteneur arrêté (`e2e-1.console`). Refermée comme le prévoit la
+  consigne (`flock /tmp/station-heavy-b5.lock sleep 14400`), sans toucher à `heavy.sh` ni au conteneur.
+- Non traité ici : L3 et L5 de la revue d'intégration de l'Epic 40 (compte rendu CSV resté affiché après un
+  téléchargement ; deux « aujourd'hui » sur la page) et l'écart de pliage des accents entre l'écran et le serveur (L1,
+  issue déjà notée).
 
 ## Change Log
 
@@ -234,3 +314,5 @@ limite de débit, parallélisme réglable (`KESH_STRIPE_PARALLEL`, 1 à 6) ; mê
   40-8a : dialogue générique et serveur simulé de la 38-12b absents de la branche (développement suspendu jusqu'à sa
   fusion), signature de `Downloads::start` changée par la 38-12b, comptes du registre relevés (162, 154, 166), LOW L5 et
   L6 de la revue P1 de la 40-8a versés ici, forme de `fetch_rows`. Statut inchangé (`ready-for-dev`).
+- 2026-11-22 — second amendement (étape 0, après la fusion d'`epic/40-stripe`) ; développement (route, tâche, écran,
+  manuels, tests), M1, L1, L2 de la revue d'intégration de l'Epic 40 intégrés ; gates de la nuit ; story en `review`.
