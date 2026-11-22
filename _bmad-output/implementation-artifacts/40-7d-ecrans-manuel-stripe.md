@@ -322,6 +322,13 @@ des contrôles de clôture retiré (`kesh-gate-logs/s40-7d/mutations.log`).
   devise » dit `foreign { amount, … }`, pour Stripe et PayPal). L1, L3, L7, L8 : entrées de
   `kesh-gate-logs/epic-38-kiss/issues-a-ouvrir.md`.
 - Compteur : `sitesTotal` 3689 → 3692 (deux badges, un texte), relevé par la garde.
+- **Mutations** (copie hors dépôt, base verte d'abord, `kesh-gate-logs/s40-7d/mutations-p1.log`) : 7/7 tuées sur une
+  assertion nommée — garde `keepId` retirée, effet de vidage retiré, `FX_RATE_INVALID` retiré, `NOT_FOUND` retiré,
+  lien Wise désactivé, `onReviewLoaded` retiré, compte rendu non effacé.
+- **Gates** (dernier commit de code `da6d6427`, aucun fichier Rust touché, quatre catalogues `.ftl` modifiés) : `npm run check`
+  (0 erreur), `lint-i18n-ownership`, Vitest **5008 passés, 293 fichiers**, `npm run build`, tous verts
+  (`gate-front-p1.log`) ; E2E partiel de la seule spec de la story (`stripe-import.spec.ts`) : 4/4 (`e2e-2.log`). nextest non
+  rejoué : aucun code Rust ne change (les locales sont lues par `kesh-i18n`, dont la parité est tenue par `i18n-keys.test.ts`).
 
 ### File List
 
