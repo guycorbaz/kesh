@@ -208,6 +208,16 @@ tâche en cours (`details.from`, `details.to`), que le dialogue annonce quand el
   1er janvier, exercice retenu couvrant toute la période) ; **L4** (§ 10 : « il y a trois ans, plus une heure »,
   phrase de la fiche alignée). **L5** et **L6** : notés au Dev Agent Record (L5 aussi aux consignes des correctifs,
   pour la reprise du serveur simulé par Wise). Le serveur étant touché, la P2 est **complète**.
+- 2026-11-22 — revue de code P2 (passe complète, une lentille ; rapport `kesh-gate-logs/s38-12b/revue-p2-rapport.md`) :
+  0 CRITICAL, 0 HIGH, 0 MEDIUM, 7 LOW. Corrigés dans la story (commit `9ca7fe48`), selon la règle « un LOW facile
+  qui touche la production se corrige, puis une passe ciblée » : **L1** (fin demandée future : `resumedNotice`
+  la ramène au jour de Zurich avant la comparaison, `max` = aujourd'hui sur le champ *Au*) ; **L2** (le test du 409
+  lance la première tâche avec une fin future et attend la fin lue) ; **L3** (`starting` remis à faux par le seul
+  `POST` de la génération courante) ; **L4** (E2E : le serveur simulé retient les fenêtres 2 et suivantes jusqu'au
+  409) ; **L6** (avis au passé à l'issue, `provider-download-resumed-ended` ; « suivi perdu » qui nomme la période
+  après une reprise, `provider-download-lost-resumed` ; quatre locales, manuel utilisateur). **L5** et **L7** :
+  notés au Dev Agent Record. Une passe **P3 ciblée** sur `9ca7fe48` suit
+  (`kesh-gate-logs/s38-12b/revue-p3-prompt.md`).
 
 ## Dev Agent Record
 
@@ -352,12 +362,58 @@ manuel utilisateur ; gates de la nuit du 22.11.
   bornant la station) ; frontend (`front-5-*.log`) : `check` 0 erreur, `lint-i18n-ownership` vert, Vitest **4989
   passés (290 fichiers)**, `build` vert ; **E2E partiel (1 spec)** `paypal-download.spec.ts` (`e2e-4.log`) : **3
   passés**. E2E complet et `gate-ci.sh` : à la fin de l'epic.
+  *(Annoté le 22.11, revue P2, L7 : ce gate backend a tourné sur l'**arbre de travail** de `8b941584` avant son
+  commit — `gate-backend-2.console` lit HEAD `bc7b7520`, commit daté de 06:29:19, gate fini à 06:32 après 921 s de
+  nextest ; le journal ne prouve donc pas l'identité du contenu. Le gate backend de la remédiation de la revue P2
+  tourne, lui, au commit, ci-dessous.)*
+- **L5 de la revue P2** (non corrigé, théorique) : l'exercice de repli de la préparation E2E
+  (`paypal-download.spec.ts`, test 1 : du 1er janvier de l'année de `FROM` au 31 décembre de l'année du jour) peut
+  chevaucher un exercice existant qui ne couvre qu'une partie de `FROM..TODAY`, et l'API le refuserait
+  (`FY_OVERLAP_KEY`). Avec la graine `with-company` (2020-2030), cela n'arrive qu'en janvier-février 2031, ou plus tôt
+  avec une graine découpée en exercices annuels : l'échec du `POST /fiscal-years` le dirait alors (message de l'API
+  dans l'assertion de `api()`).
 - **L5** (non corrigé, hors périmètre) : le serveur simulé commun apparie la route par chemin exact
   (`r.path === recorded.path`) ; réutilisable tel quel pour Stripe, non pour Wise (identifiants dans le chemin) :
   prévoir un `match(path)` dans `ProviderMockRoute` à la 39-12b. Noté aux consignes des correctifs.
 - **L6** (non corrigé, joint au point 2 ci-dessus) : `paypalApiStatus` apparie les libellés sans accents et prend le
   premier solde configuré ; avec deux soldes « Zurich »/« Zürich », le bouton peut paraître pour un libellé que
   `series_for` refusera (`PROVIDER_API_NOT_CONFIGURED`, message juste).
+
+### Remédiation de la revue P2
+
+- **Prémisses relues au code** avant correctif : L1 — `routes/paypal_downloads.rs` garde `effective_to(request.to,
+  now)` et le passe à `start`, `resumedNotice` comparait la fin demandée telle quelle, le champ *Au* n'avait pas de
+  `max` ; L2 — le seul 409 testé lançait `2020-01-01 → 2020-01-30` sous une horloge au 2020-06-30 ; L3 — le
+  `finally` de `start()` remettait `starting` à faux sans condition ; L4 — la spec dépendait des 900 ms par page et
+  de la pause de 3 s ; L6 — l'avis restait au futur en `done`, et « Suivi perdu : relancez la même période » ne
+  disait pas laquelle après une reprise. Toutes vérifiées.
+- **Correctif** (`9ca7fe48`) : `resumedNotice(running, requested, today)` (fin demandée ramenée à `today`) ; dialogue
+  : `today` lu à l'ouverture (`todayInZurich`), `max={today}` sur *Au*, `todayInZurich()` passé à la comparaison,
+  `finally { if (myGen === generation) starting = false; }`, avis `provider-download-resumed` en `running`,
+  `provider-download-resumed-ended` (passé) en `done` et `failed`, caché en `lost`, où
+  `provider-download-lost-resumed` nomme la période suivie ; quatre locales ; manuel utilisateur (§ « Fermer la fenêtre
+  n'arrête pas… »). Serveur simulé : `MockReply.until` (au plus `HOLD_CAP_MS` = 45 s, sous le délai total de 60 s
+  d'une requête du backend), `holdFromWindow` ; spec : `held`/`releaseHold()` libéré une fois l'avis de reprise vu.
+  Test serveur : première tâche `2020-06-01 → 2020-07-15`, 409 attendu `2020-06-01 → 2020-06-30` (message nommé
+  « 409 : période de la tâche suivie, fin lue »).
+- **Tests ajoutés** (périmètre `707d93e8` → `9ca7fe48`, recomptés) : Vitest **4** (`provider-download.test.ts` +1 :
+  fin future ramenée ; `ProviderDownloadDialog.test.ts` +3 : 409 sur une fin future et `max`, suivi perdu après une
+  reprise, ancien `POST` après réouverture), et une assertion de texte au passé ajoutée au test « 409 d'une AUTRE
+  période » ; Rust **0** neuf, `refus_tache_unique_et_cles_d_api` modifié ; Playwright **0** neuf, test (b) rendu
+  indépendant du temps. `sitesTotal` 3672 → **3674** (garde verte au gate ; au diff : 2 sites nets).
+- **Sondes négatives** : frontend 6 mutations (R1 fin non ramenée, R2 `max` retiré, R3 `finally` sans garde, R4 avis
+  au futur à l'issue, R5 suivi perdu sans la période, R6 avis montré en `lost`), copie hors dépôt à `node_modules`
+  réel, non mutée verte (38), **6 tuées sur 6** par test nommé en `AssertionError`
+  (`kesh-gate-logs/s38-12b/mutations-front-p2.log`) ; serveur : la mutation `(request.from, request.to)` à `paypal_downloads.rs` sur une copie `git archive` à cible propre (supprimée),
+  non mutée verte, **tuée** par `panicked at …paypal_download_e2e.rs:1292` et le message « 409 : période de la
+  tâche suivie, fin lue » (`mutations-back-p2.log`).
+- **Gates au commit `9ca7fe48`** (HEAD lu dans chaque console, cette fois après le commit) : backend
+  `scripts/test-fast.sh --ci` sous `heavy.sh` (`KESH_NO_MEMGUARD=1`, base remise à zéro ; `p2-gate-backend.console`,
+  `gate-backend-p2.log`) : fmt et clippy workspace verts, nextest **6421 exécutés, 6421 passés, 15 ignorés** ;
+  frontend (`p2-front.console`, `front-p2-*.log`) : `check` 0 erreur, `lint-i18n-ownership` vert, Vitest **4993
+  passés (290 fichiers)** (= 4989 + 4), `build` vert ; **E2E partiel (1 spec)** `paypal-download.spec.ts`
+  (`p2-e2e.console`, `e2e-p2.log`) : **3 passés**. Captures 10 à 18 reprises (la 15 montre l'avis au passé sous le
+  compte rendu). E2E complet et `gate-ci.sh` : à la fin, sur la branche d'intégration.
 
 ### File List
 
