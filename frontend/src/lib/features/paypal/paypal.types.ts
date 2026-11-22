@@ -37,6 +37,16 @@ export interface PaypalImportResponse {
 	};
 }
 
+/**
+ * Story 38-12b (AC-3) — le compte rendu d'un téléchargement par l'API (`result`
+ * d'une tâche `done`, 38-12a AC-8) : celui de l'import du CSV, plus
+ * `lastRefreshed`, le plus ancien rafraîchissement des pages de PayPal
+ * (« données de PayPal à jour jusqu'à »), `null` s'il n'en dit rien.
+ */
+export interface PaypalDownloadResult extends PaypalImportResponse {
+	lastRefreshed: string | null;
+}
+
 /** Une erreur de ligne du lecteur PayPal (`details.lines[]` de `PAYPAL_CSV_INVALID`). */
 export interface PaypalLineError {
 	line: number;

@@ -4,6 +4,14 @@
   rendu, propositions à cocher et à accepter par paquets de 500, écarts et
   lignes « à examiner » (rattachement par la modale du rapprochement).
 
+  Story 38-12b (AC-1 à AC-3) — à côté de l'import du CSV, « Télécharger depuis
+  PayPal » pour un compte dont le libellé a ses identifiants dans
+  l'environnement du serveur (`providerApi.configured` de la liste des comptes
+  bancaires) : le dialogue générique `ProviderDownloadDialog` lance la tâche, en
+  suit la progression et montre le même compte rendu que l'import du CSV
+  (`PaypalImportReport`) ; la revue se recharge à la fin. Sans identifiants,
+  l'import du CSV reste seul, et l'Administrateur lit une ligne d'aide.
+
   Kesh PROPOSE, l'utilisateur ACCEPTE : rien n'est écrit à la lecture de la
   revue ; aucune proposition n'est cochée d'office. La revue se recharge après
   l'import et après l'acceptation ; une réponse périmée (autre compte, autre
@@ -14,15 +22,19 @@
 	import { Button } from '$lib/components/ui/button';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import { errorMessageOf } from '$lib/shared/utils/error-message';
-	import { todayLocal } from '$lib/shared/utils/local-date';
+	import { todayInZurich, todayLocal } from '$lib/shared/utils/local-date';
+	import { authState } from '$lib/app/stores/auth.svelte';
 	import { formatSwissDate } from '$lib/features/reports/reports.api';
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
 	import { withoutForeignCurrency, type AccountResponse } from '$lib/features/accounts/accounts.types';
 	import { listBankAccounts, type BankAccountSummary } from '$lib/features/bank-accounts/bank-accounts.api';
-	import { accountLabelKey, paypalAccountLabels } from '$lib/features/bank-accounts/provider';
+	import { accountLabelKey, paypalAccountLabels, paypalApiStatus } from '$lib/features/bank-accounts/provider';
 	import { listFiscalYears } from '$lib/features/fiscal-years/fiscal-years.api';
 	import type { FiscalYearResponse } from '$lib/features/fiscal-years/fiscal-years.types';
 	import LinkSettlementModal from '$lib/features/reconciliation/LinkSettlementModal.svelte';
+	import ProviderDownloadDialog from '$lib/features/provider-download/ProviderDownloadDialog.svelte';
+	import { defaultPeriod } from '$lib/features/provider-download/provider-download';
+	import PaypalImportReport from '$lib/features/paypal/PaypalImportReport.svelte';
 	import type { LinkTarget } from '$lib/features/reconciliation/reconciliation.types';
 	import {
 		acceptPaypalProposals,
@@ -35,6 +47,7 @@
 		findingGapLabel,
 		paypalFailedLabel,
 		paypalImportErrorLines,
+		paypalLineErrorLabel,
 		proposalKindLabel,
 		toReviewReasonLabel,
 	} from '$lib/features/paypal/paypal-labels';
@@ -50,6 +63,7 @@
 	import type {
 		PaypalFailedProposal,
 		PaypalFinding,
+		PaypalDownloadResult,
 		PaypalImportResponse,
 		PaypalReview,
 	} from '$lib/features/paypal/paypal.types';
@@ -85,6 +99,9 @@
 	let acceptReport = $state<{ accepted: number; failed: PaypalFailedProposal[] } | null>(null);
 	let acceptError = $state<string | null>(null);
 
+	// Téléchargement par l'API (38-12b)
+	let downloadOpen = $state(false);
+
 	// Rattachement d'une ligne « à examiner »
 	let linkOpen = $state(false);
 	let linkTarget = $state<LinkTarget | null>(null);
@@ -107,6 +124,14 @@
 	);
 	let withdrawalChoices = $derived(
 		withdrawalAccountCandidates(withoutForeignCurrency(accounts), ownLedgerIds),
+	);
+
+	// Téléchargement par l'API (38-12b, AC-1) : l'état du compte choisi, le rôle, la période proposée.
+	let downloadApi = $derived(selectedAccount === null ? null : paypalApiStatus(bankAccounts, selectedAccount));
+	let role = $derived(authState.currentUser?.role);
+	let canDownload = $derived(role === 'Admin' || role === 'Comptable');
+	let downloadPeriod = $derived(
+		defaultPeriod(fiscalYears.find((fy) => fy.id === selectedYearId) ?? null, todayInZurich()),
 	);
 
 	onMount(async () => {
@@ -361,7 +386,32 @@
 					: i18nMsg('paypal-import-button', 'Importer le CSV PayPal')}
 			</Button>
 		</div>
+		{#if canDownload && downloadApi?.configured}
+			<div>
+				<Button
+					variant="outline"
+					onclick={() => (downloadOpen = true)}
+					disabled={importing || accepting}
+					data-testid="paypal-download-button"
+				>
+					{i18nMsg('paypal-download-button', 'Télécharger depuis PayPal')}
+				</Button>
+				{#if downloadApi.mode === 'sandbox'}
+					<span class="ml-2 text-xs text-text-muted" data-testid="paypal-download-sandbox">
+						{i18nMsg('paypal-download-sandbox', 'bac à sable')}
+					</span>
+				{/if}
+			</div>
+		{/if}
 	</div>
+	{#if role === 'Admin' && downloadApi !== null && !downloadApi.configured}
+		<p class="mt-2 text-xs text-text-muted" data-testid="paypal-download-not-configured">
+			{i18nMsg(
+				'paypal-download-not-configured',
+				'Téléchargement depuis PayPal non configuré pour ce compte : voir le manuel d’administration.',
+			)}
+		</p>
+	{/if}
 
 	{#if importErrors.length > 0}
 		<div class="mt-4 rounded border border-red-200 bg-red-50 p-3 text-sm" role="alert" data-testid="paypal-import-error">
@@ -375,34 +425,7 @@
 	{/if}
 
 	{#if importReport}
-		<section class="mt-4 rounded border border-border bg-surface-alt p-3 text-sm" data-testid="paypal-import-report">
-			<h2 class="font-semibold">{i18nMsg('paypal-import-report-title', 'Compte rendu de l’import')}</h2>
-			<ul class="mt-2 list-disc pl-5">
-				{#each importReport.currencies as c (c.currency)}
-					<li data-testid="paypal-import-report-{c.currency}">
-						{i18nMsg('paypal-import-report-currency', '{ $currency } : { $inserted } transaction(s) insérée(s), { $duplicates } doublon(s)', {
-							currency: c.currency,
-							inserted: String(c.inserted),
-							duplicates: String(c.duplicates),
-						})}
-					</li>
-				{/each}
-			</ul>
-			<p class="mt-2" data-testid="paypal-import-report-skipped">
-				{i18nMsg('paypal-import-report-skipped', 'Écartées : { $notCompleted } ligne(s) non terminée(s), { $memo } ligne(s) Memo, { $pairs } paire(s) neutre(s).', {
-					notCompleted: String(importReport.skipped.notCompleted.length),
-					memo: String(importReport.skipped.memo),
-					pairs: String(importReport.skipped.neutralPairs),
-				})}
-			</p>
-			{#if importReport.skipped.notCompleted.length > 0}
-				<ul class="mt-1 list-disc pl-5 text-xs text-text-muted" data-testid="paypal-import-report-not-completed">
-					{#each importReport.skipped.notCompleted as l (l.transactionId)}
-						<li>{l.transactionId} — {l.type} — {l.status}</li>
-					{/each}
-				</ul>
-			{/if}
-		</section>
+		<PaypalImportReport report={importReport} />
 	{/if}
 
 	{#if reviewError}
@@ -636,6 +659,29 @@
 			{/if}
 		</section>
 	{/if}
+{/if}
+
+{#if selectedAccount !== null}
+	<ProviderDownloadDialog
+		open={downloadOpen}
+		onOpenChange={(v) => (downloadOpen = v)}
+		provider="paypal"
+		account={selectedAccount}
+		title={i18nMsg('paypal-download-title', 'Télécharger depuis PayPal')}
+		stepLabel={i18nMsg('paypal-download-step', 'fenêtre')}
+		notice={i18nMsg(
+			'paypal-download-notice',
+			'PayPal peut mettre jusqu’à trois heures à publier une transaction ; l’historique remonte à trois ans ; le téléchargement se fait par tranches de 30 jours.',
+		)}
+		sandbox={downloadApi?.mode === 'sandbox'}
+		defaultPeriod={downloadPeriod}
+		lineLabel={paypalLineErrorLabel}
+		onDone={() => void loadReview()}
+	>
+		{#snippet report(result: PaypalDownloadResult)}
+			<PaypalImportReport report={result} testid="paypal-download-report" />
+		{/snippet}
+	</ProviderDownloadDialog>
 {/if}
 
 <LinkSettlementModal

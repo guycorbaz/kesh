@@ -15,6 +15,7 @@
 // `reopenBankAccount`.
 
 import { apiClient } from '$lib/shared/utils/api-client';
+import type { ProviderApiStatus } from '$lib/features/provider-download/provider-download.api';
 
 /** Story 34-11a1 (#972, C-e341-13) — type d'un compte : bancaire (IBAN) ou carte (sans IBAN). */
 export type BankAccountKind = 'bank' | 'credit_card';
@@ -107,6 +108,12 @@ export interface BankAccountSummary {
 	 * l'écart ; le frontend ne le recalcule pas.
 	 */
 	statementGap: string | null;
+	/**
+	 * Story 38-12b (AC-1) — pour un compte de prestataire, le téléchargement par
+	 * l'API est-il configuré (série d'identifiants au libellé du compte) ? `null`
+	 * ou absent pour un compte ordinaire. Jamais un secret.
+	 */
+	providerApi?: ProviderApiStatus | null;
 }
 
 /**
