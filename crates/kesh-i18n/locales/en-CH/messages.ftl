@@ -3690,6 +3690,7 @@ audit-log-action-imported-supplier-invoice-detached = Document detached from its
 audit-log-action-payment-batch-generated = Payment batch created
 audit-log-action-paypal-import-created = PayPal statement imported
 audit-log-action-paypal-download-created = PayPal transactions downloaded
+audit-log-action-stripe-download-created = Stripe payouts downloaded
 audit-log-action-stripe-import-created = Stripe report imported
 audit-log-action-payment-batch-confirmed = Payment batch confirmed
 audit-log-action-payment-batch-cancelled = Payment batch cancelled

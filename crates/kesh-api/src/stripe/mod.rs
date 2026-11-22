@@ -48,8 +48,8 @@ use serde::de::DeserializeOwned;
 use crate::errors::AppError;
 use crate::http_client::{BodyError, build_client, read_body_bounded, retry_after};
 use crate::provider_download::{
-    Attempt, ProviderGate, RetryError, StatusClass, Transient, Wait, Window, classify_status,
-    classify_transport, run_bounded, with_retry,
+    Attempt, JobHandle, ProviderGate, RetryError, StatusClass, Transient, Wait, Window,
+    classify_status, classify_transport, run_bounded, with_retry,
 };
 use crate::provider_env::{ProviderApiConfig, ProviderSeries, ProviderSpec};
 
@@ -81,6 +81,14 @@ pub const ERROR_FIELD_MAX_CHARS: usize = 64;
 pub const RESOURCE_PAYOUTS: &str = "payouts";
 /// Ressource de la liste des transactions de solde (journal).
 pub const RESOURCE_BALANCE_TRANSACTIONS: &str = "balance_transactions";
+
+/// Profondeur, en années, de l'historique qu'un téléchargement admet (Story
+/// 40-8b) : Stripe ne borne pas la période d'une liste, et la pagination par
+/// curseur borne chaque appel. Trente ans couvrent toute l'existence de
+/// Stripe ; la borne ne sert qu'à refuser une date absurde (l'an 1000, que la
+/// plage de la base admet) en `PROVIDER_PERIOD_INVALID` `too_old`, par le
+/// contrôle commun ([`crate::provider_download::check_period`]).
+pub const HISTORY_YEARS: u32 = 30;
 
 /// Préfixe d'une clé restreinte de production.
 pub const LIVE_PREFIX: &str = "rk_live_";
@@ -134,6 +142,23 @@ pub fn key_mode(key: &str) -> Option<KeyMode> {
     };
     (!rest.is_empty() && rest.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_'))
         .then_some(mode)
+}
+
+/// Le mode que la liste des comptes bancaires annonce pour une série Stripe
+/// (`providerApi.mode`, Story 40-8b) : lu au **préfixe de la clé**, non à
+/// l'hôte (Stripe n'a qu'un hôte, la clé dit si les données sont réelles) —
+/// `rk_live_…` → `live`, `rk_test_…` → `sandbox` (l'environnement d'essai de
+/// Stripe, que le dialogue commun montre « bac à sable »). Jamais la clé.
+pub fn series_mode(
+    config: &ProviderApiConfig,
+    series: &ProviderSeries,
+) -> Option<crate::provider_env::ProviderApiMode> {
+    use crate::provider_env::ProviderApiMode;
+    let key = config.spec.require_field(series, STRIPE_KEY).ok()?;
+    key_mode(&key).map(|m| match m {
+        KeyMode::Live => ProviderApiMode::Live,
+        KeyMode::Test => ProviderApiMode::Sandbox,
+    })
 }
 
 /// Contrôle propre à Stripe, branché sur le lecteur du socle
@@ -486,6 +511,20 @@ pub async fn fetch_rows(
     w: Window,
     parallel: usize,
 ) -> Result<StripeFetched, AppError> {
+    fetch_rows_tracked(client, w, parallel, None).await
+}
+
+/// [`fetch_rows`], la progression notée sur la tâche `job` — Story 40-8b
+/// (AC-1) : rien pendant la lecture de la liste des versements (total
+/// inconnu), puis le total posé au nombre de versements **automatiques** et
+/// une étape par versement lu (« versement 5/12 »). Le classement des erreurs
+/// est celui de [`fetch_rows`] : la progression ne change aucune issue.
+pub async fn fetch_rows_tracked(
+    client: Arc<StripeClient>,
+    w: Window,
+    parallel: usize,
+    job: Option<JobHandle>,
+) -> Result<StripeFetched, AppError> {
     let payouts = client.payouts(&w).await?;
     let mut manual_payouts = Vec::new();
     let mut automatic = Vec::new();
@@ -501,10 +540,17 @@ pub async fn fetch_rows(
         }
     }
     manual_payouts.sort();
+    if let Some(job) = &job {
+        job.set_total(u32::try_from(automatic.len()).unwrap_or(u32::MAX));
+    }
     let works = automatic.into_iter().map(move |p| {
         let client = client.clone();
+        let job = job.clone();
         async move {
             let txs = client.balance_transactions(&p.id, &w).await?;
+            if let Some(job) = &job {
+                job.step_done();
+            }
             Ok((p, txs))
         }
     });

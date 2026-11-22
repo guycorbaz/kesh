@@ -3763,6 +3763,7 @@ audit-log-action-imported-supplier-invoice-detached = Document détaché de sa f
 audit-log-action-payment-batch-generated = Lot de paiement créé
 audit-log-action-paypal-import-created = Relevé PayPal importé
 audit-log-action-paypal-download-created = Transactions PayPal téléchargées
+audit-log-action-stripe-download-created = Versements Stripe téléchargés
 audit-log-action-stripe-import-created = Rapport Stripe importé
 audit-log-action-payment-batch-confirmed = Lot de paiement confirmé
 audit-log-action-payment-batch-cancelled = Lot de paiement annulé

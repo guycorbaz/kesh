@@ -305,12 +305,20 @@ impl ProviderApiConfig {
     }
 
     /// L'état du téléchargement pour le libellé `account` (même règle que la
-    /// route : [`Self::series_for`]).
+    /// route : [`Self::series_for`]). Le mode est celui de l'hôte
+    /// ([`Self::mode`]), sauf pour Stripe, dont la clé dit le mode
+    /// ([`crate::stripe::series_mode`], Story 40-8b : un seul hôte, une clé
+    /// d'essai ou réelle).
     pub fn status_for(&self, account: &str) -> ProviderApiStatus {
-        let configured = self.series_for(account).is_some();
+        let series = self.series_for(account);
+        let mode = match series {
+            None => None,
+            Some(s) if self.spec == crate::stripe::STRIPE => crate::stripe::series_mode(self, s),
+            Some(_) => self.mode(),
+        };
         ProviderApiStatus {
-            configured,
-            mode: if configured { self.mode() } else { None },
+            configured: series.is_some(),
+            mode,
         }
     }
 }
@@ -812,13 +820,51 @@ mod tests {
                 mode: None
             }
         );
-        // Prestataire que cette version ne télécharge pas.
+        // Prestataire sans série pour ce libellé, et prestataire inconnu.
         assert!(!simule.status_for("stripe", "Boutique").configured);
+        assert!(!simule.status_for("inconnu", "Boutique").configured);
         // Forme JSON : `mode` absent quand il n'y en a pas, aucun secret.
         let json = serde_json::to_string(&simule.status_for("paypal", "Boutique")).unwrap();
         assert_eq!(json, r#"{"configured":true}"#);
         let json = serde_json::to_string(&reel.status_for("paypal", "Boutique")).unwrap();
         assert_eq!(json, r#"{"configured":true,"mode":"live"}"#);
         assert!(!json.contains("secret") && !json.contains("paypal.com"));
+    }
+
+    /// Story 40-8b (AC-4) — le mode d'un compte Stripe se lit au préfixe de sa
+    /// clé, non à l'hôte : une clé d'essai sur l'hôte réel est `sandbox`, une
+    /// clé réelle vers le serveur simulé est `live` ; jamais la clé.
+    #[test]
+    fn mode_d_un_compte_stripe_par_sa_cle() {
+        let stripe = crate::stripe::STRIPE;
+        let avec = |url: &str, cle: &str| {
+            ProvidersConfig::default().with(ProviderApiConfig::for_tests(
+                stripe,
+                url,
+                1,
+                vec![ProviderSeries::for_tests(
+                    1,
+                    "Boutique",
+                    &[(crate::stripe::STRIPE_KEY, cle)],
+                )],
+            ))
+        };
+        let essai = avec("https://api.stripe.com", "rk_test_abc");
+        assert_eq!(
+            essai.status_for("stripe", "boutique"),
+            ProviderApiStatus {
+                configured: true,
+                mode: Some(ProviderApiMode::Sandbox)
+            }
+        );
+        assert_eq!(
+            avec("http://127.0.0.1:4010", "rk_live_abc")
+                .status_for("stripe", "Boutique")
+                .mode,
+            Some(ProviderApiMode::Live)
+        );
+        let json = serde_json::to_string(&essai.status_for("stripe", "Boutique")).unwrap();
+        assert_eq!(json, r#"{"configured":true,"mode":"sandbox"}"#);
+        assert!(!essai.status_for("stripe", "Autre").configured);
     }
 }

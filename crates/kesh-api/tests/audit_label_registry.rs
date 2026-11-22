@@ -101,6 +101,7 @@ const SITES_INDIRECTS: &[(&str, &str, &[&str])] = &[
         &[
             "paypal_download.created",
             "paypal_import.created",
+            "stripe_download.created",
             "stripe_import.created",
         ],
     ),

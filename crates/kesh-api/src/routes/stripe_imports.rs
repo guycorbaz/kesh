@@ -323,6 +323,22 @@ pub fn lines_of_currency(rows: &[&StripePayoutRow]) -> (Vec<ProviderGroup>, Vec<
     (groups, payouts)
 }
 
+/// Les groupes du cœur commun, par devise, et les versements lus — la
+/// ventilation entière d'un rapport, partagée par l'import du CSV et le
+/// téléchargement par l'API (Story 40-8b, AC-3 : même résultat).
+pub fn groups_by_currency(
+    rows: &[StripePayoutRow],
+) -> (BTreeMap<String, Vec<ProviderGroup>>, Vec<PayoutReport>) {
+    let mut by_currency = BTreeMap::new();
+    let mut payouts = Vec::new();
+    for (currency, rows) in ventilate(rows) {
+        let (groups, mut currency_payouts) = lines_of_currency(&rows);
+        by_currency.insert(currency, groups);
+        payouts.append(&mut currency_payouts);
+    }
+    (by_currency, payouts)
+}
+
 // ---------------------------------------------------------------------------
 // Lecteur
 // ---------------------------------------------------------------------------
@@ -373,13 +389,7 @@ pub async fn create(
     let csv = parse_stripe_payout_csv(&form.file_bytes).map_err(csv_error)?;
     check_id_lengths(&csv.rows).map_err(csv_error)?;
 
-    let mut by_currency = BTreeMap::new();
-    let mut payouts = Vec::new();
-    for (currency, rows) in ventilate(&csv.rows) {
-        let (groups, mut currency_payouts) = lines_of_currency(&rows);
-        by_currency.insert(currency, groups);
-        payouts.append(&mut currency_payouts);
-    }
+    let (by_currency, payouts) = groups_by_currency(&csv.rows);
     let mut audit_details = serde_json::Map::new();
     audit_details.insert("provider".into(), serde_json::json!(PROVIDER_STRIPE));
     audit_details.insert("provider_account".into(), serde_json::json!(form.account));
