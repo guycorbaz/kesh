@@ -258,6 +258,63 @@ impl ProviderApiConfig {
     }
 }
 
+/// Mode d'un prestataire vu par l'écran — Story 38-12b (AC-1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ProviderApiMode {
+    /// L'hôte par défaut du prestataire (données réelles).
+    Live,
+    /// Un hôte d'essai (un segment du nom d'hôte vaut `sandbox`).
+    Sandbox,
+}
+
+/// Ce que la liste des comptes bancaires dit du téléchargement d'un compte de
+/// prestataire — Story 38-12b (AC-1, socle S7) : `{ configured, mode? }`,
+/// **jamais un secret** ni l'hôte.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+pub struct ProviderApiStatus {
+    /// Une série d'identifiants porte le libellé du compte.
+    pub configured: bool,
+    /// Le mode de l'hôte ([`ProviderApiConfig::mode`]) ; absent hors d'une
+    /// série configurée et pour un hôte ni réel ni d'essai (serveur simulé).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mode: Option<ProviderApiMode>,
+}
+
+impl ProviderApiConfig {
+    /// Le mode de l'hôte : `live` pour l'hôte par défaut du prestataire,
+    /// `sandbox` quand un segment du nom d'hôte est `sandbox`
+    /// (`api-m.sandbox.paypal.com`), `None` sinon (serveur simulé du bouclage).
+    /// Générique : aucun nom de prestataire.
+    pub fn mode(&self) -> Option<ProviderApiMode> {
+        if self.base_url == self.spec.default_base_url.trim_end_matches('/') {
+            return Some(ProviderApiMode::Live);
+        }
+        let authority = self
+            .base_url
+            .split_once("://")
+            .map_or(self.base_url.as_str(), |(_, rest)| rest);
+        let host = authority
+            .split(['/', ':'])
+            .next()
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        host.split('.')
+            .any(|label| label == "sandbox")
+            .then_some(ProviderApiMode::Sandbox)
+    }
+
+    /// L'état du téléchargement pour le libellé `account` (même règle que la
+    /// route : [`Self::series_for`]).
+    pub fn status_for(&self, account: &str) -> ProviderApiStatus {
+        let configured = self.series_for(account).is_some();
+        ProviderApiStatus {
+            configured,
+            mode: if configured { self.mode() } else { None },
+        }
+    }
+}
+
 /// Les configurations de tous les prestataires de [`ALL_PROVIDERS`].
 #[derive(Clone, Debug, Default)]
 pub struct ProvidersConfig {
@@ -280,6 +337,23 @@ impl ProvidersConfig {
         self.configs.retain(|c| c.spec.key != config.spec.key);
         self.configs.push(config);
         self
+    }
+
+    /// L'état du téléchargement d'un compte du prestataire `provider` (valeur
+    /// de `bank_accounts.provider`) au libellé `account` ; un prestataire que
+    /// cette version ne télécharge pas rend `configured: false` — Story 38-12b
+    /// (AC-1).
+    pub fn status_for(&self, provider: &str, account: &str) -> ProviderApiStatus {
+        ALL_PROVIDERS
+            .iter()
+            .find(|spec| spec.provider == provider)
+            .map_or(
+                ProviderApiStatus {
+                    configured: false,
+                    mode: None,
+                },
+                |spec| self.get(*spec).status_for(account),
+            )
     }
 
     /// Lit tous les prestataires dans l'environnement du processus.
@@ -684,5 +758,67 @@ mod tests {
             PAYPAL.require_field(&partielle, PAYPAL_SECRET),
             Err(crate::errors::AppError::ProviderApiNotConfigured { .. })
         ));
+    }
+
+    /// Story 38-12b (AC-1) — l'état que la liste des comptes bancaires rend :
+    /// configuré selon le libellé (sans casse), mode selon l'hôte, rien pour un
+    /// prestataire non téléchargé ; jamais un secret ni l'hôte dans la forme.
+    #[test]
+    fn etat_du_telechargement_d_un_compte() {
+        let serie = || {
+            vec![ProviderSeries::for_tests(
+                1,
+                "Boutique",
+                &[(PAYPAL_CLIENT_ID, "id-un"), (PAYPAL_SECRET, "secret-un")],
+            )]
+        };
+        let avec = |url: &str| {
+            ProvidersConfig::default().with(ProviderApiConfig::for_tests(PAYPAL, url, 1, serie()))
+        };
+        let reel = avec("https://api-m.paypal.com/");
+        assert_eq!(
+            reel.status_for("paypal", "  boutique "),
+            ProviderApiStatus {
+                configured: true,
+                mode: Some(ProviderApiMode::Live)
+            }
+        );
+        assert_eq!(
+            reel.status_for("paypal", "Autre"),
+            ProviderApiStatus {
+                configured: false,
+                mode: None
+            }
+        );
+        assert_eq!(
+            avec("https://api-m.sandbox.paypal.com")
+                .status_for("paypal", "Boutique")
+                .mode,
+            Some(ProviderApiMode::Sandbox)
+        );
+        // Un mot qui contient « sandbox » n'est pas un segment d'hôte d'essai.
+        assert_eq!(
+            avec("https://notsandbox.example.com")
+                .status_for("paypal", "Boutique")
+                .mode,
+            None
+        );
+        // Serveur simulé : configuré, sans mode.
+        let simule = avec("http://127.0.0.1:4010");
+        assert_eq!(
+            simule.status_for("paypal", "Boutique"),
+            ProviderApiStatus {
+                configured: true,
+                mode: None
+            }
+        );
+        // Prestataire que cette version ne télécharge pas.
+        assert!(!simule.status_for("stripe", "Boutique").configured);
+        // Forme JSON : `mode` absent quand il n'y en a pas, aucun secret.
+        let json = serde_json::to_string(&simule.status_for("paypal", "Boutique")).unwrap();
+        assert_eq!(json, r#"{"configured":true}"#);
+        let json = serde_json::to_string(&reel.status_for("paypal", "Boutique")).unwrap();
+        assert_eq!(json, r#"{"configured":true,"mode":"live"}"#);
+        assert!(!json.contains("secret") && !json.contains("paypal.com"));
     }
 }

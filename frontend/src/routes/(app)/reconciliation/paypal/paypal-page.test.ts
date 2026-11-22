@@ -53,7 +53,17 @@ vi.mock('$lib/features/paypal/paypal.api', async (importOriginal) => {
 	};
 });
 
+// Story 38-12b — le dialogue de téléchargement : seules ses routes sont simulées.
+const startDownloadMock = vi.fn();
+const getDownloadMock = vi.fn();
+vi.mock('$lib/features/provider-download/provider-download.api', async (importOriginal) => ({
+	...(await importOriginal<typeof import('$lib/features/provider-download/provider-download.api')>()),
+	startProviderDownload: (...a: unknown[]) => startDownloadMock(...a),
+	getProviderDownload: (...a: unknown[]) => getDownloadMock(...a),
+}));
+
 import * as reconciliationApi from '$lib/features/reconciliation/reconciliation.api';
+import { authState } from '$lib/app/stores/auth.svelte';
 import Page from './+page.svelte';
 
 function paypalAccount(id: number, account: string): BankAccountSummary {
@@ -67,6 +77,7 @@ function paypalAccount(id: number, account: string): BankAccountSummary {
 		cardLast4: null,
 		provider: 'paypal',
 		paypal: { account, feeAccountId: 60 },
+		stripe: null,
 		isPrimary: false,
 		journalAccountId: 31,
 		version: 1,
@@ -210,7 +221,7 @@ describe('page PayPal (Story 38-11d)', () => {
 		const r = render(Page);
 		await fireEvent.click(await r.findByTestId('paypal-check-1'));
 		await fireEvent.click(r.getByTestId('paypal-accept'));
-		expect((await r.findByTestId('paypal-accept-failed')).textContent).toContain('La proposition ne vaut plus');
+		expect((await r.findByTestId('paypal-accept-failed')).textContent).toContain('est plus valable');
 	});
 
 	it('plus de 500 propositions : un paquet à la fois, compte rendu cumulé', async () => {
@@ -403,6 +414,41 @@ describe('page PayPal — robustesse (revue P1)', () => {
 		await waitFor(() => expect((r.getByTestId('paypal-select-all') as HTMLButtonElement).disabled).toBe(false));
 	});
 
+	// Revue P1 de 40-7d (L2, mutation K) — la relecture de la revue remet à zéro les comptes de
+	// contrepartie choisis pour les retraits (`onReviewLoaded`).
+	it('relecture de la revue : le compte choisi pour un retrait est remis à zéro', async () => {
+		const r = render(Page);
+		const retrait = (await r.findByTestId('paypal-check-3')) as HTMLInputElement;
+		await fireEvent.change(r.getByTestId('paypal-withdrawal-3'), { target: { value: '20' } });
+		expect(retrait.disabled).toBe(false);
+		await fireEvent.change(r.getByTestId('paypal-account'), { target: { value: 'PayPal www' } });
+		await waitFor(() => expect(reviewMock).toHaveBeenCalledTimes(2));
+		await waitFor(() => expect((r.getByTestId('paypal-check-3') as HTMLInputElement).disabled).toBe(true));
+		expect((r.getByTestId('paypal-withdrawal-3') as HTMLSelectElement).value).toBe('');
+	});
+
+	// Revue P1 de 40-7d (L2, mutation J) — changer de compte efface le compte rendu de l'import
+	// et celui de l'acceptation du compte quitté.
+	it('changement de compte : le compte rendu de l’import et celui de l’acceptation disparaissent', async () => {
+		importMock.mockResolvedValue({
+			account: 'PayPal boutique',
+			currencies: [{ currency: 'EUR', bankAccountId: 1, importId: 3, inserted: 8, duplicates: 1 }],
+			skipped: { notCompleted: [], memo: 0, neutralPairs: 0 },
+		});
+		acceptMock.mockResolvedValue({ accepted: [{ type: 'fee', bankTransactionIds: [2], journalEntryIds: [9] }], failed: [] });
+		const r = render(Page);
+		await waitFor(() => expect(reviewMock).toHaveBeenCalledTimes(1));
+		const input = (await r.findByTestId('paypal-file-input')) as HTMLInputElement;
+		await fireEvent.change(input, { target: { files: [new File(['x'], 'paypal.csv', { type: 'text/csv' })] } });
+		expect(await r.findByTestId('paypal-import-report-EUR')).toBeTruthy();
+		await fireEvent.click(await r.findByTestId('paypal-check-2'));
+		await fireEvent.click(r.getByTestId('paypal-accept'));
+		expect(await r.findByTestId('paypal-accept-report')).toBeTruthy();
+		await fireEvent.change(r.getByTestId('paypal-account'), { target: { value: 'PayPal www' } });
+		await waitFor(() => expect(r.queryByTestId('paypal-import-report-EUR')).toBeNull());
+		expect(r.queryByTestId('paypal-accept-report')).toBeNull();
+	});
+
 	it('retrait : effacer le compte choisi décoche la proposition', async () => {
 		const r = render(Page);
 		const retrait = (await r.findByTestId('paypal-check-3')) as HTMLInputElement;
@@ -429,5 +475,93 @@ describe('page PayPal — robustesse (revue P1)', () => {
 		expect(row.textContent).toContain('Vente déjà rattachée à une autre transaction');
 		expect(row.textContent).not.toContain('Montant ou devise différents');
 		expect(r.queryByTestId('paypal-gap-details')).toBeNull();
+	});
+});
+
+describe('page PayPal — téléchargement par l’API (Story 38-12b, AC-1 à AC-3)', () => {
+	const configured = (mode?: 'live' | 'sandbox') => ({
+		...paypalAccount(1, 'PayPal www'),
+		providerApi: mode ? { configured: true, mode } : { configured: true },
+	});
+	const notConfigured = () => ({ ...paypalAccount(1, 'PayPal www'), providerApi: { configured: false } });
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		reviewMock.mockResolvedValue(review());
+	});
+
+	async function as(role: string) {
+		await authState.logout();
+		authState.login({ userId: '1', username: 'u', role, expiresIn: 3600 });
+	}
+
+	it('compte configuré, Comptable : le bouton, le dialogue, la période de l’exercice, puis la revue relue', async () => {
+		await as('Comptable');
+		listBankAccountsMock.mockResolvedValue([configured('live')]);
+		startDownloadMock.mockResolvedValue({ jobId: 8 });
+		getDownloadMock.mockResolvedValue({
+			state: 'done',
+			steps: { done: 3, total: 3 },
+			pausedUntilSeconds: null,
+			result: {
+				account: 'PayPal www',
+				currencies: [{ currency: 'CHF', bankAccountId: 1, importId: 4, inserted: 5, duplicates: 0 }],
+				skipped: { notCompleted: [], memo: 0, neutralPairs: 0 },
+				lastRefreshed: '2020-12-31T06:00:00+00:00',
+			},
+			error: null,
+		});
+		const r = render(Page);
+		const button = await r.findByTestId('paypal-download-button');
+		expect(button.textContent).toContain('Télécharger depuis PayPal');
+		expect(r.queryByTestId('paypal-download-sandbox')).toBeNull();
+		expect(r.queryByTestId('paypal-download-not-configured')).toBeNull();
+		await waitFor(() => expect(reviewMock).toHaveBeenCalledTimes(1));
+		await fireEvent.click(button);
+		const from = (await r.findByTestId('provider-download-from')) as HTMLInputElement;
+		// Exercice 2020, passé : la période proposée est l'exercice entier.
+		expect(from.value).toBe('2020-01-01');
+		expect((r.getByTestId('provider-download-to') as HTMLInputElement).value).toBe('2020-12-31');
+		expect(r.getByTestId('provider-download-notice').textContent).toContain('trois heures');
+		await fireEvent.click(r.getByTestId('provider-download-start'));
+		await waitFor(() =>
+			expect(startDownloadMock).toHaveBeenCalledWith('paypal', { account: 'PayPal www', from: '2020-01-01', to: '2020-12-31' }),
+		);
+		// Le même compte rendu que l'import du CSV, sous son propre préfixe.
+		expect((await r.findByTestId('paypal-download-report-CHF')).textContent).toContain('5 transaction(s) insérée(s)');
+		await waitFor(() => expect(reviewMock).toHaveBeenCalledTimes(2));
+	});
+
+	it('bac à sable : la mention', async () => {
+		await as('Comptable');
+		listBankAccountsMock.mockResolvedValue([configured('sandbox')]);
+		const r = render(Page);
+		expect((await r.findByTestId('paypal-download-sandbox')).textContent).toContain('bac à sable');
+	});
+
+	it('non configuré : pas de bouton ; la ligne d’aide pour l’Administrateur seulement', async () => {
+		await as('Admin');
+		listBankAccountsMock.mockResolvedValue([notConfigured()]);
+		const r = render(Page);
+		expect((await r.findByTestId('paypal-download-not-configured')).textContent).toContain('manuel d’administration');
+		expect(r.queryByTestId('paypal-download-button')).toBeNull();
+		expect(r.getByTestId('paypal-import-button')).toBeTruthy();
+		r.unmount();
+
+		await as('Comptable');
+		const r2 = render(Page);
+		await r2.findByTestId('paypal-import-button');
+		await waitFor(() => expect(reviewMock).toHaveBeenCalled());
+		expect(r2.queryByTestId('paypal-download-not-configured')).toBeNull();
+		expect(r2.queryByTestId('paypal-download-button')).toBeNull();
+	});
+
+	it('Consultation : jamais le bouton, même configuré', async () => {
+		await as('Consultation');
+		listBankAccountsMock.mockResolvedValue([configured('live')]);
+		const r = render(Page);
+		await r.findByTestId('paypal-import-button');
+		expect(r.queryByTestId('paypal-download-button')).toBeNull();
+		await authState.logout();
 	});
 });

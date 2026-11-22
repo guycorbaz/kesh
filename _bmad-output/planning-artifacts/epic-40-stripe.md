@@ -53,6 +53,12 @@ réception Wise ou bancaire de l'autre — d'où « jamais compté deux fois ».
 | **40-7c** | revue et acceptation (moteur de 38-11c2 paramétré, comme Wise) : charge → vente proposée (identifiant + brut + devise), frais et versements proposés, écarts (versement sans réception compris) ; le rattachement en devise et l'autre côté en devise sont ceux de 38-11c1 (AC-1, AC-1b) | `kesh-db`, `kesh-reconciliation`, `kesh-api`, `kesh-i18n` | 40-7b, 38-11c1, 38-11c2 | — |
 | **40-7d** | page Stripe sur le composant de PayPal généralisé (import, propositions acceptées en lot, écarts), paramètres du compte, `withoutProviders`, manuel utilisateur, `api-external.md`, E2E, captures | `frontend`, `kesh-i18n`, `docs/manual`, `docs/api-external.md` | 40-7b, 40-7c, 38-11d (39-11b pour l'E2E) | — |
 
+**À l'intégration avec l'Epic 39 (note de la revue P1 de la 40-7d, M3, 2026-11-22)** : la page Stripe renvoie un versement sans
+réception vers un compte Wise par un texte (« importez le relevé du compte de destination »), faute de page Wise dans la branche ;
+le lien vers la page Wise, selon `details.payoutBankAccountId`, se pose à la fusion avec l'Epic 39
+(`payoutGoesToProvider` dans `reconciliation/stripe/+page.svelte`), avec le manuel (`user-manual.tex`, écart « Versement sans
+réception ») et le texte `stripe-gap-receipt-import`.
+
 **Migration (phase 1)** : `20261120000003_stripe_import` (40-7b) — **une seule instruction** : `bank_accounts.payout_bank_account_id`
 (clé étrangère sur la même table) et son CHECK ; `chk_bank_accounts_provider` n'est **pas** reposée, 38-11b admet
 `'paypal'`, `'wise'` et `'stripe'` (décision de l'orchestrateur du 2026-11-20 ; si la contrainte fusionnée ne contient

@@ -55,6 +55,7 @@ use sqlx::{MySql, Transaction};
 use crate::AppState;
 use crate::errors::AppError;
 use crate::middleware::auth::CurrentUser;
+use crate::provider_env::ProviderApiStatus;
 
 // ===========================================================================
 // Payload types
@@ -298,6 +299,11 @@ pub struct BankAccountWithBalance {
     /// calculable. Seule définition de l'écart : la page d'accueil l'affiche
     /// sans le recalculer, le contrôle K3 de la préparation de clôture le lit.
     pub statement_gap: Option<Decimal>,
+    /// Story 38-12b (AC-1, socle S7) — pour un compte de prestataire,
+    /// `{ configured, mode? }` : une série d'identifiants porte son libellé
+    /// (`KESH_<P>_<n>_ACCOUNT`), et le mode de l'hôte ; **jamais un secret**.
+    /// `null` pour un compte sans prestataire.
+    pub provider_api: Option<ProviderApiStatus>,
 }
 
 // ===========================================================================
@@ -1275,6 +1281,7 @@ pub async fn list_bank_accounts(
     let payload: Vec<BankAccountWithBalance> = rows
         .into_iter()
         .map(|(account, balances)| BankAccountWithBalance {
+            provider_api: provider_api_status(&state, &account),
             account,
             statement_gap: bank_accounts::statement_gap(&balances),
             current_balance: balances.current_balance,
@@ -1286,6 +1293,15 @@ pub async fn list_bank_accounts(
         .collect();
 
     Ok(Json(payload))
+}
+
+/// L'état du téléchargement par l'API d'un compte de prestataire (Story
+/// 38-12b, AC-1) ; `None` pour un compte sans prestataire.
+fn provider_api_status(state: &AppState, account: &BankAccount) -> Option<ProviderApiStatus> {
+    let settings = &account.provider_settings;
+    let provider = settings.provider.as_deref()?;
+    let label = settings.provider_account.as_deref().unwrap_or_default();
+    Some(state.config.providers.status_for(provider, label))
 }
 
 /// Handler `POST /api/v1/bank-accounts` — création v014-1 (Comptable+).
