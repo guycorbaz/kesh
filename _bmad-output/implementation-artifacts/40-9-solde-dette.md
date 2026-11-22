@@ -1,6 +1,6 @@
 # Story 40-9 : solde de la dette de l'Epic 40 (Stripe)
 
-Status: in-progress
+Status: review
 
 *Fiche rédigée le 2026-11-22, branche `story/40-9`, partie d'`epic/40-stripe` à `b321f24ad` (fusion de la 40-8b).
 Story de solde de l'Epic 40 (`CLAUDE.md`, § *Priorités des défauts* : « une story de solde à la fin de chaque epic ») ;
@@ -152,5 +152,78 @@ story de solde 40-9 »). Chaque prémisse a été relue au code de `b321f24ad` :
   L1 (registre et fichier d'epic mis à l'état réel au début du développement), L2 (assertion de montage posée sur la
   donnée, `compose` étant privée), L3 (chemin du test d'AC-3, retrait de l'import de `todayLocal`). Trend : P1 0/0/2/5 →
   P2 0/0/1/5 → P3 0/0/0/3. Statut `in-progress` (développement).
+- 2026-11-22 — revue d'interaction de la fusion de la 40-8b (orchestrateur, rapport
+  `kesh-gate-logs/integration/epic-40-fusion-40-8b-revue.md`, 0 au-dessus de LOW) : son L1 (`api-external.md:1066`,
+  « Angle mort connu… la relecture à l'usage viendra ») est le D4 de cette fiche, déjà corrigé (`c0990f8e7`, précisé
+  par la remédiation de la validation P2) ; son L2 (le binaire du téléchargement ne joue pas la revue) noté, sans suite ici.
+- 2026-11-22 — développement (`d9e642777`) ; gates verts ; statut `review`, revue de code P1 à lancer (prompt
+  `kesh-gate-logs/s40-9/revue-p1-prompt.md`).
 
 ## Dev Agent Record
+
+Journaux : `kesh-gate-logs/s40-9/`. Dernier commit de code : `d9e642777`.
+
+### Fait
+
+- **C1** — `kesh-db/src/repositories/bank_accounts.rs` : `AND a.company_id = bank_accounts.company_id` dans les
+  sous-requêtes de devise de `list_provider_balances` et de `find_payout_destinations` ; doc-comments.
+- **C2** — `kesh-api/src/routes/stripe_imports.rs`, `label` : catégorie bornée à `PROVIDER_TYPE_MAX_CHARS` ; doc-comment.
+- **C3** — `ProviderReviewPage.svelte` : `todayInZurich()` au lieu de `todayLocal()` (import retiré).
+- **C4** — `provider-review.ts` : `IMPORT_ERRORS_CONCERNING_ACCOUNTS`, `importErrorCode`, `importErrorConcernsAccounts` ;
+  la page garde le code du refus (`importErrorCodeValue`, remis à zéro avec `importErrors`) et n'affiche le lien
+  (`{testId}-import-error-accounts-link`) que pour les quatre refus du cœur d'import.
+- **C5** — `bank-accounts/+page.svelte` : `payoutMissing` (destination absente de `payoutSource`) et option
+  « Destination actuelle (introuvable) » (`{prefix}-payout-missing`) ; clé `bank-accounts-labels-payout-missing` aux
+  quatre locales ; `sitesTotal` 3741 → **3742**, relevé par la garde (« expected 3742 to be 3741 »).
+- **D1–D6** — commentaires de `stripe_reconciliation_e2e.rs`, `api-external.md` (`:1066`, `:1074`, `:1399`, `:1476`),
+  fiche `fix-40-destination-rejugee.md` close et sa clé au registre (`c0990f8e7` et suivants). `api-external.md:1072`
+  (« renvoyées telles quelles », contrat de `POST /stripe/accept`, qui tolère les champs en trop) gardé. Manuels : aucun
+  changement (grep de `todayLocal`, « introuvable », « Comptes bancaires » : rien que C3 à C5 rende faux).
+- Registre (`40-9-solde-dette`) et fichier d'epic : état réel, extraction des lecteurs reportée.
+- `kesh-gate-logs/epic-38-kiss/issues-a-ouvrir.md` : quatre entrées barrées « CORRIGÉ par la 40-9 (`d9e642777`) »
+  (40-7d P1 L7, 40-7d P4 L1, 40-7d P4 L2, intégration 38/40 exercice), trois « TRAITÉ par fix-40 (`0638cb1c0`) »
+  (40-7b archivage, P1 L2, P2 LOW 3), la dette de la boucle de lecture annotée (reportée) ; deux entrées ajoutées
+  (destination écartée par le filtre affichée en blanc — validation P2 L2 ; copies privées de `paypal_imports.rs` —
+  40-7b P2 L5). Copie d'avant : `kesh-gate-logs/s40-9/issues-a-ouvrir.avant-40-9.md`.
+
+### Tests ajoutés (de `b321f24ad` à `d9e642777`, recomptés au diff)
+
+- Rust : **2** — `bank_accounts_repository::devise_du_compte_du_plan_lue_dans_la_seule_societe` (intégration, témoin
+  cohérent et lien incohérent, revue et import) ; `stripe_imports::tests::categorie_longue_bornee_dans_le_libelle`
+  (assertion de montage sur la donnée).
+- Vitest : **7** blocs `it`/`it.each` (14 cas) — `provider-review.test.ts` (neuf : 4 + 5 + 1 cas),
+  `stripe-page-exercice.test.ts` (neuf, `TZ=UTC`, horloge au 31.12.2025 23 h 30 UTC), `stripe-page.test.ts` (+1 cas, +1
+  assertion dans le refus de format), `bank-accounts-page-stripe.test.ts` (+2).
+
+### Gates (au dernier commit de code `d9e642777`)
+
+- `cargo fmt --check` et clippy workspace `-D warnings` verts (`fmt-1.log`, `clippy-1.log`).
+- `scripts/test-fast.sh --ci` (base `kesh_s409` remise à zéro) : **6553 exécutés, 6553 passés, 15 ignorés**
+  (`gate-backend-2.log` ; le premier passage, `gate-backend-1.log`, n'a pas démarré : bus systemd utilisateur refusé,
+  relancé avec `KESH_NO_MEMGUARD=1`).
+- Frontend : `check` 0 erreur, `lint-i18n-ownership`, `build` verts ; Vitest **5088 / 5088, 298 fichiers**
+  (`front-1-*.log`).
+- E2E : aucune spec ajoutée par la story — aucun E2E (règle de la nuit du 22.11). E2E complet et `gate-ci.sh` à
+  l'intégration de fin. Les captures ont été prises par une spec **temporaire**, jamais commitée
+  (`kesh-gate-logs/s40-9/zz-captures-40-9.spec.ts`, retirée du worktree par son script ; `e2e-cap.log` : 1 passé).
+
+### Mutations (copies `git archive` hors dépôt, cibles propres, une à la fois ; témoin non muté vert d'abord)
+
+- Rust (`mut-rust-all.console`) : témoin 2/2 verts ; garde de société de `list_provider_balances` retirée → tuée
+  (`bank_accounts_repository.rs:3236`, « import : compte du plan d'une autre société ») ; de `find_payout_destinations`
+  → tuée (`:3225`, « revue : … ») ; borne de la catégorie retirée → tuée (`stripe_imports.rs:727`).
+- Vitest (`mut-front-all.console`) : témoin vert ; `todayInZurich` → jour local → tuée (« expected 25 to be 26 ») ;
+  `importErrorConcernsAccounts` → toujours vrai → tuée (lien présent sur un refus de format) ; `payoutMissing` neutralisé
+  → tuée (« expected '' to be '4' ») ; repli `payoutPool` `null` → `[]` → tuée (« expected [ '', '4' ] to include '6' »).
+
+### Captures (thème clair, après correctif ; `kesh-gate-logs/s40-9/captures/`)
+
+- `40-9-01-refus-de-format-sans-lien.png`, `40-9-02-refus-de-compte-avec-lien.png` (page Stripe) ;
+  `40-9-03-destination-introuvable.png` (comptes bancaires, lecture des comptes archivés et clos en échec simulée).
+- Pas de capture « avant » : l'état d'avant est celui des captures de la 40-7d (`kesh-gate-logs/s40-7d/captures/`).
+
+### Points relevés
+
+- L2 de la revue de fusion 40-8b : `stripe_download_e2e` ne joue pas la revue (une revue qui ne rejugerait plus la
+  destination y survit) — couvert par `stripe_reconciliation_e2e`, noté.
+
