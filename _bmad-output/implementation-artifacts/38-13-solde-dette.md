@@ -1,6 +1,6 @@
 # Story 38-13 : solde de la dette de l'Epic 38
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-22, branche `story/38-13` partie d'`epic/38-paypal` (`38f616561`). Story de solde
 (`CLAUDE.md` § *Priorités des défauts*, « Tarir la source, puis solder ») : elle ne prend que la dette des stories de
@@ -77,7 +77,7 @@ catalogues restent vertes.
 **AC-B3 — consigne de fusion.** `epic/39-wise` et `epic/40-stripe` contiennent déjà `epic/38-paypal` et ajoutent des
 clés jointives du bloc retiré : la reprise de cette story y donnera un conflit sur les quatre catalogues. Consigne,
 écrite au Dev Agent Record et au texte de PR : **les six clés restent retirées** (les autres lignes des deux côtés
-gardées), contrôle `git grep -c '<clé>' -- crates/kesh-i18n/locales` vide sur la branche fusionnée (validation P1, M2).
+gardées), contrôle par la commande ancrée à clés exactes des Completion Notes (`git grep -n -E '^(provider-gap-(receipt-without-sale|sale-without-receipt|amount-or-currency-mismatch)|provider-review-(conversion-unpaired|withdrawal-foreign-currency|no-rule)) =' -- crates/kesh-i18n/locales`) vide sur la branche fusionnée (validation P1, M2 ; revue P1, M1).
 La consigne va aussi au rapport rendu à l'orchestrateur, qui la porte à `consignes-correctifs.md` (fichier commun que
 cette story n'écrit pas), où la lira l'agent qui fusionnera (validation P2, L2).
 
@@ -169,7 +169,7 @@ Opus (développement) ; validation P1 Sonnet, P2 Opus, P3 ciblée Sonnet.
 - **⚠️ Textes Stripe du libellé de compte (revue P1 M2)** : à la même fusion, les textes propres à Stripe écrits sur
   `epic/40-stripe` passent à « sans casse ni accents » : `docs/manual/fr/admin-manual.tex` (~1232,
   `KESH\_STRIPE\_<n>\_ACCOUNT … la casse ne compte pas`) et `docs/api-external.md` (~1416, « libellé sans casse »),
-  ainsi que les doc-comments Stripe qui parlent du libellé. Contrôle :
+  ainsi que les sites partagés qui parlent du libellé (`provider_download.rs:604`, `provider_env.rs:220` et `:772`, `routes/bank_accounts.rs:804` ; il n'existe pas de doc-comment propre à Stripe). Contrôle :
   `git grep -nE 'casse ne compte|sans casse\)' -- docs/manual docs/api-external.md crates/kesh-api/src`.
 - **A** (`0d6218c26`, mise en forme `98f1fb40d`) : `provider_env::account_label_key` (`pub(crate)`, rognage, NFD,
   retrait des marques combinantes, minuscules), employée par `series_for`, la garde de libellé en double de `read`
@@ -230,3 +230,7 @@ Opus (développement) ; validation P1 Sonnet, P2 Opus, P3 ciblée Sonnet.
   → consigne de fusion ; L1, L3 → doc-comments ; L2 (deux séries « Straße » / « Strasse » : la garde de doublon les
   accepte, la base les confond ; réservé à l'administrateur, invraisemblable en Suisse) et L4 (méthode, couvert par M1)
   notés au Dev Agent Record, sans correctif. Passe P2 ciblée à lancer (`revue-p2-prompt.md`).
+- 2026-11-22, revue de code P2 ciblée sur `cb70d7afe` (Haiku ; `kesh-gate-logs/s38-13/revue-p2-rapport.md`) : 0 au-dessus
+  de LOW, 3 LOW, corrigés sans toucher la production (L-1 doc-comment d'`account_label_key`, L-2 AC-B3 aligné sur la
+  commande ancrée, L-3 sites partagés de la consigne M2 nommés). **Boucle close**. Trend : validation P1 2 M -> P2 1 M
+  -> P3 0 (Sonnet, Opus, Sonnet) ; revue P1 0/0/2/4 (Opus) -> P2 0/0/0/3 (Haiku, ciblée). Story `done`.

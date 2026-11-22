@@ -52,8 +52,11 @@ use crate::config::ConfigError;
 /// pleine chasse (`Ａ`/`A`), l'ordinal `ª`/`a` et l'espace sans chasse U+200B,
 /// que cette forme ne replie pas ; **dans l'autre sens**, retirer toute la
 /// catégorie `Mark` égale des lettres que la base distingue, là où un signe
-/// porte un poids primaire (devanagari : `क`/`कि`). Ni l'un ni l'autre n'est
-/// atteignable avec des libellés en français, allemand, italien ou anglais.
+/// porte un poids primaire (devanagari : `क`/`कि`). Ce sens inverse n'est pas
+/// atteignable avec des libellés en français, allemand, italien ou anglais ; les
+/// formes directes (`œ`/`oe`, `ß`/`ss`, `ª`/`a`) le sont, et deux séries qui ne
+/// se distinguent que par elles sont refusées par la base en 422
+/// `PROVIDER_API_NOT_CONFIGURED`.
 pub(crate) fn account_label_key(label: &str) -> String {
     label
         .trim()
