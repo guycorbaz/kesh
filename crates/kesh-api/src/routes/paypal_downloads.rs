@@ -15,7 +15,9 @@
 //! **Ordre des refus du `POST`**, rien lancé : 403 (clé d'API) → `400
 //! VALIDATION_ERROR` → `404 PROVIDER_ACCOUNT_NOT_FOUND` → `422
 //! PROVIDER_API_NOT_CONFIGURED` → `400 PROVIDER_PERIOD_INVALID` → `409
-//! PROVIDER_DOWNLOAD_RUNNING` (`details.jobId`, pour reprendre le suivi).
+//! PROVIDER_DOWNLOAD_RUNNING` (`details.jobId`, pour reprendre le suivi, et
+//! `details.from`/`to`, la période de cette tâche, qui peut différer de celle
+//! demandée).
 //!
 //! **La tâche** lit toutes les fenêtres et les convertit **avant** toute
 //! écriture ; les lignes passent par la ventilation de 38-11b puis par le cœur
@@ -131,11 +133,14 @@ pub async fn create(
             PROVIDER_PAYPAL,
             current_user.company_id,
             &account,
+            (request.from, to),
             Some(wins.len() as u32),
         )
-        .map_err(|job_id| AppError::ProviderDownloadRunning {
+        .map_err(|running| AppError::ProviderDownloadRunning {
             provider: PROVIDER_PAYPAL,
-            job_id,
+            job_id: running.id,
+            from: running.from,
+            to: running.to,
         })?;
     let job_id = job.id;
     let run = Run {

@@ -74,6 +74,25 @@ describe('bank-accounts.api', () => {
 		expect(init.method).toBe('GET');
 	});
 
+	// Story 38-12b (AC-1) — `providerApi` traverse le mappage (l'E2E l'a vu perdu) ;
+	// absent ou `null` → `null`.
+	it('listBankAccounts garde providerApi', async () => {
+		const base = { id: 1, bankName: 'PayPal', description: null, iban: null, qrIban: null, isPrimary: false, journalAccountId: 3, version: 1, archived: false, currentBalance: null, lastTransactionDate: null };
+		mockFetch.mockResolvedValueOnce({
+			ok: true,
+			status: 200,
+			json: () =>
+				Promise.resolve([
+					{ ...base, provider: 'paypal', paypal: { account: 'A' }, providerApi: { configured: true, mode: 'sandbox' } },
+					{ ...base, id: 2 },
+				]),
+			headers: new Headers(),
+		} as Response);
+		const [a, b] = await listBankAccounts();
+		expect(a.providerApi).toEqual({ configured: true, mode: 'sandbox' });
+		expect(b.providerApi).toBeNull();
+	});
+
 	it('updateBankAccountJournalLink envoie PATCH avec body camelCase + version', async () => {
 		await updateBankAccountJournalLink(17, 1020, 3);
 		const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
