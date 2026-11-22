@@ -158,6 +158,13 @@ export interface LinkableLedgerOptions {
 	 * (intégration de la 0.17.6, raccord 1, revue P1 B-3).
 	 */
 	liabilityOnly?: boolean;
+	/**
+	 * Story 38-11d (AC-1) — offrir aussi les comptes **en devise** : vrai pour
+	 * le seul compte d'un prestataire (case « Compte PayPal » cochée), dont le
+	 * compte du plan porte la devise du solde (38-11b). Faux par défaut : le
+	 * filtre de 37-3b reste la règle de tous les autres écrans.
+	 */
+	allowForeignCurrency?: boolean;
 }
 
 /**
@@ -192,8 +199,9 @@ export function linkableLedgerAccounts(
 				// est `admitsLedgerType`, source unique avec l'écran de création.
 				admitsLedgerType(options.liabilityOnly ? 'credit_card' : 'bank', a.accountType) &&
 				!excludedIds.has(a.id) &&
-				// Story 37-3b (AC-4) : un compte lié ne porte jamais de devise (37-1).
-				!isForeignCurrencyAccount(a),
+				// Story 37-3b (AC-4) : un compte lié ne porte jamais de devise (37-1)
+				// — sauf celui d'un compte de prestataire (Story 38-11d, AC-1).
+				(options.allowForeignCurrency === true || !isForeignCurrencyAccount(a)),
 		)
 		.sort((a, b) => a.number.localeCompare(b.number));
 }

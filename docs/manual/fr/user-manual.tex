@@ -958,7 +958,7 @@ Le panneau ne bloque rien par lui-même~: \textbf{deux contrôles}, marqués \em
 
 \begin{description}
     \item[Exercices antérieurs] Un exercice plus ancien est encore ouvert~: le panneau nomme le plus ancien, qu'il faut clôturer d'abord. Ce contrôle bloque, et c'est la clôture elle-même qui bloque (le bouton \emph{Clôturer} est alors désactivé).
-    \item[Transactions bancaires à rapprocher] Des transactions bancaires, importées ou saisies à la main, datées (date de comptabilisation bancaire) dans l'exercice, attendent leur rapprochement --- y compris celles que vous avez écartées des propositions. Lien~: \emph{Réconciliation bancaire} (\S\ref{sec:reconciliation}).
+    \item[Transactions bancaires à rapprocher] Des transactions bancaires, importées ou saisies à la main, datées (date de comptabilisation bancaire) dans l'exercice, attendent leur rapprochement --- y compris celles que vous avez écartées des propositions. Lien~: \emph{Réconciliation bancaire} (\S\ref{sec:reconciliation})~; pour un compte PayPal, le lien \emph{Ouvrir la page PayPal}, à côté du compte, mène à la page PayPal (\S\ref{sec:comptes-paypal}), où ses transactions se rapprochent.
     \item[Relevés bancaires de fin d'exercice] Pour chaque compte bancaire, le relevé qui \textbf{se termine au plus tard le dernier jour de l'exercice} est comparé aux livres~: relevé manquant, relevé arrêté trop tôt, ou écart entre le solde du relevé et le solde comptable à sa date. Lien~: \emph{Comptes bancaires}.
     \item[Factures en brouillon] Des factures client datées dans l'exercice n'ont jamais été validées~: elles ne sont pas en comptabilité. Lien~: la liste des factures, filtrée sur les brouillons de l'exercice.
     \item[Documents fournisseur à traiter] Des documents déposés dans le dossier d'import, avec ou sans QR-code, attendent qu'une facture en soit créée, ou d'être retirés de la liste (\S\ref{sec:import-factures}). Lien~: \emph{Ouvrir les documents à traiter}.
@@ -1147,7 +1147,7 @@ En multi-devises, \emph{Administration} → \emph{Plan comptable} affiche la dev
     \item la contrepartie d'une \textbf{règle d'affectation} (\S\ref{sec:regles-affectation}), même supprimée~;
 \end{itemize}
 Un compte de différences de change ou de conversion désigné (ci-dessus) ne reçoit pas de devise non plus, refusé sous son propre code (\texttt{409 ACCOUNT\_\allowbreak IS\_\allowbreak FX\_\allowbreak DIFFERENCE\_\allowbreak ACCOUNT}).
-\textbf{Inversement}, un compte \textbf{en devise} ne peut pas être lié à un compte bancaire, désigné dans \emph{Facturation}, choisi comme compte d'un article, ni recevoir un rôle (\texttt{400 ACCOUNT\_\allowbreak IN\_\allowbreak FOREIGN\_\allowbreak CURRENCY}). Retirer un rôle et poser une devise dans la même modification est admis, si rien d'autre ne retient le compte.
+\textbf{Inversement}, un compte \textbf{en devise} ne peut pas être lié à un compte bancaire --- sauf au compte bancaire d'un compte PayPal (\S\ref{sec:comptes-paypal}) ---, désigné dans \emph{Facturation}, choisi comme compte d'un article, ni recevoir un rôle (\texttt{400 ACCOUNT\_\allowbreak IN\_\allowbreak FOREIGN\_\allowbreak CURRENCY}). Retirer un rôle et poser une devise dans la même modification est admis, si rien d'autre ne retient le compte.
 
 \subsection{Les comptes de différence propres}
 
@@ -3343,11 +3343,12 @@ fichier ne signale pas une période déjà saisie à la main.
 \paragraph{Limites.}
 \begin{itemize}
     \item \textbf{En CHF}~: les montants se saisissent et s'enregistrent en francs suisses, et
-          l'écran le dit. Un compte bancaire est toujours lié à un compte comptable en francs
-          suisses~: depuis la version~0.19.0, Kesh refuse de lier un compte bancaire à un compte
-          tenu en devise (\S\ref{sec:multi-devises}). Le relevé d'un compte tenu dans une autre
-          devise ne se saisit donc pas ici~; les relevés en devise sont prévus pour une version
-          ultérieure (\#233).
+          l'écran le dit. Un compte bancaire ordinaire est toujours lié à un compte comptable en
+          francs suisses~: depuis la version~0.19.0, Kesh refuse de lier un compte bancaire à un
+          compte tenu en devise (\S\ref{sec:multi-devises}), sauf celui d'un compte PayPal.
+          Un compte PayPal n'est pas proposé ici~: son relevé, en devise ou en francs, s'importe
+          par la page PayPal (\S\ref{sec:comptes-paypal}). Les autres relevés en devise sont
+          prévus pour une version ultérieure (\#233).
     \item \textbf{500 lignes} au plus par relevé~; un relevé plus long se saisit en plusieurs
           périodes.
     \item Un \textbf{compte clos} refuse la saisie, comme l'import
@@ -3395,6 +3396,56 @@ Si un fichier contient un mélange de lignes valides et invalides (date ou monta
 \begin{keshtip}
 Importez vos relevés bancaires \textbf{au moins une fois par semaine} pour faciliter la réconciliation. Plus le délai entre la transaction et l'import est court, plus il est facile de se souvenir du contexte et donc de rapprocher rapidement.
 \end{keshtip}
+
+%%─────────────────────────────────────────────────────────────────────────────
+\subsection{Comptes PayPal}\label{sec:comptes-paypal}
+
+Kesh tient le solde d'un compte PayPal comme celui d'un compte bancaire~: \textbf{un compte bancaire par compte PayPal et par devise}, lié au compte du plan de cette devise. Le relevé ne s'importe pas par l'import bancaire, mais par la page \emph{Mensuel} → \emph{PayPal}, qui importe le fichier CSV de PayPal, puis propose le rapprochement de chaque transaction~; rien ne s'écrit sans votre acceptation. La page est ouverte aux comptables et aux administrateurs.
+
+\paragraph{Créer les comptes.} \emph{Administration} → \emph{Comptes bancaires} → \emph{Nouveau compte bancaire}, type \emph{Compte bancaire}, case \emph{Compte PayPal} cochée~:
+\begin{itemize}
+    \item \textbf{Compte PayPal}~: le libellé qui réunit les soldes d'un même compte PayPal (par exemple «~PayPal www~»), le \textbf{même} pour chacune de ses devises~; le champ propose les libellés déjà saisis~;
+    \item \textbf{Compte comptable lié}~: \textbf{obligatoire}~; sa devise est celle du solde. Un compte du plan en devise n'est offert qu'au compte PayPal --- il exige le multi-devises activé (\S\ref{sec:multi-devises}) et une devise posée sur le compte (\S\ref{sec:devise-compte})~; un seul compte bancaire par compte PayPal et par devise~;
+    \item \textbf{Compte de frais}~: un compte de charge actif et imputable, en CHF ou dans la devise du compte lié. Il est facultatif~: sans lui, les frais vont «~à examiner~»~;
+    \item l'\textbf{IBAN} est facultatif~; le QR-IBAN et la case \emph{Compte principal} disparaissent --- le compte principal ne peut pas être un compte PayPal. Un compte en devise ne reçoit pas de solde d'ouverture par cet écran~: passez-le par une écriture en devise (\S\ref{sec:ecritures-devise}).
+\end{itemize}
+La liste des comptes bancaires montre sous le nom «~PayPal · <compte> · <devise>~». Un compte PayPal n'a pas de bouton \emph{Lier}~: son compte du plan se change par \emph{Modifier}, tant qu'il ne porte aucune transaction --- ensuite, le libellé et le compte du plan ne changent plus, le compte de frais si.
+
+\paragraph{Exporter le relevé de PayPal.} Dans PayPal, rapport d'activité, rapport «~Balance affecting transactions~», au format CSV, colonnes en anglais (le fichier porte notamment \emph{Date}, \emph{Type}, \emph{Status}, \emph{Currency}, \emph{Gross}, \emph{Fee}, \emph{Net}, \emph{Transaction ID}, \emph{Reference Txn ID}, \emph{Balance Impact}). Les dates doivent dire leur ordre~: une date à barre oblique dont le jour dépasse 12 suffit~; un fichier dont toutes les dates ont un jour et un mois inférieurs ou égaux à 12 est refusé --- exportez une période plus longue, ou changez le format de date dans PayPal.
+
+\paragraph{Importer.} Sur la page PayPal, choisissez le compte PayPal, puis \emph{Importer le CSV PayPal}. Kesh répartit le fichier par devise, chacune vers le compte bancaire de sa devise~; une devise sans compte bancaire fait refuser tout le fichier, qui nomme les devises à créer. Rien n'est importé d'un fichier refusé~: colonnes manquantes nommées, lignes en erreur avec leur numéro et leur champ, ordre des dates indécidable. L'import~:
+\begin{itemize}
+    \item n'importe que les lignes au statut \emph{Completed}~; les autres sont listées au compte rendu, avec les lignes \emph{Memo} et les \textbf{paires neutres} (retenue puis libération d'un même montant, qui ne changent pas le solde), écartées et comptées~;
+    \item fait de chaque ligne deux transactions~: le \textbf{brut}, et les \textbf{frais} sur une ligne à part --- y compris les frais \textbf{positifs} que PayPal rend sur un remboursement~;
+    \item écarte les \textbf{doublons}~: une transaction déjà importée sur le même compte (même identifiant PayPal) est ignorée et comptée~; réimporter un fichier qui chevauche le précédent est donc sans risque.
+\end{itemize}
+Le compte rendu reste affiché jusqu'à l'import suivant ou au changement de compte ou d'exercice~: par devise, les transactions insérées et les doublons, puis les lignes écartées.
+
+\paragraph{Le rapprochement.} En tête de page, à côté du compte PayPal, choisissez l'\textbf{exercice}~: la page liste les propositions, les écarts et les lignes «~à examiner~» des transactions en attente de ce compte PayPal dont la date tombe dans l'exercice.
+\begin{itemize}
+    \item \textbf{Vente rattachée}~: les ventes viennent de vos boutiques, qui passent elles-mêmes l'écriture de vente au débit du compte PayPal de la devise, avec «~TXN <identifiant>~» (ou «~transaction <identifiant>~») dans le libellé --- c'est l'identifiant de la transaction PayPal. Kesh propose de rattacher l'encaissement à l'écriture de même identifiant, de même montant brut et de même devise~; aucune écriture nouvelle~;
+    \item \textbf{Frais}~: une écriture entre le compte de frais et le compte PayPal~;
+    \item \textbf{Règle}~: une règle d'affectation qui reconnaît la transaction (\S\ref{sec:regles-affectation})~;
+    \item \textbf{Conversion}~: les deux côtés d'une conversion de devises, appariés par leur référence. Quand un côté est en francs, \textbf{une} écriture au CHF réel de ce côté, que les deux transactions pointent~; entre deux devises étrangères, \textbf{deux} écritures au même montant en CHF par le compte de conversion de la société (\S\ref{sec:multi-devises-comptes}), au cours mensuel retenu de la devise débitée~;
+    \item \textbf{Retrait}~: un virement du solde PayPal vers le compte du plan du compte bancaire principal de la société~; sans compte principal, vous choisissez le compte de destination (un compte d'actif en francs) dans la ligne~; seulement depuis un solde en \textbf{francs}.
+\end{itemize}
+Cochez les propositions (\emph{Tout cocher} au besoin), puis \emph{Accepter la sélection}~: Kesh les accepte par lots de 500 au plus, dans l'ordre des dates, et le compte rendu dit, pour chacune qui est refusée, pourquoi (proposition périmée parce qu'une autre action est passée entre-temps, cours du mois absent, exercice clos\ldots). Un retrait sans compte de destination reste décoché tant que vous n'en choisissez pas un.
+
+\textbf{Les écarts} trouvent les erreurs des boutiques~: \emph{Encaissement sans vente} (aucune écriture ne porte l'identifiant), \emph{Vente sans encaissement} (une écriture porte un identifiant qu'aucune transaction PayPal ne porte), \emph{Montant ou devise différents} (attendu et trouvé, ou «~aucun débit trouvé~» quand l'écriture ne débite pas le compte PayPal), \emph{Vente déjà rattachée à une autre transaction} (l'écriture de même identifiant est déjà rattachée~: double import, ou rattachement fait à la main). \textbf{À examiner}~: plusieurs ventes portent la même TXN, compte de frais non réglé, conversion sans sa paire, retrait d'un solde en devise, aucune règle~; la ligne montre le type PayPal, le nom et l'e-mail de la contrepartie, de quoi écrire une règle à filtres. Pour une telle ligne, passez l'écriture à la main (en devise pour un solde en devise, \S\ref{sec:ecritures-devise}), puis \emph{Rattacher à une écriture}~: la fenêtre de rattachement (\S\ref{sec:rattacher-reglement}) montre, dans la devise de la transaction, les écritures passées sur le compte du plan.
+
+\paragraph{Règles et filtres.} Une règle d'affectation peut porter, en plus de son critère, trois \textbf{filtres facultatifs}~: \emph{Type PayPal (exact)}, \emph{E-mail exact} (l'e-mail de la contrepartie) et le \emph{Sens} (entrées, sorties, ou les deux). Elle ne s'applique qu'à une transaction qui satisfait le critère existant \textbf{et} chaque filtre posé~; le critère reste obligatoire. \textbf{Limite}~: deux règles actives ne peuvent pas porter le même critère et la même valeur, même avec des filtres différents. \textbf{La contrepartie} d'une règle peut être un compte en devise~: la règle ne vaut alors que pour les transactions de \textbf{cette devise} (ou, avec un compte en francs, pour toutes). À l'acceptation, une règle dont la contrepartie est tenue dans une autre devise que celle de la transaction est refusée, avec ce message~: «~Cette règle désigne un compte tenu en EUR~: elle ne s'applique qu'aux transactions en EUR\,\dots~» --- choisissez un compte en francs ou dans la devise de la transaction.
+
+\paragraph{Annuler.} Une transaction rapprochée par la page se dé-rapproche comme toute autre (\S\ref{sec:annuler-rapprochement}). Pour une conversion à \textbf{une} écriture, annuler un côté ne retire que son lien~; annuler le second contre-passe l'écriture. Pour une conversion à \textbf{deux} écritures, annulez \textbf{chacune} de ses deux transactions~: entre les deux, le compte de conversion n'est pas soldé.
+
+\paragraph{Limites.}
+\begin{itemize}
+    \item Les dates sont celles de l'export, sans conversion de fuseau horaire~: une vente et son encaissement de part et d'autre du 1\textsuperscript{er} janvier paraissent en écarts dans les deux exercices.
+    \item Remboursements, litiges et retenues isolées vont «~à examiner~»~: passez l'écriture à la main, puis rattachez-y la transaction.
+    \item Aucun code TVA n'est posé sur les écritures de la page~; aucune écriture de vente n'est créée (elles viennent des boutiques).
+    \item Pas de téléchargement automatique depuis PayPal~: le fichier s'exporte et s'importe à la main.
+    \item \textbf{Une facture fournisseur ne se paie pas depuis un compte PayPal} (ni depuis sa fiche, ni par un lot de paiement \texttt{pain.001}~; l'écran ne propose pas le compte, et le serveur le refuse). Remède~: réglez la facture par un compte interne, ou passez l'écriture à la main (en devise pour un solde en devise), puis rattachez la transaction PayPal à cette écriture.
+    \item Un compte PayPal n'est proposé ni à l'import bancaire, ni à la saisie d'un relevé, ni au règlement d'une facture client, ni à l'écran de réconciliation. \textbf{Angle mort}~: par l'API, la réconciliation générique ne refuse pas, sur un compte PayPal en francs, une proposition «~facture~», «~ventilée~» ou «~règle~», un règlement groupé, l'écriture manuelle, l'éclatement d'une transaction ni le rattachement d'une transaction à un règlement, et en dresse la liste des propositions~; traitez ces transactions par la page PayPal (la proposition «~facture fournisseur~» et les lots \texttt{pain.001} sont, eux, refusés).
+\end{itemize}
 
 %%─────────────────────────────────────────────────────────────────────────────
 \section{Réconciliation bancaire}\label{sec:reconciliation}
@@ -3533,7 +3584,7 @@ L'avis ne suit que le \textbf{rôle} du compte, jamais son numéro~: un compte d
 
 \textbf{Quand.} Le mouvement du relevé est \textbf{déjà comptabilisé}, mais rien ne le relie à la transaction, qui reste en attente~: un paiement de client enregistré depuis la fiche de la facture --- ou depuis la page des échéances --- (\S\ref{sec:reglement-client})~; une facture fournisseur payée depuis sa fiche, ou par un lot de paiement d'\textbf{une} facture confirmé (\S\ref{sec:regler-facture-fournisseur})~; une \textbf{écriture saisie au journal} pour ce mouvement~; le paiement resté au grand livre d'une facture fournisseur payée puis annulée. Pour un client, c'est le cas d'un paiement que la réconciliation ne propose pas (reçu plus de 30 jours après l'échéance et le dernier rappel, client qui a payé quelques centimes de trop, imputation choisie à la main). Le rattachement relie la transaction à cette écriture~: elle passe \textbf{rapprochée}, et elle cesse d'empêcher la clôture du compte bancaire (\S\ref{sec:clore-compte-bancaire}) comme d'apparaître parmi les transactions en attente de la préparation de clôture de l'exercice (\S\ref{sec:preparer-cloture}).
 
-\textbf{Le geste.} Sur la ligne de la transaction, \emph{Rattacher à une écriture existante} (toute ligne en CHF de montant non nul, crédit ou débit). La fenêtre montre deux sections~:
+\textbf{Le geste.} Sur la ligne de la transaction, \emph{Rattacher à une écriture existante} (toute ligne en CHF de montant non nul, crédit ou débit~; la ligne en devise d'un compte PayPal se rattache depuis la page PayPal, \S\ref{sec:comptes-paypal}, dans sa devise, sans la section des règlements de factures clients). La fenêtre montre deux sections~:
 \begin{itemize}
     \item \textbf{Règlements de factures clients} --- pour un crédit seulement~: les règlements par virement sur ce compte bancaire que la transaction peut rejoindre --- facture, client, date du règlement, montant, écart, jours d'écart ---, du plus petit écart au plus grand, puis du plus proche en date au plus lointain~;
     \item \textbf{Écritures passées sur le compte de la banque}~: les écritures dont le mouvement sur le compte du grand livre de la banque égale le montant de la transaction --- numéro, date, journal, libellé, montant, jours d'écart ---, de la plus proche en date à la plus lointaine, cinquante au plus.
@@ -3628,7 +3679,7 @@ Exemple : le loyer est prélevé chaque mois par la régie. Une règle «~Loyer~
 \begin{enumerate}
     \item \emph{Administration} → \emph{Règles d'affectation} → \emph{Nouvelle règle}.
     \item Saisir le \textbf{libellé} de la règle (ex. «~Loyer~»).
-    \item Choisir le \textbf{type} de correspondance --- \emph{Contrepartie contient}, \emph{Contrepartie exacte}, \emph{Référence contient} ou \emph{IBAN exact} --- et saisir la \textbf{valeur} cherchée. Une règle porte \textbf{une seule} condition. Le type ne se choisit qu'à la création~: il ne se modifie plus ensuite. Une règle \emph{Contrepartie exacte} écrite sur un nom qu'une version antérieure à la~0.17.4 avait lu tronqué (un nom à «~\&~», par exemple «~Fils~» pour «~Dupont \& Fils~») ne reconnaît plus le nom désormais lu en entier~: corrigez sa valeur.
+    \item Choisir le \textbf{type} de correspondance --- \emph{Contrepartie contient}, \emph{Contrepartie exacte}, \emph{Référence contient} ou \emph{IBAN exact} --- et saisir la \textbf{valeur} cherchée. Une règle porte \textbf{une seule} condition, que restreignent au besoin trois \textbf{filtres facultatifs} --- \emph{Type PayPal (exact)}, \emph{E-mail exact} et \emph{Sens} (\S\ref{sec:comptes-paypal})~: la règle ne s'applique qu'à une transaction qui satisfait la condition \textbf{et} chaque filtre posé~; deux règles actives de même condition et même valeur sont refusées, même avec des filtres différents. Le type ne se choisit qu'à la création~: il ne se modifie plus ensuite. Une règle \emph{Contrepartie exacte} écrite sur un nom qu'une version antérieure à la~0.17.4 avait lu tronqué (un nom à «~\&~», par exemple «~Fils~» pour «~Dupont \& Fils~») ne reconnaît plus le nom désormais lu en entier~: corrigez sa valeur.
     \item Choisir le \textbf{compte de contrepartie}~: un compte de charge ou de produit, actif et imputable.
     \item Fixer la \textbf{priorité}, de 1 à 1000~: le \textbf{plus petit} nombre l'emporte.
     \item Au besoin, choisir un \textbf{compte analytique par défaut}.
@@ -3637,7 +3688,7 @@ Exemple : le loyer est prélevé chaque mois par la régie. Une règle «~Loyer~
 
 \subsubsection{Application des règles}
 
-Au rapprochement d'un compte bancaire, une règle ne s'applique qu'aux transactions en CHF, et seulement quand \textbf{aucune facture} n'est candidate pour la transaction --- ni désignée, par la référence du paiement ou le nom de son client, alors que le paiement la dépasse de quelques centimes (\S\ref{sec:algorithme-matching}). Pour un débit, une facture fournisseur validée et non payée d'un total égal au débit à 5 centimes près, désignée par la référence du paiement ou le nom de son fournisseur, masque aussi la règle, de même qu'une facture du montant exact dans un lot de paiement en cours sur ce compte (\S\ref{sec:matching-fournisseur}). Une dépense \textbf{déjà réglée} par un autre chemin ne la masque \textbf{pas}~: n'acceptez pas la règle, rattachez la transaction à l'écriture déjà passée (\S\ref{sec:rattacher-reglement}~; encadré «~Dépense déjà réglée par un autre chemin~»). Depuis la version~0.14.0, l'\textbf{acceptation} d'une règle est refusée quand une facture fournisseur candidate, une facture fournisseur d'un lot en cours sur ce compte, ou une facture client que le paiement dépasse de quelques centimes la défend~: rechargez la page et traitez la facture --- acceptez la facture fournisseur proposée, ou, pour un crédit, enregistrez le règlement depuis la fiche de la facture client puis rattachez-y la transaction (\S\ref{sec:rattacher-reglement}). \emph{Écriture manuelle} ne convient que si la transaction ne règle \textbf{aucune} facture saisie et n'est comptabilisée par \textbf{aucune} écriture~: sinon la charge ou le produit serait compté deux fois --- rattachez-la plutôt à l'écriture déjà passée (\S\ref{sec:rattacher-reglement}~; encadré «~Dépense déjà réglée par un autre chemin~»). Les règles actives sont essayées par \textbf{priorité croissante}, puis de la plus ancienne à la plus récente~; \textbf{seule la première} qui correspond est proposée. La colonne \emph{Appliquée} compte les acceptations.
+Au rapprochement d'un compte bancaire, une règle ne s'applique qu'aux transactions en CHF (la page PayPal l'applique aussi aux transactions en devise de ses comptes, \S\ref{sec:comptes-paypal}), et seulement quand \textbf{aucune facture} n'est candidate pour la transaction --- ni désignée, par la référence du paiement ou le nom de son client, alors que le paiement la dépasse de quelques centimes (\S\ref{sec:algorithme-matching}). Pour un débit, une facture fournisseur validée et non payée d'un total égal au débit à 5 centimes près, désignée par la référence du paiement ou le nom de son fournisseur, masque aussi la règle, de même qu'une facture du montant exact dans un lot de paiement en cours sur ce compte (\S\ref{sec:matching-fournisseur}). Une dépense \textbf{déjà réglée} par un autre chemin ne la masque \textbf{pas}~: n'acceptez pas la règle, rattachez la transaction à l'écriture déjà passée (\S\ref{sec:rattacher-reglement}~; encadré «~Dépense déjà réglée par un autre chemin~»). Depuis la version~0.14.0, l'\textbf{acceptation} d'une règle est refusée quand une facture fournisseur candidate, une facture fournisseur d'un lot en cours sur ce compte, ou une facture client que le paiement dépasse de quelques centimes la défend~: rechargez la page et traitez la facture --- acceptez la facture fournisseur proposée, ou, pour un crédit, enregistrez le règlement depuis la fiche de la facture client puis rattachez-y la transaction (\S\ref{sec:rattacher-reglement}). \emph{Écriture manuelle} ne convient que si la transaction ne règle \textbf{aucune} facture saisie et n'est comptabilisée par \textbf{aucune} écriture~: sinon la charge ou le produit serait compté deux fois --- rattachez-la plutôt à l'écriture déjà passée (\S\ref{sec:rattacher-reglement}~; encadré «~Dépense déjà réglée par un autre chemin~»). Les règles actives sont essayées par \textbf{priorité croissante}, puis de la plus ancienne à la plus récente~; \textbf{seule la première} qui correspond est proposée. La colonne \emph{Appliquée} compte les acceptations.
 
 \subsubsection{Désactiver, archiver, réactiver}
 
@@ -4909,7 +4960,7 @@ Disponibles depuis la version 0.2.0 :
 Fonctionnalités non encore disponibles :
 
 \begin{itemize}
-    \item Factures, factures fournisseur et relevés bancaires en devise (la comptabilité multi-devises, ses écritures et ses rapports sont disponibles depuis la version~0.19.0, \S\ref{sec:multi-devises}~; les pièces et les relevés restent en CHF). Le lettrage manuel d'un compte en devise raisonne en CHF, et le règlement de plusieurs factures par une transaction est réservé au CHF.
+    \item Factures, factures fournisseur et relevés bancaires en devise (la comptabilité multi-devises, ses écritures et ses rapports sont disponibles depuis la version~0.19.0, \S\ref{sec:multi-devises}~; les pièces et les relevés restent en CHF, sauf le relevé PayPal, importé dans la devise de chaque solde, \S\ref{sec:comptes-paypal}). Le lettrage manuel d'un compte en devise raisonne en CHF, et le règlement de plusieurs factures par une transaction est réservé au CHF.
     \item Décompte TVA au format officiel AFC / e-décompte ESTV (les montants du décompte Kesh sont à reporter manuellement sur le formulaire AFC).
     \item Avoir \emph{partiel} et avoir sur facture \emph{déjà encaissée}, même en partie (l'avoir total sur une facture sans aucun règlement est, lui, disponible — cf. \S\ref{sec:avoirs}).
     \item Sélecteur de langue dans l'interface (la langue de l'interface est celle de l'installation, \texttt{KESH\_LANG} ; le sélecteur est prévu pour une version ultérieure).

@@ -1,5 +1,9 @@
 <!--
   Story 8-5b FR47 — Modal CREATE/EDIT pour reconciliation_rules.
+  Story 38-11d (AC-2) — trois filtres facultatifs sous le critère : « Type
+  PayPal (exact) », « E-mail exact » et « Sens » (38-11c1, AC-2 et AC-3). Le
+  critère (`matchValue`) reste obligatoire : une règle ne se compose pas des
+  seuls filtres. Au `PATCH`, seuls les filtres changés partent (`changedFilters`).
 -->
 <script lang="ts">
 	import { errorMessageOf } from '$lib/shared/utils/error-message';
@@ -9,7 +13,15 @@
 	import { listProjects } from '$lib/features/projects/projects.api';
 	import type { ProjectResponse } from '$lib/features/projects/projects.types';
 	import { createRule, updateRule } from './rules.api';
-	import type { MatchType, ReconciliationRule } from './rules.types';
+	import type { MatchType, ReconciliationRule, RuleDirection } from './rules.types';
+	import {
+		changedFilters,
+		directionPayload,
+		emailFilterPayload,
+		isValidEmailFilter,
+		textFilterPayload,
+		type RuleFilters,
+	} from './rule-filters';
 
 	interface Props {
 		rule?: ReconciliationRule | null;
@@ -28,6 +40,10 @@
 	let counterpartyAccountId = $state<number | null>(rule?.counterpartyAccountId ?? null);
 	let priority = $state(rule?.priority ?? 100);
 	let defaultProjectId = $state<number | null>(rule?.defaultProjectId ?? null);
+	// Story 38-11d (AC-2) — filtres facultatifs.
+	let providerType = $state(rule?.providerType ?? '');
+	let counterpartyEmail = $state(rule?.counterpartyEmail ?? '');
+	let direction = $state<'' | RuleDirection>(rule?.direction ?? '');
 
 	// Story 19-5 — projets analytiques pour le sélecteur « projet par défaut ».
 	// Chargement best-effort : un échec ne bloque pas l'édition de la règle.
@@ -91,6 +107,18 @@
 			);
 			return;
 		}
+		if (!isValidEmailFilter(counterpartyEmail)) {
+			errorMsg = i18nMsg(
+				'reconciliation-rules-error-email-invalid',
+				'E-mail exact : saisissez une adresse de la forme nom@domaine, ou laissez le champ vide.',
+			);
+			return;
+		}
+		const filters: RuleFilters = {
+			providerType: textFilterPayload(providerType),
+			counterpartyEmail: emailFilterPayload(counterpartyEmail),
+			direction: directionPayload(direction),
+		};
 		submitting = true;
 		try {
 			if (isEdit && rule) {
@@ -101,6 +129,7 @@
 					counterpartyAccountId,
 					priority,
 					defaultProjectId,
+					...changedFilters(rule, filters),
 				});
 			} else {
 				await createRule({
@@ -110,6 +139,7 @@
 					counterpartyAccountId,
 					priority,
 					defaultProjectId,
+					...filters,
 				});
 			}
 			onSuccess();
@@ -197,6 +227,62 @@
 			data-testid="rule-form-match-value"
 		/>
 	</div>
+
+	<!-- Story 38-11d (AC-2) — filtres facultatifs, combinés au critère ci-dessus. -->
+	<fieldset class="space-y-2 rounded border border-border p-2" data-testid="rule-form-filters">
+		<legend class="px-1 text-sm font-medium">
+			{i18nMsg('reconciliation-rules-labels-filters', 'Filtres (facultatifs)')}
+		</legend>
+		<p class="text-xs text-text-muted">
+			{i18nMsg(
+				'reconciliation-rules-help-filters',
+				'La règle ne s’applique qu’aux transactions qui satisfont le critère et chaque filtre posé.',
+			)}
+		</p>
+		<div>
+			<label for="rule-provider-type" class="block text-sm font-medium">
+				{i18nMsg('reconciliation-rules-labels-provider-type', 'Type PayPal (exact)')}
+			</label>
+			<input
+				id="rule-provider-type"
+				type="text"
+				bind:value={providerType}
+				class="mt-1 w-full rounded border border-border px-2 py-1 text-sm"
+				maxlength="64"
+				data-testid="rule-form-provider-type"
+			/>
+		</div>
+		<div>
+			<label for="rule-counterparty-email" class="block text-sm font-medium">
+				{i18nMsg('reconciliation-rules-labels-counterparty-email', 'E-mail exact')}
+			</label>
+			<input
+				id="rule-counterparty-email"
+				type="text"
+				inputmode="email"
+				autocomplete="off"
+				bind:value={counterpartyEmail}
+				class="mt-1 w-full rounded border border-border px-2 py-1 text-sm"
+				maxlength="254"
+				data-testid="rule-form-counterparty-email"
+			/>
+		</div>
+		<div>
+			<label for="rule-direction" class="block text-sm font-medium">
+				{i18nMsg('reconciliation-rules-labels-direction', 'Sens')}
+			</label>
+			<select
+				id="rule-direction"
+				bind:value={direction}
+				class="mt-1 w-full rounded border border-border px-2 py-1 text-sm"
+				data-testid="rule-form-direction"
+			>
+				<option value="">{i18nMsg('reconciliation-rules-direction-both', 'Entrées et sorties')}</option>
+				<option value="credit">{i18nMsg('reconciliation-rules-direction-credit', 'Entrées')}</option>
+				<option value="debit">{i18nMsg('reconciliation-rules-direction-debit', 'Sorties')}</option>
+			</select>
+		</div>
+	</fieldset>
 
 	<div>
 		<label for="rule-counterparty" class="block text-sm font-medium">
