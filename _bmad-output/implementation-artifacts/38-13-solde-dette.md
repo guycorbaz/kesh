@@ -51,7 +51,7 @@ la seconde nommée), comme aujourd'hui pour la casse seule : sinon un compte de 
 
 **AC-A3 — une seule règle, trois sites.** Les **trois** comparaisons de ce libellé côté serveur passent par une seule
 fonction documentée (DRY), `pub(crate)` dans `provider_env.rs` : `series_for`, la garde de doublon de la lecture
-(`:459-467`), et la **clé de tâche** de `DownloadJobs::start` (`crates/kesh-api/src/provider_download.rs:614`, comparée
+(`:459-467`), et la **clé de tâche** de `Downloads::start` (`crates/kesh-api/src/provider_download.rs:614`, comparée
 `:622`), qui refuse un second téléchargement du même compte (`409 PROVIDER_DOWNLOAD_RUNNING`) : sans elle, « PayPal
 Zürich » et « paypal zurich » s'apparieraient à la même série avec deux clés de tâche, et deux téléchargements du même
 compte tourneraient ensemble (validation P1, M1). Un test de `start` à accents près. `provider_api_status` (qui lit
@@ -60,7 +60,7 @@ compte tourneraient ensemble (validation P1, M1). Un test de `start` à accents 
 
 **AC-A4 — documentation.** Disent « sans casse ni accents » pour ce libellé : le manuel d'administration FR
 (`docs/manual/fr/admin-manual.tex:1145`, `:1183`), `docs/api-external.md:746`, `:1044`, `:1369`, et les doc-comments
-`provider_env.rs:197`, `:735`, `provider_download.rs:601-604`. Le manuel utilisateur (`user-manual.tex:3407`) le dit
+`provider_env.rs:197`, `:735`, `provider_download.rs:602-605`. Le manuel utilisateur (`user-manual.tex:3407`) le dit
 déjà ; `.env.example` n'a rien à changer ; pas de manuel DE, IT, EN à suivre. Pas de PDF.
 
 **AC-B1 — clés orphelines retirées.** Les six clés `provider-gap-receipt-without-sale`,
@@ -77,7 +77,9 @@ catalogues restent vertes.
 **AC-B3 — consigne de fusion.** `epic/39-wise` et `epic/40-stripe` contiennent déjà `epic/38-paypal` et ajoutent des
 clés jointives du bloc retiré : la reprise de cette story y donnera un conflit sur les quatre catalogues. Consigne,
 écrite au Dev Agent Record et au texte de PR : **les six clés restent retirées** (les autres lignes des deux côtés
-gardées), contrôle `git grep -c '<clé>'` = 0 sur la branche fusionnée (validation P1, M2).
+gardées), contrôle `git grep -c '<clé>' -- crates/kesh-i18n/locales` vide sur la branche fusionnée (validation P1, M2).
+La consigne va aussi au rapport rendu à l'orchestrateur, qui la porte à `consignes-correctifs.md` (fichier commun que
+cette story n'écrit pas), où la lira l'agent qui fusionnera (validation P2, L2).
 
 **AC-C — trace.** Les deux entrées de `kesh-gate-logs/epic-38-kiss/issues-a-ouvrir.md` sont barrées, avec le commit et
 la mention « corrigé par la 38-13, ne pas ouvrir » ; rien d'autre n'y est retiré.
@@ -85,14 +87,20 @@ la mention « corrigé par la 38-13, ne pas ouvrir » ; rien d'autre n'y est ret
 ## Tasks / Subtasks
 
 - [ ] A (AC-A1 à AC-A4)
-  - [ ] fonction privée de clé de libellé dans `crates/kesh-api/src/provider_env.rs` (rognage, NFD, retrait des
-        marques combinantes, minuscules), employée par `series_for` et par la garde de doublon de la lecture
-  - [ ] tests unitaires : apparié dans les deux sens, forme décomposée, doublon refusé à accents près ; libellé
-        réellement différent toujours non apparié
-  - [ ] mutation hors dépôt (retour à `to_lowercase` seul), copie `git archive` à sa propre cible
-        (`kesh-targets/38-13-mut`), copie non mutée jouée verte d'abord, une mutation par appel de `heavy.sh`,
-        « tuée » seulement par `panicked at` et le nom du test
-  - [ ] manuel FR (`.tex`) ; grep du symptôme (« sans casse » sur ce libellé) dans le dépôt
+  - [ ] fonction `pub(crate)` de clé de libellé dans `crates/kesh-api/src/provider_env.rs`, dans cet ordre : rognage,
+        NFD, retrait des marques combinantes (`unicode_normalization::char::is_combining_mark`), minuscules — ordre écrit
+        dans son doc-comment ; employée par les **trois** sites : `series_for`, la garde de doublon (`:459-467`),
+        `Downloads::start` (`provider_download.rs:614`)
+  - [ ] tests unitaires : `series_for` apparié dans les deux sens et en forme décomposée ; doublon refusé à accents
+        près ; libellé réellement différent non apparié ; `start` rend `Err(RunningJob)` pour la variante accentuée
+        d'un libellé dont une tâche tourne
+  - [ ] mutations hors dépôt, une par appel de `heavy.sh` (copie `git archive` à sa propre cible
+        `kesh-targets/38-13-mut`, copie non mutée jouée verte d'abord, « tuée » seulement par `panicked at` et le nom
+        du test) : (1) la fonction ramenée à `trim().to_lowercase()` ; (2) retrait des marques supprimé ; (3) `start`
+        sur sa propre `to_lowercase()` ; (4) la garde de doublon sur sa propre `to_lowercase()`
+  - [ ] documentation de l'AC-A4 : manuel FR `.tex` (`:1145`, `:1183`), `docs/api-external.md` (`:746`, `:1044`,
+        `:1369`), doc-comments `provider_env.rs:197`, `:735`, `provider_download.rs:602-605` ; grep du symptôme
+        (« sans casse » sur ce libellé) dans le dépôt
 - [ ] B (AC-B1, AC-B2)
   - [ ] grep de chaque clé sur les trois branches ; retrait des six clés des quatre catalogues ; consigne AC-B3
 - [ ] C : barrer les deux entrées ; gates ; prompt de revue P1
@@ -106,6 +114,9 @@ la mention « corrigé par la 38-13, ne pas ouvrir » ; rien d'autre n'y est ret
   l'écran (`providerApi.configured` faux) ni à la route `POST /paypal-downloads` (`paypal_downloads.rs:101`).
 - **Limite de l'approximation** : NFD + retrait des marques couvre les lettres accentuées ; la collation égale aussi
   `ß` et `ss` et quelques ligatures, que la fonction ne replie pas. À écrire dans son doc-comment, sans plus.
+- **Faux DRY à écarter** : `strip_diacritics_char` (`crates/kesh-api/src/util.rs:96-108`) ne replie qu'une petite table
+  de minuscules précomposées ; ne pas la réutiliser. `is_combining_mark` couvre `General_Category=Mark`, comme le
+  `\p{M}` du frontend.
 - Crate déjà présente : `unicode-normalization` (`crates/kesh-api/Cargo.toml:49`) ; `unicode_normalization::char::is_combining_mark`.
 - **Prémisse B, relue** : les huit clés du bloc 38-11c2 (`fr-CH/messages.ftl` ~1897-1904) n'ont aucun lecteur sur
   `epic/38-paypal` ; deux sont lues sur `epic/39-wise` et `epic/40-stripe` (page commune) : elles restent. L'entrée
@@ -148,3 +159,7 @@ la mention « corrigé par la 38-13, ne pas ouvrir » ; rien d'autre n'y est ret
   0 C, 0 H, 2 M, 5 L. M1 (troisième site, la clé de tâche, `provider_download.rs:614`, relu) → AC-A3 ; M2 (conflit de
   fusion qui ressusciterait les clés) → AC-B3 ; L1 → AC-A4 ; L2 → AC-A3 ; L3 (ligne 467) ; L4 → tâche de mutation ;
   L5 → ligne « Changed ». Passe P2 à lancer.
+- 2026-11-22, validation P2 (Opus, contexte séparé ; `kesh-gate-logs/s38-13/validation-p2-*.md`) : 0 C, 0 H, 1 M, 4 L.
+  M1 (Tasks restées d'avant la P1 : fonction privée, pas de test de `start`, une seule mutation) → Tasks récrites,
+  quatre mutations nommées ; L1 (`Downloads`, `:602-605`) ; L2 → AC-B3 (rapport à l'orchestrateur) ; L3, L4 → Dev
+  Notes et Tasks. Passe P3 à lancer (dernière permise).
