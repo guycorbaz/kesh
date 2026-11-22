@@ -16,7 +16,7 @@ décodage tolérant (E4) — `provider` au format seul, `source_format = 'PROVID
 story (F15) ; une fiche qui découvre un besoin de DDL s'arrête et le dit (C-39-0).
 
 **Numéro : 39** (35 et 36 réservés ailleurs ; 40 Stripe, provisoire, B25). Une branche par story, fusionnée
-localement dans `epic/39-wise`, puis **une PR** vers le dépôt de Guy (remote du contributeur), **après celles des Epics 37 et
+localement dans `epic/39-wise`, puis **une PR** vers le dépôt de Guy, ouverte depuis le dépôt du contributeur, **après celles des Epics 37 et
 38**. Pas d'issue GitHub à ce stade (le responsable de l'epic n'a qu'un accès en lecture) ; issues et PR à la fin.
 
 **Release : un epic = une release ; 7 stories** (39-0 à 39-6, kickoff et story de solde comprises). ⚠️ **Cela dépasse la
@@ -164,8 +164,8 @@ l'Epic 38 a promis (§ *Ce que réutiliseront les Epics 39 et 40*).
   même solde**, que l'unicité `(bank_account_id, provider_tx_id)` (38-3a) traiterait comme « connu » — **perte
   muette**. Le suffixe du sens (`DEBIT` → `D`, `CREDIT` → `C`) les distingue ; `related_provider_tx_id` d'un `C` de
   carte = le `D` de même référence quand il existe. Deux lignes de même référence et même sens dans une page →
-  `InvalidResponse` (refus bruyant, `validate_page`). ≤ 64 caractères ASCII (38-3a). À constater sur les réponses de
-  le responsable de l'epic (39-4).
+  `InvalidResponse` (refus bruyant, `validate_page`). ≤ 64 caractères ASCII (38-3a). À constater sur les réponses du
+  responsable de l'epic (39-4).
 - **F8 — `event_code` court.** La colonne est `VARCHAR(16)` (38-3a) et quatre types Wise la dépassent
   (`INCOMING_CROSS_BALANCE`, 22). Une **table constante** de codes courts (≤ 16, majuscules, p. ex. `CARD`,
   `CONVERSION`, `TRANSFER`, `DEPOSIT`, `MONEY_ADDED`, `DIRECT_DEBIT`, `INTEREST`, `ADJUSTMENT`, `IN_CROSS_BAL`,

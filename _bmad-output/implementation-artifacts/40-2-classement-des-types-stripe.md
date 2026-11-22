@@ -3,8 +3,8 @@
 Status: superseded — remplacée le 2026-11-20 par la refonte KISS de l'Epic 40 (voir le registre du fichier d'epic) ; fiche gardée comme historique
 
 *Fiche rédigée le 2026-11-15 (Opus), branche `epic/40-stripe`, numéros de ligne relevés au commit `a2b1da9c`. Epic 40
-(`planning-artifacts/epic-40-stripe.md`) : G6, G7, G8, G9, G11, G14, G19 ; contrats C-40-0, **C-40-4** ; décisions de
-le responsable de l'epic B3, B7, B13, B20, B24. **Dépend de** 40-1 (`StripeRecord`, `StripeSource`, `StripePayoutFields`,
+(`planning-artifacts/epic-40-stripe.md`) : G6, G7, G8, G9, G11, G14, G19 ; contrats C-40-0, **C-40-4** ; décisions du
+responsable de l'epic B3, B7, B13, B20, B24. **Dépend de** 40-1 (`StripeRecord`, `StripeSource`, `StripePayoutFields`,
 `stripe::amounts::minor_to_decimal`, `StripeSettings`, `classify_window` provisoire qu'elle remplace) et, par elle, de
 38-3b (`ProviderMovement`, `MovementKind`, `ReviewReason`, `MovementPage`, `SkippedCounts`), 38-3a (colonnes de C-38-4)
 et 38-8 (patron : `classify_window`, `Classified`, surcharges). **Lue par** 40-3 (genre `withdrawal`, `value_date`,

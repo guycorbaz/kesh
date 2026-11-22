@@ -267,7 +267,7 @@ et `mime_type` (38-10). `kesh_version_min_required` inchangé ; P5–P8 sans obj
 DDL s'arrête et le dit (C-40-0).
 
 **Numéro : 40, confirmé** (attribué au responsable de l'epic, `docs/developpement-a-plusieurs.md` § 2 ; Q-40-1 close). Une branche par story,
-fusionnée localement dans `epic/40-stripe`, puis **une PR** vers le dépôt de Guy (remote du contributeur), **après celles des
+fusionnée localement dans `epic/40-stripe`, puis **une PR** vers le dépôt de Guy, ouverte depuis le dépôt du contributeur, **après celles des
 Epics 37, 38 et 39**. Pas d'issue GitHub à ce stade ; issues et PR à la fin.
 
 **Cible** : la release de l'Epic 38 ou une suivante (aucune migration, aucun relèvement) — à Guy (Q-40-release).
