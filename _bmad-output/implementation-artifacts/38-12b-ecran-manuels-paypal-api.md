@@ -1,6 +1,6 @@
 # Story 38-12b : bouton « Télécharger depuis PayPal », manuels, E2E
 
-Status: in-progress
+Status: review
 
 *Fiche rédigée le 2026-11-20, branche `epic/38-paypal`. Epic 38, **phase 2**. **Dépend de** : 38-12a (routes), 38-11d
 (la page PayPal `frontend/src/routes/(app)/reconciliation/paypal/+page.svelte`, son import CSV et son compte rendu,
@@ -140,10 +140,10 @@ Wise (39-12b) et Stripe (40-8b) les réutilisent.
 
 ## Tâches
 
-- [ ] T1 — `providerApi` à la réponse des comptes (AC-1).
-- [ ] T2 — Bouton, dialogue, interrogation, i18n (AC-1 à AC-4).
-- [ ] T3 — Manuels et `docs/api-external.md` (AC-5, AC-6).
-- [ ] T4 — E2E, serveur simulé, `docs/testing.md` (AC-7).
+- [x] T1 — `providerApi` à la réponse des comptes (AC-1).
+- [x] T2 — Bouton, dialogue, interrogation, i18n (AC-1 à AC-4).
+- [x] T3 — Manuels et `docs/api-external.md` (AC-5, AC-6).
+- [x] T4 — E2E, serveur simulé, `docs/testing.md` (AC-7).
 
 ## Stratégie de tests
 
@@ -165,6 +165,8 @@ clair), jointes au prompt de la revue.
 
 *Ajouté* — Bouton « Télécharger depuis PayPal » sur la page PayPal, pour un compte configuré, avec la période, la
 progression et le compte rendu ; le manuel d'administration décrit la création de l'application PayPal en lecture seule.
+*Changé (API, additif)* — chaque compte de `GET /api/v1/bank-accounts` porte `providerApi` (`{ configured, mode? }`
+pour un compte de prestataire, `null` sinon).
 
 ## Change Log
 
@@ -193,3 +195,129 @@ progression et le compte rendu ; le manuel d'administration décrit la création
   rend `INTERNAL_ERROR` (38-12a AC-8), ce que l'écran affiche comme tout code non listé.
 - 2026-11-20 — validation P5 ciblée sur les commits `977bf9ec` et `452606a3` (modèle : claude-haiku-5-5, contexte frais ; voir 38-12a et `kesh-gate-logs/epic-38-kiss/validation/38-12-P5-ciblee.md`) : rien à remédier ici ; l'AC-5 et le tableau PayPal sont cohérents avec l'AC-8 de 38-12a.
 - 2026-11-22 — développement : amendement du 22.11 (page commune absente de la branche, `providerApi` sur la liste, dates en heure de Zurich, gates de la nuit) ; statut `in-progress`.
+- 2026-11-22 — développement terminé (T1 à T4), story en `review` ; détail au Dev Agent Record.
+
+## Dev Agent Record
+
+### Agent Model Used
+
+Claude Opus 5.5 (`claude-opus-5-5`), worktree `kesh-wt38b`, branche `story/38-12b` partie d'`epic/38-paypal`
+(`8b8cd338`), cible `kesh-targets/kesh-wt38b`, `CARGO_INCREMENTAL=0`.
+
+### Prémisses relues au code (avant la première ligne)
+
+Voir « Amendement du 22.11 » : page commune des prestataires absente de la branche (le dialogue générique est
+écrit ici, le compte rendu de l'import extrait) ; `providerApi` sur la seule liste ; dates de l'API converties à
+l'heure de Zurich par la 38-12a (le manuel le dit) ; G4 de la 38-12a (première heure du jour plancher non lue) au
+manuel utilisateur ; gates de la nuit du 22.11.
+
+### Implementation Plan / décisions
+
+- **Backend (T1)** : `provider_env::ProviderApiStatus { configured, mode? }`, `ProviderApiMode`
+  (`live` = hôte par défaut du prestataire, `sandbox` = un segment d'hôte `sandbox`, absent sinon),
+  `ProviderApiConfig::status_for` (règle de `series_for`, celle de la route), `ProvidersConfig::status_for(provider,
+  account)` (prestataire non téléchargé → `configured: false`) ; `routes/bank_accounts.rs` : champ
+  `provider_api` de `BankAccountWithBalance` (liste seulement), `null` pour un compte ordinaire.
+- **Dialogue générique (T2)** : `frontend/src/lib/features/provider-download/` — `provider-download.api.ts`
+  (routes `<prestataire>-downloads`, types `ProviderApiStatus`, `ProviderDownloadView`), `provider-download.ts`
+  (règles pures : période proposée, refus du lancement avec reprise sur 409, phrases d'échec par code, progression,
+  politique de suivi : 1 s, 404 ou trois erreurs réseau consécutives = suivi perdu), `ProviderDownloadDialog.svelte`
+  (générique `R`, libellés et compte rendu fournis par l'appelant en snippet, garde de génération : suivi arrêté à la
+  fermeture, au démontage et à tout nouveau lancement). Aucun nom de prestataire dans le module ni ses clés
+  `provider-download-*`.
+- **Page PayPal (T2)** : bouton « Télécharger depuis PayPal » (Comptable et Administrateur, compte configuré),
+  mention « bac à sable », ligne d'aide de l'Administrateur sans identifiants ; période proposée = exercice choisi,
+  fin au jour de Zurich (`todayInZurich`, le jour que juge le serveur) ; revue relue à la fin ; compte rendu
+  **extrait** en `features/paypal/PaypalImportReport.svelte` (préfixe d'identifiants de test paramétré : celui de la
+  38-11d inchangé pour l'import CSV, `paypal-download-report` dans le dialogue) ; code de ligne `STATUS` libellé.
+  `paypalApiStatus` (`bank-accounts/provider.ts`) lit l'état d'un libellé sur ses soldes.
+- **i18n (AC-4)** : 39 clés aux quatre locales (32 `provider-download-*`, 6 `paypal-download-*`,
+  `paypal-line-status`) ; `sitesTotal` 3632 → 3671 (relevé par la garde, recompté au diff hors tests : 42 sites
+  ajoutés, 3 retirés) ; candidates des libellés 138 → 140 (`periodRefusalLabel`, `progressLabel`, conformes).
+- **Manuels (T3)** : admin — § « Télécharger les transactions PayPal par l'API » (`sec:paypal-api` : création de
+  l'application, points « à vérifier » en encadré, variables et défauts, `.env` et séries 1 à 3 des compose, une
+  installation une société, secrets hors base et sauvegarde, sessions seules, rotation, refus de démarrage au texte
+  de `provider_env::read`), paragraphe-tableau au § `sec:env-vars`, accès sortant `sec:acces-sortant-paypal` ;
+  utilisateur — paragraphe « Télécharger depuis PayPal » (`sec:paypal-telecharger`), limites réécrites (dates,
+  téléchargement à la main, la phrase « Pas de téléchargement automatique » retirée — L3 de la 38-11d).
+  `.tex` seuls ; PDF régénérés dans une copie hors dépôt (`latexmk -xelatex`, rc 0, aucune référence indéfinie),
+  texte contrôlé par `pdftotext | tr '\n' ' '` (sections, tableau, accès sortant, paragraphe utilisateur ; la phrase
+  retirée absente).
+- **`docs/api-external.md` (T3)** : encart du § 4, liste du § 7 « à cinq exceptions près, toutes cinq » (recompté :
+  administration, journal d'audit, suppression d'import, mot de passe, `paypal-downloads*`), ligne du § 9, ligne
+  `API_KEY_OPERATION_FORBIDDEN` du § 10, codes `PROVIDER_*` du lancement et des tâches, section « Télécharger le relevé
+  d'un compte PayPal », `providerApi`.
+- **E2E (T4)** : `frontend/tests/e2e/support/provider-mock.ts` (serveur simulé commun : routes déclarées par
+  prestataire, requêtes relevées ; jeu PayPal : jeton, recherche bornée à la fenêtre demandée, pages retardées,
+  un `429` `Retry-After: 3`) ; `paypal-download.spec.ts` (trois tests : préparation et `providerApi` à l'API ; (a)
+  compte sans identifiants ; (b) deux mois — progression, pause, compte rendu, revue, relance « 0 insérée » ; (b)
+  ignoré avec motif sans `KESH_E2E_PROVIDER_MOCK_PORT`) ; montage et ignoré connu à `docs/testing.md`.
+
+### Debug Log
+
+- **Défaut trouvé par l'E2E** (premier passage, `e2e-1.log`) : `parseBankAccount` (`bank-accounts.api.ts`)
+  recopiait les champs un à un et perdait `providerApi` — les tests de la page, qui simulent `listBankAccounts`, ne
+  pouvaient pas le voir. Corrigé (`6712d85b`) avec un test du mappage (`listBankAccounts garde providerApi`).
+- Deuxième passage (`e2e-2.log`) : la période proposée part du début de l'exercice qui couvre le jour
+  (`with-company` : 2020-2030), non du 1er janvier — attente de la spec corrigée (`f520d426`).
+- Gate frontend 1 : `svelte-check` (type du snippet du test du dialogue) et deux gardes à recompter
+  (`sitesTotal`, candidates des libellés) — `5b8d3e18`.
+- Gate backend complet (`gate-backend-1.log`, arbre `f520d426`) : 6421 exécutés, **6419 passés, 2 échecs** :
+  `kesh-i18n loader::tests::la_cloture_d_exercice_ne_parle_pas_comme_un_panneau` (de-CH « schliessen » réservé aux
+  panneaux, dans `provider-download-close-hint`) — corrigé (`605f433f`, texte seul) ; et
+  `mcp_transport_e2e::abandon_au_delai_le_permis_reste_pris` (témoin temporel du transport MCP, sans rapport avec la
+  story) — **vert au rejeu** (`cible-2-nextest.log`).
+
+### Completion Notes
+
+- **Tests ajoutés** (périmètre `8b8cd338` → `605f433f`, recomptés) : Rust **2** (`provider_env::tests::
+  etat_du_telechargement_d_un_compte`, `paypal_download_e2e::la_liste_des_comptes_dit_le_telechargement_configure`) ;
+  Vitest **33** (`provider-download.test.ts` 14, `ProviderDownloadDialog.test.ts` 11, `provider-api.test.ts` 3,
+  `paypal-page.test.ts` 19 → 23, `bank-accounts.api.test.ts` 13 → 14) ; Playwright **3** (`paypal-download.spec.ts`).
+- **Sondes négatives** (copies hors dépôt, scratchpad `s38-12b-mut/`) : frontend 8 mutations (F1 à F8),
+  copie non mutée verte (51 tests), **8 tuées sur 8**, chacune par un test nommé en échec d'assertion
+  (`kesh-gate-logs/s38-12b/mutations-front.log`) ; backend 4 mutations (B1 à B4, cible à part supprimée après),
+  copie non mutée verte, **4 tuées sur 4**, chacune par la panique d'assertion du test nommé — le script les
+  classait « douteuses » (motif du nom de fil sans l'identifiant `(tid)`), annotation à la fin de
+  `mutations-back.log`.
+- Captures (thème clair) : `kesh-gate-logs/s38-12b/captures/10` à `17` (compte sans identifiants, bouton, période,
+  progression, pause, compte rendu, revue après téléchargement, relance sans doublon).
+- Aucun appel réel à PayPal ; aucune migration ; aucun PDF ni CHANGELOG commité.
+
+### Gates
+
+- Dernier commit de code `605f433f` (texte de-CH d'un catalogue).
+- Backend complet (`scripts/test-fast.sh --ci`, base remise à zéro, `gate-backend-1.log`, arbre `f520d426`) : fmt et
+  clippy workspace verts ; nextest **6421 exécutés, 6419 passés, 2 échecs, 15 ignorés** (ci-dessus) ; puis, au
+  commit `605f433f`, `package(kesh-i18n) | binary(mcp_transport_e2e)` : **79 sur 79** (`cible-2-nextest.log`).
+  Gate ciblé antérieur (`cible-1-*`) : fmt, clippy, nextest `kesh-api` lib + `paypal_download_e2e` +
+  `bank_accounts_e2e` + `textes_coherents` : 862 sur 862.
+- Frontend au commit `5b8d3e18` (`front-3-*.log`) : `check` 0 erreur, `lint-i18n-ownership` vert, Vitest
+  **4980 passés (290 fichiers)**, `build` vert. `605f433f` ne change qu'une valeur de catalogue de-CH (clés
+  inchangées) ; non rejoué.
+- **E2E partiel (1 spec)** : `paypal-download.spec.ts` seule (spec ajoutée par la story, règle de la nuit du 22.11),
+  backend de test à `KESH_PAYPAL_1_*` vers le serveur simulé (`e2e-partiel.sh`, `e2e-3.log`) : **3 passés** à
+  `f520d426`. E2E complet et `gate-ci.sh` : à la fin de l'epic (branche d'intégration).
+
+### Points relevés hors périmètre (à ouvrir en issue par l'orchestrateur)
+
+1. Les réponses d'un seul compte bancaire (`POST`, `PUT`, `PATCH`, clôture…) ne portent pas `providerApi` : un écran
+   qui remplacerait une ligne de la liste par la réponse d'une mutation la perdrait (aucun ne le fait aujourd'hui).
+2. `ProviderApiConfig::series_for` compare les libellés par `to_lowercase`, la base par une collation sans accents :
+   « PayPal Zürich » au compte et « PayPal Zurich » à la série ne s'apparient pas (le bouton n'apparaît pas, refus
+   `PROVIDER_API_NOT_CONFIGURED`) — à aligner sur la collation, ou à dire au manuel.
+
+### File List
+
+Ajoutés : `frontend/src/lib/features/provider-download/{provider-download.api.ts, provider-download.ts,
+ProviderDownloadDialog.svelte, provider-download.test.ts, ProviderDownloadDialog.test.ts}`,
+`frontend/src/lib/features/paypal/PaypalImportReport.svelte`, `frontend/src/lib/features/bank-accounts/provider-api.test.ts`,
+`frontend/tests/e2e/paypal-download.spec.ts`, `frontend/tests/e2e/support/provider-mock.ts`.
+Modifiés : `crates/kesh-api/src/provider_env.rs`, `crates/kesh-api/src/routes/bank_accounts.rs`,
+`crates/kesh-api/tests/paypal_download_e2e.rs`, `crates/kesh-i18n/locales/{de-CH,en-CH,fr-CH,it-CH}/messages.ftl`,
+`frontend/src/routes/(app)/reconciliation/paypal/{+page.svelte, paypal-page.test.ts}`,
+`frontend/src/lib/features/paypal/{paypal.types.ts, paypal-labels.ts}`,
+`frontend/src/lib/features/bank-accounts/{bank-accounts.api.ts, bank-accounts.api.test.ts, provider.ts}`,
+`frontend/src/lib/shared/{i18n-keys.test.ts, i18n-libelle-en-dur.test.ts}`, `docs/manual/fr/{admin-manual.tex,
+user-manual.tex}`, `docs/api-external.md`, `docs/testing.md`,
+`_bmad-output/implementation-artifacts/{38-12b-ecran-manuels-paypal-api.md, sprint-status.yaml}`.
