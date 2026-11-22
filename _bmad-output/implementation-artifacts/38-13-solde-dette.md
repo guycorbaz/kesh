@@ -1,6 +1,6 @@
 # Story 38-13 : solde de la dette de l'Epic 38
 
-Status: in-progress
+Status: review
 
 *Fiche rédigée le 2026-11-22, branche `story/38-13` partie d'`epic/38-paypal` (`38f616561`). Story de solde
 (`CLAUDE.md` § *Priorités des défauts*, « Tarir la source, puis solder ») : elle ne prend que la dette des stories de
@@ -86,24 +86,24 @@ la mention « corrigé par la 38-13, ne pas ouvrir » ; rien d'autre n'y est ret
 
 ## Tasks / Subtasks
 
-- [ ] A (AC-A1 à AC-A4)
-  - [ ] fonction `pub(crate)` de clé de libellé dans `crates/kesh-api/src/provider_env.rs`, dans cet ordre : rognage,
+- [x] A (AC-A1 à AC-A4)
+  - [x] fonction `pub(crate)` de clé de libellé dans `crates/kesh-api/src/provider_env.rs`, dans cet ordre : rognage,
         NFD, retrait des marques combinantes (`unicode_normalization::char::is_combining_mark`), minuscules — ordre écrit
         dans son doc-comment ; employée par les **trois** sites : `series_for`, la garde de doublon (`:459-467`),
         `Downloads::start` (`provider_download.rs:614`)
-  - [ ] tests unitaires : `series_for` apparié dans les deux sens et en forme décomposée ; doublon refusé à accents
+  - [x] tests unitaires : `series_for` apparié dans les deux sens et en forme décomposée ; doublon refusé à accents
         près ; libellé réellement différent non apparié ; `start` rend `Err(RunningJob)` pour la variante accentuée
         d'un libellé dont une tâche tourne
-  - [ ] mutations hors dépôt, une par appel de `heavy.sh` (copie `git archive` à sa propre cible
+  - [x] mutations hors dépôt, une par appel de `heavy.sh` (copie `git archive` à sa propre cible
         `kesh-targets/38-13-mut`, copie non mutée jouée verte d'abord, « tuée » seulement par `panicked at` et le nom
         du test) : (1) la fonction ramenée à `trim().to_lowercase()` ; (2) retrait des marques supprimé ; (3) `start`
         sur sa propre `to_lowercase()` ; (4) la garde de doublon sur sa propre `to_lowercase()`
-  - [ ] documentation de l'AC-A4 : manuel FR `.tex` (`:1145`, `:1183`), `docs/api-external.md` (`:746`, `:1044`,
+  - [x] documentation de l'AC-A4 : manuel FR `.tex` (`:1145`, `:1183`), `docs/api-external.md` (`:746`, `:1044`,
         `:1369`), doc-comments `provider_env.rs:197`, `:735`, `provider_download.rs:602-605` ; grep du symptôme
         (« sans casse » sur ce libellé) dans le dépôt
-- [ ] B (AC-B1, AC-B2)
-  - [ ] grep de chaque clé sur les trois branches ; retrait des six clés des quatre catalogues ; consigne AC-B3
-- [ ] C : barrer les deux entrées ; gates ; prompt de revue P1
+- [x] B (AC-B1, AC-B2)
+  - [x] grep de chaque clé sur les trois branches ; retrait des six clés des quatre catalogues ; consigne AC-B3
+- [x] C : barrer les deux entrées ; gates ; prompt de revue P1
 
 ## Dev Notes
 
@@ -148,9 +148,52 @@ la mention « corrigé par la 38-13, ne pas ouvrir » ; rien d'autre n'y est ret
 
 ### Agent Model Used
 
+Opus (développement) ; validation P1 Sonnet, P2 Opus, P3 ciblée Sonnet.
+
 ### Completion Notes List
 
+- **Plafond** : 2, faute de plafond fixé au kickoff (fichier d'epic, l. 110). Deux points corrigés, aucun autre.
+- **B** (`3c97735cc`) : les six clés retirées des quatre catalogues (24 lignes) ; `git grep` de chacune ne rend plus
+  que cette fiche. `provider-review-ambiguous-sale` et `provider-review-fee-account-missing` gardées (lues sur
+  `epic/39-wise` et `epic/40-stripe`).
+- **⚠️ Consigne de fusion (AC-B3)** : à la reprise d'`epic/38-paypal` par `epic/40-stripe` puis `epic/39-wise`, le
+  conflit des quatre `.ftl` se résout en gardant les lignes des deux côtés **sauf les six clés, qui restent retirées** ;
+  contrôle : `git grep -c -E 'provider-gap-|provider-review-(conversion-unpaired|withdrawal-foreign-currency|no-rule)' -- crates/kesh-i18n/locales`
+  ne rend rien.
+- **A** (`0d6218c26`, mise en forme `98f1fb40d`) : `provider_env::account_label_key` (`pub(crate)`, rognage, NFD,
+  retrait des marques combinantes, minuscules), employée par `series_for`, la garde de libellé en double de `read`
+  et la clé de tâche de `Downloads::start`. Doc-comments, manuel d'administration FR (`.tex`, deux sites),
+  `docs/api-external.md` (trois sites) et le doc-comment `routes/bank_accounts.rs:751` disent « sans casse ni
+  accents ». Le grep de « sans casse » sur ces fichiers ne rend plus que des comparaisons d'autres valeurs.
+- **Tests** (périmètre `epic/38-paypal` → `HEAD`) : `#[test]` de `provider_env.rs` 9 → 11
+  (`le_libelle_s_apparie_sans_accents`, `libelles_egaux_aux_accents_pres_refuses`) ; `provider_download.rs` 15 → 15,
+  `une_tache_par_compte_tant_qu_elle_tourne` étendu d'un refus à accents près (`BÕUTIQUE`).
+- **Mutations** (`kesh-gate-logs/s38-13/mutation.sh`, `mutations.console`, `mutation-*.log` ; copie `git archive`,
+  cible propre supprimée, une par appel de `heavy.sh`) : copie non mutée verte (32 tests `provider_`) ; (1) fonction
+  ramenée à `trim().to_lowercase()` → 3 tests rouges ; (2) marques non retirées → 3 rouges ; (3) `start` sur
+  `to_lowercase()` → `une_tache_par_compte_tant_qu_elle_tourne` (`provider_download.rs:1205`) ; (4) garde de doublon sur
+  `to_lowercase()` → `libelles_egaux_aux_accents_pres_refuses` (`provider_env.rs:562`). Les quatre tuées par
+  `panicked at` d'un test nommé.
+- **Gates au dernier commit de code `98f1fb40d`** : backend `scripts/test-fast.sh --ci` (fmt, clippy `-D warnings`,
+  nextest) vert, **6423 exécutés, 6423 passés, 15 ignorés** (`gate-backend-3.log`, base `kesh_s3813` remise à zéro
+  sur dev4, `KESH_NO_MEMGUARD=1` : bus systemd utilisateur refusé) ; frontend `check`, `lint-i18n-ownership`, Vitest
+  **4995 tests (290 fichiers)**, `build` verts (`front-1-*.log`). Gate 1 rouge sur mem-guard (bus refusé), gate 2
+  rouge sur `cargo fmt` seul (test reformaté, `98f1fb40d`). **Aucun E2E** : aucune spec ajoutée (règle de la nuit du
+  22.11), aucun écran changé ; E2E complet et `gate-ci.sh` à la fin de l'epic.
+- `issues-a-ouvrir.md` : les deux entrées barrées, avec leur commit (copie d'avant :
+  `kesh-gate-logs/s38-13/issues-a-ouvrir.avant-38-13.md`).
+- Hors périmètre, relevé : le doc-comment `routes/bank_accounts.rs:751` disait la collation « sans casse » (corrigé au
+  passage, commentaire seul).
+
 ### File List
+
+- `crates/kesh-api/src/provider_env.rs`
+- `crates/kesh-api/src/provider_download.rs`
+- `crates/kesh-api/src/routes/bank_accounts.rs` (doc-comment)
+- `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl`
+- `docs/manual/fr/admin-manual.tex`
+- `docs/api-external.md`
+- `_bmad-output/implementation-artifacts/38-13-solde-dette.md`, `sprint-status.yaml`
 
 ## Change Log
 
@@ -168,3 +211,6 @@ la mention « corrigé par la 38-13, ne pas ouvrir » ; rien d'autre n'y est ret
   de LOW, 2 LOW. L1 (la mutation (2) ne meurt que par une paire accentuée / non accentuée) : les tests prévus portent
   « Zürich » / « zurich » et « Gênf » / « Genf » ; L2 annoté ci-dessus. **Validation close** : trend P1 2 M → P2 1 M →
   P3 0, modèles Sonnet, Opus, Sonnet.
+- 2026-11-22, développement : B `3c97735cc`, A `0d6218c26` + `98f1fb40d` ; gates verts à `98f1fb40d` (backend 6423,
+  frontend 4995), quatre mutations tuées ; story en `review`, prompt de revue P1
+  `kesh-gate-logs/s38-13/revue-p1-prompt.md`.
