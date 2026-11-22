@@ -174,6 +174,8 @@ Stripe » du manuel utilisateur et de `docs/api-external.md`.
 - 2026-11-22 — revue de code P1 (rapport `kesh-gate-logs/s40-7d/revue-p1-rapport.md`) : 0 CRITICAL, 0 HIGH, 3 MEDIUM, 9 LOW ;
   remédiée (voir « Remédiation de la revue P1 » au Dev Agent Record) ; passe P2 à lancer (prompt
   `kesh-gate-logs/s40-7d/revue-p2-prompt.md`).
+- 2026-11-22 — revue de code P2 ciblée (rapport `kesh-gate-logs/s40-7d/revue-p2-rapport.md`) : 0 CRITICAL, 0 HIGH, 3 MEDIUM, 4 LOW ;
+  remédiée (§ « Remédiation de la revue P2 ») ; passe P3 ciblée à lancer (prompt `kesh-gate-logs/s40-7d/revue-p3-prompt.md`).
 
 ## Dev Agent Record
 
@@ -329,6 +331,37 @@ des contrôles de clôture retiré (`kesh-gate-logs/s40-7d/mutations.log`).
   (0 erreur), `lint-i18n-ownership`, Vitest **5008 passés, 293 fichiers**, `npm run build`, tous verts
   (`gate-front-p1.log`) ; E2E partiel de la seule spec de la story (`stripe-import.spec.ts`) : 4/4 (`e2e-2.log`). nextest non
   rejoué : aucun code Rust ne change (les locales sont lues par `kesh-i18n`, dont la parité est tenue par `i18n-keys.test.ts`).
+
+### Remédiation de la revue P2 (2026-11-22)
+
+Rapport `kesh-gate-logs/s40-7d/revue-p2-rapport.md` : 0 CRITICAL, 0 HIGH, 3 MEDIUM, 4 LOW.
+
+- **P2-1** : la destination archivée ou close n'est gardée que tant que le compte du plan est celui de
+  l'ouverture (`payoutKeepId` de `bank-accounts/+page.svelte`, que l'effet suit aussi) ; à tout autre compte du
+  plan, même de même devise, elle est retirée (le serveur la rejuge alors, `payout_is_unchanged`). Le manuel
+  dit « un renommage ne l'efface pas » : toujours vrai. Test : destination archivée → vidée, active → gardée.
+- **P2-2** : le texte `stripe-gap-receipt-import` (quatre locales) et le manuel ne disent plus que d'importer le
+  relevé du compte de destination ; plus aucune promesse de page Wise. Le lien Wise reste noté à l'intégration
+  avec l'Epic 39 (fichier d'epic).
+- **P2-3** : la page Stripe relit les comptes bancaires **archivés et clos** (`listBankAccounts(true, true)`) pour
+  résoudre la destination ; test : destination Wise archivée → texte, non lien. Si la lecture échoue, la liste est
+  vide et le lien ordinaire s'affiche (limite acceptée).
+- **P2-4** (note, non corrigé) : l'effet de la destination ne suit que la devise et le compte du plan, non l'arrivée
+  tardive de `accounts` / `bankAccounts` ; une destination incompatible présente au chargement n'est vidée qu'au
+  prochain changement : le serveur la refuserait explicitement, sans perte silencieuse.
+- **P2-5** : la garde de `provider-labels.test.ts` lit aussi `closed_account_failed` et
+  `counterparty_is_bank_ledger_failed_proposal` de `reconciliation.rs` (16 codes, `BANK_ACCOUNT_CLOSED` compris).
+- **P2-6** : PayPal délègue aussi `PROVIDER_PROPOSAL_STALE` : un seul texte, `paypal-failed-proposal-stale`
+  supprimée des quatre catalogues ; `PAYPAL_OWN_FAILED_CODES` supprimée.
+- **P2-7** : `COUNTERPARTY_CURRENCY_MISMATCH` passe dans `providerFailedLabel` (clé `provider-failed-counterparty-currency-mismatch`,
+  renommée depuis `paypal-…`, quatre locales).
+- **Mutations** (`mutations-p2.log`, copie hors dépôt, base verte) : 4/4 tuées sur une assertion nommée — comparaison au
+  compte du plan d'ouverture retirée, relecture des archivés et clos retirée, lecture de `reconciliation.rs` retirée,
+  `COUNTERPARTY_CURRENCY_MISMATCH` retiré.
+- **Gates** (dernier commit de code : celui de cette remédiation ; aucun Rust, quatre `.ftl` modifiés) : `npm run check` 0 erreur,
+  `lint-i18n-ownership`, Vitest **5011 passés, 293 fichiers**, `npm run build` ; `cargo nextest -p kesh-i18n` 42/42 et
+  `-p kesh-api --test textes_coherents` 30/30 (`gate-rust-p2.log`) ; E2E partiel de la spec de la story 4/4 (`e2e-3.log`).
+  `sitesTotal` 3692 → 3691 (relevé par la garde).
 
 ### File List
 

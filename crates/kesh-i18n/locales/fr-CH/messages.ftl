@@ -1901,7 +1901,7 @@ provider-failed-fx-rate-invalid = Le cours de la conversion ne se calcule pas à
 provider-failed-not-found = La transaction ou l’écriture visée est introuvable : elle a été supprimée entre-temps. Rechargez la page.
 provider-failed-optimistic-lock = La transaction a été modifiée entre-temps. Rechargez la page.
 provider-failed-entry-not-linkable = L’écriture de vente n’est plus rattachable à cette transaction (déjà rattachée, contre-passée ou modifiée). Rechargez la page.
-paypal-failed-counterparty-currency-mismatch = Cette règle désigne un compte tenu en { $accountCurrency } : elle ne s'applique qu'aux transactions en { $accountCurrency }, et celle-ci est en { $transactionCurrency }. Choisissez un compte en CHF ou dans la devise de la transaction.
+provider-failed-counterparty-currency-mismatch = Cette règle désigne un compte tenu en { $accountCurrency } : elle ne s'applique qu'aux transactions en { $accountCurrency }, et celle-ci est en { $transactionCurrency }. Choisissez un compte en CHF ou dans la devise de la transaction.
 provider-gap-receipt-without-sale = Encaissement sans vente : aucune écriture de vente ne porte cet identifiant.
 provider-gap-sale-without-receipt = Vente sans encaissement : aucune transaction ne porte l'identifiant de cette écriture.
 provider-gap-amount-or-currency-mismatch = Montant ou devise différents : l'écriture de vente n'a pas le montant de l'encaissement sur le compte de cette devise, ou elle est déjà rattachée.
@@ -2085,7 +2085,6 @@ reconciliation-rules-direction-credit = Entrées
 reconciliation-rules-direction-debit = Sorties
 reconciliation-rules-filter-provider-type = Type PayPal = { $value }
 reconciliation-rules-filter-email = E-mail = { $value }
-paypal-failed-proposal-stale = La proposition ne vaut plus : la transaction, l’écriture, la règle ou les paramètres du compte ont changé depuis la revue. Rechargez la page.
 paypal-csv-line-field-count = nombre de cellules différent de l’en-tête
 paypal-csv-line-date = date illisible ou d’un autre format que le fichier
 paypal-csv-line-amount = montant illisible
@@ -4397,4 +4396,4 @@ stripe-gap-amount-or-currency-mismatch = Montant ou devise différents
 stripe-gap-already-linked = Vente déjà rattachée à une autre charge
 stripe-gap-payout-entry = Écriture du versement
 stripe-gap-receipt-link = Rattacher la réception à la réconciliation
-stripe-gap-receipt-import = Importez le relevé du compte de destination (Wise) : la réception s’y rattache.
+stripe-gap-receipt-import = Importez le relevé du compte de destination (Wise).

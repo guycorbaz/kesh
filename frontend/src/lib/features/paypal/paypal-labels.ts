@@ -18,39 +18,12 @@ import { isAlreadyLinked, providerFailedLabel, providerMismatchDetails } from '$
 import type { PaypalFinding, PaypalLineError, PaypalProposal } from './paypal.types';
 
 /**
- * Codes des refus que l'écran traduit lui-même (`paypal-failed-*`) ; tout autre
- * code passe par `failedProposalLabel`. Exportée pour le test, qui la compare à
- * une liste écrite en dur.
+ * Libellé d'un refus de `POST /paypal/accept` : ceux du moteur d'acceptation commun sont traduits
+ * pour tous les prestataires par `providerFailedLabel` (revue P1 et P2 de la 40-7d) ; PayPal n'en
+ * a plus de propres.
  */
-export const PAYPAL_OWN_FAILED_CODES = ['PROVIDER_PROPOSAL_STALE', 'COUNTERPARTY_CURRENCY_MISMATCH'] as const;
-
-/** Libellé d'un refus de `POST /paypal/accept`. */
 export function paypalFailedLabel(code: string, details?: unknown): string {
-	switch (code) {
-		case 'PROVIDER_PROPOSAL_STALE':
-			return i18nMsg(
-				'paypal-failed-proposal-stale',
-				'La proposition ne vaut plus : la transaction, l’écriture, la règle ou les paramètres du compte ont changé depuis la revue. Rechargez la page.',
-			);
-		// 38-11c2 (L4) : la règle désigne un compte dans une devise qui n'est ni le CHF ni celle
-		// de la transaction ; la clé est celle de la 38-11c2.
-		case 'COUNTERPARTY_CURRENCY_MISMATCH': {
-			const d = details && typeof details === 'object' ? (details as Record<string, unknown>) : {};
-			return i18nMsg(
-				'paypal-failed-counterparty-currency-mismatch',
-				'Cette règle désigne un compte tenu en { $accountCurrency } : elle ne s’applique qu’aux transactions en { $accountCurrency }, et celle-ci est en { $transactionCurrency }. Choisissez un compte en CHF ou dans la devise de la transaction.',
-				{
-					accountCurrency: typeof d.accountCurrency === 'string' ? d.accountCurrency : '',
-					transactionCurrency: typeof d.transactionCurrency === 'string' ? d.transactionCurrency : '',
-				},
-			);
-		}
-		// Revue P1 de 40-7d (M2) : les refus du moteur d'acceptation commun (`FX_*`, `NOT_FOUND`,
-		// `OPTIMISTIC_LOCK_CONFLICT`, `RECONCILIATION_ENTRY_NOT_LINKABLE`) sont traduits pour tous les
-		// prestataires par `providerFailedLabel`.
-		default:
-			return providerFailedLabel(code, details);
-	}
+	return providerFailedLabel(code, details);
 }
 
 /** Libellé d'une erreur de ligne du lecteur PayPal (38-11a) ; code brut si inconnu. */

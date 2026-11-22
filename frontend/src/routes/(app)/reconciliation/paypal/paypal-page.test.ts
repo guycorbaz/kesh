@@ -211,7 +211,7 @@ describe('page PayPal (Story 38-11d)', () => {
 		const r = render(Page);
 		await fireEvent.click(await r.findByTestId('paypal-check-1'));
 		await fireEvent.click(r.getByTestId('paypal-accept'));
-		expect((await r.findByTestId('paypal-accept-failed')).textContent).toContain('La proposition ne vaut plus');
+		expect((await r.findByTestId('paypal-accept-failed')).textContent).toContain('est plus valable');
 	});
 
 	it('plus de 500 propositions : un paquet à la fois, compte rendu cumulé', async () => {

@@ -164,9 +164,20 @@
 			accounts,
 			formLedgerCurrency,
 			mode.kind === 'edit-full' ? mode.id : null,
-			formPayoutBankAccountId,
+			payoutKeepId(),
 		),
 	);
+	/**
+	 * Revue P2 de 40-7d (P2-1) — la destination choisie reste offerte, archivée ou close, tant que le
+	 * compte du plan est celui de l'ouverture : le serveur ne la rejuge pas alors (`payout_is_unchanged`)
+	 * et la refuse (`STRIPE_PAYOUT_ACCOUNT_INVALID`) dès que le compte du plan change.
+	 */
+	function payoutKeepId(): number | null {
+		if (mode.kind !== 'edit-full') return null;
+		const id = mode.id;
+		const original = bankAccounts.find((b) => b.id === id);
+		return original && original.journalAccountId === formJournalAccountId ? formPayoutBankAccountId : null;
+	}
 	// Le compte de frais se vide seulement si sa devise n'est plus admise par celle du compte du
 	// plan choisi (revue P1, L7 : le vider à tout changement effaçait en silence un compte choisi
 	// avant le compte du plan ; revue P2, L3 : ni un compte archivé ou non imputable, que le
@@ -189,6 +200,9 @@
 	// devise la retire.
 	$effect(() => {
 		const ledger = formLedgerCurrency;
+		// Le compte du plan lui-même est suivi : un changement à même devise retire une destination
+		// archivée ou close (revue P2, P2-1).
+		void formJournalAccountId;
 		untrack(() => {
 			if (accounts.length === 0 || bankAccounts.length === 0 || formPayoutBankAccountId === null) return;
 			const kept = payoutAccountCandidates(
@@ -196,7 +210,7 @@
 				accounts,
 				ledger,
 				mode.kind === 'edit-full' ? mode.id : null,
-				formPayoutBankAccountId,
+				payoutKeepId(),
 			);
 			if (!kept.some((b) => b.id === formPayoutBankAccountId)) formPayoutBankAccountId = null;
 		});

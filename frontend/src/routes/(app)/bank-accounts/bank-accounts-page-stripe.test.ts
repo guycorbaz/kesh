@@ -270,6 +270,23 @@ describe('page des comptes bancaires — le compte Stripe (Story 40-7d, AC-1)', 
 		await waitFor(() => expect((r.getByTestId('edit-payout-account') as HTMLSelectElement).selectedIndex).toBe(0));
 	});
 
+	// Revue P2 de 40-7d (P2-1) — le serveur rejuge la destination dès que le compte du plan change
+	// (`payout_is_unchanged`) : archivée ou close, elle n'est plus offerte ; active, elle reste.
+	it.each([
+		['archivée', { archived: true }, ''],
+		['active', {}, '4'],
+	])('modification : compte du plan changé à même devise, destination %s → valeur « %s »', async (_nom, etat, attendu) => {
+		const AUTRE_EUR = account({ id: 24, number: '1032', name: 'Stripe EUR bis', currency: 'EUR' });
+		fetchAccountsMock.mockResolvedValue([BANQUE, STRIPE_CHF, STRIPE_EUR, WISE_EUR, AUTRE_EUR, FRAIS_CHF, FRAIS_EUR, PRODUIT]);
+		listBankAccountsMock.mockResolvedValue([principal, stripeEur, ordinaire, { ...wiseEur, ...etat }]);
+		const r = render(Page);
+		await fireEvent.click(await r.findByTestId('edit-button-2'));
+		const payout = (await r.findByTestId('edit-payout-account')) as HTMLSelectElement;
+		await waitFor(() => expect(payout.value).toBe('4'));
+		await fireEvent.change(r.getByTestId('edit-journal-account'), { target: { value: '24' } });
+		await waitFor(() => expect((r.getByTestId('edit-payout-account') as HTMLSelectElement).value).toBe(attendu));
+	});
+
 	it('liste : « Stripe · <compte> · <devise> », pas de « Lier » sur un compte Stripe', async () => {
 		const r = render(Page);
 		expect((await r.findByTestId('bank-account-stripe-2')).textContent).toBe('Stripe · Stripe boutique · EUR');

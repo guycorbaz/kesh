@@ -1189,7 +1189,9 @@ const ATTENDU = {
 	// (« expected 3689 to be 3632 »), relevé par la garde, non additionné.
 	// Revue P1 de la 40-7d (M1, M3 : badges de la destination archivée ou close, texte du versement
 	// vers Wise) : **3692** (« expected 3692 to be 3689 »), relevé par la garde.
-	sitesTotal: 3692,
+	// Revue P2 de la 40-7d (délégation complète de PayPal au module commun, texte du versement Wise
+	// raccourci) : **3691** (« expected 3691 to be 3692 »), relevé par la garde.
+	sitesTotal: 3691,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

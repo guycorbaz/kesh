@@ -21,6 +21,7 @@ import { PROVIDER_COMMON_FAILED_CODES, providerFailedLabel } from './provider-la
  */
 const CODES_MOTEUR = [
 	'ACCOUNT_NOT_FOUND',
+	'BANK_ACCOUNT_CLOSED',
 	'BANK_ACCOUNT_NOT_CONFIGURED',
 	'BANK_TRANSACTION_NOT_FOUND',
 	'COUNTERPARTY_CURRENCY_MISMATCH',
@@ -41,6 +42,7 @@ describe('provider-labels — les refus du moteur commun', () => {
 	it('chaque code commun a une clé provider-failed-*', () => {
 		expect([...PROVIDER_COMMON_FAILED_CODES].sort()).toEqual(
 			[
+				'COUNTERPARTY_CURRENCY_MISMATCH',
 				'FX_ACCOUNT_INVALID',
 				'FX_RATE_INVALID',
 				'NOT_FOUND',
@@ -57,12 +59,23 @@ describe('provider-labels — les refus du moteur commun', () => {
 	it('les codes écrits en dur sont ceux de la source Rust (hors tests)', () => {
 		const source = readFileSync('../crates/kesh-api/src/routes/provider_accept.rs', 'utf-8');
 		const horsTests = source.slice(0, source.indexOf('#[cfg(test)]'));
-		const trouves = new Set([...horsTests.matchAll(/"([A-Z][A-Z_]{4,})"/g)].map((m) => m[1]));
+		// Codes que le moteur reçoit de fonctions de `reconciliation.rs` (revue P2, P2-5) : le refus
+		// d'un compte clos (`BANK_ACCOUNT_CLOSED`) et celui d'une contrepartie qui est le compte bancaire.
+		const reco = readFileSync('../crates/kesh-api/src/routes/reconciliation.rs', 'utf-8');
+		const corps = (nom: string) => {
+			const debut = reco.indexOf(`fn ${nom}(`);
+			expect(debut).toBeGreaterThan(-1);
+			return reco.slice(debut, reco.indexOf('\n}\n', debut));
+		};
+		const autres = corps('closed_account_failed') + corps('counterparty_is_bank_ledger_failed_proposal');
+		const trouves = new Set(
+			[...(horsTests + autres).matchAll(/"([A-Z][A-Z_]{4,})"/g)].map((m) => m[1]),
+		);
 		expect([...trouves].sort()).toEqual(CODES_MOTEUR);
 	});
 
-	it('aucun code du moteur ne retombe sur « Refus non reconnu » (hors codes propres au prestataire)', () => {
-		for (const code of CODES_MOTEUR.filter((c) => c !== 'COUNTERPARTY_CURRENCY_MISMATCH')) {
+	it('aucun code du moteur ne retombe sur « Refus non reconnu » ', () => {
+		for (const code of CODES_MOTEUR) {
 			expect(providerFailedLabel(code, {})).not.toContain('reconciliation-failed-unknown');
 		}
 	});

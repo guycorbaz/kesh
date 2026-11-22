@@ -1818,7 +1818,7 @@ provider-failed-fx-rate-invalid = Il cambio della conversione non si calcola dai
 provider-failed-not-found = La transazione o la registrazione non si trova: è stata eliminata nel frattempo. Ricarichi la pagina.
 provider-failed-optimistic-lock = La transazione è stata modificata nel frattempo. Ricarichi la pagina.
 provider-failed-entry-not-linkable = La registrazione di vendita non è più collegabile a questa transazione (già collegata, stornata o modificata). Ricarichi la pagina.
-paypal-failed-counterparty-currency-mismatch = Questa regola indica un conto tenuto in { $accountCurrency }: si applica solo alle transazioni in { $accountCurrency }, e questa è in { $transactionCurrency }. Scegliete un conto in CHF o nella valuta della transazione.
+provider-failed-counterparty-currency-mismatch = Questa regola indica un conto tenuto in { $accountCurrency }: si applica solo alle transazioni in { $accountCurrency }, e questa è in { $transactionCurrency }. Scegliete un conto in CHF o nella valuta della transazione.
 provider-gap-receipt-without-sale = Incasso senza vendita: nessuna registrazione di vendita porta questo identificativo.
 provider-gap-sale-without-receipt = Vendita senza incasso: nessuna transazione porta l'identificativo di questa registrazione.
 provider-gap-amount-or-currency-mismatch = Importo o valuta diversi: la registrazione di vendita non ha l'importo dell'incasso sul conto di questa valuta, oppure è già collegata.
@@ -2001,7 +2001,6 @@ reconciliation-rules-direction-credit = Entrate
 reconciliation-rules-direction-debit = Uscite
 reconciliation-rules-filter-provider-type = Tipo PayPal = { $value }
 reconciliation-rules-filter-email = E-mail = { $value }
-paypal-failed-proposal-stale = La proposta non vale più: la transazione, la registrazione, la regola o i parametri del conto sono cambiati dalla revisione. Ricarichi la pagina.
 paypal-csv-line-field-count = numero di celle diverso dall’intestazione
 paypal-csv-line-date = data illeggibile o in un formato diverso dal file
 paypal-csv-line-amount = importo illeggibile
@@ -4317,4 +4316,4 @@ stripe-gap-amount-or-currency-mismatch = Importo o valuta diversi
 stripe-gap-already-linked = Vendita già collegata a un altro addebito
 stripe-gap-payout-entry = Registrazione del versamento
 stripe-gap-receipt-link = Collegare la ricezione nella riconciliazione
-stripe-gap-receipt-import = Importate l’estratto del conto di destinazione (Wise): la ricezione vi si collega.
+stripe-gap-receipt-import = Importate l’estratto del conto di destinazione (Wise).

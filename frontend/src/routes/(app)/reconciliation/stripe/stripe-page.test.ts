@@ -16,9 +16,9 @@ vi.mock('$lib/shared/utils/i18n.svelte', () => ({
 		args ? fallback.replace(/\{\s*\$(\w+)\s*\}/g, (_, k) => String(args[k] ?? '')) : fallback,
 }));
 
-const listBankAccountsMock = vi.fn<() => Promise<BankAccountSummary[]>>();
+const listBankAccountsMock = vi.fn<(archived?: boolean, closed?: boolean) => Promise<BankAccountSummary[]>>();
 vi.mock('$lib/features/bank-accounts/bank-accounts.api', () => ({
-	listBankAccounts: () => listBankAccountsMock(),
+	listBankAccounts: (archived?: boolean, closed?: boolean) => listBankAccountsMock(archived, closed),
 }));
 vi.mock('$lib/features/fiscal-years/fiscal-years.api', () => ({
 	listFiscalYears: async () => [
@@ -199,6 +199,21 @@ describe('page Stripe (Story 40-7d)', () => {
 		const bloc2 = banque.getByTestId('stripe-gap-payout_without_receipt');
 		expect(bloc2.querySelector('[data-testid="stripe-gap-receipt-import"]')).toBeNull();
 		expect(Array.from(bloc2.querySelectorAll('a')).map((a) => a.getAttribute('href'))).toEqual(['/journal-entries/77', '/reconciliation']);
+	});
+
+	// Revue P2 de 40-7d (P2-3) — une destination Wise archivée ou close n'est pas offerte par la
+	// réconciliation non plus : la résolution relit aussi les comptes archivés et clos.
+	it('versement vers un compte Wise archivé : le texte, non le lien (comptes archivés et clos relus)', async () => {
+		const wiseArchive = { ...stripeAccount(9, 'x'), bankName: 'Wise', provider: 'wise' as const, stripe: null, iban: null, archived: true };
+		listBankAccountsMock.mockImplementation(async (archived) =>
+			archived ? [stripeAccount(1, 'Stripe boutique'), wiseArchive] : [stripeAccount(1, 'Stripe boutique')],
+		);
+		const r = render(Page);
+		await waitFor(() => expect(r.getByTestId('stripe-gap-payout_without_receipt')).toBeTruthy());
+		const bloc = r.getByTestId('stripe-gap-payout_without_receipt');
+		await waitFor(() => expect(bloc.querySelector('[data-testid="stripe-gap-receipt-import"]')).not.toBeNull());
+		expect(Array.from(bloc.querySelectorAll('a')).map((a) => a.getAttribute('href'))).toEqual(['/journal-entries/77']);
+		expect(listBankAccountsMock).toHaveBeenCalledWith(true, true);
 	});
 
 	it('accepter la sélection : corps par genre, versement avec son compte de versement, ordre des dates', async () => {

@@ -25,6 +25,7 @@ export const PROVIDER_COMMON_FAILED_CODES = [
 	'NOT_FOUND',
 	'OPTIMISTIC_LOCK_CONFLICT',
 	'RECONCILIATION_ENTRY_NOT_LINKABLE',
+	'COUNTERPARTY_CURRENCY_MISMATCH',
 ] as const;
 
 /** Libellé d'un refus de `POST /<prestataire>/accept` (hors codes propres au prestataire). */
@@ -60,6 +61,19 @@ export function providerFailedLabel(code: string, details?: unknown): string {
 				'provider-failed-entry-not-linkable',
 				'L’écriture de vente n’est plus rattachable à cette transaction (déjà rattachée, contre-passée ou modifiée). Rechargez la page.',
 			);
+		// La règle désigne un compte dans une devise qui n'est ni le CHF ni celle de la transaction
+		// (voie des règles du moteur commun, sans effet pour Stripe).
+		case 'COUNTERPARTY_CURRENCY_MISMATCH': {
+			const d = details && typeof details === 'object' ? (details as Record<string, unknown>) : {};
+			return i18nMsg(
+				'provider-failed-counterparty-currency-mismatch',
+				'Cette règle désigne un compte tenu en { $accountCurrency } : elle ne s’applique qu’aux transactions en { $accountCurrency }, et celle-ci est en { $transactionCurrency }. Choisissez un compte en CHF ou dans la devise de la transaction.',
+				{
+					accountCurrency: typeof d.accountCurrency === 'string' ? d.accountCurrency : '',
+					transactionCurrency: typeof d.transactionCurrency === 'string' ? d.transactionCurrency : '',
+				},
+			);
+		}
 		default:
 			return failedProposalLabel(code, details);
 	}

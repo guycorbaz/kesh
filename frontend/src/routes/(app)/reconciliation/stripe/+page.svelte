@@ -17,6 +17,7 @@
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 	import type { BankAccountSummary } from '$lib/features/bank-accounts/bank-accounts.api';
+	import { listBankAccounts } from '$lib/features/bank-accounts/bank-accounts.api';
 	import { stripeAccountLabels } from '$lib/features/bank-accounts/provider';
 	import ProviderReviewPage from '$lib/features/provider/ProviderReviewPage.svelte';
 	import type { ProviderFinding } from '$lib/features/provider/provider-review.types';
@@ -41,7 +42,8 @@
 	// fx-filtre-comptes : exempté — aucun sélecteur de compte : la liste ne sert qu'à nommer le
 	// compte de frais que la revue a choisi (en CHF ou dans la devise du solde).
 	let accounts = $state<AccountResponse[]>([]);
-	// Comptes bancaires lus par la page commune : de quoi savoir où un versement arrive.
+	// Tous les comptes bancaires, archivés et clos compris (le serveur ne les écarte pas d'une
+	// destination de versement) : de quoi savoir où un versement arrive.
 	let bankAccounts = $state<BankAccountSummary[]>([]);
 
 	async function loadStripe() {
@@ -49,6 +51,11 @@
 			accounts = await fetchAccounts(false);
 		} catch {
 			accounts = [];
+		}
+		try {
+			bankAccounts = await listBankAccounts(true, true);
+		} catch {
+			bankAccounts = [];
 		}
 	}
 
@@ -105,7 +112,7 @@
 				<span data-testid="stripe-gap-receipt-import">
 					{i18nMsg(
 						'stripe-gap-receipt-import',
-						'Importez le relevé du compte de destination (Wise) : la réception s’y rattache.',
+						'Importez le relevé du compte de destination (Wise).',
 					)}
 				</span>
 			{:else}
@@ -159,7 +166,6 @@
 	gapDetails={stripeGapDetails}
 	toReviewLabel={stripeToReviewLabel}
 	onLoad={loadStripe}
-	bind:bankAccounts
 	{importReportExtra}
 	{proposalAction}
 	{gapExtra}
