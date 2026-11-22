@@ -409,6 +409,15 @@ Tous au commit `5d04b925` (dernier commit de code), `gates-all.sh` :
 - **Gates** (`kesh-gate-logs/s38-11d/front-7-*.log`) : `check`, `lint-i18n-ownership`, `build` verts ; Vitest **4946/4946** (287 fichiers). Aucun Rust modifié, aucune spec E2E ajoutée.
 - Prompt de la passe ciblée P5 : `kesh-gate-logs/s38-11d/revue-p5-prompt.md`.
 
+### Remédiation de la revue P5 (M1, L1, L3 ; L2 sans suite) — dernier commit de code `aa643813`
+
+- **M1** : test de page « retrait : un libellé de compte qui ne diffère que par la casse et les accents est le même compte » (compte 1 « PayPal Zürich » au compte du plan 31, compte 2 « paypal zurich » au compte du plan 20 : ni 31 ni 20 offerts en destination) ; mutation `P5-M1-normalisation-page` (`ownLedgerIds` revenu à `toLowerCase()`) tuée par ce test : `expected [ '', '20' ] to not include '20'`.
+- **L1** : `run.sh` lance et consigne le témoin non muté en tête de `mut.log` : 3 fichiers, **41 tests verts** (40 + le test neuf). Neuf mutations, neuf tuées sur une assertion nommée (`kesh-gate-logs/s38-11d/revue-p5-mut/`).
+- **L3** : phrase au manuel utilisateur (`user-manual.tex`, « Comptes PayPal ») : la casse et les accents ne distinguent pas deux libellés. PDF compilé dans une copie hors dépôt, phrase retrouvée (`pdftotext`) ; aucun PDF commité.
+- **L2** (limite acceptée, déjà écrite) : la clé fond casse et diacritiques, non les équivalences de `utf8mb4_unicode_ci` (`ß` = `ss`, `æ` = `ae`, ligatures) ; effet : deux options au sélecteur, refus propre du serveur, aucune écriture fausse.
+- **Gates** (`kesh-gate-logs/s38-11d/front-8-*.log`) : `check`, `lint-i18n-ownership`, `build` verts ; Vitest **4947/4947** (287 fichiers). Aucun Rust, aucun E2E.
+- Prompt de la passe ciblée P6 : `kesh-gate-logs/s38-11d/revue-p6-prompt.md`.
+
 
 ### Completion Notes
 
