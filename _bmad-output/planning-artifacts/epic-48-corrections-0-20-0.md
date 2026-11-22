@@ -17,6 +17,19 @@ la 0.21.0 ; la story **v0200-corrections-mineures** entre dans l'épique, qui pa
 > écritures réelles : **leurs fiches citent ce cas dans leurs critères d'acceptation** (une facture validée, payée ou non,
 > garde ses montants, sa TVA, son numéro et son PDF archivé ; seul ce que le geste vise change).
 
+
+## Clôture et découpage (2026-11-21)
+
+**L'Epic 48 est clos avec la release v0.19.1** (décision du Project Lead du 2026-11-21, revue des règles à plusieurs
+développeurs : un epic tient dans une release, au plus six stories). Il a publié 48-10, 48-13, 48-15,
+v0200-corrections-mineures et 48-14. Ses autres stories gardent leur clé et leur fiche, mais changent d'epic :
+
+- **Epic 50 « Corrections »** (`epic-50-corrections.md`) : 48-11, 48-12a, 48-12b ;
+- **Epic 51 « Réimputation »** (`epic-51-reimputation.md`) : 48-1, 48-2a, 48-2b ;
+- **liste d'attente, hors epic** : 48-3 à 48-9 ; chacune reçoit un epic quand une release la retient.
+
+Le reste de ce fichier décrit l'epic tel qu'il a été lancé le 2026-11-18 ; il sert de référence aux fiches reprises.
+
 ## Objet
 
 L'Epic 48 était le **réservoir** des stories non faites des Epics 36 et 42 à 44 (kesh:D11). Au kickoff de la 0.20.0, elle

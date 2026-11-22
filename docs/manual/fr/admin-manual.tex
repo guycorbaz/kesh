@@ -2718,6 +2718,18 @@ La session ouverte doit être \textbf{rouverte} --- reconnexion, ou au plus la d
 
 \textbf{Limite} : les données de démonstration laissées par une réinitialisation antérieure (taux de TVA, réglages de facturation, contacts, articles, factures, avoirs) qui désignent la société effacée restent en base, invisibles et inertes (\#546).
 
+\subsubsection{Lire le numéro de version}\label{sec:lire-numero-version}
+
+Le numéro de version de Kesh s'écrit \texttt{a.b.c}, et chacun de ses chiffres dit ce qu'une mise à jour vous demande. Cette lecture vaut pour les versions publiées après la 0.19.1 ; les versions antérieures montaient le deuxième chiffre à chaque version planifiée, qu'elle porte ou non une migration (les sections suivantes disent, version par version, ce qui change).
+
+\begin{itemize}
+    \item \textbf{Le dernier chiffre (\texttt{c}) monte} : la version ne porte \textbf{aucune migration} de la base. Remplacez l'image dans le compose et redémarrez (\S\ref{sec:mise-a-jour}). Pour revenir en arrière, remettez l'image précédente : la base n'a pas changé de schéma, et ce qui a été saisi entre-temps reste.
+    \item \textbf{Le chiffre du milieu (\texttt{b}) monte} : la version porte une migration de la base, ou une rupture du contrat de l'API pour les intégrations. \textbf{Lisez les notes de version avant de mettre à jour.} S'il y a une migration, \textbf{la sauvegarde complète est obligatoire avant la mise à jour} --- la base, un \keshcommand{.keshbackup} et le dossier des documents ---, et le retour en arrière passe par cette sauvegarde : l'image précédente ne démarre plus sur une base migrée. La sauvegarde que Kesh écrit seul dans \keshpath{backup/pre-upgrade/} (\S\ref{sec:sauvegarde-avant-maj}) ne remplace pas la vôtre.
+    \item \textbf{Le premier chiffre (\texttt{a})} reste à 0 tant que Kesh ne tient pas complètement les comptes d'un utilisateur ordinaire.
+\end{itemize}
+
+Le numéro ne suit pas le calendrier : plusieurs versions peuvent paraître dans la même semaine, et une version qui porte une migration paraît de préférence un vendredi.
+
 \subsubsection{Passer à la 0.19.1}\label{sec:maj-0-19-1}
 \sloppy
 
