@@ -563,6 +563,27 @@ async fn curseur_sans_objet() {
     }
 }
 
+/// AC-2 — un curseur qui ne bouge pas (la même page rendue deux fois avec
+/// `has_more`) ne fait pas tourner sans fin.
+#[tokio::test]
+async fn curseur_immobile() {
+    let b = banc().await;
+    b.sim.repondre(|req| {
+        if req.path == "/v1/payouts" {
+            Rep::Json(fixture("payouts-p1.json"))
+        } else {
+            cours_normal(req)
+        }
+    });
+    match b.lire().await.unwrap_err() {
+        AppError::ProviderResponseInvalid { details, .. } => {
+            assert_eq!(details["reason"], "cursor");
+        }
+        other => panic!("refus attendu : {other:?}"),
+    }
+    assert_eq!(b.sim.compte("/v1/payouts"), 2);
+}
+
 /// AC-3 — une transaction manquante : Σ net ≠ montant du versement,
 /// `PROVIDER_RESPONSE_INVALID` nommant le versement ; rien n'est rendu.
 #[tokio::test]
