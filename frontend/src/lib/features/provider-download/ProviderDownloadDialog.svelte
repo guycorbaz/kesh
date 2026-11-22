@@ -10,8 +10,10 @@
      cours (`details.jobId`) au lieu d'afficher une erreur ; le serveur refuse
      par compte, quelle que soit la période, et quand celle de la tâche suivie
      (`details.from`/`to`) diffère de la période demandée, un avis le dit
-     (« un téléchargement du … au … est déjà en cours ; son suivi est repris »)
-     jusqu'à l'issue.
+     (« un téléchargement du … au … est déjà en cours ; son suivi est repris »),
+     au passé une fois l'issue affichée ; la fin demandée est ramenée au jour
+     de Zurich avant la comparaison, comme le fait le serveur. Après une
+     reprise, « suivi perdu » nomme la période suivie.
   2. Suivi : `GET …/{jobId}` toutes les secondes ; barre et « fenêtre 5/13 »
      (compteur sans barre quand le total est inconnu), pause annoncée.
   3. Issue : `done` → le compte rendu de l'appelant, « données à jour jusqu'à … »
@@ -33,6 +35,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import { formatSwissDate, formatSwissDateTime } from '$lib/features/reports/reports.api';
+	import { todayInZurich } from '$lib/shared/utils/local-date';
 	import {
 		getProviderDownload,
 		startProviderDownload,
@@ -102,6 +105,8 @@
 	let failure = $state<ProviderDownloadError | null>(null);
 	/** La période d'une tâche reprise sur `409`, quand elle diffère de celle demandée. */
 	let resumed = $state<Period | null>(null);
+	/** Le jour de Zurich à l'ouverture : borne haute du champ de fin (revue P2, L1). */
+	let today = $state(todayInZurich());
 
 	// Garde de génération : toute interrogation d'une génération passée s'arrête
 	// (fermeture, démontage, nouveau lancement).
@@ -126,6 +131,7 @@
 			failure = null;
 			resumed = null;
 			starting = false;
+			today = todayInZurich();
 		}
 		if (!open && wasOpen) stopPolling();
 		wasOpen = open;
@@ -150,11 +156,14 @@
 			if (myGen !== generation) return;
 			const outcome = startRefusal(err);
 			if ('resumeJobId' in outcome) {
-				resumed = resumedNotice(outcome.running, requested);
+				resumed = resumedNotice(outcome.running, requested, todayInZurich());
 				track(outcome.resumeJobId);
 			} else refusal = outcome.message;
 		} finally {
-			starting = false;
+			// Un `POST` d'une génération passée (fermé puis rouvert) ne réactive pas
+			// le bouton pendant le `POST` suivant ; la réouverture remet déjà
+			// `starting` à faux (revue P2, L3).
+			if (myGen === generation) starting = false;
 		}
 	}
 
@@ -234,13 +243,22 @@
 		</p>
 		<p class="text-sm" data-testid="provider-download-notice">{notice}</p>
 
-		{#if resumed && phase !== 'form'}
+		{#if resumed && phase !== 'form' && phase !== 'lost'}
 			<p class="rounded bg-amber-50 p-3 text-sm text-amber-900" role="status" data-testid="provider-download-resumed">
-				{i18nMsg(
-					'provider-download-resumed',
-					'Un téléchargement du { $from } au { $to } est déjà en cours pour ce compte : son suivi est repris. Lancez votre période quand il sera terminé.',
-					{ from: formatSwissDate(resumed.from), to: formatSwissDate(resumed.to) },
-				)}
+				{#if phase === 'running'}
+					{i18nMsg(
+						'provider-download-resumed',
+						'Un téléchargement du { $from } au { $to } est déjà en cours pour ce compte : son suivi est repris. Lancez votre période quand il sera terminé.',
+						{ from: formatSwissDate(resumed.from), to: formatSwissDate(resumed.to) },
+					)}
+				{:else}
+					<!-- Issue affichée : l'avis passe au passé (revue P2, L6). -->
+					{i18nMsg(
+						'provider-download-resumed-ended',
+						'Le téléchargement du { $from } au { $to }, déjà en cours pour ce compte, a été suivi à la place du vôtre : lancez maintenant votre période.',
+						{ from: formatSwissDate(resumed.from), to: formatSwissDate(resumed.to) },
+					)}
+				{/if}
 			</p>
 		{/if}
 
@@ -266,6 +284,7 @@
 						id="provider-download-to"
 						type="date"
 						bind:value={to}
+						max={today}
 						class="rounded border border-border px-3 py-2 text-sm"
 						data-testid="provider-download-to"
 					/>
@@ -322,10 +341,19 @@
 			</div>
 		{:else if phase === 'lost'}
 			<p class="rounded border border-red-200 bg-red-50 p-3 text-sm" role="alert" data-testid="provider-download-lost">
-				{i18nMsg(
-					'provider-download-lost',
-					'Suivi perdu : relancez la même période, rien n’est doublé.',
-				)}
+				{#if resumed}
+					<!-- Après une reprise, la période perdue n'est pas celle demandée : la nommer (revue P2, L6). -->
+					{i18nMsg(
+						'provider-download-lost-resumed',
+						'Suivi perdu du téléchargement du { $from } au { $to } : relancez votre période, rien n’est doublé.',
+						{ from: formatSwissDate(resumed.from), to: formatSwissDate(resumed.to) },
+					)}
+				{:else}
+					{i18nMsg(
+						'provider-download-lost',
+						'Suivi perdu : relancez la même période, rien n’est doublé.',
+					)}
+				{/if}
 			</p>
 		{/if}
 

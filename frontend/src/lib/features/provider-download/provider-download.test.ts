@@ -52,19 +52,29 @@ describe('defaultPeriod', () => {
 
 describe('resumedNotice', () => {
 	const requested = { from: '2026-02-01', to: '2026-02-28' };
+	const today = '2026-11-22';
 	it('période différente : celle de la tâche suivie', () => {
-		expect(resumedNotice({ from: '2026-01-01', to: '2026-01-30' }, requested)).toEqual({
+		expect(resumedNotice({ from: '2026-01-01', to: '2026-01-30' }, requested, today)).toEqual({
 			from: '2026-01-01',
 			to: '2026-01-30',
 		});
-		expect(resumedNotice({ from: '2026-02-01', to: '2026-02-27' }, requested)).toEqual({
+		expect(resumedNotice({ from: '2026-02-01', to: '2026-02-27' }, requested, today)).toEqual({
 			from: '2026-02-01',
 			to: '2026-02-27',
 		});
 	});
 	it('même période, ou période inconnue : rien', () => {
-		expect(resumedNotice({ ...requested }, requested)).toBeNull();
-		expect(resumedNotice(null, requested)).toBeNull();
+		expect(resumedNotice({ ...requested }, requested, today)).toBeNull();
+		expect(resumedNotice(null, requested, today)).toBeNull();
+	});
+	it('fin demandée future : ramenée à aujourd’hui avant la comparaison, comme au serveur (revue P2, L1)', () => {
+		const exercice = { from: '2026-01-01', to: '2026-12-31' };
+		expect(resumedNotice({ from: '2026-01-01', to: today }, exercice, today)).toBeNull();
+		// Une tâche qui finit avant aujourd'hui reste une autre période.
+		expect(resumedNotice({ from: '2026-01-01', to: '2026-11-21' }, exercice, today)).toEqual({
+			from: '2026-01-01',
+			to: '2026-11-21',
+		});
 	});
 });
 

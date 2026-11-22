@@ -111,10 +111,17 @@ export function startRefusal(err: unknown): StartRefusal {
  * La période suivie à annoncer après une reprise sur `409` (revue P1, M1) :
  * celle de la tâche en cours quand elle diffère de la période demandée, sinon
  * `null` (même période, ou période inconnue : rien à dire).
+ *
+ * Le serveur garde la fin **lue** — une fin future ramenée à `today`, le jour
+ * de Zurich (`effective_to`) — et c'est elle que rend le `409` : la fin
+ * demandée est donc ramenée à `today` avant la comparaison, sans quoi la même
+ * période, demandée jusqu'à la fin de l'exercice, serait annoncée comme une
+ * autre (revue P2, L1).
  */
-export function resumedNotice(running: Period | null, requested: Period): Period | null {
+export function resumedNotice(running: Period | null, requested: Period, today: string): Period | null {
 	if (!running) return null;
-	return running.from === requested.from && running.to === requested.to ? null : running;
+	const requestedTo = requested.to > today ? today : requested.to;
+	return running.from === requested.from && running.to === requestedTo ? null : running;
 }
 
 /** `details.window` et `details.page` d'un échec, s'il y en a. */

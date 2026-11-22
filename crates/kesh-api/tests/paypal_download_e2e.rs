@@ -1279,19 +1279,23 @@ async fn refus_tache_unique_et_cles_d_api(pool: MySqlPool) {
 
     // Le serveur retient les pages : la tâche reste en cours.
     let place = sim.verrou.acquire_many(1000).await.unwrap();
-    let (s, premier) = ctx.lancer(COMPTE, "2020-01-01", "2020-01-30").await;
+    // Fin future (2020-07-15, l'horloge du test est au 2020-06-30) : la tâche
+    // garde la fin LUE, ramenée au jour (revue P2 de la 38-12b, L2).
+    let (s, premier) = ctx.lancer(COMPTE, "2020-06-01", "2020-07-15").await;
     assert_eq!(s, 202);
     let (s, b) = ctx.lancer("paypal WWW", "2020-02-01", "2020-02-02").await;
     assert_eq!((s, code(&b)), (409, "PROVIDER_DOWNLOAD_RUNNING".into()));
     assert_eq!(b["error"]["details"]["jobId"], premier["jobId"]);
     // La période de la tâche suivie, non celle demandée (revue P1 de la
-    // 38-12b, M1) : l'écran dit qu'il suit un autre téléchargement.
+    // 38-12b, M1) : l'écran dit qu'il suit un autre téléchargement ; sa fin
+    // est celle lue, le jour de l'horloge, non la fin future demandée.
     assert_eq!(
         (
             b["error"]["details"]["from"].as_str(),
             b["error"]["details"]["to"].as_str()
         ),
-        (Some("2020-01-01"), Some("2020-01-30"))
+        (Some("2020-06-01"), Some("2020-06-30")),
+        "409 : période de la tâche suivie, fin lue"
     );
     let (s, v) = ctx
         .req_avec(

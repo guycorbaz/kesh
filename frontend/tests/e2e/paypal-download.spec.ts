@@ -95,6 +95,13 @@ function transactions(): PaypalMockTransaction[] {
 }
 
 let mock: ProviderMock | null = null;
+/**
+ * Le serveur simulé retient les fenêtres 2 et 3 jusqu'à ce que (b) ait vu le
+ * `409` d'une relance : la tâche est alors forcément en cours, quel que soit le
+ * temps que la spec a mis (revue P2, L4).
+ */
+let releaseHold: () => void = () => {};
+const held = new Promise<void>((resolve) => (releaseHold = resolve));
 let fiscalYearId: number;
 /** Début de l'exercice qui couvre la période (`with-company` : 2020-2030) : début de la période proposée. */
 let fiscalYearStart: string;
@@ -108,6 +115,7 @@ test.beforeAll(async () => {
 				transactions: transactions(),
 				pageDelayMs: 900,
 				rateLimitOnce: { window: 2, retryAfterSeconds: 3 },
+				holdFromWindow: { window: 2, until: held },
 				lastRefreshed: `${TODAY}T05:00:00+00:00`,
 			}),
 		);
@@ -214,7 +222,8 @@ test('3 — (b) téléchargement de deux mois : progression, pause, compte rendu
 
 	// Fermer, rouvrir, lancer une AUTRE période : le serveur refuse (409) et rend la
 	// période de la tâche en cours, que le dialogue annonce en reprenant son suivi
-	// (revue P1, M1).
+	// (revue P1, M1). La tâche ne peut pas être finie : le serveur simulé retient la
+	// fenêtre 2 jusqu'à `releaseHold()` (revue P2, L4).
 	await page.getByTestId('provider-download-close').click();
 	await expect(dialog).toHaveCount(0);
 	await button.click();
@@ -224,6 +233,8 @@ test('3 — (b) téléchargement de deux mois : progression, pause, compte rendu
 		`Un téléchargement du ${swiss(FROM)} au ${swiss(TODAY)} est déjà en cours pour ce compte`,
 	);
 	await captureOf(page, 'provider-download-dialog', '18-dialogue-reprise-autre-periode');
+	// Le 409 est vu : le serveur simulé rend la fenêtre 2 (la pause), puis la suite.
+	releaseHold();
 	await expect(page.getByTestId('provider-download-paused')).toContainText('reprise dans', { timeout: 15_000 });
 	await captureOf(page, 'provider-download-dialog', '14-dialogue-pause');
 

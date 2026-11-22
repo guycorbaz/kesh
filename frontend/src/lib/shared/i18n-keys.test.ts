@@ -1190,7 +1190,9 @@ const ATTENDU = {
 	// au diff hors tests : 42 sites `i18nMsg(` ajoutés, 3 retirés (compte rendu extrait), net +39.
 	// Revue P1 de la 38-12b (avis `provider-download-resumed`) : **3672** (« expected 3672 to be
 	// 3671 »), relevé par la garde ; au diff : 1 site ajouté, 0 retiré.
-	sitesTotal: 3672,
+	// Revue P2 de la 38-12b (avis au passé, suivi perdu après une reprise) : **3674**, relevé par
+	// la garde ; au diff : 2 sites ajoutés, 0 retiré.
+	sitesTotal: 3674,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

@@ -27,6 +27,7 @@ vi.mock('./provider-download.api', async (importOriginal) => ({
 }));
 
 import ProviderDownloadDialog from './ProviderDownloadDialog.svelte';
+import { todayInZurich } from '$lib/shared/utils/local-date';
 
 // `inserted` facultatif : le composant est générique (`R extends { lastRefreshed? }`), et le
 // snippet doit accepter la forme de base au contrôle de types.
@@ -179,7 +180,11 @@ describe('ProviderDownloadDialog', () => {
 			),
 		);
 		await waitFor(() => expect(q('test-report')).not.toBeNull());
-		expect(q('provider-download-resumed')).not.toBeNull();
+		// Compte rendu affiché : l'avis passe au passé (revue P2, L6).
+		expect(q('provider-download-resumed')?.textContent).toContain(
+			'Le téléchargement du 01.03.2026 au 30.03.2026, déjà en cours pour ce compte, a été suivi à la place du vôtre : lancez maintenant votre période.',
+		);
+		expect(q('provider-download-resumed')?.textContent).not.toContain('quand il sera terminé');
 		// « Nouvelle période » : l'avis s'efface avec le formulaire.
 		await fireEvent.click(q('provider-download-again') as HTMLElement);
 		await waitFor(() => expect(q('provider-download-resumed')).toBeNull());
@@ -199,6 +204,68 @@ describe('ProviderDownloadDialog', () => {
 		await waitFor(() => expect(getMock).toHaveBeenCalledWith('paypal', 33));
 		expect(q('provider-download-running')).not.toBeNull();
 		expect(q('provider-download-resumed')).toBeNull();
+	});
+
+	it('409 sur une fin future : la fin lue (aujourd’hui) est la même période, sans avis ; le champ de fin borné à aujourd’hui (revue P2, L1)', async () => {
+		const today = todayInZurich();
+		startMock.mockRejectedValue({
+			code: 'PROVIDER_DOWNLOAD_RUNNING',
+			message: 'déjà en cours',
+			status: 409,
+			details: { provider: 'paypal', jobId: 34, from: '2026-01-01', to: today },
+		});
+		getMock.mockResolvedValue(running(1, 2));
+		monter({ defaultPeriod: { from: '2026-01-01', to: '2026-11-22' } });
+		await waitFor(() => expect(q('provider-download-to')).not.toBeNull());
+		expect((q('provider-download-to') as HTMLInputElement).max).toBe(today);
+		await fireEvent.input(q('provider-download-to') as HTMLInputElement, { target: { value: '2099-12-31' } });
+		await fireEvent.click(q('provider-download-start') as HTMLElement);
+		await waitFor(() => expect(getMock).toHaveBeenCalledWith('paypal', 34));
+		expect(startMock).toHaveBeenCalledWith('paypal', { account: 'PayPal www', from: '2026-01-01', to: '2099-12-31' });
+		expect(q('provider-download-running')).not.toBeNull();
+		expect(q('provider-download-resumed')).toBeNull();
+	});
+
+	it('409 d’une autre période puis suivi perdu : « suivi perdu » nomme la période suivie, sans l’avis au futur (revue P2, L6)', async () => {
+		startMock.mockRejectedValue({
+			code: 'PROVIDER_DOWNLOAD_RUNNING',
+			message: 'déjà en cours',
+			status: 409,
+			details: { provider: 'paypal', jobId: 35, from: '2026-03-01', to: '2026-03-30' },
+		});
+		getMock.mockRejectedValue({ code: 'NOT_FOUND', message: 'x', status: 404 });
+		monter();
+		await waitFor(() => expect(q('provider-download-start')).not.toBeNull());
+		await fireEvent.click(q('provider-download-start') as HTMLElement);
+		await waitFor(() => expect(q('provider-download-lost')).not.toBeNull());
+		expect(q('provider-download-lost')?.textContent).toContain(
+			'Suivi perdu du téléchargement du 01.03.2026 au 30.03.2026 : relancez votre période, rien n’est doublé.',
+		);
+		expect(q('provider-download-resumed')).toBeNull();
+	});
+
+	it('ancien POST qui répond après une réouverture : le bouton reste désactivé pendant le POST suivant (revue P2, L3)', async () => {
+		const pending: Array<(v: { jobId: number }) => void> = [];
+		startMock.mockImplementation(() => new Promise((r) => pending.push(r)));
+		getMock.mockResolvedValue(running(1, 3));
+		const r = monter();
+		await waitFor(() => expect(q('provider-download-start')).not.toBeNull());
+		await fireEvent.click(q('provider-download-start') as HTMLElement);
+		await waitFor(() => expect(startMock).toHaveBeenCalledTimes(1));
+		await r.rerender({ open: false });
+		await r.rerender({ open: true });
+		await waitFor(() => expect((q('provider-download-start') as HTMLButtonElement)?.disabled).toBe(false));
+		await fireEvent.click(q('provider-download-start') as HTMLElement);
+		await waitFor(() => expect(startMock).toHaveBeenCalledTimes(2));
+		expect((q('provider-download-start') as HTMLButtonElement).disabled).toBe(true);
+		// L'ancien POST répond : sa génération est passée, le bouton reste désactivé.
+		pending[0]({ jobId: 60 });
+		await new Promise((res) => setTimeout(res, 40));
+		expect((q('provider-download-start') as HTMLButtonElement).disabled).toBe(true);
+		expect(getMock).not.toHaveBeenCalled();
+		pending[1]({ jobId: 61 });
+		await waitFor(() => expect(getMock).toHaveBeenCalledWith('paypal', 61));
+		expect(getMock).not.toHaveBeenCalledWith('paypal', 60);
 	});
 
 	it('fermeture pendant le POST : sa réponse ne lance aucun suivi (revue P1, L1)', async () => {

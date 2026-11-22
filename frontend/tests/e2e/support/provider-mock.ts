@@ -32,13 +32,24 @@ export interface RecordedRequest {
 	body: string;
 }
 
-/** La réponse d'une route ; `delayMs` la retarde (progression visible). */
+/**
+ * La réponse d'une route ; `delayMs` la retarde (progression visible) ; `until`
+ * la retient jusqu'à ce que la spec la libère (au plus [`HOLD_CAP_MS`]).
+ */
 export interface MockReply {
 	status: number;
 	json?: unknown;
 	headers?: Record<string, string>;
 	delayMs?: number;
+	until?: Promise<void>;
 }
+
+/**
+ * Durée maximale d'une réponse retenue (`MockReply.until`) : sous le délai total
+ * d'une requête du backend (60 s), pour qu'une spec qui ne libère pas échoue sur
+ * ses propres assertions plutôt que sur un délai dépassé du backend.
+ */
+export const HOLD_CAP_MS = 45_000;
 
 /** Une route du serveur simulé. */
 export interface ProviderMockRoute {
@@ -77,6 +88,7 @@ export async function startProviderMock(port: number, routes: ProviderMockRoute[
 		requests.push(recorded);
 		const route = routes.find((r) => r.method === recorded.method && r.path === recorded.path);
 		const reply: MockReply = route ? route.handle(recorded) : { status: 404, json: { name: 'NOT_FOUND' } };
+		if (reply.until) await Promise.race([reply.until, new Promise((r) => setTimeout(r, HOLD_CAP_MS))]);
 		if (reply.delayMs) await new Promise((r) => setTimeout(r, reply.delayMs));
 		res.writeHead(reply.status, { 'content-type': 'application/json', ...reply.headers });
 		res.end(reply.json === undefined ? '' : JSON.stringify(reply.json));
@@ -118,6 +130,13 @@ export interface PaypalMockOptions {
 	 * se voie.
 	 */
 	rateLimitOnce?: { window: number; retryAfterSeconds: number };
+	/**
+	 * Retenir les réponses des fenêtres de rang `window` et suivants (à partir de
+	 * 1) jusqu'à `until` : la tâche reste en cours tant que la spec n'a pas joué ce
+	 * qui doit se passer pendant qu'elle tourne (le `409` d'une relance), sans
+	 * dépendre du temps qu'il lui reste (revue P2 de la 38-12b, L4).
+	 */
+	holdFromWindow?: { window: number; until: Promise<void> };
 	/** `last_refreshed_datetime` des pages. */
 	lastRefreshed: string;
 }
@@ -163,12 +182,15 @@ export function paypalMockRoutes(options: PaypalMockOptions): ProviderMockRoute[
 				const end = req.query.get('end_date') ?? '';
 				if (!windows.includes(start)) windows.push(start);
 				const rank = windows.indexOf(start) + 1;
+				const until =
+					options.holdFromWindow && rank >= options.holdFromWindow.window ? options.holdFromWindow.until : undefined;
 				if (options.rateLimitOnce && !limited && rank === options.rateLimitOnce.window) {
 					limited = true;
 					return {
 						status: 429,
 						headers: { 'retry-after': String(options.rateLimitOnce.retryAfterSeconds) },
 						json: { name: 'RATE_LIMIT_REACHED' },
+						until,
 					};
 				}
 				const from = Date.parse(start);
@@ -185,7 +207,7 @@ export function paypalMockRoutes(options: PaypalMockOptions): ProviderMockRoute[
 					last_refreshed_datetime: options.lastRefreshed,
 				};
 				if (inside.length > 0) body.transaction_details = inside.map(paypalTx);
-				return { status: 200, json: body, delayMs: options.pageDelayMs };
+				return { status: 200, json: body, delayMs: options.pageDelayMs, until };
 			},
 		},
 	];
