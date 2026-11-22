@@ -1,6 +1,6 @@
 # Correctif : la destination d'un versement Stripe rejugée à la revue et à l'acceptation
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-22, branche `fix/40-destination-rejugee`, partie d'`epic/40-stripe` à `15e9f8b13`.
 Correctif de l'Epic 40, non urgent, **sans migration**. Relevé par la revue d'intégration de l'Epic 39 (M2, MEDIUM ;
@@ -79,6 +79,12 @@ routes/stripe.rs` ne rendait aucun contrôle du prestataire de la destination.
 - 2026-11-22 — Développement (`0638cb1c0`) ; `sitesTotal` de la garde i18n relevé à 3734 (`2816086ae`) ; fusion
   non squash dans `epic/40-stripe` (`020120656`, arbre identique à `2816086ae` : la branche d'epic n'avait pas bougé).
   Revue P1 (code et fusion) à lancer : prompt `kesh-gate-logs/fix-40-destination/revue-p1-prompt.md`.
+- 2026-11-22 — Revue P1 (code et fusion ; complète, une lentille, contexte frais ; rapport
+  `kesh-gate-logs/fix-40-destination/revue-p1-rapport.md`) : **0 CRITICAL, 0 HIGH, 0 MEDIUM, 4 LOW** — la boucle se clôt
+  sur cette passe. Trend : P1 0 > LOW. LOW : L1 (commentaire de `stripe_reconciliation_e2e.rs` devenu faux), L3 (garde
+  de société dans la sous-requête de devise) et L4 (commentaire « route Wise absente ») repris par la story de solde
+  40-9 ; L2 (relecture non verrouillante de la destination à l'acceptation) versé à la liste des issues à ouvrir de
+  l'epic. Clôture écrite par la 40-9 (revue de fusion 11d2/40, LOW-2). Statut `done`.
 
 ## Dev Agent Record
 
