@@ -299,6 +299,19 @@ describe('page Stripe (Story 40-7d)', () => {
 		expect(r.getByTestId('stripe-import-error-accounts-link').getAttribute('href')).toBe('/bank-accounts');
 	});
 
+	it('refus du compte (compte du fournisseur introuvable) : le lien « Comptes bancaires » (Story 40-9, AC-4)', async () => {
+		importMock.mockRejectedValue({
+			code: 'PROVIDER_ACCOUNT_NOT_FOUND',
+			status: 404,
+			message: 'Compte introuvable.',
+		});
+		const r = render(Page);
+		const input = (await r.findByTestId('stripe-file-input')) as HTMLInputElement;
+		await fireEvent.change(input, { target: { files: [new File(['x'], 'a.csv')] } });
+		await r.findByTestId('stripe-import-error');
+		expect(r.getByTestId('stripe-import-error-accounts-link').getAttribute('href')).toBe('/bank-accounts');
+	});
+
 	it('états vides : aucune proposition, aucun écart, rien à examiner', async () => {
 		reviewMock.mockResolvedValue(emptyReview());
 		const r = render(Page);

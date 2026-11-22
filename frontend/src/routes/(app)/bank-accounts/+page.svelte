@@ -1153,7 +1153,7 @@
 					<option value={null}>{i18nMsg('bank-accounts-labels-not-configured', 'Non configuré')}</option>
 					{#if payoutMissing}
 						<!-- Story 40-9 (revue P4 de la 40-7d, L1) — destination réglée absente des comptes
-						     lus (lecture des comptes archivés et clos en échec) : nommée, gardée telle quelle. -->
+						     lus (par exemple lecture des comptes archivés et clos en échec, ou identifiant d'une autre société) : nommée, gardée telle quelle. -->
 						<option value={formPayoutBankAccountId} data-testid="{prefix}-payout-missing"
 							>{i18nMsg('bank-accounts-labels-payout-missing', 'Destination actuelle (introuvable)')}</option
 						>
