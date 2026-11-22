@@ -848,7 +848,13 @@ mod tests {
     /// routeur, sans quoi l'écran montrerait un bouton qui mène à un `404`.
     #[test]
     fn chaque_prestataire_lu_a_sa_route_de_telechargement() {
-        let lib = include_str!("lib.rs");
+        // Les lignes commentées ne comptent pas : une route en commentaire
+        // n'est pas dans le routeur.
+        let lib: String = include_str!("lib.rs")
+            .lines()
+            .filter(|l| !l.trim_start().starts_with("//"))
+            .collect::<Vec<_>>()
+            .join("\n");
         for spec in ALL_PROVIDERS {
             let route = format!("\"/api/v1/{}-downloads\"", spec.provider);
             assert!(

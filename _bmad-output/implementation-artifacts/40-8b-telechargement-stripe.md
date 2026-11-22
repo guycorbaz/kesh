@@ -316,3 +316,10 @@ retiré → tuée par `identifiant_trop_long_refuse_avant_l_ecriture` ; `set_tot
   L6 de la revue P1 de la 40-8a versés ici, forme de `fetch_rows`. Statut inchangé (`ready-for-dev`).
 - 2026-11-22 — second amendement (étape 0, après la fusion d'`epic/40-stripe`) ; développement (route, tâche, écran,
   manuels, tests), M1, L1, L2 de la revue d'intégration de l'Epic 40 intégrés ; gates de la nuit ; story en `review`.
+- 2026-11-22 — revue de code P1 (Sonnet 5.5, contexte frais ; rapport `kesh-gate-logs/s40-8b/revue-p1-rapport.md`) : 0 C, 0 H,
+  1 M, 3 L. Remédiés sans toucher la production, en un commit `test(40-8b)` : M1 (`KESH_STRIPE_PARALLEL` non tenu par un
+  test : `versements_lus_en_meme_temps_egal_le_reglage`, serveur simulé qui compte les requêtes de transactions en vol,
+  réglage 2 sur 3 versements), L1 (phrase de `docs/api-external.md` sur `too_old` de Stripe), L2 (le test de routes de
+  `provider_env` ignore les lignes commentées de `lib.rs`), L3 (GET d'une tâche d'une autre société : 404, dans
+  `refus_tache_unique_et_cles_d_api`). Un test neuf ; gates : fmt, clippy workspace, nextest ciblé 43/43 verts (journaux
+  `p2-*.log`). Sondes : voir la P2.

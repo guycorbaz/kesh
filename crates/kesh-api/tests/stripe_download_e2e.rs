@@ -94,6 +94,19 @@ struct Sim {
     verrou_liste: Arc<tokio::sync::Semaphore>,
     /// Retient les requêtes des transactions tant qu'il est vidé.
     verrou_transactions: Arc<tokio::sync::Semaphore>,
+    /// Requêtes de transactions de solde reçues et pas encore répondues.
+    en_vol: Arc<std::sync::atomic::AtomicUsize>,
+    /// Le plus grand nombre de ces requêtes vu en même temps.
+    max_en_vol: Arc<std::sync::atomic::AtomicUsize>,
+}
+
+/// Compte une requête de transactions « en vol » le temps de sa vie.
+struct EnVol(Arc<std::sync::atomic::AtomicUsize>);
+
+impl Drop for EnVol {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+    }
 }
 
 impl Sim {
@@ -154,6 +167,13 @@ async fn gerer(
     } else {
         sim.verrou_transactions.clone()
     };
+    // Compté avant la retenue : une requête retenue est une requête en vol.
+    let _vol = (req.path != "/v1/payouts").then(|| {
+        use std::sync::atomic::Ordering::SeqCst;
+        let n = sim.en_vol.fetch_add(1, SeqCst) + 1;
+        sim.max_en_vol.fetch_max(n, SeqCst);
+        EnVol(sim.en_vol.clone())
+    });
     let _place = verrou.acquire().await.unwrap();
     let regle = sim.regle.lock().unwrap().clone();
     let forcee = sim
@@ -197,6 +217,8 @@ async fn simuler() -> (String, Sim) {
         requetes: Arc::default(),
         verrou_liste: Arc::new(tokio::sync::Semaphore::new(1000)),
         verrou_transactions: Arc::new(tokio::sync::Semaphore::new(1000)),
+        en_vol: Arc::default(),
+        max_en_vol: Arc::default(),
     };
     let app = Router::new().fallback(gerer).with_state(sim.clone());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -671,6 +693,36 @@ async fn trois_versements_a_la_fois_rendent_les_memes_lignes(pool: MySqlPool) {
     assert_eq!(trois.transactions().await, un);
 }
 
+/// AC-2 / FR-40-8b-3 — `KESH_STRIPE_PARALLEL` borne les versements lus en même
+/// temps : le serveur retient les transactions, et le nombre de requêtes en vol
+/// atteint la valeur réglée sans la dépasser (trois versements à lire).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn versements_lus_en_meme_temps_egal_le_reglage(pool: MySqlPool) {
+    use std::sync::atomic::Ordering::SeqCst;
+    let (url, sim) = simuler().await;
+    let ctx = monter(&pool, &url, 2).await;
+    let retenue = sim.verrou_transactions.acquire_many(1000).await.unwrap();
+    let (s, job) = ctx.lancer(COMPTE, DU, AU).await;
+    assert_eq!(s, 202, "{job}");
+    for _ in 0..500 {
+        if sim.en_vol.load(SeqCst) >= 2 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    // Laisse le temps à un troisième versement de partir, s'il le pouvait.
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(
+        sim.en_vol.load(SeqCst),
+        2,
+        "KESH_STRIPE_PARALLEL=2 : deux versements en vol, ni un ni trois"
+    );
+    drop(retenue);
+    let v = ctx.suivre(&job).await;
+    assert_eq!(v["state"], "done", "{v}");
+    assert_eq!(sim.max_en_vol.load(SeqCst), 2, "jamais plus que le réglage");
+}
+
 /// AC-1 — la progression : `total` nul pendant la liste des versements, puis
 /// le nombre de versements automatiques et une étape par versement lu.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
@@ -938,6 +990,54 @@ async fn refus_tache_unique_et_cles_d_api(pool: MySqlPool) {
         )
         .await;
     assert_eq!(s, 404);
+    // Une tâche d'une autre société est introuvable (404), non refusée : le
+    // numéro de tâche ne dit pas qu'elle existe.
+    let autre = kesh_db::repositories::companies::create(
+        &pool,
+        kesh_db::entities::NewCompany {
+            name: "Autre SA".into(),
+            first_name: None,
+            last_name: None,
+            address_structured: kesh_db::entities::address::StructuredAddress {
+                street: "Rue Test".into(),
+                building: "1".into(),
+                postal_code: "1000".into(),
+                city: "Lausanne".into(),
+                country: "CH".into(),
+            },
+            ide_number: None,
+            org_type: kesh_db::entities::OrgType::Independant,
+            accounting_language: kesh_db::entities::Language::Fr,
+            instance_language: kesh_db::entities::Language::Fr,
+        },
+    )
+    .await
+    .unwrap()
+    .id;
+    let autre_admin = kesh_db::repositories::users::create(
+        &pool,
+        kesh_db::entities::NewUser {
+            username: "autre-admin".into(),
+            password_hash: kesh_api::auth::password::hash_password("password123").unwrap(),
+            role: kesh_db::entities::Role::Admin,
+            active: true,
+            company_id: autre,
+            email: None,
+        },
+    )
+    .await
+    .unwrap()
+    .id;
+    let jeton_autre = forge_jwt(autre_admin, "Admin", autre);
+    let chemin = format!("/api/v1/stripe-downloads/{}", premier["jobId"]);
+    let (s, _) = ctx
+        .req_avec(&ctx.jwt, reqwest::Method::GET, &chemin, None)
+        .await;
+    assert_eq!(s, 200, "la société de la tâche la lit");
+    let (s, _) = ctx
+        .req_avec(&jeton_autre, reqwest::Method::GET, &chemin, None)
+        .await;
+    assert_eq!(s, 404, "une autre société ne lit pas la tâche");
     // Une tâche Stripe ne se lit pas par la route de PayPal.
     let (s, _) = ctx
         .req_avec(
