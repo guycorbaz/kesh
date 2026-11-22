@@ -1,10 +1,43 @@
 # Story 38-12b : bouton « Télécharger depuis PayPal », manuels, E2E
 
-Status: ready-for-dev
+Status: in-progress
 
 *Fiche rédigée le 2026-11-20, branche `epic/38-paypal`. Epic 38, **phase 2**. **Dépend de** : 38-12a (routes), 38-11d
 (la page PayPal `frontend/src/routes/(app)/reconciliation/paypal/+page.svelte`, son import CSV et son compte rendu,
 38-11d AC-3). Scindée de 38-12a (voir sa fiche).*
+
+## Amendement du 22.11 (développement, prémisses relues au code de la 38-12a)
+
+*Relu au code de `epic/38-paypal` (`8b8cd338`, qui porte la 38-12a et la 38-11d) avant la première ligne. Ce qui
+suit remplace, là où il les contredit, les AC et la stratégie de tests ci-dessous.*
+
+1. **Page commune des prestataires** : `ProviderReviewPage` (40-7d) n'est pas sur cette branche ; la page PayPal de la
+   38-11d est l'écran. Le **dialogue générique** va à `frontend/src/lib/features/provider-download/` (route
+   `<prestataire>-downloads`, nom du prestataire et nom de l'étape en paramètres, compte rendu fourni par l'appelant
+   en *snippet*) ; le **compte rendu de l'import CSV** est **extrait** de la page en un composant
+   `frontend/src/lib/features/paypal/PaypalImportReport.svelte`, que la page (import CSV) et le dialogue (téléchargement)
+   affichent tous deux (AC-3 « même composant »). Rien n'est recopié.
+2. **AC-1, `providerApi`** : la réponse de la **liste** `GET /api/v1/bank-accounts` (celle que lit la page PayPal) porte
+   le champ ; les réponses d'un seul compte (`POST`, `PUT`, `PATCH`, clôture, réouverture, archivage) ne changent pas
+   (leur forme est le `BankAccount` de `kesh-db`, partagé). `configured` suit `ProviderApiConfig::series_for` (même
+   règle que la route : sans casse, comparaison `to_lowercase`) ; `mode` est **générique** : `live` quand l'hôte est
+   celui par défaut du prestataire, `sandbox` quand un segment de son nom d'hôte est `sandbox`
+   (`api-m.sandbox.paypal.com`), **absent** sinon (serveur simulé du bouclage).
+3. **AC-3, messages d'échec** : le `message` d'une tâche `failed` est rendu par le serveur ; le dialogue traduit lui-même
+   les codes `PROVIDER_*` qu'il connaît (clés `provider-download-error-*`, avec fenêtre et page, devises, lignes), et
+   affiche le `message` du serveur pour tout autre code (`INTERNAL_ERROR`, `BANK_ACCOUNT_CLOSED`,
+   `RECONCILIATION_ACCOUNT_LOCKED`…), puis « rien n'a été enregistré, relancez ».
+4. **AC-6, dates** : la 38-12a a constaté aux appels réels que l'API rend ses dates en **UTC** (et non dans le fuseau
+   du compte) ; elle les **convertit à l'heure de Zurich**. Le manuel dit donc : dates téléchargées à l'heure suisse,
+   dates du CSV telles que l'export les écrit (fuseau du compte) ; une transaction proche de minuit peut tomber un autre
+   jour selon la source, jamais en double (identifiant). S'ajoute la limite G4 de la 38-12a : la **première heure** du
+   jour le plus ancien admis (trois ans moins une heure) n'est pas lue.
+5. **Stratégie de tests** (règle des gates de la nuit du 22.11) : fmt, clippy, nextest complet, frontend complet ; E2E
+   **seulement** de la spec ajoutée (`paypal-download.spec.ts`) ; ni E2E complet ni `gate-ci.sh` (à la fin de l'epic).
+6. **E2E** : `with-company` a son exercice à l'année du jour ? À défaut la spec crée celui de l'année courante ; la
+   période de deux mois est prise **dans l'année courante** (fin = aujourd'hui), le serveur simulé ne rend que les
+   transactions de la fenêtre demandée, ralentit ses pages et répond une fois `429` avec `Retry-After` pour que la
+   progression et la pause se voient.
 
 ## À reprendre (revue P3 de la 38-11d)
 
@@ -159,3 +192,4 @@ progression et le compte rendu ; le manuel d'administration décrit la création
   PayPal, « cinq » exceptions, `scaKeyConfigured` absent : vérifiés au code de `origin/main`) ; la panique d'une tâche
   rend `INTERNAL_ERROR` (38-12a AC-8), ce que l'écran affiche comme tout code non listé.
 - 2026-11-20 — validation P5 ciblée sur les commits `977bf9ec` et `452606a3` (modèle : claude-haiku-5-5, contexte frais ; voir 38-12a et `kesh-gate-logs/epic-38-kiss/validation/38-12-P5-ciblee.md`) : rien à remédier ici ; l'AC-5 et le tableau PayPal sont cohérents avec l'AC-8 de 38-12a.
+- 2026-11-22 — développement : amendement du 22.11 (page commune absente de la branche, `providerApi` sur la liste, dates en heure de Zurich, gates de la nuit) ; statut `in-progress`.
