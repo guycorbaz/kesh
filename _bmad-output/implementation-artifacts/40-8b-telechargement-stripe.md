@@ -9,6 +9,42 @@ avant (socle S6) ; 40-8b l'appelle sans l'extraire, 40-7c
 (C-40-K6) ; le dialogue d'écran est celui de 38-12b (S7). L'automatisme (téléchargement périodique) vient plus tard encore,
 story à part.*
 
+## Amendement du 22.11 (avant le développement, contre le code de `epic/40-stripe` après la fusion de la 40-8a)
+
+*Relevé le 2026-11-22 sur la branche `story/40-8b`, partie de `epic/40-stripe` au commit de fusion de la 40-8a (`5e7258d2`). Ce qui
+suit l'emporte sur le texte de la fiche là où ils diffèrent.*
+
+1. **Le dialogue générique de la 38-12b n'est pas encore sur `epic/40-stripe`** (S7, S8) :
+   `frontend/src/lib/features/provider-download/` et `frontend/tests/e2e/support/provider-mock.ts` n'existent pas sur la
+   branche (`git log epic/40-stripe --oneline | grep 38-12b` ne rend que des commits de fiche) ; la 38-12b est en revue
+   sur sa propre branche, ni dans `epic/38-paypal` ni dans `epic/40-stripe`. Le champ générique `providerApi` de la réponse
+   des comptes bancaires (38-12b AC-1) n'existe pas non plus (`grep -rn providerApi crates/kesh-api/src frontend/src` :
+   aucun). **Le développement de l'AC-4 (écran, E2E) attend la fusion de la 38-12b dans `epic/38-paypal`, puis celle
+   d'`epic/38-paypal` dans `epic/40-stripe`** ; le dialogue ne se réécrit pas ici. La 40-8b n'est pas commencée : la partie
+   serveur (AC-1 à AC-3) est développable sans la 38-12b, mais la story se développe d'un tenant, après la fusion.
+2. **Signature du socle modifiée par la 38-12b** (revue P1 de la 38-12b, M1) : `Downloads::start` prend la période lue
+   `(from, to)` et rend au refus `RunningJob { id, from, to }` ; le 409 `PROVIDER_DOWNLOAD_RUNNING` porte alors
+   `details: { provider, jobId, from, to }`. La route Stripe suit la forme de la 38-12b telle qu'elle sera fusionnée, non
+   celle de `provider_download.rs` d'aujourd'hui (`start(provider, company_id, account, steps_total) -> Result<JobHandle,
+   u64>`).
+3. **Comptes du registre** (AC-1) : les valeurs écrites (157, 149, 161) sont périmées. Sur la base de cette story :
+   `LIB_ROUTES.len()` **162**, `traced` **154**, `LIB_ROUTES.len() + TEST_ENDPOINT_ROUTES.len()` **166**
+   (`crates/kesh-api/tests/audit_route_registry.rs:1142`, `:1188`, `:1239`) ; la 40-8b les relève de un (163, 155, 167),
+   **recomptés après la fusion de la 38-12b**, qui peut en ajouter.
+4. **Longueur des identifiants (revue P1 de la 40-8a, L5)** : le client (`stripe::rows`) contrôle la forme des
+   identifiants (`valid_id`) mais pas leur longueur ; l'import du CSV applique `check_id_lengths`
+   (`routes/stripe_imports.rs:129`, borne `STRIPE_ID_MAX_CHARS`). La tâche de la 40-8b **appelle `check_id_lengths`** sur
+   les lignes de `fetch_rows` avant le chemin d'import commun (un refus rend `PROVIDER_RESPONSE_INVALID`, rien d'écrit),
+   avec un test au serveur simulé (identifiant de 300 caractères).
+5. **Textes de configuration (revue P1 de la 40-8a, L6)** : `.env.example`, `docker-compose.yml` et
+   `docker-compose.prod.yml` décrivent déjà au présent la lecture Stripe par l'API (« Lecture Stripe par l'API (Story
+   40-8a) ») ; la 40-8b les relit quand la fonction existe (route, écran) et y renvoie au manuel d'administration.
+6. **Client et forme des lignes** : `fetch_rows(client, window, parallel) -> StripeFetched { rows, manual_payouts }`
+   (`crates/kesh-api/src/stripe/mod.rs`) lit une seule fenêtre (Stripe sans `max_days`) et ne rend pas de progression ;
+   l'étape « versement k/n » de l'AC-1 demande à la 40-8b un crochet de progression autour de la lecture des transactions
+   (par versement), sans changer le classement des erreurs. Les versements manuels (`manual_payouts`) vont au compte rendu
+   (« versement manuel à examiner »), non à l'import. Le mode de la clé est `StripeClient::mode()` (`live`/`test`).
+
 ## Story
 
 En tant que **Comptable**, je veux télécharger d'un bouton (ou par une route d'API) les versements Stripe d'une période
@@ -139,3 +175,7 @@ limite de débit, parallélisme réglable (`KESH_STRIPE_PARALLEL`, 1 à 6) ; mê
 - 2026-11-20 — validation P2, complément (Claude Opus 5.5)
  : cœur `ProviderLine` extrait par 38-12a (ou 40-7b), appelé ici ;
   manuel : deux tableaux de variables, au-delà de trois comptes.
+- 2026-11-22 — amendement du 22.11 (avant le développement) contre le code d'`epic/40-stripe` après la fusion de la
+  40-8a : dialogue générique et serveur simulé de la 38-12b absents de la branche (développement suspendu jusqu'à sa
+  fusion), signature de `Downloads::start` changée par la 38-12b, comptes du registre relevés (162, 154, 166), LOW L5 et
+  L6 de la revue P1 de la 40-8a versés ici, forme de `fetch_rows`. Statut inchangé (`ready-for-dev`).
