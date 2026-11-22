@@ -19,7 +19,7 @@ ajoutent des colonnes `NULL`. `account_kind` ne reçoit toujours aucune valeur n
 *(Reportée en phase 2 (2026-11-20) — voir § *Phase 1 KISS*.)*
 
 **Numéro : 38** (35 et 36 réservés ailleurs ; 39 Wise, **40 Stripe**, provisoire en attendant Guy, B25). Une branche par
-story, fusionnée localement dans `epic/38-paypal`, puis **une PR** vers le dépôt de Guy (remote du contributeur), **après celle
+story, fusionnée localement dans `epic/38-paypal`, puis **une PR** vers le dépôt de Guy, ouverte depuis le dépôt du contributeur, **après celle
 de l'Epic 37**. Pas d'issue GitHub à ce stade (le responsable de l'epic n'a qu'un accès en lecture) : le détail vit ici et dans les fiches ;
 issues et PR s'ouvrent à la fin.
 
@@ -45,7 +45,7 @@ l'**historique** de la phase de cadrage du 2026-11-15 au 2026-11-17 ; les décis
 version 2 du 2026-11-20, hors dépôt) et les notes sans donnée personnelle
 `kesh-gate-logs/epic-38-kiss/paypal-2024-comprendre.md`.
 
-**Pourquoi.** le responsable de l'epic doit rendre sa comptabilité 2025 le **dimanche 2026-11-23**. L'epic de seize stories (coffre des
+**Pourquoi.** Le responsable de l'epic doit rendre sa comptabilité 2025 le **dimanche 2026-11-23**. L'epic de seize stories (coffre des
 secrets, client de l'API PayPal, téléchargement planifié, TVA par défaut, groupes d'écritures, relevé joint) ne tient
 pas dans ce délai. La phase 1 garde le chemin le plus court : **un import CSV à la demande, un rapprochement par
 identifiant de transaction, la liste des écarts**, développable en une nuit.
@@ -361,7 +361,7 @@ boutique PayPal = **préfixe du numéro de facture** (`invoice_id`) · B25 Q3 re
 *(Reportée en phase 2 (2026-11-20) — voir § *Phase 1 KISS*.)*
 
 - **E1 — Une connexion, plusieurs comptes.** Table applicative `payment_provider_connections` (société, `provider`
-  `paypal`|…, libellé « PayPal principal », `fetch_from` (B8), `schedule` `daily`|`manual` (B9), état du dernier
+  `paypal`|…, libellé « PayPal boutique », `fetch_from` (B8), `schedule` `daily`|`manual` (B9), état du dernier
   passage, `created_by_user_id`, **`settings JSON`** — E24). Chaque solde de devise est un **compte bancaire** Kesh ordinaire (`account_kind =
   'bank'`, sans IBAN) qui porte une ligne de **réglages de prestataire** (E11) le rattachant à la connexion, et lié à un
   compte du plan **de la devise du solde** (B1). *Raison* : un jeu de secrets et un téléchargement servent trois
@@ -1258,7 +1258,7 @@ versement rattaché au relevé bancaire comme un virement entre ses comptes (34-
 
 *(Reportée en phase 2 (2026-11-20) — voir § *Phase 1 KISS*.)*
 
-le responsable de l'epic **est assujetti** à la TVA ; sa société sépare la TVA de ses ventes PayPal et Stripe et paie l'impôt sur les
+Le responsable de l'epic **est assujetti** à la TVA ; sa société sépare la TVA de ses ventes PayPal et Stripe et paie l'impôt sur les
 acquisitions de ses achats de services à l'étranger. Le report des **dix P1 du jalon « Vague 2 »** reposait sur ceci
 (`CLAUDE.md`, *Priorités des défauts*) : « le seul utilisateur réel de Kesh n'est pas assujetti […] ce report tombe dès
 que Kesh tient, ou est proposé pour tenir, les livres d'un assujetti ». **Cet epic le propose.** Deux constats au code
@@ -1271,7 +1271,7 @@ s'y ajoutent :
 L'impôt sur les acquisitions va à un **compte distinct** (B18, 38-5 : `default_vat_acquisition_account_id`, p. ex.
 2201), ce qui le rend lisible au grand livre en attendant un rapport TVA qui le reprenne (C-38-13).
 
-le responsable de l'epic ne dépose pas de décompte par Kesh cette année et passe la TVA par l'API et ces imports seulement (B6, B15) :
+Le responsable de l'epic ne dépose pas de décompte par Kesh cette année et passe la TVA par l'API et ces imports seulement (B6, B15) :
 l'epic **sépare** la TVA dans les écritures, il **ne la déclare pas**. La décision de lever ou de maintenir le report
 des P1 TVA revient à Guy.
 
