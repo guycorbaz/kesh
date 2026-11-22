@@ -3135,3 +3135,114 @@ async fn sans_iban_l_entite_lit_une_carte(pool: MySqlPool) {
         .unwrap();
     assert_eq!(liste.len(), 2, "la carte est listée sans échec de décodage");
 }
+
+// ============================================================
+// Story 40-9 — devise du compte du plan lue dans la seule société
+// ============================================================
+
+/// Story 40-9 (C1, revue P1 du correctif `fix-40`, LOW-3) : la devise du compte
+/// du plan d'un compte bancaire ne se lit que sur un compte de **la même
+/// société**. Un lien incohérent (posé en SQL : `journal_account_id` n'a pas de
+/// clé étrangère) vers un compte en EUR d'une autre société se lit `None`, par
+/// `find_payout_destinations` (revue Stripe) comme par `list_provider_balances`
+/// (import) ; un lien cohérent vers un compte en EUR de la société se lit
+/// `Some("EUR")` — sans ce témoin, un `None` ne prouverait rien.
+#[sqlx::test(migrations = "./test-schema")]
+async fn devise_du_compte_du_plan_lue_dans_la_seule_societe(pool: MySqlPool) {
+    let societe = create_test_company(&pool).await;
+    let autre = create_test_company(&pool).await;
+    let user_autre = create_test_user(&pool, autre, "autre").await;
+    let user = create_test_user(&pool, societe, "soi").await;
+    let etranger = create_account(
+        &pool,
+        autre,
+        user_autre,
+        "1031",
+        "EUR d'ailleurs",
+        AccountType::Asset,
+    )
+    .await;
+    let propre = create_account(
+        &pool,
+        societe,
+        user,
+        "1032",
+        "EUR d'ici",
+        AccountType::Asset,
+    )
+    .await;
+    sqlx::query("UPDATE accounts SET currency = 'EUR' WHERE id IN (?, ?)")
+        .bind(etranger)
+        .bind(propre)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let mut ids = Vec::new();
+    for (iban, ledger, label) in [
+        ("CH9300762011623852957", etranger, "Stripe incohérent"),
+        ("CH5604835012345678009", propre, "Stripe cohérent"),
+    ] {
+        let id = bank_accounts::create(
+            &pool,
+            NewBankAccount {
+                company_id: societe,
+                bank_name: "Stripe".into(),
+                iban: iban.into(),
+                qr_iban: None,
+                is_primary: false,
+            },
+        )
+        .await
+        .unwrap()
+        .id;
+        sqlx::query(
+            "UPDATE bank_accounts SET provider = 'stripe', provider_account = ?, \
+             journal_account_id = ? WHERE id = ?",
+        )
+        .bind(label)
+        .bind(ledger)
+        .bind(id)
+        .execute(&pool)
+        .await
+        .unwrap();
+        ids.push(id);
+    }
+
+    let lus = bank_accounts::find_payout_destinations(&pool, societe, &ids)
+        .await
+        .unwrap();
+    let devise = |id: i64| {
+        lus.iter()
+            .find(|(b, _)| b.id == id)
+            .map(|(_, d)| d.ledger_currency.clone())
+            .expect("compte rendu")
+    };
+    assert_eq!(
+        devise(ids[1]),
+        Some("EUR".to_string()),
+        "témoin : lien cohérent"
+    );
+    assert_eq!(
+        devise(ids[0]),
+        None,
+        "revue : compte du plan d'une autre société"
+    );
+
+    let soldes =
+        bank_accounts::list_provider_balances(&pool, societe, "stripe", "Stripe incohérent")
+            .await
+            .unwrap();
+    assert_eq!(soldes.len(), 1);
+    assert_eq!(
+        soldes[0].ledger_currency, None,
+        "import : compte du plan d'une autre société"
+    );
+    let soldes = bank_accounts::list_provider_balances(&pool, societe, "stripe", "Stripe cohérent")
+        .await
+        .unwrap();
+    assert_eq!(
+        soldes[0].ledger_currency,
+        Some("EUR".to_string()),
+        "témoin : lien cohérent"
+    );
+}

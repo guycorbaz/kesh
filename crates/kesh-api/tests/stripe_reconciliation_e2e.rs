@@ -1070,7 +1070,8 @@ async fn versement_a_retour_ou_positif_refuse_a_l_acceptation(pool: MySqlPool) {
     let ctx = monter(&pool).await;
     // Le solde USD n'a pas de compte de versement : on lui en règle un, en
     // USD aussi, pour que seul le rejugement du versement puisse refuser (une
-    // destination CHF ferait refuser par `counterparty_wrong_currency`).
+    // destination CHF ferait refuser par `STRIPE_PAYOUT_ACCOUNT_INVALID`,
+    // motif `currency`).
     let usd_destination = compte(&pool, ctx.seeded.company_id, "1033", "Asset", Some("USD")).await;
     let ba_usd = banque_de_plus(
         &ctx,
@@ -1795,8 +1796,8 @@ async fn destination_devenue_inutilisable_rejugee_a_la_revue_et_a_l_acceptation(
 /// l'écart `payout_without_receipt` paraît ; la réception de la banque,
 /// rattachée à l'écriture du versement, le fait disparaître. (Le côté Wise,
 /// par la route générique `link-entry`, est joué par
-/// `revue_puis_acceptation_du_tout` ; la route Wise n'est pas sur cette
-/// branche.)
+/// `revue_puis_acceptation_du_tout` ; le rattachement par la revue Wise,
+/// `POST /wise/accept`, est de l'Epic 39 et se teste avec sa route.)
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn versement_vers_une_banque_puis_reception_l_ecart_disparait(pool: MySqlPool) {
     let ctx = monter(&pool).await;

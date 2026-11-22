@@ -4323,6 +4323,7 @@ fiscal-years-checks-k2-link-stripe = Open the Stripe page
 bank-accounts-labels-is-stripe = Stripe account
 bank-accounts-labels-stripe-account = Stripe account
 bank-accounts-labels-payout-account = Payout bank account
+bank-accounts-labels-payout-missing = Current destination (not found)
 bank-accounts-help-stripe = One bank account per Stripe account and currency: its Stripe report is imported and reconciled on the Stripe page, not through the bank import.
 bank-accounts-help-stripe-account = The same label for the accounts of each currency of the same Stripe account.
 bank-accounts-help-stripe-ledger = Required: the chart account of the Stripe balance, in its currency (a foreign-currency account requires multi-currency).

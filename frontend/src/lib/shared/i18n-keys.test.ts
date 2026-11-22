@@ -1206,7 +1206,10 @@ const ATTENDU = {
 	// Story 40-8b (bouton, aide, dialogue et compte rendu du téléchargement Stripe) : +7 net sur
 	// 3733 (9 sites `i18nMsg(` ajoutés, 2 retirés), soit **3741** après la fusion dans
 	// epic/40-stripe, relevé par la garde (3734 + 7).
-	sitesTotal: 3741,
+	// Story 40-9 (option « Destination actuelle (introuvable) » du compte de versement) :
+	// **3742** (« expected 3742 to be 3741 »), relevé par la garde ; au diff : 1 site ajouté,
+	// 0 retiré.
+	sitesTotal: 3742,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

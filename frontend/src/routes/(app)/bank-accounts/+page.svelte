@@ -176,6 +176,15 @@
 		),
 	);
 	/**
+	 * Story 40-9 (revue P4 de la 40-7d, L1) — la destination réglée n'est dans aucun des comptes
+	 * lus (`payoutSource`) : le sélecteur la nomme « introuvable » au lieu de rester vide. Une
+	 * destination lue mais écartée par le filtre (autre devise, devenue Stripe ou PayPal) n'est
+	 * pas « introuvable » : limite tracée à part.
+	 */
+	let payoutMissing = $derived(
+		formPayoutBankAccountId !== null && !payoutSource.some((b) => b.id === formPayoutBankAccountId),
+	);
+	/**
 	 * Revue P2 de 40-7d (P2-1) — la destination choisie reste offerte, archivée ou close, tant que le
 	 * compte du plan est celui de l'ouverture : le serveur ne la rejuge pas alors (`payout_is_unchanged`)
 	 * et la refuse (`STRIPE_PAYOUT_ACCOUNT_INVALID`) dès que le compte du plan change.
@@ -1142,6 +1151,13 @@
 					data-testid="{prefix}-payout-account"
 				>
 					<option value={null}>{i18nMsg('bank-accounts-labels-not-configured', 'Non configuré')}</option>
+					{#if payoutMissing}
+						<!-- Story 40-9 (revue P4 de la 40-7d, L1) — destination réglée absente des comptes
+						     lus (par exemple lecture des comptes archivés et clos en échec, ou identifiant d'une autre société) : nommée, gardée telle quelle. -->
+						<option value={formPayoutBankAccountId} data-testid="{prefix}-payout-missing"
+							>{i18nMsg('bank-accounts-labels-payout-missing', 'Destination actuelle (introuvable)')}</option
+						>
+					{/if}
 					{#each payoutCandidates as b (b.id)}
 						<option value={b.id}
 							>{bankAccountName(b)}{#if b.archived}

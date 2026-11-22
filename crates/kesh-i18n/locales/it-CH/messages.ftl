@@ -4318,6 +4318,7 @@ fiscal-years-checks-k2-link-stripe = Apri la pagina Stripe
 bank-accounts-labels-is-stripe = Conto Stripe
 bank-accounts-labels-stripe-account = Conto Stripe
 bank-accounts-labels-payout-account = Conto bancario di versamento
+bank-accounts-labels-payout-missing = Destinazione attuale (non trovata)
 bank-accounts-help-stripe = Un conto bancario per conto Stripe e per valuta: il suo rapporto Stripe si importa e si riconcilia dalla pagina Stripe, non dall’importazione bancaria.
 bank-accounts-help-stripe-account = La stessa denominazione per i conti di ogni valuta di uno stesso conto Stripe.
 bank-accounts-help-stripe-ledger = Obbligatorio: il conto del piano del saldo Stripe, nella sua valuta (un conto in valuta estera richiede la multivaluta).
