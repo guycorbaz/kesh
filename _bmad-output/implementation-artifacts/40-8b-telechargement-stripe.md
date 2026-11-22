@@ -1,6 +1,6 @@
 # Story 40-8b : téléchargement Stripe par période — route, tâche, écran, manuels
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-20, branche `epic/40-stripe`, chemins relevés sur `origin/main` au commit `fd04099f`. Epic 40,
 **phase 2** (décision du responsable de l'epic du 2026-11-20). **Dépend de** : 40-8a (client), 40-7b (import CSV), du **cœur commun `ProviderLine`** (`provider_imports.rs`) extrait par 38-12a — ou par 40-7b s'il passe
@@ -334,3 +334,11 @@ retiré → tuée par `identifiant_trop_long_refuse_avant_l_ecriture` ; `set_tot
   `historyYears` (3 / 30) dans les deux E2E d'API, Vitest PayPal 3 ans / Stripe 30 ans / sans profondeur. Manuel
   utilisateur et `docs/api-external.md` à jour. Passe P3 ciblée : `kesh-gate-logs/s40-8b/revue-p3-prompt.md`.
   Gates : fmt, clippy workspace, nextest ciblé 38/38 verts (`binary(stripe_download_e2e) | binary(paypal_download_e2e) | test(provider_env)`, journal `cible-6.log`) ; frontend : check, lint-i18n-ownership, Vitest 5073 (296 fichiers), build verts, `sitesTotal` inchangé (aucun site neuf) ; E2E `stripe-download` et `paypal-download` verts (`e2e-6.log`).
+- 2026-11-22 — **clôture de la boucle de revue.** Tendance : P1 (Claude Sonnet 5.5, complète) 0 C / 0 H / 1 M / 3 L → P2
+  (Claude Haiku, ciblée sur la remédiation de la P1) 0 / 0 / 1 M / 2 L → P3 (Claude Opus 5.5, ciblée sur la remédiation du M1
+  de la P2, `kesh-gate-logs/s40-8b/revue-p3-rapport.md`) 0 / 0 / 0 / 3 L : aucune remédiation de la P3 ne touche la production.
+  L1 de la P3 : test Vitest de la garde de type de `periodRefusalLabel` (2.5, −1, 0, `'30'`, `null`, `NaN` → texte général,
+  sans chiffre) ; la mutation F3 (garde remplacée par `true`), rejouée sur une copie hors dépôt avec un vrai `node_modules`,
+  est tuée sur le test nommé « une profondeur illisible » (`mut-f3-garde-type.log`). L2 : la note de version mentionne
+  `details.historyYears` (ajout additif). L3 : les gates précédaient le commit de la P3 ; rejoués au commit final de la story
+  (journaux `final-*` de `kesh-gate-logs/s40-8b/`). Story `done`.
