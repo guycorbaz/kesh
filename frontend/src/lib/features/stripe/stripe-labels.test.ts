@@ -237,5 +237,9 @@ describe('stripe-labels — refus de l’acceptation', () => {
 		expect(stripeFailedLabel('PROVIDER_PROPOSAL_STALE')).toMatch(/^provider-failed-proposal-stale\|/);
 		expect(stripeFailedLabel('BANK_ACCOUNT_CLOSED', { bankAccountId: 3 })).not.toContain('reconciliation-failed-unknown');
 		expect(stripeFailedLabel('RATE_UNAVAILABLE', {})).not.toContain('reconciliation-failed-unknown');
+		// Destination rejugée à l'acceptation (revue d'intégration de l'Epic 39, M2).
+		expect(
+			stripeFailedLabel('STRIPE_PAYOUT_ACCOUNT_INVALID', { bankAccountId: 3, reason: 'paypal' }),
+		).toMatch(/^error-stripe-payout-account-invalid\|/);
 	});
 });

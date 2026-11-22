@@ -39,8 +39,8 @@ use kesh_db::entities::account::AccountType;
 use kesh_db::entities::audit_log::NewAuditLogEntry;
 use kesh_db::entities::bank_account::{
     BANK_ACCOUNT_BANK_NAME_MAX_CHARS, BANK_ACCOUNT_DESCRIPTION_MAX_CHARS, BankAccount,
-    BankAccountKind, NewBankAccount, PROVIDER_ACCOUNT_MAX_CHARS, PROVIDER_PAYPAL, PROVIDER_STRIPE,
-    PaypalSettings, ProviderSettings, StripeSettings, bank_account_display_name,
+    BankAccountKind, NewBankAccount, PROVIDER_ACCOUNT_MAX_CHARS, PROVIDER_STRIPE, PaypalSettings,
+    ProviderSettings, StripeSettings, bank_account_display_name,
 };
 use kesh_db::errors::{DbError, NonPostableAccount};
 use kesh_db::repositories::bank_accounts::BankAccountPutFields;
@@ -905,15 +905,12 @@ async fn check_payout_destination_in_tx(
     } else {
         bank_accounts::payout_destination_locked(tx, company_id, payout_id).await?
     };
+    // La règle elle-même est `PayoutDestination::refusal`, que la revue et
+    // l'acceptation Stripe rejugent aussi (revue d'intégration de l'Epic 39, M2).
     let reason = match facts {
-        None if Some(payout_id) == self_id => Some("stripe"),
-        None => Some("not_found"),
-        Some(f) if f.archived => Some("archived"),
-        Some(f) if f.closed => Some("closed"),
-        Some(f) if f.provider.as_deref() == Some(PROVIDER_STRIPE) => Some("stripe"),
-        Some(f) if f.provider.as_deref() == Some(PROVIDER_PAYPAL) => Some("paypal"),
-        Some(f) if f.currency() != currency => Some("currency"),
-        Some(_) => None,
+        None if Some(payout_id) == self_id => Some(bank_accounts::PAYOUT_DESTINATION_STRIPE),
+        None => Some(bank_accounts::PAYOUT_DESTINATION_NOT_FOUND),
+        Some(f) => f.refusal(currency),
     };
     match reason {
         Some(reason) => Err(AppError::StripePayoutAccountInvalid {

@@ -35,7 +35,9 @@
 use sqlx::mysql::MySqlPool;
 use sqlx::{MySql, Transaction};
 
-use crate::entities::bank_account::{BankAccount, NewBankAccount, bank_account_display_name};
+use crate::entities::bank_account::{
+    BankAccount, NewBankAccount, PROVIDER_PAYPAL, PROVIDER_STRIPE, bank_account_display_name,
+};
 use crate::errors::{DbError, map_db_error};
 
 /// Colonnes de `bank_accounts` sélectionnées pour hydrater [`BankAccount`], sous
@@ -1661,30 +1663,44 @@ where
 }
 
 /// Les comptes bancaires `ids` de la société (archivés et clos compris), par
-/// identifiant — Story 40-7c (AC-4) : la revue Stripe y lit les comptes de
-/// versement réglés, dans sa transaction de lecture. Lecture ordinaire ; un
-/// identifiant absent ou d'une autre société n'est pas rendu.
-pub async fn find_by_ids<'e, E>(
+/// identifiant, avec leurs faits de destination de versement
+/// ([`PayoutDestination`], devise du compte du plan comprise) — Story 40-7c
+/// (AC-4) : la revue Stripe y lit les comptes de versement réglés, dans sa
+/// transaction de lecture, pour les juger par [`PayoutDestination::refusal`].
+/// Lecture ordinaire ; un identifiant absent ou d'une autre société n'est pas
+/// rendu.
+pub async fn find_payout_destinations<'e, E>(
     executor: E,
     company_id: i64,
     ids: &[i64],
-) -> Result<Vec<BankAccount>, DbError>
+) -> Result<Vec<(BankAccount, PayoutDestination)>, DbError>
 where
     E: sqlx::Executor<'e, Database = MySql>,
 {
     if ids.is_empty() {
         return Ok(Vec::new());
     }
+    // Même ligne qu'un solde de prestataire : le compte et la devise de son
+    // compte du plan.
     let sql = format!(
-        "SELECT {} FROM bank_accounts WHERE company_id = ? AND id IN ({}) ORDER BY id",
+        "SELECT {}, (SELECT a.currency FROM accounts a WHERE a.id = bank_accounts.journal_account_id) \
+         AS ledger_currency FROM bank_accounts WHERE company_id = ? AND id IN ({}) ORDER BY id",
         columns!(),
         vec!["?"; ids.len()].join(", ")
     );
-    let mut q = sqlx::query_as::<_, BankAccount>(&sql).bind(company_id);
+    let mut q = sqlx::query_as::<_, ProviderBalance>(&sql).bind(company_id);
     for id in ids {
         q = q.bind(*id);
     }
-    q.fetch_all(executor).await.map_err(map_db_error)
+    Ok(q.fetch_all(executor)
+        .await
+        .map_err(map_db_error)?
+        .into_iter()
+        .map(|row| {
+            let facts = PayoutDestination::of(&row.account, row.ledger_currency);
+            (row.account, facts)
+        })
+        .collect())
 }
 
 /// [`list_provider_balances`] en **lectures verrouillantes** (`LOCK IN SHARE
@@ -1783,10 +1799,60 @@ pub struct PayoutDestination {
     pub ledger_currency: Option<String>,
 }
 
+/// Motif de refus d'une destination de versement : le compte n'existe pas
+/// (ou appartient à une autre société).
+pub const PAYOUT_DESTINATION_NOT_FOUND: &str = "not_found";
+/// Motif de refus d'une destination de versement : le compte est archivé.
+pub const PAYOUT_DESTINATION_ARCHIVED: &str = "archived";
+/// Motif de refus d'une destination de versement : le compte est clos.
+pub const PAYOUT_DESTINATION_CLOSED: &str = "closed";
+/// Motif de refus d'une destination de versement : c'est un compte Stripe.
+pub const PAYOUT_DESTINATION_STRIPE: &str = "stripe";
+/// Motif de refus d'une destination de versement : c'est un compte PayPal.
+pub const PAYOUT_DESTINATION_PAYPAL: &str = "paypal";
+/// Motif de refus d'une destination de versement : son compte du plan n'est
+/// pas dans la devise du solde Stripe.
+pub const PAYOUT_DESTINATION_CURRENCY: &str = "currency";
+
 impl PayoutDestination {
+    /// Les faits d'un compte bancaire lu, avec la devise de son compte du plan.
+    pub fn of(account: &BankAccount, ledger_currency: Option<String>) -> Self {
+        Self {
+            archived: account.archived,
+            closed: account.is_closed(),
+            provider: account.provider_settings.provider.clone(),
+            ledger_currency,
+        }
+    }
+
     /// La devise du compte, `CHF` pour la monnaie de base.
     pub fn currency(&self) -> &str {
         self.ledger_currency.as_deref().unwrap_or(BASE_CURRENCY)
+    }
+
+    /// **La** règle d'une destination de versement Stripe (Story 40-7b, AC-2 ;
+    /// rejugée à la revue et à l'acceptation depuis la revue d'intégration de
+    /// l'Epic 39, M2) : un compte ni archivé, ni clos, ni Stripe, ni PayPal,
+    /// dont le compte du plan est dans la devise `currency` du solde Stripe.
+    /// Rend le motif du refus (`PAYOUT_DESTINATION_*`, dans cet ordre), ou
+    /// `None` si la destination est admise. Seul juge de la règle : le réglage
+    /// du compte Stripe (`POST`/`PUT`), la revue et l'acceptation Stripe
+    /// l'appellent tous trois, car le compte désigné peut changer de
+    /// prestataire ou d'état après le réglage.
+    pub fn refusal(&self, currency: &str) -> Option<&'static str> {
+        if self.archived {
+            Some(PAYOUT_DESTINATION_ARCHIVED)
+        } else if self.closed {
+            Some(PAYOUT_DESTINATION_CLOSED)
+        } else if self.provider.as_deref() == Some(PROVIDER_STRIPE) {
+            Some(PAYOUT_DESTINATION_STRIPE)
+        } else if self.provider.as_deref() == Some(PROVIDER_PAYPAL) {
+            Some(PAYOUT_DESTINATION_PAYPAL)
+        } else if self.currency() != currency {
+            Some(PAYOUT_DESTINATION_CURRENCY)
+        } else {
+            None
+        }
     }
 }
 
@@ -1826,12 +1892,7 @@ pub async fn payout_destination_locked(
         .flatten(),
         None => None,
     };
-    Ok(Some(PayoutDestination {
-        archived: account.archived,
-        closed: account.is_closed(),
-        provider: account.provider_settings.provider.clone(),
-        ledger_currency,
-    }))
+    Ok(Some(PayoutDestination::of(&account, ledger_currency)))
 }
 
 /// Le drapeau `is_primary` du compte `id`, lu **sous `FOR UPDATE`** dans la
