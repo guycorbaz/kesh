@@ -77,9 +77,19 @@ pub const REVIEW_OTHER_CATEGORY: &str = "other_category";
 pub const REVIEW_PAYOUT_REVERSAL: &str = "payout_reversal";
 /// À examiner : un versement de montant positif ou nul (Σ net ≤ 0).
 pub const REVIEW_PAYOUT_NOT_NEGATIVE: &str = "payout_not_negative";
-/// À examiner : aucun compte de versement réglé, ou le compte de versement
-/// archivé, clos, ou sans compte du plan.
+/// À examiner : aucun compte de versement réglé, ou un compte de versement
+/// inutilisable (`details: { payoutId, reason }`, `reason` ∈
+/// [`PAYOUT_ACCOUNT_NOT_SET`], [`PAYOUT_ACCOUNT_NOT_CONFIGURED`], ou un motif
+/// de la règle des destinations — `not_found`, `archived`, `closed`, `stripe`,
+/// `paypal`, `currency`, que la route lit de
+/// `kesh_db::repositories::bank_accounts::PayoutDestination::refusal`).
 pub const REVIEW_PAYOUT_ACCOUNT_MISSING: &str = "payout_account_missing";
+/// Motif d'un `payout_account_missing` : le compte Stripe n'a pas de compte de
+/// versement réglé.
+pub const PAYOUT_ACCOUNT_NOT_SET: &str = "not_set";
+/// Motif d'un `payout_account_missing` : le compte de versement n'est lié à
+/// aucun compte du plan.
+pub const PAYOUT_ACCOUNT_NOT_CONFIGURED: &str = "not_configured";
 /// Écart : la somme des lignes d'un versement ne vaut pas son montant
 /// (`details: { payoutId, expected, found }`).
 pub const GAP_PAYOUT_TOTAL_MISMATCH: &str = "payout_total_mismatch";
@@ -266,7 +276,8 @@ pub enum PayoutVerdict {
 ///
 /// - (a) une ligne est un retour de versement → [`REVIEW_PAYOUT_REVERSAL`] ;
 ///   montant ≥ 0 → [`REVIEW_PAYOUT_NOT_NEGATIVE`] ;
-/// - (b) pas de compte de versement utilisable (`destination_usable`) →
+/// - (b) pas de compte de versement utilisable (jugé par la route,
+///   `destination_refusal`, sur la règle du réglage) →
 ///   [`REVIEW_PAYOUT_ACCOUNT_MISSING`] ;
 /// - (c) Σ montants des lignes ≠ − montant → [`PayoutVerdict::TotalMismatch`] ;
 /// - (d) sinon [`PayoutVerdict::Proposable`].
@@ -333,7 +344,8 @@ pub enum StripeReviewProposal {
 }
 
 /// Le compte de versement d'un compte bancaire Stripe, **utilisable** :
-/// réglé, non archivé, ouvert, lié à un compte du plan.
+/// réglé, non archivé, ouvert, ni Stripe ni PayPal, lié à un compte du plan de
+/// la devise du solde (la règle du réglage, rejugée par la route).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PayoutDestination {
     /// Le compte bancaire de versement.
@@ -356,6 +368,11 @@ pub struct StripeReviewInput<'a> {
     /// Par compte bancaire Stripe : le compte de versement réglé, utilisable
     /// ou non (`details.payoutBankAccountId` d'un écart de réception).
     pub configured_destinations: &'a HashMap<i64, i64>,
+    /// Par compte bancaire Stripe dont le compte de versement réglé est
+    /// **inutilisable** : le motif (`details.reason` d'un
+    /// `payout_account_missing`). Un compte Stripe sans réglage n'y figure pas
+    /// ([`PAYOUT_ACCOUNT_NOT_SET`]).
+    pub destination_refusals: &'a HashMap<i64, &'static str>,
     /// Les versements de l'exercice rapprochés dont l'écriture n'est pointée
     /// par aucune transaction d'un autre compte bancaire.
     pub unreceived_payouts: &'a [BankTransaction],
@@ -428,6 +445,18 @@ fn decide_payout(
     let destination = input.destinations.get(&t.bank_account_id);
     let payout_id = t.transaction_id.clone();
     match judge_payout(t, &lines, destination.is_some()) {
+        PayoutVerdict::ToReview(REVIEW_PAYOUT_ACCOUNT_MISSING) => {
+            let reason = input
+                .destination_refusals
+                .get(&t.bank_account_id)
+                .copied()
+                .unwrap_or(PAYOUT_ACCOUNT_NOT_SET);
+            review.push_to_review(finding(
+                REVIEW_PAYOUT_ACCOUNT_MISSING,
+                t,
+                serde_json::json!({ "payoutId": payout_id, "reason": reason }),
+            ))
+        }
         PayoutVerdict::ToReview(code) => review.push_to_review(finding(
             code,
             t,
@@ -746,6 +775,7 @@ mod tests {
         sales: Vec<SaleEntry>,
         destinations: HashMap<i64, PayoutDestination>,
         configured: HashMap<i64, i64>,
+        refusals: HashMap<i64, &'static str>,
         unreceived: Vec<BankTransaction>,
         fee_account: Option<i64>,
     }
@@ -779,6 +809,7 @@ mod tests {
                 sales: Vec::new(),
                 destinations: HashMap::new(),
                 configured: HashMap::new(),
+                refusals: HashMap::new(),
                 unreceived: Vec::new(),
                 fee_account: Some(6941),
             }
@@ -822,6 +853,7 @@ mod tests {
                     payout_candidates: &all,
                     destinations: &self.destinations,
                     configured_destinations: &self.configured,
+                    destination_refusals: &self.refusals,
                     unreceived_payouts: &self.unreceived,
                 },
             )
@@ -976,6 +1008,25 @@ mod tests {
                 REVIEW_PAYOUT_ACCOUNT_MISSING,
                 REVIEW_PAYOUT_REVERSAL
             ]
+        );
+        // Le motif nommé : aucun réglage, puis le refus que la route a jugé.
+        let po_a = |r: &Review<StripeReviewProposal>| {
+            r.to_review
+                .iter()
+                .find(|f| {
+                    f.code == REVIEW_PAYOUT_ACCOUNT_MISSING
+                        && f.transaction.as_ref().is_some_and(|t| t.id == 1)
+                })
+                .and_then(|f| f.details.clone())
+        };
+        assert_eq!(
+            po_a(&r),
+            Some(serde_json::json!({ "payoutId": "po_A", "reason": PAYOUT_ACCOUNT_NOT_SET }))
+        );
+        j.refusals.insert(10, "paypal");
+        assert_eq!(
+            po_a(&j.revue()),
+            Some(serde_json::json!({ "payoutId": "po_A", "reason": "paypal" }))
         );
     }
 

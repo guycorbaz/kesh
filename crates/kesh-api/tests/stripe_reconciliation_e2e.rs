@@ -1115,8 +1115,9 @@ async fn versement_a_retour_ou_positif_refuse_a_l_acceptation(pool: MySqlPool) {
 
 /// Les refus propres à la destination d'un versement (revue P1 L3) : compte
 /// sans compte du plan (`BANK_ACCOUNT_NOT_CONFIGURED`), compte du plan d'un
-/// autre type ou d'une autre devise que le solde (`VALIDATION_ERROR`) ; rien
-/// d'écrit, le versement reste à traiter.
+/// autre type (`VALIDATION_ERROR`) ou d'une autre devise que le solde
+/// (`STRIPE_PAYOUT_ACCOUNT_INVALID`, `currency`) ; rien d'écrit, le versement
+/// reste à traiter.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn destination_de_versement_sans_plan_de_mauvais_type_ou_de_mauvaise_devise(pool: MySqlPool) {
     let ctx = monter(&pool).await;
@@ -1148,17 +1149,19 @@ async fn destination_de_versement_sans_plan_de_mauvais_type_ou_de_mauvaise_devis
         "{b}"
     );
 
-    // Un solde CHF versé sur un compte du plan en EUR.
+    // Un solde CHF versé sur un compte du plan en EUR : la règle du réglage,
+    // rejugée (revue d'intégration de l'Epic 39, M2).
     regler_versement(&ctx, ctx.chf, ctx.ba_wise).await;
     let (s, b) = ctx
         .accepter(vec![json!({ "type": "payout", "bankTransactionId": po })])
         .await;
     assert_eq!(s, 200, "{b}");
-    assert_eq!(b["failed"][0]["errorCode"], "VALIDATION_ERROR", "{b}");
     assert_eq!(
-        b["failed"][0]["details"]["reason"], "counterparty_wrong_currency",
+        b["failed"][0]["errorCode"], "STRIPE_PAYOUT_ACCOUNT_INVALID",
         "{b}"
     );
+    assert_eq!(b["failed"][0]["details"]["reason"], "currency", "{b}");
+    assert_eq!(b["failed"][0]["details"]["bankAccountId"], ctx.ba_wise);
     assert_eq!(ctx.ecritures().await, avant, "rien d'écrit");
     assert_eq!(ctx.etat(po).await, ("pending".into(), None));
 }
@@ -1666,4 +1669,157 @@ async fn cout_de_la_revue_600_transactions_600_ecritures(pool: MySqlPool) {
         .count();
     assert_eq!(liens, 600, "les 600 ventes rattachables");
     assert!(duree < std::time::Duration::from_secs(10), "{duree:?}");
+}
+
+// ============================================================
+// Revue d'intégration de l'Epic 39, M2 — la destination rejugée
+// ============================================================
+
+/// Le compte de versement **change** après le réglage du compte Stripe — il
+/// devient un compte PayPal ou Stripe (un `PUT` le permet tant qu'il n'a pas
+/// de transaction), il est archivé, clos, ou lié à un compte du plan d'une
+/// autre devise que le solde : la revue ne propose plus le versement et le
+/// met à examiner sous `payout_account_missing`, au motif nommé ; la
+/// proposition de la revue d'avant est refusée à l'acceptation, sans
+/// écriture. Les changements se posent en SQL : ce sont ceux que les routes
+/// admettent sur le compte de destination (40-7b ne le garde pas).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn destination_devenue_inutilisable_rejugee_a_la_revue_et_a_l_acceptation(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let po = ctx.tx("po_TEST0002").await; // solde EUR, versé sur le compte Wise EUR
+    let v = proposition(&ctx.revue().await, po);
+    assert_eq!(v["payoutBankAccountId"], ctx.ba_wise, "{v}");
+    let avant = ctx.ecritures().await;
+    let chf_ledger = compte(&pool, ctx.seeded.company_id, "1027", "Asset", None).await;
+    let poser = |sql: &'static str| {
+        let pool = pool.clone();
+        let id = ctx.ba_wise;
+        async move {
+            sqlx::query(sql).bind(id).execute(&pool).await.unwrap();
+        }
+    };
+    let remettre = "UPDATE bank_accounts SET provider = 'wise', archived = FALSE, \
+                    closed_on = NULL WHERE id = ?";
+    let cas: [(&str, &str, (&str, &str)); 5] = [
+        (
+            "UPDATE bank_accounts SET provider = 'paypal' WHERE id = ?",
+            "paypal",
+            ("STRIPE_PAYOUT_ACCOUNT_INVALID", "paypal"),
+        ),
+        (
+            "UPDATE bank_accounts SET provider = 'stripe' WHERE id = ?",
+            "stripe",
+            ("STRIPE_PAYOUT_ACCOUNT_INVALID", "stripe"),
+        ),
+        (
+            "UPDATE bank_accounts SET archived = TRUE WHERE id = ?",
+            "archived",
+            ("PROVIDER_PROPOSAL_STALE", "payout_account_archived"),
+        ),
+        (
+            "UPDATE bank_accounts SET closed_on = '2020-12-31' WHERE id = ?",
+            "closed",
+            ("BANK_ACCOUNT_CLOSED", ""),
+        ),
+        (
+            // Le compte du plan passe en CHF (posé ci-dessous, par identifiant).
+            "UPDATE bank_accounts SET provider = 'wise' WHERE id = ?",
+            "currency",
+            ("STRIPE_PAYOUT_ACCOUNT_INVALID", "currency"),
+        ),
+    ];
+    for (sql, motif, (code, raison)) in cas {
+        poser(sql).await;
+        if motif == "currency" {
+            sqlx::query("UPDATE bank_accounts SET journal_account_id = ? WHERE id = ?")
+                .bind(chf_ledger)
+                .bind(ctx.ba_wise)
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+        // Revue : plus de proposition de versement ; à examiner, au motif nommé.
+        let revue = ctx.revue().await;
+        assert!(
+            !revue["proposals"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|p| p["bankTransactionId"] == po),
+            "{motif} : {revue}"
+        );
+        let examen = revue["toReview"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|f| f["transaction"]["id"] == po)
+            .unwrap_or_else(|| panic!("{motif} : {revue}"));
+        assert_eq!(examen["code"], "payout_account_missing", "{motif}");
+        assert_eq!(
+            examen["details"],
+            json!({ "payoutId": "po_TEST0002", "reason": motif }),
+            "{motif}"
+        );
+        // Acceptation de la proposition d'avant : refusée, sans écriture.
+        let (s, b) = ctx.accepter(vec![v.clone()]).await;
+        assert_eq!(s, 200, "{motif} : {b}");
+        assert_eq!(b["accepted"], json!([]), "{motif} : {b}");
+        assert_eq!(b["failed"][0]["bankTransactionId"], po, "{motif} : {b}");
+        assert_eq!(b["failed"][0]["errorCode"], code, "{motif} : {b}");
+        if raison.is_empty() {
+            assert_eq!(b["failed"][0]["details"]["bankAccountId"], ctx.ba_wise);
+        } else {
+            assert_eq!(b["failed"][0]["details"]["reason"], raison, "{motif} : {b}");
+        }
+        if code == "STRIPE_PAYOUT_ACCOUNT_INVALID" {
+            assert_eq!(b["failed"][0]["details"]["bankAccountId"], ctx.ba_wise);
+        }
+        assert_eq!(ctx.ecritures().await, avant, "{motif} : rien d'écrit");
+        assert_eq!(ctx.etat(po).await, ("pending".into(), None), "{motif}");
+        poser(remettre).await;
+    }
+    // Remis en état (Wise, compte du plan EUR) : de nouveau proposé et accepté.
+    sqlx::query("UPDATE bank_accounts SET journal_account_id = ? WHERE id = ?")
+        .bind(ctx.wise_eur_ledger)
+        .bind(ctx.ba_wise)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (s, b) = ctx.accepter(vec![v]).await;
+    assert_eq!((s, b["failed"].clone()), (200, json!([])), "{b}");
+    assert_eq!(b["accepted"][0]["type"], "payout");
+}
+
+/// La chaîne d'un versement Stripe vers un **compte bancaire ordinaire**
+/// (revue d'intégration de l'Epic 39, L3) : proposé par la revue, accepté,
+/// l'écart `payout_without_receipt` paraît ; la réception de la banque,
+/// rattachée à l'écriture du versement, le fait disparaître. (Le côté Wise,
+/// par la route générique `link-entry`, est joué par
+/// `revue_puis_acceptation_du_tout` ; la route Wise n'est pas sur cette
+/// branche.)
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn versement_vers_une_banque_puis_reception_l_ecart_disparait(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let po = ctx.tx("po_TEST0001").await; // solde CHF, versé sur la banque CHF
+    let v = proposition(&ctx.revue().await, po);
+    assert_eq!(v["payoutBankAccountId"], ctx.ba_banque, "{v}");
+    let (s, b) = ctx.accepter(vec![v]).await;
+    assert_eq!((s, b["failed"].clone()), (200, json!([])), "{b}");
+    let ecriture = b["accepted"][0]["journalEntryIds"][0].as_i64().unwrap();
+    let sans_reception = |revue: &Value| {
+        revue["gaps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|g| g["code"] == "payout_without_receipt" && g["transaction"]["id"] == po)
+    };
+    let revue = ctx.revue().await;
+    assert!(sans_reception(&revue), "{revue}");
+    let reception = ctx
+        .reception(ctx.ba_banque, "125.15", "CHF", "2020-02-04")
+        .await;
+    let (s, b) = ctx.rattacher(reception, ecriture).await;
+    assert_eq!(s, 200, "{b}");
+    let revue = ctx.revue().await;
+    assert!(!sans_reception(&revue), "{revue}");
 }

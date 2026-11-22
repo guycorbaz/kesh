@@ -1200,7 +1200,10 @@ const ATTENDU = {
 	// la garde ; au diff : 2 sites ajoutés, 0 retiré.
 	// Fusion d'epic/38-paypal (38-12b) dans epic/40-stripe : **3733** (« expected 3733 to be 0 »),
 	// relevé par la garde = 3691 + 42 (les sites de la 38-12b, 3674 − 3632).
-	sitesTotal: 3733,
+	// Correctif de la destination d'un versement Stripe rejugée (revue d'intégration de l'Epic 39,
+	// M2 : libellé de `STRIPE_PAYOUT_ACCOUNT_INVALID` dans `stripeFailedLabel`) : **3734**
+	// (« expected 3734 to be 3733 »), relevé par la garde ; au diff : 1 site ajouté, 0 retiré.
+	sitesTotal: 3734,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

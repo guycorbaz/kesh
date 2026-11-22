@@ -260,14 +260,24 @@ export function stripeToReviewLabel(f: ProviderFinding): string {
 		case 'payout_account_missing':
 			return i18nMsg(
 				'stripe-review-payout-account-missing',
-				'Versement sans compte de versement utilisable : réglez le compte de versement du compte Stripe (ni archivé, ni clos, lié à un compte du plan).',
+				'Versement sans compte de versement utilisable : réglez le compte de versement du compte Stripe (ni archivé, ni clos, ni un compte Stripe ou PayPal, lié à un compte du plan dans la devise du solde).',
 			);
 		default:
 			return f.code;
 	}
 }
 
-/** Libellé d'un refus de `POST /stripe/accept`. */
+/**
+ * Libellé d'un refus de `POST /stripe/accept`. `STRIPE_PAYOUT_ACCOUNT_INVALID` : le compte de
+ * versement réglé, rejugé à l'acceptation, est devenu un compte Stripe ou PayPal, ou d'une autre
+ * devise que le solde (même règle et même texte qu'au réglage du compte Stripe).
+ */
 export function stripeFailedLabel(code: string, details?: unknown): string {
+	if (code === 'STRIPE_PAYOUT_ACCOUNT_INVALID') {
+		return i18nMsg(
+			'error-stripe-payout-account-invalid',
+			'Le compte de versement doit être un compte bancaire de la société, ouvert, sans prestataire Stripe ni PayPal, dans la même devise que le solde Stripe.',
+		);
+	}
 	return providerFailedLabel(code, details);
 }

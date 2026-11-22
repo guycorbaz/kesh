@@ -38,11 +38,13 @@ use axum::extract::{Query, State};
 use axum::{Extension, Json};
 use kesh_db::entities::BankAccount;
 use kesh_db::errors::DbError;
+use kesh_db::repositories::bank_accounts::{BASE_CURRENCY, PayoutDestination as DestinationFacts};
 use kesh_db::repositories::{bank_accounts, provider_review as reads};
 use kesh_reconciliation::provider_review::{EntryKind, Proposal, ProviderKind, Review};
 use kesh_reconciliation::stripe::{
-    KIND_PAYOUT, PAYOUT_CATEGORY, PayoutDestination, PayoutVerdict, SPEC, StripeReviewInput,
-    StripeReviewProposal, classify, complete_review, judge_payout, payout_lines,
+    KIND_PAYOUT, PAYOUT_ACCOUNT_NOT_CONFIGURED, PAYOUT_CATEGORY, PayoutDestination, PayoutVerdict,
+    SPEC, StripeReviewInput, StripeReviewProposal, classify, complete_review, judge_payout,
+    payout_lines,
 };
 use serde::Deserialize;
 use sqlx::MySql;
@@ -92,11 +94,28 @@ fn destination_label(a: &BankAccount) -> String {
     }
 }
 
-/// Un compte de versement est-il **utilisable** pour une écriture : non
-/// archivé, ouvert, lié à un compte du plan. (Type et devise de son compte du
-/// plan se contrôlent à l'acceptation, `check_counterparty`.)
-fn destination_usable(a: &BankAccount) -> bool {
-    !a.archived && !a.is_closed() && a.journal_account_id.is_some()
+/// Pourquoi le compte de versement `a` (faits `facts`) n'est **pas
+/// utilisable** pour le versement d'un solde Stripe en `currency` — `None` s'il
+/// l'est. La règle des destinations ([`DestinationFacts::refusal`], la même
+/// qu'au réglage du compte Stripe : ni archivé, ni clos, ni Stripe, ni PayPal,
+/// dans la devise du solde), **rejugée** ici parce que le compte désigné peut
+/// avoir changé de prestataire ou d'état depuis le réglage (revue
+/// d'intégration de l'Epic 39, M2) ; puis le lien à un compte du plan
+/// (`not_configured`). Le type du compte du plan se contrôle à l'acceptation
+/// (`check_counterparty`). La revue et l'acceptation ([`accept_payout`]) en
+/// tirent le même verdict.
+fn destination_refusal(
+    a: &BankAccount,
+    facts: &DestinationFacts,
+    currency: &str,
+) -> Option<&'static str> {
+    match facts.refusal(currency) {
+        // Le lien au plan passe avant la devise : sans compte du plan, la
+        // devise lue (CHF par défaut) ne dit rien.
+        Some(reason) if reason != bank_accounts::PAYOUT_DESTINATION_CURRENCY => Some(reason),
+        _ if a.journal_account_id.is_none() => Some(PAYOUT_ACCOUNT_NOT_CONFIGURED),
+        other => other,
+    }
 }
 
 /// Les lectures et la revue Stripe, dans la transaction de lecture.
@@ -145,29 +164,40 @@ async fn load_review(
     let mut destination_ids: Vec<i64> = configured.values().copied().collect();
     destination_ids.sort_unstable();
     destination_ids.dedup();
-    let found: HashMap<i64, BankAccount> =
-        bank_accounts::find_by_ids(&mut **tx, company_id, &destination_ids)
+    let found: HashMap<i64, (BankAccount, DestinationFacts)> =
+        bank_accounts::find_payout_destinations(&mut **tx, company_id, &destination_ids)
             .await?
             .into_iter()
-            .map(|a| (a.id, a))
+            .map(|(a, f)| (a.id, (a, f)))
             .collect();
-    let destinations: HashMap<i64, PayoutDestination> = configured
+    let currencies: HashMap<i64, &str> = loaded
+        .balances
         .iter()
-        .filter_map(|(stripe_id, dest_id)| {
-            found
-                .get(dest_id)
-                .filter(|a| destination_usable(a))
-                .map(|a| {
-                    (
-                        *stripe_id,
-                        PayoutDestination {
-                            bank_account_id: a.id,
-                            label: destination_label(a),
-                        },
-                    )
-                })
-        })
+        .map(|b| (b.account.id, b.currency()))
         .collect();
+    let mut destinations: HashMap<i64, PayoutDestination> = HashMap::new();
+    let mut destination_refusals: HashMap<i64, &'static str> = HashMap::new();
+    for (stripe_id, dest_id) in &configured {
+        let Some((a, facts)) = found.get(dest_id) else {
+            destination_refusals.insert(*stripe_id, bank_accounts::PAYOUT_DESTINATION_NOT_FOUND);
+            continue;
+        };
+        let currency = currencies.get(stripe_id).copied().unwrap_or(BASE_CURRENCY);
+        match destination_refusal(a, facts, currency) {
+            Some(reason) => {
+                destination_refusals.insert(*stripe_id, reason);
+            }
+            None => {
+                destinations.insert(
+                    *stripe_id,
+                    PayoutDestination {
+                        bank_account_id: a.id,
+                        label: destination_label(a),
+                    },
+                );
+            }
+        }
+    }
 
     let unreceived = reads::reconciled_without_other_side(
         &mut **tx,
@@ -186,6 +216,7 @@ async fn load_review(
             payout_candidates: &payout_candidates,
             destinations: &destinations,
             configured_destinations: &configured,
+            destination_refusals: &destination_refusals,
             unreceived_payouts: &unreceived,
         },
     ))
@@ -314,7 +345,10 @@ impl EngineProposal for StripeProposal {
 /// (`provider_settings_changed`) ; même jugement que la revue
 /// ([`judge_payout`], lignes relues sous les verrous : retour de versement,
 /// montant positif, total faux → périmé sous le motif) ; compte de versement
-/// relu : absent ou archivé → périmé, clos → `BANK_ACCOUNT_CLOSED`, sans
+/// relu et **rejugé** par la règle du réglage ([`destination_refusal`]) :
+/// absent ou archivé → périmé, clos → `BANK_ACCOUNT_CLOSED`, devenu un compte
+/// Stripe ou PayPal, ou d'une autre devise que le solde →
+/// `STRIPE_PAYOUT_ACCOUNT_INVALID` (`details: { bankAccountId, reason }`), sans
 /// compte du plan → `BANK_ACCOUNT_NOT_CONFIGURED` ; son compte du plan
 /// contrôlé comme une contrepartie d'actif **de la devise du solde**
 /// (`CounterpartyRule::AssetInCurrency`). Écriture par la fonction commune
@@ -367,13 +401,38 @@ async fn accept_payout(
             Err(DbError::NotFound) => return Err(stale(id, "provider_settings_changed")),
             Err(e) => return Err(db_refusal(id, e)),
         };
-    if destination.archived {
-        return Err(stale(id, "payout_account_archived"));
-    }
-    if destination.is_closed() {
-        return Err(Refusal::Failed(
-            closed_account_failed(&[id], destination_id).remove(0),
-        ));
+    // La devise du compte du plan de la destination, pour la règle commune.
+    let ledger_currency = match destination.journal_account_id {
+        Some(ledger) => reads::counterparty_account(&mut **tx, ctx.company_id, ledger)
+            .await
+            .map_err(|e| db_refusal(id, e))?
+            .and_then(|a| a.currency),
+        None => None,
+    };
+    let facts = DestinationFacts::of(&destination, ledger_currency);
+    match destination_refusal(&destination, &facts, r.balance.currency()) {
+        // Sans compte du plan : `BANK_ACCOUNT_NOT_CONFIGURED`, ci-dessous.
+        None | Some(PAYOUT_ACCOUNT_NOT_CONFIGURED) => {}
+        Some(bank_accounts::PAYOUT_DESTINATION_ARCHIVED) => {
+            return Err(stale(id, "payout_account_archived"));
+        }
+        Some(bank_accounts::PAYOUT_DESTINATION_CLOSED) => {
+            return Err(Refusal::Failed(
+                closed_account_failed(&[id], destination_id).remove(0),
+            ));
+        }
+        // Devenu un compte Stripe ou PayPal, ou d'une autre devise que le solde
+        // (revue d'intégration de l'Epic 39, M2) : le code du réglage refusé.
+        Some(reason) => {
+            return Err(Refusal::Failed(FailedProposal {
+                bank_transaction_id: id,
+                error_code: "STRIPE_PAYOUT_ACCOUNT_INVALID".to_string(),
+                details: Some(serde_json::json!({
+                    "bankAccountId": destination_id,
+                    "reason": reason,
+                })),
+            }));
+        }
     }
     let Some(destination_ledger) = destination.journal_account_id else {
         return Err(Refusal::Failed(FailedProposal {
@@ -580,6 +639,7 @@ mod tests {
 
     #[test]
     fn libelle_et_usage_d_un_compte_de_versement() {
+        use kesh_db::repositories::bank_accounts as ba;
         let now = chrono::Utc::now().naive_utc();
         let mut a = BankAccount {
             id: 7,
@@ -599,17 +659,41 @@ mod tests {
             created_at: now,
             updated_at: now,
         };
+        let refus = |a: &BankAccount, devise: Option<&str>, solde: &str| {
+            destination_refusal(a, &DestinationFacts::of(a, devise.map(String::from)), solde)
+        };
         assert_eq!(destination_label(&a), "Banque");
-        assert!(destination_usable(&a));
+        assert_eq!(refus(&a, None, "CHF"), None);
+        assert_eq!(refus(&a, Some("EUR"), "EUR"), None);
+        assert_eq!(
+            refus(&a, Some("EUR"), "CHF"),
+            Some(ba::PAYOUT_DESTINATION_CURRENCY)
+        );
         a.description = Some("EUR".into());
         assert_eq!(destination_label(&a), "Banque · EUR");
+        // Sans compte du plan : `not_configured`, avant la devise.
         a.journal_account_id = None;
-        assert!(!destination_usable(&a));
+        assert_eq!(refus(&a, None, "CHF"), Some(PAYOUT_ACCOUNT_NOT_CONFIGURED));
+        assert_eq!(refus(&a, None, "EUR"), Some(PAYOUT_ACCOUNT_NOT_CONFIGURED));
         a.journal_account_id = Some(1);
+        // Devenu un compte de prestataire Stripe ou PayPal (revue d'intégration
+        // de l'Epic 39, M2) ; un compte Wise reste une destination.
+        for (prestataire, motif) in [
+            ("stripe", Some(ba::PAYOUT_DESTINATION_STRIPE)),
+            ("paypal", Some(ba::PAYOUT_DESTINATION_PAYPAL)),
+            ("wise", None),
+        ] {
+            a.provider_settings.provider = Some(prestataire.into());
+            assert_eq!(refus(&a, None, "CHF"), motif, "{prestataire}");
+        }
+        a.provider_settings.provider = None;
         a.archived = true;
-        assert!(!destination_usable(&a));
+        assert_eq!(
+            refus(&a, None, "CHF"),
+            Some(ba::PAYOUT_DESTINATION_ARCHIVED)
+        );
         a.archived = false;
         a.closed_on = Some(chrono::NaiveDate::from_ymd_opt(2020, 1, 1).unwrap());
-        assert!(!destination_usable(&a));
+        assert_eq!(refus(&a, None, "CHF"), Some(ba::PAYOUT_DESTINATION_CLOSED));
     }
 }
