@@ -1,6 +1,6 @@
 # Story 40-7d : écrans, manuel et E2E du compte Stripe (phase 1)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-20, branche `epic/40-stripe`, chemins relevés sur `origin/main` au commit `fd04099f`. Epic 40,
 **phase 1 KISS** (décision de Beat du 2026-11-20). **Dépend de** : 40-7b, 40-7c ; les écrans PayPal de la phase 1 de
@@ -178,6 +178,15 @@ Stripe » du manuel utilisateur et de `docs/api-external.md`.
   remédiée (§ « Remédiation de la revue P2 ») ; passe P3 ciblée à lancer (prompt `kesh-gate-logs/s40-7d/revue-p3-prompt.md`).
 - 2026-11-22 — revue de code P3 ciblée (rapport `kesh-gate-logs/s40-7d/revue-p3-rapport.md`) : 0 CRITICAL, 1 HIGH, 1 MEDIUM, 4 LOW ;
   remédiée (§ « Remédiation de la revue P3 ») ; passe P4 ciblée à lancer (prompt `kesh-gate-logs/s40-7d/revue-p4-prompt.md`).
+- 2026-11-22 — revue de code P4 ciblée sur `7bec552a` (rapport `kesh-gate-logs/s40-7d/revue-p4-rapport.md`) : 0 CRITICAL,
+  0 HIGH, 0 MEDIUM, 3 LOW ; **boucle close** (aucun finding au-dessus de LOW). Les trois LOW touchent la production
+  (`bank-accounts/+page.svelte`) et sortent du périmètre : versés à la liste d'issues à ouvrir de l'epic (destination
+  introuvable affichée en blanc, `bug` P4 ; test du repli de `payoutPool`, `technical-debt` P4 ; destination archivée
+  non rendue au retour au compte du plan d'origine, `enhancement` P4). **Synthèse de la boucle de revue de code** :
+  P1 (complète) 0/0/3 MEDIUM/9 LOW → P2 (ciblée) 0/0/3 MEDIUM/4 LOW → P3 (ciblée) 0/1 HIGH/1 MEDIUM/4 LOW → P4 (ciblée)
+  0/0/0/3 LOW. La P3 a trouvé un HIGH **introduit par la remédiation de la P2** (destination vidée à l'ouverture), motif
+  « la sévérité se déplace vers ce qu'on vient d'écrire ». Passes en contexte frais, une lentille chacune, lancées par
+  l'orchestrateur ; le modèle de chaque passe n'est pas consigné à son rapport. Story `done`.
 
 ## Dev Agent Record
 
