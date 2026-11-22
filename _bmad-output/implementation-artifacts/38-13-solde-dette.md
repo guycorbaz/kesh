@@ -1,6 +1,6 @@
 # Story 38-13 : solde de la dette de l'Epic 38
 
-Status: ready-for-dev
+Status: in-progress
 
 *Fiche rédigée le 2026-11-22, branche `story/38-13` partie d'`epic/38-paypal` (`38f616561`). Story de solde
 (`CLAUDE.md` § *Priorités des défauts*, « Tarir la source, puis solder ») : elle ne prend que la dette des stories de
@@ -162,4 +162,9 @@ la mention « corrigé par la 38-13, ne pas ouvrir » ; rien d'autre n'y est ret
 - 2026-11-22, validation P2 (Opus, contexte séparé ; `kesh-gate-logs/s38-13/validation-p2-*.md`) : 0 C, 0 H, 1 M, 4 L.
   M1 (Tasks restées d'avant la P1 : fonction privée, pas de test de `start`, une seule mutation) → Tasks récrites,
   quatre mutations nommées ; L1 (`Downloads`, `:602-605`) ; L2 → AC-B3 (rapport à l'orchestrateur) ; L3, L4 → Dev
-  Notes et Tasks. Passe P3 à lancer (dernière permise).
+  Notes et Tasks. Passe P3 à lancer (troisième et dernière de la consigne de cette story ; le plafond de `CLAUDE.md`
+  reste de huit — annoté sur le LOW L2 de la P3).
+- 2026-11-22, validation P3 ciblée sur `a40d126ce` (Sonnet ; `kesh-gate-logs/s38-13/validation-p3-*.md`) : 0 au-dessus
+  de LOW, 2 LOW. L1 (la mutation (2) ne meurt que par une paire accentuée / non accentuée) : les tests prévus portent
+  « Zürich » / « zurich » et « Gênf » / « Genf » ; L2 annoté ci-dessus. **Validation close** : trend P1 2 M → P2 1 M →
+  P3 0, modèles Sonnet, Opus, Sonnet.
