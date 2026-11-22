@@ -1188,7 +1188,9 @@ const ATTENDU = {
 	// Story 38-12b (dialogue générique de téléchargement, bouton et aide de la page PayPal, code
 	// de ligne `STATUS`) : **3671** (« expected 3671 to be 3632 »), relevé par la garde ; recompté
 	// au diff hors tests : 42 sites `i18nMsg(` ajoutés, 3 retirés (compte rendu extrait), net +39.
-	sitesTotal: 3671,
+	// Revue P1 de la 38-12b (avis `provider-download-resumed`) : **3672** (« expected 3672 to be
+	// 3671 »), relevé par la garde ; au diff : 1 site ajouté, 0 retiré.
+	sitesTotal: 3672,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

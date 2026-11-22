@@ -499,12 +499,27 @@ struct Job {
     provider: &'static str,
     company_id: i64,
     account_key: String,
+    /// La période lue (début, fin ramenée au jour du jour) : le refus d'un
+    /// second lancement la rend, pour que l'écran dise ce qu'il suit.
+    period: (NaiveDate, NaiveDate),
     state: JobState,
     steps_done: u32,
     steps_total: Option<u32>,
     result: Option<serde_json::Value>,
     error: Option<serde_json::Value>,
     finished_at: Option<Instant>,
+}
+
+/// La tâche qui tourne déjà pour un compte, rendue par le refus de
+/// [`Downloads::start`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RunningJob {
+    /// Son identifiant.
+    pub id: u64,
+    /// Le début de sa période.
+    pub from: NaiveDate,
+    /// La fin lue de sa période.
+    pub to: NaiveDate,
 }
 
 /// Progression d'une tâche.
@@ -584,26 +599,33 @@ impl Downloads {
         jobs.retain(|_, j| j.finished_at.is_none_or(|t| t.elapsed() < JOB_RETENTION));
     }
 
-    /// Ouvre une tâche, ou rend l'identifiant de celle qui tourne déjà pour ce
-    /// prestataire, cette société et ce libellé (sans casse).
+    /// Ouvre une tâche sur la période `period` (début, fin lue), ou rend
+    /// celle qui tourne déjà pour ce prestataire, cette société et ce libellé
+    /// (sans casse), **quelle que soit sa période** : son identifiant et sa
+    /// période, que le refus `409` transmet (revue P1 de la 38-12b, M1).
     pub fn start(
         self: &Arc<Self>,
         provider: &'static str,
         company_id: i64,
         account: &str,
+        period: (NaiveDate, NaiveDate),
         steps_total: Option<u32>,
-    ) -> Result<JobHandle, u64> {
+    ) -> Result<JobHandle, RunningJob> {
         let account_key = account.trim().to_lowercase();
         let mut guard = self.jobs.lock().expect("jobs");
         let (next, jobs) = &mut *guard;
         Self::purge(jobs);
-        if let Some((id, _)) = jobs.iter().find(|(_, j)| {
+        if let Some((id, j)) = jobs.iter().find(|(_, j)| {
             j.state == JobState::Running
                 && j.provider == provider
                 && j.company_id == company_id
                 && j.account_key == account_key
         }) {
-            return Err(*id);
+            return Err(RunningJob {
+                id: *id,
+                from: j.period.0,
+                to: j.period.1,
+            });
         }
         *next += 1;
         let id = *next;
@@ -613,6 +635,7 @@ impl Downloads {
                 provider,
                 company_id,
                 account_key,
+                period,
                 state: JobState::Running,
                 steps_done: 0,
                 steps_total,
@@ -1144,15 +1167,33 @@ mod tests {
     #[test]
     fn une_tache_par_compte_tant_qu_elle_tourne() {
         let downloads = Arc::new(Downloads::default());
-        let h = downloads.start("paypal", 1, "Boutique", Some(3)).unwrap();
+        let d = |s: &str| NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap();
+        let p = (d("2020-01-01"), d("2020-01-30"));
+        let h = downloads
+            .start("paypal", 1, "Boutique", p, Some(3))
+            .unwrap();
+        // Une autre période du même compte est refusée, et le refus dit la
+        // période de la tâche en cours (revue P1 de la 38-12b, M1).
         assert_eq!(
-            downloads.start("paypal", 1, " boutique ", None).err(),
-            Some(h.id)
+            downloads
+                .start(
+                    "paypal",
+                    1,
+                    " boutique ",
+                    (d("2020-02-01"), d("2020-02-02")),
+                    None
+                )
+                .err(),
+            Some(RunningJob {
+                id: h.id,
+                from: p.0,
+                to: p.1
+            })
         );
         // Autre société, autre libellé, autre prestataire : libres.
-        assert!(downloads.start("paypal", 2, "Boutique", None).is_ok());
-        assert!(downloads.start("paypal", 1, "Autre", None).is_ok());
-        assert!(downloads.start("wise", 1, "Boutique", None).is_ok());
+        assert!(downloads.start("paypal", 2, "Boutique", p, None).is_ok());
+        assert!(downloads.start("paypal", 1, "Autre", p, None).is_ok());
+        assert!(downloads.start("wise", 1, "Boutique", p, None).is_ok());
         h.step_done();
         h.add_steps(1);
         let v = downloads.view("paypal", h.id, 1).unwrap();
@@ -1173,7 +1214,7 @@ mod tests {
         let v = downloads.view("paypal", h.id, 1).unwrap();
         assert_eq!(v.state, JobState::Done);
         // Finie, elle ne bloque plus la suivante ; une fin ne s'écrase pas.
-        let h2 = downloads.start("paypal", 1, "Boutique", None).unwrap();
+        let h2 = downloads.start("paypal", 1, "Boutique", p, None).unwrap();
         assert!(h2.id > h.id);
         h.finish(JobState::Failed, None, None);
         assert_eq!(
@@ -1185,7 +1226,10 @@ mod tests {
     #[tokio::test]
     async fn une_panique_conclut_la_tache_en_echec() {
         let downloads = Arc::new(Downloads::default());
-        let h = downloads.start("paypal", 1, "Boutique", Some(1)).unwrap();
+        let jour = NaiveDate::from_ymd_opt(2020, 1, 1).unwrap();
+        let h = downloads
+            .start("paypal", 1, "Boutique", (jour, jour), Some(1))
+            .unwrap();
         let id = h.id;
         spawn_job(h, "paypal", async {
             panic!("panique de test");

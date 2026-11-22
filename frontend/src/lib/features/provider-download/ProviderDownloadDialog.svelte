@@ -7,25 +7,32 @@
   1. Formulaire : période (défaut fourni par l'appelant), texte permanent
      (`notice`), refus du serveur affichés par code. Sur `409
      PROVIDER_DOWNLOAD_RUNNING`, le dialogue REPREND le suivi de la tâche en
-     cours (`details.jobId`) au lieu d'afficher une erreur.
+     cours (`details.jobId`) au lieu d'afficher une erreur ; le serveur refuse
+     par compte, quelle que soit la période, et quand celle de la tâche suivie
+     (`details.from`/`to`) diffère de la période demandée, un avis le dit
+     (« un téléchargement du … au … est déjà en cours ; son suivi est repris »)
+     jusqu'à l'issue.
   2. Suivi : `GET …/{jobId}` toutes les secondes ; barre et « fenêtre 5/13 »
      (compteur sans barre quand le total est inconnu), pause annoncée.
   3. Issue : `done` → le compte rendu de l'appelant, « données à jour jusqu'à … »
-     (`result.lastRefreshed`) et `onDone` (la page recharge sa revue) ;
-     `failed` → le motif traduit du code, « rien n'a été enregistré » ; `404`
-     ou erreurs réseau répétées → « suivi perdu ».
+     (`result.lastRefreshed`) et `onDone`, appelé une seule fois, même s'il
+     lève (la page recharge sa revue) ; `failed` → le motif traduit du code,
+     « rien n'a été enregistré » ; `404`, erreurs réseau répétées ou `done`
+     sans compte rendu → « suivi perdu ».
 
   Le suivi S'ARRÊTE à la fermeture du dialogue et au démontage (garde de
-  génération : aucune interrogation orpheline) ; fermer le dialogue n'arrête
-  pas la tâche, que le serveur poursuit — le rouvrir et relancer la même
-  période la retrouve (409). Aucun secret n'est jamais affiché.
+  génération : aucune interrogation orpheline, même quand la fermeture tombe
+  pendant le `POST` du lancement) ; fermer le dialogue n'arrête pas la tâche,
+  que le serveur poursuit — le rouvrir et relancer le téléchargement de ce
+  compte la retrouve (409), quelle que soit la période. Aucun secret n'est
+  jamais affiché.
 -->
 <script lang="ts" generics="R extends { lastRefreshed?: string | null }">
 	import { onDestroy, type Snippet } from 'svelte';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Button } from '$lib/components/ui/button';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
-	import { formatSwissDateTime } from '$lib/features/reports/reports.api';
+	import { formatSwissDate, formatSwissDateTime } from '$lib/features/reports/reports.api';
 	import {
 		getProviderDownload,
 		startProviderDownload,
@@ -37,6 +44,7 @@
 		failureLines,
 		progressLabel,
 		progressPercent,
+		resumedNotice,
 		startRefusal,
 		type Period,
 	} from './provider-download';
@@ -92,6 +100,8 @@
 	let pausedSeconds = $state<number | null>(null);
 	let result = $state<R | null>(null);
 	let failure = $state<ProviderDownloadError | null>(null);
+	/** La période d'une tâche reprise sur `409`, quand elle diffère de celle demandée. */
+	let resumed = $state<Period | null>(null);
 
 	// Garde de génération : toute interrogation d'une génération passée s'arrête
 	// (fermeture, démontage, nouveau lancement).
@@ -114,6 +124,7 @@
 			refusal = null;
 			result = null;
 			failure = null;
+			resumed = null;
 			starting = false;
 		}
 		if (!open && wasOpen) stopPolling();
@@ -126,15 +137,33 @@
 		if (starting) return;
 		starting = true;
 		refusal = null;
+		resumed = null;
+		const requested: Period = { from, to };
+		// Une fermeture (ou un démontage) pendant le `POST` change la génération :
+		// sa réponse ne lance alors aucun suivi (revue P1, L1).
+		const myGen = generation;
 		try {
-			const { jobId } = await startProviderDownload(provider, { account, from, to });
+			const { jobId } = await startProviderDownload(provider, { account, ...requested });
+			if (myGen !== generation) return;
 			track(jobId);
 		} catch (err) {
+			if (myGen !== generation) return;
 			const outcome = startRefusal(err);
-			if ('resumeJobId' in outcome) track(outcome.resumeJobId);
-			else refusal = outcome.message;
+			if ('resumeJobId' in outcome) {
+				resumed = resumedNotice(outcome.running, requested);
+				track(outcome.resumeJobId);
+			} else refusal = outcome.message;
 		} finally {
 			starting = false;
+		}
+	}
+
+	/** `onDone`, une seule fois : une exception de l'appelant ne relance pas le suivi (revue P1, L2). */
+	function notifyDone(r: R) {
+		try {
+			onDone?.(r);
+		} catch (err) {
+			console.error('[provider-download] onDone a échoué', err);
 		}
 	}
 
@@ -155,10 +184,16 @@
 				errors = 0;
 				steps = view.steps;
 				pausedSeconds = view.pausedUntilSeconds;
-				if (view.state === 'done' && view.result) {
+				if (view.state === 'done') {
+					// Une tâche finie clôt le suivi ; sans compte rendu, rien à montrer
+					// (revue P1, L2).
+					if (!view.result) {
+						phase = 'lost';
+						return;
+					}
 					result = view.result;
 					phase = 'done';
-					onDone?.(view.result);
+					notifyDone(view.result);
 					return;
 				}
 				if (view.state === 'failed') {
@@ -198,6 +233,16 @@
 			{/if}
 		</p>
 		<p class="text-sm" data-testid="provider-download-notice">{notice}</p>
+
+		{#if resumed && phase !== 'form'}
+			<p class="rounded bg-amber-50 p-3 text-sm text-amber-900" role="status" data-testid="provider-download-resumed">
+				{i18nMsg(
+					'provider-download-resumed',
+					'Un téléchargement du { $from } au { $to } est déjà en cours pour ce compte : son suivi est repris. Lancez votre période quand il sera terminé.',
+					{ from: formatSwissDate(resumed.from), to: formatSwissDate(resumed.to) },
+				)}
+			</p>
+		{/if}
 
 		{#if phase === 'form'}
 			<div class="flex flex-wrap items-end gap-4">
@@ -254,7 +299,7 @@
 				<p class="mt-2 text-xs text-text-muted">
 					{i18nMsg(
 						'provider-download-close-hint',
-						'Vous pouvez fermer cette fenêtre : le téléchargement continue, et le relancer pour la même période le retrouve.',
+						'Vous pouvez fermer cette fenêtre : le téléchargement continue, et le relancer pour ce compte le retrouve, quelle que soit la période.',
 					)}
 				</p>
 			</div>

@@ -58,13 +58,30 @@ export function periodRefusalLabel(reason: unknown): string {
 	}
 }
 
-/** Issue d'un refus du lancement : reprendre le suivi d'une tâche en cours, ou dire pourquoi. */
-export type StartRefusal = { resumeJobId: number } | { message: string };
+/**
+ * Issue d'un refus du lancement : reprendre le suivi d'une tâche en cours (avec
+ * sa période, `null` si le serveur ne la donne pas), ou dire pourquoi.
+ */
+export type StartRefusal = { resumeJobId: number; running: Period | null } | { message: string };
+
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+/** La période `details.from`/`details.to` d'un refus, si elle est bien formée. */
+function periodOf(details: Record<string, unknown> | undefined): Period | null {
+	const from = details?.from;
+	const to = details?.to;
+	return typeof from === 'string' && typeof to === 'string' && ISO_DAY.test(from) && ISO_DAY.test(to)
+		? { from, to }
+		: null;
+}
 
 /**
  * Ce qu'un refus du `POST` devient à l'écran (AC-2). Sur `409
  * PROVIDER_DOWNLOAD_RUNNING`, le dialogue **reprend le suivi** de la tâche en
- * cours (`details.jobId`) au lieu d'afficher une erreur ; sinon, le motif.
+ * cours (`details.jobId`) au lieu d'afficher une erreur ; le serveur refuse par
+ * compte, **quelle que soit la période**, et rend celle de la tâche suivie
+ * (`details.from`/`to`), que le dialogue annonce quand elle diffère de la
+ * période demandée ([`resumedNotice`]). Sinon, le motif.
  */
 export function startRefusal(err: unknown): StartRefusal {
 	if (isApiError(err)) {
@@ -72,7 +89,8 @@ export function startRefusal(err: unknown): StartRefusal {
 		switch (err.code) {
 			case 'PROVIDER_DOWNLOAD_RUNNING': {
 				const jobId = details?.jobId;
-				if (typeof jobId === 'number' && Number.isInteger(jobId)) return { resumeJobId: jobId };
+				if (typeof jobId === 'number' && Number.isInteger(jobId))
+					return { resumeJobId: jobId, running: periodOf(details) };
 				break;
 			}
 			case 'PROVIDER_PERIOD_INVALID':
@@ -87,6 +105,16 @@ export function startRefusal(err: unknown): StartRefusal {
 		}
 	}
 	return { message: errorMessageOf(err) };
+}
+
+/**
+ * La période suivie à annoncer après une reprise sur `409` (revue P1, M1) :
+ * celle de la tâche en cours quand elle diffère de la période demandée, sinon
+ * `null` (même période, ou période inconnue : rien à dire).
+ */
+export function resumedNotice(running: Period | null, requested: Period): Period | null {
+	if (!running) return null;
+	return running.from === requested.from && running.to === requested.to ? null : running;
 }
 
 /** `details.window` et `details.page` d'un échec, s'il y en a. */

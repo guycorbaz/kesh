@@ -16,6 +16,7 @@ import {
 	failureLines,
 	progressLabel,
 	progressPercent,
+	resumedNotice,
 	startRefusal,
 } from './provider-download';
 import { downloadsRoute } from './provider-download.api';
@@ -49,11 +50,41 @@ describe('defaultPeriod', () => {
 	});
 });
 
+describe('resumedNotice', () => {
+	const requested = { from: '2026-02-01', to: '2026-02-28' };
+	it('période différente : celle de la tâche suivie', () => {
+		expect(resumedNotice({ from: '2026-01-01', to: '2026-01-30' }, requested)).toEqual({
+			from: '2026-01-01',
+			to: '2026-01-30',
+		});
+		expect(resumedNotice({ from: '2026-02-01', to: '2026-02-27' }, requested)).toEqual({
+			from: '2026-02-01',
+			to: '2026-02-27',
+		});
+	});
+	it('même période, ou période inconnue : rien', () => {
+		expect(resumedNotice({ ...requested }, requested)).toBeNull();
+		expect(resumedNotice(null, requested)).toBeNull();
+	});
+});
+
 describe('startRefusal', () => {
 	it('409 PROVIDER_DOWNLOAD_RUNNING : reprendre le suivi de la tâche en cours', () => {
 		expect(startRefusal(apiError('PROVIDER_DOWNLOAD_RUNNING', 409, { provider: 'paypal', jobId: 7 }))).toEqual({
 			resumeJobId: 7,
+			running: null,
 		});
+	});
+	it('409 avec la période de la tâche en cours : elle est rendue (revue P1, M1)', () => {
+		expect(
+			startRefusal(
+				apiError('PROVIDER_DOWNLOAD_RUNNING', 409, { provider: 'paypal', jobId: 7, from: '2026-01-01', to: '2026-01-30' }),
+			),
+		).toEqual({ resumeJobId: 7, running: { from: '2026-01-01', to: '2026-01-30' } });
+		// Mal formée : ignorée, le suivi reprend sans avis.
+		expect(
+			startRefusal(apiError('PROVIDER_DOWNLOAD_RUNNING', 409, { jobId: 7, from: '01.01.2026', to: '2026-01-30' })),
+		).toEqual({ resumeJobId: 7, running: null });
 	});
 	it('409 sans identifiant lisible : le message du serveur', () => {
 		expect(startRefusal(apiError('PROVIDER_DOWNLOAD_RUNNING', 409, { jobId: 'x' }))).toEqual({

@@ -65,20 +65,23 @@ async function api<T>(ctx: APIRequestContext, method: 'get' | 'post', path: stri
 	return (await res.json()) as T;
 }
 
-// Le jour suisse, lu une fois ; la période et les transactions s'y rapportent,
-// dans l'année du jour (l'exercice que la revue lit).
+// Le jour suisse, lu une fois ; la période (les 60 jours qui le précèdent, soit
+// trois fenêtres de 30 jours, la pause tombant sur la deuxième) et les
+// transactions s'y rapportent, **quel que soit le jour de l'année** : la période
+// peut chevaucher le 1er janvier, l'exercice retenu par la préparation la couvre
+// entière (revue P1, L3 : bornée au 1er janvier, elle tenait en une fenêtre en
+// janvier, sans pause ni transaction).
 const TODAY = todayInZurich();
 const YEAR = TODAY.slice(0, 4);
-const JAN_1 = `${YEAR}-01-01`;
-const TWO_MONTHS_AGO = ajouterJoursIso(TODAY, -60);
-const FROM = TWO_MONTHS_AGO > JAN_1 ? TWO_MONTHS_AGO : JAN_1;
+const FROM = ajouterJoursIso(TODAY, -60);
+/** `AAAA-MM-JJ` → `JJ.MM.AAAA`, la forme des dates à l'écran. */
+const swiss = (iso: string) => `${iso.slice(8, 10)}.${iso.slice(5, 7)}.${iso.slice(0, 4)}`;
 
 /** Quatre ventes fictives en CHF, dans la période, à 10:00 UTC. */
 function transactions(): PaypalMockTransaction[] {
 	const out: PaypalMockTransaction[] = [];
 	for (const [i, back] of [50, 35, 20, 5].entries()) {
 		const day = ajouterJoursIso(TODAY, -back);
-		if (day < FROM) continue;
 		out.push({
 			id: `0TESTDL0000${i + 1}`,
 			at: `${day}T10:00:00+00:00`,
@@ -93,7 +96,7 @@ function transactions(): PaypalMockTransaction[] {
 
 let mock: ProviderMock | null = null;
 let fiscalYearId: number;
-/** Début de l'exercice qui couvre le jour (`with-company` : 2020-2030) : début de la période proposée. */
+/** Début de l'exercice qui couvre la période (`with-company` : 2020-2030) : début de la période proposée. */
 let fiscalYearStart: string;
 
 test.beforeAll(async () => {
@@ -120,7 +123,7 @@ test.beforeEach(async ({ page }) => {
 	await clearAuthStorage(page);
 });
 
-test('1 — préparation : deux comptes PayPal en CHF, l’exercice qui couvre le jour', async ({ page }) => {
+test('1 — préparation : deux comptes PayPal en CHF, l’exercice qui couvre la période', async ({ page }) => {
 	await login(page);
 	const ctx = await authedApiContext(page);
 	try {
@@ -137,14 +140,18 @@ test('1 — préparation : deux comptes PayPal en CHF, l’exercice qui couvre l
 			});
 		}
 		const years = await api<Array<{ id: number; startDate: string; endDate: string }>>(ctx, 'get', '/api/v1/fiscal-years');
-		const current = years.find((y) => y.startDate <= TODAY && TODAY <= y.endDate);
-		fiscalYearStart = current?.startDate ?? JAN_1;
+		// L'exercice que la revue lit doit couvrir toute la période ; à défaut (le
+		// `with-company` a 2020-2030), un exercice du 1er janvier de l'année de son
+		// début au 31 décembre de l'année du jour.
+		const current = years.find((y) => y.startDate <= FROM && TODAY <= y.endDate);
+		const fallbackStart = `${FROM.slice(0, 4)}-01-01`;
+		fiscalYearStart = current?.startDate ?? fallbackStart;
 		fiscalYearId =
 			current?.id ??
 			(
 				await api<{ id: number }>(ctx, 'post', '/api/v1/fiscal-years', {
-					name: `Exercice ${YEAR}`,
-					startDate: JAN_1,
+					name: `Exercice ${fallbackStart.slice(0, 4)}-${YEAR}`,
+					startDate: fallbackStart,
 					endDate: `${YEAR}-12-31`,
 				})
 			).id;
@@ -204,6 +211,19 @@ test('3 — (b) téléchargement de deux mois : progression, pause, compte rendu
 	await expect(page.getByTestId('provider-download-progress')).toContainText(/fenêtre \d\/\d/);
 	await expect(page.getByTestId('provider-download-bar')).toBeVisible();
 	await captureOf(page, 'provider-download-dialog', '13-dialogue-progression');
+
+	// Fermer, rouvrir, lancer une AUTRE période : le serveur refuse (409) et rend la
+	// période de la tâche en cours, que le dialogue annonce en reprenant son suivi
+	// (revue P1, M1).
+	await page.getByTestId('provider-download-close').click();
+	await expect(dialog).toHaveCount(0);
+	await button.click();
+	await page.getByTestId('provider-download-from').fill(ajouterJoursIso(FROM, 1));
+	await page.getByTestId('provider-download-start').click();
+	await expect(page.getByTestId('provider-download-resumed')).toContainText(
+		`Un téléchargement du ${swiss(FROM)} au ${swiss(TODAY)} est déjà en cours pour ce compte`,
+	);
+	await captureOf(page, 'provider-download-dialog', '18-dialogue-reprise-autre-periode');
 	await expect(page.getByTestId('provider-download-paused')).toContainText('reprise dans', { timeout: 15_000 });
 	await captureOf(page, 'provider-download-dialog', '14-dialogue-pause');
 
@@ -234,5 +254,6 @@ test('3 — (b) téléchargement de deux mois : progression, pause, compte rendu
 		`0 transaction(s) insérée(s), ${expected.length} doublon(s)`,
 		{ timeout: 30_000 },
 	);
+	await expect(page.getByTestId('provider-download-resumed')).toHaveCount(0);
 	await captureOf(page, 'provider-download-dialog', '17-dialogue-relance-sans-doublon');
 });

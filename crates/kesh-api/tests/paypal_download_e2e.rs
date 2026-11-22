@@ -1284,6 +1284,15 @@ async fn refus_tache_unique_et_cles_d_api(pool: MySqlPool) {
     let (s, b) = ctx.lancer("paypal WWW", "2020-02-01", "2020-02-02").await;
     assert_eq!((s, code(&b)), (409, "PROVIDER_DOWNLOAD_RUNNING".into()));
     assert_eq!(b["error"]["details"]["jobId"], premier["jobId"]);
+    // La période de la tâche suivie, non celle demandée (revue P1 de la
+    // 38-12b, M1) : l'écran dit qu'il suit un autre téléchargement.
+    assert_eq!(
+        (
+            b["error"]["details"]["from"].as_str(),
+            b["error"]["details"]["to"].as_str()
+        ),
+        (Some("2020-01-01"), Some("2020-01-30"))
+    );
     let (s, v) = ctx
         .req_avec(
             &ctx.jwt,

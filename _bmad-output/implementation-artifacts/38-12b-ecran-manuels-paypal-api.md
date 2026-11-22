@@ -31,7 +31,7 @@ suit remplace, là où il les contredit, les AC et la stratégie de tests ci-des
    du compte) ; elle les **convertit à l'heure de Zurich**. Le manuel dit donc : dates téléchargées à l'heure suisse,
    dates du CSV telles que l'export les écrit (fuseau du compte) ; une transaction proche de minuit peut tomber un autre
    jour selon la source, jamais en double (identifiant). S'ajoute la limite G4 de la 38-12a : la **première heure** du
-   jour le plus ancien admis (trois ans moins une heure) n'est pas lue.
+   jour le plus ancien admis (le plancher : il y a trois ans, plus une heure) n'est pas lue.
 5. **Stratégie de tests** (règle des gates de la nuit du 22.11) : fmt, clippy, nextest complet, frontend complet ; E2E
    **seulement** de la spec ajoutée (`paypal-download.spec.ts`) ; ni E2E complet ni `gate-ci.sh` (à la fin de l'epic).
 6. **E2E** : `with-company` a son exercice à l'année du jour ? À défaut la spec crée celui de l'année courante ; la
@@ -166,7 +166,8 @@ clair), jointes au prompt de la revue.
 *Ajouté* — Bouton « Télécharger depuis PayPal » sur la page PayPal, pour un compte configuré, avec la période, la
 progression et le compte rendu ; le manuel d'administration décrit la création de l'application PayPal en lecture seule.
 *Changé (API, additif)* — chaque compte de `GET /api/v1/bank-accounts` porte `providerApi` (`{ configured, mode? }`
-pour un compte de prestataire, `null` sinon).
+pour un compte de prestataire, `null` sinon) ; le refus `409 PROVIDER_DOWNLOAD_RUNNING` porte aussi la période de la
+tâche en cours (`details.from`, `details.to`), que le dialogue annonce quand elle diffère de la période demandée.
 
 ## Change Log
 
@@ -196,6 +197,17 @@ pour un compte de prestataire, `null` sinon).
 - 2026-11-20 — validation P5 ciblée sur les commits `977bf9ec` et `452606a3` (modèle : claude-haiku-5-5, contexte frais ; voir 38-12a et `kesh-gate-logs/epic-38-kiss/validation/38-12-P5-ciblee.md`) : rien à remédier ici ; l'AC-5 et le tableau PayPal sont cohérents avec l'AC-8 de 38-12a.
 - 2026-11-22 — développement : amendement du 22.11 (page commune absente de la branche, `providerApi` sur la liste, dates en heure de Zurich, gates de la nuit) ; statut `in-progress`.
 - 2026-11-22 — développement terminé (T1 à T4), story en `review` ; détail au Dev Agent Record.
+- 2026-11-22 — revue de code P1 (passe complète, une lentille ; rapport `kesh-gate-logs/s38-12b/revue-p1-rapport.md`) :
+  0 CRITICAL, 0 HIGH, 1 MEDIUM, 6 LOW. Remédiés : **M1** (une autre période relancée pendant un téléchargement suivait
+  l'ancien sans le dire) — `Downloads::start` garde la période de la tâche et la rend au refus, le `409` la porte dans
+  `details.from`/`to` (code inchangé), le dialogue affiche `provider-download-resumed` quand elle diffère de la
+  période demandée ; `provider-download-close-hint` (quatre locales), manuel utilisateur et `docs/api-external.md`
+  (§ PayPal et § 10) disent « pour ce compte, quelle que soit la période » ; **L1** (fermeture pendant le `POST` :
+  garde de génération prise au lancement) ; **L2** (`done` sans `result` → « suivi perdu » ; `onDone` hors du `try`
+  du suivi, appelé une fois même s'il lève) ; **L3** (E2E : période des 60 jours qui précèdent le jour, sans borne au
+  1er janvier, exercice retenu couvrant toute la période) ; **L4** (§ 10 : « il y a trois ans, plus une heure »,
+  phrase de la fiche alignée). **L5** et **L6** : notés au Dev Agent Record (L5 aussi aux consignes des correctifs,
+  pour la reprise du serveur simulé par Wise). Le serveur étant touché, la P2 est **complète**.
 
 ## Dev Agent Record
 
@@ -306,6 +318,25 @@ manuel utilisateur ; gates de la nuit du 22.11.
 2. `ProviderApiConfig::series_for` compare les libellés par `to_lowercase`, la base par une collation sans accents :
    « PayPal Zürich » au compte et « PayPal Zurich » à la série ne s'apparient pas (le bouton n'apparaît pas, refus
    `PROVIDER_API_NOT_CONFIGURED`) — à aligner sur la collation, ou à dire au manuel.
+
+### Remédiation de la revue P1
+
+- **M1, prémisse relue** : `Downloads::start` refusait par (prestataire, société, libellé sans casse) sans regarder
+  la période, et le `409` ne portait que `{ provider, jobId }` — vérifié au code avant correctif. Correctif :
+  `Job.period`, `RunningJob { id, from, to }` rendu par `start` (signature : `period` en plus, avant
+  `steps_total`), `AppError::ProviderDownloadRunning { provider, job_id, from, to }` (détails `AAAA-MM-JJ`, fin lue) ;
+  frontend : `StartRefusal` porte `running: Period | null` (période mal formée ignorée), `resumedNotice(running,
+  requested)`, avis `provider-download-resumed` (`role="status"`) montré hors formulaire jusqu'à l'issue. Une fin
+  demandée dans le futur, ramenée au jour du jour par le serveur, peut faire paraître l'avis pour la même période
+  (le texte dit alors la période réellement lue, ce qui reste exact) ; la page PayPal ne propose pas de fin future.
+  **À l'intégration avec les Epics 39 et 40** : tout appel de `Downloads::start` d'une autre branche (Wise, Stripe)
+  doit passer la période lue.
+- **L5** (non corrigé, hors périmètre) : le serveur simulé commun apparie la route par chemin exact
+  (`r.path === recorded.path`) ; réutilisable tel quel pour Stripe, non pour Wise (identifiants dans le chemin) :
+  prévoir un `match(path)` dans `ProviderMockRoute` à la 39-12b. Noté aux consignes des correctifs.
+- **L6** (non corrigé, joint au point 2 ci-dessus) : `paypalApiStatus` apparie les libellés sans accents et prend le
+  premier solde configuré ; avec deux soldes « Zurich »/« Zürich », le bouton peut paraître pour un libellé que
+  `series_for` refusera (`PROVIDER_API_NOT_CONFIGURED`, message juste).
 
 ### File List
 

@@ -159,6 +159,105 @@ describe('ProviderDownloadDialog', () => {
 		expect(q('provider-download-running')).not.toBeNull();
 	});
 
+	it('409 d’une AUTRE période : l’avis dit la période suivie, jusqu’au compte rendu (revue P1, M1)', async () => {
+		startMock.mockRejectedValue({
+			code: 'PROVIDER_DOWNLOAD_RUNNING',
+			message: 'déjà en cours',
+			status: 409,
+			details: { provider: 'paypal', jobId: 32, from: '2026-03-01', to: '2026-03-30' },
+		});
+		getMock
+			.mockResolvedValueOnce(running(1, 2))
+			.mockResolvedValue({ ...running(2, 2), state: 'done', result: { inserted: 1, lastRefreshed: null } });
+		monter();
+		await waitFor(() => expect(q('provider-download-start')).not.toBeNull());
+		expect(q('provider-download-resumed')).toBeNull();
+		await fireEvent.click(q('provider-download-start') as HTMLElement);
+		await waitFor(() =>
+			expect(q('provider-download-resumed')?.textContent).toContain(
+				'Un téléchargement du 01.03.2026 au 30.03.2026 est déjà en cours pour ce compte : son suivi est repris.',
+			),
+		);
+		await waitFor(() => expect(q('test-report')).not.toBeNull());
+		expect(q('provider-download-resumed')).not.toBeNull();
+		// « Nouvelle période » : l'avis s'efface avec le formulaire.
+		await fireEvent.click(q('provider-download-again') as HTMLElement);
+		await waitFor(() => expect(q('provider-download-resumed')).toBeNull());
+	});
+
+	it('409 de la MÊME période : le suivi reprend, sans avis', async () => {
+		startMock.mockRejectedValue({
+			code: 'PROVIDER_DOWNLOAD_RUNNING',
+			message: 'déjà en cours',
+			status: 409,
+			details: { provider: 'paypal', jobId: 33, from: '2026-01-01', to: '2026-11-22' },
+		});
+		getMock.mockResolvedValue(running(1, 2));
+		monter();
+		await waitFor(() => expect(q('provider-download-start')).not.toBeNull());
+		await fireEvent.click(q('provider-download-start') as HTMLElement);
+		await waitFor(() => expect(getMock).toHaveBeenCalledWith('paypal', 33));
+		expect(q('provider-download-running')).not.toBeNull();
+		expect(q('provider-download-resumed')).toBeNull();
+	});
+
+	it('fermeture pendant le POST : sa réponse ne lance aucun suivi (revue P1, L1)', async () => {
+		let resolveStart: (v: { jobId: number }) => void = () => {};
+		startMock.mockImplementation(() => new Promise((r) => (resolveStart = r)));
+		getMock.mockResolvedValue(running(1, 3));
+		const r = monter();
+		await waitFor(() => expect(q('provider-download-start')).not.toBeNull());
+		await fireEvent.click(q('provider-download-start') as HTMLElement);
+		await waitFor(() => expect(startMock).toHaveBeenCalled());
+		await r.rerender({ open: false });
+		resolveStart({ jobId: 40 });
+		await new Promise((res) => setTimeout(res, 40));
+		expect(getMock).not.toHaveBeenCalled();
+	});
+
+	it('même chose pour une reprise sur 409 arrivée après la fermeture (revue P1, L1)', async () => {
+		let rejectStart: (e: unknown) => void = () => {};
+		startMock.mockImplementation(() => new Promise((_, rej) => (rejectStart = rej)));
+		getMock.mockResolvedValue(running(1, 3));
+		const r = monter();
+		await waitFor(() => expect(q('provider-download-start')).not.toBeNull());
+		await fireEvent.click(q('provider-download-start') as HTMLElement);
+		await waitFor(() => expect(startMock).toHaveBeenCalled());
+		await r.rerender({ open: false });
+		rejectStart({ code: 'PROVIDER_DOWNLOAD_RUNNING', message: 'x', status: 409, details: { jobId: 41 } });
+		await new Promise((res) => setTimeout(res, 40));
+		expect(getMock).not.toHaveBeenCalled();
+	});
+
+	it('`done` sans compte rendu : « suivi perdu », le suivi s’arrête (revue P1, L2)', async () => {
+		startMock.mockResolvedValue({ jobId: 42 });
+		getMock.mockResolvedValue({ ...running(3, 3), state: 'done', result: null });
+		const { onDone } = monter();
+		await waitFor(() => expect(q('provider-download-start')).not.toBeNull());
+		await fireEvent.click(q('provider-download-start') as HTMLElement);
+		await waitFor(() => expect(q('provider-download-lost')).not.toBeNull());
+		await new Promise((res) => setTimeout(res, 40));
+		expect(getMock).toHaveBeenCalledTimes(1);
+		expect(onDone).not.toHaveBeenCalled();
+	});
+
+	it('`onDone` qui lève : appelé une seule fois, le suivi s’arrête (revue P1, L2)', async () => {
+		const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+		startMock.mockResolvedValue({ jobId: 43 });
+		getMock.mockResolvedValue({ ...running(1, 1), state: 'done', result: { inserted: 3, lastRefreshed: null } });
+		const onDone = vi.fn(() => {
+			throw new Error('rechargement en échec');
+		});
+		monter({ onDone });
+		await waitFor(() => expect(q('provider-download-start')).not.toBeNull());
+		await fireEvent.click(q('provider-download-start') as HTMLElement);
+		await waitFor(() => expect(q('test-report')?.textContent).toBe('3 insérée(s)'));
+		await new Promise((res) => setTimeout(res, 40));
+		expect(onDone).toHaveBeenCalledTimes(1);
+		expect(getMock).toHaveBeenCalledTimes(1);
+		error.mockRestore();
+	});
+
 	it('refus par code : le motif, le formulaire reste', async () => {
 		startMock.mockRejectedValue({
 			code: 'PROVIDER_PERIOD_INVALID',
