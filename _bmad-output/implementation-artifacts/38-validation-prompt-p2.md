@@ -1,10 +1,10 @@
 # Prompt de validation P2 — fiches de l'Epic 38 (PayPal et socle des prestataires)
 
 **Deuxième passe complète** (modèle différent de P1, Sonnet) (`bmad-create-story validate`, `CLAUDE.md` § *Review Iteration Rule*), contexte frais, sur une
-fiche du dépôt `/home/beat/limu/compta/kesh` (branche `epic/38-paypal` ; Kesh en production : Rust/Axum, SvelteKit,
+fiche du dépôt `<dépôt>` (branche `epic/38-paypal` ; Kesh en production : Rust/Axum, SvelteKit,
 MariaDB). À lire d'abord :
 
-- `_bmad-output/planning-artifacts/epics-38-40-cadrage.md` (décisions de Beat **B1–B26**, qui priment) ;
+- `_bmad-output/planning-artifacts/epics-38-40-cadrage.md` (décisions du responsable de l'epic **B1–B26**, qui priment) ;
 - `_bmad-output/planning-artifacts/epic-38-paypal.md` : E*, C-38-*, fiches de stories, révisions, et la section
   **« Arbitrages de l'orchestrateur après la rédaction des fiches » (O1–O12), qui prime sur la fiche** — en particulier
   **O1** : l'unique migration breaking est en **38-2** (contrainte d'IBAN + `match_type`), plus en 38-3 ;
@@ -45,7 +45,7 @@ inter-fiches avec le texte proposé. Message final bref.
 ## Propre à la P2
 
 - Depuis la P1 : correctifs propres (`a9d6215d`), alignement inter-fiches et **découpage de 38-3 en 38-3a et 38-3b**
-  (`00a82990`, liste `38-p1-inter-fiches.md`), décisions **B27/B28** de Beat (frais de conversion au compte de
+  (`00a82990`, liste `38-p1-inter-fiches.md`), décisions **B27/B28** du responsable de l'epic (frais de conversion au compte de
   frais via A33 de l'Epic 37 ; rattachement d'une transaction à plusieurs écritures, table `bank_transaction_extra_entries`,
   `7ef077cc`). Relis le diff de ta fiche : `git diff e80f7695 7ef077cc -- <fiche>` — **la sévérité se déplace vers ce qu'on vient
   d'écrire**. La fiche `38-3-telechargement-cadre.md` est `split` : ne la valide pas.

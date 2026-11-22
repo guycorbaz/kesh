@@ -3,7 +3,7 @@
 Status: done
 
 *Fiche rédigée le 2026-11-20, branche `epic/38-paypal`, numéros de ligne relevés après la fusion de `origin/main`
-(v0.19.0 et suivants, commit de fusion `43ceb541`). Epic 38, **phase 1 KISS** (décision de Beat du 2026-11-20,
+(v0.19.0 et suivants, commit de fusion `43ceb541`). Epic 38, **phase 1 KISS** (décision du responsable de l'epic du 2026-11-20,
 § *Phase 1 KISS* du fichier d'epic). **Dépend de** : rien. **Suivie par** : 38-11b (import), 38-11c2 (classement).*
 
 ## Story
@@ -101,7 +101,7 @@ transaction, afin que l'import (38-11b) n'ait plus qu'à ranger ces lignes dans 
    `Option 1 Name`, `Option 1 Value`, `Option 2 Name`, `Option 2 Value`, `Reference Txn ID`, `Invoice Number`,
    `Custom Number`, `Quantity`, `Receipt ID`, `Balance`, `Address Line 1`, `Address Line 2/District/Neighborhood`,
    `Town/City`, `State/Province/Region/County/Territory/Prefecture/Republic`, `Zip/Postal Code`, `Country`,
-   `Contact Phone Number`, `Subject`, `Note`, `Country Code`, `Balance Impact` (le fichier 2024 de Beat, supprimé, ne
+   `Contact Phone Number`, `Subject`, `Note`, `Country Code`, `Balance Impact` (le fichier 2024 du responsable de l'epic, supprimé, ne
    se relit plus : les **vingt** noms que ses notes relèvent — dont ceux d'AC-2 — et leur ordre font foi, les
    vingt et un autres sont des remplissages dont le nom ne sert à aucun test ; l'intégrateur le dit au Change Log
    s'il en corrige un). **Aucune donnée réelle** : noms inventés, e-mails `@example.invalid`, identifiants `0TEST…`
@@ -142,7 +142,7 @@ langue ou d'un autre rapport est refusé en nommant les colonnes qui manquent.
 ## Notes de développement
 
 - Reprise de l'ancienne fiche 38-7 (client PayPal, `deferred`) : seule l'idée du classement par type survit, en 38-11c2.
-- Format relevé sur le fichier 2024 de Beat (notes sans donnée personnelle,
+- Format relevé sur le fichier 2024 du responsable de l'epic (notes sans donnée personnelle,
   `kesh-gate-logs/epic-38-kiss/paypal-2024-comprendre.md`) : 41 colonnes, UTF-8 avec BOM ; statuts `Completed`,
   `Pending`, `Denied`.
 

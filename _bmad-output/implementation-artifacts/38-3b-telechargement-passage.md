@@ -2,12 +2,12 @@
 
 Status: deferred
 
-*(2026-11-20 — reportée en phase 2 par la décision de Beat (phase 1 KISS, § « Phase 1 KISS » du fichier d'epic) ; validée le 2026-11-15, gardée telle quelle comme base de la phase 2. Ce qu'en reprend la phase 1 est dit dans les fiches 38-11a à 38-11d.)*
+*(2026-11-20 — reportée en phase 2 par la décision du responsable de l'epic (phase 1 KISS, § « Phase 1 KISS » du fichier d'epic) ; validée le 2026-11-15, gardée telle quelle comme base de la phase 2. Ce qu'en reprend la phase 1 est dit dans les fiches 38-11a à 38-11d.)*
 
 *Fiche née le 2026-11-15 du découpage de 38-3 (décision **D-P1-1** de l'orchestrateur, `38-p1-inter-fiches.md` :
 `38-3-telechargement-cadre.md` touchait six modules). Branche `epic/38-paypal`, numéros de ligne relevés au commit
 `8b3d548d` (repris de 38-3). Epic 38 : E5 (écriture de l'en-tête), E6, E9, E10, E12, E20 (a) ; contrats **C-38-5**,
-C-38-11, C-38-12 ; décisions de Beat B2, B8, B9, B12, B20 ; arbitrages O7, O10, O11, O12. **Dépend de** : 38-1
+C-38-11, C-38-12 ; décisions du responsable de l'epic B2, B8, B9, B12, B20 ; arbitrages O7, O10, O11, O12. **Dépend de** : 38-1
 (connexions, coffre, voie unique d'`open`), 38-2 (comptes prestataires), **38-3a** (schéma, entités, gardes), l'Epic 37
 (client HTTP borné et patron « source objet-safe + factice en mode test + route `_test` » de 37-2 AC-3, C-37-6).
 **Suivie par** : 38-7 (connecteur PayPal réel), 38-8 (classement des codes PayPal), 38-9a (écrans), 38-6a/b/c

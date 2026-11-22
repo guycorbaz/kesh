@@ -2,11 +2,11 @@
 
 Status: deferred
 
-*(2026-11-20 — reportée en phase 2 par la décision de Beat (phase 1 KISS, § « Phase 1 KISS » du fichier d'epic) ; validée le 2026-11-15, gardée telle quelle comme base de la phase 2. Ce qu'en reprend la phase 1 est dit dans les fiches 38-11a à 38-11d.)*
+*(2026-11-20 — reportée en phase 2 par la décision du responsable de l'epic (phase 1 KISS, § « Phase 1 KISS » du fichier d'epic) ; validée le 2026-11-15, gardée telle quelle comme base de la phase 2. Ce qu'en reprend la phase 1 est dit dans les fiches 38-11a à 38-11d.)*
 
 *Fiche rédigée le 2026-11-15 (Opus), branche `epic/38-paypal`, numéros de ligne relevés au commit `8b3d548d`. Epic 38
 (`_bmad-output/planning-artifacts/epic-38-paypal.md`) : décisions E1, E2, E3, E4, E18, E24 ; contrats **C-38-1**,
-**C-38-2**, C-38-11, C-38-12, C-38-13 ; décisions de Beat B11, B14, B22, B23 (`epics-38-40-cadrage.md`), qui priment.
+**C-38-2**, C-38-11, C-38-12, C-38-13 ; décisions du responsable de l'epic B11, B14, B22, B23 (`epics-38-40-cadrage.md`), qui priment.
 **Dépend de** : l'Epic 37 livré (liste close des absences admises de 37-1 AC-6, R1 ; numéros de migration postérieurs à
 `20261114000003`). **Suivie par** : 38-2 (comptes prestataires, première table enfant d'une connexion), 38-3a
 (tables des passages et des soldes), 38-3b (passages, colonnes `last_run_*`), 38-7 (« Tester la connexion » réel, `payerId`), 38-9a (écrans).
@@ -101,7 +101,7 @@ Reprises de la fiche d'epic (§ *38-1*), complétées là où un AC en ajoute (m
      `20261025000001_mcp_keys_and_server_settings.sql:81-83`, E24), `created_by_user_id BIGINT NOT NULL` (FK `users`,
      `RESTRICT` — auteur du passage quotidien en 38-3b, E5), `version INT NOT NULL DEFAULT 1`, `created_at`,
      `updated_at` `DATETIME(3) NOT NULL` ; `UNIQUE uq_ppc_company_label (company_id, label)` (deux connexions
-     « PayPal Lightning » seraient indiscernables à l'écran et au passage).
+     « PayPal principal » seraient indiscernables à l'écran et au passage).
      ⚠️ `JSON` est un `LONGTEXT` validé sous MariaDB (E24) : la colonne se lit en `String` (`settings_json`), jamais
      filtrée en SQL.
    - **`_kesh_provider_secrets`** (table **système**, E2, préfixe `_` obligatoire,
@@ -418,7 +418,7 @@ reprise de `main`.
   restreinte de 38-3b ; 38-1 reste réservée à l'Administrateur) et Q-38-1-b (unicité du libellé gardée).*
 - ~~**Q-38-1-a**~~ (38-3b, 38-9a) : le Comptable, qui peut lancer un passage (`POST …/fetch`, E10), doit-il **lire**
   l'état des connexions (lecture restreinte sans `settings`) ? — close (O7, 38-3b AC-6).
-- ~~**Q-38-1-b**~~ (Beat) : l'unicité du libellé par société (`PROVIDER_CONNECTION_LABEL_DUPLICATE`) est un ajout de
+- ~~**Q-38-1-b**~~ (responsable) : l'unicité du libellé par société (`PROVIDER_CONNECTION_LABEL_DUPLICATE`) est un ajout de
   cette fiche ; la retirer si deux connexions homonymes ont un usage. — close (O7, gardée).
 
 ## Change Log

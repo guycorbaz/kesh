@@ -1,7 +1,7 @@
 # Prompt de validation P8 ciblée — fiches de l'Epic 38
 
 Passe **ciblée** (`CLAUDE.md` § *La passe ciblée*) : une seule lentille, braquée sur **la dernière remédiation**.
-Dépôt `/home/beat/limu/compta/kesh`, branche `epic/38-paypal`. Fiche(s) indiquée(s) dans ta mission.
+Dépôt `<dépôt>`, branche `epic/38-paypal`. Fiche(s) indiquée(s) dans ta mission.
 
 ## Périmètre
 

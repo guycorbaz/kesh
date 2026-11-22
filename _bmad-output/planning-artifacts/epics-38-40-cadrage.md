@@ -1,9 +1,9 @@
 # Epics 38 à 40 — cadrage (PayPal, Wise, Stripe)
 
-**Demande de Beat (contributeur), 2026-11-14/15.** Trois epics d'import automatique des comptes de prestataires de
+**Demande du responsable de l'epic (contributeur), 2026-11-14/15.** Trois epics d'import automatique des comptes de prestataires de
 paiement, après l'Epic 37 (multi-devises), dont ils dépendent. Numéros : 35 et 36 réservés ailleurs ; **38 PayPal**,
 **39 Wise**, **40 Stripe (numéro à confirmer par Guy)**. Une branche par story, fusionnée localement dans la branche de
-son epic, puis **une PR par epic** vers le dépôt de Guy (remote `beat`), après celle de l'Epic 37. Le développement
+son epic, puis **une PR par epic** vers le dépôt de Guy (remote du contributeur), après celle de l'Epic 37. Le développement
 attend celui de l'Epic 37, lui-même en attente du retour de Guy sur la page de revue.
 
 ## Demande
@@ -17,11 +17,11 @@ attend celui de l'Epic 37, lui-même en attente du retour de Guy sur la page de 
 - **40 Stripe** : les mêmes éléments pour Stripe, avec un compte intermédiaire (délai de versement, frais,
   conversions).
 
-## Décisions de Beat (questions/réponses du 2026-11-14/15)
+## Décisions du responsable de l'epic (questions/réponses du 2026-11-14/15)
 
 - **B1 — Comptes** : PayPal en compte **business** (application REST *live*, permission *Transaction Search*). Deux
-  comptes PayPal (*Lightning*, *Online*) et un compte Wise, chacun avec trois soldes (CHF, EUR, USD) : **un compte
-  Kesh par solde et par devise** (9 comptes), comptes en devise de l'Epic 37. Exemple : plan 2019 de Beat
+  comptes PayPal (un par usage) et un compte Wise, chacun avec trois soldes (CHF, EUR, USD) : **un compte
+  Kesh par solde et par devise** (9 comptes), comptes en devise de l'Epic 37. Exemple : plan 2019 du responsable de l'epic
   (`data-not-committed/2024/`, hors dépôt ; ébauche de correspondance `mapping-comptes-2024.csv` : PayPal 1030–1033,
   Wise 1034–1036, Débiteurs Stripe 1101–1103, frais d'encaissement 6910–6914, frais bancaires 6901).
 - **B2 — Nouveau solde** : un solde de devise sans compte Kesh est **listé et proposé** ; l'Administrateur confirme la
@@ -35,11 +35,11 @@ attend celui de l'Epic 37, lui-même en attente du retour de Guy sur la page de 
 - **B5 — Règles d'affectation** : nouveaux critères — courriel du payeur ou du marchand, préfixe de facture, nom
   d'article, code d'événement du prestataire, sens (entrée/sortie). Une règle **propose** ; l'utilisateur accepte en
   lot (`accept_batch`, *Pattern batch*). Aucune écriture d'office.
-- **B6 — TVA** : la société de Beat est **assujettie** ; la TVA est calculée par ses boutiques, non par PayPal ou
+- **B6 — TVA** : la société du responsable de l'epic est **assujettie** ; la TVA est calculée par ses boutiques, non par PayPal ou
   Stripe. Une écriture proposée **sépare la TVA** selon la **règle TVA par défaut du compte** de produit ou de charge
   (code et taux), nécessaire au décompte — p. ex. l'**impôt sur les acquisitions** pour un achat de service à
   l'étranger sans TVA. Kesh n'a aujourd'hui **aucun code TVA par défaut sur un compte** : à créer. ⚠️ Les dix P1 de
-  la TVA (jalon « Vague 2 ») restent ouverts : Beat ne dépose pas de décompte TVA par Kesh cette année et passe la TVA
+  la TVA (jalon « Vague 2 ») restent ouverts : le responsable de l'epic ne dépose pas de décompte TVA par Kesh cette année et passe la TVA
   par l'API et ces imports seulement. À dire à Guy dans les epics (le report des P1 TVA reposait sur un seul
   utilisateur non assujetti).
 - **B7 — Remboursements et litiges** : un remboursement est rapproché de sa transaction d'origine et proposé comme
@@ -50,7 +50,7 @@ attend celui de l'Epic 37, lui-même en attente du retour de Guy sur la page de 
   d'antérieur. PayPal ne remonte que trois ans.
 - **B9 — Téléchargement** : **réglage** par compte de prestataire : quotidien automatique, ou à la demande seulement
   (bouton « télécharger maintenant » dans les deux cas).
-- **B10 — Relevés** : **PayPal** : aucune API ; Beat télécharge le *custom account statement* annuel et le **joint à
+- **B10 — Relevés** : **PayPal** : aucune API ; le responsable de l'epic télécharge le *custom account statement* annuel et le **joint à
   la main** (document de l'exercice et du compte). **Wise** : PDF par l'API (`balance-statements/…/statement.pdf`),
   avec l'authentification forte (SCA : défi signé par une clé privée dont la clé publique est déposée chez Wise,
   environ tous les 90 jours) ; rangé comme document du compte et de l'exercice. **Stripe** : pas de PDF ; rapports
@@ -58,7 +58,7 @@ attend celui de l'Epic 37, lui-même en attente du retour de Guy sur la page de 
 - **B11 — Secrets** : enregistrés par société en base, **chiffrés** par une clé tirée d'une variable d'environnement
   neuve ; saisis par un Administrateur (écran ou session API), jamais réaffichés.
 - **B12 — Tests** : aucun appel réseau en CI ; réponses PayPal, Wise, Stripe enregistrées et anonymisées ; recette
-  sur les comptes réels de Beat sur une instance jetable, avec des accès en lecture seule.
+  sur les comptes réels du responsable de l'epic sur une instance jetable, avec des accès en lecture seule.
 - **B13 — Stripe (40)** : une vente Stripe se passe au **compte intermédiaire** de la devise (Débiteurs Stripe :
   produit net + TVA séparée, B6) ; frais et conversions sortent de ce compte ; le versement est un virement de ce compte
   vers la banque (UBS), rattaché à la ligne du relevé bancaire comme un virement entre ses propres comptes (Epic 34) ; à
@@ -81,7 +81,7 @@ attend celui de l'Epic 37, lui-même en attente du retour de Guy sur la page de 
   <https://docs.wise.com/api-docs/features/authentication-access/personal-tokens>, SCA
   <https://docs.wise.com/guides/developer/auth-and-security/sca-over-api>.
 
-## Décisions de Beat — suite (2026-11-15, sur le projet d'epic 38)
+## Décisions du responsable de l'epic — suite (2026-11-15, sur le projet d'epic 38)
 
 - **B16 — Aucune migration breaking.** Le caractère « prestataire » d'un compte bancaire, ses comptes liés (frais et
   autres) et sa devise vivent dans les **réglages de la connexion du prestataire** (table neuve), non dans des valeurs
@@ -101,7 +101,7 @@ attend celui de l'Epic 37, lui-même en attente du retour de Guy sur la page de 
 - **B21 — WHMCS et CB Paid Subscriptions** : leurs exports CSV s'importent par un **script hors de Kesh**, par l'API ;
   l'API doit permettre à ce script de créer les écritures ou de les rattacher aux transactions de prestataire.
 
-## Décisions de Beat — suite (2026-11-15, après la révision B16–B21)
+## Décisions du responsable de l'epic — suite (2026-11-15, après la révision B16–B21)
 
 - **B22 — Une migration breaking acceptée** (remplace B16 sur ce point) : valeurs honnêtes `source_format =
   'PROVIDER_API'` et types de critère neufs des règles (`match_type`), sans détour (`MANUAL`, clé inerte
@@ -117,7 +117,7 @@ attend celui de l'Epic 37, lui-même en attente du retour de Guy sur la page de 
 - **B26 — Exigences** : chaque fiche des Epics 37 à 40 liste ses **FR** (exigences fonctionnelles) et **NFR**
   (non fonctionnelles), numérotées ; Guy dira s'il les veut en issues GitHub ou dans les fiches.
 
-## Décisions de Beat — suite (2026-11-15, questions de la rédaction)
+## Décisions du responsable de l'epic — suite (2026-11-15, questions de la rédaction)
 
 - **B27 — Frais sur une conversion** : un frais donné à part sur la moitié créditée d'une conversion va au
   **sous-compte de frais** du prestataire et de la devise (B3), jamais dans la différence de change. Demande un

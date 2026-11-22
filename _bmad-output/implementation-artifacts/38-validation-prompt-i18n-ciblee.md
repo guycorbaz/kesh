@@ -1,7 +1,7 @@
 # Prompt de validation ciblée — préfixes i18n (constat de la validation de l'Epic 40)
 
 Passe **ciblée** (`CLAUDE.md` § *La passe ciblée*), contexte frais, ouvrant un mini-cycle neuf sur des fiches closes de
-l'Epic 38 (constat venu de l'Epic 40, comme un CR). Dépôt `/home/beat/limu/compta/kesh`, branche `epic/38-paypal`.
+l'Epic 38 (constat venu de l'Epic 40, comme un CR). Dépôt `<dépôt>`, branche `epic/38-paypal`.
 
 ## Périmètre
 

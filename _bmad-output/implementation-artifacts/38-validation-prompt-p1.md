@@ -1,10 +1,10 @@
 # Prompt de validation P1 — fiches de l'Epic 38 (PayPal et socle des prestataires)
 
 **Première passe complète** (`bmad-create-story validate`, `CLAUDE.md` § *Review Iteration Rule*), contexte frais, sur une
-fiche du dépôt `/home/beat/limu/compta/kesh` (branche `epic/38-paypal` ; Kesh en production : Rust/Axum, SvelteKit,
+fiche du dépôt `<dépôt>` (branche `epic/38-paypal` ; Kesh en production : Rust/Axum, SvelteKit,
 MariaDB). À lire d'abord :
 
-- `_bmad-output/planning-artifacts/epics-38-40-cadrage.md` (décisions de Beat **B1–B26**, qui priment) ;
+- `_bmad-output/planning-artifacts/epics-38-40-cadrage.md` (décisions du responsable de l'epic **B1–B26**, qui priment) ;
 - `_bmad-output/planning-artifacts/epic-38-paypal.md` : E*, C-38-*, fiches de stories, révisions, et la section
   **« Arbitrages de l'orchestrateur après la rédaction des fiches » (O1–O12), qui prime sur la fiche** — en particulier
   **O1** : l'unique migration breaking est en **38-2** (contrainte d'IBAN + `match_type`), plus en 38-3 ;

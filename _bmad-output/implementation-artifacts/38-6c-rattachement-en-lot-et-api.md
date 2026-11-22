@@ -10,7 +10,7 @@ Status: split
 
 *Fiche rédigée le 2026-11-15 (Opus), branche `epic/38-paypal`, numéros de ligne relevés sur `8b3d548d`. Epic 38
 (`_bmad-output/planning-artifacts/epic-38-paypal.md`) : E3, E11, E15, E21, E22, E23, C-38-0, C-38-12, C-38-14 ;
-décisions de Beat B17, B21, **B28** (`epics-38-40-cadrage.md`). **Dépend de 38-3a** (colonnes `provider_tx_id`, `invoice_ref`
+décisions du responsable de l'epic B17, B21, **B28** (`epics-38-40-cadrage.md`). **Dépend de 38-3a** (colonnes `provider_tx_id`, `invoice_ref`
 de `bank_transactions`, C-38-4 ; comptes prestataires porteurs de transactions) et, à travers elle, de **38-2** (compte
 bancaire lié à un compte du plan **en devise**, levée de C-37-9, E11) et de l'**Epic 37** (37-1 : `accounts.currency` ;
 37-3a : `journal_entry_lines.amount_currency` toujours positif, sens porté par débit/crédit, `chk_jel_fx_amount` ;
@@ -95,7 +95,7 @@ Reprises de la fiche d'epic (§ 38-6c), complétées là où un AC l'exige.
    RECONCILIATION_ENTRY_NOT_LINKABLE` (`errors.rs:3241`) — changer le code d'une route publiée casserait ses clients.
    Le diagnostic qui distingue les motifs est une lecture de plus, après le refus de la règle, qui **étiquette** et
    n'admet jamais (AC-5).
-5. **Écritures 2024 « au brut, frais à part » — tranché par B28 : elles se rattachent.** Dans les livres 2024 de Beat,
+5. **Écritures 2024 « au brut, frais à part » — tranché par B28 : elles se rattachent.** Dans les livres 2024 du responsable de l'epic,
    les frais PayPal sont des **écritures à part** (B28) : une vente passée au brut (débit PayPal 100) et ses frais par
    une autre écriture (crédit PayPal 3.20) ; aucune écriture seule ne vaut 96.80. L'epic (E21) ne prévoyait que « une
    transaction ↔ une écriture » ; or le modèle actuel ne peut pas dire plus : **une** colonne,
@@ -128,7 +128,7 @@ Reprises de la fiche d'epic (§ 38-6c), complétées là où un AC l'exige.
 ## Questions ouvertes
 
 - *Close* — **Q-38-6c-1** (frais PayPal de 2024 : ligne de l'écriture de vente, ou écriture à part ?) : **écritures à
-  part**, B28 (Beat, 2026-11-15) ; d'où l'Écart 5 récrit et les AC-12 à AC-15.
+  part**, B28 (responsable, 2026-11-15) ; d'où l'Écart 5 récrit et les AC-12 à AC-15.
 
 ## Critères d'acceptation
 

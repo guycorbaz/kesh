@@ -3,7 +3,7 @@
 Status: done
 
 *Fiche rédigée le 2026-11-20, branche `epic/38-paypal` (phase 1 au commit `90428594`). Epic 38, **phase 2**
-(décisions de Beat du 2026-11-20, `kesh-gate-logs/epic-38-kiss/phase2-decisions.md`, autorisations du soir comprises).
+(décisions du responsable de l'epic du 2026-11-20, `kesh-gate-logs/epic-38-kiss/phase2-decisions.md`, autorisations du soir comprises).
 **Dépend de** : 38-11a (modèle `PaypalRow`, `crates/kesh-import/src/paypal.rs`, développé au commit `1608bb62`), 38-11b
 (comptes PayPal, ventilation et doublons), 38-11c1 et 38-11c2 (le rapprochement lit `bank_transactions`, rien à
 changer). **Suivie par** : 38-12b (bouton, manuels, E2E). Scindée de 38-12b par la règle de splitting préventif : une
@@ -41,7 +41,7 @@ par des appels réels en lecture seule (Notes de développement).*
 | **429** `RATE_LIMIT_REACHED` | **confirmé** (page de limitation de débit) ; en-tête **`Retry-After`** : **non documenté**, lu par précaution |
 | hôte de test `api-m.sandbox.paypal.com` | **confirmé** ; hôte réel `api-m.paypal.com` : cité par les portées de l'exemple d'authentification, **non dit** comme hôte de production |
 | OAuth : `POST /v1/oauth2/token`, authentification Basic `client_id:secret`, corps `grant_type=client_credentials` en `application/x-www-form-urlencoded`, réponse `access_token`, `token_type`, `expires_in` (secondes) | **confirmé** (page d'authentification) |
-| nom exact de la fonction à cocher à la création de l'application, conditions d'accès du compte (type, activation) | **non confirmés** ; « Transaction Search » est le nom de la décision de Beat |
+| nom exact de la fonction à cocher à la création de l'application, conditions d'accès du compte (type, activation) | **non confirmés** ; « Transaction Search » est le nom de la décision du responsable de l'epic |
 | libellé du CSV pour le statut `V` | **non confirmé** (sans effet : tout statut autre que `Completed` est écarté par 38-11b) |
 | correspondance code d'événement ↔ libellé du CSV (`Type`) | **partielle** : la page de PayPal décrit les codes, pas les libellés du CSV (AC-5) |
 
@@ -166,7 +166,7 @@ vers `PaypalRow`, la table des types et le passage `PaypalRow` → `ProviderLine
    | `line` | rang de la transaction dans le téléchargement, à partir de 1 (le CSV compte l'en-tête comme ligne 1 : le rang ne sert qu'aux messages) |
 
    **Table des types**, fermée, en constante `PAYPAL_EVENT_TYPES` (code → libellé du CSV). Les libellés sont **ceux
-   que lit la phase 1**, relevés sur le CSV réel de Beat (`kesh-gate-logs/epic-38-kiss/paypal-2024-comprendre.md`) :
+   que lit la phase 1**, relevés sur le CSV réel du responsable de l'epic (`kesh-gate-logs/epic-38-kiss/paypal-2024-comprendre.md`) :
    les listes de `classify` (38-11c2 AC-4 : ventes, conversions, retraits) et `PAYPAL_NEUTRAL_PAIR_TYPES` (38-11b AC-5).
    **Test obligatoire** : chaque libellé de ces listes est l'image d'au moins un code de la table — sans quoi une vente
    téléchargée tomberait en `Other` et une paire de retenue ne serait plus neutralisée, en silence (rien de faux n'est
@@ -320,10 +320,10 @@ rattrape, sans doublon.
 ## Notes de développement
 
 - **Aucun appel au vrai PayPal en test ni en CI.** Au développement, des **appels réels en lecture seule** sont permis
-  (autorisation de Beat du 2026-11-20) : chaque requête passe d'abord par `kesh-gate-logs/appel-reel.sh paypal
+  (autorisation du responsable de l'epic du 2026-11-20) : chaque requête passe d'abord par `kesh-gate-logs/appel-reel.sh paypal
   "<motif>"` (une par minute, quarante au plus pour PayPal ; code 3 = quota épuisé, s'arrêter), avec
   `data-not-committed/paypal-api.env`, jamais affiché, commité ni envoyé ; aucune réponse réelle n'entre dans le dépôt.
-  Budget conseillé : un jeton, puis une ou deux pages d'une période dont Beat a le CSV, pour vérifier les points « non
+  Budget conseillé : un jeton, puis une ou deux pages d'une période dont le responsable de l'epic a le CSV, pour vérifier les points « non
   confirmés » (hôte réel, signe des frais, `payer_info` d'un débit, libellés des codes par jointure sur l'identifiant
   de transaction) ; le résultat s'écrit au Dev Agent Record **sans donnée personnelle** (codes, libellés, signes).
   L'essai complet (tout 2024, d'abord par CSV, puis en ligne) se joue sur l'instance de répétition (8889), jamais sur
@@ -345,7 +345,7 @@ rattrape, sans doublon.
   registre et phrase du manuel relevés dans cette story ; clés d'API refusées en `API_KEY_OPERATION_FORBIDDEN` ;
   `payer_info` d'un débit non confirmé ; OAuth, 429 et fuseau confirmés à la doc ; 412 pour la paire absente ;
   `KESH_PAYPAL_BASE_URL` fermée ; jeton par tâche, lecture JSON dans `kesh-import`, trace unique par source ; appels
-  réels de développement selon les autorisations de Beat.
+  réels de développement selon les autorisations du responsable de l'epic.
 - 2026-11-20 — validation P1 de la phase 2, complément (Claude Opus 5.5, même passe, sur message du coordinateur) :
   alignement sur le **socle commun S1 à S9** des fichiers `epic-39-wise.md` et `epic-40-stripe.md` (texte identique,
   relevé par `diff` ; rapport `kesh-gate-logs/epic-39-40-kiss/validation/39-12-P1.md`, § « Ce qui doit changer côté
@@ -419,7 +419,7 @@ Claude Opus 5.5 (`claude-opus-5-5`), worktree `kesh-wt38p2`.
 ### Ce que les appels réels ont confirmé (métadonnées seules, aucune donnée personnelle conservée)
 
 33 appels sur 40 (`appel-reel.sh paypal`, journal `kesh-gate-logs/appels-reels/paypal.log`), lecture seule, deux
-comptes de Beat ; réponses brutes gardées hors dépôt (`data-not-committed/paypal-api-samples/`, mode 600) ; analyse par
+comptes du responsable de l'epic ; réponses brutes gardées hors dépôt (`data-not-committed/paypal-api-samples/`, mode 600) ; analyse par
 décomptes seulement.
 
 | Point « non confirmé » de la fiche | Constat |

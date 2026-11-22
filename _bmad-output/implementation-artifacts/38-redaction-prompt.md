@@ -1,12 +1,12 @@
 # Prompt de rédaction des fiches de l'Epic 38 (PayPal et socle des prestataires)
 
-Dépôt `/home/beat/limu/compta/kesh`, branche `epic/38-paypal` (n'en change pas ; un autre agent travaille dans
+Dépôt `<dépôt>`, branche `epic/38-paypal` (n'en change pas ; un autre agent travaille dans
 `../kesh-wt37`, n'y touche pas). Kesh : comptabilité suisse en production (Rust/Axum `crates/`, SvelteKit `frontend/`,
 MariaDB). Artefacts en **français**, concis et factuels.
 
 ## À lire d'abord
 
-- `_bmad-output/planning-artifacts/epics-38-40-cadrage.md` (décisions de Beat **B1–B26**, qui priment) ;
+- `_bmad-output/planning-artifacts/epics-38-40-cadrage.md` (décisions du responsable de l'epic **B1–B26**, qui priment) ;
 - `_bmad-output/planning-artifacts/epic-38-paypal.md` : décisions E*, contrats C-38-*, fiche de chaque story
   (périmètre, modules, migrations, FR/NFR déjà listées), section « Révision B22–B26 » ;
 - `_bmad-output/planning-artifacts/epic-37-multi-devises.md` (ce que l'Epic 37 livre, dont 38 dépend) ;

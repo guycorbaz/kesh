@@ -2,7 +2,7 @@
 
 Status: deferred
 
-*(2026-11-20 — reportée en phase 2 par la décision de Beat (phase 1 KISS, § « Phase 1 KISS » du fichier d'epic) ; validée le 2026-11-15, gardée telle quelle comme base de la phase 2. Ce qu'en reprend la phase 1 est dit dans les fiches 38-11a à 38-11d.)*
+*(2026-11-20 — reportée en phase 2 par la décision du responsable de l'epic (phase 1 KISS, § « Phase 1 KISS » du fichier d'epic) ; validée le 2026-11-15, gardée telle quelle comme base de la phase 2. Ce qu'en reprend la phase 1 est dit dans les fiches 38-11a à 38-11d.)*
 
 *Fiche rédigée le 2026-11-15 (Opus), branche `epic/38-paypal`. Epic 38 (`planning-artifacts/epic-38-paypal.md`),
 E2, E3, E9, E10, E20, E24 ; contrats C-38-1, C-38-2, C-38-5, C-38-11, C-38-12. Décisions B1, B8, B11, B12, B23.
@@ -34,7 +34,7 @@ PayPal fiable, bornée et sans fuite de secret.
   `start_date`, `end_date` obligatoires, **RFC 3339, secondes requises**, écart **≤ 31 jours** ; `fields`
   (`transaction_info` par défaut, `all` pour tout) ; `balance_affecting_records_only` (`Y` par défaut) ;
   `page_size` 1–500 (défaut 100) ; `page` ≥ 1 (la description dit « zero-relative », les exemples commencent à 1 :
-  **à constater sur les réponses de Beat**) ; historique de **trois ans** ; une transaction peut mettre **jusqu'à
+  **à constater sur les réponses du responsable de l'epic**) ; historique de **trois ans** ; une transaction peut mettre **jusqu'à
   trois heures** à apparaître ; « if any optional query parameter is specified, the `ending_balance` response field
   is empty ». Réponse : `transaction_details[]`, `account_number`, `start_date`, `end_date`,
   `last_refreshed_datetime`, `page`, `total_items`, `total_pages`, `links`.
@@ -134,7 +134,7 @@ PayPal fiable, bornée et sans fuite de secret.
      erreur de programmation de l'appelant, `tracing::error!`).
    - **Dates rendues** : PayPal peut rendre un décalage sans deux-points (`2024-03-05T10:15:00+0000`), non conforme à
      RFC 3339 strict (l'en-tête `PayPal-Enforce-ISO8601-Format` existe pour cela) ; le validateur accepte `Z`, `±HH:MM`
-     **et** `±HHMM`, convertit en UTC, et un test fige chaque forme — **à constater sur les réponses de Beat** ; sans
+     **et** `±HHMM`, convertit en UTC, et un test fige chaque forme — **à constater sur les réponses du responsable de l'epic** ; sans
      cette tolérance, une page entière serait rejetée à tort. Les liens `links` de la réponse ne sont **jamais
      suivis** (URL de base constante).
    - Rendu interne : `RawPage { records: Vec<PaypalRecord>, page, total_pages, total_items }`. `PaypalRecord` est la **forme
@@ -163,7 +163,7 @@ PayPal fiable, bornée et sans fuite de secret.
      validation P2) ; chaînes > 2000 caractères (sujet, nom, courriel > 254) ;
      `item_details` > 500 éléments. **Unicité** : deux enregistrements de même `transaction_id` **et** même devise dans
      une page → page rejetée (la doc dit que les identifiants ne sont pas uniques ; une collision dans une devise
-     casserait `UNIQUE (bank_account_id, provider_tx_id)` de E6 en silence — à constater sur les réponses de Beat, AC-12).
+     casserait `UNIQUE (bank_account_id, provider_tx_id)` de E6 en silence — à constater sur les réponses du responsable de l'epic, AC-12).
      ⚠️ Le même `transaction_id` dans **deux devises** est admis ici, mais `validate_page` de 38-3b refuse « deux fois
      le même `provider_tx_id` dans une page » sans regarder la devise : aligné à la P2 — 38-3b AC-2 refuse « le même
      couple `(provider_tx_id, currency)` », la clé unique étant par compte bancaire, donc par devise.
@@ -307,7 +307,7 @@ PayPal fiable, bornée et sans fuite de secret.
       (`AUTHENTICATION_FAILURE`, `NOT_AUTHORIZED`, `RESULTSET_TOO_LARGE`, `INVALID_REQUEST`, 500, 503). Anonymisation :
       courriels, noms, `account_id`, `transaction_id`, `paypal_reference_id`, `invoice_id` remplacés de façon
       **cohérente** (une même valeur réelle → une même valeur factice, liens gardés) ; montants, devises, codes
-      d'événement, statuts et dates gardés. Les réponses réelles de Beat sont relevées sur une **instance jetable**
+      d'événement, statuts et dates gardés. Les réponses réelles du responsable de l'epic sont relevées sur une **instance jetable**
       (jamais sa production), anonymisées hors du dépôt, puis seules les versions anonymisées entrent ; un test vérifie
       qu'aucune fixture ne contient `@` hors du domaine `example.invalid`.
     - Contre un serveur axum local (`with_base_url`) : jeton demandé une fois pour deux appels, renouvelé après
@@ -342,8 +342,8 @@ PayPal fiable, bornée et sans fuite de secret.
   non demandée à l'application en lecture seule (B12). **« Tester la connexion » pose `payerId` seulement.**
   **O10 (arbitrage de l'orchestrateur) : `accountEmail` est retiré du JSON** — `PaypalSettings` n'en porte pas
   (38-1 AC-4 et E24 à aligner : champ, test de refus d'un champ serveur fourni par le client, instantané d'audit).
-  La reconnaissance d'un virement entre les deux comptes PayPal de Beat se fait par `payerId`
-  (`payer_info.account_id` de la contrepartie, 38-8 ; *à constater sur les réponses de Beat*, Q-38-8-4).
+  La reconnaissance d'un virement entre les deux comptes PayPal du responsable de l'epic se fait par `payerId`
+  (`payer_info.account_id` de la contrepartie, 38-8 ; *à constater sur les réponses du responsable de l'epic*, Q-38-8-4).
   Q-38-7-1 **close**.
 - **Limite de 10 000 résultats** : non chiffrée par la référence actuelle (voir *Source*) ; Kesh traite le code
   d'erreur et le seuil (AC-5).
@@ -357,7 +357,7 @@ PayPal fiable, bornée et sans fuite de secret.
 
 - ~~Q-38-7-1~~ close (O10 : `accountEmail` retiré). ~~Q-38-7-2~~ close (O10 : découpage dans le connecteur).
 - **Q-38-7-3** (recette) : `page` commence-t-il à 1 (défaut et minimum de la référence) ou 0 (sa description) ? À
-  constater sur les réponses de Beat avant la fixture ; le code n'en suppose qu'un, testé. Idem : forme du décalage
+  constater sur les réponses du responsable de l'epic avant la fixture ; le code n'en suppose qu'un, testé. Idem : forme du décalage
   des dates rendues (`Z`, `+00:00`, `+0000`).
 
 ## Contrats à amender chez 38-3b (texte proposé, cf. rapport de validation ; portés par la liste inter-fiches P1)

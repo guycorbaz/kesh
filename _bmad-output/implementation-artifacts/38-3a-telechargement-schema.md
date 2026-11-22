@@ -2,12 +2,12 @@
 
 Status: deferred
 
-*(2026-11-20 — reportée en phase 2 par la décision de Beat (phase 1 KISS, § « Phase 1 KISS » du fichier d'epic) ; validée le 2026-11-15, gardée telle quelle comme base de la phase 2. Ce qu'en reprend la phase 1 est dit dans les fiches 38-11a à 38-11d.)*
+*(2026-11-20 — reportée en phase 2 par la décision du responsable de l'epic (phase 1 KISS, § « Phase 1 KISS » du fichier d'epic) ; validée le 2026-11-15, gardée telle quelle comme base de la phase 2. Ce qu'en reprend la phase 1 est dit dans les fiches 38-11a à 38-11d.)*
 
 *Fiche née le 2026-11-15 du découpage de 38-3 (décision **D-P1-1** de l'orchestrateur, `38-p1-inter-fiches.md` :
 `38-3-telechargement-cadre.md` touchait six modules). Branche `epic/38-paypal`, numéros de ligne relevés au commit
 `8b3d548d` (repris de 38-3). Epic 38 : E4 (source seule), E5, E6 (schéma), E7, E8, E12 (schéma), E18, E20 (schéma) ;
-contrats **C-38-0**, **C-38-4**, **C-38-5** (schéma, en-tête, gardes) ; décisions de Beat B2, B22 ; arbitrages **O1**,
+contrats **C-38-0**, **C-38-4**, **C-38-5** (schéma, en-tête, gardes) ; décisions du responsable de l'epic B2, B22 ; arbitrages **O1**,
 O9. **Dépend de** : 38-1 (connexions), **38-2** (unique migration breaking de l'epic, `payment_provider_accounts`,
 `is_provider_account_in_tx`), Epic 37 (liste close de 37-1 AC-6). **Suivie par** : **38-3b** (le passage, qui écrit
 dans ce schéma), 38-4 (lit `counterparty_email`, `invoice_ref`, `item_names`, `event_code`), 38-6a, 38-6b, 38-6c1, 38-6c2
@@ -272,7 +272,7 @@ mouvements en attendant les propositions de 38-6a.
 ## Questions ouvertes
 
 - **Q-38-3-c** (repris de 38-3, arbitré par O9) — refus des imports de fichier sur un compte prestataire (AC-6) : une
-  reprise d'historique antérieur aux trois ans de PayPal par CSV en serait empêchée (Beat part du 1.1.2024, B8 : sans
+  reprise d'historique antérieur aux trois ans de PayPal par CSV en serait empêchée (le responsable de l'epic part du 1.1.2024, B8 : sans
   effet pour lui).
 
 ## Change Log

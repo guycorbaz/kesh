@@ -2,7 +2,7 @@
 
 Status: deferred
 
-*(2026-11-20 — reportée en phase 2 par la décision de Beat (phase 1 KISS, § « Phase 1 KISS » du fichier d'epic) ; validée le 2026-11-15, gardée telle quelle comme base de la phase 2. Ce qu'en reprend la phase 1 est dit dans les fiches 38-11a à 38-11d.)*
+*(2026-11-20 — reportée en phase 2 par la décision du responsable de l'epic (phase 1 KISS, § « Phase 1 KISS » du fichier d'epic) ; validée le 2026-11-15, gardée telle quelle comme base de la phase 2. Ce qu'en reprend la phase 1 est dit dans les fiches 38-11a à 38-11d.)*
 
 *Fiche rédigée le 2026-11-15 (Opus), branche `epic/38-paypal`. Epic 38 (`planning-artifacts/epic-38-paypal.md`),
 E1, E2, E3, E10, E11, E12, E19, E20, E24 ; contrats C-38-1, C-38-2, C-38-3, C-38-5, C-38-12. Décisions B1, B2, B3,
@@ -438,7 +438,7 @@ rapproché.
 14. **AC-14 — Ce que la story ne touche pas.** Aucune migration ; aucune action d'audit neuve (les écritures passent
     par les routes de 38-1, 38-2, 38-3a, 38-3b, 38-7 qui auditent ; la route de l'AC-8 lit) ; **aucun outil MCP** (E23 :
     connexions, passages et contrôles ne sont pas exposés ; `kesh_ecritures` suffit pour les écritures) ; aucune
-    donnée de la production de Beat dans les captures ni les tests.
+    donnée de la production du responsable de l'epic dans les captures ni les tests.
 15. **AC-15 — Les écrans existants que les gardes de 38-2 et 38-3a touchent** (FR-38-9a-7 ; dévolus à cette story par
     38-3a et 38-2 AC-7).
     - **Imports** (`frontend/src/lib/features/bank-import/bank-import-display.ts:14-36`, aujourd'hui code brut pour toute
@@ -646,7 +646,7 @@ après chaque reprise de `main`.
   (38-3b AC-7, relu : « `< as_of` du dernier `reported` … à l'instant exact du `reported` … jamais ») ; repli sans
   `booked_at` inchangé (journée de Zurich, inclusive, comme `ledger`) ; test Rust du mouvement à `booked_at = asOf`
   ajouté (AC-8, tâches de test). Garde G4-bis (`textes_coherents.rs`, lue : manuel utilisateur, guide de démarrage,
-  quatre catalogues) : la fiche ne cite aucun numéro de compte du plan de Beat — rien à changer. À relire par une passe
+  quatre catalogues) : la fiche ne cite aucun numéro de compte du plan du responsable de l'epic — rien à changer. À relire par une passe
   ciblée.
 - 2026-11-15 — validation P8 ciblée (Sonnet) : 1 finding LOW, 0 au-dessus. Relu : `git diff be2ce1a9 d3abf458` de la
   fiche ; AC-8 (b) `booked_at < asOf` concorde avec 38-3b AC-7 (« `< as_of` du dernier `reported` … à l'instant exact

@@ -10,7 +10,7 @@ font foi. Le décodage tolérant de `ReconciliationMatchType` passe à **38-4**.
 
 *Fiche rédigée le 2026-11-15 (Opus), branche `epic/38-paypal`, numéros de ligne relevés au commit `8b3d548d`. Epic 38 :
 décisions E4, E5, E6, E7, E8, E9, E10, E12, E18, E20 (a) ; contrats **C-38-0**, **C-38-4**, **C-38-5**,
-C-38-11, C-38-12 ; décisions de Beat B2, B8, B9, B12, B20, **B22** ; arbitrage **O1** (voir ci-dessous). **Dépend de** :
+C-38-11, C-38-12 ; décisions du responsable de l'epic B2, B8, B9, B12, B20, **B22** ; arbitrage **O1** (voir ci-dessous). **Dépend de** :
 38-1, **38-2 (qui porte l'unique migration breaking de l'epic)**, l'Epic 37 (client HTTP borné et patron « source
 objet-safe + factice en mode test + route `_test` » de 37-2 AC-3, C-37-6 ; liste close de 37-1 AC-6). **Suivie par** :
 38-4 (évalue les critères neufs déclarés ici), 38-6a/b/c (propositions et rattachement des transactions téléchargées),
@@ -434,7 +434,7 @@ d'imputation (38-6) reposent sur un relevé complet et vérifiable.
   `ascii_bin` sur `match_type` — est tranchée par O2 et vit dans la migration de 38-2.)*
 - **Q-38-3-b** — découpage préventif en 38-3a / 38-3b (notes) : **recommandé** (six modules) ; à décider.
 - **Q-38-3-c** — refus des imports de fichier sur un compte prestataire (AC-11) : proposé ; une reprise d'historique
-  antérieur aux trois ans de PayPal par CSV en serait empêchée (Beat part du 1.1.2024, B8 : sans effet pour lui).
+  antérieur aux trois ans de PayPal par CSV en serait empêchée (le responsable de l'epic part du 1.1.2024, B8 : sans effet pour lui).
 
 ## Change Log
 

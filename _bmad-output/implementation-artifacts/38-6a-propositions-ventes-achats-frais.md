@@ -2,9 +2,9 @@
 
 Status: deferred
 
-*(2026-11-20 — reportée en phase 2 par la décision de Beat (phase 1 KISS, § « Phase 1 KISS » du fichier d'epic) ; validée le 2026-11-15, gardée telle quelle comme base de la phase 2. Ce qu'en reprend la phase 1 est dit dans les fiches 38-11a à 38-11d.)*
+*(2026-11-20 — reportée en phase 2 par la décision du responsable de l'epic (phase 1 KISS, § « Phase 1 KISS » du fichier d'epic) ; validée le 2026-11-15, gardée telle quelle comme base de la phase 2. Ce qu'en reprend la phase 1 est dit dans les fiches 38-11a à 38-11d.)*
 
-- **Epic** : 38 (`_bmad-output/planning-artifacts/epic-38-paypal.md`, § *38-6a*, E13, E15, C-38-8) ; décisions de Beat B3, B5,
+- **Epic** : 38 (`_bmad-output/planning-artifacts/epic-38-paypal.md`, § *38-6a*, E13, E15, C-38-8) ; décisions du responsable de l'epic B3, B5,
   B6, B17 (`epics-38-40-cadrage.md`), qui priment.
 - **Dépend de** : **38-3a** (colonnes de transaction de prestataire, C-38-4), **38-4** (critères et filtres des règles, C-38-6),
   **38-5** (TVA par défaut, C-38-7), **38-2** (réglages de compte prestataire, C-38-3), **38-6c1** (signal « déjà
@@ -143,7 +143,7 @@ afin que **mes comptes PayPal se tiennent sans saisie, sans qu'aucune écriture 
 - **C-38-6a-5 — Montants du prestataire.** Le constructeur exige `amount = gross_amount + fee_amount` (montants signés ;
   38-8 AC-4 : `amount = gross_amount + fee_amount`, net du même signe que le brut ou nul, `|frais| ≤ |brut|` ; pour un
   genre `fee`, `fee_amount = 0` et `amount = gross_amount` ; le signe de `fee_amount` se constate sur les réponses de
-  Beat, 38-8) ; sinon aucun
+  le responsable de l'epic, 38-8) ; sinon aucun
   candidat, `blockedBy` `PROVIDER_AMOUNTS_INCONSISTENT` (`details: { amount, grossAmount, feeAmount }`). Un `gross_amount`
   ou `fee_amount` `NULL` sur une transaction de prestataire est le même refus.
 - **C-38-6a-6 — Ligne d'arrondi (NFR-38-6a-4).** Chaque ligne en devise vaut `round(montant × cours, 2)`

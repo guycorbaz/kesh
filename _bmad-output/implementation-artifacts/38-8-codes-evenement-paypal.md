@@ -2,7 +2,7 @@
 
 Status: deferred
 
-*(2026-11-20 — reportée en phase 2 par la décision de Beat (phase 1 KISS, § « Phase 1 KISS » du fichier d'epic) ; validée le 2026-11-15, gardée telle quelle comme base de la phase 2. Ce qu'en reprend la phase 1 est dit dans les fiches 38-11a à 38-11d.)*
+*(2026-11-20 — reportée en phase 2 par la décision du responsable de l'epic (phase 1 KISS, § « Phase 1 KISS » du fichier d'epic) ; validée le 2026-11-15, gardée telle quelle comme base de la phase 2. Ce qu'en reprend la phase 1 est dit dans les fiches 38-11a à 38-11d.)*
 
 *Fiche rédigée le 2026-11-15 (Opus), branche `epic/38-paypal`. Epic 38 (`planning-artifacts/epic-38-paypal.md`),
 E4, E6, E7, E8, E16, E20, E24 ; contrats C-38-4, C-38-5, C-38-11. Décisions B3, B4, B7, B20, B24. **Dépend de** 38-7
@@ -32,7 +32,7 @@ plutôt qu'en vente, afin que les règles et les propositions des stories suivan
   « fully reversed and funds were refunded » ; `paypal_reference_id` « Defined as a related, pre-existing transaction
   or event », type `ODR` | `TXN` | `SUB` | `PAP` ; `invoice_id` « The invoice ID that is sent by the merchant with the
   transaction » (schéma <https://developer.paypal.com/api/transaction-search/v1/schema.json>).
-- ⚠️ La documentation **ne dit pas** le signe de `fee_amount` : il se constate sur les réponses de Beat (AC-9) ; la
+- ⚠️ La documentation **ne dit pas** le signe de `fee_amount` : il se constate sur les réponses du responsable de l'epic (AC-9) ; la
   règle de l'AC-3 ne dépend pas de ce signe tant que `net = brut + frais` se vérifie (voir *Dev Notes*).
 
 ## Exigences
@@ -45,10 +45,10 @@ plutôt qu'en vente, afin que les règles et les propositions des stories suivan
 - `FR-38-8-5` *(ajoutée)* — Les deux moitiés d'une conversion sont reliées l'une à l'autre → AC-5.
 - `FR-38-8-6` *(ajoutée)* — Seuls les enregistrements réussis qui changent le solde total deviennent des mouvements ;
   les autres sont comptés, jamais perdus en silence → AC-1, AC-6.
-- `NFR-38-8-1` — Chaque code relevé sur les réponses de Beat a son test ; aucun code inconnu ne devient une vente →
+- `NFR-38-8-1` — Chaque code relevé sur les réponses du responsable de l'epic a son test ; aucun code inconnu ne devient une vente →
   AC-2, AC-9.
 - `NFR-38-8-2` — Classement pur, sans base ni réseau → AC-8.
-- `NFR-38-8-3` *(ajoutée)* — Le classement est vérifiable : sur les réponses de Beat, Σ nets des mouvements d'une
+- `NFR-38-8-3` *(ajoutée)* — Le classement est vérifiable : sur les réponses du responsable de l'epic, Σ nets des mouvements d'une
   période = écart de `total_balance` entre ses bornes (contrôle E20 a) → AC-9.
 
 ## Critères d'acceptation
@@ -103,7 +103,7 @@ plutôt qu'en vente, afin que les règles et les propositions des stories suivan
    retrait en charge — une erreur muette ; T0109 suit T0401 (`withdrawal`), T0108 et T0110, sans ligne de relevé
    bancaire à rattacher, vont à la file comme T0105 ; T0014 à T0017 ne sont pas des ventes (rabais, versement, récupération, paiement ou remboursement
    chaîné) ; T0105 est un retrait par chèque, sans ligne de relevé bancaire à rattacher. La page avertit que les codes
-   « may change » : la table se rejoue contre les réponses de Beat (AC-9), et le contrôle de somme (AC-6) en est le
+   « may change » : la table se rejoue contre les réponses du responsable de l'epic (AC-9), et le contrôle de somme (AC-6) en est le
    filet.*
 
    ⛔ Aucun code hors des lignes `sale` ne devient une vente, ni par défaut ni par famille (« T00 » ne se lit **jamais**
@@ -155,11 +155,11 @@ plutôt qu'en vente, afin que les règles et les propositions des stories suivan
      jamais écrit ici — O11, 38-6b C-38-6b-4 ; `review_reason` reste `NULL` pour un remboursement) ;
    - **conversion** : les deux moitiés (deux enregistrements T02xx de devises différentes, de signes opposés) se
      **relient l'une à l'autre** (`related_provider_tx_id` de chacune = `provider_tx_id` de l'autre ; 38-6b lit l'un
-     **ou** l'autre sens). Appariement (O11 : par `paypal_reference_id`, à constater sur les réponses de Beat),
+     **ou** l'autre sens). Appariement (O11 : par `paypal_reference_id`, à constater sur les réponses du responsable de l'epic),
      dans la fenêtre classée : d'abord par `paypal_reference_id` commun ; sinon par **même instant d'initiation**
      (à la seconde), devises différentes, signes opposés, un seul candidat de chaque côté. Plusieurs candidats ou
      aucun → la moitié reste `conversion` sans lien et `review_reason = 'other'` (38-6b la met à la file au lieu de
-     proposer une demi-conversion). La règle d'appariement **se confirme sur les réponses de Beat** (AC-9) avant d'être
+     proposer une demi-conversion). La règle d'appariement **se confirme sur les réponses du responsable de l'epic** (AC-9) avant d'être
      figée ; si elles montrent un autre lien (p. ex. `paypal_reference_id` vers le paiement qui a déclenché la
      conversion), la fiche est amendée avant le développement de l'appariement ;
    - **paire coupée** : `classify_window` reçoit **tous les enregistrements d'une fenêtre** (AC-1 : le connecteur
@@ -169,8 +169,8 @@ plutôt qu'en vente, afin que les règles et les propositions des stories suivan
      et **ignore ce motif stocké dès que l'autre moitié s'y relie** (C-38-6b-4) ; si l'autre moitié arrive plus tard, le recouvrement du passage suivant relit
      la première (déjà connue, jamais réécrite, sans lien) : seule la seconde porte alors le lien, et 38-6b le lit
      dans les deux sens (`u.related_provider_tx_id = t.provider_tx_id`).
-   - **virement entre les deux comptes PayPal de Beat** (E24 ; *suppose que `payer_info.account_id` désigne la
-     contrepartie, y compris pour un débit : à constater sur les réponses de Beat, Q-38-8-4*) : un T00xx dont `payer_info.account_id` égale le
+   - **virement entre les deux comptes PayPal du responsable de l'epic** (E24 ; *suppose que `payer_info.account_id` désigne la
+     contrepartie, y compris pour un débit : à constater sur les réponses du responsable de l'epic, Q-38-8-4*) : un T00xx dont `payer_info.account_id` égale le
      `payerId` d'une **autre connexion PayPal de la même société** n'est pas une vente ni un achat : genre `other`,
      `review_reason = 'other'`. `ClassifyCtx` porte la liste des `payerId` des autres connexions (lue par la fabrique de
      38-3b, passée ici ; aucune base dans le classement). Le rattachement des deux côtés se fait à la main ou par 38-6b.
@@ -192,7 +192,7 @@ plutôt qu'en vente, afin que les règles et les propositions des stories suivan
      `other`/`other`), comme `sale`/`purchase` ; un surchargé `fee` suit la règle `fee` de l'AC-3 ; la surcharge
      remplace la **ligne de table** seulement : le contrôle de cohérence des montants (AC-3) et le virement entre
      connexions (AC-5 — T0014 à T0017, T0020, T0021 sont des T00xx) s'appliquent **après** elle et la priment (un
-     virement entre les deux comptes de Beat surchargé `sale` reste `other`/`other`) ; **`ignore` écarte
+     virement entre les deux comptes du responsable de l'epic surchargé `sale` reste `other`/`other`) ; **`ignore` écarte
      un code qui peut changer le solde** : le contrôle de complétude (E20 a, 38-3b AC-7) y verra alors un écart
      durable — c'est dit sous le champ (38-9a) et au manuel ;
    - violation → `PROVIDER_SETTINGS_INVALID` (400, code de 38-1), `details: { field: "eventKindOverrides", code: "T…",
@@ -218,11 +218,11 @@ plutôt qu'en vente, afin que les règles et les propositions des stories suivan
    - **Table** : un test par ligne de l'AC-2, signe positif, négatif et nul pour les genres signés ; un test « aucun
      code hors des lignes `sale` ne rend `sale` » qui balaie **tous les codes T0000–T9999** (10 000 valeurs, sans
      surcharge) ; T0024 (inexistant) → `unknown_event` ; un code connu non listé (T0500) → `other`/`other`.
-   - **Réponses de Beat** (fixtures anonymisées de 38-7, C-38-11) : **chaque code relevé** a un test qui fige son
+   - **Réponses du responsable de l'epic** (fixtures anonymisées de 38-7, C-38-11) : **chaque code relevé** a un test qui fige son
      genre, et le test échoue en nommant le code si une fixture en contient un sans test (liste des codes relevés
      construite depuis les fixtures, comparée à la liste testée) ; sur chaque fenêtre de fixture couverte par deux
      soldes (`as_of_time` aux bornes), Σ nets = écart de `total_balance` par devise (NFR-38-8-3). Le relevé se fait sur
-     une **instance jetable**, jamais sur la production de Beat.
+     une **instance jetable**, jamais sur la production du responsable de l'epic.
    - **Montants** : frais négatifs et positifs, frais absents, T01xx à `fee_amount` non nul, net de signe contraire,
      |frais| > |brut|.
    - **Champs** : `booked_at` UTC pour chaque forme de décalage, `invoice_id` absent, vide, de 300 caractères
@@ -251,16 +251,16 @@ plutôt qu'en vente, afin que les règles et les propositions des stories suivan
   une citation fausse de la page ; corrigé en P2.)*
 - **`reference`** : l'epic E8 la veut « numéro de facture du prestataire » ; FR-38-8-3 la veut égale à `invoice_id`.
   Retenu : `invoice_id` (seule valeur qui soit un numéro de facture ; le sujet va à `details`).
-- **Virement entre deux comptes PayPal de Beat** : non classé par l'epic ; retenu `other`, reconnu par `payerId`
+- **Virement entre deux comptes PayPal du responsable de l'epic** : non classé par l'epic ; retenu `other`, reconnu par `payerId`
   (AC-5), faute de courriel du compte (38-7, *Écart à l'epic*).
 
 ## Questions ouvertes
 
-- **Q-38-8-1** (recette, Beat) : comment PayPal relie-t-il les deux moitiés d'une conversion dans ses réponses
+- **Q-38-8-1** (recette, le responsable de l'epic) : comment PayPal relie-t-il les deux moitiés d'une conversion dans ses réponses
   (référence commune, instant identique) ? Bloque l'appariement (AC-5), pas le reste.
 - ~~Q-38-8-2~~ close par O11 : recouvrement réglable (`overlapDays`, AC-7). ~~Q-38-8-3~~ close par O11 : `ignore`
   gardé.
-- **Q-38-8-4** (recette, Beat) : pour un **débit** (achat, virement vers l'autre compte), `payer_info` désigne-t-il la
+- **Q-38-8-4** (recette, le responsable de l'epic) : pour un **débit** (achat, virement vers l'autre compte), `payer_info` désigne-t-il la
   contrepartie (marchand, autre compte) ou le titulaire lui-même ? Décide la source de `counterparty_name`,
   `counterparty_email` (critère `counterparty_email_exact`, B5) et du `payerId` du virement entre comptes (AC-5) ;
   si c'est le titulaire, la contrepartie se lit ailleurs (`shipping_info`, `cart_info`) et la fiche est amendée avant
