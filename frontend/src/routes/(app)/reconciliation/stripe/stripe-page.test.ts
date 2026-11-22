@@ -1,0 +1,242 @@
+// Story 40-7d (AC-2, AC-3) — la page Stripe, sur la page commune des prestataires :
+// aucun compte, rappel des ventes, import et compte rendu (devises, versements), refus du
+// fichier sans source_id, propositions (genres, action), acceptation (corps du versement),
+// écarts (charge sans vente, vente sans charge, versement sans réception et ses liens),
+// à examiner, états vides.
+
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, fireEvent, waitFor } from '@testing-library/svelte';
+import type { BankAccountSummary } from '$lib/features/bank-accounts/bank-accounts.api';
+import type { StripeReview } from '$lib/features/stripe/stripe.types';
+
+vi.mock('$app/environment', () => ({ browser: true }));
+
+vi.mock('$lib/shared/utils/i18n.svelte', () => ({
+	i18nMsg: (_key: string, fallback: string, args?: Record<string, string | number>) =>
+		args ? fallback.replace(/\{\s*\$(\w+)\s*\}/g, (_, k) => String(args[k] ?? '')) : fallback,
+}));
+
+const listBankAccountsMock = vi.fn<() => Promise<BankAccountSummary[]>>();
+vi.mock('$lib/features/bank-accounts/bank-accounts.api', () => ({
+	listBankAccounts: () => listBankAccountsMock(),
+}));
+vi.mock('$lib/features/fiscal-years/fiscal-years.api', () => ({
+	listFiscalYears: async () => [
+		{ id: 5, companyId: 1, name: '2020', startDate: '2020-01-01', endDate: '2020-12-31', status: 'Open', multiCurrency: true },
+	],
+}));
+vi.mock('$lib/features/accounts/accounts.api', () => ({
+	fetchAccounts: async () => [
+		{ id: 31, number: '1030', name: 'Stripe CHF', accountType: 'Asset', active: true, postable: true },
+		{ id: 60, number: '6940', name: 'Frais Stripe', accountType: 'Expense', active: true, postable: true },
+	],
+}));
+vi.mock('$lib/features/reconciliation/reconciliation.api', () => ({
+	getLinkCandidates: vi.fn(async () => ({ bankTransactionId: 0, candidates: [] })),
+	getEntryCandidates: vi.fn(async () => ({ bankTransactionId: 0, candidates: [] })),
+	linkEntry: vi.fn(),
+	linkTransaction: vi.fn(),
+}));
+
+const importMock = vi.fn();
+const reviewMock = vi.fn();
+const acceptMock = vi.fn();
+vi.mock('$lib/features/stripe/stripe.api', () => ({
+	importStripeReport: (...a: unknown[]) => importMock(...a),
+	getStripeReview: (...a: unknown[]) => reviewMock(...a),
+	acceptStripeProposals: (...a: unknown[]) => acceptMock(...a),
+}));
+
+import Page from './+page.svelte';
+
+function stripeAccount(id: number, account: string): BankAccountSummary {
+	return {
+		id,
+		bankName: 'Stripe',
+		description: null,
+		iban: null,
+		qrIban: null,
+		accountKind: 'bank',
+		cardLast4: null,
+		provider: 'stripe',
+		paypal: null,
+		stripe: { account, feeAccountId: 60, payoutBankAccountId: 9 },
+		isPrimary: false,
+		journalAccountId: 31,
+		version: 1,
+		archived: false,
+		closedOn: null,
+		currentBalance: null,
+		lastTransactionDate: null,
+		statementClosingBalance: null,
+		statementDate: null,
+		ledgerBalanceAtStatement: null,
+		statementGap: null,
+	};
+}
+
+function tx(id: number, date: string, extra: Record<string, unknown> = {}) {
+	return {
+		id,
+		bankAccountId: 1,
+		date,
+		amount: '100.00',
+		currency: 'CHF',
+		providerType: 'charge',
+		name: null,
+		transactionId: `txn_TEST000${id}`,
+		counterpartyEmail: null,
+		...extra,
+	};
+}
+
+function review(): StripeReview {
+	return {
+		account: 'Stripe boutique',
+		fiscalYearId: 5,
+		proposals: [
+			{
+				type: 'link_entry',
+				bankTransactionId: 1,
+				journalEntryId: 40,
+				transaction: tx(1, '2020-01-29'),
+				entry: { journalEntryId: 40, entryNumber: 12, entryDate: '2020-01-29', description: 'Vente ch_TEST0001', ids: ['ch_TEST0001'] },
+			},
+			{ type: 'fee', bankTransactionId: 2, feeAccountId: 60, transaction: tx(2, '2020-01-29', { amount: '-3.20' }) },
+			{
+				type: 'payout',
+				bankTransactionId: 3,
+				payoutBankAccountId: 9,
+				payoutAccountLabel: 'Banque · Principal',
+				transaction: tx(3, '2020-02-03', { amount: '-125.15', providerType: 'payout', transactionId: 'po_TEST0001' }),
+			},
+		],
+		gaps: [
+			{ code: 'receipt_without_sale', transaction: tx(4, '2020-02-06', { currency: 'EUR', amount: '80.00' }) },
+			{
+				code: 'sale_without_receipt',
+				entries: [{ journalEntryId: 41, entryNumber: 13, entryDate: '2020-02-07', description: 'Vente ch_TEST0050', ids: ['ch_TEST0050'] }],
+			},
+			{
+				code: 'payout_without_receipt',
+				transaction: tx(8, '2020-02-10', { amount: '-270.30', currency: 'EUR', providerType: 'payout', transactionId: 'po_TEST0002' }),
+				details: { payoutId: 'po_TEST0002', journalEntryId: 77, payoutBankAccountId: 9 },
+			},
+		],
+		toReview: [
+			{ code: 'refund', transaction: tx(5, '2020-01-31', { amount: '-20.00', providerType: 'refund' }), details: { category: 'refund' } },
+			{ code: 'payout_account_missing', transaction: tx(6, '2020-02-10', { providerType: 'payout' }), details: { payoutId: 'po_TEST0002' } },
+		],
+	};
+}
+
+const emptyReview = (): StripeReview => ({ account: 'Stripe boutique', fiscalYearId: 5, proposals: [], gaps: [], toReview: [] });
+
+describe('page Stripe (Story 40-7d)', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		listBankAccountsMock.mockResolvedValue([stripeAccount(1, 'Stripe boutique'), stripeAccount(2, 'Stripe boutique')]);
+		reviewMock.mockResolvedValue(review());
+		acceptMock.mockResolvedValue({ accepted: [{ type: 'payout', bankTransactionIds: [3], journalEntryIds: [9] }], failed: [] });
+	});
+
+	it('sans compte Stripe : le message et le lien vers les comptes bancaires ; un compte PayPal ne compte pas', async () => {
+		listBankAccountsMock.mockResolvedValue([
+			{ ...stripeAccount(1, 'x'), provider: 'paypal', stripe: null, paypal: { account: 'PayPal www', feeAccountId: null } },
+		]);
+		const r = render(Page);
+		expect((await r.findByTestId('stripe-no-account')).textContent).toContain('Aucun compte Stripe');
+		expect(r.getByTestId('stripe-no-account-link').getAttribute('href')).toBe('/bank-accounts');
+		expect(reviewMock).not.toHaveBeenCalled();
+	});
+
+	it('revue : un libellé par genre, ce qui sera fait, écarts et motifs libellés pour Stripe', async () => {
+		const r = render(Page);
+		expect((await r.findByTestId('stripe-account')) as HTMLSelectElement).toBeTruthy();
+		expect(reviewMock).toHaveBeenCalledWith('Stripe boutique', 5);
+		expect(r.getByTestId('stripe-hint').textContent).toContain('importez-les avant le rapport Stripe');
+		await waitFor(() => expect(r.getByTestId('stripe-proposal-1')).toBeTruthy());
+		expect(r.getByTestId('stripe-proposal-1').textContent).toContain('Rattachement à la vente n° 12');
+		expect(r.getByTestId('stripe-proposal-2').textContent).toContain('6940 — Frais Stripe');
+		expect(r.getByTestId('stripe-proposal-3').textContent).toContain('Versement vers Banque · Principal');
+		expect(r.getByTestId('stripe-gap-receipt_without_sale').textContent).toContain('Charge sans vente');
+		expect(r.getByTestId('stripe-gap-sale_without_receipt').textContent).toContain('Vente sans charge');
+		expect(r.getByTestId('stripe-gap-sale_without_receipt').textContent).toContain('ch_TEST0050');
+		const sansReception = r.getByTestId('stripe-gap-payout_without_receipt');
+		expect(sansReception.textContent).toContain('Versement sans réception');
+		const liens = Array.from(sansReception.querySelectorAll('[data-testid="stripe-gap-receipt-links"] a')).map((a) =>
+			a.getAttribute('href'),
+		);
+		expect(liens).toEqual(['/journal-entries/77', '/reconciliation']);
+		expect(r.queryAllByTestId('stripe-gap-receipt-links')).toHaveLength(1);
+		expect(r.getByTestId('stripe-to-review-5').textContent).toContain('Remboursement');
+		expect(r.getByTestId('stripe-to-review-6').textContent).toContain('compte de versement');
+		expect(r.getByTestId('stripe-to-review-6').textContent).toContain('txn_TEST0006');
+		expect(document.body.textContent).not.toMatch(/automatiquement/i);
+	});
+
+	it('accepter la sélection : corps par genre, versement avec son compte de versement, ordre des dates', async () => {
+		const r = render(Page);
+		await fireEvent.click(await r.findByTestId('stripe-select-all'));
+		await fireEvent.click(r.getByTestId('stripe-accept'));
+		await waitFor(() => expect(acceptMock).toHaveBeenCalledTimes(1));
+		const [account, bodies] = acceptMock.mock.calls[0];
+		expect(account).toBe('Stripe boutique');
+		expect(bodies).toEqual([
+			{ type: 'link_entry', bankTransactionId: 1, journalEntryId: 40 },
+			{ type: 'fee', bankTransactionId: 2, feeAccountId: 60 },
+			{ type: 'payout', bankTransactionId: 3, payoutBankAccountId: 9 },
+		]);
+		expect((await r.findByTestId('stripe-accept-report')).textContent).toContain('1 proposition(s) acceptée(s), 0 refusée(s)');
+		await waitFor(() => expect(reviewMock).toHaveBeenCalledTimes(2));
+	});
+
+	it('refus de l’acceptation : la proposition périmée par la clé commune', async () => {
+		acceptMock.mockResolvedValue({
+			accepted: [],
+			failed: [{ bankTransactionId: 3, errorCode: 'PROVIDER_PROPOSAL_STALE', details: { reason: 'provider_settings_changed' } }],
+		});
+		const r = render(Page);
+		await fireEvent.click(await r.findByTestId('stripe-check-3'));
+		await fireEvent.click(r.getByTestId('stripe-accept'));
+		expect((await r.findByTestId('stripe-accept-failed')).textContent).toContain('n\'est plus valable');
+	});
+
+	it('import : compte rendu par devise et versements lus, puis la revue relue', async () => {
+		importMock.mockResolvedValue({
+			account: 'Stripe boutique',
+			currencies: [{ currency: 'CHF', bankAccountId: 1, importId: 4, inserted: 8, duplicates: 0 }],
+			payouts: [{ payoutId: 'po_TEST0001', currency: 'CHF', lines: 4, net: '125.15' }],
+		});
+		const r = render(Page);
+		const input = (await r.findByTestId('stripe-file-input')) as HTMLInputElement;
+		expect(input.getAttribute('accept')).toBe('.csv,text/csv');
+		const file = new File(['x'], 'stripe.csv', { type: 'text/csv' });
+		await fireEvent.change(input, { target: { files: [file] } });
+		await waitFor(() => expect(importMock).toHaveBeenCalledWith(file, 'Stripe boutique'));
+		expect((await r.findByTestId('stripe-import-report-CHF')).textContent).toContain('8 transaction(s) insérée(s), 0 doublon(s)');
+		expect(r.getByTestId('stripe-import-report-payout-po_TEST0001').textContent).toContain('4 ligne(s), net 125.15 CHF');
+		await waitFor(() => expect(reviewMock).toHaveBeenCalledTimes(2));
+	});
+
+	it('refus du fichier sans source_id : la marche à suivre dans Stripe', async () => {
+		importMock.mockRejectedValue({
+			code: 'STRIPE_CSV_INVALID',
+			status: 422,
+			message: 'refus',
+			details: { reason: 'STRIPE_CSV_MISSING_COLUMNS', columns: ['source_id|charge_id'] },
+		});
+		const r = render(Page);
+		const input = (await r.findByTestId('stripe-file-input')) as HTMLInputElement;
+		await fireEvent.change(input, { target: { files: [new File(['x'], 'a.csv')] } });
+		expect((await r.findByTestId('stripe-import-error')).textContent).toContain('ajoutez la colonne source_id');
+	});
+
+	it('états vides : aucune proposition, aucun écart, rien à examiner', async () => {
+		reviewMock.mockResolvedValue(emptyReview());
+		const r = render(Page);
+		expect((await r.findByTestId('stripe-proposals-empty')).textContent).toContain('Aucune proposition');
+		expect(r.getByTestId('stripe-gaps-empty').textContent).toContain('Aucun écart');
+		expect(r.getByTestId('stripe-to-review-empty').textContent).toContain('Rien à examiner');
+	});
+});
