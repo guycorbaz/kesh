@@ -3400,7 +3400,7 @@ Importez vos relevés bancaires \textbf{au moins une fois par semaine} pour faci
 %%─────────────────────────────────────────────────────────────────────────────
 \subsection{Comptes PayPal}\label{sec:comptes-paypal}
 
-Kesh tient le solde d'un compte PayPal comme celui d'un compte bancaire~: \textbf{un compte bancaire par compte PayPal et par devise}, lié au compte du plan de cette devise. Le relevé ne s'importe pas par l'import bancaire, mais par la page \emph{Mensuel} → \emph{PayPal}, qui importe le fichier CSV de PayPal, puis propose le rapprochement de chaque transaction~; rien ne s'écrit sans votre acceptation. La page est ouverte aux comptables et aux administrateurs.
+Kesh tient le solde d'un compte PayPal comme celui d'un compte bancaire~: \textbf{un compte bancaire par compte PayPal et par devise}, lié au compte du plan de cette devise. Le relevé ne s'importe pas par l'import bancaire, mais par la page \emph{Mensuel} → \emph{PayPal}, qui importe le fichier CSV de PayPal --- ou le télécharge depuis PayPal, si l'administrateur l'a configuré ---, puis propose le rapprochement de chaque transaction~; rien ne s'écrit sans votre acceptation. La page est ouverte aux comptables et aux administrateurs.
 
 \paragraph{Créer les comptes.} \emph{Administration} → \emph{Comptes bancaires} → \emph{Nouveau compte bancaire}, type \emph{Compte bancaire}, case \emph{Compte PayPal} cochée~:
 \begin{itemize}
@@ -3421,6 +3421,17 @@ La liste des comptes bancaires montre sous le nom «~PayPal · <compte> · <devi
 \end{itemize}
 Le compte rendu reste affiché jusqu'à l'import suivant ou au changement de compte ou d'exercice~: par devise, les transactions insérées et les doublons, puis les lignes écartées.
 
+\paragraph{Télécharger depuis PayPal.}\label{sec:paypal-telecharger} Quand l'administrateur a posé les identifiants d'une application PayPal pour ce compte (manuel d'administration, \emph{Télécharger les transactions PayPal par l'API}), le bouton \emph{Télécharger depuis PayPal} paraît à côté de \emph{Importer le CSV PayPal}, pour les comptables et les administrateurs~; la mention «~bac à sable~» signale une installation d'essai, dont les transactions ne sont pas réelles. Sans ces identifiants, le bouton n'apparaît pas et l'import du CSV reste seul (l'administrateur lit «~Téléchargement depuis PayPal non configuré pour ce compte~»). Le bouton ouvre une fenêtre~:
+\begin{itemize}
+    \item \textbf{La période}~: \emph{Du} et \emph{Au}, proposés sur l'exercice choisi en tête de page, la fin ramenée à aujourd'hui. Le début ne peut être ni dans le futur, ni plus de \textbf{trois ans} en arrière (l'historique de PayPal ne remonte pas plus loin~; la première heure du jour le plus ancien admis n'est pas lue)~; une fin future est ramenée à aujourd'hui.
+    \item \textbf{Le délai de PayPal}~: une transaction peut mettre jusqu'à \textbf{trois heures} à paraître dans l'API. Le compte rendu dit «~Données du prestataire à jour jusqu'au \ldots~»~: une transaction plus récente n'y est pas encore~; relancez la période plus tard, elle arrive sans doublon.
+    \item \textbf{La progression}~: Kesh lit la période par tranches de 30 jours, les «~fenêtres~» --- «~fenêtre 2/3~», avec une barre. Quand PayPal limite le nombre de demandes, la fenêtre l'annonce («~Le prestataire demande de patienter~: reprise dans 20~s~») et Kesh reprend seul.
+    \item \textbf{Le compte rendu} est celui de l'import du CSV (par devise, insérées et doublons, puis les lignes écartées), et la revue de la page se recharge.
+    \item \textbf{Un échec} dit pourquoi --- identifiants refusés, application sans la fonction de lecture, PayPal indisponible ou limitant les demandes même après six essais, devise sans compte bancaire, réponse illisible --- et, s'il y a lieu, la période et la page en cause~: \textbf{rien n'a été enregistré}, relancez.
+    \item \textbf{Fermer la fenêtre n'arrête pas le téléchargement}~: le serveur le poursuit. Relancer la même période le retrouve et en reprend le suivi. Si le suivi se perd (serveur redémarré, réseau), la fenêtre dit «~Suivi perdu~»~: relancez la même période, rien n'est doublé.
+\end{itemize}
+\textbf{Mélanger le CSV et le téléchargement} est sans risque~: les doublons se reconnaissent à l'identifiant de transaction PayPal, quelle que soit la source --- un CSV puis un téléchargement de la même période, ou deux téléchargements qui se chevauchent, n'ajoutent rien. Relancer une période déjà téléchargée rend «~0 transaction insérée~».
+
 \paragraph{Le rapprochement.} En tête de page, à côté du compte PayPal, choisissez l'\textbf{exercice}~: la page liste les propositions, les écarts et les lignes «~à examiner~» des transactions en attente de ce compte PayPal dont la date tombe dans l'exercice.
 \begin{itemize}
     \item \textbf{Vente rattachée}~: les ventes viennent de vos boutiques, qui passent elles-mêmes l'écriture de vente au débit du compte PayPal de la devise, avec «~TXN <identifiant>~» (ou «~transaction <identifiant>~») dans le libellé --- c'est l'identifiant de la transaction PayPal. Kesh propose de rattacher l'encaissement à l'écriture de même identifiant, de même montant brut et de même devise~; aucune écriture nouvelle~;
@@ -3439,10 +3450,10 @@ Cochez les propositions (\emph{Tout cocher} au besoin), puis \emph{Accepter la s
 
 \paragraph{Limites.}
 \begin{itemize}
-    \item Les dates sont celles de l'export, sans conversion de fuseau horaire~: une vente et son encaissement de part et d'autre du 1\textsuperscript{er} janvier paraissent en écarts dans les deux exercices.
+    \item Les dates d'un CSV sont celles de l'export, sans conversion de fuseau horaire (le fuseau du compte PayPal)~; celles d'un \textbf{téléchargement} sont à l'\textbf{heure suisse} (PayPal les rend en UTC, Kesh les convertit). Une transaction proche de minuit peut donc tomber un autre jour selon la source --- jamais en double. Une vente et son encaissement de part et d'autre du 1\textsuperscript{er} janvier paraissent en écarts dans les deux exercices.
     \item Remboursements, litiges et retenues isolées vont «~à examiner~»~: passez l'écriture à la main, puis rattachez-y la transaction.
     \item Aucun code TVA n'est posé sur les écritures de la page~; aucune écriture de vente n'est créée (elles viennent des boutiques).
-    \item Pas de téléchargement automatique depuis PayPal~: le fichier s'exporte et s'importe à la main.
+    \item Le téléchargement depuis PayPal se lance à la main, période par période (\S\ref{sec:paypal-telecharger})~; Kesh ne télécharge rien de lui-même. Sans identifiants posés par l'administrateur, le fichier s'exporte et s'importe à la main.
     \item \textbf{Une facture fournisseur ne se paie pas depuis un compte PayPal} (ni depuis sa fiche, ni par un lot de paiement \texttt{pain.001}~; l'écran ne propose pas le compte, et le serveur le refuse). Remède~: réglez la facture par un compte interne, ou passez l'écriture à la main (en devise pour un solde en devise), puis rattachez la transaction PayPal à cette écriture.
     \item Un compte PayPal n'est proposé ni à l'import bancaire, ni à la saisie d'un relevé, ni au règlement d'une facture client, ni à l'écran de réconciliation. \textbf{Angle mort}~: par l'API, la réconciliation générique ne refuse pas, sur un compte PayPal en francs, une proposition «~facture~», «~ventilée~» ou «~règle~», un règlement groupé, l'écriture manuelle, l'éclatement d'une transaction ni le rattachement d'une transaction à un règlement, et en dresse la liste des propositions~; traitez ces transactions par la page PayPal (la proposition «~facture fournisseur~» et les lots \texttt{pain.001} sont, eux, refusés).
 \end{itemize}
