@@ -2186,4 +2186,53 @@ mod tests {
             ]
         );
     }
+    // --- Story 48-11 (#1245) : les montants s'arrondissent au centime ---
+
+    #[test]
+    fn format_amount_iso_arrondit_au_centime() {
+        assert_eq!(format_amount_iso(dec!(10.0050)), "10.01");
+        assert_eq!(format_amount_iso(dec!(5.0060)), "5.01");
+        assert_eq!(format_amount_iso(dec!(-0.0040)), "0.00");
+        assert_eq!(format_amount_iso(dec!(-10.0050)), "-10.01");
+    }
+
+    #[test]
+    fn format_rendement_arrondit() {
+        assert_eq!(format_rendement(Some(dec!(12.345))), "12.35%");
+    }
+
+    #[test]
+    fn la_balance_csv_arrondit_la_fraction_de_centime() {
+        let tb = TrialBalance {
+            period: period(),
+            rows: vec![TrialBalanceRow {
+                account_id: 1,
+                account_number: "1000".into(),
+                account_name: "Caisse".into(),
+                account_type: AccountType::Asset,
+                active: true,
+                opening_balance: dec!(0),
+                total_debit: dec!(10.0050),
+                total_credit: dec!(0),
+                balance: dec!(10.0050),
+                closing_balance: dec!(10.0050),
+                currency: None,
+                opening_currency: None,
+                total_debit_currency: None,
+                total_credit_currency: None,
+                balance_currency: None,
+                closing_currency: None,
+            }],
+            total_debit: dec!(10.0050),
+            total_credit: dec!(0),
+            balanced: true,
+            retained_earnings: dec!(0),
+            opening_balanced: true,
+        };
+        let mut buf = Vec::new();
+        render_trial_balance_csv(&tb, &mut buf).unwrap();
+        let body = String::from_utf8(buf[3..].to_vec()).unwrap();
+        assert!(body.contains("10.01"), "{body}");
+        assert!(!body.contains("10.00"), "{body}");
+    }
 }
