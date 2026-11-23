@@ -692,11 +692,13 @@ Journaux hors dépôt sous `/home/gcorbaz/devel/kesh-gate-logs/e4811/` :
 ## Change Log
 
 - **2026-11-24 — revue P1 remédiée** (Sonnet 5.5). Revue P1 : Opus, trois lentilles B, E, A exercées l'une après l'autre par un seul agent,
-  **0 CRITICAL / 0 HIGH / 1 MEDIUM / 10 LOW** (B : 0/0/0/3 ; E : 0/0/1/2 ; A : 0/0/0/5). Code de la remédiation `2797e0447` (docs `072006c2a`,
-  sans autre code : `git diff --stat 2797e0447 HEAD -- crates` vide). Sort de chaque finding :
+  **0 CRITICAL / 0 HIGH / 1 MEDIUM / 10 LOW** (B : 0/0/0/3 ; E : 0/0/1/2 ; A : 0/0/0/5). Code de la remédiation `2797e0447` (gates et mutations
+  à ce code). **Un dernier commit de test suit le gate** : il retire du test `amount_string_ecrit_un_zero_negatif_sans_signe` la ligne
+  `amount_string(dec!(-0))` que le premier Edit n'avait pas ôtée (cas qui n'est pas un zéro négatif) — une assertion en moins, `cargo fmt
+  --check` vert, **ni gate ni test relancés** : à rejouer à la passe suivante (gate ciblé). Sort de chaque finding :
   - **E-1 (MEDIUM) — corrigé.** Prémisse relue au code : `dec!(-0)` est un zéro positif ; `manual.rs:790` (`-value`) fabrique un vrai zéro
     négatif, qui atteint `amount_string` brut (`bank_statements_manual.rs:354`, `:358`). Cas `dec!(-0)` retirés de `money.rs` et du test de
-    `amount_string` (grep `dec!(-0)` : plus un seul site de test, il ne reste que cette fiche et le texte de l'AC6 réécrit) ; tests neufs
+    `amount_string` (grep `dec!(-0)` : plus un seul site d'assertion, seuls des commentaires l'expliquent) ; tests neufs
     `amount_string_ecrit_un_zero_negatif_sans_signe` (`-Decimal::ZERO`, `-Decimal::new(0, 2)`) et `un_solde_saisi_moins_zero_s_ecrit_zero_zero`
     (relevé manuel saisi `-0`, **prémisse assertée** : `is_sign_negative()` sur la valeur rendue par `parse_manual_statement`, puis `"0.00"`).
     **M2b** (retrait de `if r.is_zero()`) : **4 rouges** (`mut-m2b.log` : `money.rs` 2, `bank_statements_manual.rs` 2, dont le chemin réel),
