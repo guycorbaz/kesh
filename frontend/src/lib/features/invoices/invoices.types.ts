@@ -29,7 +29,7 @@ export interface InvoiceLineResponse {
 	/**
 	 * Type de la ligne (Story 49-1c, D6). L'API le renvoie toujours depuis la
 	 * 0.20.0 ; il est **optionnel** ici, et **absent vaut `priced`**
-	 * (`estChiffree`, `invoice-lines.ts`) — la règle des données d'avant la
+	 * (`estChiffree`, `invoice-line-type.ts`) — la règle des données d'avant la
 	 * 0.20.0 et des fixtures de test qui ne le portent pas.
 	 */
 	lineType?: InvoiceLineType;

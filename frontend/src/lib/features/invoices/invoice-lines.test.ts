@@ -53,6 +53,20 @@ describe('estLigneDeTexte (D7)', () => {
 		expect(estLigneDeTexte('priced')).toBe(false);
 		expect(estLigneDeTexte(undefined)).toBe(false);
 	});
+
+	it('null vaut absent (revue P1, E-2) : ligne chiffrée, non du texte', () => {
+		expect(estChiffree({ lineType: null })).toBe(true);
+		expect(estLigneDeTexte(null)).toBe(false);
+	});
+
+	it('est le contraire exact de estChiffree, valeur inconnue comprise (revue P1, B-2)', () => {
+		const valeurs = [undefined, null, 'priced', 'comment', 'heading', 'quote'] as never[];
+		for (const t of valeurs) {
+			expect(estLigneDeTexte(t)).toBe(!estChiffree({ lineType: t }));
+		}
+		// Un type qu'un serveur plus récent ajouterait : du texte, jamais une ligne chiffrée.
+		expect(estLigneDeTexte('quote' as never)).toBe(true);
+	});
 });
 
 describe('ligneDepuisReponse (D5)', () => {

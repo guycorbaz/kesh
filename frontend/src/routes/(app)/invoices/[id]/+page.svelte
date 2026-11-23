@@ -124,6 +124,9 @@
 		}
 	}
 
+	/** Colonnes du tableau des lignes (six `<th>` du `<thead>`) : un commentaire les couvre toutes. */
+	const COLONNES_LIGNES = 6;
+
 	let invoice = $state<InvoiceResponse | null>(null);
 	let loading = $state(true);
 	let errorMsg = $state('');
@@ -1390,7 +1393,7 @@
 						     une cellule sur toutes les colonnes, sauts de ligne gardés, sans
 						     montant, taux ni compte (« (défaut société) » serait faux). -->
 						<tr class="border-b border-border" data-testid="invoice-line-comment-row">
-							<td colspan="6" class="py-2 pr-2 whitespace-pre-line" data-testid="invoice-line-comment"
+							<td colspan={COLONNES_LIGNES} class="py-2 pr-2 whitespace-pre-line" data-testid="invoice-line-comment"
 								>{l.description}</td
 							>
 						</tr>

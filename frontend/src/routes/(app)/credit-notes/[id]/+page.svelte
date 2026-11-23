@@ -22,6 +22,9 @@
 	import { formatSwissDate } from '$lib/features/reports/reports.api';
 	import { readableAmount } from '$lib/features/supplier-invoices/supplier-invoice-form';
 
+	/** Colonnes du tableau des lignes (six `<th>` du `<thead>`) : un commentaire les couvre toutes. */
+	const COLONNES_LIGNES = 6;
+
 	let creditNote = $state<CreditNoteResponse | null>(null);
 	let loading = $state(true);
 	let errorMsg = $state('');
@@ -180,7 +183,7 @@
 					<!-- Story 49-1c (D7) — un commentaire repris de la facture : une cellule
 					     sur toutes les colonnes, sauts de ligne gardés, sans montant ni compte. -->
 					<tr class="border-b" data-testid="credit-note-line-comment-row">
-						<td colspan="6" class="py-2 whitespace-pre-line" data-testid="credit-note-line-comment"
+						<td colspan={COLONNES_LIGNES} class="py-2 whitespace-pre-line" data-testid="credit-note-line-comment"
 							>{line.description}</td
 						>
 					</tr>
