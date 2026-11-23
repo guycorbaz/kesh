@@ -464,7 +464,7 @@ pub fn stale(bank_transaction_id: i64, reason: &str) -> Refusal {
 }
 
 /// Un refus par proposition, construit.
-fn failed(bank_transaction_id: i64, code: &str, details: serde_json::Value) -> Refusal {
+pub fn failed(bank_transaction_id: i64, code: &str, details: serde_json::Value) -> Refusal {
     Refusal::Failed(FailedProposal {
         bank_transaction_id,
         error_code: code.to_string(),
@@ -1237,13 +1237,15 @@ pub struct ProviderEntry<'a> {
     pub kind: EntryKind,
     /// Projet analytique (règle).
     pub project_id: Option<i64>,
-    /// Le **CHF connu** de la transaction, quand le prestataire le donne
-    /// (Wise : carte payée en devise depuis un solde, montant CHF du marchand,
-    /// 39-11c) : la ligne du compte de prestataire en devise porte alors ce
-    /// CHF, au cours `rate_from_chf(|montant|, CHF)` de provenance `manual` —
-    /// le CHF réel fait foi, aucun cours de Kesh, comme la conversion à une
-    /// écriture. `None` : cours mensuel retenu (PayPal). Sans effet pour un
-    /// compte du plan en CHF (le montant est déjà en CHF).
+    /// Le **CHF connu** de la transaction, quand le prestataire le donne :
+    /// la ligne du compte de prestataire en devise porte alors ce CHF, au
+    /// cours `rate_from_chf(|montant|, CHF)` de provenance `manual` — le CHF
+    /// réel fait foi, aucun cours de Kesh, comme la conversion à une écriture.
+    /// `None` : cours mensuel retenu (PayPal). Sans effet pour un compte du
+    /// plan en CHF (le montant est déjà en CHF). ⚠️ **Aucun appelant
+    /// aujourd'hui** : la 39-11c écrit son paiement groupé elle-même, au cours
+    /// du mois (amendement A-1) ; champ hérité de la 38-11c2, à retirer ou à
+    /// employer au prochain besoin.
     pub known_chf: Option<Decimal>,
 }
 
@@ -1606,11 +1608,33 @@ pub async fn accept_rule(
     )
     .await?;
     mark_reconciled(tx, ctx, &r.transaction, entry_id).await?;
+    record_rule_applied(tx, ctx, &rule, &r.transaction, entry_id).await?;
+    Ok(ProviderAccepted {
+        kind: "rule",
+        bank_transaction_ids: vec![bank_transaction_id],
+        journal_entry_ids: vec![entry_id],
+        rule_id: Some(rule_id),
+    })
+}
+
+/// L'application d'une règle, une fois l'écriture passée et la transaction
+/// `t` rapprochée : le compteur d'application et la trace
+/// `reconciliation_rule.applied`, comme `accept_one_rule`. **Seule**
+/// définition : la règle d'une transaction ([`accept_rule`]) et celle d'un
+/// paiement par carte Wise groupé (Story 39-11c, `t` sa ligne principale)
+/// l'appellent.
+pub async fn record_rule_applied(
+    tx: &mut sqlx::Transaction<'_, MySql>,
+    ctx: &AcceptContext<'_>,
+    rule: &kesh_db::entities::ReconciliationRule,
+    t: &BankTransaction,
+    entry_id: i64,
+) -> Result<(), Refusal> {
     let applied_count_after =
-        reconciliation_rules::increment_applied_count_in_tx(tx, ctx.company_id, rule_id)
+        reconciliation_rules::increment_applied_count_in_tx(tx, ctx.company_id, rule.id)
             .await
-            .map_err(|e| db_refusal(bank_transaction_id, e))?;
-    let entry_date = payment_date(&r.transaction);
+            .map_err(|e| db_refusal(t.id, e))?;
+    let entry_date = payment_date(t);
     audit_log::insert_in_tx(
         tx,
         NewAuditLogEntry::for_actor(
@@ -1618,30 +1642,25 @@ pub async fn accept_rule(
             ctx.acteur.api_key_id,
             "reconciliation_rule.applied",
             "reconciliation_rules",
-            rule_id,
+            rule.id,
             Some(serde_json::json!({
-                "rule_id": rule_id,
+                "rule_id": rule.id,
                 "rule_label": rule.label,
                 "match_type": rule.match_type.as_str(),
                 "match_value": rule.match_value,
-                "bank_transaction_id": bank_transaction_id,
-                "counterparty_account_id": counterparty_account_id,
+                "bank_transaction_id": t.id,
+                "counterparty_account_id": rule.counterparty_account_id,
                 "journal_entry_id": entry_id,
                 "applied_count_after": applied_count_after,
-                "value_date": r.transaction.value_date.map(|d| d.to_string()),
+                "value_date": t.value_date.map(|d| d.to_string()),
                 "entry_date": entry_date.to_string(),
-                "was_previously_rejected": r.transaction.auto_match_rejected_at.is_some(),
+                "was_previously_rejected": t.auto_match_rejected_at.is_some(),
             })),
         ),
     )
     .await
-    .map_err(|e| db_refusal(bank_transaction_id, e))?;
-    Ok(ProviderAccepted {
-        kind: "rule",
-        bank_transaction_ids: vec![bank_transaction_id],
-        journal_entry_ids: vec![entry_id],
-        rule_id: Some(rule_id),
-    })
+    .map_err(|e| db_refusal(t.id, e))?;
+    Ok(())
 }
 
 /// `withdrawal` : retrait d'un solde **CHF** (sinon périmé) vers le compte

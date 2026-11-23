@@ -54,6 +54,19 @@ pub const MAX_CSV_LINE_ERRORS: usize = 100;
 /// dépassement.
 pub const MAX_CSV_LINE_ERROR_VALUE_CHARS: usize = 100;
 
+/// Tronque une valeur fautive à [`MAX_CSV_LINE_ERROR_VALUE_CHARS`] caractères
+/// (suffixe `…`), pour les erreurs de ligne des lecteurs par noms (PayPal,
+/// Wise).
+pub(crate) fn truncate_line_error_value(v: &str) -> String {
+    if v.chars().count() <= MAX_CSV_LINE_ERROR_VALUE_CHARS {
+        v.to_string()
+    } else {
+        let mut s: String = v.chars().take(MAX_CSV_LINE_ERROR_VALUE_CHARS).collect();
+        s.push('…');
+        s
+    }
+}
+
 /// Erreurs détectées lors du parsing d'un fichier CSV bancaire.
 #[derive(Debug, Error, Clone, PartialEq)]
 pub enum CsvError {

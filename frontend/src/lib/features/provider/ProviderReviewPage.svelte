@@ -1,13 +1,26 @@
 <!--
   Story 40-7d (AC-2, AC-3) — la page **commune** des prestataires (PayPal,
-  Stripe), tirée de la page PayPal de la 38-11d : choix du compte et de
+  Stripe ; Wise depuis la 39-11d, plusieurs fichiers ou un zip d'un geste, et
+  sa revue depuis la 39-11d2), tirée de la page PayPal de la 38-11d : choix du compte et de
   l'exercice, import du fichier et son compte rendu, propositions à cocher et
   à accepter par paquets de 500, écarts et lignes « à examiner » (rattachement
   par la modale du rapprochement, écriture manuelle). Ce qui est
   propre à un prestataire — ses textes, son client d'API, ses libellés, la
   forme de son compte rendu, l'action d'une proposition, les colonnes de ses
   lignes « à examiner » — lui est passé par ses propriétés et ses fragments ;
-  les identifiants de test se préfixent par `testId` (« paypal », « stripe »).
+  les identifiants de test se préfixent par `testId` (« paypal », « stripe », « wise »).
+
+  Story 39-11d2 (AC-2) — les lignes d'une proposition ou d'une ligne « à
+  examiner » qui en réunit plusieurs (le paiement par carte groupé de Wise) :
+  `proposalLines` et `findingLines` rendent ses lignes hors la principale,
+  affichées en sous-lignes (identifiants de test propres, jamais ceux d'une
+  ligne) ; chaque sous-ligne d'un « à examiner » a son propre bouton
+  « Rattacher à une écriture », sur sa transaction ; `lineLabel` dit ce qui
+  suit une sous-ligne (« frais ») ; `toReviewExtra` ajoute un fragment sous le
+  libellé d'un « à examiner », comme `gapExtra` pour un écart. Sans ces
+  propriétés, une page n'affiche aucune sous-ligne. Une page **sans revue**
+  (`api.getReview` absent) n'a ni exercice ni propositions : le mode reste,
+  générique (aucun prestataire ne s'en sert aujourd'hui).
 
   Fusion de l'Epic 38 (38-12b) : à côté de l'import du fichier, des actions
   propres au prestataire (`importActions` : « Télécharger depuis PayPal ») et
@@ -52,33 +65,63 @@
 		ProviderPageTexts,
 		ProviderProposalBase,
 		ProviderReview,
+		ProviderReviewTransaction,
 	} from './provider-review.types';
 
 	interface Props {
-		/** Préfixe des identifiants de test (`paypal`, `stripe`). */
+		/** Préfixe des identifiants de test (`paypal`, `stripe`, `wise`). */
 		testId: string;
+		/** Story 39-11d — les types de fichier offerts au choix (défaut : CSV). */
+		fileAccept?: string;
+		/** Story 39-11d — plusieurs fichiers d'un geste (`api.importFiles`). */
+		multiple?: boolean;
+		/** Story 39-11d — le compte rendu entier, à la place des lignes par devise (Wise : par fichier). */
+		importReportMain?: Snippet<[R]>;
 		texts: ProviderPageTexts;
 		api: ProviderPageApi<P, B, R>;
 		/** Les libellés de compte du prestataire, tirés des comptes bancaires chargés. */
 		accountLabels: (bankAccounts: BankAccountSummary[]) => string[];
 		/** Les phrases d'un refus de l'import. */
 		importErrorLines: (err: unknown) => string[];
+		// Story 39-11d — les libellés et formes de la revue qui suivent sont facultatifs : une page
+		// sans revue (`api.getReview` absent) ne les lit jamais ; les défauts sont les codes bruts.
 		/** Libellé d'un refus de l'acceptation. */
-		failedLabel: (f: ProviderFailedProposal) => string;
+		failedLabel?: (f: ProviderFailedProposal) => string;
 		/** Clé stable d'une proposition et la transaction qui l'identifie. */
-		proposalKey: (p: P) => string;
-		proposalTransactionId: (p: P) => number;
+		proposalKey?: (p: P) => string;
+		proposalTransactionId?: (p: P) => number;
 		/** Genre d'une proposition (colonne « Genre »). */
-		proposalKind: (p: P) => string;
+		proposalKind?: (p: P) => string;
 		/** Une proposition se coche-t-elle ? (défaut : oui) */
 		selectable?: (p: P, key: string) => boolean;
 		/** Les corps à envoyer pour la sélection, dans l'ordre des dates. */
-		acceptBodies: (proposals: readonly P[], selected: ReadonlySet<string>) => B[];
+		acceptBodies?: (proposals: readonly P[], selected: ReadonlySet<string>) => B[];
 		/** Libellé et détails d'un écart. */
-		gapLabel: (f: ProviderFinding) => string;
-		gapDetails: (f: ProviderFinding) => string | null;
+		gapLabel?: (f: ProviderFinding) => string;
+		gapDetails?: (f: ProviderFinding) => string | null;
 		/** Libellé d'un motif « à examiner ». */
-		toReviewLabel: (f: ProviderFinding) => string;
+		toReviewLabel?: (f: ProviderFinding) => string;
+		/**
+		 * Story 39-11d2 — les lignes d'une proposition hors sa transaction (sous-lignes ; défaut :
+		 * aucune). La page Wise y rend les lignes d'un paiement par carte groupé.
+		 */
+		proposalLines?: (p: P) => ProviderReviewTransaction[];
+		/**
+		 * Story 39-11d2 — les lignes d'une ligne « à examiner » hors sa transaction (sous-lignes,
+		 * chacune avec son bouton « Rattacher à une écriture » ; défaut : aucune). Un prestataire
+		 * qui a des colonnes propres (`toReviewHead`) passe aussi `toReviewLineCells`.
+		 */
+		findingLines?: (f: ProviderFinding) => ProviderReviewTransaction[];
+		/** Story 39-11d2 — le texte après une sous-ligne (« frais »), ou `null`. */
+		lineLabel?: (t: ProviderReviewTransaction) => string | null;
+		/** Story 39-11d2 — ce qui suit le libellé d'un « à examiner » (liens), facultatif. */
+		toReviewExtra?: Snippet<[ProviderFinding]>;
+		/**
+		 * Story 39-11d2 — les cellules propres au prestataire d'une sous-ligne « à examiner »
+		 * (mêmes colonnes que `toReviewCells`) ; données, la cellule du motif ne répète pas
+		 * l'identifiant de la sous-ligne.
+		 */
+		toReviewLineCells?: Snippet<[ProviderReviewTransaction]>;
 		/** Le compte rendu propre au prestataire, sous les lignes par devise. */
 		importReportExtra?: Snippet<[R]>;
 		/**
@@ -90,13 +133,13 @@
 		importActions?: Snippet<[{ busy: boolean }]>;
 		/** Des notes sous la ligne de l'import (aide de l'Administrateur, 38-12b). */
 		importNotes?: Snippet;
-		/** La colonne « Ce qui sera fait » d'une proposition. */
-		proposalAction: Snippet<[P, string]>;
+		/** La colonne « Ce qui sera fait » d'une proposition (sans objet sans revue). */
+		proposalAction?: Snippet<[P, string]>;
 		/** Ce qui suit le libellé d'un écart (un lien, par exemple), facultatif. */
 		gapExtra?: Snippet<[ProviderFinding]>;
 		/** Les en-têtes et les cellules propres au prestataire d'une ligne « à examiner ». */
-		toReviewHead: Snippet;
-		toReviewCells: Snippet<[ProviderFinding, number]>;
+		toReviewHead?: Snippet;
+		toReviewCells?: Snippet<[ProviderFinding, number]>;
 		/** Lectures propres au prestataire, au chargement de la page (libellés des règles…). */
 		onLoad?: () => Promise<void>;
 		/** Appelé à chaque revue relue (pour vider un état propre aux propositions). */
@@ -116,19 +159,27 @@
 
 	let {
 		testId,
+		fileAccept = '.csv,text/csv',
+		multiple = false,
+		importReportMain,
 		texts,
 		api,
 		accountLabels,
 		importErrorLines,
-		failedLabel,
-		proposalKey,
-		proposalTransactionId,
-		proposalKind,
+		failedLabel = (f) => f.errorCode,
+		proposalKey = (p) => String(p.transaction.id),
+		proposalTransactionId = (p) => p.transaction.id,
+		proposalKind = (p) => p.type,
 		selectable = () => true,
-		acceptBodies,
-		gapLabel,
-		gapDetails,
-		toReviewLabel,
+		acceptBodies = () => [],
+		gapLabel = (f) => f.code,
+		gapDetails = () => null,
+		toReviewLabel = (f) => f.code,
+		proposalLines = () => [],
+		findingLines = () => [],
+		lineLabel = () => null,
+		toReviewExtra,
+		toReviewLineCells,
 		importReportExtra,
 		importReport: importReportView,
 		importActions,
@@ -175,9 +226,14 @@
 	let linkTarget = $state<LinkTarget | null>(null);
 
 	let providerAccounts = $derived(accountLabels(bankAccounts));
+	// Story 39-11d — une page sans revue (`api.getReview` absent) n'a ni exercice ni propositions.
+	let hasReview = $derived(api.getReview !== undefined);
 
 	onMount(async () => {
-		const [ba, fy] = await Promise.allSettled([listBankAccounts(), listFiscalYears(), onLoad?.()]);
+		// Revue P1 de la 39-11d (L7) — une page sans revue ne lit pas les exercices : un échec de
+		// cette lecture, dont elle n'a que faire, ne doit pas masquer son import.
+		const years = hasReview ? listFiscalYears() : Promise.resolve<FiscalYearResponse[]>([]);
+		const [ba, fy] = await Promise.allSettled([listBankAccounts(), years, onLoad?.()]);
 		if (ba.status === 'fulfilled') bankAccounts = ba.value;
 		else loadError = errorMessageOf(ba.reason);
 		if (fy.status === 'fulfilled') fiscalYears = fy.value;
@@ -194,7 +250,8 @@
 		const account = selectedAccount;
 		const yearId = selectedYearId;
 		const myGen = ++reviewGen;
-		if (account === null || yearId === null) {
+		const getReview = api.getReview;
+		if (account === null || yearId === null || getReview === undefined) {
 			review = null;
 			reviewLoading = false;
 			return;
@@ -202,7 +259,7 @@
 		reviewLoading = true;
 		reviewError = null;
 		try {
-			const r = await api.getReview(account, yearId);
+			const r = await getReview(account, yearId);
 			if (myGen !== reviewGen) return;
 			review = r;
 			selected = new Set();
@@ -226,14 +283,17 @@
 
 	async function onFileChosen(e: Event) {
 		const input = e.currentTarget as HTMLInputElement;
-		const file = input.files?.[0];
+		const files = Array.from(input.files ?? []);
 		input.value = '';
-		if (!file || selectedAccount === null) return;
+		if (files.length === 0 || selectedAccount === null) return;
 		importing = true;
 		importErrors = [];
 		importErrorCodeValue = null;
 		try {
-			importReport = await api.importFile(file, selectedAccount);
+			// Story 39-11d — plusieurs fichiers d'un geste quand la page les prend (Wise).
+			if (api.importFiles) importReport = await api.importFiles(files, selectedAccount);
+			else if (api.importFile) importReport = await api.importFile(files[0], selectedAccount);
+			else return;
 			await reload();
 		} catch (err) {
 			importReport = null;
@@ -258,9 +318,11 @@
 			: new Set();
 	}
 
-	/** Ouvre la modale de rattachement sur la transaction d'une ligne « à examiner ». */
-	function openLink(item: ProviderFinding) {
-		const t = item.transaction;
+	/**
+	 * Ouvre la modale de rattachement sur une transaction : celle d'une ligne « à examiner »,
+	 * ou celle d'une de ses sous-lignes (39-11d2).
+	 */
+	function openLink(t: ProviderReviewTransaction | undefined) {
 		if (!t) return;
 		linkTarget = {
 			bankTransactionId: t.id,
@@ -280,7 +342,8 @@
 		// Le compte est figé avant la boucle (revue P1 de la 38-11d, L1) : les sélecteurs sont
 		// désactivés pendant l'acceptation, et chaque paquet part au même compte.
 		const account = selectedAccount;
-		if (!review || account === null) return;
+		const accept = api.accept;
+		if (!review || account === null || accept === undefined) return;
 		const bodies = acceptBodies(review.proposals, selected);
 		if (bodies.length === 0) return;
 		const batches = chunkProposals(bodies);
@@ -290,7 +353,7 @@
 		try {
 			for (let i = 0; i < batches.length; i++) {
 				batchProgress = { current: i + 1, total: batches.length };
-				const res = await api.accept(account, batches[i]);
+				const res = await accept(account, batches[i]);
 				report.accepted += res.accepted.length;
 				report.failed.push(...res.failed);
 			}
@@ -304,6 +367,31 @@
 		}
 	}
 </script>
+
+<!-- Le compte rendu propre au prestataire à la place des lignes par devise (Wise, 39-11d), dans le compte rendu commun. -->
+{#snippet importReportMainView()}
+	{#if importReport}{@render importReportMain?.(importReport)}{/if}
+{/snippet}
+
+<!-- Story 39-11d2 — l'identifiant d'une sous-ligne, et le texte qui le suit (« frais »). -->
+{#snippet subLineId(line: ProviderReviewTransaction)}
+	{@const label = lineLabel(line)}
+	<span class="font-mono text-xs whitespace-nowrap">↳ {line.transactionId ?? ''}</span>
+	{#if label !== null}<span class="ml-1 text-xs" data-testid="{testId}-line-label-{line.id}">{label}</span>{/if}
+{/snippet}
+
+<!-- Story 39-11d2 — une sous-ligne d'une proposition : sans case à cocher ni action (la proposition les porte). -->
+{#snippet subLine(line: ProviderReviewTransaction, rowTestId: string)}
+	<tr class="border-b border-border text-text-muted" data-testid={rowTestId}>
+		<td class="py-1 pr-2"></td>
+		<td class="py-1 pr-4 whitespace-nowrap">{formatSwissDate(line.date)}</td>
+		<td class="py-1 pr-4"></td>
+		<td class="py-1 pr-4 text-right font-mono whitespace-nowrap">{line.amount} {line.currency}</td>
+		<td class="py-1 pr-4">{line.name ?? ''}</td>
+		<td class="py-1 pr-4">{@render subLineId(line)}</td>
+		<td class="py-1"></td>
+	</tr>
+{/snippet}
 
 <svelte:head>
 	<title>{texts.title} - Kesh</title>
@@ -340,6 +428,7 @@
 				{/each}
 			</select>
 		</div>
+		{#if hasReview}
 		<div>
 			<label for="{testId}-fiscal-year" class="block text-sm font-medium text-text mb-1">
 				{i18nMsg('provider-label-fiscal-year', 'Exercice')}
@@ -357,11 +446,13 @@
 				{/each}
 			</select>
 		</div>
+		{/if}
 		<div>
 			<input
 				bind:this={fileInput}
 				type="file"
-				accept=".csv,text/csv"
+				accept={fileAccept}
+				{multiple}
 				class="hidden"
 				onchange={onFileChosen}
 				data-testid="{testId}-file-input"
@@ -372,6 +463,9 @@
 		</div>
 		{@render importActions?.({ busy: importing || accepting })}
 	</div>
+	{#if texts.importHelp}
+		<p class="mt-2 text-sm text-text" data-testid="{testId}-import-help">{texts.importHelp}</p>
+	{/if}
 	{@render importNotes?.()}
 	{#if texts.hint}
 		<p class="mt-2 text-sm text-text-muted" data-testid="{testId}-hint">{texts.hint}</p>
@@ -394,7 +488,11 @@
 		{#if importReportView}
 			{@render importReportView(importReport)}
 		{:else}
-			<ProviderImportReport report={importReport} testid="{testId}-import-report">
+			<ProviderImportReport
+				report={importReport}
+				testid="{testId}-import-report"
+				main={importReportMain ? importReportMainView : undefined}
+			>
 				{@render importReportExtra?.(importReport)}
 			</ProviderImportReport>
 		{/if}
@@ -496,8 +594,11 @@
 								</td>
 								<td class="py-2 pr-4">{p.transaction.name ?? ''}</td>
 								<td class="py-2 pr-4 font-mono text-xs">{p.transaction.transactionId ?? ''}</td>
-								<td class="py-2">{@render proposalAction(p, key)}</td>
+								<td class="py-2">{@render proposalAction?.(p, key)}</td>
 							</tr>
+							{#each proposalLines(p) as line (line.id)}
+								{@render subLine(line, `${testId}-proposal-line-${line.id}`)}
+							{/each}
 						{/each}
 					</tbody>
 				</table>
@@ -575,7 +676,7 @@
 							<th class="py-2 pr-4 font-semibold">{i18nMsg('provider-col-date', 'Date')}</th>
 							<th class="py-2 pr-4 font-semibold">{i18nMsg('provider-col-reason', 'Motif')}</th>
 							<th class="py-2 pr-4 text-right font-semibold">{i18nMsg('provider-col-amount', 'Montant')}</th>
-							{@render toReviewHead()}
+							{@render toReviewHead?.()}
 							<th class="py-2"></th>
 						</tr>
 					</thead>
@@ -584,14 +685,17 @@
 							{@const tx = t.transaction}
 							<tr class="border-b border-border" data-testid="{testId}-to-review-{tx?.id ?? `e${i}`}">
 								<td class="py-2 pr-4 whitespace-nowrap">{findingDate(t)}</td>
-								<td class="py-2 pr-4">{toReviewLabel(t)}</td>
+								<td class="py-2 pr-4">
+									{toReviewLabel(t)}
+									{@render toReviewExtra?.(t)}
+								</td>
 								<td class="py-2 pr-4 text-right font-mono whitespace-nowrap">{#if tx}{tx.amount} {tx.currency}{/if}</td>
-								{@render toReviewCells(t, i)}
+								{@render toReviewCells?.(t, i)}
 								<td class="py-2 whitespace-nowrap">
 									<button
 										type="button"
 										class="rounded border border-border px-2 py-1 text-xs"
-										onclick={() => openLink(t)}
+										onclick={() => openLink(tx)}
 										disabled={!tx}
 										data-testid="{testId}-link-{tx?.id ?? `e${i}`}"
 									>
@@ -602,6 +706,31 @@
 									</a>
 								</td>
 							</tr>
+							{#each findingLines(t) as line (line.id)}
+								<tr class="border-b border-border text-text-muted" data-testid="{testId}-to-review-line-{line.id}">
+									<td class="py-1 pr-4 pl-4 whitespace-nowrap">{formatSwissDate(line.date)}</td>
+									<td class="py-1 pr-4">
+										{#if toReviewLineCells}
+											{@const label = lineLabel(line)}
+											<span class="text-xs">↳ {label ?? ''}</span>
+										{:else}
+											{@render subLineId(line)}
+										{/if}
+									</td>
+									<td class="py-1 pr-4 text-right font-mono whitespace-nowrap">{line.amount} {line.currency}</td>
+									{@render toReviewLineCells?.(line)}
+									<td class="py-1 whitespace-nowrap">
+										<button
+											type="button"
+											class="rounded border border-border px-2 py-1 text-xs"
+											onclick={() => openLink(line)}
+											data-testid="{testId}-link-line-{line.id}"
+										>
+											{i18nMsg('provider-link-entry', 'Rattacher à une écriture')}
+										</button>
+									</td>
+								</tr>
+							{/each}
 						{/each}
 					</tbody>
 				</table>

@@ -440,9 +440,19 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
 // **138 → 145** (Story 40-7d) : les libellés de l'écran Stripe (`stripe/stripe-labels.ts`) et les
 // libellés communs aux prestataires (`provider/provider-labels.ts`), tous par `i18nMsg` ;
 // `conforme` **117 → 124**, relevé par la garde (« expected 145 to be 138 »).
+// **145 → 147** (Story 39-11d) : les libellés de l'écran Wise (`wise/wise-labels.ts`), par
+// `i18nMsg` ; `conforme` **124 → 126**, relevé par la garde (« expected 147 to be 145 »).
 // **145 → 147** (fusion d'epic/38-paypal, 38-12b, dans epic/40-stripe) : `periodRefusalLabel` et
 // `progressLabel` de la 38-12b ; `conforme` **124 → 126**, relevés par la garde (« expected 147 to be 0 »).
-const CANDIDATES_ATTENDUES = 147;
+// **147 → 149** (fusion d'epic/40-stripe, 38-12b, dans epic/39-wise, après la 39-11d) : les libellés Wise de la
+// 39-11d et ceux de la 38-12b ensemble ; `conforme` **126 → 128**, relevé par la garde (« expected 149 to be 147 »).
+// **149 → 159** (Story 39-11d2, revue Wise à l'écran) : `wiseProposalKindLabel`,
+// `wiseProposalActionLabel`, `wiseCardGroupReasonLabel`, `wiseToReviewLabel`, `wiseGapLabel`,
+// `wiseFailedLabel`, `wiseLineLabel`, `statementsMissingLabel`, `partlyReconciledLabel`
+// (`wise/wise-labels.ts`, par `i18nMsg` ou par délégation) : `conforme` **128 → 137** ; et
+// `detailText` (même fichier, `''` pour une valeur absente) : `ecartee` **21 → 22** ; relevés par la
+// garde (« expected 159 to be 149 »), chaque candidate nommée par un relevé du chemin et du nom.
+const CANDIDATES_ATTENDUES = 159;
 
 /** Les trois délimiteurs de littéral en JS/TS. */
 const QUOTES = ["'", '"', '`'];
@@ -959,7 +969,7 @@ describe('libellés en dur — l’angle mort #255', () => {
 			else if (c.retours.length > 0) classes.ecartee += 1;
 			else classes.conforme += 1;
 		}
-		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 21, conforme: 126 });
+		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 22, conforme: 137 });
 		// La somme est recalculée depuis les classes, jamais depuis le total qu'elle contrôle.
 		const somme = Object.values(classes).reduce((a, b) => a + b, 0);
 		expect(somme).toBe(CANDIDATES_ATTENDUES);

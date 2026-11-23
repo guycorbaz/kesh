@@ -11,6 +11,8 @@
  */
 import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 import { failedProposalLabel } from '$lib/features/reconciliation/failed-proposal-label';
+import { fxMonthLabel } from '$lib/features/journal-entries/fx-refusals';
+import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 import type { ProviderFinding } from './provider-review.types';
 
 /**
@@ -26,6 +28,7 @@ export const PROVIDER_COMMON_FAILED_CODES = [
 	'OPTIMISTIC_LOCK_CONFLICT',
 	'RECONCILIATION_ENTRY_NOT_LINKABLE',
 	'COUNTERPARTY_CURRENCY_MISMATCH',
+	'RATE_UNAVAILABLE',
 ] as const;
 
 /** Libellé d'un refus de `POST /<prestataire>/accept` (hors codes propres au prestataire). */
@@ -71,6 +74,21 @@ export function providerFailedLabel(code: string, details?: unknown): string {
 				{
 					accountCurrency: typeof d.accountCurrency === 'string' ? d.accountCurrency : '',
 					transactionCurrency: typeof d.transactionCurrency === 'string' ? d.transactionCurrency : '',
+				},
+			);
+		}
+		// Story 39-11d2 (AC-4) — le cours mensuel retenu manque (frais ou règle sur un solde en
+		// devise, conversion entre deux devises étrangères, part en devise d'un paiement groupé) :
+		// la phrase renvoie aux cours de change ; le libellé générique (« gardez la ligne comme
+		// cours saisi ») ne convient pas à une proposition. `details` absents : phrase sans valeurs.
+		case 'RATE_UNAVAILABLE': {
+			const d = details && typeof details === 'object' ? (details as Record<string, unknown>) : {};
+			return i18nMsg(
+				'provider-failed-rate-unavailable',
+				'Aucun cours mensuel { $currency } retenu pour { $month } : récupérez ou saisissez ce cours dans les cours de change, puis acceptez de nouveau.',
+				{
+					currency: typeof d.currency === 'string' ? d.currency : '',
+					month: typeof d.month === 'string' ? fxMonthLabel(d.month) : '',
 				},
 			);
 		}
@@ -124,4 +142,14 @@ export function providerMismatchDetails(f: ProviderFinding): string | null {
 	const found = `${s('foundAmount')} ${s('foundCurrency')}`.trim();
 	if (isAlreadyLinked(f) && found === expected) return null;
 	return i18nMsg('provider-gap-mismatch-details', 'Attendu { $expected }, trouvé { $found }', { expected, found });
+}
+
+/**
+ * Story 39-11d2 — un compte du plan nommé « numéro — nom » parmi `accounts`,
+ * `#<id>` s'il n'y est pas (lecture best-effort) : la colonne « Ce qui sera
+ * fait » des pages des prestataires.
+ */
+export function accountNumberName(accounts: readonly AccountResponse[], id: number): string {
+	const a = accounts.find((x) => x.id === id);
+	return a ? `${a.number} — ${a.name}` : `#${id}`;
 }

@@ -77,6 +77,7 @@ function paypalAccount(id: number, account: string): BankAccountSummary {
 		cardLast4: null,
 		provider: 'paypal',
 		paypal: { account, feeAccountId: 60 },
+		wise: null,
 		stripe: null,
 		isPrimary: false,
 		journalAccountId: 31,

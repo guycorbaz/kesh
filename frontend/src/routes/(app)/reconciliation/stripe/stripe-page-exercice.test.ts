@@ -69,6 +69,7 @@ function stripeAccount(id: number, account: string): BankAccountSummary {
 		provider: 'stripe',
 		paypal: null,
 		stripe: { account, feeAccountId: 60, payoutBankAccountId: 9 },
+		wise: null,
 		isPrimary: false,
 		journalAccountId: 31,
 		version: 1,
