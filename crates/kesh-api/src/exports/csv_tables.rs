@@ -122,8 +122,16 @@ const DEC_20_10: usize = 10;
 /// sa colonne, la précision égale à cette échelle complète par des zéros et ne
 /// coupe jamais (Story 48-11, D5 : `10.0050` → `10.0050`, `150.25` →
 /// `150.2500`). Ne pas passer une échelle inférieure à celle de la colonne : la
-/// précision de `format!` **coupe** les chiffres en trop au lieu de les arrondir.
+/// précision de `format!` **coupe** les chiffres en trop au lieu de les arrondir
+/// (`debug_assert!` ci-dessous). Borne : le tampon de `rust_decimal` fait 32
+/// caractères ; les colonnes `DECIMAL(19,4)` (20 caractères) et
+/// `DECIMAL(20,10)` (21) y tiennent, une échelle ou un entier plus grands non.
 fn fmt_decimal_scale(d: Decimal, scale: usize) -> String {
+    debug_assert!(
+        d.scale() as usize <= scale,
+        "échelle {} de {d} supérieure à celle de sa colonne ({scale}) : la précision couperait",
+        d.scale()
+    );
     format!("{d:.scale$}")
 }
 
