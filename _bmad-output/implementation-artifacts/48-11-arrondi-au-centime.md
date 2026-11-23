@@ -286,8 +286,8 @@ filtré sur `csv|export|rapport|report|pdf` : seuls `admin-manual.tex:3915` et `
   - **Famille 2 — troncature explicite** : `\.trunc\(\)`, `trunc_with_scale\(`, `RoundingStrategy::(ToZero|RoundDown)` ; liste close :
     `kesh-core/src/bank_imports/manual.rs` 1, `kesh-api/src/routes/mcp_server_settings.rs` 1 (ni l'un ni l'autre n'affiche un montant).
   - **Sonde positive** (la garde n'est pas vraie par construction) : la fonction de comptage, appliquée à un texte écrit dans le test
-    — `format!("{d:.2}")`, `format!("{:.2}", d)`, `format!("{d:>10.2}")`, `format!("{d:.scale$}")`, `format!("{:.*}", 2, d)`, une chaîne
-    `"{:.2}",` seule sur sa ligne, et une ligne `// {:.2}` —, rend **6** ; la famille 2 sur `d.trunc()` et `RoundingStrategy::ToZero`
+    — `format!("{d:.2}")`, `format!("{:.2}", d)`, `format!("{d:>10.2}")`, `format!("{d:.scale$}")`, `format!("{:.*}", 2, d)`, `format!("{:.1$}", d, 2)`, une chaîne
+    `"{:.2}",` seule sur sa ligne, et une ligne `// {:.2}` —, rend **7** ; la famille 2 sur `d.trunc()` et `RoundingStrategy::ToZero`
     rend 2 ; et la garde **voit au moins un fichier** (le balayage n'est pas vide : `sources().len()` > 100, et `money.rs` y figure). Les
     comptes attendus sont **écrits à la main** dans le test, jamais dérivés du même extracteur.
   - **Angles morts assumés** (écrits dans le doc-comment de la garde) : un `Decimal` écrit par `{}` ou `to_string()` sort à son échelle
@@ -386,7 +386,7 @@ filtré sur `csv|export|rapport|report|pdf` : seuls `admin-manual.tex:3915` et `
    plus de `pdf.rs` que `format_exchange_rate`. Les tests du bilan (`pdf.rs:2670-2690` et ceux de `shows_retained_earnings_line`)
    restent verts.
 9. **AC9 — la garde** (D6) : `arrondi_centime_garde` est verte avec la liste close de 22 occurrences dans 8 fichiers (famille 1) et de
-   2 (famille 2) ; la sonde positive rend 6 et 2 ; le balayage voit plus de 100 fichiers.
+   2 (famille 2) ; la sonde positive rend 7 et 2 ; le balayage voit plus de 100 fichiers.
 10. **AC10 — factures réelles** (contrainte de Guy du 2026-11-18) : `git diff origin/epic/48-corrections-0-20-0...HEAD --stat --
     crates/kesh-qrbill crates/kesh-api/src/routes/invoice_pdf_service.rs crates/kesh-db 'frontend/src/routes/(app)/invoices'
     frontend/src/lib/components/invoices frontend/src/lib/features/invoices` **vide** (sortie copiée au Dev Agent Record) ; les tests de
@@ -474,7 +474,7 @@ Ordre : **le test d'abord, rouge**, puis le correctif, vert. Journaux dans `/hom
 | AC1 (fonction commune, neuve) | — (elle n'existe pas avant) | **M1** : stratégie remplacée par `ToZero` dans `round_for_display` → AC1, AC2, AC3, AC4 rouges (`mut-m1.log`) ; **M2** : retrait du `if r.is_zero()` → les cas `-0.0040` rouges (`mut-m2.log`) ; **M3** : `MidpointNearestEven` → `10.0050` rouge (`mut-m3.log`) |
 | AC7 (plafond de l'écart) | **ne rougit pas** : sortie inchangée | filet déclaré (tests existants) |
 | AC8 (#1430) | — (déplacement) | le `git grep` de l'AC8, sortie copiée |
-| AC9 (garde) | un `{:.2}` réintroduit | **M4** : `let _ = format!("{:.2}", amount);` ajouté dans `kesh-report/src/csv.rs` → garde rouge, message qui nomme le fichier et dit 1 au lieu de 0 (`mut-m4.log`) ; **M5** : retrait d'un `{:.2}` légitime d'un fichier listé (par exemple la ligne de `money.rs` réécrite en `format!("{}", …)` le temps de la mutation) → rouge « 0 au lieu de 1 » (`mut-m5.log`) ; **M6** : `amount.trunc_with_scale(2)` ajouté dans `pdf.rs` → famille 2 rouge (`mut-m6.log`) ; la sonde positive rend 6 et 2 dans le même binaire |
+| AC9 (garde) | un `{:.2}` réintroduit | **M4** : `let _ = format!("{:.2}", amount);` ajouté dans `kesh-report/src/csv.rs` → garde rouge, message qui nomme le fichier et dit 1 au lieu de 0 (`mut-m4.log`) ; **M5** : retrait d'un `{:.2}` légitime d'un fichier listé (par exemple la ligne de `money.rs` réécrite en `format!("{}", …)` le temps de la mutation) → rouge « 0 au lieu de 1 » (`mut-m5.log`) ; **M6** : `amount.trunc_with_scale(2)` ajouté dans `pdf.rs` → famille 2 rouge (`mut-m6.log`) ; la sonde positive rend 7 et 2 dans le même binaire |
 | AC10, AC11, AC12 | — | commandes et sorties copiées |
 
 Numérotation : **M1 à M8, uniques, un journal chacune.**
@@ -657,7 +657,7 @@ Journaux hors dépôt sous `/home/gcorbaz/devel/kesh-gate-logs/e4811/` :
   `kesh-report` (`pdf.rs`, `csv.rs`, `balance_sheet.rs`) ; `kesh-api` (`csv_tables.rs` : `fmt_decimal` et `fmt_opt_decimal` supprimées,
   `fmt_decimal_scale` et cinq constantes `DEC_*`, 34 sites + `:430-431` + `fmt_rate`, commentaires de l'AC12, tests unitaires réécrits ;
   `bank_statements_manual.rs::amount_string` et `company_invoice_settings.rs::group_max_for_display` délèguent) ; garde neuve
-  `crates/kesh-api/tests/arrondi_centime_garde.rs` (famille 1 : 22/8 ; famille 2 : 2 ; sondes positives 6 et 2 ; balayage > 100 fichiers
+  `crates/kesh-api/tests/arrondi_centime_garde.rs` (famille 1 : 22/8 ; famille 2 : 2 ; sondes positives 7 et 2 ; balayage > 100 fichiers
   dont `money.rs`). Manuels FR : les trois sites de D8, posés par le premier agent et relus ici contre le code.
 - **Mutations** (tous journaux sous `mut/`) :
 
