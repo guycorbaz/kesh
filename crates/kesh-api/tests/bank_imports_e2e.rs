@@ -3836,6 +3836,8 @@ async fn montage_819(
             transaction_id: t.transaction_id,
             counterparty_iban: t.counterparty_iban,
             counterparty_name: t.counterparty_name,
+            counterparty_email: None,
+            provider_type: None,
         })
         .collect();
     let mut tx = pool.begin().await.unwrap();

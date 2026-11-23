@@ -17,7 +17,7 @@
 //! # L'inventaire des sites NON RÉSOLUS (D4-ter du `CLAUDE.md`)
 //!
 //! ⛔ L'extracteur ci-dessous lit un **littéral à une position d'argument**.
-//! Neuf sites du dépôt n'en portent pas : l'action y est une variable ou un
+//! Dix sites du dépôt n'en portent pas : l'action y est une variable ou un
 //! ternaire. Énumérer « les formes qui marchent » laisserait une dixième forme
 //! passer sans que rien ne rougisse. On inventorie donc l'**ensemble clos de ce
 //! qui ne résout pas** : tout site indirect doit figurer dans
@@ -96,6 +96,11 @@ const TYPE_DU_HELPER_EXERCICES: &str = "fiscal_year";
 /// site produit — établis en lisant les branches, pas en devinant.
 const SITES_INDIRECTS: &[(&str, &str, &[&str])] = &[
     (
+        "crates/kesh-api/src/routes/provider_imports.rs",
+        "le cœur commun d'import écrit la trace de sa SOURCE, que l'appelant nomme (Story 38-12a) : fichier CSV ou téléchargement par l'API",
+        &["paypal_download.created", "paypal_import.created"],
+    ),
+    (
         "crates/kesh-api/src/routes/users.rs",
         "deux libellés selon que le RÔLE change (Story 25-1b)",
         &["user.role_changed", "user.updated"],
@@ -165,7 +170,7 @@ const SITES_INDIRECTS: &[(&str, &str, &[&str])] = &[
 /// Le code porté par un argument, s'il est littéral.
 ///
 /// ⚠️ `"product.created".to_string()` EST un littéral : le refuser rapporterait
-/// quatre-vingts faux sites indirects et noierait les neuf vrais.
+/// quatre-vingts faux sites indirects et noierait les dix vrais.
 fn litteral(arg: &str) -> Option<String> {
     let mut a = arg.trim();
     if let Some(reste) = a.strip_prefix("String::from(") {
@@ -365,7 +370,7 @@ fn les_codes_de_l_inventaire_sont_verifies_dans_le_fichier_de_leur_site() {
 /// Littéraux qui ont la forme d'un code d'action **sans en être un**, et qu'on
 /// déclare plutôt que d'élargir le tamis.
 ///
-/// ⚠️ **Un ensemble clos, borné aux NEUF fichiers inventoriés** — et non une
+/// ⚠️ **Un ensemble clos, borné aux DIX fichiers inventoriés** — et non une
 /// liste ouverte sur tout le dépôt : elle ne grossit que si l'on écrit un
 /// littéral de cette forme dans l'un d'eux. Chaque entrée porte son motif, comme
 /// l'inventaire lui-même. *(« six » ici était faux : `SITES_INDIRECTS` en compte
@@ -715,7 +720,7 @@ fn l_inventaire_compte_ce_que_le_fichier_annonce() {
     // se périme pas — elle rougit.
     assert_eq!(
         SITES_INDIRECTS.len(),
-        9,
+        10,
         "⛔ Le nombre de sites indirects a changé. Mettre à jour **toutes** les \
          mentions en toutes lettres de ce fichier — elles ne sont pas confinées à \
          l'en-tête — puis ce nombre.\n\n\
@@ -838,6 +843,34 @@ fn chaque_code_a_son_libelle_dans_les_quatre_catalogues() {
             absentes.len(),
             &absentes[..absentes.len().min(8)],
             attendues.len()
+        );
+    }
+}
+
+/// Revue P2, G5 — les actions que le cœur d'import de prestataire accepte
+/// (`AUDIT_ACTIONS`) sont exactement les codes de son entrée de l'inventaire
+/// des sites indirects (écrits à la main), et chacune a son libellé : une
+/// action ajoutée à l'une des listes seulement rougit ici.
+#[test]
+fn les_actions_du_coeur_d_import_sont_inventoriees_et_libellees() {
+    let fichier = "crates/kesh-api/src/routes/provider_imports.rs";
+    let inventaire: BTreeSet<&str> = SITES_INDIRECTS
+        .iter()
+        .find(|(f, _, _)| *f == fichier)
+        .unwrap_or_else(|| panic!("{fichier} absent de SITES_INDIRECTS"))
+        .2
+        .iter()
+        .copied()
+        .collect();
+    let acceptees: BTreeSet<&str> = kesh_api::routes::provider_imports::AUDIT_ACTIONS
+        .iter()
+        .copied()
+        .collect();
+    assert_eq!(acceptees, inventaire, "AUDIT_ACTIONS et SITES_INDIRECTS");
+    for a in &acceptees {
+        assert!(
+            kesh_api::audit_labels::ACTIONS.contains(a),
+            "{a} sans libellé dans audit_labels::ACTIONS"
         );
     }
 }

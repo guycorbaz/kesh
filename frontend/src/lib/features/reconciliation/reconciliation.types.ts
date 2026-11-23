@@ -93,6 +93,13 @@ export interface ReconciliationProposal {
 	alreadyBooked: AlreadyBooked | null;
 }
 
+/**
+ * Story 38-11d (AC-5) — ce que lit la modale *Rattacher à une écriture existante* : la
+ * transaction et son identifiant, rien d'autre de la proposition. La réconciliation CHF passe
+ * sa proposition, la page PayPal une transaction construite depuis une ligne « à examiner ».
+ */
+export type LinkTarget = Pick<ReconciliationProposal, 'bankTransactionId' | 'transaction'>;
+
 export interface GetProposalsResponse {
 	proposals: ReconciliationProposal[];
 	// H6 Pass 1 code review — pagination indicator. true si la query

@@ -158,6 +158,8 @@ mod tests {
             version: 1,
             created_at: NaiveDateTime::default(),
             updated_at: NaiveDateTime::default(),
+            counterparty_email: None,
+            provider_type: None,
         }
     }
 

@@ -106,6 +106,8 @@ const bankAccount: BankAccountSummary = {
 	qrIban: null,
 	accountKind: 'bank',
 	cardLast4: null,
+	provider: null,
+	paypal: null,
 	isPrimary: true,
 	journalAccountId: LINKED_NON_POSTABLE.id,
 	version: 2,

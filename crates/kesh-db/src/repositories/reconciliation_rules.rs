@@ -25,7 +25,8 @@ use crate::errors::{DbError, map_db_error};
 use crate::repositories::audit_log;
 
 const COLUMNS: &str = "id, company_id, label, match_type, match_value, counterparty_account_id, \
-     priority, active, default_project_id, applied_count, last_applied_at, version, created_at, updated_at";
+     priority, active, default_project_id, provider_type, counterparty_email, direction, \
+     applied_count, last_applied_at, version, created_at, updated_at";
 
 /// Détecte si un [`DbError::UniqueConstraintViolation`] provient de la
 /// contrainte `uq_reconciliation_rules_match_active`. Le message MariaDB
@@ -194,16 +195,9 @@ pub async fn create_in_tx(
         super::projects::validate_taggable_in_tx(tx, company_id, &[pid]).await?;
     }
 
-    // Story 37-1 (AC-4) — le compte de contrepartie lu `LOCK IN SHARE MODE`,
-    // avant l'`INSERT` : un compte en devise n'est pas une contrepartie
-    // (`ACCOUNT_IN_FOREIGN_CURRENCY`). Après la sentinelle `companies` du
-    // projet (ordre global `companies` → `accounts`).
-    super::accounts::refuse_foreign_currency_in_tx(
-        tx,
-        company_id,
-        new_rule.counterparty_account_id,
-    )
-    .await?;
+    // Un compte de contrepartie en devise est admis (décision du responsable de l'epic du
+    // 2026-11-21, 38-11c2) : la règle ne s'applique qu'à une transaction en CHF
+    // ou dans la devise de ce compte (revue et acceptation d'un prestataire).
 
     // Story 15-5b (AC7, choix C30) — le compte de contrepartie doit être
     // imputable : une règle n'existe que pour produire des écritures sur lui.
@@ -216,8 +210,9 @@ pub async fn create_in_tx(
 
     let result = sqlx::query(
         "INSERT INTO reconciliation_rules \
-         (company_id, label, match_type, match_value, counterparty_account_id, priority, default_project_id) \
-         VALUES (?, ?, ?, ?, ?, ?, ?)",
+         (company_id, label, match_type, match_value, counterparty_account_id, priority, default_project_id, \
+          provider_type, counterparty_email, direction) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(company_id)
     .bind(&new_rule.label)
@@ -226,6 +221,9 @@ pub async fn create_in_tx(
     .bind(new_rule.counterparty_account_id)
     .bind(new_rule.priority)
     .bind(new_rule.default_project_id)
+    .bind(&new_rule.provider_type)
+    .bind(&new_rule.counterparty_email)
+    .bind(&new_rule.direction)
     .execute(&mut **tx)
     .await
     .map_err(map_db_error)?;
@@ -254,6 +252,9 @@ pub async fn create_in_tx(
                 "counterparty_account_id": new_rule.counterparty_account_id,
                 "priority": new_rule.priority,
                 "default_project_id": new_rule.default_project_id,
+                "provider_type": new_rule.provider_type,
+                "counterparty_email": new_rule.counterparty_email,
+                "direction": new_rule.direction,
                 "active": true,
             })),
         ),
@@ -320,14 +321,6 @@ pub async fn update_in_tx(
         .counterparty_account_id
         .is_some_and(|id| id != before.counterparty_account_id);
     let reactivates = patch.active == Some(true) && !before.active;
-    // Story 37-1 (AC-4) — un compte de contrepartie qui CHANGE vers un compte
-    // en devise est refusé (`ACCOUNT_IN_FOREIGN_CURRENCY`), lecture
-    // verrouillante avant l'`UPDATE` de la règle et après la sentinelle du
-    // projet. La réactivation n'a pas de garde de devise : un lien compte quel
-    // que soit l'état de la règle, le compte n'a donc pas pu recevoir de devise.
-    if account_changes {
-        super::accounts::refuse_foreign_currency_in_tx(tx, company_id, target_account_id).await?;
-    }
     if account_changes || reactivates {
         super::accounts::ensure_postable_if_active_in_tx(tx, company_id, target_account_id).await?;
     }
@@ -350,6 +343,16 @@ pub async fn update_in_tx(
     }
     if patch.default_project_id.is_some() {
         set_clauses.push("default_project_id = ?");
+    }
+    // Story 38-11b — les trois filtres facultatifs (écrits par l'API depuis la 38-11c1).
+    if patch.provider_type.is_some() {
+        set_clauses.push("provider_type = ?");
+    }
+    if patch.counterparty_email.is_some() {
+        set_clauses.push("counterparty_email = ?");
+    }
+    if patch.direction.is_some() {
+        set_clauses.push("direction = ?");
     }
     // version est toujours incrémentée (sauf si patch totalement vide,
     // auquel cas on évite un UPDATE inutile). On n'incrémente pas non
@@ -386,6 +389,17 @@ pub async fn update_in_tx(
         // `Some(None)` efface (bind NULL), `Some(Some(id))` affecte.
         q = q.bind(v);
     }
+    for v in [
+        &patch.provider_type,
+        &patch.counterparty_email,
+        &patch.direction,
+    ]
+    .into_iter()
+    .flatten()
+    {
+        // Même ordre que les clauses ci-dessus ; `Some(None)` lie NULL.
+        q = q.bind(v.clone());
+    }
     q = q.bind(id).bind(company_id).bind(expected_version);
 
     let result = q.execute(&mut **tx).await.map_err(map_db_error)?;
@@ -414,6 +428,9 @@ pub async fn update_in_tx(
                     "priority": before.priority,
                     "active": before.active,
                     "default_project_id": before.default_project_id,
+                    "provider_type": before.provider_type,
+                    "counterparty_email": before.counterparty_email,
+                    "direction": before.direction,
                 },
                 "after": {
                     "label": after.label,
@@ -421,6 +438,9 @@ pub async fn update_in_tx(
                     "priority": after.priority,
                     "active": after.active,
                     "default_project_id": after.default_project_id,
+                    "provider_type": after.provider_type,
+                    "counterparty_email": after.counterparty_email,
+                    "direction": after.direction,
                 },
             })),
         ),

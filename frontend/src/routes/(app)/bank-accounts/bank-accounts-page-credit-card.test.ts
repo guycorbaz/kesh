@@ -78,6 +78,8 @@ const carte: BankAccountSummary = {
 	qrIban: null,
 	accountKind: 'credit_card',
 	cardLast4: '4821',
+	provider: null,
+	paypal: null,
 	isPrimary: false,
 	journalAccountId: PASSIF.id,
 	version: 3,

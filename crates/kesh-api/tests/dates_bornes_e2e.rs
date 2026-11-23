@@ -428,6 +428,8 @@ impl Monde {
                 transaction_id: None,
                 counterparty_iban: None,
                 counterparty_name: None,
+                counterparty_email: None,
+                provider_type: None,
             }],
         )
         .await

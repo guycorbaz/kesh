@@ -20,6 +20,17 @@
 //! #427) — un compte actif non imputable y est refusé en 400
 //! `ACCOUNT_NOT_POSTABLE`, à la création, au changement de compte et à la
 //! réactivation.
+//!
+//! Story 38-11c1 (AC-2, AC-3) — trois **filtres facultatifs**, combinés au
+//! critère (`matchType`, `matchValue`, toujours obligatoires) :
+//! `providerType` (type de la transaction chez le prestataire, rogné, 1 à 64
+//! caractères), `counterpartyEmail` (stocké normalisé : tout blanc retiré,
+//! minuscules ; un `@`, un caractère au moins de chaque côté) et `direction`
+//! (`credit` ou `debit`). `null` admis ; au `PATCH`, absent = inchangé, `null`
+//! = retiré. Un refus de forme rend `400 VALIDATION_ERROR`. Le doublon reste
+//! jugé par `uq_reconciliation_rules_match_active` (critère seul) : deux règles
+//! de même critère sont refusées en `409 RECONCILIATION_RULE_DUPLICATE`
+//! **quels que soient leurs filtres** (limite KISS de la 38-11b, AC-1).
 
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
@@ -50,6 +61,10 @@ const PRIORITY_MAX: i32 = 1000;
 const DEFAULT_PRIORITY: i32 = 100;
 const PER_PAGE_DEFAULT: i64 = 50;
 const PER_PAGE_MAX: i64 = 200;
+/// Longueur maximale du filtre `providerType` (colonne `VARCHAR(64)`).
+const PROVIDER_TYPE_MAX_CHARS: usize = 64;
+/// Longueur maximale du filtre `counterpartyEmail` (colonne `VARCHAR(254)`).
+const COUNTERPARTY_EMAIL_MAX_CHARS: usize = 254;
 
 // ---------------------------------------------------------------------------
 // DTOs
@@ -67,6 +82,12 @@ pub struct ReconciliationRuleResponse {
     pub active: bool,
     /// Projet analytique par défaut (Story 19-5) — `null` si aucun.
     pub default_project_id: Option<i64>,
+    /// Story 38-11c1 — filtre facultatif : type chez le prestataire.
+    pub provider_type: Option<String>,
+    /// Story 38-11c1 — filtre facultatif : e-mail exact (forme normalisée).
+    pub counterparty_email: Option<String>,
+    /// Story 38-11c1 — sens facultatif : `credit` ou `debit`.
+    pub direction: Option<String>,
     pub applied_count: i64,
     pub last_applied_at: Option<chrono::NaiveDateTime>,
     pub version: i32,
@@ -85,6 +106,9 @@ impl From<ReconciliationRule> for ReconciliationRuleResponse {
             priority: r.priority,
             active: r.active,
             default_project_id: r.default_project_id,
+            provider_type: r.provider_type,
+            counterparty_email: r.counterparty_email,
+            direction: r.direction,
             applied_count: r.applied_count,
             last_applied_at: r.last_applied_at,
             version: r.version,
@@ -106,6 +130,13 @@ pub struct CreateRuleRequest {
     /// Projet analytique par défaut (Story 19-5) — optionnel.
     #[serde(default)]
     pub default_project_id: Option<i64>,
+    /// Story 38-11c1 — filtres facultatifs (voir l'en-tête du module).
+    #[serde(default)]
+    pub provider_type: Option<String>,
+    #[serde(default)]
+    pub counterparty_email: Option<String>,
+    #[serde(default)]
+    pub direction: Option<String>,
 }
 
 fn default_priority() -> i32 {
@@ -130,6 +161,14 @@ pub struct UpdateRuleRequest {
     /// `null` produise `Some(None)` (effacement) plutôt que `None` (inchangé).
     #[serde(default, deserialize_with = "crate::helpers::double_option")]
     pub default_project_id: Option<Option<i64>>,
+    /// Story 38-11c1 — filtres facultatifs, même sémantique à deux niveaux :
+    /// absent = inchangé ; `null` = retiré ; valeur = posée (validée).
+    #[serde(default, deserialize_with = "crate::helpers::double_option")]
+    pub provider_type: Option<Option<String>>,
+    #[serde(default, deserialize_with = "crate::helpers::double_option")]
+    pub counterparty_email: Option<Option<String>>,
+    #[serde(default, deserialize_with = "crate::helpers::double_option")]
+    pub direction: Option<Option<String>>,
 }
 
 #[derive(Deserialize)]
@@ -199,6 +238,68 @@ fn validate_priority(priority: i32) -> Result<(), AppError> {
     Ok(())
 }
 
+/// Story 38-11c1 (AC-2) — le filtre `providerType`, rogné : 1 à
+/// [`PROVIDER_TYPE_MAX_CHARS`] caractères, sinon `400 VALIDATION_ERROR`.
+fn validate_provider_type(value: &str) -> Result<String, AppError> {
+    let trimmed = value.trim();
+    let n = trimmed.chars().count();
+    if n == 0 || n > PROVIDER_TYPE_MAX_CHARS {
+        return Err(AppError::Validation(format!(
+            "providerType doit compter de 1 à {PROVIDER_TYPE_MAX_CHARS} caractères"
+        )));
+    }
+    Ok(trimmed.to_string())
+}
+
+/// Story 38-11c1 (AC-2) — le filtre `counterpartyEmail`, en sa forme
+/// normalisée ([`kesh_reconciliation::rules::normalize_email`]) : un seul `@`,
+/// un caractère au moins de chaque côté, au plus
+/// [`COUNTERPARTY_EMAIL_MAX_CHARS`] caractères, sinon `400 VALIDATION_ERROR`.
+fn validate_counterparty_email(value: &str) -> Result<String, AppError> {
+    let normalized = kesh_reconciliation::rules::normalize_email(value);
+    let well_formed = match normalized.split_once('@') {
+        Some((local, domain)) => !local.is_empty() && !domain.is_empty() && !domain.contains('@'),
+        None => false,
+    };
+    if !well_formed || normalized.chars().count() > COUNTERPARTY_EMAIL_MAX_CHARS {
+        return Err(AppError::Validation(format!(
+            "counterpartyEmail doit être une adresse « nom@domaine » d'au plus \
+             {COUNTERPARTY_EMAIL_MAX_CHARS} caractères"
+        )));
+    }
+    Ok(normalized)
+}
+
+/// Story 38-11c1 (AC-3) — le sens : `credit` ou `debit` exactement, sinon
+/// `400 VALIDATION_ERROR`.
+fn validate_direction(value: &str) -> Result<String, AppError> {
+    use kesh_reconciliation::rules::{DIRECTION_CREDIT, DIRECTION_DEBIT};
+    if value == DIRECTION_CREDIT || value == DIRECTION_DEBIT {
+        Ok(value.to_string())
+    } else {
+        Err(AppError::Validation(format!(
+            "direction doit valoir « {DIRECTION_CREDIT} » ou « {DIRECTION_DEBIT} »"
+        )))
+    }
+}
+
+/// Valide un filtre facultatif de création (`None` reste `None`).
+fn validate_optional(
+    value: Option<&str>,
+    validate: fn(&str) -> Result<String, AppError>,
+) -> Result<Option<String>, AppError> {
+    value.map(validate).transpose()
+}
+
+/// Valide un filtre facultatif de `PATCH` (absent = inchangé, `null` =
+/// retiré, valeur = validée).
+fn validate_patch(
+    value: Option<Option<&str>>,
+    validate: fn(&str) -> Result<String, AppError>,
+) -> Result<Option<Option<String>>, AppError> {
+    value.map(|v| validate_optional(v, validate)).transpose()
+}
+
 /// Pré-flight : valide que `counterparty_account_id` existe, est actif
 /// et appartient à `company_id`. Sinon → 404 `ACCOUNT_NOT_FOUND` pour
 /// anti-énumération KF-002 (compte archivé ne leak pas son existence).
@@ -265,6 +366,12 @@ pub async fn post_create(
     validate_label(&req.label)?;
     validate_match_value(&req.match_value)?;
     validate_priority(req.priority)?;
+    let provider_type = validate_optional(req.provider_type.as_deref(), validate_provider_type)?;
+    let counterparty_email = validate_optional(
+        req.counterparty_email.as_deref(),
+        validate_counterparty_email,
+    )?;
+    let direction = validate_optional(req.direction.as_deref(), validate_direction)?;
 
     // Normalisation IBAN canonique pour `IbanExact` (Pass 1 P-H4).
     let normalized_match_value = if req.match_type == ReconciliationMatchType::IbanExact {
@@ -284,6 +391,9 @@ pub async fn post_create(
         counterparty_account_id: req.counterparty_account_id,
         priority: req.priority,
         default_project_id: req.default_project_id,
+        counterparty_email,
+        direction,
+        provider_type,
     };
     let match_type_for_err = req.match_type;
     let match_value_for_err = new_rule.match_value.clone();
@@ -382,6 +492,18 @@ pub async fn patch(
     if let Some(priority) = req.priority {
         validate_priority(priority)?;
     }
+    let provider_type = validate_patch(
+        req.provider_type.as_ref().map(Option::as_deref),
+        validate_provider_type,
+    )?;
+    let counterparty_email = validate_patch(
+        req.counterparty_email.as_ref().map(Option::as_deref),
+        validate_counterparty_email,
+    )?;
+    let direction = validate_patch(
+        req.direction.as_ref().map(Option::as_deref),
+        validate_direction,
+    )?;
     if let Some(account_id) = req.counterparty_account_id {
         validate_counterparty_account(&state, current_user.company_id, account_id).await?;
     }
@@ -406,6 +528,9 @@ pub async fn patch(
         priority: req.priority,
         active: req.active,
         default_project_id: req.default_project_id,
+        counterparty_email,
+        direction,
+        provider_type,
     };
 
     let match_type_for_err = current.match_type;
