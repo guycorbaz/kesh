@@ -65,7 +65,7 @@ dernière, pour la raison ci-dessus ; story de solde à la fin.
 
 ### Story de solde
 
-Plafond : **trois issues** — proposition de l'orchestrateur au lancement, à confirmer par le Project Lead.
+Plafond : **trois issues** (décision du Project Lead du 2026-11-23, sur proposition de l'orchestrateur). S'il y en a plus, le choix suit la priorité (P2, puis P3, puis P4), puis l'ancienneté ; le surplus reste ouvert, sur une release ultérieure.
 
 ### Décomptes au lancement
 

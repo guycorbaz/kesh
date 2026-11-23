@@ -1197,7 +1197,7 @@ development_status:
   53-2-tva-sur-compte-de-la-vente: backlog  # #525, #1198 (P1) ; migration probable (b monte, de préférence un vendredi)
   53-3-ouverture-sous-verrou: backlog  # #513 (P1)
   53-4-assistant-compte-bancaire: backlog  # #1004 (P1)
-  53-5-solde-dette-epic: backlog  # story de solde ; plafond fixé au lancement
+  53-5-solde-dette-epic: backlog  # story de solde ; plafond de trois issues (décision de Guy du 2026-11-23)
   epic-53-retrospective: optional
   epic-54: backlog  # « Totaux du décompte de TVA » — après l'Epic 53 ; fichier epic-54-totaux-tva.md
   54-1-avoirs-dans-le-decompte-tva: backlog  # #390, #391, #392 (P1)
