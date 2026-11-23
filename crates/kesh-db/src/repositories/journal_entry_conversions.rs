@@ -235,6 +235,7 @@ pub async fn create_conversion(
         .begin()
         .await
         .map_err(|e| ConversionError::conversion(map_db_error(e).into()))?;
+    // Saisie d'une conversion (37-3b) : garde de postabilité active.
     let result = create_conversion_in_tx(
         &mut tx,
         company_id,
@@ -242,6 +243,7 @@ pub async fn create_conversion(
         entries,
         complete_difference,
         max_lines,
+        true,
     )
     .await;
     match result {
@@ -258,6 +260,14 @@ pub async fn create_conversion(
     }
 }
 
+/// Le corps de [`create_conversion`], dans la transaction de l'appelant.
+///
+/// `enforce_postable` est passé tel quel à [`journal_entries::create_in_tx`] :
+/// `true` pour la saisie d'une conversion (37-3b), `false` pour une conversion
+/// de prestataire ([`create_provider_conversion_in_tx`], Story 38-11c2 AC-8,
+/// revue P1 M4) — flux de rapprochement, dont le compte bancaire et le compte
+/// de conversion sont des comptes de configuration tolérés non imputables
+/// (D-A0), comme la forme à une écriture.
 async fn create_conversion_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,
@@ -265,6 +275,7 @@ async fn create_conversion_in_tx(
     mut entries: [NewJournalEntry; 2],
     complete_difference: bool,
     max_lines: usize,
+    enforce_postable: bool,
 ) -> Result<[JournalEntryWithLines; 2], ConversionError> {
     let conv = |e: DbError| ConversionError::conversion(e.into());
 
@@ -418,7 +429,7 @@ async fn create_conversion_in_tx(
             Some(fy) => fy,
         };
         let new = entries[idx].clone();
-        let result = journal_entries::create_in_tx(tx, fy.id, acteur, new, true)
+        let result = journal_entries::create_in_tx(tx, fy.id, acteur, new, enforce_postable)
             .await
             .map_err(|e| {
                 let kind = match e {
@@ -437,6 +448,167 @@ async fn create_conversion_in_tx(
         ))),
     }
 }
+
+/// Un côté d'une **conversion de prestataire** (Story 38-11c2, AC-8) : le
+/// compte du plan, le CHF de la ligne, et sa partie en devise (`None` pour un
+/// compte en CHF). Construit par le plan pur `kesh_reconciliation::conversion::
+/// plan_conversion`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ConversionLeg {
+    /// Le compte du plan.
+    pub ledger_account_id: i64,
+    /// Le CHF de la ligne.
+    pub chf: Decimal,
+    /// La partie en devise, provenance posée.
+    pub foreign: Option<crate::entities::ForeignAmount>,
+}
+
+/// Ce qu'écrit une conversion de prestataire (Story 38-11c2, AC-8 ; règle
+/// commune aux prestataires, servie telle quelle à Wise et Stripe).
+#[derive(Debug, Clone, PartialEq)]
+pub enum ConversionPlan {
+    /// Un côté en CHF : **une** écriture, débit `debit` (la cible) / crédit
+    /// `credit` (la source), au même CHF.
+    Single {
+        /// Le côté crédité par le prestataire, débité au journal.
+        debit: ConversionLeg,
+        /// Le côté débité par le prestataire, crédité au journal.
+        credit: ConversionLeg,
+    },
+    /// Deux devises étrangères : **deux** écritures par le compte de
+    /// conversion, au même CHF.
+    Double {
+        /// Le côté source (crédité dans l'écriture 1).
+        source: ConversionLeg,
+        /// Le côté cible (débité dans l'écriture 2).
+        target: ConversionLeg,
+    },
+}
+
+/// Passe une conversion de prestataire **dans la transaction de l'appelant**
+/// (Story 38-11c2, AC-8), sans `BEGIN` ni `COMMIT`, et rend les écritures
+/// créées — une (côté CHF) ou deux (`[écriture de la source, écriture de la
+/// cible]`).
+///
+/// - [`ConversionPlan::Single`] : une écriture au journal Banque, datée
+///   `source_date`, par [`journal_entries::create_in_tx`] (garde de
+///   postabilité désactivée, comme les autres flux de rapprochement) ; aucun
+///   exercice ouvert → [`ConversionErrorKind::NoFiscalYear`] ou
+///   [`ConversionErrorKind::FiscalYearClosed`].
+/// - [`ConversionPlan::Double`] : écriture 1 (débit conversion / crédit source,
+///   datée `source_date`) et écriture 2 (débit cible / crédit conversion,
+///   datée `target_date`), par [`create_conversion_in_tx`]
+///   (`complete_difference = false`, garde de postabilité désactivée comme
+///   pour [`ConversionPlan::Single`]), qui contrôle le compte de conversion
+///   (`FX_ACCOUNT_INVALID`) et le mode multi-devises. Le compte de conversion
+///   est lu ici d'abord, sous le même verrou partagé de `companies`, pour
+///   construire les lignes.
+///
+/// Aucun nom de prestataire : PayPal, Wise et Stripe l'appellent tel quel.
+pub async fn create_provider_conversion_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    acteur: Acteur,
+    plan: ConversionPlan,
+    source_date: NaiveDate,
+    target_date: NaiveDate,
+    description: String,
+) -> Result<Vec<i64>, ConversionError> {
+    let conv = |e: DbError| ConversionError::conversion(e.into());
+    let line = |leg: &ConversionLeg, debit: bool| NewJournalEntryLine {
+        account_id: leg.ledger_account_id,
+        debit: if debit { leg.chf } else { Decimal::ZERO },
+        credit: if debit { Decimal::ZERO } else { leg.chf },
+        project_id: None,
+        foreign: leg.foreign.clone(),
+    };
+    let entry = |date: NaiveDate, lines: Vec<NewJournalEntryLine>| NewJournalEntry {
+        company_id,
+        entry_date: date,
+        journal: crate::entities::Journal::Banque,
+        description: description.clone(),
+        project_id: None,
+        lines,
+    };
+    match plan {
+        ConversionPlan::Single { debit, credit } => {
+            let new = entry(source_date, vec![line(&debit, true), line(&credit, false)]);
+            let fy = fiscal_years::find_covering_date_in_tx(tx, company_id, source_date)
+                .await
+                .map_err(conv)?;
+            let fy = match fy {
+                None => {
+                    return Err(ConversionError::entry(
+                        0,
+                        ConversionErrorKind::NoFiscalYear(source_date),
+                    ));
+                }
+                Some(fy) if fy.status == FiscalYearStatus::Closed => {
+                    return Err(ConversionError::entry(
+                        0,
+                        ConversionErrorKind::FiscalYearClosed(source_date),
+                    ));
+                }
+                Some(fy) => fy,
+            };
+            let created = journal_entries::create_in_tx(tx, fy.id, acteur, new, false)
+                .await
+                .map_err(|e| {
+                    let kind = match e {
+                        DbError::FiscalYearClosed => {
+                            ConversionErrorKind::FiscalYearClosed(source_date)
+                        }
+                        other => ConversionErrorKind::Db(other),
+                    };
+                    ConversionError::entry(0, kind)
+                })?;
+            Ok(vec![created.entry.id])
+        }
+        ConversionPlan::Double { source, target } => {
+            let state = accounts::lock_company_currency_in_tx(tx, company_id, CompanyLock::Share)
+                .await
+                .map_err(conv)?;
+            let Some(transit) = state.fx_transit_account_id else {
+                return Err(conv(DbError::FxAccountInvalid {
+                    field: FxAccountField::Transit,
+                    reason: FxAccountReason::Missing,
+                    holder_account_id: None,
+                }));
+            };
+            let transit_leg = |chf: Decimal| ConversionLeg {
+                ledger_account_id: transit,
+                chf,
+                foreign: None,
+            };
+            let first = entry(
+                source_date,
+                vec![line(&transit_leg(source.chf), true), line(&source, false)],
+            );
+            let second = entry(
+                target_date,
+                vec![line(&target, true), line(&transit_leg(target.chf), false)],
+            );
+            // Garde de postabilité désactivée, comme la forme à une écriture
+            // (revue P1 M4).
+            let [a, b] = create_conversion_in_tx(
+                tx,
+                company_id,
+                acteur,
+                [first, second],
+                false,
+                PROVIDER_CONVERSION_MAX_LINES,
+                false,
+            )
+            .await?;
+            Ok(vec![a.entry.id, b.entry.id])
+        }
+    }
+}
+
+/// Limite de lignes passée à [`create_conversion_in_tx`] pour une conversion
+/// de prestataire : sans effet (deux lignes par écriture, aucune ligne de
+/// différence demandée).
+const PROVIDER_CONVERSION_MAX_LINES: usize = 50;
 
 /// Forme, paire et ligne de différence de l'écriture à compléter (AC-2 bis,
 /// V3, A31, A33), dans l'ordre des refus de la fiche ; ajoute la ligne

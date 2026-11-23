@@ -81,6 +81,9 @@ describe('RuleFormModal — sélecteur projet par défaut (Story 19-5)', () => {
 			priority: 100,
 			active: true,
 			defaultProjectId: 42,
+			providerType: null,
+			counterpartyEmail: null,
+			direction: null,
 			appliedCount: 0,
 			lastAppliedAt: null,
 			version: 1,
@@ -120,6 +123,9 @@ describe('RuleFormModal — refus du serveur lisible (Story 15-5b, AC14)', () =>
 			priority: 100,
 			active: true,
 			defaultProjectId: null,
+			providerType: null,
+			counterpartyEmail: null,
+			direction: null,
 			appliedCount: 0,
 			lastAppliedAt: null,
 			version: 1,
@@ -169,5 +175,39 @@ describe('RuleFormModal — compte de la banque absent en création (Story 15-6d
 		const values = Array.from(select.options).map((o) => o.textContent?.trim());
 		expect(values).toContain('6510 — Télécom');
 		expect(values).not.toContain('1020 — Banque');
+	});
+});
+
+describe('RuleFormModal — comptes en devise (38-11c2, revue P3, M3)', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it("propose les comptes de charges et de produits en devise, comme le permettent l'API et le manuel", async () => {
+		listProjectsMock.mockResolvedValueOnce([]);
+		const accounts = [
+			...makeAccounts(),
+			{
+				id: 11,
+				companyId: 1,
+				number: '6520',
+				name: 'Charges en USD',
+				accountType: 'Expense',
+				active: true,
+				role: null,
+				postable: true,
+				currency: 'USD',
+			} as AccountResponse,
+		];
+		const { findByTestId } = render(RuleFormModal, {
+			rule: null,
+			accounts,
+			onSuccess: () => {},
+			onCancel: () => {},
+		});
+		const select = (await findByTestId('rule-form-counterparty')) as HTMLSelectElement;
+		const values = Array.from(select.options).map((o) => o.value);
+		expect(values).toContain('10');
+		expect(values).toContain('11');
 	});
 });

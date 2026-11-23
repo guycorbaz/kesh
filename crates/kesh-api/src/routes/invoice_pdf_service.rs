@@ -1084,6 +1084,7 @@ mod tests {
             closed_on: None,
             created_at: chrono::NaiveDateTime::default(),
             updated_at: chrono::NaiveDateTime::default(),
+            provider_settings: Default::default(),
         }
     }
 

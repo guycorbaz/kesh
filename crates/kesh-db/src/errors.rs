@@ -1220,6 +1220,19 @@ pub enum DbError {
         site: CurrencyUseSite,
     },
 
+    /// La devise d'un compte du plan lié au **solde d'un prestataire**
+    /// (PayPal) ne change pas — Story 38-11b, revue P1 (M3) : la devise du
+    /// solde **est** celle de son compte du plan ; la changer (devise retirée,
+    /// posée ou remplacée) ferait d'un solde EUR, qui porte déjà ses
+    /// transactions EUR, un solde CHF, et contournerait l'unicité par devise.
+    /// Mappé vers HTTP **409** `ACCOUNT_CURRENCY_PROVIDER_LINKED`,
+    /// `details: { bankAccountId }`.
+    #[error("Le compte est lié au solde de prestataire {bank_account_id}")]
+    AccountCurrencyProviderLinked {
+        /// Le premier compte bancaire de prestataire lié, par `id`.
+        bank_account_id: i64,
+    },
+
     /// Un compte **en devise** choisi à un site de configuration qui débite en
     /// CHF (rôle, réglages de facturation, compte bancaire, article, règle de
     /// réconciliation) — Story 37-1, AC-4. Mappé vers HTTP **400**
@@ -1616,6 +1629,23 @@ pub enum DbError {
     )]
     SettlementAccountIsCreditCard {
         /// Le compte bancaire choisi.
+        bank_account_id: i64,
+    },
+
+    /// Le compte bancaire choisi est le solde d'un **prestataire** (PayPal) —
+    /// Story 38-11b (AC-3). Il ne reçoit ni règlement de facture client ni
+    /// paiement de facture fournisseur (limite de la phase 1 : passer par un
+    /// compte interne ou une écriture, puis rattacher la transaction). Levé par
+    /// `invoice_settlements_write::settle_invoice` et
+    /// `supplier_invoices::pay_in_tx_as` sur la ligne du compte lue sous verrou,
+    /// par la création d'un lot pain.001 (`payment_batches::create_batch`,
+    /// revue P1, M2) et par les routes des imports bancaires génériques (CAMT,
+    /// CSV, saisie manuelle). Mappé vers HTTP **409** `BANK_ACCOUNT_IS_PROVIDER`
+    /// (en `FailedProposal` du même code à l'acceptation d'une proposition
+    /// « facture fournisseur » de la réconciliation).
+    #[error("Le compte bancaire {bank_account_id} est le solde d'un prestataire de paiement")]
+    BankAccountIsProvider {
+        /// Le compte bancaire en cause.
         bank_account_id: i64,
     },
 
@@ -2489,6 +2519,7 @@ impl DbError {
             Self::AccountCurrencyLocked => "ACCOUNT_CURRENCY_LOCKED",
             Self::AccountForeignParentHasEntries { .. } => "ACCOUNT_FOREIGN_PARENT_HAS_ENTRIES",
             Self::AccountCurrencyInUse { .. } => "ACCOUNT_CURRENCY_IN_USE",
+            Self::AccountCurrencyProviderLinked { .. } => "ACCOUNT_CURRENCY_PROVIDER_LINKED",
             Self::AccountInForeignCurrency { .. } => "ACCOUNT_IN_FOREIGN_CURRENCY",
             Self::AccountIsFxDifferenceAccount { .. } => "ACCOUNT_IS_FX_DIFFERENCE_ACCOUNT",
             Self::FxMultipleCurrencies { .. } => "FX_MULTIPLE_CURRENCIES",
@@ -2519,6 +2550,7 @@ impl DbError {
             Self::AccountDesignatedInSettings { .. } => "ACCOUNT_DESIGNATED_IN_SETTINGS",
             Self::AccountLinkedToBankAccount { .. } => "ACCOUNT_LINKED_TO_BANK_ACCOUNT",
             Self::SettlementAccountIsCreditCard { .. } => "SETTLEMENT_ACCOUNT_IS_CREDIT_CARD",
+            Self::BankAccountIsProvider { .. } => "BANK_ACCOUNT_IS_PROVIDER",
             Self::AccountRoleAlreadyAssigned { .. } => "ACCOUNT_ROLE_ALREADY_ASSIGNED",
             Self::AccountParentArchived { .. } => "ACCOUNT_PARENT_ARCHIVED",
             Self::AccountParentCycle { .. } => "ACCOUNT_PARENT_CYCLE",

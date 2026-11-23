@@ -46,6 +46,8 @@ function carte(kind: BankAccountSummary['accountKind']): BankAccountSummary {
 		qrIban: null,
 		accountKind: kind,
 		cardLast4: kind === 'bank' ? null : '4821',
+		provider: null,
+		paypal: null,
 		isPrimary: false,
 		journalAccountId: 30,
 		version: 3,

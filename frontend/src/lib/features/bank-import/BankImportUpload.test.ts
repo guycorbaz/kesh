@@ -1009,3 +1009,21 @@ describe('BankImportUpload — compte sans IBAN', () => {
 		expect(get(c, 'preview-iban').textContent?.trim()).toBe('—');
 	});
 });
+
+// Story 38-11d (AC-1) — un compte de prestataire (PayPal) n'importe pas de relevé
+// bancaire : il n'est pas offert au sélecteur.
+describe('BankImportUpload — compte de prestataire', () => {
+	it('un compte PayPal n’est pas proposé ; les autres le restent', async () => {
+		const comptes = [
+			...ACCOUNTS,
+			{ id: 4, bankName: 'PayPal', description: null, iban: null, provider: 'paypal' },
+		];
+		const r = render(BankImportUpload, { props: { bankAccounts: comptes, onSuccess: vi.fn() } });
+		await flush();
+		const values = Array.from(r.container.querySelectorAll('#bank-account-select option')).map((o) =>
+			o.getAttribute('value'),
+		);
+		expect(values).not.toContain('4');
+		expect(values).toContain('1');
+	});
+});

@@ -120,6 +120,13 @@ export interface BankAccountJson {
 	 */
 	accountKind?: 'bank' | 'credit_card';
 	cardLast4?: string | null;
+	/**
+	 * Story 38-11d (AC-1) — prestataire dont le compte est le solde
+	 * (`'paypal'`), `null` pour un compte ordinaire ; absent d'un serveur
+	 * antérieur à la 38-11d. Les écrans d'import et de réconciliation écartent
+	 * ces comptes (`withoutProviders`).
+	 */
+	provider?: string | null;
 	isPrimary: boolean;
 }
 

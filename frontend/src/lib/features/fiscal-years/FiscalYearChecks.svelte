@@ -205,12 +205,23 @@
 								</p>
 								<ul class="ml-4 list-disc text-xs">
 									{#each pendingAccounts(check) as a (a.bankAccountId)}
-										<li>{pendingText(a)}</li>
+										<li>
+											{pendingText(a)}
+											{#if a.provider === 'paypal'}
+												<!-- Story 38-11d (revue P1, M1) — un compte PayPal se rapproche par sa page,
+												     la réconciliation générique ne l'offre pas. -->
+												<a class="ml-1 text-primary underline" href="/reconciliation/paypal" data-testid="fiscal-year-checks-k2-paypal-{a.bankAccountId}">
+													{i18nMsg('fiscal-years-checks-k2-link-paypal', 'Ouvrir la page PayPal')}
+												</a>
+											{/if}
+										</li>
 									{/each}
 								</ul>
-								<a class="text-xs text-primary underline" href="/reconciliation" data-testid="fiscal-year-checks-link-{check.code}">
-									{i18nMsg('fiscal-years-checks-k2-link', 'Ouvrir le rapprochement')}
-								</a>
+								{#if pendingAccounts(check).some((a) => !a.provider)}
+									<a class="text-xs text-primary underline" href="/reconciliation" data-testid="fiscal-year-checks-link-{check.code}">
+										{i18nMsg('fiscal-years-checks-k2-link', 'Ouvrir le rapprochement')}
+									</a>
+								{/if}
 							{:else if check.code === 'BANK_STATEMENT_AT_YEAR_END'}
 								<ul class="ml-4 list-disc text-xs">
 									{#each statementIssues(check) as issue (issue.bankAccountId)}

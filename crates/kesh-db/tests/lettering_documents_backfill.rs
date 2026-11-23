@@ -187,6 +187,17 @@ async fn colonne_posterieure(pool: &MySqlPool, poser: bool) {
         .expect("colonne postérieure à la fenêtre");
     colonnes_du_numero_interne(pool, poser).await;
     colonnes_du_reglement_groupe(pool, poser).await;
+    // Story 38-11b — le paiement fournisseur lit `bank_accounts.provider`
+    // (refus d'un compte PayPal), colonne de `20261120000001` : même geste.
+    let sql = if poser {
+        "ALTER TABLE bank_accounts ADD COLUMN provider VARCHAR(16) NULL"
+    } else {
+        "ALTER TABLE bank_accounts DROP COLUMN provider"
+    };
+    sqlx::query(sql)
+        .execute(pool)
+        .await
+        .expect("colonne du prestataire, postérieure à la fenêtre");
 }
 
 /// Même geste pour les colonnes de la migration `20261118000001` (Story 43-1a) que
