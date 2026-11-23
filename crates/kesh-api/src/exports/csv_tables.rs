@@ -14,7 +14,9 @@
 //!   de `"…"`, `"` interne doublé en `""`)
 //! - Dates au format ISO 8601 (`YYYY-MM-DD` pour `NaiveDate`,
 //!   `YYYY-MM-DDTHH:MM:SSZ` pour `NaiveDateTime` UTC)
-//! - Decimal toujours formaté `{:.2}` (cohérent `kesh-report::csv::format_amount_iso`)
+//! - Chaque `Decimal` s'écrit à l'échelle de sa colonne dans le schéma, sans
+//!   arrondi (constantes `DEC_*`) ; les rapports (`kesh-report::csv`)
+//!   arrondissent au centime, l'export global non (Story 48-11, #1245)
 //!
 //! Pattern privé `write_csv_bom` + `make_csv_writer` factorisés en haut du
 //! fichier (Decision §csv-helper-reuse — duplication intentionnelle vs
@@ -104,20 +106,31 @@ fn fmt_opt_dt(dt: Option<NaiveDateTime>) -> String {
     dt.map(fmt_dt).unwrap_or_default()
 }
 
-/// Format `Decimal` → toujours 2 décimales (`{:.2}`).
-fn fmt_decimal(d: Decimal) -> String {
-    format!("{d:.2}")
-}
+/// Échelle (nombre de décimales) des colonnes `DECIMAL(19,4)` du schéma.
+const DEC_19_4: usize = 4;
+/// Échelle des colonnes `DECIMAL(18,2)` du schéma.
+const DEC_18_2: usize = 2;
+/// Échelle des colonnes `DECIMAL(7,2)` du schéma.
+const DEC_7_2: usize = 2;
+/// Échelle des colonnes `DECIMAL(5,2)` du schéma.
+const DEC_5_2: usize = 2;
+/// Échelle des colonnes `DECIMAL(20,10)` du schéma.
+const DEC_20_10: usize = 10;
 
-/// Format `Option<Decimal>` → 2 décimales ou chaîne vide.
-fn fmt_opt_decimal(d: Option<Decimal>) -> String {
-    d.map(fmt_decimal).unwrap_or_default()
+/// Format `Decimal` à l'échelle **de sa colonne** dans le schéma (constantes
+/// `DEC_*`), **sans arrondi** : une valeur lue en base a au plus l'échelle de
+/// sa colonne, la précision égale à cette échelle complète par des zéros et ne
+/// coupe jamais (Story 48-11, D5 : `10.0050` → `10.0050`, `150.25` →
+/// `150.2500`). Ne pas passer une échelle inférieure à celle de la colonne : la
+/// précision de `format!` **coupe** les chiffres en trop au lieu de les arrondir.
+fn fmt_decimal_scale(d: Decimal, scale: usize) -> String {
+    format!("{d:.scale$}")
 }
 
 /// Format `Option<Decimal>` à l'échelle **de sa colonne** (Story 37-3a :
 /// `amount_currency` à 4, `exchange_rate` à 10 décimales) ou chaîne vide.
 fn fmt_opt_decimal_scale(d: Option<Decimal>, scale: usize) -> String {
-    d.map(|d| format!("{d:.scale$}")).unwrap_or_default()
+    d.map(|d| fmt_decimal_scale(d, scale)).unwrap_or_default()
 }
 
 /// Format `Option<i64>` → `i64.to_string()` ou chaîne vide.
@@ -416,8 +429,8 @@ pub fn serialize_journal_entry_lines_csv<W: Write>(
             jl.entry_id.to_string(),
             jl.account_id.to_string(),
             jl.line_order.to_string(),
-            fmt_decimal(jl.debit),
-            fmt_decimal(jl.credit),
+            fmt_decimal_scale(jl.debit, DEC_19_4),
+            fmt_decimal_scale(jl.credit, DEC_19_4),
             // Tag analytique (Epic 19) — vide si ligne non taguée.
             jl.project_id.map(|p| p.to_string()).unwrap_or_default(),
             // Lettrage (15-1a-i) — vide si la ligne est ouverte. L'origine est
@@ -426,9 +439,9 @@ pub fn serialize_journal_entry_lines_csv<W: Write>(
             // comme toute cellule texte lue en base.
             jl.lettering_key.map(|k| k.to_string()).unwrap_or_default(),
             txt(jl.lettering_origin.clone().unwrap_or_default()),
-            // Jamais `fmt_decimal` (deux décimales) : montant à 4, cours à 10.
-            fmt_opt_decimal_scale(jl.amount_currency, 4),
-            fmt_opt_decimal_scale(jl.exchange_rate, 10),
+            // Montant en devise à 4 décimales, cours à 10 : l'échelle du schéma.
+            fmt_opt_decimal_scale(jl.amount_currency, DEC_19_4),
+            fmt_opt_decimal_scale(jl.exchange_rate, DEC_20_10),
             fmt_opt_str(&jl.rate_source),
         ])
         .map_err(|e| map_csv_err("journal_entry_lines", e))?;
@@ -534,8 +547,8 @@ pub fn serialize_products_csv<W: Write>(rows: &[Product], writer: W) -> Result<(
             p.company_id.to_string(),
             txt(p.name.clone()),
             fmt_opt_str(&p.description),
-            fmt_decimal(p.unit_price),
-            fmt_decimal(p.vat_rate),
+            fmt_decimal_scale(p.unit_price, DEC_19_4),
+            fmt_decimal_scale(p.vat_rate, DEC_5_2),
             fmt_opt_i64(p.default_revenue_account_id),
             fmt_bool(p.active),
             p.version.to_string(),
@@ -594,8 +607,8 @@ pub fn serialize_invoices_csv<W: Write>(rows: &[Invoice], writer: W) -> Result<(
             fmt_date(i.date),
             fmt_opt_date(i.due_date),
             fmt_opt_str(&i.payment_terms),
-            fmt_decimal(i.total_amount),
-            fmt_decimal(i.rounding_amount),
+            fmt_decimal_scale(i.total_amount, DEC_19_4),
+            fmt_decimal_scale(i.rounding_amount, DEC_19_4),
             fmt_opt_i64(i.journal_entry_id),
             fmt_opt_dt(i.paid_at),
             // Dernier envoi e-mail (Epic 20, Story 20-3b1).
@@ -653,10 +666,10 @@ pub fn serialize_invoice_lines_csv<W: Write>(
             il.invoice_id.to_string(),
             il.position.to_string(),
             txt(il.description.clone()),
-            fmt_decimal(il.quantity),
-            fmt_decimal(il.unit_price),
-            fmt_decimal(il.vat_rate),
-            fmt_decimal(il.line_total),
+            fmt_decimal_scale(il.quantity, DEC_19_4),
+            fmt_decimal_scale(il.unit_price, DEC_19_4),
+            fmt_decimal_scale(il.vat_rate, DEC_5_2),
+            fmt_decimal_scale(il.line_total, DEC_19_4),
             fmt_opt_i64(il.revenue_account_id),
             fmt_dt(il.created_at),
         ])
@@ -761,8 +774,8 @@ pub fn serialize_bank_imports_csv<W: Write>(
             fmt_opt_str(&bi.statement_id),
             fmt_date(bi.period_from),
             fmt_date(bi.period_to),
-            fmt_opt_decimal(bi.opening_balance),
-            fmt_opt_decimal(bi.closing_balance),
+            fmt_opt_decimal_scale(bi.opening_balance, DEC_18_2),
+            fmt_opt_decimal_scale(bi.closing_balance, DEC_18_2),
             bi.transaction_count.to_string(),
             fmt_dt(bi.imported_at),
             bi.imported_by_user_id.to_string(),
@@ -811,7 +824,7 @@ pub fn serialize_bank_transactions_csv<W: Write>(
             bt.bank_account_id.to_string(),
             fmt_date(bt.booking_date),
             fmt_opt_date(bt.value_date),
-            fmt_decimal(bt.amount),
+            fmt_decimal_scale(bt.amount, DEC_18_2),
             txt(bt.currency.clone()),
             fmt_opt_str(&bt.reference),
             txt(bt.details.clone()),
@@ -860,7 +873,7 @@ pub fn serialize_vat_rates_csv<W: Write>(rows: &[VatRate], writer: W) -> Result<
             v.company_id.to_string(),
             txt(v.category.clone()),
             txt(v.label.clone()),
-            fmt_decimal(v.rate),
+            fmt_decimal_scale(v.rate, DEC_5_2),
             fmt_date(v.valid_from),
             fmt_opt_date(v.valid_to),
             fmt_bool(v.active),
@@ -874,11 +887,11 @@ pub fn serialize_vat_rates_csv<W: Write>(rows: &[VatRate], writer: W) -> Result<
 }
 
 /// Format d'un **cours de change** (Story 37-2) : toujours 10 décimales, la
-/// précision de `exchange_rates.rate` (`DECIMAL(20,10)`). ⚠️ Jamais
-/// [`fmt_decimal`], qui arrondirait le cours à 2 décimales — un cours de
-/// 0.9123456789 exporté 0.91 serait faux dans l'autre logiciel.
+/// précision de `exchange_rates.rate` (`DECIMAL(20,10)`, [`DEC_20_10`]). ⚠️ Jamais
+/// à deux décimales, qui couperait le cours — un cours de 0.9123456789 exporté
+/// 0.91 serait faux dans l'autre logiciel.
 fn fmt_rate(d: Decimal) -> String {
-    format!("{d:.10}")
+    fmt_decimal_scale(d, DEC_20_10)
 }
 
 /// Format `Option<Decimal>` d'un cours → 10 décimales ou chaîne vide.
@@ -959,7 +972,7 @@ pub fn serialize_dunning_levels_csv<W: Write>(
             l.company_id.to_string(),
             l.level_number.to_string(),
             l.delay_days.to_string(),
-            fmt_decimal(l.fee_amount),
+            fmt_decimal_scale(l.fee_amount, DEC_7_2),
             l.version.to_string(),
             fmt_dt(l.created_at),
             fmt_dt(l.updated_at),
@@ -1032,7 +1045,7 @@ pub fn serialize_invoice_reminders_csv<W: Write>(
             r.company_id.to_string(),
             r.invoice_id.to_string(),
             r.level_number.to_string(),
-            fmt_decimal(r.fee_amount),
+            fmt_decimal_scale(r.fee_amount, DEC_7_2),
             fmt_dt(r.sent_at),
             txt(r.channel.clone()),
             fmt_opt_str(&r.sent_to),
@@ -1100,11 +1113,11 @@ pub fn serialize_company_invoice_settings_csv<W: Write>(
             fmt_opt_i64(cis.default_payable_account_id),
             fmt_opt_i64(cis.default_rounding_account_id),
             fmt_bool(cis.round_to_5_centimes),
-            fmt_opt_decimal(cis.minimum_invoice_amount),
+            fmt_opt_decimal_scale(cis.minimum_invoice_amount, DEC_19_4),
             fmt_opt_i64(cis.default_discount_account_id),
             fmt_opt_i64(cis.default_bank_fees_account_id),
             fmt_opt_i64(cis.default_bad_debt_account_id),
-            fmt_decimal(cis.group_settlement_max_difference),
+            fmt_decimal_scale(cis.group_settlement_max_difference, DEC_19_4),
             cis.version.to_string(),
             fmt_dt(cis.created_at),
             fmt_dt(cis.updated_at),
@@ -1256,8 +1269,8 @@ pub fn serialize_credit_notes_csv<W: Write>(
             fmt_opt_str(&cn.credit_note_number),
             txt(cn.status.clone()),
             fmt_date(cn.date),
-            fmt_decimal(cn.total_amount),
-            fmt_decimal(cn.rounding_amount),
+            fmt_decimal_scale(cn.total_amount, DEC_19_4),
+            fmt_decimal_scale(cn.rounding_amount, DEC_19_4),
             fmt_opt_i64(cn.journal_entry_id),
             cn.version.to_string(),
             fmt_dt(cn.created_at),
@@ -1294,10 +1307,10 @@ pub fn serialize_credit_note_lines_csv<W: Write>(
             l.credit_note_id.to_string(),
             l.position.to_string(),
             txt(l.description.clone()),
-            fmt_decimal(l.quantity),
-            fmt_decimal(l.unit_price),
-            fmt_decimal(l.vat_rate),
-            fmt_decimal(l.line_total),
+            fmt_decimal_scale(l.quantity, DEC_19_4),
+            fmt_decimal_scale(l.unit_price, DEC_19_4),
+            fmt_decimal_scale(l.vat_rate, DEC_5_2),
+            fmt_decimal_scale(l.line_total, DEC_19_4),
             fmt_opt_i64(l.revenue_account_id),
             fmt_dt(l.created_at),
         ])
@@ -1352,11 +1365,11 @@ pub fn serialize_supplier_invoices_csv<W: Write>(
             txt(si.status.clone()),
             fmt_date(si.invoice_date),
             fmt_opt_date(si.due_date),
-            fmt_decimal(si.total_amount),
+            fmt_decimal_scale(si.total_amount, DEC_19_4),
             fmt_opt_str(&si.creditor_iban),
             fmt_opt_str(&si.creditor_qr_iban),
             fmt_opt_str(&si.payment_reference),
-            fmt_opt_decimal(si.expected_payment_amount),
+            fmt_opt_decimal_scale(si.expected_payment_amount, DEC_19_4),
             fmt_opt_i64(si.project_id),
             // Story v017-4a (#849, AC-4) : cellule vide pour un brouillon.
             fmt_opt_i64(si.purchase_journal_entry_id),
@@ -1402,10 +1415,10 @@ pub fn serialize_supplier_invoice_lines_csv<W: Write>(
             l.supplier_invoice_id.to_string(),
             l.position.to_string(),
             txt(l.description.clone()),
-            fmt_decimal(l.quantity),
-            fmt_decimal(l.unit_price),
-            fmt_decimal(l.vat_rate),
-            fmt_decimal(l.line_total),
+            fmt_decimal_scale(l.quantity, DEC_19_4),
+            fmt_decimal_scale(l.unit_price, DEC_19_4),
+            fmt_decimal_scale(l.vat_rate, DEC_5_2),
+            fmt_decimal_scale(l.line_total, DEC_19_4),
             l.expense_account_id.to_string(),
             fmt_dt(l.created_at),
         ])
@@ -1444,7 +1457,7 @@ pub fn serialize_payment_batches_csv<W: Write>(
             b.bank_account_id.to_string(),
             txt(b.status.clone()),
             fmt_date(b.requested_execution_date),
-            fmt_decimal(b.total_amount),
+            fmt_decimal_scale(b.total_amount, DEC_19_4),
             txt(b.msg_id.clone()),
             txt(b.payment_info_id.clone()),
             fmt_opt_dt(b.confirmed_at),
@@ -1481,7 +1494,7 @@ pub fn serialize_payment_batch_items_csv<W: Write>(
             it.supplier_invoice_id.to_string(),
             it.position.to_string(),
             txt(it.end_to_end_id.clone()),
-            fmt_decimal(it.amount),
+            fmt_decimal_scale(it.amount, DEC_19_4),
             fmt_dt(it.created_at),
         ])
         .map_err(|e| map_csv_err("payment_batch_items", e))?;
@@ -1520,7 +1533,7 @@ pub fn serialize_invoice_settlements_csv<W: Write>(
             st.company_id.to_string(),
             st.invoice_id.to_string(),
             st.journal_entry_id.to_string(),
-            fmt_decimal(st.amount),
+            fmt_decimal_scale(st.amount, DEC_19_4),
             fmt_date(st.settled_on),
             txt(st.settlement_type.clone()),
             fmt_opt_i64(st.settlement_bank_account_id),
@@ -1752,7 +1765,7 @@ pub fn serialize_imported_supplier_invoices_csv<W: Write>(
             fmt_opt_str(&i.creditor_country),
             fmt_opt_str(&i.reference_type),
             fmt_opt_str(&i.reference_value),
-            fmt_opt_decimal(i.amount),
+            fmt_opt_decimal_scale(i.amount, DEC_19_4),
             fmt_opt_str(&i.currency),
             fmt_opt_str(&i.unstructured_message),
             fmt_opt_str(&i.billing_information),
@@ -1775,7 +1788,7 @@ mod tests {
     use rust_decimal_macros::dec;
 
     /// Story 37-2 : un cours retenu s'exporte à **10 décimales** (jamais
-    /// arrondi à 2 par `fmt_decimal`), sa source et son auteur tels quels
+    /// coupé à 2 par une précision trop courte), sa source et son auteur tels quels
     /// (`updated_by` vide = copie de Kesh).
     #[test]
     fn exchange_rates_csv_exports_ten_decimals() {
@@ -2452,13 +2465,14 @@ mod tests {
     // ----- AC #30(c) — journal_entry_lines serializer -----
 
     #[test]
-    fn serialize_journal_entry_lines_csv_decimal_two_decimals() {
+    fn serialize_journal_entry_lines_csv_decimal_column_scale() {
         let mut buf = Vec::new();
         serialize_journal_entry_lines_csv(&[sample_line()], &mut buf).expect("serialize ok");
         let text = std::str::from_utf8(&buf[3..]).unwrap();
-        // Decimal formaté 2 décimales — debit 150.25 + credit 0.00,
-        // project_id vide (ligne non taguée, Story 19-2).
-        assert!(text.contains(";150.25;0.00;;;;;;\r\n"), "got: {text}");
+        // Decimal à l'échelle de sa colonne (DECIMAL(19,4), Story 48-11) —
+        // debit 150.25 → 150.2500 + credit 0.0000, project_id vide (ligne non
+        // taguée, Story 19-2).
+        assert!(text.contains(";150.2500;0.0000;;;;;;\r\n"), "got: {text}");
         // Header
         assert!(text.starts_with(
             "id;entry_id;account_id;line_order;debit;credit;project_id;lettering_key;lettering_origin;\
@@ -2482,8 +2496,23 @@ mod tests {
         let lignes: Vec<&str> = text.lines().collect();
         assert_eq!(
             lignes[1],
-            "100;10;1;1;1125.83;0.00;;;;1234.5600;0.9119281363;manual"
+            "100;10;1;1;1125.8300;0.0000;;;;1234.5600;0.9119281363;manual"
         );
+    }
+
+    /// Story 48-11 (AC4) — `fmt_decimal_scale` écrit à l'échelle de la colonne,
+    /// sans arrondi ni coupe : la fraction de centime paraît entière.
+    #[test]
+    fn fmt_decimal_scale_ecrit_a_l_echelle_de_la_colonne() {
+        assert_eq!(fmt_decimal_scale(dec!(10.0050), DEC_19_4), "10.0050");
+        assert_eq!(fmt_decimal_scale(dec!(150.25), DEC_19_4), "150.2500");
+        assert_eq!(fmt_decimal_scale(dec!(0.125), DEC_19_4), "0.1250");
+        assert_eq!(fmt_decimal_scale(dec!(8.10), DEC_5_2), "8.10");
+        assert_eq!(
+            fmt_decimal_scale(dec!(0.9123456789), DEC_20_10),
+            "0.9123456789"
+        );
+        assert_eq!(fmt_opt_decimal_scale(None, DEC_19_4), "");
     }
 
     #[test]
@@ -2493,7 +2522,7 @@ mod tests {
         let mut buf = Vec::new();
         serialize_journal_entry_lines_csv(&[line], &mut buf).expect("serialize ok");
         let text = std::str::from_utf8(&buf[3..]).unwrap();
-        assert!(text.contains(";150.25;0.00;7;;;;;\r\n"), "got: {text}");
+        assert!(text.contains(";150.2500;0.0000;7;;;;;\r\n"), "got: {text}");
     }
 
     /// Story 15-1a-i (AC14) — l'export des lignes porte la marque du lettrage :
@@ -2515,8 +2544,8 @@ mod tests {
             "id;entry_id;account_id;line_order;debit;credit;project_id;lettering_key;lettering_origin;\
              amount_currency;exchange_rate;rate_source"
         );
-        assert_eq!(lignes[1], "100;10;1;1;150.25;0.00;;100;manual;;;");
-        assert_eq!(lignes[2], "101;10;1;1;150.25;0.00;;;;;;");
+        assert_eq!(lignes[1], "100;10;1;1;150.2500;0.0000;;100;manual;;;");
+        assert_eq!(lignes[2], "101;10;1;1;150.2500;0.0000;;;;;;");
     }
 
     #[test]
