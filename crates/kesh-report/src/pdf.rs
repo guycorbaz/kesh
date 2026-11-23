@@ -3811,4 +3811,31 @@ mod tests {
             assert!(multi.iter().any(|l| l == h), "{h}");
         }
     }
+    // ------------------------------------------------------------------
+    // Story 48-11 (#1245) : les montants s'arrondissent au centime
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn format_swiss_amount_arrondit_au_centime() {
+        assert_eq!(format_swiss_amount(dec!(1234.5678)), "1'234.57");
+        assert_eq!(format_swiss_amount(dec!(10.0050)), "10.01");
+        assert_eq!(format_swiss_amount(dec!(-10.0050)), "-10.01");
+        assert_eq!(format_swiss_amount(dec!(-0.0040)), "0.00");
+    }
+
+    #[test]
+    fn format_rate_et_rendement_arrondissent() {
+        assert_eq!(format_rate(dec!(8.125)), "8.13 %");
+        assert_eq!(format_rendement(Some(dec!(12.345))), "12.35%");
+    }
+
+    #[test]
+    fn la_balance_pdf_arrondit_la_fraction_de_centime() {
+        let mut tb = fixture_tb(false);
+        tb.rows[0].total_debit = dec!(10.0050);
+        let ctx = PdfContext::fr_ch_default("Test SA");
+        let texte = pdf_text(&render_trial_balance_pdf(&tb, &ctx).unwrap());
+        assert!(texte.iter().any(|l| l == "10.01"), "{texte:?}");
+        assert!(!texte.iter().any(|l| l == "10.00"), "{texte:?}");
+    }
 }

@@ -554,3 +554,19 @@ fn amount_string(d: Decimal) -> String {
     let d = if d.is_zero() { Decimal::ZERO } else { d };
     format!("{:.2}", d)
 }
+
+#[cfg(test)]
+mod tests_arrondi_48_11 {
+    use super::amount_string;
+    use rust_decimal_macros::dec;
+
+    /// Story 48-11 (#1245) : la première valeur à trois décimales s'arrondit
+    /// au centime (demi loin de zéro) au lieu d'être coupée.
+    #[test]
+    fn amount_string_arrondit_au_centime() {
+        assert_eq!(amount_string(dec!(10.0050)), "10.01");
+        // Filets : réponses inchangées.
+        assert_eq!(amount_string(dec!(-0)), "0.00");
+        assert_eq!(amount_string(dec!(50)), "50.00");
+    }
+}
