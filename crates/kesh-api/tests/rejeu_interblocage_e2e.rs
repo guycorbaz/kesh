@@ -3031,3 +3031,139 @@ async fn exchange_rate_put_is_replayed_when_it_is_the_deadlock_victim(pool: MySq
     assert_eq!(audits, 1, "une seule entrée d'audit");
     capture.exiger_un_rejeu("exchange_rates::put_rate");
 }
+
+// ============================================================
+// Story 48-12a (#975, D3ter) — les factures client, victimes du verrou du
+// fournisseur de la règle anti-doublon
+// ============================================================
+
+/// Un projet analytique de la société, posé par SQL.
+async fn projet(pool: &MySqlPool, ctx: &Contexte, code: &str) -> i64 {
+    sqlx::query("INSERT INTO projects (company_id, code, name) VALUES (?, ?, ?)")
+        .bind(ctx.company_id())
+        .bind(code)
+        .bind(format!("Projet {code}"))
+        .execute(pool)
+        .await
+        .unwrap()
+        .last_insert_id() as i64
+}
+
+/// Une transaction lourde qui tient le contact `contact` comme la règle
+/// anti-doublon le tient (`supplier_invoices::lock_supplier_in_tx`, exclusif) —
+/// ce que font la création, la complétion et la modification d'une facture
+/// fournisseur avant de demander `companies` ou le projet par leurs clés
+/// étrangères.
+async fn lourde_tenant_le_contact(
+    pool: &MySqlPool,
+    ctx: &Contexte,
+    contact: i64,
+) -> Transaction<'static, MySql> {
+    let mut lourde = transaction_lourde(pool).await;
+    assert!(
+        kesh_db::repositories::supplier_invoices::lock_supplier_in_tx(
+            &mut lourde,
+            ctx.company_id(),
+            contact
+        )
+        .await
+        .unwrap(),
+        "le contact existe"
+    );
+    lourde
+}
+
+/// D3ter (AC-14) — `POST /invoices` avec un projet tient la sentinelle
+/// `companies` et le projet, puis attend le contact (clé étrangère de son
+/// `INSERT`) que tient la transaction lourde ; celle-ci demande alors la
+/// sentinelle : cycle, la route est la victime, rejoue et rend `201`. Sans
+/// l'enveloppe, `500`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn invoice_create_is_replayed_when_it_is_the_deadlock_victim(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let client = contact(&pool, &ctx, "Client et fournisseur", false).await;
+    let p = projet(&pool, &ctx, "R48").await;
+    let capture = CaptureRejeu::installer();
+    let lourde = lourde_tenant_le_contact(&pool, &ctx, client).await;
+    let route = requete_en_tache(
+        &ctx,
+        reqwest::Method::POST,
+        "/api/v1/invoices",
+        Some(json!({
+            "contactId": client,
+            "projectId": p,
+            "date": aujourd_hui().to_string(),
+            "lines": [
+                {"description": "Conseil", "quantity": "1", "unitPrice": "100.00", "vatRate": "8.10"}
+            ]
+        })),
+    );
+    let (status, corps) = victime(
+        &pool,
+        lourde,
+        route,
+        &["INSERT INTO invoices"],
+        "SELECT id FROM companies WHERE id = ? FOR UPDATE",
+        ctx.company_id(),
+    )
+    .await;
+    assert_eq!(status, 201, "⛔ l'interblocage doit être rejoué : {corps}");
+    assert_eq!(
+        compter(
+            &pool,
+            "SELECT COUNT(*) FROM invoices WHERE company_id = ?",
+            ctx.company_id()
+        )
+        .await,
+        1,
+        "une seule facture"
+    );
+    capture.exiger_un_rejeu("invoices::create");
+}
+
+/// D3ter (AC-14) — `PUT /invoices/{id}` qui **pose un projet neuf** (le
+/// brouillon d'origine n'en a pas) **et change le contact** : la route tient la
+/// sentinelle, le projet et la facture, puis attend le nouveau contact (clé
+/// étrangère de l'`UPDATE … contact_id`), que tient la transaction lourde ;
+/// celle-ci demande la sentinelle : cycle, rejeu, `200`. Sans projet neuf, la
+/// route ne prendrait pas la sentinelle et le test ne prouverait rien (V5-7).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn invoice_update_is_replayed_when_it_is_the_deadlock_victim(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let facture = facture_brouillon(&pool, &ctx, "100.00").await;
+    let version: i32 = sqlx::query_scalar("SELECT version FROM invoices WHERE id = ?")
+        .bind(facture)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let nouveau = contact(&pool, &ctx, "Nouveau client", false).await;
+    let p = projet(&pool, &ctx, "R48U").await;
+    let capture = CaptureRejeu::installer();
+    let lourde = lourde_tenant_le_contact(&pool, &ctx, nouveau).await;
+    let route = requete_en_tache(
+        &ctx,
+        reqwest::Method::PUT,
+        &format!("/api/v1/invoices/{facture}"),
+        Some(json!({
+            "contactId": nouveau,
+            "projectId": p,
+            "date": aujourd_hui().to_string(),
+            "version": version,
+            "lines": [
+                {"description": "Conseil", "quantity": "1", "unitPrice": "100.00", "vatRate": "8.10"}
+            ]
+        })),
+    );
+    let (status, corps) = victime(
+        &pool,
+        lourde,
+        route,
+        &["UPDATE invoices SET contact_id"],
+        "SELECT id FROM companies WHERE id = ? FOR UPDATE",
+        ctx.company_id(),
+    )
+    .await;
+    assert_eq!(status, 200, "⛔ l'interblocage doit être rejoué : {corps}");
+    assert_eq!(corps["contactId"], nouveau, "{corps}");
+    capture.exiger_un_rejeu("invoices::update");
+}

@@ -5574,6 +5574,28 @@ impl IntoResponse for AppError {
                     });
                     (StatusCode::CONFLICT, Json(body)).into_response()
                 }
+                // Story 48-12a (#975, D1, D6bis, D7) — le refus d'une facture
+                // fournisseur en double. `details.confirmable` dit si
+                // `confirmNotDuplicate: true` le lève : jamais la règle 1 à la
+                // saisie, toujours la règle 2, et les deux à la dévalidation d'une
+                // annulée. Un seul texte par refus, partagé avec l'écran (48-12b) ;
+                // la dévalidation a le sien, sans contournement ni promesse.
+                DbError::SupplierInvoiceDuplicate { existing, gesture } => {
+                    supplier_invoice_duplicate_response(
+                        "SUPPLIER_INVOICE_DUPLICATE",
+                        &existing,
+                        gesture,
+                        false,
+                    )
+                }
+                DbError::SupplierInvoiceProbableDuplicate { existing, gesture } => {
+                    supplier_invoice_duplicate_response(
+                        "SUPPLIER_INVOICE_PROBABLE_DUPLICATE",
+                        &existing,
+                        gesture,
+                        true,
+                    )
+                }
                 // ⚠️ **400** qui NOMME les comptes : raisons au doc-comment de
                 // `archived_accounts_response`.
                 DbError::ReversalAccountsArchived(archived) => archived_accounts_response(
@@ -6202,6 +6224,67 @@ fn supplier_invoice_cancel_blocked_text(
             reconciliation_cancel_blocked_text(blocker)
         }
     }
+}
+
+/// Le texte FR (repli) du refus de la **règle 1** à la saisie — clé
+/// `error-supplier-invoice-duplicate` (Story 48-12a, D7) : d'abord « si c'est la
+/// même facture », puis le contournement « 15-b ». Le même texte s'affiche à
+/// l'écran (48-12b).
+const SUPPLIER_INVOICE_DUPLICATE_FR: &str = "Une facture de ce fournisseur porte déjà ce numéro pour la même année. Si c’est la même facture, ne l’enregistrez pas une seconde fois. Si le fournisseur a recommencé sa numérotation en cours d’année, ajoutez un caractère au numéro, par exemple « 15-b ».";
+
+/// Le texte FR (repli) du refus de la **règle 2** à la saisie — clé
+/// `error-supplier-invoice-probable-duplicate` (Story 48-12a, D7).
+const SUPPLIER_INVOICE_PROBABLE_DUPLICATE_FR: &str = "Une facture de ce fournisseur porte déjà la même date et le même montant. Si c’est la même facture, ne l’enregistrez pas une seconde fois ; sinon, confirmez que ce n’est pas un doublon.";
+
+/// Le texte FR (repli) du refus de doublon à la **dévalidation d'une annulée**,
+/// pour les deux règles — clé `error-supplier-invoice-duplicate-unvalidate`
+/// (Story 48-12a, D6bis, D7) : sans contournement, sans promesse de
+/// suppression.
+const SUPPLIER_INVOICE_DUPLICATE_UNVALIDATE_FR: &str = "Une facture équivalente non annulée existe. Repasser celle-ci en brouillon en ferait un doublon : ne le faites que pour la retirer ou la corriger ensuite.";
+
+/// La réponse **409** d'un refus de doublon de facture fournisseur (Story
+/// 48-12a, #975, D1, D7) : `details : { supplierInvoiceId, internalNumber,
+/// status, confirmable }`, la facture **existante** (à la dévalidation, la
+/// facture active qui s'oppose). `confirmable` est vrai pour la règle 2
+/// (`probable`) partout, et pour les deux règles à la dévalidation d'une annulée
+/// (D6bis) ; c'est sur lui, non sur le code, que l'écran décide d'offrir un
+/// bouton. Le message ne porte pas le numéro de la facture existante : il est
+/// dans `details`.
+fn supplier_invoice_duplicate_response(
+    code: &'static str,
+    existing: &kesh_db::errors::ExistingSupplierInvoice,
+    gesture: kesh_db::errors::DuplicateGesture,
+    probable: bool,
+) -> Response {
+    use kesh_db::errors::DuplicateGesture;
+    let confirmable = probable || gesture == DuplicateGesture::Unvalidation;
+    let message = match (gesture, probable) {
+        (DuplicateGesture::Unvalidation, _) => t(
+            "error-supplier-invoice-duplicate-unvalidate",
+            SUPPLIER_INVOICE_DUPLICATE_UNVALIDATE_FR,
+        ),
+        (DuplicateGesture::Entry, false) => t(
+            "error-supplier-invoice-duplicate",
+            SUPPLIER_INVOICE_DUPLICATE_FR,
+        ),
+        (DuplicateGesture::Entry, true) => t(
+            "error-supplier-invoice-probable-duplicate",
+            SUPPLIER_INVOICE_PROBABLE_DUPLICATE_FR,
+        ),
+    };
+    let body = serde_json::json!({
+        "error": {
+            "code": code,
+            "message": message,
+            "details": {
+                "supplierInvoiceId": existing.id,
+                "internalNumber": existing.internal_number,
+                "status": existing.status,
+                "confirmable": confirmable,
+            },
+        }
+    });
+    (StatusCode::CONFLICT, Json(body)).into_response()
 }
 
 /// Le message d'un motif qui refuse le **repassage en brouillon d'une facture

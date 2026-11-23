@@ -106,11 +106,19 @@ async fn setup(pool: &MySqlPool) -> Ctx {
     }
 }
 
+/// Story 48-12a (#975) — un numéro du fournisseur unique par appel : la règle
+/// anti-doublon refuse le même numéro du même fournisseur dans la même année.
+fn numero_unique(prefixe: &str) -> String {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static N: AtomicU64 = AtomicU64::new(1);
+    format!("{prefixe}-{}", N.fetch_add(1, Ordering::Relaxed))
+}
+
 fn one_line(ctx: &Ctx, unit_price: Decimal, vat_rate: Decimal) -> NewSupplierInvoice {
     NewSupplierInvoice {
         company_id: ctx.seeded.company_id,
         contact_id: ctx.supplier_id,
-        supplier_invoice_number: Some("FF-2026-001".into()),
+        supplier_invoice_number: Some(numero_unique("FF-2026")),
         invoice_date: d(2026, 6, 15),
         due_date: Some(d(2026, 7, 15)),
         creditor_iban: None,

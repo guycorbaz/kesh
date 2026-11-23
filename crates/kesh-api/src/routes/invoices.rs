@@ -741,8 +741,18 @@ pub async fn create_invoice(
         lines,
     };
 
-    let (invoice, persisted_lines) =
-        invoices::create(&state.pool, current_user.user_id, new).await?;
+    // Story 48-12a (#975, D3ter, décision de Guy du 2026-11-19) — rejouée sur
+    // interblocage : avec un projet, la création tient la sentinelle `companies`
+    // et le projet en exclusif avant de demander le contact (clé étrangère de
+    // l'`INSERT`) ; la création, la complétion et la modification d'une facture
+    // fournisseur tiennent ce contact en exclusif avant de demander `companies`
+    // ou le projet. Le cycle reste possible ; il ne rend plus de `500`.
+    // `invoices::create` ouvre sa propre transaction et n'écrit rien hors
+    // d'elle : un rejeu ne double rien.
+    let (invoice, persisted_lines) = kesh_db::retry::retry_on_deadlock("invoices::create", || {
+        invoices::create(&state.pool, current_user.user_id, new.clone())
+    })
+    .await?;
     Ok((
         StatusCode::CREATED,
         Json(
@@ -800,14 +810,22 @@ pub async fn update_invoice(
         lines,
     };
 
-    let (invoice, persisted_lines) = invoices::update(
-        &state.pool,
-        company.id,
-        id,
-        req.version,
-        current_user.user_id,
-        changes,
-    )
+    // Story 48-12a (#975, D3ter, décision de Guy du 2026-11-19) — rejouée sur
+    // interblocage : une modification qui pose un projet non nul neuf prend la
+    // sentinelle `companies` et le projet en exclusif, puis, si le contact
+    // change, demande ce contact ; une facture fournisseur du même contact le
+    // tient en exclusif et demande `companies` ou le projet. `invoices::update`
+    // ouvre sa propre transaction : un rejeu ne double rien.
+    let (invoice, persisted_lines) = kesh_db::retry::retry_on_deadlock("invoices::update", || {
+        invoices::update(
+            &state.pool,
+            company.id,
+            id,
+            req.version,
+            current_user.user_id,
+            changes.clone(),
+        )
+    })
     .await?;
     Ok(Json(
         with_draft_rounding_preview(

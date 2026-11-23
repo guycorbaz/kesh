@@ -1179,7 +1179,13 @@ const ATTENDU = {
 	// demande de compte après relecture sans sélecteur).
 	// Fusion de la 48-14 dans epic/48 (2026-11-20) : les deux côtés gardés, total relevé par la garde,
 	// non additionné : **3508** (« expected 3508 to be +0 », `kesh-gate-logs/e4814/fusion-epic-i18n.log`).
-	sitesTotal: 3508,
+	// Story 48-12b (#975, #985) : **3502 → 3523** sur sa branche (+21 net) (« expected 3523 to be 3502 »,
+	// `kesh-gate-logs/e4812/dev/vitest-12b-complet-1.log`), relevé par la garde : vingt-trois sites
+	// ajoutés et deux retirés (le bouton d'envoi déplacé hors du `<fieldset>`) dans
+	// `SupplierInvoiceForm.svelte`, `supplier-invoice-form.ts` et la fiche `[id]/+page.svelte`.
+	// Fusion des 48-12a et 48-12b dans epic/50 (2026-11-23) : les deux côtés gardés, 3508 (0.19.1) + 21 = 3529 à vérifier,
+	// total relevé par la garde, non additionné : voir `kesh-gate-logs/e50/fusion-48-12/`.
+	sitesTotal: 3529,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

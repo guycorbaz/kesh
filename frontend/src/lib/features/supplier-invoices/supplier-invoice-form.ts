@@ -506,3 +506,164 @@ export function describeSubmitError(err: unknown): SubmitError {
 			return { field: null, message: err.message };
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Story 48-12b (#975, #985) — le formulaire, machine à états (table A de la fiche)
+// ---------------------------------------------------------------------------
+
+/**
+ * Les états du formulaire de saisie (table A de la fiche 48-12b) :
+ * - `E1` saisie ; `E2` envoi en cours ; `E3` enregistré (jusqu'à la navigation) ;
+ * - `E4` doublon refusé, sans sortie (`confirmable: false`) — saisie modifiable ;
+ * - `E5` doublon probable, confirmable — formulaire figé, deux boutons ;
+ * - `E6` issue inconnue — figé, lien de vérification et bouton de reprise ;
+ * - `E7` erreur ordinaire — saisie modifiable ;
+ * - `E8` relecture du document (complétion) — figé ; `E9` déjà enregistrée — figé.
+ */
+export type SupplierFormState = 'E1' | 'E2' | 'E3' | 'E4' | 'E5' | 'E6' | 'E7' | 'E8' | 'E9';
+
+/** Tous les états, pour les tests et les gardes. */
+export const SUPPLIER_FORM_STATES: readonly SupplierFormState[] = [
+	'E1',
+	'E2',
+	'E3',
+	'E4',
+	'E5',
+	'E6',
+	'E7',
+	'E8',
+	'E9',
+];
+
+/**
+ * Vrai si la saisie peut être écrite dans cet état — **E1, E4, E7 seulement** : les
+ * états de saisie. C'est aussi la garde de défense en profondeur des écritures
+ * asynchrones de la saisie (relevé C : le scan du QR, l'effet de l'échéance) : une
+ * écriture qui se résout hors d'un état de saisie n'écrit rien.
+ */
+export function canWriteEntry(state: SupplierFormState): boolean {
+	return state === 'E1' || state === 'E4' || state === 'E7';
+}
+
+/**
+ * Vrai si un envoi **ordinaire** (« Enregistrer ») peut partir de cet état : E1, E4, E7
+ * — les mêmes que la saisie. Le formulaire y ajoute deux conditions qu'il tient seul :
+ * aucun scan en cours, panneau « nouveau fournisseur » fermé.
+ */
+export function canSubmitFrom(state: SupplierFormState): boolean {
+	return canWriteEntry(state);
+}
+
+/** Vrai si la **confirmation** « Ce n'est pas un doublon » peut partir : E5 seulement. */
+export function canConfirmFrom(state: SupplierFormState): boolean {
+	return state === 'E5';
+}
+
+/** Les deux codes de refus de doublon (Story 48-12a, D7). */
+export const SUPPLIER_DUPLICATE_CODES = [
+	'SUPPLIER_INVOICE_DUPLICATE',
+	'SUPPLIER_INVOICE_PROBABLE_DUPLICATE',
+] as const;
+
+/**
+ * Un refus de doublon **lisible** (`details` du contrat de la 48-12a) : la facture
+ * existante citée, et `confirmable`, qui seul décide d'un bouton de confirmation.
+ */
+export interface DuplicateRefusal {
+	code: (typeof SUPPLIER_DUPLICATE_CODES)[number];
+	supplierInvoiceId: number;
+	internalNumber: string | null;
+	status: string;
+	confirmable: boolean;
+}
+
+/**
+ * Lit un refus de doublon : `null` si ce n'est pas l'un des deux codes, **ou** si ses
+ * `details` ne sont pas lisibles (identifiant entier, `confirmable` booléen) — un tel
+ * refus est une erreur ordinaire (E7, F6), affichée avec le message du serveur.
+ */
+export function readDuplicateRefusal(err: unknown): DuplicateRefusal | null {
+	if (!isApiError(err)) return null;
+	const code = SUPPLIER_DUPLICATE_CODES.find((c) => c === err.code);
+	if (code === undefined) return null;
+	const d = err.details as Record<string, unknown> | null | undefined;
+	if (!d || typeof d !== 'object') return null;
+	const id = d.supplierInvoiceId;
+	const confirmable = d.confirmable;
+	const internal = d.internalNumber;
+	if (typeof id !== 'number' || !Number.isInteger(id) || typeof confirmable !== 'boolean') {
+		return null;
+	}
+	if (internal !== null && internal !== undefined && typeof internal !== 'string') return null;
+	return {
+		code,
+		supplierInvoiceId: id,
+		internalNumber: typeof internal === 'string' && internal !== '' ? internal : null,
+		status: typeof d.status === 'string' ? d.status : '',
+		confirmable,
+	};
+}
+
+/**
+ * L'état qui suit un rejet de l'envoi (table A, sorties de E2), **hors** complétion
+ * relue (E8, que la page décide par `onRefusal`) : `confirmable: true` → E5 ;
+ * `confirmable: false` → E4 ; issue inconnue (`isSettlementOutcomeUnknown` : tout 5xx,
+ * coupure, délai, erreur hors `ApiError`) → E6 ; tout le reste — l'un des deux codes
+ * sans `details` lisibles compris — → E7.
+ */
+export function stateAfterRejection(
+	err: unknown,
+	isUnknown: (e: unknown) => boolean,
+): 'E4' | 'E5' | 'E6' | 'E7' {
+	const dup = readDuplicateRefusal(err);
+	if (dup !== null) return dup.confirmable ? 'E5' : 'E4';
+	if (isUnknown(err)) return 'E6';
+	return 'E7';
+}
+
+/**
+ * Le texte d'un refus de doublon, **le même que celui du serveur** (Story 48-12a, D7) :
+ * les clés `error-supplier-invoice-*` du catalogue, jamais `err.message`. À la
+ * saisie, la règle 1 (`confirmable: false`) ou la règle 2 ; au repassage en brouillon
+ * d'une annulée, le texte propre à la dévalidation.
+ */
+export function duplicateRefusalText(
+	code: DuplicateRefusal['code'],
+	gesture: 'entry' | 'unvalidate',
+): string {
+	if (gesture === 'unvalidate') {
+		return i18nMsg(
+			'error-supplier-invoice-duplicate-unvalidate',
+			'Une facture équivalente non annulée existe. Repasser celle-ci en brouillon en ferait un doublon : ne le faites que pour la retirer ou la corriger ensuite.',
+		);
+	}
+	return code === 'SUPPLIER_INVOICE_DUPLICATE'
+		? i18nMsg(
+				'error-supplier-invoice-duplicate',
+				'Une facture de ce fournisseur porte déjà ce numéro pour la même année. Si c’est la même facture, ne l’enregistrez pas une seconde fois. Si le fournisseur a recommencé sa numérotation en cours d’année, ajoutez un caractère au numéro, par exemple « 15-b ».',
+			)
+		: i18nMsg(
+				'error-supplier-invoice-probable-duplicate',
+				'Une facture de ce fournisseur porte déjà la même date et le même montant. Si c’est la même facture, ne l’enregistrez pas une seconde fois ; sinon, confirmez que ce n’est pas un doublon.',
+			);
+}
+
+/**
+ * Le libellé de la facture citée par un avis : son numéro interne s'il existe, sinon
+ * « brouillon n° <identifiant> ».
+ */
+export function citedInvoiceLabel(internalNumber: string | null, id: number): string {
+	return internalNumber && internalNumber.trim() !== ''
+		? internalNumber
+		: i18nMsg('supplier-invoices-cited-draft', 'brouillon n° { $id }', { id });
+}
+
+/**
+ * Ce que la page de complétion rend au formulaire après un refus qu'elle a relu
+ * (D2bis) : le document est complété (`completed`, avec la facture), encore à traiter
+ * (`pending`), retiré (`gone`), ou l'issue reste inconnue (`unknown`).
+ */
+export interface RefusalNotice {
+	kind: 'completed' | 'pending' | 'gone' | 'unknown';
+	invoiceId?: number;
+}
