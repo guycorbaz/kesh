@@ -2199,6 +2199,9 @@ mod tests {
         assert_eq!(format_amount_iso(dec!(-10.0050)), "-10.01");
     }
 
+    /// Prouve le **formateur** seul. En production, `project_report.rs` arrondit
+    /// déjà le rendement **au pair** (`round_dp(2)`) avant l'affichage : un
+    /// rendement exact de 12.345 s'affiche donc `12.34%` (#1442).
     #[test]
     fn format_rendement_arrondit() {
         assert_eq!(format_rendement(Some(dec!(12.345))), "12.35%");

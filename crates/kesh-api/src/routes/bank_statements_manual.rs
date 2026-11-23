@@ -558,6 +558,8 @@ fn amount_string(d: Decimal) -> String {
 #[cfg(test)]
 mod tests_arrondi_48_11 {
     use super::amount_string;
+    use kesh_core::bank_imports::manual::{ManualStatementRaw, parse_manual_statement};
+    use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
 
     /// Story 48-11 (#1245) : la première valeur à trois décimales s'arrondit
@@ -565,8 +567,39 @@ mod tests_arrondi_48_11 {
     #[test]
     fn amount_string_arrondit_au_centime() {
         assert_eq!(amount_string(dec!(10.0050)), "10.01");
-        // Filets : réponses inchangées.
-        assert_eq!(amount_string(dec!(-0)), "0.00");
+        // Filet : réponse inchangée.
         assert_eq!(amount_string(dec!(50)), "50.00");
+    }
+
+    /// Zéros **négatifs** construits (`dec!(-0)` est un zéro positif : le
+    /// macro passe par `from_parts`, qui efface le signe d'une mantisse nulle).
+    #[test]
+    fn amount_string_ecrit_un_zero_negatif_sans_signe() {
+        assert_eq!(amount_string(-Decimal::ZERO), "0.00");
+        assert_eq!(amount_string(-Decimal::new(0, 2)), "0.00");
+        assert_eq!(amount_string(dec!(-0)), "0.00");
+    }
+
+    /// Chemin réel du zéro négatif : un solde saisi `-0` sur un relevé manuel
+    /// sort du parseur (`manual.rs`, `-value`) en vrai zéro négatif, et
+    /// atteint `amount_string` brut (réponse et piste d'audit).
+    #[test]
+    fn un_solde_saisi_moins_zero_s_ecrit_zero_zero() {
+        let raw = ManualStatementRaw {
+            bank_account_id: 3,
+            period_from: Some("2026-09-01".into()),
+            period_to: Some("2026-09-30".into()),
+            opening_balance: Some("-0".into()),
+            closing_balance: Some("-0".into()),
+            lines: Some(vec![]),
+            ..Default::default()
+        };
+        let p = parse_manual_statement(&raw).unwrap();
+        assert!(
+            p.opening_balance.is_sign_negative() && p.closing_balance.is_sign_negative(),
+            "prémisse : le parseur rend un vrai zéro négatif"
+        );
+        assert_eq!(amount_string(p.opening_balance), "0.00");
+        assert_eq!(amount_string(p.closing_balance), "0.00");
     }
 }

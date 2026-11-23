@@ -3811,6 +3811,8 @@ mod tests {
         assert_eq!(format_swiss_amount(dec!(-0.0040)), "0.00");
     }
 
+    /// Prouve le **formateur** seul : le rendement arrive déjà arrondi au pair
+    /// de `project_report.rs` (`round_dp(2)`, #1442).
     #[test]
     fn format_rate_et_rendement_arrondissent() {
         assert_eq!(format_rate(dec!(8.125)), "8.13 %");

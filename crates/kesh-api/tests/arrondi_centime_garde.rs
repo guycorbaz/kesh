@@ -7,7 +7,7 @@
 //! qui diffère du nombre écrit, dans un sens ou dans l'autre, rougit et nomme le fichier.
 //!
 //! 1. **Précision de format** : toute précision fixe (`{x:.2}`, `{:.2}`, `{x:>10.2}`), nommée
-//!    (`{x:.scale$}`) ou passée en argument (`{:.*}`). Un montant de rapport passe par
+//!    (`{x:.scale$}`), passée en argument (`{:.*}`) ou positionnelle (`{:.1$}`). Un montant de rapport passe par
 //!    `kesh_core::types::format_two_decimals`, qui arrondit **avant** d'écrire ; l'export global
 //!    écrit chaque colonne à l'échelle du schéma.
 //! 2. **Troncature explicite** : `.trunc()`, `trunc_with_scale(`, `RoundingStrategy::ToZero` et
@@ -112,7 +112,7 @@ fn re(s: &str) -> Regex {
 
 /// Famille 1 : précision fixe, nommée (`x$`) ou passée en argument (`*`), avec ou sans largeur
 /// ni alignement.
-const PRECISION: &str = r#"\{[A-Za-z_0-9.]*:[^{}"]*\.([0-9]+|[A-Za-z_][A-Za-z_0-9]*\$|\*)\}"#;
+const PRECISION: &str = r#"\{[A-Za-z_0-9.]*:[^{}"]*\.([0-9]+\$?|[A-Za-z_][A-Za-z_0-9]*\$|\*)\}"#;
 
 /// Famille 2 : troncature explicite.
 const TRONCATURE: &str = r"\.trunc\(\)|trunc_with_scale\(|RoundingStrategy::(ToZero|RoundDown)";
@@ -202,7 +202,7 @@ fn le_balayage_voit_les_sources() {
     );
 }
 
-/// Sonde positive de la famille 1 : la fonction de comptage voit les six formes, et seulement
+/// Sonde positive de la famille 1 : la fonction de comptage voit les sept formes, et seulement
 /// elles (la ligne `//` est écartée).
 #[test]
 fn sonde_positive_famille_1() {
@@ -212,11 +212,12 @@ fn sonde_positive_famille_1() {
         r#"let c = format!("{d:>10.2}");"#,
         r#"let e = format!("{d:.scale$}");"#,
         r#"let f = format!("{:.*}", 2, d);"#,
+        r#"let g = format!("{:.1$}", d, 2);"#,
         "write!(f,\n    \"{:.2}\",\n    d)?;",
         r#"// {:.2} dans un commentaire"#,
     ]
     .join("\n");
-    assert_eq!(compte(PRECISION, &sonde), 6);
+    assert_eq!(compte(PRECISION, &sonde), 7);
 }
 
 /// Sonde positive de la famille 2.

@@ -106,7 +106,9 @@ pub fn round_for_display(amount: Decimal) -> Decimal {
 /// **exactement deux décimales**, point décimal, sans séparateur de milliers :
 /// `10.0050` → `"10.01"`, `1234.5` → `"1234.50"`, `-0.0040` → `"0.00"`.
 ///
-/// C'est le **seul** endroit où un `Decimal` de montant s'écrit avec `{:.2}` :
+/// C'est le **seul** endroit où un `Decimal` de montant **des rapports et de
+/// `kesh-api`** s'écrit avec `{:.2}` (la liste close des autres sites, tous
+/// arrondis avant l'écriture, est celle de `crates/kesh-api/tests/arrondi_centime_garde.rs`) :
 /// la valeur arrondie a une échelle ≤ 2, la précision ne fait plus que
 /// compléter par des zéros — alors que `{:.2}` sur la valeur brute **coupe**
 /// les chiffres (`10.0050` → `10.00`).
@@ -192,8 +194,8 @@ mod tests {
             (dec!(-10.0050), "-10.01"),
             (dec!(-0.0040), "0.00"),
             (Decimal::ZERO, "0.00"),
-            (dec!(-0), "0.00"),
-            // Un zéro négatif construit (`-0.00`, signe porté par la mantisse nulle).
+            // Zéros négatifs **construits** (signe porté par la mantisse nulle) :
+            // `dec!(-0)` n'en est pas un, le macro efface le signe d'un zéro.
             (-Decimal::new(0, 2), "0.00"),
             (-Decimal::ZERO, "0.00"),
             (dec!(1234.5), "1234.50"),
