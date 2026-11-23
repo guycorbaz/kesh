@@ -5,19 +5,11 @@
  */
 import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 import type { AccountResponse } from '$lib/features/accounts/accounts.types';
-import type { FiscalYearResponse } from '$lib/features/fiscal-years/fiscal-years.types';
+import { defaultFiscalYearId, selectedInDateOrder } from '$lib/features/provider/provider-review';
 import type { PaypalAcceptProposal, PaypalProposal } from './paypal.types';
 
-/**
- * L'exercice proposé par défaut : celui qui contient `today` (`AAAA-MM-JJ`),
- * sinon le plus récent ; `null` sans exercice.
- */
-export function defaultFiscalYearId(years: readonly FiscalYearResponse[], today: string): number | null {
-	const current = years.find((y) => y.startDate <= today && today <= y.endDate);
-	if (current) return current.id;
-	const sorted = [...years].sort((a, b) => b.startDate.localeCompare(a.startDate));
-	return sorted[0]?.id ?? null;
-}
+/** L'exercice proposé par défaut (règle commune aux prestataires, 40-7d). */
+export { defaultFiscalYearId };
 
 /** La transaction qui identifie une proposition (la débitée d'une conversion). */
 export function proposalTransactionId(p: PaypalProposal): number {
@@ -75,13 +67,7 @@ export function selectedBodies(
 	selected: ReadonlySet<string>,
 	withdrawalAccounts: Readonly<Record<string, number | null>>,
 ): PaypalAcceptProposal[] {
-	return [...proposals]
-		.filter((p) => selected.has(proposalKey(p)))
-		.sort(
-			(a, b) =>
-				a.transaction.date.localeCompare(b.transaction.date) ||
-				proposalTransactionId(a) - proposalTransactionId(b),
-		)
+	return selectedInDateOrder(proposals, selected, proposalKey, proposalTransactionId)
 		.map((p) => acceptBody(p, withdrawalAccounts))
 		.filter((b): b is PaypalAcceptProposal => b !== null);
 }

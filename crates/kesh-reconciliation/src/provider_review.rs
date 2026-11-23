@@ -66,6 +66,13 @@ use crate::rules::rule_matches;
 /// La monnaie de base de Kesh (un compte du plan sans devise est en CHF).
 pub const BASE_CURRENCY: &str = "CHF";
 
+/// Borne du libellé d'une écriture passée à l'acceptation, en caractères
+/// (celle des écritures de la réconciliation, `accept_one_rule`). Le moteur
+/// (`kesh-api`, `routes::provider_accept`) y coupe tout libellé ; un
+/// prestataire peut borner le sien avant, pour choisir ce qui cède (Stripe,
+/// [`crate::stripe::bounded_label`]).
+pub const ENTRY_DESCRIPTION_MAX_CHARS: usize = 200;
+
 /// Écart : encaissement sans écriture de vente de même identifiant.
 pub const GAP_RECEIPT_WITHOUT_SALE: &str = "receipt_without_sale";
 /// Écart : écriture de vente non rattachée qu'aucune transaction n'encaisse.
@@ -158,7 +165,7 @@ pub struct ProviderSpec {
     /// Genres admis **en plus** d'un encaissement ([`ProviderKind::SaleReceipt`],
     /// toujours admis) pour la proposition [`Proposal::LinkEntry`] : l'autre
     /// côté déjà passé d'un virement ou d'un versement (Wise : `Other` de
-    /// préfixe `TRANSFER` et versement Stripe, 39-11c AC-4). PayPal : aucun.
+    /// préfixe `TRANSFER` et versement Stripe, 39-11c AC-4). PayPal et Stripe : aucun.
     /// Voir [`admits_link`].
     pub linkable: fn(ProviderKind) -> bool,
     /// Genres admis **en plus** de [`ProviderKind::Other`] (toujours admis)
@@ -353,7 +360,7 @@ pub struct TransactionSummary {
     pub id: i64,
     /// Compte bancaire.
     pub bank_account_id: i64,
-    /// Date (`value_date`, à défaut `booking_date`).
+    /// Date ([`payment_date`] : `booking_date`).
     pub date: NaiveDate,
     /// Montant signé, deux décimales (chaîne décimale en JSON).
     pub amount: Decimal,
@@ -554,10 +561,19 @@ impl<P> Review<P> {
     }
 }
 
-/// La date de paiement d'une transaction (`value_date`, à défaut
-/// `booking_date`) : celle de la revue et des écritures de l'acceptation.
+/// La date d'une transaction de prestataire : sa `booking_date`, le jour du
+/// mouvement chez le prestataire — celle de la revue (période, tri, résumé) et
+/// des écritures de l'acceptation.
+///
+/// ⚠️ **Jamais `value_date`** (amendement du 21.11 de la Story 40-7c) : seul
+/// l'import Stripe la remplit (`available_on`, la date où les fonds se
+/// libèrent, quelques jours après la vente) ; une vente du 30 décembre aurait
+/// daté ses frais de janvier, dans l'exercice suivant. Les imports PayPal et
+/// Wise la laissent vide : pour eux, rien ne change. La période de la revue
+/// (`kesh_db::repositories::provider_review::pending_in_period`) suit la même
+/// date.
 pub fn payment_date(t: &BankTransaction) -> NaiveDate {
-    t.value_date.unwrap_or(t.booking_date)
+    t.booking_date
 }
 
 /// La revue — voir l'en-tête du module.

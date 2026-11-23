@@ -437,7 +437,12 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
  * `progressLabel` (`provider-download/provider-download.ts`, tout par `i18nMsg`) ; `conforme`
  * **117 → 119**, relevés par la garde (« expected 140 to be 138 »).
  */
-const CANDIDATES_ATTENDUES = 140;
+// **138 → 145** (Story 40-7d) : les libellés de l'écran Stripe (`stripe/stripe-labels.ts`) et les
+// libellés communs aux prestataires (`provider/provider-labels.ts`), tous par `i18nMsg` ;
+// `conforme` **117 → 124**, relevé par la garde (« expected 145 to be 138 »).
+// **145 → 147** (fusion d'epic/38-paypal, 38-12b, dans epic/40-stripe) : `periodRefusalLabel` et
+// `progressLabel` de la 38-12b ; `conforme` **124 → 126**, relevés par la garde (« expected 147 to be 0 »).
+const CANDIDATES_ATTENDUES = 147;
 
 /** Les trois délimiteurs de littéral en JS/TS. */
 const QUOTES = ["'", '"', '`'];
@@ -954,7 +959,7 @@ describe('libellés en dur — l’angle mort #255', () => {
 			else if (c.retours.length > 0) classes.ecartee += 1;
 			else classes.conforme += 1;
 		}
-		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 21, conforme: 119 });
+		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 21, conforme: 126 });
 		// La somme est recalculée depuis les classes, jamais depuis le total qu'elle contrôle.
 		const somme = Object.values(classes).reduce((a, b) => a + b, 0);
 		expect(somme).toBe(CANDIDATES_ATTENDUES);
