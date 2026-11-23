@@ -39,3 +39,44 @@ Recoupements : `journal_entries.rs` avec l'Epic 51 (48-2) et l'Epic 47 d'un cont
 
 - Dépend de : l'Epic 50 pour le motif de la 48-12a (à lire, non à attendre).
 - Bloque : aucune.
+
+## Lancement (2026-11-23)
+
+### Recoupements contrôlés au code
+
+Contrôle du 2026-11-23 : `git diff --name-only main...<branche>` sur les branches ouvertes, restreint aux fichiers déclarés
+ci-dessus.
+
+- **Epic 49 (`epic/49-types-de-lignes-facture`, `story/49-1c-…`)** modifie `kesh-db/src/repositories/credit_notes.rs`,
+  `invoice_settlements_write.rs` et `kesh-api/src/routes/credit_notes.rs`, et porte une migration : **recoupement réel
+  avec la 53-2**. Règle : l'Epic 49 entre le premier dans `main` (release du vendredi 2026-11-27) ; la 53-2 se développe
+  la dernière de l'epic, et sa branche reprend `main` dès l'entrée de l'Epic 49, avant sa revue de code. Sa migration se
+  date après celle de la 49-1a.
+- **Epic 50 et Epic 51** : aucun fichier commun établi avec les stories 53-1, 53-3 et 53-4 sur leur diff propre ; la 53-1
+  lit la 48-12a comme motif, sans l'attendre.
+- **Epics d'un contributeur (38, 40, 39, 46)** : leurs PR (#1462, #1463) sont invisibles au 2026-11-23 (compte restreint
+  par GitHub) ; le recoupement se contrôle quand elles reparaissent. Leurs deux migrations, avec celles des Epics 49 et 53,
+  font de la release qui les accueille une release à migrations (`b` monte, sauvegarde complète obligatoire).
+
+### Ordre des stories
+
+53-1 (doublons), 53-3 (ouverture sous verrou) et 53-4 (assistant) d'abord, indépendantes ; 53-2 (TVA, migration) la
+dernière, pour la raison ci-dessus ; story de solde à la fin.
+
+### Story de solde
+
+Plafond : **trois issues** — proposition de l'orchestrateur au lancement, à confirmer par le Project Lead.
+
+### Décomptes au lancement
+
+Recomptés le 2026-11-23 par les commandes du `CLAUDE.md`. Au tag v0.19.1, reconstitution depuis `createdAt`/`closedAt`
+(labels du jour, non ceux du tag ; issues masquées du compte d'un contributeur non comptées).
+
+| | Tag v0.19.1 (2026-11-21) | Lancement (2026-11-23) | Objectif au tag de la release (non barrière) |
+|---|---|---|---|
+| Issues ouvertes | 586 | **567** | moins de 567 |
+| Bugs (`bug` ou `known-failure`) | 293 | **274** | moins de 274 |
+| P1 ouvertes | — | **10** | six de moins (celles de l'epic) |
+
+Les six issues de l'epic (#1355, #1365, #525, #1198, #513, #1004) sont `bug` et `P1`, au milestone « Vendredi 2026-11-27 »,
+au champ *Epic 53* du projet GitHub, en *Todo*.
