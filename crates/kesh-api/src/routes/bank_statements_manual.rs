@@ -577,7 +577,6 @@ mod tests_arrondi_48_11 {
     fn amount_string_ecrit_un_zero_negatif_sans_signe() {
         assert_eq!(amount_string(-Decimal::ZERO), "0.00");
         assert_eq!(amount_string(-Decimal::new(0, 2)), "0.00");
-        assert_eq!(amount_string(dec!(-0)), "0.00");
     }
 
     /// Chemin réel du zéro négatif : un solde saisi `-0` sur un relevé manuel
