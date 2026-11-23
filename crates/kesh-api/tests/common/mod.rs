@@ -282,6 +282,9 @@ pub mod horloge;
 /// 32-6a, AC-a14).
 pub mod capture_trace;
 
+/// Le marqueur commun des secrets de prestataire (Story 38-12a, socle S9).
+pub mod secrets_prestataire;
+
 /// Le montage et les outils de test du serveur MCP (Story 32-6a).
 pub mod mcp;
 

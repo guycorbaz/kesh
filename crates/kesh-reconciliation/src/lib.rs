@@ -20,17 +20,30 @@
 //!   `validate_split_balance` (Decimal exact `==`) pour le flow
 //!   `POST /api/v1/reconciliation/split`.
 //! - [`errors`] : enum [`ReconciliationError`] commun aux modules.
+//! - [`provider_review`] : (Story 38-11c2) revue **commune** d'un compte de
+//!   prestataire de paiement (`build_review`, paramétrage `ProviderSpec`),
+//!   servie à PayPal, Wise et Stripe.
+//! - [`paypal`] : (Story 38-11c2) le paramétrage PayPal (classement,
+//!   identifiants `TXN`, libellés).
+//! - [`conversion`] : (Story 38-11c2) le plan pur d'une conversion de
+//!   prestataire (une écriture si un côté est en CHF, deux sinon).
+//! - [`stripe`] : (Story 40-7c) le paramétrage Stripe (classement,
+//!   identifiants `ch_`/`py_`, libellés) et la revue de ses versements.
 
+pub mod conversion;
 pub mod errors;
 pub mod manual;
 pub mod matching;
 pub mod mutex;
+pub mod paypal;
+pub mod provider_review;
 pub mod rules;
 pub mod split;
+pub mod stripe;
 
 pub use errors::ReconciliationError;
 pub use manual::build_journal_entry_for_counterparty;
 pub use matching::{MatchProposal, MatchScore, MatchableDocument, propose_matches};
-pub use mutex::with_account_lock;
+pub use mutex::{with_account_lock, with_account_locks};
 pub use rules::{first_matching_rule, rule_matches};
 pub use split::{SplitDetail, SplitImbalance, build_split_journal_entry, validate_split_balance};

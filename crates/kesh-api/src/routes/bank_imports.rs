@@ -67,6 +67,22 @@ use crate::routes::bank_statements_manual::MANUAL_STATEMENT_LOCK_TIMEOUT_SECS;
 /// erreur suit `From` — donc `DbError::BankAccountClosed` → `409
 /// BANK_ACCOUNT_CLOSED`. Sans cet appariement, un archivé deviendrait le `404
 /// NOT_FOUND` générique.
+/// Story 38-11b (AC-3) — refuse le compte d'un prestataire (PayPal) aux
+/// chemins d'un relevé bancaire générique — aperçu et création d'un import
+/// CAMT ou CSV, aperçu et création d'un relevé saisi à la main : `409
+/// BANK_ACCOUNT_IS_PROVIDER`. Son relevé passe par sa route ; jugé sur la
+/// ligne que le pré-vol lit déjà (pool), après « archivé » et « clos ».
+pub(crate) fn refuse_provider_account(
+    account: &kesh_db::entities::BankAccount,
+) -> Result<(), AppError> {
+    if account.provider_settings.is_provider() {
+        return Err(AppError::Database(DbError::BankAccountIsProvider {
+            bank_account_id: account.id,
+        }));
+    }
+    Ok(())
+}
+
 pub(crate) fn import_create_error(e: DbError) -> AppError {
     match e {
         DbError::NotFound => AppError::BankAccountNotFound,
@@ -1055,6 +1071,9 @@ pub async fn preview(
             bank_account_id: bank_account.id,
         });
     }
+    // Story 38-11b (AC-3) — le compte d'un prestataire n'importe que par sa
+    // route (`POST /api/v1/paypal-imports`).
+    refuse_provider_account(&bank_account)?;
 
     // Story 8-2 — détection format upload.
     let format = detect_import_format(
@@ -1240,6 +1259,8 @@ pub async fn create(
             bank_account_id: bank_account.id,
         });
     }
+    // Story 38-11b (AC-3) — même refus qu'à l'aperçu.
+    refuse_provider_account(&bank_account)?;
 
     // Story 8-2 — détection format upload + dispatch CSV.
     let format = detect_import_format(
@@ -1485,6 +1506,8 @@ async fn create_camt_under_lock(
             transaction_id: t.transaction_id,
             counterparty_iban: t.counterparty_iban,
             counterparty_name: t.counterparty_name,
+            counterparty_email: None,
+            provider_type: None,
         })
         .collect();
 
@@ -2650,6 +2673,8 @@ async fn create_csv_under_lock(
             transaction_id: d.transaction_id,
             counterparty_iban: d.counterparty_iban,
             counterparty_name: d.counterparty_name,
+            counterparty_email: None,
+            provider_type: None,
         })
         .collect();
 

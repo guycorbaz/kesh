@@ -8,6 +8,11 @@
   (masqués par défaut, C-28-4-13), badge « Clos le … », seule action « Rouvrir »
   sur une ligne close, « Clore » désactivé sur le principal, dialogue de clôture
   (date locale préremplie, avertissement d'un solde comptable non nul, C-28-4-6).
+  Story 38-11d (AC-1) — case « Compte PayPal » sous le type *Compte bancaire* :
+  libellé du compte PayPal, compte de frais, IBAN facultatif, QR-IBAN et
+  « principal » masqués, compte du plan obligatoire et admis en devise ; ligne
+  « PayPal · <compte> · <devise> » dans la liste ; pas de « Lier » (`PATCH`
+  refusé par le serveur sur un compte PayPal).
 -->
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
@@ -19,7 +24,11 @@
 	// formulaire de facture fournisseur — une seule définition côté écran.
 	import { qrIbanHasValidQrIid } from '$lib/shared/utils/iban';
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
-	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
+	import {
+		accountCurrency,
+		isForeignCurrencyAccount,
+		type AccountResponse,
+	} from '$lib/features/accounts/accounts.types';
 	import { withCurrentAccount } from '$lib/features/accounts/account-options';
 	import { getInvoiceSettings } from '$lib/features/invoices/invoices.api';
 	import { Button } from '$lib/components/ui/button';
@@ -46,6 +55,17 @@
 		cardLast4Payload,
 		isValidCardLast4,
 	} from '$lib/features/bank-accounts/credit-card';
+	import {
+		PROVIDER_ACCOUNT_MAX_CHARS,
+		feeAccountCandidates,
+		isProvider,
+		payoutAccountCandidates,
+		providerAccountLabels,
+		providerPayload,
+		providerSettingsOf,
+		providerSummaryLine,
+		type ConfigurableProvider,
+	} from '$lib/features/bank-accounts/provider';
 	import { formatSwissDate } from '$lib/features/reports/reports.api';
 	import { todayLocal } from '$lib/features/open-items/open-items';
 	import {
@@ -74,6 +94,14 @@
 	let includeArchived = $state(false);
 	// Story 28-4b (#642, C-28-4-13) — les comptes clos sont masqués par défaut.
 	let includeClosed = $state(false);
+	/**
+	 * Revue P3 de 40-7d (P3-1) — tous les comptes bancaires, archivés et clos compris, lus à part
+	 * pour le compte de versement d'un compte Stripe : sa destination, archivée ou close depuis,
+	 * s'affiche alors même quand la liste de l'écran les masque. `null` si la lecture a échoué :
+	 * on retombe sur la liste de l'écran, et une destination absente n'est jamais vidée.
+	 */
+	let payoutPool = $state<BankAccountSummary[] | null>(null);
+	let payoutSource = $derived(payoutPool ?? bankAccounts);
 
 	// UI state — modes d'édition. Un seul mode actif à la fois.
 	type Mode =
@@ -117,6 +145,106 @@
 	let formKind = $state<BankAccountKind>('bank');
 	let formCardLast4 = $state('');
 	let isCard = $derived(formKind === 'credit_card');
+	// Story 38-11d (AC-1) — compte PayPal (sous le type *Compte bancaire*
+	// seulement) : libellé du compte PayPal et compte de frais. Story 40-7d
+	// (AC-1) — généralisé au compte Stripe (une case par prestataire, l'une
+	// exclut l'autre), qui porte en plus son compte bancaire de versement.
+	let formProvider = $state<ConfigurableProvider | null>(null);
+	let formProviderAccount = $state('');
+	let formFeeAccountId = $state<number | null>(null);
+	let formPayoutBankAccountId = $state<number | null>(null);
+	// En édition : le prestataire du compte à l'ouverture (décocher envoie `paypal: null` ou `stripe: null`).
+	let formWasProvider = $state<ConfigurableProvider | null>(null);
+	let isProviderForm = $derived(!isCard && formProvider !== null);
+	let isStripeForm = $derived(isProviderForm && formProvider === 'stripe');
+	// Devise du compte du plan choisi (`null` = CHF ou aucun).
+	let formLedgerCurrency = $derived.by(() => {
+		const ledger = accounts.find((a) => a.id === formJournalAccountId);
+		return ledger ? accountCurrency(ledger) : null;
+	});
+	let feeCandidates = $derived(feeAccountCandidates(accounts, formLedgerCurrency));
+	let providerLabels = $derived(formProvider ? providerAccountLabels(bankAccounts, formProvider) : []);
+	// Story 40-7d (AC-1) — comptes de versement d'un compte Stripe : même devise que le compte du
+	// plan choisi, sans prestataire ou Wise, jamais le compte édité.
+	let payoutCandidates = $derived(
+		payoutAccountCandidates(
+			payoutSource,
+			accounts,
+			formLedgerCurrency,
+			mode.kind === 'edit-full' ? mode.id : null,
+			payoutKeepId(),
+		),
+	);
+	/**
+	 * Story 40-9 (revue P4 de la 40-7d, L1) — la destination réglée n'est dans aucun des comptes
+	 * lus (`payoutSource`) : le sélecteur la nomme « introuvable » au lieu de rester vide. Une
+	 * destination lue mais écartée par le filtre (autre devise, devenue Stripe ou PayPal) n'est
+	 * pas « introuvable » : limite tracée à part.
+	 */
+	let payoutMissing = $derived(
+		formPayoutBankAccountId !== null && !payoutSource.some((b) => b.id === formPayoutBankAccountId),
+	);
+	/**
+	 * Revue P2 de 40-7d (P2-1) — la destination choisie reste offerte, archivée ou close, tant que le
+	 * compte du plan est celui de l'ouverture : le serveur ne la rejuge pas alors (`payout_is_unchanged`)
+	 * et la refuse (`STRIPE_PAYOUT_ACCOUNT_INVALID`) dès que le compte du plan change.
+	 */
+	function payoutKeepId(): number | null {
+		return ledgerUnchanged() ? formPayoutBankAccountId : null;
+	}
+
+	/** Revue P3 de 40-7d (P3-1) — en modification, le compte du plan est-il encore celui de l'ouverture ? */
+	function ledgerUnchanged(): boolean {
+		if (mode.kind !== 'edit-full') return false;
+		const id = mode.id;
+		const original = bankAccounts.find((b) => b.id === id);
+		return original !== undefined && original.journalAccountId === formJournalAccountId;
+	}
+	// Le compte de frais se vide seulement si sa devise n'est plus admise par celle du compte du
+	// plan choisi (revue P1, L7 : le vider à tout changement effaçait en silence un compte choisi
+	// avant le compte du plan ; revue P2, L3 : ni un compte archivé ou non imputable, que le
+	// serveur juge et refuse sous son code). Il reste affiché tant que les comptes ne sont pas
+	// chargés.
+	$effect(() => {
+		const ledger = formLedgerCurrency;
+		untrack(() => {
+			if (accounts.length === 0 || formFeeAccountId === null) return;
+			const fee = accounts.find((a) => a.id === formFeeAccountId);
+			if (!fee) return;
+			const c = accountCurrency(fee);
+			if (c !== null && c !== ledger) formFeeAccountId = null;
+		});
+	});
+	// Story 40-7d (AC-1) — le compte de versement se vide seulement quand l'utilisateur change le
+	// compte du plan, et seulement si la destination, connue, n'est plus admise : autre devise
+	// (même devise que le solde), ou destination archivée ou close (le serveur la rejuge alors,
+	// revue P2, P2-1). Tant que le compte du plan est celui de l'ouverture, rien ne se vide : la
+	// destination archivée ou close reste choisie, marquée (revue P1, M1), et un simple renommage
+	// la renvoie telle quelle (revue P3, P3-1). Une destination absente de la liste lue (lecture
+	// en échec) n'est jamais vidée : on ne retire pas ce qu'on ne voit pas. Rien ne se vide non
+	// plus tant que les comptes du plan ne sont pas chargés.
+	$effect(() => {
+		const ledger = formLedgerCurrency;
+		// Le compte du plan lui-même est suivi : un changement à même devise retire une destination
+		// archivée ou close (revue P2, P2-1).
+		void formJournalAccountId;
+		untrack(() => {
+			if (accounts.length === 0 || formPayoutBankAccountId === null || ledgerUnchanged()) return;
+			const id = formPayoutBankAccountId;
+			if (!payoutSource.some((b) => b.id === id)) return;
+			const kept = payoutAccountCandidates(
+				payoutSource,
+				accounts,
+				ledger,
+				mode.kind === 'edit-full' ? mode.id : null,
+				// Le compte du plan a changé : aucune destination archivée ou close n'est gardée.
+				null,
+			);
+			if (!kept.some((b) => b.id === id)) formPayoutBankAccountId = null;
+		});
+	});
+	// Un compte du plan en devise n'admet pas de solde d'ouverture par cet écran.
+	let ledgerIsForeign = $derived(formLedgerCurrency !== null);
 	// Passe de textes de la 0.17.6 (#1040) — le solde d'ouverture porte-t-il sur une
 	// carte ? Au formulaire de création, le type choisi ; au dialogue de ligne, celui du
 	// compte de la ligne. Sert au seul libellé du sens « Dette ».
@@ -157,11 +285,17 @@
 	}
 
 	async function reload() {
-		const [baResult, accResult, settingsResult] = await Promise.allSettled([
-			listBankAccounts(includeArchived, includeClosed),
+		// Revue P3 de 40-7d (P3-1) — les destinations de versement, archivées et closes comprises,
+		// lues avant la liste de l'écran ; la même lecture quand l'écran montre déjà tout.
+		const pool = includeArchived && includeClosed ? null : listBankAccounts(true, true);
+		const shown = listBankAccounts(includeArchived, includeClosed);
+		const [baResult, poolResult, accResult, settingsResult] = await Promise.allSettled([
+			shown,
+			pool ?? shown,
 			fetchAccounts(false),
 			getInvoiceSettings(),
 		]);
+		payoutPool = poolResult.status === 'fulfilled' ? poolResult.value : null;
 		if (baResult.status === 'fulfilled') {
 			bankAccounts = baResult.value;
 			loadError = null;
@@ -208,9 +342,12 @@
 	// et le formulaire de lien.
 	// Story 34-11a2 (#972, C-e341-33) : pour une carte, la liste se réduit aux
 	// passifs (`admitsLedgerType`, miroir de la règle serveur).
+	// Story 38-11d (AC-1) : les comptes en devise ne sont offerts qu'au compte
+	// PayPal (case cochée) — `allowForeignCurrency`.
 	let linkableAccounts = $derived(
 		linkableLedgerAccounts(accounts, claimAccountIds, {
 			liabilityOnly: formKind === 'credit_card',
+			allowForeignCurrency: isProviderForm,
 		}),
 	);
 
@@ -221,6 +358,12 @@
 		const acc = accounts.find((a) => a.id === journalAccountId);
 		if (!acc) return `#${journalAccountId}`;
 		return `${acc.number} — ${acc.name}`;
+	}
+
+	/** Story 38-11d — le compte du plan lié porte-t-il une devise ? (pas de solde d'ouverture par cet écran) */
+	function isForeignLedger(journalAccountId: number): boolean {
+		const acc = accounts.find((a) => a.id === journalAccountId);
+		return acc !== undefined && isForeignCurrencyAccount(acc);
 	}
 
 	function formatBalance(balance: string | null): string {
@@ -247,6 +390,11 @@
 		formOpeningAmount = '';
 		formOpeningSide = 'debit';
 		openingError = null;
+		formProvider = null;
+		formProviderAccount = '';
+		formFeeAccountId = null;
+		formPayoutBankAccountId = null;
+		formWasProvider = null;
 	}
 
 
@@ -334,7 +482,10 @@
 	 */
 	function setFormKind(kind: BankAccountKind) {
 		formKind = kind;
-		if (kind === 'credit_card') formIsPrimary = false;
+		if (kind === 'credit_card') {
+			formIsPrimary = false;
+			formProvider = null;
+		}
 		const linked = accounts.find((a) => a.id === formJournalAccountId);
 		if (linked && !admitsLedgerType(kind, linked.accountType)) formJournalAccountId = null;
 	}
@@ -362,6 +513,77 @@
 		return true;
 	}
 
+	/**
+	 * Story 38-11d (AC-1) — cocher ou décocher « Compte PayPal » ; Story 40-7d, de
+	 * même « Compte Stripe » (l'une exclut l'autre). Cochée : le QR-IBAN et
+	 * « principal » tombent (refusés par le serveur), et le compte de versement,
+	 * propre à Stripe, se vide en passant à PayPal. Décochée : un compte du plan en
+	 * devise, que seul un compte de prestataire admet, est retiré.
+	 */
+	function setFormProvider(provider: ConfigurableProvider, checked: boolean) {
+		if (checked) {
+			formProvider = provider;
+			formQrIban = '';
+			formIsPrimary = false;
+			if (provider !== 'stripe') formPayoutBankAccountId = null;
+		} else if (formProvider === provider) {
+			formProvider = null;
+			formPayoutBankAccountId = null;
+			const ledger = accounts.find((a) => a.id === formJournalAccountId);
+			if (ledger && isForeignCurrencyAccount(ledger)) formJournalAccountId = null;
+		}
+	}
+
+	/**
+	 * Story 38-11d (AC-1) — contrôles de l'écran d'un compte de prestataire :
+	 * libellé de 1 à 120 caractères, compte du plan obligatoire. Le serveur reste
+	 * l'autorité (`PROVIDER_LEDGER_REQUIRED`, …). Clés et replis littéraux par
+	 * prestataire, lus par les gardes i18n.
+	 */
+	function validateProviderFields(): boolean {
+		if (!isProviderForm) return true;
+		const label = formProviderAccount.trim();
+		if (label === '' || label.length > PROVIDER_ACCOUNT_MAX_CHARS) {
+			formError =
+				formProvider === 'stripe'
+					? i18nMsg(
+							'bank-accounts-error-stripe-account',
+							'Saisissez le libellé du compte Stripe (1 à 120 caractères), par exemple « Stripe boutique ».',
+						)
+					: i18nMsg(
+							'bank-accounts-error-paypal-account',
+							'Saisissez le libellé du compte PayPal (1 à 120 caractères), par exemple « PayPal www ».',
+						);
+			return false;
+		}
+		if (formJournalAccountId === null) {
+			formError =
+				formProvider === 'stripe'
+					? i18nMsg(
+							'bank-accounts-error-stripe-ledger-required',
+							'Choisissez le compte du plan lié : sa devise est celle du solde Stripe.',
+						)
+					: i18nMsg(
+							'bank-accounts-error-paypal-ledger-required',
+							'Choisissez le compte du plan lié : sa devise est celle du solde PayPal.',
+						);
+			return false;
+		}
+		return true;
+	}
+
+	/** Story 40-7d — la charge du prestataire du formulaire (`{ paypal }` ou `{ stripe }`), `null` hors prestataire. */
+	function formProviderPayload() {
+		return isProviderForm && formProvider !== null
+			? providerPayload(formProvider, formProviderAccount, formFeeAccountId, isStripeForm ? formPayoutBankAccountId : null)
+			: null;
+	}
+
+	/** Story 38-11d — l'IBAN envoyé par un compte de prestataire : `null` si le champ est vide. */
+	function providerIban(): string | null {
+		return formIban.trim() === '' ? null : formIban;
+	}
+
 	function kindLabel(kind: BankAccountKind): string {
 		return kind === 'credit_card'
 			? i18nMsg('bank-accounts-kind-credit-card', 'Carte de crédit')
@@ -386,6 +608,12 @@
 		formError = null;
 		formKind = ba.accountKind;
 		formCardLast4 = ba.cardLast4 ?? '';
+		formProvider = ba.provider === 'paypal' || ba.provider === 'stripe' ? ba.provider : null;
+		formWasProvider = formProvider;
+		const settings = formProvider ? providerSettingsOf(ba, formProvider) : null;
+		formProviderAccount = settings?.account ?? '';
+		formFeeAccountId = settings?.feeAccountId ?? null;
+		formPayoutBankAccountId = ba.stripe?.payoutBankAccountId ?? null;
 		mode = { kind: 'edit-full', id: ba.id };
 	}
 
@@ -470,10 +698,12 @@
 		formError = null;
 		if (!isCard && !validateQrIbanField()) return;
 		if (!validateCardFields()) return;
+		if (!validateProviderFields()) return;
 		// Story 34-2 (revue P1, B-1), Story 35-6 — avec un compte lié, la saisie est
 		// classée avant tout envoi : « 1.234 » ou « 1,234 » (mille ou un franc ?), une
 		// saisie illisible ou négative ne partent pas ; une saisie vide n'envoie aucun solde.
-		const opening = formJournalAccountId === null ? null : openingAmountKind(formOpeningAmount);
+		const opening =
+			formJournalAccountId === null || ledgerIsForeign ? null : openingAmountKind(formOpeningAmount);
 		if (opening !== null && opening.kind !== 'empty') {
 			const refusal = openingAmountRefusal(opening.kind);
 			if (refusal !== null) {
@@ -485,6 +715,7 @@
 		try {
 			// Story 34-11a2 — une carte n'envoie ni IBAN, ni QR-IBAN, ni
 			// « principal » ; un compte bancaire garde le payload de la 0.17.5.
+			const provider = formProviderPayload();
 			const payload: NewBankAccountPayload = isCard
 				? {
 						accountKind: 'credit_card',
@@ -493,14 +724,26 @@
 						cardLast4: cardLast4Payload(formCardLast4),
 						journalAccountId: formJournalAccountId,
 					}
-				: {
+				: provider !== null
+					? {
+							// Story 38-11d (AC-1) — compte PayPal (Story 40-7d : ou Stripe) : IBAN
+							// facultatif, ni QR-IBAN ni principal.
+							bankName: formBankName,
+							description: descriptionPayload(),
+							iban: providerIban(),
+							qrIban: null,
+							isPrimary: false,
+							journalAccountId: formJournalAccountId,
+							...provider,
+						}
+					: {
 						bankName: formBankName,
 						description: descriptionPayload(),
-						iban: formIban,
-						qrIban: formQrIban.trim() === '' ? null : formQrIban,
-						isPrimary: formIsPrimary,
-						journalAccountId: formJournalAccountId,
-					};
+							iban: formIban,
+							qrIban: formQrIban.trim() === '' ? null : formQrIban,
+							isPrimary: formIsPrimary,
+							journalAccountId: formJournalAccountId,
+						};
 			// Story 34-2 (#533, AC-7) — sans compte lié, les champs du solde sont
 			// masqués et rien n'est envoyé ; un montant vide n'envoie rien non plus. La
 			// charge est celle du classement (Story 35-6), que l'aperçu a montrée.
@@ -550,11 +793,13 @@
 		formError = null;
 		if (!isCard && !validateQrIbanField()) return;
 		if (!validateCardFields()) return;
+		if (!validateProviderFields()) return;
 		submitting = true;
 		try {
 			// Story 34-11a2 (points hérités E5/B7) — le `PUT` d'une carte n'envoie
 			// ni IBAN ni type ; ses quatre chiffres sont toujours présents (`null`
 			// pour les effacer).
+			const provider = formProviderPayload();
 			const payload: UpdateBankAccountPayload = isCard
 				? {
 						bankName: formBankName,
@@ -563,15 +808,34 @@
 						journalAccountId: formJournalAccountId,
 						version: formVersion,
 					}
-				: {
-						bankName: formBankName,
-						description: descriptionPayload(),
-						iban: formIban,
-						qrIban: formQrIban.trim() === '' ? null : formQrIban,
-						isPrimary: formIsPrimary,
-						journalAccountId: formJournalAccountId,
-						version: formVersion,
-					};
+				: provider !== null
+					? {
+							// Story 38-11d (AC-1) — compte PayPal (Story 40-7d : ou Stripe) :
+							// paramètres posés ou remplacés.
+							bankName: formBankName,
+							description: descriptionPayload(),
+							iban: providerIban(),
+							qrIban: null,
+							isPrimary: false,
+							journalAccountId: formJournalAccountId,
+							version: formVersion,
+							...provider,
+						}
+					: {
+							bankName: formBankName,
+							description: descriptionPayload(),
+							iban: formIban,
+							qrIban: formQrIban.trim() === '' ? null : formQrIban,
+							isPrimary: formIsPrimary,
+							journalAccountId: formJournalAccountId,
+							version: formVersion,
+							// Décochée sur un compte qui en portait : retirés ; sinon absents (inchangés).
+							...(formWasProvider === 'paypal'
+								? { paypal: null }
+								: formWasProvider === 'stripe'
+									? { stripe: null }
+									: {}),
+						};
 			await updateBankAccount(id, payload);
 			toast.success(i18nMsg('bank-accounts-toast-update-success', 'Compte bancaire modifié.'));
 			await reload();
@@ -769,6 +1033,152 @@
 	</p>
 {/snippet}
 
+{#snippet providerCheckbox(prefix: string, provider: ConfigurableProvider, primaryLocked: boolean)}
+	<!-- Story 40-7d (AC-1) — la case d'un prestataire (« Compte PayPal », « Compte Stripe ») ;
+	     cocher l'une décoche l'autre. -->
+	<div class="flex items-center gap-2">
+		<input
+			id="{prefix}-is-{provider}"
+			type="checkbox"
+			checked={formProvider === provider}
+			disabled={primaryLocked}
+			onchange={(e) => setFormProvider(provider, (e.currentTarget as HTMLInputElement).checked)}
+			data-testid="{prefix}-is-{provider}"
+		/>
+		<label for="{prefix}-is-{provider}" class="block text-sm font-medium text-text">
+			{provider === 'stripe'
+				? i18nMsg('bank-accounts-labels-is-stripe', 'Compte Stripe')
+				: i18nMsg('bank-accounts-labels-is-paypal', 'Compte PayPal')}
+		</label>
+	</div>
+{/snippet}
+
+{#snippet paypalFields(prefix: string, primaryLocked: boolean)}
+	<!-- Story 38-11d (AC-1) — les cases des prestataires et leurs champs, communs aux
+	     formulaires de création et de modification ; Story 40-7d (AC-1) — la case
+	     « Compte Stripe » et son compte de versement. -->
+	<div class="col-span-2">
+		<div class="flex flex-wrap items-center gap-6">
+			{@render providerCheckbox(prefix, 'paypal', primaryLocked)}
+			{@render providerCheckbox(prefix, 'stripe', primaryLocked)}
+		</div>
+		{#if primaryLocked}
+			<p class="mt-1 text-xs text-text-muted" data-testid="{prefix}-is-paypal-locked">
+				{i18nMsg(
+					'bank-accounts-help-provider-primary',
+					"Le compte principal ne peut pas être un compte PayPal ni Stripe : désignez d'abord un autre compte principal.",
+				)}
+			</p>
+		{:else if formProvider === 'stripe'}
+			<p class="mt-1 text-xs text-text-muted" data-testid="{prefix}-is-stripe-help">
+				{i18nMsg(
+					'bank-accounts-help-stripe',
+					'Un compte bancaire par compte Stripe et par devise : son rapport Stripe s’importe et se rapproche par la page Stripe, non par l’import bancaire.',
+				)}
+			</p>
+		{:else}
+			<p class="mt-1 text-xs text-text-muted" data-testid="{prefix}-is-paypal-help">
+				{i18nMsg(
+					'bank-accounts-help-paypal',
+					'Un compte bancaire par compte PayPal et par devise : son relevé PayPal s’importe et se rapproche par la page PayPal, non par l’import bancaire.',
+				)}
+			</p>
+		{/if}
+	</div>
+	{#if isProviderForm && formProvider !== null}
+		<div>
+			<label for="{prefix}-{formProvider}-account" class="block text-sm font-medium text-text mb-1">
+				{formProvider === 'stripe'
+					? i18nMsg('bank-accounts-labels-stripe-account', 'Compte Stripe')
+					: i18nMsg('bank-accounts-labels-paypal-account', 'Compte PayPal')}
+			</label>
+			<Input
+				id="{prefix}-{formProvider}-account"
+				bind:value={formProviderAccount}
+				maxlength={PROVIDER_ACCOUNT_MAX_CHARS}
+				list="{prefix}-{formProvider}-labels"
+				placeholder={formProvider === 'stripe' ? 'Stripe boutique' : 'PayPal www'}
+				data-testid="{prefix}-{formProvider}-account"
+			/>
+			<datalist id="{prefix}-{formProvider}-labels" data-testid="{prefix}-{formProvider}-labels">
+				{#each providerLabels as label (label)}
+					<option value={label}></option>
+				{/each}
+			</datalist>
+			<p class="mt-1 text-xs text-text-muted">
+				{formProvider === 'stripe'
+					? i18nMsg(
+							'bank-accounts-help-stripe-account',
+							'Le même libellé pour les comptes de chaque devise d’un même compte Stripe.',
+						)
+					: i18nMsg(
+							'bank-accounts-help-paypal-account',
+							'Le même libellé pour les comptes de chaque devise d’un même compte PayPal.',
+						)}
+			</p>
+		</div>
+		<div>
+			<label for="{prefix}-fee-account" class="block text-sm font-medium text-text mb-1">
+				{i18nMsg('bank-accounts-labels-fee-account', 'Compte de frais')}
+			</label>
+			<select
+				id="{prefix}-fee-account"
+				bind:value={formFeeAccountId}
+				class="w-full rounded border border-border px-3 py-2 text-sm"
+				data-testid="{prefix}-fee-account"
+			>
+				<option value={null}>{i18nMsg('bank-accounts-labels-not-configured', 'Non configuré')}</option>
+				{#each withCurrentAccount(feeCandidates, formFeeAccountId, accounts) as acc (acc.id)}
+					<option value={acc.id}>{acc.number} — {acc.name}</option>
+				{/each}
+			</select>
+			<p class="mt-1 text-xs text-text-muted">
+				{i18nMsg(
+					'bank-accounts-help-fee-account',
+					'Compte de charge, en CHF ou dans la devise du compte du plan. Sans compte de frais, les frais vont « à examiner ».',
+				)}
+			</p>
+		</div>
+		{#if isStripeForm}
+			<div>
+				<label for="{prefix}-payout-account" class="block text-sm font-medium text-text mb-1">
+					{i18nMsg('bank-accounts-labels-payout-account', 'Compte bancaire de versement')}
+				</label>
+				<select
+					id="{prefix}-payout-account"
+					bind:value={formPayoutBankAccountId}
+					class="w-full rounded border border-border px-3 py-2 text-sm"
+					data-testid="{prefix}-payout-account"
+				>
+					<option value={null}>{i18nMsg('bank-accounts-labels-not-configured', 'Non configuré')}</option>
+					{#if payoutMissing}
+						<!-- Story 40-9 (revue P4 de la 40-7d, L1) — destination réglée absente des comptes
+						     lus (par exemple lecture des comptes archivés et clos en échec, ou identifiant d'une autre société) : nommée, gardée telle quelle. -->
+						<option value={formPayoutBankAccountId} data-testid="{prefix}-payout-missing"
+							>{i18nMsg('bank-accounts-labels-payout-missing', 'Destination actuelle (introuvable)')}</option
+						>
+					{/if}
+					{#each payoutCandidates as b (b.id)}
+						<option value={b.id}
+							>{bankAccountName(b)}{#if b.archived}
+								({i18nMsg('bank-accounts-labels-archived-badge', 'Archivé')}){:else if b.closedOn !== null}
+								({i18nMsg('bank-accounts-labels-closed-badge', 'Clos le { $date }', {
+									date: formatSwissDate(b.closedOn),
+								})}){/if}</option
+						>
+					{/each}
+				</select>
+				<p class="mt-1 text-xs text-text-muted">
+					{i18nMsg(
+						'bank-accounts-help-payout-account',
+						'Le compte bancaire où Stripe verse, dans la devise du compte du plan (une banque ou Wise, jamais un compte Stripe ni PayPal). Sans compte de versement, les versements vont « à examiner ».',
+					)}
+				</p>
+			</div>
+		{/if}
+	{/if}
+{/snippet}
+
 <div class="flex items-center justify-between">
 	<div>
 		<h1 class="text-2xl font-semibold text-text" data-testid="bank-accounts-page-title">
@@ -869,15 +1279,18 @@
 							<p class="mt-1 text-xs text-text-muted" data-testid="form-card-last4-help">{i18nMsg('bank-accounts-help-card-last4', 'Kesh ne garde jamais le numéro complet de la carte : seulement ses quatre derniers chiffres, pour la reconnaître.')}</p>
 						</div>
 					{:else}
+						{@render paypalFields('form', false)}
 						<div>
-							<label for="form-iban" class="block text-sm font-medium text-text mb-1">{i18nMsg('bank-accounts-labels-iban', 'IBAN')}</label>
-							<Input id="form-iban" bind:value={formIban} required placeholder="CH..." data-testid="form-iban" />
+							<label for="form-iban" class="block text-sm font-medium text-text mb-1">{isProviderForm ? i18nMsg('bank-accounts-labels-iban-optional', 'IBAN (facultatif)') : i18nMsg('bank-accounts-labels-iban', 'IBAN')}</label>
+							<Input id="form-iban" bind:value={formIban} required={!isProviderForm} placeholder="CH..." data-testid="form-iban" />
 						</div>
+						{#if !isProviderForm}
 						<div>
 							<label for="form-qr-iban" class="block text-sm font-medium text-text mb-1">{i18nMsg('bank-accounts-labels-qr-iban', 'QR-IBAN (optionnel)')}</label>
 							<Input id="form-qr-iban" bind:value={formQrIban} placeholder="CH..." data-testid="form-qr-iban" />
 							<p class="mt-1 text-xs text-text-muted" data-testid="form-qr-iban-help">{i18nMsg('bank-accounts-help-qr-iban', 'À remplir uniquement si votre banque vous a fourni un QR-IBAN dédié aux QR-factures (numéro spécial avec un identifiant 30000–31999). Sinon, laissez ce champ vide : votre IBAN normal suffit pour générer des QR-factures.')}</p>
 						</div>
+						{/if}
 					{/if}
 					<div>
 						<label for="form-journal-account" class="block text-sm font-medium text-text mb-1">{isCard ? i18nMsg('bank-accounts-labels-card-ledger', 'Compte de dette lié') : i18nMsg('bank-accounts-labels-journal-account-id', 'Compte comptable lié')}</label>
@@ -898,6 +1311,16 @@
 									'bank-accounts-help-card-ledger',
 									'Obligatoire : un compte de passif, la dette de la carte (par exemple un sous-compte de 2100 Dettes bancaires à court terme).',
 								)}
+							{:else if isStripeForm}
+								{i18nMsg(
+									'bank-accounts-help-stripe-ledger',
+									'Obligatoire : le compte du plan du solde Stripe, dans sa devise (un compte en devise exige le multi-devises).',
+								)}
+							{:else if isProviderForm}
+								{i18nMsg(
+									'bank-accounts-help-paypal-ledger',
+									'Obligatoire : le compte du plan du solde PayPal, dans sa devise (un compte en devise exige le multi-devises).',
+								)}
 							{:else}
 								{i18nMsg(
 									'bank-accounts-tooltip-journal-account',
@@ -906,14 +1329,14 @@
 							{/if}
 						</p>
 					</div>
-					{#if formJournalAccountId !== null}
+					{#if formJournalAccountId !== null && !ledgerIsForeign}
 						<!-- Story 34-2 (#533, AC-7) — le solde d'ouverture, actif dès qu'un compte
 						     du plan est lié ; masqué (et non envoyé) sans compte lié. -->
 						<div data-testid="form-opening-balance">
 							{@render openingFields('form')}
 						</div>
 					{/if}
-					{#if !isCard}
+					{#if !isCard && !isProviderForm}
 						<div class="col-span-2 flex items-center gap-2">
 							<input
 								id="form-is-primary"
@@ -981,6 +1404,10 @@
 						<tr class="border-b border-border" data-testid="bank-account-row-{ba.id}">
 							<td class="py-2 pr-4 {dimClass(ba)}">
 								<span data-testid="bank-account-name-{ba.id}">{bankAccountName(ba)}</span>
+								{#if providerSummaryLine(ba, accounts) !== null}
+									<!-- Story 38-11d (AC-1) — « PayPal · <compte> · <devise> » ; Story 40-7d, « Stripe · … ». -->
+									<span class="block text-xs text-text-muted" data-testid="bank-account-{ba.provider}-{ba.id}">{providerSummaryLine(ba, accounts)}</span>
+								{/if}
 								{#if ba.isPrimary}
 									<span class="ml-2 rounded bg-primary-light/20 px-1.5 py-0.5 text-xs text-primary" data-testid="primary-badge-{ba.id}">
 										{i18nMsg('bank-accounts-labels-primary-badge', 'Principal')}
@@ -1019,23 +1446,28 @@
 										{i18nMsg('bank-accounts-actions-reopen', 'Rouvrir')}
 									</button>
 								{:else if !ba.archived && mode.kind === 'none'}
+									{#if !isProvider(ba)}
+										<!-- Story 38-11d (AC-1) — pas de « Lier » sur un compte de prestataire (PayPal ;
+										     Stripe, 40-7d) : le serveur refuse tout `PATCH` d'un tel compte ; son compte du
+										     plan se change par « Modifier ». -->
+										<button
+											type="button"
+											class="mr-1 rounded border border-border px-2 py-1 text-xs"
+											onclick={() => openEditJournal(ba.id)}
+											data-testid="link-button-{ba.id}"
+										>
+											{i18nMsg('bank-accounts-actions-link-account', 'Lier')}
+										</button>
+									{/if}
 									<button
 										type="button"
 										class="rounded border border-border px-2 py-1 text-xs"
-										onclick={() => openEditJournal(ba.id)}
-										data-testid="link-button-{ba.id}"
-									>
-										{i18nMsg('bank-accounts-actions-link-account', 'Lier')}
-									</button>
-									<button
-										type="button"
-										class="ml-1 rounded border border-border px-2 py-1 text-xs"
 										onclick={() => openEditFull(ba)}
 										data-testid="edit-button-{ba.id}"
 									>
 										{i18nMsg('bank-accounts-actions-edit', 'Modifier')}
 									</button>
-									{#if ba.journalAccountId !== null && ba.lastTransactionDate === null}
+									{#if ba.journalAccountId !== null && ba.lastTransactionDate === null && !isForeignLedger(ba.journalAccountId)}
 										<!-- Story 34-2 (#533, AC-7) — compte ouvert, lié, et dont le compte du
 										     plan n'a encore aucune ligne (revue P1, E-5 : `lastTransactionDate`
 										     est la date de sa dernière ligne). Le serveur reste l'autorité. -->
@@ -1125,15 +1557,18 @@
 													<p class="mt-1 text-xs text-text-muted" data-testid="edit-card-last4-help">{i18nMsg('bank-accounts-help-card-last4', 'Kesh ne garde jamais le numéro complet de la carte : seulement ses quatre derniers chiffres, pour la reconnaître.')}</p>
 												</div>
 											{:else}
+												{@render paypalFields('edit', ba.isPrimary)}
 												<div>
-													<label for="edit-iban" class="block text-sm font-medium text-text mb-1">{i18nMsg('bank-accounts-labels-iban', 'IBAN')}</label>
-													<Input id="edit-iban" bind:value={formIban} required data-testid="edit-iban" />
+													<label for="edit-iban" class="block text-sm font-medium text-text mb-1">{isProviderForm ? i18nMsg('bank-accounts-labels-iban-optional', 'IBAN (facultatif)') : i18nMsg('bank-accounts-labels-iban', 'IBAN')}</label>
+													<Input id="edit-iban" bind:value={formIban} required={!isProviderForm} data-testid="edit-iban" />
 												</div>
+												{#if !isProviderForm}
 												<div>
 													<label for="edit-qr-iban" class="block text-sm font-medium text-text mb-1">{i18nMsg('bank-accounts-labels-qr-iban', 'QR-IBAN (optionnel)')}</label>
 													<Input id="edit-qr-iban" bind:value={formQrIban} data-testid="edit-qr-iban" />
 													<p class="mt-1 text-xs text-text-muted" data-testid="edit-qr-iban-help">{i18nMsg('bank-accounts-help-qr-iban', 'À remplir uniquement si votre banque vous a fourni un QR-IBAN dédié aux QR-factures (numéro spécial avec un identifiant 30000–31999). Sinon, laissez ce champ vide : votre IBAN normal suffit pour générer des QR-factures.')}</p>
 												</div>
+												{/if}
 											{/if}
 											<div>
 												<label for="edit-journal-account" class="block text-sm font-medium text-text mb-1">{isCard ? i18nMsg('bank-accounts-labels-card-ledger', 'Compte de dette lié') : i18nMsg('bank-accounts-labels-journal-account-id', 'Compte comptable lié')}</label>
@@ -1149,7 +1584,7 @@
 													{/each}
 												</select>
 											</div>
-											{#if !isCard}
+											{#if !isCard && !isProviderForm}
 												<div class="col-span-2 flex items-center gap-2">
 													<input
 														id="edit-is-primary"

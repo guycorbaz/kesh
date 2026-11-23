@@ -700,6 +700,12 @@ pub fn serialize_bank_accounts_csv<W: Write>(
         "updated_at",
         "account_kind",
         "card_last4",
+        // Story 38-11b — réglages de prestataire, en fin de ligne.
+        "provider",
+        "provider_account",
+        "fee_account_id",
+        // Story 40-7b — compte bancaire de versement d'un compte Stripe.
+        "payout_bank_account_id",
     ])
     .map_err(|e| map_csv_err("bank_accounts", e))?;
     for b in rows {
@@ -719,6 +725,10 @@ pub fn serialize_bank_accounts_csv<W: Write>(
             fmt_dt(b.updated_at),
             b.account_kind.as_str().to_string(),
             fmt_opt_str(&b.card_last4),
+            fmt_opt_str(&b.provider_settings.provider),
+            fmt_opt_str(&b.provider_settings.provider_account),
+            fmt_opt_i64(b.provider_settings.fee_account_id),
+            fmt_opt_i64(b.provider_settings.payout_bank_account_id),
         ])
         .map_err(|e| map_csv_err("bank_accounts", e))?;
     }
@@ -801,6 +811,9 @@ pub fn serialize_bank_transactions_csv<W: Write>(
         "version",
         "created_at",
         "updated_at",
+        // Story 38-11b — import d'un prestataire, en fin de ligne.
+        "provider_type",
+        "counterparty_email",
     ])
     .map_err(|e| map_csv_err("bank_transactions", e))?;
     for bt in rows {
@@ -825,6 +838,8 @@ pub fn serialize_bank_transactions_csv<W: Write>(
             bt.version.to_string(),
             fmt_dt(bt.created_at),
             fmt_dt(bt.updated_at),
+            fmt_opt_str(&bt.provider_type),
+            fmt_opt_str(&bt.counterparty_email),
         ])
         .map_err(|e| map_csv_err("bank_transactions", e))?;
     }
@@ -1138,6 +1153,10 @@ pub fn serialize_reconciliation_rules_csv<W: Write>(
         "version",
         "created_at",
         "updated_at",
+        // Story 38-11b — filtres facultatifs, en fin de ligne.
+        "provider_type",
+        "counterparty_email",
+        "direction",
     ])
     .map_err(|e| map_csv_err("reconciliation_rules", e))?;
     for r in rows {
@@ -1156,6 +1175,9 @@ pub fn serialize_reconciliation_rules_csv<W: Write>(
             r.version.to_string(),
             fmt_dt(r.created_at),
             fmt_dt(r.updated_at),
+            fmt_opt_str(&r.provider_type),
+            fmt_opt_str(&r.counterparty_email),
+            fmt_opt_str(&r.direction),
         ])
         .map_err(|e| map_csv_err("reconciliation_rules", e))?;
     }
@@ -2011,6 +2033,7 @@ mod tests {
             closed_on: None,
             created_at: now,
             updated_at: now,
+            provider_settings: Default::default(),
         };
         let sans = BankAccount {
             id: 8,
@@ -2033,15 +2056,44 @@ mod tests {
             card_last4: Some("1234".into()),
             ..base.clone()
         };
+        // Story 38-11b — le solde EUR d'un compte PayPal, sans IBAN.
+        let paypal = BankAccount {
+            id: 11,
+            bank_name: "PayPal".into(),
+            description: None,
+            iban: None,
+            provider_settings: kesh_db::entities::BankAccountProvider {
+                provider: Some("paypal".into()),
+                provider_account: Some("PayPal www".into()),
+                fee_account_id: Some(42),
+                payout_bank_account_id: None,
+            },
+            ..base.clone()
+        };
+        // Story 40-7b — le solde USD d'un compte Stripe, avec son compte de versement.
+        let stripe = BankAccount {
+            id: 12,
+            bank_name: "Stripe".into(),
+            description: None,
+            iban: None,
+            provider_settings: kesh_db::entities::BankAccountProvider {
+                provider: Some("stripe".into()),
+                provider_account: Some("Stripe boutique".into()),
+                fee_account_id: Some(42),
+                payout_bank_account_id: Some(7),
+            },
+            ..base.clone()
+        };
         let mut buf = Vec::new();
-        serialize_bank_accounts_csv(&[base, sans, formule, carte], &mut buf).expect("serialize ok");
+        serialize_bank_accounts_csv(&[base, sans, formule, carte, paypal, stripe], &mut buf)
+            .expect("serialize ok");
         let text = String::from_utf8(buf[3..].to_vec()).expect("utf8");
         let mut lines = text.lines();
         assert_eq!(
             lines.next().unwrap(),
             "id;company_id;bank_name;description;iban;qr_iban;is_primary;\
              journal_account_id;archived;closed_on;version;created_at;updated_at;\
-             account_kind;card_last4",
+             account_kind;card_last4;provider;provider_account;fee_account_id;payout_bank_account_id",
             "en-tête complet"
         );
         // T-a10 (Story 28-4a) — `closed_on` vide pour un compte ouvert,
@@ -2050,8 +2102,8 @@ mod tests {
         assert!(ouvert.starts_with("7;1;UBS;Épargne;CH9300762011623852957;"));
         assert!(ouvert.contains(";false;;1;"), "closed_on vide : {ouvert}");
         assert!(
-            ouvert.ends_with(";bank;"),
-            "type en fin de ligne : {ouvert}"
+            ouvert.ends_with(";bank;;;;;"),
+            "type, puis les réglages de prestataire vides : {ouvert}"
         );
         let clos = lines.next().unwrap();
         assert!(clos.starts_with("8;1;UBS;;CH9300762011623852957;"));
@@ -2071,8 +2123,18 @@ mod tests {
             "IBAN vide pour une carte : {ligne_carte}"
         );
         assert!(
-            ligne_carte.ends_with(";credit_card;1234"),
-            "type et quatre chiffres en fin de ligne : {ligne_carte}"
+            ligne_carte.ends_with(";credit_card;1234;;;;"),
+            "type et quatre chiffres, puis les réglages vides : {ligne_carte}"
+        );
+        let ligne_paypal = lines.next().unwrap();
+        assert!(
+            ligne_paypal.ends_with(";bank;;paypal;PayPal www;42;"),
+            "réglages de prestataire en fin de ligne : {ligne_paypal}"
+        );
+        let ligne_stripe = lines.next().unwrap();
+        assert!(
+            ligne_stripe.ends_with(";bank;;stripe;Stripe boutique;42;7"),
+            "compte de versement en dernière colonne : {ligne_stripe}"
         );
     }
 

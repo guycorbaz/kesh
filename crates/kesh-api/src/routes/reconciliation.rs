@@ -118,7 +118,8 @@ pub struct ReconciliationProposal {
     pub notice: Option<ProposalNotice>,
     /// Story 34-4 (#828, AC-1) — ce qui, aux livres, ressemble déjà à la
     /// transaction (champ additif) : `null` quand elle n'a rien à quoi se
-    /// rattacher (hors CHF, montant nul), que le compte bancaire n'a pas de
+    /// rattacher (autre devise que celle du compte du grand livre — Story
+    /// 38-11c1 —, montant nul), que le compte bancaire n'a pas de
     /// compte du grand livre ou qu'il est clos (le dialogue de rattachement y
     /// est refusé, revue P1 B1-3). L'écran en tire un avertissement et une
     /// confirmation ; le serveur ne refuse rien (AC-4).
@@ -790,7 +791,7 @@ pub(super) fn fx_failed_proposal(
     })
 }
 
-fn project_error_to_failed_proposal(
+pub(super) fn project_error_to_failed_proposal(
     bank_transaction_id: i64,
     project_id: Option<i64>,
     err: DbError,
@@ -1161,28 +1162,46 @@ pub async fn get_proposals(
     let ledger_for_signal = ba_check
         .journal_account_id
         .filter(|_| !ba_check.is_closed());
-    let mut already_booked_by_tx: HashMap<i64, AlreadyBooked> = match ledger_for_signal {
-        Some(ledger) => kesh_db::repositories::reconciliation_link::count_already_booked_for_page(
-            &state.pool,
-            current_user.company_id,
-            query.bank_account_id,
+    // Story 38-11c1 (AC-1) — la devise de ce compte du grand livre, lue sur le
+    // pool à côté de `ba_check` (qui ne porte que `journal_account_id`), comme
+    // au pré-vol du dialogue : la page compte ses mouvements dans cette devise.
+    let ledger_for_signal = match ledger_for_signal {
+        Some(ledger) => Some((
             ledger,
-            &transactions,
-            link_amount_tolerance(),
-        )
-        .await?
-        .into_iter()
-        .map(|(id, c)| {
-            (
-                id,
-                AlreadyBooked {
-                    settlement_count: c.settlement_count,
-                    entry_count: c.entry_count,
-                    matched_elsewhere_count: c.matched_elsewhere_count,
-                },
+            kesh_db::repositories::reconciliation_link::bank_ledger_currency(
+                &state.pool,
+                current_user.company_id,
+                ledger,
             )
-        })
-        .collect(),
+            .await?,
+        )),
+        None => None,
+    };
+    let mut already_booked_by_tx: HashMap<i64, AlreadyBooked> = match ledger_for_signal {
+        Some((ledger, ledger_currency)) => {
+            kesh_db::repositories::reconciliation_link::count_already_booked_for_page(
+                &state.pool,
+                current_user.company_id,
+                query.bank_account_id,
+                ledger,
+                &ledger_currency,
+                &transactions,
+                link_amount_tolerance(),
+            )
+            .await?
+            .into_iter()
+            .map(|(id, c)| {
+                (
+                    id,
+                    AlreadyBooked {
+                        settlement_count: c.settlement_count,
+                        entry_count: c.entry_count,
+                        matched_elsewhere_count: c.matched_elsewhere_count,
+                    },
+                )
+            })
+            .collect()
+        }
         None => HashMap::new(),
     };
     for tx in transactions {
@@ -1322,8 +1341,8 @@ pub async fn get_proposals(
     // Pass 3.5 (Story 8-5b §rule-application) — accounts_info pour appliquer
     // rule fallback dans Pass 4 (closure sync) ; les règles actives sont lues
     // avant le Pass 2 (Story 29-6).
-    let accounts_info_rows: Vec<(i64, String, String, bool)> = sqlx::query_as(
-        "SELECT id, number, name, postable FROM accounts WHERE company_id = ? AND active = TRUE",
+    let accounts_info_rows: Vec<(i64, String, String, bool, Option<String>)> = sqlx::query_as(
+        "SELECT id, number, name, postable, currency FROM accounts WHERE company_id = ? AND active = TRUE",
     )
     .bind(current_user.company_id)
     .fetch_all(&state.pool)
@@ -1344,17 +1363,22 @@ pub async fn get_proposals(
     // plus proposée (l'acceptation la refuserait toujours, `accept_one_rule`
     // étape 4 bis) et ne masque plus une règle suivante valable. L'ensemble
     // contient donc les comptes **actifs, imputables, hors compte de la
-    // banque** ; le doc-comment de `first_matching_rule` (« non archivé »)
+    // banque**, et **sans devise** (ce rapprochement écrit en CHF : une règle
+    // vers un compte en devise y serait refusée à l'acceptation,
+    // `ACCOUNT_IN_FOREIGN_CURRENCY`, et masquerait la règle valable
+    // suivante) ; le doc-comment de `first_matching_rule` (« non archivé »)
     // reste tel quel, le site d'appel fait foi.
     let bank_ledger_account_id = ba_check.journal_account_id;
     let active_account_ids: std::collections::HashSet<i64> = accounts_info_rows
         .iter()
-        .filter(|(id, _, _, postable)| *postable && Some(*id) != bank_ledger_account_id)
-        .map(|(id, _, _, _)| *id)
+        .filter(|(id, _, _, postable, currency)| {
+            *postable && Some(*id) != bank_ledger_account_id && currency.is_none()
+        })
+        .map(|(id, _, _, _, _)| *id)
         .collect();
     let accounts_info: HashMap<i64, (String, String)> = accounts_info_rows
         .into_iter()
-        .map(|(id, number, name, _)| (id, (number, name)))
+        .map(|(id, number, name, _, _)| (id, (number, name)))
         .collect();
 
     // Pass 4 : score per-tx + rule fallback + build response.
@@ -3427,6 +3451,14 @@ fn supplier_payment_error_to_failed_proposal(
             *fiscal_year_id,
             fiscal_year_name,
         ),
+        // Story 38-11b (revue P1, M2) — le solde d'un prestataire (PayPal) ne
+        // paie pas de facture fournisseur : `pay_in_tx_as` le refuse (AC-3,
+        // limite (a)) ; le refus sort nommé, non en `DATABASE_ERROR`.
+        DbError::BankAccountIsProvider { .. } => FailedProposal {
+            bank_transaction_id,
+            error_code: "BANK_ACCOUNT_IS_PROVIDER".to_string(),
+            details: Some(serde_json::json!({ "bankAccountId": bank_account_id })),
+        },
         // Défensifs : l'étape 3 tient le compte en exclusif et l'a refusé
         // avant, s'il était clos ou sans compte au grand livre.
         DbError::BankAccountClosed { .. } => FailedProposal {
@@ -4317,8 +4349,8 @@ async fn accept_one_rule(
     // compte a été scindé en sous-comptes est périmée ; `get_proposals` ne la
     // propose déjà plus (AC5), cette garde couvre la proposition rejouée par un
     // client. Archivé / inconnu → `ACCOUNT_NOT_FOUND`, prioritaire (KF-002).
-    let counterparty_row: Option<(bool, bool, String, String)> = match sqlx::query_as(
-        "SELECT active, postable, name, number FROM accounts WHERE id = ? AND company_id = ? LIMIT 1",
+    let counterparty_row: Option<(bool, bool, String, String, Option<String>)> = match sqlx::query_as(
+        "SELECT active, postable, name, number, currency FROM accounts WHERE id = ? AND company_id = ? LIMIT 1",
     )
     .bind(counterparty_account_id)
     .bind(company_id)
@@ -4335,8 +4367,22 @@ async fn accept_one_rule(
         }
     };
     let counterparty_name = match counterparty_row {
-        Some((true, true, name, _)) => name,
-        Some((true, false, _, number)) => {
+        // Une règle peut désigner un compte en devise (décision du responsable de l'epic du
+        // 2026-11-21, 38-11c2 : elle sert les prestataires) ; ce rapprochement
+        // bancaire écrit en CHF et le refuse, plutôt que de laisser le
+        // contrôle central de l'écriture le faire.
+        Some((true, _, _, _, Some(currency))) => {
+            return Err(FailedProposal {
+                bank_transaction_id,
+                error_code: "ACCOUNT_IN_FOREIGN_CURRENCY".to_string(),
+                details: Some(serde_json::json!({
+                    "accountId": counterparty_account_id,
+                    "currency": currency,
+                })),
+            });
+        }
+        Some((true, true, name, _, None)) => name,
+        Some((true, false, _, number, None)) => {
             return Err(non_postable_failed_proposal(
                 bank_transaction_id,
                 vec![kesh_db::errors::NonPostableAccount {
@@ -4462,9 +4508,13 @@ async fn accept_one_rule(
         }
     };
 
-    // Step 11 — description handler-side (Pass 2 Q9), UTF-8-safe truncate 200.
+    // Step 11 — description handler-side (Pass 2 Q9), UTF-8-safe truncate
+    // (`ENTRY_DESCRIPTION_MAX_CHARS`, 200).
     let raw_description = format!("Règle '{}' — {}", rule.label, counterparty_name);
-    let description: String = raw_description.chars().take(200).collect();
+    let description: String = raw_description
+        .chars()
+        .take(kesh_reconciliation::provider_review::ENTRY_DESCRIPTION_MAX_CHARS)
+        .collect();
 
     // Step 11bis (Story 19-5) — résout le projet analytique par défaut de la
     // règle et le RE-VALIDE ici (le projet a pu être archivé depuis la
@@ -4567,26 +4617,27 @@ async fn accept_one_rule(
     let journal_entry_id = je.entry.id;
 
     // Step 13 — UPDATE bank_transactions optimistic lock (pattern accept_one_split).
-    let bank_tx_update = sqlx::query(
-        "UPDATE bank_transactions \
-         SET matched_entry_id = ?, status = 'reconciled', \
-             auto_match_rejected_at = NULL, updated_at = NOW(3), \
-             version = version + 1 \
-         WHERE id = ? AND company_id = ? AND status = 'pending' \
-           AND version = ?",
+    // Story 38-11c2 (AC-8) : l'`UPDATE` vit dans le dépôt
+    // (`reconciliation::mark_reconciled_in_tx`), partagé avec le moteur des
+    // prestataires ; refus et textes inchangés (le message est celui de
+    // l'erreur sqlx, comme avant l'extraction).
+    let updated = reconciliation_repo::mark_reconciled_in_tx(
+        tx,
+        company_id,
+        bank_transaction_id,
+        journal_entry_id,
+        bt.version,
     )
-    .bind(journal_entry_id)
-    .bind(bank_transaction_id)
-    .bind(company_id)
-    .bind(bt.version)
-    .execute(&mut **tx)
     .await
     .map_err(|e| FailedProposal {
         bank_transaction_id,
         error_code: "DATABASE_ERROR".to_string(),
-        details: Some(serde_json::json!({ "message": e.to_string() })),
+        details: Some(serde_json::json!({ "message": match &e {
+            DbError::Sqlx(inner) => inner.to_string(),
+            other => other.to_string(),
+        } })),
     })?;
-    if bank_tx_update.rows_affected() != 1 {
+    if !updated {
         return Err(FailedProposal {
             bank_transaction_id,
             error_code: "RECONCILIATION_ALREADY_RECONCILED".to_string(),
@@ -6549,11 +6600,18 @@ fn link_amount_tolerance() -> Decimal {
 /// tait pas la cause sous une liste vide. Un compte du grand livre **inactif**
 /// n'est pas refusé, à la différence de `post_manual` : le rattachement
 /// n'écrit aucune ligne.
+///
+/// Story 38-11c1 (AC-1) : rend le couple (compte du grand livre, **sa
+/// devise**) — `"CHF"` pour un compte sans devise
+/// ([`kesh_db::repositories::reconciliation_link::bank_ledger_currency`],
+/// lecture sur le pool, sûre hors verrou). Seul le rattachement à une écriture
+/// la lit ; les routes des règlements (29-8) et des règlements groupés
+/// l'ignorent et restent CHF.
 pub(super) async fn link_preflight(
     pool: &sqlx::MySqlPool,
     company_id: i64,
     bank_account_id: i64,
-) -> Result<i64, AppError> {
+) -> Result<(i64, String), AppError> {
     let account = bank_accounts::find_by_id_for_company(pool, company_id, bank_account_id)
         .await?
         .ok_or(AppError::BankAccountNotFound)?;
@@ -6563,9 +6621,13 @@ pub(super) async fn link_preflight(
     if account.is_closed() {
         return Err(AppError::BankAccountClosed { bank_account_id });
     }
-    account
+    let ledger = account
         .journal_account_id
-        .ok_or(AppError::BankAccountNotConfigured { bank_account_id })
+        .ok_or(AppError::BankAccountNotConfigured { bank_account_id })?;
+    let currency =
+        kesh_db::repositories::reconciliation_link::bank_ledger_currency(pool, company_id, ledger)
+            .await?;
+    Ok((ledger, currency))
 }
 
 /// Un règlement rattachable, tel que l'API le rend.
@@ -6610,7 +6672,8 @@ pub async fn get_link_candidates(
 ) -> Result<Json<LinkCandidatesResponse>, AppError> {
     let company_id = current_user.company_id;
     let bank_account_id = bank_account_of_transaction(&state.pool, company_id, id).await?;
-    let bank_ledger_account_id = link_preflight(&state.pool, company_id, bank_account_id).await?;
+    let (bank_ledger_account_id, _) =
+        link_preflight(&state.pool, company_id, bank_account_id).await?;
     let t = reconciliation_repo::find_pending_by_id_for_account(
         &state.pool,
         company_id,
@@ -6710,7 +6773,8 @@ pub async fn post_link_transaction(
     };
     let company_id = current_user.company_id;
     let bank_account_id = bank_account_of_transaction(&state.pool, company_id, id).await?;
-    let bank_ledger_account_id = link_preflight(&state.pool, company_id, bank_account_id).await?;
+    let (bank_ledger_account_id, _) =
+        link_preflight(&state.pool, company_id, bank_account_id).await?;
     let req = kesh_db::repositories::reconciliation_link::LinkRequest {
         company_id,
         bank_account_id,
@@ -6856,8 +6920,10 @@ pub struct EntryCandidatesResponse {
 /// Ordre des refus, **identique à celui du `POST`** et à la 29-8 : `404
 /// NOT_FOUND` (inexistante ou d'une autre société) → pré-vol
 /// ([`link_preflight`], réutilisé : archivé, clos, non lié) → `404
-/// RECONCILIATION_TRANSACTION_NOT_PENDING`. Une transaction nulle ou hors CHF
-/// rend `200` et une liste vide. La règle et le tri sont ceux de
+/// RECONCILIATION_TRANSACTION_NOT_PENDING`. Une transaction nulle, ou d'une
+/// autre devise que celle du compte du grand livre (`CHF` pour un compte sans
+/// devise ; Story 38-11c1 : une transaction en devise sur un compte de sa
+/// devise se rattache), rend `200` et une liste vide. La règle et le tri sont ceux de
 /// [`kesh_db::repositories::reconciliation_link::find_entry_candidates`] ;
 /// rien n'est présélectionné, rien n'est écrit.
 ///
@@ -6876,7 +6942,8 @@ pub async fn get_entry_candidates(
 ) -> Result<Json<EntryCandidatesResponse>, AppError> {
     let company_id = current_user.company_id;
     let bank_account_id = bank_account_of_transaction(&state.pool, company_id, id).await?;
-    let bank_ledger_account_id = link_preflight(&state.pool, company_id, bank_account_id).await?;
+    let (bank_ledger_account_id, bank_ledger_currency) =
+        link_preflight(&state.pool, company_id, bank_account_id).await?;
     let mut tx = state
         .pool
         .begin()
@@ -6900,6 +6967,7 @@ pub async fn get_entry_candidates(
         company_id,
         &t,
         bank_ledger_account_id,
+        &bank_ledger_currency,
     )
     .await?;
     let mut candidates = Vec::with_capacity(found.len());
@@ -6996,13 +7064,15 @@ pub async fn post_link_entry(
     };
     let company_id = current_user.company_id;
     let bank_account_id = bank_account_of_transaction(&state.pool, company_id, id).await?;
-    let bank_ledger_account_id = link_preflight(&state.pool, company_id, bank_account_id).await?;
+    let (bank_ledger_account_id, bank_ledger_currency) =
+        link_preflight(&state.pool, company_id, bank_account_id).await?;
     let req = kesh_db::repositories::reconciliation_link::LinkEntryRequest {
         company_id,
         bank_account_id,
         bank_transaction_id: id,
         journal_entry_id,
         bank_ledger_account_id,
+        bank_ledger_currency: &bank_ledger_currency,
         user_id: current_user.user_id,
         actor_api_key_id: current_user.api_key_id,
     };
@@ -7017,7 +7087,7 @@ pub async fn post_link_entry(
 /// et [`kesh_db::repositories::reconciliation_link::link_entry_in_tx`].
 async fn link_entry_once(
     pool: &sqlx::MySqlPool,
-    req: kesh_db::repositories::reconciliation_link::LinkEntryRequest,
+    req: kesh_db::repositories::reconciliation_link::LinkEntryRequest<'_>,
 ) -> Result<LinkEntryResponse, AppError> {
     use kesh_db::repositories::reconciliation_link::link_entry_in_tx;
     let outcome = locked_link_attempt(
@@ -7059,7 +7129,7 @@ async fn link_entry_once(
 /// (`accept_one_*`, C-28-4-14) : sur un compte clos que la fenêtre de la
 /// v0.13.3 (#651, fermée en v0.13.4) aurait laissé avec une transaction en
 /// attente, c'est ce pré-vol, lecture fraîche en autocommit, qui les arrête.
-fn closed_account_failed(
+pub(super) fn closed_account_failed(
     bank_transaction_ids: &[i64],
     bank_account_id: i64,
 ) -> Vec<FailedProposal> {
@@ -7306,6 +7376,8 @@ mod batch_classification_tests {
             version: 1,
             created_at: at,
             updated_at: at,
+            counterparty_email: None,
+            provider_type: None,
         }
     }
 

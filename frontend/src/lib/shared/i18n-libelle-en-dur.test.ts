@@ -423,8 +423,26 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
  * (`reconciliation/gap-label.ts`, tout par `i18nMsg`), séparé de `gapSenseLabel` pour la
  * minuscule en milieu de phrase ; `ecartee` **21**, `conforme` **108 → 109**, relevés par la
  * garde (`kesh-gate-logs/e433/rem2-vitest-1.log`), non additionnés.
+ *
+ * **130 → 137** (Story 38-11d, écran PayPal) : `paypalFailedLabel`, `paypalLineErrorLabel`,
+ * `proposalKindLabel`, `gapKindLabel`, `toReviewReasonLabel` (`paypal/paypal-labels.ts`),
+ * `proposalActionLabel` (`paypal/paypal-review.ts`) et `failedLabel` (page PayPal), tous par
+ * `i18nMsg` ou par délégation ; `ecartee` **21**, `conforme` **109 → 116**, relevés par la garde
+ * (« expected 137 to be 130 »), non additionnés.
+ *
+ * **137 → 138** (revue P1 de la 38-11d, M3) : `findingGapLabel` (`paypal/paypal-labels.ts`, par
+ * `i18nMsg`) ; `conforme` **116 → 117**, relevé par la garde (« expected 138 to be 137 »).
+ *
+ * **138 → 140** (Story 38-12b, dialogue de téléchargement) : `periodRefusalLabel` et
+ * `progressLabel` (`provider-download/provider-download.ts`, tout par `i18nMsg`) ; `conforme`
+ * **117 → 119**, relevés par la garde (« expected 140 to be 138 »).
  */
-const CANDIDATES_ATTENDUES = 130;
+// **138 → 145** (Story 40-7d) : les libellés de l'écran Stripe (`stripe/stripe-labels.ts`) et les
+// libellés communs aux prestataires (`provider/provider-labels.ts`), tous par `i18nMsg` ;
+// `conforme` **117 → 124**, relevé par la garde (« expected 145 to be 138 »).
+// **145 → 147** (fusion d'epic/38-paypal, 38-12b, dans epic/40-stripe) : `periodRefusalLabel` et
+// `progressLabel` de la 38-12b ; `conforme` **124 → 126**, relevés par la garde (« expected 147 to be 0 »).
+const CANDIDATES_ATTENDUES = 147;
 
 /** Les trois délimiteurs de littéral en JS/TS. */
 const QUOTES = ["'", '"', '`'];
@@ -941,7 +959,7 @@ describe('libellés en dur — l’angle mort #255', () => {
 			else if (c.retours.length > 0) classes.ecartee += 1;
 			else classes.conforme += 1;
 		}
-		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 21, conforme: 109 });
+		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 21, conforme: 126 });
 		// La somme est recalculée depuis les classes, jamais depuis le total qu'elle contrôle.
 		const somme = Object.values(classes).reduce((a, b) => a + b, 0);
 		expect(somme).toBe(CANDIDATES_ATTENDUES);

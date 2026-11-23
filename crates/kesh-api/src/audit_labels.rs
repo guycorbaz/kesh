@@ -184,6 +184,12 @@ pub const ACTIONS: &[&str] = &[
     "payment_batch.cancelled",
     "payment_batch.confirmed",
     "payment_batch.generated",
+    // Story 38-12a — le téléchargement par l'API PayPal (une entrée par
+    // téléchargement, en plus de `bank_import.created` par devise).
+    "paypal_download.created",
+    // Story 38-11b — l'import du CSV PayPal d'un compte PayPal (une entrée par
+    // import, en plus de `bank_import.created` par devise).
+    "paypal_import.created",
     "product.archived",
     "product.created",
     "product.updated",
@@ -191,6 +197,9 @@ pub const ACTIONS: &[&str] = &[
     "project.created",
     "project.unarchived",
     "project.updated",
+    // Story 38-11c2 — une proposition de la revue d'un compte de prestataire
+    // acceptée (PayPal ; Wise et Stripe l'émettent telle quelle).
+    "provider.proposal_accepted",
     "reconciliation.accepted",
     "reconciliation.cancelled",
     "reconciliation.entry_linked",
@@ -205,6 +214,12 @@ pub const ACTIONS: &[&str] = &[
     "reconciliation_rule.updated",
     "report.exported",
     "report.generated",
+    // Story 40-8b — le téléchargement par l'API Stripe (une entrée par
+    // téléchargement, en plus de `bank_import.created` par devise).
+    "stripe_download.created",
+    // Story 40-7b — l'import du rapport Stripe d'un compte Stripe (une entrée
+    // par import, en plus de `bank_import.created` par devise).
+    "stripe_import.created",
     "supplier_invoice.cancelled",
     "supplier_invoice.created",
     "supplier_invoice.deleted",

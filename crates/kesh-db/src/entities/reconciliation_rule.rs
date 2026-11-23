@@ -121,6 +121,15 @@ pub struct ReconciliationRule {
     /// création/édition de la règle **et** re-validé à l'accept (le projet a
     /// pu être archivé entre-temps).
     pub default_project_id: Option<i64>,
+    /// Story 38-11b (AC-1) — filtre facultatif, appliqué depuis la 38-11c1 : le type de
+    /// la transaction chez le prestataire (`Type` PayPal). `None` = sans filtre.
+    pub provider_type: Option<String>,
+    /// Story 38-11b — filtre facultatif : adresse électronique de la
+    /// contrepartie. `None` = sans filtre.
+    pub counterparty_email: Option<String>,
+    /// Story 38-11b — filtre facultatif : sens, `credit` ou `debit`
+    /// (`chk_reconciliation_rules_filters`). `None` = les deux sens.
+    pub direction: Option<String>,
     pub applied_count: i64,
     pub last_applied_at: Option<NaiveDateTime>,
     pub version: i32,
@@ -143,6 +152,12 @@ pub struct NewReconciliationRule {
     /// Projet analytique par défaut (Story 19-5). Validé par le repository
     /// (`create_in_tx`) via `projects::validate_taggable_in_tx` si `Some`.
     pub default_project_id: Option<i64>,
+    /// Story 38-11b — filtres facultatifs (voir [`ReconciliationRule`]),
+    /// écrits par l'API depuis la 38-11c1, validés et normalisés à la route
+    /// (`kesh_reconciliation::rules::filters_match` les applique).
+    pub provider_type: Option<String>,
+    pub counterparty_email: Option<String>,
+    pub direction: Option<String>,
 }
 
 /// Patch partiel d'une `ReconciliationRule` (PATCH /rules/{id}).
@@ -166,4 +181,9 @@ pub struct UpdateReconciliationRule {
     /// `Some(Some(id))` = affecter le projet `id` (validé si différent de
     /// la valeur stockée, grandfathering du tag inchangé).
     pub default_project_id: Option<Option<i64>>,
+    /// Story 38-11b — filtres facultatifs, même sémantique à deux niveaux que
+    /// `default_project_id` : `None` = inchangé, `Some(None)` = retiré.
+    pub provider_type: Option<Option<String>>,
+    pub counterparty_email: Option<Option<String>>,
+    pub direction: Option<Option<String>>,
 }

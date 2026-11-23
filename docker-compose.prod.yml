@@ -154,6 +154,29 @@ services:
       KESH_ADMIN_IMPORT_MAX_MB: ${KESH_ADMIN_IMPORT_MAX_MB:-}
       # Sauvegarde avant mise à jour (0.17.4) : échappatoire, version exacte
       KESH_SKIP_PRE_UPGRADE_BACKUP: ${KESH_SKIP_PRE_UPGRADE_BACKUP:-}
+      # Téléchargement PayPal par l'API (Story 38-12a) : une série par compte
+      # PayPal ; au-delà de trois comptes, ajouter les lignes KESH_PAYPAL_4_…
+      KESH_PAYPAL_1_ACCOUNT: ${KESH_PAYPAL_1_ACCOUNT:-}
+      KESH_PAYPAL_1_CLIENT_ID: ${KESH_PAYPAL_1_CLIENT_ID:-}
+      KESH_PAYPAL_1_SECRET: ${KESH_PAYPAL_1_SECRET:-}
+      KESH_PAYPAL_2_ACCOUNT: ${KESH_PAYPAL_2_ACCOUNT:-}
+      KESH_PAYPAL_2_CLIENT_ID: ${KESH_PAYPAL_2_CLIENT_ID:-}
+      KESH_PAYPAL_2_SECRET: ${KESH_PAYPAL_2_SECRET:-}
+      KESH_PAYPAL_3_ACCOUNT: ${KESH_PAYPAL_3_ACCOUNT:-}
+      KESH_PAYPAL_3_CLIENT_ID: ${KESH_PAYPAL_3_CLIENT_ID:-}
+      KESH_PAYPAL_3_SECRET: ${KESH_PAYPAL_3_SECRET:-}
+      KESH_PAYPAL_BASE_URL: ${KESH_PAYPAL_BASE_URL:-}
+      KESH_PAYPAL_PARALLEL: ${KESH_PAYPAL_PARALLEL:-}
+      # Téléchargement Stripe par l'API (Stories 40-8a, 40-8b ; manuel d'administration) : une clé restreinte en lecture
+      # par compte Stripe ; au-delà de trois comptes, ajouter les lignes KESH_STRIPE_4_…
+      KESH_STRIPE_1_ACCOUNT: ${KESH_STRIPE_1_ACCOUNT:-}
+      KESH_STRIPE_1_KEY: ${KESH_STRIPE_1_KEY:-}
+      KESH_STRIPE_2_ACCOUNT: ${KESH_STRIPE_2_ACCOUNT:-}
+      KESH_STRIPE_2_KEY: ${KESH_STRIPE_2_KEY:-}
+      KESH_STRIPE_3_ACCOUNT: ${KESH_STRIPE_3_ACCOUNT:-}
+      KESH_STRIPE_3_KEY: ${KESH_STRIPE_3_KEY:-}
+      KESH_STRIPE_BASE_URL: ${KESH_STRIPE_BASE_URL:-}
+      KESH_STRIPE_PARALLEL: ${KESH_STRIPE_PARALLEL:-}
     ports:
       # Restriction host-side au loopback NAS (LAN privé v0.1.0, D5).
       # Accès via SSH tunnel ou reverse proxy DSM (futur v0.2+).

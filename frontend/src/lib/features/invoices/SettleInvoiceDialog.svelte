@@ -25,6 +25,7 @@
 	import type { BankAccountSummary } from '$lib/features/bank-accounts/bank-accounts.api';
 	import { bankAccountOptionLabel } from '$lib/features/bank-accounts/format';
 	import { withoutCreditCards } from '$lib/features/bank-accounts/credit-card';
+	import { withoutProviders } from '$lib/features/bank-accounts/provider';
 	import { dueToCentime } from './invoice-helpers';
 	import { readJournalAmount } from '$lib/features/journal-entries/balance';
 	import { amountEntryMessage } from '$lib/features/journal-entries/amount-entry-message';
@@ -115,7 +116,10 @@
 	// `SETTLEMENT_ACCOUNT_IS_CREDIT_CARD`). Écartée AVANT le filtre du compte
 	// débiteurs : le message ci-dessous, qui accuse ce dernier, ne compte pas les
 	// cartes.
-	let nonCardBankAccounts = $derived(withoutCreditCards(bankAccounts));
+	// Story 38-11d (AC-1) — ni un compte de prestataire (PayPal) : une facture client ne
+	// se règle pas sur un solde PayPal par cet écran (son encaissement se rattache par la
+	// page PayPal).
+	let nonCardBankAccounts = $derived(withoutProviders(withoutCreditCards(bankAccounts)));
 	let eligibleBankAccounts = $derived(bankAccountsNotLinkedTo(nonCardBankAccounts, receivableIds));
 	// Liste vide PARCE QUE le filtre a écarté un compte : le dire. Une société
 	// sans aucun compte bancaire n'a rien d'écarté, et le message, qui accuse le

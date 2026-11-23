@@ -74,7 +74,27 @@ const INVENTAIRE: &[Colonne] = &[
             "kesh-db/tests/account_currency_repository.rs::devise_refusee_a_chaque_site_de_configuration",
         ]),
         note: "Lier un compte en devise → 400 ACCOUNT_IN_FOREIGN_CURRENCY (37-1) ; \
-               passer un compte lié en devise → ACCOUNT_CURRENCY_IN_USE.",
+               passer un compte lié en devise → ACCOUNT_CURRENCY_IN_USE. Exception \
+               voulue (38-11b, levée de C-37-9) : le compte du plan d'un compte PayPal \
+               est admis en devise, c'est la devise du solde.",
+    },
+    // Story 38-11b — le compte de frais d'un compte PayPal : en CHF ou dans la
+    // devise du compte lié (une écriture ne porte qu'une devise étrangère),
+    // toute autre devise refusée.
+    Colonne {
+        colonne: "bank_accounts.fee_account_id",
+        preuve: Preuve::Tests(&[
+            "kesh-api/tests/paypal_import_e2e.rs::creer_un_solde_paypal_et_ses_refus",
+        ]),
+        note: "Compte de frais d'une autre devise que CHF et celle du solde → 400 \
+               PROVIDER_FEE_ACCOUNT_INVALID (reason currency) ; dans la devise du \
+               solde, admis par conception.",
+    },
+    Colonne {
+        colonne: "bank_accounts.payout_bank_account_id",
+        preuve: Preuve::VersBankAccounts,
+        note: "Story 40-7b — désigne un compte bancaire (la destination des versements \
+               Stripe), non un compte du plan comptable.",
     },
     Colonne {
         colonne: "bank_imports.bank_account_id",
@@ -215,10 +235,10 @@ const INVENTAIRE: &[Colonne] = &[
     Colonne {
         colonne: "reconciliation_rules.counterparty_account_id",
         preuve: Preuve::Tests(&[
-            "kesh-db/tests/account_currency_repository.rs::regles_de_reconciliation_refusent_un_compte_en_devise",
-            "kesh-api/tests/account_currency_e2e.rs::un_compte_en_devise_n_est_designable_nulle_part",
+            "kesh-db/tests/account_currency_repository.rs::regles_de_reconciliation_admettent_un_compte_en_devise",
+            "kesh-api/tests/paypal_reconciliation_e2e.rs::regle_contrepartie_dans_une_autre_devise_refusee",
         ]),
-        note: "400 ACCOUNT_IN_FOREIGN_CURRENCY (37-1).",
+        note: "Un compte en devise est admis (2026-11-21, 38-11c2) ; la devise se contrôle à l'application (COUNTERPARTY_CURRENCY_MISMATCH).",
     },
     // --- Colonnes de pièce (37-3a, AC-5) ---------------------------------
     Colonne {

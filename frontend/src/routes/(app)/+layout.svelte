@@ -117,6 +117,14 @@
 				{ i18nKey: 'nav-open-items', fallback: 'Postes ouverts', href: '/open-items' },
 				{ i18nKey: 'nav-reports', fallback: 'Rapports', href: '/reports' },
 			],
+			// Story 38-11d (AC-3) — la page PayPal, Comptable et plus (la revue et
+			// l'acceptation le sont, 38-11c2) ; toujours visible pour ces rôles : la page
+			// dit « aucun compte PayPal » quand il n'y en a pas.
+			// Story 40-7d (AC-2) — la page Stripe, à côté, mêmes rôles et même règle.
+			comptableOnly: [
+				{ i18nKey: 'nav-paypal', fallback: 'PayPal', href: '/reconciliation/paypal' },
+				{ i18nKey: 'nav-stripe', fallback: 'Stripe', href: '/reconciliation/stripe' },
+			],
 		},
 		{
 			key: 'administration',

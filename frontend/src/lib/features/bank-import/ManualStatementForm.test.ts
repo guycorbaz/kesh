@@ -399,3 +399,26 @@ describe('ManualStatementForm — dates des avertissements en forme suisse (v017
 		expect(gap + overlap).not.toMatch(/2026-\d{2}-\d{2}/);
 	});
 });
+
+// Story 38-11d (AC-1) — pas de relevé saisi sur un compte de prestataire (PayPal).
+describe('ManualStatementForm — compte de prestataire', () => {
+	it('un compte PayPal n’est pas proposé', async () => {
+		const comptes = [
+			...ACCOUNTS,
+			{ id: 9, bankName: 'PayPal', description: null, iban: null, provider: 'paypal' },
+		];
+		const { container: c } = render(ManualStatementForm, { props: { bankAccounts: comptes } });
+		const values = Array.from(c.querySelectorAll('select option')).map((o) => o.getAttribute('value'));
+		expect(values).toContain('3');
+		expect(values).not.toContain('9');
+	});
+
+	// Story 40-7d (AC-1) — de même un compte Stripe ou Wise.
+	it.each(['stripe', 'wise'])('un compte %s n’est pas proposé', async (provider) => {
+		const comptes = [...ACCOUNTS, { id: 9, bankName: provider, description: null, iban: null, provider }];
+		const { container: c } = render(ManualStatementForm, { props: { bankAccounts: comptes } });
+		const values = Array.from(c.querySelectorAll('select option')).map((o) => o.getAttribute('value'));
+		expect(values).toContain('3');
+		expect(values).not.toContain('9');
+	});
+});

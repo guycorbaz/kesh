@@ -387,6 +387,49 @@ Pour surcharger l'URL backend (ex: tests contre un kesh-api distant) :
 KESH_BACKEND_URL=http://localhost:3001 npm run test:e2e
 ```
 
+### Le serveur de prestataire simulé — `paypal-download.spec.ts` (Story 38-12b)
+
+Le téléchargement par l'API d'un prestataire se joue contre un **serveur simulé commun**
+(`frontend/tests/e2e/support/provider-mock.ts`) que la spec lance **dans le runner**, sur le
+port de `KESH_E2E_PROVIDER_MOCK_PORT`. Les identifiants se lisant au démarrage, le backend
+d'E2E reçoit en plus, au même port :
+
+```bash
+# Terminal 1, en plus de la recette ci-dessus (valeurs factices)
+  KESH_PAYPAL_1_ACCOUNT='PayPal API E2E' \
+  KESH_PAYPAL_1_CLIENT_ID=e2e-client-fictif KESH_PAYPAL_1_SECRET=e2e-secret-fictif \
+  KESH_PAYPAL_BASE_URL=http://127.0.0.1:3901 \
+# Terminal 2, en plus
+  KESH_E2E_PROVIDER_MOCK_PORT=3901
+```
+
+`http` n'est admis que vers `127.0.0.1` ou `localhost` (38-12a, AC-1) ; aucun appel ne part
+vers PayPal. Le libellé de la série doit être `PayPal API E2E` (ou celui de
+`KESH_E2E_PAYPAL_ACCOUNT` côté runner) : la spec crée le compte PayPal de ce libellé, et un
+second, `PayPal sans API`, sans série, dans le **même** démarrage. Wise et Stripe ajoutent
+leurs routes au même serveur.
+
+**Ignoré connu** : sans `KESH_E2E_PROVIDER_MOCK_PORT`, le test 3 de `paypal-download.spec.ts`
+(le téléchargement) est **ignoré**, motif écrit — il ne compte jamais vert ; les tests 1 et 2
+(préparation, compte sans identifiants) tournent. Dans une suite complète lancée sans ces
+variables, il s'ajoute aux ignorés.
+
+**Stripe — `stripe-download.spec.ts` (Story 40-8b)** : même serveur, routes `stripeMockRoutes`
+(`GET /v1/payouts`, `GET /v1/balance_transactions`). Le backend d'E2E reçoit en plus une clé
+restreinte **de test** factice (le mode « bac à sable » se lit à son préfixe) :
+
+```bash
+# Terminal 1, en plus (valeurs factices)
+  KESH_STRIPE_1_ACCOUNT='Stripe API E2E' KESH_STRIPE_1_KEY=rk_test_e2efictif \
+  KESH_STRIPE_BASE_URL=http://127.0.0.1:3901 \
+```
+
+La spec crée `Stripe API E2E` (ou `KESH_E2E_STRIPE_ACCOUNT`) et `Stripe sans API` ; la clé
+attendue par le serveur simulé est `rk_test_e2efictif` (ou `KESH_E2E_STRIPE_KEY`). PayPal et
+Stripe peuvent partager le même port : les chemins ne se recouvrent pas, mais **une spec à la
+fois** lance le serveur (les deux specs ne tournent pas en parallèle sur le même port).
+**Ignoré connu**, de même : sans `KESH_E2E_PROVIDER_MOCK_PORT`, son test 3 est ignoré.
+
 ## Les échecs attendus — la suite ne passe PAS au vert, et il faut le savoir
 
 ⚠️ **`npm run test:e2e` ne passe PAS au vert : le compte attendu est de 7 à 9 échecs, quelle que

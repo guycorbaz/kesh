@@ -680,3 +680,45 @@ describe('LinkSettlementModal — dates en forme suisse (v0172, #880)', () => {
 		expect(row.textContent).not.toContain('2026-06-17');
 	});
 });
+
+// Story 38-11d (AC-5) — la modale prend une transaction seule (page PayPal) et, pour une
+// transaction en devise, ne charge pas les règlements (route restée CHF) et montre le
+// mouvement des écritures dans la devise de la transaction.
+describe('LinkSettlementModal — transaction seule, en devise (Story 38-11d, AC-5)', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		mockApi.getLinkCandidates.mockResolvedValue({ bankTransactionId: 77, candidates: [] });
+		mockApi.getEntryCandidates.mockResolvedValue({
+			bankTransactionId: 77,
+			candidates: [entry(5, null, null, '-12.40')],
+		});
+	});
+
+	it('crédit en EUR : aucun appel des règlements, montants des écritures en EUR', async () => {
+		const target = {
+			bankTransactionId: 77,
+			transaction: {
+				bookingDate: '2020-03-14',
+				valueDate: null,
+				amount: '25.00',
+				currency: 'EUR',
+				counterpartyName: 'Client fictif',
+			},
+		};
+		const r = render(LinkSettlementModal, {
+			open: true,
+			onOpenChange: vi.fn(),
+			proposal: target,
+			onSuccess: vi.fn(),
+		});
+		await waitFor(() => expect(mockApi.getEntryCandidates).toHaveBeenCalledWith(77));
+		expect(mockApi.getLinkCandidates).not.toHaveBeenCalled();
+		await waitFor(() => expect(r.getByTestId('link-settlement-modal').textContent).toContain('-12.40 EUR'));
+	});
+
+	it('crédit en CHF : les règlements restent chargés', async () => {
+		const target = { bankTransactionId: 77, transaction: proposal().transaction };
+		render(LinkSettlementModal, { open: true, onOpenChange: vi.fn(), proposal: target, onSuccess: vi.fn() });
+		await waitFor(() => expect(mockApi.getLinkCandidates).toHaveBeenCalledWith(77));
+	});
+});

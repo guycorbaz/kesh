@@ -101,6 +101,12 @@ export interface PendingByAccount {
 	name: string;
 	count: number;
 	rejectedCount: number;
+	/**
+	 * Story 38-11d (revue P1, M1) — prestataire dont le compte est le solde (`'paypal'`, `'stripe'`),
+	 * `null` ou absent pour un compte ordinaire : ses transactions se rapprochent par la page
+	 * du prestataire, non par la réconciliation générique.
+	 */
+	provider?: string | null;
 }
 
 export type StatementReason = 'MISSING' | 'ENDS_BEFORE_YEAR_END' | 'GAP';

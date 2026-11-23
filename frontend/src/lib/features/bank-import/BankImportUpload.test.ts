@@ -1009,3 +1009,33 @@ describe('BankImportUpload — compte sans IBAN', () => {
 		expect(get(c, 'preview-iban').textContent?.trim()).toBe('—');
 	});
 });
+
+// Story 38-11d (AC-1) — un compte de prestataire (PayPal) n'importe pas de relevé
+// bancaire : il n'est pas offert au sélecteur.
+describe('BankImportUpload — compte de prestataire', () => {
+	it('un compte PayPal n’est pas proposé ; les autres le restent', async () => {
+		const comptes = [
+			...ACCOUNTS,
+			{ id: 4, bankName: 'PayPal', description: null, iban: null, provider: 'paypal' },
+		];
+		const r = render(BankImportUpload, { props: { bankAccounts: comptes, onSuccess: vi.fn() } });
+		await flush();
+		const values = Array.from(r.container.querySelectorAll('#bank-account-select option')).map((o) =>
+			o.getAttribute('value'),
+		);
+		expect(values).not.toContain('4');
+		expect(values).toContain('1');
+	});
+
+	// Story 40-7d (AC-1) — de même un compte Stripe ou Wise (`withoutProviders`, 38-11d).
+	it.each(['stripe', 'wise'])('un compte %s n’est pas proposé ; les autres le restent', async (provider) => {
+		const comptes = [...ACCOUNTS, { id: 4, bankName: provider, description: null, iban: null, provider }];
+		const r = render(BankImportUpload, { props: { bankAccounts: comptes, onSuccess: vi.fn() } });
+		await flush();
+		const values = Array.from(r.container.querySelectorAll('#bank-account-select option')).map((o) =>
+			o.getAttribute('value'),
+		);
+		expect(values).not.toContain('4');
+		expect(values).toContain('1');
+	});
+});

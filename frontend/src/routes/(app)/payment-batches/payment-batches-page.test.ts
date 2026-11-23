@@ -56,6 +56,9 @@ function compte(id: number, description: string | null): BankAccountSummary {
 		qrIban: null,
 		accountKind: 'bank',
 		cardLast4: null,
+		provider: null,
+		paypal: null,
+		stripe: null,
 		isPrimary: id === 1,
 		journalAccountId: 1020,
 		version: 1,
@@ -108,6 +111,45 @@ describe('page des lots de virements — compte source (Story 26-2b, D4)', () =>
 		);
 		expect(labels).toContain(`UBS — Personnel — ${compte(1, null).iban}`);
 		expect(labels.some((l) => l.includes('Visa'))).toBe(false);
+	});
+
+	// Story 38-11d (AC-1) — un compte PayPal, même porteur d'un IBAN, n'est pas proposé : le
+	// serveur refuse le lot (409 BANK_ACCOUNT_IS_PROVIDER, 38-11b).
+	it('un compte de prestataire n’est pas proposé, même avec un IBAN', async () => {
+		const paypal: BankAccountSummary = {
+			...compte(4, null),
+			bankName: 'PayPal',
+			provider: 'paypal',
+			paypal: { account: 'PayPal www', feeAccountId: null },
+		};
+		listBankAccountsMock.mockResolvedValue([compte(1, 'Personnel'), paypal]);
+		const { findByTestId } = render(Page);
+		await fireEvent.click(await findByTestId('payment-batch-new'));
+		const form = await findByTestId('payment-batch-form');
+		const labels = Array.from(form.querySelectorAll('select option')).map(
+			(o) => o.textContent?.trim() ?? '',
+		);
+		expect(labels).toContain(`UBS — Personnel — ${compte(1, null).iban}`);
+		expect(labels.some((l) => l.includes('PayPal'))).toBe(false);
+	});
+
+	// Story 40-7d (AC-1) — de même un compte Stripe, même avec un IBAN.
+	it('un compte Stripe n’est pas proposé, même avec un IBAN', async () => {
+		const stripe: BankAccountSummary = {
+			...compte(4, null),
+			bankName: 'Stripe',
+			provider: 'stripe',
+			stripe: { account: 'Stripe boutique', feeAccountId: null, payoutBankAccountId: null },
+		};
+		listBankAccountsMock.mockResolvedValue([compte(1, 'Personnel'), stripe]);
+		const { findByTestId } = render(Page);
+		await fireEvent.click(await findByTestId('payment-batch-new'));
+		const form = await findByTestId('payment-batch-form');
+		const labels = Array.from(form.querySelectorAll('select option')).map(
+			(o) => o.textContent?.trim() ?? '',
+		);
+		expect(labels).toContain(`UBS — Personnel — ${compte(1, null).iban}`);
+		expect(labels.some((l) => l.includes('Stripe'))).toBe(false);
 	});
 });
 

@@ -82,3 +82,38 @@ date de transaction (colonne 0) antérieure à la date de comptabilisation
 l'exemple public des documentations bancaires suisses
 (`CH9300762011623852957`), aucun compte réel ; noms, montants et numéros
 de transaction sont fictifs.
+
+## PayPal (Story 38-11a)
+
+`paypal-balance-affecting-fictif.csv` reproduit **la structure** du CSV
+« Balance affecting transactions » qu'exporte PayPal, sans aucune de ses
+valeurs : le fichier est **inventé de toutes pièces** (le fichier réel qui a
+servi à relever la structure n'est pas dans le dépôt et a été supprimé).
+
+Structure reproduite : BOM UTF-8, virgule, toutes les cellules entre
+guillemets, fins de ligne LF ; **41 colonnes** dans l'ordre PayPal. Les vingt
+noms relevés sur le fichier réel (ceux que lit le lecteur, plus `Time`,
+`TimeZone`, `Item Title`, `Invoice Number`, `Balance`, `Subject`, `Note`) font
+foi, avec leur ordre ; les vingt et un autres sont des remplissages, toujours
+vides, dont le nom ne sert à aucun test.
+
+Contenu : 14 lignes de données, **toutes en 2020** au format `JJ/MM/AAAA`
+(exercice du seed `with-company` des E2E), trois devises (EUR, USD, CHF) :
+encaissement *Website Payment* avec frais, *Subscription Payment*, achat
+*General Payment* (débit, frais négatifs), paire *User Initiated Currency
+Conversion* (débit EUR, crédit USD, `Reference Txn ID` croisés), *General
+Withdrawal*, paire *Payment Review Hold* / *Release*, *Payment Refund* à
+**frais positifs** (sa `Note` tient sur deux lignes entre guillemets), une
+ligne `Pending`, une ligne `Denied`, une ligne `Memo` (*General
+Authorization*), un montant à milliers (`1,234.56`). Noms inventés, e-mails
+`@example.invalid`, identifiants `0TEST…` de 17 caractères `[0-9A-Z]`.
+Générée par un script hors dépôt ; les valeurs attendues sont tenues en dur
+par `tests/paypal_csv.rs`. Sert aussi aux stories 38-11b, 38-11c2 et à l'E2E
+de 38-11d.
+
+## Stripe « Itemized payout reconciliation » (Story 40-7a)
+
+| Fichier | Cas couvert |
+|---|---|
+| `stripe-itemized-payout-fictif.csv` | Rapport inventé de toutes pièces : treize colonnes (les onze d'un rapport du tableau de bord **plus** `source_id` et `charge_id`), sans BOM, devises en minuscules, deux décimales, `net = gross − fee` partout, dates en 2020. Neuf lignes, quatre versements (`po_TEST0001` à `0004`), trois devises (CHF, EUR, USD) : `charge` avec frais, `refund` à frais négatifs, `fee` seule (brut négatif, frais nuls, sans objet lié) et `fee` à frais non nuls, une charge sans vente dans le jeu de rapprochement (`ch_TEST0099`), un versement qui ne porte qu'un `payout_reversal`. Le net EUR du versement `po_TEST0002` vaut 270.30. Identifiants `txn_TEST…`, `po_TEST…`, `ch_TEST…`, `re_TEST…`, `fee_TEST…` inventés. Valeurs attendues tenues en dur par `tests/stripe_csv.rs`. Sert aussi aux stories 40-7b à 40-7d et 40-8a. |
+| `stripe-itemized-payout-sans-source-fictif.csv` | Mêmes colonnes **sans** `source_id` ni `charge_id` (en-tête d'un export du tableau de bord à colonnes par défaut anciennes), trois lignes : refus `MissingColumns(["source_id\|charge_id"])`. |

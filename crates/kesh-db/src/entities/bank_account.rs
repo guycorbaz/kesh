@@ -95,6 +95,204 @@ impl<'r> Decode<'r, MySql> for BankAccountKind {
     }
 }
 
+/// Prestataires dont un compte bancaire peut être le solde — Story 38-11b
+/// (Epic 38, phase 1). Domaine de la colonne `bank_accounts.provider`, fermé à
+/// l'octet par `chk_bank_accounts_provider`. `paypal` (Epic 38) et `stripe`
+/// (Epic 40) sont servis ; `wise` reste réservé au schéma pour l'Epic 39.
+pub const PROVIDER_PAYPAL: &str = "paypal";
+
+/// Le prestataire Stripe — Story 40-7b (Epic 40, phase 1).
+pub const PROVIDER_STRIPE: &str = "stripe";
+
+/// Longueur maximale, en caractères Unicode, du libellé du compte d'un
+/// prestataire ([`BankAccountProvider::provider_account`]) — la borne de la
+/// colonne `varchar(120)` (Story 38-11b, AC-2).
+pub const PROVIDER_ACCOUNT_MAX_CHARS: usize = 120;
+
+/// Réglages de prestataire d'un compte bancaire — Story 38-11b (AC-1, AC-2).
+///
+/// Les colonnes `provider`, `provider_account`, `fee_account_id` et (Stripe, 40-7b) `payout_bank_account_id` :
+/// toutes `NULL` pour un compte bancaire ordinaire (CHECK
+/// `chk_bank_accounts_provider`). Un compte PayPal est le solde, dans **une**
+/// devise (celle de son compte du plan), d'un compte PayPal nommé par
+/// `provider_account` ; un compte PayPal a au plus un compte bancaire par devise
+/// (garde de la route, refus d'ambiguïté à l'import).
+///
+/// **Sérialisation** (aplatie dans [`BankAccount`]) : `provider` (la colonne,
+/// telle quelle : `"paypal" | "wise" | "stripe" | null`) et `paypal`
+/// (`{ account, feeAccountId }` pour un compte PayPal, `null` sinon — aussi pour
+/// un prestataire réservé, inatteignable en phase 1).
+#[derive(Debug, Clone, Default, PartialEq, Eq, sqlx::FromRow)]
+pub struct BankAccountProvider {
+    /// Le prestataire, ou `None` pour un compte bancaire ordinaire.
+    pub provider: Option<String>,
+    /// Libellé du compte du prestataire (« PayPal www »).
+    pub provider_account: Option<String>,
+    /// Compte de charge des frais ; `None` = frais « à examiner ».
+    pub fee_account_id: Option<i64>,
+    /// Story 40-7b — compte Stripe seulement : le compte bancaire où Stripe
+    /// verse (même devise) ; `None` = versements « à examiner ».
+    pub payout_bank_account_id: Option<i64>,
+}
+
+impl BankAccountProvider {
+    /// `true` si le compte est le solde d'un compte PayPal.
+    pub fn is_paypal(&self) -> bool {
+        self.provider.as_deref() == Some(PROVIDER_PAYPAL)
+    }
+
+    /// `true` si le compte est le solde d'un compte Stripe (Story 40-7b).
+    pub fn is_stripe(&self) -> bool {
+        self.provider.as_deref() == Some(PROVIDER_STRIPE)
+    }
+
+    /// `true` si le compte porte un prestataire, quel qu'il soit.
+    pub fn is_provider(&self) -> bool {
+        self.provider.is_some()
+    }
+
+    /// Réglages PayPal (`None` si le compte n'est pas un compte PayPal).
+    pub fn paypal(&self) -> Option<PaypalSettings> {
+        if !self.is_paypal() {
+            return None;
+        }
+        Some(PaypalSettings {
+            account: self.provider_account.clone().unwrap_or_default(),
+            fee_account_id: self.fee_account_id,
+            payout_bank_account_id: None,
+        })
+    }
+
+    /// Réglages Stripe (`None` si le compte n'est pas un compte Stripe) —
+    /// Story 40-7b.
+    pub fn stripe(&self) -> Option<StripeSettings> {
+        if !self.is_stripe() {
+            return None;
+        }
+        Some(StripeSettings {
+            account: self.provider_account.clone().unwrap_or_default(),
+            fee_account_id: self.fee_account_id,
+            payout_bank_account_id: self.payout_bank_account_id,
+        })
+    }
+
+    /// Les réglages **résultants**, tous prestataires servis confondus
+    /// (`None` pour un compte ordinaire ou d'un prestataire réservé).
+    pub fn settings(&self) -> Option<ProviderSettings> {
+        self.paypal()
+            .map(ProviderSettings::from)
+            .or_else(|| self.stripe().map(ProviderSettings::from))
+    }
+}
+
+/// Réglages PayPal d'un compte bancaire, tels que l'API les rend et les reçoit
+/// (`{ account, feeAccountId }`) — Story 38-11b (AC-2).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PaypalSettings {
+    /// Libellé du compte PayPal (« PayPal www »).
+    pub account: String,
+    /// Compte de charge des frais ; `null` = frais « à examiner ».
+    #[serde(default)]
+    pub fee_account_id: Option<i64>,
+    /// **Jamais admis** pour PayPal : le champ n'existe que pour que la route
+    /// le **refuse** (`400 VALIDATION_ERROR`) au lieu de l'ignorer en silence
+    /// (Story 40-7b, AC-2). Jamais écrit dans une réponse.
+    #[serde(default, skip_serializing)]
+    pub payout_bank_account_id: Option<i64>,
+}
+
+/// Réglages Stripe d'un compte bancaire, tels que l'API les rend et les reçoit
+/// (`{ account, feeAccountId, payoutBankAccountId }`) — Story 40-7b (AC-2).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StripeSettings {
+    /// Libellé du compte Stripe (« Stripe boutique »).
+    pub account: String,
+    /// Compte de charge des frais ; `null` = frais « à examiner ».
+    #[serde(default)]
+    pub fee_account_id: Option<i64>,
+    /// Compte bancaire où Stripe verse ; `null` = versements « à examiner ».
+    #[serde(default)]
+    pub payout_bank_account_id: Option<i64>,
+}
+
+/// Réglages d'un prestataire servi, **une seule forme** pour les gardes, les
+/// écritures et l'audit des routes de comptes bancaires — Story 40-7b : le
+/// corps JSON reste `paypal` ou `stripe`, tous deux ramenés ici.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProviderSettings {
+    /// [`PROVIDER_PAYPAL`] ou [`PROVIDER_STRIPE`].
+    pub provider: &'static str,
+    /// Libellé du compte du prestataire.
+    pub account: String,
+    /// Compte de charge des frais.
+    pub fee_account_id: Option<i64>,
+    /// Compte bancaire de versement (Stripe seulement ; toujours `None` pour
+    /// PayPal).
+    pub payout_bank_account_id: Option<i64>,
+}
+
+impl From<PaypalSettings> for ProviderSettings {
+    fn from(s: PaypalSettings) -> Self {
+        Self {
+            provider: PROVIDER_PAYPAL,
+            account: s.account,
+            fee_account_id: s.fee_account_id,
+            payout_bank_account_id: s.payout_bank_account_id,
+        }
+    }
+}
+
+impl From<StripeSettings> for ProviderSettings {
+    fn from(s: StripeSettings) -> Self {
+        Self {
+            provider: PROVIDER_STRIPE,
+            account: s.account,
+            fee_account_id: s.fee_account_id,
+            payout_bank_account_id: s.payout_bank_account_id,
+        }
+    }
+}
+
+/// Forme JSON de [`BankAccountProvider`] : `provider`, `paypal` et `stripe`.
+#[derive(Serialize, Deserialize)]
+struct BankAccountProviderJson {
+    #[serde(default)]
+    provider: Option<String>,
+    #[serde(default)]
+    paypal: Option<PaypalSettings>,
+    #[serde(default)]
+    stripe: Option<StripeSettings>,
+}
+
+impl Serialize for BankAccountProvider {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        BankAccountProviderJson {
+            provider: self.provider.clone(),
+            paypal: self.paypal(),
+            stripe: self.stripe(),
+        }
+        .serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for BankAccountProvider {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let json = BankAccountProviderJson::deserialize(deserializer)?;
+        let settings = json
+            .paypal
+            .map(ProviderSettings::from)
+            .or_else(|| json.stripe.map(ProviderSettings::from));
+        Ok(Self {
+            provider: json.provider,
+            provider_account: settings.as_ref().map(|p| p.account.clone()),
+            fee_account_id: settings.as_ref().and_then(|p| p.fee_account_id),
+            payout_bank_account_id: settings.and_then(|p| p.payout_bank_account_id),
+        })
+    }
+}
+
 /// Compte bancaire persisté en base.
 ///
 /// Story 8-5a-zero — ajout du champ `journal_account_id` (Option<i64>)
@@ -172,6 +370,12 @@ pub struct BankAccount {
     /// Écrite **seulement** par `bank_accounts::close_in_tx` et
     /// `bank_accounts::reopen_in_tx`.
     pub closed_on: Option<NaiveDate>,
+    /// Story 38-11b (Epic 38) — réglages de prestataire (PayPal), aplatis :
+    /// colonnes `provider`, `provider_account`, `fee_account_id` ; champs JSON
+    /// `provider` et `paypal`. Vides pour un compte bancaire ordinaire.
+    #[serde(flatten)]
+    #[sqlx(flatten)]
+    pub provider_settings: BankAccountProvider,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
 }
@@ -300,6 +504,91 @@ mod tests {
         }
     }
 
+    /// Story 38-11b (AC-2) — la borne du libellé du compte d'un prestataire est
+    /// celle de la colonne.
+    #[test]
+    fn la_borne_du_libelle_du_prestataire_est_celle_de_la_colonne() {
+        const SCHEMA: &str = include_str!("../../test-schema/0001_schema_squash.sql");
+        let debut = SCHEMA
+            .find("CREATE TABLE `bank_accounts` (")
+            .expect("table bank_accounts absente du schéma");
+        let bloc = &SCHEMA[debut..];
+        let bloc = &bloc[..bloc.find(") ENGINE").expect("fin de table")];
+        let ligne = bloc
+            .lines()
+            .find(|l| l.trim_start().starts_with("`provider_account`"))
+            .expect("colonne provider_account absente de bank_accounts");
+        assert!(
+            ligne.contains(&format!("varchar({PROVIDER_ACCOUNT_MAX_CHARS})")),
+            "la colonne doit être varchar({PROVIDER_ACCOUNT_MAX_CHARS}), trouvé : {ligne}"
+        );
+    }
+
+    /// Story 38-11b (AC-2) — la réponse porte `provider` (la colonne, telle
+    /// quelle) et `paypal` (`{ account, feeAccountId }` pour un compte PayPal,
+    /// `null` sinon, y compris pour un prestataire réservé) ; l'aller-retour
+    /// JSON rend les mêmes réglages.
+    #[test]
+    fn les_reglages_de_prestataire_en_json() {
+        let ordinaire = BankAccountProvider::default();
+        assert_eq!(
+            serde_json::to_value(&ordinaire).unwrap(),
+            serde_json::json!({ "provider": null, "paypal": null, "stripe": null })
+        );
+        let paypal = BankAccountProvider {
+            provider: Some("paypal".into()),
+            provider_account: Some("PayPal www".into()),
+            fee_account_id: Some(42),
+            payout_bank_account_id: None,
+        };
+        let json = serde_json::to_value(&paypal).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "provider": "paypal",
+                "paypal": { "account": "PayPal www", "feeAccountId": 42 },
+                "stripe": null
+            })
+        );
+        assert_eq!(
+            serde_json::from_value::<BankAccountProvider>(json).unwrap(),
+            paypal
+        );
+        // Story 40-7b — un compte Stripe rend `stripe` (avec son compte de
+        // versement) et `paypal: null` ; l'aller-retour rend les mêmes réglages.
+        let stripe = BankAccountProvider {
+            provider: Some("stripe".into()),
+            provider_account: Some("Stripe boutique".into()),
+            fee_account_id: Some(42),
+            payout_bank_account_id: Some(7),
+        };
+        let json = serde_json::to_value(&stripe).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "provider": "stripe",
+                "paypal": null,
+                "stripe": { "account": "Stripe boutique", "feeAccountId": 42, "payoutBankAccountId": 7 }
+            })
+        );
+        assert_eq!(
+            serde_json::from_value::<BankAccountProvider>(json).unwrap(),
+            stripe
+        );
+        assert_eq!(stripe.settings().unwrap().provider, "stripe");
+        let reserve = BankAccountProvider {
+            provider: Some("wise".into()),
+            provider_account: Some("Wise".into()),
+            fee_account_id: None,
+            payout_bank_account_id: None,
+        };
+        assert_eq!(
+            serde_json::to_value(&reserve).unwrap(),
+            serde_json::json!({ "provider": "wise", "paypal": null, "stripe": null })
+        );
+        assert!(reserve.is_provider() && !reserve.is_paypal());
+    }
+
     #[test]
     fn display_name_avec_description() {
         // Séparateur : tiret cadratin U+2014 entouré d'espaces.
@@ -340,6 +629,7 @@ mod tests {
             version: 1,
             archived: false,
             closed_on: None,
+            provider_settings: BankAccountProvider::default(),
             created_at: now,
             updated_at: now,
         };

@@ -192,6 +192,12 @@ const EXEMPTIONS: &[Exemption] = &[
         "permanent",
         "horodatage `%Y%m%dT%H%M%S%3f` du nom de sauvegarde, un instant (#669)",
     ),
+    (
+        "kesh-import/src/paypal_api.rs",
+        1,
+        "38-12a",
+        "la date d'une transaction de l'API PayPal, son instant ramené à l'heure de Zurich par l'appelant (`heure_suisse`) — la date d'un mouvement reçu, non le jour du jour",
+    ),
     // Story 35-5b (D5) : plus aucune entrée de code de production hors les deux permanentes.
     // Sortis de la liste, leur date venant de l'horloge de l'état ou de la `Lecture`, ou d'un
     // paramètre — `routes/audit_log.rs`, `bank_accounts.rs`, `exports.rs`,

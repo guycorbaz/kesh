@@ -243,6 +243,8 @@ fn make_new_tx(
         transaction_id: None,
         counterparty_iban: None,
         counterparty_name: Some("ACME GMBH".into()),
+        counterparty_email: None,
+        provider_type: None,
     }
 }
 

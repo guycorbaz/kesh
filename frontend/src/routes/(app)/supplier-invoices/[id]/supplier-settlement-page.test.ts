@@ -400,6 +400,26 @@ describe("fiche facture fournisseur — la contrepartie n’est pas le compte cr
     expect(queryByTestId("pay-no-eligible-bank")).toBeNull();
   });
 
+  // Story 38-11d (revue P1, M2) — un compte PayPal n'est pas proposé au paiement : le
+  // serveur le refuse (409 BANK_ACCOUNT_IS_PROVIDER, 38-11b).
+  it("un compte de prestataire (PayPal) n’est pas proposé au paiement (mutation : filtre retiré)", async () => {
+    const { findByTestId } = await monter([
+      { ...banque(3, 1031), provider: "paypal", paypal: { account: "PayPal www", feeAccountId: null } },
+      banque(2, 1020),
+    ]);
+    await findByTestId("pay-bank-account");
+    await waitFor(() => expect(options("pay-bank-account")).toContain("2"));
+    expect(options("pay-bank-account")).not.toContain("3");
+  });
+
+  // Story 40-7d (AC-1) — de même un compte Stripe ou Wise (`withoutProviders`).
+  it.each(["stripe", "wise"])("un compte %s n’est pas proposé au paiement", async (provider) => {
+    const { findByTestId } = await monter([{ ...banque(3, 1031), provider }, banque(2, 1020)]);
+    await findByTestId("pay-bank-account");
+    await waitFor(() => expect(options("pay-bank-account")).toContain("2"));
+    expect(options("pay-bank-account")).not.toContain("3");
+  });
+
   // Story 26-2b (#622, AC9, site D5) — l'option nomme le compte décrit.
   it("l’option du compte bancaire porte sa description, et garde « banque — IBAN » sans", async () => {
     const { findByTestId } = await monter([
