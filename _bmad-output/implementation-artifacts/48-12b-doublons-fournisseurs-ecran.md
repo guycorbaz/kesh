@@ -193,8 +193,8 @@ Factures fournisseur : quand Kesh refuse une facture comme doublon, l'écran mon
 - **Fichiers communs** : catalogues i18n, `i18n-keys.test.ts` (`sitesTotal`), manuels `.tex` avec les autres stories de l'Epic 48 et l'Epic 49 ; `supplier-invoices/[id]/+page.svelte` **avec la 48-1** (le second arrivé résout) ; `SupplierCreatePanel.svelte` (48-15, fusionnée) et `InvoiceForm.svelte` (Epic 49) ne sont pas touchés.
 - **Ce qui doit rester vrai** : aucune saisie n'est jamais vidée ; la confirmation ne vaut que pour la saisie montrée (figée, et qu'aucune écriture asynchrone ne réécrit) ; aucun bouton de confirmation sur `confirmable: false` ; après une issue inconnue, ni confirmation ni renvoi depuis l'avis — seule la reprise, qui n'envoie rien.
 - **Conséquence de E6 à connaître** : `isSettlementOutcomeUnknown` couvre tout 5xx ; une erreur 500 d'un défaut du serveur (transaction défaite) mène donc aussi en E6. La reprise en sort sans perte de saisie.
-- **Hors périmètre** : **#986** (conflit de version à la modification), le lot comptes bancaires, reportés à la 0.21.0 ; la correction du doc-comment de `shared/utils/unknown-outcome.ts` (issue P4 à ouvrir par l'orchestrateur) ; le filtre de `listImported` par identifiant (dette de performance, D2).
-- **Statut** : `ready-for-dev` (validation terminée à la P6) ; clé posée dans `sprint-status.yaml`.
+- **Hors périmètre** : **#986** (conflit de version à la modification), le lot comptes bancaires, reportés à la 0.21.0 ; la correction du doc-comment de `shared/utils/unknown-outcome.ts` (issue P4 à ouvrir par l'orchestrateur) ; le filtre de `listImported` par identifiant (dette de performance, D2) ; le bandeau « Base de données temporairement indisponible — réessai automatique en cours », allumé par une écriture jamais rejouée et lu à côté de l'avis E6 : **#1414** (revue P1, A6 et E4).
+- **Statut** : `review` depuis le 2026-11-20 (développement terminé ; revue de code P1 rentrée, remédiée) ; clé `48-12b-doublons-fournisseurs-ecran` au même statut dans `sprint-status.yaml`.
 
 ## Dev Agent Record
 
@@ -273,6 +273,33 @@ de la fiche faux au code. Cinq modules, aucun sixième ; `SupplierCreatePanel.sv
 ensemble par équivalence : B34 (`locked` ignoré **et** E9 posé par le formulaire), B40 (gestionnaire passé tel quel **et** drapeau
 par vérité), B27 (deux chemins de lecture illisible).
 
+### Remédiation de la revue P1 (`cf38f506f`)
+
+- **A1** — décor complet (`renderDecor`, `remplirDecor`) : un projet, une proposition d'un autre fournisseur, deux lignes ; le
+  test E2 se joue sans document (scan) **et** avec document (« C'est la bonne date ») — les deux sont exclusifs par
+  construction (`scanOffered`) ; chaque espèce est vue **active** avant l'envoi, puis inactive ; un contrôle absent fait échouer
+  le test. E3, E5 et E6 prennent le même décor.
+- **A2 / E2** — test D8 (aperçu ouvert et refermé, téléchargement réussi ou `SOURCE_DOCUMENT_NOT_FOUND` → avis et bouton
+  présents).
+- **A3** — la mutation « drapeau conservé après Modifier la saisie » est jouée (B49).
+- **E3** — `typeof … !== 'number'` à la page de complétion (`found.supplierInvoiceId`) et au formulaire
+  (`notice.invoiceId`) ; un test à chaque site (`supplierInvoiceId` absent ; `invoiceId` `null`, absent, `'55'`).
+- **B1** — l'E2E E9 vérifie que `supplier-invoice-form-error` est absent (l'assertion sur l'avis était vraie par construction).
+- **B2** — `notifyWarning` remis à zéro en tête du test C2, et compté une fois.
+- **B3** — doc-comment de `invoiceId` : obligatoire dès que `initial` est donné.
+- **A5 / E1** — `user-manual.tex` : l'avis F4 s'affiche « dans un encadré à part » (non « au-dessus des autres refus », faux
+  au code) ; l'aperçu et le téléchargement le laissent affiché. Grep du symptôme : aucune autre occurrence.
+- **A6** — explication du bandeau corrigée (ci-dessous) ; **#1414**. **A7** — titre du test D6.
+- **Propagation (B1/A9 de la 48-12a)** : quatre clés italiennes neuves de la 48-12b passent au tutoiement
+  (`supplier-invoices-err-not-yet`, `-unknown-outcome-create`, `-unknown-outcome-edit`, `-already-completed`), dans le commit
+  de la 48-12a qui corrige le catalogue.
+- **Mutations neuves** (`resume-p1.log`) : B48 (bloc du projet déplacé hors du `fieldset`), B49, B50 (`viewSourceDocument`
+  efface l'avis), B51 (`=== null` à la page), B52 (`=== undefined` au formulaire), B53 (notification de C2 retirée ; tuée par
+  les **deux** itérations, E6 comprise) : **6 jouées, 6 tuées**. Le premier passage de B53 ne compilait pas
+  (`B53-premier-passage-ne-compile-pas.log.txt`) : il n'est pas compté ; le script refuse désormais « no tests » comme
+  mise à mort. Aucune autre trace de la campagne n'a été tuée par une erreur de compilation (contrôle `no tests` : vide).
+- PREUVES_P1_ICI
+
 ### Recette visuelle (`/home/gcorbaz/devel/kesh-gate-logs/e4812/dev/captures/`, thème clair, base E2E de démonstration)
 
 Quinze captures, prises par le test « recette visuelle » et les parcours de `supplier-invoice-duplicate.spec.ts`
@@ -280,8 +307,11 @@ Quinze captures, prises par le test « recette visuelle » et les parcours de `s
 `-E6-modification`, `-E6-completion`, `-E7-pour-l-instant`, `-E7-doublon-sans-details`, `-E9-deja-enregistree`,
 `-F4-repassage-doublon`, `-F6-doublon-sans-details`, `-E1-scan-en-cours`, `-E1-panneau-ouvert`,
 `-C2-fournisseur-non-selectionne` (`.png`). E8 n'est pas capturé (visuellement E2, V5-8), ni la notification de C1
-(inatteignable, relevé C). La capture E6-création porte aussi le bandeau « Base de données temporairement indisponible » :
-il vient du 503 injecté par la spec (comportement existant de l'interface), non de la story.
+(inatteignable, relevé C). Les captures E6-création, E6-modification, E6-complétion et E4-doublon portent aussi le bandeau
+« Base de données temporairement indisponible — réessai automatique en cours » : la spec coupe la réponse par
+`route.abort('connectionreset')` (non par un 503), et c'est `fetchWithRetry` qui l'allume dans sa branche `catch`
+(`apiHealth.setDegraded()`) ; seul un 2xx l'éteint. Comportement antérieur à la story ; il contredit pourtant l'avis E6 (un
+`POST` n'est jamais rejoué) : **#1414** (correction de la revue P1, A6).
 
 ### Écarts déclarés
 
@@ -294,9 +324,15 @@ il vient du 503 injecté par la spec (comportement existant de l'interface), non
 - `f7280c030` ajoute un style (`disabled:opacity-60`) que la fiche ne nomme pas : défaut trouvé par la recette visuelle,
   corrigé dans la story.
 - Les tests ont été écrits avec le code, non avant ; le rouge est prouvé par les mutations.
-- Le titre du test D6 de `supplier-unknown-outcome-page.test.ts` nomme la mutation « avis non effacé par
-  `reloadAfterRefusal` », qu'il ne tue pas seul (B45 vivante, équivalente au code actuel) ; il la tue avec la défense de
-  `clearRefusals` (B47). Titre non retouché après le dernier commit de code : point laissé à la revue.
+- Le titre du test D6 nommait la mutation « avis non effacé par `reloadAfterRefusal` », qu'il ne tue pas seul (B45,
+  équivalente) : retitré par la remédiation P1 (A7) — « mutation B47 : avec la défense de `clearRefusals` ».
+- **D2bis, écart de lettre** (revue P1, A4) : la page de création passe `onRefusal={relireApresRefus}` sans condition, y
+  compris sans document, là où la fiche dit que la création sans document ne le passe pas. `relireApresRefus` rend `null`
+  sans rien lire quand `doc === null` ; l'issue (E4/E5/E6/E7) est la même, au prix d'un passage transitoire par E8
+  (visuellement E2). Gardé tel quel, déclaré.
+- **Revue P1, A1** : jusqu'à `cf38f506f`, le test « chaque espèce de contrôle » omettait le sélecteur de projet, « Retenir »
+  et « C'est la bonne date » (non rendus par le décor), sautait les absents (`continue`) et vérifiait la suppression de ligne
+  à vide (une seule ligne). Corrigé (voir *Remédiation de la revue P1*).
 
 ### File List
 
