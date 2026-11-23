@@ -628,11 +628,118 @@ test suivant (`git diff` vide sur le fichier muté, copié au journal).
 
 ### Agent Model Used
 
+Opus 5.5 (`bmad-dev-story`, en autonomie), 2026-11-19 et 2026-11-20. Registre :
+`e0200-choix-autonomes-e491c.md` (C-e491c-1 à 8).
+
 ### Debug Log References
+
+Journaux dans `/home/gcorbaz/devel/kesh-gate-logs/e491c/` ; scripts de mutation dans `mut/`.
+
+| Journal | Commit | Ce qu'il porte |
+|---|---|---|
+| `clippy-1.log`, `clippy-2.log` | travail en cours avant `cea6910db` | clippy `-D warnings` du workspace : vert |
+| `check-types.log` | travail avant `cea6910db` | `npm run check` après le changement des types : **0 erreur**, 29 avertissements (aucun dans un fichier touché) |
+| `vitest-cible-1.log` | travail avant `cea6910db` | 6 fichiers, **126 tests verts** (dont `AC9 a` modifié) |
+| `rouge-T12.log` | idem | `i18n-keys.test.ts` : « expected 3499 to be 3495 » (rouge de la borne) ; `vitest-i18n-2.log` : 11/11 verts après recompte |
+| `lint-i18n-1.log` | idem | `lint-i18n-ownership` : PASS |
+| `rejeu-tests-5156f2b7b.log` | idem | AC8 (c) (1) : 103 tests, **1 échec, `AC9 a`**, diff de `toEqual` = deux lignes `+ "lineType": "priced"` seulement ; copies déplacées dans `rejeu/` (C-e491c-6) |
+| `gate-cible-1.log` | `cea6910db` | nextest ciblé (7 binaires de la fiche) : 1320 tests, **1318 verts, 2 rouges** (T5, T6 : `GET /pdf` 400 — contact de `monter()` sans adresse structurée) |
+| `gate-cible-2.log` | travail avant `4cb6633e9` | `binary(invoice_line_types_e2e)` : **9/9 verts** après le correctif de fixture |
+| `rouge-T7-T8-T9.log` | `cea6910db` | 8 mutations frontend, **8 rouges**, chaque restauration `git diff` vide |
+| `rouge-T1-T6.log` | `4cb6633e9` | 6 mutations backend, **6 rouges**, chaque restauration `git diff` vide |
+| `e2e-T10-vert.log` | `4cb6633e9` | T10 seul, base `kesh_e2e_e491c` recréée : **1 passed** ; captures prises |
+| `rouge-T10.log` | `4cb6633e9` + mutation T1 | T10 **rouge** à l'enregistrement (reste sur `/invoices/new`) ; restauré, binaire reconstruit |
+| `make-manuels.log` | `.tex` de `cea6910db` | `make -B user admin` hors dépôt (C-e491c-7) : deux PDF stables (3 passes) |
 
 ### Completion Notes List
 
+**Étape 0.** Prérequis : `git merge-base --is-ancestor 57758e1b9 HEAD` rc 0 ; `crates/kesh-qrbill/src/types.rs:195`
+`pub enum LinePdfKind {`. Inventaire S1 à S3 rejoué à `7cc2bf0d5` : identique à la fiche (mêmes lignes). Les trois LOW de
+la P3 sont déjà dans la fiche (V3-1 à V3-3) ; aucune prémisse « à confirmer à l'étape 0 ». Bases `kesh_e491c` et
+`kesh_e2e_e491c` créées sur la voie 1 (C-e491c-8), collation par défaut du serveur (recréées une fois pour l'aligner
+sur `kesh` et `kesh_e2e`). Contrôle au code de « commentaires seuls non validables » :
+`crates/kesh-db/src/repositories/invoices.rs:2289` `return Err(DbError::InvalidInput("invoiceTotalZero".into()));`.
+
+**Rouge d'avant le code.** Un premier lancement « tests neufs avant la garde » a été mis en file sur la voie base puis
+**arrêté avant de tourner** (file longue : gate-ci de l'intégration de Beat, E2E de la 48-12) ; le rouge de T1 à T3 est
+donné par la mutation T1-a, qui reproduit exactement l'état d'avant le code (`Self::Comment => false`).
+
+**AC tenus.**
+- AC1 : T1 (`comment_is_open_heading_is_not`), T2 (`comment_is_accepted_heading_is_not_yet_open`), T3
+  (`comment_is_accepted_at_post_and_put`, `heading_is_refused_without_writing`). Positions affirmées `[0, 1, 2]` :
+  l'API numérote à partir de 0 (C-e491c-4 ; AC1 écrivait « 1 à 3 »).
+- AC2 : T4 (`comment_ignores_the_vat_rate_whitelist`, désactivation du 0 % vérifiée par `rows_affected == 1`) et le
+  test unitaire `only_priced_rates_reach_the_whitelist`. **Nuance** : la mutation T4 rougit au premier `POST` du test e2e
+  (le `PUT` n'est pas atteint) et sur le test unitaire ; le `PUT` passe par le même `taux_des_lignes_chiffrees`
+  (deux appelants), si bien qu'un seul point de mutation couvre les deux sites — la fiche demandait « deux assertions,
+  un journal » : il y a deux assertions, dont la seconde n'est pas atteinte sous la mutation.
+- AC3, AC4 : T8 (six cas neufs dans `InvoiceForm.test.ts`, dont le rechargement après conflit) ; `git grep -n
+  "ligneDepuisReponse" -- frontend/src/lib/components/invoices/InvoiceForm.svelte` : deux appels (`initLines`,
+  `reloadFromServer`), aucun `invoice.lines.map((l) => ({` ni `fresh.lines.map((l) => ({`.
+- AC5 : T9 (fiche facture, brouillon et validée ; fiche avoir), captures 03, 04, 06.
+- AC6 : T6 (`comment_typed_at_the_api_reaches_the_pdf_and_the_credit_note`) : commentaire à `x = 20`, rien aux colonnes
+  chiffrées à sa hauteur, écriture égale à celle de `[A, B]`, avoir à la même position, PDF de l'avoir.
+- AC7 : T5 (`nfd_comment_prints_with_its_accent`) : NFC au `POST` et au `PUT`, `Café offert` imprimé deux fois
+  (libellé chiffré et commentaire), `Thé offert` imprimé.
+- AC8 : (a) `git diff --stat 5156f2b7b..HEAD` vide sur la liste de la fiche ; dans `kesh-db`, seul
+  `src/entities/line_type.rs` ; (b) vide sur les trois tests avant/après et les deux dossiers
+  `tests/fixtures/avant-0.20.0/` ; (c) rejeu ci-dessus, et `git diff --numstat 5156f2b7b` des quatre fichiers :
+  `InvoiceForm.test.ts` 159/0, `invoice-helpers.test.ts` 11/0, `credit-note-display-page.test.ts` 40/0,
+  `invoice-display-page.test.ts` 49/0 — ajouts seulement, aucune ligne d'`import` touchée ; `toEqual` sur une charge de
+  lignes à `5156f2b7b` : le seul `:1626` (`:792` compare une liste de noms de clés) ; (d) `AC9 a` modifié, vert.
+- AC9 : quatre clés neuves × 4 catalogues (`invoice-line-add-comment`, `invoice-line-comment-placeholder`,
+  `invoice-line-comment-aria`, `invoice-line-comment-required-error`), bloc « Epic 49 — Story 49-1c » en fin de chaque
+  fichier ; `sitesTotal` **3495 → 3499**, ventilé : quatre littéraux, tous dans `InvoiceForm.svelte` (19 → 23 appels
+  `i18nMsg(`). Les deux fiches n'ont aucune chaîne neuve.
+- AC10 : (a) `user-manual.tex` (item « Lignes de facture », paragraphe des caractères, item de l'avoir) ; (b)
+  `api-external.md:512`, `admin-manual.tex:2559` ; (c) aucun PDF commité ; (d) `git grep -n -F "le type de ligne comment"
+  -- docs` : vide (rc 1) ; `git grep -n "n'est pas encore disponible" -- docs` : `api-external.md:512` (heading) et
+  `user-manual.tex:4468` (autre sujet, rapprochement) ; ``git grep -n -E "`comment`.{0,40}accept" --
+  docs/api-external.md`` : `:512` (« La valeur **`comment` est acceptée** depuis la v0.20.0 ») ; `git grep -n -E
+  "texttt\{comment\}.{0,60}accept" -- docs/manual/fr/admin-manual.tex` : `:2559` (« \texttt{comment} est accepté (texte
+  seul~; … ») ; PDF aplatis (`manuel/fr/*.pdf`, hors dépôt) : « Depuis catalogue (une ligne chiffrée » 1, « huit au
+  plus, moins avec le récapitulatif de TVA » 1, « disparaît du PDF sans avertissement » 1, « ses lignes de commentaire
+  comprises » 1, « replie ces 125 lettres » 1 ; admin « comment est accepté » 1 ; −, ≤, ≥ rendus (le seul glyphe
+  manquant du journal xelatex est ✓ U+2713, hors de cette story).
+- AC11 : T10 vert et rouge ; captures (thème clair, base `kesh_e2e_e491c` semée par `with-company`), **toutes lues** :
+  `01-formulaire-avec-commentaire.png`, `02-formulaire-commentaire-vide-bloque.png`, `03-fiche-brouillon.png`,
+  `04-fiche-validee.png`, `05-facture.pdf` et `05-facture-pdf-1.png` (`mutool draw -r 150`), `06-fiche-avoir.png`.
+- AC12 : § *Gates de passage en `review`* ci-dessous.
+
+**Écarts et constats.**
+- C-e491c-1 : prédicats dans `invoice-line-type.ts` (cycle d'imports évité), réexportés par `invoice-lines.ts`.
+- C-e491c-3 : `colspan` 6 dans le formulaire (D7 écrivait 5 ; de la description au total, il y a six colonnes).
+- Le contact de `monter()` (`invoice_line_types_e2e.rs`, fixture de la 49-1a) passe à une adresse structurée
+  (`4cb6633e9`) : le PDF l'exige ; aucun test de la 49-1a ne lisait l'adresse.
+- Commande de rejeu de la fiche : `npm --prefix frontend exec -- vitest run` ne lit pas la configuration du frontend
+  (C-e491c-6) ; lancé depuis `frontend/`.
+- **Constat hors périmètre (préexistant)** : sur la fiche avoir, l'en-tête et les cellules « TVA % » et « Compte de
+  produit » se touchent (« 8.103000 — Ventes CI », capture 06) — la cellule du taux n'a pas de marge droite
+  (`credit-notes/[id]/+page.svelte`, `class="py-2 text-right"`). Issue à ouvrir (P4, cosmétique).
+- **Constat (préexistant)** : le bandeau d'erreur du formulaire ne s'efface qu'au prochain envoi ; la capture 01, prise
+  après avoir rempli le commentaire, le montre encore. Comportement de tous les messages de `validateClient`.
+- Édition : code et tests par l'outil Edit (ou Write pour un fichier neuf), `cargo fmt` permis ; scripts seulement pour
+  les mutations (`mut/`). Aucun écart à la consigne Edit.
+
+**Gates de passage en `review`.** *(à compléter à leur fin)*
+
 ### File List
+
+- `crates/kesh-db/src/entities/line_type.rs`
+- `crates/kesh-api/src/routes/invoices.rs`
+- `crates/kesh-api/tests/invoice_line_types_e2e.rs`
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`
+- `frontend/src/lib/features/invoices/invoice-lines.ts` (neuf), `invoice-line-type.ts` (neuf), `invoice-lines.test.ts` (neuf)
+- `frontend/src/lib/features/invoices/invoices.types.ts`, `invoice-helpers.ts`, `invoice-helpers.test.ts`
+- `frontend/src/lib/features/credit-notes/credit-notes.types.ts`
+- `frontend/src/lib/components/invoices/InvoiceForm.svelte`, `InvoiceForm.test.ts`
+- `frontend/src/routes/(app)/invoices/[id]/+page.svelte`, `invoice-display-page.test.ts`
+- `frontend/src/routes/(app)/credit-notes/[id]/+page.svelte`, `credit-note-display-page.test.ts`
+- `frontend/src/lib/shared/i18n-keys.test.ts`
+- `frontend/tests/e2e/invoice-comment-lines.spec.ts` (neuf)
+- `docs/api-external.md`, `docs/manual/fr/user-manual.tex`, `docs/manual/fr/admin-manual.tex`
+- `_bmad-output/implementation-artifacts/49-1c-types-de-lignes-ecran.md`, `…-review-prompt-p1.md` (neuf),
+  `e0200-choix-autonomes-e491c.md` (neuf), `sprint-status.yaml`
 
 ## Change Log
 
