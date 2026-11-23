@@ -2446,37 +2446,49 @@ async fn export_global_chaque_colonne_decimal_a_l_echelle_du_schema(pool: MySqlP
     let invoice_id = ins!(
         "INSERT INTO invoices (company_id, contact_id, status, date, total_amount, rounding_amount, version) \
          VALUES (?, ?, 'draft', '2026-05-01', ?, ?, 1) RETURNING id",
-        cid, contact_id, v4, v4
+        cid,
+        contact_id,
+        v4,
+        v4
     );
     ins!(
         "INSERT INTO invoice_lines (invoice_id, position, description, quantity, unit_price, vat_rate, line_total) \
          VALUES (?, 1, 'Ligne', ?, ?, ?, ?) RETURNING id",
-        invoice_id, v4, v4, v2, v4
+        invoice_id,
+        v4,
+        v4,
+        v2,
+        v4
     );
     // dunning_levels / invoice_reminders (trois fixtures neuves)
     ins!(
         "INSERT INTO dunning_levels (company_id, level_number, delay_days, fee_amount) \
          VALUES (?, 1, 10, ?) RETURNING id",
-        cid, v2
+        cid,
+        v2
     );
     ins!(
         "INSERT INTO invoice_reminders (company_id, invoice_id, level_number, fee_amount, sent_at, \
          channel, subject, body) VALUES (?, ?, 1, ?, '2026-06-01 10:00:00', 'manual', 'Sujet', 'Corps') \
          RETURNING id",
-        cid, invoice_id, v2
+        cid,
+        invoice_id,
+        v2
     );
     // exchange_rates : source 'afc' + acquittement (`chk_exchange_rates_ack_pair`, `_ack_afc`)
     ins!(
         "INSERT INTO exchange_rates (company_id, currency, kind, rate_date, rate, source, \
          acknowledged_rate, acknowledged_at, version) \
          VALUES (?, 'EUR', 'day', '2026-06-01', ?, 'afc', 0.9876543210, '2026-06-02 10:00:00.000', 1) RETURNING id",
-        cid, v10
+        cid,
+        v10
     );
     // vat_rates
     ins!(
         "INSERT INTO vat_rates (company_id, label, rate, valid_from, active) \
          VALUES (?, 'normal', ?, '2026-01-01', TRUE) RETURNING id",
-        cid, v2
+        cid,
+        v2
     );
     // bank_imports / bank_transactions
     let bank_id: i64 =
@@ -2489,13 +2501,21 @@ async fn export_global_chaque_colonne_decimal_a_l_echelle_du_schema(pool: MySqlP
         "INSERT INTO bank_imports (company_id, bank_account_id, filename, file_hash, source_format, \
          period_from, period_to, opening_balance, closing_balance, transaction_count, imported_by_user_id) \
          VALUES (?, ?, 'x.xml', ?, 'CAMT053_V04', '2026-01-01', '2026-01-31', ?, ?, 1, ?) RETURNING id",
-        cid, bank_id, "c".repeat(64), v2, v2, ctx.user_id
+        cid,
+        bank_id,
+        "c".repeat(64),
+        v2,
+        v2,
+        ctx.user_id
     );
     ins!(
         "INSERT INTO bank_transactions (company_id, import_id, bank_account_id, booking_date, amount, \
          currency, details, status, version) VALUES (?, ?, ?, '2026-01-10', ?, 'CHF', '', 'pending', 1) \
          RETURNING id",
-        cid, import_id, bank_id, v2
+        cid,
+        import_id,
+        bank_id,
+        v2
     );
     // imported_supplier_invoices
     ins!(
@@ -2504,47 +2524,73 @@ async fn export_global_chaque_colonne_decimal_a_l_echelle_du_schema(pool: MySqlP
          creditor_name, creditor_country, reference_type, currency, amount, version) \
          VALUES (?, 'to_complete', 'h', '/inbox/x.pdf', 'x.pdf', 'application/pdf', 1024, \
          'CH9300762011623852957', FALSE, 'S', 'Fournisseur', 'CH', 'NON', 'CHF', ?, 1) RETURNING id",
-        cid, v4
+        cid,
+        v4
     );
     // credit_notes / credit_note_lines
     let cn_id = ins!(
         "INSERT INTO credit_notes (company_id, contact_id, invoice_id, credit_note_number, status, date, \
          total_amount, rounding_amount) VALUES (?, ?, ?, 'AV-4811', 'draft', '2026-03-01', ?, ?) RETURNING id",
-        cid, contact_id, fictif + 1, v4, v4
+        cid,
+        contact_id,
+        fictif + 1,
+        v4,
+        v4
     );
     ins!(
         "INSERT INTO credit_note_lines (credit_note_id, position, description, quantity, unit_price, \
          vat_rate, line_total) VALUES (?, 1, 'Ligne', ?, ?, ?, ?) RETURNING id",
-        cn_id, v4, v4, v2, v4
+        cn_id,
+        v4,
+        v4,
+        v2,
+        v4
     );
     // supplier_invoices / supplier_invoice_lines
     let si_id = ins!(
         "INSERT INTO supplier_invoices (company_id, contact_id, supplier_invoice_number, status, \
          invoice_date, total_amount, expected_payment_amount, purchase_journal_entry_id) \
          VALUES (?, ?, 'FF-4811', 'open', '2026-03-01', ?, ?, ?) RETURNING id",
-        cid, contact_id, v4, v4, fictif + 2
+        cid,
+        contact_id,
+        v4,
+        v4,
+        fictif + 2
     );
     ins!(
         "INSERT INTO supplier_invoice_lines (supplier_invoice_id, position, description, quantity, \
          unit_price, vat_rate, line_total, expense_account_id) VALUES (?, 1, 'Ligne', ?, ?, ?, ?, ?) RETURNING id",
-        si_id, v4, v4, v2, v4, fictif + 3
+        si_id,
+        v4,
+        v4,
+        v2,
+        v4,
+        fictif + 3
     );
     // payment_batches / payment_batch_items
     let pb_id = ins!(
         "INSERT INTO payment_batches (company_id, bank_account_id, status, requested_execution_date, \
          total_amount, msg_id, payment_info_id) VALUES (?, ?, 'generated', '2026-03-02', ?, 'MSG-4811', 'PMT-4811') RETURNING id",
-        cid, fictif + 4, v4
+        cid,
+        fictif + 4,
+        v4
     );
     ins!(
         "INSERT INTO payment_batch_items (payment_batch_id, supplier_invoice_id, position, end_to_end_id, amount) \
          VALUES (?, ?, 1, 'E2E-4811', ?) RETURNING id",
-        pb_id, si_id, v4
+        pb_id,
+        si_id,
+        v4
     );
     // invoice_settlements
     ins!(
         "INSERT INTO invoice_settlements (company_id, invoice_id, journal_entry_id, amount, settled_on, \
          settlement_type, settlement_account_id) VALUES (?, ?, ?, ?, '2026-03-03', 'internal_account', ?) RETURNING id",
-        cid, invoice_id, fictif + 6, v4, fictif + 7
+        cid,
+        invoice_id,
+        fictif + 6,
+        v4,
+        fictif + 7
     );
     sqlx::query("SET FOREIGN_KEY_CHECKS = 1")
         .execute(&mut *conn)
@@ -2569,7 +2615,12 @@ async fn export_global_chaque_colonne_decimal_a_l_echelle_du_schema(pool: MySqlP
         .collect();
     let par_echelle = |s: i64| colonnes.iter().filter(|(_, _, e)| *e == s).count();
     assert_eq!(
-        (colonnes.len(), par_echelle(4), par_echelle(2), par_echelle(10)),
+        (
+            colonnes.len(),
+            par_echelle(4),
+            par_echelle(2),
+            par_echelle(10)
+        ),
         (38, 25, 10, 3),
         "colonnes DECIMAL exportées (total, à 4, à 2, à 10) : {colonnes:?}"
     );
@@ -2594,7 +2645,10 @@ async fn export_global_chaque_colonne_decimal_a_l_echelle_du_schema(pool: MySqlP
         .await
         .unwrap();
         let (h, rows) = lire_csv(&entries, &fichier);
-        let i_cle = h.iter().position(|c| c == cle).unwrap_or_else(|| panic!("{table}: colonne {cle}"));
+        let i_cle = h
+            .iter()
+            .position(|c| c == cle)
+            .unwrap_or_else(|| panic!("{table}: colonne {cle}"));
         let i_col = h
             .iter()
             .position(|c| c == colonne)

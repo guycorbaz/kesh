@@ -87,6 +87,33 @@ impl Money {
     }
 }
 
+/// Arrondi **d'affichage** d'un montant : deux décimales, l'équidistant loin de
+/// zéro (`10.0050` → `10.01`, `-10.0050` → `-10.01`), comme à l'écran (big.js)
+/// et comme [`Money::round_to_centimes`] (Story 48-11, #1245, #1430).
+///
+/// La somme reste exacte (quatre décimales stockées) : seul l'affichage passe
+/// à deux décimales. Un résidu négatif de moins d'un demi-centime (`-0.0040`)
+/// s'arrondit à un zéro **sans signe** : il ne s'affiche pas « -0.00 ».
+///
+/// À ne pas confondre avec `Decimal::round_dp(2)`, qui arrondit **au pair**
+/// (`10.0050` → `10.00`).
+pub fn round_for_display(amount: Decimal) -> Decimal {
+    let r = amount.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero);
+    if r.is_zero() { Decimal::ZERO } else { r }
+}
+
+/// Montant arrondi au centime ([`round_for_display`]) puis écrit avec
+/// **exactement deux décimales**, point décimal, sans séparateur de milliers :
+/// `10.0050` → `"10.01"`, `1234.5` → `"1234.50"`, `-0.0040` → `"0.00"`.
+///
+/// C'est le **seul** endroit où un `Decimal` de montant s'écrit avec `{:.2}` :
+/// la valeur arrondie a une échelle ≤ 2, la précision ne fait plus que
+/// compléter par des zéros — alors que `{:.2}` sur la valeur brute **coupe**
+/// les chiffres (`10.0050` → `10.00`).
+pub fn format_two_decimals(amount: Decimal) -> String {
+    format!("{:.2}", round_for_display(amount))
+}
+
 impl fmt::Display for Money {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
@@ -155,6 +182,38 @@ impl<'a> Sum<&'a Money> for Money {
 
 #[cfg(test)]
 mod tests {
+    /// AC1 (Story 48-11) : l'équidistant s'éloigne de zéro, le zéro est sans signe.
+    #[test]
+    fn format_two_decimals_arrondit_au_demi_loin_de_zero() {
+        for (raw, expected) in [
+            (dec!(10.0050), "10.01"),
+            (dec!(5.0060), "5.01"),
+            (dec!(10.0049), "10.00"),
+            (dec!(-10.0050), "-10.01"),
+            (dec!(-0.0040), "0.00"),
+            (Decimal::ZERO, "0.00"),
+            (dec!(-0), "0.00"),
+            (dec!(1234.5), "1234.50"),
+            (dec!(12.345), "12.35"),
+            (dec!(1000000), "1000000.00"),
+        ] {
+            assert_eq!(format_two_decimals(raw), expected, "{raw}");
+        }
+    }
+
+    #[test]
+    fn round_for_display_rend_les_valeurs_arrondies_et_un_zero_sans_signe() {
+        assert_eq!(round_for_display(dec!(10.0050)), dec!(10.01));
+        assert_eq!(round_for_display(dec!(-10.0050)), dec!(-10.01));
+        assert_eq!(round_for_display(dec!(10.0049)), dec!(10.00));
+        let zero = round_for_display(dec!(-0.0040));
+        assert!(zero.is_zero());
+        assert!(
+            !zero.is_sign_negative(),
+            "un zéro d'affichage n'a pas de signe"
+        );
+    }
+
     #[test]
     fn round_to_5_centimes_examples() {
         use rust_decimal_macros::dec;

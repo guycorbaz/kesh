@@ -10,5 +10,5 @@ mod qr_iban;
 
 pub use che_number::CheNumber;
 pub use iban::Iban;
-pub use money::Money;
+pub use money::{Money, format_two_decimals, round_for_display};
 pub use qr_iban::QrIban;

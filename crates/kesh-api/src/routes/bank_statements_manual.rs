@@ -547,12 +547,12 @@ where
     }))
 }
 
-/// Montant en chaîne à deux décimales (`"50.00"`, `"-0.01"`).
+/// Montant en chaîne à deux décimales, arrondi au centime (`"50.00"`, `"-0.01"`).
+///
+/// Un zéro négatif (`"-0"` saisi) s'écrit `0.00`, non `-0.00` (revue de code P1,
+/// E6) : le traitement est celui de la fonction commune (Story 48-11).
 fn amount_string(d: Decimal) -> String {
-    // Un zéro négatif (`"-0"` saisi) s'écrit `0.00`, non `-0.00` (revue de code
-    // P1, E6).
-    let d = if d.is_zero() { Decimal::ZERO } else { d };
-    format!("{:.2}", d)
+    kesh_core::types::format_two_decimals(d)
 }
 
 #[cfg(test)]
