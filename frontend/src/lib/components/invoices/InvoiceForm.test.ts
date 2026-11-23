@@ -61,6 +61,8 @@ vi.mock('$lib/shared/utils/notify', () => ({ notifyError: vi.fn(), notifySuccess
 
 import InvoiceForm from './InvoiceForm.svelte';
 import { pinClock } from '$lib/shared/utils/pin-clock.test-helper';
+import * as contactsApi from '$lib/features/contacts/contacts.api';
+import type { ContactResponse } from '$lib/features/contacts/contacts.types';
 
 const MARKER = /Compte invalide/;
 const BLOCK_MSG = /Compte de produit invalide sur les lignes suivantes/;
@@ -1442,5 +1444,373 @@ describe('InvoiceForm — prix unitaire ambigu (36-3b, #1171)', () => {
 			expect(updateInvoiceMock).toHaveBeenCalledTimes(1);
 			expect(prixEnvoyes()).toEqual(['1250']);
 		});
+	});
+});
+
+// Story 48-13 (#1233) — le client d'un brouillon ouvert en modification se charge après
+// l'ouverture (`getContact`). Sa réponse, quand elle arrive APRÈS un geste de
+// l'utilisateur dans le champ client (choix, texte tapé), est jetée : elle ne remplace plus
+// le client choisi, ne réécrit plus le bandeau « Impossible de charger le contact », et
+// n'efface plus le texte tapé (D1, D10). Sans geste, elle s'applique comme avant.
+describe('InvoiceForm — le client choisi n’est plus écrasé par un chargement tardif (Story 48-13, #1233)', () => {
+	const getContactMock = vi.mocked(contactsApi.getContact);
+	const listContactsMock = vi.mocked(contactsApi.listContacts);
+	const ORIGINE = { id: 1, name: 'Client' } as ContactResponse;
+	const CHOISI = { id: 2, name: 'Autre client' } as ContactResponse;
+	const SERVEUR = { id: 3, name: 'Client du serveur' } as ContactResponse;
+
+	/** Une réponse de `getContact` tenue à la main. */
+	function differe() {
+		let resolve!: (c: ContactResponse) => void;
+		let reject!: (e: unknown) => void;
+		const promise = new Promise<ContactResponse>((res, rej) => {
+			resolve = res;
+			reject = rej;
+		});
+		return { promise, resolve, reject };
+	}
+
+	/** Le chargement du client d'origine (id 1) attend ; les autres répondent tout de suite. */
+	function retarderOrigine() {
+		const d = differe();
+		getContactMock.mockImplementation((id: number) =>
+			id === ORIGINE.id ? d.promise : Promise.resolve(id === SERVEUR.id ? SERVEUR : CHOISI),
+		);
+		return d;
+	}
+
+	async function monter() {
+		updateInvoiceMock.mockResolvedValue({ id: 7 });
+		const r = render(InvoiceForm, { invoice: invoiceWith([SERVICES.id]) });
+		await settle();
+		const champ = r.container.querySelector('input[role="combobox"]') as HTMLInputElement;
+		return { ...r, champ };
+	}
+
+	/** Choix SANS frappe : focus du champ (recherche vide), puis clic sur l'option. */
+	async function choisirSansTaper(container: HTMLElement, champ: HTMLInputElement) {
+		listContactsMock.mockResolvedValueOnce({ items: [CHOISI], total: 1, offset: 0, limit: 50 });
+		await fireEvent.focus(champ);
+		await settle();
+		const option = container.querySelector('[role="option"]') as HTMLElement | null;
+		expect(option, 'la liste doit proposer le client').toBeTruthy();
+		await fireEvent.mouseDown(option!);
+		await settle();
+	}
+
+	function contactEnvoye(): number {
+		return (updateInvoiceMock.mock.calls.at(-1)![1] as { contactId: number }).contactId;
+	}
+
+	afterEach(() => {
+		getContactMock.mockImplementation(async () => ORIGINE);
+	});
+
+	it('AC1 — client choisi avant la réponse : la réponse tardive ne le remplace pas, il part (M1, M3)', async () => {
+		const d = retarderOrigine();
+		const { champ, container, getByTestId } = await monter();
+		expect(champ.value).toBe('');
+
+		await choisirSansTaper(container, champ);
+		expect(champ.value).toBe('Autre client');
+
+		d.resolve(ORIGINE);
+		await settle();
+		expect(champ.value).toBe('Autre client');
+
+		await fireEvent.click(getByTestId('create-invoice-button'));
+		await settle();
+		expect(updateInvoiceMock).toHaveBeenCalledTimes(1);
+		expect(contactEnvoye()).toBe(CHOISI.id);
+	});
+
+	it('AC1 — client choisi avant un échec tardif : aucun bandeau « Impossible de charger le contact » (M2)', async () => {
+		const d = retarderOrigine();
+		const { champ, container, queryByTestId } = await monter();
+		await choisirSansTaper(container, champ);
+
+		d.reject({ code: 'INTERNAL_ERROR', message: 'panne', status: 500 });
+		await settle();
+		expect(queryByTestId('invoice-form-error')).toBeNull();
+		expect(container.textContent).not.toContain('Impossible de charger le contact');
+		expect(champ.value).toBe('Autre client');
+	});
+
+	it('AC1 — sans geste, la réponse tardive s’applique comme avant (le client d’origine s’affiche et part)', async () => {
+		const d = retarderOrigine();
+		const { champ, getByTestId } = await monter();
+		d.resolve(ORIGINE);
+		await settle();
+		expect(champ.value).toBe('Client');
+		await fireEvent.click(getByTestId('create-invoice-button'));
+		await settle();
+		expect(contactEnvoye()).toBe(ORIGINE.id);
+	});
+
+	it('AC1 — sans geste, un échec tardif s’affiche comme avant', async () => {
+		const d = retarderOrigine();
+		const { getByTestId } = await monter();
+		d.reject({ code: 'INTERNAL_ERROR', message: 'panne', status: 500 });
+		await settle();
+		expect(getByTestId('invoice-form-error').textContent).toContain('Impossible de charger le contact (panne)');
+	});
+
+	// D2 : filet de non-régression, sans preuve du rouge. La modale de conflit ne s'ouvre
+	// qu'après un envoi, qui exige un client : pendant le chargement initial, il n'y en a
+	// un que par un choix, qui jette déjà la réponse initiale (D1).
+	it('AC2 — une réponse initiale arrivée après « Recharger » ne remplace pas le client rechargé', async () => {
+		const d = retarderOrigine();
+		updateInvoiceMock.mockRejectedValueOnce({
+			code: 'OPTIMISTIC_LOCK_CONFLICT',
+			status: 409,
+			message: 'conflit',
+		});
+		getInvoiceMock.mockResolvedValue({ ...invoiceWith([SERVICES.id]), contactId: SERVEUR.id, version: 2 });
+		const { champ, container, getByTestId, getByText } = await monter();
+		await choisirSansTaper(container, champ);
+		await fireEvent.click(getByTestId('create-invoice-button'));
+		await settle();
+		await fireEvent.click(getByText('Recharger'));
+		await settle();
+		expect(champ.value).toBe('Client du serveur');
+
+		d.resolve(ORIGINE);
+		await settle();
+		expect(champ.value).toBe('Client du serveur');
+		updateInvoiceMock.mockResolvedValue({ id: 7 });
+		await fireEvent.click(getByTestId('create-invoice-button'));
+		await settle();
+		expect(contactEnvoye()).toBe(SERVEUR.id);
+	});
+
+	it('AC13 — un texte tapé avant la réponse est gardé, et l’envoi refusé (M8)', async () => {
+		const d = retarderOrigine();
+		const { champ, getByTestId } = await monter();
+		await fireEvent.input(champ, { target: { value: 'Mar' } });
+		await settle();
+
+		d.resolve(ORIGINE);
+		await settle();
+		expect(champ.value).toBe('Mar');
+
+		await fireEvent.blur(champ);
+		await fireEvent.click(getByTestId('create-invoice-button'));
+		await settle();
+		expect(updateInvoiceMock).not.toHaveBeenCalled();
+		expect(getByTestId('invoice-form-error').textContent).toContain('Choisissez le client dans la liste');
+		expect(champ.value).toBe('Mar');
+	});
+
+	// AC9 a (contrainte de Guy du 2026-11-18, factures réelles) : non-régression, ne
+	// rougit pas. Un brouillon ouvert puis enregistré sans aucun geste envoie ce qui a été
+	// chargé, champ pour champ.
+	it('AC9 a — ouvert puis enregistré sans geste : le corps envoyé est celui du brouillon chargé', async () => {
+		const brouillon = {
+			...invoiceWith([SERVICES.id, null]),
+			dueDate: '2026-07-15',
+			paymentTerms: '30 jours net',
+		} as unknown as InvoiceResponse;
+		updateInvoiceMock.mockResolvedValue({ id: 7 });
+		const { container, getByTestId } = render(InvoiceForm, { invoice: brouillon });
+		await settle();
+		const champ = container.querySelector('input[role="combobox"]') as HTMLInputElement;
+		expect(champ.value).toBe('Client');
+		// Revue P1 (A2) : le total affiché est celui du brouillon chargé (2 × 100.00),
+		// non le total comparé à lui-même.
+		const total = () => container.querySelector('tfoot')?.textContent ?? '';
+		expect(total()).toContain('200.00');
+
+		await fireEvent.click(getByTestId('create-invoice-button'));
+		await settle();
+		expect(updateInvoiceMock).toHaveBeenCalledTimes(1);
+		expect(updateInvoiceMock.mock.calls[0]).toEqual([
+			7,
+			{
+				contactId: 1,
+				date: '2026-06-15',
+				dueDate: '2026-07-15',
+				paymentTerms: '30 jours net',
+				projectId: null,
+				version: 1,
+				lines: [
+					{
+						lineType: 'priced',
+						description: 'Ligne 1',
+						quantity: '1',
+						unitPrice: '100.00',
+						vatRate: '8.10',
+						revenueAccountId: SERVICES.id,
+					},
+					{
+						lineType: 'priced',
+						description: 'Ligne 2',
+						quantity: '1',
+						unitPrice: '100.00',
+						vatRate: '8.10',
+						revenueAccountId: null,
+					},
+				],
+			},
+		]);
+		expect(total()).toContain('200.00');
+	});
+});
+
+// Story 49-1c (#1242, T8) — la ligne de commentaire dans le formulaire : saisie, envoi,
+// et relecture typée du brouillon, à l'ouverture comme après un conflit de version.
+describe('InvoiceForm — ligne de commentaire (Story 49-1c)', () => {
+	/** Une ligne de commentaire telle que l'API la rend (valeurs neutres). */
+	function commentaire(position: number, description: string) {
+		return {
+			id: 100 + position,
+			invoiceId: 7,
+			position,
+			lineType: 'comment' as const,
+			description,
+			quantity: '0.0000',
+			unitPrice: '0.0000',
+			vatRate: '0.00',
+			lineTotal: '0.0000',
+			revenueAccountId: null,
+			createdAt: '',
+		};
+	}
+
+	/** Brouillon `[chiffrée, commentaire]` : la ligne chiffrée porte un compte. */
+	function brouillonAvecCommentaire(texte = 'Merci de votre confiance'): InvoiceResponse {
+		return {
+			...invoiceWith([SERVICES.id]),
+			lines: [{ ...line(1, SERVICES.id), lineType: 'priced' }, commentaire(2, texte)],
+		} as unknown as InvoiceResponse;
+	}
+
+	const LIGNES_ATTENDUES = [
+		{
+			lineType: 'priced',
+			description: 'Ligne 1',
+			quantity: '1',
+			unitPrice: '100.00',
+			vatRate: '8.10',
+			revenueAccountId: SERVICES.id,
+		},
+		{ lineType: 'comment', description: 'Merci de votre confiance' },
+	];
+
+	function commentFields(container: HTMLElement): HTMLTextAreaElement[] {
+		return Array.from(container.querySelectorAll('[data-testid="invoice-line-comment"]'));
+	}
+
+	it('AC3 — « Commentaire » ajoute en fin de tableau un champ multiligne, sans taux, compte ni total ; le total ne change pas', async () => {
+		const { container, getByTestId } = render(InvoiceForm, { invoice: invoiceWith([null]) });
+		await settle();
+		const total = () => container.querySelector('tfoot')?.textContent ?? '';
+		expect(total()).toContain('100.00');
+		const tauxAvant = container.querySelectorAll('[data-testid="invoice-line-vat-rate"]').length;
+		const comptesAvant = accountInputs(container).length;
+
+		await fireEvent.click(getByTestId('invoice-add-comment-line'));
+		await settle();
+
+		const [champ] = commentFields(container);
+		expect(champ.tagName).toBe('TEXTAREA');
+		expect(champ.getAttribute('aria-label')).toBe('Commentaire — ligne 2');
+		const rangees = container.querySelectorAll('[data-testid="invoice-lines-table"] tbody > tr');
+		expect(rangees[rangees.length - 1].getAttribute('data-testid')).toBe('invoice-line-comment-row');
+		// La rangée du commentaire : une cellule de texte sur six colonnes, puis la suppression.
+		const cellules = rangees[rangees.length - 1].querySelectorAll(':scope > td');
+		expect(cellules).toHaveLength(2);
+		// Le colspan couvre toutes les colonnes de l'en-tête rendu sauf la dernière (la suppression).
+		const nbEntetes = container.querySelectorAll('[data-testid="invoice-lines-table"] thead th').length;
+		expect(Number(cellules[0].getAttribute('colspan'))).toBe(nbEntetes - 1);
+		expect(container.querySelectorAll('[data-testid="invoice-line-vat-rate"]')).toHaveLength(tauxAvant);
+		expect(accountInputs(container)).toHaveLength(comptesAvant);
+
+		await fireEvent.input(champ, { target: { value: 'Merci\nà bientôt' } });
+		await settle();
+		expect(total()).toContain('100.00');
+	});
+
+	it('AC3 — un commentaire vide bloque l’envoi en nommant la ligne', async () => {
+		const { container, getByTestId } = render(InvoiceForm, { invoice: invoiceWith([null]) });
+		await settle();
+		await fireEvent.click(getByTestId('invoice-add-comment-line'));
+		await settle();
+		await fireEvent.click(getByTestId('create-invoice-button'));
+		await settle();
+		expect(updateInvoiceMock).not.toHaveBeenCalled();
+		expect(getByTestId('invoice-form-error').textContent).toContain(
+			'Ligne 2 : le texte du commentaire est obligatoire',
+		);
+		expect(commentFields(container)).toHaveLength(1);
+	});
+
+	it('AC3, AC4 — brouillon [chiffrée, commentaire] ouvert puis enregistré : chaque ligne part avec son type', async () => {
+		updateInvoiceMock.mockResolvedValue({ id: 7 });
+		const { container, getByTestId } = render(InvoiceForm, { invoice: brouillonAvecCommentaire() });
+		await settle();
+		expect(commentFields(container).map((c) => c.value)).toEqual(['Merci de votre confiance']);
+		await fireEvent.click(getByTestId('create-invoice-button'));
+		await settle();
+		expect(updateInvoiceMock).toHaveBeenCalledTimes(1);
+		const sent = updateInvoiceMock.mock.calls[0][1] as { lines: unknown[] };
+		expect(sent.lines).toEqual(LIGNES_ATTENDUES);
+	});
+
+	it('AC4 — de même après « Recharger » sur un conflit de version', async () => {
+		updateInvoiceMock.mockRejectedValueOnce({
+			code: 'OPTIMISTIC_LOCK_CONFLICT',
+			status: 409,
+			message: 'conflit',
+		});
+		getInvoiceMock.mockResolvedValue(brouillonAvecCommentaire());
+		// Départ : un brouillon chiffré seulement ; le serveur, lui, porte le commentaire.
+		const { container, getByTestId, getByText } = render(InvoiceForm, {
+			invoice: invoiceWith([SERVICES.id]),
+		});
+		await settle();
+		expect(commentFields(container)).toHaveLength(0);
+		await fireEvent.click(getByTestId('create-invoice-button'));
+		await settle();
+		await fireEvent.click(getByText('Recharger'));
+		await settle();
+		expect(commentFields(container).map((c) => c.value)).toEqual(['Merci de votre confiance']);
+
+		updateInvoiceMock.mockResolvedValue({ id: 7 });
+		await fireEvent.click(getByTestId('create-invoice-button'));
+		await settle();
+		expect(updateInvoiceMock).toHaveBeenCalledTimes(2);
+		const sent = updateInvoiceMock.mock.calls[1][1] as { lines: unknown[] };
+		expect(sent.lines).toEqual(LIGNES_ATTENDUES);
+	});
+
+	it('AC4 — une ligne heading relue repart heading', async () => {
+		updateInvoiceMock.mockResolvedValue({ id: 7 });
+		const brouillon = {
+			...invoiceWith([null]),
+			lines: [line(1, null), { ...commentaire(2, 'Travaux'), lineType: 'heading' }],
+		} as unknown as InvoiceResponse;
+		const { getByTestId } = render(InvoiceForm, { invoice: brouillon });
+		await settle();
+		await fireEvent.click(getByTestId('create-invoice-button'));
+		await settle();
+		const sent = updateInvoiceMock.mock.calls[0][1] as { lines: unknown[] };
+		expect(sent.lines[1]).toEqual({ lineType: 'heading', description: 'Travaux' });
+	});
+
+	it('AC3 — taux désactivé : le refus ne nomme que la ligne chiffrée, jamais le commentaire', async () => {
+		const brouillon = {
+			...invoiceWith([null]),
+			lines: [commentaire(1, 'Préambule'), { ...line(2, null), vatRate: '7.70' }],
+		} as unknown as InvoiceResponse;
+		const { container, getByTestId } = render(InvoiceForm, { invoice: brouillon });
+		await settle();
+		// Un seul sélecteur de taux : celui de la ligne chiffrée.
+		expect(container.querySelectorAll('[data-testid="invoice-line-vat-rate"]')).toHaveLength(1);
+		await fireEvent.click(getByTestId('create-invoice-button'));
+		await settle();
+		expect(updateInvoiceMock).not.toHaveBeenCalled();
+		expect(getByTestId('invoice-form-error').textContent).toBe(
+			'Ligne 2 : le taux de TVA 7.70% a été désactivé. Choisissez un taux actif.',
+		);
 	});
 });

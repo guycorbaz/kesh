@@ -4074,3 +4074,9 @@ projects-reassign-warning-locked = Registrazioni bloccate fino al { $date }.
 projects-reassign-warning-reports = I rapporti analitici di questo periodo cambieranno.
 projects-reassign-confirm = Conferma
 projects-reassign-done = Conto analitico cambiato.
+
+# Epic 49 — Story 49-1c (#1242) : la ligne de commentaire de la facture client
+invoice-line-add-comment = Commento
+invoice-line-comment-placeholder = Testo stampato su tutta la larghezza della fattura, senza importo
+invoice-line-comment-aria = Commento — riga { $n }
+invoice-line-comment-required-error = Riga { $line }: il testo del commento è obbligatorio
