@@ -129,14 +129,14 @@ Revue P1 : Opus, trois lentilles (B, E, A) exercées l'une après l'autre par un
   `<thead>` (il est écrit en dur) : elle nomme le nombre et son lien au tableau, sans l'y lier par code.
 - **Réversibilité** : totale.
 
-## C-e491c-13 — B-1 : issue P3 demandée, non corrigé
+## C-e491c-13 — B-1 : issue P3 #1464, non corrigé
 
 - **Contexte** : `CreateInvoiceLineRequest` garde `quantity?`, `unitPrice?`, `vatRate?` pour tous les types ;
   un seul constructeur (`ligneAEnvoyer`), aucun scénario fautif aujourd'hui.
 - **Retenu** : le remède (union discriminée) touche les types de requête et leurs appelants, hors du
   « petit et sûr » ; issue `technical-debt`, P3, demandée à l'orchestrateur.
 
-## C-e491c-14 — E-1 : issue P3 demandée, non corrigé
+## C-e491c-14 — E-1 : issue P3 #1465, non corrigé
 
 - **Contexte** : un `heading` relu (inatteignable par l'API, qui le refuse) s'affiche comme un commentaire
   et rend le brouillon inenregistrable sous un refus qui parle de « heading ».
@@ -152,7 +152,7 @@ Revue P1 : Opus, trois lentilles (B, E, A) exercées l'une après l'autre par un
   confirme que cela ne change rien à ce qu'elles prouvent.
 - **Réversibilité** : sans objet.
 
-## C-e491c-16 — A-4 : issue P4 demandée
+## C-e491c-16 — A-4 : issue P4 #1466
 
 - Le constat cosmétique de la fiche avoir (marges des colonnes « TVA % » et « Compte de produit ») n'a pas
   d'issue ; demandée à l'orchestrateur (P4, `bug`), son numéro à porter à la fiche.

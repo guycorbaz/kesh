@@ -722,7 +722,7 @@ donné par la mutation T1-a, qui reproduit exactement l'état d'avant le code (`
   (C-e491c-6) ; lancé depuis `frontend/`.
 - **Constat hors périmètre (préexistant)** : sur la fiche avoir, l'en-tête et les cellules « TVA % » et « Compte de
   produit » se touchent (« 8.103000 — Ventes CI », capture 06) — la cellule du taux n'a pas de marge droite
-  (`credit-notes/[id]/+page.svelte`, `class="py-2 text-right"`). Issue à ouvrir (P4, cosmétique).
+  (`credit-notes/[id]/+page.svelte`, `class="py-2 text-right"`). Issue #1466 (P4, cosmétique), ouverte le 2026-11-23.
 - **Constat (préexistant)** : le bandeau d'erreur du formulaire ne s'efface qu'au prochain envoi ; la capture 01, prise
   après avoir rempli le commentaire, le montre encore. Comportement de tous les messages de `validateClient`.
 - Édition : code et tests par l'outil Edit (ou Write pour un fichier neuf), `cargo fmt` permis ; scripts seulement pour
