@@ -84,8 +84,16 @@ pub const BASE_URL_SUFFIX: &str = "BASE_URL";
 /// Suffixe de la variable du parallélisme.
 pub const PARALLEL_SUFFIX: &str = "PARALLEL";
 
+/// Contrôle propre à un prestataire d'un champ présent : `(champ, valeur)` →
+/// `Err(raison)`, raison fixe qui ne cite pas la valeur (Story 40-8a).
+pub type FieldCheck = fn(&str, &str) -> Result<(), &'static str>;
+
 /// Ce qui distingue un prestataire dans l'environnement.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// L'égalité compare le segment [`ProviderSpec::key`], qui identifie le
+/// prestataire (les pointeurs de fonction de [`ProviderSpec::check`] ne se
+/// comparent pas de façon fiable).
+#[derive(Debug, Clone, Copy)]
 pub struct ProviderSpec {
     /// Segment des variables (`PAYPAL` → `KESH_PAYPAL_…`).
     pub key: &'static str,
@@ -101,7 +109,21 @@ pub struct ProviderSpec {
     pub optional_fields: &'static [&'static str],
     /// Hôte par défaut de l'API.
     pub default_base_url: &'static str,
+    /// Contrôle **propre au prestataire** d'un champ présent (Story 40-8a :
+    /// la clé Stripe doit être restreinte), appelé par [`read`] après le
+    /// contrôle du gabarit : `(champ, valeur)` → `Err(raison)` refuse le
+    /// démarrage d'un message qui nomme la variable, jamais la valeur. La
+    /// raison est un texte fixe. `None` : aucun contrôle de plus (PayPal).
+    pub check: Option<FieldCheck>,
 }
+
+impl PartialEq for ProviderSpec {
+    fn eq(&self, other: &Self) -> bool {
+        self.key == other.key
+    }
+}
+
+impl Eq for ProviderSpec {}
 
 /// Champ PayPal : l'identifiant de l'application (`KESH_PAYPAL_<n>_CLIENT_ID`).
 /// Le client le lit par ce nom, la spécification le déclare par ce nom : une
@@ -118,10 +140,11 @@ pub const PAYPAL: ProviderSpec = ProviderSpec {
     fields: &[PAYPAL_CLIENT_ID, PAYPAL_SECRET],
     optional_fields: &[],
     default_base_url: "https://api-m.paypal.com",
+    check: None,
 };
 
-/// Les prestataires lus au démarrage (Wise et Stripe s'y ajoutent).
-pub const ALL_PROVIDERS: &[ProviderSpec] = &[PAYPAL];
+/// Les prestataires lus au démarrage (Wise s'y ajoutera).
+pub const ALL_PROVIDERS: &[ProviderSpec] = &[PAYPAL, crate::stripe::STRIPE];
 
 impl ProviderSpec {
     /// `KESH_<P>_<n>_<champ>`.
@@ -322,12 +345,20 @@ impl ProviderApiConfig {
     }
 
     /// L'état du téléchargement pour le libellé `account` (même règle que la
-    /// route : [`Self::series_for`]).
+    /// route : [`Self::series_for`]). Le mode est celui de l'hôte
+    /// ([`Self::mode`]), sauf pour Stripe, dont la clé dit le mode
+    /// ([`crate::stripe::series_mode`], Story 40-8b : un seul hôte, une clé
+    /// d'essai ou réelle).
     pub fn status_for(&self, account: &str) -> ProviderApiStatus {
-        let configured = self.series_for(account).is_some();
+        let series = self.series_for(account);
+        let mode = match series {
+            None => None,
+            Some(s) if self.spec == crate::stripe::STRIPE => crate::stripe::series_mode(self, s),
+            Some(_) => self.mode(),
+        };
         ProviderApiStatus {
-            configured,
-            mode: if configured { self.mode() } else { None },
+            configured: series.is_some(),
+            mode,
         }
     }
 }
@@ -483,6 +514,11 @@ pub fn read(
                 .is_some_and(crate::config::is_template_placeholder)
             {
                 return Err(invalid(spec.series_var(n, field), "valeur de gabarit <…>"));
+            }
+            if let (Some(check), Some(value)) = (spec.check, value.as_deref())
+                && let Err(reason) = check(field, value)
+            {
+                return Err(invalid(spec.series_var(n, field), reason));
             }
         }
         let mut fields = BTreeMap::new();
@@ -736,6 +772,7 @@ mod tests {
             fields: &["TOKEN"],
             optional_fields: &["PROFILE_ID"],
             default_base_url: "https://api.example.invalid",
+            check: None,
         };
         let lire_w = |pairs: &[(&str, &str)]| {
             let (map, names) = env(pairs);
@@ -856,13 +893,91 @@ mod tests {
                 mode: None
             }
         );
-        // Prestataire que cette version ne télécharge pas.
+        // Prestataire sans série pour ce libellé, et prestataire inconnu.
         assert!(!simule.status_for("stripe", "Boutique").configured);
+        assert!(!simule.status_for("inconnu", "Boutique").configured);
+        // Branche de repli : un prestataire hors de `ALL_PROVIDERS` (Wise, pas
+        // encore téléchargé) rend « non configuré », sans mode, même si une
+        // configuration portait son libellé (revue d'intégration de l'Epic 40,
+        // M1).
+        assert_eq!(
+            simule.status_for("wise", "Boutique"),
+            ProviderApiStatus {
+                configured: false,
+                mode: None
+            }
+        );
         // Forme JSON : `mode` absent quand il n'y en a pas, aucun secret.
         let json = serde_json::to_string(&simule.status_for("paypal", "Boutique")).unwrap();
         assert_eq!(json, r#"{"configured":true}"#);
         let json = serde_json::to_string(&reel.status_for("paypal", "Boutique")).unwrap();
         assert_eq!(json, r#"{"configured":true,"mode":"live"}"#);
         assert!(!json.contains("secret") && !json.contains("paypal.com"));
+    }
+
+    /// Revue d'intégration de l'Epic 40 (M1) — `configured: true` n'est rendu
+    /// que pour un prestataire de [`ALL_PROVIDERS`] ; chacun doit donc avoir sa
+    /// route de téléchargement (`POST /api/v1/<prestataire>-downloads`) dans le
+    /// routeur, sans quoi l'écran montrerait un bouton qui mène à un `404`.
+    #[test]
+    fn chaque_prestataire_lu_a_sa_route_de_telechargement() {
+        // Les lignes commentées ne comptent pas : une route en commentaire
+        // n'est pas dans le routeur.
+        let lib: String = include_str!("lib.rs")
+            .lines()
+            .filter(|l| !l.trim_start().starts_with("//"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        for spec in ALL_PROVIDERS {
+            let route = format!("\"/api/v1/{}-downloads\"", spec.provider);
+            assert!(
+                lib.contains(&route),
+                "{} : route {route} absente de lib.rs",
+                spec.provider
+            );
+            let suivi = format!("\"/api/v1/{}-downloads/{{job_id}}\"", spec.provider);
+            assert!(
+                lib.contains(&suivi),
+                "{} : route {suivi} absente de lib.rs",
+                spec.provider
+            );
+        }
+    }
+
+    /// Story 40-8b (AC-4) — le mode d'un compte Stripe se lit au préfixe de sa
+    /// clé, non à l'hôte : une clé d'essai sur l'hôte réel est `sandbox`, une
+    /// clé réelle vers le serveur simulé est `live` ; jamais la clé.
+    #[test]
+    fn mode_d_un_compte_stripe_par_sa_cle() {
+        let stripe = crate::stripe::STRIPE;
+        let avec = |url: &str, cle: &str| {
+            ProvidersConfig::default().with(ProviderApiConfig::for_tests(
+                stripe,
+                url,
+                1,
+                vec![ProviderSeries::for_tests(
+                    1,
+                    "Boutique",
+                    &[(crate::stripe::STRIPE_KEY, cle)],
+                )],
+            ))
+        };
+        let essai = avec("https://api.stripe.com", "rk_test_abc");
+        assert_eq!(
+            essai.status_for("stripe", "boutique"),
+            ProviderApiStatus {
+                configured: true,
+                mode: Some(ProviderApiMode::Sandbox)
+            }
+        );
+        assert_eq!(
+            avec("http://127.0.0.1:4010", "rk_live_abc")
+                .status_for("stripe", "Boutique")
+                .mode,
+            Some(ProviderApiMode::Live)
+        );
+        let json = serde_json::to_string(&essai.status_for("stripe", "Boutique")).unwrap();
+        assert_eq!(json, r#"{"configured":true,"mode":"sandbox"}"#);
+        assert!(!essai.status_for("stripe", "Autre").configured);
     }
 }

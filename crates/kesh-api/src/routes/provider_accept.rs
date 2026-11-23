@@ -98,9 +98,9 @@ use kesh_db::repositories::{
 use kesh_db::retry::is_deadlock_error;
 use kesh_reconciliation::conversion::{ConversionSide, PlanError, SourceRate, plan_conversion};
 use kesh_reconciliation::provider_review::{
-    EntryKind, Proposal, ProviderAccount, ProviderKind, ProviderSpec, Review, ReviewFinding,
-    ReviewInput, ReviewProposal, SaleEntry, SaleMovement, admits_link, admits_rule, build_review,
-    conversion_halves, counts, payment_date,
+    ENTRY_DESCRIPTION_MAX_CHARS, EntryKind, Proposal, ProviderAccount, ProviderKind, ProviderSpec,
+    Review, ReviewFinding, ReviewInput, ReviewProposal, SaleEntry, SaleMovement, admits_link,
+    admits_rule, build_review, conversion_halves, counts, payment_date,
 };
 use kesh_reconciliation::{ReconciliationError, rule_matches, with_account_locks};
 use rust_decimal::Decimal;
@@ -126,8 +126,8 @@ pub const PROVIDER_PROPOSAL_STALE: &str = "PROVIDER_PROPOSAL_STALE";
 const LOCK_TIMEOUT_SECS: u32 = 5;
 
 /// Borne du libellé d'une écriture, en caractères (celle des écritures de la
-/// réconciliation, `accept_one_rule`).
-const DESCRIPTION_MAX_CHARS: usize = 200;
+/// réconciliation, `accept_one_rule`) : la constante commune.
+const DESCRIPTION_MAX_CHARS: usize = ENTRY_DESCRIPTION_MAX_CHARS;
 
 // ---------------------------------------------------------------------------
 // Revue
@@ -756,6 +756,11 @@ pub struct AcceptContext<'a> {
     /// ordinaire ([`EngineProposal::entries_to_lock`]) : seules celles-ci se
     /// rattachent ([`accept_link_entry`]).
     pub locked_entries: HashSet<i64>,
+    /// Les comptes bancaires verrouillés pour le lot (ceux des transactions et
+    /// les comptes supplémentaires du prestataire, `prepare_accept`) : une
+    /// proposition propre qui écrit vers un autre compte bancaire (Stripe : le
+    /// compte de versement, 40-7c AC-4) vérifie qu'il en est.
+    pub locked_accounts: &'a [i64],
 }
 
 /// **Une tentative** de l'acceptation (voir l'en-tête du module), rejouée sur
@@ -852,6 +857,7 @@ async fn run_batch<P: EngineProposal>(
         account: &prepared.account,
         balances: balances.into_iter().map(|b| (b.account.id, b)).collect(),
         locked_entries,
+        locked_accounts: &prepared.lock_ids,
     };
     let mut outcome = BatchOutcome::default();
     for p in &prepared.eligible {
@@ -1387,9 +1393,11 @@ pub async fn mark_reconciled(
 /// `link_entry` : rattachement à une écriture déjà passée, par
 /// `link_entry_in_tx` (aucune écriture). Rejugement : transaction pending, de
 /// genre admis au rattachement ([`admits_link`] : encaissement, ou genre que
-/// le prestataire déclare — Wise : `Other` de préfixe `TRANSFER`, versement
-/// Stripe) ; pour un **encaissement**, l'identifiant figure toujours au
-/// libellé de l'écriture et la vente n'est pas déjà rattachée (sinon
+/// le prestataire déclare par `ProviderSpec::linkable` — Wise : `Other` de
+/// préfixe `TRANSFER` et versement Stripe, 39-11c AC-4 ; PayPal et Stripe n'en
+/// déclarent aucun : un versement Stripe ne se rattache pas côté Stripe, il s'y
+/// propose en `payout`) ; pour un **encaissement**, l'identifiant figure
+/// toujours au libellé de l'écriture et la vente n'est pas déjà rattachée (sinon
 /// périmée). Pour tout genre, l'écriture a été prise `FOR UPDATE` au début
 /// du lot, avant toute lecture ordinaire ([`run_batch`]) : les lectures de ce
 /// rejugement et l'étape 4.4 de `link_entry_in_tx` (mouvement, devise,

@@ -1026,4 +1026,16 @@ describe('BankImportUpload — compte de prestataire', () => {
 		expect(values).not.toContain('4');
 		expect(values).toContain('1');
 	});
+
+	// Story 40-7d (AC-1) — de même un compte Stripe ou Wise (`withoutProviders`, 38-11d).
+	it.each(['stripe', 'wise'])('un compte %s n’est pas proposé ; les autres le restent', async (provider) => {
+		const comptes = [...ACCOUNTS, { id: 4, bankName: provider, description: null, iban: null, provider }];
+		const r = render(BankImportUpload, { props: { bankAccounts: comptes, onSuccess: vi.fn() } });
+		await flush();
+		const values = Array.from(r.container.querySelectorAll('#bank-account-select option')).map((o) =>
+			o.getAttribute('value'),
+		);
+		expect(values).not.toContain('4');
+		expect(values).toContain('1');
+	});
 });

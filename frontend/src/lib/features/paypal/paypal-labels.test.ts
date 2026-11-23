@@ -15,7 +15,6 @@ import {
 	paypalFailedLabel,
 	paypalImportErrorLines,
 	paypalLineErrorLabel,
-	PAYPAL_OWN_FAILED_CODES,
 	toReviewReasonLabel,
 } from './paypal-labels';
 
@@ -81,17 +80,9 @@ describe('paypal-labels — revue', () => {
 });
 
 describe('paypal-labels — refus de l’acceptation', () => {
-	it('codes propres : écrits en dur, traduits par paypal-failed-*', () => {
-		expect([...PAYPAL_OWN_FAILED_CODES]).toEqual([
-			'PROVIDER_PROPOSAL_STALE',
-			'FX_ACCOUNT_INVALID',
-			'FX_RATE_INVALID',
-			'NOT_FOUND',
-			'OPTIMISTIC_LOCK_CONFLICT',
-			'RECONCILIATION_ENTRY_NOT_LINKABLE',
-			'COUNTERPARTY_CURRENCY_MISMATCH',
-		]);
-		expect(paypalFailedLabel('PROVIDER_PROPOSAL_STALE')).toMatch(/^paypal-failed-proposal-stale\|/);
+	it('tous les refus du moteur commun passent par les clés provider-failed-*', () => {
+		expect(paypalFailedLabel('PROVIDER_PROPOSAL_STALE')).toMatch(/^provider-failed-proposal-stale\|/);
+		expect(paypalFailedLabel('NOT_FOUND')).toMatch(/^provider-failed-not-found\|/);
 	});
 
 	it('les autres codes sont délégués au rapprochement générique', () => {
@@ -130,13 +121,13 @@ const CODES_ROUTE_PAYPAL = [
 ];
 
 describe('paypal-labels — refus de la devise de la contrepartie d’une règle', () => {
-	it('nomme les deux devises, par la clé de la 38-11c2', () => {
+	it('nomme les deux devises, par la clé commune', () => {
 		const l = paypalFailedLabel('COUNTERPARTY_CURRENCY_MISMATCH', {
 			accountId: 7,
 			accountCurrency: 'EUR',
 			transactionCurrency: 'USD',
 		});
-		expect(l).toMatch(/^paypal-failed-counterparty-currency-mismatch\|/);
+		expect(l).toMatch(/^provider-failed-counterparty-currency-mismatch\|/);
 		expect(l).toContain('EUR');
 		expect(l).toContain('USD');
 	});

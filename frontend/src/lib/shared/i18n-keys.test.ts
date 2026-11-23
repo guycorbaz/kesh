@@ -1185,6 +1185,12 @@ const ATTENDU = {
 	// Fusion de la 38-11c2 (epic/38-paypal) dans la 38-11d : total relevé par la garde.
 	// Revue P2 de la 38-11d (libellé du refus `COUNTERPARTY_CURRENCY_MISMATCH`, relais de la
 	// 38-11c2) : **3632** (« expected 3632 to be 3508 »), relevé par la garde = 3508 + 123 + 1.
+	// Story 40-7d (fusion de la 38-11d, page commune des prestataires, écrans Stripe) : **3689**
+	// (« expected 3689 to be 3632 »), relevé par la garde, non additionné.
+	// Revue P1 de la 40-7d (M1, M3 : badges de la destination archivée ou close, texte du versement
+	// vers Wise) : **3692** (« expected 3692 to be 3689 »), relevé par la garde.
+	// Revue P2 de la 40-7d (délégation complète de PayPal au module commun, texte du versement Wise
+	// raccourci) : **3691** (« expected 3691 to be 3692 »), relevé par la garde.
 	// Story 38-12b (dialogue générique de téléchargement, bouton et aide de la page PayPal, code
 	// de ligne `STATUS`) : **3671** (« expected 3671 to be 3632 »), relevé par la garde ; recompté
 	// au diff hors tests : 42 sites `i18nMsg(` ajoutés, 3 retirés (compte rendu extrait), net +39.
@@ -1192,7 +1198,18 @@ const ATTENDU = {
 	// 3671 »), relevé par la garde ; au diff : 1 site ajouté, 0 retiré.
 	// Revue P2 de la 38-12b (avis au passé, suivi perdu après une reprise) : **3674**, relevé par
 	// la garde ; au diff : 2 sites ajoutés, 0 retiré.
-	sitesTotal: 3674,
+	// Fusion d'epic/38-paypal (38-12b) dans epic/40-stripe : **3733** (« expected 3733 to be 0 »),
+	// relevé par la garde = 3691 + 42 (les sites de la 38-12b, 3674 − 3632).
+	// Correctif de la destination d'un versement Stripe rejugée (revue d'intégration de l'Epic 39,
+	// M2 : libellé de `STRIPE_PAYOUT_ACCOUNT_INVALID` dans `stripeFailedLabel`) : **3734**
+	// (« expected 3734 to be 3733 »), relevé par la garde ; au diff : 1 site ajouté, 0 retiré.
+	// Story 40-8b (bouton, aide, dialogue et compte rendu du téléchargement Stripe) : +7 net sur
+	// 3733 (9 sites `i18nMsg(` ajoutés, 2 retirés), soit **3741** après la fusion dans
+	// epic/40-stripe, relevé par la garde (3734 + 7).
+	// Story 40-9 (option « Destination actuelle (introuvable) » du compte de versement) :
+	// **3742** (« expected 3742 to be 3741 »), relevé par la garde ; au diff : 1 site ajouté,
+	// 0 retiré.
+	sitesTotal: 3742,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

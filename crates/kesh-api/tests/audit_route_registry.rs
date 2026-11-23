@@ -647,11 +647,22 @@ const LIB_ROUTES: &[(&str, &str, Status, Rejeu)] = &[
     // ventilé par devise : `bank_import.created` par devise et
     // `paypal_import.created`, dans sa transaction ; aucune écriture au journal.
     ("post", "paypal_imports::create", Traced, SansEcritureAuJournal),
+    // Story 40-7b (Epic 40) — l'import du rapport Stripe d'un compte Stripe,
+    // ventilé par devise, par le même cœur que l'import PayPal :
+    // `bank_import.created` par devise et `stripe_import.created`, dans sa
+    // transaction ; aucune écriture au journal (la revue et l'acceptation sont
+    // d'autres routes, 40-7c).
+    ("post", "stripe_imports::create", Traced, SansEcritureAuJournal),
     // Story 38-12a (Epic 38, phase 2) — le téléchargement par l'API PayPal :
     // la tâche écrit `bank_import.created` par devise et
     // `paypal_download.created`, dans la transaction de l'import ; aucune
     // écriture au journal.
     ("post", "paypal_downloads::create", Traced, SansEcritureAuJournal),
+    // Story 40-8b (Epic 40, phase 2) — le téléchargement par l'API Stripe,
+    // même forme : `bank_import.created` par devise et
+    // `stripe_download.created`, dans la transaction de l'import ; aucune
+    // écriture au journal.
+    ("post", "stripe_downloads::create", Traced, SansEcritureAuJournal),
     // Story 38-11c2 (Epic 38) — l'acceptation des propositions de la revue
     // PayPal, par le moteur commun des prestataires (`provider_accept`) :
     // écritures au journal (`journal_entry.created`), rattachements
@@ -660,6 +671,12 @@ const LIB_ROUTES: &[(&str, &str, Status, Rejeu)] = &[
     // `retry_app_on_deadlock` (opération `paypal::accept`), jamais
     // `retry_with` : le handler ne s'appelle pas `post_accept`.
     ("post", "paypal::accept_proposals", Traced, Rejouee),
+    // Story 40-7c (Epic 40) — l'acceptation des propositions de la revue
+    // Stripe (`link_entry`, `fee`, `payout`), par le même moteur : mêmes
+    // traces, `provider.proposal_accepted` par proposition. Rejouée par
+    // `retry_app_on_deadlock` (opération `stripe::accept`), jamais
+    // `retry_with` : le handler ne s'appelle pas `post_accept`.
+    ("post", "stripe::accept_proposals", Traced, Rejouee),
     ("post", "bank_profiles::create", Traced, SansEcritureAuJournal),
     ("put", "bank_profiles::update", Traced, SansEcritureAuJournal),
     ("delete", "bank_profiles::delete", Traced, SansEcritureAuJournal),
@@ -1127,8 +1144,8 @@ fn the_registry_partition_is_what_the_story_declares() {
 
     assert_eq!(
         LIB_ROUTES.len(),
-        160,
-        "l'inventaire porte sur 160 routes (+ 1 : l'acceptation de la revue PayPal, 38-11c2 ; + 1 : le téléchargement par l'API PayPal, 38-12a ; + 1 : l'import du CSV PayPal, 38-11b ; + 1 : le changement de compte analytique d'une facture, 36-16a ; + 1 : le nom de la société, v0190-nom-societe ; + 2 : l'aperçu et la passation de la réévaluation de fin d'exercice, 37-5 ; + 1 : la conversion entre devises, 37-3b ; + 5 : la récupération des cours de change, la saisie et le ↑ d'un cours retenu, l'acquittement des corrections et les genres d'un exercice, 37-2 ; + 1 : le réglage multi-devises de la société, 37-1 ; + 1 : le solde d'ouverture d'un compte bancaire existant, 34-2 ; + 1 : l'adresse de la société, 33-5 ; + 1 : `/mcp`, 32-6a ; + 1 : la décision d'un \
+        163,
+        "l'inventaire porte sur 163 routes (+ 1 : le téléchargement par l'API Stripe, 40-8b ; + 1 : l'acceptation de la revue Stripe, 40-7c ; + 1 : l'import du rapport Stripe, 40-7b ; + 1 : l'acceptation de la revue PayPal, 38-11c2 ; + 1 : le téléchargement par l'API PayPal, 38-12a ; + 1 : l'import du CSV PayPal, 38-11b ; + 1 : le changement de compte analytique d'une facture, 36-16a ; + 1 : le nom de la société, v0190-nom-societe ; + 2 : l'aperçu et la passation de la réévaluation de fin d'exercice, 37-5 ; + 1 : la conversion entre devises, 37-3b ; + 5 : la récupération des cours de change, la saisie et le ↑ d'un cours retenu, l'acquittement des corrections et les genres d'un exercice, 37-2 ; + 1 : le réglage multi-devises de la société, 37-1 ; + 1 : le solde d'ouverture d'un compte bancaire existant, 34-2 ; + 1 : l'adresse de la société, 33-5 ; + 1 : `/mcp`, 32-6a ; + 1 : la décision d'un \
          envoi MCP, 32-8b ; + 5 : les routes mutantes des prompts du serveur MCP, 32-10a-iii ; \
          + 1 : le rattachement d'une transaction à une écriture, v017-3a ; + 2 : l'aperçu et \
          la création d'un relevé saisi à la main, v016-2a ; + 4 : le `PUT`, le `DELETE`, la \
@@ -1168,8 +1185,14 @@ fn the_registry_partition_is_what_the_story_declares() {
     // PayPal, tracé par `bank_import.created` et `paypal_download.created`).
     // Story 38-11c2 (Epic 38) : 151 → 152 (l'acceptation de la revue PayPal,
     // tracée par `provider.proposal_accepted` et les traces des écritures).
+    // Story 40-7b (Epic 40), unie à la 38-11c2 par la 40-7c : 152 → 153 (l'import du
+    // rapport Stripe, tracé par `bank_import.created` et `stripe_import.created`).
+    // Story 40-7c (Epic 40) : 153 → 154 (l'acceptation de la revue Stripe,
+    // tracée par `provider.proposal_accepted` et les traces des écritures).
+    // Story 40-8b (Epic 40, phase 2) : 154 → 155 (le téléchargement par l'API
+    // Stripe, tracé par `bank_import.created` et `stripe_download.created`).
     assert_eq!(
-        traced, 152,
+        traced, 155,
         "73 tracées avant la 25-1b, plus ses 14, plus la dévalidation (25-2-b-1, #440), \
          plus l'annulation d'un règlement client (25-3-a-1) et fournisseur (25-3-a-2, #414), \
          plus l'annulation d'un rapprochement (25-3-b, #418), plus le solde du reste \
@@ -1203,7 +1226,8 @@ fn the_registry_partition_is_what_the_story_declares() {
          (v0190-nom-societe, refs #1097), plus le changement de compte analytique d'une \
          facture (36-16a, refs #1167), plus l'import du CSV PayPal (38-11b), plus le \
          téléchargement par l'API PayPal (38-12a) et l'acceptation de la revue PayPal \
-         (38-11c2)"
+         (38-11c2), plus l'import du rapport Stripe (40-7b) et l'acceptation de la revue \
+         Stripe (40-7c), plus le téléchargement par l'API Stripe (40-8b)"
     );
     assert_eq!(
         exempt, 4,
@@ -1217,8 +1241,9 @@ fn the_registry_partition_is_what_the_story_declares() {
          réévaluation de fin d'exercice, 37-5)"
     );
     assert_eq!(
+        // 40-7b et 38-11c2, unies par la 40-7c : 164 → 165 ; 40-7c : 166 ; 40-8b : 167.
         LIB_ROUTES.len() + TEST_ENDPOINT_ROUTES.len(),
-        164,
+        167,
         "le registre est plus large que l'inventaire, et c'est voulu"
     );
 }
@@ -1472,8 +1497,8 @@ fn every_replayed_route_calls_an_envelope() {
         }
     }
     assert_eq!(
-        examinees, 31,
-        "les trente et une routes Rejouee ont été examinées (vingt-sept avant la conversion \
+        examinees, 32,
+        "les trente-deux routes Rejouee ont été examinées (40-7c : + l'acceptation de la revue Stripe ; vingt-sept avant la conversion \
          entre devises, 37-3b, et la passation de la réévaluation de fin d'exercice, 37-5 ; \
          36-16a : + le changement de compte analytique d'une facture ; 38-11c2 : + \
          l'acceptation de la revue PayPal)"
@@ -1613,8 +1638,8 @@ fn the_replay_partition_is_what_the_story_declares() {
         .count();
 
     assert_eq!(
-        rejouees, 31,
-        "38-11c2 : + l'acceptation de la revue PayPal — 31 ; 36-16a : + le changement de compte analytique d'une facture — 30 ; 37-5 : + la passation de la réévaluation — 29 ; 37-3b : + la conversion entre devises — 28 ; 5 rejouées avant la 15-5e1 (write_off, accept, cancel du rapprochement, \
+        rejouees, 32,
+        "40-7c : + l'acceptation de la revue Stripe — 32 ; 38-11c2 : + l'acceptation de la revue PayPal — 31 ; 36-16a : + le changement de compte analytique d'une facture — 30 ; 37-5 : + la passation de la réévaluation — 29 ; 37-3b : + la conversion entre devises — 28 ; 5 rejouées avant la 15-5e1 (write_off, accept, cancel du rapprochement, \
          complément des soldes de départ, modification d'une écriture — 15-8a) + 4 par \
          elle (validation, règlement, annulation de règlement, saisie fournisseur) + la \
          suppression d'une écriture (15-8b) + 12 par la 15-5e2 (dévalidation, avoir, \
@@ -1633,8 +1658,8 @@ fn the_replay_partition_is_what_the_story_declares() {
     );
     assert_eq!(exemptees, 3, "full_import, /seed, /reset");
     assert_eq!(
-        sans_ecriture, 130,
-        "128 routes de lib.rs (38-12a : + 1 — le téléchargement par l'API PayPal) — 127 avant (38-11b : + 1 — l'import du CSV PayPal) — 126 avant (v0190-nom-societe : + 1 — le nom de la société, unie à l'Epic 37 par l'intégration de la 0.19.0) — 125 avant (37-5 : + 1 — l'aperçu de la réévaluation de fin d'exercice) — 124 avant (37-2 : + 5 — la récupération des cours de change, la saisie et le ↑ d'un cours retenu, l'acquittement des corrections, les genres d'un exercice) — 119 avant (37-1 : + 1 — le réglage multi-devises de la société) — 118 avant (34-2 : − 1 — la création d'un compte bancaire, reclassée \
+        sans_ecriture, 132,
+        "130 routes de lib.rs (40-8b : + 1 — le téléchargement par l'API Stripe) — 129 avant (40-7b : + 1 — l'import du rapport Stripe) — 128 avant (38-12a : + 1 — le téléchargement par l'API PayPal) — 127 avant (38-11b : + 1 — l'import du CSV PayPal) — 126 avant (v0190-nom-societe : + 1 — le nom de la société, unie à l'Epic 37 par l'intégration de la 0.19.0) — 125 avant (37-5 : + 1 — l'aperçu de la réévaluation de fin d'exercice) — 124 avant (37-2 : + 5 — la récupération des cours de change, la saisie et le ↑ d'un cours retenu, l'acquittement des corrections, les genres d'un exercice) — 119 avant (37-1 : + 1 — le réglage multi-devises de la société) — 118 avant (34-2 : − 1 — la création d'un compte bancaire, reclassée \
          `Rejouee`) — 119 avant (33-5 : + 1 — l'adresse de la société ; v0172-session : + 2 — le réglage de la durée d'inactivité \
          et le battement d'activité ; v017-4a : + 4 — la saisie fournisseur et la complétion \
          d'import reclassées, le `PUT` et le `DELETE` d'un brouillon) — 112 avant \
@@ -1669,7 +1694,12 @@ fn the_replay_partition_is_what_the_story_declares() {
     // Story 38-12a (Epic 38, phase 2) : 162 → 163 (le téléchargement par l'API
     // PayPal).
     // Story 38-11c2 (Epic 38) : 163 → 164 (l'acceptation de la revue PayPal).
-    assert_eq!(tout.len(), 164);
+    // Story 40-7b (Epic 40), unie à la 38-11c2 par la 40-7c : 164 → 165 (l'import du
+    // rapport Stripe).
+    // Story 40-7c (Epic 40) : 165 → 166 (l'acceptation de la revue Stripe).
+    // Story 40-8b (Epic 40, phase 2) : 166 → 167 (le téléchargement par l'API
+    // Stripe).
+    assert_eq!(tout.len(), 167);
 }
 
 /// Visiteur `syn` d'un fichier de routes : relève chaque appel à la primitive

@@ -133,6 +133,7 @@ function account(over: Partial<BankAccountSummary> = {}): BankAccountSummary {
 		cardLast4: null,
 		provider: null,
 		paypal: null,
+		stripe: null,
 		isPrimary: true,
 		journalAccountId: 10,
 		version: 1,
