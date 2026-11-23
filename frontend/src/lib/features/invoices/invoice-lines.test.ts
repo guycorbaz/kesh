@@ -59,13 +59,21 @@ describe('estLigneDeTexte (D7)', () => {
 		expect(estLigneDeTexte(null)).toBe(false);
 	});
 
-	it('est le contraire exact de estChiffree, valeur inconnue comprise (revue P1, B-2)', () => {
-		const valeurs = [undefined, null, 'priced', 'comment', 'heading', 'quote'] as never[];
-		for (const t of valeurs) {
-			expect(estLigneDeTexte(t)).toBe(!estChiffree({ lineType: t }));
+	it('table de littéraux : chaque valeur a son attendu écrit à la main (revue P1 B-2, P2 B-1)', () => {
+		// [valeur, estLigneDeTexte attendu, estChiffree attendu]
+		const table: [unknown, boolean, boolean][] = [
+			['priced', false, true],
+			['comment', true, false],
+			['heading', true, false],
+			[undefined, false, true],
+			[null, false, true],
+			// Un type qu'un serveur plus récent ajouterait : du texte, jamais une ligne chiffrée.
+			['quote', true, false],
+		];
+		for (const [valeur, texte, chiffree] of table) {
+			expect(estLigneDeTexte(valeur as never), `estLigneDeTexte(${String(valeur)})`).toBe(texte);
+			expect(estChiffree({ lineType: valeur as never }), `estChiffree(${String(valeur)})`).toBe(chiffree);
 		}
-		// Un type qu'un serveur plus récent ajouterait : du texte, jamais une ligne chiffrée.
-		expect(estLigneDeTexte('quote' as never)).toBe(true);
 	});
 });
 

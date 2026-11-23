@@ -1719,7 +1719,9 @@ describe('InvoiceForm — ligne de commentaire (Story 49-1c)', () => {
 		// La rangée du commentaire : une cellule de texte sur six colonnes, puis la suppression.
 		const cellules = rangees[rangees.length - 1].querySelectorAll(':scope > td');
 		expect(cellules).toHaveLength(2);
-		expect(cellules[0].getAttribute('colspan')).toBe('6');
+		// Le colspan couvre toutes les colonnes de l'en-tête rendu sauf la dernière (la suppression).
+		const nbEntetes = container.querySelectorAll('[data-testid="invoice-lines-table"] thead th').length;
+		expect(Number(cellules[0].getAttribute('colspan'))).toBe(nbEntetes - 1);
 		expect(container.querySelectorAll('[data-testid="invoice-line-vat-rate"]')).toHaveLength(tauxAvant);
 		expect(accountInputs(container)).toHaveLength(comptesAvant);
 
