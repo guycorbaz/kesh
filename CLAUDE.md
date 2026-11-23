@@ -411,6 +411,7 @@ Règle décidée par le Project Lead le 2026-11-21 ; sa mise en œuvre fait l'ob
 ### Fusions et fichiers communs
 
 - **Au kickoff**, le fichier d'epic déclare les fichiers et modules qu'il touchera ; deux epics sur le même module s'arbitrent avec le Project Lead.
+- **Les développeurs se tiennent synchrones**, dans les deux sens (décision de Guy du 2026-11-23) : chacun informe les autres **au démarrage de chaque epic** (périmètre et issues, modules et fichiers touchés, migration éventuelle, release visée, dépendances : la section de lancement du fichier d'epic), **à sa fin** (ce qui est entré dans `main` et à quel commit, date des migrations, ce que les autres doivent reprendre, stories sorties vers un epic ultérieur), **à toute fusion dans `main`** et **à toute release publiée**. Avec l'agent d'un contributeur, l'orchestrateur le fait par le canal convenu ; il annonce ce qui est fait ou lancé, jamais une décision du Project Lead qui n'est pas prise.
 
 | Fichier | Règle |
 |---|---|
