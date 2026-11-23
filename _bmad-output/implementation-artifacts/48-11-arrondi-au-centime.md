@@ -1,6 +1,6 @@
 # Story 48-11 : Les montants à deux décimales sont arrondis au centime, non tronqués — rapports CSV et PDF ; l'export global écrit chaque colonne à son échelle (#1245 ; #1430)
 
-Status: in-progress
+Status: review
 
 *Fiche rédigée le 2026-11-20 (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-48-11`, branche `story/48-11-arrondi-au-centime`, partie de
 `epic/48-corrections-0-20-0` à **`08c47a6cc`** (qui porte la PR #1327 de Beat — alignement à droite des PDF de rapports — et la PR #1346 —
@@ -610,13 +610,90 @@ désormais les montants, prix, quantités et totaux à **quatre décimales** (`1
 
 ### Agent Model Used
 
+Sonnet 5.5 (`bmad-dev-story`, reprise du 2026-11-23 après le crash du 2026-11-20 : le premier agent n'a laissé que des tests rouges et
+les manuels FR, commités par l'orchestrateur en `15ae0368a`, jamais exécutés).
+
 ### Debug Log References
+
+Journaux hors dépôt sous `/home/gcorbaz/devel/kesh-gate-logs/e4811/` :
+
+- **Rouges** (`dev/rouge-report.log`, `dev/rouge-api.log`, sur `15ae0368a`, `kesh_e4811`) : `kesh-report` 234 tests, **6 rouges**
+  (`csv::tests::{format_amount_iso_arrondit_au_centime, format_rendement_arrondit, la_balance_csv_arrondit_la_fraction_de_centime}`,
+  `pdf::tests::{format_rate_et_rendement_arrondissent, format_swiss_amount_arrondit_au_centime, la_balance_pdf_arrondit_la_fraction_de_centime}`) ;
+  `kesh-api` 49 tests, **5 rouges** (`amount_string_arrondit_au_centime`, `export_global_ne_coupe_plus_la_fraction_de_centime` : lu `10.00`
+  pour `10.0050`, `export_global_chaque_colonne_decimal_a_l_echelle_du_schema` : `group_settlement_max_difference` lu `1.12` pour `1.1234`,
+  `export_trial_balance_{csv,pdf}_arrondit_la_fraction_de_centime`). Les tests rouges se compilaient sans le correctif : la fonction commune
+  n'était pas appelée, aucun symbole ne manquait.
+- **Vert ciblé** (`dev/vert-1.log`, commit `9a6c80f81`) : `kesh-core` lib, `kesh-report`, `exports_global_e2e`, `reports_export_e2e`,
+  `arrondi_centime_garde`, `kesh-api` lib, `kesh-qrbill` : **1563 passés, 0 échec, 8 ignorés**.
+- **Mutations** (`mut/muter.py`, un journal `mut/mut-m<n>.log`, code commité avant, restauration par `git restore --worktree` puis `touch`) :
+  voir le tableau ci-dessous.
+- **Gate au passage en `review`**, commit de code `e704d397a` (`dev/gate-commit.txt`) : bases remises à neuf (`dev/gate-bases.log`) ;
+  `scripts/test-fast.sh --ci` (fmt, clippy `-D warnings`, nextest) **vert : 6222 passés, 14 ignorés, 0 échec**
+  (`dev/gate-test-fast-ci.log`) ; `scripts/gate-ci.sh kesh_ci_e4811` **code 0** (`dev/gate-ci.log`, `dev/gate-ci.console` ; somme des lignes
+  `test result:` : 259 binaires, 6241 passés, 0 échec, 18 ignorés) ; `dev/gate-exit.txt` porte les deux codes. **Frontend : aucun fichier
+  touché** (`git diff --stat 15ae0368a~1 HEAD -- frontend` vide), donc ni `check` ni `test:unit` ; **E2E Playwright non lancé** (D9, à la clôture).
+- **AC8** : `dev/ac8.txt` (`git grep -nw round_for_display -- crates/`) ne rend que `money.rs` (définition, doc, tests, appel de
+  `format_two_decimals`), le réexport de `types/mod.rs`, `balance_sheet.rs:70` (`use kesh_core::types::round_for_display`), `:126` (lien),
+  `:142` (prédicat), le test de `pdf.rs:3090-3095` et son `use` (`pdf.rs:2153`), et un commentaire de la garde ;
+  `git grep -n 'crate::pdf' crates/kesh-report/src/balance_sheet.rs` est **vide** ; `csv.rs` n'importe plus de `pdf.rs` que `format_exchange_rate`.
+- **AC10** : `dev/ac10.txt` (`git diff origin/epic/48-corrections-0-20-0...HEAD --stat -- crates/kesh-qrbill … crates/kesh-db …`) **vide** ;
+  les tests de `kesh-qrbill` sont dans le vert ciblé et dans `test-fast --ci`, sans modification.
+- **AC12** : `dev/ac12.txt` — chaque ligne non commentée appartient à un fichier de la liste close (22 occurrences, 8 fichiers : `money.rs` 1,
+  `csv_tables.rs:127` `{d:.scale$}`, `parse/tests.rs` 2, `kesh-i18n` 1, `pain001` 1, `generator.rs:115`, `kesh-qrbill/src/pdf.rs` 13,
+  `kesh-report/src/pdf.rs:361` et `:3325`) ; les lignes de commentaire restantes (`errors.rs:1563`, `money.rs:109`, `:111`, `generator.rs:107`,
+  `:111`) sont vraies. `git grep -nE '1245|tronqu' -- docs/manual` ne rend que deux phrases sans rapport (SMTP, écran de 500 lignes).
+- **AC11** : `docs/manual/fr/admin-manual.tex` porte `sec:maj-0-20-0` (`:2550`) ; `ls docs/manual/*/` : seul `fr` a des `.tex` ; PDF non commités.
+- **Mots-clés de fermeture** : `git log origin/epic/48-corrections-0-20-0..HEAD --format=%B | grep -niE '\b(close[sd]?|fix(e[sd])?|resolve[sd]?) #[0-9]'` vide.
 
 ### Completion Notes List
 
+- **Étape 0** (lecture à la tête de la branche) : les sites à corriger se sont trouvés tels que la fiche les décrit — `pdf.rs:318`
+  `let raw = format!("{amount:.2}");`, `csv.rs:51` `format!("{amount:.2}")`, `csv_tables.rs:109` `format!("{d:.2}")` ; le nombre de colonnes
+  `DECIMAL` (38 : 25/10/3) et la garde (22 occurrences dans 8 fichiers) ne sont **pas** recomptés à part : le test de pleine échelle
+  (`information_schema`) et `arrondi_centime_garde` les établissent, verts avec ces nombres écrits à la main. Non refait : la simulation
+  `garde-simulation-avant.txt` (remplacée par la garde exécutable). Les LOW du dernier rapport de validation étaient déjà traités dans la fiche.
+- **Code** : `kesh-core/src/types/money.rs` (`round_for_display` déplacée, `format_two_decimals` neuve, réexportées par `types/mod.rs`) ;
+  `kesh-report` (`pdf.rs`, `csv.rs`, `balance_sheet.rs`) ; `kesh-api` (`csv_tables.rs` : `fmt_decimal` et `fmt_opt_decimal` supprimées,
+  `fmt_decimal_scale` et cinq constantes `DEC_*`, 34 sites + `:430-431` + `fmt_rate`, commentaires de l'AC12, tests unitaires réécrits ;
+  `bank_statements_manual.rs::amount_string` et `company_invoice_settings.rs::group_max_for_display` délèguent) ; garde neuve
+  `crates/kesh-api/tests/arrondi_centime_garde.rs` (famille 1 : 22/8 ; famille 2 : 2 ; sondes positives 6 et 2 ; balayage > 100 fichiers
+  dont `money.rs`). Manuels FR : les trois sites de D8, posés par le premier agent et relus ici contre le code.
+- **Mutations** (tous journaux sous `mut/`) :
+
+  | N° | Mutation | Résultat |
+  |---|---|---|
+  | M1 | `ToZero` dans `round_for_display` (`mut-m1.log`) | **14 rouges** : `kesh-core` 2 (AC1), `kesh-report` 10 (4 `csv`, 5 `pdf`, 1 `balance_sheet`), route des rapports 2 (AC5 CSV et PDF). **`exports_global_e2e` ne rougit pas** : l'export global n'arrondit pas (D5) — la fiche le prévoyait à tort |
+  | M2 | retrait de `if r.is_zero()` | **a survécu d'abord** (`mut-m2-survivant.log` : 594 passés) : `round_dp_with_strategy` rend déjà un zéro positif pour `-0.0040` (aucun test de la fiche ne distingue). Tué après ajout de zéros négatifs **construits** (`-Decimal::new(0, 2)`, `-Decimal::ZERO`) en `e704d397a` : 2 rouges (`mut-m2.log`) ; la garde est défensive mais réelle pour une valeur lue ou calculée à signe négatif et mantisse nulle |
+  | M3 | `MidpointNearestEven` | 2 rouges (`mut-m3.log`) |
+  | M4 | `format!("{:.2}", amount)` ajouté dans `csv.rs` | garde famille 1 rouge : `kesh-report/src/csv.rs : 1 au lieu de 0` (`mut-m4.log`) |
+  | M5 | `{:.2}` retiré de `money.rs` | garde famille 1 rouge : `money.rs : 0 au lieu de 1` (`mut-m5.log`) |
+  | M6 | `trunc_with_scale(2)` ajouté dans `pdf.rs` | garde famille 2 rouge : `kesh-report/src/pdf.rs : 1 au lieu de 0` (`mut-m6.log`) |
+  | M7 | `DEC_18_2` pour `invoice_lines.line_total` | AC13 rouge nommant `invoice_lines.line_total (id=1) : attendu 1.1234 (échelle 4), lu 1.12` (`mut-m7.log`) |
+  | M8 | `38` écrit à la main remplacé par `37` | AC13 rouge sur le décompte, liste des 38 colonnes imprimée (`mut-m8.log`) |
+
+- **Écarts à la fiche** : (1) M1 ne rougit pas la route de l'export global (voir ci-dessus) ; (2) M2 a exigé deux cas de test de plus ;
+  (3) `exports_global_e2e.rs:2045` (`"7777.77"`, `contains`) est resté vert sans modification, comme annoncé à l'AC4 ; (4) la garde ne balaie
+  que `crates/*/src` (comme dit à D6), pas `tests/`.
+- **Aucune migration, aucun repository, aucun fichier du frontend ni de `kesh-qrbill`.** Le PDF des factures et des avoirs ne change pas
+  (AC10).
+- **Fichiers communs** (à dire) : `kesh-report/src/pdf.rs` (Beat, Epic 46) et `kesh-qrbill` : la garde fige 13 occurrences dans
+  `kesh-qrbill/src/pdf.rs` et 1 dans `generator.rs` — à dire à l'Epic 49 et à Beat dès la fusion.
+- **Tension de calendrier** : la voie base et Rust a été saturée le 2026-11-23 (un E2E complet de plus d'une heure, la 48-12 derrière) ;
+  `alerte.md` l'écrit. Aucune conséquence pour la story elle-même.
+
 ### File List
 
+`crates/kesh-core/src/types/{money.rs,mod.rs}` ; `crates/kesh-report/src/{pdf.rs,csv.rs,balance_sheet.rs}` ;
+`crates/kesh-api/src/exports/csv_tables.rs` ; `crates/kesh-api/src/routes/{bank_statements_manual.rs,company_invoice_settings.rs}` ;
+`crates/kesh-api/tests/{arrondi_centime_garde.rs (neuf),exports_global_e2e.rs,reports_export_e2e.rs}` ;
+`docs/manual/fr/{admin-manual.tex,user-manual.tex}` ; cette fiche et `48-11-arrondi-au-centime-review-prompt-p1.md`.
+
 ## Change Log
+
+- **2026-11-23 — développement terminé, passage en `review`** (Sonnet 5.5, reprise après crash). Rouges constatés (6 + 5) ; code `9a6c80f81` ;
+  tests de zéros négatifs `e704d397a` (M2 avait survécu) ; M1 à M8 tuées ; `test-fast --ci` 6222 verts et `gate-ci` code 0 au commit `e704d397a` ;
+  E2E Playwright non lancé (D9, à la clôture). `Status: review`. Prompt de la revue P1 : `48-11-arrondi-au-centime-review-prompt-p1.md`.
 
 - **2026-11-20 — création de la fiche** (Opus 5.5, `bmad-create-story`, code lu à `08c47a6cc`). Inventaire par le symptôme en cinq
   recherches (R1 à R5, sorties dans `kesh-gate-logs/e4811/`) : **30 occurrences de précision de format dans 10 fichiers** (R1), 21
