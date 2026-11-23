@@ -193,6 +193,9 @@ mod tests {
             (dec!(-0.0040), "0.00"),
             (Decimal::ZERO, "0.00"),
             (dec!(-0), "0.00"),
+            // Un zéro négatif construit (`-0.00`, signe porté par la mantisse nulle).
+            (-Decimal::new(0, 2), "0.00"),
+            (-Decimal::ZERO, "0.00"),
             (dec!(1234.5), "1234.50"),
             (dec!(12.345), "12.35"),
             (dec!(1000000), "1000000.00"),
@@ -212,6 +215,12 @@ mod tests {
             !zero.is_sign_negative(),
             "un zéro d'affichage n'a pas de signe"
         );
+        for z in [-Decimal::new(0, 2), -Decimal::ZERO] {
+            assert!(
+                !round_for_display(z).is_sign_negative(),
+                "un zéro négatif construit perd son signe"
+            );
+        }
     }
 
     #[test]
