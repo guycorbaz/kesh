@@ -1183,8 +1183,8 @@ const ATTENDU = {
 	// `kesh-gate-logs/e4812/dev/vitest-12b-complet-1.log`), relevé par la garde : vingt-trois sites
 	// ajoutés et deux retirés (le bouton d'envoi déplacé hors du `<fieldset>`) dans
 	// `SupplierInvoiceForm.svelte`, `supplier-invoice-form.ts` et la fiche `[id]/+page.svelte`.
-	// Fusion des 48-12a et 48-12b dans epic/50 (2026-11-23) : les deux côtés gardés, 3508 (0.19.1) + 21 = 3529 à vérifier,
-	// total relevé par la garde, non additionné : voir `kesh-gate-logs/e50/fusion-48-12/`.
+	// Fusion des 48-12a et 48-12b dans epic/50 (2026-11-23) : les deux côtés gardés, 3508 (0.19.1) + 21 = **3529**,
+	// total vérifié par la garde (vitest complet vert, 4904/4904, `kesh-gate-logs/e50/fusion-48-12/frontend.log`).
 	sitesTotal: 3529,
 	sitesNonResolus: 31,
 	relais: 6,
