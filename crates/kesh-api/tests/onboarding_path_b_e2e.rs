@@ -1166,6 +1166,18 @@ async fn step_completed(app: &TestApp, token: &str) -> serde_json::Value {
 /// franchirait l'étape et fausserait le cas suivant ; ainsi une mutation montre
 /// chaque cas rouge pour sa propre raison.
 async fn assert_name_refused(pool: MySqlPool, corps: serde_json::Value, attendus: &[&str]) {
+    let message = coordinates_refused(pool, corps).await;
+    for attendu in attendus {
+        assert!(
+            message.contains(attendu),
+            "« {attendu} » absent de « {message} »"
+        );
+    }
+}
+
+/// Le socle d'[`assert_name_refused`] : `400 VALIDATION_ERROR`, société
+/// inchangée, étape toujours à 5 ; rend le message, que l'appelant juge.
+async fn coordinates_refused(pool: MySqlPool, corps: serde_json::Value) -> String {
     let app = spawn_app(pool.clone()).await;
     create_test_company(&pool).await;
     ensure_admin_user(&pool, &test_config()).await.unwrap();
@@ -1176,15 +1188,127 @@ async fn assert_name_refused(pool: MySqlPool, corps: serde_json::Value, attendus
     let (status, body) = post_coordinates(&app, &token, corps).await;
     assert_eq!(status, 400, "{body}");
     assert_eq!(body["error"]["code"], "VALIDATION_ERROR");
-    let message = body["error"]["message"].as_str().unwrap_or_default();
-    for attendu in attendus {
-        assert!(
-            message.contains(attendu),
-            "« {attendu} » absent de « {message} »"
-        );
-    }
+    let message = body["error"]["message"]
+        .as_str()
+        .unwrap_or_default()
+        .to_string();
     assert_eq!(companies_snapshot(&pool).await, avant, "rien d'écrit");
     assert_eq!(step_completed(&app, &token).await, 5);
+    message
+}
+
+/// #1343 (story v0200-corrections-mineures, AC10) — un champ fait de caractères
+/// invisibles est refusé, et le message **commence** par le champ et le constat.
+/// Lire le début du message, non le seul statut : un prénom U+200B rendait déjà
+/// `400` par le contrôle QR du nom composé, avec un autre message (V1-11).
+async fn assert_invisible_refused(pool: MySqlPool, corps: serde_json::Value, debut: &str) {
+    let message = coordinates_refused(pool, corps).await;
+    assert!(
+        message.starts_with(debut),
+        "« {message} » ne commence pas par « {debut} »"
+    );
+    assert!(
+        message.contains("effacez le champ et saisissez-le de nouveau"),
+        "le geste manque : « {message} »"
+    );
+}
+
+/// AC10 — prénom fait du seul trait d'union conditionnel. Rouge : M11, M16.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn coordinates_rejects_an_invisible_first_name_1343(pool: MySqlPool) {
+    assert_invisible_refused(
+        pool,
+        json!({
+            "name": "",
+            "firstName": "\u{AD}",
+            "lastName": "Dupont",
+            "address": adresse_valide(),
+            "ideNumber": null
+        }),
+        "Prénom : aucun caractère visible",
+    )
+    .await;
+}
+
+/// AC10 — nom fait du seul trait d'union conditionnel. Rouge : M12, M16.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn coordinates_rejects_an_invisible_last_name_1343(pool: MySqlPool) {
+    assert_invisible_refused(
+        pool,
+        json!({
+            "name": "",
+            "firstName": "Jean",
+            "lastName": "\u{AD}",
+            "address": adresse_valide(),
+            "ideNumber": null
+        }),
+        "Nom : aucun caractère visible",
+    )
+    .await;
+}
+
+/// AC10 — prénom U+200B : **filet de message** ; sans la règle neuve, le contrôle QR
+/// du nom composé rendait déjà 400, avec un autre message. Rouge : M11 (message).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn coordinates_rejects_a_zero_width_first_name_with_its_own_message_1343(pool: MySqlPool) {
+    assert_invisible_refused(
+        pool,
+        json!({
+            "name": "",
+            "firstName": "\u{200B}",
+            "lastName": "Dupont",
+            "address": adresse_valide(),
+            "ideNumber": null
+        }),
+        "Prénom : aucun caractère visible",
+    )
+    .await;
+}
+
+/// AC10 (filet) — un prénom qui MÊLE invisible et visible passe, enregistré tel quel.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn coordinates_accept_a_mixed_first_name_as_typed_1343(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    create_test_company(&pool).await;
+    ensure_admin_user(&pool, &test_config()).await.unwrap();
+    let token = login(&app).await;
+    advance_to_step_5(&app, &token).await;
+    let (status, body) = post_coordinates(
+        &app,
+        &token,
+        json!({
+            "name": "",
+            "firstName": "Jean\u{AD}Pierre",
+            "lastName": "Dupont",
+            "address": adresse_valide(),
+            "ideNumber": null
+        }),
+    )
+    .await;
+    assert_eq!(status, 200, "{body}");
+    let lignes = companies_snapshot(&pool).await;
+    assert_eq!(lignes[0].1.as_deref(), Some("Jean\u{AD}Pierre"));
+    assert_eq!(lignes[0].2.as_deref(), Some("Dupont"));
+}
+
+/// AC10 (filet) — prénom absent : `name` fait le nom de la société, comme avant.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn coordinates_without_first_name_keep_the_company_name_1343(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    create_test_company(&pool).await;
+    ensure_admin_user(&pool, &test_config()).await.unwrap();
+    let token = login(&app).await;
+    advance_to_step_5(&app, &token).await;
+    let (status, body) = post_coordinates(
+        &app,
+        &token,
+        json!({ "name": "Démo SA", "address": adresse_valide(), "ideNumber": null }),
+    )
+    .await;
+    assert_eq!(status, 200, "{body}");
+    let lignes = companies_snapshot(&pool).await;
+    assert_eq!(lignes[0].0, "Démo SA");
+    assert_eq!(lignes[0].1, None);
 }
 
 /// AC6, D5 — un « prénom nom » composé au-delà de 70 caractères est refusé :
@@ -1344,4 +1468,97 @@ async fn coordinates_after_step_5_leave_the_company_unchanged_1226(pool: MySqlPo
     assert_eq!(body["error"]["code"], "ONBOARDING_STEP_ALREADY_COMPLETED");
     assert_eq!(companies_snapshot(&pool).await, configuree);
     assert_eq!(step_completed(&app, &token).await, 6);
+}
+
+// ─── Story 48-15 (#1334) : le prénom et le nom, bornés chacun à 70 ───
+
+/// AC3 — un **prénom seul** de 71 caractères (le nom de la société vient alors
+/// de `name`) est refusé en `400 VALIDATION_ERROR` qui nomme « Prénom », sans
+/// rien écrire. Sans la borne, il partait à `companies.first_name`
+/// `VARCHAR(70)` et MariaDB rendait `DATA_LENGTH_OR_RANGE`, qui ne nomme rien.
+/// Rouge sans le contrôle : M4.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn coordinates_rejects_a_lone_71_character_first_name_1334(pool: MySqlPool) {
+    assert_name_refused(
+        pool,
+        json!({
+            "name": "Démo SA",
+            "firstName": "P".repeat(71),
+            "address": adresse_valide(),
+            "ideNumber": null
+        }),
+        &["Prénom : 70 caractères maximum"],
+    )
+    .await;
+}
+
+/// AC3 — idem pour un **nom seul** de 71 caractères. Rouge sans le contrôle : M5.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn coordinates_rejects_a_lone_71_character_last_name_1334(pool: MySqlPool) {
+    assert_name_refused(
+        pool,
+        json!({
+            "name": "Démo SA",
+            "lastName": "N".repeat(71),
+            "address": adresse_valide(),
+            "ideNumber": null
+        }),
+        &["Nom : 70 caractères maximum"],
+    )
+    .await;
+}
+
+/// AC3 (filets) et AC9 — un prénom seul (ou un nom seul) de 70 est accepté et
+/// enregistré entier : la borne égale la colonne. Rend la ligne enregistrée.
+/// (Prénom 70 et nom 70 ensemble feraient un nom composé de 141, refusé par la
+/// 48-13 : ce n'est pas le cas jugé ici.)
+async fn assert_lone_70_accepted(pool: MySqlPool, cle: &str, valeur: &str) -> CompanyRow {
+    let app = spawn_app(pool.clone()).await;
+    create_test_company(&pool).await;
+    ensure_admin_user(&pool, &test_config()).await.unwrap();
+    let token = login(&app).await;
+    advance_to_step_5(&app, &token).await;
+
+    let mut corps = json!({ "name": "Démo SA", "address": adresse_valide(), "ideNumber": null });
+    corps[cle] = json!(valeur);
+    let (status, body) = post_coordinates(&app, &token, corps).await;
+    assert_eq!(status, 200, "{cle} seul de 70 accepté : {body}");
+    assert_eq!(body["stepCompleted"], 6);
+    let mut lignes = companies_snapshot(&pool).await;
+    assert_eq!(lignes.len(), 1);
+    lignes.remove(0)
+}
+
+/// Revue P1 (B4, E3) — la borne compte des **caractères** sur la valeur
+/// **rognée** : un prénom seul de 70 « é » (140 octets), entouré de blancs, est
+/// accepté et stocké rogné. Rouge si la borne comptait en octets (mutation M21).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn coordinates_count_a_lone_first_name_in_characters_after_trimming_1334(pool: MySqlPool) {
+    let prenom = "é".repeat(70);
+    let ligne = assert_lone_70_accepted(pool, "firstName", &format!("  {prenom}  ")).await;
+    assert_eq!(
+        ligne.1.as_deref(),
+        Some(prenom.as_str()),
+        "stocké rogné, entier"
+    );
+}
+
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn coordinates_accept_a_lone_70_character_first_name_1334(pool: MySqlPool) {
+    let ligne = assert_lone_70_accepted(pool, "firstName", &"x".repeat(70)).await;
+    assert_eq!(
+        ligne.1.as_deref(),
+        Some("x".repeat(70).as_str()),
+        "stocké entier"
+    );
+}
+
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn coordinates_accept_a_lone_70_character_last_name_1334(pool: MySqlPool) {
+    let ligne = assert_lone_70_accepted(pool, "lastName", &"x".repeat(70)).await;
+    assert_eq!(
+        ligne.2.as_deref(),
+        Some("x".repeat(70).as_str()),
+        "stocké entier"
+    );
 }

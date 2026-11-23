@@ -149,6 +149,7 @@ function monter(p: ReconciliationProposal = proposal(), accounts = ACCOUNTS) {
 		onOpenChange: vi.fn<(v: boolean) => void>(),
 		onSuccess: vi.fn<() => void>(),
 		onStale: vi.fn<() => void>(),
+		onSettledInBackground: vi.fn<() => void>(),
 	};
 	const r = render(GroupSettlementModal, {
 		open: true,
@@ -194,6 +195,22 @@ function texte(r: R, id: string): string {
 
 function submit(r: R): HTMLButtonElement {
 	return r.getByTestId('group-submit') as HTMLButtonElement;
+}
+
+/** La réponse d'un règlement accepté pour la transaction `TX`. */
+function accepte(): AcceptResponse {
+	return {
+		accepted: [
+			{
+				bankTransactionId: TX,
+				invoiceId: 0,
+				supplierInvoiceId: null,
+				journalEntryId: 9,
+				score: { total: 1, amountScore: 0, referenceScore: 0, contactScore: 0 },
+			},
+		],
+		failed: [],
+	};
 }
 
 beforeEach(() => {
@@ -785,6 +802,101 @@ describe('GroupSettlementModal — refus (D5, AC4)', () => {
 		expect(submit(r).disabled).toBe(false);
 	});
 
+	// Story 48-14 (#1263, D1) — après une relecture, une demande de compte sans sélecteur affiché
+	// ne dit jamais « Choisissez le compte de l’écart » : rien ne débloquerait l'envoi en en
+	// choisissant un. La fenêtre dit que rien n'a été enregistré ; la cause reste dite par l'avis
+	// d'arrondi ou la phrase du pied.
+	describe('demande de compte après relecture, sans sélecteur (Story 48-14, #1263)', () => {
+		const BLOQUE = 'Rien n’a été enregistré : voyez ce qui retient encore l’enregistrement.';
+		const CHOISISSEZ = 'Choisissez le compte de l’écart.';
+
+		/** Deux factures envoyées à écart nul ; `changer` modifie la recherche avant le refus. */
+		async function refusApresRelecture(
+			montants: [string, string],
+			amount: string,
+			changer: (pool: GroupCandidate[]) => void,
+		): Promise<R> {
+			const pool = [inv(12, montants[0]), inv(15, montants[1], 'Autre SàRL')];
+			serve(pool);
+			const { r } = monter(proposal(amount));
+			await ajouter(r, 12);
+			await ajouter(r, 15);
+			await waitFor(() => expect(submit(r).disabled).toBe(false));
+			changer(pool);
+			mockApi.acceptProposals.mockResolvedValue({
+				accepted: [],
+				failed: [
+					{
+						bankTransactionId: TX,
+						errorCode: 'RECONCILIATION_GROUP_INVALID',
+						details: { reason: 'difference_account_required', gap: '-0.40' },
+					},
+				],
+			});
+			await fireEvent.click(submit(r));
+			await r.findByTestId('group-refusal');
+			return r;
+		}
+
+		function refus(r: R): string[] {
+			return r.getAllByTestId('group-refusal').map((x) => x.textContent?.replace(/\s+/g, ' ').trim() ?? '');
+		}
+
+		function sansChoisissez(r: R): void {
+			expect(refus(r)).not.toContain(CHOISISSEZ);
+			const modale = r.getByTestId('group-settlement-modal').textContent ?? '';
+			expect(modale).not.toContain(CHOISISSEZ);
+			expect(r.queryByTestId('group-account-section')).toBeNull();
+			expect(champCompte()).toBeNull();
+			expect(submit(r).disabled).toBe(true);
+		}
+
+		it('T1 (AC1) — relus, écart nul, arrondi sans compte d’arrondi : la phrase neuve, l’avis d’arrondi', async () => {
+			mockSettings.mockResolvedValue(settings(null, 6940));
+			const r = await refusApresRelecture(['10.0000', '10.0000'], '20.00', (pool) => {
+				pool[0] = inv(12, '10.0049');
+			});
+			expect(refus(r)).toEqual([BLOQUE]);
+			expect(texte(r, 'group-gap')).toBe('Aucun écart');
+			await r.findByTestId('group-rounding-not-configured');
+			sansChoisissez(r);
+		});
+
+		it('T2 (AC2) — relus, écart au-delà du plafond : la phrase neuve, la phrase du pied', async () => {
+			const r = await refusApresRelecture(['500.0000', '300.0000'], '800.00', (pool) => {
+				pool[0] = inv(12, '510.0000');
+			});
+			expect(refus(r)).toEqual([BLOQUE]);
+			expect(texte(r, 'group-block-hint')).toContain('L’écart dépasse le plafond admis');
+			sansChoisissez(r);
+		});
+
+		it('T3 (AC3) — une relue (écart au-delà du plafond), une non relue : la phrase neuve, « non relue »', async () => {
+			const r = await refusApresRelecture(['500.0000', '300.0000'], '800.00', (pool) => {
+				pool[0] = inv(12, '510.0000');
+				const servi = mockApi.getGroupCandidates.getMockImplementation();
+				mockApi.getGroupCandidates.mockImplementation(async (tx, q = {}) => {
+					if (q.q === 'F-15') throw { code: 'DATABASE_ERROR', message: 'x', status: 500 };
+					return servi!(tx, q);
+				});
+			});
+			expect(refus(r)).toEqual([BLOQUE]);
+			expect(texte(r, 'group-block-hint')).toContain('L’écart dépasse le plafond admis');
+			expect(r.getAllByTestId('group-not-reread-item')).toHaveLength(1);
+			expect(texte(r, 'group-not-reread-item')).toContain('Facture F-15');
+			sansChoisissez(r);
+		});
+
+		it('T3 bis (AC3 bis) — la relecture rend un reste dû illisible : la phrase neuve, « montant illisible »', async () => {
+			const r = await refusApresRelecture(['500.0000', '300.0000'], '800.00', (pool) => {
+				pool[0] = inv(12, 'illisible');
+			});
+			expect(refus(r)).toEqual([BLOQUE]);
+			expect(texte(r, 'group-block-hint')).toContain('Kesh n’a pas pu lire un montant');
+			sansChoisissez(r);
+		});
+	});
+
 	// Revue P3 ciblée (L-B) : un compte choisi survit à l'écart nul (fiche D2 bis, C-e433-3) ; le
 	// serveur demande un compte (envoi sans compte), relecture impossible : le sélecteur montre ce
 	// compte, la phrase dit de le vérifier — jamais « Choisissez le compte » sous un champ rempli.
@@ -1021,7 +1133,10 @@ describe('GroupSettlementModal — gardes de concurrence (D4, AC3)', () => {
 		expect(cb.onSuccess).not.toHaveBeenCalled();
 	});
 
-	it('fermée pendant l’envoi, le règlement passé : le parent relit sa liste', async () => {
+	// Story 48-14 (#1262, D3) : la modale ne choisit plus entre relire et ne rien faire ; elle dit au
+	// parent que le règlement a abouti en arrière-plan, et le parent relit quand aucune modale n'est
+	// ouverte (avant : `onSuccess` si la modale restait fermée).
+	it('fermée pendant l’envoi, le règlement passé : le parent est averti, en arrière-plan', async () => {
 		serve([inv(12, '500.0000'), inv(15, '300.0000', 'Autre SàRL')]);
 		const { r, cb } = monter(proposal('800.00'));
 		await ajouter(r, 12);
@@ -1031,21 +1146,39 @@ describe('GroupSettlementModal — gardes de concurrence (D4, AC3)', () => {
 		mockApi.acceptProposals.mockImplementation(() => new Promise((res) => (resolveAccept = res)));
 		await fireEvent.click(submit(r));
 		await r.rerender({ open: false });
-		resolveAccept({
-			accepted: [
-				{
-					bankTransactionId: TX,
-					invoiceId: 0,
-					supplierInvoiceId: null,
-					journalEntryId: 9,
-					score: { total: 1, amountScore: 0, referenceScore: 0, contactScore: 0 },
-				},
-			],
-			failed: [],
-		});
-		await waitFor(() => expect(cb.onSuccess).toHaveBeenCalledTimes(1));
+		resolveAccept(accepte());
+		await waitFor(() => expect(cb.onSettledInBackground).toHaveBeenCalledTimes(1));
+		expect(cb.onSuccess).not.toHaveBeenCalled();
 		// Revue P1 (E-L7) : le règlement passé est dit, même la modale fermée.
 		expect(mockToast.success).toHaveBeenCalledTimes(1);
+	});
+
+	// Story 48-14 (#1262, AC6, T4) : rouverte sur une autre transaction pendant l'envoi, la fenêtre
+	// garde ce qu'on y a fait ; le règlement abouti avertit le parent sans la toucher.
+	it('T4 — rouverte sur une autre transaction, puis succès : onSettledInBackground, la fenêtre intacte', async () => {
+		serve([inv(12, '500.0000'), inv(15, '300.0000', 'Autre SàRL'), inv(31, '50.0000', 'Autre')]);
+		const { r, cb } = monter(proposal('800.00'));
+		await ajouter(r, 12);
+		await ajouter(r, 15);
+		await waitFor(() => expect(submit(r).disabled).toBe(false));
+		let resolveAccept!: (v: AcceptResponse) => void;
+		mockApi.acceptProposals.mockImplementation(() => new Promise((res) => (resolveAccept = res)));
+		await fireEvent.click(submit(r));
+		await r.rerender({ open: false });
+		await r.rerender({ open: true, proposal: proposal('50.00', 77, 'Autre') });
+		await waitFor(() =>
+			expect(mockApi.getGroupCandidates).toHaveBeenLastCalledWith(77, { q: 'Autre', exclude: [] }),
+		);
+		await ajouter(r, 31);
+		await fireEvent.input(r.getByTestId('group-search-input'), { target: { value: 'Tiers' } });
+		resolveAccept(accepte());
+		await waitFor(() => expect(cb.onSettledInBackground).toHaveBeenCalledTimes(1));
+		await new Promise((res) => setTimeout(res, 20));
+		expect(cb.onSuccess).not.toHaveBeenCalled();
+		expect(cb.onOpenChange).not.toHaveBeenCalled();
+		expect(mockToast.success).toHaveBeenCalledTimes(1);
+		expect(r.getAllByTestId('group-imputed-row').map((x) => x.getAttribute('data-invoice-id'))).toEqual(['31']);
+		expect((r.getByTestId('group-search-input') as HTMLInputElement).value).toBe('Tiers');
 	});
 
 	// Revue P1 (B-M1) : une recherche avortée par l'envoi ne laisse pas « Recherche… » affiché.

@@ -519,6 +519,125 @@ async fn overlong_contact_details_are_rejected_by_the_api(pool: MySqlPool) {
     );
 }
 
+/// La société courante, telle que `GET /companies/current` la rend.
+async fn current_company(app: &TestApp, token: &str) -> serde_json::Value {
+    app.client
+        .get(app.url("/api/v1/companies/current"))
+        .header("Authorization", format!("Bearer {token}"))
+        .send()
+        .await
+        .unwrap()
+        .json::<serde_json::Value>()
+        .await
+        .unwrap()["company"]
+        .clone()
+}
+
+async fn put_company_email(
+    app: &TestApp,
+    token: &str,
+    email: &str,
+    version: i64,
+) -> (u16, serde_json::Value) {
+    let resp = app
+        .client
+        .put(app.url("/api/v1/companies/current/email"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&json!({ "email": email, "version": version }))
+        .send()
+        .await
+        .unwrap();
+    let status = resp.status().as_u16();
+    (status, resp.json().await.unwrap())
+}
+
+/// Story 48-15 (#1333, AC1, AC9) — l'e-mail de la société est borné **par la
+/// route** à 320 caractères, la taille de sa colonne (`companies.email`
+/// `VARCHAR(320)`), avec un refus localisé qui dit le maximum.
+///
+/// ⚠️ Le code se lit, non le seul statut : sans la borne, MariaDB refuse aussi
+/// en `400`, mais `DATA_LENGTH_OR_RANGE`, générique, qui ne nomme pas le champ.
+/// Rouge sans la borne : mutation M1.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn company_email_is_bounded_at_320_by_the_route(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    create_test_company(&pool).await;
+    ensure_admin_user(&pool, &test_config()).await.unwrap();
+    let token = login(&app).await;
+    let version = |company: &serde_json::Value| company["version"].as_i64().unwrap();
+
+    // 320 caractères : `a…a@example.ch` (309 + 1 + 10). Accepté et stocké.
+    let at_limit = format!("{}@example.ch", "a".repeat(309));
+    assert_eq!(at_limit.chars().count(), 320);
+    let v = version(&current_company(&app, &token).await);
+    let (status, corps) = put_company_email(&app, &token, &at_limit, v).await;
+    assert_eq!(
+        status, 200,
+        "320 caractères, la colonne, acceptés : {corps}"
+    );
+    assert_eq!(corps["email"], at_limit.as_str(), "stocké entier");
+
+    // 321 caractères : refusé par la route, rien d'écrit.
+    let avant = current_company(&app, &token).await;
+    let audit_avant = audit_count(&pool).await;
+    let too_long = format!("{}@example.ch", "a".repeat(310));
+    let (status, corps) = put_company_email(&app, &token, &too_long, version(&avant)).await;
+    assert_eq!(status, 400, "{corps}");
+    assert_eq!(
+        corps["error"]["code"], "VALIDATION_ERROR",
+        "le refus vient de la route, non de MariaDB : {corps}"
+    );
+    assert_eq!(
+        corps["error"]["message"],
+        "L'adresse e-mail de la société est trop longue (320 caractères au plus).",
+        "message de la clé `error-company-email-too-long`"
+    );
+    let apres = current_company(&app, &token).await;
+    assert_eq!(apres["email"], at_limit.as_str(), "e-mail inchangé");
+    assert_eq!(version(&apres), version(&avant), "version inchangée");
+    assert_eq!(audit_count(&pool).await, audit_avant, "aucune trace");
+
+    // AC9 — la société déjà enregistrée avec un e-mail de 320 se réenregistre
+    // telle quelle : la borne égale la colonne.
+    let (status, corps) = put_company_email(&app, &token, &at_limit, version(&apres)).await;
+    assert_eq!(status, 200, "l'e-mail existant se réenregistre : {corps}");
+    assert_eq!(corps["email"], at_limit.as_str());
+}
+
+/// Revue P1 (B4, E3), AC9 — la borne de l'e-mail compte des **caractères** sur
+/// la valeur **rognée**, comme la colonne `VARCHAR(320)` en `utf8mb4` : 320
+/// caractères dont 309 « é » (629 octets), entourés de blancs, sont acceptés et
+/// stockés rognés ; 321 sont refusés. Rouge si la borne comptait en octets
+/// (mutation M20, `e.len()`).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn company_email_bound_counts_characters_after_trimming(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    create_test_company(&pool).await;
+    ensure_admin_user(&pool, &test_config()).await.unwrap();
+    let token = login(&app).await;
+    let version = |company: &serde_json::Value| company["version"].as_i64().unwrap();
+
+    let at_limit = format!("{}@example.ch", "é".repeat(309));
+    assert_eq!(at_limit.chars().count(), 320);
+    assert!(
+        at_limit.len() > 320,
+        "montage : plus d'octets que de caractères"
+    );
+    let v = version(&current_company(&app, &token).await);
+    let (status, corps) = put_company_email(&app, &token, &format!("  {at_limit}  "), v).await;
+    assert_eq!(
+        status, 200,
+        "320 caractères multi-octets, blancs autour : {corps}"
+    );
+    assert_eq!(corps["email"], at_limit.as_str(), "stocké rogné, entier");
+
+    let too_long = format!("{}@example.ch", "é".repeat(310));
+    let v = version(&current_company(&app, &token).await);
+    let (status, corps) = put_company_email(&app, &token, &too_long, v).await;
+    assert_eq!(status, 400, "{corps}");
+    assert_eq!(corps["error"]["code"], "VALIDATION_ERROR", "{corps}");
+}
+
 /// **Un champ OMIS du payload efface la valeur** — comportement épinglé, pas
 /// défendu (revue de code, passe 3).
 ///

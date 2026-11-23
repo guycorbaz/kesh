@@ -268,3 +268,170 @@ async fn a_stored_unknown_country_reads_and_edits_817(pool: MySqlPool) {
     assert_eq!(fixed["addressStructured"]["country"], "CH");
     assert_eq!(fixed["addressCountryKnown"], true);
 }
+
+/// Story v0200-corrections-mineures (#1342, AC6) — le pays d'un contact en base.
+async fn stored_country(pool: &MySqlPool, id: i64) -> Option<String> {
+    sqlx::query_scalar("SELECT address_country FROM contacts WHERE id = ?")
+        .bind(id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+/// Une adresse faite du seul pays (`country` absent : clé omise).
+fn pays_seul(country: Option<&str>) -> Value {
+    match country {
+        Some(c) => json!({ "country": c }),
+        None => json!({}),
+    }
+}
+
+/// AC6 (#1342) — `POST` et `PUT` : un pays saisi seul, autre que CH, est refusé
+/// (« un pays seul »), rien n'est écrit. Rouge sans la règle : M7.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn a_lone_foreign_country_is_refused_1342(pool: MySqlPool) {
+    let (app, token, _) = setup(&pool).await;
+    for pays in ["FR", "Suisse"] {
+        let (st, body) = send(
+            &app,
+            &token,
+            "POST",
+            "/api/v1/contacts",
+            json!({ "contactType": "Entreprise", "name": "Pays seul SA", "isClient": true,
+                    "addressStructured": pays_seul(Some(pays)) }),
+        )
+        .await;
+        assert_eq!(st, 400, "{pays} : {body}");
+        assert_eq!(body["error"]["code"], "VALIDATION_ERROR");
+        assert!(
+            body["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("un pays seul"),
+            "{body}"
+        );
+    }
+    assert_eq!(contact_count(&pool).await, 0, "rien d'écrit");
+
+    // `PUT` : un contact en « FR » complet, dont on retire tout sauf le pays.
+    let (st, created) = send(
+        &app,
+        &token,
+        "POST",
+        "/api/v1/contacts",
+        json!({ "contactType": "Entreprise", "name": "France SA", "isClient": true,
+                "addressStructured": address("FR") }),
+    )
+    .await;
+    assert_eq!(st, 201, "{created}");
+    let id = created["id"].as_i64().unwrap();
+    let (st, refused) = send(
+        &app,
+        &token,
+        "PUT",
+        &format!("/api/v1/contacts/{id}"),
+        json!({ "contactType": "Entreprise", "name": "France SA", "isClient": true,
+                "addressStructured": pays_seul(Some("FR")), "version": created["version"] }),
+    )
+    .await;
+    assert_eq!(st, 400, "{refused}");
+    assert!(
+        refused["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("un pays seul"),
+        "{refused}"
+    );
+    assert_eq!(stored_country(&pool, id).await.as_deref(), Some("FR"));
+}
+
+/// AC6 (filets) — « CH » seul, pays vide, adresse vide : un contact **sans**
+/// adresse (`address_country` NULL) ; « FR » avec NPA et localité : accepté ; le
+/// contact sans adresse se réenregistre (AC12 b).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ch_alone_or_no_country_means_no_address_1342(pool: MySqlPool) {
+    let (app, token, _) = setup(&pool).await;
+    for (i, pays) in [Some("CH"), Some(""), None].into_iter().enumerate() {
+        let (st, body) = send(
+            &app,
+            &token,
+            "POST",
+            "/api/v1/contacts",
+            json!({ "contactType": "Entreprise", "name": format!("Sans adresse {i}"),
+                    "isClient": true, "addressStructured": pays_seul(pays) }),
+        )
+        .await;
+        assert_eq!(st, 201, "{pays:?} : {body}");
+        let id = body["id"].as_i64().unwrap();
+        assert_eq!(stored_country(&pool, id).await, None, "{pays:?}");
+        assert_eq!(
+            body["addressStructured"],
+            json!({ "street": "", "building": "", "postalCode": "", "city": "",
+                    "country": null }),
+            "{pays:?} : adresse vide attendue"
+        );
+        let (st, again) = send(
+            &app,
+            &token,
+            "PUT",
+            &format!("/api/v1/contacts/{id}"),
+            json!({ "contactType": "Entreprise", "name": format!("Sans adresse {i}"),
+                    "isClient": true, "addressStructured": pays_seul(Some("CH")),
+                    "version": body["version"] }),
+        )
+        .await;
+        assert_eq!(st, 200, "réenregistré : {again}");
+    }
+    let (st, body) = send(
+        &app,
+        &token,
+        "POST",
+        "/api/v1/contacts",
+        json!({ "contactType": "Entreprise", "name": "Paris SA", "isClient": true,
+                "addressStructured": { "postalCode": "75002", "city": "Paris", "country": "FR" } }),
+    )
+    .await;
+    assert_eq!(st, 201, "{body}");
+    assert_eq!(body["addressStructured"]["country"], "FR");
+}
+
+/// Revue P1 (E1) — le geste que le manuel prescrit pour retirer l'adresse d'un contact
+/// étranger : vider aussi le pays. Un contact porteur d'une adresse en « FR », renvoyé avec
+/// le seul pays « CH » (le repli de l'écran pour un pays vidé) ou sans pays, ressort **sans**
+/// adresse : `address_country` relu `NULL`. Filet : ne rougit sous aucune mutation de la story.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn a_foreign_address_is_removed_by_clearing_the_country_1342(pool: MySqlPool) {
+    let (app, token, _) = setup(&pool).await;
+    for (i, pays) in [Some("CH"), None].into_iter().enumerate() {
+        let nom = format!("Retrait FR {i}");
+        let (st, created) = send(
+            &app,
+            &token,
+            "POST",
+            "/api/v1/contacts",
+            json!({ "contactType": "Entreprise", "name": nom, "isClient": true,
+                    "addressStructured": address("FR") }),
+        )
+        .await;
+        assert_eq!(st, 201, "{created}");
+        let id = created["id"].as_i64().unwrap();
+        assert_eq!(stored_country(&pool, id).await.as_deref(), Some("FR"));
+        let (st, after) = send(
+            &app,
+            &token,
+            "PUT",
+            &format!("/api/v1/contacts/{id}"),
+            json!({ "contactType": "Entreprise", "name": nom, "isClient": true,
+                    "addressStructured": pays_seul(pays), "version": created["version"] }),
+        )
+        .await;
+        assert_eq!(st, 200, "{pays:?} : {after}");
+        assert_eq!(stored_country(&pool, id).await, None, "{pays:?}");
+        assert_eq!(
+            after["addressStructured"],
+            json!({ "street": "", "building": "", "postalCode": "", "city": "",
+                    "country": null }),
+            "{pays:?} : adresse retirée"
+        );
+    }
+}

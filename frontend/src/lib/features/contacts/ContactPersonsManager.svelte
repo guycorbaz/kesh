@@ -6,6 +6,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Button } from '$lib/components/ui/button';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
+	import { errorMessageOf } from '$lib/shared/utils/error-message';
 	import {
 		listContactPersons,
 		createContactPerson,
@@ -66,8 +67,14 @@
 			addEmail = '';
 			addPhone = '';
 			await load();
-		} catch {
-			error = i18nMsg('contact-persons-add-error', "Impossible d'ajouter la personne");
+		} catch (err) {
+			// #1343 (0.20.0) — le motif du serveur (un prénom fait de caractères invisibles, par
+			// exemple) s'affiche ; le repli ne sert qu'à une erreur qui n'en porte pas de lisible
+			// (`errorMessageOf` : message blanc écarté, erreur hors API journalisée).
+			error = errorMessageOf(
+				err,
+				i18nMsg('contact-persons-add-error', "Impossible d'ajouter la personne")
+			);
 		} finally {
 			adding = false;
 		}

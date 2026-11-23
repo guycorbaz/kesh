@@ -1,6 +1,6 @@
 # Story 48-15 : Troncatures silencieuses — adresse du client, pays du fournisseur, e-mail de la société, prénom et nom, cinq champs du PDF (#1331, #1332, #1333, #1334)
 
-Status: ready-for-dev
+Status: done
 
 *Fiche rédigée le 2026-11-18 (Sonnet 5.5), **découpée de la 48-13 après la validation P2** (V2-2 : la 48-13, élargie à ces sites sur décision de Guy du 2026-11-18 « diminuer le nombre de bugs », touchait neuf modules au grain du domaine ;
 l'orchestrateur a déclaré le signal de splitting au Project Lead et coupé la story). Worktree `kesh-48-13`, branche `story/48-13-avant-la-vraie-facture` pour l'instant (la branche `story/48-15-troncatures-silencieuses` se crée depuis
@@ -144,8 +144,8 @@ Numérotation : **M1 à M19, uniques, un journal chacune** ; le rejeu en E2E d'u
 **Corrigé**
 
 - Contacts : l'adresse d'un client n'est plus coupée en silence quand on colle un texte trop long ; Kesh refuse et dit pourquoi, la saisie reste (refs #1331).
-- Contacts : un prénom ou un nom de plus de 70 caractères est refusé en `400` qui nomme le champ, au lieu d'une erreur générique qui ne le nomme pas ; il en va de même, par l'API, pour un prénom ou un nom seul à l'assistant (refs #1334).
-- Facture fournisseur : le pays d'un fournisseur créé depuis la facture n'est plus coupé à deux caractères (« Suisse » ne devient plus « Su ») ; Kesh refuse et demande un code ISO à deux lettres (refs #1332).
+- Contacts : un prénom ou un nom de plus de 70 caractères n'est plus coupé à la saisie : il est refusé avec un message qui nomme le champ (par l'API et depuis une facture fournisseur, il revenait jusqu'ici en erreur générique qui ne le nommait pas) ; il en va de même, par l'API, pour un prénom ou un nom seul à l'assistant (refs #1334).
+- Facture fournisseur : le pays d'un fournisseur créé depuis la facture n'est plus coupé à deux caractères (« Suisse » ne devient plus « Su ») ; avec un NPA et une localité, Kesh refuse et demande un code ISO à deux lettres (un pays saisi seul : #1342) (refs #1332).
 - Paramètres → Organisation : l'e-mail de la société est borné à 320 caractères côté serveur, avec un refus explicite, et n'est plus coupé à la saisie (refs #1333).
 - Contacts et articles : la raison sociale, le numéro de client, les conditions de paiement, le délai de paiement et le nom d'un article ne sont plus coupés en silence ; Kesh refuse et dit pourquoi (sans issue propre : champs qui finissent sur le PDF, admis dans la story par la décision de Guy du 2026-11-18, « diminuer le nombre de bugs »).
 
@@ -176,7 +176,202 @@ La story touche **sept modules au grain du domaine** (liste en Dev Notes), au-de
 
 ## Dev Agent Record
 
-*(vide — rempli au développement)*
+*Agent de développement : Opus 5.5, 2026-11-18 et 2026-11-19, en autonomie. Worktree `/home/gcorbaz/devel/kesh-48-15`, branche
+`story/48-15-troncatures-silencieuses`, partie de `epic/48-corrections-0-20-0` = `45eb99ddd`. Clé `e4815`, port 3415. Journaux :
+`/home/gcorbaz/devel/kesh-gate-logs/e4815/`. Registre : `e0200-choix-autonomes-e4815.md` (C-e4815-1 à 4).*
+
+### Commits de code
+
+| Commit | Contenu |
+|---|---|
+| `846746fbb` | lot A : `PERSON_NAME_PART_MAX` (`helpers.rs`), prénom et nom bornés dans `validate_common` et `set_coordinates`, e-mail de la société borné (clé ×4), `MAX_EMAIL_LEN` en `pub(crate)` ; tests AC1, AC2, AC3, AC4 (route), AC7 (route), AC9 |
+| `865e54132` | lot B : retrait des `maxlength` (contacts : 11 champs — prénom, nom, raison sociale, rue, numéro, NPA, localité, pays, numéro de client, délai, conditions ; « 12 » écrit d'abord, corrigé à la revue P1, A4 ; fournisseur neuf : pays ; réglages : e-mail ; articles : nom) ; motif sous le champ (C-e4815-4) ; Vitest AC4, AC6, AC7, AC8 ; E2E AC5 ; manuel `.tex` ; registre |
+| `81cd199fd` | lot B : retrait d'un doublon sur la page des articles (le motif s'y affichait déjà), vu à la recette visuelle ; registre corrigé |
+| `867be3a79` | lot B : l'E2E de l'AC5 vise `data-testid="contact-form-submit"` et `contact-form-error` (ajoutés à la page des contacts), non des libellés : la garde KF-043 (`e2e-selecteurs-traduits.test.ts`) avait rougi au `test:unit` complet (`front-test-unit-review.log` : `contacts.spec.ts :: Enregistrer`, `contacts.spec.ts :: adresse : le champ rue dépasse 70 caractères (71)`) |
+
+Le lot B n'est venu qu'après le lot A, vert et commité (borne serveur avant retrait de l'attribut, garde-fou de la dérogation).
+
+### Rouges d'abord
+
+- **Rust** (`rouge-rust.log`, commit `45eb99ddd` + tests seuls) : 12 tests, **7 rouges** — `company_email_is_bounded_at_320_by_the_route`,
+  `a_71_character_first_name_is_refused_and_named`, `a_71_character_last_name_is_refused_and_named`,
+  `a_100_plus_100_person_is_refused_by_the_route`, `put_refuses_a_71_character_first_or_last_name`,
+  `coordinates_rejects_a_lone_71_character_first_name_1334`, `coordinates_rejects_a_lone_71_character_last_name_1334` — **tous** pour
+  la raison attendue : `left: "DATA_LENGTH_OR_RANGE"`, `right: "VALIDATION_ERROR"`. Les 5 verts sont les filets déclarés (70 + 70,
+  rue 71, champs du PDF, prénom seul 70, nom seul 70).
+- **Vitest** (`rouge-vitest.log`, commit `846746fbb` + tests du lot B) : 150 tests, **17 rouges** — les quatorze « `<champ>` : aucun
+  `maxlength` » (`expected true to be false`), et les trois motifs absents (délai, raison sociale, nom d'article ; ce dernier retiré
+  ensuite, C-e4815-4). Verts dès avant : les parcours « part entier, refus affiché, saisie gardée » (rue 71, prénom 71, « Suisse »,
+  e-mail 321) — **filets** : dans jsdom un `maxlength` ne contraint pas une valeur posée par programme ; c'est l'assertion d'absence
+  qui porte le rouge, et l'E2E (AC5) qui le montre dans un navigateur.
+
+### Mutations (M1 à M19, une par journal, `mut/`)
+
+Code commité avant la première mutation ; motif vérifié **unique** avant remplacement ; restauration par `git restore --worktree`
+puis `touch` ; « `== restauré` » dans chacun des 19 journaux. Scripts : `mut/mut-rust-4815.sh`, `mut/mut-front-4815.sh`,
+`mut/e2e-m6.sh`.
+
+| Mutation | Geste | Tuée par |
+|---|---|---|
+| M1 | borne de l'e-mail neutralisée (`if false`) | `company_email_is_bounded_at_320_by_the_route` (`DATA_LENGTH_OR_RANGE` lu) |
+| M2 | borne du prénom retirée (`validate_common`) | `a_71_character_first_name_is_refused_and_named`, `a_100_plus_100_…`, `put_refuses_…` |
+| M3 | borne du nom retirée (`validate_common`) | `a_71_character_last_name_is_refused_and_named`, `put_refuses_…` |
+| M4 | borne du prénom retirée (`set_coordinates`) | `coordinates_rejects_a_lone_71_character_first_name_1334` |
+| M5 | borne du nom retirée (`set_coordinates`) | `coordinates_rejects_a_lone_71_character_last_name_1334` |
+| M6 à M10 | `maxlength` remis : rue (70), numéro (16), NPA (16), localité (35), pays (2) | « rue / numéro / NPA / localité / pays : aucun maxlength » (un `it` chacune, 1 rouge sur 51) |
+| M11 | `maxlength="2"` remis, pays du fournisseur | « pays : aucun maxlength » (`SupplierCreatePanel.test.ts`) |
+| M12 | `maxlength={255}` remis, nom d'article | « nom de l'article : aucun maxlength » ; rejouée au commit `81cd199fd` (`mut-m12.log`) |
+| M13 à M16 | numéro de client (50), conditions (100), raison sociale (255), délai (3) | leur « … : aucun maxlength » |
+| M17, M18 | prénom (70), nom (70) | « prénom : aucun maxlength », « nom de famille : aucun maxlength » |
+| M19 | `maxlength={320}` remis, e-mail de la société | « e-mail de la société : aucun maxlength » (1 rouge sur 90) |
+| M6 en E2E | `maxlength={70}` remis, frontend reconstruit | `e2e-m6.log.e2e` : « une rue de 71 caractères collée… » rouge, `Received` = 70 « R » (`page.fill` respecte l'attribut comme un collage) ; frontend reconstruit restauré. Joué au commit `865e54132`, **rejoué** au commit `867be3a79` (sélecteurs changés) : le journal est celui du rejeu, le premier a été écrasé (même rouge, même raison, relevé ici) |
+
+Filets déclarés (ne rougissent sans aucune mutation de la story) : rue 71 par la route, conditions 101, raison sociale 256, délai
+1000 (refus existants), 70 + 70, prénom ou nom seul de 70, e-mail de 320 réenregistré (AC9), AC10 ; et (revue P1, A5)
+`products-page.test.ts` « un nom de 256 caractères collé est refusé en le disant… », non-régression du motif **existant** de la
+page des articles — rouge au premier passage (`rouge-vitest.log`) parce qu'il cherchait un `data-testid` retiré depuis, il ne
+rougit plus sous aucune mutation de la story.
+
+### Tests ajoutés (recomptés depuis `git diff origin/epic/48-corrections-0-20-0...HEAD`)
+
+- Rust, `#[sqlx::test]` : **12** — `companies_e2e.rs` 1, `onboarding_path_b_e2e.rs` 4, `contact_field_lengths_e2e.rs` (nouveau) 7.
+- Vitest : **21 exécutés** — `contacts-page.test.ts` 7 `it(` écrits, dont 3 dans des boucles (5 + 4 + 2 champs) : 15 exécutés ;
+  `products-page.test.ts` 2 ; `settings-page.test.ts` 2 (et le test AC4 de la 48-13, retitré, sans son assertion de présence :
+  C-e4815-1) ; `SupplierCreatePanel.test.ts` 2.
+- Playwright : **1** (`contacts.spec.ts`, AC5).
+
+### Gates, tels qu'ils ont tourné
+
+| Gate | Commit | Journal | Résultat |
+|---|---|---|---|
+| `cargo fmt --check` | `846746fbb` (avant commit) | `fmt-lotA.log` | vert |
+| `cargo clippy --workspace --all-targets -D warnings` | lot A, avant commit | `clippy-lotA.log` | vert |
+| nextest ciblé (binaires de la fiche + `kesh-i18n`) | lot A, avant commit | `cible-rust-lotA.log` | 852 / 852 |
+| Vitest ciblé (4 fichiers) | lot B, avant commit | `vert-vitest-cible.log` | 150 / 150 |
+| Vitest des articles | `81cd199fd` (avant commit) | `vert-vitest-products.log` | 6 / 6 |
+| E2E ciblé `contacts.spec.ts` | `865e54132` | `e2e-contacts.log` | 9 verts, 2 ignorés (`test.skip` de longue date), port libéré |
+| `scripts/test-fast.sh --ci` (base `kesh_e4815` remise à neuf) | `81cd199fd` | `test-fast-ci-review.log` | **6152 / 6152**, 14 ignorés |
+| `scripts/gate-ci.sh kesh_ci_e4815` | `81cd199fd` | `gate-ci-review.log` | **6169 passés, 0 échoué**, 18 ignorés |
+| frontend complet, première prise | `81cd199fd` | `front-{check,lint-i18n-ownership,test-unit,build}-review.log` | `check`, `lint`, `build` verts ; `test:unit` **1 rouge / 4646** (garde KF-043, corrigé par `867be3a79`) |
+| Vitest de la garde et de la page des contacts | `867be3a79` (avant commit) | `vert-vitest-garde.log` | 54 / 54 |
+| frontend complet, seconde prise | `867be3a79` | `front-{check,lint-i18n-ownership,test-unit,build}-review2.log` | `check` 0 erreur (29 avertissements, les mêmes qu'à la clôture de la 48-13, aucun dans un fichier de la story) ; `lint-i18n-ownership` vert ; `test:unit` **4646 / 4646** (278 fichiers) ; `build` vert |
+| E2E ciblé `contacts.spec.ts`, seconde prise | `867be3a79` | `e2e-contacts2.log` | 9 verts, 2 ignorés, port libéré |
+| `scripts/gate-ci.sh kesh_ci_e4815`, seconde prise | `867be3a79` | `gate-ci-review2.log` | **6169 passés, 0 échoué**, 18 ignorés |
+
+`867be3a79` ne touche que l'écran des contacts (deux `data-testid`) et la spec E2E. `test-fast --ci` n'est **pas** rejoué à ce
+commit (joué à `81cd199fd`) ; `gate-ci`, qui couvre les mêmes binaires un processus par binaire, l'est (des tests Rust lisent des
+sources du frontend). **Non lancés** : l'E2E complet et le `gate-ci` de clôture (à la clôture, après la revue, `e35-dev-commun.md`).
+
+### Recette visuelle (AC12)
+
+Thème clair, base jetable `kesh_e2e_e4815`, données factices, `captures-4815.sh` / `captures-4815.mjs` (`captures.log`), frontend du
+commit `81cd199fd` : `captures/01-contact-rue-71-non-coupee.png` (1), `02-contact-rue-refus-saisie-gardee.png` (2),
+`03-fournisseur-pays-suisse-refuse.png` (3, NPA et localité renseignés), `04-societe-email-321-refuse.png` (4),
+`05a-contact-prenom-71-saisie-gardee.png` et `05b-contact-prenom-71-refus-nomme.png` (5), `06-contact-delai-1000-refuse.png` (6),
+`07-contact-raison-sociale-256-motif.png` et `08-article-nom-256-motif.png` (C-e4815-4 et son pendant existant). Le script vérifie,
+avant chaque prise, que la valeur du champ est **entière** (`exiger`). `05-contact-prenom-71-refus-nomme.png` est une prise périmée
+(le refus hors du cadre), remplacée par 05a et 05b, laissée faute de `rm`.
+
+### AC10 — factures réelles
+
+`git diff origin/epic/48-corrections-0-20-0...HEAD --stat -- crates/kesh-api/src/routes/invoice_pdf_service.rs crates/kesh-qrbill crates/kesh-report 'frontend/src/routes/(app)/invoices' frontend/src/lib/components/invoices`
+: **sortie vide** (rc 0), relevé aux commits `81cd199fd` et `867be3a79` (`...867be3a79`, branche d'épique à `45eb99ddd`). Les tests PDF existants passent sans modification (`test-fast-ci-review.log`).
+Le seul geste sur une donnée est un refus au-delà de la colonne : AC9.
+
+### AC9 — aucune donnée existante refusée
+
+Bornes neuves = colonnes, lues au schéma : `contacts.first_name`/`last_name` et `companies.first_name`/`last_name` `VARCHAR(70)`
+(`20260705000002_person_names.sql:11-12`, `:15-16`), `companies.email` `VARCHAR(320)` (`20260709000003_companies_email.sql:9`). Les
+valeurs enregistrées sont rognées (`clean`, `trim`), et le contrôle compte en caractères (`chars().count()`), comme `VARCHAR` en
+`utf8mb4` : une valeur en base ne peut dépasser sa borne. Les routes qui recopient l'état de la société (`companies.rs`, adresse,
+coordonnées, nom) ne passent pas par les bornes neuves. Tests : `a_70_plus_70_person_is_accepted_and_saves_again_unchanged` (PUT du
+même contact → 200), `company_email_is_bounded_at_320_by_the_route` (e-mail de 320 réenregistré → 200),
+`coordinates_accept_a_lone_70_character_{first,last}_name_1334`.
+
+### AC11 — compteurs, gardes, manuel
+
+- `sitesTotal` (`frontend/src/lib/shared/i18n-keys.test.ts:1153`, 3495) **inchangé** : aucune clé d'écran neuve, et les deux appels
+  `i18nMsg` de `contacts/+page.svelte` (C-e4815-4) se sont déplacés, non multipliés ; vert au `test:unit` complet.
+- Clé `error-company-email-too-long` aux quatre catalogues, juste après `error-company-website-too-long` (fr-CH, de-CH, it-CH,
+  en-CH) ; gardes de catalogue vertes (`test-fast-ci-review.log`).
+- Manuel, avant (`45eb99ddd`) : `sed -n '1350p;1353p'` rendait « \item \textbf{Nom} : raison sociale pour une entreprise ;
+  \textbf{prénom et nom} pour une personne. » et l'item « Adresse structurée » sans longueur ; `git grep -n "320 caract"` : vide.
+  Après : l'item « Nom » dit « Le prénom et le nom comptent 70 caractères au plus chacun~: plus longs, ils sont \textbf{refusés,
+  jamais coupés}, et le message nomme le champ. » ; l'item « Adresse structurée » dit les quatre longueurs ; `git grep -n "320 caract"`
+  rend la ligne 1516 (e-mail de la société). `.tex` seul ; PDF à la release.
+
+### Constats hors périmètre (issues demandées à l'orchestrateur)
+
+- **La clé `error-data-length-or-range` n'existe dans aucun catalogue** : `t()` rend alors la clé brute (`errors.rs:76-81`,
+  `bundle.format(locale, key, None)`), si bien qu'en production le refus générique de MariaDB s'affiche « error-data-length-or-range »
+  (vu dans `rouge-rust.log` : `{"error":{"code":"DATA_LENGTH_OR_RANGE","message":"error-data-length-or-range"}}` quand l'i18n est
+  initialisée, comme en production). Ouverte par l'orchestrateur : **#1348**.
+- #1342 (pays saisi seul jeté sans refus) : déjà ouverte, citée par la fiche.
+- Revue P2, L1 : les états du bouton grisé encore sans motif visible sur le formulaire des contacts, **antérieurs à la story**
+  (aucun n'est ouvert par elle) : **#1349**, ouverte par l'orchestrateur.
+- Revue P2, L2 — **limite négligeable assumée** : le `trim()` de JavaScript et celui de Rust (`str::trim`, espaces blancs Unicode)
+  ne couvrent pas exactement les mêmes caractères (U+FEFF est retiré par JavaScript et non par Rust ; U+0085 l'inverse). À la
+  borne exacte, une valeur entourée de ces seuls caractères peut être comptée d'un caractère de différence entre l'écran et le
+  serveur ; le serveur décide toujours, et son refus s'affiche. Sans issue.
+- La description d'un article (`maxlength={1000}`) ne passe pas sur la facture (`InvoiceForm.svelte` ne recopie que `p.name`) :
+  hors PDF, reste à #1340.
+
+### Décalages relevés à l'étape 0 (fiche écrite sur `773df80da`, code lu à `45eb99ddd`)
+
+- `onboarding.rs` : la lecture du prénom et du nom est à `:531-535` (`let (first_name, last_name) = (clean(&body.first_name),
+  clean(&body.last_name));`), suivie du contrôle du nom composé de la 48-13 (`validate_company_name_for_qr`, `:543`).
+- `settings/+page.svelte` : le `maxlength={320}` de l'e-mail est à `:911` (fiche : `:906`).
+- `contacts.rs` : `validate_common` commence à `:356` ; la ligne citée `:396` (`if trimmed_name.chars().count() > MAX_NAME_LEN {`)
+  est juste.
+- **V4-2 démentie par le code** : la 48-13 **a écrit** une assertion de présence (`settings-page.test.ts:1573-1574`,
+  `expect(getByTestId('settings-company-email-input').getAttribute('maxlength')).toBe('320');`) ; traitée par C-e4815-1.
+- **Prémisse de l'AC7 (écran du délai) démentie** : le message « entre 0 et 365 jours » ne s'affichait pas, le bouton se désactivant
+  avant toute soumission (`contacts/+page.svelte:1132`) ; traitée par C-e4815-4.
+
+### Remédiation de la revue P1 (commit `3aaefa33c`)
+
+Décisions de l'orchestrateur du 2026-11-19, toutes dans la story. Rapports : `kesh-gate-logs/e4815/review-p1-{B,E,A}.md`.
+
+| Finding | Remède |
+|---|---|
+| B1 = E1 = A1 (MEDIUM) | la raison sociale ne se juge qu'en type « Entreprise » (`formContactType === 'Entreprise' && …`) ; amendement de C-e4815-4 ; test de la bascule |
+| B2, E2 | longueur comptée en caractères (`[...formName.trim()].length`), contacts et articles ; tests avec 60 caractères hors BMP |
+| B4, E3 | tests aux bornes multi-octets et entourés de blancs : `multibyte_and_padded_names_are_counted_in_characters_after_trimming` (contacts), `company_email_bound_counts_characters_after_trimming` (société), `coordinates_count_a_lone_first_name_in_characters_after_trimming_1334` (assistant) |
+| B5, E5 | délai : chiffres seulement (`/^\d+$/` avant `Number`) ; tests « 0x1E », « 3e2 », « abc », « 30.0 », « -1 » |
+| B3, E6 | l'E2E neuf archive son contact dans un `finally`, par l'API (`PUT /api/v1/contacts/{id}/archive`) |
+| E4 | états du motif : ramené à 255, délai vidé, bascule, ouverture d'une fiche existante (et les cinq écritures du délai) |
+| A2, A3 | Note de version corrigée (pays : refus avec NPA et localité, #1342 ; prénom et nom : coupés à l'écran, erreur générique seulement par l'API et le panneau fournisseur) |
+| A4 | « 11 champs » (recompte du diff) |
+| A5 | `products-page.test.ts` « un nom de 256… » déclaré filet |
+| A6 | AC4 et AC8 lisent `[data-testid="contact-form-error"]`, non le `body` |
+
+**Tests ajoutés** (recomptés depuis `git diff 867be3a79 3aaefa33c`) : Rust `#[sqlx::test]` **3** (un par fichier) ; Vitest
+**11 exécutés** — `contacts-page.test.ts` 6 `it(` écrits, dont un dans une boucle de 5 écritures du délai, soit 10 exécutés ;
+`products-page.test.ts` 1 — plus 2 tests existants (AC4, AC8) dont l'assertion change.
+
+**Mutations neuves** (journaux `mut/mut-m20.log` … `mut-m25.log`, « restauré » dans chacun) :
+
+| Mutation | Geste | Tuée par |
+|---|---|---|
+| M20 | `e.chars().count()` → `e.len()` (`update_company_email`) | `company_email_bound_counts_characters_after_trimming` |
+| M21 | `value.chars().count()` → `value.len()` (`helpers.rs`, `exceeds_len`) | `multibyte_and_padded_names_are_counted_in_characters_after_trimming`, `coordinates_count_a_lone_first_name_in_characters_after_trimming_1334` |
+| M22 | garde `formContactType === 'Entreprise' &&` retirée | « bascule vers « Personne » après une raison sociale de 256 … » |
+| M23 | `[...formName.trim()].length` → `formName.trim().length` (contacts) | « raison sociale : compte en caractères, non en unités UTF-16 … » |
+| M24 | idem (articles) | « le nom se compte en caractères, non en unités UTF-16 … » |
+| M25 | `/^\d+$/` remplacé par l'ancien `Number.isInteger` | « délai « 0x1E » », « délai « 3e2 » », « délai « 30.0 » » (3 rouges) |
+
+**Gate ciblé de la remédiation** (`e35-dev-commun.md` : pas de `gate-ci` ni d'E2E à la remédiation) :
+
+| Gate | Journal | Résultat |
+|---|---|---|
+| Vitest (contacts, articles, garde KF-043, `i18n-keys`) | `remed-p1-vitest.log` | 82 / 82 |
+| `npm run check` | `remed-p1-check.log` | 0 erreur, 29 avertissements (les mêmes) |
+| `cargo fmt --check` | `remed-p1-fmt.log` | vert |
+| `cargo clippy --workspace --all-targets -D warnings` | `remed-p1-clippy.log` | vert |
+| nextest `companies_e2e`, `contact_field_lengths_e2e`, `onboarding_path_b_e2e` | `remed-p1-nextest.log` | 45 / 45 |
+
+**Non lancés** : `test-fast --ci`, frontend complet, l'E2E (dont `contacts.spec.ts`, réécrit avec son `finally`) et `gate-ci` :
+à la passe ciblée puis à la clôture.
 
 ## Change Log
 
@@ -185,3 +380,53 @@ La story touche **sept modules au grain du domaine** (liste en Dev Notes), au-de
 - **2026-11-18 — dérogation à la règle de splitting** (décision de Guy, Project Lead, 2026-11-18) : la 48-15 reste une story unique, sept domaines, un même geste mécanique en deux lots ordonnés (A serveur, B écrans) ; section `Dérogation règle de splitting` écrite, proposition 48-15a / 48-15b retirée. Sites hors périmètre rattachés à leurs issues : ContactPersonsManager #1335, e-mail et téléphone des contacts #1336, projets #1337, rapprochement #1338, profils d'import bancaire #1339, divers #1340, comptes bancaires #1005 (existante).
 - **2026-11-18 — validation, première passe sur cette fiche** (« P3 » du dossier, Opus 5.5 ; `kesh-gate-logs/e4813/validation-48-15-p3.md`) : 0 / 0 / **4 MEDIUM** / **11 LOW**, remédiés. V3-1 : la raison sociale perd son `maxlength` (D4 réécrit : un `maxlength` égal à la borne coupe quand même un texte collé). V3-2 : le délai de paiement (`:1086`) entre dans la story ; **les « trois champs du PDF » deviennent cinq**. V3-3 : sonde positive avant chaque assertion d'absence, une mutation par champ (M1 à M19), prénom et nom séparés, rejeux E2E à journal propre. V3-4 : kickoff à jour depuis `cd823aacb`, huitième story citée. V3-5 : fichiers communs avec la 48-10 et la 48-12. V3-6 : l'assertion de présence de la 48-13 est remplacée par l'assertion d'absence (AC8). V3-7 : `onboarding:814` à #1005. V3-8 : issues hors périmètre **une par écran**, choix de l'orchestrateur. V3-9 : recherche de #1334 partie du symptôme, sortie copiée, `:175`/`:179`. V3-10 : fichiers et binaires de test nommés (`contact_field_lengths_e2e.rs`). V3-11 : message de D3 en français seul, déclaré. V3-12 : une puce de Note de version par issue. V3-13 : manuel `:1350` (prénom et nom, 70 caractères). V3-14 : DRY limité aux deux sites de la story, `contact_persons.rs` tracé par #1335. V3-15 : la dérogation cite sa source et dit qu'elle sort du critère du `CLAUDE.md`.
 - **2026-11-18 — validation terminée.** Lignée : fiche née de la 48-13 après sa P2 (découpe, signal de splitting déclaré au Project Lead) ; **P3 Opus 0/0/4/11 → remédiée → P4 Sonnet 0/0/0/9** (tendance des findings au-dessus de LOW : 4 MEDIUM puis aucun). Modèles : Opus, Sonnet. Dérogation à la règle de splitting : décision de Guy du 2026-11-18, motif hors critère du `CLAUDE.md`, écrit en section. **Les neuf LOW de la P4 (V4-1 à V4-9) sont corrigés après la dernière passe, dans le texte de la fiche seulement** : NPA et localité exigés aux AC5, AC6 et à la recette (le pays saisi seul : #1342, hors périmètre) ; assertion d'absence de l'e-mail écrite par la 48-15 ; `git diff` à trois points ; un `it` par champ et état du formulaire dits ; M1 lit `error.code` ; délai déjà testé (`contact_payment_terms_e2e.rs:364`) ; contrôle du manuel par `sed -n` ; ordre de lancement et ordre de sortie distingués ; prénom seul de 70 à l'AC3. Rapport : `kesh-gate-logs/e4813/validation-48-15-p4.md`. Statut : `ready-for-dev`.
+- **2026-11-18 — étape 0 du développement** (Opus 5.5 ; code lu à `45eb99ddd`, la 48-13 fusionnée). Les neuf LOW de la P4 sont déjà
+  dans le texte ; leurs prémisses relues au code. Trois lignes citées : `onboarding.rs:531` `let (first_name, last_name) =
+  (clean(&body.first_name), clean(&body.last_name));` (fiche : `:526-541` à `773df80da`), suivie de
+  `validate_company_name_for_qr` de la 48-13 ; `settings/+page.svelte:911` `maxlength={320}` (fiche : `:906`) ; `contacts.rs:396`
+  `if trimmed_name.chars().count() > MAX_NAME_LEN {` (juste). Noms de fichiers confirmés : `frontend/tests/e2e/contacts.spec.ts` (D6),
+  `contact_field_lengths_e2e.rs` (AC2, nouveau), `contacts-page.test.ts` (AC4), `products-page.test.ts`, `settings-page.test.ts`,
+  `SupplierCreatePanel.test.ts`. **Deux prémisses démenties** : V4-2 (la 48-13 a bien écrit une assertion de présence,
+  `settings-page.test.ts:1573-1574` ; C-e4815-1) ; AC7 « écran du délai » (le motif ne s'affichait pas, bouton désactivé avant toute
+  soumission, `contacts/+page.svelte:1132` ; C-e4815-4). Aucune migration requise.
+- **2026-11-19 — développement terminé, statut `review`** (Opus 5.5). Commits de code `846746fbb` (lot A), `865e54132` (lot B),
+  `81cd199fd` (doublon de la page des articles retiré, vu à la recette), `867be3a79` (E2E sur `data-testid`, après un rouge de la garde
+  KF-043 au `test:unit` complet). Rouges d'abord : 7 Rust, 17 Vitest ; mutations M1 à M19 tuées, M6 rejouée en E2E. Gates du passage
+  en `review` : `test-fast --ci` 6152 / 6152 (`81cd199fd`), `gate-ci` 6169 / 0 (`81cd199fd`) puis rejoué à `867be3a79`, frontend
+  complet vert à `867be3a79` (4646 / 4646) ; E2E ciblé `contacts.spec.ts` vert. **Pas d'E2E complet** (clôture). Choix C-e4815-1 à 4.
+  Constat hors périmètre : `error-data-length-or-range` absente des catalogues (issue demandée). Détail : Dev Agent Record.
+- **2026-11-19 — revue de code P1, trois lentilles en contexte frais (Opus ×3 : B, E, A)** : B 0/0/1/4, E 0/0/1/5, A 0/0/1/5 ;
+  le MEDIUM est le même finding vu par les trois (B1 = E1 = A1) ; après dédoublonnage **0 / 0 / 3 / 14** (CRITICAL / HIGH / MEDIUM /
+  LOW, décompte de l'orchestrateur). Tous traités dans la story (décisions de l'orchestrateur) au commit `3aaefa33c` : refus muet à
+  la bascule Entreprise → Personne (C-e4815-4 amendé), comptage en caractères à l'écran, délai en chiffres, tests aux bornes
+  multi-octets et entourés de blancs, E2E qui archive dans un `finally`, états du motif, Note de version et Dev Agent Record corrigés,
+  AC4/AC8 sur `contact-form-error`, test des articles déclaré filet. Mutations neuves M20 à M25, toutes tuées. Gate ciblé vert
+  (Vitest 82 / 82, `check`, `fmt`, `clippy`, nextest 45 / 45). Aucun reclassement. Suite : passe ciblée de l'orchestrateur sur
+  `3aaefa33c`. Détail : Dev Agent Record, « Remédiation de la revue P1 ».
+- **2026-11-19 — revue de code P2, passe complète en contexte frais (Sonnet ; `kesh-gate-logs/e4815/review-p2.md`, prompt
+  `review-p2-prompt.md`)** : **0 / 0 / 0 / 2** — **boucle de revue terminée**. L1 (boutons grisés sans motif, antérieurs à la story)
+  : **#1349** ; L2 (`trim` de JavaScript et de Rust) : limite négligeable assumée, écrite au Dev Agent Record. Constat de
+  développement : **#1348** (clé `error-data-length-or-range` absente des catalogues). La description d'article ne passe pas sur la
+  facture : #1340.
+- **2026-11-19 — clôture, statut `done`** (Opus 5.5). **Change Log final de la boucle de revue** : P1 trois lentilles (Opus ×3 :
+  B, E, A) **0/0/3/14** (un MEDIUM vu trois fois, dédoublonné par l'orchestrateur) → remédiation `3aaefa33c` (MEDIUM et quatorze LOW
+  traités dans la story ; mutations M20 à M25) → P2 complète (Sonnet) **0/0/0/2**. Tendance au-dessus de LOW : 3 puis 0. Modèles
+  alternés : Opus, puis Sonnet. Aucun reclassement. Gates de clôture au dernier commit de code `3aaefa33c` (HEAD `6349030f1`, qui
+  ne porte en plus que la fiche ; bases `kesh_e4815`, `kesh_e2e_e4815` et `kesh_ci_e4815` remises à neuf ; enchaînement
+  `cloture-4815.sh`, `cloture.log`) :
+
+  | Gate | Journal | Résultat |
+  |---|---|---|
+  | `scripts/test-fast.sh --ci` | `test-fast-ci-cloture.log` | **6155 / 6155**, 14 ignorés |
+  | `scripts/gate-ci.sh kesh_ci_e4815` | `gate-ci-cloture.log` | **6172 passés, 0 échoué**, 18 ignorés |
+  | `npm run check` | `front-check-cloture.log` | 0 erreur, 29 avertissements (les mêmes, aucun dans un fichier de la story) |
+  | `npm run lint-i18n-ownership` | `front-lint-i18n-ownership-cloture.log` | vert |
+  | `npm run test:unit` | `front-test-unit-cloture.log` | **4657 / 4657** |
+  | `npm run build` | `front-build-cloture.log` | vert |
+  | **E2E complet** (`docs/testing.md`, `KESH_COOKIE_SECURE=false`, base `kesh_e2e_e4815` recréée, dossiers `/tmp/kesh-e2e-e4815/cloture/`) | `e2e-complet-cloture.log` (+ `.backend`) | **484 verts, 7 échecs, 18 ignorés** ; port 3415 libéré |
+
+  **Les 7 échecs, jugés un par un** contre `docs/testing.md` § *Les échecs attendus* : `mode-expert.spec.ts:26`, `:41`,
+  `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150` — **exactement les sept de la KF-029 (#97)** ; aucun
+  échec de pollution, aucun autre. Le test neuf (`contacts.spec.ts:197`, AC5) est vert. Le rouge connu
+  `disque_sature_pendant_l_ecriture` (KF-063, #1261) ne s'est pas produit au `gate-ci` : pas de rejeu. Statut : **`done`**
+  (`sprint-status.yaml` : `done`, posé par l'orchestrateur).
