@@ -1,6 +1,6 @@
 # Story 48-12b : Écran — refus de doublon visible, repassage en brouillon et complétion d'un document dont la réponse est perdue
 
-Status: review (développement terminé le 2026-11-20 ; sortie commune avec la 48-12a)
+Status: review (développement terminé le 2026-11-20 ; dernier commit de code de production `cf38f506f`, dernier commit de code de la branche `97e88541b` (test seul) ; revues P1 et P2 remédiées, boucle close sur la P2 (0/0/0/6) ; sortie commune avec la 48-12a)
 
 Issues : **#975** (côté écran) et **#985** (complétion d'un document importé annoncée en échec) — `bug`, **P2**. Release 0.20.0, Epic 48. Voie : **frontend**. Pas de migration, aucun code Rust. **Dépend de la 48-12a** (`48-12a-doublons-fournisseurs-serveur.md` : codes `409 SUPPLIER_INVOICE_DUPLICATE` et `409 SUPPLIER_INVOICE_PROBABLE_DUPLICATE`, `details : { supplierInvoiceId, internalNumber, status, confirmable }`, champ `confirmNotDuplicate` — création, `PUT`, complétion et **dévalidation d'une facture annulée** —, audit, et les trois messages `error-supplier-invoice-*`, texte unique partagé avec l'écran) : elle se fusionne **avant**. **Les deux fiches sortent dans la même release : si la 48-12b n'est pas close à la coupure, les deux partent ensemble à la release suivante** ; aucune sortie isolée de la 48-12a. Fiche-mère : `48-12-reponses-perdues-fournisseurs.md`.
 
@@ -244,14 +244,16 @@ de la fiche faux au code. Cinq modules, aucun sixième ; `SupplierCreatePanel.sv
 
 ### Gates
 
-- **Vitest ciblé** pendant le développement, puis **frontend complet** au dernier commit de code `f7280c030` :
+- **Vitest ciblé** pendant le développement, puis **frontend complet** à `f7280c030` (état du passage en `review` ; les
+  gates après les remédiations P1 et P2 sont dans *Remédiation de la revue P1* et *Remédiation de la revue P2*) :
   `npm run check` 0, `lint-i18n-ownership` 0, `test:unit` **281 fichiers / 4839 tests verts**, `build` 0
   (`final-front.log`).
 - **Manuel** — `make user` puis texte aplati (`controle-pdf-12b.log`) : « Ce n’est pas un doublon » 2, « n’a pas été
   enregistrée » 1, « qu’elle correspond à votre saisie » 1, « Repasser en brouillon malgré tout » 2, « Modifier la saisie » 2,
   « reprendre la saisie » 3 ; négatifs « relit pas encore » 0, « document traité entre-temps dans une autre session » 0.
   PDF restauré (`git restore`), non commité.
-- **gate-ci** au dernier commit de code `f7280c030`, bases `kesh_e4812` et `kesh_e2e_e4812` remises à neuf avant :
+- **gate-ci** à `f7280c030` (La 48-12b ne touche aucun code Rust ; le gate Rust après la remédiation P1 de la 48-12a est dans
+  la fiche de la 48-12a, § *Gates*), bases `kesh_e4812` et `kesh_e2e_e4812` remises à neuf avant :
   `scripts/gate-ci.sh kesh_ci_e4812` → **6202 passés, 0 échoué, 18 ignorés**, code 0 (`final-gate-ci.log`). La 48-12b ne
   touche aucun code Rust.
 - `f35c56925` ne touche qu'une spec E2E : gate-ci (`f7280c030`) non rejoué (aucun Rust ni code de `src/`) ; `npm run check`
@@ -298,7 +300,30 @@ par vérité), B27 (deux chemins de lecture illisible).
   les **deux** itérations, E6 comprise) : **6 jouées, 6 tuées**. Le premier passage de B53 ne compilait pas
   (`B53-premier-passage-ne-compile-pas.log.txt`) : il n'est pas compté ; le script refuse désormais « no tests » comme
   mise à mort. Aucune autre trace de la campagne n'a été tuée par une erreur de compilation (contrôle `no tests` : vide).
-- PREUVES_P1_ICI
+- **Preuves de la remédiation P1** : frontend complet au commit `49df1f985` (qui suit `cf38f506f`), `dev/p1-front.log` : `npm run
+  check` 0, `lint-i18n-ownership` 0, `test:unit` 281 fichiers / **4846 tests passés**, `build` 0. Gate Rust non rejoué à ce
+  moment ; il l'est depuis, voir *Remédiation de la revue P2*. Mutations B48 à B53 : ci-dessus.
+
+### Remédiation de la revue P2 (commit `97e88541b` et fiches)
+
+Revue P2 (Sonnet, `kesh-gate-logs/e4812/review-12b-p2.md`) : **0/0/0/6**, aucun finding au-dessus de LOW. **Le dernier commit de
+code de production de la 48-12b reste `cf38f506f`** ; la remédiation P2 n'y touche pas (un test, une phrase du manuel, les fiches).
+
+- **P2-1** — le marqueur vide est remplacé par les preuves ci-dessus ; « dernier commit de code » corrigé (en-tête et *Gates*).
+- **P2-2** — `sprint-status.yaml` : commentaire à réécrire par l'orchestrateur.
+- **P2-3** — prémisse vraie (`grep` de `listImported` : vide dans `imported-supplier-invoices.api.test.ts`) : deux tests
+  (`listImported` transmet `{ retry: false }` au client ; sans options, `undefined`). Mutation **B54** « `call` non transmis »
+  jouée sur `imported-supplier-invoices.api.ts` (restauration `git restore` puis `touch`, `git status` propre) : **tuée**, les deux
+  tests rougissent (`mut-12b/B54-listimported-sans-call.log`). Total de la 48-12b : 54 jouées, 53 tuées, une vivante (B45).
+- **P2-4** — prémisse vraie (`traité ou retiré` absent du `.tex`) : une demi-phrase au manuel, `user-manual.tex` (aussi le cas
+  « complété sans facture citée »). PDF non régénéré (à la release).
+- **P2-5** — `bg-warning-soft` : jeton non défini, déjà inscrit à la dette **#645** (`jetons-non-definis.test.ts:119`) ; renvoi à
+  #645, aucun changement (le remède « retirer la classe » ajouterait un site à une dette que #645 traite d'un bloc).
+- **P2-6** — sans suite requise (aucun défaut de code, B48 prouve le `fieldset`) ; l'affirmation du message de `cf38f506f` est
+  trop large pour E3, E5, E6 : dite ici.
+- **Gates** (2026-11-23, `97e88541b`) : frontend complet **281 fichiers / 4848 tests passés**, `check` 0 erreur, `lint-i18n-ownership`
+  0, `build` 0 (`dev/p2-front-*.log`) ; `gate-ci` 6203 / 0 / 18 et `test-fast --ci` 6186 / 14 ignorés (fiche de la 48-12a, § *Gates
+  après les remédiations P1 et P2*). E2E à la clôture.
 
 ### Recette visuelle (`/home/gcorbaz/devel/kesh-gate-logs/e4812/dev/captures/`, thème clair, base E2E de démonstration)
 
@@ -366,3 +391,16 @@ cette fiche, `48-12b-doublons-fournisseurs-ecran-review-prompt-p1.md` (neuf).
   trouvé et corrigé (saisie figée d'apparence active, `f7280c030`) ; quinze captures. E2E complet : un défaut de décor induit par
   la 48-12a trouvé et corrigé (`f35c56925`), puis seulement les sept rouges de la KF-029. gate-ci 6202/0/18, frontend complet
   vert. Statut `review` ; prompt de la revue P1 à côté de la fiche.
+- 2026-11-20 — **Revue de code P1 de la 48-12b (Opus, trois lentilles B, E, A ; 0/0/1/13)**, recomptée depuis
+  `review-12b-p1-{A,B,E}.md` : A 0/0/1/6 (A1 MEDIUM, A2 à A7), B 0/0/0/3, E 0/0/0/4. Remédiation `cf38f506f` (dev) : A1 décor complet
+  du gel (E2, E3, E5, E6), A2/E2 test D8, A3 mutation B49, E3 deux `typeof`, B1, B2, B3, A5/E1 manuel, A6 explication du bandeau et
+  **#1414**, A7 titre du test D6, propagation de l'italien ; A4 écart déclaré ; E4 préexistant, #1414. Mutations B48 à B53 (6, toutes
+  tuées). Aucun finding réfuté.
+- 2026-11-23 — **Revue de code P2 de la 48-12b (Sonnet, contexte frais ; 0/0/0/6**, `review-12b-p2.md`). Tendance : P1 0/0/1/13 → P2
+  0/0/0/6 ; **aucun finding au-dessus de LOW : la boucle se clôt sur cette passe**. Sort : **P2-1** marqueur et « dernier commit de
+  code » corrigés ; **P2-2** `sprint-status.yaml` à l'orchestrateur ; **P2-3** test de `listImported` + mutation B54 tuée ;
+  **P2-4** demi-phrase au manuel ; **P2-5** renvoi à la dette **#645** ; **P2-6** sans suite, dit à la fiche. Prémisse relue au code pour
+  chacun, aucun réfuté. **La remédiation ne touche aucun code de production** (un test, une phrase du manuel, les fiches) : la dernière
+  remédiation qui en touchait (`cf38f506f`, deux `typeof` sur un seul module) a été relue par cette P2 sans finding au-dessus de LOW ;
+  **aucune passe ciblée n'est requise**. Gates à `97e88541b` : frontend 281 fichiers / 4848 tests, `gate-ci` 6203 / 0 / 18. Modèles :
+  Opus (P1), Sonnet (P2).

@@ -1,6 +1,6 @@
 # Story 48-12a : Refus serveur des factures fournisseur en double (numéro comparé par année civile)
 
-Status: review (développement terminé le 2026-11-19, dernier commit de code `974bf1c35` ; revue P1 à lancer — prompt `48-12a-doublons-fournisseurs-serveur-review-prompt-p1.md` ; sortie commune avec la 48-12b)
+Status: review (développement terminé le 2026-11-19 ; dernier commit de code Rust `49df1f985` (remédiation P1), dernier commit de code de la branche `97e88541b` (test de la 48-12b) ; revues P1 et P2 remédiées, P3 à lancer — prompt `48-12a-doublons-fournisseurs-serveur-review-prompt-p3.md` ; sortie commune avec la 48-12b)
 
 Issue : **#975** (côté serveur) — `bug`, **P2**. Release 0.20.0, Epic 48. Voie : **base et Rust**. Pas de migration. **La 48-12b (écran, #975 côté écran et #985) dépend de cette fiche, et les deux sortent dans la même release** : si la 48-12b n'est pas close à la coupure, les deux partent ensemble à la release suivante (jamais de sortie isolée de la 48-12a). Fiche-mère : `48-12-reponses-perdues-fournisseurs.md` (inventaire, reports 0.21.0, historique).
 
@@ -282,8 +282,14 @@ Sous `scripts/mem-guard.sh`, une commande lourde à la fois, `flock` du verrou d
 - `c448d2415` — deux lints clippy des tests neufs.
 - `974bf1c35` — `journal_entry_detail_shows_the_document` lit le numéro reçu (le premier `gate-ci` l'a fait rougir : sous
   `cargo test`, un processus par binaire, le compteur de `complete_body` avance d'un test à l'autre, et le littéral `FF-2026-100`
-  ne tenait que sous nextest). **Dernier commit de code de la 48-12a.**
+  ne tenait que sous nextest). Dernier commit de code de la 48-12a **au passage en `review`**.
 - le commit qui suit ne porte que la fiche, `sprint-status.yaml` et le prompt de la revue P1.
+- `49df1f985` — remédiation de la revue P1 : lecture des candidates bornée à l'année civile (`BETWEEN`,
+  `repositories/supplier_invoices.rs`), `payment_text.rs`, italien, tests. **Dernier commit de code Rust de la 48-12a.**
+- `145dda094` — comptes rendus de la revue P1 et prompts de la revue P2 (fiches seules).
+- `97e88541b` — remédiation de la revue P2 : Pattern 5 (cycle des deux repassages), phrase du manuel de la 48-12b, test
+  unitaire de `listImported` (48-12b). **Dernier commit de code de la branche** (test seulement) ; aucun code de production.
+- les commits qui suivent ne portent que cette fiche, celle de la 48-12b, le prompt de la revue P3 et leurs journaux.
 
 ### Étape 0 — citations relues au code de la base
 
@@ -342,8 +348,9 @@ Le code a été écrit avant les tests (écart à « rouge d'abord ») : les tes
 admet — **à cinq exceptions près jusqu'à la revue P1** (A2) : `completion_refuses_a_duplicate_and_keeps_the_document`,
 `concurrent_unvalidation_waits_for_the_supplier_then_refuses`, `put_and_api_key_paths_apply_the_rule`,
 `hors_de_l_ensemble_rien_n_est_retire` et `la_casse_est_ignoree_mais_pas_les_autres_signes` n'étaient rougis par aucune
-mutation ; la remédiation les rougit (N01 à N07, ci-dessous). Script versionné `mut-12a/muter.py` (motif vérifié unique ; restauration `git restore --worktree` puis `touch`) ; journaux
-`mut-12a/M*.log`, `mut-12a/resume.log`, `mut-12a/resume-2.log`. **38 mutations, 38 tuées**, chacune par le test qu'elle vise
+mutation ; la remédiation les rougit (N01 à N07, tableau ci-dessous). Script versionné `mut-12a/muter.py` (motif vérifié unique ; restauration `git restore --worktree` puis `touch`) ; journaux
+`mut-12a/M*.log`, `mut-12a/resume.log`, `mut-12a/resume-2.log`. **Campagne du développement : 38 mutations (M01 à M38), 38 tuées**
+(recomptées le 2026-11-23 : 38 journaux `M*.log`, 38 lignes `verdict : TUÉE`), chacune par le test qu'elle vise
 (relu au journal) : M01-M03 (normalisation : `to_lowercase`, espace ASCII seul, U+200B), M04 (`trim_matches` → `trim`,
 `create_accepts_and_normalizes_payment_details`), M05-M06 (filtres fournisseur et société), M07 (règle 1 levée à la saisie), M08-M10
 (toute l'histoire ; découpage d'exercice 07-06 ; borne décalée d'un jour), M11-M13 (total, date, règle 3), M14 (annulées), M15-M17
@@ -359,6 +366,42 @@ rejouées (`resume-2.log`), cette fois tuées par leur test ; les premiers journ
 « période verrouillée », qui rougirait aussi ; non mutée) ; « comparer l'année de l'échéance » (le code ne lit pas l'échéance :
 mutation sans objet, l'assertion du test reste). Les mutations ont tourné sur `e906bc479` ; le commit suivant ne change que deux
 lints de tests.
+
+**Remédiation de la revue P1 : mutations N01 à N18** (`mut-12a/muter-p1.py`, journaux `mut-12a/N*.log`). N01 à N04 ont tourné le
+2026-11-20 (`resume-p1-*.log.txt` : le premier passage a été interrompu, l'agent est mort au crash du 2026-11-20) ; **N05 à N18 ont
+été rejouées le 2026-11-23, au HEAD `145dda094`** (code de production identique à `49df1f985`), une à une, sous le verrou de la voie
+base, le script restaurant `git restore --worktree` puis `touch` après chacune (`git status` : aucune modification de `crates/`
+au retour), journal de campagne `mut-12a/resume-p2-n05-n18.log`. Verdict « TUÉE » exige `Starting` et l'absence d'`error[E`.
+
+| Mutation | Ce qu'elle change | Test qui rougit (assertion) | Verdict |
+|---|---|---|---|
+| N01 | dévalidation sans verrou du fournisseur | `concurrent_unvalidation…` (`…_lock.rs:110`) | tuée |
+| N02 | verrou pris après la lecture ordinaire (4) | `concurrent_unvalidation…` | tuée |
+| N03 | règle jamais rejouée au `PUT` | `put_and_api_key_paths_apply_the_rule` (`…_e2e.rs:321`) | tuée |
+| N04 | complétion sans numéro à la règle | `completion_refuses_a_duplicate_and_keeps_the_document` (`…_e2e.rs:365`) | tuée |
+| N05 | U+2060 compté pour un blanc | `hors_de_l_ensemble_rien_n_est_retire` (`payment_text.rs:78`) | tuée |
+| N06 | `to_lowercase` retiré | `la_casse_est_ignoree_mais_pas_les_autres_signes` (`:122`) | tuée |
+| N07 | trait d'union retiré du numéro | `la_casse_est_ignoree_mais_pas_les_autres_signes` (`:135`) | tuée |
+| N08 | borne basse de l'année exclue (`>`) | `rule_2_holds_on_both_bounds…` (`…duplicate.rs:538`), `rule_1_compares_within_the_calendar_year` (`:408`) | tuée |
+| N09 | borne haute de l'année exclue (`<`) | les deux mêmes | tuée |
+| N10 | D6 : numéro brut dans `key_changed` | `update_replays_the_rule_only_when_one_of_the_four_changes` (`:760`) | tuée |
+| N11 | règle 2 : `max_by_key` au lieu de `min_by_key` | `rule_3_only_the_number_decides_when_both_have_one` (`:571`) | tuée |
+| N12 | rapprochement muet à la dévalidation | `unvalidation_duplicate_sits_between_closed_year_and_period_lock` (`:1263`) | tuée |
+| N13 | projet inconnu accepté | `entry_refusals_keep_their_precedence` (`:936`) | tuée |
+| N14 | non-fournisseur accepté | `entry_refusals_keep_their_precedence` (`:957`) | tuée |
+| N15 | `confirmNotDuplicate` ignoré à la dévalidation | `unvalidation_of_a_cancelled_duplicate_by_api_key` (`…_e2e.rs:433`) | tuée |
+| N16 | M08 rejouée : comparaison en mémoire de l'année retirée | aucun (13 tests, 13 passés) | **vivante, équivalente** |
+| N17 | M09 rejouée : année par exercice 07-06 | cinq tests dont `rule_1_compares_within_the_calendar_year` | tuée |
+| N18 | M10 rejouée : borne décalée d'un jour | `pure_decision_rule_1_first_then_smallest_id` (`:1305`) | tuée |
+
+**N16 est un mutant équivalent, pour une raison écrite.** Depuis `49df1f985`, la requête des candidates est bornée à l'année
+civile de la date de facture (`BETWEEN` du 1er janvier au 31 décembre) : toute candidate lue a déjà la même année, la comparaison
+en mémoire `c.invoice_date.year() == invoice_date.year()` ne filtre plus rien, et la retirer ne peut changer aucune décision.
+Même raison pour la borne **trop large** (`year - 1`, `year + 1`, borne supprimée), qu'aucun test ne peut tuer et qui n'a pas
+été jouée : seules les bornes trop **serrées** (N08, N09) sont tuables, et elles le sont. M08 (« toute l'histoire »), tuée avant
+la borne, ne l'est donc plus à ce HEAD ; le garde-fou de la règle « même année civile » est la borne SQL elle-même, tenue par N08,
+N09 et par N17/N18. **Décompte, recompté depuis les journaux : 18 mutations de la remédiation P1 (N01 à N18), 17 tuées, 1
+équivalente (N16) ; avec les 38 du développement, 56 jouées, 55 tuées, 1 équivalente.**
 
 ### Gates
 
@@ -380,6 +423,27 @@ Au passage en `review`, au dernier commit de code **`974bf1c35`**, bases remises
 - PDF des manuels : régénérés hors commit (`make admin user`, `make-manuels-12a.log`), contrôle aplati `controle-pdf-12a.log`
   (phrases périmées 0 dans les deux PDF, « 15-b » présent : 2 au manuel utilisateur, 1 au manuel d'administration), puis PDF
   restaurés (`git restore`) : **aucun PDF commité**.
+
+### Gates après les remédiations P1 et P2 (revue P2, P2-2)
+
+Le patch `49df1f985` touche un repository (`kesh-db`) : gate complet exigé (`CLAUDE.md`, exception `kesh-db`). **Joué le
+2026-11-23 au commit `97e88541b`** (code identique à `49df1f985` côté Rust ; différences depuis : un test Vitest, le Pattern 5, une
+phrase du manuel de la 48-12b), base `kesh_e4812` remise à neuf avant chaque commande (`dev/p2-bases.log`), sous `mem-guard` et le
+verrou de la voie base, script `dev/gate-p2.sh` :
+
+- `scripts/test-fast.sh --ci` (fmt, clippy `-D warnings`, nextest, profil `ci`) : **6186 passés, 14 ignorés, 0 échoué**, code 0
+  (`dev/p2-test-fast-ci.log`).
+- `scripts/gate-ci.sh kesh_ci_e4812` : **6203 passés, 0 échoué, 18 ignorés**, code 0 (`dev/p2-gate-ci.log`, console
+  `dev/p2-gate-ci.console` ; 260 lignes `test result`). L'écart avec les 6202 / 6185 de `974bf1c35` est le test neuf de la remédiation
+  P1, `rule_2_holds_on_both_bounds_of_the_calendar_year` (+1 des deux côtés).
+- Frontend (catalogue italien partagé, et le frontend complet pour la 48-12b), voie frontend : `npm run check` **0 erreur** (29
+  avertissements préexistants), `lint-i18n-ownership` **0**, `test:unit` **281 fichiers / 4848 tests passés**, `build` **0**
+  (`dev/p2-front-*.log`, `dev/p2-front-exit.txt`).
+- **Tests neufs de la 48-12a, recomptés à `49df1f985`** (motif `#[sqlx::test|tokio::test|test]`) : **31** = 13
+  (`supplier_invoice_duplicate.rs`) + 5 (`…_lock.rs`) + 6 (`…_e2e.rs`) + 2 (`rejeu_interblocage_e2e.rs`, 2 ajoutés de
+  `a8ffbb488` à `49df1f985`) + 5 (`payment_text.rs`). Le « 30 » du Change Log du développement était vrai à `974bf1c35`.
+- **E2E** : non lancé (il se joue à la clôture, au dernier commit de code de la branche, `97e88541b` ou son successeur). Le
+  dernier E2E complet (`e2e-complet-2.log`, 2026-11-20) porte sur le code d'avant `49df1f985`.
 
 ### Choix et écarts
 
@@ -457,3 +521,23 @@ filet_bilan_clos, supplier_invoices_internal_number}.rs` ; `frontend/src/lib/sha
 - 2026-11-20 — E2E complet joué à la fin de la 48-12b : la règle 2 de la 48-12a faisait rougir trois tests de
   `supplier-internal-number.spec.ts` (décor de brouillons sans numéro, même date, même montant) ; décor corrigé dans la 48-12b
   (`f35c56925`, `confirmNotDuplicate: true`). Aucun changement du code de la 48-12a.
+- 2026-11-20 — **Revue de code P1 de la 48-12a (Opus, trois lentilles B, E, A ; 0/0/2/16)** ; remédiation `49df1f985` (dev).
+  Recomptés depuis `review-12a-p1-{A,B,E}.md` : A 0/0/2/9 (A1, A2 MEDIUM ; A3 à A11), B 0/0/0/2 (B1, B2), E 0/0/0/5 (E1 à E5).
+  **A1** (relevé des fixtures sans E2E ; AC-10 non tenu à `974bf1c35`) et **A2** (cinq tests sans rouge) : remédiés (écart
+  déclaré, décor corrigé par `f35c56925`, mutations N01 à N07). **B2** : lecture bornée à l'année civile (`BETWEEN`). **B1 / A9** :
+  italien au tutoiement. **E1** : cycle des deux repassages écrit (doc-comment, fiche). **E4, E5, A5, A6, A7, A10, A11** : tests
+  neufs ou durcis ; **A3, A4, A8** : fiche (statut, décompte, D5). **Reclassés en issues** : E2 (**#1415**, caractères invisibles de mise en forme) et E3 (**#1416**, normalisation
+  Unicode). Aucun finding réfuté.
+- 2026-11-23 — **Revue de code P2 de la 48-12a (Sonnet, contexte frais ; 0/0/2/4**, `kesh-gate-logs/e4812/review-12a-p2.md`).
+  Tendance : P1 0/0/2/16 → P2 0/0/2/4. Les deux MEDIUM portaient sur la preuve. **P2-1** (MEDIUM) — prémisse vraie (`ls mut-12a` :
+  N01 à N04 seuls journalisés ; fiche « N01 à N07, ci-dessous » sans tableau) : **N05 à N18 rejouées et journalisées le 2026-11-23**,
+  tableau au Dev Agent Record ; 17 tuées sur 18, **N16 vivante et équivalente** (la borne SQL rend la comparaison en mémoire
+  redondante), raison écrite ; les deux tests sans rouge (`hors_de_l_ensemble_rien_n_est_retire`, `la_casse_est_ignoree_…`) sont
+  rougis (N05 ; N06, N07) ; « 38 tuées » recompté (38 journaux, 38 verdicts) et total recompté : 56 jouées, 55 tuées, 1 équivalente.
+  **P2-2** (MEDIUM) — prémisse vraie (`49df1f985` touche `repositories/supplier_invoices.rs`, aucun gate complet depuis) : gate
+  complet à `97e88541b` (6186 / 14 ignorés au `test-fast --ci`, 6203 / 0 / 18 au `gate-ci`, frontend 281 fichiers / 4848 tests),
+  écrit au Dev Agent Record ; E2E à la clôture. **P2-3** (LOW) — prémisse vraie : en-tête, Dev Notes et liste des commits réécrits
+  (`sprint-status.yaml` : orchestrateur). **P2-4** (LOW) — recompté : 31 tests neufs. **P2-5** (LOW) — la présente entrée et la
+  précédente. **P2-6** (LOW) — prémisse vraie : une phrase au Pattern 5 (`docs/MULTI-TENANT-SCOPING-PATTERNS.md`, `97e88541b`). Aucun
+  finding réfuté, aucun reclassement en dette. **Aucun code de production touché par la remédiation P2.** Une passe de plus est
+  requise (règle : un MEDIUM rendu) : P3 complète, Opus, prompt `48-12a-doublons-fournisseurs-serveur-review-prompt-p3.md`.
