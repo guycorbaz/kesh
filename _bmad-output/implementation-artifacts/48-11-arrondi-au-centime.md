@@ -373,7 +373,7 @@ filtré sur `csv|export|rapport|report|pdf` : seuls `admin-manual.tex:3915` et `
    passé en minuscules, l'hexadécimal Latin-1 de `1'234.01` (`31273233342e3031`) et l'absence de celui de `1'234.00`
    (`31273233342e3030`), sans dupliquer `pdf_text` (privé aux tests de `kesh-report`). Pas d'autre voie admise.
 6. **AC6 — relevé saisi** (`bank_statements_manual.rs`, test unitaire du module) : `amount_string(dec!(10.0050)) == "10.01"`,
-   `amount_string(dec!(-0)) == "0.00"`, `amount_string(dec!(50)) == "50.00"` (non-régression des réponses actuelles).
+   `amount_string(-Decimal::ZERO) == "0.00"` et `amount_string(-Decimal::new(0, 2)) == "0.00"` (zéros **négatifs construits** : `dec!(-0)` est un zéro positif, le macro efface le signe), `amount_string(dec!(50)) == "50.00"`, et le **chemin réel** : un solde `-0` saisi sur un relevé manuel sort du parseur (`manual.rs:790`, `-value`) en vrai zéro négatif et s'écrit `"0.00"`.
 7. **AC7 — le plafond de l'écart** : `group_max_for_display` délègue à `format_two_decimals` ; ses tests existants
    (`company_invoice_settings.rs:599-600`, `5.0050` → `5.01`, `5.0150` → `5.02`) restent verts sans modification.
 8. **AC8 — #1430** : `git grep -nw 'round_for_display' -- crates/` (toutes formes, imports entre accolades compris) — sortie copiée
@@ -642,7 +642,7 @@ Journaux hors dépôt sous `/home/gcorbaz/devel/kesh-gate-logs/e4811/` :
 - **AC12** : `dev/ac12.txt` — chaque ligne non commentée appartient à un fichier de la liste close (22 occurrences, 8 fichiers : `money.rs` 1,
   `csv_tables.rs:127` `{d:.scale$}`, `parse/tests.rs` 2, `kesh-i18n` 1, `pain001` 1, `generator.rs:115`, `kesh-qrbill/src/pdf.rs` 13,
   `kesh-report/src/pdf.rs:361` et `:3325`) ; les lignes de commentaire restantes (`errors.rs:1563`, `money.rs:109`, `:111`, `generator.rs:107`,
-  `:111`) sont vraies. `git grep -nE '1245|tronqu' -- docs/manual` ne rend que deux phrases sans rapport (SMTP, écran de 500 lignes).
+  `:111`) sont vraies. `git grep -nE '1245|tronqu' -- docs/manual` rend **dix lignes** (douze occurrences : `admin-manual.tex` 725, 2697, 2707, 3889 ; `user-manual.tex` 2875, 3074, 3385, 3629, 4064, 4065), **toutes sans rapport** avec l'arrondi (troncature d'un mot de passe, d'un nom CAMT, d'un écran de 500 lignes) et aucune ne cite #1245 (recompté à la remédiation de la revue P1, A-1).
 - **AC11** : `docs/manual/fr/admin-manual.tex` porte `sec:maj-0-20-0` (`:2550`) ; `ls docs/manual/*/` : seul `fr` a des `.tex` ; PDF non commités.
 - **Mots-clés de fermeture** : `git log origin/epic/48-corrections-0-20-0..HEAD --format=%B | grep -niE '\b(close[sd]?|fix(e[sd])?|resolve[sd]?) #[0-9]'` vide.
 
@@ -664,7 +664,7 @@ Journaux hors dépôt sous `/home/gcorbaz/devel/kesh-gate-logs/e4811/` :
   | N° | Mutation | Résultat |
   |---|---|---|
   | M1 | `ToZero` dans `round_for_display` (`mut-m1.log`) | **14 rouges** : `kesh-core` 2 (AC1), `kesh-report` 10 (4 `csv`, 5 `pdf`, 1 `balance_sheet`), route des rapports 2 (AC5 CSV et PDF). **`exports_global_e2e` ne rougit pas** : l'export global n'arrondit pas (D5) — la fiche le prévoyait à tort |
-  | M2 | retrait de `if r.is_zero()` | **a survécu d'abord** (`mut-m2-survivant.log` : 594 passés) : `round_dp_with_strategy` rend déjà un zéro positif pour `-0.0040` (aucun test de la fiche ne distingue). Tué après ajout de zéros négatifs **construits** (`-Decimal::new(0, 2)`, `-Decimal::ZERO`) en `e704d397a` : 2 rouges (`mut-m2.log`) ; la garde est défensive mais réelle pour une valeur lue ou calculée à signe négatif et mantisse nulle |
+  | M2 | retrait de `if r.is_zero()` | **a survécu d'abord** (`mut-m2-survivant.log` : 594 passés) : `round_dp_with_strategy` rend déjà un zéro positif pour `-0.0040` (aucun test de la fiche ne distingue). Tué après ajout de zéros négatifs **construits** (`-Decimal::new(0, 2)`, `-Decimal::ZERO`) en `e704d397a` : 2 rouges (`mut-m2.log`) ; la garde est **réelle pour un seul chemin** : le solde `-0` saisi sur un relevé manuel (`manual.rs:790`, `-value`, puis `bank_statements_manual.rs:354` et `:358`) ; elle est sans objet pour une valeur lue en base (le décodage passe par `from_parts`, qui efface le signe d'un zéro) et pour les rapports. Les deux cas `dec!(-0)` de `e704d397a` étaient des zéros **positifs** (revue P1, E-1) ; remplacés par `-Decimal::ZERO` et par le solde `-0` d'un relevé saisi, **M2b** rougit (`mut-m2b.log`, voir le Change Log) |
   | M3 | `MidpointNearestEven` | 2 rouges (`mut-m3.log`) |
   | M4 | `format!("{:.2}", amount)` ajouté dans `csv.rs` | garde famille 1 rouge : `kesh-report/src/csv.rs : 1 au lieu de 0` (`mut-m4.log`) |
   | M5 | `{:.2}` retiré de `money.rs` | garde famille 1 rouge : `money.rs : 0 au lieu de 1` (`mut-m5.log`) |
@@ -674,7 +674,7 @@ Journaux hors dépôt sous `/home/gcorbaz/devel/kesh-gate-logs/e4811/` :
 
 - **Écarts à la fiche** : (1) M1 ne rougit pas la route de l'export global (voir ci-dessus) ; (2) M2 a exigé deux cas de test de plus ;
   (3) `exports_global_e2e.rs:2045` (`"7777.77"`, `contains`) est resté vert sans modification, comme annoncé à l'AC4 ; (4) la garde ne balaie
-  que `crates/*/src` (comme dit à D6), pas `tests/`.
+  que `crates/*/src` (comme dit à D6), pas `tests/` ; (5) les tests unitaires réécrits de `csv_tables.rs` (`150.2500`, `fmt_decimal_scale_ecrit_a_l_echelle_de_la_colonne`) n'ont **pas** été rougis avant le correctif (`rouge-api.log` ne porte aucun test de `exports::csv_tables::tests`) : la route de l'export (AC4) et l'AC13 ont rougi, M7 tue une constante fausse (revue P1, A-3).
 - **Aucune migration, aucun repository, aucun fichier du frontend ni de `kesh-qrbill`.** Le PDF des factures et des avoirs ne change pas
   (AC10).
 - **Fichiers communs** (à dire) : `kesh-report/src/pdf.rs` (Beat, Epic 46) et `kesh-qrbill` : la garde fige 13 occurrences dans
