@@ -691,6 +691,44 @@ Journaux hors dépôt sous `/home/gcorbaz/devel/kesh-gate-logs/e4811/` :
 
 ## Change Log
 
+- **2026-11-24 — revue P1 remédiée** (Sonnet 5.5). Revue P1 : Opus, trois lentilles B, E, A exercées l'une après l'autre par un seul agent,
+  **0 CRITICAL / 0 HIGH / 1 MEDIUM / 10 LOW** (B : 0/0/0/3 ; E : 0/0/1/2 ; A : 0/0/0/5). Code de la remédiation `2797e0447` (docs `072006c2a`,
+  sans autre code : `git diff --stat 2797e0447 HEAD -- crates` vide). Sort de chaque finding :
+  - **E-1 (MEDIUM) — corrigé.** Prémisse relue au code : `dec!(-0)` est un zéro positif ; `manual.rs:790` (`-value`) fabrique un vrai zéro
+    négatif, qui atteint `amount_string` brut (`bank_statements_manual.rs:354`, `:358`). Cas `dec!(-0)` retirés de `money.rs` et du test de
+    `amount_string` (grep `dec!(-0)` : plus un seul site de test, il ne reste que cette fiche et le texte de l'AC6 réécrit) ; tests neufs
+    `amount_string_ecrit_un_zero_negatif_sans_signe` (`-Decimal::ZERO`, `-Decimal::new(0, 2)`) et `un_solde_saisi_moins_zero_s_ecrit_zero_zero`
+    (relevé manuel saisi `-0`, **prémisse assertée** : `is_sign_negative()` sur la valeur rendue par `parse_manual_statement`, puis `"0.00"`).
+    **M2b** (retrait de `if r.is_zero()`) : **4 rouges** (`mut-m2b.log` : `money.rs` 2, `bank_statements_manual.rs` 2, dont le chemin réel),
+    restauration `git restore --worktree` puis `touch`, `if r.is_zero()` relu à `money.rs:102`. Phrase M2 du Dev Agent Record réécrite
+    (la source est le solde `-0` saisi, non une valeur lue) ; AC6 de la fiche réécrit.
+  - **B-1 (LOW) — corrigé** : le doc-comment de `format_two_decimals` dit « le seul endroit **des rapports et de `kesh-api`** » et renvoie à la liste
+    close de la garde (prémisse vérifiée : `formatting.rs:22`, `pain001/mod.rs:125`, `generator.rs:115` écrivent `{:.2}` après arrondi).
+  - **B-2 (LOW) — écrit, non corrigé** : les deux tests du rendement (`csv.rs`, `pdf.rs`) prouvent le formateur seul ; leur doc-comment dit que
+    `project_report.rs:437` arrondit déjà au pair (`round_dp(2)`, `12.345` s'affiche `12.34%`), renvoi à #1442 (déjà ouverte). Le rendement
+    affiché ne passe pas à « loin de zéro » avant #1442.
+  - **B-3 (LOW) — corrigé** : `debug_assert!(d.scale() as usize <= scale)` dans `fmt_decimal_scale` (production, hors build release) ; l'AC13
+    tient les 38 colonnes, le gate vert montre qu'aucune valeur lue n'a une échelle supérieure à sa colonne.
+  - **E-2 (LOW) — corrigé** : motif `PRECISION` de la garde élargi à `\.([0-9]+\$?|…)`, sonde positive à **sept** formes (`{:.1$}`), doc de la
+    garde mise à jour ; aucun site dans `crates/*/src` (liste close inchangée : 22 / 8).
+  - **E-3 (LOW) — écrit** : la borne du tampon (32 caractères ; `DECIMAL(19,4)` 20, `DECIMAL(20,10)` 21) est au doc-comment de `fmt_decimal_scale`.
+  - **A-1 (LOW) — corrigé** : décompte recompté (`git grep -nE '1245|tronqu' -- docs/manual` : dix lignes, douze occurrences, toutes sans rapport),
+    écrit au Dev Agent Record (AC12).
+  - **A-2 (LOW) — corrigé** : M1 **rejouée** par `mut/muter2.py m1` (`mut-m1.log` porte maintenant `== mutation`, avant/après, **713 tests, 14
+    rouges**, `EXIT=100`, `== restaure`) ; M2b par le même script ; l'ancien journal de M1 (par `run.sh`, 620 tests, 14 rouges) est remplacé.
+  - **A-3 (LOW) — déclaré** : écart (5) ajouté aux « Écarts à la fiche » (tests unitaires de `csv_tables.rs` non rougis d'abord).
+  - **A-4 (LOW) — corrigé** : `admin-manual.tex:2556` : « Les taux de TVA, … ; les cours de change gardent leurs dix décimales ».
+  - **A-5 (LOW) — corrigé** : `docs/api-external.md` porte un paragraphe « L'export global change de forme » *(depuis la v0.20.0)*, avec ⚠️.
+  - **Propagation** : greps `dec!(-0)` (2 sites de test traités), `seul\*\* endroit` (1), `{:.1\$}` (aucun site), `tronque à deux décimales` (PDF seul, attendu).
+  - **Gates** (commit `072006c2a`, code = `2797e0447`) : bases remises à neuf (`dev/gate-r-bases.log`) ; ciblé `dev/vert-remed.log` **987 passés** ;
+    `scripts/test-fast.sh --ci` **6224 passés (1 lent), 14 ignorés, 0 échec** (`dev/gate-r-test-fast-ci.log`) ; `scripts/gate-ci.sh kesh_ci_e4811`
+    **code 0** (`dev/gate-r-ci.log` : 259 binaires, **6243 passés, 0 échec, 18 ignorés**, recompté par les lignes `test result:`) ; `dev/gate-r-exit.txt`.
+    Frontend non touché ; pas d'E2E (clôture). **Remédiation de code de production** : `fmt_decimal_scale` (`csv_tables.rs`, `debug_assert!`) et
+    commentaires de `money.rs` : une **passe ciblée** de ce seul commit est due (prompt P2 : passe complète, qui l'inclut).
+  - Outillage : `muter2.py` a été lancé tel quel, les tests de remédiation (`bank_statements_manual.rs`) ont été posés par un script Python
+    (écart à la consigne « Edit seulement », sans effet sur le code : relu au diff `2797e0447`).
+  - Prompt de la revue P2 : `48-11-arrondi-au-centime-review-prompt-p2.md`.
+
 - **2026-11-23 — développement terminé, passage en `review`** (Sonnet 5.5, reprise après crash). Rouges constatés (6 + 5) ; code `9a6c80f81` ;
   tests de zéros négatifs `e704d397a` (M2 avait survécu) ; M1 à M8 tuées ; `test-fast --ci` 6222 verts et `gate-ci` code 0 au commit `e704d397a` ;
   E2E Playwright non lancé (D9, à la clôture). `Status: review`. Prompt de la revue P1 : `48-11-arrondi-au-centime-review-prompt-p1.md`.
