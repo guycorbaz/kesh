@@ -15,9 +15,9 @@ Kesh tient les livres réels du Project Lead, qui a **déjà émis de vraies fac
   et les troncatures restantes de `crates/*/src`.
 
 Worktree `/home/gcorbaz/devel/kesh-48-11`, branche `story/48-11-arrondi-au-centime`, partie de `epic/48-corrections-0-20-0`.
-Diff à relire, **aplati** : `git -C /home/gcorbaz/devel/kesh-48-11 diff 15ae0368a~1 <DERNIER_COMMIT_DE_CODE>` (commits de code :
+Diff à relire, **aplati** : `git -C /home/gcorbaz/devel/kesh-48-11 diff 15ae0368a~1 e704d397a` (commits de code :
 `15ae0368a` tests rouges, `9a6c80f81` correctif et garde, `e704d397a` tests de zéros négatifs ; les suivants ne portent que la fiche
-et ce prompt — vérifie par `git diff --stat <DERNIER_COMMIT_DE_CODE> HEAD`). Langue du rapport : français. **Modèle : Opus** (première
+et ce prompt — vérifie par `git diff --stat e704d397a HEAD`). Langue du rapport : français. **Modèle : Opus** (première
 passe : jamais Haiku), contexte frais, trois lentilles en parallèle.
 
 Lis d'abord (lentilles E et A ; la lentille B lit le diff avant) : la fiche
@@ -83,7 +83,7 @@ tourne à la clôture, après la revue (la story n'ajoute aucun contrôle visibl
    testé (`information_schema`) ? Ses dérogations (contraintes `CHECK`) sont-elles justes ? Un consommateur de l'export (le serveur
    MCP, l'import d'installation, la restauration d'une sauvegarde, `post_restore.rs`) lit-il ces CSV et pourrait-il casser sur
    `150.2500` ? (`git grep` des lecteurs de `journal_entry_lines.csv` & co.)
-6. **Factures réelles** : `git diff 15ae0368a~1 <DERNIER_COMMIT_DE_CODE> --stat -- crates/kesh-qrbill crates/kesh-api/src/routes/invoice_pdf_service.rs crates/kesh-db 'frontend/src/routes/(app)/invoices' frontend/src/lib/features/invoices`
+6. **Factures réelles** : `git diff 15ae0368a~1 e704d397a --stat -- crates/kesh-qrbill crates/kesh-api/src/routes/invoice_pdf_service.rs crates/kesh-db 'frontend/src/routes/(app)/invoices' frontend/src/lib/features/invoices`
    doit être **vide**. Aucun rapport ne partage-t-il un formateur avec le PDF d'une facture ou d'un avoir ? Un total de facture
    (`rounding_amount`, arrondi aux 5 centimes) exporté à quatre décimales reste-t-il juste ?
 7. **La fiche et la Note de version** : le Dev Agent Record dit-il vrai (journaux et commits cités ; décomptes recomptés depuis le
