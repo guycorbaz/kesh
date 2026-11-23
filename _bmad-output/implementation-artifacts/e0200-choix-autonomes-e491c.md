@@ -88,3 +88,78 @@ Chaque choix : contexte, option retenue, autres options, réversibilité.
   caractères ; U+2010 et U+2011 n'ont pas d'autre nom lisible) ; écrire le point de code autrement
   (contournement de la garde, que la 49-4 retrouverait).
 - **Réversibilité** : totale (code de test seul).
+
+## Remédiation de la revue P1 (2026-11-23, Sonnet 5.5, agent de remédiation)
+
+Revue P1 : Opus, trois lentilles (B, E, A) exercées l'une après l'autre par un seul agent, contexte frais ;
+**0 CRITICAL, 0 HIGH, 1 MEDIUM (A-1), 10 LOW** (A-2 à A-5, B-1 à B-4, E-1, E-2).
+
+## C-e491c-10 — A-1 : gates de passage en `review` rejoués au HEAD, Rust cité sans rejeu
+
+- **Contexte** : l'agent de développement est mort au crash du 2026-11-20 avant d'écrire la section des
+  gates ; `front-1.log` était rouge (garde KF-043, corrigée par `2003e23ef`), `e2e-complet-1.log` vide.
+- **Retenu** : frontend complet rejoué au HEAD de la remédiation (`front-2.log`, `c00858669`) ; T10 rejoué
+  (`e2e-T10-p1.log`). `git diff --stat 7f8bf6a00 HEAD -- crates` est **vide** : `test-fast-2.log` et
+  `gate-ci-2.log`, pris à `7f8bf6a00`, restent valables et sont cités sans rejeu. Section du Dev Agent
+  Record écrite, « C-e491c-1 à 8 » corrigé en « 1 à 9 » (puis « 1 à 17 » avec la présente remédiation),
+  `Status: review`.
+- **Alternative écartée** : rejouer `test-fast` et `gate-ci` (le code Rust n'a pas bougé ; la voie base est
+  prise par la 48-11).
+- **Réversibilité** : sans objet.
+
+## C-e491c-11 — B-2 et E-2 corrigés dans la story
+
+- **Contexte** (prémisses relues au code) : `estChiffree` testait `=== undefined` (donc faux pour `null`,
+  que `ligneDepuisReponse` et le serveur lisent comme absent) ; `estLigneDeTexte` testait `comment` ou
+  `heading` : pour une valeur hors de l'union les deux prédicats disaient « non », et la ligne s'affichait
+  chiffrée mais partait en texte. Prémisses exactes (`invoice-line-type.ts:19`, `:28`).
+- **Retenu** : `estChiffree` : `l.lineType == null || l.lineType === 'priced'` ; `estLigneDeTexte(t)` =
+  `!estChiffree({ lineType: t })`, contraire exact par construction. Deux cas de test neufs
+  (`invoice-lines.test.ts`). Une valeur inconnue devient une ligne de texte partout (affichage, total
+  écarté, envoi `{ lineType, description }`), refusée par le serveur avec son message.
+- **Écartée** : rendre `ligneDepuisReponse` total sur l'union (refus explicite) : plus de code pour le même
+  effet.
+- **Réversibilité** : totale.
+
+## C-e491c-12 — B-3 et B-4 corrigés dans la story
+
+- **Retenu** : constante `COLONNES_LIGNES = 6` à côté des déclarations de chacune des deux fiches
+  (`colspan={COLONNES_LIGNES}`), doc-comment de `invoices.types.ts:32` renvoyé à `invoice-line-type.ts`.
+  Les assertions `toBe('6')` des tests des fiches restent vraies. La constante ne se dérive pas du
+  `<thead>` (il est écrit en dur) : elle nomme le nombre et son lien au tableau, sans l'y lier par code.
+- **Réversibilité** : totale.
+
+## C-e491c-13 — B-1 : issue P3 demandée, non corrigé
+
+- **Contexte** : `CreateInvoiceLineRequest` garde `quantity?`, `unitPrice?`, `vatRate?` pour tous les types ;
+  un seul constructeur (`ligneAEnvoyer`), aucun scénario fautif aujourd'hui.
+- **Retenu** : le remède (union discriminée) touche les types de requête et leurs appelants, hors du
+  « petit et sûr » ; issue `technical-debt`, P3, demandée à l'orchestrateur.
+
+## C-e491c-14 — E-1 : issue P3 demandée, non corrigé
+
+- **Contexte** : un `heading` relu (inatteignable par l'API, qui le refuse) s'affiche comme un commentaire
+  et rend le brouillon inenregistrable sous un refus qui parle de « heading ».
+- **Retenu** : l'affichage en lecture seule d'un titre est une décision d'écran qui appartient à la 49-3
+  (qui ouvre `heading`) ; issue P3 demandée, avec renvoi à la 49-3. Rien dans la fiche ne le promet.
+
+## C-e491c-15 — A-2 et A-3 déclarés à la fiche
+
+- **A-2** : le Dev Agent Record dit que T10 de `e2e-T10-vert.log` est à `4cb6633e9`, antérieur à
+  `2003e23ef` ; T10 est rejoué au HEAD (`e2e-T10-p1.log`, vert) ; l'E2E complet de clôture fait la preuve.
+- **A-3** : les captures sont sur la graine E2E (`with-company`), non sur une base de démonstration (AC11).
+  Écart déclaré à la fiche, non repris : les états touchés y sont bien visibles, le constat de la revue
+  confirme que cela ne change rien à ce qu'elles prouvent.
+- **Réversibilité** : sans objet.
+
+## C-e491c-16 — A-4 : issue P4 demandée
+
+- Le constat cosmétique de la fiche avoir (marges des colonnes « TVA % » et « Compte de produit ») n'a pas
+  d'issue ; demandée à l'orchestrateur (P4, `bug`), son numéro à porter à la fiche.
+
+## C-e491c-17 — A-5 : ventilation de `sitesTotal` recomptée
+
+- Recompté à la source : `git show <commit>:frontend/src/lib/components/invoices/InvoiceForm.svelte | grep -o
+  "i18nMsg(" | wc -l` rend **21** à `5156f2b7b` (base de la story) et **25** à `cea6910db`..`54471b566`
+  (avant la remédiation, qui ne touche pas ce fichier) ; l'écart **+4** (3495 → 3499) était juste, le « 19 → 23 »
+  de l'agent de développement ne se retrouve pas faute de périmètre. Phrase du Dev Agent Record corrigée.

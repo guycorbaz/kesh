@@ -1,6 +1,6 @@
 # Story 49-1c : types de lignes de la facture client — l'écran, la ligne de commentaire, l'ouverture de `comment` dans l'API (#1242)
 
-Status: in-progress
+Status: review
 
 *Fiche rédigée le 2026-11-19 par l'agent de rédaction de la 49-1c (Opus 5.5), par le workflow `bmad-create-story`.
 Release **0.20.0** (coupure jeudi 2026-11-26 au soir). **Aucune migration** (celle de la release est la 49-1a,
@@ -629,7 +629,7 @@ test suivant (`git diff` vide sur le fichier muté, copié au journal).
 ### Agent Model Used
 
 Opus 5.5 (`bmad-dev-story`, en autonomie), 2026-11-19 et 2026-11-20. Registre :
-`e0200-choix-autonomes-e491c.md` (C-e491c-1 à 8).
+`e0200-choix-autonomes-e491c.md` (C-e491c-1 à 17 : 1 à 9 du développement, 10 à 17 de la remédiation de la revue P1).
 
 ### Debug Log References
 
@@ -650,6 +650,10 @@ Journaux dans `/home/gcorbaz/devel/kesh-gate-logs/e491c/` ; scripts de mutation 
 | `e2e-T10-vert.log` | `4cb6633e9` | T10 seul, base `kesh_e2e_e491c` recréée : **1 passed** ; captures prises |
 | `rouge-T10.log` | `4cb6633e9` + mutation T1 | T10 **rouge** à l'enregistrement (reste sur `/invoices/new`) ; restauré, binaire reconstruit |
 | `make-manuels.log` | `.tex` de `cea6910db` | `make -B user admin` hors dépôt (C-e491c-7) : deux PDF stables (3 passes) |
+| `test-fast-1.log`, `test-fast-2.log` | `4cb6633e9` (rouge) ; `7f8bf6a00` (vert) | `test-fast --ci` : 1er rouge (G4-bis, C-e491c-9) ; 2e **6194/6194** |
+| `gate-ci-2.log(.out)` | `7f8bf6a00` | `gate-ci` : **6211 passés, 0 échoué**, 20 ignorés |
+| `front-1.log`, `vitest-garde-kf043.log`, `front-2.log` | `7f8bf6a00` (rouge KF-043) ; garde rejouée après `2003e23ef` ; `c00858669` (vert) | frontend complet : 4643/4644 ; 3/3 ; **4646/4646** |
+| `e2e-T10-p1.log` | `c00858669` | T10 : **1 passed** |
 
 ### Completion Notes List
 
@@ -689,8 +693,8 @@ donné par la mutation T1-a, qui reproduit exactement l'état d'avant le code (`
   lignes à `5156f2b7b` : le seul `:1626` (`:792` compare une liste de noms de clés) ; (d) `AC9 a` modifié, vert.
 - AC9 : quatre clés neuves × 4 catalogues (`invoice-line-add-comment`, `invoice-line-comment-placeholder`,
   `invoice-line-comment-aria`, `invoice-line-comment-required-error`), bloc « Epic 49 — Story 49-1c » en fin de chaque
-  fichier ; `sitesTotal` **3495 → 3499**, ventilé : quatre littéraux, tous dans `InvoiceForm.svelte` (19 → 23 appels
-  `i18nMsg(`). Les deux fiches n'ont aucune chaîne neuve.
+  fichier ; `sitesTotal` **3495 → 3499**, ventilé : quatre littéraux, tous dans `InvoiceForm.svelte` (+4 ; `grep -o "i18nMsg(" | wc -l` sur ce fichier : 21 à
+  `5156f2b7b`, 25 à `54471b566` — recompté à la revue P1, A-5). Les deux fiches n'ont aucune chaîne neuve.
 - AC10 : (a) `user-manual.tex` (item « Lignes de facture », paragraphe des caractères, item de l'avoir) ; (b)
   `api-external.md:512`, `admin-manual.tex:2559` ; (c) aucun PDF commité ; (d) `git grep -n -F "le type de ligne comment"
   -- docs` : vide (rc 1) ; `git grep -n "n'est pas encore disponible" -- docs` : `api-external.md:512` (heading) et
@@ -701,7 +705,10 @@ donné par la mutation T1-a, qui reproduit exactement l'état d'avant le code (`
   plus, moins avec le récapitulatif de TVA » 1, « disparaît du PDF sans avertissement » 1, « ses lignes de commentaire
   comprises » 1, « replie ces 125 lettres » 1 ; admin « comment est accepté » 1 ; −, ≤, ≥ rendus (le seul glyphe
   manquant du journal xelatex est ✓ U+2713, hors de cette story).
-- AC11 : T10 vert et rouge ; captures (thème clair, base `kesh_e2e_e491c` semée par `with-company`), **toutes lues** :
+- AC11 : T10 vert et rouge (`e2e-T10-vert.log` à `4cb6633e9`, **avant** la réécriture des sélecteurs du spec par
+  `2003e23ef` : rejoué au HEAD de la remédiation, `e2e-T10-p1.log`, § *Gates* ci-dessous) ; captures (thème clair, base `kesh_e2e_e491c` semée par `with-company`) — **écart déclaré à AC11** (revue P1, A-3) : la
+  graine E2E, non une base de démonstration ; les états touchés y sont bien visibles, l'écart n'a pas été repris
+  (C-e491c-15) ; **toutes lues** :
   `01-formulaire-avec-commentaire.png`, `02-formulaire-commentaire-vide-bloque.png`, `03-fiche-brouillon.png`,
   `04-fiche-validee.png`, `05-facture.pdf` et `05-facture-pdf-1.png` (`mutool draw -r 150`), `06-fiche-avoir.png`.
 - AC12 : § *Gates de passage en `review`* ci-dessous.
@@ -721,7 +728,33 @@ donné par la mutation T1-a, qui reproduit exactement l'état d'avant le code (`
 - Édition : code et tests par l'outil Edit (ou Write pour un fichier neuf), `cargo fmt` permis ; scripts seulement pour
   les mutations (`mut/`). Aucun écart à la consigne Edit.
 
-**Gates de passage en `review`.** *(à compléter à leur fin)*
+**Gates de passage en `review`.** Écrite le 2026-11-23 par l'agent de remédiation de la revue P1 (l'agent de
+développement est mort au crash du 2026-11-20 avant de l'écrire ; revue P1, A-1). Ne figure que ce qui a tourné,
+journaux dans `/home/gcorbaz/devel/kesh-gate-logs/e491c/`.
+
+| Gate | Commit | Résultat | Journal |
+|---|---|---|---|
+| Backend : bases neuves, `scripts/test-fast.sh --ci` (fmt, clippy `-D warnings`, nextest) | `7f8bf6a00` | **6194 exécutés, 6194 passés**, 16 ignorés, `EXIT=0` | `test-fast-2.log` |
+| Backend : `scripts/gate-ci.sh kesh_ci_e491c` (un processus par binaire, comme la CI) | `7f8bf6a00` | **6211 passés, 0 échoué, 20 ignorés**, code 0 | `gate-ci-2.log`, `gate-ci-2.log.out` |
+| Frontend complet : `check`, `lint-i18n-ownership`, `test:unit`, `build` | `c00858669` | `check` **0 erreur**, 29 avertissements ; `lint-i18n-ownership` PASS ; `test:unit` **279 fichiers, 4646 tests passés, 0 échec** ; `build` RC 0 | `front-2.log` |
+| E2E : T10 seul (`invoice-comment-lines.spec.ts`), `kesh-api` reconstruit, `kesh_e2e_e491c` recréée | `c00858669` | **1 passed** (18,5 s) | `e2e-T10-p1.log` |
+
+- **Le code Rust n'a pas bougé depuis `7f8bf6a00`** : `git diff --stat 7f8bf6a00 HEAD -- crates` est vide (contrôlé à
+  `54471b566`, puis à `c00858669`) ; les deux gates Rust sont donc cités à `7f8bf6a00`, **non rejoués**.
+- **Rouges antérieurs, par honnêteté** : `test-fast-1.log` (commit `4cb6633e9`, `EXIT=100`) rouge sur
+  `textes_coherents::les_comptes_cites_en_exemple_existent_dans_les_plans_livres` — motif de `7f8bf6a00` (C-e491c-9) ;
+  `front-1.log` (`7f8bf6a00`) : `1 failed | 4643 passed (4644)`, la garde KF-043 (`e2e-selecteurs-traduits.test.ts`), corrigée
+  par `2003e23ef`, rejouée seule (`vitest-garde-kf043.log` : 3 passés). **Le frontend complet n'a été vert qu'au HEAD de la
+  remédiation** (`front-2.log`). `e2e-complet-1.log` est vide (E2E complet abandonné à la mort de l'agent) : l'E2E complet
+  se joue à la clôture, après la revue.
+- **Pas d'E2E complet** à ce stade (`e0200-dev.md`).
+
+### Remédiation de la revue P1
+
+Voir le Change Log ; commit de code `c00858669` : `estChiffree` lit `null` comme absent, `estLigneDeTexte` en est le
+contraire exact, `colspan` des deux fiches en constante `COLONNES_LIGNES`, doc-comment d'`invoices.types.ts` (E-2, B-2, B-3,
+B-4 ; deux tests neufs dans `invoice-lines.test.ts`). Aucune issue n'a encore de numéro : B-1 et E-1 (P3) et A-4 (P4) sont
+demandées à l'orchestrateur ; leurs numéros se porteront ici.
 
 ### File List
 
@@ -731,6 +764,7 @@ donné par la mutation T1-a, qui reproduit exactement l'état d'avant le code (`
 - `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`
 - `frontend/src/lib/features/invoices/invoice-lines.ts` (neuf), `invoice-line-type.ts` (neuf), `invoice-lines.test.ts` (neuf)
 - `frontend/src/lib/features/invoices/invoices.types.ts`, `invoice-helpers.ts`, `invoice-helpers.test.ts`
+  (remédiation P1 : `invoice-line-type.ts`, `invoice-lines.test.ts`, `invoices.types.ts`, et les `+page.svelte` des deux fiches)
 - `frontend/src/lib/features/credit-notes/credit-notes.types.ts`
 - `frontend/src/lib/components/invoices/InvoiceForm.svelte`, `InvoiceForm.test.ts`
 - `frontend/src/routes/(app)/invoices/[id]/+page.svelte`, `invoice-display-page.test.ts`
@@ -749,3 +783,4 @@ donné par la mutation T1-a, qui reproduit exactement l'état d'avant le code (`
 | 2026-11-19 | **Validation P1** (Sonnet 5.5, passe complète, contexte frais ; `kesh-gate-logs/e491c/validation-49-1c-p1.md`) : **0/0/2/6**. **Décisions de Guy du 2026-11-19** sur les trois questions de la fiche (orchestrateur : `c91a5bac4`, fusion `2cce7b905`) : #1400 → 49-4 ; #1401 fermée par la PR de la 0.20.0 sur la foi de T5, contact → #1411 ; la 49-1c ne sort pas sans la 49-4. **Remédiation** (Opus 5.5) : **V1-1** (MEDIUM) levée sur le fond par ces décisions — en-tête, D9, D10, D12 (consigne de la 49-1b `:243`, `:474` renvoyée à la 49-4 par décision de Guy), Dev Notes (questions marquées tranchées, règle de sortie, issue du contact = #1411) ; **V1-2** (MEDIUM) — D6 fixe la règle d'une ligne sans type (`estChiffree` vrai pour `undefined`, `lineType` optionnel dans les types de réponse, fixtures existantes inchangées), D5 donne au formulaire son type d'état aux montants `string` (`npm run check` vert sans garde), le filtre du total est dans `computeInvoiceTotal` ; T7 gagne le cas `undefined` et deux mutations ; AC8 (c) contrôlé par `git diff --numstat` sur quatre fichiers de test ; tâche « Fixtures et types » ; **V1-3** T5 et AC7 jouent aussi le `PUT`, D9 nomme les écritures de reprise (`backup.rs:2526`) et le test unitaire existant (`invoices.rs:2035`) ; **V1-4** AC10 (a) dit la règle de ce qu'un commentaire perd, les quatre caractères deviennent des exemples, conseil du trait d'union ; **V1-5** AC10 (a) : « huit au plus, moins avec le récapitulatif de TVA » (`invoice_pdf_service.rs:81-87`, remplace la citation inexacte `pdf.rs:629`), facture de commentaires seuls non validable, boutons nommés pour la première fois, « depuis la version~0.20.0 » ; **V1-6** PR #1327 : catalogues et `user-manual.tex` communs, hunks distincts ; **V1-7** compte des modules à la crate seulement (cinq), phrase du « six » retirée ; **V1-8** `pdf.rs:668`, `vat.rs:85-86`. Propagation grepée dans la fiche : `pdf.rs:637`, `83-86`, `pdf.rs:629`, `environ huit`, « six » (restent les seuls « six cellules », vrais), « issue à ouvrir », « arbitr ». Aucun reclassement. Passe suivante : P2 complète sur Opus, `49-1c-types-de-lignes-ecran-validation-prompt-p2.md`. |
 | 2026-11-19 | **Validation P2** (Opus 5.5, passe complète, contexte frais ; `kesh-gate-logs/e491c/validation-49-1c-p2.md`) : **0/0/1/7** ; les huit findings de la P1 levés sur le fond. **Remédiation** (Opus 5.5) : **V2-1** (MEDIUM) — AC8 (c) et T8 nomment l'exception : le test `AC9 a` (`InvoiceForm.test.ts:1607`, assertion `:1626`) gagne `lineType: 'priced'` et devient la preuve d'AC8 (d), seule assertion existante modifiée ; **V2-2** signature explicite de `computeInvoiceTotal` (`lineType` optionnel, `quantity` et `unitPrice` `string` obligatoires), vérifiée à la lecture contre `invoice-helpers.ts:40-46` et la fixture `invoice-helpers.test.ts:25-29` ; **V2-3** AC8 (c) ajoute le rejeu des quatre fichiers de test pris à `5156f2b7b` (seul échec attendu : `AC9 a`) ; **V2-4** citations `backup.rs:831` (`restore_tables_in_tx`) et `invoice_pdf_service.rs:88-89` — **annotation datée** : l'entrée P1 ci-dessus citait `backup.rs:2526` (code de test) et `:81-87`, inexacts à leur date ; **V2-5** AC10 (d) en contrôles positifs ; **V2-6** la 49-4 aux fichiers communs, avec sa consigne de reprise des phrases du manuel (à porter au fichier d'épique par l'orchestrateur) ; **V2-7** sources des décisions nommées (épique pour #1400 et la règle, `sprint-status.yaml` pour #1401, #1411 issue de l'orchestrateur), « motifs de la fiche » au lieu de motifs prêtés à Guy, repli à la coupure écrit sans ambiguïté (49-1c retirée avec la 49-4, et avec elles 49-2, 49-3, fermeture de #1401) ; **V2-8** capture du formulaire bloqué sur un commentaire vide. Propagation grepée dans la fiche : `backup.rs:2526`, `81-87`, `Pick<CreateInvoiceLineRequest, 'lineType'`, « qui ont fondé », « sort avec elle », `comment.*(réservées` (restent seulement dans l'entrée P1, annotée ici). Aucun reclassement. Passe suivante : P3 **ciblée** sur le seul commit de cette remédiation, Sonnet, `49-1c-types-de-lignes-ecran-validation-prompt-p3-ciblee.md`. |
 | 2026-11-19 | **Validation terminée — Change Log final de la validation** (une entrée). **Tendance des findings par passe** (CRITICAL/HIGH/MEDIUM/LOW) : P1 complète, **Sonnet 5.5** : 0/0/2/6 (`validation-49-1c-p1.md`) → P2 complète, **Opus 5.5** : 0/0/1/7 (`validation-49-1c-p2.md` ; le MEDIUM, V2-1, né de la remédiation de V1-2) → P3 **ciblée** sur le seul commit `3e518642f`, **Sonnet 5.5** : 0/0/0/3 (`validation-49-1c-p3.md`) ; arrêt sur une passe sans finding au-dessus de LOW. **Modèles** : rédaction et remédiations Opus 5.5 ; passes Sonnet, Opus, Sonnet (alternance). **Aucun reclassement.** Les trois LOW de la P3 appliqués à la fiche, sans passe de plus (corrections de documentation, consigne de l'orchestrateur) : **V3-1** contrôles d'AC10 (d) qui discriminent (vides sur le texte actuel, motifs dans le style de chaque fichier) ; **V3-2** copie de rejeu en `*.rejeu.test.ts` (`vite.config.ts:59`), « `toEqual` sur une charge de lignes », commande sous `scripts/mem-guard.sh` ; **V3-3** conseil du trait d'union ajouté à la consigne pour la 49-4 (reporté au fichier d'épique par l'orchestrateur). Décisions de Guy du 2026-11-19 intégrées (#1400 → 49-4 ; #1401 fermée par la PR sur la foi de T5, contact → #1411 ; la 49-1c ne sort pas sans la 49-4). Statut : `ready-for-dev`. |
+| 2026-11-23 | **Revue de code P1 remédiée** (Sonnet 5.5, agent de remédiation). **Décompte de la P1** (Opus 5.5, passe complète, contexte frais ; trois lentilles — B, E, A — exercées l'une après l'autre par un seul agent ; `kesh-gate-logs/e491c/review-p1-{B,E,A}.md`) : **0 CRITICAL / 0 HIGH / 1 MEDIUM / 10 LOW**. **Sort de chaque finding.** **A-1** (MEDIUM, section des gates vide, story restée `in-progress`) : levé — gates rejoués au HEAD (frontend `front-2.log`, T10 `e2e-T10-p1.log`), Rust cité à `7f8bf6a00` (`git diff --stat 7f8bf6a00 HEAD -- crates` vide), section écrite, « C-e491c-1 à 8 » → « 1 à 17 », `Status: review` (C-e491c-10). **A-2** : déclaré au Dev Agent Record, T10 rejoué vert au HEAD (C-e491c-15). **A-3** : écart à AC11 déclaré, captures non reprises (C-e491c-15). **A-4** : issue P4 demandée (C-e491c-16). **A-5** : recompté (21 → 25 occurrences de `i18nMsg(`, écart +4 juste) et phrase corrigée (C-e491c-17). **B-1** : issue P3 demandée (C-e491c-13). **B-2** et **E-2** : corrigés (`estLigneDeTexte` = contraire exact d'`estChiffree`, `null` = absent ; deux tests ; C-e491c-11). **B-3** : constante `COLONNES_LIGNES` sur les deux fiches. **B-4** : doc-comment corrigé (C-e491c-12). **E-1** : issue P3 demandée, la 49-3 ouvre `heading` (C-e491c-14). **Aucun reclassement en dette.** Les corrections de code (`c00858669`) touchent un module, le frontend `invoices` (un fichier de test, une fiche, une page d'avoir) : passe suivante **P2 complète**, Sonnet 5.5, `49-1c-types-de-lignes-ecran-review-prompt-p2.md`. |
