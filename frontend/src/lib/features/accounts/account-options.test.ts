@@ -9,6 +9,8 @@ import type { AccountResponse } from './accounts.types';
 import {
 	accountIdsWithRole,
 	bankAccountsNotLinkedTo,
+	parentCandidates,
+	parentFieldForUpdate,
 	withCurrentAccount,
 	withoutAccountIds,
 } from './account-options';
@@ -149,5 +151,52 @@ describe('fonctions d’écran de la Story 15-6b', () => {
 			'Receivable',
 		);
 		expect(bankAccountsNotLinkedTo([bank(1, 1100)], idsApresFiltre)).toHaveLength(1);
+	});
+});
+
+// Correctif `fix-api-parent-compte` — le parent se choisit aussi à la
+// modification : ni le compte lui-même, ni ses sous-comptes ; le champ ne
+// part que s'il change.
+describe('parentCandidates', () => {
+	const G = acc({ id: 1, number: '10', name: 'Groupe' });
+	const E = acc({ id: 2, number: '100', name: 'Enfant', parentId: 1 });
+	const PE = acc({ id: 3, number: '1000', name: 'Petit-enfant', parentId: 2 });
+	const V = acc({ id: 4, number: '20', name: 'Voisin' });
+	const AR = acc({ id: 5, number: '19', name: 'Archivé', active: false });
+	const M = acc({ id: 6, number: '1020', name: 'Mouvementé', currencyLocked: true });
+	const PLAN = [PE, V, AR, E, G, M];
+
+	it('à la création, tous les comptes actifs, mouvementés compris', () => {
+		expect(parentCandidates(PLAN, null).map((a) => a.id)).toEqual([3, 4, 2, 1, 6]);
+	});
+
+	it('à la modification, ni le compte ni ses sous-comptes à tous les niveaux', () => {
+		expect(parentCandidates(PLAN, G).map((a) => a.id)).toEqual([4]);
+		expect(parentCandidates(PLAN, E).map((a) => a.id)).toEqual([4, 1]);
+		expect(parentCandidates(PLAN, PE).map((a) => a.id)).toEqual([4, 2, 1]);
+	});
+
+	it('à la modification, ni les comptes qui portent des écritures, sauf le parent actuel', () => {
+		expect(parentCandidates(PLAN, V).map((a) => a.id)).not.toContain(6);
+		const sousM = acc({ id: 7, number: '1021', name: 'Sous M', parentId: 6 });
+		expect(parentCandidates([...PLAN, sousM], sousM).map((a) => a.id)).toContain(6);
+	});
+
+	it('se termine sur une liste qui porterait un cycle', () => {
+		const X = acc({ id: 7, number: '7', name: 'X', parentId: 8 });
+		const Y = acc({ id: 8, number: '8', name: 'Y', parentId: 7 });
+		expect(parentCandidates([X, Y, V], X).map((a) => a.id)).toEqual([4]);
+	});
+});
+
+describe('parentFieldForUpdate', () => {
+	it('absent quand le parent ne change pas', () => {
+		expect(parentFieldForUpdate({ parentId: 1 }, '1')).toEqual({});
+		expect(parentFieldForUpdate({ parentId: null }, '')).toEqual({});
+	});
+
+	it('l’identifiant choisi, ou null pour « Aucun »', () => {
+		expect(parentFieldForUpdate({ parentId: null }, '4')).toEqual({ parentId: 4 });
+		expect(parentFieldForUpdate({ parentId: 1 }, '')).toEqual({ parentId: null });
 	});
 });

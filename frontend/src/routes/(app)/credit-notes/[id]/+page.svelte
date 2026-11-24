@@ -10,6 +10,7 @@
 		formatCreditNoteTotal,
 	} from '$lib/features/credit-notes/credit-note-helpers';
 	import type { CreditNoteResponse } from '$lib/features/credit-notes/credit-notes.types';
+	import { estLigneDeTexte } from '$lib/features/invoices/invoice-line-type';
 	import { apiClient, isApiError } from '$lib/shared/utils/api-client';
 	import { notifyError } from '$lib/shared/utils/notify';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
@@ -20,6 +21,9 @@
 	import { creditNoteRevenueAccountLabel } from '$lib/features/accounts/account-label';
 	import { formatSwissDate } from '$lib/features/reports/reports.api';
 	import { readableAmount } from '$lib/features/supplier-invoices/supplier-invoice-form';
+
+	/** Colonnes du tableau des lignes (six `<th>` du `<thead>`) : un commentaire les couvre toutes. */
+	const COLONNES_LIGNES = 6;
 
 	let creditNote = $state<CreditNoteResponse | null>(null);
 	let loading = $state(true);
@@ -175,6 +179,15 @@
 		</thead>
 		<tbody>
 			{#each creditNote.lines as line (line.position)}
+				{#if estLigneDeTexte(line.lineType)}
+					<!-- Story 49-1c (D7) — un commentaire repris de la facture : une cellule
+					     sur toutes les colonnes, sauts de ligne gardés, sans montant ni compte. -->
+					<tr class="border-b" data-testid="credit-note-line-comment-row">
+						<td colspan={COLONNES_LIGNES} class="py-2 whitespace-pre-line" data-testid="credit-note-line-comment"
+							>{line.description}</td
+						>
+					</tr>
+				{:else}
 				<tr class="border-b">
 					<td class="py-2">{line.description}</td>
 					<!-- Story v0171 (#866) : la quantité lisible, `1.0000` → `1`. -->
@@ -188,6 +201,7 @@
 					</td>
 					<td class="py-2 text-right">{formatCreditNoteTotal(line.lineTotal)}</td>
 				</tr>
+				{/if}
 			{/each}
 		</tbody>
 		<tfoot>

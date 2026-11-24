@@ -3,8 +3,8 @@
 Swiss QR Bill (SIX 2.2) payload builder and PDF generator for the Kesh accounting
 platform.
 
-**Positioning.** This crate is intentionally standalone — zero dependency on
-`kesh-core` or `kesh-db` (architecture DD-14). It accepts plain Rust types plus
+**Positioning.** This crate depends on `kesh-core` only (Story 22-1, D3 — it is no
+longer standalone) and never on `kesh-db`. It accepts plain Rust types plus
 an injected i18n bundle and returns a `Vec<u8>` containing the full A4 invoice
 + payment part PDF. It can be published to crates.io independently.
 

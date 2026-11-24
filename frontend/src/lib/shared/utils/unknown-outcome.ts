@@ -58,9 +58,14 @@ export function isUnknownOutcome(err: unknown): boolean {
  * brouillon, joindre et détacher un document) : une issue inconnue relit la facture
  * et le dit. Là, pas d'état bloquant : chacun de ces gestes est gardé par le statut, la
  * version ou l'état du document (joindre, détacher), si bien qu'un second envoi est
- * refusé sans rien écrire deux fois — refus qui relit la facture. Ne sont pas couvertes
- * ici la page de modification d'un brouillon (`PUT`, #986), la complétion d'un document
- * (#985) ni la création (#975).
+ * refusé sans rien écrire deux fois — refus qui relit la facture.
+ *
+ * Story 48-12b (#975, #985) — le **formulaire** d'une facture fournisseur l'emploie à son
+ * tour : à la création et à la modification d'un brouillon, une issue inconnue fige le
+ * formulaire et invite à vérifier avant de reprendre la saisie (aucun renvoi à l'aveugle) ;
+ * à la complétion d'un document, elle mène à une relecture du document, qui dit si la
+ * facture a été créée. Reste non couvert : le conflit de version qu'un renvoi rend après
+ * une modification déjà écrite (`OPTIMISTIC_LOCK_CONFLICT`, #986, release ultérieure).
  */
 export function isSettlementOutcomeUnknown(err: unknown): boolean {
 	if (!isApiError(err)) return true;

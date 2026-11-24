@@ -13,10 +13,26 @@ export type InvoiceSortBy = 'Date' | 'DueDate' | 'TotalAmount' | 'ContactName' |
 export type SortDirection = 'Asc' | 'Desc';
 export type InvoiceStatus = 'draft' | 'validated' | 'cancelled';
 
+/**
+ * Type d'une ligne de facture ou d'avoir (Story 49-1a, #1242) : `priced` (ligne
+ * chiffrée, la seule forme d'avant la 0.20.0), `comment` (texte seul, ouvert à
+ * l'API par la Story 49-1c), `heading` (titre de section, refusé par l'API
+ * jusqu'à la Story 49-3). Une ligne non chiffrée porte des valeurs neutres
+ * (quantité, prix, taux et total à zéro, aucun compte).
+ */
+export type InvoiceLineType = 'priced' | 'comment' | 'heading';
+
 export interface InvoiceLineResponse {
 	id: number;
 	invoiceId: number;
 	position: number;
+	/**
+	 * Type de la ligne (Story 49-1c, D6). L'API le renvoie toujours depuis la
+	 * 0.20.0 ; il est **optionnel** ici, et **absent vaut `priced`**
+	 * (`estChiffree`, `invoice-line-type.ts`) — la règle des données d'avant la
+	 * 0.20.0 et des fixtures de test qui ne le portent pas.
+	 */
+	lineType?: InvoiceLineType;
 	description: string;
 	quantity: string;
 	unitPrice: string;
@@ -343,10 +359,20 @@ export interface CancelSettlementResponse {
 }
 
 export interface CreateInvoiceLineRequest {
+	/**
+	 * Type de la ligne (Story 49-1c, D5) : toujours envoyé par l'écran. L'API
+	 * accepte son absence (elle vaut `priced`, contrat de la 0.19.0).
+	 */
+	lineType: InvoiceLineType;
 	description: string;
-	quantity: string;
-	unitPrice: string;
-	vatRate: string;
+	/**
+	 * Quantité, prix unitaire et taux : exigés d'une ligne `priced`, **absents**
+	 * d'une ligne de texte (`comment`, `heading`), dont la charge est
+	 * `{ lineType, description }` seulement (`ligneAEnvoyer`, Story 49-1c, D3).
+	 */
+	quantity?: string;
+	unitPrice?: string;
+	vatRate?: string;
 	/**
 	 * Compte de produit de la ligne (Story 16-1a, #152). Optionnel : omettre la
 	 * clé ou envoyer `null` fait suivre le compte par défaut de la société — le

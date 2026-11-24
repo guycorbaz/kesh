@@ -48,15 +48,16 @@ impl LineType {
     /// HTTP peut créer ou poser par modification.
     ///
     /// Le dépôt accepte les trois types ; c'est cette fonction, appelée par la
-    /// validation des lignes de `kesh-api`, qui retient `comment` et `heading`
-    /// tant que leur rendu PDF (Story 49-1b) et leur écran (Story 49-1c) ne
-    /// sont pas livrés — sans elle, un commentaire s'imprimerait
-    /// `0 × 0.00 = 0.00`. La Story 49-1c ouvre `comment`, la Story 49-3
-    /// `heading`.
+    /// validation des lignes de `kesh-api`, qui retient un type tant que son
+    /// rendu PDF et son écran ne sont pas livrés. `comment` est ouvert depuis la
+    /// Story 49-1c (rendu PDF de la 49-1b, écran de la 49-1c) ; `heading` reste
+    /// fermé jusqu'à la Story 49-3. Le `match` reste exhaustif, sans joker : un
+    /// type ajouté devra être tranché ici.
     pub fn open_to_api(&self) -> bool {
         match self {
             Self::Priced => true,
-            Self::Comment | Self::Heading => false,
+            Self::Comment => true,
+            Self::Heading => false,
         }
     }
 }
@@ -125,11 +126,12 @@ mod tests {
         assert_eq!(LineType::default(), LineType::Priced);
     }
 
-    /// La garde de la 49-1a : seul `priced` est ouvert à l'API.
+    /// La garde depuis la 49-1c (D2) : `priced` et `comment` sont ouverts à
+    /// l'API, `heading` reste fermé jusqu'à la Story 49-3.
     #[test]
-    fn only_priced_is_open_to_api() {
+    fn comment_is_open_heading_is_not() {
         assert!(LineType::Priced.open_to_api());
-        assert!(!LineType::Comment.open_to_api());
+        assert!(LineType::Comment.open_to_api());
         assert!(!LineType::Heading.open_to_api());
     }
 }

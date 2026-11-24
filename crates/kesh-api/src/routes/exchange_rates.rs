@@ -383,13 +383,14 @@ fn refuser_chf(devise: &str) -> Result<(), AppError> {
 }
 
 /// Second temps, après les autres paramètres : la devise, lue **telle
-/// quelle** (sans normalisation : `usd` est refusée), doit être de la liste
-/// ISO 4217 de 37-1 → sinon `400 CURRENCY_UNKNOWN`.
+/// quelle** (sans normalisation : `usd` est refusée), doit être une devise de
+/// **cours** — de la liste ISO 4217 de 37-1, ou une monnaie retirée dont
+/// l'AFC publie les cours (`BGN`, `HRK`…, correctif `fix-cours-afc-bgn`) —
+/// → sinon `400 CURRENCY_UNKNOWN`. Les routes des cours admettent ainsi
+/// toute devise que `POST /exchange-rates/fetch` peut écrire ; un compte, lui,
+/// ne s'ouvre que dans une monnaie active (`routes/accounts.rs`).
 fn exiger_devise_connue(devise: &str) -> Result<(), AppError> {
-    if kesh_core::currency::ISO_4217_CURRENCIES
-        .binary_search(&devise)
-        .is_err()
-    {
+    if !kesh_core::currency::is_rate_currency(devise) {
         return Err(AppError::Database(DbError::CurrencyUnknown {
             value: devise.to_string(),
         }));

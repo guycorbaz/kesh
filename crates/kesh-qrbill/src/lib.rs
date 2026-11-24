@@ -1,6 +1,8 @@
 //! Kesh QR Bill — Swiss QR Bill SIX 2.2 payload and PDF generation.
 //!
-//! Standalone crate: zero dependency on `kesh-core` / `kesh-db` (DD-14).
+//! Depends on `kesh-core` only (Story 22-1, D3 — no longer standalone), never on `kesh-db`
+//! (DD-14). `kesh-report` uses its Helvetica width table ([`largeur_mm`]) to right-align
+//! report amounts — a shared font metric, not a shared PDF layer.
 //! Input is plain Rust types plus an injected i18n bundle; output is a PDF byte vector.
 //!
 //! Entry points:
@@ -20,6 +22,7 @@ pub mod types;
 pub mod validation;
 
 pub use generator::build_payload;
+pub use largeurs::largeur_mm;
 pub use parser::{ScannedAddress, ScannedQrBill, ScannedReference, parse_spc_payload};
 pub use pdf::{
     REMINDER_LABEL_MAX_CHARS, REMINDER_NOTE_MAX_CHARS, generate_credit_note_pdf,

@@ -273,7 +273,8 @@ fn premiers_mots(noms: &HashMap<String, Vec<String>>) -> std::collections::HashS
 /// consommer** (revue de code P2, E2-3) : dans `1000 1030`, les deux nombres sont lus.
 /// Ne sont pas des comptes : un nombre collé à un chiffre, une lettre ASCII, `_`, une
 /// apostrophe (séparateur de milliers), un `%` ; précédé de `.`, `,`, `:`, `#` ; ou d'un
-/// `-` lui-même collé à un caractère alphanumérique (`ISO-8859`, `F-2026-0042`).
+/// `-` lui-même collé à un caractère alphanumérique (`ISO-8859`, `F-2026-0042`) ; ou
+/// de `U+`, un point de code Unicode (`U+2212`, Story 49-1c) — un `+` seul ne borne rien.
 /// `{` et `}` ne bornent plus rien (revue de code P2, B2-2) : `\textbf{3600}` est lu.
 /// Une date ISO `NNNN-MM-JJ` n'est pas un compte, à condition que le mois soit
 /// `01`-`12` et le jour `01`-`31` (Story 32-1a, #716, E6) : `1171-99-99` est lu.
@@ -291,6 +292,9 @@ fn nombres_isoles(ligne: &str) -> Vec<(String, String, usize, usize)> {
         let exclu_avant = match precedent {
             None => false,
             Some('-') => avant.next().is_some_and(char::is_alphanumeric),
+            // Story 49-1c (C-e491c-9) — un point de code `U+NNNN` (« le signe moins
+            // U+2212 ») n'est pas un compte : `+` précédé de `U` exactement.
+            Some('+') => avant.next() == Some('U'),
             Some(p) => p.is_ascii_digit() || p.is_ascii_alphabetic() || ".,'’:#_".contains(p),
         };
         let exclu_apres = ligne[m.end()..]
@@ -311,6 +315,24 @@ fn nombres_isoles(ligne: &str) -> Vec<(String, String, usize, usize)> {
         }
     }
     out
+}
+
+/// Story 49-1c (C-e491c-9) — un point de code `U+NNNN` n'est pas un compte ; un `+`
+/// qui ne suit pas `U` ne retire pas le nombre (`+2212`, `X+2212` restent lus).
+#[test]
+fn nombres_isoles_ne_prend_pas_un_point_de_code_pour_un_compte() {
+    assert!(
+        nombres_isoles("le signe moins «~−~» (U+2212), les flèches").is_empty(),
+        "U+2212 est un point de code, non un compte"
+    );
+    for lu in ["solde +2212 au bilan", "X+2212 ici"] {
+        let rendus: Vec<String> = nombres_isoles(lu).into_iter().map(|(n, ..)| n).collect();
+        assert_eq!(
+            rendus,
+            vec!["2212".to_string()],
+            "« {lu} » : le nombre doit être rendu"
+        );
+    }
 }
 
 /// Story 32-1a (#716, E6) — la reconnaissance d'une date ISO, fixée par des cas.
@@ -908,6 +930,36 @@ fn les_replis_rust_suivent_le_catalogue() {
                     1,
                     &[("{ $format }", "{format}")],
                 ),
+                // #1348 (story v0200-corrections-mineures, D1 c) — les vingt et une
+                // clés que le serveur appelait sans qu'aucun catalogue les porte (il
+                // rendait la clé brute). « Entrée invalide » compte deux sites : le
+                // repli de la branche générique et l'`assert_ne!` du module de test
+                // (la garde lit le fichier entier) ; le quota porte `{ $max }`.
+                ("error-onboarding-reset-forbidden", 1, &[]),
+                ("error-invoice-already-paid", 1, &[]),
+                ("error-dunning-level-not-found", 1, &[]),
+                ("error-reminder-date-in-future", 1, &[]),
+                ("error-invoice-not-paused", 1, &[]),
+                ("error-dunning-paused", 1, &[]),
+                ("error-level-already-sent", 1, &[]),
+                ("error-reminder-sent-but-invoice-gone", 1, &[]),
+                ("error-reminder-sent-but-not-recorded", 1, &[]),
+                ("error-batch-too-large", 1, &[]),
+                (
+                    "error-batch-exceeds-send-quota",
+                    1,
+                    &[("{ $max }", "{max}")],
+                ),
+                ("reconciliation-errors-lock-release-failed", 1, &[]),
+                ("reconciliation-errors-fiscal-year-closed", 1, &[]),
+                ("reconciliation-errors-transaction-not-pending", 1, &[]),
+                ("error-inbox-import-already-running", 1, &[]),
+                ("error-import-not-pending-completion", 1, &[]),
+                ("error-source-document-not-found", 1, &[]),
+                ("error-imported-invoice-not-found", 1, &[]),
+                ("error-source-document-gone", 1, &[]),
+                ("error-data-length-or-range", 1, &[]),
+                ("error-invalid-input-generic", 2, &[]),
             ],
         ),
         (

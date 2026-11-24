@@ -11,6 +11,16 @@ use sqlx::MySqlPool;
 use crate::errors::AppError;
 use crate::middleware::auth::CurrentUser;
 
+/// Longueur maximale, en caractères, du **prénom** et du **nom** d'une personne,
+/// chacun séparément — la taille des colonnes `first_name` / `last_name`
+/// (`VARCHAR(70)`) de `contacts` et de `companies` (migration
+/// `20260705000002_person_names.sql`). Story 48-15 (#1334) : sans elle, seul le
+/// nom composé était borné et un prénom de 71 caractères butait sur MariaDB
+/// (`400 DATA_LENGTH_OR_RANGE`, qui ne nomme pas le champ). La borne **égale** la
+/// colonne : aucune valeur déjà enregistrée ne peut être refusée. Sert aux routes
+/// des contacts et à l'assistant (`set_coordinates`), avec [`validate_text_len`].
+pub const PERSON_NAME_PART_MAX: usize = 70;
+
 /// Rejette (400) un texte dépassant `max` **caractères** — un 400 explicite plutôt
 /// qu'une erreur MariaDB brute (1406) au-delà de la borne de la colonne.
 ///
@@ -43,6 +53,34 @@ pub fn validate_text_len(value: &str, max: usize, field: &str) -> Result<(), App
 /// changement de borne (review Pass 4).
 pub fn exceeds_len(value: &str, max: usize) -> bool {
     value.chars().count() > max
+}
+
+/// Un nom **facultatif à ce niveau** (prénom, nom, raison sociale), jugé sur ce qui
+/// se voit — #1343 (0.20.0).
+///
+/// - `None`, vide ou blanc après `trim` → `Ok(None)` : l'appelant garde sa
+///   sémantique d'un champ absent (message « obligatoire » ou repli sur un autre
+///   champ) ;
+/// - **entièrement invisible** ([`kesh_core::text::is_invisible`] : trait d'union
+///   conditionnel U+00AD, espaces de largeur nulle, BOM…) → refus `400` qui nomme
+///   `field` et dit le geste — le champ **paraît vide** à l'écran, l'utilisateur ne
+///   voit pas ce qu'il doit corriger ;
+/// - sinon → `Ok(Some(valeur rognée))`. Un texte qui **mêle** invisible et visible
+///   (« Jean\u{AD}Pierre ») passe inchangé, comme dans
+///   `routes::contacts::normalize_optional`.
+///
+/// `str::trim` ne retire pas ces caractères : un prénom fait du seul U+00AD comptait
+/// pour renseigné et s'imprimait en espace de tête. Message en français (#710).
+pub fn optional_visible(value: Option<&str>, field: &str) -> Result<Option<String>, AppError> {
+    let Some(rogne) = value.map(str::trim).filter(|v| !v.is_empty()) else {
+        return Ok(None);
+    };
+    if rogne.chars().all(kesh_core::text::is_invisible) {
+        return Err(AppError::Validation(format!(
+            "{field} : aucun caractère visible (un trait d'union conditionnel seul, par exemple) — effacez le champ et saisissez-le de nouveau"
+        )));
+    }
+    Ok(Some(rogne.to_string()))
 }
 
 /// Récupère la company de l'utilisateur courant.
@@ -118,5 +156,34 @@ mod tests {
         };
         assert_eq!(user.user_id, 123);
         assert_eq!(user.company_id, 5);
+    }
+
+    /// #1343 (story v0200-corrections-mineures, AC11) — `optional_visible`. Rouge : M16.
+    #[test]
+    fn optional_visible_refuses_only_the_entirely_invisible_1343() {
+        for vide in [None, Some(""), Some("  ")] {
+            assert!(
+                matches!(optional_visible(vide, "Prénom"), Ok(None)),
+                "{vide:?}"
+            );
+        }
+        for invisible in ["\u{AD}", "\u{200B}\u{FEFF}", " \u{AD} "] {
+            match optional_visible(Some(invisible), "Prénom") {
+                Err(AppError::Validation(m)) => assert_eq!(
+                    m,
+                    "Prénom : aucun caractère visible (un trait d'union conditionnel seul, par exemple) — effacez le champ et saisissez-le de nouveau",
+                    "{invisible:?}"
+                ),
+                autre => panic!("{invisible:?} : refus attendu, obtenu {autre:?}"),
+            }
+        }
+        assert_eq!(
+            optional_visible(Some(" Jean "), "Prénom").unwrap(),
+            Some("Jean".to_string())
+        );
+        assert_eq!(
+            optional_visible(Some("Jean\u{AD}Pierre"), "Prénom").unwrap(),
+            Some("Jean\u{AD}Pierre".to_string())
+        );
     }
 }

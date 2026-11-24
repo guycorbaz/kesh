@@ -48,6 +48,32 @@ et à son agent — pour qu'ils voient d'avance où leurs changements croiseront
 - **L'annonce du plan de la 0.19.0 est retirée** : il annonçait pour la 0.20.0 une migration de la **note interne** (#1158,
   #268). Elle n'y est pas — #1158, #268 sortent du milestone (voir plus bas).
 
+## Révision du 2026-11-21 — ce que la release du vendredi 2026-11-27 contient désormais
+
+Décisions du Project Lead du 2026-11-21 (revue des règles à plusieurs développeurs) :
+- **Déjà publié dans la v0.19.1** (release intermédiaire du 2026-11-21, sans migration) : 48-10, 48-13, 48-15,
+  v0200-corrections-mineures, 48-14, et les correctifs de main (#1351, #1346, #1327, #1353). L'Epic 48 est clos.
+- **Epic 50 « Corrections »** (`epic-50-corrections.md`) : 48-11, 48-12a, 48-12b, story de solde.
+- **Epic 51 « Réimputation »** (`epic-51-reimputation.md`) : 48-1, 48-2a, 48-2b, story de solde — le 27 s'il tient, sinon la
+  semaine suivante ; il n'entre dans `main` que terminé.
+- **Epic 49** réduit à 49-1a, 49-1b (closes), 49-1c, 49-1d, 49-4a ; porte la migration, donc la release du 27 sera la
+  **0.20.0** (`b` monte avec une migration).
+- **Epic 52** (`epic-52-lignes-de-facture-suite.md`) : 49-2, 49-3, 49-4b, après l'Epic 49.
+- 48-3 à 48-9 : liste d'attente, hors epic.
+- Hors épique, inchangé : v0200-menu-sous-groupes (#1253).
+
+**Triage P1 du 2026-11-21** (décisions du Project Lead) : dix P1 ouverts, qui passent en priorité dans la release suivante.
+- Les epics déjà avancés continuent : l'**Epic 49** (types de lignes) reste **la fonctionnalité nouvelle de la release du
+  vendredi** — chaque release du vendredi garde au moins une fonctionnalité nouvelle, même quand les P1 passent devant ;
+  l'**Epic 50** porte déjà #1245 (48-11).
+- **Epic 53 « Écritures justes »** (`epic-53-ecritures-justes.md`) : #1355, #1365, #525, #1198, #513, #1004 ; lancé le mardi
+  2026-11-24, **avant l'Epic 51** ; vendredi 27 s'il est clos, sinon une release de milieu de semaine dès sa clôture.
+- **Epic 54 « Totaux du décompte de TVA »** (`epic-54-totaux-tva.md`) : #390, #391, #392 ; après l'Epic 53.
+- **Epic 51** (réimputation, sans P1) passe après l'Epic 53.
+
+Le milestone se nomme désormais par sa date. Les tableaux ci-dessous décrivent le plan du kickoff du 2026-11-18 ; là où ils
+divergent de cette révision, la révision fait foi.
+
 ## Contenu
 
 ### Epic 48 — Corrections de la 0.20.0 (`epic-48-corrections-0-20-0.md`)

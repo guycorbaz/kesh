@@ -48,7 +48,7 @@ pub mod vat_rate;
 
 pub use account::{
     Account, AccountRole, AccountType, AccountUpdate, CurrencyChange, FxAccounts, FxAccountsOrigin,
-    NewAccount, OwnFxAccounts, OwnFxAccountsChange,
+    NewAccount, OwnFxAccounts, OwnFxAccountsChange, ParentChange,
 };
 pub use api_key::{ApiKey, ApiKeyScope, NewApiKey};
 pub use audit_log::{AUDIT_ENTITY_ID_NONE, Acteur, ActorType, AuditLogEntry, NewAuditLogEntry};

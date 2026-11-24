@@ -83,13 +83,16 @@ struct ValidatedPerson {
 }
 
 fn validate(body: &ContactPersonBody) -> Result<ValidatedPerson, AppError> {
-    let first_name = body.first_name.trim().to_string();
-    let last_name = body.last_name.trim().to_string();
-    if first_name.is_empty() || last_name.is_empty() {
+    // #1343 (0.20.0) — un prénom ou un nom fait de caractères invisibles est refusé
+    // en nommant le champ ; vide, il garde le message d'avant.
+    let (Some(first_name), Some(last_name)) = (
+        crate::helpers::optional_visible(Some(&body.first_name), "Prénom")?,
+        crate::helpers::optional_visible(Some(&body.last_name), "Nom")?,
+    ) else {
         return Err(AppError::Validation(
             "Le prénom et le nom sont obligatoires".into(),
         ));
-    }
+    };
     if first_name.chars().count() > MAX_NAME || last_name.chars().count() > MAX_NAME {
         return Err(AppError::Validation(format!(
             "Prénom / nom : maximum {MAX_NAME} caractères"

@@ -207,7 +207,9 @@
 		</label>
 		<label class="block text-sm">
 			{i18nMsg('supplier-invoices-new-supplier-country', 'Pays')}
-			<input class="mt-1 w-full rounded border px-2 py-1" data-testid="supplier-new-country" maxlength="2" bind:value={address.country} />
+			<!-- Story 48-15 (#1332) : pas de `maxlength` — « Suisse » collé devenait « Su ». Le
+			     serveur refuse ce qui n'est pas un code ISO et le dit (`supplier-new-error`). -->
+			<input class="mt-1 w-full rounded border px-2 py-1" data-testid="supplier-new-country" bind:value={address.country} />
 		</label>
 	</div>
 

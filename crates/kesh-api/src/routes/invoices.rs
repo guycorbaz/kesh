@@ -78,9 +78,10 @@ where
 #[serde(rename_all = "camelCase")]
 pub struct CreateInvoiceLineRequest {
     /// Type de la ligne (Story 49-1a), `priced` par défaut : un corps de la
-    /// 0.19.0, qui ne l'envoie pas, est accepté à l'identique. `comment` et
-    /// `heading` sont reconnus mais **refusés** (`400`) tant que la garde
-    /// [`LineType::open_to_api`] ne les ouvre pas ; une valeur inconnue est un
+    /// 0.19.0, qui ne l'envoie pas, est accepté à l'identique. `comment` est
+    /// accepté depuis la Story 49-1c (texte seul, valeurs neutres) ; `heading`
+    /// est reconnu mais **refusé** (`400`) tant que la garde
+    /// [`LineType::open_to_api`] ne l'ouvre pas (Story 49-3) ; une valeur inconnue est un
     /// rejet de l'extracteur (`422`). Un `null` vaut l'absence, comme pour les
     /// montants et `revenueAccountId` (revue P1, B1/E3/A7) : `#[serde(default)]`
     /// seul ne couvre que la clé absente.
@@ -593,8 +594,10 @@ fn validate_line(req: CreateInvoiceLineRequest, index: usize) -> Result<NewInvoi
 /// Ligne non chiffrée (`comment`, `heading` — Story 49-1a, D8, D9) : la
 /// description seule ; quantité, prix et taux **absents ou nuls**, aucun
 /// compte. Puis **la garde** : un type que [`LineType::open_to_api`] ne
-/// retient pas est refusé, avant toute écriture et avant toute lecture des
-/// taux de TVA (`verify_vat_rates_against_db`, qui suit `validate_lines`).
+/// retient pas (`heading` jusqu'à la Story 49-3 ; `comment` est ouvert depuis
+/// la Story 49-1c) est refusé, avant toute écriture et avant toute lecture des
+/// taux de TVA (`verify_vat_rates_against_db`, qui suit `validate_lines` et ne
+/// reçoit que les taux des lignes chiffrées, [`taux_des_lignes_chiffrees`]).
 fn validate_unpriced_line(
     req: CreateInvoiceLineRequest,
     description: String,
@@ -632,6 +635,22 @@ fn validate_unpriced_line(
         revenue_account_id: None,
         line_type,
     })
+}
+
+/// Les taux de TVA à soumettre à la liste blanche des taux actifs
+/// (`vat::verify_vat_rates_against_db`) : ceux des **seules lignes chiffrées**
+/// (Story 49-1c, D4). Une ligne non chiffrée porte un taux neutre (`0`) qui
+/// n'est pas un taux appliqué : le soumettre ferait refuser une facture à
+/// commentaire dans une société dont le taux 0 % est désactivé. Une facture
+/// faite de lignes non chiffrées seules rend une liste vide, que la liste
+/// blanche accepte. Seul point de collecte, pour la création et la
+/// modification.
+fn taux_des_lignes_chiffrees(lines: &[NewInvoiceLine]) -> Vec<Decimal> {
+    lines
+        .iter()
+        .filter(|l| l.line_type.is_priced())
+        .map(|l| l.vat_rate)
+        .collect()
 }
 
 fn validate_payment_terms(pt: Option<String>) -> Result<Option<String>, AppError> {
@@ -768,7 +787,7 @@ pub async fn create_invoice(
 
     let contact = ensure_contact_belongs_to_company(&state, req.contact_id, company.id).await?;
     let lines = validate_lines(req.lines)?;
-    let rates: Vec<Decimal> = lines.iter().map(|l| l.vat_rate).collect();
+    let rates = taux_des_lignes_chiffrees(&lines);
     vat::verify_vat_rates_against_db(&state.pool, current_user.company_id, &rates).await?;
     let payment_terms = validate_payment_terms(req.payment_terms)?;
 
@@ -861,7 +880,7 @@ pub async fn update_invoice(
     // une facture existante) — le retour de l'entité est ignoré.
     let _ = ensure_contact_belongs_to_company(&state, req.contact_id, company.id).await?;
     let lines = validate_lines(req.lines)?;
-    let rates: Vec<Decimal> = lines.iter().map(|l| l.vat_rate).collect();
+    let rates = taux_des_lignes_chiffrees(&lines);
     vat::verify_vat_rates_against_db(&state.pool, current_user.company_id, &rates).await?;
     let payment_terms = validate_payment_terms(req.payment_terms)?;
 
@@ -1910,25 +1929,53 @@ mod tests {
         );
     }
 
-    /// Story 49-1a (D9) : la garde refuse `comment` et `heading`, même
-    /// neutres, avec le rang dans la liste entière.
+    /// Story 49-1c (D2, D3) : `comment` est accepté, montants absents ou
+    /// explicitement nuls, et rendu avec ses valeurs neutres ; la garde refuse
+    /// toujours `heading`, même neutre, avec le rang dans la liste entière.
     #[test]
-    fn unpriced_types_are_not_yet_open() {
-        for (t, nom) in [
-            (LineType::Comment, "comment"),
-            (LineType::Heading, "heading"),
-        ] {
+    fn comment_is_accepted_heading_is_not_yet_open() {
+        let mut nuls = unpriced(LineType::Comment);
+        nuls.quantity = Some(dec!(0));
+        nuls.unit_price = Some(dec!(0));
+        nuls.vat_rate = Some(dec!(0.00));
+        for req in [unpriced(LineType::Comment), nuls] {
+            let v = validate_line(req, 1).expect("comment est ouvert depuis la 49-1c");
+            assert_eq!(v.line_type, LineType::Comment);
+            assert_eq!(v.description, "Note");
             assert_eq!(
-                message(validate_line(unpriced(t), 1).unwrap_err()),
-                format!("Ligne 2 : le type de ligne {nom} n'est pas encore disponible")
+                (v.quantity, v.unit_price, v.vat_rate),
+                (Decimal::ZERO, Decimal::ZERO, Decimal::ZERO)
             );
-            // Montants explicitement nuls : neutres, toujours refusés par la garde.
-            let mut z = unpriced(t);
-            z.quantity = Some(dec!(0));
-            z.unit_price = Some(dec!(0));
-            z.vat_rate = Some(dec!(0.00));
-            assert!(message(validate_line(z, 0).unwrap_err()).contains("pas encore disponible"));
+            assert_eq!(v.revenue_account_id, None);
         }
+
+        assert_eq!(
+            message(validate_line(unpriced(LineType::Heading), 1).unwrap_err()),
+            "Ligne 2 : le type de ligne heading n'est pas encore disponible"
+        );
+        let mut z = unpriced(LineType::Heading);
+        z.quantity = Some(dec!(0));
+        z.unit_price = Some(dec!(0));
+        z.vat_rate = Some(dec!(0.00));
+        assert!(message(validate_line(z, 0).unwrap_err()).contains("pas encore disponible"));
+    }
+
+    /// Story 49-1c (D4) : seuls les taux des lignes chiffrées vont à la liste
+    /// blanche ; une facture de commentaires seuls n'en soumet aucun.
+    #[test]
+    fn only_priced_rates_reach_the_whitelist() {
+        let lignes = validate_lines(vec![
+            line("A", dec!(1), dec!(10), dec!(8.10)),
+            unpriced(LineType::Comment),
+            line("B", dec!(1), dec!(10), dec!(2.60)),
+        ])
+        .unwrap();
+        assert_eq!(
+            taux_des_lignes_chiffrees(&lignes),
+            vec![dec!(8.10), dec!(2.60)]
+        );
+        let commentaires = validate_lines(vec![unpriced(LineType::Comment)]).unwrap();
+        assert!(taux_des_lignes_chiffrees(&commentaires).is_empty());
     }
 
     /// Story 49-1a (AC11) : une ligne non chiffrée qui porte un montant ou un
@@ -1958,11 +2005,12 @@ mod tests {
     /// Story 49-1a (AC11) : `validate_lines` rejette un type non ouvert — le
     /// gestionnaire ne collecte donc aucun taux (`verify_vat_rates_against_db`
     /// suit `validate_lines`), même entre deux lignes chiffrées valides.
+    /// Depuis la 49-1c, le seul type non ouvert est `heading`.
     #[test]
     fn validate_lines_rejects_closed_type_before_rates() {
         let lignes = vec![
             line("A", dec!(1), dec!(10), dec!(8.10)),
-            unpriced(LineType::Comment),
+            unpriced(LineType::Heading),
             line("B", dec!(1), dec!(10), dec!(8.10)),
         ];
         assert!(message(validate_lines(lignes).unwrap_err()).starts_with("Ligne 2 :"));
