@@ -669,9 +669,9 @@ pub struct SupplierInvoiceVersionRequest {
     pub version: i32,
     /// Story 48-12a (#975, D6bis) — `confirmNotDuplicate`, facultatif, lu par la
     /// **seule dévalidation** : `true` lève le refus de doublon (les deux règles,
-    /// `DuplicateRule::lifted_by_confirmation`) d'une facture annulée repassée en brouillon alors qu'une facture
-    /// équivalente est active, et l'inscrit au journal d'audit. Sans effet sur la
-    /// validation, qui ne compare pas.
+    /// `DuplicateRule::lifted_by_confirmation`) d'une facture annulée repassée
+    /// en brouillon alors qu'une facture équivalente est active, et l'inscrit au
+    /// journal d'audit. Sans effet sur la validation, qui ne compare pas.
     #[serde(default)]
     pub confirm_not_duplicate: bool,
 }

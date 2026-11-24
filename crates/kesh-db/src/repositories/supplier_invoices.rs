@@ -505,20 +505,23 @@ impl DuplicateRule {
     /// 50-solde, #1492 ; 48-12a, D1, D6bis) : `confirmNotDuplicate: true` lève-t-il
     /// le refus de cette règle pour ce geste ? Quatre cases :
     ///
-    /// | | saisie ([`DuplicateGesture::Entry`]) | dévalidation d'une annulée |
+    /// | | saisie ([`Entry`](crate::errors::DuplicateGesture::Entry)) | dévalidation d'une annulée |
     /// |---|---|---|
     /// | règle 1 (même numéro, même année) | **non**, aucune sortie | oui |
     /// | règle 2 (même date, même total) | oui | oui |
     ///
     /// La couche base s'en sert pour lever le refus (`guard_duplicates_in_tx`) et
     /// `kesh-api` pour écrire `details.confirmable` : aucune des deux ne réécrit
-    /// la table. Le `match` est exhaustif sur le couple, sans bras `_` : une règle
-    /// ou un geste ajouté demain ne compile pas avant d'avoir sa case.
+    /// la table. Le `match` écrit **les quatre cases une à une, sans joker** (ni
+    /// `_`, ni position avalée) : une règle ou un geste ajouté demain ne compile
+    /// pas avant d'avoir **chacune** de ses cases.
     pub fn lifted_by_confirmation(self, gesture: crate::errors::DuplicateGesture) -> bool {
         use crate::errors::DuplicateGesture;
         match (self, gesture) {
             (Self::SameNumberSameYear, DuplicateGesture::Entry) => false,
-            (Self::SameDateSameTotal, _) | (_, DuplicateGesture::Unvalidation) => true,
+            (Self::SameDateSameTotal, DuplicateGesture::Entry) => true,
+            (Self::SameNumberSameYear, DuplicateGesture::Unvalidation) => true,
+            (Self::SameDateSameTotal, DuplicateGesture::Unvalidation) => true,
         }
     }
 }
@@ -1583,8 +1586,8 @@ pub async fn unvalidate_with_policy(
 /// refusé (`SUPPLIER_INVOICE_DUPLICATE` ou `SUPPLIER_INVOICE_PROBABLE_DUPLICATE`,
 /// la facture active nommée, `confirmable: true`), sauf sous
 /// [`DuplicatePolicy::Confirmed`] (`confirmNotDuplicate: true`), qui lève **les
-/// deux règles** à ce geste ([`DuplicateRule::lifted_by_confirmation`]) et inscrit `supplier_invoice.duplicate_confirmed` au nom de
-/// l'acteur. Une facture **validée** qui repasse en brouillon n'est pas
+/// deux règles** à ce geste ([`DuplicateRule::lifted_by_confirmation`]) et
+/// inscrit `supplier_invoice.duplicate_confirmed` au nom de l'acteur. Une facture **validée** qui repasse en brouillon n'est pas
 /// contrôlée : elle était déjà active.
 ///
 /// # Précédence (testée paire par paire) — composée par écriture (C-v0172a-19)

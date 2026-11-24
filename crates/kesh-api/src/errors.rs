@@ -5579,8 +5579,9 @@ impl IntoResponse for AppError {
                 // `confirmNotDuplicate: true` le lève : jamais la règle 1 à la
                 // saisie, toujours la règle 2, et les deux à la dévalidation d'une
                 // annulée — table unique : `DuplicateRule::lifted_by_confirmation`,
-                // relue par `supplier_invoice_duplicate_response`. Un seul texte par refus, partagé avec l'écran (48-12b) ;
-                // la dévalidation a le sien, sans contournement ni promesse.
+                // relue par `supplier_invoice_duplicate_response`. Un seul texte
+                // par refus, partagé avec l'écran (48-12b) ; la dévalidation a le
+                // sien, sans contournement ni promesse.
                 DbError::SupplierInvoiceDuplicate { existing, gesture } => {
                     supplier_invoice_duplicate_response(
                         &existing,
