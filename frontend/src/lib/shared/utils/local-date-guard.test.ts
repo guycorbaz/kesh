@@ -496,13 +496,13 @@ const ALLOWLIST_INSTANTS: Entree[] = [
 	},
 	{
 		fichier: 'lib/features/reports/reports.api.ts',
-		fragment: 'const ms = Date.parse(',
-		motif: 'module de référence : « naïf = UTC », décalage honoré',
+		fragment: "const d = new Date(`${m[1]}T${m[2]}${m[3] ?? 'Z'}`);",
+		motif: 'module de référence : `instantDuServeur`, la seule lecture « naïf = UTC », décalage honoré',
 	},
 	{
 		fichier: 'lib/features/reports/reports.api.ts',
-		fragment: 'ZURICH_PARTS.formatToParts(new Date(ms))',
-		motif: 'module de référence : composants à Zurich',
+		fragment: 'formateur = new Intl.DateTimeFormat(locale, {',
+		motif: "module de référence : le formateur de `formatInstant`, `timeZone: ZONE_SUISSE`, mis en cache",
 	},
 	{
 		fichier: 'lib/features/invoices/invoice-helpers.ts',
