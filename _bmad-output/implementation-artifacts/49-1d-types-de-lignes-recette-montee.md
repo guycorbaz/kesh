@@ -1042,8 +1042,10 @@ et la présente entrée.
   échoués, 21 ignorés » (`gate-ci-p1.log`, `.entete`, `.out`) ;
 - **`scripts/test-fast.sh --ci` refusé d'entrée, non joué** : le garde des droits du MariaDB de dev a relevé « droit en plus :
   GRANT ALL PRIVILEGES ON `kesh_e2e_e494a`.* TO `kesh`@`%` » (`test-fast-ci-p1.log`), posé hors de cette story ; je n'ai
-  touché ni aux droits ni au conteneur (`alerte.md`). **Le gate complet n'est donc pas entier tant que `test-fast --ci` n'a pas
-  été rejoué** après la remise en état par l'orchestrateur ;
+  touché ni aux droits ni au conteneur. Droit orphelin retiré par l'orchestrateur (`REVOKE` + `FLUSH PRIVILEGES`) ;
+  **`test-fast --ci` rejoué** à `87c3d68b4` (code identique à `a4fc72d82` : `git diff --stat a4fc72d82..HEAD -- scripts crates
+  frontend` vide), bases remises à neuf → **EXIT=0, « 6264 tests run: 6264 passed (1 slow), 17 skipped »**, 569,7 s ; le test
+  de la recette y prend 303,3 s (`test-fast-ci-p1b.log`). **Gate complet entier** ;
 - en attendant, gate ciblé `cargo nextest run -E 'binary(recette_montee_script)'` à `51ac11cf3` (`gate-cible-p1.log`) : **PASS
   en 337,0 s** (1 test, 1 passé) ; la borne de l'enveloppe (600 s) tient encore, à un peu moins du double — `docs/testing.md`
   le dit ;
