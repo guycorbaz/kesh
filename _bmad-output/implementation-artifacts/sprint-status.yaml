@@ -1221,5 +1221,8 @@ development_status:
   # 2026-11-18 — Release 0.20.0 : l'amélioration de la release (une par release, décision de Guy du 2026-11-17), hors épique.
   v0200-menu-sous-groupes: backlog  # #1253 (P4) : menu Administration en sous-groupes (Comptabilité, Banque, Facturation, Système) ; frontend seul, sans migration ; manuels des quatre langues ; à fusionner en dernier (chemins des manuels)
 
-  # 2026-11-18 — Correctif hors epic (Beat), non urgent, à la prochaine release planifiée, sans migration.
-  fix-cours-afc-bgn: review  # 2026-11-18 : branche fix/cours-afc-bgn, main v0.19.0 reprise ; cours AFC des monnaies retirées (BGN, HRK…) retenus, comptes toujours en monnaie active ; revue close (P1, P1-2, P2 ciblée) ; gate complet groupé vert (integ/fixes-0.19.0 à 5fc6fb1b) ; PR à ouvrir
+  # 2026-11-18 — Correctifs hors epic (Beat), non urgents, à la release 0.20.0, sans migration (lignes reportées dans main par l'orchestrateur le 2026-11-20, à la demande des PR).
+  fix-cours-afc-bgn: done  # 2026-11-19 fusionnée (PR #1353) ; cours AFC des monnaies retirées (BGN, HRK…) retenus, comptes toujours en monnaie active
+  fix-bilan-resultat-reporte: done  # 2026-11-20 fusionnée (PR #1346, b5333177a) ; bilan sans la ligne « Résultat reporté (calculé) » quand elle vaut zéro ; revue d'intégration 0/0/0/2
+  fix-pdf-rapports-mise-en-page: done  # 2026-11-20 fusionnée (PR #1327, 0867f1fb8, fusion administrateur décidée par Guy) ; montants alignés à droite, titre accentué, en-têtes de devise ; issues de suite #1420 à #1430
+  fix-api-parent-compte: done  # 2026-11-20 fusionnée (PR #1351, d29aa557e, fusion administrateur décidée par Guy) ; #1350 fermée, #983 fermée à la main ; issues de suite #1431 à #1435
