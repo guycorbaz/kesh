@@ -8,7 +8,7 @@ release **0.20.0** (coupure le vendredi 2026-11-27 au matin ; si elle n'est pas 
 retarder — décision du Project Lead du 2026-11-24). **Aucune migration**, aucun code serveur touché. **Changement voulu d'un comportement
 documenté** (décision du Project Lead du 2026-11-24, D0) : l'étape 0 a montré que le diagnostic de l'issue (« UTC naïf lu en heure
 locale ») est faux ; ce qui change est le fuseau d'affichage, du poste à Zurich. Validation P1 (Sonnet) remédiée le 2026-11-24 ;
-validation P2 à lancer.*
+validation P2 (Opus) : 0/0/0/9, les neuf LOW traités à l'étape 0 du développement (Change Log).*
 
 ## Story
 
@@ -34,7 +34,11 @@ Sérialisation de `DateTime<Utc>` : chrono 0.4.45 (`Cargo.lock`), `~/.cargo/regi
 décimales (`modifiedAt`, tiré d'un `SystemTime`, en porte jusqu'à neuf). Aucun `serde(with …)` ni `serialize_with` dans les cinq fichiers
 serveur (validation P1). Les tests existants le confirment : `UnrejectTransactionAction.test.ts:72` `autoMatchRejectedAt: '2026-03-04T11:00:00Z'`,
 `backup-schedule.api.test.ts:37` `lastSuccessAt: '2026-10-24T01:00:00.000Z'`, `audit-log-page.test.ts:68` `createdAt: '2026-09-16T12:26:33.123Z'`.
-Le JSON réel n'a pas été relu (aucun serveur lancé à la rédaction) : c'est la prémisse **P1**, que l'AC1 établit.
+Le JSON réel n'avait pas été relu à la rédaction : c'était la prémisse **P1**, établie à l'étape 0 du développement (2026-11-24, base
+jetable `kesh_e506`, binaire de `epic/50-corrections` à `e5654fc00`, `kesh-gate-logs/e506/ac1-json.txt`) : `createdAt` (audit),
+`autoMatchRejectedAt`, `lastAttemptAt`/`lastSuccessAt`/`nextDueAt`, `modifiedAt` finissent par `Z` ; `createdAt`/`expiresAt`/`decidedAt`
+des envois MCP et `creeLe`/`modifieLe` des prompts n'ont **pas** de fuseau. **Prémisse confirmée, aucun écart.** Les neuf décimales de
+`modifiedAt` sont réelles (`2026-11-24T18:44:17.026083080Z`).
 
 Lecture JS vérifiée (Node 22.22.1, poste à `Europe/Zurich`) : `Date.parse("2026-11-24T22:15:00.123456789Z")` → `22:15:00.123Z` (les neuf
 décimales passent) ; `"2026-11-24T22:15:00.123"` (naïf) → `21:15:00.123Z` (lu local : le défaut que l'issue décrit, **absent** des quatre sites).
@@ -180,8 +184,9 @@ n'en trouve aucun.
   Ces motifs **n'attrapent pas** `new Date()` (sans argument) ni `new Date(Date.UTC(…))` : ces lignes n'ont **pas** d'entrée (sans quoi elles
   seraient orphelines). Relevés à `e5654fc00` (commande ci-dessous, sortie `kesh-gate-logs/e506/garde-releves-avant.txt`) : **30**, dont 8 sur
   les quatre sites corrigés (`audit-log/+page.svelte:65`, `:376` ; `UnrejectTransactionAction.svelte:37`, `:39` ; `backup-format.ts:8`, `:10` ;
-  `mcp-sends-format.ts:41`, `:43`), qui disparaissent. Restent **22 relevés**, d'où l'allowlist `ALLOWLIST_INSTANTS`, **une entrée par ligne**
-  (`{ fichier, fragment, motif }`, le fragment étant un extrait exact de la ligne) :
+  `mcp-sends-format.ts:41`, `:43`), qui disparaissent. Restent **22 relevés**, d'où l'allowlist `ALLOWLIST_INSTANTS`, **une entrée par ligne relevée**
+  (`{ fichier, fragment, motif }`, le fragment étant un extrait exact de la ligne), sauf les deux lignes identiques de `premier-exercice.ts`
+  (une entrée à `lignes: 2`) : **22 relevés, 21 entrées** (V2-2) :
 
   | # | Fichier : ligne (à `e5654fc00`) | Motif de l'entrée |
   |---|---|---|
@@ -203,15 +208,17 @@ n'en trouve aucun.
   | 22 | `lib/shared/utils/local-date.ts:21` | `timeZone: 'Europe/Zurich'` (`JOUR_DE_ZURICH`) |
 
   Plus les lignes neuves de `reports.api.ts` (au moins le constructeur du formateur mis en cache ; `Date.parse` déplacé dans
-  `instantDuServeur`), chacune avec son entrée : **le total final se recompte** au dernier commit et s'écrit au Dev Agent Record (22 + n).
+  `instantDuServeur`), chacune avec son entrée : **les deux totaux se recomptent** au dernier commit et s'écrivent au Dev Agent Record (relevés 22 + n, entrées 21 + n).
   **Lignes identiques** : `premier-exercice.ts:29` et `:50` portent le même texte (`const d = new Date(2000, 0, 1);`) ; l'auditeur actuel ne sait
   pas les admettre (une entrée → « fragment à plusieurs lignes » ; deux entrées → « relevé à plusieurs entrées »). L'entrée gagne un champ
   facultatif `lignes?: number` (défaut 1), et `auditer` exige `rs.length === (e.lignes ?? 1)` ; la sonde vérifie qu'une troisième ligne
   identique rougit. Commande de recompte (celle de la validation P1, à rejouer par la P2) :
   `cd frontend/src && grep -rnP "DateTimeFormat\(|toLocale(Date|Time)?String\(|\.get(Hours|Minutes|Seconds|TimezoneOffset)\(|new (?:globalThis\.)?Date\((?!\)|Date\.UTC\()|Date\.parse\(" --include=*.ts --include=*.svelte . | grep -vE '\.test\.(ts|svelte):|\.test-helper|\.spec\.ts:' | wc -l`
-  → 30 avant, 22 + n après.
+  → 30 avant, 22 + n après (le compte des **relevés** ; celui des entrées est le nombre d'objets de `ALLOWLIST_INSTANTS`, une de moins).
   **Angles morts assumés de la garde** (V1-11) : un alias (`const F = Intl.DateTimeFormat; new F(…)`, `const D = Date; new D(x)`), un jeton
-  coupé (`Intl.DateTime\nFormat(`), `Reflect.construct(Date, [x])`, `Temporal`, une date construite dans un autre module et passée à un
+  coupé (`Intl.DateTime\nFormat(`), `Reflect.construct(Date, [x])`, `Temporal`, `new window.Date(x)` et `new self.Date(x)` (le motif n'admet que `globalThis.`),
+  `new Date (x)` (espace avant la parenthèse ; Prettier l'efface ; aucune de ces trois formes n'existe aujourd'hui, `grep -rnE
+  "new window\.Date|new self\.Date|Reflect\.construct|new Date \(" --include=*.ts --include=*.svelte frontend/src` hors tests : vide), une date construite dans un autre module et passée à un
   formateur légitime ; deux lectures sur une même ligne ne font qu'un relevé (la ligne rougit quand même si elle n'est pas admise). Sont,
   eux, attrapés et sondés : l'appel sur plusieurs lignes (`new Intl.DateTimeFormat(\n locale, {…})`, le jeton `DateTimeFormat(` étant sur la
   première) et `new globalThis.Date(x)`.
@@ -219,7 +226,7 @@ n'en trouve aucun.
   `new Date(iso)` et lui échappait, et `Intl` sans `timeZone`, le vrai symptôme, n'y était pas.
 - **D4 — `mcp-sends-format.ts` garde `dateLocale`** (nom et contrat : `—` si vide, valeur brute si illisible), réécrit en une ligne sur
   `formatInstant(valeur, 'dateHeure', i18nLocale()) ?? valeur` ; son commentaire (`:34-37` « à l'heure **locale**, comme le journal
-  d'audit ») est réécrit. Pareil pour `formatBackupDate` (`?? ''`). Les appelants ne changent pas. *Écartée* : renommer — touche `mcp-prompts`.
+  d'audit ») est réécrit. Pareil pour `formatBackupDate` (`?? ''`) ; le journal d'audit prend la valeur brute (`?? e.createdAt`, V2-5). Les appelants ne changent pas. *Écartée* : renommer — touche `mcp-prompts`.
 - **D5 — commentaires rendus faux hors des cinq fichiers** (V1-8) : `mcp-prompts/mcp-prompts-format.ts:21-22` (« UTC de la base montrée à
   l'heure locale ») et `UnrejectTransactionAction.test.ts:67-69` (« La date suit le fuseau du navigateur… ») se réécrivent. Une correction de
   **commentaire seul** ne fait pas de `mcp-prompts` un module touché (règle du `CLAUDE.md` : code de production) ; AC14 l'admet.
@@ -229,9 +236,11 @@ n'en trouve aucun.
 ## Critères d'acceptation
 
 1. **AC1 — étape 0 rejouée au JSON réel** : sur la base jetable `kesh_e506`, `curl` de `GET /api/v1/audit-log`, `GET /api/v1/bank-imports/{id}`
-   (transaction rejetée), `GET /api/v1/admin/backup-schedule`, `GET /api/v1/admin/backups`, `GET /api/v1/admin/mcp/sends` : les champs
+   (transaction rejetée), `GET /api/v1/admin/backup-schedule`, `GET /api/v1/admin/backups`, `GET /api/v1/admin/mcp/sends` **et** `GET /api/v1/admin/mcp/prompts/{id}` : les champs
    `createdAt`, `autoMatchRejectedAt`, `lastSuccessAt`/`lastAttemptAt`/`nextDueAt`, `modifiedAt` finissent par `Z` ; ceux des envois MCP
-   n'ont pas de fuseau. Sorties dans `kesh-gate-logs/e506/ac1-json.txt`. Un écart arrête le développement et se dit à l'orchestrateur.
+   (`createdAt`, `expiresAt`, `decidedAt`) et des prompts (`creeLe`, `modifieLe`) n'ont pas de fuseau. Sur une base neuve, l'envoi se
+   dépose et le prompt se propose comme à `mcp-sends.spec.ts:118-134` et `mcp-prompts.spec.ts` (`proposer_prompt`), la liste étant vide
+   sans cela (V2-9 ; le script de recette `kesh-gate-logs/e506/` le fait). Sorties dans `kesh-gate-logs/e506/ac1-json.txt`. Un écart arrête le développement et se dit à l'orchestrateur.
 2. **AC2 — le jour suivant, l'hiver** : processus épinglé à `America/New_York` puis à `UTC` (`pinTimeZone`),
    `formatInstant('2026-11-24T23:30:00Z', 'dateHeure', 'fr-CH')` = `'25 nov. 2026, 00:30'` ; avec `'date'` = `'25 nov. 2026'` ; la forme
    naïve `'2026-11-24T23:30:00.123'` et la forme à neuf décimales `'2026-11-24T23:30:00.123456789Z'` donnent le même résultat ; en `de-CH`,
@@ -239,9 +248,12 @@ n'en trouve aucun.
 3. **AC3 — l'été et les deux bascules** : `'2026-07-14T22:30:00Z'` → `'15 juil. 2026, 00:30'` ; `'2026-03-29T00:59:00Z'` →
    `'29 mars 2026, 01:59'` et `'2026-03-29T01:00:00Z'` → `'29 mars 2026, 03:00'` ; `'2026-10-25T00:30:00Z'` et `'2026-10-25T01:30:00Z'` →
    tous deux `'25 oct. 2026, 02:30'` (l'heure répétée de l'automne, assumée).
-4. **AC4 — l'absent et l'illisible** : `formatInstant(null|undefined|''|'abc'|'2026-13-45T99:99:99Z', …)` = `null`.
+4. **AC4 — l'absent et l'illisible** : `formatInstant(null|undefined|''|'abc'|'2026-13-45T99:99:99Z', …)` = `null`. Le **repli du
+   journal d'audit** (V2-5 ; aujourd'hui la page lève un `RangeError` sur une date illisible) est la **valeur brute**, comme pour les envois
+   MCP : `formatInstant(e.createdAt, 'dateHeure', i18nLocale()) ?? e.createdAt`.
 5. **AC5 — journal d'audit** : `audit-log-page.test.ts`, processus à `America/New_York`, une entrée `createdAt: '2026-11-24T23:30:00.000Z'` →
-   la cellule `audit-log-row-date` vaut `'25 nov. 2026, 00:30'`.
+   la cellule `audit-log-row-date` vaut `'25 nov. 2026, 00:30'` ; une entrée `createdAt: 'illisible'` rend la cellule `'illisible'`
+   (repli, sans exception).
 6. **AC6 — rejet de rapprochement** : `UnrejectTransactionAction.test.ts`, processus à `America/New_York`,
    `autoMatchRejectedAt: '2026-03-04T23:30:00Z'` → mention `'Rejetée le 5 mars 2026'` ; le test existant (`:90`, `'Rejetée le 4 mars 2026'`
    pour `11:00Z`) reste vert.
@@ -252,8 +264,9 @@ n'en trouve aucun.
 9. **AC9 — rien ne bouge sur un poste suisse** : les mêmes entrées d'AC5 à AC8, processus à `Europe/Zurich`, rendent la même chose qu'avant
    la story (filet de non-régression, vert avant et après, déclaré comme tel). Les tests de `mcp-time.test.ts` (expiration) restent verts
    sans modification.
-10. **AC10 — la garde (D3)** : les deux motifs relevés ; `ALLOWLIST_INSTANTS` close, une entrée par ligne, total recompté (22 + n) et écrit
-    au Dev Agent Record avec la sortie de la commande de recompte ; **sonde positive** en mémoire : les lignes d'avant la story
+10. **AC10 — la garde (D3)** : les deux motifs relevés ; `ALLOWLIST_INSTANTS` close, une entrée par ligne relevée — **sauf** les deux lignes identiques de `premier-exercice.ts`, qui n'ont qu'**une**
+    entrée à `lignes: 2` (V2-2) : les **deux** nombres s'écrivent, **relevés** (22 + n, ce que rend la commande de recompte) et **entrées**
+    (21 + n, une de moins), au Dev Agent Record avec la sortie de la commande ; **sonde positive** en mémoire : les lignes d'avant la story
     (`dateFormat.format(new Date(e.createdAt))`, `new Intl.DateTimeFormat(i18nLocale(), { dateStyle: 'medium' })`, `const date = new Date(iso);`),
     une forme multiligne (`new Intl.DateTimeFormat(\n\tlocale,`) et `new globalThis.Date(x)` sont relevées sans entrée ; une troisième ligne
     identique à celles de `premier-exercice.ts` rougit. **Sonde réelle** : la ligne `:376` d'avant rétablie dans `audit-log/+page.svelte`
@@ -261,27 +274,32 @@ n'en trouve aucun.
 11. **AC11 — un E2E** : `frontend/tests/e2e/audit-log.spec.ts` gagne un `describe` sous `test.use({ timezoneId: 'America/New_York' })` : une
     action qui écrit une entrée d'audit, la lecture de son `createdAt` par l'API, et l'assertion que `getByTestId('audit-log-row-date')` de
     la ligne égale `Intl.DateTimeFormat('fr-CH', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Europe/Zurich' }).format(new Date(createdAt))`
-    (calculé dans la spec) — et diffère de la même mise en forme à New York. Il rougit au code d'avant (journal `rouge-e2e.txt` ; au code
+    **calculé dans le navigateur** par `page.evaluate` (l'ICU de Chromium, qui met la cellule en forme ; le corps d'un test tourne dans Node, dont
+    l'ICU pourrait différer — V2-6) — et diffère de la même mise en forme à New York (`timeZone: 'America/New_York'`, aussi par `page.evaluate`). Il rougit au code d'avant (journal `rouge-e2e.txt` ; au code
     d'avant, le `data-testid` manque : le rouge se constate avec `locator('td').first()`, noté au journal).
-12. **AC12 — manuel** : `user-manual.tex:4688-4689` dit que le tableau affiche l'heure de Zurich, quel que soit le fuseau du poste
-    (« \emph{Depuis la version 0.20.0~; avant, l'heure du poste.} ») ; `:790-791` ajoute que les instants s'affichent à l'heure de Zurich,
+12. **AC12 — manuel** : `user-manual.tex:4688-4689` dit, **en ces termes** (V2-3, texte fixé) : « Le tableau affiche l'heure de Zurich, quel que
+    soit le fuseau de votre poste. \emph{Depuis la version 0.20.0~; avant, l'heure du poste.} » (apostrophe droite, sans `\textbf` sur `Zurich`) ; `:790-791` ajoute que les instants s'affichent à l'heure de Zurich,
     sauf les dates que l'on saisit (expiration d'une clé du serveur MCP, à l'heure du poste ; d'une clé d'API) et, pour l'instant, les dates de
     création, de dernier usage et de révocation des clés du serveur MCP et de la modification de ses réglages, encore à l'heure du poste.
     **Contrôles qui rougissent avant** (le texte est aplati, la phrase étant coupée) :
-    `tr '\n' ' ' < docs/manual/fr/user-manual.tex | tr -s ' ' | grep -c "affiche l'heure de votre .textbf{poste}"` → **1** à `e5654fc00`, **0**
-    après ; `tr '\n' ' ' < docs/manual/fr/user-manual.tex | tr -s ' ' | grep -c "affiche l'heure de Zurich"` → **0** avant, **≥ 1** après.
+    `tr '\n' ' ' < docs/manual/fr/user-manual.tex | tr -s ' ' | grep -o "affiche l'heure de votre .textbf{poste}" | wc -l` → **1** à
+    `e5654fc00`, **0** après ; `… | grep -o "affiche l'heure de Zurich, quel que soit le fuseau de votre poste" | wc -l` → **0** avant, **1**
+    après (le texte aplati tient sur une ligne : `grep -c` ne rendrait que 0 ou 1 par ligne, `grep -o | wc -l` compte les occurrences).
     `admin-manual.tex:3584` inchangé. Aucun PDF commité ; à la release, après `make fr`,
     `pdftotext docs/manual/fr/user-manual.pdf - | tr '\n' ' ' | tr -s ' ' | grep -o "heure de votre poste" | wc -l` → 0 (1 aujourd'hui).
 13. **AC13 — recette visuelle** (règle du `CLAUDE.md`, chaque état touché) : captures, thème clair, base de démonstration `kesh_e2e_e506`, de :
     - *Journal d'audit* (liste) ;
     - détail d'un import bancaire avec une transaction rejetée (« Rejetée le … ») ;
     - *Administration → Sauvegarde complète* : section automatique (dernière réussite, dernière tentative, prochaine) et liste des sauvegardes ;
-    - le **bandeau** « Aucune sauvegarde automatique réussie depuis le … » : sauvegarde automatique activée, intervalle 24 h, puis, sur la
-      base jetable seule, `UPDATE _kesh_backup_schedule SET last_success_at = '2026-11-20 23:30:00.000'` (instant de fin de soirée UTC, pour
-      que le jour change à Zurich) — ou l'interception de route de `backup-schedule.spec.ts:252` avec le même instant ;
+    - le **bandeau** « Aucune sauvegarde automatique réussie depuis le … » : **voie principale, l'interception de route** de
+      `backup-schedule.spec.ts` (`poser(page, etat({ overdue: true, lastSuccessAt: '2026-11-20T23:30:00.000Z' }))`, instant de fin de soirée
+      UTC, pour que le jour change à Zurich), reproductible à coup sûr. Le repli `UPDATE _kesh_backup_schedule SET last_success_at =
+      '2026-11-20 23:30:00.000'` sur la base jetable **ne tient pas** : le planificateur tourne toutes les cinq minutes
+      (`auto_backup.rs:58`) et écrit une réussite neuve, qui éteint le bandeau (V2-4) ;
     - *Envois du serveur MCP* : la liste **et** le détail d'un envoi (créé, échéance, décision), envoi déposé comme dans `mcp-sends.spec.ts:118-134` ;
     - le détail d'un **prompt du serveur MCP** (`McpPromptDetail` : modification, versions proposées).
-    Chacun **avant** (code de `e5654fc00`, navigateur à `America/New_York`) et **après** (même fuseau), plus **après** à `Europe/Zurich`
+    Les chemins et numéros de ligne s'entendent **à la tête de `epic/50-corrections` au moment de la recette** : la 50-5 déplace l'écran
+    `/admin/backup` vers `/backup-export?onglet=sauvegarder` (V2-1). Chacun **avant** (code de `e5654fc00`, navigateur à `America/New_York`) et **après** (même fuseau), plus **après** à `Europe/Zurich`
     (identique à l'avant suisse). Rangées dans `kesh-gate-logs/e506/captures/`, jointes au Dev Agent Record et au prompt de la revue de code.
 14. **AC14 — périmètre tenu** : `git diff --stat e5654fc00..HEAD -- frontend/src ':!*.test.ts'` ne nomme que `reports.api.ts`,
     `audit-log/+page.svelte`, `UnrejectTransactionAction.svelte`, `backup-format.ts`, `mcp-sends-format.ts`, et `mcp-prompts-format.ts` pour
@@ -346,17 +364,20 @@ le dernier usage et la révocation des clés et la modification des réglages re
 
 ### Modules touchés (règle de splitting) — cinq
 
-`lib/features/reports` (`reports.api.ts`), domaine *audit-log* (`routes/(app)/audit-log/+page.svelte` — compté par prudence bien qu'hors de
-`lib/features/`), `lib/features/reconciliation`, `lib/features/admin-backup`, `lib/features/mcp-sends`. Tests (garde comprise), fiche, manuel
-et le commentaire seul de `mcp-prompts-format.ts` (D5) ne comptent pas. **Cinq : pas de découpage**, à condition de tenir D1 et D2 ; toute
-extension (shared, mcp-server) fait six et renvoie à I1/I2.
+Au grain du `CLAUDE.md` (un crate, ou un domaine `frontend/src/lib/features/<domaine>`, dont le **code de production** change ; V2-7) :
+`lib/features/reports` (`reports.api.ts`), `lib/features/reconciliation`, `lib/features/admin-backup`, `lib/features/mcp-sends` : **quatre**.
+La route `routes/(app)/audit-log/+page.svelte` n'est pas un domaine de `lib/features/` (la 50-5 applique le même grain) ; la compter par
+prudence fait **cinq**, et le commentaire seul de `mcp-prompts-format.ts` (D5, hors code de production) un sixième lu au plus large — **la
+conclusion tient sous les trois lectures** : quatre, cinq, ou six au plus large pour un commentaire, sans changement de règle. Tests (garde
+comprise), fiche et manuel ne comptent pas. **Pas de découpage**, à condition de tenir D1 et D2 ; toute extension (shared, mcp-server)
+ajoute un module et renvoie à I1/I2.
 
 ### Prémisses à confirmer à l'étape 0
 
 - **P1** — les formes JSON réelles (AC1).
 - **P2** — les chaînes d'ICU : les valeurs d'AC2/AC3/AC6 viennent de Node 22.22.1 (`fr-CH` medium = « 25 nov. 2026, 00:30 », bascules
   « 29 mars 2026, 01:59 » / « 03:00 », « 25 oct. 2026, 02:30 », `de-CH` = « 25.11.2026, 00:30 », date seule « 5 mars 2026 ») ; Vitest tourne
-  sous le même Node ; l'E2E (Chromium) calcule son attendu par `Intl` dans la spec.
+  sous le même Node ; l'E2E calcule son attendu par `Intl` **dans le navigateur** (`page.evaluate`, ICU de Chromium) ; les valeurs de Vitest viennent de l'ICU de Node.
 - **P3** — `process.env.TZ` changé en cours de processus est relu par `Intl` (vérifié : 23:30 → 18:30 → 00:30 en changeant `TZ` dans le même
   processus) ; `pinTimeZone` (`lib/shared/utils/pin-time-zone.test-helper.ts`) suffit, avec le piège du `$derived`.
 
@@ -381,6 +402,10 @@ extension (shared, mcp-server) fait six et renvoie à I1/I2.
 ### Fichiers communs avec les autres stories de l'Epic 50
 
 À `e5654fc00`, la 48-11 est fusionnée dans `epic/50-corrections` ; le recouvrement de `reports.api.ts` qu'elle touchait est donc intégré.
+**La 50-5** (`story/50-5-page-sauvegarde-export`) touche le même domaine `lib/features/admin-backup` (`AutoBackupSection.svelte`,
+`BackupScheduleBanner.svelte` et leurs tests, mais **pas** `backup-format.ts`), `backup-schedule.spec.ts` (`:149`, `:222`, `:275`, dont
+l'interception que la recette d'AC13 emprunte) et `admin-manual.tex:2509` (le lien du bandeau) : pas de conflit de texte attendu avec
+la 50-6, mais le chemin de l'écran et les numéros de ligne changent si la 50-5 entre la première (V2-1) ; AC13 suit l'adresse en vigueur.
 `docs/manual/fr/user-manual.tex` est commun à toutes les stories (sections distinctes) ; `local-date-guard.test.ts` n'est touché par aucune
 autre story de l'epic à cette tête. À recontrôler à l'intégration, comme le veut le `CLAUDE.md`.
 
@@ -428,3 +453,12 @@ vendredi matin, c'est tenable si la validation converge en P2 ou P3 ; sinon la s
   `globalThis` et multiligne sondés ; **V1-12** `data-testid` (D6) ; **V1-13** prescription sur #1511 retirée (requalification par
   l'orchestrateur) ; **V1-14** charge avec les boucles, mention périmée de la 48-11 retirée. Prompt de validation P2 versionné
   (`50-6-dates-heure-de-zurich-validation-prompt-p2.md`, Opus, passe complète).
+- **2026-11-24 — étape 0 du développement** (Sonnet 5.5, `bmad-dev-story`, autonomie) : prémisses rejouées au code à `e5654fc00` — les 30
+  relevés de la garde se recomptent à l'identique (`kesh-gate-logs/e506/garde-releves-etape0.txt`, même ensemble que `garde-releves-avant.txt`,
+  seul l'ordre diffère) ; **P1 établie** par le JSON réel (`ac1-json.txt`) : quatre champs à `Z`, envois et prompts MCP naïfs, aucun écart.
+  Sort des neuf LOW de la P2 : **V2-1** fiche 50-5 nommée aux fichiers communs, AC13 suit l'adresse en vigueur ; **V2-2** « 22 relevés, 21
+  entrées » (AC10, D3), les deux nombres au Dev Agent Record ; **V2-3** phrase du manuel fixée en entier (AC12), contrôles `grep -o … | wc -l`
+  (1 → 0, 0 → 1) ; **V2-4** interception de route voie principale pour le bandeau (AC13), l'`UPDATE` écrit comme ne tenant pas ; **V2-5** repli du
+  journal = valeur brute (D4, AC4, AC5) ; **V2-6** attendu de l'E2E calculé par `page.evaluate` (AC11, P2) ; **V2-7** modules comptés au grain du
+  `CLAUDE.md` (quatre, cinq ou six selon la lecture, conclusion inchangée) ; **V2-8** `window.Date`, `self.Date`, `new Date (` écrits aux angles
+  morts, grep vide cité ; **V2-9** AC1 renvoie au dépôt d'un envoi et d'un prompt, prompts ajoutés.
