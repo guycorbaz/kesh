@@ -1051,6 +1051,323 @@ et la présente entrée.
   le dit ;
 - frontend non touché ; pas d'E2E (clôture).
 
+**15. Inventaire clos des sorties d'échec** (revue P2 ; `CLAUDE.md` § *Inventorier les sites NON RÉSOLUS*). La P1 et la P2 ont
+trouvé la même classe de défaut — un garde-fou sans scénario ni mutation — sur deux sites différents. Au lieu de corriger site
+par site, chaque sortie d'échec des trois scripts est extraite **par commande**, puis classée ; un site non classé, ou une
+mutation citée qui ne serait pas TUÉE dans `mut/juge.log`, fait échouer le classeur
+(`kesh-gate-logs/e491d/inventaire/inventaire.py <worktree> --markdown` → `inventaire/inventaire.md`, code 0 à `d2416c596`).
+
+- **Extracteurs** (cités en tête de chaque tableau) : pour `scripts/recette-montee.sh`, les `echec N` et `echec "$1"`, les
+  `|| return 1`, les `exit` non nuls (`exit N`, `exit "$…"`, `exit $?`), les `refus "…"` et les **appels** des fonctions qui
+  échouent (`ecarts_hors_attendu`, `journal_sans_erreur`, `pdf_fige_identique`, `pdf_exige`, `jouer_crochet` suivis d'un numéro de
+  phase) ; lignes de commentaire exclues. Pour le crochet, ses `|| exit 1` ; pour le script complémentaire, ses `arret "…"`,
+  `ecart "…"` et `exit` non nuls.
+- **Sondes positives** : `echec 5 "import : HTTP` (le site `:907` de la P2) et `ecarts_hors_attendu 5 avant import` (l'appel
+  `:909` de la P2, que l'extracteur de la première version ne voyait pas — d'où l'ajout des appels) ; `"$succes" = 1` ;
+  `au lieu de 410 INVOICE_PDF_GONE`. Une sonde muette fait échouer le classeur (code 4).
+- **Classes** : **C** couvert (scénario du test qui fait rougir ce site + mutation tuée, journal `mut/rouge-<nom>.log`) ;
+  **S** scénario sans mutation (gardes de la Story 33-10 : options, périmètre, journal, refus de l'image — hors donnée des
+  factures) ; **P** propagation d'un échec déjà inventorié (`|| exit $?`, sorties d'`echec`, de `refus`, de `nettoyer`) ;
+  **A** angle mort assumé, chacun avec sa raison (panne d'infrastructure que le factice ne simule pas et qui échoue fermé ;
+  contrôle de couverture du peuplement éprouvé par le seul run réel, E-P2-5 ; échec de `mutool` redondant avec S6c et S7a ;
+  site inatteignable).
+- **Décompte** : `scripts/recette-montee.sh` **188 sites = 30 C + 50 S + 37 P + 71 A** ; `verifs-0200.sh` **5 = 5 C** ;
+  `recette-complement-rel0200.sh` **24 = 5 C + 17 A + 2 P** ; **total 217 = 40 C + 50 S + 39 P + 88 A**.
+- **Sites qui gardent la donnée des factures ou des avoirs** : tous en **C**, sauf les contrôles de couverture du peuplement
+  (A, E-P2-5 : ils garantissent les cas peuplés, ne comparent aucune donnée d'avant) et les échecs de `mutool` redondants (A).
+  Ceux que la P2 désignait : `:907` → `:919` (S16a), `:909` → `:921` (S16b, S16c), phase 4 `:887` → `:899` (S15), crochet
+  `:838`, `:840`, `:922` (S16d ; et ses cinq contrôles, `verifs-0200.test.sh` 8 cas, `verifs-0200.mut.sh` 6 mutations tuées,
+  `crochet-test.log`, `crochet-mutations.log`), regel `:857` (S8c), phase 6 `:952` (S6g), `:959` (S6f), `:970` (S7a', S14),
+  `:975` (S6d, S6e). Le garde « avant vide » de la projection (B-P2-1), inatteignable, est **retiré** ; le cas réel — une table
+  vide des deux côtés — est fermé à l'empreinte d'avant (`:779`, S3h, factice cohérent).
+- **Ce que l'inventaire ne couvre pas** : les sorties implicites (`set -e` n'est pas posé dans le script principal, qui lit ses
+  codes un à un) et les conditions qui excluent une paire sans échouer (`continue` de la phase 6, comptées par le décompte exact
+  de 5 paires, S14).
+
+### `scripts/recette-montee.sh` — extracteur `grep -nE '(^|[^a-z_])echec |\|\| *return 1|\bexit [1-9]|\bexit "\$|\bexit \$\?|(^|[ ;(])refus "|(ecarts_hors_attendu|journal_sans_erreur|pdf_fige_identique|pdf_exige|jouer_crochet) [0-9]'`, sondes positives : echec 5 "import : HTTP, ecarts_hors_attendu 5 avant import
+
+| Ligne | Ce qu'il garde | Classe | Scénario | Mutation tuée (journal) ou raison |
+|---|---|---|---|---|
+| `:72` | environnement fermé | S | « la relance ne boucle pas », « la relance » | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
+| `:73` | environnement fermé | S | « la relance ne boucle pas », « la relance » | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
+| `:89` | relance impossible | S | « la relance ne boucle pas » | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
+| `:107` | sortie de `refus` | P | — | — |
+| `:113` | option, entrée, port, outil, démon, conteneur ou image refusés avant toute action | S | « les refus » (options, images, entrées, ports, dossier jetable, `.env`, démon, conteneur, tirage, outils, S11) | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
+| `:126` | option, entrée, port, outil, démon, conteneur ou image refusés avant toute action | S | « les refus » (options, images, entrées, ports, dossier jetable, `.env`, démon, conteneur, tirage, outils, S11) | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
+| `:132` | option, entrée, port, outil, démon, conteneur ou image refusés avant toute action | S | « les refus » (options, images, entrées, ports, dossier jetable, `.env`, démon, conteneur, tirage, outils, S11) | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
+| `:133` | option, entrée, port, outil, démon, conteneur ou image refusés avant toute action | S | « les refus » (options, images, entrées, ports, dossier jetable, `.env`, démon, conteneur, tirage, outils, S11) | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
+| `:134` | option, entrée, port, outil, démon, conteneur ou image refusés avant toute action | S | « les refus » (options, images, entrées, ports, dossier jetable, `.env`, démon, conteneur, tirage, outils, S11) | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
+| `:137` | option, entrée, port, outil, démon, conteneur ou image refusés avant toute action | S | « les refus » (options, images, entrées, ports, dossier jetable, `.env`, démon, conteneur, tirage, outils, S11) | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
+| `:141` | option, entrée, port, outil, démon, conteneur ou image refusés avant toute action | S | « les refus » (options, images, entrées, ports, dossier jetable, `.env`, démon, conteneur, tirage, outils, S11) | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
+| `:142` | option, entrée, port, outil, démon, conteneur ou image refusés avant toute action | S | « les refus » (options, images, entrées, ports, dossier jetable, `.env`, démon, conteneur, tirage, outils, S11) | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
+| `:143` | option, entrée, port, outil, démon, conteneur ou image refusés avant toute action | S | « les refus » (options, images, entrées, ports, dossier jetable, `.env`, démon, conteneur, tirage, outils, S11) | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
+| `:147` | option, entrée, port, outil, démon, conteneur ou image refusés avant toute action | S | « les refus » (options, images, entrées, ports, dossier jetable, `.env`, démon, conteneur, tirage, outils, S11) | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
+| `:148` | option, entrée, port, outil, démon, conteneur ou image refusés avant toute action | S | « les refus » (options, images, entrées, ports, dossier jetable, `.env`, démon, conteneur, tirage, outils, S11) | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
+| `:153` | option, entrée, port, outil, démon, conteneur ou image refusés avant toute action | S | « les refus » (options, images, entrées, ports, dossier jetable, `.env`, démon, conteneur, tirage, outils, S11) | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
+| `:156` | option, entrée, port, outil, démon, conteneur ou image refusés avant toute action | S | « les refus » (options, images, entrées, ports, dossier jetable, `.env`, démon, conteneur, tirage, outils, S11) | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
+| `:164` | option, entrée, port, outil, démon, conteneur ou image refusés avant toute action | S | « les refus » (options, images, entrées, ports, dossier jetable, `.env`, démon, conteneur, tirage, outils, S11) | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
+| `:167` | option, entrée, port, outil, démon, conteneur ou image refusés avant toute action | S | « les refus » (options, images, entrées, ports, dossier jetable, `.env`, démon, conteneur, tirage, outils, S11) | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
+| `:170` | option, entrée, port, outil, démon, conteneur ou image refusés avant toute action | S | « les refus » (options, images, entrées, ports, dossier jetable, `.env`, démon, conteneur, tirage, outils, S11) | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
+| `:171` | option, entrée, port, outil, démon, conteneur ou image refusés avant toute action | S | « les refus » (options, images, entrées, ports, dossier jetable, `.env`, démon, conteneur, tirage, outils, S11) | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
+| `:172` | propagation de `sous` (entrée hors de sa place) | P | — | — |
+| `:173` | propagation de `sous` (entrée hors de sa place) | P | — | — |
+| `:174` | option, entrée, port, outil, démon, conteneur ou image refusés avant toute action | S | « les refus » (options, images, entrées, ports, dossier jetable, `.env`, démon, conteneur, tirage, outils, S11) | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
+| `:175` | option, entrée, port, outil, démon, conteneur ou image refusés avant toute action | S | « les refus » (options, images, entrées, ports, dossier jetable, `.env`, démon, conteneur, tirage, outils, S11) | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
+| `:178` | propagation de `sous` (entrée hors de sa place) | P | — | — |
+| `:184` | option, entrée, port, outil, démon, conteneur ou image refusés avant toute action | S | « les refus » (options, images, entrées, ports, dossier jetable, `.env`, démon, conteneur, tirage, outils, S11) | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
+| `:187` | option, entrée, port, outil, démon, conteneur ou image refusés avant toute action | S | « les refus » (options, images, entrées, ports, dossier jetable, `.env`, démon, conteneur, tirage, outils, S11) | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
+| `:195` | option, entrée, port, outil, démon, conteneur ou image refusés avant toute action | S | « les refus » (options, images, entrées, ports, dossier jetable, `.env`, démon, conteneur, tirage, outils, S11) | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
+| `:203` | option, entrée, port, outil, démon, conteneur ou image refusés avant toute action | S | « les refus » (options, images, entrées, ports, dossier jetable, `.env`, démon, conteneur, tirage, outils, S11) | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
+| `:206` | option, entrée, port, outil, démon, conteneur ou image refusés avant toute action | S | « les refus » (options, images, entrées, ports, dossier jetable, `.env`, démon, conteneur, tirage, outils, S11) | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
+| `:210` | option, entrée, port, outil, démon, conteneur ou image refusés avant toute action | S | « les refus » (options, images, entrées, ports, dossier jetable, `.env`, démon, conteneur, tirage, outils, S11) | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
+| `:212` | option, entrée, port, outil, démon, conteneur ou image refusés avant toute action | S | « les refus » (options, images, entrées, ports, dossier jetable, `.env`, démon, conteneur, tirage, outils, S11) | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
+| `:219` | option, entrée, port, outil, démon, conteneur ou image refusés avant toute action | S | « les refus » (options, images, entrées, ports, dossier jetable, `.env`, démon, conteneur, tirage, outils, S11) | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
+| `:224` | option, entrée, port, outil, démon, conteneur ou image refusés avant toute action | S | « les refus » (options, images, entrées, ports, dossier jetable, `.env`, démon, conteneur, tirage, outils, S11) | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
+| `:230` | option, entrée, port, outil, démon, conteneur ou image refusés avant toute action | S | « les refus » (options, images, entrées, ports, dossier jetable, `.env`, démon, conteneur, tirage, outils, S11) | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
+| `:313` | sortie de `nettoyer`, des signaux ou d'`echec` | P | — | — |
+| `:319` | sortie de `nettoyer`, des signaux ou d'`echec` | P | — | — |
+| `:320` | sortie de `nettoyer`, des signaux ou d'`echec` | P | — | — |
+| `:323` | sortie de `nettoyer`, des signaux ou d'`echec` | P | — | — |
+| `:332` | lancement de la base et son jeton | S | « jeton du conteneur » | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
+| `:334` | lancement de la base et son jeton | S | « jeton du conteneur » | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
+| `:337` | lancement de la base et son jeton | S | « jeton du conteneur » | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
+| `:365` | le serveur meurt pendant l'attente de santé | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:389` | réponse de l'API sans identifiant | S | « la dernière ligne nomme le dossier » | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
+| `:439` | lecture des migrations | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:443` | relevé des colonnes d'avant | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:444` | colonnes d'avant relevées non vides | A | — | une table de `TABLES` sans colonne n'existe pas ; le factice rend toujours ses colonnes ; la projection échouerait ensuite (requête invalide) — fermé |
+| `:449` | lecture d'une table | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:454` | projection sur les colonnes d'avant (colonne retirée : la requête échoue) | A | — | colonne d'avant retirée ou renommée : non simulée par le factice ; la phase échoue (fermé), message « empreinte après » |
+| `:458` | lecture de `users`, `audit_log`, `_kesh_version` | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:464` | lecture de `users`, `audit_log`, `_kesh_version` | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:465` | lecture de `users`, `audit_log`, `_kesh_version` | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:466` | lecture de `users`, `audit_log`, `_kesh_version` | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:467` | connexion de l'empreinte | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:469` | lecture d'une pièce par l'API | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:470` | lecture d'une pièce par l'API | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:471` | lecture d'une pièce par l'API | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:475` | lecture du rapport TVA | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:511` | projection de `api` (jq) | A | — | `jq` qui échoue : la phase échoue (fermé) ; S3c y passe (objet devenu scalaire) |
+| `:512` | normalisation de l'avant de `api` | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:514` | projection d'une table nommée présente | A | — | inatteignable : `empreinte` écrit la projection de chaque table nommée avant toute comparaison |
+| `:530` | écart d'empreinte hors de `--diff-attendu`, ou valeur d'avant changée | C | S2, S3a, S3c à S3g, S4, S16b, S16c, « écart d'empreinte » | S2-projection-tables, S3a, S3d, S3e, S3f, S3g, S4-tables |
+| `:537` | journal du serveur illisible | A | — | le journal est écrit par la redirection du lancement ; illisible = panne de disque, fermé |
+| `:540` | ligne ERROR ou panique au journal | S | « journal du binaire » (quatre cas) | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
+| `:569` | PDF exigé : HTTP 200 et en-tête `%PDF-` | C | S7b, S8 (regel), S16 import | S7b-entete |
+| `:582` | PDF figé servi à l'octet de la phase 1 | C | S5, S12 | S5-octets |
+| `:584` | PDF figé : SHA-256 égal à `pdf_sha256` | C | S5b | S5b-sha256 |
+| `:589` | démarrage de l'image précédente, seed, connexion, plan comptable | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:591` | démarrage de l'image précédente, seed, connexion, plan comptable | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:594` | démarrage de l'image précédente, seed, connexion, plan comptable | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:595` | connexion à l'API | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:597` | démarrage de l'image précédente, seed, connexion, plan comptable | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:603` | démarrage de l'image précédente, seed, connexion, plan comptable | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:609` | refus de l'API au peuplement | S | « le peuplement : un refus de l'API » (cinq chemins) | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
+| `:617` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
+| `:618` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
+| `:628` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
+| `:633` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
+| `:634` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
+| `:637` | réponse de l'API illisible au peuplement | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:639` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
+| `:642` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
+| `:643` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
+| `:645` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
+| `:647` | réponse de l'API illisible au peuplement | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:649` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
+| `:652` | précondition : un compte principal, lié au 1020 | C | S10 aucun compte principal, S10 non lié au 1020 | S10-principal, S10-lien-1020 |
+| `:654` | précondition : compte d'arrondi désigné | C | S10 aucun compte d'arrondi | S10-arrondi |
+| `:656` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
+| `:657` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
+| `:666` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
+| `:667` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
+| `:681` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
+| `:683` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
+| `:685` | réponse de l'API illisible au peuplement | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:689` | réponse de l'API illisible au peuplement | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:690` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
+| `:693` | PDF exigé (phase 1, regel) | C | S7b | S7b-entete |
+| `:694` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
+| `:695` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
+| `:699` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
+| `:700` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
+| `:703` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
+| `:704` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
+| `:709` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
+| `:711` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
+| `:715` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
+| `:716` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
+| `:721` | statuts des factures fournisseur | S | « statuts fournisseur inattendus » | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
+| `:726` | couverture du peuplement (relevés, groupe, règlements, figées, F4, désignations, copie des documents) | A | — | contrôle de couverture du peuplement (garantit les cas que le manuel énumère, ne compare aucune donnée d'avant) : éprouvé par le seul run réel, qui le passe (E-P2-5) |
+| `:734` | réponse de l'API illisible au peuplement | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:736` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
+| `:737` | couverture du peuplement (relevés, groupe, règlements, figées, F4, désignations, copie des documents) | A | — | contrôle de couverture du peuplement (garantit les cas que le manuel énumère, ne compare aucune donnée d'avant) : éprouvé par le seul run réel, qui le passe (E-P2-5) |
+| `:739` | réponse de l'API illisible au peuplement | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:740` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
+| `:741` | couverture du peuplement (relevés, groupe, règlements, figées, F4, désignations, copie des documents) | A | — | contrôle de couverture du peuplement (garantit les cas que le manuel énumère, ne compare aucune donnée d'avant) : éprouvé par le seul run réel, qui le passe (E-P2-5) |
+| `:746` | statuts des huit factures | C | S10 statuts clients | S10-statuts |
+| `:747` | couverture du peuplement (relevés, groupe, règlements, figées, F4, désignations, copie des documents) | A | — | contrôle de couverture du peuplement (garantit les cas que le manuel énumère, ne compare aucune donnée d'avant) : éprouvé par le seul run réel, qui le passe (E-P2-5) |
+| `:749` | couverture du peuplement (relevés, groupe, règlements, figées, F4, désignations, copie des documents) | A | — | contrôle de couverture du peuplement (garantit les cas que le manuel énumère, ne compare aucune donnée d'avant) : éprouvé par le seul run réel, qui le passe (E-P2-5) |
+| `:750` | un avoir peuplé | C | S10 aucun avoir | S10-avoir |
+| `:752` | couverture du peuplement (relevés, groupe, règlements, figées, F4, désignations, copie des documents) | A | — | contrôle de couverture du peuplement (garantit les cas que le manuel énumère, ne compare aucune donnée d'avant) : éprouvé par le seul run réel, qui le passe (E-P2-5) |
+| `:754` | couverture du peuplement (relevés, groupe, règlements, figées, F4, désignations, copie des documents) | A | — | contrôle de couverture du peuplement (garantit les cas que le manuel énumère, ne compare aucune donnée d'avant) : éprouvé par le seul run réel, qui le passe (E-P2-5) |
+| `:755` | couverture du peuplement (relevés, groupe, règlements, figées, F4, désignations, copie des documents) | A | — | contrôle de couverture du peuplement (garantit les cas que le manuel énumère, ne compare aucune donnée d'avant) : éprouvé par le seul run réel, qui le passe (E-P2-5) |
+| `:757` | couverture du peuplement (relevés, groupe, règlements, figées, F4, désignations, copie des documents) | A | — | contrôle de couverture du peuplement (garantit les cas que le manuel énumère, ne compare aucune donnée d'avant) : éprouvé par le seul run réel, qui le passe (E-P2-5) |
+| `:760` | couverture du peuplement (relevés, groupe, règlements, figées, F4, désignations, copie des documents) | A | — | contrôle de couverture du peuplement (garantit les cas que le manuel énumère, ne compare aucune donnée d'avant) : éprouvé par le seul run réel, qui le passe (E-P2-5) |
+| `:768` | réponse de l'API illisible au peuplement | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:773` | réponse de l'API illisible au peuplement | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:776` | échec d'une empreinte | A | — | propagation des `|| return 1` de `empreinte`, inventoriés ci-dessus |
+| `:779` | chaque table de l'empreinte peuplée à l'avant (table vide des deux côtés) | C | S3h | S3h-table-vide |
+| `:783` | rapport TVA non vide à l'avant | C | S10 rapport TVA vide | S10-tva |
+| `:785` | sauvegarde, dump et copie des documents | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:786` | sauvegarde, dump et copie des documents | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:791` | copie des documents du seul conteneur du jeton | S | « jeton du conteneur » | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
+| `:792` | sauvegarde, dump et copie des documents | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:796` | couverture du peuplement (relevés, groupe, règlements, figées, F4, désignations, copie des documents) | A | — | contrôle de couverture du peuplement (garantit les cas que le manuel énumère, ne compare aucune donnée d'avant) : éprouvé par le seul run réel, qui le passe (E-P2-5) |
+| `:801` | sauvegarde, dump et copie des documents | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:802` | sauvegarde, dump et copie des documents | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:808` | démarrage du binaire neuf, seconde base | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:810` | démarrage du binaire neuf, seconde base | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:813` | nombre de migrations appliquées | S | « migrations : un écart au nombre attendu » | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
+| `:816` | sauvegarde `pre-upgrade/` | S | « aucun fichier pre-upgrade », « N = 0 » | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
+| `:818` | sauvegarde `pre-upgrade/` | S | « aucun fichier pre-upgrade », « N = 0 » | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
+| `:820` | échec d'une empreinte | A | — | propagation des `|| return 1` de `empreinte`, inventoriés ci-dessus |
+| `:821` | comparaison de la montée | C | S2 à S4 | S2-projection-tables |
+| `:831` | dossier du crochet | A | — | `$D/cwd` est créé par le script au début du run : inatteignable |
+| `:838` | crochet `--apres` (phase 2 et phase 5) | C | « crochet --apres » (phase 2), S16d (phase 5) | S16d-crochet-import ; contrôles du crochet : `rel0200/verifs-0200.test.sh` et `.mut.sh` |
+| `:840` | appel du crochet | C | « crochet --apres », S16d | S16d-crochet-import |
+| `:845` | connexion à l'API | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:846` | PDF figés après la montée | C | S5, S5b | S5-octets, S5b-sha256 |
+| `:848` | F8 sans fichier rend 410 | S | nominal (le factice rend 410) ; S8b | — (le 410 de code autre est S8b ; un 200 ferait échouer le regel puis S8c) |
+| `:851` | le 410 de F8 porte INVOICE_PDF_GONE | C | S8b | S8b-code-410 |
+| `:854` | regel de F8 accepté (200, réponse de facture) | C | S8 | S8-regel |
+| `:855` | PDF exigé (phase 1, regel) | C | S7b | S7b-entete |
+| `:857` | PDF du regel à l'empreinte du nouveau `pdf_sha256` | C | S8c | S8c-regel-sha256 |
+| `:860` | journal sans erreur (phases 2, 4, 5) | S | « journal du binaire », « journal de l'import » | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
+| `:870` | refus de l'image précédente sur la base migrée | S | « refus de l'image » (trois cas) | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
+| `:875` | refus de l'image précédente sur la base migrée | S | « refus de l'image » (trois cas) | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
+| `:879` | refus de l'image précédente sur la base migrée | S | « refus de l'image » (trois cas) | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
+| `:887` | refus de l'image précédente sur la base migrée | S | « refus de l'image » (trois cas) | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
+| `:895` | restauration du dump, redémarrage de l'image | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:897` | restauration du dump, redémarrage de l'image | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:898` | échec d'une empreinte | A | — | propagation des `|| return 1` de `empreinte`, inventoriés ci-dessus |
+| `:899` | égalité stricte du retour | C | S15 | S15-retour |
+| `:904` | journal sans erreur de l'image au retour | A | — | la fonction est éprouvée par ses appels des phases 2 et 5 (« journal du binaire », « journal de l'import ») ; le factice de l'image n'écrit pas de journal d'erreur |
+| `:910` | démarrage de la seconde base (phase 5) | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:914` | démarrage du binaire neuf, seconde base | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:915` | connexion à l'API | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:916` | démarrage du binaire neuf, seconde base | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:919` | import du `.keshbackup` accepté (200) | C | S16a | S16a-import-http |
+| `:920` | échec d'une empreinte | A | — | propagation des `|| return 1` de `empreinte`, inventoriés ci-dessus |
+| `:921` | comparaison de l'import | C | S16b, S16c | S16b-import-ecarts |
+| `:922` | appel du crochet | C | « crochet --apres », S16d | S16d-crochet-import |
+| `:924` | PDF figés après l'import, de l'archive | C | S12 | S12-dossier-import |
+| `:925` | journal sans erreur (phases 2, 4, 5) | S | « journal du binaire », « journal de l'import » | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
+| `:938` | version de `mutool` | A | — | `mutool -v` en échec avec un `mutool` présent : non simulé ; fermé |
+| `:949` | pages lisibles | A | — | redondant : un échec de `mutool` ici laisse un texte ou une trame vide, que S7a ou S6c attrapent en aval |
+| `:950` | pages lisibles | A | — | redondant : un échec de `mutool` ici laisse un texte ou une trame vide, que S7a ou S6c attrapent en aval |
+| `:952` | même nombre de pages | C | S6g | S6g-pages |
+| `:953` | `mutool draw` en échec | A | — | redondant : un échec de `mutool` ici laisse un texte ou une trame vide, que S7a ou S6c attrapent en aval |
+| `:954` | `mutool draw` en échec | A | — | redondant : un échec de `mutool` ici laisse un texte ou une trame vide, que S7a ou S6c attrapent en aval |
+| `:959` | même texte | C | S6f | S6f-texte |
+| `:961` | `mutool draw` en échec | A | — | redondant : un échec de `mutool` ici laisse un texte ou une trame vide, que S7a ou S6c attrapent en aval |
+| `:962` | `mutool draw` en échec | A | — | redondant : un échec de `mutool` ici laisse un texte ou une trame vide, que S7a ou S6c attrapent en aval |
+| `:964` | trame non vide | C | S6c | S6c-trame-vide |
+| `:965` | même trame | C | S6 | S6a-trame |
+| `:970` | exactement 5 paires | C | S7a, S7a', S14 | S14-decompte, S7a-numero, S7a2-zero-page |
+| `:975` | aucune erreur ni avertissement de `mutool` hors l'avis ICC | C | S6d, S6e | S6d-erreur-mutool, S6e-seul-avis-icc |
+
+sites : 188 = A 71 + C 30 + P 37 + S 50 ; non classés : 0
+
+### `kesh-gate-logs/rel0200/verifs-0200.sh` — extracteur `grep -nE '\|\| exit 1$'`, sondes positives : "$succes" = 1
+
+| Ligne | Ce qu'il garde | Classe | Scénario | Mutation tuée (journal) ou raison |
+|---|---|---|---|---|
+| `:16` | la migration 20261118000002 appliquée et achevée | C | « migration inachevée », « migration absente » | succes — `rel0200/verifs-0200.test.sh` (8 cas), mutation `rel0200/verifs-0200.mut.sh` (journal `e491d/crochet-mutations.log`) |
+| `:21` | toutes les lignes `priced`, à l'octet | C | « une ligne au type PRICED » | autres, binary — `rel0200/verifs-0200.test.sh` (8 cas), mutation `rel0200/verifs-0200.mut.sh` (journal `e491d/crochet-mutations.log`) |
+| `:26` | même nombre de lignes qu'avant | C | « une ligne de moins » | nombre — `rel0200/verifs-0200.test.sh` (8 cas), mutation `rel0200/verifs-0200.mut.sh` (journal `e491d/crochet-mutations.log`) |
+| `:28` | table de lignes non vide | C | « table vide avant et après » | vide — `rel0200/verifs-0200.test.sh` (8 cas), mutation `rel0200/verifs-0200.mut.sh` (journal `e491d/crochet-mutations.log`) |
+| `:31` | valeur par défaut `'priced'` | C | « défaut sans apostrophes », « défaut autre » | defaut — `rel0200/verifs-0200.test.sh` (8 cas), mutation `rel0200/verifs-0200.mut.sh` (journal `e491d/crochet-mutations.log`) |
+
+sites : 5 = C 5 ; non classés : 0
+
+### `kesh-gate-logs/rel0200/recette-complement-rel0200.sh` — extracteur `grep -nE '(^|[ ;|&{(])(arret|ecart) "|\bexit [1-9]'`, sondes positives : au lieu de 410 INVOICE_PDF_GONE
+
+| Ligne | Ce qu'il garde | Classe | Scénario | Mutation tuée (journal) ou raison |
+|---|---|---|---|---|
+| `:31` | argument | A | — | usage ; aucun effet sur la donnée |
+| `:52` | définition d'`arret` | P | — | — |
+| `:57` | périmètre et démarrage (ports, conteneurs, image, `.env`, base, santé, login) | A | — | garde de périmètre ou panne d'infrastructure, hors donnée des factures ; l'arrêt est fermé (aucun import ne suit) |
+| `:59` | périmètre et démarrage (ports, conteneurs, image, `.env`, base, santé, login) | A | — | garde de périmètre ou panne d'infrastructure, hors donnée des factures ; l'arrêt est fermé (aucun import ne suit) |
+| `:61` | périmètre et démarrage (ports, conteneurs, image, `.env`, base, santé, login) | A | — | garde de périmètre ou panne d'infrastructure, hors donnée des factures ; l'arrêt est fermé (aucun import ne suit) |
+| `:62` | périmètre et démarrage (ports, conteneurs, image, `.env`, base, santé, login) | A | — | garde de périmètre ou panne d'infrastructure, hors donnée des factures ; l'arrêt est fermé (aucun import ne suit) |
+| `:63` | périmètre et démarrage (ports, conteneurs, image, `.env`, base, santé, login) | A | — | garde de périmètre ou panne d'infrastructure, hors donnée des factures ; l'arrêt est fermé (aucun import ne suit) |
+| `:64` | entrées de la recette présentes | A | — | usage : un dossier incomplet arrête avant tout import ; fermé |
+| `:65` | entrées de la recette présentes | A | — | usage : un dossier incomplet arrête avant tout import ; fermé |
+| `:71` | exactement une sauvegarde `pre-upgrade/` au motif | C | second rouge : deux sauvegardes | `recette-complement-rouge2-p2.log` (arrêt « exactement une sauvegarde ») |
+| `:77` | version d'arrivée du nom = `/health` du binaire neuf | C | rouge : version altérée | rouge du script complémentaire sur une copie altérée du dossier de la recette (`recette-complement-rouge-p2.log`) |
+| `:83` | périmètre et démarrage (ports, conteneurs, image, `.env`, base, santé, login) | A | — | garde de périmètre ou panne d'infrastructure, hors donnée des factures ; l'arrêt est fermé (aucun import ne suit) |
+| `:97` | périmètre et démarrage (ports, conteneurs, image, `.env`, base, santé, login) | A | — | garde de périmètre ou panne d'infrastructure, hors donnée des factures ; l'arrêt est fermé (aucun import ne suit) |
+| `:98` | l'image importatrice est la 0.19.1 | A | — | image fixée par le script ; garde de configuration |
+| `:109` | périmètre et démarrage (ports, conteneurs, image, `.env`, base, santé, login) | A | — | garde de périmètre ou panne d'infrastructure, hors donnée des factures ; l'arrêt est fermé (aucun import ne suit) |
+| `:112` | import accepté (200) | A | — | l'import d'une sauvegarde saine n'est pas falsifiable sans altérer l'archive ; l'arrêt est fermé |
+| `:120` | lecture d'une table | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:122` | chaque table strictement égale à l'avant | C | rouge : une ligne ajoutée à l'empreinte d'avant | rouge du script complémentaire sur une copie altérée du dossier de la recette (`recette-complement-rouge-p2.log`) |
+| `:124` | au moins 17 tables comparées | A | — | la liste vient de `colonnes-avant/`, écrite par la recette (17) ; non falsifiée |
+| `:128` | nouveau login | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:133` | PDF figés à l'octet de la phase 1 | C | rouge : un octet changé au PDF de F1 | rouge du script complémentaire sur une copie altérée du dossier de la recette (`recette-complement-rouge-p2.log`) |
+| `:139` | F8 en 410 INVOICE_PDF_GONE | C | rouge : F8 désigne une facture au PDF présent | rouge du script complémentaire sur une copie altérée du dossier de la recette (`recette-complement-rouge-p2.log`) |
+| `:143` | journal de l'image sans ERROR | A | — | aucune erreur provocable sans altérer l'image publiée |
+| `:146` | code de sortie selon les écarts | P | — | — |
+
+sites : 24 = A 17 + C 5 + P 2 ; non classés : 0
+
+**16. Remédiation de la revue P2** (Opus, trois lentilles, `review-p2-{B,E,A}.md` : 0/0/1/14 ; le MEDIUM confirmé au code par
+l'orchestrateur ; chaque prémisse relue au code). Code : `d2416c596` ; hors dépôt : `rel0200/verifs-0200.sh` (BINARY, migration
+achevée), `verifs-0200.test.sh`, `verifs-0200.mut.sh`, `recette-complement-rel0200.sh` (port), `e491d/inventaire/inventaire.py`,
+`e491d/mut/mutations.py` (dix mutations neuves, juge qui distingue un test interrompu).
+
+| Finding | Sort |
+|---|---|
+| **E-P2-1 = A-P2-1** (MEDIUM) — phase 5 (`:907` HTTP de l'import, `:909` comparaison) sans scénario ni mutation | **corrigé**, et la classe entière traitée par l'inventaire clos (§ 15) : S16a (`CODE_IMPORT=500`), S16b et S16c (valeur d'avant changée sous le seul binaire de l'import, nommée ou non) ; mutations `S16a-import-http`, `S16b-import-ecarts` tuées |
+| E-P2-2 — égalité stricte du retour | **corrigé** : S15 (`ECART_RETOUR`, factice qui distingue la base restaurée), mutation `S15-retour` tuée |
+| E-P2-3 — phase 6 : texte, pages, `mutool` en échec, S7a' sans mutation | **corrigé** pour texte (S6f), pages (S6g) et zéro page (mutation `S7a2-zero-page`) ; les échecs de `mutool info`/`draw` sont des **angles morts assumés** (redondants : texte ou trame vides, attrapés par S7a et S6c) |
+| E-P2-4 — SHA-256 du regel | **corrigé** : S8c (`REGEL_SHA_ALTERE`), mutation `S8c-regel-sha256` tuée |
+| E-P2-5 — contrôles du peuplement | **angle mort assumé**, déclaré à l'inventaire : contrôles de couverture, éprouvés par le seul run réel (ils ne comparent aucune donnée d'avant) |
+| E-P2-6 — colonne neuve contrôlée en phase 2 seulement, crochet jamais vu rouge | **corrigé** : crochet rejoué en phase 5 (`jouer_crochet`, `PHASE_APRES`), S16d et sa mutation ; épreuve du crochet, `verifs-0200.test.sh` (8 cas) et `verifs-0200.mut.sh` (6 mutations tuées) |
+| E-P2-7 — tout `warning:` de `mutool` toléré | **corrigé** : seul l'avis ICC est toléré ; S6e et sa mutation |
+| E-P2-8 — minuit aussi en phase 4 | **corrigé** à `docs/testing.md` |
+| B-P2-1 — garde « avant vide » mort, factice incohérent | **corrigé** : garde retiré (inatteignable, commentaire réécrit) ; chaque table de l'empreinte doit être peuplée à l'avant ; S3h refaite avec un factice cohérent (vide aux deux `SELECT`), mutation `S3h-table-vide` tuée |
+| B-P2-2 — crochet sous la collation | **corrigé** : `WHERE BINARY line_type <> 'priced'` ; cas « PRICED » et mutation `binary` du crochet |
+| B-P2-3 — `| grep -q` sous `pipefail` au script complémentaire | **corrigé** : sortie de `ss` capturée |
+| B-P2-4 et A-P2-4 — 0.19.0 restants | **corrigés** : deux commentaires du script ; fiche aux AC5, AC8, AC14, D5, D10, T4 |
+| A-P2-2 — AC11 non rejoué au dernier commit de code | **corrigé** : rejoué sur le dossier de la recette de `d2416c596` (`recette-complement-p2.log`, vert) ; son rouge élargi à quatre écarts et un arrêt |
+| A-P2-3 — « chacun avec sa mutation tuée » | **corrigé** : `docs/testing.md` nomme les témoins et renvoie à l'inventaire |
+| P1, E7 (crochet : identité de la migration) | **corrigé** au passage (une ligne sûre au crochet, cas et mutation) : l'issue demandée à la P1 n'est plus à ouvrir |
+
+**Ce qui a tourné après la remédiation P2** (code `d2416c596`) :
+- test shell vert, **173 assertions** (`dev/test-shell-9.log`) ;
+- mutations : les **dix neuves et S6d** rejouées une à une à `d2416c596` (`mut/resume-4.log`) ; **38 sur 38 tuées** (`mut/juge.log`) ;
+  les 27 autres journaux sont ceux du tirage à `a4fc72d82` (`mut/resume-3.log`), le code qu'elles mutent n'ayant pas changé.
+  S6d s'est d'abord interrompue (collision de ports avec une autre copie du test sur la station) : le juge dit désormais
+  « INTERROMPU, à rejouer » au lieu de « vert », et S6d rejouée seule est tuée (« ✗ S6d … code 0 au lieu de 16 ») ;
+- crochet : `crochet-test.log` (8 cas verts), `crochet-mutations.log` (6 sur 6 tuées) ;
+- **recette réelle verte** à `d2416c596` (`recette-reelle-p2.log`, `/tmp/kesh-recette.fMe6kp`) : six phases, 5 paires au même
+  dessin, crochet vert en phase 2 **et** en phase 5 (`journal/apres-phase{2,5}.log`), `mutool.log` : 20 avis ICC seulement ;
+  **R1 rouge**, code 12, « api credit_note_lines invoice_lines » (`recette-reelle-rouge-diff-p2.log`) ;
+- **script complémentaire vert** sur ce dossier (`recette-complement-p2.log` : 17 tables égales, F1/F5/F7 à l'octet, F8 `410`) ;
+  rouge 1 : **4 écarts sur 4** (version d'arrivée, `invoices`, F1, F8 ; `recette-complement-rouge-p2.log`) ; rouge 2 :
+  **arrêt** « exactement une sauvegarde » (`recette-complement-rouge2-p2.log`) ;
+- gates : § 17.
+
+**17. Gate complet après la remédiation P2** (`gates-review-p2.sh`, une commande par prise ; `gates-review-p2.log`), code
+`d2416c596`, arbre propre à `2836bb52d` :
+- bases `kesh_e491d`, `kesh_ci_e491d`, `kesh_e2e_e491d` remises à neuf ; **`scripts/test-fast.sh --ci`** → **EXIT=0, « 6264 tests run:
+  6264 passed (1 slow), 17 skipped »**, 662,1 s ; le test de la recette y prend **388,8 s** — près des deux tiers de la borne de
+  600 s de son enveloppe, que `docs/testing.md` dit désormais (`test-fast-ci-p2.log`) ;
+- **`scripts/gate-ci.sh kesh_ci_e491d`** → **code 0, « 6283 passés, 0 échoués, 21 ignorés »** (`gate-ci-p2.log`, `.entete`, `.out`) ;
+- frontend non touché ; pas d'E2E (clôture).
+
 **13. Issues demandées par la revue P1** (texte prêt ; une par problème) :
 - *`technical-debt`, P4* — **Le juge des mutations de la recette de montée ne borne pas les échecs collatéraux.**
   `kesh-gate-logs/e491d/mut/mutations.py:juger` tient une mutation pour tuée dès que l'assertion visée échoue, quel que soit le
@@ -1062,7 +1379,7 @@ et la présente entrée.
 - *`technical-debt`, P4* — **Le crochet de la recette de la 0.20.0 ne contrôle pas l'identité de la migration appliquée.**
   `verifs-0200.sh` vérifie la colonne et son défaut, non que `_sqlx_migrations` porte `20261118000002` avec `success = 1`.
   Remède : une ligne `[ "$(SQL "SELECT success FROM _sqlx_migrations WHERE version = 20261118000002")" = 1 ] || exit 1`.
-  (Revue P1, E7.)
+  (Revue P1, E7.) *(2026-11-24, remédiation P2 : **corrigé au crochet**, cas et mutation — issue **à ne plus ouvrir**.)*
 - *(à la décision de l'orchestrateur) `documentation`, P4* — **Manuel d'administration, « Passer à la 0.20.0 » : la forme
   `ADD COLUMN … DEFAULT 'priced'` n'est pas citée.** (Revue P1, A4.)
 
@@ -1118,3 +1435,4 @@ echo "verifs-0200 : vert"
 | 2026-11-20 | **Validation terminée** (entrée finale de la boucle). **Passe P5** (Sonnet selon l'alternance prévue par la P4, contexte frais, `kesh-gate-logs/e491d/validation-49-1d-p5.md` : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 4 LOW) : arrêt de la boucle, aucune passe ne rendant plus de finding au-dessus de LOW. **Tendance des findings par passe** (CRITICAL/HIGH/MEDIUM/LOW) : P1 0/0/6/4, P2 0/0/3/9, P3 0/0/4/5, P4 0/0/1/4, P5 0/0/0/4. **Modèles** : Sonnet (P1), Opus (P2), Sonnet (P3), Opus (P4), Sonnet (P5) — alternance tenue, aucune passe ciblée ; rédaction et remédiations par Opus 5.5. **Reclassements** : aucun finding MEDIUM+ reclassé en dette ; le signal de recyclage de la P2 a été traité par l'**Allègement** décidé par Guy (non par un découpage) ; les MEDIUM de la P3 et de la P4 jugés non recyclants (erreurs de fait, portée), justification à leurs entrées. **LOW de la P5, traités à l'étape 0 du développement** (Opus 5.5, prémisse relue) : **V5-1** — prémisse lue, T12 (d) « parmi les ajouts du même fichier » : (d) restreinte à **la même hunk** de `git diff -U0` ; (c) réécrite sans littéral qui vieillit (« le décompte des migrations lui-même, porté de la valeur de la release précédente à celle de la release qui ajoute la migration »). **V5-2** — prémisse lue, T12 ne cherchait que `^\+\s*(#\[ignore|#\[cfg|return\b)` ; ajouts classés en (e) neutralisants (motif `return` resserré à `return;` / `return Ok(());` seul sur sa ligne) et (f) types de ligne non chiffrés (`LineType::Comment`/`Heading`, `'comment'`, `'heading'`, `line_type`/`lineType` sans le type chiffré), chacun rattaché à sa fonction englobante : dans une fonction présente au tag, compté comme retrait de valeur attendue. **V5-3** — prémisse lue, AC12 « Il se planifie avant le vendredi midi » sans repli : le contrôle de la perte assumée se joue **dès la coupure du jeudi 2026-11-26 au soir** (il ne dépend pas du bump) ; un rejeu non vert le vendredi à midi vaut le repli de l'ordre de coupe (la migration et l'Epic 49 sortent de la 0.20.0 ; l'orchestrateur le constate, le Project Lead garde le dernier mot) — AC12, *Allègement*, Dev Notes (*Si le temps manque*, *Rejeu*). **V5-4** — prémisse lue, T12 ne donnait que la commande sur tout `crates/*/tests/*` : livré `kesh-gate-logs/rel0200/perte-assumee.sh` (hors dépôt, comme le crochet), restreint aux dix fichiers et à leurs modules relevés à la tête, sonde positive incorporée, codes 0/3/4 ; nommé par T12 et l'AC12. **Sondes du script** (`kesh-gate-logs/e491d/dev/perte-assumee-sonde.log`, clone jetable muté : une assertion retirée de `grouped_settlements.rs`, un `#[ignore]` et un `LineType::Comment` ajoutés dans une fonction du tag) → code 3, les trois lignes signalées ; la première version du script manquait la troisième (`git show … \| grep -q` sous `pipefail` : SIGPIPE, une fonction ancienne passait pour neuve) — corrigé par un décompte `grep -c`, la sonde rejouée. **Joué à la tête** (`153f6ba5c`, `kesh-gate-logs/e491d/dev/perte-assumee-etape0.log`) : 15 chemins (10 binaires, 5 modules), un retrait (commentaire de `grouped_settlements.rs`, (a)), 30 ajouts de type non chiffré tous dans des fonctions neuves de la 49-1a, code 0. **Issues des Dev Notes** ouvertes par l'orchestrateur : #1444 à #1448 (n° 6, conditionnelle, non ouverte), substituées à « à ouvrir » dans l'inventaire, la perte assumée et les Dev Notes (les entrées passées du Change Log gardent leur texte). Branche reprise d'`origin/epic/49-types-de-lignes-facture` (`abb246252`, documentation seule) par `153f6ba5c`. Décomptes inchangés : D1 à D11, AC1 à AC16, S1 à S14, T0 à T12. Statut : `ready-for-dev` → `in-progress` (fiche et `sprint-status.yaml`). |
 | 2026-11-24 | **Développement repris et terminé** (Opus 5.5, `bmad-dev-story`). Branche d'épique reprise (`87e00ba05`, v0.19.1, par `0d033d36e`) ; **version de départ portée à la 0.19.1**, dernière image publiée (C-e491d-1), sites opératoires de la fiche corrigés. **T0** jouée sur `gcorbaz/kesh:0.19.1` : deux prémisses de D1 fausses, écrites au Dev Agent Record avant le code — QR-IBAN du relevé A (C-e491d-2), `total_amount` HT (C-e491d-3) — sans effet sur ce que la recette compare. Code : `a5cf95297`, `a02b79bec`, `bd7e72ce8` (dont deux défauts du script trouvés par le test : `id_piece`, et la comparaison à vide d'une trame ou d'un avant vides, scénario S6c ajouté). Test shell vert, 155 assertions ; **21 mutations, 20 tuées, S3c équivalente** (deux défauts de l'outillage de mutation corrigés en route, C-e491d-5). **Recette réelle verte** depuis l'image 0.19.1 (5 paires au même dessin, projections non vides et égales, crochet vert), **R1 et R2 rouges**, trame éprouvée hors script ; **script complémentaire vert** (17 tables, PDF figés à l'octet, F8 `410`) et son rouge (2 écarts) ; `test-fast --ci` vert (6264), `gate-ci kesh_ci_e491d` vert (6283), perte assumée code 0. `docs/testing.md` et manuel d'administration FR (section 0.20.0, « Compatibilité ») écrits ; `make fr` vert. **Aucune facture ni aucun avoir existant ne change ; le retour par la sauvegarde fonctionne** : aucun point d'arrêt. La 49-4b étant à l'Epic 52, la branche « elle n'entre pas » de D8 et de l'AC14 s'applique. Trois issues à ouvrir (Dev Agent Record § 11). Prompt de la revue P1 écrit (`49-1d-types-de-lignes-recette-montee-review-prompt-p1.md`), revue non lancée. Statut : `in-progress` → `review` (fiche ; `sprint-status.yaml` laissé à l'orchestrateur). |
 | 2026-11-24 | **Revue P1 remédiée** (Opus 5.5). **Passe P1** : Sonnet, trois lentilles en contexte frais (`kesh-gate-logs/e491d/review-p1-{B,E,A}.md`) : **0 CRITICAL, 0 HIGH, 2 MEDIUM, 16 LOW** (B : 2 MEDIUM et 5 LOW ; E : 1 MEDIUM, même cause que B1, et 6 LOW ; A : 2 MEDIUM, mêmes causes que B1 et B2, et 5 LOW — dix-huit constats, deux causes MEDIUM). Les deux MEDIUM, confirmés au code par l'orchestrateur, sont **corrigés** : chaque garde-fou de la projection de `api` (type, longueur, clé disparue, nombre de documents) et le garde « avant vide » ont désormais un scénario (S3d à S3h) et une mutation tuée ; la mutation S3c **n'était pas équivalente** (contre-exemple `[]` → `null`) : la déclaration est annotée fausse à sa date (Dev Agent Record § 5, `mut/juge-avant-revue-p1.log`) et retirée de `docs/testing.md`. LOW **corrigés** : B3, B4, B5, E3, A3, A5, A7 ; **dits** à `docs/testing.md` et au manuel : E2, E4, E5, E6 ; **issues** demandées : B6, B7, E7 (et A4 à la décision de l'orchestrateur) ; **reconnu sans issue** : A6. Sort de chacun : Dev Agent Record § 12. Code `a4fc72d82`. Test shell vert (164 assertions), **29 mutations, 29 tuées** ; recette réelle rejouée verte et R1 rouge à `a4fc72d82` ; gates : § 14 du Dev Agent Record. **Reclassements** : aucun MEDIUM reclassé en dette. Modèles : Sonnet (P1), Opus 5.5 (remédiation) ; la passe suivante, **complète, prend Opus** en contexte frais (le MEDIUM corrigé appelle une passe de plus) : prompt `49-1d-types-de-lignes-recette-montee-review-prompt-p2.md`, non lancée. Statut : `review`. |
+| 2026-11-24 | **Revue P2 remédiée** (Opus 5.5). **Passe P2** : Opus, trois lentilles en contexte frais (`kesh-gate-logs/e491d/review-p2-{B,E,A}.md`) : **0 CRITICAL, 0 HIGH, 1 MEDIUM, 14 LOW** (B : 4 LOW ; E : 1 MEDIUM et 7 LOW ; A : 1 MEDIUM, même cause qu'E-P2-1, et 3 LOW). **Tendance** (CRITICAL/HIGH/MEDIUM/LOW) : P1 0/0/2/16, P2 0/0/1/14. Le MEDIUM (phase 5 sans scénario ni mutation), confirmé par l'orchestrateur, est **de la même classe** que les deux MEDIUM de la P1 sur un autre site : il n'est pas corrigé site par site mais par l'**inventaire clos** de toutes les sorties d'échec des trois scripts (Dev Agent Record § 15 : extracteur cité, sondes positives, **217 sites = 40 couverts + 50 à scénario sans mutation (Story 33-10) + 39 propagations + 88 angles morts assumés, chacun avec sa raison**), chaque site qui garde la donnée des factures ou des avoirs étant couvert par un scénario et une mutation tuée, ou, pour les contrôles de couverture du peuplement et les échecs redondants de `mutool`, déclaré angle mort. Les quatorze LOW : treize corrigés ou dits, E-P2-5 angle mort assumé (sort de chacun : § 16). **Arbitrage de l'orchestrateur sur A4 de la P1** (la forme `ADD COLUMN … DEFAULT 'priced'` au manuel) : **sans changement**, l'avis de la remédiation P1 retenu ; aucune issue. E7 de la P1 corrigé au passage (issue retirée). Code `d2416c596`. Test shell vert (173 assertions) ; **38 mutations, 38 tuées** ; crochet : 8 cas, 6 mutations tuées ; recette réelle verte, R1 rouge, script complémentaire vert et ses deux rouges à `d2416c596` ; gates : Dev Agent Record § 17. **Reclassements** : aucun. Modèles : Opus (P2), Opus 5.5 (remédiation) ; la passe suivante, **complète, prend Sonnet** en contexte frais et recalcule l'inventaire par sa propre commande : prompt `49-1d-types-de-lignes-recette-montee-review-prompt-p3.md`, non lancée. Statut : `review`. |
