@@ -1,5 +1,12 @@
+# Registre des images de base. Par défaut Docker Hub (`docker.io/library`, la même
+# référence que `rust:…` seul) : la release et la CI de `main` et des branches du dépôt
+# construisent à l'identique. La CI d'une PR sans le secret Docker Hub (PR de fork) passe
+# `--build-arg REGISTRY=public.ecr.aws/docker/library`, le miroir public des images
+# officielles, tiré sans authentification (docs/ci.md, C-31-2-3).
+ARG REGISTRY=docker.io/library
+
 # --- Stage 1 : Build Rust ---
-FROM rust:1.97-bookworm AS rust-builder
+FROM ${REGISTRY}/rust:1.97-bookworm AS rust-builder
 WORKDIR /app
 COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
 COPY crates/ crates/
@@ -7,7 +14,7 @@ RUN cargo build --release -p kesh-api \
     && strip /app/target/release/kesh-api
 
 # --- Stage 2 : Build Frontend ---
-FROM node:22-bookworm-slim AS frontend-builder
+FROM ${REGISTRY}/node:22-bookworm-slim AS frontend-builder
 WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
@@ -15,7 +22,7 @@ COPY frontend/ .
 RUN npm run build
 
 # --- Stage 3 : Image finale ---
-FROM debian:bookworm-slim AS runtime
+FROM ${REGISTRY}/debian:bookworm-slim AS runtime
 # curl nécessaire pour le healthcheck Docker + le téléchargement pdfium ci-dessous.
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
     && rm -rf /var/lib/apt/lists/*

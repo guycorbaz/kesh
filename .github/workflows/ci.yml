@@ -77,14 +77,22 @@ jobs:
       mariadb:
         # Story 10-1 D3 : pin 10.11 = parité prod NAS Synology Package Center DSM.
         # Compat MariaDB ≥ 10.7 : NATURAL_SORT_KEY (Story 33-1b) ; ≥ 10.6 pour reconciliation_rules.sql (VIRTUAL+UNIQUE).
-        image: mariadb:10.11
+        # C-31-2-3 (variante B) — PR de fork (dépôt de tête ≠ ce dépôt) : image VIDE, le
+        # service ne démarre pas ; MariaDB démarre par l'étape « Start MariaDB (PR de
+        # fork) », `docker run` sans authentification depuis le miroir public ECR. Partout
+        # ailleurs, ce service, tiré de Docker Hub. `services` n'a pas accès à `secrets` :
+        # la décision se lit dans `github`. ⚠️ `!fork && 'image' || ''`, et non
+        # `fork && '' || 'image'` : `''` est faux et rendrait toujours l'image.
+        image: ${{ !(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'mariadb:10.11' || '' }}
         # Story 31-2 (A2) — tirage AUTHENTIFIÉ : anonyme, il tombait sous la
         # limite de Docker Hub (429) et faisait rougir le job sans rapport avec
-        # le diff. Les PR de forks n'ont pas ces secrets et échouent ici,
-        # bruyamment (C-31-2-3, docs/ci.md).
+        # le diff. Sur un fork, les secrets valent `''`, que le modèle du job peut
+        # refuser (« Unexpected value '' ») avant toute étape : une valeur de
+        # remplissage les remplace, jamais employée puisque le service ne démarre pas.
+        # Sur une PR du dépôt sans secret (Dependabot), elles restent vides.
         credentials:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          username: ${{ secrets.DOCKERHUB_USERNAME || ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'sans-objet' || '') }}
+          password: ${{ secrets.DOCKERHUB_TOKEN || ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'sans-objet' || '') }}
         env:
           MARIADB_ROOT_PASSWORD: kesh_root
           MARIADB_DATABASE: kesh
@@ -104,6 +112,8 @@ jobs:
       # par l'étape « Apply dev grants » ; migrations et seed restent en `root`
       # (outillage, pas le chemin de l'application).
       DATABASE_URL: mysql://kesh:kesh_dev@127.0.0.1:3306/kesh
+      # C-31-2-3 (variante B) — « true » sur une PR de fork : MariaDB par `docker run`.
+      EST_FORK: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) }}
       # Story 9-1 (Pass 2 ECH2-07) avait ajouté `SQLX_MAX_CONNECTIONS: "4"` ici, mais
       # code-review Pass 1 Sonnet a établi que la var n'est lue NULLE PART (main.rs:43
       # hardcode `max_connections(5)`, sqlx::test utilise sa propre config). Retirée :
@@ -113,6 +123,15 @@ jobs:
       # ajouter `pool_max_conns=N` au query string DATABASE_URL (lu par sqlx).
     steps:
       - uses: actions/checkout@v4
+
+      # C-31-2-3 (variante B) — le script testé sur toute PR, lancé sur un fork seulement :
+      # même image (miroir ECR), mêmes variables, même port, même contrôle de santé que
+      # le service, que le test compare à ce fichier.
+      - name: Tests du démarrage MariaDB de fork
+        run: bash scripts/tests/ci-mariadb-fork.test.sh
+      - name: Start MariaDB (PR de fork)
+        if: env.EST_FORK == 'true'
+        run: bash scripts/ci-mariadb-fork.sh
 
       - name: Install Rust toolchain (from rust-toolchain.toml)
         run: rustup show
@@ -294,6 +313,12 @@ jobs:
     if: ${{ !cancelled() && !(needs.changes.result == 'success' && needs.changes.outputs.code == 'false') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    # C-31-2-3 — `secrets` ne se lit pas dans un `if:` d'étape : le job en dérive un
+    # booléen (« true »/« false »), sans exposer la valeur du secret aux étapes.
+    # Sans secret (PR de fork) : pas de connexion, images de base du Dockerfile tirées
+    # du miroir ECR public, aucun push (il n'y en a jamais ici).
+    env:
+      HAS_DH: ${{ secrets.DOCKERHUB_TOKEN != '' }}
     steps:
       - uses: actions/checkout@v4
       # Story 15-11a (#550) — validation des deux compose distribués par Compose
@@ -337,11 +362,18 @@ jobs:
       # depuis Docker Hub, et le builder `docker-container` y tire
       # `moby/buildkit` : la connexion précède donc `setup-buildx-action`.
       - name: Log in to Docker Hub
+        if: env.HAS_DH == 'true'
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+      # Sans secret, le builder ne tire pas `moby/buildkit` de Docker Hub (anonyme, sous la
+      # limite des 429) mais de `mirror.gcr.io`, le miroir de Docker Hub tenu par Google :
+      # même étiquette, même empreinte (relevé le 2026-11-24, docs/ci.md). Vide avec le
+      # secret : l'image par défaut de l'action, comme avant.
       - uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: ${{ env.HAS_DH != 'true' && 'image=mirror.gcr.io/moby/buildkit:buildx-stable-1' || '' }}
       - name: Build image (no push)
         uses: docker/build-push-action@v6
         with:
@@ -349,8 +381,11 @@ jobs:
           platforms: linux/amd64
           push: false
           tags: kesh:ci
+          # Vide avec le secret : le Dockerfile garde son défaut, Docker Hub.
+          build-args: ${{ env.HAS_DH != 'true' && 'REGISTRY=public.ecr.aws/docker/library' || '' }}
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # Sans secret, une écriture refusée du cache ne fait pas échouer le build.
+          cache-to: type=gha,mode=max${{ env.HAS_DH != 'true' && ',ignore-error=true' || '' }}
 
       - name: Job summary
         if: always()
@@ -380,11 +415,12 @@ jobs:
     timeout-minutes: 25
     services:
       mariadb:
-        image: mariadb:10.11
-        # Tirage authentifié (Story 31-2, A2) : cf. le job `backend`.
+        # Désactivé sur une PR de fork (MariaDB par `docker run`), Docker Hub authentifié
+        # ailleurs : cf. le job `backend`.
+        image: ${{ !(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'mariadb:10.11' || '' }}
         credentials:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          username: ${{ secrets.DOCKERHUB_USERNAME || ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'sans-objet' || '') }}
+          password: ${{ secrets.DOCKERHUB_TOKEN || ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'sans-objet' || '') }}
         # `MARIADB_USER` crée `kesh` avec `ALL` sur `kesh`.* — les droits de la
         # production, rien de plus : l'application ne reçoit pas davantage.
         env:
@@ -399,16 +435,36 @@ jobs:
           --health-interval=10s
           --health-timeout=5s
           --health-retries=10
+    # C-31-2-3 — `secrets` ne se lit pas dans un `if:` d'étape : le job en dérive un
+    # booléen (« true »/« false »), sans exposer la valeur du secret aux étapes.
+    # Sans secret (PR de fork) : pas de connexion, images de base tirées du miroir ECR.
+    env:
+      HAS_DH: ${{ secrets.DOCKERHUB_TOKEN != '' }}
+      # C-31-2-3 (variante B) — « true » sur une PR de fork : MariaDB par `docker run`.
+      EST_FORK: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) }}
     steps:
       - uses: actions/checkout@v4
 
+      # Sur un fork, MariaDB démarre ici (cf. le job `backend`) ; le conteneur publie le
+      # port 3306 sur l'hôte, où le backend (`--network=host`) le joint comme le service.
+      - name: Start MariaDB (PR de fork)
+        if: env.EST_FORK == 'true'
+        run: bash scripts/ci-mariadb-fork.sh
+
       # Connexion AVANT le builder : il tire `moby/buildkit` depuis Docker Hub.
       - name: Log in to Docker Hub
+        if: env.HAS_DH == 'true'
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+      # Sans secret, le builder ne tire pas `moby/buildkit` de Docker Hub (anonyme, sous la
+      # limite des 429) mais de `mirror.gcr.io`, le miroir de Docker Hub tenu par Google :
+      # même étiquette, même empreinte (relevé le 2026-11-24, docs/ci.md). Vide avec le
+      # secret : l'image par défaut de l'action, comme avant.
       - uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: ${{ env.HAS_DH != 'true' && 'image=mirror.gcr.io/moby/buildkit:buildx-stable-1' || '' }}
 
       - name: Build image (cache gha, load)
         uses: docker/build-push-action@v6
@@ -418,6 +474,8 @@ jobs:
           load: true
           push: false
           tags: kesh:smoke
+          # Mêmes arguments que `docker-build`, sans quoi le cache `gha` ne correspondrait pas.
+          build-args: ${{ env.HAS_DH != 'true' && 'REGISTRY=public.ecr.aws/docker/library' || '' }}
           cache-from: type=gha
 
       # `KESH_HOST=127.0.0.1` : le mode test refuse un bind non-loopback
