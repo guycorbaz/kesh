@@ -107,7 +107,7 @@ npm run build
 
 - **La suite complète tourne en local avant tout `git push`**, et au **dernier commit de code** de la story ; « rejouée au push » est interdit. Un commit qui ne touche que des comptes rendus ou de la documentation après l'E2E ne l'oblige pas à repasser.
 - **Montage** : `docs/testing.md` § *Prérequis Playwright local* fait foi. `KESH_COOKIE_SECURE=false` y est obligatoire (Playwright ne joint pas un cookie `Secure` sur `http://127.0.0.1`), ses valeurs factices ne se remplacent pas par des gabarits `<…>` (refusés au démarrage), et `KESH_TEST_MODE=true` se pose des deux côtés.
-- **« Vert » veut dire : seulement les échecs attendus** (sept de la KF-029, #97, plus zéro à deux échecs de pollution). Un rouge se juge fichier par fichier contre `docs/testing.md` § *Les échecs attendus*, jamais au nombre.
+- **« Vert » veut dire : seulement les échecs attendus** (sept de la KF-029, #97, plus zéro à deux échecs de pollution). Un rouge se juge fichier par fichier contre `docs/testing.md` § *Les échecs attendus*, jamais au nombre. **Un échec ne devient « attendu » que prouvé** : rejoué sur `main`, dans le même environnement, avant d'être classé ; jamais sur une supposition (proposition de l'agent d'un contributeur, retenue par Guy le 2026-11-24).
 - **La CI ne lance qu'un smoke** (`e2e-smoke`, `frontend/tests/e2e/smoke.spec.ts`, contre l'image Docker de la PR), requis pour la fusion (décision de Guy du 2026-10-24). Il vérifie que le harnais est vivant, pas les fonctionnalités.
 - **Avant de diagnostiquer, lire la doc du dépôt** ; ne jamais déclarer une hypothèse écartée sans l'avoir exécutée.
 
@@ -136,6 +136,7 @@ Toute story qui ajoute ou modifie un **contrôle visible** (bouton, avis, dialog
   docker exec -i kesh-mariadb-dev mariadb -uroot -pkesh_dev_root kesh < scripts/seed-dev-db.sql
   ```
 - **`docker compose` sur ce conteneur se lance depuis le dépôt principal, jamais depuis un worktree** (le montage des droits est relatif). En travail parallèle, un agent ne redémarre ni ne recrée le conteneur : il travaille sur ses bases `kesh_<clé>` (`docs/agents-orchestration.md`, `docs/testing.md` § *Base de dev jetable*).
+- **Les places de gate** (proposition de l'agent d'un contributeur, retenue par Guy le 2026-11-24 ; **à mettre en place** sur la station, méthode et script à écrire dans `docs/testing.md`) : un serveur MariaDB par « place » (tmpfs, mêmes droits, un port chacun) et une file avec un verrou par place, pour que deux gates avec base tournent sans se gêner ; `scripts/gate-ci.sh` et l'E2E complet en parallèle, chacun sur sa place ; une cible cargo persistante pour `gate-ci.sh` (copie `git archive` extraite par `tar -x -m`) ; pas de nextest séparé quand `gate-ci.sh` tourne. Mesuré chez le contributeur : une branche passe d'environ 3 h à 1 h 30.
 
 ### CI et commits de documentation
 
@@ -288,7 +289,7 @@ Les anciennes rétrospectives classent la dette en **A** (vraie dette), **B** (l
   git log origin/main..HEAD --format=%B | grep -niE '\b(close[sd]?|fix(e[sd])?|resolve[sd]?) #[0-9]'
   ```
   Écrire « validation terminée », non « validation close ». Après fusion, vérifier : `gh issue view <N> --json state --jq .state`.
-- **Ménager les comptes GitHub** (décision de Guy du 2026-11-24) : GitHub restreint un compte sur ses limites secondaires et sa détection d'abus (rafales, contenus au même gabarit), bien avant le quota de 5000 requêtes par heure. Entre deux créations (issue, PR, commentaire, fermeture, label), **5 s au moins** ; plus de 10 d'un coup s'étalent sur plusieurs minutes ; **plus d'une trentaine par jour se demandent d'abord au Project Lead**. Une surveillance (CI, PR) interroge **toutes les 60 s au plus**, une boucle par sujet, avec un délai maximal. Avant un lot, `gh api rate_limit` ; arrêt sous 1000 requêtes restantes. *Motif : le compte d'un agent contributeur a été restreint le 2026-11-23, quotas intacts.*
+- **Ménager les comptes GitHub** (décision de Guy du 2026-11-24) : GitHub restreint un compte sur ses limites secondaires et sa détection d'abus (rafales, contenus au même gabarit), bien avant le quota de 5000 requêtes par heure. Entre deux créations (issue, PR, commentaire, fermeture, label), **5 s au moins** ; plus de 10 d'un coup s'étalent sur plusieurs minutes ; **plus d'une trentaine par jour se demandent d'abord au Project Lead**. Une surveillance (CI, PR) interroge **toutes les 60 s au plus**, une boucle par sujet, avec un délai maximal. Avant un lot, `gh api rate_limit` ; arrêt sous 1000 requêtes restantes. **Jamais de compte de remplacement** après une restriction, et tant que le compte d'un contributeur reste restreint, ses issues s'ouvrent depuis son texte, par le mainteneur (proposition de l'agent d'un contributeur, retenue par Guy le 2026-11-24). *Motif : le compte d'un agent contributeur a été restreint le 2026-11-23, quotas intacts.*
 
 ## Migration breaking policy
 
@@ -359,7 +360,7 @@ Les versions s'écrivent `a.b.c` (décision du Project Lead du 2026-11-21).
 - **Le numéro ne suit pas le calendrier** : il suit les règles ci-dessus ; les milestones portent le numéro prévu, la date en échéance, et le numéro se confirme au tag.
 - **Ce que l'administrateur lit** : `c` monte, il remplace l'image (retour en remettant la précédente) ; `b` monte, il lit les notes de version, et s'il y a une migration, la sauvegarde complète est obligatoire (§ *Ce qu'impose la production* ; manuel d'administration).
 - **Un epic tient dans une release** : au plus **six stories**, story de solde comprise, fonctionnalité nouvelle comprise ; un epic qu'on ne voit pas finir dans la semaine se découpe au kickoff en deux ou trois epics. Il entre dans `main` **une seule fois, terminé**. Une release peut porter plusieurs epics. La taille des stories compte d'abord : le splitting préventif s'applique dès la fiche.
-- **Grand epic par dérogation** : sur décision du Project Lead, au kickoff, avec une section « Dérogation » du fichier d'epic (raison, nombre de releases estimé). Il reste dans sa branche jusqu'à sa fin, et les releases partent sans lui ; il reprend `main` après chaque release et rejoue ses gates ; ses issues restent au milestone « Plus tard » jusqu'à la release qui l'accueille ; revue du code d'intégration à l'entrée. Sa migration se redate à l'intégration, après la dernière publiée (à vérifier au code avant d'appliquer).
+- **Grand epic par dérogation** : sur décision du Project Lead, au kickoff, avec une section « Dérogation » du fichier d'epic (raison, nombre de releases estimé). Il reste dans sa branche jusqu'à sa fin, et les releases partent sans lui ; il reprend `main` après chaque release et rejoue ses gates ; ses issues restent au milestone « Plus tard » jusqu'à la release qui l'accueille ; revue du code d'intégration à l'entrée. Ses migrations ne se redatent pas : sqlx applique une migration plus ancienne arrivée après de plus récentes. À l'intégration, on contrôle l'**équivalence du schéma** : une base montée dans l'ordre de `main`, une base montée dans l'ordre réel des releases, et le diff des deux schémas (`mariadb-dump --no-data`), qui doit être vide (proposition de l'agent d'un contributeur, retenue par Guy le 2026-11-24).
 - **Dépendances** : un epic qui dépend d'un autre, ou qui en bloque un, le déclare au kickoff (« dépend de », « bloque », et les relations d'issues GitHub) ; l'ordre d'intégration les suit.
 
 ### Versions de l'API
@@ -393,6 +394,7 @@ Règle décidée par le Project Lead le 2026-11-21 ; sa mise en œuvre fait l'ob
 - **Une story sortie emporte sa migration.** Une migration est annoncée d'avance au projet GitHub et dite en tête des notes ; les migrations voisines se regroupent quand c'est possible.
 - **Chaque release planifiée corrige au moins un ou deux bugs**, dans une story de correction en plus de ses epics, comptée dans la borne de six : un P1 d'abord, sinon ce qui touche l'usage réel du Project Lead, sinon le plus ancien. Elle est petite et part en premier. Le dosage s'adapte au stock de bugs. Elle s'ajoute à la story de solde et à la correction des LOW, sans les remplacer.
 - **Une release dédiée à un P1** part sans attendre le vendredi (§ *Priorités des défauts*) ; elle ne compte pas comme la release de la semaine.
+- **Une release de correction (`x.y.1`, `x.y.2`…)** se fait sans migration, depuis `main`, et c'est le Project Lead qui la déclare ; tout ce qui porte une migration attend la release planifiée suivante (proposition de l'agent d'un contributeur, retenue par Guy le 2026-11-24).
 - **Absence du Project Lead** : pas de release cette semaine-là ; il annonce ses dates d'avance, les stories continuent.
 
 ### Branches
@@ -406,13 +408,14 @@ Règle décidée par le Project Lead le 2026-11-21 ; sa mise en œuvre fait l'ob
 
 - Pas de branche `develop`.
 - **Une branche par epic, fusionnée une fois** (le squash rend toute suite après fusion source de faux conflits). La protection de `main` impose un historique linéaire : toute PR entre par squash, et une branche d'epic qui continuerait après une entrée dans `main` (exception) reprend `main` aussitôt.
+- **La PR d'un contributeur** (proposition de l'agent d'un contributeur, retenue par Guy le 2026-11-24) : une PR par epic, en **un seul commit** au-dessus de `main` ; ses epics peuvent s'empiler (l'un part du précédent) ; après le squash du précédent, le contributeur reprend le suivant par `git rebase --onto origin/main <ancien commit> <branche>`, sans faux conflit. **Elle se fusionne, elle ne se ferme pas** : GitHub compte une PR fermée sans fusion comme refusée, et le contributeur en porte le poids. Tant que la CI ne tourne pas complètement sur un fork, une copie du même commit sur une branche du dépôt pose les statuts de CI sur le commit, puis on fusionne la PR du fork elle-même.
 - **Reprendre `main` dans sa branche au moins après chaque release publiée** par un autre.
 - **On ne touche ni aux branches ni aux bases de test d'un autre.**
 
 ### Fusions et fichiers communs
 
 - **Au kickoff**, le fichier d'epic déclare les fichiers et modules qu'il touchera ; deux epics sur le même module s'arbitrent avec le Project Lead.
-- **Les développeurs se tiennent synchrones**, dans les deux sens (décision de Guy du 2026-11-23) : chacun informe les autres **au démarrage de chaque epic** (périmètre et issues, modules et fichiers touchés, migration éventuelle, release visée, dépendances : la section de lancement du fichier d'epic), **à sa fin** (ce qui est entré dans `main` et à quel commit, date des migrations, ce que les autres doivent reprendre, stories sorties vers un epic ultérieur), **à toute fusion dans `main`** et **à toute release publiée**. Avec l'agent d'un contributeur, l'orchestrateur le fait par le canal convenu ; il annonce ce qui est fait ou lancé, jamais une décision du Project Lead qui n'est pas prise.
+- **Les développeurs se tiennent synchrones**, dans les deux sens (décision de Guy du 2026-11-23) : chacun informe les autres **au démarrage de chaque epic** (périmètre et issues, modules et fichiers touchés, migration éventuelle, release visée, dépendances : la section de lancement du fichier d'epic), **à sa fin** (ce qui est entré dans `main` et à quel commit, date des migrations, ce que les autres doivent reprendre, stories sorties vers un epic ultérieur), **à toute fusion dans `main`** et **à toute release publiée**. Avec l'agent d'un contributeur, l'orchestrateur le fait par le canal convenu ; il annonce ce qui est fait ou lancé, jamais une décision du Project Lead qui n'est pas prise. **Forme fixe** (proposition de l'agent d'un contributeur, retenue par Guy le 2026-11-24) : objet « [Kesh synchro] Epic N : début | fin | fusion | release » ; liste fixe (fichiers et modules, migrations, release visée, dépendances, issues) ; au début d'un epic, contrôle des fichiers qui recoupent ceux de l'autre développeur.
 
 | Fichier | Règle |
 |---|---|
@@ -425,6 +428,7 @@ Règle décidée par le Project Lead le 2026-11-21 ; sa mise en œuvre fait l'ob
 
 - **Le second arrivé résout, dans sa branche, jamais dans `main`**, en gardant les deux intentions ; s'il y a contradiction, il en parle à l'autre et le Project Lead arbitre.
 - **Toute PR d'un epic vers `main` passe une revue du code d'intégration** : commits de fusion relus en diff combiné, et recherche des interactions sans conflit de texte (deux epics qui changent la même règle dans deux fichiers).
+- **Une revue indépendante à chaque fusion** (proposition de l'agent d'un contributeur, retenue par Guy le 2026-11-24) : après toute fusion (story dans epic, epic dans epic, `main` dans une branche), un agent qui n'a pas fusionné relit le diff combiné et cherche les défauts d'interaction sans conflit de texte.
 
 ### CI
 
