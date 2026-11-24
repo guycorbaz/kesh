@@ -571,14 +571,18 @@ pub struct ExistingSupplierInvoice {
 }
 
 /// Le geste qu'un refus de doublon arrête (Story 48-12a, D1, D6bis) : il
-/// décide de `details.confirmable` et du message.
+/// décide de `details.confirmable` (par
+/// `crate::repositories::supplier_invoices::DuplicateRule::lifted_by_confirmation`,
+/// la table unique) et du message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DuplicateGesture {
     /// Création, modification d'un brouillon, complétion d'un document : la
-    /// règle 1 (même numéro dans la même année civile) n'a **aucune** sortie.
+    /// règle 1 (même numéro dans la même année civile) n'a **aucune** sortie
+    /// (table : `DuplicateRule::lifted_by_confirmation`).
     Entry,
     /// Repassage en brouillon d'une facture **annulée** (D6bis, décision de Guy
-    /// du 2026-11-19) : les deux règles se lèvent par `confirmNotDuplicate`.
+    /// du 2026-11-19) : les deux règles se lèvent par `confirmNotDuplicate`
+    /// (table : `DuplicateRule::lifted_by_confirmation`).
     Unvalidation,
 }
 
@@ -1891,7 +1895,9 @@ pub enum DbError {
     /// civile** de la date de facture. → **409** `SUPPLIER_INVOICE_DUPLICATE`,
     /// `details : { supplierInvoiceId, internalNumber, status, confirmable }` ;
     /// `confirmable` vaut `false` pour [`DuplicateGesture::Entry`] (aucune
-    /// sortie), `true` pour [`DuplicateGesture::Unvalidation`] (D6bis).
+    /// sortie), `true` pour [`DuplicateGesture::Unvalidation`] (D6bis) — la
+    /// table est celle de
+    /// `crate::repositories::supplier_invoices::DuplicateRule::lifted_by_confirmation`.
     #[error("Facture fournisseur en double : même numéro dans la même année ({})", .existing.id)]
     SupplierInvoiceDuplicate {
         existing: ExistingSupplierInvoice,
@@ -1902,8 +1908,10 @@ pub enum DbError {
     /// non annulée du même fournisseur porte la même date et le même total TTC,
     /// et l'une au moins des deux n'a pas de numéro du fournisseur (règle 3).
     /// → **409** `SUPPLIER_INVOICE_PROBABLE_DUPLICATE`, toujours
-    /// `confirmable: true` — `confirmNotDuplicate: true` le lève, inscrit au
-    /// journal d'audit (`supplier_invoice.duplicate_confirmed`).
+    /// `confirmable: true` (table :
+    /// `crate::repositories::supplier_invoices::DuplicateRule::lifted_by_confirmation`)
+    /// — `confirmNotDuplicate: true` le lève, inscrit au journal d'audit
+    /// (`supplier_invoice.duplicate_confirmed`).
     #[error("Facture fournisseur probablement en double : même date et même montant ({})", .existing.id)]
     SupplierInvoiceProbableDuplicate {
         existing: ExistingSupplierInvoice,

@@ -457,7 +457,8 @@ macro_rules! in_own_tx {
 /// - [`DuplicatePolicy::Confirmed`] : l'appelant a reçu `confirmNotDuplicate:
 ///   true`. Il lève la règle 2 (même date et même total) ; à la création, à la
 ///   modification et à la complétion, **jamais** la règle 1 (même numéro dans la
-///   même année civile) ; à la dévalidation d'une annulée, les deux (D6bis). Un
+///   même année civile) ; à la dévalidation d'une annulée, les deux (D6bis) —
+///   la table est [`DuplicateRule::lifted_by_confirmation`], seule source. Un
 ///   refus levé ainsi s'inscrit au journal d'audit
 ///   (`supplier_invoice.duplicate_confirmed`), dans la même transaction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -497,6 +498,27 @@ impl DuplicateRule {
         match self {
             Self::SameNumberSameYear => 1,
             Self::SameDateSameTotal => 2,
+        }
+    }
+
+    /// **La table de levée d'un refus de doublon — son unique source** (Story
+    /// 50-solde, #1492 ; 48-12a, D1, D6bis) : `confirmNotDuplicate: true` lève-t-il
+    /// le refus de cette règle pour ce geste ? Quatre cases :
+    ///
+    /// | | saisie ([`DuplicateGesture::Entry`]) | dévalidation d'une annulée |
+    /// |---|---|---|
+    /// | règle 1 (même numéro, même année) | **non**, aucune sortie | oui |
+    /// | règle 2 (même date, même total) | oui | oui |
+    ///
+    /// La couche base s'en sert pour lever le refus (`guard_duplicates_in_tx`) et
+    /// `kesh-api` pour écrire `details.confirmable` : aucune des deux ne réécrit
+    /// la table. Le `match` est exhaustif sur le couple, sans bras `_` : une règle
+    /// ou un geste ajouté demain ne compile pas avant d'avoir sa case.
+    pub fn lifted_by_confirmation(self, gesture: crate::errors::DuplicateGesture) -> bool {
+        use crate::errors::DuplicateGesture;
+        match (self, gesture) {
+            (Self::SameNumberSameYear, DuplicateGesture::Entry) => false,
+            (Self::SameDateSameTotal, _) | (_, DuplicateGesture::Unvalidation) => true,
         }
     }
 }
@@ -630,7 +652,6 @@ async fn guard_duplicates_in_tx(
     gesture: crate::errors::DuplicateGesture,
     policy: DuplicatePolicy,
 ) -> Result<Option<DuplicateFinding>, DbError> {
-    use crate::errors::DuplicateGesture;
     use chrono::Datelike;
 
     let year = invoice_date.year();
@@ -655,11 +676,7 @@ async fn guard_duplicates_in_tx(
     let Some(finding) = find_duplicate(number, invoice_date, total, &candidates) else {
         return Ok(None);
     };
-    let liftable = match (finding.rule, gesture) {
-        (DuplicateRule::SameNumberSameYear, DuplicateGesture::Entry) => false,
-        (DuplicateRule::SameDateSameTotal, _) | (_, DuplicateGesture::Unvalidation) => true,
-    };
-    if liftable && policy == DuplicatePolicy::Confirmed {
+    if finding.rule.lifted_by_confirmation(gesture) && policy == DuplicatePolicy::Confirmed {
         return Ok(Some(finding));
     }
     Err(match finding.rule {
@@ -1566,7 +1583,7 @@ pub async fn unvalidate_with_policy(
 /// refusé (`SUPPLIER_INVOICE_DUPLICATE` ou `SUPPLIER_INVOICE_PROBABLE_DUPLICATE`,
 /// la facture active nommée, `confirmable: true`), sauf sous
 /// [`DuplicatePolicy::Confirmed`] (`confirmNotDuplicate: true`), qui lève **les
-/// deux règles** et inscrit `supplier_invoice.duplicate_confirmed` au nom de
+/// deux règles** à ce geste ([`DuplicateRule::lifted_by_confirmation`]) et inscrit `supplier_invoice.duplicate_confirmed` au nom de
 /// l'acteur. Une facture **validée** qui repasse en brouillon n'est pas
 /// contrôlée : elle était déjà active.
 ///
@@ -1870,7 +1887,8 @@ pub async fn unvalidate_in_tx_with_policy(
 
     // (6 bis) Annulée — la règle anti-doublon (Story 48-12a, D6bis, D4) : après
     //     l'exercice clos, avant toute écriture et avant les refus de
-    //     `delete_in_tx`. Les deux règles se lèvent par confirmation.
+    //     `delete_in_tx`. Les deux règles se lèvent par confirmation à ce geste
+    //     (`DuplicateRule::lifted_by_confirmation`).
     let confirmed = if cancelled {
         guard_duplicates_in_tx(
             tx,
