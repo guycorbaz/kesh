@@ -1,6 +1,6 @@
 # Story 49-4a : capacité du PDF de facture contrôlée avant la validation (#1364)
 
-Status: in-progress
+Status: review
 
 *Fiche issue du découpage de la `49-4-designation-longue-pdf` (décision de Guy du 2026-11-20, sur la recommandation de
 l'orchestrateur du 2026-11-19 et le finding V1-6 de la validation P1 de la 49-4 :
@@ -388,6 +388,76 @@ reconstruction (cargo garde sinon le binaire muté).
 
 ## Dev Agent Record
 
+### Réalisation (reprise du 2026-11-24, Opus 5.5 — ne dit que ce qui a tourné)
+
+**Reprise de l'épique.** `git fetch` puis `git merge --no-ff origin/epic/49-types-de-lignes-facture` (49-1c close, `87e00ba05`) :
+commit `b1d9d4776`. Sept conflits, tous de texte, résolus en gardant les deux intentions : `sprint-status.yaml` (lignes de la
+49-1c, 49-2, 49-3, 49-4 de l'épique ; la ligne `49-4a` de la branche conservée, la `49-4b` retirée : elle est à l'Epic 52),
+les quatre catalogues `messages.ftl` (bloc de la 49-1c puis bloc de la 49-4a), `admin-manual.tex` (paragraphe « Pour les
+intégrations » de la 49-1c — `comment` accepté — **plus** la phrase de changement de contrat de la 49-4a), `user-manual.tex`
+(item « Lignes de facture » de la 49-1c, dont la phrase « huit au plus » est retirée au profit de celle de la 49-4a, qui dit
+aussi l'arrondi, le refus à la validation et la limite du rappel : le repli de D7 est réconcilié). `crates/kesh-qrbill/src/pdf.rs`
+n'est **pas** touché par la 49-1c (`git diff 2a90e9957 HEAD --stat -- crates/kesh-qrbill/src/pdf.rs` vide) : la géométrie de la
+49-1b, donc la base de T3, est intacte. `$BASE` = `git merge-base HEAD origin/epic/49-types-de-lignes-facture` = **`87e00ba05`**.
+
+**Prémisses que la reprise change.** (1) V1-1 : la 49-1c accepte désormais `comment` à la création, donc la pièce « Ω » de
+AC1 (e) est atteignable par la route (elle l'était déjà au dépôt) ; T1 (e) passe. (2) Le manuel utilisateur et le manuel
+d'administration disent `comment` accepté, `heading` refusé : la phrase de la 49-4a n'y contredit rien. (3) `InvoiceForm.svelte`
+(49-1c) n'est pas touché : aucun fichier de `frontend/src` ne change (D4). (4) Garde `arrondi_centime_garde` de la 48-11 : **absente
+de cet arbre** (`grep -rn arrondi_centime_garde` vide) ; la 48-11 n'est pas fusionnée dans l'épique. Le nombre de `{:.N}` de
+`pdf.rs`, compté par `grep -o '{:[^}]*\.[0-9]\+[^}]*}' | wc -l`, est **9** à `origin/main`, **9** à `2a90e9957` et **9** à HEAD : la
+story n'en ajoute aucune (le « 13 » de la consigne se compte autrement ; à recompter par la 48-11 contre sa garde).
+
+**Ce qui a changé au code depuis la pause** : un seul correctif, `clippy::needless_borrow` à `invoice_pdf_service.rs:486`
+(`lignes_pdf(&lines)` → `lignes_pdf(lines)`) et le passage de `cargo fmt` sur `invoice_validation_pdf_e2e.rs` et `pdf.rs`
+(commit `6f7394a67`). La compilation, jamais tentée avant, n'a rendu **aucune autre erreur**.
+
+**Journaux** (`/home/gcorbaz/devel/kesh-gate-logs/e494/dev/`) :
+- `clippy-2.log` : une erreur (la ligne ci-dessus) ; `clippy-3.log` : `cargo clippy -p kesh-qrbill -p kesh-api --all-targets -- -D warnings` **vert** ; `cargo fmt --all -- --check` vert.
+- `cible-1.log` : gate ciblé (`package(kesh-qrbill) | package(kesh-i18n) | binary(kesh_api) | … | binary(textes_coherents)`) **1073 passés, 0 échoué, 8 ignorés** — au premier vert, sans passage par le rouge : le code existait déjà ; **le rouge est établi par les mutations**, non par une attente d'avant le code (écart déclaré à « test rouge avant code »). Les quatre tests neufs y passent : `invoice_validation_pdf_e2e` ×3, `pdf::tests::le_controle_et_le_rendu_s_accordent`, `textes_coherents::le_refus_de_capacite_a_ses_deux_nombres_en_quatre_langues`.
+- **Mutations** (chacune par l'outil Edit, binaire reconstruit, restauration par `git checkout -- <fichier>` puis `touch`, `git status --short` vide vérifié après chacune) :
+
+  | Mutation | Journal | Résultat |
+  |---|---|---|
+  | T1-1 le handler n'appelle pas le contrôle | `rouge-T1-1.log` | **ROUGE** (3/3 tests de T1) |
+  | T1-2 le contrôle ignore l'arrondi (`false`) | `rouge-T1-2.log` | **ROUGE** (`la_validation_refuse_une_facture_qui_ne_tient_pas`) |
+  | T1-3 un commentaire compte une ligne au plus | `rouge-T1-3.log` | **ROUGE** (T1 et T2) |
+  | T1-4 = T2-3 `ty <= plancher` dans le contrôle seul | `rouge-T1-4-T2-3.log` | **ROUGE** (`les_seuils_exacts_passent…` et T2) |
+  | T1-5 le pré-filtre n'est plus appliqué (`if false &&`) | `rouge-T1-5.log` | **ROUGE** (`la_validation_refuse…`, cas (e)) |
+  | T2-1 garde du dessin `ty < plancher - 0.5` | `rouge-T2-1.log` | **ROUGE** (T2) |
+  | T2-2 le contrôle part de 160 mm (`ordonnee_premiere_ligne() + 1.0`) | `rouge-T2-2.log` | **ROUGE** (T2) |
+  | T3-1 `TABLEAU_FILET_PAS` 3.0 → 3.5 (la première ligne descend) | `rouge-T3-1.log` | **ROUGE** (`rendu_avant_apres` ×2, `pdf_avant_apres_e2e`) |
+  | T3-2 désignation de la ligne chiffrée tronquée à 60 au lieu de 45 | `rouge-T3-2.log` | **ROUGE** (`neuf_pieces_chiffrees…`, dont S7) |
+  | T4 clé renommée dans `it-CH` | `rouge-T4.log` | **ROUGE** (`parity_between_locales`, le test neuf, `les_replis_rust_suivent_le_catalogue`) |
+  | T5 sonde positive : `controles-diff.sh` contre le commit `4dd9932ea` (touche `texte.rs`, deux tests avant/après) | `rouge-T5.log` | sortie **non vide** (3 lignes) ; `controles-diff-reel.log` : sortie **vide** sur `$BASE..HEAD` |
+  | T6 E2E sur le binaire sans le contrôle | `rouge-T6.log` | **ROUGE** (`invoice-validation-pdf.spec.ts:77`, « element(s) not found »), puis `vert-T6.log` : **1 passé** sur le binaire sain |
+
+  Écarts aux libellés de la fiche : T2-2 est une dérive d'un millimètre (160 au lieu de 159) ; T3-1 déplace le filet de 0,5 mm
+  et non la première ligne de 159 à 158,5 (même effet : la première ordonnée change) ; T3-2 passe à 60 et non au code d'avant.
+  T6 : binaires sain et muté copiés (`kesh-api-sain`, `kesh-api-mute`), servis sur le port 3494 avec la SPA de
+  `/home/gcorbaz/devel/kesh-e49/frontend/build` (construite à l'état `87e00ba05` de l'épique, dont `frontend/src` est identique
+  au nôtre) et la base `kesh_e2e_e494a` ; `/health` : `smtpConfigured:true`.
+- **Recette visuelle (AC7)**, dans `/home/gcorbaz/devel/kesh-gate-logs/e494/captures/`, base `kesh_e2e_e494a`, lues : `01-refus-de-capacite.png`
+  (dialogue : « elles demandent 9 lignes, la page en offre 8 », message entier, brouillon conservé) ; `02-pdf-seuil-conditions-de-paiement.png`
+  (huit lignes, conditions de paiement au-dessus du trait de coupe, **sans chevauchement**) ; `03-pdf-seuil-recapitulatif-tva.png`
+  (six lignes à 8,1 % : sous-total, TVA, total, conditions sans chevauchement ; 7 et plus refusés, `refus-7.txt` : « 7 lignes, la page en offre 6 »).
+  Un spec temporaire les a produites (non commité, retiré).
+- **Gates de passage en `review`** : bases `kesh_e494a` et `kesh_e2e_e494a` recréées, migrées, `kesh_e494a` semée (sans redémarrer
+  le conteneur, interdit) ; `scripts/test-fast.sh --ci` : **6269 passés, 0 échoué, 17 ignorés**, 408 s (`gate-test-fast-ci.log`) ;
+  `scripts/gate-ci.sh kesh_ci_e494` : **6288 passés, 0 échoué, 21 ignorés**, 263 binaires, code 0 (`gate-ci.log`). Les deux au
+  commit de code `6f7394a67` ; aucune ligne de production n'a changé depuis.
+- **Non exercé** : le **frontend complet** (`check`, `lint-i18n-ownership`, `test:unit`, `build`) — aucun fichier de `frontend/src` ni
+  de `frontend/package*` ne change, seul `frontend/tests/e2e/invoice-validation-pdf.spec.ts` s'ajoute ; l'**E2E complet** (à la
+  clôture, après la revue) ; la **régénération des PDF des manuels dans le dépôt** (jamais commités dans `story/…`) — compilés
+  à titre de contrôle dans un dossier jetable (`xelatex` ×3 `user-manual.tex` et `admin-manual.tex`, sans erreur), le texte
+  aplati du manuel utilisateur contient « Kesh le vérifie à la validation : une facture qui ne tiendrait pas est refusée… », celui
+  du manuel d'administration `INVOICE_LINES_DO_NOT_FIT_PDF`. Contrôle des mots-clés de fermeture contre l'épique : aucune
+  occurrence (`rc=1`).
+
+**Écart à juger (déclaré à la pause, maintenu).** Le dessin parcourt `lignes_de_commentaire` lui-même, comme avant ; `lignes_imprimees`
+en compte la longueur sans que le dessin l'appelle. L'accord des deux est prouvé par T2 (600 pièces engendrées, oracle = le rendu
+réel) et par les mutations T1-3 et T2-1/T2-2, non par construction.
+
 ### Reprise (pause de l'Epic 49 décidée par Guy le 2026-11-20, jusqu'au mardi 2026-11-24 au matin)
 
 **Où l'on en est.** Le code est **écrit et commité (`09d89db92`), mais il n'a jamais été compilé** : la seule commande lancée
@@ -456,6 +526,8 @@ tourné, aucune mutation n'a été jouée** (rien à restaurer), aucun rouge n'e
 - 2026-11-20, étape 0 : `git fetch origin` ; `git log --oneline HEAD..origin/epic/49-types-de-lignes-facture` vide (la branche
   d'épique n'a pas bougé depuis la fusion de la 49-1b) ; **`$BASE` = `git merge-base HEAD origin/epic/49-types-de-lignes-facture`
   = `f57f6ac80`** (« Merge story/49-1b-types-de-lignes-pdf dans epic/49-types-de-lignes-facture »). Aucune reprise.
+- 2026-11-24, reprise de l'épique (49-1c, `87e00ba05`) : **`$BASE` = `87e00ba05`** (`git merge-base HEAD origin/epic/49-types-de-lignes-facture`).
+  `controles-diff.sh $PWD 87e00ba05` : sortie vide.
 
 ## Change Log
 
@@ -464,3 +536,4 @@ tourné, aucune mutation n'a été jouée** (rien à restaurer), aucun rouge n'e
 | 2026-11-20 | **Création par découpage de la 49-4** (Opus 5.5 ; décision de Guy du 2026-11-20, sur la recommandation de l'orchestrateur du 2026-11-19 et le finding V1-6 de la validation P1). Reprend D4, D5, D7, D10 de la 49-4 sur le **dessin actuel** (aucun PDF ne change). Findings P1 remédiés ici, prémisse relue au code à `a1877ef9f` : V1-3 (le dessin garde sa garde, géométrie et compte des lignes à source unique, T2 interroge le rendu réel), V1-6 (le découpage), V1-8 (argument reformulé, course tracée par issue), V1-11 (fichiers communs avec la 48), V1-12 (renvois d'AC8 et AC6), V1-13 (capture au seuil avec conditions de paiement) ; V1-5 déclaré en D2, arbitrage à Guy par la question Q1 de la 49-4b. Phrase du refus sans « raccourcissez des désignations » (vraie seulement avec la 49-4b). Onze AC, six tests et une épreuve. Quatre modules. Aucune migration. Statut `backlog` : sa propre passe de validation est à venir. |
 | 2026-11-20 | **Validation P1 remédiée** (Opus 5.5, prémisses relues au code ; rapport `kesh-gate-logs/e494/validation-49-4a-p1.md`). Tendance : P1 **0/0/3/9** ; addendum (D2 « réserver ») **0/0/3/1**, **tombé** par la décision de Guy du 2026-11-20 (D2 : aucune réserve, limite au manuel avec sortie par avoir, #1374 en v0.21.0) — A1, A2, A4 sans objet, A3 joint à V1-3. **MEDIUM** : V1-1 corrigé (pré-filtre `MAX_LINES_PER_PDF` extrait et appliqué à la validation, une seule source ; AC1 (e) « 8 chiffrées + 2 commentaires « Ω » » par la route et `GET /pdf`, mutation T1-5 ; prémisse : `invoice_pdf_service.rs:235`, `validate_line` de la 49-1c `:508-509` accepte « Ω ») ; V1-2 corrigé (`$BASE` = `merge-base` avec la branche d'épique, recalculée à chaque reprise, au Dev Agent Record : D5, AC4, T5, étape 0) ; V1-3 + A3 corrigés (phrase **réécrite** « moins avec un récapitulatif — TVA ou arrondi » + limite du rappel et sa sortie, au manuel et au guide de l'API ; AC9 grepe ces mots). **LOW** : V1-4 (justification de la simulation, mutation T2-3), V1-5 (AC8 aligné sur D3), V1-6 (`invoice_total_ttc`, `None`), V1-7 (seuil 4), V1-9 (lieu sans la 49-1c), V1-10 (changement de contrat), V1-11 (citations), V1-12 (montage d'AC2 (c)) corrigés d'une phrase ; V1-8 **tombé par décision**. Reclassements : aucun. D2 propagée (inventaire, D1, D3, D7, AC8, AC9, Dev Notes, issue (1) sans objet, Note de version). Phrase du refus : « lignes » sans « imprimées » (le pré-filtre compte les lignes de la pièce). Charge inchangée, deux et demi à trois jours. |
 | 2026-11-20 | **Validation terminée** (passe P2 Sonnet, contexte frais, rapport `kesh-gate-logs/e494/validation-49-4a-p2.md` : **0/0/0/5**, aucun finding au-dessus de LOW). Tendance : P1 Opus **0/0/3/9** (addendum 0/0/3/1, **tombé par décision de Guy du 2026-11-20** : D2, aucune réserve du bloc de rappel) → P2 Sonnet **0/0/0/5**. Modèles : Opus → Sonnet. Reclassements : aucun. LOW de la P2 traités à l'étape 0 du développement (Opus 5.5) : **V2-1** (D1 : le contrôle géométrique **avant** le pré-filtre ; AC1 (f), douze lignes chiffrées, « 12 et 8 » ; ligne lue : `invoice_pdf_service.rs:235` `    if lines.len() > MAX_LINES_PER_PDF {`) ; **V2-2** (T1 « (a) à (f) » et le refus au rendu de la pièce (e) ; `grep "(a) à (d)"` vide après correction) ; **V2-3** (fiche 49-4b : volet Q1 (c) retiré des « Questions ouvertes », tranché à son § *Réponses de Guy*) ; **V2-4** (`invoice_pdf_service.rs` aux fichiers communs ; doc-comment de `MAX_LINES_PER_PDF` à réécrire dans la tâche `kesh-api` ; ligne lue : `invoice_pdf_service.rs:95` `pub const MAX_LINES_PER_PDF: usize = 9;`, et `:91-92` « la garde renvoie `QrBillError::PdfGeneration` ») ; **V2-5** (Dev Notes, *Charge* : réduction de l'epic, jamais rognage des gates). Statut `ready-for-dev`, puis `in-progress`. |
+| 2026-11-24 | **Développement terminé, statut `review`** (Opus 5.5). Épique reprise (`87e00ba05`, commit `b1d9d4776`), première compilation (un `needless_borrow`, corrigé), onze mutations jouées et restaurées (toutes rouges ; T6 sur binaire muté), recette visuelle (trois captures lues, aucun chevauchement au seuil), `test-fast --ci` 6269/0 et `gate-ci` 6288/0. Non exercé : frontend complet, E2E complet (clôture), PDF des manuels du dépôt. Détail au Dev Agent Record, § *Réalisation*. |
