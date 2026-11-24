@@ -413,11 +413,36 @@ de ligne*
 
 ### Agent Model Used
 
+Sonnet 5.5 (`bmad-dev-story`), worktree `/home/gcorbaz/devel/kesh-49-solde`. Journaux : `/home/gcorbaz/devel/kesh-gate-logs/e49solde/`.
+
 ### Debug Log References
+
+- T1 rouge : `t1-rouge.log` (cinq « Unused '@ts-expect-error' directive », lignes 13, 15, 17, 19, 21 = cas (a) à (e)).
+- Vert après D-A1/D-A2 : `a-check1.log` (`npm run check` : 0 erreur).
+- M1 (`quantity?: string` dans la variante `priced`) : `m1.log` — 1 erreur, cas (a) (`:13`) ; restaurée par `git checkout --` puis `touch`.
+- M2 (`estLigneDeTexte` rendu à `: boolean`) : `m2.log` — 1 erreur, `invoice-lines.ts:86` (`lineType: InvoiceLineType` non assignable à `CreateTextInvoiceLineRequest`) ; restaurée puis `touch`.
+- T3 rouge : `t3-rouge.log` (`credit-note-display-page.test.ts`, 1 échec sur 5 : six `th` sans `pr-2`) ; vert : `t3-vert.log` (5/5).
+- M3 (retirer `pr-2` de la seule cellule du taux) : `m3.log` — 1 échec, `<td class="py-2 text-right">8.10</td>` ; restaurée puis `touch`.
+- Captures (recette visuelle, AC-B3), thème clair, 1280 px, base `kesh_e49s`, avoir portant deux lignes chiffrées à 8.10 % sur 3000 et un commentaire : `captures/avoir-avant.png`, `avoir-avant-tableau.png` (build de `59fb28712` + lot A, page inchangée : « TVA %Compte de produit », « 8.103000 — Ventes CI »), `avoir-apres.png`, `avoir-apres-tableau.png` (« TVA % » séparé, « 8.10 » séparé de « 3000 — Ventes CI » ; total et commentaire alignés comme avant). Outil : `outils/capture.cjs`.
+- Gate frontend au dernier commit de code (`2c773dec7`) : `front-check.log` (0 erreur, 29 avertissements préexistants), `front-lint-i18n-ownership.log` (PASS), `front-test-unit.log` (282 fichiers, 4851 tests, tous passés), `front-build.log` (ok).
+- Gate backend (`scripts/test-fast.sh --ci`, base `kesh_ci_e49s`) et E2E complet (base `kesh_e2e_e49s`, `LANG=fr_CH.UTF-8`) : **lancés, en file d'attente des verrous au moment d'écrire** ; journaux `gate-backend.log` et `e2e.log` ; **aucun résultat n'est affirmé ici**.
 
 ### Completion Notes List
 
+- Lot A (#1464) : union discriminée `CreatePricedInvoiceLineRequest | CreateTextInvoiceLineRequest` ; `estLigneDeTexte` prédicat de type ; `ligneAEnvoyer` teste `estLigneDeTexte(l.lineType)`, sans `as`. **D-A3 : aucun changement de gabarit ni de `InvoiceForm.svelte`** (`npm run check` : 0 erreur, relevé au point 6 de la fiche). `invoice-lines.test.ts` non modifié.
+- Lot B (#1466) : `pr-2` sur chaque `th` et `td` du tableau (en-tête, ligne chiffrée, commentaire, pied), 15 cellules ; rien d'autre ne change (D-B2).
+- Propagation : `git grep -nE "(quantity|unitPrice|vatRate)\?:" -- frontend/src/lib/features` vide ; `py-2 text-right">{line.vatRate}` ne subsiste que dans la fiche (citations) ; `supplier-invoices/[id]/+page.svelte:1054` (`{line.vatRate}%`) n'est pas dans l'inventaire des quinze paires.
+- AC-T1 : `git diff --stat origin/epic/49-types-de-lignes-facture...HEAD` ne montre, hors `_bmad-output/`, que six fichiers sous `frontend/src`.
+
 ### File List
+
+- `frontend/src/lib/features/invoices/invoices.types.ts`
+- `frontend/src/lib/features/invoices/invoice-line-type.ts`
+- `frontend/src/lib/features/invoices/invoice-lines.ts`
+- `frontend/src/lib/features/invoices/invoice-line-request.types.test.ts` (neuf)
+- `frontend/src/routes/(app)/credit-notes/[id]/+page.svelte`
+- `frontend/src/routes/(app)/credit-notes/[id]/credit-note-display-page.test.ts`
+- `_bmad-output/implementation-artifacts/49-5-solde-dette-epic-review-prompt-p1.md` (neuf), fiche, `sprint-status.yaml`
 
 ## Change Log
 
