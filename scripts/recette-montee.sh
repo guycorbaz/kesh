@@ -586,9 +586,11 @@ pdf_fige_identique() {
 
 # Ce que la recette joue, identifié au journal (revue P3, E-P3-4) : l'identifiant et les digests de l'image — une image
 # locale homonyme n'a pas le digest de la publiée — et l'empreinte du binaire neuf. Un relevé, non un contrôle.
+# L'empreinte du binaire est relevée d'abord, et son échec arrête la recette (passe ciblée de la revue P3, LOW-2).
+EMPREINTE_BINAIRE=$(sha256sum -- "$BINAIRE") || echec 1 "empreinte du binaire illisible ($BINAIRE)"
 {
   "$DOCKER" image inspect -f '{{.Id}} {{json .RepoDigests}}' "$IMAGE" 2>&1 || echo "image : inspection illisible"
-  sha256sum -- "$BINAIRE"
+  printf '%s\n' "$EMPREINTE_BINAIRE"
 } > "$L/identite.txt"
 
 # --- Phase 1 : avant ---------------------------------------------------------------------
@@ -983,13 +985,14 @@ ERREURS_MUTOOL=$(/usr/bin/grep -v -x -e 'warning: ICC support is not available' 
 
 # Ce qui a été joué, dit en clair (revue P3, E-P3-2) : un rejeu sans `--import` ou sans `--apres` ne se lit pas comme une
 # recette complète. Le même texte va à `$L/verdict`, que le script complémentaire de la release exige.
+if [ "$MIGRATIONS" -gt 0 ]; then PHASE3_DIT="jouée"; else PHASE3_DIT="SAUTÉE (aucune migration)"; fi
 if [ "$IMPORT" = 1 ]; then IMPORT_DIT="joué"; else IMPORT_DIT="NON JOUÉ"; fi
 CROCHET_DIT="NON JOUÉ"
 if [ -n "$APRES" ]; then
   CROCHET_DIT="joué en phase 2"
   [ "$IMPORT" != 1 ] || CROCHET_DIT="joué en phases 2 et 5"
 fi
-VERDICT="vert ; import : $IMPORT_DIT ; crochet : $CROCHET_DIT ; --diff-attendu : ${DIFF_ATTENDU:-(aucun)}"
+VERDICT="vert ; phase 3 : $PHASE3_DIT ; import : $IMPORT_DIT ; crochet : $CROCHET_DIT ; --diff-attendu : ${DIFF_ATTENDU:-(aucun)}"
 printf '%s\n' "$VERDICT" > "$L/verdict"
 echo "✅ recette-montee : phases jouées, $MIGRATIONS migration(s), $PAIRES paires de rendus, journaux sous $L"
 echo "   $VERDICT"

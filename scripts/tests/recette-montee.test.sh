@@ -567,7 +567,7 @@ ordre=$(/usr/bin/grep -oE '▶ phase [1-6]' "$FX/sortie" | tr -d '▶ phase' | t
 [ "$ordre" = 123456 ] && ok "dans l'ordre" || fail "ordre : $ordre"
 sortie_dit "5 paires de rendus" && ok "5 paires de rendus, avec --import (S14)" || fail "décompte des paires : $(tail -2 "$FX/sortie" | head -1)"
 # S17 (revue P3, E-P3-2) : la ligne finale dit ce qui a été joué ; ici, l'import sans crochet.
-sortie_dit "vert ; import : joué ; crochet : NON JOUÉ ; --diff-attendu : migrations" \
+sortie_dit "vert ; phase 3 : jouée ; import : joué ; crochet : NON JOUÉ ; --diff-attendu : migrations" \
   && ok "S17 verdict : import joué, crochet non joué" || fail "S17 verdict : $(/usr/bin/grep -F 'vert ;' "$FX/sortie")"
 echo "  les documents (Story 49-1d)"
 # S9 (D3) : `docker cp` du conteneur de l'image de ce run, vers `$D/documents` — aucun montage.
@@ -751,11 +751,15 @@ scenario "S16f crochet en échec en phase 2 seulement" 12 "crochet --apres en é
 scenario "S16e valeur d'avant de api changée par l'import, nommée" 15 "api (valeurs d'avant changées" ECART_IMPORT=api -- "${BASE_ARGS[@]}" "${RELEASE[@]}" --import
 echo "  S17 : la ligne finale dit ce qui a été joué (revue P3, E-P3-2)"
 echo 'true' > "$WORK/kesh-gate-logs/verifs-vert.sh"
-scenario "S17a import et crochet joués" 0 "vert ; import : joué ; crochet : joué en phases 2 et 5" -- "${BASE_ARGS[@]}" --import --apres "$WORK/kesh-gate-logs/verifs-vert.sh"
+scenario "S17a import et crochet joués" 0 "vert ; phase 3 : jouée ; import : joué ; crochet : joué en phases 2 et 5" -- "${BASE_ARGS[@]}" --import --apres "$WORK/kesh-gate-logs/verifs-vert.sh"
 D=$(/usr/bin/grep -oE 'dossier .*$' "$FX/sortie" | tail -1 | sed 's/^dossier //')
-/usr/bin/grep -qx "vert ; import : joué ; crochet : joué en phases 2 et 5 ; --diff-attendu : migrations" "$D/journal/verdict" \
+/usr/bin/grep -qx "vert ; phase 3 : jouée ; import : joué ; crochet : joué en phases 2 et 5 ; --diff-attendu : migrations" "$D/journal/verdict" \
   && ok "S17a : \$L/verdict écrit" || fail "S17a : verdict « $(cat "$D/journal/verdict" 2>/dev/null) »"
-scenario "S17b ni import ni crochet : dit NON JOUÉ" 0 "vert ; import : NON JOUÉ ; crochet : NON JOUÉ" -- "${BASE_ARGS[@]}"
+# S18 (passe ciblée de la revue P3, LOW-3) : `identite.txt` porte l'empreinte du binaire joué.
+EMPREINTE=$(sha256sum < "$DEPOT/target/debug/kesh-api" | cut -d' ' -f1)
+/usr/bin/grep -q "^$EMPREINTE  " "$D/journal/identite.txt" \
+  && ok "S18 identite.txt : empreinte du binaire relevée" || fail "S18 identite.txt : « $(cat "$D/journal/identite.txt" 2>/dev/null) »"
+scenario "S17b ni import ni crochet : dit NON JOUÉ" 0 "vert ; phase 3 : jouée ; import : NON JOUÉ ; crochet : NON JOUÉ" -- "${BASE_ARGS[@]}"
 echo "  S6, S7, S14 : rendus (D4 b, D5)"
 scenario "S6 trame différente, texte égal" 16 "F4 : page 1, trame différente" RENDU_ECART=oui -- "${BASE_ARGS[@]}"
 scenario "S6c trame vide des deux côtés" 16 "trame vide" TRAME_VIDE=oui -- "${BASE_ARGS[@]}"
@@ -827,6 +831,8 @@ echo "  N = 0"
 preparer "N_REEL=0"
 avec --migrations-attendues 0; lancer "${AV[@]}"
 [ "$RC" -eq 0 ] && sortie_dit "sautée" && ok "phase 3 sautée, et dit" || { fail "code $RC"; tail -3 "$FX/sortie"; }
+# S17c (passe ciblée de la revue P3, LOW-1) : le verdict le dit aussi.
+sortie_dit "vert ; phase 3 : SAUTÉE (aucune migration) ;" && ok "S17c verdict : phase 3 SAUTÉE" || fail "S17c verdict : $(/usr/bin/grep -F 'vert ;' "$FX/sortie")"
 /usr/bin/grep -q 'kesh_recette' "$FX/binaire-env.txt" && ok "binaire lancé" || fail "binaire"
 
 echo "  crochet --apres"
