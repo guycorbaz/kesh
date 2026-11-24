@@ -1,6 +1,6 @@
 # Story 48-11 : Les montants à deux décimales sont arrondis au centime, non tronqués — rapports CSV et PDF ; l'export global écrit chaque colonne à son échelle (#1245 ; #1430)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-20 (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-48-11`, branche `story/48-11-arrondi-au-centime`, partie de
 `epic/48-corrections-0-20-0` à **`08c47a6cc`** (qui porte la PR #1327 de Beat — alignement à droite des PDF de rapports — et la PR #1346 —
@@ -690,6 +690,41 @@ Journaux hors dépôt sous `/home/gcorbaz/devel/kesh-gate-logs/e4811/` :
 `docs/manual/fr/{admin-manual.tex,user-manual.tex}` ; cette fiche et `48-11-arrondi-au-centime-review-prompt-p1.md`.
 
 ## Change Log
+
+- **2026-11-24 — revue de code close, gates et E2E de clôture verts, `Status: done`** (Sonnet 5.5). **Boucle de revue de code** : P1 Opus
+  (trois lentilles B, E, A) **0 CRITICAL / 0 HIGH / 1 MEDIUM / 10 LOW**, remédiée à `2797e0447` ; P2 Sonnet (trois lentilles, contexte frais,
+  modèle différent) **0 / 0 / 0 / 4 LOW** (`review-p2.md`). Tendance : 1 MEDIUM → 0 ; aucune passe au-dessus de LOW au dernier tour, la
+  remédiation P1 (code de production : `fmt_decimal_scale`, `debug_assert!`) ayant été relue en passe complète par la P2, non ciblée ; boucle
+  close sur une passe sans finding au-dessus de LOW. Aucun reclassement, aucun finding réfuté. **Sort des quatre LOW de la P2** (prémisse relue
+  avant chacun, aucun code de production touché, donc pas de passe de plus) :
+  - **E-1 — corrigé.** Prémisse relue : `mut-m4` à `mut-m8` étaient antérieurs à la remédiation (20:33 à 20:52 contre 22:07). **M4 à M8
+    rejouées au HEAD de clôture** par `mut/muter2.py`, une à une sous le verrou de la voie base (en-tête `== mutation`, avant/après, `EXIT=100`,
+    `== restaure` ; `git status --porcelain` vide après chacune, `muter2-m*-run.log`) : M4 (`csv.rs` : 1 au lieu de 0), M5 (`money.rs` : 0 au lieu
+    de 1), M6 (`pdf.rs` : 1 au lieu de 0) rouges sur la garde (`mut-m4.log` à `mut-m6.log`, 5 tests dont 1 rouge) ; M7 rouge (1 test) **par le
+    `debug_assert!`** (`csv_tables.rs:130`, « échelle 4 de 1.1234 supérieure à celle de sa colonne (2) ») : la requête de l'export échoue et le
+    test rougit sur la réponse (`exports_global_e2e.rs:2235`, `unwrap`), non sur « attendu 1.1234, lu 1.12 » ; M8 rouge sur le décompte
+    (`exports_global_e2e.rs:2617`). Fiche (tableau des preuves AC13, tableau des mutations) réécrite pour M7. M1, M2b, M3 : journaux de la
+    remédiation P1 conservés (M1 et M2b rejouées au code `2797e0447`, qui est aussi celui de production du HEAD).
+  - **A-1 — corrigé.** `assert_eq!(compte(PRECISION, &sonde), 7)` lu à `arrondi_centime_garde.rs:220` ; trois « 6 » devenus « 7 » (AC9, tableau
+    des preuves, Dev Agent Record) et la liste de la sonde complétée de `{:.1$}` ; greppé par la valeur sur tout le worktree : plus aucun « sondes
+    positives 6 » ni « rend 6 ».
+  - **A-2 — corrigé.** `README.md` (ligne v0.20.0) : « les montants des rapports (PDF et CSV) sont arrondis au centime, non tronqués, et
+    l'export global écrit chaque nombre à l'échelle où Kesh le garde » ; reste de la ligne inchangé.
+  - **A-3 — corrigé.** `dev/ac8.txt` (18 lignes) et `dev/ac12.txt` (22 lignes) régénérés au HEAD par les mêmes commandes (anciens :
+    `ac8.avant.txt`, `ac12.avant.txt`) ; la fiche cite `csv_tables.rs:135`, `money.rs:110` et `:113`. Les 22 occurrences et les 8 fichiers de la
+    liste close sont inchangés.
+  **Gates de clôture** au HEAD `5d8ded148` (`dev/gate-c-commit.txt` ; arbre propre, `dev/gate-c-status.txt` vide ; seul le code de
+  `2797e0447` et le test de `65c6d0e30` diffèrent du gate de la remédiation, et ce dernier est maintenant gaté) : bases remises à neuf
+  (`gate-c-bases.log`) ; `scripts/test-fast.sh --ci` **vert, 6224 passés (1 lent), 14 ignorés, 0 échec** (`gate-c-test-fast-ci.log`) ; base
+  `kesh_e4811` remise à neuf ; `scripts/gate-ci.sh kesh_ci_e4811` **code 0**, **259 binaires, 6243 passés, 0 échec, 18 ignorés**
+  (`gate-c-ci.log`, `gate-c-ci.console` ; `gate-c-exit.txt`). **Frontend : non rejoué**, `git diff --stat 15ae0368a~1 HEAD -- frontend` vide
+  (le seul `npm ci` + `npm run build` du worktree a produit `frontend/build` pour l'E2E : `dev/front-build.log`). **E2E complet** au même
+  commit (`dev/e2e-cloture.sh`, `dev/e2e-cloture.log` ; `kesh-api` construit au commit, base `kesh_e2e_e4811` recréée, port 3481,
+  `KESH_COOKIE_SECURE=false`, `KESH_TEST_MODE=true` des deux côtés) : **491 passés, 7 échecs, 18 ignorés, 22,2 min**. Les sept échecs sont
+  **exactement** ceux de la KF-029 (#97), jugés fichier par fichier contre `docs/testing.md` § *Les échecs attendus* : `mode-expert.spec.ts:26`
+  et `:41`, `onboarding-path-b.spec.ts:65` et `:92`, `onboarding.spec.ts:57`, `:77` et `:150` ; **zéro échec de pollution**. Aucun autre
+  rouge. Mots-clés de fermeture : `git log 08c47a6cc..HEAD --format=%B | grep -niE '\b(close[sd]?|fix(e[sd])?|resolve[sd]?) #[0-9]'` vide (P2).
+  Modèles : validations P1 Sonnet, P2 Opus, P3 Sonnet ; revues de code P1 Opus, P2 Sonnet.
 
 - **2026-11-24 — revue P1 remédiée** (Sonnet 5.5). Revue P1 : Opus, trois lentilles B, E, A exercées l'une après l'autre par un seul agent,
   **0 CRITICAL / 0 HIGH / 1 MEDIUM / 10 LOW** (B : 0/0/0/3 ; E : 0/0/1/2 ; A : 0/0/0/5). Code de la remédiation `2797e0447` (gates et mutations
