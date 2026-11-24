@@ -91,8 +91,9 @@ pub const MAX_LINES_PER_PDF: usize = 9;
 /// séparateur QR plus 15 mm pour le total, plus la réserve du récapitulatif (`4.5 × n + 1`
 /// mm s'il a `n > 0` lignes : sous-total, une par taux de TVA, et l'arrondi s'il n'est pas
 /// nul au centime), plus le bloc de rappel. Sans récapitulatif, **8 lignes imprimées**
-/// tiennent ; avec, moins. Le pré-filtre ne joue donc que pour une pièce dont des lignes
-/// n'impriment rien (commentaire sans rien d'imprimable).
+/// tiennent ; avec, moins. Au rendu, le pré-filtre passe pourtant **avant** toute
+/// géométrie : une pièce de plus de [`MAX_LINES_PER_PDF`] lignes est refusée sans que la
+/// garde précise soit consultée, même si certaines de ses lignes n'impriment rien.
 pub(crate) fn depasse_le_prefiltre(lignes_de_la_piece: usize) -> bool {
     lignes_de_la_piece > MAX_LINES_PER_PDF
 }
