@@ -2780,14 +2780,21 @@ impl IntoResponse for AppError {
                     "Trop de factures dans le lot (maximum 20).",
                 ),
             ),
-            AppError::BatchExceedsSendQuota { max } => build_response(
-                StatusCode::UNPROCESSABLE_ENTITY,
-                "BATCH_EXCEEDS_SEND_QUOTA",
-                &t(
-                    "error-batch-exceeds-send-quota",
-                    &format!("Le lot dépasse le quota d'envoi ({max} e-mails par fenêtre)."),
-                ),
-            ),
+            AppError::BatchExceedsSendQuota { max } => {
+                // #1348 (0.20.0) — `t_args`, non `t` : la valeur du catalogue porte
+                // `{ $max }`, qu'un appel sans arguments rendrait sans son nombre.
+                let mut args = FluentArgs::new();
+                args.set("max", max);
+                build_response(
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    "BATCH_EXCEEDS_SEND_QUOTA",
+                    &t_args(
+                        "error-batch-exceeds-send-quota",
+                        &format!("Le lot dépasse le quota d'envoi ({max} e-mails par fenêtre)."),
+                        &args,
+                    ),
+                )
+            }
             AppError::InvoiceEmailEmptyContent => build_response(
                 StatusCode::UNPROCESSABLE_ENTITY,
                 "INVOICE_EMAIL_EMPTY_CONTENT",
@@ -4634,6 +4641,48 @@ impl IntoResponse for AppError {
                         &t_args("accounts-parent-archived", &fallback, &args),
                     )
                 }
+                // Correctif `fix-api-parent-compte` : le `PUT` d'un compte
+                // accepte `parentId`. Le cycle a son code ; le parent introuvable
+                // relu sous verrou rend la réponse de la création (400).
+                DbError::AccountParentCycle { parent_number } => {
+                    let fallback = format!(
+                        "Le compte {parent_number} est ce compte ou l'un de ses sous-comptes : un compte ne peut pas être rangé sous lui-même."
+                    );
+                    let mut args = FluentArgs::new();
+                    args.set("number", parent_number.clone());
+                    build_response(
+                        StatusCode::CONFLICT,
+                        "ACCOUNT_PARENT_CYCLE",
+                        &t_args("error-account-parent-cycle", &fallback, &args),
+                    )
+                }
+                DbError::AccountParentHasEntries {
+                    parent_account_id,
+                    parent_number,
+                } => {
+                    let mut args = FluentArgs::new();
+                    args.set("number", parent_number.clone());
+                    coded_response(
+                        StatusCode::CONFLICT,
+                        "ACCOUNT_PARENT_HAS_ENTRIES",
+                        t_args(
+                            "error-account-parent-has-entries",
+                            &format!(
+                                "Le compte {parent_number} porte des écritures : y ranger ce compte le rendrait non imputable avec un solde qu'aucune saisie ne pourrait plus corriger. Choisissez un compte de groupe sans écriture."
+                            ),
+                            &args,
+                        ),
+                        serde_json::json!({
+                            "parentAccountId": parent_account_id,
+                            "parentNumber": parent_number,
+                        }),
+                    )
+                }
+                DbError::AccountParentNotFound => build_response(
+                    StatusCode::BAD_REQUEST,
+                    "VALIDATION_ERROR",
+                    "parent account not found",
+                ),
                 DbError::AccountRoleInvalidForType { role, account_type } => {
                     let fallback = format!(
                         "Le rôle {role} ne peut pas être attribué à un compte de type {account_type}."

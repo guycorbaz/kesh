@@ -37,6 +37,7 @@
 	// sont filtrés à l'entrée de `SettleInvoiceDialog`.
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 	import type { InvoiceSettingsResponse } from '$lib/features/invoices/invoices.types';
+	import { estLigneDeTexte } from '$lib/features/invoices/invoice-line-type';
 	import { invoiceRevenueAccountLabel } from '$lib/features/accounts/account-label';
 	import PaymentStatusBadge from '$lib/features/invoices/PaymentStatusBadge.svelte';
 	import SettleInvoiceDialog, {
@@ -122,6 +123,9 @@
 			creditNoteSubmitting = false;
 		}
 	}
+
+	/** Colonnes du tableau des lignes (six `<th>` du `<thead>`) : un commentaire les couvre toutes. */
+	const COLONNES_LIGNES = 6;
 
 	let invoice = $state<InvoiceResponse | null>(null);
 	let loading = $state(true);
@@ -1384,6 +1388,16 @@
 			</thead>
 			<tbody>
 				{#each invoice.lines as l (l.id)}
+					{#if estLigneDeTexte(l.lineType)}
+						<!-- Story 49-1c (D7) — un commentaire (ou un titre, jusqu'à la 49-3) :
+						     une cellule sur toutes les colonnes, sauts de ligne gardés, sans
+						     montant, taux ni compte (« (défaut société) » serait faux). -->
+						<tr class="border-b border-border" data-testid="invoice-line-comment-row">
+							<td colspan={COLONNES_LIGNES} class="py-2 pr-2 whitespace-pre-line" data-testid="invoice-line-comment"
+								>{l.description}</td
+							>
+						</tr>
+					{:else}
 					<tr class="border-b border-border">
 						<td class="py-2 pr-2">{l.description}</td>
 						<!-- Story v0171 (#866) : la quantité lisible, `1.0000` → `1`. -->
@@ -1397,6 +1411,7 @@
 							{formatInvoiceTotal(l.lineTotal)}
 						</td>
 					</tr>
+					{/if}
 				{/each}
 			</tbody>
 			<tfoot>

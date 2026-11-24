@@ -16,7 +16,7 @@ rétrospective de l'Epic 29 : les consignes que les prompts communs des Epics 29
 hors du dépôt — défaut voisin, mots-clés de fermeture, recette visuelle, symétrique client,
 privilèges de la base, lentilles sans fichier. Complété le 2026-10-24, rétrospective de l'Epic 31 :
 écritures dans le worktree seulement (§ 2.1), prémisse vérifiée au code et remédiations de
-l'orchestrateur (§ 3), lentilles sans redirection (§ 6), contrôle de fuite avant le push (§ 8).)*
+l'orchestrateur (§ 3), lentilles sans redirection (§ 6), contrôle de fuite avant le push (§ 9).)*
 
 **Conventions de ce document.** `<clé>` désigne la clé courte de la story (`281` pour la 28-1) ;
 `<worktree>` le répertoire du worktree assigné ; `$GATE_LOGS` le répertoire **commun** des journaux
@@ -61,7 +61,8 @@ Sauf autorisation écrite dans le prompt de l'agent :
   production (§ 6.1) ;
 - `pkill` ou `killall` à motif large — cf. § 4.
 
-Le push, les PR, les merges et les issues reviennent à l'orchestrateur ; l'agent les **demande**.
+Le push, les PR, les merges et les issues reviennent à l'orchestrateur ; l'agent les **demande**. Seule
+exception, quand le prompt l'écrit : le push de **sa seule branche `story/…`**, à chaque étape (§ 8.1).
 
 ### 2.1 Écrire dans son worktree, et nulle part ailleurs
 
@@ -283,7 +284,60 @@ réglage de session dans `create_pool`, que la production n'appelle jamais (#669
   gate complet perdu, `git diff HEAD` vide). Un rouge qui reproduit le message d'une mutation
   récente se diagnostique d'abord par les dates.
 
-## 8. Données réelles
+## 8. Reprise après un crash
+
+Quand la machine tombe (coupure, mémoire saturée, session perdue), les agents meurent sans prévenir et leurs processus
+peuvent survivre sans parent. Du travail reste non commité dans des worktrees ; des exécutions de tests orphelines tiennent
+le verrou de gate ; un agent qui avait rendu la main « en attendant ses gates » ne reprendra jamais de lui-même.
+
+### 8.1 Les consignes qui évitent la perte
+
+- **Un agent commite à chaque étape franchie** : test rouge, correctif vert, remédiation — et pas seulement quand il
+  fait une pause. Un commit par étape (`CLAUDE.md` § *Commits, branches et push*) est aussi la sauvegarde du travail.
+- **Un agent pousse sa seule branche `story/…` à chaque étape**, pour que le travail survive à la perte de la machine.
+  C'est la seule exception à l'interdit de `git push` du § 2, et elle est écrite dans le prompt de l'agent. **Jamais** une
+  branche d'epic, `main` ni un tag : ceux-là restent à l'orchestrateur.
+- **Quand un agent rend la main avec un travail de fond en cours**, l'orchestrateur arme lui-même une attente sur sa fin
+  (une surveillance du processus ou du journal de gate) : un agent rendu à l'orchestrateur ne reviendra pas seul.
+
+### 8.2 La procédure de reprise
+
+Dans cet ordre, **avant de commiter quoi que ce soit** :
+
+1. **Lister les worktrees et leur état** : `git worktree list`, puis `git -C <worktree> status --short` pour chacun.
+   Noter, pour chaque worktree, ce qui est modifié, non suivi, et le dernier commit.
+2. **Chercher les processus orphelins** : les processus de test, de build ou de backend dont le répertoire de travail est
+   un worktree (`ls -l /proc/<pid>/cwd`, ou `lsof -a -d cwd` sur la liste des processus `cargo`, `nextest`, `node`,
+   `kesh-api`). Les identifier **par leur répertoire de travail et leur PID**, et les arrêter **par PID** (§ 4.5), jamais
+   par motif.
+3. **Chercher les verrous tenus** : `$GATE_LOGS/.gate.lock`, `$GATE_LOGS/.gate-front.lock` et le verrou commun de la
+   station (`fuser` ou `lsof` sur chaque fichier de verrou). Un verrou tenu par un processus orphelin se libère en
+   arrêtant ce processus, non en supprimant le fichier.
+4. **Contrôler qu'aucune mutation n'est restée** : une campagne de mutations interrompue laisse du code volontairement
+   faux dans l'arbre. Comparer le `git diff` de chaque worktree au Dev Agent Record de la story (ce que l'agent a déclaré
+   avoir écrit) ; tout écart, surtout dans du code de production, se traite comme une mutation oubliée (§ 7 : restaurer
+   par `git checkout -- <fichier>` puis `touch <fichier>`).
+5. **Commiter seulement ensuite**, ce qui est établi légitime, par étapes lisibles.
+6. **Remettre la base de gate à zéro** si un gate était en cours, puis **relancer** les agents et les gates interrompus,
+   en relisant d'abord leurs journaux : un gate rouge laissé par le crash se lit avant d'être rejoué.
+
+### 8.3 Pistes pour faire tourner beaucoup d'agents sur une station modeste
+
+Conseils de contributeurs, à éprouver avant de les adopter ; ce ne sont pas des règles :
+
+- **Une cible cargo par worktree**, avec `CARGO_INCREMENTAL=0` pour que la cible ne grossisse pas à chaque recompilation.
+- **`CARGO_BUILD_JOBS` hérité de l'environnement écrase `jobs` de `.cargo/config.toml`** : deux gates parallèles peuvent
+  alors saturer la mémoire. Vérifier que la variable n'est pas posée dans le shell qui lance un gate.
+- **Une file des travaux lourds en deux voies** (§ 5.1), pour que la somme des gates reste sous le plafond mémoire.
+- **Un serveur MariaDB de test par place** plutôt qu'un conteneur partagé, quand la station le permet.
+- **`--innodb-undo-tablespaces=4 --innodb-undo-log-truncate=ON`** au démarrage de MariaDB : sans ces options, `ibdata1`
+  grossit sans jamais rétrécir. Changer ces options oblige à recréer le conteneur de dev (réservé à l'orchestrateur, § 2).
+- **Des gardes de fond** qui surveillent le disque, le tmpfs et la taille de `ibdata1`, pour arrêter les travaux avant la
+  saturation plutôt qu'après.
+- **Les mutations hors du dépôt** : jouer une mutation sur une copie du fichier hors de l'arbre de travail, plutôt que
+  dans l'arbre lui-même, pour qu'un crash ne laisse pas de code muté parmi le travail à commiter.
+
+## 9. Données réelles
 
 Le dépôt et ses issues sont **publics**. Rien d'un relevé ou d'une pièce réelle de l'utilisateur —
 IBAN, numéro de compte, solde, ligne de transaction, ni même un agrégat qui en dérive — n'entre

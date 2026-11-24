@@ -262,6 +262,8 @@ accounts-retype-confirm = Cambia comunque il tipo
 account-field-parent-optional = Conto padre (facoltativo)
 accounts-parent-none = Nessuno
 accounts-parent-archived = Il conto padre { $number } è archiviato. Riattivatelo prima.
+error-account-parent-cycle = Il conto { $number } è questo conto stesso o uno dei suoi sottoconti: un conto non può essere collocato sotto sé stesso.
+error-account-parent-has-entries = Il conto { $number } porta delle registrazioni: collocandovi sotto questo conto, diventerebbe non imputabile con un saldo che nessuna registrazione potrebbe più correggere. Scegliete un conto di gruppo senza registrazioni.
 accounts-role-invalid-for-type = Il ruolo { $role } non può essere attribuito a un conto di tipo { $type }.
 accounts-role-conflict-generic = Questo ruolo è appena stato attribuito a un altro conto. Ricaricate la pagina.
 accounts-reactivate-without-role = Riattivare senza il ruolo
@@ -413,6 +415,7 @@ error-date-outside-fiscal-year-generic = La data non rientra nell'esercizio corr
 journal-entries-filter-description = Descrizione
 journal-entries-filter-amount-min = Importo min
 journal-entries-filter-amount-max = Importo max
+journal-entries-filter-amount-not-applied = Questo filtro non è applicato finché l'importo non è corretto.
 journal-entries-filter-date-from = Data inizio
 journal-entries-filter-date-to = Data fine
 journal-entries-filter-journal = Giornale
@@ -1716,6 +1719,7 @@ reconciliation-group-block-unreadable = Kesh non ha potuto leggere un importo o 
 reconciliation-group-block-gap-too-large = La differenza supera il limite ammesso: aggiungete o togliete una fattura, o riconciliate la transazione in altro modo.
 reconciliation-group-not-reread = Fattura { $number }: il suo residuo non ha potuto essere riletto, la differenza indicata può essere errata. Toglietela e aggiungetela di nuovo per rileggerlo.
 reconciliation-group-reread-retry = I residui sono stati riletti: verificate la differenza, poi registrate di nuovo.
+reconciliation-group-reread-blocked = Non è stato registrato nulla: vedete che cosa impedisce ancora la registrazione.
 reconciliation-group-account-check-retry = Kesh chiede un conto per la differenza: verificate il conto scelto, poi registrate di nuovo.
 reconciliation-group-rounding-info = Arrotondamento di { $amount } registrato sul conto di arrotondamento
 reconciliation-group-rounding-not-configured = Non è designato alcun conto per le differenze di arrotondamento: chiedete all'amministratore di impostarlo.
@@ -2075,6 +2079,9 @@ reports-filename-project-return = rendimento-per-conto-analitico
 reports-filename-general-ledger = libro-mastro
 reports-pdf-header-period = Periodo
 reports-pdf-empty-message = Nessuna registrazione nel periodo selezionato.
+# Correctif fix-pdf-montants-alignes — en-têtes des colonnes de montant d'un rapport PDF qui contient un compte en devise.
+reports-pdf-col-base-currency = CHF
+reports-pdf-col-foreign-currency = Valuta
 
 # Story 9-2b — Esportazione globale ZIP (sovranità dei dati) — 12 chiavi
 nav-export-global = Esportazione globale
@@ -2521,6 +2528,7 @@ contact-salutation-madame = Signora
 # au singulier contre 11 messages de courtoisie. « NPA » est l'usage de la Poste suisse en
 # italien, et non « CAP » qui est italien.
 contact-error-address-npa-city = NPA e località sono obbligatori se viene inserito un indirizzo
+contact-error-address-country-alone = Un paese da solo non fa un indirizzo: inserire NPA e località, oppure svuotare il paese.
 contacts-country-unknown = Il codice paese « { $code } » non è un codice ISO noto: la QR-fattura di questo contatto non potrà essere prodotta. Correggilo (CH, FR, DE…); gli altri campi si registrano senza modificarlo.
 contact-error-person-name = Nome e cognome sono obbligatori per una persona
 contact-persons-add = Aggiungi
@@ -2756,6 +2764,7 @@ settings-company-address-country-unknown = Il codice paese « { $code } » della
 settings-company-address-help = Indirizzo dell’emittente e del creditore sulle vostre fatture e QR-fatture. NPA e località obbligatori; paese come codice ISO a due lettere. Un PDF già fissato non cambia.
 error-company-phone-too-long = Il numero di telefono della società è troppo lungo (al massimo 50 caratteri).
 error-company-website-too-long = L'indirizzo del sito web della società è troppo lungo (al massimo 255 caratteri).
+error-company-email-too-long = L'indirizzo e-mail della società è troppo lungo (al massimo 320 caratteri).
 error-invoice-pdf-header-overflow = L'intestazione del documento non entra nella pagina. Eliminate un recapito — telefono, e-mail o sito web — nelle impostazioni: accorciarlo non libera spazio, ogni recapito occupa una riga intera. Oppure riducete il numero di righe dell'indirizzo del destinatario.
 
 # Story 23-2 (#283) — parità it-CH : le 57 chiavi che esistevano solo in fr-CH.
@@ -4077,3 +4086,32 @@ projects-reassign-done = Conto analitico cambiato.
 
 # --- Epic 49 — Story 49-4a (#1364) : capacité du PDF de facture contrôlée à la validation ---
 error-invoice-lines-do-not-fit-pdf = Le righe di questa fattura non stanno sulla pagina del suo PDF: richiedono { $besoin } righe, la pagina ne offre { $place }. Rimuova delle righe, accorci i commenti o ripartisca le righe su due fatture. La fattura resta una bozza.
+
+# Epic 49 — Story 49-1c (#1242) : la ligne de commentaire de la facture client
+invoice-line-add-comment = Commento
+invoice-line-comment-placeholder = Testo stampato su tutta la larghezza della fattura, senza importo
+invoice-line-comment-aria = Commento — riga { $n }
+invoice-line-comment-required-error = Riga { $line }: il testo del commento è obbligatorio
+
+## #1348 (0.20.0) — rifiuti del server la cui chiave mancava al catalogo.
+error-onboarding-reset-forbidden = La reimpostazione dell'onboarding non è consentita su questa istanza.
+error-invoice-already-paid = La fattura è già pagata — non è possibile registrare alcun sollecito.
+error-dunning-level-not-found = Il livello di sollecito richiesto non esiste nella configurazione.
+error-reminder-date-in-future = La data di un sollecito non può essere nel futuro.
+error-invoice-not-paused = Questa fattura non è sospesa.
+error-dunning-paused = I solleciti sono sospesi per questa fattura.
+error-level-already-sent = Questo livello di sollecito è già stato trattato (invio concorrente o salto di livello non consentito).
+error-reminder-sent-but-invoice-gone = Il sollecito è stato inviato, ma la fattura è scomparsa prima della registrazione.
+error-reminder-sent-but-not-recorded = Il sollecito è stato inviato, ma non è stato possibile registrarlo. L'invio è tracciato nel registro di audit.
+error-batch-too-large = Troppe fatture nel lotto (massimo 20).
+error-batch-exceeds-send-quota = Il lotto supera la quota di invio ({ $max } e-mail per finestra).
+reconciliation-errors-lock-release-failed = Errore interno durante il rilascio del blocco. Riprova.
+reconciliation-errors-fiscal-year-closed = Riconciliazione impossibile: l'esercizio contabile non è aperto per questa data.
+reconciliation-errors-transaction-not-pending = Transazione bancaria non trovata o già riconciliata.
+error-inbox-import-already-running = Un'importazione della cartella è già in corso. Riprova tra qualche istante.
+error-import-not-pending-completion = Questa fattura importata non è più in attesa di completamento.
+error-source-document-not-found = Questa fattura non ha alcun documento giustificativo archiviato.
+error-imported-invoice-not-found = Questa fattura importata non è stata trovata.
+error-source-document-gone = Il documento giustificativo non è stato ripristinato (solo metadati).
+error-data-length-or-range = Un valore fornito è troppo lungo o fuori intervallo.
+error-invalid-input-generic = Inserimento non valido

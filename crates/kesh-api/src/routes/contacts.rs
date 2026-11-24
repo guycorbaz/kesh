@@ -24,7 +24,7 @@ use kesh_db::repositories::contacts::{self, ContactSortBy};
 
 use crate::AppState;
 use crate::errors::AppError;
-use crate::helpers::get_company_for;
+use crate::helpers::{PERSON_NAME_PART_MAX, get_company_for, optional_visible, validate_text_len};
 use crate::middleware::auth::CurrentUser;
 use crate::routes::ListResponse;
 use crate::services::acces::ContexteAcces;
@@ -35,7 +35,10 @@ use crate::services::carnet;
 // ---------------------------------------------------------------------------
 
 const MAX_NAME_LEN: usize = 255;
-const MAX_EMAIL_LEN: usize = 320;
+/// Taille des colonnes d'e-mail (`contacts.email`, `companies.email`,
+/// `VARCHAR(320)`). `pub(crate)` (Story 48-15, #1333) : l'e-mail de la société
+/// (`companies::update_company_email`) est borné par la même constante.
+pub(crate) const MAX_EMAIL_LEN: usize = 320;
 const MAX_PHONE_LEN: usize = 50;
 const MAX_PAYMENT_TERMS_LEN: usize = 100;
 /// Story 16-3b (#151) — aligné sur la colonne `contacts.client_number`
@@ -373,10 +376,21 @@ fn validate_common(
 ) -> Result<ValidatedFields, AppError> {
     // #213 — Personne : prénom + nom séparés, `name` recomposé « Prénom Nom ».
     // Entreprise : raison sociale unique (prénom/nom laissés vides).
-    let clean = |o: Option<String>| o.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+    // #1343 (0.20.0) — un champ fait de caractères invisibles (U+00AD seul, que
+    // `trim` laisse) est refusé en le nommant ; vide, il garde le message d'avant.
     let (trimmed_name, first_name, last_name) = match contact_type {
-        ContactType::Personne => match (clean(first_name), clean(last_name)) {
-            (Some(f), Some(l)) => (format!("{f} {l}"), Some(f), Some(l)),
+        ContactType::Personne => match (
+            optional_visible(first_name.as_deref(), "Prénom")?,
+            optional_visible(last_name.as_deref(), "Nom")?,
+        ) {
+            (Some(f), Some(l)) => {
+                // Story 48-15 (#1334) — chacun borné à sa colonne (`VARCHAR(70)`),
+                // avant le nom composé : le refus nomme le champ, au lieu du
+                // `DATA_LENGTH_OR_RANGE` générique de MariaDB.
+                validate_text_len(&f, PERSON_NAME_PART_MAX, "Prénom")?;
+                validate_text_len(&l, PERSON_NAME_PART_MAX, "Nom")?;
+                (format!("{f} {l}"), Some(f), Some(l))
+            }
             _ => {
                 return Err(AppError::Validation(
                     "Le prénom et le nom sont obligatoires pour une personne".into(),
@@ -384,12 +398,11 @@ fn validate_common(
             }
         },
         ContactType::Entreprise => {
-            let n = name.trim().to_string();
-            if n.is_empty() {
+            let Some(n) = optional_visible(Some(&name), "Raison sociale")? else {
                 return Err(AppError::Validation(
                     "La raison sociale est obligatoire pour une entreprise".into(),
                 ));
-            }
+            };
             (n, None, None)
         }
     };

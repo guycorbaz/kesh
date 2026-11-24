@@ -1,12 +1,15 @@
 [package]
 name = "kesh-report"
-version = "0.19.0"
+version = "0.19.1"
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
 kesh-core = { path = "../kesh-core" }
 kesh-db = { path = "../kesh-db" }
+# La largeur imprimée d'un texte en Helvetica (`kesh_qrbill::largeur_mm`) : les montants
+# des PDF s'alignent à droite sur le bord de leur colonne (correctif fix-pdf-montants-alignes).
+kesh-qrbill = { path = "../kesh-qrbill" }
 sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "mysql", "chrono", "rust_decimal", "macros"] }
 chrono = { version = "0.4", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
@@ -22,6 +25,9 @@ csv = "1.3"
 
 [dev-dependencies]
 rust_decimal_macros = "1.40"
+# Relire le titre des propriétés d'un PDF produit (correctif fix-pdf-montants-alignes) :
+# la version et les fonctions de `printpdf`, déjà au graphe, aucun paquet ajouté.
+lopdf = { version = "0.31", default-features = false, features = ["pom_parser"] }
 # Story 9-2a — benchmark des sérialiseurs PDF/CSV (AC #9, #30, #31).
 criterion = "0.5"
 

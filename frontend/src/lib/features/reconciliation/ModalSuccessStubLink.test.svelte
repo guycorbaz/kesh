@@ -8,9 +8,10 @@
 	type Props = {
 		open: boolean;
 		onSuccess: () => void;
+		onOpenChange?: (v: boolean) => void;
 		bankLedgerAccountId?: number | null;
 	};
-	let { open, onSuccess, bankLedgerAccountId }: Props = $props();
+	let { open, onSuccess, onOpenChange, bankLedgerAccountId }: Props = $props();
 </script>
 
-<ModalSuccessStub {open} {onSuccess} {bankLedgerAccountId} modal="link" />
+<ModalSuccessStub {open} {onSuccess} {onOpenChange} {bankLedgerAccountId} modal="link" />
