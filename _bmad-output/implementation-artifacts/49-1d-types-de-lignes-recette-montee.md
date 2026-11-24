@@ -381,24 +381,24 @@ hors tests ; V2-11) :
   `kesh-gate-logs/rel0200/recette-complement-rel0200.sh` (hors dépôt, comme `rel0190/recette-complement-rel0190.sh`), écrit et
   joué par cette story, rejoué par l'intégration ; conteneurs `kesh-rel0200c-*`, label `kesh.rel0200c`, base `mariadb:10.11` en
   tmpfs, valeurs factices ; il prend en argument le dossier `$D` laissé par la recette (AC10) et y lit `backup/pre-upgrade/`. **Un
-  seul jeu, le retour par `pre-upgrade/`** : une image 0.19.0 neuve, base vide, son administrateur créé au démarrage par
+  seul jeu, le retour par `pre-upgrade/`** : une image 0.19.1 neuve (0.19.0 avant la reprise du 2026-11-24), base vide, son administrateur créé au démarrage par
   `KESH_ADMIN_USERNAME` / `KESH_ADMIN_PASSWORD` (valeurs factices), importe la sauvegarde `pre-upgrade/` écrite par la montée par
   `POST /api/v1/admin/full-import` — la route qu'appelle le lien *Restaurer une sauvegarde* de l'assistant (`lib.rs:372` du tag,
   `frontend/src/lib/features/admin-restore/admin-restore.api.ts:64` du tag ; même route que le précédent,
   `rel0190/recette-complement-rel0190.sh:292`) (V2-5) : `200`, et l'empreinte des tables de `TABLES` égale **strictement** celle
   d'avant de la recette (`$D/journal/empreinte-avant/`).
-  **Le nom de la sauvegarde** (V3-1) : **exactement un** fichier `kesh-pre-upgrade-*-0.19.0-to-*.keshbackup` sous
+  **Le nom de la sauvegarde** (V3-1) : **exactement un** fichier `kesh-pre-upgrade-*-0.19.1-to-*.keshbackup` sous
   `$D/backup/pre-upgrade/`, sinon échec ; la version d'arrivée se relève du nom et doit égaler la version que le binaire neuf
   rend à `/health` (`routes/health.rs:25`, `env!("CARGO_PKG_VERSION")`), que la phase 2 de la recette écrit au journal
   (`$D/journal/health-binaire.json`, T3). Le nom vient de `crates/kesh-api/src/main.rs:179` `let vers = env!("CARGO_PKG_VERSION");`
   et de `pre_upgrade_backup.rs` (`kesh-pre-upgrade-{…}Z-{de}-to-{vers}.keshbackup`) : **à la tête de la story, les crates sont en
-  0.19.0** (`crates/kesh-api/Cargo.toml:3`) et le fichier finit par `-0.19.0-to-0.19.0.keshbackup` ; il ne finit par
-  `-0.19.0-to-0.20.0.keshbackup` qu'après le bump de `scripts/prepare-release.sh` (AC12).
+  0.19.1** depuis la reprise de `main` (`crates/kesh-api/Cargo.toml:3`) et le fichier finit par `-0.19.1-to-0.19.1.keshbackup` ; il ne finit par
+  `-0.19.1-to-0.20.0.keshbackup` qu'après le bump de `scripts/prepare-release.sh` (AC12).
   **Les PDF figés reviennent** (V3-4) : l'import remplace utilisateurs et société, et la session ouverte avant lui doit être
   rouverte (`admin-manual.tex`, juste avant `\subsubsection{Passer à la 0.20.0}`) ; le script fait donc, **après l'import, un
   nouveau login avec les identifiants de la base importée** — ceux de la recette, `admin` et le mot de passe factice de
   `scripts/recette-montee.sh:219-220` —, jamais avec le jeton d'avant l'import (V4-3). Puis il sert `GET
-  /api/v1/invoices/{id}/pdf` de F1, F5 et F7 par la 0.19.0 neuve, et leurs octets égalent ceux téléchargés en phase 1 de la
+  /api/v1/invoices/{id}/pdf` de F1, F5 et F7 par la 0.19.1 neuve, et leurs octets égalent ceux téléchargés en phase 1 de la
   recette (gardés sous `$D`) ; F8, dont le fichier manquait quand la montée a écrit la sauvegarde (D3), compte seulement si sa
   réponse est `410` **et** porte le code `INVOICE_PDF_GONE` (`crates/kesh-api/src/errors.rs:2835`) — attendu, et dit au
   journal ; un `401`, un `404` ou un `410` d'un autre code est un échec. Les tables seules ne verraient
@@ -515,7 +515,7 @@ ouvertes pour ce qui sort : #1445, #1446, #1447 (Dev Notes).
   Rust » et `mem-guard` (`docs/agents-orchestration.md:196`, ligne qui nomme les recettes de montée ; V2-10), depuis le worktree :
   ```sh
   flock /tmp/station-heavy.lock flock /home/gcorbaz/devel/kesh-gate-logs/.gate.lock scripts/mem-guard.sh scripts/recette-montee.sh \
-    --image gcorbaz/kesh:0.19.0 --binaire target/debug/kesh-api --static frontend/build \
+    --image gcorbaz/kesh:0.19.1 --binaire target/debug/kesh-api --static frontend/build \
     --port-api 3197 --port-base 3398 --migrations-attendues 1 \
     --diff-attendu migrations,invoice_lines,credit_note_lines,api \
     --apres ../kesh-gate-logs/rel0200/verifs-0200.sh --import --prefixe kesh-e491d
@@ -533,8 +533,8 @@ ouvertes pour ce qui sort : #1445, #1446, #1447 (Dev Notes).
   réelles ; la comparaison elle-même est éprouvée dans le script par le factice (S6).
   Après les rouges, `git status --porcelain` ne nomme pas la copie mutée.
 - **AC11 — Le retour du manuel (D11).** `kesh-gate-logs/rel0200/recette-complement-rel0200.sh` joué sur le `$D` de l'AC10 :
-  exactement une sauvegarde `kesh-pre-upgrade-*-0.19.0-to-*.keshbackup`, dont la version d'arrivée égale celle de `/health` du
-  binaire neuf (à la tête de la story : `-0.19.0-to-0.19.0`, D11), importée par `POST /api/v1/admin/full-import` dans une 0.19.0
+  exactement une sauvegarde `kesh-pre-upgrade-*-0.19.1-to-*.keshbackup`, dont la version d'arrivée égale celle de `/health` du
+  binaire neuf (à la tête de la story : `-0.19.1-to-0.19.1`, D11), importée par `POST /api/v1/admin/full-import` dans une 0.19.1
   neuve → `200`, empreinte égale **strictement** à celle d'avant ; nouveau login avec les identifiants de la recette, puis PDF de
   F1, F5, F7 servis à l'octet de la phase 1, F8 → `410` avec le code `INVOICE_PDF_GONE` (V3-4, V4-3). Texte du script et sortie (`recette-complement.log`) au Dev Agent Record.
 - **AC12 — Rejeu au dernier commit de code de la release.** La fiche et `docs/testing.md` disent que l'intégration de la 0.20.0
@@ -568,8 +568,8 @@ ouvertes pour ce qui sort : #1445, #1446, #1447 (Dev Notes).
   interrompue, refus d'une sauvegarde plus récente, rendu d'une désignation longue).
 - **AC14 — Manuel d'administration FR, section « Passer à la 0.20.0 »** (`docs/manual/fr/admin-manual.tex`, `.tex` seulement,
   sur le modèle de `:2564-2586`), **en tête** : « **Prenez avant la mise à jour une sauvegarde manuelle complète** — la base, un
-  `.keshbackup` et le dossier des documents » et « le retour à la 0.19.0 passe uniquement par la sauvegarde d'avant la mise à
-  jour » ; puis l'introduction (« La 0.20.0 se pose sur la 0.19.0 », ni compose ni variable neuve) ; **« Une migration »**
+  `.keshbackup` et le dossier des documents » et « le retour à la 0.19.1 passe uniquement par la sauvegarde d'avant la mise à
+  jour » ; puis l'introduction (« La 0.20.0 se pose sur la 0.19.1 », ni compose ni variable neuve) ; **« Une migration »**
   (`20261118000002\_invoice\allowbreak\_line\allowbreak\_types` ; le total, 96 à la tête de la story, est celui que recompte le
   rejeu, AC12 ; non breaking, `kesh_version_min_required` reste à `0.17.6` ; aucune valeur existante réécrite : la colonne neuve
   prend sa valeur par défaut, « ligne chiffrée », sur chaque ligne existante, `ADD COLUMN … DEFAULT 'priced'`, V3-6 ; sauvegarde
@@ -592,7 +592,7 @@ ouvertes pour ce qui sort : #1445, #1446, #1447 (Dev Notes).
   ci-dessus. Le paragraphe **ne reprend pas** la phrase de la 0.19.0 sur l'erreur `1060` (fausse pour cette migration, écrite pour se
   rejouer) et **ne prescrit aucun** `DELETE` sur `_sqlx_migrations` ;
   **« Ce qu'il faut savoir »** : factures et avoirs existants inchangés ; PDF archivé servi tel quel ; une facture jamais téléchargée,
-  une facture regelée et un avoir **se rendent au même dessin qu'en 0.19.0 pour des désignations de 44 caractères au plus** (en
+  une facture regelée et un avoir **se rendent au même dessin qu'en 0.19.1 pour des désignations de 44 caractères au plus** (en
   caractères courants : la forme de D1) ; **si la 49-4b est dans la release** (liste des stories fusionnées au dernier commit de
   code), la phrase nomme la dérogation de Guy : sur une facture jamais téléchargée, une facture regelée, **un avoir et un rappel**,
   une désignation de plus de 44 caractères s'imprime désormais en entier, sur plusieurs lignes, au lieu d'être coupée, et les
@@ -603,7 +603,7 @@ ouvertes pour ce qui sort : #1445, #1446, #1447 (Dev Notes).
   « Compatibilité » (`:2302`) gagne la phrase de la 0.20.0 : aucune table neuve, mais l'import compare aussi les **colonnes**
   (une colonne de la sauvegarde inconnue de la version qui l'importe, ou une colonne obligatoire absente de la sauvegarde) ; ce
   refus porte **son propre code**, `IMPORT\_SCHEMA\_MISMATCH`, et l'écran de restauration le dit « Schéma du backup incompatible
-  avec cette version de Kesh (table …) », en nommant la table (V3-2) ; une sauvegarde 0.19.0 s'importe dans la 0.20.0, ses lignes devenant
+  avec cette version de Kesh (table …) », en nommant la table (V3-2) ; une sauvegarde 0.19.1 s'importe dans la 0.20.0, ses lignes devenant
   chiffrées ; l'inverse est refusé (\S\ref{sec:maj-0-20-0}). Le manuel compile (`make fr` vert, `Overfull \hbox` relevés), **PDF non
   commité**.
 
@@ -663,7 +663,7 @@ tourne tout de même au dernier commit de code (AC16).
 
 ## Tâches
 
-- [ ] **T0 — Sonde, avant tout changement** (journal `kesh-gate-logs/e491d/t0/`) : `docker image inspect gcorbaz/kesh:0.19.0`
+- [ ] **T0 — Sonde, avant tout changement** (journal `kesh-gate-logs/e491d/t0/`) : `docker image inspect gcorbaz/kesh:0.19.1`
   (tirer si absente) ; `command -v mutool sha256sum` et `mutool -v` ; jouer **à la main**, contre une image 0.19.0 jetable (préfixe
   `kesh-e491dt0`, base `mariadb:10.11` en tmpfs), les gestes de D1 et le rapport de D10 que le script ne fait pas encore : compte
   bancaire principal et lien au `1020`, compte d'arrondi désigné, relevé saisi au jour (continuité de solde avec le relevé A : les
@@ -688,11 +688,11 @@ tourne tout de même au dernier commit de code (AC16).
   borne de `recette_montee_script.rs` (`timeout -k 10 600`, `:25`) relevée seulement si la mesure l'exige (dire la valeur).
 - [ ] **T7 — Crochet** `kesh-gate-logs/rel0200/verifs-0200.sh` (D7), texte intégral copié au Dev Agent Record.
 - [ ] **T8 — Recette réelle** (AC10), ses rouges réels R1 et R2, la sensibilité de la trame hors script ; copie mutée retirée.
-- [ ] **T9 — Script complémentaire** `kesh-gate-logs/rel0200/recette-complement-rel0200.sh` (D11, AC11) : nom `-0.19.0-to-*` et
+- [ ] **T9 — Script complémentaire** `kesh-gate-logs/rel0200/recette-complement-rel0200.sh` (D11, AC11) : nom `-0.19.1-to-*` et
   version d'arrivée égale à `/health`, import, empreinte stricte, **nouveau login après l'import** avec les identifiants de la
   recette (`admin`, mot de passe factice de `recette-montee.sh:219-220`), puis PDF de F1, F5, F7 à l'octet et F8 → `410` avec le
   code `INVOICE_PDF_GONE` (V4-3) ; joué avec son rouge,
-  texte et sortie au Dev Agent Record (à la tête de la story, le nom finit par `-0.19.0-to-0.19.0`, D11).
+  texte et sortie au Dev Agent Record (à la tête de la story, le nom finit par `-0.19.1-to-0.19.1`, D11).
 - [ ] **T10 — `docs/testing.md`** (AC13) ; grep du symptôme « aucun document » (`git grep -n -i -e "aucun document n'est peuplé" -e
   "vivent dans son" -- scripts docs crates`) : tous les sites traités.
 - [ ] **T11 — Manuel d'administration** (AC14) ; `make fr` sous le verrou de la voie « Frontend et manuels » et `mem-guard`
@@ -746,10 +746,10 @@ tourne tout de même au dernier commit de code (AC16).
 *(Pour le CHANGELOG, assemblée à l'intégration ; la story n'écrit pas `CHANGELOG.md`.)*
 
 > Le manuel d'administration décrit le passage à la 0.20.0 : la sauvegarde complète à prendre avant la mise à jour (base,
-> `.keshbackup` et dossier des documents), le retour à la 0.19.0 par cette sauvegarde, et la conduite à tenir si la migration
-> échoue au milieu. La montée a été éprouvée, depuis l'image publiée 0.19.0, sur une base de factures simulées — payées, impayées,
+> `.keshbackup` et dossier des documents), le retour à la 0.19.1 par cette sauvegarde, et la conduite à tenir si la migration
+> échoue au milieu. La montée a été éprouvée, depuis l'image publiée 0.19.1, sur une base de factures simulées — payées, impayées,
 > réglées en groupe, annulées par un avoir, au PDF archivé ou jamais téléchargé — : chacune reste identique, comme le rapport TVA ;
-> un PDF archivé est servi tel quel, et un PDF rendu de nouveau se dessine comme en 0.19.0 pour une désignation de 44 caractères au
+> un PDF archivé est servi tel quel, et un PDF rendu de nouveau se dessine comme en 0.19.1 pour une désignation de 44 caractères au
 > plus, en caractères courants. (refs #1242)
 
 *(Si la 49-4b entre dans la release, l'intégration ajoute la dérogation : sur une facture jamais téléchargée ou regelée, un avoir
