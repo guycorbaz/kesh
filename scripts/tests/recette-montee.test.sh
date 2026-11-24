@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# recette-montee.test.sh — éprouve `scripts/recette-montee.sh` avec `docker`, `curl` et
-# un binaire FACTICES, sur un mini-dépôt sous `mktemp -d` (Story 33-10, AC-5, AC-7).
+# recette-montee.test.sh — éprouve `scripts/recette-montee.sh` avec `docker`, `curl`,
+# `mutool` et un binaire FACTICES, sur un mini-dépôt sous `mktemp -d` (Story 33-10, AC-5,
+# AC-7 ; Story 49-1d, scénarios S1 à S14).
 #
 # L'environnement du script étant fermé, les factices ne reçoivent rien de lui : ils
 # lisent leur réglage (`conf`) et écrivent leurs journaux dans leur propre dossier.
@@ -647,6 +648,54 @@ avec --diff-attendu migrations,invoices; lancer "${AV[@]}"
 preparer "N_REEL=1" "ECART=invoices"
 avec --diff-attendu migrations,invoice; lancer "${AV[@]}"
 [ "$RC" -eq 12 ] && ok "un nom proche ne couvre pas" || fail "code $RC"
+
+# --- Story 49-1d : S1 à S14 ---------------------------------------------------------
+# Un scénario : réglages du factice, code attendu, texte que la sortie doit porter (vide : aucun),
+# puis `--` et les options du script.
+scenario() { # $1 = titre, $2 = code attendu, $3 = texte attendu, reste = conf… -- options…
+  local titre=$1 attendu=$2 texte=$3 conf=()
+  shift 3
+  while [ "$#" -gt 0 ] && [ "$1" != -- ]; do conf+=("$1"); shift; done
+  shift
+  preparer "N_REEL=1" "${conf[@]}"
+  lancer "$@"
+  if [ "$RC" -eq "$attendu" ] && { [ -z "$texte" ] || sortie_dit "$texte"; }; then ok "$titre (code $RC)"
+  else fail "$titre : code $RC au lieu de $attendu ; $(/usr/bin/grep -m1 'ÉCHEC\|refus' "$FX/sortie" || tail -1 "$FX/sortie")"; fi
+}
+RELEASE=(--diff-attendu migrations,invoice_lines,credit_note_lines,api)
+echo "  S1 à S4 : --diff-attendu n'admet qu'un ajout (D2)"
+scenario "S1 colonne ajoutée à invoice_lines, nommée" 0 "" ECART=invoice_lines -- "${BASE_ARGS[@]}" "${RELEASE[@]}"
+[ -s "$FX/mutool.log" ] && ok "S1 : le mutool factice est appelé" || fail "S1 : mutool factice jamais appelé"
+scenario "S2 valeur d'avant changée dans invoice_lines, nommée" 12 invoice_lines ECART_ANCIEN=invoice_lines -- "${BASE_ARGS[@]}" "${RELEASE[@]}"
+scenario "S3a clé d'avant changée dans api (rapport TVA compris), nommée" 12 "api (valeurs d'avant changées" ECART_ANCIEN=api -- "${BASE_ARGS[@]}" "${RELEASE[@]}"
+scenario "S3b clé ajoutée à api, nommée" 0 "" ECART=api -- "${BASE_ARGS[@]}" "${RELEASE[@]}"
+scenario "S3c objet devenu scalaire dans api, nommée" 12 "api (valeurs d'avant changées" ECART_TYPE=api -- "${BASE_ARGS[@]}" "${RELEASE[@]}"
+scenario "S4 credit_note_lines changée, non nommée" 12 credit_note_lines ECART_ANCIEN=credit_note_lines -- "${BASE_ARGS[@]}"
+echo "  S5, S8 : PDF archivés et regel (D4 a)"
+scenario "S5 PDF figé servi autrement" 12 "PDF archivé de F1" PDF_FIGE_ALTERE=oui -- "${BASE_ARGS[@]}"
+scenario "S8 regel refusé" 12 "regel de F8" REGEL_ECHEC=oui -- "${BASE_ARGS[@]}"
+echo "  S6, S7, S14 : rendus (D4 b, D5)"
+scenario "S6 trame différente, texte égal" 16 "F4 : page 1, trame différente" RENDU_ECART=oui -- "${BASE_ARGS[@]}"
+scenario "S7a texte sans le numéro de la pièce" 16 "0 paire(s)" RENDU_VIDE=oui -- "${BASE_ARGS[@]}"
+scenario "S7a' zéro page" 16 "0 paire(s)" PAGES=0 -- "${BASE_ARGS[@]}"
+scenario "S7b un 200 qui n'est pas un PDF" 11 "pas un PDF" PDF_PAS_PDF=oui -- "${BASE_ARGS[@]}"
+scenario "S14 sans --import : 5 paires" 0 "5 paires de rendus" -- "${BASE_ARGS[@]}"
+scenario "S14 une paire en moins" 16 "4 paire(s)" PAIRES_EN_MOINS=1 -- "${BASE_ARGS[@]}"
+echo "  S10 : préconditions et contrôles du peuplement (AC1, AC8)"
+scenario "S10 statuts clients" 11 "statuts clients" STATUTS_CLIENTS=validated,validated,draft,validated,validated,validated,validated,validated -- "${BASE_ARGS[@]}"
+scenario "S10 aucun avoir" 11 "avoir absent" NB_AVOIRS=0 -- "${BASE_ARGS[@]}"
+scenario "S10 aucun compte principal" 11 "compte bancaire principal" PRINCIPAL=0 -- "${BASE_ARGS[@]}"
+scenario "S10 aucun compte d'arrondi" 11 "différences d'arrondi" ARRONDI_COMPTE=null -- "${BASE_ARGS[@]}"
+scenario "S10 rapport TVA vide" 11 "rapport TVA sans chiffre d'affaires" TVA_VIDE=oui -- "${BASE_ARGS[@]}"
+echo "  S11 : mutool exigé (D9)"
+preparer "N_REEL=1"
+RC=0
+KESH_DOCKER="$FX/docker" KESH_CURL="$FX/curl" KESH_MUTOOL="$WORK/dehors/mutool-absent" RECETTE_RACINE_JETABLE="$WORK/jetable" \
+  bash "$DEPOT/scripts/recette-montee.sh" "${BASE_ARGS[@]}" > "$FX/sortie" 2>&1 || RC=$?
+[ "$RC" -eq 5 ] && sortie_dit "outil manquant : $WORK/dehors/mutool-absent" && [ ! -s "$FX/docker.log" ] \
+  && ok "S11 mutool introuvable : code 5, zéro appel docker" || fail "S11 : code $RC, $(wc -l < "$FX/docker.log") appels docker"
+echo "  S12 : import dans un dossier des documents neuf (D6)"
+scenario "S12 PDF figé de l'archive servi autrement" 15 "PDF archivé de F5" PDF_IMPORT_ALTERE=oui -- "${BASE_ARGS[@]}" --import
 
 echo "  journal du binaire"
 preparer "N_REEL=1" "ERREUR_JOURNAL=oui"
