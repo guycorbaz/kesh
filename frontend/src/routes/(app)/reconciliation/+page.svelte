@@ -12,6 +12,7 @@
 		type BankAccountOptionSource,
 	} from '$lib/features/bank-accounts/format';
 	import type { CompanyCurrentResponse } from '$lib/features/settings/settings.types';
+	import { withoutProviders } from '$lib/features/bank-accounts/provider';
 
 	// Story 26-2b (#622, C-26-2-18) — type partagé : `description` obligatoire.
 	let bankAccounts = $state<Array<BankAccountOptionSource & { id: number }>>([]);
@@ -21,7 +22,10 @@
 	onMount(async () => {
 		try {
 			const company = await apiClient.get<CompanyCurrentResponse>('/api/v1/companies/current');
-			bankAccounts = company.bankAccounts ?? [];
+			// Story 38-11d (AC-1) — un compte de prestataire (PayPal) se rapproche par sa
+			// page : ici, un compte PayPal en CHF recevrait des propositions génériques que
+			// le serveur ne refuse pas toutes (angle mort de 38-11b, AC-3 b).
+			bankAccounts = withoutProviders(company.bankAccounts ?? []);
 			if (bankAccounts.length > 0) selectedId = bankAccounts[0].id;
 		} catch {
 			bankAccounts = [];

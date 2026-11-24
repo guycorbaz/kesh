@@ -794,3 +794,68 @@ async fn companies_current_porte_la_description_des_comptes(pool: MySqlPool) {
     );
     assert_eq!(sans["description"], serde_json::Value::Null);
 }
+
+/// Story 38-11d (AC-1) — `GET /companies/current` porte le prestataire de
+/// chaque compte bancaire (`"paypal"`, `null` pour un compte ordinaire) : les
+/// écrans d'import bancaire et de réconciliation, qui lisent cette liste,
+/// écartent les comptes de prestataire.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn companies_current_porte_le_prestataire_des_comptes(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    create_test_company(&pool).await;
+    let company_id: i64 = sqlx::query_scalar("SELECT id FROM companies LIMIT 1")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    ensure_admin_user(&pool, &test_config()).await.unwrap();
+    let ledger_id: i64 = sqlx::query_scalar(
+        "INSERT INTO accounts (company_id, number, name, account_type) \
+         VALUES (?, '1031', 'PayPal', 'Asset') RETURNING id",
+    )
+    .bind(company_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO bank_accounts (company_id, bank_name, iban, is_primary) \
+         VALUES (?, 'UBS', 'CH9300762011623852957', FALSE)",
+    )
+    .bind(company_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO bank_accounts (company_id, bank_name, is_primary, journal_account_id, \
+         provider, provider_account) VALUES (?, 'PayPal', FALSE, ?, 'paypal', 'PayPal www')",
+    )
+    .bind(company_id)
+    .bind(ledger_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let token = login(&app).await;
+
+    let resp = app
+        .client
+        .get(app.url("/api/v1/companies/current"))
+        .header("Authorization", format!("Bearer {token}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    let accounts = body["bankAccounts"].as_array().unwrap();
+    let by_name = |name: &str| {
+        accounts
+            .iter()
+            .find(|a| a["bankName"] == name)
+            .unwrap_or_else(|| panic!("compte {name} absent : {body}"))
+    };
+    assert_eq!(by_name("PayPal")["provider"], "paypal");
+    let ubs = by_name("UBS");
+    assert!(
+        ubs.as_object().unwrap().contains_key("provider"),
+        "clé provider absente : {ubs}"
+    );
+    assert_eq!(ubs["provider"], serde_json::Value::Null);
+}
