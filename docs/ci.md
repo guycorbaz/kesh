@@ -50,7 +50,8 @@ pourrait venir d'une route ouverte). C'est le mode d'échec de l'issue #285 : un
 partout, et rien ne signalait une suite qui cessait de tourner. La **suite complète** reste locale, avant tout push
 (`CLAUDE.md` § E2E).
 
-Montage : connexion Docker Hub, `setup-buildx`, reconstruction de l'image de la PR depuis le cache `gha` laissé par
+Montage : sur une PR de fork, MariaDB par `docker run` depuis le miroir ECR (le service est désactivé) ; connexion Docker
+Hub (sautée sans secret, PR de fork : images de base par le miroir ECR, `moby/buildkit` par `mirror.gcr.io`), `setup-buildx`, reconstruction de l'image de la PR depuis le cache `gha` laissé par
 `docker-build` (`load: true`), puis `docker run --network=host` avec `KESH_TEST_MODE=true`, `KESH_HOST=127.0.0.1` (le
 mode test refuse un bind non-loopback), `KESH_COOKIE_SECURE=false` (HTTP), `KESH_PORT=3000` et
 `DATABASE_URL=mysql://kesh:kesh_dev@127.0.0.1:3306/kesh` — le service MariaDB du job, utilisateur `kesh` aux droits de
@@ -187,26 +188,89 @@ les secrets `DOCKERHUB_USERNAME` et `DOCKERHUB_TOKEN`, configurés au niveau du 
 variables → Actions ; à renouveler chaque année ou en cas d'exposition). Auparavant, le service `mariadb:10.11` était
 tiré **anonymement**, et un `429` de Docker Hub faisait échouer le job `backend` sans rapport avec le diff.
 
-| Où | Ce qui est tiré | Comment c'est authentifié |
-|---|---|---|
-| `ci.yml`, job `backend` | service `mariadb:10.11` | `services.mariadb.credentials` |
-| `ci.yml`, job `e2e-smoke` | service `mariadb:10.11` ; images de base du `Dockerfile` ; `moby/buildkit` | `credentials` + `docker/login-action` |
-| `ci.yml`, job `docker-build` | images de base du `Dockerfile` (`rust`, `node`, `debian`) ; `moby/buildkit` | `docker/login-action` |
-| `release.yml`, job `docker` | service `mariadb:10.11` ; images de base ; `moby/buildkit` ; puis le push | `credentials` + `docker/login-action` |
+| Où | Ce qui est tiré | Comment c'est authentifié | PR de fork (sans secret) |
+|---|---|---|---|
+| `ci.yml`, job `backend` | service `mariadb:10.11` | `services.mariadb.credentials` | service désactivé ; `public.ecr.aws/docker/library/mariadb:10.11` par `docker run`, anonyme |
+| `ci.yml`, job `e2e-smoke` | service `mariadb:10.11` ; images de base du `Dockerfile` ; `moby/buildkit` | `credentials` + `docker/login-action` | service désactivé, MariaDB par `docker run` ; MariaDB et images de base par ECR, `moby/buildkit` par `mirror.gcr.io`, anonymes |
+| `ci.yml`, job `docker-build` | images de base du `Dockerfile` (`rust`, `node`, `debian`) ; `moby/buildkit` | `docker/login-action` | images de base par ECR, `moby/buildkit` par `mirror.gcr.io`, anonymes |
+| `release.yml`, job `docker` | service `mariadb:10.11` ; images de base ; `moby/buildkit` ; puis le push | `credentials` + `docker/login-action` | sans objet : déclenché par un tag du dépôt |
 
 - **La connexion précède `docker/setup-buildx-action`** dans les trois jobs qui construisent : le builder
-  `docker-container` tire `moby/buildkit` depuis Docker Hub à cette étape. ⚠️ Que ce tirage profite de la connexion est
+  `docker-container` tire `moby/buildkit` depuis Docker Hub à cette étape (avec le secret ; sans lui, de
+  `mirror.gcr.io`, ci-dessous). ⚠️ Que ce tirage profite de la connexion est
   une **hypothèse** sur le comportement de l'action, à constater au journal du premier run (tirage authentifié ou non) —
   non vérifiée localement.
-- **Les PR issues de forks et de Dependabot n'ont pas accès aux secrets** : elles échouent au démarrage du service ou à
-  l'étape de connexion — échec **bruyant**, jamais un faux vert. Aucun contournement conditionnel n'est écrit (C-31-2-3 :
-  dépôt tenu par un seul développeur, sans fork actif ni `dependabot.yml`). Si le dépôt accepte un jour des PR externes,
-  le repli noté est `image: mirror.gcr.io/library/mariadb:10.11`, sans secret — non adopté, la provenance de l'image n'étant
-  plus celle du Docker Hub officiel.
+- **Les PR issues de forks tournent sans secret, par le miroir public ECR** (C-31-2-3, révisé le 2026-11-24 sur décision
+  du mainteneur : le dépôt reçoit désormais des PR de contributeurs, depuis leur fork). Ni `pull_request_target`, ni
+  secret exposé : la CI d'un fork reste un `pull_request` ordinaire, en lecture seule. Les règles :
+  - **Le service MariaDB** (jobs `backend` et `e2e-smoke`) reste un `services:` tiré de Docker Hub avec ses
+    `credentials` sur `main` et les branches du dépôt. Sur une PR de fork, son image vaut `''` : un service d'image vide
+    ne démarre pas, et MariaDB démarre à la place par l'étape « Start MariaDB (PR de fork) », qui lance
+    `scripts/ci-mariadb-fork.sh` : `docker run` de `public.ecr.aws/docker/library/mariadb:10.11`, sans authentification,
+    avec les mêmes variables, le même port (3306 publié sur l'hôte) et le même contrôle de santé, attendu « healthy »
+    avant la suite. Le script est testé sur toute PR par `scripts/tests/ci-mariadb-fork.test.sh` (étape « Tests du
+    démarrage MariaDB de fork » du job `backend`), qui compare aussi ses valeurs à celles des deux `services:`. La
+    décision se lit dans le contexte `github`
+    (`github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository`) :
+    `jobs.<id>.services` n'a pas accès à `secrets`. La comparaison des noms couvre aussi un fork supprimé
+    (`head.repo` nul), que `head.repo.fork` laisserait passer pour une branche du dépôt ; la garde sur l'événement
+    empêche un `push` (sans `pull_request`) d'être pris pour un fork.
+    **Pourquoi ne pas garder le service sur un fork** : ses `credentials` y vaudraient `''`, et le modèle du job, évalué
+    avant toute étape, peut refuser des chaînes vides pour `username` et `password` (`Unexpected value ''`) — ce que le
+    code du runner qui ignore des identifiants vides (`ContainerRegistryLogin`, `actions/runner`) ne rattrape pas, puisqu'il
+    s'exécute après. Sur un fork, les `credentials` reçoivent donc une valeur de remplissage (`sans-objet`), jamais
+    employée puisque le service ne démarre pas ; sur une PR du dépôt sans secret (Dependabot), ils restent vides, comme
+    avant. Aucun job n'est dédoublé ni sauté : les noms des quatre checks requis ne changent pas.
+  - **Les connexions `docker/login-action`** (jobs `docker-build` et `e2e-smoke`) ne tournent que si le secret est
+    présent : le job pose `HAS_DH: ${{ secrets.DOCKERHUB_TOKEN != '' }}` dans son `env`, et l'étape teste
+    `env.HAS_DH == 'true'` (`secrets` n'est pas lisible dans un `if:` d'étape ; le booléen ne livre pas la valeur du
+    secret). Sans secret, le build passe `REGISTRY=public.ecr.aws/docker/library` au `Dockerfile`, dont les trois `FROM`
+    lisent `${REGISTRY}` (défaut `docker.io/library`, la même référence que `rust:…` seul, gardé par G21 dans
+    `textes_coherents.rs`), et `setup-buildx-action` reçoit `driver-opts: image=mirror.gcr.io/moby/buildkit:buildx-stable-1` ;
+    avec le secret, `build-args` et `driver-opts` sont vides et le build de `main` et des branches du dépôt reste celui
+    d'avant. Aucun push dans `ci.yml`.
+  - **Deux critères, gardés tels quels** : le service MariaDB suit le critère « fork » (contexte `github`, seul lisible
+    dans `services`), la connexion et le build suivent le critère « secret » (`HAS_DH`). Ils coïncident sur une PR de
+    fork et sur une PR ou un `push` du dépôt quand le secret existe. Ils divergent dans deux cas, écrits ici : une PR
+    **Dependabot** (du dépôt, sans les secrets d'Actions), et un `push` sur `main` si le secret `DOCKERHUB_TOKEN` a été
+    **supprimé** (non seulement invalidé). Dans les deux, la connexion est sautée **sans signal**, le build passe par
+    ECR et `mirror.gcr.io`, et le service est tiré de Docker Hub (sans authentification si les `credentials` vides
+    sont acceptés) ; rien de faux n'est publié
+    (`release.yml` n'est pas touché), mais la provenance du build de contrôle change. Un secret **invalide**, lui,
+    échoue toujours bruyamment à la connexion.
+  - **`moby/buildkit`** : `public.ecr.aws/docker/library` ne sert que les images officielles, et `moby/buildkit` n'en est
+    pas une. Il est tiré de `mirror.gcr.io/moby/buildkit:buildx-stable-1`, le miroir de Docker Hub tenu par Google, sans
+    authentification. Relevé le 2026-11-24 : tiré sans identifiants, même empreinte d'index
+    (`sha256:baf6138e…`) que `docker.io/moby/buildkit:buildx-stable-1` lue sur Docker Hub (et que
+    `public.ecr.aws/vend/moby/buildkit`, miroir tiers, écarté). `mirror.gcr.io` ne garde que les images demandées
+    souvent : si l'étiquette en sortait, le builder échouerait à démarrer, bruyamment.
+  - **Le cache `type=gha`** d'une PR (fork ou non) lit celui de sa base et n'écrit que dans la portée de la PR
+    (`refs/pull/N/merge`), invisible des autres ; GitHub ne dit pas si une PR de fork peut y écrire : `cache-to` porte
+    donc `ignore-error=true` sans secret, pour qu'une écriture refusée ne fasse pas échouer le build. Si elle est
+    refusée, `e2e-smoke` ne trouve pas les couches de `docker-build` et reconstruit l'image entière, au risque de son
+    délai de 25 min. Le cache Rust (`Swatinem/rust-cache`) n'est de toute façon écrit que depuis `main`.
+  - **Provenance** : `public.ecr.aws/docker/library` est le miroir des images officielles Docker que tient AWS, et
+    `mirror.gcr.io` celui de Docker Hub que tient Google ; ils servent les mêmes images que Docker Hub, mais ce n'est pas
+    Docker Hub. Ils ne servent que les builds sans secret, jamais la release. *(Le repli noté jusque-là pour le service,
+    `mirror.gcr.io`, n'a pas été retenu pour les images officielles : il ne sert ici que `moby/buildkit`.)*
+  - ⚠️ **Non éprouvé sur GitHub à la rédaction** : contrôlés en local, la syntaxe (`actionlint` 1.7.7), le build du
+    `Dockerfile` avec `REGISTRY=public.ecr.aws/docker/library` et le tirage anonyme des images des deux miroirs ; le
+    premier run d'une PR de fork constatera le reste — service d'image vide non démarré et `credentials` de
+    remplissage acceptés, MariaDB par `docker run` (essayé en local : « healthy » en une dizaine de secondes, connexion
+    en `kesh`), tirages anonymes au journal, connexions sautées, builder sur `mirror.gcr.io`, cache `gha`.
+
+  *(Jusqu'au 2026-11-24, ce paragraphe disait : « Les PR issues de forks et de Dependabot n'ont pas accès aux secrets :
+  elles échouent au démarrage du service ou à l'étape de connexion — échec bruyant, jamais un faux vert. Aucun
+  contournement conditionnel n'est écrit (C-31-2-3 : dépôt tenu par un seul développeur, sans fork actif ni
+  `dependabot.yml`). » Sur la PR #1467, venue d'un fork, `Backend (Rust)` a bien été rouge ; la cause exacte — modèle
+  refusé sur des `credentials` vides, ou tirage anonyme refusé — n'est pas relevée ici, faute du journal. Le démarrage
+  par `docker run` sur un fork vaut dans les deux cas.)*
 - **Un jeton invalide bloque les fusions.** La branche protégée `main` exige **quatre** vérifications
   (`gh api repos/guycorbaz/kesh/branches/main/protection/required_status_checks` : `Backend (Rust)`, `Docker build
   (sanity)`, `Frontend (Svelte)`, et `E2E smoke (Playwright)` depuis le 2026-10-24) ; les deux premières dépendent du jeton (service `credentials`, connexion). Un jeton
   expiré se voit donc à la première PR qui suit, par un rouge de démarrage — renouveler le secret, ne pas relancer.
+  ⚠️ Un secret **supprimé** ne bloque plus rien : la connexion est sautée et le build passe par les miroirs (ci-dessus,
+  « Deux critères »).
 
 ## Timeouts et concurrency
 
