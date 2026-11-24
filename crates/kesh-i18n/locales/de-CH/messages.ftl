@@ -1811,6 +1811,7 @@ error-provider-api-error = Der Zahlungsdienstleister hat die Anfrage abgelehnt. 
 # Story 38-11c2 — revue et acceptation d’un compte de prestataire (codes servis à l’écran, 38-11d)
 provider-failed-proposal-stale = Dieser Vorschlag gilt nicht mehr: Transaktion, Buchung, Regel oder Kontoeinstellungen haben sich seit der Durchsicht geändert. Laden Sie die Durchsicht neu.
 paypal-failed-counterparty-currency-mismatch = Diese Regel bezeichnet ein Konto in { $accountCurrency }: Sie gilt nur für Transaktionen in { $accountCurrency }, diese ist aber in { $transactionCurrency }. Wählen Sie ein Konto in CHF oder in der Währung der Transaktion.
+paypal-failed-already-posted = Die Transaktion ist bereits verbucht (die Gegenseite ist mit ihrer Buchung verknüpft): Es wurde nichts gebucht. Laden Sie die Seite neu und verknüpfen Sie sie mit dieser Buchung.
 provider-review-ambiguous-sale = Mehrere Verkaufsbuchungen tragen diese Kennung: Wählen Sie die zuzuordnende.
 provider-review-fee-account-missing = Gebühr ohne Gebührenkonto: Legen Sie das Gebührenkonto des Bankkontos fest.
 error-bank-account-is-provider = Dieses Konto ist der Saldo eines Zahlungsdienstleisters: Es erhält weder Bankauszug noch Rechnungszahlung. Importieren Sie seinen Auszug über seine Route und begleichen Sie die Rechnung über ein internes Konto oder eine Buchung; verknüpfen Sie danach die Transaktion.
@@ -2018,6 +2019,8 @@ paypal-to-review-fee-account-missing = Gebührenkonto nicht eingestellt
 paypal-to-review-conversion-unpaired = Umrechnung ohne Gegenstück
 paypal-to-review-withdrawal-foreign-currency = Abhebung von einem Fremdwährungsguthaben: Buchung von Hand
 paypal-to-review-no-rule = Keine Regel
+paypal-to-review-already-posted = Bereits verbucht: Die Buchung besteht und die Gegenseite ist mit ihr verknüpft. Verknüpfen Sie diese Transaktion mit der Buchung, buchen Sie sie nicht ein zweites Mal.
+paypal-to-review-entry-link = Bereits erfasste Buchung
 paypal-action-link-entry = Der Buchung Nr. { $number } zugeordnet
 paypal-action-fee = Buchung auf das Gebührenkonto { $account }
 paypal-action-rule = Buchung auf das Gegenkonto { $account }

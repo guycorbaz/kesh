@@ -1155,36 +1155,15 @@ pub async fn count_already_booked_for_page(
     let mut amounts: Vec<Decimal> = linkable.iter().map(|t| t.amount).collect();
     amounts.sort();
     amounts.dedup();
-    let placeholders = vec!["?"; amounts.len()].join(", ");
-    let sql = format!(
-        "SELECT m.movement, \
-                CAST(({}) AS SIGNED) AS candidate, \
-                CAST({HAS_LINK} AS SIGNED) AS linked \
-         {} \
-         WHERE e.company_id = ? \
-           AND m.movement IN ({placeholders}) \
-           AND {ENTRY_NOT_REVERSED_NOR_SETTLEMENT}",
-        linkable_side(),
-        entry_movements(MovementKind::of(ledger_currency)),
-    );
-    // Ordre des `?` dans le texte : condition 4 (compte bancaire, devise,
-    // devise — la devise des transactions de la page, celle du compte du grand
-    // livre après la condition 1), `entry_movements` (grand livre), société,
-    // montants, condition 6 (compte bancaire).
-    let mut q = sqlx::query_as::<_, (Decimal, i64, i64)>(&sql)
-        .bind(bank_account_id)
-        .bind(ledger_currency)
-        .bind(ledger_currency)
-        .bind(bank_ledger_account_id)
-        .bind(company_id);
-    for amount in &amounts {
-        q = q.bind(*amount);
-    }
-    let entries = q
-        .bind(bank_account_id)
-        .fetch_all(pool)
-        .await
-        .map_err(map_db_error)?;
+    let entries = page_entry_rows(
+        pool,
+        company_id,
+        bank_account_id,
+        bank_ledger_account_id,
+        ledger_currency,
+        &amounts,
+    )
+    .await?;
 
     let cap = |n: usize, limit: i64| n.min(limit as usize);
     for t in linkable {
@@ -1201,9 +1180,9 @@ pub async fn count_already_booked_for_page(
         };
         let candidates = entries
             .iter()
-            .filter(|(m, candidate, _)| *m == t.amount && *candidate != 0);
+            .filter(|r| r.movement == t.amount && r.candidate);
         let entry_count = candidates.clone().count();
-        let matched_elsewhere_count = candidates.filter(|(_, _, linked)| *linked != 0).count();
+        let matched_elsewhere_count = candidates.filter(|r| r.linked).count();
         counts.insert(
             t.id,
             AlreadyBookedCounts {
@@ -1214,6 +1193,144 @@ pub async fn count_already_booked_for_page(
         );
     }
     Ok(counts)
+}
+
+/// Une écriture lue par [`page_entry_rows`] : son identifiant, son mouvement
+/// `M`, et les deux conditions évaluées en SQL.
+#[derive(Debug, Clone, Copy)]
+struct PageEntryRow {
+    /// L'écriture.
+    entry_id: i64,
+    /// `M`, son mouvement sur le compte du grand livre.
+    movement: Decimal,
+    /// La condition 4 de la liste ([`linkable_side`]).
+    candidate: bool,
+    /// [`HAS_LINK`] : déjà rapprochée d'une transaction.
+    linked: bool,
+}
+
+/// Les écritures dont `M` égale l'un des montants `amounts` (conditions 2, 3,
+/// 5, 6), avec, en colonnes, la condition 4 de la liste ([`linkable_side`]) et
+/// le lien existant ([`HAS_LINK`]) — la lecture par page, **un seul texte**,
+/// de [`count_already_booked_for_page`] et de [`matched_elsewhere_for_page`].
+/// `amounts` non vide. Lecture ordinaire, sans verrou.
+async fn page_entry_rows<'e, E>(
+    executor: E,
+    company_id: i64,
+    bank_account_id: i64,
+    bank_ledger_account_id: i64,
+    ledger_currency: &str,
+    amounts: &[Decimal],
+) -> Result<Vec<PageEntryRow>, DbError>
+where
+    E: sqlx::Executor<'e, Database = MySql>,
+{
+    let placeholders = vec!["?"; amounts.len()].join(", ");
+    let sql = format!(
+        "SELECT e.id, m.movement, \
+                CAST(({}) AS SIGNED) AS candidate, \
+                CAST({HAS_LINK} AS SIGNED) AS linked \
+         {} \
+         WHERE e.company_id = ? \
+           AND m.movement IN ({placeholders}) \
+           AND {ENTRY_NOT_REVERSED_NOR_SETTLEMENT} \
+         ORDER BY e.id",
+        linkable_side(),
+        entry_movements(MovementKind::of(ledger_currency)),
+    );
+    // Ordre des `?` dans le texte : condition 4 (compte bancaire, devise,
+    // devise — la devise des transactions de la page, celle du compte du grand
+    // livre après la condition 1), `entry_movements` (grand livre), société,
+    // montants, condition 6 (compte bancaire).
+    let mut q = sqlx::query_as::<_, (i64, Decimal, i64, i64)>(&sql)
+        .bind(bank_account_id)
+        .bind(ledger_currency)
+        .bind(ledger_currency)
+        .bind(bank_ledger_account_id)
+        .bind(company_id);
+    for amount in amounts {
+        q = q.bind(*amount);
+    }
+    let rows = q
+        .bind(bank_account_id)
+        .fetch_all(executor)
+        .await
+        .map_err(map_db_error)?;
+    Ok(rows
+        .into_iter()
+        .map(|(entry_id, movement, candidate, linked)| PageEntryRow {
+            entry_id,
+            movement,
+            candidate: candidate != 0,
+            linked: linked != 0,
+        })
+        .collect())
+}
+
+/// Pour chaque transaction de `transactions` (toutes du compte bancaire
+/// `bank_account_id`, `DbError::Invariant` sinon) qui a **au moins** une
+/// écriture de [`find_matched_elsewhere`] — l'autre côté d'un virement déjà
+/// rapproché —, la plus ancienne de ces écritures (plus petit identifiant).
+/// Correctif « une transaction de prestataire n'est écrite qu'une fois » :
+/// la revue d'un prestataire n'écrit pas de nouveau une transaction déjà
+/// comptabilisée de l'autre côté (typiquement : son propre lien retiré par
+/// l'annulation d'un seul côté, `reconciliation_cancel`, l'écriture restant
+/// rapprochée de la réception). Les **mêmes** conditions que
+/// [`find_matched_elsewhere`] ([`page_entry_rows`] : `candidate` et `linked`),
+/// lues par page comme [`count_already_booked_for_page`] ; une transaction
+/// que la condition 1 écarte ([`transaction_can_be_linked_to_entry`]) est
+/// absente. Lecture ordinaire, sans verrou, générique sur l'exécuteur (la revue
+/// la fait dans sa transaction de lecture).
+pub async fn matched_elsewhere_for_page<'e, E>(
+    executor: E,
+    company_id: i64,
+    bank_account_id: i64,
+    bank_ledger_account_id: i64,
+    ledger_currency: &str,
+    transactions: &[BankTransaction],
+) -> Result<std::collections::HashMap<i64, i64>, DbError>
+where
+    E: sqlx::Executor<'e, Database = MySql>,
+{
+    if let Some(t) = transactions
+        .iter()
+        .find(|t| t.bank_account_id != bank_account_id)
+    {
+        return Err(DbError::Invariant(format!(
+            "matched_elsewhere_for_page : transaction {} d'un autre compte bancaire",
+            t.id
+        )));
+    }
+    let linkable: Vec<&BankTransaction> = transactions
+        .iter()
+        .filter(|t| transaction_can_be_linked_to_entry(t, ledger_currency))
+        .collect();
+    let mut out = std::collections::HashMap::new();
+    if linkable.is_empty() {
+        return Ok(out);
+    }
+    let mut amounts: Vec<Decimal> = linkable.iter().map(|t| t.amount).collect();
+    amounts.sort();
+    amounts.dedup();
+    let rows = page_entry_rows(
+        executor,
+        company_id,
+        bank_account_id,
+        bank_ledger_account_id,
+        ledger_currency,
+        &amounts,
+    )
+    .await?;
+    for t in linkable {
+        // Lignes triées par identifiant : la première est la plus ancienne.
+        if let Some(r) = rows
+            .iter()
+            .find(|r| r.movement == t.amount && r.candidate && r.linked)
+        {
+            out.insert(t.id, r.entry_id);
+        }
+    }
+    Ok(out)
 }
 
 /// Ce qu'on demande à [`link_entry_in_tx`].

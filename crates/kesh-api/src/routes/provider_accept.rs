@@ -89,7 +89,7 @@ use kesh_db::repositories::journal_entry_conversions::{
     ConversionErrorKind, create_provider_conversion_in_tx,
 };
 use kesh_db::repositories::reconciliation_link::{
-    LinkEntryRequest, LinkRefusal, link_entry_in_tx, lock_entries_for_update,
+    self, LinkEntryRequest, LinkRefusal, link_entry_in_tx, lock_entries_for_update,
 };
 use kesh_db::repositories::{
     audit_log, fiscal_years, journal_entries, projects, provider_review as reads,
@@ -98,9 +98,9 @@ use kesh_db::repositories::{
 use kesh_db::retry::is_deadlock_error;
 use kesh_reconciliation::conversion::{ConversionSide, PlanError, SourceRate, plan_conversion};
 use kesh_reconciliation::provider_review::{
-    EntryKind, Proposal, ProviderAccount, ProviderKind, ProviderSpec, Review, ReviewFinding,
-    ReviewInput, ReviewProposal, SaleEntry, SaleMovement, admits_link, admits_rule, build_review,
-    conversion_halves, counts, payment_date,
+    EntryKind, FAILED_ALREADY_POSTED, Proposal, ProviderAccount, ProviderKind, ProviderSpec,
+    Review, ReviewFinding, ReviewInput, ReviewProposal, SaleEntry, SaleMovement, admits_link,
+    admits_rule, build_review, conversion_halves, counts, payment_date,
 };
 use kesh_reconciliation::{ReconciliationError, rule_matches, with_account_locks};
 use rust_decimal::Decimal;
@@ -188,6 +188,11 @@ pub struct LoadedReview {
     pub balances: Vec<ProviderBalance>,
     /// Les transactions pending revues.
     pub pending: Vec<BankTransaction>,
+    /// Celles qui sont **déjà comptabilisées** de l'autre côté : transaction →
+    /// écriture ([`already_posted_in_review`]). La revue commune s'en sert pour
+    /// les genres qui écrivent ; un prestataire qui décide d'un genre propre
+    /// qui écrit la lit ici (`ReviewFinding::already_posted`).
+    pub already_posted: HashMap<i64, i64>,
 }
 
 /// Les comptes du prestataire, en paramètre de la revue pure.
@@ -307,6 +312,7 @@ pub async fn load_review_in_tx(
     let rules = reconciliation_rules::find_active_for_company(&mut **tx, company_id).await?;
     let rule_account_ids = reads::rule_account_ids(&mut **tx, company_id).await?;
     let primary = reads::primary_ledger_account_id(&mut **tx, company_id).await?;
+    let already_posted = already_posted_in_review(tx, company_id, &balances, &pending).await?;
 
     let review = build_review(
         &ReviewInput {
@@ -317,6 +323,7 @@ pub async fn load_review_in_tx(
             rules: &rules,
             rule_account_ids: &rule_account_ids,
             primary_ledger_account_id: primary,
+            already_posted: &already_posted,
         },
         spec,
     );
@@ -324,7 +331,54 @@ pub async fn load_review_in_tx(
         review,
         balances,
         pending,
+        already_posted,
     })
+}
+
+/// Les transactions `pending` **déjà comptabilisées** de l'autre côté
+/// (correctif « une transaction de prestataire n'est écrite qu'une fois ») :
+/// pour chaque compte bancaire du prestataire lié à un compte du plan, une
+/// lecture par page
+/// ([`reconciliation_link::matched_elsewhere_for_page`]) — l'écriture
+/// vivante dont le mouvement sur ce compte du plan égale le montant de la
+/// transaction et qui est déjà rapprochée de **l'autre côté** (un autre
+/// compte bancaire, montant opposé ; la règle de l'annulation qui ne retire
+/// que le lien, `reconciliation_cancel`, et du signal « déjà comptabilisée »
+/// de la réconciliation, Story 34-4). **Lien structuré** : l'écriture et ses
+/// transactions, jamais le libellé. Dans la transaction de lecture de la
+/// revue.
+async fn already_posted_in_review(
+    tx: &mut sqlx::Transaction<'_, MySql>,
+    company_id: i64,
+    balances: &[ProviderBalance],
+    pending: &[BankTransaction],
+) -> Result<HashMap<i64, i64>, AppError> {
+    let mut out = HashMap::new();
+    for b in balances {
+        let Some(ledger) = b.account.journal_account_id else {
+            continue;
+        };
+        let page: Vec<BankTransaction> = pending
+            .iter()
+            .filter(|t| t.bank_account_id == b.account.id)
+            .cloned()
+            .collect();
+        if page.is_empty() {
+            continue;
+        }
+        out.extend(
+            reconciliation_link::matched_elsewhere_for_page(
+                &mut **tx,
+                company_id,
+                b.account.id,
+                ledger,
+                b.currency(),
+                &page,
+            )
+            .await?,
+        );
+    }
+    Ok(out)
 }
 
 /// La revue complète d'un prestataire **sans genre propre** (PayPal) : une
@@ -1027,6 +1081,43 @@ pub async fn rejudge<'a>(
     })
 }
 
+/// [`rejudge`], puis la règle « écrite une seule fois », pour les genres qui
+/// **écrivent** (frais, règle, retrait, conversion ; le versement Stripe) :
+/// une transaction **déjà comptabilisée** de l'autre côté
+/// ([`reconciliation_link::find_matched_elsewhere`], la règle de la revue lue
+/// sous les verrous du lot) → [`FAILED_ALREADY_POSTED`] (`details: {
+/// journalEntryId }`, la plus ancienne), sans rien écrire. Lecture non
+/// verrouillante des écritures : le verrou nommé du compte de la transaction,
+/// que le lot tient, exclut une acceptation, un rattachement ou une annulation
+/// concurrents sur ce compte ; l'autre côté (la réception) peut se rattacher
+/// en même temps depuis son propre compte — sens sûr pour la règle seulement
+/// s'il est visible, angle mort assumé sinon (fenêtre d'une transaction).
+pub async fn rejudge_writing<'a>(
+    tx: &mut sqlx::Transaction<'_, MySql>,
+    ctx: &'a AcceptContext<'_>,
+    id: i64,
+    kind_ok: impl Fn(ProviderKind) -> bool,
+) -> Result<Rejudged<'a>, Refusal> {
+    let r = rejudge(tx, ctx, id, kind_ok).await?;
+    let posted = reconciliation_link::find_matched_elsewhere(
+        &mut **tx,
+        ctx.company_id,
+        &r.transaction,
+        r.ledger_account_id,
+        r.balance.currency(),
+    )
+    .await
+    .map_err(|e| db_refusal(id, e))?;
+    if let Some(entry_id) = posted.iter().map(|c| c.journal_entry_id).min() {
+        return Err(failed(
+            id,
+            FAILED_ALREADY_POSTED,
+            serde_json::json!({ "journalEntryId": entry_id }),
+        ));
+    }
+    Ok(r)
+}
+
 /// Le contrôle d'une contrepartie, **paramétré par le genre** (AC-8), fait
 /// avant l'écriture.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1485,7 +1576,7 @@ pub async fn accept_fee(
     bank_transaction_id: i64,
     fee_account_id: i64,
 ) -> Result<ProviderAccepted, Refusal> {
-    let r = rejudge(tx, ctx, bank_transaction_id, |k| k == ProviderKind::Fee).await?;
+    let r = rejudge_writing(tx, ctx, bank_transaction_id, |k| k == ProviderKind::Fee).await?;
     if r.balance.account.provider_settings.fee_account_id != Some(fee_account_id) {
         return Err(stale(bank_transaction_id, "provider_settings_changed"));
     }
@@ -1535,7 +1626,7 @@ pub async fn accept_rule(
     rule_id: i64,
     counterparty_account_id: i64,
 ) -> Result<ProviderAccepted, Refusal> {
-    let r = rejudge(tx, ctx, bank_transaction_id, |k| admits_rule(ctx.spec, k)).await?;
+    let r = rejudge_writing(tx, ctx, bank_transaction_id, |k| admits_rule(ctx.spec, k)).await?;
     let rule = reconciliation_rules::find_by_id_for_company(&mut **tx, ctx.company_id, rule_id)
         .await
         .map_err(|e| db_refusal(bank_transaction_id, e))?;
@@ -1646,7 +1737,7 @@ pub async fn accept_withdrawal(
     bank_transaction_id: i64,
     counterparty_account_id: i64,
 ) -> Result<ProviderAccepted, Refusal> {
-    let r = rejudge(tx, ctx, bank_transaction_id, |k| {
+    let r = rejudge_writing(tx, ctx, bank_transaction_id, |k| {
         k == ProviderKind::Withdrawal
     })
     .await?;
@@ -1700,8 +1791,8 @@ pub async fn accept_conversion(
 ) -> Result<ProviderAccepted, Refusal> {
     let id = debit_transaction_id;
     let is_conversion = |k| k == ProviderKind::Conversion;
-    let debit = rejudge(tx, ctx, debit_transaction_id, is_conversion).await?;
-    let credit = rejudge(tx, ctx, credit_transaction_id, is_conversion)
+    let debit = rejudge_writing(tx, ctx, debit_transaction_id, is_conversion).await?;
+    let credit = rejudge_writing(tx, ctx, credit_transaction_id, is_conversion)
         .await
         .map_err(|r| match r {
             // Le refus nomme toujours la transaction débitée.

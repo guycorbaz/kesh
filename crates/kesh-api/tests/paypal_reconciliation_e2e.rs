@@ -17,13 +17,15 @@ use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::Arc;
 
-use chrono::{TimeDelta, Utc};
+use chrono::{NaiveDate, TimeDelta, Utc};
 use common::capture_rejeu::CaptureRejeu;
 use jsonwebtoken::{Algorithm, EncodingKey, Header};
 use kesh_api::auth::jwt::Claims;
 use kesh_api::config::Config;
 use kesh_api::routes::provider_accept::{self, EngineProposal};
 use kesh_api::{AppState, build_router};
+use kesh_db::entities::{BankImportSourceFormat, NewBankImport, NewBankTransaction};
+use kesh_db::repositories::bank_imports;
 use kesh_db::test_fixtures::{
     SeededCompany, attendre_une_requete_en_cours, disable_rounding_to_5_centimes,
     mark_onboarding_complete, seed_accounting_company,
@@ -473,6 +475,143 @@ impl Ctx {
     async fn ecritures(&self) -> i64 {
         self.count("SELECT COUNT(*) FROM journal_entries").await
     }
+
+    /// Une transaction insérée par le dépôt sur le compte bancaire `bank` (le
+    /// mouvement de l'autre côté : la réception d'un retrait, le paiement reçu
+    /// par une carte), datée `le`.
+    async fn autre_cote(&self, bank: i64, montant: &str, le: &str) -> i64 {
+        let jour = NaiveDate::parse_from_str(le, "%Y-%m-%d").unwrap();
+        let cle = format!("{bank}-{montant}-{le}");
+        let mut tx = self.pool.begin().await.unwrap();
+        let (_, txs) = bank_imports::create_with_transactions(
+            &mut tx,
+            NewBankImport {
+                company_id: self.seeded.company_id,
+                bank_account_id: bank,
+                filename: "autre-cote.xml".into(),
+                file_hash: format!("{:0>64}", cle.replace(['-', '.'], "")),
+                source_format: BankImportSourceFormat::Camt053V04,
+                statement_id: Some(format!("AUTRE-COTE-{cle}")),
+                period_from: jour,
+                period_to: jour,
+                opening_balance: None,
+                closing_balance: None,
+                transaction_count: 1,
+                imported_by_user_id: self.seeded.admin_user_id,
+            },
+            vec![NewBankTransaction {
+                company_id: self.seeded.company_id,
+                bank_account_id: bank,
+                booking_date: jour,
+                value_date: Some(jour),
+                amount: Decimal::from_str_exact(montant).unwrap(),
+                currency: "CHF".into(),
+                reference: None,
+                details: "Virement PayPal".into(),
+                end_to_end_id: None,
+                transaction_id: None,
+                counterparty_iban: None,
+                counterparty_name: Some("PayPal".into()),
+                counterparty_email: None,
+                provider_type: None,
+            }],
+        )
+        .await
+        .expect("import de l'autre côté");
+        tx.commit().await.unwrap();
+        txs[0].id
+    }
+
+    async fn rattacher(&self, transaction: i64, ecriture: i64) -> (u16, Value) {
+        self.post(
+            &format!("/api/v1/reconciliation/transactions/{transaction}/link-entry"),
+            json!({ "journalEntryId": ecriture }),
+        )
+        .await
+    }
+
+    async fn annuler(&self, transaction: i64) -> (u16, Value) {
+        self.post(
+            &format!("/api/v1/reconciliation/transactions/{transaction}/cancel"),
+            json!({}),
+        )
+        .await
+    }
+
+    /// Le compte bancaire ordinaire principal (« Banque »).
+    async fn ba_banque(&self) -> i64 {
+        self.count("SELECT id FROM bank_accounts WHERE bank_name = 'Banque'")
+            .await
+    }
+}
+
+/// Le scénario du défaut, pour la transaction `t` acceptée par `proposition`
+/// (écriture `ecriture`) puis rattachée de l'autre côté : annuler le côté
+/// PayPal ne retire que son lien ; la revue ne la propose plus, elle est à
+/// examiner sous `already_posted` (l'écriture nommée) ; l'ancienne proposition,
+/// renvoyée, est refusée `PROVIDER_TRANSACTION_ALREADY_POSTED` sans rien
+/// écrire ; le rattachement à l'écriture, que le motif conseille, passe.
+async fn detache_ni_propose_ni_ecrit_deux_fois(
+    ctx: &Ctx,
+    t: i64,
+    proposition_acceptee: Value,
+    ecriture: i64,
+    autre: i64,
+) {
+    let (s, b) = ctx.annuler(t).await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(ctx.etat(t).await, ("pending".into(), None));
+    assert_eq!(ctx.etat(autre).await, ("reconciled".into(), Some(ecriture)));
+    assert_eq!(
+        ctx.count(&format!(
+            "SELECT COUNT(*) FROM journal_entries WHERE reverses_entry_id = {ecriture}"
+        ))
+        .await,
+        0,
+        "l'écriture reste"
+    );
+    let revue = ctx.revue().await;
+    assert!(
+        !revue["proposals"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|p| p["transaction"]["id"] == t),
+        "plus proposée : {revue}"
+    );
+    let motif = revue["toReview"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["transaction"]["id"] == t)
+        .cloned()
+        .unwrap_or_else(|| panic!("absente de « à examiner » : {revue}"));
+    assert_eq!(motif["code"], "already_posted", "{motif}");
+    assert_eq!(motif["details"], json!({ "journalEntryId": ecriture }));
+    let avant = ctx.ecritures().await;
+    let audit_avant = ctx.count("SELECT COUNT(*) FROM audit_log").await;
+    let (s, b) = ctx.accepter(vec![proposition_acceptee]).await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(b["accepted"], json!([]), "{b}");
+    assert_eq!(
+        b["failed"],
+        json!([{
+            "bankTransactionId": t,
+            "errorCode": "PROVIDER_TRANSACTION_ALREADY_POSTED",
+            "details": { "journalEntryId": ecriture },
+        }]),
+        "{b}"
+    );
+    assert_eq!(ctx.ecritures().await, avant, "aucune seconde écriture");
+    assert_eq!(
+        ctx.count("SELECT COUNT(*) FROM audit_log").await,
+        audit_avant,
+        "aucune trace"
+    );
+    assert_eq!(ctx.etat(t).await, ("pending".into(), None));
+    let (s, b) = ctx.rattacher(t, ecriture).await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(ctx.etat(t).await, ("reconciled".into(), Some(ecriture)));
 }
 
 /// Une ligne lue : compte, débit, crédit, montant en devise, provenance.
@@ -866,6 +1005,137 @@ async fn conversion_chf_en_une_ecriture_puis_annulation_d_un_cote(pool: MySqlPoo
         0,
         "aucune contre-passation"
     );
+    // La moitié détachée est déjà comptabilisée (l'écriture, rapprochée de la
+    // moitié CHF) : à examiner, jamais une seconde conversion.
+    let revue = ctx.revue().await;
+    let motif = revue["toReview"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["transaction"]["id"] == eur)
+        .cloned()
+        .unwrap_or_else(|| panic!("{revue}"));
+    assert_eq!(motif["code"], "already_posted", "{motif}");
+    assert_eq!(motif["details"], json!({ "journalEntryId": ecriture }));
+}
+
+// ============================================================
+// Une transaction de prestataire n'est écrite qu'une fois
+// ============================================================
+
+/// Le retrait CHF accepté, sa réception par la banque rattachée à son
+/// écriture, puis le côté PayPal annulé seul : voir
+/// [`detache_ni_propose_ni_ecrit_deux_fois`]. Avant l'acceptation, le retrait
+/// jamais écrit est proposé (sonde positive).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn retrait_detache_ni_propose_ni_ecrit_deux_fois(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let retrait = ctx.tx("0TEST00000000007G").await;
+    let v = proposition(&ctx.revue().await, retrait);
+    assert_eq!(v["type"], "withdrawal", "{v}");
+    let (s, b) = ctx.accepter(vec![v.clone()]).await;
+    assert_eq!((s, b["failed"].clone()), (200, json!([])), "{b}");
+    let ecriture = b["accepted"][0]["journalEntryIds"][0].as_i64().unwrap();
+    let reception = ctx
+        .autre_cote(ctx.ba_banque().await, "1000.00", "2020-02-28")
+        .await;
+    let (s, b) = ctx.rattacher(reception, ecriture).await;
+    assert_eq!(s, 200, "{b}");
+    detache_ni_propose_ni_ecrit_deux_fois(&ctx, retrait, v, ecriture, reception).await;
+}
+
+/// Un relevé de plus : un paiement CHF vers une carte de crédit (« Carte
+/// Exemple »), qu'une règle impute au compte du plan de la carte.
+fn fichier_paiement_carte() -> Vec<u8> {
+    let entete = std::str::from_utf8(FIXTURE)
+        .unwrap()
+        .lines()
+        .next()
+        .unwrap()
+        .to_string();
+    format!(
+        "{entete}\r\n\"14/03/2020\",\"09:00:00\",\"CET\",\"Carte Exemple\",\"General Payment\",\"Completed\",\"CHF\",\"-200.00\",\"0.00\",\"-200.00\",\"compte@example.invalid\",\"\",\"0TESTCARTE0000001\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"Debit\"\r\n"
+    )
+    .into_bytes()
+}
+
+/// La règle dont la contrepartie est une **carte** : paiement accepté par la
+/// règle, paiement reçu par la carte rattaché à son écriture, puis le côté
+/// PayPal annulé seul : voir [`detache_ni_propose_ni_ecrit_deux_fois`]. Avant
+/// l'acceptation, la règle est proposée (sonde positive).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn regle_vers_une_carte_detachee_ni_proposee_ni_ecrite_deux_fois(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let c = ctx.seeded.company_id;
+    let carte_plan = compte(&pool, c, "2040", "Liability", None).await;
+    let carte = sqlx::query(
+        "INSERT INTO bank_accounts (company_id, bank_name, account_kind, card_last4, \
+         journal_account_id, is_primary) VALUES (?, 'Carte', 'credit_card', '1234', ?, FALSE)",
+    )
+    .bind(c)
+    .bind(carte_plan)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    sqlx::query(
+        "INSERT INTO reconciliation_rules (company_id, label, match_type, match_value, \
+         counterparty_account_id) VALUES (?, 'Carte', 'counterparty_contains', \
+         'Carte Exemple', ?)",
+    )
+    .bind(c)
+    .bind(carte_plan)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let (s, b) = ctx.importer(&fichier_paiement_carte()).await;
+    assert_eq!(s, 201, "{b}");
+    let paiement = ctx.tx("0TESTCARTE0000001").await;
+    let v = proposition(&ctx.revue().await, paiement);
+    assert_eq!(v["type"], "rule", "{v}");
+    assert_eq!(v["counterpartyAccountId"], carte_plan, "{v}");
+    let (s, b) = ctx.accepter(vec![v.clone()]).await;
+    assert_eq!((s, b["failed"].clone()), (200, json!([])), "{b}");
+    let ecriture = b["accepted"][0]["journalEntryIds"][0].as_i64().unwrap();
+    let recu = ctx.autre_cote(carte, "200.00", "2020-03-14").await;
+    let (s, b) = ctx.rattacher(recu, ecriture).await;
+    assert_eq!(s, 200, "{b}");
+    detache_ni_propose_ni_ecrit_deux_fois(&ctx, paiement, v, ecriture, recu).await;
+}
+
+/// Sonde positive : une écriture du même montant, rapprochée d'une
+/// transaction de la banque de montant opposé, mais **sans ligne sur le
+/// compte du plan du solde PayPal**, n'est pas « l'écriture du retrait » : le
+/// retrait, jamais écrit, reste proposé et s'accepte.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn retrait_jamais_ecrit_reste_propose(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let retrait = ctx.tx("0TEST00000000007G").await;
+    let depot = ctx
+        .autre_cote(ctx.ba_banque().await, "1000.00", "2020-02-28")
+        .await;
+    let (s, b) = ctx
+        .post(
+            "/api/v1/journal-entries",
+            json!({
+                "entryDate": "2020-02-28",
+                "journal": "Banque",
+                "description": "Dépôt sans rapport",
+                "lines": [
+                    { "accountId": ctx.banque, "debit": "1000.00", "credit": "0" },
+                    { "accountId": ctx.produit, "debit": "0", "credit": "1000.00" },
+                ],
+            }),
+        )
+        .await;
+    assert_eq!(s, 201, "{b}");
+    let sans_rapport = b["id"].as_i64().unwrap();
+    let (s, b) = ctx.rattacher(depot, sans_rapport).await;
+    assert_eq!(s, 200, "{b}");
+    let v = proposition(&ctx.revue().await, retrait);
+    assert_eq!(v["type"], "withdrawal", "{v}");
+    let (s, b) = ctx.accepter(vec![v]).await;
+    assert_eq!((s, b["failed"].clone()), (200, json!([])), "{b}");
 }
 
 // ============================================================

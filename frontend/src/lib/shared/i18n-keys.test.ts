@@ -1192,7 +1192,10 @@ const ATTENDU = {
 	// 3671 »), relevé par la garde ; au diff : 1 site ajouté, 0 retiré.
 	// Revue P2 de la 38-12b (avis au passé, suivi perdu après une reprise) : **3674**, relevé par
 	// la garde ; au diff : 2 sites ajoutés, 0 retiré.
-	sitesTotal: 3674,
+	// Correctif « une transaction de prestataire n'est écrite qu'une fois » (motif `already_posted`,
+	// refus `PROVIDER_TRANSACTION_ALREADY_POSTED`, lien « Écriture déjà passée ») : **3677**
+	// (« expected 3677 to be 3674 »), relevé par la garde ; au diff : 3 sites ajoutés, 0 retiré.
+	sitesTotal: 3677,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/
