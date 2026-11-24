@@ -592,7 +592,10 @@ async fn settle_client_inner(
     if bt.amount <= Decimal::ZERO {
         return Ok(Err(GroupRefusal::WrongDirection { amount: bt.amount }));
     }
-    if !super::reconciliation_link::transaction_can_be_linked_to_entry(&bt) {
+    if !super::reconciliation_link::transaction_can_be_linked_to_entry(
+        &bt,
+        super::bank_accounts::BASE_CURRENCY,
+    ) {
         return Ok(Err(GroupRefusal::CurrencyMismatch {
             currency: bt.currency.clone(),
         }));
@@ -2348,7 +2351,10 @@ async fn pay_supplier_inner(
     if bt.amount >= Decimal::ZERO {
         return Ok(Err(GroupRefusal::WrongDirection { amount: bt.amount }));
     }
-    if !super::reconciliation_link::transaction_can_be_linked_to_entry(&bt) {
+    if !super::reconciliation_link::transaction_can_be_linked_to_entry(
+        &bt,
+        super::bank_accounts::BASE_CURRENCY,
+    ) {
         return Ok(Err(GroupRefusal::CurrencyMismatch {
             currency: bt.currency.clone(),
         }));
