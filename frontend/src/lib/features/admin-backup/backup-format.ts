@@ -1,13 +1,12 @@
-// Story 31-1c (#503, AC33) — formats d'affichage des sauvegardes : date locale
-// et taille lisible, dans la locale de l'interface (jamais celle du
-// navigateur, cf. `i18nLocale`).
+// Story 31-1c (#503, AC33) — formats d'affichage des sauvegardes : date et
+// taille lisible, dans la locale de l'interface (jamais celle du navigateur,
+// cf. `i18nLocale`). Story 50-6 (#1511) : la date est à l'heure de Zurich.
 
-/** Date et heure locales d'un horodatage ISO ; `''` pour une valeur absente ou illisible. */
+import { formatInstant } from '$lib/features/reports/reports.api';
+
+/** Date et heure d'un horodatage ISO, **à l'heure de Zurich** ; `''` pour une valeur absente ou illisible. */
 export function formatBackupDate(iso: string | null, locale: string): string {
-	if (!iso) return '';
-	const date = new Date(iso);
-	if (Number.isNaN(date.getTime())) return '';
-	return new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+	return formatInstant(iso, 'dateHeure', locale) ?? '';
 }
 
 /** Taille lisible (unités décimales localisées : o, ko, Mo, Go). */
