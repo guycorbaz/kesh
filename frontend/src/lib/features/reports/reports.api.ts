@@ -218,9 +218,12 @@ const PURE_DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
  */
 const TIMESTAMP_RE = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?)(Z|[+-]\d{2}:\d{2})?$/;
 
+/** Le fuseau où Kesh montre ses instants : celui de la Suisse, quel que soit le poste (#1511). */
+const ZONE_SUISSE = 'Europe/Zurich';
+
 /** Les composants d'un instant à l'heure de Zurich (forme indépendante de la langue). */
 const ZURICH_PARTS = new Intl.DateTimeFormat('fr-CH', {
-	timeZone: 'Europe/Zurich',
+	timeZone: ZONE_SUISSE,
 	year: 'numeric',
 	month: '2-digit',
 	day: '2-digit',
@@ -230,17 +233,24 @@ const ZURICH_PARTS = new Intl.DateTimeFormat('fr-CH', {
 });
 
 /**
- * L'instant d'un horodatage, à l'heure de Zurich — `null` si `iso` n'en est pas un.
- * Sans `Z` ni décalage, l'horodatage est lu comme **UTC** : c'est ce que rend le
- * serveur (`naive_utc()`, session MariaDB en `+00:00` ; v0172-correctifs, C-v0172b-10).
+ * L'instant d'un horodatage du serveur — `null` si `iso` n'en est pas un. Sans `Z` ni
+ * décalage, l'horodatage est lu comme **UTC** : c'est ce que rend le serveur
+ * (`naive_utc()`, session MariaDB en `+00:00` ; v0172-correctifs, C-v0172b-10). La seule
+ * lecture « naïf = UTC » de ce module : `zurichParts` et `formatInstant` l'appellent.
  */
-function zurichParts(iso: string): Record<'day' | 'month' | 'year' | 'hour' | 'minute', string> | null {
+function instantDuServeur(iso: string): Date | null {
 	const m = TIMESTAMP_RE.exec(iso);
 	if (!m) return null;
-	const ms = Date.parse(`${m[1]}T${m[2]}${m[3] ?? 'Z'}`);
-	if (Number.isNaN(ms)) return null;
+	const d = new Date(`${m[1]}T${m[2]}${m[3] ?? 'Z'}`);
+	return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/** Les composants d'un instant à l'heure de Zurich — `null` si `iso` n'est pas un horodatage. */
+function zurichParts(iso: string): Record<'day' | 'month' | 'year' | 'hour' | 'minute', string> | null {
+	const instant = instantDuServeur(iso);
+	if (!instant) return null;
 	const out = { day: '', month: '', year: '', hour: '', minute: '' };
-	for (const p of ZURICH_PARTS.formatToParts(new Date(ms))) {
+	for (const p of ZURICH_PARTS.formatToParts(instant)) {
 		if (p.type in out) out[p.type as keyof typeof out] = p.value;
 	}
 	return out;
@@ -270,6 +280,39 @@ export function formatSwissDate(iso: string): string {
 export function formatSwissDateTime(iso: string): string {
 	const z = zurichParts(iso);
 	return z ? `${z.day}.${z.month}.${z.year} ${z.hour}:${z.minute}` : formatSwissDate(iso);
+}
+
+/** Les styles de `formatInstant` : la date seule, ou la date et l'heure (les styles d'avant la 0.20.0). */
+const STYLES_D_INSTANT = {
+	date: { dateStyle: 'medium' },
+	dateHeure: { dateStyle: 'medium', timeStyle: 'short' },
+} as const;
+
+/** Les formateurs de `formatInstant`, construits au premier appel de chaque `langue|style`. */
+const FORMATEURS_D_INSTANT = new Map<string, Intl.DateTimeFormat>();
+
+/**
+ * Montre un instant enregistré par Kesh **à l'heure de Zurich**, dans la langue de l'interface
+ * (`locale`), quel que soit le fuseau du poste (Story 50-6, #1511) : `date` = `25 nov. 2026`,
+ * `dateHeure` = `25 nov. 2026, 00:30` (`fr-CH`). Lit le `Z`, un décalage, ou rien (UTC), avec
+ * jusqu'à neuf décimales. Rend `null` pour une valeur absente ou illisible : chaque appelant
+ * garde son repli. Les dates **saisies** (expiration d'une clé) n'en relèvent pas.
+ */
+export function formatInstant(
+	iso: string | null | undefined,
+	style: 'date' | 'dateHeure',
+	locale: string,
+): string | null {
+	if (!iso) return null;
+	const instant = instantDuServeur(iso);
+	if (!instant) return null;
+	const cle = `${locale}|${style}`;
+	let formateur = FORMATEURS_D_INSTANT.get(cle);
+	if (!formateur) {
+		formateur = new Intl.DateTimeFormat(locale, { ...STYLES_D_INSTANT[style], timeZone: ZONE_SUISSE });
+		FORMATEURS_D_INSTANT.set(cle, formateur);
+	}
+	return formateur.format(instant);
 }
 
 /**
