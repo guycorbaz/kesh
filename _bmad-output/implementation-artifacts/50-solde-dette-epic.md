@@ -477,3 +477,16 @@ geste) » `errors.rs:6652, 6680, 6708, 6737` et six e2e (10 sur 27) ; `git diff`
   rougit six e2e de plus que la fiche), gate complet vert (`test-fast.sh --ci` 6270/6270, `gate-ci.sh` 6289 passés, 0 échoué).
   Aucune décision de la fiche modifiée, aucun test existant touché. **`Status: review`** ; revue de code P1 non lancée (prompt :
   `50-solde-dette-epic-review-prompt-p1.md`). E2E complet à la clôture.
+- **2026-11-24 — revue de code P1 et clôture** : **P1 Opus (trois lentilles B, E, A) : 0 CRITICAL / 0 HIGH / 1 MEDIUM / 8 LOW** (B1 = E1
+  MEDIUM, B2, B3, B4, E2, E3, A1, A2, A3 LOW) → **passe ciblée à venir** (un module : `kesh-db`, avec doc-comments d'`kesh-api` ; la
+  remédiation touche du code de production, la boucle ne se clôt pas avant). Remédiation de l'orchestrateur et de l'agent : **commit
+  unique `6c48e7e70`** (B1 = E1 : quatre bras explicites sans joker ; B2 lien résolu ; B3 rejustification ; B4 liens intra-doc) ; E3, A1, A2
+  au Dev Agent Record ; E2 en issue **#1533** (P4, ouverte par l'orchestrateur, non corrigée) ; A3 : `origin/epic/50-corrections`
+  (`e5654fc00`, reprise de main, Epic 38) fusionnée par `git merge --no-ff` (`63223a418`), sans conflit. Mutations M-B1 à M-B3 rejouées
+  sur le nouveau code, mêmes assertions (Dev Agent Record). **Gates au dernier commit de code (`6c48e7e70`, repris dans la fusion
+  `63223a418`)**, bases remises à neuf (96 migrations) : `test-fast.sh --ci` **6483 passés / 0 échoué / 15 ignorés** (398,7 s,
+  `test-fast-ci-2.log`) ; `gate-ci.sh kesh_ci_e50solde` **6502 passés / 0 échoué / 19 ignorés**, code 0 (`gate-ci-2.log`) ; **E2E
+  complet** (`LANG=fr_CH.UTF-8`, kesh-api construit à la fusion, `frontend/build` construit, base `kesh_e2e_e50solde`, port 3493,
+  `e2e-complet.log`) : **510 passés, 19 ignorés, 7 échoués = exactement les sept KF-029 (#97)** de `docs/testing.md` § *Les échecs
+  attendus* (`mode-expert.spec.ts:26` et `:41`, `onboarding-path-b.spec.ts:65` et `:92`, `onboarding.spec.ts:57`, `:77` et `:150`),
+  jugés fichier par fichier ; aucune pollution. **`Status: review` jusqu'à la passe ciblée.**
