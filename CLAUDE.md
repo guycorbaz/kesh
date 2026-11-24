@@ -343,9 +343,9 @@ Kesh a plusieurs développeurs depuis le 2026-11-15 : le Project Lead, l'orchest
 
 - Le projet GitHub « Kesh » porte la planification au niveau des **issues** : **release = milestone** (une issue n'appartient qu'à une release), **epic = champ du projet**, **qui = l'assigné**.
 - **Les stories BMAD restent dans `sprint-status.yaml`** ; le projet ne les recopie pas.
-- **Les milestones se nomment par date** (« Vendredi AAAA-MM-JJ »), sauf « Plus tard » ; seules les deux ou trois prochaines releases sont datées. Le numéro de version est attribué au tag (§ *Numérotation des versions*). N'entrent au projet que les issues qu'un epic ou une release retient.
+- **Les milestones se nomment par le numéro de la release** (`vX.Y.Z`), sauf « Plus tard » ; la date prévue est l'échéance du milestone (décision de Guy du 2026-11-24). Les numéros des releases à venir sont provisoires : quand une release qui les précède change la donne (une migration de plus ou de moins, un ordre de sortie inversé), on renomme les milestones suivants. N'entrent au projet que les issues qu'un epic ou une release retient.
 - Réserver un epic, c'est renseigner le champ *Epic* avec responsable et objet. **Rattacher une issue à une release est une décision du Project Lead** ; les contributeurs proposent.
-- On parle d'epics et de dates de release, non de numéros de version : le numéro n'est acquis qu'au tag.
+- On parle d'epics et de numéros de release ; un numéro à venir reste provisoire jusqu'au tag.
 
 ### Numérotation des versions
 
@@ -355,7 +355,7 @@ Les versions s'écrivent `a.b.c` (décision du Project Lead du 2026-11-21).
 - **`b` monte quand la release porte une migration ou une rupture du contrat de l'API, et seulement alors.**
 - **`c` monte pour toute autre release**, celle du vendredi comprise. Une release `c` ne porte jamais de migration.
 - Les migrations sortent de préférence le vendredi, sans s'interdire le milieu de semaine.
-- **Le numéro ne suit plus le calendrier** : les milestones se nomment par date, le numéro s'attribue au tag, et l'on parle de dates avec les contributeurs.
+- **Le numéro ne suit pas le calendrier** : il suit les règles ci-dessus ; les milestones portent le numéro prévu, la date en échéance, et le numéro se confirme au tag.
 - **Ce que l'administrateur lit** : `c` monte, il remplace l'image (retour en remettant la précédente) ; `b` monte, il lit les notes de version, et s'il y a une migration, la sauvegarde complète est obligatoire (§ *Ce qu'impose la production* ; manuel d'administration).
 - **Un epic tient dans une release** : au plus **six stories**, story de solde comprise, fonctionnalité nouvelle comprise ; un epic qu'on ne voit pas finir dans la semaine se découpe au kickoff en deux ou trois epics. Il entre dans `main` **une seule fois, terminé**. Une release peut porter plusieurs epics. La taille des stories compte d'abord : le splitting préventif s'applique dès la fiche.
 - **Grand epic par dérogation** : sur décision du Project Lead, au kickoff, avec une section « Dérogation » du fichier d'epic (raison, nombre de releases estimé). Il reste dans sa branche jusqu'à sa fin, et les releases partent sans lui ; il reprend `main` après chaque release et rejoue ses gates ; ses issues restent au milestone « Plus tard » jusqu'à la release qui l'accueille ; revue du code d'intégration à l'entrée. Sa migration se redate à l'intégration, après la dernière publiée (à vérifier au code avant d'appliquer).
@@ -375,7 +375,7 @@ Règle décidée par le Project Lead le 2026-11-21 ; sa mise en œuvre fait l'ob
 
 ### Ordre des releases
 
-- **La première release terminée sort la première** ; si besoin, on échange les dates et les milestones (le numéro de version ne s'attribue qu'au tag).
+- **La première release terminée sort la première** ; si besoin, on échange les dates et l'on renomme les milestones (le numéro se confirme au tag).
 - **Le second arrivé reprend `main`** dans sa branche, résout, puis rejoue tous les gates et l'E2E complet ; si les deux releases portent des migrations, leur ordre se contrôle sur une base peuplée par la release du premier. La recette de montée part toujours de la dernière image publiée.
 - Toute release part de `main` (§ *Cadence*) : un correctif dont la base a été dépassée par une release se publie depuis `main`, sauf décision du Project Lead.
 - **Seul le Project Lead pose un tag et publie une image**, ou l'orchestrateur sur son mandat explicite.
