@@ -288,6 +288,7 @@ Les anciennes rétrospectives classent la dette en **A** (vraie dette), **B** (l
   git log origin/main..HEAD --format=%B | grep -niE '\b(close[sd]?|fix(e[sd])?|resolve[sd]?) #[0-9]'
   ```
   Écrire « validation terminée », non « validation close ». Après fusion, vérifier : `gh issue view <N> --json state --jq .state`.
+- **Ménager les comptes GitHub** (décision de Guy du 2026-11-24) : GitHub restreint un compte sur ses limites secondaires et sa détection d'abus (rafales, contenus au même gabarit), bien avant le quota de 5000 requêtes par heure. Entre deux créations (issue, PR, commentaire, fermeture, label), **5 s au moins** ; plus de 10 d'un coup s'étalent sur plusieurs minutes ; **plus d'une trentaine par jour se demandent d'abord au Project Lead**. Une surveillance (CI, PR) interroge **toutes les 60 s au plus**, une boucle par sujet, avec un délai maximal. Avant un lot, `gh api rate_limit` ; arrêt sous 1000 requêtes restantes. *Motif : le compte d'un agent contributeur a été restreint le 2026-11-23, quotas intacts.*
 
 ## Migration breaking policy
 
