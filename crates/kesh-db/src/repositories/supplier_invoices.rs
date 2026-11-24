@@ -3897,4 +3897,45 @@ mod tests {
         let err = generate_purchase_journal_lines(&lines, 2000, None).unwrap_err();
         assert!(matches!(err, DbError::ConfigurationRequired(_)));
     }
+
+    /// Story 50-solde (#1492, AC-1) — la table de levée d'un refus de doublon,
+    /// une case par test : (règle 1, saisie) n'a aucune sortie.
+    #[test]
+    fn lifted_regle1_saisie() {
+        assert!(
+            !DuplicateRule::SameNumberSameYear
+                .lifted_by_confirmation(crate::errors::DuplicateGesture::Entry),
+            "table (règle 1, Entry)"
+        );
+    }
+
+    /// (règle 2, saisie) se lève par la confirmation.
+    #[test]
+    fn lifted_regle2_saisie() {
+        assert!(
+            DuplicateRule::SameDateSameTotal
+                .lifted_by_confirmation(crate::errors::DuplicateGesture::Entry),
+            "table (règle 2, Entry)"
+        );
+    }
+
+    /// (règle 1, dévalidation d'une annulée) se lève par la confirmation.
+    #[test]
+    fn lifted_regle1_devalidation() {
+        assert!(
+            DuplicateRule::SameNumberSameYear
+                .lifted_by_confirmation(crate::errors::DuplicateGesture::Unvalidation),
+            "table (règle 1, Unvalidation)"
+        );
+    }
+
+    /// (règle 2, dévalidation d'une annulée) se lève par la confirmation.
+    #[test]
+    fn lifted_regle2_devalidation() {
+        assert!(
+            DuplicateRule::SameDateSameTotal
+                .lifted_by_confirmation(crate::errors::DuplicateGesture::Unvalidation),
+            "table (règle 2, Unvalidation)"
+        );
+    }
 }

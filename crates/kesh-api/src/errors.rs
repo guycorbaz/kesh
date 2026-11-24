@@ -6609,6 +6609,152 @@ mod tests {
         (parts.status, json)
     }
 
+    /// Story 50-solde (#1492, AC-2) — le refus de doublon que la couche base
+    /// rend pour `(règle, geste)`, sous la variante de `DbError` que ce couple
+    /// produit (`guard_duplicates_in_tx`).
+    fn duplicate_refusal(
+        rule: kesh_db::repositories::supplier_invoices::DuplicateRule,
+        gesture: kesh_db::errors::DuplicateGesture,
+    ) -> AppError {
+        use kesh_db::repositories::supplier_invoices::DuplicateRule;
+        let existing = kesh_db::errors::ExistingSupplierInvoice {
+            id: 7,
+            internal_number: Some("FF-2026-0007".into()),
+            status: "open".into(),
+        };
+        AppError::Database(match rule {
+            DuplicateRule::SameNumberSameYear => {
+                DbError::SupplierInvoiceDuplicate { existing, gesture }
+            }
+            DuplicateRule::SameDateSameTotal => {
+                DbError::SupplierInvoiceProbableDuplicate { existing, gesture }
+            }
+        })
+    }
+
+    /// Story 50-solde (#1492, AC-2) — (règle 1, saisie) : code, `confirmable`
+    /// relu de la table puis littéral, texte. Les assertions s'enchaînent dans
+    /// cet ordre : l'échec nomme la première qui tombe.
+    #[tokio::test]
+    async fn duplicate_response_regle1_saisie() {
+        use kesh_db::errors::DuplicateGesture;
+        use kesh_db::repositories::supplier_invoices::DuplicateRule;
+        let rule = DuplicateRule::SameNumberSameYear;
+        let gesture = DuplicateGesture::Entry;
+        let (status, body) = response_body(duplicate_refusal(rule, gesture).into_response()).await;
+        assert_eq!(status, StatusCode::CONFLICT, "code (règle 1, Entry)");
+        assert_eq!(
+            body["error"]["code"], "SUPPLIER_INVOICE_DUPLICATE",
+            "code (règle 1, Entry)"
+        );
+        assert_eq!(
+            body["error"]["details"]["confirmable"],
+            rule.lifted_by_confirmation(gesture),
+            "relue (règle 1, Entry)"
+        );
+        assert_eq!(
+            body["error"]["details"]["confirmable"], false,
+            "littérale (règle 1, Entry)"
+        );
+        assert_eq!(
+            body["error"]["message"], SUPPLIER_INVOICE_DUPLICATE_FR,
+            "texte (règle 1, Entry)"
+        );
+    }
+
+    /// Story 50-solde (#1492, AC-2) — (règle 2, saisie).
+    #[tokio::test]
+    async fn duplicate_response_regle2_saisie() {
+        use kesh_db::errors::DuplicateGesture;
+        use kesh_db::repositories::supplier_invoices::DuplicateRule;
+        let rule = DuplicateRule::SameDateSameTotal;
+        let gesture = DuplicateGesture::Entry;
+        let (status, body) = response_body(duplicate_refusal(rule, gesture).into_response()).await;
+        assert_eq!(status, StatusCode::CONFLICT, "code (règle 2, Entry)");
+        assert_eq!(
+            body["error"]["code"], "SUPPLIER_INVOICE_PROBABLE_DUPLICATE",
+            "code (règle 2, Entry)"
+        );
+        assert_eq!(
+            body["error"]["details"]["confirmable"],
+            rule.lifted_by_confirmation(gesture),
+            "relue (règle 2, Entry)"
+        );
+        assert_eq!(
+            body["error"]["details"]["confirmable"], true,
+            "littérale (règle 2, Entry)"
+        );
+        assert_eq!(
+            body["error"]["message"], SUPPLIER_INVOICE_PROBABLE_DUPLICATE_FR,
+            "texte (règle 2, Entry)"
+        );
+    }
+
+    /// Story 50-solde (#1492, AC-2) — (règle 1, dévalidation d'une annulée).
+    #[tokio::test]
+    async fn duplicate_response_regle1_devalidation() {
+        use kesh_db::errors::DuplicateGesture;
+        use kesh_db::repositories::supplier_invoices::DuplicateRule;
+        let rule = DuplicateRule::SameNumberSameYear;
+        let gesture = DuplicateGesture::Unvalidation;
+        let (status, body) = response_body(duplicate_refusal(rule, gesture).into_response()).await;
+        assert_eq!(
+            status,
+            StatusCode::CONFLICT,
+            "code (règle 1, Unvalidation)"
+        );
+        assert_eq!(
+            body["error"]["code"], "SUPPLIER_INVOICE_DUPLICATE",
+            "code (règle 1, Unvalidation)"
+        );
+        assert_eq!(
+            body["error"]["details"]["confirmable"],
+            rule.lifted_by_confirmation(gesture),
+            "relue (règle 1, Unvalidation)"
+        );
+        assert_eq!(
+            body["error"]["details"]["confirmable"], true,
+            "littérale (règle 1, Unvalidation)"
+        );
+        assert_eq!(
+            body["error"]["message"], SUPPLIER_INVOICE_DUPLICATE_UNVALIDATE_FR,
+            "texte (règle 1, Unvalidation)"
+        );
+    }
+
+    /// Story 50-solde (#1492, AC-2) — (règle 2, dévalidation d'une annulée) :
+    /// la case qu'aucun test HTTP ne tient.
+    #[tokio::test]
+    async fn duplicate_response_regle2_devalidation() {
+        use kesh_db::errors::DuplicateGesture;
+        use kesh_db::repositories::supplier_invoices::DuplicateRule;
+        let rule = DuplicateRule::SameDateSameTotal;
+        let gesture = DuplicateGesture::Unvalidation;
+        let (status, body) = response_body(duplicate_refusal(rule, gesture).into_response()).await;
+        assert_eq!(
+            status,
+            StatusCode::CONFLICT,
+            "code (règle 2, Unvalidation)"
+        );
+        assert_eq!(
+            body["error"]["code"], "SUPPLIER_INVOICE_PROBABLE_DUPLICATE",
+            "code (règle 2, Unvalidation)"
+        );
+        assert_eq!(
+            body["error"]["details"]["confirmable"],
+            rule.lifted_by_confirmation(gesture),
+            "relue (règle 2, Unvalidation)"
+        );
+        assert_eq!(
+            body["error"]["details"]["confirmable"], true,
+            "littérale (règle 2, Unvalidation)"
+        );
+        assert_eq!(
+            body["error"]["message"], SUPPLIER_INVOICE_DUPLICATE_UNVALIDATE_FR,
+            "texte (règle 2, Unvalidation)"
+        );
+    }
+
     /// Story 15-13b (#576, test 15) — l'échec antérieur à la sauvegarde rend
     /// un 500 `ADMIN_PRE_IMPORT_BACKUP_FAILED` dont le repli (aucun catalogue
     /// n'est chargé dans ces tests) ne promet aucune sauvegarde, dit qu'aucune
