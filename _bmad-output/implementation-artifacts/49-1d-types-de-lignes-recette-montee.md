@@ -1412,6 +1412,26 @@ achevée), `verifs-0200.test.sh`, `verifs-0200.mut.sh`, `recette-complement-rel0
 | **E-P3-3** — écart de `api` causé par l'import seul | **corrigé** : `ECART_IMPORT=api` au `curl` factice, S16e |
 | **E-P3-4** — image et binaire non identifiés | **corrigé** : `$L/identite.txt` (identifiant et digests de l'image, SHA-256 du binaire) ; un relevé, non un contrôle (`docs/testing.md`) |
 
+**19. Ce qui a tourné après la remédiation P3** (code `6cf37f6e0`) :
+- test shell vert, **181 assertions** (`dev/test-shell-12.log`) ;
+- mutations : les **onze neuves** (`S6h-pages-boucle`, `S17-import-dit`, `S17-crochet-dit`, `S7c-telechargements-phase1`,
+  `S8d-regel-exige`, `S2c-projection-differe`, `S2b-appel-montee`, `S16f-crochet-phase2`, `S16g-crochet-echec`,
+  `S5c-boucle-montee`, `S12b-boucle-import`) et les touchées par le `mutool` factice (`S6a-trame`, `S6c-trame-vide`) rejouées une à
+  une à `6cf37f6e0`, puis **S6d seule** (`mut/resume-5.log`) ; **49 sur 49 tuées** (`mut/juge.log`) ; le journal de S6d est
+  désormais celui d'une exécution seule (aucune ligne « Aucun fichier ») ;
+- classeur d'inventaire : **code 0, 224 sites, aucun non classé, aucune mutation citée qui ne soit tuée ou loin de son site**
+  (`inventaire/inventaire.md`) ;
+- **recette réelle verte** (`recette-reelle-p3.log`, `/tmp/kesh-recette.jTw7RK`) : six phases, 5 paires, ligne finale « vert ;
+  import : joué ; crochet : joué en phases 2 et 5 ; --diff-attendu : migrations,invoice_lines,credit_note_lines,api » ;
+  `journal/identite.txt` : image `sha256:50b01c7cf627…` au digest de `gcorbaz/kesh` publié, SHA-256 du binaire relevé ;
+  **R1 rouge** (code 12, « api credit_note_lines invoice_lines », `recette-reelle-rouge-diff-p3.log`) ; **R2 rouge** (code 12,
+  « api … invoice_lines (valeurs d'avant changées … », `recette-reelle-rouge-projection-p3.log`), copie mutée retirée ;
+- **script complémentaire vert** sur ce dossier (`recette-complement-p3.log`) ; troisième rouge, verdict retiré → arrêt « la
+  recette n'a pas fini verte » (`recette-complement-rouge3-p3.log`) ;
+- gate complet (`gates-review-p3.sh`, une commande par prise) : **`test-fast --ci`** à `541c9ec05` → EXIT=0, « 6264 tests run: 6264
+  passed (1 slow), 17 skipped », 684,0 s, le test de la recette en **403,3 s** (`test-fast-ci-p3.log`) ; **`gate-ci kesh_ci_e491d`**
+  → code 0, « 6283 passés, 0 échoués, 21 ignorés » (`gate-ci-p3.log`) ; frontend non touché ; pas d'E2E (clôture).
+
 **13. Issues demandées par la revue P1** (texte prêt ; une par problème) :
 - *`technical-debt`, P4* — **Le juge des mutations de la recette de montée ne borne pas les échecs collatéraux.**
   `kesh-gate-logs/e491d/mut/mutations.py:juger` tient une mutation pour tuée dès que l'assertion visée échoue, quel que soit le
