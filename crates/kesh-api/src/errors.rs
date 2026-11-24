@@ -938,6 +938,132 @@ pub enum AppError {
         account_type: String,
     },
 
+    // ----- Story 38-11b (Epic 38) — le compte d'un prestataire (PayPal) -----
+    // Codes `PROVIDER_*` génériques (Q-39-10) : Wise et Stripe les reprennent
+    // tels quels ; leurs messages ne nomment aucun prestataire.
+    /// Compte d'un prestataire sans compte du plan lié → `400
+    /// PROVIDER_LEDGER_REQUIRED` : la devise du compte du plan **est** celle du
+    /// solde.
+    #[error("Le compte d'un prestataire exige un compte du plan lié")]
+    ProviderLedgerRequired,
+
+    /// Un autre compte bancaire non archivé du même compte du prestataire est
+    /// déjà le solde de cette devise → `409 PROVIDER_CURRENCY_DUPLICATE`,
+    /// `details: { account, currency, bankAccountId }`. Rendu aussi par
+    /// l'import, quand deux comptes visent une même devise (course de la
+    /// création, non sérialisée).
+    #[error("Le compte {account} a déjà un compte bancaire en {currency}")]
+    ProviderCurrencyDuplicate {
+        account: String,
+        currency: String,
+        bank_account_id: i64,
+    },
+
+    /// Compte de frais refusé → `400 PROVIDER_FEE_ACCOUNT_INVALID`, `details:
+    /// { accountId, reason }`, `reason` ∈ `not_found`, `not_postable`,
+    /// `not_expense`, `currency`.
+    #[error("Compte de frais refusé ({reason})")]
+    ProviderFeeAccountInvalid {
+        account_id: i64,
+        reason: &'static str,
+    },
+
+    /// Retirer les réglages, changer le libellé ou le compte du plan d'un compte
+    /// de prestataire qui porte déjà une transaction → `409
+    /// PROVIDER_ACCOUNT_IN_USE`, `details: { bankAccountId }`.
+    #[error("Le compte bancaire {bank_account_id} porte déjà des transactions")]
+    ProviderAccountInUse { bank_account_id: i64 },
+
+    /// Import : aucun compte bancaire non archivé n'est le solde de ce compte du
+    /// prestataire → `404 PROVIDER_ACCOUNT_NOT_FOUND`, `details: { account }`.
+    #[error("Aucun compte bancaire pour le compte {account}")]
+    ProviderAccountNotFound { account: String },
+
+    /// Import : des devises du fichier n'ont pas de compte bancaire de ce compte
+    /// du prestataire → `422 PROVIDER_CURRENCY_ACCOUNT_MISSING`, `details: {
+    /// currencies }` (toutes, triées). Un solde n'est jamais créé d'office.
+    #[error("Devises sans compte bancaire : {}", currencies.join(", "))]
+    ProviderCurrencyAccountMissing { currencies: Vec<String> },
+
+    /// Import : le fichier PayPal est refusé par le lecteur (38-11a) → `422
+    /// PAYPAL_CSV_INVALID`, `details: { reason, … }` — `reason` est le code du
+    /// lecteur (`PAYPAL_CSV_MISSING_COLUMNS`, `PAYPAL_CSV_LINES`, …), avec
+    /// `columns` (colonnes manquantes) ou `lines` (erreurs de ligne, forme
+    /// `{ line, field, code, value }`).
+    #[error("Fichier PayPal refusé : {reason}")]
+    PaypalCsvInvalid {
+        reason: &'static str,
+        details: serde_json::Value,
+    },
+
+    // ----- Story 38-12a (socle S4) — téléchargement par l'API d'un prestataire -----
+    /// Période d'un téléchargement refusée → `400 PROVIDER_PERIOD_INVALID`,
+    /// `details: { provider, reason }`, `reason` ∈ `from_after_to`, `future`,
+    /// `too_old`.
+    #[error("Période refusée ({reason})")]
+    ProviderPeriodInvalid {
+        provider: &'static str,
+        reason: &'static str,
+    },
+    /// Aucune série d'identifiants pour ce libellé → `422
+    /// PROVIDER_API_NOT_CONFIGURED`, `details: { provider, account }`.
+    #[error("API non configurée pour le compte {account}")]
+    ProviderApiNotConfigured {
+        provider: &'static str,
+        account: String,
+    },
+    /// Un téléchargement tourne déjà pour ce compte, quelle que soit sa
+    /// période → `409 PROVIDER_DOWNLOAD_RUNNING`, `details: { provider, jobId,
+    /// from, to }` (`from`/`to` : la période de la tâche en cours, `AAAA-MM-JJ`,
+    /// sa fin étant la fin lue).
+    #[error("Téléchargement déjà en cours ({job_id})")]
+    ProviderDownloadRunning {
+        provider: &'static str,
+        job_id: u64,
+        from: chrono::NaiveDate,
+        to: chrono::NaiveDate,
+    },
+    /// Identifiants refusés par le prestataire (jeton refusé, ou 401 après
+    /// renouvellement) → `PROVIDER_AUTH_FAILED` (502 ; issue d'une tâche).
+    #[error("Identifiants refusés par le prestataire")]
+    ProviderAuthFailed { provider: &'static str },
+    /// L'application du prestataire n'a pas le droit demandé (403) →
+    /// `PROVIDER_PERMISSION_DENIED` (502).
+    #[error("Droits insuffisants chez le prestataire")]
+    ProviderPermissionDenied { provider: &'static str },
+    /// Six essais limités en débit (429) → `PROVIDER_RATE_LIMITED` (503),
+    /// `details: { provider, window?, page? }`.
+    #[error("Débit limité par le prestataire")]
+    ProviderRateLimited {
+        provider: &'static str,
+        window: Option<String>,
+        page: Option<u32>,
+    },
+    /// Six essais en 5xx ou délai dépassé → `PROVIDER_UNAVAILABLE` (503),
+    /// `details: { provider, window?, page? }`.
+    #[error("Prestataire indisponible")]
+    ProviderUnavailable {
+        provider: &'static str,
+        window: Option<String>,
+        page: Option<u32>,
+    },
+    /// Réponse du prestataire illisible, trop grande, ou dont les transactions
+    /// sont refusées → `PROVIDER_RESPONSE_INVALID` (502), `details: { provider,
+    /// … }` (`lines`, `transactionId`, `reason`).
+    #[error("Réponse du prestataire refusée")]
+    ProviderResponseInvalid {
+        provider: &'static str,
+        details: serde_json::Value,
+    },
+    /// Tout autre refus du prestataire → `PROVIDER_API_ERROR` (502),
+    /// `details: { provider, window?, page? }`. Jamais le texte du prestataire.
+    #[error("Refus du prestataire")]
+    ProviderApiError {
+        provider: &'static str,
+        window: Option<String>,
+        page: Option<u32>,
+    },
+
     // ----- Story 34-11a2 (#972) — la carte de crédit -----
     /// Le nom ou la description d'un compte bancaire porte un **numéro de carte
     /// complet** (`kesh_core::card_number`, C-e341-15) → `400
@@ -3506,18 +3632,253 @@ impl IntoResponse for AppError {
                 (StatusCode::BAD_REQUEST, Json(body)).into_response()
             }
             AppError::BankAccountFieldNotAllowed { field } => {
+                // Story 38-11b — le message suit le champ : les quatre chiffres
+                // d'une carte (34-11a2), ou un champ que le compte d'un
+                // prestataire n'admet pas (QR-IBAN, principal, lien par `PATCH`).
+                let message = match field {
+                    "qrIban" | "isPrimary" => t(
+                        "bank-accounts-errors-provider-field-not-allowed",
+                        "Le compte d'un prestataire de paiement n'a pas de QR-IBAN et n'est jamais le compte principal.",
+                    ),
+                    "journalAccountId" => t(
+                        "bank-accounts-errors-provider-link-by-put",
+                        "Le compte du plan d'un compte de prestataire se change par la modification du compte, non par ce lien.",
+                    ),
+                    _ => t(
+                        "bank-accounts-errors-bank-account-field-not-allowed",
+                        "Les quatre derniers chiffres ne concernent qu'une carte de crédit.",
+                    ),
+                };
                 let body = serde_json::json!({
                     "error": {
                         "code": "BANK_ACCOUNT_FIELD_NOT_ALLOWED",
-                        "message": t(
-                            "bank-accounts-errors-bank-account-field-not-allowed",
-                            "Les quatre derniers chiffres ne concernent qu'une carte de crédit.",
-                        ),
+                        "message": message,
                         "details": { "field": field }
                     }
                 });
                 (StatusCode::BAD_REQUEST, Json(body)).into_response()
             }
+
+            // ----- Story 38-11b — le compte d'un prestataire -----
+            AppError::ProviderLedgerRequired => build_response(
+                StatusCode::BAD_REQUEST,
+                "PROVIDER_LEDGER_REQUIRED",
+                &t(
+                    "error-provider-ledger-required",
+                    "Le compte d'un prestataire de paiement exige un compte du plan lié : sa devise est celle du solde.",
+                ),
+            ),
+            AppError::ProviderCurrencyDuplicate {
+                account,
+                currency,
+                bank_account_id,
+            } => {
+                let mut args = FluentArgs::new();
+                args.set("account", account.clone());
+                args.set("currency", currency.clone());
+                let fallback = format!(
+                    "Le compte « {account} » a déjà un compte bancaire en {currency} : un seul compte bancaire par devise."
+                );
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "PROVIDER_CURRENCY_DUPLICATE",
+                        "message": t_args("error-provider-currency-duplicate", &fallback, &args),
+                        "details": {
+                            "account": account,
+                            "currency": currency,
+                            "bankAccountId": bank_account_id,
+                        }
+                    }
+                });
+                (StatusCode::CONFLICT, Json(body)).into_response()
+            }
+            AppError::ProviderFeeAccountInvalid { account_id, reason } => {
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "PROVIDER_FEE_ACCOUNT_INVALID",
+                        "message": t(
+                            "error-provider-fee-account-invalid",
+                            "Le compte de frais doit être un compte de charge actif et imputable, en CHF ou dans la devise du solde.",
+                        ),
+                        "details": { "accountId": account_id, "reason": reason }
+                    }
+                });
+                (StatusCode::BAD_REQUEST, Json(body)).into_response()
+            }
+            AppError::ProviderAccountInUse { bank_account_id } => {
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "PROVIDER_ACCOUNT_IN_USE",
+                        "message": t(
+                            "error-provider-account-in-use",
+                            "Ce compte porte déjà des transactions : son compte de prestataire et son compte du plan ne se changent plus (le compte de frais, si).",
+                        ),
+                        "details": { "bankAccountId": bank_account_id }
+                    }
+                });
+                (StatusCode::CONFLICT, Json(body)).into_response()
+            }
+            AppError::ProviderAccountNotFound { account } => {
+                let mut args = FluentArgs::new();
+                args.set("account", account.clone());
+                let fallback = format!(
+                    "Aucun compte bancaire n'est le solde du compte « {account} » : créez-en un par devise dans les comptes bancaires."
+                );
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "PROVIDER_ACCOUNT_NOT_FOUND",
+                        "message": t_args("error-provider-account-not-found", &fallback, &args),
+                        "details": { "account": account }
+                    }
+                });
+                (StatusCode::NOT_FOUND, Json(body)).into_response()
+            }
+            AppError::ProviderCurrencyAccountMissing { currencies } => {
+                let list = currencies.join(", ");
+                let mut args = FluentArgs::new();
+                args.set("currencies", list.clone());
+                let fallback = format!(
+                    "Le fichier porte des mouvements en {list}, sans compte bancaire de ce compte pour ces devises : créez-les, puis importez de nouveau. Rien n'a été importé."
+                );
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "PROVIDER_CURRENCY_ACCOUNT_MISSING",
+                        "message": t_args("error-provider-currency-account-missing", &fallback, &args),
+                        "details": { "currencies": currencies }
+                    }
+                });
+                (StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response()
+            }
+            AppError::PaypalCsvInvalid { reason, details } => {
+                let mut details = details.clone();
+                if let serde_json::Value::Object(map) = &mut details {
+                    map.insert("reason".into(), serde_json::json!(reason));
+                }
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "PAYPAL_CSV_INVALID",
+                        "message": t(
+                            "error-paypal-csv-invalid",
+                            "Ce fichier n'est pas un relevé PayPal « Balance affecting transactions » lisible. Rien n'a été importé.",
+                        ),
+                        "details": details,
+                    }
+                });
+                (StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response()
+            }
+
+            // ----- Story 38-12a (socle S4) — téléchargement par l'API -----
+            AppError::ProviderPeriodInvalid { provider, reason } => coded_response(
+                StatusCode::BAD_REQUEST,
+                "PROVIDER_PERIOD_INVALID",
+                t(
+                    "error-provider-period-invalid",
+                    "Période refusée : le début doit précéder la fin, ne pas être dans le futur, et dater de moins de trois ans.",
+                ),
+                serde_json::json!({ "provider": provider, "reason": reason }),
+            ),
+            AppError::ProviderApiNotConfigured { provider, account } => coded_response(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "PROVIDER_API_NOT_CONFIGURED",
+                t(
+                    "error-provider-api-not-configured",
+                    "Le téléchargement n'est pas configuré pour ce compte : l'administrateur pose ses identifiants dans l'environnement du serveur. L'import du fichier reste possible.",
+                ),
+                serde_json::json!({ "provider": provider, "account": account }),
+            ),
+            AppError::ProviderDownloadRunning {
+                provider,
+                job_id,
+                from,
+                to,
+            } => coded_response(
+                StatusCode::CONFLICT,
+                "PROVIDER_DOWNLOAD_RUNNING",
+                t(
+                    "error-provider-download-running",
+                    "Un téléchargement est déjà en cours pour ce compte : attendez qu'il se termine.",
+                ),
+                serde_json::json!({
+                    "provider": provider,
+                    "jobId": job_id,
+                    "from": from.format("%Y-%m-%d").to_string(),
+                    "to": to.format("%Y-%m-%d").to_string(),
+                }),
+            ),
+            AppError::ProviderAuthFailed { provider } => coded_response(
+                StatusCode::BAD_GATEWAY,
+                "PROVIDER_AUTH_FAILED",
+                t(
+                    "error-provider-auth-failed",
+                    "Le prestataire refuse les identifiants de ce compte : l'administrateur doit les vérifier. Rien n'a été importé.",
+                ),
+                serde_json::json!({ "provider": provider }),
+            ),
+            AppError::ProviderPermissionDenied { provider } => coded_response(
+                StatusCode::BAD_GATEWAY,
+                "PROVIDER_PERMISSION_DENIED",
+                t(
+                    "error-provider-permission-denied",
+                    "L'application du prestataire n'a pas le droit de lire les transactions : l'administrateur doit lui donner cette fonction. Rien n'a été importé.",
+                ),
+                serde_json::json!({ "provider": provider }),
+            ),
+            AppError::ProviderRateLimited {
+                provider,
+                window,
+                page,
+            } => coded_response(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "PROVIDER_RATE_LIMITED",
+                t(
+                    "error-provider-rate-limited",
+                    "Le prestataire limite le nombre de demandes : réessayez plus tard. Rien n'a été importé.",
+                ),
+                serde_json::json!({ "provider": provider, "window": window, "page": page }),
+            ),
+            AppError::ProviderUnavailable {
+                provider,
+                window,
+                page,
+            } => coded_response(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "PROVIDER_UNAVAILABLE",
+                t(
+                    "error-provider-unavailable",
+                    "Le prestataire ne répond pas : réessayez plus tard. Rien n'a été importé.",
+                ),
+                serde_json::json!({ "provider": provider, "window": window, "page": page }),
+            ),
+            AppError::ProviderResponseInvalid { provider, details } => {
+                let mut details = details;
+                if let serde_json::Value::Object(map) = &mut details {
+                    map.insert("provider".into(), serde_json::json!(provider));
+                } else {
+                    details = serde_json::json!({ "provider": provider });
+                }
+                coded_response(
+                    StatusCode::BAD_GATEWAY,
+                    "PROVIDER_RESPONSE_INVALID",
+                    t(
+                        "error-provider-response-invalid",
+                        "La réponse du prestataire n'a pas pu être lue. Rien n'a été importé.",
+                    ),
+                    details,
+                )
+            }
+            AppError::ProviderApiError {
+                provider,
+                window,
+                page,
+            } => coded_response(
+                StatusCode::BAD_GATEWAY,
+                "PROVIDER_API_ERROR",
+                t(
+                    "error-provider-api-error",
+                    "Le prestataire a refusé la demande. Rien n'a été importé.",
+                ),
+                serde_json::json!({ "provider": provider, "window": window, "page": page }),
+            ),
 
             // ----- Story 8-2 — bank profiles + CSV import -----
             AppError::BankCsvProfileNotFound { available_profiles } => {
@@ -4470,6 +4831,21 @@ impl IntoResponse for AppError {
                     });
                     (StatusCode::CONFLICT, Json(body)).into_response()
                 }
+                // Story 38-11b (AC-3) — 409 : l'état du compte (solde d'un
+                // prestataire) s'oppose au geste.
+                DbError::BankAccountIsProvider { bank_account_id } => {
+                    let body = serde_json::json!({
+                        "error": {
+                            "code": "BANK_ACCOUNT_IS_PROVIDER",
+                            "message": t(
+                                "error-bank-account-is-provider",
+                                "Ce compte est le solde d'un prestataire de paiement : il ne reçoit ni relevé bancaire ni règlement de facture. Importez son relevé par sa route, et réglez la facture par un compte interne ou une écriture, puis rattachez la transaction.",
+                            ),
+                            "details": { "bankAccountId": bank_account_id }
+                        }
+                    });
+                    (StatusCode::CONFLICT, Json(body)).into_response()
+                }
                 // Story 34-11a2 (#972, C-e341-41).
                 DbError::SettlementAccountIsCreditCard { bank_account_id } => {
                     let body = serde_json::json!({
@@ -5062,6 +5438,17 @@ impl IntoResponse for AppError {
                         "Ce compte est employé en CHF (rôle, paramètres de facturation, compte bancaire, article ou règle de rapprochement) : il ne peut pas recevoir de devise.",
                     ),
                     site.details(),
+                ),
+                // Story 38-11b, revue P1 (M3) — 409 : la devise du compte du
+                // plan d'un solde de prestataire ne change pas.
+                DbError::AccountCurrencyProviderLinked { bank_account_id } => coded_response(
+                    StatusCode::CONFLICT,
+                    "ACCOUNT_CURRENCY_PROVIDER_LINKED",
+                    t(
+                        "error-account-currency-provider-linked",
+                        "Ce compte est lié au solde d'un prestataire de paiement : sa devise est celle du solde et ne change pas.",
+                    ),
+                    serde_json::json!({ "bankAccountId": bank_account_id }),
                 ),
                 DbError::AccountInForeignCurrency {
                     account_id,

@@ -391,6 +391,8 @@ async fn create_under_lock(
             transaction_id: t.transaction_id,
             counterparty_iban: t.counterparty_iban,
             counterparty_name: t.counterparty_name,
+            counterparty_email: None,
+            provider_type: None,
         })
         .collect();
 
@@ -458,6 +460,9 @@ async fn check_statement(
             bank_account_id: account.id,
         });
     }
+    // Story 38-11b (AC-3) — un compte de prestataire ne reçoit pas de relevé
+    // saisi à la main (aperçu et création passent ici).
+    super::bank_imports::refuse_provider_account(&account)?;
     let input = parse_manual_statement(raw).map_err(statement_error)?;
     let sums = validate_manual_statement(&input).map_err(statement_error)?;
     let file_hash = compute_sha256_hex(&manual_statement_canonical_bytes(&input));

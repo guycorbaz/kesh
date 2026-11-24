@@ -24,8 +24,9 @@
 //! Story 34-11b (#972), « **au plus une transaction par côté** » : une
 //! écriture porte une transaction, ou **deux** quand elle est l'écriture d'un
 //! virement entre deux comptes bancaires propres — une transaction de chaque
-//! côté, de comptes bancaires différents et de montants opposés
-//! ([`transfer_other_side`]). `bank_accounts::list_by_company_with_balances`
+//! côté, de comptes bancaires différents et de montants opposés — ou d'une
+//! conversion entre deux de ses comptes en devises différentes, de signes
+//! opposés (Story 38-11c1) ([`transfer_other_side`]). `bank_accounts::list_by_company_with_balances`
 //! (solde par compte bancaire) le supporte ; `reconciliation_cancel` ne
 //! retire alors que le lien du côté annulé, sans contre-passer. Il est tenu
 //! par la condition « non rapprochée » de chaque règle — la condition 4 de
@@ -75,6 +76,7 @@ use crate::entities::bank_transaction::BankTransaction;
 use crate::entities::journal_entry::Journal;
 use crate::errors::{DbError, map_db_error};
 use crate::repositories::audit_log;
+use crate::repositories::bank_accounts::BASE_CURRENCY;
 use crate::repositories::bank_imports::is_reconciled;
 use crate::repositories::reconciliation::{find_by_id_for_account_for_update, payment_date};
 
@@ -496,22 +498,29 @@ pub async fn link_in_tx(
 //
 // Une écriture `e` est **rattachable** à une transaction `t` si et seulement si :
 //
-// 1. `t` est en CHF, de montant non nul ([`transaction_can_be_linked_to_entry`])
-//    — et, pour l'appelant, `pending` (rejetée ou non) ;
+// 1. `t` est dans la devise du compte du grand livre **actuel** de son compte
+//    bancaire (`CHF` quand ce compte n'a pas de devise), de montant non nul
+//    ([`transaction_can_be_linked_to_entry`], Story 38-11c1 : auparavant CHF
+//    seulement) — et, pour l'appelant, `pending` (rejetée ou non) ;
 // 2. `e` est de la même société ;
 // 3. son mouvement `M` sur le compte du grand livre **actuel** du compte
-//    bancaire de `t` (`SUM(debit) − SUM(credit)` de ses lignes sur ce compte)
-//    **égale** `t.amount`, en décimal exact — un crédit de la banque appelle
-//    `M > 0`, un débit `M < 0` ;
+//    bancaire de `t` **égale** `t.amount`, en décimal exact — un crédit de la
+//    banque appelle `M > 0`, un débit `M < 0`. `M` se compte dans la devise du
+//    compte ([`entry_movements`]) : `SUM(debit) − SUM(credit)` de ses lignes
+//    sur ce compte pour un compte CHF ; la somme signée de leurs montants en
+//    devise (`amount_currency`) pour un compte en devise ;
 // 4. `e` n'est rapprochée d'aucune transaction — **ou** d'une seule, qui est
-//    l'**autre côté d'un virement** de `t` : une transaction d'un **autre**
-//    compte bancaire, de montant **opposé** à `M` (Story 34-11b, #972 ;
-//    [`linkable_side`], qui suit la règle de sens contraire de la 34-4,
-//    C-e344-11, et ne lit aucun lien de compte bancaire à un grand livre autre
-//    que celui de `t`). Au plus **deux** transactions par écriture, une de
-//    chaque côté ; jamais deux du même compte bancaire ni deux du même sens —
-//    deux comptes bancaires qui partagent un compte du grand livre ne
-//    rapprochent donc pas deux fois le même mouvement ;
+//    l'**autre côté** de `t` : une transaction d'un **autre** compte bancaire,
+//    soit de **même devise** que `t` et de montant **opposé** à `M` (un
+//    virement entre ses comptes), soit d'une **autre devise** et de **signe**
+//    opposé (les deux côtés d'une conversion passée en une écriture, Story
+//    38-11c1) — Story 34-11b, #972 ; [`linkable_side`], qui suit la règle de
+//    sens contraire de la 34-4, C-e344-11, et ne lit aucun lien de compte
+//    bancaire à un grand livre autre que celui de `t`. Au plus **deux**
+//    transactions par écriture, une de chaque côté ; jamais deux du même
+//    compte bancaire ni deux du même sens — deux comptes bancaires qui
+//    partagent un compte du grand livre ne rapprochent donc pas deux fois le
+//    même mouvement ;
 // 5. `e` ne contre-passe rien et n'est contre-passée par rien ;
 // 6. `e` n'est pas l'écriture d'un règlement client par virement **sur le
 //    compte bancaire de `t`** — celle-là relève de la Story 29-8
@@ -526,14 +535,48 @@ pub async fn link_in_tx(
 pub const ENTRY_CANDIDATES_LIMIT: i64 = 50;
 
 /// Condition 1 de la règle du rattachement à une écriture : la transaction est
-/// en CHF, de montant **non nul** — crédit ou débit. Un montant nul (`-0.00`
-/// compris : `Decimal::is_zero` ne regarde pas le signe) n'a pas de mouvement
-/// à égaler.
+/// dans la devise `ledger_currency` du compte du grand livre **actuel** de son
+/// compte bancaire (`"CHF"` quand ce compte n'a pas de devise, [`BASE_CURRENCY`]),
+/// de montant **non nul** — crédit ou débit. Un montant nul (`-0.00` compris :
+/// `Decimal::is_zero` ne regarde pas le signe) n'a pas de mouvement à égaler.
+///
+/// Story 38-11c1 (AC-1) : la devise du compte en second argument — auparavant
+/// « CHF » en dur ; un compte CHF garde exactement la règle d'avant. Les
+/// règlements groupés (Story 43-1a) passent [`BASE_CURRENCY`] : ils restent CHF.
 ///
 /// Fonction pure, seule définition de la condition (la liste et le geste
 /// l'appellent ; l'écran en tient le miroir, `canLink`).
-pub fn transaction_can_be_linked_to_entry(t: &BankTransaction) -> bool {
-    !t.amount.is_zero() && t.currency == "CHF"
+pub fn transaction_can_be_linked_to_entry(t: &BankTransaction, ledger_currency: &str) -> bool {
+    !t.amount.is_zero() && t.currency == ledger_currency
+}
+
+/// La devise du compte du grand livre `ledger_account_id` de la société —
+/// [`BASE_CURRENCY`] quand il n'en a pas (Story 38-11c1, AC-1). Lecture
+/// ordinaire, **hors verrou**, au pré-vol des routes du rattachement à une
+/// écriture : sûre, car la devise d'un compte qui porte une ligne ne change
+/// plus (`ACCOUNT_CURRENCY_LOCKED`, Story 37-1), et un compte sans ligne n'a
+/// aucune écriture dont le mouvement égalerait une transaction. Un compte
+/// absent ou d'une autre société → `DbError::NotFound` (inatteignable : le
+/// compte bancaire tient son compte du grand livre par clé étrangère).
+pub async fn bank_ledger_currency<'e, E>(
+    executor: E,
+    company_id: i64,
+    ledger_account_id: i64,
+) -> Result<String, DbError>
+where
+    E: sqlx::Executor<'e, Database = MySql>,
+{
+    let row: Option<Option<String>> =
+        sqlx::query_scalar("SELECT currency FROM accounts WHERE id = ? AND company_id = ?")
+            .bind(ledger_account_id)
+            .bind(company_id)
+            .fetch_optional(executor)
+            .await
+            .map_err(map_db_error)?;
+    match row {
+        Some(currency) => Ok(currency.unwrap_or_else(|| BASE_CURRENCY.to_string())),
+        None => Err(DbError::NotFound),
+    }
 }
 
 /// Une écriture déjà passée à laquelle la transaction se rattache.
@@ -598,17 +641,20 @@ enum EntrySqlMode {
 }
 
 /// Le texte de la requête des conditions 2 à 6, et ses variantes
-/// ([`EntrySqlMode`]) — `One` : restreinte à `e.id`.
+/// ([`EntrySqlMode`]) — `One` : restreinte à `e.id` —, pour le genre de
+/// mouvement `kind` du compte du grand livre ([`entry_movements`], Story
+/// 38-11c1).
 ///
 /// Paramètres, dans l'ordre : date de paiement de `t` (proximité), compte du
-/// grand livre actuel, `company_id`, `t.amount`, `t.bank_account_id`
-/// (condition 4, [`linkable_side`]), `t.bank_account_id` (condition 6), et —
-/// `One` — l'identifiant de l'écriture.
+/// grand livre actuel, `company_id`, `t.amount`, `t.bank_account_id` puis
+/// `t.currency` deux fois (condition 4, [`linkable_side`]), `t.bank_account_id`
+/// (condition 6), et — `One` — l'identifiant de l'écriture.
 ///
 /// Un seul texte : les variantes n'en diffèrent que par l'ajout de
 /// [`HAS_LINK`] ou la restriction à `e.id` (tests
 /// `the_restricted_entry_query_is_the_list_query_plus_the_entry`,
-/// `the_matched_elsewhere_query_is_the_list_query_plus_the_link`).
+/// `the_matched_elsewhere_query_is_the_list_query_plus_the_link`, pour les deux
+/// genres).
 ///
 /// - Le mouvement `M` se somme dans une **table dérivée par écriture**, en
 ///   jointure interne sur les lignes du compte lié actuel. ⚠️ Ici la jointure
@@ -626,18 +672,19 @@ enum EntrySqlMode {
 ///   `COALESCE(value_date, booking_date)`.
 /// - Tri par jours d'écart, puis identifiant ; [`ENTRY_CANDIDATES_LIMIT`] au
 ///   plus, filtre et tri **avant** `LIMIT`.
-fn entry_sql(mode: EntrySqlMode) -> String {
+fn entry_sql(mode: EntrySqlMode, kind: MovementKind) -> String {
     format!(
         "SELECT e.id AS journal_entry_id, e.entry_number, e.fiscal_year_id, e.entry_date, \
                 e.journal, e.description, m.movement AS amount, \
                 CAST(ABS(DATEDIFF(e.entry_date, ?)) AS SIGNED) AS days_apart \
-         {ENTRY_MOVEMENTS} \
+         {} \
          WHERE e.company_id = ? \
            AND m.movement = ? \
            AND {} \
            AND {ENTRY_NOT_REVERSED_NOR_SETTLEMENT}{}{} \
          ORDER BY days_apart, e.id \
          LIMIT {ENTRY_CANDIDATES_LIMIT}",
+        entry_movements(kind),
         linkable_side(),
         if mode == EntrySqlMode::MatchedElsewhere {
             format!(" AND {HAS_LINK}")
@@ -652,13 +699,34 @@ fn entry_sql(mode: EntrySqlMode) -> String {
     )
 }
 
-/// **L'autre côté d'un virement** (Story 34-11b, #972 ; règle de sens contraire
-/// de la Story 34-4, C-e344-11) — le prédicat, sur une transaction `bt` liée à
-/// l'écriture, qui la reconnaît comme l'autre côté de la transaction `t` : un
-/// **autre** compte bancaire (paramètre : `t.bank_account_id`), et un montant
-/// **opposé** à `movement` — le mouvement de l'écriture sur le grand livre de
-/// `t`, égal à `t.amount` (`m.movement` dans la liste, `?` = `t.amount` dans
-/// [`transfer_other_side`]).
+/// **L'autre côté** de `t` (Story 34-11b, #972 ; règle de sens contraire de la
+/// Story 34-4, C-e344-11 ; seconde branche de la Story 38-11c1, AC-1b) — le
+/// prédicat, sur une transaction `bt` liée à l'écriture, qui la reconnaît comme
+/// l'autre côté de la transaction `t` : un **autre** compte bancaire, et, au
+/// choix (**deux branches**) :
+///
+/// - **même devise** que `t` et montant **opposé** à `movement` — un virement
+///   entre ses comptes (retrait PayPal CHF vers la banque, versement Stripe
+///   reçu sur Wise) ;
+/// - **autre devise** que `t` et **signe** opposé à celui de `movement` — les
+///   deux côtés d'une conversion passée en une écriture (38-11c2 AC-8) : les
+///   montants ne se comparent pas d'une devise à l'autre.
+///
+/// `movement` est le mouvement de l'écriture sur le grand livre de `t`, égal à
+/// `t.amount` (`m.movement` dans la liste, le geste et la page ; `?` lié à
+/// `t.amount` dans [`transfer_other_side`]).
+///
+/// **Ordre des `?` du texte** (entrelacés, non groupés) : `t.bank_account_id`,
+/// `t.currency`, `movement` s'il est `?`, `t.currency`, `movement` s'il est
+/// `?`. La devise de `t` suit son compte bancaire : commune à toute une page,
+/// comme `t.bank_account_id` (après la condition 1, c'est la devise du compte
+/// du grand livre). ⛔ Aucun `AND bt.currency = …` isolé : il contredirait la
+/// seconde branche. **Un** texte pour les trois prestataires (PayPal, Wise,
+/// Stripe : 39-11c AC-3 et 40-7c AC-1 le réutilisent).
+///
+/// **Inerte pour l'existant** : tant qu'aucun compte bancaire n'est en devise
+/// hors prestataire (C-37-9), toute transaction liée est en CHF et la seconde
+/// branche ne s'active jamais.
 ///
 /// ⛔ **Une seule définition** (choix C-e341-35, C-e34b-3) : la condition 4 de
 /// la liste et du geste ([`linkable_side`]), le second côté compté par la page
@@ -697,7 +765,9 @@ fn entry_sql(mode: EntrySqlMode) -> String {
 /// d'autre côté.
 fn other_side_predicate(movement: &str) -> String {
     format!(
-        "(bt.bank_account_id <> ? AND bt.amount = -({movement}) \
+        "(bt.bank_account_id <> ? \
+          AND ((bt.currency = ? AND bt.amount = -({movement})) \
+               OR (bt.currency <> ? AND SIGN(bt.amount) = -SIGN({movement}))) \
           AND NOT EXISTS (SELECT 1 FROM invoice_settlements s2 \
                            WHERE s2.company_id = bt.company_id \
                              AND s2.journal_entry_id = bt.matched_entry_id) \
@@ -709,9 +779,9 @@ fn other_side_predicate(movement: &str) -> String {
 }
 
 /// Condition 4 de la règle (Story 34-11b) : **aucune** transaction liée à `e`
-/// n'est autre que l'autre côté d'un virement de `t`
-/// ([`other_side_predicate`]), et **une** au plus est liée. Paramètre :
-/// `t.bank_account_id`.
+/// n'est autre que l'autre côté de `t` ([`other_side_predicate`]), et **une**
+/// au plus est liée. Paramètres : `t.bank_account_id`, `t.currency`,
+/// `t.currency` (le mouvement est `m.movement`, sans liaison).
 ///
 /// Remplace « `e` n'est rapprochée d'aucune transaction » (v017-3a), qui
 /// refusait le second côté d'un virement (fiche 34-11b, « le blocage »).
@@ -724,18 +794,23 @@ fn other_side_predicate(movement: &str) -> String {
 /// et une troisième transaction. Ce qu'elle admet : l'autre mouvement d'une
 /// écriture de virement à deux lignes de banque, même si le compte rapproché
 /// a été relié ailleurs depuis (le signe de sa transaction prouve le
-/// mouvement). Un virement éclaté sur plus de deux comptes n'a plus de second
-/// côté rattachable : aucun montant n'est opposé à celui du premier.
+/// mouvement). Un virement éclaté sur plus de deux comptes de même devise n'a
+/// plus de second côté rattachable : aucun montant n'est opposé à celui du
+/// premier.
 ///
 /// ⚠️ **Le plafond `<= 1` est une défense en profondeur, inerte aujourd'hui**
-/// (revue P1, E1-4, B1-3 ; mutation M2b **équivalente**) : deux liens sont
-/// forcément de comptes différents et de montants opposés (le second n'est
-/// entré qu'en étant l'autre côté du premier) ; une troisième transaction
-/// devrait être l'autre côté **des deux** — `bt₁.amount = −M = bt₂.amount`,
-/// impossible puisque `bt₁.amount = −bt₂.amount ≠ 0` (condition 1). Le
-/// `NOT EXISTS` suffit. Il deviendrait porteur le jour où le prédicat
-/// tolérerait un écart (frais, arrondi) : un test de comportement devra alors
-/// le garder.
+/// (revue P1, E1-4, B1-3 ; mutation M2b **équivalente**). Démonstration
+/// (Story 38-11c1, AC-1b, qui remplace celle par les montants, `bt₁.amount =
+/// −M = bt₂.amount`, qui ne vaut plus pour la seconde branche) : **chaque**
+/// branche impose `SIGN(bt.amount) = −SIGN(M)` (la première par `bt.amount =
+/// −M`). Deux transactions liées sont de signes opposés — la seconde n'est
+/// entrée qu'en étant l'autre côté de la première, et `M` de la seconde a son
+/// signe (condition 3) ; une troisième devrait être de signe opposé **aux
+/// deux** — impossible, les montants étant non nuls (condition 1). Le
+/// `NOT EXISTS` suffit. Le test (e) de la 38-11c1
+/// (`s38_11c1_conversion_a_une_ecriture`) le garde par le comportement, et le
+/// test (g) (`s38_11c1_le_signe_de_la_seconde_branche`) le signe sur lequel
+/// repose la démonstration.
 fn linkable_side() -> String {
     format!(
         "NOT EXISTS (SELECT 1 FROM bank_transactions bt \
@@ -754,8 +829,10 @@ const HAS_LINK: &str =
 
 /// L'**autre côté** de la transaction `t` sur l'écriture `entry_id` : une
 /// transaction **autre que `t`**, liée à l'écriture, d'un **autre** compte
-/// bancaire et de montant **opposé** à `t.amount`
-/// ([`other_side_predicate`]) — son identifiant, ou `None`.
+/// bancaire, de même devise et de montant **opposé** à `t.amount`, ou d'une
+/// autre devise et de signe opposé ([`other_side_predicate`]) — son
+/// identifiant, ou `None`. Liaisons : `company_id`, `entry_id`, `t.id`, puis
+/// `t.bank_account_id`, `t.currency`, `t.amount`, `t.currency`, `t.amount`.
 ///
 /// Story 34-11b (#972, C-e341-35) — la seule définition de « l'autre côté
 /// légitime », pour une transaction **liée** (l'annulation : retirer le seul
@@ -786,26 +863,74 @@ pub async fn transfer_other_side(
     .bind(company_id)
     .bind(entry_id)
     .bind(t.id)
+    // `other_side_predicate("?")` : compte, devise, montant, devise, montant.
     .bind(t.bank_account_id)
+    .bind(&t.currency)
+    .bind(t.amount)
+    .bind(&t.currency)
     .bind(t.amount)
     .fetch_optional(&mut *conn)
     .await
     .map_err(map_db_error)
 }
 
+/// Le genre du mouvement `M` d'une écriture sur le compte du grand livre
+/// (Story 38-11c1, AC-1) : en CHF, ou dans la devise du compte.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MovementKind {
+    /// Compte du grand livre sans devise : `M` en francs.
+    Chf,
+    /// Compte du grand livre en devise : `M` dans cette devise.
+    Foreign,
+}
+
+impl MovementKind {
+    /// Le genre du compte de devise `ledger_currency` ([`BASE_CURRENCY`] pour
+    /// un compte sans devise).
+    fn of(ledger_currency: &str) -> Self {
+        if ledger_currency == BASE_CURRENCY {
+            Self::Chf
+        } else {
+            Self::Foreign
+        }
+    }
+}
+
+/// La somme d'un mouvement en CHF : le texte d'avant la Story 38-11c1.
+const CHF_MOVEMENT_SUM: &str = "SUM(l.debit) - SUM(l.credit)";
+
+/// La somme d'un mouvement en devise (Story 38-11c1, AC-1) : le montant en
+/// devise de chaque ligne, du signe de son côté. Une ligne de réévaluation
+/// (`amount_currency = 0`, `chk_jel_fx_amount`) n'y pèse rien ; une ligne d'un
+/// compte en devise porte son montant en devise (contrôle central des lignes
+/// en devise de la Story 37-3a, `ACCOUNT_REQUIRES_CURRENCY`).
+const FOREIGN_MOVEMENT_SUM: &str =
+    "SUM(CASE WHEN l.debit > 0 THEN l.amount_currency ELSE -l.amount_currency END)";
+
 /// La jointure qui donne `M`, le mouvement de chaque écriture sur le compte du
-/// grand livre actuel (conditions 3 de la règle, sans le test de montant).
-/// Paramètre : le compte du grand livre. Partagé par [`entry_sql`] et la
-/// lecture par page de la Story 34-4 ([`count_already_booked_for_page`]).
-const ENTRY_MOVEMENTS: &str = "FROM journal_entries e \
-     JOIN (SELECT l.entry_id, SUM(l.debit) - SUM(l.credit) AS movement \
+/// grand livre actuel (conditions 3 de la règle, sans le test de montant),
+/// compté selon `kind` ([`CHF_MOVEMENT_SUM`], [`FOREIGN_MOVEMENT_SUM`]).
+/// Paramètre : le compte du grand livre. Partagée par [`entry_sql`] et la
+/// lecture par page de la Story 34-4 ([`count_already_booked_for_page`]) :
+/// sans elle, une transaction EUR de la page serait comptée contre des
+/// mouvements CHF.
+fn entry_movements(kind: MovementKind) -> String {
+    let sum = match kind {
+        MovementKind::Chf => CHF_MOVEMENT_SUM,
+        MovementKind::Foreign => FOREIGN_MOVEMENT_SUM,
+    };
+    format!(
+        "FROM journal_entries e \
+     JOIN (SELECT l.entry_id, {sum} AS movement \
              FROM journal_entry_lines l \
             WHERE l.account_id = ? \
-            GROUP BY l.entry_id) m ON m.entry_id = e.id";
+            GROUP BY l.entry_id) m ON m.entry_id = e.id"
+    )
+}
 
 /// Conditions 5 et 6 de la règle : ni contre-passée ni contre-passation, et
 /// hors règlement client par virement sur le compte bancaire de `t`.
-/// Paramètre : `t.bank_account_id`. Partagé comme [`ENTRY_MOVEMENTS`].
+/// Paramètre : `t.bank_account_id`. Partagé comme [`entry_movements`].
 const ENTRY_NOT_REVERSED_NOR_SETTLEMENT: &str = "e.reverses_entry_id IS NULL \
      AND NOT EXISTS (SELECT 1 FROM journal_entries r WHERE r.reverses_entry_id = e.id) \
      AND NOT EXISTS (SELECT 1 FROM invoice_settlements s \
@@ -814,25 +939,30 @@ const ENTRY_NOT_REVERSED_NOR_SETTLEMENT: &str = "e.reverses_entry_id IS NULL \
                         AND s.settlement_bank_account_id = ?)";
 
 /// Exécute [`entry_sql`] pour `t`, dans le mode demandé (l'écriture de
-/// [`EntrySqlMode::One`] est portée par la variante).
+/// [`EntrySqlMode::One`] est portée par la variante), le mouvement compté
+/// dans la devise `ledger_currency` du compte du grand livre.
 async fn query_entry_sql<'e, E>(
     executor: E,
     company_id: i64,
     t: &BankTransaction,
     bank_ledger_account_id: i64,
+    ledger_currency: &str,
     mode: EntrySqlMode,
 ) -> Result<Vec<EntryCandidate>, DbError>
 where
     E: sqlx::Executor<'e, Database = MySql>,
 {
-    let sql = entry_sql(mode);
+    let sql = entry_sql(mode, MovementKind::of(ledger_currency));
     let mut q = sqlx::query_as::<_, EntryCandidateRow>(&sql)
         .bind(payment_date(t))
         .bind(bank_ledger_account_id)
         .bind(company_id)
         .bind(t.amount)
-        // Condition 4 (`linkable_side`), puis condition 6.
+        // Condition 4 (`linkable_side`) : compte, devise, devise ; puis
+        // condition 6 : compte.
         .bind(t.bank_account_id)
+        .bind(&t.currency)
+        .bind(&t.currency)
         .bind(t.bank_account_id);
     if let EntrySqlMode::One(id) = mode {
         q = q.bind(id);
@@ -848,6 +978,7 @@ async fn query_entry_candidates<'e, E>(
     company_id: i64,
     t: &BankTransaction,
     bank_ledger_account_id: i64,
+    ledger_currency: &str,
     journal_entry_id: Option<i64>,
 ) -> Result<Vec<EntryCandidate>, DbError>
 where
@@ -857,7 +988,15 @@ where
         Some(id) => EntrySqlMode::One(id),
         None => EntrySqlMode::List,
     };
-    query_entry_sql(executor, company_id, t, bank_ledger_account_id, mode).await
+    query_entry_sql(
+        executor,
+        company_id,
+        t,
+        bank_ledger_account_id,
+        ledger_currency,
+        mode,
+    )
+    .await
 }
 
 /// Les écritures rattachables à `t` — conditions 1 à 6 —, triées par jours
@@ -865,21 +1004,31 @@ where
 /// Vide, **sans requête**, si la condition 1 est fausse.
 ///
 /// `bank_ledger_account_id` : le compte du grand livre **actuel** du compte
-/// bancaire de `t`. L'appelant a vérifié que `t` est `pending`. Lecture non
+/// bancaire de `t` ; `ledger_currency` : sa devise ([`bank_ledger_currency`],
+/// lue au pré-vol). L'appelant a vérifié que `t` est `pending`. Lecture non
 /// verrouillante ; rien n'est écrit, rien n'est présélectionné.
 pub async fn find_entry_candidates<'e, E>(
     executor: E,
     company_id: i64,
     t: &BankTransaction,
     bank_ledger_account_id: i64,
+    ledger_currency: &str,
 ) -> Result<Vec<EntryCandidate>, DbError>
 where
     E: sqlx::Executor<'e, Database = MySql>,
 {
-    if !transaction_can_be_linked_to_entry(t) {
+    if !transaction_can_be_linked_to_entry(t, ledger_currency) {
         return Ok(Vec::new());
     }
-    query_entry_candidates(executor, company_id, t, bank_ledger_account_id, None).await
+    query_entry_candidates(
+        executor,
+        company_id,
+        t,
+        bank_ledger_account_id,
+        ledger_currency,
+        None,
+    )
+    .await
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -898,11 +1047,12 @@ pub async fn find_matched_elsewhere<'e, E>(
     company_id: i64,
     t: &BankTransaction,
     bank_ledger_account_id: i64,
+    ledger_currency: &str,
 ) -> Result<Vec<EntryCandidate>, DbError>
 where
     E: sqlx::Executor<'e, Database = MySql>,
 {
-    if !transaction_can_be_linked_to_entry(t) {
+    if !transaction_can_be_linked_to_entry(t, ledger_currency) {
         return Ok(Vec::new());
     }
     query_entry_sql(
@@ -910,6 +1060,7 @@ where
         company_id,
         t,
         bank_ledger_account_id,
+        ledger_currency,
         EntrySqlMode::MatchedElsewhere,
     )
     .await
@@ -939,7 +1090,7 @@ pub struct AlreadyBookedCounts {
 /// [`find_entry_candidates`] et [`find_matched_elsewhere`] — test d'égalité
 /// `s34_4_ac8_la_lecture_par_page_egale_les_fonctions_du_dialogue`. Les
 /// conditions SQL sont les **mêmes textes** ([`LINKABLE_SETTLEMENTS`],
-/// [`ENTRY_MOVEMENTS`], [`linkable_side`], [`HAS_LINK`],
+/// [`entry_movements`], [`linkable_side`], [`HAS_LINK`],
 /// [`ENTRY_NOT_REVERSED_NOR_SETTLEMENT`]) ; seuls les tests de montant et le
 /// plafond de 50 passent en Rust, sur des décimaux exacts. Depuis la Story
 /// 34-11b, la condition 4 lit `t.bank_account_id` — commun à toute la page,
@@ -953,14 +1104,19 @@ pub struct AlreadyBookedCounts {
 ///
 /// Toutes les transactions doivent être du compte `bank_account_id`
 /// (`DbError::Invariant` sinon) : la condition 6 et le second côté le lisent.
-/// Une transaction absente de la table rendue n'a rien à quoi se rattacher
-/// (hors CHF, montant nul, [`transaction_can_be_linked_to_entry`]). Lectures
-/// ordinaires, sans verrou ; rien n'est écrit. Une erreur remonte.
+/// `ledger_currency` est la devise du compte du grand livre (Story 38-11c1) :
+/// commune à toute la page, elle compte le mouvement ([`entry_movements`]) et
+/// paramètre la condition 4 ; la section des règlements reste CHF
+/// ([`transaction_can_be_linked`]). Une transaction absente de la table rendue
+/// n'a rien à quoi se rattacher (autre devise que celle du compte, montant
+/// nul, [`transaction_can_be_linked_to_entry`]). Lectures ordinaires, sans
+/// verrou ; rien n'est écrit. Une erreur remonte.
 pub async fn count_already_booked_for_page(
     pool: &sqlx::MySqlPool,
     company_id: i64,
     bank_account_id: i64,
     bank_ledger_account_id: i64,
+    ledger_currency: &str,
     transactions: &[BankTransaction],
     amount_tolerance: Decimal,
 ) -> Result<std::collections::HashMap<i64, AlreadyBookedCounts>, DbError> {
@@ -975,7 +1131,7 @@ pub async fn count_already_booked_for_page(
     }
     let linkable: Vec<&BankTransaction> = transactions
         .iter()
-        .filter(|t| transaction_can_be_linked_to_entry(t))
+        .filter(|t| transaction_can_be_linked_to_entry(t, ledger_currency))
         .collect();
     let mut counts = std::collections::HashMap::with_capacity(linkable.len());
     if linkable.is_empty() {
@@ -1004,16 +1160,21 @@ pub async fn count_already_booked_for_page(
         "SELECT m.movement, \
                 CAST(({}) AS SIGNED) AS candidate, \
                 CAST({HAS_LINK} AS SIGNED) AS linked \
-         {ENTRY_MOVEMENTS} \
+         {} \
          WHERE e.company_id = ? \
            AND m.movement IN ({placeholders}) \
            AND {ENTRY_NOT_REVERSED_NOR_SETTLEMENT}",
-        linkable_side()
+        linkable_side(),
+        entry_movements(MovementKind::of(ledger_currency)),
     );
-    // Ordre des `?` dans le texte : condition 4 (compte bancaire),
-    // `ENTRY_MOVEMENTS` (grand livre), société, montants, condition 6 (compte bancaire).
+    // Ordre des `?` dans le texte : condition 4 (compte bancaire, devise,
+    // devise — la devise des transactions de la page, celle du compte du grand
+    // livre après la condition 1), `entry_movements` (grand livre), société,
+    // montants, condition 6 (compte bancaire).
     let mut q = sqlx::query_as::<_, (Decimal, i64, i64)>(&sql)
         .bind(bank_account_id)
+        .bind(ledger_currency)
+        .bind(ledger_currency)
         .bind(bank_ledger_account_id)
         .bind(company_id);
     for amount in &amounts {
@@ -1057,7 +1218,7 @@ pub async fn count_already_booked_for_page(
 
 /// Ce qu'on demande à [`link_entry_in_tx`].
 #[derive(Debug, Clone, Copy)]
-pub struct LinkEntryRequest {
+pub struct LinkEntryRequest<'a> {
     pub company_id: i64,
     /// Le compte bancaire de la transaction, lu au pré-vol.
     pub bank_account_id: i64,
@@ -1066,6 +1227,10 @@ pub struct LinkEntryRequest {
     pub journal_entry_id: i64,
     /// Le compte du grand livre lié au compte bancaire, lu au pré-vol.
     pub bank_ledger_account_id: i64,
+    /// Sa devise ([`bank_ledger_currency`], [`BASE_CURRENCY`] pour un compte
+    /// sans devise), lue au pré-vol avec lui, sur le pool — jamais dans le
+    /// geste, qui ne prend pas `accounts` (Story 38-11c1, AC-1).
+    pub bank_ledger_currency: &'a str,
     pub user_id: i64,
     pub actor_api_key_id: Option<i64>,
 }
@@ -1074,6 +1239,49 @@ pub struct LinkEntryRequest {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EntryLinked {
     pub journal_entry_id: i64,
+}
+
+/// Verrouille (`FOR UPDATE`) les écritures `journal_entry_ids` de la société,
+/// **une à une par identifiant croissant**, par clé primaire — la requête de
+/// l'étape 4.2 de [`link_entry_in_tx`], rien d'autre : aucun verrou
+/// d'intervalle sur un index secondaire (une écriture absente pose, comme à
+/// l'étape 4.2, le seul verrou d'intervalle de la clé primaire). Rend les
+/// identifiants trouvés. Le filtre `company_id` ne limite pas le verrou : la
+/// ligne d'une autre société est verrouillée par sa clé primaire avant d'être
+/// écartée (attente d'un commit, aucune fuite) ; l'appelant du lot ne passe que
+/// des identifiants déjà reconnus de la société ([`super::provider_review::existing_entry_ids`]),
+/// un absent ne posant ainsi aucun verrou d'intervalle.
+///
+/// ⛔ **À appeler avant la première lecture ordinaire de la transaction**
+/// (voir le corollaire de [`link_entry_in_tx`]) : c'est ce qui fait naître la
+/// vue **après** l'attente des contre-passations, modifications, suppressions
+/// et rattachements concurrents de ces écritures, qui prennent tous `je`
+/// `FOR UPDATE` en premier acte. Ordre des verrous : `je` (ici, croissants)
+/// **puis** `t` (étape 4.1, sous le verrou nommé du compte de `t`, que
+/// l'appelant tient déjà) : l'inverse de l'ordre du geste seul, sans cycle —
+/// un geste qui tiendrait `t` en attendant `je` devrait tenir le verrou nommé
+/// de son compte, que l'appelant tient (absence de cycle, ci-dessous).
+pub async fn lock_entries_for_update(
+    tx: &mut Transaction<'_, MySql>,
+    company_id: i64,
+    journal_entry_ids: &[i64],
+) -> Result<Vec<i64>, DbError> {
+    let mut ids = journal_entry_ids.to_vec();
+    ids.sort_unstable();
+    ids.dedup();
+    let mut found = Vec::with_capacity(ids.len());
+    for id in ids {
+        let je: Option<i64> = sqlx::query_scalar(
+            "SELECT id FROM journal_entries WHERE id = ? AND company_id = ? FOR UPDATE",
+        )
+        .bind(id)
+        .bind(company_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(map_db_error)?;
+        found.extend(je);
+    }
+    Ok(found)
 }
 
 /// Rattache la transaction à l'écriture désignée, **dans une transaction
@@ -1122,7 +1330,17 @@ pub struct EntryLinked {
 ///   d'InnoDB** ; l'entrelacement est forcé par le test T-race-3
 ///   (`reconciliation_link_entry_e2e.rs`) ;
 /// - corollaire : **toute** lecture ordinaire déplacée avant l'étape 4.2
-///   rouvre le double rattachement (mutation M10).
+///   rouvre le double rattachement (mutation M10) — et, plus largement, toute
+///   écriture contre-passée, modifiée ou rattachée par une transaction commitée
+///   entre cette lecture et le verrou de `je` resterait invisible à
+///   l'étape 4.4. Un appelant qui fait des lectures ordinaires **avant** ce
+///   geste dans la même transaction (le lot de l'acceptation d'un prestataire,
+///   Story 38-11c2, `routes::provider_accept`) prend donc `je` `FOR UPDATE`
+///   **avant sa première lecture ordinaire** ([`lock_entries_for_update`]) :
+///   la vue naît après l'attente, et l'étape 4.2 reprend un verrou déjà tenu
+///   (revue P1 de la 38-11c2, H1 ; test d'entrelacement
+///   `rattachement_d_une_vente_contre_passee_pendant_l_attente`,
+///   `paypal_reconciliation_e2e.rs`).
 ///
 /// # L'absence de cycle `t → je` (fiche v017-3a, AC-3 (b))
 ///
@@ -1132,9 +1350,19 @@ pub struct EntryLinked {
 /// l'éclatement manuels), et le lot qui lettre une facture avant la
 /// transaction suivante, tiennent tous le **verrou nommé du compte de la
 /// transaction qu'ils écrivent**, pris avant : ils s'excluent avec ce geste sur
-/// le même compte, et n'écrivent aucune transaction d'un autre compte. Les
-/// gestes sans verrou nommé (routes du journal, suppression d'un import) ne
-/// prennent jamais `t` après `je`. La suppression d'une écriture fait poser à
+/// le même compte, et n'écrivent aucune transaction d'un autre compte — sauf
+/// l'acceptation d'un prestataire (Story 38-11c2, `routes::provider_accept`),
+/// qui écrit des transactions de **plusieurs** comptes bancaires (les deux
+/// moitiés d'une conversion) : elle tient alors le verrou nommé de **chacun**
+/// (`with_account_locks`, pris avant toute écriture), si bien qu'elle s'exclut
+/// avec ce geste sur chacun des comptes qu'elle écrit. Elle prend aussi `je`
+/// **avant** `t` ([`lock_entries_for_update`], au début de son lot) : sans
+/// cycle pour la même raison — tout geste de rapprochement qui tient une
+/// transaction `t` d'un de ses comptes tient le verrou nommé de ce compte,
+/// qu'elle tient ; et les gestes sans verrou nommé (routes du journal,
+/// suppression d'un import) ne tiennent jamais `t` en attendant `je` ni ne le
+/// prennent après `je` (les routes du journal ne verrouillent pas `t`, la
+/// suppression d'un import ne lit pas `journal_entries`). La suppression d'une écriture fait poser à
 /// InnoDB, au titre de la clé étrangère `ON DELETE SET NULL` de
 /// `matched_entry_id`, un verrou d'**intervalle** sur l'index qu'elle parcourt
 /// (sans ligne trouvée : sa garde a refusé une écriture rapprochée) ; il
@@ -1155,7 +1383,7 @@ pub struct EntryLinked {
 /// `reconciliation.entry_linked`.
 pub async fn link_entry_in_tx(
     tx: &mut Transaction<'_, MySql>,
-    req: LinkEntryRequest,
+    req: LinkEntryRequest<'_>,
 ) -> Result<Result<EntryLinked, LinkRefusal>, DbError> {
     // 4.1 — la transaction, verrouillée.
     let Some(t) = find_by_id_for_account_for_update(
@@ -1171,7 +1399,7 @@ pub async fn link_entry_in_tx(
     if is_reconciled(t.status.as_str(), t.matched_entry_id) {
         return Ok(Err(LinkRefusal::NotPending));
     }
-    if !transaction_can_be_linked_to_entry(&t) {
+    if !transaction_can_be_linked_to_entry(&t, req.bank_ledger_currency) {
         return Ok(Err(LinkRefusal::NotLinkable));
     }
 
@@ -1198,6 +1426,7 @@ pub async fn link_entry_in_tx(
         req.company_id,
         &t,
         req.bank_ledger_account_id,
+        req.bank_ledger_currency,
         Some(req.journal_entry_id),
     )
     .await?
@@ -1283,6 +1512,8 @@ mod tests {
             version: 1,
             created_at: now,
             updated_at: now,
+            counterparty_email: None,
+            provider_type: None,
         }
     }
 
@@ -1308,16 +1539,83 @@ mod tests {
     }
 
     /// Story v017-3a, condition 1 : une transaction en CHF de montant non nul,
-    /// crédit **ou débit** — `-0.00` compris comme nul (tue M8, M27).
+    /// crédit **ou débit** — `-0.00` compris comme nul (tue M8, M27). Story
+    /// 38-11c1 : sur un compte CHF (devise du compte en second argument).
     #[test]
     fn transaction_can_be_linked_to_entry_is_a_non_zero_chf_amount() {
-        assert!(transaction_can_be_linked_to_entry(&tx("0.01", "CHF")));
-        assert!(transaction_can_be_linked_to_entry(&tx("-250.00", "CHF")));
-        assert!(transaction_can_be_linked_to_entry(&tx("-0.01", "CHF")));
-        assert!(!transaction_can_be_linked_to_entry(&tx("0.00", "CHF")));
-        assert!(!transaction_can_be_linked_to_entry(&tx("-0.00", "CHF")));
-        assert!(!transaction_can_be_linked_to_entry(&tx("-250.00", "EUR")));
-        assert!(!transaction_can_be_linked_to_entry(&tx("250.00", "EUR")));
+        let chf = BASE_CURRENCY;
+        assert!(transaction_can_be_linked_to_entry(&tx("0.01", "CHF"), chf));
+        assert!(transaction_can_be_linked_to_entry(
+            &tx("-250.00", "CHF"),
+            chf
+        ));
+        assert!(transaction_can_be_linked_to_entry(&tx("-0.01", "CHF"), chf));
+        assert!(!transaction_can_be_linked_to_entry(&tx("0.00", "CHF"), chf));
+        assert!(!transaction_can_be_linked_to_entry(
+            &tx("-0.00", "CHF"),
+            chf
+        ));
+        assert!(!transaction_can_be_linked_to_entry(
+            &tx("-250.00", "EUR"),
+            chf
+        ));
+        assert!(!transaction_can_be_linked_to_entry(
+            &tx("250.00", "EUR"),
+            chf
+        ));
+    }
+
+    /// Story 38-11c1 (AC-1) : la condition 1 compare la devise de la
+    /// transaction à celle du compte du grand livre — `EUR` sur compte EUR
+    /// vrai, `EUR` sur compte CHF faux, `USD` sur compte EUR faux ; le montant
+    /// nul reste refusé.
+    #[test]
+    fn transaction_can_be_linked_to_entry_follows_the_ledger_currency() {
+        assert!(transaction_can_be_linked_to_entry(
+            &tx("95.00", "EUR"),
+            "EUR"
+        ));
+        assert!(transaction_can_be_linked_to_entry(
+            &tx("-95.00", "EUR"),
+            "EUR"
+        ));
+        assert!(!transaction_can_be_linked_to_entry(
+            &tx("95.00", "EUR"),
+            BASE_CURRENCY
+        ));
+        assert!(!transaction_can_be_linked_to_entry(
+            &tx("95.00", "USD"),
+            "EUR"
+        ));
+        assert!(!transaction_can_be_linked_to_entry(
+            &tx("95.00", "CHF"),
+            "EUR"
+        ));
+        assert!(!transaction_can_be_linked_to_entry(
+            &tx("-0.00", "EUR"),
+            "EUR"
+        ));
+    }
+
+    /// Story 38-11c1 (AC-1) : le mouvement d'un compte CHF garde le texte
+    /// d'avant ; celui d'un compte en devise somme les montants en devise, du
+    /// signe de leur côté. Le filtre du compte reste dans les deux.
+    #[test]
+    fn the_movement_is_counted_in_the_ledger_currency() {
+        let chf = entry_movements(MovementKind::Chf);
+        let foreign = entry_movements(MovementKind::Foreign);
+        assert!(chf.contains("SUM(l.debit) - SUM(l.credit) AS movement"));
+        assert!(!chf.contains("amount_currency"));
+        assert!(foreign.contains(
+            "SUM(CASE WHEN l.debit > 0 THEN l.amount_currency ELSE -l.amount_currency END) AS movement"
+        ));
+        for m in [&chf, &foreign] {
+            assert!(m.contains("WHERE l.account_id = ?"));
+            assert_eq!(m.matches('?').count(), 1, "un paramètre : le compte");
+        }
+        assert_eq!(chf.replace(CHF_MOVEMENT_SUM, FOREIGN_MOVEMENT_SUM), foreign);
+        assert_eq!(MovementKind::of(BASE_CURRENCY), MovementKind::Chf);
+        assert_eq!(MovementKind::of("EUR"), MovementKind::Foreign);
     }
 
     /// Story v017-3a (AC-1) : la requête restreinte du geste est la requête de
@@ -1325,12 +1623,15 @@ mod tests {
     /// conditions 2 à 6.
     #[test]
     fn the_restricted_entry_query_is_the_list_query_plus_the_entry() {
-        let all = entry_sql(EntrySqlMode::List);
-        let one = entry_sql(EntrySqlMode::One(7));
-        assert_eq!(one.replace(" AND e.id = ?", ""), all);
-        assert_ne!(one, all);
-        assert!(!all.contains("FOR UPDATE"), "lecture ordinaire");
-        assert!(!one.contains("FOR UPDATE"), "lecture ordinaire");
+        for kind in [MovementKind::Chf, MovementKind::Foreign] {
+            let all = entry_sql(EntrySqlMode::List, kind);
+            let one = entry_sql(EntrySqlMode::One(7), kind);
+            assert_eq!(one.replace(" AND e.id = ?", ""), all);
+            assert_ne!(one, all);
+            assert!(!all.contains("FOR UPDATE"), "lecture ordinaire");
+            assert!(!one.contains("FOR UPDATE"), "lecture ordinaire");
+            assert!(all.contains(&entry_movements(kind)), "{kind:?}");
+        }
     }
 
     /// Story 34-4 (#828, AC-2), redéfinie par la Story 34-11b (#972, AC-10) :
@@ -1339,14 +1640,16 @@ mod tests {
     /// un mode du constructeur, non une copie.
     #[test]
     fn the_matched_elsewhere_query_is_the_list_query_plus_the_link() {
-        let list = entry_sql(EntrySqlMode::List);
-        let elsewhere = entry_sql(EntrySqlMode::MatchedElsewhere);
-        let side = linkable_side();
-        assert_eq!(list.matches(side.as_str()).count(), 1);
-        assert_eq!(elsewhere.matches(side.as_str()).count(), 1);
-        assert!(!list.contains(HAS_LINK));
-        assert_eq!(elsewhere.replace(&format!(" AND {HAS_LINK}"), ""), list);
-        assert!(!elsewhere.contains("FOR UPDATE"), "lecture ordinaire");
+        for kind in [MovementKind::Chf, MovementKind::Foreign] {
+            let list = entry_sql(EntrySqlMode::List, kind);
+            let elsewhere = entry_sql(EntrySqlMode::MatchedElsewhere, kind);
+            let side = linkable_side();
+            assert_eq!(list.matches(side.as_str()).count(), 1);
+            assert_eq!(elsewhere.matches(side.as_str()).count(), 1);
+            assert!(!list.contains(HAS_LINK));
+            assert_eq!(elsewhere.replace(&format!(" AND {HAS_LINK}"), ""), list);
+            assert!(!elsewhere.contains("FOR UPDATE"), "lecture ordinaire");
+        }
     }
 
     /// Story 34-11b (#972, AC-1) : la condition 4 et l'autre côté de
@@ -1362,15 +1665,56 @@ mod tests {
         assert!(side.contains("<= 1"), "au plus une transaction déjà liée");
         assert!(!side.contains("journal_account_id"));
         let cancel = other_side_predicate("?");
-        assert!(cancel.starts_with("(bt.bank_account_id <> ? AND bt.amount = -(?)"));
+        // Story 38-11c1 (AC-1b) : le texte commence par le compte, puis les
+        // deux branches (auparavant `bt.amount = -(?)` seul).
+        assert!(cancel.starts_with("(bt.bank_account_id <> ? "));
         // Revue P1 (E1-3) : jamais une écriture de règlement.
         assert!(cancel.contains("FROM invoice_settlements s2"));
         assert!(cancel.contains("FROM supplier_invoices si2"));
         assert_eq!(
             cancel.matches('?').count(),
-            2,
-            "deux paramètres : compte, montant"
+            5,
+            "cinq paramètres : compte, devise, montant, devise, montant (38-11c1)"
         );
+    }
+
+    /// Story 38-11c1 (AC-1b) : l'autre côté à **deux branches** — même devise
+    /// et montant opposé, ou autre devise et signe opposé —, dans cet ordre de
+    /// paramètres (entrelacés), sans `bt.currency = ?` isolé, et une seule
+    /// occurrence de chaque exclusion de règlement.
+    #[test]
+    fn the_other_side_has_two_branches() {
+        let p = other_side_predicate("M");
+        let normal = p.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(
+            normal.contains(
+                "(bt.bank_account_id <> ? AND ((bt.currency = ? AND bt.amount = -(M)) \
+                 OR (bt.currency <> ? AND SIGN(bt.amount) = -SIGN(M))) AND NOT EXISTS"
+                    .split_whitespace()
+                    .collect::<Vec<_>>()
+                    .join(" ")
+                    .as_str()
+            ),
+            "{normal}"
+        );
+        assert_eq!(p.matches("bt.currency = ?").count(), 1);
+        assert_eq!(p.matches("bt.currency <> ?").count(), 1);
+        assert_eq!(p.matches("FROM invoice_settlements s2").count(), 1);
+        assert_eq!(p.matches("FROM supplier_invoices si2").count(), 1);
+        assert_eq!(p.matches("NOT EXISTS").count(), 2);
+        // Ordre : compte, devise, (M), devise, (M).
+        let cancel = other_side_predicate("?");
+        let ordre: Vec<&str> = [
+            "bt.bank_account_id <> ?",
+            "bt.currency = ?",
+            "bt.amount = -(?)",
+            "bt.currency <> ?",
+            "-SIGN(?)",
+        ]
+        .into_iter()
+        .collect();
+        let positions: Vec<usize> = ordre.iter().map(|m| cancel.find(m).unwrap()).collect();
+        assert!(positions.windows(2).all(|w| w[0] < w[1]), "{positions:?}");
     }
 
     /// Revue P2 (B2-3, E2-4) : l'exclusion des règlements suit le classement de

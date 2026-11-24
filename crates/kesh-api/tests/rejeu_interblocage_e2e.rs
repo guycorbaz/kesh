@@ -1117,6 +1117,8 @@ async fn transaction_bancaire_en_attente(
             transaction_id: None,
             counterparty_iban: None,
             counterparty_name: None,
+            counterparty_email: None,
+            provider_type: None,
         }],
     )
     .await
@@ -1566,6 +1568,8 @@ async fn transactions_en_attente(
                 transaction_id: None,
                 counterparty_iban: None,
                 counterparty_name: Some("Client du rejeu".into()),
+                counterparty_email: None,
+                provider_type: None,
             })
             .collect(),
     )

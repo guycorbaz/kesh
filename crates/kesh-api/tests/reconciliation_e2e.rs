@@ -505,6 +505,8 @@ fn make_new_tx(
         transaction_id: None,
         counterparty_iban: None,
         counterparty_name: counterparty_name.map(String::from),
+        counterparty_email: None,
+        provider_type: None,
     }
 }
 
@@ -10936,6 +10938,54 @@ async fn monthly_invoices_and_a_batch_of_the_account(pool: MySqlPool) {
     assert_eq!(candidates[0]["supplierInvoiceId"], feb);
 }
 
+/// Story 38-11b, revue P1 (M2) — l'acceptation d'une proposition « facture
+/// fournisseur » sur le solde d'un prestataire (PayPal) : `pay_in_tx_as` la
+/// refuse (AC-3, limite (a)), et le refus sort en `FailedProposal`
+/// **nommé** `BANK_ACCOUNT_IS_PROVIDER` (`details.bankAccountId`), non en
+/// `DATABASE_ERROR` ; la facture reste ouverte, la transaction en attente.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn accepting_a_supplier_invoice_on_a_provider_account_is_refused_by_name(pool: MySqlPool) {
+    let c = setup_301b(&pool).await;
+    let (sid, _) = fournisseur_rapproche::facture_ouverte(
+        &pool,
+        &c.seeded,
+        c.f,
+        Some("FF-PAYPAL"),
+        None,
+        day_301b(3, 1),
+        Some(day_301b(3, 31)),
+        dec!(120.00),
+    )
+    .await;
+    let tx = tx_301b(&pool, &c, dec!(-120.00), None, Some(SUPPLIER_301B)).await;
+    sqlx::query(
+        "UPDATE bank_accounts SET is_primary = FALSE, provider = 'paypal', \
+         provider_account = 'PayPal www' WHERE id = ?",
+    )
+    .bind(c.f.bank_account_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let (code, details) = refusal_301b(&c, tx, sid).await;
+    assert_eq!(code, "BANK_ACCOUNT_IS_PROVIDER", "{details}");
+    assert_eq!(details["bankAccountId"], c.f.bank_account_id);
+    let (status,): (String,) = sqlx::query_as("SELECT status FROM supplier_invoices WHERE id = ?")
+        .bind(sid)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(status, "open", "facture restée ouverte");
+    let (reconciled,): (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM bank_transactions WHERE id = ? AND status = 'pending'",
+    )
+    .bind(tx)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(reconciled, 1, "transaction restée en attente");
+}
+
 /// T-b17 et T-b30 (AC-b6, AC-b16) — **l'acceptation nominale** : facture
 /// payée, au compte de l'import, `paid_at` = date de **valeur** de la
 /// transaction ; écriture `D créanciers / C banque` du TTC, datée de la date
@@ -12030,4 +12080,90 @@ async fn the_acceptance_window_reads_the_exigibility(pool: MySqlPool) {
     .await;
     assert_eq!(body["failed"], serde_json::json!([]), "{body}");
     assert_eq!(body["accepted"].as_array().unwrap().len(), 2);
+}
+
+/// Un compte de charges « 4100 » de la société du décor, tenu en USD.
+async fn usd_expense_account_38c2(pool: &MySqlPool, c: &Ctx301b) -> i64 {
+    sqlx::query(
+        "INSERT INTO accounts (company_id, number, name, account_type, currency) \
+         VALUES (?, '4100', 'Charges en USD', 'Expense', 'USD')",
+    )
+    .bind(c.seeded.company_id)
+    .execute(pool)
+    .await
+    .expect("compte en USD")
+    .last_insert_id() as i64
+}
+
+/// 38-11c2 (revue P3, M2) — **une règle vers un compte en devise n'est pas
+/// proposée au rapprochement d'un compte bancaire en CHF et ne masque pas la
+/// règle suivante** : la règle USD, prioritaire, est écartée ; la règle CHF qui
+/// correspond aussi est proposée à sa place.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn a_foreign_currency_rule_is_not_proposed_and_does_not_mask_the_next_rule(pool: MySqlPool) {
+    let c = setup_301b(&pool).await;
+    let usd = usd_expense_account_38c2(&pool, &c).await;
+    let usd_rule = create_rule_ok(
+        &c.app,
+        &c.jwt,
+        serde_json::json!({
+            "label": "Abonnement USD", "matchType": "counterparty_contains",
+            "matchValue": "Abonnement", "counterpartyAccountId": usd, "priority": 10,
+        }),
+    )
+    .await;
+    let chf_rule = create_rule_ok(
+        &c.app,
+        &c.jwt,
+        serde_json::json!({
+            "label": "Abonnement CHF", "matchType": "counterparty_contains",
+            "matchValue": "mensuel", "counterpartyAccountId": c.seeded.accounts["4000"],
+            "priority": 20,
+        }),
+    )
+    .await;
+    let tx = tx_301b(&pool, &c, dec!(-12.00), None, Some("Abonnement mensuel")).await;
+    let candidates = proposals_301b(&c, c.f.bank_account_id).await[&tx]["candidates"].clone();
+    assert_eq!(candidates.as_array().unwrap().len(), 1, "{candidates}");
+    assert_eq!(candidates[0]["candidateType"], "rule", "{candidates}");
+    assert_eq!(candidates[0]["ruleId"], chf_rule["id"], "{candidates}");
+    assert_ne!(candidates[0]["ruleId"], usd_rule["id"], "{candidates}");
+}
+
+/// 38-11c2 (revue P3, M3) — le **filet de l'acceptation** : une proposition
+/// `rule` rejouée par un client vers un compte en devise est refusée dans
+/// `failed[]` (`ACCOUNT_IN_FOREIGN_CURRENCY`, `details` : le compte et sa
+/// devise), rien n'est écrit (`docs/api-external.md`).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn accepting_a_rule_to_a_foreign_currency_account_is_refused_in_failed(pool: MySqlPool) {
+    let c = setup_301b(&pool).await;
+    let usd = usd_expense_account_38c2(&pool, &c).await;
+    let rule = create_rule_ok(
+        &c.app,
+        &c.jwt,
+        serde_json::json!({
+            "label": "Abonnement USD", "matchType": "counterparty_contains",
+            "matchValue": "Abonnement", "counterpartyAccountId": usd,
+        }),
+    )
+    .await;
+    let tx = tx_301b(&pool, &c, dec!(-12.00), None, Some("Abonnement mensuel")).await;
+    let body = accept_301b(
+        &c,
+        &c.jwt,
+        c.f.bank_account_id,
+        serde_json::json!([{
+            "type": "rule", "bankTransactionId": tx, "ruleId": rule["id"],
+            "counterpartyAccountId": usd,
+        }]),
+    )
+    .await;
+    assert_eq!(body["accepted"], serde_json::json!([]), "{body}");
+    let failed = body["failed"].as_array().unwrap();
+    assert_eq!(failed.len(), 1, "{body}");
+    assert_eq!(failed[0]["bankTransactionId"], tx);
+    assert_eq!(failed[0]["errorCode"], "ACCOUNT_IN_FOREIGN_CURRENCY");
+    assert_eq!(failed[0]["details"]["accountId"], usd);
+    assert_eq!(failed[0]["details"]["currency"], "USD");
+    assert_eq!(tx_status(&pool, tx).await, "pending", "rien d'écrit");
 }

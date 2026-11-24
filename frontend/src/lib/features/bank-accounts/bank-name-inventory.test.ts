@@ -71,8 +71,9 @@ const ATTENDU: Record<string, { n: number; motif: string }> = {
 	},
 	'routes/(app)/bank-accounts/+page.svelte': {
 		// Story 34-11a2 : 3 → 5, les payloads d'une carte (création, `PUT`) en
-		// plus de ceux d'un compte bancaire.
-		n: 5,
+		// plus de ceux d'un compte bancaire. Story 38-11d : 5 → 7, les payloads
+		// d'un compte PayPal (création, `PUT`).
+		n: 7,
 		motif: 'E1 — préremplissage et payloads du formulaire (saisie, pas affichage)',
 	},
 	'routes/onboarding/+page.svelte': {
