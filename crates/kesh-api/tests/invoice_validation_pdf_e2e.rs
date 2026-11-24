@@ -533,3 +533,31 @@ async fn la_revalidation_d_une_facture_devalidee_est_controlee(pool: MySqlPool) 
     );
     assert!(ecriture.is_none());
 }
+
+/// **E-1 (revue P1)** — le contrôle ne s'exécute que sur un **brouillon existant** : une pièce
+/// déjà validée (neuf lignes, validée par le dépôt, donc d'avant la 0.20.0) rend `409
+/// ILLEGAL_STATE_TRANSITION`, un identifiant inconnu `404`, comme avant la 49-4a — jamais
+/// `400 INVOICE_LINES_DO_NOT_FIT_PDF`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn le_controle_ne_masque_ni_le_409_ni_le_404(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let ids = seed(&pool).await;
+    let (admin_id, company_id, _) = ids;
+    let token = login(&app).await;
+
+    let id = brouillon(&pool, ids, sans_recap(9)).await;
+    invoices::validate_invoice(&pool, company_id, id, admin_id)
+        .await
+        .expect("validate_invoice par le dépôt");
+    let avant = etat(&pool, id).await;
+    let resp = valider(&app, &token, id).await;
+    assert_eq!(resp.status(), 409, "pièce déjà validée");
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "ILLEGAL_STATE_TRANSITION", "{body}");
+    assert_eq!(etat(&pool, id).await, avant);
+
+    let resp = valider(&app, &token, id + 9999).await;
+    assert_eq!(resp.status(), 404, "identifiant inconnu");
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_ne!(body["error"]["code"], "INVOICE_LINES_DO_NOT_FIT_PDF");
+}

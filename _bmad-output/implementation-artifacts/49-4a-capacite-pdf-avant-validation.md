@@ -8,8 +8,8 @@ l'orchestrateur du 2026-11-19 et le finding V1-6 de la validation P1 de la 49-4 
 (ses D4, D5, D7 et D10, ses AC5, AC7, AC9 à AC13, ses tests T6, T-PROP et T10), **restreinte au dessin actuel des lignes** ; les
 findings de la validation P1 qui touchent ce périmètre sont remédiés ici, prémisse relue au code (§ *Findings de la validation P1*).
 Release **0.20.0** (coupure jeudi 2026-11-26 au soir). **Aucune migration.** Code lu à la tête de la branche
-`story/49-4-designation-longue-pdf` (`a1877ef9f`, identique à `3379a971a` pour `crates/`). Statut `backlog` : fiche écrite, **sa
-propre passe de validation est à venir** (elle ne repasse pas toute la validation P1 de la 49-4). La sœur, `49-4b`, porte #1363 et
+`story/49-4-designation-longue-pdf` (`a1877ef9f`, identique à `3379a971a` pour `crates/`). Statut `review` : développement terminé le
+2026-11-24, revue de code P1 remédiée le même jour ; validation terminée le 2026-11-20 (§ *Change Log*). La sœur, `49-4b`, porte #1363 et
 #1400.*
 
 **Issue** : `refs #1364` ; **aucun mot-clé de fermeture** dans un commit (il ne s'écrit que dans le corps de la PR de la release).
@@ -232,7 +232,7 @@ sort pas sans la 49-4a ») : sans elle, un commentaire long rendrait une facture
 - **AC7 — Recette visuelle** (`CLAUDE.md` § *Recette visuelle*) : captures PNG, thème clair, sur une base de démonstration
   (`kesh_e2e_e494a`, jamais la base du NAS) — le dialogue de validation sur le refus de capacité ; le PDF (`mutool draw -r 150`)
   d'une facture **au seuil exact avec conditions de paiement** (D6), et d'une facture au seuil avec récapitulatif. Dans
-  `kesh-gate-logs/e494a/captures/`, jointes au Dev Agent Record et au prompt de revue ; chaque capture se **lit** (message entier
+  `kesh-gate-logs/e494/captures/`, jointes au Dev Agent Record et au prompt de revue ; chaque capture se **lit** (message entier
   et lisible ; conditions de paiement sans chevauchement, sinon issue ouverte).
 - **AC8 — Textes et contrat.** Un code neuf (`INVOICE_LINES_DO_NOT_FIT_PDF`, `400`) ; sa clé dans les **quatre** catalogues
   (`crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`, bloc de l'Epic 49 à créer, ou celui de la 49-1c après fusion) et dans la garde
@@ -258,7 +258,7 @@ sort pas sans la 49-4a ») : sans elle, un commentaire long rendrait une facture
 
 ## Tests à écrire, et la preuve du rouge
 
-Journaux de rouge dans `/home/gcorbaz/devel/kesh-gate-logs/e494a/` (`rouge-T<n>[-m].log`), commande et sortie. Chaque mutation
+Journaux de rouge dans `/home/gcorbaz/devel/kesh-gate-logs/e494/dev/` (`rouge-T<n>[-m].log`), commande et sortie. Chaque mutation
 s'**ajoute au code**, le test tourne, le journal se garde, la mutation se retire **et le fichier se touche** (`touch`) avant la
 reconstruction (cargo garde sinon le binaire muté).
 
@@ -268,45 +268,45 @@ reconstruction (cargo garde sinon le binaire muté).
 | T2 | `pdf.rs::tests::le_controle_et_le_rendu_s_accordent` (AC3) | équivalence `controler_les_lignes` ⇔ `generate_qr_bill_pdf_with_date` `Ok`, sur la famille engendrée ; oracle = la garde du **dessin**, non le plan | mutations : (1) la garde du dessin passe à `ty < plancher - 0.5` (le dessin admet une ligne de plus) → **ROUGE** ; (2) le contrôle part d'une ordonnée de 160 au lieu de la géométrie partagée (copie divergente simulée) → **ROUGE** ; (3) le contrôle seul compare `ty <= plancher` → **ROUGE** aux seuils à l'égalité (`rouge-T2-1..3.log`) |
 | T3 | tests de la 49-1b, `rendu_avant_apres.rs` et `pdf_avant_apres_e2e.rs`, **non modifiés** (AC4) | S1 à S9 (S7 compris), a à d identiques : le dessin n'a pas bougé | mutation : l'ordonnée de la première ligne, dans la géométrie partagée, passe de 159 à 158.5 mm → **ROUGE** sur S1 (ordonnées décalées) ; mutation 2 : la ligne chiffrée dessinée par `truncate_display(…, 44)` → **ROUGE** sur S7 (`rouge-T3-1..2.log`) |
 | T4 | `textes_coherents.rs` (AC8), entrée neuve pour `error-invoice-lines-do-not-fit-pdf` | la clé existe dans les quatre catalogues, avec `$besoin` et `$place` | mutation : la clé retirée du catalogue `it-CH` → **ROUGE** (`rouge-T4.log`) |
-| T5 | contrôle `git diff` de D5 et AC4, script en lecture seule `kesh-gate-logs/e494a/controles-diff.sh` (AC4, AC6) | rien de `kesh-db`, `kesh-core`, `issued_invoice_pdf.rs`, `credit_notes.rs`, `largeurs.rs`, `texte.rs` ; aucun test ni fixture existant modifié | sonde positive : le script, sur `"$BASE"..HEAD`, lancé contre un commit qui touche `texte.rs` (worktree jetable ou `git diff` d'un commit fabriqué hors branche) rend une sortie non vide (`rouge-T5.log`) |
+| T5 | contrôle `git diff` de D5 et AC4, script en lecture seule `kesh-gate-logs/e494/dev/controles-diff.sh` (AC4, AC6) | rien de `kesh-db`, `kesh-core`, `issued_invoice_pdf.rs`, `credit_notes.rs`, `largeurs.rs`, `texte.rs` ; aucun test ni fixture existant modifié | sonde positive : le script, sur `"$BASE"..HEAD`, lancé contre un commit qui touche `texte.rs` (worktree jetable ou `git diff` d'un commit fabriqué hors branche) rend une sortie non vide (`rouge-T5.log`) |
 | T6 | E2E `frontend/tests/e2e/invoice-validation-pdf.spec.ts` (AC5) | (a) et (b) dans le navigateur | rouge constaté en lançant le fichier sur le binaire **sans** le contrôle (handler muté, binaire reconstruit) : (a) échoue (`rouge-T6.log`) |
 | T10 | épreuve, non test neuf : `invoice_pdf_e2e`, `invoice_frozen_pdf_e2e`, `invoice_send_email_e2e`, `dunning_reminders_e2e`, `golden_test`, `invoice_line_types_e2e`, tests de `pdf.rs` | verts **sans modification d'assertion**. Un test existant qui valide **par la route** une pièce qui ne tient pas devient rouge par conception : il se liste au Dev Agent Record avec le changement fait (validation par le dépôt, ou pièce raccourcie) et sa raison. Cas relu : `invoice_pdf_e2e.rs::pdf_d_une_facture_a_commentaire_l_imprime` (`:1032`, commentaire de mille caractères) valide **par le dépôt** (`invoice_pdf_e2e.rs:215`, `kesh_db::repositories::invoices::validate_invoice`) : il reste vert et continue de prouver le refus **au rendu** d'une pièce validée sans contrôle | — |
 
 ## Tâches
 
-- [ ] **Étape 0 — relire.** (1) Les citations de « Ce qui se lit au code », à la tête ; `git log --oneline
+- [x] **Étape 0 — relire.** (1) Les citations de « Ce qui se lit au code », à la tête ; `git log --oneline
   HEAD..origin/epic/49-types-de-lignes-facture -- crates/kesh-qrbill crates/kesh-api/src/routes` : si la branche d'épique a bougé
   (49-1c, 49-3), la reprendre d'abord (commit de fusion relu) ; puis calculer `$BASE` (D5) et l'écrire au Dev Agent Record — de
   même après chaque reprise. (2) Refaire l'arithmétique des seuils (8, 6, 5, 4, et l'égalité à
   quatre lignes de récapitulatif) sur le code, la consigner au Dev Agent Record. (3) Vérifier que `validate_invoice` accepte un
   brouillon à commentaire créé par le dépôt (49-1a), sinon adapter le montage d'AC1 (a) et le dire.
-- [ ] **`kesh-qrbill`** : `lignes_imprimees`, la géométrie partagée, `controler_les_lignes` et `LignesHorsPage` (D1) ;
+- [x] **`kesh-qrbill`** : `lignes_imprimees`, la géométrie partagée, `controler_les_lignes` et `LignesHorsPage` (D1) ;
   `draw_invoice_section` lit la géométrie partagée et `lignes_imprimees` **sans changer un octet de sa sortie** ; doc-comments
   (`draw_invoice_section`, `controler_les_lignes`) ; ré-export dans `lib.rs`. **Ne pas** toucher `largeurs.rs`, `texte.rs`,
   `truncate_display`, `lignes_de_commentaire`.
-- [ ] **`kesh-api`** : dans `validate_invoice_handler`, avant `invoices::validate_invoice` : lecture du brouillon, contrôle (D1),
+- [x] **`kesh-api`** : dans `validate_invoice_handler`, avant `invoices::validate_invoice` : lecture du brouillon, contrôle (D1),
   puis pré-filtre extrait de `render_document` et appelé par les deux ; le doc-comment de `MAX_LINES_PER_PDF`
   (`invoice_pdf_service.rs:85-95`, qui dit la garde « renvoie `QrBillError::PdfGeneration` » et décrit un seuil « `0` sans TVA »)
   se réécrit sur la fonction extraite : la garde rend `TooManyLines` et réserve aussi pour l'arrondi (V2-4) ;
   une variante d'`AppError` (`InvoiceLinesDoNotFitPdf { besoin, place }`, à côté de `InvoiceTooManyLinesForPdf`, `errors.rs:489`) et
   sa réponse, phrase par `t_args` ; rien d'autre dans `routes/invoices.rs` (la 49-1c y touche `validate_line` et la garde : hunks
   distincts).
-- [ ] **`kesh-i18n`** : une clé × quatre catalogues, bloc de l'Epic 49 ; `textes_coherents.rs` (une entrée).
-- [ ] **Tests** T1 à T6, avec leurs rouges ; T10 relu.
-- [ ] **Documents** (AC8, AC9, D7) : `docs/api-external.md`, `admin-manual.tex` (`sec:maj-0-20-0`), puis — après la fusion de la
+- [x] **`kesh-i18n`** : une clé × quatre catalogues, bloc de l'Epic 49 ; `textes_coherents.rs` (une entrée).
+- [x] **Tests** T1 à T6, avec leurs rouges ; T10 relu.
+- [x] **Documents** (AC8, AC9, D7) : `docs/api-external.md`, `admin-manual.tex` (`sec:maj-0-20-0`), puis — après la fusion de la
   49-1c, ou selon D7 — `user-manual.tex` ; contrôles de l'AC9, sortie copiée.
-- [ ] **E2E et captures** (AC5, AC7) : le fichier Playwright, son rouge (T6), les captures relues.
+- [x] **E2E et captures** (AC5, AC7) : le fichier Playwright, son rouge (T6), les captures relues.
 - [ ] **Gates** (voie A, base et Rust ; aucune ligne de `kesh-db` : pas d'exception `kesh-db`). En cours de boucle, gate ciblé :
   `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo nextest run -E 'package(kesh-qrbill)
   | binary(kesh_api) | binary(pdf_avant_apres_e2e) | binary(invoice_validation_pdf_e2e) | binary(invoice_pdf_e2e) |
   binary(invoice_frozen_pdf_e2e) | binary(invoice_send_email_e2e) | binary(dunning_reminders_e2e) | binary(invoice_line_types_e2e) |
   binary(textes_coherents)'` ; frontend, parce que les catalogues changent : `npm run check`, `npm run lint-i18n-ownership`,
   `npm run test:unit` (sous `mem-guard`). **Au passage en `review`** : `scripts/test-fast.sh --ci` puis `scripts/gate-ci.sh
-  kesh_ci_e494a`, bases `kesh_e494a` remises à neuf (`CLAUDE.md` § *Base de gate*, sans redémarrer le conteneur). **À la clôture**
+  kesh_ci_e494`, bases `kesh_e494a` remises à neuf (`CLAUDE.md` § *Base de gate*, sans redémarrer le conteneur). **À la clôture**
   (dernier commit de code) : `gate-ci` complet et **E2E Playwright complet** sur `kesh_e2e_e494a` (montage `docs/testing.md`
   § *Prérequis Playwright local*), « vert » = les sept KF-029 seulement, jugés fichier par fichier. Une commande lourde à la fois,
   `scripts/mem-guard.sh --status` avant chacune, `flock` du verrou de la voie.
-- [ ] **Contrôle des mots-clés** : `git log origin/epic/49-types-de-lignes-facture..HEAD --format=%B | /usr/bin/grep -niE
+- [x] **Contrôle des mots-clés** : `git log origin/epic/49-types-de-lignes-facture..HEAD --format=%B | /usr/bin/grep -niE
   '\b(close[sd]?|fix(e[sd])?|resolve[sd]?) #[0-9]'` vide.
 
 ## Note de version
@@ -504,7 +504,7 @@ tourné, aucune mutation n'a été jouée** (rien à restaurer), aucun rouge n'e
    done
    docker exec -i kesh-mariadb-dev mariadb -ukesh -pkesh_dev kesh_e494a < scripts/seed-dev-db.sql
    ```
-   (`kesh_ci_e494a` est recréée par `gate-ci.sh` lui-même.)
+   (`kesh_ci_e494` est recréée par `gate-ci.sh` lui-même.)
 3. Compiler et corriger, sous verrou et `mem-guard` (`CARGO_TARGET_DIR=/home/gcorbaz/devel/kesh-49-4/target`,
    `CARGO_BUILD_JOBS=2`) :
    `flock /home/gcorbaz/devel/kesh-gate-logs/.gate.lock scripts/mem-guard.sh cargo clippy -p kesh-qrbill -p kesh-api --all-targets -- -D warnings`,
@@ -516,7 +516,7 @@ tourné, aucune mutation n'a été jouée** (rien à restaurer), aucun rouge n'e
    d'`it-CH` : `parity_between_locales` et le test neuf), T5 (sonde positive), T6 (E2E sur binaire muté) ; journaux dans
    `kesh-gate-logs/e494/dev/` ; restauration par `git restore --worktree -- <fichier>` puis `touch`.
 6. Recette visuelle (AC7, captures dans `kesh-gate-logs/e494/captures/`), puis gates de passage en `review` : bases remises à
-   neuf, `scripts/test-fast.sh --ci`, `scripts/gate-ci.sh kesh_ci_e494a`, frontend complet (`check`, `lint-i18n-ownership`,
+   neuf, `scripts/test-fast.sh --ci`, `scripts/gate-ci.sh kesh_ci_e494`, frontend complet (`check`, `lint-i18n-ownership`,
    `test:unit`, `build`, verrou `.gate-front.lock`), E2E complet sur `kesh_e2e_e494a` jugé fichier par fichier ; PDF des
    manuels régénérés et contrôlés aplatis ; Dev Agent Record, statut `review` (fiche et `sprint-status.yaml`), prompt P1
    complété.

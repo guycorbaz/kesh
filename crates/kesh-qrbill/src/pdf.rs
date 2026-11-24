@@ -6200,6 +6200,13 @@ mod tests {
         let mut graine = Graine(0x4934_a000_1364);
         for _ in 0..600 {
             let mut lignes = chiffrees(graine.tirer(11));
+            // Désignations chiffrées longues (revue P1, B-1) : l'équivalence porte aussi sur
+            // elles, pour qu'une désignation sur plusieurs lignes (49-4b) ne la déjoue pas.
+            for ligne in lignes.iter_mut() {
+                if graine.tirer(4) == 0 {
+                    ligne.description = textes[10 + graine.tirer(2)].to_string();
+                }
+            }
             for _ in 0..graine.tirer(4) {
                 let position = graine.tirer(lignes.len() + 1);
                 lignes.insert(position, commentaire(textes[graine.tirer(textes.len())]));
