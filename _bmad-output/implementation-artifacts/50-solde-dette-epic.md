@@ -1,6 +1,6 @@
 # Story 50-solde : Solde de la dette de l'Epic 50 — une seule règle de levée d'un refus de doublon (#1492), un bandeau « base indisponible » qui ne promet pas de réessai (#1414)
 
-Status: drafted — fiche écrite le 2026-11-24, réduite le même jour aux lots B et C par décision du Project Lead ; validation P1 (Sonnet, 0/0/1/11) remédiée ; **validation P2 à lancer** (prompt `50-solde-dette-epic-validation-prompt-p2.md`) ; passe à `ready-for-dev` **après** la validation seulement (consigne de l'orchestrateur).
+Status: drafted — fiche écrite le 2026-11-24, réduite le même jour aux lots B et C par décision du Project Lead ; validations P1 (Sonnet, 0/0/1/11) et P2 (Opus, 0/0/1/6) remédiées ; **validation P3 à lancer** (prompt `50-solde-dette-epic-validation-prompt-p3.md`) ; passe à `ready-for-dev` **après** la validation seulement (consigne de l'orchestrateur).
 
 *Fiche rédigée le 2026-11-24 (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-50-solde`, branche `story/50-solde-dette-epic`, partie de
 `origin/epic/50-corrections` à **`48a66ca24`**. **Tout le code cité est lu à `48a66ca24`.** Release visée : **0.20.0**, vendredi 2026-11-27
@@ -69,9 +69,11 @@ Les deux lots sont **indépendants** : aucun ne lit le code de l'autre ; ils se 
    (règle 2, dévalidation) : `:1136` vérifie le refus sous `REFUSE`, `:1139-1141` la levée sous `CONFIRMED`,
    `repasser(&pool, &seeded, a, qui, CONFIRMED).await.expect("confirmé")`) ; `crates/kesh-api/tests/supplier_invoice_duplicate_e2e.rs`,
    test `create_twice_is_refused_with_details_and_message` : boucle `for confirm in [false, true]` (`:226`), `:231`
-   `assert_eq!((s, code(&e)), (409, "SUPPLIER_INVOICE_DUPLICATE"), "{e}");`, `:238` (`"confirmable": false`, règle 1 à la saisie) ;
+   `assert_eq!((s, code(&e)), (409, "SUPPLIER_INVOICE_DUPLICATE"), "{e}");`, puis l'`assert_eq!` multiligne `:232-240` sur
+   `e["error"]["details"]` (le littéral `"confirmable": false` est à `:238`, mais un échec se signale à l'invocation de la macro,
+   **`:232`** — validation P2, V2-1), règle 1 à la saisie ;
    `:263` (règle 2 à la saisie, `true`), `:421` (règle 1 à la dévalidation, `true`). **Fait établi** (validation P1, V1-5,
-   `grep -n confirmable` → `:4, :212, :238, :263, :375, :421` ; `grep -nF PROBABLE` → `:260` seul) : **la case (règle 2, dévalidation)
+   `grep -n confirmable` → `:4, :212, :213, :238, :263, :375, :421` ; `grep -nF PROBABLE` → `:260` seul) : **la case (règle 2, dévalidation)
    n'est assertée par aucun test HTTP** ; l'AC-2 est seule à la tenir côté `details.confirmable`. Un module de tests unitaires existe dans `kesh-api/src/errors.rs`
    (`:6587`), avec l'aide `response_body(resp: Response) -> (StatusCode, serde_json::Value)` (`:6605`) ; un autre dans
    `supplier_invoices.rs` (`:3838`).
@@ -79,16 +81,19 @@ Les deux lots sont **indépendants** : aucun ne lit le code de l'autre ; ils se 
 **Inventaire par le symptôme** (« une décision sur la levée d'un refus de doublon », `inv-1492.txt`) :
 `git grep -nE "liftable|confirmable|DuplicateGesture::Unvalidation|probable \|\|" -- 'crates/*/src/*'`,
 `git grep -nE "confirmable" -- frontend/src ':!*.test.ts'` et, pour les récitations écrites sans ces mots (validation P1, V1-4),
-`git grep -nE "jamais.{0,40}(règle 1|SUPPLIER_INVOICE_DUPLICATE)|lève.{0,30}(deux règles|règle 2)|les deux règles|levé \(règle" -- 'crates/*/src/*'`
-(sortie ajoutée à `inv-1492.txt`). **Sites qui décident** : deux, `supplier_invoices.rs:658-661` et
+`git grep -niE "jamais.{0,40}(règle 1|SUPPLIER_INVOICE_DUPLICATE)|lève.{0,30}(deux règles|règle 2)|les deux règles|levé \(règle|aucune\** sortie|sans sortie" -- 'crates/*/src/*'`
+(insensible à la casse et élargie à « aucune sortie » après la validation P2, V2-2 ; sorties ajoutées à `inv-1492.txt`). **Sites qui décident** : deux, `supplier_invoices.rs:658-661` et
 `errors.rs:6260` — tous deux corrigés (D-B1, D-B2). **Sites qui lisent ou décrivent** : `supplier_invoices.rs:1883` (passe le geste,
-ne décide pas) ; doc-comments et commentaires qui récitent la table — `kesh-db/src/errors.rs:574`, `:580-581`, `:1892-1894`, `:1905`,
-`supplier_invoices.rs:449-462`, `:1567`, `kesh-api/src/errors.rs:5578-5581`, `:6240`, `:6247-6251`, `kesh-api/src/routes/supplier_invoices.rs:349-353`
+ne décide pas) ; doc-comments et commentaires qui récitent la table — `kesh-db/src/errors.rs:574`, `:577-578` (« la règle 1 … n'a
+**aucune** sortie »), `:580-581`, `:1892-1894`, `:1905`, `supplier_invoices.rs:449-462`, `:1566-1569` (« qui lève **les deux règles** »),
+`:1871-1873` (« Les deux règles se lèvent par confirmation »), `kesh-api/src/errors.rs:5578-5581`, `:6240`, `:6247-6251`, `kesh-api/src/routes/supplier_invoices.rs:349-353`
 (« il ne lève **jamais** `SUPPLIER_INVOICE_DUPLICATE` »), `:669-673` (« les deux règles »), `:749-750` (« levé (règle 2 seulement) »),
 `:956-957` — réécrits pour **nommer la source** (D-B3) ;
 frontend (`supplier-invoice-form.ts`, `SupplierInvoiceForm.svelte:1193`, `[id]/+page.svelte:1016`) : lit le booléen, inchangé. Les
 autres « confirmable » du relevé (`kesh-import`, `payment_batches.rs:351`, `errors.rs:1073`, `:1096`, `BankImportUpload.svelte:488`)
-parlent d'autres refus : hors classe.
+parlent d'autres refus : hors classe. **Hors code, contrat** : `docs/api-external.md:1028`, `:1315-1316` et
+`docs/manual/fr/admin-manual.tex:2585` récitent la table comme contrat de l'API ; ils sont justes et le restent (la story ne change
+aucune case) — non touchés.
 
 ### Lot C — #1414 : le bandeau promet un réessai qui n'a pas lieu pour une écriture
 
@@ -105,10 +110,15 @@ parlent d'autres refus : hors classe.
    le bandeau contredit l'avis, qui dit que rien n'a été renvoyé.
 4. **Ce qui est vrai pendant l'état dégradé** : `api-health.svelte.ts` interroge `GET /health` toutes les 5 s et éteint le bandeau à la
    première réponse `{ db: true }` (`pollHealth`) ; tout `2xx` l'éteint aussi (`api-client.ts:443-445`). Le bandeau disparaît donc **de
-   lui-même** quand la base répond.
-5. **Le doc-comment qui porte la croyance fausse** : `api-health.svelte.ts:4-6` — « quand l'API est injoignable ou que la DB est down
-   (réponses NETWORK_ERROR / TIMEOUT / 503 sur les requêtes idempotentes traversant `api-client.ts`) » : faux, le `catch` et le 503
-   allumant le bandeau pour toute méthode (point 2).
+   lui-même** quand la base répond. `api-client.ts` émet aussi deux `fetch` **directs**, hors de `fetchWithRetry`, qui n'allument ni
+   n'éteignent rien : `:101` (`/api/v1/auth/refresh`) et `:142` (`/api/v1/auth/me`) ; `grep -n setDegraded api-client.ts` → `:420`,
+   `:448` seulement.
+5. **Les doc-comments qui portent la croyance fausse** (même classe : « un commentaire qui décrit faux qui allume ou éteint le
+   bandeau ») : `api-health.svelte.ts:4-6` — « quand l'API est injoignable ou que la DB est down (réponses NETWORK_ERROR / TIMEOUT / 503
+   sur les requêtes idempotentes traversant `api-client.ts`) » : faux, le `catch` et le 503 allumant le bandeau pour toute méthode
+   (point 2) ; et `api-client.ts:399-401` — « `clearDegraded()` au 1er succès de fetch ne retournant pas 503 (réponse 200, 4xx,
+   5xx-non-503 → la DB répond) » : faux, le code n'éteint que sur un `2xx` (`:443-445`, et le commentaire voisin `:435-442` le dit)
+   (validation P2, V2-4).
 6. **Les tests** : aucun test unitaire de `DegradedBanner.svelte` (`git grep -ln "degraded-banner" frontend/src` ne rend que le
    composant) ; l'E2E `frontend/tests/e2e/db-resilience.spec.ts:59-61` vérifie
    `toContainText(/Base de données temporairement indisponible/)` — le **début** du texte, qui ne change pas. La garde
@@ -157,8 +167,8 @@ le commentaire d'E2E (réécrit, D-C1). Hors code produit :
   incohérent devient constructible, et les tests de `kesh-db` qui comparent des `Debug` de variantes changent tous) ; une variante unique
   `SupplierInvoiceDuplicate { rule, existing, gesture }` (change `error_code`, `kesh-db/src/errors.rs:2606-2607`, et une vingtaine de
   motifs de tests : hors de la mesure d'une story de solde).
-- **D-B3 — les doc-comments nomment la source** : ceux qui récitent la table (`kesh-db/src/errors.rs:574`, `:580-581`, `:1892-1894`,
-  `:1905` ; `supplier_invoices.rs:449-462`, `:1567` ; `kesh-api/src/errors.rs:5578-5581`, `:6240`, `:6247-6251` ;
+- **D-B3 — les doc-comments nomment la source** : ceux qui récitent la table (`kesh-db/src/errors.rs:574`, `:577-578`, `:580-581`,
+  `:1892-1894`, `:1905` ; `supplier_invoices.rs:449-462`, `:1566-1569`, `:1871-1873` ; `kesh-api/src/errors.rs:5578-5581`, `:6240`, `:6247-6251` ;
   `kesh-api/src/routes/supplier_invoices.rs:349-353`, `:669-673`, `:749-750`, `:956-957`) gardent leur résumé et renvoient à
   `DuplicateRule::lifted_by_confirmation` — sans en changer le sens. `routes/supplier_invoices.rs` est dans `kesh-api`, module déjà
   compté.
@@ -182,9 +192,12 @@ le commentaire d'E2E (réécrit, D-C1). Hors code produit :
   `:815` `mcp-sends-error-unknown-outcome` (« Ricaricare per saperlo. ») — plutôt que le `tu` d'`error-network` (`it-CH:2501`,
   « Verifica la connessione ») (validation P1, V1-11) ;
   apostrophe typographique U+2019 dans `fr-CH` et `it-CH`, comme les clés récentes. Le doc-comment `api-health.svelte.ts:4-6` se
-  corrige (V1-7) : « allumé par une coupure, un délai ou un 503 sur toute requête de `api-client.ts`, quelle que soit sa méthode (sauf
-  le 503 d'un appel `degradedOn503: false`, `exchange-rates.api.ts:37`), et par l'échec du `/health` ou de `/me` du chargement initial
-  (`routes/+layout.svelte:94`, `:97` ; `auth.svelte.ts:411`, `:425`, `fetch` direct) ; seules les méthodes idempotentes sont rejouées » ; le commentaire d'E2E
+  corrige (V1-7, V2-5) : « allumé par une coupure, un délai ou un 503 sur toute requête passée par `fetchWithRetry` (`request`,
+  `requestRaw`), quelle que soit sa méthode (sauf le 503 d'un appel `degradedOn503: false`, `exchange-rates.api.ts:37`), et par l'échec
+  du `/health` ou de `/me` du chargement initial (`routes/+layout.svelte:94`, `:97` ; `auth.svelte.ts:411`, `:425`, `fetch` direct) ;
+  les `fetch` directs de `api-client.ts` (`:101` refresh, `:142` `/me`) n'allument rien ; seules les méthodes idempotentes sont
+  rejouées » ; le doc-comment `api-client.ts:399-401` se corrige (V2-4) : « `clearDegraded()` au premier `2xx` (un 4xx ou un 5xx
+  non-503 ne prouve pas que la base répond) » ; le commentaire d'E2E
   `supplier-invoice-unknown-outcome.spec.ts:161` cesse de citer « réessai automatique ».
   **Options écartées** : ne plus allumer le bandeau pour une écriture (masquerait une panne réelle, et le bandeau suivant viendrait du
   premier `GET`) ; deux textes selon la méthode (l'état `apiHealth` est **global** et ne sait pas quelle requête l'a allumé : un `GET`
@@ -195,16 +208,21 @@ le commentaire d'E2E (réécrit, D-C1). Hors code produit :
 
 ### Lot B — #1492
 
-1. **AC-1 — la table, une fois** (`supplier_invoices.rs`, module `tests`) : un test pur sur les **quatre** cases de
-   `DuplicateRule::lifted_by_confirmation` — (règle 1, `Entry`) → `false`, (règle 2, `Entry`) → `true`, (règle 1, `Unvalidation`) →
-   `true`, (règle 2, `Unvalidation`) → `true`.
-2. **AC-2 — la réponse relit la table** (`kesh-api/src/errors.rs`, module `tests`, avec `response_body`) : pour chacune des quatre
-   cases, `AppError::Database(DbError::Supplier…Duplicate { existing, gesture })` rend `409`, le bon `error.code`, et
-   `details.confirmable` comparé **par deux assertions distinctes, chacune avec un message qui nomme la case et sa nature** : l'assertion
-   **relue** (`== DuplicateRule::<règle>.lifted_by_confirmation(gesture)`, message « relue (règle N, geste) ») et l'assertion **littérale**
-   (`== <true|false>`, message « littérale (règle N, geste) ») — l'une prouve le lien, l'autre la valeur, et c'est **laquelle rougit**
-   sous M-B1/M-B2 qui distingue une table de deux (§ *Tests*) ; le message reste celui d'aujourd'hui pour chaque case (clés
-   `error-supplier-invoice-duplicate`, `-probable-duplicate`, `-duplicate-unvalidate`).
+1. **AC-1 — la table, une fois** (`supplier_invoices.rs`, module `tests`) : **quatre tests purs, un par case**, de
+   `DuplicateRule::lifted_by_confirmation`, nommés `lifted_regle1_saisie` (→ `false`), `lifted_regle2_saisie` (→ `true`),
+   `lifted_regle1_devalidation` (→ `true`), `lifted_regle2_devalidation` (→ `true`) ; chacun une seule assertion, message
+   « table (règle N, geste) ».
+2. **AC-2 — la réponse relit la table** (`kesh-api/src/errors.rs`, module `tests`, avec `response_body`) : **quatre
+   `#[tokio::test]`, un par case** (pas de boucle : un test s'arrête à sa première assertion en échec, et la sortie de cargo doit montrer
+   chaque case — validation P2, V2-1), nommés `duplicate_response_regle1_saisie`, `…_regle2_saisie`, `…_regle1_devalidation`,
+   `…_regle2_devalidation`. Chacun construit `AppError::Database(DbError::Supplier…Duplicate { existing, gesture })` et enchaîne,
+   **dans cet ordre imposé**, des `assert_eq!` distincts, chacun avec un message qui nomme la case et sa nature :
+   (1) statut `409` et `error.code` (message « code (règle N, geste) ») ; (2) l'assertion **relue**,
+   `details.confirmable == DuplicateRule::<règle>.lifted_by_confirmation(gesture)` (message « relue (règle N, geste) ») ;
+   (3) l'assertion **littérale**, `details.confirmable == <true|false>` (message « littérale (règle N, geste) ») ; (4) le message
+   d'aujourd'hui pour la case (clés `error-supplier-invoice-duplicate`, `-probable-duplicate`, `-duplicate-unvalidate` ; message
+   « texte (règle N, geste) »). L'ordre fait qu'une assertion « verte » se **lit** dans la sortie : elle est verte si une assertion
+   **postérieure** du même test a paniqué (§ *Tests*).
 3. **AC-3 — plus aucune seconde table** :
    `git grep -nE "let liftable|probable \|\||gesture == DuplicateGesture::Unvalidation" -- 'crates/*/src/*'` est **vide** ;
    `git grep -nw lifted_by_confirmation -- 'crates/*/src/*'` ne rend que la définition, son appel dans `guard_duplicates_in_tx`, son
@@ -212,7 +230,7 @@ le commentaire d'E2E (réécrit, D-C1). Hors code produit :
 4. **AC-4 — rien ne change au comportement** : `crates/kesh-db/tests/supplier_invoice_duplicate.rs`,
    `supplier_invoice_duplicate_lock.rs` et `crates/kesh-api/tests/supplier_invoice_duplicate_e2e.rs` passent **sans modification**
    (`git diff origin/epic/50-corrections...HEAD --stat -- <ces trois fichiers>` vide). Aucun E2E neuf : rien ne change à la frontière
-   HTTP ni dans le navigateur ; les e2e existants de l'API (`:238`, `:263`, `:421`) jouent déjà la réponse.
+   HTTP ni dans le navigateur ; les e2e existants de l'API (`:232`, `:263`, `:421`) jouent déjà la réponse.
 
 ### Lot C — #1414
 
@@ -222,16 +240,22 @@ le commentaire d'E2E (réécrit, D-C1). Hors code produit :
 6. **AC-6 — le composant** (`frontend/src/lib/shared/components/DegradedBanner.test.ts`, neuf) : après `apiHealth.setDegraded()`,
    `degraded-banner` affiche le texte français de D-C1 ; il ne contient ni « réessai » ni « automatique » ; après
    `apiHealth.clearDegraded()`, il disparaît (filet, déjà vrai). État global remis entre les tests (`clearDegraded()` en `afterEach`).
-   Ce test lit le **repli Svelte** (`i18n.svelte.ts:15`, `_messages[key] || fallback`, catalogue vide en test ; même patron que
-   `SessionIdleWarning.test.ts:8`) : le catalogue `fr-CH` est tenu par la garde `i18n-repli-divergent-actif` et par l'AC-5.
+   Ce test lit le **repli Svelte** (`i18n.svelte.ts:20`, `_messages[key] || fallback`, catalogue vide en test ; même patron que
+   `SessionIdleWarning.test.ts:8`) : le catalogue `fr-CH` est tenu par la garde `i18n-repli-divergent-actif` et par l'AC-5, et dans le navigateur par le scénario 2 de l'AC-8.
 7. **AC-7 — plus aucune promesse** :
    `git grep -niE "réessai automatique|retrying automatically|Wiederholungsversuch läuft|tentativo automatico" -- crates frontend docs/manual`
    est **vide**. Sortie copiée.
-8. **AC-8 — de bout en bout et recette visuelle** : `db-resilience.spec.ts`, **trois scénarios verts** — le scénario 1 (`:31`) reçoit,
-   après l'assertion existante `:61`, l'assertion ajoutée `await expect(banner).toContainText('vérifiez si elle a été enregistrée');` ;
-   le scénario 2 (`:68`) inchangé ; le scénario 3 (`:96`, « banner disparaît automatiquement ») inchangé et **vert**, puisqu'il tient la
-   promesse neuve « ce bandeau disparaît dès qu’elle répond de nouveau ». **Captures** (règle *Recette visuelle* du `CLAUDE.md`, thème
-   clair, base de démonstration) du bandeau seul (scénario 1) et du bandeau **avec** l'avis E6 de la complétion (montage de la capture
+8. **AC-8 — de bout en bout et recette visuelle** : `db-resilience.spec.ts`, **trois scénarios verts**. **Le scénario 2** (`:68`)
+   reçoit l'assertion ajoutée, après `:93` : `await expect(banner).toContainText('vérifiez si elle a été enregistrée');` (validation
+   P2, V2-6). ⚠️ Prémisse relue au code : tel qu'il est, le scénario 2 ne lit pas non plus le catalogue — `page.goto('/contacts')`
+   (`:90`) recharge l'application, qui redemande `/api/v1/i18n/messages` (`i18n.svelte.ts:44`, par `apiClient`) alors que
+   `/api/v1/**` est déjà coupé (`:87`) ; `loadI18nMessages` avale l'échec et le bandeau affiche le **repli**. L'interception `:87`
+   laisse donc passer cette seule route (`route.request().url().includes('/api/v1/i18n/messages') ? route.continue() :
+   route.abort('failed')`), pour que l'assertion lise la valeur **`fr-CH` du catalogue servi par l'API** ; le reste du scénario
+   (coupure, `NETWORK_ERROR`, bandeau visible) ne change pas. Le scénario 1 (`:31`, tout `/api/v1/**` en 503, catalogue compris) garde
+   son assertion `:61` et lit le repli ; le scénario 3 (`:96`, « banner disparaît automatiquement ») inchangé et **vert**, puisqu'il
+   tient la promesse neuve « ce bandeau disparaît dès qu’elle répond de nouveau ». **Captures** (règle *Recette visuelle* du `CLAUDE.md`, thème
+   clair, base de démonstration) du bandeau seul (scénario 2, catalogue chargé) et du bandeau **avec** l'avis E6 de la complétion (montage de la capture
    `e4812b-E6-completion` de la 48-12b, `supplier-invoice-duplicate.spec.ts:517-540`, **complété d'un `page.route('/health', …)` qui rend
    503**, comme le scénario 3 `:117-120`, pour que le ping de 5 s n'éteigne pas le bandeau avant la capture), sous
    `kesh-gate-logs/e50solde/captures/`, jointes au Dev Agent Record et au prompt de la revue de code.
@@ -252,40 +276,42 @@ Journaux attendus sous `/home/gcorbaz/devel/kesh-gate-logs/e50solde/dev/`.
 
 | Test | Rouge sans le correctif | Preuve |
 |---|---|---|
-| AC-1 | — (la méthode est neuve : le test ne compile pas avant elle) | **M-B1** et **M-B2**, ci-dessous : AC-1 rouge sous chacune |
-| AC-2 | ne rougit pas sur le code d'avant (les valeurs sont les mêmes) : **filet**, et c'est sa raison d'être — il rougit sous M-B1/M-B2/M-B3 | déclaré |
-| AC-5, AC-6 | **rouge d'abord** : AC-6 rougit sur l'ancien texte ; **M-C1** : l'ancien texte remis dans le seul `fr-CH` → `i18n-repli-divergent-actif` rouge (AC-6, qui lit le repli Svelte, reste **vert** : V1-2) (`mut-c1.log`) ; **M-C2** : l'ancien texte remis dans le seul repli Svelte → `i18n-repli-divergent-actif` rouge (`mut-c2.log`) | `rouge-front.log` |
-| AC-8 | rouge d'abord pour l'assertion ajoutée | `rouge-e2e.log` (`db-resilience.spec.ts`) |
+| AC-1 | — (la méthode est neuve : les tests ne compilent pas avant elle) | M-B1 et M-B2, ci-dessous |
+| AC-2 | ne rougit pas sur le code d'avant (les valeurs sont les mêmes) : **filet**, et c'est sa raison d'être — il rougit sous M-B1, M-B2, M-B3 | `mut-b*.log` |
+| AC-5, AC-6 | **rouge d'abord** : AC-6 (`DegradedBanner.test.ts`) échoue sur l'ancien texte — vitest affiche le nom du test, l'attendu et le reçu (l'ancien texte), avec `fichier:ligne` ; **M-C1** : l'ancien texte remis dans le seul `fr-CH` → échoue le test de `i18n-repli-divergent-actif.test.ts` qui liste les divergences actives, en nommant la clé `db-unavailable-banner` ; AC-6, qui lit le repli Svelte, **passe** (vitest le liste « ✓ ») (`mut-c1.log`) ; **M-C2** : l'ancien texte remis dans le seul repli Svelte → même test de la garde en échec, même clé nommée ; AC-6 échoue aussi (il lit ce repli) (`mut-c2.log`) | `rouge-front.log` |
+| AC-8 | **rouge d'abord** : le scénario 2 échoue sur l'assertion ajoutée — Playwright affiche `toContainText`, l'attendu « vérifiez si elle a été enregistrée » et le texte reçu (l'ancien), avec `db-resilience.spec.ts:<ligne>` ; **M-C3** (après le correctif, binaire de l'API reconstruit) : l'ancien texte remis dans le seul `fr-CH` → le scénario 2 échoue de même (il lit le catalogue), le scénario 1 passe (il lit le repli) : la preuve, dans le navigateur, que le scénario 2 lit le catalogue (`mut-c3.log`) | `rouge-e2e.log` |
 | AC-3, AC-4, AC-7, AC-9 | — | commandes et sorties copiées |
 
-**Les mutations du lot B, assertion par assertion** (validation P1, V1-1). Une mutation qui ne touche **que** le corps de
-`lifted_by_confirmation` ne distingue « une table » de « deux tables » que par **l'assertion qui rougit** : chaque journal `mut-b*.log`
-**nomme** les assertions rouges et vertes (messages d'AC-2, ligne et itération de l'e2e), et la preuve est l'ensemble ci-dessous,
-tout entier. Sous l'hypothèse contraire (`kesh-api` garderait sa table), les colonnes « relue » et « littérale » s'inverseraient et l'e2e
-rougirait à `:231` sur l'itération `confirm = true` (`201` au lieu de `409`) : c'est ce qu'il faut **ne pas** voir.
+**Ce que la sortie montre, et comment on y lit une assertion « verte »** (validation P2, V2-1). Un `assert_eq!` qui passe n'écrit
+rien ; cargo n'affiche que **l'assertion qui panique** : `thread '<module>::<test>' panicked at <fichier>:<ligne>:<colonne>:`, puis
+`assertion `left == right` failed: <message>` et les valeurs `left` / `right` (pour un `.expect`, `<message>: <erreur>`). Chaque journal
+`mut-*.log` **nomme donc, par test, l'assertion qui échoue** — fichier:ligne et message —, et rien d'autre ; une assertion se dit
+« passée » seulement si une assertion **postérieure du même test** a paniqué (ordre imposé de l'AC-2 : code, relue, littérale, texte),
+ou si le test entier est listé `ok` / `PASS`.
 
-| Mutation (seul fichier touché : `supplier_invoices.rs`, corps de `lifted_by_confirmation`) | Assertion | Attendu |
-|---|---|---|
-| **M-B1** : (règle 1, `Entry`) → `true` (`mut-b1.log`) | AC-1, case (règle 1, `Entry`) | **rouge** |
-| | AC-2, « relue (règle 1, Entry) » | **verte** — `kesh-api` lit la table mutée |
-| | AC-2, « littérale (règle 1, Entry) » (`false`) | **rouge** |
-| | e2e `create_twice_is_refused_with_details_and_message`, itération `confirm = false` : `:231` | **verte** (le refus reste `409 SUPPLIER_INVOICE_DUPLICATE` sous `Refuse`) |
-| | même itération : `:238` (`"confirmable": false`) | **rouge** (le test s'arrête là ; l'itération `confirm = true` n'est pas atteinte) |
-| **M-B2** : (règle 2, `Unvalidation`) → `false` (`mut-b2.log`) | AC-1, case (règle 2, `Unvalidation`) | **rouge** |
-| | AC-2, « relue (règle 2, Unvalidation) » | **verte** |
-| | AC-2, « littérale (règle 2, Unvalidation) » (`true`) | **rouge** |
-| | `kesh-db/tests/supplier_invoice_duplicate.rs:1136` (refus sous `REFUSE`) | **verte** |
-| | même test, `:1139-1141` (`repasser(…, CONFIRMED).await.expect("confirmé")`) | **rouge** (le refus n'est plus levé) |
-| **M-B3** : dans `kesh-api/src/errors.rs`, les règles des deux bras `DbError::SupplierInvoiceDuplicate` / `…ProbableDuplicate` échangées (`mut-b3.log`) | AC-2, `error.code` des quatre cases | **rouge** (le code se déduit de la règle, D-B2) |
+**Les mutations du lot B.** Une mutation qui ne touche que le corps de `lifted_by_confirmation` distingue « une table » de
+« deux tables » par **l'assertion qui panique**. Le tableau donne, par test, l'échec attendu tel que cargo l'imprime ; la dernière
+colonne dit ce qu'on verrait si `kesh-api` gardait sa propre table — c'est ce qu'il faut **ne pas** voir.
 
-Le test AC-2 doit écrire ses deux assertions **séparément** (pas un seul `assert_eq!` sur un tuple), sans quoi le journal ne dit pas
-laquelle rougit. Après chaque mutation restaurée, **toucher le fichier** avant de relancer (cargo peut garder le binaire muté).
+| Mutation | Test | Échec attendu (une table) | Ce que montrerait l'hypothèse « deux tables » |
+|---|---|---|---|
+| **M-B1** : (règle 1, `Entry`) → `true`, seul `supplier_invoices.rs` touché (`mut-b1.log`) | `kesh-db` `supplier_invoices::tests::lifted_regle1_saisie` | panique, message « table (règle 1, Entry) » | idem |
+| | `kesh-api` `errors::tests::duplicate_response_regle1_saisie` | panique à l'assertion **littérale**, message « littérale (règle 1, Entry) », `left: true`, `right: false` — les assertions « code » et « relue », antérieures, sont donc passées | panique à l'assertion **relue**, message « relue (règle 1, Entry) », `left: false`, `right: true` |
+| | les trois autres tests `duplicate_response_*` | `ok` | `ok` |
+| | e2e `create_twice_is_refused_with_details_and_message` | panique à `tests/supplier_invoice_duplicate_e2e.rs:232`, `left` portant `"confirmable": Bool(true)` — à la **première** itération (`confirm = false`) : `:231`, antérieure, est passée ; l'itération `confirm = true` n'est pas atteinte | panique à `:231` à la **seconde** itération : `left: (201, …)`, `right: (409, "SUPPLIER_INVOICE_DUPLICATE")` |
+| **M-B2** : (règle 2, `Unvalidation`) → `false`, seul `supplier_invoices.rs` touché (`mut-b2.log`) | `kesh-db` `supplier_invoices::tests::lifted_regle2_devalidation` | panique, message « table (règle 2, Unvalidation) » | idem |
+| | `kesh-api` `errors::tests::duplicate_response_regle2_devalidation` | panique à l'assertion **littérale**, « littérale (règle 2, Unvalidation) », `left: false`, `right: true` | panique à l'assertion **relue**, « relue (règle 2, Unvalidation) » |
+| | `kesh-db` `tests/supplier_invoice_duplicate.rs`, `unvalidation_rule_2_other_cancelled_and_validated_invoices` (`:1126`) | panique au `.expect("confirmé")` (`:1139-1141` ; la ligne exacte, `:1139` ou `:1141`, est celle que rustc imprime : la relever au journal), message `confirmé: SupplierInvoiceProbableDuplicate …` — l'assertion `:1136`, antérieure, est passée | idem (la mutation est dans `kesh-db` dans les deux hypothèses : non discriminant, et la fiche ne le prétend pas) |
+| | aucun test HTTP | — (fait établi, lot B point 4) | — |
+| **M-B3** : dans `kesh-api/src/errors.rs`, les règles des deux bras `DbError::SupplierInvoiceDuplicate` / `…ProbableDuplicate` échangées (`mut-b3.log`) | les **quatre** tests `duplicate_response_*` | chacun panique à son assertion **code**, message « code (règle N, geste) », le code reçu étant l'autre (le code se déduit de la règle, D-B2) | — |
+
+Après chaque mutation restaurée, **toucher le fichier** avant de relancer (cargo peut garder le binaire muté).
 
 ## Tâches
 
-1. **Étape 0** : relire à la tête de la branche les lignes citées (`supplier_invoices.rs:449-460`, `:484-502`, `:622-674`, `:1567`,
-   `:1875-1886` ; `kesh-db/src/errors.rs:570-585`, `:1885-1912`, `:2606-2607` ; `kesh-api/src/errors.rs:5576-5598`, `:6230-6290`,
-   `:6587-6620` ; `messages.ftl:88` des quatre locales ; `DegradedBanner.svelte` ; `api-health.svelte.ts:1-15` ; `api-client.ts:410-450`) ;
+1. **Étape 0** : relire à la tête de la branche les lignes citées (`supplier_invoices.rs:449-462`, `:484-502`, `:622-674`, `:1566-1569`,
+   `:1871-1886` ; `kesh-db/src/errors.rs:570-585`, `:1885-1912`, `:2606-2607` ; `kesh-api/src/errors.rs:5576-5598`, `:6230-6290`,
+   `:6587-6620` ; `messages.ftl:88` des quatre locales ; `DegradedBanner.svelte` ; `api-health.svelte.ts:1-15` ; `api-client.ts:95-145`, `:395-450`) ;
    en copier trois au Change Log ; régénérer les deux inventaires (commandes en tête de `inv-1492.txt` et `inv-1414.txt`) et noter tout
    écart (une reprise de `main` dans `epic/50-corrections` est en cours : un site neuf entre au relevé avant tout code). Relire aussi
    `routes/supplier_invoices.rs:349-353`, `:669-673`, `:749-750`, `:956-957` (D-B3) et `db-resilience.spec.ts:31-140` (AC-8).
@@ -293,7 +319,8 @@ laquelle rougit. Après chaque mutation restaurée, **toucher le fichier** avant
 3. **Lot B** : `lifted_by_confirmation`, appel dans `guard_duplicates_in_tx` ; `kesh-api` (D-B2) ; doc-comments (D-B3) ; tests AC-1,
    AC-2 ; mutations M-B1 à M-B3 ; **gate complet** au commit qui porte ce patch (exception `kesh-db` du `CLAUDE.md` : il touche un
    repository).
-4. **Lot C** : quatre catalogues, repli, doc-comment `api-health.svelte.ts`, commentaire d'E2E ; test AC-6 ; E2E AC-8 ; M-C1, M-C2 ;
+4. **Lot C** : quatre catalogues, repli, doc-comments `api-health.svelte.ts` et `api-client.ts:399-401`, commentaire d'E2E ; test
+   AC-6 ; E2E AC-8 (scénario 2 : assertion et passage de `/api/v1/i18n/messages`) ; M-C1, M-C2, M-C3 ;
    captures.
 5. Propagation (grep du symptôme de chaque lot : AC-3, AC-7), AC-4, AC-9 ; Dev Agent Record. **Ne pas écrire `CHANGELOG.md` ni
    `sprint-status.yaml`** (l'orchestrateur tient les statuts).
@@ -338,11 +365,11 @@ Grain de la 48-12b (une crate backend, un domaine ou une route du frontend, ou l
 | 1 | `kesh-db` | B | `repositories/supplier_invoices.rs`, `errors.rs` (doc-comments) |
 | 2 | `kesh-api` | B | `errors.rs`, `routes/supplier_invoices.rs` (commentaires, D-B3) |
 | 3 | `kesh-i18n` | C | `locales/{fr,de,en,it}-CH/messages.ftl` |
-| 4 | `shared` (frontend) | C | `components/DegradedBanner.svelte`, `utils/api-health.svelte.ts` (doc-comment) |
+| 4 | `shared` (frontend) | C | `components/DegradedBanner.svelte`, `utils/api-health.svelte.ts` et `utils/api-client.ts` (doc-comments) |
 
 **Quatre modules : sous la borne de cinq, pas de découpage.** Le signal de la première rédaction (sept modules) est résolu par la
 décision du Project Lead du 2026-11-24 (§ *Périmètre*). Aucune documentation ni aucun manuel ne change. Tests touchés hors de ces
-fichiers : `DegradedBanner.test.ts` (neuf), `db-resilience.spec.ts` (une assertion), commentaire de
+fichiers : `DegradedBanner.test.ts` (neuf), `db-resilience.spec.ts` (scénario 2 : une assertion, une route laissée passer), commentaire de
 `supplier-invoice-unknown-outcome.spec.ts:161`.
 
 ## Dev Notes
@@ -351,8 +378,11 @@ fichiers : `DegradedBanner.test.ts` (neuf), `db-resilience.spec.ts` (une asserti
   qu'impose l'exception `kesh-db` ; lot C, une heure et demie avec les captures. **Une demi-journée** de développement, boucles de
   validation et de revue non comprises ; s'y ajoutent `gate-ci`, l'E2E complet et au moins deux passes de revue alternées. **Calendrier** :
   le développement **démarre le mercredi 2026-11-25 au matin** ; c'est la condition pour clore avant la coupure du jeudi 2026-11-26 au
-  soir (V1-12). La remédiation d'une passe ne touche en principe qu'un lot, donc un ou deux modules : les passes ciblées redeviennent
-  possibles. **Si le temps manque**, retirer un lot entier plutôt que le livrer à moitié : **C sort en premier** (P4), **puis B** ; la
+  soir (V1-12). **Passes ciblées** (validation P2, V2-7) : chaque lot couvre **deux** modules (B : `kesh-db` et `kesh-api` ; C :
+  `kesh-i18n` et `shared`) ; une remédiation qui touche les deux modules d'un lot **interdit** la passe ciblée (`CLAUDE.md` § *La passe
+  ciblée*) et appelle une passe complète ; seule une remédiation qui ne touche qu'un module peut la recevoir. Pour le lot B, toute
+  remédiation qui touche `kesh-db` impose en outre le **gate complet** (exception `kesh-db`). Compter au calendrier au moins une passe
+  complète de plus si le lot B est remédié. **Si le temps manque**, retirer un lot entier plutôt que le livrer à moitié : **C sort en premier** (P4), **puis B** ; la
   décision revient au Project Lead.
 - **Fichiers communs** : avec la 48-12a (close, fusionnée dans `epic/50-corrections`) — `supplier_invoices.rs`, `kesh-api/src/errors.rs` ;
   catalogues i18n (chaque epic dans son bloc ; ici une valeur existante change, aucune clé neuve) ; `supplier-invoice-unknown-outcome.spec.ts`
@@ -409,3 +439,24 @@ fichiers : `DegradedBanner.test.ts` (neuf), `db-resilience.spec.ts` (une asserti
   `it-CH:804`, `:815`. **V1-12** : démarrage le mercredi 2026-11-25 au matin, ordre de sortie C puis B. AC : toujours **dix** ; modules :
   toujours **quatre** (`routes/supplier_invoices.rs` est dans `kesh-api`). Passe suivante : **P2, Opus, complète** (prompt
   `50-solde-dette-epic-validation-prompt-p2.md`).
+- **2026-11-24 — validation P2 remédiée** (Opus 5.5, contexte de la rédaction). Validation P2 : **Opus**, contexte frais, **0 CRITICAL /
+  0 HIGH / 1 MEDIUM / 6 LOW** (`kesh-gate-logs/e50solde/validation-p2.md`). Tendance : P1 Sonnet 0/0/1/11 → P2 Opus 0/0/1/6.
+  **Signal de la règle de splitting préventif** : le MEDIUM **V2-1 recycle V1-1** (même preuve des mutations du lot B, défaut né de sa
+  remédiation) ; V2-2 recycle V1-4, V2-5 recycle V1-7, V2-3 est né de la remédiation de V1-2. Signal **déclaré au Project Lead par
+  l'orchestrateur** le 2026-11-24 ; **décision : la story reste entière**, le recyclage portant sur la rédaction des tests attendus, non
+  sur le périmètre (quatre modules, sous la borne). Prémisse de chaque finding relue au code à `48a66ca24`. **V2-1** (MEDIUM) — prémisse
+  vraie (`supplier_invoice_duplicate_e2e.rs:232` `assert_eq!(` ; `:238` n'est que le littéral) : `:238` → `:232` partout ; AC-1 et
+  AC-2 en **un test par case**, nommés ; AC-2 dans l'ordre code, relue, littérale, texte ; § *Tests* réécrit pour que chaque attendu
+  soit **observable** dans la sortie de cargo ou de vitest (l'assertion qui panique, `fichier:ligne` et message ; « passée » seulement
+  par une assertion postérieure qui panique). **V2-2** — prémisse vraie (`kesh-db/src/errors.rs:577-578`, `supplier_invoices.rs:1873`,
+  `:1566-1569`) : trois sites ajoutés à l'inventaire et à D-B3, `:1567` → `:1566-1569`, regex `-i` et « aucune sortie » rejouée
+  (`inv-1492.txt`) ; récitations de contrat (`api-external.md`, `admin-manual.tex:2585`) écrites hors code, justes. **V2-3** — prémisse
+  vraie (`i18n.svelte.ts:20` `const raw = _messages[key] || fallback;`) : `:15` → `:20`. **V2-4** — prémisse vraie
+  (`api-client.ts:399-401` contre `:443-445`) : doc-comment inventorié et corrigé (D-C1, module `shared`). **V2-5** — prémisse vraie
+  (`api-client.ts:101`, `:142`) : le doc-comment proposé dit « `fetchWithRetry` » et nomme les deux `fetch` directs. **V2-6** —
+  prémisse **en partie fausse**, relue au code : le scénario 2 ne lit pas non plus le catalogue (`page.goto('/contacts')`, `:90`,
+  recharge l'application, et `/api/v1/i18n/messages` est coupé par `:87`) ; remède retenu : assertion portée au scénario 2 **et**
+  interception `:87` qui laisse passer `/api/v1/i18n/messages`, avec la mutation M-C3 qui le prouve. **V2-7** : phrase des passes
+  ciblées réécrite (deux modules par lot ; gate complet pour le lot B). Greps de propagation : `:238`, `:1567`, `i18n.svelte.ts:15`,
+  « redeviennent possibles », « vertes / rouges » sur la fiche — ne restent qu'aux entrées historiques du Change Log. AC : **dix** ;
+  modules : **quatre**. Passe suivante : **P3, Sonnet, complète** (prompt `50-solde-dette-epic-validation-prompt-p3.md`).
