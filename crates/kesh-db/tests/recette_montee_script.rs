@@ -2,8 +2,8 @@
 //! (`cargo test` / nextest) et en CI ; un test shell que rien ne lance serait muet.
 //!
 //! Le test vit dans `scripts/tests/recette-montee.test.sh` : un mini-dépôt jetable,
-//! `docker`, `curl` et un binaire factices. Il ne lance ni conteneur ni serveur.
-//! *(Story 33-10, #925.)*
+//! `docker`, `curl`, `mutool` et un binaire factices. Il ne lance ni conteneur ni serveur.
+//! *(Story 33-10, #925 ; `mutool`, Story 49-1d, #1242.)*
 
 use std::path::Path;
 use std::process::Command;
@@ -26,6 +26,8 @@ fn recette_montee_refuse_ce_qui_sort_de_son_perimetre_et_enchaine_ses_phases() {
         .arg(&test_script)
         .env_remove("KESH_DOCKER")
         .env_remove("KESH_CURL")
+        // Story 49-1d (D9) : le test pose son `mutool` factice à chaque lancement.
+        .env_remove("KESH_MUTOOL")
         .env_remove("RECETTE_RACINE_JETABLE")
         .output()
         .expect("impossible de lancer bash");
