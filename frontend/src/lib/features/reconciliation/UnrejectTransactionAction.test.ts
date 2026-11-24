@@ -47,6 +47,11 @@ import * as notify from '$lib/shared/utils/notify';
 import UnrejectTransactionAction from './UnrejectTransactionAction.svelte';
 import { pinTimeZone } from '$lib/shared/utils/pin-time-zone.test-helper';
 
+// Revue P1 de la 50-6 (R1-1) : New York pour tout le fichier, afin que le formateur mis en cache par
+// `formatInstant` naisse sous New York quelle que soit la station et l'ordre des tests (sans quoi la
+// mutation M1, « `timeZone` retiré », passait sous une station à Zurich).
+pinTimeZone('America/New_York');
+
 const mockApi = vi.mocked(api);
 const mockNotify = vi.mocked(notify);
 

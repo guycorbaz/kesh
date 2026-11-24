@@ -788,12 +788,13 @@ démonstration, les réponses du serveur MCP, et la date du nom des fichiers exp
 de ce même jour comme borne du verrou, quel que soit le fuseau de votre poste~; pour une date que
 vous saisissez (une date de facture), il propose la date \textbf{de votre poste} --- pour un
 poste réglé sur la Suisse, ce sont les mêmes. Les \textbf{heures} enregistrées (journal d'audit,
-envoi d'un rappel) restent en UTC~; les instants que Kesh montre (journal d'audit, sauvegardes, envois
-et prompts du serveur MCP, rejet d'un rapprochement) s'affichent à l'heure de Zurich, quel que soit le
-fuseau de votre poste --- \emph{depuis la version 0.20.0~; avant, l'heure du poste}~; les dates que
-vous saisissez (l'expiration d'une clé du serveur MCP, à l'heure du poste, ou d'une clé d'API)
-restent telles que saisies, et, pour l'instant, la création, le dernier usage et la révocation d'une
-clé du serveur MCP et la modification de ses réglages restent à l'heure du poste~; le \textbf{jour} d'un envoi de rappel est celui de Zurich, pour
+envoi d'un rappel) restent en UTC dans la base. Kesh affiche tous les instants à l'heure de Zurich, quel
+que soit le fuseau de votre poste~; pour le journal d'audit, les sauvegardes, les envois et les prompts du
+serveur MCP et la date d'un rejet de rapprochement, c'est le cas \emph{depuis la version 0.20.0~; avant,
+l'heure du poste}. Il y a deux exceptions. Les dates que vous saisissez (l'expiration d'une clé du
+serveur MCP, à l'heure du poste, ou d'une clé d'API) restent telles que saisies. Et, à l'écran
+\emph{Serveur MCP}, la création, le dernier usage et la révocation d'une clé ainsi que la modification
+des réglages restent, pour l'instant, à l'heure du poste. Le \textbf{jour} d'un envoi de rappel est celui de Zurich, pour
 le délai du rappel suivant comme pour la fenêtre de 30~jours de la réconciliation, et les filtres
 du journal d'audit choisissent des jours de Zurich (\emph{depuis la version 0.18.0~; avant, le
 jour UTC}). Le paiement d'une facture n'est pas une heure mais une

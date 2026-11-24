@@ -50,6 +50,13 @@ import Page from './+page.svelte';
 import { authState } from '$lib/app/stores/auth.svelte';
 import { pinTimeZone } from '$lib/shared/utils/pin-time-zone.test-helper';
 
+// Revue P1 de la 50-6 (R1-1) : le fuseau du processus est New York pour TOUT le fichier. `formatInstant`
+// garde ses formateurs en cache de module : un formateur construit par un test non épinglé (au fuseau de
+// la station) serait réemployé par les cas New York, et la mutation « `timeZone` retiré » (M1) passerait
+// sous une station à Zurich. Ainsi chaque formateur naît sous New York, quelle que soit la station ou
+// l'ordre des tests ; les `describe` à `Europe/Zurich` (filets AC9) réépinglent pour leurs seuls cas.
+pinTimeZone('America/New_York');
+
 /** Le vocabulaire, rendu dans l'ORDRE DES CODES comme la route le rend. */
 const VOCAB: AuditLogVocabulary = {
 	entityTypes: [

@@ -217,7 +217,7 @@ n'en trouve aucun.
   → 30 avant, 22 + n après (le compte des **relevés** ; celui des entrées est le nombre d'objets de `ALLOWLIST_INSTANTS`, une de moins).
   **Angles morts assumés de la garde** (V1-11) : un alias (`const F = Intl.DateTimeFormat; new F(…)`, `const D = Date; new D(x)`), un jeton
   coupé (`Intl.DateTime\nFormat(`), `Reflect.construct(Date, [x])`, `Temporal`, `new window.Date(x)` et `new self.Date(x)` (le motif n'admet que `globalThis.`),
-  `new Date (x)` (espace avant la parenthèse ; Prettier l'efface ; aucune de ces trois formes n'existe aujourd'hui, `grep -rnE
+  les composants calendaires du poste `.getFullYear(`, `.getMonth(`, `.getDate(`, `.getDay(` (R1-4 : le jour du poste d'un instant venu d'ailleurs, ou de `new Date()`, passerait ; ceux d'aujourd'hui sont des dates du poste voulues : `premier-exercice.ts`, `fiscal-years.helpers.ts`, `mcp-time.ts`, `local-date.ts`), `new Date (x)` (espace avant la parenthèse ; Prettier l'efface ; aucune de ces trois formes n'existe aujourd'hui, `grep -rnE
   "new window\.Date|new self\.Date|Reflect\.construct|new Date \(" --include=*.ts --include=*.svelte frontend/src` hors tests : vide), une date construite dans un autre module et passée à un
   formateur légitime ; deux lectures sur une même ligne ne font qu'un relevé (la ligne rougit quand même si elle n'est pas admise). Sont,
   eux, attrapés et sondés : l'appel sur plusieurs lignes (`new Intl.DateTimeFormat(\n locale, {…})`, le jeton `DateTimeFormat(` étant sur la
@@ -270,7 +270,7 @@ n'en trouve aucun.
     (`dateFormat.format(new Date(e.createdAt))`, `new Intl.DateTimeFormat(i18nLocale(), { dateStyle: 'medium' })`, `const date = new Date(iso);`),
     une forme multiligne (`new Intl.DateTimeFormat(\n\tlocale,`) et `new globalThis.Date(x)` sont relevées sans entrée ; une troisième ligne
     identique à celles de `premier-exercice.ts` rougit. **Sonde réelle** : la ligne `:376` d'avant rétablie dans `audit-log/+page.svelte`
-    fait rougir la garde (journal `kesh-gate-logs/e506/mut-garde.txt`).
+    fait rougir la garde (journal `kesh-gate-logs/e506/mut-M4.txt` ; M4 rétablit la mise en forme d'avant, sans fuseau, **en ligne** dans la cellule — variante équivalente de la ligne d'avant, dont la forme exacte est relevée par la sonde en mémoire).
 11. **AC11 — un E2E** : `frontend/tests/e2e/audit-log.spec.ts` gagne un `describe` sous `test.use({ timezoneId: 'America/New_York' })` : une
     action qui écrit une entrée d'audit, la lecture de son `createdAt` par l'API, et l'assertion que `getByTestId('audit-log-row-date')` de
     la ligne égale `Intl.DateTimeFormat('fr-CH', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Europe/Zurich' }).format(new Date(createdAt))`
@@ -287,7 +287,7 @@ n'en trouve aucun.
     après (le texte aplati tient sur une ligne : `grep -c` ne rendrait que 0 ou 1 par ligne, `grep -o | wc -l` compte les occurrences).
     `admin-manual.tex:3584` inchangé. Aucun PDF commité ; à la release, après `make fr`,
     `pdftotext docs/manual/fr/user-manual.pdf - | tr '\n' ' ' | tr -s ' ' | grep -o "heure de votre poste" | wc -l` → 0 (1 aujourd'hui).
-13. **AC13 — recette visuelle** (règle du `CLAUDE.md`, chaque état touché) : captures, thème clair, base de démonstration `kesh_e2e_e506`, de :
+13. **AC13 — recette visuelle** (règle du `CLAUDE.md`, chaque état touché) : captures, thème clair, base de démonstration `kesh_e506b` (la base `kesh_e2e_e506` est celle de l'E2E complet), de :
     - *Journal d'audit* (liste) ;
     - détail d'un import bancaire avec une transaction rejetée (« Rejetée le … ») ;
     - *Administration → Sauvegarde complète* : section automatique (dernière réussite, dernière tentative, prochaine) et liste des sauvegardes ;
@@ -297,7 +297,8 @@ n'en trouve aucun.
       '2026-11-20 23:30:00.000'` sur la base jetable **ne tient pas** : le planificateur tourne toutes les cinq minutes
       (`auto_backup.rs:58`) et écrit une réussite neuve, qui éteint le bandeau (V2-4) ;
     - *Envois du serveur MCP* : la liste **et** le détail d'un envoi (créé, échéance, décision), envoi déposé comme dans `mcp-sends.spec.ts:118-134` ;
-    - le détail d'un **prompt du serveur MCP** (`McpPromptDetail` : modification, versions proposées).
+    - le détail d'un **prompt du serveur MCP** (`McpPromptDetail` : modification, versions proposées, **et une version décidée** : colonne *Décision* datée) ;
+    - un **rejet de rapprochement daté de fin de soirée UTC** (interception de la réponse du détail d'import, `autoMatchRejectedAt: '2026-11-24T23:30:00Z'`) : « Rejetée le 24 nov. » avant, « 25 nov. » après, à New York (R1-5).
     Les chemins et numéros de ligne s'entendent **à la tête de `epic/50-corrections` au moment de la recette** : la 50-5 déplace l'écran
     `/admin/backup` vers `/backup-export?onglet=sauvegarder` (V2-1). Chacun **avant** (code de `e5654fc00`, navigateur à `America/New_York`) et **après** (même fuseau), plus **après** à `Europe/Zurich`
     (identique à l'avant suisse). Rangées dans `kesh-gate-logs/e506/captures/`, jointes au Dev Agent Record et au prompt de la revue de code.
@@ -318,7 +319,7 @@ Les tests se commitent **avant** le correctif (commit « test rouge »), journau
 | AC7 | `lib/features/admin-backup/backup-format.test.ts` (neuf) | oui | `rouge-backup.txt` |
 | AC8 | `lib/features/mcp-sends/mcp-sends-format.test.ts` (neuf, ou bloc d'un test existant du module) | oui | `rouge-mcp-sends.txt` |
 | AC9 | les mêmes, sous `Europe/Zurich` | **non, voulu** : filet | — |
-| AC10 | `lib/shared/utils/local-date-guard.test.ts` | oui : les huit lignes des quatre sites sont relevées sans entrée ; sonde réelle M4 | `rouge-garde.txt`, `mut-garde.txt` |
+| AC10 | `lib/shared/utils/local-date-guard.test.ts` | oui : les huit lignes des quatre sites sont relevées sans entrée ; sonde réelle M4 | `rouge-garde.txt`, `mut-M4.txt` |
 | AC11 | `tests/e2e/audit-log.spec.ts` | oui, au code d'avant | `rouge-e2e.txt` |
 | AC12 | les deux `grep -c` du texte aplati | oui : 1 et 0 avant | `manuel-avant.txt`, `manuel-apres.txt` |
 
@@ -326,7 +327,7 @@ Les tests se commitent **avant** le correctif (commit « test rouge »), journau
 `beforeEach` de `pinTimeZone`.
 
 **Mutations** (code commité avant ; restauration par `git restore --worktree` puis `touch`) : **M1** retirer `timeZone` de `formatInstant`
-→ AC2, AC3, AC5-AC8 rougissent ; **M2** dans `instantDuServeur`, ne plus ajouter `Z` à une forme naïve → AC2 (forme naïve) et AC8 rougissent ;
+→ AC2, AC3, AC5-AC8 rougissent (journal `mut-M1-bis.txt` ; AC5 et AC6 n'y rougissent que parce que leurs fichiers de test épinglent le fuseau à New York **pour tout le fichier** : le formateur mis en cache naît sous New York, quels que soient la station et l'ordre des tests — revue P1, R1-1 ; sans cela, `mut-M1.txt`, M1 les laissait verts sur une station à Zurich) ; **M2** dans `instantDuServeur`, ne plus ajouter `Z` à une forme naïve → AC2 (forme naïve) et AC8 rougissent ;
 **M3** `formatBackupDate` rendu à `new Date(iso)` + `Intl` sans zone → AC7 et la garde rougissent ; **M4** la ligne `:376` d'avant rétablie →
 AC5 et la garde rougissent. Un journal par mutation.
 
@@ -439,11 +440,16 @@ Sonnet 5.5 (`bmad-dev-story`, autonomie), 2026-11-24. Journaux : `/home/gcorbaz/
   (les 8 relevés des quatre sites sans entrée), `rouge-e2e.txt` (1) : (1) spec telle que commitée, le `data-testid` manque ; (2) variante
   `locator('td').first()`, cellule « 24 nov. 2026, 13:48 » (New York) au lieu de « 19:48 » (Zurich).
 - **Mutations** (script `mut.sh`, restauration par `git restore --worktree` puis `touch`, arbre propre constaté) : `mut-M1.txt` (11 tests
-  rouges ; les filets Zurich rougissent aussi, le formateur en cache gardant le fuseau de l'appel précédent), `mut-M2.txt` (5 : AC2 naïf,
-  AC8, et `formatSwissDateTime` de `reports.api.test.ts`), `mut-M3.txt` (2 : AC7 et la garde), `mut-M4.txt` (3 : AC5, V2-5 et la garde).
+  rouges, **mais AC5 et AC6 restaient verts** sur une station à Zurich : le formateur en cache, construit par un test non épinglé, était
+  réemployé par les cas New York — revue P1, R1-1) puis **`mut-M1-bis.txt`** après épinglage du fuseau à New York pour tout le fichier de
+  test d'`audit-log-page.test.ts` et d'`UnrejectTransactionAction.test.ts` : 15 tests rouges, dont **AC5 et AC6** (les filets Zurich
+  rougissent aussi, le formateur en cache gardant New York) ; `reports.api.ts` restauré (`git restore --worktree`, `touch`), `mut-M2.txt` (5 : AC2 naïf,
+  AC8, et `formatSwissDateTime` de `reports.api.test.ts`), `mut-M3.txt` (2 : AC7 et la garde), `mut-M4.txt` (3 : AC5, V2-5 et la garde ; M4 rétablit la mise en forme d'avant, sans fuseau, **en ligne** dans la cellule — une
+  variante équivalente de la ligne d'avant, dont la forme exacte est relevée par la sonde en mémoire).
 - **Manuel** : `manuel-avant.txt` (1 / 0 / PDF 1), `manuel-apres.txt` (0 / 1).
-- **Recette visuelle** : `captures/{avant-ny,apres-ny,apres-zurich}/` (huit captures chacune, thème clair, base `kesh_e506`, script
-  `recette-scripts/recette.spec.ts`).
+- **Recette visuelle** : `captures/{avant-ny,apres-ny,apres-zurich}/` (dix captures chacune, thème clair, base `kesh_e506b`, script
+  `recette-scripts/recette.spec.ts`) ; les n° 09 (rejet de fin de soirée UTC : « Rejetée le 24 nov. » avant, « 25 nov. » après, à New York)
+  et 10 (version de prompt décidée, colonne *Décision* datée) ont été ajoutées à la revue P1 (R1-5), et toutes les captures rejouées.
 - **Gates** (voir « Completion Notes ») : `front-gate.log` ; `testfast.log` ; `e2e-complet.log`.
 
 ### Completion Notes List
@@ -462,12 +468,12 @@ Sonnet 5.5 (`bmad-dev-story`, autonomie), 2026-11-24. Journaux : `/home/gcorbaz/
   commit de code : `cd frontend/src && grep -rnP "DateTimeFormat\(|toLocale(Date|Time)?String\(|…" … | wc -l` → **22** (30 avant ;
   sortie `garde-releves-apres.txt`), et `awk` sur `ALLOWLIST_INSTANTS` : 21 `fichier:`. Sonde positive en mémoire (sept lignes d'avant la
   story, multiligne, `globalThis`, troisième ligne identique de `premier-exercice.ts`) et sonde réelle M4 : vertes/rouges comme prévu.
-- **AC11** : spec `audit-log.spec.ts` (bloc `New York`), attendus calculés par `page.evaluate` ; rouge constaté, vert dans l'E2E complet (voir
-  ci-dessous).
+- **AC11** : spec `audit-log.spec.ts` (bloc `New York`), attendus calculés par `page.evaluate` ; rouge constaté ; **vert à constater** dans l'E2E complet (voir
+  ci-dessous ; rien n'est affirmé avant que son journal tombe).
 - **AC12** : phrase du tableau fixée (« Le tableau affiche l'heure de Zurich, quel que soit le fuseau de votre poste. »), paragraphe de
   `:790-796` complété (exception et limite) ; contrôles du texte aplati 1 → 0 et 0 → 1. Aucun PDF commité ; après `make fr` à la release :
   `pdftotext … | grep -o "heure de votre poste" | wc -l` → 0 (1 aujourd'hui).
-- **AC13** : recette visuelle faite (voir journaux). Bandeau par interception de route (V2-4). Les captures « après » à New York et à Zurich
+- **AC13** : recette visuelle faite (voir journaux), complétée à la revue P1 (R1-5). Bandeau par interception de route (V2-4). Les captures « après » à New York et à Zurich
   montrent la même heure (par exemple le bandeau : « 20 nov. 2026, 18:30 » avant, « 21 nov. 2026, 00:30 » après, aux deux fuseaux).
 - **AC14** : `git diff --stat e5654fc00..HEAD -- frontend/src ':!*.test.ts'` ne nomme que `reports.api.ts`, `audit-log/+page.svelte`,
   `UnrejectTransactionAction.svelte`, `backup-format.ts`, `mcp-sends-format.ts`, et `mcp-prompts-format.ts` (une ligne de commentaire) ;
@@ -526,3 +532,10 @@ Sonnet 5.5 (`bmad-dev-story`, autonomie), 2026-11-24. Journaux : `/home/gcorbaz/
   l'étape 0 ; tests rouges commités (`8c029046b`), correctif (`88d7afe18`), garde (`5d233d0f4`), manuel (`5671704ce`) ; mutations M1 à M4
   rougies et restaurées ; recette visuelle faite ; gate frontend complet vert ; **gate Rust complet et E2E complet en attente des verrous
   de la voie** — le statut passe à `review` quand ils sont verts (le prompt de la revue P1, Opus, est versionné à côté de la fiche).
+- **2026-11-24 — remédiation de la revue de code P1** (Sonnet 5.5 ; Opus : 0 CRITICAL / 0 HIGH / 1 MEDIUM / 5 LOW, rapport `e506/review-p1.md`),
+  un seul commit, **aucun code de production** : **R1-1** (MEDIUM) fuseau épinglé à New York pour tout le fichier dans
+  `audit-log-page.test.ts` et `UnrejectTransactionAction.test.ts` ; M1 rejouée (`mut-M1-bis.txt`) : AC5 et AC6 rougissent ; § Mutations et
+  Dev Agent Record corrigés ; **R1-2** AC11 « vert à constater » tant que le journal de l'E2E n'est pas tombé ; **R1-3** journal cité
+  `mut-M4.txt`, M4 dit variante en ligne ; **R1-4** angle mort `.getFullYear/.getMonth/.getDate/.getDay` écrit (garde et D3) ; **R1-5** captures 09
+  (rejet de fin de soirée) et 10 (version décidée) ajoutées, base alignée (`kesh_e506b`) ; **R1-6** phrase de `user-manual.tex:790-799` en phrases
+  courtes (« Kesh affiche tous les instants à l'heure de Zurich… », deux exceptions nommées). Gate ciblé (vitest des deux fichiers) vert, `npm run check` vert (`check-r1.log`). Prompt de la passe ciblée P2 : `…-review-prompt-p2.md`.

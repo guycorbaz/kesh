@@ -61,7 +61,9 @@
  * format d'un instant passe par `formatInstant` (`reports.api.ts`), à l'heure de Zurich. **Angles morts
  * assumés** : un alias (`const F = Intl.DateTimeFormat; new F(…)`, `const D = Date; new D(x)`), un jeton
  * coupé (`Intl.DateTime\nFormat(`), `Reflect.construct(Date, [x])`, `Temporal`, `new window.Date(x)`,
- * `new self.Date(x)`, `new Date (x)`, une date construite dans un autre module et passée à un formateur
+ * `new self.Date(x)`, `new Date (x)`, les composants calendaires du poste (`.getFullYear(`, `.getMonth(`, `.getDate(`,
+ * `.getDay(` : le jour du poste d'un instant venu d'ailleurs ou de `new Date()` passerait ; ceux d'aujourd'hui sont des dates du
+ * poste voulues, `premier-exercice.ts`, `fiscal-years.helpers.ts`, `mcp-time.ts`, `local-date.ts`), une date construite dans un autre module et passée à un formateur
  * légitime ; deux lectures sur une même ligne ne font qu'un relevé (la ligne rougit quand même si elle
  * n'est pas admise). Sont attrapés et sondés : l'appel sur plusieurs lignes (le jeton `DateTimeFormat(`
  * est sur la première) et `new globalThis.Date(x)`.
