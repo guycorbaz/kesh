@@ -17,6 +17,12 @@ story. P3 (Sonnet) et P4 (Opus) faites et remédiées le 2026-11-20 ; P5 (Sonnet
 validation terminée, ses quatre LOW traités à l'étape 0 du développement. La 49-4 a été découpée le 2026-11-20 en 49-4a et 49-4b (décision de Guy, branche
 `story/49-4-designation-longue-pdf`, non encore fusionnée dans `epic/49`) : la dérogation au rendu est celle de la **49-4b** (D8).*
 
+**Version de départ (reprise du 2026-11-24, C-e491d-1 ; revue P1, A3)** : la dernière image publiée est la **0.19.1**
+(`gcorbaz/kesh:0.19.1`, tag `v0.19.1`). Partout où cette fiche nomme la 0.19.0 comme **version d'où l'on part** — image,
+référence des rendus, sauvegarde `-0.19.x-to-*`, « retour à la 0.19.x », installation neuve du retour —, lire 0.19.1 ; les sites
+qui commandent un geste (AC9 à AC12, AC14, T0, T9) sont réécrits. Restent à 0.19.0 les mentions historiques (précédent
+`rel0190`, section « Passer à la 0.19.0 » du manuel, #1448, tag `773df80da` des lectures du 2026-11-19).
+
 **Issues** : `refs #1242` ; **aucun mot-clé de fermeture** dans un commit. #1242 ne se ferme pas avec cette story.
 
 **Couplage de coupure** : **la 49-1a ne sort jamais sans la 49-1d** (fichier d'épique, § *Règles de sortie*) ; les deux sortent
@@ -24,9 +30,9 @@ ensemble, ou la 0.20.0 ne porte aucune migration. **La 49-1d se rejoue au dernie
 
 ## Story
 
-En tant que Guy, qui tient ses livres réels en 0.19.0 sur le NAS et qui a déjà remis sur papier de vraies factures à un
+En tant que Guy, qui tient ses livres réels en 0.19.1 sur le NAS et qui a déjà remis sur papier de vraies factures à un
 locataire, je veux qu'avant de publier la 0.20.0 — la première release qui touche les lignes de facture — sa montée soit jouée,
-depuis l'image publiée 0.19.0 et sur une installation jetable, sur une base peuplée **comme la mienne** : factures validées
+depuis l'image publiée 0.19.1 et sur une installation jetable, sur une base peuplée **comme la mienne** : factures validées
 payées et impayées, un avoir, un règlement groupé, des PDF déjà figés et d'autres jamais téléchargés ; et qu'elle prouve, facture
 par facture, que **rien n'a bougé** — lignes, totaux, TVA, écritures, numéros, et le PDF, qu'il soit archivé ou rendu de
 nouveau. Je veux aussi trouver au manuel d'administration, en tête de la section « Passer à la 0.20.0 », la sauvegarde à prendre
@@ -501,11 +507,11 @@ ouvertes pour ce qui sort : #1445, #1446, #1447 (Dev Notes).
 **Les factures réelles (consigne de production)**
 
 - **AC9 — Les factures et avoirs existants restent identiques, et la recette le prouve sur l'image publiée.** Après la montée de
-  0.19.0 à la tête de la story : lignes (toutes les colonnes d'avant), totaux, arrondi, TVA par ligne, rapport TVA, écritures,
+  0.19.1 à la tête de la story : lignes (toutes les colonnes d'avant), totaux, arrondi, TVA par ligne, rapport TVA, écritures,
   numéros, règlements (unitaires et groupé), avoir et ses lignes — **identiques** (AC3) ; PDF archivés servis à l'octet (AC4) ; PDF
   rendus de nouveau — facture jamais téléchargée, regel, avoir — **au même dessin** (AC5 ; ce que ce mot couvre et ne couvre pas :
   D4) pour les désignations de la forme de D1 (D8) ; rapport TVA identique (AC8) ; la même chose après l'import d'une sauvegarde
-  0.19.0 (AC6), PDF figés servis à l'octet de l'archive. Ce que deviennent les gestes courants sur ces pièces après la montée n'est
+  0.19.1 (AC6), PDF figés servis à l'octet de l'archive. Ce que deviennent les gestes courants sur ces pièces après la montée n'est
   pas prouvé ici : la parité repose sur la suite existante passée inchangée (Allègement, perte assumée), contrôlée à la tête de
   la story (T12) et sur la release assemblée (AC12).
 
@@ -542,7 +548,7 @@ ouvertes pour ce qui sort : #1445, #1446, #1447 (Dev Notes).
   `kesh-gate-logs/rel0200/`, et que la section du manuel (AC14) ne dit « constaté » que ce que ce rejeu a établi. **Le rejeu se
   fait après le bump de `scripts/prepare-release.sh`** (lancé par l'intégration, jamais par cette story), binaire reconstruit
   sur le commit qui porte le bump : c'est alors seulement que `/health` rend `0.20.0` et que la sauvegarde `pre-upgrade/` finit
-  par `-0.19.0-to-0.20.0.keshbackup` (V3-1). Il recompte aussi `ls crates/kesh-db/migrations/*.sql | wc -l` avant que le manuel
+  par `-0.19.1-to-0.20.0.keshbackup` (V3-1). Il recompte aussi `ls crates/kesh-db/migrations/*.sql | wc -l` avant que le manuel
   écrive le total (V3-6). **Il rejoue aussi le contrôle de la perte assumée** (V4-1) : le contrôle de diff de T12, par
   `kesh-gate-logs/rel0200/perte-assumee.sh` (V5-4 ; commande restreinte aux dix binaires nommés à la perte assumée et aux modules
   qu'ils incluent, relevés par le script), sortie au journal `kesh-gate-logs/rel0200/perte-assumee.log`, retraits et ajouts triés
@@ -573,16 +579,16 @@ ouvertes pour ce qui sort : #1445, #1446, #1447 (Dev Notes).
   (`20261118000002\_invoice\allowbreak\_line\allowbreak\_types` ; le total, 96 à la tête de la story, est celui que recompte le
   rejeu, AC12 ; non breaking, `kesh_version_min_required` reste à `0.17.6` ; aucune valeur existante réécrite : la colonne neuve
   prend sa valeur par défaut, « ligne chiffrée », sur chaque ligne existante, `ADD COLUMN … DEFAULT 'priced'`, V3-6 ; sauvegarde
-  `pre-upgrade/` au nom finissant par `-0.19.0-to-0.20.0.keshbackup` — constaté seulement si le rejeu suit le bump, sinon établi
-  par le code, D11 et AC12 ; `KESH_SKIP_PRE_UPGRADE_BACKUP=0.20.0`) ; **« Le retour à la 0.19.0 »** (la 0.19.0 ne démarre
+  `pre-upgrade/` au nom finissant par `-0.19.1-to-0.20.0.keshbackup` — constaté seulement si le rejeu suit le bump, sinon établi
+  par le code, D11 et AC12 ; `KESH_SKIP_PRE_UPGRADE_BACKUP=0.20.0`) ; **« Le retour à la 0.19.1 »** (la 0.19.1 ne démarre
   plus sur la base migrée — journal « migration 20261118000002 was previously applied but is missing in the resolved migrations »,
-  constaté par la phase 3 de la recette ; elle refuse une sauvegarde 0.20.0 — **établi par le code** de la 0.19.0, non constaté —,
+  constaté par la phase 3 de la recette ; elle refuse une sauvegarde 0.20.0 — **établi par le code** de la 0.19.1, non constaté —,
   dit comme la section 0.17.5 (`admin-manual.tex:2674`) par son code, `IMPORT\_SCHEMA\_MISMATCH` (`400`), **distinct**
   d'`INVALID\_BACKUP\_STRUCTURE`, et, si le texte de l'écran est cité, par celui que l'écran affiche réellement : « Schéma du backup
   incompatible avec cette version de Kesh (table credit\_note\_lines). » (§ *Les fichiers de la 49-1a* (a)) — jamais le message
   de la réponse de l'API ; la colonne en cause n'est que dans la réponse, rien n'est écrit au journal du serveur (V2-2, V3-2) ;
   retour sur une base neuve par la sauvegarde d'avant la mise à jour : **vidage de sécurité de la base actuelle**, puis
-  installation 0.19.0 neuve sur une base vide, import depuis l'assistant, lien *Restaurer une sauvegarde* — constaté par l'AC11,
+  installation 0.19.1 neuve sur une base vide, import depuis l'assistant, lien *Restaurer une sauvegarde* — constaté par l'AC11,
   PDF archivés compris ; **tout ce qui a été saisi depuis la mise à jour est perdu, et les numéros écrits sur le papier depuis la
   mise à jour sont à refaire** (phrases des sections 0.19.0 et 0.17.5, V3-5) ; une sauvegarde 0.19.0 s'importe dans la 0.20.0 —
   constaté par la phase 5) ; **« Si la migration échoue au milieu »**, sur la consigne de la 0.19.0 : Kesh ne redémarre
@@ -664,7 +670,7 @@ tourne tout de même au dernier commit de code (AC16).
 ## Tâches
 
 - [x] **T0 — Sonde, avant tout changement** (journal `kesh-gate-logs/e491d/t0/`) : `docker image inspect gcorbaz/kesh:0.19.1`
-  (tirer si absente) ; `command -v mutool sha256sum` et `mutool -v` ; jouer **à la main**, contre une image 0.19.0 jetable (préfixe
+  (tirer si absente) ; `command -v mutool sha256sum` et `mutool -v` ; jouer **à la main**, contre une image 0.19.1 jetable (préfixe
   `kesh-e491dt0`, base `mariadb:10.11` en tmpfs), les gestes de D1 et le rapport de D10 que le script ne fait pas encore : compte
   bancaire principal et lien au `1020`, compte d'arrondi désigné, relevé saisi au jour (continuité de solde avec le relevé A : les
   drapeaux `confirm*` du précédent), `invoice_group` accepté, avoir, téléchargement d'un PDF (le fichier apparaît-il sous
@@ -976,7 +982,9 @@ d'arrêt du Project Lead (`alerte.md` le dit).
 - contrôle de la perte assumée (`rel0200/perte-assumee.sh`, base par défaut portée au tag `v0.19.1`, C-e491d-1) : **code 0**
   depuis `v0.19.1` et depuis `773df80da` (`dev/perte-assumee-v0.19.1.log`, `dev/perte-assumee-773df80da.log`) : 16 fichiers
   (les dix binaires, et six modules dont `support/caracterisation.rs`, venu avec la reprise de `main`, relevé seul),
-  sonde positive 14 retraits, aucun retrait à trier, aucun ajout à classer ;
+  sonde positive 14 retraits, aucun retrait à trier, aucun ajout à classer ; le seul retrait relevé, cité (revue P1, A7) :
+  `crates/kesh-db/tests/grouped_settlements.rs`, une ligne de commentaire, « `// unitaire, une facture fournisseur payée.` »,
+  classée (a) « sans effet » (`dev/perte-assumee-v0.19.1.log`) ;
 - AC15 : `git diff --stat origin/epic/49-types-de-lignes-facture...HEAD -- crates frontend` ne nomme que
   `crates/kesh-db/tests/recette_montee_script.rs` (4+, 2−) ; `ls crates/kesh-db/migrations/*.sql | wc -l` → 96 ;
 - mots-clés de fermeture contre `origin/epic/49-types-de-lignes-facture` : aucun.
