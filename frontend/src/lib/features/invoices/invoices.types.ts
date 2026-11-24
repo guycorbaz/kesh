@@ -392,6 +392,10 @@ export interface CreatePricedInvoiceLineRequest {
  * Charge d'une ligne de **texte** (`comment`, `heading`) : `{ lineType,
  * description }` seulement, aucun montant ne part (`ligneAEnvoyer`, Story 49-1c,
  * D3 ; le serveur refuserait une quantité non nulle).
+ *
+ * `heading` fait partie du type, mais le serveur le refuse encore (« le type de ligne
+ * heading n'est pas encore disponible », `invoices.rs:626`) : l'écran n'en envoie pas
+ * avant la Story 49-3.
  */
 export interface CreateTextInvoiceLineRequest {
 	lineType: InvoiceTextLineType;
