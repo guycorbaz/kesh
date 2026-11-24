@@ -70,7 +70,15 @@ figure. Le correctif propre à Stripe (`b99591697`) se retire alors (la règle t
 
 ## Change Log
 
-- 2026-11-24 — correctif, tests, textes ; trace des revues et des gates au journal `kesh-gate-logs/fix-prest/`.
+- 2026-11-24 — correctif (`62d8783bb`), sonde positive (`0617f7ef3`), remédiation de la revue P1 (`4d9093c34`).
+  Revues : P1 complète (Opus) 0/0/3/7 → remédiée (M1 motif en tête, M2 tests d'égalité et de non-régression, M3
+  textes ; L1, L4, L5, L6, L7) ; P2 ciblée (Sonnet) sur `4d9093c34` : 0/0/0/4, boucle close. LOW restants, à tracer :
+  `writes` exempte un genre `admits_link` qui n'est pas rattaché par le constructeur générique (latent) ; genre propre
+  `ruleable` de Wise à rejuger à l'intégration de l'Epic 39 ; nom du test « même identifiant » ; liste des motifs
+  remplacés dans `api-external.md` ; coût de `find_matched_elsewhere` par proposition à l'acceptation (P1 L2) ; refus
+  d'une conversion déjà comptabilisée inatteignable (sa partenaire est rapprochée, d'où `PROVIDER_PROPOSAL_STALE`
+  d'abord, P1 L3). Mutations : cinq, toutes tuées par une assertion. Gates au commit `4d9093c34` : gate-ci 6451/0/19,
+  E2E 505 passés et les sept de la KF-029, Vitest 5008. Journal : `kesh-gate-logs/fix-prest/`.
 
 ## Notes de version
 
