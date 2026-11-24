@@ -189,6 +189,10 @@ Le stockage est dominé par l'\emph{audit\_log} et les pièces justificatives. C
 Chaque passage automatique qui a un cours à récupérer revérifie aussi le mois courant~: un appel de plus (quand rien ne manque, aucun appel). La connexion et le démarrage n'attendent jamais la source~: un accès bloqué fait seulement échouer la récupération, que l'écran \emph{Cours de change} signale (dernière récupération, motif), et les cours se saisissent alors à la main. Un \textbf{mandataire} (proxy) sortant se règle par la variable \texttt{HTTPS\_PROXY} (par exemple \texttt{http://proxy.local:3128}), lue par la bibliothèque HTTP de Kesh~; \texttt{NO\_PROXY} exclut des hôtes. \keshAttention\ \emph{Les compose fournis ne transmettent à Kesh que les variables listées sous \texttt{environment:} (\S\ref{sec:env-vars})~: ajoutez-y \texttt{HTTPS\_PROXY} --- la poser dans \keshpath{.env} ne suffit pas.}
 \end{sloppypar}
 
+\begin{sloppypar}
+\paragraph{Accès sortant : le téléchargement depuis PayPal.}\label{sec:acces-sortant-paypal} Quand un compte PayPal a ses identifiants dans l'environnement (\S\ref{sec:paypal-api}), Kesh demande ses transactions en \textbf{HTTPS} (port 443) à l'hôte de PayPal --- \texttt{api-m.paypal.com} par défaut, \texttt{api-m.sandbox.paypal.com} pour un essai (\texttt{KESH\_PAYPAL\_BASE\_URL}) ---, sans suivre de redirection. Cet accès n'a lieu \textbf{que} lorsqu'un utilisateur lance un téléchargement depuis la page PayPal~: jamais au démarrage, jamais de lui-même. Le mandataire sortant éventuel se règle comme pour les cours de change (\texttt{HTTPS\_PROXY}, ci-dessus).
+\end{sloppypar}
+
 \subsubsection{Changer le port d'écoute (conflit port 80, ex. Synology DSM Web Station)}
 
 Le port \keshcommand{80} par défaut peut entrer en conflit avec un service existant sur l'hôte — typiquement \textbf{Synology DSM Web Station} qui occupe également ce port, ou un \texttt{nginx} local, un \texttt{IIS}, etc. Quatre options d'override existent, selon votre contexte :
@@ -861,6 +865,22 @@ bouton d'envoi est simplement grisé — jamais de refus de démarrage) ; le
     \bottomrule
 \end{tabularx}
 
+\paragraph{Téléchargement des transactions PayPal par l'API.}\mbox{}\\
+Une série de trois variables par compte PayPal, \texttt{n} de 1 à 9~; une
+série entièrement vide est absente, une série incomplète refuse le démarrage
+(détail~: \S\ref{sec:paypal-api}).\par\noindent
+\begin{tabularx}{\linewidth}{>{\bfseries\ttfamily}lXl}
+    \toprule
+    \keshtableheader{Variable} & \keshtableheader{Description} & \keshtableheader{Défaut} \\
+    \midrule
+    KESH\_PAYPAL\_<n>\_ACCOUNT & Libellé du compte PayPal, identique à celui des comptes bancaires de Kesh. & \emph{vide} \\
+    KESH\_PAYPAL\_<n>\_CLIENT\_ID & Identifiant client de l'application PayPal (\textbf{secret}). & \emph{vide} \\
+    KESH\_PAYPAL\_<n>\_SECRET & Secret de l'application PayPal (\textbf{secret} --- jamais journalisé). & \emph{vide} \\
+    KESH\_PAYPAL\_BASE\_URL & Hôte de l'API (\texttt{https}). & \texttt{https://api-m.paypal.com} \\
+    KESH\_PAYPAL\_PARALLEL & Requêtes simultanées, de 1 à 6. & \texttt{1} \\
+    \bottomrule
+\end{tabularx}
+
 \paragraph{Développement / test (jamais en production).}\mbox{}\\
 \begin{tabularx}{\linewidth}{>{\bfseries\ttfamily}lXl}
     \toprule
@@ -1099,6 +1119,76 @@ Toutes les requêtes API et toutes les requêtes SQL Kesh sont filtrées par \te
 \subsubsection{Cas d'usage fiduciaire}
 
 Un fiduciaire installe \textbf{une instance par dossier client} : chaque installation porte la société de son client, et ses utilisateurs --- créés par l'administrateur de l'installation --- appartiennent tous à cette société. Un utilisateur créé reçoit la société de celui qui le crée ; aucun écran ne rattache un compte à une autre société.
+
+\subsection{Télécharger les transactions PayPal par l'API}\label{sec:paypal-api}
+
+Le relevé d'un compte PayPal s'importe en CSV depuis la page PayPal (manuel utilisateur, \emph{Comptes PayPal}). Kesh peut aussi le \textbf{télécharger} lui-même, par l'API de PayPal, pour une période que choisit le comptable~: les mêmes transactions, les mêmes doublons, le même rapprochement. Il faut pour cela une \textbf{application PayPal en lecture seule} par compte PayPal, dont l'administrateur pose les identifiants dans l'environnement du serveur, comme le mot de passe SMTP. Sans eux, le bouton \emph{Télécharger depuis PayPal} n'apparaît pas, et l'import du CSV reste seul~; l'administrateur voit alors, sur la page PayPal, la ligne «~Téléchargement depuis PayPal non configuré pour ce compte~».
+
+\subsubsection{Créer l'application chez PayPal}
+
+\begin{enumerate}
+    \item Dans l'espace développeurs de PayPal (\emph{developer.paypal.com}), connecté avec le compte PayPal à télécharger, créez une application REST de type \textbf{Live} (une application \emph{Sandbox} ne lit que le bac à sable).
+    \item Dans ses fonctions, ne cochez \textbf{que} la fonction de recherche des transactions («~Transaction Search~»)~: \textbf{aucune fonction de paiement}. L'application ne peut alors que lire.
+    \item Recopiez son \textbf{identifiant client} et son \textbf{secret} dans l'environnement du serveur (ci-dessous).
+\end{enumerate}
+
+\begin{keshwarning}
+\textbf{À vérifier dans l'interface de PayPal} --- non confirmé par Kesh~: le nom exact de la fonction à cocher (l'API ne le dit pas~; le jeton obtenu porte la portée de lecture du rapport des transactions), et les conditions d'accès du compte (type de compte, activation de la fonction, délai éventuel après la création de l'application). L'hôte réel \texttt{api-m.paypal.com} a répondu aux essais de développement avec un compte réel. Si PayPal refuse, la tâche échoue en \texttt{PROVIDER\_PERMISSION\_DENIED} (fonction manquante) ou \texttt{PROVIDER\_AUTH\_FAILED} (identifiants refusés)~; rien n'est écrit.
+\end{keshwarning}
+
+\textbf{Ce que l'application ne fait jamais}~: écrire chez PayPal. Kesh ne demande qu'un jeton et des pages de transactions, en lecture~; il ne paie, ne rembourse et ne modifie rien.
+
+\subsubsection{Poser les identifiants}
+
+Une \textbf{série} par compte PayPal, \texttt{n} de 1 à 9~:
+\begin{itemize}
+    \item \texttt{KESH\_PAYPAL\_<n>\_ACCOUNT}~: le libellé du compte PayPal, \textbf{identique} à celui des comptes bancaires de ce compte dans Kesh (ni la casse ni les accents ne comptent)~;
+    \item \texttt{KESH\_PAYPAL\_<n>\_CLIENT\_ID} et \texttt{KESH\_PAYPAL\_<n>\_SECRET}~: l'identifiant client et le secret de l'application.
+\end{itemize}
+Et, pour toutes les séries~:
+\begin{itemize}
+    \item \texttt{KESH\_PAYPAL\_BASE\_URL}~: l'hôte de l'API, \texttt{https://api-m.paypal.com} par défaut (données réelles)~; \texttt{https://api-m.sandbox.paypal.com} pour un essai avec une application \emph{Sandbox} --- la page PayPal le signale par la mention «~bac à sable~». Seul \texttt{https} est admis (\texttt{http} vers \texttt{127.0.0.1} ou \texttt{localhost} seulement, pour les tests)~;
+    \item \texttt{KESH\_PAYPAL\_PARALLEL}~: le nombre de requêtes simultanées, \textbf{1} par défaut, 6 au plus. Plus de parallélisme raccourcit un long téléchargement, mais atteint plus vite la limitation de débit de PayPal~: Kesh fait alors une pause et reprend la même requête (six essais au plus), ce qui reprend le temps gagné.
+\end{itemize}
+
+\textbf{Où les poser.} Dans une installation par \keshcommand{docker compose}, au \keshpath{.env}~: \keshpath{docker-compose.yml} et \keshpath{docker-compose.prod.yml} transmettent au conteneur les séries \textbf{1 à 3}, \texttt{KESH\_PAYPAL\_BASE\_URL} et \texttt{KESH\_PAYPAL\_PARALLEL} (lignes commentées de \keshpath{.env.example}). Au-delà de trois comptes, ajoutez les lignes \texttt{KESH\_PAYPAL\_4\_ACCOUNT}, \texttt{KESH\_PAYPAL\_4\_CLIENT\_ID}, \texttt{KESH\_PAYPAL\_4\_SECRET} (et suivantes) \textbf{aussi} sous \texttt{environment:} du fichier de composition~: la poser dans \keshpath{.env} seul ne suffit pas. Une variable laissée vide vaut absente. Tout est lu \textbf{une fois}, au démarrage~: redémarrez le conteneur après un changement.
+
+\begin{center}
+\begin{tabularx}{\linewidth}{>{\bfseries\ttfamily}lXl}
+    \toprule
+    \keshtableheader{Variable} & \keshtableheader{Description} & \keshtableheader{Défaut} \\
+    \midrule
+    KESH\_PAYPAL\_<n>\_ACCOUNT & Libellé du compte PayPal de Kesh. & --- \\
+    KESH\_PAYPAL\_<n>\_CLIENT\_ID & Identifiant client de l'application (\textbf{secret}). & --- \\
+    KESH\_PAYPAL\_<n>\_SECRET & Secret de l'application (\textbf{secret} --- jamais journalisé). & --- \\
+    KESH\_PAYPAL\_BASE\_URL & Hôte de l'API. & \texttt{https://api-m.paypal.com} \\
+    KESH\_PAYPAL\_PARALLEL & Requêtes simultanées (1 à 6). & \texttt{1} \\
+    \bottomrule
+\end{tabularx}
+\end{center}
+
+\textbf{Une installation, une société}~: le libellé d'une série vaut pour l'installation entière, non pour une société (\S\ref{sec:configuration}, \emph{Configuration multi-tenant}).
+
+\subsubsection{Les secrets restent à l'installation}
+
+Les identifiants ne sont \textbf{ni en base ni dans la sauvegarde} (\texttt{.keshbackup}), ni dans aucun journal, réponse de l'API ou trace d'audit~: ils appartiennent à l'installation, comme le mot de passe SMTP. Après une \textbf{restauration sur un autre serveur}, reposez-les dans son environnement~; sans eux, l'import du CSV continue. Les routes du téléchargement sont \textbf{réservées aux sessions}~: une clé d'API est refusée (\texttt{403 API\_KEY\_OPERATION\_FORBIDDEN}).
+
+\textbf{Rotation}~: changez le secret de l'application chez PayPal, puis \texttt{KESH\_PAYPAL\_<n>\_SECRET} dans l'environnement, et redémarrez Kesh. Un téléchargement lancé entre les deux échoue en \texttt{PROVIDER\_AUTH\_FAILED}, sans rien écrire~: relancez-le après le redémarrage.
+
+\subsubsection{Refus de démarrage}
+
+La configuration est contrôlée \textbf{à chaque démarrage}, que le téléchargement serve ou non~; un défaut \textbf{refuse le démarrage} d'un message qui nomme la variable, jamais sa valeur (\texttt{<variable> refusée~: <motif>.})~:
+\begin{itemize}
+    \item «~série incomplète~: variable absente ou vide~» --- une série dont une variable est posée et une autre manque~;
+    \item «~libellé déjà porté par une autre série~» --- deux séries au même libellé (sans casse ni accents)~;
+    \item «~numéro de série hors de 1 à 9~» --- une série numérotée 0, 10 ou au-delà~;
+    \item «~champ inconnu~» --- une variable \texttt{KESH\_PAYPAL\_<n>\_…} qui n'est ni \texttt{ACCOUNT}, ni \texttt{CLIENT\_ID}, ni \texttt{SECRET}~;
+    \item «~valeur de gabarit <…>~» --- une valeur recopiée telle quelle de la documentation~;
+    \item «~URL refusée~: https, ou http vers 127.0.0.1 ou localhost seulement~» --- \texttt{KESH\_PAYPAL\_BASE\_URL}~;
+    \item «~entier de 1 à 6 attendu~» --- \texttt{KESH\_PAYPAL\_PARALLEL}.
+\end{itemize}
+
+L'accès réseau sortant que demande le téléchargement est décrit au \S\ref{sec:acces-sortant-paypal}.
 
 %%─────────────────────────────────────────────────────────────────────────────
 \section{Premier démarrage}
@@ -3341,7 +3431,7 @@ Le contrôle d'accès basé sur les rôles est appliqué \textbf{au niveau de ch
 \label{sec:conformite-audit}
 
 \begin{sloppypar}
-La quasi-totalité des actions métier mutantes est enregistrée dans la table \texttt{audit\_log} --- 149 des 157 routes à verbe mutant au moment de la rédaction, dont, depuis la v0.13.0, la configuration d'une installation de production (une entrée par étape franchie), le chargement des données de démonstration (une entrée de synthèse) et leur réinitialisation (\texttt{installation.reset}, qui dit le nombre et la plage d'identifiants des entrées effacées). S'y ajoute une entrée qu'aucune route n'écrit d'elle-même : la réparation d'une installation touchée par \#528 ou \#542, au démarrage ou à l'import d'une sauvegarde (\texttt{installation.repaired}, \S\ref{sec:reparation-installation}). \keshAttention\ \emph{Les exceptions sont connues et comptées~: quatre routes exemptées par décision --- la connexion, la déconnexion, le renouvellement de session et le battement d'activité, qui ne s'inscrivent pas au journal ---, et quatre autres routes qui n'écrivent rien parce qu'elles ne modifient rien~: 149 + 4 + 4 = 157.} Le changement de son propre mot de passe y est inscrit (\texttt{auth.password\_changed}) ; le rejeu d'un jeton de session déjà renouvelé aussi, seule écriture du renouvellement (\texttt{auth.session\_theft\_detected}, avec le nombre de sessions vivantes révoquées, au nom du titulaire de la session et non de l'auteur du rejeu, que Kesh ne connaît pas ; un rejeu qui ne ferme aucune session vivante n'est pas inscrit). Kesh observe un rejeu, non un vol : un renouvellement dont la réponse s'est perdue (coupure réseau, mise en veille) le produit aussi. Cette entrée est écrite au mieux : si elle échoue, la révocation et le refus tiennent, et seul le journal du serveur en garde la trace. L'export d'un rapport se distingue de sa consultation, grand livre compris : \texttt{report.exported}, avec son format. \keshAttention\ \emph{Limite connue, suivie par l'issue \#538~: l'entrée du chargement des données de démonstration n'est écrite que lorsqu'il aboutit. Un chargement interrompu --- ou refusé parce que la configuration de production a franchi l'étape entre-temps --- laisse la société renommée, le plan comptable et l'exercice \textbf{sans entrée au journal}.} La liste complète, route par route, est tenue dans le dépôt et contrôlée par un test~:
+La quasi-totalité des actions métier mutantes est enregistrée dans la table \texttt{audit\_log} --- 152 des 160 routes à verbe mutant au moment de la rédaction, dont, depuis la v0.13.0, la configuration d'une installation de production (une entrée par étape franchie), le chargement des données de démonstration (une entrée de synthèse) et leur réinitialisation (\texttt{installation.reset}, qui dit le nombre et la plage d'identifiants des entrées effacées). S'y ajoute une entrée qu'aucune route n'écrit d'elle-même : la réparation d'une installation touchée par \#528 ou \#542, au démarrage ou à l'import d'une sauvegarde (\texttt{installation.repaired}, \S\ref{sec:reparation-installation}). \keshAttention\ \emph{Les exceptions sont connues et comptées~: quatre routes exemptées par décision --- la connexion, la déconnexion, le renouvellement de session et le battement d'activité, qui ne s'inscrivent pas au journal ---, et quatre autres routes qui n'écrivent rien parce qu'elles ne modifient rien~: 152 + 4 + 4 = 160.} Le changement de son propre mot de passe y est inscrit (\texttt{auth.password\_changed}) ; le rejeu d'un jeton de session déjà renouvelé aussi, seule écriture du renouvellement (\texttt{auth.session\_theft\_detected}, avec le nombre de sessions vivantes révoquées, au nom du titulaire de la session et non de l'auteur du rejeu, que Kesh ne connaît pas ; un rejeu qui ne ferme aucune session vivante n'est pas inscrit). Kesh observe un rejeu, non un vol : un renouvellement dont la réponse s'est perdue (coupure réseau, mise en veille) le produit aussi. Cette entrée est écrite au mieux : si elle échoue, la révocation et le refus tiennent, et seul le journal du serveur en garde la trace. L'export d'un rapport se distingue de sa consultation, grand livre compris : \texttt{report.exported}, avec son format. \keshAttention\ \emph{Limite connue, suivie par l'issue \#538~: l'entrée du chargement des données de démonstration n'est écrite que lorsqu'il aboutit. Un chargement interrompu --- ou refusé parce que la configuration de production a franchi l'étape entre-temps --- laisse la société renommée, le plan comptable et l'exercice \textbf{sans entrée au journal}.} La liste complète, route par route, est tenue dans le dépôt et contrôlée par un test~:
 \end{sloppypar}
 
 \begin{itemize}

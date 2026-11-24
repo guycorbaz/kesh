@@ -1185,7 +1185,22 @@ const ATTENDU = {
 	// `SupplierInvoiceForm.svelte`, `supplier-invoice-form.ts` et la fiche `[id]/+page.svelte`.
 	// Fusion des 48-12a et 48-12b dans epic/50 (2026-11-23) : les deux côtés gardés, 3508 (0.19.1) + 21 = **3529**,
 	// total vérifié par la garde (vitest complet vert, 4904/4904, `kesh-gate-logs/e50/fusion-48-12/frontend.log`).
-	sitesTotal: 3529,
+	// Story 38-11d : T1 et T2 (paramètres PayPal du compte bancaire, filtres des règles) +21, page
+	// PayPal (T3), libellés des refus de la route, remédiation de la revue P1 : +123 sur la base de
+	// la 0.19.0 ; relevés par la garde (3521, 3610, 3615, 3618 avant la reprise d'epic/38-paypal).
+	// Fusion de la 38-11c2 (epic/38-paypal) dans la 38-11d : total relevé par la garde.
+	// Revue P2 de la 38-11d (libellé du refus `COUNTERPARTY_CURRENCY_MISMATCH`, relais de la
+	// 38-11c2) : **3632** (« expected 3632 to be 3508 »), relevé par la garde = 3508 + 123 + 1.
+	// Story 38-12b (dialogue générique de téléchargement, bouton et aide de la page PayPal, code
+	// de ligne `STATUS`) : **3671** (« expected 3671 to be 3632 »), relevé par la garde ; recompté
+	// au diff hors tests : 42 sites `i18nMsg(` ajoutés, 3 retirés (compte rendu extrait), net +39.
+	// Revue P1 de la 38-12b (avis `provider-download-resumed`) : **3672** (« expected 3672 to be
+	// 3671 »), relevé par la garde ; au diff : 1 site ajouté, 0 retiré.
+	// Revue P2 de la 38-12b (avis au passé, suivi perdu après une reprise) : **3674**, relevé par
+	// la garde ; au diff : 2 sites ajoutés, 0 retiré.
+	// Fusion d'origin/main (Epic 38 PayPal, 0.19.1 + PayPal = 3674) dans epic/50 (2026-11-24) : les deux côtés gardés ;
+	// 3674 + 21 (48-12a/b) = **3695**, provisoire, à confirmer par la garde (relevé au gate).
+	sitesTotal: 3695,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

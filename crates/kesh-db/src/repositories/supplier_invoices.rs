@@ -2598,21 +2598,39 @@ pub async fn pay_in_tx_as(
                 // sans fenêtre. Ordre : absent, autre société ou archivé →
                 // `NotFound` ; clos → `BankAccountClosed` ; sans compte lié →
                 // `ConfigurationRequired`.
-                let row: Option<(Option<i64>, Option<chrono::NaiveDate>, bool)> = sqlx::query_as(
-                    "SELECT journal_account_id, closed_on, archived FROM bank_accounts \
-                     WHERE id = ? AND company_id = ? FOR UPDATE",
+                //
+                // Story 38-11b (AC-3) — `provider` lu dans la même instruction :
+                // un compte PayPal → `BankAccountIsProvider`, après « clos »
+                // (limite de la phase 1 : payer par un compte interne ou une
+                // écriture, puis rattacher la transaction PayPal). Appelants qui
+                // en héritent : la fiche, la confirmation d'un lot pain.001 et
+                // l'acceptation d'une proposition « facture fournisseur » de la
+                // réconciliation (`FailedProposal` nommé, revue P1, M2).
+                #[allow(clippy::type_complexity)]
+                let row: Option<(
+                    Option<i64>,
+                    Option<chrono::NaiveDate>,
+                    bool,
+                    Option<String>,
+                )> = sqlx::query_as(
+                    "SELECT journal_account_id, closed_on, archived, provider FROM bank_accounts \
+                         WHERE id = ? AND company_id = ? FOR UPDATE",
                 )
                 .bind(bank_account_id)
                 .bind(company_id)
                 .fetch_optional(&mut **tx)
                 .await
                 .map_err(map_db_error)?;
-                let (journal_account_id, closed_on, archived) = row.ok_or(DbError::NotFound)?;
+                let (journal_account_id, closed_on, archived, provider) =
+                    row.ok_or(DbError::NotFound)?;
                 if archived {
                     return Err(DbError::NotFound);
                 }
                 if closed_on.is_some() {
                     return Err(DbError::BankAccountClosed { bank_account_id });
+                }
+                if provider.is_some() {
+                    return Err(DbError::BankAccountIsProvider { bank_account_id });
                 }
                 let counterparty = journal_account_id.ok_or_else(|| {
                     DbError::ConfigurationRequired("bank_account.journal_account_id".into())

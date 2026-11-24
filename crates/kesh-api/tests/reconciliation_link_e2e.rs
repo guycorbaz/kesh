@@ -396,6 +396,8 @@ impl Ctx {
                 transaction_id: None,
                 counterparty_iban: None,
                 counterparty_name: Some("Dubarde SàRL".into()),
+                counterparty_email: None,
+                provider_type: None,
             }],
         )
         .await
@@ -939,6 +941,8 @@ async fn t11_une_autre_societe_ne_voit_rien(pool: MySqlPool) {
             transaction_id: None,
             counterparty_iban: None,
             counterparty_name: None,
+            counterparty_email: None,
+            provider_type: None,
         }],
     )
     .await

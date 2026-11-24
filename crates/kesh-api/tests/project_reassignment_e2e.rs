@@ -206,6 +206,8 @@ impl Ctx {
                 transaction_id: None,
                 counterparty_iban: None,
                 counterparty_name: Some("Client 36-16a".into()),
+                counterparty_email: None,
+                provider_type: None,
             }],
         )
         .await

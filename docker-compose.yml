@@ -132,6 +132,19 @@ services:
       KESH_ADMIN_IMPORT_MAX_MB: ${KESH_ADMIN_IMPORT_MAX_MB:-}
       # Sauvegarde avant mise à jour (0.17.4) : échappatoire, version exacte
       KESH_SKIP_PRE_UPGRADE_BACKUP: ${KESH_SKIP_PRE_UPGRADE_BACKUP:-}
+      # Téléchargement PayPal par l'API (Story 38-12a) : une série par compte
+      # PayPal ; au-delà de trois comptes, ajouter les lignes KESH_PAYPAL_4_…
+      KESH_PAYPAL_1_ACCOUNT: ${KESH_PAYPAL_1_ACCOUNT:-}
+      KESH_PAYPAL_1_CLIENT_ID: ${KESH_PAYPAL_1_CLIENT_ID:-}
+      KESH_PAYPAL_1_SECRET: ${KESH_PAYPAL_1_SECRET:-}
+      KESH_PAYPAL_2_ACCOUNT: ${KESH_PAYPAL_2_ACCOUNT:-}
+      KESH_PAYPAL_2_CLIENT_ID: ${KESH_PAYPAL_2_CLIENT_ID:-}
+      KESH_PAYPAL_2_SECRET: ${KESH_PAYPAL_2_SECRET:-}
+      KESH_PAYPAL_3_ACCOUNT: ${KESH_PAYPAL_3_ACCOUNT:-}
+      KESH_PAYPAL_3_CLIENT_ID: ${KESH_PAYPAL_3_CLIENT_ID:-}
+      KESH_PAYPAL_3_SECRET: ${KESH_PAYPAL_3_SECRET:-}
+      KESH_PAYPAL_BASE_URL: ${KESH_PAYPAL_BASE_URL:-}
+      KESH_PAYPAL_PARALLEL: ${KESH_PAYPAL_PARALLEL:-}
     ports:
       - "80:80"
     volumes:

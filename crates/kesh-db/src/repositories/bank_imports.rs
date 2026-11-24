@@ -31,10 +31,8 @@ const COLUMNS: &str = "id, company_id, bank_account_id, filename, file_hash, sou
      statement_id, period_from, period_to, opening_balance, closing_balance, \
      transaction_count, imported_at, imported_by_user_id";
 
-const TX_COLUMNS: &str = "id, company_id, import_id, bank_account_id, booking_date, value_date, \
-     amount, currency, reference, details, end_to_end_id, transaction_id, \
-     counterparty_iban, counterparty_name, status, matched_entry_id, \
-     auto_match_rejected_at, version, created_at, updated_at";
+/// Story 38-11b — la liste de `bank_transactions`, source unique.
+const TX_COLUMNS: &str = super::bank_transactions::COLUMNS;
 
 /// Crée atomiquement un entête `bank_imports` + toutes les
 /// `bank_transactions` filles dans une `Transaction` en cours.
@@ -151,7 +149,7 @@ pub async fn create_with_transactions(
             "INSERT INTO bank_transactions \
              (company_id, import_id, bank_account_id, booking_date, value_date, amount, \
               currency, reference, details, end_to_end_id, transaction_id, counterparty_iban, \
-              counterparty_name) ",
+              counterparty_name, provider_type, counterparty_email) ",
         );
         qb.push_values(chunk.iter(), |mut b, t| {
             b.push_bind(t.company_id)
@@ -166,7 +164,9 @@ pub async fn create_with_transactions(
                 .push_bind(&t.end_to_end_id)
                 .push_bind(&t.transaction_id)
                 .push_bind(&t.counterparty_iban)
-                .push_bind(&t.counterparty_name);
+                .push_bind(&t.counterparty_name)
+                .push_bind(&t.provider_type)
+                .push_bind(&t.counterparty_email);
         });
         qb.build().execute(&mut **tx).await.map_err(map_db_error)?;
     }

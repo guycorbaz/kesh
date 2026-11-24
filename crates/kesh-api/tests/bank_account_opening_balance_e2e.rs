@@ -517,7 +517,9 @@ async fn creation_sans_solde_comportement_d_avant(pool: MySqlPool) {
         // du `Serialize` de `BankAccount` : les treize clés du compte d'avant la
         // 34-2, ni plus ni moins — quinze depuis la 34-11a1 (#972), qui ajoute
         // `accountKind` et `cardLast4` à tout compte (intégration de la 0.17.6 :
-        // les deux stories, écrites en parallèle, se rencontrent ici).
+        // les deux stories, écrites en parallèle, se rencontrent ici) ; dix-sept
+        // depuis la 38-11b, qui ajoute `provider` et `paypal` (`null` pour un
+        // compte ordinaire).
         let mut cles: Vec<&str> = resp
             .as_object()
             .unwrap()
@@ -540,11 +542,15 @@ async fn creation_sans_solde_comportement_d_avant(pool: MySqlPool) {
                 "id",
                 "isPrimary",
                 "journalAccountId",
+                "paypal",
+                "provider",
                 "qrIban",
                 "updatedAt",
                 "version",
             ]
         );
+        assert_eq!(resp["provider"], serde_json::Value::Null);
+        assert_eq!(resp["paypal"], serde_json::Value::Null);
         let details = common::audit_details(&pool, "bank_account", id, "bank_account.created")
             .await
             .expect("details");
@@ -885,6 +891,112 @@ async fn ecriture_croisee_pendant_la_creation_est_vue(pool: MySqlPool) {
         let token = ctx.token.clone();
         let mut body = with_opening(base_body(Some(ctx.bank)), "50", "debit");
         body["isPrimary"] = json!(true);
+        tokio::spawn(async move {
+            let resp = client
+                .post(url)
+                .header("Authorization", format!("Bearer {token}"))
+                .json(&body)
+                .send()
+                .await
+                .unwrap();
+            let status = resp.status().as_u16();
+            (status, resp.json::<Value>().await.unwrap())
+        })
+    };
+    assert!(
+        attendre_une_requete_en_cours(&pool, &["FROM accounts WHERE id IN", "FOR UPDATE"], || {
+            task.is_finished()
+        })
+        .await,
+        "la création doit attendre sur le verrou du compte lié"
+    );
+    tx.commit().await.unwrap();
+
+    let (status, body) = task.await.unwrap();
+    assert_eq!(status, 409, "{body}");
+    assert_eq!(
+        body["error"]["code"],
+        json!("OPENING_COMPLEMENT_ACCOUNT_MOVED")
+    );
+    assert_eq!(bank_account_count(&pool).await, banks, "aucun compte créé");
+}
+
+// ===========================================================================
+// Compte PayPal CHF et solde d'ouverture — Story 38-11b, revue P1 (M1)
+// ===========================================================================
+
+/// Le corps d'un solde PayPal CHF lié à `journal_account_id`, sans IBAN.
+fn paypal_body(journal_account_id: i64) -> Value {
+    json!({
+        "bankName": "PayPal",
+        "journalAccountId": journal_account_id,
+        "paypal": { "account": "PayPal www", "feeAccountId": null },
+    })
+}
+
+/// Revue P1 (M1) — un solde PayPal **CHF** se crée avec son solde
+/// d'ouverture (l'AC-3 l'admet) : le compte, ses réglages et l'écriture ; un
+/// second solde CHF du même compte PayPal, avec ouverture, est refusé par la
+/// garde d'unicité (`409 PROVIDER_CURRENCY_DUPLICATE`), ni compte ni écriture.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn solde_paypal_chf_cree_avec_son_ouverture(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let (status, body) = ctx
+        .create(with_opening(paypal_body(ctx.bank), "80.00", "debit"))
+        .await;
+    assert_eq!(status, 201, "{body}");
+    assert_eq!(body["provider"], json!("paypal"));
+    assert_eq!(body["iban"], Value::Null);
+    let entry_id = body["openingEntry"]["id"].as_i64().expect("openingEntry");
+    assert_eq!(
+        lines_of(&pool, entry_id).await,
+        sorted(vec![
+            (ctx.bank, dec!(80), Decimal::ZERO),
+            (ctx.retained, Decimal::ZERO, dec!(80)),
+        ])
+    );
+
+    let banks = bank_account_count(&pool).await;
+    let entries = entry_count(&pool).await;
+    let (status, body) = ctx
+        .create(with_opening(paypal_body(ctx.overdraft), "5.00", "credit"))
+        .await;
+    assert_eq!(status, 409, "{body}");
+    assert_eq!(body["error"]["code"], json!("PROVIDER_CURRENCY_DUPLICATE"));
+    assert_eq!(bank_account_count(&pool).await, banks);
+    assert_eq!(entry_count(&pool).await, entries);
+}
+
+/// Revue P1 (M1) — le contrat de l'instantané (AC-10, C-e341-38) tenu pour
+/// un solde PayPal : la garde d'unicité par devise, qui précède l'écriture
+/// d'ouverture, lit par lectures verrouillantes ; une écriture croisée sur le
+/// compte lié, commitée pendant que la création attend son verrou, est vue
+/// (`409 OPENING_COMPLEMENT_ACCOUNT_MOVED`, aucun compte). Montage de
+/// `ecriture_croisee_pendant_la_creation_est_vue`, sans principal (un compte
+/// PayPal ne l'est jamais). Tue la lecture ordinaire de la garde (l'instantané,
+/// ouvert par elle, ne voit pas la ligne commitée ensuite : `201`).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ecriture_croisee_pendant_la_creation_d_un_solde_paypal_est_vue(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let existing = ctx.move_account(&pool, ctx.cash).await;
+    let banks = bank_account_count(&pool).await;
+
+    let mut tx = pool.begin().await.unwrap();
+    sqlx::query(
+        "INSERT INTO journal_entry_lines (entry_id, account_id, line_order, debit, credit) \
+         VALUES (?, ?, 99, 5, 0)",
+    )
+    .bind(existing)
+    .bind(ctx.bank)
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+
+    let task = {
+        let client = ctx.app.client.clone();
+        let url = ctx.app.url("/api/v1/bank-accounts");
+        let token = ctx.token.clone();
+        let body = with_opening(paypal_body(ctx.bank), "50", "debit");
         tokio::spawn(async move {
             let resp = client
                 .post(url)

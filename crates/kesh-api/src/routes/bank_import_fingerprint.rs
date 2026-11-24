@@ -203,6 +203,7 @@ mod tests {
             closed_on: None,
             created_at: ts(1),
             updated_at: ts(1),
+            provider_settings: Default::default(),
         }
     }
 
