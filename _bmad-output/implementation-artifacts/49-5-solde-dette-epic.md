@@ -425,7 +425,10 @@ Sonnet 5.5 (`bmad-dev-story`), worktree `/home/gcorbaz/devel/kesh-49-solde`. Jou
 - M3 (retirer `pr-2` de la seule cellule du taux) : `m3.log` — 1 échec, `<td class="py-2 text-right">8.10</td>` ; restaurée puis `touch`.
 - Captures (recette visuelle, AC-B3), thème clair, 1280 px, base `kesh_e49s`, avoir portant deux lignes chiffrées à 8.10 % sur 3000 et un commentaire : `captures/avoir-avant.png`, `avoir-avant-tableau.png` (build de `59fb28712` + lot A, page inchangée : « TVA %Compte de produit », « 8.103000 — Ventes CI »), `avoir-apres.png`, `avoir-apres-tableau.png` (« TVA % » séparé, « 8.10 » séparé de « 3000 — Ventes CI » ; total et commentaire alignés comme avant). Outil : `outils/capture.cjs`.
 - Gate frontend au dernier commit de code (`2c773dec7`) : `front-check.log` (0 erreur, 29 avertissements préexistants), `front-lint-i18n-ownership.log` (PASS), `front-test-unit.log` (282 fichiers, 4851 tests, tous passés), `front-build.log` (ok).
-- Gate backend (`scripts/test-fast.sh --ci`, base `kesh_ci_e49s`) et E2E complet (base `kesh_e2e_e49s`, `LANG=fr_CH.UTF-8`) : **lancés, en file d'attente des verrous au moment d'écrire** ; journaux `gate-backend.log` et `e2e.log` ; **aucun résultat n'est affirmé ici**.
+- Gate backend (`scripts/test-fast.sh --ci`, base `kesh_ci_e49s`, au code de `2c773dec7` ; le seul commit de code suivant, `17126a445`, ne change qu'un commentaire de `invoices.types.ts`) : **vert**, 6270 tests passés sur 6270, 17 ignorés, 730 s (`gate-backend.log`).
+- **Premier E2E complet : INVALIDE, sans valeur** (`invalide-e2e.log`, `invalide-e2e-backend.log`). `e2e-interne.sh` lançait `kesh-api` sans `cd` dans le worktree : le backend chargea les catalogues par le chemin relatif `crates/kesh-i18n/locales` depuis le dépôt principal, sans les clés neuves de l'Epic 49. 8 échecs : les sept KF-029 plus `invoice-validation-pdf.spec.ts:53` (clé brute `error-invoice-lines-do-not-fit-pdf`). Défaut du montage de l'agent, non du code.
+- **Second E2E complet** (base `kesh_e2e_e49s`, `LANG=fr_CH.UTF-8`, tête `17126a445`, `cd` dans le worktree et `KESH_LOCALES_DIR` absolu, ligne « locales chargées » relevée dans `e2e-locales.txt`) : journaux `e2e.log`, `e2e-backend.log` ; **résultat à consigner ici dès qu'il est tombé**.
+
 
 ### Completion Notes List
 
