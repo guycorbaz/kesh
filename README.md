@@ -70,6 +70,7 @@
 - Rust ≥ 1.97 (installé automatiquement via `rust-toolchain.toml`)
 - Node.js ≥ 20
 - Docker + Docker Compose
+- Pour les tests E2E : la locale `fr_CH.UTF-8` installée (`sudo locale-gen fr_CH.UTF-8`, contrôle `locale -a | grep -i fr_ch`) — cf. `docs/testing.md` § *Prérequis Playwright local*
 
 ### Installation
 
