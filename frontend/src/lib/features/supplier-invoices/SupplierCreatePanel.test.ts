@@ -44,3 +44,53 @@ describe('SupplierCreatePanel — refus du pays (#817)', () => {
 		);
 	});
 });
+
+// Story 48-15 (#1332, AC6) — le pays d'un fournisseur neuf n'est plus coupé à deux
+// caractères : « Suisse » part entier, le serveur le refuse en le disant, la saisie
+// reste ; « CH » s'enregistre. NPA et localité renseignés : un bloc d'adresse vide
+// est ignoré par le serveur, pays compris (#1342, hors périmètre).
+describe('SupplierCreatePanel — le pays ne coupe pas un texte collé (#1332)', () => {
+	const ADRESSE = { street: 'Rue des Essais', building: '7', postalCode: '1200', city: 'Genève' };
+
+	function monter(onCreated = vi.fn()) {
+		return render(SupplierCreatePanel, {
+			initialName: 'Démo Fournisseur SA',
+			initialAddress: { ...ADRESSE, country: '' },
+			onCreated,
+			onCancel: vi.fn(),
+		});
+	}
+
+	// Rouge par M11 (`maxlength="2"` remis). Sonde positive d'abord : le champ est
+	// trouvé (`getByTestId` lève sinon), puis l'attribut est absent.
+	it('pays : aucun maxlength', () => {
+		const champ = monter().getByTestId('supplier-new-country');
+		expect(champ.tagName).toBe('INPUT');
+		expect(champ.hasAttribute('maxlength')).toBe(false);
+	});
+
+	it('« Suisse » part entier, le refus du serveur s’affiche, la saisie reste ; « CH » s’enregistre', async () => {
+		const refus = 'adresse : le pays doit être un code ISO à 2 lettres (ex. CH)';
+		createContactMock.mockRejectedValueOnce({ code: 'VALIDATION_ERROR', status: 400, message: refus });
+		const onCreated = vi.fn();
+		const { getByTestId } = monter(onCreated);
+		const champ = getByTestId('supplier-new-country') as HTMLInputElement;
+		await fireEvent.input(champ, { target: { value: 'Suisse' } });
+		await fireEvent.click(getByTestId('supplier-new-create'));
+		await waitFor(() => expect(getByTestId('supplier-new-error').textContent).toBe(refus));
+		expect(createContactMock).toHaveBeenCalledWith(
+			expect.objectContaining({ addressStructured: expect.objectContaining({ country: 'Suisse' }) }),
+		);
+		expect(champ.value).toBe('Suisse');
+		expect(onCreated).not.toHaveBeenCalled();
+
+		const cree = { id: 7, name: 'Démo Fournisseur SA' };
+		createContactMock.mockResolvedValueOnce(cree);
+		await fireEvent.input(champ, { target: { value: 'CH' } });
+		await fireEvent.click(getByTestId('supplier-new-create'));
+		await waitFor(() => expect(onCreated).toHaveBeenCalledWith(cree));
+		expect(createContactMock).toHaveBeenLastCalledWith(
+			expect.objectContaining({ addressStructured: expect.objectContaining({ country: 'CH' }) }),
+		);
+	});
+});
