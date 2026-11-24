@@ -1103,10 +1103,14 @@ async fn regle_vers_une_carte_detachee_ni_proposee_ni_ecrite_deux_fois(pool: MyS
     detache_ni_propose_ni_ecrit_deux_fois(&ctx, paiement, v, ecriture, recu).await;
 }
 
-/// Sonde positive : une écriture du même montant, rapprochée d'une
-/// transaction de la banque de montant opposé, mais **sans ligne sur le
-/// compte du plan du solde PayPal**, n'est pas « l'écriture du retrait » : le
-/// retrait, jamais écrit, reste proposé et s'accepte.
+/// Sonde positive : le retrait, jamais écrit par Kesh, reste proposé et
+/// s'accepte, à côté de deux écritures du même montant qui ne sont pas
+/// « déjà comptabilisées » au sens de la règle :
+/// - rapprochée d'une transaction de la banque de montant opposé, mais **sans
+///   ligne sur le compte du plan du solde PayPal** ;
+/// - au compte du plan du solde PayPal, mais **rapprochée de rien** (une
+///   saisie manuelle : l'angle mort assumé de la fiche — la règle ne lit que
+///   les écritures déjà rapprochées de l'autre côté).
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn retrait_jamais_ecrit_reste_propose(pool: MySqlPool) {
     let ctx = monter(&pool).await;
@@ -1132,6 +1136,21 @@ async fn retrait_jamais_ecrit_reste_propose(pool: MySqlPool) {
     let sans_rapport = b["id"].as_i64().unwrap();
     let (s, b) = ctx.rattacher(depot, sans_rapport).await;
     assert_eq!(s, 200, "{b}");
+    let (s, b) = ctx
+        .post(
+            "/api/v1/journal-entries",
+            json!({
+                "entryDate": "2020-02-28",
+                "journal": "Banque",
+                "description": "Saisie manuelle non rattachée",
+                "lines": [
+                    { "accountId": ctx.charge, "debit": "1000.00", "credit": "0" },
+                    { "accountId": ctx.chf, "debit": "0", "credit": "1000.00" },
+                ],
+            }),
+        )
+        .await;
+    assert_eq!(s, 201, "{b}");
     let v = proposition(&ctx.revue().await, retrait);
     assert_eq!(v["type"], "withdrawal", "{v}");
     let (s, b) = ctx.accepter(vec![v]).await;
