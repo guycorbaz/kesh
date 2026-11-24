@@ -239,7 +239,7 @@ sort pas sans la 49-4a ») : sans elle, un commentaire long rendrait une facture
   `crates/kesh-api/tests/textes_coherents.rs` (même forme que `error-invoice-too-many-lines-for-pdf`) ; `docs/api-external.md` :
   la route de validation (`:520`) nomme le refus, en **changement de contrat** (une facture que la 0.19.0 validait peut être
   refusée), la table des codes (`:1281`) gagne une ligne et dit que `INVOICE_TOO_MANY_LINES_FOR_PDF` ne se rencontre plus que pour
-  une pièce validée avant la 0.20.0, un rappel (D2) ou la course (D1) ; la phrase de capacité (« huit lignes au plus, moins avec un
+  une pièce validée avant la 0.20.0, un rappel (D2) ou la course (D1) ; la phrase de capacité (« huit lignes imprimées au plus, moins avec un
   récapitulatif — TVA ou arrondi ») et la limite du rappel avec sa sortie par avoir y figurent comme au manuel (D7) ;
   `admin-manual.tex` § *Pour les intégrations* de `sec:maj-0-20-0` (`:2559`) gagne une phrase sur ce refus, en changement de
   contrat.
@@ -458,6 +458,60 @@ story n'en ajoute aucune (le « 13 » de la consigne se compte autrement ; à re
 en compte la longueur sans que le dessin l'appelle. L'accord des deux est prouvé par T2 (600 pièces engendrées, oracle = le rendu
 réel) et par les mutations T1-3 et T2-1/T2-2, non par construction.
 
+### Revue de code P1 remédiée (2026-11-24, Opus 5.5 — ne dit que ce qui a tourné)
+
+Rapports : `/home/gcorbaz/devel/kesh-gate-logs/e494/review-p1-{B,E,A}.md`. Commits : `0801c8bab` (manuel, allemand), `a2244c5c6`
+(tests, fiche, prompt P2). Journaux dans `/home/gcorbaz/devel/kesh-gate-logs/e494/dev/`.
+
+- **A-1 (MEDIUM), prémisse confirmée** : `git show 87e00ba05:docs/manual/fr/user-manual.tex | grep -noF "chaque ligne imprimée prend la
+  place"` rend `1477:` ; au HEAD d'avant la remédiation, `git grep -nF "chaque ligne imprimée prend la place"` était vide. La résolution
+  du conflit `b1d9d4776` avait donc retiré la précision de la 49-1c. **Relu en entier** : `git diff 87e00ba05 b1d9d4776 --stat -- docs
+  crates/kesh-i18n frontend/src` ne nomme que sept fichiers (quatre catalogues, `api-external.md`, deux manuels) ; les seuls
+  retraits de ces diffs sont cette phrase de `user-manual.tex` et le début de la phrase de `admin-manual.tex` réécrit à l'identique
+  plus un ajout : aucune autre phrase de la 49-1c ne s'est perdue. Corrigé au manuel (`:1477`) : « huit lignes **imprimées** au plus
+  [...] (une ligne chiffrée s'imprime sur une ligne, un commentaire sur autant de lignes que son texte en demande) », « sans numéro
+  **neuf** ni écriture » (une facture dévalidée garde son numéro), « raccourcissez les commentaires » ; accord avec `api-external.md:526`.
+  Symptôme grepé sur tout le dépôt : `git grep -nF "huit lignes au plus"` ne rend plus qu'une citation de la fiche, corrigée ;
+  `git grep -nF "sans numéro ni écriture"` ne rend que la 49-1b (hors périmètre) et un registre ; manuels DE/IT/EN : le dossier
+  `docs/manual/{de,en,it}` ne porte pas de phrase de capacité (`git grep -niE "huit lignes|eight lines|acht Zeilen|otto righe"` : aucune
+  occurrence hors `fr/`).
+- **A-5 (LOW)** : prémisse lue (`de-CH/messages.ftl:4087`, « Sie benötigen », « ihres PDF »). Corrigé : « ihres PDFs: sie benötigen ».
+  `git grep -nF "Sie benötigen"` : vide ensuite ; aucun test ne cite le texte allemand.
+- **A-3 (LOW)** : sorties d'AC9 rejouées au HEAD (après A-1), `git grep` : `-i "récapitulatif" -- user-manual.tex` → `:234` (hors sujet) et
+  **`:1477`** (la phrase neuve, qui contient « arrondi » ×2, « validation », « rappel », « avoir ») ; `-i "récapitulatif" -- docs/api-external.md`
+  → `:514`, **`:526`** (« arrondi », « validation », « rappel », « avoir »), `:1313`, `:1314` ; `"récapitulatif de TVA}" -- user-manual.tex` →
+  **vide** (rc 1) ; `-i "trait d.union ordinaire\|sans avertissement" -- user-manual.tex` → `:918, :1046, :1445, :1516, :1615`, **identique**
+  à `87e00ba05` (mêmes cinq lignes). Les lignes `:1456` et `api-external.md:524` citées plus haut (§ *Reprise*) sont celles d'avant la fusion.
+  PDF du manuel utilisateur recompilé **à ce HEAD** dans un dossier jetable (`/home/gcorbaz/devel/kesh-gate-logs/e494/manuels/src`,
+  `make user`, 3 passes, stable) puis `pdftotext … | tr '\n' ' ' | tr -s ' '` : « tient sur une page : huit lignes imprimées au plus,
+  moins avec un récapitulatif — TVA ou arrondi aux 5 centimes (une ligne chiffrée s'imprime sur une ligne, un commentaire sur autant
+  de lignes que son texte en demande) ; […] Kesh le vérifie à la validation : une facture qui ne tiendrait pas est refusée en le disant
+  — lignes demandées et lignes offertes —, sans numéro neuf ni écriture, […] retirez des lignes, raccourcissez les commentaires, ou
+  répartissez-les sur deux factures. Limite : le rappel […] un avoir […] ». `/home/gcorbaz/devel/kesh-gate-logs/e494/manuels/user-manual.pdf`
+  mis à jour ; `admin-manual.pdf` inchangé (le `.tex` n'a pas bougé).
+- **A-4 (LOW)** : tâches cochées (toutes sauf **Gates**, dont l'E2E complet reste à la clôture) ; préambule « Statut `review` » ; chemins
+  `e494a/captures/`, `e494a/` (rouges) et `e494a/controles-diff.sh` alignés sur `e494/captures/` et `e494/dev/` ; `kesh_ci_e494a` →
+  `kesh_ci_e494`.
+- **E-1 (LOW)** : prémisse lue (`invoices.rs:964-974`, contrôle seulement si `brouillon.status == "draft"`). Test neuf
+  `invoice_validation_pdf_e2e::le_controle_ne_masque_ni_le_409_ni_le_404` : une pièce de neuf lignes validée par le dépôt rend `409
+  ILLEGAL_STATE_TRANSITION` sans que son état bouge, un identifiant inconnu `404` et jamais `INVOICE_LINES_DO_NOT_FIT_PDF`. Vert au gate.
+- **B-1 (LOW)** : prémisse lue (`pdf.rs`, famille de T2 : `chiffrees(...)` à désignations courtes seulement). Corrigé : la famille
+  engendrée remplace au hasard (une chance sur quatre) la désignation d'une ligne chiffrée par un texte de 200 ou de 1014
+  caractères ; T2 reste vert, les seuils `acceptees > 100 && refusees > 100` tiennent. Test seulement.
+- **A-2 (LOW)** : gate frontend complet joué (voir ci-dessous).
+- **B-2, E-2, A-6 (LOW)** : non traités ici, sort au Change Log et issues demandées dans le rapport de remédiation (B-2 et E-2 : même
+  cause, le pré-filtre compte les lignes de la pièce, le contrôle géométrique les lignes imprimées, déclaré en D3 ; A-6 : assertion
+  d'écran facultative sur un spec qu'on ne rejoue pas hors clôture). Issue (2) des Dev Notes (course `PUT`/validation, P4) :
+  demandée de nouveau à l'orchestrateur.
+- **Gates après remédiation** (code de production touché : un catalogue i18n et le module de test de `pdf.rs`) :
+  frontend complet, `npm --prefix frontend ci` puis sous `.gate-front.lock` : `check` rc 0 (**0 erreur**, 29 avertissements, 5 fichiers
+  à problèmes, comme avant), `lint-i18n-ownership` rc 0, `test:unit` rc 0 (**281 fichiers, 4849 tests passés**), `build` rc 0
+  (`remed-front.log`) ; `cargo fmt --all -- --check` vert ; bases `kesh_e494a` et `kesh_e2e_e494a` recréées, migrées, `kesh_e494a`
+  semée ; `scripts/test-fast.sh --ci` : **6270 passés, 0 échoué, 17 ignorés** (392 s ; +1 test neuf, `remed-test-fast-ci.log`) ;
+  `scripts/gate-ci.sh kesh_ci_e494` : **6289 passés, 0 échoué, 21 ignorés**, 263 binaires, code 0 (`remed-gate-ci.log`). Pas d'E2E
+  (clôture). Le gate ciblé du clippy n'a pas été relancé : aucun code hors module de test de `pdf.rs` et fichier de test n'a changé
+  (`cargo test` du gate compile tout).
+
 ### Reprise (pause de l'Epic 49 décidée par Guy le 2026-11-20, jusqu'au mardi 2026-11-24 au matin)
 
 **Où l'on en est.** Le code est **écrit et commité (`09d89db92`), mais il n'a jamais été compilé** : la seule commande lancée
@@ -537,3 +591,4 @@ tourné, aucune mutation n'a été jouée** (rien à restaurer), aucun rouge n'e
 | 2026-11-20 | **Validation P1 remédiée** (Opus 5.5, prémisses relues au code ; rapport `kesh-gate-logs/e494/validation-49-4a-p1.md`). Tendance : P1 **0/0/3/9** ; addendum (D2 « réserver ») **0/0/3/1**, **tombé** par la décision de Guy du 2026-11-20 (D2 : aucune réserve, limite au manuel avec sortie par avoir, #1374 en v0.21.0) — A1, A2, A4 sans objet, A3 joint à V1-3. **MEDIUM** : V1-1 corrigé (pré-filtre `MAX_LINES_PER_PDF` extrait et appliqué à la validation, une seule source ; AC1 (e) « 8 chiffrées + 2 commentaires « Ω » » par la route et `GET /pdf`, mutation T1-5 ; prémisse : `invoice_pdf_service.rs:235`, `validate_line` de la 49-1c `:508-509` accepte « Ω ») ; V1-2 corrigé (`$BASE` = `merge-base` avec la branche d'épique, recalculée à chaque reprise, au Dev Agent Record : D5, AC4, T5, étape 0) ; V1-3 + A3 corrigés (phrase **réécrite** « moins avec un récapitulatif — TVA ou arrondi » + limite du rappel et sa sortie, au manuel et au guide de l'API ; AC9 grepe ces mots). **LOW** : V1-4 (justification de la simulation, mutation T2-3), V1-5 (AC8 aligné sur D3), V1-6 (`invoice_total_ttc`, `None`), V1-7 (seuil 4), V1-9 (lieu sans la 49-1c), V1-10 (changement de contrat), V1-11 (citations), V1-12 (montage d'AC2 (c)) corrigés d'une phrase ; V1-8 **tombé par décision**. Reclassements : aucun. D2 propagée (inventaire, D1, D3, D7, AC8, AC9, Dev Notes, issue (1) sans objet, Note de version). Phrase du refus : « lignes » sans « imprimées » (le pré-filtre compte les lignes de la pièce). Charge inchangée, deux et demi à trois jours. |
 | 2026-11-20 | **Validation terminée** (passe P2 Sonnet, contexte frais, rapport `kesh-gate-logs/e494/validation-49-4a-p2.md` : **0/0/0/5**, aucun finding au-dessus de LOW). Tendance : P1 Opus **0/0/3/9** (addendum 0/0/3/1, **tombé par décision de Guy du 2026-11-20** : D2, aucune réserve du bloc de rappel) → P2 Sonnet **0/0/0/5**. Modèles : Opus → Sonnet. Reclassements : aucun. LOW de la P2 traités à l'étape 0 du développement (Opus 5.5) : **V2-1** (D1 : le contrôle géométrique **avant** le pré-filtre ; AC1 (f), douze lignes chiffrées, « 12 et 8 » ; ligne lue : `invoice_pdf_service.rs:235` `    if lines.len() > MAX_LINES_PER_PDF {`) ; **V2-2** (T1 « (a) à (f) » et le refus au rendu de la pièce (e) ; `grep "(a) à (d)"` vide après correction) ; **V2-3** (fiche 49-4b : volet Q1 (c) retiré des « Questions ouvertes », tranché à son § *Réponses de Guy*) ; **V2-4** (`invoice_pdf_service.rs` aux fichiers communs ; doc-comment de `MAX_LINES_PER_PDF` à réécrire dans la tâche `kesh-api` ; ligne lue : `invoice_pdf_service.rs:95` `pub const MAX_LINES_PER_PDF: usize = 9;`, et `:91-92` « la garde renvoie `QrBillError::PdfGeneration` ») ; **V2-5** (Dev Notes, *Charge* : réduction de l'epic, jamais rognage des gates). Statut `ready-for-dev`, puis `in-progress`. |
 | 2026-11-24 | **Développement terminé, statut `review`** (Opus 5.5). Épique reprise (`87e00ba05`, commit `b1d9d4776`), première compilation (un `needless_borrow`, corrigé), onze mutations jouées et restaurées (toutes rouges ; T6 sur binaire muté), recette visuelle (trois captures lues, aucun chevauchement au seuil), `test-fast --ci` 6269/0 et `gate-ci` 6288/0. Non exercé : frontend complet, E2E complet (clôture), PDF des manuels du dépôt. Détail au Dev Agent Record, § *Réalisation*. |
+| 2026-11-24 | **Revue de code P1 remédiée** (Opus 5.5 ; P1 Opus **0/0/1/9**, les trois lentilles B, E, A exercées l'une après l'autre par un seul agent : B 0/0/0/2, E 0/0/0/2, A 0/0/1/5 ; rapports `kesh-gate-logs/e494/review-p1-{B,E,A}.md`). **MEDIUM** : A-1 corrigé (le manuel utilisateur disait « huit lignes au plus » sans dire qu'elles sont imprimées : la phrase de la 49-1c perdue à la résolution du conflit `b1d9d4776` est rétablie sous la forme « huit lignes **imprimées** au plus », avec « sans numéro **neuf** » et « raccourcissez les commentaires » ; prémisse confirmée, `87e00ba05:…/user-manual.tex:1477` contre le HEAD ; le reste de la résolution du conflit relu, aucune autre phrase perdue). **LOW** corrigés : A-5 (allemand : « sie benötigen », « ihres PDFs »), A-3 (sorties d'AC9 rejouées et recopiées), A-4 (fiche à jour), E-1 (test des 409 et 404 de la route), B-1 (désignations chiffrées longues dans la famille de T2), A-2 (frontend complet joué, vert). **LOW** renvoyés en issue : B-2 et E-2 (même cause : unités du refus du pré-filtre, déclarée en D3), A-6 (assertion d'écran facultative). Reclassements : aucun. Gates : frontend complet vert, `test-fast --ci` 6270/0, `gate-ci` 6289/0. Reste : la revue P2 (Sonnet, prompt versionné), l'E2E complet à la clôture. |

@@ -38,3 +38,4 @@ Chaque choix : contexte, option retenue, autres options, réversibilité.
   imprimée prend la place d'une ligne de facture, … huit au plus, moins avec le récapitulatif de TVA » : redit une fois, plus juste).
 - **Écartées** : garder les deux (redite).
 - **Réversibilité** : totale (texte).
+- **Corrigé le 2026-11-24 (revue P1, A-1)** : la phrase de la 49-1c portait la précision « chaque ligne **imprimée** prend la place d'une ligne de facture » ; la substituer sans la reprendre faisait lire « huit lignes de facture ». La phrase de la 49-4a dit désormais « huit lignes imprimées au plus » avec l'explication (ligne chiffrée : une ligne ; commentaire : autant que son texte en demande).
