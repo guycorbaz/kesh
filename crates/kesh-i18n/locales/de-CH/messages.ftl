@@ -4083,6 +4083,9 @@ projects-reassign-warning-reports = Die analytischen Berichte dieser Periode än
 projects-reassign-confirm = Bestätigen
 projects-reassign-done = Analytisches Konto geändert.
 
+# --- Epic 49 — Story 49-4a (#1364) : capacité du PDF de facture contrôlée à la validation ---
+error-invoice-lines-do-not-fit-pdf = Die Positionen dieser Rechnung passen nicht auf die Seite ihres PDFs: Benötigt werden { $besoin } Zeilen, die Seite bietet { $place }. Entfernen Sie Positionen, kürzen Sie die Kommentare oder verteilen Sie die Positionen auf zwei Rechnungen. Die Rechnung bleibt ein Entwurf.
+
 # Epic 49 — Story 49-1c (#1242) : la ligne de commentaire de la facture client
 invoice-line-add-comment = Kommentar
 invoice-line-comment-placeholder = Text über die ganze Breite der Rechnung, ohne Betrag

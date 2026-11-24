@@ -4084,6 +4084,9 @@ projects-reassign-warning-reports = I rapporti analitici di questo periodo cambi
 projects-reassign-confirm = Conferma
 projects-reassign-done = Conto analitico cambiato.
 
+# --- Epic 49 — Story 49-4a (#1364) : capacité du PDF de facture contrôlée à la validation ---
+error-invoice-lines-do-not-fit-pdf = Le righe di questa fattura non stanno sulla pagina del suo PDF: richiedono { $besoin } righe, la pagina ne offre { $place }. Rimuova delle righe, accorci i commenti o ripartisca le righe su due fatture. La fattura resta una bozza.
+
 # Epic 49 — Story 49-1c (#1242) : la ligne de commentaire de la facture client
 invoice-line-add-comment = Commento
 invoice-line-comment-placeholder = Testo stampato su tutta la larghezza della fattura, senza importo

@@ -75,24 +75,86 @@ pub(crate) fn vat_lines_pdf(
         .collect()
 }
 
-/// Borne v0.1 (grossière) du nombre de lignes d'un PDF A4 mono-page.
-///
-/// C'est un **pré-filtre** : la vérification géométrique **précise** (et
-/// autoritaire) est la garde de `kesh-qrbill::pdf::draw_invoice_section`, qui
-/// tient compte du header ET du bloc récap TVA (#151) :
-/// - `ty` de la 1re ligne = `159` mm (167 après header, − 5 − 3 pour la ligne
-///   de titre du tableau et son filet)
-/// - pas par ligne = `5` mm ; la check a lieu **avant** le draw
-/// - seuil de refus = `SEP_Y + 15 (=120) + réserve_récap`, où `réserve_récap`
-///   = `0` sans TVA, sinon `sous-total (4.5) + n_taux×4.5 + espace (1)`
-/// - sans récap : `159 − (N-1)*5 >= 120` ⇒ **8 lignes** tiennent ; avec un
-///   récap multi-taux, moins (le récap descend le curseur sous le total).
-///
-/// Le rendu est **défensif** : au-delà de la capacité (lignes + récap), la garde
-/// renvoie `QrBillError::PdfGeneration` plutôt que de chevaucher la zone QR ou
-/// tronquer. Cette constante (9) reste un plafond supérieur simple ; un cas qui
-/// la passe mais ne tient pas géométriquement échoue proprement dans `pdf.rs`.
+/// Borne v0.1 (grossière) du nombre de **lignes de la pièce** d'un PDF de facture A4
+/// mono-page — le pré-filtre de [`depasse_le_prefiltre`].
 pub const MAX_LINES_PER_PDF: usize = 9;
+
+/// Le **pré-filtre** du PDF d'une facture ou d'un rappel : la pièce a-t-elle plus de
+/// [`MAX_LINES_PER_PDF`] lignes ? Il compte les lignes **de la pièce**, avant toute
+/// géométrie. Seule source de ce pré-filtre : le rendu ([`render_document`], qui refuse
+/// alors par `InvoiceTooManyLinesForPdf`) et la validation
+/// ([`controler_la_capacite_du_pdf`], Story 49-4a) l'appellent tous deux.
+///
+/// La vérification **précise** (et autoritaire) est la garde de
+/// `kesh-qrbill::pdf::draw_invoice_section`, avant chaque ligne dessinée, qui rend
+/// `QrBillError::TooManyLines` : première ligne à 159 mm, pas de 5 mm, plancher au
+/// séparateur QR plus 15 mm pour le total, plus la réserve du récapitulatif (`4.5 × n + 1`
+/// mm s'il a `n > 0` lignes : sous-total, une par taux de TVA, et l'arrondi s'il n'est pas
+/// nul au centime), plus le bloc de rappel. Sans récapitulatif, **8 lignes imprimées**
+/// tiennent ; avec, moins. Au rendu, le pré-filtre passe pourtant **avant** toute
+/// géométrie : une pièce de plus de [`MAX_LINES_PER_PDF`] lignes est refusée sans que la
+/// garde précise soit consultée, même si certaines de ses lignes n'impriment rien.
+pub(crate) fn depasse_le_prefiltre(lignes_de_la_piece: usize) -> bool {
+    lignes_de_la_piece > MAX_LINES_PER_PDF
+}
+
+/// Les lignes du PDF d'une facture, par [`ligne_pdf`] — pour le rendu et pour le contrôle
+/// de la validation (une seule construction).
+fn lignes_pdf(lines: &[InvoiceLine]) -> Vec<InvoiceLinePdf> {
+    lines
+        .iter()
+        .map(|l| {
+            ligne_pdf(
+                &l.description,
+                l.line_type,
+                l.quantity,
+                l.unit_price,
+                l.vat_rate,
+                l.line_total,
+            )
+        })
+        .collect()
+}
+
+/// Story 49-4a (#1364, D1) — les lignes d'un **brouillon** tiennent-elles sur la page de
+/// son PDF ? Appelé par la validation, **avant** toute écriture : une facture qui ne
+/// tiendrait pas est refusée quand le brouillon se corrige encore, au lieu d'être validée
+/// — numéro attribué, écriture passée — puis refusée au premier rendu.
+///
+/// Les mêmes paramètres que le rendu : les lignes par [`ligne_pdf`], le récapitulatif de
+/// TVA par [`vat_lines_pdf`], l'arrondi comme la validation le figera
+/// (`invoice_total_ttc` puis `invoice_rounding`, réglage `round_to_5_centimes` de la
+/// société). D'abord le contrôle géométrique de `kesh-qrbill`
+/// ([`kesh_qrbill::controler_les_lignes`] : lignes imprimées et place), **puis** le
+/// pré-filtre ([`depasse_le_prefiltre`] : lignes de la pièce et [`MAX_LINES_PER_PDF`]) —
+/// dans cet ordre, le refus du pré-filtre ne se lit que pour une pièce que le contrôle
+/// accepte, où sa place de 9 est juste. Ni contact, ni compte bancaire, ni société : la
+/// validation n'acquiert aucun prérequis neuf. Le bloc de rappel n'est pas réservé
+/// (décision de Guy du 2026-11-20).
+///
+/// # Errors
+///
+/// [`AppError::InvoiceLinesDoNotFitPdf`], avec les lignes demandées et offertes.
+pub(crate) fn controler_la_capacite_du_pdf(
+    lines: &[InvoiceLine],
+    round_to_5_centimes: bool,
+) -> Result<(), AppError> {
+    let paires = || lines.iter().map(|l| (l.line_total, l.vat_rate));
+    let ttc_brut = kesh_core::accounting::vat::invoice_total_ttc(paires());
+    let rounding = kesh_core::accounting::vat::invoice_rounding(ttc_brut, round_to_5_centimes);
+    kesh_qrbill::controler_les_lignes(&lignes_pdf(lines), &vat_lines_pdf(paires()), rounding)
+        .map_err(|hors| AppError::InvoiceLinesDoNotFitPdf {
+            besoin: hors.besoin,
+            place: hors.place,
+        })?;
+    if depasse_le_prefiltre(lines.len()) {
+        return Err(AppError::InvoiceLinesDoNotFitPdf {
+            besoin: lines.len(),
+            place: MAX_LINES_PER_PDF,
+        });
+    }
+    Ok(())
+}
 
 /// PDF de facture généré, prêt à être servi (handler HTTP) ou attaché
 /// (e-mail Story 20-3b).
@@ -232,7 +294,7 @@ pub async fn render_document(
         return Err(AppError::InvoiceNotValidated);
     }
 
-    if lines.len() > MAX_LINES_PER_PDF {
+    if depasse_le_prefiltre(lines.len()) {
         return Err(AppError::InvoiceTooManyLinesForPdf(lines.len()));
     }
 
@@ -422,19 +484,7 @@ fn build_qrbill_inputs(
         billing_information: None,
     };
 
-    let invoice_lines_pdf: Vec<InvoiceLinePdf> = lines
-        .iter()
-        .map(|l| {
-            ligne_pdf(
-                &l.description,
-                l.line_type,
-                l.quantity,
-                l.unit_price,
-                l.vat_rate,
-                l.line_total,
-            )
-        })
-        .collect();
+    let invoice_lines_pdf: Vec<InvoiceLinePdf> = lignes_pdf(lines);
 
     // #151 : sous-total HT + ventilation TVA par taux (arrondi par ligne DC7).
     let subtotal_ht: Decimal = lines.iter().map(|l| l.line_total).sum();
