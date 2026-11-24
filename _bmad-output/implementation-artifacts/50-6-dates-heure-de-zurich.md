@@ -1,6 +1,6 @@
 # Story 50-6 : Dates et heures de Zurich — journal d'audit, sauvegardes, envois MCP, rejet de rapprochement (#1511)
 
-Status: in-progress
+Status: done
 
 *Fiche rédigée le 2026-11-24 (Opus 5.5), worktree `kesh-50-6`, branche `story/50-6-dates-heure-de-zurich` partie de
 `origin/epic/50-corrections` à `e5654fc00`, par le workflow `bmad-create-story`, en autonomie. Epic 50 « Corrections », cinquième story ;
@@ -278,8 +278,8 @@ n'en trouve aucun.
     l'ICU pourrait différer — V2-6) — et diffère de la même mise en forme à New York (`timeZone: 'America/New_York'`, aussi par `page.evaluate`). Il rougit au code d'avant (journal `rouge-e2e.txt` ; au code
     d'avant, le `data-testid` manque : le rouge se constate avec `locator('td').first()`, noté au journal).
 12. **AC12 — manuel** : `user-manual.tex:4688-4689` dit, **en ces termes** (V2-3, texte fixé) : « Le tableau affiche l'heure de Zurich, quel que
-    soit le fuseau de votre poste. \emph{Depuis la version 0.20.0~; avant, l'heure du poste.} » (apostrophe droite, sans `\textbf` sur `Zurich`) ; `:790-791` ajoute que les instants s'affichent à l'heure de Zurich,
-    sauf les dates que l'on saisit (expiration d'une clé du serveur MCP, à l'heure du poste ; d'une clé d'API) et, pour l'instant, les dates de
+    soit le fuseau de votre poste. \emph{Depuis la version 0.20.0~; avant, l'heure du poste.} » (apostrophe droite, sans `\textbf` sur `Zurich`) ; le paragraphe de `:790-799` (trois phrases courtes) dit que Kesh affiche tous les instants à l'heure de Zurich,
+    avec deux exceptions : les dates saisies, et, pour l'instant, les dates que l'on saisit (expiration d'une clé du serveur MCP, à l'heure du poste ; d'une clé d'API) et, pour l'instant, les dates de
     création, de dernier usage et de révocation des clés du serveur MCP et de la modification de ses réglages, encore à l'heure du poste.
     **Contrôles qui rougissent avant** (le texte est aplati, la phrase étant coupée) :
     `tr '\n' ' ' < docs/manual/fr/user-manual.tex | tr -s ' ' | grep -o "affiche l'heure de votre .textbf{poste}" | wc -l` → **1** à
@@ -360,6 +360,8 @@ d'un rejet de rapprochement, s'affichent désormais à l'heure de Zurich, quel q
 celles des autres écrans et comme les jours que filtre le journal d'audit ; sur un poste réglé sur la Suisse, rien ne change. Les dates que
 vous saisissez — l'expiration d'une clé du serveur MCP ou d'une clé d'API — restent telles que saisies ; à l'écran *Serveur MCP*, la création,
 le dernier usage et la révocation des clés et la modification des réglages restent pour l'instant à l'heure du poste. (refs #1511)
+
+*Prête pour le CHANGELOG (rubrique « Modifié » de la release 0.20.0), à assembler à l'intégration.*
 
 ## Dev Notes
 
@@ -471,7 +473,7 @@ Sonnet 5.5 (`bmad-dev-story`, autonomie), 2026-11-24. Journaux : `/home/gcorbaz/
 - **AC11** : spec `audit-log.spec.ts` (bloc `New York`), attendus calculés par `page.evaluate` ; rouge constaté ; **vert à constater** dans l'E2E complet (voir
   ci-dessous ; rien n'est affirmé avant que son journal tombe).
 - **AC12** : phrase du tableau fixée (« Le tableau affiche l'heure de Zurich, quel que soit le fuseau de votre poste. »), paragraphe de
-  `:790-796` complété (exception et limite) ; contrôles du texte aplati 1 → 0 et 0 → 1. Aucun PDF commité ; après `make fr` à la release :
+  `:790-799` complété (exception et limite) ; contrôles du texte aplati 1 → 0 et 0 → 1. Aucun PDF commité ; après `make fr` à la release :
   `pdftotext … | grep -o "heure de votre poste" | wc -l` → 0 (1 aujourd'hui).
 - **AC13** : recette visuelle faite (voir journaux), complétée à la revue P1 (R1-5). Bandeau par interception de route (V2-4). Les captures « après » à New York et à Zurich
   montrent la même heure (par exemple le bandeau : « 20 nov. 2026, 18:30 » avant, « 21 nov. 2026, 00:30 » après, aux deux fuseaux).
@@ -482,9 +484,17 @@ Sonnet 5.5 (`bmad-dev-story`, autonomie), 2026-11-24. Journaux : `/home/gcorbaz/
   (commentaire historique 0.17.2), `admin-manual.tex:3584` (expiration saisie), `crates/` (hors sujet), `CHANGELOG.md` (historique).
 - **Gate frontend complet**, commit `5671704ce` (journal `front-gate.log`) : `npm run check` 0 erreur, `lint-i18n-ownership` vert, `test:unit`
   **294 fichiers / 5098 tests verts**, `npm run build` vert.
-- **Gate Rust complet** (`scripts/test-fast.sh --ci`, base `kesh_e506`, verrous `station-heavy` puis `.gate.lock`) et **E2E complet** : **lancés,
-  en attente des verrous de la voie** (journaux `testfast.log`, `e2e-complet.log`, scripts `testfast.sh`, `e2e-complet.sh`) ; **non terminés à
-  l'écriture de cette ligne** — leurs résultats s'ajoutent ici, ligne par ligne, quand ils tombent.
+- **Gate Rust complet** (`scripts/test-fast.sh --ci`, base `kesh_e506`, verrous `station-heavy` puis `.gate.lock`), journal
+  `e506/testfast.log`, lancé au commit `5671704ce` (aucun fichier de `crates/` ne change dans la story, ni après) : **6475 / 6475 verts, 15
+  ignorés**, « Gate backend rapide vert ».
+- **E2E complet**, journal `e506/e2e-complet.log`, au commit `ccb027ee4` (dernier commit de code et de test ; base `kesh_e2e_e506` recréée,
+  `LANG=fr_CH.UTF-8`, backend de `e5654fc00`) : **511 passés, 19 ignorés, 7 échecs en 23,4 min**, jugés fichier par fichier contre
+  `docs/testing.md` § *Les échecs attendus* (KF-029, #97) : `mode-expert.spec.ts:26` et `:41` ; `onboarding-path-b.spec.ts:65` et `:92` ;
+  `onboarding.spec.ts:57`, `:77` et `:150` — **exactement les sept attendus, aucun autre, aucun échec de pollution**. L'E2E d'AC11
+  (`audit-log.spec.ts:163`, bloc New York) est **vert** (journal, ligne 24).
+- **Manuel compilé hors dépôt** (`e506/latex/`, copie de `docs/manual/`, `make fr/user-manual.pdf` : sortie 0, 3 passes, stable ;
+  `e506/manuel-pdf-compile.txt`) : PDF aplati, ancienne phrase « heure de votre poste » **0**, nouvelle « heure de Zurich, quel que soit le
+  fuseau de votre poste » **1**, « tous les instants à l'heure de Zurich » **1**. Aucun PDF dans le dépôt.
 - **Hors fiche, dit** : le backend de l'E2E et de la recette est le binaire de `epic/50-corrections` à `e5654fc00` (aucun code serveur ne change
   dans la story), copié dans `e506/bin/`, non reconstruit ; les scripts de recette sont dans `e506/recette-scripts/` (le dossier
   `frontend/.recette-e506/` du worktree est exclu par `.git/info/exclude`).
@@ -530,12 +540,18 @@ Sonnet 5.5 (`bmad-dev-story`, autonomie), 2026-11-24. Journaux : `/home/gcorbaz/
   morts, grep vide cité ; **V2-9** AC1 renvoie au dépôt d'un envoi et d'un prompt, prompts ajoutés.
 - **2026-11-24 — développement** (Sonnet 5.5, `bmad-dev-story`) : étape 0 rejouée et P1 établie (JSON réel) ; neuf LOW de la P2 traités à
   l'étape 0 ; tests rouges commités (`8c029046b`), correctif (`88d7afe18`), garde (`5d233d0f4`), manuel (`5671704ce`) ; mutations M1 à M4
-  rougies et restaurées ; recette visuelle faite ; gate frontend complet vert ; **gate Rust complet et E2E complet en attente des verrous
-  de la voie** — le statut passe à `review` quand ils sont verts (le prompt de la revue P1, Opus, est versionné à côté de la fiche).
+  rougies et restaurées ; recette visuelle faite ; gate frontend complet vert ; gate Rust et E2E complet verts depuis (voir Completion Notes).
 - **2026-11-24 — remédiation de la revue de code P1** (Sonnet 5.5 ; Opus : 0 CRITICAL / 0 HIGH / 1 MEDIUM / 5 LOW, rapport `e506/review-p1.md`),
   un seul commit, **aucun code de production** : **R1-1** (MEDIUM) fuseau épinglé à New York pour tout le fichier dans
   `audit-log-page.test.ts` et `UnrejectTransactionAction.test.ts` ; M1 rejouée (`mut-M1-bis.txt`) : AC5 et AC6 rougissent ; § Mutations et
   Dev Agent Record corrigés ; **R1-2** AC11 « vert à constater » tant que le journal de l'E2E n'est pas tombé ; **R1-3** journal cité
   `mut-M4.txt`, M4 dit variante en ligne ; **R1-4** angle mort `.getFullYear/.getMonth/.getDate/.getDay` écrit (garde et D3) ; **R1-5** captures 09
   (rejet de fin de soirée) et 10 (version décidée) ajoutées, base alignée (`kesh_e506b`) ; **R1-6** phrase de `user-manual.tex:790-799` en phrases
-  courtes (« Kesh affiche tous les instants à l'heure de Zurich… », deux exceptions nommées). Gate ciblé (vitest des deux fichiers) vert, `npm run check` vert (`check-r1.log`). Prompt de la passe ciblée P2 : `…-review-prompt-p2.md`.
+  courtes (« Kesh affiche tous les instants à l'heure de Zurich… », deux exceptions nommées). Gate ciblé (vitest des trois fichiers touchés : `audit-log-page`, `UnrejectTransactionAction`, `local-date-guard`, 54 tests) vert, `npm run check` vert (`check-r1.log`). Prompt de la passe ciblée P2 : `…-review-prompt-p2.md`.
+- **2026-11-24 — clôture** (Sonnet 5.5) : **Change Log final.** *Tendance des findings par passe* (CRITICAL/HIGH/MEDIUM/LOW) : validation P1 (Sonnet)
+  0/0/5/9 → validation P2 (Opus) 0/0/0/9 ; revue de code P1 (Opus) 0/0/1/5 → revue P2 ciblée (Sonnet, sur le seul commit `ccb027ee4`) 0/0/0/2 ;
+  la sévérité baisse à chaque passe, aucun recyclage (le signal de splitting n'est pas levé). *Modèles* : Sonnet, Opus, Opus, Sonnet — chaque
+  passe change de modèle, la première revue est complète (Opus), la seconde ciblée (Sonnet) car la remédiation ne touchait aucun code de
+  production. *Reclassements* : aucun finding reclassé en dette. Les deux LOW de la P2 (R2-1 plages `:790-799`, R2-2 « trois fichiers ») sont
+  corrigés à la clôture, sans passe de plus (fiche et journal seulement). Gates : frontend `5671704ce` (294 fichiers / 5098 tests), Rust
+  6475/6475 (15 ignorés), E2E complet 511 passés / 7 échecs = les sept KF-029. Statut `done`.
