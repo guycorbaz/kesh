@@ -150,3 +150,66 @@ test("un Consultation ne voit pas l'entrée de menu, et /audit-log le redirige",
 	await expect(page).toHaveURL('/');
 	await expect(page.getByTestId('homepage-card-open-invoices')).toBeVisible();
 });
+
+// Story 50-6 (#1511, AC11) — la date de la ligne est à l'heure de Zurich, quel que soit le fuseau
+// du navigateur. Le navigateur est réglé sur New York : avant la story, la cellule montrait l'heure
+// de New York (cinq ou six heures de moins), jamais celle de Zurich.
+//
+// ⛔ Les deux attendus sont calculés **dans le navigateur** (`page.evaluate`) : le corps d'un test
+// tourne dans Node, dont l'ICU pourrait différer de celui de Chromium, qui met la cellule en forme.
+test.describe('le fuseau du poste est celui de New York (50-6)', () => {
+	test.use({ timezoneId: 'America/New_York' });
+
+	test('la cellule de date égale l’heure de Zurich de createdAt, et diffère de celle de New York', async ({
+		page,
+	}) => {
+		await login(page);
+		const ctx = await authedApiContext(page);
+		let contactId: number;
+		let createdAt: string;
+		try {
+			const res = await ctx.post('/api/v1/contacts', {
+				data: {
+					contactType: 'Entreprise',
+					name: `Audit fuseau ${uniqSuffix()}`,
+					isClient: true,
+					isSupplier: false,
+					addressStructured: { street: '', building: '', postalCode: '', city: '', country: 'CH' },
+				},
+			});
+			expect(res.ok(), `création du contact : ${res.status()}`).toBeTruthy();
+			contactId = (await res.json()).id as number;
+			const lu = await ctx.get(`/api/v1/audit-log?entityType=contact&entityId=${contactId}`);
+			expect(lu.ok(), `lecture du journal : ${lu.status()}`).toBeTruthy();
+			const items = (await lu.json()).items as { action: string; createdAt: string }[];
+			const e = items.find((i) => i.action === 'contact.created');
+			expect(e, 'entrée contact.created').toBeDefined();
+			createdAt = e!.createdAt;
+		} finally {
+			await disposeContextSafe(ctx);
+		}
+		// Le serveur écrit un `Z` : l'instant est sans ambiguïté.
+		expect(createdAt).toMatch(/Z$/);
+
+		await page.goto(`/audit-log?entityType=contact&entityId=${contactId}`);
+		const cellule = page
+			.locator('[data-testid="audit-log-row"][data-action="contact.created"]')
+			.getByTestId('audit-log-row-date');
+		await expect(cellule).toHaveCount(1);
+
+		const formater = (zone: string) =>
+			page.evaluate(
+				([iso, timeZone]) =>
+					new Intl.DateTimeFormat('fr-CH', { dateStyle: 'medium', timeStyle: 'short', timeZone }).format(
+						new Date(iso),
+					),
+				[createdAt, zone] as const,
+			);
+		const zurich = await formater('Europe/Zurich');
+		const newYork = await formater('America/New_York');
+		// Garde-fou : le décalage de six heures (cinq ou six selon l'été) se voit.
+		expect(zurich).not.toBe(newYork);
+		await expect(cellule).toHaveText(zurich);
+		await expect(cellule).not.toHaveText(newYork);
+	});
+});

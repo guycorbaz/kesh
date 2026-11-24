@@ -45,6 +45,26 @@
  * pas relevé — une spec qui franchit minuit à Zurich entre deux lectures mêle deux jours,
  * comme le navigateur et le serveur, qui lisent aussi leur propre horloge : risque connu,
  * non fermé ici.
+ *
+ * Story 50-6 (#1511) — **les instants affichés** : deux motifs de plus, relevés **par ligne**, sans
+ * masque des commentaires, dans les sources hors tests (`estSource`), et une allowlist propre,
+ * `ALLOWLIST_INSTANTS` :
+ *
+ * - `MOTIF_FORMAT_D_INSTANT` : `DateTimeFormat(`, `toLocale(Date|Time)?String(`, `.getHours(`… — la mise
+ *   en forme d'un instant, qui lit le fuseau du poste dès qu'elle n'en nomme pas un ;
+ * - `MOTIF_LECTURE_D_INSTANT` : `new Date(x)`, `new globalThis.Date(x)`, `Date.parse(` — la lecture d'un
+ *   instant. N'attrapent **pas** `new Date()` (l'instant courant, sans argument) ni `new Date(Date.UTC(…))` :
+ *   ces lignes n'ont pas d'entrée.
+ *
+ * Une entrée est `{ fichier, fragment, motif, lignes? }` ; `lignes` (défaut 1) est le nombre de lignes
+ * **identiques** qu'elle couvre (`premier-exercice.ts`, deux fois `const d = new Date(2000, 0, 1);`). Le
+ * format d'un instant passe par `formatInstant` (`reports.api.ts`), à l'heure de Zurich. **Angles morts
+ * assumés** : un alias (`const F = Intl.DateTimeFormat; new F(…)`, `const D = Date; new D(x)`), un jeton
+ * coupé (`Intl.DateTime\nFormat(`), `Reflect.construct(Date, [x])`, `Temporal`, `new window.Date(x)`,
+ * `new self.Date(x)`, `new Date (x)`, une date construite dans un autre module et passée à un formateur
+ * légitime ; deux lectures sur une même ligne ne font qu'un relevé (la ligne rougit quand même si elle
+ * n'est pas admise). Sont attrapés et sondés : l'appel sur plusieurs lignes (le jeton `DateTimeFormat(`
+ * est sur la première) et `new globalThis.Date(x)`.
  */
 import { describe, expect, it } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
@@ -65,6 +85,8 @@ interface Entree {
 	fichier: string;
 	fragment: string;
 	motif: string;
+	/** Le nombre de lignes identiques que l'entrée couvre (défaut 1). */
+	lignes?: number;
 }
 
 /**
@@ -150,10 +172,15 @@ function auditer(releves: Releve[], allowlist: Entree[], exact = false): string[
 		}
 	}
 	for (const [e, rs] of usages) {
+		const attendu = e.lignes ?? 1;
 		if (rs.length === 0) erreurs.push(`entrée orpheline : ${e.fichier} — ${e.fragment}`);
-		if (rs.length > 1) {
+		else if (rs.length > attendu) {
 			erreurs.push(
 				`fragment à plusieurs lignes : ${e.fichier} — ${e.fragment} (lignes ${rs.map((r) => r.ligne).join(', ')})`,
+			);
+		} else if (rs.length < attendu) {
+			erreurs.push(
+				`entrée de ${attendu} lignes relevée ${rs.length} fois : ${e.fichier} — ${e.fragment}`,
 			);
 		}
 	}
@@ -405,6 +432,198 @@ describe('garde des dates du jour des specs E2E (#929, Story 35-5c)', () => {
 		const s = new Map([['neuf.spec.ts', 'const t = new Date();']]);
 		expect(auditer(releverSpecs(s), [])).toEqual([
 			expect.stringContaining('relevé sans entrée : neuf.spec.ts:1'),
+		]);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Story 50-6 (#1511) — les instants affichés
+// ---------------------------------------------------------------------------
+
+const MOTIF_FORMAT_D_INSTANT =
+	/DateTimeFormat\(|toLocale(Date|Time)?String\(|\.get(Hours|Minutes|Seconds|TimezoneOffset)\(/;
+const MOTIF_LECTURE_D_INSTANT = /new (?:globalThis\.)?Date\((?!\)|Date\.UTC\()|Date\.parse\(/;
+
+/** Les lignes qui portent l'un des deux motifs d'instant, dans `sources` (`chemin → texte`). */
+function releverInstants(sources: Map<string, string>): Releve[] {
+	const out: Releve[] = [];
+	for (const [fichier, texte] of sources) {
+		texte.split('\n').forEach((l, i) => {
+			if (MOTIF_FORMAT_D_INSTANT.test(l) || MOTIF_LECTURE_D_INSTANT.test(l)) {
+				out.push({ fichier, ligne: i + 1, texte: l });
+			}
+		});
+	}
+	return out;
+}
+
+/**
+ * Les sites admis (fiche 50-6, D3) : un instant qui n'est pas à afficher à Zurich, une date saisie ou
+ * pure, un test de validité, un commentaire, ou le module de référence lui-même. Une entrée par ligne
+ * relevée, sauf `premier-exercice.ts` (une entrée à `lignes: 2`).
+ */
+const ALLOWLIST_INSTANTS: Entree[] = [
+	{
+		fichier: 'routes/(app)/settings/api-keys/+page.svelte',
+		fragment: 'return new Date(utc).getTime() < Date.now();',
+		motif: 'comparaison d’instants (`Z` ajouté), indépendante du fuseau ; copie de lecture, I1',
+	},
+	{
+		fichier: 'routes/(app)/users/+page.svelte',
+		fragment: '`new Date(iso)` le',
+		motif: 'commentaire',
+	},
+	{
+		fichier: 'routes/(app)/users/+page.svelte',
+		fragment: "if (isNaN(new Date(iso).getTime())) return '—';",
+		motif: 'test de validité seul ; l’affichage passe par formatSwissDate',
+	},
+	{
+		fichier: 'lib/features/journal-entries/form-helpers.ts',
+		fragment: 'const d = new Date(`${iso}T00:00:00Z`);',
+		motif: 'date pure, `Z` littéral : arithmétique UTC',
+	},
+	{
+		fichier: 'lib/features/onboarding/premier-exercice.ts',
+		fragment: 'const d = new Date(2000, 0, 1);',
+		motif: 'composants d’une date du poste (saisie) — deux lignes identiques',
+		lignes: 2,
+	},
+	{
+		fichier: 'lib/features/reports/reports.api.ts',
+		fragment: 'const ZURICH_PARTS = new Intl.DateTimeFormat(',
+		motif: "module de référence : `timeZone: 'Europe/Zurich'`",
+	},
+	{
+		fichier: 'lib/features/reports/reports.api.ts',
+		fragment: 'const ms = Date.parse(',
+		motif: 'module de référence : « naïf = UTC », décalage honoré',
+	},
+	{
+		fichier: 'lib/features/reports/reports.api.ts',
+		fragment: 'ZURICH_PARTS.formatToParts(new Date(ms))',
+		motif: 'module de référence : composants à Zurich',
+	},
+	{
+		fichier: 'lib/features/invoices/invoice-helpers.ts',
+		fragment: '`new Date(iso)` local qui décale',
+		motif: 'commentaire',
+	},
+	{
+		fichier: 'lib/features/mcp-server/mcp-time.ts',
+		fragment: 'const d = new Date(AVEC_FUSEAU.test(texte)',
+		motif: 'lecture « naïf = UTC » (copie) ; écran Serveur MCP, hors périmètre — I2',
+	},
+	{
+		fichier: 'lib/features/mcp-server/mcp-time.ts',
+		fragment: "{ dateStyle: 'short', timeStyle: 'short' }",
+		motif: 'instants de l’écran Serveur MCP au fuseau du poste — limite de D0, I2',
+	},
+	{
+		fichier: 'lib/features/mcp-server/mcp-time.ts',
+		fragment: "{ day: '2-digit', month: '2-digit', year: 'numeric' }",
+		motif: 'expiration (date saisie, exception de D0) et révocation (instant, I2)',
+	},
+	{
+		fichier: 'lib/features/mcp-server/mcp-time.ts',
+		fragment: 'const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 23, 59, 59, 999);',
+		motif: 'fin de journée locale de l’expiration saisie',
+	},
+	{
+		fichier: 'lib/features/mcp-server/mcp-time.ts',
+		fragment: 'const d = new Date(maintenant.getFullYear()',
+		motif: 'lendemain local : borne de saisie',
+	},
+	{
+		fichier: 'lib/features/homepage/homepage-charts.ts',
+		fragment: "{ month: 'short', timeZone: 'UTC' }",
+		motif: "`timeZone: 'UTC'` sur un mois",
+	},
+	{
+		fichier: 'lib/features/homepage/homepage-charts.ts',
+		fragment: "{ month: 'short', year: 'numeric', timeZone: 'UTC' }",
+		motif: "`timeZone: 'UTC'` sur un mois",
+	},
+	{
+		fichier: 'lib/features/exchange-rates/exchange-rates-grid.ts',
+		fragment: "{ month: 'short', year: 'numeric', timeZone: 'UTC' }",
+		motif: "`timeZone: 'UTC'` sur un mois",
+	},
+	{
+		fichier: 'lib/features/exchange-rates/exchange-rates-grid.ts',
+		fragment: "{ month: 'long', year: 'numeric', timeZone: 'UTC' }",
+		motif: "`timeZone: 'UTC'` sur un mois",
+	},
+	{
+		fichier: 'lib/features/fiscal-years/fiscal-years.helpers.ts',
+		fragment: 'const start = new Date(input.startDate);',
+		motif: 'dates pures comparées : l’ordre seul',
+	},
+	{
+		fichier: 'lib/features/fiscal-years/fiscal-years.helpers.ts',
+		fragment: 'const end = new Date(input.endDate);',
+		motif: 'dates pures comparées : l’ordre seul',
+	},
+	{
+		fichier: 'lib/shared/utils/local-date.ts',
+		fragment: "const JOUR_DE_ZURICH = new Intl.DateTimeFormat('en-CA', {",
+		motif: "`timeZone: 'Europe/Zurich'` (le jour de Zurich)",
+	},
+];
+
+describe('garde des instants affichés (#1511, Story 50-6)', () => {
+	it('les sources ne portent que les sites de ALLOWLIST_INSTANTS', () => {
+		const sources = lireSources();
+		expect(sources.size).toBeGreaterThan(100);
+		expect(auditer(releverInstants(sources), ALLOWLIST_INSTANTS)).toEqual([]);
+	});
+
+	const releves = (texte: string) => releverInstants(new Map([['x.ts', texte]]));
+
+	it('sonde : les lignes d’avant la story sont relevées, sans entrée (mutation M4)', () => {
+		for (const l of [
+			'<td class="py-2">{dateFormat.format(new Date(e.createdAt))}</td>',
+			"const f = new Intl.DateTimeFormat(i18nLocale(), { dateStyle: 'medium' });",
+			'const date = new Date(iso);',
+			'new globalThis.Date(x)',
+			'const ms = Date.parse(s);',
+			'const h = d.getHours();',
+			'const t = d.toLocaleString();',
+		]) {
+			expect(releves(l), l).toHaveLength(1);
+			expect(auditer(releves(l), []), l).toEqual([expect.stringContaining('relevé sans entrée')]);
+		}
+	});
+
+	it('sonde : une forme sur plusieurs lignes est relevée à sa première', () => {
+		const multiligne = 'const f = new Intl.DateTimeFormat(\n\tlocale,\n\t{ dateStyle: "medium" },\n);';
+		expect(releves(multiligne).map((r) => r.ligne)).toEqual([1]);
+	});
+
+	it('sonde : l’instant courant et la date pure ne sont pas relevés', () => {
+		expect(releves('const n = new Date();')).toEqual([]);
+		expect(releves('const d = new Date(Date.UTC(2026, 0, 1 + n));')).toEqual([]);
+		expect(releves('const n = Date.now();')).toEqual([]);
+	});
+
+	it('sonde : les lignes identiques de premier-exercice.ts sont comptées (lignes: 2)', () => {
+		const ligne = 'const d = new Date(2000, 0, 1);';
+		const chemin = 'lib/features/onboarding/premier-exercice.ts';
+		const entree = ALLOWLIST_INSTANTS.filter((e) => e.fichier === chemin);
+		expect(entree).toHaveLength(1);
+		const avec = (n: number) => new Map([[chemin, Array(n).fill(`\t${ligne}`).join('\n')]]);
+		expect(auditer(releverInstants(avec(2)), entree)).toEqual([]);
+		expect(auditer(releverInstants(avec(3)), entree)).toEqual([
+			expect.stringContaining('fragment à plusieurs lignes'),
+		]);
+		expect(auditer(releverInstants(avec(1)), entree)).toEqual([
+			expect.stringContaining('entrée de 2 lignes relevée 1 fois'),
+		]);
+	});
+
+	it('sonde : une entrée orpheline rougit', () => {
+		expect(auditer(releverInstants(new Map()), ALLOWLIST_INSTANTS.slice(0, 1))).toEqual([
+			expect.stringContaining('entrée orpheline'),
 		]);
 	});
 });

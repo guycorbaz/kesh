@@ -48,6 +48,7 @@ vi.mock('$lib/features/audit-log/audit-log.api', () => ({
 
 import Page from './+page.svelte';
 import { authState } from '$lib/app/stores/auth.svelte';
+import { pinTimeZone } from '$lib/shared/utils/pin-time-zone.test-helper';
 
 /** Le vocabulaire, rendu dans l'ORDRE DES CODES comme la route le rend. */
 const VOCAB: AuditLogVocabulary = {
@@ -346,5 +347,39 @@ describe('revue P1', () => {
 		render(Page);
 		await waitFor(() => expect(listMock).toHaveBeenCalled());
 		expect((listMock.mock.calls[0][0] as Record<string, unknown>).dateFrom).toBeUndefined();
+	});
+});
+
+// Story 50-6 (#1511, AC5, AC9) — la date de la cellule est celle de Zurich, quel que soit le fuseau
+// du poste. Piège du `$derived` : le composant se monte APRÈS l'épinglage du fuseau (`beforeEach`
+// de `pinTimeZone`), d'où le `render` dans le test.
+describe('la date de la cellule (50-6)', () => {
+	describe('poste à America/New_York', () => {
+		pinTimeZone('America/New_York');
+
+		it('AC5 : « 25 nov. 2026, 00:30 », non 18:30 (mutation M4 : `Intl` sans `timeZone`)', async () => {
+			listMock.mockResolvedValue(page1([entry({ createdAt: '2026-11-24T23:30:00.000Z' })]));
+			const { findByTestId } = render(Page);
+			const cell = await findByTestId('audit-log-row-date');
+			expect(cell.textContent?.trim()).toBe('25 nov. 2026, 00:30');
+		});
+
+		it('AC4/AC5 : une date illisible rend la valeur brute, sans exception (V2-5)', async () => {
+			listMock.mockResolvedValue(page1([entry({ createdAt: 'illisible' })]));
+			const { findByTestId } = render(Page);
+			const cell = await findByTestId('audit-log-row-date');
+			expect(cell.textContent?.trim()).toBe('illisible');
+		});
+	});
+
+	describe('poste à Europe/Zurich (AC9 : filet, vert avant et après)', () => {
+		pinTimeZone('Europe/Zurich');
+
+		it('rend ce qu’elle rendait', async () => {
+			listMock.mockResolvedValue(page1([entry({ createdAt: '2026-11-24T23:30:00.000Z' })]));
+			const { findByTestId } = render(Page);
+			const cell = await findByTestId('audit-log-row-date');
+			expect(cell.textContent?.trim()).toBe('25 nov. 2026, 00:30');
+		});
 	});
 });
