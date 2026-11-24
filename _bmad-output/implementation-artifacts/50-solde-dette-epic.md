@@ -1,6 +1,6 @@
 # Story 50-solde : Solde de la dette de l'Epic 50 — une seule règle de levée d'un refus de doublon (#1492)
 
-Status: ready-for-dev — fiche écrite le 2026-11-24, réduite le même jour au lot B (#1492) par deux décisions du Project Lead ; validations P1 (Sonnet, 0/0/1/11), P2 (Opus, 0/0/1/6) et P3 (Sonnet, 0/0/2/3) ; **validation terminée** : la P3 ne rend aucun finding au-dessus de LOW sur le lot B, et sa seule remédiation (V3-3) est textuelle et locale (Change Log).
+Status: review — développée le 2026-11-24 (Sonnet 5.5, `bmad-dev-story`), gate complet vert au commit `88905d0ff` (Dev Agent Record) ; fiche écrite le 2026-11-24, réduite le même jour au lot B (#1492) par deux décisions du Project Lead ; validations P1 (Sonnet, 0/0/1/11), P2 (Opus, 0/0/1/6) et P3 (Sonnet, 0/0/2/3) ; **validation terminée** : la P3 ne rend aucun finding au-dessus de LOW sur le lot B, et sa seule remédiation (V3-3) est textuelle et locale (Change Log).
 
 *Fiche rédigée le 2026-11-24 (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-50-solde`, branche `story/50-solde-dette-epic`, partie de
 `origin/epic/50-corrections` à **`48a66ca24`**. **Tout le code cité est lu à `48a66ca24`.** Release visée : **0.20.0**, vendredi 2026-11-27
@@ -284,11 +284,101 @@ impose le gate complet.
 
 ### Agent Model Used
 
+Sonnet 5.5 (`claude-sonnet-5-5`), en autonomie, le 2026-11-24 ; worktree `/home/gcorbaz/devel/kesh-50-solde`, branche
+`story/50-solde-dette-epic`, partie de `epic/50-corrections` à `48a66ca24` (non reprise : l'orchestrateur fusionnera). Bases
+`kesh_e50solde`, `kesh_e2e_e50solde` (créée, non utilisée : pas d'E2E), `kesh_ci_e50solde`. Aucun droit MariaDB accordé.
+
 ### Debug Log References
+
+Journaux sous `/home/gcorbaz/devel/kesh-gate-logs/e50solde/dev/` : `inv-etape0.txt` (inventaire par le symptôme), `rouge-ac1-ac2.log`
+(rouge), `clippy-1.log`, `vert-cible.log` (gate ciblé), `mut-b1.log` / `mut-b2.log` / `mut-b3.log` (assertions qui échouent) avec
+`mut-bN.full.log` (sortie nextest entière, diff restauré) et `mut-bN.diff.txt` (la mutation), `test-fast-ci.log`, `gate-ci.log` et
+`gate-ci-journal.log`. Alerte de file d'attente : `/home/gcorbaz/devel/kesh-gate-logs/e50solde/alerte.md`.
 
 ### Completion Notes List
 
+**Étape 0** (à `02cb59a1d`, la base de la branche est restée `48a66ca24` : `git fetch` n'a rien fait bouger d'`epic/50-corrections`).
+Lignes relues au code, identiques à la fiche :
+- `supplier_invoices.rs:658-664` : `let liftable = match (finding.rule, gesture) { (DuplicateRule::SameNumberSameYear, DuplicateGesture::Entry) => false, (DuplicateRule::SameDateSameTotal, _) | (_, DuplicateGesture::Unvalidation) => true, };` puis `if liftable && policy == DuplicatePolicy::Confirmed {`.
+- `kesh-api/src/errors.rs:6260` : `let confirmable = probable || gesture == DuplicateGesture::Unvalidation;`.
+- `kesh-api/src/errors.rs:5583-5598` : les deux bras passent `false` puis `true`.
+Inventaire régénéré par les commandes de `inv-1492.txt` : même ensemble de sites, aucun site neuf (`inv-etape0.txt`).
+
+**Livré** (D-B1, D-B2, D-B3) :
+- `DuplicateRule::lifted_by_confirmation(self, gesture) -> bool` (`kesh-db`, `supplier_invoices.rs`), le `match` de `:658-661` repris tel
+  quel, exhaustif sur le couple, doc-comment de la table à quatre cases ; `guard_duplicates_in_tx` l'appelle (l'import local de
+  `DuplicateGesture`, devenu inutile, est retiré).
+- `supplier_invoice_duplicate_response(existing, gesture, rule)` (`kesh-api/src/errors.rs`) : le code se déduit de la règle par un seul
+  `match rule`, `confirmable = rule.lifted_by_confirmation(gesture)`, le message se choisit sur `(gesture, rule)` ; les deux bras ne
+  passent plus que la règle.
+- Doc-comments et commentaires de D-B3 renvoyant à la source : `kesh-db/src/errors.rs` (`DuplicateGesture`, ses deux variantes,
+  `SupplierInvoiceDuplicate`, `SupplierInvoiceProbableDuplicate`), `supplier_invoices.rs` (`DuplicatePolicy`, `unvalidate`, le commentaire
+  « 6 bis »), `kesh-api/src/errors.rs` (commentaire des bras, doc-comment de la fonction), `routes/supplier_invoices.rs` (quatre sites).
+  Les doc-comments qui décrivent les **textes** (`…_UNVALIDATE_FR`, « pour les deux règles ») ne décident rien et sont restés.
+- Tests neufs : quatre purs `lifted_regle{1,2}_{saisie,devalidation}` (AC-1) ; quatre `#[tokio::test]`
+  `duplicate_response_regle{1,2}_{saisie,devalidation}` (AC-2), assertions dans l'ordre imposé code, relue, littérale, texte.
+
+**Rouge** (`rouge-ac1-ac2.log`, commit `cf8c2c01a`) : la méthode n'existant pas, les tests ne compilent pas (`error[E0599]: no method named
+lifted_by_confirmation` × 8 : quatre dans `kesh-api/src/errors.rs`, quatre dans `kesh-db/.../supplier_invoices.rs`). C'est la preuve
+annoncée au tableau de la fiche (AC-1 : « les tests ne compilent pas avant la méthode » ; AC-2 : filet qui ne rougit pas sur l'ancien
+code, rougit sous M-B1 à M-B3). Le rouge s'est pris par `cargo test --no-run` (compilation seule, sans verrou), la file des gates
+des autres agents ayant retenu la prise plus de 25 minutes ; le gate ciblé vert a ensuite tourné sous verrou.
+
+**Vert ciblé** (`vert-cible.log`) : `cargo nextest run -E 'binary(supplier_invoice_duplicate_e2e) | binary(supplier_invoice_duplicate) | binary(supplier_invoice_duplicate_lock) | (package(kesh-api) & kind(lib)) | (package(kesh-db) & kind(lib))'` sur `kesh_e50solde` : **1259 tests, 1259 passés, 5 ignorés** ; `cargo fmt --all` sans reste, `cargo clippy --workspace --all-targets -- -D warnings` vert (`clippy-1.log`).
+
+**Mutations** (`run-mut.sh` du scratchpad : `mut.py` applique, nextest rejoue `test(lifted_regle) | test(duplicate_response_regle) | binary(supplier_invoice_duplicate_e2e) | binary(supplier_invoice_duplicate)` en `--no-fail-fast`, `git checkout -- <fichier>` puis `touch`, `git diff` compté : **0 ligne après chacune**). Assertion qui échoue, comparée à l'attendu de la fiche :
+
+| Mutation | Test | Assertion qui échoue (journal) | Attendu de la fiche |
+|---|---|---|---|
+| **M-B1** (règle 1, `Entry` → `true`) — 27 tests, 22 passés, 5 échoués | `kesh-db …::tests::lifted_regle1_saisie` | `supplier_invoices.rs:3923:9`, « table (règle 1, Entry) » | conforme |
+| | `kesh-api errors::tests::duplicate_response_regle1_saisie` | `errors.rs:6660:9`, « littérale (règle 1, Entry) », `left: Bool(true)`, `right: false` ; « code » et « relue » antérieures passées | **conforme (une table)** : littérale, non « relue » |
+| | les trois autres `duplicate_response_*` | PASS | conforme |
+| | e2e `create_twice_is_refused_with_details_and_message` | `supplier_invoice_duplicate_e2e.rs:232:9`, `left` portant `"confirmable": Bool(true)`, `right` `false` ; `:231` passée | conforme (`:232`, première itération) |
+| | `kesh-db::supplier_invoice_duplicate rule_1_same_number_same_year_is_refused_without_exit` et `update_replays_the_rule_only_when_one_of_the_four_changes` | `supplier_invoice_duplicate.rs:238:10` (message `" FA2026-1\u{200b}": SupplierInvoiceWithLines { … }`, l'opération a réussi) et `:777:10` (« doublon préexistant, date changée: SupplierInvoiceWithLines … ») | conforme : paniquent aussi, hors discrimination ; lignes `:238` et `:777` (l'`expect` de l'itération `CONFIRMED`, non les lignes `:222`/`:762` de la boucle) |
+| **M-B2** (règle 2, `Unvalidation` → `false`) — 27 tests, 24 passés, 3 échoués | `kesh-db …::tests::lifted_regle2_devalidation` | `supplier_invoices.rs:3955:9`, « table (règle 2, Unvalidation) » | conforme |
+| | `kesh-api errors::tests::duplicate_response_regle2_devalidation` | `errors.rs:6745:9`, « littérale (règle 2, Unvalidation) », `left: Bool(false)`, `right: true` | **conforme (une table)** |
+| | `kesh-db::supplier_invoice_duplicate unvalidation_rule_2_other_cancelled_and_validated_invoices` | `supplier_invoice_duplicate.rs:1141:10`, `confirmé: SupplierInvoiceProbableDuplicate { existing: ExistingSupplierInvoice { id: 2, … }, gesture: Unvalidation }` (la ligne exacte est `:1141`) ; `:1136` passée | conforme |
+| **M-B3** (règles des deux bras échangées) — 27 tests, 17 passés, 10 échoués | les **quatre** `duplicate_response_*` | chacun à son assertion « code (règle N, geste) » : `errors.rs:6651:9` (règle 1, Entry), `:6679:9` (règle 2, Entry), `:6707:9` (règle 1, Unvalidation), `:6736:9` (règle 2, Unvalidation) ; le code reçu est l'autre | conforme |
+| | **écart à la fiche, non attendu** : six tests de `supplier_invoice_duplicate_e2e` rougissent aussi (`create_twice_is_refused_with_details_and_message` à `:231`, `completion_refuses_a_duplicate_and_keeps_the_document` `:365`, `put_and_api_key_paths_apply_the_rule` `:302`, `completion_route_waits_for_the_supplier_then_refuses` `:559`, `put_route_takes_the_supplier_lock_before_reading_the_document` `:525`, `unvalidation_of_a_cancelled_duplicate_by_api_key` `:418`) | la fiche ne listait que les quatre tests unitaires pour M-B3 ; les e2e voient le code échangé, comme il se doit | écart déclaré, sans conséquence : plus de rouges, non moins |
+
+**Ce qui est tenu, ce qui ne l'est pas.** Les deux « relues » sont tenues par la mutation M-B1/M-B2 (elles ne rougissent pas : la
+relue suit la table mutée, c'est la littérale qui tombe — la lecture « une seule table » de la fiche) ; si `kesh-api` gardait sa
+propre table, c'est la « relue » qui tomberait, ce que l'ordre des assertions fait lire. Le choix variante → règle de chaque bras reste tenu
+par M-B3 et par l'AC-2, non par le typage (limite déclarée à D-B2).
+
+**AC** :
+- **AC-1, AC-2** : 8 tests neufs verts (`vert-cible.log` : `kesh-db …::lifted_regle{1,2}_{devalidation,saisie}`, `kesh-api errors::tests::duplicate_response_regle…`).
+- **AC-3** : `git grep -nE "let liftable|probable \|\||gesture == DuplicateGesture::Unvalidation" -- 'crates/*/src/*'` : **vide**.
+  `git grep -nw lifted_by_confirmation -- 'crates/*/src/*'` : la définition (`supplier_invoices.rs:517`), son appel dans
+  `guard_duplicates_in_tx` (`:679`), son appel dans `supplier_invoice_duplicate_response` (`errors.rs:6265`), les huit appels des tests
+  (`errors.rs:6657, 6685, 6713, 6742` ; `supplier_invoices.rs:3925, 3935, 3945, 3955`) et les doc-comments de D-B3
+  (`errors.rs:5581, 6248` ; `routes/supplier_invoices.rs:353, 672, 751, 959` ; `kesh-db/errors.rs:575, 581, 585, 1900, 1912` ; `supplier_invoices.rs:461, 1586, 1891`) — rien d'autre.
+- **AC-4** : `git diff 48a66ca24...HEAD --stat -- crates/kesh-db/tests/supplier_invoice_duplicate.rs crates/kesh-db/tests/supplier_invoice_duplicate_lock.rs crates/kesh-api/tests/supplier_invoice_duplicate_e2e.rs` : **vide** ; les trois binaires passent (`vert-cible.log`, `test-fast-ci.log`, `gate-ci-journal.log`).
+- **AC-5** : `git diff 48a66ca24...HEAD --stat -- crates/kesh-qrbill crates/kesh-report crates/kesh-core crates/kesh-db/migrations frontend crates/kesh-i18n` : **vide** ; `git diff 48a66ca24...HEAD -- crates/kesh-db | grep -E '^[+-].*(SELECT|UPDATE|INSERT|DELETE)'` : **vide**.
+- **AC-6** : gates ci-dessous ; **l'E2E complet n'a pas tourné** (consigne : il tourne à la clôture, après la revue).
+- Contrôle des mots-clés de fermeture contre `origin/epic/50-corrections` : vide.
+
+**Gates réellement exécutés**, au dernier commit de code `88905d0ff`, bases remises à neuf (`kesh_e50solde` supprimée, recréée, 95 migrations par `sqlx migrate run`, seed) :
+- `scripts/test-fast.sh --ci` (fmt, clippy `-D warnings`, nextest profil `ci`) : **6270 tests, 6270 passés, 15 ignorés, 388,5 s, vert** (`test-fast-ci.log`).
+- `scripts/gate-ci.sh kesh_ci_e50solde` : **6289 passés, 0 échoués, 19 ignorés, code 0** (`gate-ci.log`, `gate-ci-journal.log`).
+- Frontend : aucun fichier touché (AC-5), ses contrôles n'ont pas tourné ; **recette visuelle** : aucun contrôle visible n'est modifié, pas de capture.
+
+**Limites et écarts déclarés** : (1) une édition de test a d'abord été faite par un script Python, aussitôt annulée (`git checkout`) et
+refaite par l'outil Edit, conformément à l'interdit ; seuls `mut.py` et `run-mut.sh` (mutations, hors dépôt) emploient un script ;
+(2) la file des verrous de la voie base a retenu les trois commandes lourdes (ciblé, mutations, gates) de 25 à 45 minutes chacune ;
+(3) un `pkill -f` malvenu a été tapé dans une commande et **refusé** par le garde-fou avant exécution : aucun processus tué, aucune
+conséquence ; (4) M-B3 rougit six e2e de plus que la fiche ne l'annonce (tableau ci-dessus) ; (5) `kesh_e2e_e50solde` a été créée et
+laissée vide (aucun droit à retirer : `kesh%`.* est déjà accordé par `01-dev-grants.sql`).
+
+**Statut à poser dans `sprint-status.yaml`** (par l'orchestrateur) : `50-solde-dette-epic: review`.
+
 ### File List
+
+- `crates/kesh-db/src/repositories/supplier_invoices.rs` — `DuplicateRule::lifted_by_confirmation`, appel dans `guard_duplicates_in_tx`, doc-comments, quatre tests AC-1.
+- `crates/kesh-db/src/errors.rs` — doc-comments (`DuplicateGesture`, `SupplierInvoiceDuplicate`, `SupplierInvoiceProbableDuplicate`).
+- `crates/kesh-api/src/errors.rs` — `supplier_invoice_duplicate_response(existing, gesture, rule)`, les deux bras, doc-comments, quatre tests AC-2.
+- `crates/kesh-api/src/routes/supplier_invoices.rs` — commentaires (D-B3).
+- `_bmad-output/implementation-artifacts/50-solde-dette-epic.md` (cette fiche), `50-solde-dette-epic-review-prompt-p1.md`.
 
 ## Change Log
 
@@ -360,3 +450,8 @@ impose le gate complet.
   **Validation terminée** : la dernière passe ne rend aucun finding au-dessus de LOW pour ce qui reste dans la story (`CLAUDE.md`
   § *Review Iteration Rule*) ; **`Status: ready-for-dev`**. Statut à poser par l'orchestrateur dans `sprint-status.yaml` :
   `50-solde-dette-epic: ready-for-dev`.
+- **2026-11-24 — développement** (Sonnet 5.5, `bmad-dev-story`, en autonomie) : rouge `cf8c2c01a` (huit tests, non-compilation E0599),
+  code `88905d0ff` (D-B1, D-B2, D-B3), mutations M-B1 à M-B3 rejouées (assertions comparées à l'attendu, Dev Agent Record ; écart : M-B3
+  rougit six e2e de plus que la fiche), gate complet vert (`test-fast.sh --ci` 6270/6270, `gate-ci.sh` 6289 passés, 0 échoué).
+  Aucune décision de la fiche modifiée, aucun test existant touché. **`Status: review`** ; revue de code P1 non lancée (prompt :
+  `50-solde-dette-epic-review-prompt-p1.md`). E2E complet à la clôture.
