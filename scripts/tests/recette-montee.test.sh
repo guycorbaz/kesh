@@ -208,6 +208,8 @@ case "$methode /$chemin" in
     case "$chemin" in */credit-notes/*) num=AV-$n ;; *) num=FAC-$n ;; esac
     reponse=$(corps_pdf "/$chemin" "$num")
     if [ "${PDF_PAS_PDF:-non}" = oui ]; then reponse='{"error":{"code":"PAS_UN_PDF"}}'
+    # Revue P3 : après le regel, F8 sert un 200 qui n'est pas un PDF (S8d).
+    elif [ "${REGEL_PAS_PDF:-non}" = oui ] && [ "$num" = FAC-8 ] && [ -f "$FX/regel-fait" ]; then reponse='{"error":{"code":"PAS_UN_PDF"}}'
     elif [ "$n" = 8 ] && [ "$num" = FAC-8 ] && [ -f "$FX/up-binaire" ] && ! binaire_import && [ ! -f "$FX/regel-fait" ]; then
       code=410; reponse="{\"error\":{\"code\":\"${CODE_410:-INVOICE_PDF_GONE}\"}}"
     elif [ "${PAIRES_EN_MOINS:-0}" = 1 ] && [ "$num" = AV-1 ] && [ -f "$FX/up-binaire" ]; then
@@ -232,6 +234,8 @@ case "$methode /$chemin" in
       [ "${ECART_LONGUEUR:-}" != api ] || reponse=$(printf '%s' "$reponse" | jq -c '.lines += [{"description":"Ajoutee"}]')
       [ "${ECART_CLE:-}" != api ] || reponse=$(printf '%s' "$reponse" | jq -c 'del(.paidAt)')
       [ "${ECART_VIDE:-}" != api ] || reponse=$(printf '%s' "$reponse" | jq -c '.vatBreakdown = null')
+      # Revue P3 (E-P3-3) : une valeur d'avant de `api` changée sous le seul binaire de l'import.
+      if [ "${ECART_IMPORT:-}" = api ] && binaire_import; then reponse=$(printf '%s' "$reponse" | jq -c '.status = "importé"'); fi
     fi ;;
   "GET /api/v1/credit-notes/"[0-9]*)
     n=${chemin##*/}
@@ -291,10 +295,12 @@ cat > "$FX/mutool" <<'FACTICE'
 FX="$(dirname "$0")"
 . "$FX/conf"
 printf 'ARGV %s\n' "$*" >> "$FX/mutool.log"
-fmt="" f=""
+fmt="" f="" page=""
 prec=""
 for a in "$@"; do
   [ "$prec" != -F ] || fmt=$a
+  # Revue P3 (E-P3-1) : le numéro de page, qui suit le fichier.
+  case "$prec" in *.pdf) page=$a ;; esac
   case "$a" in *.pdf) f=$a ;; esac
   prec=$a
 done
@@ -320,10 +326,14 @@ case "${1:-}" in
       pnm)
         # Une trame vide, code 0 : deux empreintes de rien seraient égales (S6c).
         [ "${TRAME_VIDE:-non}" != oui ] || exit 0
-        printf 'P6 trame '; cat "$f"
+        printf 'P6 trame page %s ' "$page"; cat "$f"
         # Une autre trame pour F4 rendue par le binaire neuf : le texte, lui, reste égal.
         if [ "${RENDU_ECART:-non}" = oui ] && /usr/bin/grep -q 'invoices/4/' "$f"; then
           case "$f" in */apres-*) echo "pixel different" ;; esac
+        fi
+        # Revue P3 (E-P3-1) : la seule page 2 de F4 diffère au rendu.
+        if [ "${RENDU_ECART_P2:-non}" = oui ] && [ "$page" = 2 ] && /usr/bin/grep -q 'invoices/4/' "$f"; then
+          case "$f" in */apres-*) echo "pixel different en page 2" ;; esac
         fi ;;
       *) exit 2 ;;
     esac
@@ -556,6 +566,9 @@ for p in "phase 1" "phase 2" "phase 3" "phase 4" "phase 5" "phase 6"; do sortie_
 ordre=$(/usr/bin/grep -oE '▶ phase [1-6]' "$FX/sortie" | tr -d '▶ phase' | tr -d '\n')
 [ "$ordre" = 123456 ] && ok "dans l'ordre" || fail "ordre : $ordre"
 sortie_dit "5 paires de rendus" && ok "5 paires de rendus, avec --import (S14)" || fail "décompte des paires : $(tail -2 "$FX/sortie" | head -1)"
+# S17 (revue P3, E-P3-2) : la ligne finale dit ce qui a été joué ; ici, l'import sans crochet.
+sortie_dit "vert ; import : joué ; crochet : NON JOUÉ ; --diff-attendu : migrations" \
+  && ok "S17 verdict : import joué, crochet non joué" || fail "S17 verdict : $(/usr/bin/grep -F 'vert ;' "$FX/sortie")"
 echo "  les documents (Story 49-1d)"
 # S9 (D3) : `docker cp` du conteneur de l'image de ce run, vers `$D/documents` — aucun montage.
 /usr/bin/grep -qE "^ARGV cp kesh-recette-image-[0-9]+:/tmp/documents/\. .*/documents/$" "$FX/docker.log" \
@@ -723,6 +736,7 @@ scenario "S5b PDF figé aux octets de la phase 1, empreinte en base différente"
 scenario "S8 regel refusé" 12 "regel de F8" REGEL_ECHEC=oui -- "${BASE_ARGS[@]}"
 scenario "S8b 410 d'une autre cause que le fichier manquant" 12 "au lieu d'INVOICE_PDF_GONE" CODE_410=AUTRE_CHOSE -- "${BASE_ARGS[@]}"
 scenario "S8c PDF du regel à une autre empreinte que pdf_sha256" 12 "SHA-256 différent du nouveau pdf_sha256" REGEL_SHA_ALTERE=oui -- "${BASE_ARGS[@]}"
+scenario "S8d le regel sert un 200 qui n'est pas un PDF" 12 "PDF de F8 : HTTP 200" REGEL_PAS_PDF=oui -- "${BASE_ARGS[@]}"
 echo "  S15, S16 : le retour et l'import comparent les données (revue P2, E-P2-1, E-P2-2)"
 scenario "S15 valeur différente sur la base restaurée du retour" 14 "empreinte retour différente" ECART_RETOUR=invoice_lines -- "${BASE_ARGS[@]}"
 scenario "S16a import refusé" 15 "import : HTTP 500" CODE_IMPORT=500 -- "${BASE_ARGS[@]}" --import
@@ -731,6 +745,17 @@ scenario "S16c valeur d'avant changée par l'import, non nommée" 15 "écart hor
 # Le crochet rejoué après l'import (E-P2-6) : un crochet qui n'échoue qu'en phase 5.
 echo '[ "$PHASE_APRES" != 5 ] || exit 1' > "$WORK/kesh-gate-logs/verifs-phase5.sh"
 scenario "S16d crochet en échec après l'import seulement" 15 "crochet --apres en échec" -- "${BASE_ARGS[@]}" --import --apres "$WORK/kesh-gate-logs/verifs-phase5.sh"
+# Revue P3 (B-P3-2) : le crochet en échec en phase 2 seulement — l'appel de phase 2 a son scénario propre.
+echo '[ "$PHASE_APRES" != 2 ] || exit 1' > "$WORK/kesh-gate-logs/verifs-phase2.sh"
+scenario "S16f crochet en échec en phase 2 seulement" 12 "crochet --apres en échec" -- "${BASE_ARGS[@]}" --import --apres "$WORK/kesh-gate-logs/verifs-phase2.sh"
+scenario "S16e valeur d'avant de api changée par l'import, nommée" 15 "api (valeurs d'avant changées" ECART_IMPORT=api -- "${BASE_ARGS[@]}" "${RELEASE[@]}" --import
+echo "  S17 : la ligne finale dit ce qui a été joué (revue P3, E-P3-2)"
+echo 'true' > "$WORK/kesh-gate-logs/verifs-vert.sh"
+scenario "S17a import et crochet joués" 0 "vert ; import : joué ; crochet : joué en phases 2 et 5" -- "${BASE_ARGS[@]}" --import --apres "$WORK/kesh-gate-logs/verifs-vert.sh"
+D=$(/usr/bin/grep -oE 'dossier .*$' "$FX/sortie" | tail -1 | sed 's/^dossier //')
+/usr/bin/grep -qx "vert ; import : joué ; crochet : joué en phases 2 et 5 ; --diff-attendu : migrations" "$D/journal/verdict" \
+  && ok "S17a : \$L/verdict écrit" || fail "S17a : verdict « $(cat "$D/journal/verdict" 2>/dev/null) »"
+scenario "S17b ni import ni crochet : dit NON JOUÉ" 0 "vert ; import : NON JOUÉ ; crochet : NON JOUÉ" -- "${BASE_ARGS[@]}"
 echo "  S6, S7, S14 : rendus (D4 b, D5)"
 scenario "S6 trame différente, texte égal" 16 "F4 : page 1, trame différente" RENDU_ECART=oui -- "${BASE_ARGS[@]}"
 scenario "S6c trame vide des deux côtés" 16 "trame vide" TRAME_VIDE=oui -- "${BASE_ARGS[@]}"
@@ -738,6 +763,7 @@ scenario "S6d mutool signale une erreur et rend 0" 16 "mutool a signalé une err
 scenario "S6e mutool signale une réparation (avertissement autre que l'ICC)" 16 "mutool a signalé une erreur" MUTOOL_AVERTISSEMENT=oui -- "${BASE_ARGS[@]}"
 scenario "S6f texte rendu différent, numéro gardé" 16 "texte rendu différent" TEXTE_ECART=oui -- "${BASE_ARGS[@]}"
 scenario "S6g une page de plus au rendu" 16 "page(s) en référence" PAGES_RENDU=2 -- "${BASE_ARGS[@]}"
+scenario "S6h deux pages, la page 2 diffère au rendu" 16 "F4 : page 2, trame différente" PAGES=2 RENDU_ECART_P2=oui -- "${BASE_ARGS[@]}"
 scenario "S7a texte sans le numéro de la pièce" 16 "0 paire(s)" RENDU_VIDE=oui -- "${BASE_ARGS[@]}"
 scenario "S7a' zéro page" 16 "0 paire(s)" PAGES=0 -- "${BASE_ARGS[@]}"
 scenario "S7b un 200 qui n'est pas un PDF" 11 "pas un PDF" PDF_PAS_PDF=oui -- "${BASE_ARGS[@]}"
