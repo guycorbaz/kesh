@@ -16,13 +16,14 @@
 #                    N > 0, journal sans erreur, seuls les fichiers de `--diff-attendu`
 #                    diffèrent, et seulement par ajout (projection sur l'avant identique).
 #                    Puis le crochet `--apres`, pour ce qui est propre à la release (il
-#                    dispose de `SQL`, `api`, `L`). Puis les PDF : figés servis à l'octet,
+#                    dispose de `SQL`, `api`, `L`, `PHASE_APRES`). Puis les PDF : figés servis à l'octet,
 #                    regel du fichier retiré, rendus gardés pour la phase 6.
 #   3 Refus   (13) : si N > 0, l'image précédente refuse la base migrée.
 #   4 Retour  (14) : dump restauré, image relancée, empreinte identique à celle d'avant ;
 #                    puis les rendus de référence de l'image précédente.
 #   5 Import  (15) : option `--import` : le `.keshbackup` dans le binaire neuf, base neuve,
-#                    dossier des documents neuf : les PDF figés viennent de l'archive.
+#                    dossier des documents neuf : les PDF figés viennent de l'archive ;
+#                    le crochet `--apres` y est rejoué.
 #   6 Rendus  (16) : chaque PDF rendu de nouveau par le binaire neuf a, page à page, la même
 #                    trame à 300 dpi, le même texte et le même nombre de pages que sa
 #                    référence ; exactement 5 paires.
@@ -503,8 +504,9 @@ else range(0; $av | length) as $i | ($ap[$i] | proj($av[$i])) end'
 # de la projection au journal sinon.
 projection_identique() { # $1 = fichier, $2, $3 = étiquettes
   local avant=$L/empreinte-$2/$1 j=$L/projection-$3 n=$L/projection-$3/$1.avant
-  # Un avant vide se projetterait sur rien et passerait : il ne compte pas.
-  [ -s "$avant" ] || return 1
+  # Pas de garde « avant vide » ici (revue P2, B-P2-1) : cette fonction n'est appelée que pour un fichier qui DIFFÈRE,
+  # et une table vide avant puis peuplée après a une projection peuplée, que `diff` voit. Le cas réel — une table
+  # vide des deux côtés, comparée à vide — est fermé à l'empreinte d'avant (phase 1, chaque table de `TABLES` non vide).
   if [ "$1" = api ]; then
     jq -S -c --slurpfile av "$avant" --slurpfile ap "$L/empreinte-$3/api" -n "$JQ_PROJECTION" > "$j/api" || return 1
     jq -S -c . "$avant" > "$n" || return 1
@@ -686,7 +688,7 @@ DU=$(printf '%s' "$R" | jq -r '.remainingAmount // .amountDue // .totalTtc // em
 VF2=$(printf '%s' "$R" | jq -r '.version // empty')
 [[ "$VF2" =~ ^[0-9]+$ ]] || echec 1 "version de la facture 2 illisible"
 peupler "règlement de la facture 2" POST "/api/v1/invoices/$F2/settlements" -d "{\"settlementType\":\"internal_account\",\"accountId\":$CAISSE,\"amount\":\"$DU\",\"settledOn\":\"$JOUR\",\"version\":$VF2}" >/dev/null || exit $?
-# Les PDF figés en 0.19.0 (D1) : F1, F5, F7 — avant son avoir, F7 se fige validée — et F8, dont le
+# Les PDF figés par l'image de départ (D1) : F1, F5, F7 — avant son avoir, F7 se fige validée — et F8, dont le
 # fichier sera retiré de la copie des documents.
 for f in F1 F5 F7 F8; do pdf_exige 1 "$f" "$P/avant-$f.pdf"; done
 R=$(peupler "avoir de F7" POST /api/v1/credit-notes -d "{\"invoiceId\":$F7,\"date\":\"$JOUR\"}") || exit $?
@@ -772,6 +774,10 @@ EXERCICE=$(SQL "SELECT id FROM fiscal_years WHERE start_date <= '$JOUR' AND end_
 printf 'fiscalYearId=%s&periodStart=%s&periodEnd=%s' "$EXERCICE" "$JOUR" "$JOUR" > "$L/requete-tva"
 
 empreinte avant || echec 1 "empreinte avant"
+# Une table vide des deux côtés serait égale à vide (revue P2, B-P2-1) : chaque table de l'empreinte est peuplée.
+for t in $TABLES; do
+  [ -s "$L/empreinte-avant/$t" ] || echec 1 "table $t vide à l'empreinte d'avant : sa comparaison serait à vide"
+done
 # AC8 : un rapport vide des deux côtés ne prouverait rien.
 jq -e '(.totalBaseHt | tonumber) != 0' "$L/tva-avant.json" >/dev/null 2>&1 \
   || echec 1 "rapport TVA sans chiffre d'affaires ($L/tva-avant.json)"
@@ -813,23 +819,29 @@ else
 fi
 empreinte apres || echec 2 "empreinte après"
 ecarts_hors_attendu 2 avant apres
-if [ -n "$APRES" ]; then
+# Le crochet `--apres`, joué après l'empreinte de la montée (phase 2) et après celle de l'import (phase 5, revue P2,
+# E-P2-6) : ce qui ne vaut que pour la release doit tenir sur les deux bases. `PHASE_APRES` lui dit laquelle.
+jouer_crochet() { # $1 = phase
+  [ -n "$APRES" ] || return 0
+  local code
   # Sans `||` à droite : il neutraliserait le `set -e` du sous-shell, et seul le dernier
   # statut du crochet compterait.
   # shellcheck disable=SC1091
   (
     cd "$D/cwd" || exit 1
     HOME=$D/home
+    PHASE_APRES=$1
     set -e
     . "$D/apres.sh"
-  ) > "$L/apres.log" 2>&1
-  CODE_APRES=$?
-  [ "$CODE_APRES" -eq 0 ] || echec 2 "crochet --apres en échec, code $CODE_APRES ($L/apres.log)"
-fi
+  ) > "$L/apres-phase$1.log" 2>&1
+  code=$?
+  [ "$code" -eq 0 ] || echec "$1" "crochet --apres en échec, code $code ($L/apres-phase$1.log)"
+}
+jouer_crochet 2
 # Les PDF, après l'empreinte et le crochet (Story 49-1d, D4 a, AC4) : une facture figée est servie à
 # l'octet de la phase 1 ; celle dont le fichier manque (F8) rend `410`, se regèle (`200`, une réponse
 # JSON de facture), puis sert le PDF du regel, à l'empreinte de son nouveau `pdf_sha256`. Les pièces
-# jamais figées en 0.19.0 sont rendues et gardées pour la phase 6.
+# jamais figées par l'image de départ sont rendues et gardées pour la phase 6.
 login || echec 2 "connexion impossible"
 for f in F1 F5 F7; do pdf_fige_identique 2 "$f" apres; done
 CODE=$(telecharger "$(chemin_pdf F8)" "$P/apres-F8-manquant.json")
@@ -907,6 +919,7 @@ if [ "$IMPORT" = 1 ]; then
   [ "$CODE_HTTP" = 200 ] || echec 5 "import : HTTP $CODE_HTTP ($L/import-reponse.json)"
   empreinte import || echec 5 "empreinte import"
   ecarts_hors_attendu 5 avant import
+  jouer_crochet 5
   # F8 compris : l'archive, prise avant le retrait de son fichier, le porte.
   for f in F1 F5 F7 F8; do pdf_fige_identique 5 "$f" import; done
   journal_sans_erreur 5 "$L/binaire-import.log"
@@ -956,8 +969,9 @@ for paire in "F2 retour-F2 apres-F2" "F4 retour-F4 apres-F4" "F6 retour-F6 apres
 done
 [ "$PAIRES" -eq 5 ] || echec 6 "$PAIRES paire(s) de rendus comptée(s), 5 exigées"
 # Un `mutool` qui signale une erreur mais rend 0 dégraderait pareil les deux côtés d'une paire : toute ligne de sa
-# sortie d'erreur qui n'est pas un `warning:` (l'absence d'ICC en est un) fait échouer — `format error`, `cannot draw`…
-ERREURS_MUTOOL=$(/usr/bin/grep -v -e '^warning:' -e '^$' "$L/mutool.log" 2>/dev/null || true)
+# sortie d'erreur fait échouer — `format error`, `cannot draw`, et les `warning:` par lesquels MuPDF signale ce qu'il
+# répare —, hors le seul avis attendu de la station, l'absence d'ICC (revue P2, E-P2-7).
+ERREURS_MUTOOL=$(/usr/bin/grep -v -x -e 'warning: ICC support is not available' -e '' "$L/mutool.log" 2>/dev/null || true)
 [ -z "$ERREURS_MUTOOL" ] || echec 6 "mutool a signalé une erreur ($L/mutool.log) : $(printf '%s' "$ERREURS_MUTOOL" | head -1)"
 
 echo "✅ recette-montee : phases jouées, $MIGRATIONS migration(s), $PAIRES paires de rendus, journaux sous $L"

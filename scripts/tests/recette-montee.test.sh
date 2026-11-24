@@ -98,7 +98,8 @@ case "${1:-}" in
     esac
     sql=""; prec=""
     for a in "$@"; do [ "$prec" = "-e" ] && [ "${a#MYSQL_PWD}" = "$a" ] && sql=$a; prec=$a; done
-    if [ -z "$sql" ]; then cat >/dev/null; echo non > "$FX/migre"; exit 0; fi
+    # Sans `-e` : la restauration du dump (phase 4), qui ramène la base d'avant.
+    if [ -z "$sql" ]; then cat >/dev/null; echo non > "$FX/migre"; : > "$FX/restaure"; exit 0; fi
     # La seconde base, celle de la phase 5, n'a pas d'état distinct ici.
     case "$sql" in
       "SELECT 1") echo 1 ;;
@@ -137,19 +138,26 @@ case "${1:-}" in
           [ "${PDF_FIGE_ALTERE:-non}" != oui ] || c="$c altéré"
           [ "${PDF_SHA_ALTERE:-non}" != oui ] || c="$c autre empreinte"
         fi
+        # Revue P2 (E-P2-4) : après le regel de F8, une empreinte en base qui n'est pas celle du PDF servi.
+        if [ "$n" = 8 ] && [ -f "$FX/regel-fait" ] && [ "${REGEL_SHA_ALTERE:-non}" = oui ]; then c="$c autre empreinte"; fi
         printf '%s' "$c" | sha256sum | cut -d' ' -f1 ;;
       "SET SESSION group_concat_max_len"*) printf '%s\n' '`id`,`x`' ;;
       *"FROM _sqlx_migrations"*) echo "migrations-$migre" ;;
       "SELECT * FROM "*)
         t=${sql#SELECT \* FROM }; t=${t%% *}
-        # Revue P1 (B2) : une table vide avant la montée, peuplée après ; sa projection reste vide.
-        if [ "$migre" != oui ] && [ "${TABLE_VIDE:-}" = "$t" ]; then :
+        # Revue P2 (B-P2-1) : une table vide, avant comme après — cohérent avec sa projection, vide aussi.
+        # ECART_RETOUR : une valeur qui diffère sur la base restaurée de la phase 4 (E-P2-2) ; ECART_IMPORT : une
+        # valeur d'avant changée sous le seul binaire de l'import (phase 5, E-P2-1).
+        if [ "${TABLE_VIDE:-}" = "$t" ]; then :
+        elif [ "$migre" != oui ] && [ -f "$FX/restaure" ] && [ "${ECART_RETOUR:-}" = "$t" ]; then echo "$t modifiée au retour"
+        elif [ "$migre" = oui ] && binaire_import && [ "${ECART_IMPORT:-}" = "$t" ]; then echo "$t ancienne modifiée à l'import"
         elif [ "$migre" = oui ] && [ "${ECART_ANCIEN:-}" = "$t" ]; then echo "$t ancienne modifiée"
         elif [ "$migre" = oui ] && [ "${ECART:-}" = "$t" ]; then echo "$t modifiée"; else echo "$t"; fi ;;
       # La projection de D2 : les colonnes d'avant seules — une colonne ajoutée n'y paraît pas.
       'SELECT `id`,`x` FROM '*)
         t=${sql#SELECT \`id\`,\`x\` FROM }; t=${t%% *}
         if [ "${TABLE_VIDE:-}" = "$t" ]; then :
+        elif [ "$migre" = oui ] && binaire_import && [ "${ECART_IMPORT:-}" = "$t" ]; then echo "$t ancienne modifiée à l'import"
         elif [ "$migre" = oui ] && [ "${ECART_ANCIEN:-}" = "$t" ]; then echo "$t ancienne modifiée"; else echo "$t"; fi ;;
       *) echo factice ;;
     esac
@@ -292,13 +300,23 @@ for a in "$@"; do
 done
 case "${1:-}" in
   -v) echo "mutool version factice" >&2; exit 0 ;;
-  info) [ -r "$f" ] || exit 1; echo "Pages: ${PAGES:-1}"; exit 0 ;;
+  # Revue P2 (E-P2-3) : PAGES_RENDU ne vaut que pour les rendus du binaire neuf (`apres-*`).
+  info)
+    [ -r "$f" ] || exit 1
+    case "$f" in */apres-*) echo "Pages: ${PAGES_RENDU:-${PAGES:-1}}" ;; *) echo "Pages: ${PAGES:-1}" ;; esac
+    exit 0 ;;
   draw)
     [ -r "$f" ] || exit 1
     # Revue P1 (B5) : une erreur signalée sur la sortie d'erreur, code 0 quand même.
     [ "${MUTOOL_ERREUR:-non}" != oui ] || echo "format error: factice, objet illisible" >&2
+    # Revue P2 (E-P2-7) : l'avis attendu de la station, et un avertissement de réparation.
+    echo "warning: ICC support is not available" >&2
+    [ "${MUTOOL_AVERTISSEMENT:-non}" != oui ] || echo "warning: repairing PDF document" >&2
     case "$fmt" in
-      txt) if [ "${RENDU_VIDE:-non}" = oui ]; then echo "texte sans numero"; else cat "$f"; fi ;;
+      txt)
+        if [ "${RENDU_VIDE:-non}" = oui ]; then echo "texte sans numero"; else cat "$f"; fi
+        # Revue P2 (E-P2-3) : un texte rendu qui diffère, numéro gardé.
+        case "$f" in */apres-*) [ "${TEXTE_ECART:-non}" != oui ] || echo "ligne de plus" ;; esac ;;
       pnm)
         # Une trame vide, code 0 : deux empreintes de rien seraient égales (S6c).
         [ "${TRAME_VIDE:-non}" != oui ] || exit 0
@@ -370,7 +388,7 @@ PB=$(port_libre 23410)
 preparer() {
   : > "$FX/docker.log"; : > "$FX/curl.log"; : > "$FX/docker-env.txt"; : > "$FX/mutool.log"; : > "$FX/ordre.log"
   rm -f "$FX/migre" "$FX/up-image" "$FX/up-binaire" "$FX/ps.txt" "$FX/binaire-env.txt" "$FX/binaire-pwd.txt" "$FX/jeton" "$FX/erreur-tardive" \
-    "$FX/pid-run-image" "$FX/fd3" "$FX/compteur-factures" "$FX/releve-saisi" "$FX/regel-fait" "$FX/binaire-docs.log"
+    "$FX/pid-run-image" "$FX/fd3" "$FX/compteur-factures" "$FX/releve-saisi" "$FX/regel-fait" "$FX/binaire-docs.log" "$FX/restaure"
   printf '%s\n' "$@" > "$FX/conf"
 }
 
@@ -697,17 +715,29 @@ scenario "S3d tableau vide devenu null dans api, nommée" 12 "api (valeurs d'ava
 scenario "S3e élément ajouté à un tableau de api, nommée" 12 "api (valeurs d'avant changées" ECART_LONGUEUR=api -- "${BASE_ARGS[@]}" "${RELEASE[@]}"
 scenario "S3f clé nulle disparue de api, nommée" 12 "api (valeurs d'avant changées" ECART_CLE=api -- "${BASE_ARGS[@]}" "${RELEASE[@]}"
 scenario "S3g document de plus dans api, nommée" 12 "api (valeurs d'avant changées" ECART_NB=api -- "${BASE_ARGS[@]}" "${RELEASE[@]}"
-scenario "S3h table vide avant la montée, nommée" 12 "credit_note_lines (valeurs d'avant changées" TABLE_VIDE=credit_note_lines -- "${BASE_ARGS[@]}" "${RELEASE[@]}"
+scenario "S3h table vide avant et après" 11 "table credit_note_lines vide à l'empreinte d'avant" TABLE_VIDE=credit_note_lines -- "${BASE_ARGS[@]}" "${RELEASE[@]}"
 scenario "S4 credit_note_lines changée, non nommée" 12 credit_note_lines ECART_ANCIEN=credit_note_lines -- "${BASE_ARGS[@]}"
 echo "  S5, S8 : PDF archivés et regel (D4 a)"
 scenario "S5 PDF figé servi autrement (empreinte en base concordante)" 12 "PDF archivé de F1 : octets différents" PDF_FIGE_ALTERE=oui -- "${BASE_ARGS[@]}"
 scenario "S5b PDF figé aux octets de la phase 1, empreinte en base différente" 12 "PDF archivé de F1 : SHA-256 différent" PDF_SHA_ALTERE=oui -- "${BASE_ARGS[@]}"
 scenario "S8 regel refusé" 12 "regel de F8" REGEL_ECHEC=oui -- "${BASE_ARGS[@]}"
 scenario "S8b 410 d'une autre cause que le fichier manquant" 12 "au lieu d'INVOICE_PDF_GONE" CODE_410=AUTRE_CHOSE -- "${BASE_ARGS[@]}"
+scenario "S8c PDF du regel à une autre empreinte que pdf_sha256" 12 "SHA-256 différent du nouveau pdf_sha256" REGEL_SHA_ALTERE=oui -- "${BASE_ARGS[@]}"
+echo "  S15, S16 : le retour et l'import comparent les données (revue P2, E-P2-1, E-P2-2)"
+scenario "S15 valeur différente sur la base restaurée du retour" 14 "empreinte retour différente" ECART_RETOUR=invoice_lines -- "${BASE_ARGS[@]}"
+scenario "S16a import refusé" 15 "import : HTTP 500" CODE_IMPORT=500 -- "${BASE_ARGS[@]}" --import
+scenario "S16b valeur d'avant changée par l'import, nommée" 15 "invoice_lines (valeurs d'avant changées" ECART_IMPORT=invoice_lines -- "${BASE_ARGS[@]}" "${RELEASE[@]}" --import
+scenario "S16c valeur d'avant changée par l'import, non nommée" 15 "écart hors de --diff-attendu (avant → import)" ECART_IMPORT=invoice_lines -- "${BASE_ARGS[@]}" --import
+# Le crochet rejoué après l'import (E-P2-6) : un crochet qui n'échoue qu'en phase 5.
+echo '[ "$PHASE_APRES" != 5 ] || exit 1' > "$WORK/kesh-gate-logs/verifs-phase5.sh"
+scenario "S16d crochet en échec après l'import seulement" 15 "crochet --apres en échec" -- "${BASE_ARGS[@]}" --import --apres "$WORK/kesh-gate-logs/verifs-phase5.sh"
 echo "  S6, S7, S14 : rendus (D4 b, D5)"
 scenario "S6 trame différente, texte égal" 16 "F4 : page 1, trame différente" RENDU_ECART=oui -- "${BASE_ARGS[@]}"
 scenario "S6c trame vide des deux côtés" 16 "trame vide" TRAME_VIDE=oui -- "${BASE_ARGS[@]}"
 scenario "S6d mutool signale une erreur et rend 0" 16 "mutool a signalé une erreur" MUTOOL_ERREUR=oui -- "${BASE_ARGS[@]}"
+scenario "S6e mutool signale une réparation (avertissement autre que l'ICC)" 16 "mutool a signalé une erreur" MUTOOL_AVERTISSEMENT=oui -- "${BASE_ARGS[@]}"
+scenario "S6f texte rendu différent, numéro gardé" 16 "texte rendu différent" TEXTE_ECART=oui -- "${BASE_ARGS[@]}"
+scenario "S6g une page de plus au rendu" 16 "page(s) en référence" PAGES_RENDU=2 -- "${BASE_ARGS[@]}"
 scenario "S7a texte sans le numéro de la pièce" 16 "0 paire(s)" RENDU_VIDE=oui -- "${BASE_ARGS[@]}"
 scenario "S7a' zéro page" 16 "0 paire(s)" PAGES=0 -- "${BASE_ARGS[@]}"
 scenario "S7b un 200 qui n'est pas un PDF" 11 "pas un PDF" PDF_PAS_PDF=oui -- "${BASE_ARGS[@]}"
@@ -802,7 +832,8 @@ echo "  le port de la seconde base, resté à l'écoute, est signalé (revue P2,
 # Le crochet laisse un processus écouter sur `--port-base + 1`, le port de la phase 5 : le
 # docker factice n'y lance rien, si bien que seul ce processus peut s'y trouver à la fin.
 # shellcheck disable=SC2016
-printf '%s\n' 'python3 -c "import socket,sys,time
+# Le crochet est rejoué après l'import (revue P2, E-P2-6) : l'écoute ne se lance qu'en phase 2.
+printf '%s\n' '[ "$PHASE_APRES" = 2 ] || return 0' 'python3 -c "import socket,sys,time
 s=socket.socket(); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 s.bind((\"127.0.0.1\", int(sys.argv[1]))); s.listen(1); time.sleep(30)" "$((PORT_BASE + 1))" </dev/null >/dev/null 2>&1 3>&- &' \
   'echo $! > "$L/ecoute.pid"' 'for _ in $(seq 1 100); do o=$(ss -ltn); /usr/bin/grep -q ":$((PORT_BASE + 1)) " <<<"$o" && break; sleep 0.05; done' \
