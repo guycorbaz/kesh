@@ -207,3 +207,4 @@ l'orchestrateur*).
   conception plus simple de T5 : tenir les verrous de test dans le shell principal lui-même (`exec {fd}>…; flock -n`), sans
   processus de fond, et sonder par `flock -n <fichier> true` (qui rouvre le fichier) — ce qui rend V3-1 et V3-2 sans objet.
 - Le corps de #1499 a été ramené à la seule collision de ports (texte dans la fiche 49-5) ; I-1 porte l'arrêt sans résumé.
+- **Estimation** (retirée de la fiche 49-5 avec le lot C) : 2 h 30, dont au moins 4 × 6 min de temps machine (T6 rouge, T6 vert, M4, M5, …). **Ordre** : le lot C coûte le plus en temps machine ; le lancer tôt dans une story à lui.
