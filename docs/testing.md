@@ -217,9 +217,9 @@ KESH_TEST_MODE=true KESH_HOST=127.0.0.1 KESH_COOKIE_SECURE=false \
   KESH_JWT_SECRET="dev-secret-at-least-32-bytes-long-for-testing" \
   cargo run -p kesh-api
 
-# Terminal 2 : Playwright
+# Terminal 2 : Playwright — la locale fr_CH.UTF-8 doit être INSTALLÉE (voir ci-dessous)
 cd frontend
-KESH_TEST_MODE=true PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 \
+LANG=fr_CH.UTF-8 KESH_TEST_MODE=true PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 \
   KESH_BACKEND_URL=http://127.0.0.1:3000 npm run test:e2e
 ```
 
@@ -260,6 +260,28 @@ ensemble : `documents` n'apparaît qu'une fois `inbox` réglé, chaque erreur ma
 *(Relevé le 2026-08-20 au gate E2E de la story 23-3. La recette ci-dessus était incomplète depuis
 qu'elle existe, et l'écart se lisait comme une régression de branche : 182 passés contre les 183
 déclarés à l'implémentation.)*
+
+⚠️ **La locale `fr_CH.UTF-8` doit être installée sur le poste, et son absence ne se signalait
+pas.** Le runner se lance sous `LANG=fr_CH.UTF-8` : sous `C.UTF-8`, Chromium affiche les champs
+de date en MM/JJ et `date-filtre-frappe.spec.ts` rougit (KF-064, #1278). Mais une `LANG` qui
+nomme une locale **absente** est pire qu'aucune : la glibc retombe en locale C (ASCII), et
+Chromium, qui en hérite, **ignore sans erreur** un `setInputFiles` dont le chemin n'est pas ASCII
+— `input.files` reste vide, aucun évènement `change`. Les deux tests de
+`backup-restore-new-install.spec.ts` qui déposent leur sauvegarde sous `testInfo.outputPath()`
+(dossier nommé d'après le titre, « … après l’import », « … quitter l’écran ») attendaient alors
+120 s un bouton d'import qui ne s'activait jamais (KF-065, #1282). Installer et contrôler
+(Debian, Ubuntu) :
+
+```sh
+sudo locale-gen fr_CH.UTF-8
+locale -a | grep -i fr_ch        # doit rendre fr_CH.utf8
+```
+
+**Garde** : `global-setup.ts` appelle `verifierLocaleInstallee()` (`tests/e2e/helpers/locale.ts`)
+avant tout appel au backend. Si `LC_ALL`, `LC_CTYPE` ou `LANG` nomme une locale absente de
+`locale -a`, la suite s'arrête avec la commande d'installation. Elle ne dit rien quand la variable
+est absente ou vaut `C`, `POSIX` ou `C.UTF-8` (le cas de la CI, dont le job `e2e-smoke` ne fixe
+aucune locale), ni quand `locale -a` n'existe pas (simple avertissement).
 
 **Le runner lit ces deux dossiers lui-même, et ne saute plus rien** (Story 30-2a, #685).
 `inbox-import.spec.ts` et `supplier-documents.spec.ts` déposent leurs fichiers dans le dossier
@@ -449,6 +471,12 @@ rejouées seules** ; une suite relancée sur base reconstruite revient à la bas
 une régression — mais cela ne se conclut qu'après le rejeu isolé, jamais au nombre.**
 
 [#478]: https://github.com/guycorbaz/kesh/issues/478
+
+⛔ **`backup-restore-new-install.spec.ts:262` et `:381` au délai de 120 s, bouton
+`admin-restore-import-button` désactivé : ce n'est pas un échec attendu, c'est le poste.** La
+locale du runner (`LANG`) n'y est pas installée (§ *Prérequis Playwright local*, KF-065, #1282) ;
+la garde de `global-setup.ts` l'arrête désormais avant le premier test. Installée, les deux tests
+passent.
 
 **Relevé du 2026-08-26** (montage complet de la § précédente, base `kesh_e2e` reconstruite) :
 
