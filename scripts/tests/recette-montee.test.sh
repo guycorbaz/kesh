@@ -126,7 +126,8 @@ case "${1:-}" in
       "SELECT (SELECT COUNT(*) FROM invoice_lines"*) echo 0 ;;
       *"SELECT pdf_storage_path FROM invoices WHERE id = "*) printf '%064d.pdf\n' "${sql##* }" ;;
       *"SELECT pdf_sha256 FROM invoices WHERE id = "*)
-        n=${sql##* }; corps_pdf "/api/v1/invoices/$n/pdf" "FAC-$n" | sha256sum | cut -d' ' -f1 ;;
+        # Le corps tel que le `curl` factice l'écrit : sans saut de ligne final.
+        n=${sql##* }; printf '%s' "$(corps_pdf "/api/v1/invoices/$n/pdf" "FAC-$n")" | sha256sum | cut -d' ' -f1 ;;
       "SET SESSION group_concat_max_len"*) printf '%s\n' '`id`,`x`' ;;
       *"FROM _sqlx_migrations"*) echo "migrations-$migre" ;;
       "SELECT * FROM "*)
@@ -179,7 +180,9 @@ case "$methode /$chemin" in
     n=$(( $(cat "$FX/compteur-factures" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$FX/compteur-factures"
     reponse="{\"id\":$n,\"version\":1}" ;;
   "GET /api/v1/invoices/"[0-9]*/pdf | "GET /api/v1/credit-notes/"[0-9]*/pdf)
-    echo "GET /$chemin" >> "$FX/ordre.log"
+    # Qui sert : l'image précédente ou le binaire neuf (S6 ne compte que ceux de l'image).
+    if [ -f "$FX/up-binaire" ]; then qui=binaire; else qui=image; fi
+    echo "GET $qui /$chemin" >> "$FX/ordre.log"
     n=${chemin%/pdf}; n=${n##*/}
     case "$chemin" in */credit-notes/*) num=AV-$n ;; *) num=FAC-$n ;; esac
     reponse=$(corps_pdf "/$chemin" "$num")
@@ -198,7 +201,7 @@ case "$methode /$chemin" in
     else : > "$FX/regel-fait"; reponse='{"id":8,"version":2}'; fi ;;
   "GET /api/v1/invoices/"[0-9]*)
     n=${chemin##*/}
-    reponse="{\"id\":$n,\"version\":1,\"status\":\"x\",\"remainingAmount\":\"1.00\",\"invoiceNumber\":\"FAC-$n\",\"lines\":[{\"description\":\"Conseil\",\"quantity\":\"1\"}]}"
+    reponse="{\"id\":$n,\"version\":1,\"status\":\"x\",\"remainingAmount\":\"1.00\",\"totalTtc\":\"10.00\",\"invoiceNumber\":\"FAC-$n\",\"lines\":[{\"description\":\"Conseil\",\"quantity\":\"1\"}]}"
     if [ "$migre" = oui ]; then
       [ "${ECART:-}" != api ] || reponse=$(printf '%s' "$reponse" | jq -c '.lines[0].lineType = "priced"')
       [ "${ECART_ANCIEN:-}" != api ] || reponse=$(printf '%s' "$reponse" | jq -c '.status = "y"')
@@ -519,12 +522,13 @@ echo "  les documents (Story 49-1d)"
 docs=$(tr '\n' ' ' < "$FX/binaire-docs.log")
 case "$docs" in */documents\ */documents-import\ ) ok "montée sur \$D/documents, import sur \$D/documents-import" ;; *) fail "dossiers des documents : $docs" ;; esac
 # S6 (D5, V3-9) : les rendus de la phase 4 précèdent l'arrêt du conteneur du retour.
-ordre_rendus=$(awk '/^stop kesh-recette-image-/ {n++; print "stop" n} /^GET / {print "get" n+0}' "$FX/ordre.log" | tr '\n' ' ')
+ordre_rendus=$(awk '/^stop kesh-recette-image-/ {n++; print "stop" n} /^GET image / {print "image" n+0}' "$FX/ordre.log" | tr '\n' ' ')
 # Arrêts de l'image : 1 = fin de la phase 1, 2 = fin de la phase 4 (le refus de la phase 3 sort seul).
-[ "$(/usr/bin/grep -c '^GET ' <(awk '/^stop kesh-recette-image-/ {n++} /^GET / && n == 1' "$FX/ordre.log"))" -eq 4 ] \
-  && ok "quatre rendus entre l'arrêt de la phase 1 et celui du retour" || fail "ordre des rendus de la phase 4 : $ordre_rendus"
-[ "$(/usr/bin/grep -c . <(awk '/^stop kesh-recette-image-/ {n++} /^GET / && n >= 2' "$FX/ordre.log"))" -eq 0 ] \
-  && ok "aucun rendu après l'arrêt du conteneur du retour" || fail "un rendu après l'arrêt du retour : $ordre_rendus"
+# Seuls comptent les PDF servis par l'image : ceux du binaire neuf (phases 2 et 5) sont à part.
+[ "$(awk '/^stop kesh-recette-image-/ {n++} /^GET image / && n == 1' "$FX/ordre.log" | /usr/bin/grep -c .)" -eq 4 ] \
+  && ok "quatre rendus de l'image entre l'arrêt de la phase 1 et celui du retour" || fail "ordre des rendus de la phase 4 : $ordre_rendus"
+[ "$(awk '/^stop kesh-recette-image-/ {n++} /^GET image / && n >= 2' "$FX/ordre.log" | /usr/bin/grep -c . || true)" -eq 0 ] \
+  && ok "aucun rendu de l'image après l'arrêt du conteneur du retour" || fail "un rendu après l'arrêt du retour : $ordre_rendus"
 
 echo "  environnement fermé du binaire"
 D=$(/usr/bin/grep -oE 'dossier .*$' "$FX/sortie" | tail -1 | sed 's/^dossier //')

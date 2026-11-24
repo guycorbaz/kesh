@@ -538,9 +538,10 @@ journal_sans_erreur() { # $1 = phase, $2 = journal
 nb_migrations() { SQL "SELECT COUNT(*) FROM _sqlx_migrations"; }
 
 # --- Les PDF (Story 49-1d) ---------------------------------------------------------------
-# Les pièces peuplées, une par ligne de `$L/pieces` : « <pièce> <identifiant> <numéro> », pièce
-# F1 à F8 (factures) ou A1 (avoir). Les numéros sont relus à l'API.
-id_piece() { awk -v p="$1" '$1 == p {print $2}' "$L/pieces"; }
+# Les pièces peuplées, pièce F1 à F8 (factures) ou A1 (avoir) : `$L/pieces-ids`, « <pièce>
+# <identifiant> », écrit à la création ; `$L/pieces`, « <pièce> <identifiant> <numéro> », écrit à la
+# fin du peuplement, les numéros relus à l'API.
+id_piece() { awk -v p="$1" '$1 == p {print $2}' "$L/pieces-ids"; }
 numero_piece() { awk -v p="$1" '$1 == p {print $3}' "$L/pieces"; }
 chemin_pdf() { # $1 = pièce
   case "$1" in
@@ -614,18 +615,28 @@ if [ -z "$BANQUE" ]; then
 fi
 ARRONDI=$(printf '%s' "$COMPTES" | jq -r '[.[]|select((.name|test("rrondi";"i")) and .active and .postable)][0].id // empty')
 [ -n "$ARRONDI" ] || ARRONDI=$CHARGE
-# L'IBAN d'exemple du relevé synthétique.
+# Deux comptes bancaires. Celui du relevé synthétique A, tel qu'avant la Story 49-1d : son IBAN
+# d'exemple est un QR-IBAN (IID 31999), qui fait refuser tout PDF de facture sans référence QRR
+# (`400 INVOICE_NOT_PDF_READY`, sonde T0 de la 49-1d). Et le compte principal, à l'IBAN d'exemple
+# ordinaire de SIX, lié au 1020 : il porte la QR-facture des PDF et le relevé du règlement groupé.
 IBAN=CH4431999123000889012
+IBAN_PRINCIPAL=CH9300762011623852957
 R=$(peupler "lecture des comptes bancaires" GET /api/v1/bank-accounts) || exit $?
-COMPTE=$(printf '%s' "$R" | jq -r --arg i "$IBAN" '[.[]|(.account // .)|select(.iban==$i)][0].id // empty')
-if [ -z "$COMPTE" ]; then
-  R=$(peupler "compte bancaire" POST /api/v1/bank-accounts -d "{\"bankName\":\"Banque Synthetique\",\"iban\":\"$IBAN\",\"isPrimary\":true,\"journalAccountId\":$BANQUE}") || exit $?
-  COMPTE=$(id_de 1 "compte bancaire" "$(printf '%s' "$R" | jq -c '(.account // .)' 2>/dev/null)") || exit $?
+compte_iban() { printf '%s' "$R" | jq -r --arg i "$1" '[.[]|(.account // .)|select(.iban==$i)][0].id // empty'; }
+COMPTE=$(compte_iban "$IBAN")
+PRINCIPAL=$(compte_iban "$IBAN_PRINCIPAL")
+if [ -z "$PRINCIPAL" ]; then
+  R=$(peupler "compte bancaire principal" POST /api/v1/bank-accounts -d "{\"bankName\":\"Banque Principale Synthetique\",\"iban\":\"$IBAN_PRINCIPAL\",\"isPrimary\":true,\"journalAccountId\":$BANQUE}") || exit $?
+  PRINCIPAL=$(id_de 1 "compte bancaire principal" "$(printf '%s' "$R" | jq -c '(.account // .)' 2>/dev/null)") || exit $?
 else
-  R=$(printf '%s' "$R" | jq -c --arg i "$IBAN" --argjson b "$BANQUE" '[.[]|(.account // .)|select(.iban==$i)][0] | .isPrimary=true | .journalAccountId=$b') \
-    || echec 1 "compte bancaire existant illisible"
+  R=$(printf '%s' "$R" | jq -c --arg i "$IBAN_PRINCIPAL" --argjson b "$BANQUE" '[.[]|(.account // .)|select(.iban==$i)][0] | .isPrimary=true | .journalAccountId=$b') \
+    || echec 1 "compte bancaire principal existant illisible"
   printf '%s' "$R" > "$L/compte-bancaire.json"
-  peupler "compte bancaire rendu principal" PUT "/api/v1/bank-accounts/$COMPTE" --data-binary "@$L/compte-bancaire.json" >/dev/null || exit $?
+  peupler "compte bancaire rendu principal" PUT "/api/v1/bank-accounts/$PRINCIPAL" --data-binary "@$L/compte-bancaire.json" >/dev/null || exit $?
+fi
+if [ -z "$COMPTE" ]; then
+  R=$(peupler "compte bancaire du relevé A" POST /api/v1/bank-accounts -d "{\"bankName\":\"Banque Synthetique\",\"iban\":\"$IBAN\",\"isPrimary\":false,\"journalAccountId\":null}") || exit $?
+  COMPTE=$(id_de 1 "compte bancaire du relevé A" "$(printf '%s' "$R" | jq -c '(.account // .)' 2>/dev/null)") || exit $?
 fi
 R=$(peupler "lecture des réglages de facturation" GET /api/v1/company/invoice-settings) || exit $?
 R=$(printf '%s' "$R" | jq --argjson p "$CREANCIERS" --argjson a "$ARRONDI" \
@@ -661,10 +672,9 @@ creer_facture F5 "[$(ligne Accompagnement 1 150.00 8.10)]"
 creer_facture F6 "[$(ligne Accompagnement 2 150.00 8.10)]"
 creer_facture F7 "[$(ligne Conseil 1 300.00 8.10),$(ligne Documentation 2 25.00 2.60)]"
 creer_facture F8 "[$(ligne Formation 1 120.00 8.10)]"
-piece_id() { awk -v p="$1" '$1 == p {print $2}' "$L/pieces-ids"; }
-F1=$(piece_id F1) F2=$(piece_id F2) F4=$(piece_id F4) F5=$(piece_id F5) F6=$(piece_id F6) F7=$(piece_id F7) F8=$(piece_id F8)
+F1=$(id_piece F1) F2=$(id_piece F2) F4=$(id_piece F4) F5=$(id_piece F5) F6=$(id_piece F6) F7=$(id_piece F7) F8=$(id_piece F8)
 for f in F1 F2 F4 F5 F6 F7 F8; do
-  peupler "validation de $f" POST "/api/v1/invoices/$(piece_id "$f")/validate" >/dev/null || exit $?
+  peupler "validation de $f" POST "/api/v1/invoices/$(id_piece "$f")/validate" >/dev/null || exit $?
 done
 R=$(peupler "lecture de la facture 2" GET "/api/v1/invoices/$F2") || exit $?
 DU=$(printf '%s' "$R" | jq -r '.remainingAmount // .amountDue // .totalTtc // empty')
@@ -714,13 +724,16 @@ camt create "$RACINE/scripts/fixtures/recette/releve-A.xml" "$COMPTE" \
 # Le règlement groupé de F5 et F6 (D1) : un relevé saisi à la main au jour de la recette — un
 # crédit égal à la somme de leurs TTC — puis la proposition `invoice_group` acceptée. Le relevé A,
 # daté d'octobre 2026, ne peut régler aucune facture du jour.
-GROUPE=$(SQL "SELECT SUM(total_amount) FROM invoices WHERE id IN ($F5, $F6)")
-[[ "$GROUPE" =~ ^[0-9]+\.[0-9]{2}$ ]] || echec 1 "TTC de F5 et F6 illisible : $GROUPE"
-peupler "relevé saisi du règlement groupé" POST /api/v1/bank-imports/manual -d "{\"bankAccountId\":$COMPTE,\"periodFrom\":\"$JOUR\",\"periodTo\":\"$JOUR\",\"statementNumber\":\"R-GROUPE\",\"openingBalance\":\"0.00\",\"closingBalance\":\"$GROUPE\",\"lines\":[{\"bookingDate\":\"$JOUR\",\"valueDate\":null,\"details\":\"Versement groupe\",\"counterpartyName\":null,\"reference\":null,\"amount\":\"$GROUPE\",\"direction\":\"credit\"}],\"confirmDuplicateFile\":true,\"confirmDuplicateLines\":true,\"confirmOpeningBalanceGap\":true}" > "$L/releve-groupe.json" || exit $?
+# `total_amount` est le HT : le crédit est la somme des TTC, lus à l'API (sonde T0).
+TTC5=$(api GET "/api/v1/invoices/$F5" | jq -r '.totalTtc // empty')
+TTC6=$(api GET "/api/v1/invoices/$F6" | jq -r '.totalTtc // empty')
+[[ "$TTC5" =~ ^[0-9]+(\.[0-9]+)?$ ]] && [[ "$TTC6" =~ ^[0-9]+(\.[0-9]+)?$ ]] || echec 1 "TTC de F5 et F6 illisibles : « $TTC5 », « $TTC6 »"
+GROUPE=$(awk -v a="$TTC5" -v b="$TTC6" 'BEGIN { printf "%.2f", a + b }')
+peupler "relevé saisi du règlement groupé" POST /api/v1/bank-imports/manual -d "{\"bankAccountId\":$PRINCIPAL,\"periodFrom\":\"$JOUR\",\"periodTo\":\"$JOUR\",\"statementNumber\":\"R-GROUPE\",\"openingBalance\":\"0.00\",\"closingBalance\":\"$GROUPE\",\"lines\":[{\"bookingDate\":\"$JOUR\",\"valueDate\":null,\"details\":\"Versement groupe\",\"counterpartyName\":null,\"reference\":null,\"amount\":\"$GROUPE\",\"direction\":\"credit\"}],\"confirmDuplicateFile\":true,\"confirmDuplicateLines\":true,\"confirmOpeningBalanceGap\":true}" > "$L/releve-groupe.json" || exit $?
 [ "$(SQL 'SELECT COUNT(*) FROM bank_transactions')" = 3 ] || echec 1 "relevé du règlement groupé non saisi ($L/releve-groupe.json)"
 TX=$(SQL "SELECT id FROM bank_transactions WHERE amount > 0 ORDER BY id DESC LIMIT 1")
 [[ "$TX" =~ ^[0-9]+$ ]] || echec 1 "transaction du règlement groupé introuvable"
-peupler "règlement groupé de F5 et F6" POST /api/v1/reconciliation/accept -d "{\"bankAccountId\":$COMPTE,\"proposals\":[{\"type\":\"invoice_group\",\"bankTransactionId\":$TX,\"invoiceIds\":[$F5,$F6]}]}" > "$L/groupe.json" || exit $?
+peupler "règlement groupé de F5 et F6" POST /api/v1/reconciliation/accept -d "{\"bankAccountId\":$PRINCIPAL,\"proposals\":[{\"type\":\"invoice_group\",\"bankTransactionId\":$TX,\"invoiceIds\":[$F5,$F6]}]}" > "$L/groupe.json" || exit $?
 jq -e '(.failed|length) == 0 and (.accepted|length) == 1' "$L/groupe.json" >/dev/null || echec 1 "règlement groupé refusé ($L/groupe.json)"
 
 # L'état réel, relu en base, pièce par pièce (D1).
@@ -770,7 +783,7 @@ C -f --max-time 600 -o "$D/avant.keshbackup" "$URL/api/v1/admin/full-export" -H 
   || echec 1 "le conteneur de l'image ne porte pas le jeton du run"
 "$DOCKER" cp "$CT_IMAGE:/tmp/documents/." "$D/documents/" >/dev/null || echec 1 "docker cp des documents en échec"
 for f in F1 F5 F7 F8; do
-  CHEMIN=$(SQL "SELECT pdf_storage_path FROM invoices WHERE id = $(piece_id "$f")")
+  CHEMIN=$(SQL "SELECT pdf_storage_path FROM invoices WHERE id = $(id_piece "$f")")
   [[ "$CHEMIN" =~ ^[0-9a-f]{64}\.pdf$ ]] && [ -f "$D/documents/$CHEMIN" ] \
     || echec 1 "PDF de $f absent de la copie des documents (« $CHEMIN »)"
   [ "$f" != F8 ] || rm -f -- "$D/documents/$CHEMIN"
