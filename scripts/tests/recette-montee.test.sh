@@ -110,6 +110,8 @@ case "${1:-}" in
       "SELECT COUNT(*) FROM invoice_settlements") echo 3 ;;
       *"FROM invoice_settlements WHERE journal_entry_line_id IS NOT NULL"*) echo 2 ;;
       "SELECT COUNT(*) FROM credit_notes") echo "${NB_AVOIRS:-1}" ;;
+      # Revue P1 (B3) : « un seul principal » et « lié au 1020 » se règlent séparément.
+      *"FROM bank_accounts WHERE is_primary"*"journal_account_id ="*) echo "${LIEN_1020:-1}" ;;
       *"FROM bank_accounts WHERE is_primary"*) echo "${PRINCIPAL:-1}" ;;
       *"default_rounding_account_id IS NOT NULL"*)
         if [ "${ARRONDI_COMPTE:-oui}" = null ]; then echo 0; else echo 1; fi ;;
@@ -127,18 +129,28 @@ case "${1:-}" in
       "SELECT (SELECT COUNT(*) FROM invoice_lines"*) echo 0 ;;
       *"SELECT pdf_storage_path FROM invoices WHERE id = "*) printf '%064d.pdf\n' "${sql##* }" ;;
       *"SELECT pdf_sha256 FROM invoices WHERE id = "*)
-        # Le corps tel que le `curl` factice l'écrit : sans saut de ligne final.
-        n=${sql##* }; printf '%s' "$(corps_pdf "/api/v1/invoices/$n/pdf" "FAC-$n")" | sha256sum | cut -d' ' -f1 ;;
+        # Le corps tel que le `curl` factice l'écrit : sans saut de ligne final. Revue P1 (B3) : avec
+        # PDF_FIGE_ALTERE, l'empreinte suit le corps altéré (seuls les octets diffèrent de la phase 1) ;
+        # avec PDF_SHA_ALTERE, l'empreinte en base diffère (seule la comparaison au SHA-256 rougit).
+        n=${sql##* }; c=$(corps_pdf "/api/v1/invoices/$n/pdf" "FAC-$n")
+        if [ "$migre" = oui ] && [ "$n" = 1 ] && ! binaire_import; then
+          [ "${PDF_FIGE_ALTERE:-non}" != oui ] || c="$c altéré"
+          [ "${PDF_SHA_ALTERE:-non}" != oui ] || c="$c autre empreinte"
+        fi
+        printf '%s' "$c" | sha256sum | cut -d' ' -f1 ;;
       "SET SESSION group_concat_max_len"*) printf '%s\n' '`id`,`x`' ;;
       *"FROM _sqlx_migrations"*) echo "migrations-$migre" ;;
       "SELECT * FROM "*)
         t=${sql#SELECT \* FROM }; t=${t%% *}
-        if [ "$migre" = oui ] && [ "${ECART_ANCIEN:-}" = "$t" ]; then echo "$t ancienne modifiée"
+        # Revue P1 (B2) : une table vide avant la montée, peuplée après ; sa projection reste vide.
+        if [ "$migre" != oui ] && [ "${TABLE_VIDE:-}" = "$t" ]; then :
+        elif [ "$migre" = oui ] && [ "${ECART_ANCIEN:-}" = "$t" ]; then echo "$t ancienne modifiée"
         elif [ "$migre" = oui ] && [ "${ECART:-}" = "$t" ]; then echo "$t modifiée"; else echo "$t"; fi ;;
       # La projection de D2 : les colonnes d'avant seules — une colonne ajoutée n'y paraît pas.
       'SELECT `id`,`x` FROM '*)
         t=${sql#SELECT \`id\`,\`x\` FROM }; t=${t%% *}
-        if [ "$migre" = oui ] && [ "${ECART_ANCIEN:-}" = "$t" ]; then echo "$t ancienne modifiée"; else echo "$t"; fi ;;
+        if [ "${TABLE_VIDE:-}" = "$t" ]; then :
+        elif [ "$migre" = oui ] && [ "${ECART_ANCIEN:-}" = "$t" ]; then echo "$t ancienne modifiée"; else echo "$t"; fi ;;
       *) echo factice ;;
     esac
     exit 0 ;;
@@ -189,7 +201,7 @@ case "$methode /$chemin" in
     reponse=$(corps_pdf "/$chemin" "$num")
     if [ "${PDF_PAS_PDF:-non}" = oui ]; then reponse='{"error":{"code":"PAS_UN_PDF"}}'
     elif [ "$n" = 8 ] && [ "$num" = FAC-8 ] && [ -f "$FX/up-binaire" ] && ! binaire_import && [ ! -f "$FX/regel-fait" ]; then
-      code=410; reponse='{"error":{"code":"INVOICE_PDF_GONE"}}'
+      code=410; reponse="{\"error\":{\"code\":\"${CODE_410:-INVOICE_PDF_GONE}\"}}"
     elif [ "${PAIRES_EN_MOINS:-0}" = 1 ] && [ "$num" = AV-1 ] && [ -f "$FX/up-binaire" ]; then
       code=500; reponse='{"error":{"code":"INTERNAL_ERROR"}}'
     elif [ "${PDF_FIGE_ALTERE:-non}" = oui ] && [ -f "$FX/up-binaire" ] && ! binaire_import && [ "$num" = FAC-1 ]; then
@@ -202,11 +214,16 @@ case "$methode /$chemin" in
     else : > "$FX/regel-fait"; reponse='{"id":8,"version":2}'; fi ;;
   "GET /api/v1/invoices/"[0-9]*)
     n=${chemin##*/}
-    reponse="{\"id\":$n,\"version\":1,\"status\":\"x\",\"remainingAmount\":\"1.00\",\"totalTtc\":\"10.00\",\"invoiceNumber\":\"FAC-$n\",\"lines\":[{\"description\":\"Conseil\",\"quantity\":\"1\"}]}"
+    # Une clé à valeur nulle (`paidAt`) et un tableau vide (`vatBreakdown`), comme sur une vraie facture impayée.
+    reponse="{\"id\":$n,\"version\":1,\"status\":\"x\",\"remainingAmount\":\"1.00\",\"totalTtc\":\"10.00\",\"invoiceNumber\":\"FAC-$n\",\"paidAt\":null,\"vatBreakdown\":[],\"lines\":[{\"description\":\"Conseil\",\"quantity\":\"1\"}]}"
     if [ "$migre" = oui ]; then
       [ "${ECART:-}" != api ] || reponse=$(printf '%s' "$reponse" | jq -c '.lines[0].lineType = "priced"')
       [ "${ECART_ANCIEN:-}" != api ] || reponse=$(printf '%s' "$reponse" | jq -c '.status = "y"')
       [ "${ECART_TYPE:-}" != api ] || reponse=$(printf '%s' "$reponse" | jq -c '.lines = "scalaire"')
+      # Revue P1 (B1) : les autres garde-fous de la projection de `api`.
+      [ "${ECART_LONGUEUR:-}" != api ] || reponse=$(printf '%s' "$reponse" | jq -c '.lines += [{"description":"Ajoutee"}]')
+      [ "${ECART_CLE:-}" != api ] || reponse=$(printf '%s' "$reponse" | jq -c 'del(.paidAt)')
+      [ "${ECART_VIDE:-}" != api ] || reponse=$(printf '%s' "$reponse" | jq -c '.vatBreakdown = null')
     fi ;;
   "GET /api/v1/credit-notes/"[0-9]*)
     n=${chemin##*/}
@@ -216,7 +233,9 @@ case "$methode /$chemin" in
   "GET /api/v1/reports/vat")
     if [ "${TVA_VIDE:-non}" = oui ]; then base=0.00; else base=1000.00; fi
     reponse="{\"totalBaseHt\":\"$base\",\"totalVatDue\":\"81.00\",\"rows\":[{\"rate\":\"8.10\",\"baseHt\":\"$base\"}]}"
-    [ "$migre" != oui ] || [ "${ECART_ANCIEN:-}" != api ] || reponse=$(printf '%s' "$reponse" | jq -c '.totalVatDue = "81.05"') ;;
+    [ "$migre" != oui ] || [ "${ECART_ANCIEN:-}" != api ] || reponse=$(printf '%s' "$reponse" | jq -c '.totalVatDue = "81.05"')
+    # Revue P1 (B1) : un document de plus dans `api` (deux objets dans la même réponse).
+    [ "$migre" != oui ] || [ "${ECART_NB:-}" != api ] || reponse="$reponse$reponse" ;;
 esac
 # Un refus de l'API sur un chemin choisi : `--fail-with-body` rend alors 22.
 if [ -n "${API_ECHEC:-}" ]; then
@@ -276,6 +295,8 @@ case "${1:-}" in
   info) [ -r "$f" ] || exit 1; echo "Pages: ${PAGES:-1}"; exit 0 ;;
   draw)
     [ -r "$f" ] || exit 1
+    # Revue P1 (B5) : une erreur signalée sur la sortie d'erreur, code 0 quand même.
+    [ "${MUTOOL_ERREUR:-non}" != oui ] || echo "format error: factice, objet illisible" >&2
     case "$fmt" in
       txt) if [ "${RENDU_VIDE:-non}" = oui ]; then echo "texte sans numero"; else cat "$f"; fi ;;
       pnm)
@@ -672,13 +693,21 @@ scenario "S2 valeur d'avant changée dans invoice_lines, nommée" 12 invoice_lin
 scenario "S3a clé d'avant changée dans api (rapport TVA compris), nommée" 12 "api (valeurs d'avant changées" ECART_ANCIEN=api -- "${BASE_ARGS[@]}" "${RELEASE[@]}"
 scenario "S3b clé ajoutée à api, nommée" 0 "" ECART=api -- "${BASE_ARGS[@]}" "${RELEASE[@]}"
 scenario "S3c objet devenu scalaire dans api, nommée" 12 "api (valeurs d'avant changées" ECART_TYPE=api -- "${BASE_ARGS[@]}" "${RELEASE[@]}"
+scenario "S3d tableau vide devenu null dans api, nommée" 12 "api (valeurs d'avant changées" ECART_VIDE=api -- "${BASE_ARGS[@]}" "${RELEASE[@]}"
+scenario "S3e élément ajouté à un tableau de api, nommée" 12 "api (valeurs d'avant changées" ECART_LONGUEUR=api -- "${BASE_ARGS[@]}" "${RELEASE[@]}"
+scenario "S3f clé nulle disparue de api, nommée" 12 "api (valeurs d'avant changées" ECART_CLE=api -- "${BASE_ARGS[@]}" "${RELEASE[@]}"
+scenario "S3g document de plus dans api, nommée" 12 "api (valeurs d'avant changées" ECART_NB=api -- "${BASE_ARGS[@]}" "${RELEASE[@]}"
+scenario "S3h table vide avant la montée, nommée" 12 "credit_note_lines (valeurs d'avant changées" TABLE_VIDE=credit_note_lines -- "${BASE_ARGS[@]}" "${RELEASE[@]}"
 scenario "S4 credit_note_lines changée, non nommée" 12 credit_note_lines ECART_ANCIEN=credit_note_lines -- "${BASE_ARGS[@]}"
 echo "  S5, S8 : PDF archivés et regel (D4 a)"
-scenario "S5 PDF figé servi autrement" 12 "PDF archivé de F1" PDF_FIGE_ALTERE=oui -- "${BASE_ARGS[@]}"
+scenario "S5 PDF figé servi autrement (empreinte en base concordante)" 12 "PDF archivé de F1 : octets différents" PDF_FIGE_ALTERE=oui -- "${BASE_ARGS[@]}"
+scenario "S5b PDF figé aux octets de la phase 1, empreinte en base différente" 12 "PDF archivé de F1 : SHA-256 différent" PDF_SHA_ALTERE=oui -- "${BASE_ARGS[@]}"
 scenario "S8 regel refusé" 12 "regel de F8" REGEL_ECHEC=oui -- "${BASE_ARGS[@]}"
+scenario "S8b 410 d'une autre cause que le fichier manquant" 12 "au lieu d'INVOICE_PDF_GONE" CODE_410=AUTRE_CHOSE -- "${BASE_ARGS[@]}"
 echo "  S6, S7, S14 : rendus (D4 b, D5)"
 scenario "S6 trame différente, texte égal" 16 "F4 : page 1, trame différente" RENDU_ECART=oui -- "${BASE_ARGS[@]}"
 scenario "S6c trame vide des deux côtés" 16 "trame vide" TRAME_VIDE=oui -- "${BASE_ARGS[@]}"
+scenario "S6d mutool signale une erreur et rend 0" 16 "mutool a signalé une erreur" MUTOOL_ERREUR=oui -- "${BASE_ARGS[@]}"
 scenario "S7a texte sans le numéro de la pièce" 16 "0 paire(s)" RENDU_VIDE=oui -- "${BASE_ARGS[@]}"
 scenario "S7a' zéro page" 16 "0 paire(s)" PAGES=0 -- "${BASE_ARGS[@]}"
 scenario "S7b un 200 qui n'est pas un PDF" 11 "pas un PDF" PDF_PAS_PDF=oui -- "${BASE_ARGS[@]}"
@@ -688,6 +717,7 @@ echo "  S10 : préconditions et contrôles du peuplement (AC1, AC8)"
 scenario "S10 statuts clients" 11 "statuts clients" STATUTS_CLIENTS=validated,validated,draft,validated,validated,validated,validated,validated -- "${BASE_ARGS[@]}"
 scenario "S10 aucun avoir" 11 "avoir absent" NB_AVOIRS=0 -- "${BASE_ARGS[@]}"
 scenario "S10 aucun compte principal" 11 "compte bancaire principal" PRINCIPAL=0 -- "${BASE_ARGS[@]}"
+scenario "S10 compte principal non lié au 1020" 11 "compte bancaire principal" LIEN_1020=0 -- "${BASE_ARGS[@]}"
 scenario "S10 aucun compte d'arrondi" 11 "différences d'arrondi" ARRONDI_COMPTE=null -- "${BASE_ARGS[@]}"
 scenario "S10 rapport TVA vide" 11 "rapport TVA sans chiffre d'affaires" TVA_VIDE=oui -- "${BASE_ARGS[@]}"
 echo "  S11 : mutool exigé (D9)"

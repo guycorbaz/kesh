@@ -132,7 +132,7 @@ done
 [[ "$PREFIXE" =~ ^kesh-[a-z0-9]+$ ]] || refus "préfixe « $PREFIXE » hors du motif kesh-<mot>"
 [[ "$MIGRATIONS" =~ ^(0|[1-9][0-9]*)$ ]] || refus "--migrations-attendues : un entier, sans zéro de tête"
 
-for outil in jq md5sum sha256sum awk ss realpath join diff "$MUTOOL" "$CURL" "$DOCKER"; do
+for outil in jq md5sum sha256sum awk ss realpath join diff cmp "$MUTOOL" "$CURL" "$DOCKER"; do
   command -v "$outil" >/dev/null || refus "outil manquant : $outil" 5
 done
 
@@ -834,6 +834,9 @@ login || echec 2 "connexion impossible"
 for f in F1 F5 F7; do pdf_fige_identique 2 "$f" apres; done
 CODE=$(telecharger "$(chemin_pdf F8)" "$P/apres-F8-manquant.json")
 [ "$CODE" = 410 ] || echec 2 "F8, fichier retiré : HTTP $CODE au lieu de 410 ($P/apres-F8-manquant.json)"
+# Un 410 d'une autre cause ne prouve pas que le fichier manque : son code est exigé.
+CODE_ERR=$(jq -r '.error.code // empty' "$P/apres-F8-manquant.json" 2>/dev/null) || CODE_ERR=""
+[ "$CODE_ERR" = INVOICE_PDF_GONE ] || echec 2 "F8, fichier retiré : 410 de code « $CODE_ERR » au lieu d'INVOICE_PDF_GONE"
 CODE=$(C -o "$L/regel-F8.json" -w '%{http_code}' -X POST "$URL$(chemin_pdf F8)/refreeze" -H "Authorization: Bearer $TOKEN") || CODE=${CODE:-000}
 [ "$CODE" = 200 ] && jq -e '.id' "$L/regel-F8.json" >/dev/null 2>&1 \
   || echec 2 "regel de F8 : HTTP $CODE ($L/regel-F8.json)"
@@ -952,5 +955,9 @@ for paire in "F2 retour-F2 apres-F2" "F4 retour-F4 apres-F4" "F6 retour-F6 apres
   PAIRES=$((PAIRES + 1))
 done
 [ "$PAIRES" -eq 5 ] || echec 6 "$PAIRES paire(s) de rendus comptée(s), 5 exigées"
+# Un `mutool` qui signale une erreur mais rend 0 dégraderait pareil les deux côtés d'une paire : toute ligne de sa
+# sortie d'erreur qui n'est pas un `warning:` (l'absence d'ICC en est un) fait échouer — `format error`, `cannot draw`…
+ERREURS_MUTOOL=$(/usr/bin/grep -v -e '^warning:' -e '^$' "$L/mutool.log" 2>/dev/null || true)
+[ -z "$ERREURS_MUTOOL" ] || echec 6 "mutool a signalé une erreur ($L/mutool.log) : $(printf '%s' "$ERREURS_MUTOOL" | head -1)"
 
 echo "✅ recette-montee : phases jouées, $MIGRATIONS migration(s), $PAIRES paires de rendus, journaux sous $L"
