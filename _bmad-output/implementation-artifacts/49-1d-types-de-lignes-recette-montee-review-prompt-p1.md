@@ -13,9 +13,13 @@ Case Hunter), **A** (Acceptance Auditor). Une première passe n'est jamais cibl�
   « Passer à la 0.20.0 », paragraphe « Compatibilité » du § *Exporter (sauvegarde complète)*).
 - **Fiche** : `_bmad-output/implementation-artifacts/49-1d-types-de-lignes-recette-montee.md` (D1 à D11, AC1 à AC16, S1 à
   S14, T0 à T12, section *Allègement*, Dev Agent Record) ; registre :
-  `_bmad-output/implementation-artifacts/e0200-choix-autonomes-e491d.md` (C-e491d-1 à C-e491d-n).
-- **Commits** : `git log --oneline origin/epic/49-types-de-lignes-facture..HEAD` ; le Dev Agent Record dit lesquels portent du
-  code et lesquels de la documentation.
+  `_bmad-output/implementation-artifacts/e0200-choix-autonomes-e491d.md` (C-e491d-1 à C-e491d-5).
+- **Commits** : `git log --oneline origin/epic/49-types-de-lignes-facture..HEAD`. Code : `e137ae1e9` (pause du 2026-11-20),
+  `a5cf95297`, `a02b79bec`, `bd7e72ce8` ; le reste est documentation (fiche, registre, `docs/testing.md`, manuel). Le Dev Agent
+  Record (§ *Reprise du 2026-11-24*) donne pour chaque jeu son commit, son journal et ses chiffres.
+- **Journaux de gate** : `test-fast-ci.log`, `gate-ci.log` (+ `.entete`, `.out`), `mesure-nextest-1.log`, `-2.log`,
+  `gates-review.log` ; mutations : `mut/juge.log` (verdict final), `mut/resume.log`, `mut/resume-2.log`,
+  `mut/juge-tirage-parallele.log` (tirage parallèle, onze journaux tronqués, rejoués).
 - **Scripts hors dépôt, relus comme du code** (AC12, D7, D11 ; lecture seule) :
   `/home/gcorbaz/devel/kesh-gate-logs/rel0200/verifs-0200.sh` (crochet `--apres`),
   `/home/gcorbaz/devel/kesh-gate-logs/rel0200/recette-complement-rel0200.sh` (retour par `pre-upgrade/`),

@@ -1,6 +1,6 @@
 # Story 49-1d : types de lignes de la facture client — la recette de montée avec factures réelles simulées, et le passage à la 0.20.0 au manuel d'administration (#1242)
 
-Status: in-progress
+Status: review
 
 *Fiche rédigée le 2026-11-19 par l'agent de rédaction de la 49-1d (Opus 5.5), par le workflow `bmad-create-story`. Release
 **0.20.0** (coupure jeudi 2026-11-26 au soir). **Aucune migration, aucun code de production** : la story touche l'outillage de
@@ -663,7 +663,7 @@ tourne tout de même au dernier commit de code (AC16).
 
 ## Tâches
 
-- [ ] **T0 — Sonde, avant tout changement** (journal `kesh-gate-logs/e491d/t0/`) : `docker image inspect gcorbaz/kesh:0.19.1`
+- [x] **T0 — Sonde, avant tout changement** (journal `kesh-gate-logs/e491d/t0/`) : `docker image inspect gcorbaz/kesh:0.19.1`
   (tirer si absente) ; `command -v mutool sha256sum` et `mutool -v` ; jouer **à la main**, contre une image 0.19.0 jetable (préfixe
   `kesh-e491dt0`, base `mariadb:10.11` en tmpfs), les gestes de D1 et le rapport de D10 que le script ne fait pas encore : compte
   bancaire principal et lien au `1020`, compte d'arrondi désigné, relevé saisi au jour (continuité de solde avec le relevé A : les
@@ -675,31 +675,31 @@ tourne tout de même au dernier commit de code (AC16).
   facture **et** sur celui d'un avoir de la sonde rend leur numéro (`invoiceNumber`, numéro de l'avoir ; police intégrée,
   `crates/kesh-qrbill/src/pdf.rs:329`) — sans quoi aucune paire de D5 ne compterait (V3-7). Toute surprise s'écrit au Dev Agent Record **avant**
   d'écrire le script ; une prémisse fausse de D1 à D11 arrête la story et se dit.
-- [ ] **T1 — Peuplement** (AC1) : préconditions, huit factures (descriptions de la forme de D1), avoir, groupe, contrôles.
-- [ ] **T2 — Empreinte et projection** (AC2, AC3, AC8) : relevé des colonnes à `avant`, projections, `api` par clés et types,
+- [x] **T1 — Peuplement** (AC1) : préconditions, huit factures (descriptions de la forme de D1), avoir, groupe, contrôles.
+- [x] **T2 — Empreinte et projection** (AC2, AC3, AC8) : relevé des colonnes à `avant`, projections, `api` par clés et types,
   rapport TVA et son contrôle de non-vacuité, diff au journal.
-- [ ] **T3 — Documents et PDF** (AC4, AC6) : `docker cp`, retrait de F8, phase 2 (servis, `410`, regel, rendus ; corps de
+- [x] **T3 — Documents et PDF** (AC4, AC6) : `docker cp`, retrait de F8, phase 2 (servis, `410`, regel, rendus ; corps de
   `/health` du binaire neuf écrit à `$D/journal/health-binaire.json`, lu par D11), phase 5 (dossier neuf, PDF figés servis à
   l'octet).
-- [ ] **T4 — Phase 4 et phase 6** (AC5) : rendus 0.19.0 après l'empreinte du retour, comparaison trame (300 dpi) + texte + pages,
+- [x] **T4 — Phase 4 et phase 6** (AC5) : rendus 0.19.0 après l'empreinte du retour, comparaison trame (300 dpi) + texte + pages,
   décompte exact (5), code 16.
-- [ ] **T5 — Outils et relance** (AC7, D9) ; enveloppe Rust (`.env_remove("KESH_MUTOOL")`).
-- [ ] **T6 — Test shell** (S1 à S14) et mutations ; **durée mesurée avant la revue**, sous nextest, à la station (deux tirages) ;
+- [x] **T5 — Outils et relance** (AC7, D9) ; enveloppe Rust (`.env_remove("KESH_MUTOOL")`).
+- [x] **T6 — Test shell** (S1 à S14) et mutations ; **durée mesurée avant la revue**, sous nextest, à la station (deux tirages) ;
   borne de `recette_montee_script.rs` (`timeout -k 10 600`, `:25`) relevée seulement si la mesure l'exige (dire la valeur).
-- [ ] **T7 — Crochet** `kesh-gate-logs/rel0200/verifs-0200.sh` (D7), texte intégral copié au Dev Agent Record.
-- [ ] **T8 — Recette réelle** (AC10), ses rouges réels R1 et R2, la sensibilité de la trame hors script ; copie mutée retirée.
-- [ ] **T9 — Script complémentaire** `kesh-gate-logs/rel0200/recette-complement-rel0200.sh` (D11, AC11) : nom `-0.19.1-to-*` et
+- [x] **T7 — Crochet** `kesh-gate-logs/rel0200/verifs-0200.sh` (D7), texte intégral copié au Dev Agent Record.
+- [x] **T8 — Recette réelle** (AC10), ses rouges réels R1 et R2, la sensibilité de la trame hors script ; copie mutée retirée.
+- [x] **T9 — Script complémentaire** `kesh-gate-logs/rel0200/recette-complement-rel0200.sh` (D11, AC11) : nom `-0.19.1-to-*` et
   version d'arrivée égale à `/health`, import, empreinte stricte, **nouveau login après l'import** avec les identifiants de la
   recette (`admin`, mot de passe factice de `recette-montee.sh:219-220`), puis PDF de F1, F5, F7 à l'octet et F8 → `410` avec le
   code `INVOICE_PDF_GONE` (V4-3) ; joué avec son rouge,
   texte et sortie au Dev Agent Record (à la tête de la story, le nom finit par `-0.19.1-to-0.19.1`, D11).
-- [ ] **T10 — `docs/testing.md`** (AC13) ; grep du symptôme « aucun document » (`git grep -n -i -e "aucun document n'est peuplé" -e
+- [x] **T10 — `docs/testing.md`** (AC13) ; grep du symptôme « aucun document » (`git grep -n -i -e "aucun document n'est peuplé" -e
   "vivent dans son" -- scripts docs crates`) : tous les sites traités.
-- [ ] **T11 — Manuel d'administration** (AC14) ; `make fr` sous le verrou de la voie « Frontend et manuels » et `mem-guard`
+- [x] **T11 — Manuel d'administration** (AC14) ; `make fr` sous le verrou de la voie « Frontend et manuels » et `mem-guard`
   (`flock "$GATE_LOGS/.gate-front.lock" scripts/mem-guard.sh make -C docs/manual fr`), puis `git checkout -- docs/manual/fr/*.pdf`
   (PDF jamais commités) ; vérifier le texte rendu (`pdftotext docs/manual/fr/admin-manual.pdf - | tr '\n' ' ' | tr -s ' '`) avant
   le `checkout` : aucun `DELETE`, aucun « dirty », le message de sqlx et « établi » pour le refus d'import.
-- [ ] **T12 — Gates** (AC16) et Dev Agent Record (ce qui a tourné, et seulement cela). **Contrôle de la perte assumée** (V3-3) :
+- [x] **T12 — Gates** (AC16) et Dev Agent Record (ce qui a tourné, et seulement cela). **Contrôle de la perte assumée** (V3-3) :
   aucune valeur attendue de la suite existante n'a changé depuis le tag. **Seuls les retraits se citent** au Dev Agent Record,
   avec leur fichier (V4-2 ; la sortie entière des ajouts et retraits ferait plus de 5 000 lignes à la tête de la story) :
   `git diff -U0 773df80da..HEAD -- 'crates/*/tests/*' | grep -E '^(\+\+\+ b/|-)' | grep -vE '^--- (a/|/dev/null)'` ; chaque
@@ -947,7 +947,55 @@ login, F1, F5, F7 servis `200` à l'octet de la phase 1, F8 `410 INVOICE_PDF_GON
 **Aucune facture ni aucun avoir existant ne change à la montée, et le retour par la sauvegarde fonctionne** : aucun point
 d'arrêt du Project Lead (`alerte.md` le dit).
 
-**8. Rouges réels et gates** : _à compléter au passage en `review`._
+**8. Rouges réels** (`dev/chaine-reelle.sh`, une commande par prise ; journal `dev/chaine-reelle.log`) :
+- **R1** (`--diff-attendu migrations` seul) → **code 12**, « écart hors de --diff-attendu (avant → apres) : api
+  credit_note_lines invoice_lines » (`recette-reelle-rouge-diff.log`) : l'empreinte voit la migration.
+- **R2** (copie mutée `scripts/recette-montee.mut.sh`, non suivie, `UPDATE invoice_lines SET unit_price = unit_price + 0.0001
+  WHERE id = 1` juste avant `empreinte apres`) → **code 12**, « invoice_lines (valeurs d'avant changées …) » et `api` ; diff de
+  la projection : `200.0000` → `200.0001` (`recette-reelle-rouge-projection.log`). Copie retirée ; `git status --porcelain`
+  vide ensuite (fin de `dev/chaine-reelle.log`).
+- **Rouge du script complémentaire**, sur une copie du dossier de la recette (`e491d/rouge-D/`) dont l'empreinte d'avant de
+  `invoices` gagne une ligne et le PDF de F1 de la phase 1 un octet changé → **code 1, 2 écarts** : « invoices diffère », « F1 :
+  HTTP 200, octets différents » (`recette-complement-rouge.log`).
+
+**9. Gates de passage en `review`** (`gates-review.sh`, une commande par prise de la voie base ; `gates-review.log`) :
+- bases `kesh_e491d`, `kesh_ci_e491d`, `kesh_e2e_e491d` remises à neuf (`bases-neuves-e491d.sh`, 04 h 56) ;
+- **`scripts/test-fast.sh --ci`** à `a44055e74` (code identique à `bd7e72ce8`) → **EXIT=0**, « 6264 tests run: 6264 passed (1 slow),
+  17 skipped », 566 s (`test-fast-ci.log`) ; le test de la recette y prend 268,6 s ;
+- **mesure du test de la recette sous nextest**, seul binaire, deux tirages : **294,0 s** et **177,0 s**
+  (`mesure-nextest-1.log`, `-2.log`) ; la borne de l'enveloppe (600 s) n'a pas à bouger ; `docs/testing.md` le dit ;
+- **`scripts/gate-ci.sh kesh_ci_e491d`** à `a44055e74` (arbre : `docs/testing.md` modifié, documentation seule) → **code 0**,
+  « 6283 passés, 0 échoués, 21 ignorés » (`gate-ci.log`, `gate-ci.log.entete`) ;
+- frontend : non touché (`git diff --stat origin/epic/49-types-de-lignes-facture...HEAD -- frontend` vide), aucun gate ;
+- **pas d'E2E** (il tourne à la clôture, après la revue) ; recette visuelle sans objet (aucun contrôle visible) ;
+- manuel : `make fr` vert, aucun `Overfull` dans les lignes de la section 0.20.0 (`dev/make-fr.log`, `admin-manual.log`) ;
+  texte aplati contrôlé : le message « partially applied » cité, « établi par la lecture du code de la 0.19.1, non constaté »,
+  `-0.19.1-to-0.20.0.keshbackup` ; le seul *dirty* et le seul `DELETE FROM _sqlx_migrations` du PDF sont ceux des sections
+  0.19.0 (#1448) et 0.17.x, non de la section 0.20.0. PDF du dépôt remis à leur état (`git checkout`) ; copie compilée pour la
+  revue : `e491d/manuel/admin-manual.pdf` ;
+- contrôle de la perte assumée (`rel0200/perte-assumee.sh`, base par défaut portée au tag `v0.19.1`, C-e491d-1) : **code 0**
+  depuis `v0.19.1` et depuis `773df80da` (`dev/perte-assumee-v0.19.1.log`, `dev/perte-assumee-773df80da.log`) : 16 fichiers
+  (les dix binaires, et six modules dont `support/caracterisation.rs`, venu avec la reprise de `main`, relevé seul),
+  sonde positive 14 retraits, aucun retrait à trier, aucun ajout à classer ;
+- AC15 : `git diff --stat origin/epic/49-types-de-lignes-facture...HEAD -- crates frontend` ne nomme que
+  `crates/kesh-db/tests/recette_montee_script.rs` (4+, 2−) ; `ls crates/kesh-db/migrations/*.sql | wc -l` → 96 ;
+- mots-clés de fermeture contre `origin/epic/49-types-de-lignes-facture` : aucun.
+
+**10. Écarts aux consignes, déclarés.** (a) La résolution du conflit de `sprint-status.yaml`, la réécriture de la section de
+`docs/testing.md` et la copie du crochet dans cette fiche ont été faites par un court script Python, non par l'outil Edit
+(fichiers de documentation, aucun code) ; tout le code (`scripts/`, `crates/`) l'a été par Edit. (b) La recette écrit, par
+construction, sous `/tmp/kesh-recette.*` (racine jetable imposée sous `/tmp`, D3 et Dev Notes) ; tout le reste sous le worktree
+et `kesh-gate-logs/`. (c) Un `kill` par PID tiré de `pgrep -f` a touché, avec le jeu de mutations du premier tirage, le shell de
+la commande qui le lançait (mes processus seulement) ; les deux tests orphelins ont été arrêtés par leur PID. (d) Le dossier
+`e491d/mut/` garde deux racines de mutation du premier tirage interrompu (`racine-S5-octets`, `racine-S6a-trame`) : leur
+suppression m'a été refusée ; elles sont inertes.
+
+**11. À ouvrir** (une issue par problème, par l'orchestrateur) : (i) la conditionnelle n° 6 des Dev Notes, puisque la 49-4b est
+à l'Epic 52 — `technical-debt`, P4, *la recette de montée ne rend aucune désignation de plus de 44 caractères sur une pièce non
+figée* ; (ii) `technical-debt`/test défaillant, P3 — *`recette-montee.test.sh` : deux copies simultanées choisissent les mêmes
+ports, et le scénario du port de la seconde base interrompt le test sous `set -e` avant son résumé* (ligne `D=$(/usr/bin/grep
+-oE 'dossier .*$' …)`, Story 33-10) ; (iii) `technical-debt`, P4 — *`shellcheck` absent de la station : les scripts de recette ne
+sont pas passés au linter*.
 
 **Crochet `kesh-gate-logs/rel0200/verifs-0200.sh`, en entier (D7)** :
 ```sh
@@ -992,3 +1040,4 @@ echo "verifs-0200 : vert"
 | 2026-11-20 | **Passe de validation P3** (Sonnet, contexte frais, `kesh-gate-logs/e491d/validation-49-1d-p3.md` : 0 CRITICAL, 0 HIGH, 4 MEDIUM, 5 LOW) — **validation P3 remédiée** (Opus 5.5, prémisse de chaque finding relue au code). Tendance des MEDIUM : P1 → 6, P2 → 3, P3 → 4. Trois des quatre MEDIUM naissent de la remédiation précédente (V3-1 et V3-3 de la P2, V3-2 en partie de la P1) : ce sont des **erreurs de fait** (un suffixe non confronté à la version Cargo, un texte d'écran pris pour celui de l'API, des tests cités pour une preuve qu'ils ne portent pas), non le retour d'une structure sous une autre forme — pas de recyclage au sens de la règle de splitting ; V3-4 est une lacune antérieure de D11. **MEDIUM** : **V3-1** corrigé — prémisse lue, `crates/kesh-api/src/main.rs:179` `let vers = env!("CARGO_PKG_VERSION");`, crates en 0.19.0 à la tête de la story ; D11, AC11 et T9 exigent exactement un `kesh-pre-upgrade-*-0.19.0-to-*.keshbackup` dont la version d'arrivée égale `/health` du binaire neuf (écrit au journal par la phase 2, T3) ; AC12 : rejeu **après** le bump de `scripts/prepare-release.sh`, binaire reconstruit ; AC14 : le nom `-0.19.0-to-0.20.0` n'est « constaté » que si le rejeu suit le bump. **V3-2** corrigé — prémisse lue, `AdminRestorePanel.svelte:189-193` (tête et tag), clé `admin-restore-error-schema` ; AC14 et « Compatibilité » disent le code `IMPORT\_SCHEMA\_MISMATCH` (précédent de la section 0.17.5, `admin-manual.tex:2674`) et, s'ils citent l'écran, son texte réel, jamais le message de l'API ; § *Les fichiers de la 49-1a* (a) corrigé (la table se voit à l'écran). **V3-3** corrigé — prémisse lue, `credit_note_copies_unpriced_lines` compare deux avoirs dans le même code, sans facture d'avant ; la perte assumée, D10 (c), les trois lignes « angle mort » du second inventaire, AC9, AC13 et l'issue n° 2 disent désormais que la parité des gestes sur des lignes toutes chiffrées repose sur la **suite existante passée inchangée** (binaires nommés), les tests T5 à T8 de la 49-1a ne prouvant que la neutralité des lignes non chiffrées ; contrôle de diff ajouté à T12 (`git diff -U0 773df80da..HEAD -- 'crates/*/tests/*'`, retraits cités et justifiés, sonde positive du pathspec) ; à signaler à Guy par l'orchestrateur : la prémisse de sa décision était plus étroite qu'écrite. **V3-4** corrigé — prémisse lue, `admin_backup/export.rs:363-368` (`warn!` sur une pièce manquante) ; le script complémentaire sert, après l'import, les PDF de F1, F5, F7 et les compare à l'octet à la phase 1, F8 → `410` ; son rouge gagne un PDF altéré d'un octet. **LOW**, tous corrigés : V3-5 (AC14 : vidage de sécurité, perte des saisies, numéros sur papier à refaire) ; V3-6 (formule « valeur par défaut », total recompté au rejeu) ; V3-7 (T0 sonde `mutool draw -F txt` sur une facture et un avoir, `pdf.rs:329`) ; V3-8 (Dev Notes : boucle de revue hors estimation, **ordre de coupe** — rien ne se coupe dans la story, si la 49-1d n'est pas close jeudi 2026-11-26 au soir tout l'Epic 49 sort de la release, jamais de rognage des gates —, rejeu AC12 avant vendredi midi) ; V3-9 (D5 : rendus de la phase 4 avant `journal_sans_erreur 4` et `arreter_image`, conteneur neuf ; S6 contrôle l'ordre). Grep du symptôme fait (`0.19.0-to-0.20.0`, `IMPORT_SCHEMA_MISMATCH`, « T5 », « perte assumée ») : aucun reste contradictoire dans la fiche ; la fiche close de la 49-1a (AC13 e) écrit le nom de la release, juste pour l'image publiée, laissée telle quelle. Décomptes inchangés : D1 à D11, AC1 à AC16, S1 à S14, T0 à T12. Modèles : Opus (P2), Sonnet (P3), Opus 5.5 (remédiation) ; la P4, complète, prend Opus en contexte frais. Statut inchangé : `ready-for-dev`, validation en cours. |
 | 2026-11-20 | **Passe de validation P4** (Opus, contexte frais, `kesh-gate-logs/e491d/validation-49-1d-p4.md` : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 4 LOW) — **validation P4 remédiée** (Opus 5.5, prémisse de chaque finding relue au code). Tendance des MEDIUM : P1 → 6, P2 → 3, P3 → 4, P4 → 1. Le MEDIUM restant naît de la remédiation de la P3 (V3-3) : portée d'un contrôle juste (tête de la story contre release), non le retour d'une structure — pas de recyclage au sens de la règle de splitting. **MEDIUM** : **V4-1** corrigé — prémisse lue : `git diff --numstat 773df80da..origin/epic/48-corrections-0-20-0 -- 'crates/*/tests/*'` rend déjà des retraits (`invoice_send_email_e2e.rs` 37/3, `opening_balances_e2e.rs` 24/1), `origin/main` aussi (`account_currency_e2e.rs` 45/1) ; la 48-14 (#1255) refond le dé-rapprochement que couvrent `grouped_settlements` et `reconciliation_group_e2e`, la 48-11 l'arrondi que couvre `vat_report_e2e`. Le contrôle de diff de T12 se rejoue désormais au rejeu de l'AC12, sur la release assemblée, sur les dix binaires de la perte assumée **et les modules qu'ils incluent** (`#[path]`, `mod common`, relevés au rejeu ; ajout de cette remédiation, au-delà du remède proposé) ; journal `kesh-gate-logs/rel0200/perte-assumee.log` ; un retrait d'une valeur attendue venu d'une autre story revient à l'orchestrateur, sur le modèle de D2, qui décide avec le Project Lead si la perte assumée tient encore. Règle écrite à T12 pour distinguer un retrait de valeur attendue (assertion, littéral comparé, donnée de fixture, test ou attribut ; le doute tranche en « valeur attendue » ; un ajout qui neutralise — `#[ignore]`, `#[cfg]`, `return` — compte comme tel) d'un retrait sans effet (commentaire, `use`/`mod`, décompte de migrations, reformatage repris à l'identique). Propagé à *Allègement* (perte assumée), D10 (c), le second inventaire, AC9, AC12, AC13, T12 et les Dev Notes (issue n° 2, *Rejeu*). Joué à `6bb2d5770` : sur les dix fichiers et leurs modules, un seul retrait (commentaire de `grouped_settlements.rs`), aucun ajout neutralisant. **LOW**, tous corrigés : **V4-2** (T12 : sonde sur le motif lui-même, `-- 'crates/*/tests/*' \| grep migrations_upgrade_path` → `774 14`, contre zéro ligne sans `/*` ; seuls les retraits cités, 20 lignes à `6bb2d5770` au lieu de 5 328) ; **V4-3** (D11, AC11, T9 : nouveau login après l'import avec `admin` et le mot de passe factice de `recette-montee.sh:219-220` — non `:217-218` comme l'écrivait le rapport —, F8 compte seulement sur `410` **et** `INVOICE_PDF_GONE`, `errors.rs:2835`) ; **V4-4** (Note de version : « en caractères courants », et le complément conditionnel nomme les caractères repliés par la 49-4b, comme l'AC14) ; **V4-5** (AC15 : diff à trois points depuis la base de fusion). Grep du symptôme fait (« passée inchangée », `..HEAD -- crates frontend`, `F8 → 410`, « 44 caractères au plus ») : tous les sites traités. Décomptes inchangés : D1 à D11, AC1 à AC16, S1 à S14, T0 à T12. Modèles : Sonnet (P3), Opus (P4), Opus 5.5 (remédiation) ; la passe suivante, complète, prend Sonnet en contexte frais (le MEDIUM corrigé appelle une passe de plus). Statut inchangé : `ready-for-dev`, validation en cours. |
 | 2026-11-20 | **Validation terminée** (entrée finale de la boucle). **Passe P5** (Sonnet selon l'alternance prévue par la P4, contexte frais, `kesh-gate-logs/e491d/validation-49-1d-p5.md` : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 4 LOW) : arrêt de la boucle, aucune passe ne rendant plus de finding au-dessus de LOW. **Tendance des findings par passe** (CRITICAL/HIGH/MEDIUM/LOW) : P1 0/0/6/4, P2 0/0/3/9, P3 0/0/4/5, P4 0/0/1/4, P5 0/0/0/4. **Modèles** : Sonnet (P1), Opus (P2), Sonnet (P3), Opus (P4), Sonnet (P5) — alternance tenue, aucune passe ciblée ; rédaction et remédiations par Opus 5.5. **Reclassements** : aucun finding MEDIUM+ reclassé en dette ; le signal de recyclage de la P2 a été traité par l'**Allègement** décidé par Guy (non par un découpage) ; les MEDIUM de la P3 et de la P4 jugés non recyclants (erreurs de fait, portée), justification à leurs entrées. **LOW de la P5, traités à l'étape 0 du développement** (Opus 5.5, prémisse relue) : **V5-1** — prémisse lue, T12 (d) « parmi les ajouts du même fichier » : (d) restreinte à **la même hunk** de `git diff -U0` ; (c) réécrite sans littéral qui vieillit (« le décompte des migrations lui-même, porté de la valeur de la release précédente à celle de la release qui ajoute la migration »). **V5-2** — prémisse lue, T12 ne cherchait que `^\+\s*(#\[ignore|#\[cfg|return\b)` ; ajouts classés en (e) neutralisants (motif `return` resserré à `return;` / `return Ok(());` seul sur sa ligne) et (f) types de ligne non chiffrés (`LineType::Comment`/`Heading`, `'comment'`, `'heading'`, `line_type`/`lineType` sans le type chiffré), chacun rattaché à sa fonction englobante : dans une fonction présente au tag, compté comme retrait de valeur attendue. **V5-3** — prémisse lue, AC12 « Il se planifie avant le vendredi midi » sans repli : le contrôle de la perte assumée se joue **dès la coupure du jeudi 2026-11-26 au soir** (il ne dépend pas du bump) ; un rejeu non vert le vendredi à midi vaut le repli de l'ordre de coupe (la migration et l'Epic 49 sortent de la 0.20.0 ; l'orchestrateur le constate, le Project Lead garde le dernier mot) — AC12, *Allègement*, Dev Notes (*Si le temps manque*, *Rejeu*). **V5-4** — prémisse lue, T12 ne donnait que la commande sur tout `crates/*/tests/*` : livré `kesh-gate-logs/rel0200/perte-assumee.sh` (hors dépôt, comme le crochet), restreint aux dix fichiers et à leurs modules relevés à la tête, sonde positive incorporée, codes 0/3/4 ; nommé par T12 et l'AC12. **Sondes du script** (`kesh-gate-logs/e491d/dev/perte-assumee-sonde.log`, clone jetable muté : une assertion retirée de `grouped_settlements.rs`, un `#[ignore]` et un `LineType::Comment` ajoutés dans une fonction du tag) → code 3, les trois lignes signalées ; la première version du script manquait la troisième (`git show … \| grep -q` sous `pipefail` : SIGPIPE, une fonction ancienne passait pour neuve) — corrigé par un décompte `grep -c`, la sonde rejouée. **Joué à la tête** (`153f6ba5c`, `kesh-gate-logs/e491d/dev/perte-assumee-etape0.log`) : 15 chemins (10 binaires, 5 modules), un retrait (commentaire de `grouped_settlements.rs`, (a)), 30 ajouts de type non chiffré tous dans des fonctions neuves de la 49-1a, code 0. **Issues des Dev Notes** ouvertes par l'orchestrateur : #1444 à #1448 (n° 6, conditionnelle, non ouverte), substituées à « à ouvrir » dans l'inventaire, la perte assumée et les Dev Notes (les entrées passées du Change Log gardent leur texte). Branche reprise d'`origin/epic/49-types-de-lignes-facture` (`abb246252`, documentation seule) par `153f6ba5c`. Décomptes inchangés : D1 à D11, AC1 à AC16, S1 à S14, T0 à T12. Statut : `ready-for-dev` → `in-progress` (fiche et `sprint-status.yaml`). |
+| 2026-11-24 | **Développement repris et terminé** (Opus 5.5, `bmad-dev-story`). Branche d'épique reprise (`87e00ba05`, v0.19.1, par `0d033d36e`) ; **version de départ portée à la 0.19.1**, dernière image publiée (C-e491d-1), sites opératoires de la fiche corrigés. **T0** jouée sur `gcorbaz/kesh:0.19.1` : deux prémisses de D1 fausses, écrites au Dev Agent Record avant le code — QR-IBAN du relevé A (C-e491d-2), `total_amount` HT (C-e491d-3) — sans effet sur ce que la recette compare. Code : `a5cf95297`, `a02b79bec`, `bd7e72ce8` (dont deux défauts du script trouvés par le test : `id_piece`, et la comparaison à vide d'une trame ou d'un avant vides, scénario S6c ajouté). Test shell vert, 155 assertions ; **21 mutations, 20 tuées, S3c équivalente** (deux défauts de l'outillage de mutation corrigés en route, C-e491d-5). **Recette réelle verte** depuis l'image 0.19.1 (5 paires au même dessin, projections non vides et égales, crochet vert), **R1 et R2 rouges**, trame éprouvée hors script ; **script complémentaire vert** (17 tables, PDF figés à l'octet, F8 `410`) et son rouge (2 écarts) ; `test-fast --ci` vert (6264), `gate-ci kesh_ci_e491d` vert (6283), perte assumée code 0. `docs/testing.md` et manuel d'administration FR (section 0.20.0, « Compatibilité ») écrits ; `make fr` vert. **Aucune facture ni aucun avoir existant ne change ; le retour par la sauvegarde fonctionne** : aucun point d'arrêt. La 49-4b étant à l'Epic 52, la branche « elle n'entre pas » de D8 et de l'AC14 s'applique. Trois issues à ouvrir (Dev Agent Record § 11). Prompt de la revue P1 écrit (`49-1d-types-de-lignes-recette-montee-review-prompt-p1.md`), revue non lancée. Statut : `in-progress` → `review` (fiche ; `sprint-status.yaml` laissé à l'orchestrateur). |
