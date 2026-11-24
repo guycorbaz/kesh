@@ -124,6 +124,7 @@ async fn spawn_app(
         rate_fetch_memo: Arc::default(),
         rate_login_trigger: Arc::new(std::sync::Mutex::new(Some(std::time::Instant::now()))),
         test_rate_source: None,
+        provider_downloads: Default::default(),
     };
 
     let app = build_router(state, "nonexistent-static-dir".to_string());
@@ -1075,6 +1076,7 @@ async fn test_sent_emails_endpoint_captures_and_guards(pool: MySqlPool) {
         rate_fetch_memo: Arc::default(),
         rate_login_trigger: Arc::new(std::sync::Mutex::new(Some(std::time::Instant::now()))),
         test_rate_source: None,
+        provider_downloads: Default::default(),
     };
     let app = build_router(state, "nonexistent-static-dir".to_string());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -1196,6 +1198,7 @@ async fn test_sent_emails_endpoint_400_without_capture(pool: MySqlPool) {
         rate_fetch_memo: Arc::default(),
         rate_login_trigger: Arc::new(std::sync::Mutex::new(Some(std::time::Instant::now()))),
         test_rate_source: None,
+        provider_downloads: Default::default(),
     };
     let app = build_router(state, "nonexistent-static-dir".to_string());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

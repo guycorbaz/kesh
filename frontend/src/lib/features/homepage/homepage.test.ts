@@ -14,6 +14,8 @@ function account(over: Partial<BankAccountSummary> = {}): BankAccountSummary {
 		qrIban: null,
 		accountKind: 'bank',
 		cardLast4: null,
+		provider: null,
+		paypal: null,
 		isPrimary: true,
 		journalAccountId: 10,
 		version: 1,

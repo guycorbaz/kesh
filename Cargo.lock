@@ -1965,6 +1965,7 @@ dependencies = [
  "csv",
  "dotenvy",
  "http-body-util",
+ "hyper",
  "image",
  "ipnet",
  "jsonwebtoken",
@@ -2117,6 +2118,7 @@ name = "kesh-reconciliation"
 version = "0.19.1"
 dependencies = [
  "chrono",
+ "kesh-core",
  "kesh-db",
  "rust_decimal",
  "rust_decimal_macros",

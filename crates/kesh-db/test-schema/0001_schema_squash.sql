@@ -1,6 +1,6 @@
 -- SQUASH DU SCHÉMA DE TEST — Story 22-5 (#251). GÉNÉRÉ, NE PAS ÉDITER.
 -- Régénérer : scripts/regen-test-schema.sh
--- Équivalent des 96 migrations de crates/kesh-db/migrations/,
+-- Équivalent des 97 migrations de crates/kesh-db/migrations/,
 -- rejouées en UN batch DDL par base éphémère de test.
 --
 -- Le garde-fou crates/kesh-db/tests/test_schema_guard.rs compare ce schéma
@@ -217,17 +217,23 @@ CREATE TABLE `bank_accounts` (
   `closed_on` date DEFAULT NULL,
   `account_kind` varchar(20) NOT NULL DEFAULT 'bank' COMMENT 'Type du compte : bank (IBAN obligatoire) ou credit_card (sans IBAN)',
   `card_last4` char(4) DEFAULT NULL COMMENT 'Quatre derniers chiffres d''une carte ; le numéro complet n''est jamais gardé',
+  `provider` varchar(16) DEFAULT NULL COMMENT 'Prestataire dont ce compte est le solde dans une devise : paypal (wise, stripe réservés) ; NULL = compte bancaire ordinaire',
+  `provider_account` varchar(120) DEFAULT NULL COMMENT 'Libellé du compte du prestataire (p. ex. « PayPal www ») ; un compte bancaire par devise et par libellé',
+  `fee_account_id` bigint(20) DEFAULT NULL COMMENT 'Compte de charge des frais du prestataire ; NULL = frais à examiner',
   PRIMARY KEY (`id`),
   KEY `fk_bank_accounts_company` (`company_id`),
   KEY `idx_bank_accounts_journal_account` (`journal_account_id`),
+  KEY `fk_bank_accounts_fee_account` (`fee_account_id`),
   CONSTRAINT `fk_bank_accounts_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`),
+  CONSTRAINT `fk_bank_accounts_fee_account` FOREIGN KEY (`fee_account_id`) REFERENCES `accounts` (`id`),
   CONSTRAINT `chk_bank_accounts_bank_name_nonempty` CHECK (char_length(trim(`bank_name`)) > 0),
   CONSTRAINT `chk_bank_accounts_iban_nonempty` CHECK (char_length(trim(`iban`)) > 0),
   CONSTRAINT `chk_bank_accounts_closed_not_primary` CHECK (`closed_on` is null or `is_primary` = 0),
   CONSTRAINT `chk_bank_accounts_account_kind` CHECK (cast(`account_kind` as char charset binary) in ('bank','credit_card')),
-  CONSTRAINT `chk_bank_accounts_bank_has_iban` CHECK (`account_kind` <> 'bank' or `iban` is not null),
   CONSTRAINT `chk_bank_accounts_card_shape` CHECK (`account_kind` <> 'credit_card' or `iban` is null and `qr_iban` is null and `is_primary` = 0),
-  CONSTRAINT `chk_bank_accounts_card_last4` CHECK (`card_last4` is null or `account_kind` = 'credit_card' and `card_last4` regexp '^[0-9]{4}$')
+  CONSTRAINT `chk_bank_accounts_card_last4` CHECK (`card_last4` is null or `account_kind` = 'credit_card' and `card_last4` regexp '^[0-9]{4}$'),
+  CONSTRAINT `chk_bank_accounts_provider` CHECK (`provider` is null and `provider_account` is null and `fee_account_id` is null or `provider` is not null and `provider_account` is not null and cast(`provider` as char charset binary) in ('paypal','wise','stripe') and `account_kind` = 'bank' and `is_primary` = 0 and char_length(trim(`provider_account`)) > 0),
+  CONSTRAINT `chk_bank_accounts_bank_has_iban` CHECK (`account_kind` <> 'bank' or `iban` is not null or `provider` is not null)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `bank_imports`;
@@ -318,12 +324,14 @@ CREATE TABLE `bank_transactions` (
   `version` int(11) NOT NULL DEFAULT 1,
   `created_at` datetime(3) NOT NULL DEFAULT current_timestamp(3),
   `updated_at` datetime(3) NOT NULL DEFAULT current_timestamp(3) ON UPDATE current_timestamp(3),
+  `provider_type` varchar(64) DEFAULT NULL COMMENT 'Type de la transaction chez le prestataire (Type PayPal) ; NULL pour un import bancaire',
+  `counterparty_email` varchar(254) DEFAULT NULL COMMENT 'Adresse électronique de la contrepartie (import d''un prestataire)',
   PRIMARY KEY (`id`),
-  KEY `fk_bank_transactions_bank_account` (`bank_account_id`),
   KEY `fk_bank_transactions_matched_entry` (`matched_entry_id`),
   KEY `idx_bank_transactions_company_account_date` (`company_id`,`bank_account_id`,`booking_date`),
   KEY `idx_bank_transactions_import` (`import_id`),
   KEY `idx_bank_transactions_pending` (`company_id`,`bank_account_id`,`status`,`booking_date`),
+  KEY `idx_bank_transactions_account_txid` (`bank_account_id`,`transaction_id`),
   CONSTRAINT `fk_bank_transactions_bank_account` FOREIGN KEY (`bank_account_id`) REFERENCES `bank_accounts` (`id`),
   CONSTRAINT `fk_bank_transactions_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`),
   CONSTRAINT `fk_bank_transactions_import` FOREIGN KEY (`import_id`) REFERENCES `bank_imports` (`id`) ON DELETE CASCADE,
@@ -1286,6 +1294,9 @@ CREATE TABLE `reconciliation_rules` (
   `updated_at` datetime(3) NOT NULL DEFAULT current_timestamp(3) ON UPDATE current_timestamp(3),
   `active_uniq` varchar(255) GENERATED ALWAYS AS (if(`active`,`match_value`,NULL)) VIRTUAL,
   `default_project_id` bigint(20) DEFAULT NULL,
+  `provider_type` varchar(64) DEFAULT NULL COMMENT 'Filtre facultatif : type de la transaction chez le prestataire',
+  `counterparty_email` varchar(254) DEFAULT NULL COMMENT 'Filtre facultatif : adresse électronique de la contrepartie',
+  `direction` varchar(8) DEFAULT NULL COMMENT 'Filtre facultatif : sens de la transaction, credit ou debit',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_reconciliation_rules_match_active` (`company_id`,`match_type`,`active_uniq`),
   KEY `fk_reconciliation_rules_account` (`counterparty_account_id`),
@@ -1297,7 +1308,8 @@ CREATE TABLE `reconciliation_rules` (
   CONSTRAINT `chk_reconciliation_rules_label_non_empty` CHECK (char_length(trim(`label`)) > 0),
   CONSTRAINT `chk_reconciliation_rules_match_value_non_empty` CHECK (char_length(trim(`match_value`)) > 0),
   CONSTRAINT `chk_reconciliation_rules_priority_range` CHECK (`priority` between 1 and 1000),
-  CONSTRAINT `chk_reconciliation_rules_applied_count_positive` CHECK (`applied_count` >= 0)
+  CONSTRAINT `chk_reconciliation_rules_applied_count_positive` CHECK (`applied_count` >= 0),
+  CONSTRAINT `chk_reconciliation_rules_filters` CHECK ((`provider_type` is null or char_length(trim(`provider_type`)) > 0) and (`counterparty_email` is null or char_length(trim(`counterparty_email`)) > 0) and (`direction` is null or cast(`direction` as char charset binary) in ('credit','debit')))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `refresh_tokens`;

@@ -6761,3 +6761,190 @@ async fn import_sauvegarde_aller_retour_ligne_de_commentaire(pool: MySqlPool) {
         "aller-retour sans perte"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Story 38-11b (AC-7) — le compte PayPal, ses transactions et une règle à
+// filtres dans une sauvegarde ; une sauvegarde 0.19.0 sans les colonnes neuves
+// ---------------------------------------------------------------------------
+
+/// Les colonnes neuves de la 38-11b, relues : `(provider, provider_account,
+/// fee_account_id)` des comptes, `(provider_type, counterparty_email)` des
+/// transactions, `(provider_type, counterparty_email, direction)` des règles.
+#[allow(clippy::type_complexity)]
+async fn paypal_colonnes(
+    pool: &MySqlPool,
+) -> (
+    Vec<(Option<String>, Option<String>, Option<i64>)>,
+    Vec<(Option<String>, Option<String>)>,
+    Vec<(Option<String>, Option<String>, Option<String>)>,
+) {
+    (
+        sqlx::query_as("SELECT provider, provider_account, fee_account_id FROM bank_accounts ORDER BY id")
+            .fetch_all(pool)
+            .await
+            .unwrap(),
+        sqlx::query_as("SELECT provider_type, counterparty_email FROM bank_transactions ORDER BY id")
+            .fetch_all(pool)
+            .await
+            .unwrap(),
+        sqlx::query_as(
+            "SELECT provider_type, counterparty_email, direction FROM reconciliation_rules ORDER BY id",
+        )
+        .fetch_all(pool)
+        .await
+        .unwrap(),
+    )
+}
+
+/// Un compte PayPal sans IBAN (compte de frais), une transaction PayPal et une
+/// règle à filtres, écrits en base.
+async fn paypal_decor(pool: &MySqlPool, company_id: i64, user_id: i64) {
+    let compte = |numero: &'static str, type_: &'static str| async move {
+        sqlx::query(
+            "INSERT INTO accounts (company_id, number, name, account_type, active, postable) \
+             VALUES (?, ?, ?, ?, 1, 1)",
+        )
+        .bind(company_id)
+        .bind(numero)
+        .bind(format!("Compte {numero}"))
+        .bind(type_)
+        .execute(pool)
+        .await
+        .unwrap()
+        .last_insert_id() as i64
+    };
+    let solde = compte("1030", "Asset").await;
+    let frais = compte("6940", "Expense").await;
+    let bank = sqlx::query(
+        "INSERT INTO bank_accounts (company_id, bank_name, iban, is_primary, journal_account_id, \
+         provider, provider_account, fee_account_id) \
+         VALUES (?, 'PayPal', NULL, FALSE, ?, 'paypal', 'PayPal www', ?)",
+    )
+    .bind(company_id)
+    .bind(solde)
+    .bind(frais)
+    .execute(pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    let import = sqlx::query(
+        "INSERT INTO bank_imports (company_id, bank_account_id, filename, file_hash, source_format, \
+         period_from, period_to, transaction_count, imported_by_user_id) \
+         VALUES (?, ?, 'Download.CSV', REPEAT('a', 64), 'CSV', '2020-01-03', '2020-01-03', 1, ?)",
+    )
+    .bind(company_id)
+    .bind(bank)
+    .bind(user_id)
+    .execute(pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    sqlx::query(
+        "INSERT INTO bank_transactions (company_id, import_id, bank_account_id, booking_date, amount, \
+         currency, reference, details, transaction_id, provider_type, counterparty_email) \
+         VALUES (?, ?, ?, '2020-01-03', 100.00, 'CHF', 'TXN 0TEST1', 'Website Payment', '0TEST1', \
+         'Website Payment', 'alice@example.invalid')",
+    )
+    .bind(company_id)
+    .bind(import)
+    .bind(bank)
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO reconciliation_rules (company_id, label, match_type, match_value, \
+         counterparty_account_id, priority, provider_type, counterparty_email, direction) \
+         VALUES (?, 'Ventes PayPal', 'counterparty_contains', 'Alice', ?, 10, 'Website Payment', \
+         'alice@example.invalid', 'credit')",
+    )
+    .bind(company_id)
+    .bind(frais)
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+/// AC-7 — aller-retour d'un compte PayPal, de ses transactions et d'une règle à
+/// filtres : les colonnes neuves passent seules (lecture de
+/// `information_schema`), la base modifiée revient à l'état sauvegardé.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_round_trip_keeps_a_paypal_account(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let admin = seed_admin(&pool, "PayPal").await;
+    paypal_decor(&pool, admin.company_id, admin.user_id).await;
+    let avant = paypal_colonnes(&pool).await;
+    assert_eq!(
+        avant.0,
+        [(
+            Some("paypal".into()),
+            Some("PayPal www".into()),
+            avant.0[0].2
+        )]
+    );
+    assert!(avant.0[0].2.is_some());
+
+    let backup = export_backup(&app, &admin.jwt).await;
+    sqlx::query("UPDATE bank_transactions SET counterparty_email = 'autre@example.invalid'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE reconciliation_rules SET direction = 'debit'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let resp = post_import(&app, &admin.jwt, backup).await;
+    assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
+    assert_eq!(paypal_colonnes(&pool).await, avant, "relu à l'identique");
+}
+
+/// AC-7 — une sauvegarde de forme 0.19.0, sans les huit colonnes neuves,
+/// s'importe : les colonnes valent `NULL` (la règle `missing_required_columns`
+/// ne refuse qu'une colonne obligatoire).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_of_a_0_19_0_backup_without_paypal_columns(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let admin = seed_admin(&pool, "Forme 0190").await;
+    sqlx::query(
+        "INSERT INTO bank_accounts (company_id, bank_name, iban, is_primary) \
+         VALUES (?, 'Banque Exemple', 'CH9300762011623852957', TRUE)",
+    )
+    .bind(admin.company_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let backup = export_backup(&app, &admin.jwt).await;
+    let (mut manifest, mut data, fichiers) = ouvrir_tout(&backup);
+    manifest["keshVersion"] = Value::from("0.19.0");
+    for (table, colonnes) in [
+        (
+            "bank_accounts",
+            &["provider", "provider_account", "fee_account_id"][..],
+        ),
+        (
+            "bank_transactions",
+            &["provider_type", "counterparty_email"][..],
+        ),
+        (
+            "reconciliation_rules",
+            &["provider_type", "counterparty_email", "direction"][..],
+        ),
+    ] {
+        recrire_table(&mut manifest, &mut data, table, |o| {
+            for c in colonnes {
+                o.remove(*c);
+            }
+        });
+        for c in colonnes {
+            strip_column(&mut manifest, table, c);
+        }
+    }
+    let ancienne = rezip_tout(&manifest, &data, &fichiers);
+    paypal_decor(&pool, admin.company_id, admin.user_id).await;
+
+    let resp = post_import(&app, &admin.jwt, ancienne).await;
+    assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
+    let (comptes, transactions, regles) = paypal_colonnes(&pool).await;
+    assert_eq!(comptes, [(None, None, None)]);
+    assert!(transactions.is_empty());
+    assert!(regles.is_empty());
+}

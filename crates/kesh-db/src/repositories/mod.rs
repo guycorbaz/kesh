@@ -51,6 +51,7 @@ pub mod payment_batches;
 pub mod products;
 pub mod project_reassignment;
 pub mod projects;
+pub mod provider_review;
 pub mod reconciliation;
 pub mod reconciliation_cancel;
 pub mod reconciliation_group_candidates;

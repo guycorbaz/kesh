@@ -18,9 +18,13 @@ use sqlx::mysql::MySqlPool;
 use crate::entities::bank_transaction::BankTransaction;
 use crate::errors::{DbError, map_db_error};
 
+/// Colonnes de `bank_transactions` qui hydratent [`BankTransaction`] —
+/// **source unique** depuis la Story 38-11b : `bank_imports` et
+/// `reconciliation` la reprennent (deux copies divergeaient en silence à
+/// chaque colonne ajoutée ; `FromRow` ne rougit qu'à l'exécution).
 pub(crate) const COLUMNS: &str = "id, company_id, import_id, bank_account_id, booking_date, value_date, \
      amount, currency, reference, details, end_to_end_id, transaction_id, \
-     counterparty_iban, counterparty_name, status, matched_entry_id, \
+     counterparty_iban, counterparty_name, provider_type, counterparty_email, status, matched_entry_id, \
      auto_match_rejected_at, version, created_at, updated_at";
 
 /// Story 9-2b T3.2.7 — Liste **toutes** les transactions bancaires d'une
@@ -110,4 +114,44 @@ where
     .fetch_all(executor)
     .await
     .map_err(map_db_error)
+}
+
+/// Story 38-11b (AC-6) — les identifiants de transaction, parmi
+/// `transaction_ids`, que le compte bancaire porte déjà (recherche de doublon
+/// de l'import PayPal, par l'index `idx_bank_transactions_account_txid`).
+///
+/// Lecture **dans la transaction de l'import**, sous les verrous nommés des
+/// comptes visés : deux imports du même compte se sérialisent, et la lecture
+/// voit le relevé concurrent commité ou absent. La comparaison est celle de la
+/// collation de la colonne (sans casse) : un identifiant PayPal est fait de
+/// `[0-9A-Z]` (38-11a), si bien qu'elle vaut l'égalité exacte. Rend les valeurs
+/// **telles que stockées**. Par paquets de 500 identifiants.
+pub async fn existing_transaction_ids(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    bank_account_id: i64,
+    transaction_ids: &[String],
+) -> Result<std::collections::HashSet<String>, DbError> {
+    let mut found = std::collections::HashSet::new();
+    for chunk in transaction_ids.chunks(500) {
+        let mut qb: sqlx::QueryBuilder<MySql> = sqlx::QueryBuilder::new(
+            "SELECT transaction_id FROM bank_transactions WHERE company_id = ",
+        );
+        qb.push_bind(company_id)
+            .push(" AND bank_account_id = ")
+            .push_bind(bank_account_id)
+            .push(" AND transaction_id IN (");
+        let mut separated = qb.separated(", ");
+        for id in chunk {
+            separated.push_bind(id);
+        }
+        separated.push_unseparated(")");
+        let rows: Vec<(Option<String>,)> = qb
+            .build_query_as()
+            .fetch_all(&mut *conn)
+            .await
+            .map_err(map_db_error)?;
+        found.extend(rows.into_iter().filter_map(|(id,)| id));
+    }
+    Ok(found)
 }

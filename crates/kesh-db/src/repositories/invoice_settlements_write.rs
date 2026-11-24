@@ -199,17 +199,28 @@ pub async fn settle_invoice(
             // ⚠️ Angle mort assumé : l'acceptation d'une proposition « facture »
             // par la réconciliation d'une transaction de carte ne passe pas ici
             // (un remboursement reçu sur la carte peut solder une facture).
-            let row: Option<(Option<i64>, Option<NaiveDate>, bool, BankAccountKind)> =
-                sqlx::query_as(
-                    "SELECT journal_account_id, closed_on, archived, account_kind FROM bank_accounts \
-                     WHERE id = ? AND company_id = ? FOR UPDATE",
-                )
-                .bind(bank_account_id)
-                .bind(company_id)
-                .fetch_optional(&mut *tx)
-                .await
-                .map_err(map_db_error)?;
-            let (journal_account_id, closed_on, archived, kind) = row.ok_or(DbError::NotFound)?;
+            //
+            // Story 38-11b (AC-3) — `provider` lu dans la même instruction : un
+            // compte PayPal → `BankAccountIsProvider`, après « clos » et la carte.
+            // Même angle mort que la carte (acceptations de la réconciliation).
+            #[allow(clippy::type_complexity)]
+            let row: Option<(
+                Option<i64>,
+                Option<NaiveDate>,
+                bool,
+                BankAccountKind,
+                Option<String>,
+            )> = sqlx::query_as(
+                "SELECT journal_account_id, closed_on, archived, account_kind, provider FROM bank_accounts \
+                 WHERE id = ? AND company_id = ? FOR UPDATE",
+            )
+            .bind(bank_account_id)
+            .bind(company_id)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(map_db_error)?;
+            let (journal_account_id, closed_on, archived, kind, provider) =
+                row.ok_or(DbError::NotFound)?;
             if archived {
                 return Err(DbError::NotFound);
             }
@@ -218,6 +229,9 @@ pub async fn settle_invoice(
             }
             if kind == BankAccountKind::CreditCard {
                 return Err(DbError::SettlementAccountIsCreditCard { bank_account_id });
+            }
+            if provider.is_some() {
+                return Err(DbError::BankAccountIsProvider { bank_account_id });
             }
             journal_account_id.ok_or_else(|| {
                 DbError::ConfigurationRequired("bank_account.journal_account_id".into())

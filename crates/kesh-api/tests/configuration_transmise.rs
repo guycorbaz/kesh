@@ -38,6 +38,15 @@
 //!   fichier distribué ne porte `kesh_dev`, et les mots de passe MariaDB de
 //!   `.env.example` sont des lignes commentées.
 //! - **(S) Auto-test** des extracteurs sur des sources synthétiques.
+//! - **Familles indexées** (Story 38-12a) — les variables des API de
+//!   prestataires (`KESH_PAYPAL_<n>_…`, `KESH_PAYPAL_BASE_URL`,
+//!   `KESH_PAYPAL_PARALLEL`) sont lues par des noms **construits**, invisibles
+//!   de (L) : leur ensemble est **dérivé** des déclarations de
+//!   `kesh_api::provider_env` ([`noms_familles`]) et rejoint les noms connus de
+//!   (T), (E) et (F), sans entrer dans l'ensemble lu ; les séries 1 à 3 et les
+//!   deux variables sans numéro sont **exigées** aux deux compose et à
+//!   `.env.example` ([`noms_familles_exiges`]) ; les séries 4 à 9 y sont admises
+//!   absentes ([`RAISON_SERIES_FACULTATIVES`]).
 //! - **(D) Documentation d'exploitation** (15-14b, #575, #554) — le manuel
 //!   d'administration ne cite que des services et des volumes que les compose
 //!   déclarent (G14, G15) ; ses sections Synology sauvegardent la base par le
@@ -277,6 +286,73 @@ const MONTAGES: &[(&str, &str, &str)] = &[
 /// une forme **non ancrée** : `log` seul (ligne `log/` historique, aucun
 /// dossier `log` versionné dans le dépôt). Toute autre source exige `/x/`.
 const TOLERANCES_NON_ANCREES: &[&str] = &["log"];
+
+/// Story 38-12a — pourquoi les séries 4 à 9 d'une famille indexée peuvent
+/// manquer aux compose et à `.env.example` : au-delà de trois comptes,
+/// l'administrateur ajoute les lignes (le manuel d'administration le dit, et
+/// les commentaires des fichiers distribués aussi). Contrôle de la raison :
+/// chaque compose et `.env.example` portent le marqueur [`MARQUEUR_SERIES`].
+const RAISON_SERIES_FACULTATIVES: &str =
+    "séries au-delà de la troisième : l'administrateur ajoute les lignes";
+
+/// Le marqueur qui annonce, dans chaque fichier distribué, l'ajout des séries
+/// au-delà de la troisième.
+const MARQUEUR_SERIES: &str = "_4_…";
+
+/// Les noms **connus** des familles indexées : pour chaque prestataire de
+/// `kesh_api::provider_env::ALL_PROVIDERS`, ses séries 1 à 9 (libellé et
+/// champs) et ses deux variables sans numéro. Dérivés des déclarations de la
+/// production, jamais recopiés : un champ ajouté au prestataire est connu ici
+/// sans retouche.
+fn noms_familles() -> BTreeSet<String> {
+    use kesh_api::provider_env::{
+        ALL_PROVIDERS, BASE_URL_SUFFIX, MAX_SERIES, MIN_SERIES, PARALLEL_SUFFIX,
+    };
+    let mut out = BTreeSet::new();
+    for spec in ALL_PROVIDERS {
+        for n in MIN_SERIES..=MAX_SERIES {
+            for f in spec.all_fields() {
+                out.insert(spec.series_var(n, f));
+            }
+        }
+        out.insert(spec.global_var(BASE_URL_SUFFIX));
+        out.insert(spec.global_var(PARALLEL_SUFFIX));
+    }
+    out
+}
+
+/// Les noms des familles **exigés** aux deux compose et à `.env.example` : les
+/// séries 1 à `SERIES_IN_TEMPLATES` et les deux variables sans numéro.
+fn noms_familles_exiges() -> BTreeSet<String> {
+    use kesh_api::provider_env::{
+        ALL_PROVIDERS, BASE_URL_SUFFIX, MIN_SERIES, PARALLEL_SUFFIX, SERIES_IN_TEMPLATES,
+    };
+    let mut out = BTreeSet::new();
+    for spec in ALL_PROVIDERS {
+        for n in MIN_SERIES..=SERIES_IN_TEMPLATES {
+            for f in spec.all_fields() {
+                out.insert(spec.series_var(n, f));
+            }
+        }
+        out.insert(spec.global_var(BASE_URL_SUFFIX));
+        out.insert(spec.global_var(PARALLEL_SUFFIX));
+    }
+    out
+}
+
+/// (T), (E) — les noms exigés des familles indexées sont présents dans
+/// `cles` ; rend les écarts, préfixés de `fichier`.
+fn familles_exigees_absentes(fichier: &str, cles: &BTreeSet<&str>) -> Vec<String> {
+    noms_familles_exiges()
+        .into_iter()
+        .filter(|n| !cles.contains(n.as_str()))
+        .map(|n| {
+            format!(
+                "{fichier} : `{n}` (famille indexée, Story 38-12a) doit y figurer — séries 1 à 3 et variables sans numéro exigées"
+            )
+        })
+        .collect()
+}
 
 /// Le marqueur que le commentaire d'une variable de [`VIDE_SIGNIFIANT`] doit
 /// porter dans `.env.example`.
@@ -564,13 +640,15 @@ fn controle_transmission(
                 }
             }
         }
+        let familles = noms_familles();
         for cle in &cles {
-            if !lues.contains(cle) {
+            if !lues.contains(cle) && !familles.contains(*cle) {
                 erreurs.push(format!(
                     "{f} : clé `{cle}` transmise mais lue nulle part (faute de frappe ?)"
                 ));
             }
         }
+        erreurs.extend(familles_exigees_absentes(f, &cles));
     }
     for (nom, e) in EXCEPTIONS {
         if !lues.contains(nom) {
@@ -981,8 +1059,10 @@ fn controle_env_example(
     let mut erreurs = Vec::new();
     let affectations = lignes_affectation(env_example);
     let noms: BTreeSet<&str> = affectations.iter().map(|(_, n, _)| n.as_str()).collect();
+    let familles = noms_familles();
     for (i, nom, _) in &affectations {
         if !(lues.contains(nom.as_str())
+            || familles.contains(nom)
             || HOTE.contains(&nom.as_str())
             || MARIADB.contains(&nom.as_str()))
         {
@@ -1001,6 +1081,13 @@ fn controle_env_example(
                 "`{nom}` est lue par Kesh mais n'a aucune ligne d'affectation dans .env.example"
             ));
         }
+    }
+    erreurs.extend(familles_exigees_absentes(".env.example", &noms));
+    // Raison des séries facultatives (au-delà de la troisième) : annoncée.
+    if !env_example.contains(MARQUEUR_SERIES) {
+        erreurs.push(format!(
+            ".env.example doit annoncer l'ajout des séries au-delà de la troisième (marqueur `{MARQUEUR_SERIES}` : {RAISON_SERIES_FACULTATIVES})"
+        ));
     }
     // Exception unique, contrôlée dans les deux sens.
     if !env_example.contains("DO NOT SET KESH_TEST_MODE") {
@@ -1073,11 +1160,13 @@ fn jetons_kesh(texte: &str) -> Vec<(String, bool)> {
 }
 
 fn controle_fantomes(corpus: &[(String, String)], lues: &BTreeSet<&str>) -> Vec<String> {
+    let familles = noms_familles();
     let connues: BTreeSet<&str> = lues
         .iter()
         .copied()
         .chain(HOTE.iter().copied())
         .chain(VARIABLES_DE_TEST.iter().copied())
+        .chain(familles.iter().map(String::as_str))
         .collect();
     let mut erreurs = BTreeSet::new();
     for (fichier, texte) in corpus {
@@ -1375,6 +1464,24 @@ const EMPLACEMENTS_AUTORISES: &[Autorisation] = &[
         "horloge_de_test",
         "env_nonempty",
         Forme::Exacte("env_nonempty ( NOM_VARIABLE_INSTANT )"),
+        1,
+    ),
+    // Story 38-12a (socle S1) — identifiants des API de prestataires : noms
+    // CONSTRUITS (`KESH_<P>_<n>_<champ>`), invisibles de l'ensemble lu ; ils
+    // sont connus par les familles indexées ([`noms_familles`]). Le parcours
+    // des noms présents repère un numéro de série hors 1 à 9.
+    autorise(
+        "kesh-api/src/provider_env.rs",
+        "ProvidersConfig::from_env",
+        "env",
+        Forme::Exacte("env :: vars_os ( )"),
+        1,
+    ),
+    autorise(
+        "kesh-api/src/provider_env.rs",
+        "ProvidersConfig::from_env",
+        "env_nonempty",
+        Forme::Exacte("env_nonempty"),
         1,
     ),
     // `EnvFilter` sans lecture : import et construction depuis une chaîne.
@@ -1962,6 +2069,13 @@ fn garde_lecture_du_code() {
 #[test]
 fn transmission() {
     let (y, p, _) = services();
+    for compose in [Compose::Y, Compose::P] {
+        assert!(
+            lire(compose.fichier()).contains(MARQUEUR_SERIES),
+            "{} doit annoncer l'ajout des séries au-delà de la troisième (marqueur `{MARQUEUR_SERIES}` : {RAISON_SERIES_FACULTATIVES})",
+            compose.fichier()
+        );
+    }
     let dockerfile = lire("Dockerfile");
     echouer_si(
         controle_transmission(&y, &p, &dockerfile, &lues_distribuees()),
@@ -2881,6 +2995,46 @@ fn s_regle_cfg_test() {
     ] {
         assert_eq!(fenetres(&gardee).len(), 1, "non exclue attendue : {gardee}");
     }
+}
+
+/// Story 38-12a — les familles indexées : noms connus et exigés dérivés des
+/// déclarations de la production ; une série 4 transmise est connue, une
+/// série 10 ne l'est pas ; une série exigée qui manque rougit.
+#[test]
+fn s_familles_indexees() {
+    let connus = noms_familles();
+    let exiges = noms_familles_exiges();
+    // PayPal : 9 séries × 3 champs + 2 sans numéro ; exigés : 3 × 3 + 2.
+    assert!(connus.contains("KESH_PAYPAL_9_SECRET"));
+    assert!(!connus.contains("KESH_PAYPAL_10_SECRET"));
+    assert!(connus.contains("KESH_PAYPAL_PARALLEL"));
+    assert!(exiges.contains("KESH_PAYPAL_3_CLIENT_ID"));
+    assert!(!exiges.contains("KESH_PAYPAL_4_ACCOUNT"));
+    assert!(exiges.is_subset(&connus));
+    let paypal =
+        |set: &BTreeSet<String>| set.iter().filter(|n| n.starts_with("KESH_PAYPAL_")).count();
+    assert_eq!((paypal(&connus), paypal(&exiges)), (29, 11));
+    // Aucune ne passe par l'ensemble lu.
+    let lues = lues();
+    assert!(connus.iter().all(|n| !lues.contains(n.as_str())));
+
+    // (T) : une série exigée absente rougit ; la série 4 transmise est admise.
+    let mut cles: BTreeSet<&str> = exiges.iter().map(String::as_str).collect();
+    assert!(familles_exigees_absentes("x", &cles).is_empty());
+    cles.remove("KESH_PAYPAL_2_SECRET");
+    let e = familles_exigees_absentes("x", &cles);
+    assert_eq!(e.len(), 1, "{e:?}");
+    assert!(e[0].contains("KESH_PAYPAL_2_SECRET"));
+
+    // (F) : la forme du manuel (`KESH\_PAYPAL\_<n>\_…`) et une série 4 sont
+    // connues ; une série 10 est un fantôme.
+    let corpus = vec![(
+        "synthetique.tex".to_string(),
+        "voir KESH\\_PAYPAL\\_<n>\\_SECRET, KESH\\_PAYPAL\\_4\\_SECRET et KESH\\_PAYPAL\\_10\\_SECRET".to_string(),
+    )];
+    let e = controle_fantomes(&corpus, &lues);
+    assert_eq!(e.len(), 1, "{e:?}");
+    assert!(e[0].contains("KESH_PAYPAL_10_SECRET"));
 }
 
 #[test]

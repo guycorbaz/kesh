@@ -15,9 +15,27 @@
 // `reopenBankAccount`.
 
 import { apiClient } from '$lib/shared/utils/api-client';
+import type { ProviderApiStatus } from '$lib/features/provider-download/provider-download.api';
 
 /** Story 34-11a1 (#972, C-e341-13) — type d'un compte : bancaire (IBAN) ou carte (sans IBAN). */
 export type BankAccountKind = 'bank' | 'credit_card';
+
+/**
+ * Story 38-11d (AC-1) — prestataire de paiement dont un compte bancaire est le
+ * solde dans une devise (38-11b) ; `null` pour un compte ordinaire. Wise et
+ * Stripe (Epics 39, 40) prennent les deux autres valeurs.
+ */
+export type BankAccountProvider = 'paypal' | 'wise' | 'stripe';
+
+/**
+ * Story 38-11d (AC-1) — paramètres PayPal d'un compte bancaire (38-11b,
+ * AC-2) : le libellé du compte PayPal (1 à 120 caractères, « PayPal www ») et
+ * le compte de charge des frais (`null` : les frais vont « à examiner »).
+ */
+export interface PaypalSettings {
+	account: string;
+	feeAccountId: number | null;
+}
 
 export interface BankAccountSummary {
 	id: number;
@@ -40,6 +58,13 @@ export interface BankAccountSummary {
 	accountKind: BankAccountKind;
 	/** Story 34-11a1 (#972) — quatre derniers chiffres d'une carte, `null` sinon. */
 	cardLast4: string | null;
+	/**
+	 * Story 38-11d (AC-1) — prestataire dont ce compte est le solde, `null` pour
+	 * un compte ordinaire (une réponse sans le champ en est un).
+	 */
+	provider: BankAccountProvider | null;
+	/** Story 38-11d (AC-1) — paramètres PayPal, `null` hors d'un compte PayPal. */
+	paypal: PaypalSettings | null;
 	isPrimary: boolean;
 	journalAccountId: number | null;
 	version: number;
@@ -83,6 +108,12 @@ export interface BankAccountSummary {
 	 * l'écart ; le frontend ne le recalcule pas.
 	 */
 	statementGap: string | null;
+	/**
+	 * Story 38-12b (AC-1) — pour un compte de prestataire, le téléchargement par
+	 * l'API est-il configuré (série d'identifiants au libellé du compte) ? `null`
+	 * ou absent pour un compte ordinaire. Jamais un secret.
+	 */
+	providerApi?: ProviderApiStatus | null;
 }
 
 /**
@@ -98,6 +129,9 @@ interface BankAccountSummaryRaw {
 	// Story 34-11a1 — absents d'un serveur antérieur à la 0.17.6 : `bank`, `null`.
 	accountKind?: BankAccountKind;
 	cardLast4?: string | null;
+	// Story 38-11d — absents d'un serveur antérieur à la 38-11b : `null`.
+	provider?: BankAccountProvider | null;
+	paypal?: { account: string; feeAccountId?: number | null } | null;
 	isPrimary: boolean;
 	journalAccountId: number | null;
 	version: number;
@@ -111,6 +145,8 @@ interface BankAccountSummaryRaw {
 	statementDate?: string | null;
 	ledgerBalanceAtStatement?: string | null;
 	statementGap?: string | null;
+	// Story 38-12b — liste seulement ; absent d'un serveur antérieur et des réponses d'un compte.
+	providerApi?: ProviderApiStatus | null;
 }
 
 function parseBankAccount(raw: BankAccountSummaryRaw): BankAccountSummary {
@@ -122,6 +158,10 @@ function parseBankAccount(raw: BankAccountSummaryRaw): BankAccountSummary {
 		qrIban: raw.qrIban,
 		accountKind: raw.accountKind ?? 'bank',
 		cardLast4: raw.cardLast4 ?? null,
+		provider: raw.provider ?? null,
+		paypal: raw.paypal
+			? { account: raw.paypal.account, feeAccountId: raw.paypal.feeAccountId ?? null }
+			: null,
 		isPrimary: raw.isPrimary,
 		journalAccountId: raw.journalAccountId,
 		version: raw.version,
@@ -133,6 +173,7 @@ function parseBankAccount(raw: BankAccountSummaryRaw): BankAccountSummary {
 		statementDate: raw.statementDate ?? null,
 		ledgerBalanceAtStatement: raw.ledgerBalanceAtStatement ?? null,
 		statementGap: raw.statementGap ?? null,
+		providerApi: raw.providerApi ?? null,
 	};
 }
 
@@ -279,6 +320,7 @@ type BankOrCardFields =
 			qrIban?: string | null;
 			isPrimary?: boolean;
 			cardLast4?: never;
+			paypal?: never;
 	  }
 	| {
 			accountKind: 'credit_card';
@@ -286,6 +328,20 @@ type BankOrCardFields =
 			iban?: never;
 			qrIban?: never;
 			isPrimary?: never;
+			paypal?: never;
+	  }
+	| {
+			/**
+			 * Story 38-11d (AC-1) — un compte PayPal (compte bancaire, 38-11b) :
+			 * IBAN facultatif (`null`), ni QR-IBAN ni « principal », compte du
+			 * plan obligatoire (admis en devise).
+			 */
+			accountKind?: 'bank';
+			paypal: PaypalSettings;
+			iban: string | null;
+			qrIban: null;
+			isPrimary: false;
+			cardLast4?: never;
 	  };
 
 /**
@@ -335,6 +391,19 @@ export type UpdateBankAccountPayload = UpdateBankAccountFields &
 				qrIban?: string | null;
 				isPrimary?: boolean;
 				cardLast4?: never;
+				/**
+				 * Story 38-11d (AC-1) — `null` retire les paramètres PayPal d'un
+				 * compte qui en portait ; **absent** = inchangé (compte non PayPal).
+				 */
+				paypal?: null;
+		  }
+		| {
+				/** Story 38-11d (AC-1) — un compte PayPal : IBAN facultatif, ni QR-IBAN ni « principal ». */
+				paypal: PaypalSettings;
+				iban: string | null;
+				qrIban: null;
+				isPrimary: false;
+				cardLast4?: never;
 		  }
 		| {
 				/**
@@ -347,6 +416,7 @@ export type UpdateBankAccountPayload = UpdateBankAccountFields &
 				iban?: never;
 				qrIban?: never;
 				isPrimary?: never;
+				paypal?: never;
 		  }
 	);
 

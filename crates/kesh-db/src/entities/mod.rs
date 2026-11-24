@@ -52,7 +52,9 @@ pub use account::{
 };
 pub use api_key::{ApiKey, ApiKeyScope, NewApiKey};
 pub use audit_log::{AUDIT_ENTITY_ID_NONE, Acteur, ActorType, AuditLogEntry, NewAuditLogEntry};
-pub use bank_account::{BankAccount, BankAccountKind, NewBankAccount};
+pub use bank_account::{
+    BankAccount, BankAccountKind, BankAccountProvider, NewBankAccount, PaypalSettings,
+};
 pub use bank_import::{BankImport, BankImportSourceFormat, NewBankImport};
 pub use bank_profile::{BankProfile, NewBankProfile};
 pub use bank_transaction::{BankTransaction, BankTransactionStatus, NewBankTransaction};

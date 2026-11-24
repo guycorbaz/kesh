@@ -21,6 +21,7 @@
 		supplierInvoiceShortLabel,
 	} from '$lib/features/supplier-invoices/supplier-invoice-label';
 	import { listBankAccounts } from '$lib/features/bank-accounts/bank-accounts.api';
+	import { withoutProviders } from '$lib/features/bank-accounts/provider';
 	import type { BankAccountSummary } from '$lib/features/bank-accounts/bank-accounts.api';
 	import { bankAccountOptionLabel } from '$lib/features/bank-accounts/format';
 	import { formatSwissDate } from '$lib/features/reports/reports.api';
@@ -83,7 +84,11 @@
 			// Story 34-11a1 (#972, AC-5) — un compte sans IBAN ne peut pas débiter
 			// un `pain.001` : il n'est pas proposé (le serveur le refuse en 409
 			// PAYMENT_BATCH_ACCOUNT_HAS_NO_IBAN).
-			bankAccounts = banks.filter((b) => b.journalAccountId !== null && b.iban !== null);
+			// Story 38-11d (AC-1) — ni un compte de prestataire (PayPal), même porteur d'un
+			// IBAN : le serveur refuse le lot (409 BANK_ACCOUNT_IS_PROVIDER, 38-11b).
+			bankAccounts = withoutProviders(banks).filter(
+				(b) => b.journalAccountId !== null && b.iban !== null,
+			);
 		} catch (err) {
 			if (isApiError(err)) errorMsg = err.message;
 		} finally {

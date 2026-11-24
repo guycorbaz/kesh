@@ -1919,6 +1919,8 @@ mod tests {
                 transaction_id: None,
                 counterparty_iban: None,
                 counterparty_name: None,
+                counterparty_email: None,
+                provider_type: None,
             })
             .collect();
         let mut tx = pool.begin().await.expect("begin import");

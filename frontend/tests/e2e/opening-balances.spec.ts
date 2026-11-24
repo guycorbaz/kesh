@@ -212,6 +212,14 @@ test('compléter un compte oublié après la génération', async ({ page }) => 
 		'data-side',
 		'credit'
 	);
+	// La notification de la génération (svelte-sonner, en bas à droite) peut se poser sur
+	// *Compléter*, selon la hauteur de la page : survolée par le pointeur du clic,
+	// elle suspend sa disparition et intercepte chaque reprise du clic jusqu'au délai
+	// (KF-067, #1284). Le pointeur s'éloigne d'abord (comme destructive-buttons.spec.ts),
+	// puis la notification doit partir (comme date-filtre-frappe.spec.ts).
+	await page.mouse.move(0, 0);
+	await expect(page.locator('[data-sonner-toast]')).toHaveCount(0, { timeout: 15000 });
+
 	page.once('dialog', (d) => void d.accept());
 	await page.getByTestId('opening-balances-complete-submit').click();
 
