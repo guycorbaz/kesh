@@ -2,8 +2,7 @@
 
 *Kickoff du 2026-11-21 (décision du Project Lead du 2026-11-21, triage P1 des issues ouvertes : tout P1 passe en priorité dans
 la release suivante).* Branche `epic/53-ecritures-justes`, partie de `main` au lancement de sa première story (mardi
-2026-11-24). Release visée : **vendredi 2026-11-27 si l'epic est clos à la coupure, sinon une release de milieu de semaine
-dès sa clôture**. L'epic n'entre dans `main` que terminé.
+2026-11-24). Release visée : **v0.21.0, vendredi 2026-12-04** (décision de Guy du 2026-11-24 : la release de correction `x.y.1` ne porte pas de migration, et la 53-2 en porte probablement une). L'epic n'entre dans `main` que terminé.
 
 ## Objet
 
