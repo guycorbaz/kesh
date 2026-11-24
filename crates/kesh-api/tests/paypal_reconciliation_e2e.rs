@@ -442,6 +442,24 @@ impl Ctx {
         .await
     }
 
+    /// La revue du compte PayPal de libellé `compte`.
+    async fn revue_de(&self, compte: &str) -> Value {
+        let (s, b) = self
+            .req(
+                reqwest::Method::GET,
+                &format!(
+                    "/api/v1/paypal/review?account={}&fiscalYearId={}",
+                    compte.replace(' ', "%20"),
+                    self.seeded.fiscal_year_id
+                ),
+                None,
+                &self.jwt,
+            )
+            .await;
+        assert_eq!(s, 200, "revue : {b}");
+        b
+    }
+
     async fn tx(&self, transaction_id: &str) -> i64 {
         sqlx::query_scalar("SELECT id FROM bank_transactions WHERE transaction_id = ?")
             .bind(transaction_id)
@@ -480,6 +498,19 @@ impl Ctx {
     /// mouvement de l'autre côté : la réception d'un retrait, le paiement reçu
     /// par une carte), datée `le`.
     async fn autre_cote(&self, bank: i64, montant: &str, le: &str) -> i64 {
+        self.transaction_sur(bank, montant, le, None, None).await
+    }
+
+    /// Une transaction CHF insérée par le dépôt sur le compte bancaire `bank`,
+    /// de type et d'identifiant de prestataire donnés s'il y a lieu.
+    async fn transaction_sur(
+        &self,
+        bank: i64,
+        montant: &str,
+        le: &str,
+        provider_type: Option<&str>,
+        transaction_id: Option<&str>,
+    ) -> i64 {
         let jour = NaiveDate::parse_from_str(le, "%Y-%m-%d").unwrap();
         let cle = format!("{bank}-{montant}-{le}");
         let mut tx = self.pool.begin().await.unwrap();
@@ -509,11 +540,11 @@ impl Ctx {
                 reference: None,
                 details: "Virement PayPal".into(),
                 end_to_end_id: None,
-                transaction_id: None,
+                transaction_id: transaction_id.map(str::to_string),
                 counterparty_iban: None,
                 counterparty_name: Some("PayPal".into()),
                 counterparty_email: None,
-                provider_type: None,
+                provider_type: provider_type.map(str::to_string),
             }],
         )
         .await
@@ -1042,6 +1073,149 @@ async fn retrait_detache_ni_propose_ni_ecrit_deux_fois(pool: MySqlPool) {
     let (s, b) = ctx.rattacher(reception, ecriture).await;
     assert_eq!(s, 200, "{b}");
     detache_ni_propose_ni_ecrit_deux_fois(&ctx, retrait, v, ecriture, reception).await;
+}
+
+/// Deux retraits du même montant : le premier écrit et rattaché **des deux
+/// côtés**, le second, jamais écrit, reste proposé et s'accepte (revue P1,
+/// M2 : l'écriture du premier est rapprochée de deux transactions, la
+/// condition 4 l'écarte).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn deux_retraits_de_meme_montant_le_second_reste_propose(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let premier = ctx.tx("0TEST00000000007G").await;
+    let v = proposition(&ctx.revue().await, premier);
+    let (s, b) = ctx.accepter(vec![v]).await;
+    assert_eq!((s, b["failed"].clone()), (200, json!([])), "{b}");
+    let ecriture = b["accepted"][0]["journalEntryIds"][0].as_i64().unwrap();
+    let banque = ctx.ba_banque().await;
+    let reception = ctx.autre_cote(banque, "1000.00", "2020-02-28").await;
+    assert_eq!(ctx.rattacher(reception, ecriture).await.0, 200);
+    let second = ctx
+        .transaction_sur(
+            ctx.ba_chf,
+            "-1000.00",
+            "2020-03-02",
+            Some("General Withdrawal"),
+            Some("0TESTRETRAIT00002"),
+        )
+        .await;
+    let v = proposition(&ctx.revue().await, second);
+    assert_eq!(v["type"], "withdrawal", "{v}");
+    let (s, b) = ctx.accepter(vec![v]).await;
+    assert_eq!((s, b["failed"].clone()), (200, json!([])), "{b}");
+}
+
+/// L'ordre inverse : annuler d'abord le **côté banque** ne retire que son
+/// lien (l'écriture reste rapprochée du retrait, qui n'est pas pending, donc
+/// pas proposé) ; annuler ensuite le côté PayPal **contre-passe** l'écriture,
+/// et le retrait redevient proposable — jamais `already_posted`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ordre_inverse_banque_d_abord_puis_contre_passation_et_reproposition(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let retrait = ctx.tx("0TEST00000000007G").await;
+    let v = proposition(&ctx.revue().await, retrait);
+    let (s, b) = ctx.accepter(vec![v]).await;
+    assert_eq!((s, b["failed"].clone()), (200, json!([])), "{b}");
+    let ecriture = b["accepted"][0]["journalEntryIds"][0].as_i64().unwrap();
+    let reception = ctx
+        .autre_cote(ctx.ba_banque().await, "1000.00", "2020-02-28")
+        .await;
+    assert_eq!(ctx.rattacher(reception, ecriture).await.0, 200);
+    let contre =
+        |e: i64| format!("SELECT COUNT(*) FROM journal_entries WHERE reverses_entry_id = {e}");
+    // Le côté banque d'abord : son lien seul.
+    let (s, b) = ctx.annuler(reception).await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(ctx.etat(reception).await, ("pending".into(), None));
+    assert_eq!(
+        ctx.etat(retrait).await,
+        ("reconciled".into(), Some(ecriture))
+    );
+    assert_eq!(ctx.count(&contre(ecriture)).await, 0);
+    let revue = ctx.revue().await;
+    assert!(
+        !revue["proposals"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .chain(revue["toReview"].as_array().unwrap())
+            .any(|p| p["transaction"]["id"] == retrait),
+        "retrait rapproché, absent de la revue : {revue}"
+    );
+    // Puis le côté PayPal : plus d'autre côté, l'écriture est contre-passée.
+    let (s, b) = ctx.annuler(retrait).await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(ctx.etat(retrait).await, ("pending".into(), None));
+    assert_eq!(ctx.count(&contre(ecriture)).await, 1, "contre-passée");
+    let v = proposition(&ctx.revue().await, retrait);
+    assert_eq!(v["type"], "withdrawal", "de nouveau proposé : {v}");
+    let (s, b) = ctx.accepter(vec![v]).await;
+    assert_eq!((s, b["failed"].clone()), (200, json!([])), "{b}");
+}
+
+/// Deux comptes PayPal (deux prestataires au sens du moteur : deux libellés,
+/// deux comptes du plan) portent le **même identifiant** de transaction. Le
+/// retrait du premier est déjà comptabilisé (côté PayPal détaché, réception
+/// rattachée) ; celui du second, jamais écrit, reste proposé et s'accepte :
+/// la règle est bornée au compte du plan du solde, jamais au libellé « TXN
+/// <id> » qu'elles partagent.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn meme_identifiant_sur_deux_comptes_aucun_faux_deja_comptabilise(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let c = ctx.seeded.company_id;
+    let retrait = ctx.tx("0TEST00000000007G").await;
+    let v = proposition(&ctx.revue().await, retrait);
+    let (s, b) = ctx.accepter(vec![v]).await;
+    assert_eq!((s, b["failed"].clone()), (200, json!([])), "{b}");
+    let ecriture = b["accepted"][0]["journalEntryIds"][0].as_i64().unwrap();
+    let reception = ctx
+        .autre_cote(ctx.ba_banque().await, "1000.00", "2020-02-28")
+        .await;
+    assert_eq!(ctx.rattacher(reception, ecriture).await.0, 200);
+    assert_eq!(ctx.annuler(retrait).await.0, 200);
+    // Déjà comptabilisé sur le premier compte.
+    let revue = ctx.revue().await;
+    assert!(
+        revue["toReview"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|f| f["transaction"]["id"] == retrait && f["code"] == "already_posted"),
+        "{revue}"
+    );
+    // Le second compte PayPal, CHF, et le même identifiant, même montant, même jour.
+    let plan2 = compte(&pool, c, "1033", "Asset", None).await;
+    let (s, b) = ctx
+        .post(
+            "/api/v1/bank-accounts",
+            json!({
+                "bankName": "PayPal boutique",
+                "journalAccountId": plan2,
+                "paypal": { "account": "PayPal boutique", "feeAccountId": ctx.frais_chf },
+            }),
+        )
+        .await;
+    assert_eq!(s, 201, "{b}");
+    let ba2 = b["id"].as_i64().unwrap();
+    let jumeau = ctx
+        .transaction_sur(
+            ba2,
+            "-1000.00",
+            "2020-02-28",
+            Some("General Withdrawal"),
+            Some("0TEST00000000007G"),
+        )
+        .await;
+    let revue2 = ctx.revue_de("PayPal boutique").await;
+    let v = proposition(&revue2, jumeau);
+    assert_eq!(v["type"], "withdrawal", "{revue2}");
+    let (s, b) = ctx
+        .post(
+            "/api/v1/paypal/accept",
+            json!({ "account": "PayPal boutique", "proposals": [v] }),
+        )
+        .await;
+    assert_eq!((s, b["failed"].clone()), (200, json!([])), "{b}");
 }
 
 /// Un relevé de plus : un paiement CHF vers une carte de crédit (« Carte

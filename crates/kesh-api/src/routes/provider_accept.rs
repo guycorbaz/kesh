@@ -1082,11 +1082,12 @@ pub async fn rejudge<'a>(
 }
 
 /// [`rejudge`], puis la règle « écrite une seule fois », pour les genres qui
-/// **écrivent** (frais, règle, retrait, conversion ; le versement Stripe) :
+/// **écrivent** (frais, règle, retrait, conversion ; un genre propre qui
+/// écrit, chez le prestataire qui le déclare, s'y branche de même) :
 /// une transaction **déjà comptabilisée** de l'autre côté
 /// ([`reconciliation_link::find_matched_elsewhere`], la règle de la revue lue
 /// sous les verrous du lot) → [`FAILED_ALREADY_POSTED`] (`details: {
-/// journalEntryId }`, la plus ancienne), sans rien écrire. Lecture non
+/// journalEntryId }`, la plus proche par date), sans rien écrire. Lecture non
 /// verrouillante des écritures : le verrou nommé du compte de la transaction,
 /// que le lot tient, exclut une acceptation, un rattachement ou une annulation
 /// concurrents sur ce compte ; l'autre côté (la réception) peut se rattacher
@@ -1108,7 +1109,9 @@ pub async fn rejudge_writing<'a>(
     )
     .await
     .map_err(|e| db_refusal(id, e))?;
-    if let Some(entry_id) = posted.iter().map(|c| c.journal_entry_id).min() {
+    // La première : la plus proche par date, puis la plus ancienne — la même
+    // que nomme la revue (`matched_elsewhere_for_page`).
+    if let Some(entry_id) = posted.first().map(|c| c.journal_entry_id) {
         return Err(failed(
             id,
             FAILED_ALREADY_POSTED,

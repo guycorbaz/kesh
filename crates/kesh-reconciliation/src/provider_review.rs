@@ -87,12 +87,13 @@ pub const REVIEW_NO_RULE: &str = "no_rule";
 /// À examiner : la transaction est **déjà comptabilisée** — une écriture
 /// vivante porte son mouvement sur le compte du plan du solde et est déjà
 /// rapprochée de **l'autre côté** (`details: { journalEntryId }`, la plus
-/// ancienne ; [`ReviewInput::already_posted`]). Typiquement : le côté
+/// proche par date ; [`ReviewInput::already_posted`]). Typiquement : le côté
 /// prestataire d'un virement annulé seul (`reconciliation_cancel` ne retire
 /// que son lien, l'écriture reste rapprochée de la réception). L'écrire de
 /// nouveau la compterait deux fois : la transaction se **rattache** à cette
 /// écriture. Remplace, pour les genres qui **écrivent** (frais, conversion,
-/// retrait, règle), la proposition qu'ils auraient reçue ; à l'acceptation,
+/// retrait, autre : voir `writes`), la proposition ou le motif qu'ils
+/// auraient reçus, avant tout autre motif ; à l'acceptation,
 /// la même règle rend [`FAILED_ALREADY_POSTED`].
 pub const REVIEW_ALREADY_POSTED: &str = "already_posted";
 /// Code de refus (`failed[].errorCode`) de l'acceptation d'une transaction
@@ -633,13 +634,20 @@ pub fn build_review(input: &ReviewInput<'_>, spec: &ProviderSpec) -> Review {
 
     for (t, kind) in &classified {
         let account = accounts.get(&t.bank_account_id);
-        let posted = input.already_posted.get(&t.id).copied();
+        // Revue P1 du correctif (M1) : avant tout autre motif — une transaction
+        // déjà comptabilisée ne se montre jamais sous « aucune règle » ou
+        // « compte de frais non réglé », qui conseillent d'écrire de nouveau.
+        if let Some(entry_id) = input.already_posted.get(&t.id).copied()
+            && writes(spec, *kind)
+        {
+            review.push_to_review(ReviewFinding::already_posted(t, entry_id));
+            continue;
+        }
         match kind {
             ProviderKind::SaleReceipt => {
                 decide_receipt(&mut review, t, account.copied(), &sales, &sales_by_id, spec)
             }
             ProviderKind::Fee => match account.and_then(|a| a.fee_account_id) {
-                Some(_) if posted.is_some() => push_already_posted(&mut review, t, posted),
                 Some(fee_account_id) => review.push_proposal(ReviewProposal {
                     proposal: Proposal::Fee {
                         bank_transaction_id: t.id,
@@ -651,14 +659,9 @@ pub fn build_review(input: &ReviewInput<'_>, spec: &ProviderSpec) -> Review {
                 }),
                 None => review.push_to_review(ReviewFinding::on(REVIEW_FEE_ACCOUNT_MISSING, t)),
             },
-            ProviderKind::Conversion if posted.is_some() => {
-                push_already_posted(&mut review, t, posted)
-            }
             ProviderKind::Conversion => decide_conversion(&mut review, t, &conversions, spec),
             ProviderKind::Withdrawal => {
-                if posted.is_some() {
-                    push_already_posted(&mut review, t, posted);
-                } else if account.is_some_and(|a| a.currency == BASE_CURRENCY) {
+                if account.is_some_and(|a| a.currency == BASE_CURRENCY) {
                     review.push_proposal(ReviewProposal {
                         proposal: Proposal::Withdrawal {
                             bank_transaction_id: t.id,
@@ -675,7 +678,6 @@ pub fn build_review(input: &ReviewInput<'_>, spec: &ProviderSpec) -> Review {
             ProviderKind::Other => {
                 let ledger = account.and_then(|a| a.ledger_account_id);
                 match matching_rule(input.rules, t, input.rule_account_ids, ledger) {
-                    Some(_) if posted.is_some() => push_already_posted(&mut review, t, posted),
                     Some(rule) => review.push_proposal(ReviewProposal {
                         proposal: Proposal::Rule {
                             bank_transaction_id: t.id,
@@ -729,12 +731,20 @@ pub fn build_review(input: &ReviewInput<'_>, spec: &ProviderSpec) -> Review {
     review
 }
 
-/// Range `t` à examiner sous [`REVIEW_ALREADY_POSTED`] (`posted` : son
-/// écriture, toujours `Some` chez l'appelant).
-fn push_already_posted(review: &mut Review, t: &BankTransaction, posted: Option<i64>) {
-    if let Some(entry_id) = posted {
-        review.push_to_review(ReviewFinding::already_posted(t, entry_id));
-    }
+/// Le genre `kind` **écrit-il** à l'acceptation ? Frais, conversion, retrait,
+/// autre (règle) — sauf un genre que le prestataire admet au **rattachement**
+/// ([`admits_link`] : l'encaissement, et ce qu'il déclare par
+/// [`ProviderSpec::linkable`]) : sa proposition rattache à une écriture déjà
+/// passée, ce que la règle [`REVIEW_ALREADY_POSTED`] ne doit pas empêcher.
+/// Les genres propres ([`ProviderKind::Specific`]) restent au prestataire.
+fn writes(spec: &ProviderSpec, kind: ProviderKind) -> bool {
+    matches!(
+        kind,
+        ProviderKind::Fee
+            | ProviderKind::Conversion
+            | ProviderKind::Withdrawal
+            | ProviderKind::Other
+    ) && !admits_link(spec, kind)
 }
 
 /// La première règle qui correspond à `t`, de contrepartie admise — en CHF ou
@@ -1436,6 +1446,13 @@ mod tests {
         f.sales.push(sale(50, "Vente IDS", 1021, "USD", "30.00"));
         f.pending
             .push(typed(tx(7, 10, "-3.00", "USD"), "spec", "P1"));
+        // Sans compte de frais (compte 11) et sans règle : leur motif propre, sauf
+        // déjà comptabilisées (revue P1 du correctif, M1).
+        f.pending
+            .push(typed(tx(8, 11, "-0.80", "CHF"), "fee", "IDF:FEE"));
+        let mut inconnu = typed(tx(9, 10, "-7.00", "USD"), "Express Checkout Payment", "A9");
+        inconnu.counterparty_name = Some("Inconnu".into());
+        f.pending.push(inconnu);
         // Sonde positive : rien de déjà comptabilisé, tout est proposé.
         let r = f.review(&SPEC);
         let kinds: Vec<&str> = r.proposals.iter().map(|p| p.proposal.kind()).collect();
@@ -1444,9 +1461,23 @@ mod tests {
             ["fee", "withdrawal", "rule", "conversion", "link_entry"],
             "{kinds:?}"
         );
-        assert!(r.to_review.is_empty(), "{:?}", r.to_review);
+        assert_eq!(
+            codes(&r.to_review),
+            [REVIEW_FEE_ACCOUNT_MISSING, REVIEW_NO_RULE],
+            "{:?}",
+            r.to_review
+        );
         // Toutes déjà comptabilisées (la conversion par sa seule moitié débitée).
-        for (t, e) in [(1, 901), (2, 902), (3, 903), (4, 904), (6, 906), (7, 907)] {
+        for (t, e) in [
+            (1, 901),
+            (2, 902),
+            (3, 903),
+            (4, 904),
+            (6, 906),
+            (7, 907),
+            (8, 908),
+            (9, 909),
+        ] {
             f.posted.insert(t, e);
         }
         let r = f.review(&SPEC);
@@ -1481,7 +1512,16 @@ mod tests {
                 (2, serde_json::json!({ "journalEntryId": 902 })),
                 (3, serde_json::json!({ "journalEntryId": 903 })),
                 (4, serde_json::json!({ "journalEntryId": 904 })),
+                (8, serde_json::json!({ "journalEntryId": 908 })),
+                (9, serde_json::json!({ "journalEntryId": 909 })),
             ]
+        );
+        assert!(
+            !r.to_review
+                .iter()
+                .any(|f| f.code == REVIEW_FEE_ACCOUNT_MISSING || f.code == REVIEW_NO_RULE),
+            "le motif « déjà comptabilisée » passe avant : {:?}",
+            r.to_review
         );
         // La moitié créditée, privée de sa paire déjà comptabilisée : sans paire.
         assert!(

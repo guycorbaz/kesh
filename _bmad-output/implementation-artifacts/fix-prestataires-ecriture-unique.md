@@ -4,8 +4,8 @@ Status: review
 
 *Fiche rédigée le 2026-11-24, branche `fix/prestataires-ecriture-unique`, partie de `origin/main` à `f4e64b179`.
 Correctif du moteur commun des prestataires (Epic 38, déjà publié), non urgent, **sans migration**. Relevé par la
-relecture de la PR de l'Epic 40 (M2, versement Stripe), puis étendu par le mainteneur à PayPal. Issues P1 : `#<à
-remplir>` (PayPal), `#<à remplir>` (Stripe).*
+relecture de la PR de l'Epic 40 (M2, versement Stripe), puis étendu par le mainteneur à PayPal. Issues P1 : #1538
+(PayPal), #1539 (Stripe, avec la PR de l'Epic 40).*
 
 ## Intention
 
@@ -30,10 +30,12 @@ compte ; `accept_withdrawal` et `accept_rule` écrivent sans lire d'écriture ex
    (34-11b) : **une seule définition**, aucun texte de libellé.
 2. **Revue** : `load_review_in_tx` lit, par compte bancaire du prestataire, `matched_elsewhere_for_page` (nouvelle
    lecture par page, du même texte SQL que `count_already_booked_for_page`, refactorisé en `page_entry_rows`) ;
-   `build_review` remplace la proposition des genres qui **écrivent** — frais, règle, conversion, retrait — par le
-   motif « à examiner » `already_posted` (`details: { journalEntryId }`, la plus ancienne). Une moitié de conversion
-   déjà comptabilisée ne s'apparie plus. **Non touchés** : l'encaissement (`link_entry` rattache, n'écrit pas) et les
-   genres propres d'un prestataire (`Specific`), qu'il décide lui-même.
+   `build_review`, **avant tout autre motif**, met « à examiner » sous `already_posted` (`details: { journalEntryId }`,
+   la plus proche par date, puis la plus ancienne — l'ordre de `find_matched_elsewhere`) une transaction d'un genre
+   qui **écrit** — frais, conversion, retrait, autre (règle) ; `fee_account_missing` et `no_rule` ne la masquent pas.
+   Une moitié de conversion déjà comptabilisée ne s'apparie plus. **Non touchés** : un genre admis au rattachement
+   (`admits_link` : l'encaissement, et ce que le prestataire déclare par `ProviderSpec::linkable`) et les genres
+   propres (`Specific`), que le prestataire décide lui-même.
 3. **Acceptation** : `rejudge_writing` = `rejudge` + `find_matched_elsewhere` sous les verrous du lot, appelé par
    `accept_fee`, `accept_rule`, `accept_withdrawal` et `accept_conversion` (chaque moitié) ; déjà comptabilisée →
    `FailedProposal` `PROVIDER_TRANSACTION_ALREADY_POSTED` (`details: { journalEntryId }`), `200`, `failed[]`, rien
