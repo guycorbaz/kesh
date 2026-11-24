@@ -469,7 +469,7 @@ Ordre : **le test d'abord, rouge**, puis le correctif, vert. Journaux dans `/hom
 | AC3 (`format_swiss_amount`, rendu PDF, `format_rate`, rendement) | le correctif de `pdf.rs` | rouge d'abord (`"10.00"`, `"-0.00"`, `"8.12 %"`) ; `rouge-report.log` |
 | AC4 (`fmt_decimal_scale`, route de l'export global) | le correctif de `csv_tables.rs` | rouge d'abord : la route rend `10.00` et `5.00` là où `10.0050` et `5.0060` sont attendus ; les tests unitaires réécrits (`150.2500`) rougissent contre `{d:.2}` ; `rouge-api.log` |
 | AC5 (route des rapports) | le correctif de `csv.rs` / `pdf.rs` | rouge d'abord (`1234.00`, hexadécimal de `1'234.00`) ; `rouge-api.log` |
-| AC13 (pleine échelle) | le correctif de `csv_tables.rs` | rouge d'abord : les 24 colonnes à quatre décimales de `fmt_decimal` sortent `1.12` au lieu de `1.1234` (les 14 autres sont déjà vertes : filets) ; `rouge-api.log` ; **M7** : une seule constante fausse (`DEC_18_2` au lieu de `DEC_19_4` pour `invoice_lines.line_total`) → rouge qui nomme `invoice_lines.line_total` (`mut-m7.log`) ; **M8** : `38` écrit à la main remplacé par `37` → rouge sur le décompte (`mut-m8.log`) |
+| AC13 (pleine échelle) | le correctif de `csv_tables.rs` | rouge d'abord : les 24 colonnes à quatre décimales de `fmt_decimal` sortent `1.12` au lieu de `1.1234` (les 14 autres sont déjà vertes : filets) ; `rouge-api.log` ; **M7** : une seule constante fausse (`DEC_18_2` au lieu de `DEC_19_4` pour `invoice_lines.line_total`) → rouge par le `debug_assert!` de `fmt_decimal_scale` (« échelle 4 de 1.1234 supérieure à celle de sa colonne (2) », `csv_tables.rs:130`) : la requête de l'export échoue avant de livrer un CSV et le test rougit sur la réponse, non sur un message nommant la colonne (`mut-m7.log`, rejouée au HEAD de clôture) ; **M8** : `38` écrit à la main remplacé par `37` → rouge sur le décompte (`mut-m8.log`) |
 | AC6 (`amount_string(10.0050)`) | le correctif de `bank_statements_manual.rs` | rouge d'abord ; `rouge-api.log` ; les cas `-0` et `50` **ne rougissent pas** : filets |
 | AC1 (fonction commune, neuve) | — (elle n'existe pas avant) | **M1** : stratégie remplacée par `ToZero` dans `round_for_display` → AC1, AC2, AC3, AC4 rouges (`mut-m1.log`) ; **M2** : retrait du `if r.is_zero()` → les cas `-0.0040` rouges (`mut-m2.log`) ; **M3** : `MidpointNearestEven` → `10.0050` rouge (`mut-m3.log`) |
 | AC7 (plafond de l'écart) | **ne rougit pas** : sortie inchangée | filet déclaré (tests existants) |
@@ -633,15 +633,15 @@ Journaux hors dépôt sous `/home/gcorbaz/devel/kesh-gate-logs/e4811/` :
   (`dev/gate-test-fast-ci.log`) ; `scripts/gate-ci.sh kesh_ci_e4811` **code 0** (`dev/gate-ci.log`, `dev/gate-ci.console` ; somme des lignes
   `test result:` : 259 binaires, 6241 passés, 0 échec, 18 ignorés) ; `dev/gate-exit.txt` porte les deux codes. **Frontend : aucun fichier
   touché** (`git diff --stat 15ae0368a~1 HEAD -- frontend` vide), donc ni `check` ni `test:unit` ; **E2E Playwright non lancé** (D9, à la clôture).
-- **AC8** : `dev/ac8.txt` (`git grep -nw round_for_display -- crates/`) ne rend que `money.rs` (définition, doc, tests, appel de
+- **AC8** : `dev/ac8.txt` (`git grep -nw round_for_display -- crates/`, régénéré au HEAD de clôture, 18 lignes) ne rend que `money.rs` (définition, doc, tests, appel de
   `format_two_decimals`), le réexport de `types/mod.rs`, `balance_sheet.rs:70` (`use kesh_core::types::round_for_display`), `:126` (lien),
   `:142` (prédicat), le test de `pdf.rs:3090-3095` et son `use` (`pdf.rs:2153`), et un commentaire de la garde ;
   `git grep -n 'crate::pdf' crates/kesh-report/src/balance_sheet.rs` est **vide** ; `csv.rs` n'importe plus de `pdf.rs` que `format_exchange_rate`.
 - **AC10** : `dev/ac10.txt` (`git diff origin/epic/48-corrections-0-20-0...HEAD --stat -- crates/kesh-qrbill … crates/kesh-db …`) **vide** ;
   les tests de `kesh-qrbill` sont dans le vert ciblé et dans `test-fast --ci`, sans modification.
-- **AC12** : `dev/ac12.txt` — chaque ligne non commentée appartient à un fichier de la liste close (22 occurrences, 8 fichiers : `money.rs` 1,
-  `csv_tables.rs:127` `{d:.scale$}`, `parse/tests.rs` 2, `kesh-i18n` 1, `pain001` 1, `generator.rs:115`, `kesh-qrbill/src/pdf.rs` 13,
-  `kesh-report/src/pdf.rs:361` et `:3325`) ; les lignes de commentaire restantes (`errors.rs:1563`, `money.rs:109`, `:111`, `generator.rs:107`,
+- **AC12** : `dev/ac12.txt` (`git grep -nE '<motif PRECISION de la garde>' -- 'crates/*/src/*'`, régénéré au HEAD de clôture, 22 lignes) — chaque ligne non commentée appartient à un fichier de la liste close (22 occurrences, 8 fichiers : `money.rs` 1,
+  `csv_tables.rs:135` `{d:.scale$}`, `parse/tests.rs` 2, `kesh-i18n` 1, `pain001` 1, `generator.rs:115`, `kesh-qrbill/src/pdf.rs` 13,
+  `kesh-report/src/pdf.rs:361` et `:3325`) ; les lignes de commentaire restantes (`errors.rs:1563`, `money.rs:110`, `:113`, `generator.rs:107`,
   `:111`) sont vraies. `git grep -nE '1245|tronqu' -- docs/manual` rend **dix lignes** (douze occurrences : `admin-manual.tex` 725, 2697, 2707, 3889 ; `user-manual.tex` 2875, 3074, 3385, 3629, 4064, 4065), **toutes sans rapport** avec l'arrondi (troncature d'un mot de passe, d'un nom CAMT, d'un écran de 500 lignes) et aucune ne cite #1245 (recompté à la remédiation de la revue P1, A-1).
 - **AC11** : `docs/manual/fr/admin-manual.tex` porte `sec:maj-0-20-0` (`:2550`) ; `ls docs/manual/*/` : seul `fr` a des `.tex` ; PDF non commités.
 - **Mots-clés de fermeture** : `git log origin/epic/48-corrections-0-20-0..HEAD --format=%B | grep -niE '\b(close[sd]?|fix(e[sd])?|resolve[sd]?) #[0-9]'` vide.
@@ -669,7 +669,7 @@ Journaux hors dépôt sous `/home/gcorbaz/devel/kesh-gate-logs/e4811/` :
   | M4 | `format!("{:.2}", amount)` ajouté dans `csv.rs` | garde famille 1 rouge : `kesh-report/src/csv.rs : 1 au lieu de 0` (`mut-m4.log`) |
   | M5 | `{:.2}` retiré de `money.rs` | garde famille 1 rouge : `money.rs : 0 au lieu de 1` (`mut-m5.log`) |
   | M6 | `trunc_with_scale(2)` ajouté dans `pdf.rs` | garde famille 2 rouge : `kesh-report/src/pdf.rs : 1 au lieu de 0` (`mut-m6.log`) |
-  | M7 | `DEC_18_2` pour `invoice_lines.line_total` | AC13 rouge nommant `invoice_lines.line_total (id=1) : attendu 1.1234 (échelle 4), lu 1.12` (`mut-m7.log`) |
+  | M7 | `DEC_18_2` pour `invoice_lines.line_total` | AC13 rouge par le `debug_assert!` de `fmt_decimal_scale` (« échelle 4 de 1.1234 supérieure à celle de sa colonne (2) », `csv_tables.rs:130`) : la requête de l'export échoue, le test rougit sur la réponse ; le message « attendu 1.1234, lu 1.12 » ne s'exerce plus tant que l'assertion est en place (`mut-m7.log`, rejouée au HEAD de clôture) |
   | M8 | `38` écrit à la main remplacé par `37` | AC13 rouge sur le décompte, liste des 38 colonnes imprimée (`mut-m8.log`) |
 
 - **Écarts à la fiche** : (1) M1 ne rougit pas la route de l'export global (voir ci-dessus) ; (2) M2 a exigé deux cas de test de plus ;
