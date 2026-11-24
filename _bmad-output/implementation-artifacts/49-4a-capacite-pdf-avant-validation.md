@@ -444,7 +444,7 @@ story n'en ajoute aucune (le « 13 » de la consigne se compte autrement ; à re
   Un spec temporaire les a produites (non commité, retiré).
 - **Gates de passage en `review`** : bases `kesh_e494a` et `kesh_e2e_e494a` recréées, migrées, `kesh_e494a` semée (sans redémarrer
   le conteneur, interdit) ; `scripts/test-fast.sh --ci` : **6269 passés, 0 échoué, 17 ignorés**, 408 s (`gate-test-fast-ci.log`) ;
-  `scripts/gate-ci.sh kesh_ci_e494` : **6288 passés, 0 échoué, 21 ignorés**, 263 binaires, code 0 (`gate-ci.log`). Les deux au
+  `scripts/gate-ci.sh kesh_ci_e494` : **6288 passés, 0 échoué, 21 ignorés**, 253 binaires et 10 doc-tests, code 0 (`gate-ci.log`). Les deux au
   commit de code `6f7394a67` ; aucune ligne de production n'a changé depuis.
 - **Non exercé** : le **frontend complet** (`check`, `lint-i18n-ownership`, `test:unit`, `build`) — aucun fichier de `frontend/src` ni
   de `frontend/package*` ne change, seul `frontend/tests/e2e/invoice-validation-pdf.spec.ts` s'ajoute ; l'**E2E complet** (à la
@@ -508,7 +508,7 @@ Rapports : `/home/gcorbaz/devel/kesh-gate-logs/e494/review-p1-{B,E,A}.md`. Commi
   à problèmes, comme avant), `lint-i18n-ownership` rc 0, `test:unit` rc 0 (**281 fichiers, 4849 tests passés**), `build` rc 0
   (`remed-front.log`) ; `cargo fmt --all -- --check` vert ; bases `kesh_e494a` et `kesh_e2e_e494a` recréées, migrées, `kesh_e494a`
   semée ; `scripts/test-fast.sh --ci` : **6270 passés, 0 échoué, 17 ignorés** (392 s ; +1 test neuf, `remed-test-fast-ci.log`) ;
-  `scripts/gate-ci.sh kesh_ci_e494` : **6289 passés, 0 échoué, 21 ignorés**, 263 binaires, code 0 (`remed-gate-ci.log`). Pas d'E2E
+  `scripts/gate-ci.sh kesh_ci_e494` : **6289 passés, 0 échoué, 21 ignorés**, 253 binaires et 10 doc-tests, code 0 (`remed-gate-ci.log`). Pas d'E2E
   (clôture). Le gate ciblé du clippy n'a pas été relancé : aucun code hors module de test de `pdf.rs` et fichier de test n'a changé
   (`cargo test` du gate compile tout).
 
