@@ -368,7 +368,29 @@ refaite par l'outil Edit, conformément à l'interdit ; seuls `mut.py` et `run-m
 (2) la file des verrous de la voie base a retenu les trois commandes lourdes (ciblé, mutations, gates) de 25 à 45 minutes chacune ;
 (3) un `pkill -f` malvenu a été tapé dans une commande et **refusé** par le garde-fou avant exécution : aucun processus tué, aucune
 conséquence ; (4) M-B3 rougit six e2e de plus que la fiche ne l'annonce (tableau ci-dessus) ; (5) `kesh_e2e_e50solde` a été créée et
-laissée vide (aucun droit à retirer : `kesh%`.* est déjà accordé par `01-dev-grants.sql`).
+laissée vide (aucun droit à retirer : `kesh%`.* est déjà accordé par `01-dev-grants.sql`) ; (6) **écart à D-B3** (revue P1, A1) : le
+doc-comment de `kesh-api/src/errors.rs` `SUPPLIER_INVOICE_DUPLICATE_UNVALIDATE_FR` (« pour les deux règles », cité `:6240` par la
+fiche) n'a pas été réécrit : il décrit le **texte** de repli, il ne décide rien ; (7) **noms des bases** (A2) : la fiche écrit `kesh_e50s`,
+`kesh_ci_e50s`, `kesh_e2e_e50s` ; le développement a employé `kesh_e50solde`, `kesh_ci_e50solde`, `kesh_e2e_e50solde`, noms donnés par le
+prompt d'appel, qui font foi.
+
+**Angle mort assumé (revue P1, E3).** La case (règle 2, dévalidation d'une annulée) n'est tenue par **aucun test de route** : elle l'est
+**par composition** — `duplicate_response_regle2_devalidation` (`kesh-api/src/errors.rs`, niveau `IntoResponse`, l'erreur construite à la main)
+et `unvalidation_rule_2_other_cancelled_and_validated_invoices` (`kesh-db/tests/supplier_invoice_duplicate.rs:1126-1141`, la levée côté base) ;
+M-B2 tue les deux moitiés, aucun e2e de l'API ne rougit. Acceptable (AC-4 : aucun E2E neuf).
+
+**Issue ouverte par l'orchestrateur (revue P1, E2)** : **#1533** (P4, `technical-debt`) — l'appariement code d'erreur ↔ variante reste écrit
+deux fois (`DbError::error_code()` dans `kesh-db/src/errors.rs`, et le `match rule` de `supplier_invoice_duplicate_response`) ; non corrigé ici.
+
+**Remédiation de la revue P1** (commit `6c48e7e70`, hors fiche) : B1 = E1 — `lifted_by_confirmation` écrit en **quatre bras explicites sans
+joker** ; B2 — le lien `[`Entry`](crate::errors::DuplicateGesture::Entry)` se résout (`cargo doc -p kesh-db` avec
+`-D rustdoc::broken_intra_doc_links` : les liens cassés restants du crate sont antérieurs, aucun ne nomme `lifted_by_confirmation` ni
+`DuplicateGesture`, `doc-kesh-db.log`) ; B3 — trois paragraphes rejustifiés ; B4 — les trois renvois de `kesh-db/src/errors.rs` sont des
+liens intra-doc. **Mutations rejouées sur le nouveau code** (`mut2-b1.log` … `mut2-b3.full.log`, `vert-cible-2.log` : 1259/1259) —
+assertions qui échouent, **identiques** : M-B1 : `errors.rs:6661` « littérale (règle 1, Entry) », `supplier_invoices.rs:3926` « table
+(règle 1, Entry) », e2e `:232`, db `:238` et `:777` (5 échecs sur 27) ; M-B2 : `errors.rs:6746` « littérale (règle 2, Unvalidation) »,
+`supplier_invoices.rs:3956` « table (règle 2, Unvalidation) », db `:1141` « confirmé: … » (3 sur 27) ; M-B3 : les quatre « code (règle N,
+geste) » `errors.rs:6652, 6680, 6708, 6737` et six e2e (10 sur 27) ; `git diff` 0 ligne après chacune.
 
 **Statut à poser dans `sprint-status.yaml`** (par l'orchestrateur) : `50-solde-dette-epic: review`.
 
