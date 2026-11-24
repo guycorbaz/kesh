@@ -1,6 +1,6 @@
 # Story 50-solde : Solde de la dette de l'Epic 50 — une seule règle de levée d'un refus de doublon (#1492)
 
-Status: review — développée le 2026-11-24 (Sonnet 5.5, `bmad-dev-story`), gate complet vert au commit `88905d0ff` (Dev Agent Record) ; fiche écrite le 2026-11-24, réduite le même jour au lot B (#1492) par deux décisions du Project Lead ; validations P1 (Sonnet, 0/0/1/11), P2 (Opus, 0/0/1/6) et P3 (Sonnet, 0/0/2/3) ; **validation terminée** : la P3 ne rend aucun finding au-dessus de LOW sur le lot B, et sa seule remédiation (V3-3) est textuelle et locale (Change Log).
+Status: done — développée le 2026-11-24 (Sonnet 5.5, `bmad-dev-story`), revue close (P1 Opus 0/0/1/8 → passe ciblée Sonnet 0/0/0/3), gates et E2E complet verts au dernier commit de code `6c48e7e70` (Dev Agent Record, Change Log) ; fiche écrite le 2026-11-24, réduite le même jour au lot B (#1492) par deux décisions du Project Lead ; validations P1 (Sonnet, 0/0/1/11), P2 (Opus, 0/0/1/6) et P3 (Sonnet, 0/0/2/3) ; **validation terminée** : la P3 ne rend aucun finding au-dessus de LOW sur le lot B, et sa seule remédiation (V3-3) est textuelle et locale (Change Log).
 
 *Fiche rédigée le 2026-11-24 (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-50-solde`, branche `story/50-solde-dette-epic`, partie de
 `origin/epic/50-corrections` à **`48a66ca24`**. **Tout le code cité est lu à `48a66ca24`.** Release visée : **0.20.0**, vendredi 2026-11-27
@@ -305,8 +305,9 @@ Lignes relues au code, identiques à la fiche :
 Inventaire régénéré par les commandes de `inv-1492.txt` : même ensemble de sites, aucun site neuf (`inv-etape0.txt`).
 
 **Livré** (D-B1, D-B2, D-B3) :
-- `DuplicateRule::lifted_by_confirmation(self, gesture) -> bool` (`kesh-db`, `supplier_invoices.rs`), le `match` de `:658-661` repris tel
-  quel, exhaustif sur le couple, doc-comment de la table à quatre cases ; `guard_duplicates_in_tx` l'appelle (l'import local de
+- `DuplicateRule::lifted_by_confirmation(self, gesture) -> bool` (`kesh-db`, `supplier_invoices.rs`), le `match` de `:658-661` d'abord repris
+  tel quel (deux jokers de position), **puis réécrit en quatre bras explicites sans joker par la remédiation P1 `6c48e7e70`** (B1 = E1),
+  exhaustif sur le couple, doc-comment de la table à quatre cases ; `guard_duplicates_in_tx` l'appelle (l'import local de
   `DuplicateGesture`, devenu inutile, est retiré).
 - `supplier_invoice_duplicate_response(existing, gesture, rule)` (`kesh-api/src/errors.rs`) : le code se déduit de la règle par un seul
   `match rule`, `confirmable = rule.lifted_by_confirmation(gesture)`, le message se choisit sur `(gesture, rule)` ; les deux bras ne
@@ -490,3 +491,20 @@ geste) » `errors.rs:6652, 6680, 6708, 6737` et six e2e (10 sur 27) ; `git diff`
   `e2e-complet.log`) : **510 passés, 19 ignorés, 7 échoués = exactement les sept KF-029 (#97)** de `docs/testing.md` § *Les échecs
   attendus* (`mode-expert.spec.ts:26` et `:41`, `onboarding-path-b.spec.ts:65` et `:92`, `onboarding.spec.ts:57`, `:77` et `:150`),
   jugés fichier par fichier ; aucune pollution. **`Status: review` jusqu'à la passe ciblée.**
+- **2026-11-25 — clôture** : **tendance des findings : P1 Opus (trois lentilles) 0/0/1/8 → passe ciblée Sonnet de `6c48e7e70` 0/0/0/3**
+  (rapport `review-ciblee-6c48e7e70.md`) ; modèles : Opus puis Sonnet, alternés ; **boucle close** (aucun finding au-dessus de LOW).
+  Sort des trois LOW : **C1** — deux mutations de plus rejouées sur le `match` à quatre bras, chacune inversée, gate ciblé
+  (`mut2-b4.*`, `mut2-b5.*`) : **M-B4** (règle 2, `Entry` → `false`, `supplier_invoices.rs:520`) rougit cinq tests (`lifted_regle2_saisie`
+  « table (règle 2, Entry) » ; `duplicate_response_regle2_saisie` à l'assertion **littérale** « littérale (règle 2, Entry) » ; e2e
+  `create_twice_is_refused_with_details_and_message` ; deux tests de `kesh-db` au `.expect("confirmé")`) ; **M-B5** (règle 1,
+  `Unvalidation` → `false`, `:521`) rougit cinq tests (`lifted_regle1_devalidation` « table (règle 1, Unvalidation) » ; `duplicate_response_regle1_devalidation`
+  « littérale (règle 1, Unvalidation) » ; e2e `unvalidation_of_a_cancelled_duplicate_by_api_key` ; deux tests de `kesh-db`) — **les quatre
+  bras sont donc tous tués** (avec M-B1 et M-B2), aucun reste vert, aucun finding neuf ; restauration `git checkout` + `touch`, `git diff`
+  vide. **C2** — accepté : une ligne de commentaire à 129 colonnes subsiste (cosmétique ; la corriger toucherait du code après la dernière
+  passe). **C3** — corrigé : la section « Livré » dit que le `match` fut d'abord repris tel quel, puis réécrit par `6c48e7e70`. E2 : issue
+  **#1533** (P4). **Réponse à la question du coordinateur** : le backend de l'E2E a été lancé depuis `/home/gcorbaz/devel/kesh-50-solde`
+  (le script `e2e-solde.sh` fait `cd "$WT"` avant de lancer `target/debug/kesh-api` du worktree, sous le chemin relatif `crates/kesh-i18n/locales`) ;
+  `e2e-backend.log` : « 4 locales chargées depuis crates/kesh-i18n/locales » ; les catalogues du worktree portent bien
+  `error-supplier-invoice-duplicate-unvalidate`. **`Status: done`** ; `sprint-status.yaml` : `50-solde-dette-epic: done`.
+  **Notes de version** (rappel, section « Note de version » de la fiche) : *Interne* — la règle qui dit si une confirmation lève un refus de
+  doublon de facture fournisseur n'est plus écrite qu'une fois (refs #1492).
