@@ -29,3 +29,9 @@ autres options, réversibilité.
 - **Écartées** : #1465 — son remède est un choix d'écran que la 49-3 (Epic 52) tranche en ouvrant `heading` ; le faire ici poserait
   un état d'écran (quatre langues, recette visuelle) que la 49-3 défera. Proposée au rattachement à la 49-3.
 - **Réversibilité** : totale.
+
+## Note du 2026-11-24 (soir) — C-e49s-3 caduc
+
+Le lot C (#1499), retenu par C-e49s-3, est **retiré** de la 49-5 par décision de l'orchestrateur après la passe ciblée P3 (signal
+de recyclage de la règle de splitting, Change Log de la fiche). Ce n'est pas un choix autonome de l'agent de fiche ; la conception
+est conservée dans `49-5-lot-c-reporte-1499.md`. #1465 reste écartée pour sa raison propre (49-3).
