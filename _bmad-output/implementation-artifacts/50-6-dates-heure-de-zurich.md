@@ -1,6 +1,6 @@
 # Story 50-6 : Dates et heures de Zurich — journal d'audit, sauvegardes, envois MCP, rejet de rapprochement (#1511)
 
-Status: ready-for-dev
+Status: in-progress
 
 *Fiche rédigée le 2026-11-24 (Opus 5.5), worktree `kesh-50-6`, branche `story/50-6-dates-heure-de-zurich` partie de
 `origin/epic/50-corrections` à `e5654fc00`, par le workflow `bmad-create-story`, en autonomie. Epic 50 « Corrections », cinquième story ;
@@ -428,11 +428,71 @@ vendredi matin, c'est tenable si la validation converge en P2 ou P3 ; sinon la s
 
 ### Agent Model Used
 
+Sonnet 5.5 (`bmad-dev-story`, autonomie), 2026-11-24. Journaux : `/home/gcorbaz/devel/kesh-gate-logs/e506/`.
+
 ### Debug Log References
+
+- **Étape 0 / AC1** : `ac1-json.txt` (base jetable `kesh_e506`, binaire `kesh-api` copié de `epic/50-corrections` à `e5654fc00` dans
+  `e506/bin/` — aucun code serveur ne change ; script `backend.sh`). Quatre champs à `Z`, envois et prompts MCP naïfs : prémisse P1 confirmée.
+- **Rouges** (commit `8c029046b`) : `rouge-format-instant.txt` (9 échecs sur 9), `rouge-audit.txt` (3 : la cellule sans `data-testid`
+  rougit aussi le filet Zurich, attendu), `rouge-unreject.txt` (1), `rouge-backup.txt` (1), `rouge-mcp-sends.txt` (1), `rouge-garde.txt`
+  (les 8 relevés des quatre sites sans entrée), `rouge-e2e.txt` (1) : (1) spec telle que commitée, le `data-testid` manque ; (2) variante
+  `locator('td').first()`, cellule « 24 nov. 2026, 13:48 » (New York) au lieu de « 19:48 » (Zurich).
+- **Mutations** (script `mut.sh`, restauration par `git restore --worktree` puis `touch`, arbre propre constaté) : `mut-M1.txt` (11 tests
+  rouges ; les filets Zurich rougissent aussi, le formateur en cache gardant le fuseau de l'appel précédent), `mut-M2.txt` (5 : AC2 naïf,
+  AC8, et `formatSwissDateTime` de `reports.api.test.ts`), `mut-M3.txt` (2 : AC7 et la garde), `mut-M4.txt` (3 : AC5, V2-5 et la garde).
+- **Manuel** : `manuel-avant.txt` (1 / 0 / PDF 1), `manuel-apres.txt` (0 / 1).
+- **Recette visuelle** : `captures/{avant-ny,apres-ny,apres-zurich}/` (huit captures chacune, thème clair, base `kesh_e506`, script
+  `recette-scripts/recette.spec.ts`).
+- **Gates** (voir « Completion Notes ») : `front-gate.log` ; `testfast.log` ; `e2e-complet.log`.
 
 ### Completion Notes List
 
+- **AC1** établie (étape 0). **AC2-AC9** : `format-instant.test.ts` (neuf), `audit-log-page.test.ts`, `UnrejectTransactionAction.test.ts`,
+  `backup-format.test.ts` (neuf), `mcp-sends-format.test.ts` (neuf), chacun avec un `describe` épinglé à New York (rouge avant) et un à
+  `Europe/Zurich` (filet AC9, vert avant et après, déclaré tel).
+- **Code** : `reports.api.ts` gagne `ZONE_SUISSE`, `instantDuServeur` (la seule lecture « naïf = UTC » du module, `zurichParts` l'appelle),
+  `formatInstant` (formateurs en `Map` de module, clé `locale|style`) ; `formatSwissDate`/`formatSwissDateTime` inchangés. Quatre sites
+  convertis (D4) ; le journal d'audit prend la valeur brute en repli (V2-5) et sa cellule porte `data-testid="audit-log-row-date"` (D6).
+  Commentaires d'en-tête réécrits (`backup-format.ts`, `mcp-sends-format.ts`, `mcp-prompts-format.ts`, `UnrejectTransactionAction.svelte`,
+  `audit-log/+page.svelte`, `UnrejectTransactionAction.test.ts`).
+- **AC10 — garde** : `ALLOWLIST_INSTANTS` close. **Relevés : 22** (22 + n avec n = 0 : les trois lignes de `reports.api.ts` — `ZURICH_PARTS`,
+  `Date.parse`, `formatToParts(new Date(ms))` — sont devenues `ZURICH_PARTS`, `new Date(` de `instantDuServeur`, constructeur du formateur de
+  `formatInstant`). **Entrées : 21** (dont une à `lignes: 2`, `premier-exercice.ts`). Recompte, commande de la fiche (D3) rejouée au dernier
+  commit de code : `cd frontend/src && grep -rnP "DateTimeFormat\(|toLocale(Date|Time)?String\(|…" … | wc -l` → **22** (30 avant ;
+  sortie `garde-releves-apres.txt`), et `awk` sur `ALLOWLIST_INSTANTS` : 21 `fichier:`. Sonde positive en mémoire (sept lignes d'avant la
+  story, multiligne, `globalThis`, troisième ligne identique de `premier-exercice.ts`) et sonde réelle M4 : vertes/rouges comme prévu.
+- **AC11** : spec `audit-log.spec.ts` (bloc `New York`), attendus calculés par `page.evaluate` ; rouge constaté, vert dans l'E2E complet (voir
+  ci-dessous).
+- **AC12** : phrase du tableau fixée (« Le tableau affiche l'heure de Zurich, quel que soit le fuseau de votre poste. »), paragraphe de
+  `:790-796` complété (exception et limite) ; contrôles du texte aplati 1 → 0 et 0 → 1. Aucun PDF commité ; après `make fr` à la release :
+  `pdftotext … | grep -o "heure de votre poste" | wc -l` → 0 (1 aujourd'hui).
+- **AC13** : recette visuelle faite (voir journaux). Bandeau par interception de route (V2-4). Les captures « après » à New York et à Zurich
+  montrent la même heure (par exemple le bandeau : « 20 nov. 2026, 18:30 » avant, « 21 nov. 2026, 00:30 » après, aux deux fuseaux).
+- **AC14** : `git diff --stat e5654fc00..HEAD -- frontend/src ':!*.test.ts'` ne nomme que `reports.api.ts`, `audit-log/+page.svelte`,
+  `UnrejectTransactionAction.svelte`, `backup-format.ts`, `mcp-sends-format.ts`, et `mcp-prompts-format.ts` (une ligne de commentaire) ;
+  aucun fichier de `crates/`, aucun `.ftl`.
+- **Propagation (tâche 5)** : le grep du symptôme ne laisse que les sites voulus — `mcp-time.ts` (limite D0, I2) et son test, `api-keys/+page.svelte:65`
+  (commentaire historique 0.17.2), `admin-manual.tex:3584` (expiration saisie), `crates/` (hors sujet), `CHANGELOG.md` (historique).
+- **Gate frontend complet**, commit `5671704ce` (journal `front-gate.log`) : `npm run check` 0 erreur, `lint-i18n-ownership` vert, `test:unit`
+  **294 fichiers / 5098 tests verts**, `npm run build` vert.
+- **Gate Rust complet** (`scripts/test-fast.sh --ci`, base `kesh_e506`, verrous `station-heavy` puis `.gate.lock`) et **E2E complet** : **lancés,
+  en attente des verrous de la voie** (journaux `testfast.log`, `e2e-complet.log`, scripts `testfast.sh`, `e2e-complet.sh`) ; **non terminés à
+  l'écriture de cette ligne** — leurs résultats s'ajoutent ici, ligne par ligne, quand ils tombent.
+- **Hors fiche, dit** : le backend de l'E2E et de la recette est le binaire de `epic/50-corrections` à `e5654fc00` (aucun code serveur ne change
+  dans la story), copié dans `e506/bin/`, non reconstruit ; les scripts de recette sont dans `e506/recette-scripts/` (le dossier
+  `frontend/.recette-e506/` du worktree est exclu par `.git/info/exclude`).
+
 ### File List
+
+- `frontend/src/lib/features/reports/reports.api.ts` ; `frontend/src/lib/features/admin-backup/backup-format.ts` ;
+  `frontend/src/lib/features/mcp-sends/mcp-sends-format.ts` ; `frontend/src/lib/features/mcp-prompts/mcp-prompts-format.ts` (commentaire) ;
+  `frontend/src/lib/features/reconciliation/UnrejectTransactionAction.svelte` ; `frontend/src/routes/(app)/audit-log/+page.svelte`.
+- Tests : `lib/features/reports/format-instant.test.ts` (neuf), `lib/features/admin-backup/backup-format.test.ts` (neuf),
+  `lib/features/mcp-sends/mcp-sends-format.test.ts` (neuf), `lib/features/reconciliation/UnrejectTransactionAction.test.ts`,
+  `routes/(app)/audit-log/audit-log-page.test.ts`, `lib/shared/utils/local-date-guard.test.ts`, `frontend/tests/e2e/audit-log.spec.ts`.
+- `docs/manual/fr/user-manual.tex` (aucun PDF).
+- Fiche et prompt de revue P1 : `_bmad-output/implementation-artifacts/50-6-dates-heure-de-zurich.md`, `…-review-prompt-p1.md`.
 
 ## Change Log
 
@@ -462,3 +522,7 @@ vendredi matin, c'est tenable si la validation converge en P2 ou P3 ; sinon la s
   journal = valeur brute (D4, AC4, AC5) ; **V2-6** attendu de l'E2E calculé par `page.evaluate` (AC11, P2) ; **V2-7** modules comptés au grain du
   `CLAUDE.md` (quatre, cinq ou six selon la lecture, conclusion inchangée) ; **V2-8** `window.Date`, `self.Date`, `new Date (` écrits aux angles
   morts, grep vide cité ; **V2-9** AC1 renvoie au dépôt d'un envoi et d'un prompt, prompts ajoutés.
+- **2026-11-24 — développement** (Sonnet 5.5, `bmad-dev-story`) : étape 0 rejouée et P1 établie (JSON réel) ; neuf LOW de la P2 traités à
+  l'étape 0 ; tests rouges commités (`8c029046b`), correctif (`88d7afe18`), garde (`5d233d0f4`), manuel (`5671704ce`) ; mutations M1 à M4
+  rougies et restaurées ; recette visuelle faite ; gate frontend complet vert ; **gate Rust complet et E2E complet en attente des verrous
+  de la voie** — le statut passe à `review` quand ils sont verts (le prompt de la revue P1, Opus, est versionné à côté de la fiche).
