@@ -1092,6 +1092,10 @@ mutation citée qui ne serait pas TUÉE dans `mut/juge.log`, fait échouer le cl
   (`:345`, `:368`, `:377`, `:518`), et deux sites neufs du script complémentaire (verdict exigé, journal de l'image non vide).
   Le classeur vérifie aussi que la mutation citée par chaque site C remplace une ligne située à au plus 15 lignes du site
   (B-P3-2 ; une proximité, non une identité).
+  **Décompte à la passe ciblée** (code `eb7338b20`, tableau ci-dessous) : `scripts/recette-montee.sh` **194 = 31 C + 51 S + 37 P +
+  75 A** (le site neuf, « empreinte du binaire illisible », est un angle mort assumé : `sha256sum` en échec n'est pas simulable,
+  la présence de l'empreinte est éprouvée par S18) ; `verifs-0200.sh` **5 = 5 C** ; `recette-complement-rel0200.sh` **26 = 6 C + 18 A
+  + 2 P** ; **total 225 = 42 C + 51 S + 39 P + 93 A** ; classeur code 0.
 - **Sites qui gardent la donnée des factures ou des avoirs** : tous en **C**, sauf les contrôles de couverture du peuplement
   (A, E-P2-5 : ils garantissent les cas peuplés, ne comparent aucune donnée d'avant) et les échecs de `mutool` redondants (A).
   Ceux que la P2 désignait : `:907` → `:919` (S16a), `:909` → `:921` (S16b, S16c), phase 4 `:887` → `:899` (S15), crochet
@@ -1180,128 +1184,129 @@ mutation citée qui ne serait pas TUÉE dans `mut/juge.log`, fait échouer le cl
 | `:569` | PDF exigé : HTTP 200 et en-tête `%PDF-` | C | S7b, S8 (regel), S16 import | S7b-entete |
 | `:582` | PDF figé servi à l'octet de la phase 1 | C | S5, S12 | S5-octets |
 | `:584` | PDF figé : SHA-256 égal à `pdf_sha256` | C | S5b | S5b-sha256 |
-| `:596` | démarrage de l'image précédente, seed, connexion, plan comptable | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:590` | empreinte SHA-256 du binaire relevée | A | — | `sha256sum` en échec sur un binaire déjà vérifié exécutable et un outil vérifié présent : non simulable dans l'environnement fermé ; la recette s'arrête (fermé). La présence de l'empreinte au journal est éprouvée par S18 |
 | `:598` | démarrage de l'image précédente, seed, connexion, plan comptable | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
-| `:601` | démarrage de l'image précédente, seed, connexion, plan comptable | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
-| `:602` | connexion à l'API | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
-| `:604` | démarrage de l'image précédente, seed, connexion, plan comptable | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
-| `:610` | démarrage de l'image précédente, seed, connexion, plan comptable | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
-| `:616` | refus de l'API au peuplement | S | « le peuplement : un refus de l'API » (cinq chemins) | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
-| `:624` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
-| `:625` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
-| `:635` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
-| `:640` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
-| `:641` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
-| `:644` | réponse de l'API illisible au peuplement | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
-| `:646` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
-| `:649` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
-| `:650` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
+| `:600` | démarrage de l'image précédente, seed, connexion, plan comptable | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:603` | démarrage de l'image précédente, seed, connexion, plan comptable | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:604` | connexion à l'API | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:606` | démarrage de l'image précédente, seed, connexion, plan comptable | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:612` | démarrage de l'image précédente, seed, connexion, plan comptable | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:618` | refus de l'API au peuplement | S | « le peuplement : un refus de l'API » (cinq chemins) | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
+| `:626` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
+| `:627` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
+| `:637` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
+| `:642` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
+| `:643` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
+| `:646` | réponse de l'API illisible au peuplement | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:648` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
+| `:651` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
 | `:652` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
-| `:654` | réponse de l'API illisible au peuplement | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
-| `:656` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
-| `:659` | précondition : un compte principal, lié au 1020 | C | S10 aucun compte principal, S10 non lié au 1020 | S10-principal, S10-lien-1020 |
-| `:661` | précondition : compte d'arrondi désigné | C | S10 aucun compte d'arrondi | S10-arrondi |
-| `:663` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
-| `:664` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
-| `:673` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
-| `:674` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
-| `:688` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
+| `:654` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
+| `:656` | réponse de l'API illisible au peuplement | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:658` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
+| `:661` | précondition : un compte principal, lié au 1020 | C | S10 aucun compte principal, S10 non lié au 1020 | S10-principal, S10-lien-1020 |
+| `:663` | précondition : compte d'arrondi désigné | C | S10 aucun compte d'arrondi | S10-arrondi |
+| `:665` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
+| `:666` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
+| `:675` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
+| `:676` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
 | `:690` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
-| `:692` | réponse de l'API illisible au peuplement | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
-| `:696` | réponse de l'API illisible au peuplement | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
-| `:697` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
-| `:700` | PDF figés exigés à la phase 1 (F1, F5, F7, F8) | C | S7b | S7c-telechargements-phase1 |
-| `:701` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
-| `:702` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
-| `:706` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
-| `:707` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
-| `:710` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
-| `:711` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
-| `:716` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
+| `:692` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
+| `:694` | réponse de l'API illisible au peuplement | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:698` | réponse de l'API illisible au peuplement | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:699` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
+| `:702` | PDF figés exigés à la phase 1 (F1, F5, F7, F8) | C | S7b | S7c-telechargements-phase1 |
+| `:703` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
+| `:704` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
+| `:708` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
+| `:709` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
+| `:712` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
+| `:713` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
 | `:718` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
-| `:722` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
-| `:723` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
-| `:728` | statuts des factures fournisseur | S | « statuts fournisseur inattendus » | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
-| `:733` | couverture du peuplement (relevés, groupe, règlements, figées, F4, désignations, copie des documents) | A | — | contrôle de couverture du peuplement (garantit les cas que le manuel énumère, ne compare aucune donnée d'avant) : éprouvé par le seul run réel, qui le passe (E-P2-5) |
-| `:741` | réponse de l'API illisible au peuplement | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
-| `:743` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
-| `:744` | couverture du peuplement (relevés, groupe, règlements, figées, F4, désignations, copie des documents) | A | — | contrôle de couverture du peuplement (garantit les cas que le manuel énumère, ne compare aucune donnée d'avant) : éprouvé par le seul run réel, qui le passe (E-P2-5) |
-| `:746` | réponse de l'API illisible au peuplement | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
-| `:747` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
-| `:748` | couverture du peuplement (relevés, groupe, règlements, figées, F4, désignations, copie des documents) | A | — | contrôle de couverture du peuplement (garantit les cas que le manuel énumère, ne compare aucune donnée d'avant) : éprouvé par le seul run réel, qui le passe (E-P2-5) |
-| `:753` | statuts des huit factures | C | S10 statuts clients | S10-statuts |
-| `:754` | couverture du peuplement (relevés, groupe, règlements, figées, F4, désignations, copie des documents) | A | — | contrôle de couverture du peuplement (garantit les cas que le manuel énumère, ne compare aucune donnée d'avant) : éprouvé par le seul run réel, qui le passe (E-P2-5) |
+| `:720` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
+| `:724` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
+| `:725` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
+| `:730` | statuts des factures fournisseur | S | « statuts fournisseur inattendus » | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
+| `:735` | couverture du peuplement (relevés, groupe, règlements, figées, F4, désignations, copie des documents) | A | — | contrôle de couverture du peuplement (garantit les cas que le manuel énumère, ne compare aucune donnée d'avant) : éprouvé par le seul run réel, qui le passe (E-P2-5) |
+| `:743` | réponse de l'API illisible au peuplement | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:745` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
+| `:746` | couverture du peuplement (relevés, groupe, règlements, figées, F4, désignations, copie des documents) | A | — | contrôle de couverture du peuplement (garantit les cas que le manuel énumère, ne compare aucune donnée d'avant) : éprouvé par le seul run réel, qui le passe (E-P2-5) |
+| `:748` | réponse de l'API illisible au peuplement | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:749` | propagation de l'échec d'un appel (`peupler`, `id_de`) déjà inventorié | P | — | — |
+| `:750` | couverture du peuplement (relevés, groupe, règlements, figées, F4, désignations, copie des documents) | A | — | contrôle de couverture du peuplement (garantit les cas que le manuel énumère, ne compare aucune donnée d'avant) : éprouvé par le seul run réel, qui le passe (E-P2-5) |
+| `:755` | statuts des huit factures | C | S10 statuts clients | S10-statuts |
 | `:756` | couverture du peuplement (relevés, groupe, règlements, figées, F4, désignations, copie des documents) | A | — | contrôle de couverture du peuplement (garantit les cas que le manuel énumère, ne compare aucune donnée d'avant) : éprouvé par le seul run réel, qui le passe (E-P2-5) |
-| `:757` | un avoir peuplé | C | S10 aucun avoir | S10-avoir |
-| `:759` | couverture du peuplement (relevés, groupe, règlements, figées, F4, désignations, copie des documents) | A | — | contrôle de couverture du peuplement (garantit les cas que le manuel énumère, ne compare aucune donnée d'avant) : éprouvé par le seul run réel, qui le passe (E-P2-5) |
+| `:758` | couverture du peuplement (relevés, groupe, règlements, figées, F4, désignations, copie des documents) | A | — | contrôle de couverture du peuplement (garantit les cas que le manuel énumère, ne compare aucune donnée d'avant) : éprouvé par le seul run réel, qui le passe (E-P2-5) |
+| `:759` | un avoir peuplé | C | S10 aucun avoir | S10-avoir |
 | `:761` | couverture du peuplement (relevés, groupe, règlements, figées, F4, désignations, copie des documents) | A | — | contrôle de couverture du peuplement (garantit les cas que le manuel énumère, ne compare aucune donnée d'avant) : éprouvé par le seul run réel, qui le passe (E-P2-5) |
-| `:762` | couverture du peuplement (relevés, groupe, règlements, figées, F4, désignations, copie des documents) | A | — | contrôle de couverture du peuplement (garantit les cas que le manuel énumère, ne compare aucune donnée d'avant) : éprouvé par le seul run réel, qui le passe (E-P2-5) |
+| `:763` | couverture du peuplement (relevés, groupe, règlements, figées, F4, désignations, copie des documents) | A | — | contrôle de couverture du peuplement (garantit les cas que le manuel énumère, ne compare aucune donnée d'avant) : éprouvé par le seul run réel, qui le passe (E-P2-5) |
 | `:764` | couverture du peuplement (relevés, groupe, règlements, figées, F4, désignations, copie des documents) | A | — | contrôle de couverture du peuplement (garantit les cas que le manuel énumère, ne compare aucune donnée d'avant) : éprouvé par le seul run réel, qui le passe (E-P2-5) |
-| `:767` | couverture du peuplement (relevés, groupe, règlements, figées, F4, désignations, copie des documents) | A | — | contrôle de couverture du peuplement (garantit les cas que le manuel énumère, ne compare aucune donnée d'avant) : éprouvé par le seul run réel, qui le passe (E-P2-5) |
-| `:775` | réponse de l'API illisible au peuplement | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
-| `:780` | réponse de l'API illisible au peuplement | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
-| `:783` | échec d'une empreinte | A | — | propagation des `|| return 1` de `empreinte`, inventoriés ci-dessus |
-| `:786` | chaque table de l'empreinte peuplée à l'avant (table vide des deux côtés) | C | S3h | S3h-table-vide |
-| `:790` | rapport TVA non vide à l'avant | C | S10 rapport TVA vide | S10-tva |
-| `:792` | sauvegarde, dump et copie des documents | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
-| `:793` | sauvegarde, dump et copie des documents | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
-| `:798` | copie des documents du seul conteneur du jeton | S | « jeton du conteneur » | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
-| `:799` | sauvegarde, dump et copie des documents | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
-| `:803` | couverture du peuplement (relevés, groupe, règlements, figées, F4, désignations, copie des documents) | A | — | contrôle de couverture du peuplement (garantit les cas que le manuel énumère, ne compare aucune donnée d'avant) : éprouvé par le seul run réel, qui le passe (E-P2-5) |
-| `:808` | sauvegarde, dump et copie des documents | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
-| `:809` | sauvegarde, dump et copie des documents | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
-| `:815` | démarrage du binaire neuf, seconde base | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:766` | couverture du peuplement (relevés, groupe, règlements, figées, F4, désignations, copie des documents) | A | — | contrôle de couverture du peuplement (garantit les cas que le manuel énumère, ne compare aucune donnée d'avant) : éprouvé par le seul run réel, qui le passe (E-P2-5) |
+| `:769` | couverture du peuplement (relevés, groupe, règlements, figées, F4, désignations, copie des documents) | A | — | contrôle de couverture du peuplement (garantit les cas que le manuel énumère, ne compare aucune donnée d'avant) : éprouvé par le seul run réel, qui le passe (E-P2-5) |
+| `:777` | réponse de l'API illisible au peuplement | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:782` | réponse de l'API illisible au peuplement | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:785` | échec d'une empreinte | A | — | propagation des `|| return 1` de `empreinte`, inventoriés ci-dessus |
+| `:788` | chaque table de l'empreinte peuplée à l'avant (table vide des deux côtés) | C | S3h | S3h-table-vide |
+| `:792` | rapport TVA non vide à l'avant | C | S10 rapport TVA vide | S10-tva |
+| `:794` | sauvegarde, dump et copie des documents | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:795` | sauvegarde, dump et copie des documents | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:800` | copie des documents du seul conteneur du jeton | S | « jeton du conteneur » | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
+| `:801` | sauvegarde, dump et copie des documents | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:805` | couverture du peuplement (relevés, groupe, règlements, figées, F4, désignations, copie des documents) | A | — | contrôle de couverture du peuplement (garantit les cas que le manuel énumère, ne compare aucune donnée d'avant) : éprouvé par le seul run réel, qui le passe (E-P2-5) |
+| `:810` | sauvegarde, dump et copie des documents | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:811` | sauvegarde, dump et copie des documents | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
 | `:817` | démarrage du binaire neuf, seconde base | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
-| `:820` | nombre de migrations appliquées | S | « migrations : un écart au nombre attendu » | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
-| `:823` | sauvegarde `pre-upgrade/` | S | « aucun fichier pre-upgrade », « N = 0 » | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
+| `:819` | démarrage du binaire neuf, seconde base | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:822` | nombre de migrations appliquées | S | « migrations : un écart au nombre attendu » | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
 | `:825` | sauvegarde `pre-upgrade/` | S | « aucun fichier pre-upgrade », « N = 0 » | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
-| `:827` | échec d'une empreinte | A | — | propagation des `|| return 1` de `empreinte`, inventoriés ci-dessus |
-| `:828` | appel de la comparaison de la montée | C | S2 à S4 | S2b-appel-montee |
-| `:838` | dossier du crochet | A | — | `$D/cwd` est créé par le script au début du run : inatteignable |
-| `:845` | crochet `--apres` en échec (phases 2 et 5) | C | S16f (phase 2), S16d (phase 5) | S16g-crochet-echec ; contrôles du crochet : `rel0200/verifs-0200.test.sh` et `.mut.sh` |
-| `:847` | appel du crochet en phase 2 | C | S16f | S16f-crochet-phase2 |
-| `:852` | connexion à l'API | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
-| `:853` | boucle des PDF figés après la montée (F1, F5, F7) | C | S5, S5b (F1) | S5c-boucle-montee (F1 retiré de la boucle) ; F5 et F7 hors scénario : dette #1506 |
-| `:855` | F8 sans fichier rend 410 | A | — | aucun scénario ne sert autre chose que 410 ; un 200 ferait échouer le regel (`409`, S8) ou son SHA-256 (S8c) : fermé en aval |
-| `:858` | le 410 de F8 porte INVOICE_PDF_GONE | C | S8b | S8b-code-410 |
-| `:861` | regel de F8 accepté (200, réponse de facture) | C | S8 | S8-regel |
-| `:862` | PDF du regel exigé | C | S8d | S8d-regel-exige |
-| `:864` | PDF du regel à l'empreinte du nouveau `pdf_sha256` | C | S8c | S8c-regel-sha256 |
-| `:867` | journal sans erreur (phases 2, 4, 5) | S | « journal du binaire », « journal de l'import » | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
-| `:877` | refus de l'image précédente sur la base migrée | S | « refus de l'image » (trois cas) | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
-| `:882` | refus de l'image précédente sur la base migrée | S | « refus de l'image » (trois cas) | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
-| `:886` | refus de l'image précédente sur la base migrée | S | « refus de l'image » (trois cas) | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
-| `:894` | refus de l'image précédente sur la base migrée | S | « refus de l'image » (trois cas) | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
-| `:902` | restauration du dump, redémarrage de l'image | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:827` | sauvegarde `pre-upgrade/` | S | « aucun fichier pre-upgrade », « N = 0 » | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
+| `:829` | échec d'une empreinte | A | — | propagation des `|| return 1` de `empreinte`, inventoriés ci-dessus |
+| `:830` | appel de la comparaison de la montée | C | S2 à S4 | S2b-appel-montee |
+| `:840` | dossier du crochet | A | — | `$D/cwd` est créé par le script au début du run : inatteignable |
+| `:847` | crochet `--apres` en échec (phases 2 et 5) | C | S16f (phase 2), S16d (phase 5) | S16g-crochet-echec ; contrôles du crochet : `rel0200/verifs-0200.test.sh` et `.mut.sh` |
+| `:849` | appel du crochet en phase 2 | C | S16f | S16f-crochet-phase2 |
+| `:854` | connexion à l'API | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:855` | boucle des PDF figés après la montée (F1, F5, F7) | C | S5, S5b (F1) | S5c-boucle-montee (F1 retiré de la boucle) ; F5 et F7 hors scénario : dette #1506 |
+| `:857` | F8 sans fichier rend 410 | A | — | aucun scénario ne sert autre chose que 410 ; un 200 ferait échouer le regel (`409`, S8) ou son SHA-256 (S8c) : fermé en aval |
+| `:860` | le 410 de F8 porte INVOICE_PDF_GONE | C | S8b | S8b-code-410 |
+| `:863` | regel de F8 accepté (200, réponse de facture) | C | S8 | S8-regel |
+| `:864` | PDF du regel exigé | C | S8d | S8d-regel-exige |
+| `:866` | PDF du regel à l'empreinte du nouveau `pdf_sha256` | C | S8c | S8c-regel-sha256 |
+| `:869` | journal sans erreur (phases 2, 4, 5) | S | « journal du binaire », « journal de l'import » | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
+| `:879` | refus de l'image précédente sur la base migrée | S | « refus de l'image » (trois cas) | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
+| `:884` | refus de l'image précédente sur la base migrée | S | « refus de l'image » (trois cas) | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
+| `:888` | refus de l'image précédente sur la base migrée | S | « refus de l'image » (trois cas) | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
+| `:896` | refus de l'image précédente sur la base migrée | S | « refus de l'image » (trois cas) | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
 | `:904` | restauration du dump, redémarrage de l'image | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
-| `:905` | échec d'une empreinte | A | — | propagation des `|| return 1` de `empreinte`, inventoriés ci-dessus |
-| `:906` | égalité stricte du retour | C | S15 | S15-retour |
-| `:911` | journal sans erreur de l'image au retour | A | — | la fonction est éprouvée par ses appels des phases 2 et 5 (« journal du binaire », « journal de l'import ») ; le factice de l'image n'écrit pas de journal d'erreur |
-| `:917` | démarrage de la seconde base (phase 5) | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
-| `:921` | démarrage du binaire neuf, seconde base | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
-| `:922` | connexion à l'API | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:906` | restauration du dump, redémarrage de l'image | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:907` | échec d'une empreinte | A | — | propagation des `|| return 1` de `empreinte`, inventoriés ci-dessus |
+| `:908` | égalité stricte du retour | C | S15 | S15-retour |
+| `:913` | journal sans erreur de l'image au retour | A | — | la fonction est éprouvée par ses appels des phases 2 et 5 (« journal du binaire », « journal de l'import ») ; le factice de l'image n'écrit pas de journal d'erreur |
+| `:919` | démarrage de la seconde base (phase 5) | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
 | `:923` | démarrage du binaire neuf, seconde base | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
-| `:926` | import du `.keshbackup` accepté (200) | C | S16a | S16a-import-http |
-| `:927` | échec d'une empreinte | A | — | propagation des `|| return 1` de `empreinte`, inventoriés ci-dessus |
-| `:928` | comparaison de l'import | C | S16b, S16c | S16b-import-ecarts |
-| `:929` | appel du crochet en phase 5 | C | S16d | S16d-crochet-import |
-| `:931` | boucle des PDF figés après l'import (F1, F5, F7, F8) | C | S12 (F5) | S12b-boucle-import (F5 retiré de la boucle) ; F1, F7, F8 hors scénario : dette #1506 |
-| `:932` | journal sans erreur (phases 2, 4, 5) | S | « journal du binaire », « journal de l'import » | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
-| `:945` | version de `mutool` | A | — | `mutool -v` en échec avec un `mutool` présent : non simulé ; fermé |
-| `:956` | pages lisibles | A | — | redondant : un échec de `mutool` ici laisse un texte ou une trame vide, que S7a ou S6c attrapent en aval |
-| `:957` | pages lisibles | A | — | redondant : un échec de `mutool` ici laisse un texte ou une trame vide, que S7a ou S6c attrapent en aval |
-| `:959` | même nombre de pages | C | S6g | S6g-pages |
-| `:960` | `mutool draw` en échec | A | — | redondant : un échec de `mutool` ici laisse un texte ou une trame vide, que S7a ou S6c attrapent en aval |
-| `:961` | `mutool draw` en échec | A | — | redondant : un échec de `mutool` ici laisse un texte ou une trame vide, que S7a ou S6c attrapent en aval |
-| `:966` | même texte | C | S6f | S6f-texte |
-| `:968` | `mutool draw` en échec | A | — | redondant : un échec de `mutool` ici laisse un texte ou une trame vide, que S7a ou S6c attrapent en aval |
-| `:969` | `mutool draw` en échec | A | — | redondant : un échec de `mutool` ici laisse un texte ou une trame vide, que S7a ou S6c attrapent en aval |
-| `:971` | trame non vide | C | S6c | S6c-trame-vide |
-| `:972` | même trame | C | S6 | S6a-trame |
-| `:977` | exactement 5 paires | C | S7a, S7a', S14 | S14-decompte, S7a-numero, S7a2-zero-page |
-| `:982` | aucune erreur ni avertissement de `mutool` hors l'avis ICC | C | S6d, S6e | S6d-erreur-mutool, S6e-seul-avis-icc |
+| `:924` | connexion à l'API | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:925` | démarrage du binaire neuf, seconde base | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:928` | import du `.keshbackup` accepté (200) | C | S16a | S16a-import-http |
+| `:929` | échec d'une empreinte | A | — | propagation des `|| return 1` de `empreinte`, inventoriés ci-dessus |
+| `:930` | comparaison de l'import | C | S16b, S16c | S16b-import-ecarts |
+| `:931` | appel du crochet en phase 5 | C | S16d | S16d-crochet-import |
+| `:933` | boucle des PDF figés après l'import (F1, F5, F7, F8) | C | S12 (F5) | S12b-boucle-import (F5 retiré de la boucle) ; F1, F7, F8 hors scénario : dette #1506 |
+| `:934` | journal sans erreur (phases 2, 4, 5) | S | « journal du binaire », « journal de l'import » | Story 33-10 : garde de périmètre ou d'outillage, hors donnée des factures ; scénario de sa story, non muté ici |
+| `:947` | version de `mutool` | A | — | `mutool -v` en échec avec un `mutool` présent : non simulé ; fermé |
+| `:958` | pages lisibles | A | — | redondant : un échec de `mutool` ici laisse un texte ou une trame vide, que S7a ou S6c attrapent en aval |
+| `:959` | pages lisibles | A | — | redondant : un échec de `mutool` ici laisse un texte ou une trame vide, que S7a ou S6c attrapent en aval |
+| `:961` | même nombre de pages | C | S6g | S6g-pages |
+| `:962` | `mutool draw` en échec | A | — | redondant : un échec de `mutool` ici laisse un texte ou une trame vide, que S7a ou S6c attrapent en aval |
+| `:963` | `mutool draw` en échec | A | — | redondant : un échec de `mutool` ici laisse un texte ou une trame vide, que S7a ou S6c attrapent en aval |
+| `:968` | même texte | C | S6f | S6f-texte |
+| `:970` | `mutool draw` en échec | A | — | redondant : un échec de `mutool` ici laisse un texte ou une trame vide, que S7a ou S6c attrapent en aval |
+| `:971` | `mutool draw` en échec | A | — | redondant : un échec de `mutool` ici laisse un texte ou une trame vide, que S7a ou S6c attrapent en aval |
+| `:973` | trame non vide | C | S6c | S6c-trame-vide |
+| `:974` | même trame | C | S6 | S6a-trame |
+| `:979` | exactement 5 paires | C | S7a, S7a', S14 | S14-decompte, S7a-numero, S7a2-zero-page |
+| `:984` | aucune erreur ni avertissement de `mutool` hors l'avis ICC | C | S6d, S6e | S6d-erreur-mutool, S6e-seul-avis-icc |
 
-sites : 193 = A 74 + C 31 + P 37 + S 51 ; non classés : 0
+sites : 194 = A 75 + C 31 + P 37 + S 51 ; non classés : 0
 
 ### `kesh-gate-logs/rel0200/verifs-0200.sh` — extracteur `grep -nE '\|\| exit 1$'`, sondes positives : "$succes" = 1
 
@@ -1327,24 +1332,24 @@ sites : 5 = C 5 ; non classés : 0
 | `:62` | périmètre et démarrage (ports, conteneurs, image, `.env`, base, santé, login) | A | — | garde de périmètre ou panne d'infrastructure, hors donnée des factures ; l'arrêt est fermé (aucun import ne suit) |
 | `:63` | périmètre et démarrage (ports, conteneurs, image, `.env`, base, santé, login) | A | — | garde de périmètre ou panne d'infrastructure, hors donnée des factures ; l'arrêt est fermé (aucun import ne suit) |
 | `:64` | entrées de la recette présentes | A | — | usage : un dossier incomplet arrête avant tout import ; fermé |
-| `:67` | la recette a fini verte (`verdict`) | C | troisième rouge : verdict retiré | `recette-complement-rouge3-p3.log` (arrêt « la recette n'a pas fini verte ») |
-| `:68` | entrées de la recette présentes | A | — | usage : un dossier incomplet arrête avant tout import ; fermé |
-| `:74` | exactement une sauvegarde `pre-upgrade/` au motif | C | second rouge : deux sauvegardes | `recette-complement-rouge2-p2.log` (arrêt « exactement une sauvegarde ») |
-| `:80` | version d'arrivée du nom = `/health` du binaire neuf | C | rouge : version altérée | rouge du script complémentaire sur une copie altérée du dossier de la recette (`recette-complement-rouge-p2.log`) |
-| `:86` | périmètre et démarrage (ports, conteneurs, image, `.env`, base, santé, login) | A | — | garde de périmètre ou panne d'infrastructure, hors donnée des factures ; l'arrêt est fermé (aucun import ne suit) |
-| `:100` | périmètre et démarrage (ports, conteneurs, image, `.env`, base, santé, login) | A | — | garde de périmètre ou panne d'infrastructure, hors donnée des factures ; l'arrêt est fermé (aucun import ne suit) |
-| `:101` | l'image importatrice est la 0.19.1 | A | — | image fixée par le script ; garde de configuration |
-| `:112` | périmètre et démarrage (ports, conteneurs, image, `.env`, base, santé, login) | A | — | garde de périmètre ou panne d'infrastructure, hors donnée des factures ; l'arrêt est fermé (aucun import ne suit) |
-| `:115` | import accepté (200) | A | — | l'import d'une sauvegarde saine n'est pas falsifiable sans altérer l'archive ; l'arrêt est fermé |
-| `:123` | lecture d'une table | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
-| `:125` | chaque table strictement égale à l'avant | C | rouge : une ligne ajoutée à l'empreinte d'avant | rouge du script complémentaire sur une copie altérée du dossier de la recette (`recette-complement-rouge-p2.log`) |
-| `:127` | au moins 17 tables comparées | A | — | la liste vient de `colonnes-avant/`, écrite par la recette (17) ; non falsifiée |
-| `:131` | nouveau login | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
-| `:136` | PDF figés à l'octet de la phase 1 | C | rouge : un octet changé au PDF de F1 | rouge du script complémentaire sur une copie altérée du dossier de la recette (`recette-complement-rouge-p2.log`) |
-| `:142` | F8 en 410 INVOICE_PDF_GONE | C | rouge : F8 désigne une facture au PDF présent | rouge du script complémentaire sur une copie altérée du dossier de la recette (`recette-complement-rouge-p2.log`) |
-| `:146` | journal de l'image lisible | A | — | le journal est la redirection du lancement de l'image ; vide = image muette, déjà arrêtée par l'attente de santé |
-| `:148` | journal de l'image sans ERROR | A | — | aucune erreur provocable sans altérer l'image publiée |
-| `:151` | code de sortie selon les écarts | P | — | — |
+| `:71` | la recette a fini verte et complète (verdict exact de la release) | C | rouges : verdict retiré ; verdict sans import | `recette-complement-rouge3-p3.log`, `recette-complement-rouge4-cible.log` (arrêts « la recette n'a pas fini verte ») |
+| `:73` | entrées de la recette présentes | A | — | usage : un dossier incomplet arrête avant tout import ; fermé |
+| `:79` | exactement une sauvegarde `pre-upgrade/` au motif | C | second rouge : deux sauvegardes | `recette-complement-rouge2-p2.log` (arrêt « exactement une sauvegarde ») |
+| `:85` | version d'arrivée du nom = `/health` du binaire neuf | C | rouge : version altérée | rouge du script complémentaire sur une copie altérée du dossier de la recette (`recette-complement-rouge-p2.log`) |
+| `:91` | périmètre et démarrage (ports, conteneurs, image, `.env`, base, santé, login) | A | — | garde de périmètre ou panne d'infrastructure, hors donnée des factures ; l'arrêt est fermé (aucun import ne suit) |
+| `:105` | périmètre et démarrage (ports, conteneurs, image, `.env`, base, santé, login) | A | — | garde de périmètre ou panne d'infrastructure, hors donnée des factures ; l'arrêt est fermé (aucun import ne suit) |
+| `:106` | l'image importatrice est la 0.19.1 | A | — | image fixée par le script ; garde de configuration |
+| `:117` | périmètre et démarrage (ports, conteneurs, image, `.env`, base, santé, login) | A | — | garde de périmètre ou panne d'infrastructure, hors donnée des factures ; l'arrêt est fermé (aucun import ne suit) |
+| `:120` | import accepté (200) | A | — | l'import d'une sauvegarde saine n'est pas falsifiable sans altérer l'archive ; l'arrêt est fermé |
+| `:128` | lecture d'une table | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:130` | chaque table strictement égale à l'avant | C | rouge : une ligne ajoutée à l'empreinte d'avant | rouge du script complémentaire sur une copie altérée du dossier de la recette (`recette-complement-rouge-p2.log`) |
+| `:132` | au moins 17 tables comparées | A | — | la liste vient de `colonnes-avant/`, écrite par la recette (17) ; non falsifiée |
+| `:136` | nouveau login | A | — | panne d'infrastructure (Docker, base, réseau, `jq`) : le factice ne la simule pas ; la phase échoue, fermé |
+| `:141` | PDF figés à l'octet de la phase 1 | C | rouge : un octet changé au PDF de F1 | rouge du script complémentaire sur une copie altérée du dossier de la recette (`recette-complement-rouge-p2.log`) |
+| `:147` | F8 en 410 INVOICE_PDF_GONE | C | rouge : F8 désigne une facture au PDF présent | rouge du script complémentaire sur une copie altérée du dossier de la recette (`recette-complement-rouge-p2.log`) |
+| `:151` | journal de l'image lisible | A | — | le journal est la redirection du lancement de l'image ; vide = image muette, déjà arrêtée par l'attente de santé |
+| `:153` | journal de l'image sans ERROR | A | — | aucune erreur provocable sans altérer l'image publiée |
+| `:156` | code de sortie selon les écarts | P | — | — |
 
 sites : 26 = A 18 + C 6 + P 2 ; non classés : 0
 
@@ -1432,6 +1437,38 @@ achevée), `verifs-0200.test.sh`, `verifs-0200.mut.sh`, `recette-complement-rel0
   passed (1 slow), 17 skipped », 684,0 s, le test de la recette en **403,3 s** (`test-fast-ci-p3.log`) ; **`gate-ci kesh_ci_e491d`**
   → code 0, « 6283 passés, 0 échoués, 21 ignorés » (`gate-ci-p3.log`) ; frontend non touché ; pas d'E2E (clôture).
 
+**20. Passe ciblée de `6cf37f6e0` (Haiku, 0/0/1/3 ; `passe-ciblee/review-6cf37f6e0.md`) et clôture.** **Commit de correctif :
+`eb7338b20`** (script, test, `docs/testing.md`) ; hors dépôt, `rel0200/recette-complement-rel0200.sh` dans le même temps.
+
+| Finding | Sort |
+|---|---|
+| **MEDIUM-1** — le script complémentaire ne lisait que le préfixe `vert ; ` du verdict | **corrigé** : il exige le verdict **en entier** de la release (`vert ; phase 3 : jouée ; import : joué ; crochet : joué en phases 2 et 5 ; --diff-attendu : migrations,invoice_lines,credit_note_lines,api`) et l'écrit au journal ; vert : `recette-complement-cloture.log` (« ✓ verdict de la recette : … ») ; rouge, verdict sans import : arrêt « la recette n'a pas fini verte et complète » (`recette-complement-rouge4-cible.log`) |
+| **LOW-1** — verdict muet sur la phase 3 sautée | **corrigé** : `phase 3 : jouée|SAUTÉE (aucune migration)` ; S17c et sa mutation `S17c-phase3-dit`, tuée |
+| **LOW-2** — échec silencieux de `sha256sum` | **corrigé** : l'empreinte est relevée d'abord et son échec arrête la recette (`echec 1 "empreinte du binaire illisible"`) ; site inventorié en angle mort assumé (non simulable) |
+| **LOW-3** — `identite.txt` sans scénario | **corrigé** : S18 (l'empreinte du binaire est au fichier) et sa mutation `S18-empreinte-binaire`, tuée |
+
+**Ce qui a tourné** :
+- test shell vert à `eb7338b20`, **183 assertions** (`dev/test-shell-13.log`) ; mutations `S17c-phase3-dit`, `S18-empreinte-binaire`,
+  et les deux du verdict touchées (`S17-import-dit`, `S17-crochet-dit`) rejouées une à une (`mut/resume-6.log`) : **51 sur 51 tuées**
+  (`mut/juge.log`) ; classeur : code 0, **225 sites** ;
+- **clôture** : `git merge --no-ff origin/epic/49-types-de-lignes-facture` (21 commits, dont la 49-4a) → `50a55512b`, **sans
+  conflit** ; les deux intentions tiennent (le manuel gagne le changement de contrat de la 49-4a au paragraphe « Pour les
+  intégrations » ; `sprint-status.yaml` : la 49-4a `done`, la 49-1d inchangée) ; binaire reconstruit à `50a55512b`
+  (`dev/build-kesh-api-cloture.log`) ; frontend inchangé depuis sa construction ; 96 migrations ;
+- **à `50a55512b`** (`cloture.sh`, une commande par prise ; `cloture.log`) :
+  - **recette réelle verte** (`recette-reelle-cloture.log`, `/tmp/kesh-recette.PlEviB`) — la 49-4a change `kesh-qrbill/src/pdf.rs`,
+    et les 5 paires restent au même dessin ; verdict « vert ; phase 3 : jouée ; import : joué ; crochet : joué en phases 2 et 5 ;
+    --diff-attendu : migrations,invoice_lines,credit_note_lines,api » ;
+  - **R1 rouge**, code 12 (`recette-reelle-rouge-diff-cloture.log`) ;
+  - **script complémentaire vert** (`recette-complement-cloture.log`), son rouge « verdict sans import » arrêté ;
+  - **`test-fast --ci`** → EXIT=0, « 6270 tests run: 6270 passed (1 slow), 17 skipped », 650,6 s, le test de la recette en 349,2 s
+    (`test-fast-ci-cloture.log`) ;
+  - **`gate-ci kesh_ci_e491d`** → code 0, « 6289 passés, 0 échoués, 21 ignorés » (`gate-ci-cloture.log`) ;
+  - **E2E complet** (`e2e-e491d.sh`, port 3495, base `kesh_e2e_e491d`, `LANG=fr_CH.UTF-8` des deux côtés ; `/health` : `smtpConfigured:true`) → **496 passés, 7 échecs, 18 ignorés** en 22,6 min
+    (`e2e-cloture.log`) ; les sept échecs sont **exactement les sept KF-029** (#97) de `docs/testing.md` § *Les échecs
+    attendus* — `mode-expert.spec.ts:26` et `:41`, `onboarding-path-b.spec.ts:65` et `:92`, `onboarding.spec.ts:57`, `:77` et
+    `:150` —, aucun autre : **vert** au sens de la règle.
+
 **13. Issues demandées par la revue P1** (texte prêt ; une par problème) :
 - *`technical-debt`, P4* — **Le juge des mutations de la recette de montée ne borne pas les échecs collatéraux.**
   `kesh-gate-logs/e491d/mut/mutations.py:juger` tient une mutation pour tuée dès que l'assertion visée échoue, quel que soit le
@@ -1453,6 +1490,11 @@ figée* ; (ii) `technical-debt`/test défaillant, P3 — *`recette-montee.test.s
 ports, et le scénario du port de la seconde base interrompt le test sous `set -e` avant son résumé* (ligne `D=$(/usr/bin/grep
 -oE 'dossier .*$' …)`, Story 33-10) ; (iii) `technical-debt`, P4 — *`shellcheck` absent de la station : les scripts de recette ne
 sont pas passés au linter*.
+
+**Issues ouvertes par l'orchestrateur** (relues le 2026-11-24, `gh issue view`, lecture seule) : (i) → **#1498** ; (ii) →
+**#1499** ; (iii) → **#1500** ; B6 de la P1 (juge des mutations) → **#1502** ; B7 de la P1 (`perte-assumee.sh`) → **#1503** ;
+B-P3-1 de la P3 (appartenance aux listes comparées) → **#1506**, dette documentée. E7 de la P1, corrigé dans la story, n'en a
+pas ; A4 de la P1, arbitré « sans changement », non plus.
 
 **Crochet `kesh-gate-logs/rel0200/verifs-0200.sh`, en entier (D7)** :
 ```sh
@@ -1501,3 +1543,4 @@ echo "verifs-0200 : vert"
 | 2026-11-24 | **Revue P1 remédiée** (Opus 5.5). **Passe P1** : Sonnet, trois lentilles en contexte frais (`kesh-gate-logs/e491d/review-p1-{B,E,A}.md`) : **0 CRITICAL, 0 HIGH, 2 MEDIUM, 16 LOW** (B : 2 MEDIUM et 5 LOW ; E : 1 MEDIUM, même cause que B1, et 6 LOW ; A : 2 MEDIUM, mêmes causes que B1 et B2, et 5 LOW — dix-huit constats, deux causes MEDIUM). Les deux MEDIUM, confirmés au code par l'orchestrateur, sont **corrigés** : chaque garde-fou de la projection de `api` (type, longueur, clé disparue, nombre de documents) et le garde « avant vide » ont désormais un scénario (S3d à S3h) et une mutation tuée ; la mutation S3c **n'était pas équivalente** (contre-exemple `[]` → `null`) : la déclaration est annotée fausse à sa date (Dev Agent Record § 5, `mut/juge-avant-revue-p1.log`) et retirée de `docs/testing.md`. LOW **corrigés** : B3, B4, B5, E3, A3, A5, A7 ; **dits** à `docs/testing.md` et au manuel : E2, E4, E5, E6 ; **issues** demandées : B6, B7, E7 (et A4 à la décision de l'orchestrateur) ; **reconnu sans issue** : A6. Sort de chacun : Dev Agent Record § 12. Code `a4fc72d82`. Test shell vert (164 assertions), **29 mutations, 29 tuées** ; recette réelle rejouée verte et R1 rouge à `a4fc72d82` ; gates : § 14 du Dev Agent Record. **Reclassements** : aucun MEDIUM reclassé en dette. Modèles : Sonnet (P1), Opus 5.5 (remédiation) ; la passe suivante, **complète, prend Opus** en contexte frais (le MEDIUM corrigé appelle une passe de plus) : prompt `49-1d-types-de-lignes-recette-montee-review-prompt-p2.md`, non lancée. Statut : `review`. |
 | 2026-11-24 | **Revue P2 remédiée** (Opus 5.5). **Passe P2** : Opus, trois lentilles en contexte frais (`kesh-gate-logs/e491d/review-p2-{B,E,A}.md`) : **0 CRITICAL, 0 HIGH, 1 MEDIUM, 14 LOW** (B : 4 LOW ; E : 1 MEDIUM et 7 LOW ; A : 1 MEDIUM, même cause qu'E-P2-1, et 3 LOW). **Tendance** (CRITICAL/HIGH/MEDIUM/LOW) : P1 0/0/2/16, P2 0/0/1/14. Le MEDIUM (phase 5 sans scénario ni mutation), confirmé par l'orchestrateur, est **de la même classe** que les deux MEDIUM de la P1 sur un autre site : il n'est pas corrigé site par site mais par l'**inventaire clos** de toutes les sorties d'échec des trois scripts (Dev Agent Record § 15 : extracteur cité, sondes positives, **217 sites = 40 couverts + 50 à scénario sans mutation (Story 33-10) + 39 propagations + 88 angles morts assumés, chacun avec sa raison**), chaque site qui garde la donnée des factures ou des avoirs étant couvert par un scénario et une mutation tuée, ou, pour les contrôles de couverture du peuplement et les échecs redondants de `mutool`, déclaré angle mort. Les quatorze LOW : treize corrigés ou dits, E-P2-5 angle mort assumé (sort de chacun : § 16). **Arbitrage de l'orchestrateur sur A4 de la P1** (la forme `ADD COLUMN … DEFAULT 'priced'` au manuel) : **sans changement**, l'avis de la remédiation P1 retenu ; aucune issue. E7 de la P1 corrigé au passage (issue retirée). Code `d2416c596`. Test shell vert (173 assertions) ; **38 mutations, 38 tuées** ; crochet : 8 cas, 6 mutations tuées ; recette réelle verte, R1 rouge, script complémentaire vert et ses deux rouges à `d2416c596` ; gates : Dev Agent Record § 17. **Reclassements** : aucun. Modèles : Opus (P2), Opus 5.5 (remédiation) ; la passe suivante, **complète, prend Sonnet** en contexte frais et recalcule l'inventaire par sa propre commande : prompt `49-1d-types-de-lignes-recette-montee-review-prompt-p3.md`, non lancée. Statut : `review`. |
 | 2026-11-24 | **Revue P3 remédiée** (Opus 5.5). **Passe P3** : Sonnet, trois lentilles en contexte frais, un rapport (`kesh-gate-logs/e491d/review-p3.md`) : **0 CRITICAL, 0 HIGH, 1 MEDIUM, 9 LOW**. **Tendance** : P1 0/0/2/16, P2 0/0/1/14, P3 0/0/1/9. Son inventaire indépendant contenait le nôtre plus un site oublié (`:78`), ajouté ; l'extracteur élargi en a fait paraître quatre autres (`:345`, `:368`, `:377`, `:518`). **Reclassement** : le MEDIUM **B-P3-1** (l'appartenance aux listes comparées — `TABLES`, lectures de `api`, pièces figées des boucles — n'a ni scénario ni mutation) est **reclassé en dette documentée par décision du Project Lead du 2026-11-24 : issue #1506** (P3, milestone v0.21.0, propriétaire l'orchestrateur), section *Dette documentée* ; il compte comme résolu au sens de la règle d'itération, et n'est pas corrigé. Les neuf LOW sont corrigés (sort de chacun : Dev Agent Record § 18). **Commit de correctif : `6cf37f6e0`** — la passe suivante est une **passe ciblée** de ce seul commit (une lentille), à la décision de l'orchestrateur. Gates : Dev Agent Record § 19. Modèles : Sonnet (P3), Opus 5.5 (remédiation). Statut : `review`. |
+| 2026-11-24 | **Passe ciblée de `6cf37f6e0` remédiée, et clôture** (Opus 5.5). **Passe ciblée** : Haiku, une lentille, le seul commit `6cf37f6e0` (`kesh-gate-logs/e491d/passe-ciblee/review-6cf37f6e0.md`) : **0 CRITICAL, 0 HIGH, 1 MEDIUM, 3 LOW**. MEDIUM-1 (le script complémentaire ne lisait que le préfixe du verdict) et les trois LOW (phase 3 au verdict, échec de `sha256sum`, `identite.txt` sans scénario) **corrigés** dans **un seul commit de correctif, `eb7338b20`** (sort de chacun : Dev Agent Record § 20) ; 51 mutations, 51 tuées ; inventaire clos à 225 sites, classeur code 0. **Clôture** : branche d'épique reprise (`50a55512b`, 21 commits dont la 49-4a, sans conflit) ; à ce commit, recette réelle verte (la 49-4a change `pdf.rs`, les rendus restent au même dessin), R1 rouge, script complémentaire vert avec le verdict exact et son rouge « sans import » ; `test-fast --ci` vert (6270), `gate-ci kesh_ci_e491d` vert (6289) ; **E2E complet : 496 passés, 7 échecs — exactement les sept KF-029 —, 18 ignorés**. Issues ouvertes par l'orchestrateur, citées au Dev Agent Record § 11 : #1498, #1499, #1500, #1502, #1503, et la dette #1506. **Tendance des revues** (CRITICAL/HIGH/MEDIUM/LOW) : **P1 Sonnet 0/0/2/16 → P2 Opus 0/0/1/14 → P3 Sonnet 0/0/1/9, le MEDIUM reclassé en dette documentée #1506 par décision du Project Lead → passe ciblée Haiku 0/0/1/3 → passe ciblée Sonnet de `eb7338b20`, à venir**. **Reclassements** : B-P3-1 seul, en dette #1506 (P3, v0.21.0, l'orchestrateur). Arbitrage A4 de la P1 : sans changement. Modèles : Sonnet, Opus, Sonnet, Haiku pour les revues ; Opus 5.5 pour le développement et les remédiations. Statut : **`review`** jusqu'à la passe ciblée Sonnet (consigne de l'orchestrateur). |
