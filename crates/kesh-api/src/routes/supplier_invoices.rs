@@ -349,7 +349,8 @@ pub struct CreateSupplierInvoiceRequest {
     /// Story 48-12a (#975, D5) — `confirmNotDuplicate`, facultatif : `true` lève
     /// le refus `SUPPLIER_INVOICE_PROBABLE_DUPLICATE` (même date et même montant)
     /// et l'inscrit au journal d'audit ; il ne lève **jamais**
-    /// `SUPPLIER_INVOICE_DUPLICATE` (même numéro dans la même année). Partagé par
+    /// `SUPPLIER_INVOICE_DUPLICATE` (même numéro dans la même année) à ces gestes
+    /// (table : `DuplicateRule::lifted_by_confirmation`). Partagé par
     /// la création, le `PUT` (corps aplati) et la complétion.
     #[serde(default)]
     pub confirm_not_duplicate: bool,
@@ -667,10 +668,10 @@ pub struct UpdateSupplierInvoiceRequest {
 pub struct SupplierInvoiceVersionRequest {
     pub version: i32,
     /// Story 48-12a (#975, D6bis) — `confirmNotDuplicate`, facultatif, lu par la
-    /// **seule dévalidation** : `true` lève le refus de doublon (les deux règles)
-    /// d'une facture annulée repassée en brouillon alors qu'une facture
-    /// équivalente est active, et l'inscrit au journal d'audit. Sans effet sur la
-    /// validation, qui ne compare pas.
+    /// **seule dévalidation** : `true` lève le refus de doublon (les deux règles,
+    /// `DuplicateRule::lifted_by_confirmation`) d'une facture annulée repassée
+    /// en brouillon alors qu'une facture équivalente est active, et l'inscrit au
+    /// journal d'audit. Sans effet sur la validation, qui ne compare pas.
     #[serde(default)]
     pub confirm_not_duplicate: bool,
 }
@@ -746,8 +747,8 @@ pub async fn create_supplier_invoice(
     let company = get_company_for(&current_user, &state.pool).await?;
     // Story 30-2b (AC12-bis, AC13) : conversion commune, coordonnées validées.
     let new = req.to_new_supplier_invoice(company.id, PaymentSource::Body)?;
-    // Story 48-12a (#975) : le refus de doublon, levé (règle 2 seulement) par
-    // `confirmNotDuplicate`.
+    // Story 48-12a (#975) : le refus de doublon, levé (règle 2 seulement, à ce
+    // geste) par `confirmNotDuplicate` — table : `DuplicateRule::lifted_by_confirmation`.
     let policy = req.duplicate_policy();
     let created = kesh_db::retry::retry_on_deadlock("supplier_invoices::create", || {
         supplier_invoices::create_draft_with_policy(
@@ -954,7 +955,8 @@ pub async fn unvalidate_supplier_invoice(
     // Story 35-5a0 — la date du jour, lue une fois (bloqueurs de la vue).
     let aujourd_hui = state.horloge.aujourd_hui();
     // Story 48-12a (#975, D6bis) : une annulée qui ferait doublon se repasse en
-    // brouillon par `confirmNotDuplicate: true`, inscrit au journal d'audit.
+    // brouillon par `confirmNotDuplicate: true`, inscrit au journal d'audit
+    // (table : `DuplicateRule::lifted_by_confirmation`).
     let policy = supplier_invoices::DuplicatePolicy::from_confirmation(req.confirm_not_duplicate);
     let view = kesh_db::retry::retry_on_deadlock("supplier_invoices::unvalidate", || {
         supplier_invoices::unvalidate_with_policy(

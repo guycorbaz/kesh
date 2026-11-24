@@ -457,7 +457,8 @@ macro_rules! in_own_tx {
 /// - [`DuplicatePolicy::Confirmed`] : l'appelant a reçu `confirmNotDuplicate:
 ///   true`. Il lève la règle 2 (même date et même total) ; à la création, à la
 ///   modification et à la complétion, **jamais** la règle 1 (même numéro dans la
-///   même année civile) ; à la dévalidation d'une annulée, les deux (D6bis). Un
+///   même année civile) ; à la dévalidation d'une annulée, les deux (D6bis) —
+///   la table est [`DuplicateRule::lifted_by_confirmation`], seule source. Un
 ///   refus levé ainsi s'inscrit au journal d'audit
 ///   (`supplier_invoice.duplicate_confirmed`), dans la même transaction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -497,6 +498,30 @@ impl DuplicateRule {
         match self {
             Self::SameNumberSameYear => 1,
             Self::SameDateSameTotal => 2,
+        }
+    }
+
+    /// **La table de levée d'un refus de doublon — son unique source** (Story
+    /// 50-solde, #1492 ; 48-12a, D1, D6bis) : `confirmNotDuplicate: true` lève-t-il
+    /// le refus de cette règle pour ce geste ? Quatre cases :
+    ///
+    /// | | saisie ([`Entry`](crate::errors::DuplicateGesture::Entry)) | dévalidation d'une annulée |
+    /// |---|---|---|
+    /// | règle 1 (même numéro, même année) | **non**, aucune sortie | oui |
+    /// | règle 2 (même date, même total) | oui | oui |
+    ///
+    /// La couche base s'en sert pour lever le refus (`guard_duplicates_in_tx`) et
+    /// `kesh-api` pour écrire `details.confirmable` : aucune des deux ne réécrit
+    /// la table. Le `match` écrit **les quatre cases une à une, sans joker** (ni
+    /// `_`, ni position avalée) : une règle ou un geste ajouté demain ne compile
+    /// pas avant d'avoir **chacune** de ses cases.
+    pub fn lifted_by_confirmation(self, gesture: crate::errors::DuplicateGesture) -> bool {
+        use crate::errors::DuplicateGesture;
+        match (self, gesture) {
+            (Self::SameNumberSameYear, DuplicateGesture::Entry) => false,
+            (Self::SameDateSameTotal, DuplicateGesture::Entry) => true,
+            (Self::SameNumberSameYear, DuplicateGesture::Unvalidation) => true,
+            (Self::SameDateSameTotal, DuplicateGesture::Unvalidation) => true,
         }
     }
 }
@@ -630,7 +655,6 @@ async fn guard_duplicates_in_tx(
     gesture: crate::errors::DuplicateGesture,
     policy: DuplicatePolicy,
 ) -> Result<Option<DuplicateFinding>, DbError> {
-    use crate::errors::DuplicateGesture;
     use chrono::Datelike;
 
     let year = invoice_date.year();
@@ -655,11 +679,7 @@ async fn guard_duplicates_in_tx(
     let Some(finding) = find_duplicate(number, invoice_date, total, &candidates) else {
         return Ok(None);
     };
-    let liftable = match (finding.rule, gesture) {
-        (DuplicateRule::SameNumberSameYear, DuplicateGesture::Entry) => false,
-        (DuplicateRule::SameDateSameTotal, _) | (_, DuplicateGesture::Unvalidation) => true,
-    };
-    if liftable && policy == DuplicatePolicy::Confirmed {
+    if finding.rule.lifted_by_confirmation(gesture) && policy == DuplicatePolicy::Confirmed {
         return Ok(Some(finding));
     }
     Err(match finding.rule {
@@ -1566,8 +1586,8 @@ pub async fn unvalidate_with_policy(
 /// refusé (`SUPPLIER_INVOICE_DUPLICATE` ou `SUPPLIER_INVOICE_PROBABLE_DUPLICATE`,
 /// la facture active nommée, `confirmable: true`), sauf sous
 /// [`DuplicatePolicy::Confirmed`] (`confirmNotDuplicate: true`), qui lève **les
-/// deux règles** et inscrit `supplier_invoice.duplicate_confirmed` au nom de
-/// l'acteur. Une facture **validée** qui repasse en brouillon n'est pas
+/// deux règles** à ce geste ([`DuplicateRule::lifted_by_confirmation`]) et
+/// inscrit `supplier_invoice.duplicate_confirmed` au nom de l'acteur. Une facture **validée** qui repasse en brouillon n'est pas
 /// contrôlée : elle était déjà active.
 ///
 /// # Précédence (testée paire par paire) — composée par écriture (C-v0172a-19)
@@ -1870,7 +1890,8 @@ pub async fn unvalidate_in_tx_with_policy(
 
     // (6 bis) Annulée — la règle anti-doublon (Story 48-12a, D6bis, D4) : après
     //     l'exercice clos, avant toute écriture et avant les refus de
-    //     `delete_in_tx`. Les deux règles se lèvent par confirmation.
+    //     `delete_in_tx`. Les deux règles se lèvent par confirmation à ce geste
+    //     (`DuplicateRule::lifted_by_confirmation`).
     let confirmed = if cancelled {
         guard_duplicates_in_tx(
             tx,
@@ -3914,5 +3935,46 @@ mod tests {
         let lines = vec![(dec!(1000), dec!(8.1), 6000)];
         let err = generate_purchase_journal_lines(&lines, 2000, None).unwrap_err();
         assert!(matches!(err, DbError::ConfigurationRequired(_)));
+    }
+
+    /// Story 50-solde (#1492, AC-1) — la table de levée d'un refus de doublon,
+    /// une case par test : (règle 1, saisie) n'a aucune sortie.
+    #[test]
+    fn lifted_regle1_saisie() {
+        assert!(
+            !DuplicateRule::SameNumberSameYear
+                .lifted_by_confirmation(crate::errors::DuplicateGesture::Entry),
+            "table (règle 1, Entry)"
+        );
+    }
+
+    /// (règle 2, saisie) se lève par la confirmation.
+    #[test]
+    fn lifted_regle2_saisie() {
+        assert!(
+            DuplicateRule::SameDateSameTotal
+                .lifted_by_confirmation(crate::errors::DuplicateGesture::Entry),
+            "table (règle 2, Entry)"
+        );
+    }
+
+    /// (règle 1, dévalidation d'une annulée) se lève par la confirmation.
+    #[test]
+    fn lifted_regle1_devalidation() {
+        assert!(
+            DuplicateRule::SameNumberSameYear
+                .lifted_by_confirmation(crate::errors::DuplicateGesture::Unvalidation),
+            "table (règle 1, Unvalidation)"
+        );
+    }
+
+    /// (règle 2, dévalidation d'une annulée) se lève par la confirmation.
+    #[test]
+    fn lifted_regle2_devalidation() {
+        assert!(
+            DuplicateRule::SameDateSameTotal
+                .lifted_by_confirmation(crate::errors::DuplicateGesture::Unvalidation),
+            "table (règle 2, Unvalidation)"
+        );
     }
 }

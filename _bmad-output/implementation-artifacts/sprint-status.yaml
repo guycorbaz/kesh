@@ -1218,6 +1218,7 @@ development_status:
   # Les stories gardent leur clé d'origine (fiches, branches, worktrees) ; elles se lisent ci-dessus, dans le bloc de l'Epic 48.
   50-6-dates-heure-de-zurich: done  # 2026-11-24 close (validation P1 Sonnet 0/0/5/9 → P2 Opus 0/0/0/9 ; revue P1 Opus 0/0/1/5 → P2 ciblée Sonnet 0/0/0/2 ; gate frontend 294 / 5098, Rust 6475/6475, E2E de clôture 511 + 7 KF-029) ; #1511 ; instants affichés à l'heure de Zurich (formatInstant), aucune migration ; issues I1 et I2 à ouvrir
   epic-50: in-progress  # « Corrections » — vendredi 2026-11-27 ; 48-11 (arrondi au centime, #1245, #1430), 48-12a et 48-12b (doublons de fournisseurs, #975, #985), une story de solde ; fichier epic-50-corrections.md
+  50-solde-dette-epic: done  # 2026-11-24 close (#1492 ; validation P1 Sonnet 0/0/1/11 → P2 Opus 0/0/1/6 → P3 Sonnet 0/0/2/3 ; revue P1 Opus 0/0/1/8 → passe ciblée Sonnet 0/0/0/3) ; branche story/50-solde-dette-epic ; gates et E2E verts à la fusion de l'epic (test-fast 6483, gate-ci 6502, E2E 510 + les 7 KF-029) ; lots A (#1404) et C (#1414) sortis vers la v0.21.0
   epic-50-retrospective: optional
   epic-51: backlog  # « Réimputation » (#1167, #1449) — après l'Epic 53 (triage P1 du 2026-11-21) ; 48-1 (facture fournisseur), 48-2a et 48-2b (écriture manuelle), une story de solde ; fichier epic-51-reimputation.md
   epic-51-retrospective: optional
