@@ -483,7 +483,7 @@ fn build_qrbill_inputs(
         billing_information: None,
     };
 
-    let invoice_lines_pdf: Vec<InvoiceLinePdf> = lignes_pdf(&lines);
+    let invoice_lines_pdf: Vec<InvoiceLinePdf> = lignes_pdf(lines);
 
     // #151 : sous-total HT + ventilation TVA par taux (arrondi par ligne DC7).
     let subtotal_ht: Decimal = lines.iter().map(|l| l.line_total).sum();

@@ -278,7 +278,8 @@ async fn refusee(
     cas: &str,
 ) -> (usize, usize) {
     let avant = etat(pool, id).await;
-    let (ecritures_avant, compteur_avant) = (ecritures(pool).await, compteur(pool, company_id).await);
+    let (ecritures_avant, compteur_avant) =
+        (ecritures(pool).await, compteur(pool, company_id).await);
     let resp = valider(app, token, id).await;
     assert_eq!(resp.status(), 400, "{cas} : statut");
     let body: serde_json::Value = resp.json().await.unwrap();
@@ -289,7 +290,11 @@ async fn refusee(
     let message = body["error"]["message"].as_str().unwrap().to_string();
     assert_eq!(etat(pool, id).await, avant, "{cas} : la facture a bougé");
     assert_eq!(avant.0, "draft", "{cas}");
-    assert_eq!(ecritures(pool).await, ecritures_avant, "{cas} : une écriture");
+    assert_eq!(
+        ecritures(pool).await,
+        ecritures_avant,
+        "{cas} : une écriture"
+    );
     assert_eq!(
         compteur(pool, company_id).await,
         compteur_avant,
@@ -348,24 +353,36 @@ async fn la_validation_refuse_une_facture_qui_ne_tient_pas(pool: MySqlPool) {
     .await;
     let (besoin, place) = refusee(&app, &token, &pool, company_id, a, "(a)").await;
     assert_eq!(place, 6, "(a)");
-    assert!(besoin > 1 + 6, "(a) : le commentaire compte ses lignes imprimées ({besoin})");
+    assert!(
+        besoin > 1 + 6,
+        "(a) : le commentaire compte ses lignes imprimées ({besoin})"
+    );
 
     // (b) Huit lignes chiffrées à deux taux (récapitulatif de trois lignes, place 5) ; total
     // 842.80, rond aux 5 centimes : pas d'arrondi.
     let mut lignes_b: Vec<_> = (0..4).map(|_| chiffree(dec!(100.00), dec!(8.10))).collect();
     lignes_b.extend((0..4).map(|_| chiffree(dec!(100.00), dec!(2.60))));
     let b = brouillon(&pool, ids, lignes_b).await;
-    assert_eq!(refusee(&app, &token, &pool, company_id, b, "(b)").await, (8, 5));
+    assert_eq!(
+        refusee(&app, &token, &pool, company_id, b, "(b)").await,
+        (8, 5)
+    );
 
     // (c) Sept lignes chiffrées sans TVA à 10.02 (total 70.14, arrondi +0.01 : récapitulatif
     // « sous-total, arrondi », place 6).
     let lignes_c: Vec<_> = (0..7).map(|_| chiffree(dec!(10.02), dec!(0))).collect();
     let c = brouillon(&pool, ids, lignes_c).await;
-    assert_eq!(refusee(&app, &token, &pool, company_id, c, "(c)").await, (7, 6));
+    assert_eq!(
+        refusee(&app, &token, &pool, company_id, c, "(c)").await,
+        (7, 6)
+    );
 
     // (d) Neuf lignes chiffrées courtes, sans récapitulatif (place 8).
     let d = brouillon(&pool, ids, sans_recap(9)).await;
-    assert_eq!(refusee(&app, &token, &pool, company_id, d, "(d)").await, (9, 8));
+    assert_eq!(
+        refusee(&app, &token, &pool, company_id, d, "(d)").await,
+        (9, 8)
+    );
 
     // (e) Huit lignes chiffrées et deux commentaires « Ω » (rien d'imprimable : zéro ligne
     // imprimée) : le contrôle géométrique accepte (8), le pré-filtre refuse (10 lignes de la
@@ -374,11 +391,17 @@ async fn la_validation_refuse_une_facture_qui_ne_tient_pas(pool: MySqlPool) {
     lignes_e.insert(3, commentaire("Ω"));
     lignes_e.push(commentaire("Ω"));
     let e = brouillon(&pool, ids, lignes_e.clone()).await;
-    assert_eq!(refusee(&app, &token, &pool, company_id, e, "(e)").await, (10, 9));
+    assert_eq!(
+        refusee(&app, &token, &pool, company_id, e, "(e)").await,
+        (10, 9)
+    );
 
     // (f) Douze lignes chiffrées : le contrôle géométrique passe d'abord (12 et 8, non 9).
     let f = brouillon(&pool, ids, sans_recap(12)).await;
-    assert_eq!(refusee(&app, &token, &pool, company_id, f, "(f)").await, (12, 8));
+    assert_eq!(
+        refusee(&app, &token, &pool, company_id, f, "(f)").await,
+        (12, 8)
+    );
 
     // Le compteur n'a pas bougé : la pièce suivante qui tient prend le numéro qui suit.
     assert_eq!(compteur(&pool, company_id).await, compteur_initial);
@@ -404,11 +427,13 @@ async fn la_validation_refuse_une_facture_qui_ne_tient_pas(pool: MySqlPool) {
     assert_eq!(body["error"]["code"], "INVOICE_TOO_MANY_LINES_FOR_PDF");
 
     // (c) passe arrondi désactivé : plus de récapitulatif, place 8.
-    sqlx::query("UPDATE company_invoice_settings SET round_to_5_centimes = FALSE WHERE company_id = ?")
-        .bind(company_id)
-        .execute(&pool)
-        .await
-        .unwrap();
+    sqlx::query(
+        "UPDATE company_invoice_settings SET round_to_5_centimes = FALSE WHERE company_id = ?",
+    )
+    .bind(company_id)
+    .execute(&pool)
+    .await
+    .unwrap();
     acceptee(&app, &token, &pool, c, "(c) arrondi désactivé").await;
 }
 
@@ -441,10 +466,16 @@ async fn les_seuils_exacts_passent_et_le_pdf_se_rend(pool: MySqlPool) {
     let mut six = trois_taux();
     six.push(chiffree(dec!(100.00), dec!(3.80)));
     let b6 = brouillon(&pool, ids, six).await;
-    assert_eq!(refusee(&app, &token, &pool, company_id, b6, "(b) + 1").await, (6, 5));
+    assert_eq!(
+        refusee(&app, &token, &pool, company_id, b6, "(b) + 1").await,
+        (6, 5)
+    );
 
     let mut lignes_c = sans_recap(5);
-    lignes_c.insert(2, commentaire("Premier paragraphe\nDeuxième paragraphe\nTroisième"));
+    lignes_c.insert(
+        2,
+        commentaire("Premier paragraphe\nDeuxième paragraphe\nTroisième"),
+    );
     let c = brouillon(&pool, ids, lignes_c).await;
     acceptee(&app, &token, &pool, c, "(c)").await;
 }
@@ -496,6 +527,9 @@ async fn la_revalidation_d_une_facture_devalidee_est_controlee(pool: MySqlPool) 
     );
     let (statut, numero_apres, _, ecriture) = etat(&pool, id).await;
     assert_eq!(statut, "draft");
-    assert_eq!(numero_apres, numero, "le numéro gardé par la dévalidation reste");
+    assert_eq!(
+        numero_apres, numero,
+        "le numéro gardé par la dévalidation reste"
+    );
     assert!(ecriture.is_none());
 }

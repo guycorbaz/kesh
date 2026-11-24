@@ -23,8 +23,8 @@ use crate::generator::{build_payload, render_qr_image};
 use crate::largeurs::largeur_mm;
 use crate::texte::texte_imprime;
 use crate::types::{
-    Address, AddressType, Currency, InvoiceLinePdf, InvoicePdfData, InvoiceVatLinePdf,
-    LinePdfKind, QrBillData, QrBillError, QrBillI18n, Reference, ReminderPdf,
+    Address, AddressType, Currency, InvoiceLinePdf, InvoicePdfData, InvoiceVatLinePdf, LinePdfKind,
+    QrBillData, QrBillError, QrBillI18n, Reference, ReminderPdf,
 };
 use chrono::{Datelike, NaiveDate};
 use kesh_core::text::is_invisible;
@@ -6202,10 +6202,7 @@ mod tests {
             let mut lignes = chiffrees(graine.tirer(11));
             for _ in 0..graine.tirer(4) {
                 let position = graine.tirer(lignes.len() + 1);
-                lignes.insert(
-                    position,
-                    commentaire(textes[graine.tirer(textes.len())]),
-                );
+                lignes.insert(position, commentaire(textes[graine.tirer(textes.len())]));
             }
             let taux = &taux_possibles[..graine.tirer(4)];
             let arrondi = arrondis[graine.tirer(arrondis.len())];
