@@ -503,6 +503,8 @@ else range(0; $av | length) as $i | ($ap[$i] | proj($av[$i])) end'
 # de la projection au journal sinon.
 projection_identique() { # $1 = fichier, $2, $3 = étiquettes
   local avant=$L/empreinte-$2/$1 j=$L/projection-$3 n=$L/projection-$3/$1.avant
+  # Un avant vide se projetterait sur rien et passerait : il ne compte pas.
+  [ -s "$avant" ] || return 1
   if [ "$1" = api ]; then
     jq -S -c --slurpfile av "$avant" --slurpfile ap "$L/empreinte-$3/api" -n "$JQ_PROJECTION" > "$j/api" || return 1
     jq -S -c . "$avant" > "$n" || return 1
@@ -919,6 +921,7 @@ fi
 echo "▶ phase 6 : rendus (trame à 300 dpi, texte, pages)"
 "$MUTOOL" -v > "$L/mutool-version.txt" 2>&1 || echec 6 "mutool -v en échec"
 pages_de() { "$MUTOOL" info "$1" 2>>"$L/mutool.log" | awk '/^Pages:/ {print $2}'; }
+MD5_VIDE=$(printf '' | md5sum | awk '{print $1}')
 PAIRES=0
 for paire in "F2 retour-F2 apres-F2" "F4 retour-F4 apres-F4" "F6 retour-F6 apres-F6" "A1 retour-A1 apres-A1" "F8 avant-F8 apres-F8-regel"; do
   read -r piece ref ren <<< "$paire"
@@ -941,6 +944,8 @@ for paire in "F2 retour-F2 apres-F2" "F4 retour-F4 apres-F4" "F6 retour-F6 apres
   for p in $(seq 1 "$pr"); do
     hr=$("$MUTOOL" draw -q -r 300 -c rgb -F pnm -o - "$ref" "$p" 2>>"$L/mutool.log" | md5sum) || echec 6 "$piece : trame de la référence, page $p"
     hn=$("$MUTOOL" draw -q -r 300 -c rgb -F pnm -o - "$ren" "$p" 2>>"$L/mutool.log" | md5sum) || echec 6 "$piece : trame du rendu, page $p"
+    # Une trame vide des deux côtés aurait la même empreinte : celle de rien ne compte pas.
+    [ "${hr%% *}" != "$MD5_VIDE" ] && [ "${hn%% *}" != "$MD5_VIDE" ] || echec 6 "$piece : page $p, trame vide"
     [ "$hr" = "$hn" ] || echec 6 "$piece : page $p, trame différente à 300 dpi (texte égal)"
   done
   echo "  $piece : $pr page(s), même dessin"

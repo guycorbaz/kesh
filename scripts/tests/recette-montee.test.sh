@@ -279,6 +279,8 @@ case "${1:-}" in
     case "$fmt" in
       txt) if [ "${RENDU_VIDE:-non}" = oui ]; then echo "texte sans numero"; else cat "$f"; fi ;;
       pnm)
+        # Une trame vide, code 0 : deux empreintes de rien seraient égales (S6c).
+        [ "${TRAME_VIDE:-non}" != oui ] || exit 0
         printf 'P6 trame '; cat "$f"
         # Une autre trame pour F4 rendue par le binaire neuf : le texte, lui, reste égal.
         if [ "${RENDU_ECART:-non}" = oui ] && /usr/bin/grep -q 'invoices/4/' "$f"; then
@@ -676,6 +678,7 @@ scenario "S5 PDF figé servi autrement" 12 "PDF archivé de F1" PDF_FIGE_ALTERE=
 scenario "S8 regel refusé" 12 "regel de F8" REGEL_ECHEC=oui -- "${BASE_ARGS[@]}"
 echo "  S6, S7, S14 : rendus (D4 b, D5)"
 scenario "S6 trame différente, texte égal" 16 "F4 : page 1, trame différente" RENDU_ECART=oui -- "${BASE_ARGS[@]}"
+scenario "S6c trame vide des deux côtés" 16 "trame vide" TRAME_VIDE=oui -- "${BASE_ARGS[@]}"
 scenario "S7a texte sans le numéro de la pièce" 16 "0 paire(s)" RENDU_VIDE=oui -- "${BASE_ARGS[@]}"
 scenario "S7a' zéro page" 16 "0 paire(s)" PAGES=0 -- "${BASE_ARGS[@]}"
 scenario "S7b un 200 qui n'est pas un PDF" 11 "pas un PDF" PDF_PAS_PDF=oui -- "${BASE_ARGS[@]}"
