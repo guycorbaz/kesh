@@ -323,8 +323,8 @@ hors tests ; V2-11) :
   d'instance aléatoire, `crates/kesh-qrbill/src/pdf.rs:55-56` « *modulo* printpdf's internal random / instance id » : fragile) ;
   (e) 72 dpi (un demi-millimètre du bloc de paiement y passerait).
 - **D5 — La référence d'un rendu 0.19.0 se prend en phase 4, sur la base restaurée.** Télécharger F2, F4, F6 en phase 1 les
-  figerait dans la base d'avant. La phase 4 restaure la base d'avant sous l'image 0.19.0 : **après** son empreinte (inchangée),
-  elle rend F2, F4, F6 et l'avoir A1 — la référence 0.19.0 —, **avant** `journal_sans_erreur 4` et `arreter_image`
+  figerait dans la base d'avant. La phase 4 restaure la base d'avant sous l'image 0.19.1 : **après** son empreinte (inchangée),
+  elle rend F2, F4, F6 et l'avoir A1 — la référence 0.19.1 —, **avant** `journal_sans_erreur 4` et `arreter_image`
   (`scripts/recette-montee.sh:628-634`) : un rendu qui journalise ` ERROR ` fait échouer la phase 4. Le conteneur du retour est
   neuf (`--rm`) et son dossier des documents vide : F1, F5, F7, F8 y manquent, sans effet pour les quatre pièces non figées
   rendues ; aucune pièce figée n'y est demandée (elle y rendrait `410`) (V3-9). La phase 2 (binaire neuf) les rend **après** son empreinte et le
@@ -373,7 +373,7 @@ hors tests ; V2-11) :
   preuve du rouge dépendrait de l'hôte (V1-6). *Écartée* : sauter la phase 6 si `mutool` manque.
 - **D10 — Après la montée, le rapport TVA tourne sur les données d'avant, sous les deux versions.** Le rapport TVA de la période
   du peuplement entre dans `api` (`GET /api/v1/reports/vat`, `lib.rs:1443`, requête `ReportQuery`, `reports.rs:855`, bornée par
-  `fiscal_year_id`, `period_start`, `period_end`, `reports.rs:64-68`), sous la projection par ajout (D2) : rendu par la 0.19.0 à
+  `fiscal_year_id`, `period_start`, `period_end`, `reports.rs:64-68`), sous la projection par ajout (D2) : rendu par la 0.19.1 à
   l'empreinte `avant`, par la 0.20.0 à l'empreinte `apres`. C'est le seul lecteur filtré par `line_type` que la recette fait
   tourner (second inventaire) ; un lecteur filtré à tort laisserait les tables identiques, d'où ce rapport. *Écartées* : (a) se
   fier à l'égalité des tables ; (b) les **créances âgées** (V2-6) : la route ne prend aucune période (`reports.rs:455-462`), son
@@ -490,16 +490,16 @@ ouvertes pour ce qui sort : #1445, #1446, #1447 (Dev Notes).
   F8 : `GET …/pdf` → `410` ; `POST …/pdf/refreeze` → `200` (une réponse JSON de facture, `routes/invoice_pdf.rs:78`, `:93`, non
   un PDF) ; puis `GET …/pdf` → `200`, en-tête `%PDF-`, SHA-256 égal au nouveau `pdf_sha256` relu en base — ce PDF est « le PDF du
   regel » (V2-7) ; F2, F4, F6 et A1 rendus et gardés pour la phase 6.
-- **AC5 — Rendus (D4 b, D5) : phase 6, code 16.** Après la phase 4 (qui rend F2, F4, F6, A1 sous l'image 0.19.0, **après** son
+- **AC5 — Rendus (D4 b, D5) : phase 6, code 16.** Après la phase 4 (qui rend F2, F4, F6, A1 sous l'image 0.19.1, **après** son
   empreinte) : chaque rendu 0.20.0 a, page à page, la même trame à 300 dpi, le même texte et le même nombre de pages (≥ 1) que sa
-  référence 0.19.0 (pour F8 : son fichier figé de la phase 1). **Décompte exact** : 5 paires, avec ou sans `--import` ; une paire
+  référence 0.19.1 (pour F8 : son fichier figé de la phase 1). **Décompte exact** : 5 paires, avec ou sans `--import` ; une paire
   ne compte que si ses deux PDF sont valides (D1) et que leur texte contient le numéro de la pièce. Un écart nomme la pièce et écrit le
   diff du texte au journal ; un décompte faux échoue. La version de `mutool` s'écrit au journal.
 - **AC6 — Import (D6).** Avec `--import`, la phase 5 importe dans `$D/documents-import` (neuf) ; F1, F5, F7, F8 y sont servis à
   l'octet de la phase 1 ; l'empreinte suit AC3. Aucun rendu n'y est refait (Allègement).
 - **AC7 — Outils (D9).** `mutool` et `sha256sum` sont exigés (code 5 s'ils manquent) ; `KESH_MUTOOL` traverse la relance et rien
   d'autre de neuf ; l'en-tête du script (`:10-19`, phases et codes) et `:38-39` disent la phase 6 et ce qui est désormais comparé.
-- **AC8 — Rapport TVA sur les données d'avant (D10).** Le rapport TVA de la période du peuplement, rendu par la 0.19.0 à
+- **AC8 — Rapport TVA sur les données d'avant (D10).** Le rapport TVA de la période du peuplement, rendu par la 0.19.1 à
   l'empreinte `avant` et par la 0.20.0 à l'empreinte `apres` (et après l'import), passe la projection de l'AC3 ; à l'empreinte
   `avant`, il porte un chiffre d'affaires non nul (contrôle de non-vacuité, code 11 ; le champ exact se relève à T0) — un rapport
   vide des deux côtés ne compte pas.
@@ -590,7 +590,7 @@ ouvertes pour ce qui sort : #1445, #1446, #1447 (Dev Notes).
   retour sur une base neuve par la sauvegarde d'avant la mise à jour : **vidage de sécurité de la base actuelle**, puis
   installation 0.19.1 neuve sur une base vide, import depuis l'assistant, lien *Restaurer une sauvegarde* — constaté par l'AC11,
   PDF archivés compris ; **tout ce qui a été saisi depuis la mise à jour est perdu, et les numéros écrits sur le papier depuis la
-  mise à jour sont à refaire** (phrases des sections 0.19.0 et 0.17.5, V3-5) ; une sauvegarde 0.19.0 s'importe dans la 0.20.0 —
+  mise à jour sont à refaire** (phrases des sections 0.19.0 et 0.17.5, V3-5) ; une sauvegarde 0.19.1 s'importe dans la 0.20.0 —
   constaté par la phase 5) ; **« Si la migration échoue au milieu »**, sur la consigne de la 0.19.0 : Kesh ne redémarre
   plus, et le journal porte « Échec des migrations : migration 20261118000002 is partially applied; fix and remove row from
   `_sqlx_migrations` table » (message cité au code, D11 et § *Les fichiers de la 49-1a*, non le mot *dirty*) ; **ne reprenez pas le
@@ -687,7 +687,7 @@ tourne tout de même au dernier commit de code (AC16).
 - [x] **T3 — Documents et PDF** (AC4, AC6) : `docker cp`, retrait de F8, phase 2 (servis, `410`, regel, rendus ; corps de
   `/health` du binaire neuf écrit à `$D/journal/health-binaire.json`, lu par D11), phase 5 (dossier neuf, PDF figés servis à
   l'octet).
-- [x] **T4 — Phase 4 et phase 6** (AC5) : rendus 0.19.0 après l'empreinte du retour, comparaison trame (300 dpi) + texte + pages,
+- [x] **T4 — Phase 4 et phase 6** (AC5) : rendus 0.19.1 après l'empreinte du retour, comparaison trame (300 dpi) + texte + pages,
   décompte exact (5), code 16.
 - [x] **T5 — Outils et relance** (AC7, D9) ; enveloppe Rust (`.env_remove("KESH_MUTOOL")`).
 - [x] **T6 — Test shell** (S1 à S14) et mutations ; **durée mesurée avant la revue**, sous nextest, à la station (deux tirages) ;
