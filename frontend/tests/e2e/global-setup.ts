@@ -19,11 +19,17 @@
  * `beforeEach` pour onboarding). Si `globalSetup` échoue partiellement
  * (ex: truncate ok mais `mark_onboarding_complete` timeout), le spec
  * suivant re-seedera son état propre et corrigera la dérive.
+ *
+ * **La locale d'abord** (`helpers/locale.ts`) : une `LANG` qui nomme une locale absente du
+ * poste fait ignorer en silence les `setInputFiles` sur un chemin non ASCII (KF-065, #1282).
+ * La garde échoue avant tout appel au backend, avec la commande d'installation.
  */
 
+import { verifierLocaleInstallee } from './helpers/locale';
 import { seedTestState } from './helpers/test-state';
 
 async function globalSetup(): Promise<void> {
+	verifierLocaleInstallee();
 	try {
 		await seedTestState('with-company');
 	} catch (e) {

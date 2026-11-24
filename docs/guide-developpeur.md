@@ -50,7 +50,9 @@ découlent, sans exception :
 ## 3. Le poste de dev
 
 **Prérequis** : Rust (la version est fixée par `rust-toolchain.toml`, installée d'office par rustup), Node.js ≥ 20, Docker
-et Docker Compose. `cargo install cargo-nextest` est recommandé.
+et Docker Compose. `cargo install cargo-nextest` est recommandé. Pour les E2E, la locale **`fr_CH.UTF-8` installée**
+(`sudo locale-gen fr_CH.UTF-8`, contrôle `locale -a | grep -i fr_ch`) : la suite se lance sous `LANG=fr_CH.UTF-8`, et une
+locale nommée mais absente fait échouer sans bruit les dépôts de fichier (`docs/testing.md` § *Prérequis Playwright local*).
 
 ```sh
 git clone https://github.com/guycorbaz/kesh.git && cd kesh
