@@ -867,6 +867,121 @@ scénarios manquants, puis les mutations (journaux sous `kesh-gate-logs/e491d/mu
 **Bases à recréer** (`docs/testing.md` § *Base de dev jetable*) : `kesh_e491d`, `kesh_e2e_e491d`, `kesh_ci_e491d` — aucune n'a
 encore été créée. Sonde et recette ont leurs propres conteneurs `mariadb:10.11` en tmpfs.
 
+### Reprise du 2026-11-24 — ce qui a tourné (Opus 5.5)
+
+Tout chiffre ci-dessous cite son journal (sous `/home/gcorbaz/devel/kesh-gate-logs/e491d/` sauf mention) et son commit.
+
+**1. Reprise de la branche d'épique.** `git merge --no-ff origin/epic/49-types-de-lignes-facture` (`87e00ba05`) → `0d033d36e`.
+Un conflit, `sprint-status.yaml` : bloc de l'épique gardé (49-1c `done`, renvois à l'Epic 52), ligne de la 49-1d gardée
+`in-progress`. **La dernière image publiée est la 0.19.1** : la fiche et ses scripts partent d'elle (C-e491d-1 ; sites
+opératoires corrigés, mentions historiques gardées). Faits relus au tag `v0.19.1` : rendu, routes, import, nom de la
+sauvegarde, écran de restauration identiques à la 0.19.0 (`git diff --stat v0.19.0 v0.19.1` vide sur ces fichiers) ; `kesh-qrbill`
+ne change que la visibilité de `largeur_mm`. **La 49-4b est passée à l'Epic 52** (`sprint-status.yaml` de l'épique, 2026-11-21) :
+D8 (c) et l'AC14 jouent leur branche « la 49-4b n'entre pas » ; l'issue conditionnelle n° 6 des Dev Notes est donc à ouvrir.
+
+**2. T0, la sonde** (`t0/sonde-t0.sh`, image `gcorbaz/kesh:0.19.1` `sha256:50b01c7cf627`, `mutool 1.27.0`). Premier tirage
+(`t0/sonde-t0.log`) — **deux prémisses de D1 fausses, écrites ici avant le code qui en dépend** : (a) l'IBAN du relevé A,
+`CH4431999123000889012`, est un **QR-IBAN** (IID 31999) ; en compte principal, tout PDF de facture est refusé
+(`400 INVOICE_NOT_PDF_READY`, « QR-IBAN fourni sans référence QRR ») → C-e491d-2 (un second compte, principal, à l'IBAN
+d'exemple ordinaire de SIX `CH9300762011623852957`) ; (b) `invoices.total_amount` est le **HT** ; un crédit égal à leur somme fait
+refuser le groupe (`RECONCILIATION_GROUP_DIFFERENCE_TOO_LARGE`) → C-e491d-3 (somme des `totalTtc`). Aucune des deux ne touche
+la preuve : elles changent le peuplement, non ce qui est comparé ; la story continue. Second tirage (`t0/sonde-t0-2.log`), tout
+établi : compte bancaire rendu sous `{ "id": … }` à plat ; aucun compte au nom d'arrondi dans le preset (le premier compte de
+charge est retenu) ; F4 (`100.00`/8,10 + `33.33`/2,60 + `10.01`/0,00) → `rounding_amount = -0.0100` ; les taux 2,60 et 0,00
+existent et passent la validation ; l'avoir annule la facture (`cancelled`) ; PDF figé à `<sha256>.pdf` à la racine de
+`/tmp/documents` (le dossier n'existe qu'après le premier), `docker cp` lisible par l'utilisateur ; deux rendus d'un avoir
+diffèrent à l'octet et ont la même trame ; `410 INVOICE_PDF_GONE`, puis regel `200` (réponse JSON de facture), au journal un
+**`WARN`** (« PDF de facture refigé »), aucune ligne ` ERROR ` ; `totalBaseHt` au rapport TVA ; le numéro de la pièce dans le
+texte `mutool` d'une facture (2 fois) et d'un avoir (1 fois) ; après `full-import` dans une 0.19.1 neuve, les 17 tables
+strictement égales, et le PDF figé servi à l'octet. Établi aussi : une facture de 40 lignes est refusée au PDF (`400`, capacité) :
+aucune pièce de la recette n'a deux pages, la trame page à page n'est éprouvée que par le factice.
+
+**3. Le code.** Commits `a5cf95297` (pièces lues dès leur création — `id_piece` lisait un fichier écrit après les
+téléchargements de la phase 1 : défaut trouvé au premier tirage du test —, deux comptes bancaires, crédit au TTC ; factices
+alignés), `a02b79bec` (scénarios S1 à S14 propres, `.env_remove("KESH_MUTOOL")`), `bd7e72ce8` (une trame vide des deux côtés
+ou un fichier d'avant vide ne comptent plus : scénario **S6c** ajouté, défaut relevé en rédigeant le prompt de revue).
+`shellcheck` n'est pas installé à la station : non joué.
+
+**4. Le test shell** (`scripts/tests/recette-montee.test.sh`, factices seuls) : vert à `bd7e72ce8`, **155 assertions**,
+`dev/test-shell-7.log` ; seul, 2 min 56 s (`dev/test-shell-6.log`, à `a02b79bec`). Durée sous nextest : § 7.
+
+**5. Les mutations** (`mut/mutations.py`, copies de `scripts/` hors worktree, C-e491d-5) au commit `bd7e72ce8` : **21
+mutations, 20 tuées, 1 équivalente** (`mut/juge.log`, rejugé par `mutations.py --juger`). Équivalente, déclarée d'avance :
+S3c sans le contrôle de type — `jq` échoue sur l'objet devenu scalaire (`has`, indice), la projection échoue quand même
+(`rouge-S3c-type-equivalente.log` : « S3c … (code 12) » sous mutation). Deux mutations retirent deux contrôles qui se couvrent
+(S5 : octets et SHA-256 ; S10-principal : principal et lien au `1020`). **Deux défauts de l'outillage de mutation, trouvés et
+corrigés en cours de route** : (a) le premier tirage jugeait « tuée » toute mutation, l'en-tête du journal citant l'assertion
+attendue (relevé sur S3c, test vert) — le verdict exclut désormais l'en-tête et exige le résumé « assertion(s) en échec » ;
+(b) deux tests en parallèle choisissent les mêmes ports et le scénario du port de la seconde base s'interrompt sous `set -e`
+avant le résumé (onze journaux tronqués, `mut/juge-tirage-parallele.log`) — rejouées une à une (`mut/resume-2.log`), toutes
+les onze ont rendu leur verdict, dix tuées et S3c équivalente. Le défaut (b) est **préexistant au test** (Story 33-10, ligne
+`D=$(… grep -oE 'dossier .*$' … )` sous `pipefail`) : issue à ouvrir (une par problème), test défaillant, P3.
+
+**6. La recette réelle (AC10)**, à `bd7e72ce8`, binaire construit à `0d033d36e` (code de production inchangé depuis :
+`git diff --stat 0d033d36e..bd7e72ce8 -- crates` ne nomme que le test), frontend construit à la même tête
+(`dev/build-kesh-api.log`, `dev/build-frontend.log`) :
+```
+flock /tmp/station-heavy.lock flock …/.gate.lock scripts/mem-guard.sh scripts/recette-montee.sh \
+  --image gcorbaz/kesh:0.19.1 --binaire target/debug/kesh-api --static frontend/build \
+  --port-api 3197 --port-base 3398 --migrations-attendues 1 \
+  --diff-attendu migrations,invoice_lines,credit_note_lines,api \
+  --apres ../kesh-gate-logs/rel0200/verifs-0200.sh --import --prefixe kesh-e491d
+```
+→ **code 0** (`recette-reelle.log`, dossier `/tmp/kesh-recette.fq4BbW`) : 95 migrations avant, une appliquée ; phase 3
+« refusée : migration inconnue d'elle (sqlx) » ; **5 paires de rendus, chacune « 1 page(s), même dessin »** (F2, F4, F6, A1, F8).
+Écarts relevés, tous attendus et **par ajout seulement** : `migrations`, `invoice_lines`, `credit_note_lines`, `api`, à la
+montée comme à l'import ; les six diffs de projection sont vides, et non à vide — 11 lignes de facture, 2 d'avoir, 14 documents
+`api` (8 factures, 4 factures fournisseur, 1 avoir, le rapport TVA), dont 13 lignes gagnent `lineType` ; `totalBaseHt` du
+rapport TVA = 1813.34 aux empreintes `avant`, `apres` et `import`. Crochet (`journal/apres.log`) : « invoice_lines — 11
+ligne(s), toutes priced, défaut 'priced' », « credit_note_lines — 2 ligne(s) … », « vert ». Sauvegarde
+`kesh-pre-upgrade-20261124T004729872Z-0.19.1-to-0.19.1.keshbackup`, `/health` du binaire `0.19.1` (les crates sont en 0.19.1 :
+`-0.19.1-to-0.20.0` n'est attendu qu'après le bump, AC12). **Sensibilité de la trame, hors script** (`trame-hors-script.log`) :
+F2 contre F2 et la référence 0.19.1 de F2 contre son rendu 0.20.0 → MD5 égaux (`851d4f02…`) alors que leurs octets diffèrent ;
+F2 contre F4 → différents (`ff35b8ba…`). Rouges réels R1 et R2 : § 8.
+
+**7. Le script complémentaire (AC11)** (`rel0200/recette-complement-rel0200.sh`, joué sur `/tmp/kesh-recette.fq4BbW`) →
+**code 0, 0 écart** (`recette-complement.log`) : exactement une sauvegarde `-0.19.1-to-*`, version d'arrivée 0.19.1 = `/health` ;
+import `200` (`filesRestored 3`, `filesMissing 1` : F8) ; **17 tables strictement égales** à l'empreinte d'avant ; après un nouveau
+login, F1, F5, F7 servis `200` à l'octet de la phase 1, F8 `410 INVOICE_PDF_GONE` ; journal de l'image sans ` ERROR `.
+
+**Aucune facture ni aucun avoir existant ne change à la montée, et le retour par la sauvegarde fonctionne** : aucun point
+d'arrêt du Project Lead (`alerte.md` le dit).
+
+**8. Rouges réels et gates** : _à compléter au passage en `review`._
+
+**Crochet `kesh-gate-logs/rel0200/verifs-0200.sh`, en entier (D7)** :
+```sh
+# verifs-0200.sh — crochet `--apres` de la recette de montée de la 0.20.0 (Story 49-1d, D7, #1242).
+#
+# Sourcé par `scripts/recette-montee.sh` en phase 2, après l'empreinte `apres`, dans un sous-shell
+# sous `set -e`, depuis `$D/cwd`. Il dispose de `SQL` (base migrée), `api` et `L` (journal du run).
+# Ce qu'il contrôle ne vaut que pour la migration 20261118000002 (types de lignes) : la projection de
+# `--diff-attendu` (D2) prouve que les valeurs d'avant n'ont pas bougé ; ce crochet prouve la VALEUR
+# de la colonne neuve et le nombre de lignes, sur les deux tables.
+#
+# Forme imposée (D7) : chaque contrôle s'écrit `[ … ] || exit 1`, jamais dans un `if`, un `&&` ni un
+# `local x=$(…)` — les exceptions de `set -e` que l'en-tête du script documente. Valeurs relevées par
+# des affectations simples, qui font sortir le crochet si la requête échoue.
+
+for t in invoice_lines credit_note_lines; do
+  # Aucune ligne existante n'a reçu un autre type que la ligne chiffrée.
+  n_autres=$(SQL "SELECT COUNT(*) FROM $t WHERE line_type <> 'priced'")
+  [ "$n_autres" = 0 ] || exit 1
+  # Le nombre de lignes égale celui d'avant, lu au fichier de l'empreinte `avant` (une ligne par
+  # enregistrement : `mariadb -N` en mode batch échappe les sauts de ligne).
+  n_avant=$(wc -l < "$L/empreinte-avant/$t")
+  n_apres=$(SQL "SELECT COUNT(*) FROM $t")
+  [ "$n_apres" = "$n_avant" ] || exit 1
+  # Une table vide ne prouverait rien : la recette peuple des lignes de facture et d'avoir.
+  [ "$n_avant" -gt 0 ] || exit 1
+  # La valeur par défaut, apostrophes comprises (forme de MariaDB 10.11).
+  defaut=$(SQL "SELECT COLUMN_DEFAULT FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '$t' AND COLUMN_NAME = 'line_type'")
+  [ "$defaut" = "'priced'" ] || exit 1
+  echo "verifs-0200 : $t — $n_apres ligne(s), toutes priced, défaut $defaut"
+done
+echo "verifs-0200 : vert"
+```
+
 ## Change Log
 
 | Date | Entrée |
