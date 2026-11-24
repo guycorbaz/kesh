@@ -217,6 +217,63 @@ where
     q.fetch_all(executor).await.map_err(map_db_error)
 }
 
+/// Les écritures **vivantes** de la société dont le libellé contient l'un des
+/// textes `needles` — Story 40-7c, correctif M2 de la revue de la PR de
+/// l'Epic 40 : les écritures qui portent déjà l'identifiant d'un versement
+/// Stripe (`po_…`). Rendues `(id, libellé)`, triées par identifiant ; le
+/// mot entier se juge **en Rust**, par la fonction du prestataire
+/// (`kesh_reconciliation::stripe::posted_payouts`).
+///
+/// - **Sous-chaîne exacte** : `LOCATE` sur le libellé en collation **binaire**
+///   (casse comprise, `_` et `%` sans valeur de motif) — jamais un `LIKE` ;
+/// - **vivante** : ni contre-passée (aucune écriture ne la contre-passe), ni
+///   contre-passation elle-même (`reverses_entry_id IS NULL`) — l'annulation
+///   d'un versement **sans** réception contre-passe son écriture, et le
+///   versement doit alors redevenir proposable ;
+/// - **rapprochée ou non**, sauf par une transaction d'un compte bancaire du
+///   prestataire `excluded_provider` : l'écriture des **frais** d'une ligne
+///   Stripe porte aussi le `po_…` de son versement (libellé de la 40-7b,
+///   « … - po_… »), et sa transaction de frais la pointe ; l'écriture d'un
+///   versement dont le côté Stripe a été détaché n'est plus pointée que par
+///   sa réception (banque ou Wise).
+///
+/// Lecture ordinaire, non verrouillante ; par tranches de
+/// [`super::reconciliation::MAX_IN_CLAUSE_IDS`] textes.
+pub async fn live_entries_mentioning(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    needles: &[String],
+    excluded_provider: &str,
+) -> Result<Vec<(i64, String)>, DbError> {
+    let mut out: HashMap<i64, String> = HashMap::new();
+    for chunk in needles.chunks(super::reconciliation::MAX_IN_CLAUSE_IDS) {
+        let any =
+            vec!["LOCATE(?, je.description COLLATE utf8mb4_bin) > 0"; chunk.len()].join(" OR ");
+        let sql = format!(
+            "SELECT je.id, je.description FROM journal_entries je \
+             WHERE je.company_id = ? AND ({any}) \
+               AND je.reverses_entry_id IS NULL \
+               AND NOT EXISTS (SELECT 1 FROM journal_entries r \
+                                WHERE r.reverses_entry_id = je.id) \
+               AND NOT EXISTS (SELECT 1 FROM bank_transactions bt \
+                                 JOIN bank_accounts ba ON ba.id = bt.bank_account_id \
+                                WHERE bt.company_id = je.company_id \
+                                  AND bt.matched_entry_id = je.id \
+                                  AND ba.provider = ?) \
+             ORDER BY je.id"
+        );
+        let mut q = sqlx::query_as::<_, (i64, String)>(&sql).bind(company_id);
+        for n in chunk {
+            q = q.bind(n);
+        }
+        q = q.bind(excluded_provider);
+        out.extend(q.fetch_all(&mut *conn).await.map_err(map_db_error)?);
+    }
+    let mut rows: Vec<(i64, String)> = out.into_iter().collect();
+    rows.sort_by_key(|(id, _)| *id);
+    Ok(rows)
+}
+
 /// Les transactions `ids` de la société, quel que soit leur compte ou leur
 /// statut, par identifiant (pré-vol de l'acceptation). Au plus
 /// [`super::reconciliation::MAX_IN_CLAUSE_IDS`] identifiants : l'appelant borne

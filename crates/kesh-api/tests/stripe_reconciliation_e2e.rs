@@ -1527,6 +1527,133 @@ async fn annulation_d_un_versement_avant_reception(pool: MySqlPool) {
 }
 
 // ============================================================
+// Correctif M2 (revue de la PR de l'Epic 40) — un versement déjà écrit
+// ============================================================
+
+/// Le scénario du défaut : versement accepté, réception de la banque rattachée
+/// à son écriture, puis annulation du **côté Stripe** — qui ne retire que le
+/// lien (`unlink_only`) : l'écriture reste. Le versement redevient pending ;
+/// la revue ne le propose plus, il est « à examiner » sous
+/// `payout_already_posted` (l'écriture nommée) ; l'acceptation forcée de
+/// l'ancienne proposition est refusée `STRIPE_PAYOUT_ALREADY_POSTED`, en
+/// `200`, sans seconde écriture ; le rattachement à l'écriture existante,
+/// que le motif conseille, passe.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn versement_deja_ecrit_puis_detache_ni_propose_ni_ecrit_deux_fois(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let po = ctx.tx("po_TEST0001").await; // solde CHF, versé sur la banque CHF
+    let ancienne = proposition(&ctx.revue().await, po);
+    let (s, b) = ctx.accepter(vec![ancienne.clone()]).await;
+    assert_eq!((s, b["failed"].clone()), (200, json!([])), "{b}");
+    let ecriture = b["accepted"][0]["journalEntryIds"][0].as_i64().unwrap();
+    let reception = ctx
+        .reception(ctx.ba_banque, "125.15", "CHF", "2020-02-04")
+        .await;
+    let (s, b) = ctx.rattacher(reception, ecriture).await;
+    assert_eq!(s, 200, "{b}");
+    // Annulation du côté Stripe : le lien seul.
+    let (s, b) = ctx
+        .post(
+            &format!("/api/v1/reconciliation/transactions/{po}/cancel"),
+            json!({}),
+        )
+        .await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(ctx.etat(po).await, ("pending".into(), None));
+    assert_eq!(
+        ctx.etat(reception).await,
+        ("reconciled".into(), Some(ecriture))
+    );
+    assert_eq!(
+        ctx.count(&format!(
+            "SELECT COUNT(*) FROM journal_entries WHERE reverses_entry_id = {ecriture}"
+        ))
+        .await,
+        0,
+        "l'écriture du versement reste"
+    );
+    // La revue : plus proposé, à examiner, l'écriture nommée.
+    let revue = ctx.revue().await;
+    assert!(
+        !genres(&revue).contains(&("payout".to_string(), "po_TEST0001".to_string())),
+        "{revue}"
+    );
+    let motif = revue["toReview"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["transaction"]["id"] == po)
+        .cloned()
+        .unwrap_or_else(|| panic!("versement absent de « à examiner » : {revue}"));
+    assert_eq!(motif["code"], "payout_already_posted", "{motif}");
+    assert_eq!(
+        motif["details"],
+        json!({ "payoutId": "po_TEST0001", "journalEntryId": ecriture })
+    );
+    // L'acceptation forcée de l'ancienne proposition : refusée, rien d'écrit.
+    let avant = ctx.ecritures().await;
+    let audit_avant = ctx.count("SELECT COUNT(*) FROM audit_log").await;
+    let (s, b) = ctx.accepter(vec![ancienne]).await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(b["accepted"], json!([]), "{b}");
+    assert_eq!(
+        b["failed"],
+        json!([{
+            "bankTransactionId": po,
+            "errorCode": "STRIPE_PAYOUT_ALREADY_POSTED",
+            "details": { "payoutId": "po_TEST0001", "journalEntryId": ecriture },
+        }]),
+        "{b}"
+    );
+    assert_eq!(ctx.ecritures().await, avant, "aucune seconde écriture");
+    assert_eq!(
+        ctx.count("SELECT COUNT(*) FROM audit_log").await,
+        audit_avant,
+        "aucune trace d'acceptation"
+    );
+    assert_eq!(ctx.etat(po).await, ("pending".into(), None));
+    // Le geste conseillé : rattacher le versement à son écriture.
+    let (s, b) = ctx.rattacher(po, ecriture).await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(ctx.etat(po).await, ("reconciled".into(), Some(ecriture)));
+}
+
+/// La sonde positive du correctif M2 : un versement jamais écrit reste
+/// proposé — même quand les frais de ses lignes, dont les écritures portent
+/// aussi son `po_…` (libellé « … - po_TEST0001 »), sont déjà acceptés.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn versement_jamais_ecrit_reste_propose_apres_ses_frais(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let revue = ctx.revue().await;
+    let frais: Vec<Value> = revue["proposals"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|p| p["type"] == "fee")
+        .cloned()
+        .collect();
+    assert!(!frais.is_empty(), "{revue}");
+    let (s, b) = ctx.accepter(frais).await;
+    assert_eq!((s, b["failed"].clone()), (200, json!([])), "{b}");
+    assert!(
+        ctx.count(
+            "SELECT COUNT(*) FROM journal_entries \
+              WHERE LOCATE('po_TEST0001', description COLLATE utf8mb4_bin) > 0"
+        )
+        .await
+            > 0,
+        "les écritures des frais portent le versement"
+    );
+    let po = ctx.tx("po_TEST0001").await;
+    let seconde = ctx.revue().await;
+    let v = proposition(&seconde, po);
+    assert_eq!(v["type"], "payout", "{v}");
+    let (s, b) = ctx.accepter(vec![v]).await;
+    assert_eq!((s, b["failed"].clone()), (200, json!([])), "{b}");
+    assert_eq!(b["accepted"][0]["type"], "payout");
+}
+
+// ============================================================
 // AC-6 — interblocage dans une proposition : rejeu, jamais dans failed[]
 // ============================================================
 

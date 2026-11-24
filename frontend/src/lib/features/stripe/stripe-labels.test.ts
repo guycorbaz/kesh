@@ -204,6 +204,7 @@ describe('stripe-labels — les codes contre leur source Rust', () => {
 		'fee_account_missing',
 		'other_category',
 		'payout_account_missing',
+		'payout_already_posted',
 		'payout_not_negative',
 		'payout_reversal',
 		'refund',
@@ -241,5 +242,9 @@ describe('stripe-labels — refus de l’acceptation', () => {
 		expect(
 			stripeFailedLabel('STRIPE_PAYOUT_ACCOUNT_INVALID', { bankAccountId: 3, reason: 'paypal' }),
 		).toMatch(/^error-stripe-payout-account-invalid\|/);
+		// Versement déjà écrit (correctif M2 de la revue de la PR de l'Epic 40).
+		expect(
+			stripeFailedLabel('STRIPE_PAYOUT_ALREADY_POSTED', { payoutId: 'po_1', journalEntryId: 9 }),
+		).toMatch(/^stripe-failed-payout-already-posted\|/);
 	});
 });

@@ -84,6 +84,18 @@ pub const REVIEW_PAYOUT_NOT_NEGATIVE: &str = "payout_not_negative";
 /// `paypal`, `currency`, que la route lit de
 /// `kesh_db::repositories::bank_accounts::PayoutDestination::refusal`).
 pub const REVIEW_PAYOUT_ACCOUNT_MISSING: &str = "payout_account_missing";
+/// À examiner : un versement dont l'identifiant (`po_…`) figure déjà, en mot
+/// entier, au libellé d'une écriture vivante, rapprochée ou non (`details: {
+/// payoutId, journalEntryId }`, la plus ancienne) — typiquement l'écriture
+/// d'un versement dont le côté Stripe a été détaché alors que sa réception
+/// restait rattachée (correctif M2 de la revue de la PR de l'Epic 40). Le
+/// proposer ferait écrire le versement une seconde fois ; à l'acceptation, la
+/// même règle rend [`FAILED_PAYOUT_ALREADY_POSTED`]. Voir [`posted_payouts`].
+pub const REVIEW_PAYOUT_ALREADY_POSTED: &str = "payout_already_posted";
+/// Code de refus (`failed[].errorCode`) de l'acceptation d'un versement déjà
+/// écrit ([`REVIEW_PAYOUT_ALREADY_POSTED`]), sans rien écrire (`details: {
+/// payoutId, journalEntryId }`).
+pub const FAILED_PAYOUT_ALREADY_POSTED: &str = "STRIPE_PAYOUT_ALREADY_POSTED";
 /// Motif d'un `payout_account_missing` : le compte Stripe n'a pas de compte de
 /// versement réglé.
 pub const PAYOUT_ACCOUNT_NOT_SET: &str = "not_set";
@@ -147,13 +159,42 @@ pub fn classify(t: &BankTransaction) -> ProviderKind {
 /// doublon, dans l'ordre du libellé. `xch_1` n'en est pas un (le préfixe est
 /// dans un mot plus long).
 pub fn stripe_ids_in(text: &str) -> Vec<String> {
+    ids_with_prefixes(text, &ID_PREFIXES)
+}
+
+/// Les jetons de `text` qui commencent par l'un des `prefixes`, en mot entier
+/// (voir [`stripe_ids_in`]), sans doublon, dans l'ordre du texte.
+fn ids_with_prefixes(text: &str, prefixes: &[&str]) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     for word in text.split(|c: char| !is_id_char(c)) {
-        let is_id = ID_PREFIXES
+        let is_id = prefixes
             .iter()
             .any(|p| word.len() > p.len() && word.starts_with(p));
         if is_id && !out.iter().any(|w| w == word) {
             out.push(word.to_string());
+        }
+    }
+    out
+}
+
+/// Préfixe de l'identifiant d'un versement Stripe.
+const PAYOUT_ID_PREFIX: &str = "po_";
+
+/// Les versements **déjà écrits** ([`REVIEW_PAYOUT_ALREADY_POSTED`]) : pour
+/// chacun des identifiants `payout_ids` qui figure **en mot entier**, casse
+/// comprise, au libellé d'une des écritures `entries` (`(id, libellé)`, les
+/// écritures vivantes que la route lit), l'écriture la plus ancienne (plus
+/// petit identifiant). **Seule** définition : la revue et le rejugement de
+/// l'acceptation l'appellent. `po_1` ne se trouve pas dans `po_10`.
+pub fn posted_payouts(payout_ids: &[String], entries: &[(i64, String)]) -> HashMap<String, i64> {
+    let mut out: HashMap<String, i64> = HashMap::new();
+    for (entry_id, description) in entries {
+        for word in ids_with_prefixes(description, &[PAYOUT_ID_PREFIX]) {
+            if payout_ids.contains(&word) {
+                out.entry(word)
+                    .and_modify(|e| *e = (*e).min(*entry_id))
+                    .or_insert(*entry_id);
+            }
         }
     }
     out
@@ -376,6 +417,9 @@ pub struct StripeReviewInput<'a> {
     /// Les versements de l'exercice rapprochés dont l'écriture n'est pointée
     /// par aucune transaction d'un autre compte bancaire.
     pub unreceived_payouts: &'a [BankTransaction],
+    /// Les versements pending **déjà écrits** : identifiant `po_…` → écriture
+    /// ([`posted_payouts`]).
+    pub posted_payouts: &'a HashMap<String, i64>,
 }
 
 /// Un motif sur une transaction, avec des détails.
@@ -441,9 +485,21 @@ fn decide_payout(
     t: &BankTransaction,
     input: &StripeReviewInput<'_>,
 ) {
+    let payout_id = t.transaction_id.clone();
+    // Avant tout autre motif : un versement déjà écrit ne se propose jamais.
+    if let Some(entry_id) = payout_id
+        .as_deref()
+        .and_then(|p| input.posted_payouts.get(p))
+    {
+        review.push_to_review(finding(
+            REVIEW_PAYOUT_ALREADY_POSTED,
+            t,
+            serde_json::json!({ "payoutId": payout_id, "journalEntryId": entry_id }),
+        ));
+        return;
+    }
     let lines = payout_lines(t, input.payout_candidates);
     let destination = input.destinations.get(&t.bank_account_id);
-    let payout_id = t.transaction_id.clone();
     match judge_payout(t, &lines, destination.is_some()) {
         PayoutVerdict::ToReview(REVIEW_PAYOUT_ACCOUNT_MISSING) => {
             let reason = input
@@ -777,6 +833,7 @@ mod tests {
         configured: HashMap<i64, i64>,
         refusals: HashMap<i64, &'static str>,
         unreceived: Vec<BankTransaction>,
+        posted: HashMap<String, i64>,
         fee_account: Option<i64>,
     }
 
@@ -811,6 +868,7 @@ mod tests {
                 configured: HashMap::new(),
                 refusals: HashMap::new(),
                 unreceived: Vec::new(),
+                posted: HashMap::new(),
                 fee_account: Some(6941),
             }
         }
@@ -855,6 +913,7 @@ mod tests {
                     configured_destinations: &self.configured,
                     destination_refusals: &self.refusals,
                     unreceived_payouts: &self.unreceived,
+                    posted_payouts: &self.posted,
                 },
             )
         }
@@ -1053,5 +1112,61 @@ mod tests {
             r.gaps[0].details.as_ref().unwrap()["payoutBankAccountId"],
             serde_json::Value::Null
         );
+    }
+
+    /// Correctif M2 : un versement déjà écrit est à examiner, avant tout autre
+    /// motif (même sans compte de versement) ; un versement jamais écrit reste
+    /// proposé.
+    #[test]
+    fn versement_deja_ecrit_a_examiner_l_autre_propose() {
+        let mut j = Jeu::new();
+        j.destinations.insert(
+            10,
+            PayoutDestination {
+                bank_account_id: 77,
+                label: "Banque EUR".into(),
+            },
+        );
+        j.pending.push(payout(1, "-194.00", "po_A"));
+        j.all.push(line(11, "194", "charge", "po_A"));
+        j.pending.push(payout(2, "-50.00", "po_B"));
+        j.all.push(line(12, "50", "charge", "po_B"));
+        j.posted.insert("po_A".into(), 900);
+        let r = j.revue();
+        assert_eq!(r.proposals.len(), 1, "{:?}", r.proposals);
+        assert_eq!(
+            serde_json::to_value(&r.proposals[0]).unwrap()["bankTransactionId"],
+            2
+        );
+        assert_eq!(codes(&r.to_review), [REVIEW_PAYOUT_ALREADY_POSTED]);
+        assert_eq!(
+            r.to_review[0].details,
+            Some(serde_json::json!({ "payoutId": "po_A", "journalEntryId": 900 }))
+        );
+        j.destinations.clear();
+        let r = j.revue();
+        assert_eq!(
+            codes(&r.to_review),
+            [REVIEW_PAYOUT_ALREADY_POSTED, REVIEW_PAYOUT_ACCOUNT_MISSING]
+        );
+    }
+
+    /// `posted_payouts` : mot entier, casse comprise, écriture la plus
+    /// ancienne ; seuls les identifiants demandés.
+    #[test]
+    fn versements_deja_ecrits_au_libelle() {
+        let ids = vec!["po_1".to_string(), "po_X".to_string()];
+        let entries = vec![
+            (30, "Versement Stripe po_1 96.80 CHF".to_string()),
+            (20, "Correction (po_1)".to_string()),
+            (40, "Versement Stripe po_10 1.00 CHF".to_string()),
+            (50, "Versement Stripe PO_X 1.00 CHF".to_string()),
+            (60, "Versement Stripe xpo_X 1.00 CHF".to_string()),
+            (70, "Versement Stripe po_Y 1.00 CHF".to_string()),
+        ];
+        let m = posted_payouts(&ids, &entries);
+        assert_eq!(m.len(), 1, "{m:?}");
+        assert_eq!(m.get("po_1"), Some(&20));
+        assert!(posted_payouts(&[], &entries).is_empty());
     }
 }
