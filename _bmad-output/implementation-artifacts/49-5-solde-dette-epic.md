@@ -1,6 +1,6 @@
 # Story 49-5 : Solde de la dette de l'Epic 49 — une charge de ligne de facture typée par son type (#1464), un avoir dont le taux et le compte ne se collent plus (#1466), un test de recette qui supporte deux copies simultanées (#1499)
 
-Status: drafted — fiche écrite le 2026-11-24 ; validation P1 (Sonnet, 0/1/2/9) **remédiée** le 2026-11-24 ; **validation P2 à lancer** (prompt `49-5-solde-dette-epic-validation-prompt-p2.md`, Opus) ; passe à `ready-for-dev` **après** la validation seulement.
+Status: drafted — fiche écrite le 2026-11-24 ; validation P1 (Sonnet, 0/1/2/9) et P2 (Opus, 0/0/1/8) **remédiées** le 2026-11-24 ; **passe ciblée P3 à lancer** (prompt `49-5-solde-dette-epic-validation-prompt-p3-ciblee.md`, Sonnet) ; passe à `ready-for-dev` **après** la validation seulement.
 
 > ⚠️ **Plafond provisoire — à confirmer par le Project Lead.** Le kickoff de l'Epic 49 (2026-11-18) n'a pas fixé de plafond
 > d'issues pour sa story de solde (`CLAUDE.md` § *Priorités des défauts*). Cette fiche prend **trois issues**, le plafond que le
@@ -46,7 +46,7 @@ seul code qu'elles ont écrit. #1464 vise du code de la 49-1c ; #1466 (`git blam
 l'épique » ne retiendrait que #1464 ; elle est écartée parce que le `CLAUDE.md` ne la demande pas et qu'elle laisserait sans
 story des constats nés de l'épique.
 
-Aucune issue du PDF n'est retenue : la seule candidate, #1399, change le rendu de toute facture non figée (§ *Issues écartées*).
+Aucune issue du PDF n'est retenue : #1363 et #1400 appartiennent à la 49-4b (Epic 52) ; la seule candidate de dette, #1399, change le rendu de toute facture non figée (§ *Issues écartées*).
 
 **Modules** (grain du `CLAUDE.md` § *La passe ciblée* : un crate ou un domaine du frontend dont le **code de production** change) :
 **deux au plus** — `frontend` domaine `invoices` (lot A : `src/lib/features/invoices/` ; si D-A3 exigeait de toucher
@@ -151,7 +151,7 @@ Ensemble clos des quinze paires rendues :
 | `routes/(app)/bank-import/[id]/+page.svelte:170-171`, `:183-184` | Montant → Référence (`{tx.amount} {tx.currency}` → `{tx.reference ?? '—'}`) | **hors périmètre** (domaine `bank-import`) : issue P4 **I-3** |
 | `lib/features/bank-import/BankImportUpload.svelte:867-868`, `:875-876` | Montant → Détails | **hors périmètre** (domaine `bank-import`) : issue P4 **I-4** |
 | `lib/features/reconciliation/ReconciliationProposals.svelte:708-709`, `:756-757` | Montant → Contrepartie | **hors périmètre** (domaine `reconciliation`) : issue P4 **I-5** |
-| `lib/features/journal-entries/JournalEntryForm.svelte:864-873` | en-tête Crédit → Projet (colonne affichée seulement avec `showProjectColumn` ; les cellules du corps portent `pr-2`, `:884-951`) | **hors périmètre** (domaine `journal-entries`) : issue P4 **I-6**, en-tête seul, constat au code à confirmer à l'écran |
+| `lib/features/journal-entries/JournalEntryForm.svelte:864-873` | en-tête Crédit → Compte analytique (`JournalEntryForm.svelte:874`, `journal-entry-form-col-project`), colonne affichée seulement avec `showProjectColumn` ; les cellules du corps portent `pr-2`, `:884-951`) | **hors périmètre** (domaine `journal-entries`) : issue P4 **I-6**, en-tête seul, constat au code à confirmer à l'écran |
 | `routes/(app)/journal-entries/+page.svelte:635-638`, `lib/features/reconciliation/GroupSettlementModal.svelte:797-798`, `lib/features/bank-import/ManualStatementForm.svelte:424-425`, `lib/components/invoices/InvoiceForm.svelte:1155-1158` | la seconde cellule est vide, ou ne porte qu'un texte `sr-only` | hors classe : rien à coller |
 
 Chaque site hors périmètre va à **une issue P4 par site** (« une issue par problème »), ouverte par l'orchestrateur
@@ -195,7 +195,8 @@ marge peuvent aussi se toucher quand la table manque de largeur : ce n'est pas l
    **Périmètre** : cette story supprime la **collision de ports** (la cause constatée). La **fragilité** des quatre sites
    `D=$(grep …)` sous `set -e`/`pipefail` — toute autre cause de refus arrête encore le test sans dire pourquoi — **reste hors
    périmètre** (plafond de trois issues) : elle va à une **issue distincte, I-1**, que l'orchestrateur ouvrira avant le
-   développement ; **#1499 ne couvre que la collision de ports**, et son corps sera précisé en ce sens à sa fermeture.
+   développement ; **#1499 ne couvre que la collision de ports**. La scission se fait **avant** le développement, à l'ouverture
+   d'I-1 : le nouveau corps de #1499 (texte prêt, § *Issues à ouvrir par l'orchestrateur*) renvoie la fragilité à I-1.
 3. **Les autres ressources partagées** (`inv-1499.txt`) : la racine jetable est unique (`mktemp -d /tmp/recette-montee-test.XXXXXX`,
    `:19`) ; `ecouter` (`:473-485`) laisse le système choisir son port (`bind(("127.0.0.1",0))`) ; aucun autre chemin fixe sous
    `/tmp` n'est écrit (la ligne `:574` est une assertion sur un chemin **dans le conteneur factice**). Les ports `23310`/`23410`
@@ -277,18 +278,30 @@ recette (`docs/manual/*/` : à vérifier en validation, `.tex` et PDF aplatis, a
      (`PB=$(port_libre 23410)`) — les deux seuls (`git grep -n 'port_libre' -- scripts` : `:388`, `:394`, `:395`). Les descripteurs
      sont gardés dans un tableau global (`VERROUS_PORTS+=("$fd")`), jamais fermés avant la fin du processus.
   2. **Le verrou** : pour chaque candidat `p` (et `p + 1` quand la fonction reçoit une largeur de 2, cas de `PB`), ouvrir
-     `exec {fd}>"$DOSSIER_VERROUS/port-$p.lock"` puis prendre `flock -n "$fd"`. **Sous `set -euo pipefail` (`:11`), `flock -n` se
+     `exec {fd}>"$DOSSIER_VERROUS/port-$p.lock"` (où `DOSSIER_VERROUS=${KESH_RECETTE_TEST_VERROUS:-/tmp/kesh-recette-montee-test-$(id -u)}`,
+     relu à chaque appel, point 4) puis prendre `flock -n "$fd"`. **Sous `set -euo pipefail` (`:11`), `flock -n` se
      garde toujours par `if`** : `if flock -n "$fd"; then …; else exec {fd}>&-; p=$((p + 2)); continue; fi` — un `flock -n` nu en
-     échec interromprait le test sans résumé, le symptôme même de l'issue. L'ouverture du fichier se garde de même
+     échec interromprait le test sans résumé, le symptôme même de l'issue. **Largeur 2** : si `p` est pris mais que `p + 1` est
+     refusé (verrou tenu ou port à l'écoute), le verrou de `p` **se relâche** (`exec {fd}>&-` sur le descripteur de `p`) avant de
+     passer au candidat suivant : aucun verrou orphelin ne reste tenu. L'ouverture du fichier se garde de même
      (`if ! exec {fd}>…; then …`, ou un test d'écriture préalable) et, en échec, arrête le test **avec un message** (`echo … >&2;
      exit 2`), jamais en silence.
   3. **`ss` contrôle `p` et `p + 1`** : un processus étranger à l'écoute sur `PB + 1` ferait refuser le script sous test
      (`recette-montee.sh:153-157`) ; le candidat est sauté si l'un des deux écoute.
-  4. **Dossier des verrous** : `DOSSIER_VERROUS=/tmp/kesh-recette-montee-test-$(id -u)` (créé par `mkdir -p`, mode 700) — un fichier
-     créé par un autre compte (CI, autre utilisateur) ne peut donc pas faire échouer l'ouverture. Les fichiers de verrou **ne se
+  4. **Dossier des verrous** : `port_libre` lit la variable **`KESH_RECETTE_TEST_VERROUS`** ; son défaut est le dossier par
+     utilisateur `/tmp/kesh-recette-montee-test-$(id -u)` (créé par `mkdir -p`, mode 700). C'est ce défaut que partagent les copies
+     pour réserver `PA` et `PB` ; T5 le remplace par des dossiers propres à la copie (AC-C2). **Garantie, dite exactement** : un
+     fichier de verrou créé par un autre compte dans un dossier partagé ne peut plus faire échouer l'ouverture, puisque chaque compte
+     a son dossier ; **sauf dossier squatté** — un autre compte qui aurait créé `/tmp/kesh-recette-montee-test-<uid>` avant le premier
+     lancement (`mkdir -p` réussit alors sans en changer le propriétaire) : l'ouverture échoue et le test s'arrête **avec un
+     message** (point 2), cas théorique sur la station. Les fichiers de verrou **ne se
      retirent pas** (retirer un fichier dont le verrou vient d'être relâché rouvrirait la course entre deux copies) ; c'est écrit en
      commentaire au-dessus de `port_libre`.
-  5. Deux copies simultanées prennent ainsi des ports distincts, sans attendre ni refuser. Vérifié par la validation P1 : `PA`
+  5. Deux copies simultanées prennent ainsi des ports distincts, sans attendre ni refuser. **T6 et une campagne de mutations à
+     plusieurs copies restent verts** : `PA` et `PB` se réservent dans le dossier partagé (c'est ce que T6 éprouve), et T5 ne touche
+     **jamais** ce dossier ni les plages 23310/23410 — il travaille dans des dossiers sous `$WORK` (unique par copie,
+     `mktemp -d`, `:19`), sur des ports que rien n'écoute, et ses attentes sont relatives au port rendu : deux copies jouent donc T5
+     en même temps sans se voir. Vérifié par la validation P1 : `PA`
      (pas de 2 depuis 23310) et `PB + 1` (impair, depuis 23411) ne se chevauchent pas avant 50 sauts.
   *Écartées* : un verrou global `flock -n` qui refuse la seconde copie (il fait rougir un lancement parce qu'un autre tourne — le
   défaut même) ; un verrou global bloquant (la seconde copie attendrait 337 à 389 s et dépasserait l'enveloppe de 600 s, § lot C,
@@ -296,7 +309,7 @@ recette (`docs/manual/*/` : à vérifier en validation, `.tex` et PDF aplatis, a
   suivre `PB`) ; garder `$(…)` et ouvrir le verrou après coup dans le shell principal (une fenêtre de course entre le choix et le
   verrou).
 - **D-C2 — Ce que la story vérifie avant d'écrire** (étape 0) : relu par la validation P1 sans objection — `exec 3>&1`/`3>&-`
-  (`recette-montee.sh:317`, `:409`, `:423`) ne touchent que le descripteur 3, et la relance `env -i … bash` (`:73-80`) ne ferme pas
+  (`recette-montee.sh:317`, `:409`, `:423`) ne touchent que le descripteur 3, et la relance `env -i … bash` (`:86-97`, `exec` à `:96`) ne ferme pas
   les descripteurs ≥ 10. L'agent de développement le relit à HEAD. Les processus de fond du test héritent du descripteur : un
   verrou peut survivre quelques secondes à la sortie (écoutes de 30 et 60 s) ; la copie suivante saute alors au port d'après —
   **sans effet sur le verdict**, à écrire en commentaire au-dessus de `port_libre`. Si la relecture contredit D-C1, l'agent
@@ -349,20 +362,37 @@ recette (`docs/manual/*/` : à vérifier en validation, `.tex` et PDF aplatis, a
 - **AC-C1** — `port_libre` est appelé directement aux deux sites (`:394`, `:395` d'origine) et rend `PORT_RESERVE` ; il réserve le
   port par un verrou exclusif non bloquant pris **dans le shell principal**, gardé par `if` ; `PB + 1` est réservé et contrôlé à `ss`
   avec `PB` ; dossier des verrous par utilisateur (D-C1). Constat : `git grep -n '\$(port_libre' -- scripts` **vide**, et lecture.
-- **AC-C2** — **T5** (dans le test shell lui-même, section « ports », sur une **plage distincte** de 23310/23410, par exemple
-  24310) : (i) **après le retour** de `port_libre 24310`, un processus de fond tente `flock -n <fichier du port rendu> true` — qui **rouvre** le fichier,
-  jamais sur un descripteur hérité, dont la description partagée prendrait le verrou sans conflit — et
-  **échoue** — le verrou est encore tenu par le shell principal (c'est ce cas qui rougit si le verrou est pris dans un sous-shell) ;
-  (ii) un processus de fond tient le verrou de 24310 : `port_libre 24310` rend 24312 ; (iii) témoin positif : un fichier de verrou
-  libre se prend (`flock -n` réussit depuis un processus de fond sur un port jamais réservé, 24390). Témoins positif et négatif dans
+- **AC-C2** — **T5** (dans le test shell lui-même, section « ports ») se joue **entièrement dans des dossiers de verrous propres à la
+  copie** — `KESH_RECETTE_TEST_VERROUS="$WORK/verrous-t5-<cas>" port_libre …` (affectation préfixée, qui ne vaut que pour l'appel)
+  — sur des ports **distincts par cas**, hors de 23310/23410, et **ses attentes sont relatives au port rendu** (jamais une valeur
+  absolue que l'état de la station pourrait déplacer) :
+  - (i) **verrou tenu au retour** — après `port_libre 24310` (dossier `verrous-t5-i`), un processus de fond tente
+    `flock -n <fichier du port rendu> true` — qui **rouvre** le fichier, jamais sur un descripteur hérité, dont la description
+    partagée prendrait le verrou sans conflit — et **échoue** : le verrou est encore tenu par le shell principal (c'est ce cas qui
+    rougit si le verrou est pris dans un sous-shell, M5) ;
+  - (ii) **port tenu sauté** — un tenant de fond prend le verrou du port `q` (premier port libre à `ss` à partir de 24330, dossier
+    `verrous-t5-ii`) ; `port_libre 24330` dans ce dossier rend un port **différent de `q` et supérieur** (M4) ;
+  - (iii) **témoin positif** — dans un dossier `verrous-t5-iii` vide, `flock -n` sur un port jamais réservé (24390) réussit depuis
+    un processus de fond ;
+  - (iv) **la variable est lue** — un tenant de fond tient `r` (premier port libre à `ss` à partir de 24350) dans `verrous-t5-iv-autre` ;
+    `KESH_RECETTE_TEST_VERROUS="$WORK/verrous-t5-iv-autre" port_libre 24350` rend un port ≠ `r`, et
+    `KESH_RECETTE_TEST_VERROUS="$WORK/verrous-t5-iv" port_libre 24350` rend `r` (M6).
+  **Tenants de fond synchronisés** (V2-2) : chacun se lance par `flock -n <fichier> bash -c 'touch "<prêt>"; sleep 60'`
+  (toujours `-n`, jamais bloquant), sorties vers `/dev/null` et descripteurs du test fermés (`3>&-`, et ceux de `VERROUS_PORTS`),
+  pour ne pas retenir la lecture de l'enveloppe Rust ; le test attend le fichier `<prêt>` par une boucle **bornée** (5 s, puis
+  `fail` avec message), et **vérifie** par une sonde `flock -n … true` qui échoue que le verrou est bien tenu, avant d'appeler
+  `port_libre`. Chaque tenant est tué et attendu (`kill`, `wait`) en fin de bloc, et un **`trap … EXIT`** étendu (`kill` des PID
+  notés dans `T5_PIDS`, puis `rm -rf "$WORK"`, `:20`) garantit le nettoyage même si le test s'arrête. Témoins positif et négatif dans
   le même bloc.
-- **AC-C3** — **T6** : **une seule invocation**, sous le verrou de voie et sous `mem-guard`, lance les deux copies en même temps :
-  `flock /home/gcorbaz/devel/kesh-gate-logs/.gate.lock scripts/mem-guard.sh bash -c 'bash scripts/tests/recette-montee.test.sh >
+- **AC-C3** — **T6** : **une seule invocation**, prise comme la voie « Base et Rust » (`docs/agents-orchestration.md` § 5.1,
+  `:197` : recettes de montée et mutations), lance les deux copies en même temps :
+  `flock /tmp/station-heavy.lock flock /home/gcorbaz/devel/kesh-gate-logs/.gate.lock scripts/mem-guard.sh bash -c 'bash scripts/tests/recette-montee.test.sh >
   …/t6-copie1.log 2>&1 & bash scripts/tests/recette-montee.test.sh > …/t6-copie2.log 2>&1 & wait'` (deux copies dans **une**
   place de `mem-guard`, qui n'en offre que deux sur la station : deux invocations séparées pourraient s'attendre et ne pas se
   recouvrir). Chaque copie **imprime au démarrage** `PA`, `PB` et un horodatage, et à la fin un horodatage ; le journal
   `kesh-gate-logs/e49solde/t6-deux-copies.log` réunit les deux sorties et **prouve le recouvrement** (intervalles qui se
-  chevauchent) ; chaque copie rend « ✅ aucune assertion en échec » et le code 0 ; les `PA`/`PB` sont distincts. Durée de chaque
+  chevauchent) ; chaque copie rend « ✅ aucune assertion en échec » et le code 0, **T5 compris** (ses lignes ✓ figurent dans les deux journaux) ;
+  les `PA`/`PB` sont distincts. Durée de chaque
   copie notée (deux copies concurrentes allongent les 337 à 389 s mesurés ; lancé directement, le test n'a pas l'enveloppe de
   600 s).
 - **AC-C4** — `docs/testing.md:643` et `docs/ci.md:101` sont à jour (D-C3, D-C4) ; `git grep -n -iE 'deux copies lancées en même
@@ -387,8 +417,9 @@ recette (`docs/manual/*/` : à vérifier en validation, `.tex` et PDF aplatis, a
 | **T3** — `pr-2` sur chaque cellule (AC-B1) | B | `credit-note-display-page.test.ts` | **écrit avant le code** : rouge sur `59fb28712` (aucune cellule ne porte `pr-2`) — journal `t3-rouge.log` |
 | **M3** — mutation : retirer `pr-2` de la seule cellule du taux (`:198`) | B | `+page.svelte` | T3 rouge ; journal `m3.log` |
 | **T4** — captures avant / après (AC-B3) | B | `kesh-gate-logs/e49solde/captures/` | constat visuel ; un test vérifie qu'une classe existe, non qu'on voit l'écart (`CLAUDE.md` § *Recette visuelle*) |
-| **T5** — réservation (AC-C2, cas i à iii) | C | `scripts/tests/recette-montee.test.sh` | **rouge par mutations** M4 et M5 |
+| **T5** — réservation (AC-C2, cas i à iv) | C | `scripts/tests/recette-montee.test.sh` | **rouge par mutations** M4, M5 et M6 |
 | **M4** — mutation : `port_libre` sans verrou (retour au code de `59fb28712`) | C | idem | T5 (ii) rouge (le port tenu n'est pas sauté) ; journal `m4.log` |
+| **M6** — mutation : `port_libre` ignore `KESH_RECETTE_TEST_VERROUS` (dossier par utilisateur en dur) | C | idem | T5 (iv) rouge (le premier appel rend `r`, le port tenu ailleurs) ; journal `m6.log`. Preuve que T5 joue dans ses propres dossiers, donc que deux copies ne s'y voient pas (V2-1) |
 | **M5** — mutation : verrou pris **dans un sous-shell** — `port_libre` remis en `PORT=$( … )` autour de l'ouverture et du `flock` | C | idem | T5 (i) rouge (le verrou est relâché au retour : le `flock -n` de fond réussit) ; journal `m5.log`. C'est la preuve que V1-1 est fermé, non portée par T6 seul (probabiliste) |
 | **T6** — deux copies simultanées (AC-C3) | C | une invocation sous `.gate.lock` et `mem-guard` | **rouge avant le code** : les deux copies sur `59fb28712`, même invocation — au moins une sans résumé ou en échec (collision dans la fenêtre de 30 s du crochet), journal `t6-rouge.log` ; si deux tirages ne reproduisent pas, le dire au Dev Agent Record (le rouge reste porté par M4 et M5) |
 
@@ -400,7 +431,7 @@ recette (`docs/manual/*/` : à vérifier en validation, `.tex` et PDF aplatis, a
 - [ ] **Lot A** — T1 (rouge, journal) ; D-A1 ; D-A2 ; T1 vert ; M1, M2 ; doc-comments (`invoices.types.ts`, `invoice-line-type.ts`).
       Commit `refs #1464`.
 - [ ] **Lot B** — captures **avant** (T4) ; T3 (rouge, journal) ; D-B1 ; T3 vert ; M3 ; captures **après**. Commit `refs #1466`.
-- [ ] **Lot C** — T6-rouge (deux copies sur le code d'origine, une invocation) ; D-C1 (sites `:394`, `:395` réécrits) ; T5 ; M4, M5 ;
+- [ ] **Lot C** — T6-rouge (deux copies sur le code d'origine, une invocation) ; D-C1 (sites `:394`, `:395` réécrits) ; T5 ; M4, M5, M6 ;
       T6 vert ; D-C3 (dont la valeur périmée de `docs/ci.md:101`), D-C4. Commit `refs #1499`.
 - [ ] **Propagation** — `git grep` des symptômes corrigés (`quantity?:`, « deux copies », `py-2 text-right">{line.vatRate}`) sur tout
       le dépôt ; tout site neuf traité ou écrit.
@@ -449,13 +480,14 @@ lue, sinon la raison suffit à écarter.
 | #1500 | `technical-debt`, P4 | Installer `shellcheck` sur la station et en CI : hors du périmètre d'une story (installation interdite aux agents). |
 | #1502 | `technical-debt`, P4 | Le juge des mutations vit **hors dépôt** (`kesh-gate-logs/e491d/mut/`). |
 | #1504 | `technical-debt`, P4 | Déjà corrigée, **hors dépôt** : `/home/gcorbaz/devel/kesh-gate-logs/rel0200/verifs-0200.sh:15` (`succes=$(SQL "SELECT success FROM _sqlx_migrations WHERE version = 20261118000002")`) ; le commit `d2416c596` que cite le commentaire de l'issue ne touche pas ce fichier (`git show --stat` : `scripts/recette-montee.sh` et son test seulement). |
+| #1363 | `bug`, P3 — **PDF** | Désignation tronquée à 44 caractères : portée par la 49-4b (Epic 52), milestone v0.22.0 ; pas de la dette des revues de l'épique. |
 | #1330, #1374, #1364, #1400, #1401, #1423 | — | Hors classe : CR, issues portées par les stories elles-mêmes, ou rangées à d'autres milestones (v0.20.0, v0.21.0, v0.22.0, « Plus tard ») ; pas de la dette des revues de l'épique. |
 
 
 ## Issues à ouvrir par l'orchestrateur
 
-Six issues, **une par problème**, à ouvrir **avant le développement** (I-1) ou à la clôture (I-2 à I-6), au rythme des limites
-GitHub (cinq secondes au moins entre deux créations). Texte prêt :
+Sept issues, **une par problème**, à ouvrir **avant le développement** (I-1, avec le nouveau corps de #1499) ou à la clôture (I-2 à
+I-7), au rythme des limites GitHub (cinq secondes au moins entre deux créations). Texte prêt :
 
 **I-1** — `technical-debt`, P3 — *recette-montee.test.sh : un refus du script sous test arrête le test sous `set -e` avant son
 résumé (`D=$(grep -oE 'dossier .*$' …)`)*
@@ -468,32 +500,53 @@ résumé (`D=$(grep -oE 'dossier .*$' …)`)*
 > autre cause de refus. **Remède** : lire le dossier sans arrêt du test (`… || true`, ou lecture sans tube) et faire échouer
 > l'assertion qui suit, avec la sortie du script. Origine : validation P1 de la fiche 49-5 (V1-2), refs #1499.
 
-**I-2** — `bug`, P4 — *Journal d'audit : « N° » et « Détails » collés (marge droite absente)*
+**I-2** — `bug`, `triage`, P4 — *Journal d'audit : « N° » et « Détails » collés (marge droite absente)*
 > `frontend/src/routes/(app)/audit-log/+page.svelte:364-365` (en-têtes) et `:387-388` (cellules) : la cellule du numéro d'entité,
 > alignée à droite (`class="py-2 text-right"`), est suivie de la cellule « Détails », alignée à gauche, sans marge horizontale ;
 > leurs contenus se touchent. Même défaut que #1466 (fiche d'un avoir), corrigé là par `pr-2` sur chaque cellule (convention de la
 > fiche de facture). Constat au code seul (balayage de la validation P1 de la Story 49-5), sans capture. Cosmétique.
 
-**I-3** — `bug`, P4 — *Détail d'un import bancaire : « Montant » et « Référence » collés*
+**I-3** — `bug`, `triage`, P4 — *Détail d'un import bancaire : « Montant » et « Référence » collés*
 > `frontend/src/routes/(app)/bank-import/[id]/+page.svelte:170-171` (en-têtes `class="text-right"` → `class="text-left"`) et
 > `:183-184` (`{tx.amount} {tx.currency}` → `{tx.reference ?? '—'}`) : aucune marge horizontale entre la colonne du montant,
 > alignée à droite, et celle de la référence. Même défaut que #1466. Constat au code seul (Story 49-5), sans capture. Cosmétique.
 
-**I-4** — `bug`, P4 — *Import de relevé (aperçu) : « Montant » et « Détails » collés*
+**I-4** — `bug`, `triage`, P4 — *Import de relevé (aperçu) : « Montant » et « Détails » collés*
 > `frontend/src/lib/features/bank-import/BankImportUpload.svelte:867-868` (en-têtes) et `:875-876` (cellules) : la colonne du
 > montant, alignée à droite, est suivie de « Détails », alignée à gauche, sans marge horizontale. Même défaut que #1466. Constat au
 > code seul (Story 49-5), sans capture. Cosmétique.
 
-**I-5** — `bug`, P4 — *Propositions de rapprochement : « Montant » et « Contrepartie » collés*
+**I-5** — `bug`, `triage`, P4 — *Propositions de rapprochement : « Montant » et « Contrepartie » collés*
 > `frontend/src/lib/features/reconciliation/ReconciliationProposals.svelte:708-709` (en-têtes) et `:756-757` (cellules,
 > `{p.transaction.amount} {p.transaction.currency}` → `{p.transaction.counterpartyName ?? ''}`) : aucune marge horizontale entre
 > le montant, aligné à droite, et la contrepartie. Même défaut que #1466. Constat au code seul (Story 49-5), sans capture.
 > Cosmétique.
 
-**I-6** — `bug`, P4 — *Saisie d'une écriture : en-têtes « Crédit » et « Projet » collés quand la colonne Projet est affichée*
+**I-6** — `bug`, `triage`, P4 — *Saisie d'une écriture : en-têtes « Crédit » et « Compte analytique » collés quand la colonne
+analytique est affichée*
 > `frontend/src/lib/features/journal-entries/JournalEntryForm.svelte:864-873` : l'en-tête « Crédit » (`text-right`, sans marge) est
-> suivi de l'en-tête « Projet » (`text-left`, sans marge) quand `showProjectColumn` est vrai ; les cellules du corps portent `pr-2`
+> suivi de l'en-tête « Compte analytique » (`:874`, clé `journal-entry-form-col-project` ; `text-left`, sans marge) quand
+> `showProjectColumn` est vrai ; les cellules du corps portent `pr-2`
 > (`:884-951`), pas les en-têtes. Constat au code seul (Story 49-5), à confirmer à l'écran avant correction. Cosmétique.
+
+**I-7** — `bug`, `triage`, P4 — *Fiche d'une facture : les montants du pied sont décalés de 8 px vers la droite par rapport aux totaux
+de ligne*
+> `frontend/src/routes/(app)/invoices/[id]/+page.svelte` : le total de chaque ligne porte `pr-2` (`:1410`,
+> `<td class="py-2 pr-2 text-right font-mono">`), mais pas les montants du pied (`:1429` sous-total HT, `:1438` TVA par taux,
+> `:1448` arrondi, `:1457` et `:1466`, `class="py-1 text-right font-mono"` / `class="py-3 text-right …"`) : les montants du pied
+> ne s'alignent pas sur la colonne des totaux de ligne. Relevé par la validation P2 de la fiche 49-5 (la fiche d'un avoir, corrigée
+> par #1466, met `pr-2` aussi sur son pied). Constat au code seul, sans capture. Cosmétique.
+
+**Nouveau corps de #1499** (à poser par l'orchestrateur **à l'ouverture d'I-1**, avant le développement ; le titre devient
+*« recette-montee.test.sh : deux exécutions simultanées prennent les mêmes ports »*) :
+> Deux exécutions simultanées de `scripts/tests/recette-montee.test.sh` prennent les mêmes ports : `port_libre`
+> (`:388-395` à `59fb28712`) constate qu'un port n'est pas à l'écoute mais ne le **réserve** pas, si bien que deux copies lancées
+> ensemble choisissent `PA=23310` et `PB=23410` ; l'une voit alors le port de l'autre (écoute du crochet sur `PB + 1`, `:864-873`)
+> et le script sous test refuse (`scripts/recette-montee.sh:153-157`). Code de la Story 33-10, constaté pendant la Story 49-1d.
+> **Remède** (Story 49-5) : réservation de chaque port par un verrou `flock` pris dans le shell principal.
+> **Hors de cette issue** : l'arrêt du test sous `set -e` avant son résumé quand le script sous test refuse (les quatre
+> `D=$(grep -oE 'dossier .*$' …)`) est suivi par I-1 (#N à reporter), qu'il vienne de cette collision ou d'une autre cause.
+> Origine : story 49-1d (#1242) ; scission décidée à la validation de la fiche 49-5.
 
 ## Dev Notes
 
@@ -527,3 +580,4 @@ résumé (`D=$(grep -oE 'dossier .*$' …)`)*
 |---|---|
 | 2026-11-24 | **Fiche écrite** (Opus 5.5, `bmad-create-story`), base `59fb28712`. Plafond **provisoire** de trois issues, à confirmer par le Project Lead (C-e49s-1). Retenues : #1464 (P3), #1499 (P3), #1466 (P4) ; #1399 (PDF) et #1465 (P3) écartées au code (C-e49s-2, C-e49s-3). Deux modules de production (`invoices`, `credit-notes`), aucune migration. Statut `drafted` ; validation P1 (Sonnet) à lancer. |
 | 2026-11-24 | **Validation P1 remédiée** (Opus 5.5). **Passe P1** : Sonnet 5.5, complète, contexte frais (`kesh-gate-logs/e49solde/validation-p1.md`) : **0/1/2/9** (CRITICAL/HIGH/MEDIUM/LOW), onze axes déclarés, tous exercés (A6 par raisonnement : aucune exécution). Prémisses relues au code avant remède. **V1-1 (HIGH)** : `PA=$(port_libre …)` (`recette-montee.test.sh:394-395`) tient le verrou dans un sous-shell — D-C1 réécrit : appel direct, résultat dans `PORT_RESERVE`, sites `:394`, `:395` nommés, `flock -n` gardé par `if` sous `set -e` ; T5 (i) rougit si le verrou est perdu au retour, mutation M5 neuve. **V1-2 (MEDIUM)** : « mécanisme non établi » retiré, cité à la 49-1d (`:944`, `:1496-1502`) ; les quatre `D=$(grep -oE …)` (`:589`, `:755`, `:858`, `:875`) restent hors périmètre (plafond de trois issues) → issue I-1, et #1499 ne couvre que la collision de ports (corps précisé à sa fermeture). **V1-3 (MEDIUM)** : inventaire du lot B refait par un balayage de tous les `.svelte` (`kesh-gate-logs/e49solde/outils/paires-droite-gauche.py`, lecture seule) : quinze paires, ensemble clos classé ; hors module → une issue P4 chacune (I-2 audit-log, I-3 bank-import/[id], I-4 BankImportUpload, I-5 ReconciliationProposals, et I-6 JournalEntryForm, que le balayage a ajouté) ; angle mort du balayage écrit. **LOW** : V1-4 (chemin de `InvoiceForm.svelte`, lecture du grain « module » sous les deux sens, `ecouter` `:473-485`) ; V1-5 (exposition réelle : campagnes de mutations et lancements hors verrou, non les gates, sérialisés par `.gate.lock`) ; V1-6 (AC-C3 : une seule invocation sous `.gate.lock` et `mem-guard`, preuve du recouvrement par horodatages) ; V1-7 (`PB + 1` contrôlé à `ss`, verrous dans un dossier par utilisateur, fichiers non retirés, plage distincte pour T5) ; V1-8 (cas de type sur une ligne, dans un `it`) ; V1-9 (le pied de la facture n'a pas `pr-2` : écrit dans D-B1) ; V1-10 (`docs/ci.md:101` : `flock` et la valeur périmée « 99 à 104 s » corrigés dans le lot C) ; V1-11 (« seule P4 `bug` retenable », lecture de « dette des stories », #1504 cité à `verifs-0200.sh:15`). Section *Issues à ouvrir par l'orchestrateur* ajoutée (I-1 à I-6, texte prêt). Remédiation textuelle seule (fiche) ; validation P2 (Opus, complète) à lancer, prompt `49-5-solde-dette-epic-validation-prompt-p2.md`. |
+| 2026-11-24 | **Validation P2 remédiée** (Opus 5.5). **Passe P2** : Opus 5.5, complète, contexte frais (`kesh-gate-logs/e49solde/validation-p2.md`) : **0/0/1/8**, treize axes déclarés, tous exercés (A6 par raisonnement et sondes sans écriture). Prémisses relues au code avant remède (`docs/agents-orchestration.md:197`, `recette-montee.sh:86`, `:96`, `JournalEntryForm.svelte:874`, `invoices/[id]/+page.svelte:1410`, `:1429`, `:1438`, `:1448`, `:1457`, `:1466`). **V2-1 (MEDIUM, né de la remédiation de V1-1/V1-7 ; sévérité inférieure au HIGH de la P1 : signal de splitting non atteint)** : T5 se joue dans des dossiers de verrous propres à la copie (`KESH_RECETTE_TEST_VERROUS`, lue par `port_libre`, défaut le dossier par utilisateur), attentes relatives au port rendu ; cas (iv) neuf et mutation M6 (variable ignorée) ; D-C1 point 5 dit pourquoi T6 et une campagne à plusieurs copies restent verts ; T6 exige T5 vert dans les deux journaux. **LOW** : V2-2 (tenants de fond `flock -n`, prêts signalés par fichier, sonde de vérification, `kill`/`wait`, `trap` étendu, descripteurs fermés) ; V2-3 (`p` relâché quand `p + 1` est refusé ; garantie du dossier par utilisateur reformulée, cas du dossier squatté) ; V2-4 (T6 sous `/tmp/station-heavy.lock` puis `.gate.lock`, § 5.1) ; V2-5 (relance citée `:86-97`, `:96`) ; V2-6 (#1363 ajoutée aux écartées) ; V2-7 (I-6 « Compte analytique » ; `triage` sur I-2 à I-6) ; V2-8 (nouveau corps de #1499 prêt, posé à l'ouverture d'I-1, non à la fermeture) ; V2-9 (I-7, pied de la fiche de facture sans `pr-2`). Remédiation textuelle seule (fiche, lot C et sections d'issues) : passe ciblée P3 (Sonnet) sur ce seul commit, prompt `49-5-solde-dette-epic-validation-prompt-p3-ciblee.md`. |
