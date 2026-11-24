@@ -358,21 +358,23 @@ export interface CancelSettlementResponse {
 	reversalJournalEntryId: number;
 }
 
-export interface CreateInvoiceLineRequest {
-	/**
-	 * Type de la ligne (Story 49-1c, D5) : toujours envoyé par l'écran. L'API
-	 * accepte son absence (elle vaut `priced`, contrat de la 0.19.0).
-	 */
-	lineType: InvoiceLineType;
+/** Les types d'une ligne de texte, sans montant (Story 49-5, #1464). */
+export type InvoiceTextLineType = Exclude<InvoiceLineType, 'priced'>;
+
+/**
+ * Charge d'une ligne **chiffrée** (`priced`) : quantité, prix unitaire et taux
+ * sont obligatoires, comme l'exige le serveur (Story 49-5, #1464).
+ *
+ * `lineType` est toujours envoyé par l'écran (Story 49-1c, D5) ; l'API accepte
+ * son absence (elle vaut `priced`, contrat de la 0.19.0) : ce type décrit ce que
+ * l'écran envoie, non tout ce que l'API accepte.
+ */
+export interface CreatePricedInvoiceLineRequest {
+	lineType: 'priced';
 	description: string;
-	/**
-	 * Quantité, prix unitaire et taux : exigés d'une ligne `priced`, **absents**
-	 * d'une ligne de texte (`comment`, `heading`), dont la charge est
-	 * `{ lineType, description }` seulement (`ligneAEnvoyer`, Story 49-1c, D3).
-	 */
-	quantity?: string;
-	unitPrice?: string;
-	vatRate?: string;
+	quantity: string;
+	unitPrice: string;
+	vatRate: string;
 	/**
 	 * Compte de produit de la ligne (Story 16-1a, #152). Optionnel : omettre la
 	 * clé ou envoyer `null` fait suivre le compte par défaut de la société — le
@@ -385,6 +387,21 @@ export interface CreateInvoiceLineRequest {
 	 */
 	revenueAccountId?: number | null;
 }
+
+/**
+ * Charge d'une ligne de **texte** (`comment`, `heading`) : `{ lineType,
+ * description }` seulement, aucun montant ne part (`ligneAEnvoyer`, Story 49-1c,
+ * D3 ; le serveur refuserait une quantité non nulle).
+ */
+export interface CreateTextInvoiceLineRequest {
+	lineType: InvoiceTextLineType;
+	description: string;
+}
+
+/** Charge d'une ligne : typée par son `lineType` (union discriminée, #1464). */
+export type CreateInvoiceLineRequest =
+	| CreatePricedInvoiceLineRequest
+	| CreateTextInvoiceLineRequest;
 
 export interface CreateInvoiceRequest {
 	contactId: number;
