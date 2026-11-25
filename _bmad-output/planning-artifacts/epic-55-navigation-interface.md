@@ -93,8 +93,8 @@ Base `origin/main` à `1e23edb55` ; branches de l'Epic 46 lues par `git show <br
   l'écran se déduit de l'URL au chargement **et à chaque navigation** (Retour, Suivant, lien), par une fonction pure
   (`reports-url.ts`, lecture et écriture), non par des effets dispersés. (55-1a)
 - **D2 — Empiler ou remplacer selon le geste.** Clic sur un onglet et clic sur un lien de compte : **`pushState`** (une
-  entrée d'historique) ; *Générer*, contrôles de regroupement, accordéons et flèches du clavier sur les onglets :
-  **`replaceState`** ; un champ modifié sans *Générer* n'écrit rien (l'URL décrit le dernier rapport demandé).
+  entrée d'historique) ; *Générer* et flèches du clavier sur les onglets : **`replaceState`** ; les contrôles de
+  regroupement et les accordéons n'écrivent pas l'URL, c'est la réponse affichée qui l'écrit (55-1b) ; un champ modifié sans *Générer* n'écrit rien (l'URL décrit le dernier rapport demandé).
   ⚠️ Le clic sur un onglet en `pushState` **renverse D-7c** de la Story 21-7 (« pas d'empilement ») : c'est la demande de
   l'utilisateur (b). (55-1a)
 - **D3 — Une URL venue de l'extérieur affiche son rapport ; un clic sur un onglet ne génère rien (Q2).** Arrivée sur une
@@ -105,9 +105,9 @@ Base `origin/main` à `1e23edb55` ; branches de l'Epic 46 lues par `git show <br
   paramètre reste l'écran d'aujourd'hui. *Écarté* (validation P1 de la 55-1, devenue 55-1a) : générer à chaque changement d'onglet.
   *(Amendée le 2026-11-25.)*
 - **D4 — Vue de regroupement : URL d'abord, mémoire ensuite.** Les paramètres de regroupement de l'URL priment sur la
-  mémoire du navigateur de l'Epic 46 ; absents, la vue mémorisée s'applique et l'URL est complétée (`replaceState`), pour
-  qu'un lien copié porte la vue affichée. La vue affichée reste mémorisée comme le fait déjà l'Epic 46 (dernière vue
-  affichée par société et rapport). (55-1b)
+  mémoire du navigateur de l'Epic 46 ; absents, la vue des contrôles (qui porte la mémoire) s'applique. La présentation
+  n'entre dans l'URL **que par la réponse affichée** (qui complète l'URL), pour qu'un lien copié porte la vue affichée.
+  *(Amendée à la validation P4 de la 55-1b.)* (55-1b)
 - **D5 — Valeurs invalides : ignorées paramètre par paramètre, URL normalisée** en `replaceState`, sans message. Les
   bornes métier (période hors exercice, `from > to`) restent jugées par l'API, avec ses messages d'aujourd'hui. (55-1a)
 - **D6 — Un seul composant de lien de compte** (`AccountLink.svelte`) qui rend le numéro et le lien de `ledgerHref` ;
@@ -197,7 +197,7 @@ Déclarés au kickoff (`CLAUDE.md` § *Fusions et fichiers communs*), relevés l
 |---|---|---|---|
 | `frontend/src/routes/(app)/reports/+page.svelte` | 55-1a (fort), 55-1b, 55-2, 55-3b | **Epic 46** (`pr/46-rapports-groupes` `511e61d54`, `story/46-export-api-groupe` `8ca669b3f`, `story/46-5` `0f483c7bb` : +287 lignes, `GroupingControls`, `genSeq`/`invalidateInFlight`, `companyId`) | 55 part de la PR 46 ; l'état de regroupement passe par l'URL (D4) |
 | `frontend/src/routes/(app)/reports/+page.ts` | 55-1a (lecture) | Epic 46 (`companyId`) | — |
-| `frontend/src/lib/features/reports/reports-grouping.ts` | 55-1b (lecture de la vue depuis l'URL) | **Epic 46** (neuf) | réutiliser `sanitizeGroupingView`, `isDetailLevel`, aucune copie |
+| `frontend/src/lib/features/reports/reports-grouping.ts` | 55-1b (`groupingFromParams` neuve, borne `Number.isSafeInteger` dans `readIdList`) | **Epic 46** (neuf) | réutiliser `sanitizeGroupingView`, `isDetailLevel`, aucune copie |
 | `frontend/src/lib/features/reports/GroupingControls.svelte`, `GroupedReportRows.svelte` | 55-2 (`AccountLink` dans `GroupedReportRows`) | **Epic 46** (neufs) | — |
 | `frontend/src/lib/features/reports/BalanceSheetView.svelte`, `IncomeStatementView.svelte` | 55-2 | **Epic 46** (branches groupées) ; **Epic 47** (`epic/47-comptes-miroirs` : `MirrorOfNote`) | lien seul remplacé, structure inchangée ; `MirrorOfNote` (Epic 47) reste en texte, issue ouverte par la 55-2 : le second arrivé le sait |
 | `frontend/src/lib/features/reports/TrialBalanceView.svelte` | 55-2 | **Epic 46** (46-6b, balance groupée) | idem |

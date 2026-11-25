@@ -70,13 +70,20 @@ n'entre dans l'URL que par la réponse affichée**. Les gestes de présentation 
   vue (46-2) ; l'URL reste celle du dernier rapport demandé.
 - **Clic sur un onglet groupé** : la clé affichée de l'onglet (55-1a), présentation comprise ; s'il n'a pas de rapport,
   `?tab=<id>` seul.
+- **Bouton *Générer* sur un onglet groupé** : le gestionnaire (55-1a) écrit les paramètres du rapport **et la vue des
+  contrôles** envoyée avec la requête — l'URL égale alors la clé en vol ; la réponse ne réécrit que si l'écho change la vue.
+- **Règle d'écriture** (55-1a) : aucun `goto` si la recherche écrite égale `page.url.search` ; `lastHandledKey` est la clé
+  canonique **avec** la présentation.
 
 ### Ce que la page lit (`applyUrl` de la 55-1a, pour un onglet groupé)
 
 1. **Vue** — URL complète : `groupingFromParams`. `view=flat` **seul** : `{ ...groupingViews[tab], shown: false }` (les
    autres choix sont gardés, manuel de la PR 46 `:4207-4211`) ; `view=flat` accompagné d'autres paramètres : ceux-ci sont
-   ignorés et retirés à la normalisation. Sinon, si `anyValid`, la vue de l'URL (absents : vue par défaut de la 46-2) ;
-   sinon, la vue mémorisée (`readGroupingView`). La vue retenue est posée par `setGroupingView` (contrôles et mémoire). URL
+   ignorés et retirés à la normalisation. Sinon, si `anyValid` (**au moins un champ effectivement retenu** par
+   `sanitizeGroupingView` — `open=5&closed=5` seul n'en retient aucun), la vue de l'URL (absents : vue par défaut de la
+   46-2) ; sinon, **la vue des contrôles** `groupingViews[tab]` (qui porte déjà la mémoire du navigateur, relue avant la
+   première requête et tenue à jour par `setGroupingView`) — jamais une relecture du stockage, qui rendrait la vue par
+   défaut si le stockage est refusé. La vue retenue est posée par `setGroupingView` (contrôles et mémoire). URL
    incomplète ou `/reports` : la vue ne change pas.
 2. **Rapport** — on compare la clé de l'URL (paramètres et vue retenue) :
    - à la **clé en vol** de l'onglet : égale, rien (la réponse arrive et écrira l'URL) ;
@@ -95,12 +102,14 @@ n'entre dans l'URL que par la réponse affichée**. Les gestes de présentation 
 |---|---|---|
 | Contrôle de présentation, rapport affiché | 1 (la 46-2) | 1 (à la réponse) |
 | Contrôle de présentation, sans rapport ni chargement | 0 | 0 |
+| *Générer* sur un onglet groupé | 1 | 1 (au geste ; 0 de plus à la réponse, sauf écho) |
 | Retour vers la clé affichée, rien en vol | 0 | 0 |
 | Retour vers la clé affichée, redemande de l'onglet en vol | 0 (péremption) | 0 |
-| Retour vers la clé en vol | 0 | 1 (à la réponse) |
-| Retour, mêmes paramètres, autre vue | 1 | 1 (à la réponse) |
+| Retour vers la clé en vol | 0 | 0 (la réponse égale l'URL ; 1 si l'écho la change) |
+| Retour, mêmes paramètres, autre vue | 1 | 0 (idem) |
 | URL sans présentation, rapport gardé égal | 0 | 1 |
-| URL à normaliser et compléter | selon le rapport | 1 |
+| URL à normaliser, sans requête | 0 | 1 |
+| URL à normaliser **et** une requête | 1 | 1 (normalisation) + 1 si la réponse diffère |
 | Entrée ancienne dont un groupe a disparu | 1 si redemandée | 1 (écho) |
 
 ## Critères d'acceptation
@@ -117,11 +126,14 @@ n'entre dans l'URL que par la réponse affichée**. Les gestes de présentation 
 4. **AC-4 — Retour vers une autre présentation.** Bilan au niveau 2, clic sur l'onglet *Balance*, clic sur le Bilan, niveau 3,
    puis *Retour* deux fois : le Bilan **au niveau 2**, contrôles au niveau 2 ; sans la 55-1b, les contrôles restent au
    niveau 3 — le test rougit.
-5. **AC-5 — Règle de la 46-2 intacte.** Scénario X1 (niveau changé sur le Bilan, *Générer* sur le Compte de résultat, clic
-   sur le Bilan) et le même par *Retour* : le Bilan est redemandé dans la vue des contrôles **à la fin** de l'autre
-   génération, qui n'est pas interrompue ; l'URL porte ensuite la clé affichée.
+5. **AC-5 — Règle de la 46-2 intacte.** Scénario X1 (niveau changé sur le Bilan, *Générer* sur le Compte de résultat, **clic**
+   sur le Bilan) : le Bilan est redemandé dans la vue des contrôles **à la fin** de l'autre génération, qui n'est pas
+   interrompue ; l'URL porte ensuite la clé affichée. Le même par ***Retour*** vers l'entrée du Bilan : les contrôles
+   prennent la vue de l'entrée (la clé affichée), **0 requête**, l'autre génération n'est pas interrompue — *Retour* écarte
+   un choix de présentation qui n'était pas encore affiché.
 6. **AC-6 — Les gestes n'écrivent pas l'URL.** Contrôle changé avec rapport affiché : aucun `goto` avant la réponse, un à la
-   réponse, une requête, **une** écriture en mémoire (espion sur `localStorage.setItem`) ; sans rapport : 0 `goto`, 0
+   réponse, une requête, deux écritures en mémoire — une au geste (`changeGrouping`), une à la réponse (`acceptGrouped`) —,
+   **aucune** du fait de l'URL (espion sur `localStorage.setItem`) ; sans rapport : 0 `goto`, 0
    requête.
 7. **AC-7 — Écho.** Un groupe ouvert à la main puis disparu du plan : la réponse le retire des listes ; l'URL et la mémoire
    le retirent ; *Retour* puis *Suivant* vers cette entrée : 0 requête.
@@ -135,10 +147,14 @@ n'entre dans l'URL que par la réponse affichée**. Les gestes de présentation 
     (redemande en vol), *Retour* deux fois vers l'entrée du niveau 2 : 0 requête, la redemande en vol périmée, l'écran au
     niveau 2 sous des contrôles au niveau 2 ; de même avec une **autre période** générée en vol (période changée,
     *Générer*, *Retour*) ; *Retour* vers une URL égale à la clé en vol : 0 requête.
-11. **AC-11 — Export.** Les boutons PDF et CSV reprennent toujours la dernière réponse affichée (46-2, AC-6), inchangé.
+11. **AC-11 — Export.** Les boutons PDF et CSV reprennent toujours la dernière réponse affichée (46-2, AC-6) : Vitest d'un
+    export pendant une redemande lancée par *Retour* (contrôles déjà sur la vue de l'entrée, écran sur l'ancienne) — l'export
+    suit `displayedGrouping`.
 12. **AC-12 — Manuel.** Paragraphe de la présentation de la PR 46 (`:4240-4250` sur la PR 46) : l'adresse porte la
-    présentation affichée, qui prime sur celle que retient le navigateur, et ouvrir un lien remplace la présentation
-    retenue ; paragraphe « Naviguer dans les rapports » de la 55-1a : la présentation s'ajoute à « ce qu'elle retient ».
+    présentation affichée, qui prime sur celle que retient le navigateur, et ouvrir un lien ou revenir par *Retour*
+    remplace la présentation retenue ; la phrase « changer la présentation pendant le chargement d'un autre rapport
+    interrompt ce chargement » est précisée : un geste de présentation, non *Retour* ni un lien ; PDF de la base à contrôler
+    au T0 ; paragraphe « Naviguer dans les rapports » de la 55-1a : la présentation s'ajoute à « ce qu'elle retient ».
     `.tex` seul.
 
 ## Tests à écrire, et la preuve du rouge
@@ -147,8 +163,9 @@ n'entre dans l'URL que par la réponse affichée**. Les gestes de présentation 
   `readIdList`.
 - **Vitest** `reports-url.test.ts` (55-1a) : écriture groupée et à plat, ordre et unicité des listes, virgule brute et
   encodée, aller-retour canonique.
-- **Vitest de la page** (`reports-page-url.test.ts`, helper de la 55-1a) : AC-2 à AC-10, chaque ligne du tableau des
-  compteurs, flèches du clavier comme le clic.
+- **Vitest de la page** (`reports-page-url.test.ts`, helper de la 55-1a) : AC-2 à AC-11, chaque ligne du tableau des
+  compteurs, flèches du clavier comme le clic ; stockage refusé puis *Retour* vers une entrée sans présentation (contrôles
+  inchangés) ; `open=5&closed=5` seul (`anyValid` faux).
 - **E2E** `reports-navigation.spec.ts`, bloc 55-1b : AC-1 et AC-4, sur un plan groupé (helper
   `tests/e2e/helpers/reports-groupes.ts` de la PR 46).
 - **Preuve du rouge** (journal `kesh-gate-logs/s55-1b/`) et **mutations**, chacune tuée par un test nommé : mémoire
@@ -190,7 +207,8 @@ lien remplace la présentation retenue. (refs #À-VENIR)
 - **C-55-1b-2** — La présentation n'entre dans l'URL que par la réponse affichée (validation P3) : l'URL ne décrit jamais
   une vue que l'écran n'affiche pas, et un geste ne peut pas être réappliqué par l'effet. *Écarté* : écrire la vue des
   contrôles au geste (P1, P2) — elle divergeait de la requête partie, qui lit le formulaire.
-- **C-55-1b-3** — Longueur : au plus 500 + 500 identifiants (≈ 6 Ko d'URL). Un lien ouvert dans une autre société porte
+- **C-55-1b-3** — Longueur : au plus 500 + 500 identifiants, soit environ 9 Ko d'URL avec `%2C` — au-delà des 8 Ko de
+  certains mandataires inverses ; cas théorique (500 groupes ouverts à la main), assumé. Un lien ouvert dans une autre société porte
   des identifiants inconnus d'elle : l'API les ignore et l'écho les retire (46-1), sans erreur.
 
 ### References
@@ -229,3 +247,7 @@ lien remplace la présentation retenue. (refs #À-VENIR)
   affichée pendant une génération de l'onglet avec une autre clé : péremption sans requête, généralisée aux paramètres
   (V3-2, V3-5 ; le cas des rapports non groupés est écrit à la 55-1a) ; borne dans `readIdList`, AC-8 complété, tableau des
   compteurs (V3-7) ; AC renumérotés, citation `:4207-4211` (V3-8). Prochaine passe : P4 ; dès la P6, retrait seulement.
+- 2026-11-25 — Validation P4 (Sonnet) : 0/0/4/5 ; remédiée : AC-5 restreinte au clic, attendu de *Retour* écrit (V4-1) ;
+  tableau des compteurs corrigé (règle « écriture identique : pas de `goto` », *Générer*, normalisation et requête) (V4-2) ;
+  deux écritures en mémoire (V4-3) ; vue des contrôles au lieu d'une relecture du stockage (V4-4) ; LOW V4-5 à V4-9 (fichier
+  d'epic : D2, D4, fichiers communs). Prochaine passe : P5, dernière remédiation possible de l'orchestrateur.
