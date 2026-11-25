@@ -603,6 +603,121 @@ async fn post_revenue_account_400_non_balance_account(pool: MySqlPool) {
     );
 }
 
+/// Jumeau `Expense` de `post_revenue_account_400_non_balance_account` (Story
+/// 53-3, AC-2) : même verdict, même message, aucune écriture.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn post_expense_account_400_non_balance_account(pool: MySqlPool) {
+    let (app, token) = bootstrap_admin(&pool).await;
+    let seed = seed_ready(&pool).await;
+    let expense = create_acc(
+        &pool,
+        seed.user_id,
+        seed.company_id,
+        "4000",
+        "Charges",
+        AccountType::Expense,
+        None,
+    )
+    .await;
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/opening-balances"))
+        .header("Authorization", auth(&token))
+        .json(&json!({ "lines": [
+            line(expense, "100.00", "0"),
+            line(seed.retained, "0", "100.00"),
+        ]}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 400);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "VALIDATION_ERROR");
+    let msg = body["error"]["message"].as_str().unwrap_or("");
+    assert!(
+        msg.contains("comptes de bilan"),
+        "message non-balance-account attendu, obtenu: {msg}"
+    );
+    assert_eq!(
+        journal_entries::count_by_company(&pool, seed.company_id)
+            .await
+            .unwrap(),
+        0,
+        "aucune écriture d'ouverture"
+    );
+}
+
+/// Story 53-3, AC-5 (e) — **D3** : le contrôle du type se fait sous verrou,
+/// donc **après** `accounting::validate`. Une requête qui cumule un compte de
+/// résultat et un refus de `validate` rend le refus de `validate`, avec son
+/// code machine (statut 400 inchangé). Épingle la décision Q1 du 2026-11-25.
+async fn post_revenue_plus(
+    pool: &MySqlPool,
+    lignes: impl FnOnce(&Seed, i64) -> Vec<Value>,
+) -> Value {
+    let (app, token) = bootstrap_admin(pool).await;
+    let seed = seed_ready(pool).await;
+    let revenue = create_acc(
+        pool,
+        seed.user_id,
+        seed.company_id,
+        "3000",
+        "Ventes",
+        AccountType::Revenue,
+        None,
+    )
+    .await;
+    let resp = app
+        .client
+        .post(app.url("/api/v1/opening-balances"))
+        .header("Authorization", auth(&token))
+        .json(&json!({ "lines": lignes(&seed, revenue) }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 400);
+    resp.json().await.unwrap()
+}
+
+/// (1) compte de résultat + déséquilibre → `ENTRY_UNBALANCED`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn d3_revenue_et_desequilibre_rend_entry_unbalanced(pool: MySqlPool) {
+    let body = post_revenue_plus(&pool, |seed, revenue| {
+        vec![line(seed.asset, "100.00", "0"), line(revenue, "0", "50.00")]
+    })
+    .await;
+    assert_eq!(body["error"]["code"], "ENTRY_UNBALANCED", "{body}");
+}
+
+/// (2) compte de résultat + partie en devise jugée par `validate` (cours **et**
+/// débit fournis, montant en devise négatif) → `FX_VALUE_OUT_OF_RANGE`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn d3_revenue_et_partie_en_devise_invalide_rend_fx(pool: MySqlPool) {
+    let body = post_revenue_plus(&pool, |seed, revenue| {
+        vec![
+            json!({ "accountId": seed.asset, "debit": "4.40", "credit": "0",
+                    "foreign": { "amount": "-5", "rate": "0.88" } }),
+            line(revenue, "0", "4.40"),
+        ]
+    })
+    .await;
+    assert_eq!(body["error"]["code"], "FX_VALUE_OUT_OF_RANGE", "{body}");
+}
+
+/// (3) compte de résultat + une seule ligne → message de `validate`, non
+/// « comptes de bilan » ; le code reste `VALIDATION_ERROR`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn d3_revenue_et_une_seule_ligne_rend_le_message_de_validate(pool: MySqlPool) {
+    let body = post_revenue_plus(&pool, |_seed, revenue| vec![line(revenue, "0", "100.00")]).await;
+    assert_eq!(body["error"]["code"], "VALIDATION_ERROR", "{body}");
+    let msg = body["error"]["message"].as_str().unwrap_or("");
+    assert!(
+        !msg.contains("comptes de bilan"),
+        "le message doit être celui de validate, obtenu: {msg}"
+    );
+}
+
 /// Company avec ≥1 écriture (posée dans un exercice POSTÉRIEUR, pas le
 /// premier — garde company-wide P3-BH3-1) → 409 avec le **message** distinct
 /// `already-has-entries` (le code `ILLEGAL_STATE_TRANSITION` est partagé,

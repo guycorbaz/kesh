@@ -20,8 +20,10 @@ use kesh_db::entities::{
 use kesh_db::errors::DbError;
 use kesh_db::repositories::fiscal_years::{
     FY_OPENING_ALREADY_HAS_ENTRIES_KEY, FY_OPENING_FIRST_YEAR_CLOSED_KEY,
+    FY_OPENING_NON_BALANCE_ACCOUNT_KEY,
 };
 use kesh_db::repositories::{accounts, audit_log, companies, fiscal_years, journal_entries, users};
+use kesh_db::test_fixtures::attendre_une_requete_en_cours;
 use rust_decimal_macros::dec;
 use sqlx::MySqlPool;
 
@@ -634,5 +636,329 @@ async fn create_opening_entry_concurrent_different_first_fys_serialized(pool: My
         journal_entries::count_by_company(&pool, cid).await.unwrap(),
         1,
         "PAS de doublon d'ouverture"
+    );
+}
+
+// ============================================================
+// Story 53-3 (#513) — le type des comptes se contrôle SOUS VERROU
+// ============================================================
+
+/// Société prête : un exercice 2026, un compte `Asset` « cible » (1000), un
+/// compte de report (2970). Rend `(cid, uid, fy, cible, report)`.
+async fn societe_prete(pool: &MySqlPool, nom: &str) -> (i64, i64, i64, i64, i64) {
+    let cid = create_company(pool, nom).await;
+    let uid = create_user(pool, &format!("u-{nom}"), cid).await;
+    let fy = create_fy(pool, uid, cid, "FY2026", 2026).await;
+    let cible = create_acc(pool, uid, cid, "1000", "Banque", AccountType::Asset, None).await;
+    let report = create_acc(
+        pool,
+        uid,
+        cid,
+        "2970",
+        "Report",
+        AccountType::Liability,
+        Some(AccountRole::RetainedEarnings),
+    )
+    .await;
+    (cid, uid, fy, cible, report)
+}
+
+fn debut_2026() -> NaiveDate {
+    NaiveDate::from_ymd_opt(2026, 1, 1).unwrap()
+}
+
+fn est_non_balance(
+    r: &Result<kesh_db::entities::journal_entry::JournalEntryWithLines, DbError>,
+) -> bool {
+    matches!(r, Err(DbError::Invariant(k)) if k == FY_OPENING_NON_BALANCE_ACCOUNT_KEY)
+}
+
+/// **AC-3.** Entrelacement forcé : `tenue` prend `companies` en partage comme
+/// `accounts::update`, retype le compte cible, ne commite pas ;
+/// `create_opening_entry` est vue **en attente sur la société** ; `tenue`
+/// commite ; l'écriture doit refuser. Sans le contrôle sous verrou, l'appel
+/// rend `Ok` et une ligne d'ouverture est posée sur un compte de résultat.
+async fn course_retypage_sous_societe(pool: MySqlPool, nom: &str, type_cible: &str) {
+    let (cid, uid, fy, cible, report) = societe_prete(&pool, nom).await;
+
+    let mut tenue = pool.begin().await.unwrap();
+    sqlx::query("SELECT id FROM companies WHERE id = ? LOCK IN SHARE MODE")
+        .bind(cid)
+        .fetch_one(&mut *tenue)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE accounts SET account_type = ? WHERE id = ?")
+        .bind(type_cible)
+        .bind(cible)
+        .execute(&mut *tenue)
+        .await
+        .unwrap();
+
+    let p = pool.clone();
+    let new = opening_entry(cid, debut_2026(), cible, report);
+    let tache =
+        tokio::spawn(
+            async move { journal_entries::create_opening_entry(&p, cid, fy, uid, new).await },
+        );
+    let en_attente = attendre_une_requete_en_cours(
+        &pool,
+        &["FROM companies WHERE id = ?", "FOR UPDATE"],
+        || tache.is_finished(),
+    )
+    .await;
+    assert!(
+        en_attente,
+        "create_opening_entry aurait dû attendre le sentinelle de la société"
+    );
+    tenue.commit().await.unwrap();
+
+    let r = tache.await.expect("la tâche ne doit pas paniquer");
+    assert!(
+        est_non_balance(&r),
+        "attendu Invariant(FY_OPENING_NON_BALANCE_ACCOUNT_KEY), obtenu {r:?}"
+    );
+    assert_eq!(
+        journal_entries::count_by_company(&pool, cid).await.unwrap(),
+        0,
+        "aucune écriture d'ouverture ne doit rester"
+    );
+}
+
+#[sqlx::test(migrations = "./test-schema")]
+async fn course_retypage_revenue_sous_societe_est_refusee(pool: MySqlPool) {
+    course_retypage_sous_societe(pool, "co-513-rev", "Revenue").await;
+}
+
+#[sqlx::test(migrations = "./test-schema")]
+async fn course_retypage_expense_sous_societe_est_refusee(pool: MySqlPool) {
+    course_retypage_sous_societe(pool, "co-513-exp", "Expense").await;
+}
+
+/// **AC-4.** Un écrivain qui ne prend PAS la société (`UPDATE accounts` seul,
+/// non commité) : `create_opening_entry` doit attendre **sur la lecture des
+/// types** (`LOCK IN SHARE MODE`), non sur celle de `validate_lines_accounts_in_tx`
+/// (`currency FROM accounts`). Tue la mutation « lecture ordinaire ».
+async fn course_retypage_sans_societe(pool: MySqlPool, nom: &str, type_cible: &str) {
+    let (cid, uid, fy, cible, report) = societe_prete(&pool, nom).await;
+
+    let mut tenue = pool.begin().await.unwrap();
+    sqlx::query("UPDATE accounts SET account_type = ? WHERE id = ?")
+        .bind(type_cible)
+        .bind(cible)
+        .execute(&mut *tenue)
+        .await
+        .unwrap();
+
+    let p = pool.clone();
+    let new = opening_entry(cid, debut_2026(), cible, report);
+    let tache =
+        tokio::spawn(
+            async move { journal_entries::create_opening_entry(&p, cid, fy, uid, new).await },
+        );
+    let en_attente = attendre_une_requete_en_cours(
+        &pool,
+        &["account_type FROM accounts", "LOCK IN SHARE MODE"],
+        || tache.is_finished(),
+    )
+    .await;
+    assert!(
+        en_attente,
+        "create_opening_entry aurait dû attendre sur la lecture verrouillante des types"
+    );
+    tenue.commit().await.unwrap();
+
+    let r = tache.await.expect("la tâche ne doit pas paniquer");
+    assert!(
+        est_non_balance(&r),
+        "attendu Invariant(FY_OPENING_NON_BALANCE_ACCOUNT_KEY), obtenu {r:?}"
+    );
+    assert_eq!(
+        journal_entries::count_by_company(&pool, cid).await.unwrap(),
+        0
+    );
+}
+
+#[sqlx::test(migrations = "./test-schema")]
+async fn lecture_des_types_attend_un_ecrivain_sans_societe_revenue(pool: MySqlPool) {
+    course_retypage_sans_societe(pool, "co-513-lock-rev", "Revenue").await;
+}
+
+#[sqlx::test(migrations = "./test-schema")]
+async fn lecture_des_types_attend_un_ecrivain_sans_societe_expense(pool: MySqlPool) {
+    course_retypage_sans_societe(pool, "co-513-lock-exp", "Expense").await;
+}
+
+/// Refus séquentiel (sans course), les deux types : l'écriture ne s'écrit pas
+/// et n'est pas auditée.
+#[sqlx::test(migrations = "./test-schema")]
+async fn create_opening_entry_refuse_revenue_et_expense(pool: MySqlPool) {
+    for (nom, type_cible) in [("co-513-seq-rev", "Revenue"), ("co-513-seq-exp", "Expense")] {
+        let (cid, uid, fy, cible, report) = societe_prete(&pool, nom).await;
+        sqlx::query("UPDATE accounts SET account_type = ? WHERE id = ?")
+            .bind(type_cible)
+            .bind(cible)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let r = journal_entries::create_opening_entry(
+            &pool,
+            cid,
+            fy,
+            uid,
+            opening_entry(cid, debut_2026(), cible, report),
+        )
+        .await;
+        assert!(est_non_balance(&r), "{type_cible} : obtenu {r:?}");
+        assert_eq!(
+            journal_entries::count_by_company(&pool, cid).await.unwrap(),
+            0
+        );
+        let audits: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM audit_log WHERE action = 'journal_entry.created' \
+             AND user_id = ?",
+        )
+        .bind(uid)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(audits, 0, "un refus n'écrit aucune ligne d'audit");
+    }
+}
+
+/// **AC-5 (a)** — société avec une écriture + ligne `Revenue` : le verdict
+/// « société vierge » prime sur le type.
+#[sqlx::test(migrations = "./test-schema")]
+async fn verdict_a_deja_des_ecritures_prime_sur_le_type(pool: MySqlPool) {
+    let (cid, uid, fy, cible, report) = societe_prete(&pool, "co-513-a").await;
+    let revenue = create_acc(
+        &pool,
+        uid,
+        cid,
+        "3000",
+        "Ventes",
+        AccountType::Revenue,
+        None,
+    )
+    .await;
+    journal_entries::create(
+        &pool,
+        fy,
+        Acteur::utilisateur(uid),
+        opening_entry(
+            cid,
+            NaiveDate::from_ymd_opt(2026, 6, 1).unwrap(),
+            cible,
+            report,
+        ),
+    )
+    .await
+    .unwrap();
+
+    let r = journal_entries::create_opening_entry(
+        &pool,
+        cid,
+        fy,
+        uid,
+        opening_entry(cid, debut_2026(), cible, revenue),
+    )
+    .await;
+    assert!(
+        matches!(&r, Err(DbError::Invariant(k)) if k == FY_OPENING_ALREADY_HAS_ENTRIES_KEY),
+        "attendu ALREADY_HAS_ENTRIES, obtenu {r:?}"
+    );
+}
+
+/// **AC-5 (b)** — premier exercice clos (société vierge) + ligne `Revenue` :
+/// le verdict « exercice clos » prime sur le type.
+#[sqlx::test(migrations = "./test-schema")]
+async fn verdict_b_premier_exercice_clos_prime_sur_le_type(pool: MySqlPool) {
+    let (cid, uid, fy, cible, _report) = societe_prete(&pool, "co-513-b").await;
+    let revenue = create_acc(
+        &pool,
+        uid,
+        cid,
+        "3000",
+        "Ventes",
+        AccountType::Revenue,
+        None,
+    )
+    .await;
+    fiscal_years::close(&pool, uid, cid, fy).await.unwrap();
+
+    let r = journal_entries::create_opening_entry(
+        &pool,
+        cid,
+        fy,
+        uid,
+        opening_entry(cid, debut_2026(), cible, revenue),
+    )
+    .await;
+    assert!(
+        matches!(&r, Err(DbError::Invariant(k)) if k == FY_OPENING_FIRST_YEAR_CLOSED_KEY),
+        "attendu FIRST_YEAR_CLOSED, obtenu {r:?}"
+    );
+}
+
+/// **AC-5 (c)** — ligne `Revenue` + une autre ligne sur un compte **archivé** :
+/// le refus de type précède `INACTIVE_OR_INVALID_ACCOUNTS`.
+#[sqlx::test(migrations = "./test-schema")]
+async fn verdict_c_type_precede_comptes_inactifs(pool: MySqlPool) {
+    let (cid, uid, fy, cible, _report) = societe_prete(&pool, "co-513-c").await;
+    let revenue = create_acc(
+        &pool,
+        uid,
+        cid,
+        "3000",
+        "Ventes",
+        AccountType::Revenue,
+        None,
+    )
+    .await;
+    sqlx::query("UPDATE accounts SET active = 0 WHERE id = ?")
+        .bind(cible)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let r = journal_entries::create_opening_entry(
+        &pool,
+        cid,
+        fy,
+        uid,
+        opening_entry(cid, debut_2026(), cible, revenue),
+    )
+    .await;
+    assert!(est_non_balance(&r), "attendu NON_BALANCE, obtenu {r:?}");
+}
+
+/// **AC-5 (d)** — un compte `Revenue` **d'une autre société** : jamais
+/// `NON_BALANCE` (anti-énumération KF-002), toujours `InactiveOrInvalidAccounts`.
+#[sqlx::test(migrations = "./test-schema")]
+async fn verdict_d_compte_d_une_autre_societe_reste_invalide(pool: MySqlPool) {
+    let (cid, uid, fy, cible, _report) = societe_prete(&pool, "co-513-d").await;
+    let autre = create_company(&pool, "co-513-d-autre").await;
+    let uid_autre = create_user(&pool, "u-513-d-autre", autre).await;
+    let etranger = create_acc(
+        &pool,
+        uid_autre,
+        autre,
+        "3000",
+        "Ventes",
+        AccountType::Revenue,
+        None,
+    )
+    .await;
+
+    let r = journal_entries::create_opening_entry(
+        &pool,
+        cid,
+        fy,
+        uid,
+        opening_entry(cid, debut_2026(), cible, etranger),
+    )
+    .await;
+    assert!(
+        matches!(&r, Err(DbError::InactiveOrInvalidAccounts)),
+        "attendu InactiveOrInvalidAccounts, obtenu {r:?}"
     );
 }
