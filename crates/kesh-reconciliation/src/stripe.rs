@@ -185,9 +185,11 @@ pub fn stripe_ids_in(text: &str) -> Vec<String> {
 ///   le garde est la **présélection**, non le nom : l'écriture des frais n'a
 ///   de ligne sur aucun autre compte bancaire, et la présélection « déjà
 ///   comptabilisée » exige une transaction d'un autre compte qui lui soit
-///   rapprochée, comme pour les frais PayPal. Une réception rattachée par
-///   erreur à une écriture de frais la ferait nommer le versement, qui
-///   passerait « à examiner » (le sens prudent, rien d'écrit deux fois) ;
+///   rapprochée, et un mouvement sur le compte du solde égal au montant de la
+///   transaction, comme pour les frais PayPal. Une réception rattachée par
+///   erreur à une écriture de frais dont le montant égalerait le net d'un
+///   versement détaché ferait passer ce versement « à examiner » (le sens
+///   prudent, rien d'écrit deux fois) ;
 /// - remboursement, autre catégorie : l'objet lié (`re_…`…), ou aucune ; ces
 ///   genres n'écrivent pas.
 fn match_key(t: &BankTransaction) -> Option<&str> {
@@ -775,7 +777,7 @@ mod tests {
         assert!(!entry_names(&SPEC, &frais, &du_versement, &[]));
         assert!(!entry_names(&SPEC, &frais, &des_frais, &[]), "{des_frais}");
         // L'écriture des frais nomme le versement (« … - po_1 ») : la
-        // présélection l'écarte, elle n'est jamais rapprochée de l'autre côté.
+        // présélection l'écarte, elle n'a de ligne sur aucun autre compte bancaire.
         assert!(entry_names(&SPEC, &versement, &des_frais, &[]));
         // Sans libellé importé, le libellé de repli porte aussi le `po_…`.
         let mut nu = payout(4, "-96.80", "po_4");
@@ -794,8 +796,6 @@ mod tests {
         );
         assert_eq!(first_naming_entry(&SPEC, &autre, candidats, &[]), Some(902));
         assert_eq!(first_naming_entry(&SPEC, &nu, [candidats[0]], &[]), None);
-        // Le libellé porte aussi une charge ou un paiement : le versement reste
-        // nommé, et seul lui (avant L3, ni le nom ni le repli prudent).
         // Angle mort assumé (fiche, manuel, API) : un libellé qui ne porte
         // qu'une charge ou un paiement, sans le `po_…`, nomme cette charge, non
         // le versement — ni le nom ni le repli prudent ne le retiennent.
@@ -808,6 +808,8 @@ mod tests {
             ),
             None
         );
+        // Le libellé porte aussi une charge ou un paiement : le versement reste
+        // nommé, et seul lui (avant L3, ni le nom ni le repli prudent).
         for jeton in ["ch_TEST0002", "py_TEST0003"] {
             let mixte = format!("Versement Stripe po_1 96.80 CHF {jeton}");
             assert_eq!(

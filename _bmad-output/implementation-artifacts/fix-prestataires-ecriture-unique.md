@@ -118,7 +118,10 @@ versement saisie à la main dont le libellé porte un `ch_…` ou un `py_…` **
 versement : ni le nom ni le repli prudent ne la retiennent (test unitaire). Revue P1 complète (Sonnet) 0/0/0/3 :
 doc de `match_key` (le garde des frais est la présélection) et test de l'angle mort corrigés ; **LOW à tracer** : des
 frais rendus d'un versement de somme nulle (sans transaction de versement) portent `po_…` et sortent en écart
-`sale_without_receipt` faux (une ligne d'écart, rien d'écrit). Journal : `kesh-gate-logs/s40-m2c/`.
+`sale_without_receipt` faux (une ligne d'écart, rien d'écrit). Revue P2 ciblée (Haiku) 0/0/2/2 : doc de `match_key`
+(la présélection exige aussi le montant) et test réordonné corrigés ; l'angle mort ci-dessus et ce LOW sont **deux
+issues à ouvrir** (`kesh-gate-logs/s40-m2c/issues-a-ouvrir.md` : l'angle mort peut écrire un versement deux fois,
+`bug` P1 ; l'écart faux, `bug` P4). Journal : `kesh-gate-logs/s40-m2c/`.
 
 ## Change Log
 
