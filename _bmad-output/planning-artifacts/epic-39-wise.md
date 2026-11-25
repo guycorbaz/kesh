@@ -839,3 +839,8 @@ attendent le test du responsable de l'epic sur l'API des relevés Wise (Q-39-1) 
 - Rappel en tête : les fiches attendent la recette de 39-0 (Q-39-1).
 - 2026-11-20 — Validation P5 ciblée (Claude Sonnet 5.5, passe ciblée, contexte frais, rapport `kesh-gate-logs/epic-39-40-kiss/validation/39-11-P5-ciblee.md`) : 0 C/H/M, 2 LOW remédiés — G4, 39-11b AC-5 et 39-11c AC-6 disent la même chose (l'import juge à son instant, la revue relit la même règle sur l'état présent) ; 39-11c AC-3 : 40-7c n'écrit le texte qu'en dernier recours.
 - 2026-11-20 — Validation P1 de la phase 2 (Claude Sonnet 5.5, contexte frais, rapport `kesh-gate-logs/epic-39-40-kiss/validation/39-12-P1.md`) : **3 HIGH, 11 MEDIUM, 8 LOW, remédiés**. Recette 1 de Wise : défi SCA constaté, signature intégrée (H4, H5, `KESH_WISE_<n>_SCA_KEY_FILE`), 39-12a scindée en 39-12a1 (client, SCA) et 39-12a2 (route, import), 39-2 `superseded` ; socle commun S1 à S9 avec les Epics 38 et 40 ; lecture complète avant écriture, aucune pause fixe, politique de reprise unique, codes `PROVIDER_*`, sessions seules, `providerApi`.
+- 2026-11-25 — Préparation de la PR (branche `pr/39-wise-v2`, après la #1534) : fusion de `pr/40-stripe`
+  (`a31ed4d00`, `main` à `1e23edb55` compris), raccords décrits au message du commit de fusion ; Wise branché sur la
+  règle commune « une transaction de prestataire n'est écrite qu'une fois » (fiche
+  `fix-prestataires-ecriture-unique.md`, § *Reprise sur `pr/39-wise-v2`*) ; aucune migration. Journal :
+  `kesh-gate-logs/s39-pr/`.
