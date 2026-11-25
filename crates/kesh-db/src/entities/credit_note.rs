@@ -16,6 +16,8 @@ use chrono::{NaiveDate, NaiveDateTime};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
+use super::LineType;
+
 /// Avoir persisté (entête).
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 #[serde(rename_all = "camelCase")]
@@ -73,6 +75,10 @@ pub struct CreditNoteLine {
     /// délibérément d'interpréter (D-B2). Le repli sur le défaut société
     /// s'applique alors, exactement comme avant la story.
     pub revenue_account_id: Option<i64>,
+    /// Type de la ligne, **recopié de la ligne de facture** avec sa position
+    /// (Story 49-1a, D7) : l'avoir reprend aussi les commentaires et les
+    /// titres, à valeurs neutres.
+    pub line_type: LineType,
     pub created_at: NaiveDateTime,
 }
 

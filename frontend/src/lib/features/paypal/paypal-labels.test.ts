@@ -17,6 +17,7 @@ import {
 	paypalLineErrorLabel,
 	PAYPAL_OWN_FAILED_CODES,
 	toReviewReasonLabel,
+	alreadyPostedEntryId,
 } from './paypal-labels';
 
 const apiError = (code: string, details?: Record<string, unknown>, message = `message ${code}`) => ({
@@ -73,7 +74,7 @@ describe('paypal-labels — revue', () => {
 		expect(gapKindLabel('sale_without_receipt')).toContain('Vente sans encaissement');
 		expect(gapKindLabel('amount_or_currency_mismatch')).toContain('Montant ou devise différents');
 		expect(gapKindLabel('autre')).toBe('autre');
-		for (const r of ['ambiguous_sale', 'fee_account_missing', 'conversion_unpaired', 'withdrawal_foreign_currency', 'no_rule']) {
+		for (const r of ['ambiguous_sale', 'fee_account_missing', 'conversion_unpaired', 'withdrawal_foreign_currency', 'no_rule', 'already_posted']) {
 			expect(toReviewReasonLabel(r)).toMatch(/^paypal-to-review-/);
 		}
 		expect(toReviewReasonLabel('autre')).toBe('autre');
@@ -90,8 +91,12 @@ describe('paypal-labels — refus de l’acceptation', () => {
 			'OPTIMISTIC_LOCK_CONFLICT',
 			'RECONCILIATION_ENTRY_NOT_LINKABLE',
 			'COUNTERPARTY_CURRENCY_MISMATCH',
+			'PROVIDER_TRANSACTION_ALREADY_POSTED',
 		]);
 		expect(paypalFailedLabel('PROVIDER_PROPOSAL_STALE')).toMatch(/^paypal-failed-proposal-stale\|/);
+		expect(paypalFailedLabel('PROVIDER_TRANSACTION_ALREADY_POSTED', { journalEntryId: 9 })).toMatch(
+			/^paypal-failed-already-posted\|/,
+		);
 	});
 
 	it('les autres codes sont délégués au rapprochement générique', () => {
@@ -121,6 +126,9 @@ const CODES_ROUTE_PAYPAL = [
 	'NOT_FOUND',
 	'OPTIMISTIC_LOCK_CONFLICT',
 	'PROVIDER_PROPOSAL_STALE',
+	// La constante `FAILED_ALREADY_POSTED` de `kesh-reconciliation/src/provider_review.rs`
+	// (une transaction de prestataire n'est écrite qu'une fois), posée par `rejudge_writing`.
+	'PROVIDER_TRANSACTION_ALREADY_POSTED',
 	'RATE_UNAVAILABLE',
 	'RECONCILIATION_ALREADY_RECONCILED',
 	'RECONCILIATION_ENTRY_NOT_LINKABLE',
@@ -205,5 +213,14 @@ const CODES_CONVERTIS = [
 describe('paypal-labels — codes convertis des refus d’écriture', () => {
 	it.each(CODES_CONVERTIS)('%s a un libellé traduit', (code) => {
 		expect(paypalFailedLabel(code, {})).not.toContain('reconciliation-failed-unknown');
+	});
+});
+
+describe('paypal-labels — l’écriture déjà passée d’un motif « à examiner »', () => {
+	it('already_posted : l’écriture ; tout autre motif ou sans identifiant : null', () => {
+		expect(alreadyPostedEntryId({ code: 'already_posted', details: { journalEntryId: 42 } })).toBe(42);
+		expect(alreadyPostedEntryId({ code: 'no_rule', details: { journalEntryId: 42 } })).toBeNull();
+		expect(alreadyPostedEntryId({ code: 'already_posted', details: { journalEntryId: '42' } })).toBeNull();
+		expect(alreadyPostedEntryId({ code: 'already_posted' })).toBeNull();
 	});
 });

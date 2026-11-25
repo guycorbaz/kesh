@@ -11,6 +11,8 @@ use chrono::{NaiveDate, NaiveDateTime};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
+use super::LineType;
+
 /// Facture persistée (entête).
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 #[serde(rename_all = "camelCase")]
@@ -98,6 +100,10 @@ pub struct InvoiceLine {
     /// refuse délibérément d'interpréter (D-B2) — et sur les factures
     /// `cancelled`, qu'il exclut (D-B5).
     pub revenue_account_id: Option<i64>,
+    /// Type de la ligne (Story 49-1a). Toute ligne d'avant la 0.20.0 est
+    /// `priced` ; une ligne `comment` ou `heading` porte des valeurs neutres
+    /// (quantité, prix, taux, total à zéro, compte `None`), contrainte en base.
+    pub line_type: LineType,
     pub created_at: NaiveDateTime,
 }
 
@@ -113,6 +119,11 @@ pub struct NewInvoiceLine {
     /// Compte de produit choisi pour cette ligne. `None` = repli sur le compte
     /// de produit par défaut de la société (Story 16-1a, D1/D2).
     pub revenue_account_id: Option<i64>,
+    /// Type de la ligne (Story 49-1a), `priced` par défaut. Une ligne
+    /// `comment` ou `heading` doit porter des valeurs neutres : le dépôt la
+    /// refuse sinon (`DbError::Invariant`, D10), sans normaliser en silence.
+    #[serde(default)]
+    pub line_type: LineType,
 }
 
 /// Données de création d'une facture. Le caller a déjà validé/normalisé.

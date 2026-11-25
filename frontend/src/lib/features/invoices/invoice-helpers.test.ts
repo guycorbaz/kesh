@@ -32,6 +32,17 @@ describe('computeInvoiceTotal', () => {
 	it('returns 0.0000 for empty lines', () => {
 		expect(computeInvoiceTotal([])).toBe('0.0000');
 	});
+	// Story 49-1c (D6, T7) — une ligne de texte n'entre jamais dans le total, même si
+	// elle portait des montants ; une ligne sans `lineType` est chiffrée.
+	it('49-1c — ignore les lignes de texte, compte une ligne sans type', () => {
+		const lines = [
+			{ quantity: '1', unitPrice: '100.00' },
+			{ lineType: 'comment' as const, quantity: '5', unitPrice: '999.00' },
+			{ lineType: 'heading' as const, quantity: '2', unitPrice: '50.00' },
+			{ lineType: 'priced' as const, quantity: '2', unitPrice: '10.00' },
+		];
+		expect(computeInvoiceTotal(lines)).toBe('120.0000');
+	});
 });
 
 describe('formatInvoiceTotal', () => {

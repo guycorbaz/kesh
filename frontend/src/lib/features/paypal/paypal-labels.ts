@@ -30,6 +30,7 @@ export const PAYPAL_OWN_FAILED_CODES = [
 	'OPTIMISTIC_LOCK_CONFLICT',
 	'RECONCILIATION_ENTRY_NOT_LINKABLE',
 	'COUNTERPARTY_CURRENCY_MISMATCH',
+	'PROVIDER_TRANSACTION_ALREADY_POSTED',
 ] as const;
 
 /** Libellé d'un refus de `POST /paypal/accept`. */
@@ -78,6 +79,13 @@ export function paypalFailedLabel(code: string, details?: unknown): string {
 				},
 			);
 		}
+		// Une transaction de prestataire n'est écrite qu'une fois : déjà comptabilisée de l'autre
+		// côté, elle se rattache à l'écriture existante.
+		case 'PROVIDER_TRANSACTION_ALREADY_POSTED':
+			return i18nMsg(
+				'paypal-failed-already-posted',
+				'La transaction est déjà comptabilisée (l’autre côté est rattaché à son écriture) : rien n’a été écrit. Rechargez la page et rattachez-la à cette écriture.',
+			);
 		default:
 			return failedProposalLabel(code, details);
 	}
@@ -271,7 +279,21 @@ export function toReviewReasonLabel(reason: string): string {
 			);
 		case 'no_rule':
 			return i18nMsg('paypal-to-review-no-rule', 'Aucune règle');
+		case 'already_posted':
+			return i18nMsg(
+				'paypal-to-review-already-posted',
+				'Déjà comptabilisée : l’écriture existe et l’autre côté y est rattaché. Rattachez cette transaction à l’écriture, ne l’écrivez pas une seconde fois.',
+			);
 		default:
 			return reason;
 	}
+}
+
+/**
+ * L'écriture déjà passée que nomme un motif « à examiner » `already_posted`
+ * (`details.journalEntryId`) ; `null` pour tout autre motif ou sans identifiant numérique.
+ */
+export function alreadyPostedEntryId(f: PaypalFinding): number | null {
+	const id = f.details?.journalEntryId;
+	return f.code === 'already_posted' && typeof id === 'number' ? id : null;
 }

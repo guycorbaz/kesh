@@ -333,6 +333,7 @@ impl Ctx {
                     unit_price: amount,
                     vat_rate: Decimal::ZERO,
                     revenue_account_id: Some(s.accounts["3000"]),
+                    line_type: kesh_db::entities::LineType::Priced,
                 }],
             },
         )

@@ -1815,6 +1815,7 @@ error-provider-api-error = Il prestatore ha rifiutato la richiesta. Nulla è sta
 # Story 38-11c2 — revue et acceptation d’un compte de prestataire (codes servis à l’écran, 38-11d)
 provider-failed-proposal-stale = Questa proposta non è più valida: la transazione, la registrazione, la regola o le impostazioni del conto sono cambiate dalla revisione. Ricaricate la revisione.
 paypal-failed-counterparty-currency-mismatch = Questa regola indica un conto tenuto in { $accountCurrency }: si applica solo alle transazioni in { $accountCurrency }, e questa è in { $transactionCurrency }. Scegliete un conto in CHF o nella valuta della transazione.
+paypal-failed-already-posted = La transazione è già contabilizzata (l'altro lato è collegato alla sua registrazione): nulla è stato registrato. Ricaricate la pagina e collegatela a questa registrazione.
 provider-review-ambiguous-sale = Più registrazioni di vendita portano questo identificativo: scegliete quella da collegare.
 provider-review-fee-account-missing = Commissione senza conto delle commissioni: impostate il conto delle commissioni del conto bancario.
 error-bank-account-is-provider = Questo conto è il saldo di un prestatore di pagamento: non riceve né estratti bancari né pagamenti di fatture. Importi il suo estratto con la sua rotta e regoli la fattura con un conto interno o una registrazione, poi colleghi la transazione.
@@ -2022,6 +2023,8 @@ paypal-to-review-fee-account-missing = Conto delle commissioni non impostato
 paypal-to-review-conversion-unpaired = Conversione senza la sua coppia
 paypal-to-review-withdrawal-foreign-currency = Prelievo da un saldo in valuta estera: registrazione a mano
 paypal-to-review-no-rule = Nessuna regola
+paypal-to-review-already-posted = Già contabilizzata: la registrazione esiste e l'altro lato vi è collegato. Collegate questa transazione alla registrazione, non registratela una seconda volta.
+paypal-to-review-entry-link = Registrazione già effettuata
 paypal-action-link-entry = Collegata alla registrazione n. { $number }
 paypal-action-fee = Registrazione sul conto delle commissioni { $account }
 paypal-action-rule = Registrazione sulla contropartita { $account }
@@ -4292,6 +4295,15 @@ projects-reassign-warning-locked = Registrazioni bloccate fino al { $date }.
 projects-reassign-warning-reports = I rapporti analitici di questo periodo cambieranno.
 projects-reassign-confirm = Conferma
 projects-reassign-done = Conto analitico cambiato.
+
+# --- Epic 49 — Story 49-4a (#1364) : capacité du PDF de facture contrôlée à la validation ---
+error-invoice-lines-do-not-fit-pdf = Le righe di questa fattura non stanno sulla pagina del suo PDF: richiedono { $besoin } righe, la pagina ne offre { $place }. Rimuova delle righe, accorci i commenti o ripartisca le righe su due fatture. La fattura resta una bozza.
+
+# Epic 49 — Story 49-1c (#1242) : la ligne de commentaire de la facture client
+invoice-line-add-comment = Commento
+invoice-line-comment-placeholder = Testo stampato su tutta la larghezza della fattura, senza importo
+invoice-line-comment-aria = Commento — riga { $n }
+invoice-line-comment-required-error = Riga { $line }: il testo del commento è obbligatorio
 
 ## #1348 (0.20.0) — rifiuti del server la cui chiave mancava al catalogo.
 error-onboarding-reset-forbidden = La reimpostazione dell'onboarding non è consentita su questa istanza.

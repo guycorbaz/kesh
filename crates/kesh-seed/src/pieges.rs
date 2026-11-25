@@ -582,6 +582,7 @@ pub async fn semer(
                 unit_price: cent,
                 vat_rate: Decimal::ZERO,
                 revenue_account_id: None,
+                line_type: kesh_db::entities::LineType::Priced,
             }],
         },
     )

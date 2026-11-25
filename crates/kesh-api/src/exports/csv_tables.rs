@@ -666,6 +666,9 @@ pub fn serialize_invoice_lines_csv<W: Write>(
         // reçu un avoir.
         "revenue_account_id",
         "created_at",
+        // Story 49-1a (D14) : en DERNIÈRE colonne, pour ne décaler aucune
+        // colonne existante. `priced`, `comment` ou `heading`.
+        "line_type",
     ])
     .map_err(|e| map_csv_err("invoice_lines", e))?;
     for il in rows {
@@ -680,6 +683,7 @@ pub fn serialize_invoice_lines_csv<W: Write>(
             fmt_decimal_scale(il.line_total, DEC_19_4),
             fmt_opt_i64(il.revenue_account_id),
             fmt_dt(il.created_at),
+            il.line_type.as_str().to_string(),
         ])
         .map_err(|e| map_csv_err("invoice_lines", e))?;
     }
@@ -1326,6 +1330,9 @@ pub fn serialize_credit_note_lines_csv<W: Write>(
         "line_total",
         "revenue_account_id",
         "created_at",
+        // Story 49-1a (D14) : en DERNIÈRE colonne, pour ne décaler aucune
+        // colonne existante.
+        "line_type",
     ])
     .map_err(|e| map_csv_err("credit_note_lines", e))?;
     for l in rows {
@@ -1340,6 +1347,7 @@ pub fn serialize_credit_note_lines_csv<W: Write>(
             fmt_decimal_scale(l.line_total, DEC_19_4),
             fmt_opt_i64(l.revenue_account_id),
             fmt_dt(l.created_at),
+            l.line_type.as_str().to_string(),
         ])
         .map_err(|e| map_csv_err("credit_note_lines", e))?;
     }

@@ -1815,6 +1815,7 @@ error-provider-api-error = The provider refused the request. Nothing was importe
 # Story 38-11c2 — revue et acceptation d’un compte de prestataire (codes servis à l’écran, 38-11d)
 provider-failed-proposal-stale = This proposal is no longer valid: the transaction, the entry, the rule or the account settings changed since the review. Reload the review.
 paypal-failed-counterparty-currency-mismatch = This rule names an account kept in { $accountCurrency }: it only applies to transactions in { $accountCurrency }, and this one is in { $transactionCurrency }. Choose an account in CHF or in the transaction's currency.
+paypal-failed-already-posted = The transaction is already posted (the other side is linked to its entry): nothing was posted. Reload the page and link it to that entry.
 provider-review-ambiguous-sale = Several sales entries carry this identifier: choose the one to link.
 provider-review-fee-account-missing = Fee without a fee account: set the fee account of the bank account.
 error-bank-account-is-provider = This account is a payment provider's balance: it receives neither bank statements nor invoice payments. Import its statement through its own route, and settle the invoice through an internal account or an entry, then link the transaction.
@@ -2022,6 +2023,8 @@ paypal-to-review-fee-account-missing = Fee account not set
 paypal-to-review-conversion-unpaired = Conversion without its pair
 paypal-to-review-withdrawal-foreign-currency = Withdrawal from a foreign-currency balance: manual entry
 paypal-to-review-no-rule = No rule
+paypal-to-review-already-posted = Already posted: the entry exists and the other side is linked to it. Link this transaction to the entry, do not post it a second time.
+paypal-to-review-entry-link = Entry already posted
 paypal-action-link-entry = Linked to entry no. { $number }
 paypal-action-fee = Entry to the fee account { $account }
 paypal-action-rule = Entry to the counterparty { $account }
@@ -4297,6 +4300,15 @@ projects-reassign-warning-locked = Entries locked through { $date }.
 projects-reassign-warning-reports = The analytical reports for this period will change.
 projects-reassign-confirm = Confirm
 projects-reassign-done = Analytical account changed.
+
+# --- Epic 49 — Story 49-4a (#1364) : capacité du PDF de facture contrôlée à la validation ---
+error-invoice-lines-do-not-fit-pdf = The lines of this invoice do not fit on the page of its PDF: they need { $besoin } lines, the page offers { $place }. Remove lines, shorten the comments, or split the lines across two invoices. The invoice remains a draft.
+
+# Epic 49 — Story 49-1c (#1242) : la ligne de commentaire de la facture client
+invoice-line-add-comment = Comment
+invoice-line-comment-placeholder = Text printed across the full width of the invoice, without an amount
+invoice-line-comment-aria = Comment — line { $n }
+invoice-line-comment-required-error = Line { $line }: the comment text is required
 
 ## #1348 (0.20.0) — server refusals whose key was missing from the catalogue.
 error-onboarding-reset-forbidden = Resetting the onboarding is not allowed on this instance.

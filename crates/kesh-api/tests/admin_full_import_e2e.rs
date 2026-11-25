@@ -898,6 +898,7 @@ async fn validated_invoice(pool: &MySqlPool, biz: &Business) -> i64 {
                     unit_price: dec!(33.35),
                     vat_rate: dec!(0),
                     revenue_account_id: None,
+                    line_type: kesh_db::entities::LineType::Priced,
                 },
                 NewInvoiceLine {
                     description: "Marchandise".into(),
@@ -905,6 +906,7 @@ async fn validated_invoice(pool: &MySqlPool, biz: &Business) -> i64 {
                     unit_price: dec!(12.55),
                     vat_rate: dec!(0),
                     revenue_account_id: None,
+                    line_type: kesh_db::entities::LineType::Priced,
                 },
             ],
         },
@@ -2308,6 +2310,7 @@ async fn validating_a_backdated_invoice_is_refused_by_the_period_lock(pool: MySq
                 unit_price: dec!(100.00),
                 vat_rate: dec!(0),
                 revenue_account_id: None,
+                line_type: kesh_db::entities::LineType::Priced,
             }],
         },
     )
@@ -6605,6 +6608,159 @@ async fn full_import_of_a_0_18_0_backup_resets_the_group_ceiling(pool: MySqlPool
         plafond,
         dec!(5.0000),
         "le plafond revient à sa valeur par défaut"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Story 49-1a (#1242) — T3 : les types de lignes à l'import (AC4)
+// ---------------------------------------------------------------------------
+
+/// Les lignes de facture et d'avoir, une chaîne par ligne, sur les colonnes de
+/// la 0.19.0 (sans `line_type`), puis les types seuls.
+async fn empreinte_lignes(pool: &MySqlPool) -> (Vec<String>, Vec<String>) {
+    let mut lignes = Vec::new();
+    let mut types = Vec::new();
+    for (table, parent) in [
+        ("invoice_lines", "invoice_id"),
+        ("credit_note_lines", "credit_note_id"),
+    ] {
+        let rows: Vec<(String, String)> = sqlx::query_as(&format!(
+            "SELECT CONCAT_WS('|', id, {parent}, position, description, quantity, unit_price, \
+             vat_rate, line_total, COALESCE(revenue_account_id, '<NULL>'), created_at), \
+             line_type FROM {table} ORDER BY id"
+        ))
+        .fetch_all(pool)
+        .await
+        .unwrap();
+        for (l, t) in rows {
+            lignes.push(format!("{table}|{l}"));
+            types.push(format!("{table}|{t}"));
+        }
+    }
+    (lignes, types)
+}
+
+/// Une facture validée et son avoir, par le vrai chemin (lignes chiffrées).
+async fn facture_et_avoir(pool: &MySqlPool, biz: &Business) {
+    let invoice_id = validated_invoice(pool, biz).await;
+    kesh_db::repositories::credit_notes::create_credit_note(
+        pool,
+        kesh_db::entities::NewCreditNote {
+            company_id: biz.ctx.company_id,
+            invoice_id,
+            date: chrono::NaiveDate::from_ymd_opt(2026, 3, 15).unwrap(),
+        },
+        biz.ctx.user_id,
+    )
+    .await
+    .expect("avoir");
+}
+
+/// T3 (a) — une sauvegarde **0.19.0** (manifeste sans `line_type` sur les deux
+/// tables de lignes) s'importe : chaque ligne de facture et d'avoir est
+/// identique à ce qu'elle était, et `priced`. Tue la mutation « `NOT NULL` sans
+/// `DEFAULT` » (`is_required` exigerait alors la colonne à la source).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn import_sauvegarde_0_19_0_donne_les_memes_lignes(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let biz = seed_business(&pool, "T3a").await;
+    validated_invoice(&pool, &biz).await;
+    facture_et_avoir(&pool, &biz).await;
+    let (avant, _) = empreinte_lignes(&pool).await;
+    assert_eq!(
+        avant.len(),
+        6,
+        "anti-vacuité : 4 lignes de facture, 2 d'avoir"
+    );
+
+    let backup = export_backup(&app, &biz.ctx.jwt).await;
+    let (mut manifest, data) = unzip(&backup);
+    strip_column(&mut manifest, "invoice_lines", "line_type");
+    strip_column(&mut manifest, "credit_note_lines", "line_type");
+    import_ok(&app, &biz.ctx.jwt, &manifest, &data).await;
+
+    let (apres, types) = empreinte_lignes(&pool).await;
+    assert_eq!(
+        apres, avant,
+        "les lignes d'une sauvegarde 0.19.0 sont identiques"
+    );
+    assert!(
+        types.iter().all(|t| t.ends_with("|priced")),
+        "le DEFAULT donne `priced` : {types:?}"
+    );
+}
+
+/// T3 (b) — une sauvegarde **0.20.0** portant un commentaire et un titre, sur
+/// une facture et sur son avoir, fait l'aller-retour sans perte ni refus de
+/// contrainte.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn import_sauvegarde_aller_retour_ligne_de_commentaire(pool: MySqlPool) {
+    use kesh_db::entities::LineType;
+
+    let app = spawn_app(pool.clone()).await;
+    let biz = seed_business(&pool, "T3b").await;
+    let neutre = |lt: LineType, desc: &str| NewInvoiceLine {
+        description: desc.into(),
+        quantity: dec!(0),
+        unit_price: dec!(0),
+        vat_rate: dec!(0),
+        revenue_account_id: None,
+        line_type: lt,
+    };
+    let (inv, _) = invoices::create(
+        &pool,
+        biz.ctx.user_id,
+        NewInvoice {
+            company_id: biz.ctx.company_id,
+            contact_id: biz.contact_id,
+            date: chrono::NaiveDate::from_ymd_opt(2026, 3, 1).unwrap(),
+            due_date: None,
+            payment_terms: None,
+            project_id: None,
+            lines: vec![
+                neutre(LineType::Heading, "Travaux"),
+                NewInvoiceLine {
+                    description: "Prestation".into(),
+                    quantity: dec!(2),
+                    unit_price: dec!(50),
+                    vat_rate: dec!(0),
+                    revenue_account_id: None,
+                    line_type: LineType::Priced,
+                },
+                neutre(LineType::Comment, "Selon devis"),
+            ],
+        },
+    )
+    .await
+    .expect("facture à commentaire");
+    invoices::validate_invoice(&pool, biz.ctx.company_id, inv.id, biz.ctx.user_id)
+        .await
+        .expect("validation");
+    kesh_db::repositories::credit_notes::create_credit_note(
+        &pool,
+        kesh_db::entities::NewCreditNote {
+            company_id: biz.ctx.company_id,
+            invoice_id: inv.id,
+            date: chrono::NaiveDate::from_ymd_opt(2026, 3, 15).unwrap(),
+        },
+        biz.ctx.user_id,
+    )
+    .await
+    .expect("avoir");
+    let avant = empreinte_lignes(&pool).await;
+    assert_eq!(
+        avant.1.iter().filter(|t| !t.ends_with("|priced")).count(),
+        4,
+        "anti-vacuité : un titre et un commentaire, sur la facture et l'avoir"
+    );
+
+    let backup = export_backup(&app, &biz.ctx.jwt).await;
+    let (manifest, data) = unzip(&backup);
+    import_ok(&app, &biz.ctx.jwt, &manifest, &data).await;
+    assert_eq!(
+        empreinte_lignes(&pool).await,
+        avant,
+        "aller-retour sans perte"
     );
 }
 

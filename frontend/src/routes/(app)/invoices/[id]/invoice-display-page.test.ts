@@ -346,3 +346,52 @@ describe("fiche facture — bouton « Changer le compte analytique » (36-16a)",
     expect(r.queryByTestId(bouton)).toBeNull();
   });
 });
+
+// Story 49-1c (#1242, T9, AC5) — un commentaire (et un titre, jusqu'à la 49-3) s'affiche
+// en une cellule sur toutes les colonnes, sans montant, taux ni « (défaut société) » ;
+// la ligne chiffrée voisine garde ses six cellules.
+describe("fiche facture — ligne de commentaire (49-1c)", () => {
+  function texte(id: number, lineType: "comment" | "heading", description: string) {
+    return {
+      ...ligne(id, "0.0000"),
+      lineType,
+      description,
+      unitPrice: "0.0000",
+      vatRate: "0.00",
+      lineTotal: "0.0000",
+    };
+  }
+
+  for (const status of ["draft", "validated"] as const) {
+    it(`${status} : le commentaire tient une cellule colspan 6, sauts de ligne gardés ; la ligne chiffrée est inchangée`, async () => {
+      getInvoiceMock.mockResolvedValue(
+        invoice({
+          status,
+          journalEntryId: status === "draft" ? null : 9,
+          lines: [
+            { ...ligne(1, "1.0000"), lineType: "priced" },
+            texte(2, "comment", "Merci\nà bientôt"),
+            texte(3, "heading", "Travaux"),
+          ],
+        } as unknown as Partial<InvoiceResponse>),
+      );
+      const { findAllByTestId } = render(Page);
+      const cellules = await findAllByTestId("invoice-line-comment");
+      expect(cellules.map((c) => c.textContent)).toEqual(["Merci\nà bientôt", "Travaux"]);
+      for (const c of cellules) {
+        expect(c.getAttribute("colspan")).toBe("6");
+        expect(c.className).toContain("whitespace-pre-line");
+        const rangee = c.parentElement!;
+        expect(rangee.querySelectorAll(":scope > td")).toHaveLength(1);
+        expect(rangee.textContent).not.toContain("défaut société");
+        expect(rangee.textContent).not.toContain("0.00");
+        expect(rangee.textContent).not.toContain("%");
+      }
+      // Seule la ligne chiffrée a une quantité et un compte.
+      expect(await findAllByTestId("invoice-line-quantity")).toHaveLength(1);
+      expect(await findAllByTestId("invoice-line-revenue-account")).toHaveLength(1);
+      const chiffree = (await findAllByTestId("invoice-line-quantity"))[0].parentElement!;
+      expect(chiffree.querySelectorAll(":scope > td")).toHaveLength(6);
+    });
+  }
+});
