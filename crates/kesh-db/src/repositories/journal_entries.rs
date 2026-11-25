@@ -4018,9 +4018,16 @@ mod tests {
                     },
                 ],
             );
-            let created = create(&pool, fy_id, Acteur::utilisateur(admin_user_id), new)
-                .await
-                .unwrap();
+            let created = create_with_policy(
+                &pool,
+                fy_id,
+                Acteur::utilisateur(admin_user_id),
+                new,
+                // Story 53-1a : écritures identiques à dessein (décor), politique Confirmed.
+                DuplicatePolicy::Confirmed,
+            )
+            .await
+            .unwrap();
             match attendu {
                 None => attendu = Some(created.entry.entry_number + 1),
                 Some(n) => {
@@ -4154,11 +4161,13 @@ mod tests {
         )
         .await
         .unwrap();
-        let milieu = create(
+        let milieu = create_with_policy(
             &pool,
             fy_id,
             Acteur::utilisateur(admin),
             mk_entry(company_id, today, paire(a1, a2)),
+            // Story 53-1a : écritures identiques à dessein (décor), politique Confirmed.
+            DuplicatePolicy::Confirmed,
         )
         .await
         .unwrap();
@@ -5158,7 +5167,7 @@ mod tests {
 
         // Créer 3 écritures à la même date.
         for _ in 0..3 {
-            create(
+            create_with_policy(
                 &pool,
                 fy_id,
                 Acteur::utilisateur(admin_user_id),
@@ -5182,6 +5191,8 @@ mod tests {
                         },
                     ],
                 ),
+                // Story 53-1a : écritures identiques à dessein (décor), politique Confirmed.
+                DuplicatePolicy::Confirmed,
             )
             .await
             .unwrap();
@@ -5630,7 +5641,7 @@ mod tests {
 
         // Créer 5 écritures.
         for _ in 0..5 {
-            create(
+            create_with_policy(
                 &pool,
                 fy_id,
                 Acteur::utilisateur(admin_user_id),
@@ -5654,6 +5665,8 @@ mod tests {
                         },
                     ],
                 ),
+                // Story 53-1a : écritures identiques à dessein (décor), politique Confirmed.
+                DuplicatePolicy::Confirmed,
             )
             .await
             .unwrap();
@@ -5706,7 +5719,7 @@ mod tests {
         let (a1, a2) = two_accounts(&pool, company_id).await;
 
         for _ in 0..3 {
-            create(
+            create_with_policy(
                 &pool,
                 fy_id,
                 Acteur::utilisateur(admin_user_id),
@@ -5730,6 +5743,8 @@ mod tests {
                         },
                     ],
                 ),
+                // Story 53-1a : écritures identiques à dessein (décor), politique Confirmed.
+                DuplicatePolicy::Confirmed,
             )
             .await
             .unwrap();

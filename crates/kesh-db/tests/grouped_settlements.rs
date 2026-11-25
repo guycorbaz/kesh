@@ -285,7 +285,7 @@ async fn facture(
     .fetch_one(pool)
     .await
     .expect("exercice couvrant la date de la facture");
-    let je = journal_entries::create(
+    let je = journal_entries::create_with_policy(
         pool,
         exercice,
         Acteur::utilisateur(s.admin_user_id),
@@ -300,6 +300,8 @@ async fn facture(
                 chf_line(s.accounts["3000"], Decimal::ZERO, amount),
             ],
         },
+        // Story 53-1a : écritures identiques à dessein (décor), politique Confirmed.
+        kesh_db::repositories::duplicate_policy::DuplicatePolicy::Confirmed,
     )
     .await
     .expect("écriture de vente");

@@ -340,7 +340,7 @@ impl Ctx {
         .await
         .expect("facture")
         .0;
-        let je = journal_entries::create(
+        let je = journal_entries::create_with_policy(
             &self.pool,
             s.fiscal_year_id,
             Acteur::utilisateur(s.admin_user_id),
@@ -367,6 +367,8 @@ impl Ctx {
                     },
                 ],
             },
+            // Story 53-1a : écritures identiques à dessein (décor), politique Confirmed.
+            kesh_db::repositories::duplicate_policy::DuplicatePolicy::Confirmed,
         )
         .await
         .expect("écriture de vente");
@@ -1675,7 +1677,7 @@ impl Ctx {
         let s = &self.seeded;
         let contact_id = self.contact(&format!("Fournisseur {interne}")).await;
         let amount = dec(montant);
-        let je = journal_entries::create(
+        let je = journal_entries::create_with_policy(
             &self.pool,
             s.fiscal_year_id,
             Acteur::utilisateur(s.admin_user_id),
@@ -1702,6 +1704,8 @@ impl Ctx {
                     },
                 ],
             },
+            // Story 53-1a : écritures identiques à dessein (décor), politique Confirmed.
+            kesh_db::repositories::duplicate_policy::DuplicatePolicy::Confirmed,
         )
         .await
         .expect("écriture d'achat");

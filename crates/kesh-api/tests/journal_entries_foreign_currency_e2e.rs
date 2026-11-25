@@ -172,12 +172,16 @@ fn corps(ctx: &Ctx, compte: i64, ligne: Value, contre: &str) -> Value {
 }
 
 async fn post(ctx: &Ctx, body: &Value) -> (u16, Value) {
+    // Story 53-1a : ces cas saisissent la même écriture de référence plusieurs fois
+    // à dessein (ils jugent les devises, non le doublon) : confirmation explicite.
+    let mut body = body.clone();
+    body["confirmNotDuplicate"] = serde_json::json!(true);
     let r = ctx
         .app
         .client
         .post(format!("{}/api/v1/journal-entries", ctx.app.base_url))
         .bearer_auth(&ctx.jwt)
-        .json(body)
+        .json(&body)
         .send()
         .await
         .unwrap();
