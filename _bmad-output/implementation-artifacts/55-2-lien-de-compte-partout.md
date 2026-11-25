@@ -1,10 +1,27 @@
 # Story 55-2 : le lien de compte partout — Journaux, Grand livre, TVA, Compte de résultat
 
-Status: drafted
+Status: ready-for-dev
 
 Epic : `_bmad-output/planning-artifacts/epic-55-navigation-interface.md` — D6, D7 (Q3), D8. Issues : #À-VENIR (`enhancement`,
 P4, point a) ; #À-VENIR (`bug`, P3, point d : sélecteur d'exercice du Grand livre, AC-11 à AC-15). Release : la prochaine planifiée après la 0.20.0. **Frontend seulement, aucune migration. Suit la 55-1a**
 (l'URL du grand livre et le Retour).
+
+## ⚠️ Points renvoyés au développement (validation P6)
+
+La validation de l'ajout (sélecteur d'exercice du Grand livre) s'est arrêtée à la **sixième passe** sur un MEDIUM
+(`kesh-gate-logs/s55-kickoff/55-2-validation-p6.md`), **renvoyé au développement** par la règle de la sixième passe : le T0
+le tranche avant toute ligne de code, ligne lue et décision citées au Change Log.
+
+- **R-1 (V6-1)** — « dates libres » n'est pas un geste possible quand les dates sont les bornes d'un exercice (sélecteur
+  dérivé). Défaut proposé (a) : l'entrée est un **état d'affichage** — la choisir est sans effet et le sélecteur se
+  resynchronise (test sur la valeur relue du `<select>`) ; AC-15 et la note de version disent « « dates libres » s'affiche
+  quand la période n'est pas un exercice ». Alternative (b) : entrée désactivée tant que les dates sont des bornes.
+- **LOW à reprendre** : V6-2 (préremplissage à l'**entrée** sur l'onglet, une fois, jamais à la saisie ; test « deux dates
+  vidées à la main restent vides »), V6-3 (exception notée aux lignes `:146` et `:175` de la 55-1a ; `reports.spec.ts` cité
+  pour la 55-2 au tableau des fichiers communs), V6-4 (second exercice créé pour l'E2E, `api-fixtures.ts:445` ; mutation
+  « écriture de `selectedFiscalYearId` » avec un exercice différent et un rapport en mémoire ; tests nommés pour AC-13 et
+  AC-14), V6-5 (fichier d'epic : la phrase « Justificatif et non pièce » à remettre au point 3 de l'*Objectif*), V6-6
+  (modules de `fiscalYearMatching` et de la fonction de libellé : `features/reports` ; taille de la story déclarée).
 
 ## Story
 
@@ -285,3 +302,6 @@ onglet. (refs #À-VENIR, #À-VENIR)
   deux clés neuves (V5-3) ; en-tête, note de version, tâche T3bis, captures (V5-4) ; LOW V5-5 à V5-11 (tests nommés, item du
   manuel `:4198-4205`, commentaires, numérotation, texte d'issue, fichier d'epic, libellé partagé, société sans exercice).
   Prochaine passe : P6 ; au-delà, retrait ou renvoi.
+- 2026-11-25 — Validation P6 ciblée (Sonnet) : 0/0/1/5. **Arrêt de la boucle par renvoi au développement** (R-1).
+  Tendance : P1 Sonnet 0/0/4/6 → P2 Opus 0/0/3/5 → P3 ciblée Haiku 0/0/1/1 → P4 ciblée Sonnet 0/0/0/4 (close) → ajout du
+  sélecteur d'exercice → P5 ciblée Opus 0/0/4/7 → P6 ciblée Sonnet 0/0/1/5. `ready-for-dev` **sous réserve** du T0 (R-1).
