@@ -274,7 +274,8 @@ pub struct ReviewInput<'a> {
     pub primary_ledger_account_id: Option<i64>,
     /// Les transactions pending **déjà comptabilisées** de l'autre côté :
     /// identifiant de la transaction → écriture ([`REVIEW_ALREADY_POSTED`]),
-    /// lues par `kesh_db::repositories::reconciliation_link::matched_elsewhere_for_page`.
+    /// lues par `kesh_db::repositories::reconciliation_link::posted_elsewhere_for_page`
+    /// puis [`first_naming_entry`].
     pub already_posted: &'a HashMap<i64, i64>,
 }
 
@@ -880,7 +881,14 @@ pub fn conversion_halves(a: &BankTransaction, b: &BankTransaction, spec: &Provid
 /// - **par sa paire de conversion** : une conversion en une écriture ne
 ///   nomme que sa moitié débitée ; l'autre moitié est nommée si l'écriture
 ///   est rapprochée (`linked` : les transactions rapprochées de l'écriture)
-///   de sa paire ([`conversion_halves`]), que l'écriture nomme.
+///   de sa paire ([`conversion_halves`]), que l'écriture nomme ;
+/// - **par prudence, une écriture qui ne nomme aucune transaction** (aucun
+///   identifiant dans son libellé : une écriture saisie à la main, puis
+///   rattachée des deux côtés) vaut pour **toute** transaction de la
+///   présélection — son montant, l'autre côté. Elle ne dit pas laquelle elle
+///   porte : en refuser une de trop (« à examiner », écrite à la main) coûte
+///   moins que d'en écrire une seconde fois. Seule une écriture qui nomme une
+///   **autre** transaction l'écarte.
 pub fn entry_names(
     spec: &ProviderSpec,
     t: &BankTransaction,
@@ -890,7 +898,8 @@ pub fn entry_names(
     let ids = (spec.extract_ids)(description);
     let named =
         |x: &BankTransaction| (spec.match_key)(x).is_some_and(|k| ids.iter().any(|i| i == k));
-    named(t)
+    ids.is_empty()
+        || named(t)
         || ((spec.classify)(t) == ProviderKind::Conversion
             && linked
                 .iter()
@@ -1493,10 +1502,15 @@ mod tests {
         let candidates = [(901, "Retrait IDA"), (902, "Retrait IDB")];
         assert_eq!(first_naming_entry(&SPEC, &a, candidates, &[]), Some(901));
         assert_eq!(first_naming_entry(&SPEC, &b, candidates, &[]), Some(902));
-        // Une écriture qui ne nomme personne ne retient rien.
+        // Une écriture qui ne nomme personne (saisie à la main) retient, par
+        // prudence, toute transaction de la présélection.
         assert_eq!(
             first_naming_entry(&SPEC, &a, [(903, "Retrait sans identifiant")], &[]),
-            None
+            Some(903)
+        );
+        assert_eq!(
+            first_naming_entry(&SPEC, &b, [(903, "Retrait sans identifiant")], &[]),
+            Some(903)
         );
         let c = typed(tx(3, 10, "-50.00", "CHF"), "wd", "IDC");
         assert_eq!(first_naming_entry(&SPEC, &c, candidates, &[]), None);

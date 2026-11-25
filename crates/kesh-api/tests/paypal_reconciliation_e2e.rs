@@ -1330,6 +1330,42 @@ async fn frais_du_meme_montant_que_le_retrait_jamais_confondus(pool: MySqlPool) 
     );
 }
 
+/// Correctif #1538 (revue P1 de la #1560, M1) : l'écriture du retrait
+/// **saisie à la main** (libellé libre, sans identifiant), rattachée des deux
+/// côtés, puis le côté PayPal annulé seul. L'écriture ne nomme aucune
+/// transaction : par prudence, elle vaut pour le retrait — à examiner, jamais
+/// écrit une seconde fois ; voir [`detache_ni_propose_ni_ecrit_deux_fois`].
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ecriture_saisie_a_la_main_rattachee_puis_detachee_jamais_reecrite(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let retrait = ctx.tx("0TEST00000000007G").await;
+    let v = proposition(&ctx.revue().await, retrait);
+    assert_eq!(v["type"], "withdrawal", "{v}");
+    let (s, b) = ctx
+        .post(
+            "/api/v1/journal-entries",
+            json!({
+                "entryDate": "2020-02-28",
+                "journal": "Banque",
+                "description": "Retrait PayPal vers la banque",
+                "lines": [
+                    { "accountId": ctx.banque, "debit": "1000.00", "credit": "0" },
+                    { "accountId": ctx.chf, "debit": "0", "credit": "1000.00" },
+                ],
+            }),
+        )
+        .await;
+    assert_eq!(s, 201, "{b}");
+    let ecriture = b["id"].as_i64().unwrap();
+    assert_eq!(ctx.rattacher(retrait, ecriture).await.0, 200);
+    let reception = ctx
+        .autre_cote(ctx.ba_banque().await, "1000.00", "2020-02-28")
+        .await;
+    let (s, b) = ctx.rattacher(reception, ecriture).await;
+    assert_eq!(s, 200, "{b}");
+    detache_ni_propose_ni_ecrit_deux_fois(&ctx, retrait, v, ecriture, reception).await;
+}
+
 /// L'ordre inverse : annuler d'abord le **côté banque** ne retire que son
 /// lien (l'écriture reste rapprochée du retrait, qui n'est pas pending, donc
 /// pas proposé) ; annuler ensuite le côté PayPal **contre-passe** l'écriture,

@@ -1130,7 +1130,11 @@ pub async fn rejudge<'a>(
 /// que le lot tient, exclut une acceptation, un rattachement ou une annulation
 /// concurrents sur ce compte ; l'autre côté (la réception) peut se rattacher
 /// en même temps depuis son propre compte — sens sûr pour la règle seulement
-/// s'il est visible, angle mort assumé sinon (fenêtre d'une transaction).
+/// s'il est visible, angle mort assumé sinon (fenêtre d'une transaction). De
+/// même pour la paire d'une conversion (autre solde, verrou non tenu par le
+/// lot) : un rattachement ou une annulation concurrents de la paire entre la
+/// présélection et la lecture de ses liens peut changer le nom de l'autre
+/// moitié.
 pub async fn rejudge_writing<'a>(
     tx: &mut sqlx::Transaction<'_, MySql>,
     ctx: &'a AcceptContext<'_>,
