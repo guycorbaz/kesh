@@ -154,14 +154,20 @@ par la garde : un fichier commun, non un module.) Les pages des fiches de factur
    téléchargement, au premier envoi, ou au premier affichage depuis les rapports », renvoi `\S\ref{sec:pdf-fige}` depuis
    les deux paragraphes des rapports ; le chemin « Mensuel → Rapports → Journal » (`:4318`) contrôlé contre l'onglet réel
    (« Journaux »). **Phrases du figement** — par une **règle**, non par une liste de lignes (validation P4 de la version
-   récrite : chaque liste se révélait incomplète) : **toute phrase du manuel qui attribue le figement d'un PDF de facture au
-   seul téléchargement ou au seul envoi**, ou qui dit qu'une facture « jamais téléchargée ni envoyée » n'est pas figée, est
-   corrigée pour y ajouter l'affichage depuis les rapports, avec renvoi au § 11.6.1. Méthode, au T4 et sur la base de
-   développement (les numéros glissent de −6 entre `1e23edb55` et la PR 46) : `grep -nE
-   "t[ée]l[ée]charg|envoy|envoi|ouvert|rendu|fig[ée]|refig" docs/manual/fr/user-manual.tex` (balises `\textbf{}` comprises),
-   chaque occurrence **jugée** dans une table du Change Log — corrigée, ou laissée avec sa raison —, ligne lue citée.
+   récrite : chaque liste se révélait incomplète) : **toute phrase des manuels utilisateur et d'administration qui attribue le
+   figement d'un PDF de facture au seul téléchargement ou au seul envoi**, ou qui dit qu'une facture « jamais téléchargée ni
+   envoyée » n'est pas figée, est corrigée pour y ajouter l'affichage depuis les rapports, avec renvoi au § 11.6.1 (sauf dans
+   le § 11.6.1 lui-même). **Le refus d'un PDF figé disparu** (`user-manual.tex:1650`) reçoit une phrase propre : l'affichage
+   depuis les rapports est refusé de même, avec le même message ; le bouton *Refiger* n'apparaît qu'après un téléchargement
+   refusé **depuis la fiche** (`invoices/[id]/+page.svelte:926`, `:994`, `:1037`). Méthode, au T4 et sur la base de
+   développement (les numéros glissent entre `1e23edb55` et la PR 46, de façon inégale : relevés sur la base) : en deux
+   étapes, `grep -nE "fig[ée]|refig" docs/manual/fr/user-manual.tex docs/manual/fr/admin-manual.tex`, puis, parmi les
+   phrases des factures et de leur PDF, `grep -nE "t[ée]l[ée]charg|envoy|envoi|ouvert|rendu"` ; le nombre de lignes écartées
+   à chaque étape est déclaré, et chaque ligne retenue **jugée** dans une table du Change Log — corrigée, ou laissée avec sa
+   raison —, ligne lue citée.
    Repères à `1e23edb55`, non limitatifs : `:1502`, `:1513`, `:1553`, `:1633`, `:1637`, `:1641`-`:1645`, `:1650`, `:1674`,
-   `:1725`, `:2058` (laissée : audit), `:4909`. Formulation : § 11.6.1 (`:1637`) « au premier téléchargement, au premier
+   `:1725`, `:2058` (laissée : audit), `:4909` ; `admin-manual.tex:949`, `:1607` (Consultation : « le premier
+   téléchargement du PDF d'une facture le fige »), `:1644` ; `:3426` (clé d'API) laissée. Formulation : § 11.6.1 (`:1637`) « au premier téléchargement, au premier
    envoi, ou au premier affichage depuis les rapports » ; ailleurs, l'ajout de « ou affichage » à la tournure existante.
    `.tex` seul ; le PDF se régénère à la release. Captures du
    manuel montrant le grand livre (p. ex. `rd-grand-livre-usd.png`) : périmées si la colonne y paraît, à refaire à la
@@ -182,8 +188,11 @@ par la garde : un fichier commun, non un module.) Les pages des fiches de factur
   appel de `goto` (mock de `$app/navigation`) ; **fermé puis rouvert pendant la lecture de la liste** — deux promesses
   contrôlées, la première résolue **après** la seconde, avec des listes de noms **différents** ; l'assertion porte sur la
   liste affichée : celle de la seconde ouverture — (mutation : compteur d'ouverture retiré → la liste ancienne s'affiche, test rouge).
-- **Vitest** (focus) : fermeture (Échap, « Fermer ») → focus sur l'icône qui a ouvert (deux icônes, la seconde ouvre ;
-  mutation : focus rendu à la première → test rouge).
+- **Vitest** (focus, dans `EntryDocuments.test.ts`) : fermeture (Échap, « Fermer ») → focus sur l'icône qui a ouvert (deux
+  icônes, la seconde ouvre, par `fireEvent.click`, qui ne donne pas le focus au bouton). Mécanisme : `onCloseAutoFocus` du
+  dialogue avec `preventDefault()` puis le focus rendu à l'élément retenu (bits-ui 2.16.5 rend le focus par défaut,
+  `focus-scope.svelte.js:79-90`, ce qui laisserait l'E2E vert sans le code). Mutation : retrait du rendu explicite → test
+  rouge.
 - **Vitest** `reports.api.test.ts` : `fetchEntryDocuments(entryId)`, `fetchInvoicePdf`, `fetchCreditNotePdf` (URL exactes).
 - **Vitest** `DocumentPreview.test.ts` : tests ajoutés (propriété présente rendant une chaîne, y compris pour
   `SOURCE_DOCUMENT_GONE` ; rendant `undefined` ; absente ; nouveau rendu avec une autre fonction `errorMessage` → **une**
@@ -215,7 +224,7 @@ d'une facture figée, ou par `page.route` rendant `410 INVOICE_PDF_GONE`) ; gran
 
 ## Tâches
 
-- [ ] **T0** — Base `epic/55-navigation` avec les 55-1a, 55-1b, 55-2 et 55-3a ; lignes du manuel sur la base PR 46 ; et les
+- [ ] **T0** — Base `epic/55-navigation` avec les 55-1a, 55-1b, 55-2 et 55-3a ; lignes du manuel sur la base de développement ; et les
       points renvoyés par la validation, chacun tranché au Change Log, ligne lue citée :
       - hauteur de l'aperçu dans le dialogue (titre, liste, cadre et « Fermer » tiennent dans `85vh`, sans double
         défilement) ;
@@ -319,3 +328,7 @@ n'était pas encore produit le fige, comme un téléchargement. (refs #À-VENIR)
   lignes du manuel est remplacé par une règle, une méthode de recherche large et une table de jugement au Change Log, sur
   la base de développement (Vv2p4-1, Vv2p4-2, Vv2p4-3) ; focus rendu à l'icône d'origine, test et mutation (Vv2p4-4).
   Prochaine passe : P5 ; dès la P6, retrait ou renvoi.
+- 2026-11-25 — Validation P5 ciblée (version récrite, Opus) : 0/0/2/4 ; remédiée (dernière remédiation permise à
+  l'orchestrateur) : manuel d'administration dans la règle (`:949`, `:1607`, `:1644`) et au fichier d'epic (Vv2p5-1) ;
+  phrase propre pour le refus d'un PDF disparu, *Refiger* depuis la fiche seulement (Vv2p5-2) ; LOW Vv2p5-3 à Vv2p5-6
+  (décalage inégal, recherche en deux étapes, renvoi hors du § 11.6.1, test du focus et `onCloseAutoFocus`).

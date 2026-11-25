@@ -218,7 +218,7 @@ Déclarés au kickoff (`CLAUDE.md` § *Fusions et fichiers communs*), relevés l
 | `crates/kesh-i18n/locales/*/messages.ftl` | 55-2, 55-3b (55-1a si un texte apparaît) | Epic 46 (`reports-groups-*`) | bloc `reports-nav-*` propre à l'epic |
 | `frontend/src/lib/shared/i18n-keys.test.ts` (`sitesTotal`) | 55-2, 55-3b | tous | recompté par la garde après chaque reprise |
 | `frontend/tests/e2e/reports.spec.ts`, `homepage-charts.spec.ts`, `open-items.spec.ts`, `dunning-roundtrip.spec.ts` | 55-1a (comportement de génération, D3) | Epic 46 (`reports-groupes*.spec.ts`) | E2E neufs : `reports-navigation.spec.ts` (55-1a, 55-1b, 55-2), `reports-entry-documents.spec.ts` (55-3b) |
-| `docs/manual/fr/user-manual.tex` § *Rapports comptables* (`:4101`-`:4476` à `1e23edb55`) | 55-1a, 55-1b, 55-2, 55-3b (et § 11.6.1 *Le PDF émis est figé*, `:1635`) | Epic 46 (§ *Bilan*, *Compte de résultat*, *Balance*) | `.tex` seul, PDF à la release |
+| `docs/manual/fr/user-manual.tex` § *Rapports comptables* (`:4101`-`:4476` à `1e23edb55`) | 55-1a, 55-1b, 55-2, 55-3b (et § 11.6.1 *Le PDF émis est figé*, `:1635` ; `admin-manual.tex` : phrases du figement, 55-3b) | Epic 46 (§ *Bilan*, *Compte de résultat*, *Balance*) | `.tex` seul, PDF à la release |
 | `_bmad-output/implementation-artifacts/sprint-status.yaml` | toutes | tous | bloc propre à l'Epic 55 |
 
 ## Questions au mainteneur
