@@ -5,8 +5,8 @@ Status: drafted
 *Fiche rédigée le 2026-11-25 (Sonnet 5.5), worktree `kesh-53-3`, branche `story/53-3-ouverture-sous-verrou` partie de
 `origin/epic/53-ecritures-justes` à `4d540a6ea`, par le workflow `bmad-create-story`, en autonomie. Epic 53 « Écritures justes »,
 troisième story ; release **v0.21.0** (vendredi 2026-12-04). **Aucune migration.** Priorité **P1** (une écriture d'ouverture sur un
-compte de produits ou de charges fausse le résultat du premier exercice). Validation P1 (Opus) : 0/0/3/8, remédiée le 2026-11-25 (Change Log) ; validation P2 (Sonnet) : 0/0/4/8, remédiée le 2026-11-25 ; validation P3 (Opus) :
-`53-3-ouverture-sous-verrou-validation-prompt-p3.md`. Q1 (D3) : acceptée le 2026-11-25 sur une description inexacte, **à reconfirmer** (D3 réécrite) ; Q2 : issue #1580.*
+compte de produits ou de charges fausse le résultat du premier exercice). Validation P1 (Opus) : 0/0/3/8, remédiée le 2026-11-25 (Change Log) ; validation P2 (Sonnet) : 0/0/4/8, remédiée le 2026-11-25 ; validation P3 (Opus) : 0/0/3/5, remédiée le 2026-11-25 ; validation P4 (Sonnet) :
+`53-3-ouverture-sous-verrou-validation-prompt-p4.md`. Q1 (D3) : **tranchée « oui »** par le Project Lead le 2026-11-25, sur la description exacte ; Q2 : issue #1580. Story unique : voir § *Dérogation règle de splitting*.*
 
 ## Story
 
@@ -53,7 +53,8 @@ UPDATE` de la société) : il suffit de relire le type **dans** `create_opening_
 10.11, `accounts.rs:627`). Placée avant `count_by_company`, une lecture ordinaire serait elle-même la première lecture cohérente et verrait
 tout retypage commité avant elle ; ce que la lecture verrouillante apporte **en plus** : (α) elle **attend** un écrivain non commité qui ne
 prendrait pas la société (aucun aujourd'hui ; demain, un nouveau site) puis lit la dernière version commitée ; (β) elle **tient** le verrou
-partagé jusqu'au commit : aucun retypage ne peut plus s'intercaler entre le contrôle et l'écriture — c'est le cœur de #513 ;
+partagé jusqu'au commit, ce qui garde la propriété (aucun retypage entre le contrôle et l'écriture) **même contre un écrivain qui ne prendrait
+pas la société** ; aujourd'hui, c'est la sentinelle `companies` qui ferme #513 (P5), et M4 laisse AC-3 vert ;
 (ii) **place** (validation P1, V1-3) : **juste après `fiscal_years FOR UPDATE`, avant `count_by_company`**, donc **vue non ouverte**.
 C'est la règle de la 25-7 que l'issue prescrit (« verrous d'abord, puis lectures, puis refus », `opening_complement.rs:454-461`). Placée
 après `count_by_company`, la lecture verrouillante s'exécuterait vue ouverte : avec `innodb_snapshot_isolation` (actif par défaut depuis
@@ -89,11 +90,11 @@ Commande de l'inventaire : `git grep -n "create_opening_in_tx\|create_opening_en
 | W7 | serveur MCP et clés d'API | aucun outil d'écriture d'ouverture (`mcp/outils/grand_livre.rs`, `exercices.rs`, `rapports.rs` : lecture) ; une clé d'API qui atteint `POST /opening-balances` passe par W1 | couvert par W1 |
 | W8 | données de démonstration (`kesh-seed`) | recherche `ouverture\|opening` : aucune ligne | non concerné |
 | W9 | assistant d'installation (`routes/onboarding.rs`) | recherche `ouverture\|Opening` : aucune ligne ; le compte bancaire de l'assistant passe par W3 | non concerné |
-| W10 | **modification** de l'écriture d'ouverture (`PUT /api/v1/journal-entries/{id}`) | aucun refus de type propre à l'ouverture : « rien n'empêche donc d'y ajouter une ligne de résultat, ce que la génération refuse » (`docs/manual/fr/user-manual.tex:1065`, retrouvé dans le PDF aplati) | **angle mort assumé, documenté au manuel** : la modification est un geste d'écriture ordinaire (toute écriture peut toucher un compte de résultat) ; ce que #513 ferme est la **génération** ; hors périmètre, la fiche ne le traite pas (issue à ouvrir, texte au § *Décisions du Project Lead*) |
+| W10 | **modification** de l'écriture d'ouverture (`PUT /api/v1/journal-entries/{id}`) | aucun refus de type propre à l'ouverture : « rien n'empêche donc d'y ajouter une ligne de résultat, ce que la génération refuse » (`docs/manual/fr/user-manual.tex:1064`, retrouvé dans le PDF aplati) | **angle mort assumé, documenté au manuel** : la modification est un geste d'écriture ordinaire (toute écriture peut toucher un compte de résultat) ; ce que #513 ferme est la **génération** ; hors périmètre, la fiche ne le traite pas (issue à ouvrir, texte au § *Décisions du Project Lead*) |
 | W11 | soldes d'ouverture de **relevés** (`opening_balance` de `bank_statements_manual.rs`, `bank_imports.rs`) | soldes de relevé, non des écritures | non concernés |
 
 Sites **non résolus** de la classe « lire un type de compte avant d'écrire, hors du verrou » : `find_types_by_ids_in_tx` n'a **qu'un seul
-appelant de production**, le handler W1 (`git grep -n find_types_by_ids_in_tx` : handler `:452`, définition `accounts.rs:474`, trois tests
+appelant de production**, le handler W1 (`git grep -n find_types_by_ids_in_tx` : handler `:452`, définition `accounts.rs:474`, deux tests
 `opening_balances_repository.rs:302`, `:325`, `:260`). Aucun autre site de la classe. Angle mort assumé : un compte **créé** après le
 contrôle ne peut être visé par une requête déjà lancée (identifiant inconnu au client).
 
@@ -123,21 +124,23 @@ contrôle ne peut être visé par une requête déjà lancée (identifiant incon
   `validate_lines_accounts_in_tx` — ce helper sert les dix-neuf routes qui créent une écriture ; y mettre une règle d'ouverture fait porter à
   toutes un paramètre qui ne regarde que deux. Sa requête **n'est pas réécrite** par la story (hors périmètre) : si l'`EXPLAIN` de AC-6 montre
   qu'elle surverrouille, c'est une **issue**, non un patch ici.
-- **D3 — le handler perd sa transaction jetée et son pré-contrôle des types ; l'ordre de deux familles de verdicts change.** **Décision Q1
-  du Project Lead du 2026-11-25 : acceptée sur une description inexacte (« le message diffère ») ; À RECONFIRMER sur la description exacte
-  ci-dessous** (l'orchestrateur la lui redonne). Aujourd'hui le contrôle des types (`opening_balances.rs:443-463`) précède
-  `accounting::validate` (`:481`). Après la story, `validate` précède la transaction : une requête qui cumule un compte de résultat **et** un
-  refus de `validate` rendra le refus de `validate`. **Statut HTTP inchangé (400). Le code machine change pour deux familles**
-  (`map_core_error`, `journal_entries.rs:335-366`) : le **déséquilibre** rendra **`ENTRY_UNBALANCED`** (`errors.rs:2745`) et les trois refus de
-  partie en devise (`FxValueOutOfRange`, `FxLineRoundsToZero`, `FxAmountMismatch`) rendront leur code **`FX_*`** (`errors.rs:3246-3250`) ;
-  libellé vide, moins de deux lignes, montant négatif, débit et crédit à la fois, total nul, total hors intervalle restent
-  **`VALIDATION_ERROR`**. Le **message** change dans tous les cas. Pour un client de l'API (clé REST), la requête doublement fautive
-  « compte de résultat + déséquilibre » lisait `VALIDATION_ERROR` et lira `ENTRY_UNBALANCED`. **La fiche tient sous les deux réponses** :
-  *oui* (changement accepté) : le déplacement complet, tel que décrit ; *non* : la seule voie qui garde l'ordre est de **conserver le
-  pré-contrôle lock-free des types au handler, en plus du contrôle sous verrou** (comme le handler le fait déjà pour l'exercice et la société
-  vierge, `:410-411`) — coût : un site de plus pour la règle (DRY) et une double lecture, soit en pratique **un `if` et sa transaction courte
-  conservés dans `generate_opening_balances`** (T4 se réduit à garder `:443-463` en place) ; le correctif sous verrou (D1) est le même. Le
-  changement est **épinglé par un test** qui asserte le **code** (AC-5 e).
+- **D3 — le handler perd sa transaction jetée et son pré-contrôle des types ; l'ordre de deux familles de verdicts change. Décision Q1 du
+  Project Lead du 2026-11-25, sur cette description exacte : OUI, accepté.** Aujourd'hui le contrôle des types (`opening_balances.rs:443-463`)
+  précède `accounting::validate` (`:481`). Après la story, `validate` précède la transaction : une requête qui cumule un compte de résultat
+  **et** un refus de `validate` rendra le refus de `validate`. **Statut HTTP inchangé (400). Le code machine change pour deux familles** :
+  (1) le **déséquilibre** rendra **`ENTRY_UNBALANCED`** (`errors.rs:2745`) ; (2) les refus de partie en devise **que juge
+  `accounting::validate`** (`check_foreign_line`, `kesh-core/src/accounting/fx.rs:216-247` ; il faut un **cours et** un débit ou un crédit
+  fournis : cours hors bornes, montant en devise ≤ 0, `round(montant × cours, 2)` nul, débit différent du CHF calculé) rendront leur code
+  **`FX_*`** (`errors.rs:3246-3250`). **Ne changent pas** : les refus de l'**analyse de la ligne**, `parse_line_amounts`
+  (`journal_entries.rs:796-840` : somme hors bornes, `chf` fourni contredisant le montant, ligne sans cours, ligne sans débit ni crédit),
+  qui précèdent déjà le contrôle des types (`opening_balances.rs:391-405`) et rendent déjà `FX_*` ; et libellé vide, moins de deux lignes,
+  montant négatif, débit et crédit à la fois, total hors intervalle (restent `VALIDATION_ERROR`). Le **message** change dans tous les cas.
+  Pour un client de l'API (clé REST), la requête « compte de résultat + déséquilibre » lisait `VALIDATION_ERROR` et lira `ENTRY_UNBALANCED`.
+  **Qualification au regard de CLAUDE.md § *Versions de l'API*** : la précédence des refus de `POST /opening-balances` n'est **pas documentée**
+  (`docs/api-external.md` ne dit rien de `non-balance-account` ni de son ordre) ; ce n'est donc pas une rupture du contrat, mais un changement
+  de précédence, **annoncé ⚠️ en tête des notes de version**, sous `/api/v1`, release `c` si elle partait seule ; précédent assumé : C-15-8-16
+  (`routes/journal_entries.rs`, `create_journal_entry` : « un corps déséquilibré ET sans exercice rend désormais `ENTRY_UNBALANCED` avant
+  `NO_FISCAL_YEAR` »). Le changement est **épinglé par un test** qui asserte le **code** (AC-5 e).
 - **D4 — nouvelle clé `FY_OPENING_NON_BALANCE_ACCOUNT_KEY = "fiscal_year:opening-non-balance-account"`** à côté des deux clés de la 14-4
   (`fiscal_years.rs:269`, `:275`), émise en `DbError::Invariant(<KEY>)`, re-mappée par `map_opening_balances_error`
   (`opening_balances.rs:221`) en `AppError::Validation(t("error-opening-balances-non-balance-account", …))` — **même message, mêmes
@@ -199,8 +202,8 @@ n'ouvre plus de transaction et ne lit plus de type (`git grep -n find_types_by_i
 d'audit. Le test existant `post_revenue_account_400_non_balance_account` (`opening_balances_e2e.rs:571`) reste vert, un jumeau `Expense`
 s'y ajoute.
 
-**AC-3 — la course de #513 est fermée, et le test rougit sans le correctif.** Test d'entrelacement forcé (patron `PROCESSLIST` de
-`opening_complement_repository.rs` / `credit_card_repository.rs:150`, jamais `INNODB_TRX`, jamais un `sleep`) : une connexion
+**AC-3 — la course de #513 est fermée, et le test rougit sans le correctif.** Test d'entrelacement forcé (assistant partagé `kesh_db::test_fixtures::attendre_une_requete_en_cours`, `test_fixtures.rs:593`, motifs
+`["FROM companies WHERE id = ?", "FOR UPDATE"]`, jamais `INNODB_TRX`, jamais un `sleep`) : une connexion
 `tenue` ouvre une transaction, prend `companies` en partage comme `accounts::update`, retype le compte cible en `Revenue` **sans commiter** ;
 `create_opening_entry` est lancée (tâche) et **vue en attente** sur la société ; `tenue` commite ; l'appel doit rendre
 `Invariant(FY_OPENING_NON_BALANCE_ACCOUNT_KEY)`, **aucune** écriture. Sans le correctif, l'appel rend `Ok` et une ligne d'ouverture est
@@ -221,16 +224,18 @@ test par l'API ne voit donc pas l'ordre sous verrou (V1-1) : (a) société avec 
 `Invariant(FY_OPENING_FIRST_YEAR_CLOSED_KEY)` ; (c) ligne `Revenue` + une autre ligne sur un compte **archivé** → `NON_BALANCE` (le contrôle
 précède `INACTIVE_OR_INVALID_ACCOUNTS`) ; (d) ligne sur un compte `Revenue` **d'une autre société** → `INACTIVE_OR_INVALID_ACCOUNTS` (non
 `NON_BALANCE` : anti-énumération KF-002, contrat 14-4). Par l'API (`opening_balances_e2e.rs`), contrôle d'absence de régression : 409 et
-`first-year-closed` inchangés ; (e) **épinglage de D3, sur le code** : une ligne `Revenue` **et** (1) une écriture déséquilibrée → **`ENTRY_UNBALANCED`** ; (2) une partie en
-devise hors intervalle (`FX_VALUE_OUT_OF_RANGE`) → code **`FX_*`** correspondant ; (3) une seule ligne → **`VALIDATION_ERROR`** (message
-de `validate`, non « comptes de bilan »). Un cas par famille de D3 ; si Q1 est reconfirmée « non », (e) devient : le message « comptes de
-bilan » et `VALIDATION_ERROR` pour les trois.
+`first-year-closed` inchangés ; (e) **épinglage de D3, sur le code**, chaque cas **rouge à `4d540a6ea`** (journal à l'appui) : une ligne `Revenue` **et** (1) une écriture déséquilibrée
+→ **`ENTRY_UNBALANCED`** ; (2) une partie en devise **jugée par `validate`** — cours **et** débit fournis, `foreign.amount = "-5"` — →
+**`FX_VALUE_OUT_OF_RANGE`** (une ligne en devise **sans cours**, ou dont `chf` contredit le débit, est refusée par `parse_line_amounts` et rendait
+déjà `FX_*` avant la story : elle n'épingle rien) ; (3) une seule ligne → **`VALIDATION_ERROR`** (message de `validate`, non « comptes de bilan »).
 
-**AC-6 — ni sur-verrouillage ni nouvelle arête d'interblocage (D5).** Les mesures (a) à (d) du § *Verrous* sont faites sur la base de
-dev, avec au moins deux identifiants, leurs sorties versées à `kesh-gate-logs/e533/`, leur lecture citée au Dev Agent Record. Si l'accès
-n'est ni `const` ni `range` sur `PRIMARY` — pour l'**une ou l'autre** des deux requêtes —, elle est réécrite (`FORCE INDEX (PRIMARY)` ou lecture
-par clé primaire, une ligne à la fois, `ORDER BY id`) et la mesure refaite. La doc de `create_opening_entry` (liste des verrous, § « Portée
-exacte ») est mise à jour : le verrou `accounts` y paraît, avec sa place et la raison (vue non ouverte, #669).
+**AC-6 — ni sur-verrouillage ni nouvelle arête d'interblocage (D5).** (i) La requête neuve porte `FORCE INDEX (PRIMARY)` **d'emblée** (D2) ;
+les mesures (a) à (d) du § *Verrous* (sur la base de dev, au moins deux identifiants) **constatent** le plan épinglé (`const` ou `range` sur
+`PRIMARY`, sans `Using filesort`), leurs sorties versées à `kesh-gate-logs/e533/`, leur lecture citée au Dev Agent Record. (ii) Pour la requête de
+`validate_lines_accounts_in_tx` (`journal_entries.rs:276-278`, dix-neuf routes), qui n'est **pas** réécrite par la story : un plan autre que
+`const` ou `range` sur `PRIMARY` ouvre une **issue**, citée au Dev Agent Record, et la sonde d'`INSERT` (c) devient **obligatoire** ; jamais une
+réécriture ici. La doc de `create_opening_entry` (liste des verrous, § « Portée exacte ») est mise à jour : le verrou `accounts` y paraît, avec sa
+place et la raison (vue non ouverte, #669).
 
 **AC-7 — les chemins couverts le restent (inventaire W2, W3).** Les tests existants de `opening_complement_repository.rs` et
 `bank_account_opening_balance_e2e.rs` passent sans modification ; **aucun** de leurs fichiers de production n'est touché. Le contrôle
@@ -240,7 +245,7 @@ lexical `chf_line_lexical.rs` reste vert (`create_opening_in_tx` : deux appelant
 (`lexique::decouper` : commentaires, chaînes et tests masqués — sinon le doc-comment de `create_opening_entry`, qui nommera la fonction,
 fait passer la garde à vide après suppression de l'appel) et le corps de `create_opening_entry` délimité par `fonction_englobante` : il
 **contient** un appel à `lock_types_by_ids_in_tx` ; le handler `opening_balances.rs` n'en contient ni de `lock_types_by_ids_in_tx` ni de
-`find_types_by_ids_in_tx` (sauf si Q1 est reconfirmée « non » : le handler garde alors son pré-contrôle, la deuxième moitié est retirée).
+`find_types_by_ids_in_tx`.
 Sondes : positive (le fichier source est lu, sinon échec bruyant) et **négative** (un appel retiré, une copie du corps sans l'appel, rougit).
 Limite écrite : lexical, un renommage en alias le contourne ; il garde le geste, non l'intention.
 
@@ -259,7 +264,7 @@ n'est qu'un contrôle d'absence de régression). Le story file n'affirme que ce 
   `kesh_db::test_fixtures::attendre_une_requete_en_cours`** (`test_fixtures.rs:593`, Story 25-3-a-1, crochet `interrompre`), non en en copiant une ; prouver le rouge **avant**
   le correctif (journal dans `kesh-gate-logs/e533/`).
 - [ ] **T2 — `accounts.rs`** : `find_types_by_ids_in_tx` → `lock_types_by_ids_in_tx`, `ORDER BY id … LOCK IN SHARE MODE`, doc réécrite
-  (« sous verrou », renvoi à P6) ; mettre à jour les deux tests existants (`opening_balances_repository.rs:260`, `:321`).
+  (« sous verrou », renvoi à P6) ; mettre à jour les deux tests existants (`opening_balances_repository.rs:260`, `:321`, dont les doc-comments `:4` et `:257`).
 - [ ] **T3 — `fiscal_years.rs`** : constante `FY_OPENING_NON_BALANCE_ACCOUNT_KEY` ; **`journal_entries.rs`** : l'étape de contrôle dans
   `create_opening_entry` (D1), doc de la fonction mise à jour (étapes, verrous) ; garde `rollback` comme les autres refus.
 - [ ] **T4 — `routes/opening_balances.rs`** : retirer la transaction jetée et le pré-contrôle des types (`:443-463`) ; arm de
@@ -282,16 +287,17 @@ n'est qu'un contrôle d'absence de régression). Le story file n'affirme que ce 
 
 | # | Mutation (appliquée à la main, restaurée, `touch` du fichier après restauration) | Doit rougir |
 |---|---|---|
-| M1 | supprimer l'étape de contrôle de `create_opening_entry` | AC-3, AC-4, AC-2 (via l'API) |
+| M1 | supprimer l'étape de contrôle de `create_opening_entry` | AC-3, AC-4, AC-2 (via l'API : sans contrôle sous verrou, la requête `Revenue` rend 201) |
 | M2 | lire les types **avant** le sentinelle `companies` (lecture simple ou verrouillante) | AC-3 (lecture simple) ; variante verrouillante : par l'attente seule, voir ci-dessous |
 | M3 | ne refuser que `Revenue` (retirer `Expense`) | variante `Expense` d'AC-2 et d'AC-3 |
 | M4 | retirer `LOCK IN SHARE MODE` (lecture ordinaire des types) | **AC-4 seul** (AC-3 reste vert : la société est déjà un verrou commun, et la lecture ordinaire ouvre sa vue après le commit de `tenue`) ; meurt par (α) et (β) de P6 (i) — à écrire au Dev Agent Record |
-| M5 | retirer l'arm de `map_opening_balances_error` (la clé tombe en 500) | AC-2 |
+| M5 | retirer l'arm de `map_opening_balances_error` (la clé tombe en 500) | AC-2 (le handler n'a plus de pré-contrôle : la requête `Revenue` atteint l'arm et rend 500) |
 | M6 | placer le **refus** avant la garde « société vierge » | AC-5 (a), **au niveau du dépôt** (V1-1) |
 | M6-bis | placer le **refus** avant le contrôle du statut `Closed` | AC-5 (b), au niveau du dépôt |
 | M7 | refuser aussi l'identifiant absent (`non-balance` au lieu de `INACTIVE_OR_INVALID_ACCOUNTS`) | AC-5 (d) |
 | M8 | placer le contrôle **après** `create_opening_in_tx` | AC-5 (c) : `INACTIVE` passe alors avant `NON_BALANCE` (la ligne archivée est une autre ligne que le compte `Revenue`) |
 | M9 | lecture **non scopée par la société** (`WHERE id IN …` seul) | test renommé de `opening_balances_repository.rs:260` (compte `foreign` absent du résultat) ; AC-5 (d) |
+| M11 | retirer `FORCE INDEX (PRIMARY)` ou `ORDER BY id` de `lock_types_by_ids_in_tx` | **aucun test** (le plan de la base de test reste `PRIMARY`, l'ordre de verrouillage n'est pas observé) : **angle mort écrit**, gardé par la revue et par la mesure (a) d'AC-6 ; la garde lexicale d'AC-8 peut en outre exiger les deux motifs dans le texte masqué de la requête |
 | M10 | placer la lecture verrouillante **après** `count_by_company` (vue ouverte, P6 ii) | **aucun test sous 10.11** : angle mort écrit, protégé par le doc-comment et par AC-6 (la place) ; ne devient visible que sous ≥ 11.6 (#669) |
 
 **Comment M2 (variante verrouillante) et M4 meurent** : uniquement par la **panique de l'attente `PROCESSLIST`** (la requête attendue ne se
@@ -307,7 +313,7 @@ d'un verrou (`innodb_lock_wait_timeout`, hors périmètre).
 
 - **Fichiers touchés (deux crates)** : `kesh-db` (`repositories/accounts.rs`, `journal_entries.rs`, `fiscal_years.rs`,
   trois fichiers de tests), `kesh-api` (`routes/opening_balances.rs`, un fichier de tests). Pas de frontend. **Splitting préventif : non
-  déclenché** (deux modules). Recoupements : `journal_entries.rs` avec **la story 53-1 de la même epic** (`epic-53-ecritures-justes.md:25`), l'Epic 51 (48-2) et
+  déclenché** (deux modules). Recoupements : `journal_entries.rs` avec **la story 53-1 de la même epic** (`epic-53-ecritures-justes.md:27`), l'Epic 51 (48-2) et
   l'Epic 47 d'un contributeur — la modification est **localisée** à `create_opening_entry` ; le second arrivé reprend l'epic avant sa revue de
   code (§ *Travailler à plusieurs développeurs*). À ajouter à la ligne « Recoupements » de l'epic : « 53-1 et 53-3 sur `journal_entries.rs`
   (fonctions distinctes) ».
@@ -338,27 +344,36 @@ d'un verrou (`innodb_lock_wait_timeout`, hors périmètre).
 
 **v0.21.0 — Corrigé.** *Soldes de départ* : le contrôle qui refuse un compte de produits ou de charges dans le bilan d'ouverture se fait
 désormais **au moment même de l'écriture**, sous verrou, et non avant ; un compte retypé par un autre utilisateur pendant la génération ne
-peut plus recevoir une ligne d'ouverture. Aucun changement pour l'utilisateur dans le cas courant : même message de refus. **Pour un client de l'API** : une requête
-*doublement fautive* (compte de résultat **et** déséquilibre, ou partie en devise invalide) peut rendre un autre code machine
-(`ENTRY_UNBALANCED`, `FX_*`) qu'auparavant (`VALIDATION_ERROR`) ; le statut reste 400. Aucune migration. `refs #513`.
-*(Texte à confirmer si Q1 est reconfirmée « non » : la phrase pour le client de l'API disparaît.)*
+peut plus recevoir une ligne d'ouverture. Aucun changement pour l'utilisateur dans le cas courant : même message de refus.
+**⚠️ Pour un client de l'API** (`POST /api/v1/opening-balances`) : une requête qui porte **à la fois** un compte de résultat **et** un
+déséquilibre rend désormais `ENTRY_UNBALANCED` (au lieu de `VALIDATION_ERROR`), et une partie en devise jugée invalide par la validation de
+l'écriture (cours et montant fournis) rend son code `FX_*` ; le statut reste 400, la précédence de ces refus n'était pas documentée. Aucune
+migration. `refs #513`.
 
 ## Décisions du Project Lead (2026-11-25) et issues
 
-- **Q1 — acceptée sur une description inexacte, à reconfirmer** : le changement d'ordre des verdicts (D3) avait été accepté sur « le
-  message diffère » ; au code, le **code machine** change aussi (`ENTRY_UNBALANCED`, `FX_*`). L'orchestrateur redonne la description de D3 au
-  Project Lead. La fiche tient sous « oui » comme sous « non » (D3, AC-5 e, AC-8, Notes de version).
+- **Q1 — tranchée OUI (2026-11-25), sur la description exacte de D3** : le changement d'ordre des verdicts est accepté (`ENTRY_UNBALANCED` et les
+  `FX_*` jugés par `accounting::validate`, au lieu de `VALIDATION_ERROR` ; statut 400 inchangé).
 - **Q2 — tracée** : issue **#1580** (helper d'attente `PROCESSLIST`, migration vers `kesh_db::test_fixtures::attendre_une_requete_en_cours`).
 - **W10 — issue à ouvrir** par l'orchestrateur (« on trace toujours », CLAUDE.md § *Priorités des défauts*). Texte proposé :
   **Titre** : `La modification de l'écriture d'ouverture peut y poser une ligne de compte de résultat`
   **Labels** : `enhancement`, `P3`, `triage` (le Project Lead peut la requalifier `bug` P2 : la génération refuse ce que la modification admet).
   **Corps** : `POST /api/v1/opening-balances` refuse les comptes de produits et de charges (le bilan d'ouverture ne touche que des comptes de
-  bilan). Mais l'écriture d'ouverture, une fois générée, « se modifie comme toute écriture saisie à la main » (`docs/manual/fr/user-manual.tex:1065`,
+  bilan). Mais l'écriture d'ouverture, une fois générée, « se modifie comme toute écriture saisie à la main » (`docs/manual/fr/user-manual.tex:1064`,
   « rien n'empêche donc d'y ajouter une ligne de résultat, ce que la génération refuse ») : `PUT /api/v1/journal-entries/{id}` n'a aucun refus de
   type propre à l'ouverture. C'est une **limite documentée**, non un contrôle. À décider : refuser un compte de résultat dans la modification
   de l'écriture d'ouverture (comment la reconnaître : journal OD à la date de début du premier exercice, description de la langue comptable ?),
   ou maintenir la limite et la garder au manuel. Hors de la story 53-3 (`refs #513`), qui ne ferme que la fenêtre entre contrôle et
   écriture de la **génération**.
+
+## Dérogation règle de splitting
+
+Signal déclaré au Project Lead : la validation P3 a rendu 3 MEDIUM **recyclés** (V3-1 et V3-2 nés du correctif de V2-1, V3-3 reliquat de V2-2),
+après P1 (3 MEDIUM) et P2 (4 MEDIUM, dont deux nés de correctifs). **La story reste unique** (décision du Project Lead du 2026-11-25) :
+(1) elle touche **deux crates** (`kesh-db`, `kesh-api`), loin du plafond de cinq modules, et elle est minimale (une lecture verrouillante, une
+clé d'erreur, un arm de mapping, des tests) ; (2) **un découpage ne supprimerait pas la cause** : les défauts recyclés étaient des précisions de
+**texte** autour d'une seule décision, D3 (Q1), non une taille ni une dépendance ; (3) **Q1 est tranchée** : la branche « non », qui
+doublait D3, AC-1, AC-5, AC-8, T4, les mutations et les Notes de version, est **retirée** — la branche qui recyclait n'existe plus.
 
 ## Dev Agent Record
 
@@ -366,6 +381,13 @@ peut plus recevoir une ligne d'ouverture. Aucun changement pour l'utilisateur da
 
 ## Change Log
 
+- 2026-11-25 — **validation P3 remédiée ; Q1 tranchée ; dérogation** (Opus 0/0/3/5 ; rapport `kesh-gate-logs/e533/validation-p3.md`) : Q1 = oui, la branche
+  « non » retirée de D3, AC-5, AC-8, Notes de version et Décisions (V3-1 disparaît ; M1 et M5 meurent sous « oui » seul, via AC-2 : le handler n'a
+  plus de pré-contrôle) ; V3-2 (D3, AC-5 e(2) et Notes de version : seuls les refus en devise de `accounting::validate` changent, non ceux de
+  `parse_line_amounts`, `journal_entries.rs:796-840` ; e(2) construit par `foreign.amount = "-5"` avec cours et débit, rouge à `4d540a6ea`) ; V3-3
+  (AC-6 aligné sur D2 : `FORCE INDEX (PRIMARY)` d'emblée, défaut de `validate_lines_accounts_in_tx` → issue) ; V3-4 (P6 β) ; V3-5 (AC-3, assistant
+  partagé) ; V3-6 (M11) ; V3-7 (D3 : qualification au regard de § *Versions de l'API*, ⚠️ en tête des notes, précédent C-15-8-16) ; V3-8
+  (`user-manual.tex:1064`, `epic…md:27`, « deux tests », T8 `:4` et `:257`). **Signal de recyclage levé**, dérogation : § *Dérogation règle de splitting*.
 - 2026-11-25 — **validation P2 remédiée** (Sonnet 0/0/4/8 ; rapport `kesh-gate-logs/e533/validation-p2.md`) : V2-1 (D3 réécrite : le **code** change aussi,
   `ENTRY_UNBALANCED` et `FX_*` ; AC-5 e asserte le code ; Q1 à reconfirmer ; tenue sous « oui » et « non » ; Notes de version), V2-2 (D2 : `FORCE INDEX
   (PRIMARY)` d'emblée, option « réemploi de `lock_designated_accounts_in_tx` » écartée par écrit, AC-6 = preuve du plan épinglé), V2-3 (assistant
