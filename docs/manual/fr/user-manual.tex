@@ -596,6 +596,28 @@ Pour chaque ligne :
     \item \textbf{Description ligne} : précision supplémentaire (optionnel).
 \end{itemize}
 
+\textbf{Une écriture identique.} Kesh refuse d'enregistrer une écriture \textbf{identique à une
+écriture déjà enregistrée le même jour}~: même date, même journal, même libellé (casse comprise)
+et mêmes lignes --- mêmes comptes, mêmes montants au débit et au crédit, même projet, même montant
+en devise, quel que soit l'ordre des lignes. Un message le dit, cite l'écriture existante (son
+numéro et sa date, avec un lien qui s'ouvre dans un nouvel onglet) et la saisie reste à l'écran,
+figée~; deux boutons s'offrent~: \emph{Modifier la saisie}, qui la rend modifiable, et \emph{Ce
+n'est pas un doublon, enregistrer}, qui l'enregistre telle quelle~; la confirmation s'inscrit au
+journal d'audit. Deux écritures identiques le même jour sont parfois légitimes (deux ventes du même
+montant)~: distinguez-les par le libellé, ou confirmez. Les écritures contre-passées et les
+contre-passations ne sont pas comparées. \emph{Modifier} une écriture existante ne contrôle pas les
+doublons.
+
+\textbf{Si la réponse se perd.} Une coupure réseau ou un délai dépassé peut survenir une fois
+l'écriture enregistrée. La saisie se fige alors et un avis dit que l'enregistrement a peut-être
+abouti~: \emph{Valider} et Ctrl+S ne font plus rien. Ouvrez le lien de l'avis (le journal, filtré sur
+la date de la saisie, dans un nouvel onglet) et vérifiez si l'écriture existe. Si elle n'existe pas,
+\emph{J'ai vérifié, elle n'existe pas --- reprendre la saisie}~: la saisie est intacte et rien n'est
+envoyé. Si vous reprenez la saisie \textbf{sans avoir vérifié}, puis confirmez « Ce n'est pas un
+doublon », Kesh peut écrire l'écriture deux fois~: la confirmation reste votre décision, et le journal
+d'audit en garde la trace. À la \emph{modification} d'une écriture, une réponse perdue se dit de même
+(la modification a peut-être été enregistrée~: rechargez l'écriture avant de la modifier encore).
+
 \subsection{Exemple de saisie}
 
 Vente d'une marchandise à crédit pour CHF 1'000 + TVA 8.1\% :
