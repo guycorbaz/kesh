@@ -187,6 +187,9 @@ async fn colonne_posterieure(pool: &MySqlPool, poser: bool) {
         .expect("colonne postérieure à la fenêtre");
     colonnes_du_numero_interne(pool, poser).await;
     colonnes_du_reglement_groupe(pool, poser).await;
+    // Story 49-1a : `line_type` (`20261118000002`), écrit et lu par les gestes
+    // vivants de la facture et de l'avoir.
+    common::colonnes_types_de_ligne(pool, poser).await;
     // Story 38-11b — le paiement fournisseur lit `bank_accounts.provider`
     // (refus d'un compte PayPal), colonne de `20261120000001` : même geste.
     let sql = if poser {

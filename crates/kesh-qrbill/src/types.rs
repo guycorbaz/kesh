@@ -187,8 +187,28 @@ pub struct ReminderPdf {
     pub fees: Decimal,
 }
 
+/// Le type d'une ligne du PDF (Story 49-1b, #1242) : ce que le tableau des lignes en dessine.
+///
+/// Propre à `kesh-qrbill`, qui ne dépend pas de `kesh-db` (DD-14) : l'appelant traduit son
+/// propre type de ligne vers celui-ci, par un `match` exhaustif.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LinePdfKind {
+    /// Ligne chiffrée : description (au-delà de 45 caractères, réduite à 44 et « … »), quantité, prix
+    /// unitaire, taux de TVA et total, dans leurs colonnes.
+    Priced,
+    /// Commentaire : le texte seul, sur toute la largeur du tableau, coupé en lignes aux
+    /// frontières de mots, sans rien tronquer ni aucune colonne chiffrée.
+    Comment,
+    /// Titre de section : rendu **exactement comme un commentaire** en 0.20.0 ; sa mise en
+    /// évidence est l'objet de la Story 49-3.
+    Heading,
+}
+
 #[derive(Debug, Clone)]
 pub struct InvoiceLinePdf {
+    /// Le type de la ligne (Story 49-1b) : il décide de son dessin. Obligatoire, sans
+    /// défaut — un champ oublié ne doit pas passer en silence pour une ligne chiffrée.
+    pub kind: LinePdfKind,
     pub description: String,
     pub quantity: Decimal,
     pub unit_price: Decimal,

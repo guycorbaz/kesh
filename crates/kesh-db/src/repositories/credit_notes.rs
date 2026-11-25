@@ -59,23 +59,62 @@ fn credit_note_snapshot_json(cn: &CreditNote, lines: &[CreditNoteLine]) -> serde
             // Story 16-1a (D5) : compte de produit recopié depuis la ligne de
             // facture — c'est lui que la contre-passation débite.
             "revenueAccountId": l.revenue_account_id,
+            // Story 49-1a (AC7) : le type figure au snapshot d'audit.
+            "lineType": l.line_type.as_str(),
         })).collect::<Vec<_>>(),
     })
 }
+
+/// Colonnes de `credit_note_lines`, dans l'ordre des champs de
+/// [`CreditNoteLine`] — **la seule liste** (Story 49-1a, AC5). Elles étaient
+/// énumérées en dur à trois endroits ; un oubli échoue à l'exécution
+/// (`FromRow`), jamais à la compilation. Le préfixe sert la forme jointe de
+/// l'export (`cnl.`).
+macro_rules! credit_note_line_columns {
+    ($p:literal) => {
+        concat!(
+            $p,
+            "id, ",
+            $p,
+            "credit_note_id, ",
+            $p,
+            "position, ",
+            $p,
+            "description, ",
+            $p,
+            "quantity, ",
+            $p,
+            "unit_price, ",
+            $p,
+            "vat_rate, ",
+            $p,
+            "line_total, ",
+            $p,
+            "revenue_account_id, ",
+            $p,
+            "line_type, ",
+            $p,
+            "created_at"
+        )
+    };
+}
+
+/// Lignes d'un avoir, dans l'ordre de leur position.
+const SELECT_CREDIT_NOTE_LINES_SQL: &str = concat!(
+    "SELECT ",
+    credit_note_line_columns!(""),
+    " FROM credit_note_lines WHERE credit_note_id = ? ORDER BY position"
+);
 
 async fn fetch_credit_note_lines(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     credit_note_id: i64,
 ) -> Result<Vec<CreditNoteLine>, DbError> {
-    sqlx::query_as::<_, CreditNoteLine>(
-        "SELECT id, credit_note_id, position, description, quantity, unit_price, vat_rate, \
-         line_total, revenue_account_id, created_at \
-         FROM credit_note_lines WHERE credit_note_id = ? ORDER BY position",
-    )
-    .bind(credit_note_id)
-    .fetch_all(&mut **tx)
-    .await
-    .map_err(map_db_error)
+    sqlx::query_as::<_, CreditNoteLine>(SELECT_CREDIT_NOTE_LINES_SQL)
+        .bind(credit_note_id)
+        .fetch_all(&mut **tx)
+        .await
+        .map_err(map_db_error)
 }
 
 /// Récupère un avoir + ses lignes (scopé company). `None` si introuvable.
@@ -95,15 +134,11 @@ pub async fn get(
         return Ok(None);
     };
 
-    let lines = sqlx::query_as::<_, CreditNoteLine>(
-        "SELECT id, credit_note_id, position, description, quantity, unit_price, vat_rate, \
-         line_total, revenue_account_id, created_at \
-         FROM credit_note_lines WHERE credit_note_id = ? ORDER BY position",
-    )
-    .bind(cn.id)
-    .fetch_all(pool)
-    .await
-    .map_err(map_db_error)?;
+    let lines = sqlx::query_as::<_, CreditNoteLine>(SELECT_CREDIT_NOTE_LINES_SQL)
+        .bind(cn.id)
+        .fetch_all(pool)
+        .await
+        .map_err(map_db_error)?;
 
     Ok(Some((cn, lines)))
 }
@@ -496,8 +531,12 @@ pub async fn create_credit_note(
         // Pourquoi avant l'exercice : convention du doc-comment canonique de
         // `validate_invoice` (comptes → exercice), qui réduit la fréquence des
         // interblocages sans les exclure ; la défense est le rejeu de la route.
+        // Story 49-1a (AC9 b) : seules les lignes chiffrées postent ; une ligne
+        // non chiffrée (compte `NULL`) ne fait ni verrouiller ni exiger le
+        // compte par défaut.
         let triplets: Vec<(Decimal, Decimal, Option<i64>)> = invoice_lines
             .iter()
+            .filter(|l| l.line_type.is_priced())
             .map(|l| (l.line_total, l.vat_rate, l.revenue_account_id))
             .collect();
         let vat_payable_to_lock = if credit_note_emits_vat(&credit_note_vat_by_rate(&triplets)) {
@@ -625,11 +664,12 @@ pub async fn create_credit_note(
         // configuration entre-temps. Seule l'inactivité est bloquante, parce
         // qu'elle l'est en base.
         {
-            let mut sites: Vec<(i32, i64)> = invoice_lines
-                .iter()
+            // Story 49-1a (AC9 b) : les lignes chiffrées seules.
+            let priced = || invoice_lines.iter().filter(|l| l.line_type.is_priced());
+            let mut sites: Vec<(i32, i64)> = priced()
                 .filter_map(|l| l.revenue_account_id.map(|a| (l.position + 1, a)))
                 .collect();
-            if invoice_lines.iter().any(|l| l.revenue_account_id.is_none()) {
+            if priced().any(|l| l.revenue_account_id.is_none()) {
                 // Ligne 0 = le compte par défaut de la société, qu'aucune ligne
                 // ne porte (miroir du `None` côté facture).
                 sites.push((0, revenue_account_id));
@@ -773,8 +813,8 @@ pub async fn create_credit_note(
             sqlx::query(
                 "INSERT INTO credit_note_lines \
                  (credit_note_id, position, description, quantity, unit_price, vat_rate, \
-                  line_total, revenue_account_id) \
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                  line_total, revenue_account_id, line_type) \
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             )
             .bind(cn_id)
             .bind(line.position)
@@ -789,6 +829,9 @@ pub async fn create_credit_note(
             // ensuite. La créance et l'arrondi, eux, ne sont pas recopiés : ils
             // sont relus sur l'écriture de vente (Story 15-6a, #473, #523).
             .bind(line.revenue_account_id)
+            // Story 49-1a (D7, AC9 a) : TOUTES les lignes, à leur position,
+            // avec leur type — l'avoir reprend commentaires et titres.
+            .bind(line.line_type)
             .execute(&mut *tx)
             .await
             .map_err(map_db_error)?;
@@ -920,14 +963,14 @@ pub async fn list_all_lines_by_company(
     pool: &MySqlPool,
     company_id: i64,
 ) -> Result<Vec<CreditNoteLine>, DbError> {
-    sqlx::query_as::<_, CreditNoteLine>(
-        "SELECT cnl.id, cnl.credit_note_id, cnl.position, cnl.description, cnl.quantity, \
-         cnl.unit_price, cnl.vat_rate, cnl.line_total, cnl.revenue_account_id, cnl.created_at \
-         FROM credit_note_lines cnl \
+    sqlx::query_as::<_, CreditNoteLine>(concat!(
+        "SELECT ",
+        credit_note_line_columns!("cnl."),
+        " FROM credit_note_lines cnl \
          JOIN credit_notes cn ON cnl.credit_note_id = cn.id \
          WHERE cn.company_id = ? \
-         ORDER BY cnl.credit_note_id, cnl.position",
-    )
+         ORDER BY cnl.credit_note_id, cnl.position"
+    ))
     .bind(company_id)
     .fetch_all(pool)
     .await
@@ -1112,6 +1155,7 @@ mod tests {
                 vat_rate,
                 line_total,
                 revenue_account_id: account,
+                line_type: crate::entities::LineType::Priced,
                 created_at: chrono::NaiveDate::from_ymd_opt(2026, 1, 1)
                     .unwrap()
                     .and_hms_opt(0, 0, 0)

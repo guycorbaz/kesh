@@ -184,6 +184,7 @@ async fn create_validated_invoice_on(
         payment_terms: None,
         lines: vec![NewInvoiceLine {
             revenue_account_id: None,
+            line_type: kesh_db::entities::LineType::Priced,
             description: "Stub".into(),
             quantity: dec!(1),
             unit_price: dec!(100.00),

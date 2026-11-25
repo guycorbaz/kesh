@@ -135,6 +135,7 @@ fn lines_from(spec: &[(Decimal, Decimal, Option<i64>)]) -> Vec<NewInvoiceLine> {
             unit_price: *price,
             vat_rate: *rate,
             revenue_account_id: *account,
+            line_type: kesh_db::entities::LineType::Priced,
         })
         .collect()
 }

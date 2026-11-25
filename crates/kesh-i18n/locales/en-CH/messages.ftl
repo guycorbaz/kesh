@@ -4278,6 +4278,15 @@ projects-reassign-warning-reports = The analytical reports for this period will 
 projects-reassign-confirm = Confirm
 projects-reassign-done = Analytical account changed.
 
+# --- Epic 49 — Story 49-4a (#1364) : capacité du PDF de facture contrôlée à la validation ---
+error-invoice-lines-do-not-fit-pdf = The lines of this invoice do not fit on the page of its PDF: they need { $besoin } lines, the page offers { $place }. Remove lines, shorten the comments, or split the lines across two invoices. The invoice remains a draft.
+
+# Epic 49 — Story 49-1c (#1242) : la ligne de commentaire de la facture client
+invoice-line-add-comment = Comment
+invoice-line-comment-placeholder = Text printed across the full width of the invoice, without an amount
+invoice-line-comment-aria = Comment — line { $n }
+invoice-line-comment-required-error = Line { $line }: the comment text is required
+
 ## #1348 (0.20.0) — server refusals whose key was missing from the catalogue.
 error-onboarding-reset-forbidden = Resetting the onboarding is not allowed on this instance.
 error-invoice-already-paid = The invoice is already paid — no reminder can be recorded.

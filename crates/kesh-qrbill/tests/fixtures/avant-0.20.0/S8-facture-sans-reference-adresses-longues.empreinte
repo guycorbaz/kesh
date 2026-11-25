@@ -1,0 +1,72 @@
+# empreinte du rendu d'un PDF — kesh-qrbill, format 1
+pages	1
+media-box	1 [0 0 595.27563 841.88983]
+condensat-operations	393113544a211d716f062fae79b3b8fb1d7d2e9a5e72a73d3ba203b7600afdcd
+nombre-operations	6023
+police	1 /Helvetica <</BaseFont /Helvetica /Encoding /WinAnsiEncoding /Subtype /Type1 /Type /Font>>
+police	1 /Helvetica-Bold <</BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding /Subtype /Type1 /Type /Font>>
+ressources	1 <</Font <</Helvetica <</BaseFont /Helvetica /Encoding /WinAnsiEncoding /Subtype /Type1 /Type /Font>> /Helvetica-Bold <</BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding /Subtype /Type1 /Type /Font>>>> /Properties <</MC0 <</Intent [/View /Design] /Name (4C617965722031) /Type /OCG /Usage <</CreatorInfo <</Creator (41646F626520496C6C7573747261746F722031342E30) /Subtype /Artwork>> /Type /OCG>>>>>>>>
+texte	20.000002	277.00003	Robert Schneider SA
+texte	20.000002	272.00003	Rue du Lac 1268
+texte	20.000002	268.00003	2501 Biel
+texte	20.000002	264.00003	VAT ID: CHE-123.456.789 TVA
+texte	120.000015	277.00003	Invoice
+texte	120.000015	270.00003	Invoice number: F-2026-0008
+texte	120.000015	265.50003	Date: 14.04.2026
+texte	120.000015	261.00003	Due date: 14.05.2026
+texte	20.000002	242.00002	Recipient
+texte	20.000002	237.00003	Pia Rutschmann
+texte	20.000002	232.50002	Marktgasse 28
+texte	20.000002	228.50003	9400 Rorschach
+texte	20.000002	167.00003	Description
+texte	110.000015	167.00003	Qty
+texte	130.00002	167.00003	Unit price
+texte	160.00002	167.00003	VAT
+texte	180.00002	167.00003	Total
+texte	20.000002	159.00002	Location de salle
+texte	110.000015	159.00002	2.00
+texte	130.00002	159.00002	150.00
+texte	160.00002	159.00002	8.10%
+texte	180.00002	159.00002	300.00
+texte	130.00002	147.00002	Subtotal
+texte	180.00002	147.00002	CHF 300.00
+texte	130.00002	142.50002	VAT 8.1%
+texte	180.00002	142.50002	CHF 24.30
+texte	130.00002	137.00002	Total (incl. VAT)
+texte	180.00002	137.00002	CHF 324.30
+texte	20.000002	129.00002	Payment terms: 30 jours net
+texte	5.0000005	96.50001	Receipt
+texte	5.0000005	90.50001	Account / Payable to
+texte	5.0000005	87.50001	CH93 0076 2011 6238 5295 7
+texte	5.0000005	84.00001	Fondation pour l'entretien des immeubles
+texte	5.0000005	80.50001	locatifs du quartier
+texte	5.0000005	77.00001	Avenue de la Gare des Marchandises et
+texte	5.0000005	73.50001	du Port 125b
+texte	5.0000005	70.00001	1003 Lausanne
+texte	5.0000005	64.00001	Payable by
+texte	5.0000005	60.500004	Association des locataires et des
+texte	5.0000005	57.000004	propriétaires réunis
+texte	5.0000005	53.500008	Chemin des Vignes de la Côte
+texte	5.0000005	50.000008	Ensoleillée 7
+texte	5.0000005	46.500004	1820 Montreux
+texte	5.0000005	35.000004	Currency
+texte	17.000002	35.000004	Amount
+texte	5.0000005	31.500004	CHF
+texte	17.000002	31.500004	324.30
+texte	39.357586	20.500002	Acceptance point
+texte	67.00001	96.50001	Payment part
+texte	118.000015	98.000015	Account / Payable to
+texte	118.000015	95.000015	CH93 0076 2011 6238 5295 7
+texte	118.000015	91.500015	Fondation pour l'entretien des immeubles locatifs du quartier
+texte	118.000015	88.000015	Avenue de la Gare des Marchandises et du Port 125b
+texte	118.000015	84.50001	1003 Lausanne
+texte	118.000015	78.50001	Additional information
+texte	118.000015	75.50001	Facture F-2026-0008
+texte	118.000015	69.50001	Payable by
+texte	118.000015	66.00001	Association des locataires et des propriétaires réunis
+texte	118.000015	62.500008	Chemin des Vignes de la Côte Ensoleillée 7
+texte	118.000015	59.000008	1820 Montreux
+texte	67.00001	35.000004	Currency
+texte	82.00001	35.000004	Amount
+texte	67.00001	31.500004	CHF
+texte	82.00001	31.500004	324.30

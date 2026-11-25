@@ -515,6 +515,7 @@ async fn validation_refuses_a_designated_receivable_made_non_postable(pool: MySq
             payment_terms: None,
             lines: vec![NewInvoiceLine {
                 revenue_account_id: None,
+                line_type: kesh_db::entities::LineType::Priced,
                 description: "Prestation".into(),
                 quantity: dec!(1),
                 unit_price: dec!(100.00),

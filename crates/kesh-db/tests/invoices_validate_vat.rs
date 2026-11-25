@@ -70,6 +70,7 @@ async fn create_and_validate(
             .iter()
             .map(|(rate, price)| NewInvoiceLine {
                 revenue_account_id: None,
+                line_type: kesh_db::entities::LineType::Priced,
                 description: "Ligne".into(),
                 quantity: dec!(1),
                 unit_price: *price,
@@ -322,6 +323,7 @@ async fn validate_uses_line_rate_snapshot_immune_to_vat_rates_change(pool: MySql
         payment_terms: None,
         lines: vec![NewInvoiceLine {
             revenue_account_id: None,
+            line_type: kesh_db::entities::LineType::Priced,
             description: "Ligne".into(),
             quantity: dec!(1),
             unit_price: dec!(1000.00),
@@ -402,6 +404,7 @@ fn draft_with_project(
         project_id,
         lines: vec![NewInvoiceLine {
             revenue_account_id: None,
+            line_type: kesh_db::entities::LineType::Priced,
             description: "Ligne".into(),
             quantity: dec!(1),
             unit_price: dec!(1000.00),
@@ -517,6 +520,7 @@ async fn update_grandfathers_unchanged_project(pool: MySqlPool) {
         project_id,
         lines: vec![NewInvoiceLine {
             revenue_account_id: None,
+            line_type: kesh_db::entities::LineType::Priced,
             description: "Ligne".into(),
             quantity: dec!(1),
             unit_price: dec!(1000.00),
@@ -1292,6 +1296,7 @@ mod garde_usage_comptes_reglage {
                 .iter()
                 .map(|(rate, price, account)| NewInvoiceLine {
                     revenue_account_id: *account,
+                    line_type: kesh_db::entities::LineType::Priced,
                     description: "Ligne".into(),
                     quantity: dec!(1),
                     unit_price: *price,
@@ -2259,5 +2264,172 @@ mod garde_usage_comptes_reglage {
             )]
         );
         assert_nothing_written(&pool, &seeded, id).await;
+    }
+}
+
+/// Story 49-1a (#1242) — T5 : la validation ignore les lignes non chiffrées
+/// (AC8). Deux jeux : (1) une ligne chiffrée sans compte **et** un commentaire —
+/// la matérialisation du compte (`UPDATE … AND line_type = 'priced'`) ne touche
+/// pas le commentaire, qui violerait sinon `chk_invoice_lines_unpriced_neutral`
+/// (500 SQL) ; (2) des lignes chiffrées à compte explicite **et** un
+/// commentaire, compte par défaut archivé — la validation passe, le commentaire
+/// ne fait pas exiger le compte par défaut.
+mod lignes_non_chiffrees {
+    use super::*;
+    use kesh_db::entities::LineType;
+
+    fn ligne(lt: LineType, rate: Decimal, price: Decimal, account: Option<i64>) -> NewInvoiceLine {
+        let priced = lt == LineType::Priced;
+        NewInvoiceLine {
+            description: if priced { "Ligne" } else { "Commentaire" }.into(),
+            quantity: if priced { dec!(1) } else { Decimal::ZERO },
+            unit_price: price,
+            vat_rate: rate,
+            revenue_account_id: account,
+            line_type: lt,
+        }
+    }
+
+    fn commentaire() -> NewInvoiceLine {
+        ligne(LineType::Comment, Decimal::ZERO, Decimal::ZERO, None)
+    }
+
+    async fn valider(
+        pool: &MySqlPool,
+        seeded: &SeededCompany,
+        contact_id: i64,
+        lines: Vec<NewInvoiceLine>,
+    ) -> Result<invoices::ValidatedInvoice, DbError> {
+        let new = NewInvoice {
+            company_id: seeded.company_id,
+            contact_id,
+            date: NaiveDate::from_ymd_opt(INVOICE_DATE.0, INVOICE_DATE.1, INVOICE_DATE.2).unwrap(),
+            due_date: None,
+            payment_terms: None,
+            lines,
+            project_id: None,
+        };
+        let (inv, _) = invoices::create(pool, seeded.admin_user_id, new)
+            .await
+            .expect("create invoice");
+        invoices::validate_invoice(pool, seeded.company_id, inv.id, seeded.admin_user_id).await
+    }
+
+    /// Les lignes d'écriture, dans l'ordre : (compte, débit, crédit).
+    fn ecriture(v: &invoices::ValidatedInvoice) -> Vec<(i64, Decimal, Decimal)> {
+        v.journal_entry
+            .lines
+            .iter()
+            .map(|l| (l.account_id, l.debit, l.credit))
+            .collect()
+    }
+
+    /// Jeu (1) — compte `NULL` sur les lignes chiffrées, un commentaire entre elles.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn validation_ignores_unpriced_lines(pool: MySqlPool) {
+        let seeded = seed_accounting_company(&pool).await.unwrap();
+        // TTC non multiple de 5 centimes : l'arrondi exigerait un compte désigné.
+        kesh_db::test_fixtures::disable_rounding_to_5_centimes(&pool, seeded.company_id)
+            .await
+            .unwrap();
+        let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
+        let a = ligne(LineType::Priced, dec!(8.10), dec!(1000.00), None);
+        let b = ligne(LineType::Priced, dec!(2.60), dec!(333.35), None);
+
+        let sans = valider(&pool, &seeded, contact, vec![a.clone(), b.clone()])
+            .await
+            .expect("sans commentaire");
+        let avec = valider(&pool, &seeded, contact, vec![a, commentaire(), b])
+            .await
+            .expect("avec commentaire : la validation passe (pas de 500)");
+
+        // (c) Écriture identique : comptes, montants, ordre.
+        assert_eq!(ecriture(&avec), ecriture(&sans));
+        assert_eq!(avec.invoice.total_amount, sans.invoice.total_amount);
+
+        // (e) Les lignes rendues : toutes, types compris ; le commentaire sans
+        // compte, les lignes chiffrées matérialisées.
+        let defaut = seeded.accounts["3000"];
+        let rendues: Vec<_> = avec
+            .lines
+            .iter()
+            .map(|l| (l.line_type, l.revenue_account_id))
+            .collect();
+        assert_eq!(
+            rendues,
+            vec![
+                (LineType::Priced, Some(defaut)),
+                (LineType::Comment, None),
+                (LineType::Priced, Some(defaut)),
+            ]
+        );
+
+        // En base, le commentaire reste `NULL`.
+        let en_base: Vec<(String, Option<i64>)> = sqlx::query_as(
+            "SELECT line_type, revenue_account_id FROM invoice_lines \
+             WHERE invoice_id = ? ORDER BY position",
+        )
+        .bind(avec.invoice.id)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert_eq!(en_base[1], ("comment".to_string(), None));
+        assert_eq!(en_base[0].1, Some(defaut));
+
+        // (f) L'audit « after » est cohérent.
+        let details: serde_json::Value = sqlx::query_scalar(
+            "SELECT details_json FROM audit_log WHERE action = 'invoice.validated' \
+             AND entity_id = ? ORDER BY id DESC LIMIT 1",
+        )
+        .bind(avec.invoice.id)
+        .fetch_one(&pool)
+        .await
+        .expect("audit invoice.validated");
+        let ligne_audit = &details["after"]["lines"][1];
+        assert_eq!(ligne_audit["lineType"], "comment");
+        assert!(ligne_audit["revenueAccountId"].is_null());
+        assert_eq!(details["after"]["lines"][0]["revenueAccountId"], defaut);
+    }
+
+    /// Jeu (2) — comptes explicites sur les lignes chiffrées, compte par défaut
+    /// archivé : le commentaire ne le fait pas exiger (AC8 d).
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn unpriced_line_does_not_require_default_account(pool: MySqlPool) {
+        let seeded = seed_accounting_company(&pool).await.unwrap();
+        let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
+        let explicite = sqlx::query(
+            "INSERT INTO accounts (company_id, number, name, account_type) \
+             VALUES (?, '3200', 'Prestations', 'Revenue')",
+        )
+        .bind(seeded.company_id)
+        .execute(&pool)
+        .await
+        .unwrap()
+        .last_insert_id() as i64;
+        sqlx::query("UPDATE accounts SET active = FALSE WHERE id = ?")
+            .bind(seeded.accounts["3000"])
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let v = valider(
+            &pool,
+            &seeded,
+            contact,
+            vec![
+                ligne(LineType::Priced, dec!(8.10), dec!(500), Some(explicite)),
+                commentaire(),
+            ],
+        )
+        .await
+        .expect("compte par défaut archivé, non posté : la validation passe");
+        assert!(
+            v.journal_entry
+                .lines
+                .iter()
+                .all(|l| l.account_id != seeded.accounts["3000"]),
+            "le compte par défaut n'est pas posté"
+        );
+        assert_eq!(v.lines[1].revenue_account_id, None);
     }
 }

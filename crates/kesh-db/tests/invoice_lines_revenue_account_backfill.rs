@@ -1239,6 +1239,7 @@ async fn validated_invoice_from_the_real_engine_is_recovered_by_the_backfill(poo
                     unit_price: dec!(33.35),
                     vat_rate: dec!(8.10),
                     revenue_account_id: None,
+                    line_type: kesh_db::entities::LineType::Priced,
                 },
                 NewInvoiceLine {
                     description: "Marchandise".into(),
@@ -1246,6 +1247,7 @@ async fn validated_invoice_from_the_real_engine_is_recovered_by_the_backfill(poo
                     unit_price: dec!(12.55),
                     vat_rate: dec!(2.60),
                     revenue_account_id: None,
+                    line_type: kesh_db::entities::LineType::Priced,
                 },
             ],
         },

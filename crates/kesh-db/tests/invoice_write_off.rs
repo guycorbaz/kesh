@@ -98,6 +98,7 @@ async fn validated_invoice(
                     unit_price: *ht,
                     vat_rate: *rate,
                     revenue_account_id: Some(seeded.accounts["3000"]),
+                    line_type: kesh_db::entities::LineType::Priced,
                 })
                 .collect(),
         },

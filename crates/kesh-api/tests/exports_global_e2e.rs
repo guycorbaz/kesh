@@ -580,6 +580,119 @@ async fn export_global_zip_invoice_lines_expose_revenue_account(pool: MySqlPool)
     );
 }
 
+/// Story 49-1a (#1242) — T10 (AC13 a, D14) : `invoice_lines.csv` et
+/// `credit_note_lines.csv` portent `line_type` **en dernière colonne** — aucune
+/// colonne existante ne se décale —, chaque ligne a l'arité de l'en-tête, une
+/// ligne de forme 0.19.0 sort `priced`, un commentaire et un titre sortent
+/// sous leur type.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn export_global_zip_line_type_is_the_last_column(pool: MySqlPool) {
+    let ctx = seed_with_full_data(&pool, "co_line_type", Role::Comptable).await;
+    let contact_id: i64 =
+        sqlx::query_scalar("SELECT id FROM contacts WHERE company_id = ? ORDER BY id LIMIT 1")
+            .bind(ctx.company_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let invoice_id: i64 = sqlx::query_scalar(
+        "INSERT INTO invoices (company_id, contact_id, status, date, total_amount, version) \
+         VALUES (?, ?, 'draft', '2026-05-01', 150.00, 1) RETURNING id",
+    )
+    .bind(ctx.company_id)
+    .bind(contact_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    // Forme 0.19.0 (sans `line_type`), puis un commentaire neutre.
+    sqlx::query(
+        "INSERT INTO invoice_lines (invoice_id, position, description, quantity, unit_price, \
+         vat_rate, line_total) VALUES (?, 0, 'Prestation', 1, 150.00, 8.10, 150.00)",
+    )
+    .bind(invoice_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO invoice_lines (invoice_id, position, description, quantity, unit_price, \
+         vat_rate, line_total, line_type) VALUES (?, 1, 'Selon devis', 0, 0, 0, 0, 'comment')",
+    )
+    .bind(invoice_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let cn_id: i64 = sqlx::query_scalar(
+        "INSERT INTO credit_notes (company_id, contact_id, invoice_id, status, date, total_amount) \
+         VALUES (?, ?, ?, 'draft', '2026-05-02', 150.00) RETURNING id",
+    )
+    .bind(ctx.company_id)
+    .bind(contact_id)
+    .bind(invoice_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO credit_note_lines (credit_note_id, position, description, quantity, \
+         unit_price, vat_rate, line_total) VALUES (?, 0, 'Prestation', 1, 150.00, 8.10, 150.00)",
+    )
+    .bind(cn_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO credit_note_lines (credit_note_id, position, description, quantity, \
+         unit_price, vat_rate, line_total, line_type) VALUES (?, 1, 'Travaux', 0, 0, 0, 0, 'heading')",
+    )
+    .bind(cn_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let app = spawn_app(pool).await;
+    let resp = app
+        .client
+        .get(app.url("/api/v1/exports/global.zip"))
+        .bearer_auth(&ctx.jwt)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body = resp.bytes().await.unwrap();
+    let entries = assert_zip_response(&body);
+
+    for (fichier, types) in [
+        ("invoice_lines.csv", ["priced", "comment"]),
+        ("credit_note_lines.csv", ["priced", "heading"]),
+    ] {
+        let raw = entry_bytes(&entries, fichier);
+        let text = std::str::from_utf8(&raw[3..]).unwrap(); // strip BOM
+        let mut lines = text.split("\r\n").filter(|l| !l.is_empty());
+        let header: Vec<String> = lines
+            .next()
+            .expect("en-tête")
+            .split(';')
+            .map(|c| c.trim_matches('"').to_string())
+            .collect();
+        assert_eq!(
+            header.last().unwrap(),
+            "line_type",
+            "{fichier} : dernière colonne"
+        );
+        assert_eq!(
+            header[header.len() - 2],
+            "created_at",
+            "{fichier} : aucune colonne existante décalée"
+        );
+        let lus: Vec<String> = lines
+            .map(|row| {
+                let cells: Vec<&str> = row.split(';').collect();
+                assert_eq!(cells.len(), header.len(), "{fichier} : arité de {row}");
+                cells.last().unwrap().trim_matches('"').to_string()
+            })
+            .collect();
+        assert_eq!(lus, types, "{fichier} : types exportés");
+    }
+}
+
 // ============================================================
 // AC #29(a) — Success path
 // ============================================================

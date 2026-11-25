@@ -1179,6 +1179,12 @@ const ATTENDU = {
 	// demande de compte après relecture sans sélecteur).
 	// Fusion de la 48-14 dans epic/48 (2026-11-20) : les deux côtés gardés, total relevé par la garde,
 	// non additionné : **3508** (« expected 3508 to be +0 », `kesh-gate-logs/e4814/fusion-epic-i18n.log`).
+	// Story 49-1c (#1242) : **3495 → 3499** (« expected 3499 to be 3495 »,
+	// `kesh-gate-logs/e491c/rouge-T12.log`) — quatre littéraux neufs, tous dans
+	// `InvoiceForm.svelte` (21 → 25 occurrences de `i18nMsg(`, `grep -o`) : bouton « Commentaire », aide et `aria-label` du
+	// champ, message du commentaire vide. À recompter après la fusion avec la 48-14.
+	// Reprise de main (v0.19.1) dans epic/49 (2026-11-23) : les deux côtés gardés, total relevé
+	// par la garde, non additionné : **3512** (« expected 3512 to be +0 », `kesh-gate-logs/e49/reprise-main/vitest-compteur.log`) ; il égale 3508 (main) + 4 (49-1c).
 	// Story 38-11d : T1 et T2 (paramètres PayPal du compte bancaire, filtres des règles) +21, page
 	// PayPal (T3), libellés des refus de la route, remédiation de la revue P1 : +123 sur la base de
 	// la 0.19.0 ; relevés par la garde (3521, 3610, 3615, 3618 avant la reprise d'epic/38-paypal).
@@ -1192,10 +1198,9 @@ const ATTENDU = {
 	// 3671 »), relevé par la garde ; au diff : 1 site ajouté, 0 retiré.
 	// Revue P2 de la 38-12b (avis au passé, suivi perdu après une reprise) : **3674**, relevé par
 	// la garde ; au diff : 2 sites ajoutés, 0 retiré.
-	// Correctif « une transaction de prestataire n'est écrite qu'une fois » (motif `already_posted`,
-	// refus `PROVIDER_TRANSACTION_ALREADY_POSTED`, lien « Écriture déjà passée ») : **3677**
-	// (« expected 3677 to be 3674 »), relevé par la garde ; au diff : 3 sites ajoutés, 0 retiré.
-	sitesTotal: 3677,
+	// Reprise de main (PayPal, 38-11b/c/d) dans epic/49 (2026-11-24) : les deux côtés gardés ; attendu 3674 (main) + 4 (49-1c) = 3678.
+	// Reprise de main (2026-11-25, correctif « une transaction de prestataire n'est écrite qu'une fois », 3 sites ajoutés) : attendu 3678 + 3 = 3681, à confirmer par la garde.
+	sitesTotal: 3681,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

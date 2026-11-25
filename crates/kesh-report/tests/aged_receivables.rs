@@ -90,6 +90,7 @@ async fn mk_validated(
             project_id: None,
             lines: vec![NewInvoiceLine {
                 revenue_account_id: None,
+                line_type: kesh_db::entities::LineType::Priced,
                 description: "Prestation".into(),
                 quantity: dec!(1),
                 unit_price: amount,
@@ -176,6 +177,7 @@ async fn aged_buckets_reconciliation_and_parity(pool: MySqlPool) {
             project_id: None,
             lines: vec![NewInvoiceLine {
                 revenue_account_id: None,
+                line_type: kesh_db::entities::LineType::Priced,
                 description: "Brouillon".into(),
                 quantity: dec!(1),
                 unit_price: dec!(888),

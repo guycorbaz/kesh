@@ -273,7 +273,8 @@ fn premiers_mots(noms: &HashMap<String, Vec<String>>) -> std::collections::HashS
 /// consommer** (revue de code P2, E2-3) : dans `1000 1030`, les deux nombres sont lus.
 /// Ne sont pas des comptes : un nombre collé à un chiffre, une lettre ASCII, `_`, une
 /// apostrophe (séparateur de milliers), un `%` ; précédé de `.`, `,`, `:`, `#` ; ou d'un
-/// `-` lui-même collé à un caractère alphanumérique (`ISO-8859`, `F-2026-0042`).
+/// `-` lui-même collé à un caractère alphanumérique (`ISO-8859`, `F-2026-0042`) ; ou
+/// de `U+`, un point de code Unicode (`U+2212`, Story 49-1c) — un `+` seul ne borne rien.
 /// `{` et `}` ne bornent plus rien (revue de code P2, B2-2) : `\textbf{3600}` est lu.
 /// Une date ISO `NNNN-MM-JJ` n'est pas un compte, à condition que le mois soit
 /// `01`-`12` et le jour `01`-`31` (Story 32-1a, #716, E6) : `1171-99-99` est lu.
@@ -291,6 +292,9 @@ fn nombres_isoles(ligne: &str) -> Vec<(String, String, usize, usize)> {
         let exclu_avant = match precedent {
             None => false,
             Some('-') => avant.next().is_some_and(char::is_alphanumeric),
+            // Story 49-1c (C-e491c-9) — un point de code `U+NNNN` (« le signe moins
+            // U+2212 ») n'est pas un compte : `+` précédé de `U` exactement.
+            Some('+') => avant.next() == Some('U'),
             Some(p) => p.is_ascii_digit() || p.is_ascii_alphabetic() || ".,'’:#_".contains(p),
         };
         let exclu_apres = ligne[m.end()..]
@@ -311,6 +315,24 @@ fn nombres_isoles(ligne: &str) -> Vec<(String, String, usize, usize)> {
         }
     }
     out
+}
+
+/// Story 49-1c (C-e491c-9) — un point de code `U+NNNN` n'est pas un compte ; un `+`
+/// qui ne suit pas `U` ne retire pas le nombre (`+2212`, `X+2212` restent lus).
+#[test]
+fn nombres_isoles_ne_prend_pas_un_point_de_code_pour_un_compte() {
+    assert!(
+        nombres_isoles("le signe moins «~−~» (U+2212), les flèches").is_empty(),
+        "U+2212 est un point de code, non un compte"
+    );
+    for lu in ["solde +2212 au bilan", "X+2212 ici"] {
+        let rendus: Vec<String> = nombres_isoles(lu).into_iter().map(|(n, ..)| n).collect();
+        assert_eq!(
+            rendus,
+            vec!["2212".to_string()],
+            "« {lu} » : le nombre doit être rendu"
+        );
+    }
 }
 
 /// Story 32-1a (#716, E6) — la reconnaissance d'une date ISO, fixée par des cas.
@@ -737,6 +759,8 @@ fn les_replis_rust_suivent_le_catalogue() {
     const PAYS: &[(&str, &str)] = &[("{ $code }", "{code}")];
     // Story 35-2b (#955, revue P1 B1) — le nombre de lignes du refus « trop de lignes ».
     const LIGNES: &[(&str, &str)] = &[("{ $count }", "{n}")];
+    // Story 49-4a (#1364) — les lignes demandées et offertes du refus à la validation.
+    const BESOIN_PLACE: &[(&str, &str)] = &[("{ $besoin }", "{besoin}"), ("{ $place }", "{place}")];
     // Story 35-1 (#948) — le format de numérotation et le nom de l'exercice.
     const FORMAT_EXERCICE: &[(&str, &str)] = &[
         ("{ $format }", "{format}"),
@@ -773,6 +797,8 @@ fn les_replis_rust_suivent_le_catalogue() {
                 // Story 35-2b (#955, revue P1 B1) — un seul site : la fonction
                 // `message_trop_de_lignes_pdf`, commune à la route et au lot.
                 ("error-invoice-too-many-lines-for-pdf", 1, LIGNES),
+                // Story 49-4a (#1364, AC8) — un seul site : `message_lignes_hors_page`.
+                ("error-invoice-lines-do-not-fit-pdf", 1, BESOIN_PLACE),
                 // Story 15-1a2-0 (#518) — le rang 2 bis, un bras par famille, et
                 // le message neutre de `LETTERING_IS_DOCUMENT` (validation P1, R-2).
                 ("settlement-cancel-blocked-lettering-closed", 1, &[]),
@@ -3173,4 +3199,26 @@ fn le_vocabulaire_analytique_est_compte_analytique() {
         ecarts.len(),
         ecarts.join("\n  - ")
     );
+}
+
+/// **T4 (Story 49-4a, #1364, AC8)** — le refus de capacité à la validation a sa phrase dans
+/// les **quatre** catalogues, chacune avec les deux nombres (`$besoin`, `$place`) : une
+/// traduction qui en perdrait un dirait un refus sans ce qu'il faut retirer.
+#[test]
+fn le_refus_de_capacite_a_ses_deux_nombres_en_quatre_langues() {
+    for locale in ["fr-CH", "de-CH", "it-CH", "en-CH"] {
+        let catalogue = lire(&format!("crates/kesh-i18n/locales/{locale}/messages.ftl"));
+        let lignes: Vec<&str> = catalogue
+            .lines()
+            .filter(|l| l.starts_with("error-invoice-lines-do-not-fit-pdf ="))
+            .collect();
+        assert_eq!(lignes.len(), 1, "{locale} : {lignes:?}");
+        for variable in ["{ $besoin }", "{ $place }"] {
+            assert!(
+                lignes[0].contains(variable),
+                "{locale} : {variable} absent de {}",
+                lignes[0]
+            );
+        }
+    }
 }

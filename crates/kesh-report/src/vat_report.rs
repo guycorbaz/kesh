@@ -116,12 +116,15 @@ pub async fn generate(
 ) -> Result<VatReport, ReportError> {
     // Granularité LIGNE (pas de GROUP BY/SUM SQL) — l'arrondi par ligne (FR55)
     // se fait en Rust. Seules les factures validées dans la période comptent.
+    // Story 49-1a (AC10 a) : seules les lignes CHIFFRÉES — un commentaire
+    // (`vat_rate = 0`, base 0) ferait sinon apparaître un taux « 0 % » fantôme.
     let lines: Vec<(Decimal, Decimal)> = sqlx::query_as(
         "SELECT il.vat_rate, il.line_total \
          FROM invoice_lines il \
          INNER JOIN invoices i ON i.id = il.invoice_id \
          WHERE i.company_id = ? \
            AND i.status = 'validated' \
+           AND il.line_type = 'priced' \
            AND i.date BETWEEN ? AND ?",
     )
     .bind(company_id)

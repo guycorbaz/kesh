@@ -1,0 +1,73 @@
+# empreinte du rendu d'un PDF — kesh-qrbill, format 1
+pages	1
+media-box	1 [0 0 595.27563 841.88983]
+condensat-operations	76c1f05cfd772869901837f16a51b115b4ce3766dca8f382efbf6097d9937adb
+nombre-operations	4004
+police	1 /Helvetica <</BaseFont /Helvetica /Encoding /WinAnsiEncoding /Subtype /Type1 /Type /Font>>
+police	1 /Helvetica-Bold <</BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding /Subtype /Type1 /Type /Font>>
+ressources	1 <</Font <</Helvetica <</BaseFont /Helvetica /Encoding /WinAnsiEncoding /Subtype /Type1 /Type /Font>> /Helvetica-Bold <</BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding /Subtype /Type1 /Type /Font>>>> /Properties <</MC0 <</Intent [/View /Design] /Name (4C617965722031) /Type /OCG /Usage <</CreatorInfo <</Creator (41646F626520496C6C7573747261746F722031342E30) /Subtype /Artwork>> /Type /OCG>>>>>>>>
+texte	20.000002	277.00003	CI Test Company
+texte	20.000002	272.00003	Test Address 1
+texte	20.000002	268.00003	1000 Lausanne
+texte	120.000015	277.00003	Facture
+texte	120.000015	270.00003	N° de facture: F-2020-0003
+texte	120.000015	265.50003	Date: 14.04.2026
+texte	120.000015	261.00003	Échéance: 14.05.2026
+texte	20.000002	242.00002	Destinataire
+texte	20.000002	237.00003	Pia Rutschmann
+texte	20.000002	232.50002	Marktgasse 28
+texte	20.000002	228.50003	9400 Rorschach
+texte	20.000002	167.00003	Description
+texte	110.000015	167.00003	Qté
+texte	130.00002	167.00003	Prix unitaire
+texte	160.00002	167.00003	TVA
+texte	180.00002	167.00003	Total
+texte	20.000002	159.00002	Frais de dossier
+texte	110.000015	159.00002	1.00
+texte	130.00002	159.00002	33.33
+texte	160.00002	159.00002	8.10%
+texte	180.00002	159.00002	33.33
+texte	130.00002	147.00002	Sous-total
+texte	180.00002	147.00002	CHF 33.33
+texte	130.00002	142.50002	TVA 8.1%
+texte	180.00002	142.50002	CHF 2.70
+texte	130.00002	138.00002	Arrondi
+texte	180.00002	138.00002	CHF +0.02
+texte	130.00002	132.50002	Total TTC
+texte	180.00002	132.50002	CHF 36.05
+texte	20.000002	124.500015	Conditions de paiement: 30 jours net
+texte	5.0000005	96.50001	Récépissé
+texte	5.0000005	90.50001	Compte / Payable à
+texte	5.0000005	87.50001	CH44 3199 9123 0008 8901 2
+texte	5.0000005	84.00001	CI Test Company
+texte	5.0000005	80.50001	Test Address 1
+texte	5.0000005	77.00001	1000 Lausanne
+texte	5.0000005	71.00001	Référence
+texte	5.0000005	68.00001	00 00000 00000 10000 00000 00039
+texte	5.0000005	62.000004	Payable par
+texte	5.0000005	58.500008	Pia Rutschmann
+texte	5.0000005	55.000008	Marktgasse 28
+texte	5.0000005	51.500008	9400 Rorschach
+texte	5.0000005	35.000004	Monnaie
+texte	17.000002	35.000004	Montant
+texte	5.0000005	31.500004	CHF
+texte	17.000002	31.500004	36.05
+texte	42.29976	20.500002	Point de dépôt
+texte	67.00001	96.50001	Section paiement
+texte	118.000015	98.000015	Compte / Payable à
+texte	118.000015	95.000015	CH44 3199 9123 0008 8901 2
+texte	118.000015	91.500015	CI Test Company
+texte	118.000015	88.000015	Test Address 1
+texte	118.000015	84.50001	1000 Lausanne
+texte	118.000015	78.50001	Référence
+texte	118.000015	75.50001	00 00000 00000 10000 00000 00039
+texte	118.000015	69.50001	Informations supplémentaires
+texte	118.000015	66.50001	Facture F-2020-0003
+texte	118.000015	60.500004	Payable par
+texte	118.000015	57.000004	Pia Rutschmann
+texte	118.000015	53.500008	Marktgasse 28
+texte	118.000015	50.000008	9400 Rorschach
+texte	67.00001	35.000004	Monnaie
+texte	82.00001	35.000004	Montant
+texte	67.00001	31.500004	CHF
+texte	82.00001	31.500004	36.05

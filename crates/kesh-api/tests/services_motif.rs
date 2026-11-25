@@ -230,6 +230,7 @@ async fn poser_livres(pool: &MySqlPool) -> Livres {
             project_id: None,
             lines: vec![NewInvoiceLine {
                 revenue_account_id: None,
+                line_type: kesh_db::entities::LineType::Priced,
                 description: "Prestation synthétique".into(),
                 quantity: dec!(1),
                 unit_price: dec!(100),

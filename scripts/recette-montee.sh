@@ -8,15 +8,25 @@
 #     [--apres ../kesh-gate-logs/relXYZ/verifs.sh] [--import] [--prefixe kesh-recette]
 #
 # Phases, chacune vérifiée, chacune son code de sortie :
-#   1 Avant   (11) : l'image précédente sur une base neuve, peuplement, empreinte,
-#                    `.keshbackup`, dump.
+#   1 Avant   (11) : l'image précédente sur une base neuve, peuplement (huit factures client,
+#                    un avoir, un règlement groupé, quatre PDF figés, Story 49-1d), empreinte,
+#                    `.keshbackup`, dump ; le dossier des documents de l'image copié par
+#                    `docker cp`, puis le fichier d'une facture figée retiré (le regel).
 #   2 Montée  (12) : le binaire neuf : N migrations, une sauvegarde `pre-upgrade/` si
 #                    N > 0, journal sans erreur, seuls les fichiers de `--diff-attendu`
-#                    diffèrent. Puis le crochet `--apres`, pour ce qui est propre à la
-#                    release (il dispose de `SQL`, `api`, `L`).
+#                    diffèrent, et seulement par ajout (projection sur l'avant identique).
+#                    Puis le crochet `--apres`, pour ce qui est propre à la release (il
+#                    dispose de `SQL`, `api`, `L`, `PHASE_APRES`). Puis les PDF : figés servis à l'octet,
+#                    regel du fichier retiré, rendus gardés pour la phase 6.
 #   3 Refus   (13) : si N > 0, l'image précédente refuse la base migrée.
-#   4 Retour  (14) : dump restauré, image relancée, empreinte identique à celle d'avant.
-#   5 Import  (15) : option `--import` : le `.keshbackup` dans le binaire neuf, base neuve.
+#   4 Retour  (14) : dump restauré, image relancée, empreinte identique à celle d'avant ;
+#                    puis les rendus de référence de l'image précédente.
+#   5 Import  (15) : option `--import` : le `.keshbackup` dans le binaire neuf, base neuve,
+#                    dossier des documents neuf : les PDF figés viennent de l'archive ;
+#                    le crochet `--apres` y est rejoué.
+#   6 Rendus  (16) : chaque PDF rendu de nouveau par le binaire neuf a, page à page, la même
+#                    trame à 300 dpi, le même texte et le même nombre de pages que sa
+#                    référence ; exactement 5 paires.
 #
 # Limite assumée : le retour joué ici passe par le dump. La procédure du manuel, par le
 # `.keshbackup` de `pre-upgrade/` dans une installation neuve, relève d'une autre recette.
@@ -36,14 +46,15 @@
 # `local x=$(…)` ne l'arrête pas. Rien ne l'empêche d'atteindre `docker`, le réseau ou un autre
 # dossier : il se relit comme du code.
 # L'empreinte ne couvre pas tout non plus : `docs/testing.md` dit exactement ce qu'elle
-# regarde, et aucun document n'est peuplé ni comparé.
+# regarde. Les documents : les PDF des factures peuplées sont comparés (archivés à l'octet,
+# rendus par leur dessin, phases 2, 5 et 6) ; aucune autre pièce ne l'est.
 #
 # Codes : 2 option ou entrée refusée ; 3 `.env` atteignable ; 4 conteneur de recette déjà
 # présent ; 5 outil manquant, démon non local, image indisponible ou conteneur de base
 # inattendu.
 #
 # Variables de test (les seules qui traversent la relance) : KESH_DOCKER, KESH_CURL,
-# RECETTE_RACINE_JETABLE (sous /tmp). Qui les pose exécute déjà ce qu'il veut.
+# KESH_MUTOOL, RECETTE_RACINE_JETABLE (sous /tmp). Qui les pose exécute déjà ce qu'il veut.
 
 set -uo pipefail
 
@@ -62,7 +73,7 @@ environnement_ferme() {
   [ "${HOME:-}" = "$HOME_FERME" ] || return 1
   while IFS= read -r -d '' e; do
     case "${e%%=*}" in
-      PATH | HOME | KESH_DOCKER | KESH_CURL | RECETTE_RACINE_JETABLE) ;;
+      PATH | HOME | KESH_DOCKER | KESH_CURL | KESH_MUTOOL | RECETTE_RACINE_JETABLE) ;;
       PWD | SHLVL | _ | OLDPWD) ;;
       *) return 1 ;;
     esac
@@ -80,6 +91,7 @@ if ! environnement_ferme; then
   relance=("PATH=$PATH_FERME" "HOME=$HOME_FERME")
   [ -z "${KESH_DOCKER:-}" ] || relance+=("KESH_DOCKER=$KESH_DOCKER")
   [ -z "${KESH_CURL:-}" ] || relance+=("KESH_CURL=$KESH_CURL")
+  [ -z "${KESH_MUTOOL:-}" ] || relance+=("KESH_MUTOOL=$KESH_MUTOOL")
   [ -z "${RECETTE_RACINE_JETABLE:-}" ] || relance+=("RECETTE_RACINE_JETABLE=$RECETTE_RACINE_JETABLE")
   exec /usr/bin/env -i "${relance[@]}" /usr/bin/bash "$0" --relance-faite "$@"
 fi
@@ -87,6 +99,7 @@ fi
 
 DOCKER=${KESH_DOCKER:-docker}
 CURL=${KESH_CURL:-curl}
+MUTOOL=${KESH_MUTOOL:-mutool}
 RACINE="$(cd "$(dirname "$0")/.." && pwd)"
 
 refus() {
@@ -120,7 +133,7 @@ done
 [[ "$PREFIXE" =~ ^kesh-[a-z0-9]+$ ]] || refus "préfixe « $PREFIXE » hors du motif kesh-<mot>"
 [[ "$MIGRATIONS" =~ ^(0|[1-9][0-9]*)$ ]] || refus "--migrations-attendues : un entier, sans zéro de tête"
 
-for outil in jq md5sum awk ss realpath join "$CURL" "$DOCKER"; do
+for outil in jq md5sum sha256sum awk ss realpath join diff cmp "$MUTOOL" "$CURL" "$DOCKER"; do
   command -v "$outil" >/dev/null || refus "outil manquant : $outil" 5
 done
 
@@ -209,8 +222,10 @@ done
 
 # --- Le dossier jetable : le script n'écrit que là ----------------------------------------
 D=$(mktemp -d "$RACINE_JETABLE/kesh-recette.XXXXXX") || refus "dossier jetable impossible" 5
-mkdir -p "$D/documents" "$D/inbox" "$D/backup" "$D/cwd" "$D/home" "$D/journal"
+mkdir -p "$D/documents" "$D/documents-import" "$D/inbox" "$D/backup" "$D/cwd" "$D/home" "$D/journal" "$D/pdf"
 L=$D/journal
+# Les PDF téléchargés, un fichier par pièce et par phase : `$P/<phase>-<pièce>.pdf`.
+P=$D/pdf
 if [ -n "$APRES" ]; then
   cp -- "$APRES" "$D/apres.sh" || refus "crochet illisible" 2
 fi
@@ -396,13 +411,13 @@ lancer_image() { # $1 = suffixe du journal
 }
 # Le binaire neuf : liste exacte, depuis `$D/cwd`. Tout ce qu'il écrit est sous `$D` ; il ne lit
 # hors de là que ses textes et son frontend, dans le dépôt.
-lancer_binaire() { # $1 = suffixe du journal, $2 = port de la base
+lancer_binaire() { # $1 = suffixe du journal, $2 = port de la base, $3 = dossier des documents (sous `$D`)
   (cd "$D/cwd" && exec /usr/bin/env -i \
     "PATH=$PATH_FERME" "HOME=$D/home" \
     "DATABASE_URL=$(url_base "$2")" \
     "KESH_HOST=127.0.0.1" "KESH_PORT=$PORT_API" "KESH_COOKIE_SECURE=false" \
     "KESH_STATIC_DIR=$STATIQUE" "KESH_LOCALES_DIR=$RACINE/crates/kesh-i18n/locales" \
-    "KESH_INBOX_DIR=$D/inbox" "KESH_DOCUMENTS_DIR=$D/documents" "KESH_ADMIN_BACKUP_DIR=$D/backup" \
+    "KESH_INBOX_DIR=$D/inbox" "KESH_DOCUMENTS_DIR=$3" "KESH_ADMIN_BACKUP_DIR=$D/backup" \
     "KESH_ADMIN_USERNAME=$ADMIN_NOM" "KESH_ADMIN_PASSWORD=$ADMIN_MDP" "KESH_JWT_SECRET=$JWT" \
     "KESH_SMTP_HOST=$SMTP_HOTE" "KESH_SMTP_USER=$SMTP_NOM" "KESH_SMTP_PASSWORD=$SMTP_MDP" "KESH_SMTP_FROM=$SMTP_DE" \
     "$BINAIRE") > "$L/binaire-$1.log" 2>&1 < /dev/null 3>&- &
@@ -411,16 +426,33 @@ lancer_binaire() { # $1 = suffixe du journal, $2 = port de la base
 
 # --- L'empreinte -------------------------------------------------------------------------
 # Ce qu'elle couvre est dit à `docs/testing.md` : y tenir la liste à jour.
-TABLES="journal_entries journal_entry_lines invoices invoice_lines invoice_settlements supplier_invoices supplier_invoice_lines bank_imports bank_transactions bank_accounts contacts accounts companies fiscal_years company_invoice_settings"
+TABLES="journal_entries journal_entry_lines invoices invoice_lines invoice_settlements supplier_invoices supplier_invoice_lines bank_imports bank_transactions bank_accounts contacts accounts companies fiscal_years company_invoice_settings credit_notes credit_note_lines"
 AUDIT_N=0
 AUDIT_DECALAGE=0
+# Les colonnes d'une table, relevées à l'empreinte `avant`, dans l'ordre de `SELECT *`, chaque nom
+# entre apostrophes inverses (`CHAR(96)`) : la projection de D2 (Story 49-1d) les relit telles quelles.
+COLONNES=$L/colonnes-avant
+est_table() { case " $TABLES " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
 empreinte() { # $1 = étiquette
-  local o=$L/empreinte-$1 t id
-  mkdir -p "$o"
+  local o=$L/empreinte-$1 j=$L/projection-$1 t id
+  mkdir -p "$o" "$j"
   SQL "SELECT version, description, success, HEX(checksum) FROM _sqlx_migrations ORDER BY version" > "$o/migrations" || return 1
+  if [ "$1" = avant ]; then
+    mkdir -p "$COLONNES"
+    for t in $TABLES; do
+      SQL "SET SESSION group_concat_max_len = 65535; SELECT GROUP_CONCAT(CONCAT(CHAR(96), COLUMN_NAME, CHAR(96)) ORDER BY ORDINAL_POSITION) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '$t'" > "$COLONNES/$t" || return 1
+      [ -s "$COLONNES/$t" ] && [ "$(cat "$COLONNES/$t")" != NULL ] || return 1
+    done
+  fi
   for t in $TABLES; do
     # `ORDER BY 1` : la première colonne, `id` ou `company_id` (réglages de facturation).
     SQL "SELECT * FROM $t ORDER BY 1" > "$o/$t" || return 1
+    # Projection sur les colonnes d'avant, pour une table que `--diff-attendu` nomme : hors de
+    # l'empreinte (son dossier propre), comparée par `ecarts_hors_attendu`. Une colonne d'avant
+    # retirée ou renommée fait échouer la requête, donc la phase : voulu.
+    if [ "$1" != avant ] && attendu_en_diff "$t"; then
+      SQL "SELECT $(cat "$COLONNES/$t") FROM $t ORDER BY 1" > "$j/$t" || return 1
+    fi
   done
   # `users`, sans ce que réécrit l'avis « Recovery effectué » à chaque démarrage.
   SQL "SELECT id, username, role, active, company_id, email FROM users ORDER BY id" > "$o/users" || return 1
@@ -436,6 +468,12 @@ empreinte() { # $1 = étiquette
   : > "$o/api"
   for id in $(cat "$L/ids-factures"); do api GET "/api/v1/invoices/$id" | jq -S . >> "$o/api" || return 1; done
   for id in $(cat "$L/ids-fournisseur"); do api GET "/api/v1/supplier-invoices/$id" | jq -S . >> "$o/api" || return 1; done
+  for id in $(cat "$L/ids-avoirs"); do api GET "/api/v1/credit-notes/$id" | jq -S . >> "$o/api" || return 1; done
+  # Le rapport TVA de la période du peuplement (D10) : le seul lecteur filtré par le type de
+  # ligne que la recette fait tourner sur les données d'avant. Gardé aussi à part, pour le
+  # contrôle de non-vacuité de la phase 1.
+  api GET "/api/v1/reports/vat?$(cat "$L/requete-tva")" | jq -S . > "$L/tva-$1.json" || return 1
+  cat "$L/tva-$1.json" >> "$o/api"
   (cd "$o" && md5sum -- *) | awk '{print $2, $1}' | sort > "$L/empreinte-$1.md5"
 }
 # Les fichiers qui diffèrent entre deux empreintes, un par ligne.
@@ -445,10 +483,49 @@ ecarts() { # $1, $2 = étiquettes
 attendu_en_diff() {
   case ",$DIFF_ATTENDU," in *",$1,"*) return 0 ;; *) return 1 ;; esac
 }
+# `api`, réduit aux clés d'avant (D2) : chaque document d'après, projeté sur le document d'avant de
+# même rang, récursivement — objets réduits aux clés d'avant (une clé disparue est marquée),
+# tableaux élément par élément à longueur égale, même type JSON exigé. La sortie est la projection,
+# un document par ligne de `jq -S`, à comparer à l'avant normalisé de même façon.
+JQ_PROJECTION='
+def proj($a):
+  . as $b
+  | if ($a | type) != ($b | type) then {"ÉCART DE TYPE": [($a | type), ($b | type)]}
+    elif ($a | type) == "object" then
+      reduce ($a | keys_unsorted[]) as $k ({};
+        . + {($k): (if ($b | has($k)) then ($b[$k] | proj($a[$k])) else {"CLÉ DISPARUE": $k} end)})
+    elif ($a | type) == "array" then
+      if ($a | length) != ($b | length) then {"ÉCART DE LONGUEUR": [($a | length), ($b | length)]}
+      else [range(0; $a | length) as $i | ($b[$i] | proj($a[$i]))] end
+    else $b end;
+if ($av | length) != ($ap | length) then {"ÉCART DU NOMBRE DE DOCUMENTS": [($av | length), ($ap | length)]}
+else range(0; $av | length) as $i | ($ap[$i] | proj($av[$i])) end'
+# Rend 0 si la projection de `$3` (étiquette d'après) sur `$2` (avant) égale l'avant ; écrit le diff
+# de la projection au journal sinon.
+projection_identique() { # $1 = fichier, $2, $3 = étiquettes
+  local avant=$L/empreinte-$2/$1 j=$L/projection-$3 n=$L/projection-$3/$1.avant
+  # Pas de garde « avant vide » ici (revue P2, B-P2-1) : cette fonction n'est appelée que pour un fichier qui DIFFÈRE,
+  # et une table vide avant puis peuplée après a une projection peuplée, que `diff` voit. Le cas réel — une table
+  # vide des deux côtés, comparée à vide — est fermé à l'empreinte d'avant (phase 1, chaque table de `TABLES` non vide).
+  if [ "$1" = api ]; then
+    jq -S -c --slurpfile av "$avant" --slurpfile ap "$L/empreinte-$3/api" -n "$JQ_PROJECTION" > "$j/api" || return 1
+    jq -S -c . "$avant" > "$n" || return 1
+  else
+    [ -f "$j/$1" ] || return 1
+    cp -- "$avant" "$n"
+  fi
+  diff -- "$n" "$j/$1" > "$L/diff-projection-$3-$1.txt" && return 0
+  return 1
+}
 ecarts_hors_attendu() { # $1 = phase, $2, $3 = étiquettes
   local e faute=""
   for e in $(ecarts "$2" "$3"); do
-    attendu_en_diff "$e" || faute="$faute $e"
+    if ! attendu_en_diff "$e"; then
+      faute="$faute $e"
+    elif { est_table "$e" || [ "$e" = api ]; } && ! projection_identique "$e" "$2" "$3"; then
+      # Story 49-1d (D2) : une table ou `api` nommés ne peuvent différer que par ajout.
+      faute="$faute $e (valeurs d'avant changées : $L/diff-projection-$3-$e.txt)"
+    fi
   done
   [ -z "$faute" ] || echec "$1" "écart hors de --diff-attendu ($2 → $3) :$faute"
 }
@@ -463,6 +540,58 @@ journal_sans_erreur() { # $1 = phase, $2 = journal
   [ -z "$erreurs" ] || echec "$1" "erreur au journal $2"
 }
 nb_migrations() { SQL "SELECT COUNT(*) FROM _sqlx_migrations"; }
+
+# --- Les PDF (Story 49-1d) ---------------------------------------------------------------
+# Les pièces peuplées, pièce F1 à F8 (factures) ou A1 (avoir) : `$L/pieces-ids`, « <pièce>
+# <identifiant> », écrit à la création ; `$L/pieces`, « <pièce> <identifiant> <numéro> », écrit à la
+# fin du peuplement, les numéros relus à l'API.
+id_piece() { awk -v p="$1" '$1 == p {print $2}' "$L/pieces-ids"; }
+numero_piece() { awk -v p="$1" '$1 == p {print $3}' "$L/pieces"; }
+chemin_pdf() { # $1 = pièce
+  case "$1" in
+    A*) printf '/api/v1/credit-notes/%s/pdf' "$(id_piece "$1")" ;;
+    *) printf '/api/v1/invoices/%s/pdf' "$(id_piece "$1")" ;;
+  esac
+}
+pdf_valide() { [ -s "$1" ] && [ "$(head -c 5 -- "$1")" = "%PDF-" ]; }
+empreinte_sha() { sha256sum -- "$1" | awk '{print $1}'; }
+# Un téléchargement : le statut HTTP et le corps, gardé tel quel (un refus JSON reste lisible).
+telecharger() { # $1 = chemin d'API, $2 = fichier ; rend le statut HTTP sur la sortie
+  local code
+  code=$(C -o "$2" -w '%{http_code}' "$URL$1" -H "Authorization: Bearer $TOKEN") || code=${code:-000}
+  printf '%s' "$code"
+}
+# Un PDF exigé : HTTP 200 et en-tête `%PDF-`, sinon la phase échoue en nommant la pièce.
+pdf_exige() { # $1 = phase, $2 = pièce, $3 = fichier
+  local code
+  code=$(telecharger "$(chemin_pdf "$2")" "$3")
+  [ "$code" = 200 ] && pdf_valide "$3" \
+    || echec "$1" "PDF de $2 : HTTP $code, en-tête « $(head -c 5 -- "$3" 2>/dev/null | tr -cd '[:print:]') » — pas un PDF (corps gardé : $3)"
+}
+# Un rendu gardé pour la phase 6 : un échec n'arrête pas la phase, la paire ne comptera pas.
+pdf_rendu() { # $1 = pièce, $2 = fichier
+  local code
+  code=$(telecharger "$(chemin_pdf "$1")" "$2")
+  pdf_valide "$2" && [ "$code" = 200 ] || echo "  ⚠️ rendu de $1 : HTTP $code, pas un PDF ($2) : la paire ne comptera pas"
+}
+# Une facture figée, servie par le serveur en cours : les octets de la phase 1, et l'empreinte en
+# base. $1 = phase, $2 = pièce, $3 = étiquette du fichier.
+pdf_fige_identique() {
+  local f=$P/$3-$2.pdf
+  pdf_exige "$1" "$2" "$f"
+  cmp -s -- "$P/avant-$2.pdf" "$f" || echec "$1" "PDF archivé de $2 : octets différents de ceux de la phase 1 ($f)"
+  [ "$(empreinte_sha "$f")" = "$(SQL "SELECT pdf_sha256 FROM invoices WHERE id = $(id_piece "$2")")" ] \
+    || echec "$1" "PDF archivé de $2 : SHA-256 différent de pdf_sha256 en base"
+}
+
+# Ce que la recette joue, identifié au journal (revue P3, E-P3-4) : l'identifiant et les digests de l'image — une image
+# locale homonyme n'a pas le digest de la publiée — et l'empreinte du binaire neuf. Un relevé, non un contrôle.
+# L'empreinte du binaire est relevée d'abord, et son échec arrête la recette (passe ciblée de la revue P3, LOW-2).
+EMPREINTE_BINAIRE=$(sha256sum -- "$BINAIRE") || echec 1 "empreinte du binaire illisible ($BINAIRE)"
+{
+  "$DOCKER" image inspect -f '{{.Id}} {{json .RepoDigests}}' "$IMAGE" 2>&1 || echo "image : inspection illisible"
+  printf '%s\n' "$EMPREINTE_BINAIRE"
+} > "$L/identite.txt"
 
 # --- Phase 1 : avant ---------------------------------------------------------------------
 echo "▶ phase 1 : avant ($IMAGE)"
@@ -489,18 +618,77 @@ peupler() { # $1 = étiquette, reste = arguments d'`api` ; rend le corps sur la 
   corps=$(api "$@") || echec 1 "$etiquette : refus de l'API : $(printf '%s' "$corps" | head -c 300)"
   printf '%s' "$corps"
 }
+# Story 49-1d (D1) — deux préconditions d'abord : sans compte bancaire PRINCIPAL, aucun PDF de
+# facture ne se rend ; sans compte de différences d'arrondi désigné, aucune facture à l'arrondi non
+# nul ne se valide. Le compte bancaire est lié au 1020 (le règlement groupé l'exige).
+BANQUE=$(compte_numero 1020)
+if [ -z "$BANQUE" ]; then
+  R=$(peupler "compte 1020" POST /api/v1/accounts -d '{"number":"1020","name":"Banque de recette","accountType":"Asset","parentId":null}') || exit $?
+  BANQUE=$(id_de 1 "compte 1020" "$R") || exit $?
+fi
+ARRONDI=$(printf '%s' "$COMPTES" | jq -r '[.[]|select((.name|test("rrondi";"i")) and .active and .postable)][0].id // empty')
+[ -n "$ARRONDI" ] || ARRONDI=$CHARGE
+# Deux comptes bancaires. Celui du relevé synthétique A, tel qu'avant la Story 49-1d : son IBAN
+# d'exemple est un QR-IBAN (IID 31999), qui fait refuser tout PDF de facture sans référence QRR
+# (`400 INVOICE_NOT_PDF_READY`, sonde T0 de la 49-1d). Et le compte principal, à l'IBAN d'exemple
+# ordinaire de SIX, lié au 1020 : il porte la QR-facture des PDF et le relevé du règlement groupé.
+IBAN=CH4431999123000889012
+IBAN_PRINCIPAL=CH9300762011623852957
+R=$(peupler "lecture des comptes bancaires" GET /api/v1/bank-accounts) || exit $?
+compte_iban() { printf '%s' "$R" | jq -r --arg i "$1" '[.[]|(.account // .)|select(.iban==$i)][0].id // empty'; }
+COMPTE=$(compte_iban "$IBAN")
+PRINCIPAL=$(compte_iban "$IBAN_PRINCIPAL")
+if [ -z "$PRINCIPAL" ]; then
+  R=$(peupler "compte bancaire principal" POST /api/v1/bank-accounts -d "{\"bankName\":\"Banque Principale Synthetique\",\"iban\":\"$IBAN_PRINCIPAL\",\"isPrimary\":true,\"journalAccountId\":$BANQUE}") || exit $?
+  PRINCIPAL=$(id_de 1 "compte bancaire principal" "$(printf '%s' "$R" | jq -c '(.account // .)' 2>/dev/null)") || exit $?
+else
+  R=$(printf '%s' "$R" | jq -c --arg i "$IBAN_PRINCIPAL" --argjson b "$BANQUE" '[.[]|(.account // .)|select(.iban==$i)][0] | .isPrimary=true | .journalAccountId=$b') \
+    || echec 1 "compte bancaire principal existant illisible"
+  printf '%s' "$R" > "$L/compte-bancaire.json"
+  peupler "compte bancaire rendu principal" PUT "/api/v1/bank-accounts/$PRINCIPAL" --data-binary "@$L/compte-bancaire.json" >/dev/null || exit $?
+fi
+if [ -z "$COMPTE" ]; then
+  R=$(peupler "compte bancaire du relevé A" POST /api/v1/bank-accounts -d "{\"bankName\":\"Banque Synthetique\",\"iban\":\"$IBAN\",\"isPrimary\":false,\"journalAccountId\":null}") || exit $?
+  COMPTE=$(id_de 1 "compte bancaire du relevé A" "$(printf '%s' "$R" | jq -c '(.account // .)' 2>/dev/null)") || exit $?
+fi
+R=$(peupler "lecture des réglages de facturation" GET /api/v1/company/invoice-settings) || exit $?
+R=$(printf '%s' "$R" | jq --argjson p "$CREANCIERS" --argjson a "$ARRONDI" \
+  '.defaultPayableAccountId=$p | .defaultRoundingAccountId=$a | .roundTo5Centimes=true') || echec 1 "réglages de facturation illisibles"
+printf '%s' "$R" > "$L/reglages-facturation.json"
+peupler "écriture des réglages de facturation" PUT /api/v1/company/invoice-settings --data-binary "@$L/reglages-facturation.json" >/dev/null || exit $?
+[ "$(SQL "SELECT COUNT(*) FROM bank_accounts WHERE is_primary = TRUE AND archived = FALSE")" = 1 ] \
+  && [ "$(SQL "SELECT COUNT(*) FROM bank_accounts WHERE is_primary = TRUE AND archived = FALSE AND journal_account_id = $BANQUE")" = 1 ] \
+  || echec 1 "précondition : pas exactement un compte bancaire principal, lié au 1020"
+[ "$(SQL "SELECT COUNT(*) FROM company_invoice_settings WHERE default_rounding_account_id IS NOT NULL")" = 1 ] \
+  || echec 1 "précondition : aucun compte de différences d'arrondi désigné"
+
 R=$(peupler client POST /api/v1/contacts -d '{"contactType":"Personne","name":"Synthetique","firstName":"Pia","lastName":"Synthetique","isClient":true,"isSupplier":false,"addressStructured":{"street":"Marktgasse","building":"28","postalCode":"9400","city":"Rorschach","country":"CH"},"defaultPaymentTerms":"30 jours net"}') || exit $?
 CLIENT=$(id_de 1 client "$R") || exit $?
+# Huit factures (D1), dans l'ordre de leurs pièces : F1 à F8. Les désignations de F2 à F8 restent
+# dans ce que la 49-4b ne change pas (au plus 44 caractères, ASCII imprimable, espaces simples,
+# aucune de bord) ; celle de F1, figée, dépasse 44 caractères.
+ligne() { printf '{"description":"%s","quantity":"%s","unitPrice":"%s","vatRate":"%s"}' "$1" "$2" "$3" "$4"; }
 : > "$L/ids-factures"
-for q in 4.5 1 2; do
-  R=$(peupler facture POST /api/v1/invoices -d "{\"contactId\":$CLIENT,\"date\":\"$JOUR\",\"dueDate\":\"$JOUR\",\"paymentTerms\":\"30 jours net\",\"lines\":[{\"description\":\"Conseil\",\"quantity\":\"$q\",\"unitPrice\":\"200.00\",\"vatRate\":\"8.10\"}]}") || exit $?
-  V=$(id_de 1 facture "$R") || exit $?
-  printf '%s\n' "$V" >> "$L/ids-factures"
+: > "$L/pieces-ids"
+creer_facture() { # $1 = pièce, $2 = lignes JSON
+  local r v
+  r=$(peupler "facture $1" POST /api/v1/invoices -d "{\"contactId\":$CLIENT,\"date\":\"$JOUR\",\"dueDate\":\"$JOUR\",\"paymentTerms\":\"30 jours net\",\"lines\":$2}") || exit $?
+  v=$(id_de 1 "facture $1" "$r") || exit $?
+  printf '%s\n' "$v" >> "$L/ids-factures"
+  printf '%s %s\n' "$1" "$v" >> "$L/pieces-ids"
+}
+creer_facture F1 "[$(ligne "Conseil en organisation comptable, seance du matin et de l apres-midi" 4.5 200.00 8.10)]"
+creer_facture F2 "[$(ligne Conseil 1 200.00 8.10)]"
+creer_facture F3 "[$(ligne Conseil 2 200.00 8.10)]"
+creer_facture F4 "[$(ligne Conseil 1 100.00 8.10),$(ligne Livres 1 33.33 2.60),$(ligne "Frais hors champ" 1 10.01 0.00)]"
+creer_facture F5 "[$(ligne Accompagnement 1 150.00 8.10)]"
+creer_facture F6 "[$(ligne Accompagnement 2 150.00 8.10)]"
+creer_facture F7 "[$(ligne Conseil 1 300.00 8.10),$(ligne Documentation 2 25.00 2.60)]"
+creer_facture F8 "[$(ligne Formation 1 120.00 8.10)]"
+F1=$(id_piece F1) F2=$(id_piece F2) F4=$(id_piece F4) F5=$(id_piece F5) F6=$(id_piece F6) F7=$(id_piece F7) F8=$(id_piece F8)
+for f in F1 F2 F4 F5 F6 F7 F8; do
+  peupler "validation de $f" POST "/api/v1/invoices/$(id_piece "$f")/validate" >/dev/null || exit $?
 done
-F1=$(sed -n 1p "$L/ids-factures")
-F2=$(sed -n 2p "$L/ids-factures")
-peupler "validation de la facture 1" POST "/api/v1/invoices/$F1/validate" >/dev/null || exit $?
-peupler "validation de la facture 2" POST "/api/v1/invoices/$F2/validate" >/dev/null || exit $?
 R=$(peupler "lecture de la facture 2" GET "/api/v1/invoices/$F2") || exit $?
 DU=$(printf '%s' "$R" | jq -r '.remainingAmount // .amountDue // .totalTtc // empty')
 [ -n "$DU" ] || echec 1 "reste dû de la facture 2 illisible"
@@ -509,11 +697,14 @@ DU=$(printf '%s' "$R" | jq -r '.remainingAmount // .amountDue // .totalTtc // em
 VF2=$(printf '%s' "$R" | jq -r '.version // empty')
 [[ "$VF2" =~ ^[0-9]+$ ]] || echec 1 "version de la facture 2 illisible"
 peupler "règlement de la facture 2" POST "/api/v1/invoices/$F2/settlements" -d "{\"settlementType\":\"internal_account\",\"accountId\":$CAISSE,\"amount\":\"$DU\",\"settledOn\":\"$JOUR\",\"version\":$VF2}" >/dev/null || exit $?
+# Les PDF figés par l'image de départ (D1) : F1, F5, F7 — avant son avoir, F7 se fige validée — et F8, dont le
+# fichier sera retiré de la copie des documents.
+for f in F1 F5 F7 F8; do pdf_exige 1 "$f" "$P/avant-$f.pdf"; done
+R=$(peupler "avoir de F7" POST /api/v1/credit-notes -d "{\"invoiceId\":$F7,\"date\":\"$JOUR\"}") || exit $?
+A1=$(id_de 1 "avoir de F7" "$R") || exit $?
+printf '%s\n' "$A1" > "$L/ids-avoirs"
+printf 'A1 %s\n' "$A1" >> "$L/pieces-ids"
 
-R=$(peupler "lecture des réglages de facturation" GET /api/v1/company/invoice-settings) || exit $?
-R=$(printf '%s' "$R" | jq --argjson p "$CREANCIERS" '.defaultPayableAccountId=$p') || echec 1 "réglages de facturation illisibles"
-printf '%s' "$R" > "$L/reglages-facturation.json"
-peupler "écriture des réglages de facturation" PUT /api/v1/company/invoice-settings --data-binary "@$L/reglages-facturation.json" >/dev/null || exit $?
 R=$(peupler fournisseur POST /api/v1/contacts -d '{"contactType":"Entreprise","name":"Fournisseur Synthetique SA","isClient":false,"isSupplier":true}') || exit $?
 FOURNISSEUR=$(id_de 1 fournisseur "$R") || exit $?
 : > "$L/ids-fournisseur"
@@ -535,30 +726,85 @@ peupler "annulation de la facture fournisseur" POST "/api/v1/supplier-invoices/$
 
 # L'état réel, relu en base : c'est lui que l'empreinte va comparer.
 SQL "SELECT GROUP_CONCAT(CONCAT(id,':',status) ORDER BY id) FROM supplier_invoices" > "$L/statuts-fournisseur.txt"
-SQL "SELECT GROUP_CONCAT(status ORDER BY id) FROM invoices" > "$L/statuts-clients.txt"
 [ "$(cat "$L/statuts-fournisseur.txt")" = "1:open,2:paid,3:cancelled,4:draft" ] \
   || echec 1 "statuts fournisseur inattendus : $(cat "$L/statuts-fournisseur.txt")"
-[ "$(cat "$L/statuts-clients.txt")" = "validated,validated,draft" ] \
-  || echec 1 "statuts clients inattendus : $(cat "$L/statuts-clients.txt")"
-[ "$(SQL 'SELECT COUNT(*) FROM invoice_settlements')" = 1 ] || echec 1 "règlement client absent"
 
-# L'IBAN d'exemple du relevé synthétique.
-IBAN=CH4431999123000889012
-R=$(peupler "lecture des comptes bancaires" GET /api/v1/bank-accounts) || exit $?
-COMPTE=$(printf '%s' "$R" | jq -r --arg i "$IBAN" '[.[]|(.account // .)|select(.iban==$i)][0].id // empty')
-if [ -z "$COMPTE" ]; then
-  R=$(peupler "compte bancaire" POST /api/v1/bank-accounts -d "{\"bankName\":\"Banque Synthetique\",\"iban\":\"$IBAN\",\"isPrimary\":false,\"journalAccountId\":null}") || exit $?
-  COMPTE=$(id_de 1 "compte bancaire" "$R") || exit $?
-fi
 camt preview "$RACINE/scripts/fixtures/recette/releve-A.xml" "$COMPTE" > "$L/apercu-A.json"
 camt create "$RACINE/scripts/fixtures/recette/releve-A.xml" "$COMPTE" \
   -F "previewFingerprint=$(jq -r .previewFingerprint "$L/apercu-A.json")" > "$L/import-A.json"
 [ "$(SQL 'SELECT COUNT(*) FROM bank_transactions')" = 2 ] || echec 1 "relevé synthétique non importé ($L/import-A.json)"
 
+# Le règlement groupé de F5 et F6 (D1) : un relevé saisi à la main au jour de la recette — un
+# crédit égal à la somme de leurs TTC — puis la proposition `invoice_group` acceptée. Le relevé A,
+# daté d'octobre 2026, ne peut régler aucune facture du jour.
+# `total_amount` est le HT : le crédit est la somme des TTC, lus à l'API (sonde T0).
+TTC5=$(api GET "/api/v1/invoices/$F5" | jq -r '.totalTtc // empty')
+TTC6=$(api GET "/api/v1/invoices/$F6" | jq -r '.totalTtc // empty')
+[[ "$TTC5" =~ ^[0-9]+(\.[0-9]+)?$ ]] && [[ "$TTC6" =~ ^[0-9]+(\.[0-9]+)?$ ]] || echec 1 "TTC de F5 et F6 illisibles : « $TTC5 », « $TTC6 »"
+GROUPE=$(awk -v a="$TTC5" -v b="$TTC6" 'BEGIN { printf "%.2f", a + b }')
+peupler "relevé saisi du règlement groupé" POST /api/v1/bank-imports/manual -d "{\"bankAccountId\":$PRINCIPAL,\"periodFrom\":\"$JOUR\",\"periodTo\":\"$JOUR\",\"statementNumber\":\"R-GROUPE\",\"openingBalance\":\"0.00\",\"closingBalance\":\"$GROUPE\",\"lines\":[{\"bookingDate\":\"$JOUR\",\"valueDate\":null,\"details\":\"Versement groupe\",\"counterpartyName\":null,\"reference\":null,\"amount\":\"$GROUPE\",\"direction\":\"credit\"}],\"confirmDuplicateFile\":true,\"confirmDuplicateLines\":true,\"confirmOpeningBalanceGap\":true}" > "$L/releve-groupe.json" || exit $?
+[ "$(SQL 'SELECT COUNT(*) FROM bank_transactions')" = 3 ] || echec 1 "relevé du règlement groupé non saisi ($L/releve-groupe.json)"
+TX=$(SQL "SELECT id FROM bank_transactions WHERE amount > 0 ORDER BY id DESC LIMIT 1")
+[[ "$TX" =~ ^[0-9]+$ ]] || echec 1 "transaction du règlement groupé introuvable"
+peupler "règlement groupé de F5 et F6" POST /api/v1/reconciliation/accept -d "{\"bankAccountId\":$PRINCIPAL,\"proposals\":[{\"type\":\"invoice_group\",\"bankTransactionId\":$TX,\"invoiceIds\":[$F5,$F6]}]}" > "$L/groupe.json" || exit $?
+jq -e '(.failed|length) == 0 and (.accepted|length) == 1' "$L/groupe.json" >/dev/null || echec 1 "règlement groupé refusé ($L/groupe.json)"
+
+# L'état réel, relu en base, pièce par pièce (D1).
+SQL "SELECT GROUP_CONCAT(status ORDER BY id) FROM invoices" > "$L/statuts-clients.txt"
+[ "$(cat "$L/statuts-clients.txt")" = "validated,validated,draft,validated,validated,validated,cancelled,validated" ] \
+  || echec 1 "statuts clients inattendus : $(cat "$L/statuts-clients.txt")"
+[ "$(SQL 'SELECT COUNT(*) FROM invoice_settlements')" = 3 ] || echec 1 "règlements clients : 3 attendus (F2, F5, F6)"
+[ "$(SQL 'SELECT COUNT(*) FROM invoice_settlements WHERE journal_entry_line_id IS NOT NULL')" = 2 ] \
+  || echec 1 "règlement groupé : 2 règlements à ligne d'écriture désignée attendus"
+[ "$(SQL 'SELECT COUNT(*) FROM credit_notes')" = 1 ] || echec 1 "avoir absent"
+[ "$(SQL 'SELECT GROUP_CONCAT(id ORDER BY id) FROM invoices WHERE pdf_sha256 IS NOT NULL')" = "$F1,$F5,$F7,$F8" ] \
+  || echec 1 "factures figées : F1, F5, F7, F8 attendues"
+[ "$(SQL "SELECT CONCAT(COUNT(*), ':', COUNT(DISTINCT vat_rate), ':', SUM(vat_rate = 0)) FROM invoice_lines WHERE invoice_id = $F4")" = "3:3:1" ] \
+  || echec 1 "F4 : trois lignes, trois taux dont 0.00 attendus"
+[ "$(SQL "SELECT rounding_amount <> 0 FROM invoices WHERE id = $F4")" = 1 ] || echec 1 "F4 : arrondi nul"
+[ "$(SQL "SELECT COUNT(*) FROM invoice_lines WHERE invoice_id = $F1 AND CHAR_LENGTH(description) > 44")" = 1 ] \
+  || echec 1 "F1 : désignation de plus de 44 caractères attendue"
+[ "$(SQL "SELECT COUNT(*) FROM invoice_lines WHERE invoice_id <> $F1")" -gt 0 ] \
+  && [ "$(SQL "SELECT (SELECT COUNT(*) FROM invoice_lines WHERE invoice_id <> $F1 AND (CHAR_LENGTH(description) > 44 OR description NOT REGEXP '^[!-~]+( [!-~]+)*\$')) + (SELECT COUNT(*) FROM credit_note_lines WHERE CHAR_LENGTH(description) > 44 OR description NOT REGEXP '^[!-~]+( [!-~]+)*\$')")" = 0 ] \
+  || echec 1 "une désignation de F2 à F8 ou de l'avoir sort de la forme de D1 (44 caractères, ASCII imprimable, espaces simples)"
+# Les numéros, relus à l'API : une paire de rendus ne compte que si son texte contient le sien.
+: > "$L/pieces"
+while read -r piece id; do
+  case "$piece" in
+    A*) num=$(api GET "/api/v1/credit-notes/$id" | jq -r '.creditNoteNumber // empty') ;;
+    *) num=$(api GET "/api/v1/invoices/$id" | jq -r '.invoiceNumber // "brouillon"') ;;
+  esac
+  [ -n "$num" ] || echec 1 "numéro de $piece illisible"
+  printf '%s %s %s\n' "$piece" "$id" "$num" >> "$L/pieces"
+done < "$L/pieces-ids"
+# Le rapport TVA de la période du peuplement (D10), sur l'exercice du jour.
+EXERCICE=$(SQL "SELECT id FROM fiscal_years WHERE start_date <= '$JOUR' AND end_date >= '$JOUR' ORDER BY id LIMIT 1")
+[[ "$EXERCICE" =~ ^[0-9]+$ ]] || echec 1 "aucun exercice ne couvre le $JOUR"
+printf 'fiscalYearId=%s&periodStart=%s&periodEnd=%s' "$EXERCICE" "$JOUR" "$JOUR" > "$L/requete-tva"
+
 empreinte avant || echec 1 "empreinte avant"
+# Une table vide des deux côtés serait égale à vide (revue P2, B-P2-1) : chaque table de l'empreinte est peuplée.
+for t in $TABLES; do
+  [ -s "$L/empreinte-avant/$t" ] || echec 1 "table $t vide à l'empreinte d'avant : sa comparaison serait à vide"
+done
+# AC8 : un rapport vide des deux côtés ne prouverait rien.
+jq -e '(.totalBaseHt | tonumber) != 0' "$L/tva-avant.json" >/dev/null 2>&1 \
+  || echec 1 "rapport TVA sans chiffre d'affaires ($L/tva-avant.json)"
 C -f --max-time 600 -o "$D/avant.keshbackup" "$URL/api/v1/admin/full-export" -H "Authorization: Bearer $TOKEN" \
   || echec 1 "export .keshbackup en échec"
 [ -s "$D/avant.keshbackup" ] || echec 1 ".keshbackup vide"
+# Le dossier des documents de l'image (D3), copié par `docker cp` — aucun montage —, depuis le seul
+# conteneur qui porte le jeton de ce run ; puis le fichier de F8 retiré, pour le regel de la phase 2.
+# La sauvegarde ci-dessus, prise avant, le garde.
+[ "$("$DOCKER" inspect -f '{{index .Config.Labels "kesh.recette"}}' "$CT_IMAGE" 2>/dev/null)" = "$JETON" ] \
+  || echec 1 "le conteneur de l'image ne porte pas le jeton du run"
+"$DOCKER" cp "$CT_IMAGE:/tmp/documents/." "$D/documents/" >/dev/null || echec 1 "docker cp des documents en échec"
+for f in F1 F5 F7 F8; do
+  CHEMIN=$(SQL "SELECT pdf_storage_path FROM invoices WHERE id = $(id_piece "$f")")
+  [[ "$CHEMIN" =~ ^[0-9a-f]{64}\.pdf$ ]] && [ -f "$D/documents/$CHEMIN" ] \
+    || echec 1 "PDF de $f absent de la copie des documents (« $CHEMIN »)"
+  [ "$f" != F8 ] || rm -f -- "$D/documents/$CHEMIN"
+done
 arreter_image
 "$DOCKER" exec -e "MYSQL_PWD=$MDP_ROOT" "$CT_BASE" mariadb-dump -uroot --single-transaction --routines --triggers \
   --add-drop-database --databases "$BASE" > "$D/avant.sql" || echec 1 "dump en échec"
@@ -567,8 +813,10 @@ echo "  $MIGRATIONS_AVANT migrations, empreinte et sauvegardes prises"
 
 # --- Phase 2 : montée --------------------------------------------------------------------
 echo "▶ phase 2 : montée (binaire neuf, $MIGRATIONS migration(s) attendue(s))"
-lancer_binaire montee "$PORT_BASE"
+lancer_binaire montee "$PORT_BASE" "$D/documents"
 attendre_sante "$PID_BINAIRE" || echec 2 "le binaire ne répond pas ($L/binaire-montee.log)"
+# Sa version, que relit le script complémentaire de la release (nom de la sauvegarde `pre-upgrade/`).
+C -f --max-time 5 -o "$L/health-binaire.json" "$URL/health" || echec 2 "/health du binaire illisible"
 MIGRATIONS_APRES=$(nb_migrations)
 [ "$MIGRATIONS_APRES" -eq "$((MIGRATIONS_AVANT + MIGRATIONS))" ] \
   || echec 2 "$MIGRATIONS_AVANT migrations avant, $MIGRATIONS_APRES après, $MIGRATIONS attendue(s)"
@@ -580,19 +828,43 @@ else
 fi
 empreinte apres || echec 2 "empreinte après"
 ecarts_hors_attendu 2 avant apres
-if [ -n "$APRES" ]; then
+# Le crochet `--apres`, joué après l'empreinte de la montée (phase 2) et après celle de l'import (phase 5, revue P2,
+# E-P2-6) : ce qui ne vaut que pour la release doit tenir sur les deux bases. `PHASE_APRES` lui dit laquelle.
+jouer_crochet() { # $1 = phase
+  [ -n "$APRES" ] || return 0
+  local code
   # Sans `||` à droite : il neutraliserait le `set -e` du sous-shell, et seul le dernier
   # statut du crochet compterait.
   # shellcheck disable=SC1091
   (
     cd "$D/cwd" || exit 1
     HOME=$D/home
+    PHASE_APRES=$1
     set -e
     . "$D/apres.sh"
-  ) > "$L/apres.log" 2>&1
-  CODE_APRES=$?
-  [ "$CODE_APRES" -eq 0 ] || echec 2 "crochet --apres en échec, code $CODE_APRES ($L/apres.log)"
-fi
+  ) > "$L/apres-phase$1.log" 2>&1
+  code=$?
+  [ "$code" -eq 0 ] || echec "$1" "crochet --apres en échec, code $code ($L/apres-phase$1.log)"
+}
+jouer_crochet 2
+# Les PDF, après l'empreinte et le crochet (Story 49-1d, D4 a, AC4) : une facture figée est servie à
+# l'octet de la phase 1 ; celle dont le fichier manque (F8) rend `410`, se regèle (`200`, une réponse
+# JSON de facture), puis sert le PDF du regel, à l'empreinte de son nouveau `pdf_sha256`. Les pièces
+# jamais figées par l'image de départ sont rendues et gardées pour la phase 6.
+login || echec 2 "connexion impossible"
+for f in F1 F5 F7; do pdf_fige_identique 2 "$f" apres; done
+CODE=$(telecharger "$(chemin_pdf F8)" "$P/apres-F8-manquant.json")
+[ "$CODE" = 410 ] || echec 2 "F8, fichier retiré : HTTP $CODE au lieu de 410 ($P/apres-F8-manquant.json)"
+# Un 410 d'une autre cause ne prouve pas que le fichier manque : son code est exigé.
+CODE_ERR=$(jq -r '.error.code // empty' "$P/apres-F8-manquant.json" 2>/dev/null) || CODE_ERR=""
+[ "$CODE_ERR" = INVOICE_PDF_GONE ] || echec 2 "F8, fichier retiré : 410 de code « $CODE_ERR » au lieu d'INVOICE_PDF_GONE"
+CODE=$(C -o "$L/regel-F8.json" -w '%{http_code}' -X POST "$URL$(chemin_pdf F8)/refreeze" -H "Authorization: Bearer $TOKEN") || CODE=${CODE:-000}
+[ "$CODE" = 200 ] && jq -e '.id' "$L/regel-F8.json" >/dev/null 2>&1 \
+  || echec 2 "regel de F8 : HTTP $CODE ($L/regel-F8.json)"
+pdf_exige 2 F8 "$P/apres-F8-regel.pdf"
+[ "$(empreinte_sha "$P/apres-F8-regel.pdf")" = "$(SQL "SELECT pdf_sha256 FROM invoices WHERE id = $(id_piece F8)")" ] \
+  || echec 2 "PDF du regel de F8 : SHA-256 différent du nouveau pdf_sha256"
+for f in F2 F4 F6 A1; do pdf_rendu "$f" "$P/apres-$f.pdf"; done
 # Lu en dernier : ce qu'empreinte et crochet ont fait écrire au binaire compte aussi.
 journal_sans_erreur 2 "$L/binaire-montee.log"
 arreter_binaire
@@ -634,6 +906,10 @@ lancer_image retour
 attendre_sante "$PID_IMAGE" || echec 4 "l'image ne repart pas ($L/image-retour.log)"
 empreinte retour || echec 4 "empreinte retour"
 [ -z "$(ecarts avant retour)" ] || echec 4 "empreinte retour différente : $(ecarts avant retour | tr '\n' ' ')"
+# Les références de la phase 6 (D5) : les pièces jamais figées, rendues par l'image précédente sur la
+# base d'avant restaurée — après son empreinte, avant la lecture de son journal et son arrêt. Son
+# dossier des documents est vide : aucune pièce figée n'y est demandée.
+for f in F2 F4 F6 A1; do pdf_rendu "$f" "$P/retour-$f.pdf"; done
 journal_sans_erreur 4 "$L/image-retour.log"
 arreter_image
 
@@ -642,7 +918,8 @@ if [ "$IMPORT" = 1 ]; then
   echo "▶ phase 5 : le .keshbackup dans le binaire neuf, base neuve"
   lancer_base "$CT_BASE_2" "$PORT_BASE_2" || echec 5 "seconde base injoignable"
   CT_COURANT=$CT_BASE_2
-  lancer_binaire import "$PORT_BASE_2"
+  # Un dossier des documents neuf (D6) : un PDF figé servi après l'import vient de l'archive.
+  lancer_binaire import "$PORT_BASE_2" "$D/documents-import"
   attendre_sante "$PID_BINAIRE" || echec 5 "le binaire ne répond pas ($L/binaire-import.log)"
   login || echec 5 "connexion impossible"
   AUDIT_DECALAGE=$(SQL "SELECT COALESCE(MAX(id), 0) FROM audit_log") || echec 5 "journal d'audit illisible"
@@ -651,8 +928,71 @@ if [ "$IMPORT" = 1 ]; then
   [ "$CODE_HTTP" = 200 ] || echec 5 "import : HTTP $CODE_HTTP ($L/import-reponse.json)"
   empreinte import || echec 5 "empreinte import"
   ecarts_hors_attendu 5 avant import
+  jouer_crochet 5
+  # F8 compris : l'archive, prise avant le retrait de son fichier, le porte.
+  for f in F1 F5 F7 F8; do pdf_fige_identique 5 "$f" import; done
   journal_sans_erreur 5 "$L/binaire-import.log"
   arreter_binaire
 fi
 
-echo "✅ recette-montee : phases jouées, $MIGRATIONS migration(s), journaux sous $L"
+# --- Phase 6 : rendus ----------------------------------------------------------------------
+# Story 49-1d (D4 b, D5) : chaque PDF rendu de nouveau par le binaire neuf contre sa référence —
+# rendue par l'image précédente en phase 4, ou, pour le regel de F8, son PDF figé de la phase 1.
+# Une paire compte si ses deux PDF sont valides, ont au moins une page et que leur texte contient
+# le numéro de la pièce ; elle doit alors avoir le même nombre de pages, le même texte et, page à
+# page, la même trame à 300 dpi (empreinte MD5 prise sur la sortie standard de `mutool` : aucune
+# trame n'est écrite). « Même trame » : le même dessin au pixel près, avec ce `mutool` — non le
+# même fichier (dictionnaire `Info`, `/ID`, structure). Exactement 5 paires, avec ou sans import.
+echo "▶ phase 6 : rendus (trame à 300 dpi, texte, pages)"
+"$MUTOOL" -v > "$L/mutool-version.txt" 2>&1 || echec 6 "mutool -v en échec"
+pages_de() { "$MUTOOL" info "$1" 2>>"$L/mutool.log" | awk '/^Pages:/ {print $2}'; }
+MD5_VIDE=$(printf '' | md5sum | awk '{print $1}')
+PAIRES=0
+for paire in "F2 retour-F2 apres-F2" "F4 retour-F4 apres-F4" "F6 retour-F6 apres-F6" "A1 retour-A1 apres-A1" "F8 avant-F8 apres-F8-regel"; do
+  read -r piece ref ren <<< "$paire"
+  ref=$P/$ref.pdf ren=$P/$ren.pdf
+  num=$(numero_piece "$piece")
+  if ! pdf_valide "$ref" || ! pdf_valide "$ren"; then
+    echo "  $piece : paire non comptée (un des deux PDF manque ou n'en est pas un)"; continue
+  fi
+  pr=$(pages_de "$ref") || echec 6 "$piece : mutool info en échec ($ref)"
+  pn=$(pages_de "$ren") || echec 6 "$piece : mutool info en échec ($ren)"
+  if ! [[ "$pr" =~ ^[1-9][0-9]*$ ]]; then echo "  $piece : paire non comptée (référence sans page)"; continue; fi
+  [ "$pr" = "$pn" ] || echec 6 "$piece : $pr page(s) en référence, ${pn:-?} rendue(s)"
+  "$MUTOOL" draw -q -F txt -o - "$ref" > "$L/rendu-$piece-reference.txt" 2>>"$L/mutool.log" || echec 6 "$piece : texte de la référence illisible"
+  "$MUTOOL" draw -q -F txt -o - "$ren" > "$L/rendu-$piece-rendu.txt" 2>>"$L/mutool.log" || echec 6 "$piece : texte du rendu illisible"
+  if [ -z "$num" ] || ! /usr/bin/grep -qF -- "$num" "$L/rendu-$piece-reference.txt" || ! /usr/bin/grep -qF -- "$num" "$L/rendu-$piece-rendu.txt"; then
+    echo "  $piece : paire non comptée (le texte ne contient pas le numéro « $num »)"; continue
+  fi
+  diff -- "$L/rendu-$piece-reference.txt" "$L/rendu-$piece-rendu.txt" > "$L/diff-rendu-$piece.txt" \
+    || echec 6 "$piece : texte rendu différent ($L/diff-rendu-$piece.txt)"
+  for p in $(seq 1 "$pr"); do
+    hr=$("$MUTOOL" draw -q -r 300 -c rgb -F pnm -o - "$ref" "$p" 2>>"$L/mutool.log" | md5sum) || echec 6 "$piece : trame de la référence, page $p"
+    hn=$("$MUTOOL" draw -q -r 300 -c rgb -F pnm -o - "$ren" "$p" 2>>"$L/mutool.log" | md5sum) || echec 6 "$piece : trame du rendu, page $p"
+    # Une trame vide des deux côtés aurait la même empreinte : celle de rien ne compte pas.
+    [ "${hr%% *}" != "$MD5_VIDE" ] && [ "${hn%% *}" != "$MD5_VIDE" ] || echec 6 "$piece : page $p, trame vide"
+    [ "$hr" = "$hn" ] || echec 6 "$piece : page $p, trame différente à 300 dpi (texte égal)"
+  done
+  echo "  $piece : $pr page(s), même dessin"
+  PAIRES=$((PAIRES + 1))
+done
+[ "$PAIRES" -eq 5 ] || echec 6 "$PAIRES paire(s) de rendus comptée(s), 5 exigées"
+# Un `mutool` qui signale une erreur mais rend 0 dégraderait pareil les deux côtés d'une paire : toute ligne de sa
+# sortie d'erreur fait échouer — `format error`, `cannot draw`, et les `warning:` par lesquels MuPDF signale ce qu'il
+# répare —, hors le seul avis attendu de la station, l'absence d'ICC (revue P2, E-P2-7).
+ERREURS_MUTOOL=$(/usr/bin/grep -v -x -e 'warning: ICC support is not available' -e '' "$L/mutool.log" 2>/dev/null || true)
+[ -z "$ERREURS_MUTOOL" ] || echec 6 "mutool a signalé une erreur ($L/mutool.log) : $(printf '%s' "$ERREURS_MUTOOL" | head -1)"
+
+# Ce qui a été joué, dit en clair (revue P3, E-P3-2) : un rejeu sans `--import` ou sans `--apres` ne se lit pas comme une
+# recette complète. Le même texte va à `$L/verdict`, que le script complémentaire de la release exige.
+if [ "$MIGRATIONS" -gt 0 ]; then PHASE3_DIT="jouée"; else PHASE3_DIT="SAUTÉE (aucune migration)"; fi
+if [ "$IMPORT" = 1 ]; then IMPORT_DIT="joué"; else IMPORT_DIT="NON JOUÉ"; fi
+CROCHET_DIT="NON JOUÉ"
+if [ -n "$APRES" ]; then
+  CROCHET_DIT="joué en phase 2"
+  [ "$IMPORT" != 1 ] || CROCHET_DIT="joué en phases 2 et 5"
+fi
+VERDICT="vert ; phase 3 : $PHASE3_DIT ; import : $IMPORT_DIT ; crochet : $CROCHET_DIT ; --diff-attendu : ${DIFF_ATTENDU:-(aucun)}"
+printf '%s\n' "$VERDICT" > "$L/verdict"
+echo "✅ recette-montee : phases jouées, $MIGRATIONS migration(s), $PAIRES paires de rendus, journaux sous $L"
+echo "   $VERDICT"
