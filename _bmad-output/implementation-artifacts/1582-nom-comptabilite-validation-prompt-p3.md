@@ -13,6 +13,8 @@ seul, aucune migration, hors epic, visée v0.20.0). **Passe ciblée : une seule 
 - **Lentille** : « la remédiation de la P2 est-elle exacte, complète et sans défaut neuf ? » — chaque affirmation **nouvelle** du diff est
   vraie au code, aucune mention périmée ne subsiste, aucun chiffre ni renvoi n'est devenu faux.
 
+*Annotation datée du 2026-11-25 (après la passe) : les nombres « 43 à titre, 12 sans » du point 1 et la méthode `<title>` avec le `>` étaient faux ; la passe l'a établi (55 pages, 44 à titre, 11 sans). Voir le Change Log de la fiche. Ce prompt est gardé tel qu'il a été donné.*
+
 ## Garde-fou `grep -nF` (obligatoire)
 
 Pour **tout** finding CRITICAL ou HIGH qui affirme l'absence d'un texte attendu ou la présence d'un défaut, donne la commande
