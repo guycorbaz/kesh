@@ -3,9 +3,8 @@
 Status: drafted
 
 Epic : `_bmad-output/planning-artifacts/epic-55-navigation-interface.md`. Release : celle de l'epic, **avant le tag**.
-Règle : `CLAUDE.md` § *Priorités des défauts*, les deux puces sous « Tarir la source, puis solder » (un LOW qui touche la
-production peut se corriger dans sa story ; une story de solde à la fin de chaque epic, plafonnée par un nombre d'issues
-fixé au kickoff).
+Règle : `CLAUDE.md` § *Priorités des défauts*, les puces « Un LOW de revue qui touche la production peut se corriger dans
+la story » et « Une story de solde à la fin de chaque epic » (décisions de Guy du 2026-11-14).
 
 ## Story
 
@@ -22,8 +21,8 @@ afin que l'epic ne fasse pas monter le compte d'issues ouvertes par sa propre de
   kickoff ; un LOW corrigé sur place par la boucle de revue de sa story (il ne compte pas dans le plafond, `CLAUDE.md`
   § *Priorités des défauts*).
 - **Plafond : au plus 2 issues** (fixé au kickoff, fichier d'epic). Au-delà, les suivantes restent ouvertes, nommées à la
-  rétrospective avec leur raison. Un correctif qui toucherait plus de cinq modules n'est pas pris (règle de splitting
-  préventif) et reste ouvert.
+  rétrospective avec leur raison. Un correctif qui toucherait plus de cinq modules n'est pas pris (par analogie avec
+  la règle de splitting préventif) et reste ouvert.
 - Frontend seulement, **sauf**, si les 55-3a et 55-3b sont restées dans l'epic (Q1), une dette née de la 55-3a côté `kesh-report`.
 - Aucune migration ; aucun changement de contrat de l'API **par la 55-4**.
 
@@ -38,7 +37,7 @@ afin que l'epic ne fasse pas monter le compte d'issues ouvertes par sa propre de
 
 1. **AC-1 — Liste au départ.** Au T0, le Change Log nomme chaque candidate (numéro, titre, story d'origine, site) tirée de
    la source ci-dessus, les exclusions appliquées, et **au plus deux** retenues, avec le motif du choix (priorité, puis
-   effet visible). Zéro ou une candidate : la story le dit et se réduit d'autant.
+   effet visible). Zéro ou une candidate : la story le dit, ne corrige que ce qu'il y a, et garde T0, T2 et T3.
 2. **AC-2 — Preuve, selon la nature du correctif.**
    - **Comportement** faux : test (Vitest, Rust ou E2E) rouge avant le correctif, vert après ; journal
      `kesh-gate-logs/s55-4/`.
@@ -59,9 +58,10 @@ afin que l'epic ne fasse pas monter le compte d'issues ouvertes par sa propre de
 
 ## Tâches
 
-- [ ] **T0** — Liste des candidates (AC-1).
+- [ ] **T0** — Liste des candidates (AC-1). **Prérequis** : le mainteneur ou son agent a ouvert les issues des sections
+      *Issues à ouvrir* et transmis leurs numéros ; une candidate sans numéro peut être retenue, son numéro reporté avant T1.
 - [ ] **T1** — Corrections et preuves (AC-2).
-- [ ] **T2** — Gates de fin d'epic, **après le dernier commit de code** des corrections (§ *Gates* du fichier d'epic) :
+- [ ] **T2** — Gates de fin d'epic (règle soumise au mainteneur, Q6 du fichier d'epic), **après le dernier commit de code** des corrections (§ *Gates* du fichier d'epic) :
       `scripts/gate-ci.sh origin/main` (ou la base de la PR de l'epic si elle diffère, nommée au journal) et E2E
       complet ; « vert » = seulement les échecs attendus de `docs/testing.md` § *Les échecs attendus*, jugés fichier par
       fichier ; journaux `kesh-gate-logs/s55-4/`.
@@ -88,3 +88,6 @@ d'epic), avec `refs #N` par ligne ; la note de l'epic est assemblée à la relea
 - 2026-11-25 — Validation P1 (Sonnet) : 0/0/3/6 ; remédiée : source de la liste et exclusions (V1-1), preuve selon la
   nature du correctif (V1-2), gates de fin d'epic écrits au fichier d'epic et précisés en T2 (V1-3), garde-fous et
   suivi (V1-4 à V1-9).
+- 2026-11-25 — Validation P2 ciblée (Haiku) : 0/0/2/3 ; remédiée : règle des gates soumise au mainteneur (Q6), la règle de
+  `CLAUDE.md` valant d'ici là (V2-1) ; prérequis des numéros au T0 (V2-2) ; puces citées par leur début (V2-3) ; LOW V2-4,
+  V2-5.

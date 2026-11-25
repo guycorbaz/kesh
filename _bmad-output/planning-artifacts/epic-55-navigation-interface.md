@@ -142,8 +142,10 @@ parallèle de la 55-1 ou de la 55-2, avant la 55-3b.
 
 ## Gates
 
-Règle de l'epic (décision du responsable de l'epic, appliquée à ses epics depuis l'Epic 37 ; **écart assumé** à
-`CLAUDE.md` § *Test Locally First*, qui demande l'E2E complet au dernier commit de code de chaque story) :
+Règle **proposée** par le responsable de l'epic (celle qu'il applique à ses epics) ; c'est un **écart** à `CLAUDE.md`
+§ *Test Locally First*, qui demande la suite E2E complète au dernier commit de code de **chaque** story (« rejouée au push »
+interdit, décision D7) : **soumise au mainteneur (Q6)**. Tant que Q6 n'est pas tranchée, et si elle est refusée, la règle de
+`CLAUDE.md` s'applique telle quelle (E2E complet au dernier commit de code de chaque story, en plus de ce qui suit).
 
 - **par story**, au dernier commit de code : `npm run check`, `lint-i18n-ownership`, `test:unit`, `build` ; pour la 55-3a
   en plus `cargo fmt --check`, `cargo clippy --workspace --all-targets -D warnings` et `cargo nextest` sur le rayon
@@ -207,3 +209,5 @@ Déclarés au kickoff (`CLAUDE.md` § *Fusions et fichiers communs*), relevés l
 - **Q3** — D7 : le lien de la TVA passe par les comptes désignés des réglages : d'accord ?
 - **Q4** — D10 : une écriture de règlement montre le PDF de la facture réglée : d'accord ?
 - **Q5** — Priorité de l'issue c) (proposition : P4, `enhancement`).
+- **Q6** — § *Gates* : E2E complet et `scripts/gate-ci.sh` en fin d'epic seulement, specs des Rapports à chaque story —
+  écart à `CLAUDE.md` § *Test Locally First* (D7) : accepté pour cet epic ?
