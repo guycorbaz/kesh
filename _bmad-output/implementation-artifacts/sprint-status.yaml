@@ -1275,6 +1275,6 @@ development_status:
   55-1b-presentation-dans-l-url: drafted  # b) présentation de l'Epic 46 (hiérarchie, niveau, sous-totaux, groupes) dans l'URL
   55-2-lien-de-compte-partout: ready-for-dev  # validation terminée 2026-11-25 (P1 Sonnet 0/0/4/6, P2 Opus 0/0/3/5, P3 ciblée Haiku 0/0/1/1, P4 ciblée Sonnet 0/0/0/4) ; a) un composant AccountLink ; Journaux, Grand livre, TVA (comptes désignés), Compte de résultat à plat
   55-3a-justificatifs-serveur: drafted  # c) champ documents du journal et du grand livre (backend kesh-report, sans migration ni route neuve) ; découpée de la 55-3 (validation P1)
-  55-3b-justificatifs-ecran: drafted  # c) bouton des justificatifs dans le Journal (critère principal) et le Grand livre ; DocumentPreview réutilisé
+  55-3b-justificatifs-ecran: ready-for-dev  # validation terminée 2026-11-25 (P1 Sonnet 0/0/4/9, P2 Opus 0/0/4/10, P3 Sonnet 0/0/0/7) ; c) bouton des justificatifs dans le Journal (critère principal) et le Grand livre ; DocumentPreview réutilisé
   55-4-solde-dette-epic: drafted  # story de solde ; plafond : 2 issues
   epic-55-retrospective: optional

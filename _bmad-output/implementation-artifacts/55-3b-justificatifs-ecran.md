@@ -1,6 +1,6 @@
 # Story 55-3b : ouvrir les justificatifs d'une écriture depuis le Journal (et le Grand livre)
 
-Status: drafted
+Status: ready-for-dev
 
 Epic : `_bmad-output/planning-artifacts/epic-55-navigation-interface.md` — D9 à D11. Issue : #À-VENIR (point c, comme la
 55-3a). Release : la prochaine planifiée après la 0.20.0. **Frontend seulement, aucune migration.** **Suit la 55-3a**
@@ -100,8 +100,8 @@ par la garde : un fichier commun, non un module.) Les pages des fiches de factur
    `documents` par un tableau d'objets égaux ne relit pas le document. Le cas réel : Retour ou Suivant vers le **même
    onglet**, dont le rapport est repris de la mémoire (55-1a, C-55-1-2) ou redemandé, l'écriture y étant encore ; *Générer*
    n'est pas atteignable dialogue ouvert (modal) et démonte la vue (`{#if loading}`). La décision de figer à l'affichage est
-   soumise au mainteneur (Q7 du fichier d'epic) ; refusée, seules les factures déjà figées seraient montrées (un champ de
-   plus au contrat de la 55-3a).
+   soumise au mainteneur (Q7 du fichier d'epic) ; refusée, la 55-3a ne rend que les factures déjà figées (un filtre serveur,
+   aucun champ de plus au contrat).
 6. **AC-6 — Grand livre.** Une colonne `documents` (`COLUMNS`, après `description`, en-tête `reports-nav-ledger-column-documents`
    « Justificatifs », rendu étroit), **présente seulement si au moins une ligne du rapport a des justificatifs** (condition
    sur le rapport, non sur la section : toutes les sections ont alors le même nombre d'en-têtes) ; les constantes qui
@@ -219,6 +219,9 @@ n'était pas encore produit le fige, comme un téléchargement. (refs #À-VENIR)
 
 ### Issues à ouvrir
 
+- (LOW, `bug` P4) `frontend/src/lib/components/ui/dialog/dialog-content.svelte:42` porte un `sr-only` « Close » anglais en
+  dur pour tout dialogue à bouton par défaut (Epic 55, story 55-3b).
+
 - (LOW, `technical-debt`) Lecture en `Blob` du PDF d'une facture et d'un avoir écrite deux fois : pages des fiches et
   `reports.api.ts` (C-55-3b-2).
 
@@ -238,3 +241,12 @@ n'était pas encore produit le fige, comme un téléchargement. (refs #À-VENIR)
   `undefined` (V2-1) ; inventaire des cinq phrases du figement au manuel (V2-2) ; E2E du Retour par l'historique, dialogue
   ouvert (V2-3) ; colonne conditionnelle et constantes dérivées, tests de couverture rejoués (V2-4) ; figement soumis au
   mainteneur (Q7, V2-5) ; LOW V2-6 à V2-14.
+- 2026-11-25 — Validation P3 (Sonnet) : 0/0/0/7 — **validation terminée**. Tendance : P1 Sonnet 0/0/4/9 → P2 Opus 0/0/4/10 →
+  P3 Sonnet 0/0/0/7. Les sept LOW ne sont pas remédiés dans la fiche : ils se reprennent au **T0 du développement**, ligne
+  lue citée au Change Log — V3-1 (inventaire du figement par `grep -n "téléchargement\|télécharge"` sur le `.tex`, `:1553`,
+  `:1642`, `:1672-1673`, `:2058` jugées ; constat sur le `.tex`, le PDF n'étant régénéré qu'à la release), V3-2 (décor E2E
+  à montant exact sans compte désigné, aides neuves sans toucher au spec de l'Epic 43), V3-3 (issue tracée ci-dessus),
+  V3-4 (assertion `goto` : garde, et `page.url()` avant et après à l'E2E), V3-5 (`lib.rs:1170`, ou E2E *Consultation*,
+  patron `reports.spec.ts:448`), V3-6 (hauteur de l'aperçu bornée dans le dialogue ; texte générique de
+  `pdfErrorMessage`), V3-7 (« condition `:37` »). Seule modification après la P3 : la phrase de l'AC-5 sur Q7 refusée,
+  alignée sur la 55-3a (V4-1 de sa P4), relue par la passe P5 ciblée de la 55-3a.
