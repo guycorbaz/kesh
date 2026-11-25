@@ -1,6 +1,6 @@
 # Story 55-2 : le lien de compte partout — Journaux, Grand livre, TVA, Compte de résultat
 
-Status: drafted
+Status: ready-for-dev
 
 Epic : `_bmad-output/planning-artifacts/epic-55-navigation-interface.md` — D6, D7 (Q3), D8. Issue : #À-VENIR (`enhancement`,
 P4, point a). Release : la prochaine planifiée après la 0.20.0. **Frontend seulement, aucune migration. Suit la 55-1a**
@@ -217,3 +217,10 @@ Grand livre et, pour la TVA, les comptes de TVA due et d'impôt préalable. (ref
   LOW V2-4, V2-6, V2-7, V2-8.
 - 2026-11-25 — Validation P3 ciblée (Haiku) : 0/0/1/1 ; remédiée : déclencheur unique de la lecture des réglages de TVA,
   au premier affichage du décompte (V3-1) ; quatre liens à `1e23edb55`, cinq sur la PR 46 (V3-2).
+- 2026-11-25 — Validation P4 ciblée (Sonnet) : 0/0/0/4 — **validation terminée**. Tendance : P1 Sonnet 0/0/4/6 → P2 Opus
+  0/0/3/5 → P3 ciblée Haiku 0/0/1/1 → P4 ciblée Sonnet 0/0/0/4. Les quatre LOW de la P4 ne sont pas remédiés dans la fiche
+  (une remédiation après la dernière passe ne serait relue par personne) : ils se reprennent au **T0 du développement**,
+  ligne lue citée au Change Log — V4-1 (déclencheur de la lecture des réglages : « clic sur *Générer* », décompte en
+  mémoire montré par un clic d'onglet, retentative après échec), V4-2 (le cas « aucune lecture avant affichage » est une
+  garde, rouge sous une mutation `onMount`), V4-3 (dépendance à la 55-1b : non requise, ordre de l'epic), V4-4 (liste des
+  specs : celle du § *Gates* du fichier d'epic). Rapports : `kesh-gate-logs/s55-kickoff/55-2-validation-p{1..4}.md`.
