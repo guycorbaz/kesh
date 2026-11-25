@@ -31,6 +31,25 @@ marqué) ; LOW : Vv2p7-3 caduc (aucun nom `apercu-facture-…`), Vv2p7-4 repris 
 suit l'**élément choisi**, AC-5), Vv2p7-5 repris (le message au lieu du bandeau), Vv2p7-6 sans objet. Le texte ci-dessous
 est celui du 2026-11-25.
 
+**Précisions d'interface du 2026-11-26** (passe ciblée hors décompte, rapport
+`kesh-gate-logs/s55-decisions-2/interface-2026-11-26-validation.md`) — à trancher au **T0**, ligne lue citée :
+
+- **R-8 (UI-1, MEDIUM) — Couleur de l'icône.** `stroke="currentColor"` est vrai de toute icône lucide, et la liste de
+  classes interdites est ouverte. Défaut : aucun préfixe `text-`, `fill-`, `stroke-` ni `bg-` de couleur sur le bouton ni
+  sur le SVG (Vitest à mutation), et un E2E qui compare `getComputedStyle(svg).color` à celle du `#numéro` de la même
+  ligne.
+- **R-9 (UI-2, MEDIUM) — Vignettes : un constat qui constate.** Les E2E tournent sans tête (`playwright.config.ts` sans
+  `headless` ni `channel`), où Chromium n'a pas de lecteur PDF : « pas de vignettes » y est vrai de toute URL. Défaut :
+  capture dans un navigateur **avec tête** (celui où l'utilisateur constate le comportement des factures fournisseur,
+  nommé avec sa version), sur un PDF d'une page et un de deux ; repli `#pagemode=none`, essayer aussi `navpanes=0`
+  (UI-5).
+- **R-10 (UI-3, MEDIUM) — § *Tests à écrire* à compléter** : le Vitest de focus et l'E2E disent encore « Échap,
+  Fermer » ; ajouter le clic à côté, la hauteur par `boundingBox`, le `src` sans fragment, la couleur (R-8).
+- **LOW** : UI-4 (`DocumentPreview.svelte:92-97`, non `:96-101`) ; UI-5 (voir R-9) ; UI-6 (la ligne d'en-tête,
+  `JournalReportView.svelte:59`, n'a pas de `data-testid` : en poser un ; mutation de la mesure de hauteur) ; UI-7 (Échap
+  inopérant une fois le focus dans le PDF : le dire au manuel et à la note de version) ; UI-8 (Vitest du clic à côté sans
+  précédent dans Kesh — rejet bits-ui par `pointerdown`, `debounce` de 10 ms : l'écrire en premier, l'E2E en repli).
+
 La validation s'est arrêtée à la **septième passe** de la version récrite sur un MEDIUM ; au-delà de la sixième passe,
 l'orchestrateur ne remédie plus (`CLAUDE.md` § *Review Iteration Rule*) : les points vont au **T0**, tranchés avant toute
 ligne de code, avec le mainteneur si le texte visible change, et le Change Log cite la ligne lue et la décision. La P8,
@@ -556,3 +575,5 @@ d'une facture figée, ou par `page.route` rendant `410 INVOICE_PDF_GONE`) ; gran
   `m5a`, `m5b`, `m5c` corrigées et `m5d` (« PDF pas encore émis ») ajoutée hors du dépôt (`kesh-gate-logs/s55-maquettes/`).
   Fiche au plafond de huit passes : la passe ciblée du 2026-11-26 (précisions d'interface) la lit, ses points vont au
   **T0**.
+- 2026-11-26 — Passe ciblée sur les précisions d'interface (Opus, `kesh-gate-logs/s55-decisions-2/interface-2026-11-26-validation.md`), hors décompte (fiche au plafond) :
+  0/0/3/5. Renvoi au **T0** (R-8 à R-10, en tête) ; LOW UI-4 à UI-8 listés en tête.

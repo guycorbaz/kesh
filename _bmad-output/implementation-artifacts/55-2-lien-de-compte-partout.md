@@ -341,3 +341,8 @@ onglet. (refs #À-VENIR, #À-VENIR)
   `components/ui/select`) : si le T0 de la 55-1a retient les trois sélecteurs d'exercice (R-5 de la 55-1a), le sélecteur
   du Grand livre (AC-11) emploie le même composant et le même rendu ; « — dates libres » reste une entrée en graisse
   normale. Renvoi au **T0** (fiche au plafond de huit passes).
+- 2026-11-26 — Passe ciblée sur les précisions d'interface (Opus, `kesh-gate-logs/s55-decisions-2/interface-2026-11-26-validation.md`), hors décompte (fiche au plafond) :
+  0/0/1/0. Renvoi au **T0** : **R-3 (UI-14, MEDIUM)** — les trois sélecteurs étant le défaut de R-5 de la 55-1a, l'AC-11
+  passe au composant `ui/select` dès que la 55-1a l'adopte : la fonction de libellé partagée rend `{ name, dates }` (et non
+  une chaîne), la valeur dérivée passe par un `Select.Root` contrôlé, et l'E2E clique le déclencheur puis
+  `getByRole('option')` ; à trancher avec R-7 de la 55-1a.

@@ -523,3 +523,11 @@ qui l'affichent désormais à l'arrivée) ; le lien *Rapports* du menu ramène a
   dépôt (`kesh-gate-logs/s55-maquettes/`, nom seul en gras ; ancienne version gardée en `mocks-src.avant-2026-11-26.html`).
   La fiche est au plafond de huit passes : la passe ciblée du 2026-11-26 (précisions d'interface) la lit, ses points vont
   au **T0**.
+- 2026-11-26 — Passe ciblée sur les précisions d'interface (Opus, `kesh-gate-logs/s55-decisions-2/interface-2026-11-26-validation.md`), hors décompte (fiche au plafond) :
+  0/0/1/4. Renvoi au **T0**, ligne lue citée : **R-7 (UI-9, MEDIUM)** — aucun Vitest de Kesh ne pilote aujourd'hui
+  `components/ui/select` (pas de polyfill dans `vitest-setup.ts`, `fireEvent.change` ne suffit plus) : écrire d'abord, au
+  T0, un test qui pilote le sélecteur sous jsdom (Vitest de la page, `ReportSelector.test.ts` neuf) ; s'il ne tient pas,
+  arbitrer **avec l'utilisateur** avant le code (p. ex. `<select>` natif gardé et nom en gras affiché à côté) ; LOW : UI-10
+  (`Number('')` vaut `0` : conversion explicite), UI-11 (« seuls `paypal-*` » est faux, 139 lignes de `selectOption`, aucune
+  sur `ReportSelector` : la conclusion tient), UI-12 (AC-14 absent des § *Recette visuelle* et *Tests* ; « options en
+  graisse normale » sans constat), UI-13 (R-5 parle encore de « classe commune » et de « valeur affichée du `<select>` »).
