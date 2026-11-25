@@ -168,8 +168,8 @@ site, texte) : c'est la source de la story de solde (55-4). Chaque issue ouverte
 **Revue du code d'intégration** (`CLAUDE.md` § *Fusions et fichiers communs*) : avant la PR de l'epic vers `main`, et
 après chaque reprise de la PR 46 ou de `main`, une revue relit les commits de fusion en diff combiné et cherche les
 interactions sans conflit de texte ; journal **à produire** dans `kesh-gate-logs/s55-integration/`, avec sa propre section
-*Issues à ouvrir* (marque « Epic 55, revue d'intégration »). Si elle n'a pas eu lieu au T0 de la 55-4, la 55-4 la tient
-avant T1 (T0bis, AC-8).
+*Issues à ouvrir* (marque « Epic 55, revue d'intégration »). La 55-4 n'en prend les points que si elle a eu lieu avant
+son T0 ; sinon, ils vont en issues à leur nom.
 
 ## Backend
 

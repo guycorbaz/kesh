@@ -17,8 +17,6 @@ afin que l'epic ne fasse pas monter le compte d'issues ouvertes par sa propre de
 - **La dette des stories de l'epic** : les points des revues (validation et code) des stories 55-1a à 55-3b, et de la
   revue du code d'intégration, **qui siègent dans du code ou un texte écrit par une story 55-x** et qui n'ont pas été
   corrigés dans leur story. Un défaut trouvé dans le code de l'Epic 46 ou 47 reste à son epic (issue à son nom).
-- **Interactions** entre l'Epic 55 et les Epics 46 ou 47 : dette de l'epic si leur correctif se fait dans du code d'une
-  story 55-x ; sinon, issue à l'epic concerné.
 - **Exclus** : les issues a), b) et c) de l'epic (livrables fermés par la PR de l'epic) ; toute issue antérieure au
   kickoff ; un LOW corrigé sur place par la boucle de revue de sa story (il ne compte pas dans le plafond, `CLAUDE.md`
   § *Priorités des défauts*).
@@ -31,7 +29,8 @@ afin que l'epic ne fasse pas monter le compte d'issues ouvertes par sa propre de
 ## D'où vient la liste (l'agent de l'epic n'a pas `gh`)
 
 - **Source** : les Change Logs et Dev Agent Records des fiches 55-1a à 55-3b, et le compte rendu de la revue du code
-  d'intégration (journal **à produire** `kesh-gate-logs/s55-integration/`, fichier d'epic § *Gates* ; absent au T0 : T0bis).
+  d'intégration (journal `kesh-gate-logs/s55-integration/`, fichier d'epic § *Gates*) **si elle a eu lieu avant le T0** ; sinon, ses
+  points iront en issues à leur nom, hors du plafond de cette story.
   Chaque issue ouverte porte dans son corps « Epic 55, story 55-x » (ou « Epic 55, revue d'intégration »), ce qui permet le
   recoupement. Chaque story y écrit, en section *Issues à ouvrir*, les points non corrigés (sévérité, site, texte de
   l'issue) ; le mainteneur ou son agent les ouvre et l'agent de l'epic reporte les numéros dans la fiche.
@@ -59,15 +58,10 @@ afin que l'epic ne fasse pas monter le compte d'issues ouvertes par sa propre de
 6. **AC-6 — Captures** si un contrôle visible change (`CLAUDE.md` § *Recette visuelle*).
 7. **AC-7 — Revue.** Les corrections de production passent la boucle de revue de code et se closent sur une passe sans
    finding au-dessus de LOW (`CLAUDE.md` § *Review Iteration Rule*).
-8. **AC-8 — Revue d'intégration.** Le journal `kesh-gate-logs/s55-integration/` existe avant T1, avec sa section *Issues à
-   ouvrir* (même vide), tenu par un relecteur autre que l'auteur des corrections ; ses points entrent dans la liste du T0
-   (Change Log mis à jour).
-
 ## Tâches
 
 - [ ] **T0** — Liste des candidates (AC-1). **Prérequis** : le mainteneur ou son agent a ouvert les issues des sections
       *Issues à ouvrir* et transmis leurs numéros ; une candidate sans numéro peut être retenue, son numéro reporté avant T1.
-- [ ] **T0bis** — Si le journal de la revue d'intégration manque : la tenir (AC-8), puis compléter la liste du T0.
 - [ ] **T1** — Corrections et preuves (AC-2).
 - [ ] **T2** — Gates de fin d'epic (règle soumise au mainteneur, Q6 du fichier d'epic), **après le dernier commit de code** des corrections (§ *Gates* du fichier d'epic) :
       `scripts/gate-ci.sh origin/main` (ou la base de la PR de l'epic si elle diffère, nommée au journal) et E2E
@@ -107,3 +101,9 @@ d'epic), avec `refs #N` par ligne ; la note de l'epic est assemblée à la relea
   T1 (V4-3).
 - 2026-11-25 — Validation P5 ciblée (Sonnet) : 0/0/1/3 ; remédiée : revue d'intégration en AC-8 et T0bis, avant T1 (V5-1,
   fichier d'epic aligné) ; interactions 46/55 (V5-2) ; marque (V5-3) ; tolérance du numéro sortie de l'énumération (V5-4).
+- 2026-11-25 — Validation P6 ciblée (Haiku) : 0/0/2/2, deux MEDIUM nés de la remédiation de la P5. **Règle de la sixième
+  passe** (`CLAUDE.md` § *Review Iteration Rule* : dès la sixième passe, l'orchestrateur ne remédie plus, il retire) :
+  **retirés** la puce « Interactions » (V6-1 : la règle d'origine du périmètre — un défaut du code de l'Epic 46 ou 47 reste
+  à son epic — vaut seule), l'AC-8 et la tâche T0bis (V6-2) ; la revue d'intégration reste une étape de l'epic (fichier
+  d'epic § *Gates*), non de la 55-4, qui n'en prend les points que si elle a eu lieu avant son T0. V6-3, V6-4 : sans objet
+  après le retrait, ou à reprendre au T0 (prérequis « souhaité »).
