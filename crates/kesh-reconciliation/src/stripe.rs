@@ -3,8 +3,8 @@
 //!
 //! Fonctions **pures**, sans I/O : le classement d'une transaction importée du
 //! rapport Stripe « Itemized payout reconciliation » (Story 40-7b,
-//! [`classify`]), l'extraction des identifiants `ch_…` et `py_…` d'un libellé
-//! d'écriture de vente ([`stripe_ids_in`]), le libellé des écritures
+//! [`classify`]), l'extraction des identifiants `ch_…`, `py_…` et `po_…` d'un
+//! libellé d'écriture ([`stripe_ids_in`]), le libellé des écritures
 //! ([`entry_label`]), le jugement d'un **versement** ([`judge_payout`]) et la
 //! revue Stripe complète, bâtie sur la revue commune ([`complete_review`]).
 //!
@@ -98,9 +98,18 @@ pub const GAP_PAYOUT_TOTAL_MISMATCH: &str = "payout_total_mismatch";
 /// journalEntryId, payoutBankAccountId }`).
 pub const GAP_PAYOUT_WITHOUT_RECEIPT: &str = "payout_without_receipt";
 
-/// Préfixes des identifiants Stripe cherchés dans un libellé d'écriture de
-/// vente : charge (`ch_`) et paiement (`py_`).
-const ID_PREFIXES: [&str; 2] = ["ch_", "py_"];
+/// Préfixes des identifiants Stripe cherchés dans un libellé d'écriture :
+/// charge (`ch_`) et paiement (`py_`), les clés des encaissements que nomme
+/// l'écriture de vente d'une boutique ; **versement** (`po_`), la clé d'un
+/// versement, que nomme l'écriture de son acceptation (« Versement Stripe
+/// po_… <net> <devise> »). Sans `po_`, l'écriture d'un versement ne nommait
+/// pas son versement : la règle commune « déjà comptabilisée »
+/// ([`crate::provider_review::first_naming_entry`]) ne retenait plus que le
+/// repli prudent — deux versements de même montant tous deux bloqués —, et
+/// rien du tout si le libellé portait aussi un `ch_…` ou un `py_…` (correctif
+/// L3 de la revue de la #1534). `txn_` (la transaction de solde) n'est la clé
+/// d'aucun genre : il n'en est pas.
+const ID_PREFIXES: [&str; 3] = ["ch_", "py_", "po_"];
 
 /// Caractère d'un identifiant Stripe : `[A-Za-z0-9_]`.
 fn is_id_char(c: char) -> bool {
@@ -140,7 +149,7 @@ pub fn classify(t: &BankTransaction) -> ProviderKind {
     }
 }
 
-/// Les identifiants Stripe d'un libellé : les jetons `ch_…` et `py_…`, faits de
+/// Les identifiants Stripe d'un libellé : les jetons `ch_…`, `py_…` et `po_…`, faits de
 /// `[A-Za-z0-9_]`, en **mot entier** (bornés par le début, la fin ou un
 /// caractère hors de cet ensemble), au moins un caractère après le préfixe ;
 /// **casse comprise** (les identifiants Stripe y sont sensibles) ; sans
@@ -159,8 +168,26 @@ pub fn stripe_ids_in(text: &str) -> Vec<String> {
     out
 }
 
-/// Clé de rattachement d'une transaction Stripe : sa `reference` (l'objet lié,
-/// `source_id` à défaut `charge_id`, 40-7b AC-5).
+/// Clé de rattachement d'une transaction Stripe : sa `reference`, posée par
+/// l'import (40-7b AC-5), selon le genre :
+///
+/// - **encaissement** (charge) : l'objet lié, `source_id` à défaut
+///   `charge_id` — `ch_…` ou `py_…`, que porte le libellé de l'écriture de
+///   vente de la boutique ;
+/// - **versement** : l'identifiant du versement, `po_…` — celui qu'écrit le
+///   libellé de son acceptation ([`entry_label`] : « Versement Stripe po_…
+///   <net> <devise> », ou « Stripe <compte> · po_… » sans libellé importé) ;
+///   c'est ce qui fait **nommer** le versement par son écriture ;
+/// - **frais** (`<txn_…>:FEE`) : l'objet lié de la ligne, comme la charge
+///   qu'ils accompagnent. Le libellé de leur écriture, la ligne du rapport
+///   (`Frais Stripe · … BRUT - txn_… (…) - po_…`), ne le porte pas, sauf si
+///   la description de la vente le cite, et nomme le **versement** (`po_…`) ;
+///   mais l'écriture des frais
+///   n'est jamais rapprochée d'un autre compte bancaire (elle n'a de ligne sur
+///   aucun) : la présélection « déjà comptabilisée » l'écarte, comme celle des
+///   frais PayPal ;
+/// - remboursement, autre catégorie : l'objet lié (`re_…`…), ou aucune ; ces
+///   genres n'écrivent pas.
 fn match_key(t: &BankTransaction) -> Option<&str> {
     t.reference
         .as_deref()
@@ -446,8 +473,10 @@ pub fn complete_review(
 /// **Avant tout autre motif**, la règle commune « écrite une seule fois » : un
 /// versement **déjà comptabilisé** — son écriture vivante, rapprochée de la
 /// réception d'un autre compte bancaire, alors que le versement lui-même a
-/// été détaché (annulation du seul côté Stripe, qui ne retire que le lien) —
-/// va « à examiner » sous `already_posted`, l'écriture nommée
+/// été détaché (annulation du seul côté Stripe, qui ne retire que le lien), et
+/// qui le **nomme** (son libellé porte son `po_…`, [`match_key`]) ou, par
+/// prudence, ne porte aucun identifiant (`first_naming_entry` de la revue
+/// commune) — va « à examiner » sous `already_posted`, l'écriture nommée
 /// ([`ReviewFinding::already_posted`]) : jamais proposé, jamais sous un motif
 /// qui conseillerait de l'écrire de nouveau. La route rejuge la même règle à
 /// l'acceptation (`rejudge_writing`).
@@ -635,6 +664,15 @@ mod tests {
         );
         assert_eq!(stripe_ids_in("ch_A-ch_B"), ["ch_A", "ch_B"]);
         assert_eq!(stripe_ids_in("début:ch_Z"), ["ch_Z"]);
+        // Le versement, que nomme l'écriture de son acceptation.
+        assert_eq!(
+            stripe_ids_in("Versement Stripe po_TEST0001 125.15 CHF"),
+            ["po_TEST0001"]
+        );
+        assert_eq!(
+            stripe_ids_in("Versement Stripe po_TEST0001 ch_TEST0002"),
+            ["po_TEST0001", "ch_TEST0002"]
+        );
     }
 
     #[test]
@@ -643,13 +681,15 @@ mod tests {
         assert!(stripe_ids_in("xch_TEST0001").is_empty());
         assert!(stripe_ids_in("1py_TEST").is_empty());
         // Préfixe seul.
-        assert!(stripe_ids_in("ch_ et py_").is_empty());
+        assert!(stripe_ids_in("ch_ et py_ et po_").is_empty());
+        assert!(stripe_ids_in("xpo_1 PO_1").is_empty());
         // Casse comprise : `CH_` n'est pas un identifiant, et la casse est gardée.
         assert!(stripe_ids_in("CH_TEST0001").is_empty());
         assert_eq!(stripe_ids_in("ch_AbC"), ["ch_AbC"]);
         assert_ne!(stripe_ids_in("ch_abc"), ["ch_ABC"]);
-        // Autres objets Stripe.
-        assert!(stripe_ids_in("txn_1 po_2 re_3 pi_4").is_empty());
+        // Autres objets Stripe : ni la transaction de solde (`txn_`), clé
+        // d'aucun genre, ni un remboursement ou une intention de paiement.
+        assert!(stripe_ids_in("txn_1 re_3 pi_4").is_empty());
         assert!(stripe_ids_in("").is_empty());
     }
 
@@ -661,6 +701,8 @@ mod tests {
         assert_eq!(match_key(&t), Some("ch_TEST0001"));
         t.reference = Some("  ".into());
         assert_eq!(match_key(&t), None);
+        // Un versement : son identifiant, celui qu'écrit son libellé.
+        assert_eq!(match_key(&payout(2, "-96.80", "po_1")), Some("po_1"));
     }
 
     // --- Libellés ---
@@ -708,6 +750,63 @@ mod tests {
         let b = bounded_label(&accents, 200);
         assert_eq!(b.chars().count(), 200);
         assert!(b.ends_with(") - po_é"));
+    }
+
+    /// Correctif L3 (revue de la #1534) : avec les libellés de Stripe,
+    /// l'écriture d'un versement **nomme** ce versement — sa clé `po_…` est
+    /// dans son libellé —, jamais un autre versement de même montant, ni des
+    /// frais ; et cela tient quand le libellé porte aussi un `ch_…` ou un
+    /// `py_…`. L'écriture des frais ne nomme pas les frais.
+    #[test]
+    fn libelle_stripe_nomme_le_seul_versement_ecrit() {
+        use crate::provider_review::{entry_names, first_naming_entry};
+        let mut versement = payout(1, "-96.80", "po_1");
+        versement.details = "Versement Stripe po_1 96.80 CHF".into();
+        let autre = payout(2, "-96.80", "po_2");
+        let mut frais = tx(3, "-3.20", "charge", "txn_1:FEE");
+        frais.reference = Some("ch_1".into());
+        frais.details = "Frais Stripe · Encaissement Stripe de 100.00 CHF -3.20=96.80 CHF BRUT - txn_1 (2020-01-29 10:15:04- Vente A) - po_1".into();
+        let du_versement = entry_label(EntryKind::Withdrawal, "S", &versement);
+        let des_frais = entry_label(EntryKind::Fee, "S", &frais);
+        assert!(entry_names(&SPEC, &versement, &du_versement, &[]));
+        assert!(!entry_names(&SPEC, &autre, &du_versement, &[]));
+        assert!(!entry_names(&SPEC, &frais, &du_versement, &[]));
+        assert!(!entry_names(&SPEC, &frais, &des_frais, &[]), "{des_frais}");
+        // L'écriture des frais nomme le versement (« … - po_1 ») : la
+        // présélection l'écarte, elle n'est jamais rapprochée de l'autre côté.
+        assert!(entry_names(&SPEC, &versement, &des_frais, &[]));
+        // Sans libellé importé, le libellé de repli porte aussi le `po_…`.
+        let mut nu = payout(4, "-96.80", "po_4");
+        nu.details = String::new();
+        let repli = entry_label(EntryKind::Withdrawal, "Stripe boutique", &nu);
+        assert!(entry_names(&SPEC, &nu, &repli, &[]), "{repli}");
+        // Deux versements de même montant : chacun la seule écriture qui le
+        // nomme ; aucune pour un versement jamais écrit.
+        let candidats = [
+            (901, du_versement.as_str()),
+            (902, "Versement Stripe po_2 96.80 CHF"),
+        ];
+        assert_eq!(
+            first_naming_entry(&SPEC, &versement, candidats, &[]),
+            Some(901)
+        );
+        assert_eq!(first_naming_entry(&SPEC, &autre, candidats, &[]), Some(902));
+        assert_eq!(first_naming_entry(&SPEC, &nu, [candidats[0]], &[]), None);
+        // Le libellé porte aussi une charge ou un paiement : le versement reste
+        // nommé, et seul lui (avant L3, ni le nom ni le repli prudent).
+        for jeton in ["ch_TEST0002", "py_TEST0003"] {
+            let mixte = format!("Versement Stripe po_1 96.80 CHF {jeton}");
+            assert_eq!(
+                first_naming_entry(&SPEC, &versement, [(903, mixte.as_str())], &[]),
+                Some(903),
+                "{mixte}"
+            );
+            assert_eq!(
+                first_naming_entry(&SPEC, &autre, [(903, mixte.as_str())], &[]),
+                None,
+                "{mixte}"
+            );
+        }
     }
 
     /// Frontière de la fin gardée : une fin qui tient (150 < 200) est gardée

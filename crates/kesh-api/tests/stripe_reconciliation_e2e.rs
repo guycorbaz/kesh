@@ -1670,17 +1670,9 @@ async fn versement_deja_ecrit_refuse_avant_les_controles_de_destination(pool: My
     );
 }
 
-/// Revue P1 (M1), limite de la règle commune, assumée et dite au manuel : la
-/// règle lit l'écriture par son mouvement et ses liens, jamais par
-/// l'identifiant du versement. Tant que `po_TEST0001` est détaché, un second
-/// versement **de même montant** (`po_TEST0009`) est lui aussi « déjà
-/// comptabilisé », sur la même écriture ; rattacher `po_TEST0001` à son
-/// écriture (l'écriture porte son `po_…`) la lie des deux côtés, et
-/// `po_TEST0009` redevient proposé et s'accepte.
-#[sqlx::test(migrations = "../kesh-db/test-schema")]
-async fn deux_versements_de_meme_montant_le_detache_retient_l_autre(pool: MySqlPool) {
-    let ctx = monter(&pool).await;
-    let (po, _, ecriture, _) = detacher_un_versement(&ctx).await;
+/// Importe un second versement `po_TEST0009`, de même net que `po_TEST0001`
+/// (125.15 CHF), et rend sa transaction.
+async fn importer_un_second_versement_de_meme_montant(ctx: &Ctx) -> i64 {
     let entete = std::str::from_utf8(FIXTURE)
         .unwrap()
         .lines()
@@ -1692,29 +1684,86 @@ async fn deux_versements_de_meme_montant_le_detache_retient_l_autre(pool: MySqlP
     );
     let (s, b) = ctx.importer(second.as_bytes()).await;
     assert_eq!(s, 201, "{b}");
-    let po2 = ctx.tx("po_TEST0009").await;
+    ctx.tx("po_TEST0009").await
+}
+
+/// Revue P1 (M1) de la #1534, réglée par la règle commune qui **nomme** la
+/// transaction et par la clé `po_…` de Stripe (correctif L3) : tant que
+/// `po_TEST0001` est détaché, un second versement **de même montant**
+/// (`po_TEST0009`) n'est pas « déjà comptabilisé » — l'écriture nomme
+/// `po_TEST0001`, non lui. Seul le détaché passe « à examiner » ; l'autre est
+/// proposé et s'accepte, par une écriture à lui, et le détaché reste « à
+/// examiner » sur la sienne, puis se rattache.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn deux_versements_de_meme_montant_seul_le_detache_est_a_examiner(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let (po, _, ecriture, _) = detacher_un_versement(&ctx).await;
+    let po2 = importer_un_second_versement_de_meme_montant(&ctx).await;
     let revue = ctx.revue().await;
-    for id in [po, po2] {
-        let motif = motif_de(&revue, id);
-        assert_eq!(motif["code"], "already_posted", "{motif}");
-        assert_eq!(motif["details"], json!({ "journalEntryId": ecriture }));
-    }
-    // Le geste que dit le manuel : l'écriture nomme le versement qu'elle porte.
-    let libelle: String =
-        sqlx::query_scalar("SELECT description FROM journal_entries WHERE id = ?")
-            .bind(ecriture)
-            .fetch_one(&ctx.pool)
-            .await
-            .unwrap();
-    assert!(libelle.contains("po_TEST0001"), "{libelle}");
-    assert!(!libelle.contains("po_TEST0009"), "{libelle}");
-    let (s, b) = ctx.rattacher(po, ecriture).await;
-    assert_eq!(s, 200, "{b}");
-    let v = proposition(&ctx.revue().await, po2);
+    let motif = motif_de(&revue, po);
+    assert_eq!(motif["code"], "already_posted", "{motif}");
+    assert_eq!(motif["details"], json!({ "journalEntryId": ecriture }));
+    assert!(
+        !revue["toReview"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|f| f["transaction"]["id"] == po2),
+        "le second versement n'est pas à examiner : {revue}"
+    );
+    let v = proposition(&revue, po2);
     assert_eq!(v["type"], "payout", "{v}");
     let (s, b) = ctx.accepter(vec![v]).await;
     assert_eq!((s, b["failed"].clone()), (200, json!([])), "{b}");
-    assert_eq!(b["accepted"][0]["type"], "payout");
+    let ecriture2 = b["accepted"][0]["journalEntryIds"][0].as_i64().unwrap();
+    assert_ne!(ecriture2, ecriture, "une écriture à lui");
+    assert_eq!(ctx.etat(po2).await, ("reconciled".into(), Some(ecriture2)));
+    // Le détaché reste à examiner, sur son écriture ; il s'y rattache.
+    let motif = motif_de(&ctx.revue().await, po);
+    assert_eq!(motif["code"], "already_posted", "{motif}");
+    assert_eq!(motif["details"], json!({ "journalEntryId": ecriture }));
+    let (s, b) = ctx.rattacher(po, ecriture).await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(ctx.etat(po).await, ("reconciled".into(), Some(ecriture)));
+}
+
+/// Correctif L3 (revue de la #1534) : le libellé de l'écriture du versement
+/// porte **aussi** une charge et un paiement (`ch_…`, `py_…`, ajoutés à la
+/// main). Avant, ces jetons le privaient du nom (`po_…` n'était pas lu) et du
+/// repli prudent (le libellé portait un identifiant) : le versement détaché
+/// redevenait proposé, et son acceptation écrivait une seconde fois. Il reste
+/// « à examiner » sous `already_posted`, son acceptation forcée est refusée
+/// sans rien écrire ; le second versement de même montant reste proposé.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn versement_detache_libelle_portant_aussi_une_charge(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let (po, ancienne, ecriture, _) = detacher_un_versement(&ctx).await;
+    sqlx::query(
+        "UPDATE journal_entries SET description = CONCAT(description, ' ch_TEST7777 py_TEST7778') WHERE id = ?",
+    )
+    .bind(ecriture)
+    .execute(&ctx.pool)
+    .await
+    .unwrap();
+    let po2 = importer_un_second_versement_de_meme_montant(&ctx).await;
+    let revue = ctx.revue().await;
+    let motif = motif_de(&revue, po);
+    assert_eq!(motif["code"], "already_posted", "{motif}");
+    assert_eq!(motif["details"], json!({ "journalEntryId": ecriture }));
+    assert_eq!(proposition(&revue, po2)["type"], "payout");
+    let avant = ctx.ecritures().await;
+    let (s, b) = ctx.accepter(vec![ancienne]).await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(
+        b["failed"],
+        json!([{
+            "bankTransactionId": po,
+            "errorCode": "PROVIDER_TRANSACTION_ALREADY_POSTED",
+            "details": { "journalEntryId": ecriture },
+        }]),
+        "{b}"
+    );
+    assert_eq!(ctx.ecritures().await, avant, "aucune seconde écriture");
 }
 
 /// La sonde positive : un versement jamais écrit reste proposé et s'accepte,

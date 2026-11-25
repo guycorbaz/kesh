@@ -102,6 +102,21 @@ Après la fusion de cette branche dans `main` et sa reprise dans `pr/40-stripe` 
 dans `decide_payout`, avant tout autre motif, pousser `ReviewFinding::already_posted(t, id)` quand la transaction y
 figure. Le correctif propre à Stripe (`b99591697`) se retire alors (la règle textuelle `po_…` n'a plus d'objet).
 
+*Fait sur `pr/40-stripe` le 2026-11-25* (fusion de la tête `64c04f736`, puis paramétrage Stripe, refs #1539) :
+`accept_payout` passe par `rejudge_writing` et `decide_payout` lit `already_posted` avant tout autre motif, sur l'API
+commune telle qu'elle est (`first_naming_entry`). **Correctif L3** (revue du mainteneur) : l'extraction Stripe
+(`stripe_ids_in`) ne lisait que `ch_` et `py_` ; la clé d'un versement (`match_key` = `reference` = son `po_…`) ne se
+retrouvait pas dans le libellé de son écriture (`Versement Stripe po_… <net> <devise>`) : deux versements de même
+montant étaient tous deux bloqués par le seul repli prudent, et rien ne jouait si le libellé portait aussi un `ch_…`
+ou un `py_…`. `po_` est ajouté aux préfixes ; `txn_`, clé d'aucun genre, ne l'est pas. Clés par genre : charge,
+`ch_…`/`py_…` (`source_id`, à défaut `charge_id`) ; versement, `po_…` ; frais, l'objet lié de leur ligne, que le
+libellé de leur écriture ne porte pas d'ordinaire (et qui n'est rapprochée d'aucun autre compte) ; remboursement et
+autre catégorie, qui n'écrivent pas. La limite écrite sur cette branche (« deux versements de même montant… rattacher
+celui que nomme le libellé ») est retirée du manuel et de `docs/api-external.md`, son test remplacé par le cas réglé
+(seul le détaché est « à examiner », l'autre est proposé et s'accepte). **Angle mort assumé** : une écriture de
+versement saisie à la main dont le libellé porte un `ch_…` ou un `py_…` **sans** son `po_…` nomme une charge, non le
+versement : ni le nom ni le repli prudent ne la retiennent. Journal : `kesh-gate-logs/s40-m2c/`.
+
 ## Change Log
 
 - 2026-11-24 — correctif (`62d8783bb`), sonde positive (`0617f7ef3`), remédiation de la revue P1 (`4d9093c34`).
