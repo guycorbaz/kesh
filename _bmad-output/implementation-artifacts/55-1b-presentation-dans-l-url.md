@@ -43,15 +43,19 @@ Trois : `frontend/src/lib/features/reports` (`reports-url.ts`, lecture de `repor
 | Paramètre | Valeur valide |
 |---|---|
 | `view` | `grouped`, `flat` |
-| `level` | `all`, ou un entier écrit `^[1-9][0-9]*$` de 1 à 20 (`03`, `3.0` refusés) |
+| `level` | `all`, ou un entier écrit `^[1-9][0-9]*$` de 1 à 20 (`03`, `3.0`, `+3` refusés) |
 | `subtotals` | `header`, `footer` |
-| `open`, `closed` | entiers `^[1-9][0-9]*$` séparés par des virgules, au plus 500 chacun, sans identifiant commun aux deux ; `open=` vide = absent ; `1,,2` refusé |
+| `open`, `closed` | entiers `^[1-9][0-9]*$` ≤ `Number.MAX_SAFE_INTEGER` séparés par des virgules, au plus 500 chacun, sans identifiant commun aux deux ; `open=` vide = absent ; `1,,2` refusé |
 
 - **Lecture** : une fonction **exportée de `reports-grouping.ts`** (neuve, `groupingFromParams(params): { view: GroupingView;
   anyValid: boolean }`) juge chaque paramètre avec les règles du module (`isDetailLevel`, `readIdList`, la règle conjointe
   des deux listes) : aucune copie des règles dans `reports-url.ts`, qui ne fait que lui passer les chaînes. `open=5&closed=5`
   seul : les deux listes ignorées, aucun paramètre valide (`anyValid` faux).
-- **Écriture** : `view`, `level`, `subtotals`, et `open`, `closed` s'ils sont non vides, **en ordre croissant et sans
+- **Vue à plat** : à l'écriture, `view=flat` **seul** (les gestes comme la réponse : `groupingParamsOf` rend `undefined` à
+  plat, la clé affichée n'a pas d'autre champ) ; à la lecture, `view=flat` masque la hiérarchie **et garde les autres
+  champs** de la vue en cours (contrôles, sinon mémoire du navigateur) — « vos autres choix sont gardés pendant que la
+  hiérarchie est masquée » (manuel de la PR 46 `:4207-4210`) ; exception assumée au « tout ou rien ».
+- **Écriture** (vue groupée) : `view`, `level`, `subtotals`, et `open`, `closed` s'ils sont non vides, **en ordre croissant et sans
   doublon**, à la suite des paramètres de la 55-1a, dans l'ordre `view`, `level`, `subtotals`, `open`, `closed`. Forme
   canonique : celle de `URLSearchParams.toString()` de la 55-1a, qui encode la virgule (`open=1%2C2`) ; la lecture accepte
   `open=1,2` comme `open=1%2C2`, et une URL collée avec des virgules brutes est normalisée (un `goto` qui remplace).
@@ -67,7 +71,8 @@ Trois : `frontend/src/lib/features/reports` (`reports-url.ts`, lecture de `repor
 
 | Geste | URL | Requêtes, `goto` |
 |---|---|---|
-| Contrôles de présentation, accordéons | **remplace** par les paramètres du rapport affiché et la vue **des contrôles**, clé enregistrée (la 55-1a ignore l'URL écrite par la page) ; la 46-2 redemande comme aujourd'hui (rapport affiché, ou chargement **de ce même rapport**), ou ne demande rien sans eux | 0 requête de l'URL, 1 `goto` |
+| Contrôles de présentation, accordéons, **rapport affiché** | **remplace** par les paramètres du rapport affiché et la vue **des contrôles**, clé enregistrée (la 55-1a ignore l'URL écrite par la page) ; la 46-2 redemande comme aujourd'hui | 0 requête de l'URL, 1 `goto` |
+| Contrôles de présentation **sans** rapport affiché | **aucune** (l'URL ne décrit aucun rapport) ; la 46-2 ne demande rien, sauf chargement **de ce même rapport** | 0, 0 |
 | Clic ou flèche sur un onglet groupé **avec** un rapport affiché | la clé de la 55-1a, présentation = vue **des contrôles** ; la règle de la 46-2 (`resyncActiveGroupedTab`) redemande si la vue affichée diffère | 0 requête de l'URL, 1 `goto` |
 | Clic ou flèche sur un onglet groupé **sans** rapport | `?tab=<id>` seul, sans présentation (55-1a) | 0, 1 |
 | Réponse acceptée, onglet actif | **remplace** par la clé affichée | 1 `goto` (aucun si l'URL est déjà celle-ci) |
@@ -78,14 +83,20 @@ Trois : `frontend/src/lib/features/reports` (`reports-url.ts`, lecture de `repor
   de la 46-2, non la mémoire) est posée par `setGroupingView` (contrôles **et** mémoire, vue `flat` comprise) ; sinon, la vue
   mémorisée (`readGroupingView`) est posée aux contrôles. URL **incomplète** ou `/reports` : la vue des contrôles ne change
   pas, aucune complétion.
-- **Rapport** (point 3 de la 55-1a, clés de ce document) : si la clé affichée ou la clé en vol égalent les paramètres du
-  rapport et la vue posée, rien ; **mêmes paramètres de rapport, autre vue** : la vue est posée, puis
+- **Rapport** (point 3 de la 55-1a, clés de ce document) : si la **clé en vol** de l'onglet égale l'URL, rien (la réponse
+  arrive) ; si la **clé affichée** égale l'URL **et qu'aucune génération de cet onglet n'est en vol** avec une autre
+  présentation, rien ; si la clé affichée égale l'URL mais qu'une redemande de cet onglet est en vol avec une autre vue
+  (niveau changé, puis *Retour*), la vue est posée et le rapport redemandé (`generate({ keepDisplay: true })`), qui périme
+  la redemande en vol ; **mêmes paramètres de rapport, autre vue** : la vue est posée, puis
   `resyncActiveGroupedTab()` décide — redemande en gardant l'affichage si aucune génération n'est en vol, **à la fin de
   l'autre génération** sinon (règle de la 46-2, manuel de la PR 46 `:4240-4242`) ; autres paramètres : `generate()` (55-1a).
 - **Complétion** : URL complète sans présentation valide, rapport affiché pris de la mémoire : l'URL est remplacée par la
-  clé (1 `goto`) ; si une requête part, la complétion se fait à sa réponse (ligne « Réponse acceptée »). Ces `goto` de
-  complétion et de normalisation **amendent** l'AC-7 de la 55-1a pour les onglets groupés (Retour : 0 ou 1 `goto`, compté
-  par cas dans les tests).
+  clé (1 `goto`) ; si une requête part, la complétion se fait à sa réponse (ligne « Réponse acceptée », 1 `goto`). Ces
+  `goto` **amendent** l'AC-7 de la 55-1a pour les onglets groupés : normalisation 1, complétion 1, Retour vers une URL
+  canonique et complète 0.
+- **Paramètres de la redemande** : une redemande de présentation (46-2, `changeGrouping` → `generate`) lit le formulaire,
+  non la clé affichée ; un champ modifié sans *Générer* passe donc dans la redemande (comportement de la PR 46). L'URL
+  écrite à la réponse est la clé de la requête partie, donc vraie ; l'écart avec C-55-1-1 est tracé en issue.
 
 ## Critères d'acceptation
 
@@ -95,9 +106,9 @@ Trois : `frontend/src/lib/features/reports` (`reports-url.ts`, lecture de `repor
    **autre** vue.
 2. **AC-2 — L'URL prime sur la mémoire.** Avec une autre vue en mémoire pour ce rapport, l'URL l'emporte ; la mémoire prend
    ensuite la vue de l'URL (vue `flat` comprise) — ouvrir un lien remplace la présentation retenue du destinataire.
-3. **AC-3 — La mémoire complète l'URL.** `?tab=balance-sheet&fy=E` sans présentation, bilan absent de la mémoire : la vue
-   mémorisée s'applique, **1 requête** part avec elle, et l'URL est complétée à la réponse (**1 `goto`** qui remplace) ;
-   bilan présent avec cette vue : 0 requête, 1 `goto`.
+3. **AC-3 — La mémoire du navigateur complète l'URL.** `?tab=balance-sheet&fy=E` sans présentation, bilan **non gardé par la
+   page** : la vue du `localStorage` s'applique, **1 requête** part avec elle, et l'URL est complétée à la réponse (**1
+   `goto`** qui remplace) ; bilan gardé par la page avec cette vue : 0 requête, 1 `goto`.
 4. **AC-4 — Retour vers une autre présentation.** Bilan au niveau 2 (URL remplacée), clic sur l'onglet *Balance*, clic sur
    le Bilan, niveau 3 (URL remplacée), puis *Retour* deux fois : le Bilan **au niveau 2**, contrôles au niveau 2 (une
    redemande, affichage gardé) ; sans la 55-1b, les contrôles restent au niveau 3 — le test rougit.
@@ -105,13 +116,20 @@ Trois : `frontend/src/lib/features/reports` (`reports-url.ts`, lecture de `repor
    sur le Bilan) et **le même scénario par *Retour*** au lieu du clic : le Bilan est redemandé dans la vue des contrôles **à
    la fin** de l'autre génération, qui n'est pas interrompue ; l'URL porte ensuite la clé affichée. Rejoués dans le Vitest
    de la page avec un `page.url` qui suit `goto`.
-6. **AC-6 — Aucune requête d'une écriture.** Un contrôle de présentation changé sans rapport affiché : URL remplacée,
-   **zéro** requête.
+6. **AC-6 — Aucune requête d'une écriture.** Contrôle changé **avec** rapport affiché : URL remplacée (1 `goto`), **une**
+   requête (celle de la 46-2), aucune seconde requête née de la relecture de l'URL ; **sans** rapport affiché : 0 `goto`,
+   0 requête.
 7. **AC-7 — Écho.** Un groupe ouvert à la main puis disparu du plan : la réponse le retire des listes ; l'URL de l'entrée
    courante (remplacée) et la mémoire le retirent aussi ; *Retour* puis *Suivant* vers cette entrée : 0 requête (Vitest).
-8. **AC-8 — Valeurs invalides.** `level=0`, `level=21`, `level=03`, `open=1,a`, `open=1,,2`, `view=xyz` : chacun ignoré, URL
+8. **AC-8 — Valeurs invalides.** `level=0`, `level=21`, `level=03`, `level=3.0`, `level=+3`, `open=1,a`, `open=1,,2`,
+   `open=99999999999999999999`, une liste de 501 identifiants, `closed` mal formé, `view=xyz` : chacun ignoré, URL
    normalisée, aucune valeur invalide envoyée à l'API ; un paramètre invalide seul, et `open=5&closed=5` seul, laissent la
    vue mémorisée (`anyValid` faux).
+9. **AC-9bis — Vue à plat.** Lien `view=flat` sur un bilan dont la mémoire porte le niveau 2 : à plat, puis « hiérarchie
+   montrée » rend le niveau 2 ; une réponse à plat n'écrit que `view=flat` (0 `goto` de plus si l'URL l'a déjà).
+9. **AC-9ter — Retour pendant une redemande.** Bilan au niveau 2, niveau 3 (redemande en vol), *Retour* vers l'entrée du
+   niveau 2 : le Bilan est redemandé au niveau 2, contrôles au niveau 2, l'écran ne montre jamais le niveau 3 sous des
+   contrôles au niveau 2 ; *Retour* vers une URL égale à la clé en vol : 0 requête.
 9. **AC-9 — Export.** Les boutons PDF et CSV reprennent toujours la dernière réponse affichée (46-2, AC-6), inchangé.
 10. **AC-10 — Manuel.** Paragraphe de la présentation de la PR 46 (`:4240-4250` sur la PR 46) : l'adresse porte la
     présentation, qui prime sur celle que retient le navigateur, et ouvrir un lien remplace la présentation retenue ;
@@ -129,7 +147,8 @@ Trois : `frontend/src/lib/features/reports` (`reports-url.ts`, lecture de `repor
 - **Preuve du rouge** (journal `kesh-gate-logs/s55-1b/`) et **mutations**, chacune tuée par un test nommé : mémoire
   appliquée malgré l'URL (AC-2) ; vue `flat` d'un lien non mémorisée (AC-2) ; écho non reporté dans l'URL (AC-7) ; URL
   écrite par un contrôle réappliquée (AC-6) ; redemande immédiate au lieu de `resyncActiveGroupedTab` (AC-5 par *Retour*) ;
-  clé en vol sans présentation (AC-7).
+  clé en vol sans présentation (AC-9ter) ; `view=flat` qui remet les autres champs aux défauts (AC-9bis) ; contrôle sans
+  rapport qui écrit l'URL (AC-6).
 
 ## Recette visuelle
 
@@ -152,7 +171,8 @@ la story).
 ## Note de version
 
 *Rapports* : l'adresse d'un bilan, d'un compte de résultat ou d'une balance porte aussi sa présentation (hiérarchie,
-niveau, sous-totaux, groupes ouverts ou fermés à la main) ; elle prime sur celle que retient le navigateur. (refs #À-VENIR)
+niveau, sous-totaux, groupes ouverts ou fermés à la main) ; elle prime sur celle que retient le navigateur, et ouvrir un
+lien remplace la présentation retenue. (refs #À-VENIR)
 
 ## Dev Notes
 
@@ -180,6 +200,9 @@ niveau, sous-totaux, groupes ouverts ou fermés à la main) ; elle prime sur cel
 
 (Points de revue non corrigés : sévérité, site, texte proposé ; source de la story de solde 55-4.)
 
+- (LOW, `bug` P3, préexistant) Une redemande de présentation (46-2, `changeGrouping`) lit le formulaire : un champ
+  modifié sans *Générer* passe dans la redemande (Epic 55, story 55-1b, relevé de validation).
+
 ### File List
 
 ## Change Log
@@ -190,3 +213,6 @@ niveau, sous-totaux, groupes ouverts ou fermés à la main) ; elle prime sur cel
   vol avec la présentation, URL de la réponse (V1-2) ; clic sans rapport, URL incomplète et `/reports` sans complétion,
   compteurs écrits (V1-3) ; `groupingFromParams` exportée de `reports-grouping.ts` (V1-4) ; virgule encodée, lecture des deux
   formes (V1-5) ; AC-4 qui rougit sans la story (V1-6) ; manuel (V1-7) ; LOW V1-8 à V1-15.
+- 2026-11-25 — Validation P2 (Sonnet) : 0/0/3/6 ; remédiée : vue à plat (`view=flat` seul, autres champs gardés, AC-9bis)
+  (V2-1) ; contrôle sans rapport n'écrit pas l'URL, AC-6 constatable (V2-2) ; Retour pendant une redemande de l'onglet
+  (AC-9ter) (V2-3 ; le cas voisin de la 55-1a lui est signalé) ; LOW V2-4 à V2-9 (dont une issue).
