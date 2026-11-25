@@ -378,7 +378,9 @@ invalide. Jointes au Dev Agent Record et au prompt de la revue de code.
 `cd frontend && npm run check && npm run lint-i18n-ownership && npm run test:unit && npm run build` ; E2E : la spec neuve et
 les specs de T4 (les specs des Rapports et de la navigation) ; suite complète et `scripts/gate-ci.sh` en fin d'epic, story **purement écran** (fichier d'epic, § *Gates*,
 *Dérogation*, Q6 tranchée par le mainteneur le 2026-11-25). Aucun gate
-backend.
+backend, sauf : **À la clôture de la story**, comme elle modifie le manuel (et `messages.ftl` si un texte apparaît), aussi `cargo nextest run -p kesh-i18n` et
+`cargo nextest run -p kesh-api -E 'binary(textes_coherents)'` (resserrement de la dérogation, décision du mainteneur du
+2026-11-26, fichier d'epic § *Dérogation*).
 
 ## Note de version
 
@@ -500,3 +502,7 @@ qui l'affichent désormais à l'arrivée) ; le lien *Rapports* du menu ramène a
   fichier d'epic. **Sans passe** : le plafond de huit passes est atteint (P8) ; alignement mécanique sur une décision, à
   recontrôler au **T0** (R-6 : la phrase du § *Gates* contre le § *Dérogation* du fichier d'epic, ligne lue citée au Change
   Log).
+- 2026-11-26 — **Décision du mainteneur du 2026-11-26 versée** (resserrement de la dérogation Q6, fichier d'epic
+  § *Dérogation*) : § *Gates* — à la clôture, `nextest -p kesh-i18n` et `binary(textes_coherents)`, la story modifiant le
+  manuel. Aucune passe (plafond de huit atteint) : la phrase se recontrôle au **T0** contre le § *Dérogation*, ligne lue
+  citée (avec R-6).

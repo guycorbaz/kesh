@@ -32,7 +32,8 @@ avant toute ligne de code, ligne lue et décision citées au Change Log ; le cor
 
 ## Points de la P7 (décisions du mainteneur, au T0)
 
-- **LOW** (`kesh-gate-logs/s55-decisions/55-1b-validation-p7.md`) : V7-1 (le manuel modifié par l'AC-12 est gardé par
+- **LOW** (`kesh-gate-logs/s55-decisions/55-1b-validation-p7.md`) : V7-1 (**tranché le 2026-11-26** par le
+  mainteneur, § *Gates*) (le manuel modifié par l'AC-12 est gardé par
   `textes_coherents`, qui ne tournerait qu'en fin d'epic : la précision de la *Dérogation* proposée au mainteneur, fichier
   d'epic, question *Gardes Rust des textes*) ; V7-2 (§ *Gates* : nommer les specs de la *Dérogation*, dont les specs
   groupées de l'Epic 46 `reports-*groupes*.spec.ts`).
@@ -225,7 +226,9 @@ Captures (`kesh-gate-logs/s55-1b/`) : bilan groupé avant le lien ; après *Reto
 
 `cd frontend && npm run check && npm run lint-i18n-ownership && npm run test:unit && npm run build` ; E2E des Rapports et
 de la navigation au dernier commit de code ; suite complète et `scripts/gate-ci.sh` en fin d'epic, story **purement écran** (fichier d'epic, § *Gates*,
-*Dérogation*, Q6 tranchée par le mainteneur le 2026-11-25).
+*Dérogation*, Q6 tranchée par le mainteneur le 2026-11-25). **À la clôture de la story**, comme elle modifie le manuel, aussi `cargo nextest run -p kesh-i18n` et
+`cargo nextest run -p kesh-api -E 'binary(textes_coherents)'` (resserrement de la dérogation, décision du mainteneur du
+2026-11-26, fichier d'epic § *Dérogation*).
 
 ## Note de version
 
@@ -300,3 +303,6 @@ lien ou revenir par *Retour* remplace la présentation retenue. (refs #À-VENIR)
   fichier d'epic. Passe P7 ciblée sur ce changement ; au-delà de la sixième passe, ses points vont au T0 (R-n).
 - 2026-11-25 — Validation P7 ciblée (Opus) sur la décision Q6 : 0/0/0/2 — **validation terminée** sur ce changement ; les
   deux LOW vont au T0 (section *Points de la P7*). `ready-for-dev` sous réserve du T0 (R-1, R-2, et ces LOW).
+- 2026-11-26 — **Décision du mainteneur du 2026-11-26 versée** (resserrement de la dérogation Q6) : § *Gates* — à la
+  clôture, `nextest -p kesh-i18n` et `binary(textes_coherents)` ; V7-1 tranché. Passe P8 ciblée (la dernière permise ;
+  au-delà de la sixième, ses points vont au T0).

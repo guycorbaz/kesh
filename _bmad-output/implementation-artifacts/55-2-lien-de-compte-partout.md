@@ -23,13 +23,14 @@ le tranche avant toute ligne de code, ligne lue et décision citées au Change L
   « écriture de `selectedFiscalYearId` » avec un exercice différent et un rapport en mémoire ; tests nommés pour AC-13 et
   AC-14), V6-5 (fichier d'epic : la phrase « Justificatif et non pièce » à remettre au point 3 de l'*Objectif*), V6-6
   (modules de `fiscalYearMatching` et de la fonction de libellé : `features/reports` ; taille de la story déclarée).
-- **R-2 (P7, V7-1, MEDIUM) — Gardes Rust des textes.** La story, « purement écran », modifie `messages.ftl` et le manuel,
+- **R-2 (P7, V7-1, MEDIUM) — Gardes Rust des textes. Tranché le 2026-11-26** par le mainteneur (resserrement de la
+  dérogation Q6, fichier d'epic § *Dérogation*) dans le sens du défaut ci-dessous : § *Gates* et T5 le portent. La story, « purement écran », modifie `messages.ftl` et le manuel,
   gardés par des tests Rust (`parity_between_locales`, `textes_coherents`) qui ne tourneraient qu'en fin d'epic. Défaut :
   la précision de la *Dérogation* proposée au mainteneur (fichier d'epic, question *Gardes Rust des textes*) — à sa
   clôture, `cargo nextest run -p kesh-i18n` et `-p kesh-api -E 'binary(textes_coherents)'` ; l'AC-9 nomme la garde A.
 - **LOW de la P7** (`kesh-gate-logs/s55-decisions/55-2-validation-p7.md`, aucune remédiation) : V7-2 (preuve du grep du
-  fichier d'epic : remédiée là, Pv2p5 de la 55-3a), V7-3 (C-55-2-4 : la ligne surlignée est une question ouverte au fichier
-  d'epic ; si elle revient à la 55-2, un AC neuf et une passe), V7-4 (§ *Gates* et T5 : nommer les specs de la *Dérogation*),
+  fichier d'epic : remédiée là, Pv2p5 de la 55-3a), V7-3 (**tranché le 2026-11-26** : la ligne surlignée revient à l'epic à part des liens
+  de compte, 56 proposé, et n'est pas un livrable de la 55-2 ; C-55-2-4), V7-4 (§ *Gates* et T5 : nommer les specs de la *Dérogation*),
   V7-5 (« Paramètres → Facturation, section Comptes TVA » ; le compte de décompte n'est pas lu, sans lien).
 
 ## Story
@@ -235,13 +236,16 @@ section lié et non lié ; TVA avec sa ligne de comptes ; Compte de résultat à
 - [ ] **T3bis** — Grand livre : `fiscalYearMatching`, sélecteur, préremplissage des dates vides, fonction de libellé
       partagée avec `ReportSelector` (AC-11 à AC-15).
 - [ ] **T4** — i18n, manuel, E2E, captures.
-- [ ] **T5** — Gates frontend ; E2E de la story et des Rapports.
+- [ ] **T5** — Gates frontend ; E2E de la story et des Rapports ; à la clôture, `nextest -p kesh-i18n` et
+      `binary(textes_coherents)` (§ *Gates*, R-2).
 
 ## Gates
 
 `cd frontend && npm run check && npm run lint-i18n-ownership && npm run test:unit && npm run build` ; E2E des Rapports et
 de la navigation au dernier commit de code ; suite complète et `scripts/gate-ci.sh` en fin d'epic, story **purement écran** (fichier d'epic, § *Gates*,
-*Dérogation*, Q6 tranchée par le mainteneur le 2026-11-25).
+*Dérogation*, Q6 tranchée par le mainteneur le 2026-11-25). **À la clôture de la story**, comme elle modifie le manuel et `messages.ftl`, aussi `cargo nextest run -p kesh-i18n` et
+`cargo nextest run -p kesh-api -E 'binary(textes_coherents)'` (resserrement de la dérogation, décision du mainteneur du
+2026-11-26, fichier d'epic § *Dérogation*).
 
 ## Note de version
 
@@ -267,8 +271,9 @@ onglet. (refs #À-VENIR, #À-VENIR)
 
 - **C-55-2-4** — `AccountLink` est réutilisable hors des Rapports (décision Q9 du mainteneur : les liens de compte du
   reste de l'application font un epic à part, qui dépend de l'Epic 55) : ses propriétés ne lisent rien de la page des
-  Rapports, l'appelant passe les bornes de la période. La **ligne surlignée** du grand livre n'est pas posée ici (fichier
-  d'epic, § *Hors périmètre*).
+  Rapports, l'appelant passe les bornes de la période. La **ligne surlignée** du grand livre n'est pas posée ici : elle revient à
+  l'epic à part des liens de compte (56 proposé), et seulement depuis une écriture, une facture ou une transaction
+  (décision du mainteneur du 2026-11-26 ; fichier d'epic, § *Hors périmètre*).
 
 ### References
 
@@ -325,3 +330,7 @@ onglet. (refs #À-VENIR, #À-VENIR)
 - 2026-11-25 — Validation P7 ciblée (Opus) sur les décisions du mainteneur : 0/0/1/4. Au-delà de la sixième passe :
   **renvoi au développement** (R-2, LOW listés en tête). Tendance : … → P6 ciblée Sonnet 0/0/1/5 → (décisions du
   mainteneur) P7 ciblée Opus 0/0/1/4. La P8 reste en réserve.
+- 2026-11-26 — **Décisions du mainteneur du 2026-11-26 versées** : R-2 tranché (resserrement de la dérogation Q6 :
+  § *Gates*, T5) ; ligne surlignée à l'epic à part des liens de compte, 56 proposé, depuis une écriture, une facture ou une
+  transaction seulement (C-55-2-4, V7-3). Passe P8 ciblée (la dernière permise ; au-delà de la sixième, ses points vont au
+  T0).

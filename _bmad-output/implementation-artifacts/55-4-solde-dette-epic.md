@@ -35,9 +35,11 @@ afin que l'epic ne fasse pas monter le compte d'issues ouvertes par sa propre de
 - **Plafond : au plus 2 issues** (fixé au kickoff, fichier d'epic). Au-delà, les suivantes restent ouvertes, nommées à la
   rétrospective avec leur raison. Un correctif qui toucherait plus de cinq modules n'est pas pris (par analogie avec
   la règle de splitting préventif) et reste ouvert.
-- Frontend seulement, **sauf** une dette née de la 55-3a côté serveur (`kesh-report`, `kesh-api`, `kesh-qrbill`,
-  `kesh-i18n`) — les 55-3a et 55-3b restent dans l'epic (Q1 acceptée par le mainteneur le 2026-11-25) ; une 55-4 qui touche
-  le serveur passe le gate complet et l'E2E complet à sa clôture (fichier d'epic, § *Dérogation*).
+- Frontend seulement, **sauf** une dette née de la 55-3a côté serveur (`kesh-report`, `kesh-api` ; l'aperçu et la marque,
+  `kesh-qrbill`, sont sortis de l'epic le 2026-11-26) — les 55-3a et 55-3b restent dans l'epic (Q1 acceptée par le
+  mainteneur le 2026-11-25) ; une 55-4 qui touche le serveur passe le gate complet et l'E2E complet à sa clôture ; une
+  55-4 qui touche `messages.ftl` ou le manuel joue à sa clôture `cargo nextest run -p kesh-i18n` et
+  `cargo nextest run -p kesh-api -E 'binary(textes_coherents)'` (fichier d'epic, § *Dérogation*).
 - Aucune migration ; aucun changement de contrat de l'API **par la 55-4**.
 
 ## D'où vient la liste (l'agent de l'epic n'a pas `gh`)
@@ -133,3 +135,7 @@ d'epic), avec `refs #N` par ligne ; la note de l'epic est assemblée à la relea
   Passe P8 ciblée, la dernière permise ; ses points vont au T0 (R-n).
 - 2026-11-25 — Validation P8 ciblée (Opus) sur les décisions du mainteneur : 0/0/1/4. **Dernière passe** : renvoi au
   développement (R-1, LOW listés en tête). `ready-for-dev` sous réserve du T0.
+- 2026-11-26 — **Décisions du mainteneur du 2026-11-26 versées** : périmètre serveur ramené à `kesh-report` et
+  `kesh-api` (aperçu sorti de l'epic) ; resserrement de la dérogation Q6 (`nextest -p kesh-i18n`, `binary(textes_coherents)`
+  pour une 55-4 qui touche `messages.ftl` ou le manuel). Aucune passe (plafond de huit atteint) : recontrôle au **T0**,
+  ligne lue citée.

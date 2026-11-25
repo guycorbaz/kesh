@@ -2,18 +2,19 @@
 
 Status: ready-for-dev
 
-Epic : `_bmad-output/planning-artifacts/epic-55-navigation-interface.md` — D9 (Q1), D10, D12 (aperçu sans figement), D13
-(marque d'un PDF non émis, Q10), D14 (fiche de la facture, Q8). Issue : #À-VENIR (`enhancement`, **P4**, Q5 ; point c,
+Epic : `_bmad-output/planning-artifacts/epic-55-navigation-interface.md` — D9 (Q1), D10, D12 (afficher n'est pas figer :
+sans aperçu dans l'Epic 55), D14 (fiche de la facture, Q8). Issue : #À-VENIR (`enhancement`, **P4**, Q5 ; point c,
 convenu au téléphone le 2026-11-25 entre l'utilisateur et le mainteneur).
-Release : la prochaine planifiée après la 0.20.0. **Aucune migration. ⚠️ Backend** (`kesh-report`, `kesh-api`,
-`kesh-qrbill`, `kesh-i18n`) : un booléen additif dans la réponse JSON du journal et du grand livre, **une route de lecture
-minimale**, et l'aperçu sans figement, dont le PDF porte sa marque — l'epic était annoncé « frontend seulement » ;
-**accepté par le mainteneur le 2026-11-25 (Q1), sous conditions** : le PDF d'aperçu porte lui-même la marque de Q10 sur
-chaque page ; une facture déjà figée s'affiche en PDF figé tel quel, sans marque ; le rendu d'aperçu ne sert qu'aux
-factures validées dont le PDF n'est jamais sorti. *Réponses de l'utilisateur du 2026-11-25 versées* (D10 :
-le règlement montre la facture réglée, client et fournisseur ; D12 : depuis le Journal et les Rapports, **afficher une
-facture ne la fige pas** — d'où une **route d'aperçu sans figement**, `GET /api/v1/invoices/{id}/pdf/preview`, que la
-55-3a crée, aucune n'existant aujourd'hui).
+Release : la prochaine planifiée après la 0.20.0. **Aucune migration. ⚠️ Backend** (`kesh-report`, `kesh-api`) : un
+booléen additif dans la réponse JSON du journal et du grand livre, et **une route de lecture minimale** qui liste les
+justificatifs d'une écriture, avec l'état du PDF d'une facture — l'epic était annoncé « frontend seulement » ; **accepté
+par le mainteneur le 2026-11-25 (Q1)**. *Réponses de l'utilisateur du 2026-11-25 versées* (D10 : le règlement montre la
+facture réglée, client et fournisseur ; D12 : depuis le Journal et les Rapports, **afficher une facture ne la fige
+pas**). ⚠️ **Décision du mainteneur du 2026-11-26** : l'aperçu sans figement (`GET /invoices/{id}/pdf/preview`) et la
+marque d'un PDF non émis (`kesh-qrbill`) **sortent de l'Epic 55** pour l'epic « PDF marqués » (numéro à confirmer) ; leur
+texte est gardé en section *Reporté à l'epic « PDF marqués »*. Dans l'Epic 55, une facture figée s'affiche par son PDF
+figé, une facture pas encore émise est signalée « PDF pas encore émis », sans aperçu (*Afficher sans figer, dans
+l'Epic 55*).
 
 *Découpée de la 55-3 à la validation P1 (V1-5 : plus de cinq modules pour une seule story) : 55-3a le serveur, 55-3b
 l'écran. Le Journal reste le critère principal (demande de l'utilisateur) ; le Grand livre suit, à coût marginal.*
@@ -52,7 +53,8 @@ de requête, la branche fournisseur dédoublée pour l'achat et le règlement) :
 
 | Document | Rattachement | Règle du document servi | Route de lecture (droits) |
 |---|---|---|---|
-| PDF d'une facture client (écriture de vente) | `invoices.journal_entry_id` (`20260417000001_invoice_validation.sql`) | la route sert le PDF **figé** s'il existe, sinon fige une facture **validée**, sinon `400 INVOICE_NOT_VALIDATED` (`crates/kesh-api/src/routes/issued_invoice_pdf.rs:104-109`). Une facture annulée par un avoir **garde** `journal_entry_id` (`crates/kesh-db/src/repositories/credit_notes.rs:843`) ; seule la dévalidation le vide (`crates/kesh-db/src/repositories/invoices.rs:1782`). Manuel § 11.6.1 (`user-manual.tex:1635`) : « une facture annulée par un avoir garde le PDF qu'elle a émis ; … jamais figée … n'a pas de PDF » | `GET /api/v1/invoices/{id}/pdf` (`lib.rs:1262` ; `:1304` sur la PR 46), tout rôle — **fige** au premier appel ; l'écran des Rapports passe par l'aperçu neuf (D12, *L'aperçu sans figement*) |
+| PDF d'une facture client (écriture de vente) | `invoices.journal_entry_id` (`20260417000001_invoice_validation.sql`) | la route sert le PDF **figé** s'il existe, sinon fige une facture **validée**, sinon `400 INVOICE_NOT_VALIDATED` (`crates/kesh-api/src/routes/issued_invoice_pdf.rs:104-109`). Une facture annulée par un avoir **garde** `journal_entry_id` (`crates/kesh-db/src/repositories/credit_notes.rs:843`) ; seule la dévalidation le vide (`crates/kesh-db/src/repositories/invoices.rs:1782`). Manuel § 11.6.1 (`user-manual.tex:1635`) : « une facture annulée par un avoir garde le PDF qu'elle a émis ; … jamais figée … n'a pas de PDF » | `GET /api/v1/invoices/{id}/pdf` (`lib.rs:1262` ; `:1304` sur la PR 46), tout rôle — **fige** au premier appel ; l'écran des Rapports ne l'appelle que pour une facture **figée** (D12,
+*Afficher sans figer, dans l'Epic 55*) |
 | idem, écriture de **règlement** | `invoice_settlements.journal_entry_id` → `invoice_id` (`20260827000001_invoice_settlements.sql` ; plusieurs factures par écriture depuis `20261118000001_grouped_settlements.sql`, clé `(journal_entry_id, invoice_id)`). Un règlement annulé est **supprimé** (`invoice_settlements_write.rs:1140`, `:972` groupé) | même règle que la ligne précédente | idem |
 | PDF d'un **avoir** | `credit_notes.journal_entry_id` (`20260627000001_credit_notes.sql:36` ; `CHECK` : émis ⇒ écriture, `:54`) ; statuts `draft`, `issued`, `cancelled` (`:50`) | rendu à la demande, sans contrôle de statut (`routes/credit_notes.rs:279-330`) | `GET /api/v1/credit-notes/{id}/pdf` (`lib.rs:1275` ; `:1317`), tout rôle |
 | **Document** d'une facture fournisseur | `supplier_invoices.purchase_journal_entry_id` ou `settlement_journal_entry_id` (`20260628000001`), ← `imported_supplier_invoices.supplier_invoice_id`, `status = 'completed'` (`20260629000001`). Règlement fournisseur **groupé** : plusieurs factures portent le même `settlement_journal_entry_id` (`20261118000001`, `CHECK` « ligne ⇒ écriture » ; `grouped_settlements.rs:9`) | fichier archivé | `GET /api/v1/supplier-invoices/{id}/source-document` (`lib.rs:1291` ; `:1333`), tout rôle (30-2c AC22) |
@@ -132,9 +134,10 @@ pub struct EntryDocument {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub file_name: Option<String>,
     /// État du PDF d'une facture (facture seulement) : `frozen` (PDF émis, figé) ou `notFrozen`
-    /// (aucun PDF émis : l'écran montre un aperçu, avec son bandeau, 55-3b). Énumération
-    /// **ouverte** : une valeur future (`external`, PDF produit hors de Kesh) s'y ajoute sans
-    /// rien changer d'autre (*Limite connue et évolution*).
+    /// (pas de PDF figé : l'écran affiche « PDF pas encore émis », sans aperçu, 55-3b).
+    /// Énumération **ouverte** : l'epic « PDF marqués » (aperçu) et le PDF produit hors de
+    /// Kesh (`external`, *Limite connue et évolution*) pourront y ajouter une valeur sans
+    /// rien changer d'autre.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pdf_status: Option<PdfStatus>,
 }
@@ -146,12 +149,241 @@ pub enum PdfStatus { Frozen, NotFrozen }
 
 TypeScript (55-3b) : `interface EntryDocument { kind: 'invoice' | 'creditNote' | 'supplierDocument'; id: number; number:
 string | null; fileName?: string; pdfStatus?: string }` — `pdfStatus` typé `string` et non en union fermée : l'écran ne
-montre le bandeau que pour `'notFrozen'`, toute autre valeur (y compris une valeur future) n'en montre pas.
+lit le PDF d'une facture que pour `'frozen'` ; toute autre valeur (`'notFrozen'`, champ absent, valeur future) ne lit
+rien et affiche « PDF pas encore émis » (55-3b, AC-5) — le côté sûr : l'écran ne fige jamais.
 
 `pdf_status` se lit dans la même requête que la liste (`i.pdf_storage_path IS NOT NULL` ⇒ `frozen`, la règle
 d'`is_frozen`, `issued_invoice_pdf.rs:325`) ; il vaut **à la lecture de la liste** : une facture figée entre la lecture et
-l'affichage (téléchargement depuis la fiche par un autre utilisateur) garde son bandeau jusqu'à la prochaine ouverture —
-limite assumée, écrite au manuel par la 55-3b.
+l'affichage (téléchargement depuis la fiche par un autre utilisateur) reste signalée « PDF pas encore émis » jusqu'à la
+prochaine ouverture — limite assumée, écrite au manuel par la 55-3b.
+
+### Afficher sans figer, dans l'Epic 55 (D12)
+
+Décision du mainteneur du 2026-11-26 : l'aperçu marqué — la route d'aperçu et la marque dans `kesh-qrbill` — **sort de
+l'Epic 55** pour l'epic « PDF marqués » (numéro à confirmer ; section *Reporté à l'epic « PDF marqués »*). La 55-3a
+n'ajoute **aucune route de PDF** et ne touche ni `issued_invoice_pdf.rs`, ni `invoice_pdf.rs`, ni
+`invoice_pdf_service.rs`, ni `kesh-qrbill`, ni `kesh-i18n`. Ce que l'écran fait d'une facture (55-3b) :
+
+- **facture figée** (`pdfStatus: "frozen"`, validée ou annulée) : l'écran lit `GET /api/v1/invoices/{id}/pdf`, qui sert
+  le fichier figé (`serve_frozen`) **sans rien écrire** — ni fichier, ni colonne, ni audit : `get_or_freeze`
+  (`issued_invoice_pdf.rs:95-112`) ne rend et ne pose que pour une facture non figée ;
+- **facture pas encore émise** (`pdfStatus: "notFrozen"`) : **aucune lecture de PDF** ; l'écran affiche « PDF pas encore
+  émis », **sans aperçu**, tant que l'epic « PDF marqués » n'est pas livré — afficher n'est pas figer, et `/pdf`
+  figerait ;
+- ⚠️ **une validée non figée dont un PDF est pourtant sorti** (`invoices.emailed_at` non nul : envoi d'avant la v0.12.1 ;
+  ou une entrée `invoice.pdf_frozen` au journal d'audit : facture téléchargée, dévalidée puis revalidée — la dévalidation
+  est refusée à une facture envoyée, `errors.rs:443`) : **pour l'Epic 55, elle n'est pas figée** — `pdfStatus:
+  "notFrozen"`, comme les autres, et l'écran la signale « PDF pas encore émis ». La 55-3a ne lit ni `emailed_at` ni le
+  journal d'audit. **Aucune nuance de texte** n'est nécessaire dans l'Epic 55 : le texte de la 55-3b (AC-5) dit que la
+  facture **n'a pas de PDF figé** et ce qui le figera, non qu'elle n'a jamais été envoyée ni téléchargée ; il reste vrai
+  pour ces factures. Le bandeau propre à ce cas est décidé pour l'epic « PDF marqués » (section reportée) ;
+- **course** : `pdfStatus` vaut à la lecture de la liste ; une facture figée entre la lecture et le clic reste signalée
+  « PDF pas encore émis » jusqu'à la prochaine ouverture (rien n'est lu, rien n'est figé). Le cas inverse — une facture lue
+  `frozen`, redevenue non figée avant le clic — ne naît que d'une restauration d'une sauvegarde d'avant le gel (la
+  dévalidation vide `journal_entry_id`, `crates/kesh-db/src/repositories/invoices.rs:1782`, et la liste est relue à chaque
+  ouverture) : `/pdf` la figerait alors. Limite assumée, écrite à la note de l'API (T3) ;
+- **fiche de la facture inchangée** (D14, Q8 refusée) : elle garde son bouton, qui fige au premier téléchargement — le
+  **geste d'émission** ;
+- **aucune dérogation** à l'arbitrage 8 de la 25-6-b dans l'Epic 55 : aucun PDF non émis ne sort de Kesh.
+
+### Limite connue et évolution : un PDF produit hors de Kesh
+
+Un jour, une facture client créée par l'API pourra porter un **PDF produit hors de Kesh** ; c'est lui qui devra
+s'afficher, à la place du PDF que Kesh génère. **Non livré ici** (issue `enhancement`, évolution : texte dans
+`kesh-gate-logs/s55-decisions/issues-a-envoyer.md`). Le modèle ne l'empêche pas : un élément de la liste
+désigne la **facture** (`kind`, `id`), non un fichier ; c'est la route de lecture qui choisit le fichier servi ; et
+`pdfStatus` est une énumération ouverte, à laquelle une valeur (`external`) s'ajoutera, que l'écran d'aujourd'hui traite
+déjà (aucun bandeau). Issue `enhancement` à ouvrir (section *Issues à ouvrir*).
+
+**Règles de cette évolution** (avis d'usager du 2026-11-25, **décidées par le mainteneur le même jour**) :
+
+- le PDF fourni **est** la pièce émise : copié dans Kesh, rangé et **sauvegardé** comme les autres documents, **figé**
+  avec la facture, **jamais régénéré** ; la raison : il doit rester cohérent avec les lignes de la facture en base, et un
+  fichier resté hors de Kesh peut changer ou disparaître sans que la facture le sache ;
+- pour une facture arrivée avec son PDF, Kesh ne produit **ni second PDF ni QR-facture à lui** — ni aperçu marqué (epic
+  « PDF marqués ») : l'écran le servira comme un PDF figé ;
+- « lien seulement » ne viendrait **que sur demande** : un lien ne passe pas dans le `.keshbackup`.
+
+### Règles de rattachement
+
+- **Facture** (vente et règlement) : `i.status = 'validated' OR (i.status = 'cancelled' AND i.pdf_storage_path IS NOT
+  NULL)` — les factures pour lesquelles la route **peut** servir un PDF (son rendu peut encore être refusé : `INVOICE_NOT_PDF_READY`, `410` si le fichier figé manque, `409` ; l'écran affiche alors l'erreur, 55-3b AC-4) ; une facture annulée jamais figée n'a pas de justificatif.
+  Une facture **validée non figée** reste un justificatif : l'écran la signale « PDF pas encore émis », sans aperçu ni
+  figement (D12).
+- **Avoir** : `cn.status <> 'draft'` — la route rend le PDF d'un avoir sans contrôle de statut ; un brouillon n'est pas
+  une pièce comptable ; l'application n'écrit aujourd'hui que `issued`
+  (voir *Ce qui se lit au code*), la règle vaut pour un avoir annulé futur.
+- **Document fournisseur** : `isi.status = 'completed'`, achat ou règlement, **tous** les documents d'un règlement groupé.
+- **Filtre de société sur chaque table** de chaque branche (`je.company_id`, `i.company_id`, `s.company_id` de
+  `invoice_settlements`, `cn.company_id`, `si.company_id`, `isi.company_id`), défense en profondeur (KF-002).
+- **Dédoublonnage** par `(kind, id)` dans chaque écriture, à la construction de la `HashMap` (une même facture ne peut
+  pas sortir deux fois d'une écriture aujourd'hui, mais rien au schéma ne l'interdit) ; **ordre stable** : genre
+  (`invoice`, `creditNote`, `supplierDocument`), puis identifiant.
+- **Écart assumé avec le détail d'une écriture** : un règlement fournisseur groupé montre **tous** ses documents au
+  journal, **un seul** au détail de l'écriture (`find_source_document_of_entry`, `LIMIT 1`). Issue `enhancement` à ouvrir
+  pour aligner le détail (section *Issues à ouvrir*).
+
+### Les requêtes, une seule définition des rattachements (DRY)
+
+- `kesh-report/src/documents.rs` (neuf) porte **un** constructeur des cinq branches (facture de vente, facture réglée,
+  avoir, document fournisseur par l'achat, par le règlement — deux branches plutôt qu'un `OR`, pour l'index de chaque
+  colonne), avec les règles ci-dessus, paramétré par son filtre d'écritures ; deux fonctions l'emploient :
+  - `entries_with_documents(pool, company_id, from, to) -> HashSet<i64>` : `SELECT DISTINCT entry_id FROM (… UNION ALL
+    …)`, chaque branche jointe à `journal_entries` et bornée par `je.company_id = ?` et `je.entry_date BETWEEN ? AND ?`
+    (index `idx_journal_entries_company_date`) — **une** requête par rapport, aucune liste `IN`, aucune requête par
+    écriture ni par compte ;
+  - `documents_of_entry(pool, company_id, entry_id) -> Vec<EntryDocument>` : la même union bornée par `je.id = ?` et
+    `je.company_id = ?`, dédoublonnée par `(kind, id)`, triée (genre, identifiant) ; la route l'appelle.
+- **Site d'appel** du booléen : **un** appel dans `journal_report::generate`, après la requête des lignes ; **un** appel
+  dans `general_ledger::generate`, **avant** la boucle `for acc in accounts` (`:825`), l'ensemble étant lu dans la boucle.
+  Les exports et l'outil MCP, qui passent par ces `generate`, paient cette requête sans lire le champ : assumé.
+- **Borne du grand livre** : la période seule (C-55-3a-4).
+
+## Critères d'acceptation
+
+1. **AC-1 — Journal.** `GET /api/v1/reports/journals` : chaque écriture qui a au moins un justificatif, selon les règles
+   ci-dessus, porte `hasDocuments: true` ; les autres n'ont pas le champ.
+2. **AC-2 — Grand livre.** `GET /api/v1/reports/general-ledger` : chaque `LedgerLine` porte `hasDocuments` de son écriture ;
+   une écriture présente dans plusieurs sections le porte dans chacune. *Option* : § *Où un justificatif a un sens*.
+3. **AC-3 — La route.** `GET /api/v1/journal-entries/{id}/documents` rend la liste, ordonnée et dédoublonnée : facture
+   validée (un justificatif) ; facture annulée figée (un) ; facture annulée jamais figée (aucun) ; règlement simple (la
+   facture) ; **règlement client groupé** de deux factures (deux, ordre par identifiant) ; avoir émis (un) ; facture
+   fournisseur à document, écriture d'achat et de règlement (le document) ; **règlement fournisseur groupé** de deux
+   factures à document (deux) ; facture fournisseur sans document (aucun) ; facture fournisseur annulée, écriture d'achat
+   (le document). Pour chaque cas, `hasDocuments` du journal est vrai **si et seulement si** la liste est non vide (même
+   constructeur : test qui les compare sur tous les cas). Rôle *Consultation* : `200` ; clé d'API en lecture : `200` ; écriture d'une
+   autre société : `404` ; sans session : `401`. Les règlements de type « solde du reste » et « compte interne » sont
+   rattachés à leur facture comme les autres (un cas chacun).
+4. **AC-4 — Négatifs qui rougissent.** Chaque filtre est éprouvé par des données **posées en SQL direct** que le schéma
+   admet : avoir `draft` portant un `journal_entry_id` ; document importé `discarded` portant un `supplier_invoice_id` dont
+   la facture fournisseur porte l'écriture d'achat ; facture `draft` portant un `journal_entry_id` ; **par branche**, une
+   ligne de la société B (facture, règlement, avoir, facture fournisseur, document importé) qui pointe une écriture de la
+   société A, plus un document importé de B rattaché à une facture fournisseur de A (filtre `isi.company_id`). Les tests
+   appellent **`entries_with_documents` et `documents_of_entry` directement** (aucune clé de B ni hors période), en plus du
+   journal et de la route. Le T0 vérifie qu'aucune contrainte ne refuse ces lignes ; une ligne refusée rend son filtre
+   « défense en profondeur, non éprouvable », écrit tel quel au Change Log. Le règlement annulé (supprimé) : test de
+   **non-régression**. Chaque filtre a sa **mutation** (filtre retiré → test rouge), journal `kesh-gate-logs/s55-3a/`.
+5. **AC-5 — Une requête.** Le booléen du journal et celui du grand livre viennent d'**un** appel d'`entries_with_documents`
+   chacun, hors de toute boucle (`grep -nE "entries_with_documents\(" crates/kesh-report/src/*.rs | grep -vE
+   ':[0-9]+:\s*//'` rend une définition et deux appels — les tests d'appel direct de l'AC-4 vivent donc dans
+   `crates/kesh-report/tests/documents.rs`, non dans un `mod tests` de `src/`) ; grand livre à plusieurs comptes : le booléen de chaque section est
+   juste ; une écriture hors période n'est pas lue.
+6. **AC-6 — Contrat additif.** Une écriture sans justificatif sérialise **exactement** le JSON d'aujourd'hui (clés
+   comparées) ; les exports PDF et CSV du journal et du grand livre rendent le même résultat avec `hasDocuments` vrai ou
+   faux (CSV : chaînes égales ; PDF : texte lu par `kesh_report::texte_pdf::lignes` de la PR 46, après avoir vérifié qu'il
+   contient un numéro d'écriture connu) ; garde de non-régression, déclarée telle ; `kesh-report/tests/rapports_mono_devise.rs`
+   (références figées du JSON, du CSV et du PDF) reste vert sans modification et tient le cas « sans justificatif ». L'outil MCP du grand livre recopie ses
+   champs : sortie inchangée par construction, `mcp_contrat` vert comme filet.
+7. **AC-7 — Documentation de l'API.** `docs/api-external.md` : le champ `hasDocuments` aux paragraphes du grand livre
+   (`:310` à `1e23edb55`) et du journal (`:1164`), et la route `GET /journal-entries/{id}/documents` (forme, genres, droits,
+   `404`), avec sa ligne dans la table des routes ouvertes aux clés (`:232`) ; lignes relevées sur la base PR 46.
+8. **AC-8 — Note pour l'écran.** Les deux contrats TypeScript ci-dessus sont recopiés dans la fiche 55-3b à l'identique.
+9. **AC-9 — Aucune route de PDF neuve** (l'aperçu sans figement est reporté à l'epic « PDF marqués », section
+   reportée). `grep -n "pdf/preview" crates/kesh-api/src/lib.rs` ne rend rien ; `issued_invoice_pdf.rs`,
+   `invoice_pdf.rs`, `invoice_pdf_service.rs` et `crates/kesh-qrbill/` sont absents du `git diff --stat` de la story ;
+   constat au Change Log.
+10. **AC-10 — État du PDF dans la liste.** `GET /journal-entries/{id}/documents` : une facture validée non figée porte
+    `pdfStatus: "notFrozen"`, une facture figée (validée ou annulée) `"frozen"` ; une validée non figée à `emailed_at` non
+    nul `"notFrozen"` aussi (*Afficher sans figer, dans l'Epic 55*) ; un avoir et un document fournisseur n'ont pas le
+    champ. Après un `GET /pdf`, la même écriture rend `"frozen"`. Mutation : `pdf_status` toujours `frozen` → test rouge.
+11. **AC-11, AC-12 — reportés** à l'epic « PDF marqués » (la marque d'un PDF non émis ; le PDF émis inchangé ; section
+    reportée). L'Epic 55 ne touche pas `kesh-qrbill` : le rendu du PDF émis est inchangé par construction (AC-9).
+
+## Tâches
+
+- [ ] **T0** — Q1 acceptée par le mainteneur le 2026-11-25 ; aperçu et marque sortis de l'epic le 2026-11-26 (section
+      reportée) ; réponses de l'utilisateur relues (D10, D12) ; base `epic/55-navigation` (PR 46 reprise) ; relever le sens
+      d'un avoir `cancelled` et de son écriture ; vérifier les lignes SQL directes de l'AC-4 contre les contraintes.
+- [ ] **T1** — Tests rouges d'abord (AC-3 à AC-6) ; journal.
+- [ ] **T2** — `documents.rs` (constructeur commun, deux fonctions) ; `has_documents` du journal et du grand livre, appels
+      hors boucle ; les deux littéraux de **production** (`journal_report.rs:232`, `general_ledger.rs:901`) le lisent dans
+      l'ensemble (`contains(&entry_id)`) ; les littéraux de **test et de banc** reçoivent `has_documents: false` et rien
+      d'autre (règle
+      de fichier commun pour `csv.rs`, `pdf.rs`, `benches/export.rs`, réécrits par les Epics 46 et 47).
+- [ ] **T2bis** — Un service `services::ecritures::justificatifs` (`crates/kesh-api/src/services/ecritures.rs`, placé après
+      `detail`, avec sa constante `EXIGENCE_*` comme `EXIGENCE_DETAIL` `:46`) : `find_by_id` borné à la société (le `404`),
+      puis `documents_of_entry(lecture.pool(), …)` — la couche de services est le seul lieu des lectures des livres
+      (`services/mod.rs`, R1 à R4) ; la route `GET /api/v1/journal-entries/{id}/documents` l'appelle, sur le modèle du détail
+      (`routes/journal_entries.rs:494-499`, `ecritures::detail(&ContexteAcces::depuis_api(..), &state.lecture(), id)`) ;
+      tests d'intégration `crates/kesh-api/tests/journal_entry_documents_e2e.rs` (neuf).
+- [ ] **T2ter** — `pdf_status` dans `documents_of_entry` (AC-10), lu dans la même requête ; aucune route de PDF neuve
+      (AC-9). *(La route d'aperçu et la marque — anciens T2ter et T2quater : section reportée.)*
+- [ ] **T3** — `docs/api-external.md` (AC-7 ; `pdfStatus` : ses deux valeurs, énumération ouverte, valeur à la lecture
+      de la liste, et la course de *Afficher sans figer, dans l'Epic 55*) ; lignes relevées sur la base PR 46. *(La
+      documentation de la route d'aperçu et de son code d'erreur : section reportée.)*
+- [ ] **T4** — Gates.
+
+## Gates
+
+Règle de l'epic (fichier d'epic, § *Gates*) : `cargo fmt --all -- --check` ; `cargo clippy --workspace --all-targets -- -D
+warnings` ; `cargo nextest run -E 'package(kesh-report) | package(kesh-api)'` (rayon d'impact : tout `kesh-api`, la liste des binaires
+qui lisent le journal ou le grand livre étant longue — `reports_e2e`, `reports_export_e2e`, `fx_recette_api_e2e`,
+`open_items_e2e`, `dates_bornes_e2e`, `services_motif`, `mcp_contrat`, `mcp_outils_e2e`, `mcp_enveloppe_e2e`,
+`mcp_transport_e2e`, `journal_entry_reversal_e2e`, les tests du lib ; relevé par `git grep -lE
+"reports/(journals|general-ledger)|journal_report|general_ledger" crates/kesh-api`). **À la clôture de la story** (fichier d'epic, § *Gates*, *Dérogation* : la
+story qui touche le serveur suit la règle) : **gate complet** (`cargo fmt --all -- --check`, `cargo clippy --workspace
+--all-targets -- -D warnings`, `cargo nextest` du workspace) **et E2E complet** au dernier commit de code ;
+`scripts/gate-ci.sh` en fin d'epic. Aucun fichier de `kesh-db` touché (sinon gate complet en cours de boucle aussi,
+`CLAUDE.md` § *Exception `kesh-db`*).
+
+## Recette visuelle
+
+Aucune : la story ne change ni un écran ni un PDF (la recette du PDF marqué suit l'aperçu : section reportée).
+
+## Note de version
+
+API : les écritures du journal et les lignes du grand livre portent `hasDocuments` (vrai quand l'écriture a au moins un
+justificatif : facture, avoir, document de facture fournisseur ; absent sinon) ; `GET /journal-entries/{id}/documents` rend
+la liste des justificatifs d'une écriture, avec l'état du PDF d'une facture (`pdfStatus` : `frozen` ou `notFrozen`) ;
+`GET /invoices/{id}/pdf` est inchangé ; exports PDF et CSV inchangés. (refs #À-VENIR)
+
+## Dev Notes
+
+### Choix et écarts
+
+- **C-55-3a-1** — Un booléen dans le rapport, la liste au clic (décision de l'utilisateur du 2026-11-25) : le rapport reste
+  léger, la liste ne se lit que pour l'écriture ouverte. *Écarté* : la liste dans le rapport (version précédente de la
+  fiche), et une route groupée `?ids=…` (inutile : on n'ouvre qu'une écriture à la fois).
+- **C-55-3a-2** — Le règlement montre la facture réglée (D10), comme `find_source_document_of_entry` pour le fournisseur.
+- **C-55-3a-3** — Pas de justificatif libre joint à une écriture manuelle : il n'en existe pas dans Kesh ; hors périmètre.
+- **C-55-3a-5** — Reporté avec l'aperçu (section *Reporté à l'epic « PDF marqués »*).
+- **C-55-3a-4** — Borne du grand livre par période seule (voir *La requête*), quelle que soit la page (`limit`, `offset`)
+  : la requête lit les justificatifs de toute la période, une page n'en montre qu'une partie.
+
+### Modules (règle de splitting préventif)
+
+Deux modules de production : `kesh-report` (`documents.rs`, `journal_report.rs`, `general_ledger.rs`, `lib.rs`, et les
+littéraux de test de `csv.rs`, `pdf.rs`, `benches/export.rs`) et `kesh-api` (le service `services/ecritures.rs`, la route
+`routes/journal_entries.rs`, `lib.rs`) ; plus `docs/api-external.md` et les tests `kesh-report/tests/`, `kesh-api/tests/`.
+*Réévalué après la décision du mainteneur du 2026-11-26* (aperçu et marque sortis de l'epic) : `kesh-qrbill`,
+`kesh-i18n`, `errors.rs` et les fichiers du PDF de la facture (`issued_invoice_pdf.rs`, `invoice_pdf.rs`,
+`invoice_pdf_service.rs`) sortent du périmètre ; au grain des « modules métier de premier niveau », un seul chantier
+(les justificatifs des écritures) dans deux crates, loin du seuil de cinq ; taille ramenée de **XL** à **M** — celle de
+la fiche avant l'aperçu (validation P2 de la 55-3a, V2-11) : cinq AC de comportement (AC-1 à AC-5), l'AC-10 de
+`pdfStatus` et trois AC de contrat et de documentation (AC-6 à AC-8, AC-9 constat), une requête et une route de lecture.
+
+### References
+
+- Fiche 30-2c (document d'une facture fournisseur, lecture par tout rôle) ; fiche 25-6-b (PDF figé) ; Story 43-1a/43-1b
+  (règlements groupés).
+
+## Reporté à l'epic « PDF marqués »
+
+Décision du mainteneur du 2026-11-26 : les PDF marqués sortent de l'Epic 55 et forment un petit epic à part, « PDF
+marqués » (numéro à confirmer), qui porte le filigrane, l'en-tête et la QR-facture barrée dans `kesh-qrbill`, l'aperçu
+« APERÇU — non émis » et le PDF du brouillon. Le texte ci-dessous est celui de la fiche au 2026-11-25, après sa passe
+Pv2p6, **laissé tel quel** pour servir à la fiche de cet epic ; ses renvois (D12, D13, AC-9, AC-11, AC-12, T2ter,
+T2quater, *Recette visuelle*, 55-3b) désignent la numérotation de ce jour-là. Les LOW renvoyés au T0 qui portent sur ce
+contenu le suivent : Vv2p4-1 à Vv2p4-4 (Pv2p4), Pv2p6-1 à Pv2p6-4 (Pv2p6) (Change Log).
+
+**Un PDF déjà sorti sans être figé** (décision du mainteneur du 2026-11-26, pour l'epic « PDF marqués » ; tranche la
+question *Aperçu d'un PDF déjà sorti* du fichier d'epic) : une facture validée non figée dont un PDF est sorti —
+`invoices.emailed_at` non nul (envoi d'avant la v0.12.1), ou une entrée `invoice.pdf_frozen` au journal d'audit (facture
+téléchargée, dévalidée puis revalidée) — **recevra l'aperçu marqué**, avec un bandeau « Un PDF de cette facture est
+sorti le … sans être gardé ; ceci est un aperçu. » (date : celle de l'envoi ou du gel). Dans l'Epic 55, une telle facture
+n'est pas figée : « PDF pas encore émis » (*Afficher sans figer, dans l'Epic 55*).
+
+**Ancien § *L'aperçu sans figement (D12)* et § *La marque d'un PDF non émis (D13, Q10)*** :
 
 ### L'aperçu sans figement (D12)
 
@@ -259,97 +491,8 @@ dur dans `kesh-qrbill`. **Le PDF d'un brouillon n'est pas livré ici** (question
   inchangé ; le rendu marqué a son propre test (tous les textes en noir **sauf** le filigrane, remplissage remis au noir
   après lui).
 
-### Limite connue et évolution : un PDF produit hors de Kesh
+**Anciens AC-9, AC-11 et AC-12** :
 
-Un jour, une facture client créée par l'API pourra porter un **PDF produit hors de Kesh** ; c'est lui qui devra
-s'afficher, à la place du PDF que Kesh génère. **Non livré ici** (issue `enhancement`, évolution : texte dans
-`kesh-gate-logs/s55-decisions/issues-a-envoyer.md`). Le modèle ne l'empêche pas : un élément de la liste
-désigne la **facture** (`kind`, `id`), non un fichier ; c'est la route de lecture qui choisit le fichier servi ; et
-`pdfStatus` est une énumération ouverte, à laquelle une valeur (`external`) s'ajoutera, que l'écran d'aujourd'hui traite
-déjà (aucun bandeau). Issue `enhancement` à ouvrir (section *Issues à ouvrir*).
-
-**Règles de cette évolution** (avis d'usager du 2026-11-25, **décidées par le mainteneur le même jour**) :
-
-- le PDF fourni **est** la pièce émise : copié dans Kesh, rangé et **sauvegardé** comme les autres documents, **figé**
-  avec la facture, **jamais régénéré** ; la raison : il doit rester cohérent avec les lignes de la facture en base, et un
-  fichier resté hors de Kesh peut changer ou disparaître sans que la facture le sache ;
-- pour une facture arrivée avec son PDF, Kesh ne produit **ni second PDF ni QR-facture à lui** — ni aperçu marqué : la
-  route d'aperçu servira ce PDF comme un PDF figé ;
-- « lien seulement » ne viendrait **que sur demande** : un lien ne passe pas dans le `.keshbackup`.
-
-### Règles de rattachement
-
-- **Facture** (vente et règlement) : `i.status = 'validated' OR (i.status = 'cancelled' AND i.pdf_storage_path IS NOT
-  NULL)` — les factures pour lesquelles la route **peut** servir un PDF (son rendu peut encore être refusé : `INVOICE_NOT_PDF_READY`, `410` si le fichier figé manque, `409` ; l'écran affiche alors l'erreur, 55-3b AC-4) ; une facture annulée jamais figée n'a pas de justificatif.
-  Une facture **validée non figée** reste un justificatif : l'écran l'affiche par l'aperçu, sans la figer (D12).
-- **Avoir** : `cn.status <> 'draft'` — la route rend le PDF d'un avoir sans contrôle de statut ; un brouillon n'est pas
-  une pièce comptable ; l'application n'écrit aujourd'hui que `issued`
-  (voir *Ce qui se lit au code*), la règle vaut pour un avoir annulé futur.
-- **Document fournisseur** : `isi.status = 'completed'`, achat ou règlement, **tous** les documents d'un règlement groupé.
-- **Filtre de société sur chaque table** de chaque branche (`je.company_id`, `i.company_id`, `s.company_id` de
-  `invoice_settlements`, `cn.company_id`, `si.company_id`, `isi.company_id`), défense en profondeur (KF-002).
-- **Dédoublonnage** par `(kind, id)` dans chaque écriture, à la construction de la `HashMap` (une même facture ne peut
-  pas sortir deux fois d'une écriture aujourd'hui, mais rien au schéma ne l'interdit) ; **ordre stable** : genre
-  (`invoice`, `creditNote`, `supplierDocument`), puis identifiant.
-- **Écart assumé avec le détail d'une écriture** : un règlement fournisseur groupé montre **tous** ses documents au
-  journal, **un seul** au détail de l'écriture (`find_source_document_of_entry`, `LIMIT 1`). Issue `enhancement` à ouvrir
-  pour aligner le détail (section *Issues à ouvrir*).
-
-### Les requêtes, une seule définition des rattachements (DRY)
-
-- `kesh-report/src/documents.rs` (neuf) porte **un** constructeur des cinq branches (facture de vente, facture réglée,
-  avoir, document fournisseur par l'achat, par le règlement — deux branches plutôt qu'un `OR`, pour l'index de chaque
-  colonne), avec les règles ci-dessus, paramétré par son filtre d'écritures ; deux fonctions l'emploient :
-  - `entries_with_documents(pool, company_id, from, to) -> HashSet<i64>` : `SELECT DISTINCT entry_id FROM (… UNION ALL
-    …)`, chaque branche jointe à `journal_entries` et bornée par `je.company_id = ?` et `je.entry_date BETWEEN ? AND ?`
-    (index `idx_journal_entries_company_date`) — **une** requête par rapport, aucune liste `IN`, aucune requête par
-    écriture ni par compte ;
-  - `documents_of_entry(pool, company_id, entry_id) -> Vec<EntryDocument>` : la même union bornée par `je.id = ?` et
-    `je.company_id = ?`, dédoublonnée par `(kind, id)`, triée (genre, identifiant) ; la route l'appelle.
-- **Site d'appel** du booléen : **un** appel dans `journal_report::generate`, après la requête des lignes ; **un** appel
-  dans `general_ledger::generate`, **avant** la boucle `for acc in accounts` (`:825`), l'ensemble étant lu dans la boucle.
-  Les exports et l'outil MCP, qui passent par ces `generate`, paient cette requête sans lire le champ : assumé.
-- **Borne du grand livre** : la période seule (C-55-3a-4).
-
-## Critères d'acceptation
-
-1. **AC-1 — Journal.** `GET /api/v1/reports/journals` : chaque écriture qui a au moins un justificatif, selon les règles
-   ci-dessus, porte `hasDocuments: true` ; les autres n'ont pas le champ.
-2. **AC-2 — Grand livre.** `GET /api/v1/reports/general-ledger` : chaque `LedgerLine` porte `hasDocuments` de son écriture ;
-   une écriture présente dans plusieurs sections le porte dans chacune. *Option* : § *Où un justificatif a un sens*.
-3. **AC-3 — La route.** `GET /api/v1/journal-entries/{id}/documents` rend la liste, ordonnée et dédoublonnée : facture
-   validée (un justificatif) ; facture annulée figée (un) ; facture annulée jamais figée (aucun) ; règlement simple (la
-   facture) ; **règlement client groupé** de deux factures (deux, ordre par identifiant) ; avoir émis (un) ; facture
-   fournisseur à document, écriture d'achat et de règlement (le document) ; **règlement fournisseur groupé** de deux
-   factures à document (deux) ; facture fournisseur sans document (aucun) ; facture fournisseur annulée, écriture d'achat
-   (le document). Pour chaque cas, `hasDocuments` du journal est vrai **si et seulement si** la liste est non vide (même
-   constructeur : test qui les compare sur tous les cas). Rôle *Consultation* : `200` ; clé d'API en lecture : `200` ; écriture d'une
-   autre société : `404` ; sans session : `401`. Les règlements de type « solde du reste » et « compte interne » sont
-   rattachés à leur facture comme les autres (un cas chacun).
-4. **AC-4 — Négatifs qui rougissent.** Chaque filtre est éprouvé par des données **posées en SQL direct** que le schéma
-   admet : avoir `draft` portant un `journal_entry_id` ; document importé `discarded` portant un `supplier_invoice_id` dont
-   la facture fournisseur porte l'écriture d'achat ; facture `draft` portant un `journal_entry_id` ; **par branche**, une
-   ligne de la société B (facture, règlement, avoir, facture fournisseur, document importé) qui pointe une écriture de la
-   société A, plus un document importé de B rattaché à une facture fournisseur de A (filtre `isi.company_id`). Les tests
-   appellent **`entries_with_documents` et `documents_of_entry` directement** (aucune clé de B ni hors période), en plus du
-   journal et de la route. Le T0 vérifie qu'aucune contrainte ne refuse ces lignes ; une ligne refusée rend son filtre
-   « défense en profondeur, non éprouvable », écrit tel quel au Change Log. Le règlement annulé (supprimé) : test de
-   **non-régression**. Chaque filtre a sa **mutation** (filtre retiré → test rouge), journal `kesh-gate-logs/s55-3a/`.
-5. **AC-5 — Une requête.** Le booléen du journal et celui du grand livre viennent d'**un** appel d'`entries_with_documents`
-   chacun, hors de toute boucle (`grep -nE "entries_with_documents\(" crates/kesh-report/src/*.rs | grep -vE
-   ':[0-9]+:\s*//'` rend une définition et deux appels — les tests d'appel direct de l'AC-4 vivent donc dans
-   `crates/kesh-report/tests/documents.rs`, non dans un `mod tests` de `src/`) ; grand livre à plusieurs comptes : le booléen de chaque section est
-   juste ; une écriture hors période n'est pas lue.
-6. **AC-6 — Contrat additif.** Une écriture sans justificatif sérialise **exactement** le JSON d'aujourd'hui (clés
-   comparées) ; les exports PDF et CSV du journal et du grand livre rendent le même résultat avec `hasDocuments` vrai ou
-   faux (CSV : chaînes égales ; PDF : texte lu par `kesh_report::texte_pdf::lignes` de la PR 46, après avoir vérifié qu'il
-   contient un numéro d'écriture connu) ; garde de non-régression, déclarée telle ; `kesh-report/tests/rapports_mono_devise.rs`
-   (références figées du JSON, du CSV et du PDF) reste vert sans modification et tient le cas « sans justificatif ». L'outil MCP du grand livre recopie ses
-   champs : sortie inchangée par construction, `mcp_contrat` vert comme filet.
-7. **AC-7 — Documentation de l'API.** `docs/api-external.md` : le champ `hasDocuments` aux paragraphes du grand livre
-   (`:310` à `1e23edb55`) et du journal (`:1164`), et la route `GET /journal-entries/{id}/documents` (forme, genres, droits,
-   `404`), avec sa ligne dans la table des routes ouvertes aux clés (`:232`) ; lignes relevées sur la base PR 46.
-8. **AC-8 — Note pour l'écran.** Les deux contrats TypeScript ci-dessus sont recopiés dans la fiche 55-3b à l'identique.
 9. **AC-9 — L'aperçu ne fige pas.** `GET /api/v1/invoices/{id}/pdf/preview` sur une facture validée non figée : `200`,
    `application/pdf`, et **rien n'est écrit** — la ligne de la facture (colonnes `pdf_*`, `version`, `updated_at`) est
    égale avant et après, le journal d'audit n'a aucune ligne de plus, `KESH_DOCUMENTS_DIR` aucun fichier de plus ; deux
@@ -363,10 +506,6 @@ déjà (aucun bandeau). Issue `enhancement` à ouvrir (section *Issues à ouvrir
    tombe dans le service statique (`404` sans corps d'`AppError`) : tous les tests rouges, « autre société » compris par son
    corps ; **mutation** : `preview` qui appelle `get_or_freeze(…, Usage::Download)` → le test
    « rien n'est écrit » rouge.
-10. **AC-10 — État du PDF dans la liste.** `GET /journal-entries/{id}/documents` : une facture validée non figée porte
-    `pdfStatus: "notFrozen"`, une facture figée (validée ou annulée) `"frozen"` ; un avoir et un document fournisseur
-    n'ont pas le champ. Après un `GET /pdf`, la même écriture rend `"frozen"`. Mutation : `pdf_status` toujours `frozen` →
-    test rouge.
 11. **AC-11 — La marque d'aperçu (D13).** Tests dans `kesh-qrbill` (rendu avec marque, fixture d'une facture de
     **plusieurs lignes**, à la capacité de la page — huit lignes chiffrées sans TVA, la fixture `S3` de
     `rendu_avant_apres.rs:239-246`, ou six avec un taux ; au-delà, le rendu refuse en `INVOICE_TOO_MANY_LINES_FOR_PDF`,
@@ -389,54 +528,20 @@ déjà (aucun bandeau). Issue `enhancement` à ouvrir (section *Issues à ouvrir
     après un aperçu fige un PDF **sans** marque (texte extrait : ni filigrane ni en-tête ; section de paiement présente) ;
     un rappel n'en porte pas. Mutation : marque passée par `get_or_freeze` → test rouge.
 
-## Tâches
+**Anciens T2ter et T2quater** :
 
-- [ ] **T0** — Q1 acceptée par le mainteneur le 2026-11-25, sous conditions (D12, D13) ; réponses de l'utilisateur
-      relues (D10, D12) ; pour la marque : zone libre de l'en-tête, niveau de gris (recette sur une impression en noir et
-      blanc ou une capture en niveaux de gris), passage ou non par `texte_imprime`, fichiers de `kesh-qrbill` touchés par
-      les Epics 46 et 47 relevés ; base `epic/55-navigation` (PR 46 reprise) ; relever le sens
-      d'un avoir `cancelled` et de son écriture ; vérifier les lignes SQL directes de l'AC-4 contre les contraintes.
-- [ ] **T1** — Tests rouges d'abord (AC-3 à AC-6) ; journal.
-- [ ] **T2** — `documents.rs` (constructeur commun, deux fonctions) ; `has_documents` du journal et du grand livre, appels
-      hors boucle ; les deux littéraux de **production** (`journal_report.rs:232`, `general_ledger.rs:901`) le lisent dans
-      l'ensemble (`contains(&entry_id)`) ; les littéraux de **test et de banc** reçoivent `has_documents: false` et rien
-      d'autre (règle
-      de fichier commun pour `csv.rs`, `pdf.rs`, `benches/export.rs`, réécrits par les Epics 46 et 47).
-- [ ] **T2bis** — Un service `services::ecritures::justificatifs` (`crates/kesh-api/src/services/ecritures.rs`, placé après
-      `detail`, avec sa constante `EXIGENCE_*` comme `EXIGENCE_DETAIL` `:46`) : `find_by_id` borné à la société (le `404`),
-      puis `documents_of_entry(lecture.pool(), …)` — la couche de services est le seul lieu des lectures des livres
-      (`services/mod.rs`, R1 à R4) ; la route `GET /api/v1/journal-entries/{id}/documents` l'appelle, sur le modèle du détail
-      (`routes/journal_entries.rs:494-499`, `ecritures::detail(&ContexteAcces::depuis_api(..), &state.lecture(), id)`) ;
-      tests d'intégration `crates/kesh-api/tests/journal_entry_documents_e2e.rs` (neuf).
-- [ ] **T2ter** — L'aperçu sans figement (D12, AC-9) : `issued_invoice_pdf::preview`, gestionnaire dans
+- *(reporté)* **T2ter** — L'aperçu sans figement (D12, AC-9) : `issued_invoice_pdf::preview`, gestionnaire dans
       `routes/invoice_pdf.rs` (garde des clés d'API), route dans `lib.rs` à côté de `/pdf` ; code
       `API_KEY_PREVIEW_FORBIDDEN` (`errors.rs`, quatre locales) ; les trois commentaires rendus faux ; `pdf_status` dans
       `documents_of_entry` (AC-10) ; tests `invoice_pdf_preview_e2e.rs`.
-- [ ] **T2quater** — La marque d'un PDF non émis (D13, AC-11, AC-12) : structure de marque et rendu dans
+- *(reporté)* **T2quater** — La marque d'un PDF non émis (D13, AC-11, AC-12) : structure de marque et rendu dans
       `kesh-qrbill/src/pdf.rs` (filigrane sous le contenu, en-tête, cadre barré à la place de la section de paiement),
       clés dans `types.rs` (`I18N_KEYS`, `DEFAULT_EN`) et dans les quatre `messages.ftl` de `kesh-i18n` ; paramètre de
       marque de `render_document`, passé par `preview` seulement ; tests et mutations ; recette visuelle.
-- [ ] **T3** — `docs/api-external.md` (AC-7, et la route d'aperçu : forme, droits, fermée aux clés, « n'écrit rien »,
-      PDF marqué « APERÇU », QR-facture barrée, course ; `pdfStatus`) ; la route ajoutée aux lignes de la table des codes d'erreur pour `INVOICE_NOT_PDF_READY`
-      (`:1398` à `1e23edb55`), `INVOICE_NOT_VALIDATED` et `INVOICE_PDF_GONE`, et le code neuf `API_KEY_PREVIEW_FORBIDDEN`
-      ; lignes relevées sur la base PR 46.
-- [ ] **T4** — Gates.
 
-## Gates
+**Ancienne *Recette visuelle*** :
 
-Règle de l'epic (fichier d'epic, § *Gates*) : `cargo fmt --all -- --check` ; `cargo clippy --workspace --all-targets -- -D
-warnings` ; `cargo nextest run -E 'package(kesh-report) | package(kesh-api)'` (rayon d'impact : tout `kesh-api`, la liste des binaires
-qui lisent le journal ou le grand livre étant longue — `reports_e2e`, `reports_export_e2e`, `fx_recette_api_e2e`,
-`open_items_e2e`, `dates_bornes_e2e`, `services_motif`, `mcp_contrat`, `mcp_outils_e2e`, `mcp_enveloppe_e2e`,
-`mcp_transport_e2e`, `journal_entry_reversal_e2e`, les tests du lib ; relevé par `git grep -lE
-"reports/(journals|general-ledger)|journal_report|general_ledger" crates/kesh-api`) ;
-plus `package(kesh-qrbill) | package(kesh-i18n)` pour la marque et ses textes. **À la clôture de la story** (fichier d'epic, § *Gates*, *Dérogation* : la
-story qui touche le serveur suit la règle) : **gate complet** (`cargo fmt --all -- --check`, `cargo clippy --workspace
---all-targets -- -D warnings`, `cargo nextest` du workspace) **et E2E complet** au dernier commit de code ;
-`scripts/gate-ci.sh` en fin d'epic. Aucun fichier de `kesh-db` touché (sinon gate complet en cours de boucle aussi,
-`CLAUDE.md` § *Exception `kesh-db`*).
-
-## Recette visuelle
+#### Recette visuelle (ancienne)
 
 Captures (thème clair, `kesh-gate-logs/s55-3a/`) du PDF d'aperçu d'une facture validée non figée **de plusieurs lignes**
 (à la capacité de la page, voir l'AC-11), en couleur **et en niveaux de gris** (`pdftoppm -gray`, pour juger l'impression en noir et blanc) : le
@@ -444,47 +549,11 @@ filigrane lisible comme marque, le texte de la facture lisible au travers ; l'en
 QR-facture. En regard, le PDF figé de la même facture, sans marque. Jointes au Dev Agent Record et au prompt de la revue
 de code.
 
-## Note de version
+**Ancien C-55-3a-5** :
 
-API : les écritures du journal et les lignes du grand livre portent `hasDocuments` (vrai quand l'écriture a au moins un
-justificatif : facture, avoir, document de facture fournisseur ; absent sinon) ; `GET /journal-entries/{id}/documents` rend
-la liste des justificatifs d'une écriture, avec l'état du PDF d'une facture (`pdfStatus`) ;
-`GET /invoices/{id}/pdf/preview` rend le PDF d'une facture **sans le figer** (le PDF figé tel quel s'il existe ; sinon un
-aperçu marqué « APERÇU », en-tête « Aperçu — non émis », QR-facture barrée et non payable), et n'écrit rien ; `GET /invoices/{id}/pdf` est inchangé ; exports PDF et CSV inchangés. (refs #À-VENIR)
-
-## Dev Notes
-
-### Choix et écarts
-
-- **C-55-3a-1** — Un booléen dans le rapport, la liste au clic (décision de l'utilisateur du 2026-11-25) : le rapport reste
-  léger, la liste ne se lit que pour l'écriture ouverte. *Écarté* : la liste dans le rapport (version précédente de la
-  fiche), et une route groupée `?ids=…` (inutile : on n'ouvre qu'une écriture à la fois).
-- **C-55-3a-2** — Le règlement montre la facture réglée (D10), comme `find_source_document_of_entry` pour le fournisseur.
-- **C-55-3a-3** — Pas de justificatif libre joint à une écriture manuelle : il n'en existe pas dans Kesh ; hors périmètre.
 - **C-55-3a-5** — Aperçu sans figement (D12, réponse de l'utilisateur du 2026-11-25) : une route neuve plutôt qu'un
   paramètre de `/pdf` (`?preview=1`) — le figement reste le seul effet de `/pdf`, et l'aperçu ne peut pas figer par un
   paramètre oublié. *Écarté* : n'afficher que les factures déjà figées (ancienne alternative de Q7).
-- **C-55-3a-4** — Borne du grand livre par période seule (voir *La requête*), quelle que soit la page (`limit`, `offset`)
-  : la requête lit les justificatifs de toute la période, une page n'en montre qu'une partie.
-
-### Modules (règle de splitting préventif)
-
-Quatre modules de production : `kesh-report` (`documents.rs`, `journal_report.rs`, `general_ledger.rs`, `lib.rs`, et les
-littéraux de test de `csv.rs`, `pdf.rs`, `benches/export.rs`), `kesh-api` (le service `services/ecritures.rs`, la route
-`routes/journal_entries.rs`, l'aperçu `routes/issued_invoice_pdf.rs`, `routes/invoice_pdf.rs`, `invoice_pdf_service.rs`
-— paramètre de marque et commentaire —, `errors.rs`, `lib.rs`), **`kesh-qrbill`** (la marque, `pdf.rs`, `types.rs`, D13) et
-`kesh-i18n` (les textes de la marque, et le message du code neuf s'il reste, quatre locales) ; plus `docs/api-external.md`
-et les tests `kesh-report/tests/`, `kesh-api/tests/`, `kesh-qrbill/tests/`. *Réévalué après les décisions du mainteneur
-(2026-11-25)* : quatre crates de production ; au grain des « modules métier de premier niveau » de la règle de splitting
-préventif, `kesh-api` en compte deux (justificatifs des écritures ; PDF de la facture), soit **cinq, au seuil** (le
-critère est « plus de cinq ») ; taille portée de L à **XL** — deux chantiers indépendants (la liste des justificatifs ;
-l'aperçu marqué, qui ne dépend pas de la liste) dans une story. **Signalée, non découpée**, comme le mainteneur l'a
-demandé le 2026-11-25 (l'epic est à six stories). Pour information, si le mainteneur découpait un jour, la coupure naturelle est AC-9, AC-11, AC-12, T2ter, T2quater (l'aperçu marqué) d'un côté, le reste de l'autre.
-
-### References
-
-- Fiche 30-2c (document d'une facture fournisseur, lecture par tout rôle) ; fiche 25-6-b (PDF figé) ; Story 43-1a/43-1b
-  (règlements groupés).
 
 ## Dev Agent Record
 
@@ -591,3 +660,14 @@ demandé le 2026-11-25 (l'epic est à six stories). Pour information, si le main
   cas « dévalidée puis revalidée » ne vise qu'une facture téléchargée), Pv2p6-3 (test des quatre locales écrit à l'AC-11 ;
   T2quater cite les deux voies), Pv2p6-4 (AC-9 : une validée non figée à `emailed_at` non nul rend `200`, marquée, rien
   d'écrit — selon la réponse du mainteneur à la question *Aperçu d'un PDF déjà sorti*).
+- 2026-11-26 — **Décisions du mainteneur du 2026-11-26 versées** (fichier d'epic, § *Décisions du mainteneur
+  (2026-11-26)*) : les **PDF marqués sortent de l'Epic 55** pour un epic à part, « PDF marqués » (numéro à confirmer) — la
+  route `GET /invoices/{id}/pdf/preview`, la marque (D13), AC-9, AC-11, AC-12, T2ter (sa partie aperçu), T2quater, la
+  recette visuelle et C-55-3a-5 sont rangés, sans être supprimés, en section *Reporté à l'epic « PDF marqués »* ; un PDF
+  déjà sorti sans être figé y est décidé (aperçu marqué, bandeau « sorti le … ») ; dans l'Epic 55, une telle facture n'est
+  pas figée (`notFrozen`, « PDF pas encore émis », aucune nuance de texte) ; § neuf *Afficher sans figer, dans l'Epic 55*
+  (facture figée : `/pdf` sert le PDF figé sans rien écrire ; pas encore émise : aucune lecture) ; AC-9 récrit en constat
+  « aucune route de PDF neuve », AC-10 complété (`emailed_at`) ; `pdfStatus` inchangé (`frozen`, `notFrozen`), énumération
+  ouverte à l'aperçu à venir et au PDF externe ; `kesh-qrbill`, `kesh-i18n`, `errors.rs` et les fichiers du PDF de la
+  facture hors périmètre ; taille ramenée de **XL** à **M**. Passe suivante : Pv2p7 ciblée (septième de la version
+  récrite : au-delà de la sixième, ses points vont au T0).
