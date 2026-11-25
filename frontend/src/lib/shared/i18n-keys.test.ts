@@ -1253,7 +1253,9 @@ const ATTENDU = {
 	// Fusion de pr/40-stripe (02d025725, main à 1e23edb55 compris) dans pr/39-wise-v2 (2026-11-25) : les deux côtés
 	// gardés ; 3771 (pr/40) + 83 (Epic 39, 3742 → 3825 de son côté, sur l'ancienne pr/40) = **3854**, confirmé par
 	// la garde (`kesh-gate-logs/s39-pr/compteurs-1.log`).
-	sitesTotal: 3854,
+	// **3855** (revue P2 de la PR de l'Epic 39, M-1) : + `wise-review-card-group-partly-posted`, relevé par la garde
+	// (« expected 3855 to be 3854 »).
+	sitesTotal: 3855,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

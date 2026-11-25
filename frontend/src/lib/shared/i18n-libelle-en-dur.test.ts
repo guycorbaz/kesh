@@ -465,7 +465,9 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
 // **161** (fusion de pr/40-stripe dans pr/39-wise-v2, 2026-11-25) : 149 (pr/40) + 12 (Epic 39, 147 → 159 de son
 // côté) ; `conforme` **139** (128 + 11), `ecartee` **22** (21 + 1) ; confirmés par la garde
 // (`kesh-gate-logs/s39-pr/compteurs-1.log`).
-const CANDIDATES_ATTENDUES = 161;
+// **161 → 162** (revue P2 de la PR de l'Epic 39, M-1) : `partlyPostedLabel` (`wise/wise-labels.ts`, par `i18nMsg`) ;
+// `conforme` **139 → 140**, relevés par la garde (« expected 162 to be 161 »).
+const CANDIDATES_ATTENDUES = 162;
 
 /** Les trois délimiteurs de littéral en JS/TS. */
 const QUOTES = ["'", '"', '`'];
@@ -982,7 +984,7 @@ describe('libellés en dur — l’angle mort #255', () => {
 			else if (c.retours.length > 0) classes.ecartee += 1;
 			else classes.conforme += 1;
 		}
-		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 22, conforme: 139 });
+		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 22, conforme: 140 });
 		// La somme est recalculée depuis les classes, jamais depuis le total qu'elle contrôle.
 		const somme = Object.values(classes).reduce((a, b) => a + b, 0);
 		expect(somme).toBe(CANDIDATES_ATTENDUES);

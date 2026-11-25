@@ -318,6 +318,7 @@ describe('wise-labels — une phrase par motif et par écart', () => {
 
 	it('les écritures d’une part déjà rapprochée : des identifiants, pour ce seul motif', () => {
 		expect(wisePartlyReconciledEntryIds({ code: 'card_group_partly_reconciled', details: { journalEntryIds: [5, 'x', 9] } })).toEqual([5, 9]);
+		expect(wisePartlyReconciledEntryIds({ code: 'card_group_partly_posted', details: { journalEntryIds: [7] } })).toEqual([7]);
 		expect(wisePartlyReconciledEntryIds({ code: 'no_rule', details: { journalEntryIds: [5] } })).toEqual([]);
 		expect(wiseToReviewLabel({ code: 'card_group_partly_reconciled', details: { journalEntryIds: [5] } })).not.toContain('n°');
 	});
@@ -376,6 +377,7 @@ describe('wise-labels — les listes contre la source Rust', () => {
 		'already_posted',
 		'ambiguous_link',
 		'card_group_no_rule',
+		'card_group_partly_posted',
 		'card_group_partly_reconciled',
 		'card_group_statements_missing',
 		'card_group_unsupported',

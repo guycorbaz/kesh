@@ -4477,6 +4477,7 @@ wise-card-group-reason-exchange-amount-missing = a conversion does not state its
 wise-card-group-reason-card-line-missing = fees only, without the payment line
 wise-review-card-group-statements-missing = A line of this payment may be missing: the statement of the { $currencies } balance does not cover this date; import it, or handle the lines by hand.
 wise-review-card-group-partly-reconciled = Part of this payment is already reconciled: cancel that reconciliation, then accept the whole payment, or finish by hand.
+wise-review-card-group-partly-posted = A line of this payment is already posted (an existing entry names it): link it to that entry, then handle the other lines by hand.
 wise-review-no-rule = No rule recognises this line: create an assignment rule (filter on type CARD, TRANSFER…), or post the entry by hand, then link the line.
 wise-review-ambiguous-link = Several entries already posted may be the other side of this transfer (no. { $numbers }): link the line to the right one.
 wise-review-stripe-payout-unmatched = Stripe payout without the entry of its payout: import the Stripe report and accept the payout, or post the entry by hand, then link the line; no rule applies to it.

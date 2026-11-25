@@ -4552,6 +4552,7 @@ wise-card-group-reason-exchange-amount-missing = une conversion ne dit pas son m
 wise-card-group-reason-card-line-missing = seuls des frais, sans la ligne du paiement
 wise-review-card-group-statements-missing = Une ligne de ce paiement peut manquer : le relevé du solde { $currencies } ne couvre pas cette date ; importez-le, ou traitez les lignes à la main.
 wise-review-card-group-partly-reconciled = Une part de ce paiement est déjà rapprochée : annulez ce rapprochement puis acceptez le paiement entier, ou finissez à la main.
+wise-review-card-group-partly-posted = Une ligne de ce paiement est déjà comptabilisée (une écriture déjà passée la nomme) : rattachez-la à cette écriture, puis traitez les autres lignes à la main.
 wise-review-no-rule = Aucune règle ne reconnaît cette ligne : créez une règle d’affectation (filtre de type CARD, TRANSFER…), ou passez l’écriture à la main puis rattachez la ligne.
 wise-review-ambiguous-link = Plusieurs écritures déjà passées peuvent être l’autre côté de ce virement (n° { $numbers }) : rattachez la ligne à la bonne.
 wise-review-stripe-payout-unmatched = Versement Stripe sans l’écriture de son versement : importez le rapport Stripe et acceptez le versement, ou passez l’écriture à la main puis rattachez la ligne ; aucune règle ne s’y applique.

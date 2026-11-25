@@ -1602,12 +1602,38 @@ pub async fn accept_link_entry(
         }
     } else {
         // L'autre côté déjà passé d'un virement (Wise) : jamais l'écriture qui
-        // nomme une autre transaction du même genre (`names_another`, la règle
-        // de la revue), rejugé ici pour une proposition forgée ou périmée.
+        // nomme une autre transaction du même genre (`names_another`), ni une
+        // autre écriture que celle déjà passée de la transaction quand il y en
+        // a une (`first_naming_entry` sur la présélection) — les règles de la
+        // revue, rejugées ici pour une proposition forgée ou périmée.
         let description = reads::entry_description(&mut **tx, ctx.company_id, journal_entry_id)
             .await
             .map_err(|e| db_refusal(bank_transaction_id, e))?;
         if description.is_some_and(|d| names_another(ctx.spec, &r.transaction, &d)) {
+            return Err(stale(bank_transaction_id, "entry_changed"));
+        }
+        let posted = reconciliation_link::find_posted_elsewhere(
+            &mut **tx,
+            ctx.company_id,
+            &r.transaction,
+            r.ledger_account_id,
+            r.balance.currency(),
+        )
+        .await
+        .map_err(|e| db_refusal(bank_transaction_id, e))?;
+        let entry_ids: Vec<i64> = posted.iter().map(|c| c.journal_entry_id).collect();
+        let linked = linked_to_entries(tx, ctx.company_id, &entry_ids)
+            .await
+            .map_err(|e| db_refusal(bank_transaction_id, e))?;
+        let named = first_naming_entry(
+            ctx.spec,
+            &r.transaction,
+            posted
+                .iter()
+                .map(|c| (c.journal_entry_id, c.description.as_str())),
+            &linked,
+        );
+        if named.is_some_and(|e| e != journal_entry_id) {
             return Err(stale(bank_transaction_id, "entry_changed"));
         }
     }

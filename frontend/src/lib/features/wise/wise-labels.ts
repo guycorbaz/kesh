@@ -297,6 +297,7 @@ export const WISE_TO_REVIEW_CODES = [
 	'card_group_unsupported',
 	'card_group_statements_missing',
 	'card_group_partly_reconciled',
+	'card_group_partly_posted',
 ] as const;
 
 /** Les raisons d'un paiement par carte qui n'a pas la forme attendue (`judge_card_group`, `wise.rs`). */
@@ -460,6 +461,14 @@ function partlyReconciledLabel(): string {
 	);
 }
 
+/** La phrase d'un paiement groupé dont une ligne, en attente, est déjà comptabilisée. */
+function partlyPostedLabel(): string {
+	return i18nMsg(
+		'wise-review-card-group-partly-posted',
+		'Une ligne de ce paiement est déjà comptabilisée (une écriture déjà passée la nomme) : rattachez-la à cette écriture, puis traitez les autres lignes à la main.',
+	);
+}
+
 /** Libellé d'un motif « à examiner » de la revue Wise ; code brut si inconnu, jamais une ligne vide. */
 export function wiseToReviewLabel(f: ProviderFinding): string {
 	switch (f.code) {
@@ -495,14 +504,19 @@ export function wiseToReviewLabel(f: ProviderFinding): string {
 			return statementsMissingLabel(stringList(f.details?.missingCurrencies));
 		case 'card_group_partly_reconciled':
 			return partlyReconciledLabel();
+		case 'card_group_partly_posted':
+			return partlyPostedLabel();
 		default:
 			return providerToReviewLabel(f.code) ?? f.code;
 	}
 }
 
-/** Les écritures d'une part déjà rapprochée (`details.journalEntryIds`, des identifiants), pour leurs liens. */
+/**
+ * Les écritures d'une part déjà rapprochée, ou déjà comptabilisée (`details.journalEntryIds`, des identifiants), pour
+ * leurs liens.
+ */
 export function wisePartlyReconciledEntryIds(f: ProviderFinding): number[] {
-	if (f.code !== 'card_group_partly_reconciled') return [];
+	if (f.code !== 'card_group_partly_reconciled' && f.code !== 'card_group_partly_posted') return [];
 	const ids = f.details?.journalEntryIds;
 	return Array.isArray(ids) ? ids.filter((v): v is number => typeof v === 'number') : [];
 }

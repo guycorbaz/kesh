@@ -236,9 +236,9 @@ async fn build_wise_review(
                 review.push_to_review(ReviewFinding::already_posted(t, entry_id));
             }
             // Les autres lignes du paiement ne disparaissent pas de la revue :
-            // une part du paiement est déjà passée, comme
-            // `card_group_partly_reconciled` (revue P1 de la PR, M2) — sur la
-            // première d'entre elles, la principale si elle n'est pas passée.
+            // une part du paiement est déjà comptabilisée (revue P1 de la PR,
+            // M2 ; motif propre, revue P2, M-1) — sur la première d'entre
+            // elles, la principale si elle n'est pas passée.
             let rest: Vec<&BankTransaction> = g
                 .lines
                 .iter()
@@ -251,10 +251,10 @@ async fn build_wise_review(
                         "cardId": g.card_id,
                         "bankTransactionIds": rest.iter().map(|t| t.id).collect::<Vec<_>>(),
                         "lines": rest.iter().map(|t| TransactionSummary::of(t)).collect::<Vec<_>>(),
-                        "reconciledBankTransactionIds": posted_ids,
+                        "postedBankTransactionIds": posted_ids,
                         "journalEntryIds": entry_ids,
                     })),
-                    ..ReviewFinding::on(wise::REVIEW_CARD_GROUP_PARTLY_RECONCILED, first)
+                    ..ReviewFinding::on(wise::REVIEW_CARD_GROUP_PARTLY_POSTED, first)
                 });
             }
             continue;

@@ -2784,13 +2784,13 @@ async fn partielle_dont_une_ligne_est_deja_comptabilisee(pool: MySqlPool) {
     // Les autres lignes du paiement restent dans la revue : une part du
     // paiement est déjà passée (revue P1 de la PR, M2).
     let reste = motif(&revue, ids[1]).unwrap_or_else(|| panic!("{revue}"));
-    assert_eq!(reste["code"], "card_group_partly_reconciled", "{reste}");
+    assert_eq!(reste["code"], "card_group_partly_posted", "{reste}");
     assert_eq!(
         reste["details"]["bankTransactionIds"],
         json!([ids[1], ids[2]])
     );
     assert_eq!(
-        reste["details"]["reconciledBankTransactionIds"],
+        reste["details"]["postedBankTransactionIds"],
         json!([ids[0]])
     );
     assert_eq!(reste["details"]["journalEntryIds"], json!([ecriture]));

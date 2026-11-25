@@ -1936,4 +1936,23 @@ mod tests {
         assert_eq!(json[1]["payoutAccountLabel"], "Banque");
         assert_eq!(json[1]["transaction"]["amount"], "-50.00");
     }
+
+    /// Revue P2 de la PR de l'Epic 39 (L-2) : avec les identifiants de Wise
+    /// (`wise_ids_in`), une écriture qui débite le compte du solde et cite un
+    /// identifiant Wise, non rapprochée, sort de la revue commune en
+    /// `sale_without_receipt` — l'écart que la route Wise retire (Wise n'a pas
+    /// de vente) ; la sonde du test e2e
+    /// `ecriture_a_la_main_citant_un_identifiant_n_est_pas_une_vente`.
+    #[test]
+    fn identifiant_wise_cite_sort_en_vente_sans_encaissement_de_la_revue_commune() {
+        let mut f = Fixture::new();
+        f.sales
+            .push(sale(100, "Dépôt TRANSFER-75000009", 1020, "CHF", "50.00"));
+        let r = f.review(&crate::wise::SPEC);
+        assert!(
+            r.gaps.iter().any(|g| g.code == GAP_SALE_WITHOUT_RECEIPT),
+            "{:?}",
+            r.gaps
+        );
+    }
 }

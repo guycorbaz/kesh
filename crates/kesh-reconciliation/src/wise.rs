@@ -89,6 +89,12 @@ pub const REVIEW_CARD_GROUP_STATEMENTS_MISSING: &str = "card_group_statements_mi
 /// une partielle dont une part a été passée seule : l'écrire donnerait une
 /// seconde écriture du même paiement.
 pub const REVIEW_CARD_GROUP_PARTLY_RECONCILED: &str = "card_group_partly_reconciled";
+/// À examiner : paiement par carte converti dont une ligne, **en attente**, est
+/// **déjà comptabilisée** (une écriture déjà passée la nomme, règle commune
+/// « écrite une seule fois ») : le groupe n'est pas proposé ; ce motif porte
+/// les autres lignes. La ligne se rattache à son écriture, les autres se
+/// finissent à la main.
+pub const REVIEW_CARD_GROUP_PARTLY_POSTED: &str = "card_group_partly_posted";
 
 /// Écart maximal, en jours, entre la date de paiement d'une transaction et
 /// l'écriture déjà passée de l'autre côté (AC-4).
