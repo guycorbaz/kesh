@@ -71,7 +71,8 @@ use kesh_db::repositories::{
 };
 use kesh_reconciliation::provider_review::{
     ENTRY_DESCRIPTION_MAX_CHARS, EntryKind, EntrySummary, Proposal, ProviderKind, REVIEW_NO_RULE,
-    Review, ReviewFinding, ReviewProposal, TransactionSummary, matching_rule, payment_date,
+    Review, ReviewFinding, ReviewProposal, TransactionSummary, matching_rule, names_another,
+    payment_date,
 };
 use kesh_reconciliation::rule_matches;
 use kesh_reconciliation::wise::{
@@ -86,7 +87,7 @@ use super::provider_accept::{
     self, AcceptBodyExtractor, AcceptContext, BatchOutcome, CounterpartyRule, EngineProposal,
     PROVIDER_PROPOSAL_STALE, ProviderAcceptResponse, ProviderAccepted, Refusal, ReviewQuery,
     ReviewResponse, check_counterparty, db_refusal, entry_refusal, failed, mark_reconciled,
-    month_rate, record_rule_applied, rejudge, stale,
+    month_rate, record_rule_applied, rejudge_writing, stale,
 };
 use super::reconciliation::{
     counterparty_is_bank_ledger_failed_proposal, project_error_to_failed_proposal,
@@ -215,6 +216,23 @@ async fn build_wise_review(
     // principale : ses lignes et le montant du marchand (AC-1 de la 39-11d2).
     let mut shown: HashMap<i64, (Vec<TransactionSummary>, String)> = HashMap::new();
     for g in &groups {
+        // Règle commune « une transaction de prestataire n'est écrite qu'une
+        // fois » : une ligne du paiement déjà comptabilisée (l'écriture qui la
+        // nomme, `already_posted_in_review`) n'est jamais réécrite par le
+        // groupe ; elle est « à examiner » sous `already_posted`, et le groupe
+        // n'est pas proposé (la revue commune, dont les lignes groupées sont
+        // retirées, ne la montre plus).
+        let posted: Vec<(&BankTransaction, i64)> = g
+            .lines
+            .iter()
+            .filter_map(|t| loaded.already_posted.get(&t.id).map(|e| (*t, *e)))
+            .collect();
+        if !posted.is_empty() {
+            for (t, entry_id) in posted {
+                review.push_to_review(ReviewFinding::already_posted(t, entry_id));
+            }
+            continue;
+        }
         let principal = g.principal();
         let lines: Vec<TransactionSummary> =
             g.lines.iter().map(|t| TransactionSummary::of(t)).collect();
@@ -284,10 +302,14 @@ async fn build_wise_review(
         let balance = balances.get(&t.bank_account_id);
         let ledger = balance.and_then(|b| b.account.journal_account_id);
         let candidates: Vec<EntryCandidate> = match (balance, ledger) {
+            // Une écriture qui nomme un autre virement (ou versement) n'est
+            // pas l'autre côté de celui-ci : la règle commune du nom
+            // (`names_another`), comme pour la décision « déjà comptabilisée ».
             (Some(b), Some(l)) => find_matched_elsewhere(&mut **tx, company_id, t, l, b.currency())
                 .await?
                 .into_iter()
                 .filter(|c| c.days_apart <= wise::LINK_MAX_DAYS)
+                .filter(|c| !names_another(&SPEC, t, &c.description))
                 .collect(),
             _ => Vec::new(),
         };
@@ -309,6 +331,13 @@ async fn build_wise_review(
             [] if *tag == KIND_STRIPE_PAYOUT => {
                 review.push_to_review(ReviewFinding::on(wise::REVIEW_STRIPE_PAYOUT_UNMATCHED, t))
             }
+            // Aucune écriture à rattacher dans la fenêtre, mais une écriture
+            // déjà passée qui nomme le virement (ou, par prudence, ne nomme
+            // aucun virement) : « à examiner » sous `already_posted`, jamais
+            // une règle qui l'écrirait une seconde fois.
+            [] if loaded.already_posted.contains_key(&t.id) => review.push_to_review(
+                ReviewFinding::already_posted(t, loaded.already_posted[&t.id]),
+            ),
             [] => match matching_rule(&rules, t, &rule_accounts, ledger) {
                 Some(rule) => review.push_proposal(common(
                     Proposal::Rule {
@@ -748,7 +777,9 @@ async fn accept_card_group(
     let mut lines: Vec<BankTransaction> = Vec::with_capacity(ids.len());
     let mut ledgers: HashMap<i64, (i64, String)> = HashMap::new();
     for id in ids {
-        let r = rejudge(tx, ctx, *id, card_or_fee)
+        // `rejudge_writing` : une ligne déjà comptabilisée de l'autre côté
+        // n'est pas réécrite par le groupe (`PROVIDER_TRANSACTION_ALREADY_POSTED`).
+        let r = rejudge_writing(tx, ctx, *id, card_or_fee)
             .await
             .map_err(|r| naming(primary, r))?;
         ledgers.insert(

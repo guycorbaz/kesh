@@ -175,7 +175,10 @@ pub struct ProviderSpec {
     /// l'exclut du repli prudent ([`unnamed_and_free`]). PayPal : un seul genre
     /// ([`one_key_kind`]). Stripe : pour un versement, seul un `po_` — une
     /// charge citée au libellé d'un versement ne fait pas de son écriture celle
-    /// d'un autre versement ; pour des frais, tout identifiant Stripe.
+    /// d'un autre versement ; pour des frais, tout identifiant Stripe. Wise :
+    /// le préfixe de l'identifiant (`TRANSFER`, `CARD`, `FEE-TRANSFER`…) — une
+    /// carte citée au libellé d'un virement ne fait pas de son écriture celle
+    /// d'un autre virement.
     pub same_key_kind: fn(&BankTransaction, &str) -> bool,
     /// Les deux transactions sont-elles les moitiés d'une même conversion,
     /// par leurs références (PayPal : même `Reference Txn ID`, ou chacune
@@ -903,7 +906,8 @@ pub fn conversion_halves(a: &BankTransaction, b: &BankTransaction, spec: &Provid
 ///   ([`ProviderSpec::extract_ids`]) comprennent la clé de `t`
 ///   ([`ProviderSpec::match_key`]) — la règle du rattachement d'une vente. Le
 ///   libellé est celui de l'acceptation ([`ProviderSpec::entry_label`] : PayPal
-///   « … · TXN <id> »). Les frais PayPal ont pour clé `<id>:FEE`, que leur
+///   « … · TXN <id> » ; Wise « Wise <compte> · <type> · <id> », ses frais
+///   compris, « Frais Wise <devise> · FEE-<id> »). Les frais PayPal ont pour clé `<id>:FEE`, que leur
 ///   écriture ne porte pas (« Frais PayPal … · TXN <id> ») : ils ne sont
 ///   jamais nommés, par l'écriture principale ni par la leur. L'écriture des
 ///   frais nomme la transaction principale, mais n'est jamais rapprochée de
@@ -956,6 +960,20 @@ pub fn unnamed_and_free(
         && !linked
             .iter()
             .any(|p| p.bank_account_id == t.bank_account_id)
+}
+
+/// L'écriture de libellé `description` nomme-t-elle **une autre** transaction
+/// que `t`, du même genre de clé : un identifiant qu'elle porte est du genre
+/// de `t` ([`ProviderSpec::same_key_kind`]) et n'est pas sa clé
+/// ([`ProviderSpec::match_key`]) ? C'est alors l'écriture de cette autre
+/// transaction, jamais celle de `t` : [`first_naming_entry`] ne la retient
+/// pas, et un prestataire qui propose de rattacher `t` à l'autre côté déjà
+/// passé d'un virement (Wise, 39-11c AC-4) l'écarte de ses candidates.
+pub fn names_another(spec: &ProviderSpec, t: &BankTransaction, description: &str) -> bool {
+    let key = (spec.match_key)(t);
+    (spec.extract_ids)(description)
+        .iter()
+        .any(|id| (spec.same_key_kind)(t, id) && key != Some(id.as_str()))
 }
 
 /// L'écriture déjà passée de `t` parmi les `candidates` (déjà triées : la plus

@@ -40,7 +40,7 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 use crate::provider_review::{
-    BASE_CURRENCY, EntryKind, Placement, Proposal, ProviderKind, ProviderSpec, one_key_kind,
+    BASE_CURRENCY, EntryKind, Placement, Proposal, ProviderKind, ProviderSpec,
 };
 
 /// Valeur de `bank_accounts.provider` d'un compte Wise.
@@ -197,9 +197,68 @@ fn match_key(t: &BankTransaction) -> Option<&str> {
     t.transaction_id.as_deref()
 }
 
-/// Aucune écriture de vente ne porte d'identifiant Wise (phase 1).
-fn no_ids(_: &str) -> Vec<String> {
-    Vec::new()
+/// Un caractère d'identifiant Wise (`[A-Za-z0-9_-]`, la forme que garde
+/// l'import, 39-11a, en majuscules).
+fn is_wise_id_char(c: char) -> bool {
+    c.is_ascii_alphanumeric() || c == '_' || c == '-'
+}
+
+/// Le **genre** d'un identifiant Wise : ce qui précède son premier chiffre,
+/// sans tiret final (`TRANSFER`, `CARD`, `BALANCE`, `CONVERSION_ORDER`,
+/// `FEE-TRANSFER`…) — la règle du `provider_type` que pose l'import
+/// (`id_prefix` de `kesh_import::wise`). Vide pour un jeton sans chiffre.
+pub fn key_genre(id: &str) -> &str {
+    let end = id.find(|c: char| c.is_ascii_digit()).unwrap_or(0);
+    id[..end].trim_end_matches('-')
+}
+
+/// Les identifiants Wise d'un libellé, en forme comparable à la clé d'une
+/// transaction ([`match_key`] : l'identifiant tel que l'import l'a écrit, en
+/// majuscules). Un identifiant est un **mot entier** fait de `[A-Za-z0-9_-]`
+/// (borné par le début, la fin ou un autre caractère : ` · `, une espace,
+/// une ponctuation), qui commence par une lettre et dont le premier chiffre
+/// suit un tiret (`TRANSFER-70000001`, `FEE-CARD-90000020`,
+/// `CONVERSION_ORDER-90000011`) ; rendu en majuscules (l'import les y met : un
+/// identifiant recopié à la main en minuscules nomme la même transaction) ;
+/// sans doublon, dans l'ordre du libellé. Ne sont pas des identifiants : une
+/// date (`2020-02-13`), une référence qui commence par un chiffre
+/// (`2020-001`), un IBAN (sans tiret), un mot dont le chiffre ne suit pas un
+/// tiret (`MP3`).
+///
+/// C'est ce qui fait **nommer** une transaction Wise par l'écriture de son
+/// acceptation : [`entry_label`] y écrit son identifiant (« Wise <compte> ·
+/// <type> · <identifiant> », « Frais Wise <devise> · <identifiant> »), règle
+/// commune « une transaction de prestataire n'est écrite qu'une fois »
+/// ([`crate::provider_review::first_naming_entry`]).
+pub fn wise_ids_in(text: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for word in text.split(|c: char| !is_wise_id_char(c)) {
+        let Some(digit) = word.find(|c: char| c.is_ascii_digit()) else {
+            continue;
+        };
+        let is_id = word.starts_with(|c: char| c.is_ascii_alphabetic())
+            && word[..digit].ends_with('-')
+            && !key_genre(word).is_empty();
+        let id = word.to_ascii_uppercase();
+        if is_id && !out.contains(&id) {
+            out.push(id);
+        }
+    }
+    out
+}
+
+/// Un identifiant cité dans un libellé fait-il de l'écriture celle d'**une
+/// autre** transaction que `t` ([`crate::provider_review::unnamed_and_free`]) ?
+/// Seulement s'il est du **même genre** que la clé de `t` ([`key_genre`]) :
+/// une carte (`CARD-…`) citée au libellé d'une écriture de virement ne fait
+/// pas d'elle l'écriture d'un autre virement, et l'écriture reste au repli
+/// prudent. Une transaction sans identifiant : aucun identifiant ne compte (le
+/// repli prudent, jamais une seconde écriture).
+fn same_key_kind(t: &BankTransaction, id: &str) -> bool {
+    match match_key(t).map(str::trim).map(str::to_ascii_uppercase) {
+        Some(key) if !key_genre(&key).is_empty() => key_genre(&key) == key_genre(id),
+        _ => false,
+    }
 }
 
 /// Les deux moitiés d'une conversion Wise portent le **même** identifiant
@@ -247,10 +306,8 @@ pub const SPEC: ProviderSpec = ProviderSpec {
     provider: PROVIDER,
     classify,
     match_key,
-    extract_ids: no_ids,
-    // Raccord de la fusion de `pr/40-stripe` : le champ commun, au genre unique
-    // de PayPal (sans effet tant que `no_ids` ne rend aucun identifiant).
-    same_key_kind: one_key_kind,
+    extract_ids: wise_ids_in,
+    same_key_kind,
     conversion_match,
     conversion_unpaired: (GAP_CONVERSION_HALF_MISSING, Placement::Gap),
     entry_label,
@@ -886,5 +943,147 @@ mod tests {
             serde_json::from_value::<WiseProposal>(serde_json::json!({ "type": "inconnu" }))
                 .is_err()
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // Règle commune « une transaction de prestataire n'est écrite qu'une
+    // fois » : la clé de Wise se retrouve au libellé de son acceptation, et le
+    // genre de clé borne le repli prudent.
+    // -----------------------------------------------------------------------
+
+    /// L'identifiant de chaque genre, tel que l'écrit l'acceptation
+    /// ([`entry_label`]), se retrouve par [`wise_ids_in`] : la transaction est
+    /// **nommée** par l'écriture de son acceptation.
+    #[test]
+    fn la_cle_se_retrouve_au_libelle_de_l_acceptation() {
+        use crate::provider_review::entry_names;
+        let cas = [
+            (EntryKind::Rule, "TRANSFER-70000001", "-120.00", "CHF"),
+            (EntryKind::Rule, "CARD-90000007", "-19.00", "CHF"),
+            (EntryKind::Fee, "FEE-TRANSFER-90000004", "-1.20", "CHF"),
+            (EntryKind::Fee, "FEE-CARD-90000020", "-0.04", "USD"),
+            (EntryKind::Conversion, "BALANCE-90000003", "-500.00", "CHF"),
+            (
+                EntryKind::Conversion,
+                "CONVERSION_ORDER-90000011",
+                "-100.00",
+                "EUR",
+            ),
+        ];
+        for (kind, id, amount, currency) in cas {
+            let t = named(tx(1, 1, id, amount, currency), "Atelier Exemple Sàrl");
+            let label = entry_label(kind, "Wise Pro", &t);
+            assert_eq!(
+                (SPEC.match_key)(&t).map(str::to_string),
+                wise_ids_in(&label).into_iter().find(|i| i == id),
+                "{label}"
+            );
+            assert!(entry_names(&SPEC, &t, &label, &[]), "{label}");
+            // Un autre identifiant du même genre n'est pas nommé.
+            let autre = tx(2, 1, &format!("{}-1", key_genre(id)), amount, currency);
+            assert!(!entry_names(&SPEC, &autre, &label, &[]), "{label}");
+        }
+    }
+
+    /// Ce qui est un identifiant Wise dans un libellé, et ce qui n'en est pas.
+    #[test]
+    fn identifiants_d_un_libelle() {
+        assert_eq!(
+            wise_ids_in(
+                "Wise Pro · TRANSFER · TRANSFER-70000001 · Atelier (FEE-CARD-9, conversion_order-12)"
+            ),
+            ["TRANSFER-70000001", "FEE-CARD-9", "CONVERSION_ORDER-12"]
+        );
+        // Dates, références numériques, IBAN, mots sans tiret avant le
+        // chiffre, et doublons : aucun.
+        assert_eq!(
+            wise_ids_in("Facture 2020-001 du 2020-02-13 CH9300762011623852957 MP3 x-"),
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            wise_ids_in("CARD-7 card-7 CARD-7"),
+            ["CARD-7"],
+            "sans doublon, casse ramenée"
+        );
+        assert_eq!(key_genre("FEE-TRANSFER-4"), "FEE-TRANSFER");
+        assert_eq!(key_genre("CONVERSION_ORDER-9"), "CONVERSION_ORDER");
+        assert_eq!(key_genre("TRANSFER"), "");
+    }
+
+    /// Le genre de clé : seul un identifiant du préfixe de la transaction
+    /// fait d'une écriture celle d'une autre transaction ; une carte citée au
+    /// libellé d'un virement laisse l'écriture au repli prudent.
+    #[test]
+    fn genre_de_cle_et_repli_prudent() {
+        use crate::provider_review::{first_naming_entry, names_another, unnamed_and_free};
+        let virement = tx(1, 1, "TRANSFER-70000001", "-120.00", "CHF");
+        assert!((SPEC.same_key_kind)(&virement, "TRANSFER-70000077"));
+        assert!(!(SPEC.same_key_kind)(&virement, "CARD-70000001"));
+        assert!(!(SPEC.same_key_kind)(&virement, "FEE-TRANSFER-70000001"));
+        let frais = tx(2, 1, "FEE-TRANSFER-70000001", "-1.20", "CHF");
+        assert!((SPEC.same_key_kind)(&frais, "FEE-TRANSFER-5"));
+        assert!(!(SPEC.same_key_kind)(&frais, "TRANSFER-70000001"));
+        let mut sans_cle = tx(3, 1, "TRANSFER-1", "-1.00", "CHF");
+        sans_cle.transaction_id = None;
+        assert!(!(SPEC.same_key_kind)(&sans_cle, "TRANSFER-1"));
+
+        // Saisie à la main, côté Wise libre : une carte citée → repli prudent.
+        let carte = "Virement vers la banque CARD-70000009";
+        assert!(unnamed_and_free(&SPEC, &virement, carte, &[]));
+        assert_eq!(
+            first_naming_entry(&SPEC, &virement, [(901, carte)], &[]),
+            Some(901)
+        );
+        // Un autre virement nommé : jamais retenue, ni candidate au rattachement.
+        let autre = "Wise Pro · TRANSFER · TRANSFER-70000077";
+        assert!(names_another(&SPEC, &virement, autre));
+        assert_eq!(
+            first_naming_entry(&SPEC, &virement, [(902, autre)], &[]),
+            None
+        );
+        // Le sien : nommé, retenu, même après une écriture sans nom plus proche.
+        let sien = "Wise Pro · TRANSFER · TRANSFER-70000001";
+        assert!(!names_another(&SPEC, &virement, sien));
+        assert_eq!(
+            first_naming_entry(&SPEC, &virement, [(903, carte), (904, sien)], &[]),
+            Some(904)
+        );
+        // Côté Wise encore rapproché (une transaction du même solde) : la
+        // saisie à la main n'est plus au repli prudent.
+        let mut porte = tx(5, 1, "TRANSFER-70000002", "-120.00", "CHF");
+        porte.matched_entry_id = Some(901);
+        assert_eq!(
+            first_naming_entry(&SPEC, &virement, [(901, carte)], &[porte]),
+            None
+        );
+    }
+
+    /// 39-11a2 : un même identifiant au débit puis au crédit (réserve de carte
+    /// expirée, vérification de carte). Le nom ne distingue pas les deux
+    /// sens — c'est la présélection (mouvement égal au montant **signé** de la
+    /// transaction, `find_posted_elsewhere`) qui les sépare ; une écriture qui
+    /// nomme l'identifiant nomme les deux, et n'est jamais celle d'une autre.
+    #[test]
+    fn meme_identifiant_au_debit_et_au_credit() {
+        use crate::provider_review::{entry_names, names_another};
+        let debit = tx(1, 1, "CARD-71000005", "-5.00", "CHF");
+        let credit = tx(2, 1, "CARD-71000005", "5.00", "CHF");
+        let label = "Vérification de carte CARD-71000005";
+        for t in [&debit, &credit] {
+            assert!(entry_names(&SPEC, t, label, &[]));
+            assert!(!names_another(&SPEC, t, label));
+        }
+    }
+
+    /// Plusieurs devises : la clé ne porte pas la devise, la conversion se
+    /// nomme par son identifiant commun aux deux soldes.
+    #[test]
+    fn conversion_nommee_sur_ses_deux_soldes() {
+        use crate::provider_review::entry_names;
+        let chf = tx(1, 1, "BALANCE-90000003", "-500.00", "CHF");
+        let eur = tx(2, 2, "BALANCE-90000003", "462.30", "EUR");
+        let label = entry_label(EntryKind::Conversion, "Wise Pro", &chf);
+        assert!(entry_names(&SPEC, &chf, &label, &[]));
+        assert!(entry_names(&SPEC, &eur, &label, &[]));
     }
 }

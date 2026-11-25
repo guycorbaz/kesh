@@ -359,8 +359,9 @@ describe('wise-labels — les listes contre la source Rust', () => {
 		const re = new RegExp(`pub const ${prefixe}_[A-Z_]+: &str = "([a-z_]+)";`, 'g');
 		return [...source.matchAll(re)].map((m) => m[1]);
 	};
-	// Codes de la revue commune qu'aucun compte Wise ne rend : ni vente ni encaissement (`no_ids`,
-	// aucun genre `SaleReceipt`), ni retrait, et une conversion sans sa paire va aux écarts sous le
+	// Codes de la revue commune qu'aucun compte Wise ne rend : ni vente ni encaissement (aucun genre
+	// `SaleReceipt` : les identifiants de `wise_ids_in` ne servent qu'au nom d'une transaction déjà
+	// comptabilisée), ni retrait, et une conversion sans sa paire va aux écarts sous le
 	// code propre de Wise (`SPEC.conversion_unpaired`).
 	const HORS_WISE = [
 		'receipt_without_sale',

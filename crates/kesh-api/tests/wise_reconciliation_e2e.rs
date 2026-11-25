@@ -336,6 +336,19 @@ impl Ctx {
     }
 
     async fn regle(&self, libelle: &str, genre: &str, valeur: &str, filtre: Option<&str>) -> i64 {
+        self.regle_vers(libelle, genre, valeur, filtre, self.charge)
+            .await
+    }
+
+    /// Une règle de contrepartie `contrepartie` (la charge pour [`Ctx::regle`]).
+    async fn regle_vers(
+        &self,
+        libelle: &str,
+        genre: &str,
+        valeur: &str,
+        filtre: Option<&str>,
+        contrepartie: i64,
+    ) -> i64 {
         sqlx::query(
             "INSERT INTO reconciliation_rules (company_id, label, match_type, match_value, \
              counterparty_account_id, provider_type) VALUES (?, ?, ?, ?, ?, ?)",
@@ -344,7 +357,7 @@ impl Ctx {
         .bind(libelle)
         .bind(genre)
         .bind(valeur)
-        .bind(self.charge)
+        .bind(contrepartie)
         .bind(filtre)
         .execute(&self.pool)
         .await
@@ -449,8 +462,24 @@ impl Ctx {
     /// `compte_bancaire`, de `montant`, rapprochée de l'écriture `ecriture`
     /// (posée en base, import compris).
     async fn autre_cote(&self, compte_bancaire: i64, date: &str, montant: &str, ecriture: i64) {
+        self.transaction_bancaire(compte_bancaire, date, montant, Some(ecriture))
+            .await;
+    }
+
+    /// Une transaction CHF du compte bancaire `compte_bancaire` (import
+    /// compris), posée en base : rapprochée de `ecriture`, ou en attente.
+    async fn transaction_bancaire(
+        &self,
+        compte_bancaire: i64,
+        date: &str,
+        montant: &str,
+        ecriture: Option<i64>,
+    ) -> i64 {
         let c = self.seeded.company_id;
-        let hash = format!("{:064}", ecriture);
+        let hash = format!(
+            "{:064}",
+            self.count("SELECT COUNT(*) + 1 FROM bank_imports").await
+        );
         let import = sqlx::query(
             "INSERT INTO bank_imports (company_id, bank_account_id, filename, file_hash, \
              source_format, period_from, period_to, transaction_count, imported_by_user_id) \
@@ -469,17 +498,51 @@ impl Ctx {
         sqlx::query(
             "INSERT INTO bank_transactions (company_id, import_id, bank_account_id, booking_date, \
              amount, currency, details, status, matched_entry_id) \
-             VALUES (?, ?, ?, ?, ?, 'CHF', 'Autre côté', 'reconciled', ?)",
+             VALUES (?, ?, ?, ?, ?, 'CHF', 'Autre côté', ?, ?)",
         )
         .bind(c)
         .bind(import)
         .bind(compte_bancaire)
         .bind(date)
         .bind(montant)
+        .bind(if ecriture.is_some() {
+            "reconciled"
+        } else {
+            "pending"
+        })
         .bind(ecriture)
         .execute(&self.pool)
         .await
-        .unwrap();
+        .unwrap()
+        .last_insert_id() as i64
+    }
+
+    /// `POST /reconciliation/transactions/{id}/link-entry`.
+    async fn rattacher(&self, id: i64, ecriture: i64) -> (u16, Value) {
+        self.post(
+            &format!("/api/v1/reconciliation/transactions/{id}/link-entry"),
+            json!({ "journalEntryId": ecriture }),
+        )
+        .await
+    }
+
+    /// `POST /reconciliation/transactions/{id}/cancel`, qui doit passer.
+    async fn annuler(&self, id: i64) {
+        let (s, b) = self
+            .post(
+                &format!("/api/v1/reconciliation/transactions/{id}/cancel"),
+                json!({}),
+            )
+            .await;
+        assert_eq!(s, 200, "annulation : {b}");
+    }
+
+    /// Les identifiants des écritures, dans l'ordre.
+    async fn ecritures(&self) -> Vec<i64> {
+        sqlx::query_scalar("SELECT id FROM journal_entries ORDER BY id")
+            .fetch_all(&self.pool)
+            .await
+            .unwrap()
     }
 }
 
@@ -2149,4 +2212,556 @@ async fn cout_de_la_lecture_de_l_autre_cote(pool: MySqlPool) {
         duree < std::time::Duration::from_secs(30),
         "revue trop lente : {duree:?}"
     );
+}
+
+// ============================================================
+// Règle commune des prestataires — une transaction Wise n'est écrite qu'une
+// fois (correctif des prestataires, #1560, et genre de clé de la #1534)
+// ============================================================
+
+/// IBAN du compte bancaire principal du montage (`ba_banque`).
+const IBAN_BANQUE: &str = "CH9300762011623852957";
+
+/// Une ligne d'un relevé Wise écrit ici : identifiant, date (`JJ-MM-AAAA`),
+/// heure, montant, solde après, sens (`DEBIT`, `CREDIT`), contrepartie, IBAN
+/// du bénéficiaire, type de détail (`TRANSFER`, `CARD`).
+type LigneWise<'a> = (
+    &'a str,
+    &'a str,
+    &'a str,
+    &'a str,
+    &'a str,
+    &'a str,
+    &'a str,
+    &'a str,
+    &'a str,
+);
+
+/// Un relevé Wise d'une devise, lignes de la plus récente à la plus ancienne
+/// (comme l'export de Wise). Un virement porte sa contrepartie en
+/// bénéficiaire (débit) ou en payeur (crédit), une carte en marchand.
+fn releve_wise(devise: &str, lignes: &[LigneWise]) -> Vec<u8> {
+    let mut csv = format!("{HEADER}\n");
+    for (id, date, heure, montant, solde, sens, nom, iban, genre) in lignes {
+        let (payeur, beneficiaire, marchand) = match (*genre, *sens) {
+            ("CARD", _) => ("", "", *nom),
+            (_, "CREDIT") => (*nom, "", ""),
+            _ => ("", *nom, ""),
+        };
+        csv.push_str(&format!(
+            "{id},{date},{date} {heure},{montant},{devise},Mouvement {id},,{solde},,,,{payeur},{beneficiaire},{iban},{marchand},,,,,,,{sens},{genre}\n"
+        ));
+    }
+    csv.into_bytes()
+}
+
+/// Les identifiants des écritures nouvelles depuis `avant`.
+fn nouvelles(apres: &[i64], avant: &[i64]) -> Vec<i64> {
+    apres
+        .iter()
+        .filter(|e| !avant.contains(e))
+        .copied()
+        .collect()
+}
+
+/// L'acceptation d'une proposition `rule` (ancienne ou forgée) de `id` est
+/// refusée `PROVIDER_TRANSACTION_ALREADY_POSTED`, en `200`, l'écriture
+/// `ecriture` nommée, sans aucune écriture ni trace d'acceptation.
+async fn regle_refusee_deja_comptabilisee(ctx: &Ctx, regle: Value, id: i64, ecriture: i64) {
+    let avant = ctx.ecritures().await;
+    let audit = ctx
+        .count("SELECT COUNT(*) FROM audit_log WHERE action = 'provider.proposal_accepted'")
+        .await;
+    let (s, b) = ctx.accepter(vec![regle]).await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(b["accepted"], json!([]), "{b}");
+    assert_eq!(
+        b["failed"],
+        json!([{
+            "bankTransactionId": id,
+            "errorCode": "PROVIDER_TRANSACTION_ALREADY_POSTED",
+            "details": { "journalEntryId": ecriture },
+        }]),
+        "{b}"
+    );
+    assert_eq!(ctx.ecritures().await, avant, "aucune seconde écriture");
+    assert_eq!(
+        ctx.count("SELECT COUNT(*) FROM audit_log WHERE action = 'provider.proposal_accepted'")
+            .await,
+        audit,
+        "aucune trace d'acceptation"
+    );
+    assert_eq!(ctx.etat(id).await, ("pending".into(), None));
+}
+
+/// Le motif « à examiner » de la transaction `id`, s'il y en a un.
+fn motif(revue: &Value, id: i64) -> Option<Value> {
+    revue["toReview"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["transaction"]["id"] == id)
+        .cloned()
+}
+
+/// Le scénario du défaut, sur un virement Wise → banque dans la devise
+/// `devise` (`reçu` : le montant en CHF que reçoit la banque) :
+///
+/// 1. le virement `…001` accepté par sa règle (contrepartie : le compte du
+///    plan de la banque), une écriture ;
+/// 2. la réception de la banque rattachée à cette écriture : rattaché des
+///    deux côtés ;
+/// 3. le côté Wise détaché (`…/cancel`) : le lien seul est retiré, l'écriture
+///    reste, rapprochée de la réception ;
+/// 4. la revue propose de **rattacher** le virement à son écriture, jamais
+///    une règle ; l'ancienne proposition `rule`, renvoyée, est refusée
+///    `PROVIDER_TRANSACTION_ALREADY_POSTED`, sans rien écrire ;
+/// 5. la sonde positive : un second virement du même montant et de la même
+///    devise (`…002`, deux jours plus tard), que l'écriture ne nomme pas,
+///    reste proposé par sa règle — non rattaché à l'écriture du premier — et
+///    s'écrit, par une écriture à lui ; un virement du même montant dans
+///    l'autre devise (`…003`) aussi ;
+/// 6. le rattachement proposé passe, sans nouvelle écriture.
+async fn virement_detache_cote_wise(pool: MySqlPool, devise: &str, autre: &str, recu: &str) {
+    let ctx = monter_sans_import(&pool).await;
+    let n = if devise == "CHF" { "71" } else { "72" };
+    let (t1, t2, t3) = (
+        format!("TRANSFER-{n}000001"),
+        format!("TRANSFER-{n}000002"),
+        format!("TRANSFER-{n}000003"),
+    );
+    let depot = format!("TRANSFER-{n}000000");
+    let principal = releve_wise(
+        devise,
+        &[
+            (
+                &t2,
+                "17-02-2020",
+                "10:00:00.000",
+                "-100.00",
+                "800.00",
+                "DEBIT",
+                "Moi-même",
+                IBAN_BANQUE,
+                "TRANSFER",
+            ),
+            (
+                &t1,
+                "15-02-2020",
+                "10:00:00.000",
+                "-100.00",
+                "900.00",
+                "DEBIT",
+                "Moi-même",
+                IBAN_BANQUE,
+                "TRANSFER",
+            ),
+            (
+                &depot,
+                "01-02-2020",
+                "09:00:00.000",
+                "1000.00",
+                "1000.00",
+                "CREDIT",
+                "Client Fictif",
+                "",
+                "TRANSFER",
+            ),
+        ],
+    );
+    let jumeau = releve_wise(
+        autre,
+        &[
+            (
+                &t3,
+                "15-02-2020",
+                "10:00:00.000",
+                "-100.00",
+                "900.00",
+                "DEBIT",
+                "Moi-même",
+                IBAN_BANQUE,
+                "TRANSFER",
+            ),
+            (
+                "TRANSFER-79000000",
+                "01-02-2020",
+                "09:00:00.000",
+                "1000.00",
+                "1000.00",
+                "CREDIT",
+                "Client Fictif",
+                "",
+                "TRANSFER",
+            ),
+        ],
+    );
+    let (s, b) = ctx
+        .importer(&[("principal.csv", &principal), ("jumeau.csv", &jumeau)])
+        .await;
+    assert_eq!(s, 201, "import : {b}");
+    let regle = ctx
+        .regle_vers(
+            "Vers la banque",
+            "iban_exact",
+            IBAN_BANQUE,
+            Some("TRANSFER"),
+            ctx.banque,
+        )
+        .await;
+    let ledger = |d: &str| match d {
+        "CHF" => ctx.chf,
+        "EUR" => ctx.eur,
+        _ => ctx.usd,
+    };
+    let (v1, v2, v3) = (
+        ctx.tx(&t1, ledger(devise)).await,
+        ctx.tx(&t2, ledger(devise)).await,
+        ctx.tx(&t3, ledger(autre)).await,
+    );
+
+    // 1. Accepter le premier virement par sa règle.
+    let ancienne = proposition(&ctx.revue().await, v1);
+    assert_eq!(
+        (ancienne["type"].clone(), ancienne["ruleId"].clone()),
+        (json!("rule"), json!(regle))
+    );
+    let (s, b) = ctx.accepter(vec![ancienne.clone()]).await;
+    assert_eq!((s, b["failed"].clone()), (200, json!([])), "{b}");
+    let ecriture = b["accepted"][0]["journalEntryIds"][0].as_i64().unwrap();
+    // 2. La réception de la banque, rattachée à la même écriture.
+    let reception = ctx
+        .transaction_bancaire(ctx.ba_banque, "2020-02-16", recu, None)
+        .await;
+    let (s, b) = ctx.rattacher(reception, ecriture).await;
+    assert_eq!(s, 200, "réception : {b}");
+    // 3. Détacher le côté Wise : le lien seul.
+    ctx.annuler(v1).await;
+    assert_eq!(ctx.etat(v1).await, ("pending".into(), None));
+    assert_eq!(
+        ctx.etat(reception).await,
+        ("reconciled".into(), Some(ecriture))
+    );
+    assert_eq!(
+        ctx.count(&format!(
+            "SELECT COUNT(*) FROM journal_entries WHERE reverses_entry_id = {ecriture}"
+        ))
+        .await,
+        0,
+        "l'écriture reste"
+    );
+
+    // 4. La revue : rattacher, jamais réécrire.
+    let revue = ctx.revue().await;
+    let p1 = proposition(&revue, v1);
+    assert_eq!(
+        (p1["type"].clone(), p1["journalEntryId"].clone()),
+        (json!("link_entry"), json!(ecriture)),
+        "{revue}"
+    );
+    regle_refusee_deja_comptabilisee(&ctx, ancienne, v1, ecriture).await;
+
+    // 5. La sonde positive : le second virement, et le jumeau dans l'autre devise.
+    let revue = ctx.revue().await;
+    for v in [v2, v3] {
+        let p = proposition(&revue, v);
+        assert_eq!(p["type"], "rule", "{devise} {v} : {revue}");
+        assert!(motif(&revue, v).is_none(), "{revue}");
+        let avant = ctx.ecritures().await;
+        let (s, b) = ctx.accepter(vec![p]).await;
+        assert_eq!((s, b["failed"].clone()), (200, json!([])), "{b}");
+        let neuves = nouvelles(&ctx.ecritures().await, &avant);
+        assert_eq!(neuves.len(), 1, "une écriture à lui");
+        assert_ne!(neuves[0], ecriture);
+        assert_eq!(ctx.etat(v).await, ("reconciled".into(), Some(neuves[0])));
+    }
+
+    // 6. Le rattachement proposé : sans nouvelle écriture.
+    let avant = ctx.ecritures().await;
+    let p1 = proposition(&ctx.revue().await, v1);
+    let (s, b) = ctx.accepter(vec![p1]).await;
+    assert_eq!((s, b["failed"].clone()), (200, json!([])), "{b}");
+    assert_eq!(ctx.ecritures().await, avant);
+    assert_eq!(ctx.etat(v1).await, ("reconciled".into(), Some(ecriture)));
+}
+
+/// [`virement_detache_cote_wise`] en CHF (le jumeau en EUR).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn virement_rattache_des_deux_cotes_detache_cote_wise_chf(pool: MySqlPool) {
+    virement_detache_cote_wise(pool, "CHF", "EUR", "100.00").await;
+}
+
+/// [`virement_detache_cote_wise`] en EUR (100 EUR au cours de 0.95 : 95.00 CHF
+/// reçus ; le jumeau en CHF).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn virement_rattache_des_deux_cotes_detache_cote_wise_eur(pool: MySqlPool) {
+    virement_detache_cote_wise(pool, "EUR", "CHF", "95.00").await;
+}
+
+/// L'écriture d'un virement passée **à la main**, hors de la fenêtre du
+/// rattachement (dix jours après), rapprochée de la réception de la banque,
+/// son côté Wise libre :
+///
+/// - son libellé ne cite qu'une **carte** (`CARD-…`, un autre genre de clé) :
+///   elle ne nomme aucun virement, et la carte ne fait pas d'elle l'écriture
+///   d'un autre virement — le repli prudent la retient : le virement est « à
+///   examiner » sous `already_posted`, jamais proposé par sa règle ; la règle
+///   renvoyée est refusée sans rien écrire ;
+/// - la sonde positive : son libellé nomme **un autre virement**
+///   (`TRANSFER-73000077`) — elle est l'écriture de celui-là ; le virement est
+///   proposé par sa règle et s'écrit, par une écriture à lui.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn virement_ecrit_a_la_main_citant_une_carte_reste_au_repli_prudent(pool: MySqlPool) {
+    let ctx = monter_sans_import(&pool).await;
+    let releve = releve_wise(
+        "CHF",
+        &[
+            (
+                "TRANSFER-73000001",
+                "15-02-2020",
+                "10:00:00.000",
+                "-120.00",
+                "880.00",
+                "DEBIT",
+                "Moi-même",
+                IBAN_BANQUE,
+                "TRANSFER",
+            ),
+            (
+                "TRANSFER-73000000",
+                "01-02-2020",
+                "09:00:00.000",
+                "1000.00",
+                "1000.00",
+                "CREDIT",
+                "Client Fictif",
+                "",
+                "TRANSFER",
+            ),
+        ],
+    );
+    let (s, b) = ctx.importer(&[("chf.csv", &releve)]).await;
+    assert_eq!(s, 201, "import : {b}");
+    let regle = ctx
+        .regle_vers(
+            "Vers la banque",
+            "iban_exact",
+            IBAN_BANQUE,
+            Some("TRANSFER"),
+            ctx.banque,
+        )
+        .await;
+    let v = ctx.tx("TRANSFER-73000001", ctx.chf).await;
+    let ecriture = ctx
+        .ecriture(
+            "2020-02-25",
+            "Virement de Wise vers la banque CARD-73000009",
+            ctx.banque,
+            ctx.chf,
+            "120.00",
+        )
+        .await;
+    let reception = ctx
+        .transaction_bancaire(ctx.ba_banque, "2020-02-25", "120.00", None)
+        .await;
+    let (s, b) = ctx.rattacher(reception, ecriture).await;
+    assert_eq!(s, 200, "réception : {b}");
+
+    let revue = ctx.revue().await;
+    let m = motif(&revue, v).unwrap_or_else(|| panic!("{revue}"));
+    assert_eq!(m["code"], "already_posted", "{m}");
+    assert_eq!(m["details"], json!({ "journalEntryId": ecriture }));
+    assert!(
+        !revue["proposals"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|p| p["transaction"]["id"] == v),
+        "{revue}"
+    );
+    let forgee = json!({
+        "type": "rule",
+        "bankTransactionId": v,
+        "ruleId": regle,
+        "counterpartyAccountId": ctx.banque,
+    });
+    regle_refusee_deja_comptabilisee(&ctx, forgee, v, ecriture).await;
+
+    // La sonde positive : l'écriture nomme un autre virement.
+    sqlx::query("UPDATE journal_entries SET description = ? WHERE id = ?")
+        .bind("Virement de Wise vers la banque TRANSFER-73000077")
+        .bind(ecriture)
+        .execute(&ctx.pool)
+        .await
+        .unwrap();
+    let revue = ctx.revue().await;
+    assert!(motif(&revue, v).is_none(), "{revue}");
+    let p = proposition(&revue, v);
+    assert_eq!(p["type"], "rule", "{revue}");
+    let avant = ctx.ecritures().await;
+    let (s, b) = ctx.accepter(vec![p]).await;
+    assert_eq!((s, b["failed"].clone()), (200, json!([])), "{b}");
+    let neuves = nouvelles(&ctx.ecritures().await, &avant);
+    assert_eq!(neuves.len(), 1);
+    assert_ne!(neuves[0], ecriture);
+    assert_eq!(ctx.etat(v).await, ("reconciled".into(), Some(neuves[0])));
+}
+
+/// 39-11a2 — un même identifiant au débit puis au crédit (vérification de
+/// carte : −5.00 puis +5.00, à quelques secondes). L'écriture passée de la
+/// banque vers Wise (+5.00 au solde Wise, la banque −5.00), qui nomme la
+/// carte, est l'écriture du **crédit** seul : le crédit est « à examiner »
+/// sous `already_posted`, et sa règle renvoyée est refusée sans rien écrire ;
+/// le **débit**, de l'autre sens (son mouvement n'égale pas celui de
+/// l'écriture), reste proposé par sa règle et s'écrit — la sonde positive.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn meme_identifiant_au_debit_et_au_credit_seul_le_sens_ecrit_est_retenu(pool: MySqlPool) {
+    let ctx = monter_sans_import(&pool).await;
+    let releve = releve_wise(
+        "CHF",
+        &[
+            (
+                "CARD-74000005",
+                "01-03-2020",
+                "12:00:05.000",
+                "5.00",
+                "1000.00",
+                "CREDIT",
+                "Boutique Exemple",
+                "",
+                "CARD",
+            ),
+            (
+                "CARD-74000005",
+                "01-03-2020",
+                "12:00:00.000",
+                "-5.00",
+                "995.00",
+                "DEBIT",
+                "Boutique Exemple",
+                "",
+                "CARD",
+            ),
+            (
+                "TRANSFER-74000000",
+                "01-02-2020",
+                "09:00:00.000",
+                "1000.00",
+                "1000.00",
+                "CREDIT",
+                "Client Fictif",
+                "",
+                "TRANSFER",
+            ),
+        ],
+    );
+    let (s, b) = ctx.importer(&[("chf.csv", &releve)]).await;
+    assert_eq!(s, 201, "import : {b}");
+    let regle = regle_boutique(&ctx).await;
+    let ids: Vec<(i64, Decimal)> = sqlx::query_as(
+        "SELECT id, amount FROM bank_transactions WHERE transaction_id = 'CARD-74000005' ORDER BY amount",
+    )
+    .fetch_all(&ctx.pool)
+    .await
+    .unwrap();
+    let [(debit, _), (credit, _)] = ids[..] else {
+        panic!("{ids:?}")
+    };
+    let ecriture = ctx
+        .ecriture(
+            "2020-03-01",
+            "Vérification de carte CARD-74000005",
+            ctx.chf,
+            ctx.banque,
+            "5.00",
+        )
+        .await;
+    let banque = ctx
+        .transaction_bancaire(ctx.ba_banque, "2020-03-01", "-5.00", None)
+        .await;
+    let (s, b) = ctx.rattacher(banque, ecriture).await;
+    assert_eq!(s, 200, "banque : {b}");
+
+    let revue = ctx.revue().await;
+    let m = motif(&revue, credit).unwrap_or_else(|| panic!("{revue}"));
+    assert_eq!(m["code"], "already_posted", "{m}");
+    assert_eq!(m["details"], json!({ "journalEntryId": ecriture }));
+    let forgee = json!({
+        "type": "rule",
+        "bankTransactionId": credit,
+        "ruleId": regle,
+        "counterpartyAccountId": ctx.charge,
+    });
+    regle_refusee_deja_comptabilisee(&ctx, forgee, credit, ecriture).await;
+
+    // Le débit : proposé, écrit.
+    assert!(motif(&revue, debit).is_none(), "{revue}");
+    let p = proposition(&revue, debit);
+    assert_eq!(p["type"], "rule", "{revue}");
+    let avant = ctx.ecritures().await;
+    let (s, b) = ctx.accepter(vec![p]).await;
+    assert_eq!((s, b["failed"].clone()), (200, json!([])), "{b}");
+    let neuves = nouvelles(&ctx.ecritures().await, &avant);
+    assert_eq!(neuves.len(), 1);
+    assert_eq!(
+        ctx.etat(debit).await,
+        ("reconciled".into(), Some(neuves[0]))
+    );
+}
+
+/// Le paiement par carte converti (la partielle « USD, CHF ») dont la ligne
+/// CHF est **déjà comptabilisée** : une écriture passée à la main qui la nomme
+/// (`CARD-90000020`), au mouvement de la ligne sur le solde CHF, rapprochée de
+/// l'autre côté (une transaction de la banque de sens contraire), son côté
+/// Wise libre. La sonde positive d'abord : sans elle, le groupe est proposé.
+/// Avec elle, le groupe n'est plus proposé — la ligne est « à examiner » sous
+/// `already_posted` — et le groupe renvoyé est refusé
+/// `PROVIDER_TRANSACTION_ALREADY_POSTED` (nommé par la ligne principale),
+/// sans rien écrire.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn partielle_dont_une_ligne_est_deja_comptabilisee(pool: MySqlPool) {
+    let (ctx, regle, ids) = monter_partielle(&pool).await;
+    let revue = ctx.revue().await;
+    assert_eq!(de_groupe(&revue["proposals"]).len(), 1, "{revue}");
+
+    let ecriture = ctx
+        .ecriture(
+            "2020-03-10",
+            "Carte CARD-90000020 réglée depuis la banque",
+            ctx.banque,
+            ctx.chf,
+            "86.60",
+        )
+        .await;
+    let banque = ctx
+        .transaction_bancaire(ctx.ba_banque, "2020-03-10", "86.60", None)
+        .await;
+    let (s, b) = ctx.rattacher(banque, ecriture).await;
+    assert_eq!(s, 200, "banque : {b}");
+
+    let revue = ctx.revue().await;
+    assert_eq!(
+        de_groupe(&revue["proposals"]),
+        Vec::<Value>::new(),
+        "{revue}"
+    );
+    let m = motif(&revue, ids[0]).unwrap_or_else(|| panic!("{revue}"));
+    assert_eq!(m["code"], "already_posted", "{m}");
+    assert_eq!(m["details"], json!({ "journalEntryId": ecriture }));
+    let avant = ctx.ecritures().await;
+    let (s, b) = ctx.accepter(vec![groupe(&ids, regle, ctx.charge)]).await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(
+        b["failed"],
+        json!([{
+            "bankTransactionId": ids[0],
+            "errorCode": "PROVIDER_TRANSACTION_ALREADY_POSTED",
+            "details": { "journalEntryId": ecriture },
+        }]),
+        "{b}"
+    );
+    assert_eq!(ctx.ecritures().await, avant, "aucune seconde écriture");
+    for id in ids {
+        assert_eq!(ctx.etat(id).await, ("pending".into(), None));
+    }
 }
