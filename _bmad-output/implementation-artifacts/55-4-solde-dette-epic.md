@@ -10,12 +10,12 @@ fixé au kickoff).
 ## Story
 
 En tant que mainteneur,
-je veux que la dette laissée par les revues des stories 55-1 à 55-3 soit soldée avant la release,
+je veux que la dette laissée par les revues des stories 55-1 à 55-3b soit soldée avant la release,
 afin que l'epic ne fasse pas monter le compte d'issues ouvertes par sa propre dette.
 
 ## Périmètre
 
-- **La dette des stories de l'epic** : les points des revues (validation et code) des stories 55-1 à 55-3, et de la
+- **La dette des stories de l'epic** : les points des revues (validation et code) des stories 55-1 à 55-3b, et de la
   revue du code d'intégration, **qui siègent dans du code ou un texte écrit par une story 55-x** et qui n'ont pas été
   corrigés dans leur story. Un défaut trouvé dans le code de l'Epic 46 ou 47 reste à son epic (issue à son nom).
 - **Exclus** : les issues a), b) et c) de l'epic (livrables fermés par la PR de l'epic) ; toute issue antérieure au
@@ -24,12 +24,12 @@ afin que l'epic ne fasse pas monter le compte d'issues ouvertes par sa propre de
 - **Plafond : au plus 2 issues** (fixé au kickoff, fichier d'epic). Au-delà, les suivantes restent ouvertes, nommées à la
   rétrospective avec leur raison. Un correctif qui toucherait plus de cinq modules n'est pas pris (règle de splitting
   préventif) et reste ouvert.
-- Frontend seulement, **sauf**, si la 55-3 est restée dans l'epic (Q1), une dette née de la 55-3 côté `kesh-report`.
+- Frontend seulement, **sauf**, si les 55-3a et 55-3b sont restées dans l'epic (Q1), une dette née de la 55-3a côté `kesh-report`.
 - Aucune migration ; aucun changement de contrat de l'API **par la 55-4**.
 
 ## D'où vient la liste (l'agent de l'epic n'a pas `gh`)
 
-- **Source** : les Change Logs et Dev Agent Records des fiches 55-1 à 55-3, et le compte rendu de la revue du code
+- **Source** : les Change Logs et Dev Agent Records des fiches 55-1 à 55-3b, et le compte rendu de la revue du code
   d'intégration. Chaque story y écrit, en section *Issues à ouvrir*, les points non corrigés (sévérité, site, texte de
   l'issue) ; le mainteneur ou son agent les ouvre et l'agent de l'epic reporte les numéros dans la fiche.
 - **Recoupement** sur GitHub, par le mainteneur ou son agent : `gh issue list --state open --search '"Epic 55" in:body'`.

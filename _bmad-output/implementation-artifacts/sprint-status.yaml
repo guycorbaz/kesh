@@ -1268,11 +1268,12 @@ development_status:
 
   # 2026-11-25 — Epic 55 « Navigation de l'interface » (numéro attribué par le mainteneur le 2026-11-25, contributeur) ; release : la
   # prochaine planifiée après la 0.20.0 (numéro fixé par le mainteneur) ; fichier epic-55-navigation-interface.md ; développement sur la
-  # base de la PR de l'Epic 46 ; quatre stories, solde compris ; aucune migration ; backend pour la seule 55-3 (Q1 au mainteneur).
+  # base de la PR de l'Epic 46 ; cinq stories, solde compris ; aucune migration ; backend pour la seule 55-3a (Q1 au mainteneur).
   epic-55: backlog  # kickoff 2026-11-25 ; issues #À-VENIR (a : liens de compte, enhancement P4 ; b : Retour du navigateur, bug P3 ; c : pièces d'une écriture)
   55-0-kickoff: done  # 2026-11-25 : fichier d'epic et fiches
   55-1-etat-des-rapports-dans-l-url: drafted  # b) Retour et Suivant, lien partagé ; état des Rapports (onglet, exercice, période, compte, regroupement 46) dans l'URL
   55-2-lien-de-compte-partout: drafted  # a) un composant AccountLink ; Journaux, Grand livre, TVA (comptes désignés), Compte de résultat à plat
-  55-3-pieces-des-ecritures: drafted  # c) icône des pièces dans le Journal (et le Grand livre) ; champ documents des rapports (backend kesh-report, sans migration)
+  55-3a-justificatifs-serveur: drafted  # c) champ documents du journal et du grand livre (backend kesh-report, sans migration ni route neuve) ; découpée de la 55-3 (validation P1)
+  55-3b-justificatifs-ecran: drafted  # c) bouton des justificatifs dans le Journal (critère principal) et le Grand livre ; DocumentPreview réutilisé
   55-4-solde-dette-epic: drafted  # story de solde ; plafond : 2 issues
   epic-55-retrospective: optional
