@@ -881,14 +881,10 @@ pub fn conversion_halves(a: &BankTransaction, b: &BankTransaction, spec: &Provid
 /// - **par sa paire de conversion** : une conversion en une écriture ne
 ///   nomme que sa moitié débitée ; l'autre moitié est nommée si l'écriture
 ///   est rapprochée (`linked` : les transactions rapprochées de l'écriture)
-///   de sa paire ([`conversion_halves`]), que l'écriture nomme ;
-/// - **par prudence, une écriture qui ne nomme aucune transaction** (aucun
-///   identifiant dans son libellé : une écriture saisie à la main, puis
-///   rattachée des deux côtés) vaut pour **toute** transaction de la
-///   présélection — son montant, l'autre côté. Elle ne dit pas laquelle elle
-///   porte : en refuser une de trop (« à examiner », écrite à la main) coûte
-///   moins que d'en écrire une seconde fois. Seule une écriture qui nomme une
-///   **autre** transaction l'écarte.
+///   de sa paire ([`conversion_halves`]), que l'écriture nomme.
+///
+/// Une écriture sans aucun identifiant n'en nomme aucune : voir
+/// [`unnamed_and_free`] et [`first_naming_entry`].
 pub fn entry_names(
     spec: &ProviderSpec,
     t: &BankTransaction,
@@ -898,21 +894,51 @@ pub fn entry_names(
     let ids = (spec.extract_ids)(description);
     let named =
         |x: &BankTransaction| (spec.match_key)(x).is_some_and(|k| ids.iter().any(|i| i == k));
-    ids.is_empty()
-        || named(t)
+    named(t)
         || ((spec.classify)(t) == ProviderKind::Conversion
             && linked
                 .iter()
                 .any(|p| conversion_halves(t, p, spec) && named(p)))
 }
 
-/// La première des écritures `candidates` (déjà triées : la plus proche par
-/// date, puis la plus ancienne) qui **nomme** `t` ([`entry_names`]), ou
-/// `None`. `linked` : les transactions rapprochées de ces écritures, toutes
-/// ensemble (chacune porte son `matched_entry_id`). La **seule** décision « déjà
-/// comptabilisée » d'une transaction de prestataire (#1538) : la revue (sur la
-/// lecture par page) et l'acceptation (sous les verrous du lot) l'appellent
-/// sur la même présélection
+/// L'écriture de libellé `description` ne porte **aucun** identifiant (une
+/// écriture saisie à la main, puis rattachée) **et** son côté prestataire est
+/// **libre** : aucune transaction du compte bancaire de `t` ne lui est
+/// rapprochée (`linked` : celles qui le sont). C'est l'écriture d'une
+/// transaction détachée de ce compte, sans dire laquelle : le repli prudent de
+/// [`first_naming_entry`] (revue P1 de la #1560, M1). Une écriture dont le côté
+/// prestataire est encore rapproché (une transaction qu'elle porte toujours,
+/// par exemple un retrait d'un mois passé du même montant) n'est l'écriture
+/// d'aucune transaction en attente.
+pub fn unnamed_and_free(
+    spec: &ProviderSpec,
+    t: &BankTransaction,
+    description: &str,
+    linked: &[&BankTransaction],
+) -> bool {
+    (spec.extract_ids)(description).is_empty()
+        && !linked
+            .iter()
+            .any(|p| p.bank_account_id == t.bank_account_id)
+}
+
+/// L'écriture déjà passée de `t` parmi les `candidates` (déjà triées : la plus
+/// proche par date, puis la plus ancienne), ou `None`. `linked` : les
+/// transactions rapprochées de ces écritures, toutes ensemble (chacune porte
+/// son `matched_entry_id`). Deux passes :
+///
+/// 1. la première qui **nomme** `t` ([`entry_names`]) — une écriture qui nomme
+///    `t` passe toujours avant une écriture sans identifiant, même plus proche ;
+/// 2. à défaut, **par prudence**, la première sans identifiant dont le côté
+///    prestataire est libre ([`unnamed_and_free`]) : elle ne dit pas quelle
+///    transaction elle porte, et vaut pour toute transaction de ce montant du
+///    compte — en refuser une de trop (« à examiner », écrite à la main) coûte
+///    moins que d'en écrire une seconde fois.
+///
+/// Une écriture qui nomme une **autre** transaction n'est jamais retenue. La
+/// **seule** décision « déjà comptabilisée » d'une transaction de prestataire
+/// (#1538) : la revue (sur la lecture par page) et l'acceptation (sous les
+/// verrous du lot) l'appellent sur la même présélection
 /// (`kesh_db::repositories::reconciliation_link::find_posted_elsewhere`).
 pub fn first_naming_entry<'a>(
     spec: &ProviderSpec,
@@ -920,13 +946,24 @@ pub fn first_naming_entry<'a>(
     candidates: impl IntoIterator<Item = (i64, &'a str)>,
     linked: &[BankTransaction],
 ) -> Option<i64> {
-    candidates.into_iter().find_map(|(entry_id, description)| {
-        let on_entry: Vec<&BankTransaction> = linked
+    let candidates: Vec<(i64, &str, Vec<&BankTransaction>)> = candidates
+        .into_iter()
+        .map(|(entry_id, description)| {
+            let on_entry = linked
+                .iter()
+                .filter(|p| p.matched_entry_id == Some(entry_id))
+                .collect();
+            (entry_id, description, on_entry)
+        })
+        .collect();
+    let pass = |keep: &dyn Fn(&str, &[&BankTransaction]) -> bool| {
+        candidates
             .iter()
-            .filter(|p| p.matched_entry_id == Some(entry_id))
-            .collect();
-        entry_names(spec, t, description, &on_entry).then_some(entry_id)
-    })
+            .find(|(_, d, on)| keep(d, on))
+            .map(|(id, _, _)| *id)
+    };
+    pass(&|d, on| entry_names(spec, t, d, on))
+        .or_else(|| pass(&|d, on| unnamed_and_free(spec, t, d, on)))
 }
 
 /// Les partenaires possibles de `t` parmi les conversions pending
@@ -1502,14 +1539,31 @@ mod tests {
         let candidates = [(901, "Retrait IDA"), (902, "Retrait IDB")];
         assert_eq!(first_naming_entry(&SPEC, &a, candidates, &[]), Some(901));
         assert_eq!(first_naming_entry(&SPEC, &b, candidates, &[]), Some(902));
-        // Une écriture qui ne nomme personne (saisie à la main) retient, par
-        // prudence, toute transaction de la présélection.
+        // Une écriture qui ne nomme personne (saisie à la main), côté
+        // prestataire libre, retient par prudence toute transaction de la
+        // présélection ; une écriture qui nomme `t`, même plus loin, passe
+        // avant elle.
+        let sans_nom = (903, "Retrait sans identifiant");
+        assert_eq!(first_naming_entry(&SPEC, &a, [sans_nom], &[]), Some(903));
+        assert_eq!(first_naming_entry(&SPEC, &b, [sans_nom], &[]), Some(903));
         assert_eq!(
-            first_naming_entry(&SPEC, &a, [(903, "Retrait sans identifiant")], &[]),
-            Some(903)
+            first_naming_entry(&SPEC, &a, [sans_nom, (901, "Retrait IDA")], &[]),
+            Some(901),
+            "l'écriture qui nomme passe avant la plus proche sans nom"
         );
+        // Côté prestataire encore rapproché (une transaction du même compte) :
+        // l'écriture n'est celle d'aucune transaction en attente.
+        let mut portee = typed(tx(9, 10, "-50.00", "CHF"), "wd", "IDZ");
+        portee.matched_entry_id = Some(903);
         assert_eq!(
-            first_naming_entry(&SPEC, &b, [(903, "Retrait sans identifiant")], &[]),
+            first_naming_entry(&SPEC, &a, [sans_nom], &[portee.clone()]),
+            None
+        );
+        // Une transaction d'un autre compte (l'autre côté) ne l'occupe pas.
+        let mut autre_cote = tx(10, 99, "50.00", "CHF");
+        autre_cote.matched_entry_id = Some(903);
+        assert_eq!(
+            first_naming_entry(&SPEC, &a, [sans_nom], &[autre_cote]),
             Some(903)
         );
         let c = typed(tx(3, 10, "-50.00", "CHF"), "wd", "IDC");

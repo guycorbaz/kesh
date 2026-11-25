@@ -1366,6 +1366,53 @@ async fn ecriture_saisie_a_la_main_rattachee_puis_detachee_jamais_reecrite(pool:
     detache_ni_propose_ni_ecrit_deux_fois(&ctx, retrait, v, ecriture, reception).await;
 }
 
+/// Correctif #1538 (revue P2 de la #1560, M1) : une écriture saisie à la
+/// main (sans identifiant) **encore rapprochée des deux côtés** — le retrait
+/// d'un mois passé — ne bloque pas un nouveau retrait du même montant, jamais
+/// écrit : son côté PayPal n'est pas libre, elle n'est l'écriture d'aucune
+/// transaction en attente. Le nouveau retrait reste proposé et s'accepte.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ecriture_a_la_main_encore_rapprochee_ne_bloque_pas_un_nouveau_retrait(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let ancien = ctx.tx("0TEST00000000007G").await;
+    let (s, b) = ctx
+        .post(
+            "/api/v1/journal-entries",
+            json!({
+                "entryDate": "2020-02-28",
+                "journal": "Banque",
+                "description": "Retrait PayPal vers la banque",
+                "lines": [
+                    { "accountId": ctx.banque, "debit": "1000.00", "credit": "0" },
+                    { "accountId": ctx.chf, "debit": "0", "credit": "1000.00" },
+                ],
+            }),
+        )
+        .await;
+    assert_eq!(s, 201, "{b}");
+    let ecriture = b["id"].as_i64().unwrap();
+    assert_eq!(ctx.rattacher(ancien, ecriture).await.0, 200);
+    let reception = ctx
+        .autre_cote(ctx.ba_banque().await, "1000.00", "2020-02-28")
+        .await;
+    assert_eq!(ctx.rattacher(reception, ecriture).await.0, 200);
+    let nouveau = ctx
+        .transaction_sur(
+            ctx.ba_chf,
+            "-1000.00",
+            "2020-03-02",
+            Some("General Withdrawal"),
+            Some("0TESTRETRAIT00005"),
+        )
+        .await;
+    let revue = ctx.revue().await;
+    assert_eq!(deja_comptabilisee(&revue, nouveau), None, "{revue}");
+    let v = proposition(&revue, nouveau);
+    assert_eq!(v["type"], "withdrawal", "{v}");
+    let (s, b) = ctx.accepter(vec![v]).await;
+    assert_eq!((s, b["failed"].clone()), (200, json!([])), "{b}");
+}
+
 /// L'ordre inverse : annuler d'abord le **côté banque** ne retire que son
 /// lien (l'écriture reste rapprochée du retrait, qui n'est pas pending, donc
 /// pas proposé) ; annuler ensuite le côté PayPal **contre-passe** l'écriture,

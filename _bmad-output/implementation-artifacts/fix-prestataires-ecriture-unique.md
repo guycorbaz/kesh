@@ -30,9 +30,12 @@ compte ; `accept_withdrawal` et `accept_rule` écrivent sans lire d'écriture ex
    identifiants de son libellé (`ProviderSpec::extract_ids`) comprennent la clé de la transaction
    (`ProviderSpec::match_key`), la règle du rattachement d'une vente ; ou, pour l'autre moitié d'une conversion en
    une écriture (le libellé ne nomme que la moitié débitée), l'écriture est rapprochée de sa paire
-   (`conversion_halves`), qu'elle nomme ; ou, **par prudence**, son libellé ne porte aucun identifiant (écriture
-   saisie à la main puis rattachée des deux côtés, revue P1 de la #1560, M1) : elle vaut alors pour toute transaction
-   de la présélection — en refuser une de trop coûte moins que d'en écrire une seconde fois. La présélection SQL est `reconciliation_link::find_posted_elsewhere`
+   (`conversion_halves`), qu'elle nomme. À défaut d'une écriture qui la nomme — qui passe toujours en premier —,
+   **par prudence**, une écriture sans aucun identifiant dont le côté prestataire est libre (aucune transaction du
+   compte rapprochée : écriture saisie à la main, rattachée des deux côtés puis détachée ; `unnamed_and_free`,
+   revues P1 et P2 de la #1560) vaut pour toute transaction de la présélection — en refuser une de trop coûte moins
+   que d'en écrire une seconde fois ; encore rapprochée côté prestataire (le retrait d'un mois passé), elle ne bloque
+   rien. La présélection SQL est `reconciliation_link::find_posted_elsewhere`
    (`EntrySqlMode::PostedElsewhere` : la liste de la 34-4, la condition 4 remplacée par le lien à l'autre côté,
    sans plafond) ; le choix, `provider_review::first_naming_entry` (pur, la première dans l'ordre de la
    présélection : la plus proche par date, puis la plus ancienne).
@@ -89,6 +92,8 @@ compte ; `accept_withdrawal` et `accept_rule` écrivent sans lire d'écriture ex
 - AC-8 : des frais du même montant que le retrait, sous le même identifiant → jamais confondus avec lui.
 - AC-9 : une écriture saisie à la main (sans identifiant), rattachée des deux côtés, puis le côté PayPal annulé →
   `already_posted`, jamais réécrite.
+- AC-10 : la même écriture encore rapprochée des deux côtés ne bloque pas un nouveau retrait du même montant ; une
+  écriture qui nomme la transaction passe avant une écriture sans identifiant plus proche.
 
 ## Reprise sur `pr/40-stripe` (versement Stripe)
 
