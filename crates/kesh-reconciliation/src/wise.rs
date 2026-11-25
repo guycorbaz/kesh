@@ -1041,6 +1041,13 @@ mod tests {
             first_naming_entry(&SPEC, &virement, [(902, autre)], &[]),
             None
         );
+        // Le sien, même si le libellé du compte cite un autre virement : il ne
+        // nomme pas d'autre transaction.
+        assert!(!names_another(
+            &SPEC,
+            &virement,
+            "Wise TRANSFER-1 · TRANSFER · TRANSFER-70000001"
+        ));
         // Le sien : nommé, retenu, même après une écriture sans nom plus proche.
         let sien = "Wise Pro · TRANSFER · TRANSFER-70000001";
         assert!(!names_another(&SPEC, &virement, sien));

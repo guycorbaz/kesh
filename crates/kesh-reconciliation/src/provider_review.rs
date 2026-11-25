@@ -963,17 +963,20 @@ pub fn unnamed_and_free(
 }
 
 /// L'écriture de libellé `description` nomme-t-elle **une autre** transaction
-/// que `t`, du même genre de clé : un identifiant qu'elle porte est du genre
-/// de `t` ([`ProviderSpec::same_key_kind`]) et n'est pas sa clé
-/// ([`ProviderSpec::match_key`]) ? C'est alors l'écriture de cette autre
+/// que `t`, et non `t` : elle ne porte pas la clé de `t`
+/// ([`ProviderSpec::match_key`]), mais un identifiant du genre de `t`
+/// ([`ProviderSpec::same_key_kind`]) ? C'est alors l'écriture de cette autre
 /// transaction, jamais celle de `t` : [`first_naming_entry`] ne la retient
 /// pas, et un prestataire qui propose de rattacher `t` à l'autre côté déjà
-/// passé d'un virement (Wise, 39-11c AC-4) l'écarte de ses candidates.
+/// passé d'un virement (Wise, 39-11c AC-4) l'écarte de ses candidates. Une
+/// écriture qui porte la clé de `t` n'en nomme jamais une autre, même si son
+/// libellé cite aussi un identifiant du même genre (le libellé du compte du
+/// prestataire, par exemple, qu'écrit l'acceptation).
 pub fn names_another(spec: &ProviderSpec, t: &BankTransaction, description: &str) -> bool {
     let key = (spec.match_key)(t);
-    (spec.extract_ids)(description)
-        .iter()
-        .any(|id| (spec.same_key_kind)(t, id) && key != Some(id.as_str()))
+    let ids = (spec.extract_ids)(description);
+    !ids.iter().any(|id| key == Some(id.as_str()))
+        && ids.iter().any(|id| (spec.same_key_kind)(t, id))
 }
 
 /// L'écriture déjà passée de `t` parmi les `candidates` (déjà triées : la plus
