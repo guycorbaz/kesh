@@ -19,7 +19,7 @@ Passe **6**, passe ciblée, **contexte frais**. Langue du rapport : français.
 3. La fiche : `_bmad-output/implementation-artifacts/55-2-lien-de-compte-partout.md`.
 4. Le code qu'elle cite, **ligne par ligne** : chaque `chemin:ligne` se vérifie à la base indiquée.
 
-**Passe ciblée** : une seule lentille, braquée sur la remédiation de la passe précédente, commit `HEAD` (`git show HEAD`). Vérifie que chaque correctif est juste au code, qu'il ne crée pas de défaut neuf, et qu'il est propagé (même symptôme ailleurs dans la fiche, le fichier d'epic et les autres fiches). Les axes A1 à A9 ne s'exercent que sur ce que touche ce commit.
+**Passe ciblée** : une seule lentille, braquée sur la remédiation de la passe précédente, commit `0a295bd20` (`git show 0a295bd20` ; le texte d'issue est dans `/home/beat/claude/kesh-gate-logs/s55-kickoff/issues-a-ouvrir.md`). Vérifie que chaque correctif est juste au code, qu'il ne crée pas de défaut neuf, et qu'il est propagé (même symptôme ailleurs dans la fiche, le fichier d'epic et les autres fiches). Les axes A1 à A9 ne s'exercent que sur ce que touche ce commit.
 
 ## Axes (chacun exercé, ou déclaré non exercé avec sa raison)
 
