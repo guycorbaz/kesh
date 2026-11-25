@@ -250,6 +250,10 @@ pour l'exercice choisi, sans cliquer sur *Générer*. (refs #À-VENIR)
 
 ### Completion Notes List
 
+### Issues à ouvrir
+
+(Points de revue non corrigés : sévérité, site, texte proposé ; source de la story de solde 55-4.)
+
 ### File List
 
 ## Change Log

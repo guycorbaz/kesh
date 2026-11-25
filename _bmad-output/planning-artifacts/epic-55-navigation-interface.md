@@ -104,10 +104,11 @@ Base `origin/main` à `1e23edb55` ; branches de l'Epic 46 lues par `git show <br
 - **D6 — Un seul composant de lien de compte** (`AccountLink.svelte`) qui rend le numéro et le lien de `ledgerHref` ;
   toutes les vues l'emploient. `ledgerHref` garde sa sortie **à l'octet près** (ordre `tab`, `accountId`, `from`, `to`)
   pour l'accueil et la réévaluation. (55-2)
-- **D7 — TVA : les comptes désignés (Q3).** Le décompte TVA ne montre aucun compte. La 55-2 affiche, sur les lignes
-  « TVA due » et « TVA récupérable », le numéro du compte désigné (TVA due, impôt préalable : réglages de facturation,
-  lisibles par tout rôle) en lien vers son grand livre sur la période du décompte. Compte non désigné : ni numéro ni lien.
-  *Écarté* : ajouter des comptes au DTO de la TVA (backend). (55-2)
+- **D7 — TVA : les comptes désignés (Q3).** Le décompte TVA ne montre aucun compte. La 55-2 ajoute une ligne « Comptes au
+  grand livre : TVA due `NNNN` · TVA récupérable `MMMM` » (réglages de facturation, lisibles par tout rôle), chaque numéro
+  en lien vers son grand livre sur la période du décompte ; compte non désigné : sa mention est omise. Une ligne à part, et
+  non un lien sur les montants : la TVA due du décompte vient des factures, non du solde du compte (manuel, § *Décompte
+  TVA*). *Écarté* : ajouter des comptes au DTO de la TVA (backend). *(Amendé à la validation P1 de la 55-2.)* (55-2)
 - **D8 — Grand livre : contreparties et titre.** Les numéros de contrepartie deviennent des liens (numéro → compte par la
   liste des comptes déjà chargée par la page) ; le numéro du titre d'une section n'est un lien que quand le grand livre
   montre plusieurs comptes (un lien vers lui-même n'apprend rien). (55-2)
@@ -133,6 +134,22 @@ Base `origin/main` à `1e23edb55` ; branches de l'Epic 46 lues par `git show <br
 
 Ordre : 55-1 → 55-2 → 55-3 → 55-4. La 55-3 peut commencer sa partie serveur en parallèle de la 55-2 (aucun fichier serveur
 commun) ; ses vues se posent après la 55-2 (`JournalReportView.svelte`, `GeneralLedgerView.svelte` communs).
+
+## Gates
+
+Règle de l'epic (décision du responsable de l'epic, appliquée à ses epics depuis l'Epic 37 ; **écart assumé** à
+`CLAUDE.md` § *Test Locally First*, qui demande l'E2E complet au dernier commit de code de chaque story) :
+
+- **par story**, au dernier commit de code : `npm run check`, `lint-i18n-ownership`, `test:unit`, `build` ; pour la 55-3
+  en plus `cargo fmt --check`, `cargo clippy --workspace --all-targets -D warnings` et `cargo nextest` sur le rayon
+  d'impact ; les **specs E2E de la story et celles des Rapports** (`reports*.spec.ts`, `homepage-charts.spec.ts`,
+  `open-items.spec.ts`, `dunning-roundtrip.spec.ts`) ;
+- **en fin d'epic** (55-4, T2), après le dernier commit de code : `scripts/gate-ci.sh <base>` et la **suite E2E complète** ;
+  « vert » = seulement les échecs attendus de `docs/testing.md` § *Les échecs attendus*, jugés fichier par fichier.
+
+Le Dev Agent Record de chaque story dit exactement ce qui a tourné (« gate ciblé …, gate complet en fin d'epic »).
+Chaque story écrit en section *Issues à ouvrir* de son Dev Agent Record les points de revue non corrigés (sévérité,
+site, texte) : c'est la source de la story de solde (55-4).
 
 ## Backend
 
