@@ -3,8 +3,9 @@
  * des E2E : un petit serveur HTTP du bouclage, lancé par la spec sur le port lu
  * de `KESH_E2E_PROVIDER_MOCK_PORT`, vers lequel le backend d'E2E est démarré
  * (`KESH_<P>_BASE_URL=http://127.0.0.1:<port>`, `http` admis vers le seul
- * bouclage). Il joue PayPal ici ; Wise (39-12b) et Stripe (40-8b) y ajoutent
- * leurs routes ([`ProviderMockRoute`]) sans toucher au serveur.
+ * bouclage). Il joue PayPal (38-12b) et Stripe (40-8b, [`stripeMockRoutes`]) ;
+ * Wise (39-12b) y ajoute ses routes ([`ProviderMockRoute`]) sans toucher au
+ * serveur.
  *
  * **Aucune donnée réelle** : identifiants `0TEST…`, e-mails `@example.invalid`,
  * aucun appel sortant. Le serveur garde la liste des requêtes reçues, pour que
@@ -229,6 +230,136 @@ export function paypalMockRoutes(options: PaypalMockOptions): ProviderMockRoute[
 				};
 				if (inside.length > 0) body.transaction_details = inside.map(paypalTx);
 				return { status: 200, json: body, delayMs: options.pageDelayMs, hold };
+			},
+		},
+	];
+}
+
+// ---------------------------------------------------------------------------
+// Stripe (Story 40-8a : versements payés, transactions de solde d'un versement)
+// ---------------------------------------------------------------------------
+
+/** Une charge fictive d'un versement Stripe (montants décimaux, deux décimales). */
+export interface StripeMockCharge {
+	/** Identifiant de la transaction de solde (`txn_TEST…`). */
+	id: string;
+	/** Identifiant de la charge (`ch_TEST…`), la `source`. */
+	source: string;
+	/** Brut et frais, `"10.00"`. */
+	gross: string;
+	fee: string;
+	/** Instant de création, ISO 8601 en UTC. */
+	createdAt: string;
+}
+
+/** Un versement fictif payé, en CHF. */
+export interface StripeMockPayout {
+	id: string;
+	/** Instant d'arrivée, ISO 8601 en UTC (le filtre `arrival_date`). */
+	arrivalAt: string;
+	automatic: boolean;
+	charges: StripeMockCharge[];
+}
+
+/** Réglages du jeu Stripe. */
+export interface StripeMockOptions {
+	/** La clé restreinte attendue (`Bearer <clé>`). */
+	key: string;
+	payouts: StripeMockPayout[];
+	/**
+	 * Retenir les transactions de ce versement jusqu'à `ProviderMock.release()` :
+	 * la progression « versement 1/2 » se voit, sans dépendre du temps.
+	 */
+	holdPayout?: string;
+}
+
+const minor = (decimal: string) => Math.round(Number(decimal) * 100);
+const epoch = (iso: string) => Math.floor(Date.parse(iso) / 1000);
+
+/** Le versement dans la forme de `GET /v1/payouts` (montant = somme des nets). */
+function stripePayout(p: StripeMockPayout): unknown {
+	const amount = p.charges.reduce((sum, c) => sum + minor(c.gross) - minor(c.fee), 0);
+	return {
+		id: p.id,
+		object: 'payout',
+		amount,
+		currency: 'chf',
+		arrival_date: epoch(p.arrivalAt),
+		automatic: p.automatic,
+		status: 'paid',
+	};
+}
+
+/** Les transactions de solde d'un versement, dont la sienne (`type: payout`), à écarter. */
+function stripeBalanceTransactions(p: StripeMockPayout): unknown[] {
+	const own = (stripePayout(p) as { amount: number }).amount;
+	return [
+		{
+			id: `txn_PO${p.id.slice(3)}`,
+			object: 'balance_transaction',
+			amount: -own,
+			fee: 0,
+			net: -own,
+			currency: 'chf',
+			created: epoch(p.arrivalAt),
+			available_on: epoch(p.arrivalAt),
+			reporting_category: 'payout',
+			type: 'payout',
+			description: 'STRIPE PAYOUT',
+			source: p.id,
+		},
+		...p.charges.map((c) => ({
+			id: c.id,
+			object: 'balance_transaction',
+			amount: minor(c.gross),
+			fee: minor(c.fee),
+			net: minor(c.gross) - minor(c.fee),
+			currency: 'chf',
+			created: epoch(c.createdAt),
+			available_on: epoch(p.arrivalAt),
+			reporting_category: 'charge',
+			type: 'charge',
+			description: 'Vente fictive',
+			source: c.source,
+		})),
+	];
+}
+
+/**
+ * Les routes de Stripe : `GET /v1/payouts` (clé exigée ; versements dont
+ * l'arrivée tombe dans `[arrival_date[gte], arrival_date[lt][`, une page) et
+ * `GET /v1/balance_transactions?payout=…` (clé exigée ; une page).
+ */
+export function stripeMockRoutes(options: StripeMockOptions): ProviderMockRoute[] {
+	const authorized = (req: RecordedRequest) => req.authorization === `Bearer ${options.key}`;
+	const refused: MockReply = { status: 401, json: { error: { type: 'invalid_request_error', code: 'api_key_invalid' } } };
+	return [
+		{
+			method: 'GET',
+			path: '/v1/payouts',
+			handle: (req) => {
+				if (!authorized(req)) return refused;
+				const gte = Number(req.query.get('arrival_date[gte]'));
+				const lt = Number(req.query.get('arrival_date[lt]'));
+				const data = options.payouts
+					.filter((p) => epoch(p.arrivalAt) >= gte && epoch(p.arrivalAt) < lt)
+					.sort((a, b) => epoch(b.arrivalAt) - epoch(a.arrivalAt))
+					.map(stripePayout);
+				return { status: 200, json: { object: 'list', data, has_more: false } };
+			},
+		},
+		{
+			method: 'GET',
+			path: '/v1/balance_transactions',
+			handle: (req) => {
+				if (!authorized(req)) return refused;
+				const payout = options.payouts.find((p) => p.id === req.query.get('payout'));
+				if (!payout) return { status: 404, json: { error: { code: 'resource_missing' } } };
+				return {
+					status: 200,
+					json: { object: 'list', data: stripeBalanceTransactions(payout), has_more: false },
+					hold: options.holdPayout === payout.id,
+				};
 			},
 		},
 	];

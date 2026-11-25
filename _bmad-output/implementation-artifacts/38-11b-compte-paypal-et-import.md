@@ -172,7 +172,7 @@ solde attende son rapprochement (38-11c2).
      contre sa contrepartie), et le rapprochement PayPal propre (38-11c2) n'existe pas encore ; l'écran les masque
      (`withoutProviders`, 38-11d AC-1), l'API non ; *remède* : ne pas accepter la proposition, la passer en rejet ou la
      traiter par le rapprochement PayPal (38-11c2). Le rattachement à une écriture existante (`link_entry`, 38-11c1)
-     est admis, non un angle mort. Un point de traçage est à ouvrir pour la phase 2
+     est admis, non un angle mort. Le point de traçage pour la phase 2 est l'issue #1468
      (`kesh-gate-logs/epic-38-kiss/issues-a-ouvrir.md`, point 1).
 4. **AC-4 — Route d'import** `POST /api/v1/paypal-imports` (multipart : `file`, `account`), Comptable+, clés d'API
    `read-write` admises (comme `POST /api/v1/bank-imports`, `lib.rs:946`). Inscrite à `LIB_ROUTES`
@@ -480,7 +480,7 @@ tronqué à 255 (`NAME_MAX_CHARS`), seuls `transaction_id` (frais `:FEE`) et `re
 - **L2** — `PAYPAL_TRANSACTION_ID_MAX_CHARS` (255 − `:FEE`, assertion de compilation pour `TXN `) et
   `check_transaction_id_lengths`, appelée après la lecture : 422 `PAYPAL_CSV_INVALID` (`PAYPAL_CSV_LINES`, erreur de ligne
   `transaction_id`) au lieu d'une erreur de base.
-- **L3 à L7** : dette, `kesh-gate-logs/epic-38-kiss/issues-a-ouvrir.md` (points 5 à 9 ; point 1 annoté).
+- **L3 à L7** : dette, `kesh-gate-logs/epic-38-kiss/issues-a-ouvrir.md` (points 5 à 9 ; point 1 annoté). *(Annoté le 2026-11-24 : points 5 à 9 → #1471 à #1475 ; point 1 → #1468.)*
 
 **Tests** (recomptés de `44d5069e` à `ac73d4ea`, `grep -cE '#\[(sqlx::)?test'` aux deux bornes) : 6 neufs —
 `paypal_import_e2e.rs` 8 → 10 (`la_devise_du_compte_du_plan_d_un_solde_paypal_ne_change_pas`,
@@ -622,7 +622,7 @@ Hors dépôt : `kesh-gate-logs/s38-11b/` (T0, gates, mutations, prompt de revue)
   verrouillantes avant l'écriture d'ouverture, `list_provider_balances_locked`), M2 (lot pain.001 refusé dès la
   création, `FailedProposal` `BANK_ACCOUNT_IS_PROVIDER` à l'acceptation d'une facture fournisseur, inventaire clos et
   angle mort tranché à l'AC-3), M3 (`ACCOUNT_CURRENCY_PROVIDER_LINKED`, code neuf, quatre locales), L1 (relecture sous
-  les verrous nommés) et L2 (identifiant borné, 422) corrigés ; L3 à L7 à la dette (`issues-a-ouvrir.md`, points 5 à 9).
+  les verrous nommés) et L2 (identifiant borné, 422) corrigés ; L3 à L7 à la dette (`issues-a-ouvrir.md`, points 5 à 9 ; annoté le 2026-11-24 : #1471 à #1475).
   Symptômes grepés (code, fiche, `docs/api-external.md`, fiche 38-11d — phrase de l'angle mort reprise au manuel).
   Gates complets verts (Dev Agent Record). Prochaine passe : P2 complète, Opus
   (`kesh-gate-logs/s38-11b/revue-p2-prompt.md`).
@@ -630,7 +630,7 @@ Hors dépôt : `kesh-gate-logs/s38-11b/` (T0, gates, mutations, prompt de revue)
 - 2026-11-20 — revue de code P2 (Claude Opus 5.5, contexte frais) : 0 CRITICAL / 0 HIGH / 0 MEDIUM / 5 LOW ; boucle close
   (rien au-dessus de LOW). Versés à la dette (`kesh-gate-logs/epic-38-kiss/issues-a-ouvrir.md`) : P2-L1 interblocage
   possible import ↔ routes des comptes (import non rejoué → 500, fenêtre de quelques ms, non reproduit), P2-L4 compte
-  ordinaire mouvementé passé PayPal par PUT (lot pain.001 antérieur), P2-L5 deux sens de la garde 3 bis sans test.
+  ordinaire mouvementé passé PayPal par PUT (lot pain.001 antérieur), P2-L5 deux sens de la garde 3 bis sans test. *(Annoté le 2026-11-24 : P2-L4 et P2-L5 → #1476.)*
   P2-L2 et P2-L3 (rédaction 38-11d, `api-external.md:1001`, angle mort complet) : à reprendre au développement de 38-11d.
   Rapport : `kesh-gate-logs/s38-11b/revue-p2-rapport.md`.
 - 2026-11-20 — P2-L1 corrigé dans la 38-11c1 (commit `8d241e52`) : l'import (`routes/paypal_imports.rs`) prend ses

@@ -1,0 +1,55 @@
+{
+ "object": "list",
+ "data": [
+  {
+   "id": "po_TEST0003",
+   "object": "payout",
+   "amount": 3854,
+   "arrival_date": 1581894000,
+   "automatic": true,
+   "currency": "usd",
+   "created": 1581634800,
+   "status": "paid",
+   "type": "bank_account",
+   "method": "standard",
+   "livemode": false,
+   "balance_transaction": "txn_TESTPO0003",
+   "description": "STRIPE PAYOUT",
+   "statement_descriptor": null
+  },
+  {
+   "id": "po_TEST0005",
+   "object": "payout",
+   "amount": 5000,
+   "arrival_date": 1581462000,
+   "automatic": false,
+   "currency": "chf",
+   "created": 1581375600,
+   "status": "paid",
+   "type": "bank_account",
+   "method": "standard",
+   "livemode": false,
+   "balance_transaction": "txn_TESTPO0005",
+   "description": "Versement manuel fictif",
+   "statement_descriptor": null
+  },
+  {
+   "id": "po_TEST0002",
+   "object": "payout",
+   "amount": 27030,
+   "arrival_date": 1581289200,
+   "automatic": true,
+   "currency": "eur",
+   "created": 1581030000,
+   "status": "paid",
+   "type": "bank_account",
+   "method": "standard",
+   "livemode": false,
+   "balance_transaction": "txn_TESTPO0002",
+   "description": "STRIPE PAYOUT",
+   "statement_descriptor": null
+  }
+ ],
+ "has_more": true,
+ "url": "/v1/payouts"
+}

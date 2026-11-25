@@ -395,7 +395,7 @@ rattrape, sans doublon.
 - 2026-11-21 — revue de code P1 (Claude Sonnet 5.5, passe complète, une lentille ; rapport
   `kesh-gate-logs/s38-12a/revue-p1-rapport.md`) : 0 CRITICAL, 1 HIGH, 0 MEDIUM, 12 LOW. Remédiation (Claude Opus 5.5)
   au commit `3e22ea0e` : F1 (HIGH), F2, F3, F4, F5, F6, F9, F10, F11, F13 corrigés dans la story (le socle sert Wise et
-  Stripe) ; F7, F8, F12 en dette, issues 17 à 19 de `kesh-gate-logs/epic-38-kiss/issues-a-ouvrir.md`. AC-4 amendé
+  Stripe) ; F7, F8, F12 en dette, issues 17 à 19 de `kesh-gate-logs/epic-38-kiss/issues-a-ouvrir.md` (annoté le 2026-11-24 : #1480 à #1482). AC-4 amendé
   (recouvrement d'une seconde, fin future ramenée au jour du jour, plancher de l'historique). **12 tests ajoutés**
   (recomptés de `9bbf1388` à `3e22ea0e` par `#[test]`/`#[tokio::test]`/`#[sqlx::test]` : `provider_download.rs` 11 → 15,
   `http_client.rs` 0 → 2, `provider_env.rs` 7 → 8, `routes/provider_imports.rs` 2 → 3, `paypal_download_e2e.rs` 9 → 11,
@@ -535,12 +535,12 @@ d'attente, a été arrêtée avant de tourner.
 | F4 — `AUDIT_ACTIONS` `[&str; 2]`, `debug_assert!` | **corrigé** : tranche `&[&str]`, contrôle `check_audit_action` en tête d'`import_lines`, `AppError::Internal` en version publiée | `provider_imports.rs` |
 | F5 — colle PayPal non partagée | **corrigé** : `retry_after` (`http_client`), `classify_status`/`StatusClass`, `classify_transport` (`provider_download`), appelés par PayPal | |
 | F6 — champs lus par chaîne, erreur dans la tâche | **corrigé** : constantes `PAYPAL_CLIENT_ID`, `PAYPAL_SECRET` (spécification et client), `ProviderSpec::require_field` (nom non déclaré → `Internal`), client construit **avant** la tâche (refus synchrone) | `provider_env.rs`, `paypal_downloads.rs` |
-| F7 — identifiant répété à montants différents bloque la période | **dette** (issue 17 de `epic-38-kiss/issues-a-ouvrir.md`) | |
-| F8 — séries globales, libellés par société | **dette** (issue 18) | |
+| F7 — identifiant répété à montants différents bloque la période | **dette** (issue 17 de `epic-38-kiss/issues-a-ouvrir.md` ; annoté le 2026-11-24 : #1480) | |
+| F8 — séries globales, libellés par société | **dette** (issue 18 ; annoté le 2026-11-24 : #1481) | |
 | F9 — `Retry-After: 0` | **corrigé** : pause entre 1 et 120 s (`RETRY_AFTER_FLOOR`) | `pause_for` |
 | F10 — nom d'erreur non borné au journal | **corrigé** : 64 caractères (`ERROR_NAME_MAX_CHARS`) | `paypal_api/mod.rs` |
 | F11 — borne des trois ans | **corrigé sans perdre de jour** : plancher `history_floor` = `now − 3 ans + 1 h` ; `too_old` au jour de Zurich du plancher (jour admis) ; la première fenêtre commence au plancher, la première moitié d'une fenêtre coupée garde ce début | `provider_download.rs` |
-| F12 — lignes sans transaction hors « déjà vu » | **dette** (issue 19) : le correctif change la forme de `ProviderGroup`, partagée avec la 40-7b | |
+| F12 — lignes sans transaction hors « déjà vu » | **dette** (issue 19 ; annoté le 2026-11-24 : #1482) : le correctif change la forme de `ProviderGroup`, partagée avec la 40-7b | |
 | F13 — virgule des milliers sur une valeur d'API | **corrigé** : `parse_api_amount` (forme fermée sans virgule), commun pour Wise et Stripe | `kesh-import/src/csv/amount.rs`, `paypal_api.rs` |
 
 Tests ajoutés : 12, décompte au Change Log. Sondes négatives de la remédiation (`kesh-gate-logs/s38-12a/mut/mutations-p1.log`,

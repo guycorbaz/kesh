@@ -1,8 +1,11 @@
 <!--
   Story 38-12b (AC-3) — le compte rendu d'un import PayPal, extrait de la page
   PayPal de la 38-11d (AC-3) pour servir aux deux sources : l'import du CSV
-  (page) et le téléchargement par l'API (dialogue générique, 38-12b) — par
-  devise, transactions insérées et doublons, puis lignes écartées.
+  (page commune des prestataires, `ProviderReviewPage`, par son fragment
+  `importReport`) et le téléchargement par l'API (dialogue générique, 38-12b).
+  Les lignes par devise sont celles du compte rendu commun
+  (`ProviderImportReport`, 40-7d) ; ce composant y ajoute les lignes écartées,
+  propres à PayPal.
 
   `testid` préfixe les identifiants de test (« paypal-import-report » par
   défaut, celui de la 38-11d) : la page et le dialogue peuvent afficher chacun
@@ -10,6 +13,7 @@
 -->
 <script lang="ts">
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
+	import ProviderImportReport from '$lib/features/provider/ProviderImportReport.svelte';
 	import type { PaypalImportResponse } from './paypal.types';
 
 	interface Props {
@@ -20,19 +24,7 @@
 	let { report, testid = 'paypal-import-report' }: Props = $props();
 </script>
 
-<section class="mt-4 rounded border border-border bg-surface-alt p-3 text-sm" data-testid={testid}>
-	<h2 class="font-semibold">{i18nMsg('paypal-import-report-title', 'Compte rendu de l’import')}</h2>
-	<ul class="mt-2 list-disc pl-5">
-		{#each report.currencies as c (c.currency)}
-			<li data-testid="{testid}-{c.currency}">
-				{i18nMsg('paypal-import-report-currency', '{ $currency } : { $inserted } transaction(s) insérée(s), { $duplicates } doublon(s)', {
-					currency: c.currency,
-					inserted: String(c.inserted),
-					duplicates: String(c.duplicates),
-				})}
-			</li>
-		{/each}
-	</ul>
+<ProviderImportReport {report} {testid}>
 	<p class="mt-2" data-testid="{testid}-skipped">
 		{i18nMsg('paypal-import-report-skipped', 'Écartées : { $notCompleted } ligne(s) non terminée(s), { $memo } ligne(s) Memo, { $pairs } paire(s) neutre(s).', {
 			notCompleted: String(report.skipped.notCompleted.length),
@@ -47,4 +39,4 @@
 			{/each}
 		</ul>
 	{/if}
-</section>
+</ProviderImportReport>

@@ -341,7 +341,7 @@ test('6 — une proposition acceptée ailleurs entre-temps est refusée, avec so
 	await row.locator('input[type="checkbox"]').check();
 	await page.getByTestId('paypal-accept').click();
 	await expect(page.getByTestId('paypal-accept-report')).toContainText('1 refusée(s)');
-	await expect(page.getByTestId('paypal-accept-failed')).toContainText('ne vaut plus');
+	await expect(page.getByTestId('paypal-accept-failed')).toContainText("n'est plus valable");
 	await captureOf(page, 'paypal-accept-report', '12-acceptation-avec-refus');
 	await expect(page.getByTestId('paypal-proposals-empty')).toBeVisible();
 });

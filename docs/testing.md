@@ -436,6 +436,22 @@ leurs routes au même serveur.
 (préparation, compte sans identifiants) tournent. Dans une suite complète lancée sans ces
 variables, il s'ajoute aux ignorés.
 
+**Stripe — `stripe-download.spec.ts` (Story 40-8b)** : même serveur, routes `stripeMockRoutes`
+(`GET /v1/payouts`, `GET /v1/balance_transactions`). Le backend d'E2E reçoit en plus une clé
+restreinte **de test** factice (le mode « bac à sable » se lit à son préfixe) :
+
+```bash
+# Terminal 1, en plus (valeurs factices)
+  KESH_STRIPE_1_ACCOUNT='Stripe API E2E' KESH_STRIPE_1_KEY=rk_test_e2efictif \
+  KESH_STRIPE_BASE_URL=http://127.0.0.1:3901 \
+```
+
+La spec crée `Stripe API E2E` (ou `KESH_E2E_STRIPE_ACCOUNT`) et `Stripe sans API` ; la clé
+attendue par le serveur simulé est `rk_test_e2efictif` (ou `KESH_E2E_STRIPE_KEY`). PayPal et
+Stripe peuvent partager le même port : les chemins ne se recouvrent pas, mais **une spec à la
+fois** lance le serveur (les deux specs ne tournent pas en parallèle sur le même port).
+**Ignoré connu**, de même : sans `KESH_E2E_PROVIDER_MOCK_PORT`, son test 3 est ignoré.
+
 ## Les échecs attendus — la suite ne passe PAS au vert, et il faut le savoir
 
 ⚠️ **`npm run test:e2e` ne passe PAS au vert : le compte attendu est de 7 à 9 échecs, quelle que

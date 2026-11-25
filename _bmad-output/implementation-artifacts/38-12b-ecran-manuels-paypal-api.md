@@ -344,6 +344,7 @@ manuel utilisateur ; gates de la nuit du 22.11.
 
 1. Les réponses d'un seul compte bancaire (`POST`, `PUT`, `PATCH`, clôture…) ne portent pas `providerApi` : un écran
    qui remplacerait une ligne de la liste par la réponse d'une mutation la perdrait (aucun ne le fait aujourd'hui).
+   *(Annoté le 2026-11-24 : #1486.)*
 2. `ProviderApiConfig::series_for` compare les libellés par `to_lowercase`, la base par une collation sans accents :
    « PayPal Zürich » au compte et « PayPal Zurich » à la série ne s'apparient pas (le bouton n'apparaît pas, refus
    `PROVIDER_API_NOT_CONFIGURED`) — à aligner sur la collation, ou à dire au manuel.
