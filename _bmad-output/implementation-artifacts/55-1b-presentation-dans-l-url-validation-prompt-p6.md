@@ -20,7 +20,7 @@ Passe **6**, passe ciblée, **contexte frais**. Langue du rapport : français.
 4. Le code qu'elle cite, **ligne par ligne** : chaque `chemin:ligne` se vérifie à la base indiquée.
 5. La fiche 55-1a (modèle d'URL), et sur la PR 46 `frontend/src/lib/features/reports/reports-grouping.ts` et `frontend/src/routes/(app)/reports/+page.svelte` (`git show pr/46-rapports-groupes:<fichier>`), la fiche 46-2.
 
-**Passe ciblée** : une seule lentille, braquée sur la remédiation de la passe précédente, commit `HEAD` (`git show HEAD`). Vérifie que chaque correctif est juste au code, qu'il ne crée pas de défaut neuf, et qu'il est propagé (même symptôme ailleurs dans la fiche, le fichier d'epic et les autres fiches). Les axes A1 à A9 ne s'exercent que sur ce que touche ce commit.
+**Passe ciblée** : une seule lentille, braquée sur la remédiation de la passe précédente, commit `9d604a314` (`git show 9d604a314 -- _bmad-output/implementation-artifacts/55-1b-presentation-dans-l-url.md`). Vérifie que chaque correctif est juste au code, qu'il ne crée pas de défaut neuf, et qu'il est propagé (même symptôme ailleurs dans la fiche, le fichier d'epic et les autres fiches). Les axes A1 à A9 ne s'exercent que sur ce que touche ce commit.
 
 ## Axes (chacun exercé, ou déclaré non exercé avec sa raison)
 
