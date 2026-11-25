@@ -31,7 +31,8 @@ compte ; `accept_withdrawal` et `accept_rule` écrivent sans lire d'écriture ex
    (`ProviderSpec::match_key`), la règle du rattachement d'une vente ; ou, pour l'autre moitié d'une conversion en
    une écriture (le libellé ne nomme que la moitié débitée), l'écriture est rapprochée de sa paire
    (`conversion_halves`), qu'elle nomme. À défaut d'une écriture qui la nomme — qui passe toujours en premier —,
-   **par prudence**, une écriture sans aucun identifiant dont le côté prestataire est libre (aucune transaction du
+   **par prudence**, une écriture sans aucun identifiant (du genre de la clé de la transaction,
+   `ProviderSpec::same_key_kind`, #1539) dont le côté prestataire est libre (aucune transaction du
    compte rapprochée : écriture saisie à la main, rattachée des deux côtés puis détachée ; `unnamed_and_free`,
    revues P1 et P2 de la #1560) vaut pour toute transaction de la présélection — en refuser une de trop coûte moins
    que d'en écrire une seconde fois ; encore rapprochée côté prestataire (le retrait d'un mois passé), elle ne bloque
@@ -102,6 +103,45 @@ Après la fusion de cette branche dans `main` et sa reprise dans `pr/40-stripe` 
 dans `decide_payout`, avant tout autre motif, pousser `ReviewFinding::already_posted(t, id)` quand la transaction y
 figure. Le correctif propre à Stripe (`b99591697`) se retire alors (la règle textuelle `po_…` n'a plus d'objet).
 
+*Fait sur `pr/40-stripe` le 2026-11-25* (fusion de la tête `64c04f736`, puis paramétrage Stripe, refs #1539) :
+`accept_payout` passe par `rejudge_writing` et `decide_payout` lit `already_posted` avant tout autre motif, sur l'API
+commune telle qu'elle est (`first_naming_entry`). **Correctif L3** (revue du mainteneur) : l'extraction Stripe
+(`stripe_ids_in`) ne lisait que `ch_` et `py_` ; la clé d'un versement (`match_key` = `reference` = son `po_…`) ne se
+retrouvait pas dans le libellé de son écriture (`Versement Stripe po_… <net> <devise>`) : deux versements de même
+montant étaient tous deux bloqués par le seul repli prudent, et rien ne jouait si le libellé portait aussi un `ch_…`
+ou un `py_…`. `po_` est ajouté aux préfixes ; `txn_`, clé d'aucun genre, ne l'est pas. Clés par genre : charge,
+`ch_…`/`py_…` (`source_id`, à défaut `charge_id`) ; versement, `po_…` ; frais, l'objet lié de leur ligne, que le
+libellé de leur écriture ne porte pas d'ordinaire (et qui n'est rapprochée d'aucun autre compte) ; remboursement et
+autre catégorie, qui n'écrivent pas. La limite écrite sur cette branche (« deux versements de même montant… rattacher
+celui que nomme le libellé ») est retirée du manuel et de `docs/api-external.md`, son test remplacé par le cas réglé
+(seul le détaché est « à examiner », l'autre est proposé et s'accepte). Angle mort relevé à cette étape (une
+écriture de versement saisie à la main dont le libellé porte un `ch_…` ou un `py_…` **sans** son `po_…` n'était
+retenue ni par le nom ni par le repli prudent) : **fermé** au paragraphe suivant. Revue P1 complète (Sonnet) 0/0/0/3 :
+doc de `match_key` (le garde des frais est la présélection) et test de l'angle mort corrigés ; **LOW à tracer** : des
+frais rendus d'un versement de somme nulle (sans transaction de versement) portent `po_…` et sortent en écart
+`sale_without_receipt` faux (une ligne d'écart, rien d'écrit). Revue P2 ciblée (Haiku) 0/0/2/2 : doc de `match_key`
+(la présélection exige aussi le montant) et test réordonné corrigés ; l'angle mort ci-dessus et ce LOW sont **deux
+issues à ouvrir** (`kesh-gate-logs/s40-m2c/issues-a-ouvrir.md` : l'angle mort peut écrire un versement deux fois,
+`bug` P1 ; l'écart faux, `bug` P3) — la première retirée depuis, l'angle mort étant fermé ci-dessous. Revue P3 ciblée (Sonnet) 0/0/0/3 : boucle close ; ses LOW (exemple de la doc de `match_key`, angle mort testé pour `py_` aussi) corrigés sans toucher au code, le « jamais rapprochée » du moteur commun laissé à la #1560. Journal : `kesh-gate-logs/s40-m2c/`.
+
+*Angle mort fermé sur `pr/40-stripe` le 2026-11-25* (refs #1539 ; Kesh étant en production, avant le push de la
+branche) : le repli prudent (`unnamed_and_free`) ne compte plus, parmi les identifiants du libellé, que ceux **du
+même genre de clé** que la transaction jugée — nouveau crochet `ProviderSpec::same_key_kind`. Stripe
+(`stripe::same_key_kind`) : pour un versement, seul un `po_` compte ; pour des frais (clé de charge), tout identifiant
+Stripe compte, comme avant #1539 — l'écriture d'un versement de même montant n'est jamais la leur (revue P1, M1) ; une
+transaction sans clé d'un genre connu ne voit compter aucun identifiant (repli prudent, jamais une seconde écriture).
+PayPal : `one_key_kind`, un seul genre, tout identifiant compte — comportement inchangé. Une écriture de versement
+qui ne cite qu'une charge ou un paiement ne nomme aucun versement : elle tombe dans le repli prudent, sous sa borne
+(montant, compte du plan, côté Stripe libre, rapprochée de l'autre côté), et vaut, comme une écriture sans
+identifiant, pour tout versement de ce montant du solde ; un `po_…` d'un autre versement l'en exclut toujours. Le
+nom (`entry_names`) et le rattachement des ventes (`extract_ids`) ne changent pas. C'est la piste de départ, au plus
+simple : un crochet de genre plutôt qu'une seconde extraction. Manuel et `docs/api-external.md` : la consigne « y
+mettre le `po_…`, ou aucun identifiant » et l'angle mort retirés ; test unitaire de l'angle mort remplacé
+(`libelle_stripe_nomme_le_seul_versement_ecrit`) ; e2e `versement_detache_libelle_ne_portant_qu_une_charge` et
+`…_qu_un_paiement`. ⚠️ À la reprise par l'Epic 39 : la `ProviderSpec` de Wise doit recevoir `same_key_kind` (erreur
+de compilation, non conflit de texte ; `one_key_kind` si Wise n'a qu'un genre de clé). Journal :
+`kesh-gate-logs/s40-m2d/`.
+
 ## Change Log
 
 - 2026-11-24 — correctif (`62d8783bb`), sonde positive (`0617f7ef3`), remédiation de la revue P1 (`4d9093c34`).
@@ -125,6 +165,12 @@ figure. Le correctif propre à Stripe (`b99591697`) se retire alors (la règle t
   conversion à deux écritures sans e2e. Mutations (`kesh-gate-logs/fix-prest/p2/mut/`) : six, toutes tuées. Gates au
   commit `7d2764960` (dernier commit de code `976fd49e1`, puis commentaires) : témoin ciblé 67/67 ; gate-ci
   6460/0/19 ; E2E 505 passés, les sept de la KF-029, 18 ignorés. Frontend inchangé depuis `afe562d48`.
+
+- 2026-11-25 — `pr/40-stripe`, angle mort de la #1534 fermé (refs #1539) : repli prudent par genre de clé
+  (`685c9c84b`) ; revue P1 complète (Sonnet) 0/0/1/4 → M1 (frais bloqués par l'écriture d'un versement détaché de même
+  montant) : le genre ne se restreint que pour un versement (`5c100ac01`), LOW-1 laissé (clé absente : sens prudent) ;
+  P2 ciblée (Haiku) 0/0/0/4, boucle close ; ses LOW L1 à L3 (commentaires, fiche) corrigés sans code exécutable, L4
+  laissé. Mutations (`kesh-gate-logs/s40-m2d/mut/BILAN.md`) : quatre, toutes tuées. Gates : `kesh-gate-logs/s40-m2d/GATES.md`.
 
 ## Notes de version
 

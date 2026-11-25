@@ -66,6 +66,13 @@ use crate::rules::rule_matches;
 /// La monnaie de base de Kesh (un compte du plan sans devise est en CHF).
 pub const BASE_CURRENCY: &str = "CHF";
 
+/// Borne du libellé d'une écriture passée à l'acceptation, en caractères
+/// (celle des écritures de la réconciliation, `accept_one_rule`). Le moteur
+/// (`kesh-api`, `routes::provider_accept`) y coupe tout libellé ; un
+/// prestataire peut borner le sien avant, pour choisir ce qui cède (Stripe,
+/// [`crate::stripe::bounded_label`]).
+pub const ENTRY_DESCRIPTION_MAX_CHARS: usize = 200;
+
 /// Écart : encaissement sans écriture de vente de même identifiant.
 pub const GAP_RECEIPT_WITHOUT_SALE: &str = "receipt_without_sale";
 /// Écart : écriture de vente non rattachée qu'aucune transaction n'encaisse.
@@ -161,6 +168,15 @@ pub struct ProviderSpec {
     /// Extraction des identifiants d'un libellé d'écriture, en forme
     /// comparable à [`ProviderSpec::match_key`].
     pub extract_ids: fn(&str) -> Vec<String>,
+    /// L'identifiant `id`, extrait d'un libellé ([`ProviderSpec::extract_ids`]),
+    /// est-il du **même genre de clé** que la transaction `t` — celui d'une
+    /// transaction que l'écriture pourrait porter à la place de `t` ? Seul un
+    /// tel identifiant fait d'une écriture celle d'**une autre** transaction et
+    /// l'exclut du repli prudent ([`unnamed_and_free`]). PayPal : un seul genre
+    /// ([`one_key_kind`]). Stripe : pour un versement, seul un `po_` — une
+    /// charge citée au libellé d'un versement ne fait pas de son écriture celle
+    /// d'un autre versement ; pour des frais, tout identifiant Stripe.
+    pub same_key_kind: fn(&BankTransaction, &str) -> bool,
     /// Les deux transactions sont-elles les moitiés d'une même conversion,
     /// par leurs références (PayPal : même `Reference Txn ID`, ou chacune
     /// pointant l'autre ; Wise : même `transaction_id`) ? Le signe opposé et la
@@ -174,7 +190,7 @@ pub struct ProviderSpec {
     /// Genres admis **en plus** d'un encaissement ([`ProviderKind::SaleReceipt`],
     /// toujours admis) pour la proposition [`Proposal::LinkEntry`] : l'autre
     /// côté déjà passé d'un virement ou d'un versement (Wise : `Other` de
-    /// préfixe `TRANSFER` et versement Stripe, 39-11c AC-4). PayPal : aucun.
+    /// préfixe `TRANSFER` et versement Stripe, 39-11c AC-4). PayPal et Stripe : aucun.
     /// Voir [`admits_link`].
     pub linkable: fn(ProviderKind) -> bool,
     /// Genres admis **en plus** de [`ProviderKind::Other`] (toujours admis)
@@ -182,6 +198,12 @@ pub struct ProviderSpec {
     /// prestataire règle, selon ses candidates, par une règle). PayPal :
     /// aucun. Voir [`admits_rule`].
     pub ruleable: fn(ProviderKind) -> bool,
+}
+
+/// Un seul genre de clé : tout identifiant d'un libellé est du genre de toute
+/// transaction (paramétrage de PayPal pour [`ProviderSpec::same_key_kind`]).
+pub fn one_key_kind(_: &BankTransaction, _: &str) -> bool {
+    true
 }
 
 /// Aucun genre en plus (paramétrage de PayPal pour [`ProviderSpec::linkable`]
@@ -374,7 +396,7 @@ pub struct TransactionSummary {
     pub id: i64,
     /// Compte bancaire.
     pub bank_account_id: i64,
-    /// Date (`value_date`, à défaut `booking_date`).
+    /// Date ([`payment_date`] : `booking_date`).
     pub date: NaiveDate,
     /// Montant signé, deux décimales (chaîne décimale en JSON).
     pub amount: Decimal,
@@ -585,10 +607,19 @@ impl<P> Review<P> {
     }
 }
 
-/// La date de paiement d'une transaction (`value_date`, à défaut
-/// `booking_date`) : celle de la revue et des écritures de l'acceptation.
+/// La date d'une transaction de prestataire : sa `booking_date`, le jour du
+/// mouvement chez le prestataire — celle de la revue (période, tri, résumé) et
+/// des écritures de l'acceptation.
+///
+/// ⚠️ **Jamais `value_date`** (amendement du 21.11 de la Story 40-7c) : seul
+/// l'import Stripe la remplit (`available_on`, la date où les fonds se
+/// libèrent, quelques jours après la vente) ; une vente du 30 décembre aurait
+/// daté ses frais de janvier, dans l'exercice suivant. Les imports PayPal et
+/// Wise la laissent vide : pour eux, rien ne change. La période de la revue
+/// (`kesh_db::repositories::provider_review::pending_in_period`) suit la même
+/// date.
 pub fn payment_date(t: &BankTransaction) -> NaiveDate {
-    t.value_date.unwrap_or(t.booking_date)
+    t.booking_date
 }
 
 /// La revue — voir l'en-tête du module.
@@ -901,22 +932,27 @@ pub fn entry_names(
                 .any(|p| conversion_halves(t, p, spec) && named(p)))
 }
 
-/// L'écriture de libellé `description` ne porte **aucun** identifiant (une
-/// écriture saisie à la main, puis rattachée) **et** son côté prestataire est
-/// **libre** : aucune transaction du compte bancaire de `t` ne lui est
-/// rapprochée (`linked` : celles qui le sont). C'est l'écriture d'une
-/// transaction détachée de ce compte, sans dire laquelle : le repli prudent de
-/// [`first_naming_entry`] (revue P1 de la #1560, M1). Une écriture dont le côté
-/// prestataire est encore rapproché (une transaction qu'elle porte toujours,
-/// par exemple un retrait d'un mois passé du même montant) n'est l'écriture
-/// d'aucune transaction en attente.
+/// L'écriture de libellé `description` ne porte **aucun** identifiant du
+/// genre de clé de `t` ([`ProviderSpec::same_key_kind`] ; une écriture saisie
+/// à la main, puis rattachée, sans identifiant ou avec seulement des
+/// identifiants d'un autre genre — une charge `ch_…` citée au libellé d'un
+/// versement Stripe) **et** son côté prestataire est **libre** : aucune
+/// transaction du compte bancaire de `t` ne lui est rapprochée (`linked` :
+/// celles qui le sont). C'est l'écriture d'une transaction détachée de ce
+/// compte, sans dire laquelle : le repli prudent de [`first_naming_entry`]
+/// (revue P1 de la #1560, M1 ; identifiant d'un autre genre : #1539). Une
+/// écriture dont le côté prestataire est encore rapproché (une transaction
+/// qu'elle porte toujours, par exemple un retrait d'un mois passé du même
+/// montant) n'est l'écriture d'aucune transaction en attente.
 pub fn unnamed_and_free(
     spec: &ProviderSpec,
     t: &BankTransaction,
     description: &str,
     linked: &[&BankTransaction],
 ) -> bool {
-    (spec.extract_ids)(description).is_empty()
+    !(spec.extract_ids)(description)
+        .iter()
+        .any(|id| (spec.same_key_kind)(t, id))
         && !linked
             .iter()
             .any(|p| p.bank_account_id == t.bank_account_id)
@@ -929,16 +965,17 @@ pub fn unnamed_and_free(
 ///
 /// 1. la première qui **nomme** `t` ([`entry_names`]) — une écriture qui nomme
 ///    `t` passe toujours avant une écriture sans identifiant, même plus proche ;
-/// 2. à défaut, **par prudence**, la première sans identifiant dont le côté
-///    prestataire est libre ([`unnamed_and_free`]) : elle ne dit pas quelle
-///    transaction elle porte, et vaut pour toute transaction de ce montant du
-///    compte — en refuser une de trop (« à examiner », écrite à la main) coûte
-///    moins que d'en écrire une seconde fois.
+/// 2. à défaut, **par prudence**, la première sans identifiant du genre de
+///    clé de `t` dont le côté prestataire est libre ([`unnamed_and_free`]) :
+///    elle ne dit pas quelle transaction elle porte, et vaut pour toute
+///    transaction de ce montant du compte — en refuser une de trop (« à
+///    examiner », écrite à la main) coûte moins que d'en écrire une seconde
+///    fois.
 ///
-/// Une écriture qui nomme une **autre** transaction n'est jamais retenue. La
-/// **seule** décision « déjà comptabilisée » d'une transaction de prestataire
-/// (#1538) : la revue (sur la lecture par page) et l'acceptation (sous les
-/// verrous du lot) l'appellent sur la même présélection
+/// Une écriture qui nomme une **autre** transaction du même genre de clé n'est
+/// jamais retenue. La **seule** décision « déjà comptabilisée » d'une
+/// transaction de prestataire (#1538) : la revue (sur la lecture par page) et
+/// l'acceptation (sous les verrous du lot) l'appellent sur la même présélection
 /// (`kesh_db::repositories::reconciliation_link::find_posted_elsewhere`).
 pub fn first_naming_entry<'a>(
     spec: &ProviderSpec,
@@ -1119,6 +1156,7 @@ mod tests {
         classify,
         match_key: key,
         extract_ids: extract,
+        same_key_kind: one_key_kind,
         conversion_match: conv_match,
         conversion_unpaired: (REVIEW_CONVERSION_UNPAIRED, Placement::ToReview),
         entry_label: label,
