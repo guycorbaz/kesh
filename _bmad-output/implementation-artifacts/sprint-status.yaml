@@ -1231,7 +1231,7 @@ development_status:
   53-1-ecriture-pas-deux-fois: backlog  # #1355, #1365 (P1) ; même philosophie que la 48-12a (refus serveur, issue inconnue figée à l'écran)
   53-2-tva-sur-compte-de-la-vente: backlog  # #525, #1198 (P1) ; migration probable (b monte, de préférence un vendredi)
   53-3-ouverture-sous-verrou: backlog  # #513 (P1)
-  53-4-assistant-compte-bancaire: drafted  # #1004 (P1) ; fiche rédigée le 2026-11-25 (serveur juste, défaut à l écran seulement ; QR-IBAN aussi effacé) ; validation P1 à lancer (Opus)
+  53-4-assistant-compte-bancaire: drafted  # #1004 (P1) ; fiche rédigée et remédiée après la validation P1 le 2026-11-25 (serveur juste, défaut à l écran ; QR-IBAN aussi effacé) ; validation P2 à lancer (Sonnet)
   53-5-solde-dette-epic: backlog  # story de solde ; plafond de trois issues (décision de Guy du 2026-11-23)
   epic-53-retrospective: optional
   epic-54: backlog  # « Totaux du décompte de TVA » — après l'Epic 53 ; fichier epic-54-totaux-tva.md
