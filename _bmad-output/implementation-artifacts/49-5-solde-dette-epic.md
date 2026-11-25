@@ -1,6 +1,6 @@
 # Story 49-5 : Solde de la dette de l'Epic 49 — une charge de ligne de facture typée par son type (#1464), un avoir dont le taux et le compte ne se collent plus (#1466)
 
-Status: in-progress (développement terminé le 2026-11-24, revue de code et gates en cours) — fiche écrite le 2026-11-24 ; validation terminée : P1 (Sonnet, 0/1/2/9), P2 (Opus, 0/0/1/8), P3 ciblée (Sonnet, 0/0/1/4), P4 ciblée (Haiku, 0/0/0/3) ; **lot C (#1499) retiré** le 2026-11-24 sur décision de l'orchestrateur (signal de recyclage, Change Log), conception conservée dans `49-5-lot-c-reporte-1499.md` ; développement en cours (`bmad-dev-story`).
+Status: review — développement terminé le 2026-11-24, gates verts, revue de code P1 (Opus 0/0/0/3) et passe ciblée (Haiku 0/0/1/2) faites, passe ciblée sur le commit de clôture à venir ; fiche écrite le 2026-11-24 ; validation terminée : P1 (Sonnet, 0/1/2/9), P2 (Opus, 0/0/1/8), P3 ciblée (Sonnet, 0/0/1/4), P4 ciblée (Haiku, 0/0/0/3) ; **lot C (#1499) retiré** le 2026-11-24 sur décision de l'orchestrateur (signal de recyclage, Change Log), conception conservée dans `49-5-lot-c-reporte-1499.md` ; développement en cours (`bmad-dev-story`).
 
 > ⚠️ **Plafond provisoire — à confirmer par le Project Lead.** Le kickoff de l'Epic 49 (2026-11-18) n'a pas fixé de plafond
 > d'issues pour sa story de solde (`CLAUDE.md` § *Priorités des défauts*). Cette fiche prend **deux issues** sur le plafond de trois que le
@@ -281,7 +281,7 @@ Aucune phrase des manuels ne décrit la marge des colonnes de la fiche d'un avoi
 - [x] **Lot B** — captures **avant** (T4) ; T3 (rouge, journal) ; D-B1 ; T3 vert ; M3 ; captures **après**. Commit `refs #1466`.
 - [x] **Propagation** — `git grep` des symptômes corrigés (`quantity?:`, `py-2 text-right">{line.vatRate}`) sur tout
       le dépôt ; tout site neuf traité ou écrit.
-- [x] **Gates** (§ *Gates*), Dev Agent Record, Change Log ; statut `review`.
+- [x] **Gates** (§ *Gates*), Dev Agent Record, Change Log ; statut `review`. Chiffres réels : frontend `check` 0 erreur, 282 fichiers / 4851 tests, lint-i18n et build verts (à `2c773dec7`) ; backend `test-fast --ci` 6270/6270, 17 ignorés (à `2c773dec7`, + un commentaire seul à `17126a445`) ; E2E complet à `17126a445` (496 passés, 18 ignorés, 7 échecs = les sept KF-029, catalogues chargés depuis `/home/gcorbaz/devel/kesh-49-solde/crates/kesh-i18n/locales`) ; le premier E2E, invalide (backend lancé hors du worktree), est consigné au Dev Agent Record.
 
 ## Gates
 
@@ -332,10 +332,10 @@ lue, sinon la raison suffit à écarter.
 
 ## Issues à ouvrir par l'orchestrateur
 
-Sept issues, **une par problème**, à ouvrir **avant le développement** (I-1, avec le nouveau corps de #1499) ou à la clôture (I-2 à
+Sept issues, **une par problème**, **ouvertes le 2026-11-24** (I-1 = #1547, I-2 à I-7 = #1548 à #1553 ; texte ci-dessous = texte prévu), à ouvrir **avant le développement** (I-1, avec le nouveau corps de #1499) ou à la clôture (I-2 à
 I-7), au rythme des limites GitHub (cinq secondes au moins entre deux créations). Texte prêt :
 
-**I-1** — `technical-debt`, P3 — *recette-montee.test.sh : un refus du script sous test arrête le test sous `set -e` avant son
+**I-1 = #1547** — `technical-debt`, P3 — *recette-montee.test.sh : un refus du script sous test arrête le test sous `set -e` avant son
 résumé (`D=$(grep -oE 'dossier .*$' …)`)*
 > Dans `scripts/tests/recette-montee.test.sh`, quatre sites lisent le dossier de la recette par
 > `D=$(/usr/bin/grep -oE 'dossier .*$' "$FX/sortie" | tail -1 | sed 's/^dossier //')` (`:589`, `:755`, `:858`, `:875` à `59fb28712`).
@@ -346,36 +346,36 @@ résumé (`D=$(grep -oE 'dossier .*$' …)`)*
 > refus, et ne dépend pas de la correction de #1499. **Remède** : lire le dossier sans arrêt du test (`… || true`, ou lecture sans tube) et faire échouer
 > l'assertion qui suit, avec la sortie du script. Origine : validation P1 de la fiche 49-5 (V1-2), refs #1499.
 
-**I-2** — `bug`, `triage`, P4 — *Journal d'audit : « N° » et « Détails » collés (marge droite absente)*
+**I-2 = #1548** — `bug`, `triage`, P4 — *Journal d'audit : « N° » et « Détails » collés (marge droite absente)*
 > `frontend/src/routes/(app)/audit-log/+page.svelte:364-365` (en-têtes) et `:387-388` (cellules) : la cellule du numéro d'entité,
 > alignée à droite (`class="py-2 text-right"`), est suivie de la cellule « Détails », alignée à gauche, sans marge horizontale ;
 > leurs contenus se touchent. Même défaut que #1466 (fiche d'un avoir), corrigé là par `pr-2` sur chaque cellule (convention de la
 > fiche de facture). Constat au code seul (balayage de la validation P1 de la Story 49-5), sans capture. Cosmétique.
 
-**I-3** — `bug`, `triage`, P4 — *Détail d'un import bancaire : « Montant » et « Référence » collés*
+**I-3 = #1549** — `bug`, `triage`, P4 — *Détail d'un import bancaire : « Montant » et « Référence » collés*
 > `frontend/src/routes/(app)/bank-import/[id]/+page.svelte:170-171` (en-têtes `class="text-right"` → `class="text-left"`) et
 > `:183-184` (`{tx.amount} {tx.currency}` → `{tx.reference ?? '—'}`) : aucune marge horizontale entre la colonne du montant,
 > alignée à droite, et celle de la référence. Même défaut que #1466. Constat au code seul (Story 49-5), sans capture. Cosmétique.
 
-**I-4** — `bug`, `triage`, P4 — *Import de relevé (aperçu) : « Montant » et « Détails » collés*
+**I-4 = #1550** — `bug`, `triage`, P4 — *Import de relevé (aperçu) : « Montant » et « Détails » collés*
 > `frontend/src/lib/features/bank-import/BankImportUpload.svelte:867-868` (en-têtes) et `:875-876` (cellules) : la colonne du
 > montant, alignée à droite, est suivie de « Détails », alignée à gauche, sans marge horizontale. Même défaut que #1466. Constat au
 > code seul (Story 49-5), sans capture. Cosmétique.
 
-**I-5** — `bug`, `triage`, P4 — *Propositions de rapprochement : « Montant » et « Contrepartie » collés*
+**I-5 = #1551** — `bug`, `triage`, P4 — *Propositions de rapprochement : « Montant » et « Contrepartie » collés*
 > `frontend/src/lib/features/reconciliation/ReconciliationProposals.svelte:708-709` (en-têtes) et `:756-757` (cellules,
 > `{p.transaction.amount} {p.transaction.currency}` → `{p.transaction.counterpartyName ?? ''}`) : aucune marge horizontale entre
 > le montant, aligné à droite, et la contrepartie. Même défaut que #1466. Constat au code seul (Story 49-5), sans capture.
 > Cosmétique.
 
-**I-6** — `bug`, `triage`, P4 — *Saisie d'une écriture : en-têtes « Crédit » et « Compte analytique » collés quand la colonne
+**I-6 = #1552** — `bug`, `triage`, P4 — *Saisie d'une écriture : en-têtes « Crédit » et « Compte analytique » collés quand la colonne
 analytique est affichée*
 > `frontend/src/lib/features/journal-entries/JournalEntryForm.svelte:864-873` : l'en-tête « Crédit » (`text-right`, sans marge) est
 > suivi de l'en-tête « Compte analytique » (`:874`, clé `journal-entry-form-col-project` ; `text-left`, sans marge) quand
 > `showProjectColumn` est vrai ; les cellules du corps portent `pr-2`
 > (`:884-951`), pas les en-têtes. Constat au code seul (Story 49-5), à confirmer à l'écran avant correction. Cosmétique.
 
-**I-7** — `bug`, `triage`, P4 — *Fiche d'une facture : les montants du pied sont décalés de 8 px vers la droite par rapport aux totaux
+**I-7 = #1553** — `bug`, `triage`, P4 — *Fiche d'une facture : les montants du pied sont décalés de 8 px vers la droite par rapport aux totaux
 de ligne*
 > `frontend/src/routes/(app)/invoices/[id]/+page.svelte` : le total de chaque ligne porte `pr-2` (`:1410`,
 > `<td class="py-2 pr-2 text-right font-mono">`), mais pas les montants du pied (`:1429` sous-total HT, `:1438` TVA par taux,
@@ -383,7 +383,7 @@ de ligne*
 > ne s'alignent pas sur la colonne des totaux de ligne. Relevé par la validation P2 de la fiche 49-5 (la fiche d'un avoir, corrigée
 > par #1466, met `pr-2` aussi sur son pied). Constat au code seul, sans capture. Cosmétique.
 
-**Nouveau corps de #1499** (à poser par l'orchestrateur **à l'ouverture d'I-1**, avant le développement ; le titre devient
+**Nouveau corps de #1499 — posé** (avec son nouveau titre, 2026-11-24 ; à poser par l'orchestrateur **à l'ouverture d'I-1**, avant le développement ; le titre devient
 *« recette-montee.test.sh : deux exécutions simultanées prennent les mêmes ports »*) :
 > Deux exécutions simultanées de `scripts/tests/recette-montee.test.sh` prennent les mêmes ports : `port_libre`
 > (`:388-395` à `59fb28712`) constate qu'un port n'est pas à l'écoute mais ne le **réserve** pas, si bien que deux copies lancées
@@ -393,7 +393,7 @@ de ligne*
 > tests sont conçus dans `_bmad-output/implementation-artifacts/49-5-lot-c-reporte-1499.md` (branche `story/49-5-solde-dette-epic` jusqu'à sa fusion, puis branche de l'Epic 49), avec les
 > constats encore ouverts ; une story à elle reprendra de là.
 > **Hors de cette issue** : l'arrêt du test sous `set -e` avant son résumé quand le script sous test refuse (les quatre
-> `D=$(grep -oE 'dossier .*$' …)`) est suivi par I-1 (#N à reporter), qu'il vienne de cette collision ou d'une autre cause.
+> `D=$(grep -oE 'dossier .*$' …)`) est suivi par I-1 (#1547), qu'il vienne de cette collision ou d'une autre cause.
 > Origine : story 49-1d (#1242) ; scission décidée à la validation de la fiche 49-5 ; retrait de la 49-5 le 2026-11-24 (signal de
 > recyclage de la règle de splitting).
 
@@ -427,7 +427,7 @@ Sonnet 5.5 (`bmad-dev-story`), worktree `/home/gcorbaz/devel/kesh-49-solde`. Jou
 - Gate frontend au dernier commit de code (`2c773dec7`) : `front-check.log` (0 erreur, 29 avertissements préexistants), `front-lint-i18n-ownership.log` (PASS), `front-test-unit.log` (282 fichiers, 4851 tests, tous passés), `front-build.log` (ok).
 - Gate backend (`scripts/test-fast.sh --ci`, base `kesh_ci_e49s`, au code de `2c773dec7` ; le seul commit de code suivant, `17126a445`, ne change qu'un commentaire de `invoices.types.ts`) : **vert**, 6270 tests passés sur 6270, 17 ignorés, 730 s (`gate-backend.log`).
 - **Premier E2E complet : INVALIDE, sans valeur** (`invalide-e2e.log`, `invalide-e2e-backend.log`). `e2e-interne.sh` lançait `kesh-api` sans `cd` dans le worktree : le backend chargea les catalogues par le chemin relatif `crates/kesh-i18n/locales` depuis le dépôt principal, sans les clés neuves de l'Epic 49. 8 échecs : les sept KF-029 plus `invoice-validation-pdf.spec.ts:53` (clé brute `error-invoice-lines-do-not-fit-pdf`). Défaut du montage de l'agent, non du code.
-- **Second E2E complet** (base `kesh_e2e_e49s`, `LANG=fr_CH.UTF-8`, tête `17126a445`, `cd` dans le worktree et `KESH_LOCALES_DIR` absolu, ligne « locales chargées » relevée dans `e2e-locales.txt`) : journaux `e2e.log`, `e2e-backend.log` ; **résultat à consigner ici dès qu'il est tombé**.
+- **Second E2E complet** (base `kesh_e2e_e49s`, `LANG=fr_CH.UTF-8`, tête `17126a445`, `cd` dans le worktree et `KESH_LOCALES_DIR` absolu, ligne « locales chargées » relevée dans `e2e-locales.txt`) : journaux `e2e.log`, `e2e-backend.log` ; **verdict : 496 passés, 18 ignorés, 7 échecs**, exactement les sept KF-029 (#97), jugés fichier par fichier : `mode-expert.spec.ts:26` et `:41`, `onboarding-path-b.spec.ts:65` et `:92`, `onboarding.spec.ts:57`, `:77` et `:150` ; aucun autre échec ; catalogues chargés depuis `/home/gcorbaz/devel/kesh-49-solde/crates/kesh-i18n/locales` (`e2e-locales.txt`) ; `e2e.log`, durée 22,5 min.
 
 
 ### Completion Notes List
@@ -457,3 +457,4 @@ Sonnet 5.5 (`bmad-dev-story`), worktree `/home/gcorbaz/devel/kesh-49-solde`. Jou
 | 2026-11-24 | **Passe ciblée P3 ; lot C retiré** (Opus 5.5). **Passe P3** : Sonnet 5.5, ciblée sur `7f435dbad`, contexte frais (`kesh-gate-logs/e49solde/validation-p3-ciblee.md`) : **0/0/1/4**, six axes déclarés, tous exercés. Le MEDIUM V3-1 naît du correctif de V2-2, lui-même né du correctif de V1-1/V1-7, **à sévérité égale (MEDIUM)** : **signal de recyclage** de la règle de splitting préventif (`CLAUDE.md`), tout entier dans le lot C. **Décision de l'orchestrateur** (à déclarer au Project Lead au résumé de 9 h) : **le lot C sort de la 49-5** ; la story garde les lots A (#1464) et B (#1466) ; plafond utilisé : deux issues sur trois. #1499 reste ouverte ; D-C1 à D-C4, AC-C1 à AC-C4, T5, T6, M4 à M6, la tâche et la note du lot C, et les constats V3-1 à V3-4 (non remédiés : remèdes écrits) sont **déplacés** dans `49-5-lot-c-reporte-1499.md`. I-1 reste à ouvrir (indépendante du lot C) ; le nouveau corps de #1499 se pose quand même, avec la mention du report. **V3-5** corrigé : « I-2 à I-7 » ; décompte des mutations recalculé sans le lot C — trois mutations (M1, M2, M3) et quatre tests (T1 à T4, dont T2 filet et T4 recette visuelle), recomptés au tableau des tests. Modules : inchangés (deux au plus, frontend seul) ; charge : 3 h 30 au lieu de 6 h. Passe ciblée P4 (Haiku) sur ce seul commit, prompt `49-5-solde-dette-epic-validation-prompt-p4-ciblee.md`. |
 | 2026-11-24 | **Validation terminée** (Opus 5.5). **Passe ciblée P4** : Haiku, sur `0675644b7`, contexte frais (`kesh-gate-logs/e49solde/validation-p4-ciblee.md`) : **0/0/0/3**. Tendance des quatre passes (CRITICAL/HIGH/MEDIUM/LOW) : P1 Sonnet 0/1/2/9 → P2 Opus 0/0/1/8 → P3 ciblée Sonnet 0/0/1/4 (lot C retiré) → P4 ciblée Haiku 0/0/0/3. **V4-1** : estimation (2 h 30, dont 4 × 6 min de temps machine) et note « lancer tôt » du lot C ajoutées au report. **V4-2** : en-tête « deux issues sur le plafond de trois ». **V4-3** : le corps prévu de #1499 nomme la branche `story/49-5-solde-dette-epic` jusqu'à sa fusion. Remédiations textuelles seules ; prémisses de la fiche rejouées au code à l'étape 0 (voir Dev Agent Record). Statut `ready-for-dev` puis `in-progress`. |
 | 2026-11-24 | **Développement terminé** (Sonnet 5.5, `bmad-dev-story`). Lots A (#1464) et B (#1466) livrés, rouges et mutations M1 à M3 prouvés (journaux au Dev Agent Record). **Revue de code P1** (Opus, `kesh-gate-logs/e49solde/review-p1.md`) : **0/0/0/3** ; **R1-1** corrigé (doc-comment de `CreateTextInvoiceLineRequest` : `heading` est dans le type, le serveur le refuse encore, `invoices.rs:626`), commentaire seul, **dernier commit de code** ; R5-1 : orchestrateur. **Premier E2E invalide** : `e2e-interne.sh` lançait `kesh-api` sans `cd` dans le worktree, le backend chargea les catalogues du dépôt principal (`crates/kesh-i18n/locales` relatif), sans les clés neuves de l'Epic 49 : 8 échecs (les sept KF-029 plus `invoice-validation-pdf.spec.ts:53`, clé brute `error-invoice-lines-do-not-fit-pdf`) ; consigné sans valeur, rejoué après correction (voir Dev Agent Record). |
+| 2026-11-25 | **Clôture du développement ; statut `review`** (Sonnet 5.5). Tendance des passes (CRITICAL/HIGH/MEDIUM/LOW) : **validation** P1 Sonnet 0/1/2/9 → P2 Opus 0/0/1/8 → P3 ciblée Sonnet 0/0/1/4 (signal de recyclage, lot C sorti) → P4 ciblée Haiku 0/0/0/3 ; **revue de code** P1 Opus 0/0/0/3 → ciblée Haiku (`17126a445`) 0/0/1/2 → ciblée à venir sur ce commit de clôture. Remédiations : R1-1 (doc-comment, `heading` refusé par le serveur), F1 (case « Gates » cochée avec les chiffres réels), F2 (Status et tâche cohérents), F3 (« l'écran n'en crée pas »). Gates : backend 6270/6270 (17 ignorés) ; frontend 282 fichiers / 4851 tests ; E2E à `17126a445` vert (sept KF-029 seuls) ; premier E2E invalide, cause consignée. Issues ouvertes : I-1 = #1547, I-2 à I-7 = #1548 à #1553 ; #1499 a reçu son nouveau titre et son corps. Notes de version prêtes (section *Note de version*). |

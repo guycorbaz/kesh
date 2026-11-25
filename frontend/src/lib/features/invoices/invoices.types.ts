@@ -394,7 +394,7 @@ export interface CreatePricedInvoiceLineRequest {
  * D3 ; le serveur refuserait une quantité non nulle).
  *
  * `heading` fait partie du type, mais le serveur le refuse encore (« le type de ligne
- * heading n'est pas encore disponible », `invoices.rs:626`) : l'écran n'en envoie pas
+ * heading n'est pas encore disponible », `invoices.rs:626`) : l'écran n'en crée pas
  * avant la Story 49-3.
  */
 export interface CreateTextInvoiceLineRequest {
