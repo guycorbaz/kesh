@@ -184,7 +184,7 @@ Déclarés au kickoff (`CLAUDE.md` § *Fusions et fichiers communs*), relevés l
 | `frontend/src/routes/(app)/reports/+page.ts` | 55-1 (lecture) | Epic 46 (`companyId`) | — |
 | `frontend/src/lib/features/reports/reports-grouping.ts` | 55-1 (lecture et écriture de la vue depuis l'URL) | **Epic 46** (neuf) | réutiliser `sanitizeGroupingView`, `isDetailLevel`, aucune copie |
 | `frontend/src/lib/features/reports/GroupingControls.svelte`, `GroupedReportRows.svelte` | 55-2 (`AccountLink` dans `GroupedReportRows`) | **Epic 46** (neufs) | — |
-| `frontend/src/lib/features/reports/BalanceSheetView.svelte`, `IncomeStatementView.svelte` | 55-2 | **Epic 46** (branches groupées) ; **Epic 47** (`epic/47-comptes-miroirs` : `MirrorOfNote`) | lien seul remplacé, structure inchangée |
+| `frontend/src/lib/features/reports/BalanceSheetView.svelte`, `IncomeStatementView.svelte` | 55-2 | **Epic 46** (branches groupées) ; **Epic 47** (`epic/47-comptes-miroirs` : `MirrorOfNote`) | lien seul remplacé, structure inchangée ; `MirrorOfNote` (Epic 47) reste en texte, issue ouverte par la 55-2 : le second arrivé le sait |
 | `frontend/src/lib/features/reports/TrialBalanceView.svelte` | 55-2 | **Epic 46** (46-6b, balance groupée) | idem |
 | `frontend/src/lib/features/reports/reports.api.ts` | 55-1 (`ledgerHref` inchangé), 55-2, 55-3b (lecteurs des PDF) | **Epic 46** (paramètres de regroupement, 46-8 : `getReportExportUrl`) | `ledgerHref` : sortie inchangée (D6) |
 | `frontend/src/lib/features/reports/reports.types.ts` | 55-3b (`documents`) | **Epic 46**, Epic 47 | champ ajouté en fin de type |
