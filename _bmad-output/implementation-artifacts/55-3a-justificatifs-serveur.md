@@ -173,13 +173,19 @@ tout rôle authentifié (*Consultation* compris), **fermée aux clés d'API**, b
 - **facture figée** (validée ou annulée) : le fichier figé, par `serve_frozen` (même vérification d'empreinte ; `410
   INVOICE_PDF_GONE` si le fichier manque, `500` s'il est altéré) — octet pour octet celui de `/pdf`, **tel quel, sans
   marque** (décision du mainteneur, Q1) ;
-- **facture validée non figée** — la seule à laquelle sert le rendu d'aperçu, celle dont le PDF n'est, pour Kesh, jamais
-  sorti (décision du mainteneur, Q1 ; Kesh n'en a pas d'autre signe que l'absence de figement : les cas du § 11.6.1 où un PDF
-  est sorti sans être figé — envoi d'avant la v0.12.1, facture dévalidée puis revalidée, sauvegarde d'avant le gel — sont
-  rendus en aperçu marqué, ce qui ne les fait pas passer pour un PDF émis) : `render_document(…, PdfDocument::Invoice)`
+- **facture validée non figée** — la seule à laquelle sert le rendu d'aperçu (décision du mainteneur, Q1 : « les factures
+  validées dont le PDF n'est jamais sorti ») : `render_document(…, PdfDocument::Invoice)`
   dans la langue du client (`client_language`, la règle du figement), **avec la marque d'aperçu** (D13), **sans aucune
   écriture** : ni fichier dans `KESH_DOCUMENTS_DIR`, ni colonne `pdf_*`, ni `version`, ni trace d'audit
   (`invoice.pdf_frozen` ni aucune autre) ; les erreurs de rendu sont celles de `/pdf` (`400 INVOICE_NOT_PDF_READY`, …) ;
+- ⚠️ **une validée non figée dont le PDF est pourtant sorti** : deux des cas du § 11.6.1 laissent une trace au code — un
+  envoi d'avant la v0.12.1 (`invoices.emailed_at` non nul, posé à chaque envoi, `invoices.rs:2843`) et une facture
+  dévalidée puis revalidée (la dévalidation vide les `pdf_*`, `invoices.rs:1782-1784`, mais une entrée `invoice.pdf_frozen`
+  antérieure reste au journal d'audit) ; seule la restauration d'une sauvegarde d'avant le gel n'en laisse aucune. La fiche
+  les rend, comme toute validée non figée, en **aperçu marqué** (la marque dit d'elle-même que le document n'est pas
+  émis) : c'est une **lecture** de la condition de Q1, soumise au mainteneur (question *Aperçu d'un PDF déjà sorti* du
+  fichier d'epic) ; s'il la refuse, ces deux signes ferment l'aperçu à ces factures (un cas chacun à l'AC-9, une mutation),
+  avec un code d'erreur et un affichage à fixer avec la 55-3b ;
 - **brouillon, facture annulée jamais figée** : `400 INVOICE_NOT_VALIDATED`, comme `/pdf` ;
 - `Content-Disposition: inline; filename="apercu-facture-<numéro>.pdf"` pour un rendu non figé, `facture-<numéro>.pdf`
   pour le fichier figé — en-tête pour un appel direct ; l'écran lit le PDF par `getBlob` et nomme lui-même le document
@@ -211,27 +217,38 @@ page** :
   créancier commence à `PAGE_H - 20.0`, `pdf.rs:430`) ;
 - **la QR-facture barrée et non payable** : la section de paiement (`dessiner_section_de_paiement`, `pdf.rs:1802`) n'est
   **pas** dessinée ; à sa place, sous le séparateur (`draw_separator`), un **cadre barré** (deux diagonales) portant une
-  mention courte (« Aperçu — non payable »). Aucune matrice QR, aucune croix suisse, aucun IBAN ni référence de paiement
+  mention courte (« Aperçu — non payable » : **proposition de la fiche**, Q10 ne demandant qu'un cadre barré ; confirmée
+  ou retirée à la recette visuelle). Aucune matrice QR, aucune croix suisse, aucun IBAN ni référence de paiement
   dans le PDF. La charge utile reste **construite et validée** comme pour l'émission (`build_payload`, contrôle du module ≥
   0,4 mm, `pdf.rs:73-86`) : l'aperçu refuse ce que l'émission refuserait (`400 INVOICE_NOT_PDF_READY`, …), il ne dessine
   seulement pas la QR.
 
 **Un seul mécanisme de rendu**, dans `kesh-qrbill` (vérifié au code : le PDF de la facture se dessine dans
-`crates/kesh-qrbill/src/pdf.rs`, `generate_qr_bill_pdf_with_date`, `:58`, appelé par `render_document`,
-`crates/kesh-api/src/routes/invoice_pdf_service.rs:335`) : une structure publique de marque, **paramétrée par ses
-textes** (filigrane, en-tête, mention du cadre barré), passée en option au rendu de la facture ; **sans marque, le rendu
-est celui d'aujourd'hui, à l'octet près** (golden `crates/kesh-qrbill/tests/golden_test.rs`, `rendu_avant_apres.rs`,
-inchangés et verts). Le même mécanisme doit pouvoir servir **« BROUILLON »** (PDF d'un brouillon : filigrane « BROUILLON »,
+`crates/kesh-qrbill/src/pdf.rs` : `render_document` appelle `generate_qr_bill_pdf`,
+`crates/kesh-api/src/routes/invoice_pdf_service.rs:335`, qui délègue à `generate_qr_bill_pdf_with_date`, `pdf.rs:47`,
+`:52`, `:58`) : une structure publique de marque, **paramétrée par ses textes** (filigrane, en-tête, mention du cadre
+barré), passée en option au rendu de la facture par une **variante neuve** (ou un paramètre qui traverse les deux
+fonctions) **sans changer les signatures** que lisent les tests figés (`rendu_avant_apres.rs:39`, `golden_test.rs:12`) ;
+**sans marque, le rendu est celui d'aujourd'hui** : même **empreinte** (`rendu_avant_apres.rs`,
+`neuf_pieces_chiffrees_se_rendent_comme_en_0_19_0`, `:411` — les octets bruts ne sont pas stables, `printpdf` tirant au
+hasard une part du `/ID` et de la métadonnée XMP, `empreinte.rs:8-10`), golden `golden_test.rs` inchangés et verts. Le même mécanisme doit pouvoir servir **« BROUILLON »** (PDF d'un brouillon : filigrane « BROUILLON »,
 sans numéro, QR-facture barrée), avec d'autres textes et sans rien d'autre de neuf : aucun texte ni booléen « aperçu » en
 dur dans `kesh-qrbill`. **Le PDF d'un brouillon n'est pas livré ici** (question au mainteneur du fichier d'epic) :
 `render_document` refuse aujourd'hui un brouillon (`invoice.status != "validated"` → `InvoiceNotValidated`,
 `invoice_pdf_service.rs:293-295`) et la 55-3a ne change pas ce refus.
 
-- **Textes** : trois clés neuves de `kesh-i18n` (préfixe `invoice-pdf-preview-`, quatre locales), lues par `build_i18n`
-  (`invoice_pdf_service.rs:547`) et ajoutées à `I18N_KEYS` / `DEFAULT_EN` de `kesh-qrbill` (`types.rs`), dans la langue du
-  client comme le reste du document. Les caractères (`Ç`, `é`, `—`) sont ceux de WinAnsi : le T0 vérifie par extraction de
-  texte qu'ils sortent tels quels ; ⚠️ `texte_imprime` remplace U+2014 par `-` (`pdf.rs:433-436`) : la marque ne passe pas
-  par lui, ou la mention s'écrit sans tiret long — tranché au T0, constat au Change Log.
+- **Textes** : trois clés neuves de `kesh-i18n` (préfixe `invoice-pdf-preview-`, quatre locales), dans la langue du
+  client comme le reste du document. **Qui remplit la structure** : `kesh-api`. Deux voies, tranchées au T0 : (a) les clés
+  ajoutées à `I18N_KEYS` **et à la même position** dans `DEFAULT_EN` (`types.rs:312`, test d'appariement positionnel
+  `pdf.rs:3759`), lues par `build_i18n` (`invoice_pdf_service.rs:547-549`), et `render_document` construit la marque par
+  `qr_i18n.get("invoice-pdf-preview-…")` — les replis anglais de `DEFAULT_EN` sont alors l'exception admise à « aucun
+  texte en dur » ; (b) les trois textes lus au bundle dans `kesh-api` (`i18n.format`), `I18N_KEYS` inchangé. Dans les deux
+  cas, le dessin de `kesh-qrbill` ne lit **que** la structure. Un test du patron de
+  `client_number_labels_are_translated_in_all_four_locales` (`crates/kesh-i18n/src/loader.rs:260-276`) garde les trois
+  clés traduites dans les quatre locales (le repli silencieux sur le français, `loader.rs:249-253`, ne rougit pas sans
+  lui). Les caractères (`Ç`, `é`, `—`) sont ceux de WinAnsi : le T0 vérifie par extraction de texte qu'ils sortent tels
+  quels ; ⚠️ `texte_imprime` remplace U+2014 par `-` (règle `texte.rs:32`) : la marque ne passe pas par lui, ou la mention
+  s'écrit sans tiret long — tranché au T0, constat au Change Log.
 - **Qui la porte** : la seule fonction `preview` (via `render_document`, un paramètre de marque). `get_or_freeze`
   (téléchargement et envoi : le PDF **émis**), `serve_frozen` (le PDF figé) et les rappels (`PdfDocument::Reminder`) ne la
   portent **jamais** (AC-12).
@@ -351,11 +368,14 @@ déjà (aucun bandeau). Issue `enhancement` à ouvrir (section *Issues à ouvrir
     n'ont pas le champ. Après un `GET /pdf`, la même écriture rend `"frozen"`. Mutation : `pdf_status` toujours `frozen` →
     test rouge.
 11. **AC-11 — La marque d'aperçu (D13).** Tests dans `kesh-qrbill` (rendu avec marque, fixture d'une facture de
-    **plusieurs lignes**, au moins dix) : le texte extrait du PDF (l'extracteur des tests de `pdf.rs`, `couleurs_des_textes`
+    **plusieurs lignes**, à la capacité de la page — huit lignes chiffrées sans TVA, la fixture `S3` de
+    `rendu_avant_apres.rs:239-246`, ou six avec un taux ; au-delà, le rendu refuse en `INVOICE_TOO_MANY_LINES_FOR_PDF`,
+    `pdf.rs:787-820`, et la marque ne libère aucune place) : le texte extrait du PDF (l'extracteur des tests de `pdf.rs`, `couleurs_des_textes`
     / `operations_du_pdf`, ou `kesh_report::texte_pdf` de la PR 46) contient le filigrane et l'en-tête de la marque, et la
     mention du cadre barré ; il ne contient **aucun** des textes de la section de paiement (titres du récépissé et de la
     section de paiement, IBAN formaté, référence) ; aucune matrice QR n'est dessinée (nombre de rectangles pleins de la
-    zone QR nul, ou absence de l'appel relevée par le test) ; le filigrane est rempli en gris de niveau ≥ celui fixé au T0
+    zone QR nul : seuls `draw_qr_matrix`, `pdf.rs:1829`, et la croix, `:1862`, y posent des rectangles remplis ; le
+    cadre barré n'est fait que de traits) ; le filigrane est rempli en gris de niveau ≥ celui fixé au T0
     (jamais `0 0 0 rg`) et dessiné **avant** le premier texte du contenu (ordre des opérations du flux) ; tous les autres
     textes sont en noir. Le **même** mécanisme, appelé avec les textes « BROUILLON », rend « BROUILLON » et aucun
     « APERÇU » (test du paramétrage ; aucun PDF de brouillon livré). Une charge utile que l'émission refuse est refusée
@@ -363,8 +383,9 @@ déjà (aucun bandeau). Issue `enhancement` à ouvrir (section *Issues à ouvrir
     paiement dessinée sous la marque ; texte de marque en dur. Bout en bout (`invoice_pdf_preview_e2e.rs`) : l'aperçu d'une
     facture validée non figée porte la marque dans la langue du client (deux locales), celui d'une facture figée **n'en
     porte pas** (mêmes octets que `/pdf`, AC-9).
-12. **AC-12 — Le PDF émis ne change pas.** Sans marque, `generate_qr_bill_pdf_with_date` rend les mêmes octets
-    qu'aujourd'hui (golden de `kesh-qrbill` inchangés et verts, `chaque_texte_s_imprime_en_noir` inchangé) ; `GET /pdf`
+12. **AC-12 — Le PDF émis ne change pas.** Sans marque, le rendu garde l'**empreinte** d'aujourd'hui
+    (`rendu_avant_apres.rs`, inchangé et vert ; golden de `kesh-qrbill` inchangés et verts, `chaque_texte_s_imprime_en_noir`
+    inchangé) ; `GET /pdf`
     après un aperçu fige un PDF **sans** marque (texte extrait : ni filigrane ni en-tête ; section de paiement présente) ;
     un rappel n'en porte pas. Mutation : marque passée par `get_or_freeze` → test rouge.
 
@@ -409,7 +430,7 @@ qui lisent le journal ou le grand livre étant longue — `reports_e2e`, `report
 `open_items_e2e`, `dates_bornes_e2e`, `services_motif`, `mcp_contrat`, `mcp_outils_e2e`, `mcp_enveloppe_e2e`,
 `mcp_transport_e2e`, `journal_entry_reversal_e2e`, les tests du lib ; relevé par `git grep -lE
 "reports/(journals|general-ledger)|journal_report|general_ledger" crates/kesh-api`) ;
-plus `package(kesh-qrbill)` pour la marque. **À la clôture de la story** (fichier d'epic, § *Gates*, *Dérogation* : la
+plus `package(kesh-qrbill) | package(kesh-i18n)` pour la marque et ses textes. **À la clôture de la story** (fichier d'epic, § *Gates*, *Dérogation* : la
 story qui touche le serveur suit la règle) : **gate complet** (`cargo fmt --all -- --check`, `cargo clippy --workspace
 --all-targets -- -D warnings`, `cargo nextest` du workspace) **et E2E complet** au dernier commit de code ;
 `scripts/gate-ci.sh` en fin d'epic. Aucun fichier de `kesh-db` touché (sinon gate complet en cours de boucle aussi,
@@ -418,7 +439,7 @@ story qui touche le serveur suit la règle) : **gate complet** (`cargo fmt --all
 ## Recette visuelle
 
 Captures (thème clair, `kesh-gate-logs/s55-3a/`) du PDF d'aperçu d'une facture validée non figée **de plusieurs lignes**
-(au moins dix), en couleur **et en niveaux de gris** (`pdftoppm -gray`, pour juger l'impression en noir et blanc) : le
+(à la capacité de la page, voir l'AC-11), en couleur **et en niveaux de gris** (`pdftoppm -gray`, pour juger l'impression en noir et blanc) : le
 filigrane lisible comme marque, le texte de la facture lisible au travers ; l'en-tête ; le cadre barré à la place de la
 QR-facture. En regard, le PDF figé de la même facture, sans marque. Jointes au Dev Agent Record et au prompt de la revue
 de code.
@@ -454,10 +475,11 @@ littéraux de test de `csv.rs`, `pdf.rs`, `benches/export.rs`), `kesh-api` (le s
 — paramètre de marque et commentaire —, `errors.rs`, `lib.rs`), **`kesh-qrbill`** (la marque, `pdf.rs`, `types.rs`, D13) et
 `kesh-i18n` (les textes de la marque, et le message du code neuf s'il reste, quatre locales) ; plus `docs/api-external.md`
 et les tests `kesh-report/tests/`, `kesh-api/tests/`, `kesh-qrbill/tests/`. *Réévalué après les décisions du mainteneur
-(2026-11-25)* : quatre modules de production, **sous le seuil de cinq** ; taille portée de L à **XL** — deux chantiers
-indépendants (la liste des justificatifs ; l'aperçu marqué, qui ne dépend pas de la liste) dans une story. **Signalé au
-mainteneur, non découpé** (l'epic est à six stories ; question *Taille de la 55-3a* du fichier d'epic). Si le mainteneur
-découpe, la coupure naturelle est AC-9, AC-11, AC-12, T2ter, T2quater (l'aperçu marqué) d'un côté, le reste de l'autre.
+(2026-11-25)* : quatre crates de production ; au grain des « modules métier de premier niveau » de la règle de splitting
+préventif, `kesh-api` en compte deux (justificatifs des écritures ; PDF de la facture), soit **cinq, au seuil** (le
+critère est « plus de cinq ») ; taille portée de L à **XL** — deux chantiers indépendants (la liste des justificatifs ;
+l'aperçu marqué, qui ne dépend pas de la liste) dans une story. **Signalée, non découpée**, comme le mainteneur l'a
+demandé le 2026-11-25 (l'epic est à six stories). Pour information, si le mainteneur découpait un jour, la coupure naturelle est AC-9, AC-11, AC-12, T2ter, T2quater (l'aperçu marqué) d'un côté, le reste de l'autre.
 
 ### References
 
@@ -548,5 +570,15 @@ découpe, la coupure naturelle est AC-9, AC-11, AC-12, T2ter, T2quater (l'aperç
   un mécanisme paramétré par ses textes dans `kesh-qrbill`, prêt pour « BROUILLON », non livré), AC-11, AC-12, T2quater,
   *Recette visuelle* (facture de plusieurs lignes) ; dérogation à l'arbitrage 8 réglée par la marque, course réécrite ;
   **Q8** refusée (D14) ; Q5 (P4) ; Q6 (gate complet et E2E complet à la clôture de cette story) ; règles du PDF produit hors
-  de Kesh décidées ; modules réévalués (quatre, sous le seuil), taille **XL**, signalée sans découpage. Validation Pv2p5
+  de Kesh décidées ; modules réévalués, taille **XL**, signalée sans découpage. Validation Pv2p5
   ciblée sur ces changements.
+- 2026-11-25 — Validation Pv2p5 ciblée (Opus) : 0/0/2/8 (`kesh-gate-logs/s55-decisions/55-3a-validation-pv2p5.md`) ;
+  remédiée : fixture à la capacité de la page (huit lignes sans TVA, six avec un taux) au lieu de « au moins dix »
+  (V5p-1) ; prémisse « aucun autre signe que l'absence de figement » retirée — `emailed_at` et l'empreinte au journal
+  d'audit en sont deux ; aperçu marqué gardé comme lecture de Q1, **soumise au mainteneur** (V5p-2, voie b) ; LOW : taille
+  écrite comme signalement décidé, non comme question (V5p-3) ; chaîne d'appel, empreinte au lieu des octets, règle de
+  `texte.rs:32` (V5p-4) ; qui remplit la marque, deux voies au T0 (V5p-5) ; test des quatre locales et `package(kesh-i18n)`
+  (V5p-6) ; preuve du grep du *Hors périmètre* (V5p-7) ; `sprint-status.yaml`, ligne de l'epic (V5p-8) ; mention du cadre
+  écrite comme proposition, modules « au seuil » (V5p-9) ; branche vague de l'AC-11 retirée (V5p-10). Fichier d'epic aussi
+  remédié pour les passes des 55-2 (V7-2) et 55-4 (V8-1 : argument de `gate-ci.sh`). Passe suivante : Pv2p6 ciblée,
+  dernière remédiable.

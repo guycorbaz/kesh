@@ -30,6 +30,13 @@ avant toute ligne de code, ligne lue et décision citées au Change Log ; le cor
   redemande), V6-6 (ordre de C-55-1b-3 et -4 ; `?tab=balance-sheet&level=3` à l'AC-8). Et ceux de la P5 déjà renvoyés :
   V5-5, V5-9.
 
+## Points de la P7 (décisions du mainteneur, au T0)
+
+- **LOW** (`kesh-gate-logs/s55-decisions/55-1b-validation-p7.md`) : V7-1 (le manuel modifié par l'AC-12 est gardé par
+  `textes_coherents`, qui ne tournerait qu'en fin d'epic : la précision de la *Dérogation* proposée au mainteneur, fichier
+  d'epic, question *Gardes Rust des textes*) ; V7-2 (§ *Gates* : nommer les specs de la *Dérogation*, dont les specs
+  groupées de l'Epic 46 `reports-*groupes*.spec.ts`).
+
 ## Story
 
 En tant que comptable qui lit son bilan par groupes,
@@ -291,3 +298,5 @@ lien ou revenir par *Retour* remplace la présentation retenue. (refs #À-VENIR)
   0/0/2/7 → P6 ciblée Sonnet 0/0/2/4. `ready-for-dev` **sous réserve** du T0 (R-1, R-2).
 - 2026-11-25 — **Décision du mainteneur versée** (Q6, dérogation partielle) : § *Gates* aligné sur la *Dérogation* du
   fichier d'epic. Passe P7 ciblée sur ce changement ; au-delà de la sixième passe, ses points vont au T0 (R-n).
+- 2026-11-25 — Validation P7 ciblée (Opus) sur la décision Q6 : 0/0/0/2 — **validation terminée** sur ce changement ; les
+  deux LOW vont au T0 (section *Points de la P7*). `ready-for-dev` sous réserve du T0 (R-1, R-2, et ces LOW).

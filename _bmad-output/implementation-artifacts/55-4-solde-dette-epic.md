@@ -6,6 +6,18 @@ Epic : `_bmad-output/planning-artifacts/epic-55-navigation-interface.md`. Releas
 Règle : `CLAUDE.md` § *Priorités des défauts*, les puces « Un LOW de revue qui touche la production peut se corriger dans
 la story » et « Une story de solde à la fin de chaque epic » (décisions de Guy du 2026-11-14).
 
+## ⚠️ Points renvoyés au développement (validation P8, dernière passe)
+
+- **R-1 (V8-1, MEDIUM) — Argument de `gate-ci.sh`.** `scripts/gate-ci.sh origin/main` est refusé (code 2) : l'argument est
+  une base jetable `kesh_ci_<suffixe>` (`scripts/gate-ci.sh:8-10`). Défaut : `scripts/gate-ci.sh kesh_ci_s55_4
+  kesh-gate-logs/s55-4/gate-ci.log`, au dernier commit de code de la branche de l'epic, après la dernière reprise ; la
+  parenthèse « ou la base de la PR » retirée (fichier d'epic déjà corrigé).
+- **LOW** (`kesh-gate-logs/s55-decisions/55-4-validation-p8.md`) : V8-2 (T2 complet : `fmt`, `clippy`, les quatre commandes
+  frontend, `gate-ci.sh`, E2E complet) ; V8-3 (correctif d'une story fautive : porté par sa fiche, hors plafond, passe de
+  revue ciblée, gate complet rejoué pour une story serveur, de même si `gate-ci.sh` rougit) ; V8-4 (catalogues i18n : dans
+  le périmètre écran, avec leurs gardes Rust ciblées) ; V8-5 (« dette serveur admise » : conséquence tirée de Q1, non
+  décision).
+
 ## Story
 
 En tant que mainteneur,
@@ -119,3 +131,5 @@ d'epic), avec `refs #N` par ligne ; la note de l'epic est assemblée à la relea
 - 2026-11-25 — **Décisions du mainteneur versées** : Q1 (55-3a et 55-3b dans l'epic ; dette serveur admise) ; Q6 (T2 : gates
   de fin d'epic avant la PR vers `main`, E2E rouge → l'epic n'entre pas dans `main` avant correction de la story fautive).
   Passe P8 ciblée, la dernière permise ; ses points vont au T0 (R-n).
+- 2026-11-25 — Validation P8 ciblée (Opus) sur les décisions du mainteneur : 0/0/1/4. **Dernière passe** : renvoi au
+  développement (R-1, LOW listés en tête). `ready-for-dev` sous réserve du T0.

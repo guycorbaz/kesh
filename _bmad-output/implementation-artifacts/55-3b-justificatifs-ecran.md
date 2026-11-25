@@ -33,6 +33,11 @@ dernière permise, est gardée en réserve. Le correctif proposé est la résolu
   les rapports, une facture non figée s'affiche en **aperçu**, qui n'est pas le PDF émis » ; la phrase de la pièce sortie
   nuancée : l'aperçu affiché dans Kesh n'est pas une pièce émise, et il est fermé aux clés d'API (55-3a) ; l'AC-9 dit
   « les phrases qui attribuent le figement au téléchargement et à l'envoi restent justes ; ces deux-là sont ajustées ».
+- **R-3 à R-5 (Pv2p8, LOW, `kesh-gate-logs/s55-decisions/55-3b-validation-pv2p8.md`)** : R-3 (gardes Rust des
+  catalogues que la story modifie : la précision de la *Dérogation* proposée au mainteneur, fichier d'epic, question
+  *Gardes Rust des textes*) ; R-4 (l'AC-9 renvoie à R-2 : « aucune n'est réécrite » sauf `:1637` et `:1641`) ; R-5 (la
+  capture du PDF marqué sous le bandeau : navigateur réel non headless sur une installation jetable, ou deux captures
+  composées — dialogue et PDF de la 55-3a —, dit au Dev Agent Record).
 - **LOW** : Vv2p7-3 et V8-4 de la 55-1a (nom `apercu-facture-<numéro>.pdf` passé à `DocumentPreview` quand `pdfStatus`
   vaut `'notFrozen'`, test Vitest du nom) ; Vv2p7-4 (le bandeau suit l'**élément choisi** : deux éléments `notFrozen` puis
   `frozen`, un clic sur le second retire le bandeau ; mutation « bandeau tenu par `list[0]` ») ; Vv2p7-5 (contrôle de
@@ -400,3 +405,5 @@ non figé », et ce PDF porte la mention « APERÇU » et une QR-facture barrée
   55-3a D13) à l'AC-5, à l'AC-9 (phrase du § 11.6.1) et à la recette visuelle ; **Q8 refusée** (D14) à l'AC-5 ; Q5 (P4) ;
   Q6 au § *Gates* (story purement écran). Aucune remédiation de passe : la passe suivante, **Pv2p8**, est la dernière
   permise ; au-delà de la sixième, ses points vont au T0 (R-n).
+- 2026-11-25 — Validation Pv2p8 ciblée (Sonnet) sur les décisions du mainteneur : 0/0/0/3 — **validation terminée**,
+  dernière passe permise ; les trois LOW vont au T0 (R-3 à R-5). `ready-for-dev` sous réserve du T0 (R-1 à R-5).

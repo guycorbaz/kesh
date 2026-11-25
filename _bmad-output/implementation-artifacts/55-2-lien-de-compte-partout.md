@@ -23,6 +23,14 @@ le tranche avant toute ligne de code, ligne lue et décision citées au Change L
   « écriture de `selectedFiscalYearId` » avec un exercice différent et un rapport en mémoire ; tests nommés pour AC-13 et
   AC-14), V6-5 (fichier d'epic : la phrase « Justificatif et non pièce » à remettre au point 3 de l'*Objectif*), V6-6
   (modules de `fiscalYearMatching` et de la fonction de libellé : `features/reports` ; taille de la story déclarée).
+- **R-2 (P7, V7-1, MEDIUM) — Gardes Rust des textes.** La story, « purement écran », modifie `messages.ftl` et le manuel,
+  gardés par des tests Rust (`parity_between_locales`, `textes_coherents`) qui ne tourneraient qu'en fin d'epic. Défaut :
+  la précision de la *Dérogation* proposée au mainteneur (fichier d'epic, question *Gardes Rust des textes*) — à sa
+  clôture, `cargo nextest run -p kesh-i18n` et `-p kesh-api -E 'binary(textes_coherents)'` ; l'AC-9 nomme la garde A.
+- **LOW de la P7** (`kesh-gate-logs/s55-decisions/55-2-validation-p7.md`, aucune remédiation) : V7-2 (preuve du grep du
+  fichier d'epic : remédiée là, Pv2p5 de la 55-3a), V7-3 (C-55-2-4 : la ligne surlignée est une question ouverte au fichier
+  d'epic ; si elle revient à la 55-2, un AC neuf et une passe), V7-4 (§ *Gates* et T5 : nommer les specs de la *Dérogation*),
+  V7-5 (« Paramètres → Facturation, section Comptes TVA » ; le compte de décompte n'est pas lu, sans lien).
 
 ## Story
 
@@ -314,3 +322,6 @@ onglet. (refs #À-VENIR, #À-VENIR)
 - 2026-11-25 — **Décisions du mainteneur versées** : Q3 acceptée (en-tête, AC-6) ; Q6 (§ *Gates*, story purement écran) ;
   Q9 (C-55-2-4 : `AccountLink` réutilisable par l'epic à part ; la ligne surlignée n'est pas posée par l'Epic 55). Passe P7
   ciblée sur ces changements ; au-delà de la sixième passe, ses points vont au T0 (R-n).
+- 2026-11-25 — Validation P7 ciblée (Opus) sur les décisions du mainteneur : 0/0/1/4. Au-delà de la sixième passe :
+  **renvoi au développement** (R-2, LOW listés en tête). Tendance : … → P6 ciblée Sonnet 0/0/1/5 → (décisions du
+  mainteneur) P7 ciblée Opus 0/0/1/4. La P8 reste en réserve.
