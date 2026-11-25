@@ -121,7 +121,7 @@ frais rendus d'un versement de somme nulle (sans transaction de versement) porte
 `sale_without_receipt` faux (une ligne d'écart, rien d'écrit). Revue P2 ciblée (Haiku) 0/0/2/2 : doc de `match_key`
 (la présélection exige aussi le montant) et test réordonné corrigés ; l'angle mort ci-dessus et ce LOW sont **deux
 issues à ouvrir** (`kesh-gate-logs/s40-m2c/issues-a-ouvrir.md` : l'angle mort peut écrire un versement deux fois,
-`bug` P1 ; l'écart faux, `bug` P4). Journal : `kesh-gate-logs/s40-m2c/`.
+`bug` P1 ; l'écart faux, `bug` P3). Revue P3 ciblée (Sonnet) 0/0/0/3 : boucle close ; ses LOW (exemple de la doc de `match_key`, angle mort testé pour `py_` aussi) corrigés sans toucher au code, le « jamais rapprochée » du moteur commun laissé à la #1560. Journal : `kesh-gate-logs/s40-m2c/`.
 
 ## Change Log
 

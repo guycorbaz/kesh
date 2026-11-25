@@ -186,10 +186,9 @@ pub fn stripe_ids_in(text: &str) -> Vec<String> {
 ///   de ligne sur aucun autre compte bancaire, et la présélection « déjà
 ///   comptabilisée » exige une transaction d'un autre compte qui lui soit
 ///   rapprochée, et un mouvement sur le compte du solde égal au montant de la
-///   transaction, comme pour les frais PayPal. Une réception rattachée par
-///   erreur à une écriture de frais dont le montant égalerait le net d'un
-///   versement détaché ferait passer ce versement « à examiner » (le sens
-///   prudent, rien d'écrit deux fois) ;
+///   transaction, comme pour les frais PayPal (`…/link-entry` refuse d'y
+///   rattacher une réception : l'écriture des frais n'a pas de mouvement sur
+///   le compte de la banque) ;
 /// - remboursement, autre catégorie : l'objet lié (`re_…`…), ou aucune ; ces
 ///   genres n'écrivent pas.
 fn match_key(t: &BankTransaction) -> Option<&str> {
@@ -799,15 +798,14 @@ mod tests {
         // Angle mort assumé (fiche, manuel, API) : un libellé qui ne porte
         // qu'une charge ou un paiement, sans le `po_…`, nomme cette charge, non
         // le versement — ni le nom ni le repli prudent ne le retiennent.
-        assert_eq!(
-            first_naming_entry(
-                &SPEC,
-                &versement,
-                [(904, "Versement Stripe ch_TEST0002 96.80 CHF")],
-                &[]
-            ),
-            None
-        );
+        for jeton in ["ch_TEST0002", "py_TEST0003"] {
+            let seul = format!("Versement Stripe {jeton} 96.80 CHF");
+            assert_eq!(
+                first_naming_entry(&SPEC, &versement, [(904, seul.as_str())], &[]),
+                None,
+                "{seul}"
+            );
+        }
         // Le libellé porte aussi une charge ou un paiement : le versement reste
         // nommé, et seul lui (avant L3, ni le nom ni le repli prudent).
         for jeton in ["ch_TEST0002", "py_TEST0003"] {
