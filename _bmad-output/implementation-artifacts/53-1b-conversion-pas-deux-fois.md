@@ -15,7 +15,7 @@ afin qu'un second clic après une réponse perdue ne passe pas deux écritures d
 ## Ce que la 53-1b reprend de la 53-1a (sans le refaire)
 
 - La règle D1 (même date, même journal, même libellé, même multiensemble de lignes ; contre-passées exclues ; aucune fenêtre ; toujours levable) et ses décisions Q1 à Q5 ; **Q7** (décision du Project Lead du 2026-11-25) : une conversion dont **une seule** des deux écritures est identique est refusée (levable).
-- `DuplicatePolicy` du module commun ; `DbError::JournalEntryProbableDuplicate` et son `409 JOURNAL_ENTRY_PROBABLE_DUPLICATE` ; le message `error-journal-entry-probable-duplicate` ; l'audit `journal_entry.duplicate_confirmed` ; l'entrée `journal_entries::create_in_tx_with_policy` ; la lecture de la borne déplacée après le verrou de l'exercice ; le module d'états pur de l'écran (`entry-submit-state.ts`) et les clés `journal-entries-duplicate-existing`, `journal-entries-duplicate-confirm`, `journal-entries-duplicate-edit`, `journal-entries-unknown-outcome-link`.
+- `DuplicatePolicy` du module commun ; `DbError::JournalEntryProbableDuplicate` et son `409 JOURNAL_ENTRY_PROBABLE_DUPLICATE` ; le message `error-journal-entry-probable-duplicate` ; l'audit `journal_entry.duplicate_confirmed` ; l'entrée `journal_entries::create_in_tx_with_policy` ; la lecture de la borne déplacée après le verrou de l'exercice ; le module d'états pur de l'écran (`entry-submit-state.ts`) — **que la 53-1b étend d'un champ facultatif `entry` : la lecture de `details.entry` est à sa charge** (V3-12 de la 53-1a) — et les clés `journal-entries-duplicate-existing`, `journal-entries-duplicate-confirm`, `journal-entries-duplicate-edit`, `journal-entries-unknown-outcome-link`.
 - L'inventaire clos des sites (53-1a, lignes 2 et 3) et l'argument « tout geste qui change une donnée comparée tient l'exercice » (53-1a, inventaire des modifications).
 
 ## Ce qui se lit au code
@@ -80,7 +80,7 @@ Le retour au journal de la page (`conversion/+page.svelte:76`) reste actif dans 
 - **S1** D2 et D3 dans `journal_entry_conversions.rs` ; doc-comments du module (ordre neuf, D4).
 - **S2** Route : champ au corps, chaîne de l'extracteur, `create_conversion_with_policy` dans le rejeu.
 - **S3** Tests Rust (fichier neuf), mutations M1 à M4, M7.
-- **F1** Table K dans `ConversionAssistant.svelte` avec le module d'états commun ; **F2** textes ; **F3** Vitest, M5, M6 ; **F4** Playwright ou test de composant ; **F5** recette visuelle (K1, K5, K6, thème clair, base de démonstration) ; **F6** manuel et API.
+- **F1** Table K dans `ConversionAssistant.svelte` avec le module d'états commun, étendu de la lecture de `details.entry` (test unitaire) ; **F2** textes ; **F3** Vitest, M5, M6 ; **F4** Playwright ou test de composant ; **F5** recette visuelle (K1, K5, K6, thème clair, base de démonstration) ; **F6** manuel et API.
 
 ## Gates
 
@@ -97,3 +97,4 @@ Avec celle de la 53-1a : **⚠️** `POST /api/v1/journal-entries/conversions` r
 ## Change Log
 
 - 2026-11-25 — Fiche écrite au découpage de la 53-1 (décision du Project Lead, signal de recyclage V2-1 de la validation P2, `kesh-gate-logs/e531/validation-p2.md`). Porte le correctif de **V2-1** (pré-verrou juste après `lock_company_currency_in_tx`, ordre `companies` S → exercices X chronologiques → comptes S, inventaire écrit des lectures qui le précèdent, M2b redéfinie), **V2-4** (appelant `:593` : ni politique ni pré-verrou), **V2-5** (inversion projets/exercice neuve pour la première écriture, écrite comme aggravation), **V2-8** (fichier de test neuf) et la part conversion de **V2-10** (clés de K nommées). Décision Q7 du Project Lead écrite. Aucune passe de validation lancée.
+- 2026-11-25 — Frontière avec la 53-1a précisée (V3-12 de la validation P3 de la 53-1a, `kesh-gate-logs/e531/validation-1a-p3.md`) : la lecture de `details.entry` appartient à la 53-1b, qui étend le module d'états commun.
