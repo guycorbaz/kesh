@@ -1,6 +1,6 @@
 # Story 1582-nom-comptabilite : Afficher le nom de la comptabilité ouverte sous le logo et dans le titre de l'onglet (#1582)
 
-Status: ready-for-dev
+Status: review
 
 <!-- Fiche écrite par bmad-create-story le 2026-11-25 (Sonnet 5.5). Validations : P1 (Opus) et P2 (Sonnet) faites et remédiées ; P3 ciblée (Haiku) faite et remédiée ; P4 ciblée (Sonnet) à lancer : prompt `1582-nom-comptabilite-validation-prompt-p4.md`. -->
 
@@ -158,15 +158,41 @@ Une capture de l'en-tête (et de la fenêtre pour l'onglet) par état : (1) soci
 
 ## Dev Agent Record
 
-*(à remplir au développement)*
+*(rempli au développement, 2026-11-25 ; n'affirme que ce qui a tourné)*
 
 ### Agent Model Used
 
+Sonnet 5.5 (`bmad-dev-story`).
+
 ### Debug Log References
+
+- Gate frontend : `kesh-gate-logs/s1582/dev/gate-front.log` ; mutations : `kesh-gate-logs/s1582/dev/mutations.md` et `mut/*.log` ; E2E : `kesh-gate-logs/s1582/e2e/e2e-full.log`, `e2e-spec.log` ; captures : `kesh-gate-logs/s1582/captures/` (`mesures.txt`, `capture.cjs`).
 
 ### Completion Notes List
 
+- **Étape 0** : prémisses relues à `a914c4823` (= `origin/main`, tête de la branche) : méthode du constat 7 rejouée, **55 pages, 15 sans `<title` dans leur fichier, 3 composants portant `<svelte:head` dans `lib/`** (`AdminBackupPanel`, `AdminRestorePanel`, `ProviderReviewPage`) : conforme (44 à titre, 11 sans), aucun écart ; en-tête `+layout.svelte:311-314` et `adoptCompany` `settings/+page.svelte:217` conformes ; aucun `firstName` dans la page des Réglages.
+- **Livré** : `company-identity.svelte.ts` (store ; `load()` remet à `null` avant l'appel, séquence en `let`), `tab-title.ts` (`titleWithCompany`, `watchTabTitle`), `AppBrand.svelte`, layout (deux `$effect`, `untrack`, `clear` au nettoyage), `adoptCompany` (`companyIdentity.set` après la décision d'adoption), manuel `user-manual.tex` (puce « Barre supérieure »). Aucune clé i18n, aucun fichier de page.
+- **Écart à la fiche (D3)** : les deux blocs du lien du logo sont des `<div>` (blocs par nature, y compris sous jsdom), non des `<span class="block">` : sans Tailwind, jsdom donne alors bien « Kesh Dupont Sàrl » comme nom accessible, et le test en a la preuve sans astuce. `AppBrand.test.ts` vérifie `DIV` à la place de la classe `block`.
+- **Écart à la fiche (E2E 5)** : `DemoBanner` n'a pas de `data-testid` et doit rester inchangé (AC7) ; la garde `e2e-selecteurs-traduits.test.ts` interdit un sélecteur de texte ; le bandeau est visé par `div.bg-yellow-100[role="status"]`.
+- **Tests** : Vitest rouges d'abord (commit `test(1582)`, rouge = module absent), puis code (commit `feat(1582)`). 4 fichiers touchés ou nouveaux : `tab-title.test.ts`, `company-identity.svelte.test.ts`, `AppBrand.test.ts`, `settings-page.test.ts` (+1 test) = 122 tests verts ; E2E `company-name-header.spec.ts` : **6 tests** (société/titre, suivi des Réglages, nom long, groupes repliés, accessibilité, échec 500) **+ 1 test démonstration = 7**, tous verts.
+- **Mutations** (`dev/mutations.md`) : M1 à M10 tuées ; **M3 a d'abord survécu** (sans la garde, pas de boucle mais `raw` devenait le titre décoré) : test renforcé puis tuée ; **M11a, M11b et M12 déclarées sans test** (survivent, 122 verts) ; M11 combinée non jouée contre le layout (non monté en Vitest).
+- **Gate frontend** (`npm run check` : 0 erreur, 32 warnings préexistants ; `lint-i18n-ownership` PASS ; `test:unit` **308 fichiers, 5260 tests verts** ; `build` vert), sous `.gate-front.lock`. Un premier passage avait rougi sur `e2e-selecteurs-traduits.test.ts` (sélecteur de texte de ma spec), corrigé puis gate rejoué en entier.
+- **Pas de gate Rust** : `git diff --stat origin/main -- crates/` **vide** (aucun fichier de `crates/` ne change) ; le backend n'est pas rejoué en entier.
+- **E2E complet** au dernier commit de code (`53387344f`), base `kesh_e2e_1582`, port 3482, `LANG=fr_CH.UTF-8` : **527 passés, 20 skipped, 7 échecs, 23,6 min** ; les sept échecs sont **exactement ceux de la KF-029 (#97)** : `mode-expert.spec.ts:26` et `:41`, `onboarding-path-b.spec.ts:65` et `:92`, `onboarding.spec.ts:57`, `:77` et `:150` ; aucun échec de pollution. ⚠️ Le binaire `kesh-api` de l'E2E est une **copie** de `kesh-pr1534/target/debug/kesh-api` (construit depuis du Rust identique à `a914c4823` : `git diff --stat a914c4823 -- crates` vide dans ce worktree-là), faute de cible cargo dans ce worktree ; la story ne touche pas le Rust. `KESH_LOCALES_DIR` pointait sur les locales du worktree.
+- **Recette visuelle** : 15 captures + `mesures.txt` dans `kesh-gate-logs/s1582/captures/` (thème clair, base jetable `kesh_s1582_demo`, noms synthétiques). Vu : (1) « Kesh » puis « Dupont Sàrl » en petit, aligné à gauche sous le logo, l'en-tête garde 56 px et le champ de recherche glisse un peu ; (2) personne physique composée par le **vrai assistant** (API : prénom « Marie », nom « Dupont ») : « Marie Dupont », titre « Kesh — Marie Dupont — Accueil » ; (3) nom de 70 caractères coupé par une ellipse (« Établissements Dupont-Müller & Fils, … »), `title` complet, en-tête 56 px, menu profil visible à 1280 px — **l'infobulle native du survol n'apparaît pas sur une capture sans interface** (le survol et l'attribut sont prouvés, l'infobulle non) ; (4) groupes dépliés puis repliés : boîte du nom identique au pixel (`{x:16,y:33.5,w:67,h:16}` des deux côtés) ; sur la capture « repliés », le groupe Administration reste ouvert à la vue (le nom n'a pas bougé) ; (5) **barre d'onglets reconstituée** à partir des titres réels lus (une capture sans interface n'a pas de barre) : deux onglets de deux noms distincts, le nom reste visible en onglet de 140 px, la page se coupe la première ; (6) démonstration : bandeau jaune et « Démo SA » ensemble ; (7) lecture en 500 : lien « Kesh » seul, ni nom ni toast, titre « Accueil - Kesh ».
+- **Manuel** : `user-manual.tex` seul (PDF non commité) ; DE/IT/EN : `README.md` seulement. `README.md` du dépôt : rien à changer (ni epic ni feuille de route).
+- Prompt de la revue de code P1 (Opus, contexte frais, captures jointes, manuel PDF aplati, axes exercés/non exercés, interdits) : `1582-nom-comptabilite-code-review-prompt-p1.md`. **La revue n'est pas lancée.**
+- Mesures restantes à signaler : le test unitaire du layout n'existe pas (M11 et M12 sans test) ; les sélecteurs de l'E2E de l'AC4 supposent le menu profil comme dernier `button` de l'en-tête.
+
 ### File List
+
+- `frontend/src/lib/app/stores/company-identity.svelte.ts` (nouveau) et `.svelte.test.ts` (nouveau)
+- `frontend/src/lib/shared/utils/tab-title.ts` (nouveau) et `tab-title.test.ts` (nouveau)
+- `frontend/src/lib/shared/components/AppBrand.svelte` (nouveau) et `AppBrand.test.ts` (nouveau)
+- `frontend/src/routes/(app)/+layout.svelte`, `frontend/src/routes/(app)/settings/+page.svelte`, `frontend/src/routes/(app)/settings/settings-page.test.ts`
+- `frontend/tests/e2e/company-name-header.spec.ts` (nouveau)
+- `docs/manual/fr/user-manual.tex`
+- `_bmad-output/implementation-artifacts/1582-nom-comptabilite.md`, `…-code-review-prompt-p1.md` (nouveau), `sprint-status.yaml`
 
 ## Change Log
 
@@ -186,3 +212,4 @@ Une capture de l'en-tête (et de la fenêtre pour l'onglet) par état : (1) soci
 **Corps** : `POST /api/v1/onboarding/coordinates` compose `companies.name` en « Prénom Nom » quand le prénom et le nom sont fournis (`crates/kesh-api/src/routes/onboarding.rs:542-543`, `(Some(f), Some(l)) => format!("{f} {l}")`) ; c'est ce `name` qu'impriment le PDF et, depuis la story 1582, l'en-tête de l'application. Les tests à `firstName` (`crates/kesh-api/tests/onboarding_path_b_e2e.rs:1218-1296`) n'affirment que `first_name` et `last_name` (`lignes[0].1`, `.2`), jamais `name` (`lignes[0].0`) ; aucune spec E2E ne contient « Marie Dupont » ni équivalent. Attendu : un test qui affirme `name == "Prénom Nom"` après l'assistant, prénom et nom fournis, et un autre pour le cas « nom absent, prénom présent » (`name` = raison sociale saisie) ; le cas « prénom absent » est déjà affirmé à `onboarding_path_b_e2e.rs:1296-1310` (`coordinates_without_first_name_keep_the_company_name_1343`, `assert_eq!(lignes[0].0, "Démo SA")`). Découvert à la validation P2 de la story 1582 (refs #1582).
 - 2026-11-25 — **validation P2 remédiée** (Sonnet 0/0/1/5 ; rapport `kesh-gate-logs/s1582/validation-p2.md`), `main` (`a914c4823`, Stripe) repris dans la branche (commit de fusion `2e668d3af`). V2-1 (MEDIUM) : la justification du retrait de l'E2E « personne physique » est réécrite (composition `format!("{f} {l}")` vérifiée à la lecture, `onboarding.rs:542-543`, **non testée** ; issue `technical-debt` P3 en fin de fiche ; la story reste frontend seul, AC12). V2-2 : « Sept E2E restent ». V2-3 : mentions périmées de la fiche et de `sprint-status.yaml`. V2-4 : décompte recompté **au code, `lib/` compris** : **55 pages, 43 à titre, 12 sans** — ce recomptage corrige aussi la P1 et la P2 (`admin/backup`, `admin/restore` tiennent leur titre de leurs panneaux ; `reconciliation/paypal` et `reconciliation/stripe` de `ProviderReviewPage`) ; constat 7, AC3, étape 0, #1534 et texte de l'issue P4 (12 pages) mis à jour. V2-5 : condition `isAuthenticated` retirée (`+layout.ts:11`). V2-6 : `clear()` au démontage déclarée sans test (M12). Passe ciblée P3 (Haiku) à lancer : `1582-nom-comptabilite-validation-prompt-p3.md`.
 - 2026-11-25 — **passe ciblée P3 remédiée** (Haiku 0/1/1/4 ; rapport `kesh-gate-logs/s1582/validation-p3.md` ; recomptage de l'orchestrateur confirmé au code : `grep -LF "<title"` → 15 pages, dont 4 par composant). V3-1 (HIGH) : **55 pages, 44 à titre, 11 sans** (`reconciliation/rules` a un `<title` sur plusieurs lignes) ; constat 7, AC3, étape 0 et issue P4 (« 11 pages ») corrigés, **méthode de comptage écrite au constat 7** (`<title` sans `>`, composants compris). *Annotation datée : l'entrée « validation P2 remédiée » ci-dessus disait « 43 à titre, 12 sans » ; c'était faux à sa date (même cause).* V3-2 : « M1 à M12 ». V3-3 (PayPal dans la parenthèse, devenue une phrase de méthode), V3-4 (incise retirée), V3-5 (en-tête de la table : M11 et M12 sans test, M11 avant M12), V3-6 (l'issue P3 ne demande plus le cas « prénom absent », déjà affirmé). Passe ciblée P4 (Sonnet) à lancer : `1582-nom-comptabilite-validation-prompt-p4.md`.
+- 2026-11-25 — **développement** (bmad-dev-story, Sonnet 5.5) : voir Dev Agent Record ; statut `review`. Écarts : deux `div` à la place de `span.block` (D3), bandeau de démonstration visé par sa classe (E2E 5), M3 survivante puis tuée, M11a/M11b/M12 sans test. Revue de code P1 (Opus) à lancer.
