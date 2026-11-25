@@ -1105,6 +1105,231 @@ async fn deux_retraits_de_meme_montant_le_second_reste_propose(pool: MySqlPool) 
     assert_eq!((s, b["failed"].clone()), (200, json!([])), "{b}");
 }
 
+/// La transaction de la revue sous le motif `already_posted`, son écriture.
+fn deja_comptabilisee(revue: &Value, t: i64) -> Option<Value> {
+    revue["toReview"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["transaction"]["id"] == t && f["code"] == "already_posted")
+        .map(|f| f["details"]["journalEntryId"].clone())
+}
+
+/// Le premier retrait écrit, sa réception rattachée, puis son côté PayPal
+/// annulé seul ; un second retrait du **même montant**, jamais écrit, en
+/// attente sur le même solde. Rend (premier, sa proposition, son écriture,
+/// la réception, le second).
+async fn deux_retraits_le_premier_detache(ctx: &Ctx) -> (i64, Value, i64, i64, i64) {
+    let premier = ctx.tx("0TEST00000000007G").await;
+    let v = proposition(&ctx.revue().await, premier);
+    let (s, b) = ctx.accepter(vec![v.clone()]).await;
+    assert_eq!((s, b["failed"].clone()), (200, json!([])), "{b}");
+    let ecriture = b["accepted"][0]["journalEntryIds"][0].as_i64().unwrap();
+    let reception = ctx
+        .autre_cote(ctx.ba_banque().await, "1000.00", "2020-02-28")
+        .await;
+    assert_eq!(ctx.rattacher(reception, ecriture).await.0, 200);
+    let second = ctx
+        .transaction_sur(
+            ctx.ba_chf,
+            "-1000.00",
+            "2020-03-02",
+            Some("General Withdrawal"),
+            Some("0TESTRETRAIT00002"),
+        )
+        .await;
+    let (s, b) = ctx.annuler(premier).await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(ctx.etat(premier).await, ("pending".into(), None));
+    (premier, v, ecriture, reception, second)
+}
+
+/// Correctif #1538 (revue P1 de la suite de la #1534, M1) : deux retraits du
+/// même montant sur le même solde, le premier détaché, le second jamais écrit.
+/// Seul le premier — que l'écriture **nomme** (« TXN <id> ») — est déjà
+/// comptabilisé ; le second reste proposé et s'accepte. Sans la condition du
+/// nom, l'écriture du premier retenait aussi le second, bloqué à tort.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn deux_retraits_de_meme_montant_seul_le_detache_est_deja_comptabilise(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let (premier, v_premier, ecriture, _, second) = deux_retraits_le_premier_detache(&ctx).await;
+    let revue = ctx.revue().await;
+    assert_eq!(
+        deja_comptabilisee(&revue, premier),
+        Some(json!(ecriture)),
+        "{revue}"
+    );
+    assert_eq!(deja_comptabilisee(&revue, second), None, "{revue}");
+    let v_second = proposition(&revue, second);
+    assert_eq!(v_second["type"], "withdrawal", "{v_second}");
+    let avant = ctx.ecritures().await;
+    let (s, b) = ctx.accepter(vec![v_premier, v_second]).await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(
+        b["failed"],
+        json!([{
+            "bankTransactionId": premier,
+            "errorCode": "PROVIDER_TRANSACTION_ALREADY_POSTED",
+            "details": { "journalEntryId": ecriture },
+        }]),
+        "{b}"
+    );
+    assert_eq!(
+        b["accepted"][0]["bankTransactionIds"],
+        json!([second]),
+        "{b}"
+    );
+    assert_eq!(ctx.ecritures().await, avant + 1, "le second seul est écrit");
+    assert_eq!(ctx.etat(premier).await, ("pending".into(), None));
+}
+
+/// Correctif #1538 : le second retrait, de même montant, rattaché **par
+/// erreur** à l'écriture du premier (ce que la fenêtre de rattachement
+/// admet : l'écriture n'était rapprochée que de l'autre côté). Le premier,
+/// que l'écriture nomme, reste déjà comptabilisé — jamais écrit une seconde
+/// fois, son acceptation refusée — malgré ce lien de plus ; son rattachement
+/// est refusé tant que le second y est rattaché. Annuler le rattachement du
+/// second ne retire que son lien ; le second est alors proposé, et le premier
+/// se rattache.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn rattacher_l_autre_retrait_ne_permet_pas_de_seconde_ecriture(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let (premier, v_premier, ecriture, reception, second) =
+        deux_retraits_le_premier_detache(&ctx).await;
+    let (s, b) = ctx.rattacher(second, ecriture).await;
+    assert_eq!(s, 200, "le rattachement par erreur passe : {b}");
+    let revue = ctx.revue().await;
+    assert_eq!(
+        deja_comptabilisee(&revue, premier),
+        Some(json!(ecriture)),
+        "{revue}"
+    );
+    assert!(
+        !revue["proposals"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|p| p["transaction"]["id"] == premier),
+        "{revue}"
+    );
+    let avant = ctx.ecritures().await;
+    let audit_avant = ctx.count("SELECT COUNT(*) FROM audit_log").await;
+    let (s, b) = ctx.accepter(vec![v_premier]).await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(b["accepted"], json!([]), "{b}");
+    assert_eq!(
+        b["failed"][0]["errorCode"], "PROVIDER_TRANSACTION_ALREADY_POSTED",
+        "{b}"
+    );
+    assert_eq!(ctx.ecritures().await, avant, "aucune seconde écriture");
+    assert_eq!(
+        ctx.count("SELECT COUNT(*) FROM audit_log").await,
+        audit_avant
+    );
+    let (s, b) = ctx.rattacher(premier, ecriture).await;
+    assert_ne!(s, 200, "l'écriture porte déjà deux liens : {b}");
+    // Défaire le rattachement par erreur : le lien seul, l'écriture reste.
+    let (s, b) = ctx.annuler(second).await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(ctx.etat(second).await, ("pending".into(), None));
+    assert_eq!(
+        ctx.etat(reception).await,
+        ("reconciled".into(), Some(ecriture))
+    );
+    let revue = ctx.revue().await;
+    assert_eq!(proposition(&revue, second)["type"], "withdrawal");
+    assert_eq!(deja_comptabilisee(&revue, premier), Some(json!(ecriture)));
+    let (s, b) = ctx.rattacher(premier, ecriture).await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(
+        ctx.etat(premier).await,
+        ("reconciled".into(), Some(ecriture))
+    );
+}
+
+/// Correctif #1538 : des frais **du même montant** que le retrait, sous le
+/// même identifiant (`<id>:FEE`). L'écriture du retrait, rapprochée de la
+/// réception, nomme « TXN <id> » — qu'elle partage avec les frais —, mais ne
+/// retient que le retrait : les frais détachés (leur écriture contre-passée)
+/// restent proposés et s'acceptent ; l'écriture des frais, qui nomme aussi
+/// « TXN <id> », n'est jamais l'écriture déjà passée du retrait (elle n'est
+/// pas rapprochée de l'autre côté).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn frais_du_meme_montant_que_le_retrait_jamais_confondus(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let retrait = ctx
+        .transaction_sur(
+            ctx.ba_chf,
+            "-50.00",
+            "2020-03-05",
+            Some("General Withdrawal"),
+            Some("0TESTRETRAIT00003"),
+        )
+        .await;
+    let frais = ctx
+        .transaction_sur(
+            ctx.ba_chf,
+            "-50.00",
+            "2020-03-06",
+            Some("General Withdrawal"),
+            Some("0TESTRETRAIT00003:FEE"),
+        )
+        .await;
+    let revue = ctx.revue().await;
+    let v_retrait = proposition(&revue, retrait);
+    let v_frais = proposition(&revue, frais);
+    assert_eq!(
+        (v_retrait["type"].clone(), v_frais["type"].clone()),
+        (json!("withdrawal"), json!("fee"))
+    );
+    let (s, b) = ctx.accepter(vec![v_retrait.clone(), v_frais]).await;
+    assert_eq!((s, b["failed"].clone()), (200, json!([])), "{b}");
+    let ecriture = ctx.etat(retrait).await.1.unwrap();
+    let ecriture_frais = ctx.etat(frais).await.1.unwrap();
+    assert_ne!(ecriture, ecriture_frais);
+    let reception = ctx
+        .autre_cote(ctx.ba_banque().await, "50.00", "2020-03-05")
+        .await;
+    assert_eq!(ctx.rattacher(reception, ecriture).await.0, 200);
+    // Le retrait détaché : son écriture, jamais celle des frais.
+    assert_eq!(ctx.annuler(retrait).await.0, 200);
+    let revue = ctx.revue().await;
+    assert_eq!(
+        deja_comptabilisee(&revue, retrait),
+        Some(json!(ecriture)),
+        "{revue}"
+    );
+    // Les frais détachés : leur écriture, sans autre côté, est contre-passée.
+    assert_eq!(ctx.annuler(frais).await.0, 200);
+    assert_eq!(
+        ctx.count(&format!(
+            "SELECT COUNT(*) FROM journal_entries WHERE reverses_entry_id = {ecriture_frais}"
+        ))
+        .await,
+        1
+    );
+    let revue = ctx.revue().await;
+    assert_eq!(deja_comptabilisee(&revue, frais), None, "{revue}");
+    let v_frais = proposition(&revue, frais);
+    assert_eq!(v_frais["type"], "fee", "{v_frais}");
+    let (s, b) = ctx.accepter(vec![v_retrait, v_frais]).await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(
+        b["accepted"][0]["bankTransactionIds"],
+        json!([frais]),
+        "{b}"
+    );
+    assert_eq!(
+        b["failed"],
+        json!([{
+            "bankTransactionId": retrait,
+            "errorCode": "PROVIDER_TRANSACTION_ALREADY_POSTED",
+            "details": { "journalEntryId": ecriture },
+        }]),
+        "{b}"
+    );
+}
+
 /// L'ordre inverse : annuler d'abord le **côté banque** ne retire que son
 /// lien (l'écriture reste rapprochée du retrait, qui n'est pas pending, donc
 /// pas proposé) ; annuler ensuite le côté PayPal **contre-passe** l'écriture,

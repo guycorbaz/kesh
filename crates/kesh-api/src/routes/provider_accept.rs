@@ -100,7 +100,7 @@ use kesh_reconciliation::conversion::{ConversionSide, PlanError, SourceRate, pla
 use kesh_reconciliation::provider_review::{
     EntryKind, FAILED_ALREADY_POSTED, Proposal, ProviderAccount, ProviderKind, ProviderSpec,
     Review, ReviewFinding, ReviewInput, ReviewProposal, SaleEntry, SaleMovement, admits_link,
-    admits_rule, build_review, conversion_halves, counts, payment_date,
+    admits_rule, build_review, conversion_halves, counts, first_naming_entry, payment_date,
 };
 use kesh_reconciliation::{ReconciliationError, rule_matches, with_account_locks};
 use rust_decimal::Decimal;
@@ -312,7 +312,8 @@ pub async fn load_review_in_tx(
     let rules = reconciliation_rules::find_active_for_company(&mut **tx, company_id).await?;
     let rule_account_ids = reads::rule_account_ids(&mut **tx, company_id).await?;
     let primary = reads::primary_ledger_account_id(&mut **tx, company_id).await?;
-    let already_posted = already_posted_in_review(tx, company_id, &balances, &pending).await?;
+    let already_posted =
+        already_posted_in_review(tx, company_id, spec, &balances, &pending).await?;
 
     let review = build_review(
         &ReviewInput {
@@ -335,25 +336,24 @@ pub async fn load_review_in_tx(
     })
 }
 
-/// Les transactions `pending` **déjà comptabilisées** de l'autre côté
-/// (correctif « une transaction de prestataire n'est écrite qu'une fois ») :
-/// pour chaque compte bancaire du prestataire lié à un compte du plan, une
-/// lecture par page
-/// ([`reconciliation_link::matched_elsewhere_for_page`]) — l'écriture
-/// vivante dont le mouvement sur ce compte du plan égale le montant de la
-/// transaction et qui est déjà rapprochée de **l'autre côté** (un autre
-/// compte bancaire, montant opposé ; la règle de l'annulation qui ne retire
-/// que le lien, `reconciliation_cancel`, et du signal « déjà comptabilisée »
-/// de la réconciliation, Story 34-4). **Lien structuré** : l'écriture et ses
-/// transactions, jamais le libellé. Dans la transaction de lecture de la
+/// Les transactions `pending` **déjà comptabilisées** (correctif « une
+/// transaction de prestataire n'est écrite qu'une fois », #1538) : pour chaque
+/// compte bancaire du prestataire lié à un compte du plan, la présélection lue
+/// par page ([`reconciliation_link::posted_elsewhere_for_page`] : une écriture
+/// vivante, hors règlement, dont le mouvement sur ce compte du plan égale le
+/// montant de la transaction et qui est rapprochée de **l'autre côté** — un
+/// autre compte bancaire, sens contraire), puis la première écriture qui
+/// **nomme** la transaction ([`first_naming_entry`]) — la décision de
+/// l'acceptation ([`rejudge_writing`]). Dans la transaction de lecture de la
 /// revue.
 async fn already_posted_in_review(
     tx: &mut sqlx::Transaction<'_, MySql>,
     company_id: i64,
+    spec: &ProviderSpec,
     balances: &[ProviderBalance],
     pending: &[BankTransaction],
 ) -> Result<HashMap<i64, i64>, AppError> {
-    let mut out = HashMap::new();
+    let mut found: Vec<(&BankTransaction, Vec<reconciliation_link::PostedEntry>)> = Vec::new();
     for b in balances {
         let Some(ledger) = b.account.journal_account_id else {
             continue;
@@ -366,17 +366,54 @@ async fn already_posted_in_review(
         if page.is_empty() {
             continue;
         }
-        out.extend(
-            reconciliation_link::matched_elsewhere_for_page(
-                &mut **tx,
-                company_id,
-                b.account.id,
-                ledger,
-                b.currency(),
-                &page,
+        let mut posted = reconciliation_link::posted_elsewhere_for_page(
+            &mut **tx,
+            company_id,
+            b.account.id,
+            ledger,
+            b.currency(),
+            &page,
+        )
+        .await?;
+        for t in pending.iter().filter(|t| t.bank_account_id == b.account.id) {
+            if let Some(entries) = posted.remove(&t.id) {
+                found.push((t, entries));
+            }
+        }
+    }
+    let mut entry_ids: Vec<i64> = found
+        .iter()
+        .flat_map(|(_, es)| es.iter().map(|e| e.journal_entry_id))
+        .collect();
+    entry_ids.sort_unstable();
+    entry_ids.dedup();
+    let linked = linked_to_entries(tx, company_id, &entry_ids).await?;
+    Ok(found
+        .into_iter()
+        .filter_map(|(t, entries)| {
+            first_naming_entry(
+                spec,
+                t,
+                entries
+                    .iter()
+                    .map(|e| (e.journal_entry_id, e.description.as_str())),
+                &linked,
             )
-            .await?,
-        );
+            .map(|entry_id| (t.id, entry_id))
+        })
+        .collect())
+}
+
+/// Les transactions rapprochées des écritures `entry_ids`, lues par tranches
+/// de [`reconciliation_repo::MAX_IN_CLAUSE_IDS`] ([`reads::transactions_matched_to_entries`]).
+async fn linked_to_entries(
+    tx: &mut sqlx::Transaction<'_, MySql>,
+    company_id: i64,
+    entry_ids: &[i64],
+) -> Result<Vec<BankTransaction>, DbError> {
+    let mut out = Vec::new();
+    for chunk in entry_ids.chunks(reconciliation_repo::MAX_IN_CLAUSE_IDS) {
+        out.extend(reads::transactions_matched_to_entries(&mut **tx, company_id, chunk).await?);
     }
     Ok(out)
 }
@@ -1084,10 +1121,11 @@ pub async fn rejudge<'a>(
 /// [`rejudge`], puis la règle « écrite une seule fois », pour les genres qui
 /// **écrivent** (frais, règle, retrait, conversion ; un genre propre qui
 /// écrit, chez le prestataire qui le déclare, s'y branche de même) :
-/// une transaction **déjà comptabilisée** de l'autre côté
-/// ([`reconciliation_link::find_matched_elsewhere`], la règle de la revue lue
-/// sous les verrous du lot) → [`FAILED_ALREADY_POSTED`] (`details: {
-/// journalEntryId }`, la plus proche par date), sans rien écrire. Lecture non
+/// une transaction **déjà comptabilisée** — une écriture de
+/// [`reconciliation_link::find_posted_elsewhere`] qui la nomme
+/// ([`first_naming_entry`]), la règle de la revue lue sous les verrous du lot
+/// → [`FAILED_ALREADY_POSTED`] (`details: { journalEntryId }`, la plus proche
+/// par date), sans rien écrire. Lecture non
 /// verrouillante des écritures : le verrou nommé du compte de la transaction,
 /// que le lot tient, exclut une acceptation, un rattachement ou une annulation
 /// concurrents sur ce compte ; l'autre côté (la réception) peut se rattacher
@@ -1100,7 +1138,7 @@ pub async fn rejudge_writing<'a>(
     kind_ok: impl Fn(ProviderKind) -> bool,
 ) -> Result<Rejudged<'a>, Refusal> {
     let r = rejudge(tx, ctx, id, kind_ok).await?;
-    let posted = reconciliation_link::find_matched_elsewhere(
+    let posted = reconciliation_link::find_posted_elsewhere(
         &mut **tx,
         ctx.company_id,
         &r.transaction,
@@ -1109,9 +1147,21 @@ pub async fn rejudge_writing<'a>(
     )
     .await
     .map_err(|e| db_refusal(id, e))?;
-    // La première : la plus proche par date, puis la plus ancienne — la même
-    // que nomme la revue (`matched_elsewhere_for_page`).
-    if let Some(entry_id) = posted.first().map(|c| c.journal_entry_id) {
+    let entry_ids: Vec<i64> = posted.iter().map(|c| c.journal_entry_id).collect();
+    let linked = linked_to_entries(tx, ctx.company_id, &entry_ids)
+        .await
+        .map_err(|e| db_refusal(id, e))?;
+    // La première qui nomme la transaction, dans l'ordre de la présélection
+    // (la plus proche par date, puis la plus ancienne) : la même que nomme la
+    // revue (`already_posted_in_review`).
+    if let Some(entry_id) = first_naming_entry(
+        ctx.spec,
+        &r.transaction,
+        posted
+            .iter()
+            .map(|c| (c.journal_entry_id, c.description.as_str())),
+        &linked,
+    ) {
         return Err(failed(
             id,
             FAILED_ALREADY_POSTED,

@@ -638,6 +638,15 @@ enum EntrySqlMode {
     /// [`HAS_LINK`] (l'écriture est déjà rapprochée). Une partie de la liste par
     /// construction : `matchedElsewhereCount ≤ entryCount`.
     MatchedElsewhere,
+    /// Correctif « une transaction de prestataire n'est écrite qu'une fois »
+    /// (#1538) — **l'écriture déjà passée** d'une transaction de prestataire :
+    /// les conditions 1 à 3, 5 et 6 de la liste, la condition 4 remplacée par
+    /// [`posted_elsewhere_side`] (l'écriture est rapprochée de l'autre côté,
+    /// quels que soient ses autres liens), **sans** plafond de lignes : le
+    /// filtre par le nom (`provider_review::first_naming_entry`, en Rust)
+    /// vient après, et un plafond pourrait écarter l'écriture qui nomme la
+    /// transaction.
+    PostedElsewhere,
 }
 
 /// Le texte de la requête des conditions 2 à 6, et ses variantes
@@ -682,10 +691,13 @@ fn entry_sql(mode: EntrySqlMode, kind: MovementKind) -> String {
            AND m.movement = ? \
            AND {} \
            AND {ENTRY_NOT_REVERSED_NOR_SETTLEMENT}{}{} \
-         ORDER BY days_apart, e.id \
-         LIMIT {ENTRY_CANDIDATES_LIMIT}",
+         ORDER BY days_apart, e.id{}",
         entry_movements(kind),
-        linkable_side(),
+        if mode == EntrySqlMode::PostedElsewhere {
+            posted_elsewhere_side()
+        } else {
+            linkable_side()
+        },
         if mode == EntrySqlMode::MatchedElsewhere {
             format!(" AND {HAS_LINK}")
         } else {
@@ -695,6 +707,11 @@ fn entry_sql(mode: EntrySqlMode, kind: MovementKind) -> String {
             " AND e.id = ?"
         } else {
             ""
+        },
+        if mode == EntrySqlMode::PostedElsewhere {
+            String::new()
+        } else {
+            format!(" LIMIT {ENTRY_CANDIDATES_LIMIT}")
         }
     )
 }
@@ -817,6 +834,23 @@ fn linkable_side() -> String {
                       WHERE bt.matched_entry_id = e.id AND NOT {}) \
          AND (SELECT COUNT(*) FROM bank_transactions bt \
                WHERE bt.matched_entry_id = e.id) <= 1",
+        other_side_predicate("m.movement")
+    )
+}
+
+/// Correctif #1538 — l'écriture est rapprochée de **l'autre côté** de `t`
+/// ([`other_side_predicate`]), quels que soient ses autres liens : la condition
+/// 4 de [`EntrySqlMode::PostedElsewhere`]. Mêmes paramètres, dans le même
+/// ordre, que [`linkable_side`] (`t.bank_account_id`, `t.currency`,
+/// `t.currency`). À la différence de [`linkable_side`] et [`HAS_LINK`], une
+/// transaction du **même** compte bancaire déjà liée à l'écriture (un
+/// rattachement fait par erreur à la place de la transaction que l'écriture
+/// nomme) ne la retire pas : la transaction qu'elle nomme reste déjà
+/// comptabilisée, jamais écrite une seconde fois.
+fn posted_elsewhere_side() -> String {
+    format!(
+        "EXISTS (SELECT 1 FROM bank_transactions bt \
+                  WHERE bt.matched_entry_id = e.id AND {})",
         other_side_predicate("m.movement")
     )
 }
@@ -1066,6 +1100,42 @@ where
     .await
 }
 
+/// Correctif « une transaction de prestataire n'est écrite qu'une fois »
+/// (#1538) — les écritures **qui peuvent être l'écriture déjà passée** de `t`
+/// ([`EntrySqlMode::PostedElsewhere`]) : un mouvement égal à `t.amount` sur le
+/// compte du plan `bank_ledger_account_id` (le compte du plan du solde du
+/// prestataire), ni contre-passée ni contre-passation, hors règlement, et
+/// **rapprochée de l'autre côté** ([`posted_elsewhere_side`]). Triées par jours
+/// d'écart croissants puis identifiant, **sans plafond**. Ce n'est qu'une
+/// présélection : deux transactions de même montant y trouvent les mêmes
+/// écritures, et seule celle que l'écriture **nomme** est déjà comptabilisée —
+/// le filtre par le nom est fait par l'appelant
+/// (`kesh_reconciliation::provider_review::first_naming_entry`). Vide, sans
+/// requête, si la condition 1 est fausse. Lecture non verrouillante.
+pub async fn find_posted_elsewhere<'e, E>(
+    executor: E,
+    company_id: i64,
+    t: &BankTransaction,
+    bank_ledger_account_id: i64,
+    ledger_currency: &str,
+) -> Result<Vec<EntryCandidate>, DbError>
+where
+    E: sqlx::Executor<'e, Database = MySql>,
+{
+    if !transaction_can_be_linked_to_entry(t, ledger_currency) {
+        return Ok(Vec::new());
+    }
+    query_entry_sql(
+        executor,
+        company_id,
+        t,
+        bank_ledger_account_id,
+        ledger_currency,
+        EntrySqlMode::PostedElsewhere,
+    )
+    .await
+}
+
 /// Ce qui, aux livres, ressemble déjà à une transaction (Story 34-4, AC-1).
 /// Chaque nombre vaut au plus 50.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1186,7 +1256,7 @@ pub async fn count_already_booked_for_page(
 }
 
 /// Le prologue commun des lectures par page ([`count_already_booked_for_page`],
-/// [`matched_elsewhere_for_page`]) : toutes les transactions sont du compte
+/// [`posted_elsewhere_for_page`]) : toutes les transactions sont du compte
 /// `bank_account_id` (`DbError::Invariant` sinon, nommant `caller`) ; celles
 /// que la condition 1 admet ([`transaction_can_be_linked_to_entry`]) ; leurs
 /// montants, triés et sans doublon.
@@ -1215,26 +1285,31 @@ fn linkable_page<'t>(
     Ok((linkable, amounts))
 }
 
-/// Une écriture lue par [`page_entry_rows`] : son identifiant, son mouvement
-/// `M`, et les deux conditions évaluées en SQL.
-#[derive(Debug, Clone, Copy)]
+/// Une écriture lue par [`page_entry_rows`] : son identifiant, son libellé,
+/// son mouvement `M`, et les trois conditions évaluées en SQL.
+#[derive(Debug, Clone)]
 struct PageEntryRow {
     /// L'écriture.
     entry_id: i64,
     /// Sa date (le choix de la plus proche, comme le tri de [`entry_sql`]).
     entry_date: NaiveDate,
+    /// Son libellé (le filtre par le nom de [`posted_elsewhere_for_page`]).
+    description: String,
     /// `M`, son mouvement sur le compte du grand livre.
     movement: Decimal,
     /// La condition 4 de la liste ([`linkable_side`]).
     candidate: bool,
     /// [`HAS_LINK`] : déjà rapprochée d'une transaction.
     linked: bool,
+    /// [`posted_elsewhere_side`] : rapprochée de l'autre côté (#1538).
+    posted: bool,
 }
 
 /// Les écritures dont `M` égale l'un des montants `amounts` (conditions 2, 3,
-/// 5, 6), avec, en colonnes, la condition 4 de la liste ([`linkable_side`]) et
-/// le lien existant ([`HAS_LINK`]) — la lecture par page, **un seul texte**,
-/// de [`count_already_booked_for_page`] et de [`matched_elsewhere_for_page`].
+/// 5, 6), avec, en colonnes, la condition 4 de la liste ([`linkable_side`]),
+/// le lien existant ([`HAS_LINK`]) et le lien à l'autre côté
+/// ([`posted_elsewhere_side`]) — la lecture par page, **un seul texte**, de
+/// [`count_already_booked_for_page`] et de [`posted_elsewhere_for_page`].
 /// `amounts` non vide. Lecture ordinaire, sans verrou.
 async fn page_entry_rows<'e, E>(
     executor: E,
@@ -1249,22 +1324,28 @@ where
 {
     let placeholders = vec!["?"; amounts.len()].join(", ");
     let sql = format!(
-        "SELECT e.id, e.entry_date, m.movement, \
+        "SELECT e.id, e.entry_date, e.description, m.movement, \
                 CAST(({}) AS SIGNED) AS candidate, \
-                CAST({HAS_LINK} AS SIGNED) AS linked \
+                CAST({HAS_LINK} AS SIGNED) AS linked, \
+                CAST({} AS SIGNED) AS posted \
          {} \
          WHERE e.company_id = ? \
            AND m.movement IN ({placeholders}) \
            AND {ENTRY_NOT_REVERSED_NOR_SETTLEMENT} \
          ORDER BY e.id",
         linkable_side(),
+        posted_elsewhere_side(),
         entry_movements(MovementKind::of(ledger_currency)),
     );
     // Ordre des `?` dans le texte : condition 4 (compte bancaire, devise,
     // devise — la devise des transactions de la page, celle du compte du grand
-    // livre après la condition 1), `entry_movements` (grand livre), société,
-    // montants, condition 6 (compte bancaire).
-    let mut q = sqlx::query_as::<_, (i64, NaiveDate, Decimal, i64, i64)>(&sql)
+    // livre après la condition 1), le lien à l'autre côté (les trois mêmes),
+    // `entry_movements` (grand livre), société, montants, condition 6 (compte
+    // bancaire).
+    let mut q = sqlx::query_as::<_, (i64, NaiveDate, String, Decimal, i64, i64, i64)>(&sql)
+        .bind(bank_account_id)
+        .bind(ledger_currency)
+        .bind(ledger_currency)
         .bind(bank_account_id)
         .bind(ledger_currency)
         .bind(ledger_currency)
@@ -1281,45 +1362,58 @@ where
     Ok(rows
         .into_iter()
         .map(
-            |(entry_id, entry_date, movement, candidate, linked)| PageEntryRow {
-                entry_id,
-                entry_date,
-                movement,
-                candidate: candidate != 0,
-                linked: linked != 0,
+            |(entry_id, entry_date, description, movement, candidate, linked, posted)| {
+                PageEntryRow {
+                    entry_id,
+                    entry_date,
+                    description,
+                    movement,
+                    candidate: candidate != 0,
+                    linked: linked != 0,
+                    posted: posted != 0,
+                }
             },
         )
         .collect())
 }
 
+/// Une écriture de [`find_posted_elsewhere`] lue par page : son identifiant et
+/// son libellé (le filtre par le nom de l'appelant).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PostedEntry {
+    pub journal_entry_id: i64,
+    pub description: String,
+}
+
 /// Pour chaque transaction de `transactions` (toutes du compte bancaire
-/// `bank_account_id`, `DbError::Invariant` sinon) qui a **au moins** une
-/// écriture de [`find_matched_elsewhere`] — l'autre côté d'un virement déjà
-/// rapproché —, la plus proche de ces écritures par date, puis la plus
-/// ancienne (l'ordre de [`find_matched_elsewhere`]).
-/// Correctif « une transaction de prestataire n'est écrite qu'une fois » :
-/// la revue d'un prestataire n'écrit pas de nouveau une transaction déjà
-/// comptabilisée de l'autre côté (typiquement : son propre lien retiré par
-/// l'annulation d'un seul côté, `reconciliation_cancel`, l'écriture restant
-/// rapprochée de la réception). Les **mêmes** conditions que
-/// [`find_matched_elsewhere`] ([`page_entry_rows`] : `candidate` et `linked`),
-/// lues par page comme [`count_already_booked_for_page`] ; une transaction
-/// que la condition 1 écarte ([`transaction_can_be_linked_to_entry`]) est
-/// absente. Lecture ordinaire, sans verrou, générique sur l'exécuteur (la revue
-/// la fait dans sa transaction de lecture).
-pub async fn matched_elsewhere_for_page<'e, E>(
+/// `bank_account_id`, `DbError::Invariant` sinon), les écritures de
+/// [`find_posted_elsewhere`] — **les mêmes, dans le même ordre** : jours
+/// d'écart croissants, puis identifiant —, lues par page comme
+/// [`count_already_booked_for_page`] (une lecture par compte au lieu d'une par
+/// transaction). Une transaction sans écriture, ou que la condition 1 écarte
+/// ([`transaction_can_be_linked_to_entry`]), est absente.
+///
+/// Correctif « une transaction de prestataire n'est écrite qu'une fois »
+/// (#1538) : la présélection de la revue d'un prestataire ; l'appelant ne
+/// retient que l'écriture qui **nomme** la transaction
+/// (`kesh_reconciliation::provider_review::first_naming_entry`), la même que
+/// l'acceptation. Égalité gardée par
+/// `s34_4_ac8_la_lecture_par_page_egale_les_fonctions_du_dialogue`. Lecture
+/// ordinaire, sans verrou, générique sur l'exécuteur (la revue la fait dans
+/// sa transaction de lecture).
+pub async fn posted_elsewhere_for_page<'e, E>(
     executor: E,
     company_id: i64,
     bank_account_id: i64,
     bank_ledger_account_id: i64,
     ledger_currency: &str,
     transactions: &[BankTransaction],
-) -> Result<std::collections::HashMap<i64, i64>, DbError>
+) -> Result<std::collections::HashMap<i64, Vec<PostedEntry>>, DbError>
 where
     E: sqlx::Executor<'e, Database = MySql>,
 {
     let (linkable, amounts) = linkable_page(
-        "matched_elsewhere_for_page",
+        "posted_elsewhere_for_page",
         bank_account_id,
         ledger_currency,
         transactions,
@@ -1338,17 +1432,26 @@ where
     )
     .await?;
     for t in linkable {
-        // La plus proche par date, puis la plus ancienne : l'ordre de
-        // [`find_matched_elsewhere`] (`days_apart, e.id`), dont la première
-        // est celle que nomme le refus de l'acceptation.
+        // L'ordre de [`find_posted_elsewhere`] (`days_apart, e.id`).
         let paid = payment_date(t);
-        if let Some(r) = rows
+        let mut found: Vec<&PageEntryRow> = rows
             .iter()
-            .filter(|r| r.movement == t.amount && r.candidate && r.linked)
-            .min_by_key(|r| ((r.entry_date - paid).num_days().abs(), r.entry_id))
-        {
-            out.insert(t.id, r.entry_id);
+            .filter(|r| r.movement == t.amount && r.posted)
+            .collect();
+        if found.is_empty() {
+            continue;
         }
+        found.sort_by_key(|r| ((r.entry_date - paid).num_days().abs(), r.entry_id));
+        out.insert(
+            t.id,
+            found
+                .into_iter()
+                .map(|r| PostedEntry {
+                    journal_entry_id: r.entry_id,
+                    description: r.description.clone(),
+                })
+                .collect(),
+        );
     }
     Ok(out)
 }
@@ -1786,6 +1889,26 @@ mod tests {
             assert!(!list.contains(HAS_LINK));
             assert_eq!(elsewhere.replace(&format!(" AND {HAS_LINK}"), ""), list);
             assert!(!elsewhere.contains("FOR UPDATE"), "lecture ordinaire");
+        }
+    }
+
+    /// Correctif #1538 : l'écriture déjà passée d'une transaction de
+    /// prestataire est la liste, la condition 4 remplacée par le lien à
+    /// l'autre côté (le même prédicat que l'annulation), sans plafond.
+    #[test]
+    fn the_posted_elsewhere_query_is_the_list_query_with_the_other_side_link() {
+        for kind in [MovementKind::Chf, MovementKind::Foreign] {
+            let list = entry_sql(EntrySqlMode::List, kind);
+            let posted = entry_sql(EntrySqlMode::PostedElsewhere, kind);
+            let side = posted_elsewhere_side();
+            assert!(side.contains(&other_side_predicate("m.movement")));
+            assert!(!posted.contains(&linkable_side()));
+            assert!(!posted.contains("LIMIT"), "aucun plafond");
+            assert_eq!(
+                posted.replace(&side, &linkable_side()),
+                list.replace(&format!(" LIMIT {ENTRY_CANDIDATES_LIMIT}"), "")
+            );
+            assert!(!posted.contains("FOR UPDATE"), "lecture ordinaire");
         }
     }
 

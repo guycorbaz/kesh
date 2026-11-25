@@ -859,6 +859,67 @@ pub fn conversion_halves(a: &BankTransaction, b: &BankTransaction, spec: &Provid
         && (spec.conversion_match)(a, b)
 }
 
+/// L'écriture de libellé `description` **nomme-t-elle** la transaction `t` ?
+/// Correctif « une transaction de prestataire n'est écrite qu'une fois »
+/// (#1538) : la condition qui distingue, parmi les transactions de même
+/// montant d'un même solde, celle dont une écriture est **déjà passée** —
+/// l'écriture la nomme. Deux formes, sans autre lien structuré entre une
+/// écriture et une transaction détachée (`matched_entry_id`, effacé par le
+/// détachement, est le seul) :
+///
+/// - **par son libellé** : les identifiants qu'il porte
+///   ([`ProviderSpec::extract_ids`]) comprennent la clé de `t`
+///   ([`ProviderSpec::match_key`]) — la règle du rattachement d'une vente. Le
+///   libellé est celui de l'acceptation ([`ProviderSpec::entry_label`] : PayPal
+///   « … · TXN <id> »). Les frais PayPal ont pour clé `<id>:FEE`, que leur
+///   écriture ne porte pas (« Frais PayPal … · TXN <id> ») : ils ne sont
+///   jamais nommés, par l'écriture principale ni par la leur. L'écriture des
+///   frais nomme la transaction principale, mais n'est jamais rapprochée de
+///   l'autre côté (elle n'a de ligne sur aucun autre compte bancaire) : la
+///   présélection de l'appelant l'écarte ;
+/// - **par sa paire de conversion** : une conversion en une écriture ne
+///   nomme que sa moitié débitée ; l'autre moitié est nommée si l'écriture
+///   est rapprochée (`linked` : les transactions rapprochées de l'écriture)
+///   de sa paire ([`conversion_halves`]), que l'écriture nomme.
+pub fn entry_names(
+    spec: &ProviderSpec,
+    t: &BankTransaction,
+    description: &str,
+    linked: &[&BankTransaction],
+) -> bool {
+    let ids = (spec.extract_ids)(description);
+    let named =
+        |x: &BankTransaction| (spec.match_key)(x).is_some_and(|k| ids.iter().any(|i| i == k));
+    named(t)
+        || ((spec.classify)(t) == ProviderKind::Conversion
+            && linked
+                .iter()
+                .any(|p| conversion_halves(t, p, spec) && named(p)))
+}
+
+/// La première des écritures `candidates` (déjà triées : la plus proche par
+/// date, puis la plus ancienne) qui **nomme** `t` ([`entry_names`]), ou
+/// `None`. `linked` : les transactions rapprochées de ces écritures, toutes
+/// ensemble (chacune porte son `matched_entry_id`). La **seule** décision « déjà
+/// comptabilisée » d'une transaction de prestataire (#1538) : la revue (sur la
+/// lecture par page) et l'acceptation (sous les verrous du lot) l'appellent
+/// sur la même présélection
+/// (`kesh_db::repositories::reconciliation_link::find_posted_elsewhere`).
+pub fn first_naming_entry<'a>(
+    spec: &ProviderSpec,
+    t: &BankTransaction,
+    candidates: impl IntoIterator<Item = (i64, &'a str)>,
+    linked: &[BankTransaction],
+) -> Option<i64> {
+    candidates.into_iter().find_map(|(entry_id, description)| {
+        let on_entry: Vec<&BankTransaction> = linked
+            .iter()
+            .filter(|p| p.matched_entry_id == Some(entry_id))
+            .collect();
+        entry_names(spec, t, description, &on_entry).then_some(entry_id)
+    })
+}
+
 /// Les partenaires possibles de `t` parmi les conversions pending
 /// ([`conversion_halves`]).
 fn conversion_partners<'a>(
@@ -1420,6 +1481,61 @@ mod tests {
         f.rule_accounts.insert(1021, None);
         f.rules[0].counterparty_account_id = 1021;
         assert!(f.review(&SPEC).proposals.is_empty());
+    }
+
+    /// Correctif #1538 : seule l'écriture qui **nomme** la transaction la
+    /// retient ; deux transactions de même montant ne se confondent pas.
+    #[test]
+    fn premiere_ecriture_qui_nomme_la_transaction() {
+        let a = typed(tx(1, 10, "-50.00", "CHF"), "wd", "IDA");
+        let b = typed(tx(2, 10, "-50.00", "CHF"), "wd", "IDB");
+        // La plus proche (901) nomme A ; la suivante (902) nomme B.
+        let candidates = [(901, "Retrait IDA"), (902, "Retrait IDB")];
+        assert_eq!(first_naming_entry(&SPEC, &a, candidates, &[]), Some(901));
+        assert_eq!(first_naming_entry(&SPEC, &b, candidates, &[]), Some(902));
+        // Une écriture qui ne nomme personne ne retient rien.
+        assert_eq!(
+            first_naming_entry(&SPEC, &a, [(903, "Retrait sans identifiant")], &[]),
+            None
+        );
+        let c = typed(tx(3, 10, "-50.00", "CHF"), "wd", "IDC");
+        assert_eq!(first_naming_entry(&SPEC, &c, candidates, &[]), None);
+    }
+
+    /// Correctif #1538 : une conversion en une écriture ne nomme que sa
+    /// moitié débitée ; l'autre moitié est nommée par sa paire, rapprochée de
+    /// l'écriture — jamais par une conversion étrangère de même montant.
+    #[test]
+    fn conversion_nommee_par_sa_paire_rapprochee() {
+        let mut debit = typed(tx(1, 11, "-90.00", "CHF"), "conv", "IDD");
+        debit.end_to_end_id = Some("REF1".into());
+        debit.matched_entry_id = Some(901);
+        let mut credit = typed(tx(2, 10, "100.00", "USD"), "conv", "IDC");
+        credit.end_to_end_id = Some("REF1".into());
+        let mut autre = typed(tx(3, 10, "100.00", "USD"), "conv", "IDX");
+        autre.end_to_end_id = Some("REF2".into());
+        let linked = [debit.clone()];
+        assert_eq!(
+            first_naming_entry(&SPEC, &credit, [(901, "Conversion IDD")], &linked),
+            Some(901)
+        );
+        assert_eq!(
+            first_naming_entry(&SPEC, &autre, [(901, "Conversion IDD")], &linked),
+            None,
+            "une autre conversion de même montant"
+        );
+        // La paire doit être rapprochée de CETTE écriture.
+        assert_eq!(
+            first_naming_entry(&SPEC, &credit, [(902, "Conversion IDD")], &linked),
+            None
+        );
+        // Une transaction qui n'est pas une conversion n'est pas nommée par une paire.
+        let mut retrait = typed(tx(4, 10, "100.00", "USD"), "wd", "IDW");
+        retrait.end_to_end_id = Some("REF1".into());
+        assert_eq!(
+            first_naming_entry(&SPEC, &retrait, [(901, "Conversion IDD")], &linked),
+            None
+        );
     }
 
     /// Correctif « écrite une seule fois » : une transaction déjà

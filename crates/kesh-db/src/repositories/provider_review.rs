@@ -164,6 +164,36 @@ where
     Ok(rows.into_iter().map(|t| (t.id, t)).collect())
 }
 
+/// Les transactions de la société **rapprochées** de l'une des écritures
+/// `entry_ids` (`matched_entry_id`), triées par identifiant. Correctif #1538 :
+/// la paire d'une conversion, rapprochée de l'écriture, la désigne comme celle
+/// de l'autre moitié (`kesh_reconciliation::provider_review::entry_names`).
+/// Lecture ordinaire, sans verrou. Au plus
+/// [`super::reconciliation::MAX_IN_CLAUSE_IDS`] identifiants par appel :
+/// l'appelant découpe au-delà.
+pub async fn transactions_matched_to_entries<'e, E>(
+    executor: E,
+    company_id: i64,
+    entry_ids: &[i64],
+) -> Result<Vec<BankTransaction>, DbError>
+where
+    E: sqlx::Executor<'e, Database = MySql>,
+{
+    if entry_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let sql = format!(
+        "SELECT {BANK_TX_COLUMNS} FROM bank_transactions \
+         WHERE company_id = ? AND matched_entry_id IN ({}) ORDER BY id",
+        placeholders(entry_ids.len())
+    );
+    let mut q = sqlx::query_as::<_, BankTransaction>(&sql).bind(company_id);
+    for id in entry_ids {
+        q = q.bind(*id);
+    }
+    q.fetch_all(executor).await.map_err(map_db_error)
+}
+
 /// Ceux des identifiants `ids` qui sont une écriture de la société (lecture
 /// ordinaire, sur le pool : pré-vol de l'acceptation). Le lot ne pré-verrouille
 /// que ceux-là : un identifiant absent ou d'une autre société ne pose aucun
