@@ -9,7 +9,7 @@
  * `unit-price.ts`, Story 36-3b, V1-5).
  */
 
-import type { InvoiceLineType } from './invoices.types';
+import type { InvoiceLineType, InvoiceTextLineType } from './invoices.types';
 
 /**
  * Une ligne est-elle chiffrée ? **Absent vaut `priced`** (D6) : c'est le cas
@@ -27,7 +27,15 @@ export function estChiffree(l: { lineType?: InvoiceLineType | null }): boolean {
  * Définie comme **le contraire exact** de `estChiffree` : l'écran, le total,
  * les contrôles et la charge choisissent donc toujours le même côté, même
  * pour une valeur hors de l'union (un type qu'un serveur plus récent ajouterait).
+ *
+ * **Prédicat de type** (Story 49-5, #1464) : vrai, il rétrécit `t` à
+ * `InvoiceTextLineType`, ce qui type la charge d'une ligne de texte sans
+ * conversion. Limite : une valeur hors de l'union est classée texte **et typée**
+ * `InvoiceTextLineType` — c'est déjà son comportement à l'exécution (elle part
+ * `{ lineType, description }`), le type ne fait que le dire.
  */
-export function estLigneDeTexte(t: InvoiceLineType | null | undefined): boolean {
+export function estLigneDeTexte(
+	t: InvoiceLineType | null | undefined,
+): t is InvoiceTextLineType {
 	return !estChiffree({ lineType: t });
 }

@@ -119,3 +119,39 @@ describe('fiche d’un avoir — ligne de commentaire (49-1c)', () => {
 		expect(quantites[0].parentElement!.querySelectorAll(':scope > td')).toHaveLength(6);
 	});
 });
+
+// Story 49-5 (#1466, T3, AC-B1) — « TVA % » (alignée à droite) et « Compte de produit »
+// (à gauche) ne se touchent plus : chaque cellule du tableau porte `pr-2`, comme sur la
+// fiche de facture (`invoices/[id]/+page.svelte`). Mutation M3 : retirer `pr-2` de la seule
+// cellule du taux rougit ce test. Un test vérifie qu'une classe existe, non qu'on voit l'écart :
+// les captures de la recette visuelle (T4) font foi du rendu.
+describe('fiche d’un avoir — marge des cellules (49-5, #1466)', () => {
+	it('chaque th et td de l’en-tête, d’une ligne chiffrée, d’un commentaire et du pied porte pr-2', async () => {
+		getMock.mockResolvedValue(
+			avoir({
+				lines: [
+					{ ...ligne(1, '1.0000'), lineType: 'priced', revenueAccountId: 4 },
+					{
+						...ligne(2, '0.0000'),
+						lineType: 'comment',
+						description: 'Merci',
+						unitPrice: '0.0000',
+						vatRate: '0.00',
+						lineTotal: '0.0000',
+					},
+				],
+			}),
+		);
+		const { findByTestId, container } = render(Page);
+		await findByTestId('credit-note-total');
+		const sansMarge = (selecteur: string, attendu: number) => {
+			const cellules = Array.from(container.querySelectorAll(selecteur));
+			expect(cellules, selecteur).toHaveLength(attendu);
+			return cellules.filter((c) => !c.classList.contains('pr-2')).map((c) => c.outerHTML);
+		};
+		expect(sansMarge('table thead th', 6)).toEqual([]);
+		expect(sansMarge('table tbody tr:not([data-testid="credit-note-line-comment-row"]) td', 6)).toEqual([]);
+		expect(sansMarge('table tbody tr[data-testid="credit-note-line-comment-row"] td', 1)).toEqual([]);
+		expect(sansMarge('table tfoot td', 2)).toEqual([]);
+	});
+});

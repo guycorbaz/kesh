@@ -166,15 +166,15 @@
 	<table class="w-full border-collapse text-sm">
 		<thead>
 			<tr class="border-b text-left text-text-muted">
-				<th class="py-2">{i18nMsg('credit-notes-col-description', 'Description')}</th>
-				<th class="py-2 text-right">{i18nMsg('credit-notes-col-qty', 'Qté')}</th>
-				<th class="py-2 text-right">{i18nMsg('credit-notes-col-unit-price', 'Prix unitaire')}</th>
-				<th class="py-2 text-right">{i18nMsg('credit-notes-col-vat', 'TVA %')}</th>
+				<th class="py-2 pr-2">{i18nMsg('credit-notes-col-description', 'Description')}</th>
+				<th class="py-2 pr-2 text-right">{i18nMsg('credit-notes-col-qty', 'Qté')}</th>
+				<th class="py-2 pr-2 text-right">{i18nMsg('credit-notes-col-unit-price', 'Prix unitaire')}</th>
+				<th class="py-2 pr-2 text-right">{i18nMsg('credit-notes-col-vat', 'TVA %')}</th>
 				<!-- AC6-bis : ce fichier est i18n — la colonne suit sa convention. -->
-				<th class="py-2">
+				<th class="py-2 pr-2">
 					{i18nMsg('invoice-line-col-revenue-account', 'Compte de produit')}
 				</th>
-				<th class="py-2 text-right">{i18nMsg('credit-notes-col-line-total', 'Total HT')}</th>
+				<th class="py-2 pr-2 text-right">{i18nMsg('credit-notes-col-line-total', 'Total HT')}</th>
 			</tr>
 		</thead>
 		<tbody>
@@ -183,31 +183,31 @@
 					<!-- Story 49-1c (D7) — un commentaire repris de la facture : une cellule
 					     sur toutes les colonnes, sauts de ligne gardés, sans montant ni compte. -->
 					<tr class="border-b" data-testid="credit-note-line-comment-row">
-						<td colspan={COLONNES_LIGNES} class="py-2 whitespace-pre-line" data-testid="credit-note-line-comment"
+						<td colspan={COLONNES_LIGNES} class="py-2 pr-2 whitespace-pre-line" data-testid="credit-note-line-comment"
 							>{line.description}</td
 						>
 					</tr>
 				{:else}
 				<tr class="border-b">
-					<td class="py-2">{line.description}</td>
+					<td class="py-2 pr-2">{line.description}</td>
 					<!-- Story v0171 (#866) : la quantité lisible, `1.0000` → `1`. -->
-					<td class="py-2 text-right" data-testid="credit-note-line-quantity">
+					<td class="py-2 pr-2 text-right" data-testid="credit-note-line-quantity">
 						{readableAmount(line.quantity, 0)}
 					</td>
-					<td class="py-2 text-right">{formatCreditNoteTotal(line.unitPrice)}</td>
-					<td class="py-2 text-right">{line.vatRate}</td>
-					<td class="py-2" data-testid="credit-note-line-revenue-account">
+					<td class="py-2 pr-2 text-right">{formatCreditNoteTotal(line.unitPrice)}</td>
+					<td class="py-2 pr-2 text-right">{line.vatRate}</td>
+					<td class="py-2 pr-2" data-testid="credit-note-line-revenue-account">
 						{revenueAccountCell(line.revenueAccountId)}
 					</td>
-					<td class="py-2 text-right">{formatCreditNoteTotal(line.lineTotal)}</td>
+					<td class="py-2 pr-2 text-right">{formatCreditNoteTotal(line.lineTotal)}</td>
 				</tr>
 				{/if}
 			{/each}
 		</tbody>
 		<tfoot>
 			<tr class="font-semibold">
-				<td class="py-2" colspan="5">{i18nMsg('credit-notes-col-total', 'Total HT')}</td>
-				<td class="py-2 text-right" data-testid="credit-note-total">
+				<td class="py-2 pr-2" colspan="5">{i18nMsg('credit-notes-col-total', 'Total HT')}</td>
+				<td class="py-2 pr-2 text-right" data-testid="credit-note-total">
 					{formatCreditNoteTotal(creditNote.totalAmount)}
 				</td>
 			</tr>

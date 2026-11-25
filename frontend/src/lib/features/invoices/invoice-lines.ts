@@ -82,7 +82,7 @@ export function ligneDepuisReponse(l: InvoiceLineResponse, uiKey: string): Ligne
  * une quantité non nulle.
  */
 export function ligneAEnvoyer(l: LigneFormulaire): CreateInvoiceLineRequest {
-	if (!estChiffree(l)) {
+	if (estLigneDeTexte(l.lineType)) {
 		return { lineType: l.lineType, description: l.description };
 	}
 	return {
