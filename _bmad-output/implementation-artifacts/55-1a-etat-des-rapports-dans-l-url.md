@@ -22,7 +22,7 @@ si un texte apparaît (aucun n'est prévu). Aucun code Rust.
 ## Ce qui se lit au code
 
 Relevé à `origin/main` `1e23edb55` et sur `pr/46-rapports-groupes` `511e61d54` (`git show`). Les numéros de ligne de la page
-sont ceux de `origin/main` ; ceux de la PR 46 se relèvent au T0 (+287 lignes).
+sont ceux de `origin/main` ; ceux de la PR 46 se relèvent au T0 (+231 lignes nettes).
 
 - `frontend/src/routes/(app)/reports/+page.svelte` (893 lignes à `main`) :
   - `activeTab` (`:85`) est un `$state` ; `selectTab` (`:608-615`) écrit `goto('?tab=' + next, { replaceState: true,
@@ -57,7 +57,7 @@ sont ceux de `origin/main` ; ceux de la PR 46 se relèvent au T0 (+287 lignes).
   Retour et Suivant (`popstate`) de même ; au `popstate`, le focus est remis au corps de la page.
 - Liens entrants : `/reports?tab=aged-receivables` (`invoices/due-dates/+page.svelte:401`, `invoices/reminders/+page.svelte:277`),
   `/reports` (`settings/opening-balances/+page.svelte:691`). E2E qui ouvrent `/reports?…` : `dunning-roundtrip.spec.ts:115`,
-  `open-items.spec.ts:357`, `reports.spec.ts:319,423,432,461`, `homepage-charts.spec.ts`.
+  `open-items.spec.ts:357`, `reports.spec.ts:319,432,461` (`:423` est une assertion d'URL), `homepage-charts.spec.ts`.
 - **Aucun filtre de devise** n'existe dans les Rapports (`grep -n "currency\|devise"` sur la page ne rend, à `main` et sur
   les trois branches de l'Epic 46, qu'un commentaire, `// fx-filtre-comptes : exempté — rapports …`) : rien à porter dans
   l'URL à ce titre. Si un filtre existe à la base de départ (T0), il entre dans
@@ -132,9 +132,10 @@ Le modèle est en même temps **simplifié** : la page n'applique jamais l'URL q
   dernier**, après `resyncActiveGroupedTab` (qui n'écrit pas) : aucun second `goto` dans la même tâche n'abandonne le
   premier (`client.js:1809`, `:1873-1883`).
 - **Clé** : une seule variable, `lastHandledKey`, posée à **chaque** `goto` de la page **et** à **chaque** application
-  d'une URL, jamais consommée ; « déjà la même » compare la clé canonique de l'URL lue à `lastHandledKey`.
+  d'une URL, jamais consommée ; l'effet compare la clé canonique de l'URL lue à `lastHandledKey`.
 - `goto` est appelé avec `keepFocus: true, noScroll: true`, toujours `void goto(…)` (sans `await` ni `.then` : les mocks
-  `goto: vi.fn()` des Vitest de la PR 46 rendent `undefined`) ; aucune écriture si l'URL canonique est déjà la même.
+  `goto: vi.fn()` des Vitest de la PR 46 rendent `undefined`) ; aucune écriture si la recherche écrite égale `page.url.search`
+  (comparaison au texte de l'adresse, non à `lastHandledKey`, sans quoi la normalisation n'aurait jamais lieu).
   « Empile » et « remplace » désignent les deux formes de `goto` (option `replaceState`), non l'API `pushState` de
   `$app/navigation` (C-55-1-3).
 - **Conséquence voulue** : un clic sur un onglet dont le rapport est affiché écrit la clé de ce rapport, même si un champ a
@@ -150,19 +151,26 @@ du grand livre (`:567`), **seulement si la clé lue diffère de `lastHandledKey`
 2. **Champs** — URL **complète** : chaque champ de l'onglet prend la valeur de l'URL, et **un champ absent prend son
    défaut** (période vide, compte nul, `includeZero` faux) ; URL **incomplète** : aucun champ n'est modifié. Les champs des
    autres onglets ne bougent pas ; les champs des rapports par compte analytique ne sont **jamais** touchés (leur garde
-   reste armée). La garde P17 est **désarmée pour cette application** (`lastFyId` posé avant les champs) ; si l'exercice
-   change, les rapports des autres onglets sont vidés comme par P17 (et leurs clés, point 4), pas la période restaurée.
+   reste armée). Les `from`/`to` valides d'une URL incomplète restent dans l'URL. **Si l'exercice change** : ce que fait P17
+   aujourd'hui — tous les rapports vidés (rapports par compte analytique compris, qui lisent le même exercice ; leur compte
+   et leur mode restent) et toute génération en vol périmée (`invalidateInFlight`), clés retirées —, puis la période de
+   l'URL est posée (`lastFyId` posé avant les champs, pour que P17 ne l'efface pas après).
 3. **Rapport** — URL incomplète : le rapport affiché de l'onglet s'il y en a un, sinon l'invite ; aucune requête, aucune
-   péremption. URL complète : si la **clé affichée** ou la **clé en vol** de l'onglet est celle-ci, rien (le rapport est
-   là, ou il arrive) ; sinon `generate()` — **mais si une génération est en vol** (`loading`, d'un autre
-   onglet), la demande est **différée à sa fin**, comme la 46-2 diffère la sienne (`afterGeneration`) : aucune génération
-   n'est interrompue par une navigation (aujourd'hui *Générer* est désactivé pendant `loading`, `ReportSelector.svelte:38`,
-   `+page.svelte` PR 46 `:907,982,1017` : rien n'interrompt un chargement, sinon un geste de présentation). Puis, si rien
-   n'a été demandé, la règle de la 46-2 (`resyncActiveGroupedTab`).
+   péremption. URL complète :
+   - la **clé en vol** de l'onglet est celle-ci : rien (le rapport arrive) ;
+   - la **clé affichée** est celle-ci : rien ; si une génération **de cet onglet** est en vol avec une autre clé,
+     `invalidateInFlight()` — l'écran garde le rapport de l'URL, aucune requête (même règle que la 55-1b) ;
+   - sinon, **aucune génération en vol** (ni `loading` ni `refreshing`) : `generate()` ;
+   - sinon (une génération d'un autre onglet est en vol, au même exercice) : **aucune requête**, l'invite de l'onglet avec
+     ses champs remplis ; l'utilisateur clique *Générer* quand le bouton se réactive (aujourd'hui *Générer* est désactivé
+     pendant `loading`, `ReportSelector.svelte:38`, `+page.svelte` PR 46 `:907,982,1017`). *Écarté* (validation P5) : une
+     demande différée à la fin de l'autre génération — son cycle de vie (onglet, annulation, clé) ouvrait plus de cas qu'il
+     n'en fermait.
+   Aucune navigation n'interrompt donc une génération, sauf au changement d'exercice (comme P17). Puis, si rien n'a été
+   demandé, la règle de la 46-2 (`resyncActiveGroupedTab`).
 4. **Clés** (invariant) : la **clé affichée** d'un onglet est celle de la réponse acceptée qu'il affiche ; la **clé en vol**,
    par onglet, est posée au départ de la requête et devient la clé affichée à l'acceptation ; elle est retirée à l'échec et
-   à la péremption ; un vidage de rapport (P17, compte analytique) retire les deux. Une demande différée porte sa clé en
-   vol dès qu'elle est enregistrée.
+   à la péremption ; un vidage de rapport (P17, compte analytique) retire les deux.
 5. **Course avec un geste** : si un Retour supplante un `goto` de la page avant que l'effet n'ait lu la clé écrite, l'URL lue
    est celle du Retour, qui n'est pas la clé écrite : elle est appliquée (aucun drapeau consommé à tort).
 
@@ -206,11 +214,15 @@ d'aujourd'hui.
    `open-items.spec.ts:357`) — 1 `goto` de normalisation qui remplace. Aucune boucle.
 8. **AC-8 — Course.** (a) *Générer* sur le Compte de résultat, puis, requête en vol, **clic** sur l'onglet *Balance* jamais
    générée, puis **clic** sur le Compte de résultat : sa réponse s'affiche. (b) *Retour* vers une URL complète d'un rapport
-   absent de la mémoire pendant la génération d'un autre onglet : cette génération **n'est pas interrompue** ; sa réponse
-   s'affiche dans son onglet, puis le rapport de l'URL est demandé (une requête) et s'affiche.
+   absent de la mémoire, **même exercice**, pendant la génération d'un autre onglet : aucune requête, l'invite de l'onglet
+   avec ses champs remplis ; l'autre génération n'est pas interrompue et sa réponse s'affiche dans son onglet. (b')
+   *Retour* vers une URL d'un **autre exercice** pendant une génération : celle-ci est périmée (comme P17), le rapport de
+   l'URL est demandé. (c) *Retour* vers la clé affichée pendant une génération de cet onglet avec une autre période : 0
+   requête, la génération périmée, l'écran garde le rapport de l'URL.
 9. **AC-9 — Restauration sans effacement.** Retour vers une URL d'un autre exercice : la période restaurée n'est pas
-   effacée, et la génération lancée n'est pas périmée par P17. Retour pendant qu'un rapport par compte analytique est
-   affiché : ses champs et son rapport ne bougent pas (sa garde reste armée).
+   effacée, la génération lancée n'est pas périmée par P17 ; un rapport par compte analytique affiché est vidé (même
+   exercice partagé), son compte et son mode restent. Retour au **même** exercice : le rapport par compte analytique, ses
+   champs et sa garde ne bougent pas. Lien du menu *Rapports* cliqué depuis la page : onglet *Bilan*, aucune requête.
 10. **AC-10 — Erreur et accessibilité.** Échec sur le Compte de résultat, puis *Retour* au Bilan : aucun message d'erreur
     au-dessus du Bilan. Après Retour, l'onglet de l'URL est `aria-selected` et `tabindex=0` ; chaque `goto` de la page
     reçoit `noScroll: true, keepFocus: true` (Vitest) ; sur une page défilée (rapport long, `window.scrollY > 0` avant),
@@ -218,10 +230,12 @@ d'aujourd'hui.
     au `popstate`, focus et défilement sont ceux de SvelteKit (non testés : comportement du framework) ; test axe de
     `reports.spec.ts` à zéro violation.
 11. **AC-11 — Manuel.** `docs/manual/fr/user-manual.tex` (lignes à `1e23edb55`, relevées sur la base PR 46 au T0) :
-    **un** paragraphe « Naviguer dans les rapports », placé dans § *Visualisation et exports* (`:4368`), avec un renvoi depuis
-    l'introduction de § *Rapports comptables* (`:4101`) : Retour et Suivant, chaque onglet une étape, adresse à copier (pour un utilisateur connecté), ce qu'elle
+    **un** paragraphe « Naviguer dans les rapports », placé dans § *Visualisation et exports* (`:4368`) (§ *Rapports
+    comptables*, `:4101`, n'a pas d'introduction : il s'ouvre sur § *Bilan*) : Retour et Suivant, chaque clic sur un onglet
+    une étape, adresse à copier (pour un utilisateur connecté), ce qu'elle
     retient (onglet, exercice, période, compte), ce qu'elle ne retient pas (un champ modifié sans *Générer*, les rapports
-    par compte analytique), et qu'arriver par Retour ou par un lien pendant le chargement d'un autre rapport attend sa fin ; § *Grand livre*, l'item « Accès direct depuis le bilan et la balance » (`:4220`) : Retour ramène au
+    par compte analytique), et qu'arriver par Retour ou par un lien pendant le chargement d'un autre rapport laisse l'onglet à son invite (*Générer*
+    ensuite) ; § *Grand livre*, l'item « Accès direct depuis le bilan et la balance » (`:4220`) : Retour ramène au
     rapport. Formulation à reprendre du précédent de la liste des factures (« la page et le filtre suivent l'adresse, si
     bien que le retour arrière du navigateur les retrouve »). `.tex` seul, PDF aplati contrôlé avant. Les manuels DE, EN et
     IT n'existent pas encore (`docs/manual/{de,en,it}/` ne porte qu'un `README.md`).
@@ -246,10 +260,11 @@ d'aujourd'hui.
   et `page.reload()`), AC-5 (deux valeurs invalides), AC-10 (`window.scrollY`).
 - **Preuve du rouge** : l'E2E AC-1 est lancé **avant** le correctif (journal `kesh-gate-logs/s55-1a/e2e-rouge-avant.log`) et
   rougit sur « Bilan affiché après Retour » ; les Vitest neufs de la page rougissent sans le correctif (journal). Mutations,
-  chacune tuée par un test nommé au Change Log : *Générer* qui empile ; clé écrite non enregistrée (l'effet réapplique →
-  double requête) ; retrait du désarmement de P17 ; clé en vol
+  chacune tuée par un test nommé au Change Log : *Générer* qui empile ; clé écrite non enregistrée (l'effet réapplique l'URL du clic : un champ modifié sans *Générer* est remis à la
+  valeur de la clé — test « champ gardé après un clic d'onglet ») ; retrait du désarmement de P17 ; clé en vol
   ignorée au point 3 ; champ absent conservé au lieu du défaut ; `errorMsg` non effacé ; `applyUrl` qui ne pose pas
-  `lastHandledKey` ; demande non différée pendant `loading` (interruption) ; écriture de l'URL dans `generate()` ; dans
+  `lastHandledKey` ; requête partie pendant la génération d'un autre onglet (AC-8 b) ; péremption omise au changement d'exercice (AC-8 b') ;
+  péremption omise vers la clé affichée (AC-8 c) ; écriture de l'URL dans `generate()` ; dans
   `reports-url.ts`, retrait de la validation de `fy`.
 
 ## Recette visuelle
@@ -264,9 +279,9 @@ invalide. Jointes au Dev Agent Record et au prompt de la revue de code.
       relever les lignes de la page et du manuel à cette base ; vérifier qu'aucun filtre de devise n'existe.
 - [ ] **T1** — E2E AC-1 rouge (journal).
 - [ ] **T2** — `reports-url.ts` et ses Vitest ; `ledgerHref` réécrite dessus.
-- [ ] **T3** — Page : écriture de l'URL aux gestes (clé enregistrée avant `goto`) ; `applyUrl` et son `$effect` (remplacent
-      `onMount` `:546` et l'effet `:567`) ; clés affichée et en vol par onglet ; désarmement de P17 et de l'effet du compte
-      analytique.
+- [ ] **T3** — Page : écriture de l'URL par les gestionnaires (`lastHandledKey` posée à chaque `goto`) ; `applyUrl` et son
+      `$effect` (remplacent `onMount` `:546` et l'effet `:567`) ; clés affichée et en vol par onglet ; P17 désarmée pour la
+      seule période restaurée ; l'effet du compte analytique **jamais** désarmé.
 - [ ] **T4** — Suites existantes : Vitest `reports-page.test.ts`, `reports-page-groupes.test.ts` ; E2E `reports.spec.ts`,
       `reports-groupes*.spec.ts`, `reports-currency.spec.ts`, `reports-export-pdf.spec.ts`, `dunning-roundtrip.spec.ts`,
       `open-items.spec.ts`, `homepage-charts.spec.ts`, `invoice-write-off.spec.ts`, `opening-balances.spec.ts` ;
@@ -283,7 +298,7 @@ dernier commit de code de la story). Aucun gate backend.
 ## Note de version
 
 *Rapports* : *Retour* et *Suivant* du navigateur ramènent au rapport précédent, avec son exercice, sa période et son
-compte ; chaque changement d'onglet est une étape de l'historique ; l'adresse d'une vue se copie et rouvre la même vue pour
+compte ; chaque clic sur un onglet est une étape de l'historique ; l'adresse d'une vue se copie et rouvre la même vue pour
 un utilisateur connecté, sans cliquer sur *Générer* (comme les liens de l'échéancier et des rappels vers la balance âgée,
 qui l'affichent désormais à l'arrivée) ; le lien *Rapports* du menu ramène au Bilan. (refs #À-VENIR)
 
@@ -292,6 +307,9 @@ qui l'affichent désormais à l'arrivée) ; le lien *Rapports* du menu ramène a
 ### Pièges
 
 - **Effet P17** : voir *Appliquer une URL*, point 2 ; l'effet du compte analytique n'est jamais désarmé.
+- **Normalisation au montage** : un `goto` de normalisation à l'arrivée interrompt la navigation d'entrée de SvelteKit
+  (`client.js:1727`, `:1988`) — défilement et focus non remis ; sans effet aujourd'hui (les liens internes sont canoniques),
+  à garder en tête.
 - **`load` ne doit pas lire `url`** : sinon SvelteKit le rejoue à chaque changement de paramètre.
 - **Liste des comptes** : un `accountId` absent de la liste n'est pas invalide côté client — l'API juge.
 - La PR 46 garde l'affichage pendant une redemande (`refreshing`) et périme par `invalidateInFlight()` : la page passe par
@@ -307,9 +325,9 @@ qui l'affichent désormais à l'arrivée) ; le lien *Rapports* du menu ramène a
   `applyUrl` (validation P3, V3-1 : appliquer l'URL écrite par le clic recopiait dans les contrôles l'état de l'ancien
   rapport et faisait passer à vide la règle de la 46-2).
 - **C-55-1-5** — Clavier en `replace` : une entrée par flèche rendrait *Retour* inutilisable.
-- **C-55-1-6** — Arriver par une adresse pendant le chargement d'un autre rapport **attend sa fin** (validation P4, V4-3 :
-  la prémisse « *Générer* interrompt » était fausse — le bouton est désactivé pendant `loading`) ; une génération à la fois,
-  sans refaire la garde `genSeq` de la PR 46.
+- **C-55-1-6** — Arriver par une adresse pendant le chargement d'un autre rapport ne demande rien (validation P5 ; la P4
+  avait corrigé la prémisse fausse « *Générer* interrompt » — le bouton est désactivé pendant `loading` — par une demande
+  différée, retirée en P5) : l'onglet montre son invite, comme si l'on y arrivait par un clic.
 - **C-55-1-7** — Rapports par compte analytique hors de l'URL (validation P4, V4-1), issue à ouvrir.
 
 ### References
@@ -366,3 +384,10 @@ qui l'affichent désormais à l'arrivée) ; le lien *Rapports* du menu ramène a
   demande attend la fin de la génération en vol (V4-3, prémisse fausse corrigée, C-55-1-6) ; URL écrite par les seuls
   gestionnaires, `goto` en dernier, AC-8(c) retiré (V4-4) ; `estDateStockable` (V4-5) ; LOW V4-6 à V4-12 (dont deux issues
   à ouvrir). La passe suivante est la P5 ; dès la P6, l'orchestrateur ne remédie plus (retrait ou renvoi).
+- 2026-11-25 — Validation P5 (Opus) : 0/0/5/9 (le HIGH a disparu ; deux MEDIUM nés de la demande différée de la P4).
+  Remédiation, la dernière permise à l'orchestrateur avant la règle de la sixième passe, **par retrait** de la demande
+  différée : une adresse qui arrive pendant la génération d'un autre onglet ne demande rien (V5-1, C-55-1-6) ; changement
+  d'exercice par l'URL : vidage et péremption comme P17 (V5-2, AC-8 b') ; AC-9 juste pour les rapports par compte analytique
+  (V5-3) ; T3 sans le désarmement de l'effet du compte analytique (V5-4) ; fichier d'epic amendé (D1, *Taille*) (V5-5) ;
+  cas « clé affichée, génération de l'onglet en vol » écrit au point 3 (repris de la P3 de la 55-1b, AC-8 c) ; LOW V5-6 à
+  V5-14. **Dès la P6, plus aucune remédiation de l'orchestrateur** : retrait ou renvoi au développement.

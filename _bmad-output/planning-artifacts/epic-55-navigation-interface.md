@@ -18,7 +18,8 @@ ajoutée le 2026-11-25, est découpée en 55-3a et 55-3b à sa validation P1 (pl
 55-1b à sa validation P3. ⚠️ **Signal de non-convergence déclaré au mainteneur** (`CLAUDE.md` § *Règle de splitting
 préventif*) : la P3 de la 55-1 a remonté un HIGH après une P2 à MEDIUM, une part de ses défauts naissant des remédiations
 de la P2 (recyclage) ; le découpage sépare la présentation de l'Epic 46 (55-1b) de l'URL des rapports (55-1a), et le modèle
-est simplifié (la page n'applique jamais l'URL qu'elle écrit). Plus aucune story ne peut s'ajouter sans en sortir une.
+est simplifié (la page n'applique jamais l'URL qu'elle écrit). Plus aucune story ne peut s'ajouter sans en sortir une. Le signal s'est **maintenu** à la P4 de la 55-1a (HIGH encore) : le
+périmètre a été réduit (rapports par compte analytique hors de l'URL), et la P5 a rendu 0 HIGH.
 
 **Issues** (ouvertes par l'agent du mainteneur ; numéros à reporter) :
 
@@ -87,7 +88,8 @@ Base `origin/main` à `1e23edb55` ; branches de l'Epic 46 lues par `git show <br
 ## Décisions (proposées au kickoff ; celles marquées **Q** attendent le mainteneur)
 
 - **D1 — L'URL est la source de l'état des Rapports.** L'onglet et tous les paramètres de la vue (exercice, période,
-  compte, comptes sans mouvement, compte analytique et mode, regroupement de l'Epic 46) sont des paramètres de requête ;
+  compte, comptes sans mouvement, regroupement de l'Epic 46) sont des paramètres de requête — **les rapports par compte
+  analytique** n'y portent que leur onglet (validation P4 de la 55-1a, issue à ouvrir) ;
   l'écran se déduit de l'URL au chargement **et à chaque navigation** (Retour, Suivant, lien), par une fonction pure
   (`reports-url.ts`, lecture et écriture), non par des effets dispersés. (55-1a)
 - **D2 — Empiler ou remplacer selon le geste.** Clic sur un onglet et clic sur un lien de compte : **`pushState`** (une
