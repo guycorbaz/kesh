@@ -196,7 +196,7 @@ Règle de l'epic (fichier d'epic, § *Gates*) : `cargo fmt --all -- --check` ; `
 warnings` ; `cargo nextest run -E 'package(kesh-report) | binary(reports_e2e) | binary(reports_export_e2e) | binary(fx_recette_api_e2e)
 | binary(open_items_e2e) | binary(dates_bornes_e2e) | binary(mcp_contrat)'` (rayon d'impact : binaires qui lisent le
 journal ou le grand livre) ;
-`scripts/gate-ci.sh` en fin d'epic. Aucun fichier de `kesh-db` touché (sinon gate complet, `CLAUDE.md` § *Exception
+`scripts/gate-ci.sh` en fin d'epic ; E2E selon le § *Gates* du fichier d'epic (Q6 : tant qu'elle n'est pas tranchée, E2E complet au dernier commit de code de la story). Aucun fichier de `kesh-db` touché (sinon gate complet, `CLAUDE.md` § *Exception
 `kesh-db`*).
 
 ## Note de version
