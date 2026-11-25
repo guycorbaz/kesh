@@ -113,6 +113,9 @@ describe('watchTabTitle (D6)', () => {
 		document.title = 'Contacts — Kesh';
 		stop = watchTabTitle(N);
 		expect(document.title).toBe(`Kesh — ${N} — Contacts`);
+		// Laisser l'observateur voir sa propre écriture : le titre brut mémorisé ne doit pas
+		// devenir le titre décoré (garde anti-boucle, M3).
+		await new Promise((r) => setTimeout(r, 50));
 		stop();
 		stop = null;
 		expect(document.title).toBe('Contacts — Kesh');
