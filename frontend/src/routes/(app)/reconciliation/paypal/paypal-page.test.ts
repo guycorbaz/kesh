@@ -77,6 +77,7 @@ function paypalAccount(id: number, account: string): BankAccountSummary {
 		cardLast4: null,
 		provider: 'paypal',
 		paypal: { account, feeAccountId: 60 },
+		stripe: null,
 		isPrimary: false,
 		journalAccountId: 31,
 		version: 1,
@@ -220,7 +221,7 @@ describe('page PayPal (Story 38-11d)', () => {
 		const r = render(Page);
 		await fireEvent.click(await r.findByTestId('paypal-check-1'));
 		await fireEvent.click(r.getByTestId('paypal-accept'));
-		expect((await r.findByTestId('paypal-accept-failed')).textContent).toContain('La proposition ne vaut plus');
+		expect((await r.findByTestId('paypal-accept-failed')).textContent).toContain('est plus valable');
 	});
 
 	it('plus de 500 propositions : un paquet à la fois, compte rendu cumulé', async () => {
@@ -411,6 +412,41 @@ describe('page PayPal — robustesse (revue P1)', () => {
 		expect((r.getByTestId('paypal-select-none') as HTMLButtonElement).disabled).toBe(true);
 		releaseAccept();
 		await waitFor(() => expect((r.getByTestId('paypal-select-all') as HTMLButtonElement).disabled).toBe(false));
+	});
+
+	// Revue P1 de 40-7d (L2, mutation K) — la relecture de la revue remet à zéro les comptes de
+	// contrepartie choisis pour les retraits (`onReviewLoaded`).
+	it('relecture de la revue : le compte choisi pour un retrait est remis à zéro', async () => {
+		const r = render(Page);
+		const retrait = (await r.findByTestId('paypal-check-3')) as HTMLInputElement;
+		await fireEvent.change(r.getByTestId('paypal-withdrawal-3'), { target: { value: '20' } });
+		expect(retrait.disabled).toBe(false);
+		await fireEvent.change(r.getByTestId('paypal-account'), { target: { value: 'PayPal www' } });
+		await waitFor(() => expect(reviewMock).toHaveBeenCalledTimes(2));
+		await waitFor(() => expect((r.getByTestId('paypal-check-3') as HTMLInputElement).disabled).toBe(true));
+		expect((r.getByTestId('paypal-withdrawal-3') as HTMLSelectElement).value).toBe('');
+	});
+
+	// Revue P1 de 40-7d (L2, mutation J) — changer de compte efface le compte rendu de l'import
+	// et celui de l'acceptation du compte quitté.
+	it('changement de compte : le compte rendu de l’import et celui de l’acceptation disparaissent', async () => {
+		importMock.mockResolvedValue({
+			account: 'PayPal boutique',
+			currencies: [{ currency: 'EUR', bankAccountId: 1, importId: 3, inserted: 8, duplicates: 1 }],
+			skipped: { notCompleted: [], memo: 0, neutralPairs: 0 },
+		});
+		acceptMock.mockResolvedValue({ accepted: [{ type: 'fee', bankTransactionIds: [2], journalEntryIds: [9] }], failed: [] });
+		const r = render(Page);
+		await waitFor(() => expect(reviewMock).toHaveBeenCalledTimes(1));
+		const input = (await r.findByTestId('paypal-file-input')) as HTMLInputElement;
+		await fireEvent.change(input, { target: { files: [new File(['x'], 'paypal.csv', { type: 'text/csv' })] } });
+		expect(await r.findByTestId('paypal-import-report-EUR')).toBeTruthy();
+		await fireEvent.click(await r.findByTestId('paypal-check-2'));
+		await fireEvent.click(r.getByTestId('paypal-accept'));
+		expect(await r.findByTestId('paypal-accept-report')).toBeTruthy();
+		await fireEvent.change(r.getByTestId('paypal-account'), { target: { value: 'PayPal www' } });
+		await waitFor(() => expect(r.queryByTestId('paypal-import-report-EUR')).toBeNull());
+		expect(r.queryByTestId('paypal-accept-report')).toBeNull();
 	});
 
 	it('retrait : effacer le compte choisi décoche la proposition', async () => {

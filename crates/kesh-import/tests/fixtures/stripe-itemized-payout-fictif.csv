@@ -1,0 +1,10 @@
+automatic_payout_id,automatic_payout_effective_at,balance_transaction_id,created,available_on,currency,gross,fee,net,reporting_category,description,source_id,charge_id
+po_TEST0001,2020-02-03 00:00:00,txn_TEST0001,2020-01-29 10:15:04,2020-02-03 00:00:00,chf,100.00,3.20,96.80,charge,Vente fictive A,ch_TEST0001,ch_TEST0001
+po_TEST0001,2020-02-03 00:00:00,txn_TEST0002,2020-01-30 14:02:41,2020-02-03 00:00:00,chf,50.00,1.75,48.25,charge,Vente fictive B,ch_TEST0002,ch_TEST0002
+po_TEST0001,2020-02-03 00:00:00,txn_TEST0003,2020-01-31 09:40:12,2020-02-03 00:00:00,chf,-20.00,-0.60,-19.40,refund,Remboursement fictif de la vente A,re_TEST0001,ch_TEST0001
+po_TEST0001,2020-02-03 00:00:00,txn_TEST0004,2020-02-01 00:00:00,2020-02-03 00:00:00,chf,-0.50,0.00,-0.50,fee,Frais fictifs de la plateforme,,
+po_TEST0002,2020-02-10 00:00:00,txn_TEST0005,2020-02-05 11:20:33,2020-02-10 00:00:00,eur,200.00,6.00,194.00,charge,Vente fictive C,ch_TEST0003,ch_TEST0003
+po_TEST0002,2020-02-10 00:00:00,txn_TEST0006,2020-02-06 16:45:09,2020-02-10 00:00:00,eur,80.00,2.50,77.50,charge,Vente fictive D (absente du jeu de ventes),ch_TEST0099,ch_TEST0099
+po_TEST0002,2020-02-10 00:00:00,txn_TEST0007,2020-02-10 00:00:00,2020-02-10 00:00:00,eur,-1.00,0.20,-1.20,fee,Frais fictifs de versement en autre devise,fee_TEST0001,
+po_TEST0003,2020-02-17 00:00:00,txn_TEST0008,2020-02-12 08:05:55,2020-02-17 00:00:00,usd,40.00,1.46,38.54,charge,Vente fictive E,ch_TEST0004,ch_TEST0004
+po_TEST0004,2020-02-24 00:00:00,txn_TEST0009,2020-02-20 13:30:00,2020-02-24 00:00:00,usd,-38.54,0.00,-38.54,payout_reversal,Retour fictif du versement po_TEST0003,po_TEST0003,

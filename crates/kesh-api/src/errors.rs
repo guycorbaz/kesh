@@ -1010,14 +1010,38 @@ pub enum AppError {
         details: serde_json::Value,
     },
 
+    /// Import Stripe : le fichier est refusé par le lecteur (40-7a) → `422
+    /// STRIPE_CSV_INVALID`, `details: { reason, … }` — `reason` est le code du
+    /// lecteur, avec `columns` (colonnes manquantes ; `source_id|charge_id`
+    /// s'accompagne de la marche à suivre dans Stripe) ou `lines` (erreurs de
+    /// ligne, forme `{ line, field, code, value }`).
+    #[error("Fichier Stripe refusé : {reason}")]
+    StripeCsvInvalid {
+        reason: &'static str,
+        details: serde_json::Value,
+    },
+
+    /// Compte de versement d'un compte Stripe refusé → `400
+    /// STRIPE_PAYOUT_ACCOUNT_INVALID`, `details: { bankAccountId, reason }`,
+    /// `reason` ∈ `not_found`, `archived`, `closed`, `stripe`, `paypal`,
+    /// `currency`.
+    #[error("Compte de versement refusé ({reason})")]
+    StripePayoutAccountInvalid {
+        bank_account_id: i64,
+        reason: &'static str,
+    },
+
     // ----- Story 38-12a (socle S4) — téléchargement par l'API d'un prestataire -----
     /// Période d'un téléchargement refusée → `400 PROVIDER_PERIOD_INVALID`,
-    /// `details: { provider, reason }`, `reason` ∈ `from_after_to`, `future`,
-    /// `too_old`.
+    /// `details: { provider, reason, historyYears }`, `reason` ∈
+    /// `from_after_to`, `future`, `too_old` ; `historyYears` est la profondeur
+    /// d'historique du prestataire (3 pour PayPal, 30 pour Stripe), que le texte
+    /// du refus `too_old` dit à l'écran.
     #[error("Période refusée ({reason})")]
     ProviderPeriodInvalid {
         provider: &'static str,
         reason: &'static str,
+        history_years: u32,
     },
     /// Aucune série d'identifiants pour ce libellé → `422
     /// PROVIDER_API_NOT_CONFIGURED`, `details: { provider, account }`.
@@ -3799,15 +3823,56 @@ impl IntoResponse for AppError {
                 (StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response()
             }
 
+            AppError::StripeCsvInvalid { reason, details } => {
+                let mut details = details.clone();
+                if let serde_json::Value::Object(map) = &mut details {
+                    map.insert("reason".into(), serde_json::json!(reason));
+                }
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "STRIPE_CSV_INVALID",
+                        "message": t(
+                            "error-stripe-csv-invalid",
+                            "Ce fichier n'est pas un rapport Stripe « Itemized payout reconciliation » lisible. Rien n'a été importé.",
+                        ),
+                        "details": details,
+                    }
+                });
+                (StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response()
+            }
+            AppError::StripePayoutAccountInvalid {
+                bank_account_id,
+                reason,
+            } => {
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "STRIPE_PAYOUT_ACCOUNT_INVALID",
+                        "message": t(
+                            "error-stripe-payout-account-invalid",
+                            "Le compte de versement doit être un compte bancaire de la société, ouvert, sans prestataire Stripe ni PayPal, dans la même devise que le solde Stripe.",
+                        ),
+                        "details": { "bankAccountId": bank_account_id, "reason": reason }
+                    }
+                });
+                (StatusCode::BAD_REQUEST, Json(body)).into_response()
+            }
             // ----- Story 38-12a (socle S4) — téléchargement par l'API -----
-            AppError::ProviderPeriodInvalid { provider, reason } => coded_response(
+            AppError::ProviderPeriodInvalid {
+                provider,
+                reason,
+                history_years,
+            } => coded_response(
                 StatusCode::BAD_REQUEST,
                 "PROVIDER_PERIOD_INVALID",
                 t(
                     "error-provider-period-invalid",
-                    "Période refusée : le début doit précéder la fin, ne pas être dans le futur, et dater de moins de trois ans.",
+                    "Période refusée : le début doit précéder la fin, ne pas être dans le futur, et ne pas remonter plus loin que l'historique du prestataire.",
                 ),
-                serde_json::json!({ "provider": provider, "reason": reason }),
+                serde_json::json!({
+                    "provider": provider,
+                    "reason": reason,
+                    "historyYears": history_years
+                }),
             ),
             AppError::ProviderApiNotConfigured { provider, account } => coded_response(
                 StatusCode::UNPROCESSABLE_ENTITY,

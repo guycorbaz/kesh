@@ -273,7 +273,7 @@ pub struct PendingByAccount {
     /// Parmi elles, celles que l'utilisateur a écartées des propositions.
     pub rejected_count: i64,
     /// Story 38-11d (revue P1, M1) — prestataire dont le compte est le solde
-    /// (`"paypal"`), `None` pour un compte ordinaire : l'écran lie alors la
+    /// (`"paypal"`, `"stripe"`), `None` pour un compte ordinaire : l'écran lie alors la
     /// page du prestataire, où ces transactions se rapprochent, au lieu de la
     /// réconciliation générique, qui n'offre pas ce compte.
     pub provider: Option<String>,

@@ -1,0 +1,7 @@
+{
+ "error": {
+  "type": "invalid_request_error",
+  "code": "rate_limit",
+  "message": "Too many requests FUITE"
+ }
+}
