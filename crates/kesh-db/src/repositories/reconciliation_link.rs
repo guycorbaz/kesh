@@ -694,7 +694,7 @@ fn entry_sql(mode: EntrySqlMode, kind: MovementKind) -> String {
          ORDER BY days_apart, e.id{}",
         entry_movements(kind),
         if mode == EntrySqlMode::PostedElsewhere {
-            posted_elsewhere_side()
+            posted_elsewhere_side("?")
         } else {
             linkable_side()
         },
@@ -840,18 +840,23 @@ fn linkable_side() -> String {
 
 /// Correctif #1538 — l'écriture est rapprochée de **l'autre côté** de `t`
 /// ([`other_side_predicate`]), quels que soient ses autres liens : la condition
-/// 4 de [`EntrySqlMode::PostedElsewhere`]. Mêmes paramètres, dans le même
-/// ordre, que [`linkable_side`] (`t.bank_account_id`, `t.currency`,
-/// `t.currency`). À la différence de [`linkable_side`] et [`HAS_LINK`], une
+/// 4 de [`EntrySqlMode::PostedElsewhere`]. `movement` : le mouvement de
+/// l'écriture, `m.movement` dans la lecture par page ([`page_entry_rows`] :
+/// paramètres `t.bank_account_id`, `t.currency`, `t.currency`), `?` lié à
+/// `t.amount` dans [`entry_sql`] (paramètres `t.bank_account_id`,
+/// `t.currency`, `t.amount`, `t.currency`, `t.amount`), où `m.movement =
+/// t.amount` : MariaDB refuse là `m.movement` dans ce `EXISTS`
+/// (`Unknown column 'm.movement' in 'WHERE'`, la condition étant poussée dans
+/// la table dérivée), alors qu'il l'admet dans la liste de sélection. À la différence de [`linkable_side`] et [`HAS_LINK`], une
 /// transaction du **même** compte bancaire déjà liée à l'écriture (un
 /// rattachement fait par erreur à la place de la transaction que l'écriture
 /// nomme) ne la retire pas : la transaction qu'elle nomme reste déjà
 /// comptabilisée, jamais écrite une seconde fois.
-fn posted_elsewhere_side() -> String {
+fn posted_elsewhere_side(movement: &str) -> String {
     format!(
         "EXISTS (SELECT 1 FROM bank_transactions bt \
                   WHERE bt.matched_entry_id = e.id AND {})",
-        other_side_predicate("m.movement")
+        other_side_predicate(movement)
     )
 }
 
@@ -992,12 +997,17 @@ where
         .bind(bank_ledger_account_id)
         .bind(company_id)
         .bind(t.amount)
-        // Condition 4 (`linkable_side`) : compte, devise, devise ; puis
-        // condition 6 : compte.
+        // Condition 4 (`linkable_side`) : compte, devise, devise — ou, pour
+        // `PostedElsewhere` (`posted_elsewhere_side("?")`), compte, devise,
+        // montant, devise, montant ; puis condition 6 : compte.
         .bind(t.bank_account_id)
-        .bind(&t.currency)
-        .bind(&t.currency)
-        .bind(t.bank_account_id);
+        .bind(&t.currency);
+    if mode == EntrySqlMode::PostedElsewhere {
+        q = q.bind(t.amount).bind(&t.currency).bind(t.amount);
+    } else {
+        q = q.bind(&t.currency);
+    }
+    q = q.bind(t.bank_account_id);
     if let EntrySqlMode::One(id) = mode {
         q = q.bind(id);
     }
@@ -1334,7 +1344,7 @@ where
            AND {ENTRY_NOT_REVERSED_NOR_SETTLEMENT} \
          ORDER BY e.id",
         linkable_side(),
-        posted_elsewhere_side(),
+        posted_elsewhere_side("m.movement"),
         entry_movements(MovementKind::of(ledger_currency)),
     );
     // Ordre des `?` dans le texte : condition 4 (compte bancaire, devise,
@@ -1900,8 +1910,12 @@ mod tests {
         for kind in [MovementKind::Chf, MovementKind::Foreign] {
             let list = entry_sql(EntrySqlMode::List, kind);
             let posted = entry_sql(EntrySqlMode::PostedElsewhere, kind);
-            let side = posted_elsewhere_side();
-            assert!(side.contains(&other_side_predicate("m.movement")));
+            let side = posted_elsewhere_side("?");
+            assert!(side.contains(&other_side_predicate("?")));
+            assert!(
+                !posted.contains("m.movement)"),
+                "le montant lié, jamais m.movement"
+            );
             assert!(!posted.contains(&linkable_side()));
             assert!(!posted.contains("LIMIT"), "aucun plafond");
             assert_eq!(
