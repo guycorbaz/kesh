@@ -10,7 +10,8 @@
 # avec un délai croissant mais borné : le miroir public ECR, `mirror.gcr.io`, puis
 # Docker Hub en anonyme. Les trois servaient la même image au relevé du 2026-11-25
 # (même empreinte d'index, docs/ci.md) ; l'étiquette `10.11` est mouvante, et un
-# miroir peut servir un temps un correctif plus ancien que Docker Hub. La reprise vient du run 45525662619 (PR #1560) :
+# miroir peut servir un temps un correctif plus ancien que Docker Hub.
+# La reprise vient du run 45525662619 (PR #1560) :
 # ECR y a refusé le tirage anonyme (« toomanyrequests: Data limit exceeded »), un
 # quota intermittent, alors que le job `backend` avait obtenu l'image peu avant.
 #

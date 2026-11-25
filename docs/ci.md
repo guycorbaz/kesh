@@ -50,7 +50,7 @@ pourrait venir d'une route ouverte). C'est le mode d'échec de l'issue #285 : un
 partout, et rien ne signalait une suite qui cessait de tourner. La **suite complète** reste locale, avant tout push
 (`CLAUDE.md` § E2E).
 
-Montage : sur une PR de fork, MariaDB par `docker run` depuis le miroir ECR (le service est désactivé) ; connexion Docker
+Montage : sur une PR de fork, MariaDB par `docker run` depuis le premier miroir qui sert l'image (ECR, `mirror.gcr.io`, Docker Hub ; le service est désactivé) ; connexion Docker
 Hub (sautée sans secret, PR de fork : images de base par le miroir ECR, `moby/buildkit` par `mirror.gcr.io`), `setup-buildx`, reconstruction de l'image de la PR depuis le cache `gha` laissé par
 `docker-build` (`load: true`), puis `docker run --network=host` avec `KESH_TEST_MODE=true`, `KESH_HOST=127.0.0.1` (le
 mode test refuse un bind non-loopback), `KESH_COOKIE_SECURE=false` (HTTP), `KESH_PORT=3000` et
