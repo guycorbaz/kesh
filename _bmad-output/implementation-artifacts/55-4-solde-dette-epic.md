@@ -29,7 +29,8 @@ afin que l'epic ne fasse pas monter le compte d'issues ouvertes par sa propre de
 ## D'où vient la liste (l'agent de l'epic n'a pas `gh`)
 
 - **Source** : les Change Logs et Dev Agent Records des fiches 55-1a à 55-3b, et le compte rendu de la revue du code
-  d'intégration (journal `kesh-gate-logs/s55-integration/`, qui porte lui aussi une section *Issues à ouvrir*).
+  d'intégration (journal **à produire** `kesh-gate-logs/s55-integration/`, fichier d'epic § *Gates* ; absent au T0 : la
+  55-4 le dit et tient la revue avant T2).
   Chaque issue ouverte porte dans son corps « Epic 55, story 55-x » (ou « revue d'intégration »), ce qui permet le
   recoupement. Chaque story y écrit, en section *Issues à ouvrir*, les points non corrigés (sévérité, site, texte de
   l'issue) ; le mainteneur ou son agent les ouvre et l'agent de l'epic reporte les numéros dans la fiche.
@@ -37,7 +38,7 @@ afin que l'epic ne fasse pas monter le compte d'issues ouvertes par sa propre de
 
 ## Critères d'acceptation
 
-1. **AC-1 — Liste au départ.** Au T0, le Change Log nomme chaque candidate (numéro, titre, story d'origine, site) tirée de
+1. **AC-1 — Liste au départ.** Au T0, le Change Log nomme chaque candidate (numéro — au plus tard avant T1 —, titre, story d'origine, site) tirée de
    la source ci-dessus, les exclusions appliquées, et **au plus deux** retenues, avec le motif du choix (priorité, puis
    effet visible). Zéro ou une candidate : la story le dit, ne corrige que ce qu'il y a, et garde T0, T2 et T3.
 2. **AC-2 — Preuve, selon la nature du correctif.**
@@ -96,3 +97,6 @@ d'epic), avec `refs #N` par ligne ; la note de l'epic est assemblée à la relea
 - 2026-11-25 — Validation P3 ciblée (Sonnet) : 0/0/1/3 ; remédiée : règle des gates de Q6 propagée aux fiches 55-1, 55-2,
   55-3a (V3-1) ; phrase de l'epic (V3-2) ; marque « Epic 55, story 55-x » dans le corps des issues (V3-3) ; section
   *Issues à ouvrir* de la revue d'intégration (V3-4).
+- 2026-11-25 — Validation P4 ciblée (Haiku) : 0/0/1/2 ; remédiée : revue d'intégration et son journal « à produire »
+  décrits au fichier d'epic (V4-1) ; marque des issues au § *Gates* du fichier d'epic (V4-2) ; numéro au plus tard avant
+  T1 (V4-3).

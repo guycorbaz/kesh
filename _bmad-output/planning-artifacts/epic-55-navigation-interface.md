@@ -162,7 +162,14 @@ suite complète de fin d'epic restent dus dans tous les cas.
 
 Le Dev Agent Record de chaque story dit exactement ce qui a tourné (« gate ciblé …, gate complet en fin d'epic »).
 Chaque story écrit en section *Issues à ouvrir* de son Dev Agent Record les points de revue non corrigés (sévérité,
-site, texte) : c'est la source de la story de solde (55-4).
+site, texte) : c'est la source de la story de solde (55-4). Chaque issue ouverte de ces sections porte dans son corps
+« Epic 55, story 55-x ».
+
+**Revue du code d'intégration** (`CLAUDE.md` § *Fusions et fichiers communs*) : avant la PR de l'epic vers `main`, et
+après chaque reprise de la PR 46 ou de `main`, une revue relit les commits de fusion en diff combiné et cherche les
+interactions sans conflit de texte ; journal **à produire** dans `kesh-gate-logs/s55-integration/`, avec sa propre section
+*Issues à ouvrir* (marque « Epic 55, revue d'intégration »). Si elle n'a pas eu lieu au T0 de la 55-4, la 55-4 le dit et
+la tient avant T2.
 
 ## Backend
 
