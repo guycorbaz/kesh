@@ -115,7 +115,10 @@ autre catégorie, qui n'écrivent pas. La limite écrite sur cette branche (« d
 celui que nomme le libellé ») est retirée du manuel et de `docs/api-external.md`, son test remplacé par le cas réglé
 (seul le détaché est « à examiner », l'autre est proposé et s'accepte). **Angle mort assumé** : une écriture de
 versement saisie à la main dont le libellé porte un `ch_…` ou un `py_…` **sans** son `po_…` nomme une charge, non le
-versement : ni le nom ni le repli prudent ne la retiennent. Journal : `kesh-gate-logs/s40-m2c/`.
+versement : ni le nom ni le repli prudent ne la retiennent (test unitaire). Revue P1 complète (Sonnet) 0/0/0/3 :
+doc de `match_key` (le garde des frais est la présélection) et test de l'angle mort corrigés ; **LOW à tracer** : des
+frais rendus d'un versement de somme nulle (sans transaction de versement) portent `po_…` et sortent en écart
+`sale_without_receipt` faux (une ligne d'écart, rien d'écrit). Journal : `kesh-gate-logs/s40-m2c/`.
 
 ## Change Log
 

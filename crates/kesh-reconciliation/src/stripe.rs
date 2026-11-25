@@ -182,10 +182,12 @@ pub fn stripe_ids_in(text: &str) -> Vec<String> {
 ///   qu'ils accompagnent. Le libellé de leur écriture, la ligne du rapport
 ///   (`Frais Stripe · … BRUT - txn_… (…) - po_…`), ne le porte pas, sauf si
 ///   la description de la vente le cite, et nomme le **versement** (`po_…`) ;
-///   mais l'écriture des frais
-///   n'est jamais rapprochée d'un autre compte bancaire (elle n'a de ligne sur
-///   aucun) : la présélection « déjà comptabilisée » l'écarte, comme celle des
-///   frais PayPal ;
+///   le garde est la **présélection**, non le nom : l'écriture des frais n'a
+///   de ligne sur aucun autre compte bancaire, et la présélection « déjà
+///   comptabilisée » exige une transaction d'un autre compte qui lui soit
+///   rapprochée, comme pour les frais PayPal. Une réception rattachée par
+///   erreur à une écriture de frais la ferait nommer le versement, qui
+///   passerait « à examiner » (le sens prudent, rien d'écrit deux fois) ;
 /// - remboursement, autre catégorie : l'objet lié (`re_…`…), ou aucune ; ces
 ///   genres n'écrivent pas.
 fn match_key(t: &BankTransaction) -> Option<&str> {
@@ -794,6 +796,18 @@ mod tests {
         assert_eq!(first_naming_entry(&SPEC, &nu, [candidats[0]], &[]), None);
         // Le libellé porte aussi une charge ou un paiement : le versement reste
         // nommé, et seul lui (avant L3, ni le nom ni le repli prudent).
+        // Angle mort assumé (fiche, manuel, API) : un libellé qui ne porte
+        // qu'une charge ou un paiement, sans le `po_…`, nomme cette charge, non
+        // le versement — ni le nom ni le repli prudent ne le retiennent.
+        assert_eq!(
+            first_naming_entry(
+                &SPEC,
+                &versement,
+                [(904, "Versement Stripe ch_TEST0002 96.80 CHF")],
+                &[]
+            ),
+            None
+        );
         for jeton in ["ch_TEST0002", "py_TEST0003"] {
             let mixte = format!("Versement Stripe po_1 96.80 CHF {jeton}");
             assert_eq!(
