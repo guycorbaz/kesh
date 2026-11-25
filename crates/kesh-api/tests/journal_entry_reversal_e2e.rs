@@ -3933,7 +3933,13 @@ async fn acteur_de(
 }
 
 /// `POST /api/v1/journal-entries` sous le jeton donné ; rend l'id créé.
+///
+/// Story 53-1a (#1355) : une saisie identique à une saisie du même jour est refusée ;
+/// le libellé porte donc un rang propre à chaque appel (le test prouve l'attribution
+/// à la clé, non le doublon).
 async fn saisir_par(app: &TestApp, jeton: &str, d: i64, c: i64) -> i64 {
+    static RANG: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let rang = RANG.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let resp = app
         .client
         .post(app.url("/api/v1/journal-entries"))
@@ -3941,7 +3947,7 @@ async fn saisir_par(app: &TestApp, jeton: &str, d: i64, c: i64) -> i64 {
         .json(&json!({
             "entryDate": crate::common::jour::aujourd_hui_test(),
             "journal": "OD",
-            "description": "Saisie 35-8a2",
+            "description": format!("Saisie 35-8a2 n° {rang}"),
             "lines": [
                 { "accountId": d, "debit": "100.00", "credit": "0" },
                 { "accountId": c, "debit": "0", "credit": "100.00" },

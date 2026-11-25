@@ -3856,6 +3856,14 @@ mod tests {
         }
     }
 
+    /// Story 53-1a (#1355) — la même écriture sous un **libellé distinct** : la saisie
+    /// (`create`) refuse une écriture identique à une écriture du même jour ; un test
+    /// qui en crée plusieurs sans que le doublon soit son objet les rend distinctes.
+    fn avec_libelle(mut e: NewJournalEntry, libelle: &str) -> NewJournalEntry {
+        e.description = libelle.to_string();
+        e
+    }
+
     /// Story 3.5 — vérifie que `create` insère bien une entrée `audit_log`
     /// avec `action = "journal_entry.created"` et un `details_json`
     /// contenant le snapshot direct (PAS de wrapper `{before, after}`).
@@ -4069,7 +4077,7 @@ mod tests {
             &pool,
             fy_id,
             Acteur::utilisateur(admin),
-            mk_entry(company_id, today, paire(a1, a2)),
+            avec_libelle(mk_entry(company_id, today, paire(a1, a2)), "Numéro 1"),
         )
         .await
         .unwrap();
@@ -4077,7 +4085,7 @@ mod tests {
             &pool,
             fy_id,
             Acteur::utilisateur(admin),
-            mk_entry(company_id, today, paire(a1, a2)),
+            avec_libelle(mk_entry(company_id, today, paire(a1, a2)), "Numéro 2"),
         )
         .await
         .unwrap();
@@ -4085,7 +4093,7 @@ mod tests {
             &pool,
             fy_id,
             Acteur::utilisateur(admin),
-            mk_entry(company_id, today, paire(a1, a2)),
+            avec_libelle(mk_entry(company_id, today, paire(a1, a2)), "Numéro 3"),
         )
         .await
         .unwrap();
@@ -4201,18 +4209,23 @@ mod tests {
         let (company_id, fy_id, admin, today) = setup(&pool).await;
         let (a1, a2) = two_accounts(&pool, company_id).await;
 
+        // L'objet est la numérotation concurrente, non le doublon (Story 53-1a) : les
+        // deux créations sont identiques à dessein, la politique `Confirmed` lève le
+        // refus de doublon (des libellés distincts conviendraient aussi).
         let (g, d) = tokio::join!(
-            create(
+            create_with_policy(
                 &pool,
                 fy_id,
                 Acteur::utilisateur(admin),
-                mk_entry(company_id, today, paire(a1, a2))
+                mk_entry(company_id, today, paire(a1, a2)),
+                DuplicatePolicy::Confirmed
             ),
-            create(
+            create_with_policy(
                 &pool,
                 fy_id,
                 Acteur::utilisateur(admin),
-                mk_entry(company_id, today, paire(a1, a2))
+                mk_entry(company_id, today, paire(a1, a2)),
+                DuplicatePolicy::Confirmed
             ),
         );
 
@@ -5542,7 +5555,7 @@ mod tests {
         let (a1, a2) = two_accounts(&pool, company_id).await;
 
         // Créer 2 écritures Banque + 1 Ventes.
-        for _ in 0..2 {
+        for i in 0..2 {
             let mut e = mk_entry(
                 company_id,
                 today,
@@ -5564,6 +5577,8 @@ mod tests {
                 ],
             );
             e.journal = CoreJournal::Banque.into();
+            // Libellés distincts : le test filtre par journal, non par doublon (53-1a).
+            e.description = format!("Banque {i}");
             create(&pool, fy_id, Acteur::utilisateur(admin_user_id), e)
                 .await
                 .unwrap();
