@@ -1,6 +1,6 @@
 # Story 55-3a : les justificatifs d'une écriture dans la réponse du journal et du grand livre (serveur)
 
-Status: drafted
+Status: ready-for-dev
 
 Epic : `_bmad-output/planning-artifacts/epic-55-navigation-interface.md` — D9 (Q1), D10 (Q4), règle des factures (Q7). Issue : #À-VENIR
 (`enhancement`, priorité à fixer, Q5 ; point c, convenu au téléphone le 2026-11-25 entre l'utilisateur et le mainteneur).
@@ -306,3 +306,11 @@ littéraux de test de `csv.rs`, `pdf.rs`, `benches/export.rs`) et `kesh-api` (le
   de services) (Vv2p1-1) ; fichier d'epic mis à jour (en-tête, § *Backend*, fichiers communs) (Vv2p1-2) ; tests d'appel
   direct hors de `src/` (Vv2p1-3) ; gate ciblé `package(kesh-api)` (Vv2p1-4) ; LOW Vv2p1-5 à Vv2p1-9 (Vv2p1-10, lignes à
   relever au T0).
+- 2026-11-25 — Validation P2 ciblée de la version récrite (Sonnet) : 0/0/0/5 — **validation terminée**. Tendance de la
+  version récrite : P1 Opus 0/0/4/6 → P2 ciblée Sonnet 0/0/0/5. Les cinq LOW se reprennent au **T0 du développement**,
+  ligne lue citée au Change Log : Vv2p2-1 (la liste des binaires du gate est indicative ; le gate est `package(kesh-api)`),
+  Vv2p2-2 (manuel : titre `:1635`, phrase `:1642`, base des numéros nommée), Vv2p2-3 (`docs/api-external.md` : `:232` à
+  `1e23edb55`, `:234` sur la PR 46 ; paragraphe neuf à côté de `:310` et `:1164`), Vv2p2-4 (55-3b AC-4 : « sans route neuve
+  **pour les PDF** »), Vv2p2-5 (service au motif R1 à R3 : `(&ContexteAcces, &Lecture, id)`, `acces.exiger(…)?` d'abord,
+  `company_for_ids` avant `find_by_id`, portée MCP `None` par défaut ; types de règlement `write_off`, `internal_account`,
+  `bank_transfer` ; `INVOICE_NOT_PDF_READY` est un `400`).
