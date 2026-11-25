@@ -527,6 +527,16 @@ pub(crate) async fn create_copying_projects_in_tx(
 /// `reverses_entry_id` — l'écriture contre-passée, `None` pour toute écriture
 /// ordinaire. L'`UNIQUE` de la colonne porte l'idempotence **structurellement**,
 /// sans pré-`SELECT`, donc elle tient sous concurrence.
+///
+/// `duplicates` (Story 53-1a, #1355, D2) — la règle anti-doublon : `None` pour
+/// tous les flux automatiques (`create_in_tx`, ouverture, copie de projets,
+/// contre-passation), `Some(policy)` pour la saisie
+/// ([`create_in_tx_with_policy`]). **Sur le chemin à politique, aucune lecture
+/// ordinaire ne précède le verrou de l'exercice (étape 1)** : la borne du verrou
+/// de période (étape 0-bis) se lit après lui, pour que l'instantané
+/// `REPEATABLE READ` naisse après l'attente — même idiome que `update`
+/// (« aucune lecture ordinaire avant le verrou »). Preuve : AC-7
+/// (`journal_entry_duplicate.rs`, mutation M2).
 #[allow(clippy::too_many_arguments)]
 async fn create_in_tx_inner(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
@@ -562,7 +572,29 @@ async fn create_in_tx_inner(
         super::projects::validate_taggable_in_tx(tx, new.company_id, &line_project_ids).await?;
     }
 
-    // Étape 0-bis (Story 24-4c, #380) : LIRE la borne du verrou de période.
+    // Étape 1 : re-lock de l'exercice contre une clôture concurrente + bornes de dates.
+    // Story 37-3a (AC-4 rang 2) : le mode de l'exercice se lit dans la même
+    // ligne verrouillée (sérialisée avec l'activation de 37-1, qui l'écrit).
+    let fy_row: Option<(i64, String, NaiveDate, NaiveDate, bool)> = sqlx::query_as(
+        "SELECT id, status, start_date, end_date, multi_currency FROM fiscal_years \
+         WHERE id = ? AND company_id = ? FOR UPDATE",
+    )
+    .bind(fiscal_year_id)
+    .bind(new.company_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(map_db_error)?;
+
+    // Étape 0-bis (Story 24-4c, #380) : LIRE la borne du verrou de période —
+    // **après** le verrou de l'exercice (Story 53-1a, D3).
+    //
+    // ⛔ **Elle se lit ICI, après l'étape 1, et nulle part avant.** C'est la
+    // première lecture ORDINAIRE de la transaction de saisie (l'étape 0 est
+    // verrouillante) : elle fait naître l'instantané `REPEATABLE READ`, qui doit
+    // naître APRÈS l'attente de l'exercice, faute de quoi la comparaison
+    // anti-doublon de l'étape 3-bis ne verrait pas l'écriture qu'une saisie
+    // concurrente vient de valider (AC-7, mutation M2). L'étiquette « 0-bis »
+    // est gardée : `:600` et `update` y renvoient.
     //
     // ⛔ ELLE SE LIT ICI ET S'ÉVALUE PLUS BAS, et cette dissociation est
     // délibérée : le moment de la LECTURE n'est pas l'ordre des REFUS. Le
@@ -582,19 +614,6 @@ async fn create_in_tx_inner(
             .await
             .map_err(map_db_error)?
             .flatten();
-
-    // Étape 1 : re-lock de l'exercice contre une clôture concurrente + bornes de dates.
-    // Story 37-3a (AC-4 rang 2) : le mode de l'exercice se lit dans la même
-    // ligne verrouillée (sérialisée avec l'activation de 37-1, qui l'écrit).
-    let fy_row: Option<(i64, String, NaiveDate, NaiveDate, bool)> = sqlx::query_as(
-        "SELECT id, status, start_date, end_date, multi_currency FROM fiscal_years \
-         WHERE id = ? AND company_id = ? FOR UPDATE",
-    )
-    .bind(fiscal_year_id)
-    .bind(new.company_id)
-    .fetch_optional(&mut **tx)
-    .await
-    .map_err(map_db_error)?;
 
     let exercice_multi_devises = fy_row.as_ref().is_some_and(|r| r.4);
     match fy_row {

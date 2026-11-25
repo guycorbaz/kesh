@@ -188,6 +188,19 @@ export interface CreateJournalEntryRequest {
 	lines: CreateJournalEntryLineRequest[];
 }
 
+/**
+ * Corps de `POST /journal-entries` (Story 53-1a, D5) : celui de
+ * {@link CreateJournalEntryRequest}, plus `confirmNotDuplicate` — la confirmation
+ * qui lève le refus `JOURNAL_ENTRY_PROBABLE_DUPLICATE`.
+ *
+ * ⛔ Le champ vit **ici et nulle part ailleurs** : `CreateJournalEntryRequest` est
+ * étendu par le corps du `PUT` (qui l'ignore) et employé par les entrées de la
+ * conversion (qui ne le portent pas) ; un test de types le garde.
+ */
+export type CreateJournalEntryBody = CreateJournalEntryRequest & {
+	confirmNotDuplicate?: boolean;
+};
+
 /** Corps du `PUT` (Story 15-8a) : celui du `POST`, plus la version lue. */
 export interface UpdateJournalEntryRequest extends CreateJournalEntryRequest {
 	version: number;

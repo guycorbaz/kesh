@@ -6,7 +6,7 @@ import { apiClient } from '$lib/shared/utils/api-client';
 import type {
 	ConversionResponse,
 	CreateConversionRequest,
-	CreateJournalEntryRequest,
+	CreateJournalEntryBody,
 	JournalEntryDetailResponse,
 	JournalEntryListQuery,
 	JournalEntryResponse,
@@ -71,7 +71,7 @@ export async function reverseJournalEntryAtNextFiscalYearStart(
 }
 
 export async function createJournalEntry(
-	req: CreateJournalEntryRequest
+	req: CreateJournalEntryBody
 ): Promise<JournalEntryResponse> {
 	return apiClient.post<JournalEntryResponse>('/api/v1/journal-entries', req);
 }
