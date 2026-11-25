@@ -91,10 +91,11 @@ use crate::entities::{
     NewJournalEntryLine, RateProvenance,
 };
 use crate::errors::{
-    ArchivedAccount, DbError, ModificationBlocker, ModificationGuard, NonPostableAccount,
-    ReversalBlocker, map_db_error,
+    ArchivedAccount, DbError, ExistingJournalEntry, ModificationBlocker, ModificationGuard,
+    NonPostableAccount, ReversalBlocker, map_db_error,
 };
 use crate::repositories::audit_log;
+use crate::repositories::duplicate_policy::DuplicatePolicy;
 use crate::repositories::journal_entry_fx::{self, PorteeDevises};
 use crate::util::search::escape_boolean_ft;
 
@@ -333,10 +334,26 @@ pub async fn create(
     acteur: Acteur,
     new: NewJournalEntry,
 ) -> Result<JournalEntryWithLines, DbError> {
+    create_with_policy(pool, fiscal_year_id, acteur, new, DuplicatePolicy::Refuse).await
+}
+
+/// [`create`] avec la politique anti-doublon que demande l'appelant (Story
+/// 53-1a, #1355, D2, D5) : [`DuplicatePolicy::Refuse`] refuse une écriture
+/// identique à une écriture déjà saisie le même jour
+/// ([`DbError::JournalEntryProbableDuplicate`]) ; [`DuplicatePolicy::Confirmed`]
+/// (`confirmNotDuplicate: true`) l'enregistre et inscrit
+/// `journal_entry.duplicate_confirmed` dans la même transaction.
+pub async fn create_with_policy(
+    pool: &MySqlPool,
+    fiscal_year_id: i64,
+    acteur: Acteur,
+    new: NewJournalEntry,
+    policy: DuplicatePolicy,
+) -> Result<JournalEntryWithLines, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
     // Point d'entrée MANUEL (unique appelant `routes/journal_entries.rs`) :
     // la garde de postabilité s'applique (Story 14-3b, D-A0).
-    match create_in_tx(&mut tx, fiscal_year_id, acteur, new, true).await {
+    match create_in_tx_with_policy(&mut tx, fiscal_year_id, acteur, new, true, policy).await {
         Ok(result) => {
             tx.commit().await.map_err(map_db_error)?;
             Ok(result)
@@ -349,6 +366,32 @@ pub async fn create(
             Err(e)
         }
     }
+}
+
+/// [`create_in_tx`] **soumise à la règle anti-doublon** (Story 53-1a, D2) : la
+/// seule entrée, dans la transaction de l'appelant, qui passe une politique.
+/// [`create_with_policy`] l'emploie ; la conversion de devises l'emploiera
+/// (Story 53-1b). `pub(crate)` : une saisie ne l'atteint que par la route.
+pub(crate) async fn create_in_tx_with_policy(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    fiscal_year_id: i64,
+    acteur: Acteur,
+    new: NewJournalEntry,
+    enforce_postable: bool,
+    policy: DuplicatePolicy,
+) -> Result<JournalEntryWithLines, DbError> {
+    create_in_tx_inner(
+        tx,
+        fiscal_year_id,
+        acteur,
+        new,
+        enforce_postable,
+        true,
+        None,
+        PorteeDevises::UneSeule,
+        Some(policy),
+    )
+    .await
 }
 
 /// Cœur métier de [`create`] — accepte une transaction ouverte par le
@@ -394,6 +437,7 @@ pub async fn create_in_tx(
         true,
         None,
         PorteeDevises::UneSeule,
+        None,
     )
     .await
 }
@@ -421,6 +465,7 @@ pub(crate) async fn create_opening_in_tx(
         true,
         None,
         PorteeDevises::Ouverture,
+        None,
     )
     .await
 }
@@ -458,6 +503,7 @@ pub(crate) async fn create_copying_projects_in_tx(
         false,
         None,
         PorteeDevises::UneSeule,
+        None,
     )
     .await
 }
@@ -491,8 +537,11 @@ async fn create_in_tx_inner(
     enforce_project_taggable: bool,
     reverses_entry_id: Option<i64>,
     portee: PorteeDevises,
+    duplicates: Option<DuplicatePolicy>,
 ) -> Result<JournalEntryWithLines, DbError> {
     let mut new = new;
+    // Squelette (Story 53-1a) : la règle anti-doublon n'est pas encore câblée.
+    let _ = duplicates;
     // Étape 0 : validation des projets analytiques par-ligne (Story 19-2).
     // Elle précède l'étape 1 (le re-verrou de l'exercice) : sentinelle et
     // projets avant l'exercice, la convention de Pattern 5 (« Global Lock
@@ -3318,6 +3367,8 @@ async fn reverse_in_tx_inner(
         // Exemptée de la règle d'une devise et de `FX_RATE_NOT_AFC` par
         // `reverses_entry_id`, non de `MULTI_CURRENCY_DISABLED` (Story 37-3a).
         PorteeDevises::UneSeule,
+        // Aucun flux automatique ne change de règle (Story 53-1a, D2).
+        None,
     )
     .await?;
 

@@ -4326,3 +4326,14 @@ error-imported-invoice-not-found = Diese importierte Rechnung wurde nicht gefund
 error-source-document-gone = Der Beleg wurde nicht wiederhergestellt (nur Metadaten).
 error-data-length-or-range = Ein angegebener Wert ist zu lang oder liegt ausserhalb des zulässigen Bereichs.
 error-invalid-input-generic = Ungültige Eingabe
+
+# Story 53-1a (#1355) — la saisie d'une écriture ne passe pas deux fois
+error-journal-entry-probable-duplicate = Eine identische Buchung existiert bereits an diesem Datum (gleiches Journal, gleiche Beschreibung, gleiche Konten und Beträge). Ist es dieselbe, erfassen Sie sie nicht ein zweites Mal; andernfalls bestätigen Sie, dass es kein Duplikat ist.
+journal-entries-duplicate-existing = Buchung Nr. { $number } vom { $date }
+journal-entries-duplicate-confirm = Kein Duplikat, speichern
+journal-entries-duplicate-edit = Erfassung ändern
+journal-entries-unknown-outcome = Die Speicherung ist möglicherweise gelungen. Prüfen Sie im Journal, ob die Buchung existiert, bevor Sie sie erneut erfassen.
+journal-entries-unknown-outcome-link = Buchungen dieses Datums anzeigen
+journal-entries-unknown-outcome-resume = Ich habe geprüft, sie existiert nicht — Erfassung fortsetzen
+journal-entries-unknown-outcome-update = Die Änderung wurde möglicherweise gespeichert: Laden Sie die Buchung neu, bevor Sie sie erneut ändern.
+audit-log-action-journal-entry-duplicate-confirmed = Buchungsduplikat bestätigt

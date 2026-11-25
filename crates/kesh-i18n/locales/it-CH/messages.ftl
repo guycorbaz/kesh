@@ -4327,3 +4327,14 @@ error-imported-invoice-not-found = Questa fattura importata non è stata trovata
 error-source-document-gone = Il documento giustificativo non è stato ripristinato (solo metadati).
 error-data-length-or-range = Un valore fornito è troppo lungo o fuori intervallo.
 error-invalid-input-generic = Inserimento non valido
+
+# Story 53-1a (#1355) — la saisie d'une écriture ne passe pas deux fois
+error-journal-entry-probable-duplicate = Una scrittura identica esiste già a questa data (stesso giornale, stessa descrizione, stessi conti e importi). Se è la stessa, non registrarla una seconda volta; altrimenti, conferma che non è un doppione.
+journal-entries-duplicate-existing = Scrittura n. { $number } del { $date }
+journal-entries-duplicate-confirm = Non è un doppione, salva
+journal-entries-duplicate-edit = Modifica l'inserimento
+journal-entries-unknown-outcome = Il salvataggio potrebbe essere riuscito. Verifica nel giornale se la scrittura esiste prima di inserirla di nuovo.
+journal-entries-unknown-outcome-link = Vedi le scritture di questa data
+journal-entries-unknown-outcome-resume = Ho verificato, non esiste — riprendi l'inserimento
+journal-entries-unknown-outcome-update = La modifica potrebbe essere stata salvata: ricarica la scrittura prima di modificarla ancora.
+audit-log-action-journal-entry-duplicate-confirmed = Doppione di scrittura confermato

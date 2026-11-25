@@ -570,6 +570,19 @@ pub struct ExistingSupplierInvoice {
     pub status: String,
 }
 
+/// L'écriture **existante** qu'un refus de doublon de saisie nomme (Story
+/// 53-1a, #1355, D1) : la plus petite en identifiant parmi celles du même
+/// refus. Exposée en `details : { journalEntryId, entryNumber, entryDate }`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExistingJournalEntry {
+    /// Son identifiant.
+    pub id: i64,
+    /// Son numéro dans son exercice.
+    pub entry_number: i64,
+    /// Sa date.
+    pub entry_date: chrono::NaiveDate,
+}
+
 /// Le geste qu'un refus de doublon arrête (Story 48-12a, D1, D6bis) : il
 /// décide de `details.confirmable` (par
 /// [`lifted_by_confirmation`](crate::repositories::supplier_invoices::DuplicateRule::lifted_by_confirmation),
@@ -1948,6 +1961,16 @@ pub enum DbError {
         gesture: DuplicateGesture,
     },
 
+    /// **Refus de doublon à la saisie** (Story 53-1a, #1355, D1) : une écriture
+    /// de la même société porte la même date, le même journal, le même libellé
+    /// et le même ensemble de lignes. → **409**
+    /// `JOURNAL_ENTRY_PROBABLE_DUPLICATE`, `details : { journalEntryId,
+    /// entryNumber, entryDate, confirmable: true }` — toujours levable :
+    /// `confirmNotDuplicate: true` (inscrit au journal d'audit,
+    /// `journal_entry.duplicate_confirmed`).
+    #[error("Écriture probablement en double : identique à l'écriture {}", .existing.id)]
+    JournalEntryProbableDuplicate { existing: ExistingJournalEntry },
+
     /// L'écriture ne peut pas être contre-passée (Story 24-4a, #380).
     ///
     /// C'est un **conflit d'état**, pas une donnée invalide → HTTP **409**, avec
@@ -2645,6 +2668,7 @@ impl DbError {
             Self::SupplierInvoiceNotUnvalidatable { blocker, .. } => blocker.code(),
             Self::SupplierInvoiceDuplicate { .. } => "SUPPLIER_INVOICE_DUPLICATE",
             Self::SupplierInvoiceProbableDuplicate { .. } => "SUPPLIER_INVOICE_PROBABLE_DUPLICATE",
+            Self::JournalEntryProbableDuplicate { .. } => "JOURNAL_ENTRY_PROBABLE_DUPLICATE",
             Self::EntryIsReversed => "ENTRY_IS_REVERSED",
             // ⚠️ Repli générique, comme `EntryNotReversable` : le code EXPOSÉ
             // vient du mappage `kesh-api`, qui rend `guard.code()`.
