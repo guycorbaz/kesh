@@ -134,7 +134,15 @@ par la garde : un fichier commun, non un module.) Les pages des fiches de factur
 1. **AC-1 — Journal : une icône par écriture (critère principal).** Une écriture qui porte `hasDocuments` montre, sur sa
    ligne d'en-tête (`#numéro`, date), **une** icône PDF — un `<button>` (`data-testid="journal-entry-documents-<entryId>"`,
    `aria-label` « Justificatifs de l'écriture n° N »), **sans compteur ni menu**, qu'elle ait un justificatif ou plusieurs.
-   Une écriture sans `hasDocuments` n'en a pas. Aucune requête n'est faite avant le clic.
+   Une écriture sans `hasDocuments` n'en a pas. Aucune requête n'est faite avant le clic. **Aspect** (précision de
+   l'utilisateur du 2026-11-26) : l'icône est **un peu plus grande qu'une icône de texte** (p. ex. `FileText` de
+   `@lucide/svelte`, déjà employé par Kesh, à `1.15em` environ, réglé à la capture), **sans augmenter la hauteur de la
+   ligne** (bouton sans remplissage vertical, `leading-none`, aligné sur le texte), et **monochrome, de la couleur du
+   texte** (`currentColor`, aucune classe de couleur : ni rouge, ni couleur d'alerte ou d'accent), pour ne pas attirer
+   l'œil ; elle garde son libellé accessible (`aria-label` ci-dessus, l'icône `aria-hidden`). Constat : Vitest — le bouton
+   ne porte aucune classe de couleur (`text-destructive`, `text-warning`, `text-red-*`, `text-primary` : absentes) et son
+   SVG `stroke="currentColor"` ; E2E — dans un même journal, la hauteur (`boundingBox`) de la ligne d'en-tête d'une
+   écriture **avec** icône égale celle d'une écriture **sans** icône, à un pixel près ; capture.
 2. **AC-2 — La visionneuse et sa liste.** Au clic, un dialogue s'ouvre ; il lit `GET /api/v1/journal-entries/{id}/documents`
    (une requête, un indicateur de chargement), puis, s'il y en a deux ou plus, montre **en haut** la liste des justificatifs (genre, numéro, nom du
    fichier d'un document fournisseur ; l'élément affiché marqué `aria-current`) et **dessous** `DocumentPreview` sur le
@@ -202,8 +210,16 @@ par la garde : un fichier commun, non un module.) Les pages des fiches de factur
    justificatif : même nombre d'en-têtes. *Option* : celle de la 55-3a.
 7. **AC-7 — Dialogue.** `components/ui/dialog` avec `showCloseButton={false}`, un bouton « Fermer » propre
    (`reports-nav-documents-close`), une largeur qui tient la visionneuse (`sm:max-w-4xl`) et un contenu qui défile ; titre
-   `reports-nav-documents-title` (« Justificatifs de l'écriture n° { $number } ») ; *Échap* (focus dans le dialogue, hors du cadre
-   du PDF, qui est un autre document) et « Fermer » — le chemin sûr — ferment, focus rendu au bouton d'origine. Ouvrir le dialogue n'appelle pas `goto` (55-1a, D2 : l'URL ne change pas). Une navigation qui
+   `reports-nav-documents-title` (« Justificatifs de l'écriture n° { $number } ») ; **trois façons de fermer**, comme
+   les autres dialogues de Kesh (précision de l'utilisateur du 2026-11-26) : le bouton **« Fermer »**, visible ; un **clic
+   à côté** (sur le fond) ; la touche **Échap** (focus dans le dialogue, hors du cadre du PDF, qui est un autre document)
+   — ce que le dialogue de Kesh offre déjà : `interactOutsideBehavior` et `escapeKeydownBehavior` valent `"close"` par
+   défaut (bits-ui 2.16.5, `utilities/dismissible-layer/dismissible-layer.svelte:8`,
+   `utilities/escape-layer/escape-layer.svelte:8`), et le dialogue ne les surcharge pas (les dialogues qui les surchargent,
+   p. ex. `WriteOffDialog.svelte:124-125`, ne le font que pendant un envoi en vol, ce que la visionneuse n'a pas) ; un clic
+   **dans** le PDF n'est pas un clic à côté. Chaque fermeture rend le focus au bouton d'origine. Constat : Vitest, une
+   fermeture par chacune des trois voies, focus rendu (mutation : `interactOutsideBehavior="ignore"` → test du clic à
+   côté rouge) ; E2E, clic sur le fond → `[role="dialog"]` en nombre 0. Ouvrir le dialogue n'appelle pas `goto` (55-1a, D2 : l'URL ne change pas). Une navigation qui
    change le rapport affiché (Retour vers un autre onglet) démonte la vue et ferme le dialogue. Un rapport repris de la
    mémoire (55-1a, D3) peut porter un justificatif devenu introuvable : l'erreur s'affiche dans le dialogue (AC-4).
 8. **AC-8 — Textes.** Clés neuves du bloc `reports-nav-*`, quatre locales : `reports-nav-documents-button` (« Justificatifs
@@ -238,6 +254,19 @@ par la garde : un fichier commun, non un module.) Les pages des fiches de factur
 10. **AC-10 — Accessibilité.** Bouton au clavier ; dialogue `role="dialog"`, `aria-modal`, étiqueté par son titre ; axe
     à zéro violation, dialogue ouvert : `new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).include('[role="dialog"]')`
     (modèle : les specs axe existantes de `tests/e2e/`).
+11. **AC-11 — Pas de vignettes de pages par défaut** (précision de l'utilisateur du 2026-11-26). Une facture ne fait le
+    plus souvent qu'une ou deux pages : la visionneuse l'ouvre **sans le panneau des vignettes** à gauche, comme
+    aujourd'hui pour les factures fournisseur. Relevé au code : `DocumentPreview` ne passe **aucun paramètre** au lecteur
+    PDF du navigateur (`DocumentPreview.svelte:96-101`, `<iframe src={view.url}>`, l'URL `blob:` nue ; `grep -rn
+    "pagemode\|navpanes" frontend/src` ne rend rien) ; les PDF que Kesh produit portent `/PageMode /UseNone` (printpdf 0.7,
+    `pdf_document.rs:498-505`, sans signets). Le comportement des factures fournisseur vient donc du lecteur du navigateur
+    et du PDF, non d'un réglage de Kesh, et la 55-3b le **reprend tel quel** : même `DocumentPreview`, même URL nue.
+    Constat : Vitest — le `src` du cadre est l'URL `blob:` sans fragment (mutation : fragment ajouté → test rouge, garde de
+    non-régression déclarée telle) ; **recette visuelle** dans Chromium (le navigateur des E2E) : une facture figée d'une
+    page s'ouvre sans panneau de vignettes. **Si le lecteur les montre** malgré tout, le T0 ajoute à `DocumentPreview` une
+    propriété facultative qui suffixe l'URL de `#pagemode=none` (paramètre d'ouverture des PDF d'Adobe, lu par pdf.js de
+    Firefox), absente pour les cinq appelants d'aujourd'hui, et vérifie à la capture que Chromium l'honore ; décision et
+    capture au Change Log.
 
 ## Tests à écrire, et la preuve du rouge
 
@@ -518,3 +547,11 @@ d'une facture figée, ou par `page.route` rendant `410 INVOICE_PDF_GONE`) ; gran
   **R-7** (Pv2p7-9) — la raison de « aucune nuance » est le vocabulaire de Kesh (« émis » veut dire « figé », manuel
   `:1642`), à écrire telle ; signaler au mainteneur qu'une facture envoyée avant la v0.12.1 se verra promettre un gel dont
   `:1643` dit qu'il peut différer du document reçu (le bandeau daté de l'epic « PDF marqués » le dira).
+- 2026-11-26 — **Précisions d'interface de l'utilisateur versées** (transmises par le coordinateur) : AC-1, aspect de
+  l'icône (un peu plus grande qu'une icône de texte, hauteur de ligne inchangée, monochrome de la couleur du texte, libellé
+  accessible ; constats Vitest et E2E) ; AC-7, trois façons de fermer (« Fermer », clic à côté, Échap ; comportement par
+  défaut du dialogue de Kesh, relevé dans bits-ui 2.16.5 ; mutation) ; **AC-11 neuf**, pas de vignettes par défaut (aucun
+  paramètre au code aujourd'hui ; repris tel quel, recette dans Chromium, `#pagemode=none` en repli au T0). Maquettes
+  `m5a`, `m5b`, `m5c` corrigées et `m5d` (« PDF pas encore émis ») ajoutée hors du dépôt (`kesh-gate-logs/s55-maquettes/`).
+  Fiche au plafond de huit passes : la passe ciblée du 2026-11-26 (précisions d'interface) la lit, ses points vont au
+  **T0**.

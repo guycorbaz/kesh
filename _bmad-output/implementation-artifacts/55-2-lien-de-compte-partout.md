@@ -337,3 +337,7 @@ onglet. (refs #À-VENIR, #À-VENIR)
 - 2026-11-26 — Validation P8 ciblée (Sonnet, `kesh-gate-logs/s55-decisions-2/55-2-55-1b-validation-p8.md`, commune aux 55-2 et 55-1b) sur les
   décisions du 2026-11-26 : 0/0/0/2 — P8-1 (R-2 : « l'AC-9 nomme la garde A » est faux ; écrire « § *Gates* et T5 »), P8-2 (R-2 au passé, « Défaut : … proposée » retiré). **Validation terminée**, dernière passe permise ; les LOW se reprennent au **T0**, ligne
   lue citée au Change Log.
+- 2026-11-26 — Précision de l'utilisateur sur la 55-1a (AC-14 : le **nom** de l'exercice seul en gras, par le composant
+  `components/ui/select`) : si le T0 de la 55-1a retient les trois sélecteurs d'exercice (R-5 de la 55-1a), le sélecteur
+  du Grand livre (AC-11) emploie le même composant et le même rendu ; « — dates libres » reste une entrée en graisse
+  normale. Renvoi au **T0** (fiche au plafond de huit passes).

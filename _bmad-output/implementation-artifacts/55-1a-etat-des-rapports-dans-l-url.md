@@ -37,7 +37,9 @@ décision. Le correctif proposé par la passe est la résolution par défaut.
 - **R-5 (P7, V7-4) — Portée du gras.** Défaut : **les trois sélecteurs d'exercice des Rapports** en gras (celui du haut,
   `ReportSelector` ; celui des rapports par compte analytique, PR 46 `+page.svelte:966-971` ; celui du Grand livre, 55-2
   AC-11), par une classe commune ; le gras ne vaut que pour la valeur affichée du `<select>` (les options de la liste
-  ouverte restent normales) ; la note de version le dit.
+  ouverte restent normales) ; la note de version le dit. *(Précisé le 2026-11-26 par l'utilisateur : le **nom** seul en
+  gras, non les dates, AC-14 ; si les trois sélecteurs sont retenus, ils emploient le même composant que l'AC-14 —
+  celui du Grand livre est celui de la 55-2, AC-11.)*
 - **R-6 (décision Q6 du mainteneur, 2026-11-25, versée sans passe : plafond atteint)** — § *Gates* aligné sur la
   *Dérogation* du fichier d'epic (story purement écran : specs des Rapports et de la navigation à la story, E2E complet et
   `gate-ci.sh` en fin d'epic) ; le T0 relit la phrase contre le fichier d'epic et le cite au Change Log.
@@ -320,11 +322,20 @@ d'aujourd'hui.
       clic sur un autre onglet et retour (0, rapport inchangé) ; E2E de l'AC-1, de l'AC-2 et de l'AC-4. *Preuve du rouge* :
       les cas « Retour », « Suivant », « rechargement » et « lien partagé » rougissent sans le correctif ; les cas du clic
       sur un onglet sont **verts avant et après** (non-régression, déclarée telle au Change Log, non comptée comme preuve).
-14. **AC-14 — L'exercice en gras.** Dans le sélecteur d'exercice du haut des rapports (`ReportSelector.svelte`, le `<select>`
-    lié à `selectedFiscalYearId`), l'exercice choisi s'affiche **en gras** (classe `font-semibold` du thème, aucune couleur
-    neuve), pour voir d'un coup d'œil dans quel exercice on se trouve. Style seulement : aucun texte, aucun comportement ne
-    change. Capture (thème clair) ; Vitest : la classe est posée sur le `<select>`. `ReportSelector.svelte` passe de « lu »
-    à « modifié » (tableau des fichiers communs).
+14. **AC-14 — Le nom de l'exercice en gras, non ses dates** (précision de l'utilisateur du 2026-11-26). Dans le sélecteur
+    d'exercice du haut des rapports (`ReportSelector.svelte`, lié à `selectedFiscalYearId`), l'exercice choisi s'affiche
+    avec **son nom seul en gras** et ses dates en graisse normale : **Exercice 2025** (01.01.2025 → 31.12.2025) — mettre
+    tout le libellé en gras ferait perdre ce qui distingue l'exercice. Classe `font-semibold` du thème sur le nom, aucune
+    couleur neuve ; les options de la liste ouverte restent en graisse normale. ⚠️ Un `<select>` natif ne peut pas mettre en
+    gras **une partie** de sa valeur affichée (`ReportSelector.svelte:46-57` : `<option>{fy.name} ({dates})</option>`, texte
+    brut) : le sélecteur passe au composant de liste de Kesh, `components/ui/select` (bits-ui, déjà employé par
+    `JournalEntryForm.svelte:819-825`), dont le déclencheur rend `<span class="font-semibold">{fy.name}</span>
+    ({dates})` ; même étiquette accessible (`aria-label` « Exercice »), même désactivation (`noFiscalYears || loading`),
+    valeurs en chaîne converties en nombre pour `selectedFiscalYearId`. Aucun E2E ne choisit cet exercice par
+    `selectOption` (`grep -rn selectOption frontend/tests/e2e` : seuls `paypal-*` sur un autre sélecteur) ; les specs qui
+    lisent sa valeur se relèvent au T0. Constat : Vitest — le nom est dans un élément `font-semibold`, les dates hors de
+    lui (mutation : classe sur tout le libellé → test rouge) ; capture (thème clair) qui montre le nom en gras et les dates
+    en graisse normale. `ReportSelector.svelte` passe de « lu » à « modifié » (tableau des fichiers communs).
 
 ## Tests à écrire, et la preuve du rouge
 
@@ -506,3 +517,9 @@ qui l'affichent désormais à l'arrivée) ; le lien *Rapports* du menu ramène a
   § *Dérogation*) : § *Gates* — à la clôture, `nextest -p kesh-i18n` et `binary(textes_coherents)`, la story modifiant le
   manuel. Aucune passe (plafond de huit atteint) : la phrase se recontrôle au **T0** contre le § *Dérogation*, ligne lue
   citée (avec R-6).
+- 2026-11-26 — **Précision d'interface de l'utilisateur versée** (transmise par le coordinateur) : AC-14 récrit — le
+  **nom** de l'exercice seul en gras, les dates en graisse normale ; un `<select>` natif ne le permet pas, d'où le
+  composant `components/ui/select` ; constat Vitest à mutation et capture ; R-5 précisé. Maquette `m2` corrigée hors du
+  dépôt (`kesh-gate-logs/s55-maquettes/`, nom seul en gras ; ancienne version gardée en `mocks-src.avant-2026-11-26.html`).
+  La fiche est au plafond de huit passes : la passe ciblée du 2026-11-26 (précisions d'interface) la lit, ses points vont
+  au **T0**.
