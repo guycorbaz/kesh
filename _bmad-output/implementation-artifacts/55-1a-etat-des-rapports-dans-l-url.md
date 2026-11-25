@@ -2,7 +2,7 @@
 
 Status: ready-for-dev
 
-Epic : `_bmad-output/planning-artifacts/epic-55-navigation-interface.md` — D1 à D3, D5, Q2 (D4 : 55-1b). Issue : #À-VENIR (`bug`, P3, point b).
+Epic : `_bmad-output/planning-artifacts/epic-55-navigation-interface.md` — D1 à D3 (réponse de l'utilisateur du 2026-11-25, AC-13), D5 (D4 : 55-1b). Issue : #À-VENIR (`bug`, P3, point b).
 Release : la prochaine planifiée après la 0.20.0 (numéro fixé par le mainteneur). **Frontend seulement, aucune migration.**
 **Base : la PR de l'Epic 46** (`pr/46-rapports-groupes`, `511e61d54` au kickoff), reprise dans `epic/55-navigation` avant T1.
 
@@ -29,9 +29,11 @@ décision. Le correctif proposé par la passe est la résolution par défaut.
   (1 requête, l'autre génération périmée) ; la mutation « requête partie pendant la génération d'un autre onglet » (à
   inverser : « aucune requête » → test rouge) ; le texte du manuel de l'AC-11 ; C-55-1-6 ; le défaut de R-2 (remplacé) ; la
   liste des tests. Même alignement dans la 55-1b (son AC-12 : *Retour* et un lien interrompent aussi un chargement).
-- **R-4 (P7, V7-3) — Portée de « pas de requête en double ».** Lecture retenue par défaut, à confirmer avec l'utilisateur :
-  **jamais deux appels simultanés pour un même jeu de paramètres, ni d'appel pour le rapport affiché** — le modèle garde un
-  rapport par onglet (C-55-1-2) : *Retour* plus loin, un changement d'exercice ou une génération interrompue redemandent.
+- **R-4 (P7, V7-3) — tranché le 2026-11-25** (réponse de l'utilisateur, partie A, point 2) : « pas de requête en
+  double » était une formulation technique de la consigne, non une demande de l'utilisateur. La lecture par défaut est
+  gardée comme **exigence technique seulement** : **jamais deux appels simultanés pour un même jeu de paramètres, ni
+  d'appel pour le rapport déjà affiché** — le modèle garde un rapport par onglet (C-55-1-2) : *Retour* plus loin, un
+  changement d'exercice ou une génération interrompue redemandent. Rien à confirmer au T0.
 - **R-5 (P7, V7-4) — Portée du gras.** Défaut : **les trois sélecteurs d'exercice des Rapports** en gras (celui du haut,
   `ReportSelector` ; celui des rapports par compte analytique, PR 46 `+page.svelte:966-971` ; celui du Grand livre, 55-2
   AC-11), par une classe commune ; le gras ne vaut que pour la valeur affichée du `<select>` (les options de la liste
@@ -283,24 +285,32 @@ d'aujourd'hui.
 
 ### Exigences de l'utilisateur (2026-11-25), critères explicites
 
-13. **AC-13 — Pas de second « Générer ».**
-    - Un onglet dont l'URL porte les paramètres d'un rapport **déjà généré** dans la session (par lui, ou par l'utilisateur)
-      **s'affiche seul** quand on y revient — clic sur l'onglet, *Retour*, *Suivant* — et un lien partagé affiche le sien
-      sans clic : rapport gardé par la page s'il a ces paramètres, requête sinon.
-    - Un onglet **jamais généré** reste à son invite jusqu'au clic sur *Générer*.
+13. **AC-13 — Une adresse affiche son rapport sans « Générer » (D3).** *Récrit le 2026-11-25 sur la réponse de
+    l'utilisateur (partie A, point 1)* : revenir par un **clic** sur un onglet déjà généré montre **déjà** son rapport
+    aujourd'hui (`selectTab`, aucune requête) ; cette story ne le change pas et ne régénère rien au changement d'onglet.
+    Ce qui reste à faire :
+    - Une adresse de rapport **collée**, **rechargée**, ou atteinte par **Retour** ou **Suivant** affiche son rapport
+      **sans clic sur *Générer*** : le rapport gardé par la page s'il a ces paramètres (aucune requête), une requête
+      sinon (une trace d'audit, C-55-1-2).
+    - Le clic sur un onglet reste **comme aujourd'hui** : le rapport que l'onglet a déjà, ou son invite ; **aucune
+      requête**, jamais.
+    - Un onglet **jamais généré**, atteint par un clic, reste à son invite jusqu'au clic sur *Générer*.
     - Une modification des paramètres **sans clic** ne régénère rien (C-55-1-1).
-    - **Pas de requête en double** : un même jeu de paramètres ne déclenche qu'**un** appel (clés affichée et en vol,
-      point 4 ; compté par les Vitest de l'AC-7).
+    - **Exigence technique** (R-4, tranché) : jamais deux appels simultanés pour un même jeu de paramètres, ni d'appel pour
+      le rapport déjà affiché (clés affichée et en vol, point 4 ; comptés par les Vitest de l'AC-7). Ce n'est pas une
+      demande de l'utilisateur : la note de version et le manuel ne la mentionnent pas.
     - **Ce critère tranche R-2** (point 3, génération d'un autre onglet en vol) : une adresse complète qui arrive pendant la
       génération d'un autre onglet **demande son rapport** (comme un clic sur *Générer*, une génération à la fois) ; la
       génération de l'autre onglet est périmée, et son onglet se réaffichera seul par son adresse (*Retour*), ou restera à
       son invite s'il n'avait encore rien affiché. C-55-1-6 et la branche « aucune requête, l'invite » du point 3 sont
-      **remplacés** par cette règle, qui prime ; le manuel (AC-11) dit « arriver par *Retour* ou par un lien pendant le
+      **remplacés** par cette règle, qui prime (R-3) ; le manuel (AC-11) dit « arriver par *Retour* ou par un lien pendant le
       chargement d'un autre rapport l'interrompt ».
-    - Tests : Vitest de la page — retour par clic sur un onglet généré (0 requête), *Retour* et *Suivant* (0 requête si
-      gardé, 1 sinon), lien partagé (1), onglet jamais généré (0, invite), champ modifié sans clic puis clic sur un autre
-      onglet et retour (0), adresse complète pendant la génération d'un autre onglet (1, l'autre périmée) ; E2E de l'AC-1 et
-      de l'AC-2.
+    - Tests : Vitest de la page — *Retour* et *Suivant* (0 requête si gardé, 1 sinon), rechargement et lien partagé (1),
+      adresse complète pendant la génération d'un autre onglet (1, l'autre périmée) ; **non-régression** du clic sur un
+      onglet : onglet généré (0 requête, rapport affiché), onglet jamais généré (0, invite), champ modifié sans clic puis
+      clic sur un autre onglet et retour (0, rapport inchangé) ; E2E de l'AC-1, de l'AC-2 et de l'AC-4. *Preuve du rouge* :
+      les cas « Retour », « Suivant », « rechargement » et « lien partagé » rougissent sans le correctif ; les cas du clic
+      sur un onglet sont **verts avant et après** (non-régression, déclarée telle au Change Log, non comptée comme preuve).
 14. **AC-14 — L'exercice en gras.** Dans le sélecteur d'exercice du haut des rapports (`ReportSelector.svelte`, le `<select>`
     lié à `selectedFiscalYearId`), l'exercice choisi s'affiche **en gras** (classe `font-semibold` du thème, aucune couleur
     neuve), pour voir d'un coup d'œil dans quel exercice on se trouve. Style seulement : aucun texte, aucun comportement ne
@@ -467,3 +477,8 @@ qui l'affichent désormais à l'arrivée) ; le lien *Rapports* du menu ramène a
   passe ; la P8, dernière permise, est gardée en réserve) : R-3 (l'AC-13 prime, sites à récrire), R-4 (portée de « pas de
   requête en double », à confirmer avec l'utilisateur), R-5 (portée du gras) ; LOW listés. `ready-for-dev` **sous réserve**
   du T0 (R-1 à R-5).
+- 2026-11-25 — **Réponses de l'utilisateur versées** (partie A, points 1 et 2) : l'AC-13 est récrit — revenir à un onglet
+  déjà généré montre déjà son rapport aujourd'hui ; ce qui reste à faire est qu'une adresse collée, rechargée ou atteinte
+  par *Retour* ou *Suivant* affiche son rapport sans *Générer* (D3) ; aucune régénération au changement d'onglet ; les
+  tests du clic sur un onglet deviennent des tests de non-régression. **R-4 tranché** : « pas de requête en double » reste
+  une exigence technique seulement. Validation P8 ciblée sur ce changement (dernière passe permise).

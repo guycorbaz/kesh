@@ -11,7 +11,8 @@ Epic : `_bmad-output/planning-artifacts/epic-55-navigation-interface.md` — D9 
 *⚠️ **Récrite le 2026-11-25 sur décision de l'utilisateur** : **une seule icône PDF par ligne d'écriture**, quel que soit
 le nombre de justificatifs — ni compteur, ni menu ; au clic, **la visionneuse existante** (`DocumentPreview`, dont le
 cadre affiche le PDF dans le lecteur du navigateur, pages à gauche), avec **la liste des documents de l'écriture en haut** :
-un clic dans la liste change le document affiché ; avec un seul justificatif, la liste se réduit à son nom. La liste se
+un clic dans la liste change le document affiché. **Avec un seul justificatif, aucune liste** : la visionneuse l'ouvre
+directement ; la liste en haut ne paraît qu'**à partir de deux** (simplification de l'utilisateur, 2026-11-25). La liste se
 charge au clic (route de la 55-3a). Validation reprise à P1 sur cette version.*
 
 ## Story
@@ -31,7 +32,9 @@ par la garde : un fichier commun, non un module.) Les pages des fiches de factur
 
 - Le contrat de la 55-3a : `hasDocuments?: boolean` sur `JournalEntryRow` et `LedgerLine` ; `GET
   /api/v1/journal-entries/{id}/documents` → `EntryDocument[]`, `EntryDocument { kind: 'invoice' | 'creditNote' |
-  'supplierDocument'; id: number; number: string | null; fileName?: string }`.
+  'supplierDocument'; id: number; number: string | null; fileName?: string; pdfStatus?: string }` (`pdfStatus` : facture
+  seulement, `'frozen'` ou `'notFrozen'`, énumération ouverte) ; l'aperçu sans figement
+  `GET /api/v1/invoices/{id}/pdf/preview` (55-3a, D12).
 - **La visionneuse** : la seule de Kesh est `DocumentPreview` (`grep -rln "iframe\|<object\|<embed"` sous
   `frontend/src` ne rend qu'elle ; aucune bibliothèque PDF — ni `pdfjs` ni vignettes — dans `package.json`) : un `<iframe>`
   d'une URL `blob:` où le **lecteur PDF du navigateur** affiche le document, avec ses pages à gauche. Elle sert déjà à
@@ -89,13 +92,15 @@ par la garde : un fichier commun, non un module.) Les pages des fiches de factur
    `aria-label` « Justificatifs de l'écriture n° N »), **sans compteur ni menu**, qu'elle ait un justificatif ou plusieurs.
    Une écriture sans `hasDocuments` n'en a pas. Aucune requête n'est faite avant le clic.
 2. **AC-2 — La visionneuse et sa liste.** Au clic, un dialogue s'ouvre ; il lit `GET /api/v1/journal-entries/{id}/documents`
-   (une requête, un indicateur de chargement), puis montre **en haut** la liste des justificatifs (genre, numéro, nom du
+   (une requête, un indicateur de chargement), puis, s'il y en a deux ou plus, montre **en haut** la liste des justificatifs (genre, numéro, nom du
    fichier d'un document fournisseur ; l'élément affiché marqué `aria-current`) et **dessous** `DocumentPreview` sur le
    **premier** de la liste. Un clic sur un autre élément change le document affiché, sans fermer le dialogue. Un seul
-   justificatif : la liste se réduit à son nom (aucun choix). Liste vide (justificatif disparu depuis le rapport) : le
+   justificatif : **aucune liste** — ni élément, ni libellé (`data-testid="entry-documents-list"` absent) — et
+   `DocumentPreview` l'ouvre directement ; la liste ne paraît qu'à partir de **deux** justificatifs. Liste vide (justificatif disparu depuis le rapport) : le
    message `reports-nav-documents-none` ; erreur de la route : `errorMessageOf`. La liste est **relue à chaque ouverture** ;
    une réponse d'une ouverture antérieure (fermé puis rouvert en vol) est ignorée (compteur d'ouverture), test dédié.
-3. **AC-3 — Les trois genres et leurs lecteurs.** `fetchInvoicePdf(id)` → `GET /api/v1/invoices/{id}/pdf` ;
+3. **AC-3 — Les trois genres et leurs lecteurs.** `fetchInvoicePdfPreview(id)` → `GET /api/v1/invoices/{id}/pdf/preview`
+   (l'aperçu sans figement de la 55-3a ; **jamais** `/pdf`, qui fige) ;
    `fetchCreditNotePdf(id)` → `GET /api/v1/credit-notes/{id}/pdf` (les deux dans `reports.api.ts`, par `apiClient.getBlob`) ;
    document fournisseur → `fetchSupplierInvoiceSourceDocument(id)`. Noms passés à `DocumentPreview` :
    `facture-<numéro>.pdf`, `avoir-<numéro>.pdf`, à défaut du numéro `facture-<id>.pdf`, `avoir-<id>.pdf` ; le `fileName` du
@@ -103,7 +108,8 @@ par la garde : un fichier commun, non un module.) Les pages des fiches de factur
    vide : le lecteur d'`EntryDocuments` **rejette** par une erreur « vide » dédiée (`DocumentPreview` ne contrôle pas la
    taille, `:50-61`), rendue par `reports-nav-documents-empty` (« Le document reçu est vide. »), pour les trois genres —
    clé neuve parce que `lint-i18n-ownership` refuse `invoice-pdf-error-empty` depuis `features/reports`.
-4. **AC-4 — Erreurs, droits.** Les trois routes d'aujourd'hui, sans route neuve, leurs droits inchangés (un rôle
+4. **AC-4 — Erreurs, droits.** L'aperçu de la 55-3a pour la facture, les deux routes d'aujourd'hui pour l'avoir et le
+   document fournisseur, toutes sous « tout rôle authentifié » (un rôle
    *Consultation* voit le bouton et ouvre le justificatif). `DocumentPreview` gagne une propriété **facultative**
    `errorMessage?: (err: unknown) => string | undefined`, lue **dans le `catch` seulement** (pas dans l'`$effect` qui lit
    `load` : une fonction neuve ne relance pas la lecture) : une chaîne rend l'état `document-preview-error` avec ce texte ;
@@ -114,16 +120,23 @@ par la garde : un fichier commun, non un module.) Les pages des fiches de factur
    avoir → `pdfErrorMessage(err)` (`410 INVOICE_PDF_GONE` nomme le fichier à restaurer), document fournisseur → `undefined`.
    Le journal reste affiché. Rôle *Consultation* : constat par construction, écrit au Change Log — aucun contrôle de rôle
    dans `EntryDocuments` (`grep -n "role" EntryDocuments.svelte` vide) et les trois routes sous « tout rôle authentifié »
-   (`lib.rs:1262-1293`).
-5. **AC-5 — Figement et lecture unique.** Ouvrir la facture d'une écriture la **fige** si elle ne l'était pas (route
-   d'aujourd'hui, `Usage::Download`), y compris pour un rôle *Consultation* : dit au manuel (AC-9). Le justificatif choisi
+   (`lib.rs:1262-1293`, et la route d'aperçu montée à côté de `/pdf`).
+5. **AC-5 — Aucun figement, bandeau, lecture unique.** Ouvrir la facture d'une écriture **ne la fige pas** (réponse de
+   l'utilisateur du 2026-11-25, D12) : l'écran lit l'aperçu (AC-3), jamais `/pdf`. Une facture dont l'élément porte
+   `pdfStatus: 'notFrozen'` s'affiche avec un **bandeau** au-dessus de `DocumentPreview`
+   (`data-testid="entry-documents-not-frozen"`, `role="status"`), texte `reports-nav-documents-not-frozen` : « Aperçu — PDF
+   non figé : cette facture n'a encore été ni téléchargée ni envoyée, et son PDF peut encore changer. » (« figé », « PDF
+   émis » : les termes de Kesh, manuel § 11.6.1, `invoice-detail-pdf-frozen-at-label` « Document figé le »,
+   `error-invoice-pdf-not-frozen`). Aucun bandeau pour `'frozen'`, pour un avoir, un document fournisseur, ni pour une
+   valeur inconnue de `pdfStatus` (une valeur future, 55-3a *Limite connue et évolution*). Le bandeau suit la liste lue à
+   l'ouverture : une facture figée entre-temps le garde jusqu'à la prochaine ouverture (limite dite au manuel, AC-9). La
+   **fiche de la facture ne change pas** : son téléchargement fige toujours (question Q8 au mainteneur, non tranchée).
+   **Lecture unique** : le justificatif choisi
    est tenu par **deux primitives** (`kind`, `id`), et la fonction `load` est dérivée de ces seules primitives : remplacer
    le rapport ou la liste relue par des objets égaux ne relit pas le document. Changer d'élément dans la liste ne relit que le document
    choisi. Le cas réel du tableau remplacé : Retour ou Suivant vers le **même
    onglet**, dont le rapport est repris de la mémoire (55-1a, C-55-1-2) ou redemandé, l'écriture y étant encore ; *Générer*
-   n'est pas atteignable dialogue ouvert (modal) et démonte la vue (`{#if loading}`). La décision de figer à l'affichage est
-   soumise au mainteneur (Q7 du fichier d'epic) ; refusée, la 55-3a ne rend que les factures déjà figées (un filtre serveur,
-   aucun champ de plus au contrat).
+   n'est pas atteignable dialogue ouvert (modal) et démonte la vue (`{#if loading}`).
 6. **AC-6 — Grand livre.** Une colonne `documents` (`COLUMNS`, après `description`, en-tête `reports-nav-ledger-column-documents`
    « Justificatifs », rendu étroit), **présente seulement si au moins une ligne du rapport porte `hasDocuments`** (condition
    sur le rapport, non sur la section : toutes les sections ont alors le même nombre d'en-têtes) ; les constantes qui
@@ -145,30 +158,22 @@ par la garde : un fichier commun, non un module.) Les pages des fiches de factur
    de l'écriture n° { $number } »), `reports-nav-documents-title`, `reports-nav-documents-kind-invoice` (« Facture »),
    `-kind-credit-note` (« Avoir »), `-kind-supplier-document` (« Document fournisseur »), `reports-nav-documents-list`
    (libellé de la liste), `reports-nav-documents-loading`, `reports-nav-documents-none`, `reports-nav-documents-close`
-   (« Fermer »), `reports-nav-documents-empty`, `reports-nav-ledger-column-documents` ; constat : `i18n-keys` (`sitesTotal` recompté par
+   (« Fermer »), `reports-nav-documents-empty`, `reports-nav-documents-not-frozen` (bandeau, AC-5), `reports-nav-ledger-column-documents` ; constat : `i18n-keys` (`sitesTotal` recompté par
    la garde, parité des quatre locales), `i18n-libelle-en-dur`, `i18n-un-repli-par-cle`, `npm run lint-i18n-ownership`
    verts.
 9. **AC-9 — Manuel.** `docs/manual/fr/user-manual.tex` (lignes à `1e23edb55`) : § *Journal des écritures* (`:4316`) — le
    bouton, les trois genres, le règlement qui montre la facture réglée, la liste ; § *Grand livre*, l'énumération des
-   colonnes (`:4193-4194`) gagne « ses justificatifs » ; § 11.6.1 (`sec:pdf-fige`, `:1635-1637`) — « au premier
-   téléchargement, au premier envoi, ou au premier affichage depuis les rapports », renvoi `\S\ref{sec:pdf-fige}` depuis
-   les deux paragraphes des rapports ; le chemin « Mensuel → Rapports → Journal » (`:4318`) contrôlé contre l'onglet réel
-   (« Journaux »). **Phrases du figement** — par une **règle**, non par une liste de lignes (validation P4 de la version
-   récrite : chaque liste se révélait incomplète) : **toute phrase des manuels utilisateur et d'administration qui attribue le
-   figement d'un PDF de facture au seul téléchargement ou au seul envoi**, ou qui dit qu'une facture « jamais téléchargée ni
-   envoyée » n'est pas figée, est corrigée pour y ajouter l'affichage depuis les rapports, avec renvoi au § 11.6.1 (sauf dans
-   le § 11.6.1 lui-même). **Le refus d'un PDF figé disparu** (`user-manual.tex:1650`) reçoit une phrase propre : l'affichage
-   depuis les rapports est refusé de même, avec le même message ; le bouton *Refiger* n'apparaît qu'après un téléchargement
-   refusé **depuis la fiche** (`invoices/[id]/+page.svelte:926`, `:994`, `:1037`). Méthode, au T4 et sur la base de
-   développement (les numéros glissent entre `1e23edb55` et la PR 46, de façon inégale : relevés sur la base) : en deux
-   étapes, `grep -nE "fig[ée]|refig" docs/manual/fr/user-manual.tex docs/manual/fr/admin-manual.tex`, puis, parmi les
-   phrases des factures et de leur PDF, `grep -nE "t[ée]l[ée]charg|envoy|envoi|ouvert|rendu"` ; le nombre de lignes écartées
-   à chaque étape est déclaré, et chaque ligne retenue **jugée** dans une table du Change Log — corrigée, ou laissée avec sa
-   raison —, ligne lue citée.
-   Repères à `1e23edb55`, non limitatifs : `:1502`, `:1513`, `:1553`, `:1633`, `:1637`, `:1641`-`:1645`, `:1650`, `:1674`,
-   `:1725`, `:2058` (laissée : audit), `:4909` ; `admin-manual.tex:949`, `:1607` (Consultation : « le premier
-   téléchargement du PDF d'une facture le fige »), `:1644` ; `:3426` (clé d'API) laissée. Formulation : § 11.6.1 (`:1637`) « au premier téléchargement, au premier
-   envoi, ou au premier affichage depuis les rapports » ; ailleurs, l'ajout de « ou affichage » à la tournure existante.
+   colonnes (`:4193-4194`) gagne « ses justificatifs » ; le chemin « Mensuel → Rapports → Journal » (`:4318`) contrôlé
+   contre l'onglet réel (« Journaux »). **§ 11.6.1** (`sec:pdf-fige`, `:1635-1645`) gagne **une** phrase : afficher une
+   facture depuis les rapports (Journal, Grand livre) **ne la fige pas** — une facture non figée s'y montre en aperçu, sous
+   un bandeau « PDF non figé », et le PDF émis reste produit au premier téléchargement ou au premier envoi ; le bandeau vaut
+   à l'ouverture de la visionneuse. Renvoi `\S\ref{sec:pdf-fige}` depuis le paragraphe du Journal. **Les phrases du
+   figement restent justes** (téléchargement et envoi demeurent les seuls gestes qui figent) : aucune n'est réécrite ; le
+   T4 le constate par `grep -nE "fig[ée]|refig" docs/manual/fr/user-manual.tex docs/manual/fr/admin-manual.tex` sur la base
+   de développement, nombre de lignes lues déclaré au Change Log, et toute phrase qui dirait le contraire (« toute
+   ouverture fige ») corrigée. **Le refus d'un PDF figé disparu** (`user-manual.tex:1650`) : l'affichage depuis les
+   rapports est refusé de même, avec le même message ; le bouton *Refiger* n'apparaît qu'après un téléchargement refusé
+   **depuis la fiche** (`invoices/[id]/+page.svelte:926`, `:994`, `:1037`) — une demi-phrase.
    `.tex` seul ; le PDF se régénère à la release. Captures du
    manuel montrant le grand livre (p. ex. `rd-grand-livre-usd.png`) : périmées si la colonne y paraît, à refaire à la
    release (dit au Change Log).
@@ -181,7 +186,10 @@ par la garde : un fichier commun, non un module.) Les pages des fiches de factur
 - **Vitest** `EntryDocuments.test.ts` (neuf, l'icône et le dialogue) et `EntryDocumentsViewer.test.ts` (neuf, la liste
   au-dessus de `DocumentPreview`) : aucune icône sans `hasDocuments`, une seule avec (que la liste compte 1 ou 3
   éléments) ; aucune requête avant le clic, **une** au clic ; premier élément affiché ; clic sur un autre élément → son
-  lecteur appelé, une lecture ; un seul justificatif → son nom, sans choix ; liste vide ; erreur de la route ; les trois
+  lecteur appelé, une lecture ; un seul justificatif → **aucune liste** (`entry-documents-list` absent), l'aperçu ouvert ;
+  deux → la liste ; bandeau présent pour `'notFrozen'`, absent pour `'frozen'`, un avoir, un document fournisseur et une
+  valeur inconnue (mutations : bandeau toujours affiché, liste rendue à un élément → tests rouges) ; lecteur de facture qui
+  vise `/pdf/preview` et non `/pdf` (mutation : `/pdf` → test rouge) ; liste vide ; erreur de la route ; les trois
   genres (lecteur appelé, nom de fichier, replis de l'AC-3) ; erreur `410` → texte de `pdfErrorMessage` ; `Blob` vide
   **pour chacun des trois genres** ; **lecture unique** : dialogue ouvert, rapport remplacé par un objet égal → toujours
   **une** lecture (mutation déclarée au journal : sélection tenue par l'objet → deux lectures, test rouge) ; ouverture sans
@@ -193,7 +201,7 @@ par la garde : un fichier commun, non un module.) Les pages des fiches de factur
   dialogue avec `preventDefault()` puis le focus rendu à l'élément retenu (bits-ui 2.16.5 rend le focus par défaut,
   `focus-scope.svelte.js:79-90`, ce qui laisserait l'E2E vert sans le code). Mutation : retrait du rendu explicite → test
   rouge.
-- **Vitest** `reports.api.test.ts` : `fetchEntryDocuments(entryId)`, `fetchInvoicePdf`, `fetchCreditNotePdf` (URL exactes).
+- **Vitest** `reports.api.test.ts` : `fetchEntryDocuments(entryId)`, `fetchInvoicePdfPreview`, `fetchCreditNotePdf` (URL exactes).
 - **Vitest** `DocumentPreview.test.ts` : tests ajoutés (propriété présente rendant une chaîne, y compris pour
   `SOURCE_DOCUMENT_GONE` ; rendant `undefined` ; absente ; nouveau rendu avec une autre fonction `errorMessage` → **une**
   lecture).
@@ -202,8 +210,9 @@ par la garde : un fichier commun, non un module.) Les pages des fiches de factur
 - Rouges sans le correctif, journal `kesh-gate-logs/s55-3b/`.
 - **E2E** `frontend/tests/e2e/reports-entry-documents.spec.ts` (neuf, déclaré au tableau des fichiers communs), **cible :
   le Journal** : créer et valider une facture par l'API, ouvrir *Rapports → Journaux* sur la période, cliquer le bouton de
-  l'écriture de vente (`journalEntryId` de la facture) → la liste à un élément (le numéro de la facture) et
-  `document-preview-frame` visible ; *Échap* ferme, focus rendu ;
+  l'écriture de vente (`journalEntryId` de la facture) → **aucune liste**, `document-preview-frame` visible, bandeau
+  `entry-documents-not-frozen` visible ; puis `GET /api/v1/invoices/{id}` rend `pdfFrozenAt: null` (la facture n'a pas été
+  figée) ; *Échap* ferme, focus rendu ;
   axe à zéro violation dialogue ouvert. **Deux justificatifs** : deux factures validées, puis un règlement groupé par
   `POST /api/v1/reconciliation/accept` (`invoice_group`, patron `reconciliation-group.spec.ts:796-800`, écriture lue dans
   `accepted[0].journalEntryId`) → **une** icône sur l'écriture de règlement ; le dialogue montre la liste de deux, la première facture
@@ -218,8 +227,8 @@ par la garde : un fichier commun, non un module.) Les pages des fiches de factur
 
 ## Recette visuelle
 
-Captures (thème clair, `kesh-gate-logs/s55-3b/`) : journal avec ses icônes ; visionneuse à un justificatif (liste réduite
-au nom) ; visionneuse à deux justificatifs, chacun affiché ; erreur `410` (obtenue sur une installation jetable en retirant de `KESH_DOCUMENTS_DIR` le fichier `<empreinte>.pdf`
+Captures (thème clair, `kesh-gate-logs/s55-3b/`) : journal avec ses icônes ; visionneuse à un justificatif (ouverte
+directement, sans liste) ; visionneuse à deux justificatifs, chacun affiché ; bandeau « PDF non figé » ; erreur `410` (obtenue sur une installation jetable en retirant de `KESH_DOCUMENTS_DIR` le fichier `<empreinte>.pdf`
 d'une facture figée, ou par `page.route` rendant `410 INVOICE_PDF_GONE`) ; grand livre avec la colonne.
 
 ## Tâches
@@ -235,9 +244,11 @@ d'une facture figée, ou par `page.route` rendant `410 INVOICE_PDF_GONE`) ; gran
         libellé de l'icône et le titre s'ils portent le même texte ;
       - E2E *Consultation* exigé (patron `reports.spec.ts:441`) ;
       - LOW de la version précédente (V3-1 à V3-7).
+      - **caducs depuis D12** (l'affichage ne fige plus) : V3-1, Vv2p6-1 et Vv2p6-2, qui portaient sur la réécriture des
+        phrases du figement ; à écrire tels au Change Log.
 - [ ] **T1** — Vitest rouges.
 - [ ] **T2** — `DocumentPreview` (`errorMessage`, rien d'autre) ; lecteurs dans `reports.api.ts`
-      (`fetchEntryDocuments`, `fetchInvoicePdf`, `fetchCreditNotePdf`) ; `EntryDocumentsViewer.svelte` (la liste en haut,
+      (`fetchEntryDocuments`, `fetchInvoicePdfPreview`, `fetchCreditNotePdf`) ; `EntryDocumentsViewer.svelte` (la liste en haut,
       `DocumentPreview` dessous, sélection par primitives) ; `EntryDocuments.svelte` (le dialogue `ui/dialog`, **une
       instance par vue**, et la lecture de la liste au clic) ; l'icône de chaque ligne est un bouton qui lui passe
       l'écriture **et son élément** ; l'instance rend le focus à cet élément à la fermeture.
@@ -253,9 +264,10 @@ des Rapports ; suite complète selon le § *Gates* du fichier d'epic (Q6).
 ## Note de version
 
 *Rapports → Journaux* et *Grand livre* : une icône PDF sur une écriture ouvre ses justificatifs dans la visionneuse — PDF
-de la facture, de l'avoir, document de la facture fournisseur ; pour un règlement, la ou les factures réglées, à choisir
-dans la liste en haut. Ouvrir ainsi une facture dont le PDF
-n'était pas encore produit le fige, comme un téléchargement. (refs #À-VENIR)
+de la facture, de l'avoir, document de la facture fournisseur ; pour un règlement, la ou les factures réglées. Avec un
+seul justificatif, il s'ouvre directement ; avec plusieurs, une liste en haut permet de choisir. Afficher ainsi une
+facture **ne la fige pas** : une facture dont le PDF n'a pas encore été émis s'affiche en aperçu, sous un bandeau « PDF
+non figé ». (refs #À-VENIR)
 
 ## Dev Notes
 
@@ -339,3 +351,10 @@ n'était pas encore produit le fige, comme un téléchargement. (refs #À-VENIR)
   comment l'administrateur refige : depuis la fiche, téléchargement refusé puis *Refiger le document* ;
   `admin-manual.tex:1648`, `:1653` aux repères), Vv2p6-3 (`admin-manual.tex` nommé au § *Modules*, même module ;
   `focus-scope.svelte.js:78-90` ; raison de laisser `:3426` écrite en toutes lettres).
+- 2026-11-25 — **Réponses de l'utilisateur versées** (partie A, points 3 à 5) : l'affichage d'une facture depuis les
+  Rapports **ne la fige pas** — lecture par l'aperçu de la 55-3a (`/pdf/preview`), bandeau « PDF non figé » sur
+  `pdfStatus: 'notFrozen'` (AC-3, AC-5, AC-8) ; la règle de réécriture des phrases du figement au manuel est **retirée**
+  (elles restent justes), remplacée par une phrase au § 11.6.1 (AC-9) ; fiche de la facture inchangée (Q8 au mainteneur) ;
+  **un seul justificatif : aucune liste**, la visionneuse l'ouvre directement, la liste ne paraît qu'à partir de deux
+  (AC-2) ; tests, E2E, captures et note de version alignés. Validation P7 ciblée sur ces changements (dès la P6, plus de
+  remédiation : points en R-n).
