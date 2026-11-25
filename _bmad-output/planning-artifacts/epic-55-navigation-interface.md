@@ -205,9 +205,9 @@ Déclarés au kickoff (`CLAUDE.md` § *Fusions et fichiers communs*), relevés l
 | `frontend/src/lib/features/reports/BalanceSheetView.svelte`, `IncomeStatementView.svelte` | 55-2 | **Epic 46** (branches groupées) ; **Epic 47** (`epic/47-comptes-miroirs` : `MirrorOfNote`) | lien seul remplacé, structure inchangée ; `MirrorOfNote` (Epic 47) reste en texte, issue ouverte par la 55-2 : le second arrivé le sait |
 | `frontend/src/lib/features/reports/TrialBalanceView.svelte` | 55-2 | **Epic 46** (46-6b, balance groupée) | idem |
 | `frontend/src/lib/features/reports/reports.api.ts` | 55-1a (`ledgerHref` inchangé), 55-2, 55-3b (lecteurs des PDF) | **Epic 46** (paramètres de regroupement, 46-8 : `getReportExportUrl`) | `ledgerHref` : sortie inchangée (D6) |
-| `frontend/src/lib/features/reports/reports.types.ts` | 55-3b (`documents`) | **Epic 46**, Epic 47 | champ ajouté en fin de type |
+| `frontend/src/lib/features/reports/reports.types.ts` | 55-3b (`hasDocuments`, `EntryDocument`) | **Epic 46**, Epic 47 | champ ajouté en fin de type |
 | `frontend/src/lib/features/reports/JournalReportView.svelte`, `GeneralLedgerView.svelte`, `VatReportView.svelte`, `ReportSelector.svelte` | 55-1a (`ReportSelector` lu seulement), 55-2, 55-3b | — | 55-2 puis 55-3b |
-| `frontend/src/lib/features/reports/reports-url.ts` (neuf), `AccountLink.svelte` (neuf), `EntryDocuments.svelte` (neuf) | 55-1a, 55-1b, 55-2, 55-3b | — | — |
+| `frontend/src/lib/features/reports/reports-url.ts` (neuf), `AccountLink.svelte` (neuf), `EntryDocuments.svelte`, `EntryDocumentsViewer.svelte` (neufs) | 55-1a, 55-1b, 55-2, 55-3b | — | — |
 | `frontend/src/lib/features/imported-supplier-invoices/DocumentPreview.svelte` | 55-3b (propriété facultative `errorMessage`) | — | comportement d'aujourd'hui inchangé sans la propriété |
 | `crates/kesh-report/src/journal_report.rs`, `general_ledger.rs`, `documents.rs` (neuf) ; `crates/kesh-api/src/lib.rs`, `routes/journal_entries.rs` (route de lecture) | 55-3a | ni l'Epic 46 ni l'Epic 47 n'y touchent | champ additif, exports inchangés |
 | `crates/kesh-report/src/lib.rs` | 55-3a (`pub mod documents`) | **Epic 46** (+25 lignes, `pub mod`/`pub use`), **Epic 47** | une ligne, dans l'ordre alphabétique des modules |

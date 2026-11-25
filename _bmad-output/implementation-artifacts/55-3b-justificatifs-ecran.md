@@ -35,11 +35,12 @@ par la garde : un fichier commun, non un module.) Les pages des fiches de factur
 - **La visionneuse** : la seule de Kesh est `DocumentPreview` (`grep -rln "iframe\|<object\|<embed"` sous
   `frontend/src` ne rend qu'elle ; aucune bibliothèque PDF — ni `pdfjs` ni vignettes — dans `package.json`) : un `<iframe>`
   d'une URL `blob:` où le **lecteur PDF du navigateur** affiche le document, avec ses pages à gauche. Elle sert déjà à
-  quatre endroits : `AttachDocumentPicker.svelte:198`, `supplier-invoices/new/+page.svelte:236`,
-  `supplier-invoices/import/+page.svelte:605`, `journal-entries/[id]/+page.svelte:618`. Pour recevoir une liste, il ne lui
+  cinq endroits : `AttachDocumentPicker.svelte:198`, `supplier-invoices/new/+page.svelte:236`,
+  `supplier-invoices/import/+page.svelte:605`, `supplier-invoices/[id]/+page.svelte:1086`,
+  `journal-entries/[id]/+page.svelte:618`. Pour recevoir une liste, il ne lui
   faut rien : elle affiche **un** document, et une nouvelle fonction `load` le remplace (son `$effect` relit, et révoque
   l'URL `blob:` précédente). La liste vit donc **au-dessus d'elle**, dans un composant neuf qui choisit le document et lui
-  passe `load` et `fileName` — `DocumentPreview` ne change pas pour ses quatre appelants (une seule propriété facultative,
+  passe `load` et `fileName` — `DocumentPreview` ne change pas pour ses cinq appelants (une seule propriété facultative,
   `errorMessage`, AC-4).
 - `frontend/src/lib/features/imported-supplier-invoices/DocumentPreview.svelte` : `Props { load: () => Promise<Blob>;
   fileName: string }` (`:23-28`) ; un `$effect` relit le document **à chaque nouvelle fonction `load`** ; l'erreur de `load`
@@ -92,7 +93,8 @@ par la garde : un fichier commun, non un module.) Les pages des fiches de factur
    fichier d'un document fournisseur ; l'élément affiché marqué `aria-current`) et **dessous** `DocumentPreview` sur le
    **premier** de la liste. Un clic sur un autre élément change le document affiché, sans fermer le dialogue. Un seul
    justificatif : la liste se réduit à son nom (aucun choix). Liste vide (justificatif disparu depuis le rapport) : le
-   message `reports-nav-documents-none` ; erreur de la route : `errorMessageOf`.
+   message `reports-nav-documents-none` ; erreur de la route : `errorMessageOf`. La liste est **relue à chaque ouverture** ;
+   une réponse d'une ouverture antérieure (fermé puis rouvert en vol) est ignorée (compteur d'ouverture), test dédié.
 3. **AC-3 — Les trois genres et leurs lecteurs.** `fetchInvoicePdf(id)` → `GET /api/v1/invoices/{id}/pdf` ;
    `fetchCreditNotePdf(id)` → `GET /api/v1/credit-notes/{id}/pdf` (les deux dans `reports.api.ts`, par `apiClient.getBlob`) ;
    document fournisseur → `fetchSupplierInvoiceSourceDocument(id)`. Noms passés à `DocumentPreview` :
@@ -187,8 +189,9 @@ par la garde : un fichier commun, non un module.) Les pages des fiches de factur
   `POST /api/v1/reconciliation/accept` (`invoice_group`, patron `reconciliation-group.spec.ts:796-800`, écriture lue dans
   `accepted[0].journalEntryId`) → **une** icône sur l'écriture de règlement ; le dialogue montre la liste de deux, la première facture
   affichée ; un clic sur la seconde change le document (la requête de son PDF part) ; les aides
-  (`createAndValidateInvoiceViaApi`, `createManualCreditStatementViaApi` d'`api-fixtures.ts`, et celles du spec déplacées dans
-  `api-fixtures.ts` plutôt que recopiées) ; nettoyage en `finally` comme le patron (groupe annulé, import supprimé).
+  (`createAndValidateInvoiceViaApi`, `createManualCreditStatementViaApi` d'`api-fixtures.ts`, et des aides neuves **dans le
+  spec neuf** pour le règlement groupé — le spec `reconciliation-group.spec.ts` de l'Epic 43 n'est pas touché, ni
+  `api-fixtures.ts` modifié) ; nettoyage en `finally` comme le patron (groupe annulé, import supprimé).
   **Retour** : partir du *Bilan*, cliquer *Journaux* (entrée d'historique, 55-1a D2), générer, ouvrir le dialogue
   (`[role="dialog"]` visible), puis `page.goBack()` **dialogue ouvert** → URL `tab=balance-sheet`, `[role="dialog"]` en
   nombre 0, et un clic sur un onglet réussit (aucun overlay ni verrou de défilement resté).
@@ -282,3 +285,7 @@ n'était pas encore produit le fige, comme un téléchargement. (refs #À-VENIR)
   existante (`DocumentPreview`, lecteur PDF du navigateur) avec la liste des documents en haut, chargée au clic par la route
   de la 55-3a ; un composant neuf `EntryDocumentsViewer` au-dessus de `DocumentPreview`, inchangé pour ses quatre
   appelants. Statut repassé à `drafted`, validation reprise à P1 sur cette version.
+- 2026-11-25 — Validation P1 de la version récrite (Sonnet) : 0/0/1/8 ; remédiée : aides de l'E2E dans le spec neuf, le spec de
+  l'Epic 43 intact (Vv2p1-1) ; cinq appelants (Vv2p1-2) ; liste relue à chaque ouverture, garde d'ouverture (Vv2p1-3) ;
+  Vv2p1-4 à Vv2p1-9 **renvoyés au T0** (hauteur du dialogue, `:1643-1644` et `:1650` du manuel, fichier d'epic, une instance
+  de dialogue par vue, nature de l'erreur « vide » et clés en double, E2E *Consultation* exigé).
