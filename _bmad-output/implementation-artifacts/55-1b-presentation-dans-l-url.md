@@ -90,8 +90,15 @@ n'entre dans l'URL que par la réponse affichée**. Les gestes de présentation 
    - à la **clé affichée** : égale, et une génération de l'onglet est en vol avec une **autre** clé (paramètres ou vue) :
      `invalidateInFlight()` — l'écran garde le rapport affiché, qui est celui de l'URL, **aucune requête** ; égale, rien en
      vol : rien ;
-   - sinon : mêmes paramètres de rapport, autre vue → `resyncActiveGroupedTab()` décide (redemande en gardant l'affichage,
-     ou à la fin d'une génération d'un autre onglet, règle de la 46-2) ; autres paramètres → `generate()` (55-1a).
+   - sinon, une génération **de cet onglet** est en vol avec une autre clé (chargement ou redemande) : `generate({
+     keepDisplay: true })` s'il y a un rapport affiché, `generate()` sinon — qui la périme ; la garde de la 46-2
+     (`resyncActiveGroupedTab`, qui sort dès que `loading`) ne s'en charge pas ;
+   - sinon, mêmes paramètres **que la clé affichée**, autre vue → `resyncActiveGroupedTab()` décide (redemande en gardant
+     l'affichage, ou à la fin d'une génération d'un autre onglet, règle de la 46-2) ; autres paramètres, ou rien d'affiché →
+     `generate()` (55-1a).
+   - La **normalisation** écrit la clé complète, présentation comprise (invariant de `lastHandledKey`, 55-1a).
+   - L'écriture à la réponse ne se fait que si **aucune navigation n'est en cours** et si l'entrée courante porte encore la
+     clé de la requête partie (sinon un *Retour* entre-temps serait réécrit).
 3. **Complétion** : URL complète sans présentation (ou présentation invalide), rapport affiché et égal en paramètres :
    l'URL est remplacée par la clé affichée (1 `goto`) ; une requête : la réponse écrit l'URL (1 `goto`). URL à normaliser
    **et** à compléter : un seul `goto`.
@@ -121,7 +128,7 @@ n'entre dans l'URL que par la réponse affichée**. Les gestes de présentation 
 2. **AC-2 — L'URL prime sur la mémoire.** Avec une autre vue en mémoire pour ce rapport, l'URL l'emporte ; la mémoire prend
    ensuite la vue de l'URL — ouvrir un lien remplace la présentation retenue du destinataire.
 3. **AC-3 — La mémoire du navigateur complète l'URL.** `?tab=balance-sheet&fy=E` sans présentation, bilan non gardé par la
-   page : la vue du `localStorage` s'applique, 1 requête, 1 `goto` à la réponse ; bilan gardé par la page avec cette vue :
+   page : la vue des contrôles (qui porte celle du `localStorage`) s'applique, 1 requête, 1 `goto` à la réponse ; bilan gardé par la page avec cette vue :
    0 requête, 1 `goto`.
 4. **AC-4 — Retour vers une autre présentation.** Bilan au niveau 2, clic sur l'onglet *Balance*, clic sur le Bilan, niveau 3,
    puis *Retour* deux fois : le Bilan **au niveau 2**, contrôles au niveau 2 ; sans la 55-1b, les contrôles restent au
@@ -140,16 +147,16 @@ n'entre dans l'URL que par la réponse affichée**. Les gestes de présentation 
 8. **AC-8 — Valeurs invalides.** `level=0`, `21`, `03`, `3.0`, `+3`, `ALL` ; `open=1,a`, `open=1,,2`,
    `open=99999999999999999999`, 501 identifiants, `closed=x` ; `view=xyz` ; `view=flat&level=3` (les autres retirés) :
    chacun ignoré, URL normalisée, aucune valeur invalide envoyée à l'API ; un paramètre invalide seul, et `open=5&closed=5`
-   seul, laissent la vue mémorisée ; `open=` vide est absent.
+   seul, laissent la vue des contrôles ; `open=` vide est absent.
 9. **AC-9 — Vue à plat.** Lien `view=flat` sur un bilan dont les contrôles portent le niveau 2 : à plat, puis « hiérarchie
    montrée » rend le niveau 2 ; une réponse à plat écrit `view=flat` seul.
 10. **AC-10 — Retour pendant une redemande de l'onglet.** Bilan au niveau 2, clic sur *Balance*, clic sur le Bilan, niveau 3
     (redemande en vol), *Retour* deux fois vers l'entrée du niveau 2 : 0 requête, la redemande en vol périmée, l'écran au
     niveau 2 sous des contrôles au niveau 2 ; de même avec une **autre période** générée en vol (période changée,
     *Générer*, *Retour*) ; *Retour* vers une URL égale à la clé en vol : 0 requête.
-11. **AC-11 — Export.** Les boutons PDF et CSV reprennent toujours la dernière réponse affichée (46-2, AC-6) : Vitest d'un
-    export pendant une redemande lancée par *Retour* (contrôles déjà sur la vue de l'entrée, écran sur l'ancienne) — l'export
-    suit `displayedGrouping`.
+11. **AC-11 — Export.** Pendant une redemande ou un chargement lancé par *Retour*, PDF et CSV sont désactivés (`canExport`,
+    PR 46 `+page.svelte:575-577`) ; à la réponse, l'export porte la présentation de l'entrée (`displayedGrouping`) — Vitest
+    des deux états.
 12. **AC-12 — Manuel.** Paragraphe de la présentation de la PR 46 (`:4240-4250` sur la PR 46) : l'adresse porte la
     présentation affichée, qui prime sur celle que retient le navigateur, et ouvrir un lien ou revenir par *Retour*
     remplace la présentation retenue ; la phrase « changer la présentation pendant le chargement d'un autre rapport
@@ -196,7 +203,7 @@ la story).
 
 *Rapports* : l'adresse d'un bilan, d'un compte de résultat ou d'une balance porte aussi sa présentation (hiérarchie,
 niveau, sous-totaux, groupes ouverts ou fermés à la main) ; elle prime sur celle que retient le navigateur, et ouvrir un
-lien remplace la présentation retenue. (refs #À-VENIR)
+lien ou revenir par *Retour* remplace la présentation retenue. (refs #À-VENIR)
 
 ## Dev Notes
 
@@ -207,6 +214,9 @@ lien remplace la présentation retenue. (refs #À-VENIR)
 - **C-55-1b-2** — La présentation n'entre dans l'URL que par la réponse affichée (validation P3) : l'URL ne décrit jamais
   une vue que l'écran n'affiche pas, et un geste ne peut pas être réappliqué par l'effet. *Écarté* : écrire la vue des
   contrôles au geste (P1, P2) — elle divergeait de la requête partie, qui lit le formulaire.
+- **C-55-1b-4** — Une URL **incomplète** qui porte une présentation (`?tab=balance-sheet&level=3`) : la présentation est
+  retirée à la normalisation (rien n'est affiché, rien ne s'écrit). Un lien d'une autre société porte un `fy` inconnu :
+  l'URL devient incomplète, rien n'est demandé.
 - **C-55-1b-3** — Longueur : au plus 500 + 500 identifiants, soit environ 9 Ko d'URL avec `%2C` — au-delà des 8 Ko de
   certains mandataires inverses ; cas théorique (500 groupes ouverts à la main), assumé. Un lien ouvert dans une autre société porte
   des identifiants inconnus d'elle : l'API les ignore et l'écho les retire (46-1), sans erreur.
@@ -251,3 +261,7 @@ lien remplace la présentation retenue. (refs #À-VENIR)
   tableau des compteurs corrigé (règle « écriture identique : pas de `goto` », *Générer*, normalisation et requête) (V4-2) ;
   deux écritures en mémoire (V4-3) ; vue des contrôles au lieu d'une relecture du stockage (V4-4) ; LOW V4-5 à V4-9 (fichier
   d'epic : D2, D4, fichiers communs). Prochaine passe : P5, dernière remédiation possible de l'orchestrateur.
+- 2026-11-25 — Validation P5 (Opus) : 0/0/2/7 ; remédiée (dernière remédiation permise à l'orchestrateur) : génération de
+  l'onglet en vol avec une autre clé, péremption par `generate` (V5-1 ; même trou que R-1 de la 55-1a, renvoyé au
+  développement là-bas) ; AC-11 sur des états atteignables (V5-2) ; LOW V5-3, V5-4, V5-6 à V5-8 ; V5-5 (deux lignes du tableau)
+  et V5-9 (AC-10, AC-7, AC-1 à préciser) **renvoyés au T0**. Dès la P6, retrait ou renvoi seulement.
