@@ -42,9 +42,9 @@ use kesh_db::repositories::bank_accounts::{BASE_CURRENCY, PayoutDestination as D
 use kesh_db::repositories::{bank_accounts, provider_review as reads};
 use kesh_reconciliation::provider_review::{EntryKind, Proposal, ProviderKind, Review};
 use kesh_reconciliation::stripe::{
-    FAILED_PAYOUT_ALREADY_POSTED, KIND_PAYOUT, PAYOUT_ACCOUNT_NOT_CONFIGURED, PAYOUT_CATEGORY,
-    PROVIDER, PayoutDestination, PayoutVerdict, SPEC, StripeReviewInput, StripeReviewProposal,
-    classify, complete_review, judge_payout, payout_lines, posted_payouts,
+    KIND_PAYOUT, PAYOUT_ACCOUNT_NOT_CONFIGURED, PAYOUT_CATEGORY, PayoutDestination, PayoutVerdict,
+    SPEC, StripeReviewInput, StripeReviewProposal, classify, complete_review, judge_payout,
+    payout_lines,
 };
 use serde::Deserialize;
 use sqlx::MySql;
@@ -118,40 +118,6 @@ fn destination_refusal(
     }
 }
 
-/// Les versements `payout_ids` **déjà écrits** : identifiant → écriture
-/// vivante qui le porte en mot entier, la plus ancienne (correctif M2 de la
-/// revue de la PR de l'Epic 40). Les écritures se lisent par
-/// [`reads::live_entries_mentioning`] (ni contre-passées, ni contre-passation,
-/// ni pointées par une transaction d'un compte Stripe — celles des frais, qui
-/// portent aussi le `po_…`) ; le mot entier se juge par [`posted_payouts`].
-/// **Seule** lecture de la règle : la revue ([`load_review`]) et le
-/// rejugement de l'acceptation ([`accept_payout`]) l'appellent.
-///
-/// ⚠️ Lien **textuel**, faute de lien structuré : une écriture ne garde le
-/// versement que par la transaction qui la pointe (`matched_entry_id`), et
-/// c'est précisément ce lien que l'annulation du côté Stripe retire ; reste
-/// le libellé, que l'acceptation écrit depuis celui de la transaction (« …
-/// po_… », [`kesh_reconciliation::stripe::entry_label`]). Une écriture saisie
-/// à la main qui cite le versement compte aussi : le versement passe alors à
-/// examiner, jamais écrit deux fois.
-async fn already_posted(
-    conn: &mut sqlx::MySqlConnection,
-    company_id: i64,
-    payout_ids: &[String],
-) -> Result<HashMap<String, i64>, DbError> {
-    // Un identifiant vide se trouverait dans tout libellé : écarté.
-    let payout_ids: Vec<String> = payout_ids
-        .iter()
-        .filter(|p| !p.trim().is_empty())
-        .cloned()
-        .collect();
-    if payout_ids.is_empty() {
-        return Ok(HashMap::new());
-    }
-    let entries = reads::live_entries_mentioning(conn, company_id, &payout_ids, PROVIDER).await?;
-    Ok(posted_payouts(&payout_ids, &entries))
-}
-
 /// Les lectures et la revue Stripe, dans la transaction de lecture.
 async fn load_review(
     tx: &mut sqlx::Transaction<'_, MySql>,
@@ -183,7 +149,6 @@ async fn load_review(
         .collect();
     let payout_candidates =
         reads::transactions_of_groups(tx, company_id, &own_ids, &payout_ids).await?;
-    let posted = already_posted(tx, company_id, &payout_ids).await?;
 
     // Les comptes de versement réglés, et ceux qui sont utilisables.
     let configured: HashMap<i64, i64> = loaded
@@ -253,7 +218,6 @@ async fn load_review(
             configured_destinations: &configured,
             destination_refusals: &destination_refusals,
             unreceived_payouts: &unreceived,
-            posted_payouts: &posted,
         },
     ))
 }
@@ -376,10 +340,7 @@ impl EngineProposal for StripeProposal {
 }
 
 /// `payout` (AC-4 d) : le versement rejugé sous les verrous — pending, genre
-/// versement, **jamais écrit** (sinon `STRIPE_PAYOUT_ALREADY_POSTED`, `details:
-/// { payoutId, journalEntryId }`, sans rien écrire : la règle de la revue,
-/// [`already_posted`], lue sous les verrous des comptes du lot mais par une
-/// lecture non verrouillante des écritures), compte de versement réglé, **verrouillé** pour le lot (lu au
+/// versement, compte de versement réglé, **verrouillé** pour le lot (lu au
 /// pré-vol) et égal à celui que la revue a montré s'il est donné, sinon périmé
 /// (`provider_settings_changed`) ; même jugement que la revue
 /// ([`judge_payout`], lignes relues sous les verrous : retour de versement,
@@ -411,23 +372,6 @@ async fn accept_payout(
 ) -> Result<ProviderAccepted, Refusal> {
     let id = bank_transaction_id;
     let r = rejudge(tx, ctx, id, |k| k == ProviderKind::Specific(KIND_PAYOUT)).await?;
-    let payout_id = r.transaction.transaction_id.clone().unwrap_or_default();
-    // Déjà écrit (correctif M2) : la règle de la revue, rejugée sous les
-    // verrous ; refus sans rien écrire.
-    if let Some(entry_id) = already_posted(tx, ctx.company_id, std::slice::from_ref(&payout_id))
-        .await
-        .map_err(|e| db_refusal(id, e))?
-        .get(&payout_id)
-    {
-        return Err(Refusal::Failed(FailedProposal {
-            bank_transaction_id: id,
-            error_code: FAILED_PAYOUT_ALREADY_POSTED.to_string(),
-            details: Some(serde_json::json!({
-                "payoutId": payout_id,
-                "journalEntryId": entry_id,
-            })),
-        }));
-    }
     let configured = r.balance.account.provider_settings.payout_bank_account_id;
     let Some(destination_id) = configured.filter(|d| ctx.locked_accounts.contains(d)) else {
         return Err(stale(id, "provider_settings_changed"));
@@ -435,6 +379,7 @@ async fn accept_payout(
     if claimed_destination.is_some_and(|c| c != destination_id) {
         return Err(stale(id, "provider_settings_changed"));
     }
+    let payout_id = r.transaction.transaction_id.clone().unwrap_or_default();
     let candidates =
         reads::transactions_of_groups(tx, ctx.company_id, &[r.balance.account.id], &[payout_id])
             .await

@@ -1209,10 +1209,7 @@ const ATTENDU = {
 	// Story 40-9 (option « Destination actuelle (introuvable) » du compte de versement) :
 	// **3742** (« expected 3742 to be 3741 »), relevé par la garde ; au diff : 1 site ajouté,
 	// 0 retiré.
-	// Correctif M2 de la revue de la PR de l'Epic 40 (versement Stripe déjà écrit : motif
-	// `payout_already_posted` et refus `STRIPE_PAYOUT_ALREADY_POSTED`) : **3744** (« expected 3744
-	// to be 3742 »), relevé par la garde ; au diff : 2 sites ajoutés, 0 retiré.
-	sitesTotal: 3744,
+	sitesTotal: 3742,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

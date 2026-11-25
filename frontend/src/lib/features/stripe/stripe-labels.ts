@@ -187,7 +187,6 @@ export const STRIPE_TO_REVIEW_CODES = [
 	'ambiguous_sale',
 	'fee_account_missing',
 	'payout_account_missing',
-	'payout_already_posted',
 	'payout_reversal',
 	'payout_not_negative',
 	'refund',
@@ -258,11 +257,6 @@ export function stripeToReviewLabel(f: ProviderFinding): string {
 				'stripe-review-payout-not-negative',
 				"Versement de montant positif ou nul : passez l'écriture à la main, puis rattachez la transaction.",
 			);
-		case 'payout_already_posted':
-			return i18nMsg(
-				'stripe-review-payout-already-posted',
-				"Versement déjà écrit : une écriture porte déjà son identifiant. Il n'est plus proposé (il serait écrit deux fois) : rattachez-le à cette écriture.",
-			);
 		case 'payout_account_missing':
 			return i18nMsg(
 				'stripe-review-payout-account-missing',
@@ -277,16 +271,8 @@ export function stripeToReviewLabel(f: ProviderFinding): string {
  * Libellé d'un refus de `POST /stripe/accept`. `STRIPE_PAYOUT_ACCOUNT_INVALID` : le compte de
  * versement réglé, rejugé à l'acceptation, est devenu un compte Stripe ou PayPal, ou d'une autre
  * devise que le solde (même règle et même texte qu'au réglage du compte Stripe).
- * `STRIPE_PAYOUT_ALREADY_POSTED` : une écriture porte déjà l'identifiant du versement ; rien
- * n'est écrit (correctif M2 de la revue de la PR de l'Epic 40).
  */
 export function stripeFailedLabel(code: string, details?: unknown): string {
-	if (code === 'STRIPE_PAYOUT_ALREADY_POSTED') {
-		return i18nMsg(
-			'stripe-failed-payout-already-posted',
-			"Versement déjà écrit : une écriture porte déjà son identifiant. Rien n'a été écrit ; rattachez le versement à cette écriture.",
-		);
-	}
 	if (code === 'STRIPE_PAYOUT_ACCOUNT_INVALID') {
 		return i18nMsg(
 			'error-stripe-payout-account-invalid',
