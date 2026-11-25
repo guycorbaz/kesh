@@ -164,6 +164,7 @@ async fn create_draft(
         payment_terms: None,
         lines: vec![NewInvoiceLine {
             revenue_account_id: None,
+            line_type: kesh_db::entities::LineType::Priced,
             description: "Prestation".into(),
             quantity: dec!(1),
             unit_price: dec!(100.00),

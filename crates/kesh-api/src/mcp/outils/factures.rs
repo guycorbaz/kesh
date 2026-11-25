@@ -243,6 +243,9 @@ sortie! {
         taux_tva: Montant,
         total: Montant,
         compte_produit_id: Option<i64>,
+        // Story 49-1a (D14) : présent sur chaque ligne (`priced`, `comment`,
+        // `heading`) — un ajout de clé, non cassant.
+        type_ligne: kesh_db::entities::LineType,
     }
 }
 
@@ -493,6 +496,7 @@ impl McpTool for KeshFacture {
                         taux_tva: Montant(l.vat_rate),
                         total: Montant(l.line_total),
                         compte_produit_id: l.revenue_account_id,
+                        type_ligne: l.line_type,
                     })
                     .collect(),
             };

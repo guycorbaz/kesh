@@ -488,6 +488,20 @@ pub enum AppError {
     #[error("Facture trop de lignes pour PDF : {0}")]
     InvoiceTooManyLinesForPdf(usize),
 
+    /// Story 49-4a (#1364, D3) — refus **à la validation** d'un brouillon dont les lignes ne
+    /// tiendraient pas sur la page de son PDF (`400 INVOICE_LINES_DO_NOT_FIT_PDF`), quand il
+    /// se corrige encore. Distinct d'[`AppError::InvoiceTooManyLinesForPdf`], le refus **au
+    /// rendu**, dont la phrase compte les lignes de la pièce : celui-ci dit les lignes
+    /// demandées (`besoin`) et offertes (`place`) — imprimées pour le contrôle géométrique,
+    /// de la pièce pour le pré-filtre `MAX_LINES_PER_PDF`.
+    #[error("Lignes hors de la page du PDF : {besoin} demandées, {place} offertes")]
+    InvoiceLinesDoNotFitPdf {
+        /// Lignes demandées.
+        besoin: usize,
+        /// Lignes offertes.
+        place: usize,
+    },
+
     /// En-tête du PDF (émetteur + destinataire) débordant sur le tableau des
     /// lignes — Story 16-3a (#151).
     ///
@@ -2521,6 +2535,19 @@ pub(crate) fn message_trop_de_lignes_pdf(n: usize) -> String {
     t_args("error-invoice-too-many-lines-for-pdf", &fallback, &args)
 }
 
+/// La phrase du refus [`AppError::InvoiceLinesDoNotFitPdf`] (Story 49-4a, D3), dans la langue
+/// de l'installation : ce qui est possible sur un brouillon. Elle ne dit pas « raccourcissez
+/// des désignations » : une désignation s'imprime sur une ligne, la raccourcir ne libère rien.
+pub(crate) fn message_lignes_hors_page(besoin: usize, place: usize) -> String {
+    let fallback = format!(
+        "Les lignes de cette facture ne tiennent pas sur la page de son PDF : elles demandent {besoin} lignes, la page en offre {place}. Retirez des lignes, raccourcissez les commentaires, ou répartissez les lignes sur deux factures. La facture reste un brouillon."
+    );
+    let mut args = FluentArgs::new();
+    args.set("besoin", besoin as i64);
+    args.set("place", place as i64);
+    t_args("error-invoice-lines-do-not-fit-pdf", &fallback, &args)
+}
+
 /// La phrase du refus [`AppError::InvoicePdfHeaderOverflow`] — même rôle que
 /// [`message_trop_de_lignes_pdf`] : seule source, pour la réponse
 /// `400 INVOICE_PDF_HEADER_OVERFLOW` et pour le lot de rappels (Story 35-2b).
@@ -3080,6 +3107,11 @@ impl IntoResponse for AppError {
                 StatusCode::BAD_REQUEST,
                 "INVOICE_TOO_MANY_LINES_FOR_PDF",
                 &message_trop_de_lignes_pdf(n),
+            ),
+            AppError::InvoiceLinesDoNotFitPdf { besoin, place } => build_response(
+                StatusCode::BAD_REQUEST,
+                "INVOICE_LINES_DO_NOT_FIT_PDF",
+                &message_lignes_hors_page(besoin, place),
             ),
             AppError::InvoicePdfHeaderOverflow => build_response(
                 StatusCode::BAD_REQUEST,
@@ -6189,6 +6221,28 @@ impl IntoResponse for AppError {
                     });
                     (StatusCode::CONFLICT, Json(body)).into_response()
                 }
+                // Story 48-12a (#975, D1, D6bis, D7) — le refus d'une facture
+                // fournisseur en double. `details.confirmable` dit si
+                // `confirmNotDuplicate: true` le lève : jamais la règle 1 à la
+                // saisie, toujours la règle 2, et les deux à la dévalidation d'une
+                // annulée — table unique : `DuplicateRule::lifted_by_confirmation`,
+                // relue par `supplier_invoice_duplicate_response`. Un seul texte
+                // par refus, partagé avec l'écran (48-12b) ; la dévalidation a le
+                // sien, sans contournement ni promesse.
+                DbError::SupplierInvoiceDuplicate { existing, gesture } => {
+                    supplier_invoice_duplicate_response(
+                        &existing,
+                        gesture,
+                        kesh_db::repositories::supplier_invoices::DuplicateRule::SameNumberSameYear,
+                    )
+                }
+                DbError::SupplierInvoiceProbableDuplicate { existing, gesture } => {
+                    supplier_invoice_duplicate_response(
+                        &existing,
+                        gesture,
+                        kesh_db::repositories::supplier_invoices::DuplicateRule::SameDateSameTotal,
+                    )
+                }
                 // ⚠️ **400** qui NOMME les comptes : raisons au doc-comment de
                 // `archived_accounts_response`.
                 DbError::ReversalAccountsArchived(archived) => archived_accounts_response(
@@ -6819,6 +6873,73 @@ fn supplier_invoice_cancel_blocked_text(
     }
 }
 
+/// Le texte FR (repli) du refus de la **règle 1** à la saisie — clé
+/// `error-supplier-invoice-duplicate` (Story 48-12a, D7) : d'abord « si c'est la
+/// même facture », puis le contournement « 15-b ». Le même texte s'affiche à
+/// l'écran (48-12b).
+const SUPPLIER_INVOICE_DUPLICATE_FR: &str = "Une facture de ce fournisseur porte déjà ce numéro pour la même année. Si c’est la même facture, ne l’enregistrez pas une seconde fois. Si le fournisseur a recommencé sa numérotation en cours d’année, ajoutez un caractère au numéro, par exemple « 15-b ».";
+
+/// Le texte FR (repli) du refus de la **règle 2** à la saisie — clé
+/// `error-supplier-invoice-probable-duplicate` (Story 48-12a, D7).
+const SUPPLIER_INVOICE_PROBABLE_DUPLICATE_FR: &str = "Une facture de ce fournisseur porte déjà la même date et le même montant. Si c’est la même facture, ne l’enregistrez pas une seconde fois ; sinon, confirmez que ce n’est pas un doublon.";
+
+/// Le texte FR (repli) du refus de doublon à la **dévalidation d'une annulée**,
+/// pour les deux règles — clé `error-supplier-invoice-duplicate-unvalidate`
+/// (Story 48-12a, D6bis, D7) : sans contournement, sans promesse de
+/// suppression.
+const SUPPLIER_INVOICE_DUPLICATE_UNVALIDATE_FR: &str = "Une facture équivalente non annulée existe. Repasser celle-ci en brouillon en ferait un doublon : ne le faites que pour la retirer ou la corriger ensuite.";
+
+/// La réponse **409** d'un refus de doublon de facture fournisseur (Story
+/// 48-12a, #975, D1, D7) : `details : { supplierInvoiceId, internalNumber,
+/// status, confirmable }`, la facture **existante** (à la dévalidation, la
+/// facture active qui s'oppose). `confirmable` se **relit** de
+/// `DuplicateRule::lifted_by_confirmation(gesture)` (Story 50-solde, #1492 :
+/// la règle 2 partout, les deux règles à la dévalidation d'une annulée, D6bis) —
+/// cette fonction ne tient aucune table ; le code d'erreur se déduit de la règle.
+/// C'est sur `confirmable`, non sur le code, que l'écran décide d'offrir un
+/// bouton. Le message ne porte pas le numéro de la facture existante : il est
+/// dans `details`.
+fn supplier_invoice_duplicate_response(
+    existing: &kesh_db::errors::ExistingSupplierInvoice,
+    gesture: kesh_db::errors::DuplicateGesture,
+    rule: kesh_db::repositories::supplier_invoices::DuplicateRule,
+) -> Response {
+    use kesh_db::errors::DuplicateGesture;
+    use kesh_db::repositories::supplier_invoices::DuplicateRule;
+    let code = match rule {
+        DuplicateRule::SameNumberSameYear => "SUPPLIER_INVOICE_DUPLICATE",
+        DuplicateRule::SameDateSameTotal => "SUPPLIER_INVOICE_PROBABLE_DUPLICATE",
+    };
+    let confirmable = rule.lifted_by_confirmation(gesture);
+    let message = match (gesture, rule) {
+        (DuplicateGesture::Unvalidation, _) => t(
+            "error-supplier-invoice-duplicate-unvalidate",
+            SUPPLIER_INVOICE_DUPLICATE_UNVALIDATE_FR,
+        ),
+        (DuplicateGesture::Entry, DuplicateRule::SameNumberSameYear) => t(
+            "error-supplier-invoice-duplicate",
+            SUPPLIER_INVOICE_DUPLICATE_FR,
+        ),
+        (DuplicateGesture::Entry, DuplicateRule::SameDateSameTotal) => t(
+            "error-supplier-invoice-probable-duplicate",
+            SUPPLIER_INVOICE_PROBABLE_DUPLICATE_FR,
+        ),
+    };
+    let body = serde_json::json!({
+        "error": {
+            "code": code,
+            "message": message,
+            "details": {
+                "supplierInvoiceId": existing.id,
+                "internalNumber": existing.internal_number,
+                "status": existing.status,
+                "confirmable": confirmable,
+            },
+        }
+    });
+    (StatusCode::CONFLICT, Json(body)).into_response()
+}
+
 /// Le message d'un motif qui refuse le **repassage en brouillon d'une facture
 /// fournisseur** (« dévalidation » ; Story v017-4a, #849, AC-11 ; Story
 /// v0172-annulees, #868, AC-8) : il dit **quoi faire d'abord**, et nomme
@@ -7139,6 +7260,144 @@ mod tests {
         let bytes = body.collect().await.expect("body collect").to_bytes();
         let json: serde_json::Value = serde_json::from_slice(&bytes).expect("body should be JSON");
         (parts.status, json)
+    }
+
+    /// Story 50-solde (#1492, AC-2) — le refus de doublon que la couche base
+    /// rend pour `(règle, geste)`, sous la variante de `DbError` que ce couple
+    /// produit (`guard_duplicates_in_tx`).
+    fn duplicate_refusal(
+        rule: kesh_db::repositories::supplier_invoices::DuplicateRule,
+        gesture: kesh_db::errors::DuplicateGesture,
+    ) -> AppError {
+        use kesh_db::repositories::supplier_invoices::DuplicateRule;
+        let existing = kesh_db::errors::ExistingSupplierInvoice {
+            id: 7,
+            internal_number: Some("FF-2026-0007".into()),
+            status: "open".into(),
+        };
+        AppError::Database(match rule {
+            DuplicateRule::SameNumberSameYear => {
+                DbError::SupplierInvoiceDuplicate { existing, gesture }
+            }
+            DuplicateRule::SameDateSameTotal => {
+                DbError::SupplierInvoiceProbableDuplicate { existing, gesture }
+            }
+        })
+    }
+
+    /// Story 50-solde (#1492, AC-2) — (règle 1, saisie) : code, `confirmable`
+    /// relu de la table puis littéral, texte. Les assertions s'enchaînent dans
+    /// cet ordre : l'échec nomme la première qui tombe.
+    #[tokio::test]
+    async fn duplicate_response_regle1_saisie() {
+        use kesh_db::errors::DuplicateGesture;
+        use kesh_db::repositories::supplier_invoices::DuplicateRule;
+        let rule = DuplicateRule::SameNumberSameYear;
+        let gesture = DuplicateGesture::Entry;
+        let (status, body) = response_body(duplicate_refusal(rule, gesture).into_response()).await;
+        assert_eq!(status, StatusCode::CONFLICT, "code (règle 1, Entry)");
+        assert_eq!(
+            body["error"]["code"], "SUPPLIER_INVOICE_DUPLICATE",
+            "code (règle 1, Entry)"
+        );
+        assert_eq!(
+            body["error"]["details"]["confirmable"],
+            rule.lifted_by_confirmation(gesture),
+            "relue (règle 1, Entry)"
+        );
+        assert_eq!(
+            body["error"]["details"]["confirmable"], false,
+            "littérale (règle 1, Entry)"
+        );
+        assert_eq!(
+            body["error"]["message"], SUPPLIER_INVOICE_DUPLICATE_FR,
+            "texte (règle 1, Entry)"
+        );
+    }
+
+    /// Story 50-solde (#1492, AC-2) — (règle 2, saisie).
+    #[tokio::test]
+    async fn duplicate_response_regle2_saisie() {
+        use kesh_db::errors::DuplicateGesture;
+        use kesh_db::repositories::supplier_invoices::DuplicateRule;
+        let rule = DuplicateRule::SameDateSameTotal;
+        let gesture = DuplicateGesture::Entry;
+        let (status, body) = response_body(duplicate_refusal(rule, gesture).into_response()).await;
+        assert_eq!(status, StatusCode::CONFLICT, "code (règle 2, Entry)");
+        assert_eq!(
+            body["error"]["code"], "SUPPLIER_INVOICE_PROBABLE_DUPLICATE",
+            "code (règle 2, Entry)"
+        );
+        assert_eq!(
+            body["error"]["details"]["confirmable"],
+            rule.lifted_by_confirmation(gesture),
+            "relue (règle 2, Entry)"
+        );
+        assert_eq!(
+            body["error"]["details"]["confirmable"], true,
+            "littérale (règle 2, Entry)"
+        );
+        assert_eq!(
+            body["error"]["message"], SUPPLIER_INVOICE_PROBABLE_DUPLICATE_FR,
+            "texte (règle 2, Entry)"
+        );
+    }
+
+    /// Story 50-solde (#1492, AC-2) — (règle 1, dévalidation d'une annulée).
+    #[tokio::test]
+    async fn duplicate_response_regle1_devalidation() {
+        use kesh_db::errors::DuplicateGesture;
+        use kesh_db::repositories::supplier_invoices::DuplicateRule;
+        let rule = DuplicateRule::SameNumberSameYear;
+        let gesture = DuplicateGesture::Unvalidation;
+        let (status, body) = response_body(duplicate_refusal(rule, gesture).into_response()).await;
+        assert_eq!(status, StatusCode::CONFLICT, "code (règle 1, Unvalidation)");
+        assert_eq!(
+            body["error"]["code"], "SUPPLIER_INVOICE_DUPLICATE",
+            "code (règle 1, Unvalidation)"
+        );
+        assert_eq!(
+            body["error"]["details"]["confirmable"],
+            rule.lifted_by_confirmation(gesture),
+            "relue (règle 1, Unvalidation)"
+        );
+        assert_eq!(
+            body["error"]["details"]["confirmable"], true,
+            "littérale (règle 1, Unvalidation)"
+        );
+        assert_eq!(
+            body["error"]["message"], SUPPLIER_INVOICE_DUPLICATE_UNVALIDATE_FR,
+            "texte (règle 1, Unvalidation)"
+        );
+    }
+
+    /// Story 50-solde (#1492, AC-2) — (règle 2, dévalidation d'une annulée) :
+    /// la case qu'aucun test HTTP ne tient.
+    #[tokio::test]
+    async fn duplicate_response_regle2_devalidation() {
+        use kesh_db::errors::DuplicateGesture;
+        use kesh_db::repositories::supplier_invoices::DuplicateRule;
+        let rule = DuplicateRule::SameDateSameTotal;
+        let gesture = DuplicateGesture::Unvalidation;
+        let (status, body) = response_body(duplicate_refusal(rule, gesture).into_response()).await;
+        assert_eq!(status, StatusCode::CONFLICT, "code (règle 2, Unvalidation)");
+        assert_eq!(
+            body["error"]["code"], "SUPPLIER_INVOICE_PROBABLE_DUPLICATE",
+            "code (règle 2, Unvalidation)"
+        );
+        assert_eq!(
+            body["error"]["details"]["confirmable"],
+            rule.lifted_by_confirmation(gesture),
+            "relue (règle 2, Unvalidation)"
+        );
+        assert_eq!(
+            body["error"]["details"]["confirmable"], true,
+            "littérale (règle 2, Unvalidation)"
+        );
+        assert_eq!(
+            body["error"]["message"], SUPPLIER_INVOICE_DUPLICATE_UNVALIDATE_FR,
+            "texte (règle 2, Unvalidation)"
+        );
     }
 
     /// Story 15-13b (#576, test 15) — l'échec antérieur à la sauvegarde rend

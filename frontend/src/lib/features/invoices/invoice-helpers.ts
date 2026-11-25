@@ -7,7 +7,8 @@
 
 import Big from 'big.js';
 import { formatSwissAmount } from '$lib/features/journal-entries/balance';
-import type { CreateInvoiceLineRequest } from './invoices.types';
+import type { InvoiceLineType } from './invoices.types';
+import { estChiffree } from './invoice-line-type';
 
 // Mode d'arrondi local, appliqué par appel à `.round(dp, mode)` plutôt que via
 // `Big.RM` global, pour ne pas affecter d'autres features (journal-entries,
@@ -35,12 +36,18 @@ export function computeLineTotal(qty: string, unitPrice: string): string {
 }
 
 /**
- * Somme `line_total` pour toutes les lignes, arrondie à 4 décimales.
+ * Somme `line_total` pour toutes les lignes **chiffrées**, arrondie à 4
+ * décimales. Une ligne de texte (`comment`, `heading`) n'entre jamais dans le
+ * total, quels que soient ses champs (Story 49-1c, D6) ; une ligne sans
+ * `lineType` est chiffrée (`estChiffree`).
  */
-export function computeInvoiceTotal(lines: Pick<CreateInvoiceLineRequest, 'quantity' | 'unitPrice'>[]): string {
+export function computeInvoiceTotal(
+	lines: { lineType?: InvoiceLineType; quantity: string; unitPrice: string }[],
+): string {
 	// Arrondit chaque line_total à 4 décimales avant sommation — miroir du
 	// backend (`compute_line_total` applique `.round_dp(4)` avant Σ).
 	return lines
+		.filter(estChiffree)
 		.reduce((acc, l) => {
 			try {
 				return acc.plus(new Big(l.quantity).times(l.unitPrice).round(4, ROUND_HALF_UP));

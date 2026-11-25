@@ -193,6 +193,11 @@ export function toReviewReasonLabel(reason: string): string {
 			);
 		case 'no_rule':
 			return i18nMsg('paypal-to-review-no-rule', 'Aucune règle');
+		case 'already_posted':
+			return i18nMsg(
+				'paypal-to-review-already-posted',
+				'Déjà comptabilisée : l’écriture existe et l’autre côté y est rattaché. Rattachez cette transaction à l’écriture, ne l’écrivez pas une seconde fois.',
+			);
 		default:
 			return reason;
 	}

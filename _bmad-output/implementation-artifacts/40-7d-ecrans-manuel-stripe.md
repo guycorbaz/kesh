@@ -182,7 +182,8 @@ Stripe » du manuel utilisateur et de `docs/api-external.md`.
   0 HIGH, 0 MEDIUM, 3 LOW ; **boucle close** (aucun finding au-dessus de LOW). Les trois LOW touchent la production
   (`bank-accounts/+page.svelte`) et sortent du périmètre : versés à la liste d'issues à ouvrir de l'epic (destination
   introuvable affichée en blanc, `bug` P4 ; test du repli de `payoutPool`, `technical-debt` P4 ; destination archivée
-  non rendue au retour au compte du plan d'origine, `enhancement` P4). **Synthèse de la boucle de revue de code** :
+  non rendue au retour au compte du plan d'origine, `enhancement` P4 — #1540, annoté le 2026-11-25 ; les deux premiers
+  corrigés par la 40-9, C5). **Synthèse de la boucle de revue de code** :
   P1 (complète) 0/0/3 MEDIUM/9 LOW → P2 (ciblée) 0/0/3 MEDIUM/4 LOW → P3 (ciblée) 0/1 HIGH/1 MEDIUM/4 LOW → P4 (ciblée)
   0/0/0/3 LOW. La P3 a trouvé un HIGH **introduit par la remédiation de la P2** (destination vidée à l'ouverture), motif
   « la sévérité se déplace vers ce qu'on vient d'écrire ». Passes en contexte frais, une lentille chacune, lancées par
@@ -333,7 +334,8 @@ des contrôles de clôture retiré (`kesh-gate-logs/s40-7d/mutations.log`).
   réelles des fixtures remplacées par « Banque Alpha » / « Banque Zeta » dans le test de Stripe ; les mêmes
   fixtures de `bank-accounts-page-paypal.test.ts` sont de la 38-11d, laissées), L9 (`api-external.md` : « ligne en
   devise » dit `foreign { amount, … }`, pour Stripe et PayPal). L1, L3, L7, L8 : entrées de
-  `kesh-gate-logs/epic-38-kiss/issues-a-ouvrir.md`.
+  `kesh-gate-logs/epic-38-kiss/issues-a-ouvrir.md`. *(Annoté le 2026-11-25 : L1 → #1535, L3 → #1536, L8 → #1537 ; L7
+  corrigé par la 40-9, C4.)*
 - Compteur : `sitesTotal` 3689 → 3692 (deux badges, un texte), relevé par la garde.
 - **Mutations** (copie hors dépôt, base verte d'abord, `kesh-gate-logs/s40-7d/mutations-p1.log`) : 7/7 tuées sur une
   assertion nommée — garde `keepId` retirée, effet de vidage retiré, `FX_RATE_INVALID` retiré, `NOT_FOUND` retiré,

@@ -372,6 +372,7 @@ describe('wise-labels — les listes contre la source Rust', () => {
 	];
 	const ATTENDUS_ECARTS = ['balance_gap', 'conversion_half_missing', 'fee_without_origin'];
 	const ATTENDUS_MOTIFS = [
+		'already_posted',
 		'ambiguous_link',
 		'card_group_no_rule',
 		'card_group_partly_reconciled',

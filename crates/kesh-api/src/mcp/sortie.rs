@@ -140,6 +140,9 @@ champ_enum!(
     // Story 37-3a (AC-8) : la provenance du cours d'une ligne en devise, sans
     // champ, `Serialize` dérivé en minuscules (`afc`, `manual`, `revaluation`).
     kesh_db::entities::RateProvenance,
+    // Story 49-1a (AC13 b) : le type d'une ligne de facture, sans champ,
+    // `Serialize` dérivé en minuscules (`priced`, `comment`, `heading`).
+    kesh_db::entities::LineType,
     // Story 32-9b : les énumérations d'un contact, sans champ, `Serialize`
     // dérivé (`entities/contact.rs:53`, `:110` ; `company.rs:73-74`).
     kesh_db::entities::contact::ContactType,

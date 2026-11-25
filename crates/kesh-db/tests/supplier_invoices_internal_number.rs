@@ -95,10 +95,21 @@ impl Decor {
         }
     }
 
+    /// Story 48-12a (#975) — les brouillons de ce décor n'ont pas de numéro, et
+    /// partagent date et montant : doublons probables (règle 2), créés **confirmés**.
+    async fn creer(&self, pool: &MySqlPool, new: NewSupplierInvoice) -> SupplierInvoiceWithLines {
+        supplier_invoices::create_draft_with_policy(
+            pool,
+            new,
+            self.user(),
+            supplier_invoices::DuplicatePolicy::Confirmed,
+        )
+        .await
+        .expect("brouillon")
+    }
+
     async fn brouillon(&self, pool: &MySqlPool, date: NaiveDate) -> SupplierInvoiceWithLines {
-        supplier_invoices::create_draft(pool, self.nouvelle(date, None), self.user())
-            .await
-            .expect("brouillon")
+        self.creer(pool, self.nouvelle(date, None)).await
     }
 
     /// Valide l'en-tête `d` ; rend la vue de la facture validée (Story 34-8 : la
@@ -593,8 +604,17 @@ async fn a_draft_creation_waits_for_a_validation_without_deadlock(pool: MySqlPoo
     .expect("validation en cours");
 
     let (pool2, nouvelle, user) = (pool.clone(), d.nouvelle(dans_a(), None), d.user());
-    let creation =
-        tokio::spawn(async move { supplier_invoices::create_draft(&pool2, nouvelle, user).await });
+    // Story 48-12a : sans numéro, même date et même montant que la facture validée en
+    // cours — un doublon probable, créé confirmé.
+    let creation = tokio::spawn(async move {
+        supplier_invoices::create_draft_with_policy(
+            &pool2,
+            nouvelle,
+            user,
+            supplier_invoices::DuplicatePolicy::Confirmed,
+        )
+        .await
+    });
     let vue = attendre_une_requete_en_cours(&pool, &["INSERT INTO supplier_invoices"], || {
         creation.is_finished()
     })
@@ -912,9 +932,8 @@ async fn purchase_and_settlement_labels_carry_the_internal_number(pool: MySqlPoo
         (None, "FF-2026-002"),
         (Some("   "), "FF-2026-003"),
     ] {
-        let b = supplier_invoices::create_draft(&pool, d.nouvelle(dans_a(), numero), d.user())
-            .await
-            .unwrap();
+        // Story 48-12a : sans numéro, même date et même montant — confirmé (règle 2).
+        let b = d.creer(&pool, d.nouvelle(dans_a(), numero)).await;
         let v = d.valider(&pool, &b.invoice).await;
         assert_eq!(
             libelle_ecriture(&pool, v.invoice.purchase_journal_entry_id.unwrap()).await,
@@ -948,9 +967,8 @@ async fn settlement_label_falls_back_without_internal_number(pool: MySqlPool) {
         account_id: d.seeded.accounts["1000"],
     };
     for (numero, attendu) in [(Some("ABC-123"), Some("ABC-123")), (None, None)] {
-        let b = supplier_invoices::create_draft(&pool, d.nouvelle(dans_a(), numero), d.user())
-            .await
-            .unwrap();
+        // Story 48-12a : sans numéro, même date et même montant — confirmé (règle 2).
+        let b = d.creer(&pool, d.nouvelle(dans_a(), numero)).await;
         let v = d.valider(&pool, &b.invoice).await;
         sqlx::query("UPDATE supplier_invoices SET internal_number = NULL WHERE id = ?")
             .bind(v.invoice.id)
@@ -1089,9 +1107,8 @@ async fn the_lettering_audit_carries_the_long_form(pool: MySqlPool) {
         (Some("ABC-123"), "FF-2026-001 (ABC-123)"),
         (None, "FF-2026-002"),
     ] {
-        let b = supplier_invoices::create_draft(&pool, d.nouvelle(dans_a(), numero), d.user())
-            .await
-            .unwrap();
+        // Story 48-12a : sans numéro, même date et même montant — confirmé (règle 2).
+        let b = d.creer(&pool, d.nouvelle(dans_a(), numero)).await;
         let v = d.valider(&pool, &b.invoice).await;
         supplier_invoices::pay(
             &pool,

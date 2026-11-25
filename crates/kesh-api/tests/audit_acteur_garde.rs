@@ -361,13 +361,19 @@ const SITES: &[(&str, &str, Motif, usize, Raison, &str)] = &[
         "`cancel_supplier_invoice` (lib.rs:683), lettrage `reversal`"),
     ("crates/kesh-db/src/repositories/supplier_invoices.rs", "cancel_in_tx", Utilisateur, 1, AConvertir,
         "`cancel_supplier_invoice` (lib.rs:683), la contre-passation de l'achat — 35-8a2"),
-    ("crates/kesh-db/src/repositories/supplier_invoices.rs", "create_draft_in_tx", User, 1, AConvertir,
-        "`create_supplier_invoice` (lib.rs:661)"),
+    // Story 48-12a (#975) : le corps de `create_draft_in_tx` est passé dans
+    // `create_draft_in_tx_with_policy` ; deux traces, `supplier_invoice.created` et
+    // `supplier_invoice.duplicate_confirmed` (règle 2 confirmée), au nom de
+    // l'utilisateur de la clé pour une intégration (dette connue).
+    ("crates/kesh-db/src/repositories/supplier_invoices.rs", "create_draft_in_tx_with_policy", User, 2, AConvertir,
+        "`create_supplier_invoice` (lib.rs:661), `complete_import`"),
     ("crates/kesh-db/src/repositories/supplier_invoices.rs", "delete_draft_in_tx", User, 2, AdminSansCle,
         "`delete_supplier_invoice` (lib.rs:330), `require_not_pat`"),
     ("crates/kesh-db/src/repositories/supplier_invoices.rs", "pay_in_tx", ApiKeyNone, 1, AConvertir,
         "`pay_supplier_invoice` (lib.rs:679)"),
-    ("crates/kesh-db/src/repositories/supplier_invoices.rs", "update_draft_in_tx", User, 1, AConvertir,
+    // Story 48-12a (#975) : le corps est passé dans `update_draft_in_tx_with_policy` ;
+    // `supplier_invoice.updated` et `supplier_invoice.duplicate_confirmed`.
+    ("crates/kesh-db/src/repositories/supplier_invoices.rs", "update_draft_in_tx_with_policy", User, 2, AConvertir,
         "`update_supplier_invoice` (lib.rs:667)"),
     ("crates/kesh-db/src/repositories/supplier_invoices.rs", "validate_in_tx", User, 1, AConvertir,
         "`validate_supplier_invoice` (lib.rs:671)"),

@@ -7,8 +7,9 @@
 	 * la route rend `actionLabel`, `entityTypeLabel` et le vocabulaire traduit
 	 * (Story 25-1c-a). Les dates filtrent sur des jours **de Zurich** (contrat de
 	 * la route depuis la Story 36-10, #1147) : le jour choisi part tel quel, la
-	 * route en tire les instants qui le bornent. Le tableau affiche l'heure du
-	 * **poste** ; l'export CSV, l'instant UTC.
+	 * route en tire les instants qui le bornent. Le tableau affiche l'heure de
+	 * **Zurich**, quel que soit le fuseau du poste (Story 50-6, #1511) ; l'export CSV,
+	 * l'instant UTC.
 	 */
 	import { onMount, untrack } from 'svelte';
 	import { page } from '$app/state';
@@ -17,6 +18,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { i18nLocale, i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import { isApiError } from '$lib/shared/utils/api-client';
+	import { formatInstant } from '$lib/features/reports/reports.api';
 	import { saisieDeFiltre, sortieDeFiltre } from '$lib/shared/utils/date-filtre';
 	import { notifyError } from '$lib/shared/utils/notify';
 	import {
@@ -61,10 +63,6 @@
 	let actionOptions = $derived(
 		toSelectOptions(vocabulary?.actions ?? [], i18nLocale(), action || undefined),
 	);
-	let dateFormat = $derived(
-		new Intl.DateTimeFormat(i18nLocale(), { dateStyle: 'medium', timeStyle: 'short' }),
-	);
-
 	/** La requête courante : les filtres affichés et la pagination. */
 	function buildQuery(): AuditLogQuery {
 		const q: AuditLogQuery = { offset, limit };
@@ -373,7 +371,9 @@
 						data-action={e.action}
 						data-entity-type={e.entityType}
 					>
-						<td class="py-2 whitespace-nowrap">{dateFormat.format(new Date(e.createdAt))}</td>
+						<td class="py-2 whitespace-nowrap" data-testid="audit-log-row-date">
+							{formatInstant(e.createdAt, 'dateHeure', i18nLocale()) ?? e.createdAt}
+						</td>
 						<td class="py-2">
 							{e.actorLabel}
 							{#if e.actorType === 'api_key'}

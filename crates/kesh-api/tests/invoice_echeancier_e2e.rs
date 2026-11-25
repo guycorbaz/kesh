@@ -177,6 +177,7 @@ async fn create_validated_invoice(
         payment_terms: None,
         lines: vec![NewInvoiceLine {
             revenue_account_id: None,
+            line_type: kesh_db::entities::LineType::Priced,
             description: "Stub".into(),
             quantity: dec!(1),
             unit_price: amount,
@@ -235,6 +236,7 @@ async fn list_due_dates_default_returns_only_unpaid_validated(pool: MySqlPool) {
             payment_terms: None,
             lines: vec![NewInvoiceLine {
                 revenue_account_id: None,
+                line_type: kesh_db::entities::LineType::Priced,
                 description: "Draft".into(),
                 quantity: dec!(1),
                 unit_price: dec!(50.00),
@@ -466,6 +468,7 @@ async fn settle_on_draft_invoice_returns_409(pool: MySqlPool) {
             project_id: None,
             lines: vec![NewInvoiceLine {
                 revenue_account_id: None,
+                line_type: kesh_db::entities::LineType::Priced,
                 description: "Brouillon".into(),
                 quantity: dec!(1),
                 unit_price: dec!(50.00),
@@ -1471,6 +1474,7 @@ async fn draft_123_44(pool: &MySqlPool) -> i64 {
             payment_terms: None,
             lines: vec![NewInvoiceLine {
                 revenue_account_id: None,
+                line_type: kesh_db::entities::LineType::Priced,
                 description: "Prestation".into(),
                 quantity: dec!(1),
                 unit_price: dec!(114.19),

@@ -56,6 +56,10 @@ error-supplier-invoice-unvalidate-blocked-paid-reconciled = This supplier invoic
 error-supplier-invoice-unvalidate-blocked-detached-payment = This invoice was cancelled while it was paid: its payment (entry no. { $entry } of { $entryDate }) remains in the general ledger. If this payment did not take place, reverse it first from its entry, then return the invoice to draft.
 error-supplier-invoice-unvalidate-blocked-detached-payment-reconciled = This invoice was cancelled while it was paid: its payment (entry no. { $entry } of { $entryDate }) is matched to the bank transaction of { $date }. If this payment did not take place, cancel this reconciliation first, from the bank import detail — it will reverse the payment —, then return the invoice to draft.
 error-supplier-invoice-due-before-invoice-date = The due date ({ $dueDate }) is before the invoice date ({ $invoiceDate }).
+# Story 48-12a (#975) — duplicate supplier invoice refused; one text per refusal, shared with the screen (48-12b).
+error-supplier-invoice-duplicate = An invoice from this supplier already has this number for the same year. If it is the same invoice, do not record it a second time. If the supplier restarted its numbering during the year, add a character to the number, for example “15-b”.
+error-supplier-invoice-probable-duplicate = An invoice from this supplier already has the same date and the same amount. If it is the same invoice, do not record it a second time; otherwise, confirm that it is not a duplicate.
+error-supplier-invoice-duplicate-unvalidate = An equivalent invoice that is not cancelled exists. Returning this one to draft would make a duplicate: only do it to remove or correct it afterwards.
 
 # Lettrage (Story 15-1a-i, #518)
 error-lettering-too-few-lines = A matching group brings together at least two distinct lines.
@@ -1825,8 +1829,10 @@ provider-failed-not-found = The transaction or entry cannot be found: it was del
 provider-failed-optimistic-lock = The transaction was changed in the meantime. Reload the page.
 provider-failed-entry-not-linkable = The sale entry can no longer be linked to this transaction (already linked, reversed or changed). Reload the page.
 provider-failed-counterparty-currency-mismatch = This rule names an account kept in { $accountCurrency }: it only applies to transactions in { $accountCurrency }, and this one is in { $transactionCurrency }. Choose an account in CHF or in the transaction's currency.
+provider-failed-already-posted = The transaction is already posted (the other side is linked to its entry): nothing was posted. Reload the page and link it to that entry.
 provider-review-ambiguous-sale = Several sales entries carry this identifier: choose the one to link.
 provider-review-fee-account-missing = Fee without a fee account: set the fee account of the bank account.
+provider-review-already-posted = Already posted: the entry exists and the other side is linked to it. Link this transaction to the entry, do not post it a second time.
 # Story 40-7c — Stripe review: Stripe's own reasons and gaps (served to the screen, 40-7d)
 stripe-review-refund = Refund: post the entry by hand (in the foreign currency), then link the transaction.
 stripe-review-other-category = Stripe category to review ({ $category }): post the entry by hand, then link the transaction.
@@ -2035,6 +2041,8 @@ paypal-to-review-fee-account-missing = Fee account not set
 paypal-to-review-conversion-unpaired = Conversion without its pair
 paypal-to-review-withdrawal-foreign-currency = Withdrawal from a foreign-currency balance: manual entry
 paypal-to-review-no-rule = No rule
+paypal-to-review-already-posted = Already posted: the entry exists and the other side is linked to it. Link this transaction to the entry, do not post it a second time.
+provider-to-review-entry-link = Entry already posted
 paypal-action-link-entry = Linked to entry no. { $number }
 paypal-action-fee = Entry to the fee account { $account }
 paypal-action-rule = Entry to the counterparty { $account }
@@ -3361,6 +3369,24 @@ supplier-invoices-err-amount = The line total ({$actual}) does not match the QR 
 supplier-invoices-err-currency = Currency not supported (CHF only). Remove the document from the list, or create the invoice without a document and attach it afterwards.
 supplier-invoices-err-iban-ref = Mismatch between the IBAN and the QRR reference of the QR code.
 supplier-invoices-err-not-pending = This document has already been processed or removed from the list.
+# Story 48-12b (#975, #985) — screen notices: duplicate, unknown outcome, document already recorded.
+supplier-invoices-err-not-yet = No invoice is recorded for now: you can try again.
+supplier-invoices-cited-draft = draft no. { $id }
+supplier-invoices-cited-prefix = Invoice already recorded:
+supplier-invoices-cited-active-prefix = Active invoice:
+supplier-invoices-confirm-not-duplicate = Not a duplicate, record it
+supplier-invoices-modify-entry = Edit the entry
+supplier-invoices-unknown-outcome-create = The recording may have succeeded. Check in the list whether the invoice exists before entering it again.
+supplier-invoices-unknown-outcome-create-link = See this supplier's invoices
+supplier-invoices-resume-entry-create = I checked, it does not exist — resume the entry
+supplier-invoices-unknown-outcome-edit = The change may have been saved. Check on the invoice page whether your change was saved; if so, reload this page before changing it again.
+supplier-invoices-unknown-outcome-edit-link = Open the invoice page
+supplier-invoices-resume-entry-edit = I checked, it was not saved — resume the entry
+supplier-invoices-already-completed = This document has already been recorded as an invoice. Open it to check that it matches your entry.
+supplier-invoices-already-completed-link = Open the invoice
+supplier-invoices-unvalidate-anyway = Return to draft anyway
+supplier-invoices-scan-ignored = QR reading ignored: the form was no longer being edited.
+supplier-invoices-new-supplier-created-not-selected = Supplier created, not selected.
 supplier-invoices-err-doc-not-found = Document not found.
 supplier-invoices-err-fiscal-year = No open fiscal year covers this date.
 supplier-invoices-payment-error-invalid-iban = Invalid IBAN: check the country code, the length and the check digits.
@@ -3682,6 +3708,7 @@ audit-log-action-supplier-invoice-updated = Supplier invoice draft updated
 audit-log-action-supplier-invoice-validated = Supplier invoice validated
 audit-log-action-supplier-invoice-unvalidated = Supplier invoice returned to draft
 audit-log-action-supplier-invoice-deleted = Supplier invoice draft deleted
+audit-log-action-supplier-invoice-duplicate-confirmed = Supplier invoice duplicate confirmed
 audit-log-action-imported-supplier-invoice-created = Document imported
 audit-log-action-imported-supplier-invoice-completed = Document processed (invoice created)
 audit-log-action-imported-supplier-invoice-discarded = Document removed from the list
@@ -4295,6 +4322,15 @@ projects-reassign-warning-locked = Entries locked through { $date }.
 projects-reassign-warning-reports = The analytical reports for this period will change.
 projects-reassign-confirm = Confirm
 projects-reassign-done = Analytical account changed.
+
+# --- Epic 49 — Story 49-4a (#1364) : capacité du PDF de facture contrôlée à la validation ---
+error-invoice-lines-do-not-fit-pdf = The lines of this invoice do not fit on the page of its PDF: they need { $besoin } lines, the page offers { $place }. Remove lines, shorten the comments, or split the lines across two invoices. The invoice remains a draft.
+
+# Epic 49 — Story 49-1c (#1242) : la ligne de commentaire de la facture client
+invoice-line-add-comment = Comment
+invoice-line-comment-placeholder = Text printed across the full width of the invoice, without an amount
+invoice-line-comment-aria = Comment — line { $n }
+invoice-line-comment-required-error = Line { $line }: the comment text is required
 
 ## #1348 (0.20.0) — server refusals whose key was missing from the catalogue.
 error-onboarding-reset-forbidden = Resetting the onboarding is not allowed on this instance.

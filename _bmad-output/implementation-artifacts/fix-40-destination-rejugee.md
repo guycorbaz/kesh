@@ -84,7 +84,7 @@ routes/stripe.rs` ne rendait aucun contrôle du prestataire de la destination.
   sur cette passe. Trend : P1 0 > LOW. LOW : L1 (commentaire de `stripe_reconciliation_e2e.rs` devenu faux), L3 (garde
   de société dans la sous-requête de devise) et L4 (commentaire « route Wise absente ») repris par la story de solde
   40-9 ; L2 (relecture non verrouillante de la destination à l'acceptation) versé à la liste des issues à ouvrir de
-  l'epic. Clôture écrite par la 40-9 (revue de fusion 11d2/40, LOW-2). Statut `done`.
+  l'epic *(annoté le 2026-11-25 : #1541)*. Clôture écrite par la 40-9 (revue de fusion 11d2/40, LOW-2). Statut `done`.
 
 ## Dev Agent Record
 

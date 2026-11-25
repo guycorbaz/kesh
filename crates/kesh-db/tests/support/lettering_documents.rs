@@ -105,6 +105,7 @@ pub async fn facture(
                 unit_price: ht,
                 vat_rate: dec!(0),
                 revenue_account_id: Some(seeded.accounts["3000"]),
+                line_type: kesh_db::entities::LineType::Priced,
             }],
         },
     )

@@ -322,3 +322,52 @@ describe('page d’édition d’un brouillon', () => {
 		await waitFor(() => expect(sel.value).toBe('2'));
 	});
 });
+
+// ---------------------------------------------------------------------------
+// Story 48-12b (#975 ; table A, E5, E6 variante « modification »)
+// ---------------------------------------------------------------------------
+
+describe('page d’édition — doublon et issue inconnue (Story 48-12b)', () => {
+	it('E6 : PUT perdu → texte, lien vers la fiche (nouvel onglet) et libellé de la variante « modification » ; la reprise n’envoie rien', async () => {
+		getMock.mockResolvedValue(draft());
+		updateMock.mockRejectedValue({ code: 'NETWORK_ERROR', status: 0, message: 'Réseau indisponible' });
+		const v = render(Page);
+		await v.findByTestId('supplier-invoice-form');
+		await fireEvent.click(v.getByTestId('supplier-invoice-submit'));
+		await v.findByTestId('supplier-invoice-unknown-outcome');
+		// Mutation « texte de création à la modification ».
+		expect(v.getByTestId('supplier-invoice-unknown-outcome-text').textContent).toBe(
+			'La modification a peut-être été enregistrée. Vérifiez sur la fiche si votre modification a été enregistrée ; si oui, rechargez cette page avant de modifier encore.',
+		);
+		const link = v.getByTestId('supplier-invoice-unknown-outcome-link');
+		expect(link.getAttribute('href')).toBe('/supplier-invoices/9');
+		expect(link.getAttribute('target')).toBe('_blank');
+		expect(v.getByTestId('supplier-invoice-resume-entry').textContent?.trim()).toBe(
+			'J’ai vérifié, elle n’a pas été enregistrée — reprendre la saisie',
+		);
+		expect(v.getByTestId('supplier-invoice-line-unit-price').matches(':disabled')).toBe(true);
+		await fireEvent.click(v.getByTestId('supplier-invoice-resume-entry'));
+		expect(updateMock).toHaveBeenCalledTimes(1);
+		expect(v.getByTestId('supplier-invoice-line-unit-price').matches(':disabled')).toBe(false);
+		expect(gotoMock).not.toHaveBeenCalled();
+	});
+
+	it('E5 : doublon probable → confirmation renvoie le corps gardé (version comprise) avec le drapeau, une fois', async () => {
+		getMock.mockResolvedValue(draft());
+		updateMock.mockRejectedValueOnce({
+			code: 'SUPPLIER_INVOICE_PROBABLE_DUPLICATE',
+			status: 409,
+			message: 'x',
+			details: { supplierInvoiceId: 3, internalNumber: 'FF-2026-003', status: 'open', confirmable: true },
+		});
+		updateMock.mockResolvedValueOnce(draft({ version: 6 }));
+		const v = render(Page);
+		await v.findByTestId('supplier-invoice-form');
+		await fireEvent.click(v.getByTestId('supplier-invoice-submit'));
+		await v.findByTestId('supplier-invoice-probable-duplicate');
+		await fireEvent.click(v.getByTestId('supplier-invoice-confirm-not-duplicate'));
+		await waitFor(() => expect(updateMock).toHaveBeenCalledTimes(2));
+		expect(updateMock.mock.calls[1][1]).toEqual({ ...updateMock.mock.calls[0][1], confirmNotDuplicate: true });
+		expect(updateMock.mock.calls[1][1].version).toBe(5);
+	});
+});

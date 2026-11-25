@@ -86,6 +86,7 @@ async fn create_validated_invoice(
             .iter()
             .map(|(rate, price)| NewInvoiceLine {
                 revenue_account_id: None,
+                line_type: kesh_db::entities::LineType::Priced,
                 description: "Ligne".into(),
                 quantity: dec!(1),
                 unit_price: *price,

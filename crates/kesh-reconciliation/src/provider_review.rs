@@ -91,6 +91,22 @@ pub const REVIEW_CONVERSION_UNPAIRED: &str = "conversion_unpaired";
 pub const REVIEW_WITHDRAWAL_FOREIGN_CURRENCY: &str = "withdrawal_foreign_currency";
 /// À examiner : aucune règle ne correspond.
 pub const REVIEW_NO_RULE: &str = "no_rule";
+/// À examiner : la transaction est **déjà comptabilisée** — une écriture
+/// vivante porte son mouvement sur le compte du plan du solde et est déjà
+/// rapprochée de **l'autre côté** (`details: { journalEntryId }`, la plus
+/// proche par date ; [`ReviewInput::already_posted`]). Typiquement : le côté
+/// prestataire d'un virement annulé seul (`reconciliation_cancel` ne retire
+/// que son lien, l'écriture reste rapprochée de la réception). L'écrire de
+/// nouveau la compterait deux fois : la transaction se **rattache** à cette
+/// écriture. Remplace, pour les genres qui **écrivent** (frais, conversion,
+/// retrait, autre : voir `writes`), la proposition ou le motif qu'ils
+/// auraient reçus, avant tout autre motif ; à l'acceptation,
+/// la même règle rend [`FAILED_ALREADY_POSTED`].
+pub const REVIEW_ALREADY_POSTED: &str = "already_posted";
+/// Code de refus (`failed[].errorCode`) de l'acceptation d'une transaction
+/// déjà comptabilisée ([`REVIEW_ALREADY_POSTED`]) : rien n'est écrit
+/// (`details: { journalEntryId }`).
+pub const FAILED_ALREADY_POSTED: &str = "PROVIDER_TRANSACTION_ALREADY_POSTED";
 
 /// Le genre d'une transaction de prestataire, rendu par
 /// [`ProviderSpec::classify`]. Commun aux prestataires ; un prestataire range
@@ -152,6 +168,15 @@ pub struct ProviderSpec {
     /// Extraction des identifiants d'un libellé d'écriture, en forme
     /// comparable à [`ProviderSpec::match_key`].
     pub extract_ids: fn(&str) -> Vec<String>,
+    /// L'identifiant `id`, extrait d'un libellé ([`ProviderSpec::extract_ids`]),
+    /// est-il du **même genre de clé** que la transaction `t` — celui d'une
+    /// transaction que l'écriture pourrait porter à la place de `t` ? Seul un
+    /// tel identifiant fait d'une écriture celle d'**une autre** transaction et
+    /// l'exclut du repli prudent ([`unnamed_and_free`]). PayPal : un seul genre
+    /// ([`one_key_kind`]). Stripe : pour un versement, seul un `po_` — une
+    /// charge citée au libellé d'un versement ne fait pas de son écriture celle
+    /// d'un autre versement ; pour des frais, tout identifiant Stripe.
+    pub same_key_kind: fn(&BankTransaction, &str) -> bool,
     /// Les deux transactions sont-elles les moitiés d'une même conversion,
     /// par leurs références (PayPal : même `Reference Txn ID`, ou chacune
     /// pointant l'autre ; Wise : même `transaction_id`) ? Le signe opposé et la
@@ -173,6 +198,12 @@ pub struct ProviderSpec {
     /// prestataire règle, selon ses candidates, par une règle). PayPal :
     /// aucun. Voir [`admits_rule`].
     pub ruleable: fn(ProviderKind) -> bool,
+}
+
+/// Un seul genre de clé : tout identifiant d'un libellé est du genre de toute
+/// transaction (paramétrage de PayPal pour [`ProviderSpec::same_key_kind`]).
+pub fn one_key_kind(_: &BankTransaction, _: &str) -> bool {
+    true
 }
 
 /// Aucun genre en plus (paramétrage de PayPal pour [`ProviderSpec::linkable`]
@@ -263,6 +294,11 @@ pub struct ReviewInput<'a> {
     pub rule_account_ids: &'a HashMap<i64, Option<String>>,
     /// Compte du plan du compte bancaire principal de la société.
     pub primary_ledger_account_id: Option<i64>,
+    /// Les transactions pending **déjà comptabilisées** de l'autre côté :
+    /// identifiant de la transaction → écriture ([`REVIEW_ALREADY_POSTED`]),
+    /// lues par `kesh_db::repositories::reconciliation_link::posted_elsewhere_for_page`
+    /// puis [`first_naming_entry`].
+    pub already_posted: &'a HashMap<i64, i64>,
 }
 
 /// Une proposition — servie par la revue, et corps de l'acceptation.
@@ -468,6 +504,16 @@ pub struct ReviewFinding {
 }
 
 impl ReviewFinding {
+    /// Le motif [`REVIEW_ALREADY_POSTED`] de `t`, qui nomme l'écriture
+    /// `journal_entry_id`. Public : un prestataire qui décide d'un genre propre
+    /// qui écrit (le versement Stripe) le sert de la même façon.
+    pub fn already_posted(t: &BankTransaction, journal_entry_id: i64) -> Self {
+        Self {
+            details: Some(serde_json::json!({ "journalEntryId": journal_entry_id })),
+            ..Self::on(REVIEW_ALREADY_POSTED, t)
+        }
+    }
+
     /// Un motif sur une transaction, sans détail.
     pub fn on(code: &'static str, t: &BankTransaction) -> Self {
         Self {
@@ -608,14 +654,27 @@ pub fn build_review(input: &ReviewInput<'_>, spec: &ProviderSpec) -> Review {
         .iter()
         .map(|t| (t, (spec.classify)(t)))
         .collect();
+    // Une moitié de conversion déjà comptabilisée ne s'apparie pas : sa
+    // partenaire, si elle est pending, reste sans paire.
     let conversions: Vec<&BankTransaction> = classified
         .iter()
-        .filter(|(_, k)| *k == ProviderKind::Conversion)
+        .filter(|(t, k)| {
+            *k == ProviderKind::Conversion && !input.already_posted.contains_key(&t.id)
+        })
         .map(|(t, _)| *t)
         .collect();
 
     for (t, kind) in &classified {
         let account = accounts.get(&t.bank_account_id);
+        // Revue P1 du correctif (M1) : avant tout autre motif — une transaction
+        // déjà comptabilisée ne se montre jamais sous « aucune règle » ou
+        // « compte de frais non réglé », qui conseillent d'écrire de nouveau.
+        if let Some(entry_id) = input.already_posted.get(&t.id).copied()
+            && writes(spec, *kind)
+        {
+            review.push_to_review(ReviewFinding::already_posted(t, entry_id));
+            continue;
+        }
         match kind {
             ProviderKind::SaleReceipt => {
                 decide_receipt(&mut review, t, account.copied(), &sales, &sales_by_id, spec)
@@ -702,6 +761,22 @@ pub fn build_review(input: &ReviewInput<'_>, spec: &ProviderSpec) -> Review {
 
     review.sort();
     review
+}
+
+/// Le genre `kind` **écrit-il** à l'acceptation ? Frais, conversion, retrait,
+/// autre (règle) — sauf un genre que le prestataire admet au **rattachement**
+/// ([`admits_link`] : l'encaissement, et ce qu'il déclare par
+/// [`ProviderSpec::linkable`]) : sa proposition rattache à une écriture déjà
+/// passée, ce que la règle [`REVIEW_ALREADY_POSTED`] ne doit pas empêcher.
+/// Les genres propres ([`ProviderKind::Specific`]) restent au prestataire.
+fn writes(spec: &ProviderSpec, kind: ProviderKind) -> bool {
+    matches!(
+        kind,
+        ProviderKind::Fee
+            | ProviderKind::Conversion
+            | ProviderKind::Withdrawal
+            | ProviderKind::Other
+    ) && !admits_link(spec, kind)
 }
 
 /// La première règle qui correspond à `t`, de contrepartie admise — en CHF ou
@@ -814,6 +889,118 @@ pub fn conversion_halves(a: &BankTransaction, b: &BankTransaction, spec: &Provid
         && a.amount.is_sign_negative() != b.amount.is_sign_negative()
         && a.currency != b.currency
         && (spec.conversion_match)(a, b)
+}
+
+/// L'écriture de libellé `description` **nomme-t-elle** la transaction `t` ?
+/// Correctif « une transaction de prestataire n'est écrite qu'une fois »
+/// (#1538) : la condition qui distingue, parmi les transactions de même
+/// montant d'un même solde, celle dont une écriture est **déjà passée** —
+/// l'écriture la nomme. Deux formes, sans autre lien structuré entre une
+/// écriture et une transaction détachée (`matched_entry_id`, effacé par le
+/// détachement, est le seul) :
+///
+/// - **par son libellé** : les identifiants qu'il porte
+///   ([`ProviderSpec::extract_ids`]) comprennent la clé de `t`
+///   ([`ProviderSpec::match_key`]) — la règle du rattachement d'une vente. Le
+///   libellé est celui de l'acceptation ([`ProviderSpec::entry_label`] : PayPal
+///   « … · TXN <id> »). Les frais PayPal ont pour clé `<id>:FEE`, que leur
+///   écriture ne porte pas (« Frais PayPal … · TXN <id> ») : ils ne sont
+///   jamais nommés, par l'écriture principale ni par la leur. L'écriture des
+///   frais nomme la transaction principale, mais n'est jamais rapprochée de
+///   l'autre côté (elle n'a de ligne sur aucun autre compte bancaire) : la
+///   présélection de l'appelant l'écarte ;
+/// - **par sa paire de conversion** : une conversion en une écriture ne
+///   nomme que sa moitié débitée ; l'autre moitié est nommée si l'écriture
+///   est rapprochée (`linked` : les transactions rapprochées de l'écriture)
+///   de sa paire ([`conversion_halves`]), que l'écriture nomme.
+///
+/// Une écriture sans aucun identifiant n'en nomme aucune : voir
+/// [`unnamed_and_free`] et [`first_naming_entry`].
+pub fn entry_names(
+    spec: &ProviderSpec,
+    t: &BankTransaction,
+    description: &str,
+    linked: &[&BankTransaction],
+) -> bool {
+    let ids = (spec.extract_ids)(description);
+    let named =
+        |x: &BankTransaction| (spec.match_key)(x).is_some_and(|k| ids.iter().any(|i| i == k));
+    named(t)
+        || ((spec.classify)(t) == ProviderKind::Conversion
+            && linked
+                .iter()
+                .any(|p| conversion_halves(t, p, spec) && named(p)))
+}
+
+/// L'écriture de libellé `description` ne porte **aucun** identifiant du
+/// genre de clé de `t` ([`ProviderSpec::same_key_kind`] ; une écriture saisie
+/// à la main, puis rattachée, sans identifiant ou avec seulement des
+/// identifiants d'un autre genre — une charge `ch_…` citée au libellé d'un
+/// versement Stripe) **et** son côté prestataire est **libre** : aucune
+/// transaction du compte bancaire de `t` ne lui est rapprochée (`linked` :
+/// celles qui le sont). C'est l'écriture d'une transaction détachée de ce
+/// compte, sans dire laquelle : le repli prudent de [`first_naming_entry`]
+/// (revue P1 de la #1560, M1 ; identifiant d'un autre genre : #1539). Une
+/// écriture dont le côté prestataire est encore rapproché (une transaction
+/// qu'elle porte toujours, par exemple un retrait d'un mois passé du même
+/// montant) n'est l'écriture d'aucune transaction en attente.
+pub fn unnamed_and_free(
+    spec: &ProviderSpec,
+    t: &BankTransaction,
+    description: &str,
+    linked: &[&BankTransaction],
+) -> bool {
+    !(spec.extract_ids)(description)
+        .iter()
+        .any(|id| (spec.same_key_kind)(t, id))
+        && !linked
+            .iter()
+            .any(|p| p.bank_account_id == t.bank_account_id)
+}
+
+/// L'écriture déjà passée de `t` parmi les `candidates` (déjà triées : la plus
+/// proche par date, puis la plus ancienne), ou `None`. `linked` : les
+/// transactions rapprochées de ces écritures, toutes ensemble (chacune porte
+/// son `matched_entry_id`). Deux passes :
+///
+/// 1. la première qui **nomme** `t` ([`entry_names`]) — une écriture qui nomme
+///    `t` passe toujours avant une écriture sans identifiant, même plus proche ;
+/// 2. à défaut, **par prudence**, la première sans identifiant du genre de
+///    clé de `t` dont le côté prestataire est libre ([`unnamed_and_free`]) :
+///    elle ne dit pas quelle transaction elle porte, et vaut pour toute
+///    transaction de ce montant du compte — en refuser une de trop (« à
+///    examiner », écrite à la main) coûte moins que d'en écrire une seconde
+///    fois.
+///
+/// Une écriture qui nomme une **autre** transaction du même genre de clé n'est
+/// jamais retenue. La **seule** décision « déjà comptabilisée » d'une
+/// transaction de prestataire (#1538) : la revue (sur la lecture par page) et
+/// l'acceptation (sous les verrous du lot) l'appellent sur la même présélection
+/// (`kesh_db::repositories::reconciliation_link::find_posted_elsewhere`).
+pub fn first_naming_entry<'a>(
+    spec: &ProviderSpec,
+    t: &BankTransaction,
+    candidates: impl IntoIterator<Item = (i64, &'a str)>,
+    linked: &[BankTransaction],
+) -> Option<i64> {
+    let candidates: Vec<(i64, &str, Vec<&BankTransaction>)> = candidates
+        .into_iter()
+        .map(|(entry_id, description)| {
+            let on_entry = linked
+                .iter()
+                .filter(|p| p.matched_entry_id == Some(entry_id))
+                .collect();
+            (entry_id, description, on_entry)
+        })
+        .collect();
+    let pass = |keep: &dyn Fn(&str, &[&BankTransaction]) -> bool| {
+        candidates
+            .iter()
+            .find(|(_, d, on)| keep(d, on))
+            .map(|(id, _, _)| *id)
+    };
+    pass(&|d, on| entry_names(spec, t, d, on))
+        .or_else(|| pass(&|d, on| unnamed_and_free(spec, t, d, on)))
 }
 
 /// Les partenaires possibles de `t` parmi les conversions pending
@@ -969,6 +1156,7 @@ mod tests {
         classify,
         match_key: key,
         extract_ids: extract,
+        same_key_kind: one_key_kind,
         conversion_match: conv_match,
         conversion_unpaired: (REVIEW_CONVERSION_UNPAIRED, Placement::ToReview),
         entry_label: label,
@@ -1037,6 +1225,7 @@ mod tests {
         rules: Vec<ReconciliationRule>,
         rule_accounts: HashMap<i64, Option<String>>,
         primary: Option<i64>,
+        posted: HashMap<i64, i64>,
     }
 
     impl Fixture {
@@ -1053,6 +1242,7 @@ mod tests {
                 rules: Vec::new(),
                 rule_accounts: [(6500, None), (4000, None)].into_iter().collect(),
                 primary: Some(1010),
+                posted: HashMap::new(),
             }
         }
         fn review(&self, spec: &ProviderSpec) -> Review {
@@ -1065,6 +1255,7 @@ mod tests {
                     rules: &self.rules,
                     rule_account_ids: &self.rule_accounts,
                     primary_ledger_account_id: self.primary,
+                    already_posted: &self.posted,
                 },
                 spec,
             )
@@ -1374,6 +1565,195 @@ mod tests {
         f.rule_accounts.insert(1021, None);
         f.rules[0].counterparty_account_id = 1021;
         assert!(f.review(&SPEC).proposals.is_empty());
+    }
+
+    /// Correctif #1538 : seule l'écriture qui **nomme** la transaction la
+    /// retient ; deux transactions de même montant ne se confondent pas.
+    #[test]
+    fn premiere_ecriture_qui_nomme_la_transaction() {
+        let a = typed(tx(1, 10, "-50.00", "CHF"), "wd", "IDA");
+        let b = typed(tx(2, 10, "-50.00", "CHF"), "wd", "IDB");
+        // La plus proche (901) nomme A ; la suivante (902) nomme B.
+        let candidates = [(901, "Retrait IDA"), (902, "Retrait IDB")];
+        assert_eq!(first_naming_entry(&SPEC, &a, candidates, &[]), Some(901));
+        assert_eq!(first_naming_entry(&SPEC, &b, candidates, &[]), Some(902));
+        // Une écriture qui ne nomme personne (saisie à la main), côté
+        // prestataire libre, retient par prudence toute transaction de la
+        // présélection ; une écriture qui nomme `t`, même plus loin, passe
+        // avant elle.
+        let sans_nom = (903, "Retrait sans identifiant");
+        assert_eq!(first_naming_entry(&SPEC, &a, [sans_nom], &[]), Some(903));
+        assert_eq!(first_naming_entry(&SPEC, &b, [sans_nom], &[]), Some(903));
+        assert_eq!(
+            first_naming_entry(&SPEC, &a, [sans_nom, (901, "Retrait IDA")], &[]),
+            Some(901),
+            "l'écriture qui nomme passe avant la plus proche sans nom"
+        );
+        // Côté prestataire encore rapproché (une transaction du même compte) :
+        // l'écriture n'est celle d'aucune transaction en attente.
+        let mut portee = typed(tx(9, 10, "-50.00", "CHF"), "wd", "IDZ");
+        portee.matched_entry_id = Some(903);
+        assert_eq!(
+            first_naming_entry(&SPEC, &a, [sans_nom], &[portee.clone()]),
+            None
+        );
+        // Une transaction d'un autre compte (l'autre côté) ne l'occupe pas.
+        let mut autre_cote = tx(10, 99, "50.00", "CHF");
+        autre_cote.matched_entry_id = Some(903);
+        assert_eq!(
+            first_naming_entry(&SPEC, &a, [sans_nom], &[autre_cote]),
+            Some(903)
+        );
+        let c = typed(tx(3, 10, "-50.00", "CHF"), "wd", "IDC");
+        assert_eq!(first_naming_entry(&SPEC, &c, candidates, &[]), None);
+    }
+
+    /// Correctif #1538 : une conversion en une écriture ne nomme que sa
+    /// moitié débitée ; l'autre moitié est nommée par sa paire, rapprochée de
+    /// l'écriture — jamais par une conversion étrangère de même montant.
+    #[test]
+    fn conversion_nommee_par_sa_paire_rapprochee() {
+        let mut debit = typed(tx(1, 11, "-90.00", "CHF"), "conv", "IDD");
+        debit.end_to_end_id = Some("REF1".into());
+        debit.matched_entry_id = Some(901);
+        let mut credit = typed(tx(2, 10, "100.00", "USD"), "conv", "IDC");
+        credit.end_to_end_id = Some("REF1".into());
+        let mut autre = typed(tx(3, 10, "100.00", "USD"), "conv", "IDX");
+        autre.end_to_end_id = Some("REF2".into());
+        let linked = [debit.clone()];
+        assert_eq!(
+            first_naming_entry(&SPEC, &credit, [(901, "Conversion IDD")], &linked),
+            Some(901)
+        );
+        assert_eq!(
+            first_naming_entry(&SPEC, &autre, [(901, "Conversion IDD")], &linked),
+            None,
+            "une autre conversion de même montant"
+        );
+        // La paire doit être rapprochée de CETTE écriture.
+        assert_eq!(
+            first_naming_entry(&SPEC, &credit, [(902, "Conversion IDD")], &linked),
+            None
+        );
+        // Une transaction qui n'est pas une conversion n'est pas nommée par une paire.
+        let mut retrait = typed(tx(4, 10, "100.00", "USD"), "wd", "IDW");
+        retrait.end_to_end_id = Some("REF1".into());
+        assert_eq!(
+            first_naming_entry(&SPEC, &retrait, [(901, "Conversion IDD")], &linked),
+            None
+        );
+    }
+
+    /// Correctif « écrite une seule fois » : une transaction déjà
+    /// comptabilisée de l'autre côté n'est proposée à aucun genre qui écrit
+    /// (frais, retrait, règle, conversion) ; elle est à examiner, l'écriture
+    /// nommée. La sonde positive : sans entrée dans `already_posted`, les
+    /// mêmes transactions sont proposées. Un encaissement n'est pas touché (sa
+    /// proposition rattache, elle n'écrit pas), ni un genre propre.
+    #[test]
+    fn deja_comptabilisee_a_examiner_pour_les_genres_qui_ecrivent() {
+        let mut f = Fixture::new();
+        f.pending
+            .push(typed(tx(1, 10, "-1.20", "USD"), "fee", "IDA:FEE"));
+        f.pending
+            .push(typed(tx(2, 11, "-500.00", "CHF"), "wd", "W1"));
+        let mut achat = typed(tx(3, 10, "-20.00", "USD"), "Express Checkout Payment", "A1");
+        achat.counterparty_name = Some("Hostpoint AG".into());
+        f.pending.push(achat);
+        f.rules.push(rule(1, "hostpoint", 6500));
+        f.pending.push(conv(4, 10, "-100.00", "USD", "REF1"));
+        f.pending.push(conv(5, 11, "90.00", "CHF", "REF1"));
+        f.pending
+            .push(typed(tx(6, 10, "30.00", "USD"), "sale", "IDS"));
+        f.sales.push(sale(50, "Vente IDS", 1021, "USD", "30.00"));
+        f.pending
+            .push(typed(tx(7, 10, "-3.00", "USD"), "spec", "P1"));
+        // Sans compte de frais (compte 11) et sans règle : leur motif propre, sauf
+        // déjà comptabilisées (revue P1 du correctif, M1).
+        f.pending
+            .push(typed(tx(8, 11, "-0.80", "CHF"), "fee", "IDF:FEE"));
+        let mut inconnu = typed(tx(9, 10, "-7.00", "USD"), "Express Checkout Payment", "A9");
+        inconnu.counterparty_name = Some("Inconnu".into());
+        f.pending.push(inconnu);
+        // Sonde positive : rien de déjà comptabilisé, tout est proposé.
+        let r = f.review(&SPEC);
+        let kinds: Vec<&str> = r.proposals.iter().map(|p| p.proposal.kind()).collect();
+        assert_eq!(
+            kinds,
+            ["fee", "withdrawal", "rule", "conversion", "link_entry"],
+            "{kinds:?}"
+        );
+        assert_eq!(
+            codes(&r.to_review),
+            [REVIEW_FEE_ACCOUNT_MISSING, REVIEW_NO_RULE],
+            "{:?}",
+            r.to_review
+        );
+        // Toutes déjà comptabilisées (la conversion par sa seule moitié débitée).
+        for (t, e) in [
+            (1, 901),
+            (2, 902),
+            (3, 903),
+            (4, 904),
+            (6, 906),
+            (7, 907),
+            (8, 908),
+            (9, 909),
+        ] {
+            f.posted.insert(t, e);
+        }
+        let r = f.review(&SPEC);
+        assert_eq!(
+            r.proposals
+                .iter()
+                .map(|p| p.proposal.kind())
+                .collect::<Vec<_>>(),
+            ["link_entry"],
+            "l'encaissement se rattache toujours"
+        );
+        assert_eq!(
+            r.specific,
+            vec![(7, "special")],
+            "un genre propre reste au prestataire"
+        );
+        let deja: Vec<(i64, serde_json::Value)> = r
+            .to_review
+            .iter()
+            .filter(|f| f.code == REVIEW_ALREADY_POSTED)
+            .map(|f| {
+                (
+                    f.transaction.as_ref().unwrap().id,
+                    f.details.clone().unwrap(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            deja,
+            vec![
+                (1, serde_json::json!({ "journalEntryId": 901 })),
+                (2, serde_json::json!({ "journalEntryId": 902 })),
+                (3, serde_json::json!({ "journalEntryId": 903 })),
+                (4, serde_json::json!({ "journalEntryId": 904 })),
+                (8, serde_json::json!({ "journalEntryId": 908 })),
+                (9, serde_json::json!({ "journalEntryId": 909 })),
+            ]
+        );
+        assert!(
+            !r.to_review
+                .iter()
+                .any(|f| f.code == REVIEW_FEE_ACCOUNT_MISSING || f.code == REVIEW_NO_RULE),
+            "le motif « déjà comptabilisée » passe avant : {:?}",
+            r.to_review
+        );
+        // La moitié créditée, privée de sa paire déjà comptabilisée : sans paire.
+        assert!(
+            r.to_review
+                .iter()
+                .any(|f| f.code == REVIEW_CONVERSION_UNPAIRED
+                    && f.transaction.as_ref().unwrap().id == 5),
+            "{:?}",
+            r.to_review
+        );
     }
 
     #[test]

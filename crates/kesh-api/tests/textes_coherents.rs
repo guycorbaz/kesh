@@ -23,7 +23,7 @@
 //! | G18-bis | #127 | le manuel utilisateur dit comment on entre : compte créé par l'administrateur, connexion par identifiant |
 //! | G19 | release 0.13.0 | toute URL `raw.githubusercontent.com` du dépôt (manuels, README, site) pointe sur le tag `v<\keshVersion>`, jamais sur `main` |
 //! | G20 | #616, #617, #619 | ni case « Compte de banque » au plan comptable, ni CAMT.053 présenté comme universel ; l'écran d'import dit « CAMT.053 ou CSV » dans les quatre langues |
-//! | G21 | #697 | le `FROM rust:` du `Dockerfile` et le `channel` de `rust-toolchain.toml` désignent la même chaîne (même mineure, même patch si les deux en portent un) |
+//! | G21 | #697 | le `FROM rust:` du `Dockerfile` et le `channel` de `rust-toolchain.toml` désignent la même chaîne (même mineure, même patch si les deux en portent un) ; le `ARG REGISTRY` du `Dockerfile` vaut `docker.io/library` par défaut, avant le premier `FROM`, et `release.yml` ne le remplace pas |
 //! | G22 | #503 | la sauvegarde automatique : le manuel dit la reprise au bout d'une heure et le bandeau à partir d'au moins deux intervalles ; le rappel de l'écran dit le volume (nombre conservé plus une, une par import jamais purgée) dans les quatre langues |
 //! | G23 | #723 | le serveur MCP : le manuel liste exactement les plages admises par défaut et les cinq portées (dans l'ordre), nomme `100.64.0.0/10` hors des défauts ; l'écran le nomme, ainsi que Traefik et Docker, dans les quatre langues |
 //! | G24 | #816 | la table des libellés de `reason` de l'écran de saisie d'un relevé (`manual-statement-reason-label.ts`) a exactement les clés de `ManualStatementReason::ALL`, dans les deux sens |
@@ -273,7 +273,8 @@ fn premiers_mots(noms: &HashMap<String, Vec<String>>) -> std::collections::HashS
 /// consommer** (revue de code P2, E2-3) : dans `1000 1030`, les deux nombres sont lus.
 /// Ne sont pas des comptes : un nombre collé à un chiffre, une lettre ASCII, `_`, une
 /// apostrophe (séparateur de milliers), un `%` ; précédé de `.`, `,`, `:`, `#` ; ou d'un
-/// `-` lui-même collé à un caractère alphanumérique (`ISO-8859`, `F-2026-0042`).
+/// `-` lui-même collé à un caractère alphanumérique (`ISO-8859`, `F-2026-0042`) ; ou
+/// de `U+`, un point de code Unicode (`U+2212`, Story 49-1c) — un `+` seul ne borne rien.
 /// `{` et `}` ne bornent plus rien (revue de code P2, B2-2) : `\textbf{3600}` est lu.
 /// Une date ISO `NNNN-MM-JJ` n'est pas un compte, à condition que le mois soit
 /// `01`-`12` et le jour `01`-`31` (Story 32-1a, #716, E6) : `1171-99-99` est lu.
@@ -291,6 +292,9 @@ fn nombres_isoles(ligne: &str) -> Vec<(String, String, usize, usize)> {
         let exclu_avant = match precedent {
             None => false,
             Some('-') => avant.next().is_some_and(char::is_alphanumeric),
+            // Story 49-1c (C-e491c-9) — un point de code `U+NNNN` (« le signe moins
+            // U+2212 ») n'est pas un compte : `+` précédé de `U` exactement.
+            Some('+') => avant.next() == Some('U'),
             Some(p) => p.is_ascii_digit() || p.is_ascii_alphabetic() || ".,'’:#_".contains(p),
         };
         let exclu_apres = ligne[m.end()..]
@@ -311,6 +315,24 @@ fn nombres_isoles(ligne: &str) -> Vec<(String, String, usize, usize)> {
         }
     }
     out
+}
+
+/// Story 49-1c (C-e491c-9) — un point de code `U+NNNN` n'est pas un compte ; un `+`
+/// qui ne suit pas `U` ne retire pas le nombre (`+2212`, `X+2212` restent lus).
+#[test]
+fn nombres_isoles_ne_prend_pas_un_point_de_code_pour_un_compte() {
+    assert!(
+        nombres_isoles("le signe moins «~−~» (U+2212), les flèches").is_empty(),
+        "U+2212 est un point de code, non un compte"
+    );
+    for lu in ["solde +2212 au bilan", "X+2212 ici"] {
+        let rendus: Vec<String> = nombres_isoles(lu).into_iter().map(|(n, ..)| n).collect();
+        assert_eq!(
+            rendus,
+            vec!["2212".to_string()],
+            "« {lu} » : le nombre doit être rendu"
+        );
+    }
 }
 
 /// Story 32-1a (#716, E6) — la reconnaissance d'une date ISO, fixée par des cas.
@@ -737,6 +759,8 @@ fn les_replis_rust_suivent_le_catalogue() {
     const PAYS: &[(&str, &str)] = &[("{ $code }", "{code}")];
     // Story 35-2b (#955, revue P1 B1) — le nombre de lignes du refus « trop de lignes ».
     const LIGNES: &[(&str, &str)] = &[("{ $count }", "{n}")];
+    // Story 49-4a (#1364) — les lignes demandées et offertes du refus à la validation.
+    const BESOIN_PLACE: &[(&str, &str)] = &[("{ $besoin }", "{besoin}"), ("{ $place }", "{place}")];
     // Story 35-1 (#948) — le format de numérotation et le nom de l'exercice.
     const FORMAT_EXERCICE: &[(&str, &str)] = &[
         ("{ $format }", "{format}"),
@@ -773,6 +797,8 @@ fn les_replis_rust_suivent_le_catalogue() {
                 // Story 35-2b (#955, revue P1 B1) — un seul site : la fonction
                 // `message_trop_de_lignes_pdf`, commune à la route et au lot.
                 ("error-invoice-too-many-lines-for-pdf", 1, LIGNES),
+                // Story 49-4a (#1364, AC8) — un seul site : `message_lignes_hors_page`.
+                ("error-invoice-lines-do-not-fit-pdf", 1, BESOIN_PLACE),
                 // Story 15-1a2-0 (#518) — le rang 2 bis, un bras par famille, et
                 // le message neutre de `LETTERING_IS_DOCUMENT` (validation P1, R-2).
                 ("settlement-cancel-blocked-lettering-closed", 1, &[]),
@@ -1918,7 +1944,8 @@ fn ligne_unique<'a>(
 /// qui nomme l'écart.
 ///
 /// Règle (AC7) :
-/// - **Dockerfile** : lignes `FROM rust:` non commentées, `FROM` sans égard à la casse
+/// - **Dockerfile** : lignes `FROM rust:` (ou `FROM ${REGISTRY}/rust:`, le registre des
+///   images de base passé en `ARG`, C-31-2-3) non commentées, `FROM` sans égard à la casse
 ///   (une instruction Dockerfile l'est) ; exactement une. Le tag est `X.Y[.Z]`, suivi ou
 ///   non de `-<suffixe>` (`1.97-bookworm`, `1.97.1-bookworm`, `1.97`), puis éventuellement
 ///   de `AS <nom>`. Un tag sans mineure (`1-bookworm`, `bookworm`, `latest`) est refusé.
@@ -1930,7 +1957,8 @@ fn ligne_unique<'a>(
 ///   (C-31-3-2).
 ///
 /// **Angles morts écrits** : une image tirée par `FROM --platform=… rust:…`, par une
-/// variable (`FROM ${IMAGE}`) ou par un digest (`rust:1.97@sha256:…`) n'est pas
+/// variable autre que le préfixe `${REGISTRY}/` (`FROM ${IMAGE}`, `FROM ${X}/rust:…`) ou
+/// par un digest (`rust:1.97@sha256:…`) n'est pas
 /// reconnue — la première et la deuxième rendent « aucune ligne », la troisième « sans
 /// mineure » : un refus explicite, jamais un vert muet. Une table `[toolchain]` écrite en
 /// ligne (`toolchain = { channel = … }`) rend « absent ».
@@ -1938,10 +1966,13 @@ fn rust_versions_accordees(
     dockerfile: &str,
     toolchain: &str,
 ) -> Result<(VersionRust, VersionRust), String> {
+    // Le préfixe `${REGISTRY}/` (l'`ARG` du registre des images de base, C-31-2-3) est le
+    // seul admis : toute autre variable reste un angle mort refusé.
     static FROM_RUST: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r"(?i)^\s*FROM\s+rust:").unwrap());
-    static TAG: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r"(?i)^\s*FROM\s+rust:(\S+)(?:\s+AS\s+\S+)?\s*$").unwrap());
+        LazyLock::new(|| Regex::new(r"(?i)^\s*FROM\s+(?:\$\{REGISTRY\}/)?rust:").unwrap());
+    static TAG: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"(?i)^\s*FROM\s+(?:\$\{REGISTRY\}/)?rust:(\S+)(?:\s+AS\s+\S+)?\s*$").unwrap()
+    });
     static VERSION_DU_TAG: LazyLock<Regex> =
         LazyLock::new(|| Regex::new(r"^(\d+\.\d+(?:\.\d+)?)(?:-[A-Za-z0-9._-]+)?$").unwrap());
     static CHANNEL: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*channel\s*=").unwrap());
@@ -2008,8 +2039,23 @@ fn rust_versions_accordees(
 fn g21_la_regle_d_accord_dockerfile_toolchain() {
     const TC_1971: &str = "[toolchain]\nchannel = \"1.97.1\"\n";
     // (Dockerfile, rust-toolchain.toml, Ok(()) ou fragment attendu du message d'erreur)
-    let cas: [(&str, &str, Result<(), &str>); 16] = [
+    let cas: [(&str, &str, Result<(), &str>); 19] = [
         ("FROM rust:1.97-bookworm\n", TC_1971, Ok(())),
+        (
+            "ARG REGISTRY=docker.io/library\nFROM ${REGISTRY}/rust:1.97-bookworm AS rust-builder\n",
+            TC_1971,
+            Ok(()),
+        ),
+        (
+            "FROM ${REGISTRY}/rust:1.96-bookworm\n",
+            TC_1971,
+            Err("mineure"),
+        ),
+        (
+            "FROM ${IMAGE}/rust:1.97-bookworm\n",
+            TC_1971,
+            Err("aucune ligne"),
+        ),
         (
             "FROM rust:1.97.1-bookworm AS rust-builder\n",
             TC_1971,
@@ -2119,6 +2165,122 @@ fn le_dockerfile_et_rust_toolchain_designent_la_meme_chaine() {
         }
         Err(e) => panic!("G21 — Dockerfile et rust-toolchain.toml en désaccord : {e}"),
     }
+}
+
+/// **Fonction pure de G21, second volet** (C-31-2-3) — le registre des images de base
+/// vaut Docker Hub par défaut. Les `FROM` du `Dockerfile` lisent `${REGISTRY}/…` : la
+/// release (`release.yml`, qui ne passe pas l'argument) construit l'image publiée depuis
+/// ce défaut, et seule la CI d'une PR sans secret le remplace par le miroir ECR.
+///
+/// Règle : exactement une ligne `ARG REGISTRY` non commentée (`ARG` sans égard à la
+/// casse), de valeur `docker.io/library` mot pour mot, placée **avant** le premier `FROM`
+/// (un `ARG` d'étape ne serait pas lu par les `FROM`, et le défaut ne s'appliquerait pas).
+fn registre_par_defaut_docker_hub(dockerfile: &str) -> Result<(), String> {
+    static ARG_REGISTRY: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"(?i)^\s*ARG\s+REGISTRY\b").unwrap());
+    static VALEUR: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"(?i)^\s*ARG\s+REGISTRY=(\S*)\s*$").unwrap());
+    static FROM: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)^\s*FROM\s").unwrap());
+
+    let ligne = ligne_unique(
+        dockerfile,
+        &ARG_REGISTRY,
+        "Dockerfile",
+        "`ARG REGISTRY`",
+        "aucune ligne `ARG REGISTRY` non commentée",
+    )?;
+    let valeur = VALEUR
+        .captures(ligne)
+        .map(|c| c[1].to_string())
+        .ok_or_else(|| format!("Dockerfile : `ARG REGISTRY` sans défaut lisible : « {ligne} »"))?;
+    if valeur != "docker.io/library" {
+        return Err(format!(
+            "Dockerfile : défaut de `ARG REGISTRY` = `{valeur}`, attendu `docker.io/library`"
+        ));
+    }
+    let position = |motif: &Regex| dockerfile.lines().position(|l| motif.is_match(l));
+    match (position(&ARG_REGISTRY), position(&FROM)) {
+        (Some(arg), Some(from)) if arg < from => Ok(()),
+        (_, None) => Err("Dockerfile : aucun `FROM`".to_string()),
+        _ => Err("Dockerfile : `ARG REGISTRY` après le premier `FROM`, attendu avant".to_string()),
+    }
+}
+
+/// G21, second volet — cas de la fonction pure : l'accord et chaque branche de refus
+/// (la sonde négative), reconnue à un fragment de son message.
+#[test]
+fn g21_le_registre_par_defaut_est_docker_hub() {
+    let cas: [(&str, Result<(), &str>); 7] = [
+        (
+            "ARG REGISTRY=docker.io/library\nFROM ${REGISTRY}/rust:1.97-bookworm\n",
+            Ok(()),
+        ),
+        (
+            "ARG REGISTRY=public.ecr.aws/docker/library\nFROM ${REGISTRY}/rust:1.97\n",
+            Err("attendu `docker.io/library`"),
+        ),
+        (
+            "ARG REGISTRY\nFROM ${REGISTRY}/rust:1.97\n",
+            Err("sans défaut"),
+        ),
+        (
+            "FROM rust:1.97-bookworm\n",
+            Err("aucune ligne `ARG REGISTRY`"),
+        ),
+        (
+            "# ARG REGISTRY=docker.io/library\nFROM rust:1.97\n",
+            Err("aucune ligne `ARG REGISTRY`"),
+        ),
+        (
+            "ARG REGISTRY=docker.io/library\nARG REGISTRY=docker.io/library\nFROM x\n",
+            Err("2 lignes"),
+        ),
+        (
+            "FROM debian AS a\nARG REGISTRY=docker.io/library\nFROM ${REGISTRY}/rust:1.97\n",
+            Err("après le premier `FROM`"),
+        ),
+    ];
+    let mut erreurs = Vec::new();
+    for (i, (dockerfile, attendu)) in cas.iter().enumerate() {
+        let rendu = registre_par_defaut_docker_hub(dockerfile);
+        let juste = match (attendu, &rendu) {
+            (Ok(()), Ok(())) => true,
+            (Err(fragment), Err(message)) => message.contains(fragment),
+            _ => false,
+        };
+        if !juste {
+            erreurs.push(format!(
+                "cas {i} ({dockerfile:?}) : attendu {attendu:?}, rendu {rendu:?}"
+            ));
+        }
+    }
+    assert!(
+        erreurs.is_empty(),
+        "G21 (registre) — {} cas faux :\n  - {}",
+        erreurs.len(),
+        erreurs.join("\n  - ")
+    );
+}
+
+/// **G21, second volet** (C-31-2-3) — le `Dockerfile` réel tire ses images de base de
+/// Docker Hub par défaut, et `release.yml` ne remplace pas ce défaut : l'image publiée ne
+/// part jamais du miroir des PR de fork.
+#[test]
+fn le_dockerfile_tire_de_docker_hub_par_defaut() {
+    let dockerfile = lire("Dockerfile");
+    assert!(dockerfile.contains("rust-builder"), "Dockerfile lu à vide");
+    if let Err(e) = registre_par_defaut_docker_hub(&dockerfile) {
+        panic!("G21 — registre des images de base : {e}");
+    }
+    let release = lire(".github/workflows/release.yml");
+    assert!(
+        release.contains("docker/build-push-action"),
+        "release.yml lu à vide"
+    );
+    assert!(
+        !release.contains("REGISTRY"),
+        "G21 — release.yml nomme `REGISTRY` : l'image publiée doit partir du défaut du Dockerfile"
+    );
 }
 
 /// **G22** (#503, revue de code P1 de la Story 31-1c, L-B4 et F-A2) — la sauvegarde
@@ -3037,4 +3199,26 @@ fn le_vocabulaire_analytique_est_compte_analytique() {
         ecarts.len(),
         ecarts.join("\n  - ")
     );
+}
+
+/// **T4 (Story 49-4a, #1364, AC8)** — le refus de capacité à la validation a sa phrase dans
+/// les **quatre** catalogues, chacune avec les deux nombres (`$besoin`, `$place`) : une
+/// traduction qui en perdrait un dirait un refus sans ce qu'il faut retirer.
+#[test]
+fn le_refus_de_capacite_a_ses_deux_nombres_en_quatre_langues() {
+    for locale in ["fr-CH", "de-CH", "it-CH", "en-CH"] {
+        let catalogue = lire(&format!("crates/kesh-i18n/locales/{locale}/messages.ftl"));
+        let lignes: Vec<&str> = catalogue
+            .lines()
+            .filter(|l| l.starts_with("error-invoice-lines-do-not-fit-pdf ="))
+            .collect();
+        assert_eq!(lignes.len(), 1, "{locale} : {lignes:?}");
+        for variable in ["{ $besoin }", "{ $place }"] {
+            assert!(
+                lignes[0].contains(variable),
+                "{locale} : {variable} absent de {}",
+                lignes[0]
+            );
+        }
+    }
 }

@@ -371,3 +371,88 @@ test('7 — compte principal : la case « Compte PayPal » est désactivée, ave
 	await expect(page.getByTestId('edit-is-paypal-locked')).toBeVisible();
 	await captureOf(page, 'edit-bank-account-form', '13-principal-case-desactivee');
 });
+
+test('8 — retrait détaché côté PayPal, réception rattachée : « Déjà comptabilisée », jamais écrit deux fois', async ({
+	page,
+}) => {
+	// Correctif « une transaction de prestataire n'est écrite qu'une fois ».
+	await login(page);
+	const ctx = await authedApiContext(page);
+	let withdrawalId = 0;
+	let entryId = 0;
+	let destination = 0;
+	try {
+		const banks = await api<Array<{ id: number; journalAccountId: number | null }>>(ctx, 'get', '/api/v1/bank-accounts');
+		const paypalChf = banks.find((b) => b.journalAccountId === ids.chf)!.id;
+		const imports = await api<{ items: Array<{ id: number }> }>(ctx, 'get', `/api/v1/bank-imports?bankAccountId=${paypalChf}`);
+		for (const imp of imports.items) {
+			const detail = await api<{
+				transactions: Array<{ id: number; transactionId: string | null; matchedEntryId: number | null }>;
+			}>(ctx, 'get', `/api/v1/bank-imports/${imp.id}`);
+			const t = detail.transactions.find((x) => x.transactionId === '0TEST00000000007G');
+			if (t) {
+				withdrawalId = t.id;
+				entryId = t.matchedEntryId ?? 0;
+			}
+		}
+		expect(entryId, 'le retrait accepté à l’étape 4').toBeGreaterThan(0);
+		// La réception : un compte bancaire relié au compte de destination du retrait.
+		const entry = await api<{ lines: Array<{ accountId: number }> }>(ctx, 'get', `/api/v1/journal-entries/${entryId}`);
+		destination = entry.lines.find((l) => l.accountId !== ids.chf)!.accountId;
+		const bank = await api<{ id: number }>(ctx, 'post', '/api/v1/bank-accounts', {
+			bankName: 'Banque de réception',
+			iban: 'CH5604835012345678009',
+			journalAccountId: destination,
+		});
+		const imported = await api<{ id: number }>(ctx, 'post', '/api/v1/bank-imports/manual', {
+			bankAccountId: bank.id,
+			periodFrom: '2020-02-28',
+			periodTo: '2020-02-28',
+			statementNumber: null,
+			openingBalance: '0.00',
+			closingBalance: '1000.00',
+			lines: [
+				{
+					bookingDate: '2020-02-28',
+					valueDate: '2020-02-28',
+					details: 'Virement PayPal',
+					counterpartyName: 'PayPal',
+					reference: null,
+					amount: '1000.00',
+					direction: 'credit',
+				},
+			],
+			confirmDuplicateFile: false,
+			confirmDuplicateLines: false,
+			confirmOpeningBalanceGap: false,
+		});
+		const detail = await api<{ transactions: Array<{ id: number }> }>(ctx, 'get', `/api/v1/bank-imports/${imported.id}`);
+		await api(ctx, 'post', `/api/v1/reconciliation/transactions/${detail.transactions[0].id}/link-entry`, {
+			journalEntryId: entryId,
+		});
+		// Le côté PayPal annulé seul : son lien retiré, l'écriture reste.
+		await api(ctx, 'post', `/api/v1/reconciliation/transactions/${withdrawalId}/cancel`, {});
+	} finally {
+		await disposeContextSafe(ctx);
+	}
+	await page.goto('/reconciliation/paypal');
+	const row = page.getByTestId(`paypal-to-review-${withdrawalId}`);
+	await expect(row).toContainText('Déjà comptabilisée');
+	await expect(page.getByTestId(`paypal-to-review-entry-${withdrawalId}`)).toHaveAttribute(
+		'href',
+		`/journal-entries/${entryId}`,
+	);
+	await captureOf(page, 'paypal-to-review', '14-deja-comptabilisee');
+	// L'ancienne proposition, renvoyée : refusée, rien d'écrit.
+	const ctx2 = await authedApiContext(page);
+	try {
+		const res = await api<{ accepted: unknown[]; failed: Array<{ errorCode: string }> }>(ctx2, 'post', '/api/v1/paypal/accept', {
+			account: PAYPAL,
+			proposals: [{ type: 'withdrawal', bankTransactionId: withdrawalId, counterpartyAccountId: destination }],
+		});
+		expect(res.accepted).toEqual([]);
+		expect(res.failed.map((f) => f.errorCode)).toEqual(['PROVIDER_TRANSACTION_ALREADY_POSTED']);
+	} finally {
+		await disposeContextSafe(ctx2);
+	}
+});

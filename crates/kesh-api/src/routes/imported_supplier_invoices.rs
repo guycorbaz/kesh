@@ -42,10 +42,10 @@ use crate::middleware::auth::CurrentUser;
 use crate::routes::contacts::ContactResponse;
 use crate::routes::supplier_invoices::{
     CreateSupplierInvoiceRequest, PaymentDetails, PaymentSource, SupplierInvoiceResponse,
-    normalize_payment_field,
 };
 use crate::services::acces::ContexteAcces;
 use crate::services::pieces;
+use kesh_core::payment_text::normalize_payment_field;
 
 // ---------------------------------------------------------------------------
 // POST /api/v1/inbox-import
@@ -200,7 +200,18 @@ async fn complete_import_once(
 
         // (7) Création du BROUILLON dans la MÊME transaction (DC6) — Story
         //     v017-4a (#849, AC-7) : la complétion n'écrit plus au journal.
-        let created = supplier_invoices::create_draft_in_tx(&mut tx, new, user_id).await?;
+        //     Story 48-12a (#975, D3, D4) : le verrou du fournisseur est la
+        //     première instruction de la création, et aucune lecture ordinaire
+        //     ne la précède ici (le staging est une lecture verrouillante,
+        //     `new_from_document` est pur) ; le refus de doublon vient après le
+        //     statut du document et ses règles.
+        let created = supplier_invoices::create_draft_in_tx_with_policy(
+            &mut tx,
+            new,
+            user_id,
+            req.duplicate_policy(),
+        )
+        .await?;
 
         // Lien staging → facture réelle + passage `completed`, origine
         // `completion` (le `PUT` du brouillon garde les règles du QR).

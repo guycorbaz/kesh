@@ -100,6 +100,10 @@ async function decor(page: Page): Promise<Decor> {
 async function brouillon(d: Decor, numero: string | null): Promise<{ id: number; version: number }> {
 	const res = await d.ctx.post('/api/v1/supplier-invoices', {
 		data: {
+			// Story 48-12a — les brouillons de ce décor ont tous la même date et le même montant :
+			// sans numéro, la règle 2 les refuserait comme doublons probables. Ils sont distincts
+			// par construction : la confirmation est explicite.
+			confirmNotDuplicate: true,
 			contactId: d.supplierId,
 			supplierInvoiceNumber: numero,
 			invoiceDate: todayInZurich(),

@@ -1,0 +1,44 @@
+# empreinte du rendu d'un PDF — kesh-qrbill, format 1
+pages	1
+media-box	1 [0 0 595.27563 841.88983]
+condensat-operations	0eea979707fa2fb642ea27a305a1290e88495dabfd51e382238b9e648f6273c4
+nombre-operations	194
+police	1 /Helvetica <</BaseFont /Helvetica /Encoding /WinAnsiEncoding /Subtype /Type1 /Type /Font>>
+police	1 /Helvetica-Bold <</BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding /Subtype /Type1 /Type /Font>>
+ressources	1 <</Font <</Helvetica <</BaseFont /Helvetica /Encoding /WinAnsiEncoding /Subtype /Type1 /Type /Font>> /Helvetica-Bold <</BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding /Subtype /Type1 /Type /Font>>>> /Properties <</MC0 <</Intent [/View /Design] /Name (4C617965722031) /Type /OCG /Usage <</CreatorInfo <</Creator (41646F626520496C6C7573747261746F722031342E30) /Subtype /Artwork>> /Type /OCG>>>>>>>>
+texte	20.000002	277.00003	CI Test Company
+texte	20.000002	272.00003	Test Address 1
+texte	20.000002	268.00003	1000 Lausanne
+texte	120.000015	277.00003	Avoir
+texte	120.000015	270.00003	N° d'avoir: AV-2020-0001
+texte	120.000015	265.50003	Date: 20.04.2026
+texte	120.000015	261.00003	Réf. facture d'origine: F-2020-0004
+texte	20.000002	242.00002	Destinataire
+texte	20.000002	237.00003	Pia Rutschmann
+texte	20.000002	232.50002	Marktgasse 28
+texte	20.000002	228.50003	9400 Rorschach
+texte	20.000002	167.00003	Description
+texte	110.000015	167.00003	Qté
+texte	130.00002	167.00003	Prix unitaire
+texte	160.00002	167.00003	TVA
+texte	180.00002	167.00003	Total
+texte	20.000002	159.00002	Conseil
+texte	110.000015	159.00002	2.00
+texte	130.00002	159.00002	150.00
+texte	160.00002	159.00002	7.70%
+texte	180.00002	159.00002	300.00
+texte	20.000002	154.00002	Ouvrages de référence
+texte	110.000015	154.00002	3.00
+texte	130.00002	154.00002	40.00
+texte	160.00002	154.00002	2.60%
+texte	180.00002	154.00002	120.00
+texte	130.00002	142.00002	Sous-total
+texte	180.00002	142.00002	CHF 420.00
+texte	130.00002	137.50002	TVA 7.7%
+texte	180.00002	137.50002	CHF 23.10
+texte	130.00002	133.00002	TVA 2.6%
+texte	180.00002	133.00002	CHF 3.12
+texte	130.00002	128.50002	Arrondi
+texte	180.00002	128.50002	CHF -0.02
+texte	130.00002	123.000015	Total TTC
+texte	180.00002	123.000015	CHF 446.20

@@ -18,5 +18,6 @@ pub mod horloge;
 pub mod invoice_format;
 pub mod lettering;
 pub mod listing;
+pub mod payment_text;
 pub mod text;
 pub mod types;

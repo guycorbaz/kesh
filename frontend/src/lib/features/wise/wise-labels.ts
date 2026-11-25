@@ -284,9 +284,11 @@ export const WISE_GAP_CODES = ['conversion_half_missing', 'fee_without_origin', 
 /**
  * Les motifs « à examiner » de la revue Wise : ceux de Wise (`REVIEW_*` de
  * `wise.rs`) et ceux de la revue commune que Wise sert (frais sans compte de
- * frais, aucune règle). Exportée pour le test, comparée à la source Rust.
+ * frais, aucune règle, transaction déjà comptabilisée). Exportée pour le test,
+ * comparée à la source Rust.
  */
 export const WISE_TO_REVIEW_CODES = [
+	'already_posted',
 	'fee_account_missing',
 	'no_rule',
 	'ambiguous_link',

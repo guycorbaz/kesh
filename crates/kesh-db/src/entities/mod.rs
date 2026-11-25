@@ -29,6 +29,7 @@ pub mod invoice_number_sequence;
 pub mod invoice_reminder;
 pub mod invoice_settlement;
 pub mod journal_entry;
+pub mod line_type;
 pub mod mcp_key;
 pub mod mcp_prompt;
 pub mod mcp_prompt_standards;
@@ -80,6 +81,7 @@ pub use journal_entry::{
     ForeignAmount, Journal, JournalEntry, JournalEntryLine, JournalEntryWithLines, LineForeign,
     NewJournalEntry, NewJournalEntryLine, RateProvenance,
 };
+pub use line_type::LineType;
 pub use mcp_key::{
     McpKey, McpScope, McpScopeError, McpScopes, NewMcpKey, SendValidation, StoredMcpScopes,
 };

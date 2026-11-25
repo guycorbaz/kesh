@@ -172,6 +172,9 @@ describe('stripe-labels — écarts et motifs', () => {
 	it('motifs : communs (clés provider-) et propres à Stripe, la catégorie nommée', () => {
 		expect(stripeToReviewLabel({ code: 'ambiguous_sale' })).toMatch(/^provider-review-ambiguous-sale\|/);
 		expect(stripeToReviewLabel({ code: 'fee_account_missing' })).toMatch(/^provider-review-fee-account-missing\|/);
+		expect(stripeToReviewLabel({ code: 'already_posted', details: { journalEntryId: 7 } })).toMatch(
+			/^provider-review-already-posted\|/,
+		);
 		expect(stripeToReviewLabel({ code: 'other_category', details: { category: 'dispute' } })).toContain('(dispute)');
 		expect(stripeToReviewLabel({ code: 'refund' })).toMatch(/^stripe-review-refund\|/);
 	});
@@ -200,6 +203,7 @@ describe('stripe-labels — les codes contre leur source Rust', () => {
 		'sale_without_receipt',
 	];
 	const ATTENDUS_MOTIFS = [
+		'already_posted',
 		'ambiguous_sale',
 		'fee_account_missing',
 		'other_category',
@@ -235,6 +239,10 @@ describe('stripe-labels — les codes contre leur source Rust', () => {
 describe('stripe-labels — refus de l’acceptation', () => {
 	it('proposition périmée : la clé commune ; les autres délégués au rapprochement', () => {
 		expect(stripeFailedLabel('PROVIDER_PROPOSAL_STALE')).toMatch(/^provider-failed-proposal-stale\|/);
+		// Règle commune « écrite une seule fois » (#1539), déléguée au moteur commun.
+		expect(stripeFailedLabel('PROVIDER_TRANSACTION_ALREADY_POSTED', { journalEntryId: 9 })).toMatch(
+			/^provider-failed-already-posted\|/,
+		);
 		expect(stripeFailedLabel('BANK_ACCOUNT_CLOSED', { bankAccountId: 3 })).not.toContain('reconciliation-failed-unknown');
 		expect(stripeFailedLabel('RATE_UNAVAILABLE', {})).not.toContain('reconciliation-failed-unknown');
 		// Destination rejugée à l'acceptation (revue d'intégration de l'Epic 39, M2).

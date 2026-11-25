@@ -40,7 +40,7 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 use crate::provider_review::{
-    BASE_CURRENCY, EntryKind, Placement, Proposal, ProviderKind, ProviderSpec,
+    BASE_CURRENCY, EntryKind, Placement, Proposal, ProviderKind, ProviderSpec, one_key_kind,
 };
 
 /// Valeur de `bank_accounts.provider` d'un compte Wise.
@@ -248,6 +248,9 @@ pub const SPEC: ProviderSpec = ProviderSpec {
     classify,
     match_key,
     extract_ids: no_ids,
+    // Raccord de la fusion de `pr/40-stripe` : le champ commun, au genre unique
+    // de PayPal (sans effet tant que `no_ids` ne rend aucun identifiant).
+    same_key_kind: one_key_kind,
     conversion_match,
     conversion_unpaired: (GAP_CONVERSION_HALF_MISSING, Placement::Gap),
     entry_label,

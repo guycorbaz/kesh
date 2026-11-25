@@ -360,7 +360,12 @@ const NINE_HANDLERS: [(&str, &str, &str); 9] = [
         "update_supplier_invoice_once",
     ),
     (HANDLERS, "validate_supplier_invoice", "validate"),
-    (HANDLERS, "unvalidate_supplier_invoice", "unvalidate"),
+    // Story 48-12a (#975) : la route appelle la variante à politique anti-doublon.
+    (
+        HANDLERS,
+        "unvalidate_supplier_invoice",
+        "unvalidate_with_policy",
+    ),
     (HANDLERS, "pay_supplier_invoice", "pay"),
     (HANDLERS, "cancel_supplier_invoice", "cancel"),
     (
@@ -385,7 +390,9 @@ const NINE_HANDLERS: [(&str, &str, &str); 9] = [
 /// `kesh-db` et les quatre tentatives `_once` des routes.
 const NINE_WRITERS: [(&str, &str); 9] = [
     (WRITES, "validate"),
-    (WRITES, "unvalidate"),
+    // Story 48-12a (#975) : le corps de `unvalidate` est passé dans
+    // `unvalidate_with_policy`, qui tient la transaction.
+    (WRITES, "unvalidate_with_policy"),
     (WRITES, "pay"),
     (WRITES, "cancel"),
     (WRITES, "cancel_settlement"),

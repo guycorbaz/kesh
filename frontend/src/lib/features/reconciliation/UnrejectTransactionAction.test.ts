@@ -45,6 +45,12 @@ vi.mock('$lib/shared/utils/notify', () => ({
 import * as api from './reconciliation.api';
 import * as notify from '$lib/shared/utils/notify';
 import UnrejectTransactionAction from './UnrejectTransactionAction.svelte';
+import { pinTimeZone } from '$lib/shared/utils/pin-time-zone.test-helper';
+
+// Revue P1 de la 50-6 (R1-1) : New York pour tout le fichier, afin que le formateur mis en cache par
+// `formatInstant` naisse sous New York quelle que soit la station et l'ordre des tests (sans quoi la
+// mutation M1, « `timeZone` retiré », passait sous une station à Zurich).
+pinTimeZone('America/New_York');
 
 const mockApi = vi.mocked(api);
 const mockNotify = vi.mocked(notify);
@@ -65,10 +71,9 @@ function rejected(partial: Partial<BankTransactionDto> = {}): BankTransactionDto
 		status: 'pending',
 		matchedEntryId: null,
 		// Revue P1 (E-1, A-2) : un autre jour qu'aujourd'hui, pour qu'une date du jour formatée à
-		// la place de celle du rejet se voie. La date suit le fuseau du navigateur (C-28-5-15) ; la
-		// suite ne fixe aucun fuseau et tourne dans celui du runner (poste de dev, CI). À 11:00 UTC,
-		// le 4 mars reste le 4 mars de UTC-11 à UTC+12 : l'assertion tient pour tout runner de
-		// cette plage, et rougirait sur un runner en UTC+13 ou UTC+14.
+		// la place de celle du rejet se voie. La date est celle de Zurich (50-6, #1511), quel que soit
+		// le fuseau du poste : à 11:00 UTC, le 4 mars reste le 4 mars à Zurich ; ce test ne fixe aucun
+		// fuseau, et les cas de fuseau ont leur `describe` épinglé (`pinTimeZone`) plus bas.
 		autoMatchRejectedAt: '2026-03-04T11:00:00Z',
 		...partial,
 	};
@@ -165,5 +170,32 @@ describe('UnrejectTransactionAction', () => {
 		// Revue P1 (B-L3) — après l'échec, le bouton redevient actif : on peut réessayer
 		// (mutation M22 : `finally { submitting = false }` retiré).
 		await waitFor(() => expect(bouton.disabled).toBe(false));
+	});
+});
+
+// Story 50-6 (#1511, AC6, AC9) — la date du rejet est celle de Zurich, quel que soit le fuseau du
+// poste. Le composant se monte après l'épinglage (piège du `$derived`).
+describe('UnrejectTransactionAction — la date du rejet (50-6)', () => {
+	describe('poste à America/New_York', () => {
+		pinTimeZone('America/New_York');
+
+		it('AC6 : 23:30 UTC le 4 mars = le 5 mars à Zurich (mutation : `Intl` sans `timeZone`)', () => {
+			const { getByTestId } = monter(false, rejected({ autoMatchRejectedAt: '2026-03-04T23:30:00Z' }));
+			expect((getByTestId('detail-tx-rejected-on').textContent ?? '').trim()).toBe('Rejetée le 5 mars 2026');
+		});
+
+		it('AC6 : le test existant (11:00Z) reste le 4 mars', () => {
+			const { getByTestId } = monter(false);
+			expect((getByTestId('detail-tx-rejected-on').textContent ?? '').trim()).toBe('Rejetée le 4 mars 2026');
+		});
+	});
+
+	describe('poste à Europe/Zurich (AC9 : filet, vert avant et après)', () => {
+		pinTimeZone('Europe/Zurich');
+
+		it('rend la même chose', () => {
+			const { getByTestId } = monter(false, rejected({ autoMatchRejectedAt: '2026-03-04T23:30:00Z' }));
+			expect((getByTestId('detail-tx-rejected-on').textContent ?? '').trim()).toBe('Rejetée le 5 mars 2026');
+		});
 	});
 });

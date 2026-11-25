@@ -11,6 +11,7 @@ use rust_decimal::Decimal;
 
 use crate::provider_review::{
     EntryKind, Placement, ProviderKind, ProviderSpec, REVIEW_CONVERSION_UNPAIRED, no_extra_kind,
+    one_key_kind,
 };
 
 /// Valeur de `bank_accounts.provider` d'un compte PayPal.
@@ -203,6 +204,7 @@ pub const SPEC: ProviderSpec = ProviderSpec {
     classify,
     match_key,
     extract_ids: txn_ids_in,
+    same_key_kind: one_key_kind,
     conversion_match,
     conversion_unpaired: (REVIEW_CONVERSION_UNPAIRED, Placement::ToReview),
     entry_label,
@@ -243,6 +245,26 @@ mod tests {
             created_at: now,
             updated_at: now,
         }
+    }
+
+    /// Correctif #1538 : avec les libellés de PayPal, l'écriture d'un
+    /// retrait nomme le retrait, jamais ses frais (même identifiant, suffixe
+    /// `:FEE`), ni un autre retrait de même montant.
+    #[test]
+    fn libelle_paypal_nomme_la_seule_transaction_ecrite() {
+        use crate::provider_review::entry_names;
+        let retrait = tx("-50.00", "General Withdrawal", "0TESTRETRAIT00003");
+        let frais = tx("-50.00", "General Withdrawal", "0TESTRETRAIT00003:FEE");
+        let autre = tx("-50.00", "General Withdrawal", "0TESTRETRAIT00004");
+        let principal = entry_label(EntryKind::Withdrawal, "www", &retrait);
+        let des_frais = entry_label(EntryKind::Fee, "www", &frais);
+        assert!(entry_names(&SPEC, &retrait, &principal, &[]));
+        assert!(!entry_names(&SPEC, &frais, &principal, &[]), "{principal}");
+        assert!(!entry_names(&SPEC, &autre, &principal, &[]));
+        assert!(!entry_names(&SPEC, &frais, &des_frais, &[]), "{des_frais}");
+        // L'écriture des frais nomme le retrait (elle porte « TXN <id> ») : la
+        // présélection l'écarte, elle n'est jamais rapprochée de l'autre côté.
+        assert!(entry_names(&SPEC, &retrait, &des_frais, &[]));
     }
 
     #[test]

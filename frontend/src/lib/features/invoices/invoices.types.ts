@@ -13,10 +13,26 @@ export type InvoiceSortBy = 'Date' | 'DueDate' | 'TotalAmount' | 'ContactName' |
 export type SortDirection = 'Asc' | 'Desc';
 export type InvoiceStatus = 'draft' | 'validated' | 'cancelled';
 
+/**
+ * Type d'une ligne de facture ou d'avoir (Story 49-1a, #1242) : `priced` (ligne
+ * chiffrée, la seule forme d'avant la 0.20.0), `comment` (texte seul, ouvert à
+ * l'API par la Story 49-1c), `heading` (titre de section, refusé par l'API
+ * jusqu'à la Story 49-3). Une ligne non chiffrée porte des valeurs neutres
+ * (quantité, prix, taux et total à zéro, aucun compte).
+ */
+export type InvoiceLineType = 'priced' | 'comment' | 'heading';
+
 export interface InvoiceLineResponse {
 	id: number;
 	invoiceId: number;
 	position: number;
+	/**
+	 * Type de la ligne (Story 49-1c, D6). L'API le renvoie toujours depuis la
+	 * 0.20.0 ; il est **optionnel** ici, et **absent vaut `priced`**
+	 * (`estChiffree`, `invoice-line-type.ts`) — la règle des données d'avant la
+	 * 0.20.0 et des fixtures de test qui ne le portent pas.
+	 */
+	lineType?: InvoiceLineType;
 	description: string;
 	quantity: string;
 	unitPrice: string;
@@ -342,7 +358,19 @@ export interface CancelSettlementResponse {
 	reversalJournalEntryId: number;
 }
 
-export interface CreateInvoiceLineRequest {
+/** Les types d'une ligne de texte, sans montant (Story 49-5, #1464). */
+export type InvoiceTextLineType = Exclude<InvoiceLineType, 'priced'>;
+
+/**
+ * Charge d'une ligne **chiffrée** (`priced`) : quantité, prix unitaire et taux
+ * sont obligatoires, comme l'exige le serveur (Story 49-5, #1464).
+ *
+ * `lineType` est toujours envoyé par l'écran (Story 49-1c, D5) ; l'API accepte
+ * son absence (elle vaut `priced`, contrat de la 0.19.0) : ce type décrit ce que
+ * l'écran envoie, non tout ce que l'API accepte.
+ */
+export interface CreatePricedInvoiceLineRequest {
+	lineType: 'priced';
 	description: string;
 	quantity: string;
 	unitPrice: string;
@@ -359,6 +387,25 @@ export interface CreateInvoiceLineRequest {
 	 */
 	revenueAccountId?: number | null;
 }
+
+/**
+ * Charge d'une ligne de **texte** (`comment`, `heading`) : `{ lineType,
+ * description }` seulement, aucun montant ne part (`ligneAEnvoyer`, Story 49-1c,
+ * D3 ; le serveur refuserait une quantité non nulle).
+ *
+ * `heading` fait partie du type, mais le serveur le refuse encore (« le type de ligne
+ * heading n'est pas encore disponible », `invoices.rs:626`) : l'écran n'en crée pas
+ * avant la Story 49-3.
+ */
+export interface CreateTextInvoiceLineRequest {
+	lineType: InvoiceTextLineType;
+	description: string;
+}
+
+/** Charge d'une ligne : typée par son `lineType` (union discriminée, #1464). */
+export type CreateInvoiceLineRequest =
+	| CreatePricedInvoiceLineRequest
+	| CreateTextInvoiceLineRequest;
 
 export interface CreateInvoiceRequest {
 	contactId: number;

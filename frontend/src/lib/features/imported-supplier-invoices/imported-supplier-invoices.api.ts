@@ -9,7 +9,7 @@
  * `<a download>` directe.
  */
 
-import { apiClient } from '$lib/shared/utils/api-client';
+import { apiClient, type CallOptions } from '$lib/shared/utils/api-client';
 import { parseContentDispositionFilename } from '$lib/features/export/exports.api';
 import type { ContactResponse } from '$lib/features/contacts/contacts.types';
 import type {
@@ -46,9 +46,18 @@ export async function triggerInboxImport(): Promise<InboxImportReport> {
 	);
 }
 
-/** Liste les factures importées filtrées par statut (status obligatoire côté API). */
-export async function listImported(status: ImportedStatus): Promise<ImportedSupplierInvoice[]> {
-	return apiClient.get(`/api/v1/imported-supplier-invoices?status=${encodeURIComponent(status)}`);
+/**
+ * Liste les factures importées filtrées par statut (status obligatoire côté API).
+ * Story 48-12b (D2) — `call` : la relecture d'une complétion passe `{ retry: false }`.
+ */
+export async function listImported(
+	status: ImportedStatus,
+	call?: CallOptions,
+): Promise<ImportedSupplierInvoice[]> {
+	return apiClient.get(
+		`/api/v1/imported-supplier-invoices?status=${encodeURIComponent(status)}`,
+		call,
+	);
 }
 
 /**

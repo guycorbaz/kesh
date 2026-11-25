@@ -26,6 +26,7 @@ use printpdf::{
 };
 use rust_decimal::Decimal;
 
+use kesh_core::types::format_two_decimals;
 use kesh_db::entities::AccountRole;
 use kesh_qrbill::largeur_mm;
 
@@ -307,15 +308,16 @@ impl PdfContext {
 // ============================================================================
 
 /// Formate un `Decimal` au format suisse : apostrophe séparateur de milliers,
-/// point décimal, **toujours 2 décimales** (T2.4 + Pass 1 ECH-L1 négatifs).
+/// point décimal, **toujours 2 décimales**, **arrondies au centime** loin de zéro
+/// (T2.4 + Pass 1 ECH-L1 négatifs ; Story 48-11, #1245).
 ///
 /// Exemples :
 /// - `1234.5` → `"1'234.50"`
 /// - `-1234.56` → `"-1'234.56"`
 /// - `0` → `"0.00"`
 pub fn format_swiss_amount(amount: Decimal) -> String {
-    // Format raw avec 2 décimales (gère signe et arrondi)
-    let raw = format!("{amount:.2}");
+    // Arrondi au centime et 2 décimales exactes (gère signe et arrondi)
+    let raw = format_two_decimals(amount);
     let (sign, body) = if let Some(stripped) = raw.strip_prefix('-') {
         ("-", stripped)
     } else {
@@ -339,24 +341,10 @@ pub fn format_swiss_amount(amount: Decimal) -> String {
     format!("{sign}{grouped}{dec_part}")
 }
 
-/// Arrondi **explicite** d'un montant en devise avant tout formatage (Story
-/// 37-4, AC-5) : la somme reste exacte (4 décimales stockées), seul l'affichage
-/// passe à 2 décimales, l'équidistant loin de zéro — les formateurs ne font
-/// qu'un `{:.2}`, dont l'arrondi n'est pas celui qu'on écrit.
-///
-/// Un résidu négatif de moins d'un demi-centime (`-0.0040`) s'arrondit à un
-/// zéro **sans signe** : il ne s'affiche pas « -0.00 » (revue de code P1).
-pub(crate) fn round_for_display(amount: Decimal) -> Decimal {
-    let r = amount.round_dp_with_strategy(2, rust_decimal::RoundingStrategy::MidpointAwayFromZero);
-    if r.is_zero() { Decimal::ZERO } else { r }
-}
-
-/// Montant en devise au format suisse : `USD 1'233.57` (Story 37-4).
+/// Montant en devise au format suisse : `USD 1'233.57` (Story 37-4) ; l'arrondi
+/// au centime est celui de [`format_swiss_amount`].
 pub(crate) fn format_currency_amount(currency: &str, amount: Decimal) -> String {
-    format!(
-        "{currency} {}",
-        format_swiss_amount(round_for_display(amount))
-    )
+    format!("{currency} {}", format_swiss_amount(amount))
 }
 
 /// Formate un **cours de change** par unité de devise (Story 37-4, AC-5) : sans
@@ -896,7 +884,7 @@ pub fn render_balance_sheet_pdf(
     for (label, amount) in [
         bs.shows_retained_earnings_line().then_some((
             &ctx.section_labels.retained_result_label,
-            round_for_display(bs.retained_earnings),
+            bs.retained_earnings,
         )),
         Some((&ctx.section_labels.equity_result_label, bs.equity_result)),
     ]
@@ -1112,8 +1100,7 @@ pub fn render_trial_balance_pdf(
         // petit — ouverture, débit, crédit et clôture en devise. Aucune ligne de
         // total en devise (devises mêlées).
         if let Some(cur) = &row.currency {
-            let m =
-                |v: Option<Decimal>| format_swiss_amount(round_for_display(v.unwrap_or_default()));
+            let m = |v: Option<Decimal>| format_swiss_amount(v.unwrap_or_default());
             let texte = format!(
                 "{cur} {} {} · {} {} · {} {} · {} {}",
                 l.fx_opening,
@@ -1392,7 +1379,7 @@ const VAT_DUE_RIGHT_MM: f32 = AMOUNT_RIGHT_MM;
 
 /// Formate un taux en pourcent pour l'affichage (ex. `8.10` → `"8.10 %"`).
 fn format_rate(rate: Decimal) -> String {
-    format!("{rate:.2} %")
+    format!("{} %", format_two_decimals(rate))
 }
 
 /// Dessine une ligne du tableau TVA (3 colonnes, les deux montants alignés à
@@ -1665,7 +1652,7 @@ const RET_RENDEMENT_RIGHT_MM: f32 = AMOUNT_RIGHT_MM;
 
 fn format_rendement(pct: Option<Decimal>) -> String {
     match pct {
-        Some(p) => format!("{p:.2}%"),
+        Some(p) => format!("{}%", format_two_decimals(p)),
         None => "—".to_string(),
     }
 }
@@ -2163,6 +2150,7 @@ mod tests {
     use crate::balance_sheet::AccountBalance;
     use crate::period::ReportPeriod;
     use crate::trial_balance::TrialBalanceRow;
+    use kesh_core::types::round_for_display;
     use kesh_db::entities::AccountType;
     use kesh_db::entities::journal_entry::Journal;
     use rust_decimal_macros::dec;
@@ -3810,5 +3798,34 @@ mod tests {
         for h in ["Débit CHF", "Crédit CHF", "Solde CHF"] {
             assert!(multi.iter().any(|l| l == h), "{h}");
         }
+    }
+    // ------------------------------------------------------------------
+    // Story 48-11 (#1245) : les montants s'arrondissent au centime
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn format_swiss_amount_arrondit_au_centime() {
+        assert_eq!(format_swiss_amount(dec!(1234.5678)), "1'234.57");
+        assert_eq!(format_swiss_amount(dec!(10.0050)), "10.01");
+        assert_eq!(format_swiss_amount(dec!(-10.0050)), "-10.01");
+        assert_eq!(format_swiss_amount(dec!(-0.0040)), "0.00");
+    }
+
+    /// Prouve le **formateur** seul : le rendement arrive déjà arrondi au pair
+    /// de `project_report.rs` (`round_dp(2)`, #1442).
+    #[test]
+    fn format_rate_et_rendement_arrondissent() {
+        assert_eq!(format_rate(dec!(8.125)), "8.13 %");
+        assert_eq!(format_rendement(Some(dec!(12.345))), "12.35%");
+    }
+
+    #[test]
+    fn la_balance_pdf_arrondit_la_fraction_de_centime() {
+        let mut tb = fixture_tb(false);
+        tb.rows[0].total_debit = dec!(10.0050);
+        let ctx = PdfContext::fr_ch_default("Test SA");
+        let texte = pdf_text(&render_trial_balance_pdf(&tb, &ctx).unwrap());
+        assert!(texte.iter().any(|l| l == "10.01"), "{texte:?}");
+        assert!(!texte.iter().any(|l| l == "10.00"), "{texte:?}");
     }
 }

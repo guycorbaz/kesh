@@ -72,7 +72,7 @@ describe('paypal-labels — revue', () => {
 		expect(gapKindLabel('sale_without_receipt')).toContain('Vente sans encaissement');
 		expect(gapKindLabel('amount_or_currency_mismatch')).toContain('Montant ou devise différents');
 		expect(gapKindLabel('autre')).toBe('autre');
-		for (const r of ['ambiguous_sale', 'fee_account_missing', 'conversion_unpaired', 'withdrawal_foreign_currency', 'no_rule']) {
+		for (const r of ['ambiguous_sale', 'fee_account_missing', 'conversion_unpaired', 'withdrawal_foreign_currency', 'no_rule', 'already_posted']) {
 			expect(toReviewReasonLabel(r)).toMatch(/^paypal-to-review-/);
 		}
 		expect(toReviewReasonLabel('autre')).toBe('autre');
@@ -83,6 +83,9 @@ describe('paypal-labels — refus de l’acceptation', () => {
 	it('tous les refus du moteur commun passent par les clés provider-failed-*', () => {
 		expect(paypalFailedLabel('PROVIDER_PROPOSAL_STALE')).toMatch(/^provider-failed-proposal-stale\|/);
 		expect(paypalFailedLabel('NOT_FOUND')).toMatch(/^provider-failed-not-found\|/);
+		expect(paypalFailedLabel('PROVIDER_TRANSACTION_ALREADY_POSTED', { journalEntryId: 9 })).toMatch(
+			/^provider-failed-already-posted\|/,
+		);
 	});
 
 	it('les autres codes sont délégués au rapprochement générique', () => {
@@ -112,6 +115,9 @@ const CODES_ROUTE_PAYPAL = [
 	'NOT_FOUND',
 	'OPTIMISTIC_LOCK_CONFLICT',
 	'PROVIDER_PROPOSAL_STALE',
+	// La constante `FAILED_ALREADY_POSTED` de `kesh-reconciliation/src/provider_review.rs`
+	// (une transaction de prestataire n'est écrite qu'une fois), posée par `rejudge_writing`.
+	'PROVIDER_TRANSACTION_ALREADY_POSTED',
 	'RATE_UNAVAILABLE',
 	'RECONCILIATION_ALREADY_RECONCILED',
 	'RECONCILIATION_ENTRY_NOT_LINKABLE',

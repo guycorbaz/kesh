@@ -1834,10 +1834,17 @@ fn complete_body(
     unit: Decimal,
     vat: Decimal,
 ) -> Value {
+    // Story 48-12a (#975) : un numéro du fournisseur par corps — la règle anti-doublon
+    // refuse le même numéro du même fournisseur dans la même année.
+    static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(100);
+    let numero = format!(
+        "FF-2026-{}",
+        N.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    );
     json!({
         "contactId": supplier_id,
         "invoiceDate": "2026-06-15",
-        "supplierInvoiceNumber": "FF-2026-100",
+        "supplierInvoiceNumber": numero,
         "dueDate": "2026-07-15",
         "lines": [{
             "description": "Prestation",
@@ -3576,9 +3583,11 @@ async fn journal_entry_detail_shows_the_document(pool: MySqlPool) {
         "pay relit la facture"
     );
 
+    // Story 48-12a (#975) : le numéro du fournisseur est unique par corps
+    // (`complete_body`) — celui que la création a reçu, non un littéral.
     let attendu = json!({
         "supplierInvoiceId": inv,
-        "supplierInvoiceNumber": "FF-2026-100",
+        "supplierInvoiceNumber": created["supplierInvoiceNumber"],
         "internalNumber": "FF-2020-001",
         "originalFilename": "facture.png",
     });

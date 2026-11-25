@@ -56,6 +56,10 @@ error-supplier-invoice-unvalidate-blocked-paid-reconciled = Cette facture fourni
 error-supplier-invoice-unvalidate-blocked-detached-payment = Cette facture a été annulée alors qu'elle était payée : son paiement (écriture n° { $entry } du { $entryDate }) reste au grand livre. Si ce paiement n'a pas eu lieu, contre-passez-le d'abord depuis sa fiche, puis repassez la facture en brouillon.
 error-supplier-invoice-unvalidate-blocked-detached-payment-reconciled = Cette facture a été annulée alors qu'elle était payée : son paiement (écriture n° { $entry } du { $entryDate }) est rapproché de la transaction bancaire du { $date }. Si ce paiement n'a pas eu lieu, annulez d'abord ce rapprochement, depuis le détail de l'import bancaire — il contre-passera le paiement —, puis repassez la facture en brouillon.
 error-supplier-invoice-due-before-invoice-date = L'échéance ({ $dueDate }) précède la date de la facture ({ $invoiceDate }).
+# Story 48-12a (#975) — refus d'une facture fournisseur en double ; un seul texte par refus, partagé avec l'écran (48-12b).
+error-supplier-invoice-duplicate = Une facture de ce fournisseur porte déjà ce numéro pour la même année. Si c’est la même facture, ne l’enregistrez pas une seconde fois. Si le fournisseur a recommencé sa numérotation en cours d’année, ajoutez un caractère au numéro, par exemple « 15-b ».
+error-supplier-invoice-probable-duplicate = Une facture de ce fournisseur porte déjà la même date et le même montant. Si c’est la même facture, ne l’enregistrez pas une seconde fois ; sinon, confirmez que ce n’est pas un doublon.
+error-supplier-invoice-duplicate-unvalidate = Une facture équivalente non annulée existe. Repasser celle-ci en brouillon en ferait un doublon : ne le faites que pour la retirer ou la corriger ensuite.
 
 # Lettrage (Story 15-1a-i, #518)
 error-lettering-too-few-lines = Un lettrage réunit au moins deux lignes distinctes.
@@ -1908,8 +1912,10 @@ provider-failed-not-found = La transaction ou l’écriture visée est introuvab
 provider-failed-optimistic-lock = La transaction a été modifiée entre-temps. Rechargez la page.
 provider-failed-entry-not-linkable = L’écriture de vente n’est plus rattachable à cette transaction (déjà rattachée, contre-passée ou modifiée). Rechargez la page.
 provider-failed-counterparty-currency-mismatch = Cette règle désigne un compte tenu en { $accountCurrency } : elle ne s'applique qu'aux transactions en { $accountCurrency }, et celle-ci est en { $transactionCurrency }. Choisissez un compte en CHF ou dans la devise de la transaction.
+provider-failed-already-posted = La transaction est déjà comptabilisée (l'autre côté est rattaché à son écriture) : rien n'a été écrit. Rechargez la page et rattachez-la à cette écriture.
 provider-review-ambiguous-sale = Plusieurs écritures de vente portent cet identifiant : choisissez celle à rattacher.
 provider-review-fee-account-missing = Frais sans compte de frais : réglez le compte de frais du compte bancaire.
+provider-review-already-posted = Déjà comptabilisée : l'écriture existe et l'autre côté y est rattaché. Rattachez cette transaction à l'écriture, ne l'écrivez pas une seconde fois.
 # Story 40-7c — revue Stripe : motifs et écarts propres à Stripe (servis à l’écran, 40-7d)
 stripe-review-refund = Remboursement : passez l'écriture à la main (en devise), puis rattachez la transaction.
 stripe-review-other-category = Catégorie Stripe à examiner ({ $category }) : passez l'écriture à la main, puis rattachez la transaction.
@@ -2119,6 +2125,8 @@ paypal-to-review-fee-account-missing = Compte de frais non réglé
 paypal-to-review-conversion-unpaired = Conversion sans sa paire
 paypal-to-review-withdrawal-foreign-currency = Retrait d’un solde en devise : écriture à la main
 paypal-to-review-no-rule = Aucune règle
+paypal-to-review-already-posted = Déjà comptabilisée : l'écriture existe et l'autre côté y est rattaché. Rattachez cette transaction à l'écriture, ne l'écrivez pas une seconde fois.
+provider-to-review-entry-link = Écriture déjà passée
 paypal-action-link-entry = Rattachée à l’écriture n° { $number }
 paypal-action-fee = Écriture au compte de frais { $account }
 paypal-action-rule = Écriture à la contrepartie { $account }
@@ -3405,6 +3413,24 @@ supplier-invoices-err-amount = Le total des lignes ({$actual}) ne correspond pas
 supplier-invoices-err-currency = Devise non supportée (CHF uniquement). Retirez le document de la liste, ou créez la facture sans document puis joignez-le.
 supplier-invoices-err-iban-ref = Incohérence entre l’IBAN et la référence QRR du QR-code.
 supplier-invoices-err-not-pending = Ce document a déjà été traité ou retiré de la liste.
+# Story 48-12b (#975, #985) — avis de l'écran : doublon, issue inconnue, pièce déjà enregistrée.
+supplier-invoices-err-not-yet = Aucune facture n’est enregistrée pour l’instant : vous pouvez réessayer.
+supplier-invoices-cited-draft = brouillon n° { $id }
+supplier-invoices-cited-prefix = Facture déjà enregistrée :
+supplier-invoices-cited-active-prefix = Facture active :
+supplier-invoices-confirm-not-duplicate = Ce n’est pas un doublon, enregistrer
+supplier-invoices-modify-entry = Modifier la saisie
+supplier-invoices-unknown-outcome-create = L’enregistrement a peut-être abouti. Vérifiez dans la liste si la facture existe avant de la saisir de nouveau.
+supplier-invoices-unknown-outcome-create-link = Voir les factures de ce fournisseur
+supplier-invoices-resume-entry-create = J’ai vérifié, elle n’existe pas — reprendre la saisie
+supplier-invoices-unknown-outcome-edit = La modification a peut-être été enregistrée. Vérifiez sur la fiche si votre modification a été enregistrée ; si oui, rechargez cette page avant de modifier encore.
+supplier-invoices-unknown-outcome-edit-link = Ouvrir la fiche de la facture
+supplier-invoices-resume-entry-edit = J’ai vérifié, elle n’a pas été enregistrée — reprendre la saisie
+supplier-invoices-already-completed = Cette pièce a déjà été enregistrée comme facture. Ouvrez-la pour vérifier qu’elle correspond à votre saisie.
+supplier-invoices-already-completed-link = Ouvrir la facture
+supplier-invoices-unvalidate-anyway = Repasser en brouillon malgré tout
+supplier-invoices-scan-ignored = Lecture du QR ignorée : le formulaire n’était plus en saisie.
+supplier-invoices-new-supplier-created-not-selected = Fournisseur créé, non sélectionné.
 supplier-invoices-err-doc-not-found = Document introuvable.
 supplier-invoices-err-fiscal-year = Aucun exercice ouvert ne couvre cette date.
 # Les sept motifs de `INVALID_PAYMENT_DETAILS` (AC12-bis), affichés sous le champ nommé.
@@ -3755,6 +3781,7 @@ audit-log-action-supplier-invoice-updated = Brouillon de facture fournisseur mod
 audit-log-action-supplier-invoice-validated = Facture fournisseur validée
 audit-log-action-supplier-invoice-unvalidated = Facture fournisseur repassée en brouillon
 audit-log-action-supplier-invoice-deleted = Brouillon de facture fournisseur supprimé
+audit-log-action-supplier-invoice-duplicate-confirmed = Doublon de facture fournisseur confirmé
 audit-log-action-imported-supplier-invoice-created = Document importé
 audit-log-action-imported-supplier-invoice-completed = Document traité (facture créée)
 audit-log-action-imported-supplier-invoice-discarded = Document retiré de la liste
@@ -4368,6 +4395,15 @@ projects-reassign-warning-locked = Écritures verrouillées jusqu'au { $date }.
 projects-reassign-warning-reports = Les rapports analytiques de cette période changeront.
 projects-reassign-confirm = Confirmer
 projects-reassign-done = Compte analytique changé.
+
+# --- Epic 49 — Story 49-4a (#1364) : capacité du PDF de facture contrôlée à la validation ---
+error-invoice-lines-do-not-fit-pdf = Les lignes de cette facture ne tiennent pas sur la page de son PDF : elles demandent { $besoin } lignes, la page en offre { $place }. Retirez des lignes, raccourcissez les commentaires, ou répartissez les lignes sur deux factures. La facture reste un brouillon.
+
+# Epic 49 — Story 49-1c (#1242) : la ligne de commentaire de la facture client
+invoice-line-add-comment = Commentaire
+invoice-line-comment-placeholder = Texte imprimé sur toute la largeur de la facture, sans montant
+invoice-line-comment-aria = Commentaire — ligne { $n }
+invoice-line-comment-required-error = Ligne { $line } : le texte du commentaire est obligatoire
 
 ## #1348 (0.20.0) — refus du serveur dont la clé manquait au catalogue : l'utilisateur et
 ## les clients de l'API lisaient la clé brute. Texte fr-CH = repli de `errors.rs`

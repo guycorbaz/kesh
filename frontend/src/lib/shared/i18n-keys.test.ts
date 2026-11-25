@@ -1179,6 +1179,18 @@ const ATTENDU = {
 	// demande de compte après relecture sans sélecteur).
 	// Fusion de la 48-14 dans epic/48 (2026-11-20) : les deux côtés gardés, total relevé par la garde,
 	// non additionné : **3508** (« expected 3508 to be +0 », `kesh-gate-logs/e4814/fusion-epic-i18n.log`).
+	// Story 48-12b (#975, #985) : **3502 → 3523** sur sa branche (+21 net) (« expected 3523 to be 3502 »,
+	// `kesh-gate-logs/e4812/dev/vitest-12b-complet-1.log`), relevé par la garde : vingt-trois sites
+	// ajoutés et deux retirés (le bouton d'envoi déplacé hors du `<fieldset>`) dans
+	// `SupplierInvoiceForm.svelte`, `supplier-invoice-form.ts` et la fiche `[id]/+page.svelte`.
+	// Fusion des 48-12a et 48-12b dans epic/50 (2026-11-23) : les deux côtés gardés, 3508 (0.19.1) + 21 = **3529**,
+	// total vérifié par la garde (vitest complet vert, 4904/4904, `kesh-gate-logs/e50/fusion-48-12/frontend.log`).
+	// Story 49-1c (#1242) : **3495 → 3499** (« expected 3499 to be 3495 »,
+	// `kesh-gate-logs/e491c/rouge-T12.log`) — quatre littéraux neufs, tous dans
+	// `InvoiceForm.svelte` (21 → 25 occurrences de `i18nMsg(`, `grep -o`) : bouton « Commentaire », aide et `aria-label` du
+	// champ, message du commentaire vide. À recompter après la fusion avec la 48-14.
+	// Reprise de main (v0.19.1) dans epic/49 (2026-11-23) : les deux côtés gardés, total relevé
+	// par la garde, non additionné : **3512** (« expected 3512 to be +0 », `kesh-gate-logs/e49/reprise-main/vitest-compteur.log`) ; il égale 3508 (main) + 4 (49-1c).
 	// Story 38-11d : T1 et T2 (paramètres PayPal du compte bancaire, filtres des règles) +21, page
 	// PayPal (T3), libellés des refus de la route, remédiation de la revue P1 : +123 sur la base de
 	// la 0.19.0 ; relevés par la garde (3521, 3610, 3615, 3618 avant la reprise d'epic/38-paypal).
@@ -1202,6 +1214,12 @@ const ATTENDU = {
 	// 3671 »), relevé par la garde ; au diff : 1 site ajouté, 0 retiré.
 	// Revue P2 de la 38-12b (avis au passé, suivi perdu après une reprise) : **3674**, relevé par
 	// la garde ; au diff : 2 sites ajoutés, 0 retiré.
+	// Fusion d'origin/main (Epic 38 PayPal, 0.19.1 + PayPal = 3674) dans epic/50 (2026-11-24) : les deux côtés gardés ;
+	// 3674 + 21 (48-12a/b) = **3695**, provisoire, à confirmer par la garde (relevé au gate).
+	// Reprise de main (PayPal, 38-11b/c/d) dans epic/49 (2026-11-24) : les deux côtés gardés ; attendu 3674 (main) + 4 (49-1c) = 3678.
+	// Reprise de main (2026-11-25, correctif « une transaction de prestataire n'est écrite qu'une fois », 3 sites ajoutés) : attendu 3678 + 3 = 3681, à confirmer par la garde.
+	// Reprise de main (Epic 49, #1560, #1561) dans epic/50 (2026-11-25) : les deux côtés gardés ;
+	// 3681 (main) + 21 (48-12a/b) = **3702**, confirmé par la garde (`kesh-gate-logs/e50/reprise-main-r2/vitest-compteur.log`).
 	// Fusion d'epic/38-paypal (38-12b) dans epic/40-stripe : **3733** (« expected 3733 to be 0 »),
 	// relevé par la garde = 3691 + 42 (les sites de la 38-12b, 3674 − 3632).
 	// Fusion d'epic/40-stripe (38-12b) dans epic/39-wise, après la 39-11d : **3782** (« expected 3782 to be 0 »), relevé par la garde = 3740 + 42 (les sites de la 38-12b).
@@ -1222,9 +1240,20 @@ const ATTENDU = {
 	// Story 40-9 (option « Destination actuelle (introuvable) » du compte de versement) :
 	// **3742** (« expected 3742 to be 3741 »), relevé par la garde ; au diff : 1 site ajouté,
 	// 0 retiré.
+	// Fusion du correctif « une transaction de prestataire n'est écrite qu'une fois » (branche
+	// fix/prestataires-ecriture-unique, 3674 → 3677 de son côté) dans pr/40-stripe : **3746**
+	// (« expected 3746 to be 3742 »), relevé par la garde ; au diff : 4 sites ajoutés, 0 retiré —
+	// le refus `provider-failed-already-posted` et le motif `provider-review-already-posted`
+	// (communs), le lien `provider-to-review-entry-link` de la page commune, le motif
+	// `paypal-to-review-already-posted` de PayPal.
+	// Reprise de main à 1e23edb55 (Epics 49 et 50, #1560 déjà portée) dans pr/40-stripe (2026-11-25) : les deux
+	// côtés gardés ; 3746 (pr/40, base 3677) + 25 (main, 3677 → 3702) = **3771**, confirmé par la garde (`kesh-gate-logs/s40-m2d/compteurs-3.log`).
 	// Propagation d'epic/40-stripe (38-13, 40-8b, 40-9) dans epic/39-wise : relevé par la garde.
 	// **3825** = 3817 + 8 (40-8b + 7, 40-9 + 1 ; la 38-13 ne retire aucun site).
-	sitesTotal: 3825,
+	// Fusion de pr/40-stripe (02d025725, main à 1e23edb55 compris) dans pr/39-wise-v2 (2026-11-25) : les deux côtés
+	// gardés ; 3771 (pr/40) + 83 (Epic 39, 3742 → 3825 de son côté, sur l'ancienne pr/40) = **3854**, confirmé par
+	// la garde (`kesh-gate-logs/s39-pr/compteurs-1.log`).
+	sitesTotal: 3854,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

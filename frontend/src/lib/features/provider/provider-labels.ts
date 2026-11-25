@@ -28,6 +28,7 @@ export const PROVIDER_COMMON_FAILED_CODES = [
 	'OPTIMISTIC_LOCK_CONFLICT',
 	'RECONCILIATION_ENTRY_NOT_LINKABLE',
 	'COUNTERPARTY_CURRENCY_MISMATCH',
+	'PROVIDER_TRANSACTION_ALREADY_POSTED',
 	'RATE_UNAVAILABLE',
 ] as const;
 
@@ -77,6 +78,13 @@ export function providerFailedLabel(code: string, details?: unknown): string {
 				},
 			);
 		}
+		// Une transaction de prestataire n'est écrite qu'une fois : déjà comptabilisée de l'autre
+		// côté, elle se rattache à l'écriture existante (`FAILED_ALREADY_POSTED`).
+		case 'PROVIDER_TRANSACTION_ALREADY_POSTED':
+			return i18nMsg(
+				'provider-failed-already-posted',
+				'La transaction est déjà comptabilisée (l’autre côté est rattaché à son écriture) : rien n’a été écrit. Rechargez la page et rattachez-la à cette écriture.',
+			);
 		// Story 39-11d2 (AC-4) — le cours mensuel retenu manque (frais ou règle sur un solde en
 		// devise, conversion entre deux devises étrangères, part en devise d'un paiement groupé) :
 		// la phrase renvoie aux cours de change ; le libellé générique (« gardez la ligne comme
@@ -110,9 +118,26 @@ export function providerToReviewLabel(code: string): string | null {
 				'provider-review-fee-account-missing',
 				'Frais sans compte de frais : réglez le compte de frais du compte bancaire.',
 			);
+		// Une transaction déjà comptabilisée de l'autre côté (correctif des prestataires) : elle se
+		// rattache à l'écriture existante, elle ne s'écrit pas une seconde fois.
+		case 'already_posted':
+			return i18nMsg(
+				'provider-review-already-posted',
+				'Déjà comptabilisée : l’écriture existe et l’autre côté y est rattaché. Rattachez cette transaction à l’écriture, ne l’écrivez pas une seconde fois.',
+			);
 		default:
 			return null;
 	}
+}
+
+/**
+ * L'écriture déjà passée que nomme un motif « à examiner » `already_posted`
+ * (`details.journalEntryId`) ; `null` pour tout autre motif ou sans identifiant numérique.
+ * La page commune y met le lien « Écriture déjà passée » à la place de « Écriture manuelle ».
+ */
+export function alreadyPostedEntryId(f: ProviderFinding): number | null {
+	const id = f.details?.journalEntryId;
+	return f.code === 'already_posted' && typeof id === 'number' ? id : null;
 }
 
 /**

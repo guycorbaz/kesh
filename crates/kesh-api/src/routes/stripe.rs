@@ -52,7 +52,7 @@ use sqlx::MySql;
 use super::provider_accept::{
     self, AcceptBodyExtractor, AcceptContext, BatchOutcome, CounterpartyRule, EngineProposal,
     ProviderAcceptResponse, ProviderAccepted, ProviderEntry, Refusal, ReviewQuery, ReviewResponse,
-    accept_common, check_counterparty, db_refusal, mark_reconciled, rejudge, stale,
+    accept_common, check_counterparty, db_refusal, mark_reconciled, rejudge_writing, stale,
     write_provider_entry,
 };
 use super::reconciliation::{FailedProposal, closed_account_failed};
@@ -218,6 +218,7 @@ async fn load_review(
             configured_destinations: &configured,
             destination_refusals: &destination_refusals,
             unreceived_payouts: &unreceived,
+            already_posted: &loaded.already_posted,
         },
     ))
 }
@@ -340,7 +341,9 @@ impl EngineProposal for StripeProposal {
 }
 
 /// `payout` (AC-4 d) : le versement rejugé sous les verrous — pending, genre
-/// versement, compte de versement réglé, **verrouillé** pour le lot (lu au
+/// versement, **pas déjà comptabilisé** de l'autre côté (la règle commune de
+/// [`rejudge_writing`] : sinon `PROVIDER_TRANSACTION_ALREADY_POSTED`, `details:
+/// { journalEntryId }`, rien n'est écrit), compte de versement réglé, **verrouillé** pour le lot (lu au
 /// pré-vol) et égal à celui que la revue a montré s'il est donné, sinon périmé
 /// (`provider_settings_changed`) ; même jugement que la revue
 /// ([`judge_payout`], lignes relues sous les verrous : retour de versement,
@@ -354,6 +357,13 @@ impl EngineProposal for StripeProposal {
 /// (`CounterpartyRule::AssetInCurrency`). Écriture par la fonction commune
 /// (débit compte de versement, crédit solde Stripe, net en devise, deux lignes
 /// au même cours), puis rapprochement du versement.
+///
+/// Concurrence de la règle « écrite une seule fois » : le lot tient le verrou
+/// nommé du compte de versement **réglé**, si bien qu'un rattachement de la
+/// réception sur ce compte ne passe pas pendant les instructions du lot ; reste
+/// la fenêtre du commit (verrou rendu, rattachement pas encore visible), plus
+/// large pour une réception sur un autre compte — l'angle mort que dit
+/// [`rejudge_writing`].
 ///
 /// Le compte de versement n'est pas gardé par `ensure_open_in_tx` : aucune
 /// ligne ne lui est rattachée (seule l'écriture touche son compte du plan).
@@ -371,7 +381,10 @@ async fn accept_payout(
     claimed_destination: Option<i64>,
 ) -> Result<ProviderAccepted, Refusal> {
     let id = bank_transaction_id;
-    let r = rejudge(tx, ctx, id, |k| k == ProviderKind::Specific(KIND_PAYOUT)).await?;
+    // La règle « écrite une seule fois » du moteur commun : un versement déjà
+    // comptabilisé de l'autre côté → `PROVIDER_TRANSACTION_ALREADY_POSTED`,
+    // rien n'est écrit (correctif des prestataires, #1539).
+    let r = rejudge_writing(tx, ctx, id, |k| k == ProviderKind::Specific(KIND_PAYOUT)).await?;
     let configured = r.balance.account.provider_settings.payout_bank_account_id;
     let Some(destination_id) = configured.filter(|d| ctx.locked_accounts.contains(d)) else {
         return Err(stale(id, "provider_settings_changed"));
