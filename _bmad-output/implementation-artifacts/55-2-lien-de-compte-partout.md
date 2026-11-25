@@ -334,3 +334,6 @@ onglet. (refs #À-VENIR, #À-VENIR)
   § *Gates*, T5) ; ligne surlignée à l'epic à part des liens de compte, 56 proposé, depuis une écriture, une facture ou une
   transaction seulement (C-55-2-4, V7-3). Passe P8 ciblée (la dernière permise ; au-delà de la sixième, ses points vont au
   T0).
+- 2026-11-26 — Validation P8 ciblée (Sonnet, `kesh-gate-logs/s55-decisions-2/55-2-55-1b-validation-p8.md`, commune aux 55-2 et 55-1b) sur les
+  décisions du 2026-11-26 : 0/0/0/2 — P8-1 (R-2 : « l'AC-9 nomme la garde A » est faux ; écrire « § *Gates* et T5 »), P8-2 (R-2 au passé, « Défaut : … proposée » retiré). **Validation terminée**, dernière passe permise ; les LOW se reprennent au **T0**, ligne
+  lue citée au Change Log.

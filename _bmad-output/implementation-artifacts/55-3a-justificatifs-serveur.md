@@ -671,3 +671,14 @@ de code.
   ouverte à l'aperçu à venir et au PDF externe ; `kesh-qrbill`, `kesh-i18n`, `errors.rs` et les fichiers du PDF de la
   facture hors périmètre ; taille ramenée de **XL** à **M**. Passe suivante : Pv2p7 ciblée (septième de la version
   récrite : au-delà de la sixième, ses points vont au T0).
+- 2026-11-26 — Validation Pv2p7 ciblée (Opus) sur les décisions du 2026-11-26 : 0/0/0/5 sur cette fiche — **validation
+  terminée** (`kesh-gate-logs/s55-decisions-2/55-3a-validation-pv2p7.md`). Au-delà de la sixième passe, les cinq LOW ne sont pas remédiés : ils se
+  reprennent au **T0**, ligne lue citée au Change Log — Pv2p7-1 (la course inverse naît aussi d'un règlement annulé puis
+  d'une dévalidation et d'une revalidation, visionneuse restée ouverte ; même phrase au T3), Pv2p7-2 (citer
+  `crates/kesh-db/src/errors.rs:443-448` et `invoices.rs:1733`, non `errors.rs:443` de `kesh-api`), Pv2p7-3 (*Règles de
+  rattachement* : pour une facture figée, seulement `410` ou `500`), Pv2p7-4 (recopier dans la section reportée, depuis
+  `cf0c2dcbd^`, l'ancien T3 de l'aperçu, l'ancien gate `package(kesh-qrbill) | package(kesh-i18n)`, l'ancien T0 de la
+  marque et la phrase de l'ancienne note de version), Pv2p7-5 (AC-9 : ajouter `crates/kesh-i18n/` et
+  `crates/kesh-api/src/errors.rs` ; § *Modules* : « taille de la version récrite avant l'aperçu », trois AC de contrat et
+  un constat). Tendance depuis les décisions du 2026-11-25 : Pv2p5 Opus 0/0/2/8 → Pv2p6 Sonnet 0/0/0/4 → (décisions du
+  2026-11-26) Pv2p7 Opus 0/0/0/5. La P8 reste en réserve.

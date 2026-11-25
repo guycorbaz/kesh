@@ -510,3 +510,11 @@ d'une facture figée, ou par `page.route` rendant `410 INVOICE_PDF_GONE`) ; gran
   l'epic « PDF marqués »* ; R-1, R-2, R-4, R-5 caducs, **R-3 tranché** (§ *Gates* : `nextest -p kesh-i18n` et
   `binary(textes_coherents)` à la clôture). La fiche est au **plafond de huit passes** (version récrite, Pv2p8) : la
   passe ciblée du 2026-11-26 la relit comme contexte de cohérence, et ses points sur cette fiche vont au **T0** (R-n).
+- 2026-11-26 — Passe Pv2p7 de la 55-3a (Opus, `kesh-gate-logs/s55-decisions-2/55-3a-validation-pv2p7.md`), qui relit cette fiche pour la
+  cohérence (fiche au plafond, la passe ne compte pas pour elle) : 0/0/0/2 sur cette fiche. Au **T0**, avec le mainteneur
+  pour le texte visible : **R-6** (Pv2p7-8) — « depuis sa fiche » est plus étroit que le manuel (`user-manual.tex:1641` : une
+  clé d'API en lecture fige aussi) ; défaut : « son prochain téléchargement, ou son prochain envoi par e-mail, le figera »,
+  et au manuel « au premier téléchargement (depuis la fiche ou par l'API) ou au premier envoi », traductions alignées ;
+  **R-7** (Pv2p7-9) — la raison de « aucune nuance » est le vocabulaire de Kesh (« émis » veut dire « figé », manuel
+  `:1642`), à écrire telle ; signaler au mainteneur qu'une facture envoyée avant la v0.12.1 se verra promettre un gel dont
+  `:1643` dit qu'il peut différer du document reçu (le bandeau daté de l'epic « PDF marqués » le dira).

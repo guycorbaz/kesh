@@ -296,8 +296,7 @@ Déclarés au kickoff (`CLAUDE.md` § *Fusions et fichiers communs*), relevés l
 | `crates/kesh-i18n/locales/*/messages.ftl` | 55-2, 55-3b (55-1a si un texte apparaît) | Epic 46 (`reports-groups-*`) | bloc `reports-nav-*` propre à l'epic |
 | `frontend/src/lib/shared/i18n-keys.test.ts` (`sitesTotal`) | 55-2, 55-3b | tous | recompté par la garde après chaque reprise |
 | `frontend/tests/e2e/reports.spec.ts`, `homepage-charts.spec.ts`, `open-items.spec.ts`, `dunning-roundtrip.spec.ts` | 55-1a (comportement de génération, D3) | Epic 46 (`reports-groupes*.spec.ts`) | E2E neufs : `reports-navigation.spec.ts` (55-1a, 55-1b, 55-2), `reports-entry-documents.spec.ts` (55-3b) |
-| `docs/manual/fr/user-manual.tex` § *Rapports comptables* (`:4101`-`:4476` à `1e23edb55`) | 55-1a, 55-1b, 55-2, 55-3b (et § 11.6.1 *Le PDF émis est figé*, `:1635` : une phrase, l'affichage depuis les rapports ne fige pas et une facture
-pas encore émise y est signalée « PDF pas encore émis », 55-3b) | Epic 46 (§ *Bilan*, *Compte de résultat*, *Balance*) | `.tex` seul, PDF à la release |
+| `docs/manual/fr/user-manual.tex` § *Rapports comptables* (`:4101`-`:4476` à `1e23edb55`) | 55-1a, 55-1b, 55-2, 55-3b (et § 11.6.1 *Le PDF émis est figé*, `:1635` : une phrase, l'affichage depuis les rapports ne fige pas et une facture pas encore émise y est signalée « PDF pas encore émis », 55-3b) | Epic 46 (§ *Bilan*, *Compte de résultat*, *Balance*) | `.tex` seul, PDF à la release |
 | `_bmad-output/implementation-artifacts/sprint-status.yaml` | toutes | tous | bloc propre à l'Epic 55 |
 
 ## Réponses de l'utilisateur (2026-11-25)
@@ -342,7 +341,7 @@ Versées aux décisions D7, D12 à D14, aux sections *Backend*, *Gates* (*Dérog
 
 ## Décisions du mainteneur (2026-11-26)
 
-Versées aux décisions D12 à D14, aux sections *Migration et backend* (en-tête), *Objectif*, *Hors périmètre*, *Backend*,
+Versées aux décisions D12 à D14, à l'en-tête (*Migration*, *Backend*), aux sections *Objectif*, *Hors périmètre*, *Backend*,
 *Gates* (*Dérogation*), *Stories* et *Fichiers communs*, et aux fiches :
 
 1. **Les PDF marqués sortent de l'Epic 55** et forment un petit epic à part, « PDF marqués » (numéro à confirmer) : le

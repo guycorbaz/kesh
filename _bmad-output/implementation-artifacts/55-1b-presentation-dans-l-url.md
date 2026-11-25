@@ -306,3 +306,6 @@ lien ou revenir par *Retour* remplace la présentation retenue. (refs #À-VENIR)
 - 2026-11-26 — **Décision du mainteneur du 2026-11-26 versée** (resserrement de la dérogation Q6) : § *Gates* — à la
   clôture, `nextest -p kesh-i18n` et `binary(textes_coherents)` ; V7-1 tranché. Passe P8 ciblée (la dernière permise ;
   au-delà de la sixième, ses points vont au T0).
+- 2026-11-26 — Validation P8 ciblée (Sonnet, `kesh-gate-logs/s55-decisions-2/55-2-55-1b-validation-p8.md`, commune aux 55-2 et 55-1b) sur les
+  décisions du 2026-11-26 : 0/0/0/1 — P8-3 (V7-1 au passé, après « tranché »). **Validation terminée**, dernière passe permise ; les LOW se reprennent au **T0**, ligne
+  lue citée au Change Log.
