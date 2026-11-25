@@ -465,7 +465,7 @@ function partlyReconciledLabel(): string {
 function partlyPostedLabel(): string {
 	return i18nMsg(
 		'wise-review-card-group-partly-posted',
-		'Une ligne de ce paiement est déjà comptabilisée (une écriture déjà passée la nomme) : rattachez-la à cette écriture, puis traitez les autres lignes à la main.',
+		'Une ligne de ce paiement est déjà comptabilisée (une écriture déjà passée la porte) : rattachez-la à cette écriture, puis traitez les autres lignes à la main, en vérifiant d’abord ce que cette écriture couvre déjà.',
 	);
 }
 

@@ -19,7 +19,9 @@
 //!    proposition `card_group` par paiement (règle de contrepartie en CHF sur
 //!    la ligne principale), sinon « à examiner » (`card_group_no_rule`,
 //!    `card_group_unsupported`, `card_group_statements_missing`,
-//!    `card_group_partly_reconciled` : [`card_group_blocker`]).
+//!    `card_group_partly_reconciled` : [`card_group_blocker`] ;
+//!    `card_group_partly_posted` : une ligne déjà comptabilisée, règle commune
+//!    « écrite une seule fois », la ligne elle-même sous `already_posted`).
 //! 2. **Autre côté déjà passé** (AC-4) — pour un versement Stripe et un
 //!    virement : `find_matched_elsewhere` (les écritures déjà rapprochées d'une
 //!    transaction d'un autre compte bancaire), filtrée à

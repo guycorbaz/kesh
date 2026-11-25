@@ -2919,4 +2919,33 @@ async fn rattachement_propose_seulement_vers_l_ecriture_qui_nomme(pool: MySqlPoo
             .any(|p| p["transaction"]["id"] == v),
         "{revue}"
     );
+    // Revue P3 de la PR (M-A) : un rattachement forgé vers l'écriture proche,
+    // qui n'est pas celle déjà passée du virement, est périmé à l'acceptation
+    // (`entry_changed`), rien n'est rattaché ; la sonde positive : le
+    // rattachement à l'écriture qui le nomme passe, sans nouvelle écriture.
+    let avant = ctx.ecritures().await;
+    let (s, b) = ctx
+        .accepter(vec![json!({
+            "type": "link_entry",
+            "bankTransactionId": v,
+            "journalEntryId": proche,
+        })])
+        .await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(
+        b["failed"][0]["errorCode"], "PROVIDER_PROPOSAL_STALE",
+        "{b}"
+    );
+    assert_eq!(b["failed"][0]["details"]["reason"], "entry_changed", "{b}");
+    assert_eq!(ctx.etat(v).await, ("pending".into(), None));
+    let (s, b) = ctx
+        .accepter(vec![json!({
+            "type": "link_entry",
+            "bankTransactionId": v,
+            "journalEntryId": nommee,
+        })])
+        .await;
+    assert_eq!((s, b["failed"].clone()), (200, json!([])), "{b}");
+    assert_eq!(ctx.etat(v).await, ("reconciled".into(), Some(nommee)));
+    assert_eq!(ctx.ecritures().await, avant);
 }
