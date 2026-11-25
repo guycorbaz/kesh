@@ -114,9 +114,23 @@ figure. Le correctif propre à Stripe (`b99591697`) se retire alors (la règle t
   d'abord, P1 L3). Mutations : cinq, toutes tuées par une assertion. Gates au commit `4d9093c34` : gate-ci 6451/0/19,
   E2E 505 passés et les sept de la KF-029, Vitest 5008. Journal : `kesh-gate-logs/fix-prest/`.
 
+- 2026-11-25 — règle précisée après le MEDIUM M1 de la revue P1 de la suite de la #1534 (deux transactions de même
+  montant) : la règle nomme la transaction (`e4f3508f7`) ; revue P1 complète (Sonnet) 0/0/1/5 → prudence pour une
+  écriture sans identifiant (`2d10db3c6`) ; P2 ciblée (Haiku) 0/0/3/3 → deux passes et côté prestataire libre
+  (`c9c0346a2`) ; P3 ciblée (Sonnet) 0/0/0/2 → textes (`33da92492`) ; témoin rouge (`Unknown column 'm.movement'`
+  dans l'`EXISTS` de la présélection de l'acceptation) → montant lié (`976fd49e1`) ; P4 ciblée (Sonnet) sur ce
+  commit 0/0/0/4 → commentaires (`7d2764960`). Boucle close. LOW à tracer : troncature à 200 caractères non gardée par
+  un test ; coût de la colonne `posted` et de la présélection sans plafond ; branche devise étrangère du mode
+  `PostedElsewhere` non exercée en base ; aucun test ne lie le nombre de `?` aux liaisons ; moitié débitée détachée et
+  conversion à deux écritures sans e2e. Mutations (`kesh-gate-logs/fix-prest/p2/mut/`) : six, toutes tuées. Gates au
+  commit `7d2764960` (dernier commit de code `976fd49e1`, puis commentaires) : témoin ciblé 67/67 ; gate-ci
+  6460/0/19 ; E2E 505 passés, les sept de la KF-029, 18 ignorés. Frontend inchangé depuis `afe562d48`.
+
 ## Notes de version
 
 - **Fixed** — Prestataires (PayPal) : une transaction déjà comptabilisée de l'autre côté — typiquement un retrait, ou
   un paiement imputé par une règle à une autre banque ou à une carte, dont seul le côté PayPal a été annulé — n'est
   plus proposée à la revue : elle est « à examiner » (*Déjà comptabilisée*), et son acceptation est refusée sans rien
-  écrire (`PROVIDER_TRANSACTION_ALREADY_POSTED`). Le compte de l'autre côté n'est plus compté deux fois.
+  écrire (`PROVIDER_TRANSACTION_ALREADY_POSTED`). Le compte de l'autre côté n'est plus compté deux fois. Seule la
+  transaction que l'écriture nomme (son identifiant au libellé) est retenue : une autre transaction du même montant
+  reste proposée.
