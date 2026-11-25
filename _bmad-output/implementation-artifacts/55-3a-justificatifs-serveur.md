@@ -33,8 +33,8 @@ au grand livre (colonne `reports-ledger-column-piece`, manuel `user-manual.tex:4
 
 ## Ce qui se lit au code (`origin/main` `1e23edb55`)
 
-**Aucune table de pièces jointes.** Trois documents se rattachent à une écriture, par **cinq** colonnes (quatre branches
-de requête) :
+**Aucune table de pièces jointes.** Trois documents se rattachent à une écriture, par **cinq** colonnes (cinq branches
+de requête, la branche fournisseur dédoublée pour l'achat et le règlement) :
 
 | Document | Rattachement | Règle du document servi | Route de lecture (droits) |
 |---|---|---|---|
@@ -52,9 +52,22 @@ de requête) :
   `journal_entries.reverses_entry_id`) ne portent aucun fichier ; les imports PayPal (`20261120000001`, à `main`) et Stripe
   (`20261120000003`, PR 46) ne rattachent aucun fichier à une écriture.
 - **DTO** : `JournalEntryRow` (`kesh-report/src/journal_report.rs:41`), `LedgerLine` (`general_ledger.rs:229`, `entry_id`
-  `:231`) : aucun champ de justificatif. Les routes les rendent en JSON telles quelles (`routes/reports.rs:363-366`,
-  `:285-291`) ; les exports passent par les mêmes `generate` (`services/rapports.rs:664`, `:718`) et l'outil MCP du grand
-  livre aussi (`mcp/outils/grand_livre.rs:159`), qui recopie ses champs dans sa propre structure (`:175`).
+  `:231`) : aucun champ de justificatif. Les routes les rendent en JSON telles quelles (`get_journal_report`,
+  `get_general_ledger` de `routes/reports.rs`) ; les exports passent par les mêmes `generate` (fonctions `journaux` et
+  `grand_livre` de `services/rapports.rs`) et l'outil MCP du grand livre aussi (`mcp/outils/grand_livre.rs:159`), qui
+  recopie ses champs dans sa propre structure (`:175`).
+- **Littéraux** : `JournalEntryRow` et `LedgerLine` n'ont ni `Default` ni constructeur ; à `1e23edb55`, `git grep -nE
+  "JournalEntryRow \{|LedgerLine \{" crates/` rend deux sites de production (`journal_report.rs:232`,
+  `general_ledger.rs:901`) et des littéraux de test ou de banc (`general_ledger.rs:1022`, `csv.rs:1484,1660,1878`,
+  `pdf.rs:2297,2856,2917`, `benches/export.rs:155`) ; la PR 46 et l'Epic 47 déplacent ceux de `csv.rs` et `pdf.rs`
+  (relevé au T0 sur la base de départ).
+- **Avoirs** : aucun `UPDATE credit_notes` dans `crates/` ; le seul `INSERT` de production écrit `status = 'issued'`
+  (`credit_notes.rs:780`, « single-step ») : `draft` et `cancelled` ne sont pas écrits par l'application aujourd'hui.
+- **Clés étrangères** vers l'écriture seulement (`fk_invoices_journal_entry`, `fk_credit_notes_journal_entry`,
+  `fk_supplier_invoices_purchase_je`, …) : le schéma admet qu'une ligne d'une société pointe une écriture d'une autre ;
+  d'où le filtre de société sur chaque table.
+- **Documentation de l'API** : `docs/api-external.md` décrit ces réponses champ par champ (grand livre `:306`, journal
+  `:1164`, avec les précédents additifs `letteringCode` et champs en devise).
 - `fetch_counterparts` (`general_ledger.rs:639-690`) fait **une requête par compte**, appelée dans `for acc in accounts`
   (`:825`, `:861`), avec une liste `IN` de taille variable : **ce n'est pas le patron** de la 55-3a.
 - Index `idx_journal_entries_company_date (company_id, entry_date DESC)` (`20260412000001_journal_entries.sql:33`).
@@ -65,8 +78,12 @@ de requête) :
 ```rust
 /// Les justificatifs de l'écriture — omis quand il n'y en a aucun (JSON identique
 /// à aujourd'hui pour ces écritures). Écran seulement : PDF et CSV inchangés.
-#[serde(skip_serializing_if = "Vec::is_empty", default)]
+#[serde(skip_serializing_if = "Vec::is_empty")]
 pub documents: Vec<EntryDocument>,
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[serde(rename_all = "camelCase")]
+pub enum EntryDocumentKind { Invoice, CreditNote, SupplierDocument } // ordre = ordre d'affichage
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -90,8 +107,8 @@ string | null; fileName?: string }`, `documents?: EntryDocument[]` sur `JournalE
 
 - **Facture** (vente et règlement) : `i.status = 'validated' OR (i.status = 'cancelled' AND i.pdf_storage_path IS NOT
   NULL)` — exactement les factures dont la route sert un PDF ; une facture annulée jamais figée n'a pas de justificatif.
-- **Avoir** : `cn.status <> 'draft'` (un avoir émis ou annulé a un PDF ; le sens d'un avoir `cancelled` et de son écriture
-  se relève au T0, et la règle se corrige au Change Log si le relevé la contredit).
+- **Avoir** : `cn.status <> 'draft'` — un avoir émis ou annulé a un PDF ; l'application n'écrit aujourd'hui que `issued`
+  (voir *Ce qui se lit au code*), la règle vaut pour un avoir annulé futur.
 - **Document fournisseur** : `isi.status = 'completed'`, achat ou règlement, **tous** les documents d'un règlement groupé.
 - **Filtre de société sur chaque table** de chaque branche (`je.company_id`, `i.company_id`, `cn.company_id`,
   `si.company_id`, `isi.company_id`), défense en profondeur (KF-002).
@@ -105,7 +122,9 @@ string | null; fileName?: string }`, `documents?: EntryDocument[]` sur `JournalE
 ### La requête et son site d'appel
 
 - `kesh-report/src/documents.rs` (neuf), `documents_by_entry(pool, company_id, from, to) -> HashMap<i64,
-  Vec<EntryDocument>>` : **une** requête, `SELECT … UNION ALL …` des quatre branches, chacune jointe à `journal_entries` et
+  Vec<EntryDocument>>` : **une** requête, `SELECT … UNION ALL …` des cinq branches (facture de vente, facture réglée,
+  avoir, document fournisseur par l'achat, par le règlement — deux branches plutôt qu'un `OR`, pour l'index de chaque
+  colonne), chacune jointe à `journal_entries` et
   bornée par `je.company_id = ?` et `je.entry_date BETWEEN ? AND ?` (index `idx_journal_entries_company_date`) — aucune
   liste `IN`, aucune requête par écriture ni par compte.
 - **Site d'appel** : **un** appel dans `journal_report::generate`, après la requête des lignes ; **un** appel dans
@@ -132,7 +151,9 @@ string | null; fileName?: string }`, `documents?: EntryDocument[]` sur `JournalE
    (aucun) ; facture fournisseur annulée, écriture d'achat (le document, comme le précédent).
 4. **AC-4 — Négatifs qui rougissent.** Chaque filtre est éprouvé par des données **posées en SQL direct** que le schéma
    admet : avoir `draft` portant un `journal_entry_id` (aucun justificatif) ; document importé `discarded` portant un
-   `supplier_invoice_id` (aucun) ; facture `draft` portant un `journal_entry_id` (aucune). Le T0 vérifie qu'aucune
+   `supplier_invoice_id` (aucun) ; facture `draft` portant un `journal_entry_id` (aucune) ; **par branche**, une ligne de la
+   société B (facture, règlement, avoir, facture fournisseur, document importé) qui pointe une écriture de la société A :
+   le journal de A ne la montre pas (filtres de société des tables du document). Le T0 vérifie qu'aucune
    contrainte ne refuse ces lignes ; une ligne refusée par le schéma rend son filtre « défense en profondeur, non
    éprouvable », écrit tel quel au Change Log, et son test est retiré. Le règlement annulé (supprimé) : test de
    **non-régression** (annulation par le dépôt, puis aucun justificatif sur l'écriture d'origine ni sur sa contre-passation),
@@ -140,14 +161,19 @@ string | null; fileName?: string }`, `documents?: EntryDocument[]` sur `JournalE
 5. **AC-5 — Bornes.** Deux sociétés, chacune avec ses justificatifs : le journal et le grand livre de A ne portent que
    ceux de A ; une écriture hors période n'est pas lue ; grand livre **à plusieurs comptes** : les justificatifs de chaque
    section sont justes. **Une requête** : la ligne d'appel de `documents_by_entry` dans chaque `generate` est citée au
-   Change Log et se trouve **hors** de toute boucle (`grep -n "documents_by_entry" crates/kesh-report/src/*.rs` rend une
-   définition et deux appels).
+   Change Log et se trouve **hors** de toute boucle (`grep -n "documents_by_entry" crates/kesh-report/src/*.rs`, hors
+   `use` et commentaires, rend une définition et deux appels).
 6. **AC-6 — Contrat additif.** Une écriture sans justificatif sérialise **exactement** le JSON d'aujourd'hui (test de
    sérialisation, clés comparées) ; les exports PDF et CSV du journal et du grand livre rendent **le même résultat avec
    `documents` rempli et vidé** (même rapport, champ vidé à la main) : CSV, chaînes égales ; PDF, texte extrait par
-   `lopdf` (`kesh-report/Cargo.toml`, dépendance de développement) égal. L'outil MCP du grand livre recopie ses champs : sa
+   `lopdf` (`kesh-report/Cargo.toml`, dépendance de développement ; aucun précédent d'`extract_text` : le test vérifie
+   d'abord que le texte extrait contient un numéro d'écriture connu) égal. Garde de non-régression, déclarée telle : les
+   rendus ne lisent pas le champ. L'outil MCP du grand livre recopie ses champs : sa
    sortie est inchangée **par construction** ; `mcp_contrat` reste vert comme filet, non comme preuve.
-7. **AC-7 — Note pour l'écran.** Le contrat TypeScript ci-dessus est recopié dans la fiche 55-3b à l'identique (revu à la
+7. **AC-7 — Documentation de l'API.** `docs/api-external.md`, aux paragraphes du grand livre (`:306`) et du journal
+   (`:1164`) : le champ `documents` (forme, genres, absent quand vide, routes de lecture et droits, exports inchangés), sur
+   le modèle des ajouts additifs précédents.
+8. **AC-8 — Note pour l'écran.** Le contrat TypeScript ci-dessus est recopié dans la fiche 55-3b à l'identique (revu à la
    passe de validation suivante).
 
 ## Tâches
@@ -155,13 +181,18 @@ string | null; fileName?: string }`, `documents?: EntryDocument[]` sur `JournalE
 - [ ] **T0** — Q1 tranchée par le mainteneur (sinon arrêt) ; base `epic/55-navigation` (PR 46 reprise) ; relever le sens
       d'un avoir `cancelled` et de son écriture ; vérifier les lignes SQL directes de l'AC-4 contre les contraintes.
 - [ ] **T1** — Tests rouges d'abord (AC-3 à AC-6) ; journal.
-- [ ] **T2** — `documents.rs`, champ `documents` du journal et du grand livre, appels hors boucle.
-- [ ] **T3** — Gates.
+- [ ] **T2** — `documents.rs`, champ `documents` du journal et du grand livre, appels hors boucle ; chaque littéral relevé
+      (production, tests, banc) reçoit `documents: Vec::new()` et rien d'autre (règle de fichier commun pour `csv.rs`,
+      `pdf.rs`, `benches/export.rs`, réécrits par les Epics 46 et 47).
+- [ ] **T3** — `docs/api-external.md` (AC-7).
+- [ ] **T4** — Gates.
 
 ## Gates
 
 Règle de l'epic (fichier d'epic, § *Gates*) : `cargo fmt --all -- --check` ; `cargo clippy --workspace --all-targets -- -D
-warnings` ; `cargo nextest run -E 'package(kesh-report) | binary(reports_e2e) | binary(mcp_contrat)'` (rayon d'impact) ;
+warnings` ; `cargo nextest run -E 'package(kesh-report) | binary(reports_e2e) | binary(reports_export_e2e) | binary(fx_recette_api_e2e)
+| binary(open_items_e2e) | binary(dates_bornes_e2e) | binary(mcp_contrat)'` (rayon d'impact : binaires qui lisent le
+journal ou le grand livre) ;
 `scripts/gate-ci.sh` en fin d'epic. Aucun fichier de `kesh-db` touché (sinon gate complet, `CLAUDE.md` § *Exception
 `kesh-db`*).
 
@@ -184,7 +215,9 @@ inchangés. (refs #À-VENIR)
 
 ### Modules (règle de splitting préventif)
 
-Un : `kesh-report` (et ses tests ; `kesh-api/tests/reports_e2e.rs` pour la réponse HTTP, sans code de production).
+Un module de production : `kesh-report` (`documents.rs`, `journal_report.rs`, `general_ledger.rs`, `lib.rs`, et les
+littéraux de test de `csv.rs`, `pdf.rs`, `benches/export.rs`) ; plus `docs/api-external.md` et les tests
+`kesh-api/tests/reports_e2e.rs`.
 
 ### References
 
@@ -212,3 +245,7 @@ Un : `kesh-report` (et ses tests ; `kesh-api/tests/reports_e2e.rs` pour la répo
   détail d'écriture (V1-2), site d'appel hors boucle et borne du grand livre, `fetch_counterparts` n'est plus le patron
   (V1-3), négatifs posés en SQL direct et mutations (V1-7), constats de l'AC-5 et de l'AC-6 (V1-8), contrat aligné sur D9
   (V1-10), LOW V1-11, V1-12, V1-13, V1-18 ; V1-4, V1-6, V1-9, V1-14 à V1-17 vont à la 55-3b.
+- 2026-11-25 — Validation P2 (Sonnet) : 0/0/3/8 ; remédiée : littéraux à compléter et fichiers communs (V2-1) ; négatifs
+  inter-sociétés par branche (V2-2) ; `docs/api-external.md` (V2-3, AC-7) ; LOW V2-4 à V2-11 (garde de l'extraction PDF,
+  fonctions citées au lieu des lignes de `kesh-api`, cinq branches, avoirs relevés au code, rayon d'impact, contrat
+  compilable, commande de contrôle, taille M).

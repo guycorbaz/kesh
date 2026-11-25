@@ -133,7 +133,7 @@ Base `origin/main` à `1e23edb55` ; branches de l'Epic 46 lues par `git show <br
 | 55-0 | Kickoff (ce fichier ; pas de fiche) | — | — | — |
 | 55-1 | L'état des Rapports dans l'URL : Retour, Suivant, lien partagé | base PR 46 | M | `55-1-etat-des-rapports-dans-l-url.md` |
 | 55-2 | Le lien de compte partout : Journaux, Grand livre, TVA, Compte de résultat à plat | 55-1 | S | `55-2-lien-de-compte-partout.md` |
-| 55-3a | Les justificatifs d'une écriture dans la réponse du journal et du grand livre (serveur) | base PR 46 ; Q1 ; **backend** | S | `55-3a-justificatifs-serveur.md` |
+| 55-3a | Les justificatifs d'une écriture dans la réponse du journal et du grand livre (serveur) | base PR 46 ; Q1 ; **backend** | M | `55-3a-justificatifs-serveur.md` |
 | 55-3b | Ouvrir les justificatifs depuis le Journal (et le Grand livre) | 55-3a, 55-2 | M | `55-3b-justificatifs-ecran.md` |
 | 55-4 | Solde de la dette de l'epic (plafond : **2 issues**) | toutes | S | `55-4-solde-dette-epic.md` |
 
@@ -192,6 +192,8 @@ Déclarés au kickoff (`CLAUDE.md` § *Fusions et fichiers communs*), relevés l
 | `frontend/src/lib/features/reports/reports-url.ts` (neuf), `AccountLink.svelte` (neuf), `EntryDocuments.svelte` (neuf) | 55-1, 55-2, 55-3b | — | — |
 | `frontend/src/lib/features/imported-supplier-invoices/DocumentPreview.svelte` | 55-3b (propriété facultative `errorMessage`) | — | comportement d'aujourd'hui inchangé sans la propriété |
 | `crates/kesh-report/src/journal_report.rs`, `general_ledger.rs`, `documents.rs` (neuf), `lib.rs` | 55-3a | ni l'Epic 46 ni l'Epic 47 n'y touchent (relevé à la validation P1) | champ additif, exports inchangés |
+| `crates/kesh-report/src/csv.rs`, `pdf.rs`, `benches/export.rs` (littéraux de test seulement) | 55-3a | **Epic 46** (PR 46 : `csv.rs` +1119, `pdf.rs` +1776 lignes), **Epic 47** (`pdf.rs`, `presentation.rs`) | une ligne `documents: Vec::new(),` par littéral, rien d'autre |
+| `docs/api-external.md` (grand livre, journal) | 55-3a | Epic 46 (rapports groupés) | paragraphes propres |
 | `crates/kesh-api/tests/reports_e2e.rs` | 55-3a | Epics 46 et 47 (cités par le fichier de l'Epic 46) | bloc de tests propre |
 | `crates/kesh-i18n/locales/*/messages.ftl` | 55-2, 55-3b (55-1 si un texte apparaît) | Epic 46 (`reports-groups-*`) | bloc `reports-nav-*` propre à l'epic |
 | `frontend/src/lib/shared/i18n-keys.test.ts` (`sitesTotal`) | 55-2, 55-3b | tous | recompté par la garde après chaque reprise |
