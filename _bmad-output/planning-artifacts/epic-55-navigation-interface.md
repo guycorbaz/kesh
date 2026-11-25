@@ -28,6 +28,7 @@ périmètre a été réduit (rapports par compte analytique hors de l'URL), et l
 | a) Liens de compte partout dans les Rapports | `enhancement` | P4 | #À-VENIR |
 | b) Retour du navigateur, état des Rapports dans l'URL | `bug` | P3 | #À-VENIR |
 | c) Justificatifs (PDF) d'une écriture depuis le Journal | `enhancement` | à fixer | #À-VENIR (à ouvrir, convenue au téléphone le 2026-11-25) |
+| d) Grand livre sans sélecteur d'exercice (*Générer* inutilisable en arrivant d'un autre onglet) | `bug` | P3 | #À-VENIR (texte : `kesh-gate-logs/s55-kickoff/issues-a-ouvrir.md`) ; traité par la 55-2 |
 
 **Décompte au tag précédent** (`CLAUDE.md` § *Priorités des défauts*, à mesurer par le mainteneur, l'agent de l'epic n'ayant
 pas `gh`) : issues ouvertes au tag précédent : **À-MESURER** ; dont bugs : **À-MESURER**. Objectif à terme : moins d'issues
@@ -142,7 +143,7 @@ Base `origin/main` à `1e23edb55` ; branches de l'Epic 46 lues par `git show <br
 | 55-0 | Kickoff (ce fichier ; pas de fiche) | — | — | — |
 | 55-1a | L'état des Rapports dans l'URL : Retour, Suivant, lien partagé | base PR 46 | M | `55-1a-etat-des-rapports-dans-l-url.md` |
 | 55-1b | La présentation des rapports groupés dans l'URL (Epic 46) | 55-1a | S | `55-1b-presentation-dans-l-url.md` |
-| 55-2 | Le lien de compte partout : Journaux, Grand livre, TVA, Compte de résultat à plat | 55-1a | S | `55-2-lien-de-compte-partout.md` |
+| 55-2 | Le lien de compte partout : Journaux, Grand livre, TVA, Compte de résultat à plat ; sélecteur d'exercice du Grand livre | 55-1a | M | `55-2-lien-de-compte-partout.md` |
 | 55-3a | Les justificatifs d'une écriture dans la réponse du journal et du grand livre (serveur) | base PR 46 ; Q1, Q7 ; **backend** | M | `55-3a-justificatifs-serveur.md` |
 | 55-3b | Ouvrir les justificatifs depuis le Journal (et le Grand livre) | 55-3a, 55-2 | M | `55-3b-justificatifs-ecran.md` |
 | 55-4 | Solde de la dette de l'epic (plafond : **2 issues**) | toutes | S | `55-4-solde-dette-epic.md` |

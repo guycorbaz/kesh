@@ -1,6 +1,6 @@
 # Story 55-2 : le lien de compte partout — Journaux, Grand livre, TVA, Compte de résultat
 
-Status: ready-for-dev
+Status: drafted
 
 Epic : `_bmad-output/planning-artifacts/epic-55-navigation-interface.md` — D6, D7 (Q3), D8. Issue : #À-VENIR (`enhancement`,
 P4, point a). Release : la prochaine planifiée après la 0.20.0. **Frontend seulement, aucune migration. Suit la 55-1a**
@@ -59,6 +59,44 @@ Relevé à `origin/main` `1e23edb55` et `pr/46-rapports-groupes` `511e61d54` ; l
 | `ProjectExpensesView.svelte:70` | le numéro est **dans** le bouton qui déplie la ligne : un lien dans un bouton n'est pas du HTML valide ; le rapport par compte analytique n'est pas un rapport de comptes |
 | `MirrorOfNote.svelte` (Epic 47, `epic/47-comptes-miroirs`, absent de `main` et de la PR 46) | la mention « Solde de 2270 … » est **un** message Fluent dont les sources sont jointes en une chaîne ; la lier demande de refaire le message (Epic 47) : hors périmètre ; issue `enhancement` **ouverte dans tous les cas** (section *Issues à ouvrir*), et signalée au tableau des fichiers communs de l'epic pour le second arrivé |
 | `data-testid` formés sur `accountNumber` (`AccountCurrencyBalance.svelte:18`, `TrialBalanceView.svelte:88`, …) | attributs de test, non des affichages |
+
+## Ajout du 2026-11-25 — le Grand livre a son sélecteur d'exercice (défaut d, `bug` P3)
+
+*Remarque de l'utilisateur, transmise le 2026-11-25 ; l'epic étant à six stories, elle entre dans la 55-2 (la story qui
+traite le Grand livre comme destination des liens), et la validation de la fiche reprend.*
+
+**Le défaut** : le bandeau du Grand livre n'a pas de sélecteur d'exercice (`+page.svelte:638-714` à `1e23edb55` :
+`ledgerFrom`, `ledgerTo`, compte, « comptes sans mouvement », *Générer* `ledger-generate` désactivé tant que « Du » ou « Au »
+est vide). En arrivant d'un autre onglet où un exercice était choisi, le sélecteur d'exercice disparaît avec le bandeau des
+rapports classiques (`ReportSelector`) et *Générer* reste inutilisable : comportement faux visible. Issue à ouvrir (texte :
+`kesh-gate-logs/s55-kickoff/issues-a-ouvrir.md`).
+
+**Le remède** (AC-11 à AC-14) :
+
+11. **AC-11 — Sélecteur.** Le bandeau du Grand livre gagne un sélecteur « Exercice » (`data-testid="ledger-fiscal-year"`),
+    libellé `reports-filter-fiscal-year` (clé existante du domaine), avec les exercices de `data.fiscalYears` et une entrée
+    **« — (dates libres) »** (`reports-nav-ledger-free-dates`, quatre locales). Choisir un exercice **remplit** « Du » et « Au »
+    avec ses bornes (`startDate`, `endDate`) ; modifier une date à la main fait passer le sélecteur à « dates libres » si
+    les dates ne sont plus les bornes d'un exercice ; « dates libres » laisse les dates telles quelles (un Grand livre sur
+    plusieurs exercices reste possible).
+12. **AC-12 — Arrivée sur l'onglet.** Clic sur l'onglet *Grand livre* depuis un rapport classique dont l'exercice E est
+    choisi, « Du » et « Au » du Grand livre encore vides : le sélecteur prend E, « Du » et « Au » ses bornes, *Générer* est
+    **visible et utilisable** (aucune requête n'est faite au clic, 55-1a). Dates du Grand livre déjà remplies : elles restent,
+    et le sélecteur montre l'exercice dont elles sont les bornes, sinon « dates libres ».
+13. **AC-13 — Arrivée par un lien de compte.** `ledgerHref(…, from, to)` (sortie inchangée) : « Du » et « Au » sont ceux du
+    lien ; le sélecteur montre l'exercice dont ils sont les bornes, sinon « dates libres » (lien de la période d'un bilan
+    partiel, d'une balance).
+14. **AC-14 — URL.** L'exercice du Grand livre **se déduit** des dates de l'URL (55-1a : `from`, `to`) — aucun paramètre neuf,
+    ordre canonique et `ledgerHref` inchangés : une URL rouvre le même sélecteur (exercice dont les dates sont les bornes,
+    sinon « dates libres »).
+15. **AC-15 — Manuel.** § *Grand livre*, l'item « Période libre, sans exercice » (`user-manual.tex:4198-4201` à `1e23edb55`)
+    devient : le Grand livre propose l'exercice comme raccourci pour la période, et « dates libres » pour franchir la borne.
+
+**Tests** : Vitest du bandeau (choix d'un exercice → dates ; date modifiée → « dates libres » ; arrivée depuis un onglet
+classique → exercice repris, *Générer* actif ; dates déjà remplies gardées) ; Vitest de la page (`reports-page-url.test.ts`
+de la 55-1a : URL du Grand livre → sélecteur déduit) ; E2E `reports-navigation.spec.ts` : Bilan de E généré, clic sur
+*Grand livre* → sélecteur sur E, dates aux bornes, *Générer* actif, génération ; rouges sans le correctif (aucun
+`ledger-fiscal-year`).
 
 ## Critères d'acceptation
 
@@ -224,3 +262,6 @@ Grand livre et, pour la TVA, les comptes de TVA due et d'impôt préalable. (ref
   mémoire montré par un clic d'onglet, retentative après échec), V4-2 (le cas « aucune lecture avant affichage » est une
   garde, rouge sous une mutation `onMount`), V4-3 (dépendance à la 55-1b : non requise, ordre de l'epic), V4-4 (liste des
   specs : celle du § *Gates* du fichier d'epic). Rapports : `kesh-gate-logs/s55-kickoff/55-2-validation-p{1..4}.md`.
+- 2026-11-25 — **Ajout** sur remarque de l'utilisateur : le sélecteur d'exercice du Grand livre, avec « dates libres »
+  (AC-11 à AC-15, défaut d, `bug` P3, issue à ouvrir) ; l'epic étant à six stories, l'ajout entre ici ; statut repassé à
+  `drafted`, validation reprise (P5).
