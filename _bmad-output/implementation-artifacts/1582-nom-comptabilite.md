@@ -1,6 +1,6 @@
 # Story 1582-nom-comptabilite : Afficher le nom de la comptabilité ouverte sous le logo et dans le titre de l'onglet (#1582)
 
-Status: review
+Status: done
 
 <!-- Fiche écrite par bmad-create-story le 2026-11-25 (Sonnet 5.5). Validations : P1 (Opus) et P2 (Sonnet) faites et remédiées ; P3 ciblée (Haiku) faite et remédiée ; P4 ciblée (Sonnet) à lancer : prompt `1582-nom-comptabilite-validation-prompt-p4.md`. -->
 
@@ -141,7 +141,7 @@ Une capture de l'en-tête (et de la fenêtre pour l'onglet) par état : (1) soci
 - `docs/manual/fr/user-manual.tex:150-152`, puce « Barre supérieure » : « le logo, **sous lequel s'affiche le nom de la comptabilité ouverte** (le nom de la comptabilité, tel qu'il est enregistré dans *Administration → Paramètres* ; le nom complet apparaît au survol quand il est coupé), un champ de recherche (à venir) et le menu utilisateur… ». Ajouter une phrase : **le titre de l'onglet du navigateur porte le même nom** (« Kesh — <nom> — <page> »), pour distinguer deux comptabilités ouvertes dans deux onglets ; **corrigé dans *Administration → Paramètres*, le nom change aussitôt dans cet onglet, et dans les autres à leur prochain chargement**.
 - Le prompt de validation exige la lecture du **PDF** (`user-manual.pdf`), aplati avant de greper, pour ce que le manuel dit de l'en-tête et du titre de l'onglet.
 
-## Note de version (v0.20.0, ou v0.21.0 si la story passe)
+## Note de version (v0.20.0, ou v0.21.0 si la story passe) — prête pour le CHANGELOG
 
 **Ajouté**
 
@@ -221,3 +221,17 @@ Sonnet 5.5 (`bmad-dev-story`).
 **Labels** : `bug`, `triage`, `P4`
 **Corps** : Depuis la story 1582, le nom de la comptabilité s'affiche sous le logo. Il est lu par `GET /api/v1/companies/current` au montage du layout `(app)` : avant la réponse, « Kesh » est centré verticalement et le champ de recherche commence vers x ≈ 96 px ; quand le nom arrive (quelques dizaines de millisecondes), « Kesh » monte d'environ 8 px et le champ glisse vers la droite de la largeur du nom (≈ 115 px pour « Dupont Sàrl », ≈ 272 px pour un nom de 70 caractères). Le saut se produit à chaque chargement. Cosmétique. Attendu : réserver la place (hauteur de la ligne du nom, largeur) dès le premier rendu, ou ne pas déplacer le champ. Découvert à la revue de code P1 de la story 1582 (refs #1582).
 - 2026-11-25 — **gates après remédiation P1** : `check` 0 erreur (32 warnings), `lint-i18n-ownership` PASS, `test:unit` 308 fichiers / **5261 tests** verts, `build` vert ; **E2E complet** au dernier commit de code (base `kesh_e2e_1582`, port 3482) : **527 passés, 20 skipped, 7 échecs = les sept de la KF-029**, 23,5 min. Binaire `kesh-api` : même copie de `kesh-pr1534` (Rust identique à `a914c4823`, `git diff --stat` et `git status --porcelain -- crates` vides) ; **réserve** : un état non commité au moment de sa compilation (20:16) ne peut être exclu par construction. Capture 4b reprise (`captures/4b-groupes-replies-*`, trois groupes `open=false`, `mesures.txt`).
+
+## Issue à ouvrir (P3, `technical-debt`, par l'orchestrateur — hors périmètre, « on trace toujours »)
+
+**Titre** : `L'E2E « lecture de la société en échec » n'est pas prouvé sensible à un toast ou à une redirection`
+**Labels** : `technical-debt`, `triage`, `P3`
+**Corps** : `frontend/tests/e2e/company-name-header.spec.ts` (AC10, story 1582) attend la réponse 500 de `GET /api/v1/companies/current`, puis asserte l'absence de nom (`company-name`), l'absence de toast (`[data-sonner-toast]`) et un titre sans « — ». La seule mutation jouée (retrait du bouchon 500) rougit sur l'assertion du nom ; aucune mutation n'a montré que l'ajout d'un toast ou d'une redirection sur l'échec ferait rougir les assertions de toast et de titre. Attendu : une mutation (toast ou redirection ajouté sur le 500) jouée contre le backend, consignée. Découvert à la revue de code P2 de la story 1582 (R2-1, refs #1582).
+
+## Issue à ouvrir (P3, `technical-debt`, par l'orchestrateur — hors périmètre, « on trace toujours »)
+
+**Titre** : `company-identity.svelte.test.ts : le test « load() appelé depuis un $effect » n'attend pas la promesse de load()`
+**Labels** : `technical-debt`, `triage`, `P3`
+**Corps** : Dans `frontend/src/lib/app/stores/company-identity.svelte.test.ts`, le dernier test (« load() appelé depuis un $effect ne le relance pas ») ne joint pas la promesse de `load()` : la résolution du mock écrit le nom après la fin du test. Sans conséquence aujourd'hui (le `beforeEach` appelle `clear()`, qui rend la lecture en vol sans effet, et le test est le dernier du bloc), mais un test ajouté après lui hériterait d'un état dépendant de la microtâche. Attendu : attendre explicitement la lecture (`vi.waitFor` sur le mock puis `flushSync`), ou écrire la dépendance à l'ordre en commentaire. Découvert à la revue de code P2 de la story 1582 (R2-2, refs #1582).
+
+- 2026-11-25 — **CHANGE LOG FINAL (boucle close)**. Tendance des findings (CRITICAL/HIGH/MEDIUM/LOW) : validation P1 (Opus) 0/0/3/12 ; P2 (Sonnet) 0/0/1/5 ; P3 ciblée (Haiku) 0/1/1/4 ; P4 ciblée (Sonnet) 0/0/0/0 ; revue de code P1 (Opus) 0/0/0/8 ; revue de code P2 ciblée (Haiku) 0/0/0/2. Modèles employés : Sonnet 5.5 (fiche, développement), Opus (validation P1, revue de code P1), Sonnet (validation P2 et P4), Haiku (validation P3, revue de code P2), alternance respectée. Reclassements : le HIGH de la validation P3 (recomptage des pages, 55 / 44 / 11) corrigé à la fiche ; les 8 LOW de la revue de code P1 remédiés sauf R1-4 (issue P4) ; les 2 LOW de la revue de code P2 (R2-1, R2-2) non corrigés, tracés en issues `technical-debt` P3. La dernière remédiation (`312c3aa17`) ne touche que des tests, la fiche et le manuel (aucun code de production). Issues à ouvrir par l'orchestrateur, **cinq**, une par problème : (1) 11 pages sans titre d'onglet (P4, `bug`) ; (2) aucun test Rust n'affirme `name` = « Prénom Nom » (P3, `technical-debt`) ; (3) saut de l'en-tête au chargement (P4, `bug`) ; (4) E2E AC10 non prouvé sensible au toast ou à la redirection (P3, `technical-debt`) ; (5) test `load()` depuis un `$effect` sans attente (P3, `technical-debt`). Gates finaux : voir l'entrée « gates après remédiation P1 » (check 0 erreur, `test:unit` 308 fichiers / 5261 tests, build vert, E2E 527 passés / 20 skipped / 7 échecs KF-029). Notes de version : section « Note de version » ci-dessus, prête pour le CHANGELOG.
