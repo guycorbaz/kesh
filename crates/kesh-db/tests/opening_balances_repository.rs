@@ -1,7 +1,7 @@
 //! Tests d'intégration Story 14-4 — bilan d'ouverture (soldes de départ).
 //!
 //! Couvre les helpers repo (`journal_entries::count_by_company`,
-//! `accounts::find_types_by_ids_in_tx`) et la fn dédiée atomique
+//! `accounts::lock_types_by_ids_in_tx`) et la fn dédiée atomique
 //! `journal_entries::create_opening_entry` (garde « company vierge » +
 //! statut exercice sous `fiscal_years FOR UPDATE`, P1-C1/P3-BH3-1),
 //! y compris la course concurrente (P1-M3-BH, miroir de
@@ -256,11 +256,11 @@ async fn count_by_company_is_tenant_scoped(pool: MySqlPool) {
 }
 
 // ============================================================
-// accounts::find_types_by_ids_in_tx
+// accounts::lock_types_by_ids_in_tx
 // ============================================================
 
 #[sqlx::test(migrations = "./test-schema")]
-async fn find_types_by_ids_returns_types_scoped_to_company(pool: MySqlPool) {
+async fn lock_types_by_ids_returns_types_scoped_to_company(pool: MySqlPool) {
     let cid = create_company(&pool, "co-types").await;
     let uid = create_user(&pool, "u-types", cid).await;
     let asset = create_acc(&pool, uid, cid, "1000", "Banque", AccountType::Asset, None).await;
@@ -301,7 +301,7 @@ async fn find_types_by_ids_returns_types_scoped_to_company(pool: MySqlPool) {
 
     let mut tx = pool.begin().await.unwrap();
     let mut types =
-        accounts::find_types_by_ids_in_tx(&mut tx, cid, &[asset, liab, revenue, foreign])
+        accounts::lock_types_by_ids_in_tx(&mut tx, cid, &[asset, liab, revenue, foreign])
             .await
             .unwrap();
     types.sort();
@@ -321,10 +321,10 @@ async fn find_types_by_ids_returns_types_scoped_to_company(pool: MySqlPool) {
 /// `ids` vide → `Ok(vec![])` sans requête SQL (un `IN ()` vide serait une
 /// erreur de syntaxe MariaDB → 500, P3-ECH-LOW-1).
 #[sqlx::test(migrations = "./test-schema")]
-async fn find_types_by_ids_empty_ids_ok(pool: MySqlPool) {
+async fn lock_types_by_ids_empty_ids_ok(pool: MySqlPool) {
     let cid = create_company(&pool, "co-types-empty").await;
     let mut tx = pool.begin().await.unwrap();
-    let types = accounts::find_types_by_ids_in_tx(&mut tx, cid, &[])
+    let types = accounts::lock_types_by_ids_in_tx(&mut tx, cid, &[])
         .await
         .unwrap();
     tx.rollback().await.unwrap();

@@ -458,20 +458,39 @@ where
     Ok(row.0)
 }
 
-/// Retourne les paires `(id, account_type)` des comptes demandés, **scopées
-/// company** (Story 14-4, P1-M1-ECH).
+/// Lit **sous verrou** les paires `(id, account_type)` des comptes demandés,
+/// **scopées société** (Story 14-4 P1-M1-ECH ; sous verrou depuis la Story 53-3,
+/// #513).
 ///
-/// Sert la garde « comptes de bilan » de `POST /opening-balances` : le handler
-/// rejette toute ligne dont le type retourné est `Revenue`/`Expense`. Un id
-/// **absent** du résultat (compte inexistant ou d'une autre company) n'est PAS
-/// une erreur ici — il retombe dans la garde `InactiveOrInvalidAccounts` de
-/// `journal_entries::create_in_tx` (contrat AC-B, findings P3-AA-1/BH3-6).
+/// Sert le contrôle « comptes de bilan » de [`super::journal_entries::create_opening_entry`] :
+/// elle s'exécute **dans la transaction qui écrit**, après les verrous de tête
+/// (`companies`, `fiscal_years`) et **avant** la première lecture cohérente
+/// (`journal_entries::count_by_company`). Un id **absent** du résultat (compte
+/// inexistant ou d'une autre société) n'est PAS une erreur ici : il retombe dans
+/// la garde `InactiveOrInvalidAccounts` de `journal_entries::create_in_tx`
+/// (contrat AC-B, findings P3-AA-1/BH3-6).
+///
+/// ⚠️ **La lecture est verrouillante, et placée avant toute lecture
+/// cohérente** : sous REPEATABLE READ, la première lecture cohérente d'une
+/// transaction fige son instantané (cf. [`count_by_company`]). Une lecture
+/// verrouillante `LOCK IN SHARE MODE` (jamais `FOR SHARE` : erreur de syntaxe
+/// sur MariaDB 10.11) (α) **attend** un écrivain non commité du type, puis lit
+/// la dernière version commitée ; (β) **tient** le verrou partagé jusqu'au
+/// commit, si bien qu'aucun retypage ne s'intercale entre le contrôle et
+/// l'écriture, même par un écrivain qui ne prendrait pas la société. Placée
+/// vue ouverte (après `count_by_company`), elle rendrait `ER_CHECKREAD` (1020)
+/// sous `innodb_snapshot_isolation` (MariaDB ≥ 11.6, #669) : 500, rien d'écrit.
+///
+/// `FORCE INDEX (PRIMARY)` et `ORDER BY id` : le verrou ne porte que sur les
+/// lignes visées (jamais un index secondaire commençant par `company_id`, dont
+/// les verrous d'intervalle bloqueraient la création d'un compte de la
+/// société), posé dans un ordre stable (revue 15-5d B-1).
 ///
 /// `ids` vide → `Ok(vec![])` sans requête : un `IN ()` vide est une erreur de
 /// syntaxe MariaDB qui remonterait en 500 (P3-ECH-LOW-1). Clause `IN`
 /// construite par placeholders bindés manuellement (pattern
 /// `reconciliation::find_contacts_by_ids`) — pas de N+1.
-pub async fn find_types_by_ids_in_tx(
+pub async fn lock_types_by_ids_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,
     ids: &[i64],
@@ -483,7 +502,9 @@ pub async fn find_types_by_ids_in_tx(
         .collect::<Vec<_>>()
         .join(", ");
     let sql = format!(
-        "SELECT id, account_type FROM accounts WHERE company_id = ? AND id IN ({placeholders})"
+        "SELECT id, account_type FROM accounts FORCE INDEX (PRIMARY) \
+         WHERE company_id = ? AND id IN ({placeholders}) \
+         ORDER BY id LOCK IN SHARE MODE"
     );
     let mut q = sqlx::query_as::<_, (i64, String)>(&sql).bind(company_id);
     for id in ids {

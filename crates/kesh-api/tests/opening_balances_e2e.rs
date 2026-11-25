@@ -545,7 +545,7 @@ async fn post_negative_amount_400(pool: MySqlPool) {
 }
 
 /// `{ lines: [] }` → 400 `VALIDATION_ERROR`, PAS 500 (garde `ids.is_empty()`
-/// dans `find_types_by_ids_in_tx`, P3-ECH-LOW-1).
+/// dans `lock_types_by_ids_in_tx`, P3-ECH-LOW-1).
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_empty_lines_400_not_500(pool: MySqlPool) {
     let (app, token) = bootstrap_admin(&pool).await;

@@ -817,13 +817,25 @@ where
 /// 1. `tx = pool.begin()` puis sentinel `SELECT id FROM companies WHERE id=?
 ///    FOR UPDATE` (`None` → `NotFound`).
 /// 2. `SELECT id, status FROM fiscal_years WHERE id=? AND company_id=? FOR UPDATE`
-///    → `None` → `NotFound` (le statut est examiné à l'étape 3-bis).
+///    → `None` → `NotFound` (le statut est examiné à l'étape 4).
+///    Puis (**2-bis**, Story 53-3, #513) le **type des comptes visés, lu sous
+///    verrou** : [`super::accounts::lock_types_by_ids_in_tx`] (`LOCK IN SHARE MODE`, scopée
+///    société) — **avant** `count_by_company`, première lecture cohérente de la
+///    transaction : lue vue ouverte, elle rendrait `ER_CHECKREAD` (1020) sous
+///    `innodb_snapshot_isolation` (MariaDB ≥ 11.6, #669 ; sans effet sous
+///    10.11). Le verrou partagé tenu jusqu'au commit est celui que
+///    `validate_lines_accounts_in_tx` prendra ensuite sur les mêmes lignes :
+///    avancé, non neuf. Le refus se juge à l'étape 4-bis.
 /// 3. [`count_by_company`] `(&mut *tx)` **sous le lock** → `> 0` →
 ///    `Invariant(FY_OPENING_ALREADY_HAS_ENTRIES_KEY)` (garde double-ouverture
 ///    company-wide, P3-BH3-1 — évaluée AVANT le statut clos : sur
 ///    « clos + écritures », le verdict doit être `ALREADY_HAS_ENTRIES`, pas le
 ///    conseil trompeur « rouvrez l'exercice »).
 /// 4. Statut `Closed` → `Invariant(FY_OPENING_FIRST_YEAR_CLOSED_KEY)`.
+///    Puis (**4-bis**) un compte lu `Revenue` ou `Expense` →
+///    `Invariant(FY_OPENING_NON_BALANCE_ACCOUNT_KEY)`, sans rien écrire ni
+///    auditer. Un id absent du résultat (inconnu, autre société) n'est pas
+///    refusé ici : `INACTIVE_OR_INVALID_ACCOUNTS` de `create_in_tx` (KF-002).
 /// 5. [`create_in_tx`] (`enforce_postable = true` — la grille n'offre que des
 ///    comptes postables, saisie manuelle assistée) : re-lock ré-entrant même tx,
 ///    validation comptes/équilibre/date, INSERT, audit `journal_entry.created`.
@@ -835,6 +847,14 @@ where
 /// exercice, la convention de Pattern 5, qui réduit la fréquence des
 /// interblocages sans les exclure (P3-ECH confirmé) : la route est rejouée
 /// (enveloppe `retry_on_deadlock`, Story 15-5e2).
+///
+/// **Verrous, dans l'ordre** (Story 53-3) : `companies` X → `fiscal_years` X →
+/// `accounts` S (les lignes visées, étape 2-bis, avant `count_by_company` pour
+/// ne pas ouvrir la vue : #669) → compteur de numéros. Le verrou `accounts` est
+/// celui que `validate_lines_accounts_in_tx` prend ensuite : **avancé, non neuf**,
+/// donc aucune arête neuve dans le graphe des attentes. Les gestes qui écrivent
+/// `accounts` (dont le retypage, `accounts::update`) prennent `companies` en
+/// partage d'abord : ils s'excluent de cette fonction dès son sentinel.
 ///
 /// **Portée exacte de la sérialisation** (Pass 1 BH-1 + Pass 3 BH3-1 code
 /// review) : la garde « company vierge » est **company-wide**, donc le verrou
@@ -873,6 +893,7 @@ pub async fn create_opening_entry(
 ) -> Result<JournalEntryWithLines, DbError> {
     use super::fiscal_years::{
         FY_OPENING_ALREADY_HAS_ENTRIES_KEY, FY_OPENING_FIRST_YEAR_CLOSED_KEY,
+        FY_OPENING_NON_BALANCE_ACCOUNT_KEY,
     };
 
     let mut tx = pool.begin().await.map_err(map_db_error)?;
@@ -913,6 +934,16 @@ pub async fn create_opening_entry(
         Some((_, status)) => status,
     };
 
+    // Étape 2-bis (Story 53-3, #513) : type des comptes visés, lu SOUS VERROU
+    // (`LOCK IN SHARE MODE`) dans la transaction qui écrit — le contrôle fait
+    // par le handler, dans une transaction jetée, laissait une fenêtre où un
+    // compte retypé en `Revenue`/`Expense` recevait une ligne d'ouverture.
+    // Placée **avant** `count_by_company` (première lecture cohérente, qui fige
+    // l'instantané REPEATABLE READ) : verrous d'abord, lectures ensuite, refus
+    // à leur place (étape 4-bis). Cf. doc de `accounts::lock_types_by_ids_in_tx`.
+    let account_ids: Vec<i64> = new.lines.iter().map(|l| l.account_id).collect();
+    let types = super::accounts::lock_types_by_ids_in_tx(&mut tx, company_id, &account_ids).await?;
+
     // Étape 3 : garde « company vierge » SOUS le lock (P3-BH3-1), évaluée
     // AVANT le statut clos (priorité amendée ECH3-2, propagée au chemin
     // d'écriture en Pass 4 — BH4/ECH4 convergés) : sur « clos + écritures »,
@@ -932,6 +963,21 @@ pub async fn create_opening_entry(
         let _ = tx.rollback().await;
         return Err(DbError::Invariant(
             FY_OPENING_FIRST_YEAR_CLOSED_KEY.to_string(),
+        ));
+    }
+
+    // Étape 4-bis (Story 53-3) : refus d'un compte de produits ou de charges,
+    // après les gardes « société vierge » et de statut (même ordre des verdicts
+    // qu'avant). Un id absent de `types` (inconnu, autre société) n'est pas
+    // refusé ici : il retombe dans `InactiveOrInvalidAccounts` de `create_in_tx`
+    // (anti-énumération, contrat AC-B de la 14-4).
+    if types
+        .iter()
+        .any(|(_, ty)| ty == "Revenue" || ty == "Expense")
+    {
+        let _ = tx.rollback().await;
+        return Err(DbError::Invariant(
+            FY_OPENING_NON_BALANCE_ACCOUNT_KEY.to_string(),
         ));
     }
 
