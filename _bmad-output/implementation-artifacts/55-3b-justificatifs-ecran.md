@@ -158,8 +158,13 @@ par la garde : un fichier commun, non un module.) Les pages des fiches de factur
    `:1513` (« figé au premier téléchargement ou envoi »), `:1637`, `:1641` (« qui télécharge le premier » → « qui
    télécharge ou ouvre le premier »), `:1645` (« au premier téléchargement »), `:1643` (« figée à son prochain téléchargement ») et `:1644` (« son prochain
    téléchargement figera ») → « téléchargement ou affichage » ; `:1650` (PDF figé disparu, « le téléchargement est
-   refusé ») : une phrase qui dit que l'affichage depuis les rapports l'est aussi, avec le même message. `.tex` seul. Constat : `pdftotext docs/manual/fr/user-manual.pdf - | tr '\n' ' ' | tr -s ' ' | grep -o
-   'premier téléchargement.\{0,120\}'` avant (journal) ; après la régénération à la release, les cinq phrases neuves (« affichage »). Captures du
+   refusé ») : une phrase qui dit que l'affichage depuis les rapports l'est aussi, avec le même message. `.tex` seul. Constat, **sur le `.tex`** (le PDF n'est régénéré qu'à la release) : avant, `grep -nE "premier téléchargement|prochain
+   téléchargement|télécharge le premier|le téléchargement est refusé" docs/manual/fr/user-manual.tex` (journal) ; après,
+   chacune des **huit** lignes de l'inventaire (`:1502`, `:1513`, `:1637`, `:1641`, `:1643`, `:1644`, `:1645`, `:1650`, à
+   `1e23edb55`, relevées sur la base PR 46) porte « affichage », vérifié ligne par ligne ; `:2058` (« son premier
+   téléchargement est bien inscrit au journal d'audit ») est jugée vraie et laissée. Formulations : `:1637` reçoit la longue
+   (« au premier téléchargement, au premier envoi, ou au premier affichage depuis les rapports », avec le renvoi) ; les
+   autres, la courte (« téléchargement, envoi ou affichage »). Captures du
    manuel montrant le grand livre (p. ex. `rd-grand-livre-usd.png`) : périmées si la colonne y paraît, à refaire à la
    release (dit au Change Log).
 10. **AC-10 — Accessibilité.** Bouton au clavier ; dialogue `role="dialog"`, `aria-modal`, étiqueté par son titre ; axe
@@ -175,8 +180,9 @@ par la garde : un fichier commun, non un module.) Les pages des fiches de factur
   genres (lecteur appelé, nom de fichier, replis de l'AC-3) ; erreur `410` → texte de `pdfErrorMessage` ; `Blob` vide
   **pour chacun des trois genres** ; **lecture unique** : dialogue ouvert, rapport remplacé par un objet égal → toujours
   **une** lecture (mutation déclarée au journal : sélection tenue par l'objet → deux lectures, test rouge) ; ouverture sans
-  appel de `goto` (mock de `$app/navigation`) ; **fermé puis rouvert pendant la lecture de la liste** : la réponse de la
-  première ouverture est ignorée (mutation : compteur d'ouverture retiré → la liste ancienne s'affiche, test rouge).
+  appel de `goto` (mock de `$app/navigation`) ; **fermé puis rouvert pendant la lecture de la liste** — deux promesses
+  contrôlées, la première résolue **après** la seconde, avec des listes de noms **différents** ; l'assertion porte sur la
+  liste affichée : celle de la seconde ouverture — (mutation : compteur d'ouverture retiré → la liste ancienne s'affiche, test rouge).
 - **Vitest** `reports.api.test.ts` : `fetchEntryDocuments(entryId)`, `fetchInvoicePdf`, `fetchCreditNotePdf` (URL exactes).
 - **Vitest** `DocumentPreview.test.ts` : tests ajoutés (propriété présente rendant une chaîne, y compris pour
   `SOURCE_DOCUMENT_GONE` ; rendant `undefined` ; absente ; nouveau rendu avec une autre fonction `errorMessage` → **une**
@@ -213,7 +219,8 @@ d'une facture figée, ou par `page.route` rendant `410 INVOICE_PDF_GONE`) ; gran
       - hauteur de l'aperçu dans le dialogue (titre, liste, cadre et « Fermer » tiennent dans `85vh`, sans double
         défilement) ;
       - fichier d'epic : `helpers/api-fixtures.ts` non touché ;
-      - une instance du dialogue **par vue** (non par ligne), l'icône ne portant que l'écriture ;
+      - (tranché : **une** instance du dialogue par vue — `EntryDocuments.svelte` est rendu une fois par vue, avec l'écriture
+        ouverte en état ; l'icône par ligne n'est qu'un bouton qui l'ouvre ; T2 en conséquence) ;
       - nature de l'erreur « vide » (classe dédiée reconnue par `errorMessage` avant `pdfErrorMessage`) ; une clé pour le
         libellé de l'icône et le titre s'ils portent le même texte ;
       - E2E *Consultation* exigé (patron `reports.spec.ts:441`) ;
@@ -221,8 +228,9 @@ d'une facture figée, ou par `page.route` rendant `410 INVOICE_PDF_GONE`) ; gran
 - [ ] **T1** — Vitest rouges.
 - [ ] **T2** — `DocumentPreview` (`errorMessage`, rien d'autre) ; lecteurs dans `reports.api.ts`
       (`fetchEntryDocuments`, `fetchInvoicePdf`, `fetchCreditNotePdf`) ; `EntryDocumentsViewer.svelte` (la liste en haut,
-      `DocumentPreview` dessous, sélection par primitives) ; `EntryDocuments.svelte` (l'icône, le dialogue `ui/dialog`, la
-      lecture de la liste au clic).
+      `DocumentPreview` dessous, sélection par primitives) ; `EntryDocuments.svelte` (le dialogue `ui/dialog`, **une
+      instance par vue**, et la lecture de la liste au clic) ; l'icône de chaque ligne est un bouton qui lui passe
+      l'écriture.
 - [ ] **T3** — Vues du journal et du grand livre (colonne conditionnelle) ; types `reports.types.ts`.
 - [ ] **T4** — i18n, manuel, E2E, captures.
 - [ ] **T5** — Gates (fichier d'epic, § *Gates*).
@@ -303,3 +311,6 @@ n'était pas encore produit le fige, comme un téléchargement. (refs #À-VENIR)
   de dialogue par vue, nature de l'erreur « vide » et clés en double, E2E *Consultation* exigé).
 - 2026-11-25 — Validation P2 ciblée (version récrite, Haiku) : 0/0/2/0 ; remédiée : `:1643`, `:1644`, `:1650` à l'AC-9
   (Vv2p2-1) ; renvois au T0 écrits en tâches (Vv2p2-1) ; test de la garde d'ouverture et sa mutation (Vv2p2-2).
+- 2026-11-25 — Validation P3 ciblée (version récrite, Sonnet) : 0/0/1/3 ; remédiée : constat de l'AC-9 sur le `.tex`, huit
+  lignes nommées, `:2058` jugée (Vv2p3-1) ; une formulation par ligne (Vv2p3-2) ; test de la garde d'ouverture spécifié
+  (Vv2p3-3) ; un dialogue par vue, tranché (Vv2p3-4).
