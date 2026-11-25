@@ -1,6 +1,6 @@
 # Story 55-4 : solde de la dette de l'epic
 
-Status: drafted
+Status: ready-for-dev
 
 Epic : `_bmad-output/planning-artifacts/epic-55-navigation-interface.md`. Release : celle de l'epic, **avant le tag**.
 Règle : `CLAUDE.md` § *Priorités des défauts*, les puces « Un LOW de revue qui touche la production peut se corriger dans
@@ -107,3 +107,8 @@ d'epic), avec `refs #N` par ligne ; la note de l'epic est assemblée à la relea
   à son epic — vaut seule), l'AC-8 et la tâche T0bis (V6-2) ; la revue d'intégration reste une étape de l'epic (fichier
   d'epic § *Gates*), non de la 55-4, qui n'en prend les points que si elle a eu lieu avant son T0. V6-3, V6-4 : sans objet
   après le retrait, ou à reprendre au T0 (prérequis « souhaité »).
+- 2026-11-25 — Validation P7 ciblée (Sonnet) sur le retrait : 0/0/0/2 — **validation terminée**. Tendance : P1 Sonnet
+  0/0/3/6 → P2 ciblée Haiku 0/0/2/3 → P3 ciblée Sonnet 0/0/1/3 → P4 ciblée Haiku 0/0/1/2 → P5 ciblée Sonnet 0/0/1/3 → P6
+  ciblée Haiku 0/0/2/2 (retrait) → P7 ciblée Sonnet 0/0/0/2. Les deux LOW se reprennent au **T0 du développement**, ligne
+  lue citée au Change Log : V7-1 (« si elle a eu lieu avant le T0 » au périmètre, ligne de la revue d'intégration), V7-2
+  (« Prérequis (souhaité) … ; à défaut, AC-1 s'applique »).
