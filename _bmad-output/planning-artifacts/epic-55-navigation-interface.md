@@ -188,7 +188,7 @@ Déclarés au kickoff (`CLAUDE.md` § *Fusions et fichiers communs*), relevés l
 | `frontend/src/lib/features/reports/TrialBalanceView.svelte` | 55-2 | **Epic 46** (46-6b, balance groupée) | idem |
 | `frontend/src/lib/features/reports/reports.api.ts` | 55-1 (`ledgerHref` inchangé), 55-2, 55-3b (lecteurs des PDF) | **Epic 46** (paramètres de regroupement, 46-8 : `getReportExportUrl`) | `ledgerHref` : sortie inchangée (D6) |
 | `frontend/src/lib/features/reports/reports.types.ts` | 55-3b (`documents`) | **Epic 46**, Epic 47 | champ ajouté en fin de type |
-| `frontend/src/lib/features/reports/JournalReportView.svelte`, `GeneralLedgerView.svelte`, `VatReportView.svelte`, `ReportSelector.svelte` | 55-1 (`ReportSelector`), 55-2, 55-3b | — | 55-2 puis 55-3b |
+| `frontend/src/lib/features/reports/JournalReportView.svelte`, `GeneralLedgerView.svelte`, `VatReportView.svelte`, `ReportSelector.svelte` | 55-1 (`ReportSelector` lu seulement), 55-2, 55-3b | — | 55-2 puis 55-3b |
 | `frontend/src/lib/features/reports/reports-url.ts` (neuf), `AccountLink.svelte` (neuf), `EntryDocuments.svelte` (neuf) | 55-1, 55-2, 55-3b | — | — |
 | `frontend/src/lib/features/imported-supplier-invoices/DocumentPreview.svelte` | 55-3b (propriété facultative `errorMessage`) | — | comportement d'aujourd'hui inchangé sans la propriété |
 | `crates/kesh-report/src/journal_report.rs`, `general_ledger.rs`, `documents.rs` (neuf), `lib.rs` | 55-3a | ni l'Epic 46 ni l'Epic 47 n'y touchent (relevé à la validation P1) | champ additif, exports inchangés |
