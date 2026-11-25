@@ -175,6 +175,7 @@
 		document={qrDocument}
 		{hasDocument}
 		initial={invoice}
+		invoiceId={invoice.id}
 		proposals={[]}
 		onSubmit={save}
 	/>

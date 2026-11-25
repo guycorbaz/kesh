@@ -4,7 +4,8 @@
 //! - UTF-8 + BOM (`\u{FEFF}` en tête) — pour Excel CH/DE qui détecte l'encodage via BOM.
 //! - Séparateur `;` (PAS la virgule — convention Excel CH/DE).
 //! - Terminator `\r\n` (CRLF).
-//! - Format décimal ISO point + **toujours 2 décimales** (`format!("{:.2}", ...)`).
+//! - Format décimal ISO point + **toujours 2 décimales**, **arrondies au centime**
+//!   (`kesh_core::types::format_two_decimals` : l'équidistant loin de zéro, comme à l'écran).
 //! - Dates ISO 8601 `YYYY-MM-DD` (machine-readable).
 //! - Escaping automatique (RFC 4180) géré par `csv 1.3`.
 //!
@@ -14,6 +15,7 @@
 use std::io::Write;
 
 use kesh_core::csv::csv_sanitize;
+use kesh_core::types::format_two_decimals;
 use rust_decimal::Decimal;
 
 use crate::aged_receivables::AgedReceivables;
@@ -22,7 +24,7 @@ use crate::errors::ReportError;
 use crate::general_ledger::{FiscalYearBreak, GeneralLedger};
 use crate::income_statement::IncomeStatement;
 use crate::journal_report::JournalReport;
-use crate::pdf::{format_exchange_rate, round_for_display};
+use crate::pdf::format_exchange_rate;
 use crate::trial_balance::TrialBalance;
 use crate::vat_report::VatReport;
 
@@ -46,17 +48,18 @@ fn make_writer<W: Write>(writer: W) -> csv::Writer<W> {
 }
 
 /// Formate un Decimal au format ISO décimal point, **toujours 2 décimales** (T3.6 +
-/// Pass 1 ECH-H5 — sinon Excel auto-type colonne mixte casse).
+/// Pass 1 ECH-H5 — sinon Excel auto-type colonne mixte casse), **arrondies au
+/// centime** loin de zéro (`10.0050` → `10.01`, Story 48-11, #1245).
 fn format_amount_iso(amount: Decimal) -> String {
-    format!("{amount:.2}")
+    format_two_decimals(amount)
 }
 
 /// Montant **en devise** (Story 37-4, AC-5) : la somme exacte (4 décimales
-/// stockées), arrondie explicitement à 2 décimales loin de zéro, puis au format
-/// des colonnes CHF (point décimal, sans séparateur de milliers : un tableur ne
-/// relit pas `1'233.57`).
+/// stockées), au format des colonnes CHF (point décimal, sans séparateur de
+/// milliers : un tableur ne relit pas `1'233.57`) ; l'arrondi est celui de
+/// [`format_amount_iso`].
 fn format_currency_amount_iso(amount: Decimal) -> String {
-    format_amount_iso(round_for_display(amount))
+    format_amount_iso(amount)
 }
 
 /// Écrit un enregistrement : les colonnes de base, puis, si le rapport contient
@@ -222,7 +225,7 @@ pub fn render_balance_sheet_csv<W: Write>(
                 "",
                 "Résultat reporté (calculé)",
                 // Arrondie comme la règle qui la montre (revue P1, LOW-1).
-                &format_amount_iso(round_for_display(bs.retained_earnings)),
+                &format_amount_iso(bs.retained_earnings),
             ],
             balance_row_extra(None, fx),
         )?;
@@ -744,7 +747,7 @@ pub fn render_project_expenses_csv<W: Write>(
 /// Formate un rendement `Option<Decimal>` en `"xx.xx%"` ou `"—"` (Story 19-6b).
 fn format_rendement(pct: Option<Decimal>) -> String {
     match pct {
-        Some(p) => format!("{p:.2}%"),
+        Some(p) => format!("{}%", format_two_decimals(p)),
         None => "—".to_string(),
     }
 }
@@ -2185,5 +2188,57 @@ mod tests {
                 "-60.00%"
             ]
         );
+    }
+    // --- Story 48-11 (#1245) : les montants s'arrondissent au centime ---
+
+    #[test]
+    fn format_amount_iso_arrondit_au_centime() {
+        assert_eq!(format_amount_iso(dec!(10.0050)), "10.01");
+        assert_eq!(format_amount_iso(dec!(5.0060)), "5.01");
+        assert_eq!(format_amount_iso(dec!(-0.0040)), "0.00");
+        assert_eq!(format_amount_iso(dec!(-10.0050)), "-10.01");
+    }
+
+    /// Prouve le **formateur** seul. En production, `project_report.rs` arrondit
+    /// déjà le rendement **au pair** (`round_dp(2)`) avant l'affichage : un
+    /// rendement exact de 12.345 s'affiche donc `12.34%` (#1442).
+    #[test]
+    fn format_rendement_arrondit() {
+        assert_eq!(format_rendement(Some(dec!(12.345))), "12.35%");
+    }
+
+    #[test]
+    fn la_balance_csv_arrondit_la_fraction_de_centime() {
+        let tb = TrialBalance {
+            period: period(),
+            rows: vec![TrialBalanceRow {
+                account_id: 1,
+                account_number: "1000".into(),
+                account_name: "Caisse".into(),
+                account_type: AccountType::Asset,
+                active: true,
+                opening_balance: dec!(0),
+                total_debit: dec!(10.0050),
+                total_credit: dec!(0),
+                balance: dec!(10.0050),
+                closing_balance: dec!(10.0050),
+                currency: None,
+                opening_currency: None,
+                total_debit_currency: None,
+                total_credit_currency: None,
+                balance_currency: None,
+                closing_currency: None,
+            }],
+            total_debit: dec!(10.0050),
+            total_credit: dec!(0),
+            balanced: true,
+            retained_earnings: dec!(0),
+            opening_balanced: true,
+        };
+        let mut buf = Vec::new();
+        render_trial_balance_csv(&tb, &mut buf).unwrap();
+        let body = String::from_utf8(buf[3..].to_vec()).unwrap();
+        assert!(body.contains("10.01"), "{body}");
+        assert!(!body.contains("10.00"), "{body}");
     }
 }

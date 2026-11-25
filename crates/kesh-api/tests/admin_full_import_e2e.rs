@@ -5536,7 +5536,9 @@ async fn facture_numerotee(
         NewSupplierInvoice {
             company_id: biz.ctx.company_id,
             contact_id: supplier,
-            supplier_invoice_number: Some("ABC".into()),
+            // Story 48-12a (#975) : un numéro par facture — la règle anti-doublon
+            // refuse le même numéro du même fournisseur dans la même année.
+            supplier_invoice_number: Some(format!("ABC-{}-{:02}-{:02}", date.0, date.1, date.2)),
             invoice_date: chrono::NaiveDate::from_ymd_opt(date.0, date.1, date.2).unwrap(),
             due_date: None,
             creditor_iban: None,

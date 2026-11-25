@@ -2330,3 +2330,477 @@ async fn export_global_zip_carries_a_modified_entry_and_its_trace(pool: MySqlPoo
         "la trace porte l'avant et l'après : {trace}"
     );
 }
+
+// ============================================================
+// Story 48-11 (#1245, #1430) — l'export global écrit chaque colonne
+// `DECIMAL` à l'échelle du schéma, sans arrondi ni coupe.
+// ============================================================
+
+/// Télécharge l'export global de `ctx` et le rend sous forme d'entrées.
+async fn telecharger_export(pool: MySqlPool, ctx: &Ctx) -> Vec<(String, Vec<u8>)> {
+    let app = spawn_app(pool).await;
+    let resp = app
+        .client
+        .get(app.url("/api/v1/exports/global.zip"))
+        .bearer_auth(&ctx.jwt)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body = resp.bytes().await.unwrap();
+    assert_zip_response(&body)
+}
+
+/// Lit un CSV de l'export : `(en-têtes, lignes)`, BOM ôté, séparateur `;`.
+fn lire_csv(entries: &[(String, Vec<u8>)], nom: &str) -> (Vec<String>, Vec<Vec<String>>) {
+    let raw = entry_bytes(entries, nom);
+    let mut rdr = csv::ReaderBuilder::new()
+        .delimiter(b';')
+        .has_headers(true)
+        .flexible(true)
+        .from_reader(&raw[3..]);
+    let headers: Vec<String> = rdr.headers().unwrap().iter().map(String::from).collect();
+    let rows = rdr
+        .records()
+        .map(|r| r.unwrap().iter().map(String::from).collect())
+        .collect();
+    (headers, rows)
+}
+
+/// AC4 — le cas du manuel d'administration (`admin-manual.tex`, plafond de
+/// l'écart d'un règlement groupé posé à `5.0060`) et le débit à `10.0050` :
+/// l'export les écrit tels quels, à quatre décimales ; `amount_currency` et
+/// `exchange_rate` gardent leurs échelles ; un taux de TVA reste à deux
+/// décimales.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn export_global_ne_coupe_plus_la_fraction_de_centime(pool: MySqlPool) {
+    let ctx = seed_with_full_data(&pool, "co_4811_cut", Role::Comptable).await;
+    let ligne_id: i64 = sqlx::query_scalar(
+        "SELECT jel.id FROM journal_entry_lines jel \
+         JOIN journal_entries je ON je.id = jel.entry_id \
+         WHERE je.company_id = ? AND jel.debit > 0 ORDER BY jel.id LIMIT 1",
+    )
+    .bind(ctx.company_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    sqlx::query("UPDATE journal_entry_lines SET debit = 10.0050 WHERE id = ?")
+        .bind(ligne_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO company_invoice_settings (company_id) VALUES (?) \
+         ON DUPLICATE KEY UPDATE company_id = company_id",
+    )
+    .bind(ctx.company_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "UPDATE company_invoice_settings SET group_settlement_max_difference = 5.0060 \
+         WHERE company_id = ?",
+    )
+    .bind(ctx.company_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let entries = telecharger_export(pool, &ctx).await;
+
+    let (h, rows) = lire_csv(&entries, "journal_entry_lines.csv");
+    let (i_id, i_debit) = (
+        h.iter().position(|c| c == "id").unwrap(),
+        h.iter().position(|c| c == "debit").unwrap(),
+    );
+    let ligne = rows
+        .iter()
+        .find(|r| r[i_id] == ligne_id.to_string())
+        .expect("la ligne modifiée sort");
+    assert_eq!(ligne[i_debit], "10.0050");
+
+    let (h, rows) = lire_csv(&entries, "company_invoice_settings.csv");
+    let i = h
+        .iter()
+        .position(|c| c == "group_settlement_max_difference")
+        .unwrap();
+    assert_eq!(rows[0][i], "5.0060");
+
+    // Le produit du jeu : `unit_price` 150.00 → quatre décimales, `vat_rate`
+    // 8.10 → deux décimales.
+    let (h, rows) = lire_csv(&entries, "products.csv");
+    let p = h.iter().position(|c| c == "unit_price").unwrap();
+    let v = h.iter().position(|c| c == "vat_rate").unwrap();
+    assert_eq!(rows[0][p], "150.0000");
+    assert_eq!(rows[0][v], "8.10");
+}
+
+/// AC13 — **pour chaque colonne `DECIMAL` exportée, la cellule du CSV vaut la
+/// valeur posée en base, écrite à l'échelle de la colonne** (même échelle,
+/// mêmes chiffres, zéros de queue compris).
+///
+/// ⛔ Ce test n'est pas vrai par construction : l'ensemble des colonnes et leur
+/// échelle viennent d'`information_schema`, non du code testé ; les décomptes
+/// (38 colonnes : 25 à quatre décimales, 10 à deux, 3 à dix) sont écrits à la
+/// main ; les valeurs attendues viennent de la base (`CAST(… AS CHAR)`), non du
+/// sérialiseur. Une colonne `DECIMAL` ajoutée par une migration fait rougir le
+/// décompte et se nomme.
+///
+/// Le jeu est monté **ici** (une société, `seed_with_full_data` pour les
+/// écritures, puis les tables restantes), sans toucher aux fixtures des autres
+/// tests. Valeur par défaut : `1.` suivi des `s` premiers chiffres de
+/// `1234567891`. Dérogations, par contrainte `CHECK` :
+/// - `journal_entry_lines` : `chk_jel_debit_credit_exclusive`,
+///   `chk_jel_fx_all_or_none`, `chk_jel_fx_chf` → trois lignes (L1 débit, L2
+///   crédit, L3 en devise avec `debit = 1.2600 = round(1.1234 × 1.1234567891, 2)`) ;
+/// - `exchange_rates` : `chk_exchange_rates_ack_pair`, `_ack_afc` → `source =
+///   'afc'` et `acknowledged_at` posé ; `acknowledged_rate = 0.9876543210`
+///   (distinct de `rate`, pour qu'une colonne lue à la place de l'autre rougisse).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn export_global_chaque_colonne_decimal_a_l_echelle_du_schema(pool: MySqlPool) {
+    use kesh_api::exports::global::TABLES_EXPORTEES;
+
+    let ctx = seed_with_full_data(&pool, "co_4811_full", Role::Comptable).await;
+    let cid = ctx.company_id;
+    let (v4, v2, v10) = ("1.1234", "1.12", "1.1234567891");
+
+    // --- Lignes d'écriture L1, L2, L3 (trois lignes distinctes, sans devise
+    // au départ ; L3 se pose par un seul UPDATE des cinq colonnes).
+    let lignes: Vec<i64> = sqlx::query_scalar(
+        "SELECT jel.id FROM journal_entry_lines jel JOIN journal_entries je ON je.id = jel.entry_id \
+         WHERE je.company_id = ? ORDER BY jel.id LIMIT 3",
+    )
+    .bind(cid)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(lignes.len(), 3);
+    // L1 : débit seul (`chk_jel_debit_credit_exclusive`).
+    sqlx::query("UPDATE journal_entry_lines SET debit = ?, credit = 0 WHERE id = ?")
+        .bind(v4)
+        .bind(lignes[0])
+        .execute(&pool)
+        .await
+        .unwrap();
+    // L2 : crédit seul.
+    sqlx::query("UPDATE journal_entry_lines SET debit = 0, credit = ? WHERE id = ?")
+        .bind(v4)
+        .bind(lignes[1])
+        .execute(&pool)
+        .await
+        .unwrap();
+    // L3 : en devise, un seul UPDATE (`chk_jel_fx_all_or_none`, `chk_jel_fx_chf`).
+    sqlx::query(
+        "UPDATE journal_entry_lines SET amount_currency = ?, exchange_rate = ?, \
+         rate_source = 'manual', debit = 1.2600, credit = 0 WHERE id = ?",
+    )
+    .bind(v4)
+    .bind(v10)
+    .bind(lignes[2])
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    // --- products (seed : 150.00 / 8.10) et réglages (préréglage ou insertion).
+    sqlx::query("UPDATE products SET unit_price = ?, vat_rate = ? WHERE company_id = ?")
+        .bind(v4)
+        .bind(v2)
+        .bind(cid)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO company_invoice_settings (company_id) VALUES (?) \
+         ON DUPLICATE KEY UPDATE company_id = company_id",
+    )
+    .bind(cid)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "UPDATE company_invoice_settings SET minimum_invoice_amount = ?, \
+         group_settlement_max_difference = ? WHERE company_id = ?",
+    )
+    .bind(v4)
+    .bind(v4)
+    .bind(cid)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    // --- Les tables restantes : montage par SQL direct, clés étrangères
+    // suspendues sur UNE connexion dédiée (comme le test des onze tables) ; les
+    // `CHECK` restent actifs. Chaque colonne `DECIMAL` reçoit sa valeur par
+    // défaut dès l'insertion.
+    let contact_id: i64 =
+        sqlx::query_scalar("SELECT id FROM contacts WHERE company_id = ? ORDER BY id LIMIT 1")
+            .bind(cid)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let fictif = 900_000 + cid * 100;
+    let mut conn = pool.acquire().await.unwrap();
+    sqlx::query("SET FOREIGN_KEY_CHECKS = 0")
+        .execute(&mut *conn)
+        .await
+        .unwrap();
+
+    macro_rules! ins {
+        ($sql:expr $(, $b:expr)* $(,)?) => {{
+            sqlx::query_scalar::<_, i64>($sql)
+                $(.bind($b))*
+                .fetch_one(&mut *conn)
+                .await
+                .unwrap()
+        }};
+    }
+
+    // invoices / invoice_lines
+    let invoice_id = ins!(
+        "INSERT INTO invoices (company_id, contact_id, status, date, total_amount, rounding_amount, version) \
+         VALUES (?, ?, 'draft', '2026-05-01', ?, ?, 1) RETURNING id",
+        cid,
+        contact_id,
+        v4,
+        v4
+    );
+    ins!(
+        "INSERT INTO invoice_lines (invoice_id, position, description, quantity, unit_price, vat_rate, line_total) \
+         VALUES (?, 1, 'Ligne', ?, ?, ?, ?) RETURNING id",
+        invoice_id,
+        v4,
+        v4,
+        v2,
+        v4
+    );
+    // dunning_levels / invoice_reminders (trois fixtures neuves)
+    ins!(
+        "INSERT INTO dunning_levels (company_id, level_number, delay_days, fee_amount) \
+         VALUES (?, 1, 10, ?) RETURNING id",
+        cid,
+        v2
+    );
+    ins!(
+        "INSERT INTO invoice_reminders (company_id, invoice_id, level_number, fee_amount, sent_at, \
+         channel, subject, body) VALUES (?, ?, 1, ?, '2026-06-01 10:00:00', 'manual', 'Sujet', 'Corps') \
+         RETURNING id",
+        cid,
+        invoice_id,
+        v2
+    );
+    // exchange_rates : source 'afc' + acquittement (`chk_exchange_rates_ack_pair`, `_ack_afc`)
+    ins!(
+        "INSERT INTO exchange_rates (company_id, currency, kind, rate_date, rate, source, \
+         acknowledged_rate, acknowledged_at, version) \
+         VALUES (?, 'EUR', 'day', '2026-06-01', ?, 'afc', 0.9876543210, '2026-06-02 10:00:00.000', 1) RETURNING id",
+        cid,
+        v10
+    );
+    // vat_rates
+    ins!(
+        "INSERT INTO vat_rates (company_id, label, rate, valid_from, active) \
+         VALUES (?, 'normal', ?, '2026-01-01', TRUE) RETURNING id",
+        cid,
+        v2
+    );
+    // bank_imports / bank_transactions
+    let bank_id: i64 =
+        sqlx::query_scalar("SELECT id FROM bank_accounts WHERE company_id = ? LIMIT 1")
+            .bind(cid)
+            .fetch_one(&mut *conn)
+            .await
+            .unwrap();
+    let import_id = ins!(
+        "INSERT INTO bank_imports (company_id, bank_account_id, filename, file_hash, source_format, \
+         period_from, period_to, opening_balance, closing_balance, transaction_count, imported_by_user_id) \
+         VALUES (?, ?, 'x.xml', ?, 'CAMT053_V04', '2026-01-01', '2026-01-31', ?, ?, 1, ?) RETURNING id",
+        cid,
+        bank_id,
+        "c".repeat(64),
+        v2,
+        v2,
+        ctx.user_id
+    );
+    ins!(
+        "INSERT INTO bank_transactions (company_id, import_id, bank_account_id, booking_date, amount, \
+         currency, details, status, version) VALUES (?, ?, ?, '2026-01-10', ?, 'CHF', '', 'pending', 1) \
+         RETURNING id",
+        cid,
+        import_id,
+        bank_id,
+        v2
+    );
+    // imported_supplier_invoices
+    ins!(
+        "INSERT INTO imported_supplier_invoices (company_id, status, file_hash, storage_path, \
+         original_filename, mime_type, byte_size, creditor_iban, is_qr_iban, creditor_address_type, \
+         creditor_name, creditor_country, reference_type, currency, amount, version) \
+         VALUES (?, 'to_complete', 'h', '/inbox/x.pdf', 'x.pdf', 'application/pdf', 1024, \
+         'CH9300762011623852957', FALSE, 'S', 'Fournisseur', 'CH', 'NON', 'CHF', ?, 1) RETURNING id",
+        cid,
+        v4
+    );
+    // credit_notes / credit_note_lines
+    let cn_id = ins!(
+        "INSERT INTO credit_notes (company_id, contact_id, invoice_id, credit_note_number, status, date, \
+         total_amount, rounding_amount) VALUES (?, ?, ?, 'AV-4811', 'draft', '2026-03-01', ?, ?) RETURNING id",
+        cid,
+        contact_id,
+        fictif + 1,
+        v4,
+        v4
+    );
+    ins!(
+        "INSERT INTO credit_note_lines (credit_note_id, position, description, quantity, unit_price, \
+         vat_rate, line_total) VALUES (?, 1, 'Ligne', ?, ?, ?, ?) RETURNING id",
+        cn_id,
+        v4,
+        v4,
+        v2,
+        v4
+    );
+    // supplier_invoices / supplier_invoice_lines
+    let si_id = ins!(
+        "INSERT INTO supplier_invoices (company_id, contact_id, supplier_invoice_number, status, \
+         invoice_date, total_amount, expected_payment_amount, purchase_journal_entry_id) \
+         VALUES (?, ?, 'FF-4811', 'open', '2026-03-01', ?, ?, ?) RETURNING id",
+        cid,
+        contact_id,
+        v4,
+        v4,
+        fictif + 2
+    );
+    ins!(
+        "INSERT INTO supplier_invoice_lines (supplier_invoice_id, position, description, quantity, \
+         unit_price, vat_rate, line_total, expense_account_id) VALUES (?, 1, 'Ligne', ?, ?, ?, ?, ?) RETURNING id",
+        si_id,
+        v4,
+        v4,
+        v2,
+        v4,
+        fictif + 3
+    );
+    // payment_batches / payment_batch_items
+    let pb_id = ins!(
+        "INSERT INTO payment_batches (company_id, bank_account_id, status, requested_execution_date, \
+         total_amount, msg_id, payment_info_id) VALUES (?, ?, 'generated', '2026-03-02', ?, 'MSG-4811', 'PMT-4811') RETURNING id",
+        cid,
+        fictif + 4,
+        v4
+    );
+    ins!(
+        "INSERT INTO payment_batch_items (payment_batch_id, supplier_invoice_id, position, end_to_end_id, amount) \
+         VALUES (?, ?, 1, 'E2E-4811', ?) RETURNING id",
+        pb_id,
+        si_id,
+        v4
+    );
+    // invoice_settlements
+    ins!(
+        "INSERT INTO invoice_settlements (company_id, invoice_id, journal_entry_id, amount, settled_on, \
+         settlement_type, settlement_account_id) VALUES (?, ?, ?, ?, '2026-03-03', 'internal_account', ?) RETURNING id",
+        cid,
+        invoice_id,
+        fictif + 6,
+        v4,
+        fictif + 7
+    );
+    sqlx::query("SET FOREIGN_KEY_CHECKS = 1")
+        .execute(&mut *conn)
+        .await
+        .unwrap();
+    drop(conn);
+
+    // --- L'ensemble des colonnes : information_schema, source différente du
+    // code testé.
+    let tables: Vec<String> = TABLES_EXPORTEES.iter().map(|t| t.to_string()).collect();
+    let colonnes: Vec<(String, String, i64)> = sqlx::query_as(
+        "SELECT CAST(TABLE_NAME AS CHAR), CAST(COLUMN_NAME AS CHAR), CAST(NUMERIC_SCALE AS SIGNED) \
+         FROM information_schema.COLUMNS \
+         WHERE TABLE_SCHEMA = DATABASE() AND DATA_TYPE = 'decimal' ORDER BY 1, 2",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    let colonnes: Vec<(String, String, i64)> = colonnes
+        .into_iter()
+        .filter(|(t, _, _)| tables.contains(t))
+        .collect();
+    let par_echelle = |s: i64| colonnes.iter().filter(|(_, _, e)| *e == s).count();
+    assert_eq!(
+        (
+            colonnes.len(),
+            par_echelle(4),
+            par_echelle(2),
+            par_echelle(10)
+        ),
+        (38, 25, 10, 3),
+        "colonnes DECIMAL exportées (total, à 4, à 2, à 10) : {colonnes:?}"
+    );
+
+    let entries = telecharger_export(pool.clone(), &ctx).await;
+    let mut verifiees = 0usize;
+    for (table, colonne, echelle) in &colonnes {
+        let fichier = if table == "companies" {
+            "company.csv".to_string()
+        } else {
+            format!("{table}.csv")
+        };
+        let cle = if table == "company_invoice_settings" {
+            "company_id"
+        } else {
+            "id"
+        };
+        let attendues: Vec<(i64, Option<String>)> = sqlx::query_as(&format!(
+            "SELECT CAST(`{cle}` AS SIGNED), CAST(`{colonne}` AS CHAR) FROM `{table}`"
+        ))
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        let (h, rows) = lire_csv(&entries, &fichier);
+        let i_cle = h
+            .iter()
+            .position(|c| c == cle)
+            .unwrap_or_else(|| panic!("{table}: colonne {cle}"));
+        let i_col = h
+            .iter()
+            .position(|c| c == colonne)
+            .unwrap_or_else(|| panic!("{table}.{colonne} absente de {fichier}"));
+        let defaut = match echelle {
+            4 => v4.to_string(),
+            2 => v2.to_string(),
+            _ => v10.to_string(),
+        };
+        let mut a_la_valeur = false;
+        for (id, attendue) in &attendues {
+            let ligne = rows
+                .iter()
+                .find(|r| r[i_cle] == id.to_string())
+                .unwrap_or_else(|| panic!("{table} {cle}={id} absente de {fichier}"));
+            let lu = &ligne[i_col];
+            match attendue {
+                Some(a) => {
+                    assert_eq!(
+                        lu, a,
+                        "{table}.{colonne} ({cle}={id}) : attendu {a} (échelle {echelle}), lu {lu}"
+                    );
+                    let cible = if table == "exchange_rates" && colonne == "acknowledged_rate" {
+                        "0.9876543210"
+                    } else {
+                        defaut.as_str()
+                    };
+                    if a == cible {
+                        a_la_valeur = true;
+                    }
+                }
+                None => assert_eq!(lu, "", "{table}.{colonne} ({cle}={id}) : NULL attendu vide"),
+            }
+        }
+        assert!(
+            a_la_valeur,
+            "{table}.{colonne} : aucune ligne ne porte la valeur posée à l'échelle {echelle}"
+        );
+        verifiees += 1;
+    }
+    assert_eq!(verifiees, 38);
+}

@@ -28,7 +28,17 @@ import {
 	paymentFields,
 	readableUnambiguousAmount,
 	sumTtc,
+	canConfirmFrom,
+	canSubmitFrom,
+	canWriteEntry,
+	citedInvoiceLabel,
+	duplicateRefusalText,
+	readDuplicateRefusal,
+	stateAfterRejection,
+	SUPPLIER_DUPLICATE_CODES,
+	SUPPLIER_FORM_STATES,
 } from './supplier-invoice-form';
+import { isSettlementOutcomeUnknown } from '$lib/shared/utils/unknown-outcome';
 import { readJournalAmount } from '$lib/features/journal-entries/balance';
 import type { CreateSupplierInvoiceLineRequest } from './supplier-invoices.types';
 
@@ -321,5 +331,102 @@ describe('describeSubmitError — SUPPLIER_INVOICE_LINE_NOT_IN_CENTIMES', () => 
 		expect(e.message).toBe(
 			'La ligne 2 donne un montant de 4.9995, qui n’est pas au centime. Saisissez la ligne au montant facturé par le fournisseur, au centime.',
 		);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Story 48-12b (#975, #985) — la machine à états du formulaire (table A, relevé C)
+// ---------------------------------------------------------------------------
+
+describe('canWriteEntry, canSubmitFrom, canConfirmFrom — les neuf états (relevé C, gardes)', () => {
+	it.each(SUPPLIER_FORM_STATES.map((s) => [s]))('%s', (s) => {
+		const saisie = s === 'E1' || s === 'E4' || s === 'E7';
+		// Mutation « canWriteEntry vraie en E5 » : rougit sur E5.
+		expect(canWriteEntry(s)).toBe(saisie);
+		expect(canSubmitFrom(s)).toBe(saisie);
+		// Mutation « confirmation sans garde d'état » : la confirmation hors E5 refusée.
+		expect(canConfirmFrom(s)).toBe(s === 'E5');
+	});
+	it('les neuf états sont comptés', () => {
+		expect(SUPPLIER_FORM_STATES).toHaveLength(9);
+	});
+});
+
+const dup = (code: string, details?: Record<string, unknown>) => ({
+	code,
+	status: 409,
+	message: 'Message du serveur.',
+	...(details !== undefined ? { details } : {}),
+});
+const lisibles = { supplierInvoiceId: 12, internalNumber: null, status: 'draft' };
+
+describe('readDuplicateRefusal et stateAfterRejection — le contrat de la 48-12a', () => {
+	const inconnu = (e: unknown) => isSettlementOutcomeUnknown(e);
+
+	it('confirmable: false → E4 ; confirmable: true → E5 — décidé sur confirmable, jamais sur le code', () => {
+		expect(stateAfterRejection(dup('SUPPLIER_INVOICE_DUPLICATE', { ...lisibles, confirmable: false }), inconnu)).toBe('E4');
+		expect(stateAfterRejection(dup('SUPPLIER_INVOICE_DUPLICATE', { ...lisibles, confirmable: true }), inconnu)).toBe('E5');
+		expect(
+			stateAfterRejection(dup('SUPPLIER_INVOICE_PROBABLE_DUPLICATE', { ...lisibles, confirmable: false }), inconnu),
+		).toBe('E4');
+		expect(
+			stateAfterRejection(dup('SUPPLIER_INVOICE_PROBABLE_DUPLICATE', { ...lisibles, confirmable: true }), inconnu),
+		).toBe('E5');
+	});
+
+	it('un des deux codes sans details lisibles → E7 (message du serveur)', () => {
+		for (const details of [undefined, {}, { supplierInvoiceId: '12', confirmable: true }, { supplierInvoiceId: 12 }]) {
+			const err = dup('SUPPLIER_INVOICE_DUPLICATE', details);
+			expect(readDuplicateRefusal(err)).toBeNull();
+			expect(stateAfterRejection(err, inconnu)).toBe('E7');
+			expect(describeSubmitError(err).message).toBe('Message du serveur.');
+		}
+	});
+
+	it('issue inconnue → E6 : TIMEOUT, NETWORK_ERROR, 502, 503, 504, erreur hors ApiError', () => {
+		for (const err of [
+			{ code: 'TIMEOUT', status: 0, message: '' },
+			{ code: 'NETWORK_ERROR', status: 0, message: '' },
+			{ code: 'X', status: 502, message: '' },
+			{ code: 'SERVICE_UNAVAILABLE', status: 503, message: '' },
+			{ code: 'X', status: 504, message: '' },
+			new TypeError('Failed to fetch'),
+		]) {
+			expect(stateAfterRejection(err, inconnu)).toBe('E6');
+		}
+	});
+
+	it('tout autre refus → E7', () => {
+		for (const code of ['VALIDATION_ERROR', 'INVALID_PAYMENT_DETAILS', 'AMOUNT_MISMATCH', 'OPTIMISTIC_LOCK_CONFLICT']) {
+			expect(stateAfterRejection({ code, status: 400, message: '' }, inconnu)).toBe('E7');
+		}
+	});
+
+	it('la facture citée : numéro interne, sinon « brouillon n° »', () => {
+		expect(citedInvoiceLabel('FF-2026-001', 12)).toBe('FF-2026-001');
+		expect(citedInvoiceLabel(null, 12)).toBe('brouillon n° 12');
+		expect(readDuplicateRefusal(dup('SUPPLIER_INVOICE_DUPLICATE', { ...lisibles, internalNumber: 'FF-2026-001', confirmable: false }))).toEqual({
+			code: 'SUPPLIER_INVOICE_DUPLICATE',
+			supplierInvoiceId: 12,
+			internalNumber: 'FF-2026-001',
+			status: 'draft',
+			confirmable: false,
+		});
+	});
+
+	it('les textes des avis sont ceux du serveur (clés error-supplier-invoice-*), jamais err.message', () => {
+		expect(duplicateRefusalText('SUPPLIER_INVOICE_DUPLICATE', 'entry')).toBe(
+			'Une facture de ce fournisseur porte déjà ce numéro pour la même année. Si c’est la même facture, ne l’enregistrez pas une seconde fois. Si le fournisseur a recommencé sa numérotation en cours d’année, ajoutez un caractère au numéro, par exemple « 15-b ».',
+		);
+		expect(duplicateRefusalText('SUPPLIER_INVOICE_PROBABLE_DUPLICATE', 'entry')).toBe(
+			'Une facture de ce fournisseur porte déjà la même date et le même montant. Si c’est la même facture, ne l’enregistrez pas une seconde fois ; sinon, confirmez que ce n’est pas un doublon.',
+		);
+		for (const code of SUPPLIER_DUPLICATE_CODES) {
+			const t = duplicateRefusalText(code, 'unvalidate');
+			expect(t).toBe(
+				'Une facture équivalente non annulée existe. Repasser celle-ci en brouillon en ferait un doublon : ne le faites que pour la retirer ou la corriger ensuite.',
+			);
+			expect(t).not.toContain('15-b');
+		}
 	});
 });

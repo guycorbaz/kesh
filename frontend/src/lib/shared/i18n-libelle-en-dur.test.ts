@@ -424,6 +424,11 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
  * minuscule en milieu de phrase ; `ecartee` **21**, `conforme` **108 → 109**, relevés par la
  * garde (`kesh-gate-logs/e433/rem2-vitest-1.log`), non additionnés.
  *
+ * **130 → 132** (Story 48-12b, #975) : `citedInvoiceLabel` et `duplicateRefusalText`
+ * (`supplier-invoices/supplier-invoice-form.ts`, tout par `i18nMsg`) ; `ecartee` **21**, `conforme`
+ * **109 → 111**, relevés par la garde (`kesh-gate-logs/e4812/dev/vitest-12b-complet-1.log`), non
+ * additionnés.
+ *
  * **130 → 137** (Story 38-11d, écran PayPal) : `paypalFailedLabel`, `paypalLineErrorLabel`,
  * `proposalKindLabel`, `gapKindLabel`, `toReviewReasonLabel` (`paypal/paypal-labels.ts`),
  * `proposalActionLabel` (`paypal/paypal-review.ts`) et `failedLabel` (page PayPal), tous par
@@ -436,8 +441,11 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
  * **138 → 140** (Story 38-12b, dialogue de téléchargement) : `periodRefusalLabel` et
  * `progressLabel` (`provider-download/provider-download.ts`, tout par `i18nMsg`) ; `conforme`
  * **117 → 119**, relevés par la garde (« expected 140 to be 138 »).
+ *
+ * **Fusion d'origin/main dans epic/50 (2026-11-24)** : 140 (PayPal) + 2 (48-12b) = **142**, `conforme`
+ * 119 + 2 = **121**, provisoires, à confirmer par la garde.
  */
-const CANDIDATES_ATTENDUES = 140;
+const CANDIDATES_ATTENDUES = 142;
 
 /** Les trois délimiteurs de littéral en JS/TS. */
 const QUOTES = ["'", '"', '`'];
@@ -954,7 +962,7 @@ describe('libellés en dur — l’angle mort #255', () => {
 			else if (c.retours.length > 0) classes.ecartee += 1;
 			else classes.conforme += 1;
 		}
-		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 21, conforme: 119 });
+		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 21, conforme: 121 });
 		// La somme est recalculée depuis les classes, jamais depuis le total qu'elle contrôle.
 		const somme = Object.values(classes).reduce((a, b) => a + b, 0);
 		expect(somme).toBe(CANDIDATES_ATTENDUES);

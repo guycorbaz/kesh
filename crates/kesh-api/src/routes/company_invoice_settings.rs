@@ -43,10 +43,7 @@ use crate::middleware::auth::CurrentUser;
 /// garde quatre décimales ; seule une valeur posée par SQL direct diffère de son
 /// affichage (limite L-4).
 fn group_max_for_display(value: rust_decimal::Decimal) -> String {
-    format!(
-        "{:.2}",
-        value.round_dp_with_strategy(2, rust_decimal::RoundingStrategy::MidpointAwayFromZero)
-    )
+    kesh_core::types::format_two_decimals(value)
 }
 
 #[derive(Serialize)]

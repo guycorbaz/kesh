@@ -442,14 +442,290 @@ macro_rules! in_own_tx {
     }};
 }
 
+// ---------------------------------------------------------------------------
+// Story 48-12a (#975) — le refus des factures fournisseur en double
+// ---------------------------------------------------------------------------
+
+/// Ce que fait la règle anti-doublon d'un refus **confirmable** (Story 48-12a,
+/// D5 ; patron du `confirm_designated` d'`accounts::archive`).
+///
+/// - [`DuplicatePolicy::Refuse`] : tout doublon est refusé. C'est la politique
+///   des fonctions qui ont gardé leur signature (`create_draft`,
+///   `create_validated`, `create_draft_in_tx`, `update_draft`,
+///   `update_draft_in_tx`, `unvalidate`, `unvalidate_in_tx`) : seeds, tests et
+///   futurs appelants passent par elle sans le savoir.
+/// - [`DuplicatePolicy::Confirmed`] : l'appelant a reçu `confirmNotDuplicate:
+///   true`. Il lève la règle 2 (même date et même total) ; à la création, à la
+///   modification et à la complétion, **jamais** la règle 1 (même numéro dans la
+///   même année civile) ; à la dévalidation d'une annulée, les deux (D6bis) —
+///   la table est [`DuplicateRule::lifted_by_confirmation`], seule source. Un
+///   refus levé ainsi s'inscrit au journal d'audit
+///   (`supplier_invoice.duplicate_confirmed`), dans la même transaction.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum DuplicatePolicy {
+    /// Tout doublon est refusé.
+    #[default]
+    Refuse,
+    /// L'utilisateur ou l'intégration a confirmé que ce n'est pas un doublon.
+    Confirmed,
+}
+
+impl DuplicatePolicy {
+    /// La politique que demande le champ `confirmNotDuplicate` d'une requête.
+    pub fn from_confirmation(confirm_not_duplicate: bool) -> Self {
+        if confirm_not_duplicate {
+            Self::Confirmed
+        } else {
+            Self::Refuse
+        }
+    }
+}
+
+/// La règle anti-doublon qu'une facture enfreint (Story 48-12a, D1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DuplicateRule {
+    /// Règle 1 : même numéro du fournisseur (normalisé) dans la même année
+    /// civile de la date de facture.
+    SameNumberSameYear,
+    /// Règle 2 : même date et même total TTC, l'une au moins des deux sans
+    /// numéro (règle 3).
+    SameDateSameTotal,
+}
+
+impl DuplicateRule {
+    /// Le numéro de la règle, tel que l'audit le consigne (`rule`).
+    pub fn number(self) -> u8 {
+        match self {
+            Self::SameNumberSameYear => 1,
+            Self::SameDateSameTotal => 2,
+        }
+    }
+
+    /// **La table de levée d'un refus de doublon — son unique source** (Story
+    /// 50-solde, #1492 ; 48-12a, D1, D6bis) : `confirmNotDuplicate: true` lève-t-il
+    /// le refus de cette règle pour ce geste ? Quatre cases :
+    ///
+    /// | | saisie ([`Entry`](crate::errors::DuplicateGesture::Entry)) | dévalidation d'une annulée |
+    /// |---|---|---|
+    /// | règle 1 (même numéro, même année) | **non**, aucune sortie | oui |
+    /// | règle 2 (même date, même total) | oui | oui |
+    ///
+    /// La couche base s'en sert pour lever le refus (`guard_duplicates_in_tx`) et
+    /// `kesh-api` pour écrire `details.confirmable` : aucune des deux ne réécrit
+    /// la table. Le `match` écrit **les quatre cases une à une, sans joker** (ni
+    /// `_`, ni position avalée) : une règle ou un geste ajouté demain ne compile
+    /// pas avant d'avoir **chacune** de ses cases.
+    pub fn lifted_by_confirmation(self, gesture: crate::errors::DuplicateGesture) -> bool {
+        use crate::errors::DuplicateGesture;
+        match (self, gesture) {
+            (Self::SameNumberSameYear, DuplicateGesture::Entry) => false,
+            (Self::SameDateSameTotal, DuplicateGesture::Entry) => true,
+            (Self::SameNumberSameYear, DuplicateGesture::Unvalidation) => true,
+            (Self::SameDateSameTotal, DuplicateGesture::Unvalidation) => true,
+        }
+    }
+}
+
+/// Une facture du même fournisseur, telle que la comparaison la lit (D2).
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct DuplicateCandidate {
+    pub id: i64,
+    pub internal_number: Option<String>,
+    pub supplier_invoice_number: Option<String>,
+    pub status: String,
+    pub invoice_date: NaiveDate,
+    pub total_amount: Decimal,
+}
+
+/// Ce que la comparaison a trouvé : la règle, et la facture existante qu'elle
+/// cite (la plus petite en identifiant parmi celles de cette règle).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DuplicateFinding {
+    pub rule: DuplicateRule,
+    pub existing: crate::errors::ExistingSupplierInvoice,
+}
+
+/// La décision **pure** de la règle anti-doublon (Story 48-12a, D1, D2) : le
+/// numéro (brut, normalisé ici par
+/// [`kesh_core::payment_text::normalize_supplier_invoice_number`]), la date et le
+/// total TTC de la facture jugée, contre les factures **non annulées du même
+/// fournisseur et de la même société** (filtrées par l'appelant, la facture
+/// jugée exclue).
+///
+/// D'abord la règle 1 sur toutes les candidates (même numéro normalisé, même
+/// année civile — jamais l'exercice), **puis** la règle 2 avec la règle 3 (même
+/// date, même total en égalité de valeur décimale, l'une au moins des deux sans
+/// numéro). La facture citée est la plus petite en identifiant parmi celles du
+/// refus retenu.
+pub fn find_duplicate(
+    number: Option<&str>,
+    invoice_date: NaiveDate,
+    total: Decimal,
+    candidates: &[DuplicateCandidate],
+) -> Option<DuplicateFinding> {
+    use chrono::Datelike;
+    use kesh_core::payment_text::normalize_supplier_invoice_number;
+
+    let number = normalize_supplier_invoice_number(number);
+    let cite = |rule, c: &DuplicateCandidate| DuplicateFinding {
+        rule,
+        existing: crate::errors::ExistingSupplierInvoice {
+            id: c.id,
+            internal_number: c.internal_number.clone(),
+            status: c.status.clone(),
+        },
+    };
+    let same_number = candidates
+        .iter()
+        .filter(|c| {
+            number.is_some()
+                && normalize_supplier_invoice_number(c.supplier_invoice_number.as_deref()) == number
+                && c.invoice_date.year() == invoice_date.year()
+        })
+        .min_by_key(|c| c.id);
+    if let Some(c) = same_number {
+        return Some(cite(DuplicateRule::SameNumberSameYear, c));
+    }
+    candidates
+        .iter()
+        .filter(|c| {
+            (number.is_none()
+                || normalize_supplier_invoice_number(c.supplier_invoice_number.as_deref())
+                    .is_none())
+                && c.invoice_date == invoice_date
+                && c.total_amount == total
+        })
+        .min_by_key(|c| c.id)
+        .map(|c| cite(DuplicateRule::SameDateSameTotal, c))
+}
+
+/// Verrouille la ligne du **fournisseur** (`contacts`, `FOR UPDATE`) — Story
+/// 48-12a, D3. Rend `false`, **sans erreur**, si le contact n'existe pas dans la
+/// société : la suite rend alors son refus habituel (`check_draft_input_in_tx` :
+/// « aucune ligne », projet, puis `NotFound` du fournisseur), si bien que la
+/// précédence des refus de saisie ne change pas (V2-8).
+///
+/// ⛔ **Avant toute lecture ordinaire de la transaction** : sous `REPEATABLE
+/// READ`, la vue cohérente d'InnoDB naît à la première lecture simple ; prise
+/// après elle, la transaction qui attendait ce verrou ne verrait pas la facture
+/// que la première vient de commiter, et les deux doublons passeraient.
+///
+/// ⚠️ Les tests pilotés (`tests/supplier_invoice_duplicate_lock.rs`,
+/// `kesh-api/tests/supplier_invoice_duplicate_e2e.rs`) reconnaissent l'attente
+/// sur ce verrou par les motifs `"FROM contacts WHERE id"` et `"FOR UPDATE"` :
+/// ils sont **couplés à la forme exacte de ce SQL**.
+pub async fn lock_supplier_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    contact_id: i64,
+) -> Result<bool, DbError> {
+    let found: Option<i64> =
+        sqlx::query_scalar("SELECT id FROM contacts WHERE id = ? AND company_id = ? FOR UPDATE")
+            .bind(contact_id)
+            .bind(company_id)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(map_db_error)?;
+    Ok(found.is_some())
+}
+
+/// Compare la facture jugée aux factures non annulées du même fournisseur
+/// (Story 48-12a, D2) et applique la politique (D1, D5, D6bis) : `Ok(None)` sans
+/// doublon ; `Err` pour un refus ; `Ok(Some(finding))` pour un refus que
+/// [`DuplicatePolicy::Confirmed`] a **levé** — l'appelant en écrit l'audit
+/// `supplier_invoice.duplicate_confirmed` dans sa transaction.
+///
+/// ⚠️ La lecture des candidates est **ordinaire** : elle n'est juste que sous le
+/// verrou du fournisseur ([`lock_supplier_in_tx`]), pris avant toute lecture
+/// ordinaire de la transaction.
+///
+/// La lecture est **bornée à l'année civile** de la facture jugée (1er janvier au
+/// 31 décembre, bornes comprises) : la règle 1 ne compare que dans cette année,
+/// la règle 2 que la même date, qui y tombe ; [`find_duplicate`] reste la seule
+/// décision, et le coût ne croît plus avec l'historique du fournisseur.
+#[allow(clippy::too_many_arguments)]
+async fn guard_duplicates_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    contact_id: i64,
+    number: Option<&str>,
+    invoice_date: NaiveDate,
+    total: Decimal,
+    exclude_id: Option<i64>,
+    gesture: crate::errors::DuplicateGesture,
+    policy: DuplicatePolicy,
+) -> Result<Option<DuplicateFinding>, DbError> {
+    use chrono::Datelike;
+
+    let year = invoice_date.year();
+    let first_day = NaiveDate::from_ymd_opt(year, 1, 1)
+        .ok_or_else(|| DbError::Invariant(format!("année civile hors bornes : {year}")))?;
+    let last_day = NaiveDate::from_ymd_opt(year, 12, 31)
+        .ok_or_else(|| DbError::Invariant(format!("année civile hors bornes : {year}")))?;
+    let candidates: Vec<DuplicateCandidate> = sqlx::query_as(
+        "SELECT id, internal_number, supplier_invoice_number, status, invoice_date, total_amount \
+         FROM supplier_invoices \
+         WHERE company_id = ? AND contact_id = ? AND status <> 'cancelled' AND id <> ? \
+           AND invoice_date BETWEEN ? AND ?",
+    )
+    .bind(company_id)
+    .bind(contact_id)
+    .bind(exclude_id.unwrap_or(0))
+    .bind(first_day)
+    .bind(last_day)
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(map_db_error)?;
+    let Some(finding) = find_duplicate(number, invoice_date, total, &candidates) else {
+        return Ok(None);
+    };
+    if finding.rule.lifted_by_confirmation(gesture) && policy == DuplicatePolicy::Confirmed {
+        return Ok(Some(finding));
+    }
+    Err(match finding.rule {
+        DuplicateRule::SameNumberSameYear => DbError::SupplierInvoiceDuplicate {
+            existing: finding.existing,
+            gesture,
+        },
+        DuplicateRule::SameDateSameTotal => DbError::SupplierInvoiceProbableDuplicate {
+            existing: finding.existing,
+            gesture,
+        },
+    })
+}
+
+/// Le `details` de l'audit `supplier_invoice.duplicate_confirmed` (D5) : la
+/// facture existante qui aurait refusé, et la règle levée.
+fn duplicate_confirmed_details(finding: &DuplicateFinding) -> serde_json::Value {
+    serde_json::json!({
+        "supplierInvoiceId": finding.existing.id,
+        "internalNumber": finding.existing.internal_number,
+        "rule": finding.rule.number(),
+    })
+}
+
 /// Enregistre un **brouillon** (Story v017-4a, AC-6), transaction comprise —
-/// cf. [`create_draft_in_tx`].
+/// cf. [`create_draft_in_tx`]. Tout doublon est refusé ([`DuplicatePolicy::Refuse`]).
 pub async fn create_draft(
     pool: &MySqlPool,
     new: NewSupplierInvoice,
     user_id: i64,
 ) -> Result<SupplierInvoiceWithLines, DbError> {
-    in_own_tx!(pool, |tx| create_draft_in_tx(&mut tx, new, user_id).await)
+    create_draft_with_policy(pool, new, user_id, DuplicatePolicy::Refuse).await
+}
+
+/// [`create_draft`] avec la politique anti-doublon de la requête (Story 48-12a,
+/// D5) — appelée par la route `POST /supplier-invoices`, dans son rejeu.
+pub async fn create_draft_with_policy(
+    pool: &MySqlPool,
+    new: NewSupplierInvoice,
+    user_id: i64,
+    policy: DuplicatePolicy,
+) -> Result<SupplierInvoiceWithLines, DbError> {
+    in_own_tx!(pool, |tx| create_draft_in_tx_with_policy(
+        &mut tx, new, user_id, policy
+    )
+    .await)
 }
 
 /// Enregistre une facture **et la valide** dans une même transaction
@@ -490,7 +766,11 @@ pub async fn create_validated_in_tx(
 /// ([`purchase_lines_form`]), comptes de charge (de la société, actifs, de type
 /// charge, imputables — les non imputables nommés ensemble).
 ///
-/// ⛔ **Aucun verrou** (C-v017-4-28) : le projet est lu par une lecture
+/// Depuis la Story 48-12a (D3), ses appelants ont déjà pris le verrou du
+/// fournisseur ([`lock_supplier_in_tx`]) : ses lectures ordinaires ouvrent
+/// l'instantané **après** lui, ce dont dépend la comparaison anti-doublon.
+///
+/// ⛔ **Aucun verrou ici** (C-v017-4-28) : le projet est lu par une lecture
 /// ordinaire, non par `projects::validate_taggable_in_tx` (sentinelle
 /// `companies` et projet `FOR UPDATE`) ; les comptes de même. Les jugements qui
 /// comptent pour le journal (projet archivé, compte archivé ou non imputable
@@ -641,19 +921,58 @@ async fn reread(
 ///
 /// # Verrous
 ///
-/// **Aucun verrou exclusif** : les lectures sont ordinaires ; seule
-/// l'insertion prend les verrous **partagés** de ses clés étrangères (société,
-/// fournisseur, projet, comptes des lignes). Ils ne sont pas compatibles avec
-/// tout — une validation aux comptes croisés tient l'exclusif —, d'où le rejeu
-/// gardé de la route (`retry_on_deadlock("supplier_invoices::create", …)`,
-/// C-v017-4-37).
+/// Le **fournisseur** `FOR UPDATE` ([`lock_supplier_in_tx`]), première
+/// instruction de [`create_draft_in_tx_with_policy`] (Story 48-12a, D3), avant
+/// toute lecture ordinaire ; puis les lectures ordinaires de la saisie et la
+/// comparaison anti-doublon ; enfin l'insertion, qui prend les verrous
+/// **partagés** de ses clés étrangères (société, projet, comptes des lignes).
+/// Ils ne sont pas compatibles avec tout — une validation aux comptes croisés
+/// tient l'exclusif, une création de facture client tient la sentinelle
+/// `companies` et le projet avant de demander le contact (relevé A de la
+/// 48-12a) —, d'où le rejeu gardé de la route
+/// (`retry_on_deadlock("supplier_invoices::create", …)`, C-v017-4-37).
+///
+/// Tout doublon est refusé ([`DuplicatePolicy::Refuse`]).
 pub async fn create_draft_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     new: NewSupplierInvoice,
     user_id: i64,
 ) -> Result<SupplierInvoiceWithLines, DbError> {
+    create_draft_in_tx_with_policy(tx, new, user_id, DuplicatePolicy::Refuse).await
+}
+
+/// [`create_draft_in_tx`] avec la politique anti-doublon de la requête (Story
+/// 48-12a, D1 à D5) — appelée par la complétion d'un document, dans la
+/// transaction qui tient le document verrouillé.
+///
+/// Ordre : verrou du fournisseur (D3) ; contrôles de saisie
+/// ([`check_draft_input_in_tx`], ordre inchangé) ; total ; comparaison
+/// anti-doublon (D4 : après la saisie, avant l'`INSERT`) ; `INSERT`, lignes,
+/// audit `supplier_invoice.created`, puis, si [`DuplicatePolicy::Confirmed`] a
+/// levé un refus, audit `supplier_invoice.duplicate_confirmed`.
+pub async fn create_draft_in_tx_with_policy(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    new: NewSupplierInvoice,
+    user_id: i64,
+    policy: DuplicatePolicy,
+) -> Result<SupplierInvoiceWithLines, DbError> {
+    // D3 — le fournisseur d'abord, avant toute lecture ordinaire. Absent : la
+    // suite rend son refus habituel (précédence inchangée).
+    lock_supplier_in_tx(tx, new.company_id, new.contact_id).await?;
     let line_totals = check_draft_input_in_tx(tx, &new).await?;
     let total = draft_total(&new.lines, &line_totals);
+    let confirmed = guard_duplicates_in_tx(
+        tx,
+        new.company_id,
+        new.contact_id,
+        new.supplier_invoice_number.as_deref(),
+        new.invoice_date,
+        total,
+        None,
+        crate::errors::DuplicateGesture::Entry,
+        policy,
+    )
+    .await?;
     let inv_id: i64 = sqlx::query(
         "INSERT INTO supplier_invoices \
          (company_id, contact_id, supplier_invoice_number, status, invoice_date, due_date, \
@@ -691,6 +1010,19 @@ pub async fn create_draft_in_tx(
         ),
     )
     .await?;
+    if let Some(finding) = &confirmed {
+        audit_log::insert_in_tx(
+            &mut *tx,
+            NewAuditLogEntry::user(
+                user_id,
+                "supplier_invoice.duplicate_confirmed".to_string(),
+                "supplier_invoice".to_string(),
+                inv_id,
+                Some(duplicate_confirmed_details(finding)),
+            ),
+        )
+        .await?;
+    }
     Ok(created)
 }
 
@@ -700,8 +1032,9 @@ pub async fn create_draft_in_tx(
 /// [`DbError::IllegalStateTransition`] (avant la version) ; version périmée →
 /// [`DbError::OptimisticLockConflict`].
 ///
-/// Appelée par la route `PUT` **avant** les règles « document » (qui lisent le
-/// document joint), puis de nouveau par [`update_draft_in_tx`] — le second
+/// Depuis la Story 48-12a, appelée par [`lock_draft_and_supplier_in_tx`], que la
+/// route `PUT` prend **avant** les règles « document » (qui lisent le document
+/// joint), puis de nouveau [`update_draft_in_tx_with_policy`] — le second
 /// `FOR UPDATE` ne prend aucun verrou neuf.
 pub async fn lock_draft_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
@@ -728,6 +1061,29 @@ pub async fn lock_draft_in_tx(
     Ok(inv)
 }
 
+/// Les verrous de la **modification** d'un brouillon (Story 48-12a, D3) : la
+/// facture ([`lock_draft_in_tx`], ses refus dans leur ordre — `NotFound`, pas un
+/// brouillon, version), **puis** le fournisseur `contact_id` **du corps**
+/// ([`lock_supplier_in_tx`]) — le nouveau, le seul dont l'ensemble comparé
+/// grossit. Ordre « facture puis fournisseur » : aucun chemin ne prend un
+/// fournisseur puis une facture fournisseur, pas de cycle.
+///
+/// ⛔ Appelée **avant toute lecture ordinaire** : par la route `PUT` à la place
+/// de [`lock_draft_in_tx`], avant la lecture du document joint, et en tête de
+/// [`update_draft_in_tx_with_policy`] — reprendre des verrous déjà tenus ne
+/// coûte rien ; appelée seule, la modification se protège elle-même.
+pub async fn lock_draft_and_supplier_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    id: i64,
+    version: i32,
+    contact_id: i64,
+) -> Result<SupplierInvoice, DbError> {
+    let inv = lock_draft_in_tx(tx, company_id, id, version).await?;
+    lock_supplier_in_tx(tx, company_id, contact_id).await?;
+    Ok(inv)
+}
+
 /// Modifie un brouillon, transaction comprise — cf. [`update_draft_in_tx`].
 /// Pour les tests et le dépôt : la route tient sa propre transaction, où les
 /// règles « document » passent entre le verrou et la modification.
@@ -751,17 +1107,52 @@ pub async fn update_draft(
 /// audit `supplier_invoice.updated` (instantanés avant et après).
 ///
 /// `new.company_id` est ignoré au profit de `company_id` (la société de la
-/// requête). Ordre des verrous : la facture `FOR UPDATE`
-/// ([`lock_draft_in_tx`]), puis les clés étrangères des lignes insérées.
+/// requête). Ordre des verrous : la facture `FOR UPDATE` puis le fournisseur
+/// du corps ([`lock_draft_and_supplier_in_tx`], Story 48-12a, D3), puis les
+/// clés étrangères des lignes insérées. Tout doublon est refusé
+/// ([`DuplicatePolicy::Refuse`]).
 pub async fn update_draft_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    id: i64,
+    version: i32,
+    new: NewSupplierInvoice,
+    user_id: i64,
+) -> Result<SupplierInvoiceWithLines, DbError> {
+    update_draft_in_tx_with_policy(
+        tx,
+        company_id,
+        id,
+        version,
+        new,
+        user_id,
+        DuplicatePolicy::Refuse,
+    )
+    .await
+}
+
+/// [`update_draft_in_tx`] avec la politique anti-doublon de la requête (Story
+/// 48-12a, D5, D6) — appelée par la route `PUT /supplier-invoices/{id}`.
+///
+/// **D6** : la règle ne se rejoue que si l'un des quatre éléments qui la
+/// fondent **change** par rapport à la facture avant modification —
+/// fournisseur, numéro du fournisseur (normalisé), date de facture, total TTC ;
+/// tout changement de l'un d'eux rejoue **les deux** règles, la facture
+/// elle-même exclue. Sans changement des quatre, la modification passe, même
+/// si la facture était déjà le double d'une autre avant la 0.20.0.
+#[allow(clippy::too_many_arguments)]
+pub async fn update_draft_in_tx_with_policy(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,
     id: i64,
     version: i32,
     mut new: NewSupplierInvoice,
     user_id: i64,
+    policy: DuplicatePolicy,
 ) -> Result<SupplierInvoiceWithLines, DbError> {
-    lock_draft_in_tx(tx, company_id, id, version).await?;
+    use kesh_core::payment_text::normalize_supplier_invoice_number;
+
+    let locked = lock_draft_and_supplier_in_tx(tx, company_id, id, version, new.contact_id).await?;
     new.company_id = company_id;
     let before_lines = fetch_lines(tx, id).await?;
     let before = sqlx::query_as::<_, SupplierInvoice>(FIND_SCOPED_SQL)
@@ -772,6 +1163,27 @@ pub async fn update_draft_in_tx(
         .map_err(map_db_error)?;
     let line_totals = check_draft_input_in_tx(tx, &new).await?;
     let total = draft_total(&new.lines, &line_totals);
+    let key_changed = locked.contact_id != new.contact_id
+        || normalize_supplier_invoice_number(locked.supplier_invoice_number.as_deref())
+            != normalize_supplier_invoice_number(new.supplier_invoice_number.as_deref())
+        || locked.invoice_date != new.invoice_date
+        || locked.total_amount != total;
+    let confirmed = if key_changed {
+        guard_duplicates_in_tx(
+            tx,
+            company_id,
+            new.contact_id,
+            new.supplier_invoice_number.as_deref(),
+            new.invoice_date,
+            total,
+            Some(id),
+            crate::errors::DuplicateGesture::Entry,
+            policy,
+        )
+        .await?
+    } else {
+        None
+    };
     let rows = sqlx::query(
         "UPDATE supplier_invoices SET contact_id = ?, supplier_invoice_number = ?, \
          invoice_date = ?, due_date = ?, total_amount = ?, creditor_iban = ?, \
@@ -820,6 +1232,19 @@ pub async fn update_draft_in_tx(
         ),
     )
     .await?;
+    if let Some(finding) = &confirmed {
+        audit_log::insert_in_tx(
+            &mut *tx,
+            NewAuditLogEntry::user(
+                user_id,
+                "supplier_invoice.duplicate_confirmed".to_string(),
+                "supplier_invoice".to_string(),
+                id,
+                Some(duplicate_confirmed_details(finding)),
+            ),
+        )
+        .await?;
+    }
     Ok(after)
 }
 
@@ -1105,8 +1530,33 @@ pub async fn unvalidate(
     acteur: Acteur,
     aujourd_hui: NaiveDate,
 ) -> Result<SupplierInvoiceSettlementView, DbError> {
+    unvalidate_with_policy(
+        pool,
+        company_id,
+        id,
+        version,
+        acteur,
+        aujourd_hui,
+        DuplicatePolicy::Refuse,
+    )
+    .await
+}
+
+/// [`unvalidate`] avec la politique anti-doublon de la requête (Story 48-12a,
+/// D6bis) — appelée par la route `POST /supplier-invoices/{id}/unvalidate`,
+/// dans son rejeu.
+pub async fn unvalidate_with_policy(
+    pool: &MySqlPool,
+    company_id: i64,
+    id: i64,
+    version: i32,
+    acteur: Acteur,
+    aujourd_hui: NaiveDate,
+    policy: DuplicatePolicy,
+) -> Result<SupplierInvoiceSettlementView, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
-    let result = unvalidate_in_tx(&mut tx, company_id, id, version, acteur).await;
+    let result =
+        unvalidate_in_tx_with_policy(&mut tx, company_id, id, version, acteur, policy).await;
     let (view, _) = commit_with_view(tx, company_id, result, |_| id, aujourd_hui).await?;
     Ok(view)
 }
@@ -1128,6 +1578,18 @@ pub async fn unvalidate(
 /// contre-passé d'abord (C-v0172a-5). La facture garde ses lignes, son
 /// numéro, son fournisseur ; son document reste joint (C-v0172a-12).
 ///
+/// # Une annulée qui ferait doublon (Story 48-12a, #975, D6bis)
+///
+/// Repasser en brouillon une facture **annulée** la remet en jeu : elle passe
+/// par la règle anti-doublon, sur ses propres fournisseur, numéro, date et
+/// total. Si une facture équivalente **non annulée** existe, le geste est
+/// refusé (`SUPPLIER_INVOICE_DUPLICATE` ou `SUPPLIER_INVOICE_PROBABLE_DUPLICATE`,
+/// la facture active nommée, `confirmable: true`), sauf sous
+/// [`DuplicatePolicy::Confirmed`] (`confirmNotDuplicate: true`), qui lève **les
+/// deux règles** à ce geste ([`DuplicateRule::lifted_by_confirmation`]) et
+/// inscrit `supplier_invoice.duplicate_confirmed` au nom de l'acteur. Une facture **validée** qui repasse en brouillon n'est pas
+/// contrôlée : elle était déjà active.
+///
 /// # Précédence (testée paire par paire) — composée par écriture (C-v0172a-19)
 ///
 /// `NotFound` → statut (payée : [`SupplierUnvalidationBlocker::Paid`], ou
@@ -1136,7 +1598,8 @@ pub async fn unvalidate(
 /// détaché non contre-passé → écriture d'achat rapprochée, puis (annulée)
 /// contre-passation rapprochée → (annulée) pré-contrôle de l'exercice clos de
 /// l'achat ou de la contre-passation (C-v0172a-4 : le mode `System` de la
-/// dissolution exige un exercice ouvert) → les refus de
+/// dissolution exige un exercice ouvert) → (annulée) **doublon** (Story
+/// 48-12a, D4 : avant toute écriture) → les refus de
 /// [`super::journal_entries::delete_in_tx`] pour la **contre-passation**, puis
 /// pour l'**achat** : exercice clos, exercice postérieur clos, écriture
 /// contre-passée (inatteignable : la contre-passation part d'abord), période
@@ -1152,10 +1615,23 @@ pub async fn unvalidate(
 /// `FOR UPDATE` — la contre-passation trouvée par une lecture **verrouillante**
 /// sur `reverses_entry_id`, jamais par `journal_entries::reversed_by`, lecture
 /// ordinaire qui ouvrirait l'instantané avant les verrous (V1-1, M14) ; les
-/// transactions rapprochées des deux écritures ; **puis seulement** les
-/// lectures ordinaires (audit du paiement détaché, `fetch_lines`) ; les lignes
-/// (dissolution) ; l'`UPDATE` ; enfin `delete_in_tx` ×2. Rejouée par la route
+/// transactions rapprochées des deux écritures ; (annulée) **le fournisseur**
+/// `FOR UPDATE` ([`lock_supplier_in_tx`], Story 48-12a, D3 : après les
+/// exercices, comme la création d'un avoir — « exercice puis contact » —, si
+/// bien qu'aucun cycle ne se forme par l'exercice de l'achat) ; **puis
+/// seulement** les lectures ordinaires (audit du paiement détaché, comparaison
+/// anti-doublon, `fetch_lines`) ; les lignes (dissolution) ; l'`UPDATE` ; enfin
+/// `delete_in_tx` ×2. Rejouée par la route
 /// (`retry_on_deadlock("supplier_invoices::unvalidate", …)`).
+///
+/// ⚠️ *Cycle possible entre deux repassages d'annulées du même fournisseur*
+/// (revue P1 de la 48-12a, E1) : U2 tient l'exercice N+1 de sa facture et
+/// attend le fournisseur, qu'U1 tient ; U1, à `delete_in_tx` sur son écriture
+/// de l'exercice N, balaie les exercices postérieurs (`find_later_closed_in_tx`,
+/// `FOR UPDATE`) et attend l'exercice N+1. Le cycle est neuf (avant la story, U2
+/// ne demandait pas le fournisseur) ; il repose sur le plan d'exécution et n'est
+/// pas piloté par un test. Il est **couvert par le rejeu de la route** : la
+/// victime est rejouée après le commit de l'autre, sans `500` ni écriture.
 ///
 /// ⚠️ **Second appelant de `delete_in_tx` avec `enforce_ownership = false`**,
 /// après `invoices::unvalidate` : la facture supprime **ses** propres
@@ -1177,6 +1653,9 @@ pub async fn unvalidate(
 /// contre-passation) et le `lettering.removed` des paires `reversal` sont **tous**
 /// attribués à la clé, l'utilisateur restant son créateur.
 ///
+/// Tout doublon est refusé ([`DuplicatePolicy::Refuse`]) ; la politique de la
+/// requête passe par [`unvalidate_in_tx_with_policy`].
+///
 /// [`SupplierUnvalidationBlocker::Paid`]: crate::errors::SupplierUnvalidationBlocker::Paid
 pub async fn unvalidate_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
@@ -1184,6 +1663,19 @@ pub async fn unvalidate_in_tx(
     id: i64,
     version: i32,
     acteur: Acteur,
+) -> Result<SupplierInvoiceWithLines, DbError> {
+    unvalidate_in_tx_with_policy(tx, company_id, id, version, acteur, DuplicatePolicy::Refuse).await
+}
+
+/// [`unvalidate_in_tx`] avec la politique anti-doublon de la requête (Story
+/// 48-12a, D6bis) : le doc-comment de [`unvalidate_in_tx`] vaut pour les deux.
+pub async fn unvalidate_in_tx_with_policy(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    id: i64,
+    version: i32,
+    acteur: Acteur,
+    policy: DuplicatePolicy,
 ) -> Result<SupplierInvoiceWithLines, DbError> {
     use super::journal_entries::{DETACHED_SETTLEMENT_ENTRY, DETACHED_SETTLEMENT_TRACES};
     use crate::errors::{SupplierUnvalidationBlocker as B, SupplierUnvalidationHint as Hint};
@@ -1310,6 +1802,12 @@ pub async fn unvalidate_in_tx(
         Some((_, cp_id, _, _)) => matched_transaction_locked(tx, *cp_id).await?,
         None => None,
     };
+    //     Annulée — le fournisseur, dernier verrou, avant toute lecture
+    //     ordinaire (Story 48-12a, D3) : la comparaison anti-doublon de
+    //     l'étape (6 bis) n'est juste que sous lui.
+    if cancelled {
+        lock_supplier_in_tx(tx, company_id, inv.contact_id).await?;
+    }
 
     // (4) Annulée — lectures ORDINAIRES, après le dernier verrou : le paiement
     //     détaché que nomme chaque trace d'annulation (AC-6, C-v0172a-5). Le
@@ -1390,6 +1888,27 @@ pub async fn unvalidate_in_tx(
         return Err(DbError::FiscalYearClosed);
     }
 
+    // (6 bis) Annulée — la règle anti-doublon (Story 48-12a, D6bis, D4) : après
+    //     l'exercice clos, avant toute écriture et avant les refus de
+    //     `delete_in_tx`. Les deux règles se lèvent par confirmation à ce geste
+    //     (`DuplicateRule::lifted_by_confirmation`).
+    let confirmed = if cancelled {
+        guard_duplicates_in_tx(
+            tx,
+            company_id,
+            inv.contact_id,
+            inv.supplier_invoice_number.as_deref(),
+            inv.invoice_date,
+            inv.total_amount,
+            Some(id),
+            crate::errors::DuplicateGesture::Unvalidation,
+            policy,
+        )
+        .await?
+    } else {
+        None
+    };
+
     let lines = fetch_lines(tx, id).await?;
     let snapshot = snapshot_json(&inv, &lines);
 
@@ -1463,6 +1982,21 @@ pub async fn unvalidate_in_tx(
         ),
     )
     .await?;
+    // La confirmation d'un doublon (D6bis), au nom de l'acteur — la clé quand
+    // une intégration agit.
+    if let Some(finding) = &confirmed {
+        audit_log::insert_in_tx(
+            &mut *tx,
+            NewAuditLogEntry::par(
+                acteur,
+                "supplier_invoice.duplicate_confirmed".to_string(),
+                "supplier_invoice".to_string(),
+                id,
+                Some(duplicate_confirmed_details(finding)),
+            ),
+        )
+        .await?;
+    }
     reread(tx, company_id, id).await
 }
 
@@ -3401,5 +3935,46 @@ mod tests {
         let lines = vec![(dec!(1000), dec!(8.1), 6000)];
         let err = generate_purchase_journal_lines(&lines, 2000, None).unwrap_err();
         assert!(matches!(err, DbError::ConfigurationRequired(_)));
+    }
+
+    /// Story 50-solde (#1492, AC-1) — la table de levée d'un refus de doublon,
+    /// une case par test : (règle 1, saisie) n'a aucune sortie.
+    #[test]
+    fn lifted_regle1_saisie() {
+        assert!(
+            !DuplicateRule::SameNumberSameYear
+                .lifted_by_confirmation(crate::errors::DuplicateGesture::Entry),
+            "table (règle 1, Entry)"
+        );
+    }
+
+    /// (règle 2, saisie) se lève par la confirmation.
+    #[test]
+    fn lifted_regle2_saisie() {
+        assert!(
+            DuplicateRule::SameDateSameTotal
+                .lifted_by_confirmation(crate::errors::DuplicateGesture::Entry),
+            "table (règle 2, Entry)"
+        );
+    }
+
+    /// (règle 1, dévalidation d'une annulée) se lève par la confirmation.
+    #[test]
+    fn lifted_regle1_devalidation() {
+        assert!(
+            DuplicateRule::SameNumberSameYear
+                .lifted_by_confirmation(crate::errors::DuplicateGesture::Unvalidation),
+            "table (règle 1, Unvalidation)"
+        );
+    }
+
+    /// (règle 2, dévalidation d'une annulée) se lève par la confirmation.
+    #[test]
+    fn lifted_regle2_devalidation() {
+        assert!(
+            DuplicateRule::SameDateSameTotal
+                .lifted_by_confirmation(crate::errors::DuplicateGesture::Unvalidation),
+            "table (règle 2, Unvalidation)"
+        );
     }
 }

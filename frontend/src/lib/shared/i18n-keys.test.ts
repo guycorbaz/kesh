@@ -1179,6 +1179,12 @@ const ATTENDU = {
 	// demande de compte après relecture sans sélecteur).
 	// Fusion de la 48-14 dans epic/48 (2026-11-20) : les deux côtés gardés, total relevé par la garde,
 	// non additionné : **3508** (« expected 3508 to be +0 », `kesh-gate-logs/e4814/fusion-epic-i18n.log`).
+	// Story 48-12b (#975, #985) : **3502 → 3523** sur sa branche (+21 net) (« expected 3523 to be 3502 »,
+	// `kesh-gate-logs/e4812/dev/vitest-12b-complet-1.log`), relevé par la garde : vingt-trois sites
+	// ajoutés et deux retirés (le bouton d'envoi déplacé hors du `<fieldset>`) dans
+	// `SupplierInvoiceForm.svelte`, `supplier-invoice-form.ts` et la fiche `[id]/+page.svelte`.
+	// Fusion des 48-12a et 48-12b dans epic/50 (2026-11-23) : les deux côtés gardés, 3508 (0.19.1) + 21 = **3529**,
+	// total vérifié par la garde (vitest complet vert, 4904/4904, `kesh-gate-logs/e50/fusion-48-12/frontend.log`).
 	// Story 49-1c (#1242) : **3495 → 3499** (« expected 3499 to be 3495 »,
 	// `kesh-gate-logs/e491c/rouge-T12.log`) — quatre littéraux neufs, tous dans
 	// `InvoiceForm.svelte` (21 → 25 occurrences de `i18nMsg(`, `grep -o`) : bouton « Commentaire », aide et `aria-label` du
@@ -1198,9 +1204,13 @@ const ATTENDU = {
 	// 3671 »), relevé par la garde ; au diff : 1 site ajouté, 0 retiré.
 	// Revue P2 de la 38-12b (avis au passé, suivi perdu après une reprise) : **3674**, relevé par
 	// la garde ; au diff : 2 sites ajoutés, 0 retiré.
+	// Fusion d'origin/main (Epic 38 PayPal, 0.19.1 + PayPal = 3674) dans epic/50 (2026-11-24) : les deux côtés gardés ;
+	// 3674 + 21 (48-12a/b) = **3695**, provisoire, à confirmer par la garde (relevé au gate).
 	// Reprise de main (PayPal, 38-11b/c/d) dans epic/49 (2026-11-24) : les deux côtés gardés ; attendu 3674 (main) + 4 (49-1c) = 3678.
 	// Reprise de main (2026-11-25, correctif « une transaction de prestataire n'est écrite qu'une fois », 3 sites ajoutés) : attendu 3678 + 3 = 3681, à confirmer par la garde.
-	sitesTotal: 3681,
+	// Reprise de main (Epic 49, #1560, #1561) dans epic/50 (2026-11-25) : les deux côtés gardés ;
+	// 3681 (main) + 21 (48-12a/b) = **3702**, confirmé par la garde (`kesh-gate-logs/e50/reprise-main-r2/vitest-compteur.log`).
+	sitesTotal: 3702,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

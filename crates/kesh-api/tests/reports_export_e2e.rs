@@ -1018,3 +1018,133 @@ async fn export_content_disposition_handles_non_ascii_company_name(pool: MySqlPo
         "Content-Disposition must include filename*=UTF-8'…' (RFC 5987), got: {cd}"
     );
 }
+
+// ============================================================
+// Story 48-11 (#1245) — les montants d'un rapport s'arrondissent au centime
+// ============================================================
+
+/// Une écriture à `1234.0050` (fraction de centime, saisie admise à quatre
+/// décimales) : le CSV de la balance porte `1234.01` (demi-centime loin de
+/// zéro, comme l'écran), non `1234.00` (troncature de `{:.2}`).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn export_trial_balance_csv_arrondit_la_fraction_de_centime(pool: MySqlPool) {
+    let ctx = seed_company(&pool, "co_arr_csv", Role::Comptable).await;
+    let banque = create_acc(
+        &pool,
+        ctx.user_id,
+        ctx.company_id,
+        "1000",
+        "Banque",
+        AccountType::Asset,
+    )
+    .await;
+    let ventes = create_acc(
+        &pool,
+        ctx.user_id,
+        ctx.company_id,
+        "3000",
+        "Ventes",
+        AccountType::Revenue,
+    )
+    .await;
+    post_entry(
+        &pool,
+        ctx.user_id,
+        ctx.fy_id,
+        ctx.company_id,
+        NaiveDate::from_ymd_opt(2026, 3, 1).unwrap(),
+        Journal::Banque,
+        "Fraction de centime",
+        banque,
+        ventes,
+        dec!(1234.0050),
+    )
+    .await;
+    let app = spawn_app(pool).await;
+
+    let resp = app
+        .client
+        .get(app.url(&format!(
+            "/api/v1/reports/trial-balance/export?fiscalYearId={}&format=csv",
+            ctx.fy_id
+        )))
+        .bearer_auth(&ctx.jwt)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body = String::from_utf8(resp.bytes().await.unwrap().to_vec()).unwrap();
+    assert!(
+        body.contains("1234.01"),
+        "le CSV doit porter 1234.01, lu : {body}"
+    );
+    assert!(
+        !body.contains("1234.00"),
+        "le CSV ne doit plus tronquer 1234.0050 en 1234.00, lu : {body}"
+    );
+}
+
+/// Même écriture, en PDF : le texte se lit dans le corps non compressé
+/// (`printpdf` ne compresse pas sous `debug_assertions`) ; la police
+/// intégrée écrit un octet WinAnsi par caractère, en `Tj` hexadécimal.
+/// `1'234.01` = `31273233342e3031`, `1'234.00` = `31273233342e3030`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn export_trial_balance_pdf_arrondit_la_fraction_de_centime(pool: MySqlPool) {
+    let ctx = seed_company(&pool, "co_arr_pdf", Role::Comptable).await;
+    let banque = create_acc(
+        &pool,
+        ctx.user_id,
+        ctx.company_id,
+        "1000",
+        "Banque",
+        AccountType::Asset,
+    )
+    .await;
+    let ventes = create_acc(
+        &pool,
+        ctx.user_id,
+        ctx.company_id,
+        "3000",
+        "Ventes",
+        AccountType::Revenue,
+    )
+    .await;
+    post_entry(
+        &pool,
+        ctx.user_id,
+        ctx.fy_id,
+        ctx.company_id,
+        NaiveDate::from_ymd_opt(2026, 3, 1).unwrap(),
+        Journal::Banque,
+        "Fraction de centime",
+        banque,
+        ventes,
+        dec!(1234.0050),
+    )
+    .await;
+    let app = spawn_app(pool).await;
+
+    let resp = app
+        .client
+        .get(app.url(&format!(
+            "/api/v1/reports/trial-balance/export?fiscalYearId={}&format=pdf",
+            ctx.fy_id
+        )))
+        .bearer_auth(&ctx.jwt)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body = resp.bytes().await.unwrap();
+    // Le `Tj` est écrit en hexadécimal ASCII dans le flux : on cherche la
+    // chaîne hexadécimale **écrite en texte** (minuscules), non les octets.
+    let text = String::from_utf8_lossy(&body).to_lowercase();
+    assert!(
+        text.contains("31273233342e3031"),
+        "le PDF doit porter 1'234.01 (hex 31273233342e3031)"
+    );
+    assert!(
+        !text.contains("31273233342e3030"),
+        "le PDF ne doit pas porter 1'234.00 (hex 31273233342e3030)"
+    );
+}

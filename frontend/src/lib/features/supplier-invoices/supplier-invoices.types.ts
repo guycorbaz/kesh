@@ -165,6 +165,13 @@ export interface CreateSupplierInvoiceRequest {
 	/** Projet analytique (Epic 19, Story 19-3) — document-level, optionnel. */
 	projectId?: number | null;
 	lines: CreateSupplierInvoiceLineRequest[];
+	/**
+	 * Story 48-12a/48-12b (#975) — `true` lève le refus « doublon probable » (même date et
+	 * même montant, sans numéro à comparer) ; jamais le refus du même numéro dans la même
+	 * année. Envoyé seulement par la confirmation explicite de l'écran (E5). Hérité par le
+	 * corps du `PUT` et transmis par la complétion.
+	 */
+	confirmNotDuplicate?: boolean;
 }
 
 /**

@@ -54,6 +54,8 @@
 	import type { VatRateResponse } from '$lib/features/vat-rates/vat-rates.types';
 	import { listProjects } from '$lib/features/projects/projects.api';
 	import type { ProjectResponse } from '$lib/features/projects/projects.types';
+	import type { RefusalNotice } from '$lib/features/supplier-invoices/supplier-invoice-form';
+	import { isSettlementOutcomeUnknown } from '$lib/shared/utils/unknown-outcome';
 
 	const canWrite = $derived(
 		authState.currentUser?.role === 'Admin' || authState.currentUser?.role === 'Comptable',
@@ -150,6 +152,34 @@
 		notifySuccess(i18nMsg('imported-supplier-invoices-completed', 'Brouillon enregistré.'));
 		await goto(`/supplier-invoices/${created.id}`);
 	}
+
+	/** Story 48-12b (D2bis, E9) — la pièce est déjà enregistrée : le formulaire se fige. */
+	let locked = $state(false);
+
+	/**
+	 * Story 48-12b (#985, D2, D2bis) — après un refus de la **complétion**, relit le
+	 * document, mais **seulement** pour `IMPORT_NOT_PENDING_COMPLETION` et une issue
+	 * inconnue ; pour tout autre refus (doublon compris), rend `null` sans rien lire. Ordre
+	 * (V2-9) : `to_complete` d'abord — un document n'y revient pas (hors détachement) —,
+	 * puis `completed`, sans rejeu. Une lecture en échec lève : le formulaire passe en E6.
+	 */
+	async function relireApresRefus(err: unknown): Promise<RefusalNotice | null> {
+		const current = doc;
+		if (current === null) return null;
+		const notPending = isApiError(err) && err.code === 'IMPORT_NOT_PENDING_COMPLETION';
+		if (!notPending && !isSettlementOutcomeUnknown(err)) return null;
+		const toComplete = await listImported('to_complete', { retry: false });
+		if (toComplete.some((d) => d.id === current.id)) return { kind: 'pending' };
+		const completed = await listImported('completed', { retry: false });
+		const found = completed.find((d) => d.id === current.id);
+		if (found === undefined) return { kind: 'gone' };
+		// Revue P1 (E3) : tout ce qui n'est pas un nombre (`null`, champ absent) est
+		// « complété sans facture » → E6 ; `locked` n'est posé qu'avec une facture citable,
+		// sans quoi il figerait la saisie en E9 sans avis ni reprise.
+		if (typeof found.supplierInvoiceId !== 'number') return { kind: 'unknown' };
+		locked = true;
+		return { kind: 'completed', invoiceId: found.supplierInvoiceId };
+	}
 </script>
 
 <svelte:head>
@@ -214,6 +244,8 @@
 				document={doc}
 				{proposals}
 				onSubmit={save}
+				onRefusal={relireApresRefus}
+				{locked}
 			/>
 		</div>
 	</div>

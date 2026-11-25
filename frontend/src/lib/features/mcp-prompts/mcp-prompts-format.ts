@@ -19,7 +19,7 @@ import type {
 } from './mcp-prompts.types';
 
 // La mise en forme des dates est celle de l'écran des envois (UTC de la base
-// montrée à l'heure locale) : une seule fonction, réemployée (C-32-10b-23).
+// montrée à l'heure de Zurich) : une seule fonction, réemployée (C-32-10b-23).
 export { dateLocale } from '$lib/features/mcp-sends/mcp-sends-format';
 
 /**

@@ -52,7 +52,10 @@ vi.mock('$lib/features/supplier-invoices/supplier-invoices.api', () => ({
 	cancelSupplierInvoice: (id: number) => cancelMock(id),
 	cancelSupplierInvoiceSettlement: (id: number) => cancelSettlementMock(id),
 	validateSupplierInvoice: (id: number, v: number) => validateMock(id, v),
-	unvalidateSupplierInvoice: (id: number, v: number) => unvalidateMock(id, v),
+	// Story 48-12b (règle du drapeau) : le mock transmet TOUS ses arguments — les
+	// assertions `toHaveBeenCalledWith(9, 3)` deviennent strictes (un troisième argument
+	// les rougit).
+	unvalidateSupplierInvoice: (...args: unknown[]) => unvalidateMock(...args),
 	deleteSupplierInvoice: (id: number) => deleteMock(id),
 }));
 vi.mock('$lib/features/bank-accounts/bank-accounts.api', () => ({

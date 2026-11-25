@@ -66,8 +66,8 @@ use sqlx::MySqlPool;
 use crate::errors::ReportError;
 use crate::income_statement;
 use crate::opening::{is_bilan, is_debit_natured};
-use crate::pdf::round_for_display;
 use crate::period::ReportPeriod;
+use kesh_core::types::round_for_display;
 
 /// Bilan complet.
 #[derive(Debug, Clone, Serialize)]
@@ -123,7 +123,7 @@ impl BalanceSheet {
 
     /// `true` si la **ligne calculée** « Résultat reporté (calculé) » doit figurer au
     /// bilan **présenté** (PDF, CSV) : seulement quand `retained_earnings`, **arrondi au
-    /// centime comme il s'affiche** ([`round_for_display`], l'équidistant loin de zéro),
+    /// centime comme il s'affiche** ([`kesh_core::types::round_for_display`], l'équidistant loin de zéro),
     /// est **non nul** — un résidu sous le demi-centime (`0.004`, `-0.004`) ne fait pas
     /// paraître une ligne « 0.00 » ni « -0.00 » ; `0.005` s'affiche « 0.01 ». Les
     /// sorties écrivent alors la valeur arrondie de même (revue P1, LOW-1).

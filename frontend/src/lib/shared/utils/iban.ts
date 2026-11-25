@@ -17,8 +17,9 @@
  * `White_Space` d'Unicode, plus U+200B (espace de largeur nulle) et U+FEFF (BOM).
  *
  * ⚠️ `\s` de JavaScript couvre déjà U+FEFF, U+00A0, U+202F… mais **pas** U+0085, que
- * `char::is_whitespace` retire côté serveur (`normalize_payment_field`,
- * `crates/kesh-api/src/routes/supplier_invoices.rs`) ; U+200B n'est dans aucun des
+ * `char::is_whitespace` retire côté serveur (`is_payment_blank` et
+ * `normalize_payment_field`, `crates/kesh-core/src/payment_text.rs`, seule
+ * définition du serveur depuis la v0.20.0) ; U+200B n'est dans aucun des
  * deux. D'où cette liste explicite, et un test de chaque côté qui porte les mêmes
  * sept caractères.
  */

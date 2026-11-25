@@ -56,6 +56,10 @@ error-supplier-invoice-unvalidate-blocked-paid-reconciled = Diese Lieferantenrec
 error-supplier-invoice-unvalidate-blocked-detached-payment = Diese Rechnung wurde storniert, als sie bezahlt war: Ihre Zahlung (Buchung Nr. { $entry } vom { $entryDate }) bleibt im Hauptbuch. Hat diese Zahlung nicht stattgefunden, stornieren Sie sie zuerst über ihre Buchung und setzen Sie die Rechnung dann in den Entwurf zurück.
 error-supplier-invoice-unvalidate-blocked-detached-payment-reconciled = Diese Rechnung wurde storniert, als sie bezahlt war: Ihre Zahlung (Buchung Nr. { $entry } vom { $entryDate }) ist mit der Banktransaktion vom { $date } abgeglichen. Hat diese Zahlung nicht stattgefunden, heben Sie zuerst diesen Abgleich im Detail des Bankimports auf – er storniert die Zahlung – und setzen Sie die Rechnung dann in den Entwurf zurück.
 error-supplier-invoice-due-before-invoice-date = Die Fälligkeit ({ $dueDate }) liegt vor dem Rechnungsdatum ({ $invoiceDate }).
+# Story 48-12a (#975) — doppelte Lieferantenrechnung abgelehnt; ein Text pro Ablehnung, mit dem Bildschirm geteilt (48-12b).
+error-supplier-invoice-duplicate = Eine Rechnung dieses Lieferanten trägt bereits diese Nummer im selben Jahr. Ist es dieselbe Rechnung, erfassen Sie sie nicht ein zweites Mal. Hat der Lieferant seine Nummerierung im Lauf des Jahres neu begonnen, fügen Sie der Nummer ein Zeichen hinzu, zum Beispiel «15-b».
+error-supplier-invoice-probable-duplicate = Eine Rechnung dieses Lieferanten trägt bereits dasselbe Datum und denselben Betrag. Ist es dieselbe Rechnung, erfassen Sie sie nicht ein zweites Mal; andernfalls bestätigen Sie, dass es kein Duplikat ist.
+error-supplier-invoice-duplicate-unvalidate = Eine gleichwertige, nicht stornierte Rechnung existiert. Diese in den Entwurf zurückzusetzen, ergäbe ein Duplikat: Tun Sie es nur, um sie danach zu entfernen oder zu korrigieren.
 
 # Lettrage (Story 15-1a-i, #518)
 error-lettering-too-few-lines = Ein Ausgleich umfasst mindestens zwei verschiedene Zeilen.
@@ -3340,6 +3344,24 @@ supplier-invoices-err-amount = Die Summe der Zeilen ({$actual}) stimmt nicht mit
 supplier-invoices-err-currency = Währung nicht unterstützt (nur CHF). Entfernen Sie das Dokument aus der Liste, oder erfassen Sie die Rechnung ohne Dokument und hängen Sie es danach an.
 supplier-invoices-err-iban-ref = Widerspruch zwischen IBAN und QRR-Referenz des QR-Codes.
 supplier-invoices-err-not-pending = Dieses Dokument wurde bereits bearbeitet oder aus der Liste entfernt.
+# Story 48-12b (#975, #985) — Hinweise des Bildschirms: Duplikat, unbekannter Ausgang, bereits erfasstes Dokument.
+supplier-invoices-err-not-yet = Bisher ist keine Rechnung erfasst: Sie können es erneut versuchen.
+supplier-invoices-cited-draft = Entwurf Nr. { $id }
+supplier-invoices-cited-prefix = Bereits erfasste Rechnung:
+supplier-invoices-cited-active-prefix = Aktive Rechnung:
+supplier-invoices-confirm-not-duplicate = Kein Duplikat, erfassen
+supplier-invoices-modify-entry = Eingabe ändern
+supplier-invoices-unknown-outcome-create = Die Erfassung ist möglicherweise gelungen. Prüfen Sie in der Liste, ob die Rechnung existiert, bevor Sie sie erneut erfassen.
+supplier-invoices-unknown-outcome-create-link = Rechnungen dieses Lieferanten anzeigen
+supplier-invoices-resume-entry-create = Geprüft, sie existiert nicht — Eingabe fortsetzen
+supplier-invoices-unknown-outcome-edit = Die Änderung wurde möglicherweise gespeichert. Prüfen Sie im Detail, ob Ihre Änderung gespeichert wurde; falls ja, laden Sie diese Seite neu, bevor Sie weiter ändern.
+supplier-invoices-unknown-outcome-edit-link = Detail der Rechnung öffnen
+supplier-invoices-resume-entry-edit = Geprüft, sie wurde nicht gespeichert — Eingabe fortsetzen
+supplier-invoices-already-completed = Dieses Dokument wurde bereits als Rechnung erfasst. Öffnen Sie sie, um zu prüfen, ob sie Ihrer Eingabe entspricht.
+supplier-invoices-already-completed-link = Rechnung öffnen
+supplier-invoices-unvalidate-anyway = Trotzdem in den Entwurf zurücksetzen
+supplier-invoices-scan-ignored = Lesen des QR-Codes ignoriert: Das Formular war nicht mehr in Eingabe.
+supplier-invoices-new-supplier-created-not-selected = Lieferant erstellt, nicht ausgewählt.
 supplier-invoices-err-doc-not-found = Dokument nicht gefunden.
 supplier-invoices-err-fiscal-year = Kein offenes Geschäftsjahr deckt dieses Datum ab.
 supplier-invoices-payment-error-invalid-iban = Ungültige IBAN: Prüfen Sie Ländercode, Länge und Prüfziffern.
@@ -3661,6 +3683,7 @@ audit-log-action-supplier-invoice-updated = Lieferantenrechnungsentwurf aktualis
 audit-log-action-supplier-invoice-validated = Lieferantenrechnung validiert
 audit-log-action-supplier-invoice-unvalidated = Lieferantenrechnung in den Entwurf zurückgesetzt
 audit-log-action-supplier-invoice-deleted = Lieferantenrechnungsentwurf gelöscht
+audit-log-action-supplier-invoice-duplicate-confirmed = Duplikat einer Lieferantenrechnung bestätigt
 audit-log-action-imported-supplier-invoice-created = Dokument importiert
 audit-log-action-imported-supplier-invoice-completed = Dokument bearbeitet (Rechnung erstellt)
 audit-log-action-imported-supplier-invoice-discarded = Dokument aus der Liste entfernt

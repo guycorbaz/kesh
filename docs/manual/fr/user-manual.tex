@@ -788,7 +788,13 @@ démonstration, les réponses du serveur MCP, et la date du nom des fichiers exp
 de ce même jour comme borne du verrou, quel que soit le fuseau de votre poste~; pour une date que
 vous saisissez (une date de facture), il propose la date \textbf{de votre poste} --- pour un
 poste réglé sur la Suisse, ce sont les mêmes. Les \textbf{heures} enregistrées (journal d'audit,
-envoi d'un rappel) restent en UTC~; le \textbf{jour} d'un envoi de rappel est celui de Zurich, pour
+envoi d'un rappel) restent en UTC dans la base. Kesh affiche tous les instants à l'heure de Zurich, quel
+que soit le fuseau de votre poste~; pour le journal d'audit, les sauvegardes, les envois et les prompts du
+serveur MCP et la date d'un rejet de rapprochement, c'est le cas \emph{depuis la version 0.20.0~; avant,
+l'heure du poste}. Il y a deux exceptions. Les dates que vous saisissez (l'expiration d'une clé du
+serveur MCP, à l'heure du poste, ou d'une clé d'API) restent telles que saisies. Et, à l'écran
+\emph{Serveur MCP}, la création, le dernier usage et la révocation d'une clé ainsi que la modification
+des réglages restent, pour l'instant, à l'heure du poste. Le \textbf{jour} d'un envoi de rappel est celui de Zurich, pour
 le délai du rappel suivant comme pour la fenêtre de 30~jours de la réconciliation, et les filtres
 du journal d'audit choisissent des jours de Zurich (\emph{depuis la version 0.18.0~; avant, le
 jour UTC}). Le paiement d'une facture n'est pas une heure mais une
@@ -2105,7 +2111,44 @@ ouvre sa fiche~: la facture s'y relit, s'y corrige au besoin, puis s'y \textbf{v
 c'est la validation qui passe l'écriture d'achat (charge et TVA préalable au débit, dette
 fournisseur au crédit). Saisissez, puis validez~: voir \S\ref{sec:brouillon-fournisseur}. Pour
 créer la facture d'un document reçu dans le dossier d'import, voir
-\S\ref{sec:import-factures}~: la même saisie s'y fait à côté du document.
+\S\ref{sec:import-factures}~: la même saisie s'y fait à côté du document. Depuis la
+version~0.20.0, l'enregistrement refuse une facture déjà saisie (\S\ref{sec:doublons-fournisseur}).
+
+\paragraph{Les doublons.}\label{sec:doublons-fournisseur} Depuis la version~0.20.0, Kesh
+\textbf{refuse d'enregistrer deux fois la même facture fournisseur}. Il compare la facture aux
+factures du \textbf{même fournisseur} qui ne sont pas annulées~:
+\begin{itemize}
+    \item \textbf{même numéro du fournisseur dans la même année} --- l'année civile de la date de
+          facture~; les espaces et les majuscules ne comptent pas, «~FA 2026-1~» et
+          «~fa2026-1~» sont le même numéro~: l'enregistrement est \textbf{refusé}, sans
+          exception. Si c'est la même facture, ne l'enregistrez pas une seconde fois. Deux
+          factures «~15~» de deux années différentes sont acceptées --- un fournisseur qui
+          repart à un chaque année est respecté ---, et la limite d'un exercice comptable n'y
+          change rien. Si le fournisseur a recommencé sa numérotation \textbf{en cours d'année}
+          (cas rare), ajoutez un caractère au numéro, par exemple «~15-b~»~;
+    \item \textbf{même date et même montant}, quand l'une au moins des deux factures n'a pas de
+          numéro~: l'enregistrement est refusé \textbf{par défaut}, comme doublon probable~;
+          si ce n'est pas la même facture, une \textbf{confirmation explicite} l'enregistre, et
+          le journal d'audit la garde. Deux factures qui portent chacune un numéro
+          \textbf{différent} ne sont jamais un doublon, même de même date et de même montant.
+\end{itemize}
+Les factures \textbf{annulées} ne comptent pas~: une facture annulée par erreur se ressaisit. Le
+numéro du fournisseur reste facultatif, et les factures déjà enregistrées ne changent pas~: la
+règle vaut pour une nouvelle saisie, la création de la facture d'un document
+(\S\ref{sec:import-factures}), une modification qui change le fournisseur, le numéro, la date
+ou le montant (\S\ref{sec:brouillon-fournisseur}), et le repassage en brouillon d'une facture
+annulée (\S\ref{sec:repasser-brouillon}). Une intégration par clé d'API reçoit les mêmes refus.
+
+\paragraph{À l'écran, un doublon refusé.} Depuis la version~0.20.0, le refus s'affiche sous le
+formulaire, \textbf{sans perdre la saisie}, avec un lien vers la facture déjà enregistrée --- son
+numéro interne, ou «~brouillon n°~\ldots~» ---, qui s'ouvre \textbf{dans un nouvel onglet} pour
+la comparer. Pour le \textbf{même numéro}, la saisie reste modifiable et aucun bouton ne lève le
+refus~: si c'est la même facture, quittez la page~; sinon, changez le numéro («~15-b~») et
+enregistrez~; l'avis s'efface à l'envoi suivant. Pour un \textbf{doublon probable} (même date et
+même montant, sans numéro à comparer), le formulaire se fige et propose deux boutons~:
+\emph{Ce n'est pas un doublon, enregistrer} envoie la même saisie, confirmée --- le journal
+d'audit garde la confirmation ---, et \emph{Modifier la saisie} rend le formulaire modifiable,
+l'envoi suivant étant de nouveau contrôlé.
 
 \paragraph{Les dates.} La date de la facture est proposée au jour même. À côté d'un document,
 elle est de plus \textbf{marquée «~à vérifier~»}~: un avis sous le champ demande de la vérifier sur
@@ -2194,7 +2237,7 @@ type d'origine), puis relancez la validation.
 
 \subsection{Le numéro interne}\label{sec:numero-interne-fournisseur}
 
-Depuis la version~0.17.5, Kesh attribue à chaque facture fournisseur \textbf{validée} un \textbf{numéro interne} unique dans la société, \texttt{FF-2026-001} au format par défaut, pour classer et retrouver les \textbf{factures papier}. Le numéro du fournisseur reste, facultatif~: il sert aux recherches, mais deux fournisseurs peuvent avoir la même numérotation, et certains n'en ont pas. La liste montre les deux, en deux colonnes~; la colonne \emph{N° interne} se trie, et le champ de recherche trouve le numéro interne, le numéro du fournisseur et le nom du fournisseur. Les nouvelles écritures portent les deux au libellé~: \emph{Facture fournisseur FF-2026-001 (ABC-123) - Dupont SA}, \emph{Règlement fournisseur FF-2026-001 (ABC-123) - Dupont SA}~; les écritures d'avant la mise à jour gardent le leur.
+Depuis la version~0.17.5, Kesh attribue à chaque facture fournisseur \textbf{validée} un \textbf{numéro interne} unique dans la société, \texttt{FF-2026-001} au format par défaut, pour classer et retrouver les \textbf{factures papier}. Le numéro du fournisseur reste, facultatif~: il sert aux recherches et, depuis la version~0.20.0, au refus des doublons (\S\ref{sec:doublons-fournisseur}), mais deux fournisseurs peuvent avoir la même numérotation, et certains n'en ont pas. La liste montre les deux, en deux colonnes~; la colonne \emph{N° interne} se trie, et le champ de recherche trouve le numéro interne, le numéro du fournisseur et le nom du fournisseur. Les nouvelles écritures portent les deux au libellé~: \emph{Facture fournisseur FF-2026-001 (ABC-123) - Dupont SA}, \emph{Règlement fournisseur FF-2026-001 (ABC-123) - Dupont SA}~; les écritures d'avant la mise à jour gardent le leur.
 
 \textbf{Quand il naît.} À la validation, jamais avant~: un brouillon jamais validé n'en a pas, et sa fiche dit «~Attribué à la validation~». Une facture repassée en brouillon \textbf{garde} le sien, et le reprend à sa revalidation. Les factures déjà saisies et validées l'ont reçu à la mise à jour vers la version~0.17.5, par ordre de date.
 
@@ -2228,7 +2271,14 @@ fiche ne propose ni \emph{Payer} ni \emph{Annuler la facture}~; elle propose~:
           saisie pré-rempli~; \emph{Enregistrer} remplace la facture --- fournisseur, numéro du fournisseur,
           dates, coordonnées, compte analytique, lignes ---, toujours sans rien passer au journal. Si la
           facture a été modifiée entre-temps dans une autre session, l'enregistrement est refusé
-          et vous invite à recharger la page. Un compte analytique \textbf{archivé} déjà imputé au brouillon
+          et vous invite à recharger la page. Depuis la version~0.20.0, une modification qui change
+          le \textbf{fournisseur}, le \textbf{numéro du fournisseur}, la \textbf{date} ou le
+          \textbf{montant total} rejoue le refus des doublons (\S\ref{sec:doublons-fournisseur}),
+          la facture elle-même mise à part~; une modification qui ne touche aucun des quatre passe,
+          même si la facture était déjà, avant cette version, le double d'une autre. Changer la
+          date d'un tel doublon, même dans la même année, est refusé sans sortie~: supprimez le
+          brouillon en trop (administrateur), annulez la facture en double, ou donnez à l'une un
+          autre numéro («~15-b~»). Un compte analytique \textbf{archivé} déjà imputé au brouillon
           reste affiché, marqué «~(archivé)~» --- même sous un compte analytique parent archivé lui
           aussi (depuis la version~0.17.4)~; la validation le refuse toujours (ci-dessous)~:
           choisissez-en un autre avant de valider.
@@ -2246,8 +2296,12 @@ fiche ne propose ni \emph{Payer} ni \emph{Annuler la facture}~; elle propose~:
           annulé ou confirmé puis son règlement annulé, et qu'il ait été annulé ou non avant
           d'être repassé en brouillon --- \textbf{ne se supprime pas}~: l'historique de
           l'ordre transmis à la banque se garde. Corrigez-le et validez-le~; s'il n'est pas dû,
-          validez-le puis annulez-le (\S\ref{sec:annuler-facture-fournisseur}).
+          validez-le puis annulez-le (\S\ref{sec:annuler-facture-fournisseur}). C'est aussi le
+          geste qui retire un doublon enregistré.
 \end{description}
+\textbf{À l'écran, la modification} (depuis la version~0.20.0) montre les mêmes avis qu'à la
+saisie (\S\ref{sec:doublons-fournisseur})~: même numéro refusé, la saisie restant modifiable~;
+doublon probable, avec \emph{Ce n'est pas un doublon, enregistrer} et \emph{Modifier la saisie}.
 Le contrôle de clôture \emph{Factures fournisseur en brouillon} (\S\ref{sec:preparer-cloture})
 signale les brouillons datés dans l'exercice.
 
@@ -2280,9 +2334,24 @@ disparaître, \textbf{supprime l'écriture d'achat et sa contre-passation}~: la 
 écritures garde \textbf{deux trous}, que le journal d'audit explique --- il garde le contenu
 complet des deux écritures, la facture telle qu'elle était, et l'annulation d'origine. Le
 brouillon obtenu se corrige et se valide de nouveau, ou, par un administrateur, se supprime
-(\S\ref{sec:brouillon-fournisseur}). Annuler reste le geste par défaut pour une facture qui
+(\S\ref{sec:brouillon-fournisseur}). \textbf{Depuis la version~0.20.0}, si une facture
+\textbf{équivalente non annulée} existe --- même fournisseur et même numéro dans la même année,
+ou même date et même montant quand l'une des deux n'a pas de numéro
+(\S\ref{sec:doublons-fournisseur}) ---, le repassage est \textbf{refusé par défaut}~: la facture
+resterait en double de l'autre. Il passe par une \textbf{confirmation explicite}, que le journal
+d'audit garde. Ne le faites que pour \textbf{retirer} ou \textbf{corriger} ensuite le brouillon
+obtenu~: le retirer, c'est le supprimer --- par un administrateur, une intégration par clé d'API
+ne le peut pas ---, ou, s'il a figuré dans un lot de paiement, le valider puis l'annuler, ce qui
+le remet à zéro aux livres~; le corriger, c'est changer son numéro, sa date ou son montant, et
+la règle des doublons s'y rejoue. Le valider sans rien changer doublerait la dette~: la
+validation ne compare pas. Annuler reste le geste par défaut pour une facture qui
 n'était pas due~: l'achat et sa contre-passation restent aux livres, la correction se voit.
 Repasser une annulée en brouillon est un second geste, délibéré.
+
+\textbf{À l'écran, le repassage refusé} (depuis la version~0.20.0)~: si une facture équivalente
+est active (\S\ref{sec:doublons-fournisseur}), la fiche de l'annulée affiche le refus et la
+facture active, à ouvrir dans un nouvel onglet~; la facture reste annulée. Le bouton
+\emph{Repasser en brouillon malgré tout} confirme le repassage, que le journal d'audit garde.
 
 \emph{Lecture de Kesh, non avis juridique~:} le Code des obligations demande une comptabilité
 vérifiable (art.~957a CO) et des supports dont l'intégrité se garde (art.~958f CO, OLICo
@@ -2325,6 +2394,12 @@ Le repassage en brouillon est refusé, et la fiche dit pourquoi et quoi faire d'
           d'un exercice clôturé (le refus nomme alors celui-ci)~: un administrateur doit rouvrir
           les exercices clôturés, en commençant par le plus récent
           (\S\ref{sec:reouverture-exercice})~;
+    \item (annulée, depuis la version~0.20.0) une facture \textbf{équivalente non annulée}
+          existe (\S\ref{sec:doublons-fournisseur})~: le refus nomme la facture active~; si
+          vous voulez bien la repasser en brouillon pour la retirer ou la corriger, confirmez-le
+          (le journal d'audit garde la confirmation). Ce refus vient après celui de l'exercice
+          clôturé de l'achat ou de la contre-passation, et avant celui d'un exercice \emph{suivant}
+          clôturé, puis celui du verrou de période~;
     \item la date de l'achat ou de la contre-passation est sous le \textbf{verrou de période}~:
           le refus nomme la date du verrou (depuis la version~0.17.4)~; un administrateur fait
           reculer le verrou avant elle (\S\ref{sec:verrou-periode})~;
@@ -2341,6 +2416,11 @@ la facture a peut-être déjà été payée~: vérifiez le relevé avant de chan
 ne dit pas que ce lot l'a payée~: il dit seulement qu'elle y figure. Une facture annulée qui a
 figuré dans un lot repasse en brouillon, mais ce brouillon \textbf{ne se supprime pas}~:
 l'historique de l'ordre transmis à la banque se garde.
+
+Le refus de doublon du repassage s'affiche, lui, dans un encadré à part, avec la facture
+active et, pour la lever, \emph{Repasser en brouillon malgré tout}~; joindre ou détacher le
+document de la facture, ou toute relecture de la fiche, efface cet avis~; ouvrir l'aperçu du
+document ou le télécharger le laisse affiché.
 
 \subsection{Régler une facture fournisseur}\label{sec:regler-facture-fournisseur}
 
@@ -2386,9 +2466,16 @@ brouillon, joindre ou détacher son document. La fiche relit alors la facture et
 encadré, que l'issue n'est pas connue~: vérifiez ce que montre la fiche relue avant de réessayer.
 Si la relecture elle-même échoue, l'encadré le dit~: rechargez la page avant de réessayer. Un second
 envoi ne s'écrit pas deux fois~: la facture --- ou son document --- a changé entre-temps, Kesh le
-refuse, et la fiche relit la facture pour montrer ce qui est écrit. La page de \emph{modification}
-d'un brouillon ne relit pas encore la facture~: après une coupure pendant l'enregistrement,
-rechargez-la avant de réessayer.
+refuse, et la fiche relit la facture pour montrer ce qui est écrit. \textbf{Pendant la saisie},
+depuis la version~0.20.0~: si la réponse se perd pendant l'\textbf{enregistrement} d'une facture,
+le formulaire \textbf{se fige}, garde votre saisie et dit que l'enregistrement a \textbf{peut-être
+abouti}~; un lien ouvre, dans un nouvel onglet, la liste des factures du fournisseur. Vérifiez si
+la facture existe~: si oui, quittez la page~; sinon, \emph{J'ai vérifié, elle n'existe pas ---
+reprendre la saisie} rend la saisie modifiable \textbf{sans rien envoyer}, et l'enregistrement
+reste votre geste --- si la facture existait, Kesh le refuse comme doublon. Sur la page de
+\emph{modification}, l'avis dit que la modification a peut-être été enregistrée et le lien ouvre
+la fiche~: si elle l'a été, rechargez la page avant de modifier encore~; sinon, \emph{J'ai
+vérifié, elle n'a pas été enregistrée --- reprendre la saisie}.
 
 \textbf{Lettrage.} Une facture fournisseur \textbf{payée} est \textbf{lettrée} d'office~: sa
 ligne d'achat au compte créanciers et celle du paiement sur ce compte forment un groupe de
@@ -2476,7 +2563,9 @@ lui reste joint.
 \label{sec:annuler-facture-fournisseur}
 
 Une facture fournisseur saisie par erreur --- doublon, mauvais fournisseur, facture qui n'était
-pas due --- s'annule depuis sa fiche, \textbf{qu'elle soit validée ou déjà payée}~: bouton
+pas due --- s'annule depuis sa fiche (depuis la version~0.20.0, Kesh refuse la plupart des
+doublons dès la saisie, \S\ref{sec:doublons-fournisseur}~; un doublon enregistré avant, ou
+confirmé, s'annule toujours ainsi), \textbf{qu'elle soit validée ou déjà payée}~: bouton
 \emph{Annuler la facture} (comptable ou administrateur). Kesh passe une écriture inverse de
 l'achat, \textbf{datée du jour}, liée à l'écriture d'origine~: la charge et l'impôt préalable
 reviennent à zéro, et la facture passe à \emph{annulée}. Le journal d'audit nomme le geste.
@@ -2495,7 +2584,9 @@ contre-passation \textbf{restent au journal} et au grand livre, nettes à zéro 
 loi demande d'une correction (art.~958f CO). Annuler laisse donc l'achat et sa contre-passation
 aux livres~; depuis la version~0.17.2, une facture annulée \textbf{saisie par erreur} --- qui
 n'aurait jamais dû l'être --- \textbf{repasse en brouillon}, puis se corrige ou se supprime,
-sous les gardes dites (\S\ref{sec:repasser-brouillon}).
+sous les gardes dites (\S\ref{sec:repasser-brouillon})~; depuis la version~0.20.0, si une
+facture équivalente est active, le repassage demande une confirmation, gardée au journal
+d'audit.
 
 \textbf{Une liste paginée et filtrée.} Depuis la version~0.17.2, la liste montre
 \textbf{50 factures par page}, avec leur nombre et les boutons \emph{Précédent} et \emph{Suivant}~:
@@ -2530,7 +2621,11 @@ date la plus récente du lettrage et/ou rouvre les exercices clôturés, selon l
 a été \textbf{archivé} (réactivez-le), aucun exercice ouvert ne couvre la date du jour
 (créez-le), ou la facture figure dans un \textbf{lot de paiement en cours} (annulez d'abord le
 lot). Une facture annulée ne se \emph{désannule} pas~; si l'annulation était une erreur,
-repassez-la en brouillon (\S\ref{sec:repasser-brouillon}), puis validez-la de nouveau.
+repassez-la en brouillon (\S\ref{sec:repasser-brouillon}), puis validez-la de nouveau. Depuis
+la version~0.20.0, si une facture équivalente a été saisie entre-temps (le même numéro du
+fournisseur dans la même année, ou la même date et le même montant), le repassage demande une
+confirmation~: la valider de nouveau, sans rien changer, doublerait la dette~; retirez plutôt
+l'une des deux.
 
 \subsection{Paiements par fichier pain.001}
 \label{sec:paiements-fournisseurs}
@@ -2722,7 +2817,15 @@ proche de celui du créancier (« nom proche » --- formes juridiques comme SA, 
 accents ignorés, « Müller » rapproché de « Mueller »). \textbf{Aucun n'est choisi d'office}~:
 cliquez \emph{Retenir} sur le bon, choisissez-en un autre dans la liste, ou créez-le par
 \emph{Nouveau fournisseur} (le nom et, pour une adresse structurée du QR, l'adresse sont
-pré-remplis). Sans QR, rien n'est proposé.
+pré-remplis). Sans QR, rien n'est proposé. Depuis la version~0.20.0, si la réponse se perd
+pendant l'enregistrement, Kesh relit le document~: s'il a été enregistré, l'écran le dit ---
+«~Cette pièce a déjà été enregistrée comme facture. Ouvrez-la pour vérifier qu'elle correspond à
+votre saisie.~» ---, avec un lien vers la facture, qui s'ouvre dans un nouvel onglet, et le
+formulaire reste figé~; s'il est encore à traiter, «~Aucune facture n'est enregistrée pour
+l'instant~: vous pouvez réessayer.~»~; s'il a été retiré de la liste entre-temps, l'écran le dit
+(«~Ce document a déjà été traité ou retiré de la liste.~»)~; si la relecture échoue, ou si le
+document est enregistré sans qu'une facture soit citée, l'avis de la saisie (vérifier, puis
+reprendre la saisie).
 
 \begin{keshwarning}
 \textbf{Une proposition n'est qu'une proposition.} Son absence ne prouve pas que le
@@ -2736,9 +2839,11 @@ Vérifiez avant de retenir.
 À l'enregistrement, le document quitte la liste et l'écran ouvre la fiche du brouillon
 créé (« Brouillon enregistré. »). Un refus --- une ligne qui n'est pas au centime
 (\S\ref{sec:saisie-facture-fournisseur}), total différent du QR, coordonnée de paiement
-invalide (sous le champ concerné), échéance antérieure à la date, document traité entre-temps
-dans une autre session --- s'affiche sans perdre la saisie, et le document reste dans la
-liste. Ce qu'exige l'écriture d'achat --- compte créanciers ou TVA récupérable imputable,
+invalide (sous le champ concerné), échéance antérieure à la date, doublon
+(\S\ref{sec:doublons-fournisseur}) --- s'affiche sans perdre la saisie, et le document reste
+dans la liste. Un document qu'une autre personne a enregistré pendant votre saisie mène à
+«~Cette pièce a déjà été enregistrée comme facture~», avec le lien vers elle, depuis la
+version~0.20.0. Ce qu'exige l'écriture d'achat --- compte créanciers ou TVA récupérable imputable,
 exercice ouvert (\S\ref{sec:saisie-facture-fournisseur}) --- se vérifie à la
 \textbf{validation}, depuis la version~0.17.0. Un lien vers un document qui n'est plus à traiter affiche « Ce document n'est plus à
 traiter. » et renvoie à la liste.
@@ -2784,13 +2889,16 @@ aucun fichier n'est supprimé. C'est le geste qui corrige une pièce jointe par 
 détachez-la, puis joignez la bonne.
 
 \begin{keshwarning}
-\textbf{Un document détaché redevient un document à traiter, avec QR compris}~: rien
-n'empêche d'en \emph{créer une facture} une seconde fois, et la première facture n'est ni
-annulée ni signalée. Si c'est la facture elle-même qui est fausse~: un brouillon se
+\textbf{Un document détaché redevient un document à traiter, avec QR compris}~: on peut en
+\emph{créer une facture} de nouveau, et la première facture n'est ni annulée ni modifiée.
+Depuis la version~0.20.0, une facture identique à la première --- même fournisseur et même
+numéro dans la même année, ou même date et même montant sans numéro --- est refusée comme
+doublon (\S\ref{sec:doublons-fournisseur})~; une saisie modifiée, ou confirmée, passe. Si c'est la facture elle-même qui est fausse~: un brouillon se
 \textbf{supprime} (administrateur) --- son document redevient «~à traiter~» ---~; une facture
-validée --- ou annulée, saisie par erreur --- se repasse en brouillon puis se supprime, ou se
-corrige (\S\ref{sec:repasser-brouillon})~; une facture qui n'était pas due s'annule. Puis
-traitez le document.
+validée --- ou annulée, saisie par erreur, avec une confirmation si une facture équivalente est
+active --- se repasse en brouillon puis se supprime, ou se corrige
+(\S\ref{sec:repasser-brouillon})~; une facture qui n'était pas due s'annule. Puis traitez le
+document.
 \end{keshwarning}
 
 Le détail d'une \textbf{écriture} d'achat ou de règlement d'une facture fournisseur qui a un
@@ -4444,6 +4552,11 @@ couvrent l'ensemble de votre comptabilité~:
           SHA-256 de chaque fichier).
 \end{itemize}
 
+Chaque nombre s'y écrit à l'échelle où Kesh le garde, sans arrondi~: quatre décimales pour les
+montants, prix, quantités et totaux (\texttt{150.2500}), deux pour les taux de TVA, les frais de
+rappel et les montants et soldes des relevés, dix pour les cours de change~; point décimal, sans
+séparateur des milliers.
+
 \begin{keshnote}
 \textbf{Ce que l'export ne contient pas, et pourquoi.} Les \textbf{compteurs de numérotation}
 (les numéros attribués figurent déjà sur les pièces), les \textbf{clés d'API, les clés du
@@ -4579,9 +4692,10 @@ transactions à rapprocher) est prévu mais pas encore disponible.
           son type. Un numéro nul, négatif ou non entier est ignoré.
     \item \textbf{Les dates filtrent sur des jours de Zurich}~: une opération faite peu après
           minuit, heure suisse, appartient au jour où elle a eu lieu. Le tableau affiche l'heure de
-          votre \textbf{poste} --- pour un poste réglé sur la Suisse, la même. \emph{Depuis la
-          version 0.18.0~; avant, les dates filtraient sur des jours UTC, et une opération faite
-          entre minuit et une heure du matin (deux en été) paraissait à la veille.} Une date de
+          Zurich, quel que soit le fuseau de votre poste. \emph{Depuis la version 0.20.0~; avant,
+          l'heure du poste.} \emph{Depuis la version 0.18.0~; avant, les dates filtraient sur des
+          jours UTC, et une opération faite entre minuit et une heure du matin (deux en été)
+          paraissait à la veille.} Une date de
           début postérieure à la date de fin est refusée par l'écran.
     \item \textbf{Le tableau}~: la date, l'auteur (tel qu'il s'appelait au moment de l'opération,
           et «~clé API~» si elle a été faite par une clé d'API --- \emph{pour une partie des
@@ -4832,7 +4946,9 @@ Selon l'action :
     \item Facture fournisseur~: un brouillon se corrige, ou se supprime (administrateur)~; une
           facture validée dont la saisie est fausse se repasse en brouillon, se corrige et se
           revalide (\S\ref{sec:repasser-brouillon})~; une facture annulée par erreur se repasse
-          en brouillon, ses écritures d'achat et de contre-passation supprimées~; une facture qui n'était pas due s'annule depuis
+          en brouillon, ses écritures d'achat et de contre-passation supprimées --- avec une
+          confirmation, depuis la version~0.20.0, si une facture équivalente est active
+          (\S\ref{sec:doublons-fournisseur})~; une facture qui n'était pas due s'annule depuis
           sa fiche, validée ou payée (\S\ref{sec:annuler-facture-fournisseur})~; payée, son règlement reste au grand
           livre, détaché --- un paiement sans facture. La fiche de ce paiement n'offre ni «~Modifier~» ni «~Supprimer~»~: elle affiche le motif, et la contre-passation reste disponible.
     \item Rapprochement bancaire~: il s'annule depuis le détail de l'import bancaire, ou depuis

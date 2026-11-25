@@ -18,6 +18,7 @@
 <script lang="ts">
 	import { i18nLocale, i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import { errorMessageOf } from '$lib/shared/utils/error-message';
+	import { formatInstant } from '$lib/features/reports/reports.api';
 	import { notifyError, notifySuccess } from '$lib/shared/utils/notify';
 	import type { BankTransactionDto } from '$lib/features/bank-import/bank-import.types';
 	import { unrejectTransaction } from './reconciliation.api';
@@ -33,11 +34,9 @@
 
 	let submitting = $state(false);
 
-	// C-28-5-15 — la date seule : l'heure n'aide pas à retrouver une transaction.
-	const dateFormat = $derived(new Intl.DateTimeFormat(i18nLocale(), { dateStyle: 'medium' }));
-	const rejectedOn = $derived(
-		tx.autoMatchRejectedAt != null ? dateFormat.format(new Date(tx.autoMatchRejectedAt)) : '',
-	);
+	// C-28-5-15 — la date seule : l'heure n'aide pas à retrouver une transaction. 50-6 (#1511) :
+	// le jour de Zurich, quel que soit le fuseau du poste.
+	const rejectedOn = $derived(formatInstant(tx.autoMatchRejectedAt, 'date', i18nLocale()) ?? '');
 
 	async function unreject() {
 		if (submitting) return;
