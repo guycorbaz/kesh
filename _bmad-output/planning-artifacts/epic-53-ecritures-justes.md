@@ -14,13 +14,14 @@ au grand livre change sans qu'on le dise.
 
 | Story | Issues | Objet |
 |---|---|---|
-| 53-1 — Une écriture ne passe pas deux fois | #1355, #1365 | après une réponse perdue, un second envoi ne crée ni une seconde écriture (#1355) ni une seconde paire de conversion (#1365). **Même philosophie que la 48-12a** (décision du Project Lead du 2026-11-21) : le serveur refuse le doublon, l'écran fige l'issue inconnue et fait vérifier avant de reprendre. La fiche juge s'il faut la découper en serveur et écran (règle de splitting). |
+| 53-1a — La saisie ne passe pas deux fois | #1355 | **née du découpage de la 53-1 le 2026-11-25** (décision du Project Lead, signal de recyclage en validation P2) : après une réponse perdue, un second envoi d'une saisie manuelle identique est refusé (409 levable par confirmation, auditée) ; l'écran fige l'issue inconnue et fait vérifier avant de reprendre ; pose le motif commun (politique de doublon, erreur, module d'états). Aucun verrou neuf sur `journal_entries` : l'instantané naît après le verrou de l'exercice. |
+| 53-1b — La conversion ne passe pas deux fois | #1365 | **née du même découpage** : reprend le motif de la 53-1a pour la conversion de devises ; pré-verrou des exercices juste après la société. Dépend de la 53-1a (fusionnée d'abord). |
 | 53-2 — La TVA revient sur le compte de la vente | #525, #1198 | l'avoir (#525) et la correction de TVA d'un escompte ou d'une perte (#1198) contre-passent la TVA sur le compte de TVA due **de la vente**, non sur celui des réglages du moment. Probablement une migration (mémoriser le compte sur la facture, ou le relire de l'écriture de vente) : la fiche le dit ; une migration fait monter `b` et sort de préférence un vendredi. |
 | 53-3 — L'ouverture ne se passe pas sur un compte de résultat | #513 | le contrôle des types de comptes du bilan d'ouverture se fait dans la transaction qui écrit, sous verrou. |
 | ~~53-4 — L'assistant ne réécrit pas le compte bancaire~~ | #1004 | **sortie de l'Epic 53 le 2026-11-25** (décision du Project Lead) : la validation P2 de la fiche a établi au code qu'aucun compte principal ne peut exister avant l'étape 6 (`assert_onboarding_complete`, `bank_accounts.rs:358`) ; le défaut ne touche que la saisie de l'assistant, avant toute écriture comptable : #1004 reclassée P3. Fiche et validations conservées sur `story/53-4-assistant-compte-bancaire`, pour la liste d'attente. |
 | 53-solde — Story de solde | plafond fixé au lancement | dette des revues de l'epic seulement. |
 
-Quatre stories, story de solde comprise, depuis la sortie de la 53-4 (2026-11-25) : la borne de six tient. La 53-1 n'est pas découpée (fiche du 2026-11-25).
+Cinq stories, story de solde comprise (53-1a, 53-1b, 53-2, 53-3, solde), depuis la sortie de la 53-4 et le découpage de la 53-1 (2026-11-25) : la borne de six tient.
 
 ## Fichiers et modules (probables, confirmés par les fiches)
 
@@ -31,7 +32,7 @@ Quatre stories, story de solde comprise, depuis la sortie de la 53-4 (2026-11-25
 - 53-3 : `kesh-api/src/routes/opening_balances.rs` ; `kesh-db/src/repositories/journal_entries.rs` (`create_opening_entry`), `accounts.rs` (lecture des types), `fiscal_years.rs` (clé d'erreur) ; tests `kesh-db` et `kesh-api` (fiche 53-3, validation P1, V1-10).
 - ~~53-4~~ : sortie de l'epic (2026-11-25).
 
-Recoupements : `journal_entries.rs` avec l'Epic 51 (48-2) et l'Epic 47 d'un contributeur ; `onboarding.rs` avec l'Epic 50
+Recoupements : `journal_entries.rs` entre la 53-1a/53-1b et la 53-3 (fonctions distinctes ; la seconde fusionnée reprend la première), avec l'Epic 51 (48-2) et l'Epic 47 d'un contributeur ; `onboarding.rs` avec l'Epic 50
 (aucun site commun connu).
 
 ## Dépendances
