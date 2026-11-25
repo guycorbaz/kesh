@@ -319,7 +319,8 @@ par la garde : un fichier commun, non un module.) Les pages des fiches de factur
 
 ## Recette visuelle
 
-Captures (thème clair, `kesh-gate-logs/s55-3b/`) : journal avec ses icônes ; visionneuse à un justificatif (ouverte
+Captures (thème clair, `kesh-gate-logs/s55-3b/`) : journal avec ses icônes (monochromes, de la couleur du texte,
+lignes à hauteur inchangée, AC-1) ; visionneuse sans panneau de vignettes (AC-11) ; visionneuse à un justificatif (ouverte
 directement, sans liste) ; visionneuse à deux justificatifs, chacun affiché ; facture pas encore émise : le message « PDF
 pas encore émis » à la place de l'aperçu ; erreur `410` (obtenue sur une installation jetable en retirant de
 `KESH_DOCUMENTS_DIR` le fichier `<empreinte>.pdf` d'une facture figée, ou par `page.route` rendant `410 INVOICE_PDF_GONE`) ;
