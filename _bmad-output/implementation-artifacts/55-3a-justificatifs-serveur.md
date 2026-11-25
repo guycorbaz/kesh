@@ -1,6 +1,6 @@
 # Story 55-3a : les justificatifs d'une écriture dans la réponse du journal et du grand livre (serveur)
 
-Status: drafted
+Status: ready-for-dev
 
 Epic : `_bmad-output/planning-artifacts/epic-55-navigation-interface.md` — D9 (Q1), D10 (Q4), règle des factures (Q7). Issue : #À-VENIR
 (`enhancement`, priorité à fixer, Q5 ; point c, convenu au téléphone le 2026-11-25 entre l'utilisateur et le mainteneur).
@@ -270,3 +270,8 @@ littéraux de test de `csv.rs`, `pdf.rs`, `benches/export.rs`) ; plus `docs/api-
 - 2026-11-25 — Validation P4 ciblée (Sonnet) : 0/0/3/5 ; remédiée : Q7 au T0 et sa conséquence (filtre serveur, aucun champ)
   (V4-1, 55-3b et fichier d'epic alignés) ; tests de filtres par appel direct, `s.company_id` et `isi.company_id` (V4-2) ;
   extracteur `texte_pdf` de la PR 46 au lieu de `lopdf` (V4-3) ; LOW V4-4 à V4-8.
+- 2026-11-25 — Validation P5 ciblée (Haiku) : 0/0/0/3 — **validation terminée**. Tendance (55-3 puis 55-3a) : P1 Opus
+  0/0/10/8 (découpage) → P2 Sonnet 0/0/3/8 → P3 ciblée Haiku 0/0/5/6 → P4 ciblée Sonnet 0/0/3/5 → P5 ciblée Haiku 0/0/0/3.
+  Les trois LOW se reprennent au **T0 du développement**, ligne lue citée au Change Log : V5-1 (règle « Q7 refusée » avec
+  `i.status IN ('validated','cancelled')` et un négatif « brouillon portant un PDF figé »), V5-2 (AC-3 récrit selon la
+  réponse à Q7), V5-3 (statut de la 55-3b confirmé par ce verdict).
