@@ -32,27 +32,33 @@ par la garde : un fichier commun, non un module.) Les pages des fiches de factur
   lien « Télécharger » ; CSP `blob:` autorisée (`kesh-api/src/middleware/csp.rs:37-38`).
 - `frontend/src/lib/shared/utils/pdf-error.ts` : `pdfErrorMessage` rend le message du serveur pour
   `INVOICE_TOO_MANY_LINES_FOR_PDF` et `INVOICE_PDF_GONE` (`:36`), un générique sinon (`:41`) — propre aux PDF de facture.
-- Lectures en `Blob` d'aujourd'hui : `fetchSupplierInvoiceSourceDocument(id)` (`imported-supplier-invoices.api.ts:119`) ;
+- Lectures en `Blob` d'aujourd'hui : `fetchSupplierInvoiceSourceDocument(id)` (`imported-supplier-invoices.api.ts:120`) ;
   facture et avoir, écrites **dans les pages** : `apiClient.getBlob('/api/v1/invoices/${id}/pdf')`
   (`invoices/[id]/+page.svelte:969`, nom `facture-${number ?? id}.pdf`), `…/credit-notes/${id}/pdf`
   (`credit-notes/[id]/+page.svelte:94`).
 - Le détail d'une écriture montre déjà le document d'une facture fournisseur (`journal-entries/[id]/+page.svelte:589-620`).
 - Manuel : § 11.6.1 « Le PDF émis est figé » (`sec:pdf-fige`, `user-manual.tex:1635-1645`) — produit « au premier
   téléchargement ou au premier envoi par e-mail », « qui que ce soit qui télécharge le premier — y compris un utilisateur en
-  consultation » ; § *Grand livre* (`:4184`, « avec sa date, sa pièce, son journal », `:4192`) ; § *Journal des écritures*
+  consultation » ; § *Grand livre* (`:4184`, « avec sa date, sa pièce, son journal », `:4193`) ; § *Journal des écritures*
   (`:4316-4318`, deux lignes).
 
 - Composants : `frontend/src/lib/components/ui/dialog` (bits-ui, employé par `ManualMatchModal`) ; `dialog-content.svelte`
-  porte `showCloseButton = true` par défaut, avec un `<span class="sr-only">Close</span>` **anglais en dur**, et la classe
-  `sm:max-w-sm` (`:16`, `:31`, `:37`). `DocumentPreview` : `data-testid` `document-preview`, `-loading`, `-gone`, `-error`,
+  porte `showCloseButton = true` par défaut (`:16`, test `:37`), avec un `<span class="sr-only">Close</span>` **anglais en
+  dur** (`:42`), et la classe `sm:max-w-sm` (`:31`) ; précédent de dialogue large qui défile : `max-h-[85vh] overflow-y-auto`
+  (`LinkSettlementModal.svelte:201`). `DocumentPreview` : `data-testid` `document-preview`, `-loading`, `-gone`, `-error`,
   `-image`, `-frame`, `-download` (`:71-103`) ; son `<iframe>` fait `h-[75vh]`.
-- `GeneralLedgerView.svelte` : colonnes déclarées dans `COLUMNS` (`:41-51`), libellés par un `switch` exhaustif
-  (`columnLabel`, `:68-88`), commentaire « Lettrage est la dernière … » (`:35-37`) ; `GeneralLedgerView.test.ts`
-  (« 15-1c-ii test 3 ») attend **9** en-têtes ; `piece()` rend le numéro d'écriture préfixé de l'exercice.
+- `GeneralLedgerView.svelte` : colonnes déclarées dans `COLUMNS` (`:44-54`), constantes de module qui en découlent
+  (`COLUMN_COUNT` `:58`, `BALANCE_LABEL_SPAN`, `AFTER_BALANCE`, `MOVEMENTS_LABEL_SPAN`, `AFTER_MOVEMENTS` `:61-67`, `colspan` par
+  `indexOf` `:300-301`), libellés par un `switch` exhaustif (`columnLabel`, `:70-91`), commentaire « Lettrage est la dernière … »
+  (`:36-39`) ; `GeneralLedgerView.test.ts` : « 15-1c-ii test 3 — « Lettrage » est la DERNIÈRE colonne, après « Solde
+  progressif » » (`:241-248`) attend **9** en-têtes, et « chaque rangée du corps et du pied couvre exactement les en-têtes »
+  (`:251-262`), « le solde tombe sous Solde progressif » (`:274`), « le total des mouvements tombe sous Débit et Crédit »
+  (`:293`) ; `piece()` (`:151-155`) rend le numéro d'écriture, préfixé de l'exercice **quand la période en traverse un**.
 - Le numéro d'écriture repart à 1 à chaque exercice ; le journal est rendu pour **un** exercice (`fiscalYearId`), le grand
   livre peut en traverser plusieurs.
 - Une écriture à deux justificatifs s'obtient **par l'API** : `POST /api/v1/reconciliation/accept` avec une proposition
-  `invoice_group` (règlement client groupé, `routes/reconciliation_group.rs:164`) ; patron et aides dans
+  `invoice_group` (règlement client groupé, `accept_one_invoice_group`, `routes/reconciliation_group.rs:169` ; l'écriture se lit dans
+  `accepted[0].journalEntryId`, `routes/reconciliation.rs:566`) ; patron et aides dans
   `frontend/tests/e2e/reconciliation-group.spec.ts` et `tests/e2e/helpers/api-fixtures.ts` ; `InvoiceResponse.journalEntryId`
   désigne l'écriture de vente.
 - Gardes i18n : `i18n-keys` (`sitesTotal`), `i18n-libelle-en-dur`, `i18n-un-repli-par-cle`, `lint-i18n-ownership` (une clé
@@ -73,29 +79,44 @@ par la garde : un fichier commun, non un module.) Les pages des fiches de factur
    document fournisseur → `fetchSupplierInvoiceSourceDocument(id)`. Noms passés à `DocumentPreview` :
    `facture-<numéro>.pdf`, `avoir-<numéro>.pdf`, à défaut du numéro `facture-<id>.pdf`, `avoir-<id>.pdf` ; le `fileName` du
    document fournisseur, à défaut `justificatif-<id>`. Dans la liste, un numéro nul s'affiche par l'identifiant. Un `Blob`
-   vide rend l'état d'erreur avec le message `reports-nav-documents-empty` (« Le document reçu est vide. »).
+   vide : le lecteur d'`EntryDocuments` **rejette** par une erreur « vide » dédiée (`DocumentPreview` ne contrôle pas la
+   taille, `:50-61`), rendue par `reports-nav-documents-empty` (« Le document reçu est vide. »), pour les trois genres —
+   clé neuve parce que `lint-i18n-ownership` refuse `invoice-pdf-error-empty` depuis `features/reports`.
 4. **AC-4 — Erreurs, droits.** Les trois routes d'aujourd'hui, sans route neuve, leurs droits inchangés (un rôle
    *Consultation* voit le bouton et ouvre le justificatif). `DocumentPreview` gagne une propriété **facultative**
-   `errorMessage?: (err: unknown) => string` : **présente**, toute erreur de `load` rend l'état `document-preview-error` avec
-   ce texte (y compris `SOURCE_DOCUMENT_GONE`) ; **absente**, le comportement d'aujourd'hui. Les tests existants de
+   `errorMessage?: (err: unknown) => string | undefined`, lue **dans le `catch` seulement** (pas dans l'`$effect` qui lit
+   `load` : une fonction neuve ne relance pas la lecture) : une chaîne rend l'état `document-preview-error` avec ce texte ;
+   `undefined`, ou la propriété absente, le comportement d'aujourd'hui (`gone` pour `SOURCE_DOCUMENT_GONE`, texte fixe
+   sinon). Les tests existants de
    `DocumentPreview.test.ts` passent **sans modification** ; des tests y sont **ajoutés** (propriété présente, absente).
-   Facture et avoir : `errorMessage = pdfErrorMessage` (`410 INVOICE_PDF_GONE` nomme le fichier à restaurer) ; document
-   fournisseur : sans la propriété. Le journal reste affiché.
+   `EntryDocuments` la passe pour les trois genres : erreur « vide » → `reports-nav-documents-empty` ; sinon facture et
+   avoir → `pdfErrorMessage(err)` (`410 INVOICE_PDF_GONE` nomme le fichier à restaurer), document fournisseur → `undefined`.
+   Le journal reste affiché. Rôle *Consultation* : constat par construction, écrit au Change Log — aucun contrôle de rôle
+   dans `EntryDocuments` (`grep -n "role" EntryDocuments.svelte` vide) et les trois routes sous « tout rôle authentifié »
+   (`lib.rs:1262-1293`).
 5. **AC-5 — Figement et lecture unique.** Ouvrir la facture d'une écriture la **fige** si elle ne l'était pas (route
    d'aujourd'hui, `Usage::Download`), y compris pour un rôle *Consultation* : dit au manuel (AC-9). Le justificatif choisi
    est tenu par **deux primitives** (`kind`, `id`), et la fonction `load` est dérivée de ces seules primitives : remplacer
-   `documents` par un tableau d'objets égaux (rapport repris ou redemandé pendant que le dialogue est ouvert) ne relit pas
-   le document.
+   `documents` par un tableau d'objets égaux ne relit pas le document. Le cas réel : Retour ou Suivant vers le **même
+   onglet**, dont le rapport est repris de la mémoire (55-1, C-55-1-2) ou redemandé, l'écriture y étant encore ; *Générer*
+   n'est pas atteignable dialogue ouvert (modal) et démonte la vue (`{#if loading}`). La décision de figer à l'affichage est
+   soumise au mainteneur (Q7 du fichier d'epic) ; refusée, seules les factures déjà figées seraient montrées (un champ de
+   plus au contrat de la 55-3a).
 6. **AC-6 — Grand livre.** Une colonne `documents` (`COLUMNS`, après `description`, en-tête `reports-nav-ledger-column-documents`
-   « Justificatifs », rendu étroit), **présente seulement si au moins une ligne du rapport a des justificatifs** ; chaque
-   ligne qui en a porte le bouton (`data-testid="ledger-entry-documents-<lineId>"`, unique), `aria-label` avec le numéro
-   préfixé de l'exercice (`piece()`), même dialogue. Le commentaire `:35-37` est corrigé. Sans justificatif dans le rapport,
-   le test « 15-1c-ii test 3 » (9 en-têtes) reste vert sans modification ; un test neuf compte 10 en-têtes avec un
-   justificatif. *Option* : celle de la 55-3a.
+   « Justificatifs », rendu étroit), **présente seulement si au moins une ligne du rapport a des justificatifs** (condition
+   sur le rapport, non sur la section : toutes les sections ont alors le même nombre d'en-têtes) ; les constantes qui
+   découlent de `COLUMNS` (`COLUMN_COUNT`, `BALANCE_LABEL_SPAN`, `AFTER_BALANCE`, `MOVEMENTS_LABEL_SPAN`, `AFTER_MOVEMENTS`,
+   `indexOf`) deviennent dérivées de la liste effective. Chaque ligne qui a des justificatifs porte le bouton
+   (`data-testid="ledger-entry-documents-<lineId>"`, unique), `aria-label` avec le numéro de `piece()` (préfixé quand la
+   période traverse un exercice), même dialogue. Le commentaire `:36-39` est corrigé. Sans justificatif, les tests existants
+   restent verts sans modification ; avec une ligne à justificatif, 10 en-têtes, et les trois tests « chaque rangée … couvre
+   exactement les en-têtes » (section en devise comprise, seconde ligne `ledger-fx-*`), « le solde tombe sous Solde
+   progressif », « le total des mouvements tombe sous Débit et Crédit » sont **rejoués** ; deux sections dont une seule a un
+   justificatif : même nombre d'en-têtes. *Option* : celle de la 55-3a.
 7. **AC-7 — Dialogue.** `components/ui/dialog` avec `showCloseButton={false}`, un bouton « Fermer » propre
    (`reports-nav-documents-close`), une largeur qui tient l'aperçu (`sm:max-w-4xl`) et un contenu qui défile ; titre
-   `reports-nav-documents-title` (« Justificatifs de l'écriture n° { $number } ») ; *Échap* et « Fermer » ferment, focus
-   rendu au bouton d'origine. Ouvrir le dialogue n'appelle pas `goto` (55-1, D2 : l'URL ne change pas). Une navigation qui
+   `reports-nav-documents-title` (« Justificatifs de l'écriture n° { $number } ») ; *Échap* (focus dans le dialogue, hors du cadre
+   du PDF, qui est un autre document) et « Fermer » — le chemin sûr — ferment, focus rendu au bouton d'origine. Ouvrir le dialogue n'appelle pas `goto` (55-1, D2 : l'URL ne change pas). Une navigation qui
    change le rapport affiché (Retour vers un autre onglet) démonte la vue et ferme le dialogue. Un rapport repris de la
    mémoire (55-1, D3) peut porter un justificatif devenu introuvable : l'erreur s'affiche dans le dialogue (AC-4).
 8. **AC-8 — Textes.** Clés neuves du bloc `reports-nav-*`, quatre locales : `reports-nav-documents-button` (« Justificatifs
@@ -110,8 +131,11 @@ par la garde : un fichier commun, non un module.) Les pages des fiches de factur
    colonnes (`:4193-4194`) gagne « ses justificatifs » ; § 11.6.1 (`sec:pdf-fige`, `:1635-1637`) — « au premier
    téléchargement, au premier envoi, ou au premier affichage depuis les rapports », renvoi `\S\ref{sec:pdf-fige}` depuis
    les deux paragraphes des rapports ; le chemin « Mensuel → Rapports → Journal » (`:4318`) contrôlé contre l'onglet réel
-   (« Journaux »). `.tex` seul. Constat : `pdftotext docs/manual/fr/user-manual.pdf - | tr '\n' ' ' | tr -s ' ' | grep -o
-   'premier téléchargement.\{0,120\}'` avant (journal) ; après la régénération à la release, la phrase neuve. Captures du
+   (« Journaux »). **Inventaire des phrases du figement**, chacune corrigée en « au premier téléchargement, envoi ou
+   affichage » avec renvoi au § 11.6.1 : `:1502` (« produit et figé au premier téléchargement ou au premier envoi »),
+   `:1513` (« figé au premier téléchargement ou envoi »), `:1637`, `:1641` (« qui télécharge le premier » → « qui
+   télécharge ou ouvre le premier »), `:1645` (« au premier téléchargement »). `.tex` seul. Constat : `pdftotext docs/manual/fr/user-manual.pdf - | tr '\n' ' ' | tr -s ' ' | grep -o
+   'premier téléchargement.\{0,120\}'` avant (journal) ; après la régénération à la release, les cinq phrases neuves (« affichage »). Captures du
    manuel montrant le grand livre (p. ex. `rd-grand-livre-usd.png`) : périmées si la colonne y paraît, à refaire à la
    release (dit au Change Log).
 10. **AC-10 — Accessibilité.** Bouton au clavier ; dialogue `role="dialog"`, `aria-modal`, étiqueté par son titre ; axe
@@ -122,26 +146,34 @@ par la garde : un fichier commun, non un module.) Les pages des fiches de factur
 
 - **Vitest** `EntryDocuments.test.ts` (neuf) : aucun bouton sans `documents` ; un justificatif → aperçu direct ; deux →
   liste, aperçu, retour ; les trois genres (lecteur appelé, nom de fichier, replis de l'AC-3) ; erreur `410` → texte de
-  `pdfErrorMessage` ; `Blob` vide ; **lecture unique** : dialogue ouvert, `documents` remplacé par un tableau d'objets
+  `pdfErrorMessage` ; `Blob` vide **pour chacun des trois genres** ; **lecture unique** : dialogue ouvert, `documents` remplacé par un tableau d'objets
   égaux → toujours **une** lecture (mutation déclarée au journal : sélection tenue par l'objet → deux lectures, test
   rouge) ; ouverture sans appel de `goto` (mock de `$app/navigation`).
 - **Vitest** `reports.api.test.ts` : `fetchInvoicePdf`, `fetchCreditNotePdf` (URL exactes).
-- **Vitest** `DocumentPreview.test.ts` : tests ajoutés (propriété présente, y compris `SOURCE_DOCUMENT_GONE` ; absente).
+- **Vitest** `DocumentPreview.test.ts` : tests ajoutés (propriété présente rendant une chaîne, y compris pour
+  `SOURCE_DOCUMENT_GONE` ; rendant `undefined` ; absente ; nouveau rendu avec une autre fonction `errorMessage` → **une**
+  lecture).
 - **Vitest** `JournalReportView.test.ts` et `GeneralLedgerView.test.ts` : bouton présent avec `documents`, absent sans ;
-  colonne présente (10 en-têtes) ou absente (9).
+  colonne présente ou absente, et les tests de l'AC-6 rejoués avec la colonne.
 - Rouges sans le correctif, journal `kesh-gate-logs/s55-3b/`.
 - **E2E** `frontend/tests/e2e/reports-entry-documents.spec.ts` (neuf, déclaré au tableau des fichiers communs), **cible :
   le Journal** : créer et valider une facture par l'API, ouvrir *Rapports → Journaux* sur la période, cliquer le bouton de
   l'écriture de vente (`journalEntryId` de la facture) → `document-preview-frame` visible ; *Échap* ferme, focus rendu ;
   axe à zéro violation dialogue ouvert. **Deux justificatifs** : deux factures validées, puis un règlement groupé par
-  `POST /api/v1/reconciliation/accept` (`invoice_group`, patron `reconciliation-group.spec.ts`) → le bouton de l'écriture
-  de règlement ouvre la liste de deux. Retour : dialogue ouvert, onglet changé puis `page.goBack()` → dialogue absent.
+  `POST /api/v1/reconciliation/accept` (`invoice_group`, patron `reconciliation-group.spec.ts:796-800`, écriture lue dans
+  `accepted[0].journalEntryId`) → le bouton de l'écriture de règlement ouvre la liste de deux ; les aides
+  (`createAndValidateInvoiceViaApi`, `createManualCreditStatementViaApi` d'`api-fixtures.ts`, et celles du spec déplacées dans
+  `api-fixtures.ts` plutôt que recopiées) ; nettoyage en `finally` comme le patron (groupe annulé, import supprimé).
+  **Retour** : partir du *Bilan*, cliquer *Journaux* (entrée d'historique, 55-1 D2), générer, ouvrir le dialogue
+  (`[role="dialog"]` visible), puis `page.goBack()` **dialogue ouvert** → URL `tab=balance-sheet`, `[role="dialog"]` en
+  nombre 0, et un clic sur un onglet réussit (aucun overlay ni verrou de défilement resté).
   Grand livre : un test court (colonne, bouton, aperçu). Le test du Journal rougit sans le correctif (aucun bouton).
 
 ## Recette visuelle
 
 Captures (thème clair, `kesh-gate-logs/s55-3b/`) : journal avec boutons (un et plusieurs justificatifs) ; dialogue sur un
-PDF de facture ; dialogue en liste ; erreur `410` ; grand livre avec la colonne.
+PDF de facture ; dialogue en liste ; erreur `410` (obtenue sur une installation jetable en retirant de `KESH_DOCUMENTS_DIR` le fichier `<empreinte>.pdf`
+d'une facture figée, ou par `page.route` rendant `410 INVOICE_PDF_GONE`) ; grand livre avec la colonne.
 
 ## Tâches
 
@@ -202,3 +234,7 @@ n'était pas encore produit le fige, comme un téléchargement. (refs #À-VENIR)
   AC, `Retour` précisé, `DocumentPreview.test.ts` complété sans modification des tests existants (V1-3) ; sélection par
   primitives et test de lecture unique qui rougit par mutation (V1-4) ; E2E à deux justificatifs par
   `reconciliation/accept` (A9, l'angle mort retiré) ; LOW V1-5 à V1-13.
+- 2026-11-25 — Validation P2 (Opus) : 0/0/4/10 ; remédiée : `Blob` vide par une erreur dédiée et `errorMessage` à repli
+  `undefined` (V2-1) ; inventaire des cinq phrases du figement au manuel (V2-2) ; E2E du Retour par l'historique, dialogue
+  ouvert (V2-3) ; colonne conditionnelle et constantes dérivées, tests de couverture rejoués (V2-4) ; figement soumis au
+  mainteneur (Q7, V2-5) ; LOW V2-6 à V2-14.
