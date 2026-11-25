@@ -3,7 +3,7 @@
 Status: drafted
 
 Epic : `_bmad-output/planning-artifacts/epic-55-navigation-interface.md` — D6, D7 (Q3), D8. Issue : #À-VENIR (`enhancement`,
-P4, point a). Release : la prochaine planifiée après la 0.20.0. **Frontend seulement, aucune migration. Suit la 55-1**
+P4, point a). Release : la prochaine planifiée après la 0.20.0. **Frontend seulement, aucune migration. Suit la 55-1a**
 (l'URL du grand livre et le Retour).
 
 ## Story
@@ -46,7 +46,7 @@ Relevé à `origin/main` `1e23edb55` et `pr/46-rapports-groupes` `511e61d54` ; l
   livre divergent après un avoir (`keshwarning`, `:4337-4346`). Côté écran, `getInvoiceSettings()` (`invoices.api.ts:99`, `GET
   /api/v1/company/invoice-settings`, **tout rôle authentifié**, `kesh-api/src/lib.rs:1309`) rend
   `defaultVatPayableAccountId` et `defaultVatRecoverableAccountId` (`invoices.types.ts:144-145`).
-- `ledgerHref` (55-1) : sortie inchangée, écrite sur la fonction d'URL de la 55-1.
+- `ledgerHref` (55-1a) : sortie inchangée, écrite sur la fonction d'URL de la 55-1a.
 - Le décompte vide (`isReportEmpty('vat')`, `reports.api.ts:198-206` : aucune vente, TVA récupérable nulle, aucun solde)
   ne rend pas le tableau (`VatReportView.svelte:11`, `:40-44`).
 - La page passe aujourd'hui aux vues : `dto` seul, et `letterableAccountIds` au grand livre (`+page.svelte:853-870`).
@@ -97,7 +97,7 @@ Relevé à `origin/main` `1e23edb55` et `pr/46-rapports-groupes` `511e61d54` ; l
    égalité de montant (C-55-2-2). Aucun changement du DTO de la TVA, du PDF ni du CSV. *Écart à D7 du fichier d'epic,
    amendé en conséquence* : une ligne à part plutôt qu'un lien dans les lignes « TVA due » et « TVA récupérable », parce que
    la TVA due du tableau n'est pas le solde du compte.
-7. **AC-7 — Retour.** Depuis chacun des liens ci-dessus, *Retour* ramène au rapport d'origine (55-1) : un E2E le constate
+7. **AC-7 — Retour.** Depuis chacun des liens ci-dessus, *Retour* ramène au rapport d'origine (55-1a) : un E2E le constate
    pour le Journal, une contrepartie du Grand livre et la TVA.
 8. **AC-8 — Rien d'autre ne bouge.** Exports PDF et CSV, ordre et texte des lignes, montants, accessibilité (axe à zéro
    violation sur les états peuplés de `reports-navigation.spec.ts`, ci-dessous ; celui de `reports.spec.ts` ne voit que le
@@ -124,11 +124,11 @@ Relevé à `origin/main` `1e23edb55` et `pr/46-rapports-groupes` `511e61d54` ; l
   `TrialBalanceView.test.ts` et `GroupedReportRows.test.ts` (PR 46) : **tests neufs** du lien inchangé (`href`, `title`,
   classe exacts — aucun Vitest actuel ne vérifie ces liens). Chacun rougit sans le correctif (journal
   `kesh-gate-logs/s55-2/vitest-rouge-avant.log`), sauf les trois derniers, filets de non-régression déclarés tels.
-- **Vitest de la page** (fichier `reports-page-url.test.ts` de la 55-1) : réglages de TVA lus **une fois**, au premier
+- **Vitest de la page** (fichier `reports-page-url.test.ts` de la 55-1a) : réglages de TVA lus **une fois**, au premier
   affichage du décompte (y compris par une URL), **aucune** tant que le décompte n'est pas affiché (onglet ouvert sans
   génération) ; échec silencieux ; carte numéro → compte recalculée quand la liste des
   comptes arrive après le rapport.
-- **E2E** `frontend/tests/e2e/reports-navigation.spec.ts` (fichier de la 55-1, bloc `55-2`) : Journal → lien d'une ligne →
+- **E2E** `frontend/tests/e2e/reports-navigation.spec.ts` (fichier de la 55-1a, bloc `55-2`) : Journal → lien d'une ligne →
   grand livre du compte → *Retour* → Journal ; Grand livre « tous les comptes » → contrepartie → grand livre de la
   contrepartie → *Retour* ; TVA → compte d'impôt préalable → *Retour*. **Données** : le preset `with-company` désigne déjà les
   deux comptes de TVA (`seed_accounting_company`, `crates/kesh-db/src/test_fixtures.rs:179-195` : TVA due `2000`, impôt
@@ -148,7 +148,7 @@ section lié et non lié ; TVA avec sa ligne de comptes ; Compte de résultat à
 
 ## Tâches
 
-- [ ] **T0** — Base : `epic/55-navigation` avec la 55-1 ; relever les lignes ; choisir les clés i18n (AC-9).
+- [ ] **T0** — Base : `epic/55-navigation` avec la 55-1a et la 55-1b ; relever les lignes ; choisir les clés i18n (AC-9).
 - [ ] **T1** — Vitest rouges des vues neuves.
 - [ ] **T2** — `AccountLink.svelte` ; remplacement des sites (cinq sur la base PR 46).
 - [ ] **T3** — Compte de résultat, Journaux, Grand livre, TVA. Propriétés neuves : `GeneralLedgerView` reçoit
@@ -188,7 +188,7 @@ Grand livre et, pour la TVA, les comptes de TVA due et d'impôt préalable. (ref
 
 ### References
 
-- Fiche 55-1 ; fiche 46-2 AC-4 (`ledgerHref` sur `account` et `own` seulement).
+- Fiche 55-1a ; fiche 46-2 AC-4 (`ledgerHref` sur `account` et `own` seulement).
 
 ## Dev Agent Record
 

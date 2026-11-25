@@ -9,12 +9,12 @@ la story » et « Une story de solde à la fin de chaque epic » (décisions de 
 ## Story
 
 En tant que mainteneur,
-je veux que la dette laissée par les revues des stories 55-1 à 55-3b soit soldée avant la release,
+je veux que la dette laissée par les revues des stories 55-1a à 55-3b soit soldée avant la release,
 afin que l'epic ne fasse pas monter le compte d'issues ouvertes par sa propre dette.
 
 ## Périmètre
 
-- **La dette des stories de l'epic** : les points des revues (validation et code) des stories 55-1 à 55-3b, et de la
+- **La dette des stories de l'epic** : les points des revues (validation et code) des stories 55-1a à 55-3b, et de la
   revue du code d'intégration, **qui siègent dans du code ou un texte écrit par une story 55-x** et qui n'ont pas été
   corrigés dans leur story. Un défaut trouvé dans le code de l'Epic 46 ou 47 reste à son epic (issue à son nom).
 - **Exclus** : les issues a), b) et c) de l'epic (livrables fermés par la PR de l'epic) ; toute issue antérieure au
@@ -28,7 +28,7 @@ afin que l'epic ne fasse pas monter le compte d'issues ouvertes par sa propre de
 
 ## D'où vient la liste (l'agent de l'epic n'a pas `gh`)
 
-- **Source** : les Change Logs et Dev Agent Records des fiches 55-1 à 55-3b, et le compte rendu de la revue du code
+- **Source** : les Change Logs et Dev Agent Records des fiches 55-1a à 55-3b, et le compte rendu de la revue du code
   d'intégration (journal `kesh-gate-logs/s55-integration/`, qui porte lui aussi une section *Issues à ouvrir*).
   Chaque issue ouverte porte dans son corps « Epic 55, story 55-x » (ou « revue d'intégration »), ce qui permet le
   recoupement. Chaque story y écrit, en section *Issues à ouvrir*, les points non corrigés (sévérité, site, texte de

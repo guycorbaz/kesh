@@ -4,7 +4,7 @@ Status: drafted
 
 Epic : `_bmad-output/planning-artifacts/epic-55-navigation-interface.md` — D9 à D11. Issue : #À-VENIR (point c, comme la
 55-3a). Release : la prochaine planifiée après la 0.20.0. **Frontend seulement, aucune migration.** **Suit la 55-3a**
-(champ `documents`), **la 55-2** (mêmes vues) **et la 55-1** (URL, mémoire des rapports).
+(champ `documents`), **la 55-2** (mêmes vues) **et la 55-1a** (URL, mémoire des rapports).
 
 *Découpée de la 55-3 à la validation P1 (V1-5).*
 
@@ -98,7 +98,7 @@ par la garde : un fichier commun, non un module.) Les pages des fiches de factur
    d'aujourd'hui, `Usage::Download`), y compris pour un rôle *Consultation* : dit au manuel (AC-9). Le justificatif choisi
    est tenu par **deux primitives** (`kind`, `id`), et la fonction `load` est dérivée de ces seules primitives : remplacer
    `documents` par un tableau d'objets égaux ne relit pas le document. Le cas réel : Retour ou Suivant vers le **même
-   onglet**, dont le rapport est repris de la mémoire (55-1, C-55-1-2) ou redemandé, l'écriture y étant encore ; *Générer*
+   onglet**, dont le rapport est repris de la mémoire (55-1a, C-55-1-2) ou redemandé, l'écriture y étant encore ; *Générer*
    n'est pas atteignable dialogue ouvert (modal) et démonte la vue (`{#if loading}`). La décision de figer à l'affichage est
    soumise au mainteneur (Q7 du fichier d'epic) ; refusée, seules les factures déjà figées seraient montrées (un champ de
    plus au contrat de la 55-3a).
@@ -116,9 +116,9 @@ par la garde : un fichier commun, non un module.) Les pages des fiches de factur
 7. **AC-7 — Dialogue.** `components/ui/dialog` avec `showCloseButton={false}`, un bouton « Fermer » propre
    (`reports-nav-documents-close`), une largeur qui tient l'aperçu (`sm:max-w-4xl`) et un contenu qui défile ; titre
    `reports-nav-documents-title` (« Justificatifs de l'écriture n° { $number } ») ; *Échap* (focus dans le dialogue, hors du cadre
-   du PDF, qui est un autre document) et « Fermer » — le chemin sûr — ferment, focus rendu au bouton d'origine. Ouvrir le dialogue n'appelle pas `goto` (55-1, D2 : l'URL ne change pas). Une navigation qui
+   du PDF, qui est un autre document) et « Fermer » — le chemin sûr — ferment, focus rendu au bouton d'origine. Ouvrir le dialogue n'appelle pas `goto` (55-1a, D2 : l'URL ne change pas). Une navigation qui
    change le rapport affiché (Retour vers un autre onglet) démonte la vue et ferme le dialogue. Un rapport repris de la
-   mémoire (55-1, D3) peut porter un justificatif devenu introuvable : l'erreur s'affiche dans le dialogue (AC-4).
+   mémoire (55-1a, D3) peut porter un justificatif devenu introuvable : l'erreur s'affiche dans le dialogue (AC-4).
 8. **AC-8 — Textes.** Clés neuves du bloc `reports-nav-*`, quatre locales : `reports-nav-documents-button` (« Justificatifs
    de l'écriture n° { $number } : { $count } »), `reports-nav-documents-title`, `reports-nav-documents-kind-invoice`
    (« Facture »), `-kind-credit-note` (« Avoir »), `-kind-supplier-document` (« Document fournisseur »),
@@ -164,7 +164,7 @@ par la garde : un fichier commun, non un module.) Les pages des fiches de factur
   `accepted[0].journalEntryId`) → le bouton de l'écriture de règlement ouvre la liste de deux ; les aides
   (`createAndValidateInvoiceViaApi`, `createManualCreditStatementViaApi` d'`api-fixtures.ts`, et celles du spec déplacées dans
   `api-fixtures.ts` plutôt que recopiées) ; nettoyage en `finally` comme le patron (groupe annulé, import supprimé).
-  **Retour** : partir du *Bilan*, cliquer *Journaux* (entrée d'historique, 55-1 D2), générer, ouvrir le dialogue
+  **Retour** : partir du *Bilan*, cliquer *Journaux* (entrée d'historique, 55-1a D2), générer, ouvrir le dialogue
   (`[role="dialog"]` visible), puis `page.goBack()` **dialogue ouvert** → URL `tab=balance-sheet`, `[role="dialog"]` en
   nombre 0, et un clic sur un onglet réussit (aucun overlay ni verrou de défilement resté).
   Grand livre : un test court (colonne, bouton, aperçu). Le test du Journal rougit sans le correctif (aucun bouton).
@@ -177,7 +177,7 @@ d'une facture figée, ou par `page.route` rendant `410 INVOICE_PDF_GONE`) ; gran
 
 ## Tâches
 
-- [ ] **T0** — Base `epic/55-navigation` avec la 55-1, la 55-2 et la 55-3a ; lignes du manuel sur la base PR 46.
+- [ ] **T0** — Base `epic/55-navigation` avec les 55-1a, 55-1b, 55-2 et 55-3a ; lignes du manuel sur la base PR 46.
 - [ ] **T1** — Vitest rouges.
 - [ ] **T2** — `DocumentPreview` (`errorMessage`) ; lecteurs dans `reports.api.ts` ; `EntryDocuments.svelte` (bouton,
       dialogue `ui/dialog`, liste, sélection par primitives).

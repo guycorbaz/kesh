@@ -3,7 +3,7 @@
 **Kickoff : 2026-11-25.** Numéro **55** attribué par le mainteneur le 2026-11-25 ; responsable de l'epic : contributeur.
 Branche `epic/55-navigation`, partie de `origin/main` à `1e23edb55` pour le kickoff (fichier d'epic et fiches seulement,
 aucun code). **Le développement repart de la PR de l'Epic 46, une fois celle-ci poussée** (§ *Recouvrement avec l'Epic 46*) :
-la branche reprend alors cette base avant la première ligne de code de la 55-1.
+la branche reprend alors cette base avant la première ligne de code de la 55-1a.
 
 **Release visée** : la **prochaine release planifiée après la 0.20.0** — numéro et milestone **fixés par le mainteneur**
 (`CLAUDE.md` § *Numérotation des versions* : un numéro n'est acquis qu'au tag). Contrainte d'ordre : l'Epic 55 part de
@@ -13,8 +13,12 @@ Un epic = une release.
 **Migration** : aucune. **Backend** : **oui, pour la seule 55-3a** (voir § *Backend*), ajout d'un champ aux réponses JSON du
 journal et du grand livre — l'epic avait été annoncé « frontend seulement » ; **à confirmer par le mainteneur (Q1)**.
 
-**Taille** : cinq stories, solde compris — sous la borne de six d'un epic de correction ou d'amélioration (la 55-3, ajoutée
-le 2026-11-25, découpée en 55-3a et 55-3b à sa validation P1 par la règle de splitting préventif).
+**Taille** : **six stories**, solde compris — **à la borne** de six d'un epic de correction ou d'amélioration. La 55-3,
+ajoutée le 2026-11-25, est découpée en 55-3a et 55-3b à sa validation P1 (plus de cinq modules) ; la 55-1, en 55-1a et
+55-1b à sa validation P3. ⚠️ **Signal de non-convergence déclaré au mainteneur** (`CLAUDE.md` § *Règle de splitting
+préventif*) : la P3 de la 55-1 a remonté un HIGH après une P2 à MEDIUM, une part de ses défauts naissant des remédiations
+de la P2 (recyclage) ; le découpage sépare la présentation de l'Epic 46 (55-1b) de l'URL des rapports (55-1a), et le modèle
+est simplifié (la page n'applique jamais l'URL qu'elle écrit). Plus aucune story ne peut s'ajouter sans en sortir une.
 
 **Issues** (ouvertes par l'agent du mainteneur ; numéros à reporter) :
 
@@ -28,7 +32,7 @@ le 2026-11-25, découpée en 55-3a et 55-3b à sa validation P1 par la règle de
 pas `gh`) : issues ouvertes au tag précédent : **À-MESURER** ; dont bugs : **À-MESURER**. Objectif à terme : moins d'issues
 ouvertes au tag de cette release qu'au tag précédent (objectif, non barrière).
 
-**Plafond de la story de solde (55-4)** : **2 issues** de dette des stories 55-1 à 55-3b (comme la 46-7).
+**Plafond de la story de solde (55-4)** : **2 issues** de dette des stories 55-1a à 55-3b (comme la 46-7).
 
 **Règles des fichiers communs** (`CLAUDE.md` § *Travailler à plusieurs développeurs*) : aucune ligne au `CHANGELOG.md` en
 cours d'epic (chaque fiche a sa *Note de version*) ; aucun PDF de manuel commité (`.tex` seul) ; catalogues i18n et
@@ -39,7 +43,7 @@ cours d'epic (chaque fiche a sa *Note de version*) ; aucun PDF de manuel commit�
 L'utilisateur, en tenant ses livres, navigue dans les Rapports comme dans des pages :
 
 1. **Retour et Suivant** du navigateur ramènent au rapport précédent ou suivant, avec sa période et ses filtres ; une vue
-   des Rapports se **partage par un lien** et se retrouve au rechargement (55-1).
+   des Rapports se **partage par un lien** et se retrouve au rechargement (55-1a ; la présentation de l'Epic 46, 55-1b).
 2. Le **numéro de compte est un lien** vers le grand livre de ce compte partout où un rapport en montre un — Bilan, Compte
    de résultat, Balance, Journaux, Grand livre et, par les comptes désignés, TVA —, par **un seul composant** (55-2).
 3. **Les justificatifs d'une écriture** — PDF figé de la facture, PDF de l'avoir, document d'une facture fournisseur —
@@ -66,7 +70,7 @@ Base `origin/main` à `1e23edb55` ; branches de l'Epic 46 lues par `git show <br
 | Onglet | `activeTab` est un `$state` du composant ; `selectTab` écrit `?tab=<id>` en **`replaceState`** (Story 21-7, D-7c, « pas d'empilement ») ; lu **une fois** au montage (`onMount`) | `routes/(app)/reports/+page.svelte:85`, `:546-551`, `:608-615` |
 | Lien de compte | `ledgerHref(accountId, from, to)` rend `/reports?tab=general-ledger&accountId=…&from=…&to=…` ; un `<a href>` : SvelteKit **empile** une entrée d'historique | `features/reports/reports.api.ts:574-582` |
 | Arrivée par un lien | un `$effect` lit `tab`, `from`, `to`, `accountId` **seulement si `tab=general-ledger`**, et génère le grand livre | `+page.svelte:567-586` |
-| **Le défaut b)** | après un clic sur un lien de compte depuis le Bilan, *Retour* ramène l'URL à `?tab=balance-sheet` (ou `/reports`) **sans remonter le composant** : l'effet ci-dessus sort tôt (`tab ≠ general-ledger`), `activeTab` reste `general-ledger`. L'URL a changé, l'écran non ; le second *Retour* quitte la page. Les paramètres de période, d'exercice, de compte (hors lien) et de regroupement ne sont jamais dans l'URL | lecture du code, à confirmer par l'E2E rouge de la 55-1 (T1) |
+| **Le défaut b)** | après un clic sur un lien de compte depuis le Bilan, *Retour* ramène l'URL à `?tab=balance-sheet` (ou `/reports`) **sans remonter le composant** : l'effet ci-dessus sort tôt (`tab ≠ general-ledger`), `activeTab` reste `general-ledger`. L'URL a changé, l'écran non ; le second *Retour* quitte la page. Les paramètres de période, d'exercice, de compte (hors lien) et de regroupement ne sont jamais dans l'URL | lecture du code, à confirmer par l'E2E rouge de la 55-1a (T1) |
 | Période, exercice | `selectedFiscalYearId`, `periodStart`, `periodEnd` : `$state`, jamais écrits dans l'URL | `+page.svelte:82-84` |
 | Grand livre | `ledgerFrom`, `ledgerTo`, `ledgerAccountId`, `ledgerIncludeZero` : `$state` | `+page.svelte:109-112` |
 | Projets | `selectedProjectId`, `projectMode` | `+page.svelte:91-92` |
@@ -85,25 +89,25 @@ Base `origin/main` à `1e23edb55` ; branches de l'Epic 46 lues par `git show <br
 - **D1 — L'URL est la source de l'état des Rapports.** L'onglet et tous les paramètres de la vue (exercice, période,
   compte, comptes sans mouvement, compte analytique et mode, regroupement de l'Epic 46) sont des paramètres de requête ;
   l'écran se déduit de l'URL au chargement **et à chaque navigation** (Retour, Suivant, lien), par une fonction pure
-  (`reports-url.ts`, lecture et écriture), non par des effets dispersés. (55-1)
+  (`reports-url.ts`, lecture et écriture), non par des effets dispersés. (55-1a)
 - **D2 — Empiler ou remplacer selon le geste.** Clic sur un onglet et clic sur un lien de compte : **`pushState`** (une
   entrée d'historique) ; *Générer*, contrôles de regroupement, accordéons et flèches du clavier sur les onglets :
   **`replaceState`** ; un champ modifié sans *Générer* n'écrit rien (l'URL décrit le dernier rapport demandé).
   ⚠️ Le clic sur un onglet en `pushState` **renverse D-7c** de la Story 21-7 (« pas d'empilement ») : c'est la demande de
-  l'utilisateur (b). (55-1)
+  l'utilisateur (b). (55-1a)
 - **D3 — Une URL venue de l'extérieur affiche son rapport ; un clic sur un onglet ne génère rien (Q2).** Arrivée sur une
   URL complète (lien collé, rechargement, lien de compte, Retour ou Suivant) : le rapport s'affiche sans clic sur
   *Générer*, **repris de la mémoire** s'il a été produit avec les mêmes paramètres, **redemandé** sinon. Le clic sur un
   onglet, lui, montre le rapport que l'onglet a déjà, ou son invite, **comme aujourd'hui** : aucune requête, et la règle
   revue de la 46-2 (un rapport groupé redemandé à la fin d'une génération en vol) reste intacte. `/reports` sans
-  paramètre reste l'écran d'aujourd'hui. *Écarté* (validation P1 de la 55-1) : générer à chaque changement d'onglet.
+  paramètre reste l'écran d'aujourd'hui. *Écarté* (validation P1 de la 55-1, devenue 55-1a) : générer à chaque changement d'onglet.
   *(Amendée le 2026-11-25.)*
 - **D4 — Vue de regroupement : URL d'abord, mémoire ensuite.** Les paramètres de regroupement de l'URL priment sur la
   mémoire du navigateur de l'Epic 46 ; absents, la vue mémorisée s'applique et l'URL est complétée (`replaceState`), pour
   qu'un lien copié porte la vue affichée. La vue affichée reste mémorisée comme le fait déjà l'Epic 46 (dernière vue
-  affichée par société et rapport). (55-1)
+  affichée par société et rapport). (55-1b)
 - **D5 — Valeurs invalides : ignorées paramètre par paramètre, URL normalisée** en `replaceState`, sans message. Les
-  bornes métier (période hors exercice, `from > to`) restent jugées par l'API, avec ses messages d'aujourd'hui. (55-1)
+  bornes métier (période hors exercice, `from > to`) restent jugées par l'API, avec ses messages d'aujourd'hui. (55-1a)
 - **D6 — Un seul composant de lien de compte** (`AccountLink.svelte`) qui rend le numéro et le lien de `ledgerHref` ;
   toutes les vues l'emploient. `ledgerHref` garde sa sortie **à l'octet près** (ordre `tab`, `accountId`, `from`, `to`)
   pour l'accueil et la réévaluation. (55-2)
@@ -131,14 +135,15 @@ Base `origin/main` à `1e23edb55` ; branches de l'Epic 46 lues par `git show <br
 | Clé | Titre | Dépend de | Taille | Fiche |
 |---|---|---|---|---|
 | 55-0 | Kickoff (ce fichier ; pas de fiche) | — | — | — |
-| 55-1 | L'état des Rapports dans l'URL : Retour, Suivant, lien partagé | base PR 46 | M | `55-1-etat-des-rapports-dans-l-url.md` |
-| 55-2 | Le lien de compte partout : Journaux, Grand livre, TVA, Compte de résultat à plat | 55-1 | S | `55-2-lien-de-compte-partout.md` |
+| 55-1a | L'état des Rapports dans l'URL : Retour, Suivant, lien partagé | base PR 46 | M | `55-1a-etat-des-rapports-dans-l-url.md` |
+| 55-1b | La présentation des rapports groupés dans l'URL (Epic 46) | 55-1a | S | `55-1b-presentation-dans-l-url.md` |
+| 55-2 | Le lien de compte partout : Journaux, Grand livre, TVA, Compte de résultat à plat | 55-1a | S | `55-2-lien-de-compte-partout.md` |
 | 55-3a | Les justificatifs d'une écriture dans la réponse du journal et du grand livre (serveur) | base PR 46 ; Q1 ; **backend** | M | `55-3a-justificatifs-serveur.md` |
 | 55-3b | Ouvrir les justificatifs depuis le Journal (et le Grand livre) | 55-3a, 55-2 | M | `55-3b-justificatifs-ecran.md` |
 | 55-4 | Solde de la dette de l'epic (plafond : **2 issues**) | toutes | S | `55-4-solde-dette-epic.md` |
 
-Ordre : 55-1 → 55-2 → 55-3b → 55-4 ; la 55-3a (serveur, aucun fichier commun avec les autres stories) peut se faire en
-parallèle de la 55-1 ou de la 55-2, avant la 55-3b.
+Ordre : 55-1a → 55-1b → 55-2 → 55-3b → 55-4 ; la 55-3a (serveur, aucun fichier commun avec les autres stories) peut se
+faire en parallèle de la 55-1a ou de la 55-2, avant la 55-3b.
 
 ## Gates
 
@@ -163,15 +168,15 @@ site, texte) : c'est la source de la story de solde (55-4).
 
 L'epic était annoncé « frontend seulement ». **La 55-3a touche le backend** : `kesh-report` (`journal_report.rs`,
 `general_ledger.rs`, `documents.rs` neuf : une fonction de lecture des justificatifs, partagée), sans migration, sans route neuve, sans changement des
-exports PDF et CSV ; le contrat JSON du journal et du grand livre gagne un champ **additif**. Les 55-1, 55-2 et 55-4 restent
+exports PDF et CSV ; le contrat JSON du journal et du grand livre gagne un champ **additif**. Les 55-1a, 55-1b, 55-2, 55-3b et 55-4 restent
 frontend seulement. **Q1 au mainteneur** : accepter ce périmètre, ou sortir les 55-3a et 55-3b de l'epic.
 
 ## Recouvrement avec l'Epic 46
 
 L'Epic 46 (rapports par groupes) n'est pas encore dans `main` ; il modifie la page des Rapports et les vues que l'Epic 55
-touche. **L'état d'URL de la 55-1 inclut le regroupement de l'Epic 46** (`view`, `level`, `subtotals`, `open`, `closed`).
+touche. **L'état d'URL inclut le regroupement de l'Epic 46** (55-1b) (`view`, `level`, `subtotals`, `open`, `closed`).
 L'Epic 55 se développe **sur la base de la PR 46** une fois poussée ; le second arrivé dans `main` reprend l'autre et rejoue
-les gates (`CLAUDE.md` § *Ordre des releases*). Si la PR 46 tarde, la 55-1 peut partir de `main` **sans** les paramètres de
+les gates (`CLAUDE.md` § *Ordre des releases*). Si la PR 46 tarde, la 55-1a peut partir de `main` **sans** les paramètres de
 regroupement, à condition de le dire au Change Log et de les ajouter à la reprise (la fonction `reports-url.ts` est faite
 pour s'étendre d'un paramètre sans rien changer d'autre).
 
@@ -181,26 +186,26 @@ Déclarés au kickoff (`CLAUDE.md` § *Fusions et fichiers communs*), relevés l
 
 | Fichier ou module | Stories de l'epic | Autres chantiers qui le touchent | Règle |
 |---|---|---|---|
-| `frontend/src/routes/(app)/reports/+page.svelte` | 55-1 (fort), 55-2, 55-3b | **Epic 46** (`pr/46-rapports-groupes` `511e61d54`, `story/46-export-api-groupe` `8ca669b3f`, `story/46-5` `0f483c7bb` : +287 lignes, `GroupingControls`, `genSeq`/`invalidateInFlight`, `companyId`) | 55 part de la PR 46 ; l'état de regroupement passe par l'URL (D4) |
-| `frontend/src/routes/(app)/reports/+page.ts` | 55-1 (lecture) | Epic 46 (`companyId`) | — |
-| `frontend/src/lib/features/reports/reports-grouping.ts` | 55-1 (lecture et écriture de la vue depuis l'URL) | **Epic 46** (neuf) | réutiliser `sanitizeGroupingView`, `isDetailLevel`, aucune copie |
+| `frontend/src/routes/(app)/reports/+page.svelte` | 55-1a (fort), 55-1b, 55-2, 55-3b | **Epic 46** (`pr/46-rapports-groupes` `511e61d54`, `story/46-export-api-groupe` `8ca669b3f`, `story/46-5` `0f483c7bb` : +287 lignes, `GroupingControls`, `genSeq`/`invalidateInFlight`, `companyId`) | 55 part de la PR 46 ; l'état de regroupement passe par l'URL (D4) |
+| `frontend/src/routes/(app)/reports/+page.ts` | 55-1a (lecture) | Epic 46 (`companyId`) | — |
+| `frontend/src/lib/features/reports/reports-grouping.ts` | 55-1b (lecture de la vue depuis l'URL) | **Epic 46** (neuf) | réutiliser `sanitizeGroupingView`, `isDetailLevel`, aucune copie |
 | `frontend/src/lib/features/reports/GroupingControls.svelte`, `GroupedReportRows.svelte` | 55-2 (`AccountLink` dans `GroupedReportRows`) | **Epic 46** (neufs) | — |
 | `frontend/src/lib/features/reports/BalanceSheetView.svelte`, `IncomeStatementView.svelte` | 55-2 | **Epic 46** (branches groupées) ; **Epic 47** (`epic/47-comptes-miroirs` : `MirrorOfNote`) | lien seul remplacé, structure inchangée ; `MirrorOfNote` (Epic 47) reste en texte, issue ouverte par la 55-2 : le second arrivé le sait |
 | `frontend/src/lib/features/reports/TrialBalanceView.svelte` | 55-2 | **Epic 46** (46-6b, balance groupée) | idem |
-| `frontend/src/lib/features/reports/reports.api.ts` | 55-1 (`ledgerHref` inchangé), 55-2, 55-3b (lecteurs des PDF) | **Epic 46** (paramètres de regroupement, 46-8 : `getReportExportUrl`) | `ledgerHref` : sortie inchangée (D6) |
+| `frontend/src/lib/features/reports/reports.api.ts` | 55-1a (`ledgerHref` inchangé), 55-2, 55-3b (lecteurs des PDF) | **Epic 46** (paramètres de regroupement, 46-8 : `getReportExportUrl`) | `ledgerHref` : sortie inchangée (D6) |
 | `frontend/src/lib/features/reports/reports.types.ts` | 55-3b (`documents`) | **Epic 46**, Epic 47 | champ ajouté en fin de type |
-| `frontend/src/lib/features/reports/JournalReportView.svelte`, `GeneralLedgerView.svelte`, `VatReportView.svelte`, `ReportSelector.svelte` | 55-1 (`ReportSelector` lu seulement), 55-2, 55-3b | — | 55-2 puis 55-3b |
-| `frontend/src/lib/features/reports/reports-url.ts` (neuf), `AccountLink.svelte` (neuf), `EntryDocuments.svelte` (neuf) | 55-1, 55-2, 55-3b | — | — |
+| `frontend/src/lib/features/reports/JournalReportView.svelte`, `GeneralLedgerView.svelte`, `VatReportView.svelte`, `ReportSelector.svelte` | 55-1a (`ReportSelector` lu seulement), 55-2, 55-3b | — | 55-2 puis 55-3b |
+| `frontend/src/lib/features/reports/reports-url.ts` (neuf), `AccountLink.svelte` (neuf), `EntryDocuments.svelte` (neuf) | 55-1a, 55-1b, 55-2, 55-3b | — | — |
 | `frontend/src/lib/features/imported-supplier-invoices/DocumentPreview.svelte` | 55-3b (propriété facultative `errorMessage`) | — | comportement d'aujourd'hui inchangé sans la propriété |
 | `crates/kesh-report/src/journal_report.rs`, `general_ledger.rs`, `documents.rs` (neuf) | 55-3a | ni l'Epic 46 ni l'Epic 47 n'y touchent | champ additif, exports inchangés |
 | `crates/kesh-report/src/lib.rs` | 55-3a (`pub mod documents`) | **Epic 46** (+25 lignes, `pub mod`/`pub use`), **Epic 47** | une ligne, dans l'ordre alphabétique des modules |
 | `crates/kesh-report/src/csv.rs`, `pdf.rs`, `benches/export.rs` (littéraux de test seulement) | 55-3a | **Epic 46** (PR 46 : `csv.rs` 1119, `pdf.rs` 1776 lignes touchées), **Epic 47** (`csv.rs`, `pdf.rs`, `presentation.rs`) | une ligne `documents: Vec::new(),` par littéral, rien d'autre |
 | `docs/api-external.md` (grand livre `:310`, journal `:1164` à `1e23edb55`) | 55-3a | **Epic 46** (+74 lignes vers `:313`), **Epic 47** (vers `:308-311`) | phrase ajoutée en fin de paragraphe, lignes relevées sur la base |
 | `crates/kesh-api/tests/reports_e2e.rs` | 55-3a | Epics 46 et 47 (cités par le fichier de l'Epic 46) | bloc de tests propre |
-| `crates/kesh-i18n/locales/*/messages.ftl` | 55-2, 55-3b (55-1 si un texte apparaît) | Epic 46 (`reports-groups-*`) | bloc `reports-nav-*` propre à l'epic |
+| `crates/kesh-i18n/locales/*/messages.ftl` | 55-2, 55-3b (55-1a si un texte apparaît) | Epic 46 (`reports-groups-*`) | bloc `reports-nav-*` propre à l'epic |
 | `frontend/src/lib/shared/i18n-keys.test.ts` (`sitesTotal`) | 55-2, 55-3b | tous | recompté par la garde après chaque reprise |
-| `frontend/tests/e2e/reports.spec.ts`, `homepage-charts.spec.ts`, `open-items.spec.ts`, `dunning-roundtrip.spec.ts` | 55-1 (comportement de génération, D3) | Epic 46 (`reports-groupes*.spec.ts`) | E2E neufs : `reports-navigation.spec.ts` (55-1, 55-2), `reports-entry-documents.spec.ts` (55-3b) |
-| `docs/manual/fr/user-manual.tex` § *Rapports comptables* (`:4101`-`:4476` à `1e23edb55`) | 55-1, 55-2, 55-3b (et § 11.6.1 *Le PDF émis est figé*, `:1635`) | Epic 46 (§ *Bilan*, *Compte de résultat*, *Balance*) | `.tex` seul, PDF à la release |
+| `frontend/tests/e2e/reports.spec.ts`, `homepage-charts.spec.ts`, `open-items.spec.ts`, `dunning-roundtrip.spec.ts` | 55-1a (comportement de génération, D3) | Epic 46 (`reports-groupes*.spec.ts`) | E2E neufs : `reports-navigation.spec.ts` (55-1a, 55-1b, 55-2), `reports-entry-documents.spec.ts` (55-3b) |
+| `docs/manual/fr/user-manual.tex` § *Rapports comptables* (`:4101`-`:4476` à `1e23edb55`) | 55-1a, 55-1b, 55-2, 55-3b (et § 11.6.1 *Le PDF émis est figé*, `:1635`) | Epic 46 (§ *Bilan*, *Compte de résultat*, *Balance*) | `.tex` seul, PDF à la release |
 | `_bmad-output/implementation-artifacts/sprint-status.yaml` | toutes | tous | bloc propre à l'Epic 55 |
 
 ## Questions au mainteneur
