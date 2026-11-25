@@ -1,12 +1,18 @@
 # Story 55-3b : ouvrir les justificatifs d'une écriture depuis le Journal (et le Grand livre)
 
-Status: ready-for-dev
+Status: drafted
 
 Epic : `_bmad-output/planning-artifacts/epic-55-navigation-interface.md` — D9 à D11. Issue : #À-VENIR (point c, comme la
 55-3a). Release : la prochaine planifiée après la 0.20.0. **Frontend seulement, aucune migration.** **Suit la 55-3a**
-(champ `documents`), **la 55-2** (mêmes vues) **et la 55-1a** (URL, mémoire des rapports).
+(booléen `hasDocuments`, route `GET /journal-entries/{id}/documents`), **la 55-2** (mêmes vues) **et la 55-1a** (URL, mémoire des rapports).
 
 *Découpée de la 55-3 à la validation P1 (V1-5).*
+
+*⚠️ **Récrite le 2026-11-25 sur décision de l'utilisateur** : **une seule icône PDF par ligne d'écriture**, quel que soit
+le nombre de justificatifs — ni compteur, ni menu ; au clic, **la visionneuse existante** (`DocumentPreview`, dont le
+cadre affiche le PDF dans le lecteur du navigateur, pages à gauche), avec **la liste des documents de l'écriture en haut** :
+un clic dans la liste change le document affiché ; avec un seul justificatif, la liste se réduit à son nom. La liste se
+charge au clic (route de la 55-3a). Validation reprise à P1 sur cette version.*
 
 ## Story
 
@@ -23,8 +29,18 @@ par la garde : un fichier commun, non un module.) Les pages des fiches de factur
 
 ## Ce qui se lit au code (`origin/main` `1e23edb55`)
 
-- Le contrat de la 55-3a : `documents?: EntryDocument[]` sur `JournalEntryRow` et `LedgerLine`, `EntryDocument { kind:
-  'invoice' | 'creditNote' | 'supplierDocument'; id: number; number: string | null; fileName?: string }`.
+- Le contrat de la 55-3a : `hasDocuments?: boolean` sur `JournalEntryRow` et `LedgerLine` ; `GET
+  /api/v1/journal-entries/{id}/documents` → `EntryDocument[]`, `EntryDocument { kind: 'invoice' | 'creditNote' |
+  'supplierDocument'; id: number; number: string | null; fileName?: string }`.
+- **La visionneuse** : la seule de Kesh est `DocumentPreview` (`grep -rln "iframe\|<object\|<embed"` sous
+  `frontend/src` ne rend qu'elle ; aucune bibliothèque PDF — ni `pdfjs` ni vignettes — dans `package.json`) : un `<iframe>`
+  d'une URL `blob:` où le **lecteur PDF du navigateur** affiche le document, avec ses pages à gauche. Elle sert déjà à
+  quatre endroits : `AttachDocumentPicker.svelte:198`, `supplier-invoices/new/+page.svelte:236`,
+  `supplier-invoices/import/+page.svelte:605`, `journal-entries/[id]/+page.svelte:618`. Pour recevoir une liste, il ne lui
+  faut rien : elle affiche **un** document, et une nouvelle fonction `load` le remplace (son `$effect` relit, et révoque
+  l'URL `blob:` précédente). La liste vit donc **au-dessus d'elle**, dans un composant neuf qui choisit le document et lui
+  passe `load` et `fileName` — `DocumentPreview` ne change pas pour ses quatre appelants (une seule propriété facultative,
+  `errorMessage`, AC-4).
 - `frontend/src/lib/features/imported-supplier-invoices/DocumentPreview.svelte` : `Props { load: () => Promise<Blob>;
   fileName: string }` (`:23-28`) ; un `$effect` relit le document **à chaque nouvelle fonction `load`** ; l'erreur de `load`
   est rendue par deux textes fixes — `SOURCE_DOCUMENT_GONE` → « Le document n'a pas été restauré », tout le reste → « Le
@@ -67,13 +83,16 @@ par la garde : un fichier commun, non un module.) Les pages des fiches de factur
 
 ## Critères d'acceptation
 
-1. **AC-1 — Journal, un justificatif (critère principal).** Une écriture de vente d'une facture validée porte, sur sa ligne
-   d'en-tête (`#numéro`, date), un **bouton** icône (`data-testid="journal-entry-documents-<entryId>"`, `aria-label`
-   « Justificatifs de l'écriture n° N : 1 ») ; un clic ouvre un dialogue modal qui affiche le PDF par `DocumentPreview`, lu
-   par `GET /api/v1/invoices/{id}/pdf`. Une écriture sans justificatif n'a pas de bouton.
-2. **AC-2 — Plusieurs justificatifs.** Une écriture à deux justificatifs : `aria-label` « … : 2 », le nombre visible ; le
-   dialogue s'ouvre sur une **liste** (genre, numéro, nom du fichier d'un document fournisseur) ; choisir un justificatif
-   l'affiche dans le même dialogue, avec « Retour à la liste ».
+1. **AC-1 — Journal : une icône par écriture (critère principal).** Une écriture qui porte `hasDocuments` montre, sur sa
+   ligne d'en-tête (`#numéro`, date), **une** icône PDF — un `<button>` (`data-testid="journal-entry-documents-<entryId>"`,
+   `aria-label` « Justificatifs de l'écriture n° N »), **sans compteur ni menu**, qu'elle ait un justificatif ou plusieurs.
+   Une écriture sans `hasDocuments` n'en a pas. Aucune requête n'est faite avant le clic.
+2. **AC-2 — La visionneuse et sa liste.** Au clic, un dialogue s'ouvre ; il lit `GET /api/v1/journal-entries/{id}/documents`
+   (une requête, un indicateur de chargement), puis montre **en haut** la liste des justificatifs (genre, numéro, nom du
+   fichier d'un document fournisseur ; l'élément affiché marqué `aria-current`) et **dessous** `DocumentPreview` sur le
+   **premier** de la liste. Un clic sur un autre élément change le document affiché, sans fermer le dialogue. Un seul
+   justificatif : la liste se réduit à son nom (aucun choix). Liste vide (justificatif disparu depuis le rapport) : le
+   message `reports-nav-documents-none` ; erreur de la route : `errorMessageOf`.
 3. **AC-3 — Les trois genres et leurs lecteurs.** `fetchInvoicePdf(id)` → `GET /api/v1/invoices/{id}/pdf` ;
    `fetchCreditNotePdf(id)` → `GET /api/v1/credit-notes/{id}/pdf` (les deux dans `reports.api.ts`, par `apiClient.getBlob`) ;
    document fournisseur → `fetchSupplierInvoiceSourceDocument(id)`. Noms passés à `DocumentPreview` :
@@ -97,16 +116,17 @@ par la garde : un fichier commun, non un module.) Les pages des fiches de factur
 5. **AC-5 — Figement et lecture unique.** Ouvrir la facture d'une écriture la **fige** si elle ne l'était pas (route
    d'aujourd'hui, `Usage::Download`), y compris pour un rôle *Consultation* : dit au manuel (AC-9). Le justificatif choisi
    est tenu par **deux primitives** (`kind`, `id`), et la fonction `load` est dérivée de ces seules primitives : remplacer
-   `documents` par un tableau d'objets égaux ne relit pas le document. Le cas réel : Retour ou Suivant vers le **même
+   le rapport ou la liste relue par des objets égaux ne relit pas le document. Changer d'élément dans la liste ne relit que le document
+   choisi. Le cas réel du tableau remplacé : Retour ou Suivant vers le **même
    onglet**, dont le rapport est repris de la mémoire (55-1a, C-55-1-2) ou redemandé, l'écriture y étant encore ; *Générer*
    n'est pas atteignable dialogue ouvert (modal) et démonte la vue (`{#if loading}`). La décision de figer à l'affichage est
    soumise au mainteneur (Q7 du fichier d'epic) ; refusée, la 55-3a ne rend que les factures déjà figées (un filtre serveur,
    aucun champ de plus au contrat).
 6. **AC-6 — Grand livre.** Une colonne `documents` (`COLUMNS`, après `description`, en-tête `reports-nav-ledger-column-documents`
-   « Justificatifs », rendu étroit), **présente seulement si au moins une ligne du rapport a des justificatifs** (condition
+   « Justificatifs », rendu étroit), **présente seulement si au moins une ligne du rapport porte `hasDocuments`** (condition
    sur le rapport, non sur la section : toutes les sections ont alors le même nombre d'en-têtes) ; les constantes qui
    découlent de `COLUMNS` (`COLUMN_COUNT`, `BALANCE_LABEL_SPAN`, `AFTER_BALANCE`, `MOVEMENTS_LABEL_SPAN`, `AFTER_MOVEMENTS`,
-   `indexOf`) deviennent dérivées de la liste effective. Chaque ligne qui a des justificatifs porte le bouton
+   `indexOf`) deviennent dérivées de la liste effective. Chaque ligne qui porte `hasDocuments` porte la même icône
    (`data-testid="ledger-entry-documents-<lineId>"`, unique), `aria-label` avec le numéro de `piece()` (préfixé quand la
    période traverse un exercice), même dialogue. Le commentaire `:36-39` est corrigé. Sans justificatif, les tests existants
    restent verts sans modification ; avec une ligne à justificatif, 10 en-têtes, et les trois tests « chaque rangée … couvre
@@ -120,10 +140,10 @@ par la garde : un fichier commun, non un module.) Les pages des fiches de factur
    change le rapport affiché (Retour vers un autre onglet) démonte la vue et ferme le dialogue. Un rapport repris de la
    mémoire (55-1a, D3) peut porter un justificatif devenu introuvable : l'erreur s'affiche dans le dialogue (AC-4).
 8. **AC-8 — Textes.** Clés neuves du bloc `reports-nav-*`, quatre locales : `reports-nav-documents-button` (« Justificatifs
-   de l'écriture n° { $number } : { $count } »), `reports-nav-documents-title`, `reports-nav-documents-kind-invoice`
-   (« Facture »), `-kind-credit-note` (« Avoir »), `-kind-supplier-document` (« Document fournisseur »),
-   `reports-nav-documents-back` (« Retour à la liste »), `reports-nav-documents-close` (« Fermer »),
-   `reports-nav-documents-empty`, `reports-nav-ledger-column-documents` ; constat : `i18n-keys` (`sitesTotal` recompté par
+   de l'écriture n° { $number } »), `reports-nav-documents-title`, `reports-nav-documents-kind-invoice` (« Facture »),
+   `-kind-credit-note` (« Avoir »), `-kind-supplier-document` (« Document fournisseur »), `reports-nav-documents-list`
+   (libellé de la liste), `reports-nav-documents-loading`, `reports-nav-documents-none`, `reports-nav-documents-close`
+   (« Fermer »), `reports-nav-documents-empty`, `reports-nav-ledger-column-documents` ; constat : `i18n-keys` (`sitesTotal` recompté par
    la garde, parité des quatre locales), `i18n-libelle-en-dur`, `i18n-un-repli-par-cle`, `npm run lint-i18n-ownership`
    verts.
 9. **AC-9 — Manuel.** `docs/manual/fr/user-manual.tex` (lignes à `1e23edb55`) : § *Journal des écritures* (`:4316`) — le
@@ -144,24 +164,29 @@ par la garde : un fichier commun, non un module.) Les pages des fiches de factur
 
 ## Tests à écrire, et la preuve du rouge
 
-- **Vitest** `EntryDocuments.test.ts` (neuf) : aucun bouton sans `documents` ; un justificatif → aperçu direct ; deux →
-  liste, aperçu, retour ; les trois genres (lecteur appelé, nom de fichier, replis de l'AC-3) ; erreur `410` → texte de
-  `pdfErrorMessage` ; `Blob` vide **pour chacun des trois genres** ; **lecture unique** : dialogue ouvert, `documents` remplacé par un tableau d'objets
-  égaux → toujours **une** lecture (mutation déclarée au journal : sélection tenue par l'objet → deux lectures, test
-  rouge) ; ouverture sans appel de `goto` (mock de `$app/navigation`).
-- **Vitest** `reports.api.test.ts` : `fetchInvoicePdf`, `fetchCreditNotePdf` (URL exactes).
+- **Vitest** `EntryDocuments.test.ts` (neuf, l'icône et le dialogue) et `EntryDocumentsViewer.test.ts` (neuf, la liste
+  au-dessus de `DocumentPreview`) : aucune icône sans `hasDocuments`, une seule avec (que la liste compte 1 ou 3
+  éléments) ; aucune requête avant le clic, **une** au clic ; premier élément affiché ; clic sur un autre élément → son
+  lecteur appelé, une lecture ; un seul justificatif → son nom, sans choix ; liste vide ; erreur de la route ; les trois
+  genres (lecteur appelé, nom de fichier, replis de l'AC-3) ; erreur `410` → texte de `pdfErrorMessage` ; `Blob` vide
+  **pour chacun des trois genres** ; **lecture unique** : dialogue ouvert, rapport remplacé par un objet égal → toujours
+  **une** lecture (mutation déclarée au journal : sélection tenue par l'objet → deux lectures, test rouge) ; ouverture sans
+  appel de `goto` (mock de `$app/navigation`).
+- **Vitest** `reports.api.test.ts` : `fetchEntryDocuments(entryId)`, `fetchInvoicePdf`, `fetchCreditNotePdf` (URL exactes).
 - **Vitest** `DocumentPreview.test.ts` : tests ajoutés (propriété présente rendant une chaîne, y compris pour
   `SOURCE_DOCUMENT_GONE` ; rendant `undefined` ; absente ; nouveau rendu avec une autre fonction `errorMessage` → **une**
   lecture).
-- **Vitest** `JournalReportView.test.ts` et `GeneralLedgerView.test.ts` : bouton présent avec `documents`, absent sans ;
+- **Vitest** `JournalReportView.test.ts` et `GeneralLedgerView.test.ts` : icône présente avec `hasDocuments`, absente sans ;
   colonne présente ou absente, et les tests de l'AC-6 rejoués avec la colonne.
 - Rouges sans le correctif, journal `kesh-gate-logs/s55-3b/`.
 - **E2E** `frontend/tests/e2e/reports-entry-documents.spec.ts` (neuf, déclaré au tableau des fichiers communs), **cible :
   le Journal** : créer et valider une facture par l'API, ouvrir *Rapports → Journaux* sur la période, cliquer le bouton de
-  l'écriture de vente (`journalEntryId` de la facture) → `document-preview-frame` visible ; *Échap* ferme, focus rendu ;
+  l'écriture de vente (`journalEntryId` de la facture) → la liste à un élément (le numéro de la facture) et
+  `document-preview-frame` visible ; *Échap* ferme, focus rendu ;
   axe à zéro violation dialogue ouvert. **Deux justificatifs** : deux factures validées, puis un règlement groupé par
   `POST /api/v1/reconciliation/accept` (`invoice_group`, patron `reconciliation-group.spec.ts:796-800`, écriture lue dans
-  `accepted[0].journalEntryId`) → le bouton de l'écriture de règlement ouvre la liste de deux ; les aides
+  `accepted[0].journalEntryId`) → **une** icône sur l'écriture de règlement ; le dialogue montre la liste de deux, la première facture
+  affichée ; un clic sur la seconde change le document (la requête de son PDF part) ; les aides
   (`createAndValidateInvoiceViaApi`, `createManualCreditStatementViaApi` d'`api-fixtures.ts`, et celles du spec déplacées dans
   `api-fixtures.ts` plutôt que recopiées) ; nettoyage en `finally` comme le patron (groupe annulé, import supprimé).
   **Retour** : partir du *Bilan*, cliquer *Journaux* (entrée d'historique, 55-1a D2), générer, ouvrir le dialogue
@@ -171,16 +196,18 @@ par la garde : un fichier commun, non un module.) Les pages des fiches de factur
 
 ## Recette visuelle
 
-Captures (thème clair, `kesh-gate-logs/s55-3b/`) : journal avec boutons (un et plusieurs justificatifs) ; dialogue sur un
-PDF de facture ; dialogue en liste ; erreur `410` (obtenue sur une installation jetable en retirant de `KESH_DOCUMENTS_DIR` le fichier `<empreinte>.pdf`
+Captures (thème clair, `kesh-gate-logs/s55-3b/`) : journal avec ses icônes ; visionneuse à un justificatif (liste réduite
+au nom) ; visionneuse à deux justificatifs, chacun affiché ; erreur `410` (obtenue sur une installation jetable en retirant de `KESH_DOCUMENTS_DIR` le fichier `<empreinte>.pdf`
 d'une facture figée, ou par `page.route` rendant `410 INVOICE_PDF_GONE`) ; grand livre avec la colonne.
 
 ## Tâches
 
 - [ ] **T0** — Base `epic/55-navigation` avec les 55-1a, 55-1b, 55-2 et 55-3a ; lignes du manuel sur la base PR 46.
 - [ ] **T1** — Vitest rouges.
-- [ ] **T2** — `DocumentPreview` (`errorMessage`) ; lecteurs dans `reports.api.ts` ; `EntryDocuments.svelte` (bouton,
-      dialogue `ui/dialog`, liste, sélection par primitives).
+- [ ] **T2** — `DocumentPreview` (`errorMessage`, rien d'autre) ; lecteurs dans `reports.api.ts`
+      (`fetchEntryDocuments`, `fetchInvoicePdf`, `fetchCreditNotePdf`) ; `EntryDocumentsViewer.svelte` (la liste en haut,
+      `DocumentPreview` dessous, sélection par primitives) ; `EntryDocuments.svelte` (l'icône, le dialogue `ui/dialog`, la
+      lecture de la liste au clic).
 - [ ] **T3** — Vues du journal et du grand livre (colonne conditionnelle) ; types `reports.types.ts`.
 - [ ] **T4** — i18n, manuel, E2E, captures.
 - [ ] **T5** — Gates (fichier d'epic, § *Gates*).
@@ -192,8 +219,9 @@ des Rapports ; suite complète selon le § *Gates* du fichier d'epic (Q6).
 
 ## Note de version
 
-*Rapports → Journaux* et *Grand livre* : un bouton sur une écriture ouvre ses justificatifs — PDF de la facture, de
-l'avoir, document de la facture fournisseur ; pour un règlement, la facture réglée. Ouvrir ainsi une facture dont le PDF
+*Rapports → Journaux* et *Grand livre* : une icône PDF sur une écriture ouvre ses justificatifs dans la visionneuse — PDF
+de la facture, de l'avoir, document de la facture fournisseur ; pour un règlement, la ou les factures réglées, à choisir
+dans la liste en haut. Ouvrir ainsi une facture dont le PDF
 n'était pas encore produit le fige, comme un téléchargement. (refs #À-VENIR)
 
 ## Dev Notes
@@ -250,3 +278,7 @@ n'était pas encore produit le fige, comme un téléchargement. (refs #À-VENIR)
   patron `reports.spec.ts:448`), V3-6 (hauteur de l'aperçu bornée dans le dialogue ; texte générique de
   `pdfErrorMessage`), V3-7 (« condition `:37` »). Seule modification après la P3 : la phrase de l'AC-5 sur Q7 refusée,
   alignée sur la 55-3a (V4-1 de sa P4), relue par la passe P5 ciblée de la 55-3a.
+- 2026-11-25 — **Récrite sur décision de l'utilisateur** : une icône par ligne, sans compteur ni menu ; la visionneuse
+  existante (`DocumentPreview`, lecteur PDF du navigateur) avec la liste des documents en haut, chargée au clic par la route
+  de la 55-3a ; un composant neuf `EntryDocumentsViewer` au-dessus de `DocumentPreview`, inchangé pour ses quatre
+  appelants. Statut repassé à `drafted`, validation reprise à P1 sur cette version.

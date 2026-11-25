@@ -121,16 +121,19 @@ Base `origin/main` à `1e23edb55` ; branches de l'Epic 46 lues par `git show <br
 - **D8 — Grand livre : contreparties et titre.** Les numéros de contrepartie deviennent des liens (numéro → compte par la
   liste des comptes déjà chargée par la page) ; le numéro du titre d'une section n'est un lien que quand le grand livre
   montre plusieurs comptes (un lien vers lui-même n'apprend rien). (55-2)
-- **D9 — Les justificatifs viennent de l'API du rapport, en une requête (Q1).** Chaque écriture du journal (et chaque ligne
-  du grand livre) gagne un champ `documents: [{ kind, id, number, fileName? }]` (contrat exact : fiche 55-3a), rempli par
-  **une seule requête groupée** sur la période
-  (`UNION ALL` des cinq rattachements, aucune requête par écriture) ; PDF et CSV des rapports inchangés ; outil MCP du
-  grand livre inchangé (il recopie ses champs, `mcp/outils/grand_livre.rs:175`). (55-3a)
+- **D9 — Un booléen dans le rapport, la liste au clic (Q1 ; décision de l'utilisateur du 2026-11-25).** Chaque écriture du
+  journal (et chaque ligne du grand livre) gagne `hasDocuments` (« a au moins un justificatif »), calculé par **une**
+  requête groupée sur la période (`UNION ALL` des cinq rattachements, aucune requête par écriture) ; la liste des
+  justificatifs se lit **au clic**, par une route de lecture minimale, `GET /api/v1/journal-entries/{id}/documents` (aucune
+  route existante ne la donne). PDF et CSV des rapports inchangés ; outil MCP du grand livre inchangé (il recopie ses
+  champs, `mcp/outils/grand_livre.rs:175`). (55-3a)
 - **D10 — Une écriture de règlement montre la facture réglée (Q4).** Le règlement d'une facture client ou fournisseur
   présente le PDF de la facture (ou les PDF de plusieurs factures, règlement groupé) ; *écarté* : rien sur les règlements —
   la pièce d'un paiement est la facture qu'il solde. (55-3a)
-- **D11 — L'ouverture passe par les routes existantes**, leurs droits inchangés ; plusieurs justificatifs : une courte liste.
-  (55-3b)
+- **D11 — Une icône, la visionneuse existante (décision de l'utilisateur du 2026-11-25).** Une seule icône PDF par ligne
+  d'écriture, sans compteur ni menu ; au clic, `DocumentPreview` (le lecteur PDF du navigateur, pages à gauche), avec la
+  liste des justificatifs de l'écriture en haut ; un clic dans la liste change le document. L'ouverture passe par les
+  routes existantes, leurs droits inchangés. (55-3b)
 
 ## Stories
 
@@ -176,7 +179,7 @@ son T0 ; sinon, ils vont en issues à leur nom.
 ## Backend
 
 L'epic était annoncé « frontend seulement ». **La 55-3a touche le backend** : `kesh-report` (`journal_report.rs`,
-`general_ledger.rs`, `documents.rs` neuf : une fonction de lecture des justificatifs, partagée), sans migration, sans route neuve, sans changement des
+`general_ledger.rs`, `documents.rs` neuf : une définition des rattachements, partagée) et `kesh-api` (une route de lecture), sans migration, sans route neuve, sans changement des
 exports PDF et CSV ; le contrat JSON du journal et du grand livre gagne un champ **additif**. Les 55-1a, 55-1b, 55-2, 55-3b et 55-4 restent
 frontend seulement. **Q1 au mainteneur** : accepter ce périmètre, ou sortir les 55-3a et 55-3b de l'epic.
 
@@ -206,7 +209,7 @@ Déclarés au kickoff (`CLAUDE.md` § *Fusions et fichiers communs*), relevés l
 | `frontend/src/lib/features/reports/JournalReportView.svelte`, `GeneralLedgerView.svelte`, `VatReportView.svelte`, `ReportSelector.svelte` | 55-1a (`ReportSelector` lu seulement), 55-2, 55-3b | — | 55-2 puis 55-3b |
 | `frontend/src/lib/features/reports/reports-url.ts` (neuf), `AccountLink.svelte` (neuf), `EntryDocuments.svelte` (neuf) | 55-1a, 55-1b, 55-2, 55-3b | — | — |
 | `frontend/src/lib/features/imported-supplier-invoices/DocumentPreview.svelte` | 55-3b (propriété facultative `errorMessage`) | — | comportement d'aujourd'hui inchangé sans la propriété |
-| `crates/kesh-report/src/journal_report.rs`, `general_ledger.rs`, `documents.rs` (neuf) | 55-3a | ni l'Epic 46 ni l'Epic 47 n'y touchent | champ additif, exports inchangés |
+| `crates/kesh-report/src/journal_report.rs`, `general_ledger.rs`, `documents.rs` (neuf) ; `crates/kesh-api/src/lib.rs`, `routes/journal_entries.rs` (route de lecture) | 55-3a | ni l'Epic 46 ni l'Epic 47 n'y touchent | champ additif, exports inchangés |
 | `crates/kesh-report/src/lib.rs` | 55-3a (`pub mod documents`) | **Epic 46** (+25 lignes, `pub mod`/`pub use`), **Epic 47** | une ligne, dans l'ordre alphabétique des modules |
 | `crates/kesh-report/src/csv.rs`, `pdf.rs`, `benches/export.rs` (littéraux de test seulement) | 55-3a | **Epic 46** (PR 46 : `csv.rs` 1119, `pdf.rs` 1776 lignes touchées), **Epic 47** (`csv.rs`, `pdf.rs`, `presentation.rs`) | une ligne `documents: Vec::new(),` par littéral, rien d'autre |
 | `docs/api-external.md` (grand livre `:310`, journal `:1164` à `1e23edb55`) | 55-3a | **Epic 46** (+74 lignes vers `:313`), **Epic 47** (vers `:308-311`) | phrase ajoutée en fin de paragraphe, lignes relevées sur la base |
@@ -219,7 +222,8 @@ Déclarés au kickoff (`CLAUDE.md` § *Fusions et fichiers communs*), relevés l
 
 ## Questions au mainteneur
 
-- **Q1** — La 55-3a ajoute un champ aux réponses JSON du journal et du grand livre (backend, sans migration) : accepté dans
+- **Q1** — La 55-3a ajoute un booléen aux réponses JSON du journal et du grand livre et une route de lecture,
+  `GET /journal-entries/{id}/documents` (backend, sans migration) : accepté dans
   cet epic ?
 - **Q2** — D3 : une adresse de rapport collée, rechargée ou atteinte par Retour affiche le rapport sans *Générer*
   (une requête et une trace d'audit si le rapport n'est pas en mémoire) ; le clic sur un onglet reste comme aujourd'hui :
