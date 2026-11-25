@@ -17,10 +17,10 @@ au grand livre change sans qu'on le dise.
 | 53-1 — Une écriture ne passe pas deux fois | #1355, #1365 | après une réponse perdue, un second envoi ne crée ni une seconde écriture (#1355) ni une seconde paire de conversion (#1365). **Même philosophie que la 48-12a** (décision du Project Lead du 2026-11-21) : le serveur refuse le doublon, l'écran fige l'issue inconnue et fait vérifier avant de reprendre. La fiche juge s'il faut la découper en serveur et écran (règle de splitting). |
 | 53-2 — La TVA revient sur le compte de la vente | #525, #1198 | l'avoir (#525) et la correction de TVA d'un escompte ou d'une perte (#1198) contre-passent la TVA sur le compte de TVA due **de la vente**, non sur celui des réglages du moment. Probablement une migration (mémoriser le compte sur la facture, ou le relire de l'écriture de vente) : la fiche le dit ; une migration fait monter `b` et sort de préférence un vendredi. |
 | 53-3 — L'ouverture ne se passe pas sur un compte de résultat | #513 | le contrôle des types de comptes du bilan d'ouverture se fait dans la transaction qui écrit, sous verrou. |
-| 53-4 — L'assistant ne réécrit pas le compte bancaire | #1004 | renvoyer l'étape du compte bancaire ne vide plus sa description et ne remplace plus son compte lié sans le dire : l'écran repart du compte existant. |
+| ~~53-4 — L'assistant ne réécrit pas le compte bancaire~~ | #1004 | **sortie de l'Epic 53 le 2026-11-25** (décision du Project Lead) : la validation P2 de la fiche a établi au code qu'aucun compte principal ne peut exister avant l'étape 6 (`assert_onboarding_complete`, `bank_accounts.rs:358`) ; le défaut ne touche que la saisie de l'assistant, avant toute écriture comptable : #1004 reclassée P3. Fiche et validations conservées sur `story/53-4-assistant-compte-bancaire`, pour la liste d'attente. |
 | 53-solde — Story de solde | plafond fixé au lancement | dette des revues de l'epic seulement. |
 
-Cinq stories, story de solde comprise : la borne de six tient. Si la 53-1 se découpe en deux, elle en fait six.
+Quatre stories, story de solde comprise, depuis la sortie de la 53-4 (2026-11-25) : la borne de six tient. La 53-1 n'est pas découpée (fiche du 2026-11-25).
 
 ## Fichiers et modules (probables, confirmés par les fiches)
 
@@ -28,8 +28,8 @@ Cinq stories, story de solde comprise : la borne de six tient. Si la 53-1 se dé
   `frontend/src/lib/features/journal-entries/` (`JournalEntryForm.svelte`, `ConversionAssistant.svelte`). Motif de
   référence : 48-12a et 48-12b (Epic 50).
 - 53-2 : `kesh-db/src/repositories/credit_notes.rs`, `invoice_settlements_write.rs` ; migration éventuelle.
-- 53-3 : `kesh-api/src/routes/opening_balances.rs`, `kesh-db/src/repositories/journal_entries.rs`.
-- 53-4 : `frontend/src/routes/onboarding/+page.svelte`, `kesh-api/src/routes/onboarding.rs`.
+- 53-3 : `kesh-api/src/routes/opening_balances.rs` ; `kesh-db/src/repositories/journal_entries.rs` (`create_opening_entry`), `accounts.rs` (lecture des types), `fiscal_years.rs` (clé d'erreur) ; tests `kesh-db` et `kesh-api` (fiche 53-3, validation P1, V1-10).
+- ~~53-4~~ : sortie de l'epic (2026-11-25).
 
 Recoupements : `journal_entries.rs` avec l'Epic 51 (48-2) et l'Epic 47 d'un contributeur ; `onboarding.rs` avec l'Epic 50
 (aucun site commun connu).
