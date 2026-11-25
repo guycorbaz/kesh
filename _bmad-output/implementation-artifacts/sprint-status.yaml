@@ -1228,7 +1228,7 @@ development_status:
   # 2026-11-21 — Triage P1 (décision du Project Lead) : tout P1 passe en priorité dans la release suivante ; les epics avancés (49, 50) continuent ;
   # l'Epic 49 reste la fonctionnalité nouvelle du vendredi 2026-11-27 ; l'Epic 53 passe avant l'Epic 51.
   epic-53: in-progress  # « Écritures justes » — lancé le 2026-11-23 (kickoff ; stories dès le 2026-11-24, ordre 53-1, 53-3, 53-4, 53-2 après l'entrée de l'Epic 49) ; v0.21.0, vendredi 2026-12-04 (Guy, 2026-11-24) ; fichier epic-53-ecritures-justes.md
-  53-1a-saisie-pas-deux-fois: drafted  # #1355 (P1) ; découpée de la 53-1 le 2026-11-25 (décision du Project Lead, signal de recyclage V2-1) ; validations P1, P2, P3 et passe ciblée P4 remédiées ; passe ciblée P5 (Sonnet) à lancer
+  53-1a-saisie-pas-deux-fois: in-progress  # #1355 (P1) ; découpée de la 53-1 le 2026-11-25 ; validation P1 à P5 terminée ; développement commencé le 2026-11-25
   53-1b-conversion-pas-deux-fois: drafted  # #1365 (P1) ; découpée de la 53-1 le 2026-11-25 ; dépend de la 53-1a (fusionnée d'abord) ; porte V2-1 ; aucune validation lancée
   53-2-tva-sur-compte-de-la-vente: backlog  # #525, #1198 (P1) ; migration probable (b monte, de préférence un vendredi)
   53-3-ouverture-sous-verrou: backlog  # #513 (P1)
