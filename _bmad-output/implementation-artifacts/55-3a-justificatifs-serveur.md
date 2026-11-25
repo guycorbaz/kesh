@@ -1,6 +1,6 @@
 # Story 55-3a : les justificatifs d'une écriture dans la réponse du journal et du grand livre (serveur)
 
-Status: drafted
+Status: ready-for-dev
 
 Epic : `_bmad-output/planning-artifacts/epic-55-navigation-interface.md` — D9 (Q1), D10, D12 (aperçu sans figement), D13
 (marque d'un PDF non émis, Q10), D14 (fiche de la facture, Q8). Issue : #À-VENIR (`enhancement`, **P4**, Q5 ; point c,
@@ -582,3 +582,12 @@ demandé le 2026-11-25 (l'epic est à six stories). Pour information, si le main
   écrite comme proposition, modules « au seuil » (V5p-9) ; branche vague de l'AC-11 retirée (V5p-10). Fichier d'epic aussi
   remédié pour les passes des 55-2 (V7-2) et 55-4 (V8-1 : argument de `gate-ci.sh`). Passe suivante : Pv2p6 ciblée,
   dernière remédiable.
+- 2026-11-25 — Validation Pv2p6 ciblée (Sonnet) sur la remédiation de la Pv2p5 : 0/0/0/4 — **validation terminée**.
+  Tendance depuis les décisions du mainteneur : Pv2p5 ciblée Opus 0/0/2/8 → Pv2p6 ciblée Sonnet 0/0/0/4. Les quatre LOW
+  (`kesh-gate-logs/s55-decisions/55-3a-validation-pv2p6.md`) ne sont pas remédiés (une remédiation après la dernière passe
+  ne serait relue par personne) : ils se reprennent au **T0 du développement**, ligne lue citée au Change Log — Pv2p6-1
+  (fichier d'epic, fichiers communs : « à l'octet près » → « même empreinte, `rendu_avant_apres.rs` »), Pv2p6-2 (citer
+  `crates/kesh-db/src/repositories/invoices.rs` ; la dévalidation est refusée à une facture envoyée, `errors.rs:443` : le
+  cas « dévalidée puis revalidée » ne vise qu'une facture téléchargée), Pv2p6-3 (test des quatre locales écrit à l'AC-11 ;
+  T2quater cite les deux voies), Pv2p6-4 (AC-9 : une validée non figée à `emailed_at` non nul rend `200`, marquée, rien
+  d'écrit — selon la réponse du mainteneur à la question *Aperçu d'un PDF déjà sorti*).
