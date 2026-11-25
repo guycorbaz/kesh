@@ -1811,6 +1811,7 @@ error-provider-api-error = The provider refused the request. Nothing was importe
 # Story 38-11c2 — revue et acceptation d’un compte de prestataire (codes servis à l’écran, 38-11d)
 provider-failed-proposal-stale = This proposal is no longer valid: the transaction, the entry, the rule or the account settings changed since the review. Reload the review.
 paypal-failed-counterparty-currency-mismatch = This rule names an account kept in { $accountCurrency }: it only applies to transactions in { $accountCurrency }, and this one is in { $transactionCurrency }. Choose an account in CHF or in the transaction's currency.
+paypal-failed-already-posted = The transaction is already posted (the other side is linked to its entry): nothing was posted. Reload the page and link it to that entry.
 provider-review-ambiguous-sale = Several sales entries carry this identifier: choose the one to link.
 provider-review-fee-account-missing = Fee without a fee account: set the fee account of the bank account.
 error-bank-account-is-provider = This account is a payment provider's balance: it receives neither bank statements nor invoice payments. Import its statement through its own route, and settle the invoice through an internal account or an entry, then link the transaction.
@@ -2018,6 +2019,8 @@ paypal-to-review-fee-account-missing = Fee account not set
 paypal-to-review-conversion-unpaired = Conversion without its pair
 paypal-to-review-withdrawal-foreign-currency = Withdrawal from a foreign-currency balance: manual entry
 paypal-to-review-no-rule = No rule
+paypal-to-review-already-posted = Already posted: the entry exists and the other side is linked to it. Link this transaction to the entry, do not post it a second time.
+paypal-to-review-entry-link = Entry already posted
 paypal-action-link-entry = Linked to entry no. { $number }
 paypal-action-fee = Entry to the fee account { $account }
 paypal-action-rule = Entry to the counterparty { $account }

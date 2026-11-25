@@ -50,6 +50,7 @@
 		paypalLineErrorLabel,
 		proposalKindLabel,
 		toReviewReasonLabel,
+		alreadyPostedEntryId,
 	} from '$lib/features/paypal/paypal-labels';
 	import {
 		defaultFiscalYearId,
@@ -631,6 +632,7 @@
 					<tbody>
 						{#each review.toReview as t, i (i)}
 							{@const tx = t.transaction}
+							{@const postedEntry = alreadyPostedEntryId(t)}
 							<tr class="border-b border-border" data-testid="paypal-to-review-{tx?.id ?? `e${i}`}">
 								<td class="py-2 pr-4 whitespace-nowrap">{findingDate(t)}</td>
 								<td class="py-2 pr-4">{toReviewReasonLabel(t.code)}</td>
@@ -648,9 +650,19 @@
 									>
 										{i18nMsg('paypal-link-entry', 'Rattacher à une écriture')}
 									</button>
-									<a href="/journal-entries" class="ml-1 text-xs text-primary underline">
-										{i18nMsg('paypal-manual-entry', 'Écriture manuelle')}
-									</a>
+									{#if postedEntry !== null}
+										<a
+											href="/journal-entries/{postedEntry}"
+											class="ml-1 text-xs text-primary underline"
+											data-testid="paypal-to-review-entry-{tx?.id ?? `e${i}`}"
+										>
+											{i18nMsg('paypal-to-review-entry-link', 'Écriture déjà passée')}
+										</a>
+									{:else}
+										<a href="/journal-entries" class="ml-1 text-xs text-primary underline">
+											{i18nMsg('paypal-manual-entry', 'Écriture manuelle')}
+										</a>
+									{/if}
 								</td>
 							</tr>
 						{/each}

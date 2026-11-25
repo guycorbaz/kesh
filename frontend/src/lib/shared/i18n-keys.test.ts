@@ -1198,8 +1198,9 @@ const ATTENDU = {
 	// 3671 »), relevé par la garde ; au diff : 1 site ajouté, 0 retiré.
 	// Revue P2 de la 38-12b (avis au passé, suivi perdu après une reprise) : **3674**, relevé par
 	// la garde ; au diff : 2 sites ajoutés, 0 retiré.
-	// Reprise de main (PayPal, 38-11b/c/d) dans epic/49 (2026-11-24) : les deux côtés gardés ; attendu 3674 (main) + 4 (49-1c) = 3678, à confirmer par la garde.
-	sitesTotal: 3678,
+	// Reprise de main (PayPal, 38-11b/c/d) dans epic/49 (2026-11-24) : les deux côtés gardés ; attendu 3674 (main) + 4 (49-1c) = 3678.
+	// Reprise de main (2026-11-25, correctif « une transaction de prestataire n'est écrite qu'une fois », 3 sites ajoutés) : attendu 3678 + 3 = 3681, à confirmer par la garde.
+	sitesTotal: 3681,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

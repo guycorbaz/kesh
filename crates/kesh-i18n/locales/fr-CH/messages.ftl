@@ -1894,6 +1894,7 @@ error-provider-api-error = Le prestataire a refusé la demande. Rien n'a été i
 # Story 38-11c2 — revue et acceptation d’un compte de prestataire (codes servis à l’écran, 38-11d)
 provider-failed-proposal-stale = Cette proposition n'est plus valable : la transaction, l'écriture, la règle ou les réglages du compte ont changé depuis la revue. Rechargez la revue.
 paypal-failed-counterparty-currency-mismatch = Cette règle désigne un compte tenu en { $accountCurrency } : elle ne s'applique qu'aux transactions en { $accountCurrency }, et celle-ci est en { $transactionCurrency }. Choisissez un compte en CHF ou dans la devise de la transaction.
+paypal-failed-already-posted = La transaction est déjà comptabilisée (l'autre côté est rattaché à son écriture) : rien n'a été écrit. Rechargez la page et rattachez-la à cette écriture.
 provider-review-ambiguous-sale = Plusieurs écritures de vente portent cet identifiant : choisissez celle à rattacher.
 provider-review-fee-account-missing = Frais sans compte de frais : réglez le compte de frais du compte bancaire.
 error-bank-account-is-provider = Ce compte est le solde d'un prestataire de paiement : il ne reçoit ni relevé bancaire ni règlement de facture. Importez son relevé par sa route, et réglez la facture par un compte interne ou une écriture, puis rattachez la transaction.
@@ -2102,6 +2103,8 @@ paypal-to-review-fee-account-missing = Compte de frais non réglé
 paypal-to-review-conversion-unpaired = Conversion sans sa paire
 paypal-to-review-withdrawal-foreign-currency = Retrait d’un solde en devise : écriture à la main
 paypal-to-review-no-rule = Aucune règle
+paypal-to-review-already-posted = Déjà comptabilisée : l'écriture existe et l'autre côté y est rattaché. Rattachez cette transaction à l'écriture, ne l'écrivez pas une seconde fois.
+paypal-to-review-entry-link = Écriture déjà passée
 paypal-action-link-entry = Rattachée à l’écriture n° { $number }
 paypal-action-fee = Écriture au compte de frais { $account }
 paypal-action-rule = Écriture à la contrepartie { $account }
