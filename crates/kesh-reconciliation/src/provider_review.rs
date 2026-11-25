@@ -173,9 +173,9 @@ pub struct ProviderSpec {
     /// transaction que l'écriture pourrait porter à la place de `t` ? Seul un
     /// tel identifiant fait d'une écriture celle d'**une autre** transaction et
     /// l'exclut du repli prudent ([`unnamed_and_free`]). PayPal : un seul genre
-    /// ([`one_key_kind`]). Stripe : `po_` pour un versement, `ch_`/`py_` pour
-    /// une charge — une charge citée au libellé d'un versement ne fait pas de
-    /// son écriture celle d'un autre versement.
+    /// ([`one_key_kind`]). Stripe : pour un versement, seul un `po_` — une
+    /// charge citée au libellé d'un versement ne fait pas de son écriture celle
+    /// d'un autre versement ; pour des frais, tout identifiant Stripe.
     pub same_key_kind: fn(&BankTransaction, &str) -> bool,
     /// Les deux transactions sont-elles les moitiés d'une même conversion,
     /// par leurs références (PayPal : même `Reference Txn ID`, ou chacune
@@ -973,8 +973,7 @@ pub fn unnamed_and_free(
 ///    fois.
 ///
 /// Une écriture qui nomme une **autre** transaction du même genre de clé n'est
-/// jamais retenue. La
-/// **seule** décision « déjà comptabilisée » d'une transaction de prestataire
+/// jamais retenue. La **seule** décision « déjà comptabilisée » d'une transaction de prestataire
 /// (#1538) : la revue (sur la lecture par page) et l'acceptation (sous les
 /// verrous du lot) l'appellent sur la même présélection
 /// (`kesh_db::repositories::reconciliation_link::find_posted_elsewhere`).

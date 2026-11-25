@@ -127,7 +127,8 @@ issues à ouvrir** (`kesh-gate-logs/s40-m2c/issues-a-ouvrir.md` : l'angle mort p
 *Angle mort fermé sur `pr/40-stripe` le 2026-11-25* (refs #1539 ; Kesh étant en production, avant le push de la
 branche) : le repli prudent (`unnamed_and_free`) ne compte plus, parmi les identifiants du libellé, que ceux **du
 même genre de clé** que la transaction jugée — nouveau crochet `ProviderSpec::same_key_kind`. Stripe
-(`stripe::same_key_kind`) : `po_` pour un versement, `ch_`/`py_` pour des frais (leur clé est la charge) ; une
+(`stripe::same_key_kind`) : pour un versement, seul un `po_` compte ; pour des frais (clé de charge), tout identifiant
+Stripe compte, comme avant — l'écriture d'un versement de même montant n'est jamais la leur (revue P1, M1) ; une
 transaction sans clé d'un genre connu ne voit compter aucun identifiant (repli prudent, jamais une seconde écriture).
 PayPal : `one_key_kind`, un seul genre, tout identifiant compte — comportement inchangé. Une écriture de versement
 qui ne cite qu'une charge ou un paiement ne nomme aucun versement : elle tombe dans le repli prudent, sous sa borne

@@ -212,18 +212,21 @@ fn key_kind(id: &str) -> Option<&'static str> {
 }
 
 /// Correctif de l'angle mort de la #1534 (#1539) : un identifiant cité dans un
-/// libellé ne fait de l'écriture celle d'**une autre** transaction
-/// ([`crate::provider_review::unnamed_and_free`]) que s'il est du genre de la
-/// clé de `t` ([`match_key`]) : un `po_…` pour un versement, un `ch_…`/`py_…`
-/// pour des frais. Une écriture de versement passée à la main qui ne cite
-/// qu'une charge ou un paiement ne nomme donc aucun autre versement : elle
-/// tombe dans le repli prudent, sous sa borne (montant, compte du plan, côté
-/// Stripe libre, rapprochée de l'autre côté). Une transaction sans clé d'un
-/// genre connu : aucun identifiant ne compte (le repli prudent, jamais une
-/// seconde écriture).
+/// libellé fait-il de l'écriture celle d'**une autre** transaction
+/// ([`crate::provider_review::unnamed_and_free`]) ? Le genre ne se restreint
+/// que pour un **versement** (clé `po_…`) : seul un `po_…` compte, si bien
+/// qu'une écriture de versement passée à la main qui ne cite qu'une charge ou
+/// un paiement ne nomme aucun autre versement et tombe dans le repli prudent,
+/// sous sa borne (montant, compte du plan, côté Stripe libre, rapprochée de
+/// l'autre côté). Pour une clé de charge (`ch_…`/`py_…` : des frais), tout
+/// identifiant Stripe compte, comme avant : l'écriture d'un versement
+/// (`po_…`) de même montant n'est jamais celle de frais (revue P1, M1). Une
+/// transaction sans clé d'un genre connu : aucun identifiant ne compte (le
+/// repli prudent, jamais une seconde écriture).
 fn same_key_kind(t: &BankTransaction, id: &str) -> bool {
     match match_key(t).and_then(key_kind) {
-        Some(kind) => key_kind(id) == Some(kind),
+        Some("payout") => key_kind(id) == Some("payout"),
+        Some(_) => key_kind(id).is_some(),
         None => false,
     }
 }
@@ -510,7 +513,8 @@ pub fn complete_review(
 /// été détaché (annulation du seul côté Stripe, qui ne retire que le lien), et
 /// qui le **nomme** (son libellé porte son `po_…`, [`match_key`]) ou, par
 /// prudence, ne porte aucun `po_…` (un `ch_…` ou un `py_…` cité ne compte
-/// pas : [`same_key_kind`] ; `first_naming_entry` de la revue commune) — va « à examiner » sous `already_posted`, l'écriture nommée
+/// pas : [`same_key_kind`] ; `first_naming_entry` de la revue commune) — va
+/// « à examiner » sous `already_posted`, l'écriture nommée
 /// ([`ReviewFinding::already_posted`]) : jamais proposé, jamais sous un motif
 /// qui conseillerait de l'écrire de nouveau. La route rejuge la même règle à
 /// l'acceptation (`rejudge_writing`).
@@ -857,13 +861,27 @@ mod tests {
                 "{autre_po}"
             );
         }
-        // Le genre de clé : `po_` d'un versement, `ch_`/`py_` des frais (leur
-        // clé est la charge) ; un jeton d'aucun genre ne compte pour personne.
+        // Le genre ne se restreint que pour un versement (`po_` seul) ; pour
+        // des frais (clé de charge), tout identifiant Stripe compte, comme
+        // avant : l'écriture d'un versement de même montant n'est jamais la
+        // leur, même versement détaché (revue P1, M1).
         assert!(same_key_kind(&versement, "po_9"));
         assert!(!same_key_kind(&versement, "ch_9"));
         assert!(!same_key_kind(&versement, "py_9"));
         assert!(same_key_kind(&frais, "ch_9") && same_key_kind(&frais, "py_9"));
-        assert!(!same_key_kind(&frais, "po_9"));
+        assert!(same_key_kind(&frais, "po_9"));
+        let mut frais_egaux = tx(7, "-96.80", "charge", "txn_7:FEE");
+        frais_egaux.reference = Some("ch_7".into());
+        assert_eq!(
+            first_naming_entry(&SPEC, &frais_egaux, [(906, du_versement.as_str())], &[]),
+            None,
+            "{du_versement}"
+        );
+        // Sans aucun identifiant : le repli prudent vaut aussi pour des frais.
+        assert_eq!(
+            first_naming_entry(&SPEC, &frais_egaux, [(907, "Saisie à la main")], &[]),
+            Some(907)
+        );
         let mut sans_cle = payout(6, "-1.00", "po_6");
         sans_cle.reference = None;
         assert!(!same_key_kind(&sans_cle, "po_6"));
