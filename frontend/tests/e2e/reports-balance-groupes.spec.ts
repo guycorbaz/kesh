@@ -171,6 +171,16 @@ test('balance par groupes : défaut, pied, niveau 1, ouverture à la main, expor
 	await expect(page.getByTestId('grouping-level')).toBeDisabled();
 	await capture(page, '7-hierarchie-masquee');
 
+	// 7 bis. Export de l'écran à plat : sans paramètre, l'export de l'API est groupé
+	// (présentation de l'écran par défaut) ; l'écran à plat demande donc
+	// `detailLevel=flat`, et le fichier n'a pas les colonnes groupées.
+	const [platUrl, plat] = await exporter(page, 'csv', '7-a-plat');
+	expect(platUrl.searchParams.get('detailLevel')).toBe('flat');
+	expect(platUrl.searchParams.has('subtotalPosition')).toBe(false);
+	const platTexte = plat.toString('utf8').replace(/^\uFEFF/, '');
+	expect(platTexte.split(/\r?\n/)[0]).not.toContain('Niveau;TypeLigne');
+	expect(platTexte).toContain('1900');
+
 	// La remise en place laisse la vue par défaut pour les specs suivantes.
 	req = page.waitForRequest((r) => BALANCE.test(r.url()));
 	await page.getByTestId('grouping-shown').check();

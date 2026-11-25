@@ -83,8 +83,9 @@ impl ReportQuery {
 /// résultat et de la balance (Story 46-6a).
 const PARAMETRES_GROUPES: [&str; 4] = ["detailLevel", "subtotalPosition", "open", "closed"];
 
-/// La demande de groupes (Story 46-1), lue dans les paires de la requête ;
-/// `None` sans `detailLevel`.
+/// La demande de groupes (Story 46-1) d'une route **JSON**, lue dans les
+/// paires de la requête ; `None` sans `detailLevel` ou avec `detailLevel=flat`
+/// (le rapport à plat, réponse d'avant l'Epic 46).
 ///
 /// Les paires brutes, et non des champs de [`ReportQuery`] : un paramètre
 /// répété y serait un rejet de désérialisation d'Axum, sans le code
@@ -92,6 +93,31 @@ const PARAMETRES_GROUPES: [&str; 4] = ["detailLevel", "subtotalPosition", "open"
 /// doit ignorer ces paramètres. Ici, un paramètre de groupes répété est un 400
 /// `VALIDATION_ERROR` qui le nomme.
 fn groupes_de(paires: &[(String, String)]) -> Result<Option<DemandeGroupes>, AppError> {
+    lire_groupes(paires, None)
+}
+
+/// Le niveau de détail d'un export sans `detailLevel` : celui de l'écran à sa
+/// première visite (tous les groupes ouverts, sous-totaux sur la ligne du
+/// titre — `defaultGroupingView`, `frontend/src/lib/features/reports/reports-grouping.ts`).
+const NIVEAU_EXPORT_PAR_DEFAUT: &str = "all";
+
+/// La demande de groupes d'un **export** (bilan, compte de résultat,
+/// balance) : l'export par l'API rend ce que rend l'export lancé depuis
+/// l'écran, donc la présentation par groupes **par défaut** — sans
+/// `detailLevel`, [`NIVEAU_EXPORT_PAR_DEFAUT`], et `subtotalPosition`, `open`,
+/// `closed` s'y appliquent. `detailLevel=flat` demande l'export à plat (sans
+/// colonnes `Niveau;TypeLigne`), celui qu'un export sans paramètre rendait
+/// jusqu'à l'Epic 46. Mêmes refus que [`groupes_de`].
+fn groupes_de_l_export(paires: &[(String, String)]) -> Result<Option<DemandeGroupes>, AppError> {
+    lire_groupes(paires, Some(NIVEAU_EXPORT_PAR_DEFAUT))
+}
+
+/// Lit les quatre paramètres de groupes ; `niveau_par_defaut` tient lieu de
+/// `detailLevel` absent.
+fn lire_groupes(
+    paires: &[(String, String)],
+    niveau_par_defaut: Option<&str>,
+) -> Result<Option<DemandeGroupes>, AppError> {
     let mut valeurs: [Option<&str>; 4] = [None; 4];
     for (cle, valeur) in paires {
         if let Some(i) = PARAMETRES_GROUPES.iter().position(|p| p == cle) {
@@ -104,7 +130,12 @@ fn groupes_de(paires: &[(String, String)]) -> Result<Option<DemandeGroupes>, App
         }
     }
     let [detail_level, subtotal_position, open, closed] = valeurs;
-    DemandeGroupes::depuis_requete(detail_level, subtotal_position, open, closed)
+    DemandeGroupes::depuis_requete(
+        detail_level.or(niveau_par_defaut),
+        subtotal_position,
+        open,
+        closed,
+    )
 }
 
 /// Query params du grand livre.
@@ -261,8 +292,9 @@ fn mesurer(span: &tracing::Span, start: std::time::Instant, body: &[u8]) {
 // Story 9-1 — Endpoints JSON
 // ===========================================================================
 
-/// GET /api/v1/reports/balance-sheet — avec `detailLevel`, aussi `grouping`
-/// et `groupedRows` (Story 46-1) ; sans, la réponse d'avant, à l'octet.
+/// GET /api/v1/reports/balance-sheet — avec `detailLevel` autre que `flat`,
+/// aussi `grouping` et `groupedRows` (Story 46-1) ; sans, ou avec `flat`, la
+/// réponse d'avant, à l'octet.
 ///
 /// L'accès est contrôlé **avant** les paramètres de groupes : un appelant sans
 /// droit reçoit son refus d'accès, non un 400 (même ordre que `fiscalYearId`).
@@ -399,9 +431,9 @@ pub async fn export_general_ledger(
     )
 }
 
-/// GET /api/v1/reports/trial-balance — avec `detailLevel`, aussi `grouping`
-/// et `groupedRows` (un tableau : la balance n'a pas de sections, Story
-/// 46-6a) ; sans, la réponse d'avant, à l'octet. Même ordre que le bilan :
+/// GET /api/v1/reports/trial-balance — avec `detailLevel` autre que `flat`,
+/// aussi `grouping` et `groupedRows` (un tableau : la balance n'a pas de
+/// sections, Story 46-6a) ; sans, ou avec `flat`, la réponse d'avant, à l'octet. Même ordre que le bilan :
 /// l'accès d'abord, puis les paramètres de groupes.
 pub async fn get_trial_balance(
     State(state): State<AppState>,
@@ -438,7 +470,9 @@ pub async fn get_journal_report(
 // Story 9-2a — Endpoints export PDF/CSV
 // ===========================================================================
 
-/// GET /api/v1/reports/balance-sheet/export?format=pdf|csv
+/// GET /api/v1/reports/balance-sheet/export?format=pdf|csv — le bilan par
+/// groupes, comme l'export de l'écran ; par défaut tous les groupes ouverts
+/// ([`groupes_de_l_export`]) ; `detailLevel=flat`, l'export à plat.
 pub async fn export_balance_sheet(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
@@ -461,7 +495,7 @@ pub async fn export_balance_sheet(
     // Story 46-3 (AC-1) : format, puis accès, puis groupes — l'ordre des
     // routes JSON ; `ExportQuery` reste inchangé (paires brutes).
     acces.exiger(rapports::EXIGENCES_BILAN.export)?;
-    let groupes = groupes_de(&paires)?;
+    let groupes = groupes_de_l_export(&paires)?;
     let lecture = state.lecture();
     let rapport =
         rapports::bilan_par_groupes(&acces, &lecture, query.demande(), groupes, Export(format))
@@ -576,7 +610,8 @@ pub async fn export_aged_receivables(
         .map_err(|e| AppError::Internal(format!("response build: {e}")))
 }
 
-/// GET /api/v1/reports/income-statement/export?format=pdf|csv
+/// GET /api/v1/reports/income-statement/export?format=pdf|csv — comme le
+/// bilan ([`export_balance_sheet`]).
 pub async fn export_income_statement(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
@@ -599,7 +634,7 @@ pub async fn export_income_statement(
     // Story 46-3 (AC-1) : format, puis accès, puis groupes — l'ordre des
     // routes JSON ; `ExportQuery` reste inchangé (paires brutes).
     acces.exiger(rapports::EXIGENCES_COMPTE_DE_RESULTAT.export)?;
-    let groupes = groupes_de(&paires)?;
+    let groupes = groupes_de_l_export(&paires)?;
     let lecture = state.lecture();
     let rapport = rapports::compte_de_resultat_par_groupes(
         &acces,
@@ -830,9 +865,9 @@ pub async fn export_project_return(
     )
 }
 
-/// GET /api/v1/reports/trial-balance/export?format=pdf|csv — avec
-/// `detailLevel`, la balance telle que l'écran la groupe (Story 46-6b) ; sans,
-/// l'export d'avant, à l'identique.
+/// GET /api/v1/reports/trial-balance/export?format=pdf|csv — la balance telle
+/// que l'écran la groupe (Story 46-6b), par défaut tous les groupes ouverts ;
+/// `detailLevel=flat`, l'export à plat d'avant, à l'identique.
 pub async fn export_trial_balance(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
@@ -855,7 +890,7 @@ pub async fn export_trial_balance(
     // Story 46-6b (AC-2) : format, puis accès, puis groupes — l'ordre du bilan
     // (46-3) ; `ExportQuery` reste inchangé (paires brutes).
     acces.exiger(rapports::EXIGENCES_BALANCE.export)?;
-    let groupes = groupes_de(&paires)?;
+    let groupes = groupes_de_l_export(&paires)?;
     let lecture = state.lecture();
     let rapport =
         rapports::balance_par_groupes(&acces, &lecture, query.demande(), groupes, Export(format))
@@ -1191,4 +1226,102 @@ mod tests {
 
     // Tests `content_disposition_*` + `percent_encode_*` migrés vers
     // `crate::util::tests` (Story 9-2b §util).
+
+    /// Les paires d'une requête, comme Axum les rend.
+    fn paires(liste: &[(&str, &str)]) -> Vec<(String, String)> {
+        liste
+            .iter()
+            .map(|(c, v)| (c.to_string(), v.to_string()))
+            .collect()
+    }
+
+    /// Story 46 (export API groupé) — sans paramètre, l'export reçoit la
+    /// présentation de l'écran à sa première visite : tous les groupes
+    /// ouverts, sous-totaux sur la ligne du titre, aucun groupe à la main.
+    #[test]
+    fn export_sans_parametre_groupe_comme_l_ecran() {
+        let demande = groupes_de_l_export(&paires(&[("fiscalYearId", "1"), ("format", "csv")]))
+            .unwrap()
+            .expect("l'export sans paramètre est groupé");
+        assert_eq!(demande.options.niveau, kesh_report::NiveauDetail::Tous);
+        assert_eq!(
+            demande.options.position,
+            kesh_report::PositionSousTotal::Titre
+        );
+        assert!(demande.options.ouverts.is_empty() && demande.options.fermes.is_empty());
+    }
+
+    /// Le défaut de l'export ne vaut que pour `detailLevel` : `subtotalPosition`
+    /// et `closed` s'y appliquent seuls ; un niveau donné l'emporte.
+    #[test]
+    fn export_defaut_combine_aux_autres_parametres() {
+        let demande =
+            groupes_de_l_export(&paires(&[("subtotalPosition", "footer"), ("closed", "19")]))
+                .unwrap()
+                .unwrap();
+        assert_eq!(demande.options.niveau, kesh_report::NiveauDetail::Tous);
+        assert_eq!(
+            demande.options.position,
+            kesh_report::PositionSousTotal::Pied
+        );
+        assert_eq!(
+            demande.options.fermes.iter().copied().collect::<Vec<_>>(),
+            [19]
+        );
+        let demande = groupes_de_l_export(&paires(&[("detailLevel", "2")]))
+            .unwrap()
+            .unwrap();
+        assert_eq!(demande.options.niveau, kesh_report::NiveauDetail::Niveau(2));
+    }
+
+    /// `detailLevel=flat` : l'export à plat (l'ancien défaut) ; aux routes
+    /// JSON, la même chose que l'absence du paramètre.
+    #[test]
+    fn detail_level_flat_rend_a_plat() {
+        assert!(
+            groupes_de_l_export(&paires(&[("detailLevel", "flat")]))
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            groupes_de(&paires(&[("detailLevel", "flat")]))
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            groupes_de(&paires(&[])).unwrap().is_none(),
+            "JSON : à plat sans paramètre"
+        );
+    }
+
+    /// À plat, les autres paramètres de groupes sont refusés et nommés ; `flat`
+    /// répété reste un paramètre répété ; la casse compte (`FLAT`).
+    #[test]
+    fn detail_level_flat_refus() {
+        for p in ["subtotalPosition", "open", "closed"] {
+            let valeur = if p == "subtotalPosition" {
+                "footer"
+            } else {
+                "1"
+            };
+            for lire in [groupes_de, groupes_de_l_export] {
+                let Err(AppError::Validation(m)) =
+                    lire(&paires(&[("detailLevel", "flat"), (p, valeur)]))
+                else {
+                    panic!("{p} avec flat doit être refusé");
+                };
+                assert!(m.contains(p) && m.contains("flat"), "{m}");
+            }
+        }
+        let Err(AppError::Validation(m)) =
+            groupes_de_l_export(&paires(&[("detailLevel", "flat"), ("detailLevel", "flat")]))
+        else {
+            panic!("répété");
+        };
+        assert!(m.contains("répété"), "{m}");
+        assert!(matches!(
+            groupes_de_l_export(&paires(&[("detailLevel", "FLAT")])),
+            Err(AppError::Validation(_))
+        ));
+    }
 }

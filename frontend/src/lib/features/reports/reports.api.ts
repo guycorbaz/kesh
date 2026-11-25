@@ -35,11 +35,20 @@ function buildQuery(params: Record<string, string | number | undefined>): string
 }
 
 /**
+ * La valeur de `detailLevel` qui demande un export **à plat** (sans colonnes
+ * `Niveau;TypeLigne`) : sans paramètre, l'export de l'API rend la présentation
+ * par groupes de l'écran.
+ */
+export const FLAT_DETAIL_LEVEL = 'flat';
+
+/**
  * Story 46-2 — les paramètres de groupement d'une demande (46-1 § *Le contrat*) :
  * `detailLevel`, `subtotalPosition`, et `open` / `closed` en identifiants séparés
  * par des virgules, **omis quand la liste est vide** (une liste vide serait
  * refusée en `400` : « » n'est pas un identifiant). Sans `grouping`, aucun
- * paramètre : la réponse (ou l'export) est celle d'avant l'Epic 46.
+ * paramètre : la réponse JSON est celle d'avant l'Epic 46, à plat. L'export,
+ * lui, est groupé sans paramètre : {@link getReportExportUrl} demande le rendu
+ * à plat par `detailLevel=flat`.
  */
 export function groupingQueryParams(
 	grouping: GroupingParams | undefined,
@@ -418,7 +427,9 @@ export function formatCurrencyFigure(v: string | undefined): string {
  * Story 46-2 (AC-6) — `grouping` : les paramètres de groupement de la dernière
  * requête affichée du bilan, du compte de résultat ou de la balance (46-6b), que
  * l'export reprend tels quels pour rendre ce que montre l'écran (rendu groupé :
- * 46-3, 46-6b). Ignoré pour les autres rapports.
+ * 46-3, 46-6b). Sans `grouping` (hiérarchie masquée à l'écran), `detailLevel=flat` :
+ * l'export de l'API est groupé par défaut, l'écran à plat demande donc le rendu à
+ * plat explicitement. Ignoré pour les autres rapports.
  */
 export function getReportExportUrl(
 	type: ReportType,
@@ -436,7 +447,10 @@ export function getReportExportUrl(
 		params.journal = (query as JournalReportQuery).journal;
 	}
 	if (type === 'balance-sheet' || type === 'income-statement' || type === 'trial-balance') {
-		Object.assign(params, groupingQueryParams(grouping));
+		Object.assign(
+			params,
+			grouping ? groupingQueryParams(grouping) : { detailLevel: FLAT_DETAIL_LEVEL },
+		);
 	}
 	const qs = buildQuery(params);
 	return `/api/v1/reports/${type}/export?${qs}`;

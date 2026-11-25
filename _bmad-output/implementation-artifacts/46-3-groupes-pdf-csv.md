@@ -256,12 +256,15 @@ zéro (#1346), l'alignement (#1327).
 (`detailLevel`, `subtotalPosition`, `open`, `closed`, comme les routes JSON) : niveau, groupes ouverts ou fermés,
 sous-totaux sur le titre ou en pied ; le PDF dit le niveau imprimé, décale chaque ligne selon sa profondeur et met les
 groupes en gras ; le CSV gagne les colonnes `Niveau` et `TypeLigne`. Les montants de ces exports groupés s'arrondissent
-au centime, l'équidistant loin de zéro. Sans paramètre, l'export ne change pas (CSV identique à l'octet, PDF aux mêmes
-lignes de texte).
+au centime, l'équidistant loin de zéro. Sans paramètre, l'export par l'API rend la présentation de l'écran (tous les
+groupes ouverts) ; `detailLevel=flat` rend l'export à plat d'avant (CSV identique à l'octet, PDF aux mêmes lignes de
+texte). *(Annoté le 2026-11-24, story 46-8, décision du mainteneur : cette note disait « Sans paramètre, l'export ne
+change pas ».)*
 
 **Changed** — L'export d'écran suit la hiérarchie affichée, avec les colonnes `Niveau;TypeLigne` et les sous-totaux.
-Le CSV groupé (bilan, compte de résultat ou balance) ne s'additionne pas tel quel : le titre d'un groupe (en pied, sa ligne de sous-total) répète les montants de ses comptes, et un groupe fermé n'y porte que son sous-total. Chaque section du bilan et du compte de résultat porte sa ligne de total, la balance sa ligne `Total` ; pour additionner les montants dans un tableur, décocher « Hiérarchie des groupes » pour l'export à plat d'avant, qui porte lui aussi ses lignes de total (à filtrer par `Section` au bilan et au compte de résultat, à écarter à la balance : ligne `Total`) et n'a pas de colonne `TypeLigne` ; les montants groupés sont arrondis au centime. Seul un appel
-de l'API sans paramètre garde l'export d'avant, à l'octet.
+Le CSV groupé (bilan, compte de résultat ou balance) ne s'additionne pas tel quel : le titre d'un groupe (en pied, sa ligne de sous-total) répète les montants de ses comptes, et un groupe fermé n'y porte que son sous-total. Chaque section du bilan et du compte de résultat porte sa ligne de total, la balance sa ligne `Total` ; pour additionner les montants dans un tableur, décocher « Hiérarchie des groupes » pour l'export à plat d'avant, qui porte lui aussi ses lignes de total (à filtrer par `Section` au bilan et au compte de résultat, à écarter à la balance : ligne `Total`) et n'a pas de colonne `TypeLigne` ; les montants groupés sont arrondis au centime. Par l'API,
+l'export d'avant, à l'octet, se demande par `detailLevel=flat` (story 46-8 ; cette note disait « Seul un appel de l'API
+sans paramètre garde l'export d'avant », annoté le 2026-11-24).
 
 ### Choix du développement
 

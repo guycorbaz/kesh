@@ -4712,16 +4712,6 @@ mod tests {
         );
     }
 
-    /// AC-6 — le formateur arrondit (l'équidistant loin de zéro), puis pose les
-    /// apostrophes des milliers ; un reste négatif sous le demi-centime sort sans
-    /// signe (Story 48-11, #1245).
-    #[test]
-    fn format_swiss_amount_arrondit_puis_groupe_les_milliers() {
-        assert_eq!(format_swiss_amount(dec!(10.005)), "10.01");
-        assert_eq!(format_swiss_amount(dec!(-1234567.505)), "-1'234'567.51");
-        assert_eq!(format_swiss_amount(dec!(-0.004)), "0.00");
-    }
-
     /// AC-6 — les totaux de section et les lignes calculées d'un rendu groupé
     /// s'arrondissent (10.005 → 10.01), comme le rendu à plat depuis la
     /// Story 48-11 (#1245). L'équation y vaut 10.005 + 0.005 = 10.010, écrite
@@ -5208,6 +5198,8 @@ mod tests {
         assert_eq!(format_swiss_amount(dec!(10.0050)), "10.01");
         assert_eq!(format_swiss_amount(dec!(-10.0050)), "-10.01");
         assert_eq!(format_swiss_amount(dec!(-0.0040)), "0.00");
+        // Epic 46 : arrondi, puis apostrophes sur plusieurs groupes de milliers.
+        assert_eq!(format_swiss_amount(dec!(-1234567.505)), "-1'234'567.51");
     }
 
     /// Prouve le **formateur** seul : le rendement arrive déjà arrondi au pair

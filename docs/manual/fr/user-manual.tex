@@ -4333,7 +4333,7 @@ Trois règles propres à la balance, qui n'a pas de sections~:
           montré dès que des comptes \textbf{des deux natures} y portent un montant non nul~: ses
           sous-groupes et ses comptes remontent d'un rang. Au plan PME, ce sont les classes
           \emph{6}, \emph{7} et \emph{8}, et leurs groupes \emph{70} et \emph{80}~; un compte à
-          zéro --- un compte miroir, par exemple --- ne dissout rien.
+          zéro ne dissout rien.
     \item \textbf{\emph{2~Passifs} reste un groupe} à la balance (au bilan, il n'est pas montré dès
           qu'un compte de capitaux propres a un solde, ses dettes et ses fonds propres tombant dans deux
           sections), puisque dettes et fonds propres sont tous
@@ -4564,9 +4564,11 @@ résultat~», «~Décompte TVA~»).
 
 \paragraph{Le bilan, le compte de résultat et la balance par groupes.} L'export du bilan, du
 compte de résultat et de la balance \textbf{suit l'écran}~: même niveau de détail, mêmes groupes ouverts ou fermés, mêmes
-sous-totaux, sur la ligne du titre ou en pied. Exporté sans niveau --- à l'écran, case \textbf{Hiérarchie des groupes} décochée --- il reste à
-plat, tel qu'avant. Depuis l'écran, l'export suit la hiérarchie affichée, avec les colonnes
-\texttt{Niveau} et \texttt{TypeLigne} et les sous-totaux. Le CSV groupé (bilan, compte de résultat ou balance) ne s'additionne pas tel quel~: le titre d'un groupe (en pied, sa ligne de sous-total) répète les montants de ses comptes, et un groupe fermé n'y porte que son sous-total. Chaque section du bilan et du compte de résultat porte sa ligne de total, la balance sa ligne \texttt{Total}~; pour additionner les montants dans un tableur, décochez «~Hiérarchie des groupes~» pour l'export à plat d'avant, qui porte lui aussi ses lignes de total (à filtrer par \texttt{Section} au bilan et au compte de résultat, à écarter à la balance~: ligne \texttt{Total}) et n'a pas de colonne \texttt{TypeLigne}. Les montants groupés sont arrondis au centime.
+sous-totaux, sur la ligne du titre ou en pied. Case \textbf{Hiérarchie des groupes} décochée, il reste à
+plat, tel qu'avant. Par l'API, un export qui ne précise rien rend la même chose que l'écran à sa première
+visite --- tous les comptes, colonnes \texttt{Niveau} et \texttt{TypeLigne} au CSV ---, et l'export à plat se
+demande par \texttt{detailLevel=flat} (guide de l'API, \texttt{docs/api-external.md}). Depuis l'écran, l'export suit la hiérarchie affichée, avec les colonnes
+\texttt{Niveau} et \texttt{TypeLigne} et les sous-totaux. Le CSV groupé (bilan, compte de résultat ou balance) ne s'additionne pas tel quel~: le titre d'un groupe (en pied, sa ligne de sous-total) répète les montants de ses comptes, et un groupe fermé n'y porte que son sous-total. Chaque section du bilan et du compte de résultat porte sa ligne de total, la balance sa ligne \texttt{Total}~; pour additionner les montants dans un tableur, décochez «~Hiérarchie des groupes~» pour l'export à plat d'avant, qui porte lui aussi ses lignes de total (à filtrer par \texttt{Section} au bilan et au compte de résultat, à écarter à la balance~: ligne \texttt{Total}) et n'a pas de colonne \texttt{TypeLigne}. Les montants, groupés ou à plat, sont arrondis au centime.
 \begin{itemize}
     \item \textbf{PDF} --- sous la période, une ligne dit le niveau imprimé («~Niveau~2~», ou
           «~Tous les comptes~»), suivie de «~, détail ajusté à la main~» si vous avez ouvert ou

@@ -86,6 +86,7 @@ légales imposées (Q7) ; le grand livre (Q6) ; **la balance est dans le périm�
   `{ kind: group|account|own, depth, accountId, number, name, balance, currency?, balanceCurrency? }`. Les trois rendus
   et le MCP lisent la même liste. *(Q5 pour le MCP)*
   *Responsable de l'epic, 2026-11-19 :* approuvé (Q5 tel que proposé) ; le MCP suit, avec la position des sous-totaux (46-4). *Précisé à la 46-1, § Le contrat (validation P3, 2026-11-20) : les noms de champs de la fiche font foi (`accountNumber`, `accountName`, `open`, `active`, `role`, `mirrorOf`, genre `subtotal` en pied) ; le schéma ci-dessus n'en est qu'une esquisse.*
+  *Annoté le 2026-11-24, story 46-8 : « sans paramètre … identiques » ne vaut plus pour l'**export** par l'API, groupé par défaut ; l'export d'avant se demande par `detailLevel=flat`. Voir l'amendement de NFR-46-1, ci-dessous.*
 - **D9 — Choix du niveau à l'écran** : un sélecteur « À plat · Niveau 1 · … · Tous les comptes » sur le bilan et le
   compte de résultat ; le niveau passe à l'export (PDF, CSV). Retenu par visiteur (`localStorage`, convenance) ; aucun
   preset enregistré (hors périmètre).
@@ -118,6 +119,9 @@ légales imposées (Q7) ; le grand livre (Q6) ; **la balance est dans le périm�
 **Non fonctionnelles**
 
 - NFR-46-1 — Sans paramètre : JSON, CSV (octet pour octet) et PDF (mêmes lignes de texte) identiques à l'actuel.
+  *(Amendé le 2026-11-24, décision du mainteneur, story 46-8 : l'**export** par l'API rend la présentation de l'écran
+  sans paramètre (groupé, `detailLevel=all`) ; l'export d'avant se demande par `detailLevel=flat`, CSV à l'octet, PDF
+  aux mêmes lignes. NFR-46-1 et D8 valent désormais pour le JSON et le MCP, et pour l'export à `detailLevel=flat`.)*
 - NFR-46-2 — Somme des sous-totaux de premier niveau = total de la section, à tout niveau ; équation du bilan inchangée.
 - NFR-46-3 — Une seule requête de plus par rapport (l'arbre) ; agrégation en mémoire, O(n comptes).
 - NFR-46-4 — Arbre défensif : un cycle ou un parent d'une autre société (impossible par l'API, possible par SQL) ne
@@ -161,6 +165,7 @@ AC-4 ; la 46-3 ne commence qu'après sa fusion) ; la **47-3** (présentation mir
 | 46-6a | Balance par groupes : modèle, API, MCP | 46-1 ; MCP : 46-4 | M | `46-6a-balance-groupes-modele-api-mcp.md` |
 | 46-6b | Balance par groupes : écran, PDF, CSV | 46-6a, 46-2, 46-3 | M | `46-6b-balance-groupes-ecran-pdf-csv.md` |
 | 46-7 | Solde de la dette de l'epic (plafond : **2 issues**) | toutes | S | `46-7-solde-dette-epic.md` |
+| 46-8 | L'export par l'API rend la présentation de l'écran (décision du mainteneur du 2026-11-24) | 46-3, 46-6b | S | `46-8-export-api-groupe-par-defaut.md` |
 
 Ordre : 46-1 → (46-3 dès la 48-11 fusionnée, 46-4, 46-6a hors MCP en parallèle ; le MCP de la 46-6a après la 46-4) → 46-2 (après 46-3, pour l'export groupé :
 avant elle, `ExportQuery` ignorerait les paramètres et rendrait un PDF à plat d'un écran groupé, sans rien signaler) →

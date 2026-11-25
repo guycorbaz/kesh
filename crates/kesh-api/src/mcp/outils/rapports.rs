@@ -26,6 +26,13 @@
 //! typée de la Story 46-1, qui seule les valide. Pas de pagination
 //! (C-46-4-3) : le niveau borne la taille.
 //!
+//! **Sans `detailLevel`, la sortie reste à plat**, comme les routes JSON de
+//! l'API, que ces outils reflètent : seuls les **exports** (PDF, CSV) de
+//! l'API rendent par défaut la présentation de l'écran (décision du
+//! mainteneur, Epic 46), et le MCP n'exporte pas de fichier. La valeur
+//! `flat` de la route REST n'a pas d'équivalent ici : elle n'y changerait
+//! rien.
+//!
 //! Tailles, mesurées le 2026-11-21 (`tailles_groupees_plan_pme`,
 //! `tailles_groupees_seuil`). Plan PME (hors comptes à rôle, que le test ne
 //! mouvemente pas ; ses 52 comptes imputables sans rôle ni écriture passés en

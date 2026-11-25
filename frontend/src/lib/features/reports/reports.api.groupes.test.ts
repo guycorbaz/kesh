@@ -19,6 +19,7 @@ import {
 	getBalanceSheet,
 	getIncomeStatement,
 	getReportExportUrl,
+	FLAT_DETAIL_LEVEL,
 	getTrialBalance,
 	groupingQueryParams,
 } from './reports.api';
@@ -99,10 +100,27 @@ describe("URL d'export (AC-6, paramètres de la 46-3 et de la 46-6b)", () => {
 		}
 	});
 
-	it('hiérarchie masquée : URL sans paramètre de groupement', () => {
+	// Avant la décision du mainteneur (l'export de l'API rend la présentation de
+	// l'écran par défaut), ce test attendait une URL sans paramètre de groupement :
+	// c'était l'export à plat. Sans paramètre, l'export est désormais groupé ;
+	// l'écran à plat demande donc `detailLevel=flat`, et rien d'autre.
+	it('hiérarchie masquée : detailLevel=flat seul, pour les trois rapports groupés', () => {
 		expect(getReportExportUrl('balance-sheet', { fiscalYearId: 1 }, 'pdf')).toBe(
-			'/api/v1/reports/balance-sheet/export?fiscalYearId=1&format=pdf',
+			'/api/v1/reports/balance-sheet/export?fiscalYearId=1&format=pdf&detailLevel=flat',
 		);
+		for (const type of ['balance-sheet', 'income-statement', 'trial-balance'] as const) {
+			const p = params(getReportExportUrl(type, { fiscalYearId: 1 }, 'csv'));
+			expect(p.get('detailLevel')).toBe(FLAT_DETAIL_LEVEL);
+			expect(p.has('subtotalPosition')).toBe(false);
+			expect(p.has('open')).toBe(false);
+			expect(p.has('closed')).toBe(false);
+		}
+	});
+
+	it('hiérarchie masquée : la lecture JSON reste sans paramètre (à plat par défaut)', async () => {
+		await getBalanceSheet({ fiscalYearId: 1 });
+		const p = params(getMock.mock.calls.at(-1)![0] as string);
+		expect(p.has('detailLevel')).toBe(false);
 	});
 
 	it('les autres rapports ne reçoivent jamais de paramètre de groupement', () => {
@@ -110,6 +128,8 @@ describe("URL d'export (AC-6, paramètres de la 46-3 et de la 46-6b)", () => {
 		for (const type of ['journals', 'vat'] as const) {
 			const p = params(getReportExportUrl(type, { fiscalYearId: 1 }, 'csv', g));
 			expect(p.has('detailLevel')).toBe(false);
+			// …pas même `flat` sans groupement.
+			expect(params(getReportExportUrl(type, { fiscalYearId: 1 }, 'csv')).has('detailLevel')).toBe(false);
 			expect(p.has('open')).toBe(false);
 		}
 	});

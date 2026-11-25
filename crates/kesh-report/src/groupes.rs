@@ -321,7 +321,7 @@ pub struct LigneGroupee {
     /// État d'un groupe (`Groupe` seulement).
     pub ouvert: Option<bool>,
     /// Indice de la ligne d'entrée (`Compte` et `Propre` seulement) : de quoi
-    /// relire ce que la ligne neutre ne porte pas (actif, rôle, miroir).
+    /// relire ce que la ligne neutre ne porte pas (actif, rôle).
     pub source: Option<usize>,
 }
 
@@ -1071,7 +1071,7 @@ impl LigneAgregeable for TrialBalanceRow {
 
 /// Une ligne groupée de la balance, telle que sérialisée dans `groupedRows`
 /// (un tableau : la balance n'a pas de sections). Les noms sont ceux de
-/// [`TrialBalanceRow`] ; ni rôle ni miroir (la balance n'est pas présentée).
+/// [`TrialBalanceRow`] ; ni rôle (la balance n'est pas présentée).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LigneBalanceGroupee {
@@ -2277,8 +2277,9 @@ mod tests {
 
     /// AC-2 — nature, au lieu de section : un compte de nature contraire à
     /// zéro ne dissout pas son groupe (C-46-6a-3) ; avec un montant, il dissout
-    /// le groupe et ses ancêtres. Cas du compte miroir de passif rangé sous un
-    /// groupe d'actif (état forgé, 47-1 AC-8).
+    /// le groupe et ses ancêtres. Cas d'un compte de passif rangé sous un
+    /// groupe d'actif (état forgé ; le compte miroir de l'Epic 47, pas encore
+    /// dans cette base, en serait un).
     #[test]
     fn balance_nature_et_lignes_nulles() {
         let p = plan(&[

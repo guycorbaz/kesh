@@ -140,7 +140,8 @@ Fiches 46-1, 46-2, 46-3, 46-6a.
   en pied, groupes ouverts ou fermés d'un clic), avec sa propre mémoire ; chaque groupe totalise ouverture, débit,
   crédit et clôture de ses comptes, et un groupe en devise unique a sa seconde ligne en devise. Les exports PDF et
   CSV reprennent la présentation affichée (CSV : colonnes `Niveau;TypeLigne` en tête) ; sans présentation par
-  groupes, ils restent ceux d'avant.
+  groupes, ils restent ceux d'avant. Par l'API, l'export sans paramètre est groupé comme l'écran, et l'export d'avant se
+  demande par `detailLevel=flat` (story 46-8, annoté le 2026-11-24).
 - **Changed** — La balance s'affiche désormais groupée par défaut (tous les comptes), et l'export PDF ou CSV lancé
   depuis l'écran suit la vue affichée : le CSV de la balance change de forme sans geste de l'utilisateur, avec les
   colonnes `Niveau;TypeLigne` en tête et les sous-totaux. Le CSV groupé de la balance ne s'additionne pas tel quel :
@@ -153,6 +154,8 @@ Fiches 46-1, 46-2, 46-3, 46-6a.
   `all`, `subtotalPosition` autre que `header` ou `footer`, un élément de `open` ou `closed` qui n'est pas un
   entier, un même identifiant dans les deux listes, plus de 500 identifiants) ; `subtotalPosition`, `open` ou
   `closed` sans `detailLevel`. Un export qui passait avec ces paramètres invalides est désormais refusé.
+  *(Annoté le 2026-11-24, story 46-8 : `subtotalPosition`, `open` ou `closed` sans `detailLevel` sont désormais
+  acceptés à l'export, groupé par défaut au niveau `all` ; ils sont refusés avec `detailLevel=flat`.)*
 
 ## Dev Agent Record
 

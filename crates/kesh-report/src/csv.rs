@@ -170,7 +170,7 @@ pub fn render_grouped_balance_sheet_csv<W: Write>(
 
 /// La disposition des colonnes d'un CSV du bilan ou du compte de résultat :
 /// groupé ou non (colonnes `Niveau;TypeLigne`), en devise ou non (colonnes
-/// `Devise;SoldeDevise`), et le formateur de ses montants.
+/// `Devise;SoldeDevise`).
 struct Disposition {
     /// Colonnes `Niveau;TypeLigne` (Story 46-3).
     groupe: bool,

@@ -214,13 +214,19 @@ pub struct DemandePeriode {
 pub const MAX_GROUPES_MANUELS: usize = 500;
 
 /// Le niveau de détail d'une demande, **avant** validation de sa plage : un
-/// entier quelconque, ou `all`.
+/// entier quelconque, `all` ou `flat`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NiveauDemande {
     /// Un entier, valide de 1 à [`NIVEAU_MAX`].
     Niveau(i64),
     /// Tous les groupes ouverts.
     Tous,
+    /// La présentation **à plat**, sans groupes (`detailLevel=flat`) : le
+    /// moyen d'obtenir d'un export l'ancien rendu, que l'export ne rend plus
+    /// sans paramètre (la présentation de l'écran y est le défaut). Sans
+    /// effet ailleurs : une route JSON sans `detailLevel` rend déjà le rapport
+    /// à plat.
+    APlat,
 }
 
 /// Demande de présentation par groupes de comptes (Story 46-1) du bilan ou du
@@ -240,9 +246,10 @@ pub struct DemandeGroupes {
 }
 
 impl DemandeGroupes {
-    /// Entrée typée. `Ok(None)` sans `detail_level` ni rien d'autre ; refus
-    /// `400 VALIDATION_ERROR` qui nomme le paramètre : niveau hors de 1 à 20,
-    /// `subtotalPosition`, `open` ou `closed` sans `detailLevel`, plus de 500
+    /// Entrée typée. `Ok(None)` sans `detail_level` ni rien d'autre, ou avec
+    /// [`NiveauDemande::APlat`] seul ; refus `400 VALIDATION_ERROR` qui nomme
+    /// le paramètre : niveau hors de 1 à 20, `subtotalPosition`, `open` ou
+    /// `closed` sans `detailLevel` ou avec `detailLevel=flat`, plus de 500
     /// identifiants dans une liste, un même identifiant ouvert et fermé.
     pub fn depuis_valeurs(
         detail_level: Option<NiveauDemande>,
@@ -250,23 +257,9 @@ impl DemandeGroupes {
         open: Option<Vec<i64>>,
         closed: Option<Vec<i64>>,
     ) -> Result<Option<Self>, AppError> {
-        let Some(niveau) = detail_level else {
-            for (nom, donne) in [
-                ("subtotalPosition", subtotal_position.is_some()),
-                ("open", open.is_some()),
-                ("closed", closed.is_some()),
-            ] {
-                if donne {
-                    return Err(AppError::Validation(format!(
-                        "{nom} : exige detailLevel (présentation par groupes)"
-                    )));
-                }
-            }
-            return Ok(None);
-        };
-        let niveau = match niveau {
-            NiveauDemande::Tous => NiveauDetail::Tous,
-            NiveauDemande::Niveau(n) => match u8::try_from(n) {
+        let niveau = match detail_level {
+            Some(NiveauDemande::Tous) => NiveauDetail::Tous,
+            Some(NiveauDemande::Niveau(n)) => match u8::try_from(n) {
                 Ok(n) if (1..=NIVEAU_MAX).contains(&n) => NiveauDetail::Niveau(n),
                 _ => {
                     return Err(AppError::Validation(format!(
@@ -274,6 +267,25 @@ impl DemandeGroupes {
                     )));
                 }
             },
+            // Sans niveau, ou à plat : aucune présentation par groupes, et
+            // aucun autre paramètre de groupes n'a de sens.
+            None | Some(NiveauDemande::APlat) => {
+                let motif = if detail_level.is_none() {
+                    "exige detailLevel (présentation par groupes)"
+                } else {
+                    "sans objet avec detailLevel=flat (présentation à plat)"
+                };
+                for (nom, donne) in [
+                    ("subtotalPosition", subtotal_position.is_some()),
+                    ("open", open.is_some()),
+                    ("closed", closed.is_some()),
+                ] {
+                    if donne {
+                        return Err(AppError::Validation(format!("{nom} : {motif}")));
+                    }
+                }
+                return Ok(None);
+            }
         };
         let liste = |nom: &str,
                      ids: Option<Vec<i64>>|
@@ -305,8 +317,8 @@ impl DemandeGroupes {
     }
 
     /// Entrée REST : les chaînes de la requête. Refuse à l'analyse ce qui n'a
-    /// pas la syntaxe attendue (`detailLevel` qui n'est ni un entier ni `all`
-    /// — `2.5`, `ALL`, vide —, `subtotalPosition` autre que `header` ou
+    /// pas la syntaxe attendue (`detailLevel` qui n'est ni un entier, ni `all`,
+    /// ni `flat` — `2.5`, `ALL`, `FLAT`, vide —, `subtotalPosition` autre que `header` ou
     /// `footer`, un élément de liste qui n'est pas un entier, vide compris),
     /// puis valide par [`DemandeGroupes::depuis_valeurs`].
     pub fn depuis_requete(
@@ -318,9 +330,10 @@ impl DemandeGroupes {
         let niveau = detail_level
             .map(|v| match v {
                 "all" => Ok(NiveauDemande::Tous),
+                "flat" => Ok(NiveauDemande::APlat),
                 _ => v.parse::<i64>().map(NiveauDemande::Niveau).map_err(|_| {
                     AppError::Validation(format!(
-                        "detailLevel : attendu un entier de 1 à {NIVEAU_MAX} ou « all » (reçu « {v} »)"
+                        "detailLevel : attendu un entier de 1 à {NIVEAU_MAX}, « all » ou « flat » (reçu « {v} »)"
                     ))
                 }),
             })
@@ -794,10 +807,10 @@ pub async fn bilan_par_groupes<U: Usage>(
     validate_fiscal_year_id(demande.fiscal_year_id)?;
     let period = resoudre_periode(acces, lecture, &demande).await?;
     let bilan = generate_balance_sheet(lecture.pool(), acces.company_id(), &period).await?;
-    // Point d'insertion de la présentation miroir (Story 47-3,
-    // `present_balance_sheet`) : elle s'applique ici, au bilan brut, **avant**
-    // le regroupement (AC-9, décision de Guy « miroir puis groupes ») ; les
-    // groupes se calculent alors sur les sections présentées.
+    // Point d'insertion prévu de la présentation miroir de l'Epic 47 (Story
+    // 47-3, pas encore dans cette base) : elle s'appliquera ici, au bilan brut,
+    // **avant** le regroupement (AC-9, décision de Guy « miroir puis groupes ») ;
+    // les groupes se calculeront alors sur les sections présentées.
     let contenu = match groupes {
         None => AvecGroupes::sans_groupes(bilan),
         Some(g) => AvecGroupes::bilan(bilan, &arbre_des_comptes(acces, lecture).await?, &g.options),
@@ -830,8 +843,8 @@ pub async fn compte_de_resultat_par_groupes<U: Usage>(
     validate_fiscal_year_id(demande.fiscal_year_id)?;
     let period = resoudre_periode(acces, lecture, &demande).await?;
     let resultat = generate_income_statement(lecture.pool(), acces.company_id(), &period).await?;
-    // Point d'insertion de la présentation miroir (Story 47-3,
-    // `present_income_statement`), avant le regroupement (AC-9).
+    // Point d'insertion prévu de la présentation miroir de l'Epic 47 (Story
+    // 47-3, pas encore dans cette base), avant le regroupement (AC-9).
     let contenu = match groupes {
         None => AvecGroupes::sans_groupes(resultat),
         Some(g) => AvecGroupes::compte_de_resultat(

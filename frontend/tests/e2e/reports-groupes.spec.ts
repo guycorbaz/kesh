@@ -15,6 +15,7 @@
  * Captures : `KESH_CAPTURES_DIR` (thème clair), une par état touché.
  */
 
+import { readFileSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
 import { seedTestState, clearAuthStorage } from './helpers/test-state';
 import { login, preparerArbre } from './helpers/reports-groupes';
@@ -31,6 +32,27 @@ const CAPTURES = process.env.KESH_CAPTURES_DIR ?? 'test-results';
 
 async function capture(page: Page, nom: string): Promise<void> {
 	await page.screenshot({ path: `${CAPTURES}/46-2-${nom}.png`, fullPage: true });
+}
+
+/**
+ * Story 46-8 (revue P1, LOW-6) — exporte en CSV l'onglet affiché, hiérarchie
+ * masquée : l'export de l'API étant groupé sans paramètre, l'écran à plat
+ * demande `detailLevel=flat`, et le fichier n'a pas les colonnes groupées.
+ */
+async function exporterAPlat(page: Page, route: string, compte: string): Promise<void> {
+	const exportReq = page.waitForRequest((r) =>
+		new RegExp(`reports/${route}/export\\?`).test(r.url()),
+	);
+	const download = page.waitForEvent('download');
+	await page.getByRole('button', { name: /export csv/i }).click();
+	const url = new URL((await exportReq).url());
+	expect(url.searchParams.get('detailLevel')).toBe('flat');
+	expect(url.searchParams.has('subtotalPosition')).toBe(false);
+	const chemin = await (await download).path();
+	expect(chemin, 'fichier téléchargé').toBeTruthy();
+	const texte = readFileSync(chemin!, 'utf8').replace(/^\uFEFF/, '');
+	expect(texte.split(/\r?\n/)[0]).not.toContain('Niveau;TypeLigne');
+	expect(texte).toContain(compte);
 }
 
 /** Clique « Générer » et attend la requête du bilan ; rend son URL. */
@@ -126,6 +148,7 @@ test('bilan par groupes : défaut, niveau 1, ouverture à la main, export, retou
 	await expect(page.getByRole('link', { name: '1910' })).toBeVisible();
 	await expect(page.getByTestId('grouping-level')).toBeDisabled();
 	await capture(page, '6-hierarchie-masquee');
+	await exporterAPlat(page, 'balance-sheet', '1900');
 
 	// La remise en place laisse la vue par défaut pour les specs suivantes.
 	req = page.waitForRequest((r) => /reports\/balance-sheet\?/.test(r.url()));
@@ -141,4 +164,13 @@ test('bilan par groupes : défaut, niveau 1, ouverture à la main, export, retou
 	await expect(page.getByTestId('grouped-account-3000')).toContainText('1’250.00');
 	await expect(page.getByTestId('grouping-level')).toBeDisabled(); // plan sans groupe ici
 	await capture(page, '7-compte-de-resultat');
+
+	// 9. Compte de résultat, hiérarchie masquée : l'export demande `detailLevel=flat`.
+	req = page.waitForRequest((r) => /reports\/income-statement\?/.test(r.url()));
+	await page.getByTestId('grouping-shown').uncheck();
+	expect(new URL((await req).url()).searchParams.has('detailLevel')).toBe(false);
+	await exporterAPlat(page, 'income-statement', '3000');
+	req = page.waitForRequest((r) => /reports\/income-statement\?/.test(r.url()));
+	await page.getByTestId('grouping-shown').check();
+	await req;
 });

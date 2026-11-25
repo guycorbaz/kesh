@@ -1213,12 +1213,40 @@ fn fixture_groupes(nom: &str) -> std::path::PathBuf {
         .join(nom)
 }
 
-/// Compare les exports sans paramètre de groupes de `rapports` (`(route,
-/// nom)`), pour les deux exercices du jeu PME et les deux formats, à leurs
-/// fixtures `export-<nom>-<année>.{csv,pdf.txt}` : CSV **à l'octet**, PDF aux
-/// **mêmes lignes de texte** (extracteur partagé `kesh_report::texte_pdf`).
-/// `ecrire` réécrit les fixtures — à ne faire qu'au commit de base de la story
-/// qui les pose.
+/// Le corps d'un export comparable d'un appel à l'autre : le CSV tel quel, le
+/// PDF par ses lignes de texte (extracteur partagé `kesh_report::texte_pdf`),
+/// une par ligne.
+async fn corps_comparable(
+    app: &TestApp,
+    jeu: &JeuPme,
+    route: &str,
+    fy: i64,
+    format: &str,
+    suite: &str,
+) -> Vec<u8> {
+    let resp = export_pme(app, jeu, route, fy, format, suite).await;
+    assert_eq!(resp.status(), 200, "{route} {fy} {format}{suite}");
+    let corps = resp.bytes().await.unwrap().to_vec();
+    if format == "csv" {
+        return corps;
+    }
+    let lignes = kesh_report::texte_pdf::lignes(&corps);
+    assert!(
+        lignes.len() > 5,
+        "{route} {fy} : PDF illisible ({lignes:?})"
+    );
+    (lignes.join("\n") + "\n").into_bytes()
+}
+
+/// Compare les exports **à plat** (`detailLevel=flat`) de `rapports`
+/// (`(route, nom)`), pour les deux exercices du jeu PME et les deux formats, à
+/// leurs fixtures `export-<nom>-<année>.{csv,pdf.txt}` : CSV **à l'octet**, PDF
+/// aux **mêmes lignes de texte** (extracteur partagé `kesh_report::texte_pdf`).
+/// Les fixtures sont celles de l'export sans paramètre d'avant l'Epic 46 ;
+/// depuis que l'export par l'API rend par défaut la présentation de l'écran
+/// (groupée), cet ancien rendu se demande par `detailLevel=flat`, et c'est lui
+/// que les fixtures gardent. `ecrire` réécrit les fixtures — à ne faire qu'au
+/// commit de base de la story qui les pose.
 async fn comparer_aux_fixtures(
     app: &TestApp,
     jeu: &JeuPme,
@@ -1228,7 +1256,7 @@ async fn comparer_aux_fixtures(
     for (route, nom) in rapports {
         for (fy, annee) in [(jeu.fy_2025, 2025), (jeu.fy_2026, 2026)] {
             for format in ["csv", "pdf"] {
-                let resp = export_pme(app, jeu, route, fy, format, "").await;
+                let resp = export_pme(app, jeu, route, fy, format, "&detailLevel=flat").await;
                 assert_eq!(resp.status(), 200, "{route} {annee} {format}");
                 let corps = resp.bytes().await.unwrap().to_vec();
                 let (chemin, obtenu) = if format == "csv" {
@@ -1253,7 +1281,7 @@ async fn comparer_aux_fixtures(
                 assert_eq!(
                     String::from_utf8_lossy(&obtenu),
                     String::from_utf8_lossy(&attendu),
-                    "{route} {annee} {format} sans paramètre : l'export a changé (NFR-46-1)"
+                    "{route} {annee} {format} à plat : l'export a changé (NFR-46-1)"
                 );
                 assert_eq!(obtenu, attendu, "{route} {annee} {format} : octets");
             }
@@ -1261,14 +1289,18 @@ async fn comparer_aux_fixtures(
     }
 }
 
-/// AC-2 (NFR-46-1) — sans paramètre de groupes, l'export CSV du bilan et du
-/// compte de résultat est **identique à l'octet**, et l'export PDF a les
-/// **mêmes lignes de texte**, qu'au commit de base de la Story 46-3, fixtures
-/// écrites dans `tests/fixtures/rapports-groupes/export-*` avant toute
-/// modification du rendu. `KESH_ECRIRE_FIXTURES_46_3=1` les réécrit — à ne
-/// faire qu'au commit de base.
+/// AC-2 (NFR-46-1), **reformulé** : à plat (`detailLevel=flat`), l'export CSV
+/// du bilan et du compte de résultat est **identique à l'octet**, et l'export
+/// PDF a les **mêmes lignes de texte**, qu'au commit de base de la Story 46-3,
+/// fixtures écrites dans `tests/fixtures/rapports-groupes/export-*` avant
+/// toute modification du rendu. Jusqu'à la décision du mainteneur qui a fait
+/// de la présentation de l'écran le défaut de l'export par l'API, ce test
+/// s'appelait `exports_sans_parametre_identiques_a_la_fixture_de_base` et
+/// appelait l'export sans paramètre ; il garde l'ancien rendu, désormais
+/// demandé par `detailLevel=flat`. `KESH_ECRIRE_FIXTURES_46_3=1` les réécrit —
+/// à ne faire qu'au commit de base.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
-async fn exports_sans_parametre_identiques_a_la_fixture_de_base(pool: MySqlPool) {
+async fn exports_a_plat_identiques_a_la_fixture_de_base(pool: MySqlPool) {
     let jeu = jeu_pme(&pool).await;
     let app = spawn_app(pool).await;
     let ecrire = std::env::var("KESH_ECRIRE_FIXTURES_46_3").as_deref() == Ok("1");
@@ -1281,17 +1313,88 @@ async fn exports_sans_parametre_identiques_a_la_fixture_de_base(pool: MySqlPool)
     .await;
 }
 
-/// Story 46-6b, AC-3 (NFR-46-1) — sans paramètre de groupes, l'export de la
+/// Story 46-6b, AC-3 (NFR-46-1), **reformulé** comme le test ci-dessus : à
+/// plat (`detailLevel=flat`, l'ancien export sans paramètre), l'export de la
 /// **balance** est inchangé : CSV à l'octet, PDF aux mêmes lignes de texte,
 /// contre les fixtures `export-balance-*` écrites au commit de base de la
-/// 46-6b, avant toute modification du rendu. `KESH_ECRIRE_FIXTURES_46_6B=1`
-/// les réécrit — à ne faire qu'au commit de base.
+/// 46-6b, avant toute modification du rendu (ancien nom :
+/// `export_balance_sans_parametre_identique_a_la_fixture_de_base`).
+/// `KESH_ECRIRE_FIXTURES_46_6B=1` les réécrit — à ne faire qu'au commit de base.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
-async fn export_balance_sans_parametre_identique_a_la_fixture_de_base(pool: MySqlPool) {
+async fn export_balance_a_plat_identique_a_la_fixture_de_base(pool: MySqlPool) {
     let jeu = jeu_pme(&pool).await;
     let app = spawn_app(pool).await;
     let ecrire = std::env::var("KESH_ECRIRE_FIXTURES_46_6B").as_deref() == Ok("1");
     comparer_aux_fixtures(&app, &jeu, &[("trial-balance", "balance")], ecrire).await;
+}
+
+/// Décision du mainteneur (Epic 46) — **l'export par l'API rend ce que rend
+/// l'export lancé depuis l'écran** : sans paramètre de groupes, le bilan, le
+/// compte de résultat et la balance s'exportent dans la présentation de
+/// l'écran à sa première visite (`detailLevel=all`, `subtotalPosition=header`),
+/// colonnes `Niveau;TypeLigne` au CSV, et non plus à plat. Pour les trois
+/// rapports, les deux exercices et les deux formats : l'export sans paramètre
+/// est celui de `detailLevel=all&subtotalPosition=header` (CSV à l'octet, PDF
+/// aux mêmes lignes de texte), il diffère de l'export à plat
+/// (`detailLevel=flat`), et `subtotalPosition=footer` seul vaut
+/// `detailLevel=all&subtotalPosition=footer`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn exports_sans_parametre_rendent_la_presentation_de_l_ecran(pool: MySqlPool) {
+    let jeu = jeu_pme(&pool).await;
+    let app = spawn_app(pool).await;
+    for route in ["balance-sheet", "income-statement", "trial-balance"] {
+        for fy in [jeu.fy_2025, jeu.fy_2026] {
+            for format in ["csv", "pdf"] {
+                let defaut = corps_comparable(&app, &jeu, route, fy, format, "").await;
+                let ecran = corps_comparable(
+                    &app,
+                    &jeu,
+                    route,
+                    fy,
+                    format,
+                    "&detailLevel=all&subtotalPosition=header",
+                )
+                .await;
+                assert_eq!(
+                    String::from_utf8_lossy(&defaut),
+                    String::from_utf8_lossy(&ecran),
+                    "{route} {fy} {format} : sans paramètre, la présentation de l'écran"
+                );
+                let a_plat =
+                    corps_comparable(&app, &jeu, route, fy, format, "&detailLevel=flat").await;
+                assert_ne!(defaut, a_plat, "{route} {fy} {format} : plus à plat");
+                let texte = String::from_utf8_lossy(&defaut);
+                if format == "csv" {
+                    assert!(
+                        texte.lines().next().unwrap().contains("Niveau;TypeLigne;"),
+                        "{route} {fy} : en-tête groupé ({texte})"
+                    );
+                    assert!(
+                        !String::from_utf8_lossy(&a_plat).contains("Niveau;TypeLigne"),
+                        "{route} {fy} : à plat, sans les colonnes groupées"
+                    );
+                } else {
+                    assert!(
+                        texte.contains("Tous les comptes"),
+                        "{route} {fy} : en-tête du niveau ({texte})"
+                    );
+                }
+                let pied =
+                    corps_comparable(&app, &jeu, route, fy, format, "&subtotalPosition=footer")
+                        .await;
+                let pied_explicite = corps_comparable(
+                    &app,
+                    &jeu,
+                    route,
+                    fy,
+                    format,
+                    "&detailLevel=all&subtotalPosition=footer",
+                )
+                .await;
+                assert_eq!(pied, pied_explicite, "{route} {fy} {format} : pied seul");
+            }
+        }
+    }
 }
 
 /// Un montant de `groupedRows` (chaîne décimale exacte) tel que le PDF groupé
@@ -1497,8 +1600,18 @@ async fn export_groupes_refus_du_contrat(pool: MySqlPool) {
         ("&detailLevel=0", "detailLevel"),
         ("&detailLevel=21", "detailLevel"),
         ("&detailLevel=ALL", "detailLevel"),
-        ("&subtotalPosition=header", "subtotalPosition"),
-        ("&open=1", "open"),
+        // Sans `detailLevel`, l'export est groupé par défaut (tous les groupes
+        // ouverts) : `subtotalPosition` ou `open` seul y est admis (cf.
+        // `exports_sans_parametre_rendent_la_presentation_de_l_ecran`). Le refus
+        // de la 46-3 porte désormais sur ces paramètres **à plat**.
+        (
+            "&detailLevel=flat&subtotalPosition=header",
+            "subtotalPosition",
+        ),
+        ("&detailLevel=flat&open=1", "open"),
+        ("&detailLevel=flat&closed=1", "closed"),
+        ("&detailLevel=FLAT", "detailLevel"),
+        ("&detailLevel=flat&detailLevel=flat", "detailLevel"),
         ("&detailLevel=2&subtotalPosition=middle", "subtotalPosition"),
         ("&detailLevel=2&open=1,a", "open"),
         ("&detailLevel=2&open=7&closed=3,7", "closed"),
@@ -1746,8 +1859,10 @@ fn type_csv(kind: &str) -> &'static str {
 /// paramètres de groupes : un paramètre répété est refusé (`400
 /// VALIDATION_ERROR`, couvert par `export_groupes_refus_du_contrat`), ce qui
 /// remplace le test de la 46-3 (AC-8) et de la 46-6a (AC-9) qui l'affirmait
-/// **ignoré** ; avec `detailLevel`, le corps diffère de celui d'avant ; sans,
-/// il est celui d'avant (`export_balance_sans_parametre_identique_a_la_fixture_de_base`).
+/// **ignoré** ; avec `detailLevel=1`, le corps diffère de celui d'avant, à
+/// plat (`detailLevel=flat` : `export_balance_a_plat_identique_a_la_fixture_de_base`
+/// — jusqu'à ce que l'export par l'API prenne par défaut la présentation de
+/// l'écran, la comparaison se faisait à l'export sans paramètre).
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn export_balance_lit_les_parametres_de_groupes(pool: MySqlPool) {
     let jeu = jeu_pme(&pool).await;
@@ -1763,7 +1878,15 @@ async fn export_balance_lit_les_parametres_de_groupes(pool: MySqlPool) {
         )
         .await;
         assert_eq!(repete.status(), 400, "{format}");
-        let sans = export_pme(&app, &jeu, "trial-balance", jeu.fy_2025, format, "").await;
+        let sans = export_pme(
+            &app,
+            &jeu,
+            "trial-balance",
+            jeu.fy_2025,
+            format,
+            "&detailLevel=flat",
+        )
+        .await;
         assert_eq!(sans.status(), 200);
         let sans = sans.bytes().await.unwrap();
         let avec = export_pme(

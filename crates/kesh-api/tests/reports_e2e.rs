@@ -1526,11 +1526,13 @@ async fn balance_sheet_next_year_reflects_prior_closing_balances(pool: MySqlPool
     assert_eq!(body["equationHolds"], true, "14000 == 10000 + 4000 + 0");
 
     // Correctif fix-bilan-resultat-reporte : report calculé NON nul → la ligne calculée
-    // reste dans l'export CSV (elle signale un report à passer).
+    // reste dans l'export CSV (elle signale un report à passer). Export **à plat**
+    // (`detailLevel=flat`) : la ligne attendue est celle du CSV à plat, que l'export par
+    // l'API ne rend plus sans paramètre (présentation de l'écran par défaut).
     let resp = app
         .client
         .get(app.url(&format!(
-            "/api/v1/reports/balance-sheet/export?format=csv&fiscalYearId={fy2026}"
+            "/api/v1/reports/balance-sheet/export?format=csv&detailLevel=flat&fiscalYearId={fy2026}"
         )))
         .bearer_auth(&jwt)
         .send()
@@ -2151,6 +2153,35 @@ async fn balance_sans_parametre_identique_a_la_fixture_de_base(pool: MySqlPool) 
             "balance {annee} sans paramètre : le JSON a changé (NFR-46-1)"
         );
         assert!(!corps.contains("grouping") && !corps.contains("groupedRows"));
+    }
+}
+
+/// Story 46-8, AC-3 (revue P1, LOW-6) — `detailLevel=flat` aux **routes
+/// JSON** : le corps du bilan, du compte de résultat et de la balance est
+/// identique à l'octet aux fixtures de base (celles du rendu sans paramètre,
+/// tests ci-dessus), sans `grouping` ni `groupedRows`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn routes_json_a_plat_identiques_a_la_fixture_de_base(pool: MySqlPool) {
+    let jeu = jeu_pme(&pool).await;
+    let app = spawn_app(pool).await;
+    for (route, nom) in [
+        ("balance-sheet", "bilan"),
+        ("income-statement", "resultat"),
+        ("trial-balance", "balance"),
+    ] {
+        for (fy, annee) in [(jeu.fy_2025, 2025), (jeu.fy_2026, 2026)] {
+            let resp = get_pme(&app, &jeu, route, fy, "&detailLevel=flat").await;
+            assert_eq!(resp.status(), 200, "{route} {annee}");
+            let corps = resp.text().await.unwrap();
+            let chemin = fixture_46_1(&format!("{nom}-{annee}.json"));
+            let attendu = std::fs::read_to_string(&chemin)
+                .unwrap_or_else(|e| panic!("fixture {} illisible : {e}", chemin.display()));
+            assert_eq!(
+                corps, attendu,
+                "{route} {annee} avec detailLevel=flat : le JSON diffère de celui sans paramètre"
+            );
+            assert!(!corps.contains("grouping") && !corps.contains("groupedRows"));
+        }
     }
 }
 

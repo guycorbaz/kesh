@@ -664,7 +664,10 @@ describe('page des rapports — vue groupée de la balance (Story 46-6b)', () =>
 		expect(args[4]).toEqual({ detailLevel: 1, subtotalPosition: 'header', open: [], closed: [] });
 	});
 
-	it('hiérarchie masquée : requête et export sans paramètre, écran à plat', async () => {
+	// L'export reçoit `undefined` pour le groupement ; c'est `getReportExportUrl` qui en
+	// fait `detailLevel=flat` (reports.api.groupes.test.ts), l'export de l'API étant
+	// groupé sans paramètre.
+	it('hiérarchie masquée : requête sans paramètre, export sans groupement, écran à plat', async () => {
 		localStorage.setItem(
 			TB_KEY,
 			JSON.stringify({ shown: false, detailLevel: 'all', subtotalPosition: 'header', open: [], closed: [] }),
