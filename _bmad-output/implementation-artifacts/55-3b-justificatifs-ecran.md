@@ -156,7 +156,9 @@ par la garde : un fichier commun, non un module.) Les pages des fiches de factur
    (« Journaux »). **Inventaire des phrases du figement**, chacune corrigée en « au premier téléchargement, envoi ou
    affichage » avec renvoi au § 11.6.1 : `:1502` (« produit et figé au premier téléchargement ou au premier envoi »),
    `:1513` (« figé au premier téléchargement ou envoi »), `:1637`, `:1641` (« qui télécharge le premier » → « qui
-   télécharge ou ouvre le premier »), `:1645` (« au premier téléchargement »). `.tex` seul. Constat : `pdftotext docs/manual/fr/user-manual.pdf - | tr '\n' ' ' | tr -s ' ' | grep -o
+   télécharge ou ouvre le premier »), `:1645` (« au premier téléchargement »), `:1643` (« figée à son prochain téléchargement ») et `:1644` (« son prochain
+   téléchargement figera ») → « téléchargement ou affichage » ; `:1650` (PDF figé disparu, « le téléchargement est
+   refusé ») : une phrase qui dit que l'affichage depuis les rapports l'est aussi, avec le même message. `.tex` seul. Constat : `pdftotext docs/manual/fr/user-manual.pdf - | tr '\n' ' ' | tr -s ' ' | grep -o
    'premier téléchargement.\{0,120\}'` avant (journal) ; après la régénération à la release, les cinq phrases neuves (« affichage »). Captures du
    manuel montrant le grand livre (p. ex. `rd-grand-livre-usd.png`) : périmées si la colonne y paraît, à refaire à la
    release (dit au Change Log).
@@ -173,7 +175,8 @@ par la garde : un fichier commun, non un module.) Les pages des fiches de factur
   genres (lecteur appelé, nom de fichier, replis de l'AC-3) ; erreur `410` → texte de `pdfErrorMessage` ; `Blob` vide
   **pour chacun des trois genres** ; **lecture unique** : dialogue ouvert, rapport remplacé par un objet égal → toujours
   **une** lecture (mutation déclarée au journal : sélection tenue par l'objet → deux lectures, test rouge) ; ouverture sans
-  appel de `goto` (mock de `$app/navigation`).
+  appel de `goto` (mock de `$app/navigation`) ; **fermé puis rouvert pendant la lecture de la liste** : la réponse de la
+  première ouverture est ignorée (mutation : compteur d'ouverture retiré → la liste ancienne s'affiche, test rouge).
 - **Vitest** `reports.api.test.ts` : `fetchEntryDocuments(entryId)`, `fetchInvoicePdf`, `fetchCreditNotePdf` (URL exactes).
 - **Vitest** `DocumentPreview.test.ts` : tests ajoutés (propriété présente rendant une chaîne, y compris pour
   `SOURCE_DOCUMENT_GONE` ; rendant `undefined` ; absente ; nouveau rendu avec une autre fonction `errorMessage` → **une**
@@ -205,7 +208,16 @@ d'une facture figée, ou par `page.route` rendant `410 INVOICE_PDF_GONE`) ; gran
 
 ## Tâches
 
-- [ ] **T0** — Base `epic/55-navigation` avec les 55-1a, 55-1b, 55-2 et 55-3a ; lignes du manuel sur la base PR 46.
+- [ ] **T0** — Base `epic/55-navigation` avec les 55-1a, 55-1b, 55-2 et 55-3a ; lignes du manuel sur la base PR 46 ; et les
+      points renvoyés par la validation, chacun tranché au Change Log, ligne lue citée :
+      - hauteur de l'aperçu dans le dialogue (titre, liste, cadre et « Fermer » tiennent dans `85vh`, sans double
+        défilement) ;
+      - fichier d'epic : `helpers/api-fixtures.ts` non touché ;
+      - une instance du dialogue **par vue** (non par ligne), l'icône ne portant que l'écriture ;
+      - nature de l'erreur « vide » (classe dédiée reconnue par `errorMessage` avant `pdfErrorMessage`) ; une clé pour le
+        libellé de l'icône et le titre s'ils portent le même texte ;
+      - E2E *Consultation* exigé (patron `reports.spec.ts:441`) ;
+      - LOW de la version précédente (V3-1 à V3-7).
 - [ ] **T1** — Vitest rouges.
 - [ ] **T2** — `DocumentPreview` (`errorMessage`, rien d'autre) ; lecteurs dans `reports.api.ts`
       (`fetchEntryDocuments`, `fetchInvoicePdf`, `fetchCreditNotePdf`) ; `EntryDocumentsViewer.svelte` (la liste en haut,
@@ -289,3 +301,5 @@ n'était pas encore produit le fige, comme un téléchargement. (refs #À-VENIR)
   l'Epic 43 intact (Vv2p1-1) ; cinq appelants (Vv2p1-2) ; liste relue à chaque ouverture, garde d'ouverture (Vv2p1-3) ;
   Vv2p1-4 à Vv2p1-9 **renvoyés au T0** (hauteur du dialogue, `:1643-1644` et `:1650` du manuel, fichier d'epic, une instance
   de dialogue par vue, nature de l'erreur « vide » et clés en double, E2E *Consultation* exigé).
+- 2026-11-25 — Validation P2 ciblée (version récrite, Haiku) : 0/0/2/0 ; remédiée : `:1643`, `:1644`, `:1650` à l'AC-9
+  (Vv2p2-1) ; renvois au T0 écrits en tâches (Vv2p2-1) ; test de la garde d'ouverture et sa mutation (Vv2p2-2).
