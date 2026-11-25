@@ -48,7 +48,10 @@ story de solde 40-9 »). Chaque prémisse a été relue au code de `b321f24ad` :
 - Verrou de la destination à l'acceptation (fix-40, `technical-debt` P3), type de compte de la destination (40-7b, P3),
   libellé passé d'un prestataire à l'autre (40-7d P1 L1), textes du remboursement en CHF (40-7d P1 L8), compte rendu CSV
   resté affiché après un téléchargement, six clés `provider-*` sans site, retour au compte du plan d'origine (40-7d P4
-  L3), E2E de versements en devise (40-7d P1 L3), `bank-import.spec.ts:130` : restent en issues.
+  L3), E2E de versements en devise (40-7d P1 L3), `bank-import.spec.ts:130` : restent en issues. *(Annoté le 2026-11-25 :
+  ouvertes le 2026-11-24 — verrou de la destination #1541, type de compte de la destination #1542, libellé passé d'un
+  prestataire à l'autre #1535, textes du remboursement en CHF #1537, compte rendu CSV resté affiché #1546, retour au
+  compte du plan d'origine #1540, E2E de versements en devise #1536.)*
 - Un compte ordinaire déjà importé en CAMT peut recevoir des réglages de prestataire (40-7c P1 L4, `bug` P3) : demande
   une décision (refuser le réglage, ou dater par `value_date`), non un correctif mécanique ; reste en issue.
 - Côté Wise du L3 (chaîne versement Stripe → compte Wise → `POST /wise/accept`) : de l'Epic 39 ; entrée ajoutée à
@@ -79,7 +82,8 @@ story de solde 40-9 »). Chaque prémisse a été relue au code de `b321f24ad` :
 - **AC-4 (C4)** : le lien « Comptes bancaires » du panneau d'erreur d'import ne s'affiche que pour les refus qui se
   règlent à l'écran *Comptes bancaires* : `PROVIDER_ACCOUNT_NOT_FOUND`, `PROVIDER_CURRENCY_ACCOUNT_MISSING`,
   `PROVIDER_CURRENCY_DUPLICATE` et `BANK_ACCOUNT_CLOSED` (refus du cœur d'import, `provider_imports.rs:7-10` ; un
-  compte clos se rouvre à cet écran). Liste blanche : une erreur réseau ou inconnue n'a pas de lien. La page garde le **code**
+  compte clos se rouvre à cet écran). Liste blanche : une erreur réseau ou inconnue n'a pas de lien. *(Annoté le 2026-11-25 : le dialogue de téléchargement
+  par l'API n'offre pas ce lien, #1545.)* La page garde le **code**
   du refus (état neuf, remis à zéro avec `importErrors` au changement de compte ou d'exercice et à chaque import) :
   `importErrorLines` ne rend que des phrases. Règle hors composant (`importErrorConcernsAccounts(code)`,
   `provider-review.ts`), testée seule code par code ; et, sur la page Stripe, le panneau avec le lien pour
@@ -92,7 +96,7 @@ story de solde 40-9 »). Chaque prémisse a été relue au code de `b321f24ad` :
   actuelle (introuvable) » choisie ; **et**, dans le même cas dégradé, une candidate active de la liste de l'écran reste
   offerte, nommée (c'est ce qui tue la mutation du repli `payoutPool`, `… : null` → `… : []`, qui afficherait aussi
   « introuvable »). Limite, tracée en issue : une destination présente dans la liste mais écartée par le filtre (devenue
-  Stripe ou PayPal, autre devise) reste affichée en blanc.
+  Stripe ou PayPal, autre devise) reste affichée en blanc. *(Annoté le 2026-11-25 : #1543.)*
 - **AC-6 (docs)** : D1 à D6 faits ; D4 réécrit, non retiré : le `PUT` ne protège toujours pas la destination
   (décision 5 de `fix-40`), seule la fin « la relecture à l'usage viendra » est périmée. Grep des symptômes sur le
   dépôt (code, quatre locales, manuels `.tex`, docs, fiches) ; la formule de `POST /stripe/accept`
@@ -164,7 +168,7 @@ story de solde 40-9 »). Chaque prémisse a été relue au code de `b321f24ad` :
   ajouté sur la page Stripe (AC-4) ; L2 : limite du témoin des mutations dite au Dev Agent Record ; L3 : commentaire de
   `bank-accounts/+page.svelte` aux deux causes ; L4 : conflits de fusion vers `epic/39-wise` notés pour l'intégration
   (`provider-review.test.ts` add/add, `api-external.md` « PayPal, Stripe, Wise ») ; L5 : ergonomie de l'option
-  « introuvable », hors AC, notée par l'orchestrateur. Trend validation P1 0/0/2/5 → P2 0/0/1/5 → P3 0/0/0/3 ; revue
+  « introuvable », hors AC, notée par l'orchestrateur *(annoté le 2026-11-25 : #1544)*. Trend validation P1 0/0/2/5 → P2 0/0/1/5 → P3 0/0/0/3 ; revue
   de code P1 0/0/0/5. Statut `done`.
 
 ## Dev Agent Record
