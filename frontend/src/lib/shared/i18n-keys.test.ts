@@ -1171,6 +1171,14 @@ const ATTENDU = {
 	// garde après la fusion : **3499** (« expected 3499 to be +0 »,
 	// `kesh-gate-logs/fix-api-parent-compte/reprise-v0190-i18n-1.log`), non additionné — il égale
 	// 3495 (0.19.0) + 4 (le champ parent du dialogue de modification), les deux côtés gardés.
+	// Story 46-2 (2026-11-22) : **3499 → 3515**, relevé par la garde (« expected 3515 to be 3499 »,
+	// `kesh-gate-logs/s46-2/front-test-unit.log`) — la barre de présentation par groupes
+	// (`GroupingControls.svelte`) et les lignes groupées (`GroupedReportRows.svelte`), bloc
+	// `reports-groups-*`.
+	// Story 46-6b (2026-11-22) : **3515 → 3517**, relevé par la garde (« expected 3517 to be 3515 »,
+	// `kesh-gate-logs/s46-6b/front-test-unit.log`) — l'info-bulle du niveau propre à la balance
+	// (`reports-groups-level-hint-trial-balance`, `reports/+page.svelte`) et le badge « archivé »
+	// des lignes groupées de la balance (`reports-archived-label`, `GroupedReportRows.svelte`).
 	// Reprise de main dans epic/48 (2026-11-20, après les fusions de #1346, #1327, #1351) : les deux côtés gardés,
 	// total relevé par la garde, non additionné : **3507** (« expected 3507 to be +0 »,
 	// `kesh-gate-logs/e48-reprise-main/vitest-compteur.log`).
@@ -1235,7 +1243,9 @@ const ATTENDU = {
 	// `paypal-to-review-already-posted` de PayPal.
 	// Reprise de main à 1e23edb55 (Epics 49 et 50, #1560 déjà portée) dans pr/40-stripe (2026-11-25) : les deux
 	// côtés gardés ; 3746 (pr/40, base 3677) + 25 (main, 3677 → 3702) = **3771**, confirmé par la garde (`kesh-gate-logs/s40-m2d/compteurs-3.log`).
-	sitesTotal: 3771,
+	// Epic 46 reposé sur main à a914c4823 (branche pr/46-rapports-groupes-v2, 2026-11-25) : les deux côtés
+	// gardés ; 3771 (main) + 18 (Epic 46 : 3508 → 3526) = **3789**, confirmé par la garde (`kesh-gate-logs/s46-pr/front-vitest-a.log`).
+	sitesTotal: 3789,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

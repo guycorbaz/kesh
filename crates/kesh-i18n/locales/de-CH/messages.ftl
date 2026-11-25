@@ -4318,6 +4318,24 @@ invoice-line-comment-placeholder = Text über die ganze Breite der Rechnung, ohn
 invoice-line-comment-aria = Kommentar — Zeile { $n }
 invoice-line-comment-required-error = Zeile { $line }: Der Text des Kommentars ist erforderlich
 
+# Story 46-2 — Bilanz und Erfolgsrechnung nach Kontogruppen (Bildschirme)
+reports-groups-controls-label = Darstellung nach Kontogruppen
+reports-groups-hierarchy = Gruppenhierarchie
+reports-groups-level = Detailstufe
+reports-groups-level-n = Stufe { $level }
+reports-groups-level-all = Alle Konten
+reports-groups-level-hint = Die gesetzlichen Abschnitte der Bilanz bleiben bestehen (Aktiven, Passiven, Eigenkapital). Eine zusammengeklappte Darstellung, insbesondere auf Stufe 1, ist eine Arbeitsansicht und keine Jahresrechnung.
+reports-groups-level-hint-trial-balance = Die Summe der Soll- und die der Habenbuchungen bleiben jene aller Konten. Eine Gruppe, deren Konten ungleich null gegensätzlicher Natur sind (Soll und Haben), wird nicht summiert: Ihre Unterkonten erscheinen an ihrer Stelle. Eine zusammengeklappte Darstellung ist eine Arbeitsansicht.
+reports-groups-open-all = Alle aufklappen
+reports-groups-close-all = Alle zuklappen
+reports-groups-subtotals = Zwischensummen
+reports-groups-subtotals-header = auf der Titelzeile
+reports-groups-subtotals-footer = am Ende
+reports-groups-toggle-open = Gruppe { $number } { $name } aufklappen
+reports-groups-toggle-close = Gruppe { $number } { $name } zuklappen
+reports-groups-subtotal = Total { $name }
+reports-groups-own-balance = { $name } (eigener Saldo)
+
 ## #1348 (0.20.0) — Ablehnungen des Servers, deren Schlüssel im Katalog fehlte.
 error-onboarding-reset-forbidden = Das Zurücksetzen des Onboardings ist auf dieser Instanz nicht erlaubt.
 error-invoice-already-paid = Die Rechnung ist bereits bezahlt — es kann keine Mahnung erfasst werden.

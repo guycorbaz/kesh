@@ -18,7 +18,7 @@ vi.mock("$lib/shared/utils/i18n.svelte", () => ({
 }));
 
 import TrialBalanceView from "./TrialBalanceView.svelte";
-import type { TrialBalanceDto } from "./reports.types";
+import type { TrialBalanceDto, TrialBalanceGroupedRow } from "./reports.types";
 
 function makeDto(overrides: Partial<TrialBalanceDto> = {}): TrialBalanceDto {
   return {
@@ -164,5 +164,144 @@ describe("TrialBalanceView — Story 37-4, compte en devise", () => {
     const { container } = render(TrialBalanceView, { dto: makeDto() });
     expect(container.innerHTML).not.toContain("tb-fx-row");
     expect(screen.getAllByTestId("tb-row")).toHaveLength(1);
+  });
+});
+
+// Story 46-6b — la balance par groupes : le composant partagé du bilan, à quatre
+// colonnes ; résultat reporté après les groupes ; totaux et contrôles inchangés.
+describe("TrialBalanceView — Story 46-6b, vue groupée", () => {
+  const ligne = (
+    kind: TrialBalanceGroupedRow["kind"],
+    depth: number,
+    accountId: number,
+    accountNumber: string,
+    accountName: string,
+    m: [string, string, string, string],
+    extra: Partial<TrialBalanceGroupedRow> = {},
+  ): TrialBalanceGroupedRow => ({
+    kind,
+    depth,
+    accountId,
+    accountNumber,
+    accountName,
+    openingBalance: m[0],
+    totalDebit: m[1],
+    totalCredit: m[2],
+    balance: "999",
+    closingBalance: m[3],
+    ...extra,
+  });
+
+  function groupee(
+    rows: TrialBalanceGroupedRow[],
+    position: "header" | "footer" = "header",
+  ): TrialBalanceDto {
+    return makeDto({
+      grouping: {
+        detailLevel: "all",
+        subtotalPosition: position,
+        maxDepth: 2,
+        open: [],
+        closed: [],
+      },
+      groupedRows: rows,
+    });
+  }
+
+  const g10 = ligne("group", 1, 90, "10", "Actifs circulants", ["1000", "500", "0", "1500"], { open: true });
+  const banque = ligne("account", 2, 1, "1100", "Banque", ["1000", "500", "0", "1500"], { active: true });
+
+  const cellules = (el: HTMLElement) =>
+    Array.from(el.querySelectorAll("td")).map((c) =>
+      c.textContent?.replace(/\s+/g, " ").trim(),
+    );
+
+  it("rend les lignes groupées, quatre montants arrondis, en-tête et pied d'avant", () => {
+    const { container } = render(TrialBalanceView, {
+      dto: groupee([
+        { ...g10, openingBalance: "1000.005" },
+        banque,
+      ]),
+    });
+    expect(screen.queryByTestId("tb-row")).toBeNull();
+    const titre = cellules(screen.getByTestId("grouped-group-10"));
+    expect(titre[1]).toBe("Actifs circulants");
+    expect(titre.slice(2)).toEqual(["1’000.01", "500.00", "0.00", "1’500.00"]);
+    expect(cellules(screen.getByTestId("grouped-account-1100")).slice(2)).toEqual([
+      "1’000.00",
+      "500.00",
+      "0.00",
+      "1’500.00",
+    ]);
+    // Le net des mouvements (`balance`) ne paraît nulle part.
+    expect(container.textContent).not.toContain("999");
+    expect(screen.getAllByRole("columnheader")).toHaveLength(6);
+    expect(screen.getByTestId("tb-opening-check").textContent?.trim()).toBe("✓");
+    expect(screen.getByTestId("tb-movements-check").textContent?.trim()).toBe("✓");
+  });
+
+  it("place le résultat reporté APRÈS les groupes, hors d'eux, « Perte reportée » si négatif", () => {
+    render(TrialBalanceView, {
+      dto: { ...groupee([g10, banque]), retainedEarnings: "-50" },
+    });
+    const lignes = Array.from(document.querySelectorAll("tbody tr")).map(
+      (tr) => tr.getAttribute("data-testid"),
+    );
+    expect(lignes).toEqual(["grouped-group-10", "grouped-account-1100", "tb-retained"]);
+    expect(screen.getByTestId("tb-retained").textContent).toContain("Perte reportée");
+  });
+
+  it("sous-totaux en pied : « Total <nom> », titre sans montant", () => {
+    render(TrialBalanceView, {
+      dto: groupee(
+        [g10, banque, ligne("subtotal", 1, 90, "10", "Actifs circulants", ["1000", "500", "0", "1500"])],
+        "footer",
+      ),
+    });
+    expect(cellules(screen.getByTestId("grouped-group-10")).slice(2)).toEqual(["", "", "", ""]);
+    const pied = cellules(screen.getByTestId("grouped-subtotal-10"));
+    expect(pied[1]).toBe("Total Actifs circulants");
+    expect(pied[5]).toBe("1’500.00");
+  });
+
+  it("seconde ligne en devise d'un compte et d'un groupe en devise unique", () => {
+    const fx = {
+      currency: "USD",
+      openingCurrency: "10",
+      totalDebitCurrency: "5",
+      totalCreditCurrency: "0",
+      balanceCurrency: "5",
+      closingCurrency: "15",
+    };
+    render(TrialBalanceView, {
+      dto: groupee([
+        { ...g10, ...fx },
+        { ...banque, ...fx },
+      ]),
+    });
+    const attendu = "USD ouverture 10.00 · débit 5.00 · crédit 0.00 · clôture 15.00";
+    expect(
+      screen.getByTestId("tb-group-fx-row-group-10").textContent?.replace(/\s+/g, " ").trim(),
+    ).toBe(attendu);
+    expect(
+      screen.getByTestId("tb-fx-row-1100").textContent?.replace(/\s+/g, " ").trim(),
+    ).toBe(attendu);
+    // Pas de solde en devise à côté du libellé, comme au bilan : la seconde ligne le porte.
+    expect(screen.queryByTestId("group-fx-10")).toBeNull();
+    expect(screen.queryByTestId("account-fx-1100")).toBeNull();
+  });
+
+  it("un compte archivé garde son badge", () => {
+    render(TrialBalanceView, {
+      dto: groupee([g10, { ...banque, active: false }]),
+    });
+    expect(screen.getByTestId("grouped-account-1100").textContent).toContain("archivé");
+  });
+
+  it("l'accordéon appelle onToggleGroup avec la ligne du groupe", async () => {
+    const onToggleGroup = vi.fn();
+    render(TrialBalanceView, { dto: groupee([g10, banque]), onToggleGroup });
+    screen.getByTestId("group-toggle-10").click();
+    expect(onToggleGroup).toHaveBeenCalledWith(expect.objectContaining({ accountId: 90 }));
   });
 });

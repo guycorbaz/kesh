@@ -236,26 +236,36 @@ pub const TEMOINS: &[(&str, Jeux, Complet)] = &[
     ),
     (
         "kesh_balance",
-        |p| vec![json!({"fiscalYearId": p.exercice_id, "limit": 42})],
+        // Story 46-6a : maximum 37 (lignes groupées re-mesurées).
+        |p| vec![json!({"fiscalYearId": p.exercice_id, "limit": 37})],
+        // Story 46-6a : les arguments de groupement, `open` et `closed` disjoints.
         |p| {
             json!({"fiscalYearId": p.exercice_id, "periodStart": d(p.exercice_debut),
-                   "periodEnd": d(p.exercice_fin), "limit": 42, "offset": 0})
+                   "periodEnd": d(p.exercice_fin), "limit": 37, "offset": 0,
+                   "detailLevel": 2, "subtotalPosition": "footer", "open": [p.compte_k1],
+                   "closed": [p.compte_cr]})
         },
     ),
     (
         "kesh_bilan",
         |p| vec![json!({"fiscalYearId": p.exercice_id})],
+        // Story 46-4 : les arguments de groupement, `open` et `closed` disjoints.
         |p| {
             json!({"fiscalYearId": p.exercice_id, "periodStart": d(p.exercice_debut),
-                   "periodEnd": d(p.exercice_fin)})
+                   "periodEnd": d(p.exercice_fin), "detailLevel": 2,
+                   "subtotalPosition": "footer", "open": [p.compte_k1],
+                   "closed": [p.compte_cr]})
         },
     ),
     (
         "kesh_compte_de_resultat",
         |p| vec![json!({"fiscalYearId": p.exercice_id})],
+        // Story 46-4 : les arguments de groupement, `open` et `closed` disjoints.
         |p| {
             json!({"fiscalYearId": p.exercice_id, "periodStart": d(p.exercice_debut),
-                   "periodEnd": d(p.exercice_fin)})
+                   "periodEnd": d(p.exercice_fin), "detailLevel": 2,
+                   "subtotalPosition": "footer", "open": [p.compte_k1],
+                   "closed": [p.compte_cr]})
         },
     ),
     (

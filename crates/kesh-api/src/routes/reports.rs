@@ -31,14 +31,16 @@ use kesh_db::entities::journal_entry::Journal;
 use kesh_report::pdf::{ProjectExpensesPdfLabels, ProjectReturnPdfLabels, VatPdfLabels};
 use kesh_report::project_report::ProjectPeriodMode;
 use kesh_report::{
-    AgedReceivables, BalanceSheet, GeneralLedger, HomepageSummary, IncomeStatement, JournalReport,
-    PdfContext, ProjectExpensesReport, ProjectReturnReport, ReportPeriod, TrialBalance, VatReport,
-    render_aged_receivables_csv, render_balance_sheet_csv, render_balance_sheet_pdf,
-    render_general_ledger_csv, render_general_ledger_pdf, render_income_statement_csv,
-    render_income_statement_pdf, render_journal_report_csv, render_journal_report_pdf,
-    render_project_expenses_csv, render_project_expenses_pdf, render_project_return_csv,
-    render_project_return_pdf, render_trial_balance_csv, render_trial_balance_pdf,
-    render_vat_report_csv, render_vat_report_pdf,
+    AgedReceivables, AvecGroupes, BalanceSheet, GeneralLedger, HomepageSummary, IncomeStatement,
+    JournalReport, LigneBalanceGroupee, PdfContext, ProjectExpensesReport, ProjectReturnReport,
+    ReportPeriod, SectionsBilan, SectionsResultat, TrialBalance, VatReport,
+    render_aged_receivables_csv, render_general_ledger_csv, render_general_ledger_pdf,
+    render_grouped_balance_sheet_csv, render_grouped_balance_sheet_pdf,
+    render_grouped_income_statement_csv, render_grouped_income_statement_pdf,
+    render_grouped_trial_balance_csv, render_grouped_trial_balance_pdf, render_journal_report_csv,
+    render_journal_report_pdf, render_project_expenses_csv, render_project_expenses_pdf,
+    render_project_return_csv, render_project_return_pdf, render_vat_report_csv,
+    render_vat_report_pdf,
 };
 use serde::Deserialize;
 
@@ -50,8 +52,8 @@ use crate::services::acces::ContexteAcces;
 use crate::services::poignees::Lecture;
 use crate::services::rapports::FormatExport as ExportFormat;
 use crate::services::rapports::{
-    self, Affichage, DemandeGrandLivre, DemandeJournaux, DemandePeriode, DemandeProjet, Export,
-    ModeProjet,
+    self, Affichage, DemandeGrandLivre, DemandeGroupes, DemandeJournaux, DemandePeriode,
+    DemandeProjet, Export, ModeProjet,
 };
 
 /// Query params communs aux 3 premiers rapports (balance-sheet, income-statement,
@@ -75,6 +77,34 @@ impl ReportQuery {
             period_end: self.period_end,
         }
     }
+}
+
+/// Les quatre paramètres de groupes (Story 46-1) du bilan, du compte de
+/// résultat et de la balance (Story 46-6a).
+const PARAMETRES_GROUPES: [&str; 4] = ["detailLevel", "subtotalPosition", "open", "closed"];
+
+/// La demande de groupes (Story 46-1), lue dans les paires de la requête ;
+/// `None` sans `detailLevel`.
+///
+/// Les paires brutes, et non des champs de [`ReportQuery`] : un paramètre
+/// répété y serait un rejet de désérialisation d'Axum, sans le code
+/// `VALIDATION_ERROR`, et frapperait aussi la TVA, qui partage `ReportQuery` et
+/// doit ignorer ces paramètres. Ici, un paramètre de groupes répété est un 400
+/// `VALIDATION_ERROR` qui le nomme.
+fn groupes_de(paires: &[(String, String)]) -> Result<Option<DemandeGroupes>, AppError> {
+    let mut valeurs: [Option<&str>; 4] = [None; 4];
+    for (cle, valeur) in paires {
+        if let Some(i) = PARAMETRES_GROUPES.iter().position(|p| p == cle) {
+            if valeurs[i].is_some() {
+                return Err(AppError::Validation(format!(
+                    "{cle} : paramètre répété (une seule valeur ; listes séparées par des virgules)"
+                )));
+            }
+            valeurs[i] = Some(valeur.as_str());
+        }
+    }
+    let [detail_level, subtotal_position, open, closed] = valeurs;
+    DemandeGroupes::depuis_requete(detail_level, subtotal_position, open, closed)
 }
 
 /// Query params du grand livre.
@@ -231,26 +261,50 @@ fn mesurer(span: &tracing::Span, start: std::time::Instant, body: &[u8]) {
 // Story 9-1 — Endpoints JSON
 // ===========================================================================
 
-/// GET /api/v1/reports/balance-sheet
+/// GET /api/v1/reports/balance-sheet — avec `detailLevel`, aussi `grouping`
+/// et `groupedRows` (Story 46-1) ; sans, la réponse d'avant, à l'octet.
+///
+/// L'accès est contrôlé **avant** les paramètres de groupes : un appelant sans
+/// droit reçoit son refus d'accès, non un 400 (même ordre que `fiscalYearId`).
 pub async fn get_balance_sheet(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
     Query(query): Query<ReportQuery>,
-) -> Result<Json<BalanceSheet>, AppError> {
+    Query(paires): Query<Vec<(String, String)>>,
+) -> Result<Json<AvecGroupes<BalanceSheet, SectionsBilan>>, AppError> {
     let acces = ContexteAcces::depuis_api(&current_user);
-    let rapport = rapports::bilan(&acces, &state.lecture(), query.demande(), Affichage).await?;
+    acces.exiger(rapports::EXIGENCES_BILAN.affichage)?;
+    let groupes = groupes_de(&paires)?;
+    let rapport = rapports::bilan_par_groupes(
+        &acces,
+        &state.lecture(),
+        query.demande(),
+        groupes,
+        Affichage,
+    )
+    .await?;
     Ok(Json(rapport.afficher(&state.trace()).await))
 }
 
-/// GET /api/v1/reports/income-statement
+/// GET /api/v1/reports/income-statement — même régime que le bilan
+/// (Story 46-1).
 pub async fn get_income_statement(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
     Query(query): Query<ReportQuery>,
-) -> Result<Json<IncomeStatement>, AppError> {
+    Query(paires): Query<Vec<(String, String)>>,
+) -> Result<Json<AvecGroupes<IncomeStatement, SectionsResultat>>, AppError> {
     let acces = ContexteAcces::depuis_api(&current_user);
-    let rapport =
-        rapports::compte_de_resultat(&acces, &state.lecture(), query.demande(), Affichage).await?;
+    acces.exiger(rapports::EXIGENCES_COMPTE_DE_RESULTAT.affichage)?;
+    let groupes = groupes_de(&paires)?;
+    let rapport = rapports::compte_de_resultat_par_groupes(
+        &acces,
+        &state.lecture(),
+        query.demande(),
+        groupes,
+        Affichage,
+    )
+    .await?;
     Ok(Json(rapport.afficher(&state.trace()).await))
 }
 
@@ -345,13 +399,27 @@ pub async fn export_general_ledger(
     )
 }
 
+/// GET /api/v1/reports/trial-balance — avec `detailLevel`, aussi `grouping`
+/// et `groupedRows` (un tableau : la balance n'a pas de sections, Story
+/// 46-6a) ; sans, la réponse d'avant, à l'octet. Même ordre que le bilan :
+/// l'accès d'abord, puis les paramètres de groupes.
 pub async fn get_trial_balance(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
     Query(query): Query<ReportQuery>,
-) -> Result<Json<TrialBalance>, AppError> {
+    Query(paires): Query<Vec<(String, String)>>,
+) -> Result<Json<AvecGroupes<TrialBalance, Vec<LigneBalanceGroupee>>>, AppError> {
     let acces = ContexteAcces::depuis_api(&current_user);
-    let rapport = rapports::balance(&acces, &state.lecture(), query.demande(), Affichage).await?;
+    acces.exiger(rapports::EXIGENCES_BALANCE.affichage)?;
+    let groupes = groupes_de(&paires)?;
+    let rapport = rapports::balance_par_groupes(
+        &acces,
+        &state.lecture(),
+        query.demande(),
+        groupes,
+        Affichage,
+    )
+    .await?;
     Ok(Json(rapport.afficher(&state.trace()).await))
 }
 
@@ -375,6 +443,7 @@ pub async fn export_balance_sheet(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
     Query(query): Query<ExportQuery>,
+    Query(paires): Query<Vec<(String, String)>>,
 ) -> Result<Response, AppError> {
     let format = validate_format(&query.format)?;
 
@@ -389,17 +458,24 @@ pub async fn export_balance_sheet(
     let start = std::time::Instant::now();
 
     let acces = ContexteAcces::depuis_api(&current_user);
+    // Story 46-3 (AC-1) : format, puis accès, puis groupes — l'ordre des
+    // routes JSON ; `ExportQuery` reste inchangé (paires brutes).
+    acces.exiger(rapports::EXIGENCES_BILAN.export)?;
+    let groupes = groupes_de(&paires)?;
     let lecture = state.lecture();
-    let rapport = rapports::bilan(&acces, &lecture, query.demande(), Export(format)).await?;
-
+    let rapport =
+        rapports::bilan_par_groupes(&acces, &lecture, query.demande(), groupes, Export(format))
+            .await?;
     let (ctx, company_name) = load_pdf_context(&acces, &lecture).await?;
     let period = attendu(rapport.periode())?.clone();
 
     let body = rapport
         .exporter(&state.trace(), |report| {
             let body: Vec<u8> = match format {
-                ExportFormat::Pdf => render_balance_sheet_pdf(report, &ctx)?,
-                ExportFormat::Csv => render_csv_to_vec(|w| render_balance_sheet_csv(report, w))?,
+                ExportFormat::Pdf => render_grouped_balance_sheet_pdf(report, &ctx)?,
+                ExportFormat::Csv => {
+                    render_csv_to_vec(|w| render_grouped_balance_sheet_csv(report, w))?
+                }
             };
             mesurer(&span, start, &body);
             Ok(body)
@@ -505,6 +581,7 @@ pub async fn export_income_statement(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
     Query(query): Query<ExportQuery>,
+    Query(paires): Query<Vec<(String, String)>>,
 ) -> Result<Response, AppError> {
     let format = validate_format(&query.format)?;
 
@@ -519,17 +596,29 @@ pub async fn export_income_statement(
     let start = std::time::Instant::now();
 
     let acces = ContexteAcces::depuis_api(&current_user);
+    // Story 46-3 (AC-1) : format, puis accès, puis groupes — l'ordre des
+    // routes JSON ; `ExportQuery` reste inchangé (paires brutes).
+    acces.exiger(rapports::EXIGENCES_COMPTE_DE_RESULTAT.export)?;
+    let groupes = groupes_de(&paires)?;
     let lecture = state.lecture();
-    let rapport =
-        rapports::compte_de_resultat(&acces, &lecture, query.demande(), Export(format)).await?;
+    let rapport = rapports::compte_de_resultat_par_groupes(
+        &acces,
+        &lecture,
+        query.demande(),
+        groupes,
+        Export(format),
+    )
+    .await?;
     let (ctx, company_name) = load_pdf_context(&acces, &lecture).await?;
     let period = attendu(rapport.periode())?.clone();
 
     let body = rapport
         .exporter(&state.trace(), |report| {
             let body: Vec<u8> = match format {
-                ExportFormat::Pdf => render_income_statement_pdf(report, &ctx)?,
-                ExportFormat::Csv => render_csv_to_vec(|w| render_income_statement_csv(report, w))?,
+                ExportFormat::Pdf => render_grouped_income_statement_pdf(report, &ctx)?,
+                ExportFormat::Csv => {
+                    render_csv_to_vec(|w| render_grouped_income_statement_csv(report, w))?
+                }
             };
             mesurer(&span, start, &body);
             Ok(body)
@@ -741,11 +830,14 @@ pub async fn export_project_return(
     )
 }
 
-/// GET /api/v1/reports/trial-balance/export?format=pdf|csv
+/// GET /api/v1/reports/trial-balance/export?format=pdf|csv — avec
+/// `detailLevel`, la balance telle que l'écran la groupe (Story 46-6b) ; sans,
+/// l'export d'avant, à l'identique.
 pub async fn export_trial_balance(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
     Query(query): Query<ExportQuery>,
+    Query(paires): Query<Vec<(String, String)>>,
 ) -> Result<Response, AppError> {
     let format = validate_format(&query.format)?;
 
@@ -760,16 +852,25 @@ pub async fn export_trial_balance(
     let start = std::time::Instant::now();
 
     let acces = ContexteAcces::depuis_api(&current_user);
+    // Story 46-6b (AC-2) : format, puis accès, puis groupes — l'ordre du bilan
+    // (46-3) ; `ExportQuery` reste inchangé (paires brutes).
+    acces.exiger(rapports::EXIGENCES_BALANCE.export)?;
+    let groupes = groupes_de(&paires)?;
     let lecture = state.lecture();
-    let rapport = rapports::balance(&acces, &lecture, query.demande(), Export(format)).await?;
+    let rapport =
+        rapports::balance_par_groupes(&acces, &lecture, query.demande(), groupes, Export(format))
+            .await?;
     let (ctx, company_name) = load_pdf_context(&acces, &lecture).await?;
     let period = attendu(rapport.periode())?.clone();
 
     let body = rapport
         .exporter(&state.trace(), |report| {
+            // Sans groupes, les rendus groupés sont les rendus à plat, à l'identique.
             let body: Vec<u8> = match format {
-                ExportFormat::Pdf => render_trial_balance_pdf(report, &ctx)?,
-                ExportFormat::Csv => render_csv_to_vec(|w| render_trial_balance_csv(report, w))?,
+                ExportFormat::Pdf => render_grouped_trial_balance_pdf(report, &ctx)?,
+                ExportFormat::Csv => {
+                    render_csv_to_vec(|w| render_grouped_trial_balance_csv(report, w))?
+                }
             };
             mesurer(&span, start, &body);
             Ok(body)

@@ -1,0 +1,7 @@
+﻿Section;NumeroCompte;NomCompte;Solde
+Produits;8000;Produits extraordinaires;400.00
+Total produits;;;400.00
+Charges;5000;Salaires;2500.00
+Charges;8010;Charges extraordinaires;150.00
+Total charges;;;2650.00
+ResultatNet;;;-2250.00

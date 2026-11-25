@@ -4397,6 +4397,24 @@ invoice-line-comment-placeholder = Texte imprimé sur toute la largeur de la fac
 invoice-line-comment-aria = Commentaire — ligne { $n }
 invoice-line-comment-required-error = Ligne { $line } : le texte du commentaire est obligatoire
 
+# Story 46-2 — bilan et compte de résultat par groupes de comptes (écrans)
+reports-groups-controls-label = Présentation par groupes de comptes
+reports-groups-hierarchy = Hiérarchie des groupes
+reports-groups-level = Niveau de détail
+reports-groups-level-n = Niveau { $level }
+reports-groups-level-all = Tous les comptes
+reports-groups-level-hint = Les sections légales du bilan restent (Actifs, Passifs, Capitaux propres). Un affichage replié, au niveau 1 en particulier, est un affichage de travail, non des comptes annuels.
+reports-groups-level-hint-trial-balance = Le total des débits et celui des crédits restent ceux de tous les comptes. Un groupe dont les comptes non nuls sont de natures contraires (débitrice et créditrice) n'est pas totalisé : ses sous-comptes paraissent à sa place. Un affichage replié est un affichage de travail.
+reports-groups-open-all = Tout ouvrir
+reports-groups-close-all = Tout fermer
+reports-groups-subtotals = Sous-totaux
+reports-groups-subtotals-header = sur le titre
+reports-groups-subtotals-footer = en pied
+reports-groups-toggle-open = Ouvrir le groupe { $number } { $name }
+reports-groups-toggle-close = Fermer le groupe { $number } { $name }
+reports-groups-subtotal = Total { $name }
+reports-groups-own-balance = { $name } (solde propre)
+
 ## #1348 (0.20.0) — refus du serveur dont la clé manquait au catalogue : l'utilisateur et
 ## les clients de l'API lisaient la clé brute. Texte fr-CH = repli de `errors.rs`
 ## (garde `les_replis_rust_suivent_le_catalogue`).

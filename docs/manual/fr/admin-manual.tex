@@ -3769,9 +3769,9 @@ Depuis la 0.16.0, le serveur MCP de Kesh (\keshpath{/mcp}) sert à un agent des 
 \texttt{kesh\_ecritures} & \texttt{books:read} & les écritures et leurs lignes, filtrées et paginées \\
 \texttt{kesh\_ecriture} & \texttt{books:read} & une écriture, et la facture fournisseur dont elle est l'achat ou le règlement \\
 \texttt{kesh\_grand\_livre} & \texttt{books:read} & le grand livre d'un compte sur une période ; pour un compte en devise, les montants, soldes et cours dans sa devise (\texttt{null} pour un compte en CHF) \\
-\texttt{kesh\_balance} & \texttt{books:read} & la balance d'un exercice, par tranches, avec ses totaux (en CHF) ; colonnes en devise d'un compte en devise \\
-\texttt{kesh\_bilan} & \texttt{books:read} & le bilan d'un exercice ; devise et solde en devise d'un compte en devise \\
-\texttt{kesh\_compte\_de\_resultat} & \texttt{books:read} & le compte de résultat d'un exercice ; devise et solde en devise d'un compte en devise \\
+\texttt{kesh\_balance} & \texttt{books:read} & la balance d'un exercice, par tranches, avec ses totaux (en CHF) ; colonnes en devise d'un compte en devise ; par groupes de comptes sur demande, comme le bilan (la tranche porte alors sur les lignes groupées ; un groupe qui mêle comptes débiteurs et créditeurs à montant non nul est dissous) \\
+\texttt{kesh\_bilan} & \texttt{books:read} & le bilan d'un exercice ; devise et solde en devise d'un compte en devise ; par groupes de comptes sur demande, comme à l'écran (niveau de détail, groupes ouverts ou fermés, place des sous-totaux : refusé au-delà d'environ 60 lignes groupées, choisir alors un niveau plus bas) \\
+\texttt{kesh\_compte\_de\_resultat} & \texttt{books:read} & le compte de résultat d'un exercice ; devise et solde en devise d'un compte en devise ; par groupes de comptes sur demande, comme le bilan \\
 \texttt{kesh\_postes\_ouverts} & \texttt{books:read} & les postes ouverts d'un compte lettrable, en CHF même sur un compte en devise \\
 \texttt{kesh\_factures} & \texttt{invoices:read} & les factures clientes, filtrées et paginées \\
 \texttt{kesh\_facture} & \texttt{invoices:read} & une facture cliente et ses lignes \\

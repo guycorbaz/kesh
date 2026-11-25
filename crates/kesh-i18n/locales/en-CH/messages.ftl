@@ -4324,6 +4324,24 @@ invoice-line-comment-placeholder = Text printed across the full width of the inv
 invoice-line-comment-aria = Comment — line { $n }
 invoice-line-comment-required-error = Line { $line }: the comment text is required
 
+# Story 46-2 — balance sheet and income statement by account groups (screens)
+reports-groups-controls-label = Presentation by account groups
+reports-groups-hierarchy = Group hierarchy
+reports-groups-level = Level of detail
+reports-groups-level-n = Level { $level }
+reports-groups-level-all = All accounts
+reports-groups-level-hint = The legal sections of the balance sheet remain (Assets, Liabilities, Equity). A collapsed view, at level 1 in particular, is a working view, not annual financial statements.
+reports-groups-level-hint-trial-balance = The debit and credit totals remain those of all accounts. A group whose non-zero accounts are of opposite natures (debit and credit) is not totalled: its sub-accounts appear in its place. A collapsed view is a working view.
+reports-groups-open-all = Expand all
+reports-groups-close-all = Collapse all
+reports-groups-subtotals = Subtotals
+reports-groups-subtotals-header = on the heading
+reports-groups-subtotals-footer = at the end
+reports-groups-toggle-open = Expand group { $number } { $name }
+reports-groups-toggle-close = Collapse group { $number } { $name }
+reports-groups-subtotal = Total { $name }
+reports-groups-own-balance = { $name } (own balance)
+
 ## #1348 (0.20.0) — server refusals whose key was missing from the catalogue.
 error-onboarding-reset-forbidden = Resetting the onboarding is not allowed on this instance.
 error-invoice-already-paid = The invoice is already paid — no reminder can be recorded.

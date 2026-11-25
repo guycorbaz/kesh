@@ -1,0 +1,10 @@
+﻿Section;NumeroCompte;NomCompte;Solde
+Produits;3000;Ventes de marchandises;8000.00
+Produits;6950;Produits financiers;50.00
+Produits;7000;Produits annexes;300.00
+Total produits;;;8350.00
+Charges;4000;Achats de marchandises;3000.00
+Charges;6000;Loyers;1200.00
+Charges;7010;Charges annexes;100.00
+Total charges;;;4300.00
+ResultatNet;;;4050.00

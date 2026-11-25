@@ -4175,22 +4175,29 @@ au journal d'audit (\S\ref{sec:tracabilite}), avec son auteur.
 \keshscreenshot{rapport-bilan.png}{Bilan : actifs, passifs et capitaux propres à une date donnée.}  % TODO capture: rapport bilan
 
 \emph{Mensuel} → \emph{Rapports} → \emph{Bilan}. Affiche, à une date donnée, les comptes
-d'actif et de passif à solde non nul, \textbf{triés par numéro de compte}, avec les totaux
-Actifs, Passifs et Capitaux propres.
+d'actif et de passif à solde non nul, avec les totaux Actifs, Passifs et Capitaux propres.
+Par défaut, les comptes de chaque section se présentent \textbf{dans la hiérarchie de votre
+plan comptable}, groupes ouverts, chaque groupe avec son sous-total
+(\S\ref{sec:rapports-groupes})~; case \emph{Hiérarchie des groupes} décochée, le bilan est
+la liste à plat, \textbf{triée par numéro de compte}, des versions précédentes.
 
 \begin{keshwarning}[title=\faExclamationTriangle\ Le bilan n'est pas encore structuré selon l'art.~959a CO]
-Kesh ne regroupe pas les comptes en \textbf{actif circulant} et \textbf{actif immobilisé}, ni
-les dettes en \textbf{capitaux étrangers à court terme} et \textbf{à long terme}. Le plan
-comptable porte bien une hiérarchie de comptes, mais les rapports ne l'utilisent pas encore.
+Les groupes affichés sont ceux de \textbf{votre} plan comptable~: Kesh ne contrôle pas qu'ils
+suivent les rubriques de l'art.~959a CO (\textbf{actif circulant}, \textbf{actif immobilisé},
+\textbf{capitaux étrangers à court terme} et \textbf{à long terme}). Les sections légales du
+bilan restent, elles, toujours affichées~: Actifs, Passifs (les dettes), Capitaux propres. Un
+affichage replié --- au niveau~1 en particulier --- est un \textbf{affichage de travail}, non
+des comptes annuels.
 
 \medskip
-\noindent Seule la partition \textbf{capitaux propres / dettes} est faite, et elle l'est
+\noindent La partition \textbf{capitaux propres / dettes} est faite, et elle l'est
 correctement (voir ci-dessous). Pour des comptes annuels à remettre à un tiers --- fiduciaire,
-organe de révision, banque ---, la mise en forme normée reste donc à produire hors de Kesh, à
-partir des chiffres qu'il fournit.
+organe de révision, banque ---, la mise en forme normée reste donc à vérifier, et au besoin à
+produire hors de Kesh, à partir des chiffres qu'il fournit.
 \end{keshwarning}
 
-La section \emph{Capitaux propres} est présentée \textbf{séparément des dettes} et \textbf{regroupée par rôle} de compte (capital, autres fonds propres, bénéfice / perte reporté), dans l'ordre légal de l'Art. 959a CO. Kesh distingue nettement deux grandeurs qu'il ne faut jamais confondre :
+La section \emph{Capitaux propres} est présentée \textbf{séparément des dettes} et, dans
+l'affichage à plat, \textbf{regroupée par rôle} de compte (capital, autres fonds propres, bénéfice / perte reporté), dans l'ordre légal de l'Art. 959a CO. Kesh distingue nettement deux grandeurs qu'il ne faut jamais confondre :
 
 \begin{itemize}
     \item le \textbf{report d'ouverture physique} que vous avez saisi sur un compte (typiquement lors d'une reprise de comptabilité depuis un autre logiciel) — il apparaît sous son propre numéro de compte ;
@@ -4206,7 +4213,9 @@ Filtres : date de référence (par défaut fin d'exercice en cours), exercice à
 \keshscreenshot{rapport-resultat.png}{Compte de résultat : produits, charges et résultat de la période.}  % TODO capture: rapport compte de resultat
 
 \emph{Mensuel} → \emph{Rapports} → \emph{Compte de résultat}. Liste les comptes de produits
-et les comptes de charges à solde non nul, et le résultat de la période.
+et les comptes de charges à solde non nul, et le résultat de la période~; comme au bilan, par
+défaut dans la hiérarchie de votre plan (\S\ref{sec:rapports-groupes}), ou à plat, case
+\emph{Hiérarchie des groupes} décochée.
 
 \begin{keshwarning}[title=\faExclamationTriangle\ Le compte de résultat n'est pas encore structuré selon l'art.~959b CO]
 Kesh ne propose \textbf{pas} les présentations \emph{par nature} et \emph{par fonction}, et ne
@@ -4218,6 +4227,61 @@ net.
 \noindent Pour des comptes annuels destinés à un tiers, la mise en forme normée reste à
 produire hors de Kesh, à partir de ces chiffres.
 \end{keshwarning}
+
+\subsection{Bilan et compte de résultat par groupes}\label{sec:rapports-groupes}
+
+\keshscreenshot{rapport-bilan-groupes.png}{Bilan par groupes, sous-totaux en pied~: chaque groupe ouvert se clôt sur la ligne «~Total~» de son nom.}
+
+Au-dessus du bilan et du compte de résultat, une barre règle leur présentation~:
+
+\begin{itemize}
+    \item \textbf{Hiérarchie des groupes} --- cochée (par défaut), chaque compte s'affiche sous son
+          compte de groupe, en retrait, et chaque groupe porte le \textbf{sous-total} de ses comptes~;
+          décochée, la liste à plat, sous-titres de rôle des capitaux propres compris. Vos autres
+          choix sont gardés pendant que la hiérarchie est masquée.
+    \item \textbf{Niveau de détail} --- \emph{Niveau~1}, \emph{Niveau~2}\ldots{} jusqu'à
+          \emph{Tous les comptes}~: au niveau~1, seuls les groupes de premier rang sont montrés,
+          fermés sur leur sous-total~; au niveau~2, ils s'ouvrent sur leurs groupes de second rang,
+          et ainsi de suite. Le sélecteur ne propose que les niveaux que votre plan contient, et il
+          est inactif avant la première génération du rapport, pour un plan sans groupe ou un
+          rapport vide, et hiérarchie masquée. Son info-bulle le rappelle~: un
+          affichage replié est un affichage de travail, non des comptes annuels.
+    \item \textbf{Tout ouvrir}, \textbf{Tout fermer} --- reviennent à \emph{Tous les comptes} et au
+          niveau~1.
+    \item \textbf{Sous-totaux} --- \emph{sur le titre}~: le sous-total sur la ligne du groupe (par
+          défaut)~; \emph{en pied}~: une ligne «~Total \emph{nom du groupe}~» sous ses comptes. Un
+          groupe fermé porte toujours son sous-total sur sa ligne.
+\end{itemize}
+
+Hiérarchie masquée, \emph{Tout ouvrir}, \emph{Tout fermer} et \emph{Sous-totaux} sont inactifs
+eux aussi~: seule la case reste active.
+
+Chaque groupe s'ouvre et se ferme d'un clic sur sa flèche (ou au clavier, touche Entrée)~; le
+clic l'emporte sur le niveau, jusqu'au prochain changement de niveau, qui l'efface. Un compte de
+groupe qui porte lui-même des écritures montre son \textbf{solde propre} en première ligne du
+groupe, «~\emph{nom} (solde propre)~». Un groupe dont tous les comptes sont dans une même devise
+étrangère montre aussi son sous-total dans cette devise~; sinon, son sous-total est en CHF seul.
+Un groupe fermé par le niveau dont le sous-total est nul n'est pas montré --- son zéro reste
+dans le groupe au-dessus. Un groupe dont les comptes tombent dans deux sections (au bilan, un
+groupe \emph{Passifs} qui porte à la fois des dettes et des capitaux propres~; au compte de
+résultat, un groupe qui mêle produits et charges) n'est montré dans aucune~: ses sous-groupes
+remontent d'un rang dans chaque section. Les totaux des sections, les lignes calculées du bilan
+et le résultat ne changent pas avec la présentation.
+
+Chaque changement redemande le rapport au serveur, même pendant une génération en cours~: seule
+la réponse à la dernière demande s'affiche, et l'écran revient toujours à la présentation que la
+barre indique --- si vous revenez sur un rapport pendant la génération d'un autre, dès la fin de
+celle-ci. Si une demande échoue, le message d'erreur s'affiche et l'écran garde la présentation
+précédente~; \emph{Générer} la redemande. Changer la présentation d'un rapport pendant le chargement
+d'un autre rapport interrompt ce chargement~: il faut le relancer avec \emph{Générer}. Chaque demande est inscrite au journal
+d'audit, comme un changement de période. Le navigateur \textbf{retient votre présentation}, pour
+chaque société et chaque rapport~: en revenant sur la page, vous retrouvez la hiérarchie, le
+niveau, la place des sous-totaux et les groupes ouverts ou fermés à la main --- dans la mesure où
+le navigateur le permet (en navigation privée, ou si le stockage du site est refusé, la
+présentation par défaut revient, sans erreur). Un groupe disparu du plan depuis est oublié.
+
+Les boutons d'export PDF et CSV reprennent la présentation affichée
+(\S\ref{sec:rapports-exports}).
 
 \subsection{Balance des comptes}
 
@@ -4250,6 +4314,38 @@ d'ouverture}, les \textbf{mouvements} débit et crédit, et le \textbf{solde de 
 \end{itemize}
 
 Seul filtre : la période.
+
+\paragraph{La balance par groupes.} La balance a la même barre de présentation que le bilan
+(\S\ref{sec:rapports-groupes}) --- hiérarchie des groupes, niveau de détail, \emph{Tout ouvrir},
+\emph{Tout fermer}, place des sous-totaux, flèche de chaque groupe ---, avec sa propre mémoire~:
+la présentation du bilan ne change pas celle de la balance. Par défaut, la hiérarchie est montrée,
+tous les groupes ouverts, les sous-totaux sur le titre. Chaque groupe porte, dans chacune des quatre
+colonnes, la somme de ses comptes~; un groupe dont tous les comptes non nuls sont dans une même
+devise étrangère a, comme un compte, sa seconde ligne dans cette devise. La ligne
+«~Résultat reporté (calculé)~» vient après les groupes, hors d'eux~; le total des débits et celui
+des crédits, et les deux contrôles, ne changent pas avec la présentation. Hiérarchie masquée, la
+balance redevient la liste à plat décrite ci-dessus.
+
+Trois règles propres à la balance, qui n'a pas de sections~:
+\begin{itemize}
+    \item \textbf{Un groupe ne totalise que des comptes de même nature.} Un groupe qui mêle des
+          comptes de nature débitrice (actifs, charges) et créditrice (passifs, produits) n'est pas
+          montré dès que des comptes \textbf{des deux natures} y portent un montant non nul~: ses
+          sous-groupes et ses comptes remontent d'un rang. Au plan PME, ce sont les classes
+          \emph{6}, \emph{7} et \emph{8}, et leurs groupes \emph{70} et \emph{80}~; un compte à
+          zéro --- un compte miroir, par exemple --- ne dissout rien.
+    \item \textbf{\emph{2~Passifs} reste un groupe} à la balance (au bilan, il n'est pas montré dès
+          qu'un compte de capitaux propres a un solde, ses dettes et ses fonds propres tombant dans deux
+          sections), puisque dettes et fonds propres sont tous
+          de nature créditrice.
+    \item \textbf{Un compte de groupe sans solde ni mouvement n'a pas de ligne propre}~: le groupe
+          est montré par son titre. Un groupe qui n'est pas montré et dont le compte est à zéro
+          --- au plan PME, \emph{6}, \emph{7}, \emph{70}, \emph{8} et \emph{80} --- ne paraît donc
+          pas du tout.
+\end{itemize}
+
+Les boutons d'export PDF et CSV reprennent la présentation affichée
+(\S\ref{sec:rapports-exports}).
 
 \subsection{Grand livre}\label{sec:grand-livre}
 
@@ -4448,16 +4544,65 @@ Tous les rapports se \textbf{consultent à l'écran}. Pour les emporter :
 
 \begin{keshnote}
 Le PDF est paginé et destiné à être présenté ou archivé ; le CSV est destiné à être repris dans
-un tableur. Aucun des deux ne perd de ligne, même quand l'écran en limite le nombre~; le PDF abrège
-seulement, d'un «~…~», les textes qui dépassent un nombre fixe de caractères (intitulé de compte de la balance,
-pièce, journal, libellé et contreparties du grand livre, nom d'un compte en devise au bilan et au
-compte de résultat). Dans le PDF, les montants sont \textbf{alignés à droite} dans leur colonne,
+un tableur. Exporté \textbf{à plat} (sans groupes), aucun des deux ne perd de ligne, même quand
+l'écran en limite le nombre~; exporté \textbf{par groupes} (ci-dessous), un groupe fermé n'a qu'une
+ligne, qui porte la somme de ses comptes. Le PDF abrège seulement, d'un «~…~», les textes qui
+dépassent un nombre fixe de caractères (intitulé de compte de la balance, pièce, journal, libellé et
+contreparties du grand livre, nom d'un compte en devise au bilan et au compte de résultat, et, par
+groupes, tout libellé de plus de 48~caractères au premier niveau (47 au deuxième, 45 au troisième, 44 au quatrième,
+42 au cinquième, 40 au plus profond~; sur une ligne en devise, 34 au premier niveau et moins en retrait), même celui d'un compte que l'export à plat n'abrège pas~;
+à la balance par groupes, l'intitulé garde sa colonne~: 22~caractères au premier niveau, comme à plat, 21 au deuxième,
+19 au troisième, 18 au quatrième, 16 au cinquième, 14 au plus profond~; un sous-total («~Total~\ldots~»), qui n'a pas de numéro,
+commence dans la colonne du numéro et dispose de 30~caractères au premier niveau, 29 au deuxième, 27 au troisième,
+26 au quatrième, 24 au cinquième, 22 au plus profond). Dans le PDF, les montants sont \textbf{alignés à droite} dans leur colonne,
 les décimales l'une sous l'autre, totaux compris~; au bilan et au compte de résultat, le solde en
 devise («~USD 1'233.57~») l'est dans sa propre colonne. Les secondes lignes en petit du grand livre
 et de la balance, qui sont des phrases, restent alignées à gauche.
 Le titre du rapport, dans les propriétés du fichier PDF, garde ses accents («~Compte de
 résultat~», «~Décompte TVA~»).
 \end{keshnote}
+
+\paragraph{Le bilan, le compte de résultat et la balance par groupes.} L'export du bilan, du
+compte de résultat et de la balance \textbf{suit l'écran}~: même niveau de détail, mêmes groupes ouverts ou fermés, mêmes
+sous-totaux, sur la ligne du titre ou en pied. Exporté sans niveau --- à l'écran, case \textbf{Hiérarchie des groupes} décochée --- il reste à
+plat, tel qu'avant. Depuis l'écran, l'export suit la hiérarchie affichée, avec les colonnes
+\texttt{Niveau} et \texttt{TypeLigne} et les sous-totaux. Le CSV groupé (bilan, compte de résultat ou balance) ne s'additionne pas tel quel~: le titre d'un groupe (en pied, sa ligne de sous-total) répète les montants de ses comptes, et un groupe fermé n'y porte que son sous-total. Chaque section du bilan et du compte de résultat porte sa ligne de total, la balance sa ligne \texttt{Total}~; pour additionner les montants dans un tableur, décochez «~Hiérarchie des groupes~» pour l'export à plat d'avant, qui porte lui aussi ses lignes de total (à filtrer par \texttt{Section} au bilan et au compte de résultat, à écarter à la balance~: ligne \texttt{Total}) et n'a pas de colonne \texttt{TypeLigne}. Les montants groupés sont arrondis au centime.
+\begin{itemize}
+    \item \textbf{PDF} --- sous la période, une ligne dit le niveau imprimé («~Niveau~2~», ou
+          «~Tous les comptes~»), suivie de «~, détail ajusté à la main~» si vous avez ouvert ou
+          fermé des groupes vous-même (un groupe que vous ramenez à l'état que lui donne le niveau ne
+          compte plus)~; les groupes ouverts ou fermés se voient dans le corps, où
+          un groupe fermé porte sa somme sans ses comptes. Chaque ligne est décalée selon sa
+          profondeur dans le plan~; un groupe et sa ligne de sous-total («~Total Liquidités~») sont
+          en gras~; un compte de groupe qui porte lui-même des écritures a sa ligne
+          «~(solde propre)~», suffixe qui reste entier quand le nom est abrégé (sauf à partir de la profondeur~6 de la balance, dont la colonne est alors plus étroite que lui). Le titre d'un groupe ouvert ne reste pas seul en bas de page. Les
+          sous-titres de rôle des capitaux propres (\emph{Capital}, \emph{Autres fonds
+          propres}\ldots) ne s'impriment qu'à plat~: par groupes, les fonds propres suivent le plan.
+          Les totaux de section, les lignes calculées et l'équation du bilan ne changent pas.
+    \item \textbf{CSV} --- deux colonnes de plus après \texttt{Section}~: \texttt{Niveau} (la
+          profondeur dans le plan) et \texttt{TypeLigne} (\texttt{groupe}, \texttt{compte},
+          \texttt{propre}, \texttt{soustotal}), une ligne par ligne de l'écran~; le solde du titre
+          d'un groupe ouvert dont le sous-total est en pied est vide, sa ligne \texttt{soustotal}
+          le porte.
+    \item \textbf{La balance} --- au PDF, les mêmes lignes, sur ses quatre colonnes (ouverture,
+          débit, crédit, clôture)~; un groupe en devise unique a, comme un compte, sa seconde ligne en
+          petit dans sa devise. Au CSV, \texttt{Niveau} et \texttt{TypeLigne} viennent \textbf{en
+          tête} de chaque ligne, puisque la balance n'a pas de colonne \texttt{Section}~; un groupe
+          en devise unique remplit les colonnes en devise comme un compte. Le résultat reporté, le
+          total des mouvements et le contrôle d'ouverture restent sous les groupes, comme à plat.
+\end{itemize}
+Les montants s'arrondissent au centime au moment de s'écrire. Un sous-total est l'arrondi de la
+somme exacte de ses comptes, \textbf{non la somme de leurs montants arrondis}~: deux comptes à
+10.005 et 5.006 s'impriment 10.01 et 5.01, et leur groupe 15.01. L'écart d'un centime avec
+l'addition des lignes est voulu~; les totaux de section suivent la même règle.
+
+\begin{keshwarning}
+Un bilan ou un compte de résultat imprimé à un niveau qui replie les comptes --- le niveau~1 en
+particulier --- est un \textbf{affichage de travail}, utile pour lire ou discuter les chiffres, et
+\textbf{non des comptes annuels}~: la conformité à l'art.~959a CO tient aux sections légales, que
+les groupes ne changent pas. Pour la remise de comptes annuels, préférez l'export à plat (case «~Hiérarchie des groupes~» décochée), ou au
+niveau «~Tous les comptes~».
+\end{keshwarning}
 
 \paragraph{Les cellules de texte du CSV.} Pour qu'un tableur lise toujours un libellé comme du
 texte, et jamais comme une formule, une cellule de texte d'un export CSV de rapport --- libellé
