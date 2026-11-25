@@ -219,7 +219,7 @@ fn key_kind(id: &str) -> Option<&'static str> {
 /// un paiement ne nomme aucun autre versement et tombe dans le repli prudent,
 /// sous sa borne (montant, compte du plan, côté Stripe libre, rapprochée de
 /// l'autre côté). Pour une clé de charge (`ch_…`/`py_…` : des frais), tout
-/// identifiant Stripe compte, comme avant : l'écriture d'un versement
+/// identifiant Stripe compte, comme avant #1539 : l'écriture d'un versement
 /// (`po_…`) de même montant n'est jamais celle de frais (revue P1, M1). Une
 /// transaction sans clé d'un genre connu : aucun identifiant ne compte (le
 /// repli prudent, jamais une seconde écriture).
@@ -863,8 +863,8 @@ mod tests {
         }
         // Le genre ne se restreint que pour un versement (`po_` seul) ; pour
         // des frais (clé de charge), tout identifiant Stripe compte, comme
-        // avant : l'écriture d'un versement de même montant n'est jamais la
-        // leur, même versement détaché (revue P1, M1).
+        // avant #1539 : l'écriture d'un versement de même montant n'est jamais
+        // la leur, même lorsque ce versement est détaché (revue P1, M1).
         assert!(same_key_kind(&versement, "po_9"));
         assert!(!same_key_kind(&versement, "ch_9"));
         assert!(!same_key_kind(&versement, "py_9"));

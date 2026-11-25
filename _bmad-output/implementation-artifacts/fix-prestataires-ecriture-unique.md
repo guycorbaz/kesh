@@ -128,7 +128,7 @@ issues à ouvrir** (`kesh-gate-logs/s40-m2c/issues-a-ouvrir.md` : l'angle mort p
 branche) : le repli prudent (`unnamed_and_free`) ne compte plus, parmi les identifiants du libellé, que ceux **du
 même genre de clé** que la transaction jugée — nouveau crochet `ProviderSpec::same_key_kind`. Stripe
 (`stripe::same_key_kind`) : pour un versement, seul un `po_` compte ; pour des frais (clé de charge), tout identifiant
-Stripe compte, comme avant — l'écriture d'un versement de même montant n'est jamais la leur (revue P1, M1) ; une
+Stripe compte, comme avant #1539 — l'écriture d'un versement de même montant n'est jamais la leur (revue P1, M1) ; une
 transaction sans clé d'un genre connu ne voit compter aucun identifiant (repli prudent, jamais une seconde écriture).
 PayPal : `one_key_kind`, un seul genre, tout identifiant compte — comportement inchangé. Une écriture de versement
 qui ne cite qu'une charge ou un paiement ne nomme aucun versement : elle tombe dans le repli prudent, sous sa borne
@@ -165,6 +165,12 @@ de compilation, non conflit de texte ; `one_key_kind` si Wise n'a qu'un genre de
   conversion à deux écritures sans e2e. Mutations (`kesh-gate-logs/fix-prest/p2/mut/`) : six, toutes tuées. Gates au
   commit `7d2764960` (dernier commit de code `976fd49e1`, puis commentaires) : témoin ciblé 67/67 ; gate-ci
   6460/0/19 ; E2E 505 passés, les sept de la KF-029, 18 ignorés. Frontend inchangé depuis `afe562d48`.
+
+- 2026-11-25 — `pr/40-stripe`, angle mort de la #1534 fermé (refs #1539) : repli prudent par genre de clé
+  (`685c9c84b`) ; revue P1 complète (Sonnet) 0/0/1/4 → M1 (frais bloqués par l'écriture d'un versement détaché de même
+  montant) : le genre ne se restreint que pour un versement (`5c100ac01`), LOW-1 laissé (clé absente : sens prudent) ;
+  P2 ciblée (Haiku) 0/0/0/4, boucle close ; ses LOW L1 à L3 (commentaires, fiche) corrigés sans code exécutable, L4
+  laissé. Mutations (`kesh-gate-logs/s40-m2d/mut/BILAN.md`) : quatre, toutes tuées. Gates : `kesh-gate-logs/s40-m2d/GATES.md`.
 
 ## Notes de version
 

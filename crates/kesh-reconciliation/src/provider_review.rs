@@ -973,9 +973,9 @@ pub fn unnamed_and_free(
 ///    fois.
 ///
 /// Une écriture qui nomme une **autre** transaction du même genre de clé n'est
-/// jamais retenue. La **seule** décision « déjà comptabilisée » d'une transaction de prestataire
-/// (#1538) : la revue (sur la lecture par page) et l'acceptation (sous les
-/// verrous du lot) l'appellent sur la même présélection
+/// jamais retenue. La **seule** décision « déjà comptabilisée » d'une
+/// transaction de prestataire (#1538) : la revue (sur la lecture par page) et
+/// l'acceptation (sous les verrous du lot) l'appellent sur la même présélection
 /// (`kesh_db::repositories::reconciliation_link::find_posted_elsewhere`).
 pub fn first_naming_entry<'a>(
     spec: &ProviderSpec,
