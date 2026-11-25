@@ -126,8 +126,8 @@ jobs:
       - uses: actions/checkout@v4
 
       # C-31-2-3 (variante B) — le script testé sur toute PR, lancé sur un fork seulement :
-      # même image (chaîne de miroirs avec reprise), mêmes variables, même port, même contrôle de santé que
-      # le service, que le test compare à ce fichier.
+      # même image (chaîne de miroirs avec reprise), mêmes variables, même port, même
+      # contrôle de santé que le service, que le test compare à ce fichier.
       - name: Tests du démarrage MariaDB de fork
         run: bash scripts/tests/ci-mariadb-fork.test.sh
       - name: Start MariaDB (PR de fork)

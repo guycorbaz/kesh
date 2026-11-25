@@ -42,11 +42,12 @@ case "$1" in
 esac
 FACTICE
 chmod +x "$WORK/docker"
-# Factice de `sleep`, premier dans le PATH : consigne les délais demandés, sans attendre.
+# Factice de `sleep`, premier dans le PATH : consigne les délais de reprise, sans attendre.
+# Les pauses de l'attente de santé valent 0 (KESH_CI_MARIADB_PAUSE=0) et ne sont pas notées.
 mkdir -p "$WORK/bin"
 cat > "$WORK/bin/sleep" <<'FACTICE'
 #!/usr/bin/env bash
-echo "$1" >> "$(dirname "$0")/../delais.log"
+[ "$1" = 0 ] || echo "$1" >> "$(dirname "$0")/../delais.log"
 FACTICE
 chmod +x "$WORK/bin/sleep"
 

@@ -200,7 +200,7 @@ tiré **anonymement**, et un `429` de Docker Hub faisait échouer le job `backen
   `mirror.gcr.io`, ci-dessous). ⚠️ Que ce tirage profite de la connexion est
   une **hypothèse** sur le comportement de l'action, à constater au journal du premier run (tirage authentifié ou non) —
   non vérifiée localement.
-- **Les PR issues de forks tournent sans secret, par le miroir public ECR** (C-31-2-3, révisé le 2026-11-24 sur décision
+- **Les PR issues de forks tournent sans secret, par des registres publics anonymes** (miroir ECR, `mirror.gcr.io`, Docker Hub ; C-31-2-3, révisé le 2026-11-24 sur décision
   du mainteneur : le dépôt reçoit désormais des PR de contributeurs, depuis leur fork). Ni `pull_request_target`, ni
   secret exposé : la CI d'un fork reste un `pull_request` ordinaire, en lecture seule. Les règles :
   - **Le service MariaDB** (jobs `backend` et `e2e-smoke`) reste un `services:` tiré de Docker Hub avec ses
@@ -224,14 +224,16 @@ tiré **anonymement**, et un `429` de Docker Hub faisait échouer le job `backen
   - **La chaîne de miroirs de MariaDB** (`scripts/ci-mariadb-fork.sh`, depuis le run 45525662619 de la PR #1560, la
     première PR de fork après la #1521) : à ce run, le smoke E2E a échoué à « Start MariaDB (PR de fork) » sur un refus
     d'ECR, `toomanyrequests: Data limit exceeded` (exit 125), alors que le job `backend` avait obtenu l'image quelques
-    minutes plus tôt — un quota anonyme, compté par adresse, que les runners partagent : intermittent. Le script tire
+    minutes plus tôt — un quota anonyme, intermittent (vraisemblablement compté par adresse, que les runners partagent ;
+    non établi par le run). Le script tire
     donc l'image avant `docker run`, dans cet ordre : `public.ecr.aws/docker/library/mariadb:10.11`,
     `mirror.gcr.io/library/mariadb:10.11`, puis `docker.io/library/mariadb:10.11` en anonyme. Chaque miroir est essayé
     trois fois, à 5 puis 10 secondes d'intervalle (le délai double, borné à 20 s) ; le journal nomme chaque refus et le
     miroir qui a servi ; `docker run --pull=never` démarre l'image obtenue. Si aucun ne la sert, l'étape échoue avec
     « aucun miroir n'a servi l'image ». Au pire, la chaîne ajoute 45 secondes d'attente. Relevé le 2026-11-25, tiré
-    sans identifiants : les trois miroirs servent `mariadb:10.11` sous la **même empreinte d'index**
-    (`sha256:e5fe75b2…`). Le test (`scripts/tests/ci-mariadb-fork.test.sh`) éprouve la reprise sur le même miroir, le
+    sans identifiants : les trois miroirs servaient `mariadb:10.11` sous la **même empreinte d'index**
+    (`sha256:e5fe75b2…`) — un relevé daté, non une garantie : l'étiquette est mouvante (comme celle du service), et
+    `mirror.gcr.io`, un cache, peut servir un temps un correctif plus ancien que Docker Hub. Le test (`scripts/tests/ci-mariadb-fork.test.sh`) éprouve la reprise sur le même miroir, le
     passage au suivant, l'ordre des trois, le délai borné et l'échec de tous ; une sonde de mutation qui retire la
     reprise le fait rougir.
   - ⚠️ **Limite : les images de base du `Dockerfile` et `moby/buildkit` n'ont pas de reprise.** Sans secret, elles sont

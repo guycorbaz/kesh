@@ -8,8 +8,9 @@
 #
 # Le tirage suit une chaîne de miroirs, dans cet ordre, chacun repris quelques fois
 # avec un délai croissant mais borné : le miroir public ECR, `mirror.gcr.io`, puis
-# Docker Hub en anonyme. Les trois servent la même image (même empreinte d'index,
-# relevée le 2026-11-25, docs/ci.md). La reprise vient du run 45525662619 (PR #1560) :
+# Docker Hub en anonyme. Les trois servaient la même image au relevé du 2026-11-25
+# (même empreinte d'index, docs/ci.md) ; l'étiquette `10.11` est mouvante, et un
+# miroir peut servir un temps un correctif plus ancien que Docker Hub. La reprise vient du run 45525662619 (PR #1560) :
 # ECR y a refusé le tirage anonyme (« toomanyrequests: Data limit exceeded »), un
 # quota intermittent, alors que le job `backend` avait obtenu l'image peu avant.
 #
@@ -18,9 +19,9 @@
 # à tenir égaux à la main, la garde de `scripts/tests/ci-mariadb-fork.test.sh`
 # compare les valeurs écrites ici à celles de `ci.yml`.
 #
-# Rend 0 quand le conteneur est « healthy » ; 1 si aucun miroir ne sert l'image, si
-# `docker run` échoue, ou si le conteneur devient « unhealthy », s'arrête ou n'est
-# pas prêt dans le délai (journal du conteneur sur la sortie d'erreur).
+# Rend 0 quand le conteneur est « healthy » ; 1 si aucun miroir ne sert l'image, ou si
+# le conteneur devient « unhealthy », s'arrête ou n'est pas prêt dans le délai (journal
+# du conteneur sur la sortie d'erreur) ; le code de `docker` si `docker run` échoue.
 #
 # Surcharges, pour les tests seulement : DOCKER (commande), KESH_CI_MARIADB_PORT,
 # KESH_CI_MARIADB_NOM, KESH_CI_MARIADB_ESSAIS, KESH_CI_MARIADB_PAUSE,
