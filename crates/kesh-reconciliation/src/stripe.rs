@@ -198,6 +198,36 @@ fn match_key(t: &BankTransaction) -> Option<&str> {
         .filter(|r| !r.is_empty())
 }
 
+/// Le genre de clé d'un identifiant Stripe : `po_` (versement), `ch_` ou
+/// `py_` (encaissement : la charge et son paiement désignent la même vente) ;
+/// `None` pour tout autre jeton.
+fn key_kind(id: &str) -> Option<&'static str> {
+    if id.starts_with("po_") {
+        Some("payout")
+    } else if id.starts_with("ch_") || id.starts_with("py_") {
+        Some("charge")
+    } else {
+        None
+    }
+}
+
+/// Correctif de l'angle mort de la #1534 (#1539) : un identifiant cité dans un
+/// libellé ne fait de l'écriture celle d'**une autre** transaction
+/// ([`crate::provider_review::unnamed_and_free`]) que s'il est du genre de la
+/// clé de `t` ([`match_key`]) : un `po_…` pour un versement, un `ch_…`/`py_…`
+/// pour des frais. Une écriture de versement passée à la main qui ne cite
+/// qu'une charge ou un paiement ne nomme donc aucun autre versement : elle
+/// tombe dans le repli prudent, sous sa borne (montant, compte du plan, côté
+/// Stripe libre, rapprochée de l'autre côté). Une transaction sans clé d'un
+/// genre connu : aucun identifiant ne compte (le repli prudent, jamais une
+/// seconde écriture).
+fn same_key_kind(t: &BankTransaction, id: &str) -> bool {
+    match match_key(t).and_then(key_kind) {
+        Some(kind) => key_kind(id) == Some(kind),
+        None => false,
+    }
+}
+
 /// Stripe n'a pas de conversion : aucune paire.
 fn no_conversion(_: &BankTransaction, _: &BankTransaction) -> bool {
     false
@@ -251,6 +281,7 @@ pub const SPEC: ProviderSpec = ProviderSpec {
     classify,
     match_key,
     extract_ids: stripe_ids_in,
+    same_key_kind,
     conversion_match: no_conversion,
     // Jamais atteint : `classify` ne rend jamais `Conversion`.
     conversion_unpaired: (REVIEW_CONVERSION_UNPAIRED, Placement::ToReview),
@@ -478,8 +509,8 @@ pub fn complete_review(
 /// réception d'un autre compte bancaire, alors que le versement lui-même a
 /// été détaché (annulation du seul côté Stripe, qui ne retire que le lien), et
 /// qui le **nomme** (son libellé porte son `po_…`, [`match_key`]) ou, par
-/// prudence, ne porte aucun identifiant (`first_naming_entry` de la revue
-/// commune) — va « à examiner » sous `already_posted`, l'écriture nommée
+/// prudence, ne porte aucun `po_…` (un `ch_…` ou un `py_…` cité ne compte
+/// pas : [`same_key_kind`] ; `first_naming_entry` de la revue commune) — va « à examiner » sous `already_posted`, l'écriture nommée
 /// ([`ReviewFinding::already_posted`]) : jamais proposé, jamais sous un motif
 /// qui conseillerait de l'écrire de nouveau. La route rejuge la même règle à
 /// l'acceptation (`rejudge_writing`).
@@ -759,7 +790,8 @@ mod tests {
     /// l'écriture d'un versement **nomme** ce versement — sa clé `po_…` est
     /// dans son libellé —, jamais un autre versement de même montant, ni des
     /// frais ; et cela tient quand le libellé porte aussi un `ch_…` ou un
-    /// `py_…`. L'écriture des frais ne nomme pas les frais.
+    /// `py_…`. L'écriture des frais ne nomme pas les frais. Un libellé qui ne
+    /// porte qu'une charge ou un paiement tombe dans le repli prudent (#1539).
     #[test]
     fn libelle_stripe_nomme_le_seul_versement_ecrit() {
         use crate::provider_review::{entry_names, first_naming_entry};
@@ -795,17 +827,46 @@ mod tests {
         );
         assert_eq!(first_naming_entry(&SPEC, &autre, candidats, &[]), Some(902));
         assert_eq!(first_naming_entry(&SPEC, &nu, [candidats[0]], &[]), None);
-        // Angle mort assumé (fiche, manuel, API) : un libellé qui ne porte
-        // qu'une charge ou un paiement, sans le `po_…`, nomme cette charge, non
-        // le versement — ni le nom ni le repli prudent ne le retiennent.
+        // #1539 : un libellé qui ne porte qu'une charge ou un paiement, sans le
+        // `po_…`, ne nomme aucun versement — la charge est d'un autre genre de
+        // clé : le repli prudent le retient, pour l'un et l'autre versement de
+        // même montant (le côté Stripe est libre) ; non s'il porte encore un
+        // versement de ce compte.
         for jeton in ["ch_TEST0002", "py_TEST0003"] {
             let seul = format!("Versement Stripe {jeton} 96.80 CHF");
+            for v in [&versement, &autre] {
+                assert!(!entry_names(&SPEC, v, &seul, &[]), "{seul}");
+                assert_eq!(
+                    first_naming_entry(&SPEC, v, [(904, seul.as_str())], &[]),
+                    Some(904),
+                    "{seul}"
+                );
+            }
+            let mut porte = payout(5, "-96.80", "po_5");
+            porte.matched_entry_id = Some(904);
             assert_eq!(
-                first_naming_entry(&SPEC, &versement, [(904, seul.as_str())], &[]),
+                first_naming_entry(&SPEC, &versement, [(904, seul.as_str())], &[porte]),
                 None,
                 "{seul}"
             );
+            // Un `po_…` d'un autre versement, même à côté de la charge : exclu.
+            let autre_po = format!("Versement Stripe po_2 {jeton} 96.80 CHF");
+            assert_eq!(
+                first_naming_entry(&SPEC, &versement, [(905, autre_po.as_str())], &[]),
+                None,
+                "{autre_po}"
+            );
         }
+        // Le genre de clé : `po_` d'un versement, `ch_`/`py_` des frais (leur
+        // clé est la charge) ; un jeton d'aucun genre ne compte pour personne.
+        assert!(same_key_kind(&versement, "po_9"));
+        assert!(!same_key_kind(&versement, "ch_9"));
+        assert!(!same_key_kind(&versement, "py_9"));
+        assert!(same_key_kind(&frais, "ch_9") && same_key_kind(&frais, "py_9"));
+        assert!(!same_key_kind(&frais, "po_9"));
+        let mut sans_cle = payout(6, "-1.00", "po_6");
+        sans_cle.reference = None;
+        assert!(!same_key_kind(&sans_cle, "po_6"));
         // Le libellé porte aussi une charge ou un paiement : le versement reste
         // nommé, et seul lui (avant L3, ni le nom ni le repli prudent).
         for jeton in ["ch_TEST0002", "py_TEST0003"] {

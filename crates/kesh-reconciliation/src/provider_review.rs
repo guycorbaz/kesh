@@ -168,6 +168,15 @@ pub struct ProviderSpec {
     /// Extraction des identifiants d'un libellé d'écriture, en forme
     /// comparable à [`ProviderSpec::match_key`].
     pub extract_ids: fn(&str) -> Vec<String>,
+    /// L'identifiant `id`, extrait d'un libellé ([`ProviderSpec::extract_ids`]),
+    /// est-il du **même genre de clé** que la transaction `t` — celui d'une
+    /// transaction que l'écriture pourrait porter à la place de `t` ? Seul un
+    /// tel identifiant fait d'une écriture celle d'**une autre** transaction et
+    /// l'exclut du repli prudent ([`unnamed_and_free`]). PayPal : un seul genre
+    /// ([`one_key_kind`]). Stripe : `po_` pour un versement, `ch_`/`py_` pour
+    /// une charge — une charge citée au libellé d'un versement ne fait pas de
+    /// son écriture celle d'un autre versement.
+    pub same_key_kind: fn(&BankTransaction, &str) -> bool,
     /// Les deux transactions sont-elles les moitiés d'une même conversion,
     /// par leurs références (PayPal : même `Reference Txn ID`, ou chacune
     /// pointant l'autre ; Wise : même `transaction_id`) ? Le signe opposé et la
@@ -189,6 +198,12 @@ pub struct ProviderSpec {
     /// prestataire règle, selon ses candidates, par une règle). PayPal :
     /// aucun. Voir [`admits_rule`].
     pub ruleable: fn(ProviderKind) -> bool,
+}
+
+/// Un seul genre de clé : tout identifiant d'un libellé est du genre de toute
+/// transaction (paramétrage de PayPal pour [`ProviderSpec::same_key_kind`]).
+pub fn one_key_kind(_: &BankTransaction, _: &str) -> bool {
+    true
 }
 
 /// Aucun genre en plus (paramétrage de PayPal pour [`ProviderSpec::linkable`]
@@ -917,22 +932,27 @@ pub fn entry_names(
                 .any(|p| conversion_halves(t, p, spec) && named(p)))
 }
 
-/// L'écriture de libellé `description` ne porte **aucun** identifiant (une
-/// écriture saisie à la main, puis rattachée) **et** son côté prestataire est
-/// **libre** : aucune transaction du compte bancaire de `t` ne lui est
-/// rapprochée (`linked` : celles qui le sont). C'est l'écriture d'une
-/// transaction détachée de ce compte, sans dire laquelle : le repli prudent de
-/// [`first_naming_entry`] (revue P1 de la #1560, M1). Une écriture dont le côté
-/// prestataire est encore rapproché (une transaction qu'elle porte toujours,
-/// par exemple un retrait d'un mois passé du même montant) n'est l'écriture
-/// d'aucune transaction en attente.
+/// L'écriture de libellé `description` ne porte **aucun** identifiant du
+/// genre de clé de `t` ([`ProviderSpec::same_key_kind`] ; une écriture saisie
+/// à la main, puis rattachée, sans identifiant ou avec seulement des
+/// identifiants d'un autre genre — une charge `ch_…` citée au libellé d'un
+/// versement Stripe) **et** son côté prestataire est **libre** : aucune
+/// transaction du compte bancaire de `t` ne lui est rapprochée (`linked` :
+/// celles qui le sont). C'est l'écriture d'une transaction détachée de ce
+/// compte, sans dire laquelle : le repli prudent de [`first_naming_entry`]
+/// (revue P1 de la #1560, M1 ; identifiant d'un autre genre : #1539). Une
+/// écriture dont le côté prestataire est encore rapproché (une transaction
+/// qu'elle porte toujours, par exemple un retrait d'un mois passé du même
+/// montant) n'est l'écriture d'aucune transaction en attente.
 pub fn unnamed_and_free(
     spec: &ProviderSpec,
     t: &BankTransaction,
     description: &str,
     linked: &[&BankTransaction],
 ) -> bool {
-    (spec.extract_ids)(description).is_empty()
+    !(spec.extract_ids)(description)
+        .iter()
+        .any(|id| (spec.same_key_kind)(t, id))
         && !linked
             .iter()
             .any(|p| p.bank_account_id == t.bank_account_id)
@@ -945,13 +965,15 @@ pub fn unnamed_and_free(
 ///
 /// 1. la première qui **nomme** `t` ([`entry_names`]) — une écriture qui nomme
 ///    `t` passe toujours avant une écriture sans identifiant, même plus proche ;
-/// 2. à défaut, **par prudence**, la première sans identifiant dont le côté
-///    prestataire est libre ([`unnamed_and_free`]) : elle ne dit pas quelle
-///    transaction elle porte, et vaut pour toute transaction de ce montant du
-///    compte — en refuser une de trop (« à examiner », écrite à la main) coûte
-///    moins que d'en écrire une seconde fois.
+/// 2. à défaut, **par prudence**, la première sans identifiant du genre de
+///    clé de `t` dont le côté prestataire est libre ([`unnamed_and_free`]) :
+///    elle ne dit pas quelle transaction elle porte, et vaut pour toute
+///    transaction de ce montant du compte — en refuser une de trop (« à
+///    examiner », écrite à la main) coûte moins que d'en écrire une seconde
+///    fois.
 ///
-/// Une écriture qui nomme une **autre** transaction n'est jamais retenue. La
+/// Une écriture qui nomme une **autre** transaction du même genre de clé n'est
+/// jamais retenue. La
 /// **seule** décision « déjà comptabilisée » d'une transaction de prestataire
 /// (#1538) : la revue (sur la lecture par page) et l'acceptation (sous les
 /// verrous du lot) l'appellent sur la même présélection
@@ -1135,6 +1157,7 @@ mod tests {
         classify,
         match_key: key,
         extract_ids: extract,
+        same_key_kind: one_key_kind,
         conversion_match: conv_match,
         conversion_unpaired: (REVIEW_CONVERSION_UNPAIRED, Placement::ToReview),
         entry_label: label,
