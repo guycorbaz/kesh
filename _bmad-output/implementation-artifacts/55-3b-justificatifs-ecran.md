@@ -1,6 +1,6 @@
 # Story 55-3b : ouvrir les justificatifs d'une écriture depuis le Journal (et le Grand livre)
 
-Status: drafted
+Status: ready-for-dev
 
 Epic : `_bmad-output/planning-artifacts/epic-55-navigation-interface.md` — D9 à D11. Issue : #À-VENIR (point c, comme la
 55-3a). Release : la prochaine planifiée après la 0.20.0. **Frontend seulement, aucune migration.** **Suit la 55-3a**
@@ -332,3 +332,10 @@ n'était pas encore produit le fige, comme un téléchargement. (refs #À-VENIR)
   l'orchestrateur) : manuel d'administration dans la règle (`:949`, `:1607`, `:1644`) et au fichier d'epic (Vv2p5-1) ;
   phrase propre pour le refus d'un PDF disparu, *Refiger* depuis la fiche seulement (Vv2p5-2) ; LOW Vv2p5-3 à Vv2p5-6
   (décalage inégal, recherche en deux étapes, renvoi hors du § 11.6.1, test du focus et `onCloseAutoFocus`).
+- 2026-11-25 — Validation P6 ciblée (version récrite, Sonnet) : 0/0/0/3 — **validation terminée**. Tendance de la version
+  récrite : P1 Sonnet 0/0/1/8 → P2 ciblée Haiku 0/0/2/0 → P3 ciblée Sonnet 0/0/1/3 → P4 ciblée Haiku 0/0/2/2 → P5 ciblée
+  Opus 0/0/2/4 → P6 ciblée Sonnet 0/0/0/3. Les trois LOW se reprennent au **T0 du développement**, ligne lue citée :
+  Vv2p6-1 (`README.md:33` et le commentaire `invoices.types.ts:109` dans la règle du figement), Vv2p6-2 (le manuel dit
+  comment l'administrateur refige : depuis la fiche, téléchargement refusé puis *Refiger le document* ;
+  `admin-manual.tex:1648`, `:1653` aux repères), Vv2p6-3 (`admin-manual.tex` nommé au § *Modules*, même module ;
+  `focus-scope.svelte.js:78-90` ; raison de laisser `:3426` écrite en toutes lettres).
