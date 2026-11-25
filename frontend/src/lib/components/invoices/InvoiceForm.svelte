@@ -8,7 +8,7 @@
 	import { notifyError, notifySuccess } from '$lib/shared/utils/notify';
 	import { isApiError } from '$lib/shared/utils/api-client';
 	import { goto } from '$app/navigation';
-	import { Plus, Trash2, Package } from '@lucide/svelte';
+	import { Plus, Trash2, Package, MessageSquareText } from '@lucide/svelte';
 	import Big from 'big.js';
 
 	import type { ContactResponse } from '$lib/features/contacts/contacts.types';
@@ -25,6 +25,15 @@
 		computeLineTotal,
 		formatInvoiceTotal,
 	} from '$lib/features/invoices/invoice-helpers';
+	// Story 49-1c (D5) — les seules conversions entre une ligne de l'API et l'état du
+	// formulaire, et le type de chaque ligne.
+	import {
+		estChiffree,
+		estLigneDeTexte,
+		ligneAEnvoyer,
+		ligneDepuisReponse,
+		type LigneFormulaire,
+	} from '$lib/features/invoices/invoice-lines';
 	import { createInvoice, getInvoice, updateInvoice, getInvoiceSettings } from '$lib/features/invoices/invoices.api';
 	import { todayLocal } from '$lib/shared/utils/local-date';
 	import { getContact } from '$lib/features/contacts/contacts.api';
@@ -40,10 +49,8 @@
 	import { isAccountUnusable } from '$lib/features/accounts/account-validity';
 	import { listProjects } from '$lib/features/projects/projects.api';
 	import type { ProjectResponse } from '$lib/features/projects/projects.types';
-	// Story v0171 (#878) — symétrique client de v017-4b (AC-23) : une quantité ou un prix
-	// lu du serveur (`DECIMAL(19,4)`, `1.0000`, `100.0000`) s'ouvre lisible dans son champ
-	// (`1`, `100.00`), sans perte de précision (`33.3333` gardé).
-	import { readableAmount } from '$lib/features/supplier-invoices/supplier-invoice-form';
+	// Story v0171 (#878) — une quantité ou un prix lu du serveur s'ouvre lisible dans son
+	// champ : la conversion vit depuis la Story 49-1c dans `ligneDepuisReponse`.
 	// Story 36-3b (#1171) — le prix unitaire se lit comme le montant d'une écriture :
 	// « 1.250 » est refusé comme ambigu, « 1'250 » part `1250` ; un prix rouvert ne
 	// prend jamais une forme ambiguë (`1.2340`, non `1.234`).
@@ -99,17 +106,19 @@
 		if (vatOptions.length === 0) return;
 		const fallback = vatOptions.includes('8.10') ? '8.10' : vatOptions[0];
 		for (const l of lines) {
-			if (l._vatPlaceholder) {
+			// Story 49-1c : jamais de taux sur une ligne de texte (elle n'en envoie aucun).
+			if (estChiffree(l) && l._vatPlaceholder) {
 				l.vatRate = fallback;
 				l._vatPlaceholder = false;
 			}
 		}
 	});
 
-	// Identifiant UI stable (cross-reorder/remove). NE PAS envoyer au backend.
+	// État d'une ligne : `LigneFormulaire` (Story 49-1c, D5, `invoice-lines.ts`).
+	// `_uiKey` : identifiant UI stable (cross-reorder/remove), jamais envoyé au backend.
 	// `_vatPlaceholder` (v0172, #882) : la ligne porte la valeur provisoire du taux,
 	// posée avant la résolution des taux actifs ; seul le repli ci-dessus la lit.
-	type LineState = CreateInvoiceLineRequest & { _uiKey: string; _vatPlaceholder?: boolean };
+	type LineState = LigneFormulaire;
 
 	let uiKeySeq = 0;
 	function nextUiKey(): string {
@@ -117,27 +126,16 @@
 		return `line-${Date.now()}-${uiKeySeq}`;
 	}
 
-	function stripUiKey(l: LineState): CreateInvoiceLineRequest {
-		const { _uiKey, _vatPlaceholder, ...rest } = l;
-		return rest;
-	}
-
-
 	function initLines(): LineState[] {
 		if (invoice && invoice.lines.length > 0) {
-			return invoice.lines.map((l) => ({
-				description: l.description,
-				quantity: readableAmount(l.quantity, 0),
-				unitPrice: unitPriceFieldValue(l.unitPrice),
-				vatRate: l.vatRate,
-				// AC9-bis — site 1/5. Recopier depuis la réponse serveur, sinon toute
-				// ouverture d'un brouillon perdrait sa ventilation au ré-enregistrement.
-				revenueAccountId: l.revenueAccountId,
-				_uiKey: nextUiKey(),
-			}));
+			// AC9-bis (16-1a) — site 1/5 ; Story 49-1c (D5) : le type et le compte de
+			// chaque ligne sont relus par le seul `ligneDepuisReponse`, partagé avec
+			// `reloadFromServer`.
+			return invoice.lines.map((l) => ligneDepuisReponse(l, nextUiKey()));
 		}
 		return [
 			{
+				lineType: 'priced',
 				description: '',
 				quantity: '1',
 				unitPrice: '0.00',
@@ -261,7 +259,10 @@
 		new Set(
 			vatOptions.length === 0
 				? []
-				: lines.map((l) => l.vatRate).filter((r) => r !== '' && !vatOptions.includes(r)),
+				: lines
+						.filter(estChiffree)
+						.map((l) => l.vatRate)
+						.filter((r) => r !== '' && !vatOptions.includes(r)),
 		),
 	);
 
@@ -375,7 +376,8 @@
 		if (invoiceSettings === null) return [];
 		const out: number[] = [];
 		lines.forEach((l, i) => {
-			if (l.revenueAccountId == null) return;
+			// Story 49-1c : une ligne de texte n'a aucun compte (contrainte de la 49-1a).
+			if (!estChiffree(l) || l.revenueAccountId == null) return;
 			const acc = accounts.find((a) => a.id === l.revenueAccountId);
 			if (
 				isAccountUnusable(acc, {
@@ -482,6 +484,7 @@
 
 	function addFreeLine() {
 		lines.push({
+			lineType: 'priced',
 			description: '',
 			quantity: '1',
 			unitPrice: '0.00',
@@ -496,8 +499,26 @@
 		});
 	}
 
+	/**
+	 * Story 49-1c (D1, D8) — une ligne de commentaire, en fin de tableau : du texte
+	 * seul, sans quantité, prix, taux ni compte (champs vides, jamais envoyés). Son
+	 * type ne change plus : on la supprime et on en ajoute une autre.
+	 */
+	function addCommentLine() {
+		lines.push({
+			lineType: 'comment',
+			description: '',
+			quantity: '',
+			unitPrice: '',
+			vatRate: '',
+			revenueAccountId: null,
+			_uiKey: nextUiKey(),
+		});
+	}
+
 	function onProductSelect(p: ProductResponse) {
 		lines.push({
+			lineType: 'priced',
 			description: p.name,
 			quantity: '1',
 			unitPrice: unitPriceFieldValue(p.unitPrice),
@@ -526,9 +547,14 @@
 		return computeLineTotal(l.quantity, unitPricePayload(l.unitPrice) ?? '0');
 	}
 
+	// Story 49-1c (D6) : `computeInvoiceTotal` écarte les lignes de texte.
 	let totalAmount = $derived(
 		computeInvoiceTotal(
-			lines.map((l) => ({ quantity: l.quantity, unitPrice: unitPricePayload(l.unitPrice) ?? '0' })),
+			lines.map((l) => ({
+				lineType: l.lineType,
+				quantity: l.quantity,
+				unitPrice: unitPricePayload(l.unitPrice) ?? '0',
+			})),
 		),
 	);
 
@@ -602,6 +628,18 @@
 		}
 		for (let i = 0; i < lines.length; i++) {
 			const l = lines[i];
+			// Story 49-1c (AC3) : une ligne de texte n'exige que son texte — ni quantité,
+			// ni prix, ni taux actif.
+			if (!estChiffree(l)) {
+				if (!l.description.trim()) {
+					return i18nMsg(
+						'invoice-line-comment-required-error',
+						'Ligne { $line } : le texte du commentaire est obligatoire',
+						{ line: i + 1 },
+					);
+				}
+				continue;
+			}
 			if (!l.description.trim()) return `Ligne ${i + 1} : description requise`;
 			// Story 36-3b (D1, D3) — le prix se lit avant la quantité (C-36-3b-9).
 			const lecturePrix = readLineUnitPrice(i, l.unitPrice);
@@ -701,15 +739,21 @@
 		// prix est en cause (revue P1, B2). La quantité et la description retapées
 		// pendant l'attente ne sont pas revalidées ici (hors périmètre, #1190 ; le
 		// serveur les juge).
+		// Story 49-1c (D5) : chaque ligne part par `ligneAEnvoyer` — une ligne de texte
+		// sans aucun montant, une ligne chiffrée avec son prix relu ici.
 		const payloadLines: CreateInvoiceLineRequest[] = [];
 		for (let i = 0; i < lines.length; i++) {
+			if (!estChiffree(lines[i])) {
+				payloadLines.push(ligneAEnvoyer(lines[i]));
+				continue;
+			}
 			const prix = readLineUnitPrice(i, lines[i].unitPrice);
 			if (!prix.ok) {
 				errorMsg = prix.message;
 				submitting = false;
 				return;
 			}
-			payloadLines.push({ ...stripUiKey(lines[i]), unitPrice: prix.payload });
+			payloadLines.push(ligneAEnvoyer({ ...lines[i], unitPrice: prix.payload }));
 		}
 		try {
 			const payload: CreateInvoiceRequest = {
@@ -775,20 +819,11 @@
 			dueDate = fresh.dueDate ?? '';
 			paymentTerms = fresh.paymentTerms ?? '';
 			projectId = fresh.projectId ?? null;
-			lines = fresh.lines.map((l) => ({
-				description: l.description,
-				quantity: readableAmount(l.quantity, 0),
-				unitPrice: unitPriceFieldValue(l.unitPrice),
-				vatRate: l.vatRate,
-				// AC9-bis — site 4/5, LE PLUS DANGEREUX. Un oubli ici n'est visible
-				// qu'APRÈS un conflit de version : conflit optimiste → modale →
-				// « Recharger » → les lignes sont remappées sans compte → toutes les
-				// ventilations retombent à `NULL` EN SILENCE → le ré-enregistrement
-				// les efface en base. `stripUiKey` étant un spread, rien ne signale
-				// l'absence du champ.
-				revenueAccountId: l.revenueAccountId,
-				_uiKey: nextUiKey(),
-			}));
+			// AC9-bis (16-1a) — site 4/5, LE PLUS DANGEREUX : il n'est atteint qu'après
+			// un conflit de version. Story 49-1c (D5) : la relecture passe par le même
+			// `ligneDepuisReponse` que l'ouverture du brouillon — un champ (compte, type)
+			// ne peut plus manquer à l'un des deux sites seulement.
+			lines = fresh.lines.map((l) => ligneDepuisReponse(l, nextUiKey()));
 			// Await explicite + fallback UI si le contact devient indisponible.
 			// FK RESTRICT en DB garantit qu'un contact référencé existe toujours,
 			// mais une race théorique (archivage pendant la requête) peut rendre
@@ -971,6 +1006,40 @@
 			</thead>
 			<tbody>
 				{#each lines as line, i (line._uiKey)}
+					{#if estLigneDeTexte(line.lineType)}
+						<!-- Story 49-1c (D7) — une ligne de texte : un champ multiligne qui
+						     couvre les colonnes de la description au total, sans quantité, prix,
+						     taux, compte ni total ; la cellule de suppression reste. -->
+						<tr class="border-b border-border align-top" data-testid="invoice-line-comment-row">
+							<td class="py-2 pr-2" colspan={LINE_TABLE_COLUMNS - 1}>
+								<textarea
+									rows="2"
+									bind:value={line.description}
+									placeholder={i18nMsg(
+										'invoice-line-comment-placeholder',
+										'Texte imprimé sur toute la largeur de la facture, sans montant',
+									)}
+									aria-label={i18nMsg('invoice-line-comment-aria', 'Commentaire — ligne { $n }', {
+										n: i + 1,
+									})}
+									data-testid="invoice-line-comment"
+									class="border-input bg-background w-full rounded-md border px-3 py-2 text-sm"
+								></textarea>
+							</td>
+							<td class="py-2">
+								<Button
+									type="button"
+									variant="ghost"
+									size="sm"
+									onclick={() => removeLine(i)}
+									disabled={lines.length <= 1}
+									aria-label="Supprimer la ligne"
+								>
+									<Trash2 class="h-4 w-4" aria-hidden="true" />
+								</Button>
+							</td>
+						</tr>
+					{:else}
 					<tr class="border-b border-border align-top">
 						<td class="py-2 pr-2">
 							<Input type="text" bind:value={line.description} />
@@ -1077,6 +1146,7 @@
 							</td>
 						</tr>
 					{/if}
+					{/if}
 				{/each}
 			</tbody>
 			<tfoot>
@@ -1098,6 +1168,17 @@
 			<Button type="button" variant="outline" onclick={() => (productPickerOpen = true)}>
 				<Package class="h-4 w-4" aria-hidden="true" />
 				Depuis catalogue
+			</Button>
+			<!-- Story 49-1c (D1) : le troisième geste d'ajout ; les deux libellés voisins
+			     restent en dur (AC9, même arbitrage qu'AC6-bis de la 16-1b). -->
+			<Button
+				type="button"
+				variant="outline"
+				onclick={addCommentLine}
+				data-testid="invoice-add-comment-line"
+			>
+				<MessageSquareText class="h-4 w-4" aria-hidden="true" />
+				{i18nMsg('invoice-line-add-comment', 'Commentaire')}
 			</Button>
 		</div>
 	</div>

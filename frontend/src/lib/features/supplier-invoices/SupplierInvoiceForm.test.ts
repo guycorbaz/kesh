@@ -36,6 +36,7 @@ import SupplierInvoiceForm from './SupplierInvoiceForm.svelte';
 import { scanQrSupplierInvoice } from './supplier-invoices.api';
 import { decodeQrFromImageFile, scanToPrefill } from './supplier-invoice-scan';
 import { todayLocal } from '$lib/features/open-items/open-items';
+import { notifyWarning } from '$lib/shared/utils/notify';
 
 function contact(id: number, name: string): ContactResponse {
 	return {
@@ -118,6 +119,10 @@ function renderForm(opts: {
 	initial?: SupplierInvoiceFormInitial | null;
 	hasDocument?: boolean;
 	vatRates?: { id: number; rate: string }[];
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	projects?: any[];
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	onRefusal?: (err: unknown) => Promise<any>;
 }) {
 	const onSubmit = vi.fn(opts.onSubmit ?? (async () => {}));
 	const r = render(SupplierInvoiceForm, {
@@ -127,7 +132,7 @@ function renderForm(opts: {
 			expenseAccounts: [ACCOUNT as any],
 			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			vatRates: (opts.vatRates ?? []) as any,
-			projects: [],
+			projects: opts.projects ?? [],
 			document: opts.document ?? null,
 			proposals: opts.proposals ?? [],
 			onSubmit,
@@ -135,6 +140,7 @@ function renderForm(opts: {
 			// (leurs défauts — `null`, `false` — sont ce que la page de création passe).
 			...(opts.initial !== undefined ? { initial: opts.initial } : {}),
 			...(opts.hasDocument !== undefined ? { hasDocument: opts.hasDocument } : {}),
+			...(opts.onRefusal !== undefined ? { onRefusal: opts.onRefusal } : {}),
 		},
 	});
 	return { ...r, onSubmit };
@@ -1063,10 +1069,16 @@ describe('SupplierInvoiceForm — le prix unitaire « 1.250 » (Story 36-18a, #1
 		await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
 		expect(onSubmit.mock.calls[0][0].lines[0]).toMatchObject({ unitPrice: '1250', quantity: '2' });
 
-		await fireEvent.input(getByTestId('supplier-invoice-line-qty'), { target: { value: '1.250' } });
-		await fireEvent.click(getByTestId('supplier-invoice-submit'));
-		await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(2));
-		expect(onSubmit.mock.calls[1][0].lines[0].quantity).toBe('1.250');
+		// Story 48-12b (A-E3) : après un succès, le formulaire reste figé jusqu'à la
+		// navigation — le second envoi se fait sur un formulaire neuf.
+		cleanup();
+		const second = renderForm({ document: null });
+		await selectSupplier(second.container, '1');
+		await fillLine(second.container, "1'250");
+		await fireEvent.input(second.getByTestId('supplier-invoice-line-qty'), { target: { value: '1.250' } });
+		await fireEvent.click(second.getByTestId('supplier-invoice-submit'));
+		await waitFor(() => expect(second.onSubmit).toHaveBeenCalledTimes(1));
+		expect(second.onSubmit.mock.calls[0][0].lines[0].quantity).toBe('1.250');
 	});
 
 	it.each([
@@ -1218,10 +1230,16 @@ describe('SupplierInvoiceForm — le montant attendu « 1.250 » (Story 36-18a, 
 		await fireEvent.click(getByTestId('supplier-invoice-submit'));
 		await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
 		expect(onSubmit.mock.calls[0][0].expectedPaymentAmount).toBe(sent);
-		await setExpected(getByTestId, '');
-		await fireEvent.click(getByTestId('supplier-invoice-submit'));
-		await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(2));
-		expect(onSubmit.mock.calls[1][0].expectedPaymentAmount).toBeNull();
+		// Story 48-12b (A-E3) : après un succès, le formulaire reste figé jusqu'à la
+		// navigation — le cas « vide » se joue sur un formulaire neuf.
+		cleanup();
+		const second = renderForm({ document: null });
+		await selectSupplier(second.container, '1');
+		await fillLine(second.container, '10.00');
+		await setExpected(second.getByTestId, '');
+		await fireEvent.click(second.getByTestId('supplier-invoice-submit'));
+		await waitFor(() => expect(second.onSubmit).toHaveBeenCalledTimes(1));
+		expect(second.onSubmit.mock.calls[0][0].expectedPaymentAmount).toBeNull();
 	});
 
 	it('rouvert à 1.2340 : 1.2340, sans message (M12)', () => {
@@ -1319,5 +1337,427 @@ describe('SupplierInvoiceForm — le montant attendu « 1.250 » (Story 36-18a, 
 		await tick();
 		expect(getByTestId('supplier-invoice-form-error').textContent?.trim()).toBe(AMBIGU);
 		expect(onSubmit).not.toHaveBeenCalled();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Story 48-12b (#975 ; table A, E1 à E7 ; relevé C) — la machine à états du formulaire
+// ---------------------------------------------------------------------------
+
+/** Un refus de doublon, au contrat de la 48-12a. */
+function dupErr(code: string, confirmable: boolean, details = true) {
+	return {
+		code,
+		status: 409,
+		message: 'Message du serveur.',
+		...(details
+			? { details: { supplierInvoiceId: 12, internalNumber: null, status: 'draft', confirmable } }
+			: {}),
+	};
+}
+const LOST = { code: 'NETWORK_ERROR', status: 0, message: 'Réseau indisponible' };
+
+/** Remplit un formulaire envoyable (fournisseur 1, une ligne, numéro « FA-1 »). */
+async function remplir(r: ReturnType<typeof renderForm>) {
+	await selectSupplier(r.container, '1');
+	await fillLine(r.container, '10.00');
+	await fireEvent.input(r.getByTestId('supplier-invoice-number'), { target: { value: 'FA-1' } });
+}
+
+/** Un projet racine : le sélecteur de projet n'est rendu qu'avec au moins un projet. */
+const PROJET = {
+	id: 5,
+	parentId: null,
+	code: 'P-5',
+	name: 'Projet cinq',
+	description: null,
+	archived: false,
+	startDate: null,
+	endDate: null,
+	version: 1,
+	createdAt: '2026-01-01T00:00:00Z',
+	updatedAt: '2026-01-01T00:00:00Z',
+};
+
+/**
+ * Le décor « complet » de la table A (revue P1 de la 48-12b, A1) : un projet (sélecteur),
+ * une proposition d'un AUTRE fournisseur (« Retenir », actif), et, avec `hasDocument`, la
+ * date « à vérifier » (« C'est la bonne date ») à la place du scan — les deux sont
+ * exclusifs par construction (`scanOffered`). Après `remplir`, une seconde ligne : avec une
+ * seule ligne, le bouton de suppression est inactif par lui-même et l'assertion serait vide.
+ */
+function renderDecor(opts: { hasDocument?: boolean; nom?: string } = {}) {
+	return renderForm({
+		suppliers: [contact(1, opts.nom ?? 'Alpha SA'), contact(2, 'Beta SA')],
+		proposals: [{ contact: contact(2, 'Beta SA'), reason: 'iban' }],
+		projects: [PROJET],
+		...(opts.hasDocument ? { hasDocument: true } : {}),
+	});
+}
+
+/** `remplir`, puis une seconde ligne complète (description, prix, compte). */
+async function remplirDecor(r: ReturnType<typeof renderForm>) {
+	await remplir(r);
+	await fireEvent.click(r.getByTestId('supplier-invoice-add-line'));
+	const nth = (id: string) => r.container.querySelectorAll(`[data-testid="${id}"]`)[1] as HTMLInputElement;
+	await fireEvent.input(nth('supplier-invoice-line-desc'), { target: { value: 'Seconde' } });
+	await fireEvent.input(nth('supplier-invoice-line-unit-price'), { target: { value: '5.00' } });
+	const account = nth('supplier-invoice-line-account') as unknown as HTMLSelectElement;
+	account.value = '40';
+	await fireEvent.change(account);
+}
+
+/** Les espèces du décor sans document, puis avec document (scan ↔ date à vérifier). */
+const ESPECES_SANS_DOCUMENT = [
+	'champ',
+	'fournisseur',
+	'projet',
+	'retenir',
+	'ligne',
+	'ajout',
+	'suppression',
+	'scan',
+	'panneau',
+] as const;
+const ESPECES_AVEC_DOCUMENT = [
+	'champ',
+	'fournisseur',
+	'projet',
+	'retenir',
+	'date',
+	'ligne',
+	'ajout',
+	'suppression',
+	'panneau',
+] as const;
+type Espece = (typeof ESPECES_SANS_DOCUMENT)[number] | (typeof ESPECES_AVEC_DOCUMENT)[number];
+
+/** Les contrôles de chaque espèce qui écrivent la saisie (point 5 du code). */
+function controles(container: HTMLElement): Record<Espece, HTMLElement | null> {
+	const q = (id: string) => container.querySelector(`[data-testid="${id}"]`) as HTMLElement | null;
+	const removeLine = container.querySelector('[data-testid="supplier-invoice-line"] button') as HTMLElement | null;
+	return {
+		champ: q('supplier-invoice-number'),
+		fournisseur: q('supplier-invoice-supplier'),
+		projet: q('supplier-invoice-project'),
+		retenir: q('supplier-proposal-retain'),
+		date: q('supplier-invoice-date-confirm'),
+		ligne: q('supplier-invoice-line-desc'),
+		ajout: q('supplier-invoice-add-line'),
+		suppression: removeLine,
+		scan: q('supplier-invoice-scan-btn'),
+		panneau: q('supplier-new-open'),
+	};
+}
+
+/**
+ * Chaque espèce ATTENDUE est rendue — un contrôle absent fait échouer le test (plus de
+ * `continue` muet) — et inactive. Avec `actifs`, la même liste doit d'abord être active :
+ * la preuve que l'inactivité vient du gel, non du décor.
+ */
+function tousInactifs(container: HTMLElement, especes: readonly Espece[] = ESPECES_SANS_DOCUMENT) {
+	const c = controles(container);
+	for (const nom of especes) {
+		const el = c[nom];
+		expect(el, `${nom} rendu`).not.toBeNull();
+		// Un contrôle dans un `<fieldset disabled>` garde `disabled === false` en propriété :
+		// c'est `:disabled` qui le dit inactif.
+		expect(el!.matches(':disabled'), `${nom} inactif`).toBe(true);
+	}
+}
+
+function tousActifs(container: HTMLElement, especes: readonly Espece[]) {
+	const c = controles(container);
+	for (const nom of especes) {
+		const el = c[nom];
+		expect(el, `${nom} rendu`).not.toBeNull();
+		expect(el!.matches(':disabled'), `${nom} actif avant l'envoi`).toBe(false);
+	}
+}
+
+describe('SupplierInvoiceForm — table A (Story 48-12b)', () => {
+	for (const [decor, avecDocument, especes] of [
+		['sans document', false, ESPECES_SANS_DOCUMENT],
+		['avec document', true, ESPECES_AVEC_DOCUMENT],
+	] as const) {
+		it(`E2 (${decor}) : pendant l’envoi, chaque espèce de contrôle est inactive ; double submit = une requête`, async () => {
+			let finir: () => void = () => {};
+			const r = renderDecor({ hasDocument: avecDocument });
+			r.onSubmit.mockImplementationOnce(() => new Promise<void>((res) => (finir = res)));
+			await remplirDecor(r);
+			// Chaque espèce est rendue et active avant l'envoi : l'inactivité qui suit vient
+			// du gel, non du décor (suppression comprise : deux lignes).
+			tousActifs(r.container, especes);
+			const form = r.getByTestId('supplier-invoice-form') as HTMLFormElement;
+			await fireEvent.submit(form);
+			await fireEvent.submit(form);
+			await tick();
+			expect(r.onSubmit).toHaveBeenCalledTimes(1);
+			tousInactifs(r.container, especes);
+			expect((r.getByTestId('supplier-invoice-submit') as HTMLButtonElement).disabled).toBe(true);
+			finir();
+		});
+	}
+
+	it('E3 : après un succès, avant la navigation, aucun contrôle de saisie n’est actif', async () => {
+		const r = renderDecor();
+		await remplirDecor(r);
+		await fireEvent.click(r.getByTestId('supplier-invoice-submit'));
+		await waitFor(() => expect(r.onSubmit).toHaveBeenCalledTimes(1));
+		await tick();
+		// Mutation « formulaire réactivé après le succès ».
+		tousInactifs(r.container);
+		expect((r.getByTestId('supplier-invoice-submit') as HTMLButtonElement).disabled).toBe(true);
+	});
+
+	it('E4 : confirmable false → avis (texte du serveur, lien nouvel onglet), aucun bouton de confirmation, saisie modifiable ; l’envoi suivant efface l’avis', async () => {
+		const r = renderForm({});
+		r.onSubmit.mockRejectedValueOnce(dupErr('SUPPLIER_INVOICE_DUPLICATE', false));
+		await remplir(r);
+		await fireEvent.click(r.getByTestId('supplier-invoice-submit'));
+		await r.findByTestId('supplier-invoice-duplicate');
+		// Mutations « avis tiré de err.message », « clé d'écran distincte ».
+		expect(r.getByTestId('supplier-invoice-duplicate-text').textContent).toBe(
+			'Une facture de ce fournisseur porte déjà ce numéro pour la même année. Si c’est la même facture, ne l’enregistrez pas une seconde fois. Si le fournisseur a recommencé sa numérotation en cours d’année, ajoutez un caractère au numéro, par exemple « 15-b ».',
+		);
+		const link = r.getByTestId('supplier-invoice-duplicate-link');
+		expect(link.getAttribute('target')).toBe('_blank');
+		expect(link.getAttribute('href')).toBe('/supplier-invoices/12');
+		expect(link.textContent).toBe('brouillon n° 12');
+		// Mutations « bouton aussi sur confirmable: false », « bouton décidé sur le code ».
+		expect(r.queryByTestId('supplier-invoice-confirm-not-duplicate')).toBeNull();
+		expect(r.getByTestId('supplier-invoice-number').matches(':disabled')).toBe(false);
+		// Un contrôle local en échec garde l'avis.
+		await fireEvent.input(r.getByTestId('supplier-invoice-date'), { target: { value: '' } });
+		await fireEvent.click(r.getByTestId('supplier-invoice-submit'));
+		await tick();
+		expect(r.getByTestId('supplier-invoice-duplicate')).toBeTruthy();
+		expect(r.onSubmit).toHaveBeenCalledTimes(1);
+		// L'envoi suivant efface l'avis.
+		await fireEvent.input(r.getByTestId('supplier-invoice-date'), { target: { value: '2026-10-01' } });
+		await fireEvent.input(r.getByTestId('supplier-invoice-number'), { target: { value: 'FA-1-b' } });
+		await fireEvent.click(r.getByTestId('supplier-invoice-submit'));
+		await waitFor(() => expect(r.onSubmit).toHaveBeenCalledTimes(2));
+		expect(r.queryByTestId('supplier-invoice-duplicate')).toBeNull();
+	});
+
+	it('E5 : figé ; la confirmation renvoie le corps GARDÉ avec le drapeau, une fois ; deux clics synchrones = une requête', async () => {
+		let finir: () => void = () => {};
+		const r = renderDecor();
+		r.onSubmit.mockRejectedValueOnce(dupErr('SUPPLIER_INVOICE_PROBABLE_DUPLICATE', true));
+		r.onSubmit.mockImplementationOnce(() => new Promise<void>((res) => (finir = res)));
+		await remplirDecor(r);
+		await fireEvent.click(r.getByTestId('supplier-invoice-submit'));
+		await r.findByTestId('supplier-invoice-probable-duplicate');
+		// Figé, « Enregistrer » masqué.
+		tousInactifs(r.container);
+		expect(r.queryByTestId('supplier-invoice-submit')).toBeNull();
+		// `requestSubmit()` en E5 n'envoie rien.
+		(r.getByTestId('supplier-invoice-form') as HTMLFormElement).requestSubmit();
+		await tick();
+		expect(r.onSubmit).toHaveBeenCalledTimes(1);
+		// Une valeur changée par programme pendant le gel ne part pas : la confirmation
+		// renvoie le corps GARDÉ, non l'état courant de la saisie.
+		await fireEvent.input(r.getByTestId('supplier-invoice-number'), { target: { value: 'AUTRE' } });
+		const btn = r.getByTestId('supplier-invoice-confirm-not-duplicate');
+		btn.click();
+		btn.click();
+		await tick();
+		// Mutation « confirmation sans garde d'état ».
+		expect(r.onSubmit).toHaveBeenCalledTimes(2);
+		// Mutation « bouton qui reforme le corps depuis l'état courant » : le corps gardé.
+		expect(r.onSubmit.mock.calls[1][0]).toEqual({ ...r.onSubmit.mock.calls[0][0], confirmNotDuplicate: true });
+		finir();
+	});
+
+	it('E5 → « Modifier la saisie » : E1 sans avis, l’envoi suivant est ordinaire (sans drapeau)', async () => {
+		const r = renderForm({});
+		r.onSubmit.mockRejectedValueOnce(dupErr('SUPPLIER_INVOICE_PROBABLE_DUPLICATE', true));
+		await remplir(r);
+		await fireEvent.click(r.getByTestId('supplier-invoice-submit'));
+		await r.findByTestId('supplier-invoice-probable-duplicate');
+		await fireEvent.click(r.getByTestId('supplier-invoice-modify-entry'));
+		expect(r.queryByTestId('supplier-invoice-probable-duplicate')).toBeNull();
+		expect(r.getByTestId('supplier-invoice-number').matches(':disabled')).toBe(false);
+		await fireEvent.click(r.getByTestId('supplier-invoice-submit'));
+		await waitFor(() => expect(r.onSubmit).toHaveBeenCalledTimes(2));
+		// Mutation « drapeau conservé après Modifier la saisie ».
+		expect(r.onSubmit.mock.calls[1][0].confirmNotDuplicate).toBeUndefined();
+	});
+
+	for (const [nom, err] of [
+		['réponse perdue', LOST],
+		['503', { code: 'SERVICE_UNAVAILABLE', status: 503, message: 'x' }],
+		['erreur hors ApiError', new TypeError('Failed to fetch')],
+	] as const) {
+		it(`E6 (${nom}) : figé, avis, lien liste encodé, aucun bouton d’envoi ni de confirmation ; reprise → E1 sans requête, saisie intacte`, async () => {
+			const r = renderDecor({ nom: 'Dupont & Fils' });
+			r.onSubmit.mockRejectedValueOnce(err);
+			await remplirDecor(r);
+			await fireEvent.click(r.getByTestId('supplier-invoice-submit'));
+			await r.findByTestId('supplier-invoice-unknown-outcome');
+			expect(r.getByTestId('supplier-invoice-unknown-outcome-text').textContent).toBe(
+				'L’enregistrement a peut-être abouti. Vérifiez dans la liste si la facture existe avant de la saisir de nouveau.',
+			);
+			const link = r.getByTestId('supplier-invoice-unknown-outcome-link');
+			// Mutation « nom non encodé ».
+			expect(link.getAttribute('href')).toBe('/supplier-invoices?q=Dupont%20%26%20Fils');
+			expect(link.getAttribute('target')).toBe('_blank');
+			tousInactifs(r.container);
+			expect((r.getByTestId('supplier-invoice-submit') as HTMLButtonElement).disabled).toBe(true);
+			expect(r.queryByTestId('supplier-invoice-confirm-not-duplicate')).toBeNull();
+			await fireEvent.click(r.getByTestId('supplier-invoice-resume-entry'));
+			expect(r.onSubmit).toHaveBeenCalledTimes(1);
+			expect((r.getByTestId('supplier-invoice-number') as HTMLInputElement).value).toBe('FA-1');
+			expect(r.getByTestId('supplier-invoice-number').matches(':disabled')).toBe(false);
+		});
+	}
+
+	for (const invoiceId of [null, undefined, '55']) {
+		it(`E8 → complété sans identifiant numérique (${String(invoiceId)}) → E6 avec reprise, jamais E9 (revue P1, E3)`, async () => {
+			const r = renderForm({
+				onRefusal: async () => ({ kind: 'completed', invoiceId }),
+			});
+			r.onSubmit.mockRejectedValueOnce(LOST);
+			await remplir(r);
+			await fireEvent.click(r.getByTestId('supplier-invoice-submit'));
+			await r.findByTestId('supplier-invoice-unknown-outcome');
+			expect(r.queryByTestId('supplier-invoice-already-completed')).toBeNull();
+			expect(r.getByTestId('supplier-invoice-resume-entry')).toBeTruthy();
+		});
+	}
+
+	it('E6 après une CONFIRMATION coupée : pas de bouton de confirmation', async () => {
+		const r = renderForm({});
+		r.onSubmit.mockRejectedValueOnce(dupErr('SUPPLIER_INVOICE_PROBABLE_DUPLICATE', true));
+		r.onSubmit.mockRejectedValueOnce(LOST);
+		await remplir(r);
+		await fireEvent.click(r.getByTestId('supplier-invoice-submit'));
+		await fireEvent.click(await r.findByTestId('supplier-invoice-confirm-not-duplicate'));
+		await r.findByTestId('supplier-invoice-unknown-outcome');
+		expect(r.queryByTestId('supplier-invoice-confirm-not-duplicate')).toBeNull();
+	});
+
+	it('E7 : un refus de champ garde son message sous le champ ; un doublon sans details → message du serveur ; « Enregistrer » actif', async () => {
+		const r = renderForm({});
+		r.onSubmit.mockRejectedValueOnce({
+			code: 'INVALID_PAYMENT_DETAILS',
+			status: 400,
+			message: 'x',
+			details: { field: 'creditorIban', reason: 'INVALID_IBAN' },
+		});
+		r.onSubmit.mockRejectedValueOnce(dupErr('SUPPLIER_INVOICE_DUPLICATE', false, false));
+		await remplir(r);
+		await fireEvent.click(r.getByTestId('supplier-invoice-submit'));
+		await r.findByTestId('supplier-invoice-iban-error');
+		expect((r.getByTestId('supplier-invoice-submit') as HTMLButtonElement).disabled).toBe(false);
+		await fireEvent.click(r.getByTestId('supplier-invoice-submit'));
+		await waitFor(() =>
+			expect(r.getByTestId('supplier-invoice-form-error').textContent?.trim()).toBe('Message du serveur.'),
+		);
+		// Mutation « doublon illisible traité comme E4 ».
+		expect(r.queryByTestId('supplier-invoice-duplicate')).toBeNull();
+		expect((r.getByTestId('supplier-invoice-submit') as HTMLButtonElement).disabled).toBe(false);
+	});
+
+	it('E1 : « Enregistrer » inactif panneau ouvert', async () => {
+		const r = renderForm({});
+		await remplir(r);
+		await fireEvent.click(r.getByTestId('supplier-new-open'));
+		expect((r.getByTestId('supplier-invoice-submit') as HTMLButtonElement).disabled).toBe(true);
+		(r.getByTestId('supplier-invoice-form') as HTMLFormElement).requestSubmit();
+		await tick();
+		expect(r.onSubmit).not.toHaveBeenCalled();
+	});
+
+	it('E1 : scan en attente → « Enregistrer » inactif, requestSubmit() sans requête', async () => {
+		vi.mocked(decodeQrFromImageFile).mockReturnValue(new Promise(() => {}));
+		const r = renderForm({});
+		await remplir(r);
+		const input = r.getByTestId('supplier-invoice-scan-file') as HTMLInputElement;
+		const file = new File(['x'], 'qr.png', { type: 'image/png' });
+		Object.defineProperty(input, 'files', { value: [file], configurable: true });
+		await fireEvent.change(input);
+		await tick();
+		// Mutation « garde de scanning retirée ».
+		expect((r.getByTestId('supplier-invoice-submit') as HTMLButtonElement).disabled).toBe(true);
+		(r.getByTestId('supplier-invoice-form') as HTMLFormElement).requestSubmit();
+		await tick();
+		expect(r.onSubmit).not.toHaveBeenCalled();
+	});
+
+	for (const issue of ['E5', 'E6'] as const) {
+		it(`relevé C, C2 (chemin réel) : contact créé pendant l’envoi, résolu en ${issue} → dans la liste, non sélectionné ; échéance inchangée`, async () => {
+			let finirContact: (c: ContactResponse) => void = () => {};
+			createContactMock.mockReturnValueOnce(new Promise((res) => (finirContact = res)));
+			listContactsMock.mockResolvedValue({ items: [], total: 0, limit: 20, offset: 0 });
+			// Revue P1 (B2) : le mock de module n'est remis à zéro nulle part — sans ceci,
+			// l'appel de l'itération E5 satisferait l'assertion de l'itération E6.
+			vi.mocked(notifyWarning).mockClear();
+			const r = renderForm({});
+			r.onSubmit.mockRejectedValueOnce(issue === 'E5' ? dupErr('SUPPLIER_INVOICE_PROBABLE_DUPLICATE', true) : LOST);
+			await remplir(r);
+			const dueAvant = (r.getByTestId('supplier-invoice-due') as HTMLInputElement).value;
+			await fireEvent.click(r.getByTestId('supplier-new-open'));
+			await fireEvent.input(r.getByTestId('supplier-new-name'), { target: { value: 'Neuf SA' } });
+			await fireEvent.click(r.getByTestId('supplier-new-create'));
+			await fireEvent.click(r.getByTestId('supplier-new-cancel'));
+			await fireEvent.click(r.getByTestId('supplier-invoice-submit'));
+			await r.findByTestId(issue === 'E5' ? 'supplier-invoice-probable-duplicate' : 'supplier-invoice-unknown-outcome');
+			finirContact({ ...contact(99, 'Neuf SA'), defaultPaymentTermsDays: 60 });
+			await tick();
+			await tick();
+			const select = r.getByTestId('supplier-invoice-supplier') as HTMLSelectElement;
+			// Mutation « contact créé non ajouté à la liste ».
+			expect(Array.from(select.options).some((o) => o.value === '99')).toBe(true);
+			// Mutation « onSupplierCreated sans contrôle d'état ».
+			expect(select.value).toBe('1');
+			expect((r.getByTestId('supplier-invoice-due') as HTMLInputElement).value).toBe(dueAvant);
+			expect(notifyWarning).toHaveBeenCalledTimes(1);
+			expect(notifyWarning).toHaveBeenCalledWith('Fournisseur créé, non sélectionné.');
+		});
+	}
+
+	it('relevé C, C3 (défense en profondeur) : re-rendu en E5 avec une prop suppliers où le délai change → échéance inchangée', async () => {
+		const avecDelai = { ...contact(1, 'Alpha SA'), defaultPaymentTermsDays: 10 };
+		const r = renderForm({ suppliers: [avecDelai] });
+		r.onSubmit.mockRejectedValueOnce(dupErr('SUPPLIER_INVOICE_PROBABLE_DUPLICATE', true));
+		await remplir(r);
+		const due = (r.getByTestId('supplier-invoice-due') as HTMLInputElement).value;
+		await fireEvent.click(r.getByTestId('supplier-invoice-submit'));
+		await r.findByTestId('supplier-invoice-probable-duplicate');
+		await r.rerender({ suppliers: [{ ...avecDelai, defaultPaymentTermsDays: 90 }] });
+		await tick();
+		// Mutation « $effect sans garde ».
+		expect((r.getByTestId('supplier-invoice-due') as HTMLInputElement).value).toBe(due);
+	});
+
+	it('relevé C, C1 (défense en profondeur) : un scan qui se résout hors saisie n’écrit rien', async () => {
+		let finirScan: (x: unknown) => void = () => {};
+		vi.mocked(decodeQrFromImageFile).mockResolvedValue('SPC');
+		vi.mocked(scanQrSupplierInvoice).mockReturnValue(new Promise((res) => (finirScan = res)) as never);
+		vi.mocked(scanToPrefill).mockReturnValue({
+			creditorIban: 'CH9300762011623852957',
+			creditorQrIban: '',
+			paymentReference: 'REF',
+			expectedAmount: '5.00',
+			currency: 'CHF',
+			creditorName: 'Scan SA',
+		} as never);
+		const r = renderForm({});
+		r.onSubmit.mockRejectedValueOnce(dupErr('SUPPLIER_INVOICE_PROBABLE_DUPLICATE', true));
+		await remplir(r);
+		await fireEvent.click(r.getByTestId('supplier-invoice-submit'));
+		await r.findByTestId('supplier-invoice-probable-duplicate');
+		// Appel direct du gestionnaire (l'interface ne l'atteint pas : garde primaire intacte).
+		const input = r.getByTestId('supplier-invoice-scan-file') as HTMLInputElement;
+		Object.defineProperty(input, 'files', { value: [new File(['x'], 'qr.png', { type: 'image/png' })], configurable: true });
+		await fireEvent.change(input);
+		finirScan({});
+		await tick();
+		await tick();
+		// Mutation « écriture du scan sans appel de canWriteEntry ».
+		expect((r.getByTestId('supplier-invoice-iban') as HTMLInputElement).value).toBe('');
+		expect(notifyWarning).toHaveBeenCalledWith('Lecture du QR ignorée : le formulaire n’était plus en saisie.');
 	});
 });

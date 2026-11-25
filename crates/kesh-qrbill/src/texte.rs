@@ -57,8 +57,9 @@ pub(crate) fn texte_imprime(s: &str) -> String {
 
 /// La base d'une lettre du § 4.1.1 que WinAnsi ne porte pas : table close de
 /// 125 lettres, 121 de Latin Extended-A et les quatre de U+0218 à U+021B.
-/// `None` pour tout le reste.
-fn repli(c: char) -> Option<&'static str> {
+/// `None` pour tout le reste. Partagée avec le commentaire du tableau des lignes
+/// (`pdf::lignes_de_commentaire`, Story 49-1b), qui n'emploie pas [`texte_code`].
+pub(crate) fn repli(c: char) -> Option<&'static str> {
     Some(match c {
         'Ā' | 'Ă' | 'Ą' => "A",
         'ā' | 'ă' | 'ą' => "a",

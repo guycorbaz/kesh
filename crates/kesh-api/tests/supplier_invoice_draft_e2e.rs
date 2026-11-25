@@ -1479,10 +1479,13 @@ async fn nobody_writes_the_internal_number_but_the_validation(pool: MySqlPool) {
     assert_eq!(m["internalNumber"], Value::Null, "modification : {m}");
 
     let doc = document(&pool, c.seeded.company_id, "num-interne", None).await;
+    // Story 48-12a (#975) : un autre numéro — le même serait refusé comme doublon.
+    let mut completion = body;
+    completion["supplierInvoiceNumber"] = json!("ABC-2");
     let (s, k) = post(
         &c,
         &format!("/api/v1/imported-supplier-invoices/{doc}/complete"),
-        body,
+        completion,
     )
     .await;
     assert_eq!(s, 200, "{k}");

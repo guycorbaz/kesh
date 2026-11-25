@@ -282,8 +282,12 @@ const PREFIXES = [
  * Intégration de main (v0.18.0) dans l'Epic 37 (2026-11-17) : **463**, relevé par la garde après la
  * fusion (`expected 463 to be 0`, `kesh-gate-logs/integration-main-37/vitest-1.log`), non
  * additionné — 434 + 7 (Story 37-1) + 22 (Epic 36).
+ *
+ * Story 48-12b (#975, #985) : **463 → 480**, relevé par la garde (`expected 480 to be 463`,
+ * `kesh-gate-logs/e4812/dev/vitest-12b-complet-1.log`), non additionné — les dix-sept clés
+ * `supplier-invoices-*` neuves de l'écran (avis, boutons, notifications du relevé C).
  */
-const CLES_RELEVEES = 463;
+const CLES_RELEVEES = 480;
 
 
 /** Relève, pour chaque clé du domaine, l'ensemble de ses replis littéraux distincts. */

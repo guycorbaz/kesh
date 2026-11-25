@@ -216,6 +216,7 @@ async fn seed_validated_invoice(pool: &MySqlPool, company_id: i64, admin_id: i64
             payment_terms: Some("30 jours net".into()),
             lines: vec![NewInvoiceLine {
                 revenue_account_id: None,
+                line_type: kesh_db::entities::LineType::Priced,
                 description: "Ligne".into(),
                 quantity: dec!(1),
                 unit_price: dec!(100.00),

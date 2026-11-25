@@ -307,6 +307,7 @@ async fn brouillon(pool: &MySqlPool, s: &SeededCompany, contact: i64) -> i64 {
             project_id: None,
             lines: vec![NewInvoiceLine {
                 revenue_account_id: None,
+                line_type: kesh_db::entities::LineType::Priced,
                 description: "Prestation".into(),
                 quantity: dec!(1),
                 unit_price: dec!(500.00),
@@ -499,7 +500,13 @@ async fn facture_fournisseur(pool: &MySqlPool, s: &SeededCompany) -> Result<i64,
         NewSupplierInvoice {
             company_id: s.company_id,
             contact_id,
-            supplier_invoice_number: Some("FF-1512B".into()),
+            // Story 48-12a (#975) : un numéro par facture — la règle anti-doublon
+            // refuse le même numéro du même fournisseur dans la même année.
+            supplier_invoice_number: Some({
+                use std::sync::atomic::{AtomicU64, Ordering};
+                static N: AtomicU64 = AtomicU64::new(1);
+                format!("FF-1512B-{}", N.fetch_add(1, Ordering::Relaxed))
+            }),
             invoice_date: d(2026, 6, 15),
             due_date: None,
             creditor_iban: Some("CH5604835012345678009".into()),

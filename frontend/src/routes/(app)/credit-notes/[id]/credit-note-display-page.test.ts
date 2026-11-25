@@ -79,3 +79,79 @@ describe('fiche d’un avoir — affichage (v0171)', () => {
 		expect(container.textContent).not.toContain('2026-03-02');
 	});
 });
+
+// Story 49-1c (#1242, T9, AC5) — un commentaire repris de la facture : une cellule sur
+// toutes les colonnes, sans montant ni compte ; la ligne chiffrée voisine est inchangée.
+describe('fiche d’un avoir — ligne de commentaire (49-1c)', () => {
+	function texte(position: number, lineType: 'comment' | 'heading', description: string) {
+		return {
+			...ligne(position, '0.0000'),
+			lineType,
+			description,
+			unitPrice: '0.0000',
+			vatRate: '0.00',
+			lineTotal: '0.0000',
+		};
+	}
+
+	it('le commentaire et le titre tiennent une cellule colspan 6 ; la ligne chiffrée garde ses six cellules', async () => {
+		getMock.mockResolvedValue(
+			avoir({
+				lines: [
+					{ ...ligne(1, '1.0000'), lineType: 'priced' },
+					texte(2, 'comment', 'Merci\nà bientôt'),
+					texte(3, 'heading', 'Travaux'),
+				],
+			}),
+		);
+		const { findAllByTestId } = render(Page);
+		const cellules = await findAllByTestId('credit-note-line-comment');
+		expect(cellules.map((c) => c.textContent)).toEqual(['Merci\nà bientôt', 'Travaux']);
+		for (const c of cellules) {
+			expect(c.getAttribute('colspan')).toBe('6');
+			expect(c.className).toContain('whitespace-pre-line');
+			const rangee = c.parentElement!;
+			expect(rangee.querySelectorAll(':scope > td')).toHaveLength(1);
+			expect(rangee.textContent).not.toContain('0.00');
+		}
+		const quantites = await findAllByTestId('credit-note-line-quantity');
+		expect(quantites).toHaveLength(1);
+		expect(quantites[0].parentElement!.querySelectorAll(':scope > td')).toHaveLength(6);
+	});
+});
+
+// Story 49-5 (#1466, T3, AC-B1) — « TVA % » (alignée à droite) et « Compte de produit »
+// (à gauche) ne se touchent plus : chaque cellule du tableau porte `pr-2`, comme sur la
+// fiche de facture (`invoices/[id]/+page.svelte`). Mutation M3 : retirer `pr-2` de la seule
+// cellule du taux rougit ce test. Un test vérifie qu'une classe existe, non qu'on voit l'écart :
+// les captures de la recette visuelle (T4) font foi du rendu.
+describe('fiche d’un avoir — marge des cellules (49-5, #1466)', () => {
+	it('chaque th et td de l’en-tête, d’une ligne chiffrée, d’un commentaire et du pied porte pr-2', async () => {
+		getMock.mockResolvedValue(
+			avoir({
+				lines: [
+					{ ...ligne(1, '1.0000'), lineType: 'priced', revenueAccountId: 4 },
+					{
+						...ligne(2, '0.0000'),
+						lineType: 'comment',
+						description: 'Merci',
+						unitPrice: '0.0000',
+						vatRate: '0.00',
+						lineTotal: '0.0000',
+					},
+				],
+			}),
+		);
+		const { findByTestId, container } = render(Page);
+		await findByTestId('credit-note-total');
+		const sansMarge = (selecteur: string, attendu: number) => {
+			const cellules = Array.from(container.querySelectorAll(selecteur));
+			expect(cellules, selecteur).toHaveLength(attendu);
+			return cellules.filter((c) => !c.classList.contains('pr-2')).map((c) => c.outerHTML);
+		};
+		expect(sansMarge('table thead th', 6)).toEqual([]);
+		expect(sansMarge('table tbody tr:not([data-testid="credit-note-line-comment-row"]) td', 6)).toEqual([]);
+		expect(sansMarge('table tbody tr[data-testid="credit-note-line-comment-row"] td', 1)).toEqual([]);
+		expect(sansMarge('table tfoot td', 2)).toEqual([]);
+	});
+});

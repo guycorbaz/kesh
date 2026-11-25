@@ -56,6 +56,10 @@ error-supplier-invoice-unvalidate-blocked-paid-reconciled = Questa fattura forni
 error-supplier-invoice-unvalidate-blocked-detached-payment = Questa fattura è stata annullata quando era pagata: il suo pagamento (scrittura n. { $entry } del { $entryDate }) resta nel libro mastro. Se questo pagamento non è avvenuto, stornalo prima dalla sua scheda, poi riporta la fattura in bozza.
 error-supplier-invoice-unvalidate-blocked-detached-payment-reconciled = Questa fattura è stata annullata quando era pagata: il suo pagamento (scrittura n. { $entry } del { $entryDate }) è riconciliato con la transazione bancaria del { $date }. Se questo pagamento non è avvenuto, annulla prima questa riconciliazione, dal dettaglio dell'importazione bancaria — stornerà il pagamento —, poi riporta la fattura in bozza.
 error-supplier-invoice-due-before-invoice-date = La scadenza ({ $dueDate }) precede la data della fattura ({ $invoiceDate }).
+# Story 48-12a (#975) — fattura fornitore doppia rifiutata; un solo testo per rifiuto, condiviso con lo schermo (48-12b).
+error-supplier-invoice-duplicate = Una fattura di questo fornitore porta già questo numero nello stesso anno. Se è la stessa fattura, non registrarla una seconda volta. Se il fornitore ha ricominciato la numerazione durante l'anno, aggiungi un carattere al numero, per esempio «15-b».
+error-supplier-invoice-probable-duplicate = Una fattura di questo fornitore porta già la stessa data e lo stesso importo. Se è la stessa fattura, non registrarla una seconda volta; altrimenti, conferma che non è un doppione.
+error-supplier-invoice-duplicate-unvalidate = Esiste una fattura equivalente non annullata. Riportare questa in bozza creerebbe un doppione: fallo solo per toglierla o correggerla in seguito.
 
 # Lettrage (Story 15-1a-i, #518)
 error-lettering-too-few-lines = Un abbinamento riunisce almeno due righe distinte.
@@ -3353,6 +3357,24 @@ supplier-invoices-err-amount = Il totale delle righe ({$actual}) non corrisponde
 supplier-invoices-err-currency = Valuta non supportata (solo CHF). Togli il documento dall'elenco, oppure crea la fattura senza documento e poi allegalo.
 supplier-invoices-err-iban-ref = Incoerenza tra l'IBAN e il riferimento QRR del codice QR.
 supplier-invoices-err-not-pending = Questo documento è già stato trattato o tolto dall'elenco.
+# Story 48-12b (#975, #985) — avvisi dello schermo: doppione, esito sconosciuto, documento già registrato.
+supplier-invoices-err-not-yet = Per ora nessuna fattura è registrata: puoi riprovare.
+supplier-invoices-cited-draft = bozza n. { $id }
+supplier-invoices-cited-prefix = Fattura già registrata:
+supplier-invoices-cited-active-prefix = Fattura attiva:
+supplier-invoices-confirm-not-duplicate = Non è un doppione, registrare
+supplier-invoices-modify-entry = Modificare l'inserimento
+supplier-invoices-unknown-outcome-create = La registrazione potrebbe essere riuscita. Verifica nell'elenco se la fattura esiste prima di inserirla di nuovo.
+supplier-invoices-unknown-outcome-create-link = Vedere le fatture di questo fornitore
+supplier-invoices-resume-entry-create = Ho verificato, non esiste — riprendere l'inserimento
+supplier-invoices-unknown-outcome-edit = La modifica potrebbe essere stata registrata. Verifica sulla scheda se la tua modifica è stata registrata; se sì, ricarica questa pagina prima di modificare ancora.
+supplier-invoices-unknown-outcome-edit-link = Aprire la scheda della fattura
+supplier-invoices-resume-entry-edit = Ho verificato, non è stata registrata — riprendere l'inserimento
+supplier-invoices-already-completed = Questo documento è già stato registrato come fattura. Aprila per verificare che corrisponda al tuo inserimento.
+supplier-invoices-already-completed-link = Aprire la fattura
+supplier-invoices-unvalidate-anyway = Riportare in bozza comunque
+supplier-invoices-scan-ignored = Lettura del QR ignorata: il modulo non era più in inserimento.
+supplier-invoices-new-supplier-created-not-selected = Fornitore creato, non selezionato.
 supplier-invoices-err-doc-not-found = Documento non trovato.
 supplier-invoices-err-fiscal-year = Nessun esercizio aperto copre questa data.
 supplier-invoices-payment-error-invalid-iban = IBAN non valido: verifica il codice paese, la lunghezza e le cifre di controllo.
@@ -3674,6 +3696,7 @@ audit-log-action-supplier-invoice-updated = Bozza di fattura fornitore aggiornat
 audit-log-action-supplier-invoice-validated = Fattura fornitore convalidata
 audit-log-action-supplier-invoice-unvalidated = Fattura fornitore riportata in bozza
 audit-log-action-supplier-invoice-deleted = Bozza di fattura fornitore eliminata
+audit-log-action-supplier-invoice-duplicate-confirmed = Doppione di fattura fornitore confermato
 audit-log-action-imported-supplier-invoice-created = Documento importato
 audit-log-action-imported-supplier-invoice-completed = Documento trattato (fattura creata)
 audit-log-action-imported-supplier-invoice-discarded = Documento tolto dall'elenco
@@ -4286,6 +4309,15 @@ projects-reassign-warning-locked = Registrazioni bloccate fino al { $date }.
 projects-reassign-warning-reports = I rapporti analitici di questo periodo cambieranno.
 projects-reassign-confirm = Conferma
 projects-reassign-done = Conto analitico cambiato.
+
+# --- Epic 49 — Story 49-4a (#1364) : capacité du PDF de facture contrôlée à la validation ---
+error-invoice-lines-do-not-fit-pdf = Le righe di questa fattura non stanno sulla pagina del suo PDF: richiedono { $besoin } righe, la pagina ne offre { $place }. Rimuova delle righe, accorci i commenti o ripartisca le righe su due fatture. La fattura resta una bozza.
+
+# Epic 49 — Story 49-1c (#1242) : la ligne de commentaire de la facture client
+invoice-line-add-comment = Commento
+invoice-line-comment-placeholder = Testo stampato su tutta la larghezza della fattura, senza importo
+invoice-line-comment-aria = Commento — riga { $n }
+invoice-line-comment-required-error = Riga { $line }: il testo del commento è obbligatorio
 
 ## #1348 (0.20.0) — rifiuti del server la cui chiave mancava al catalogo.
 error-onboarding-reset-forbidden = La reimpostazione dell'onboarding non è consentita su questa istanza.

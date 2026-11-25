@@ -161,7 +161,7 @@
 //!   `post`, `put`, `delete` et `patch`. Aucune route `GET` n'écrit au journal
 //!   aujourd'hui (remontée de l'AC1 : des `POST` et un `DELETE`) ; l'angle mort
 //!   est du même ordre que celui de l'audit (`GET /invoices/{id}/pdf`, plus bas).
-//! - **(vi)** **trente-trois routes `SansEcritureAuJournal` sont rejouées quand
+//! - **(vi)** **trente-cinq routes `SansEcritureAuJournal` sont rejouées quand
 //!   même** : `fiscal_years::update_fiscal_year` (enveloppe `DbError`, opération
 //!   `fiscal_years::update_name`, Story 34-7, #945 : le renommage tient l'exercice
 //!   puis son homonyme par la lecture de doublon, alors que la clôture tient ses
@@ -350,8 +350,21 @@
 //!   récupération et la copie (mêmes clés uniques), et, pour les genres, avec
 //!   l'activation de 37-1 ; `put_rate` est tenue par
 //!   `exchange_rate_put_is_replayed_when_it_is_the_deadlock_victim`
-//!   (`rejeu_interblocage_e2e.rs`), les trois autres par leur revue. Et —
-//!   Story 38-11c1 (relevé P2-L1 de la revue de la 38-11b) —
+//!   (`rejeu_interblocage_e2e.rs`), les trois autres par leur revue. Et — Story
+//!   48-12a, #975, D3ter (décision de Guy du 2026-11-19) — `invoices::create_invoice`
+//!   et `invoices::update_invoice` (enveloppe `DbError`
+//!   `kesh_db::retry::retry_on_deadlock`, opérations `invoices::create` et
+//!   `invoices::update`) : avec un projet, la création d'une facture client tient
+//!   la sentinelle `companies` et le projet en exclusif avant de demander le
+//!   contact en partage (clé étrangère de son `INSERT`), et la modification fait
+//!   de même quand elle pose un projet non nul neuf et change le contact ; la
+//!   création, la complétion et la modification d'une facture fournisseur
+//!   tiennent ce contact en exclusif (verrou du fournisseur de la règle
+//!   anti-doublon) avant de demander `companies` ou le projet en partage ; tenues
+//!   par `invoice_create_is_replayed_when_it_is_the_deadlock_victim` et
+//!   `invoice_update_is_replayed_when_it_is_the_deadlock_victim`
+//!   (`rejeu_interblocage_e2e.rs`).
+//!   Et — Story 38-11c1 (relevé P2-L1 de la revue de la 38-11b) —
 //!   `paypal_imports::create` (enveloppe `AppError`
 //!   `crate::retry::retry_app_on_deadlock`, opération `paypal_imports::create`) :
 //!   l'import PayPal n'écrit rien au journal, mais sa relecture verrouillante
@@ -362,14 +375,15 @@
 //!   tenue par `import_rejoue_un_interblocage_avec_un_geste_de_compte`
 //!   (`paypal_import_e2e.rs`).
 //!
-//!   **Décompte : trente-trois** le 2026-11-20 (Story 38-11c1), par ajout de
-//!   `paypal_imports::create` au décompte qui suit, **non recompté en entier**.
-//!   **Trente-deux**, recompté le 2026-11-16 à la Story 37-2 depuis
-//!   la table et le corps de chaque route : vingt-neuf handlers
+//!   **Décompte : trente-cinq**, recompté le 2026-11-24 à la reprise de `main` dans
+//!   epic/50, additionné et non recompté en entier : trente-quatre à la Story 48-12a
+//!   (recompté le 2026-11-19), plus `paypal_imports::create` (Story 38-11c1, trente-trois
+//!   le 2026-11-20) : trente-deux handlers
 //!   `SansEcritureAuJournal` de `src/routes/` portent une enveloppe, plus
 //!   `onboarding::seed_demo` et `onboarding::reset`, rejouées dans `kesh-seed`,
 //!   plus `exchange_rates::fetch_rates`, rejouée dans
-//!   `exchange_rates::recuperation`. *(Vingt-huit à la Story 37-2 avant les
+//!   `exchange_rates::recuperation`. *(Trente-deux le 2026-11-16 à la Story 37-2,
+//!   avant les deux routes de la facture client ; vingt-huit à la Story 37-2 avant les
 //!   routes des cours retenus ; vingt-sept le 2026-11-16 à la Story 37-1, avant
 //!   la récupération des cours.)*
 //!   *(Relevés antérieurs, datés : vingt-trois le 2026-11-05, revue de la

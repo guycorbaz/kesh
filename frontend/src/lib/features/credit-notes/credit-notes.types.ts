@@ -3,10 +3,18 @@
  * Miroir camelCase des réponses backend (kesh-api routes/credit_notes.rs).
  */
 
+import type { InvoiceLineType } from '$lib/features/invoices/invoices.types';
+
 export type CreditNoteStatus = 'draft' | 'issued' | 'cancelled';
 
 export interface CreditNoteLineResponse {
 	position: number;
+	/**
+	 * Type de la ligne, recopié de la ligne de facture (Story 49-1a ; lu par
+	 * l'écran depuis la Story 49-1c, D6). Optionnel ici : **absent vaut
+	 * `priced`**, comme pour une ligne de facture.
+	 */
+	lineType?: InvoiceLineType;
 	description: string;
 	quantity: string;
 	unitPrice: string;

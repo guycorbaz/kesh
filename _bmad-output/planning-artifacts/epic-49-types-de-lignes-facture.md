@@ -6,7 +6,18 @@
 demande et réponses de Guy du 2026-11-17 au corps de #1242. Révisé le même jour sur les réponses de Guy aux points
 ouverts du kickoff : sous-totaux repoussés, ordre de fusion avec la 48-13, règlements de l'orchestrateur ; puis sur le
 complément de Guy du même jour (factures réelles déjà émises, § *Contraintes de production*) ; puis sur le découpage
-préventif de la 49-1 en 49-1a à 49-1d (`kesh-gate-logs/e491/decoupage-49-1.md`).*
+préventif de la 49-1 en 49-1a à 49-1d (`kesh-gate-logs/e491/decoupage-49-1.md`) ; puis le 2026-11-19 : 49-4 ajoutée par Guy, #1400
+rattachée à la 49-4 et règle « la 49-1c ne sort pas sans la 49-4 » (décisions de Guy du 2026-11-19) ; puis le 2026-11-20 :
+49-4 découpée en 49-4a (capacité) et 49-4b (retour à la ligne, caractères), la règle devenant « la 49-1c ne sort pas sans
+la 49-4a » (décision de Guy du 2026-11-20).*
+
+
+## Réduction du 2026-11-21
+
+Décision du Project Lead du 2026-11-21 (revue des règles à plusieurs développeurs : un epic tient dans une release) :
+l'Epic 49 se réduit à **49-1a, 49-1b (closes), 49-1c, 49-1d et 49-4a** pour la release du vendredi 2026-11-27, qui portera
+sa migration (donc la 0.20.0). **49-2, 49-3 et 49-4b** passent à l'**Epic 52** (`epic-52-lignes-de-facture-suite.md`),
+sous leur clé, après l'entrée de l'Epic 49 dans `main`.
 
 ## Objet
 
@@ -78,6 +89,9 @@ le découpage préventif de la 49-1 (49-1a, 49-1b, 49-1c, 49-1d, 49-2, 49-3).
    doit se **réimprimer à l'identique**, ou son PDF archivé être servi tel quel. Deux chemins à couvrir : une facture
    validée dont le PDF n'a pas encore été gelé (il le sera avec le code 0.20.0), et le regel explicite
    (`refreeze_invoice_pdf`). **La fiche le prouve par un test** : rendu avant / après d'une facture validée de la 0.19.0.
+   *Exception (2026-11-19, décision de Guy) : la dérogation de la 49-4b — une facture jamais téléchargée ou regelée
+   s'imprime avec le nouveau rendu des désignations ; son étendue (avoir, rappel) est une question ouverte de la fiche
+   49-4b. La 49-4a ne change le PDF d'aucune pièce.*
 4. **Recette de montée obligatoire, avec des factures réelles simulées** (gate de la release, plan § *Gates*) : base
    peuplée par la 0.19.0 avec des factures client validées, payées et non payées, un avoir, une facture réglée en groupe ;
    après montée, comparaison des totaux, des écritures et du PDF de chacune. Jamais sur la base du NAS.
@@ -126,6 +140,7 @@ précise à la fiche) :
 | 49-1d-types-de-lignes-recette-montee | Gate de la release, sans code de production : peuplement de `scripts/recette-montee.sh` (factures validées payées et impayées, avoir, règlement groupé, PDF figés et non figés), **`credit_notes` et `credit_note_lines` ajoutées à l'empreinte** (`TABLES=`), `--diff-attendu` des deux tables de lignes, `docs/testing.md`, section « Passer à la 0.20.0 » du manuel d'administration (×4) | non | 49-1a |
 | 49-2-reordonnancement-lignes | Réordonner les lignes d'un brouillon : ↑ / ↓, et glisser-déposer si la fiche le juge sûr | non | 49-1c |
 | 49-3-titres-de-section | Titre de section, sans montant : saisie, rendu PDF, reprise dans les avoirs ; **ouvre `heading`** | non (posée par 49-1a) | 49-1a, 49-1b, 49-1c |
+| 49-4-designation-longue-pdf | **Découpée le 2026-11-20 (décision de Guy)** en **49-4a-capacite-pdf-avant-validation** (#1364 : capacité contrôlée avant la validation, aucun PDF changé) et **49-4b-designation-longue-retour-ligne** (#1363, #1400 : retour à la ligne, caractères ; porte la dérogation ; sort si close à la coupure, sinon #1363 et #1400 partent entières à la release suivante). Périmètre d'origine : ajoutée par Guy le 2026-11-19 : désignation longue sur le PDF de facture et d'avoir, retour à la ligne au lieu de la troncature à 44 caractères (#1363) ; capacité du PDF contrôlée avant la validation (#1364) ; caractères que la police n'a pas — signe moins U+2212, traits d'union U+2010/U+2011, grec, cyrillique — signalés au lieu de disparaître (#1400, rattachée le 2026-11-19, décision de Guy) ; s'applique aux factures émises à partir de la 0.20.0, le PDF archivé fait foi pour les anciennes ; **reprend les phrases du manuel posées par la 49-1c** (`user-manual.tex:1456`, `:1594` : « disparaît du PDF sans avertissement », « huit au plus, moins avec le récapitulatif de TVA », et le conseil d'écrire le moins en trait d'union ordinaire, caduc si la 49-4 rend ces caractères) ; fichiers communs avec la 49-1c : `user-manual.tex`, peut-être `InvoiceForm.svelte` (#1364) | non | 49-1b |
 
 La clé `49-3-titres-et-sous-totaux` du kickoff est renommée `49-3-titres-de-section` le 2026-11-18, les sous-totaux étant
 repoussés (décision de Guy, #1330).
@@ -149,6 +164,9 @@ ouvre `comment` ; la 49-3 ouvre `heading`. Le dépôt accepte tous les types dè
   aucune des deux ;
 - **la 49-1c ne sort pas sans la 49-1b** : l'écran offrirait un type que le PDF imprimerait en `0 × 0.00 = 0.00` ;
 - **la 49-3 ne sort pas sans la 49-1b et la 49-1c**.
+- **la 49-1c ne sort pas sans la 49-4a** (décision de Guy du 2026-11-19, réduite à la 49-4a le 2026-11-20) : sans elle, un commentaire long rendrait une
+  facture validée impossible à imprimer (#1364) — même risque qu'aujourd'hui avec de nombreuses lignes chiffrées (#1110),
+  mais que la 49-1c étendrait au texte libre.
 
 **Contrat d'API** : `quantity`, `unitPrice`, `vatRate` de `CreateInvoiceLineRequest` deviennent optionnels à la
 désérialisation (obligatoires pour `priced`) ; leur absence rend `400 VALIDATION_ERROR` nommant la ligne, documenté dans

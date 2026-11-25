@@ -2536,6 +2536,7 @@ mod tests {
                     payment_terms: None,
                     lines: vec![NewInvoiceLine {
                         revenue_account_id: None,
+                        line_type: crate::entities::LineType::Priced,
                         description: "Prestation".into(),
                         quantity: rust_decimal::Decimal::ONE,
                         unit_price: rust_decimal::Decimal::new(100, 0),

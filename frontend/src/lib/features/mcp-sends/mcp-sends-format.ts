@@ -4,6 +4,7 @@ import { i18nLocale, i18nMsg } from '$lib/shared/utils/i18n.svelte';
 import { isApiError } from '$lib/shared/utils/api-client';
 import { errorMessageOf } from '$lib/shared/utils/error-message';
 import { isUnknownOutcome } from '$lib/shared/utils/unknown-outcome';
+import { formatInstant } from '$lib/features/reports/reports.api';
 import type { McpSendState } from './mcp-sends.types';
 
 /**
@@ -32,15 +33,12 @@ export function nombreLocal(n: number): string {
 
 /**
  * Une date de la base (`2026-10-26T09:15:00.123`, UTC sans suffixe) montrée à
- * l'heure **locale**, comme le journal d'audit. Une valeur illisible est
- * rendue telle quelle plutôt que masquée.
+ * l'heure de **Zurich**, comme le journal d'audit (Story 50-6, #1511). Une
+ * valeur illisible est rendue telle quelle plutôt que masquée.
  */
 export function dateLocale(valeur: string | null): string {
 	if (!valeur) return '—';
-	const iso = /(Z|[+-]\d{2}:\d{2})$/.test(valeur) ? valeur : `${valeur}Z`;
-	const d = new Date(iso);
-	if (Number.isNaN(d.getTime())) return valeur;
-	return new Intl.DateTimeFormat(i18nLocale(), { dateStyle: 'medium', timeStyle: 'short' }).format(d);
+	return formatInstant(valeur, 'dateHeure', i18nLocale()) ?? valeur;
 }
 
 /** Le libellé du badge d'état ; un envoi validé modifié le dit. */

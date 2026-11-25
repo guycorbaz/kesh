@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# recette-montee.test.sh — éprouve `scripts/recette-montee.sh` avec `docker`, `curl` et
-# un binaire FACTICES, sur un mini-dépôt sous `mktemp -d` (Story 33-10, AC-5, AC-7).
+# recette-montee.test.sh — éprouve `scripts/recette-montee.sh` avec `docker`, `curl`,
+# `mutool` et un binaire FACTICES, sur un mini-dépôt sous `mktemp -d` (Story 33-10, AC-5,
+# AC-7 ; Story 49-1d, scénarios S1 à S14).
 #
 # L'environnement du script étant fermé, les factices ne reçoivent rien de lui : ils
 # lisent leur réglage (`conf`) et écrivent leurs journaux dans leur propre dossier.
@@ -34,11 +35,21 @@ echo 'true' > "$WORK/kesh-gate-logs/verifs.sh"
 ln -s "$WORK/dehors/binaire" "$DEPOT/target/debug/lien"
 FX="$WORK/fx"
 
+# Ce que partagent les factices (Story 49-1d) : le corps d'un PDF factice, qui porte le chemin et
+# le numéro de sa pièce — le `curl` factice le sert, le `docker` factice en rend l'empreinte comme
+# `pdf_sha256`, le `mutool` factice en tire texte et trame.
+cat > "$FX/commun.sh" <<'FACTICE'
+corps_pdf() { printf '%%PDF-1.7 factice %s numero %s\n' "$1" "$2"; }
+# Le binaire factice en cours est-il celui de l'import (dossier des documents neuf) ?
+binaire_import() { [ -f "$FX/up-binaire" ] && case "$(tail -1 "$FX/binaire-docs.log" 2>/dev/null)" in */documents-import) true ;; *) false ;; esac; }
+FACTICE
+
 # Le docker factice : journal, état de la base dans `$FX/migre`.
 cat > "$FX/docker" <<'FACTICE'
 #!/usr/bin/env bash
 FX="$(dirname "$0")"
 . "$FX/conf"
+. "$FX/commun.sh"
 printf 'ARGV %s\n' "$*" >> "$FX/docker.log"
 # Le témoin de la relance : l'environnement que reçoit réellement `docker`.
 env >> "$FX/docker-env.txt"
@@ -54,7 +65,13 @@ case "${1:-}" in
   inspect)
     if [ "${INSPECT_AUTRE:-non}" = oui ]; then echo un-autre-jeton; else cat "$FX/jeton"; fi
     exit 0 ;;
+  # La copie du dossier des documents de l'image : un fichier par facture figée, nommé comme
+  # `pdf_storage_path` le rend ci-dessous.
+  cp)
+    for n in 1 5 7 8; do printf 'piece %s\n' "$n" > "$3/$(printf '%064d' "$n").pdf"; done
+    exit 0 ;;
   stop)
+    echo "stop $2" >> "$FX/ordre.log"
     case "$2" in *-image-*) [ "${IMAGE_SOURDE:-non}" = oui ] || rm -f "$FX/up-image" ;; esac
     exit 0 ;;
   run)
@@ -81,22 +98,67 @@ case "${1:-}" in
     esac
     sql=""; prec=""
     for a in "$@"; do [ "$prec" = "-e" ] && [ "${a#MYSQL_PWD}" = "$a" ] && sql=$a; prec=$a; done
-    if [ -z "$sql" ]; then cat >/dev/null; echo non > "$FX/migre"; exit 0; fi
+    # Sans `-e` : la restauration du dump (phase 4), qui ramène la base d'avant.
+    if [ -z "$sql" ]; then cat >/dev/null; echo non > "$FX/migre"; : > "$FX/restaure"; exit 0; fi
     # La seconde base, celle de la phase 5, n'a pas d'état distinct ici.
     case "$sql" in
       "SELECT 1") echo 1 ;;
       "SELECT COUNT(*) FROM _sqlx_migrations")
         if [ "$migre" = oui ]; then echo $((88 + ${N_REEL:-1})); else echo 88; fi ;;
-      "SELECT COUNT(*) FROM bank_transactions") echo 2 ;;
-      "SELECT COUNT(*) FROM invoice_settlements") echo 1 ;;
+      "SELECT COUNT(*) FROM bank_transactions")
+        if [ -f "$FX/releve-saisi" ]; then echo 3; else echo 2; fi ;;
+      *"FROM bank_transactions WHERE amount > 0"*) echo 3 ;;
+      "SELECT COUNT(*) FROM invoice_settlements") echo 3 ;;
+      *"FROM invoice_settlements WHERE journal_entry_line_id IS NOT NULL"*) echo 2 ;;
+      "SELECT COUNT(*) FROM credit_notes") echo "${NB_AVOIRS:-1}" ;;
+      # Revue P1 (B3) : « un seul principal » et « lié au 1020 » se règlent séparément.
+      *"FROM bank_accounts WHERE is_primary"*"journal_account_id ="*) echo "${LIEN_1020:-1}" ;;
+      *"FROM bank_accounts WHERE is_primary"*) echo "${PRINCIPAL:-1}" ;;
+      *"default_rounding_account_id IS NOT NULL"*)
+        if [ "${ARRONDI_COMPTE:-oui}" = null ]; then echo 0; else echo 1; fi ;;
+      *"SUM(total_amount) FROM invoices"*) echo 20.00 ;;
+      *"FROM fiscal_years WHERE start_date"*) echo 1 ;;
       *"CONCAT(id,':',status)"*"FROM supplier_invoices"*)
         echo "${STATUTS_FOURNISSEUR:-1:open,2:paid,3:cancelled,4:draft}" ;;
       *"GROUP_CONCAT(status"*"FROM invoices"*)
-        echo "${STATUTS_CLIENTS:-validated,validated,draft}" ;;
+        echo "${STATUTS_CLIENTS:-validated,validated,draft,validated,validated,validated,cancelled,validated}" ;;
+      *"GROUP_CONCAT(id ORDER BY id) FROM invoices WHERE pdf_sha256 IS NOT NULL"*) echo "1,5,7,8" ;;
+      *"COUNT(DISTINCT vat_rate)"*) echo "3:3:1" ;;
+      *"rounding_amount <> 0"*) echo 1 ;;
+      *"invoice_id = 1 AND CHAR_LENGTH(description) > 44") echo 1 ;;
+      "SELECT COUNT(*) FROM invoice_lines WHERE invoice_id <> "*) echo 7 ;;
+      "SELECT (SELECT COUNT(*) FROM invoice_lines"*) echo 0 ;;
+      *"SELECT pdf_storage_path FROM invoices WHERE id = "*) printf '%064d.pdf\n' "${sql##* }" ;;
+      *"SELECT pdf_sha256 FROM invoices WHERE id = "*)
+        # Le corps tel que le `curl` factice l'écrit : sans saut de ligne final. Revue P1 (B3) : avec
+        # PDF_FIGE_ALTERE, l'empreinte suit le corps altéré (seuls les octets diffèrent de la phase 1) ;
+        # avec PDF_SHA_ALTERE, l'empreinte en base diffère (seule la comparaison au SHA-256 rougit).
+        n=${sql##* }; c=$(corps_pdf "/api/v1/invoices/$n/pdf" "FAC-$n")
+        if [ "$migre" = oui ] && [ "$n" = 1 ] && ! binaire_import; then
+          [ "${PDF_FIGE_ALTERE:-non}" != oui ] || c="$c altéré"
+          [ "${PDF_SHA_ALTERE:-non}" != oui ] || c="$c autre empreinte"
+        fi
+        # Revue P2 (E-P2-4) : après le regel de F8, une empreinte en base qui n'est pas celle du PDF servi.
+        if [ "$n" = 8 ] && [ -f "$FX/regel-fait" ] && [ "${REGEL_SHA_ALTERE:-non}" = oui ]; then c="$c autre empreinte"; fi
+        printf '%s' "$c" | sha256sum | cut -d' ' -f1 ;;
+      "SET SESSION group_concat_max_len"*) printf '%s\n' '`id`,`x`' ;;
       *"FROM _sqlx_migrations"*) echo "migrations-$migre" ;;
       "SELECT * FROM "*)
         t=${sql#SELECT \* FROM }; t=${t%% *}
-        if [ "$migre" = oui ] && [ "${ECART:-}" = "$t" ]; then echo "$t modifiée"; else echo "$t"; fi ;;
+        # Revue P2 (B-P2-1) : une table vide, avant comme après — cohérent avec sa projection, vide aussi.
+        # ECART_RETOUR : une valeur qui diffère sur la base restaurée de la phase 4 (E-P2-2) ; ECART_IMPORT : une
+        # valeur d'avant changée sous le seul binaire de l'import (phase 5, E-P2-1).
+        if [ "${TABLE_VIDE:-}" = "$t" ]; then :
+        elif [ "$migre" != oui ] && [ -f "$FX/restaure" ] && [ "${ECART_RETOUR:-}" = "$t" ]; then echo "$t modifiée au retour"
+        elif [ "$migre" = oui ] && binaire_import && [ "${ECART_IMPORT:-}" = "$t" ]; then echo "$t ancienne modifiée à l'import"
+        elif [ "$migre" = oui ] && [ "${ECART_ANCIEN:-}" = "$t" ]; then echo "$t ancienne modifiée"
+        elif [ "$migre" = oui ] && [ "${ECART:-}" = "$t" ]; then echo "$t modifiée"; else echo "$t"; fi ;;
+      # La projection de D2 : les colonnes d'avant seules — une colonne ajoutée n'y paraît pas.
+      'SELECT `id`,`x` FROM '*)
+        t=${sql#SELECT \`id\`,\`x\` FROM }; t=${t%% *}
+        if [ "${TABLE_VIDE:-}" = "$t" ]; then :
+        elif [ "$migre" = oui ] && binaire_import && [ "${ECART_IMPORT:-}" = "$t" ]; then echo "$t ancienne modifiée à l'import"
+        elif [ "$migre" = oui ] && [ "${ECART_ANCIEN:-}" = "$t" ]; then echo "$t ancienne modifiée"; else echo "$t"; fi ;;
       *) echo factice ;;
     esac
     exit 0 ;;
@@ -110,13 +172,15 @@ cat > "$FX/curl" <<'FACTICE'
 #!/usr/bin/env bash
 FX="$(dirname "$0")"
 . "$FX/conf"
+. "$FX/commun.sh"
 printf 'ARGV %s\n' "$*" >> "$FX/curl.log"
-url="" sortie="" ecrit="" vers_fichier=0 fail=0 stdin=0
+url="" sortie="" ecrit="" vers_fichier=0 fail=0 stdin=0 methode=GET
 prec=""
 for a in "$@"; do
   case "$prec" in
     -o) sortie=$a ;;
     -w) ecrit=$a ;;
+    -X) methode=$a ;;
   esac
   case "$a" in
     http://*) url=$a ;;
@@ -128,7 +192,63 @@ done
 [ "$stdin" = 0 ] || cat >/dev/null
 chemin=${url#http://*/}
 chemin=${chemin%%\?*}
+migre=$(cat "$FX/migre" 2>/dev/null || echo non)
 reponse='{"id":1,"version":1,"status":"x","remainingAmount":"1.00"}'
+code=200
+# Story 49-1d : les pièces, leurs PDF, l'avoir, le groupe, le rapport TVA.
+case "$methode /$chemin" in
+  "POST /api/v1/invoices")
+    n=$(( $(cat "$FX/compteur-factures" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$FX/compteur-factures"
+    reponse="{\"id\":$n,\"version\":1}" ;;
+  "GET /api/v1/invoices/"[0-9]*/pdf | "GET /api/v1/credit-notes/"[0-9]*/pdf)
+    # Qui sert : l'image précédente ou le binaire neuf (S6 ne compte que ceux de l'image).
+    if [ -f "$FX/up-binaire" ]; then qui=binaire; else qui=image; fi
+    echo "GET $qui /$chemin" >> "$FX/ordre.log"
+    n=${chemin%/pdf}; n=${n##*/}
+    case "$chemin" in */credit-notes/*) num=AV-$n ;; *) num=FAC-$n ;; esac
+    reponse=$(corps_pdf "/$chemin" "$num")
+    if [ "${PDF_PAS_PDF:-non}" = oui ]; then reponse='{"error":{"code":"PAS_UN_PDF"}}'
+    # Revue P3 : après le regel, F8 sert un 200 qui n'est pas un PDF (S8d).
+    elif [ "${REGEL_PAS_PDF:-non}" = oui ] && [ "$num" = FAC-8 ] && [ -f "$FX/regel-fait" ]; then reponse='{"error":{"code":"PAS_UN_PDF"}}'
+    elif [ "$n" = 8 ] && [ "$num" = FAC-8 ] && [ -f "$FX/up-binaire" ] && ! binaire_import && [ ! -f "$FX/regel-fait" ]; then
+      code=410; reponse="{\"error\":{\"code\":\"${CODE_410:-INVOICE_PDF_GONE}\"}}"
+    elif [ "${PAIRES_EN_MOINS:-0}" = 1 ] && [ "$num" = AV-1 ] && [ -f "$FX/up-binaire" ]; then
+      code=500; reponse='{"error":{"code":"INTERNAL_ERROR"}}'
+    elif [ "${PDF_FIGE_ALTERE:-non}" = oui ] && [ -f "$FX/up-binaire" ] && ! binaire_import && [ "$num" = FAC-1 ]; then
+      reponse="$reponse altéré"
+    elif [ "${PDF_IMPORT_ALTERE:-non}" = oui ] && binaire_import && [ "$num" = FAC-5 ]; then
+      reponse="$reponse altéré"
+    fi ;;
+  "POST /api/v1/invoices/"[0-9]*/pdf/refreeze)
+    if [ "${REGEL_ECHEC:-non}" = oui ]; then code=409; reponse='{"error":{"code":"INVOICE_PDF_PRESENT"}}'
+    else : > "$FX/regel-fait"; reponse='{"id":8,"version":2}'; fi ;;
+  "GET /api/v1/invoices/"[0-9]*)
+    n=${chemin##*/}
+    # Une clé à valeur nulle (`paidAt`) et un tableau vide (`vatBreakdown`), comme sur une vraie facture impayée.
+    reponse="{\"id\":$n,\"version\":1,\"status\":\"x\",\"remainingAmount\":\"1.00\",\"totalTtc\":\"10.00\",\"invoiceNumber\":\"FAC-$n\",\"paidAt\":null,\"vatBreakdown\":[],\"lines\":[{\"description\":\"Conseil\",\"quantity\":\"1\"}]}"
+    if [ "$migre" = oui ]; then
+      [ "${ECART:-}" != api ] || reponse=$(printf '%s' "$reponse" | jq -c '.lines[0].lineType = "priced"')
+      [ "${ECART_ANCIEN:-}" != api ] || reponse=$(printf '%s' "$reponse" | jq -c '.status = "y"')
+      [ "${ECART_TYPE:-}" != api ] || reponse=$(printf '%s' "$reponse" | jq -c '.lines = "scalaire"')
+      # Revue P1 (B1) : les autres garde-fous de la projection de `api`.
+      [ "${ECART_LONGUEUR:-}" != api ] || reponse=$(printf '%s' "$reponse" | jq -c '.lines += [{"description":"Ajoutee"}]')
+      [ "${ECART_CLE:-}" != api ] || reponse=$(printf '%s' "$reponse" | jq -c 'del(.paidAt)')
+      [ "${ECART_VIDE:-}" != api ] || reponse=$(printf '%s' "$reponse" | jq -c '.vatBreakdown = null')
+      # Revue P3 (E-P3-3) : une valeur d'avant de `api` changée sous le seul binaire de l'import.
+      if [ "${ECART_IMPORT:-}" = api ] && binaire_import; then reponse=$(printf '%s' "$reponse" | jq -c '.status = "importé"'); fi
+    fi ;;
+  "GET /api/v1/credit-notes/"[0-9]*)
+    n=${chemin##*/}
+    reponse="{\"id\":$n,\"creditNoteNumber\":\"AV-$n\",\"lines\":[{\"description\":\"Conseil\"}]}" ;;
+  "POST /api/v1/bank-imports/manual") : > "$FX/releve-saisi"; reponse='{"id":2}' ;;
+  "POST /api/v1/reconciliation/accept") reponse='{"accepted":[{"id":1}],"failed":[]}' ;;
+  "GET /api/v1/reports/vat")
+    if [ "${TVA_VIDE:-non}" = oui ]; then base=0.00; else base=1000.00; fi
+    reponse="{\"totalBaseHt\":\"$base\",\"totalVatDue\":\"81.00\",\"rows\":[{\"rate\":\"8.10\",\"baseHt\":\"$base\"}]}"
+    [ "$migre" != oui ] || [ "${ECART_ANCIEN:-}" != api ] || reponse=$(printf '%s' "$reponse" | jq -c '.totalVatDue = "81.05"')
+    # Revue P1 (B1) : un document de plus dans `api` (deux objets dans la même réponse).
+    [ "$migre" != oui ] || [ "${ECART_NB:-}" != api ] || reponse="$reponse$reponse" ;;
+esac
 # Un refus de l'API sur un chemin choisi : `--fail-with-body` rend alors 22.
 if [ -n "${API_ECHEC:-}" ]; then
   case "/$chemin" in
@@ -157,11 +277,69 @@ case "/$chemin" in
   /api/v1/admin/full-export) reponse='KESHBACKUP-FACTICE' ;;
 esac
 case "$*" in
-  *"-X POST"*"/api/v1/bank-accounts"*) reponse='{"id":5}' ;;
+  *"-X POST"*"/api/v1/bank-accounts"*) reponse='{"account":{"id":5},"openingEntry":null}' ;;
+  *"-X POST"*"/api/v1/accounts"*) reponse='{"id":9}' ;;
 esac
+[ "/$chemin" != /api/v1/admin/full-import ] || code=${CODE_IMPORT:-200}
 if [ -n "$sortie" ]; then printf '%s' "$reponse" > "$sortie"; else printf '%s' "$reponse"; fi
-[ -z "$ecrit" ] || printf '%s' "${CODE_IMPORT:-200}"
+[ -z "$ecrit" ] || printf '%s' "$code"
+# Comme `--fail-with-body` et `-f` : un statut d'erreur rend 22 (le corps reste écrit).
+if [ "$code" -ge 400 ] && { [ "$fail" = 1 ] || [[ " $* " == *" --fail-with-body "* ]]; }; then exit 22; fi
 exit 0
+FACTICE
+
+# Le mutool factice (Story 49-1d, D9) : consigne chaque appel ; le texte d'un PDF factice est son
+# corps (qui porte le numéro de la pièce) ; sa trame aussi, sauf réglage.
+cat > "$FX/mutool" <<'FACTICE'
+#!/usr/bin/env bash
+FX="$(dirname "$0")"
+. "$FX/conf"
+printf 'ARGV %s\n' "$*" >> "$FX/mutool.log"
+fmt="" f="" page=""
+prec=""
+for a in "$@"; do
+  [ "$prec" != -F ] || fmt=$a
+  # Revue P3 (E-P3-1) : le numéro de page, qui suit le fichier.
+  case "$prec" in *.pdf) page=$a ;; esac
+  case "$a" in *.pdf) f=$a ;; esac
+  prec=$a
+done
+case "${1:-}" in
+  -v) echo "mutool version factice" >&2; exit 0 ;;
+  # Revue P2 (E-P2-3) : PAGES_RENDU ne vaut que pour les rendus du binaire neuf (`apres-*`).
+  info)
+    [ -r "$f" ] || exit 1
+    case "$f" in */apres-*) echo "Pages: ${PAGES_RENDU:-${PAGES:-1}}" ;; *) echo "Pages: ${PAGES:-1}" ;; esac
+    exit 0 ;;
+  draw)
+    [ -r "$f" ] || exit 1
+    # Revue P1 (B5) : une erreur signalée sur la sortie d'erreur, code 0 quand même.
+    [ "${MUTOOL_ERREUR:-non}" != oui ] || echo "format error: factice, objet illisible" >&2
+    # Revue P2 (E-P2-7) : l'avis attendu de la station, et un avertissement de réparation.
+    echo "warning: ICC support is not available" >&2
+    [ "${MUTOOL_AVERTISSEMENT:-non}" != oui ] || echo "warning: repairing PDF document" >&2
+    case "$fmt" in
+      txt)
+        if [ "${RENDU_VIDE:-non}" = oui ]; then echo "texte sans numero"; else cat "$f"; fi
+        # Revue P2 (E-P2-3) : un texte rendu qui diffère, numéro gardé.
+        case "$f" in */apres-*) [ "${TEXTE_ECART:-non}" != oui ] || echo "ligne de plus" ;; esac ;;
+      pnm)
+        # Une trame vide, code 0 : deux empreintes de rien seraient égales (S6c).
+        [ "${TRAME_VIDE:-non}" != oui ] || exit 0
+        printf 'P6 trame page %s ' "$page"; cat "$f"
+        # Une autre trame pour F4 rendue par le binaire neuf : le texte, lui, reste égal.
+        if [ "${RENDU_ECART:-non}" = oui ] && /usr/bin/grep -q 'invoices/4/' "$f"; then
+          case "$f" in */apres-*) echo "pixel different" ;; esac
+        fi
+        # Revue P3 (E-P3-1) : la seule page 2 de F4 diffère au rendu.
+        if [ "${RENDU_ECART_P2:-non}" = oui ] && [ "$page" = 2 ] && /usr/bin/grep -q 'invoices/4/' "$f"; then
+          case "$f" in */apres-*) echo "pixel different en page 2" ;; esac
+        fi ;;
+      *) exit 2 ;;
+    esac
+    exit 0 ;;
+esac
+exit 2
 FACTICE
 
 # Le binaire factice : consigne ce qu'il reçoit, « migre », puis sert jusqu'au signal.
@@ -173,6 +351,8 @@ env > "\$FX/binaire-env.txt"
 pwd > "\$FX/binaire-pwd.txt"
 [ ! -e "/proc/\$\$/fd/3" ] || echo "binaire \$\$" >> "\$FX/fd3"
 echo "\$KESH_ADMIN_BACKUP_DIR" > "\$FX/binaire-backup.txt"
+# Story 49-1d (D6) : le dossier des documents de chaque lancement, dans l'ordre.
+echo "\$KESH_DOCUMENTS_DIR" >> "\$FX/binaire-docs.log"
 echo oui > "\$FX/migre"
 # Comme le vrai binaire, sur toute base peuplée : l'avis du compte réinitialisé, au niveau ERROR.
 echo "2026-01-01T00:00:00Z ERROR kesh_api::auth::bootstrap: Recovery effectué"
@@ -200,7 +380,7 @@ while :; do
   sleep 0.05
 done
 FACTICE
-chmod +x "$FX/docker" "$FX/curl" "$DEPOT/target/debug/kesh-api"
+chmod +x "$FX/docker" "$FX/curl" "$FX/mutool" "$DEPOT/target/debug/kesh-api"
 
 # Deux ports libres, trouvés au moment du test, sous la plage éphémère du système : les
 # connexions à la base des autres tests y prendraient sinon le port entre deux contrôles.
@@ -216,9 +396,9 @@ PB=$(port_libre 23410)
 
 # Remet les factices à neuf. Arguments : lignes de `conf`.
 preparer() {
-  : > "$FX/docker.log"; : > "$FX/curl.log"; : > "$FX/docker-env.txt"
+  : > "$FX/docker.log"; : > "$FX/curl.log"; : > "$FX/docker-env.txt"; : > "$FX/mutool.log"; : > "$FX/ordre.log"
   rm -f "$FX/migre" "$FX/up-image" "$FX/up-binaire" "$FX/ps.txt" "$FX/binaire-env.txt" "$FX/binaire-pwd.txt" "$FX/jeton" "$FX/erreur-tardive" \
-    "$FX/pid-run-image" "$FX/fd3"
+    "$FX/pid-run-image" "$FX/fd3" "$FX/compteur-factures" "$FX/releve-saisi" "$FX/regel-fait" "$FX/binaire-docs.log" "$FX/restaure"
   printf '%s\n' "$@" > "$FX/conf"
 }
 
@@ -227,9 +407,10 @@ BASE_ARGS=(--image gcorbaz/kesh:0.17.4 --binaire target/debug/kesh-api --static 
 
 # Lance le script du mini-dépôt, racine jetable sous $WORK. Sortie dans `$FX/sortie`.
 RC=0
+# `KESH_MUTOOL` est posé à CHAQUE lancement (D9) : le `mutool` de l'hôte n'est jamais atteint.
 lancer() {
   RC=0
-  KESH_DOCKER="$FX/docker" KESH_CURL="$FX/curl" RECETTE_RACINE_JETABLE="$WORK/jetable" \
+  KESH_DOCKER="$FX/docker" KESH_CURL="$FX/curl" KESH_MUTOOL="$FX/mutool" RECETTE_RACINE_JETABLE="$WORK/jetable" \
     bash "$DEPOT/scripts/recette-montee.sh" "$@" > "$FX/sortie" 2>&1 || RC=$?
 }
 sortie_dit() { /usr/bin/grep -qF -- "$1" "$FX/sortie"; }
@@ -311,14 +492,14 @@ kill "$ECOUTE" 2>/dev/null; wait "$ECOUTE" 2>/dev/null || true
 echo "  dossier jetable"
 RC2=0
 preparer "N=1"
-KESH_DOCKER="$FX/docker" KESH_CURL="$FX/curl" RECETTE_RACINE_JETABLE=/var \
+KESH_DOCKER="$FX/docker" KESH_CURL="$FX/curl" KESH_MUTOOL="$FX/mutool" RECETTE_RACINE_JETABLE=/var \
   bash "$DEPOT/scripts/recette-montee.sh" "${BASE_ARGS[@]}" > "$FX/sortie" 2>&1 || RC2=$?
 if [ "$RC2" -ne 0 ] && [ ! -s "$FX/docker.log" ]; then ok "hors de /tmp refusée (code $RC2)"; else fail "hors de /tmp"; fi
 
 mkdir -p "$WORK/env-parent/enfant"; touch "$WORK/env-parent/.env"
 preparer "N=1"
 RC2=0
-KESH_DOCKER="$FX/docker" KESH_CURL="$FX/curl" RECETTE_RACINE_JETABLE="$WORK/env-parent/enfant" \
+KESH_DOCKER="$FX/docker" KESH_CURL="$FX/curl" KESH_MUTOOL="$FX/mutool" RECETTE_RACINE_JETABLE="$WORK/env-parent/enfant" \
   bash "$DEPOT/scripts/recette-montee.sh" "${BASE_ARGS[@]}" > "$FX/sortie" 2>&1 || RC2=$?
 if [ "$RC2" -eq 3 ] && [ ! -s "$FX/docker.log" ]; then ok ".env dans un parent de la racine jetable"; else fail ".env parent : code $RC2"; fi
 
@@ -361,12 +542,14 @@ RC=0
 sonde_fonction() { echo sonde; }
 (cd "$APPELANT" && export -f sonde_fonction && DATABASE_URL=mysql://sonde:sonde@sonde.invalid/sonde KESH_ADMIN_BACKUP_DIR=/inexistant/sonde \
   KESH_SMTP_PASSWORD=sonde-smtp KESH_RECETTE_RELANCE=1 DOCKER_HOST=tcp://sonde.invalid:2375 DOCKER_CONTEXT=sonde DOCKER_CONFIG=/inexistant/sonde \
-  HOME="$WORK/home-sonde" KESH_DOCKER="$FX/docker" KESH_CURL="$FX/curl" RECETTE_RACINE_JETABLE="$WORK/jetable" \
+  KESH_AUTRE=sonde-autre HOME="$WORK/home-sonde" KESH_DOCKER="$FX/docker" KESH_CURL="$FX/curl" KESH_MUTOOL="$FX/mutool" RECETTE_RACINE_JETABLE="$WORK/jetable" \
   bash "$DEPOT/scripts/recette-montee.sh" "${BASE_ARGS[@]}" --import --diff-attendu migrations) > "$FX/sortie" 2>&1 || RC=$?
 echo "  la relance : ce que reçoit réellement docker"
 noms=$(cut -d= -f1 "$FX/docker-env.txt" | /usr/bin/grep -E '^[A-Za-z_][A-Za-z0-9_]*$' | /usr/bin/grep -vxE 'PWD|SHLVL|_|OLDPWD' | LC_ALL=C sort -u | tr '\n' ' ')
-[ "$noms" = "HOME KESH_CURL KESH_DOCKER PATH RECETTE_RACINE_JETABLE " ] && ok "liste exacte, sonde positive comprise" || fail "docker reçoit : $noms"
-/usr/bin/grep -qE 'sonde|BASH_FUNC|KESH_RECETTE_RELANCE' "$FX/docker-env.txt" && fail "une sonde atteint docker" || ok "ni variable sonde, ni fonction exportée"
+[ "$noms" = "HOME KESH_CURL KESH_DOCKER KESH_MUTOOL PATH RECETTE_RACINE_JETABLE " ] && ok "liste exacte, sonde positive comprise" || fail "docker reçoit : $noms"
+/usr/bin/grep -qE 'sonde|BASH_FUNC|KESH_RECETTE_RELANCE|KESH_AUTRE' "$FX/docker-env.txt" && fail "une sonde atteint docker" || ok "ni variable sonde (KESH_AUTRE comprise), ni fonction exportée"
+# S13 (D9) : `KESH_MUTOOL` traverse la relance — le `mutool` factice est appelé, quel que soit l'hôte.
+[ -s "$FX/mutool.log" ] && ok "KESH_MUTOOL traverse : le mutool factice est appelé ($(wc -l < "$FX/mutool.log") appels)" || fail "mutool factice jamais appelé"
 /usr/bin/grep -qx 'HOME=/nonexistent' "$FX/docker-env.txt" && ok "HOME neutralisé" || fail "HOME : $(/usr/bin/grep -m1 '^HOME=' "$FX/docker-env.txt")"
 /usr/bin/grep -qx 'PATH=/usr/bin:/bin' "$FX/docker-env.txt" && ok "PATH fermé" || fail "PATH"
 echo "  les processus de fond ne tiennent pas la sortie d'origine (revue P2, L1)"
@@ -377,11 +560,30 @@ echo "  chaque appel curl est borné dans le temps (revue P2, L7)"
 nb_curl=$(/usr/bin/grep -c '^ARGV ' "$FX/curl.log" || true)
 sans_borne=$(/usr/bin/grep '^ARGV ' "$FX/curl.log" | /usr/bin/grep -vc -- '--max-time' || true)
 [ "$nb_curl" -gt 10 ] && [ "$sans_borne" -eq 0 ] && ok "$nb_curl appels, tous à --max-time" || fail "$sans_borne appel(s) sur $nb_curl sans --max-time"
-echo "  chemin nominal, cinq phases"
+echo "  chemin nominal, six phases"
 [ "$RC" -eq 0 ] && ok "code 0" || { fail "code $RC"; tail -5 "$FX/sortie"; }
-for p in "phase 1" "phase 2" "phase 3" "phase 4" "phase 5"; do sortie_dit "▶ $p" && ok "$p jouée" || fail "$p"; done
-ordre=$(/usr/bin/grep -oE '▶ phase [1-5]' "$FX/sortie" | tr -d '▶ phase' | tr -d '\n')
-[ "$ordre" = 12345 ] && ok "dans l'ordre" || fail "ordre : $ordre"
+for p in "phase 1" "phase 2" "phase 3" "phase 4" "phase 5" "phase 6"; do sortie_dit "▶ $p" && ok "$p jouée" || fail "$p"; done
+ordre=$(/usr/bin/grep -oE '▶ phase [1-6]' "$FX/sortie" | tr -d '▶ phase' | tr -d '\n')
+[ "$ordre" = 123456 ] && ok "dans l'ordre" || fail "ordre : $ordre"
+sortie_dit "5 paires de rendus" && ok "5 paires de rendus, avec --import (S14)" || fail "décompte des paires : $(tail -2 "$FX/sortie" | head -1)"
+# S17 (revue P3, E-P3-2) : la ligne finale dit ce qui a été joué ; ici, l'import sans crochet.
+sortie_dit "vert ; phase 3 : jouée ; import : joué ; crochet : NON JOUÉ ; --diff-attendu : migrations" \
+  && ok "S17 verdict : import joué, crochet non joué" || fail "S17 verdict : $(/usr/bin/grep -F 'vert ;' "$FX/sortie")"
+echo "  les documents (Story 49-1d)"
+# S9 (D3) : `docker cp` du conteneur de l'image de ce run, vers `$D/documents` — aucun montage.
+/usr/bin/grep -qE "^ARGV cp kesh-recette-image-[0-9]+:/tmp/documents/\. .*/documents/$" "$FX/docker.log" \
+  && ok "documents copiés par docker cp, du conteneur de l'image" || fail "docker cp : $(/usr/bin/grep '^ARGV cp' "$FX/docker.log")"
+# S12 (D6) : le binaire de l'import reçoit un dossier des documents neuf.
+docs=$(tr '\n' ' ' < "$FX/binaire-docs.log")
+case "$docs" in */documents\ */documents-import\ ) ok "montée sur \$D/documents, import sur \$D/documents-import" ;; *) fail "dossiers des documents : $docs" ;; esac
+# S6 (D5, V3-9) : les rendus de la phase 4 précèdent l'arrêt du conteneur du retour.
+ordre_rendus=$(awk '/^stop kesh-recette-image-/ {n++; print "stop" n} /^GET image / {print "image" n+0}' "$FX/ordre.log" | tr '\n' ' ')
+# Arrêts de l'image : 1 = fin de la phase 1, 2 = fin de la phase 4 (le refus de la phase 3 sort seul).
+# Seuls comptent les PDF servis par l'image : ceux du binaire neuf (phases 2 et 5) sont à part.
+[ "$(awk '/^stop kesh-recette-image-/ {n++} /^GET image / && n == 1' "$FX/ordre.log" | /usr/bin/grep -c .)" -eq 4 ] \
+  && ok "quatre rendus de l'image entre l'arrêt de la phase 1 et celui du retour" || fail "ordre des rendus de la phase 4 : $ordre_rendus"
+[ "$(awk '/^stop kesh-recette-image-/ {n++} /^GET image / && n >= 2' "$FX/ordre.log" | /usr/bin/grep -c . || true)" -eq 0 ] \
+  && ok "aucun rendu de l'image après l'arrêt du conteneur du retour" || fail "un rendu après l'arrêt du retour : $ordre_rendus"
 
 echo "  environnement fermé du binaire"
 D=$(/usr/bin/grep -oE 'dossier .*$' "$FX/sortie" | tail -1 | sed 's/^dossier //')
@@ -455,7 +657,7 @@ echo "  un client docker sourd ne fige pas la sortie"
 # Sourd à `docker stop` ET à SIGTERM, comme le vrai client attaché (revue P2, M1).
 preparer "N_REEL=1" "IMAGE_SOURDE=oui" "STATUTS_CLIENTS=draft,draft,draft"
 RC=0
-KESH_DOCKER="$FX/docker" KESH_CURL="$FX/curl" RECETTE_RACINE_JETABLE="$WORK/jetable" \
+KESH_DOCKER="$FX/docker" KESH_CURL="$FX/curl" KESH_MUTOOL="$FX/mutool" RECETTE_RACINE_JETABLE="$WORK/jetable" \
   timeout -k 10 90 bash "$DEPOT/scripts/recette-montee.sh" "${BASE_ARGS[@]}" > "$FX/sortie" 2>&1 || RC=$?
 [ "$RC" -eq 11 ] && /usr/bin/grep -q 'ARGV stop kesh-recette-db-' "$FX/docker.log" && ok "sortie bornée, base arrêtée" || fail "code $RC (124 ou 137 : figé)"
 PID_SOURD=$(cat "$FX/pid-run-image" 2>/dev/null || true)
@@ -470,7 +672,7 @@ rm -f "$FX/up-image"
 echo "  docker est un outil comme les autres (revue P2, L3)"
 preparer "N=1"
 RC=0
-KESH_DOCKER="$WORK/dehors/docker-absent" KESH_CURL="$FX/curl" RECETTE_RACINE_JETABLE="$WORK/jetable" \
+KESH_DOCKER="$WORK/dehors/docker-absent" KESH_CURL="$FX/curl" KESH_MUTOOL="$FX/mutool" RECETTE_RACINE_JETABLE="$WORK/jetable" \
   bash "$DEPOT/scripts/recette-montee.sh" "${BASE_ARGS[@]}" > "$FX/sortie" 2>&1 || RC=$?
 [ "$RC" -eq 5 ] && sortie_dit "outil manquant : $WORK/dehors/docker-absent" && [ ! -s "$FX/curl.log" ] \
   && ok "docker introuvable : outil manquant, code 5" || fail "docker introuvable : code $RC, $(tail -1 "$FX/sortie")"
@@ -484,7 +686,7 @@ mkdir -p "$WORK/depot-boucle/scripts"
   "$SCRIPT_SRC" > "$WORK/depot-boucle/scripts/recette-montee.sh"
 if /usr/bin/grep -qF '[ -n "${JAMAIS_POSEE:-}" ] || return 1' "$WORK/depot-boucle/scripts/recette-montee.sh"; then
   RC=0
-  timeout -k 2 20 bash "$WORK/depot-boucle/scripts/recette-montee.sh" "${BASE_ARGS[@]}" > "$FX/sortie" 2>&1 || RC=$?
+  KESH_MUTOOL="$FX/mutool" timeout -k 2 20 bash "$WORK/depot-boucle/scripts/recette-montee.sh" "${BASE_ARGS[@]}" > "$FX/sortie" 2>&1 || RC=$?
   [ "$RC" -eq 5 ] && sortie_dit "environnement non fermable" && ok "une seule relance, puis refus (code 5)" \
     || fail "relance sans fin ou refus muet : code $RC (124 : boucle)"
 else fail "montage : PATH_FERME introuvable dans le script"; fi
@@ -500,6 +702,93 @@ avec --diff-attendu migrations,invoices; lancer "${AV[@]}"
 preparer "N_REEL=1" "ECART=invoices"
 avec --diff-attendu migrations,invoice; lancer "${AV[@]}"
 [ "$RC" -eq 12 ] && ok "un nom proche ne couvre pas" || fail "code $RC"
+
+# --- Story 49-1d : S1 à S14 ---------------------------------------------------------
+# Un scénario : réglages du factice, code attendu, texte que la sortie doit porter (vide : aucun),
+# puis `--` et les options du script.
+scenario() { # $1 = titre, $2 = code attendu, $3 = texte attendu, reste = conf… -- options…
+  local titre=$1 attendu=$2 texte=$3 conf=()
+  shift 3
+  while [ "$#" -gt 0 ] && [ "$1" != -- ]; do conf+=("$1"); shift; done
+  shift
+  preparer "N_REEL=1" "${conf[@]}"
+  lancer "$@"
+  if [ "$RC" -eq "$attendu" ] && { [ -z "$texte" ] || sortie_dit "$texte"; }; then ok "$titre (code $RC)"
+  else fail "$titre : code $RC au lieu de $attendu ; $(/usr/bin/grep -m1 'ÉCHEC\|refus' "$FX/sortie" || tail -1 "$FX/sortie")"; fi
+}
+RELEASE=(--diff-attendu migrations,invoice_lines,credit_note_lines,api)
+echo "  S1 à S4 : --diff-attendu n'admet qu'un ajout (D2)"
+scenario "S1 colonne ajoutée à invoice_lines, nommée" 0 "" ECART=invoice_lines -- "${BASE_ARGS[@]}" "${RELEASE[@]}"
+[ -s "$FX/mutool.log" ] && ok "S1 : le mutool factice est appelé" || fail "S1 : mutool factice jamais appelé"
+scenario "S2 valeur d'avant changée dans invoice_lines, nommée" 12 invoice_lines ECART_ANCIEN=invoice_lines -- "${BASE_ARGS[@]}" "${RELEASE[@]}"
+scenario "S3a clé d'avant changée dans api (rapport TVA compris), nommée" 12 "api (valeurs d'avant changées" ECART_ANCIEN=api -- "${BASE_ARGS[@]}" "${RELEASE[@]}"
+scenario "S3b clé ajoutée à api, nommée" 0 "" ECART=api -- "${BASE_ARGS[@]}" "${RELEASE[@]}"
+scenario "S3c objet devenu scalaire dans api, nommée" 12 "api (valeurs d'avant changées" ECART_TYPE=api -- "${BASE_ARGS[@]}" "${RELEASE[@]}"
+scenario "S3d tableau vide devenu null dans api, nommée" 12 "api (valeurs d'avant changées" ECART_VIDE=api -- "${BASE_ARGS[@]}" "${RELEASE[@]}"
+scenario "S3e élément ajouté à un tableau de api, nommée" 12 "api (valeurs d'avant changées" ECART_LONGUEUR=api -- "${BASE_ARGS[@]}" "${RELEASE[@]}"
+scenario "S3f clé nulle disparue de api, nommée" 12 "api (valeurs d'avant changées" ECART_CLE=api -- "${BASE_ARGS[@]}" "${RELEASE[@]}"
+scenario "S3g document de plus dans api, nommée" 12 "api (valeurs d'avant changées" ECART_NB=api -- "${BASE_ARGS[@]}" "${RELEASE[@]}"
+scenario "S3h table vide avant et après" 11 "table credit_note_lines vide à l'empreinte d'avant" TABLE_VIDE=credit_note_lines -- "${BASE_ARGS[@]}" "${RELEASE[@]}"
+scenario "S4 credit_note_lines changée, non nommée" 12 credit_note_lines ECART_ANCIEN=credit_note_lines -- "${BASE_ARGS[@]}"
+echo "  S5, S8 : PDF archivés et regel (D4 a)"
+scenario "S5 PDF figé servi autrement (empreinte en base concordante)" 12 "PDF archivé de F1 : octets différents" PDF_FIGE_ALTERE=oui -- "${BASE_ARGS[@]}"
+scenario "S5b PDF figé aux octets de la phase 1, empreinte en base différente" 12 "PDF archivé de F1 : SHA-256 différent" PDF_SHA_ALTERE=oui -- "${BASE_ARGS[@]}"
+scenario "S8 regel refusé" 12 "regel de F8" REGEL_ECHEC=oui -- "${BASE_ARGS[@]}"
+scenario "S8b 410 d'une autre cause que le fichier manquant" 12 "au lieu d'INVOICE_PDF_GONE" CODE_410=AUTRE_CHOSE -- "${BASE_ARGS[@]}"
+scenario "S8c PDF du regel à une autre empreinte que pdf_sha256" 12 "SHA-256 différent du nouveau pdf_sha256" REGEL_SHA_ALTERE=oui -- "${BASE_ARGS[@]}"
+scenario "S8d le regel sert un 200 qui n'est pas un PDF" 12 "PDF de F8 : HTTP 200" REGEL_PAS_PDF=oui -- "${BASE_ARGS[@]}"
+echo "  S15, S16 : le retour et l'import comparent les données (revue P2, E-P2-1, E-P2-2)"
+scenario "S15 valeur différente sur la base restaurée du retour" 14 "empreinte retour différente" ECART_RETOUR=invoice_lines -- "${BASE_ARGS[@]}"
+scenario "S16a import refusé" 15 "import : HTTP 500" CODE_IMPORT=500 -- "${BASE_ARGS[@]}" --import
+scenario "S16b valeur d'avant changée par l'import, nommée" 15 "invoice_lines (valeurs d'avant changées" ECART_IMPORT=invoice_lines -- "${BASE_ARGS[@]}" "${RELEASE[@]}" --import
+scenario "S16c valeur d'avant changée par l'import, non nommée" 15 "écart hors de --diff-attendu (avant → import)" ECART_IMPORT=invoice_lines -- "${BASE_ARGS[@]}" --import
+# Le crochet rejoué après l'import (E-P2-6) : un crochet qui n'échoue qu'en phase 5.
+echo '[ "$PHASE_APRES" != 5 ] || exit 1' > "$WORK/kesh-gate-logs/verifs-phase5.sh"
+scenario "S16d crochet en échec après l'import seulement" 15 "crochet --apres en échec" -- "${BASE_ARGS[@]}" --import --apres "$WORK/kesh-gate-logs/verifs-phase5.sh"
+# Revue P3 (B-P3-2) : le crochet en échec en phase 2 seulement — l'appel de phase 2 a son scénario propre.
+echo '[ "$PHASE_APRES" != 2 ] || exit 1' > "$WORK/kesh-gate-logs/verifs-phase2.sh"
+scenario "S16f crochet en échec en phase 2 seulement" 12 "crochet --apres en échec" -- "${BASE_ARGS[@]}" --import --apres "$WORK/kesh-gate-logs/verifs-phase2.sh"
+scenario "S16e valeur d'avant de api changée par l'import, nommée" 15 "api (valeurs d'avant changées" ECART_IMPORT=api -- "${BASE_ARGS[@]}" "${RELEASE[@]}" --import
+echo "  S17 : la ligne finale dit ce qui a été joué (revue P3, E-P3-2)"
+echo 'true' > "$WORK/kesh-gate-logs/verifs-vert.sh"
+scenario "S17a import et crochet joués" 0 "vert ; phase 3 : jouée ; import : joué ; crochet : joué en phases 2 et 5" -- "${BASE_ARGS[@]}" --import --apres "$WORK/kesh-gate-logs/verifs-vert.sh"
+D=$(/usr/bin/grep -oE 'dossier .*$' "$FX/sortie" | tail -1 | sed 's/^dossier //')
+/usr/bin/grep -qx "vert ; phase 3 : jouée ; import : joué ; crochet : joué en phases 2 et 5 ; --diff-attendu : migrations" "$D/journal/verdict" \
+  && ok "S17a : \$L/verdict écrit" || fail "S17a : verdict « $(cat "$D/journal/verdict" 2>/dev/null) »"
+# S18 (passe ciblée de la revue P3, LOW-3) : `identite.txt` porte l'empreinte du binaire joué.
+EMPREINTE=$(sha256sum < "$DEPOT/target/debug/kesh-api" | cut -d' ' -f1)
+/usr/bin/grep -q "^$EMPREINTE  " "$D/journal/identite.txt" \
+  && ok "S18 identite.txt : empreinte du binaire relevée" || fail "S18 identite.txt : « $(cat "$D/journal/identite.txt" 2>/dev/null) »"
+scenario "S17b ni import ni crochet : dit NON JOUÉ" 0 "vert ; phase 3 : jouée ; import : NON JOUÉ ; crochet : NON JOUÉ" -- "${BASE_ARGS[@]}"
+echo "  S6, S7, S14 : rendus (D4 b, D5)"
+scenario "S6 trame différente, texte égal" 16 "F4 : page 1, trame différente" RENDU_ECART=oui -- "${BASE_ARGS[@]}"
+scenario "S6c trame vide des deux côtés" 16 "trame vide" TRAME_VIDE=oui -- "${BASE_ARGS[@]}"
+scenario "S6d mutool signale une erreur et rend 0" 16 "mutool a signalé une erreur" MUTOOL_ERREUR=oui -- "${BASE_ARGS[@]}"
+scenario "S6e mutool signale une réparation (avertissement autre que l'ICC)" 16 "mutool a signalé une erreur" MUTOOL_AVERTISSEMENT=oui -- "${BASE_ARGS[@]}"
+scenario "S6f texte rendu différent, numéro gardé" 16 "texte rendu différent" TEXTE_ECART=oui -- "${BASE_ARGS[@]}"
+scenario "S6g une page de plus au rendu" 16 "page(s) en référence" PAGES_RENDU=2 -- "${BASE_ARGS[@]}"
+scenario "S6h deux pages, la page 2 diffère au rendu" 16 "F4 : page 2, trame différente" PAGES=2 RENDU_ECART_P2=oui -- "${BASE_ARGS[@]}"
+scenario "S7a texte sans le numéro de la pièce" 16 "0 paire(s)" RENDU_VIDE=oui -- "${BASE_ARGS[@]}"
+scenario "S7a' zéro page" 16 "0 paire(s)" PAGES=0 -- "${BASE_ARGS[@]}"
+scenario "S7b un 200 qui n'est pas un PDF" 11 "pas un PDF" PDF_PAS_PDF=oui -- "${BASE_ARGS[@]}"
+scenario "S14 sans --import : 5 paires" 0 "5 paires de rendus" -- "${BASE_ARGS[@]}"
+scenario "S14 une paire en moins" 16 "4 paire(s)" PAIRES_EN_MOINS=1 -- "${BASE_ARGS[@]}"
+echo "  S10 : préconditions et contrôles du peuplement (AC1, AC8)"
+scenario "S10 statuts clients" 11 "statuts clients" STATUTS_CLIENTS=validated,validated,draft,validated,validated,validated,validated,validated -- "${BASE_ARGS[@]}"
+scenario "S10 aucun avoir" 11 "avoir absent" NB_AVOIRS=0 -- "${BASE_ARGS[@]}"
+scenario "S10 aucun compte principal" 11 "compte bancaire principal" PRINCIPAL=0 -- "${BASE_ARGS[@]}"
+scenario "S10 compte principal non lié au 1020" 11 "compte bancaire principal" LIEN_1020=0 -- "${BASE_ARGS[@]}"
+scenario "S10 aucun compte d'arrondi" 11 "différences d'arrondi" ARRONDI_COMPTE=null -- "${BASE_ARGS[@]}"
+scenario "S10 rapport TVA vide" 11 "rapport TVA sans chiffre d'affaires" TVA_VIDE=oui -- "${BASE_ARGS[@]}"
+echo "  S11 : mutool exigé (D9)"
+preparer "N_REEL=1"
+RC=0
+KESH_DOCKER="$FX/docker" KESH_CURL="$FX/curl" KESH_MUTOOL="$WORK/dehors/mutool-absent" RECETTE_RACINE_JETABLE="$WORK/jetable" \
+  bash "$DEPOT/scripts/recette-montee.sh" "${BASE_ARGS[@]}" > "$FX/sortie" 2>&1 || RC=$?
+[ "$RC" -eq 5 ] && sortie_dit "outil manquant : $WORK/dehors/mutool-absent" && [ ! -s "$FX/docker.log" ] \
+  && ok "S11 mutool introuvable : code 5, zéro appel docker" || fail "S11 : code $RC, $(wc -l < "$FX/docker.log") appels docker"
+echo "  S12 : import dans un dossier des documents neuf (D6)"
+scenario "S12 PDF figé de l'archive servi autrement" 15 "PDF archivé de F5" PDF_IMPORT_ALTERE=oui -- "${BASE_ARGS[@]}" --import
 
 echo "  journal du binaire"
 preparer "N_REEL=1" "ERREUR_JOURNAL=oui"
@@ -542,6 +831,8 @@ echo "  N = 0"
 preparer "N_REEL=0"
 avec --migrations-attendues 0; lancer "${AV[@]}"
 [ "$RC" -eq 0 ] && sortie_dit "sautée" && ok "phase 3 sautée, et dit" || { fail "code $RC"; tail -3 "$FX/sortie"; }
+# S17c (passe ciblée de la revue P3, LOW-1) : le verdict le dit aussi.
+sortie_dit "vert ; phase 3 : SAUTÉE (aucune migration) ;" && ok "S17c verdict : phase 3 SAUTÉE" || fail "S17c verdict : $(/usr/bin/grep -F 'vert ;' "$FX/sortie")"
 /usr/bin/grep -q 'kesh_recette' "$FX/binaire-env.txt" && ok "binaire lancé" || fail "binaire"
 
 echo "  crochet --apres"
@@ -562,7 +853,7 @@ lancer "${BASE_ARGS[@]}" --apres "$WORK/kesh-gate-logs/verifs.sh"
 printf '%s\n' 'pwd > "$L/crochet-pwd.txt"' 'echo "$HOME" > "$L/crochet-home.txt"' 'env > "$L/crochet-env.txt"' > "$WORK/kesh-gate-logs/verifs.sh"
 preparer "N_REEL=1"
 RC=0
-DOCKER_HOST=tcp://sonde.invalid:2375 KESH_DOCKER="$FX/docker" KESH_CURL="$FX/curl" RECETTE_RACINE_JETABLE="$WORK/jetable" \
+DOCKER_HOST=tcp://sonde.invalid:2375 KESH_DOCKER="$FX/docker" KESH_CURL="$FX/curl" KESH_MUTOOL="$FX/mutool" RECETTE_RACINE_JETABLE="$WORK/jetable" \
   bash "$DEPOT/scripts/recette-montee.sh" "${BASE_ARGS[@]}" --apres "$WORK/kesh-gate-logs/verifs.sh" > "$FX/sortie" 2>&1 || RC=$?
 D=$(/usr/bin/grep -oE 'dossier .*$' "$FX/sortie" | tail -1 | sed 's/^dossier //')
 [ "$RC" -eq 0 ] && [ "$(cat "$D/journal/crochet-pwd.txt")" = "$D/cwd" ] && [ "$(cat "$D/journal/crochet-home.txt")" = "$D/home" ] \
@@ -573,7 +864,8 @@ echo "  le port de la seconde base, resté à l'écoute, est signalé (revue P2,
 # Le crochet laisse un processus écouter sur `--port-base + 1`, le port de la phase 5 : le
 # docker factice n'y lance rien, si bien que seul ce processus peut s'y trouver à la fin.
 # shellcheck disable=SC2016
-printf '%s\n' 'python3 -c "import socket,sys,time
+# Le crochet est rejoué après l'import (revue P2, E-P2-6) : l'écoute ne se lance qu'en phase 2.
+printf '%s\n' '[ "$PHASE_APRES" = 2 ] || return 0' 'python3 -c "import socket,sys,time
 s=socket.socket(); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 s.bind((\"127.0.0.1\", int(sys.argv[1]))); s.listen(1); time.sleep(30)" "$((PORT_BASE + 1))" </dev/null >/dev/null 2>&1 3>&- &' \
   'echo $! > "$L/ecoute.pid"' 'for _ in $(seq 1 100); do o=$(ss -ltn); /usr/bin/grep -q ":$((PORT_BASE + 1)) " <<<"$o" && break; sleep 0.05; done' \

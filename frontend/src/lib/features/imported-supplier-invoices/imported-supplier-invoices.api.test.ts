@@ -7,9 +7,38 @@ vi.mock('$lib/shared/utils/api-client', () => ({
 }));
 
 import { apiClient } from '$lib/shared/utils/api-client';
-import { INBOX_IMPORT_TIMEOUT_MS, triggerInboxImport } from './imported-supplier-invoices.api';
+import {
+	INBOX_IMPORT_TIMEOUT_MS,
+	listImported,
+	triggerInboxImport,
+} from './imported-supplier-invoices.api';
 
 const client = vi.mocked(apiClient);
+
+// Story 48-12b (revue P2, P2-3) — la relecture de la complétion (E8) passe `{ retry: false }` :
+// sans cette transmission, un `GET` coupé se rejouerait (~14 s) au lieu de rendre la main.
+describe('listImported', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it('transmet les options d’appel au client', async () => {
+		client.get.mockResolvedValueOnce([]);
+		await listImported('completed', { retry: false });
+		expect(client.get).toHaveBeenCalledWith('/api/v1/imported-supplier-invoices?status=completed', {
+			retry: false,
+		});
+	});
+
+	it('sans options, le second argument reste indéfini', async () => {
+		client.get.mockResolvedValueOnce([]);
+		await listImported('to_complete');
+		expect(client.get).toHaveBeenCalledWith(
+			'/api/v1/imported-supplier-invoices?status=to_complete',
+			undefined,
+		);
+	});
+});
 
 describe('triggerInboxImport', () => {
 	beforeEach(() => {

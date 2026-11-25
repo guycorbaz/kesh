@@ -11,7 +11,7 @@ use axum::extract::{Path, Query, State};
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use chrono::{NaiveDate, NaiveDateTime};
-use kesh_db::entities::{CreditNote, CreditNoteLine};
+use kesh_db::entities::{CreditNote, CreditNoteLine, LineType};
 use kesh_db::errors::DbError;
 use kesh_db::repositories::{contacts, credit_notes};
 use kesh_qrbill::{Currency, InvoiceLinePdf, InvoicePdfData};
@@ -25,7 +25,7 @@ use crate::helpers::get_company_for;
 use crate::middleware::auth::CurrentUser;
 use crate::routes::ListResponse;
 use crate::routes::invoice_pdf_service::{
-    CauseRefusPdf, build_i18n, map_qrbill_error, refus, sanitize_filename, split_lines,
+    CauseRefusPdf, build_i18n, ligne_pdf, map_qrbill_error, refus, sanitize_filename, split_lines,
 };
 
 #[derive(Serialize)]
@@ -60,6 +60,8 @@ pub struct CreditNoteLineResponse {
     /// cf. le test `null_line_credit_note_falls_back_to_current_default_known_limitation`
     /// et l'avertissement correspondant du CHANGELOG.
     pub revenue_account_id: Option<i64>,
+    /// Type de la ligne, recopié de la ligne de facture (Story 49-1a).
+    pub line_type: LineType,
 }
 
 impl From<CreditNoteLine> for CreditNoteLineResponse {
@@ -72,6 +74,7 @@ impl From<CreditNoteLine> for CreditNoteLineResponse {
             vat_rate: l.vat_rate,
             line_total: l.line_total,
             revenue_account_id: l.revenue_account_id,
+            line_type: l.line_type,
         }
     }
 }
@@ -306,12 +309,15 @@ pub async fn get_credit_note_pdf(
 
     let pdf_lines: Vec<InvoiceLinePdf> = lines
         .iter()
-        .map(|l| InvoiceLinePdf {
-            description: l.description.clone(),
-            quantity: l.quantity,
-            unit_price: l.unit_price,
-            vat_rate: l.vat_rate,
-            line_total: l.line_total,
+        .map(|l| {
+            ligne_pdf(
+                &l.description,
+                l.line_type,
+                l.quantity,
+                l.unit_price,
+                l.vat_rate,
+                l.line_total,
+            )
         })
         .collect();
 
