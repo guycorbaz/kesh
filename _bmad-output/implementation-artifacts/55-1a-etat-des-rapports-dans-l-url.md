@@ -1,10 +1,33 @@
 # Story 55-1a : l'état des Rapports dans l'URL — Retour, Suivant, lien partagé
 
-Status: drafted
+Status: ready-for-dev
 
 Epic : `_bmad-output/planning-artifacts/epic-55-navigation-interface.md` — D1 à D3, D5, Q2 (D4 : 55-1b). Issue : #À-VENIR (`bug`, P3, point b).
 Release : la prochaine planifiée après la 0.20.0 (numéro fixé par le mainteneur). **Frontend seulement, aucune migration.**
 **Base : la PR de l'Epic 46** (`pr/46-rapports-groupes`, `511e61d54` au kickoff), reprise dans `epic/55-navigation` avant T1.
+
+## ⚠️ Points renvoyés au développement (validation P6)
+
+La validation s'est arrêtée à la **sixième passe** sur deux MEDIUM (`kesh-gate-logs/s55-kickoff/55-1a-validation-p6.md`).
+Par la règle de `CLAUDE.md` § *Review Iteration Rule* (« dès la sixième passe, l'orchestrateur ne remédie plus lui-même —
+il retire, ou renvoie au développement »), ils sont **renvoyés au développement** : le T0 les tranche **avant toute
+ligne de code**, avec le mainteneur si le choix change le comportement visible, et le Change Log cite la ligne lue et la
+décision. Le correctif proposé par la passe est la résolution par défaut.
+
+- **R-1 (V6-1)** — *Appliquer une URL*, point 3, n'a pas de branche pour « une génération **de cet onglet** en vol avec une
+  autre clé, et la clé affichée différente de l'URL (ou rien d'affiché) » (p. ex. *Générer* sur le Bilan P1, puis arrivée
+  sur le Bilan P2). Défaut proposé : `generate()` pour la clé de l'URL (qui périme la génération en vol du même onglet) ;
+  un AC-8 (d) et une mutation.
+- **R-2 (V6-2)** — Branche « génération d'un autre onglet en vol » : poser les champs de l'URL alors que l'onglet affiche un
+  rapport d'une autre clé fait dire trois choses à l'écran, aux champs et à l'URL, et l'export suit les champs. Défaut
+  proposé : dans cette branche, **ne poser ni champs ni exercice**, et remplacer l'URL par la clé affichée de l'onglet (ou
+  `?tab=<id>` s'il n'a rien) ; AC-8 (b) vérifié avec un rapport affiché d'une autre période ; C-55-1-6 corrigé (« comme un
+  clic »).
+- **LOW à reprendre** : V6-3 (la phrase « aucune navigation n'interrompt » oublie la branche « clé affichée »), V6-4
+  (*Générer* ne se désactive que pendant `loading`, non `refreshing`), V6-5 (fichier d'epic `:198`, « +287 » → « +231 nettes »),
+  V6-6 (*Générer* : 0 `goto` si l'URL est déjà égale ; comparer sans le `?` de `page.url.search`), V6-7 (le test qui tue la
+  mutation « clé écrite non enregistrée » vise un onglet qui affiche un rapport d'une autre période), V6-8 (la période d'un
+  rapport par compte analytique suit celle des classiques au Retour : même classe que l'issue d'export, à y joindre).
 
 ## Story
 
@@ -391,3 +414,7 @@ qui l'affichent désormais à l'arrivée) ; le lien *Rapports* du menu ramène a
   (V5-3) ; T3 sans le désarmement de l'effet du compte analytique (V5-4) ; fichier d'epic amendé (D1, *Taille*) (V5-5) ;
   cas « clé affichée, génération de l'onglet en vol » écrit au point 3 (repris de la P3 de la 55-1b, AC-8 c) ; LOW V5-6 à
   V5-14. **Dès la P6, plus aucune remédiation de l'orchestrateur** : retrait ou renvoi au développement.
+- 2026-11-25 — Validation P6 ciblée (Sonnet) : 0/0/2/6. **Arrêt de la boucle par renvoi au développement** (règle de la
+  sixième passe) : V6-1 et V6-2 en R-1 et R-2, avec leur résolution par défaut ; LOW listés. Tendance : P1 Opus 0/1/10/8 →
+  P2 Sonnet 0/0/5/7 → P3 Opus 0/1/6/6 (découpage) → P4 Sonnet 0/1/4/8 (réduction) → P5 Opus 0/0/5/9 (retrait) → P6 ciblée
+  Sonnet 0/0/2/6. `ready-for-dev` **sous réserve** du T0 (R-1, R-2).
