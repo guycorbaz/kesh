@@ -903,6 +903,9 @@ async fn create_in_tx_inner(
 /// devise. La devise suit le compte ; cours et provenance n'entrent pas.
 type CleDeLigne = (i64, Decimal, Decimal, Option<i64>, Option<Decimal>);
 
+/// Une ligne lue pour la comparaison : l'écriture, puis [`CleDeLigne`].
+type LigneLue = (i64, i64, Decimal, Decimal, Option<i64>, Option<Decimal>);
+
 /// Cherche une écriture **identique** à `new` dans la société (Story 53-1a,
 /// #1355, D1) : même date, même journal, même libellé (égalité exacte, casse
 /// comprise, comparée **ici** et non en SQL, dont la collation ignore la casse)
@@ -949,7 +952,7 @@ async fn find_duplicate_in_tx(
         ids.push_bind(*id);
     }
     requete.push(")");
-    let lignes: Vec<(i64, i64, Decimal, Decimal, Option<i64>, Option<Decimal>)> = requete
+    let lignes: Vec<LigneLue> = requete
         .build_query_as()
         .fetch_all(&mut **tx)
         .await
