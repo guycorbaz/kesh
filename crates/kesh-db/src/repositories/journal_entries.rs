@@ -540,8 +540,7 @@ async fn create_in_tx_inner(
     duplicates: Option<DuplicatePolicy>,
 ) -> Result<JournalEntryWithLines, DbError> {
     let mut new = new;
-    // Squelette (Story 53-1a) : la règle anti-doublon n'est pas encore câblée.
-    let _ = duplicates;
+
     // Étape 0 : validation des projets analytiques par-ligne (Story 19-2).
     // Elle précède l'étape 1 (le re-verrou de l'exercice) : sentinelle et
     // projets avant l'exercice, la convention de Pattern 5 (« Global Lock
@@ -720,6 +719,34 @@ async fn create_in_tx_inner(
         super::journal_entry_number_sequences::next_number_for(tx, new.company_id, fiscal_year_id)
             .await?;
 
+    // Étape 3-bis (Story 53-1a, #1355, D1, D3, D6) : la règle anti-doublon, **en
+    // dernier des refus** (après forme, exercice, verrou de période, comptes,
+    // devises) et avant tout `INSERT`. Elle ne s'applique qu'à la saisie
+    // (`Some(policy)`) ; les flux automatiques passent `None` (D2).
+    //
+    // ⛔ **Toutes les lectures ordinaires de cette transaction se font APRÈS le
+    // verrou de l'exercice (étape 1).** Toute écriture d'une société à une date
+    // appartient à l'unique exercice qui la couvre, et tout geste qui fait naître,
+    // disparaître ou change une donnée comparée tient cet exercice `FOR UPDATE`
+    // jusqu'à son `COMMIT` : la comparaison est donc exacte, **pourvu que
+    // l'instantané `REPEATABLE READ` naisse après l'obtention de l'exercice**
+    // (même idiome que `update`, étape 1 : « aucune lecture ordinaire avant le
+    // verrou »). Une lecture ordinaire ajoutée AVANT l'étape 1 fait naître
+    // l'instantané avant l'attente : la saisie concurrente ne voit pas l'écriture
+    // qui vient d'être validée, et écrit un doublon (test
+    // `une_saisie_concurrente_attend_l_exercice_puis_voit_l_ecriture`, mutation
+    // M2). Aucun verrou n'est posé sur `journal_entries` (C-15-8-23 : pas de
+    // verrou d'intervalle sur l'index de date).
+    let doublon_confirme: Option<ExistingJournalEntry> = match duplicates {
+        None => None,
+        Some(policy) => match find_duplicate_in_tx(tx, &new).await? {
+            Some(existing) if policy == DuplicatePolicy::Refuse => {
+                return Err(DbError::JournalEntryProbableDuplicate { existing });
+            }
+            found => found,
+        },
+    };
+
     // Étape 4 : INSERT de l'en-tête.
     //
     // ⛔ **La colonne `reverses_entry_id` n'entre dans l'INSERT que si elle a
@@ -830,7 +857,118 @@ async fn create_in_tx_inner(
     )
     .await?;
 
+    // Story 53-1a (D5) : le refus que la politique `Confirmed` a levé s'inscrit
+    // au journal, dans la même transaction, sur l'écriture créée.
+    if let Some(existing) = doublon_confirme {
+        audit_log::insert_in_tx(
+            tx,
+            NewAuditLogEntry::par(
+                acteur,
+                "journal_entry.duplicate_confirmed".to_string(),
+                "journal_entry".to_string(),
+                entry_id,
+                Some(serde_json::json!({
+                    "journalEntryId": existing.id,
+                    "entryNumber": existing.entry_number,
+                })),
+            ),
+        )
+        .await?;
+    }
+
     Ok(JournalEntryWithLines { entry, lines })
+}
+
+/// La clé d'égalité d'une ligne pour la règle anti-doublon (Story 53-1a, D1) :
+/// compte, débit, crédit (en **valeur** décimale), projet effectif, montant en
+/// devise. La devise suit le compte ; cours et provenance n'entrent pas.
+type CleDeLigne = (i64, Decimal, Decimal, Option<i64>, Option<Decimal>);
+
+/// Cherche une écriture **identique** à `new` dans la société (Story 53-1a,
+/// #1355, D1) : même date, même journal, même libellé (égalité exacte, casse
+/// comprise, comparée **ici** et non en SQL, dont la collation ignore la casse)
+/// et même multiensemble de lignes. Les écritures contre-passées et les
+/// contre-passations sont **exclues** (Q3) ; aucune fenêtre de temps (Q2). Rend
+/// la plus petite en identifiant.
+///
+/// Lectures **ordinaires** : leur exactitude tient à l'instantané né après le
+/// verrou de l'exercice (cf. l'étape 3-bis de [`create_in_tx_inner`]).
+async fn find_duplicate_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    new: &NewJournalEntry,
+) -> Result<Option<ExistingJournalEntry>, DbError> {
+    // Plage sur `idx_journal_entries_company_date`, sous-requête par
+    // `uq_journal_entries_reverses`.
+    let candidats: Vec<(i64, i64, String)> = sqlx::query_as(
+        "SELECT je.id, je.entry_number, je.description FROM journal_entries je \
+         WHERE je.company_id = ? AND je.entry_date = ? AND je.journal = ? \
+           AND je.reverses_entry_id IS NULL \
+           AND NOT EXISTS (SELECT 1 FROM journal_entries r WHERE r.reverses_entry_id = je.id) \
+         ORDER BY je.id",
+    )
+    .bind(new.company_id)
+    .bind(new.entry_date)
+    .bind(new.journal)
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(map_db_error)?;
+    let candidats: Vec<(i64, i64)> = candidats
+        .into_iter()
+        .filter(|(_, _, libelle)| *libelle == new.description)
+        .map(|(id, numero, _)| (id, numero))
+        .collect();
+    if candidats.is_empty() {
+        return Ok(None);
+    }
+
+    let mut requete = QueryBuilder::<sqlx::MySql>::new(
+        "SELECT entry_id, account_id, debit, credit, project_id, amount_currency \
+         FROM journal_entry_lines WHERE entry_id IN (",
+    );
+    let mut ids = requete.separated(", ");
+    for (id, _) in &candidats {
+        ids.push_bind(*id);
+    }
+    requete.push(")");
+    let lignes: Vec<(i64, i64, Decimal, Decimal, Option<i64>, Option<Decimal>)> = requete
+        .build_query_as()
+        .fetch_all(&mut **tx)
+        .await
+        .map_err(map_db_error)?;
+
+    let mut voulues: Vec<CleDeLigne> = new
+        .lines
+        .iter()
+        .map(|l| {
+            (
+                l.account_id,
+                l.debit,
+                l.credit,
+                l.project_id.or(new.project_id),
+                l.foreign.as_ref().map(|f| f.amount),
+            )
+        })
+        .collect();
+    voulues.sort();
+
+    for (id, numero) in candidats {
+        let mut existantes: Vec<CleDeLigne> = lignes
+            .iter()
+            .filter(|(entry_id, ..)| *entry_id == id)
+            .map(|(_, compte, debit, credit, projet, devise)| {
+                (*compte, *debit, *credit, *projet, *devise)
+            })
+            .collect();
+        existantes.sort();
+        if existantes == voulues {
+            return Ok(Some(ExistingJournalEntry {
+                id,
+                entry_number: numero,
+                entry_date: new.entry_date,
+            }));
+        }
+    }
+    Ok(None)
 }
 
 /// Compte les écritures d'une company, **tous exercices confondus**.

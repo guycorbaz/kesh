@@ -32,6 +32,7 @@ use kesh_db::entities::{
     Journal as DbJournal, JournalEntry, JournalEntryLine, JournalEntryWithLines, NewJournalEntry,
     NewJournalEntryLine,
 };
+use kesh_db::repositories::duplicate_policy::DuplicatePolicy;
 use kesh_db::repositories::{fiscal_years, imported_supplier_invoices, journal_entries};
 
 use crate::AppState;
@@ -132,6 +133,26 @@ pub struct CreateJournalEntryRequest {
     pub journal: CoreJournal,
     pub description: String,
     pub lines: Vec<CreateJournalEntryLineRequest>,
+}
+
+/// Corps du `POST /api/v1/journal-entries` (Story 53-1a, #1355, D5) : celui de
+/// [`CreateJournalEntryRequest`], plus `confirmNotDuplicate`.
+///
+/// ⛔ Le champ **n'entre pas** dans `CreateJournalEntryRequest`, que la
+/// conversion de devises partage (`CreateConversionRequest.entries`) : un
+/// `confirmNotDuplicate` non booléen d'une entrée de conversion ne doit pas
+/// devenir un `400`. Le `PUT` a son propre corps ([`UpdateJournalEntryRequest`]),
+/// qui l'ignore. Précédent de `#[serde(flatten)]` sur un corps :
+/// `UpdateSupplierInvoiceRequest`.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateJournalEntryBody {
+    #[serde(flatten)]
+    pub entry: CreateJournalEntryRequest,
+    /// `true` : l'appelant confirme que l'écriture n'est pas un doublon
+    /// (lève le refus `JOURNAL_ENTRY_PROBABLE_DUPLICATE`, inscrit à l'audit).
+    #[serde(default)]
+    pub confirm_not_duplicate: bool,
 }
 
 /// Corps du `PUT /api/v1/journal-entries/{id}` (Story 15-8a, #532) : celui du
@@ -869,8 +890,10 @@ pub(crate) fn parse_line_amounts(
 pub async fn create_journal_entry(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
-    Json(req): Json<CreateJournalEntryRequest>,
+    Json(body): Json<CreateJournalEntryBody>,
 ) -> Result<(StatusCode, Json<JournalEntryResponse>), AppError> {
+    let policy = DuplicatePolicy::from_confirmation(body.confirm_not_duplicate);
+    let req = body.entry;
     borner(req.entry_date, "entryDate")?;
     let company = get_company_for(&current_user, &state.pool).await?;
 
@@ -906,12 +929,13 @@ pub async fn create_journal_entry(
     // Création atomique (re-lock FY + numérotation + INSERT + balance check).
     // P2 : mapping stable via variants DbError dédiés (plus de matching sur
     // le contenu du message).
-    let result = kesh_db::retry::retry_on_deadlock("journal_entries::create", || {
-        journal_entries::create(
+    let result = kesh_db::retry::retry_on_deadlock("journal_entries::create_with_policy", || {
+        journal_entries::create_with_policy(
             &state.pool,
             fiscal_year.id,
             Acteur::from(&current_user),
             new.clone(),
+            policy,
         )
     })
     .await
