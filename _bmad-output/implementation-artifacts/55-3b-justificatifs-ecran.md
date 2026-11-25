@@ -153,18 +153,17 @@ par la garde : un fichier commun, non un module.) Les pages des fiches de factur
    colonnes (`:4193-4194`) gagne « ses justificatifs » ; § 11.6.1 (`sec:pdf-fige`, `:1635-1637`) — « au premier
    téléchargement, au premier envoi, ou au premier affichage depuis les rapports », renvoi `\S\ref{sec:pdf-fige}` depuis
    les deux paragraphes des rapports ; le chemin « Mensuel → Rapports → Journal » (`:4318`) contrôlé contre l'onglet réel
-   (« Journaux »). **Inventaire des phrases du figement**, chacune corrigée en « au premier téléchargement, envoi ou
-   affichage » avec renvoi au § 11.6.1 : `:1502` (« produit et figé au premier téléchargement ou au premier envoi »),
-   `:1513` (« figé au premier téléchargement ou envoi »), `:1637`, `:1641` (« qui télécharge le premier » → « qui
-   télécharge ou ouvre le premier »), `:1645` (« au premier téléchargement »), `:1643` (« figée à son prochain téléchargement ») et `:1644` (« son prochain
-   téléchargement figera ») → « téléchargement ou affichage » ; `:1650` (PDF figé disparu, « le téléchargement est
-   refusé ») : une phrase qui dit que l'affichage depuis les rapports l'est aussi, avec le même message. `.tex` seul. Constat, **sur le `.tex`** (le PDF n'est régénéré qu'à la release) : avant, `grep -nE "premier téléchargement|prochain
-   téléchargement|télécharge le premier|le téléchargement est refusé" docs/manual/fr/user-manual.tex` (journal) ; après,
-   chacune des **huit** lignes de l'inventaire (`:1502`, `:1513`, `:1637`, `:1641`, `:1643`, `:1644`, `:1645`, `:1650`, à
-   `1e23edb55`, relevées sur la base PR 46) porte « affichage », vérifié ligne par ligne ; `:2058` (« son premier
-   téléchargement est bien inscrit au journal d'audit ») est jugée vraie et laissée. Formulations : `:1637` reçoit la longue
-   (« au premier téléchargement, au premier envoi, ou au premier affichage depuis les rapports », avec le renvoi) ; les
-   autres, la courte (« téléchargement, envoi ou affichage »). Captures du
+   (« Journaux »). **Phrases du figement** — par une **règle**, non par une liste de lignes (validation P4 de la version
+   récrite : chaque liste se révélait incomplète) : **toute phrase du manuel qui attribue le figement d'un PDF de facture au
+   seul téléchargement ou au seul envoi**, ou qui dit qu'une facture « jamais téléchargée ni envoyée » n'est pas figée, est
+   corrigée pour y ajouter l'affichage depuis les rapports, avec renvoi au § 11.6.1. Méthode, au T4 et sur la base de
+   développement (les numéros glissent de −6 entre `1e23edb55` et la PR 46) : `grep -nE
+   "t[ée]l[ée]charg|envoy|envoi|ouvert|rendu|fig[ée]|refig" docs/manual/fr/user-manual.tex` (balises `\textbf{}` comprises),
+   chaque occurrence **jugée** dans une table du Change Log — corrigée, ou laissée avec sa raison —, ligne lue citée.
+   Repères à `1e23edb55`, non limitatifs : `:1502`, `:1513`, `:1553`, `:1633`, `:1637`, `:1641`-`:1645`, `:1650`, `:1674`,
+   `:1725`, `:2058` (laissée : audit), `:4909`. Formulation : § 11.6.1 (`:1637`) « au premier téléchargement, au premier
+   envoi, ou au premier affichage depuis les rapports » ; ailleurs, l'ajout de « ou affichage » à la tournure existante.
+   `.tex` seul ; le PDF se régénère à la release. Captures du
    manuel montrant le grand livre (p. ex. `rd-grand-livre-usd.png`) : périmées si la colonne y paraît, à refaire à la
    release (dit au Change Log).
 10. **AC-10 — Accessibilité.** Bouton au clavier ; dialogue `role="dialog"`, `aria-modal`, étiqueté par son titre ; axe
@@ -183,6 +182,8 @@ par la garde : un fichier commun, non un module.) Les pages des fiches de factur
   appel de `goto` (mock de `$app/navigation`) ; **fermé puis rouvert pendant la lecture de la liste** — deux promesses
   contrôlées, la première résolue **après** la seconde, avec des listes de noms **différents** ; l'assertion porte sur la
   liste affichée : celle de la seconde ouverture — (mutation : compteur d'ouverture retiré → la liste ancienne s'affiche, test rouge).
+- **Vitest** (focus) : fermeture (Échap, « Fermer ») → focus sur l'icône qui a ouvert (deux icônes, la seconde ouvre ;
+  mutation : focus rendu à la première → test rouge).
 - **Vitest** `reports.api.test.ts` : `fetchEntryDocuments(entryId)`, `fetchInvoicePdf`, `fetchCreditNotePdf` (URL exactes).
 - **Vitest** `DocumentPreview.test.ts` : tests ajoutés (propriété présente rendant une chaîne, y compris pour
   `SOURCE_DOCUMENT_GONE` ; rendant `undefined` ; absente ; nouveau rendu avec une autre fonction `errorMessage` → **une**
@@ -230,7 +231,7 @@ d'une facture figée, ou par `page.route` rendant `410 INVOICE_PDF_GONE`) ; gran
       (`fetchEntryDocuments`, `fetchInvoicePdf`, `fetchCreditNotePdf`) ; `EntryDocumentsViewer.svelte` (la liste en haut,
       `DocumentPreview` dessous, sélection par primitives) ; `EntryDocuments.svelte` (le dialogue `ui/dialog`, **une
       instance par vue**, et la lecture de la liste au clic) ; l'icône de chaque ligne est un bouton qui lui passe
-      l'écriture.
+      l'écriture **et son élément** ; l'instance rend le focus à cet élément à la fermeture.
 - [ ] **T3** — Vues du journal et du grand livre (colonne conditionnelle) ; types `reports.types.ts`.
 - [ ] **T4** — i18n, manuel, E2E, captures.
 - [ ] **T5** — Gates (fichier d'epic, § *Gates*).
@@ -314,3 +315,7 @@ n'était pas encore produit le fige, comme un téléchargement. (refs #À-VENIR)
 - 2026-11-25 — Validation P3 ciblée (version récrite, Sonnet) : 0/0/1/3 ; remédiée : constat de l'AC-9 sur le `.tex`, huit
   lignes nommées, `:2058` jugée (Vv2p3-1) ; une formulation par ligne (Vv2p3-2) ; test de la garde d'ouverture spécifié
   (Vv2p3-3) ; un dialogue par vue, tranché (Vv2p3-4).
+- 2026-11-25 — Validation P4 ciblée (version récrite, Haiku) : 0/0/2/2 ; remédiée **par simplification** : l'inventaire de
+  lignes du manuel est remplacé par une règle, une méthode de recherche large et une table de jugement au Change Log, sur
+  la base de développement (Vv2p4-1, Vv2p4-2, Vv2p4-3) ; focus rendu à l'icône d'origine, test et mutation (Vv2p4-4).
+  Prochaine passe : P5 ; dès la P6, retrait ou renvoi.
