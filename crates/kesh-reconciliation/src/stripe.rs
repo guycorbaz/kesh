@@ -843,6 +843,7 @@ mod tests {
                     rules: &rules,
                     rule_account_ids: &rule_ids,
                     primary_ledger_account_id: None,
+                    already_posted: &HashMap::new(),
                 },
                 &SPEC,
             );

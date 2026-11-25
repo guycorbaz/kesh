@@ -172,6 +172,9 @@ describe('stripe-labels — écarts et motifs', () => {
 	it('motifs : communs (clés provider-) et propres à Stripe, la catégorie nommée', () => {
 		expect(stripeToReviewLabel({ code: 'ambiguous_sale' })).toMatch(/^provider-review-ambiguous-sale\|/);
 		expect(stripeToReviewLabel({ code: 'fee_account_missing' })).toMatch(/^provider-review-fee-account-missing\|/);
+		expect(stripeToReviewLabel({ code: 'already_posted', details: { journalEntryId: 7 } })).toMatch(
+			/^provider-review-already-posted\|/,
+		);
 		expect(stripeToReviewLabel({ code: 'other_category', details: { category: 'dispute' } })).toContain('(dispute)');
 		expect(stripeToReviewLabel({ code: 'refund' })).toMatch(/^stripe-review-refund\|/);
 	});
@@ -200,6 +203,7 @@ describe('stripe-labels — les codes contre leur source Rust', () => {
 		'sale_without_receipt',
 	];
 	const ATTENDUS_MOTIFS = [
+		'already_posted',
 		'ambiguous_sale',
 		'fee_account_missing',
 		'other_category',

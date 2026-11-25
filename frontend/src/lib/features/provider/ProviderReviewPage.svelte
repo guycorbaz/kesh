@@ -38,6 +38,7 @@
 	import ProviderImportReport from './ProviderImportReport.svelte';
 	import type { LinkTarget } from '$lib/features/reconciliation/reconciliation.types';
 	import { chunkProposals } from './provider-review.api';
+	import { alreadyPostedEntryId } from './provider-labels';
 	import {
 		defaultFiscalYearId,
 		findingDate,
@@ -582,6 +583,7 @@
 					<tbody>
 						{#each review.toReview as t, i (i)}
 							{@const tx = t.transaction}
+							{@const postedEntry = alreadyPostedEntryId(t)}
 							<tr class="border-b border-border" data-testid="{testId}-to-review-{tx?.id ?? `e${i}`}">
 								<td class="py-2 pr-4 whitespace-nowrap">{findingDate(t)}</td>
 								<td class="py-2 pr-4">{toReviewLabel(t)}</td>
@@ -597,9 +599,19 @@
 									>
 										{i18nMsg('provider-link-entry', 'Rattacher à une écriture')}
 									</button>
-									<a href="/journal-entries" class="ml-1 text-xs text-primary underline">
-										{i18nMsg('provider-manual-entry', 'Écriture manuelle')}
-									</a>
+									{#if postedEntry !== null}
+										<a
+											href="/journal-entries/{postedEntry}"
+											class="ml-1 text-xs text-primary underline"
+											data-testid="{testId}-to-review-entry-{tx?.id ?? `e${i}`}"
+										>
+											{i18nMsg('provider-to-review-entry-link', 'Écriture déjà passée')}
+										</a>
+									{:else}
+										<a href="/journal-entries" class="ml-1 text-xs text-primary underline">
+											{i18nMsg('provider-manual-entry', 'Écriture manuelle')}
+										</a>
+									{/if}
 								</td>
 							</tr>
 						{/each}

@@ -50,7 +50,7 @@ use kesh_db::entities::{
 };
 use kesh_db::repositories::reconciliation_link::{
     EntryCandidate, count_already_booked_for_page, find_entry_candidates, find_link_candidates,
-    find_matched_elsewhere,
+    find_matched_elsewhere, matched_elsewhere_for_page,
 };
 use kesh_db::repositories::{
     bank_accounts, bank_imports, companies, contacts, reconciliation, supplier_invoices, users,
@@ -2607,6 +2607,34 @@ async fn s34_4_ac8_la_lecture_par_page_egale_les_fonctions_du_dialogue(pool: MyS
             }
         }
     }
+    // Correctif « une transaction de prestataire n'est écrite qu'une fois »
+    // (revue P1, M2) : la lecture par page de la revue des prestataires
+    // (`matched_elsewhere_for_page`) nomme, pour chaque transaction, **la
+    // première** écriture de `find_matched_elsewhere` (celle que nomme le
+    // refus de l'acceptation), ou rien — sur le même jeu varié : contre-passée,
+    // rapprochée sur ce compte, rapprochée dans le même sens ailleurs, second
+    // côté d'un virement, règlements, 55 rapprochées ailleurs, autre société.
+    let deja =
+        matched_elsewhere_for_page(&pool, ctx.company_id(), a, ctx.ledger, CHF, &transactions)
+            .await
+            .unwrap();
+    let mut nommees = 0;
+    for t in &transactions {
+        let attendu = find_matched_elsewhere(&pool, ctx.company_id(), t, ctx.ledger, CHF)
+            .await
+            .unwrap()
+            .first()
+            .map(|c| c.journal_entry_id);
+        assert_eq!(
+            deja.get(&t.id).copied(),
+            attendu,
+            "transaction de {} {}",
+            t.amount,
+            t.currency
+        );
+        nommees += usize::from(attendu.is_some());
+    }
+    assert!(nommees > 0 && nommees < transactions.len(), "{nommees}");
     // Le jeu n'est pas vide : chaque nombre est exercé, et le plafond atteint.
     assert!(reglements > 0 && ecritures > 0 && ailleurs > 0 && absentes > 0);
     let t999 = transactions

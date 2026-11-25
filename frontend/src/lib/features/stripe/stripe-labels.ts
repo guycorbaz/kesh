@@ -184,6 +184,7 @@ export const STRIPE_GAP_CODES = [
  * propres à Stripe). Exportée pour le test, comparée aux constantes `REVIEW_*`.
  */
 export const STRIPE_TO_REVIEW_CODES = [
+	'already_posted',
 	'ambiguous_sale',
 	'fee_account_missing',
 	'payout_account_missing',

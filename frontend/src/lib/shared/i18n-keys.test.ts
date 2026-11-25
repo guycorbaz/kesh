@@ -1209,7 +1209,13 @@ const ATTENDU = {
 	// Story 40-9 (option « Destination actuelle (introuvable) » du compte de versement) :
 	// **3742** (« expected 3742 to be 3741 »), relevé par la garde ; au diff : 1 site ajouté,
 	// 0 retiré.
-	sitesTotal: 3742,
+	// Fusion du correctif « une transaction de prestataire n'est écrite qu'une fois » (branche
+	// fix/prestataires-ecriture-unique, 3674 → 3677 de son côté) dans pr/40-stripe : **3746**
+	// (« expected 3746 to be 3742 »), relevé par la garde ; au diff : 4 sites ajoutés, 0 retiré —
+	// le refus `provider-failed-already-posted` et le motif `provider-review-already-posted`
+	// (communs), le lien `provider-to-review-entry-link` de la page commune, le motif
+	// `paypal-to-review-already-posted` de PayPal.
+	sitesTotal: 3746,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

@@ -11,7 +11,7 @@ vi.mock('$lib/shared/utils/i18n.svelte', () => ({
 		`${key}|` + (args ? fallback.replace(/\{\s*\$(\w+)\s*\}/g, (_, k) => String(args[k] ?? '')) : fallback),
 }));
 
-import { PROVIDER_COMMON_FAILED_CODES, providerFailedLabel } from './provider-labels';
+import { PROVIDER_COMMON_FAILED_CODES, alreadyPostedEntryId, providerFailedLabel } from './provider-labels';
 
 /**
  * Les codes de refus que le moteur commun peut poser dans `failed[]`, ÉCRITS EN DUR (jamais lus
@@ -44,6 +44,7 @@ const CODES_MOTEUR = [
 	'PROJECT_ARCHIVED',
 	'PROJECT_NOT_FOUND',
 	'PROVIDER_PROPOSAL_STALE',
+	'PROVIDER_TRANSACTION_ALREADY_POSTED',
 	'RATE_UNAVAILABLE',
 	'RECONCILIATION_ALREADY_RECONCILED',
 	'RECONCILIATION_ENTRY_NOT_LINKABLE',
@@ -62,6 +63,7 @@ describe('provider-labels — les refus du moteur commun', () => {
 				'NOT_FOUND',
 				'OPTIMISTIC_LOCK_CONFLICT',
 				'PROVIDER_PROPOSAL_STALE',
+				'PROVIDER_TRANSACTION_ALREADY_POSTED',
 				'RECONCILIATION_ENTRY_NOT_LINKABLE',
 			],
 		);
@@ -115,9 +117,17 @@ describe('provider-labels — les refus du moteur commun', () => {
 			expect(tableDb).toMatch(new RegExp(`Self::${variante}\\b[^=]*=> "${code}"`));
 		}
 		expect(corps(reco, 'non_postable_failed_proposal')).toContain('AccountsNotPostable(list).error_code()');
+		// Le refus d'une transaction déjà comptabilisée est la constante `FAILED_ALREADY_POSTED` de
+		// `kesh-reconciliation` (correctif des prestataires), que le moteur importe et pose : non
+		// un littéral du fichier, relue dans sa source.
+		const revue = readFileSync('../crates/kesh-reconciliation/src/provider_review.rs', 'utf-8');
+		const constante = revue.match(/pub const FAILED_ALREADY_POSTED: &str = "([A-Z_]+)";/);
+		expect(constante).not.toBeNull();
+		expect(horsTests).toMatch(/\bFAILED_ALREADY_POSTED,\n/);
 		const trouves = new Set([
 			...[...(horsTests + autres).matchAll(/"([A-Z][A-Z_]{4,})"/g)].map((m) => m[1]),
 			...Object.keys(parErrorCode),
+			constante![1],
 		]);
 		expect([...trouves].sort()).toEqual(CODES_MOTEUR);
 	});
@@ -126,5 +136,14 @@ describe('provider-labels — les refus du moteur commun', () => {
 		for (const code of CODES_MOTEUR) {
 			expect(providerFailedLabel(code, {})).not.toContain('reconciliation-failed-unknown');
 		}
+	});
+});
+
+describe('provider-labels — l’écriture déjà passée d’un motif « à examiner »', () => {
+	it('already_posted : l’écriture ; tout autre motif ou sans identifiant : null', () => {
+		expect(alreadyPostedEntryId({ code: 'already_posted', details: { journalEntryId: 42 } })).toBe(42);
+		expect(alreadyPostedEntryId({ code: 'no_rule', details: { journalEntryId: 42 } })).toBeNull();
+		expect(alreadyPostedEntryId({ code: 'already_posted', details: { journalEntryId: '42' } })).toBeNull();
+		expect(alreadyPostedEntryId({ code: 'already_posted' })).toBeNull();
 	});
 });
