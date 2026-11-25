@@ -29,7 +29,9 @@ afin que l'epic ne fasse pas monter le compte d'issues ouvertes par sa propre de
 ## D'où vient la liste (l'agent de l'epic n'a pas `gh`)
 
 - **Source** : les Change Logs et Dev Agent Records des fiches 55-1 à 55-3b, et le compte rendu de la revue du code
-  d'intégration. Chaque story y écrit, en section *Issues à ouvrir*, les points non corrigés (sévérité, site, texte de
+  d'intégration (journal `kesh-gate-logs/s55-integration/`, qui porte lui aussi une section *Issues à ouvrir*).
+  Chaque issue ouverte porte dans son corps « Epic 55, story 55-x » (ou « revue d'intégration »), ce qui permet le
+  recoupement. Chaque story y écrit, en section *Issues à ouvrir*, les points non corrigés (sévérité, site, texte de
   l'issue) ; le mainteneur ou son agent les ouvre et l'agent de l'epic reporte les numéros dans la fiche.
 - **Recoupement** sur GitHub, par le mainteneur ou son agent : `gh issue list --state open --search '"Epic 55" in:body'`.
 
@@ -91,3 +93,6 @@ d'epic), avec `refs #N` par ligne ; la note de l'epic est assemblée à la relea
 - 2026-11-25 — Validation P2 ciblée (Haiku) : 0/0/2/3 ; remédiée : règle des gates soumise au mainteneur (Q6), la règle de
   `CLAUDE.md` valant d'ici là (V2-1) ; prérequis des numéros au T0 (V2-2) ; puces citées par leur début (V2-3) ; LOW V2-4,
   V2-5.
+- 2026-11-25 — Validation P3 ciblée (Sonnet) : 0/0/1/3 ; remédiée : règle des gates de Q6 propagée aux fiches 55-1, 55-2,
+  55-3a (V3-1) ; phrase de l'epic (V3-2) ; marque « Epic 55, story 55-x » dans le corps des issues (V3-3) ; section
+  *Issues à ouvrir* de la revue d'intégration (V3-4).

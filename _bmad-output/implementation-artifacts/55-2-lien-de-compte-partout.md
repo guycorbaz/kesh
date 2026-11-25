@@ -67,14 +67,15 @@ Relevé à `origin/main` `1e23edb55` et `pr/46-rapports-groupes` `511e61d54` ; l
    `ledgerHref(accountId, from, to)`, avec le titre d'aujourd'hui, la classe d'aujourd'hui (`text-indigo-700
    hover:underline`), le `data-testid` passé par la vue ; `accountId` nul ou `linked={false}` : le numéro en texte. Tout
    numéro de compte des vues des Rapports passe par lui, liés ou non (le titre d'une section unique du grand livre compris). Les
-   **cinq** `<a href={ledgerHref…}>` d'aujourd'hui (Bilan ×3, Balance, `GroupedReportRows`) sont remplacés par lui : après
+   `<a href={ledgerHref…}>` d'aujourd'hui — **quatre** à `1e23edb55` (Bilan ×3, Balance), **cinq** sur la base PR 46
+   (`GroupedReportRows` en plus) — sont remplacés par lui : après
    la story, `grep -rn "ledgerHref(" frontend/src/lib/features/reports/*.svelte` ne rend **que** `AccountLink.svelte`.
    L'accueil et la réévaluation gardent leurs liens (hors Rapports, hors périmètre). **Second contrôle**, qui voit un
    numéro neuf rendu en nœud de texte : `grep -rnE "(^|[>[:space:]])\{[a-z]+\.accountNumber\}"
    frontend/src/lib/features/reports/*.svelte` (les attributs `number={…}` n'y correspondent pas). Sortie à `1e23edb55` :
    `BalanceSheetView.svelte:147,186,241`, `TrialBalanceView.svelte:71`, `IncomeStatementView.svelte:60,90`,
    `JournalReportView.svelte:68`, `GeneralLedgerView.svelte:220`, `ProjectExpensesView.svelte:70` ; **attendue après** :
-   `ProjectExpensesView.svelte:70` et la ligne `group` de `GroupedReportRows.svelte` seulement. Et `grep -n
+   `ProjectExpensesView.svelte:70` seulement, et la ligne `group` de `GroupedReportRows.svelte` sur la base PR 46. Et `grep -n
    "counterpart.join" frontend/src/lib/features/reports/GeneralLedgerView.svelte` : vide après. Les sorties au Change Log.
    Les imports de `ledgerHref` devenus inutiles dans les vues sont retirés (`npm run check` et le lint le vérifient).
 2. **AC-2 — Compte de résultat à plat.** Produits et charges : le numéro devient `AccountLink`, période du rapport.
@@ -90,7 +91,8 @@ Relevé à `origin/main` `1e23edb55` et `pr/46-rapports-groupes` `511e61d54` ; l
    « aucune écriture » d'un décompte vide — elle s'affiche dans les deux cas) : « Comptes au grand livre : » suivie de deux
    paires étiquette et numéro — `reports-vat-column-vat-due` puis `AccountLink` du compte TVA due, `reports-vat-recoverable`
    puis `AccountLink` du compte d'impôt préalable —, sur la période du décompte. Les comptes viennent de
-   `getInvoiceSettings()` (une requête, **à la première ouverture de l'onglet TVA**) et de la liste des comptes ; un compte
+   `getInvoiceSettings()` (une requête, **au premier affichage du décompte** : clic, URL, Retour ; aucune tant qu'aucun
+   décompte n'est affiché) et de la liste des comptes ; un compte
    non désigné, ou des réglages en échec : sa paire est omise ; les deux : la ligne est omise. L'étiquette ne promet aucune
    égalité de montant (C-55-2-2). Aucun changement du DTO de la TVA, du PDF ni du CSV. *Écart à D7 du fichier d'epic,
    amendé en conséquence* : une ligne à part plutôt qu'un lien dans les lignes « TVA due » et « TVA récupérable », parce que
@@ -123,7 +125,8 @@ Relevé à `origin/main` `1e23edb55` et `pr/46-rapports-groupes` `511e61d54` ; l
   classe exacts — aucun Vitest actuel ne vérifie ces liens). Chacun rougit sans le correctif (journal
   `kesh-gate-logs/s55-2/vitest-rouge-avant.log`), sauf les trois derniers, filets de non-régression déclarés tels.
 - **Vitest de la page** (fichier `reports-page-url.test.ts` de la 55-1) : réglages de TVA lus **une fois**, au premier
-  affichage du décompte (y compris par une URL) ; échec silencieux ; carte numéro → compte recalculée quand la liste des
+  affichage du décompte (y compris par une URL), **aucune** tant que le décompte n'est pas affiché (onglet ouvert sans
+  génération) ; échec silencieux ; carte numéro → compte recalculée quand la liste des
   comptes arrive après le rapport.
 - **E2E** `frontend/tests/e2e/reports-navigation.spec.ts` (fichier de la 55-1, bloc `55-2`) : Journal → lien d'une ligne →
   grand livre du compte → *Retour* → Journal ; Grand livre « tous les comptes » → contrepartie → grand livre de la
@@ -147,7 +150,7 @@ section lié et non lié ; TVA avec sa ligne de comptes ; Compte de résultat à
 
 - [ ] **T0** — Base : `epic/55-navigation` avec la 55-1 ; relever les lignes ; choisir les clés i18n (AC-9).
 - [ ] **T1** — Vitest rouges des vues neuves.
-- [ ] **T2** — `AccountLink.svelte` ; remplacement des cinq sites.
+- [ ] **T2** — `AccountLink.svelte` ; remplacement des sites (cinq sur la base PR 46).
 - [ ] **T3** — Compte de résultat, Journaux, Grand livre, TVA. Propriétés neuves : `GeneralLedgerView` reçoit
       `accountIdByNumber: ReadonlyMap<string, number>` (un `$derived` de `accounts`, comme `letterableAccountIds`
       `+page.svelte:137` : la liste arrive de façon asynchrone) ; `VatReportView` reçoit `vatAccounts: { payable:
@@ -160,7 +163,8 @@ section lié et non lié ; TVA avec sa ligne de comptes ; Compte de résultat à
 ## Gates
 
 `cd frontend && npm run check && npm run lint-i18n-ownership && npm run test:unit && npm run build` ; E2E des Rapports ;
-suite complète en fin d'epic.
+suite complète selon le § *Gates* du fichier d'epic (Q6 : tant qu'elle n'est pas tranchée, E2E complet au dernier commit
+de code de la story).
 
 ## Note de version
 
@@ -211,3 +215,5 @@ Grand livre et, pour la TVA, les comptes de TVA due et d'impôt préalable. (ref
   de l'E2E décrites (V2-1, V2-5) ; total des mouvements, non solde, égal à la TVA récupérable, manuel `:4326` (V2-2) ;
   propriétés d'`AccountLink` fixées, second contrôle sur les nœuds de texte avec sorties attendues, contreparties (V2-3) ;
   LOW V2-4, V2-6, V2-7, V2-8.
+- 2026-11-25 — Validation P3 ciblée (Haiku) : 0/0/1/1 ; remédiée : déclencheur unique de la lecture des réglages de TVA,
+  au premier affichage du décompte (V3-1) ; quatre liens à `1e23edb55`, cinq sur la PR 46 (V3-2).
