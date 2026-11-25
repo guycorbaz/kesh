@@ -1650,6 +1650,7 @@ async fn versement_deja_ecrit_refuse_avant_les_controles_de_destination(pool: My
     let motif = motif_de(&ctx.revue().await, po);
     assert_eq!(motif["code"], "already_posted", "{motif}");
     let avant = ctx.ecritures().await;
+    let audit_avant = ctx.count("SELECT COUNT(*) FROM audit_log").await;
     let (s, b) = ctx.accepter(vec![ancienne]).await;
     assert_eq!(s, 200, "{b}");
     assert_eq!(
@@ -1662,6 +1663,11 @@ async fn versement_deja_ecrit_refuse_avant_les_controles_de_destination(pool: My
         "{b}"
     );
     assert_eq!(ctx.ecritures().await, avant);
+    assert_eq!(
+        ctx.count("SELECT COUNT(*) FROM audit_log").await,
+        audit_avant,
+        "aucune trace d'acceptation"
+    );
 }
 
 /// Revue P1 (M1), limite de la règle commune, assumée et dite au manuel : la
@@ -1693,6 +1699,15 @@ async fn deux_versements_de_meme_montant_le_detache_retient_l_autre(pool: MySqlP
         assert_eq!(motif["code"], "already_posted", "{motif}");
         assert_eq!(motif["details"], json!({ "journalEntryId": ecriture }));
     }
+    // Le geste que dit le manuel : l'écriture nomme le versement qu'elle porte.
+    let libelle: String =
+        sqlx::query_scalar("SELECT description FROM journal_entries WHERE id = ?")
+            .bind(ecriture)
+            .fetch_one(&ctx.pool)
+            .await
+            .unwrap();
+    assert!(libelle.contains("po_TEST0001"), "{libelle}");
+    assert!(!libelle.contains("po_TEST0009"), "{libelle}");
     let (s, b) = ctx.rattacher(po, ecriture).await;
     assert_eq!(s, 200, "{b}");
     let v = proposition(&ctx.revue().await, po2);

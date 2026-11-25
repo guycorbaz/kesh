@@ -343,10 +343,7 @@ impl EngineProposal for StripeProposal {
 /// `payout` (AC-4 d) : le versement rejugé sous les verrous — pending, genre
 /// versement, **pas déjà comptabilisé** de l'autre côté (la règle commune de
 /// [`rejudge_writing`] : sinon `PROVIDER_TRANSACTION_ALREADY_POSTED`, `details:
-/// { journalEntryId }`, rien n'est écrit ; la réception ne peut se rattacher
-/// en même temps sur le compte de versement **réglé**, dont le lot tient le
-/// verrou nommé — seule une réception sur un autre compte reste dans la
-/// fenêtre que dit [`rejudge_writing`]), compte de versement réglé, **verrouillé** pour le lot (lu au
+/// { journalEntryId }`, rien n'est écrit), compte de versement réglé, **verrouillé** pour le lot (lu au
 /// pré-vol) et égal à celui que la revue a montré s'il est donné, sinon périmé
 /// (`provider_settings_changed`) ; même jugement que la revue
 /// ([`judge_payout`], lignes relues sous les verrous : retour de versement,
@@ -360,6 +357,13 @@ impl EngineProposal for StripeProposal {
 /// (`CounterpartyRule::AssetInCurrency`). Écriture par la fonction commune
 /// (débit compte de versement, crédit solde Stripe, net en devise, deux lignes
 /// au même cours), puis rapprochement du versement.
+///
+/// Concurrence de la règle « écrite une seule fois » : le lot tient le verrou
+/// nommé du compte de versement **réglé**, si bien qu'un rattachement de la
+/// réception sur ce compte ne passe pas pendant les instructions du lot ; reste
+/// la fenêtre du commit (verrou rendu, rattachement pas encore visible), plus
+/// large pour une réception sur un autre compte — l'angle mort que dit
+/// [`rejudge_writing`].
 ///
 /// Le compte de versement n'est pas gardé par `ensure_open_in_tx` : aucune
 /// ligne ne lui est rattachée (seule l'écriture touche son compte du plan).
