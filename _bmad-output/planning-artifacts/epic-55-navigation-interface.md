@@ -10,8 +10,8 @@ la branche reprend alors cette base avant la première ligne de code de la 55-1a
 l'Epic 46 (prévision 0.21.0) ; il ne peut pas sortir avant lui, et sort au plus tôt avec lui ou dans la release suivante.
 Un epic = une release.
 
-**Migration** : aucune. **Backend** : **oui, pour la seule 55-3a** (voir § *Backend*), ajout d'un champ aux réponses JSON du
-journal et du grand livre — l'epic avait été annoncé « frontend seulement » ; **à confirmer par le mainteneur (Q1)**.
+**Migration** : aucune. **Backend** : **oui, pour la seule 55-3a** (voir § *Backend*), ajout d'un booléen (`hasDocuments`) aux
+réponses JSON du journal et du grand livre et d'une route de lecture, `GET /api/v1/journal-entries/{id}/documents` — l'epic avait été annoncé « frontend seulement » ; **à confirmer par le mainteneur (Q1)**.
 
 **Taille** : **six stories**, solde compris — **à la borne** de six d'un epic de correction ou d'amélioration. La 55-3,
 ajoutée le 2026-11-25, est découpée en 55-3a et 55-3b à sa validation P1 (plus de cinq modules) ; la 55-1, en 55-1a et
@@ -179,8 +179,8 @@ son T0 ; sinon, ils vont en issues à leur nom.
 ## Backend
 
 L'epic était annoncé « frontend seulement ». **La 55-3a touche le backend** : `kesh-report` (`journal_report.rs`,
-`general_ledger.rs`, `documents.rs` neuf : une définition des rattachements, partagée) et `kesh-api` (une route de lecture), sans migration, sans route neuve, sans changement des
-exports PDF et CSV ; le contrat JSON du journal et du grand livre gagne un champ **additif**. Les 55-1a, 55-1b, 55-2, 55-3b et 55-4 restent
+`general_ledger.rs`, `documents.rs` neuf : une définition des rattachements, partagée) et `kesh-api` (un service et une route de lecture, `GET /journal-entries/{id}/documents`), sans migration, sans changement
+des exports PDF et CSV ; le contrat JSON du journal et du grand livre gagne un booléen **additif**. Les 55-1a, 55-1b, 55-2, 55-3b et 55-4 restent
 frontend seulement. **Q1 au mainteneur** : accepter ce périmètre, ou sortir les 55-3a et 55-3b de l'epic.
 
 ## Recouvrement avec l'Epic 46
@@ -209,9 +209,9 @@ Déclarés au kickoff (`CLAUDE.md` § *Fusions et fichiers communs*), relevés l
 | `frontend/src/lib/features/reports/JournalReportView.svelte`, `GeneralLedgerView.svelte`, `VatReportView.svelte`, `ReportSelector.svelte` | 55-1a (`ReportSelector` lu seulement), 55-2, 55-3b | — | 55-2 puis 55-3b |
 | `frontend/src/lib/features/reports/reports-url.ts` (neuf), `AccountLink.svelte` (neuf), `EntryDocuments.svelte`, `EntryDocumentsViewer.svelte` (neufs) | 55-1a, 55-1b, 55-2, 55-3b | — | — |
 | `frontend/src/lib/features/imported-supplier-invoices/DocumentPreview.svelte` | 55-3b (propriété facultative `errorMessage`) | — | comportement d'aujourd'hui inchangé sans la propriété |
-| `crates/kesh-report/src/journal_report.rs`, `general_ledger.rs`, `documents.rs` (neuf) ; `crates/kesh-api/src/lib.rs`, `routes/journal_entries.rs` (route de lecture) | 55-3a | ni l'Epic 46 ni l'Epic 47 n'y touchent | champ additif, exports inchangés |
+| `crates/kesh-report/src/journal_report.rs`, `general_ledger.rs`, `documents.rs` (neuf) ; `crates/kesh-api/src/lib.rs`, `routes/journal_entries.rs`, `services/ecritures.rs` (service et route de lecture) ; tests neufs `crates/kesh-report/tests/documents.rs`, `crates/kesh-api/tests/journal_entry_documents_e2e.rs` | 55-3a | ni l'Epic 46 ni l'Epic 47 n'y touchent | champ additif, exports inchangés |
 | `crates/kesh-report/src/lib.rs` | 55-3a (`pub mod documents`) | **Epic 46** (+25 lignes, `pub mod`/`pub use`), **Epic 47** | une ligne, dans l'ordre alphabétique des modules |
-| `crates/kesh-report/src/csv.rs`, `pdf.rs`, `benches/export.rs` (littéraux de test seulement) | 55-3a | **Epic 46** (PR 46 : `csv.rs` 1119, `pdf.rs` 1776 lignes touchées), **Epic 47** (`csv.rs`, `pdf.rs`, `presentation.rs`) | une ligne `documents: Vec::new(),` par littéral, rien d'autre |
+| `crates/kesh-report/src/csv.rs`, `pdf.rs`, `benches/export.rs` (littéraux de test seulement) | 55-3a | **Epic 46** (PR 46 : `csv.rs` 1119, `pdf.rs` 1776 lignes touchées), **Epic 47** (`csv.rs`, `pdf.rs`, `presentation.rs`) | une ligne `has_documents: false,` par littéral, rien d'autre |
 | `docs/api-external.md` (grand livre `:310`, journal `:1164` à `1e23edb55`) | 55-3a | **Epic 46** (+74 lignes vers `:313`), **Epic 47** (vers `:308-311`) | phrase ajoutée en fin de paragraphe, lignes relevées sur la base |
 | `crates/kesh-api/tests/reports_e2e.rs` | 55-3a | Epics 46 et 47 (cités par le fichier de l'Epic 46) | bloc de tests propre |
 | `crates/kesh-i18n/locales/*/messages.ftl` | 55-2, 55-3b (55-1a si un texte apparaît) | Epic 46 (`reports-groups-*`) | bloc `reports-nav-*` propre à l'epic |

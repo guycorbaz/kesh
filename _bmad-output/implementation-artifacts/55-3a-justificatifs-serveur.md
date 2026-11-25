@@ -30,7 +30,7 @@ afin que l'écran puisse me les ouvrir d'un clic (55-3b).
 ## Vocabulaire
 
 « **Justificatif** » partout (textes, manuel, noms de code `documents`) : « pièce » désigne déjà le **numéro d'écriture**
-au grand livre (colonne `reports-ledger-column-piece`, manuel `user-manual.tex:4192`).
+au grand livre (colonne `reports-ledger-column-piece`, manuel `user-manual.tex:4193`).
 
 ## Où un justificatif a un sens
 
@@ -129,7 +129,7 @@ string | null; fileName?: string }`.
 ### Règles de rattachement
 
 - **Facture** (vente et règlement) : `i.status = 'validated' OR (i.status = 'cancelled' AND i.pdf_storage_path IS NOT
-  NULL)` — exactement les factures dont la route sert un PDF ; une facture annulée jamais figée n'a pas de justificatif.
+  NULL)` — les factures pour lesquelles la route **peut** servir un PDF (son rendu peut encore être refusé : `INVOICE_NOT_PDF_READY`, `410` si le fichier figé manque, `409` ; l'écran affiche alors l'erreur, 55-3b AC-4) ; une facture annulée jamais figée n'a pas de justificatif.
   **Si Q7 est refusée** (ne pas figer à l'affichage) : `i.pdf_storage_path IS NOT NULL` seulement (facture validée ou
   annulée **déjà figée**) — un filtre serveur, **aucun champ de plus au contrat** ; AC-3 perd « facture validée » non
   figée, gagne « facture validée non figée : aucun justificatif ».
@@ -174,8 +174,9 @@ string | null; fileName?: string }`.
    fournisseur à document, écriture d'achat et de règlement (le document) ; **règlement fournisseur groupé** de deux
    factures à document (deux) ; facture fournisseur sans document (aucun) ; facture fournisseur annulée, écriture d'achat
    (le document). Pour chaque cas, `hasDocuments` du journal est vrai **si et seulement si** la liste est non vide (même
-   constructeur : test qui les compare sur tous les cas). Rôle *Consultation* : `200` ; écriture d'une autre société :
-   `404` ; sans session : `401`.
+   constructeur : test qui les compare sur tous les cas). Rôle *Consultation* : `200` ; clé d'API en lecture : `200` ; écriture d'une
+   autre société : `404` ; sans session : `401`. Les règlements de type « solde du reste » et « compte interne » sont
+   rattachés à leur facture comme les autres (un cas chacun).
 4. **AC-4 — Négatifs qui rougissent.** Chaque filtre est éprouvé par des données **posées en SQL direct** que le schéma
    admet : avoir `draft` portant un `journal_entry_id` ; document importé `discarded` portant un `supplier_invoice_id` dont
    la facture fournisseur porte l'écriture d'achat ; facture `draft` portant un `journal_entry_id` ; **par branche**, une
@@ -187,16 +188,18 @@ string | null; fileName?: string }`.
    **non-régression**. Chaque filtre a sa **mutation** (filtre retiré → test rouge), journal `kesh-gate-logs/s55-3a/`.
 5. **AC-5 — Une requête.** Le booléen du journal et celui du grand livre viennent d'**un** appel d'`entries_with_documents`
    chacun, hors de toute boucle (`grep -nE "entries_with_documents\(" crates/kesh-report/src/*.rs | grep -vE
-   ':[0-9]+:\s*//'` rend une définition et deux appels) ; grand livre à plusieurs comptes : le booléen de chaque section est
+   ':[0-9]+:\s*//'` rend une définition et deux appels — les tests d'appel direct de l'AC-4 vivent donc dans
+   `crates/kesh-report/tests/documents.rs`, non dans un `mod tests` de `src/`) ; grand livre à plusieurs comptes : le booléen de chaque section est
    juste ; une écriture hors période n'est pas lue.
 6. **AC-6 — Contrat additif.** Une écriture sans justificatif sérialise **exactement** le JSON d'aujourd'hui (clés
    comparées) ; les exports PDF et CSV du journal et du grand livre rendent le même résultat avec `hasDocuments` vrai ou
    faux (CSV : chaînes égales ; PDF : texte lu par `kesh_report::texte_pdf::lignes` de la PR 46, après avoir vérifié qu'il
-   contient un numéro d'écriture connu) ; garde de non-régression, déclarée telle. L'outil MCP du grand livre recopie ses
+   contient un numéro d'écriture connu) ; garde de non-régression, déclarée telle ; `kesh-report/tests/rapports_mono_devise.rs`
+   (références figées du JSON, du CSV et du PDF) reste vert sans modification et tient le cas « sans justificatif ». L'outil MCP du grand livre recopie ses
    champs : sortie inchangée par construction, `mcp_contrat` vert comme filet.
 7. **AC-7 — Documentation de l'API.** `docs/api-external.md` : le champ `hasDocuments` aux paragraphes du grand livre
    (`:310` à `1e23edb55`) et du journal (`:1164`), et la route `GET /journal-entries/{id}/documents` (forme, genres, droits,
-   `404`), lignes relevées sur la base PR 46.
+   `404`), avec sa ligne dans la table des routes ouvertes aux clés (`:232`) ; lignes relevées sur la base PR 46.
 8. **AC-8 — Note pour l'écran.** Les deux contrats TypeScript ci-dessus sont recopiés dans la fiche 55-3b à l'identique.
 
 ## Tâches
@@ -209,17 +212,23 @@ string | null; fileName?: string }`.
       l'ensemble (`contains(&entry_id)`) ; les littéraux de **test et de banc** reçoivent `has_documents: false` et rien
       d'autre (règle
       de fichier commun pour `csv.rs`, `pdf.rs`, `benches/export.rs`, réécrits par les Epics 46 et 47).
-- [ ] **T2bis** — Route `GET /api/v1/journal-entries/{id}/documents` (`kesh-api`, lectures « tout rôle », vérification de
-      la société comme le détail) et ses tests d'intégration (`crates/kesh-api/tests/journal_entry_documents_e2e.rs`, neuf).
+- [ ] **T2bis** — Un service `services::ecritures::justificatifs` (`crates/kesh-api/src/services/ecritures.rs`, placé après
+      `detail`, avec sa constante `EXIGENCE_*` comme `EXIGENCE_DETAIL` `:46`) : `find_by_id` borné à la société (le `404`),
+      puis `documents_of_entry(lecture.pool(), …)` — la couche de services est le seul lieu des lectures des livres
+      (`services/mod.rs`, R1 à R4) ; la route `GET /api/v1/journal-entries/{id}/documents` l'appelle, sur le modèle du détail
+      (`routes/journal_entries.rs:494-499`, `ecritures::detail(&ContexteAcces::depuis_api(..), &state.lecture(), id)`) ;
+      tests d'intégration `crates/kesh-api/tests/journal_entry_documents_e2e.rs` (neuf).
 - [ ] **T3** — `docs/api-external.md` (AC-7).
 - [ ] **T4** — Gates.
 
 ## Gates
 
 Règle de l'epic (fichier d'epic, § *Gates*) : `cargo fmt --all -- --check` ; `cargo clippy --workspace --all-targets -- -D
-warnings` ; `cargo nextest run -E 'package(kesh-report) | binary(reports_e2e) | binary(reports_export_e2e) | binary(journal_entry_documents_e2e) | binary(fx_recette_api_e2e)
-| binary(open_items_e2e) | binary(dates_bornes_e2e) | binary(mcp_contrat)'` (rayon d'impact : binaires qui lisent le
-journal ou le grand livre) ;
+warnings` ; `cargo nextest run -E 'package(kesh-report) | package(kesh-api)'` (rayon d'impact : tout `kesh-api`, la liste des binaires
+qui lisent le journal ou le grand livre étant longue — `reports_e2e`, `reports_export_e2e`, `fx_recette_api_e2e`,
+`open_items_e2e`, `dates_bornes_e2e`, `services_motif`, `mcp_contrat`, `mcp_outils_e2e`, `mcp_enveloppe_e2e`,
+`mcp_transport_e2e`, `journal_entry_reversal_e2e`, les tests du lib ; relevé par `git grep -lE
+"reports/(journals|general-ledger)|journal_report|general_ledger" crates/kesh-api`) ;
 `scripts/gate-ci.sh` en fin d'epic ; E2E selon le § *Gates* du fichier d'epic (Q6 non tranchée ou refusée : E2E complet au dernier commit de code de la story). Aucun fichier de `kesh-db` touché (sinon gate complet, `CLAUDE.md` § *Exception
 `kesh-db`*).
 
@@ -244,8 +253,8 @@ la liste des justificatifs d'une écriture ; exports PDF et CSV inchangés. (ref
 ### Modules (règle de splitting préventif)
 
 Deux modules de production : `kesh-report` (`documents.rs`, `journal_report.rs`, `general_ledger.rs`, `lib.rs`, et les
-littéraux de test de `csv.rs`, `pdf.rs`, `benches/export.rs`) et `kesh-api` (la route, `lib.rs` et `routes/journal_entries.rs`)
-; plus `docs/api-external.md` et les tests `kesh-api/tests/`.
+littéraux de test de `csv.rs`, `pdf.rs`, `benches/export.rs`) et `kesh-api` (le service `services/ecritures.rs`, la route
+`routes/journal_entries.rs`, `lib.rs`) ; plus `docs/api-external.md` et les tests `kesh-report/tests/`, `kesh-api/tests/`.
 
 ### References
 
@@ -293,3 +302,7 @@ littéraux de test de `csv.rs`, `pdf.rs`, `benches/export.rs`) et `kesh-api` (la
   booléen `hasDocuments` dans le rapport, route `GET /journal-entries/{id}/documents`, un constructeur commun des
   rattachements (DRY) ; règles de rattachement, négatifs, bornes et contrat additif repris ; statut repassé à `drafted`,
   validation reprise à P1 sur cette version (la numérotation des passes repart : P1 de la version récrite).
+- 2026-11-25 — Validation P1 de la version récrite (Opus) : 0/0/4/6 ; remédiée : service `ecritures::justificatifs` (couche
+  de services) (Vv2p1-1) ; fichier d'epic mis à jour (en-tête, § *Backend*, fichiers communs) (Vv2p1-2) ; tests d'appel
+  direct hors de `src/` (Vv2p1-3) ; gate ciblé `package(kesh-api)` (Vv2p1-4) ; LOW Vv2p1-5 à Vv2p1-9 (Vv2p1-10, lignes à
+  relever au T0).
