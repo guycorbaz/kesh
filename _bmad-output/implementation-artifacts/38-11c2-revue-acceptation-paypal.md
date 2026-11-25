@@ -483,7 +483,7 @@ code avant chaque correctif ; toutes justes.
   qui nomme la transaction principale).
 - **Dette (LOW gardés)** : L2 (unicité non rejugée sous verrou), L5 (un seul site d'interblocage exercé pour les
   écritures), L6 (raisons de péremption sans test : `conversion_pair_changed`, `provider_settings_changed`,
-  `withdrawal_foreign_currency`) — issues à ouvrir n° 14 à 16 de `kesh-gate-logs/epic-38-kiss/issues-a-ouvrir.md`.
+  `withdrawal_foreign_currency`) — issues à ouvrir n° 14 à 16 de `kesh-gate-logs/epic-38-kiss/issues-a-ouvrir.md`. *(Annoté le 2026-11-24 : #1477, #1478, #1479.)*
 
 **Gates de la remédiation** (cible propre `kesh-targets/kesh-wt38c2`, par `heavy.sh`) :
 
@@ -534,7 +534,7 @@ conversion nomme la devise du côté en cause ; `ReviewResponse` générique (fo
   `nextest-inventaire.log`, 30 passés (`account_columns_inventory` + `account_currency_repository`) ; le backend complet n'a
   **pas** été rejoué en entier après `49a410cf` (commit de test seul). Frontend (`tour-final.log`) : check, lint-i18n, build verts, Vitest
   **4612 tests, 278 fichiers**. E2E complet : **476 passés, 11 échecs, 18 ignorés** — dix attendus (sept KF-029, `backup-restore-new-install:262`
-  et `:381`, `opening-balances:156`) et `bank-import.spec.ts:130` (compte de lignes lu avant le chargement de la liste : pollution d'état),
+  et `:381`, `opening-balances:156`) et `bank-import.spec.ts:130` (compte de lignes lu avant le chargement de la liste : pollution d'état ; annoté le 2026-11-24 : KF-065, #1489),
   **passé seul** au rejeu (`e2e-un.log`, `rerun.console`). gate-ci sur copie `git archive` de `49a410cf` : **6297 passés, 0 échoué, 18
   ignorés** (`gate-ci.log`, code 0).
 - **La story reste `review`** : du code de production a changé après la P2 ; passe ciblée P3 à lancer sur son prompt,
@@ -555,7 +555,7 @@ transaction (un compte USD ne sert que les transactions en USD) ; toute autre de
 - **M3** : filtre `withoutForeignCurrency` retiré de `RuleFormModal.svelte` (exemption `fx-filtre-comptes` justifiée) ; test
   Vitest. Filet `ACCOUNT_IN_FOREIGN_CURRENCY` de `accept_one_rule` testé :
   `accepting_a_rule_to_a_foreign_currency_account_is_refused_in_failed` (`failed[]`, `details`, rien d'écrit).
-- **L1** : entrée ajoutée à `kesh-gate-logs/epic-38-kiss/issues-a-ouvrir.md` (`ACCOUNT_CURRENCY_IN_USE`, manuel 1127-1134).
+- **L1** : entrée ajoutée à `kesh-gate-logs/epic-38-kiss/issues-a-ouvrir.md` (`ACCOUNT_CURRENCY_IN_USE`, manuel 1127-1134). *(Annoté le 2026-11-24 : #1484.)*
 - **L2** : doc d'`accept_rule` corrigé. **L3** : `refuse_foreign_currency_in_tx` supprimée (aucun appelant). **L5** :
   `accept_rule` compare à `r.transaction.currency`, comme `matching_rule`. **L6** : le test USD sur USD asserte les lignes
   (compte, sens, même CHF, même montant en devise, même cours, même provenance) ; le test de l'écriture absente asserte
@@ -612,7 +612,7 @@ Rapport : `kesh-gate-logs/s38-11c2/revue-p4-rapport.md` (0 CRITICAL, 0 HIGH, 1 M
   toutefois deux fois la même devise (LOW de la P5, laissé tel quel : le sens reste juste). Aucun test n'affirmait le texte (greppé Rust et Vitest).
 - **L4** : « décision du responsable de l'epic » (`account_currency_e2e.rs`).
 - **L5** : `docs/api-external.md` dit que `GET /reconciliation/proposals` ne propose pas une règle vers un compte en devise ;
-  l'affichage de la devise dans le sélecteur est une entrée de `issues-a-ouvrir.md`.
+  l'affichage de la devise dans le sélecteur est une entrée de `issues-a-ouvrir.md`. *(Annoté le 2026-11-24 : #1485.)*
 - Gates : fmt, clippy workspace, nextest `textes_coherents` + `kesh-i18n` + `account_columns_inventory` (74/74), `npm run check`
   (0 erreur), `lint-i18n-ownership`, Vitest `reconciliation` + `shared/i18n` (662/662). Gate complet et E2E non rejoués : seuls des
   textes et des commentaires ont changé.
@@ -663,7 +663,7 @@ Rapport : `kesh-gate-logs/s38-11c2/revue-p4-rapport.md` (0 CRITICAL, 0 HIGH, 1 M
 - 2026-11-21 — revue de code P1 (Claude Opus 5.5, contexte frais) : 0 CRITICAL, 1 HIGH, 4 MEDIUM, 8 LOW ; remédiée
   (Claude Opus 5.5) : commits `d2b532c8` (code) et `77f0254b` (tests) — H1 par pré-verrou des écritures avant la vue
   du lot (choix justifié au Dev Agent Record), M1 à M4, L1, L3, L4, L7, L8 ; L2, L5, L6 en dette (issues à ouvrir
-  n° 14 à 16). Mutations vérifiées ; gates complets à rejouer (arrêtés par la station, mémoire). Prompt de la passe
+  n° 14 à 16 ; annoté le 2026-11-24 : #1477 à #1479). Mutations vérifiées ; gates complets à rejouer (arrêtés par la station, mémoire). Prompt de la passe
   P2 complète (Sonnet) : `kesh-gate-logs/s38-11c2/revue-p2-prompt.md`. Statut : `review`.
 - 2026-11-21 — revue P2 (Sonnet 5.5) : 0 au-dessus de LOW, quatre LOW ; L1, L2, L4 remédiés (`85369670`) ; décision du responsable de l'epic du 2026-11-21 intégrée (`0ec6472a`, `49a410cf`) ; gates rejoués ; passe ciblée P3 à lancer.
 - 2026-11-21 — remédiation de la revue P3 (Claude Sonnet 5.5) : 0 CRITICAL, 0 HIGH, 3 MEDIUM, 9 LOW remédiés (`f6ef42b6`, `328a87a1`, `4bcc68ae`) ; quatre tests faux corrigés (`b5aad3fc`) ; gates rejoués au dernier commit de code (ci-dessus) ; passe P4 complète à lancer ; statut `review`.

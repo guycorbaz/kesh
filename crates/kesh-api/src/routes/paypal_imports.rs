@@ -306,6 +306,7 @@ pub fn provider_lines_of_row(row: &PaypalRow) -> Vec<ProviderLine> {
         provider_type: Some(truncate_chars(&kind, PROVIDER_TYPE_MAX_CHARS)),
         rank: row.line,
         balance_after: row.balance,
+        value_date: None,
     };
 
     let mut out = Vec::with_capacity(2);
