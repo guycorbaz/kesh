@@ -128,7 +128,7 @@ test.describe('nom de la comptabilité — société ordinaire', () => {
 			const asideApres = await page.locator('aside').boundingBox();
 			expect(asideApres?.width).toBe(asideAvant?.width);
 			// tient à 1280 px sans retour à la ligne : le menu profil reste dans la fenêtre
-			const menu = await page.locator('header button').last().boundingBox();
+			const menu = await page.locator('header').getByRole('button', { name: 'Admin' }).boundingBox();
 			expect(menu!.x + menu!.width).toBeLessThanOrEqual(1280);
 		} finally {
 			await renameCompany(ctx, initial);
@@ -169,7 +169,13 @@ test.describe('nom de la comptabilité — société ordinaire', () => {
 		page,
 	}) => {
 		await page.route('**/api/v1/companies/current', (r) => r.fulfill({ status: 500, body: '{}' }));
+		// La réponse 500 est attendue avant toute assertion : sans elle, « pas de nom » est aussi
+		// l'état pendant la lecture, et le test passerait même sans le bouchon.
+		const lecture = page.waitForResponse(
+			(x) => x.url().endsWith('/api/v1/companies/current') && x.status() === 500,
+		);
 		await login(page);
+		await lecture;
 		await expect(page).toHaveURL('/');
 		// sonde positive : le lien du logo est là
 		await expect(page.getByRole('link', { name: 'Kesh', exact: true })).toBeVisible();
@@ -193,8 +199,9 @@ test.describe('nom de la comptabilité — mode démonstration', () => {
 		const ctx = await authedApiContext(page);
 		try {
 			const nom = (await readCompany(ctx)).name;
-			// Le bandeau n'a pas de data-testid (DemoBanner reste inchangé) : sa classe de fond.
-			await expect(page.locator('div.bg-yellow-100[role="status"]')).toBeVisible();
+			// Le bandeau n'a pas de data-testid (DemoBanner reste inchangé) : sa classe de fond, hors le
+			// bandeau « service dégradé », qui porte les mêmes classes.
+			await expect(page.locator('div.bg-yellow-100[role="status"]:not([data-testid="degraded-banner"])')).toBeVisible();
 			await expect(page.getByTestId('company-name')).toHaveText(nom);
 		} finally {
 			await disposeContextSafe(ctx);

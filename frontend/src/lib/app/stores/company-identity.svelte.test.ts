@@ -1,6 +1,7 @@
 // Story 1582 (#1582) — le store du nom de la comptabilité ouverte.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { flushSync } from 'svelte';
 import type { CompanyCurrentResponse } from '$lib/features/settings/settings.types';
 
 const fetchCompanyCurrentMock = vi.fn<() => Promise<CompanyCurrentResponse>>();
@@ -105,5 +106,25 @@ describe('companyIdentity (Story 1582)', () => {
 		fetchCompanyCurrentMock.mockResolvedValueOnce(reponse('Deux SA'));
 		await companyIdentity.load();
 		expect(companyIdentity.name).toBe('Deux SA');
+	});
+
+	// M11a : une séquence en `$state` ferait dépendre l'effet de ce que `load()` écrit
+	// (`effect_update_depth_exceeded`). Le layout appelle `load()` depuis un `$effect`.
+	it('load() appelé depuis un $effect ne le relance pas (séquence non réactive)', () => {
+		fetchCompanyCurrentMock.mockResolvedValue(reponse('Effet SA'));
+		let lancements = 0;
+		const stop = $effect.root(() => {
+			$effect(() => {
+				lancements++;
+				void companyIdentity.load();
+			});
+		});
+		try {
+			flushSync();
+			expect(lancements).toBe(1);
+			expect(fetchCompanyCurrentMock).toHaveBeenCalledTimes(1);
+		} finally {
+			stop();
+		}
 	});
 });
