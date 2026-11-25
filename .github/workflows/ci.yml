@@ -79,7 +79,8 @@ jobs:
         # Compat MariaDB ≥ 10.7 : NATURAL_SORT_KEY (Story 33-1b) ; ≥ 10.6 pour reconciliation_rules.sql (VIRTUAL+UNIQUE).
         # C-31-2-3 (variante B) — PR de fork (dépôt de tête ≠ ce dépôt) : image VIDE, le
         # service ne démarre pas ; MariaDB démarre par l'étape « Start MariaDB (PR de
-        # fork) », `docker run` sans authentification depuis le miroir public ECR. Partout
+        # fork) », `docker run` sans authentification, l'image tirée par une chaîne de
+        # miroirs avec reprise (ECR, `mirror.gcr.io`, Docker Hub anonyme). Partout
         # ailleurs, ce service, tiré de Docker Hub. `services` n'a pas accès à `secrets` :
         # la décision se lit dans `github`. ⚠️ `!fork && 'image' || ''`, et non
         # `fork && '' || 'image'` : `''` est faux et rendrait toujours l'image.
@@ -125,7 +126,7 @@ jobs:
       - uses: actions/checkout@v4
 
       # C-31-2-3 (variante B) — le script testé sur toute PR, lancé sur un fork seulement :
-      # même image (miroir ECR), mêmes variables, même port, même contrôle de santé que
+      # même image (chaîne de miroirs avec reprise), mêmes variables, même port, même contrôle de santé que
       # le service, que le test compare à ce fichier.
       - name: Tests du démarrage MariaDB de fork
         run: bash scripts/tests/ci-mariadb-fork.test.sh
