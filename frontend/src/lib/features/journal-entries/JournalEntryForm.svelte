@@ -1448,7 +1448,13 @@
 	{/if}
 
 	<div class="flex justify-end gap-2">
-		<Button type="button" variant="outline" onclick={onCancel} disabled={submitting}>
+		<Button
+			type="button"
+			variant="outline"
+			onclick={onCancel}
+			disabled={submitting}
+			data-testid="journal-entry-cancel"
+		>
 			{i18nMsg('journal-entry-form-cancel', 'Annuler')}
 		</Button>
 		{#if showSubmit}

@@ -116,9 +116,9 @@ test('saisie coupée après l’écriture : J6, puis la reprise sans requête, p
 	await expect(link).toHaveAttribute('target', '_blank');
 	await expect(fields(page)).toBeDisabled();
 	await expect(submit(page)).toHaveCount(0);
-	await expect(page.getByRole('button', { name: 'Annuler' })).toBeEnabled();
-	// Aucun toast d'échec.
-	await expect(page.getByText('Erreur lors de la sauvegarde')).toHaveCount(0);
+	await expect(page.getByTestId('journal-entry-cancel')).toBeEnabled();
+	// Aucun toast d'échec : l'avis remplace le toast « Erreur lors de la sauvegarde ».
+	await expect(page.locator('[data-sonner-toast]')).toHaveCount(0);
 	await capture(page, testInfo, 'j6-issue-inconnue');
 
 	// Ctrl+S sans effet.
@@ -151,7 +151,7 @@ test('saisie coupée après l’écriture : J6, puis la reprise sans requête, p
 	await expect(page.getByTestId('journal-entry-modify-entry')).toBeVisible();
 	await expect(submit(page)).toHaveCount(0);
 	await expect(fields(page)).toBeDisabled();
-	await expect(page.getByRole('button', { name: 'Annuler' })).toBeEnabled();
+	await expect(page.getByTestId('journal-entry-cancel')).toBeEnabled();
 	await capture(page, testInfo, 'j5-doublon');
 
 	// AC-10 : « Modifier la saisie » rend J1, l'envoi suivant est ordinaire (refusé encore).
@@ -219,7 +219,7 @@ test('modification coupée après l’écriture : toast J6-m, formulaire actif',
 		await route.abort('connectionreset');
 	});
 	await page.goto(`/journal-entries/${id}`);
-	await page.getByRole('button', { name: 'Modifier' }).click();
+	await page.getByTestId('edit-entry').click();
 	await page.fill('#entry-description', `${label} corrigé`);
 	await submit(page).click();
 
@@ -228,7 +228,8 @@ test('modification coupée après l’écriture : toast J6-m, formulaire actif',
 			'La modification a peut-être été enregistrée : rechargez l’écriture avant de la modifier encore.',
 		),
 	).toBeVisible();
-	await expect(page.getByText('Erreur lors de la sauvegarde')).toHaveCount(0);
+	// Un seul toast : celui de J6-m, non « Erreur lors de la sauvegarde ».
+	await expect(page.locator('[data-sonner-toast]')).toHaveCount(1);
 	// Le formulaire reste actif.
 	await expect(submit(page)).toBeEnabled();
 	await capture(page, testInfo, 'j6m-modification-issue-inconnue');
