@@ -2461,6 +2461,23 @@ async fn virement_detache_cote_wise(pool: MySqlPool, devise: &str, autre: &str, 
     );
     regle_refusee_deja_comptabilisee(&ctx, ancienne, v1, ecriture).await;
 
+    // Un rattachement forgé du second virement à l'écriture qui nomme le
+    // premier : périmé (`entry_changed`), rien n'est rattaché.
+    let (s, b) = ctx
+        .accepter(vec![json!({
+            "type": "link_entry",
+            "bankTransactionId": v2,
+            "journalEntryId": ecriture,
+        })])
+        .await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(
+        b["failed"][0]["errorCode"], "PROVIDER_PROPOSAL_STALE",
+        "{b}"
+    );
+    assert_eq!(b["failed"][0]["details"]["reason"], "entry_changed", "{b}");
+    assert_eq!(ctx.etat(v2).await, ("pending".into(), None));
+
     // 5. La sonde positive : le second virement, et le jumeau dans l'autre devise.
     let revue = ctx.revue().await;
     for v in [v2, v3] {
@@ -2764,4 +2781,142 @@ async fn partielle_dont_une_ligne_est_deja_comptabilisee(pool: MySqlPool) {
     for id in ids {
         assert_eq!(ctx.etat(id).await, ("pending".into(), None));
     }
+    // Les autres lignes du paiement restent dans la revue : une part du
+    // paiement est déjà passée (revue P1 de la PR, M2).
+    let reste = motif(&revue, ids[1]).unwrap_or_else(|| panic!("{revue}"));
+    assert_eq!(reste["code"], "card_group_partly_reconciled", "{reste}");
+    assert_eq!(
+        reste["details"]["bankTransactionIds"],
+        json!([ids[1], ids[2]])
+    );
+    assert_eq!(
+        reste["details"]["reconciledBankTransactionIds"],
+        json!([ids[0]])
+    );
+    assert_eq!(reste["details"]["journalEntryIds"], json!([ecriture]));
+    assert!(
+        motif(&revue, ids[2]).is_none(),
+        "une ligne par paiement : {revue}"
+    );
+}
+
+/// Revue P1 de la PR (M1) : une écriture passée à la main qui débite le solde
+/// Wise et cite un identifiant Wise, non rapprochée, n'est pas une « vente sans
+/// encaissement » — Wise n'a pas de vente ; aucun écart `sale_without_receipt`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ecriture_a_la_main_citant_un_identifiant_n_est_pas_une_vente(pool: MySqlPool) {
+    let ctx = monter_sans_import(&pool).await;
+    let releve = releve_wise(
+        "CHF",
+        &[(
+            "TRANSFER-75000000",
+            "01-02-2020",
+            "09:00:00.000",
+            "1000.00",
+            "1000.00",
+            "CREDIT",
+            "Client Fictif",
+            "",
+            "TRANSFER",
+        )],
+    );
+    let (s, b) = ctx.importer(&[("chf.csv", &releve)]).await;
+    assert_eq!(s, 201, "import : {b}");
+    ctx.ecriture(
+        "2020-02-10",
+        "Dépôt TRANSFER-75000009",
+        ctx.chf,
+        ctx.banque,
+        "50.00",
+    )
+    .await;
+    let revue = ctx.revue().await;
+    assert_eq!(revue["gaps"], json!([]), "{revue}");
+}
+
+/// Revue P1 de la PR (L1) : l'écriture qui nomme le virement est hors de la
+/// fenêtre (dix jours), une autre, sans identifiant, rapprochée de la banque,
+/// est dans la fenêtre. La revue ne propose pas de rattacher le virement à
+/// celle-ci — elle peut être l'écriture d'un autre virement — : il est « à
+/// examiner » sous `already_posted`, l'écriture qui le nomme désignée. Sonde
+/// positive : sans l'écriture qui le nomme, le rattachement est proposé.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn rattachement_propose_seulement_vers_l_ecriture_qui_nomme(pool: MySqlPool) {
+    let ctx = monter_sans_import(&pool).await;
+    let releve = releve_wise(
+        "CHF",
+        &[
+            (
+                "TRANSFER-76000001",
+                "15-02-2020",
+                "10:00:00.000",
+                "-120.00",
+                "880.00",
+                "DEBIT",
+                "Moi-même",
+                IBAN_BANQUE,
+                "TRANSFER",
+            ),
+            (
+                "TRANSFER-76000000",
+                "01-02-2020",
+                "09:00:00.000",
+                "1000.00",
+                "1000.00",
+                "CREDIT",
+                "Client Fictif",
+                "",
+                "TRANSFER",
+            ),
+        ],
+    );
+    let (s, b) = ctx.importer(&[("chf.csv", &releve)]).await;
+    assert_eq!(s, 201, "import : {b}");
+    let v = ctx.tx("TRANSFER-76000001", ctx.chf).await;
+    let proche = ctx
+        .ecriture(
+            "2020-02-16",
+            "Virement vers la banque",
+            ctx.banque,
+            ctx.chf,
+            "120.00",
+        )
+        .await;
+    let r1 = ctx
+        .transaction_bancaire(ctx.ba_banque, "2020-02-16", "120.00", None)
+        .await;
+    let (s, b) = ctx.rattacher(r1, proche).await;
+    assert_eq!(s, 200, "{b}");
+    // Sonde positive : la seule écriture, dans la fenêtre, se propose.
+    let p = proposition(&ctx.revue().await, v);
+    assert_eq!(
+        (p["type"].clone(), p["journalEntryId"].clone()),
+        (json!("link_entry"), json!(proche))
+    );
+    let nommee = ctx
+        .ecriture(
+            "2020-02-25",
+            "Virement vers la banque TRANSFER-76000001",
+            ctx.banque,
+            ctx.chf,
+            "120.00",
+        )
+        .await;
+    let r2 = ctx
+        .transaction_bancaire(ctx.ba_banque, "2020-02-25", "120.00", None)
+        .await;
+    let (s, b) = ctx.rattacher(r2, nommee).await;
+    assert_eq!(s, 200, "{b}");
+    let revue = ctx.revue().await;
+    let m = motif(&revue, v).unwrap_or_else(|| panic!("{revue}"));
+    assert_eq!(m["code"], "already_posted", "{m}");
+    assert_eq!(m["details"], json!({ "journalEntryId": nommee }));
+    assert!(
+        !revue["proposals"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|p| p["transaction"]["id"] == v),
+        "{revue}"
+    );
 }

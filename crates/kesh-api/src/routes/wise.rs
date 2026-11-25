@@ -228,8 +228,34 @@ async fn build_wise_review(
             .filter_map(|t| loaded.already_posted.get(&t.id).map(|e| (*t, *e)))
             .collect();
         if !posted.is_empty() {
+            let posted_ids: Vec<i64> = posted.iter().map(|(t, _)| t.id).collect();
+            let mut entry_ids: Vec<i64> = posted.iter().map(|(_, e)| *e).collect();
+            entry_ids.sort_unstable();
+            entry_ids.dedup();
             for (t, entry_id) in posted {
                 review.push_to_review(ReviewFinding::already_posted(t, entry_id));
+            }
+            // Les autres lignes du paiement ne disparaissent pas de la revue :
+            // une part du paiement est déjà passée, comme
+            // `card_group_partly_reconciled` (revue P1 de la PR, M2) — sur la
+            // première d'entre elles, la principale si elle n'est pas passée.
+            let rest: Vec<&BankTransaction> = g
+                .lines
+                .iter()
+                .copied()
+                .filter(|t| !posted_ids.contains(&t.id))
+                .collect();
+            if let Some(first) = rest.first() {
+                review.push_to_review(ReviewFinding {
+                    details: Some(serde_json::json!({
+                        "cardId": g.card_id,
+                        "bankTransactionIds": rest.iter().map(|t| t.id).collect::<Vec<_>>(),
+                        "lines": rest.iter().map(|t| TransactionSummary::of(t)).collect::<Vec<_>>(),
+                        "reconciledBankTransactionIds": posted_ids,
+                        "journalEntryIds": entry_ids,
+                    })),
+                    ..ReviewFinding::on(wise::REVIEW_CARD_GROUP_PARTLY_RECONCILED, first)
+                });
             }
             continue;
         }
@@ -313,7 +339,15 @@ async fn build_wise_review(
                 .collect(),
             _ => Vec::new(),
         };
+        // L'écriture déjà passée qui nomme `t` (ou, par prudence, ne nomme
+        // aucune transaction de son genre) : un rattachement ne se propose que
+        // vers elle (revue P1 de la PR, L1) — une autre candidate de la
+        // fenêtre peut être l'écriture d'un autre virement.
+        let posted = loaded.already_posted.get(&t.id).copied();
         match candidates.as_slice() {
+            [only] if posted.is_some_and(|e| e != only.journal_entry_id) => {
+                review.push_to_review(ReviewFinding::already_posted(t, posted.unwrap_or_default()))
+            }
             [only] => review.push_proposal(ReviewProposal {
                 entry: Some(entry_summary(only)),
                 ..common(
@@ -335,9 +369,9 @@ async fn build_wise_review(
             // déjà passée qui nomme le virement (ou, par prudence, ne nomme
             // aucun virement) : « à examiner » sous `already_posted`, jamais
             // une règle qui l'écrirait une seconde fois.
-            [] if loaded.already_posted.contains_key(&t.id) => review.push_to_review(
-                ReviewFinding::already_posted(t, loaded.already_posted[&t.id]),
-            ),
+            [] if posted.is_some() => {
+                review.push_to_review(ReviewFinding::already_posted(t, posted.unwrap_or_default()))
+            }
             [] => match matching_rule(&rules, t, &rule_accounts, ledger) {
                 Some(rule) => review.push_proposal(common(
                     Proposal::Rule {
@@ -352,6 +386,14 @@ async fn build_wise_review(
         }
         debug_assert!(*tag == KIND_STRIPE_PAYOUT || *tag == KIND_TRANSFER);
     }
+
+    // Wise n'a ni vente ni encaissement (aucun genre `SaleReceipt`) : les
+    // identifiants de `wise_ids_in` ne servent qu'au nom d'une transaction déjà
+    // comptabilisée, et une écriture passée à la main qui cite un identifiant
+    // Wise n'est pas une « vente sans encaissement » (revue P1 de la PR, M1).
+    review
+        .gaps
+        .retain(|g| g.code != kesh_reconciliation::provider_review::GAP_SALE_WITHOUT_RECEIPT);
 
     // 3. Écarts propres (AC-6).
     let all = reads::transactions_of_accounts(&mut **tx, company_id, &own_ids).await?;

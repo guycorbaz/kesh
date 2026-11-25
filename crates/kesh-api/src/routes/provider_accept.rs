@@ -101,7 +101,7 @@ use kesh_reconciliation::provider_review::{
     ENTRY_DESCRIPTION_MAX_CHARS, EntryKind, FAILED_ALREADY_POSTED, Proposal, ProviderAccount,
     ProviderKind, ProviderSpec, Review, ReviewFinding, ReviewInput, ReviewProposal, SaleEntry,
     SaleMovement, admits_link, admits_rule, build_review, conversion_halves, counts,
-    first_naming_entry, payment_date,
+    first_naming_entry, names_another, payment_date,
 };
 use kesh_reconciliation::{ReconciliationError, rule_matches, with_account_locks};
 use rust_decimal::Decimal;
@@ -1599,6 +1599,16 @@ pub async fn accept_link_entry(
             .map_err(|e| db_refusal(bank_transaction_id, e))?;
         if links > 0 {
             return Err(stale(bank_transaction_id, "entry_linked"));
+        }
+    } else {
+        // L'autre côté déjà passé d'un virement (Wise) : jamais l'écriture qui
+        // nomme une autre transaction du même genre (`names_another`, la règle
+        // de la revue), rejugé ici pour une proposition forgée ou périmée.
+        let description = reads::entry_description(&mut **tx, ctx.company_id, journal_entry_id)
+            .await
+            .map_err(|e| db_refusal(bank_transaction_id, e))?;
+        if description.is_some_and(|d| names_another(ctx.spec, &r.transaction, &d)) {
+            return Err(stale(bank_transaction_id, "entry_changed"));
         }
     }
     let req = LinkEntryRequest {
