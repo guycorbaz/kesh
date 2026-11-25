@@ -1,6 +1,6 @@
 # Story 55-1a : l'état des Rapports dans l'URL — Retour, Suivant, lien partagé
 
-Status: drafted
+Status: ready-for-dev
 
 Epic : `_bmad-output/planning-artifacts/epic-55-navigation-interface.md` — D1 à D3, D5, Q2 (D4 : 55-1b). Issue : #À-VENIR (`bug`, P3, point b).
 Release : la prochaine planifiée après la 0.20.0 (numéro fixé par le mainteneur). **Frontend seulement, aucune migration.**
@@ -23,7 +23,23 @@ décision. Le correctif proposé par la passe est la résolution par défaut.
   proposé : dans cette branche, **ne poser ni champs ni exercice**, et remplacer l'URL par la clé affichée de l'onglet (ou
   `?tab=<id>` s'il n'a rien) ; AC-8 (b) vérifié avec un rapport affiché d'une autre période ; C-55-1-6 corrigé (« comme un
   clic »).
-- **LOW à reprendre** : V6-3 (la phrase « aucune navigation n'interrompt » oublie la branche « clé affichée »), V6-4
+- **R-3 (P7, V7-1) — L'AC-13 prime partout.** Au T0, avant tout code, chaque site de l'ancienne règle « une adresse
+  pendant la génération d'un autre onglet ne demande rien » est récrit dans le sens de l'AC-13 (l'adresse demande son
+  rapport, l'autre génération est périmée) : point 3 et la phrase « Aucune navigation n'interrompt » ; **AC-8 (b)**
+  (1 requête, l'autre génération périmée) ; la mutation « requête partie pendant la génération d'un autre onglet » (à
+  inverser : « aucune requête » → test rouge) ; le texte du manuel de l'AC-11 ; C-55-1-6 ; le défaut de R-2 (remplacé) ; la
+  liste des tests. Même alignement dans la 55-1b (son AC-12 : *Retour* et un lien interrompent aussi un chargement).
+- **R-4 (P7, V7-3) — Portée de « pas de requête en double ».** Lecture retenue par défaut, à confirmer avec l'utilisateur :
+  **jamais deux appels simultanés pour un même jeu de paramètres, ni d'appel pour le rapport affiché** — le modèle garde un
+  rapport par onglet (C-55-1-2) : *Retour* plus loin, un changement d'exercice ou une génération interrompue redemandent.
+- **R-5 (P7, V7-4) — Portée du gras.** Défaut : **les trois sélecteurs d'exercice des Rapports** en gras (celui du haut,
+  `ReportSelector` ; celui des rapports par compte analytique, PR 46 `+page.svelte:966-971` ; celui du Grand livre, 55-2
+  AC-11), par une classe commune ; le gras ne vaut que pour la valeur affichée du `<select>` (les options de la liste
+  ouverte restent normales) ; la note de version le dit.
+- **LOW à reprendre** : V7-5 à V7-10 (`ReportSelector` « modifié » à `:41` et au fichier d'epic ; tests et preuve du rouge de
+  l'AC-13 et de l'AC-14, `ReportSelector.test.ts` neuf ; « par *Suivant* » quand on est parti par *Retour* ; le test « champ
+  modifié sans clic » vérifie que le rapport reste affiché et n'emploie pas l'exercice ; « rapport absent de la mémoire » ;
+  l'AC-13 tranche aussi R-1 ; « par lui » = par la page à l'arrivée d'une adresse) ; V6-3 (la phrase « aucune navigation n'interrompt » oublie la branche « clé affichée »), V6-4
   (*Générer* ne se désactive que pendant `loading`, non `refreshing`), V6-5 (fichier d'epic `:198`, « +287 » → « +231 nettes »),
   V6-6 (*Générer* : 0 `goto` si l'URL est déjà égale ; comparer sans le `?` de `page.url.search`), V6-7 (le test qui tue la
   mutation « clé écrite non enregistrée » vise un onglet qui affiche un rapport d'une autre période), V6-8 (la période d'un
@@ -447,3 +463,7 @@ qui l'affichent désormais à l'arrivée) ; le lien *Rapports* du menu ramène a
 - 2026-11-25 — **Ajout** sur demande de l'utilisateur : AC-13 (pas de second « Générer », un seul appel par jeu de
   paramètres ; tranche R-2 et remplace C-55-1-6) et AC-14 (exercice en gras dans le sélecteur du haut). Statut repassé à
   `drafted`, validation reprise (P7, ciblée sur l'ajout).
+- 2026-11-25 — Validation P7 ciblée sur l'ajout (Opus) : 0/0/4/6. **Arrêt par renvoi au développement** (règle de la sixième
+  passe ; la P8, dernière permise, est gardée en réserve) : R-3 (l'AC-13 prime, sites à récrire), R-4 (portée de « pas de
+  requête en double », à confirmer avec l'utilisateur), R-5 (portée du gras) ; LOW listés. `ready-for-dev` **sous réserve**
+  du T0 (R-1 à R-5).

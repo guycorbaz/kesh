@@ -23,6 +23,8 @@ avant toute ligne de code, ligne lue et décision citées au Change Log ; le cor
 - **R-2 (V6-3)** — `keepDisplay: true` seulement si les paramètres de rapport de l'URL égalent ceux de la clé affichée,
   sinon `generate()` (chargement complet) ; un AC et une mutation. Même famille que R-1 de la 55-1a : les deux se tranchent
   ensemble.
+- **R-3 (de la P7 de la 55-1a)** — L'AC-13 de la 55-1a (une adresse demande son rapport, même pendant la génération d'un
+  autre onglet) prime : l'AC-12 de cette fiche est récrit au T0 — *Retour* et un lien interrompent aussi un chargement.
 - **LOW à reprendre** : V6-2 (AC, ligne du tableau et mutation pour la branche « génération de l'onglet en vol »), V6-4
   (renvoyer à la règle complète du point 3 de la 55-1a), V6-5 (justification : la garde de la 46-2 ne sort pas pendant une
   redemande), V6-6 (ordre de C-55-1b-3 et -4 ; `?tab=balance-sheet&level=3` à l'AC-8). Et ceux de la P5 déjà renvoyés :
