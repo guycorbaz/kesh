@@ -2,7 +2,7 @@
 
 Tu valides la **fiche** de la story **53-4** de Kesh (comptabilité suisse ; Rust/Axum, MariaDB, SvelteKit), Epic 53 « Écritures justes »,
 release visée **v0.21.0** (vendredi 2026-12-04). **Kesh est en production** : le Project Lead tient ses livres réels. Deuxième passe :
-**complète**, contexte frais, modèle **Opus**. Langue du rapport : français. Tu relis ; tu ne corriges pas la fiche, tu rends des findings
+**complète**, contexte frais, modèle **Sonnet** (différent de la P1, qui était Opus). Langue du rapport : français. Tu relis ; tu ne corriges pas la fiche, tu rends des findings
 (CRITICAL, HIGH, MEDIUM, LOW), chacun avec `fichier:ligne` copié et l'extrait cité.
 
 Worktree `/home/gcorbaz/devel/kesh-53-4`, branche `story/53-4-assistant-compte-bancaire`, base `origin/epic/53-ecritures-justes` à
