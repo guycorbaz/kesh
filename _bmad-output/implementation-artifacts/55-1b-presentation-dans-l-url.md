@@ -1,6 +1,6 @@
 # Story 55-1b : la présentation des rapports groupés dans l'URL
 
-Status: drafted
+Status: ready-for-dev
 
 Epic : `_bmad-output/planning-artifacts/epic-55-navigation-interface.md` — D4. Issue : #À-VENIR (`bug`, P3, point b, comme
 la 55-1a). Release : la prochaine planifiée après la 0.20.0. **Frontend seulement, aucune migration.** **Suit la 55-1a**
@@ -8,6 +8,25 @@ la 55-1a). Release : la prochaine planifiée après la 0.20.0. **Frontend seulem
 
 *Découpée de la 55-1 à sa validation P3 (signal de recyclage) : la 55-1a porte l'URL des rapports, la 55-1b y ajoute la
 présentation de l'Epic 46 (hiérarchie, niveau, place des sous-totaux, groupes ouverts ou fermés à la main).*
+
+## ⚠️ Points renvoyés au développement (validation P6)
+
+La validation s'est arrêtée à la **sixième passe** sur deux MEDIUM (`kesh-gate-logs/s55-kickoff/55-1b-validation-p6.md`),
+**renvoyés au développement** par la règle de la sixième passe (`CLAUDE.md` § *Review Iteration Rule*) : le T0 les tranche
+avant toute ligne de code, ligne lue et décision citées au Change Log ; le correctif proposé est la résolution par défaut.
+
+- **R-1 (V6-1)** — La garde de l'écriture à la réponse (« aucune navigation en cours », « l'entrée courante porte la clé de
+  la requête ») supprime, lue à la lettre, l'écriture de toute redemande par contrôle. Défaut proposé : relever
+  `page.url.search` **au départ** de la requête et n'écrire à la réponse que si elle n'a pas changé ; retirer « navigation
+  en cours » ; un test (*Retour* vers une URL incomplète ou un autre onglet pendant une redemande) et la mutation « garde
+  omise ».
+- **R-2 (V6-3)** — `keepDisplay: true` seulement si les paramètres de rapport de l'URL égalent ceux de la clé affichée,
+  sinon `generate()` (chargement complet) ; un AC et une mutation. Même famille que R-1 de la 55-1a : les deux se tranchent
+  ensemble.
+- **LOW à reprendre** : V6-2 (AC, ligne du tableau et mutation pour la branche « génération de l'onglet en vol »), V6-4
+  (renvoyer à la règle complète du point 3 de la 55-1a), V6-5 (justification : la garde de la 46-2 ne sort pas pendant une
+  redemande), V6-6 (ordre de C-55-1b-3 et -4 ; `?tab=balance-sheet&level=3` à l'AC-8). Et ceux de la P5 déjà renvoyés :
+  V5-5, V5-9.
 
 ## Story
 
@@ -265,3 +284,6 @@ lien ou revenir par *Retour* remplace la présentation retenue. (refs #À-VENIR)
   l'onglet en vol avec une autre clé, péremption par `generate` (V5-1 ; même trou que R-1 de la 55-1a, renvoyé au
   développement là-bas) ; AC-11 sur des états atteignables (V5-2) ; LOW V5-3, V5-4, V5-6 à V5-8 ; V5-5 (deux lignes du tableau)
   et V5-9 (AC-10, AC-7, AC-1 à préciser) **renvoyés au T0**. Dès la P6, retrait ou renvoi seulement.
+- 2026-11-25 — Validation P6 ciblée (Sonnet) : 0/0/2/4. **Arrêt de la boucle par renvoi au développement** (R-1, R-2).
+  Tendance : P1 Opus 0/0/7/8 → P2 Sonnet 0/0/3/6 → P3 ciblée Opus 0/0/3/5 (modèle récrit) → P4 Sonnet 0/0/4/5 → P5 Opus
+  0/0/2/7 → P6 ciblée Sonnet 0/0/2/4. `ready-for-dev` **sous réserve** du T0 (R-1, R-2).
