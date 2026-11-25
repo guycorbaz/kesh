@@ -15,6 +15,30 @@ un clic dans la liste change le document affiché. **Avec un seul justificatif, 
 directement ; la liste en haut ne paraît qu'**à partir de deux** (simplification de l'utilisateur, 2026-11-25). La liste se
 charge au clic (route de la 55-3a). Validation reprise à P1 sur cette version.*
 
+## ⚠️ Points renvoyés au développement (validation Pv2p7, et Pv2p3 de la 55-3a)
+
+La validation s'est arrêtée à la **septième passe** de la version récrite sur un MEDIUM ; au-delà de la sixième passe,
+l'orchestrateur ne remédie plus (`CLAUDE.md` § *Review Iteration Rule*) : les points vont au **T0**, tranchés avant toute
+ligne de code, avec le mainteneur si le texte visible change, et le Change Log cite la ligne lue et la décision. La P8,
+dernière permise, est gardée en réserve. Le correctif proposé est la résolution par défaut.
+
+- **R-1 (Vv2p7-1, MEDIUM) — Texte du bandeau.** « … n'a encore été ni téléchargée ni envoyée … » est faux pour une facture
+  non figée qui l'a été : dévalidée puis revalidée (`user-manual.tex:1645`), restaurée d'une sauvegarde d'avant le gel
+  (`:1644`), envoyée avant la v0.12.1 (`:1642-1643`). Défaut : « Aperçu — PDF non figé : ce n'est pas encore le PDF émis
+  de cette facture ; il peut encore changer. » — dans l'AC-5, l'AC-8, la phrase du § 11.6.1 de l'AC-9 et D12 du fichier
+  d'epic (`grep -n "ni téléchargée ni envoyée"` sur les fiches 55-* et le fichier d'epic : zéro hors historiques).
+- **R-2 (Vv2p3-2 de la 55-3a, MEDIUM) — Deux phrases du § 11.6.1 deviennent fausses**, contrairement à ce que dit l'AC-9
+  (« aucune n'est réécrite ») : `user-manual.tex:1637` (« Le PDF d'une facture est produit **une seule fois** ») et `:1641`
+  (« une pièce sortie de Kesh est figée »). Défaut : « Le PDF **émis** d'une facture est produit une seule fois … ; depuis
+  les rapports, une facture non figée s'affiche en **aperçu**, qui n'est pas le PDF émis » ; la phrase de la pièce sortie
+  nuancée : l'aperçu affiché dans Kesh n'est pas une pièce émise, et il est fermé aux clés d'API (55-3a) ; l'AC-9 dit
+  « les phrases qui attribuent le figement au téléchargement et à l'envoi restent justes ; ces deux-là sont ajustées ».
+- **LOW** : Vv2p7-3 et V8-4 de la 55-1a (nom `apercu-facture-<numéro>.pdf` passé à `DocumentPreview` quand `pdfStatus`
+  vaut `'notFrozen'`, test Vitest du nom) ; Vv2p7-4 (le bandeau suit l'**élément choisi** : deux éléments `notFrozen` puis
+  `frozen`, un clic sur le second retire le bandeau ; mutation « bandeau tenu par `list[0]` ») ; Vv2p7-5 (contrôle de
+  hauteur du T0 : titre, liste, **bandeau**, cadre et « Fermer ») ; Vv2p7-6 (objectif 3 du fichier d'epic : corrigé par la
+  remédiation de la Pv2p3 de la 55-3a).
+
 ## Story
 
 En tant que comptable qui relit son journal,
@@ -358,3 +382,8 @@ non figé ». (refs #À-VENIR)
   **un seul justificatif : aucune liste**, la visionneuse l'ouvre directement, la liste ne paraît qu'à partir de deux
   (AC-2) ; tests, E2E, captures et note de version alignés. Validation P7 ciblée sur ces changements (dès la P6, plus de
   remédiation : points en R-n).
+- 2026-11-25 — Validation Pv2p7 ciblée sur les réponses de l'utilisateur (Opus) : 0/0/1/5. **Arrêt par renvoi au
+  développement** (au-delà de la sixième passe) : R-1 (texte du bandeau), R-2 (deux phrases du § 11.6.1, venu de la
+  Pv2p3 de la 55-3a) ; LOW listés en tête. Tendance de la version récrite : P1 Sonnet 0/0/1/8 → P2 Haiku 0/0/2/0 → P3
+  Sonnet 0/0/1/3 → P4 Haiku 0/0/2/2 → P5 Opus 0/0/2/4 → P6 Sonnet 0/0/0/3 → (réponses de l'utilisateur) P7 Opus 0/0/1/5.
+  `ready-for-dev` **sous réserve** du T0 (R-1, R-2) ; la P8 reste en réserve.

@@ -153,8 +153,17 @@ limite assumée, écrite au manuel par la 55-3b.
 ### L'aperçu sans figement (D12)
 
 `GET /api/v1/invoices/{id}/pdf/preview` — **neuve**, montée à côté de `GET /api/v1/invoices/{id}/pdf` (`lib.rs:1262`),
-**mêmes droits** (tout rôle authentifié, *Consultation* compris ; ouverte aux clés d'API comme `/pdf`, ligne de la table
-des routes ouvertes aux clés relevée au T0), bornée à la société (`404` sinon, comme `/pdf`) :
+tout rôle authentifié (*Consultation* compris), **fermée aux clés d'API**, bornée à la société (`404` sinon, comme `/pdf`) :
+
+- ⚠️ **Dérogation écrite à l'arbitrage 8 de la 25-6-b** (« une pièce sortie de Kesh est figée, qui que ce soit qui l'ait
+  fait sortir », `issued_invoice_pdf.rs:37-39`, `invoice_pdf.rs:11-13`, manuel `user-manual.tex:1641`) : l'aperçu fait
+  sortir vers l'écran un PDF de facture **non émis**. Motif : la réponse de l'utilisateur (afficher n'est pas figer),
+  bornée à l'**affichage dans Kesh** ; le bandeau (55-3b) dit que ce n'est pas le PDF émis. Le lecteur du navigateur
+  permet encore de télécharger l'aperçu : Q10 au mainteneur.
+- **Clés d'API : `403`** — une clé n'affiche rien ; ouvrir l'aperçu aux clés ferait sortir des PDF non figés vers un
+  client d'API, au-delà de la réponse de l'utilisateur. Garde au gestionnaire sur `current_user.api_key_id` (le
+  discriminant de `require_not_pat`, `middleware/rbac.rs:58-67`), code neuf `API_KEY_PREVIEW_FORBIDDEN`, message dans les
+  quatre locales (`kesh-i18n`). Rouvrir aux clés serait un choix du mainteneur (Q1).
 
 - **facture figée** : le fichier figé, par `serve_frozen` (même vérification d'empreinte ; `410 INVOICE_PDF_GONE` si le
   fichier manque, `500` s'il est altéré) — octet pour octet celui de `/pdf` ;
@@ -164,10 +173,18 @@ des routes ouvertes aux clés relevée au T0), bornée à la société (`404` si
   (`400 INVOICE_NOT_PDF_READY`, …) ;
 - **brouillon, facture annulée jamais figée** : `400 INVOICE_NOT_VALIDATED`, comme `/pdf` ;
 - `Content-Disposition: inline; filename="apercu-facture-<numéro>.pdf"` pour un rendu non figé, `facture-<numéro>.pdf`
-  pour le fichier figé ;
+  pour le fichier figé — en-tête pour un appel direct ; l'écran lit le PDF par `getBlob` et nomme lui-même le document
+  (55-3b, AC-3) ;
+- **course** : un `GET /pdf` concurrent peut figer la facture entre la lecture et le rendu de l'aperçu ; l'aperçu rend
+  alors un rendu neuf, non le PDF émis. Limite assumée (le bandeau dit « aperçu »), sans relecture après le rendu ; écrite
+  à la note de l'API (T3) ;
 - une fonction `preview(ctx, invoice_id)` dans `issued_invoice_pdf.rs`, qui réemploie `load`, `is_frozen`,
   `serve_frozen` et `client_language` (DRY) ; `get_or_freeze` et `Usage` **inchangés** ; le gestionnaire dans
   `routes/invoice_pdf.rs`, sur le modèle de `get_invoice_pdf` (`:27-67`).
+- **Commentaires rendus faux, corrigés au T2ter** : `issued_invoice_pdf.rs:4-5` (« le **seul** chemin vers le PDF d'une
+  facture »), `invoice_pdf_service.rs:274-278` (« ⛔ … la facture ne se rend plus directement ») et `invoice_pdf.rs:1`
+  (un seul endpoint) : l'aperçu est le seul autre appelant légitime de `render_document(…, PdfDocument::Invoice)`, son
+  rendu **n'est pas** le document émis et n'est jamais posé.
 - **Fiche de la facture inchangée** : son téléchargement continue de figer (`/pdf`, `Usage::Download`). Faut-il que
   l'**affichage** sur la fiche passe aussi par l'aperçu, avec le même bandeau ? Question au mainteneur (Q8 du fichier
   d'epic), **non tranchée ici**.
@@ -259,9 +276,12 @@ déjà (aucun bandeau). Issue `enhancement` à ouvrir (section *Issues à ouvrir
    appels de suite rendent `200` tous deux, la facture toujours non figée ; **puis** `GET /pdf` fige comme aujourd'hui
    (non-régression : colonnes posées, audit `invoice.pdf_frozen`). Facture figée : l'aperçu rend **les mêmes octets** que
    `/pdf`, sans écriture ; fichier figé retiré : `410 INVOICE_PDF_GONE`. Brouillon : `400 INVOICE_NOT_VALIDATED`. Rôle
-   *Consultation* : `200`, sans figement ; clé d'API en lecture : `200` ; autre société : `404` ; sans session : `401`.
+   *Consultation* : `200`, sans figement ; clé d'API en lecture : `403 API_KEY_PREVIEW_FORBIDDEN`, rien d'écrit ; autre
+   société : `404` **avec le corps JSON d'`AppError`** (code d'erreur vérifié : le `404` du service statique, `lib.rs:280`,
+   `:1619`, n'en a pas) ; sans session : `401`.
    Tests dans `crates/kesh-api/tests/invoice_pdf_preview_e2e.rs` (neuf). *Preuve du rouge* : avant le correctif, la route
-   rend `404` (tous les tests rouges) ; **mutation** : `preview` qui appelle `get_or_freeze(…, Usage::Download)` → le test
+   tombe dans le service statique (`404` sans corps d'`AppError`) : tous les tests rouges, « autre société » compris par son
+   corps ; **mutation** : `preview` qui appelle `get_or_freeze(…, Usage::Download)` → le test
    « rien n'est écrit » rouge.
 10. **AC-10 — État du PDF dans la liste.** `GET /journal-entries/{id}/documents` : une facture validée non figée porte
     `pdfStatus: "notFrozen"`, une facture figée (validée ou annulée) `"frozen"` ; un avoir et un document fournisseur
@@ -285,10 +305,13 @@ déjà (aucun bandeau). Issue `enhancement` à ouvrir (section *Issues à ouvrir
       (`routes/journal_entries.rs:494-499`, `ecritures::detail(&ContexteAcces::depuis_api(..), &state.lecture(), id)`) ;
       tests d'intégration `crates/kesh-api/tests/journal_entry_documents_e2e.rs` (neuf).
 - [ ] **T2ter** — L'aperçu sans figement (D12, AC-9) : `issued_invoice_pdf::preview`, gestionnaire dans
-      `routes/invoice_pdf.rs`, route dans `lib.rs` à côté de `/pdf` ; `pdf_status` dans `documents_of_entry` (AC-10) ;
-      tests `invoice_pdf_preview_e2e.rs`.
-- [ ] **T3** — `docs/api-external.md` (AC-7, et la route d'aperçu : forme, droits, codes, « n'écrit rien » ; ligne de la
-      table des routes ouvertes aux clés ; `pdfStatus`).
+      `routes/invoice_pdf.rs` (garde des clés d'API), route dans `lib.rs` à côté de `/pdf` ; code
+      `API_KEY_PREVIEW_FORBIDDEN` (`errors.rs`, quatre locales) ; les trois commentaires rendus faux ; `pdf_status` dans
+      `documents_of_entry` (AC-10) ; tests `invoice_pdf_preview_e2e.rs`.
+- [ ] **T3** — `docs/api-external.md` (AC-7, et la route d'aperçu : forme, droits, fermée aux clés, « n'écrit rien »,
+      course ; `pdfStatus`) ; la route ajoutée aux lignes de la table des codes d'erreur pour `INVOICE_NOT_PDF_READY`
+      (`:1398` à `1e23edb55`), `INVOICE_NOT_VALIDATED` et `INVOICE_PDF_GONE`, et le code neuf `API_KEY_PREVIEW_FORBIDDEN`
+      ; lignes relevées sur la base PR 46.
 - [ ] **T4** — Gates.
 
 ## Gates
@@ -329,7 +352,7 @@ sinon), et n'écrit rien ; `GET /invoices/{id}/pdf` est inchangé ; exports PDF 
 
 Deux modules de production : `kesh-report` (`documents.rs`, `journal_report.rs`, `general_ledger.rs`, `lib.rs`, et les
 littéraux de test de `csv.rs`, `pdf.rs`, `benches/export.rs`) et `kesh-api` (le service `services/ecritures.rs`, la route
-`routes/journal_entries.rs`, l'aperçu `routes/issued_invoice_pdf.rs` et `routes/invoice_pdf.rs`, `lib.rs`) ; plus `docs/api-external.md` et les tests `kesh-report/tests/`, `kesh-api/tests/`.
+`routes/journal_entries.rs`, l'aperçu `routes/issued_invoice_pdf.rs`, `routes/invoice_pdf.rs` et le commentaire d'`invoice_pdf_service.rs`, `errors.rs`, `lib.rs`), plus `kesh-i18n` (le message du code neuf, quatre locales) ; *réévalué à la validation Pv2p3 (Vv2p3-7)* : trois modules de production, sous le seuil de cinq ; taille portée de M à **L** ; l'aperçu ne dépend pas de la liste et pourrait sortir en story propre, ce qui ferait passer l'epic au-delà de la borne de six : choix laissé au mainteneur (Q1) ; plus `docs/api-external.md` et les tests `kesh-report/tests/`, `kesh-api/tests/`.
 
 ### References
 
@@ -398,3 +421,9 @@ littéraux de test de `csv.rs`, `pdf.rs`, `benches/export.rs`) et `kesh-api` (le
   `GET /invoices/{id}/pdf/preview` (AC-9) et `pdfStatus` dans la liste (AC-10) ; l'alternative « Q7 refusée » est retirée ;
   fiche de la facture inchangée, question de son affichage au mainteneur (Q8) ; limite connue et évolution du PDF produit
   hors de Kesh, issue à ouvrir. Validation P3 ciblée sur ces changements.
+- 2026-11-25 — Validation Pv2p3 ciblée sur les réponses de l'utilisateur (Opus) : 0/0/2/7 ; remédiée : dérogation à
+  l'arbitrage 8 écrite, aperçu **fermé aux clés d'API** (`403 API_KEY_PREVIEW_FORBIDDEN`) (Vv2p3-1) ; Vv2p3-2 (deux
+  phrases du § 11.6.1 rendues fausses) porte sur le manuel, qui est à la 55-3b : renvoyé à son R-2 (la 55-3b est au-delà
+  de la sixième passe) ; LOW : commentaires rendus faux (Vv2p3-3, et Vv2p7-2 de la 55-3b), `404` vérifié par son corps
+  (Vv2p3-4), nom du fichier à l'usage des appels directs (Vv2p3-5), objectif 3 du fichier d'epic (Vv2p3-6), taille L et
+  modules réévalués (Vv2p3-7), course écrite (Vv2p3-8), table des codes au T3 (Vv2p3-9). Passe suivante : Pv2p4 ciblée.

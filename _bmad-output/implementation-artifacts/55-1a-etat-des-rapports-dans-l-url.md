@@ -38,6 +38,12 @@ décision. Le correctif proposé par la passe est la résolution par défaut.
   `ReportSelector` ; celui des rapports par compte analytique, PR 46 `+page.svelte:966-971` ; celui du Grand livre, 55-2
   AC-11), par une classe commune ; le gras ne vaut que pour la valeur affichée du `<select>` (les options de la liste
   ouverte restent normales) ; la note de version le dit.
+- **LOW de la P8** (`kesh-gate-logs/s55-maquettes/55-1a-validation-p8.md`, dernière passe, aucune remédiation) : V8-1
+  (« aucune requête » au clic sur un onglet s'entend **du changement d'onglet lui-même** : la remise d'accord de la 46-2,
+  `resyncActiveGroupedTab`, peut redemander un rapport groupé — à écrire ainsi dans l'AC-13, le tableau des gestes et D3) ;
+  V8-3 (preuve du rouge de l'AC-13 : l'assertion décisive est « onglet actif et rapport affiché égaux à ceux de l'URL », non
+  le seul décompte de requêtes ; « rechargement » et « lien partagé » sont un seul cas au Vitest) ; V8-2, V8-4, V8-5 portent
+  sur `sprint-status.yaml`, la 55-3b et la 55-3a (repris là).
 - **LOW à reprendre** : V7-5 à V7-10 (`ReportSelector` « modifié » à `:41` et au fichier d'epic ; tests et preuve du rouge de
   l'AC-13 et de l'AC-14, `ReportSelector.test.ts` neuf ; « par *Suivant* » quand on est parti par *Retour* ; le test « champ
   modifié sans clic » vérifie que le rapport reste affiché et n'emploie pas l'exercice ; « rapport absent de la mémoire » ;
@@ -482,3 +488,7 @@ qui l'affichent désormais à l'arrivée) ; le lien *Rapports* du menu ramène a
   par *Retour* ou *Suivant* affiche son rapport sans *Générer* (D3) ; aucune régénération au changement d'onglet ; les
   tests du clic sur un onglet deviennent des tests de non-régression. **R-4 tranché** : « pas de requête en double » reste
   une exigence technique seulement. Validation P8 ciblée sur ce changement (dernière passe permise).
+- 2026-11-25 — Validation P8 ciblée sur les réponses de l'utilisateur (Sonnet) : 0/0/0/5 — **validation terminée** (dernière
+  passe permise, aucune remédiation : les LOW V8-1 et V8-3 se reprennent au T0, ligne lue citée au Change Log). Tendance :
+  P1 Opus 0/1/10/8 → P2 Sonnet 0/0/5/7 → P3 Opus 0/1/6/6 → P4 Sonnet 0/1/4/8 → P5 Opus 0/0/5/9 → P6 ciblée Sonnet 0/0/2/6 →
+  P7 ciblée Opus 0/0/4/6 → P8 ciblée Sonnet 0/0/0/5. `ready-for-dev` sous réserve du T0 (R-1 à R-3, R-5 ; R-4 tranché).

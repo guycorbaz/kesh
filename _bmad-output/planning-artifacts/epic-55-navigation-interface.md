@@ -49,7 +49,7 @@ L'utilisateur, en tenant ses livres, navigue dans les Rapports comme dans des pa
    des Rapports se **partage par un lien** et se retrouve au rechargement (55-1a ; la présentation de l'Epic 46, 55-1b).
 2. Le **numéro de compte est un lien** vers le grand livre de ce compte partout où un rapport en montre un — Bilan, Compte
    de résultat, Balance, Journaux, Grand livre et, par les comptes désignés, TVA —, par **un seul composant** (55-2).
-3. **Les justificatifs d'une écriture** — PDF figé de la facture, PDF de l'avoir, document d'une facture fournisseur —
+3. **Les justificatifs d'une écriture** — PDF de la facture (le PDF figé, ou un aperçu s'il n'est pas encore émis), PDF de l'avoir, document d'une facture fournisseur —
    s'ouvrent **depuis le Journal**, par un bouton sur l'écriture, sans passer par l'écriture ni la facture, et **sans figer**
    la facture (aperçu, bandeau « PDF non figé ») ; le Grand livre suit (55-3a serveur, 55-3b écran).
 4. Le **Grand livre a son sélecteur d'exercice**, avec « dates libres » ; ses dates sont pré-remplies et *Générer*
@@ -152,10 +152,11 @@ Base `origin/main` à `1e23edb55` ; branches de l'Epic 46 lues par `git show <br
   inchangés. (55-3b)
 - **D12 — Afficher n'est pas figer (réponse de l'utilisateur du 2026-11-25, ancienne Q7).** Depuis le Journal et les
   Rapports, afficher une facture **ne la fige pas** : une route d'aperçu neuve, `GET /api/v1/invoices/{id}/pdf/preview`
-  (fichier figé s'il existe, rendu non figé sinon, **aucune écriture** ni trace d'audit, droits de `/pdf`, *Consultation*
-  compris) — aucune voie d'aperçu sans figement n'existe au code (`issued_invoice_pdf.rs` : `Usage` n'a que `Download` et
+  (fichier figé s'il existe, rendu non figé sinon, **aucune écriture** ni trace d'audit, tout rôle, *Consultation*
+  compris, **fermée aux clés d'API** ; dérogation écrite à l'arbitrage 8 de la 25-6-b, « une pièce sortie de Kesh est figée ») — aucune voie d'aperçu sans figement n'existe au code (`issued_invoice_pdf.rs` : `Usage` n'a que `Download` et
   `Send`). La liste porte l'état du PDF (`pdfStatus`) ; une facture non figée s'affiche sous un **bandeau** « Aperçu — PDF
-  non figé : … ni téléchargée ni envoyée, … peut encore changer » (les termes de Kesh : « figé », « PDF émis »). **La fiche
+  non figé : … » (texte repris au T0, R-1 de la 55-3b : « ni téléchargée ni envoyée » est faux pour une facture
+  dévalidée puis revalidée) (les termes de Kesh : « figé », « PDF émis »). **La fiche
   de la facture ne change pas** (son téléchargement fige) ; son affichage : Q8. (55-3a, 55-3b)
 
 ## Stories
@@ -166,7 +167,7 @@ Base `origin/main` à `1e23edb55` ; branches de l'Epic 46 lues par `git show <br
 | 55-1a | L'état des Rapports dans l'URL : Retour, Suivant, lien partagé | base PR 46 | M | `55-1a-etat-des-rapports-dans-l-url.md` |
 | 55-1b | La présentation des rapports groupés dans l'URL (Epic 46) | 55-1a | S | `55-1b-presentation-dans-l-url.md` |
 | 55-2 | Le lien de compte partout : Journaux, Grand livre, TVA, Compte de résultat à plat ; sélecteur d'exercice du Grand livre | 55-1a | M | `55-2-lien-de-compte-partout.md` |
-| 55-3a | Les justificatifs d'une écriture dans la réponse du journal et du grand livre, et l'aperçu sans figement (serveur) | base PR 46 ; Q1 ; **backend** | M | `55-3a-justificatifs-serveur.md` |
+| 55-3a | Les justificatifs d'une écriture dans la réponse du journal et du grand livre, et l'aperçu sans figement (serveur) | base PR 46 ; Q1 ; **backend** | L | `55-3a-justificatifs-serveur.md` |
 | 55-3b | Ouvrir les justificatifs depuis le Journal (et le Grand livre) | 55-3a, 55-2 | M | `55-3b-justificatifs-ecran.md` |
 | 55-4 | Solde de la dette de l'epic (plafond : **2 issues**) | toutes | S | `55-4-solde-dette-epic.md` |
 
@@ -262,7 +263,8 @@ revenir sur chacune.
 
 - **Q1** — La 55-3a ajoute un booléen aux réponses JSON du journal et du grand livre, une route de lecture,
   `GET /journal-entries/{id}/documents`, et une route d'aperçu sans figement, `GET /invoices/{id}/pdf/preview` (backend,
-  sans migration) : accepté dans cet epic ?
+  sans migration) : accepté dans cet epic ? L'aperçu est **fermé aux clés d'API** (une clé n'affiche rien) : d'accord ?
+  Il ne dépend pas de la liste et pourrait faire une story à part, ce qui dépasserait la borne de six stories.
 - **Q3** — D7 : le lien de la TVA passe par les comptes désignés des réglages : d'accord ?
 - **Q5** — Priorité de l'issue c) (proposition : P4, `enhancement`).
 - **Q6** — § *Gates* : E2E complet et `scripts/gate-ci.sh` en fin d'epic seulement, specs des Rapports à chaque story —
