@@ -427,3 +427,11 @@ littéraux de test de `csv.rs`, `pdf.rs`, `benches/export.rs`) et `kesh-api` (le
   de la sixième passe) ; LOW : commentaires rendus faux (Vv2p3-3, et Vv2p7-2 de la 55-3b), `404` vérifié par son corps
   (Vv2p3-4), nom du fichier à l'usage des appels directs (Vv2p3-5), objectif 3 du fichier d'epic (Vv2p3-6), taille L et
   modules réévalués (Vv2p3-7), course écrite (Vv2p3-8), table des codes au T3 (Vv2p3-9). Passe suivante : Pv2p4 ciblée.
+- 2026-11-25 — Validation Pv2p4 ciblée (Sonnet) : 0/0/0/4 — **validation terminée**. Tendance de la version récrite :
+  P1 Opus 0/0/4/6 → P2 ciblée Sonnet 0/0/0/5 → (réponses de l'utilisateur) Pv2p3 ciblée Opus 0/0/2/7 → Pv2p4 ciblée
+  Sonnet 0/0/0/4. Les quatre LOW se reprennent au **T0 du développement**, ligne lue citée au Change Log : Vv2p4-1
+  (réemployer `ApiKeyOperationForbidden`, `403 API_KEY_OPERATION_FORBIDDEN`, `errors.rs:261-277`, au lieu d'un code neuf —
+  `kesh-i18n` et `errors.rs` sortiraient alors du périmètre), Vv2p4-2 (ajouter au T2ter les deux sites de l'« arbitrage 8 »,
+  `issued_invoice_pdf.rs:37-39`, `invoice_pdf.rs:8-13`), Vv2p4-3 (« `404` sans corps » vrai sous le harnais
+  `"nonexistent-static-dir"` seulement), Vv2p4-4 (clé `read-write` aussi `403` ; garde avant `get_company_for` et `load`,
+  cas « clé sur une facture d'une autre société ou à fichier figé retiré : `403`, non `404`/`410` », mutation).
