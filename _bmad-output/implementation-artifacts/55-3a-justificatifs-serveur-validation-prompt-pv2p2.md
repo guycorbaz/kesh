@@ -9,7 +9,7 @@ décisions D1 à D11). Worktree `/home/beat/claude/kesh/.claude/worktrees/kesh-e
 `git show pr/46-rapports-groupes:<fichier>` (`511e61d54`), `git show story/46-export-api-groupe:<fichier>` (`8ca669b3f`),
 `git show story/46-5:<fichier>` (`0f483c7bb`) ; l'Epic 47 par `git show epic/47-comptes-miroirs:<fichier>`.
 
-Passe **v2p2**, passe ciblée, **contexte frais**. Langue du rapport : français.
+Passe **P2 de la version récrite (v2)**, passe ciblée, **contexte frais**. Langue du rapport : français.
 
 ## À lire d'abord
 
@@ -20,7 +20,7 @@ Passe **v2p2**, passe ciblée, **contexte frais**. Langue du rapport : français
 4. Le code qu'elle cite, **ligne par ligne** : chaque `chemin:ligne` se vérifie à la base indiquée.
 5. `crates/kesh-db/src/repositories/imported_supplier_invoices.rs` (`find_source_document_of_entry`), `crates/kesh-report/src/journal_report.rs`, `general_ledger.rs`, les migrations citées, `crates/kesh-api/src/lib.rs` (droits des routes), `frontend/src/lib/features/imported-supplier-invoices/DocumentPreview.svelte`.
 
-**Passe ciblée** : une seule lentille, braquée sur la remédiation de la passe précédente, commit `HEAD` (`git show HEAD`). Vérifie que chaque correctif est juste au code, qu'il ne crée pas de défaut neuf, et qu'il est propagé (même symptôme ailleurs dans la fiche, le fichier d'epic et les autres fiches). Les axes A1 à A9 ne s'exercent que sur ce que touche ce commit.
+**Passe ciblée** : une seule lentille, braquée sur la remédiation de la passe précédente, commit `9fe0d348b` (`git show 9fe0d348b`). Vérifie que chaque correctif est juste au code, qu'il ne crée pas de défaut neuf, et qu'il est propagé (même symptôme ailleurs dans la fiche, le fichier d'epic et les autres fiches). Les axes A1 à A9 ne s'exercent que sur ce que touche ce commit.
 
 ## Axes (chacun exercé, ou déclaré non exercé avec sa raison)
 
