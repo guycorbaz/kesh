@@ -136,6 +136,8 @@ function review(): StripeReview {
 		toReview: [
 			{ code: 'refund', transaction: tx(5, '2020-01-31', { amount: '-20.00', providerType: 'refund' }), details: { category: 'refund' } },
 			{ code: 'payout_account_missing', transaction: tx(6, '2020-02-10', { providerType: 'payout' }), details: { payoutId: 'po_TEST0002' } },
+			// Règle commune « écrite une seule fois » (#1539) : versement détaché, son écriture nommée.
+			{ code: 'already_posted', transaction: tx(7, '2020-02-03', { amount: '-125.15', providerType: 'payout' }), details: { journalEntryId: 78 } },
 		],
 	};
 }
@@ -182,6 +184,11 @@ describe('page Stripe (Story 40-7d)', () => {
 		expect(r.getByTestId('stripe-to-review-5').textContent).toContain('Remboursement');
 		expect(r.getByTestId('stripe-to-review-6').textContent).toContain('compte de versement');
 		expect(r.getByTestId('stripe-to-review-6').textContent).toContain('txn_TEST0006');
+		// Déjà comptabilisé : le motif, et le lien vers l'écriture à la place de « Écriture manuelle ».
+		expect(r.getByTestId('stripe-to-review-7').textContent).toContain('Déjà comptabilisée');
+		expect(r.getByTestId('stripe-to-review-entry-7').getAttribute('href')).toBe('/journal-entries/78');
+		expect(r.getByTestId('stripe-to-review-7').textContent).not.toContain('Écriture manuelle');
+		expect(r.queryByTestId('stripe-to-review-entry-6')).toBeNull();
 		expect(document.body.textContent).not.toMatch(/automatiquement/i);
 	});
 

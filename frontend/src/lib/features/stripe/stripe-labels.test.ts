@@ -239,6 +239,10 @@ describe('stripe-labels — les codes contre leur source Rust', () => {
 describe('stripe-labels — refus de l’acceptation', () => {
 	it('proposition périmée : la clé commune ; les autres délégués au rapprochement', () => {
 		expect(stripeFailedLabel('PROVIDER_PROPOSAL_STALE')).toMatch(/^provider-failed-proposal-stale\|/);
+		// Règle commune « écrite une seule fois » (#1539), déléguée au moteur commun.
+		expect(stripeFailedLabel('PROVIDER_TRANSACTION_ALREADY_POSTED', { journalEntryId: 9 })).toMatch(
+			/^provider-failed-already-posted\|/,
+		);
 		expect(stripeFailedLabel('BANK_ACCOUNT_CLOSED', { bankAccountId: 3 })).not.toContain('reconciliation-failed-unknown');
 		expect(stripeFailedLabel('RATE_UNAVAILABLE', {})).not.toContain('reconciliation-failed-unknown');
 		// Destination rejugée à l'acceptation (revue d'intégration de l'Epic 39, M2).

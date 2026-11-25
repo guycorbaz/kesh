@@ -1530,19 +1530,13 @@ async fn annulation_d_un_versement_avant_reception(pool: MySqlPool) {
 // Correctif des prestataires (#1539) — un versement n'est écrit qu'une fois
 // ============================================================
 
-/// Le scénario du défaut, pas à pas : versement accepté, réception de la
-/// banque rattachée à son écriture, puis annulation du **côté Stripe** — qui
-/// ne retire que le lien (`unlink_only`) : l'écriture reste, rapprochée de la
-/// réception. Le versement redevient pending ; la revue ne le propose plus, il
-/// est « à examiner » sous `already_posted` (l'écriture nommée), la règle
-/// commune des prestataires ; l'acceptation forcée de l'ancienne proposition
-/// est refusée `PROVIDER_TRANSACTION_ALREADY_POSTED`, en `200`, sans seconde
-/// écriture ni trace ; le rattachement à l'écriture existante, que le motif
-/// conseille, passe.
-#[sqlx::test(migrations = "../kesh-db/test-schema")]
-async fn versement_deja_ecrit_puis_detache_ni_propose_ni_ecrit_deux_fois(pool: MySqlPool) {
-    let ctx = monter(&pool).await;
-    let po = ctx.tx("po_TEST0001").await; // solde CHF, versé sur la banque CHF
+/// Les trois premiers pas du scénario du défaut (#1539) : le versement
+/// `po_TEST0001` (solde CHF, versé sur la banque CHF) accepté, la réception de
+/// la banque rattachée à son écriture, puis l'annulation du **côté Stripe** —
+/// qui ne retire que le lien (`unlink_only`) : l'écriture reste, rapprochée de
+/// la réception. Rend (versement, ancienne proposition, écriture, réception).
+async fn detacher_un_versement(ctx: &Ctx) -> (i64, Value, i64, i64) {
+    let po = ctx.tx("po_TEST0001").await;
     let ancienne = proposition(&ctx.revue().await, po);
     assert_eq!(ancienne["type"], "payout", "{ancienne}");
     // 1. Accepter le versement.
@@ -1576,19 +1570,38 @@ async fn versement_deja_ecrit_puis_detache_ni_propose_ni_ecrit_deux_fois(pool: M
         0,
         "l'écriture du versement reste"
     );
+    (po, ancienne, ecriture, reception)
+}
+
+/// Le motif « à examiner » de la transaction `id` dans la revue.
+fn motif_de(revue: &Value, id: i64) -> Value {
+    revue["toReview"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["transaction"]["id"] == id)
+        .cloned()
+        .unwrap_or_else(|| panic!("transaction {id} absente de « à examiner » : {revue}"))
+}
+
+/// Le scénario du défaut, pas à pas ([`detacher_un_versement`], puis la
+/// revue) : le versement redevenu pending n'est plus proposé, il est « à
+/// examiner » sous `already_posted` (l'écriture nommée), la règle commune des
+/// prestataires ; l'acceptation forcée de l'ancienne proposition est refusée
+/// `PROVIDER_TRANSACTION_ALREADY_POSTED`, en `200`, sans seconde écriture ni
+/// trace ; le rattachement à l'écriture existante, que le motif conseille,
+/// passe.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn versement_deja_ecrit_puis_detache_ni_propose_ni_ecrit_deux_fois(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let (po, ancienne, ecriture, _) = detacher_un_versement(&ctx).await;
     // 4. Revoir : plus proposé, à examiner, l'écriture nommée.
     let revue = ctx.revue().await;
     assert!(
         !genres(&revue).contains(&("payout".to_string(), "po_TEST0001".to_string())),
         "{revue}"
     );
-    let motif = revue["toReview"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|f| f["transaction"]["id"] == po)
-        .cloned()
-        .unwrap_or_else(|| panic!("versement absent de « à examiner » : {revue}"));
+    let motif = motif_de(&revue, po);
     assert_eq!(motif["code"], "already_posted", "{motif}");
     assert_eq!(motif["details"], json!({ "journalEntryId": ecriture }));
     // L'acceptation forcée de l'ancienne proposition : refusée, rien d'écrit.
@@ -1617,6 +1630,76 @@ async fn versement_deja_ecrit_puis_detache_ni_propose_ni_ecrit_deux_fois(pool: M
     let (s, b) = ctx.rattacher(po, ecriture).await;
     assert_eq!(s, 200, "{b}");
     assert_eq!(ctx.etat(po).await, ("reconciled".into(), Some(ecriture)));
+}
+
+/// Revue P1 (L2) : la règle passe **avant** les contrôles du compte de
+/// versement, à la revue comme à l'acceptation. Le versement détaché, puis son
+/// compte de versement retiré des réglages : la revue dit `already_posted`, non
+/// `payout_account_missing` ; l'acceptation forcée de l'ancienne proposition
+/// (qui nomme l'ancien compte) est refusée `PROVIDER_TRANSACTION_ALREADY_POSTED`,
+/// non périmée sous `provider_settings_changed`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn versement_deja_ecrit_refuse_avant_les_controles_de_destination(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let (po, ancienne, ecriture, _) = detacher_un_versement(&ctx).await;
+    sqlx::query("UPDATE bank_accounts SET payout_bank_account_id = NULL WHERE id = ?")
+        .bind(ctx.ba_chf)
+        .execute(&ctx.pool)
+        .await
+        .unwrap();
+    let motif = motif_de(&ctx.revue().await, po);
+    assert_eq!(motif["code"], "already_posted", "{motif}");
+    let avant = ctx.ecritures().await;
+    let (s, b) = ctx.accepter(vec![ancienne]).await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(
+        b["failed"],
+        json!([{
+            "bankTransactionId": po,
+            "errorCode": "PROVIDER_TRANSACTION_ALREADY_POSTED",
+            "details": { "journalEntryId": ecriture },
+        }]),
+        "{b}"
+    );
+    assert_eq!(ctx.ecritures().await, avant);
+}
+
+/// Revue P1 (M1), limite de la règle commune, assumée et dite au manuel : la
+/// règle lit l'écriture par son mouvement et ses liens, jamais par
+/// l'identifiant du versement. Tant que `po_TEST0001` est détaché, un second
+/// versement **de même montant** (`po_TEST0009`) est lui aussi « déjà
+/// comptabilisé », sur la même écriture ; rattacher `po_TEST0001` à son
+/// écriture (l'écriture porte son `po_…`) la lie des deux côtés, et
+/// `po_TEST0009` redevient proposé et s'accepte.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn deux_versements_de_meme_montant_le_detache_retient_l_autre(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let (po, _, ecriture, _) = detacher_un_versement(&ctx).await;
+    let entete = std::str::from_utf8(FIXTURE)
+        .unwrap()
+        .lines()
+        .next()
+        .unwrap()
+        .to_string();
+    let second = format!(
+        "{entete}\npo_TEST0009,2020-03-02 00:00:00,txn_TEST0099,2020-02-28 10:00:00,2020-03-02 00:00:00,chf,125.15,0.00,125.15,charge,Vente fictive Z,ch_TEST0098,ch_TEST0098\n"
+    );
+    let (s, b) = ctx.importer(second.as_bytes()).await;
+    assert_eq!(s, 201, "{b}");
+    let po2 = ctx.tx("po_TEST0009").await;
+    let revue = ctx.revue().await;
+    for id in [po, po2] {
+        let motif = motif_de(&revue, id);
+        assert_eq!(motif["code"], "already_posted", "{motif}");
+        assert_eq!(motif["details"], json!({ "journalEntryId": ecriture }));
+    }
+    let (s, b) = ctx.rattacher(po, ecriture).await;
+    assert_eq!(s, 200, "{b}");
+    let v = proposition(&ctx.revue().await, po2);
+    assert_eq!(v["type"], "payout", "{v}");
+    let (s, b) = ctx.accepter(vec![v]).await;
+    assert_eq!((s, b["failed"].clone()), (200, json!([])), "{b}");
+    assert_eq!(b["accepted"][0]["type"], "payout");
 }
 
 /// La sonde positive : un versement jamais écrit reste proposé et s'accepte,
