@@ -4157,17 +4157,15 @@ mod tests {
             &pool,
             fy_id,
             Acteur::utilisateur(admin),
-            mk_entry(company_id, today, paire(a1, a2)),
+            avec_libelle(mk_entry(company_id, today, paire(a1, a2)), "Trou 1"),
         )
         .await
         .unwrap();
-        let milieu = create_with_policy(
+        let milieu = create(
             &pool,
             fy_id,
             Acteur::utilisateur(admin),
-            mk_entry(company_id, today, paire(a1, a2)),
-            // Story 53-1a : écritures identiques à dessein (décor), politique Confirmed.
-            DuplicatePolicy::Confirmed,
+            avec_libelle(mk_entry(company_id, today, paire(a1, a2)), "Trou 2"),
         )
         .await
         .unwrap();
@@ -4175,7 +4173,7 @@ mod tests {
             &pool,
             fy_id,
             Acteur::utilisateur(admin),
-            mk_entry(company_id, today, paire(a1, a2)),
+            avec_libelle(mk_entry(company_id, today, paire(a1, a2)), "Trou 3"),
         )
         .await
         .unwrap();
@@ -4202,7 +4200,7 @@ mod tests {
             &pool,
             fy_id,
             Acteur::utilisateur(admin),
-            mk_entry(company_id, today, paire(a1, a2)),
+            avec_libelle(mk_entry(company_id, today, paire(a1, a2)), "Trou 4"),
         )
         .await
         .unwrap();
