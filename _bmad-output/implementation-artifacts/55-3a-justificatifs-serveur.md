@@ -38,7 +38,7 @@ de requête, la branche fournisseur dédoublée pour l'achat et le règlement) :
 
 | Document | Rattachement | Règle du document servi | Route de lecture (droits) |
 |---|---|---|---|
-| PDF d'une facture client (écriture de vente) | `invoices.journal_entry_id` (`20260417000001_invoice_validation.sql`) | la route sert le PDF **figé** s'il existe, sinon fige une facture **validée**, sinon `400 INVOICE_NOT_VALIDATED` (`kesh-api/src/routes/issued_invoice_pdf.rs:104-109`). Une facture annulée par un avoir **garde** `journal_entry_id` (`kesh-db/src/repositories/credit_notes.rs:843`) ; seule la dévalidation le vide (`invoices.rs:1782`). Manuel § 11.6.1 (`user-manual.tex:1635`) : « une facture annulée par un avoir garde le PDF qu'elle a émis ; … jamais figée … n'a pas de PDF » | `GET /api/v1/invoices/{id}/pdf` (`lib.rs:1262` ; `:1304` sur la PR 46), tout rôle |
+| PDF d'une facture client (écriture de vente) | `invoices.journal_entry_id` (`20260417000001_invoice_validation.sql`) | la route sert le PDF **figé** s'il existe, sinon fige une facture **validée**, sinon `400 INVOICE_NOT_VALIDATED` (`kesh-api/src/routes/issued_invoice_pdf.rs:104-109`). Une facture annulée par un avoir **garde** `journal_entry_id` (`kesh-db/src/repositories/credit_notes.rs:843`) ; seule la dévalidation le vide (`crates/kesh-db/src/repositories/invoices.rs:1782`). Manuel § 11.6.1 (`user-manual.tex:1635`) : « une facture annulée par un avoir garde le PDF qu'elle a émis ; … jamais figée … n'a pas de PDF » | `GET /api/v1/invoices/{id}/pdf` (`lib.rs:1262` ; `:1304` sur la PR 46), tout rôle |
 | idem, écriture de **règlement** | `invoice_settlements.journal_entry_id` → `invoice_id` (`20260827000001_invoice_settlements.sql` ; plusieurs factures par écriture depuis `20261118000001_grouped_settlements.sql`, clé `(journal_entry_id, invoice_id)`). Un règlement annulé est **supprimé** (`invoice_settlements_write.rs:1140`, `:972` groupé) | même règle que la ligne précédente | idem |
 | PDF d'un **avoir** | `credit_notes.journal_entry_id` (`20260627000001_credit_notes.sql:36` ; `CHECK` : émis ⇒ écriture, `:54`) ; statuts `draft`, `issued`, `cancelled` (`:50`) | rendu à la demande, sans contrôle de statut (`routes/credit_notes.rs:279-330`) | `GET /api/v1/credit-notes/{id}/pdf` (`lib.rs:1275` ; `:1317`), tout rôle |
 | **Document** d'une facture fournisseur | `supplier_invoices.purchase_journal_entry_id` ou `settlement_journal_entry_id` (`20260628000001`), ← `imported_supplier_invoices.supplier_invoice_id`, `status = 'completed'` (`20260629000001`). Règlement fournisseur **groupé** : plusieurs factures portent le même `settlement_journal_entry_id` (`20261118000001`, `CHECK` « ligne ⇒ écriture » ; `grouped_settlements.rs:9`) | fichier archivé | `GET /api/v1/supplier-invoices/{id}/source-document` (`lib.rs:1291` ; `:1333`), tout rôle (30-2c AC22) |
@@ -66,7 +66,7 @@ de requête, la branche fournisseur dédoublée pour l'achat et le règlement) :
 - **Clés étrangères** vers l'écriture seulement (`fk_invoices_journal_entry`, `fk_credit_notes_journal_entry`,
   `fk_supplier_invoices_purchase_je`, …) : le schéma admet qu'une ligne d'une société pointe une écriture d'une autre ;
   d'où le filtre de société sur chaque table.
-- **Documentation de l'API** : `docs/api-external.md` décrit ces réponses champ par champ (grand livre `:306`, journal
+- **Documentation de l'API** : `docs/api-external.md` décrit ces réponses champ par champ (grand livre `:310`, journal
   `:1164`, avec les précédents additifs `letteringCode` et champs en devise).
 - `fetch_counterparts` (`general_ledger.rs:639-690`) fait **une requête par compte**, appelée dans `for acc in accounts`
   (`:825`, `:861`), avec une liste `IN` de taille variable : **ce n'est pas le patron** de la 55-3a.
@@ -107,7 +107,8 @@ string | null; fileName?: string }`, `documents?: EntryDocument[]` sur `JournalE
 
 - **Facture** (vente et règlement) : `i.status = 'validated' OR (i.status = 'cancelled' AND i.pdf_storage_path IS NOT
   NULL)` — exactement les factures dont la route sert un PDF ; une facture annulée jamais figée n'a pas de justificatif.
-- **Avoir** : `cn.status <> 'draft'` — un avoir émis ou annulé a un PDF ; l'application n'écrit aujourd'hui que `issued`
+- **Avoir** : `cn.status <> 'draft'` — la route rend le PDF d'un avoir sans contrôle de statut ; un brouillon n'est pas
+  une pièce comptable ; l'application n'écrit aujourd'hui que `issued`
   (voir *Ce qui se lit au code*), la règle vaut pour un avoir annulé futur.
 - **Document fournisseur** : `isi.status = 'completed'`, achat ou règlement, **tous** les documents d'un règlement groupé.
 - **Filtre de société sur chaque table** de chaque branche (`je.company_id`, `i.company_id`, `cn.company_id`,
@@ -151,7 +152,8 @@ string | null; fileName?: string }`, `documents?: EntryDocument[]` sur `JournalE
    (aucun) ; facture fournisseur annulée, écriture d'achat (le document, comme le précédent).
 4. **AC-4 — Négatifs qui rougissent.** Chaque filtre est éprouvé par des données **posées en SQL direct** que le schéma
    admet : avoir `draft` portant un `journal_entry_id` (aucun justificatif) ; document importé `discarded` portant un
-   `supplier_invoice_id` (aucun) ; facture `draft` portant un `journal_entry_id` (aucune) ; **par branche**, une ligne de la
+   `supplier_invoice_id` dont la facture fournisseur porte l'écriture d'achat (aucun ; la table n'a pas de colonne
+   d'écriture, le lien passe par `supplier_invoice_id`) ; facture `draft` portant un `journal_entry_id` (aucune) ; **par branche**, une ligne de la
    société B (facture, règlement, avoir, facture fournisseur, document importé) qui pointe une écriture de la société A :
    le journal de A ne la montre pas (filtres de société des tables du document). Le T0 vérifie qu'aucune
    contrainte ne refuse ces lignes ; une ligne refusée par le schéma rend son filtre « défense en profondeur, non
@@ -161,8 +163,8 @@ string | null; fileName?: string }`, `documents?: EntryDocument[]` sur `JournalE
 5. **AC-5 — Bornes.** Deux sociétés, chacune avec ses justificatifs : le journal et le grand livre de A ne portent que
    ceux de A ; une écriture hors période n'est pas lue ; grand livre **à plusieurs comptes** : les justificatifs de chaque
    section sont justes. **Une requête** : la ligne d'appel de `documents_by_entry` dans chaque `generate` est citée au
-   Change Log et se trouve **hors** de toute boucle (`grep -n "documents_by_entry" crates/kesh-report/src/*.rs`, hors
-   `use` et commentaires, rend une définition et deux appels).
+   Change Log et se trouve **hors** de toute boucle (`grep -nE "documents_by_entry\(" crates/kesh-report/src/*.rs` rend une
+   définition et deux appels).
 6. **AC-6 — Contrat additif.** Une écriture sans justificatif sérialise **exactement** le JSON d'aujourd'hui (test de
    sérialisation, clés comparées) ; les exports PDF et CSV du journal et du grand livre rendent **le même résultat avec
    `documents` rempli et vidé** (même rapport, champ vidé à la main) : CSV, chaînes égales ; PDF, texte extrait par
@@ -170,8 +172,8 @@ string | null; fileName?: string }`, `documents?: EntryDocument[]` sur `JournalE
    d'abord que le texte extrait contient un numéro d'écriture connu) égal. Garde de non-régression, déclarée telle : les
    rendus ne lisent pas le champ. L'outil MCP du grand livre recopie ses champs : sa
    sortie est inchangée **par construction** ; `mcp_contrat` reste vert comme filet, non comme preuve.
-7. **AC-7 — Documentation de l'API.** `docs/api-external.md`, aux paragraphes du grand livre (`:306`) et du journal
-   (`:1164`) : le champ `documents` (forme, genres, absent quand vide, routes de lecture et droits, exports inchangés), sur
+7. **AC-7 — Documentation de l'API.** `docs/api-external.md`, aux paragraphes du grand livre (`:310`, à `1e23edb55`) et du
+   journal (`:1164`) — lignes à relever sur la base PR 46, que les Epics 46 et 47 déplacent — : le champ `documents` (forme, genres, absent quand vide, routes de lecture et droits, exports inchangés), sur
    le modèle des ajouts additifs précédents.
 8. **AC-8 — Note pour l'écran.** Le contrat TypeScript ci-dessus est recopié dans la fiche 55-3b à l'identique (revu à la
    passe de validation suivante).
@@ -181,9 +183,10 @@ string | null; fileName?: string }`, `documents?: EntryDocument[]` sur `JournalE
 - [ ] **T0** — Q1 tranchée par le mainteneur (sinon arrêt) ; base `epic/55-navigation` (PR 46 reprise) ; relever le sens
       d'un avoir `cancelled` et de son écriture ; vérifier les lignes SQL directes de l'AC-4 contre les contraintes.
 - [ ] **T1** — Tests rouges d'abord (AC-3 à AC-6) ; journal.
-- [ ] **T2** — `documents.rs`, champ `documents` du journal et du grand livre, appels hors boucle ; chaque littéral relevé
-      (production, tests, banc) reçoit `documents: Vec::new()` et rien d'autre (règle de fichier commun pour `csv.rs`,
-      `pdf.rs`, `benches/export.rs`, réécrits par les Epics 46 et 47).
+- [ ] **T2** — `documents.rs`, champ `documents` du journal et du grand livre, appels hors boucle ; les deux littéraux de
+      **production** (`journal_report.rs:232`, `general_ledger.rs:901`) reçoivent les justificatifs de la `HashMap` de
+      `documents_by_entry` ; les littéraux de **test et de banc** reçoivent `documents: Vec::new()` et rien d'autre (règle
+      de fichier commun pour `csv.rs`, `pdf.rs`, `benches/export.rs`, réécrits par les Epics 46 et 47).
 - [ ] **T3** — `docs/api-external.md` (AC-7).
 - [ ] **T4** — Gates.
 
@@ -249,3 +252,7 @@ littéraux de test de `csv.rs`, `pdf.rs`, `benches/export.rs`) ; plus `docs/api-
   inter-sociétés par branche (V2-2) ; `docs/api-external.md` (V2-3, AC-7) ; LOW V2-4 à V2-11 (garde de l'extraction PDF,
   fonctions citées au lieu des lignes de `kesh-api`, cinq branches, avoirs relevés au code, rayon d'impact, contrat
   compilable, commande de contrôle, taille M).
+- 2026-11-25 — Validation P3 ciblée (Haiku) : 0/0/5/6 ; remédiée : littéraux de production alimentés par la `HashMap`
+  (V3-1) ; D9 à cinq branches (V3-2) ; fichiers communs `lib.rs`, `csv.rs`, `docs/api-external.md` corrigés pour les
+  Epics 46 et 47 (V3-3, V3-4, V3-7) ; figement par la lecture depuis le Journal soumis au mainteneur (Q7, V3-5) ; LOW V3-6,
+  V3-8 à V3-11.

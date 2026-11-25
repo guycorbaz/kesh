@@ -118,7 +118,7 @@ Base `origin/main` à `1e23edb55` ; branches de l'Epic 46 lues par `git show <br
 - **D9 — Les justificatifs viennent de l'API du rapport, en une requête (Q1).** Chaque écriture du journal (et chaque ligne
   du grand livre) gagne un champ `documents: [{ kind, id, number, fileName? }]` (contrat exact : fiche 55-3a), rempli par
   **une seule requête groupée** sur la période
-  (`UNION ALL` des quatre rattachements, aucune requête par écriture) ; PDF et CSV des rapports inchangés ; outil MCP du
+  (`UNION ALL` des cinq rattachements, aucune requête par écriture) ; PDF et CSV des rapports inchangés ; outil MCP du
   grand livre inchangé (il recopie ses champs, `mcp/outils/grand_livre.rs:175`). (55-3a)
 - **D10 — Une écriture de règlement montre la facture réglée (Q4).** Le règlement d'une facture client ou fournisseur
   présente le PDF de la facture (ou les PDF de plusieurs factures, règlement groupé) ; *écarté* : rien sur les règlements —
@@ -144,8 +144,9 @@ parallèle de la 55-1 ou de la 55-2, avant la 55-3b.
 
 Règle **proposée** par le responsable de l'epic (celle qu'il applique à ses epics) ; c'est un **écart** à `CLAUDE.md`
 § *Test Locally First*, qui demande la suite E2E complète au dernier commit de code de **chaque** story (« rejouée au push »
-interdit, décision D7) : **soumise au mainteneur (Q6)**. Tant que Q6 n'est pas tranchée, et si elle est refusée, la règle de
-`CLAUDE.md` s'applique telle quelle (E2E complet au dernier commit de code de chaque story, en plus de ce qui suit).
+interdit, décision D7) : **soumise au mainteneur (Q6)**. Tant que Q6 n'est pas tranchée, ou si elle est refusée, la règle de
+`CLAUDE.md` s'applique telle quelle : E2E complet au dernier commit de code de chaque story ; `scripts/gate-ci.sh` et la
+suite complète de fin d'epic restent dus dans tous les cas.
 
 - **par story**, au dernier commit de code : `npm run check`, `lint-i18n-ownership`, `test:unit`, `build` ; pour la 55-3a
   en plus `cargo fmt --check`, `cargo clippy --workspace --all-targets -D warnings` et `cargo nextest` sur le rayon
@@ -191,9 +192,10 @@ Déclarés au kickoff (`CLAUDE.md` § *Fusions et fichiers communs*), relevés l
 | `frontend/src/lib/features/reports/JournalReportView.svelte`, `GeneralLedgerView.svelte`, `VatReportView.svelte`, `ReportSelector.svelte` | 55-1 (`ReportSelector` lu seulement), 55-2, 55-3b | — | 55-2 puis 55-3b |
 | `frontend/src/lib/features/reports/reports-url.ts` (neuf), `AccountLink.svelte` (neuf), `EntryDocuments.svelte` (neuf) | 55-1, 55-2, 55-3b | — | — |
 | `frontend/src/lib/features/imported-supplier-invoices/DocumentPreview.svelte` | 55-3b (propriété facultative `errorMessage`) | — | comportement d'aujourd'hui inchangé sans la propriété |
-| `crates/kesh-report/src/journal_report.rs`, `general_ledger.rs`, `documents.rs` (neuf), `lib.rs` | 55-3a | ni l'Epic 46 ni l'Epic 47 n'y touchent (relevé à la validation P1) | champ additif, exports inchangés |
-| `crates/kesh-report/src/csv.rs`, `pdf.rs`, `benches/export.rs` (littéraux de test seulement) | 55-3a | **Epic 46** (PR 46 : `csv.rs` +1119, `pdf.rs` +1776 lignes), **Epic 47** (`pdf.rs`, `presentation.rs`) | une ligne `documents: Vec::new(),` par littéral, rien d'autre |
-| `docs/api-external.md` (grand livre, journal) | 55-3a | Epic 46 (rapports groupés) | paragraphes propres |
+| `crates/kesh-report/src/journal_report.rs`, `general_ledger.rs`, `documents.rs` (neuf) | 55-3a | ni l'Epic 46 ni l'Epic 47 n'y touchent | champ additif, exports inchangés |
+| `crates/kesh-report/src/lib.rs` | 55-3a (`pub mod documents`) | **Epic 46** (+25 lignes, `pub mod`/`pub use`), **Epic 47** | une ligne, dans l'ordre alphabétique des modules |
+| `crates/kesh-report/src/csv.rs`, `pdf.rs`, `benches/export.rs` (littéraux de test seulement) | 55-3a | **Epic 46** (PR 46 : `csv.rs` 1119, `pdf.rs` 1776 lignes touchées), **Epic 47** (`csv.rs`, `pdf.rs`, `presentation.rs`) | une ligne `documents: Vec::new(),` par littéral, rien d'autre |
+| `docs/api-external.md` (grand livre `:310`, journal `:1164` à `1e23edb55`) | 55-3a | **Epic 46** (+74 lignes vers `:313`), **Epic 47** (vers `:308-311`) | phrase ajoutée en fin de paragraphe, lignes relevées sur la base |
 | `crates/kesh-api/tests/reports_e2e.rs` | 55-3a | Epics 46 et 47 (cités par le fichier de l'Epic 46) | bloc de tests propre |
 | `crates/kesh-i18n/locales/*/messages.ftl` | 55-2, 55-3b (55-1 si un texte apparaît) | Epic 46 (`reports-groups-*`) | bloc `reports-nav-*` propre à l'epic |
 | `frontend/src/lib/shared/i18n-keys.test.ts` (`sitesTotal`) | 55-2, 55-3b | tous | recompté par la garde après chaque reprise |
@@ -213,3 +215,6 @@ Déclarés au kickoff (`CLAUDE.md` § *Fusions et fichiers communs*), relevés l
 - **Q5** — Priorité de l'issue c) (proposition : P4, `enhancement`).
 - **Q6** — § *Gates* : E2E complet et `scripts/gate-ci.sh` en fin d'epic seulement, specs des Rapports à chaque story —
   écart à `CLAUDE.md` § *Test Locally First* (D7) : accepté pour cet epic ?
+- **Q7** — 55-3b : ouvrir depuis le Journal la facture d'une écriture **fige** son PDF s'il ne l'était pas (route
+  d'aujourd'hui, `Usage::Download`, trace d'audit), y compris pour un rôle *Consultation* — comme un téléchargement depuis
+  la fiche : d'accord, ou faut-il n'afficher que les factures déjà figées ?
