@@ -50,7 +50,9 @@ L'utilisateur, en tenant ses livres, navigue dans les Rapports comme dans des pa
    de résultat, Balance, Journaux, Grand livre et, par les comptes désignés, TVA —, par **un seul composant** (55-2).
 3. **Les justificatifs d'une écriture** — PDF figé de la facture, PDF de l'avoir, document d'une facture fournisseur —
    s'ouvrent **depuis le Journal**, par un bouton sur l'écriture, sans passer par l'écriture ni la facture ; le Grand livre
-   suit (55-3a serveur, 55-3b écran). « Justificatif » et non « pièce », qui désigne déjà le numéro d'écriture au grand livre.
+   suit (55-3a serveur, 55-3b écran).
+4. Le **Grand livre a son sélecteur d'exercice**, avec « dates libres » ; ses dates sont pré-remplies et *Générer*
+   utilisable en arrivant d'un autre onglet (55-2, défaut d). « Justificatif » et non « pièce », qui désigne déjà le numéro d'écriture au grand livre.
 
 ## Origine (relevé de l'utilisateur, transmis par le mainteneur le 2026-11-25)
 
@@ -59,6 +61,8 @@ L'utilisateur, en tenant ses livres, navigue dans les Rapports comme dans des pa
 - **b) Retour du navigateur.** *Retour* quitte la page Rapports au lieu de revenir au rapport précédent.
 - **c) Pièces** (téléphone du 2026-11-25, utilisateur et mainteneur) : voir les PDF associés à une écriture depuis la liste,
   **en particulier dans le Journal**.
+- **d) Grand livre** (remarque du 2026-11-25) : son bandeau n'a pas de sélecteur d'exercice ; en arrivant d'un autre
+  onglet, *Générer* est inutilisable (`bug` P3).
 
 ## Ce qui se lit au code (relevé du 2026-11-25)
 
