@@ -223,6 +223,28 @@ describe('JournalEntryForm — mode édition', () => {
 		}
 	);
 
+	// Story 53-1a (AC-12, J6-m, M23) — une réponse perdue au PUT n'est pas un échec : le
+	// toast dit que la modification a peut-être été enregistrée ; le formulaire reste
+	// actif (le second envoi rend OPTIMISTIC_LOCK_CONFLICT, inchangé).
+	it.each([
+		['coupure', { code: 'NETWORK_ERROR', status: 0, message: 'réseau coupé' }],
+		['délai', { code: 'TIMEOUT', status: 0, message: 'délai' }],
+		['503', { code: 'INTERNAL_ERROR', status: 503, message: 'panne' }],
+		['hors ApiError', new Error('boom')]
+	])('issue inconnue au PUT (%s) : toast J6-m, jamais « Erreur lors de la sauvegarde »', async (_nom, erreur) => {
+		const { onStale, onSuccess } = await submitWith(erreur);
+		expect(toastError).toHaveBeenCalledTimes(1);
+		expect(toastError).toHaveBeenCalledWith(
+			'La modification a peut-être été enregistrée : rechargez l’écriture avant de la modifier encore.'
+		);
+		expect(toastError).not.toHaveBeenCalledWith('Erreur lors de la sauvegarde');
+		expect(onStale).not.toHaveBeenCalled();
+		expect(onSuccess).not.toHaveBeenCalled();
+		// Le formulaire reste actif : aucun fieldset figé, « Valider » disponible.
+		expect((screen.getByRole('button', { name: 'Valider' }) as HTMLButtonElement).disabled).toBe(false);
+		expect((screen.getByTestId('journal-entry-fields') as HTMLFieldSetElement).disabled).toBe(false);
+	});
+
 	it('OPTIMISTIC_LOCK_CONFLICT : toast, rechargement, AUCUNE modale', async () => {
 		const { onStale } = await submitWith(apiError('OPTIMISTIC_LOCK_CONFLICT'));
 		expect(toastError).toHaveBeenCalledWith(

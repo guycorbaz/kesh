@@ -1210,7 +1210,8 @@ const ATTENDU = {
 	// Reprise de main (2026-11-25, correctif « une transaction de prestataire n'est écrite qu'une fois », 3 sites ajoutés) : attendu 3678 + 3 = 3681, à confirmer par la garde.
 	// Reprise de main (Epic 49, #1560, #1561) dans epic/50 (2026-11-25) : les deux côtés gardés ;
 	// 3681 (main) + 21 (48-12a/b) = **3702**, confirmé par la garde (`kesh-gate-logs/e50/reprise-main-r2/vitest-compteur.log`).
-	sitesTotal: 3702,
+	// Story 53-1a (#1355, 2026-11-25) : 3702 + 8 (entry-submit-state.ts : 1 ; JournalEntryForm.svelte : 7) = **3710**, confirmé par la garde.
+	sitesTotal: 3710,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/
