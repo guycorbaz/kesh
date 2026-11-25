@@ -116,7 +116,7 @@ test.describe('nom de la comptabilité — société ordinaire', () => {
 			expect(await nom.evaluate((e) => e.scrollWidth > e.clientWidth)).toBe(false);
 			const asideAvant = await page.locator('aside').boundingBox();
 
-			const long = 'Établissements Dupont-Müller & Fils, Société Anonyme de Construction'.slice(0, 70);
+			const long = 'Établissements Dupont-Müller & Fils, Société Anonyme de Constructions.';
 			expect([...long].length).toBe(70);
 			await renameCompany(ctx, long);
 			await page.reload();
