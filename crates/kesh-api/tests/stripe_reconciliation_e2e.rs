@@ -1527,6 +1527,158 @@ async fn annulation_d_un_versement_avant_reception(pool: MySqlPool) {
 }
 
 // ============================================================
+// Correctif des prestataires (#1539) — un versement n'est écrit qu'une fois
+// ============================================================
+
+/// Le scénario du défaut, pas à pas : versement accepté, réception de la
+/// banque rattachée à son écriture, puis annulation du **côté Stripe** — qui
+/// ne retire que le lien (`unlink_only`) : l'écriture reste, rapprochée de la
+/// réception. Le versement redevient pending ; la revue ne le propose plus, il
+/// est « à examiner » sous `already_posted` (l'écriture nommée), la règle
+/// commune des prestataires ; l'acceptation forcée de l'ancienne proposition
+/// est refusée `PROVIDER_TRANSACTION_ALREADY_POSTED`, en `200`, sans seconde
+/// écriture ni trace ; le rattachement à l'écriture existante, que le motif
+/// conseille, passe.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn versement_deja_ecrit_puis_detache_ni_propose_ni_ecrit_deux_fois(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let po = ctx.tx("po_TEST0001").await; // solde CHF, versé sur la banque CHF
+    let ancienne = proposition(&ctx.revue().await, po);
+    assert_eq!(ancienne["type"], "payout", "{ancienne}");
+    // 1. Accepter le versement.
+    let (s, b) = ctx.accepter(vec![ancienne.clone()]).await;
+    assert_eq!((s, b["failed"].clone()), (200, json!([])), "{b}");
+    let ecriture = b["accepted"][0]["journalEntryIds"][0].as_i64().unwrap();
+    // 2. Rattacher la réception de la banque à son écriture.
+    let reception = ctx
+        .reception(ctx.ba_banque, "125.15", "CHF", "2020-02-04")
+        .await;
+    let (s, b) = ctx.rattacher(reception, ecriture).await;
+    assert_eq!(s, 200, "{b}");
+    // 3. Annuler côté Stripe : le lien seul.
+    let (s, b) = ctx
+        .post(
+            &format!("/api/v1/reconciliation/transactions/{po}/cancel"),
+            json!({}),
+        )
+        .await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(ctx.etat(po).await, ("pending".into(), None));
+    assert_eq!(
+        ctx.etat(reception).await,
+        ("reconciled".into(), Some(ecriture))
+    );
+    assert_eq!(
+        ctx.count(&format!(
+            "SELECT COUNT(*) FROM journal_entries WHERE reverses_entry_id = {ecriture}"
+        ))
+        .await,
+        0,
+        "l'écriture du versement reste"
+    );
+    // 4. Revoir : plus proposé, à examiner, l'écriture nommée.
+    let revue = ctx.revue().await;
+    assert!(
+        !genres(&revue).contains(&("payout".to_string(), "po_TEST0001".to_string())),
+        "{revue}"
+    );
+    let motif = revue["toReview"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["transaction"]["id"] == po)
+        .cloned()
+        .unwrap_or_else(|| panic!("versement absent de « à examiner » : {revue}"));
+    assert_eq!(motif["code"], "already_posted", "{motif}");
+    assert_eq!(motif["details"], json!({ "journalEntryId": ecriture }));
+    // L'acceptation forcée de l'ancienne proposition : refusée, rien d'écrit.
+    let avant = ctx.ecritures().await;
+    let audit_avant = ctx.count("SELECT COUNT(*) FROM audit_log").await;
+    let (s, b) = ctx.accepter(vec![ancienne]).await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(b["accepted"], json!([]), "{b}");
+    assert_eq!(
+        b["failed"],
+        json!([{
+            "bankTransactionId": po,
+            "errorCode": "PROVIDER_TRANSACTION_ALREADY_POSTED",
+            "details": { "journalEntryId": ecriture },
+        }]),
+        "{b}"
+    );
+    assert_eq!(ctx.ecritures().await, avant, "aucune seconde écriture");
+    assert_eq!(
+        ctx.count("SELECT COUNT(*) FROM audit_log").await,
+        audit_avant,
+        "aucune trace d'acceptation"
+    );
+    assert_eq!(ctx.etat(po).await, ("pending".into(), None));
+    // Le geste conseillé : rattacher le versement à son écriture.
+    let (s, b) = ctx.rattacher(po, ecriture).await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(ctx.etat(po).await, ("reconciled".into(), Some(ecriture)));
+}
+
+/// La sonde positive : un versement jamais écrit reste proposé et s'accepte,
+/// à côté de deux écritures de son montant qui ne sont **pas** « l'autre côté »
+/// de son écriture — une saisie manuelle au compte du solde Stripe, non
+/// rattachée, et une écriture de la banque, rattachée à une réception, qui ne
+/// touche pas le compte du solde Stripe — et après l'acceptation de ses frais.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn versement_jamais_ecrit_reste_propose_a_cote_d_ecritures_de_meme_montant(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let frais: Vec<Value> = ctx.revue().await["proposals"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|p| p["type"] == "fee")
+        .cloned()
+        .collect();
+    assert!(!frais.is_empty());
+    let (s, b) = ctx.accepter(frais).await;
+    assert_eq!((s, b["failed"].clone()), (200, json!([])), "{b}");
+    // Saisie manuelle du versement, non rattachée.
+    ctx.ecriture(
+        "2020-02-03",
+        "Versement Stripe saisi à la main",
+        (ctx.banque, None),
+        (ctx.chf, None),
+        "125.15",
+    )
+    .await;
+    // Écriture de même montant, rapprochée de la banque, sans ligne au solde Stripe.
+    let autre = ctx
+        .ecriture(
+            "2020-02-04",
+            "Encaissement sans rapport",
+            (ctx.banque, None),
+            (ctx.produit, None),
+            "125.15",
+        )
+        .await;
+    let reception = ctx
+        .reception(ctx.ba_banque, "125.15", "CHF", "2020-02-04")
+        .await;
+    let (s, b) = ctx.rattacher(reception, autre).await;
+    assert_eq!(s, 200, "{b}");
+    let po = ctx.tx("po_TEST0001").await;
+    let revue = ctx.revue().await;
+    assert!(
+        !revue["toReview"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|f| f["code"] == "already_posted"),
+        "{revue}"
+    );
+    let v = proposition(&revue, po);
+    assert_eq!(v["type"], "payout", "{v}");
+    let (s, b) = ctx.accepter(vec![v]).await;
+    assert_eq!((s, b["failed"].clone()), (200, json!([])), "{b}");
+    assert_eq!(b["accepted"][0]["type"], "payout");
+}
+
+// ============================================================
 // AC-6 — interblocage dans une proposition : rejeu, jamais dans failed[]
 // ============================================================
 

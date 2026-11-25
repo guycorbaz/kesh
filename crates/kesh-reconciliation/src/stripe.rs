@@ -376,6 +376,12 @@ pub struct StripeReviewInput<'a> {
     /// Les versements de l'exercice rapprochés dont l'écriture n'est pointée
     /// par aucune transaction d'un autre compte bancaire.
     pub unreceived_payouts: &'a [BankTransaction],
+    /// Les transactions pending **déjà comptabilisées** de l'autre côté :
+    /// transaction → écriture, lues par la revue commune
+    /// (`LoadedReview::already_posted` de la route). Un versement qui y figure
+    /// va « à examiner » sous [`crate::provider_review::REVIEW_ALREADY_POSTED`],
+    /// avant tout autre motif (correctif des prestataires).
+    pub already_posted: &'a HashMap<i64, i64>,
 }
 
 /// Un motif sur une transaction, avec des détails.
@@ -436,11 +442,24 @@ pub fn complete_review(
 }
 
 /// Décision d'un versement pending (voir [`judge_payout`]).
+///
+/// **Avant tout autre motif**, la règle commune « écrite une seule fois » : un
+/// versement **déjà comptabilisé** — son écriture vivante, rapprochée de la
+/// réception d'un autre compte bancaire, alors que le versement lui-même a
+/// été détaché (annulation du seul côté Stripe, qui ne retire que le lien) —
+/// va « à examiner » sous `already_posted`, l'écriture nommée
+/// ([`ReviewFinding::already_posted`]) : jamais proposé, jamais sous un motif
+/// qui conseillerait de l'écrire de nouveau. La route rejuge la même règle à
+/// l'acceptation (`rejudge_writing`).
 fn decide_payout(
     review: &mut Review<StripeReviewProposal>,
     t: &BankTransaction,
     input: &StripeReviewInput<'_>,
 ) {
+    if let Some(entry_id) = input.already_posted.get(&t.id).copied() {
+        review.push_to_review(ReviewFinding::already_posted(t, entry_id));
+        return;
+    }
     let lines = payout_lines(t, input.payout_candidates);
     let destination = input.destinations.get(&t.bank_account_id);
     let payout_id = t.transaction_id.clone();
@@ -494,8 +513,8 @@ mod tests {
     use super::*;
     use crate::provider_review::{
         GAP_AMOUNT_OR_CURRENCY_MISMATCH, GAP_RECEIPT_WITHOUT_SALE, GAP_SALE_WITHOUT_RECEIPT,
-        ProviderAccount, REVIEW_AMBIGUOUS_SALE, REVIEW_FEE_ACCOUNT_MISSING, ReviewInput, SaleEntry,
-        SaleMovement, build_review,
+        ProviderAccount, REVIEW_ALREADY_POSTED, REVIEW_AMBIGUOUS_SALE, REVIEW_FEE_ACCOUNT_MISSING,
+        ReviewInput, SaleEntry, SaleMovement, build_review,
     };
     use chrono::NaiveDate;
     use kesh_db::entities::bank_transaction::BankTransactionStatus;
@@ -778,6 +797,7 @@ mod tests {
         refusals: HashMap<i64, &'static str>,
         unreceived: Vec<BankTransaction>,
         fee_account: Option<i64>,
+        posted: HashMap<i64, i64>,
     }
 
     fn sale(id: i64, description: &str, ledger: i64, currency: &str, amount: &str) -> SaleEntry {
@@ -812,6 +832,7 @@ mod tests {
                 refusals: HashMap::new(),
                 unreceived: Vec::new(),
                 fee_account: Some(6941),
+                posted: HashMap::new(),
             }
         }
 
@@ -843,7 +864,7 @@ mod tests {
                     rules: &rules,
                     rule_account_ids: &rule_ids,
                     primary_ledger_account_id: None,
-                    already_posted: &HashMap::new(),
+                    already_posted: &self.posted,
                 },
                 &SPEC,
             );
@@ -856,6 +877,7 @@ mod tests {
                     configured_destinations: &self.configured,
                     destination_refusals: &self.refusals,
                     unreceived_payouts: &self.unreceived,
+                    already_posted: &self.posted,
                 },
             )
         }
@@ -1029,6 +1051,51 @@ mod tests {
             po_a(&j.revue()),
             Some(serde_json::json!({ "payoutId": "po_A", "reason": "paypal" }))
         );
+    }
+
+    /// Correctif des prestataires (#1539) : un versement déjà comptabilisé de
+    /// l'autre côté va « à examiner » sous `already_posted`, l'écriture nommée,
+    /// **avant tout autre motif** — compte de versement absent, total faux —,
+    /// jamais proposé. La sonde positive : sans entrée dans `already_posted`,
+    /// ou une entrée pour une autre transaction, le versement reste proposé.
+    #[test]
+    fn versement_deja_comptabilise_a_examiner_avant_tout_autre_motif() {
+        let mut j = Jeu::new();
+        j.destinations.insert(
+            10,
+            PayoutDestination {
+                bank_account_id: 77,
+                label: "Banque EUR".into(),
+            },
+        );
+        j.pending.push(payout(1, "-194.00", "po_A"));
+        j.all.push(line(11, "200", "charge", "po_A"));
+        j.all.push(line(12, "-6.00", "charge", "po_A"));
+        // Sonde positive : une écriture déjà comptabilisée pour une autre
+        // transaction ne touche pas le versement.
+        j.posted.insert(99, 901);
+        let r = j.revue();
+        assert_eq!(r.proposals.len(), 1, "{:?}", r.to_review);
+        assert!(r.to_review.is_empty());
+        // Déjà comptabilisé : à examiner, l'écriture nommée, plus proposé.
+        j.posted.insert(1, 900);
+        let r = j.revue();
+        assert!(r.proposals.is_empty());
+        assert!(r.gaps.is_empty());
+        assert_eq!(codes(&r.to_review), [REVIEW_ALREADY_POSTED]);
+        assert_eq!(r.to_review[0].transaction.as_ref().map(|t| t.id), Some(1));
+        assert_eq!(
+            r.to_review[0].details,
+            Some(serde_json::json!({ "journalEntryId": 900 }))
+        );
+        // Avant le compte de versement absent…
+        j.destinations.clear();
+        assert_eq!(codes(&j.revue().to_review), [REVIEW_ALREADY_POSTED]);
+        // … et avant le total faux.
+        j.all.pop();
+        let r = j.revue();
+        assert!(r.gaps.is_empty(), "{:?}", r.gaps);
+        assert_eq!(codes(&r.to_review), [REVIEW_ALREADY_POSTED]);
     }
 
     #[test]
