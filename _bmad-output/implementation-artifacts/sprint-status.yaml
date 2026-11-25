@@ -1265,3 +1265,14 @@ development_status:
   fix-pdf-rapports-mise-en-page: done  # 2026-11-20 fusionnée (PR #1327, 0867f1fb8, fusion administrateur décidée par Guy) ; montants alignés à droite, titre accentué, en-têtes de devise ; issues de suite #1420 à #1430
   fix-api-parent-compte: done  # 2026-11-20 fusionnée (PR #1351, d29aa557e, fusion administrateur décidée par Guy) ; #1350 fermée, #983 fermée à la main ; issues de suite #1431 à #1435
   fix-prestataires-ecriture-unique: review  # 2026-11-24 : une transaction de prestataire déjà comptabilisée de l'autre côté n'est ni proposée ni écrite une seconde fois (moteur commun ; PayPal retrait et règle ; versement Stripe repris sur la branche de l'Epic 40)
+
+  # 2026-11-25 — Epic 55 « Navigation de l'interface » (numéro attribué par le mainteneur le 2026-11-25, contributeur) ; release : la
+  # prochaine planifiée après la 0.20.0 (numéro fixé par le mainteneur) ; fichier epic-55-navigation-interface.md ; développement sur la
+  # base de la PR de l'Epic 46 ; quatre stories, solde compris ; aucune migration ; backend pour la seule 55-3 (Q1 au mainteneur).
+  epic-55: backlog  # kickoff 2026-11-25 ; issues #À-VENIR (a : liens de compte, enhancement P4 ; b : Retour du navigateur, bug P3 ; c : pièces d'une écriture)
+  55-0-kickoff: done  # 2026-11-25 : fichier d'epic et fiches
+  55-1-etat-des-rapports-dans-l-url: drafted  # b) Retour et Suivant, lien partagé ; état des Rapports (onglet, exercice, période, compte, regroupement 46) dans l'URL
+  55-2-lien-de-compte-partout: drafted  # a) un composant AccountLink ; Journaux, Grand livre, TVA (comptes désignés), Compte de résultat à plat
+  55-3-pieces-des-ecritures: drafted  # c) icône des pièces dans le Journal (et le Grand livre) ; champ documents des rapports (backend kesh-report, sans migration)
+  55-4-solde-dette-epic: drafted  # story de solde ; plafond : 2 issues
+  epic-55-retrospective: optional
