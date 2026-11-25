@@ -656,8 +656,10 @@ enum EntrySqlMode {
 ///
 /// Paramètres, dans l'ordre : date de paiement de `t` (proximité), compte du
 /// grand livre actuel, `company_id`, `t.amount`, `t.bank_account_id` puis
-/// `t.currency` deux fois (condition 4, [`linkable_side`]), `t.bank_account_id`
-/// (condition 6), et — `One` — l'identifiant de l'écriture.
+/// `t.currency` deux fois (condition 4, [`linkable_side`] ; `PostedElsewhere` :
+/// `t.currency`, `t.amount`, `t.currency`, `t.amount` après le compte,
+/// [`posted_elsewhere_side`]), `t.bank_account_id` (condition 6), et — `One` —
+/// l'identifiant de l'écriture.
 ///
 /// Un seul texte : les variantes n'en diffèrent que par l'ajout de
 /// [`HAS_LINK`] ou la restriction à `e.id` (tests
@@ -847,7 +849,9 @@ fn linkable_side() -> String {
 /// `t.currency`, `t.amount`, `t.currency`, `t.amount`), où `m.movement =
 /// t.amount` : MariaDB refuse là `m.movement` dans ce `EXISTS`
 /// (`Unknown column 'm.movement' in 'WHERE'`, la condition étant poussée dans
-/// la table dérivée), alors qu'il l'admet dans la liste de sélection. À la différence de [`linkable_side`] et [`HAS_LINK`], une
+/// la table dérivée), alors qu'il l'admet dans la liste de sélection.
+///
+/// À la différence de [`linkable_side`] et [`HAS_LINK`], une
 /// transaction du **même** compte bancaire déjà liée à l'écriture (un
 /// rattachement fait par erreur à la place de la transaction que l'écriture
 /// nomme) ne la retire pas : la transaction qu'elle nomme reste déjà
