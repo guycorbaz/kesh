@@ -50,7 +50,7 @@ pourrait venir d'une route ouverte). C'est le mode d'échec de l'issue #285 : un
 partout, et rien ne signalait une suite qui cessait de tourner. La **suite complète** reste locale, avant tout push
 (`CLAUDE.md` § E2E).
 
-Montage : sur une PR de fork, MariaDB par `docker run` depuis le miroir ECR (le service est désactivé) ; connexion Docker
+Montage : sur une PR de fork, MariaDB par `docker run` depuis le premier miroir qui sert l'image (ECR, `mirror.gcr.io`, Docker Hub ; le service est désactivé) ; connexion Docker
 Hub (sautée sans secret, PR de fork : images de base par le miroir ECR, `moby/buildkit` par `mirror.gcr.io`), `setup-buildx`, reconstruction de l'image de la PR depuis le cache `gha` laissé par
 `docker-build` (`load: true`), puis `docker run --network=host` avec `KESH_TEST_MODE=true`, `KESH_HOST=127.0.0.1` (le
 mode test refuse un bind non-loopback), `KESH_COOKIE_SECURE=false` (HTTP), `KESH_PORT=3000` et
@@ -190,9 +190,9 @@ tiré **anonymement**, et un `429` de Docker Hub faisait échouer le job `backen
 
 | Où | Ce qui est tiré | Comment c'est authentifié | PR de fork (sans secret) |
 |---|---|---|---|
-| `ci.yml`, job `backend` | service `mariadb:10.11` | `services.mariadb.credentials` | service désactivé ; `public.ecr.aws/docker/library/mariadb:10.11` par `docker run`, anonyme |
-| `ci.yml`, job `e2e-smoke` | service `mariadb:10.11` ; images de base du `Dockerfile` ; `moby/buildkit` | `credentials` + `docker/login-action` | service désactivé, MariaDB par `docker run` ; MariaDB et images de base par ECR, `moby/buildkit` par `mirror.gcr.io`, anonymes |
-| `ci.yml`, job `docker-build` | images de base du `Dockerfile` (`rust`, `node`, `debian`) ; `moby/buildkit` | `docker/login-action` | images de base par ECR, `moby/buildkit` par `mirror.gcr.io`, anonymes |
+| `ci.yml`, job `backend` | service `mariadb:10.11` | `services.mariadb.credentials` | service désactivé ; `mariadb:10.11` par `docker run`, anonyme, du premier miroir qui la sert (ECR, `mirror.gcr.io`, Docker Hub) |
+| `ci.yml`, job `e2e-smoke` | service `mariadb:10.11` ; images de base du `Dockerfile` ; `moby/buildkit` | `credentials` + `docker/login-action` | service désactivé, MariaDB par `docker run` (même chaîne de miroirs) ; images de base par ECR, `moby/buildkit` par `mirror.gcr.io`, anonymes, sans reprise |
+| `ci.yml`, job `docker-build` | images de base du `Dockerfile` (`rust`, `node`, `debian`) ; `moby/buildkit` | `docker/login-action` | images de base par ECR, `moby/buildkit` par `mirror.gcr.io`, anonymes, sans reprise |
 | `release.yml`, job `docker` | service `mariadb:10.11` ; images de base ; `moby/buildkit` ; puis le push | `credentials` + `docker/login-action` | sans objet : déclenché par un tag du dépôt |
 
 - **La connexion précède `docker/setup-buildx-action`** dans les trois jobs qui construisent : le builder
@@ -200,14 +200,14 @@ tiré **anonymement**, et un `429` de Docker Hub faisait échouer le job `backen
   `mirror.gcr.io`, ci-dessous). ⚠️ Que ce tirage profite de la connexion est
   une **hypothèse** sur le comportement de l'action, à constater au journal du premier run (tirage authentifié ou non) —
   non vérifiée localement.
-- **Les PR issues de forks tournent sans secret, par le miroir public ECR** (C-31-2-3, révisé le 2026-11-24 sur décision
+- **Les PR issues de forks tournent sans secret, par des registres publics anonymes** (miroir ECR, `mirror.gcr.io`, Docker Hub ; C-31-2-3, révisé le 2026-11-24 sur décision
   du mainteneur : le dépôt reçoit désormais des PR de contributeurs, depuis leur fork). Ni `pull_request_target`, ni
   secret exposé : la CI d'un fork reste un `pull_request` ordinaire, en lecture seule. Les règles :
   - **Le service MariaDB** (jobs `backend` et `e2e-smoke`) reste un `services:` tiré de Docker Hub avec ses
     `credentials` sur `main` et les branches du dépôt. Sur une PR de fork, son image vaut `''` : un service d'image vide
     ne démarre pas, et MariaDB démarre à la place par l'étape « Start MariaDB (PR de fork) », qui lance
-    `scripts/ci-mariadb-fork.sh` : `docker run` de `public.ecr.aws/docker/library/mariadb:10.11`, sans authentification,
-    avec les mêmes variables, le même port (3306 publié sur l'hôte) et le même contrôle de santé, attendu « healthy »
+    `scripts/ci-mariadb-fork.sh` : `docker run` de `mariadb:10.11`, sans authentification, tirée d'abord par une
+    **chaîne de miroirs avec reprise** (ci-dessous), avec les mêmes variables, le même port (3306 publié sur l'hôte) et le même contrôle de santé, attendu « healthy »
     avant la suite. Le script est testé sur toute PR par `scripts/tests/ci-mariadb-fork.test.sh` (étape « Tests du
     démarrage MariaDB de fork » du job `backend`), qui compare aussi ses valeurs à celles des deux `services:`. La
     décision se lit dans le contexte `github`
@@ -221,6 +221,30 @@ tiré **anonymement**, et un `429` de Docker Hub faisait échouer le job `backen
     s'exécute après. Sur un fork, les `credentials` reçoivent donc une valeur de remplissage (`sans-objet`), jamais
     employée puisque le service ne démarre pas ; sur une PR du dépôt sans secret (Dependabot), ils restent vides, comme
     avant. Aucun job n'est dédoublé ni sauté : les noms des quatre checks requis ne changent pas.
+  - **La chaîne de miroirs de MariaDB** (`scripts/ci-mariadb-fork.sh`, depuis le run 45525662619 de la PR #1560, la
+    première PR de fork après la #1521) : à ce run, le smoke E2E a échoué à « Start MariaDB (PR de fork) » sur un refus
+    d'ECR, `toomanyrequests: Data limit exceeded` (exit 125), alors que le job `backend` avait obtenu l'image quelques
+    minutes plus tôt — un quota anonyme, intermittent (vraisemblablement compté par adresse, que les runners partagent ;
+    non établi par le run). Le script tire
+    donc l'image avant `docker run`, dans cet ordre : `public.ecr.aws/docker/library/mariadb:10.11`,
+    `mirror.gcr.io/library/mariadb:10.11`, puis `docker.io/library/mariadb:10.11` en anonyme. Chaque miroir est essayé
+    trois fois, à 5 puis 10 secondes d'intervalle (le délai double, borné à 20 s) ; le journal nomme chaque refus et le
+    miroir qui a servi ; `docker run --pull=never` démarre l'image obtenue. Si aucun ne la sert, l'étape échoue avec
+    « aucun miroir n'a servi l'image ». Au pire, la chaîne ajoute 45 secondes d'attente. Relevé le 2026-11-25, tiré
+    sans identifiants : les trois miroirs servaient `mariadb:10.11` sous la **même empreinte d'index**
+    (`sha256:e5fe75b2…`) — un relevé daté, non une garantie : l'étiquette est mouvante (comme celle du service), et
+    `mirror.gcr.io`, un cache, peut servir un temps un correctif plus ancien que Docker Hub. Le test (`scripts/tests/ci-mariadb-fork.test.sh`) éprouve la reprise sur le même miroir, le
+    passage au suivant, l'ordre des trois, le délai borné et l'échec de tous ; une sonde de mutation qui retire la
+    reprise le fait rougir.
+  - ⚠️ **Limite : les images de base du `Dockerfile` et `moby/buildkit` n'ont pas de reprise.** Sans secret, elles sont
+    tirées par BuildKit (`build-push-action`) et par `setup-buildx-action` depuis ECR et `mirror.gcr.io`, au même
+    quota anonyme pour ECR : les images de base (`rust` surtout) pèsent davantage que MariaDB, et un refus ferait
+    échouer `docker-build` ou `e2e-smoke` de la même façon. Une reprise n'y est ni simple ni sûre : le builder
+    `docker-container` a son propre magasin d'images, si bien qu'un `docker pull` préalable ne lui sert à rien ;
+    reprendre le build sur un autre `REGISTRY` doublerait la durée d'un build qui échoue pour une autre raison (le job
+    `docker-build` a 20 minutes) et changerait la clé du cache `gha` qu'`e2e-smoke` relit ; les miroirs de registre de
+    `buildkitd` ne se règlent que pour `docker.io`, et leur repli sur un refus n'est pas éprouvé ici. Sur un tel refus,
+    le remède est de relancer le job.
   - **Les connexions `docker/login-action`** (jobs `docker-build` et `e2e-smoke`) ne tournent que si le secret est
     présent : le job pose `HAS_DH: ${{ secrets.DOCKERHUB_TOKEN != '' }}` dans son `env`, et l'étape teste
     `env.HAS_DH == 'true'` (`secrets` n'est pas lisible dans un `if:` d'étape ; le booléen ne livre pas la valeur du
@@ -258,6 +282,8 @@ tiré **anonymement**, et un `429` de Docker Hub faisait échouer le job `backen
     premier run d'une PR de fork constatera le reste — service d'image vide non démarré et `credentials` de
     remplissage acceptés, MariaDB par `docker run` (essayé en local : « healthy » en une dizaine de secondes, connexion
     en `kesh`), tirages anonymes au journal, connexions sautées, builder sur `mirror.gcr.io`, cache `gha`.
+    *(Annoté le 2026-11-25 : le premier run d'une PR de fork, 45525662619 sur la #1560, a échoué au tirage anonyme
+    d'ECR — d'où la chaîne de miroirs ci-dessus.)*
 
   *(Jusqu'au 2026-11-24, ce paragraphe disait : « Les PR issues de forks et de Dependabot n'ont pas accès aux secrets :
   elles échouent au démarrage du service ou à l'étape de connexion — échec bruyant, jamais un faux vert. Aucun
