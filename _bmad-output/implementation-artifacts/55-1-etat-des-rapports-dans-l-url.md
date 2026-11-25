@@ -147,9 +147,9 @@ l'`onMount` (`:546`) et l'effet du grand livre (`:567`) :
      a un, sinon l'invite ; **aucune requête, aucune péremption** — une génération en vol sur un autre onglet continue, sa
      réponse atterrit dans son onglet (comportement d'aujourd'hui, `loading` global compris) ;
    - URL **complète** venue d'ailleurs (lien, chargement, Retour, Suivant) : si la clé affichée de l'onglet est celle-ci, le
-     rapport s'affiche sans requête ; sinon `generate()`, qui ne périme (`invalidateInFlight`) que la génération du
-     **même** onglet ou une génération que le changement d'exercice ou de projet du point 3 rend fausse — **jamais** celle
-     d'un autre onglet ;
+     rapport s'affiche sans requête ; sinon `generate()`, **tel qu'aujourd'hui** : une
+     génération à la fois (`invalidateInFlight`, `genSeq` global), comme un clic sur *Générer* — une adresse qui demande un
+     rapport est une demande neuve ; seuls les gestes sans requête (clic, URL incomplète) ne périment jamais rien ;
    - puis seulement, et si ce point n'a rien demandé, la règle de la 46-2 (`resyncActiveGroupedTab`).
 5. **Clés** (invariant) : la **clé affichée** d'un onglet est celle de la réponse **acceptée** qu'il affiche ; une **clé en
    vol**, distincte et par onglet, est posée au départ de la requête et devient la clé affichée à l'acceptation ; elle est
