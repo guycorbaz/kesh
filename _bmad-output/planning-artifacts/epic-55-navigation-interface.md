@@ -54,6 +54,9 @@ L'utilisateur, en tenant ses livres, navigue dans les Rapports comme dans des pa
 4. Le **Grand livre a son sélecteur d'exercice**, avec « dates libres » ; ses dates sont pré-remplies et *Générer*
    utilisable en arrivant d'un autre onglet (55-2, défaut d). « Justificatif » et non « pièce », qui désigne déjà le numéro d'écriture au grand livre.
 
+**Hors de l'epic** : les liens de compte **hors des Rapports** (vue d'une écriture, factures, plan comptable…) n'entrent
+pas dans l'Epic 55 ; l'utilisateur décide s'ils forment un epic à part (2026-11-25).
+
 ## Origine (relevé de l'utilisateur, transmis par le mainteneur le 2026-11-25)
 
 - **a) Liens de compte.** Sous *Rapports*, le numéro de compte ouvre le grand livre filtré dans le Bilan, la Balance (et le
@@ -211,7 +214,7 @@ Déclarés au kickoff (`CLAUDE.md` § *Fusions et fichiers communs*), relevés l
 | `frontend/src/lib/features/reports/TrialBalanceView.svelte` | 55-2 | **Epic 46** (46-6b, balance groupée) | idem |
 | `frontend/src/lib/features/reports/reports.api.ts` | 55-1a (`ledgerHref` inchangé), 55-2, 55-3b (lecteurs des PDF) | **Epic 46** (paramètres de regroupement, 46-8 : `getReportExportUrl`) | `ledgerHref` : sortie inchangée (D6) |
 | `frontend/src/lib/features/reports/reports.types.ts` | 55-3b (`hasDocuments`, `EntryDocument`) | **Epic 46**, Epic 47 | champ ajouté en fin de type |
-| `frontend/src/lib/features/reports/JournalReportView.svelte`, `GeneralLedgerView.svelte`, `VatReportView.svelte`, `ReportSelector.svelte` | 55-1a (`ReportSelector` lu seulement), 55-2, 55-3b | — | 55-2 puis 55-3b |
+| `frontend/src/lib/features/reports/JournalReportView.svelte`, `GeneralLedgerView.svelte`, `VatReportView.svelte`, `ReportSelector.svelte` | 55-1a (`ReportSelector` : exercice en gras, AC-14), 55-2, 55-3b | — | 55-2 puis 55-3b |
 | `frontend/src/lib/features/reports/reports-url.ts` (neuf), `AccountLink.svelte` (neuf), `EntryDocuments.svelte`, `EntryDocumentsViewer.svelte` (neufs) | 55-1a, 55-1b, 55-2, 55-3b | — | — |
 | `frontend/src/lib/features/imported-supplier-invoices/DocumentPreview.svelte` | 55-3b (propriété facultative `errorMessage`) | — | comportement d'aujourd'hui inchangé sans la propriété |
 | `crates/kesh-report/src/journal_report.rs`, `general_ledger.rs`, `documents.rs` (neuf) ; `crates/kesh-api/src/lib.rs`, `routes/journal_entries.rs`, `services/ecritures.rs` (service et route de lecture) ; tests neufs `crates/kesh-report/tests/documents.rs`, `crates/kesh-api/tests/journal_entry_documents_e2e.rs` | 55-3a | ni l'Epic 46 ni l'Epic 47 n'y touchent | champ additif, exports inchangés |

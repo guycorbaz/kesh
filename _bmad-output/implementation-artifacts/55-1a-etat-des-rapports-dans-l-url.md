@@ -1,6 +1,6 @@
 # Story 55-1a : l'état des Rapports dans l'URL — Retour, Suivant, lien partagé
 
-Status: ready-for-dev
+Status: drafted
 
 Epic : `_bmad-output/planning-artifacts/epic-55-navigation-interface.md` — D1 à D3, D5, Q2 (D4 : 55-1b). Issue : #À-VENIR (`bug`, P3, point b).
 Release : la prochaine planifiée après la 0.20.0 (numéro fixé par le mainteneur). **Frontend seulement, aucune migration.**
@@ -265,6 +265,32 @@ d'aujourd'hui.
 12. **AC-12 — Textes.** Aucun texte visible n'est ajouté (prévu) ; s'il en faut un, quatre locales dans le bloc
     `reports-nav-*`, `i18n-keys` (`sitesTotal` recompté par la garde) et `i18n-libelle-en-dur` verts.
 
+### Exigences de l'utilisateur (2026-11-25), critères explicites
+
+13. **AC-13 — Pas de second « Générer ».**
+    - Un onglet dont l'URL porte les paramètres d'un rapport **déjà généré** dans la session (par lui, ou par l'utilisateur)
+      **s'affiche seul** quand on y revient — clic sur l'onglet, *Retour*, *Suivant* — et un lien partagé affiche le sien
+      sans clic : rapport gardé par la page s'il a ces paramètres, requête sinon.
+    - Un onglet **jamais généré** reste à son invite jusqu'au clic sur *Générer*.
+    - Une modification des paramètres **sans clic** ne régénère rien (C-55-1-1).
+    - **Pas de requête en double** : un même jeu de paramètres ne déclenche qu'**un** appel (clés affichée et en vol,
+      point 4 ; compté par les Vitest de l'AC-7).
+    - **Ce critère tranche R-2** (point 3, génération d'un autre onglet en vol) : une adresse complète qui arrive pendant la
+      génération d'un autre onglet **demande son rapport** (comme un clic sur *Générer*, une génération à la fois) ; la
+      génération de l'autre onglet est périmée, et son onglet se réaffichera seul par son adresse (*Retour*), ou restera à
+      son invite s'il n'avait encore rien affiché. C-55-1-6 et la branche « aucune requête, l'invite » du point 3 sont
+      **remplacés** par cette règle, qui prime ; le manuel (AC-11) dit « arriver par *Retour* ou par un lien pendant le
+      chargement d'un autre rapport l'interrompt ».
+    - Tests : Vitest de la page — retour par clic sur un onglet généré (0 requête), *Retour* et *Suivant* (0 requête si
+      gardé, 1 sinon), lien partagé (1), onglet jamais généré (0, invite), champ modifié sans clic puis clic sur un autre
+      onglet et retour (0), adresse complète pendant la génération d'un autre onglet (1, l'autre périmée) ; E2E de l'AC-1 et
+      de l'AC-2.
+14. **AC-14 — L'exercice en gras.** Dans le sélecteur d'exercice du haut des rapports (`ReportSelector.svelte`, le `<select>`
+    lié à `selectedFiscalYearId`), l'exercice choisi s'affiche **en gras** (classe `font-semibold` du thème, aucune couleur
+    neuve), pour voir d'un coup d'œil dans quel exercice on se trouve. Style seulement : aucun texte, aucun comportement ne
+    change. Capture (thème clair) ; Vitest : la classe est posée sur le `<select>`. `ReportSelector.svelte` passe de « lu »
+    à « modifié » (tableau des fichiers communs).
+
 ## Tests à écrire, et la preuve du rouge
 
 - **Vitest `frontend/src/lib/features/reports/reports-url.test.ts`** (neuf) : lecture et écriture de chaque paramètre ;
@@ -418,3 +444,6 @@ qui l'affichent désormais à l'arrivée) ; le lien *Rapports* du menu ramène a
   sixième passe) : V6-1 et V6-2 en R-1 et R-2, avec leur résolution par défaut ; LOW listés. Tendance : P1 Opus 0/1/10/8 →
   P2 Sonnet 0/0/5/7 → P3 Opus 0/1/6/6 (découpage) → P4 Sonnet 0/1/4/8 (réduction) → P5 Opus 0/0/5/9 (retrait) → P6 ciblée
   Sonnet 0/0/2/6. `ready-for-dev` **sous réserve** du T0 (R-1, R-2).
+- 2026-11-25 — **Ajout** sur demande de l'utilisateur : AC-13 (pas de second « Générer », un seul appel par jeu de
+  paramètres ; tranche R-2 et remplace C-55-1-6) et AC-14 (exercice en gras dans le sélecteur du haut). Statut repassé à
+  `drafted`, validation reprise (P7, ciblée sur l'ajout).
