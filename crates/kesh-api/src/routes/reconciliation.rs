@@ -4508,9 +4508,13 @@ async fn accept_one_rule(
         }
     };
 
-    // Step 11 — description handler-side (Pass 2 Q9), UTF-8-safe truncate 200.
+    // Step 11 — description handler-side (Pass 2 Q9), UTF-8-safe truncate
+    // (`ENTRY_DESCRIPTION_MAX_CHARS`, 200).
     let raw_description = format!("Règle '{}' — {}", rule.label, counterparty_name);
-    let description: String = raw_description.chars().take(200).collect();
+    let description: String = raw_description
+        .chars()
+        .take(kesh_reconciliation::provider_review::ENTRY_DESCRIPTION_MAX_CHARS)
+        .collect();
 
     // Step 11bis (Story 19-5) — résout le projet analytique par défaut de la
     // règle et le RE-VALIDE ici (le projet a pu être archivé depuis la

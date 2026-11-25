@@ -102,7 +102,7 @@ export interface PendingByAccount {
 	count: number;
 	rejectedCount: number;
 	/**
-	 * Story 38-11d (revue P1, M1) — prestataire dont le compte est le solde (`'paypal'`),
+	 * Story 38-11d (revue P1, M1) — prestataire dont le compte est le solde (`'paypal'`, `'stripe'`),
 	 * `null` ou absent pour un compte ordinaire : ses transactions se rapprochent par la page
 	 * du prestataire, non par la réconciliation générique.
 	 */

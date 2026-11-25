@@ -325,6 +325,18 @@ describe('SettleInvoiceDialog — la contrepartie n’est pas le compte débiteu
 		await waitFor(() => expect(options('settle-bank')).toEqual(['2']));
 	});
 
+	// Story 40-7d (AC-1) — de même un compte Stripe ou Wise (`withoutProviders`).
+	it.each(['stripe', 'wise'] as const)('un compte %s n’est pas proposé au règlement client', async (provider) => {
+		const autre = {
+			...compte(3, 1031),
+			iban: null,
+			provider,
+			stripe: provider === 'stripe' ? { account: 'Stripe boutique', feeAccountId: null, payoutBankAccountId: null } : null,
+		} as BankAccountSummary;
+		monter([CAISSE, DEBITEURS], [compte(2, 1020, true), autre]);
+		await waitFor(() => expect(options('settle-bank')).toEqual(['2']));
+	});
+
 	it('`accounts` arrivé APRÈS l’ouverture ne réinitialise pas la saisie (mutation : présélection dans l’effet de réinitialisation)', async () => {
 		// Hôte qui passe les props une à une (cf. son en-tête : `rerender` les changerait toutes).
 		const { getByTestId } = render(SettleInvoiceDialogHost, {
