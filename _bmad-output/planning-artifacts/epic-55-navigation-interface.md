@@ -84,17 +84,18 @@ Base `origin/main` à `1e23edb55` ; branches de l'Epic 46 lues par `git show <br
   compte, comptes sans mouvement, compte analytique et mode, regroupement de l'Epic 46) sont des paramètres de requête ;
   l'écran se déduit de l'URL au chargement **et à chaque navigation** (Retour, Suivant, lien), par une fonction pure
   (`reports-url.ts`, lecture et écriture), non par des effets dispersés. (55-1)
-- **D2 — Empiler ou remplacer selon le geste.** Changement d'onglet et clic sur un lien de compte : **`pushState`** (une
-  entrée d'historique) ; *Générer*, changement d'exercice, contrôles de regroupement et accordéons : **`replaceState`**.
-  ⚠️ Le changement d'onglet en `pushState` **renverse D-7c** de la Story 21-7 (« pas d'empilement ») : c'est la demande de
+- **D2 — Empiler ou remplacer selon le geste.** Clic sur un onglet et clic sur un lien de compte : **`pushState`** (une
+  entrée d'historique) ; *Générer*, contrôles de regroupement, accordéons et flèches du clavier sur les onglets :
+  **`replaceState`** ; un champ modifié sans *Générer* n'écrit rien (l'URL décrit le dernier rapport demandé).
+  ⚠️ Le clic sur un onglet en `pushState` **renverse D-7c** de la Story 21-7 (« pas d'empilement ») : c'est la demande de
   l'utilisateur (b). (55-1)
-- **D3 — Une URL complète affiche son rapport (Q2).** Quand l'URL porte l'onglet et les paramètres requis de ce rapport
-  (l'exercice pour les rapports classiques, `from` et `to` pour le grand livre, le compte analytique pour les rapports
-  par projet ; rien pour la balance âgée), le rapport s'affiche sans clic sur *Générer* — **repris de la mémoire** s'il a
-  déjà été produit avec les mêmes paramètres, **redemandé** sinon. `/reports` sans paramètre reste l'écran d'aujourd'hui
-  (« Sélectionnez un exercice et cliquez sur Générer »). Conséquence voulue : un changement d'onglet, l'exercice étant
-  choisi, affiche le rapport de l'onglet (une requête, une trace `report.generated` au journal d'audit, comme un clic sur
-  *Générer* aujourd'hui). *Écarté* : ne générer qu'au clic — un lien partagé ou un *Retour* afficherait alors un onglet vide.
+- **D3 — Une URL venue de l'extérieur affiche son rapport ; un clic sur un onglet ne génère rien (Q2).** Arrivée sur une
+  URL complète (lien collé, rechargement, lien de compte, Retour ou Suivant) : le rapport s'affiche sans clic sur
+  *Générer*, **repris de la mémoire** s'il a été produit avec les mêmes paramètres, **redemandé** sinon. Le clic sur un
+  onglet, lui, montre le rapport que l'onglet a déjà, ou son invite, **comme aujourd'hui** : aucune requête, et la règle
+  revue de la 46-2 (un rapport groupé redemandé à la fin d'une génération en vol) reste intacte. `/reports` sans
+  paramètre reste l'écran d'aujourd'hui. *Écarté* (validation P1 de la 55-1) : générer à chaque changement d'onglet.
+  *(Amendée le 2026-11-25.)*
 - **D4 — Vue de regroupement : URL d'abord, mémoire ensuite.** Les paramètres de regroupement de l'URL priment sur la
   mémoire du navigateur de l'Epic 46 ; absents, la vue mémorisée s'applique et l'URL est complétée (`replaceState`), pour
   qu'un lien copié porte la vue affichée. La vue affichée reste mémorisée comme le fait déjà l'Epic 46 (dernière vue
@@ -195,8 +196,9 @@ Déclarés au kickoff (`CLAUDE.md` § *Fusions et fichiers communs*), relevés l
 
 - **Q1** — La 55-3 ajoute un champ aux réponses JSON du journal et du grand livre (backend, sans migration) : accepté dans
   cet epic ?
-- **Q2** — D3 : un changement d'onglet affiche aussitôt le rapport de l'onglet (l'exercice étant choisi), au lieu
-  d'attendre *Générer* : d'accord ?
+- **Q2** — D3 : une adresse de rapport collée, rechargée ou atteinte par Retour affiche le rapport sans *Générer*
+  (une requête et une trace d'audit si le rapport n'est pas en mémoire) ; le clic sur un onglet reste comme aujourd'hui :
+  d'accord ?
 - **Q3** — D7 : le lien de la TVA passe par les comptes désignés des réglages : d'accord ?
 - **Q4** — D10 : une écriture de règlement montre le PDF de la facture réglée : d'accord ?
 - **Q5** — Priorité de l'issue c) (proposition : P4, `enhancement`).
