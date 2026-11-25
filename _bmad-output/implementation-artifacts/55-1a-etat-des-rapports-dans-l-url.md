@@ -38,6 +38,9 @@ décision. Le correctif proposé par la passe est la résolution par défaut.
   `ReportSelector` ; celui des rapports par compte analytique, PR 46 `+page.svelte:966-971` ; celui du Grand livre, 55-2
   AC-11), par une classe commune ; le gras ne vaut que pour la valeur affichée du `<select>` (les options de la liste
   ouverte restent normales) ; la note de version le dit.
+- **R-6 (décision Q6 du mainteneur, 2026-11-25, versée sans passe : plafond atteint)** — § *Gates* aligné sur la
+  *Dérogation* du fichier d'epic (story purement écran : specs des Rapports et de la navigation à la story, E2E complet et
+  `gate-ci.sh` en fin d'epic) ; le T0 relit la phrase contre le fichier d'epic et le cite au Change Log.
 - **LOW de la P8** (`kesh-gate-logs/s55-maquettes/55-1a-validation-p8.md`, dernière passe, aucune remédiation) : V8-1
   (« aucune requête » au clic sur un onglet s'entend **du changement d'onglet lui-même** : la remise d'accord de la 46-2,
   `resyncActiveGroupedTab`, peut redemander un rapport groupé — à écrire ainsi dans l'AC-13, le tableau des gestes et D3) ;
@@ -373,8 +376,9 @@ invalide. Jointes au Dev Agent Record et au prompt de la revue de code.
 ## Gates
 
 `cd frontend && npm run check && npm run lint-i18n-ownership && npm run test:unit && npm run build` ; E2E : la spec neuve et
-les specs de T4 ; suite complète selon le § *Gates* du fichier d'epic (Q6 : tant qu'elle n'est pas tranchée, E2E complet au
-dernier commit de code de la story). Aucun gate backend.
+les specs de T4 (les specs des Rapports et de la navigation) ; suite complète et `scripts/gate-ci.sh` en fin d'epic, story **purement écran** (fichier d'epic, § *Gates*,
+*Dérogation*, Q6 tranchée par le mainteneur le 2026-11-25). Aucun gate
+backend.
 
 ## Note de version
 
@@ -492,3 +496,7 @@ qui l'affichent désormais à l'arrivée) ; le lien *Rapports* du menu ramène a
   passe permise, aucune remédiation : les LOW V8-1 et V8-3 se reprennent au T0, ligne lue citée au Change Log). Tendance :
   P1 Opus 0/1/10/8 → P2 Sonnet 0/0/5/7 → P3 Opus 0/1/6/6 → P4 Sonnet 0/1/4/8 → P5 Opus 0/0/5/9 → P6 ciblée Sonnet 0/0/2/6 →
   P7 ciblée Opus 0/0/4/6 → P8 ciblée Sonnet 0/0/0/5. `ready-for-dev` sous réserve du T0 (R-1 à R-3, R-5 ; R-4 tranché).
+- 2026-11-25 — **Décision du mainteneur versée** (Q6, dérogation partielle) : § *Gates* aligné sur la *Dérogation* du
+  fichier d'epic. **Sans passe** : le plafond de huit passes est atteint (P8) ; alignement mécanique sur une décision, à
+  recontrôler au **T0** (R-6 : la phrase du § *Gates* contre le § *Dérogation* du fichier d'epic, ligne lue citée au Change
+  Log).

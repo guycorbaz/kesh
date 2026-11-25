@@ -216,9 +216,9 @@ Captures (`kesh-gate-logs/s55-1b/`) : bilan groupé avant le lien ; après *Reto
 
 ## Gates
 
-`cd frontend && npm run check && npm run lint-i18n-ownership && npm run test:unit && npm run build` ; E2E des Rapports ;
-suite complète selon le § *Gates* du fichier d'epic (Q6 non tranchée ou refusée : E2E complet au dernier commit de code de
-la story).
+`cd frontend && npm run check && npm run lint-i18n-ownership && npm run test:unit && npm run build` ; E2E des Rapports et
+de la navigation au dernier commit de code ; suite complète et `scripts/gate-ci.sh` en fin d'epic, story **purement écran** (fichier d'epic, § *Gates*,
+*Dérogation*, Q6 tranchée par le mainteneur le 2026-11-25).
 
 ## Note de version
 
@@ -289,3 +289,5 @@ lien ou revenir par *Retour* remplace la présentation retenue. (refs #À-VENIR)
 - 2026-11-25 — Validation P6 ciblée (Sonnet) : 0/0/2/4. **Arrêt de la boucle par renvoi au développement** (R-1, R-2).
   Tendance : P1 Opus 0/0/7/8 → P2 Sonnet 0/0/3/6 → P3 ciblée Opus 0/0/3/5 (modèle récrit) → P4 Sonnet 0/0/4/5 → P5 Opus
   0/0/2/7 → P6 ciblée Sonnet 0/0/2/4. `ready-for-dev` **sous réserve** du T0 (R-1, R-2).
+- 2026-11-25 — **Décision du mainteneur versée** (Q6, dérogation partielle) : § *Gates* aligné sur la *Dérogation* du
+  fichier d'epic. Passe P7 ciblée sur ce changement ; au-delà de la sixième passe, ses points vont au T0 (R-n).

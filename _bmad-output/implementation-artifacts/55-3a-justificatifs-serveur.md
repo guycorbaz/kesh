@@ -1,13 +1,16 @@
 # Story 55-3a : les justificatifs d'une écriture dans la réponse du journal et du grand livre (serveur)
 
-Status: ready-for-dev
+Status: drafted
 
-Epic : `_bmad-output/planning-artifacts/epic-55-navigation-interface.md` — D9 (Q1), D10, D12 (aperçu sans figement). Issue : #À-VENIR
-(`enhancement`, priorité à fixer, Q5 ; point c, convenu au téléphone le 2026-11-25 entre l'utilisateur et le mainteneur).
-Release : la prochaine planifiée après la 0.20.0. **Aucune migration. ⚠️ Backend** (`kesh-report`, `kesh-api`) : un
-booléen additif dans la réponse JSON du journal et du grand livre, et **une route de lecture minimale** — l'epic était
-annoncé « frontend seulement » ;
-**à confirmer par le mainteneur (Q1)** avant le développement. *Réponses de l'utilisateur du 2026-11-25 versées* (D10 :
+Epic : `_bmad-output/planning-artifacts/epic-55-navigation-interface.md` — D9 (Q1), D10, D12 (aperçu sans figement), D13
+(marque d'un PDF non émis, Q10), D14 (fiche de la facture, Q8). Issue : #À-VENIR (`enhancement`, **P4**, Q5 ; point c,
+convenu au téléphone le 2026-11-25 entre l'utilisateur et le mainteneur).
+Release : la prochaine planifiée après la 0.20.0. **Aucune migration. ⚠️ Backend** (`kesh-report`, `kesh-api`,
+`kesh-qrbill`, `kesh-i18n`) : un booléen additif dans la réponse JSON du journal et du grand livre, **une route de lecture
+minimale**, et l'aperçu sans figement, dont le PDF porte sa marque — l'epic était annoncé « frontend seulement » ;
+**accepté par le mainteneur le 2026-11-25 (Q1), sous conditions** : le PDF d'aperçu porte lui-même la marque de Q10 sur
+chaque page ; une facture déjà figée s'affiche en PDF figé tel quel, sans marque ; le rendu d'aperçu ne sert qu'aux
+factures validées dont le PDF n'est jamais sorti. *Réponses de l'utilisateur du 2026-11-25 versées* (D10 :
 le règlement montre la facture réglée, client et fournisseur ; D12 : depuis le Journal et les Rapports, **afficher une
 facture ne la fige pas** — d'où une **route d'aperçu sans figement**, `GET /api/v1/invoices/{id}/pdf/preview`, que la
 55-3a crée, aucune n'existant aujourd'hui).
@@ -158,26 +161,32 @@ tout rôle authentifié (*Consultation* compris), **fermée aux clés d'API**, b
 - ⚠️ **Dérogation écrite à l'arbitrage 8 de la 25-6-b** (« une pièce sortie de Kesh est figée, qui que ce soit qui l'ait
   fait sortir », `issued_invoice_pdf.rs:37-39`, `invoice_pdf.rs:11-13`, manuel `user-manual.tex:1641`) : l'aperçu fait
   sortir vers l'écran un PDF de facture **non émis**. Motif : la réponse de l'utilisateur (afficher n'est pas figer),
-  bornée à l'**affichage dans Kesh** ; le bandeau (55-3b) dit que ce n'est pas le PDF émis. Le lecteur du navigateur
-  permet encore de télécharger l'aperçu : Q10 au mainteneur.
+  bornée à l'**affichage dans Kesh** ; **acceptée par le mainteneur (Q1) à condition que le PDF porte lui-même sa marque**
+  (*La marque d'un PDF non émis*, D13) : téléchargé par le lecteur du navigateur, imprimé ou transmis, l'aperçu dit de
+  lui-même qu'il n'est pas émis, et sa QR-facture barrée ne se paie pas. Le bandeau (55-3b) le dit en plus dans Kesh.
 - **Clés d'API : `403`** — une clé n'affiche rien ; ouvrir l'aperçu aux clés ferait sortir des PDF non figés vers un
   client d'API, au-delà de la réponse de l'utilisateur. Garde au gestionnaire sur `current_user.api_key_id` (le
   discriminant de `require_not_pat`, `middleware/rbac.rs:58-67`), code neuf `API_KEY_PREVIEW_FORBIDDEN`, message dans les
-  quatre locales (`kesh-i18n`). Rouvrir aux clés serait un choix du mainteneur (Q1).
+  quatre locales (`kesh-i18n`). Q1 acceptée par le mainteneur avec cette fermeture ; la rouvrir aux clés serait
+  un choix du mainteneur.
 
-- **facture figée** : le fichier figé, par `serve_frozen` (même vérification d'empreinte ; `410 INVOICE_PDF_GONE` si le
-  fichier manque, `500` s'il est altéré) — octet pour octet celui de `/pdf` ;
-- **facture validée non figée** : `render_document(…, PdfDocument::Invoice)` dans la langue du client (`client_language`,
-  la règle du figement), **sans aucune écriture** : ni fichier dans `KESH_DOCUMENTS_DIR`, ni colonne `pdf_*`, ni
-  `version`, ni trace d'audit (`invoice.pdf_frozen` ni aucune autre) ; les erreurs de rendu sont celles de `/pdf`
-  (`400 INVOICE_NOT_PDF_READY`, …) ;
+- **facture figée** (validée ou annulée) : le fichier figé, par `serve_frozen` (même vérification d'empreinte ; `410
+  INVOICE_PDF_GONE` si le fichier manque, `500` s'il est altéré) — octet pour octet celui de `/pdf`, **tel quel, sans
+  marque** (décision du mainteneur, Q1) ;
+- **facture validée non figée** — la seule à laquelle sert le rendu d'aperçu, celle dont le PDF n'est, pour Kesh, jamais
+  sorti (décision du mainteneur, Q1 ; Kesh n'en a pas d'autre signe que l'absence de figement : les cas du § 11.6.1 où un PDF
+  est sorti sans être figé — envoi d'avant la v0.12.1, facture dévalidée puis revalidée, sauvegarde d'avant le gel — sont
+  rendus en aperçu marqué, ce qui ne les fait pas passer pour un PDF émis) : `render_document(…, PdfDocument::Invoice)`
+  dans la langue du client (`client_language`, la règle du figement), **avec la marque d'aperçu** (D13), **sans aucune
+  écriture** : ni fichier dans `KESH_DOCUMENTS_DIR`, ni colonne `pdf_*`, ni `version`, ni trace d'audit
+  (`invoice.pdf_frozen` ni aucune autre) ; les erreurs de rendu sont celles de `/pdf` (`400 INVOICE_NOT_PDF_READY`, …) ;
 - **brouillon, facture annulée jamais figée** : `400 INVOICE_NOT_VALIDATED`, comme `/pdf` ;
 - `Content-Disposition: inline; filename="apercu-facture-<numéro>.pdf"` pour un rendu non figé, `facture-<numéro>.pdf`
   pour le fichier figé — en-tête pour un appel direct ; l'écran lit le PDF par `getBlob` et nomme lui-même le document
   (55-3b, AC-3) ;
 - **course** : un `GET /pdf` concurrent peut figer la facture entre la lecture et le rendu de l'aperçu ; l'aperçu rend
-  alors un rendu neuf, non le PDF émis. Limite assumée (le bandeau dit « aperçu »), sans relecture après le rendu ; écrite
-  à la note de l'API (T3) ;
+  alors un rendu neuf **marqué**, non le PDF émis. Limite assumée (le PDF porte « APERÇU » et sa QR-facture est barrée),
+  sans relecture après le rendu ; écrite à la note de l'API (T3) ;
 - une fonction `preview(ctx, invoice_id)` dans `issued_invoice_pdf.rs`, qui réemploie `load`, `is_frozen`,
   `serve_frozen` et `client_language` (DRY) ; `get_or_freeze` et `Usage` **inchangés** ; le gestionnaire dans
   `routes/invoice_pdf.rs`, sur le modèle de `get_invoice_pdf` (`:27-67`).
@@ -185,24 +194,71 @@ tout rôle authentifié (*Consultation* compris), **fermée aux clés d'API**, b
   facture »), `invoice_pdf_service.rs:274-278` (« ⛔ … la facture ne se rend plus directement ») et `invoice_pdf.rs:1`
   (un seul endpoint) : l'aperçu est le seul autre appelant légitime de `render_document(…, PdfDocument::Invoice)`, son
   rendu **n'est pas** le document émis et n'est jamais posé.
-- **Fiche de la facture inchangée** : son téléchargement continue de figer (`/pdf`, `Usage::Download`). Faut-il que
-  l'**affichage** sur la fiche passe aussi par l'aperçu, avec le même bandeau ? Question au mainteneur (Q8 du fichier
-  d'epic), **non tranchée ici**.
+- **Fiche de la facture inchangée** (D14, décision du mainteneur du 2026-11-25, Q8 refusée) : elle garde son bouton
+  actuel, qui fige au premier téléchargement (`/pdf`, `Usage::Download`) — c'est le **geste d'émission** ; elle n'a pas
+  d'aperçu.
+
+### La marque d'un PDF non émis (D13, Q10)
+
+Décision du mainteneur du 2026-11-25. Le rendu de l'aperçu non figé — et lui seul dans cette story — porte, **sur chaque
+page** :
+
+- **un filigrane « APERÇU »** en diagonale, assez gros pour traverser la page, qui peut passer sur le texte mais reste
+  **nettement moins foncé** que lui : gris clair (niveau fixé au T0 par la recette visuelle, point de départ `0.85` en RVB
+  égal, à comparer au noir `0.0` des textes), **dessiné avant le contenu** — donc sous lui : une lettre de texte noir posée
+  après reste noire là où elle croise le filigrane ; la facture reste bien lisible, **même imprimée en noir et blanc** ;
+- **en en-tête**, « Aperçu — non émis », à un endroit que le contenu d'aujourd'hui laisse libre (relevé au T0 : le bloc du
+  créancier commence à `PAGE_H - 20.0`, `pdf.rs:430`) ;
+- **la QR-facture barrée et non payable** : la section de paiement (`dessiner_section_de_paiement`, `pdf.rs:1802`) n'est
+  **pas** dessinée ; à sa place, sous le séparateur (`draw_separator`), un **cadre barré** (deux diagonales) portant une
+  mention courte (« Aperçu — non payable »). Aucune matrice QR, aucune croix suisse, aucun IBAN ni référence de paiement
+  dans le PDF. La charge utile reste **construite et validée** comme pour l'émission (`build_payload`, contrôle du module ≥
+  0,4 mm, `pdf.rs:73-86`) : l'aperçu refuse ce que l'émission refuserait (`400 INVOICE_NOT_PDF_READY`, …), il ne dessine
+  seulement pas la QR.
+
+**Un seul mécanisme de rendu**, dans `kesh-qrbill` (vérifié au code : le PDF de la facture se dessine dans
+`crates/kesh-qrbill/src/pdf.rs`, `generate_qr_bill_pdf_with_date`, `:58`, appelé par `render_document`,
+`crates/kesh-api/src/routes/invoice_pdf_service.rs:335`) : une structure publique de marque, **paramétrée par ses
+textes** (filigrane, en-tête, mention du cadre barré), passée en option au rendu de la facture ; **sans marque, le rendu
+est celui d'aujourd'hui, à l'octet près** (golden `crates/kesh-qrbill/tests/golden_test.rs`, `rendu_avant_apres.rs`,
+inchangés et verts). Le même mécanisme doit pouvoir servir **« BROUILLON »** (PDF d'un brouillon : filigrane « BROUILLON »,
+sans numéro, QR-facture barrée), avec d'autres textes et sans rien d'autre de neuf : aucun texte ni booléen « aperçu » en
+dur dans `kesh-qrbill`. **Le PDF d'un brouillon n'est pas livré ici** (question au mainteneur du fichier d'epic) :
+`render_document` refuse aujourd'hui un brouillon (`invoice.status != "validated"` → `InvoiceNotValidated`,
+`invoice_pdf_service.rs:293-295`) et la 55-3a ne change pas ce refus.
+
+- **Textes** : trois clés neuves de `kesh-i18n` (préfixe `invoice-pdf-preview-`, quatre locales), lues par `build_i18n`
+  (`invoice_pdf_service.rs:547`) et ajoutées à `I18N_KEYS` / `DEFAULT_EN` de `kesh-qrbill` (`types.rs`), dans la langue du
+  client comme le reste du document. Les caractères (`Ç`, `é`, `—`) sont ceux de WinAnsi : le T0 vérifie par extraction de
+  texte qu'ils sortent tels quels ; ⚠️ `texte_imprime` remplace U+2014 par `-` (`pdf.rs:433-436`) : la marque ne passe pas
+  par lui, ou la mention s'écrit sans tiret long — tranché au T0, constat au Change Log.
+- **Qui la porte** : la seule fonction `preview` (via `render_document`, un paramètre de marque). `get_or_freeze`
+  (téléchargement et envoi : le PDF **émis**), `serve_frozen` (le PDF figé) et les rappels (`PdfDocument::Reminder`) ne la
+  portent **jamais** (AC-12).
+- **Chaque page** : le PDF d'une facture tient aujourd'hui sur **une** page (`draw_invoice_section` refuse au-delà de sa
+  capacité, `INVOICE_TOO_MANY_LINES_FOR_PDF`, `pdf.rs:640`) ; la marque se dessine par page, pour qu'un rendu à plusieurs
+  pages futur la garde sur chacune.
+- **Gardes existantes** : `chaque_texte_s_imprime_en_noir` (`pdf.rs:2777`) tient le rendu **sans marque** et reste
+  inchangé ; le rendu marqué a son propre test (tous les textes en noir **sauf** le filigrane, remplissage remis au noir
+  après lui).
 
 ### Limite connue et évolution : un PDF produit hors de Kesh
 
 Un jour, une facture client créée par l'API pourra porter un **PDF produit hors de Kesh** ; c'est lui qui devra
-s'afficher, à la place du PDF que Kesh génère. **Non livré ici.** Le modèle ne l'empêche pas : un élément de la liste
+s'afficher, à la place du PDF que Kesh génère. **Non livré ici** (issue `enhancement`, évolution : texte dans
+`kesh-gate-logs/s55-decisions/issues-a-envoyer.md`). Le modèle ne l'empêche pas : un élément de la liste
 désigne la **facture** (`kind`, `id`), non un fichier ; c'est la route de lecture qui choisit le fichier servi ; et
 `pdfStatus` est une énumération ouverte, à laquelle une valeur (`external`) s'ajoutera, que l'écran d'aujourd'hui traite
 déjà (aucun bandeau). Issue `enhancement` à ouvrir (section *Issues à ouvrir*).
 
-**Par défaut, le PDF reçu est copié dans Kesh** (décision d'usager du 2026-11-25, à confirmer par le mainteneur) : le
-PDF d'une facture client créée par l'API, et ses pièces jointes, deviennent des fichiers **gérés par Kesh**, rangés et
-sauvegardés comme les autres documents, figés avec la facture. Ils ne restent pas un simple lien vers l'extérieur. La
-raison : le PDF doit rester cohérent avec les lignes de la facture enregistrées en base ; un fichier resté hors de Kesh
-peut changer ou disparaître sans que la facture le sache. Une option « lien seulement » n'est pas exclue, mais elle
-n'est pas le défaut.
+**Règles de cette évolution** (avis d'usager du 2026-11-25, **décidées par le mainteneur le même jour**) :
+
+- le PDF fourni **est** la pièce émise : copié dans Kesh, rangé et **sauvegardé** comme les autres documents, **figé**
+  avec la facture, **jamais régénéré** ; la raison : il doit rester cohérent avec les lignes de la facture en base, et un
+  fichier resté hors de Kesh peut changer ou disparaître sans que la facture le sache ;
+- pour une facture arrivée avec son PDF, Kesh ne produit **ni second PDF ni QR-facture à lui** — ni aperçu marqué : la
+  route d'aperçu servira ce PDF comme un PDF figé ;
+- « lien seulement » ne viendrait **que sur demande** : un lien ne passe pas dans le `.keshbackup`.
 
 ### Règles de rattachement
 
@@ -294,10 +350,30 @@ n'est pas le défaut.
     `pdfStatus: "notFrozen"`, une facture figée (validée ou annulée) `"frozen"` ; un avoir et un document fournisseur
     n'ont pas le champ. Après un `GET /pdf`, la même écriture rend `"frozen"`. Mutation : `pdf_status` toujours `frozen` →
     test rouge.
+11. **AC-11 — La marque d'aperçu (D13).** Tests dans `kesh-qrbill` (rendu avec marque, fixture d'une facture de
+    **plusieurs lignes**, au moins dix) : le texte extrait du PDF (l'extracteur des tests de `pdf.rs`, `couleurs_des_textes`
+    / `operations_du_pdf`, ou `kesh_report::texte_pdf` de la PR 46) contient le filigrane et l'en-tête de la marque, et la
+    mention du cadre barré ; il ne contient **aucun** des textes de la section de paiement (titres du récépissé et de la
+    section de paiement, IBAN formaté, référence) ; aucune matrice QR n'est dessinée (nombre de rectangles pleins de la
+    zone QR nul, ou absence de l'appel relevée par le test) ; le filigrane est rempli en gris de niveau ≥ celui fixé au T0
+    (jamais `0 0 0 rg`) et dessiné **avant** le premier texte du contenu (ordre des opérations du flux) ; tous les autres
+    textes sont en noir. Le **même** mécanisme, appelé avec les textes « BROUILLON », rend « BROUILLON » et aucun
+    « APERÇU » (test du paramétrage ; aucun PDF de brouillon livré). Une charge utile que l'émission refuse est refusée
+    avec marque aussi. Mutations, chacune rouge : filigrane dessiné après le contenu ; filigrane en noir ; section de
+    paiement dessinée sous la marque ; texte de marque en dur. Bout en bout (`invoice_pdf_preview_e2e.rs`) : l'aperçu d'une
+    facture validée non figée porte la marque dans la langue du client (deux locales), celui d'une facture figée **n'en
+    porte pas** (mêmes octets que `/pdf`, AC-9).
+12. **AC-12 — Le PDF émis ne change pas.** Sans marque, `generate_qr_bill_pdf_with_date` rend les mêmes octets
+    qu'aujourd'hui (golden de `kesh-qrbill` inchangés et verts, `chaque_texte_s_imprime_en_noir` inchangé) ; `GET /pdf`
+    après un aperçu fige un PDF **sans** marque (texte extrait : ni filigrane ni en-tête ; section de paiement présente) ;
+    un rappel n'en porte pas. Mutation : marque passée par `get_or_freeze` → test rouge.
 
 ## Tâches
 
-- [ ] **T0** — Q1 tranchée par le mainteneur (sinon arrêt) ; réponses de l'utilisateur relues (D10, D12) ; base `epic/55-navigation` (PR 46 reprise) ; relever le sens
+- [ ] **T0** — Q1 acceptée par le mainteneur le 2026-11-25, sous conditions (D12, D13) ; réponses de l'utilisateur
+      relues (D10, D12) ; pour la marque : zone libre de l'en-tête, niveau de gris (recette sur une impression en noir et
+      blanc ou une capture en niveaux de gris), passage ou non par `texte_imprime`, fichiers de `kesh-qrbill` touchés par
+      les Epics 46 et 47 relevés ; base `epic/55-navigation` (PR 46 reprise) ; relever le sens
       d'un avoir `cancelled` et de son écriture ; vérifier les lignes SQL directes de l'AC-4 contre les contraintes.
 - [ ] **T1** — Tests rouges d'abord (AC-3 à AC-6) ; journal.
 - [ ] **T2** — `documents.rs` (constructeur commun, deux fonctions) ; `has_documents` du journal et du grand livre, appels
@@ -315,8 +391,12 @@ n'est pas le défaut.
       `routes/invoice_pdf.rs` (garde des clés d'API), route dans `lib.rs` à côté de `/pdf` ; code
       `API_KEY_PREVIEW_FORBIDDEN` (`errors.rs`, quatre locales) ; les trois commentaires rendus faux ; `pdf_status` dans
       `documents_of_entry` (AC-10) ; tests `invoice_pdf_preview_e2e.rs`.
+- [ ] **T2quater** — La marque d'un PDF non émis (D13, AC-11, AC-12) : structure de marque et rendu dans
+      `kesh-qrbill/src/pdf.rs` (filigrane sous le contenu, en-tête, cadre barré à la place de la section de paiement),
+      clés dans `types.rs` (`I18N_KEYS`, `DEFAULT_EN`) et dans les quatre `messages.ftl` de `kesh-i18n` ; paramètre de
+      marque de `render_document`, passé par `preview` seulement ; tests et mutations ; recette visuelle.
 - [ ] **T3** — `docs/api-external.md` (AC-7, et la route d'aperçu : forme, droits, fermée aux clés, « n'écrit rien »,
-      course ; `pdfStatus`) ; la route ajoutée aux lignes de la table des codes d'erreur pour `INVOICE_NOT_PDF_READY`
+      PDF marqué « APERÇU », QR-facture barrée, course ; `pdfStatus`) ; la route ajoutée aux lignes de la table des codes d'erreur pour `INVOICE_NOT_PDF_READY`
       (`:1398` à `1e23edb55`), `INVOICE_NOT_VALIDATED` et `INVOICE_PDF_GONE`, et le code neuf `API_KEY_PREVIEW_FORBIDDEN`
       ; lignes relevées sur la base PR 46.
 - [ ] **T4** — Gates.
@@ -329,16 +409,27 @@ qui lisent le journal ou le grand livre étant longue — `reports_e2e`, `report
 `open_items_e2e`, `dates_bornes_e2e`, `services_motif`, `mcp_contrat`, `mcp_outils_e2e`, `mcp_enveloppe_e2e`,
 `mcp_transport_e2e`, `journal_entry_reversal_e2e`, les tests du lib ; relevé par `git grep -lE
 "reports/(journals|general-ledger)|journal_report|general_ledger" crates/kesh-api`) ;
-`scripts/gate-ci.sh` en fin d'epic ; E2E selon le § *Gates* du fichier d'epic (Q6 non tranchée ou refusée : E2E complet au dernier commit de code de la story). Aucun fichier de `kesh-db` touché (sinon gate complet, `CLAUDE.md` § *Exception
-`kesh-db`*).
+plus `package(kesh-qrbill)` pour la marque. **À la clôture de la story** (fichier d'epic, § *Gates*, *Dérogation* : la
+story qui touche le serveur suit la règle) : **gate complet** (`cargo fmt --all -- --check`, `cargo clippy --workspace
+--all-targets -- -D warnings`, `cargo nextest` du workspace) **et E2E complet** au dernier commit de code ;
+`scripts/gate-ci.sh` en fin d'epic. Aucun fichier de `kesh-db` touché (sinon gate complet en cours de boucle aussi,
+`CLAUDE.md` § *Exception `kesh-db`*).
+
+## Recette visuelle
+
+Captures (thème clair, `kesh-gate-logs/s55-3a/`) du PDF d'aperçu d'une facture validée non figée **de plusieurs lignes**
+(au moins dix), en couleur **et en niveaux de gris** (`pdftoppm -gray`, pour juger l'impression en noir et blanc) : le
+filigrane lisible comme marque, le texte de la facture lisible au travers ; l'en-tête ; le cadre barré à la place de la
+QR-facture. En regard, le PDF figé de la même facture, sans marque. Jointes au Dev Agent Record et au prompt de la revue
+de code.
 
 ## Note de version
 
 API : les écritures du journal et les lignes du grand livre portent `hasDocuments` (vrai quand l'écriture a au moins un
 justificatif : facture, avoir, document de facture fournisseur ; absent sinon) ; `GET /journal-entries/{id}/documents` rend
 la liste des justificatifs d'une écriture, avec l'état du PDF d'une facture (`pdfStatus`) ;
-`GET /invoices/{id}/pdf/preview` rend le PDF d'une facture **sans le figer** (le fichier figé s'il existe, un aperçu
-sinon), et n'écrit rien ; `GET /invoices/{id}/pdf` est inchangé ; exports PDF et CSV inchangés. (refs #À-VENIR)
+`GET /invoices/{id}/pdf/preview` rend le PDF d'une facture **sans le figer** (le PDF figé tel quel s'il existe ; sinon un
+aperçu marqué « APERÇU », en-tête « Aperçu — non émis », QR-facture barrée et non payable), et n'écrit rien ; `GET /invoices/{id}/pdf` est inchangé ; exports PDF et CSV inchangés. (refs #À-VENIR)
 
 ## Dev Notes
 
@@ -357,9 +448,16 @@ sinon), et n'écrit rien ; `GET /invoices/{id}/pdf` est inchangé ; exports PDF 
 
 ### Modules (règle de splitting préventif)
 
-Deux modules de production : `kesh-report` (`documents.rs`, `journal_report.rs`, `general_ledger.rs`, `lib.rs`, et les
-littéraux de test de `csv.rs`, `pdf.rs`, `benches/export.rs`) et `kesh-api` (le service `services/ecritures.rs`, la route
-`routes/journal_entries.rs`, l'aperçu `routes/issued_invoice_pdf.rs`, `routes/invoice_pdf.rs` et le commentaire d'`invoice_pdf_service.rs`, `errors.rs`, `lib.rs`), plus `kesh-i18n` (le message du code neuf, quatre locales) ; *réévalué à la validation Pv2p3 (Vv2p3-7)* : trois modules de production, sous le seuil de cinq ; taille portée de M à **L** ; l'aperçu ne dépend pas de la liste et pourrait sortir en story propre, ce qui ferait passer l'epic au-delà de la borne de six : choix laissé au mainteneur (Q1) ; plus `docs/api-external.md` et les tests `kesh-report/tests/`, `kesh-api/tests/`.
+Quatre modules de production : `kesh-report` (`documents.rs`, `journal_report.rs`, `general_ledger.rs`, `lib.rs`, et les
+littéraux de test de `csv.rs`, `pdf.rs`, `benches/export.rs`), `kesh-api` (le service `services/ecritures.rs`, la route
+`routes/journal_entries.rs`, l'aperçu `routes/issued_invoice_pdf.rs`, `routes/invoice_pdf.rs`, `invoice_pdf_service.rs`
+— paramètre de marque et commentaire —, `errors.rs`, `lib.rs`), **`kesh-qrbill`** (la marque, `pdf.rs`, `types.rs`, D13) et
+`kesh-i18n` (les textes de la marque, et le message du code neuf s'il reste, quatre locales) ; plus `docs/api-external.md`
+et les tests `kesh-report/tests/`, `kesh-api/tests/`, `kesh-qrbill/tests/`. *Réévalué après les décisions du mainteneur
+(2026-11-25)* : quatre modules de production, **sous le seuil de cinq** ; taille portée de L à **XL** — deux chantiers
+indépendants (la liste des justificatifs ; l'aperçu marqué, qui ne dépend pas de la liste) dans une story. **Signalé au
+mainteneur, non découpé** (l'epic est à six stories ; question *Taille de la 55-3a* du fichier d'epic). Si le mainteneur
+découpe, la coupure naturelle est AC-9, AC-11, AC-12, T2ter, T2quater (l'aperçu marqué) d'un côté, le reste de l'autre.
 
 ### References
 
@@ -374,9 +472,10 @@ littéraux de test de `csv.rs`, `pdf.rs`, `benches/export.rs`) et `kesh-api` (le
 
 ### Issues à ouvrir
 
-- (`enhancement`, évolution) Une facture client créée par l'API pourra porter un PDF produit hors de Kesh, à afficher à la
-  place du PDF généré (aperçu, justificatifs du Journal, fiche) ; le modèle de la liste ne l'empêche pas (*Limite connue
-  et évolution*) (Epic 55, story 55-3a).
+- (`enhancement`, évolution) Une facture client créée par l'API pourra porter un PDF produit hors de Kesh, qui **est** la
+  pièce émise (copié, sauvegardé, figé, jamais régénéré ; ni second PDF ni QR-facture de Kesh ; « lien seulement » sur
+  demande) ; le modèle de la liste ne l'empêche pas (*Limite connue et évolution*) (Epic 55, story 55-3a). Texte prêt :
+  `kesh-gate-logs/s55-decisions/issues-a-envoyer.md`.
 - (LOW, `enhancement`) Le détail d'une écriture de règlement fournisseur groupé ne montre qu'un document
   (`find_source_document_of_entry`, `LIMIT 1`) quand le journal les montre tous.
 
@@ -442,3 +541,12 @@ littéraux de test de `csv.rs`, `pdf.rs`, `benches/export.rs`) et `kesh-api` (le
   `issued_invoice_pdf.rs:37-39`, `invoice_pdf.rs:8-13`), Vv2p4-3 (« `404` sans corps » vrai sous le harnais
   `"nonexistent-static-dir"` seulement), Vv2p4-4 (clé `read-write` aussi `403` ; garde avant `get_company_for` et `load`,
   cas « clé sur une facture d'une autre société ou à fichier figé retiré : `403`, non `404`/`410` », mutation).
+- 2026-11-25 — **Décisions du mainteneur versées** (fichier d'epic, § *Décisions du mainteneur*) : Q1 acceptée sous
+  conditions (en-tête ; figée : PDF figé tel quel, sans marque ; rendu d'aperçu pour les seules validées non figées) ;
+  **Q10** : la marque d'un PDF non émis, section neuve (filigrane « APERÇU » sous le contenu, en gris clair ; en-tête
+  « Aperçu — non émis » ; QR-facture barrée, cadre barré à la place de la section de paiement, charge utile validée ;
+  un mécanisme paramétré par ses textes dans `kesh-qrbill`, prêt pour « BROUILLON », non livré), AC-11, AC-12, T2quater,
+  *Recette visuelle* (facture de plusieurs lignes) ; dérogation à l'arbitrage 8 réglée par la marque, course réécrite ;
+  **Q8** refusée (D14) ; Q5 (P4) ; Q6 (gate complet et E2E complet à la clôture de cette story) ; règles du PDF produit hors
+  de Kesh décidées ; modules réévalués (quatre, sous le seuil), taille **XL**, signalée sans découpage. Validation Pv2p5
+  ciblée sur ces changements.

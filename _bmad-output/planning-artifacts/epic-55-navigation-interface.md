@@ -12,7 +12,9 @@ Un epic = une release.
 
 **Migration** : aucune. **Backend** : **oui, pour la seule 55-3a** (voir § *Backend*), ajout d'un booléen (`hasDocuments`) aux
 réponses JSON du journal et du grand livre, d'une route de lecture, `GET /api/v1/journal-entries/{id}/documents`, et d'une
-**route d'aperçu sans figement**, `GET /api/v1/invoices/{id}/pdf/preview` (D12) — l'epic avait été annoncé « frontend seulement » ; **à confirmer par le mainteneur (Q1)**.
+**route d'aperçu sans figement**, `GET /api/v1/invoices/{id}/pdf/preview` (D12), dont le PDF porte sa **marque d'aperçu**
+(D13, `kesh-qrbill`) — l'epic avait été annoncé « frontend seulement » ; **accepté par le mainteneur le 2026-11-25 (Q1), sous
+conditions** (§ *Décisions du mainteneur*).
 
 **Taille** : **six stories**, solde compris — **à la borne** de six d'un epic de correction ou d'amélioration. La 55-3,
 ajoutée le 2026-11-25, est découpée en 55-3a et 55-3b à sa validation P1 (plus de cinq modules) ; la 55-1, en 55-1a et
@@ -28,8 +30,12 @@ périmètre a été réduit (rapports par compte analytique hors de l'URL), et l
 |---|---|---|---|
 | a) Liens de compte partout dans les Rapports | `enhancement` | P4 | #À-VENIR |
 | b) Retour du navigateur, état des Rapports dans l'URL | `bug` | P3 | #À-VENIR |
-| c) Justificatifs (PDF) d'une écriture depuis le Journal | `enhancement` | à fixer | #À-VENIR (à ouvrir, convenue au téléphone le 2026-11-25) |
-| d) Grand livre sans sélecteur d'exercice (*Générer* inutilisable en arrivant d'un autre onglet) | `bug` | P3 | #À-VENIR (texte : `kesh-gate-logs/s55-kickoff/issues-a-ouvrir.md`) ; traité par la 55-2 |
+| c) Justificatifs (PDF) d'une écriture depuis le Journal | `enhancement` | P4 (Q5, décidé le 2026-11-25) | #À-VENIR (convenue au téléphone le 2026-11-25) |
+| d) Grand livre sans sélecteur d'exercice (*Générer* inutilisable en arrivant d'un autre onglet) | `bug` | P3 | #À-VENIR ; traité par la 55-2 |
+| e) PDF d'une facture produit hors de Kesh (évolution, **non livrée** par l'epic) | `enhancement` | — | #À-VENIR ; ni livrable ni fermée par l'epic |
+
+Textes des cinq issues, prêts à ouvrir : `kesh-gate-logs/s55-decisions/issues-a-envoyer.md` (celui de d) y est repris de
+`kesh-gate-logs/s55-kickoff/issues-a-ouvrir.md`).
 
 **Décompte au tag précédent** (`CLAUDE.md` § *Priorités des défauts*, à mesurer par le mainteneur, l'agent de l'epic n'ayant
 pas `gh`) : issues ouvertes au tag précédent : **À-MESURER** ; dont bugs : **À-MESURER**. Objectif à terme : moins d'issues
@@ -49,18 +55,39 @@ L'utilisateur, en tenant ses livres, navigue dans les Rapports comme dans des pa
    des Rapports se **partage par un lien** et se retrouve au rechargement (55-1a ; la présentation de l'Epic 46, 55-1b).
 2. Le **numéro de compte est un lien** vers le grand livre de ce compte partout où un rapport en montre un — Bilan, Compte
    de résultat, Balance, Journaux, Grand livre et, par les comptes désignés, TVA —, par **un seul composant** (55-2).
-3. **Les justificatifs d'une écriture** — PDF de la facture (le PDF figé, ou un aperçu s'il n'est pas encore émis), PDF de l'avoir, document d'une facture fournisseur —
-   s'ouvrent **depuis le Journal**, par un bouton sur l'écriture, sans passer par l'écriture ni la facture, et **sans figer**
-   la facture (aperçu, bandeau « PDF non figé ») ; le Grand livre suit (55-3a serveur, 55-3b écran).
+3. **Les justificatifs d'une écriture** — PDF de la facture (le PDF figé tel quel, ou, s'il n'est pas encore émis, un
+   aperçu qui porte lui-même sa marque : filigrane « APERÇU », en-tête « Aperçu — non émis », QR-facture barrée), PDF de
+   l'avoir, document d'une facture fournisseur — s'ouvrent **depuis le Journal**, par un bouton sur l'écriture, sans passer
+   par l'écriture ni la facture, et **sans figer** la facture (aperçu, bandeau « PDF non figé ») ; le Grand livre suit
+   (55-3a serveur, 55-3b écran).
 4. Le **Grand livre a son sélecteur d'exercice**, avec « dates libres » ; ses dates sont pré-remplies et *Générer*
    utilisable en arrivant d'un autre onglet (55-2, défaut d). « Justificatif » et non « pièce », qui désigne déjà le numéro d'écriture au grand livre.
 
-**Hors de l'epic** : les liens de compte **hors des Rapports** (vue d'une écriture, factures, plan comptable, comptes
-bancaires, postes ouverts, soldes d'ouverture, pages des prestataires), avec le saut vers le grand livre du compte sur
-l'exercice de l'écriture, la ligne surlignée, n'entrent pas dans l'Epic 55 ; faut-il un epic à part ? (Q9 au mainteneur).
-De même, un PDF de facture **produit hors de Kesh** (facture créée par l'API) : évolution, non livrée (55-3a, *Limite
-connue et évolution*). Par défaut, ce PDF et ses pièces jointes seront **copiés dans Kesh**, gérés et figés avec la
-facture, pour rester cohérents avec ses lignes en base (avis d'usager du 2026-11-25, à confirmer).
+## Hors périmètre
+
+- **Les liens de compte hors des Rapports** (vue d'une écriture, factures, plan comptable, comptes bancaires, postes
+  ouverts, soldes d'ouverture, pages des prestataires), avec le saut vers le grand livre du compte sur l'exercice de
+  l'écriture et la ligne surlignée : **un epic à part (numéro à confirmer)**, décidé par le mainteneur le 2026-11-25 (Q9).
+  Il dépend de l'Epic 55. **Ce que l'Epic 55 lui laisse de réutilisable**, vérifié aux fiches :
+  - **le composant de lien** : `AccountLink.svelte` (55-2, AC-1), propriétés `{ accountId, number, from, to, linked?,
+    testId? }`, sans dépendance à la page des Rapports — un appelant hors des Rapports lui passe les bornes de l'exercice
+    de l'écriture ; il vit sous `frontend/src/lib/features/reports/` (l'epic à part le déplacera sous `lib/shared/` s'il le
+    juge utile, `ledgerHref` gardant sa sortie à l'octet, D6) ;
+  - **le saut** : une adresse `/reports?tab=general-ledger&accountId=…&from=…&to=…` affiche le grand livre de ce compte
+    sans *Générer*, à l'arrivée par un lien, Retour ou Suivant (55-1a, D1 à D3) ; `reports-url.ts` est faite pour gagner un
+    paramètre sans rien changer d'autre (§ *Recouvrement avec l'Epic 46*) ;
+  - ⚠️ **la ligne surlignée n'est pas posée par l'Epic 55** : aucune fiche ne porte un paramètre d'écriture dans l'adresse
+    du grand livre ni le surlignage d'une ligne (`grep -n "surlign\|highlight"` sur les fiches 55-* : aucun résultat).
+    L'epic à part l'ajoutera, en un paramètre de plus dans `reports-url.ts` et `ledgerHref`, ou la 55-2 le prendra si le
+    mainteneur en décide autrement (question *Ligne surlignée*, § *Questions au mainteneur*).
+- **Un PDF de facture produit hors de Kesh** (facture créée par l'API) : évolution, **non livrée** (55-3a, *Limite connue et
+  évolution* ; issue e). Règles décidées par le mainteneur le 2026-11-25, dans la limite connue de la 55-3a : le PDF fourni
+  **est** la pièce émise — copié dans Kesh, sauvegardé, figé, jamais régénéré ; Kesh ne produit ni second PDF ni QR-facture
+  à lui pour une facture arrivée avec son PDF ; « lien seulement » ne viendrait que sur demande, un lien ne passant pas
+  dans le `.keshbackup`.
+- **Le PDF d'un brouillon** (filigrane « BROUILLON », sans numéro, QR-facture barrée) : **pas un livrable de l'Epic 55** ;
+  sa place est à décider (question *PDF du brouillon*). La marque de la 55-3a (D13) est seulement écrite pour pouvoir le
+  servir.
 
 ## Origine (relevé de l'utilisateur, transmis par le mainteneur le 2026-11-25)
 
@@ -98,7 +125,7 @@ Base `origin/main` à `1e23edb55` ; branches de l'Epic 46 lues par `git show <br
 | Routes de lecture | `GET /api/v1/invoices/{id}/pdf` (fige au premier rendu), `GET /api/v1/credit-notes/{id}/pdf`, `GET /api/v1/supplier-invoices/{id}/source-document` — **tout rôle authentifié** | `kesh-api/src/lib.rs:1262,1275,1291` |
 | DTO des rapports | `JournalEntryRow { entryId, entryNumber, entryDate, description, lines }`, `LedgerLine { entryId, … }` : **aucun champ de justificatif** | `kesh-report/src/journal_report.rs:41` ; `general_ledger.rs:229` |
 
-## Décisions (proposées au kickoff ; celles marquées **Q** attendent le mainteneur)
+## Décisions (proposées au kickoff ; les questions **Q** tranchées par le mainteneur le 2026-11-25, § *Décisions du mainteneur*)
 
 - **D1 — L'URL est la source de l'état des Rapports.** L'onglet et tous les paramètres de la vue (exercice, période,
   compte, comptes sans mouvement, regroupement de l'Epic 46) sont des paramètres de requête — **les rapports par compte
@@ -128,9 +155,9 @@ Base `origin/main` à `1e23edb55` ; branches de l'Epic 46 lues par `git show <br
 - **D6 — Un seul composant de lien de compte** (`AccountLink.svelte`) qui rend le numéro et le lien de `ledgerHref` ;
   toutes les vues l'emploient. `ledgerHref` garde sa sortie **à l'octet près** (ordre `tab`, `accountId`, `from`, `to`)
   pour l'accueil et la réévaluation. (55-2)
-- **D7 — TVA : les comptes désignés (Q3).** Le décompte TVA ne montre aucun compte. La 55-2 ajoute une ligne « Comptes au
+- **D7 — TVA : les comptes désignés (Q3, acceptée par le mainteneur le 2026-11-25).** Le décompte TVA ne montre aucun compte. La 55-2 ajoute une ligne « Comptes au
   grand livre : TVA due `NNNN` · TVA récupérable `MMMM` » (réglages de facturation, lisibles par tout rôle), chaque numéro
-  en lien vers son grand livre sur la période du décompte ; compte non désigné : sa mention est omise. Une ligne à part, et
+  en lien vers son grand livre sur la période du décompte ; compte non désigné : sa mention est omise — **sans compte désigné, aucun lien**. Une ligne à part, et
   non un lien sur les montants : la TVA due du décompte vient des factures, non du solde du compte (manuel, § *Décompte
   TVA*). *Écarté* : ajouter des comptes au DTO de la TVA (backend). *(Amendé à la validation P1 de la 55-2.)* (55-2)
 - **D8 — Grand livre : contreparties et titre.** Les numéros de contrepartie deviennent des liens (numéro → compte par la
@@ -153,12 +180,25 @@ Base `origin/main` à `1e23edb55` ; branches de l'Epic 46 lues par `git show <br
   inchangés. (55-3b)
 - **D12 — Afficher n'est pas figer (réponse de l'utilisateur du 2026-11-25, ancienne Q7).** Depuis le Journal et les
   Rapports, afficher une facture **ne la fige pas** : une route d'aperçu neuve, `GET /api/v1/invoices/{id}/pdf/preview`
-  (fichier figé s'il existe, rendu non figé sinon, **aucune écriture** ni trace d'audit, tout rôle, *Consultation*
-  compris, **fermée aux clés d'API** ; dérogation écrite à l'arbitrage 8 de la 25-6-b, « une pièce sortie de Kesh est figée ») — aucune voie d'aperçu sans figement n'existe au code (`issued_invoice_pdf.rs` : `Usage` n'a que `Download` et
-  `Send`). La liste porte l'état du PDF (`pdfStatus`) ; une facture non figée s'affiche sous un **bandeau** « Aperçu — PDF
+  (facture **figée** : le PDF figé **tel quel, sans marque** ; facture **validée non figée** — la seule à laquelle sert le
+  rendu d'aperçu : celle dont le PDF n'est, pour Kesh, jamais sorti — : un rendu qui porte la marque d'aperçu, D13 ; **aucune
+  écriture** ni trace d'audit, tout rôle, *Consultation* compris, **fermée aux clés d'API** ; dérogation écrite à
+  l'arbitrage 8 de la 25-6-b, « une pièce sortie de Kesh est figée », acceptée par le mainteneur à condition que le PDF
+  porte lui-même sa marque, Q1) — aucune voie d'aperçu sans figement n'existe au code (`issued_invoice_pdf.rs` : `Usage`
+  n'a que `Download` et `Send`). La liste porte l'état du PDF (`pdfStatus`) ; une facture non figée s'affiche sous un **bandeau** « Aperçu — PDF
   non figé : … » (texte repris au T0, R-1 de la 55-3b : « ni téléchargée ni envoyée » est faux pour une facture
-  dévalidée puis revalidée) (les termes de Kesh : « figé », « PDF émis »). **La fiche
-  de la facture ne change pas** (son téléchargement fige) ; son affichage : Q8. (55-3a, 55-3b)
+  dévalidée puis revalidée) (les termes de Kesh : « figé », « PDF émis »). (55-3a, 55-3b)
+- **D13 — La marque d'un PDF non émis (Q10, décision du mainteneur du 2026-11-25).** Le PDF d'aperçu non figé porte
+  lui-même, sur chaque page : un filigrane « APERÇU » en diagonale, assez gros, qui peut passer sur le texte mais reste
+  **nettement moins foncé** que lui — dessiné **sous** le contenu, en gris clair, la facture restant bien lisible, même
+  imprimée en noir et blanc ; en en-tête, « Aperçu — non émis » ; et **une QR-facture barrée, non payable** : la section de
+  paiement est remplacée par un cadre barré, sans QR. **Un seul mécanisme de rendu**, dans `kesh-qrbill` (où se dessine le
+  PDF de la facture, `pdf.rs`), paramétré par ses textes, sert « APERÇU » et pourra servir « BROUILLON » (le PDF d'un
+  brouillon n'est pas un livrable de l'epic). Le PDF figé, le PDF émis (téléchargement, envoi) et les rappels ne portent
+  jamais la marque. Recette visuelle : une facture de plusieurs lignes. (55-3a)
+- **D14 — La fiche de la facture garde son bouton (Q8, refusée par le mainteneur le 2026-11-25).** Le téléchargement depuis
+  la fiche fige le PDF au premier téléchargement, comme aujourd'hui : c'est le **geste d'émission**. L'aperçu ne sert
+  qu'aux Rapports (Journal, Grand livre) ; la fiche n'en a pas. (55-3a, 55-3b)
 
 ## Stories
 
@@ -168,7 +208,7 @@ Base `origin/main` à `1e23edb55` ; branches de l'Epic 46 lues par `git show <br
 | 55-1a | L'état des Rapports dans l'URL : Retour, Suivant, lien partagé | base PR 46 | M | `55-1a-etat-des-rapports-dans-l-url.md` |
 | 55-1b | La présentation des rapports groupés dans l'URL (Epic 46) | 55-1a | S | `55-1b-presentation-dans-l-url.md` |
 | 55-2 | Le lien de compte partout : Journaux, Grand livre, TVA, Compte de résultat à plat ; sélecteur d'exercice du Grand livre | 55-1a | M | `55-2-lien-de-compte-partout.md` |
-| 55-3a | Les justificatifs d'une écriture dans la réponse du journal et du grand livre, et l'aperçu sans figement (serveur) | base PR 46 ; Q1 ; **backend** | L | `55-3a-justificatifs-serveur.md` |
+| 55-3a | Les justificatifs d'une écriture dans la réponse du journal et du grand livre, et l'aperçu marqué sans figement (serveur) | base PR 46 ; **backend** (Q1 acceptée) | **XL** (signalé, § *Questions au mainteneur*) | `55-3a-justificatifs-serveur.md` |
 | 55-3b | Ouvrir les justificatifs depuis le Journal (et le Grand livre) | 55-3a, 55-2 | M | `55-3b-justificatifs-ecran.md` |
 | 55-4 | Solde de la dette de l'epic (plafond : **2 issues**) | toutes | S | `55-4-solde-dette-epic.md` |
 
@@ -177,18 +217,26 @@ faire en parallèle de la 55-1a ou de la 55-2, avant la 55-3b.
 
 ## Gates
 
-Règle **proposée** par le responsable de l'epic (celle qu'il applique à ses epics) ; c'est un **écart** à `CLAUDE.md`
-§ *Test Locally First*, qui demande la suite E2E complète au dernier commit de code de **chaque** story (« rejouée au push »
-interdit, décision D7) : **soumise au mainteneur (Q6)**. Tant que Q6 n'est pas tranchée, ou si elle est refusée, la règle de
-`CLAUDE.md` s'applique telle quelle : E2E complet au dernier commit de code de chaque story ; `scripts/gate-ci.sh` et la
-suite complète de fin d'epic restent dus dans tous les cas.
+Règle de `CLAUDE.md` § *Test Locally First* (E2E complet au dernier commit de code de chaque story), **sauf la
+dérogation ci-dessous**, accordée par le mainteneur le 2026-11-25 (Q6).
 
-- **par story**, au dernier commit de code : `npm run check`, `lint-i18n-ownership`, `test:unit`, `build` ; pour la 55-3a
-  en plus `cargo fmt --check`, `cargo clippy --workspace --all-targets -D warnings` et `cargo nextest` sur le rayon
-  d'impact ; les **specs E2E de la story et celles des Rapports** (`reports*.spec.ts`, `homepage-charts.spec.ts`,
-  `open-items.spec.ts`, `dunning-roundtrip.spec.ts`) ;
-- **en fin d'epic** (55-4, T2), après le dernier commit de code : `scripts/gate-ci.sh <base>` et la **suite E2E complète** ;
-  « vert » = seulement les échecs attendus de `docs/testing.md` § *Les échecs attendus*, jugés fichier par fichier.
+### Dérogation
+
+Dérogation **partielle** à `CLAUDE.md` § *Test Locally First* (« L'E2E complet tourne au DERNIER COMMIT DE CODE de la
+story », décision D7), décidée par le mainteneur le 2026-11-25, pour cet epic seulement :
+
+- **les stories purement écran** — 55-1a, 55-1b, 55-2, 55-3b, et la 55-4 si elle ne touche pas le serveur — jouent **à
+  chaque story**, au dernier commit de code : `npm run check`, `lint-i18n-ownership`, `test:unit`, `build`, et les **specs
+  E2E des Rapports et de la navigation** (`reports*.spec.ts`, dont `reports-navigation.spec.ts` et
+  `reports-entry-documents.spec.ts`, `homepage-charts.spec.ts`, `open-items.spec.ts`, `dunning-roundtrip.spec.ts`) ; **l'E2E
+  complet et `scripts/gate-ci.sh <base>` tournent en fin d'epic** (55-4, T2), après le dernier commit de code, **avant la
+  PR vers `main`** ;
+- **la story des justificatifs qui touche le serveur, la 55-3a**, passe **à sa clôture** le gate complet (`cargo fmt
+  --check`, `cargo clippy --workspace --all-targets -D warnings`, `cargo nextest` du workspace) **et l'E2E complet**,
+  comme la règle le veut ; une 55-4 qui toucherait le serveur ferait de même ;
+- **si l'E2E de fin d'epic rougit** (hors des échecs attendus de `docs/testing.md` § *Les échecs attendus*, jugés fichier
+  par fichier), **l'epic n'entre pas dans `main`** avant que la story fautive soit trouvée et corrigée, et les gates de
+  fin d'epic rejoués.
 
 Le Dev Agent Record de chaque story dit exactement ce qui a tourné (« gate ciblé …, gate complet en fin d'epic »).
 Chaque story écrit en section *Issues à ouvrir* de son Dev Agent Record les points de revue non corrigés (sévérité,
@@ -204,9 +252,12 @@ son T0 ; sinon, ils vont en issues à leur nom.
 ## Backend
 
 L'epic était annoncé « frontend seulement ». **La 55-3a touche le backend** : `kesh-report` (`journal_report.rs`,
-`general_ledger.rs`, `documents.rs` neuf : une définition des rattachements, partagée) et `kesh-api` (un service et une route de lecture, `GET /journal-entries/{id}/documents` ; l'aperçu sans figement, `GET /invoices/{id}/pdf/preview`, D12), sans migration, sans changement
-des exports PDF et CSV ; le contrat JSON du journal et du grand livre gagne un booléen **additif**. Les 55-1a, 55-1b, 55-2, 55-3b et 55-4 restent
-frontend seulement. **Q1 au mainteneur** : accepter ce périmètre, ou sortir les 55-3a et 55-3b de l'epic.
+`general_ledger.rs`, `documents.rs` neuf : une définition des rattachements, partagée), `kesh-api` (un service et une route
+de lecture, `GET /journal-entries/{id}/documents` ; l'aperçu sans figement, `GET /invoices/{id}/pdf/preview`, D12),
+`kesh-qrbill` (la marque d'un PDF non émis, D13) et `kesh-i18n` (les textes de la marque), sans migration, sans changement
+des exports PDF et CSV ni du PDF émis ; le contrat JSON du journal et du grand livre gagne un booléen **additif**. Les
+55-1a, 55-1b, 55-2, 55-3b et 55-4 restent frontend seulement. **Accepté par le mainteneur le 2026-11-25 (Q1)**, à
+condition que le PDF d'aperçu porte sa marque (D13).
 
 ## Recouvrement avec l'Epic 46
 
@@ -235,6 +286,9 @@ Déclarés au kickoff (`CLAUDE.md` § *Fusions et fichiers communs*), relevés l
 | `frontend/src/lib/features/reports/reports-url.ts` (neuf), `AccountLink.svelte` (neuf), `EntryDocuments.svelte`, `EntryDocumentsViewer.svelte` (neufs) | 55-1a, 55-1b, 55-2, 55-3b | — | — |
 | `frontend/src/lib/features/imported-supplier-invoices/DocumentPreview.svelte` | 55-3b (propriété facultative `errorMessage`) | — | comportement d'aujourd'hui inchangé sans la propriété |
 | `crates/kesh-report/src/journal_report.rs`, `general_ledger.rs`, `documents.rs` (neuf) ; `crates/kesh-api/src/lib.rs`, `routes/journal_entries.rs`, `services/ecritures.rs` (service et route de lecture), `routes/issued_invoice_pdf.rs`, `routes/invoice_pdf.rs` (aperçu, D12) ; tests neufs `crates/kesh-report/tests/documents.rs`, `crates/kesh-api/tests/journal_entry_documents_e2e.rs`, `invoice_pdf_preview_e2e.rs` | 55-3a | ni l'Epic 46 ni l'Epic 47 n'y touchent | champ additif, exports inchangés |
+| `crates/kesh-qrbill/src/pdf.rs`, `types.rs` (`I18N_KEYS`, `DEFAULT_EN`) ; tests `crates/kesh-qrbill/tests/` ; `crates/kesh-api/src/routes/invoice_pdf_service.rs` (`render_document`, `build_i18n`) | 55-3a (marque d'un PDF non émis, D13) | **à relever au T0** sur la base de développement (`git log --oneline <base>..` de ces fichiers sur les branches des Epics 46 et 47 et sur `main`) | le rendu sans marque reste à l'octet près celui d'aujourd'hui (golden de `kesh-qrbill`) |
+| `crates/kesh-i18n/locales/*/messages.ftl` (clés `invoice-pdf-preview-*` de la marque) | 55-3a | tous | bloc propre, quatre locales |
+| `frontend/src/routes/(app)/+layout.svelte`, en-tête, titre de l'onglet | **aucune** story de l'epic ne les touche ; la page des Rapports porte son propre `<title>` (`reports/+page.svelte:618-620` à `1e23edb55`), que l'epic ne change pas | **#1582** (`fbfa64a27`, à `main` depuis le kickoff ; commit absent du worktree, non lu) | à la reprise de `main` : si #1582 touche aussi le `<title>` ou le `<svelte:head>` de `reports/+page.svelte`, le second arrivé garde les deux intentions |
 | `crates/kesh-report/src/lib.rs` | 55-3a (`pub mod documents`) | **Epic 46** (+25 lignes, `pub mod`/`pub use`), **Epic 47** | une ligne, dans l'ordre alphabétique des modules |
 | `crates/kesh-report/src/csv.rs`, `pdf.rs`, `benches/export.rs` (littéraux de test seulement) | 55-3a | **Epic 46** (PR 46 : `csv.rs` 1119, `pdf.rs` 1776 lignes touchées), **Epic 47** (`csv.rs`, `pdf.rs`, `presentation.rs`) | une ligne `has_documents: false,` par littéral, rien d'autre |
 | `docs/api-external.md` (grand livre `:310`, journal `:1164` à `1e23edb55`) | 55-3a | **Epic 46** (+74 lignes vers `:313`), **Epic 47** (vers `:308-311`) | phrase ajoutée en fin de paragraphe, lignes relevées sur la base |
@@ -260,23 +314,37 @@ revenir sur chacune.
   figé » ; route d'aperçu neuve (55-3a, 55-3b).
 - **D11** : une écriture n'a le plus souvent qu'une facture ; avec un seul justificatif, aucune liste (55-3b).
 
+## Décisions du mainteneur (2026-11-25)
+
+Versées aux décisions D7, D12 à D14, aux sections *Backend*, *Gates* (*Dérogation*) et *Hors périmètre*, et aux fiches :
+
+- **Q1 — acceptée, avec conditions.** `hasDocuments` et la route qui liste les justificatifs d'une écriture : acceptés tels
+  quels. L'aperçu `GET /invoices/{id}/pdf/preview` : accepté si le PDF **porte lui-même** la marque de Q10 sur chaque page.
+  Une facture **déjà figée** : l'aperçu montre le PDF figé **tel quel, sans filigrane**. L'aperçu non figé ne sert qu'aux
+  factures **validées dont le PDF n'est jamais sorti** (pour Kesh : validées et non figées). (55-3a, 55-3b)
+- **Q10 — la marque dans le PDF d'aperçu non figé** : filigrane « APERÇU » en diagonale, nettement moins foncé que le
+  texte ; en-tête « Aperçu — non émis » ; QR-facture barrée et non payable ; un seul mécanisme pour « APERÇU » et
+  « BROUILLON » ; capture d'une facture de plusieurs lignes (D13 ; 55-3a).
+- **Q3 — oui** : le lien de la TVA passe par les comptes désignés des paramètres de la TVA ; sans compte désigné, aucun
+  lien (D7 ; 55-2).
+- **Q5 — oui** : issue c) en P4, `enhancement`.
+- **Q6 — dérogation partielle** (§ *Gates*, *Dérogation*).
+- **Q8 — non** : la fiche de la facture garde son bouton, qui fige au premier téléchargement : c'est le geste d'émission
+  (D14).
+- **Q9 — oui, un epic à part** (numéro à confirmer), qui dépend de l'Epic 55 (§ *Hors périmètre*).
+- **PDF produit hors de Kesh** (évolution, non livrée) : le PDF fourni est la pièce émise — copié, sauvegardé, figé, jamais
+  régénéré ; ni second PDF ni QR-facture de Kesh ; « lien seulement » sur demande seulement (§ *Hors périmètre* ; 55-3a ;
+  issue e).
+
 ## Questions au mainteneur
 
-- **Q1** — La 55-3a ajoute un booléen aux réponses JSON du journal et du grand livre, une route de lecture,
-  `GET /journal-entries/{id}/documents`, et une route d'aperçu sans figement, `GET /invoices/{id}/pdf/preview` (backend,
-  sans migration) : accepté dans cet epic ? L'aperçu est **fermé aux clés d'API** (une clé n'affiche rien) : d'accord ?
-  Il ne dépend pas de la liste et pourrait faire une story à part, ce qui dépasserait la borne de six stories.
-- **Q3** — D7 : le lien de la TVA passe par les comptes désignés des réglages : d'accord ?
-- **Q5** — Priorité de l'issue c) (proposition : P4, `enhancement`).
-- **Q6** — § *Gates* : E2E complet et `scripts/gate-ci.sh` en fin d'epic seulement, specs des Rapports à chaque story —
-  écart à `CLAUDE.md` § *Test Locally First* (D7) : accepté pour cet epic ?
-- **Q8** — *(question de l'utilisateur, non tranchée)* Sur la **fiche de la facture**, le téléchargement continue de
-  figer. Faut-il que l'**affichage** y passe aussi par l'aperçu, sans figer, avec le même bandeau (le figement restant au
-  téléchargement et à l'envoi) ? Hors de l'Epic 55 tel qu'il est écrit ; une story de plus le ferait sortir de la borne
-  de six.
-- **Q9** — Les liens de compte dans le reste de l'application (vue d'une écriture, factures, plan comptable, comptes
-  bancaires, postes ouverts, soldes d'ouverture, pages des prestataires), avec le saut vers le grand livre de l'exercice
-  de l'écriture, la ligne surlignée : faut-il un **epic séparé** ?
-- **Q10** — L'aperçu d'une facture non figée se télécharge par le lecteur PDF du navigateur, **sans mention** qui le
-  distingue du PDF émis ; le bandeau n'est que dans Kesh. Faut-il une mention dans le PDF d'aperçu lui-même (« Aperçu —
-  non émis ») ? Proposition : non dans l'Epic 55 (le PDF rendu serait différent du PDF émis), issue à ouvrir si oui.
+- **PDF du brouillon : dans l'Epic 55 ou à part ?** Le PDF d'un brouillon (filigrane « BROUILLON », sans numéro, QR-facture
+  barrée) n'est pas un livrable de l'epic ; la marque de la 55-3a (D13) est écrite pour pouvoir le servir. L'ajouter à
+  l'epic (qui est à six stories) en ferait sortir une autre ; le rendu d'aujourd'hui refuse un brouillon
+  (`invoice_pdf_service.rs`, `render_document` : `InvoiceNotValidated`).
+- **Taille de la 55-3a** — la marque (D13) la porte de L à **XL** : quatre modules de production (`kesh-report`,
+  `kesh-api`, `kesh-qrbill`, `kesh-i18n`), sous le seuil de cinq, mais deux chantiers indépendants (la liste des
+  justificatifs, l'aperçu marqué). La découper (l'aperçu marqué en story propre) ferait sept stories, au-delà de la borne
+  de six ; **non découpée**, signalée : à vous de décider.
+- **Ligne surlignée** — l'Epic 55 ne pose pas le saut « avec la ligne surlignée » que Q9 lui prête (§ *Hors périmètre*) :
+  proposition, l'epic à part l'ajoute (un paramètre d'écriture dans l'adresse du grand livre) ; la 55-2 ne change pas.

@@ -23,7 +23,9 @@ afin que l'epic ne fasse pas monter le compte d'issues ouvertes par sa propre de
 - **Plafond : au plus 2 issues** (fixé au kickoff, fichier d'epic). Au-delà, les suivantes restent ouvertes, nommées à la
   rétrospective avec leur raison. Un correctif qui toucherait plus de cinq modules n'est pas pris (par analogie avec
   la règle de splitting préventif) et reste ouvert.
-- Frontend seulement, **sauf**, si les 55-3a et 55-3b sont restées dans l'epic (Q1), une dette née de la 55-3a côté `kesh-report`.
+- Frontend seulement, **sauf** une dette née de la 55-3a côté serveur (`kesh-report`, `kesh-api`, `kesh-qrbill`,
+  `kesh-i18n`) — les 55-3a et 55-3b restent dans l'epic (Q1 acceptée par le mainteneur le 2026-11-25) ; une 55-4 qui touche
+  le serveur passe le gate complet et l'E2E complet à sa clôture (fichier d'epic, § *Dérogation*).
 - Aucune migration ; aucun changement de contrat de l'API **par la 55-4**.
 
 ## D'où vient la liste (l'agent de l'epic n'a pas `gh`)
@@ -63,10 +65,12 @@ afin que l'epic ne fasse pas monter le compte d'issues ouvertes par sa propre de
 - [ ] **T0** — Liste des candidates (AC-1). **Prérequis** : le mainteneur ou son agent a ouvert les issues des sections
       *Issues à ouvrir* et transmis leurs numéros ; une candidate sans numéro peut être retenue, son numéro reporté avant T1.
 - [ ] **T1** — Corrections et preuves (AC-2).
-- [ ] **T2** — Gates de fin d'epic (règle soumise au mainteneur, Q6 du fichier d'epic), **après le dernier commit de code** des corrections (§ *Gates* du fichier d'epic) :
+- [ ] **T2** — Gates de fin d'epic (fichier d'epic, § *Gates*, *Dérogation*, Q6 tranchée par le mainteneur le
+      2026-11-25), **après le dernier commit de code** des corrections, **avant la PR vers `main`** :
       `scripts/gate-ci.sh origin/main` (ou la base de la PR de l'epic si elle diffère, nommée au journal) et E2E
       complet ; « vert » = seulement les échecs attendus de `docs/testing.md` § *Les échecs attendus*, jugés fichier par
-      fichier ; journaux `kesh-gate-logs/s55-4/`.
+      fichier ; journaux `kesh-gate-logs/s55-4/`. **Si l'E2E rougit**, l'epic n'entre pas dans `main` : la story fautive
+      est trouvée (spec rouge rapportée à la story qui a touché son écran ou sa route) et corrigée, puis T2 rejoué.
 - [ ] **T3** — Clôture : numéros des issues retenues reportés au fichier d'epic (tableau *Issues*) et au bloc de
       l'Epic 55 de `sprint-status.yaml` ; décompte des issues ouvertes et des bugs à la préparation du tag, demandé au
       mainteneur (pour la rétrospective).
@@ -112,3 +116,6 @@ d'epic), avec `refs #N` par ligne ; la note de l'epic est assemblée à la relea
   ciblée Haiku 0/0/2/2 (retrait) → P7 ciblée Sonnet 0/0/0/2. Les deux LOW se reprennent au **T0 du développement**, ligne
   lue citée au Change Log : V7-1 (« si elle a eu lieu avant le T0 » au périmètre, ligne de la revue d'intégration), V7-2
   (« Prérequis (souhaité) … ; à défaut, AC-1 s'applique »).
+- 2026-11-25 — **Décisions du mainteneur versées** : Q1 (55-3a et 55-3b dans l'epic ; dette serveur admise) ; Q6 (T2 : gates
+  de fin d'epic avant la PR vers `main`, E2E rouge → l'epic n'entre pas dans `main` avant correction de la story fautive).
+  Passe P8 ciblée, la dernière permise ; ses points vont au T0 (R-n).

@@ -2,7 +2,8 @@
 
 Status: ready-for-dev
 
-Epic : `_bmad-output/planning-artifacts/epic-55-navigation-interface.md` — D6, D7 (Q3), D8. Issues : #À-VENIR (`enhancement`,
+Epic : `_bmad-output/planning-artifacts/epic-55-navigation-interface.md` — D6, D7 (Q3, acceptée par le mainteneur le
+2026-11-25), D8. Issues : #À-VENIR (`enhancement`,
 P4, point a) ; #À-VENIR (`bug`, P3, point d : sélecteur d'exercice du Grand livre, AC-11 à AC-15). Release : la prochaine planifiée après la 0.20.0. **Frontend seulement, aucune migration. Suit la 55-1a**
 (l'URL du grand livre et le Retour).
 
@@ -152,7 +153,7 @@ bandeau du Grand livre avec le sélecteur sur un exercice, et sur « dates libre
 5. **AC-5 — Grand livre, titre (D8).** Le numéro du titre d'une section est un lien **seulement** quand le rapport rend
    plusieurs sections (`dto.sections.length > 1`) ; une seule section — compte filtré, ou « tous les comptes » qui n'en
    rend qu'une — reste du texte. Tests des deux cas.
-6. **AC-6 — TVA (D7, Q3).** Une ligne `data-testid="vat-accounts"`, **après** le contenu du décompte (tableau, ou message
+6. **AC-6 — TVA (D7, Q3 acceptée : les comptes désignés des paramètres de la TVA ; sans compte désigné, aucun lien).** Une ligne `data-testid="vat-accounts"`, **après** le contenu du décompte (tableau, ou message
    « aucune écriture » d'un décompte vide — elle s'affiche dans les deux cas) : « Comptes au grand livre : » suivie de deux
    paires étiquette et numéro — `reports-vat-column-vat-due` puis `AccountLink` du compte TVA due, `reports-vat-recoverable`
    puis `AccountLink` du compte d'impôt préalable —, sur la période du décompte. Les comptes viennent de
@@ -230,9 +231,9 @@ section lié et non lié ; TVA avec sa ligne de comptes ; Compte de résultat à
 
 ## Gates
 
-`cd frontend && npm run check && npm run lint-i18n-ownership && npm run test:unit && npm run build` ; E2E des Rapports ;
-suite complète selon le § *Gates* du fichier d'epic (Q6 : tant qu'elle n'est pas tranchée, E2E complet au dernier commit
-de code de la story).
+`cd frontend && npm run check && npm run lint-i18n-ownership && npm run test:unit && npm run build` ; E2E des Rapports et
+de la navigation au dernier commit de code ; suite complète et `scripts/gate-ci.sh` en fin d'epic, story **purement écran** (fichier d'epic, § *Gates*,
+*Dérogation*, Q6 tranchée par le mainteneur le 2026-11-25).
 
 ## Note de version
 
@@ -255,6 +256,11 @@ onglet. (refs #À-VENIR, #À-VENIR)
   `:4322`, `:4337-4346`). D'où une ligne de comptes à part, non un lien sur le montant de TVA due.
 - **C-55-2-3** — Les numéros de contrepartie se résolvent côté écran (liste déjà chargée) plutôt que d'ajouter les
   identifiants au DTO du grand livre : aucune requête de plus.
+
+- **C-55-2-4** — `AccountLink` est réutilisable hors des Rapports (décision Q9 du mainteneur : les liens de compte du
+  reste de l'application font un epic à part, qui dépend de l'Epic 55) : ses propriétés ne lisent rien de la page des
+  Rapports, l'appelant passe les bornes de la période. La **ligne surlignée** du grand livre n'est pas posée ici (fichier
+  d'epic, § *Hors périmètre*).
 
 ### References
 
@@ -305,3 +311,6 @@ onglet. (refs #À-VENIR, #À-VENIR)
 - 2026-11-25 — Validation P6 ciblée (Sonnet) : 0/0/1/5. **Arrêt de la boucle par renvoi au développement** (R-1).
   Tendance : P1 Sonnet 0/0/4/6 → P2 Opus 0/0/3/5 → P3 ciblée Haiku 0/0/1/1 → P4 ciblée Sonnet 0/0/0/4 (close) → ajout du
   sélecteur d'exercice → P5 ciblée Opus 0/0/4/7 → P6 ciblée Sonnet 0/0/1/5. `ready-for-dev` **sous réserve** du T0 (R-1).
+- 2026-11-25 — **Décisions du mainteneur versées** : Q3 acceptée (en-tête, AC-6) ; Q6 (§ *Gates*, story purement écran) ;
+  Q9 (C-55-2-4 : `AccountLink` réutilisable par l'epic à part ; la ligne surlignée n'est pas posée par l'Epic 55). Passe P7
+  ciblée sur ces changements ; au-delà de la sixième passe, ses points vont au T0 (R-n).

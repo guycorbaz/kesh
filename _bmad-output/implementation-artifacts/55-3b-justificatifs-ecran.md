@@ -2,8 +2,8 @@
 
 Status: ready-for-dev
 
-Epic : `_bmad-output/planning-artifacts/epic-55-navigation-interface.md` — D9 à D11. Issue : #À-VENIR (point c, comme la
-55-3a). Release : la prochaine planifiée après la 0.20.0. **Frontend seulement, aucune migration.** **Suit la 55-3a**
+Epic : `_bmad-output/planning-artifacts/epic-55-navigation-interface.md` — D9 à D14. Issue : #À-VENIR (point c, comme la
+55-3a ; `enhancement`, P4, Q5). Release : la prochaine planifiée après la 0.20.0. **Frontend seulement, aucune migration.** **Suit la 55-3a**
 (booléen `hasDocuments`, route `GET /journal-entries/{id}/documents`), **la 55-2** (mêmes vues) **et la 55-1a** (URL, mémoire des rapports).
 
 *Découpée de la 55-3 à la validation P1 (V1-5).*
@@ -146,7 +146,10 @@ par la garde : un fichier commun, non un module.) Les pages des fiches de factur
    dans `EntryDocuments` (`grep -n "role" EntryDocuments.svelte` vide) et les trois routes sous « tout rôle authentifié »
    (`lib.rs:1262-1293`, et la route d'aperçu montée à côté de `/pdf`).
 5. **AC-5 — Aucun figement, bandeau, lecture unique.** Ouvrir la facture d'une écriture **ne la fige pas** (réponse de
-   l'utilisateur du 2026-11-25, D12) : l'écran lit l'aperçu (AC-3), jamais `/pdf`. Une facture dont l'élément porte
+   l'utilisateur du 2026-11-25, D12) : l'écran lit l'aperçu (AC-3), jamais `/pdf`. Le PDF de l'aperçu d'une facture non
+   figée **porte lui-même sa marque** (filigrane « APERÇU », en-tête « Aperçu — non émis », QR-facture barrée, 55-3a, D13) ;
+   celui d'une facture figée est le PDF figé tel quel, sans marque ni bandeau (décision du mainteneur, Q1). L'écran ne
+   dessine rien sur le PDF : la marque vient du serveur. Une facture dont l'élément porte
    `pdfStatus: 'notFrozen'` s'affiche avec un **bandeau** au-dessus de `DocumentPreview`
    (`data-testid="entry-documents-not-frozen"`, `role="status"`), texte `reports-nav-documents-not-frozen` : « Aperçu — PDF
    non figé : cette facture n'a encore été ni téléchargée ni envoyée, et son PDF peut encore changer. » (« figé », « PDF
@@ -154,7 +157,8 @@ par la garde : un fichier commun, non un module.) Les pages des fiches de factur
    `error-invoice-pdf-not-frozen`). Aucun bandeau pour `'frozen'`, pour un avoir, un document fournisseur, ni pour une
    valeur inconnue de `pdfStatus` (une valeur future, 55-3a *Limite connue et évolution*). Le bandeau suit la liste lue à
    l'ouverture : une facture figée entre-temps le garde jusqu'à la prochaine ouverture (limite dite au manuel, AC-9). La
-   **fiche de la facture ne change pas** : son téléchargement fige toujours (question Q8 au mainteneur, non tranchée).
+   **fiche de la facture ne change pas** : elle garde son bouton, qui fige au premier téléchargement — le geste
+   d'émission (D14, décision du mainteneur du 2026-11-25, Q8 refusée).
    **Lecture unique** : le justificatif choisi
    est tenu par **deux primitives** (`kind`, `id`), et la fonction `load` est dérivée de ces seules primitives : remplacer
    le rapport ou la liste relue par des objets égaux ne relit pas le document. Changer d'élément dans la liste ne relit que le document
@@ -190,7 +194,9 @@ par la garde : un fichier commun, non un module.) Les pages des fiches de factur
    colonnes (`:4193-4194`) gagne « ses justificatifs » ; le chemin « Mensuel → Rapports → Journal » (`:4318`) contrôlé
    contre l'onglet réel (« Journaux »). **§ 11.6.1** (`sec:pdf-fige`, `:1635-1645`) gagne **une** phrase : afficher une
    facture depuis les rapports (Journal, Grand livre) **ne la fige pas** — une facture non figée s'y montre en aperçu, sous
-   un bandeau « PDF non figé », et le PDF émis reste produit au premier téléchargement ou au premier envoi ; le bandeau vaut
+   un bandeau « PDF non figé », et ce PDF d'aperçu porte lui-même la mention « APERÇU » et une QR-facture barrée, non
+   payable (il ne peut pas passer pour la facture émise, même téléchargé ou imprimé) ; une facture figée s'y montre par son
+   PDF figé ; le PDF émis reste produit au premier téléchargement depuis la fiche ou au premier envoi ; le bandeau vaut
    à l'ouverture de la visionneuse. Renvoi `\S\ref{sec:pdf-fige}` depuis le paragraphe du Journal. **Les phrases du
    figement restent justes** (téléchargement et envoi demeurent les seuls gestes qui figent) : aucune n'est réécrite ; le
    T4 le constate par `grep -nE "fig[ée]|refig" docs/manual/fr/user-manual.tex docs/manual/fr/admin-manual.tex` sur la base
@@ -252,7 +258,8 @@ par la garde : un fichier commun, non un module.) Les pages des fiches de factur
 ## Recette visuelle
 
 Captures (thème clair, `kesh-gate-logs/s55-3b/`) : journal avec ses icônes ; visionneuse à un justificatif (ouverte
-directement, sans liste) ; visionneuse à deux justificatifs, chacun affiché ; bandeau « PDF non figé » ; erreur `410` (obtenue sur une installation jetable en retirant de `KESH_DOCUMENTS_DIR` le fichier `<empreinte>.pdf`
+directement, sans liste) ; visionneuse à deux justificatifs, chacun affiché ; bandeau « PDF non figé », avec le PDF
+d'aperçu marqué visible dessous (filigrane, QR-facture barrée) ; erreur `410` (obtenue sur une installation jetable en retirant de `KESH_DOCUMENTS_DIR` le fichier `<empreinte>.pdf`
 d'une facture figée, ou par `page.route` rendant `410 INVOICE_PDF_GONE`) ; grand livre avec la colonne.
 
 ## Tâches
@@ -283,7 +290,8 @@ d'une facture figée, ou par `page.route` rendant `410 INVOICE_PDF_GONE`) ; gran
 ## Gates
 
 `cd frontend && npm run check && npm run lint-i18n-ownership && npm run test:unit && npm run build` ; E2E de la story et
-des Rapports ; suite complète selon le § *Gates* du fichier d'epic (Q6).
+des specs des Rapports et de la navigation, au dernier commit de code ; story **purement écran** : E2E complet et
+`scripts/gate-ci.sh` en fin d'epic (fichier d'epic, § *Gates*, *Dérogation*, Q6).
 
 ## Note de version
 
@@ -291,7 +299,7 @@ des Rapports ; suite complète selon le § *Gates* du fichier d'epic (Q6).
 de la facture, de l'avoir, document de la facture fournisseur ; pour un règlement, la ou les factures réglées. Avec un
 seul justificatif, il s'ouvre directement ; avec plusieurs, une liste en haut permet de choisir. Afficher ainsi une
 facture **ne la fige pas** : une facture dont le PDF n'a pas encore été émis s'affiche en aperçu, sous un bandeau « PDF
-non figé ». (refs #À-VENIR)
+non figé », et ce PDF porte la mention « APERÇU » et une QR-facture barrée. (refs #À-VENIR)
 
 ## Dev Notes
 
@@ -387,3 +395,8 @@ non figé ». (refs #À-VENIR)
   Pv2p3 de la 55-3a) ; LOW listés en tête. Tendance de la version récrite : P1 Sonnet 0/0/1/8 → P2 Haiku 0/0/2/0 → P3
   Sonnet 0/0/1/3 → P4 Haiku 0/0/2/2 → P5 Opus 0/0/2/4 → P6 Sonnet 0/0/0/3 → (réponses de l'utilisateur) P7 Opus 0/0/1/5.
   `ready-for-dev` **sous réserve** du T0 (R-1, R-2) ; la P8 reste en réserve.
+- 2026-11-25 — **Décisions du mainteneur versées** (fichier d'epic, § *Décisions du mainteneur*) : Q1 (facture figée :
+  PDF figé tel quel, sans marque ni bandeau ; aperçu marqué pour une validée non figée) et Q10 (la marque vient du serveur,
+  55-3a D13) à l'AC-5, à l'AC-9 (phrase du § 11.6.1) et à la recette visuelle ; **Q8 refusée** (D14) à l'AC-5 ; Q5 (P4) ;
+  Q6 au § *Gates* (story purement écran). Aucune remédiation de passe : la passe suivante, **Pv2p8**, est la dernière
+  permise ; au-delà de la sixième, ses points vont au T0 (R-n).
