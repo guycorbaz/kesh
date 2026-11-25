@@ -197,6 +197,13 @@ désigne la **facture** (`kind`, `id`), non un fichier ; c'est la route de lectu
 `pdfStatus` est une énumération ouverte, à laquelle une valeur (`external`) s'ajoutera, que l'écran d'aujourd'hui traite
 déjà (aucun bandeau). Issue `enhancement` à ouvrir (section *Issues à ouvrir*).
 
+**Par défaut, le PDF reçu est copié dans Kesh** (décision d'usager du 2026-11-25, à confirmer par le mainteneur) : le
+PDF d'une facture client créée par l'API, et ses pièces jointes, deviennent des fichiers **gérés par Kesh**, rangés et
+sauvegardés comme les autres documents, figés avec la facture. Ils ne restent pas un simple lien vers l'extérieur. La
+raison : le PDF doit rester cohérent avec les lignes de la facture enregistrées en base ; un fichier resté hors de Kesh
+peut changer ou disparaître sans que la facture le sache. Une option « lien seulement » n'est pas exclue, mais elle
+n'est pas le défaut.
+
 ### Règles de rattachement
 
 - **Facture** (vente et règlement) : `i.status = 'validated' OR (i.status = 'cancelled' AND i.pdf_storage_path IS NOT

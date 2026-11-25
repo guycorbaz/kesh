@@ -59,7 +59,8 @@ L'utilisateur, en tenant ses livres, navigue dans les Rapports comme dans des pa
 bancaires, postes ouverts, soldes d'ouverture, pages des prestataires), avec le saut vers le grand livre du compte sur
 l'exercice de l'écriture, la ligne surlignée, n'entrent pas dans l'Epic 55 ; faut-il un epic à part ? (Q9 au mainteneur).
 De même, un PDF de facture **produit hors de Kesh** (facture créée par l'API) : évolution, non livrée (55-3a, *Limite
-connue et évolution*).
+connue et évolution*). Par défaut, ce PDF et ses pièces jointes seront **copiés dans Kesh**, gérés et figés avec la
+facture, pour rester cohérents avec ses lignes en base (avis d'usager du 2026-11-25, à confirmer).
 
 ## Origine (relevé de l'utilisateur, transmis par le mainteneur le 2026-11-25)
 
