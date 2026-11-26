@@ -2,9 +2,9 @@
 
 Tu développes la story **37-4** (`_bmad-output/implementation-artifacts/37-4-rapports-en-devise.md`) selon le
 skill `bmad-dev-story` (lis `.claude/skills/bmad-dev-story/SKILL.md` et suis-le), dans le worktree
-`/home/beat/claude/kesh/.claude/worktrees/kesh-s37-4` (branche `story/37-4-rapports-en-devise`, partie de
+`<worktree>/kesh-s37-4` (branche `story/37-4-rapports-en-devise`, partie de
 `epic/37-multi-devises`). **N'écris jamais hors de ce worktree**, sauf les journaux dans
-`/home/beat/claude/kesh-gate-logs/s37-4/`. Chemins absolus.
+`$GATE_LOGS/s37-4/`. Chemins absolus.
 
 ## À lire d'abord
 
@@ -44,14 +44,14 @@ questions.
   ligne en devise, validation, contrôle central ; kesh-core et kesh-db), lui-même parti de `story/37-2` (cours). La
   37-3a continue en parallèle (API `journal-entries`, MCP, exports) ; la 37-2 est en revue. **Ne modifie ni le modèle de
   ligne ni le code de 37-2 et 37-3a** : un défaut trouvé là va à
-  `/home/beat/claude/kesh-gate-logs/issues-a-ouvrir-epic-37.md` sous « pour la revue de 37-2/37-3a ». L'orchestrateur
+  `$GATE_LOGS/issues-a-ouvrir-epic-37.md` sous « pour la revue de 37-2/37-3a ». L'orchestrateur
   fusionnera les branches amont dans celle-ci ; ne fais pas de `git merge` toi-même. Évite de toucher aux fichiers que
   la 37-3a modifie encore (routes `journal-entries`, MCP des écritures) sauf nécessité, et dis-le.
-- **Étape 0 déjà faite** contre 37-2 : `/home/beat/claude/kesh-gate-logs/etape0/37-4.md` (les prémisses « attend
+- **Étape 0 déjà faite** contre 37-2 : `$GATE_LOGS/etape0/37-4.md` (les prémisses « attend
   37-3a » se vérifient maintenant contre `946aa86a`). Reporte-la au Change Log.
 - `balances_as_of` vit dans `kesh-db` (cycle `kesh-db` ↔ `kesh-report` confirmé). Aucune migration n'est attendue ; si
   une s'impose, dis-le avant de l'écrire.
 - Base de test `kesh_s37_4` / `kesh_e2e_s37_4`, port **3374**. Exécutions lourdes **uniquement** par
-  `/home/beat/claude/kesh-gate-logs/heavy.sh scripts/mem-guard.sh <commande>` (au plus deux sur la station) ; backend
+  `$GATE_LOGS/heavy.sh scripts/mem-guard.sh <commande>` (au plus deux sur la station) ; backend
   lancé avec `7>&- 8>&- 9>&-`.
-- Les défauts hors périmètre vont à `/home/beat/claude/kesh-gate-logs/issues-a-ouvrir-epic-37.md`, jamais en issue.
+- Les défauts hors périmètre vont à `$GATE_LOGS/issues-a-ouvrir-epic-37.md`, jamais en issue.

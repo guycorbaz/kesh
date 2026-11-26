@@ -2,8 +2,8 @@
 
 Première passe complète de `bmad-code-review` (lis `.claude/skills/bmad-code-review/SKILL.md` et suis-le : couches
 Blind Hunter, Edge Case Hunter, Acceptance Auditor, triage), contexte frais, sur la story 37-4, worktree
-`/home/beat/claude/kesh/.claude/worktrees/kesh-s37-4` (branche `story/37-4-rapports-en-devise`). N'écris
-nulle part ailleurs, sauf journaux dans `/home/beat/claude/kesh-gate-logs/s37-4/review-p1/`.
+`<worktree>/kesh-s37-4` (branche `story/37-4-rapports-en-devise`). N'écris
+nulle part ailleurs, sauf journaux dans `$GATE_LOGS/s37-4/review-p1/`.
 
 ## Périmètre
 
@@ -26,7 +26,7 @@ clé d'API) ; audit ; MCP (tailles) ; i18n 4 locales ; **manuels** (`.tex` contr
 
 Applique les patches des findings (CRITICAL à LOW selon le skill), avec leurs tests ; gate ciblé (fmt, clippy workspace,
 nextest des binaires touchés — **gate complet si un patch touche `kesh-db`** : migrations, repository, `post_restore`),
-sous ``/home/beat/claude/kesh-gate-logs/heavy.sh scripts/mem-guard.sh <commande>` (au plus deux exécutions lourdes sur la station ; backend lancé avec `7>&- 8>&- 9>&-`), base `kesh_s37_4` (cf. `docs/agents-orchestration.md`) ; commit local
+sous ``$GATE_LOGS/heavy.sh scripts/mem-guard.sh <commande>` (au plus deux exécutions lourdes sur la station ; backend lancé avec `7>&- 8>&- 9>&-`), base `kesh_s37_4` (cf. `docs/agents-orchestration.md`) ; commit local
 « fix(37-4) : revue de code P1 — … » (aucun mot-clé de fermeture, aucune mention d'IA). Change Log de la fiche :
 « 2026-11-16 — revue de code P1 (<modèle>) : <décompte> ». N'affirme que ce qui a tourné.
 

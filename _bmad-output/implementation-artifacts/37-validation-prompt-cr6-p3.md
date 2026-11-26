@@ -1,7 +1,7 @@
 # Prompt de validation CR-6 P3 — fiches de l'Epic 37 (couverture API et MCP)
 
 Troisième passe du cycle CR-6, **modèle différent** de P2 (Opus), contexte frais, sur une fiche du dépôt
-`/home/beat/limu/compta/kesh` (Kesh : Rust/Axum, SvelteKit, MariaDB). À lire d'abord :
+`~/limu/compta/kesh` (Kesh : Rust/Axum, SvelteKit, MariaDB). À lire d'abord :
 
 - `_bmad-output/implementation-artifacts/37-couverture-api-mcp.md` (audit, V1–V13) et la section « CR-6 — couverture API
   et MCP » du fichier d'epic `_bmad-output/planning-artifacts/epic-37-multi-devises.md` ;

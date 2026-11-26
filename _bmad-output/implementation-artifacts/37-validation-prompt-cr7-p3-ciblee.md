@@ -1,7 +1,7 @@
 # Prompt de validation CR-7 P3 ciblée — fiches de l'Epic 37
 
 Passe **ciblée** (`CLAUDE.md` § *La passe ciblée*), contexte frais, braquée sur la dernière remédiation. Worktree
-`/home/beat/claude/kesh/.claude/worktrees/kesh-wt37` (branche `epic/37-multi-devises`) : n'écris nulle part ailleurs.
+`<worktree>/kesh-wt37` (branche `epic/37-multi-devises`) : n'écris nulle part ailleurs.
 
 ## Périmètre
 

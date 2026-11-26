@@ -1,7 +1,7 @@
 # Prompt de fin de story — 37-1
 
-Worktree `/home/beat/claude/kesh/.claude/worktrees/kesh-s37-1` (branche `story/37-1-reglage-et-devise-des-comptes`) ;
-journaux dans `/home/beat/claude/kesh-gate-logs/s37-1/final3/`. Règles : `CLAUDE.md` (*Test Locally First*, E2E,
+Worktree `<worktree>/kesh-s37-1` (branche `story/37-1-reglage-et-devise-des-comptes`) ;
+journaux dans `$GATE_LOGS/s37-1/final3/`. Règles : `CLAUDE.md` (*Test Locally First*, E2E,
 *Plafonds mémoire*), `docs/agents-orchestration.md` (base `kesh_s37_1` / `kesh_e2e_s37_1`, port propre, verrou
 `flock`, `scripts/mem-guard.sh`, aucun `GRANT` à la main, aucun redémarrage du conteneur), `docs/testing.md`
 § « Les échecs attendus ».

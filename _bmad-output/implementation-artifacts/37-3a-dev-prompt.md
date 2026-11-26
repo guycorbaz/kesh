@@ -2,9 +2,9 @@
 
 Tu développes la story **37-3a** (`_bmad-output/implementation-artifacts/37-3a-ecritures-en-devise-modele.md`) selon le
 skill `bmad-dev-story` (lis `.claude/skills/bmad-dev-story/SKILL.md` et suis-le), dans le worktree
-`/home/beat/claude/kesh/.claude/worktrees/kesh-s37-3a` (branche `story/37-3a-ecritures-en-devise-modele`, partie de
+`<worktree>/kesh-s37-3a` (branche `story/37-3a-ecritures-en-devise-modele`, partie de
 `epic/37-multi-devises`). **N'écris jamais hors de ce worktree**, sauf les journaux dans
-`/home/beat/claude/kesh-gate-logs/s37-3a/`. Chemins absolus.
+`$GATE_LOGS/s37-3a/`. Chemins absolus.
 
 ## À lire d'abord
 
@@ -43,7 +43,7 @@ questions.
 - **Base de départ** : cette branche part de `story/37-2-cours-mensuels-afc` (code complet, gates verts, E2E de clôture
   en cours, revue de code à venir), et non de `epic/37-multi-devises`, pour gagner du temps. Réutilise le code de 37-1
   (fusionnée) et de 37-2 (tables et dépôt des cours, `RateKind` dans kesh-core) sans le dupliquer. Ne modifie pas le
-  code de 37-2 : un défaut trouvé dans 37-2 va à `/home/beat/claude/kesh-gate-logs/issues-a-ouvrir-epic-37.md` sous
+  code de 37-2 : un défaut trouvé dans 37-2 va à `$GATE_LOGS/issues-a-ouvrir-epic-37.md` sous
   « pour la revue de 37-2 », et l'orchestrateur le transmet. Les correctifs de la revue de 37-2 seront fusionnés dans
   cette branche par l'orchestrateur ; ne fais pas de `git merge` toi-même.
 - **Migration** : nomme la tienne après celle de 37-2 (`20261114000002_exchange_rates.sql`), et dis-la avant de l'écrire
@@ -51,5 +51,5 @@ questions.
 - **Ordre de travail** : commite tôt le modèle de ligne, la validation et le contrôle central (kesh-core et kesh-db),
   dans un commit à part : la 37-4 pourra partir de ce commit.
 - Base de test `kesh_s37_3a` / `kesh_e2e_s37_3a`, port **3373**.
-- Les défauts trouvés hors périmètre vont à `/home/beat/claude/kesh-gate-logs/issues-a-ouvrir-epic-37.md`, jamais en
+- Les défauts trouvés hors périmètre vont à `$GATE_LOGS/issues-a-ouvrir-epic-37.md`, jamais en
   issue GitHub.
