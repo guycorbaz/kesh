@@ -24,8 +24,13 @@ function str(details: RefusalDetails, key: string): string {
 	return typeof v === 'string' ? v : v === undefined || v === null ? '' : String(v);
 }
 
-/** Le mois `AAAA-MM-01` en `MM.AAAA`. */
-function monthLabel(iso: string): string {
+/**
+ * Le mois `AAAA-MM-01` en `MM.AAAA` (une valeur d'une autre forme rendue
+ * telle quelle). Exportée sous ce nom pour les refus des prestataires
+ * (Story 39-11d2, `provider-labels.ts`) : `exchange-rates-grid.ts` exporte
+ * déjà un `monthLabel` d'une autre signature.
+ */
+export function fxMonthLabel(iso: string): string {
 	return /^\d{4}-\d{2}/.test(iso) ? `${iso.slice(5, 7)}.${iso.slice(0, 4)}` : iso;
 }
 
@@ -72,7 +77,7 @@ export function fxRefusalMessage(code: string, details: RefusalDetails, serverMe
 			return i18nMsg(
 				'error-fx-screen-rate-unavailable',
 				'Aucun cours { $currency } retenu pour { $month } : récupérez le mois, ou gardez la ligne comme cours saisi.',
-				{ currency: str(details, 'currency'), month: monthLabel(str(details, 'month')) }
+				{ currency: str(details, 'currency'), month: fxMonthLabel(str(details, 'month')) }
 			);
 		default:
 			return serverMessage;

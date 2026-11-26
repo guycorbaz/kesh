@@ -1,0 +1,4 @@
+TransferWise ID,Date,Date Time,Amount,Currency,Description,Payment Reference,Running Balance,Exchange From,Exchange To,Exchange Rate,Payer Name,Payee Name,Payee Account Number,Merchant,Card Last Four Digits,Card Holder Full Name,Attachment,Note,Total fees,Exchange To Amount,Transaction Type,Transaction Details Type
+CARD-90000012,25-03-2020,25-03-2020 17:30:00.000,-9.99,USD,Carte Service En Ligne Fictif,,317.01,,,,,,,Service En Ligne Fictif,,,,,,,DEBIT,CARD
+CONVERSION_ORDER-90000011,20-03-2020,20-03-2020 10:00:00.000,109.00,USD,Converti 100.00 EUR en 109.00 USD,,327.00,EUR,USD,1.09,,,,,,,,,,109.00,CREDIT,CONVERSION
+BALANCE-90000010,10-02-2020,10-02-2020 09:00:00.000,218.00,USD,Converti 200.00 EUR en 218.00 USD,,218.00,EUR,USD,1.09,,,,,,,,,,218.00,CREDIT,CONVERSION

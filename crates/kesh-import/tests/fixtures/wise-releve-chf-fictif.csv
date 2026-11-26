@@ -1,0 +1,11 @@
+TransferWise ID,Date,Date Time,Amount,Currency,Description,Payment Reference,Running Balance,Exchange From,Exchange To,Exchange Rate,Payer Name,Payee Name,Payee Account Number,Merchant,Card Last Four Digits,Card Holder Full Name,Attachment,Note,Total fees,Exchange To Amount,Transaction Type,Transaction Details Type
+BALANCE-90000008,15-03-2020,15-03-2020 08:00:00.000,1500.00,CHF,Argent reçu de Stripe,,2433.55,,,,Stripe Payments Europe,,,,,,,,,,CREDIT,DEPOSIT
+CARD-90000007,01-03-2020,01-03-2020 12:45:30.250,-19.00,CHF,Carte Boutique Exemple,,933.55,,,,,,,Boutique Exemple,,,,,,,DEBIT,CARD
+TRANSFER-90000006,18-02-2020,18-02-2020 09:05:00.000,-80.00,CHF,Envoi vers Association Fictive,,952.55,,,,,Association Fictive,0123456789,,,,,,,,DEBIT,TRANSFER
+TRANSFER-90000005,15-02-2020,15-02-2020 16:20:10.000,-120.00,CHF,Envoi de 120 CHF à Atelier Exemple Sàrl,Facture 2020-001,1032.55,,,,,Atelier Exemple Sàrl,CH56 0483 5012 3456 7800 9,,,,,,,,DEBIT,TRANSFER
+TRANSFER-90000004,12-02-2020,12-02-2020 11:00:00.000,-300.00,CHF,Envoi vers Société Fictive SA,Virement test,1152.55,,,,,Société Fictive SA,CH93 0076 2011 6238 5295 7,,,,,,1.20,,DEBIT,TRANSFER
+FEE-TRANSFER-90000004,12-02-2020,12-02-2020 10:59:59.999,-1.20,CHF,Frais d'envoi,,1452.55,,,,,,,,,,,,,,DEBIT,TRANSFER
+BALANCE-90000003,05-02-2020,05-02-2020 10:30:00.000,-500.00,CHF,Converti 500.00 CHF en 462.30 EUR,,1453.75,CHF,EUR,0.9246,,,,,,,,,0.35,462.30,DEBIT,CONVERSION
+FEE-BALANCE-90000003,05-02-2020,05-02-2020 10:29:59.999,-0.35,CHF,Frais de conversion,,1953.75,,,,,,,,,,,,,,DEBIT,CONVERSION
+CARD-90000002,20-01-2020,20-01-2020 14:00:00.500,-45.90,CHF,Carte Café du Marché Fictif,,1954.10,,,,,,,Café du Marché Fictif,,,,,,,DEBIT,CARD
+BALANCE-90000001,10-01-2020,10-01-2020 09:15:02.123,2000.00,CHF,Argent reçu de Stripe,,2000.00,,,,Stripe Payments Europe,,,,,,,,,,CREDIT,DEPOSIT

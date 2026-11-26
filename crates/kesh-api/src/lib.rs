@@ -42,6 +42,7 @@ pub mod routes;
 pub mod services;
 pub mod stripe;
 pub(crate) mod util;
+pub mod zip_read;
 
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -971,6 +972,15 @@ pub fn build_router_avec_registre(
                 (state.config.bank_import_max_mib as usize) * 1024 * 1024,
             )),
         )
+        // Story 39-11b (Epic 39) : import d'un ou plusieurs relevés CSV d'un
+        // compte Wise, un fichier par devise (Comptable+, clés `read-write`
+        // comme l'import bancaire ; même limite de taille, pour le corps entier).
+        .route(
+            "/api/v1/wise-imports",
+            post(routes::wise_imports::create).layer(axum::extract::DefaultBodyLimit::max(
+                (state.config.bank_import_max_mib as usize) * 1024 * 1024,
+            )),
+        )
         // Story 40-7b (Epic 40) : import du rapport Stripe « Itemized payout
         // reconciliation » d'un compte Stripe, ventilé par devise (mêmes
         // droits et même limite que l'import PayPal).
@@ -1011,6 +1021,10 @@ pub fn build_router_avec_registre(
             "/api/v1/paypal/accept",
             post(routes::paypal::accept_proposals),
         )
+        // Story 39-11c (Epic 39) : revue et acceptation Wise, sur le même
+        // moteur (mêmes rôles et clés ; acceptation rejouée sur interblocage).
+        .route("/api/v1/wise/review", get(routes::wise::review))
+        .route("/api/v1/wise/accept", post(routes::wise::accept_proposals))
         // Story 40-7c (Epic 40) : revue et acceptation Stripe, sur le même
         // moteur (mêmes droits ; propositions `link_entry`, `fee`, `payout`).
         .route("/api/v1/stripe/review", get(routes::stripe::review))

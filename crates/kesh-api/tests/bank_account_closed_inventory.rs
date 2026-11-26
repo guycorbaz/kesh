@@ -240,7 +240,9 @@ const REGISTRE: &[(&str, &str, Statut)] = &[
     (
         "kesh-db/src/repositories/reconciliation_cancel.rs",
         "cancel_in_tx",
-        Statut::Gardee("bank_accounts::ensure_open_in_tx sur bt.bank_account_id, après (3)"),
+        Statut::Gardee(
+            "bank_accounts::ensure_open_in_tx sur bt.bank_account_id, après (3), et sur le compte de chaque autre ligne d'un paiement groupé, étape (5 bis)",
+        ),
     ),
     // Story 43-1a (#823) — le règlement groupé client et son dé-rapprochement.
     (
@@ -635,7 +637,10 @@ fn every_bank_account_writer_is_classified() {
     // bank_transactions`). Story 48-14 (#1255, D4) : 45 → 44 — les deux
     // `UPDATE bank_transactions` du dé-rapprochement groupé (client et
     // fournisseur) n'en font plus qu'un, dans `unlink_group_transaction_in_tx`.
-    assert_eq!(sites.len(), 44, "sites vus :\n{}", detail.join("\n"));
+    // Story 39-11c : 44 → 45 — l'`UPDATE bank_transactions` de l'étape (5 bis)
+    // de `reconciliation_cancel::cancel_in_tx` (les autres lignes d'un paiement
+    // Wise groupé), gardé par `ensure_open_in_tx` sur chacun de leurs comptes.
+    assert_eq!(sites.len(), 45, "sites vus :\n{}", detail.join("\n"));
 }
 
 /// Second inventaire (AC8, C-28-4-22) — chaque appelant du créateur de

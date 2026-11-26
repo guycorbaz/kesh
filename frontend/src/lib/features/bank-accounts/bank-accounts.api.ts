@@ -50,11 +50,12 @@ export interface StripeSettings extends PaypalSettings {
 /**
  * Story 40-7d (AC-1) — les paramètres d'un compte de prestataire tels que le
  * corps de `POST` ou `PUT /bank-accounts` les porte : **un** prestataire, sous
- * sa clé.
+ * sa clé. Story 39-11d : `wise`, de même forme que `paypal` (39-11b).
  */
 export type ProviderSettingsBody =
-	| { paypal: PaypalSettings; stripe?: never }
-	| { stripe: StripeSettings; paypal?: never };
+	| { paypal: PaypalSettings; wise?: never; stripe?: never }
+	| { wise: PaypalSettings; paypal?: never; stripe?: never }
+	| { stripe: StripeSettings; paypal?: never; wise?: never };
 
 export interface BankAccountSummary {
 	id: number;
@@ -84,6 +85,8 @@ export interface BankAccountSummary {
 	provider: BankAccountProvider | null;
 	/** Story 38-11d (AC-1) — paramètres PayPal, `null` hors d'un compte PayPal. */
 	paypal: PaypalSettings | null;
+	/** Story 39-11d (AC-1) — paramètres Wise (forme PayPal), `null` hors d'un compte Wise. */
+	wise: PaypalSettings | null;
 	/** Story 40-7d (AC-1) — paramètres Stripe, `null` hors d'un compte Stripe. */
 	stripe: StripeSettings | null;
 	isPrimary: boolean;
@@ -153,6 +156,8 @@ interface BankAccountSummaryRaw {
 	// Story 38-11d — absents d'un serveur antérieur à la 38-11b : `null`.
 	provider?: BankAccountProvider | null;
 	paypal?: { account: string; feeAccountId?: number | null } | null;
+	// Story 39-11d — absent d'un serveur antérieur à la 39-11b : `null`.
+	wise?: { account: string; feeAccountId?: number | null } | null;
 	// Story 40-7d — absent d'un serveur antérieur à la 40-7b : `null`.
 	stripe?: { account: string; feeAccountId?: number | null; payoutBankAccountId?: number | null } | null;
 	isPrimary: boolean;
@@ -185,6 +190,7 @@ function parseBankAccount(raw: BankAccountSummaryRaw): BankAccountSummary {
 		paypal: raw.paypal
 			? { account: raw.paypal.account, feeAccountId: raw.paypal.feeAccountId ?? null }
 			: null,
+		wise: raw.wise ? { account: raw.wise.account, feeAccountId: raw.wise.feeAccountId ?? null } : null,
 		stripe: raw.stripe
 			? {
 					account: raw.stripe.account,
@@ -351,6 +357,7 @@ type BankOrCardFields =
 			isPrimary?: boolean;
 			cardLast4?: never;
 			paypal?: never;
+			wise?: never;
 			stripe?: never;
 	  }
 	| {
@@ -360,6 +367,7 @@ type BankOrCardFields =
 			qrIban?: never;
 			isPrimary?: never;
 			paypal?: never;
+			wise?: never;
 			stripe?: never;
 	  }
 	| ({
@@ -367,7 +375,7 @@ type BankOrCardFields =
 			 * Story 38-11d (AC-1) — un compte PayPal (compte bancaire, 38-11b) :
 			 * IBAN facultatif (`null`), ni QR-IBAN ni « principal », compte du
 			 * plan obligatoire (admis en devise). Story 40-7d : de même un compte
-			 * Stripe, sous `stripe`.
+			 * Stripe, sous `stripe` ; Story 39-11d : un compte Wise, sous `wise`.
 			 */
 			accountKind?: 'bank';
 			iban: string | null;
@@ -428,6 +436,8 @@ export type UpdateBankAccountPayload = UpdateBankAccountFields &
 				 * compte qui en portait ; **absent** = inchangé (compte non PayPal).
 				 */
 				paypal?: null;
+				/** Story 39-11d (AC-1) — de même pour les paramètres Wise. */
+				wise?: null;
 				/** Story 40-7d (AC-1) — de même pour les paramètres Stripe. */
 				stripe?: null;
 		  }
@@ -453,6 +463,7 @@ export type UpdateBankAccountPayload = UpdateBankAccountFields &
 				qrIban?: never;
 				isPrimary?: never;
 				paypal?: never;
+				wise?: never;
 				stripe?: never;
 		  }
 	);

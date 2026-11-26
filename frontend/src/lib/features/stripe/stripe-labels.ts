@@ -15,6 +15,7 @@ import { isApiError } from '$lib/shared/utils/api-error';
 import { errorMessageOf } from '$lib/shared/utils/error-message';
 import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 import {
+	accountNumberName,
 	isAlreadyLinked,
 	providerFailedLabel,
 	providerMismatchDetails,
@@ -145,10 +146,8 @@ export function stripeProposalKindLabel(p: StripeProposal): string {
 	}
 }
 
-function accountName(accounts: readonly AccountResponse[], id: number): string {
-	const a = accounts.find((x) => x.id === id);
-	return a ? `${a.number} — ${a.name}` : `#${id}`;
-}
+/** Le nom « numéro — nom » d'un compte (règle commune aux prestataires, 39-11d2). */
+const accountName = accountNumberName;
 
 /** Ce que fera une proposition (colonne « Ce qui sera fait »). */
 export function stripeProposalActionLabel(p: StripeProposal, accounts: readonly AccountResponse[]): string {
