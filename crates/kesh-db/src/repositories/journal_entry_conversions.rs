@@ -26,16 +26,27 @@
 //!    est validée (`accounting::validate`, `ENTRY_UNBALANCED` …) ;
 //! 4. forme et paire de l'écriture à compléter (A31, A33), ajout éventuel de la
 //!    ligne de différence (`completeDifference`), puis sa validation ;
-//! 5. les deux créations, dans l'ordre **chronologique** (exercices pris
-//!    `FOR UPDATE` dans l'ordre de la clôture), chacune par
-//!    [`journal_entries::create_in_tx`] — tous les contrôles de
-//!    `POST /journal-entries`.
+//! 5. les deux créations, dans l'ordre **chronologique**, chacune par
+//!    [`journal_entries::create_in_tx_with_policy`] (la saisie) — tous les
+//!    contrôles de `POST /journal-entries`, **la règle anti-doublon
+//!    comprise** (Story 53-1b : la première écriture identique à une écriture du
+//!    même jour fait refuser toute la conversion, `details.entry` = son rang dans
+//!    le corps, levable par `confirmNotDuplicate`). Les exercices des deux dates
+//!    se lisent sur le pool avant `begin` et se verrouillent `FOR UPDATE` dans
+//!    l'ordre chronologique **juste après `companies`**, avant toute lecture
+//!    ordinaire ([`create_conversion_with_policy`]) : l'instantané
+//!    `REPEATABLE READ` naît ainsi après l'attente de chaque exercice comparé. Le
+//!    statut clos est jugé **sous ce verrou, avant** la création de chaque
+//!    écriture (`NoFiscalYear`, puis `FiscalYearClosed`). La conversion de
+//!    prestataire ([`create_provider_conversion_in_tx`]) n'a ni comparaison ni
+//!    pré-verrou : [`journal_entries::create_in_tx`], lecture de l'exercice
+//!    inchangée.
 //!
 //! **Cycles de verrous** (argument écrit, défendu par le rejeu de la route,
-//! `Rejouee`) : le compte de conversion, les comptes de l'écriture à compléter
-//! et ses comptes de différence sont lus en partage **avant** l'exercice, alors
-//! que l'écriture ordinaire prend l'exercice puis les comptes en partage ;
-//! seule l'activation du multi-devises (`companies::update_currency_settings`)
+//! `Rejouee`) : `companies` (S), puis les exercices (X, chronologique), puis le
+//! compte de conversion, les comptes de l'écriture à compléter et ses comptes
+//! de différence en partage — l'ordre de l'écriture ordinaire (l'exercice puis
+//! les comptes en partage) ; seule l'activation du multi-devises (`companies::update_currency_settings`)
 //! prend des exercices puis des comptes **en exclusif** (les exercices ouverts,
 //! puis les comptes de change désignés), mais jamais un compte de l'écriture à
 //! compléter avant d'avoir pris `companies` `FOR UPDATE`, que la conversion
@@ -57,7 +68,15 @@
 //! - une conversion, même sans projet, prend `companies` en partage **puis**
 //!   l'exercice `FOR UPDATE`, quand un flux qui tient déjà l'exercice prend
 //!   ensuite `companies` `FOR UPDATE` (rapprochement ventilé ou lot avec
-//!   projet, `create_in_tx` étape 0) : cycle exercice ↔ `companies`.
+//!   projet, `create_in_tx` étape 0) : cycle exercice ↔ `companies` ;
+//! - **aggravation de la Story 53-1b** : avec le pré-verrou, l'étape 0 (sentinelle
+//!   `companies` `FOR UPDATE`, puis projets) de **chaque** écriture portant un
+//!   projet vient **après** les exercices ; avant, la première écriture tenait la
+//!   convention du Pattern 5 (sentinelle et projets avant l'exercice) et seule la
+//!   seconde l'inversait. Un cycle devient possible avec un flux qui prend la
+//!   sentinelle ou un projet puis un exercice ; défendu, comme les autres, par le
+//!   rejeu des deux côtés. La promotion S → X de `companies` se fait désormais en
+//!   tenant les exercices.
 //!
 //! La reconnaissance des comptes des lignes
 //! ([`accounts::conversion_line_accounts_in_tx`]) verrouille les comptes lus,
@@ -85,7 +104,74 @@ use crate::errors::{DbError, FxAccountField, FxAccountReason, map_db_error};
 use crate::repositories::accounts::{
     self, CompanyLock, ConversionLineAccount, FxAccountCheck, FxAccountLock,
 };
+use crate::repositories::duplicate_policy::DuplicatePolicy;
 use crate::repositories::{fiscal_years, journal_entries};
+
+/// Ce que la saisie d'une conversion ajoute au corps de la transaction (Story
+/// 53-1b, D2, D3) : la règle anti-doublon, et l'exercice qui couvre la date de
+/// chacune des deux écritures (rang du corps), **lu sur le pool avant `begin`**
+/// (`None` : aucun exercice). Les deux vont ensemble — pas de politique sans
+/// pré-verrou des exercices —, d'où un seul type, que la conversion de
+/// prestataire ne passe pas (`None` : ni comparaison, ni pré-verrou).
+#[derive(Debug, Clone, Copy)]
+struct DuplicateGuard {
+    policy: DuplicatePolicy,
+    covering: [Option<i64>; 2],
+}
+
+/// L'ordre de création des deux écritures : **chronologique** (rangs 0-based du
+/// corps), celui du corps à date égale.
+fn chronological_order(entries: &[NewJournalEntry; 2]) -> [usize; 2] {
+    if entries[1].entry_date < entries[0].entry_date {
+        [1, 0]
+    } else {
+        [0, 1]
+    }
+}
+
+/// Verrouille `FOR UPDATE` les exercices pré-lus des deux écritures, **dans
+/// l'ordre chronologique** (une seule fois quand les deux dates tombent dans le
+/// même exercice), et rend, pour chacun, s'il est **clos** sous le verrou ; un
+/// exercice disparu entre la lecture et le verrou est absent du résultat (la
+/// création rendra `NoFiscalYear`, comme une course perdue, bénin).
+///
+/// Ordre des verrous : `companies` (S) → exercices (X, chronologique) → comptes
+/// (S) → [par écriture : projets → exercice repris → comptes → compteur] : l'ordre
+/// de la création ordinaire (l'exercice puis les comptes). L'étape 0 (projets) de
+/// chaque écriture vient désormais **après** les exercices : une aggravation neuve
+/// pour la première écriture, défendue, comme les autres cycles, par le rejeu de
+/// la route. Un verrou ne refuse rien : aucun refus ne change.
+async fn lock_fiscal_years(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    entries: &[NewJournalEntry; 2],
+    guard: &DuplicateGuard,
+) -> Result<HashMap<i64, bool>, ConversionError> {
+    let order = chronological_order(entries);
+    let mut ids: Vec<(usize, i64)> = Vec::with_capacity(2);
+    for idx in order {
+        if let Some(id) = guard.covering[idx]
+            && !ids.iter().any(|(_, known)| *known == id)
+        {
+            ids.push((idx, id));
+        }
+    }
+    let mut locked = HashMap::new();
+    for (idx, id) in ids {
+        let row: Option<(i64, String)> = sqlx::query_as(
+            "SELECT id, status FROM fiscal_years WHERE id = ? AND company_id = ? FOR UPDATE",
+        )
+        .bind(id)
+        .bind(company_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(|e| ConversionError::entry(idx, map_db_error(e).into()))?;
+        if let Some((fy_id, status)) = row {
+            locked.insert(fy_id, status == "Closed");
+        }
+    }
+    Ok(locked)
+}
 
 /// Refus de forme propre à la conversion (400 `Validation`), avec la ligne
 /// visée (rang 1-based dans le corps de l'écriture).
@@ -231,6 +317,48 @@ pub async fn create_conversion(
     complete_difference: bool,
     max_lines: usize,
 ) -> Result<[JournalEntryWithLines; 2], ConversionError> {
+    create_conversion_with_policy(
+        pool,
+        company_id,
+        acteur,
+        entries,
+        complete_difference,
+        max_lines,
+        DuplicatePolicy::Refuse,
+    )
+    .await
+}
+
+/// [`create_conversion`] avec la politique anti-doublon que demande l'appelant
+/// (Story 53-1b, #1365, D1, D2) : chaque écriture est comparée, dans l'ordre
+/// chronologique, à une écriture identique du même jour
+/// ([`DuplicatePolicy::Refuse`] : `409` de la première identique, rang `entry`
+/// dans le corps ; [`DuplicatePolicy::Confirmed`] : les deux passent, une entrée
+/// `journal_entry.duplicate_confirmed` par écriture levée).
+///
+/// **Les exercices se lisent ici, sur le pool, avant `begin`** (dans la
+/// fermeture que la route rejoue) : la transaction les verrouille ensuite, juste
+/// après `companies` et avant toute lecture ordinaire (D2) — c'est ce qui fait
+/// naître l'instantané `REPEATABLE READ` **après** l'attente du verrou de chaque
+/// exercice comparé, faute de quoi une saisie concurrente validée pendant
+/// l'attente resterait invisible à la comparaison.
+#[allow(clippy::too_many_arguments)]
+pub async fn create_conversion_with_policy(
+    pool: &MySqlPool,
+    company_id: i64,
+    acteur: Acteur,
+    entries: [NewJournalEntry; 2],
+    complete_difference: bool,
+    max_lines: usize,
+    policy: DuplicatePolicy,
+) -> Result<[JournalEntryWithLines; 2], ConversionError> {
+    let mut covering: [Option<i64>; 2] = [None, None];
+    for (idx, slot) in covering.iter_mut().enumerate() {
+        *slot = fiscal_years::find_covering_date(pool, company_id, entries[idx].entry_date)
+            .await
+            .map_err(|e| ConversionError::entry(idx, e.into()))?
+            .map(|fy| fy.id);
+    }
     let mut tx = pool
         .begin()
         .await
@@ -244,6 +372,7 @@ pub async fn create_conversion(
         complete_difference,
         max_lines,
         true,
+        Some(DuplicateGuard { policy, covering }),
     )
     .await;
     match result {
@@ -268,6 +397,13 @@ pub async fn create_conversion(
 /// revue P1 M4) — flux de rapprochement, dont le compte bancaire et le compte
 /// de conversion sont des comptes de configuration tolérés non imputables
 /// (D-A0), comme la forme à une écriture.
+///
+/// `guard` (Story 53-1b, D2, D3) : `Some` pour la saisie d'une conversion — la
+/// règle anti-doublon **et** les exercices pré-lus, qui se verrouillent juste
+/// après `companies` ; `None` pour la conversion de prestataire (aucune
+/// comparaison, aucun pré-verrou : l'ordre des verrous de ce flux automatique
+/// est inchangé).
+#[allow(clippy::too_many_arguments)]
 async fn create_conversion_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,
@@ -276,6 +412,7 @@ async fn create_conversion_in_tx(
     complete_difference: bool,
     max_lines: usize,
     enforce_postable: bool,
+    guard: Option<DuplicateGuard>,
 ) -> Result<[JournalEntryWithLines; 2], ConversionError> {
     let conv = |e: DbError| ConversionError::conversion(e.into());
 
@@ -294,6 +431,16 @@ async fn create_conversion_in_tx(
             reason: FxAccountReason::Missing,
             holder_account_id: None,
         }));
+    };
+    // --- 1 bis. Les exercices des deux dates, `FOR UPDATE`, avant toute lecture
+    // ordinaire (Story 53-1b, D2). ⛔ Rien d'ordinaire ne les précède : `LOCK IN
+    // SHARE MODE` sur `companies` ne fait pas naître l'instantané (mesure D2 (a),
+    // `kesh-gate-logs/e531b/d3-mesure-conversion.md`), alors que l'`EXISTS` de
+    // `conversion_line_accounts_in_tx` le fait (mesure (b)) — d'où la place,
+    // avant `check_fx_accounts_in_tx` et cette lecture. ---
+    let locked = match &guard {
+        Some(g) => Some(lock_fiscal_years(tx, company_id, &entries, g).await?),
+        None => None,
     };
     accounts::check_fx_accounts_in_tx(
         tx,
@@ -402,42 +549,88 @@ async fn create_conversion_in_tx(
         .map_err(|e| ConversionError::entry(target, ConversionErrorKind::Core(e)))?;
 
     // --- 5. Les deux créations, dans l'ordre chronologique. ---------------
-    let order: [usize; 2] = if entries[1].entry_date < entries[0].entry_date {
-        [1, 0]
-    } else {
-        [0, 1]
-    };
+    let order = chronological_order(&entries);
     let mut created: [Option<JournalEntryWithLines>; 2] = [None, None];
     for idx in order {
         let date = entries[idx].entry_date;
-        let fy = fiscal_years::find_covering_date_in_tx(tx, company_id, date)
-            .await
-            .map_err(|e| ConversionError::entry(idx, e.into()))?;
-        let fy = match fy {
-            None => {
-                return Err(ConversionError::entry(
-                    idx,
-                    ConversionErrorKind::NoFiscalYear(date),
-                ));
+        // Exercice de l'écriture : sous le verrou du pré-verrou (statut de la
+        // ligne verrouillée) pour la saisie, lecture ordinaire pour la conversion
+        // de prestataire (inchangée). Dans les deux cas, `NoFiscalYear` puis
+        // `FiscalYearClosed`, **avant** la création (`create_in_tx_inner` juge
+        // l'étape 0, projets, avant de voir l'exercice : sans ce jugement, un
+        // exercice clos portant un projet archivé rendrait un autre refus).
+        let fy_id = match (&guard, &locked) {
+            (Some(g), Some(l)) => {
+                let Some(id) = g.covering[idx] else {
+                    return Err(ConversionError::entry(
+                        idx,
+                        ConversionErrorKind::NoFiscalYear(date),
+                    ));
+                };
+                match l.get(&id) {
+                    None => {
+                        return Err(ConversionError::entry(
+                            idx,
+                            ConversionErrorKind::NoFiscalYear(date),
+                        ));
+                    }
+                    Some(true) => {
+                        return Err(ConversionError::entry(
+                            idx,
+                            ConversionErrorKind::FiscalYearClosed(date),
+                        ));
+                    }
+                    Some(false) => id,
+                }
             }
-            Some(fy) if fy.status == FiscalYearStatus::Closed => {
-                return Err(ConversionError::entry(
-                    idx,
-                    ConversionErrorKind::FiscalYearClosed(date),
-                ));
+            _ => {
+                let fy = fiscal_years::find_covering_date_in_tx(tx, company_id, date)
+                    .await
+                    .map_err(|e| ConversionError::entry(idx, e.into()))?;
+                match fy {
+                    None => {
+                        return Err(ConversionError::entry(
+                            idx,
+                            ConversionErrorKind::NoFiscalYear(date),
+                        ));
+                    }
+                    Some(fy) if fy.status == FiscalYearStatus::Closed => {
+                        return Err(ConversionError::entry(
+                            idx,
+                            ConversionErrorKind::FiscalYearClosed(date),
+                        ));
+                    }
+                    Some(fy) => fy.id,
+                }
             }
-            Some(fy) => fy,
         };
         let new = entries[idx].clone();
-        let result = journal_entries::create_in_tx(tx, fy.id, acteur, new, enforce_postable)
-            .await
-            .map_err(|e| {
-                let kind = match e {
-                    DbError::FiscalYearClosed => ConversionErrorKind::FiscalYearClosed(date),
-                    other => ConversionErrorKind::Db(other),
-                };
-                ConversionError::entry(idx, kind)
-            })?;
+        // La règle anti-doublon (D1) : la saisie passe sa politique ; la
+        // seconde écriture est comparée à un journal qui contient déjà la
+        // première (même transaction), mais les deux ne peuvent être égales : le
+        // compte de conversion est au débit net de l'une et au crédit net de
+        // l'autre, soldes opposés et non nuls (`balanced`, ci-dessus).
+        let result = match &guard {
+            Some(g) => {
+                journal_entries::create_in_tx_with_policy(
+                    tx,
+                    fy_id,
+                    acteur,
+                    new,
+                    enforce_postable,
+                    g.policy,
+                )
+                .await
+            }
+            None => journal_entries::create_in_tx(tx, fy_id, acteur, new, enforce_postable).await,
+        }
+        .map_err(|e| {
+            let kind = match e {
+                DbError::FiscalYearClosed => ConversionErrorKind::FiscalYearClosed(date),
+                other => ConversionErrorKind::Db(other),
+            };
+            ConversionError::entry(idx, kind)
+        })?;
         created[idx] = Some(result);
     }
     let [a, b] = created;
@@ -598,6 +791,7 @@ pub async fn create_provider_conversion_in_tx(
                 false,
                 PROVIDER_CONVERSION_MAX_LINES,
                 false,
+                None,
             )
             .await?;
             Ok(vec![a.entry.id, b.entry.id])

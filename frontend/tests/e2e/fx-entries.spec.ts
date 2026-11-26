@@ -28,12 +28,15 @@
  *    saisi », la ligne part `manual` ; après le ↑ de la table des cours, `afc`.
  * 9. Cours `manual` apparu après l'écriture : modifier le seul montant d'une
  *    ligne `afc` → `FX_RATE_NOT_AFC` sans cours attendu, « Garder mon cours ».
+ * 10. Story 53-1b (#1365, AC-7) : une conversion dont la réponse est perdue après le
+ *    `COMMIT` (K6, rien n'est renvoyé), reprise sans requête, puis le doublon refusé (K5) et
+ *    sa confirmation ; le journal porte deux écritures de CETTE conversion, non quatre.
  *
  * L'activation est irréversible : la spec reseede `with-company` en fin de parcours.
  * Captures d'écran (thème clair) dans `KESH_CAPTURES_DIR` s'il est défini.
  */
 
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page, type Request } from '@playwright/test';
 import { join } from 'node:path';
 import {
 	seedTestState,
@@ -44,7 +47,7 @@ import {
 
 test.describe.configure({ mode: 'serial' });
 
-const CAPTURES = process.env.KESH_CAPTURES_DIR;
+const CAPTURES = process.env.KESH_CAPTURES_DIR ?? process.env.KESH_E2E_CAPTURES_DIR;
 
 async function capture(page: Page, name: string): Promise<void> {
 	if (CAPTURES) await page.screenshot({ path: join(CAPTURES, `${name}.png`), fullPage: true });
@@ -497,4 +500,120 @@ test('9 — cours manual apparu après l’écriture : FX_RATE_NOT_AFC sans cour
 	await page.goto(`/journal-entries/${id}`);
 	await expect(page.getByTestId(/^entry-line-fx-/).first()).toContainText('USD 200.00 × 0.88 · manuel');
 	await capture(page, '11-fiche-ligne-devise');
+});
+
+test('10 — la conversion ne passe pas deux fois : réponse perdue (K6), reprise sans requête, doublon (K5), confirmation', async ({
+	page,
+}) => {
+	await login(page);
+	// Dates et montants **distincts** de ceux du test 6 (2026-03-05/06, EUR 1000 / USD 1060) : le
+	// libellé de la conversion est calculé par l'assistant, il ne distingue pas deux conversions ;
+	// ce décor est partagé (mode `serial`), le journal porte déjà les deux écritures du test 6.
+	const D1 = '2026-03-12';
+	const D2 = '2026-03-13';
+	await page.goto('/journal-entries');
+	await page.getByTestId('journal-entries-conversion').click();
+	await expect(page.getByTestId('conversion-assistant')).toBeVisible();
+	await page.getByTestId('conversion-debit-date').fill(D1);
+	await page.getByTestId('conversion-credit-date').fill(D2);
+	await page.getByTestId('conversion-column-debit').locator('input[aria-autocomplete="list"]').fill('1027');
+	await page.getByRole('listbox').getByRole('option').filter({ hasText: '1027' }).first().click();
+	await page.getByTestId('conversion-column-credit').locator('input[aria-autocomplete="list"]').fill('1025');
+	await page.getByRole('listbox').getByRole('option').filter({ hasText: '1025' }).first().click();
+	await expect(page.getByTestId('conversion-debit-rate')).toHaveValue('0.93');
+	await expect(page.getByTestId('conversion-credit-rate')).toHaveValue('0.88');
+	await page.getByTestId('conversion-debit-amount').fill('500');
+	await page.getByTestId('conversion-credit-amount').fill('530');
+	await expect(page.getByTestId('conversion-preview-2-difference')).toBeVisible();
+	await capture(page, '12-k1-conversion-saisie');
+
+	// Le serveur écrit, la réponse est jetée (la première fois seulement).
+	const posts: Request[] = [];
+	let cut = true;
+	await page.route('**/api/v1/journal-entries/conversions', async (route) => {
+		if (route.request().method() !== 'POST') return route.fallback();
+		posts.push(route.request());
+		if (!cut) return route.fallback();
+		const response = await route.fetch();
+		expect(response.status(), 'le serveur a bien écrit').toBe(201);
+		await route.abort('connectionreset');
+	});
+	const submit = page.getByTestId('conversion-submit');
+	const fields = page.getByTestId('conversion-debit-date');
+	const ofThisConversion = async (): Promise<number> => {
+		const ctx = await authedApiContext(page);
+		try {
+			const list = await api<{ items: Array<{ description: string }> }>(
+				ctx,
+				'get',
+				`/api/v1/journal-entries?dateFrom=${D1}&dateTo=${D2}&limit=50`,
+			);
+			return list.items.filter((e) => /^Conversion EUR → USD/.test(e.description)).length;
+		} finally {
+			await disposeContextSafe(ctx);
+		}
+	};
+
+	await submit.click();
+
+	// K6 : figé, avis, lien sur la plage des deux dates, aucun message d'échec, aucun toast.
+	const unknown = page.getByTestId('conversion-unknown-outcome');
+	await expect(unknown).toBeVisible();
+	await expect(page.getByTestId('conversion-unknown-outcome-text')).toHaveText(
+		'La conversion a peut-être été passée. Vérifiez dans le journal si ses deux écritures existent avant de la passer de nouveau.',
+	);
+	// Aucun message d'échec (le faux « n'a pas pu être passée » de l'ancien écran) : ni erreur globale ni de colonne.
+	await expect(page.getByTestId('conversion-global-error')).toHaveCount(0);
+	await expect(page.getByTestId('conversion-debit-error')).toHaveCount(0);
+	await expect(page.getByTestId('conversion-credit-error')).toHaveCount(0);
+	const link = page.getByTestId('conversion-unknown-outcome-link');
+	await expect(link).toHaveAttribute('href', `/journal-entries?dateFrom=${D1}&dateTo=${D2}`);
+	await expect(link).toHaveAttribute('target', '_blank');
+	await expect(fields).toBeDisabled();
+	await expect(submit).toHaveCount(0);
+	await expect(page.locator('[data-sonner-toast]')).toHaveCount(0);
+	await capture(page, '13-k6-issue-inconnue');
+	expect(await ofThisConversion(), 'le COMMIT a eu lieu : deux écritures de cette conversion').toBe(2);
+
+	// La reprise rend la saisie intacte, sans requête.
+	await page.getByTestId('conversion-resume-entry').click();
+	expect(posts).toHaveLength(1);
+	await expect(unknown).toHaveCount(0);
+	await expect(fields).toBeEnabled();
+	await expect(page.getByTestId('conversion-debit-amount')).toHaveValue('500');
+	await expect(submit).toBeEnabled();
+
+	// L'envoi suivant : le doublon (K5), aucune écriture de plus.
+	cut = false;
+	await submit.click();
+	const dup = page.getByTestId('conversion-probable-duplicate');
+	await expect(dup).toBeVisible();
+	expect(posts).toHaveLength(2);
+	await expect(page.getByTestId('conversion-probable-duplicate-text')).toHaveText(
+		'L’écriture de la colonne Débit de cette conversion existe déjà à l’identique. Si la conversion est déjà passée, ne la passez pas une seconde fois ; sinon, confirmez que ce n’est pas un doublon.',
+	);
+	const cited = page.getByTestId('conversion-duplicate-link');
+	await expect(cited).toHaveAttribute('href', /^\/journal-entries\/\d+$/);
+	await expect(cited).toHaveAttribute('target', '_blank');
+	await expect(cited).toContainText('Écriture n°');
+	await expect(fields).toBeDisabled();
+	await expect(submit).toHaveCount(0);
+	await capture(page, '14-k5-doublon');
+	expect(await ofThisConversion(), 'deux écritures de cette conversion, non quatre').toBe(2);
+
+	// « Modifier la saisie » rend K1 ; l'envoi suivant est ordinaire (refusé encore).
+	await page.getByTestId('conversion-modify-entry').click();
+	await expect(fields).toBeEnabled();
+	await submit.click();
+	await expect(dup).toBeVisible();
+	expect(posts).toHaveLength(3);
+	expect(posts[2].postDataJSON().confirmNotDuplicate).toBeUndefined();
+
+	// La confirmation renvoie le corps gardé avec confirmNotDuplicate, une requête.
+	await page.getByTestId('conversion-confirm-not-duplicate').click();
+	await expect(page).toHaveURL(/\/journal-entries$/);
+	expect(posts).toHaveLength(4);
+	expect(posts[3].postDataJSON().confirmNotDuplicate).toBe(true);
+	expect(posts[3].postDataJSON().entries).toEqual(posts[0].postDataJSON().entries);
+	expect(await ofThisConversion(), 'la seconde conversion, confirmée, s’ajoute').toBe(4);
 });

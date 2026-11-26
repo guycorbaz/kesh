@@ -174,6 +174,12 @@ export interface CreateJournalEntryLineRequest {
 export interface CreateConversionRequest {
 	entries: [CreateJournalEntryRequest, CreateJournalEntryRequest];
 	completeDifference?: boolean;
+	/**
+	 * Story 53-1b (#1365) — la confirmation qui lève le refus
+	 * `JOURNAL_ENTRY_PROBABLE_DUPLICATE` de la conversion. Au niveau du **corps** : le
+	 * champ n'est **pas** dans `entries[i]` (type {@link CreateJournalEntryRequest}).
+	 */
+	confirmNotDuplicate?: boolean;
 }
 
 /** Réponse 201 de la conversion : les deux écritures, dans l'ordre du corps. */
@@ -195,7 +201,9 @@ export interface CreateJournalEntryRequest {
  *
  * ⛔ Le champ vit **ici et nulle part ailleurs** : `CreateJournalEntryRequest` est
  * étendu par le corps du `PUT` (qui l'ignore) et employé par les entrées de la
- * conversion (qui ne le portent pas) ; un test de types le garde.
+ * conversion (`entries[i]`, qui ne le portent pas : c'est le **corps** de la
+ * conversion, {@link CreateConversionRequest}, qui porte le sien, Story 53-1b) ; un
+ * test de types le garde.
  */
 export type CreateJournalEntryBody = CreateJournalEntryRequest & {
 	confirmNotDuplicate?: boolean;

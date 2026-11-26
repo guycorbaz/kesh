@@ -5,6 +5,15 @@
 	 * « cours OU CHF » comme au formulaire, aperçu des deux écritures avec la
 	 * ligne de différence calculée (non modifiable, visible avant l'envoi, D6),
 	 * puis « Passer les écritures » (`POST /journal-entries/conversions`).
+	 *
+	 * Story 53-1b (#1365, table K de la fiche) — **une conversion ne passe pas deux
+	 * fois** : l'envoi suit les états du module commun `entry-submit-state.ts`, dont les
+	 * états K se rangent un à un : K1 = `J1` (saisie), K2a = `J2a` (attente des
+	 * recherches de cours en vol, corps non formé), K2b = `J2b` (requête en vol, corps
+	 * gardé), K3 = `J3` (fait), K5 = `J5` (doublon probable : avis, lien, confirmation),
+	 * K6 = `J6` (issue inconnue : avis, lien de vérification, reprise — **rien n'est
+	 * renvoyé tout seul**), K7 = `J7` (erreur ordinaire). Les contrôles sont figés
+	 * (`<fieldset disabled>`) sauf en K1 et K7.
 	 */
 	import Big from 'big.js';
 	import { toast } from 'svelte-sonner';
@@ -13,12 +22,26 @@
 	import { Input } from '$lib/components/ui/input';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import { isApiError } from '$lib/shared/utils/api-client';
+	import { isSettlementOutcomeUnknown } from '$lib/shared/utils/unknown-outcome';
 	import { todayLocal } from '$lib/shared/utils/local-date';
+	import SupplierInvoiceNotice from '$lib/features/supplier-invoices/SupplierInvoiceNotice.svelte';
 	import { accountCurrency, type AccountResponse } from '$lib/features/accounts/accounts.types';
 	import type { CompanyJson } from '$lib/features/settings/settings.types';
 	import { formatSwissAmount } from './balance';
 	import { createConversion } from './journal-entries.api';
+	import type { CreateConversionRequest } from './journal-entries.types';
 	import AccountAutocomplete from './AccountAutocomplete.svelte';
+	import {
+		canConfirmFrom,
+		canSendFrom,
+		canWriteEntry,
+		isEntryFrozen,
+		readEntryDuplicateRefusal,
+		stateAfterRejection,
+		unknownOutcomeRangeHref,
+		type EntryDuplicateRefusal,
+		type EntrySubmitState
+	} from './entry-submit-state';
 	import {
 		applyChfEntry,
 		applyLookup,
@@ -54,6 +77,19 @@
 	let debitCol = $state<ConversionColumn>({ date: today, accountId: null, foreign: null, fees: [] });
 	let creditCol = $state<ConversionColumn>({ date: today, accountId: null, foreign: null, fees: [] });
 	let submitting = $state(false);
+	/** L'état de l'envoi (table K, rangée dans les états J du module commun). */
+	let phase = $state<EntrySubmitState>('J1');
+	/** Le refus de doublon lu en K5 : l'écriture existante citée, et le rang visé. */
+	let duplicate = $state<EntryDuplicateRefusal | null>(null);
+	/**
+	 * Le **corps gardé** de l'envoi en vol : c'est lui, et nul autre, que renvoie la
+	 * confirmation de K5 (jamais reformé) ; ses dates alimentent le lien de K6.
+	 */
+	let kept = $state.raw<{ body: CreateConversionRequest; dates: [string, string] } | null>(null);
+	/** Figé : tous les contrôles de la saisie (`<fieldset disabled>`), sauf en K1 et K7. */
+	const frozen = $derived(isEntryFrozen(phase));
+	/** « Passer les écritures » n'est offert ni en K5 ni en K6. */
+	const showSubmit = $derived(phase !== 'J5' && phase !== 'J6');
 	/** Refus du serveur : sur une colonne (`details.entry`), ou au-dessus de l'aperçu. */
 	let columnError = $state<{ debit: string | null; credit: string | null }>({ debit: null, credit: null });
 	let feeErrors = $state<{ debit: Record<number, string>; credit: Record<number, string> }>({
@@ -107,6 +143,12 @@
 		const done: Promise<void> = cache
 			.get(currency, date)
 			.then((r) => {
+				// Une recherche résolue **après** la formation du corps (K2b et au-delà) ne
+				// doit plus écrire la saisie : l'écran divergerait de ce qui a été envoyé.
+				// En K2a (attente des recherches) elle écrit, c'est voulu : le plan est relu
+				// ensuite, et le cours mis à jour part avec le corps. Défense en profondeur :
+				// ce cas est inatteignable par l'interface (les contrôles sont figés).
+				if (!canWriteEntry(phase)) return;
 				const now = getCol(side);
 				if (!now.foreign || now.foreign.currency !== currency || now.date !== date) return;
 				setCol(side, { ...now, foreign: applyLookup(now.foreign, monthOf(date), r.outcome) });
@@ -247,13 +289,17 @@
 	}
 
 	async function submit() {
-		if (plan.kind !== 'ready' || submitting) return;
+		// L'envoi ordinaire ne part que de K1 et K7 ; la garde est synchrone (K2a
+		// dès le premier événement), un second événement d'envoi ne part pas.
+		if (plan.kind !== 'ready' || !canSendFrom(phase) || submitting) return;
+		phase = 'J2a';
 		submitting = true;
-		// L'envoi attend les `lookup` en cours (cours proposé du mois de la date,
-		// provenance), comme le formulaire ; le plan est relu ensuite.
+		// K2a : l'envoi attend les `lookup` en cours (cours proposé du mois de la
+		// date, provenance), comme le formulaire ; le plan est relu ensuite.
 		if (inflight.size > 0) {
 			await Promise.all([...inflight]);
 			if (plan.kind !== 'ready') {
+				phase = 'J1';
 				submitting = false;
 				return;
 			}
@@ -262,15 +308,70 @@
 		columnError = { debit: null, credit: null };
 		feeErrors = { debit: {}, credit: {} };
 		globalError = null;
+		// K2b : requête en vol, le corps est formé et **gardé**.
+		const body: CreateConversionRequest = { entries: sentPlan.entries };
+		kept = {
+			body,
+			dates: [sentPlan.entries[0].entryDate, sentPlan.entries[1].entryDate]
+		};
+		duplicate = null;
+		phase = 'J2b';
+		await transmit(body, false);
+	}
+
+	/**
+	 * « Ce n'est pas un doublon, passer la conversion » (K5 → K2b) : renvoie le **corps
+	 * gardé** avec `confirmNotDuplicate: true`, une seule fois — la garde est synchrone.
+	 */
+	async function confirmDuplicate() {
+		if (!canConfirmFrom(phase) || kept === null || submitting) return;
+		phase = 'J2b';
+		submitting = true;
+		await transmit(kept.body, true);
+	}
+
+	/** « Modifier la saisie » (K5 → K1) : rien n'est envoyé. */
+	function modifyEntry() {
+		if (phase !== 'J5') return;
+		duplicate = null;
+		phase = 'J1';
+	}
+
+	/** « J'ai vérifié, elle n'a pas été passée — reprendre la saisie » (K6 → K1) : rien n'est envoyé. */
+	function resumeEntry() {
+		if (phase !== 'J6') return;
+		phase = 'J1';
+	}
+
+	/** L'envoi lui-même : succès (K3), doublon (K5), issue inconnue (K6), erreur (K7). */
+	async function transmit(body: CreateConversionRequest, confirm: boolean) {
 		try {
-			await createConversion({ entries: sentPlan.entries });
+			await createConversion(confirm ? { ...body, confirmNotDuplicate: true } : body);
+			phase = 'J3';
 			toast.success(i18nMsg('journal-entries-conversion-done', 'Conversion passée : deux écritures enregistrées.'));
 			onDone();
 		} catch (err) {
-			if (!isApiError(err)) {
-				globalError = i18nMsg('journal-entries-conversion-error', 'La conversion n’a pas pu être passée.');
+			// Sorties de K2b : le refus de doublon (K5, **avec** son rang), l'issue inconnue
+			// (K6 : tout 5xx, coupure, délai, erreur qui n'est pas une `ApiError` — on ne
+			// dit plus « La conversion n'a pas pu être passée » quand l'issue est
+			// inconnue), le reste (K7, traitement ordinaire).
+			const next = stateAfterRejection(err, isSettlementOutcomeUnknown, { needsEntry: true });
+			if (next === 'J5') {
+				duplicate = readEntryDuplicateRefusal(err);
+				phase = 'J5';
 				return;
 			}
+			if (next === 'J6') {
+				phase = 'J6';
+				return;
+			}
+			// Défensif : `isSettlementOutcomeUnknown` range déjà toute erreur hors
+			// `ApiError` en K6 ; une autre ne dirait rien de l'issue.
+			if (!isApiError(err)) {
+				phase = 'J6';
+				return;
+			}
+			phase = 'J7';
 			const message = isFxRefusalCode(err.code) ? fxRefusalMessage(err.code, err.details, err.message) : err.message;
 			const entry = refusalEntry(err.details);
 			const line = refusalLine(err.details);
@@ -435,10 +536,20 @@
 {/snippet}
 
 <div class="space-y-6" data-testid="conversion-assistant">
-	<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-		{@render column('debit')}
-		{@render column('credit')}
-	</div>
+	<!-- Story 53-1b (table K) — UN `<fieldset disabled>` enveloppe tous les contrôles qui
+	     écrivent la saisie (date, comptes, montants, cours, CHF, frais) ; figé en K2a, K2b,
+	     K3, K5, K6, sans rien vider. Atténué : un champ inactif doit en avoir l'air. L'aperçu,
+	     les avis (K5, K6) et leurs boutons sont hors du fieldset, donc actifs. -->
+	<fieldset
+		class="m-0 min-w-0 border-0 p-0 disabled:opacity-60"
+		disabled={frozen}
+		data-testid="conversion-fields"
+	>
+		<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+			{@render column('debit')}
+			{@render column('credit')}
+		</div>
+	</fieldset>
 
 	<section class="space-y-3 rounded-md border border-border p-4" data-testid="conversion-preview">
 		<h2 class="font-semibold">{i18nMsg('journal-entries-conversion-preview', 'Aperçu')}</h2>
@@ -493,15 +604,86 @@
 				{/each}
 			</ul>
 		{/if}
-		<div class="flex justify-end">
-			<Button
-				type="button"
-				data-testid="conversion-submit"
-				disabled={plan.kind !== 'ready' || submitting}
-				onclick={submit}
+		<!-- Story 53-1b — les avis de K5 (doublon probable) et K6 (issue inconnue). -->
+		{#if phase === 'J5' && duplicate !== null}
+			<SupplierInvoiceNotice
+				testid="conversion-probable-duplicate"
+				text={duplicate.entry === 1
+					? i18nMsg(
+							'journal-entries-conversion-probable-duplicate-debit',
+							'L’écriture de la colonne Débit de cette conversion existe déjà à l’identique. Si la conversion est déjà passée, ne la passez pas une seconde fois ; sinon, confirmez que ce n’est pas un doublon.'
+						)
+					: i18nMsg(
+							'journal-entries-conversion-probable-duplicate-credit',
+							'L’écriture de la colonne Crédit de cette conversion existe déjà à l’identique. Si la conversion est déjà passée, ne la passez pas une seconde fois ; sinon, confirmez que ce n’est pas un doublon.'
+						)}
+				link={{
+					href: `/journal-entries/${duplicate.journalEntryId}`,
+					label: i18nMsg('journal-entries-duplicate-existing', 'Écriture n° { $number } du { $date }', {
+						number: duplicate.entryNumber,
+						date: formatSwissDate(duplicate.entryDate)
+					}),
+					testid: 'conversion-duplicate-link'
+				}}
 			>
-				{i18nMsg('journal-entries-conversion-submit', 'Passer les écritures')}
-			</Button>
+				<button
+					type="button"
+					class="rounded bg-primary px-3 py-1 text-sm text-primary-foreground"
+					data-testid="conversion-confirm-not-duplicate"
+					onclick={() => confirmDuplicate()}
+				>
+					{i18nMsg('journal-entries-duplicate-confirm', 'Ce n’est pas un doublon, enregistrer')}
+				</button>
+				<button
+					type="button"
+					class="rounded border px-3 py-1 text-sm"
+					data-testid="conversion-modify-entry"
+					onclick={() => modifyEntry()}
+				>
+					{i18nMsg('journal-entries-duplicate-edit', 'Modifier la saisie')}
+				</button>
+			</SupplierInvoiceNotice>
+		{/if}
+		{#if phase === 'J6'}
+			<SupplierInvoiceNotice
+				testid="conversion-unknown-outcome"
+				text={i18nMsg(
+					'journal-entries-conversion-unknown-outcome',
+					'La conversion a peut-être été passée. Vérifiez dans le journal si ses deux écritures existent avant de la passer de nouveau.'
+				)}
+				link={{
+					href: unknownOutcomeRangeHref(
+						kept?.dates[0] ?? debitCol.date,
+						kept?.dates[1] ?? creditCol.date
+					),
+					label: i18nMsg('journal-entries-conversion-unknown-outcome-link', 'Voir les écritures de ces dates'),
+					testid: 'conversion-unknown-outcome-link'
+				}}
+			>
+				<button
+					type="button"
+					class="rounded border px-3 py-1 text-sm"
+					data-testid="conversion-resume-entry"
+					onclick={() => resumeEntry()}
+				>
+					{i18nMsg(
+						'journal-entries-conversion-unknown-outcome-resume',
+						'J’ai vérifié, elle n’a pas été passée — reprendre la saisie'
+					)}
+				</button>
+			</SupplierInvoiceNotice>
+		{/if}
+		<div class="flex justify-end">
+			{#if showSubmit}
+				<Button
+					type="button"
+					data-testid="conversion-submit"
+					disabled={plan.kind !== 'ready' || submitting || !canSendFrom(phase)}
+					onclick={submit}
+				>
+					{i18nMsg('journal-entries-conversion-submit', 'Passer les écritures')}
+				</Button>
+			{/if}
 		</div>
 	</section>
 </div>

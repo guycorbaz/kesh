@@ -140,8 +140,9 @@ pub struct CreateJournalEntryRequest {
 ///
 /// ⛔ Le champ **n'entre pas** dans `CreateJournalEntryRequest`, que la
 /// conversion de devises partage (`CreateConversionRequest.entries`) : un
-/// `confirmNotDuplicate` non booléen d'une entrée de conversion ne doit pas
-/// devenir un `400`. Le `PUT` a son propre corps ([`UpdateJournalEntryRequest`]),
+/// `confirmNotDuplicate` non booléen d'une **entrée** de conversion ne doit pas
+/// devenir un `400` (c'est le **corps** de la conversion qui le porte, Story
+/// 53-1b, et lui seul). Le `PUT` a son propre corps ([`UpdateJournalEntryRequest`]),
 /// qui l'ignore. Précédent de `#[serde(flatten)]` sur un corps :
 /// `UpdateSupplierInvoiceRequest`.
 #[derive(Debug, Deserialize)]
@@ -965,12 +966,21 @@ pub struct CreateConversionRequest {
     /// rend 400 (extracteur).
     #[serde(default)]
     pub complete_difference: bool,
+    /// `true` : l'appelant confirme que la conversion n'est pas un doublon
+    /// (Story 53-1b, #1365 ; lève le refus `JOURNAL_ENTRY_PROBABLE_DUPLICATE`
+    /// de **chacune** des deux écritures, une entrée d'audit par écriture
+    /// levée) ; absent = `false`. Un champ non booléen ou `null` rend 400
+    /// (extracteur). ⛔ Il vit **au niveau du corps** : un `confirmNotDuplicate`
+    /// dans `entries[i]` est ignoré (la saisie a son propre corps,
+    /// [`CreateJournalEntryBody`]).
+    #[serde(default)]
+    pub confirm_not_duplicate: bool,
 }
 
 crate::extractors::impl_validation_extractor!(
     ConversionBody,
     CreateConversionRequest,
-    "entries (deux écritures), completeDifference (booléen)"
+    "entries (deux écritures), completeDifference (booléen), confirmNotDuplicate (booléen)"
 );
 
 /// Réponse 201 de la conversion : les deux écritures créées, dans l'ordre du
@@ -1041,7 +1051,14 @@ async fn conversion_refusal(err: AppError) -> axum::response::Response {
 /// (37-3a AC-6) et contrôle FX par ligne (37-3a AC-3) — sans
 /// `accounting::validate`, qui attend l'identification de l'écriture à
 /// compléter ; puis, sous verrou, l'ordre de
-/// [`kesh_db::repositories::journal_entry_conversions::create_conversion`].
+/// [`kesh_db::repositories::journal_entry_conversions::create_conversion_with_policy`],
+/// où **chaque écriture**, dans l'ordre chronologique, passe la règle
+/// anti-doublon de `POST /journal-entries` (Story 53-1b : `409
+/// JOURNAL_ENTRY_PROBABLE_DUPLICATE`, `details.entry` = le rang, dans le corps,
+/// de la première écriture identique ; `confirmNotDuplicate: true` au corps la
+/// lève). Les refus propres à la conversion (compte de conversion, devises)
+/// précèdent le doublon ; le doublon de la première écriture est rendu avant
+/// les refus de création de la seconde.
 /// La ligne de différence n'est calculée que sur `completeDifference: true`
 /// (A31). Réponse 201 `{ entries }` dans l'ordre du corps ; audit
 /// `journal_entry.created` ×2.
@@ -1084,17 +1101,19 @@ pub async fn create_conversion(
             .map_err(|_| AppError::Internal("conversion : deux écritures attendues".into()))?;
         let acteur = Acteur::from(&current_user);
         let complete_difference = req.complete_difference;
+        let policy = DuplicatePolicy::from_confirmation(req.confirm_not_duplicate);
         let created = crate::retry::retry_app_on_deadlock("journal_entries::conversion", || {
             let pool = &state.pool;
             let entries = entries.clone();
             async move {
-                kesh_db::repositories::journal_entry_conversions::create_conversion(
+                kesh_db::repositories::journal_entry_conversions::create_conversion_with_policy(
                     pool,
                     company.id,
                     acteur,
                     entries,
                     complete_difference,
                     MAX_LINES_PER_ENTRY,
+                    policy,
                 )
                 .await
                 .map_err(conversion_error)
