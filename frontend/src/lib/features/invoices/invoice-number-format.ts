@@ -11,7 +11,22 @@ export const MAX_TEMPLATE_LEN = 64;
 export const MAX_RENDERED_LEN = 64;
 export const MAX_SEQ_PADDING = 10;
 
-const ALLOWED_CHAR_RE = /^[A-Za-z0-9\-_/.#\s{}:]+$/;
+/**
+ * Les caractères admis, comme `is_allowed_char` (Rust) : lettres ASCII, chiffres, `- _ / . # : { }`,
+ * espace et tabulation — **pas** `\s`, qui admettrait aussi U+00A0, U+2003, `\n`… (#1120).
+ *
+ * Écarts connus avec le serveur, tous au même refus (« caractères non autorisés ») sauf mention :
+ * - le miroir applique ce filtre à **tout** le gabarit, accolades comprises, que `parse` (Rust) saute
+ *   (il ne juge que les caractères hors accolades) ; seul effet connu : `{SEQ:+4}`, admis par le
+ *   serveur (`u32::from_str` accepte un `+`), est refusé ici (#1119) ; un caractère dans une
+ *   accolade (`{ÉTÉ}`) est `UnknownPlaceholder` au serveur, « caractères non autorisés » ici ;
+ * - U+FEFF seul : « vide » ici (`trim` de JavaScript), `IllegalCharacter` au serveur ;
+ * - l'ordre : le serveur juge caractères et accolades de gauche à droite (`}é` → `UnmatchedBrace`),
+ *   le miroir tous les caractères d'abord.
+ * Aucun de ces écarts ne laisse passer à l'écran ce que le serveur refuse.
+ */
+const ALLOWED_CHAR_RE = /^[A-Za-z0-9\-_/.#: \t{}]+$/;
+const utf8Length = (s: string): number => new TextEncoder().encode(s).length;
 const KNOWN_PLACEHOLDERS = new Set(['YEAR', 'FY', 'SEQ']);
 
 export interface FormatValidationResult {
@@ -127,6 +142,8 @@ export function validateDescriptionTemplate(template: string): FormatValidationR
  * `kesh_core::invoice_format::validate_numbering_template` (Story 33-1b, #926) :
  * `<préfixe>{YEAR}<séparateur>{SEQ}` ou `{SEQ:NN}`, séparateur non vide et sans chiffre,
  * rien après le compteur, aucun `{FY}`, ni blanc en tête ni tabulation.
+ * Même écart que `ALLOWED_CHAR_RE` : `{SEQ:+4}`, que le serveur admettrait, est refusé avant d'arriver
+ * ici, par « caractères non autorisés » (#1119).
  */
 const NUMBERING_SHAPE_RE = /^(?![ \t])[^{}\t]*\{YEAR\}([^{}0-9\t]+)\{SEQ(:\d+)?\}$/;
 
@@ -190,13 +207,16 @@ function validateTemplateRules(template: string): FormatValidationResult {
 			error: i18nMsg('invoices-format-error-empty', 'Le format de numérotation est vide'),
 		};
 	}
-	if (template.length > MAX_TEMPLATE_LEN) {
+	// Octets UTF-8, comme le serveur (`template.len()`, jugé avant les caractères) : `length`
+	// compterait des unités UTF-16 (#1120).
+	const templateBytes = utf8Length(template);
+	if (templateBytes > MAX_TEMPLATE_LEN) {
 		return {
 			ok: false,
 			error: i18nMsg(
 				'invoices-format-error-too-long',
-				'Le format dépasse { $max } caractères (actuel : { $actual })',
-				{ max: MAX_TEMPLATE_LEN, actual: template.length },
+				'Le format dépasse { $max } octets (actuel : { $actual })',
+				{ max: MAX_TEMPLATE_LEN, actual: templateBytes },
 			),
 		};
 	}
@@ -243,8 +263,9 @@ function validateTemplateRules(template: string): FormatValidationResult {
 			// i64::MAX = 19 chiffres (review P2 parité Rust).
 			worstCaseLen += 19;
 		} else if (inner.startsWith('SEQ:')) {
-			// Strictement décimal, comme `str::parse::<u32>` (revue P1, E2) : `parseInt`
-			// accepterait « 4a » et « 4 » précédé d'un blanc.
+			// Strictement décimal (revue P1, E2) : `parseInt` accepterait « 4a » et « 4 » précédé
+			// d'un blanc. Le serveur, lui, lit `str::parse::<u32>`, qui admet aussi un `+` en tête :
+			// `{SEQ:+4}` n'arrive jamais ici, `ALLOWED_CHAR_RE` l'ayant déjà refusé (#1119).
 			const digits = inner.slice(4);
 			const n = /^\d+$/.test(digits) ? parseInt(digits, 10) : NaN;
 			if (!Number.isFinite(n) || n < 1 || n > MAX_SEQ_PADDING) {

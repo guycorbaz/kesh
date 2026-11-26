@@ -523,3 +523,5 @@ Journaux hors dépôt, `/home/gcorbaz/devel/kesh-gate-logs/e351/` : `rouges.log`
     de l'orchestrateur ; les sept LOW de la P2, #1118 à #1124) ; #1058 (format sans année ni exercice), de la validation.
   - Statut : **`done`**. Bases de voie 2 gardées (suppression par l'orchestrateur) ; aucun backend vivant (PID du backend d'E2E
     tué en fin de script, port 3411 libre).
+
+- **Rectificatif du 2026-11-26 (story 58-1).** Deux phrases de cette fiche, laissées telles qu'écrites, sont inexactes : le miroir n'a pas un padding « comme `str::parse::<u32>` » (`/^\d+$/`, E2, ligne 478) : le serveur admet `{SEQ:+4}`, que le miroir refuse avant d'arriver à ce contrôle, par `ALLOWED_CHAR_RE` (« caractères non autorisés », #1119) ; et « une lettre accentuée en compte deux » (ligne 508, #1123) sous-disait le poids des caractères (« – » et « € » : trois octets, un emoji : quatre). La borne de 64 octets n'est pas non plus imposée par la QR-facture (ligne 475, #1122) : c'est un choix de prudence (voir le rectificatif de C-e351-7).
