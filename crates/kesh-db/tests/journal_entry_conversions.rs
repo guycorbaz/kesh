@@ -381,7 +381,10 @@ async fn la_confirmation_enregistre_et_s_inscrit_a_l_audit(pool: MySqlPool) {
     convertir(
         &pool,
         &dc,
-        [ecriture_1(&dc, d(2026, 4, 1)), ecriture_2(&dc, d(2026, 4, 2))],
+        [
+            ecriture_1(&dc, d(2026, 4, 1)),
+            ecriture_2(&dc, d(2026, 4, 2)),
+        ],
         DuplicatePolicy::Confirmed,
     )
     .await

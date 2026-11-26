@@ -370,8 +370,8 @@ pub async fn create_with_policy(
 
 /// [`create_in_tx`] **soumise à la règle anti-doublon** (Story 53-1a, D2) : la
 /// seule entrée, dans la transaction de l'appelant, qui passe une politique.
-/// [`create_with_policy`] l'emploie ; la conversion de devises l'emploiera
-/// (Story 53-1b). `pub(crate)` : une saisie ne l'atteint que par la route.
+/// [`create_with_policy`] l'emploie, comme la conversion de devises
+/// (Story 53-1b, `journal_entry_conversions`). `pub(crate)` : une saisie ne l'atteint que par la route.
 pub(crate) async fn create_in_tx_with_policy(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     fiscal_year_id: i64,

@@ -1,6 +1,6 @@
 //! La politique de la règle anti-doublon, commune aux dépôts qui refusent un
 //! doublon confirmable (Story 48-12a : factures fournisseur ; Story 53-1a :
-//! écritures saisies ; Story 53-1b : conversion de devises, à venir).
+//! écritures saisies ; Story 53-1b : conversion de devises).
 //!
 //! Une seule définition (DRY) : chaque dépôt la réexporte (`pub use`) sous son
 //! propre chemin. Les règles — ce qui compte comme doublon, ce que la
