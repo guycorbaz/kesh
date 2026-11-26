@@ -28,6 +28,102 @@ export interface AccountBalance {
 	balanceCurrency?: string;
 }
 
+// --- Story 46-2 — bilan et compte de résultat par groupes (contrat de la 46-1) ---
+
+/** Niveau de détail : `1` à `20`, ou `all` (tous les groupes ouverts). */
+export type DetailLevel = number | 'all';
+
+/** Place du sous-total d'un groupe ouvert : sur la ligne du titre, ou en pied. */
+export type SubtotalPosition = 'header' | 'footer';
+
+/**
+ * Paramètres de groupement d'une demande de bilan, de compte de résultat ou de balance
+ * (46-1 § *Le contrat*, 46-6a) ; les mêmes vont à l'export (46-3, 46-6b).
+ */
+export interface GroupingParams {
+	detailLevel: DetailLevel;
+	subtotalPosition: SubtotalPosition;
+	/** Groupes ouverts à la main (identifiants de comptes de groupe). */
+	open: number[];
+	/** Groupes fermés à la main. */
+	closed: number[];
+}
+
+/**
+ * Écho `grouping` de la réponse : les choix **retenus** (identifiants ignorés
+ * retirés, listes triées) et `maxDepth`, la profondeur de l'arbre affiché,
+ * indépendante de l'ouverture (`0` rapport vide, `1` plan sans groupe).
+ */
+export interface GroupingEcho extends GroupingParams {
+	maxDepth: number;
+}
+
+/** Genre d'une ligne groupée. */
+export type GroupedRowKind = 'group' | 'account' | 'own' | 'subtotal';
+
+/**
+ * Ce que toute ligne groupée porte, quel que soit le rapport (Story 46-6b) :
+ * genre, profondeur, compte, devise unique éventuelle et solde dans cette
+ * devise, état d'un groupe (`open`, sur `group` seulement) et compte actif
+ * (`active`, sur `account` et `own`). Les autres montants sont propres à chaque
+ * rapport.
+ */
+export interface GroupedRowBase {
+	kind: GroupedRowKind;
+	depth: number;
+	accountId: number;
+	accountNumber: string;
+	accountName: string;
+	currency?: string;
+	/**
+	 * Le solde en devise, présent avec `currency` : au bilan et au compte de
+	 * résultat, le solde de la ligne ; à la balance, son net des mouvements.
+	 */
+	balanceCurrency?: string;
+	open?: boolean;
+	active?: boolean;
+}
+
+/**
+ * Une ligne de `groupedRows` du bilan ou du compte de résultat, déjà dans
+ * l'ordre d'affichage. `balance` est le sous-total d'un groupe.
+ */
+export interface GroupedRow extends GroupedRowBase {
+	balance: string;
+	role?: AccountRole | null;
+}
+
+/**
+ * Une ligne de `groupedRows` de la balance (Story 46-6a ; un tableau, la
+ * balance n'a pas de sections) : les montants de {@link TrialBalanceRow}, sous-
+ * totaux exacts d'un groupe. Les montants en devise ne sont présents qu'avec
+ * `currency` (toute la descendance non nulle dans cette devise).
+ */
+export interface TrialBalanceGroupedRow extends GroupedRowBase {
+	openingBalance: string;
+	totalDebit: string;
+	totalCredit: string;
+	/** Net des mouvements : rendu par l'API, montré nulle part (25-5-b). */
+	balance: string;
+	closingBalance: string;
+	openingCurrency?: string;
+	totalDebitCurrency?: string;
+	totalCreditCurrency?: string;
+	balanceCurrency?: string;
+	closingCurrency?: string;
+}
+
+export interface BalanceSheetGroupedRows {
+	assets: GroupedRow[];
+	liabilities: GroupedRow[];
+	equity: GroupedRow[];
+}
+
+export interface IncomeStatementGroupedRows {
+	revenues: GroupedRow[];
+	expenses: GroupedRow[];
+}
+
 export interface BalanceSheetDto {
 	period: ReportPeriod;
 	assets: AccountBalance[];
@@ -44,6 +140,9 @@ export interface BalanceSheetDto {
 	retainedEarnings: string;
 	equityResult: string;
 	equationHolds: boolean;
+	/** Story 46-2 — présents seulement si la demande portait `detailLevel`. */
+	grouping?: GroupingEcho;
+	groupedRows?: BalanceSheetGroupedRows;
 }
 
 export interface IncomeStatementDto {
@@ -53,6 +152,9 @@ export interface IncomeStatementDto {
 	totalRevenues: string;
 	totalExpenses: string;
 	netResult: string;
+	/** Story 46-2 — présents seulement si la demande portait `detailLevel`. */
+	grouping?: GroupingEcho;
+	groupedRows?: IncomeStatementGroupedRows;
 }
 
 export interface TrialBalanceRow {
@@ -89,6 +191,9 @@ export interface TrialBalanceDto {
 	retainedEarnings: string;
 	/** Story 25-5-b — Σ des ouvertures en sens débit − résultat reporté = 0. */
 	openingBalanced: boolean;
+	/** Story 46-6b — présents seulement si la demande portait `detailLevel`. */
+	grouping?: GroupingEcho;
+	groupedRows?: TrialBalanceGroupedRow[];
 }
 
 export type Journal = 'Achats' | 'Ventes' | 'Banque' | 'Caisse' | 'OD';

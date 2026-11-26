@@ -1,0 +1,6 @@
+{
+ "error": {
+  "type": "invalid_request_error",
+  "message": "This API key does not have the rak_payout_read permission FUITE"
+ }
+}

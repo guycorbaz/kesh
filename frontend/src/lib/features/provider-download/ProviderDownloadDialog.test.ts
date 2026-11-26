@@ -365,12 +365,12 @@ describe('ProviderDownloadDialog', () => {
 			code: 'PROVIDER_PERIOD_INVALID',
 			message: 'x',
 			status: 400,
-			details: { provider: 'paypal', reason: 'too_old' },
+			details: { provider: 'paypal', reason: 'too_old', historyYears: 3 },
 		});
 		monter();
 		await waitFor(() => expect(q('provider-download-start')).not.toBeNull());
 		await fireEvent.click(q('provider-download-start') as HTMLElement);
-		await waitFor(() => expect(q('provider-download-refusal')?.textContent).toContain('plus de trois ans'));
+		await waitFor(() => expect(q('provider-download-refusal')?.textContent).toContain('plus de 3 ans'));
 		expect(getMock).not.toHaveBeenCalled();
 		expect(q('provider-download-start')).not.toBeNull();
 	});

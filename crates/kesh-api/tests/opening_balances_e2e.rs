@@ -385,10 +385,13 @@ async fn post_happy_path_od_at_fy_start_appears_in_balance_sheet(pool: MySqlPool
     // Correctif fix-bilan-resultat-reporte : le JSON garde `retainedEarnings` (champ
     // stable, ci-dessus), mais l'export CSV omet la ligne calculée nulle — seul le
     // compte physique 2970 porte le report, et le total des capitaux propres est juste.
+    // Export **à plat** (`detailLevel=flat`) : les lignes attendues sont celles du CSV à
+    // plat ; depuis que l'export par l'API rend par défaut la présentation de l'écran
+    // (groupée, colonnes `Niveau;TypeLigne`), ce rendu se demande explicitement.
     let resp = app
         .client
         .get(app.url(&format!(
-            "/api/v1/reports/balance-sheet/export?format=csv&fiscalYearId={}",
+            "/api/v1/reports/balance-sheet/export?format=csv&detailLevel=flat&fiscalYearId={}",
             seed.fy_id
         )))
         .header("Authorization", auth(&token))
@@ -404,6 +407,28 @@ async fn post_happy_path_od_at_fy_start_appears_in_balance_sheet(pool: MySqlPool
         csv.contains("Total passifs + capitaux propres;;;1000.00"),
         "{csv}"
     );
+
+    // Revue P1 de la 46-8, LOW-6 : l'export **sans paramètre**, celui de tout client
+    // depuis la 46-8, rend le CSV groupé de l'écran ; la ligne calculée nulle y est
+    // omise de même (`shows_retained_earnings_line`, partagé par les deux rendus).
+    let resp = app
+        .client
+        .get(app.url(&format!(
+            "/api/v1/reports/balance-sheet/export?format=csv&fiscalYearId={}",
+            seed.fy_id
+        )))
+        .header("Authorization", auth(&token))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let csv = resp.text().await.unwrap();
+    assert!(
+        csv.contains("Section;Niveau;TypeLigne;NumeroCompte;NomCompte;Solde"),
+        "{csv}"
+    );
+    assert!(csv.contains(";2970;"), "{csv}");
+    assert!(!csv.contains("Résultat reporté"), "{csv}");
 }
 
 /// AC-A happy path bis (P3-BH3-5) : report d'ouverture NÉGATIF (perte

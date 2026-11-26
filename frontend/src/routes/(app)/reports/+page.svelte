@@ -19,6 +19,17 @@
 	import GeneralLedgerView from '$lib/features/reports/GeneralLedgerView.svelte';
 	import JournalReportView from '$lib/features/reports/JournalReportView.svelte';
 	import VatReportView from '$lib/features/reports/VatReportView.svelte';
+	import GroupingControls from '$lib/features/reports/GroupingControls.svelte';
+	import {
+		groupingParamsOf,
+		readGroupingView,
+		sameGroupingParams,
+		toggleGroup,
+		withEcho,
+		writeGroupingView,
+		type GroupedReport,
+		type GroupingView,
+	} from '$lib/features/reports/reports-grouping';
 	import {
 		buildExportFilename,
 		downloadReport,
@@ -61,6 +72,8 @@
 		GeneralLedgerDto,
 		LedgerQuery,
 		AgedReceivablesDto,
+		GroupedRowBase,
+		GroupingParams,
 	} from '$lib/features/reports/reports.types';
 	import type { FiscalYearResponse } from '$lib/features/fiscal-years/fiscal-years.types';
 
@@ -76,6 +89,8 @@
 		fiscalYears: FiscalYearResponse[];
 		// Story 9-2a — Nom de la company pour construire les filenames d'export.
 		companyName: string;
+		// Story 46-2 (AC-10) — clé de la vue groupée mémorisée ; `null` si inconnue.
+		companyId?: number | null;
 	}
 	let { data }: { data: PageData } = $props();
 
@@ -147,6 +162,167 @@
 
 	// P20 — race guard : sequence counter pattern (cf. ReconciliationProposals).
 	let genSeq = 0;
+	// L'onglet dont la génération est en vol (rapports classiques), `null` sinon.
+	let inFlightTab: TabId | null = null;
+
+	/**
+	 * Périme toute génération en vol et rabaisse ses deux drapeaux (`loading`,
+	 * `refreshing`) ; rend le numéro de la génération suivante.
+	 *
+	 * ⚠️ **Le seul endroit qui incrémente `genSeq`** (Story 46-2, revue P1 M1) :
+	 * une réponse périmée est jetée par `mySeq !== genSeq`, donc son `finally` ne
+	 * rabaisse plus rien — c'est à celui qui la périme de le faire. Avant cette
+	 * fonction, trois chemins (grand livre, balance âgée, projet) et l'effet de
+	 * changement de projet incrémentaient `genSeq` sans rabaisser `refreshing`,
+	 * qui restait levé (export grisé, `aria-busy`) jusqu'au « Générer » suivant.
+	 */
+	function invalidateInFlight(): number {
+		genSeq++;
+		inFlightTab = null;
+		loading = false;
+		refreshing = false;
+		return genSeq;
+	}
+
+	// Story 46-2 — vue groupée du bilan et du compte de résultat (AC-1 à AC-6, AC-10) ;
+	// Story 46-6b — et de la balance, avec sa propre mémoire.
+	// Relue de la mémoire du navigateur AVANT la première requête : la première
+	// demande part avec la vue retenue, sans passer par la vue par défaut.
+	const companyId = untrack(() => data.companyId ?? null);
+	let groupingViews = $state<Record<GroupedReport, GroupingView>>({
+		'balance-sheet': readGroupingView(companyId, 'balance-sheet'),
+		'income-statement': readGroupingView(companyId, 'income-statement'),
+		'trial-balance': readGroupingView(companyId, 'trial-balance'),
+	});
+	// Paramètres de la dernière réponse AFFICHÉE de chaque rapport : l'export les
+	// reprend tels quels (AC-6), et non la vue en cours de redemande.
+	let displayedGrouping: Record<GroupedReport, GroupingParams | undefined> = {
+		'balance-sheet': undefined,
+		'income-statement': undefined,
+		'trial-balance': undefined,
+	};
+	// Redemande après un changement de présentation : l'écran garde l'affichage
+	// précédent (sans clignotement), marqué `aria-busy` (AC-3).
+	let refreshing = $state(false);
+	/** L'onglet est-il un rapport qui a une vue groupée ? */
+	function isGroupedReport(tab: TabId): tab is GroupedReport {
+		return tab === 'balance-sheet' || tab === 'income-statement' || tab === 'trial-balance';
+	}
+	const isGroupedTab = $derived(isGroupedReport(activeTab));
+	const activeGroupingView = $derived(
+		isGroupedTab ? groupingViews[activeTab as GroupedReport] : null,
+	);
+	/** Le rapport groupé affiché d'un onglet, ou `null`. */
+	function displayedReport(
+		report: GroupedReport,
+	): BalanceSheetDto | IncomeStatementDto | TrialBalanceDto | null {
+		switch (report) {
+			case 'balance-sheet':
+				return balanceSheet;
+			case 'income-statement':
+				return incomeStatement;
+			case 'trial-balance':
+				return trialBalance;
+		}
+	}
+	const activeMaxDepth = $derived(
+		isGroupedTab ? (displayedReport(activeTab as GroupedReport)?.grouping?.maxDepth ?? null) : null,
+	);
+
+	/** Retient la vue d'un rapport, à l'écran et dans la mémoire du navigateur. */
+	function setGroupingView(report: GroupedReport, view: GroupingView): void {
+		groupingViews[report] = view;
+		writeGroupingView(companyId, report, view);
+	}
+
+	/**
+	 * Un changement de présentation (contrôles ou accordéon) : la vue est retenue,
+	 * et le rapport affiché est redemandé à l'API, seule à connaître la règle
+	 * d'ouverture (C-46-2-1). Sans rapport affiché, rien n'est demandé.
+	 */
+	function changeGrouping(next: GroupingView): void {
+		if (!isGroupedTab) return;
+		const report = activeTab as GroupedReport;
+		setGroupingView(report, next);
+		const displayed = displayedReport(report);
+		// Revue P1 M2 (a) — pendant le premier chargement (`loading`, rien
+		// d'affiché), la demande en vol est partie avec l'ancienne vue : la
+		// redemander, sans quoi les contrôles diraient une vue que l'écran
+		// n'affiche pas. Un chargement complet reste un chargement complet.
+		const loadingThis = loading && inFlightTab === report;
+		if (displayed || loadingThis) {
+			void generate({ keepDisplay: displayed !== null && !loadingThis });
+		}
+	}
+
+	/**
+	 * Revue P1 M2 (b) — le rapport affiché l'a-t-il été avec la vue en cours ?
+	 * Sinon (redemande jetée par une génération sur un autre onglet), il faut le
+	 * redemander : les contrôles ne montrent jamais une vue que l'écran n'affiche pas.
+	 */
+	function displayedMatchesView(report: GroupedReport): boolean {
+		return sameGroupingParams(displayedGrouping[report], groupingParamsOf(groupingViews[report]));
+	}
+
+	/**
+	 * Remet l'onglet actif d'accord avec ses contrôles : si c'est un rapport groupé (bilan,
+	 * compte de résultat, balance), affiché avec une autre vue que celle des contrôles, et
+	 * qu'aucune génération n'est en vol, il est redemandé (affichage gardé).
+	 *
+	 * Appelée au retour sur l'onglet (`selectTab`) et à la fin d'une génération
+	 * d'un AUTRE onglet (revue P2 M1) : un retour pendant ce chargement-là ne
+	 * redemande rien — il périmerait la génération demandée sur l'autre onglet —,
+	 * la redemande attend donc qu'elle finisse.
+	 */
+	function resyncActiveGroupedTab(): void {
+		if (!isGroupedReport(activeTab)) return;
+		const displayed = displayedReport(activeTab);
+		if (displayed && !loading && !displayedMatchesView(activeTab)) {
+			void generate({ keepDisplay: true });
+		}
+	}
+
+	/**
+	 * Fin d'une génération non périmée, lancée sur `finishedTab` : si l'utilisateur
+	 * a changé d'onglet entre-temps, l'onglet actif est remis d'accord avec ses
+	 * contrôles. La génération de l'onglet actif lui-même ne redemande jamais
+	 * (une redemande en erreur ne boucle pas).
+	 */
+	function afterGeneration(finishedTab: TabId): void {
+		if (finishedTab !== activeTab) resyncActiveGroupedTab();
+	}
+
+	function onToggleGroup(row: GroupedRowBase): void {
+		if (!activeGroupingView) return;
+		changeGrouping(toggleGroup(activeGroupingView, row.accountId, row.open === true, row.depth));
+	}
+
+	/**
+	 * Une réponse d'un rapport groupé (bilan, compte de résultat, balance) est affichée : ses paramètres
+	 * deviennent ceux de l'export, et la mémoire reprend les listes de l'écho (les
+	 * groupes disparus du plan, ignorés par l'API, en sortent — AC-10).
+	 */
+	function acceptGrouped(
+		report: GroupedReport,
+		params: GroupingParams | undefined,
+		dto: BalanceSheetDto | IncomeStatementDto | TrialBalanceDto,
+	): void {
+		displayedGrouping[report] = params;
+		// Revue P1 M2 — l'écho n'est repris que s'il répond à la vue en cours :
+		// il ne doit jamais remplacer un choix fait après le départ de la demande.
+		// ⚠️ Garde défensive, inatteignable aujourd'hui : tout changement de vue
+		// redemande le rapport (`changeGrouping`), ce qui périme la réponse
+		// partie avec l'ancienne ; et le retour sur l'onglet remet l'écran
+		// d'accord avec ses contrôles (`selectTab`).
+		if (!displayedMatchesView(report)) return;
+		if (params && dto.grouping) {
+			const view = withEcho(groupingViews[report], dto.grouping);
+			setGroupingView(report, view);
+			// Les groupes que l'API a ignorés ne changent rien à l'affichage :
+			// l'export part avec les listes de l'écho, égales à la vue retenue.
+			displayedGrouping[report] = groupingParamsOf(view);
+		}
+	}
 
 	// P17 — reset period dates when fiscal year changes (avoid silent cross-FY 400).
 	let lastFyId: number | null = selectedFiscalYearId;
@@ -166,8 +342,7 @@
 			// sur l'axe exercice (sinon un résultat FY-2026 en vol pourrait repeupler
 			// la vue après un switch vers FY-2027 → mismatch affichage/export). Durcit
 			// du même coup la même race préexistante sur les 5 rapports classiques.
-			genSeq++;
-			loading = false;
+			invalidateInFlight();
 			lastFyId = selectedFiscalYearId;
 		}
 	});
@@ -187,8 +362,7 @@
 				projectExpenses = null;
 				projectReturn = null;
 				errorMsg = null;
-				genSeq++;
-				loading = false;
+				invalidateInFlight();
 			}
 			lastProjectSel = key;
 		}
@@ -242,12 +416,17 @@
 		};
 	}
 
-	async function generate(): Promise<void> {
+	/**
+	 * @param options.keepDisplay — Story 46-2 : redemande après un changement de
+	 *   présentation ; l'affichage précédent reste jusqu'à la réponse (AC-3).
+	 */
+	async function generate(options: { keepDisplay?: boolean } = {}): Promise<void> {
+		const myTab = activeTab;
 		// Story 24-1 — grand livre : période libre, sans exercice.
 		if (isLedgerTab) {
 			const q = ledgerQuery();
 			if (!q) return;
-			const mySeq = ++genSeq;
+			const mySeq = invalidateInFlight();
 			loading = true;
 			errorMsg = null;
 			try {
@@ -256,13 +435,16 @@
 			} catch (e) {
 				if (mySeq === genSeq) errorMsg = formatError(e);
 			} finally {
-				if (mySeq === genSeq) loading = false;
+				if (mySeq === genSeq) {
+					loading = false;
+					afterGeneration(myTab);
+				}
 			}
 			return;
 		}
 		// Story 21-7 — balance âgée : pas de FY/période (arrêté à aujourd'hui).
 		if (isAgedTab) {
-			const mySeq = ++genSeq;
+			const mySeq = invalidateInFlight();
 			loading = true;
 			errorMsg = null;
 			try {
@@ -271,7 +453,10 @@
 			} catch (e) {
 				if (mySeq === genSeq) errorMsg = formatError(e);
 			} finally {
-				if (mySeq === genSeq) loading = false;
+				if (mySeq === genSeq) {
+					loading = false;
+					afterGeneration(myTab);
+				}
 			}
 			return;
 		}
@@ -279,7 +464,7 @@
 		if (isProjectTab) {
 			const q = projectQuery();
 			if (!q) return;
-			const mySeq = ++genSeq;
+			const mySeq = invalidateInFlight();
 			loading = true;
 			errorMsg = null;
 			try {
@@ -293,13 +478,18 @@
 			} catch (e) {
 				if (mySeq === genSeq) errorMsg = formatError(e);
 			} finally {
-				if (mySeq === genSeq) loading = false;
+				if (mySeq === genSeq) {
+					loading = false;
+					afterGeneration(myTab);
+				}
 			}
 			return;
 		}
 		if (selectedFiscalYearId === null) return;
-		const mySeq = ++genSeq;
-		loading = true;
+		const mySeq = invalidateInFlight();
+		inFlightTab = activeTab;
+		if (options.keepDisplay) refreshing = true;
+		else loading = true;
 		errorMsg = null;
 		const query = {
 			fiscalYearId: selectedFiscalYearId,
@@ -309,18 +499,30 @@
 		try {
 			switch (activeTab) {
 				case 'balance-sheet': {
-					const result = await getBalanceSheet(query);
-					if (mySeq === genSeq) balanceSheet = result;
+					const params = groupingParamsOf(groupingViews['balance-sheet']);
+					const result = await getBalanceSheet(query, params);
+					if (mySeq === genSeq) {
+						balanceSheet = result;
+						acceptGrouped('balance-sheet', params, result);
+					}
 					break;
 				}
 				case 'income-statement': {
-					const result = await getIncomeStatement(query);
-					if (mySeq === genSeq) incomeStatement = result;
+					const params = groupingParamsOf(groupingViews['income-statement']);
+					const result = await getIncomeStatement(query, params);
+					if (mySeq === genSeq) {
+						incomeStatement = result;
+						acceptGrouped('income-statement', params, result);
+					}
 					break;
 				}
 				case 'trial-balance': {
-					const result = await getTrialBalance(query);
-					if (mySeq === genSeq) trialBalance = result;
+					const params = groupingParamsOf(groupingViews['trial-balance']);
+					const result = await getTrialBalance(query, params);
+					if (mySeq === genSeq) {
+						trialBalance = result;
+						acceptGrouped('trial-balance', params, result);
+					}
 					break;
 				}
 				case 'journals': {
@@ -337,7 +539,12 @@
 		} catch (e) {
 			if (mySeq === genSeq) errorMsg = formatError(e);
 		} finally {
-			if (mySeq === genSeq) loading = false;
+			if (mySeq === genSeq) {
+				loading = false;
+				refreshing = false;
+				inFlightTab = null;
+				afterGeneration(myTab);
+			}
 		}
 	}
 
@@ -367,6 +574,7 @@
 
 	let canExport = $derived(
 		!loading &&
+			!refreshing &&
 			!exporting &&
 			selectedFiscalYearId !== null &&
 			data.fiscalYears.length > 0 &&
@@ -472,7 +680,11 @@
 				{ start: period.startDate, end: period.endDate },
 				format,
 			);
-			await downloadReport(activeTab as ReportType, query, format, filename);
+			// Story 46-2 (AC-6) — les paramètres de la dernière réponse affichée.
+			const grouping = isGroupedTab
+				? displayedGrouping[activeTab as GroupedReport]
+				: undefined;
+			await downloadReport(activeTab as ReportType, query, format, filename, grouping);
 		} catch (e) {
 			// Pass 1 code-review M13 (AA4-F2) : code structuré → message i18n
 			// du backend (formatError) ; sinon fallback générique AC #23.
@@ -611,6 +823,10 @@
 			errorMsg = null;
 			// Story 21-7 (D-7c) — rend l'onglet adressable (replaceState, pas d'empilement).
 			void goto(`?tab=${next}`, { replaceState: true, keepFocus: true, noScroll: true });
+			// Story 46-2, revue P1 M2 (b) — retour sur un rapport groupé dont la
+			// redemande a été jetée : l'écran est remis d'accord avec ses contrôles
+			// (ou, si une génération est en vol, à sa fin — revue P2 M1).
+			resyncActiveGroupedTab();
 		}
 	}
 </script>
@@ -629,7 +845,7 @@
 			bind:periodStart
 			bind:periodEnd
 			{loading}
-			onGenerate={generate}
+			onGenerate={() => generate()}
 			onExportPdf={exportPdf}
 			onExportCsv={exportCsv}
 			{canExport}
@@ -687,7 +903,7 @@
 			<button
 				type="button"
 				class="rounded bg-primary px-3 py-1 text-sm text-white disabled:opacity-50"
-				onclick={generate}
+				onclick={() => generate()}
 				disabled={loading || !ledgerFrom || !ledgerTo}
 				data-testid="ledger-generate"
 			>
@@ -762,7 +978,7 @@
 			<button
 				type="button"
 				class="rounded bg-primary px-3 py-1 text-sm text-white disabled:opacity-50"
-				onclick={generate}
+				onclick={() => generate()}
 				disabled={loading || selectedProjectId === null}
 				data-testid="project-report-generate"
 			>
@@ -797,7 +1013,7 @@
 			<button
 				type="button"
 				class="rounded bg-primary px-3 py-1 text-sm text-white disabled:opacity-50"
-				onclick={generate}
+				onclick={() => generate()}
 				disabled={loading}
 				data-testid="aged-report-generate"
 			>
@@ -845,17 +1061,32 @@
 		role="tabpanel"
 		id="reports-tabpanel-{activeTab}"
 		aria-labelledby="reports-tab-{activeTab}"
+		aria-busy={loading || refreshing}
+		class="space-y-3"
 	>
+		{#if activeGroupingView}
+			<GroupingControls
+				view={activeGroupingView}
+				maxDepth={activeMaxDepth}
+				onChange={changeGrouping}
+				levelHint={activeTab === 'trial-balance'
+					? i18nMsg(
+							'reports-groups-level-hint-trial-balance',
+							"Le total des débits et celui des crédits restent ceux de tous les comptes. Un groupe dont les comptes non nuls sont de natures contraires (débitrice et créditrice) n'est pas totalisé : ses sous-comptes paraissent à sa place. Un affichage replié est un affichage de travail.",
+						)
+					: undefined}
+			/>
+		{/if}
 		{#if loading}
 			<p class="text-sm italic text-gray-500" role="status">
 				{i18nMsg('reports-loading', 'Génération du rapport en cours…')}
 			</p>
 		{:else if activeTab === 'balance-sheet' && balanceSheet}
-			<BalanceSheetView dto={balanceSheet} />
+			<BalanceSheetView dto={balanceSheet} {onToggleGroup} />
 		{:else if activeTab === 'income-statement' && incomeStatement}
-			<IncomeStatementView dto={incomeStatement} />
+			<IncomeStatementView dto={incomeStatement} {onToggleGroup} />
 		{:else if activeTab === 'trial-balance' && trialBalance}
-			<TrialBalanceView dto={trialBalance} />
+			<TrialBalanceView dto={trialBalance} {onToggleGroup} />
 		{:else if activeTab === 'journals' && journalReport}
 			<JournalReportView dto={journalReport} />
 		{:else if activeTab === 'vat' && vatReport}

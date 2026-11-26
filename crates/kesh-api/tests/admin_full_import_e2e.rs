@@ -6950,3 +6950,185 @@ async fn full_import_of_a_0_19_0_backup_without_paypal_columns(pool: MySqlPool) 
     assert!(transactions.is_empty());
     assert!(regles.is_empty());
 }
+
+// ---------------------------------------------------------------------------
+// Story 40-7b (AC-8) — le compte Stripe et son compte de versement dans une
+// sauvegarde ; une sauvegarde de la version précédente sans la colonne neuve
+// ---------------------------------------------------------------------------
+
+/// Deux comptes écrits en base : une destination de versement (un compte Wise
+/// sans IBAN) et un compte Stripe qui la désigne (clé étrangère sur la même
+/// table). Rend `(destination, stripe)`.
+async fn stripe_decor(pool: &MySqlPool, company_id: i64) -> (i64, i64) {
+    let compte = |numero: &'static str| async move {
+        sqlx::query(
+            "INSERT INTO accounts (company_id, number, name, account_type, active, postable) \
+             VALUES (?, ?, ?, 'Asset', 1, 1)",
+        )
+        .bind(company_id)
+        .bind(numero)
+        .bind(format!("Compte {numero}"))
+        .execute(pool)
+        .await
+        .unwrap()
+        .last_insert_id() as i64
+    };
+    let (l1, l2) = (compte("1040").await, compte("1041").await);
+    let destination = sqlx::query(
+        "INSERT INTO bank_accounts (company_id, bank_name, iban, is_primary, journal_account_id, \
+         provider, provider_account) VALUES (?, 'Wise', NULL, FALSE, ?, 'wise', 'Wise boutique')",
+    )
+    .bind(company_id)
+    .bind(l1)
+    .execute(pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    let stripe = sqlx::query(
+        "INSERT INTO bank_accounts (company_id, bank_name, iban, is_primary, journal_account_id, \
+         provider, provider_account, payout_bank_account_id) \
+         VALUES (?, 'Stripe', NULL, FALSE, ?, 'stripe', 'Stripe boutique', ?)",
+    )
+    .bind(company_id)
+    .bind(l2)
+    .bind(destination)
+    .execute(pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    (destination, stripe)
+}
+
+/// `(id, provider, payout_bank_account_id)` des comptes, par id.
+async fn stripe_colonnes(pool: &MySqlPool) -> Vec<(i64, Option<String>, Option<i64>)> {
+    sqlx::query_as("SELECT id, provider, payout_bank_account_id FROM bank_accounts ORDER BY id")
+        .fetch_all(pool)
+        .await
+        .unwrap()
+}
+
+/// AC-8 — aller-retour d'un compte Stripe et de son compte de versement : la
+/// colonne neuve passe seule (lecture de `information_schema`), sa clé
+/// étrangère sur la même table n'empêche pas la restauration ; la base
+/// modifiée revient à l'état sauvegardé.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_round_trip_keeps_a_stripe_payout_account(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let admin = seed_admin(&pool, "Stripe").await;
+    let (destination, stripe) = stripe_decor(&pool, admin.company_id).await;
+    let avant = stripe_colonnes(&pool).await;
+    assert!(
+        avant.contains(&(stripe, Some("stripe".into()), Some(destination))),
+        "{avant:?}"
+    );
+
+    let backup = export_backup(&app, &admin.jwt).await;
+    sqlx::query("UPDATE bank_accounts SET payout_bank_account_id = NULL")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let resp = post_import(&app, &admin.jwt, backup).await;
+    assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
+    assert_eq!(stripe_colonnes(&pool).await, avant, "relu à l'identique");
+}
+
+/// Revue P1 (L3) — aller-retour d'un compte Stripe d'identifiant **inférieur**
+/// à celui de sa destination (cas ordinaire : le compte Stripe créé d'abord, la
+/// destination ensuite, puis un `PUT`) : la clé étrangère sur la même table
+/// vise une ligne restaurée plus tard, ce qui ne doit pas empêcher la
+/// restauration (`FOREIGN_KEY_CHECKS = 0`).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_round_trip_with_a_destination_of_higher_id(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let admin = seed_admin(&pool, "Stripe inverse").await;
+    let c = admin.company_id;
+    let mut plan = Vec::new();
+    for numero in ["1040", "1041"] {
+        plan.push(
+            sqlx::query(
+                "INSERT INTO accounts (company_id, number, name, account_type, active, postable) \
+                 VALUES (?, ?, ?, 'Asset', 1, 1)",
+            )
+            .bind(c)
+            .bind(numero)
+            .bind(format!("Compte {numero}"))
+            .execute(&pool)
+            .await
+            .unwrap()
+            .last_insert_id() as i64,
+        );
+    }
+    let stripe = sqlx::query(
+        "INSERT INTO bank_accounts (company_id, bank_name, iban, is_primary, journal_account_id, \
+         provider, provider_account) VALUES (?, 'Stripe', NULL, FALSE, ?, 'stripe', 'Stripe boutique')",
+    )
+    .bind(c)
+    .bind(plan[0])
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    let destination = sqlx::query(
+        "INSERT INTO bank_accounts (company_id, bank_name, iban, is_primary, journal_account_id, \
+         provider, provider_account) VALUES (?, 'Wise', NULL, FALSE, ?, 'wise', 'Wise boutique')",
+    )
+    .bind(c)
+    .bind(plan[1])
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    sqlx::query("UPDATE bank_accounts SET payout_bank_account_id = ? WHERE id = ?")
+        .bind(destination)
+        .bind(stripe)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(destination > stripe);
+    let avant = stripe_colonnes(&pool).await;
+    assert!(
+        avant.contains(&(stripe, Some("stripe".into()), Some(destination))),
+        "{avant:?}"
+    );
+
+    let backup = export_backup(&app, &admin.jwt).await;
+    sqlx::query("UPDATE bank_accounts SET payout_bank_account_id = NULL")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let resp = post_import(&app, &admin.jwt, backup).await;
+    assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
+    assert_eq!(stripe_colonnes(&pool).await, avant, "relu à l'identique");
+}
+
+/// AC-8 — une sauvegarde de la version précédente, sans la colonne
+/// `payout_bank_account_id`, s'importe : elle vaut `NULL` (la règle
+/// `missing_required_columns` ne refuse qu'une colonne obligatoire ; la liste
+/// close `ABSENCES_ADMISES_EPIC_37` n'est pas touchée).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_of_a_backup_without_the_payout_column(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let admin = seed_admin(&pool, "Forme precedente").await;
+    sqlx::query(
+        "INSERT INTO bank_accounts (company_id, bank_name, iban, is_primary) \
+         VALUES (?, 'Banque Exemple', 'CH9300762011623852957', TRUE)",
+    )
+    .bind(admin.company_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let backup = export_backup(&app, &admin.jwt).await;
+    let (mut manifest, mut data, fichiers) = ouvrir_tout(&backup);
+    recrire_table(&mut manifest, &mut data, "bank_accounts", |o| {
+        o.remove("payout_bank_account_id");
+    });
+    strip_column(&mut manifest, "bank_accounts", "payout_bank_account_id");
+    let ancienne = rezip_tout(&manifest, &data, &fichiers);
+    stripe_decor(&pool, admin.company_id).await;
+
+    let resp = post_import(&app, &admin.jwt, ancienne).await;
+    assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
+    let comptes = stripe_colonnes(&pool).await;
+    assert_eq!(comptes.len(), 1, "{comptes:?}");
+    assert_eq!((comptes[0].1.clone(), comptes[0].2), (None, None));
+}

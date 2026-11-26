@@ -33,6 +33,7 @@ pub mod csv;
 pub mod error;
 pub mod paypal;
 pub mod paypal_api;
+pub mod stripe;
 pub mod types;
 
 /// Première année qu'un relevé peut porter : celle qu'une colonne de date de la
@@ -62,5 +63,9 @@ pub use error::{
 pub use paypal::{
     BalanceImpact, DateOrder, PaypalCsv, PaypalCsvError, PaypalLineError, PaypalLineErrorCode,
     PaypalRow, parse_paypal_csv,
+};
+pub use stripe::{
+    StripeCsvError, StripeLineError, StripeLineErrorCode, StripePayoutCsv, StripePayoutRow,
+    parse_stripe_payout_csv,
 };
 pub use types::{ImportedStatement, ImportedTransaction, SourceFormat};

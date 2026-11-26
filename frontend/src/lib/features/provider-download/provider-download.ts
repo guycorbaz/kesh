@@ -38,22 +38,31 @@ export function defaultPeriod(fiscalYear: { startDate: string; endDate: string }
 	return { from, to };
 }
 
-/** Le motif d'un refus de période (`PROVIDER_PERIOD_INVALID`, `details.reason`). */
-export function periodRefusalLabel(reason: unknown): string {
+/**
+ * Le motif d'un refus de période (`PROVIDER_PERIOD_INVALID`, `details.reason`).
+ * Le refus `too_old` dit la profondeur d'historique **du prestataire**
+ * (`details.historyYears` : trois ans pour PayPal, trente pour Stripe) ; sans
+ * elle, le texte général, qui ne cite aucun nombre.
+ */
+export function periodRefusalLabel(reason: unknown, historyYears?: unknown): string {
+	const years = typeof historyYears === 'number' && Number.isInteger(historyYears) && historyYears > 0 ? historyYears : null;
 	switch (reason) {
 		case 'from_after_to':
 			return i18nMsg('provider-download-period-from-after-to', 'La date de début doit précéder la date de fin.');
 		case 'future':
 			return i18nMsg('provider-download-period-future', 'La date de début est dans le futur.');
 		case 'too_old':
+			// Sans profondeur lisible, le texte général (`default`) : aucun nombre faux.
+			if (years === null) return periodRefusalLabel(null);
 			return i18nMsg(
 				'provider-download-period-too-old',
-				'La date de début remonte à plus de trois ans : le prestataire ne remonte pas plus loin.',
+				'La date de début remonte à plus de { $years } ans : le prestataire ne remonte pas plus loin.',
+				{ years: String(years) },
 			);
 		default:
 			return i18nMsg(
 				'provider-download-period-invalid',
-				'Période refusée : le début doit précéder la fin, ne pas être dans le futur, et dater de moins de trois ans.',
+				'Période refusée : le début doit précéder la fin, ne pas être dans le futur, et ne pas remonter plus loin que l\'historique du prestataire.',
 			);
 	}
 }
@@ -94,7 +103,7 @@ export function startRefusal(err: unknown): StartRefusal {
 				break;
 			}
 			case 'PROVIDER_PERIOD_INVALID':
-				return { message: periodRefusalLabel(details?.reason) };
+				return { message: periodRefusalLabel(details?.reason, details?.historyYears) };
 			case 'PROVIDER_API_NOT_CONFIGURED':
 				return {
 					message: i18nMsg(

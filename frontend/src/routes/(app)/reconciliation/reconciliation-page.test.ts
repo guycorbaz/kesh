@@ -41,6 +41,14 @@ describe('page de réconciliation — comptes de prestataire écartés (Story 38
 		expect(Array.from(select.options).map((o) => o.value)).toEqual(['1']);
 	});
 
+	// Story 40-7d (AC-1) — de même un compte Stripe ou Wise.
+	it.each(['stripe', 'wise'])('un compte %s n’est pas proposé ; le compte ordinaire l’est', async (provider) => {
+		getMock.mockResolvedValue({ company: {}, bankAccounts: [compte(1, 'UBS', null), compte(2, provider, provider)] });
+		const r = render(Page);
+		const select = (await r.findByTestId('bank-account-select')) as HTMLSelectElement;
+		expect(Array.from(select.options).map((o) => o.value)).toEqual(['1']);
+	});
+
 	it('seulement des comptes PayPal : « aucun compte », aucune proposition chargée', async () => {
 		getMock.mockResolvedValue({ company: {}, bankAccounts: [compte(2, 'PayPal', 'paypal')] });
 		const r = render(Page);

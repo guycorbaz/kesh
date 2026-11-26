@@ -183,7 +183,7 @@ langue ou d'un autre rapport est refusé en nommant les colonnes qui manquent.
   frontend ni autre crate ; ils restent dus au dernier commit de code de la phase, avant le push.
 - Points ouverts : (a) `detect_encoding` refuse un fichier ISO-8859-1 dont les 1024 premiers octets sont ASCII
   (défaut préexistant du détecteur commun, sans effet sur PayPal, qui exporte en UTF-8 avec BOM) — à tracer en
-  issue ; (b) la phrase d'AC-1 sur le BOM, à corriger dans la fiche si on la reprend.
+  issue (annoté le 2026-11-24 : #1455) ; (b) la phrase d'AC-1 sur le BOM, à corriger dans la fiche si on la reprend.
 - Prompt de la revue P1 : `kesh-gate-logs/s38-11a/revue-p1-prompt.md`.
 
 ### File List
@@ -229,7 +229,7 @@ langue ou d'un autre rapport est refusé en nommant les colonnes qui manquent.
   close sur cette passe (rien au-dessus de LOW). LOW non corrigés, versés à la dette de l'epic
   (`kesh-gate-logs/epic-38-kiss/issues-a-ouvrir.md`) : indice de date « slash » sans contrôle calendaire (LOW-1),
   ordre FIELD_COUNT au plafond (LOW-2), branche Err du crate csv sans test (LOW-3), aide `amount` à deux décimales à
-  relire pour Wise/Stripe (LOW-4), phrase d'AC-1 sur le BOM (LOW-5). Rapport : `kesh-gate-logs/s38-11a/revue-p1-rapport.md`.
+  relire pour Wise/Stripe (LOW-4), phrase d'AC-1 sur le BOM (LOW-5). *(Annoté le 2026-11-24 : LOW-1, LOW-3 et LOW-5 → #1470.)* Rapport : `kesh-gate-logs/s38-11a/revue-p1-rapport.md`.
 - 2026-11-20 — correctif post-revue : débordement des montants (M1 de la revue de la 40-7a). Un montant extrême
   (`79228162514264337593543950335`) faisait paniquer `gross + fee` (`Decimal`) de `paypal.rs`, la forme fermée n'ayant
   pas de borne de longueur. Remède : `csv/amount.rs` borne la partie entière à 15 chiffres (nus ou groupés par

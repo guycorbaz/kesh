@@ -123,7 +123,10 @@ describe('reports.api — Story 9-2a', () => {
 				{ fiscalYearId: 7 },
 				'pdf',
 			);
-			expect(url).toBe('/api/v1/reports/balance-sheet/export?fiscalYearId=7&format=pdf');
+			// Sans groupement : `detailLevel=flat` (l'export de l'API est groupé sans paramètre).
+			expect(url).toBe(
+				'/api/v1/reports/balance-sheet/export?fiscalYearId=7&format=pdf&detailLevel=flat',
+			);
 		});
 
 		it("inclut periodStart/periodEnd si fournis", () => {

@@ -1,0 +1,96 @@
+Société PME 46-3
+Balance des comptes
+Période : 01.01.2025 31.12.2025
+N° compte Intitulé Ouverture CHF Débit CHF Crédit CHF Clôture CHF
+1 Actifs 0.00 0.00 0.00 0.00
+10 Actifs circulants 0.00 0.00 0.00 0.00
+1000 Caisse 0.00 0.00 0.00 0.00
+1010 Poste 0.00 0.00 0.00 0.00
+1020 Banque 0.00 20'350.00 2'212.00 18'138.00
+1025 Banque USD 0.00 912.00 0.00 912.00
+USD ouverture 0.00 · débit 1'000.00 · crédit 0.00 · clôture 1'000.00
+1040 Avoirs à court terme 0.00 0.00 0.00 0.00
+1100 Débiteurs 0.00 8'000.00 0.00 8'000.00
+1109 Ducroire 0.00 0.00 0.00 0.00
+1170 Impôt anticipé à récu… 0.00 0.00 0.00 0.00
+1171 Impôt préalable 0.00 0.00 0.00 0.00
+1200 Stock de marchandises 0.00 0.00 0.00 0.00
+1300 Actifs transitoires 0.00 0.00 0.00 0.00
+14 Actifs immobilisés 0.00 0.00 0.00 0.00
+1400 Titres 0.00 0.00 0.00 0.00
+1500 Machines et appareils 0.00 0.00 0.00 0.00
+1509 Amort. cumulés machin… 0.00 0.00 0.00 0.00
+1510 Mobilier et installat… 0.00 0.00 0.00 0.00
+1519 Amort. cumulés mobili… 0.00 0.00 0.00 0.00
+1520 Informatique 0.00 4'000.00 0.00 4'000.00
+1529 Amort. cumulés inform… 0.00 0.00 0.00 0.00
+1600 Immeubles 0.00 0.00 0.00 0.00
+2 Passifs 0.00 0.00 0.00 0.00
+20 Capitaux étrangers à … 0.00 0.00 0.00 0.00
+2000 Créanciers 0.00 0.00 3'000.00 3'000.00
+2100 Dettes bancaires à co… 0.00 0.00 0.00 0.00
+2200 TVA due 0.00 0.00 0.00 0.00
+2201 Impôt anticipé dû 0.00 0.00 0.00 0.00
+2206 Décompte TVA 0.00 0.00 0.00 0.00
+2270 AVS/AI/APG 0.00 0.00 0.00 0.00
+2300 Passifs transitoires 0.00 0.00 0.00 0.00
+24 Capitaux étrangers à … 0.00 0.00 0.00 0.00
+2400 Emprunts bancaires 0.00 0.00 4'000.00 4'000.00
+2500 Provisions 0.00 0.00 0.00 0.00
+28 Capitaux propres 0.00 0.00 0.00 0.00
+2800 Capital social 0.00 0.00 20'000.00 20'000.00
+2900 Réserve légale 0.00 0.00 0.00 0.00
+2970 Bénéfice/perte reporté 0.00 0.00 0.00 0.00
+2979 Résultat de l'exercice 0.00 0.00 0.00 0.00
+3 Produits d'exploitati… 0.00 0.00 0.00 0.00
+30 Produits des ventes 0.00 0.00 0.00 0.00
+3000 Ventes de marchandises 0.00 0.00 8'000.00 8'000.00
+3200 Prestations de servic… 0.00 0.00 0.00 0.00
+3400 Autres produits 0.00 0.00 0.00 0.00
+3800 Déductions sur ventes 0.00 0.00 0.00 0.00
+3805 Pertes sur créances 0.00 0.00 0.00 0.00
+3900 Variation des stocks 0.00 0.00 0.00 0.00
+4 Charges de matières 0.00 0.00 0.00 0.00
+40 Charges de matières e… 0.00 0.00 0.00 0.00
+4000 Achats de marchandises 0.00 3'000.00 0.00 3'000.00
+4200 Achats de matières pr… 0.00 0.00 0.00 0.00
+4400 Prestations de tiers 0.00 0.00 0.00 0.00
+5 Charges de personnel 0.00 0.00 0.00 0.00
+page 1 / 2
+50 Salaires et charges s… 0.00 0.00 0.00 0.00
+5000 Salaires 0.00 0.00 0.00 0.00
+5700 Charges sociales 0.00 0.00 0.00 0.00
+5800 Autres charges de per… 0.00 0.00 0.00 0.00
+6 Autres charges d'expl… 0.00 0.00 0.00 0.00
+60 Charges de locaux 0.00 0.00 0.00 0.00
+6000 Loyers 0.00 1'200.00 0.00 1'200.00
+6100 Entretien et réparati… 0.00 0.00 0.00 0.00
+6200 Véhicules et transpor… 0.00 0.00 0.00 0.00
+6300 Assurances 0.00 0.00 0.00 0.00
+6400 Énergie 0.00 0.00 0.00 0.00
+6500 Administration 0.00 0.00 0.00 0.00
+6510 Téléphone et internet 0.00 0.00 0.00 0.00
+6570 Informatique et licen… 0.00 0.00 0.00 0.00
+6600 Publicité 0.00 0.00 0.00 0.00
+6700 Autres charges d'expl… 0.00 0.00 0.00 0.00
+6800 Amortissements 0.00 0.00 0.00 0.00
+6900 Charges financières 0.00 0.00 0.00 0.00
+6940 Différences d'arrondi 0.00 0.00 0.00 0.00
+6950 Produits financiers 0.00 0.00 50.00 50.00
+7 Résultats annexes 0.00 0.00 0.00 0.00
+70 Produits et charges a… 0.00 0.00 0.00 0.00
+7000 Produits annexes 0.00 0.00 300.00 300.00
+7010 Charges annexes 0.00 100.00 0.00 100.00
+8 Résultats hors exploi… 0.00 0.00 0.00 0.00
+80 Résultats extraordina… 0.00 0.00 0.00 0.00
+8000 Produits extraordinai… 0.00 0.00 0.00 0.00
+8010 Charges extraordinair… 0.00 0.00 0.00 0.00
+8900 Impôts directs 0.00 0.00 0.00 0.00
+9 Clôture 0.00 0.00 0.00 0.00
+90 Comptes de clôture 0.00 0.00 0.00 0.00
+9000 Bilan d'ouverture 0.00 0.00 0.00 0.00
+9100 Compte de résultat 0.00 0.00 0.00 0.00
+9200 Bilan de clôture 0.00 0.00 0.00 0.00
+Résultat reporté (calculé) 0.00 0.00
+Total général 37'562.00 37'562.00
+page 2 / 2

@@ -1,0 +1,4 @@
+automatic_payout_id,automatic_payout_effective_at,balance_transaction_id,created,available_on,currency,gross,fee,net,reporting_category,description
+po_TEST0001,2020-02-03 00:00:00,txn_TEST0001,2020-01-29 10:15:04,2020-02-03 00:00:00,chf,100.00,3.20,96.80,charge,Vente fictive A
+po_TEST0001,2020-02-03 00:00:00,txn_TEST0002,2020-01-30 14:02:41,2020-02-03 00:00:00,chf,50.00,1.75,48.25,charge,Vente fictive B
+po_TEST0001,2020-02-03 00:00:00,txn_TEST0003,2020-01-31 09:40:12,2020-02-03 00:00:00,chf,-20.00,-0.60,-19.40,refund,Remboursement fictif de la vente A
